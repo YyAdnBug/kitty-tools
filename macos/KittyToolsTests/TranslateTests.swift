@@ -7,31 +7,62 @@ import Testing
 @testable import KittyTools
 
 struct LanguageTests {
-  @Test func smartTarget() {
-    let resolve = { (detected: Lang?) in
-      Lang.resolve(source: nil, target: nil, detected: detected, native: .zhHans, foreign: .en)
-    }
-    #expect(resolve(.zhHans) == (.zhHans, .en))
-    #expect(resolve(.zhHant) == (.zhHant, .en))  // 繁体也算母语
-    #expect(resolve(.ja) == (.ja, .zhHans))
-    #expect(resolve(nil) == (nil, .zhHans))  // 检测不出：交给服务识别，译成母语
+  private func resolve(_ source: Lang?, _ target: Lang?, detected: Lang?) -> Lang.Plan {
+    Lang.resolve(source: source, target: target, detected: detected, first: .zhHans, second: .en)
   }
 
-  @Test func fixedTargetSwapsWhenSameLanguage() {
-    let result = Lang.resolve(
-      source: nil, target: .zhHans, detected: .zhHant, native: .zhHans, foreign: .en)
-    #expect(result == (.zhHant, .en))
-    #expect(
-      Lang.resolve(source: .fr, target: .de, detected: .en, native: .zhHans, foreign: .en) == (
-        .fr, .de
-      ))
+  @Test func autoTargetUsesFirstAndSecondLanguage() {
+    #expect(resolve(nil, nil, detected: .zhHans) == .init(from: nil, to: .en))
+    #expect(resolve(nil, nil, detected: .zhHant) == .init(from: nil, to: .en))  // 简繁算同一种
+    #expect(resolve(nil, nil, detected: .ja) == .init(from: nil, to: .zhHans))
+    #expect(resolve(nil, nil, detected: nil) == .init(from: nil, to: .zhHans))  // 纯数字等
+    // 源自动时不把本地检测结果发给服务，让服务自己识别
+    #expect(resolve(nil, .ja, detected: .en) == .init(from: nil, to: .ja))
+  }
+
+  @Test func fixedTargetEqualToTextFallsBackToAuto() {
+    // 源自动、目标日语、原文日语：改译第一语言并标记，界面写「原文已是日语」
+    #expect(resolve(nil, .ja, detected: .ja) == .init(from: nil, to: .zhHans, fellBack: true))
+    #expect(resolve(nil, .zhHans, detected: .zhHans) == .init(to: .en, fellBack: true))
+    // 简体原文、目标繁体是用户要的转换，照做
+    #expect(resolve(nil, .zhHant, detected: .zhHans) == .init(from: nil, to: .zhHant))
+  }
+
+  @Test func fixedSourceIsTrusted() {
+    // 「英文 → 日语」照所选发出（原文不符只在界面提示，不改方向）
+    #expect(resolve(.en, .ja, detected: .zhHans) == .init(from: .en, to: .ja))
+    #expect(resolve(.en, nil, detected: .zhHans) == .init(from: .en, to: .zhHans))
+    #expect(resolve(.zhHans, nil, detected: .ja) == .init(from: .zhHans, to: .en))
+    // 旧设置留下的「英 → 英」：目标按自动处理
+    #expect(resolve(.en, .en, detected: .en) == .init(from: .en, to: .zhHans))
+  }
+
+  @Test func preferredPairNeverRepeats() {
+    #expect(Lang.pair(first: nil, second: nil) == (.zhHans, .en))
+    #expect(Lang.pair(first: "ja", second: "ja") == (.ja, .en))
+    #expect(Lang.pair(first: "en", second: "en") == (.en, .zhHans))
+    #expect(Lang.pair(first: "zh-Hans", second: "zh-Hant") == (.zhHans, .en))
   }
 
   @Test func detection() {
+    let preferred: [Lang] = [.zhHans, .en]
     #expect(Lang.detect("今天天气很好，我们去公园散步吧") == .zhHans)
     #expect(Lang.detect("The quick brown fox jumps over the lazy dog") == .en)
     #expect(Lang.detect("こんにちは、元気ですか") == .ja)
-    #expect(Lang.detect("a") == nil)
+    // 短文本靠第一 / 第二语言的先验：不加先验时「你好」判成繁体、「API」判成意大利语，「猫」会译成中文
+    #expect(Lang.detect("你好", preferring: preferred) == .zhHans)
+    #expect(Lang.detect("猫", preferring: preferred) == .zhHans)
+    #expect(Lang.detect("API", preferring: preferred) == .en)
+    // 证据足够时先验不会盖过实际语言
+    #expect(Lang.detect("東京", preferring: preferred) == .ja)
+    #expect(Lang.detect("頭髮", preferring: preferred) == .zhHant)
+    #expect(Lang.detect("Bonjour", preferring: preferred) == .fr)
+    #expect(Lang.detect("12345", preferring: preferred) == nil)
+    // 中文里夹英文词：只看中文部分（否则判成英语 / 德语，自动模式会中译中）
+    #expect(Lang.detect("请帮我 review 一下这个 PR", preferring: preferred) == .zhHans)
+    #expect(Lang.detect("iPhone 17 Pro Max 发布了", preferring: preferred) == .zhHans)
+    #expect(Lang.detect("このアプリは iPhone で動く", preferring: preferred) == .ja)
+    #expect(Lang.detect("The word 猫 means cat in Chinese", preferring: preferred) == .en)
   }
 }
 

@@ -23,12 +23,13 @@ enum Prefs {
   static let clipboardClearOnLock = "clipboardClearOnLock"
   static let clipboardShowPreview = "clipboardShowPreview"
 
-  /// 源语言：没设 = 自动检测
+  /// 源语言：没设 = 自动检测。只在翻译浮窗顶部切换，全局记住
   static let translateSource = "translateSourceLang"
-  /// 目标语言：没设 = 智能（母语 ⇄ 常用外语）
+  /// 目标语言：没设 = 自动（第一 ⇄ 第二语言）。只在翻译浮窗顶部切换，全局记住
   static let translateTarget = "translateTargetLang"
-  static let translateNative = "translateNativeLang"
-  static let translateForeign = "translateForeignLang"
+  /// 第一 / 第二语言（键名是 M4 起的旧名，改名会丢设置）；读取统一走 Lang.preferredPair
+  static let translateFirst = "translateNativeLang"
+  static let translateSecond = "translateForeignLang"
   static let translateRemoveNewlines = "translateDeleteNewline"
   /// 自动复制第一个服务的译文
   static let translateAutoCopy = "autoCopy"
@@ -57,8 +58,8 @@ enum Prefs {
       clipboardClearOnQuit: false,
       clipboardClearOnLock: false,
       clipboardShowPreview: true,
-      translateNative: Lang.zhHans.rawValue,
-      translateForeign: Lang.en.rawValue,
+      translateFirst: Lang.zhHans.rawValue,
+      translateSecond: Lang.en.rawValue,
       translateRemoveNewlines: false,
       translateAutoCopy: false,
       translateHistoryEnabled: true,

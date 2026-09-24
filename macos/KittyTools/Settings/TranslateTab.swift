@@ -1,14 +1,12 @@
-// 设置 › 翻译：语言（源、目标、智能模式的母语 / 常用外语）、行为（去换行、自动复制、历史），
+// 设置 › 翻译：语言（第一 / 第二语言；源、目标只在浮窗顶部切换）、行为（去换行、自动复制、历史），
 // 服务（启用、排序、各服务的选项与密钥、自建 AI 实例的增删改、获取模型、测试连接）。密钥直接读写钥匙串。
 
 import SwiftUI
 
 struct TranslateTab: View {
   @Bindable var services: TranslateServiceStore
-  @AppStorage(Prefs.translateSource) private var source: String?
-  @AppStorage(Prefs.translateTarget) private var target: String?
-  @AppStorage(Prefs.translateNative) private var native = Lang.zhHans.rawValue
-  @AppStorage(Prefs.translateForeign) private var foreign = Lang.en.rawValue
+  @AppStorage(Prefs.translateFirst) private var first = Lang.zhHans.rawValue
+  @AppStorage(Prefs.translateSecond) private var second = Lang.en.rawValue
   @AppStorage(Prefs.translateRemoveNewlines) private var removeNewlines = false
   @AppStorage(Prefs.translateAutoCopy) private var autoCopy = false
   @AppStorage(Prefs.translateHistoryEnabled) private var historyEnabled = true
@@ -18,24 +16,22 @@ struct TranslateTab: View {
   var body: some View {
     Form {
       Section("语言") {
-        Picker("源语言", selection: $source) {
-          Text("自动检测").tag(String?.none)
-          ForEach(Lang.allCases, id: \.self) { Text($0.title).tag(String?.some($0.rawValue)) }
-        }
-        Picker("目标语言", selection: $target) {
-          Text("智能").tag(String?.none)
-          ForEach(Lang.allCases, id: \.self) { Text($0.title).tag(String?.some($0.rawValue)) }
-        }
-        Picker("母语", selection: $native) {
+        Picker("第一语言", selection: $first) {
           ForEach(Lang.allCases, id: \.self) { Text($0.title).tag($0.rawValue) }
         }
-        Picker("常用外语", selection: $foreign) {
+        Picker("第二语言", selection: $second) {
           ForEach(Lang.allCases, id: \.self) { Text($0.title).tag($0.rawValue) }
         }
-        Text("「智能」：原文是母语就译成常用外语，否则译成母语。选了固定目标语言、而原文正好是这种语言时，也会改译成另一端。")
-          .font(.caption)
-          .foregroundStyle(.secondary)
+        Text(
+          "目标语言选「自动」时：原文是第一语言就译成第二语言，否则译成第一语言（简繁中文算同一种）。"
+            + "源语言和目标语言在翻译浮窗顶部切换，会一直记住。"
+        )
+        .font(.caption)
+        .foregroundStyle(.secondary)
       }
+      // 两个选成同一种语言（简繁也算）就互换，免得「自动」变成中译中
+      .onChange(of: first) { old, new in if sameLanguage(new, second) { second = old } }
+      .onChange(of: second) { old, new in if sameLanguage(new, first) { first = old } }
       Section("行为") {
         Toggle("翻译前把换行合成一段（适合 PDF 复制的文字）", isOn: $removeNewlines)
         Toggle("自动复制第一个服务的译文", isOn: $autoCopy)
@@ -79,6 +75,11 @@ struct TranslateTab: View {
     }
     .formStyle(.grouped)
     .frame(width: 540, height: 600)
+  }
+
+  private func sameLanguage(_ a: String, _ b: String) -> Bool {
+    guard let a = Lang(rawValue: a), let b = Lang(rawValue: b) else { return false }
+    return a.isSameLanguage(as: b)
   }
 
   private func move(_ id: String, by offset: Int) {

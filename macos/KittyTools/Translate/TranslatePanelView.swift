@@ -1,5 +1,6 @@
 // 翻译浮窗根视图（原生重新设计，不沿用旧版样式）：
-// 顶栏：源语言 ⇄ 目标语言 + 复制即译 / 历史 / 设置 / 固定；原文区（Enter 翻译，Shift+Enter 换行）+ 语种与原文操作；
+// 顶栏：源语言 ⇄ 目标语言（在这里切换、全局记住）+ 复制即译 / 历史 / 设置 / 固定；
+// 原文区（Enter 翻译，Shift+Enter 换行）+ 实际方向与原文操作；
 // 下方是各服务结果卡片，历史覆盖在结果区上。状态和操作都在 TranslateCoordinator。
 
 import SwiftUI
@@ -13,8 +14,10 @@ struct TranslatePanelView: View {
   @AppStorage(Prefs.translateCopyToTranslate) private var copyToTranslate = false
   /// nil = 自动检测
   @AppStorage(Prefs.translateSource) private var source: String?
-  /// nil = 智能
+  /// nil = 自动（第一 ⇄ 第二语言）
   @AppStorage(Prefs.translateTarget) private var target: String?
+  @AppStorage(Prefs.translateFirst) private var first: String?
+  @AppStorage(Prefs.translateSecond) private var second: String?
 
   var body: some View {
     VStack(spacing: 0) {
@@ -33,23 +36,25 @@ struct TranslatePanelView: View {
         results.frame(maxHeight: .infinity)
       }
     }
-    .onChange(of: source) { retranslate() }
-    .onChange(of: target) { retranslate() }
+    // 一次操作只重译一次（交换、撞同语言时两个值在同一次更新里一起改）
+    .onChange(of: [source, target]) { retranslate() }
   }
 
   // MARK: 顶栏
 
   private var header: some View {
     HStack(spacing: 6) {
-      Picker("源语言", selection: $source) {
+      Picker("源语言", selection: choose(\.source, other: \.target)) {
         Text("自动检测").tag(String?.none)
         Divider()
         ForEach(Lang.allCases, id: \.self) { Text($0.title).tag(String?.some($0.rawValue)) }
       }
-      Button("交换语言", systemImage: "arrow.left.arrow.right", action: swap)
-        .disabled(source == nil && target == nil && coordinator.target == nil)
-      Picker("目标语言", selection: $target) {
-        Text("智能（中⇄外）").tag(String?.none)
+      // 原样互换，「自动」也照换（Bob 的做法）；两边都自动时本来就是双向的，不用换
+      Button("交换语言", systemImage: "arrow.left.arrow.right") { (source, target) = (target, source) }
+        .disabled(source == nil && target == nil)
+      Picker("目标语言", selection: choose(\.target, other: \.source)) {
+        let pair = Lang.pair(first: first, second: second)
+        Text("自动（\(pair.first.title) ⇄ \(pair.second.title)）").tag(String?.none)
         Divider()
         ForEach(Lang.allCases, id: \.self) { Text($0.title).tag(String?.some($0.rawValue)) }
       }
@@ -76,11 +81,16 @@ struct TranslatePanelView: View {
     .padding(.bottom, 8)
   }
 
-  /// 交换：自动 / 智能的一侧用实际检测或解析出的语言
-  private func swap() {
-    let newSource = target ?? coordinator.target?.rawValue
-    target = source ?? coordinator.detected?.rawValue
-    source = newSource
+  /// 选成和另一边相同的固定语言时，另一边换成这边原来的值（像交换一样），不会出现「英 → 英」
+  private func choose(
+    _ side: ReferenceWritableKeyPath<Self, String?>, other: ReferenceWritableKeyPath<Self, String?>
+  ) -> Binding<String?> {
+    Binding {
+      self[keyPath: side]
+    } set: { new in
+      if new != nil, new == self[keyPath: other] { self[keyPath: other] = self[keyPath: side] }
+      self[keyPath: side] = new
+    }
   }
 
   private func retranslate() {
@@ -110,7 +120,9 @@ struct TranslatePanelView: View {
             "朗读原文",
             systemImage: speaker.speaking == coordinator.sourceText ? "stop.fill" : "speaker.wave.2"
           ) {
-            speaker.toggle(coordinator.sourceText, language: coordinator.detected)
+            speaker.toggle(
+              coordinator.sourceText,
+              language: coordinator.fixedSource ?? coordinator.detected)
           }
           Button("复制原文", systemImage: "doc.on.doc") { Paster.write(string: coordinator.sourceText) }
           Button("清空", systemImage: "xmark.circle") { coordinator.beginInput() }
@@ -128,11 +140,20 @@ struct TranslatePanelView: View {
     .padding(.vertical, 8)
   }
 
-  /// 「英语 → 简体中文」（源是自动时显示检测结果）
+  /// 这次会话的实际方向「英语 → 简体中文」（源自动时显示检测结果），出乎所选的地方写明原因：
+  /// 固定目标正好是原文语言而改译了另一端；固定源和检测结果对不上（照所选发出，只提示）
   private var direction: String? {
     guard let to = coordinator.target else { return nil }
-    let from = source.flatMap(Lang.init(rawValue:)) ?? coordinator.detected
-    return "\(from?.title ?? "自动识别") → \(to.title)"
+    let fixedSource = coordinator.fixedSource
+    var text = "\((fixedSource ?? coordinator.detected)?.title ?? "自动识别") → \(to.title)"
+    if let abandoned = coordinator.abandonedTarget {
+      text += "（原文已是\(abandoned.title)）"
+    } else if let fixedSource, let detected = coordinator.detected,
+      !detected.isSameLanguage(as: fixedSource)
+    {
+      text += " · 检测到\(detected.title)"
+    }
+    return text
   }
 
   // MARK: 结果

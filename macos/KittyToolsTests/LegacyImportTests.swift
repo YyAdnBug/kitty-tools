@@ -36,8 +36,8 @@ struct LegacyImportTests {
     let plan = LegacyImport.plan(from: config)
     #expect(plan.preferences[Prefs.translateSource] is NSNull)  // auto → 回到默认
     #expect(plan.preferences[Prefs.translateTarget] as? String == Lang.zhHant.rawValue)
-    #expect(plan.preferences[Prefs.translateNative] as? String == Lang.zhHans.rawValue)
-    #expect(plan.preferences[Prefs.translateForeign] as? String == Lang.ja.rawValue)
+    #expect(plan.preferences[Prefs.translateFirst] as? String == Lang.zhHans.rawValue)
+    #expect(plan.preferences[Prefs.translateSecond] as? String == Lang.ja.rawValue)
     #expect(plan.preferences[Prefs.translateAutoCopy] as? Bool == true)
     #expect(plan.preferences[Prefs.translateHistoryLimit] as? Int == 1000)
     #expect(plan.launchAtLogin)
@@ -62,6 +62,15 @@ struct LegacyImportTests {
     #expect(services[3].name == "AI 服务" && services[3].aiProtocol == .openai)  // 空名、未知协议兜底
   }
 
+  @Test func languagePairIsNormalized() {
+    // 旧版允许 A / B 选成简繁：规整成新版实际使用的一对
+    let plan = LegacyImport.plan(from: [
+      "bidirectionalLangA": "zh-CN", "bidirectionalLangB": "zh-TW",
+    ])
+    #expect(plan.preferences[Prefs.translateFirst] as? String == Lang.zhHans.rawValue)
+    #expect(plan.preferences[Prefs.translateSecond] as? String == Lang.en.rawValue)
+  }
+
   @Test func unknownConfigHasNoServices() {
     #expect(LegacyImport.plan(from: ["autoCopy": false]).services == nil)
   }
@@ -69,7 +78,7 @@ struct LegacyImportTests {
   @Test func historyTargetIsTheActualLanguage() {
     let target = { (stored: String, source: String, result: String) in
       LegacyImport.historyTarget(
-        stored: stored, sourceLang: source, result: result, native: .zhHans, foreign: .en)
+        stored: stored, sourceLang: source, result: result, first: .zhHans, second: .en)
     }
     #expect(target("auto", "en", "敏捷的棕色狐狸跳过了那只懒狗") == .zhHans)
     // 双向互译时记录值不是实际方向：以译文为准
@@ -80,6 +89,8 @@ struct LegacyImportTests {
     #expect(target("ja", "en", "12345") == .ja)
     #expect(target("auto", "en", "12345") == .zhHans)
     #expect(target("auto", "zh-CN", "12345") == .en)
+    // 短译文按记录值做先验，不被第一 / 第二语言拉成英语
+    #expect(target("fr", "zh-CN", "Paris") == .fr)
   }
 
   @Test func importsRetainedClipsAndHistoryWithoutDuplicates() async throws {

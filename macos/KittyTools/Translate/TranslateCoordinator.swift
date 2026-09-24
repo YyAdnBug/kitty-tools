@@ -28,9 +28,15 @@ import Observation
 
   var sourceText = ""
   var showsHistory = false
-  // 以下三项只由会话自己改；setter 不设 private 只为截图自检能直接摆出各种状态
+  // 以下几项只由会话自己改；setter 不设 private 只为截图自检能直接摆出各种状态
+  /// 本地检测出的原文语种（偏向第一 / 第二语言；纯数字等认不出时为 nil）
   var detected: Lang?
+  /// 实际译成的语言
   var target: Lang?
+  /// 这次用的固定源语言（nil = 自动检测）；方向标签按这次的值显示，不看浮窗上此刻的选择
+  var fixedSource: Lang?
+  /// 选的固定目标正好是原文语言、这次改按「自动」译了：记下原来选的目标，标签写「原文已是 X」
+  var abandonedTarget: Lang?
   var cards: [Card] = []
   /// 原文区的提示（取词失败、原文过长等）
   private(set) var notice: String?
@@ -64,6 +70,8 @@ import Observation
     cards = []
     detected = nil
     target = nil
+    fixedSource = nil
+    abandonedTarget = nil
     notice = nil
     showsHistory = false
   }
@@ -95,15 +103,14 @@ import Observation
       cards = []
       return
     }
-    detected = Lang.detect(text)
+    let (first, second) = Lang.preferredPair
+    detected = Lang.detect(text, preferring: [first, second])
+    let chosenTarget = defaults.string(forKey: Prefs.translateTarget).flatMap(Lang.init(rawValue:))
+    fixedSource = defaults.string(forKey: Prefs.translateSource).flatMap(Lang.init(rawValue:))
     let plan = Lang.resolve(
-      source: defaults.string(forKey: Prefs.translateSource).flatMap(Lang.init(rawValue:)),
-      target: defaults.string(forKey: Prefs.translateTarget).flatMap(Lang.init(rawValue:)),
-      detected: detected,
-      native: defaults.string(forKey: Prefs.translateNative).flatMap(Lang.init(rawValue:))
-        ?? .zhHans,
-      foreign: defaults.string(forKey: Prefs.translateForeign).flatMap(Lang.init(rawValue:)) ?? .en)
+      source: fixedSource, target: chosenTarget, detected: detected, first: first, second: second)
     target = plan.to
+    abandonedTarget = plan.fellBack ? chosenTarget : nil
     request = TranslateRequest(text: text, from: plan.from, to: plan.to)
     cards = services.enabled.map { Card(service: $0, state: .waiting) }
     for card in cards { run(card.service) }

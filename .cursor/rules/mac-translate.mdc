@@ -8,9 +8,11 @@ alwaysApply: false
 
 代码：`Translate/`（Language、TranslateService、Providers/*、HTTP、SSE、TranslateCoordinator、HistoryStore、SelectionReader、Speaker、各视图）、`Storage/Keychain.swift`、`Storage/LegacyImport.swift`。旧版只当行为清单。
 
-## 1. 语言
-- 检测用 NaturalLanguage（限定在 `Lang.allCases`，能分简繁），置信度 < 0.4 或太短返回 nil → 交给服务自己识别。
-- 解析只在 `Lang.resolve`：目标「智能」= 原文是母语译常用外语、否则译母语；固定目标与原文同一种语言（简繁算同一种）→ 改译另一端。发给服务的目标语言永远是具体语言。
+## 1. 语言（参照 Bob / Easydict，PLAN §11「翻译语言」）
+- 模型：源 = 自动检测 / 固定；目标 = 自动（第一 ⇄ 第二语言）/ 固定。源、目标只在浮窗顶部改、全局记住；设置页只有第一 / 第二语言（键名仍是 `translateNativeLang` / `translateForeignLang`，读取走 `Lang.preferredPair`，同属一种时第二语言兜底）。
+- 检测 `Lang.detect(_:preferring:)`：NaturalLanguage 限定 `Lang.allCases` + 第一 / 第二语言先验（languageHints 0.5 / 0.3 / 其余 0.02），**不设置信度门槛**；只有纯数字 / 符号返回 nil。别删先验：不加时「你好」判繁体、「API」判意大利语。中日韩文夹英文词（CJK 字数 ≥ 拉丁词数）时只看 CJK 部分，否则「请帮我 review 一下这个 PR」判成英语、自动模式中译中。
+- 解析只在 `Lang.resolve` → `Plan`：目标自动 = 原文是第一语言译第二语言、否则译第一语言；源自动且固定目标 == 原文（同一种写法，简→繁是转换不算）→ 按自动译并 `fellBack`（标签写「原文已是 X」）；源和目标都固定且相同 → 目标按自动。源自动时 `from = nil`，让服务自己识别。
+- 交换按钮原样互换（自动也照换），两侧都自动时禁用；两侧选成同一种固定语言时自动互换。
 
 ## 2. 服务
 - 分发只有 `TranslateService.translate` 的一个 `switch`；加服务 = 一个 `Providers/*.swift` + 一个 case，不建 registry / factory / protocol。

@@ -141,8 +141,7 @@ enum LegacyImport {
       return (oldID: row.text(0) ?? "", item: item, rich: rich)
     }
 
-    let native = UserDefaults.standard.string(forKey: Prefs.translateNative).flatMap(Lang.init)
-    let foreign = UserDefaults.standard.string(forKey: Prefs.translateForeign).flatMap(Lang.init)
+    let (first, second) = Lang.preferredPair
     let translations = try old.query(
       """
       SELECT id, source_text, translated_text, source_lang, target_lang, provider, favorited, timestamp
@@ -157,7 +156,7 @@ enum LegacyImport {
         id: UUID(uuidString: row.text(0) ?? "") ?? UUID(), source: String(source.prefix(10_000)),
         target: historyTarget(
           stored: row.text(4) ?? "", sourceLang: row.text(3) ?? "", result: result,
-          native: native ?? .zhHans, foreign: foreign ?? .en),
+          first: first, second: second),
         result: result, service: serviceNames[provider] ?? provider,
         createdAt: date(ms: row.int(7)), favorite: row.int(6) == 1)
     }
@@ -241,13 +240,15 @@ enum LegacyImport {
   /// 旧版记的是设置里的目标语言（常是 auto，双向互译时也不是实际方向），新版要记实际译成的语言：
   /// 以译文的检测结果为准（和记录值同属一种语言时取记录值，保住简繁）；检测不出退回记录值，再退回按原文推断
   static func historyTarget(
-    stored: String, sourceLang: String, result: String, native: Lang, foreign: Lang
+    stored: String, sourceLang: String, result: String, first: Lang, second: Lang
   ) -> Lang {
     let recorded = lang(stored)
-    guard let detected = Lang.detect(result) else {
+    // 先验偏向记录值（和它的另一端），不然「Paris」这种短译文会被第一 / 第二语言的先验拉成英语
+    let preferred = recorded.map { [$0, $0.isSameLanguage(as: first) ? second : first] }
+    guard let detected = Lang.detect(result, preferring: preferred ?? [first, second]) else {
       return recorded
         ?? Lang.resolve(
-          source: lang(sourceLang), target: nil, detected: nil, native: native, foreign: foreign
+          source: lang(sourceLang), target: nil, detected: nil, first: first, second: second
         ).to
     }
     if let recorded, recorded.isSameLanguage(as: detected) { return recorded }
@@ -294,18 +295,20 @@ enum LegacyImport {
       copy(old, new)
     }
 
-    // 语言：旧版 auto → 新版「自动」/「智能」；双向互译的 A / B → 母语 / 常用外语
+    // 语言：旧版 auto → 新版「自动」；双向互译的 A / B → 第一 / 第二语言
     if let source = config["sourceLang"] as? String {
       plan.preferences[Prefs.translateSource] = lang(source)?.rawValue ?? NSNull()
     }
     if let target = config["targetLang"] as? String {
       plan.preferences[Prefs.translateTarget] = lang(target)?.rawValue ?? NSNull()
     }
-    if let native = (config["bidirectionalLangA"] as? String).flatMap(lang) {
-      plan.preferences[Prefs.translateNative] = native.rawValue
-    }
-    if let foreign = (config["bidirectionalLangB"] as? String).flatMap(lang) {
-      plan.preferences[Prefs.translateForeign] = foreign.rawValue
+    // 旧版允许 A / B 选成简繁这种同一种语言：按新版的兜底规则规整后再存，设置页显示的就是实际用的
+    if config["bidirectionalLangA"] != nil || config["bidirectionalLangB"] != nil {
+      let pair = Lang.pair(
+        first: (config["bidirectionalLangA"] as? String).flatMap(lang)?.rawValue,
+        second: (config["bidirectionalLangB"] as? String).flatMap(lang)?.rawValue)
+      plan.preferences[Prefs.translateFirst] = pair.first.rawValue
+      plan.preferences[Prefs.translateSecond] = pair.second.rawValue
     }
     plan.launchAtLogin = config["launchOnStartup"] as? Bool ?? false
 
