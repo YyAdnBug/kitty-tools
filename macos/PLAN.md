@@ -733,15 +733,17 @@ echo "$DMG"
 
 ## 12. 进度与交接（2026-09-24，新会话从这里接着做）
 
-**已完成并推送到 `origin/macos-native`**（单测 51 个全过，`xcrun swift-format lint --strict` 无输出，Debug 构建零警告）：
+**已完成并推送到 `origin/macos-native`**（单测 54 个全过，`xcrun swift-format lint --strict` 无输出，Debug 构建零警告）：
 - M0 工程骨架 / 规则 / DMG 脚本；M1 浮层、热键、粘贴；M2 剪贴板数据层；M3 剪贴板面板（原生重新设计）+ 设置窗 + 快捷键录制；
 - M4 翻译核心（智谱、AI 三协议、划词、复制即译、历史、翻译浮窗与设置页、旧版偏好与密钥导入）；
 - M5 其余 7 家服务（百度、有道、Google、DeepL/DeepLX、微软、火山、腾讯）+ 各服务设置表单 + 导入扩展到全部内置服务；
 - M6 代码部分：`LegacyImport` 数据导入（保留类剪贴板条目 + 图片 + 分组 + 全部翻译历史，一个事务、可重复执行；本机真实旧库演练：保留 10 条全新增，翻译 500 条 → 新增 495、合并 5，第二次全部合并）；通用页（开机自启 `SMAppService.mainApp`、辅助功能与剪贴板访问状态、一键导入）；关于页（版本、发布页、随包 changelog）；首次安装打开通用页、更新后打开关于页（`lastSeenVersion`）；`MARKETING_VERSION = 0.1.0` + changelog 条目。
 
-**进行中**：翻译语言模型重新设计（用户反馈「自动 - 自动」「英文 - 日语」等组合混乱），参考 Bob / Easydict / Pot 等成熟 App 调研后定方案，定稿前不发 0.1.0。
+- 翻译语言模型重做（用户反馈「自动 - 自动」「英文 - 日语」混乱；调研 Bob / Easydict / Pot / DeepL / Google 后按 §11「翻译语言」实现，单测 54 个全过）。
 
-**待用户手测**（代码已就绪，清单见各里程碑验收标准）：M1 #1–#5、M2 #2、M3 #1–#3、M4 #2–#8、M5 #1、M6 #1–#5（导入用「设置 › 通用 › 导入旧版 Kitty Tools 的数据…」）。
+**待发布**：0.1.0 的 DMG 已由 `macos/build-dmg.sh` 产出并自检（arm64、Apple Development 签名、无 get-task-allow），**等用户确认后**再打 tag、发 GitHub prerelease。
+
+**待用户手测**（代码已就绪，清单见各里程碑验收标准）：M1 #1–#5、M2 #2、M3 #1–#3、M4 #2–#8、M5 #1、M6 #1–#5（导入用「设置 › 通用 › 导入旧版 Kitty Tools 的数据…」），以及 §11「翻译语言」的几种组合。
 
 **发布 0.1.0**：`macos/build-dmg.sh` 出 arm64 DMG → GitHub（`yyandbug-coder/kitty-tools`）**prerelease**、不勾 Set as latest（见 build-dmg.sh 头部注释），**发布前须经用户确认**；tag `macos-v0.1.0` 打在 `macos-native`；发完在 master 工作区跑 `pnpm release:verify`。
 
