@@ -1,6 +1,6 @@
 ---
 description: 原生分支 macOS 热键浮层规范（OverlayPanel / 全局热键 / 粘贴回原 App / 浮层内输入框 / 划词时序）
-globs: macos/KittyTools/Shell/**,macos/KittyTools/Translate/SelectionReader.swift
+globs: macos/KittyTools/Shell/**,macos/KittyTools/Screenshot/**,macos/KittyTools/Translate/SelectionReader.swift
 alwaysApply: false
 ---
 
@@ -9,7 +9,7 @@ alwaysApply: false
 M1 实测结论 + master 旧规则 `macos-overlay-panel.mdc` 删减。代码：`Shell/OverlayPanel.swift`、`HotKeyCenter.swift`、`Paster.swift`、`Permissions.swift`、`CommandTextField.swift`，`Translate/SourceTextView.swift`。
 
 ## 1. 浮层只有 OverlayPanel 一种
-- 剪贴板面板、翻译浮窗（Phase 2 启动器同理）都是 `OverlayPanel` 实例，**禁止**另写 NSPanel / NSWindow 子类。
+- 剪贴板面板、翻译浮窗（Phase 2 启动器同理）都是 `OverlayPanel` 实例，**禁止**另写 NSPanel / NSWindow 子类。唯一例外是截图框选遮罩 `SelectionOverlay`（§8）：无边框、全屏、每屏一个、用完即释放，和浮层的行为没有交集。
 - `styleMask` 在 init 里一次写全，含 `.nonactivatingPanel`（初始化后再加不生效）；`.titled + .fullSizeContentView` + 隐藏三个按钮，拿系统圆角、阴影和缩放。
 - 显示只走 `present()`（`orderFrontRegardless` + `makeKey`）；**永远不对浮层调 `NSApp.activate`**，否则前台 App 变成自己，⌘V / ⌘C 会落空。
 - `NSHostingView.sizingOptions = []`：窗口尺寸由 `OverlayPanel` 定，不让 SwiftUI 理想尺寸反推。
@@ -50,3 +50,15 @@ M1 实测结论 + master 旧规则 `macos-overlay-panel.mdc` 删减。代码：`
 - `NSEvent` 监听和 Carbon 的回调闭包不是 MainActor 隔离的，里面一律 `MainActor.assumeIsolated {}`。
 - `kAXTrustedCheckOptionPrompt` 这类 C 全局 var 在 Swift 6 下不算并发安全，用字符串字面量（`"AXTrustedCheckOptionPrompt"`）。
 - 发测试按键的脚本自己也要有辅助功能授权，否则事件被系统丢弃；热键 / 粘贴只能手测（见 PLAN §7 M1 清单）。
+
+## 8. 截图翻译框选（`Screenshot/`）
+- **先截后选**：按下热键先 `ScreenCapture.freeze()` 把每块屏幕截成冻结帧，再盖遮罩；框选、裁剪只读这一帧，禁止改成「框完再截」（其它 App 靠失焦关闭的菜单 / 弹层会先消失）。
+- 截屏前先 `Permissions.isScreenRecordingAllowed`，没授权只调一次 `requestScreenRecording()` 再在浮窗里提示：直接调 ScreenCaptureKit 会每块屏幕各弹一个系统框。
+- 截图排除本 App 除菜单栏图标（状态栏层级）以外的全部窗口：刚 orderOut 的面板、正在淡出的菜单、上一次的遮罩都可能还在合成结果里。
+- 遮罩：每屏一个 `SelectionOverlay`（`.borderless + .nonactivatingPanel`，层级 `.popUpMenu + 1`），不激活本 App；鼠标所在屏的遮罩 `makeKey` 收 Esc，其它屏靠 `acceptsFirstMouse` 直接拖。光标用 `.activeAlways` 的 tracking area 设十字。
+- 固定着的面板不收；没固定的先 `clipboardPanel.hide()` 再 `translatePanel.hide()`（反过来浮窗的 onHide 会把 key 还给剪贴板面板）。截图和划词互斥（互相 guard 对方的进行中标记）。
+- 框选期间 `hotKeys.suspend()`，结束时只有原来开着才 `reload()`（设置里正在录快捷键时热键本来就停着）；录制器的按键监听放过发给 `SelectionOverlay` 的按键。
+- 光标：`.cursorUpdate` 不支持 `.activeAlways`，遮罩显示后手动 `NSCursor.crosshair.set()`、mouseMoved 里再设，结束设回箭头。
+- 截图原文已在剪贴板历史里时只 `bump`，不走 `record`（会冲掉那条的格式和来源）。
+- 选区（点、原点左下）→ 像素（原点左上）只走 `RegionSelector.pixelRect`，配单测；各屏按自己的像素尺寸换算（混合缩放多屏）。
+- 识字 `OCR.recognizeText(in: CGImage)`：只开自动识别语种、**不给语言提示**（给提示时中日韩混排图里日文、韩文整行丢失，单测锁住）。

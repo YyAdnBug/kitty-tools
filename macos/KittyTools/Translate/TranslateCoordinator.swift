@@ -38,8 +38,10 @@ import Observation
   /// 选的固定目标正好是原文语言、这次改按「自动」译了：记下原来选的目标，标签写「原文已是 X」
   var abandonedTarget: Lang?
   var cards: [Card] = []
-  /// 原文区的提示（取词失败、原文过长等）
+  /// 原文区的提示（取词失败、识别不到文字、原文过长等）
   private(set) var notice: String?
+  /// 提示要引导去授权的那一项；nil 就不显示授权按钮
+  private(set) var noticePermission: Permissions.Kind?
 
   let services: TranslateServiceStore
   let history: HistoryStore
@@ -73,12 +75,14 @@ import Observation
     fixedSource = nil
     abandonedTarget = nil
     notice = nil
+    noticePermission = nil
     showsHistory = false
   }
 
-  func showNotice(_ text: String) {
+  func showNotice(_ text: String, permission: Permissions.Kind? = nil) {
     beginInput()
     notice = text
+    noticePermission = permission
   }
 
   func translate(_ text: String) {
@@ -91,6 +95,7 @@ import Observation
     cancel()
     showsHistory = false
     notice = nil
+    noticePermission = nil
     let defaults = UserDefaults.standard
     var text = sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
     if defaults.bool(forKey: Prefs.translateRemoveNewlines) {

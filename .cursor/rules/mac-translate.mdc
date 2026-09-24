@@ -40,6 +40,7 @@ alwaysApply: false
 - **划词**（`AppDelegate.selectionTranslate`）：忙时忽略重复热键 → 自家浮层是 key 先收起 → `SelectionReader.read`（AX 读选区，0.5s 超时；读不到再备份剪贴板 → ⌘C（显式 `.maskCommand`）→ 轮询 changeCount ≤ 约 500ms → 还原，期间暂停 watcher）→ **取词完成后**才显示浮窗。没授权显示提示；没选区当输入翻译。
 - **复制即译**：watcher 文本回调 → `present(makingKey: false)`（只露出来不抢键盘，靠点外关闭）。
 - **剪贴板预览里的「翻译」**：剪贴板面板保持打开（兄弟浮层）。
+- **截图翻译**（`AppDelegate.screenshotTranslate`，默认 ⌥S）：冻结帧框选 → Vision 识字 → 原文过敏感过滤后记进剪贴板历史 → `coordinator.translate`。识别失败 / 没有文字只显示提示、不开翻译会话；缺屏幕录制授权时提示带「打开屏幕录制设置」按钮（`showNotice(_:permission:)`，只有授权类提示才带按钮）。框选细节见 mac-overlay-panel §8。
 
 ## 6. 旧版导入（`LegacyImport`，可重复执行）
 - 旧库 WAL：连同 `-wal`/`-shm` 拷到临时目录读写打开副本 + `quick_check`，原文件只拷不开；读失败中止，绝不用默认值覆盖。

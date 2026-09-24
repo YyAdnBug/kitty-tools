@@ -91,6 +91,7 @@ struct SnapshotProbeTests {
         AboutTab(), size: NSSize(width: 520, height: 460), dark: dark,
         to: "\(out)/settings-about\(dark ? "-dark" : "").png")
     }
+    try renderSelection(out)
   }
 
   private func renderTranslate(_ out: String) throws {
@@ -125,7 +126,8 @@ struct SnapshotProbeTests {
         }
       ),
       ("translate-history", { c in c.showsHistory = true }),
-      ("translate-notice", { c in c.showNotice("划词翻译需要「辅助功能」授权") }),
+      ("translate-notice", { c in c.showNotice("划词翻译需要「辅助功能」授权", permission: .accessibility) }),
+      ("translate-screenshot-empty", { c in c.showNotice("没有识别到文字，可以把选区框大一些再试") }),
     ]
     for dark in [false, true] {
       for (name, configure) in states {
@@ -140,6 +142,25 @@ struct SnapshotProbeTests {
     try snapshot(
       TranslateTab(services: services), size: NSSize(width: 540, height: 600), dark: false,
       to: "\(out)/settings-translate.png")
+  }
+
+  /// 截图翻译的框选遮罩：待选（整屏轻暗 + 提示）和拖动中（选区外变暗）
+  private func renderSelection(_ out: String) throws {
+    let frozen = try ScreenshotTests.render([
+      "The quick brown fox jumps over the lazy dog", "敏捷的棕色狐狸跳过了懒狗", "日本語のテキスト",
+    ])
+    let size = NSSize(width: 600, height: 180)
+    for (name, selection) in [
+      ("select-idle", nil), ("select-drag", CGRect(x: 10, y: 95, width: 440, height: 60)),
+    ] as [(String, CGRect?)] {
+      let view = SelectionView(image: frozen) { _ in }
+      view.frame = NSRect(origin: .zero, size: size)
+      view.selection = selection
+      let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+      view.cacheDisplay(in: view.bounds, to: bitmap)
+      try #require(bitmap.representation(using: .png, properties: [:]))
+        .write(to: URL(filePath: "\(out)/\(name).png"))
+    }
   }
 
   private func snapshot(_ view: some View, size: NSSize, dark: Bool, to path: String) throws {

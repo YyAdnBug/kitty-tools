@@ -163,8 +163,9 @@ struct TranslatePanelView: View {
       ContentUnavailableView {
         Label(notice, systemImage: "exclamationmark.bubble")
       } actions: {
-        if !Permissions.isAccessibilityTrusted {
-          Button("打开辅助功能设置", action: Permissions.openAccessibilitySettings)
+        // 只有授权类提示才给按钮（以前任何提示都挂「打开辅助功能设置」）
+        if let permission = coordinator.noticePermission {
+          Button(permission.settingsTitle, action: permission.openSettings)
         }
       }
     } else if coordinator.services.enabled.isEmpty {
@@ -175,8 +176,8 @@ struct TranslatePanelView: View {
       }
     } else if coordinator.cards.isEmpty {
       ContentUnavailableView(
-        "划词或输入后开始翻译", systemImage: "character.bubble",
-        description: Text("划词翻译、输入翻译的快捷键可在设置里修改"))
+        "划词、截图或输入后开始翻译", systemImage: "character.bubble",
+        description: Text("划词翻译、截图翻译、输入翻译的快捷键可在设置里修改"))
     } else {
       ScrollView {
         VStack(spacing: 8) {

@@ -9,6 +9,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var isRunning = false
   /// 划词取词进行中：重复按热键直接忽略
   private var isReadingSelection = false
+  /// 截图翻译进行中（截屏 → 框选 → 识别）：重复按热键直接忽略
+  private var isCapturing = false
   let hotKeys = HotKeyCenter()
 
   // MARK: 数据与服务（按依赖顺序）
@@ -115,6 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     hotKeys.setHandler(for: .clipboard) { [unowned self] in toggleClipboard() }
     hotKeys.setHandler(for: .selectionTranslate) { [unowned self] in selectionTranslate() }
     hotKeys.setHandler(for: .inputTranslate) { [unowned self] in showInputTranslate() }
+    hotKeys.setHandler(for: .screenshotTranslate) { [unowned self] in screenshotTranslate() }
     hotKeys.reload()
     showWelcomeIfNeeded()
   }
@@ -146,7 +149,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 划词翻译：取词完成前绝不显示浮窗（先显示会取消原 App 的选区）。自家浮层是 key 时先收起，
   /// 否则 AX 读到的、⌘C 发到的都是自己
   func selectionTranslate() {
-    guard !isReadingSelection else { return }
+    // 截图框选中不划词：取词结束时显示的浮窗会被遮罩盖住、还抢走遮罩的 key
+    guard !isReadingSelection, !isCapturing else { return }
     isReadingSelection = true
     if clipboardPanel.isKeyWindow { clipboardPanel.hide() }
     if translatePanel.isKeyWindow { translatePanel.orderOut(nil) }
@@ -155,13 +159,72 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       if let text = await SelectionReader.read(pausing: watcher) {
         coordinator.translate(text)
       } else if !Permissions.isAccessibilityTrusted {
-        coordinator.showNotice("划词翻译需要「辅助功能」授权")
+        coordinator.showNotice("划词翻译需要「辅助功能」授权", permission: .accessibility)
         Permissions.requestAccessibility()
       } else {
         coordinator.beginInput()  // 没有选中文字：当输入翻译用
       }
       translatePanel.present()
     }
+  }
+
+  /// 截图翻译：冻结各屏 → 框选 → 本机识别文字 → 原文记进剪贴板历史 → 翻译浮窗走现有的多服务翻译。
+  /// 固定着的面板不收（冻结帧本来就排除了自家窗口，取消后也还在）；没固定的先收剪贴板面板再收翻译浮窗：
+  /// 反过来浮窗的 onHide 会把 key 还给剪贴板面板
+  func screenshotTranslate() {
+    guard !isCapturing, !isReadingSelection else { return }
+    isCapturing = true
+    let defaults = UserDefaults.standard
+    if defaults.bool(forKey: Prefs.clipboardHideOnUnfocus) { clipboardPanel.hide() }
+    if !defaults.bool(forKey: Prefs.floatingPinned) { translatePanel.hide() }
+    Task {
+      defer { isCapturing = false }
+      guard Permissions.isScreenRecordingAllowed else {
+        Permissions.requestScreenRecording()
+        showScreenshotNotice("截图翻译需要「屏幕录制」授权（授权后可能要重新打开本 App）", .screenRecording)
+        return
+      }
+      let shots: [ScreenCapture.Shot]
+      do {
+        shots = try await ScreenCapture.freeze()
+      } catch {
+        showScreenshotNotice("截屏失败：\(error.localizedDescription)", .screenRecording)
+        return
+      }
+      // 框选期间别的热键会弹出浮层抢走 key（遮罩就收不到 Esc）。设置里正在录快捷键时热键本来就停着，
+      // 结束后不能替它恢复
+      let hotKeysWereActive = !hotKeys.bindings.isEmpty
+      hotKeys.suspend()
+      let region = await RegionSelector.select(shots)
+      if hotKeysWereActive { hotKeys.reload() }
+      guard let region else { return }
+      // ponytail: 识别期间不显示「识别中」：常见选区 0.04–0.13s，整屏密集文字约 0.9s；大选区嫌慢再加
+      guard let text = await OCR.recognizeText(in: region) else {
+        return showScreenshotNotice("文字识别失败，请重试")
+      }
+      guard !text.isEmpty else { return showScreenshotNotice("没有识别到文字，可以把选区框大一些再试") }
+      // 原文记进剪贴板历史（和复制进来的一样过敏感文本过滤；来源 App 为空）。已有同样正文的只挪到最前：
+      // 走 record 会把那条的格式和来源冲掉，而这次并不是一次复制
+      if !(defaults.bool(forKey: Prefs.clipboardBlockSensitive)
+        && ClipboardFilter.looksSensitive(text))
+      {
+        if let existing = clipboardStore.items.first(where: { $0.kind == .text && $0.text == text })
+        {
+          clipboardStore.bump(existing.id)
+        } else {
+          var item = ClipItem(kind: .text)
+          item.text = text
+          clipboardStore.record(item)
+        }
+      }
+      coordinator.translate(text)
+      translatePanel.present()
+    }
+  }
+
+  private func showScreenshotNotice(_ text: String, _ permission: Permissions.Kind? = nil) {
+    coordinator.showNotice(text, permission: permission)
+    translatePanel.present()
   }
 
   /// 复制即译：只露出浮窗、不抢键盘（用户可能正在别的 App 里继续打字）

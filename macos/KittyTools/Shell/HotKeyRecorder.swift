@@ -38,6 +38,8 @@ struct HotKeyRecorder: View {
     isRecording = true
     center.suspend()
     monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+      // 录制中从菜单栏开了截图框选：按键归遮罩（Esc 取消框选），不录进快捷键
+      if event.window is SelectionOverlay { return event }
       MainActor.assumeIsolated {
         if Int(event.keyCode) == kVK_Escape {
           stop()

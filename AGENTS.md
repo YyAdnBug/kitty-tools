@@ -6,8 +6,8 @@
 
 **kitty-tools 原生 macOS 版**：用 Swift 6 + SwiftUI / AppKit 重写的纯原生菜单栏工具，替代 Tauri 版的 macOS 端。基本自用：只支持 Apple 芯片（arm64），最低 macOS 15.0。
 
-- **Phase 1（当前）**：剪贴板历史 + 翻译（划词 / 输入 / 复制即译，全部翻译服务），目标版本 0.1.0。
-- **Phase 2 / 3**：启动器 / 截图。到时再迁，现在不写任何脚手架。
+- **Phase 1（当前）**：剪贴板历史 + 翻译（划词 / 输入 / 复制即译 / 截图翻译，全部翻译服务），目标版本 0.1.0。截图翻译提前做了（Vision 本机识字，`Screenshot/`）。
+- **Phase 2 / 3**：启动器 / 截图标注（钉图、保存等）。到时再迁，现在不写任何脚手架。
 - 迁移期与 Tauri 版共存：Bundle ID `com.yy.kitty-tools.native`（Debug `com.yy.kitty-tools.native.dev`），显示名 `Kitty Tools Native`。
 - **行为规格**：`macos/PLAN.md`。§4 架构与文件表，§5 逐行对应 Tauri 代码的 path:line，§6 数据迁移，§7 里程碑 M0–M6 与验收，§9 已知坑。
 
@@ -24,7 +24,7 @@
 ```
 macos/                       # 本分支唯一开发区
 ├── KittyTools.xcodeproj/    # 共享 scheme：KittyTools
-├── KittyTools/              # 同步文件夹：App/ Shell/ Storage/ Clipboard/ Translate/ Settings/ Resources/
+├── KittyTools/              # 同步文件夹：App/ Shell/ Storage/ Clipboard/ Translate/ Screenshot/ Settings/ Resources/
 ├── KittyToolsTests/         # 纯函数单测（Swift Testing），M2 起建
 ├── Config/                  # Base/Debug/Release.xcconfig、Info.plist（局部）、Secrets.xcconfig（不入库）
 ├── build-dmg.sh             # 打包：archive → 自检 → DMG → notes
@@ -70,7 +70,7 @@ tccutil reset Accessibility com.yy.kitty-tools.native.dev
 |---|---|---|---|
 | `mac-native` | 常驻规则 `.cursor/rules/mac-native.mdc` | 已有 | 始终加载 |
 | `ponytail` | 常驻规则 `.cursor/rules/ponytail.mdc` | 已有 | 只给 Cursor；Claude 侧由用户级插件生效 |
-| `mac-overlay-panel` | 技能 | 已有（M1） | `Shell/**`、`Translate/SelectionReader.swift`；NSPanel、热键、前台快照、粘贴回原 App、划词时序、设置窗激活 |
+| `mac-overlay-panel` | 技能 | 已有（M1） | `Shell/**`、`Screenshot/**`、`Translate/SelectionReader.swift`；NSPanel、热键、前台快照、粘贴回原 App、划词时序、设置窗激活、截图框选遮罩 |
 | `mac-clipboard` | 技能 | 已有（M3） | `Clipboard/**`、`Storage/Database.swift` |
 | `mac-translate` | 技能 | 已有（M4） | `Translate/**` |
 

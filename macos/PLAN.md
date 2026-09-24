@@ -99,7 +99,8 @@ xcuserdata/
 | CoreGraphics `CGEvent` | 10.x | 模拟 ⌘V / ⌘C |
 | `NSPasteboard`（`changeCount`、`accessBehavior`） | 10.0 / 15.4 | 剪贴板采集、剪贴板隐私状态 |
 | ImageIO + UniformTypeIdentifiers | 10.x / 11 | PNG 编码、读取尺寸、按需生成缩略图 |
-| Vision `RecognizeTextRequest` | 15.0 | 剪贴板图片 OCR |
+| Vision `RecognizeTextRequest` | 15.0 | 剪贴板图片 OCR、截图翻译识字 |
+| ScreenCaptureKit `SCShareableContent` + `SCScreenshotManager` | 14.0 | 截图翻译的冻结帧（逐屏截图） |
 | NaturalLanguage `NLLanguageRecognizer` | 10.14 | 语种检测（替代 Lingua，能识别繁体） |
 | AVFoundation `AVSpeechSynthesizer` | 10.14 | 朗读 |
 | Foundation `URLSession.bytes(for:)`、`AttributedString(markdown:)` | 12 | SSE 流式输出、行内 Markdown |
@@ -237,6 +238,7 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 | `Clipboard/` | `ClipboardWatcher.swift`、`ClipboardStore.swift`、`ClipItem.swift`、`ClipboardFilter.swift`、`ContentForm.swift`、`Search.swift`、`ImageStore.swift`、`OCR.swift`、`ClipboardPanelView.swift`、`ClipRowView.swift`、`PreviewView.swift`、`Dialogs.swift` |
 | `Translate/` | `TranslateCoordinator.swift`、`LanguageResolver.swift`、`SelectionReader.swift`、`SSE.swift`、`Providers/`（`Zhipu`、`AIService`、`Baidu`、`Youdao`、`Google`、`DeepL`、`Microsoft`、`Volcengine`、`Tencent` 各一个 `.swift`）、`TranslatePanelView.swift`、`ProviderCardView.swift`、`HistoryStore.swift`、`HistoryView.swift` |
 | `Settings/` | `GeneralTab.swift`、`HotkeysTab.swift`、`ClipboardTab.swift`、`TranslateTab.swift`、`AboutTab.swift` |
+| `Screenshot/` | `ScreenCapture.swift`（逐屏冻结帧）、`RegionSelector.swift`（每屏一个框选遮罩 + 选区到像素的换算）；截图翻译提前到 Phase 1 做，标注 / 钉图 / 保存仍在 Phase 3 |
 
 各 provider 函数签名统一，由 coordinator 里的一个 `switch` 分发。不建 registry 或 factory。
 
@@ -379,7 +381,7 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 | 剪贴板预览里的「翻译」按钮 `F/components/ClipboardPreviewActions/index.tsx:54-59` | 直接调用 `TranslateCoordinator.translate(text)` | S | 打开翻译浮窗，剪贴板面板保持不关（兄弟窗口豁免） |
 
 **Phase 1 砍掉或推迟的翻译功能**：
-- 截图翻译整条链路推迟到 Phase 3，包括：`hotkeyScreenshot`、「截图翻译默认服务」下拉、智谱识图模型（`zhipu.visionModel`）、百度图片翻译、百度 OCR 凭据、各家 OCR。
+- 截图翻译已做（2026-09-24，用户决定提前）：只用 Vision 本机识字，识别出的原文交给全部启用服务翻译。**不做**：「截图翻译默认服务」下拉、智谱识图（`zhipu.visionModel`）、百度图片翻译、百度 OCR 凭据、各家云端 OCR（旧链路坏了好几处，见 §11 #7–#9、#22）。
 - 「划词 / 浮窗默认服务」下拉（D15）、翻译 Tab 顶部的快捷键汇总卡（快捷键 Tab 已经有）。
 - Markdown 块级渲染降级：Tauri 用 GFM + breaks 渲染列表、标题、代码块；`.inlineOnlyPreservingWhitespace` 只渲染行内格式，块级标记会原样显示为文字。接受这个降级，真有需要再按 `PresentationIntent` 拆块（约 80 行）。
 - 点击译文正文朗读：砍掉，保留朗读按钮。原因是原生要开 `.textSelection(.enabled)` 让用户能选中文字，和点击手势冲突。
@@ -413,7 +415,7 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 | `baidu.appId` / `baidu.secret` | `baidu.appId` / `baidu.secret` | Phase 1 |
 | `youdao.appKey` / `youdao.appSecret` | `youdao.appKey` / `youdao.appSecret` | Phase 1 |
 | `aiServices[].apiKey` | `ai:<id>`（删除实例时一并删除） | Phase 1 |
-| `baidu.ocrApiKey` / `baidu.ocrSecretKey` | 同名 | Phase 3 |
+| `baidu.ocrApiKey` / `baidu.ocrSecretKey` | 不导（截图翻译只用 Vision 本机识字） | — |
 | Google、DeepL、微软、火山、腾讯的凭据（`google.apiKey`、`deepl.apiKey`、`microsoft.apiKey`、`volcengine.accessKeyId/secretAccessKey`、`tencent.secretId/secretKey` 等，以 `config.rs` 实际字段名为准） | 同名规则 `<service>.<field>` | Phase 1（M5） |
 
 **新表结构**：把旧版的 OCR 表和富文本表合并进主表。
@@ -720,30 +722,33 @@ echo "$DMG"
 - 屏幕录制权限（TCC）：用 `CGPreflightScreenCaptureAccess` / `CGRequestScreenCaptureAccess` 检查和申请，同样绑定签名。授权提示由系统提供，App 不能自定义文案（没有对应的 Info.plist 键）。macOS 15 会周期性地再次询问屏幕录制授权。
 - 保留冻结底图的铁律：按下热键后先截整屏（ScreenCaptureKit `SCScreenshotManager`，macOS 14+），框选、取色、裁剪都只读这一帧；禁止改回「框选之后再截屏」。
 - 遮罩窗口：每块屏幕一个无边框窗口，层级要高于菜单栏；注意 AppKit（原点在左下）和 CG（原点在左上）的坐标换算，以及多屏拼接。全屏透明窗口的 backing store 是内存大头，不要让它常驻。
-- 截图翻译的接口：`TranslateCoordinator.translateScreenshot(png: Data)` 加 `OCR`。
-  - 百度图片翻译一步完成。
-  - 智谱必须分两步：先用 V-Flash 识图，再用 Flash 翻译；图片长边缩到 2560，JPEG 质量 90。
-  - OCR 出来的原文写进剪贴板历史（`ClipboardStore.insertText`，来源 App 为空）。
-  - 导入百度 OCR 凭据（§6 表格里的 Phase 3 行）。
-  - Vision 是否替换百度 / Google / 有道 OCR 这条兜底链，到 Phase 3 再决定。
-- 截图热键 ⌘⇧S / ⌘⇧A 会覆盖各 App 里的「另存为」等快捷键，这是现有行为。
+- **截图翻译已实现**（2026-09-24，提前到 Phase 1；用户决策：只用 Vision、原文写剪贴板历史、默认热键 ⌥S）：`AppDelegate.screenshotTranslate` → 屏幕录制授权 → `ScreenCapture.freeze`（每屏一张，排除自家浮层和设置窗、保留菜单栏图标）→ `RegionSelector.select`（每屏一个不激活的无边框遮罩，层级高于弹出菜单；拖动框选，Esc / 右键取消；期间暂停全局热键）→ `OCR.recognizeText(in: CGImage)`（自动识别语种、不给语言提示）→ 原文过敏感过滤后记进剪贴板历史 → `TranslateCoordinator.translate` 走现有多服务翻译。截图标注（⌘⇧A）以后做时复用 `ScreenCapture` 和 `RegionSelector`。
+- 截图标注热键 ⌘⇧A 会覆盖各 App 里的快捷键；截图翻译默认 ⌥S（用户旧版实际用的键，不占「另存为」）。
 - 钉图窗口用普通 NSPanel 即可。
 
 ---
 
 ## 12. 进度与交接（2026-09-24，新会话从这里接着做）
 
-**已完成并推送到 `origin/macos-native`**（单测 54 个全过，`xcrun swift-format lint --strict` 无输出，Debug 构建零警告）：
+**已完成并推送到 `origin/macos-native`**（单测 58 个全过，`xcrun swift-format lint --strict` 无输出，Debug 构建零警告）：
 - M0 工程骨架 / 规则 / DMG 脚本；M1 浮层、热键、粘贴；M2 剪贴板数据层；M3 剪贴板面板（原生重新设计）+ 设置窗 + 快捷键录制；
 - M4 翻译核心（智谱、AI 三协议、划词、复制即译、历史、翻译浮窗与设置页、旧版偏好与密钥导入）；
 - M5 其余 7 家服务（百度、有道、Google、DeepL/DeepLX、微软、火山、腾讯）+ 各服务设置表单 + 导入扩展到全部内置服务；
 - M6 代码部分：`LegacyImport` 数据导入（保留类剪贴板条目 + 图片 + 分组 + 全部翻译历史，一个事务、可重复执行；本机真实旧库演练：保留 10 条全新增，翻译 500 条 → 新增 495、合并 5，第二次全部合并）；通用页（开机自启 `SMAppService.mainApp`、辅助功能与剪贴板访问状态、一键导入）；关于页（版本、发布页、随包 changelog）；首次安装打开通用页、更新后打开关于页（`lastSeenVersion`）；`MARKETING_VERSION = 0.1.0` + changelog 条目。
 
 - 翻译语言模型重做（用户反馈「自动 - 自动」「英文 - 日语」混乱；调研 Bob / Easydict / Pot / DeepL / Google 后按 §11「翻译语言」实现，单测 54 个全过）。
+- 截图翻译（提前到 Phase 1，§10）：⌥S → 冻结帧逐屏框选 → Vision 本机识字（自动识别语种、不给提示）→ 原文记剪贴板历史 → 多服务翻译；通用页加「屏幕录制」授权行；剪贴板图片 OCR 顺带修掉只认中英（§11 #21）。单测 58 个全过。
 
 **暂不发版**（用户决定，2026-09-24）：0.1.0 只在本地用 `macos/build-dmg.sh` 打包自用（arm64、Apple Development 签名、无 get-task-allow），不打 tag、不发 GitHub / GitCode；以后要发时再按下面的「发布 0.1.0」步骤，且须先经用户确认。
 
-**待用户手测**（代码已就绪，清单见各里程碑验收标准）：M1 #1–#5、M2 #2、M3 #1–#3、M4 #2–#8、M5 #1、M6 #1–#5（导入用「设置 › 通用 › 导入旧版 Kitty Tools 的数据…」），以及 §11「翻译语言」的几种组合。
+**待用户手测**（代码已就绪，清单见各里程碑验收标准）：M1 #1–#5、M2 #2、M3 #1–#3、M4 #2–#8、M5 #1、M6 #1–#5（导入用「设置 › 通用 › 导入旧版 Kitty Tools 的数据…」），以及 §11「翻译语言」的几种组合；截图翻译手测：
+  1. 首次按 ⌥S：弹一次系统「屏幕录制」授权框，浮窗提示并带「打开屏幕录制设置」；授权（必要时重开 App）后再按能进入框选。
+  2. 内屏 2x + 外接 1x 各框一次文字，识别内容与框选一致；鼠标所在屏按 Esc / 右键能取消，取消后不用点击就能继续在原 App 打字。
+  3. 其它 App 开着右键菜单时按 ⌥S，菜单在冻结帧里；全屏 App 的空间里能用；从菜单栏点「截图翻译」时冻结帧里没有自家菜单残影（有就给菜单入口加短延迟）。
+  4. 框选期间按 ⌘⇧V 等热键没反应，结束后恢复；固定着的翻译浮窗不被收起、也不在冻结帧里。
+  5. 中文 / 英文 / 日文 / 韩文网页截图：各服务卡并发翻译，第一个服务写历史、自动复制；剪贴板历史里出现原文（无来源 App），画面里有 `sk-…` 密钥时不入历史。
+  6. 框选空白处：只提示「没有识别到文字」、没有卡片；十字光标在按下热键后立即出现、结束后恢复箭头。
+  7. `footprint` 看框选结束后内存回落（遮罩和冻结帧不常驻）。
 
 **发布 0.1.0**：`macos/build-dmg.sh` 出 arm64 DMG → GitHub（`yyandbug-coder/kitty-tools`）**prerelease**、不勾 Set as latest（见 build-dmg.sh 头部注释），**发布前须经用户确认**；tag `macos-v0.1.0` 打在 `macos-native`；发完在 master 工作区跑 `pnpm release:verify`。
 
@@ -772,6 +777,23 @@ echo "$DMG"
 | 4 | `src-tauri/src/translate/api.rs` 微软翻译（未填 key） | 依赖 `edge.microsoft.com/translate/auth` 换 token，该地址 2026-08 起返回 404，**旧版微软免费翻译已失效** | 改调免登录的 `edge.microsoft.com/translate/translatetext`（字符串数组请求体，返回结构与认知服务相同）；填了 key 仍走 Azure 认知服务 |
 | 5 | `src-tauri/src/translate/api.rs` DeepL 语言码 | 源 / 目标共用一张映射：简繁都映射成 `ZH`（繁体丢失），目标 `EN` / `PT` 已被 DeepL 弃用 | 源用基础码，目标用 `ZH-HANS` / `ZH-HANT` / `EN-US` / `PT-BR`，配单测 |
 | 6 | `src-tauri/src/translate/history_db.rs` `record_blocking`、`FloatingResult` 写历史处 | 翻译历史的 `target_lang` 记的是**设置值**（常为 `auto`；双向互译时也不是实际方向），去重键 `(source_text, target_lang)` 因此让同一原文在「自动」和固定语言下各存一条，应用历史时也还原不出实际目标语言 | 记实际译成的语言；M6 导入时以译文的语种检测为准还原（本机 500 条里 5 条因此合并） |
+| 7 | `src-tauri/src/translate/api.rs:175-191,707-708`、`translate/pipeline.rs:300-310` | 百度图片翻译把目标语言 `auto` 原样发出，译文与原文相同（旧库 24 条 auto→auto 的百度截图记录全是原文） | 不接百度图片翻译，截图原文交给各服务按统一的语言规则翻译 |
+| 8 | `src-tauri/src/ocr.rs:304-329` | Google Vision 响应按 `text_annotations` 解析，实际字段是 `textAnnotations`，结果永远为空，这条路径从没工作过 | 不接云端 OCR |
+| 9 | `src-tauri/src/translate/api.rs:1679-1691,1726-1732` | 智谱识图把「没有可见文字」之类说明句当原文发给各服务翻译，之后才判失败 | Vision 识别为空时只提示「没有识别到文字」，不开翻译 |
+| 10 | `FloatingResult/index.tsx:779-788,632-647` | 识图失败只清掉截图服务那张卡，其余卡一直「翻译中」、翻译按钮被锁 | 识别完成后才开翻译会话 |
+| 11 | `FloatingResult/index.tsx:916-923` | 识图失败后点「重试」拿到空原文，没反应 | 同上 |
+| 12 | `FloatingResult/index.tsx:278-288,550-558` | 截图时写历史取截图服务、自动复制取列表第一个，可能不是同一个服务 | 都只认列表第一个服务（`finished()`） |
+| 13 | `translate/pipeline.rs:300-310` 对比 `FloatingResult:722` | 百度用按热键时的语言设置，其它卡用浮窗当前设置 | 一个会话只在 `start()` 读一次语言 |
+| 14 | `screenshot/desktop_capture/platform_capture.rs:106-128`、`frozen.rs:493-501` | 混合缩放多屏时只截鼠标所在屏、拉伸铺满整块桌面，框的和截的不是同一处 | 每块屏幕单独截、按各自像素尺寸换算 |
+| 15 | `screenshot_macos_permission.rs:36-47`、`RegionSelectApp/index.tsx:532-548` | 缺权限的报错发给停在屏外的遮罩，用户看不见；系统设置被打开两次、和系统授权框同时弹 | 只弹一次系统框，翻译浮窗里提示并给「打开屏幕录制设置」按钮 |
+| 16 | `screenshot/pipeline.rs:576-582` | 翻译模式下单击截窗仍会激活目标 App 并同步等 120ms | 不做单击截窗 |
+| 17 | `RegionSelect/index.tsx:912-938`、`screenshot/commands.rs:290-298` | 翻译模式下仍响应 P 钉图（直接结束会话）、H 截图历史、C 取色 | 不做 |
+| 18 | `RegionSelect/index.tsx:569-584,725-747` | 延时倒计时期间遮罩仍拦着键鼠，达不到「摆好界面」的目的 | 不做延时 |
+| 19 | `window_hit_test.rs:221,276-288` | 窗口识别读的是实时窗口列表而不是冻结那一刻的；非主屏的程序坞 / 菜单栏条带坐标算错 | 不做窗口吸附 |
+| 20 | `RegionSelect/index.tsx:898-910` | Enter 截全部屏幕后缩到 2560，小字识别不出 | 不做 Enter 全屏 |
+| 21 | `clipboard/ocr_local.rs:14`（原生 M2 照搬到 `Clipboard/OCR.swift`） | Vision 语言写死简中 / 繁中 / 英文：日文假名丢失、韩文为空、俄文变拉丁乱码 | 只开自动识别语种、不给提示（实测给第一 / 第二语言作提示时，中日韩混排图里日文、韩文整行丢失），配单测 |
+| 22 | `translate/api.rs:1640` | 智谱识图 max_tokens 1024 且不看 finish_reason，长截图被静默截断 | 不接智谱识图 |
+| 23 | `src/features/settings/lib/translate-provider-settings.tsx:127,197-201` | 设置说明与实际不符（「由划词默认引擎翻译」「百度 OCR 兜底」） | 这些设置项不迁 |
 
 ## 附录：评审处理记录
 

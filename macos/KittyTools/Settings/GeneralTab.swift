@@ -1,4 +1,4 @@
-// 设置 › 通用：开机自启、权限状态（辅助功能、剪贴板访问）、从旧版导入（设置、密钥、剪贴板保留条目、翻译历史）。
+// 设置 › 通用：开机自启、权限状态（辅助功能、屏幕录制、剪贴板访问）、从旧版导入（设置、密钥、剪贴板保留条目、翻译历史）。
 
 import ServiceManagement
 import SwiftUI
@@ -7,6 +7,7 @@ struct GeneralTab: View {
   /// 导入旧版的全部内容，返回逐行结果（LegacyImport.run）
   let importLegacy: () async -> String
   @State private var trusted = Permissions.isAccessibilityTrusted
+  @State private var screenRecording = Permissions.isScreenRecordingAllowed
   @State private var loginStatus = SMAppService.mainApp.status
   @State private var loginError: String?
   /// NSPasteboard.AccessBehavior 的 rawValue（这个类型 macOS 15.4 才有），窗口变成 key 时刷新
@@ -43,6 +44,17 @@ struct GeneralTab: View {
           }
         }
         caption("粘贴回原 App、划词翻译都需要「辅助功能」授权。")
+        LabeledContent("屏幕录制") {
+          if screenRecording {
+            Label("已授权", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+          } else {
+            Button("去授权") {
+              Permissions.requestScreenRecording()
+              Permissions.Kind.screenRecording.openSettings()
+            }
+          }
+        }
+        caption("截图翻译需要「屏幕录制」授权；授权后可能要重新打开本 App 才生效。")
         if #available(macOS 15.4, *) { pasteboardAccess }
       }
       Section("从旧版导入") {
@@ -63,6 +75,7 @@ struct GeneralTab: View {
     .fixedSize(horizontal: false, vertical: true)
     .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
       trusted = Permissions.isAccessibilityTrusted
+      screenRecording = Permissions.isScreenRecordingAllowed
       loginStatus = SMAppService.mainApp.status
       pasteboardBehavior = Self.currentPasteboardBehavior
     }

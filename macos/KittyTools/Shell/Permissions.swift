@@ -1,9 +1,27 @@
-// 辅助功能授权：粘贴回原 App（模拟 ⌘V）和划词（AX 读选区 / 模拟 ⌘C）都依赖它。
+// 系统授权：辅助功能（粘贴回原 App 模拟 ⌘V、划词读 AX / 模拟 ⌘C）、屏幕录制（截图翻译截屏）。
 
 import AppKit
 import ApplicationServices
 
 enum Permissions {
+  /// 提示里「去系统设置授权」按钮要打开的那一项
+  enum Kind {
+    case accessibility, screenRecording
+
+    var settingsTitle: String {
+      switch self {
+      case .accessibility: "打开辅助功能设置"
+      case .screenRecording: "打开屏幕录制设置"
+      }
+    }
+
+    func openSettings() {
+      let anchor = self == .accessibility ? "Privacy_Accessibility" : "Privacy_ScreenCapture"
+      NSWorkspace.shared.open(
+        URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)")!)
+    }
+  }
+
   static var isAccessibilityTrusted: Bool { AXIsProcessTrusted() }
 
   /// 未授权时弹系统授权框。系统只弹一次，之后要去系统设置里手动打开
@@ -12,8 +30,11 @@ enum Permissions {
     AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
   }
 
-  static func openAccessibilitySettings() {
-    let url = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-    NSWorkspace.shared.open(URL(string: url)!)
-  }
+  static func openAccessibilitySettings() { Kind.accessibility.openSettings() }
+
+  /// 只检查、不弹框
+  static var isScreenRecordingAllowed: Bool { CGPreflightScreenCaptureAccess() }
+
+  /// 未授权时弹系统授权框（同样只弹一次）。截屏前先经这里，免得每块屏幕各弹一个框
+  static func requestScreenRecording() { CGRequestScreenCaptureAccess() }
 }
