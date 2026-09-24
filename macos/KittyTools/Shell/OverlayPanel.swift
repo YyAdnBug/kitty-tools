@@ -112,7 +112,8 @@ final class OverlayPanel: NSPanel {
     return NSApp.sendAction(action, to: nil, from: self)
   }
 
-  private static let editActions: [String: Selector] = [
+  /// 截图里输入文字时也用它（同样不激活本 App）
+  static let editActions: [String: Selector] = [
     "x": #selector(NSText.cut(_:)), "c": #selector(NSText.copy(_:)),
     "v": #selector(NSText.paste(_:)), "a": #selector(NSText.selectAll(_:)),
     "z": Selector(("undo:")),

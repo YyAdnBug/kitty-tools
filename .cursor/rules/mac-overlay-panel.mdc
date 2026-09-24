@@ -64,11 +64,14 @@ M1 实测结论 + master 旧规则 `macos-overlay-panel.mdc` 删减。代码：`
 - 选区（点、原点左下）→ 像素（原点左上）只走 `RegionSelector.pixelRect`，配单测；各屏按自己的像素尺寸换算（混合缩放多屏）。
 - 识字 `OCR.recognizeText(in: CGImage)`：只开自动识别语种、**不给语言提示**（给提示时中日韩混排图里日文、韩文整行丢失，单测锁住）。
 - 截图与截图翻译共用 `AppDelegate.beginCapture`（互斥、收面板）+ `frozenSelection`（授权 → 冻结 → 暂停热键框选 → 恢复）；`RegionSelector.select`（截图翻译）的行为不能被截图模式带着改。
-- 遮罩画面走图层（`SelectionView`）：冻结帧放在 layer-hosting 的 `Canvas` 上，蒙层、边框、手柄、放大镜是 CALayer，更新都包在 `CATransaction.setDisableActions(true)` 里；**不要**改回在 `draw(_:)` 里每次画整张冻结帧（5K 屏拖动卡）。`contentsScale` 跟 `backingScaleFactor` 走，否则 Retina 上线条发糊。
+- 遮罩画面走图层（`SelectionView`）：冻结帧是 `SelectionView` 自己图层的内容（`updateLayer`），蒙层、边框、手柄、放大镜是 layer-hosting 的 `Canvas` 上的 CALayer，标注在两者之间的 `AnnotationCanvas`，更新都包在 `CATransaction.setDisableActions(true)` 里；**不要**改回在 `draw(_:)` 里每次画整张冻结帧（5K 屏拖动卡）。`contentsScale` 跟 `backingScaleFactor` 走，否则 Retina 上线条发糊。
 - 窗口吸附只读冻结那一刻的 `Shot.windows`（从前到后，第一个包含点的就是），不读实时窗口列表、不按面积排（§11 #41）。
 - 选区只在一块屏上：一块屏开始操作就 `session.activate(self)` 清掉别的屏；截图模式下选区外单击不动，拖动才开新选区。
-- 输出：遮罩先收起（`session.finish`）再做复制 / 保存 / 钉图；另存为要先激活本 App 才弹 NSSavePanel，存完还前台。裁出的图用 `RegionSelector.detached` 拷成独立的图（`cropping` 的结果引用整屏冻结帧）。复制也经 `Paster.write`，所以要自己记进剪贴板历史。
+- 输出：遮罩先收起（`session.finish`）再做复制 / 保存 / 钉图 / 识字 / 翻译；另存为要先激活本 App 才弹 NSSavePanel（`begin`，不用 runModal），存完还前台。截图模式的图一律来自 `Annotation.render`（画进新位图，不引用整屏冻结帧；`cropping` 的结果会拖住整帧），松手即确认模式直接 `cropping`。复制也经 `Paster.write`，所以要自己记进剪贴板历史。
 - 截图自检：`SnapshotProbeTests.renderLayers` 把视图放进屏外窗口跑几轮 RunLoop 再 `layer.render(in:)`（`cacheDisplay` 画不出直接加的子图层）。
+- 标注（M10）：`Annotation` 值类型、存整屏视图坐标；屏幕上的标注层 `AnnotationCanvas` 按变了的标注 `setNeedsDisplay(rect)` 局部重画，导出走 `Annotation.render`，两边共用 `Annotation.draw`，不要各写一份。输出（复制 / 保存 / 钉图 / 识字 / 翻译）一律用合成图。
+- 文字标注用叠在遮罩里的 `NSTextView`（`EditorField`，输入法靠它）：它是第一响应者时按键都归它；⌘C / ⌘V / ⌘Z 经 `OverlayPanel.editActions` 发给它（本 App 不激活，主菜单收不到），每个输入框用自己的 UndoManager；Esc 走 `doCommandBy(cancelOperation:)` 收下文字；收下时**先** `makeFirstResponder(self)` 再移除输入框（反过来第一响应者落到窗口上，单键快捷键全失灵）。右键不弹文本菜单（菜单层级低于遮罩）。两条栏的按钮 `refusesFirstResponder`，点了不打断输入；栏的间隙、边距落到 `SelectionView.mouseDown` 时直接忽略。
+- 轻提示用 `Toast`（不抢键盘的 `OverlayPanel` 实例），不另写窗口类。
 
 ## 9. 钉图（`Screenshot/PinPanel.swift`）
 - `PinPanel`：`.borderless + .nonactivatingPanel`、`.floating`、`canBecomeKey`；显示只 `orderFrontRegardless`，**不 makeKey**（出现时不抢键盘，修旧版 §11 #48）；用户点了它才 makeKey，Esc / ⌘C 才归它。

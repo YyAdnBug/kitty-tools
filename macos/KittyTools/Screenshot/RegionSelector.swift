@@ -1,7 +1,7 @@
 // 框选会话：每块屏幕盖一个全屏遮罩（SelectionOverlay）画冻结帧，选区只在一块屏上。两种用法：
-// - 截图翻译 select：拖动框选，松手确认，Esc / 右键取消（行为不变）；
-// - 截图 capture：悬停高亮窗口 / 单击截整窗、确认后可调整选区，↩ 复制、⌘S 保存、⇧⌘S 另存为、T 钉图，
-//   C 复制放大镜中心的色值，D 选中上次的区域。
+// - 截图翻译 / 识字 select：拖动框选，松手确认，Esc / 右键取消；
+// - 截图 capture：悬停高亮窗口 / 单击截整窗、确认后可调整选区和标注，↩ 复制、⌘S 保存、⇧⌘S 另存为、T 钉图、
+//   工具栏识字 / 翻译，C 复制放大镜中心的色值，D 选中上次的区域。
 // 遮罩是不激活前台的 NSPanel（和 OverlayPanel 一样不抢前台 App），会话结束立即 orderOut 释放，不常驻
 // （全屏窗口的 backing store 是内存大头）。画面与交互在 SelectionView。
 
@@ -13,14 +13,17 @@ enum RegionSelector {
 
   enum Action {
     case copy, save, saveAs, pin
+    /// 识字并复制（识别的是打码后的合成图）
+    case recognize
+    case translate
   }
 
   struct Capture {
-    /// 选区的像素图（截图模式下已拷成独立的图，不再引用整屏冻结帧）
+    /// 选区的像素图（截图模式下是画上标注的合成图，不再引用整屏冻结帧）
     let image: CGImage
     /// 选区（点，AppKit 全局坐标）
     let frame: CGRect
-    /// 截图翻译只取图，不看它
+    /// 截图翻译 / 识字只取图，不看它
     let action: Action
 
     /// 像素 / 点
@@ -33,9 +36,10 @@ enum RegionSelector {
     case color(String)
   }
 
-  /// 截图翻译：在冻结帧上框选，返回裁好的图；取消返回 nil
-  static func select(_ shots: [ScreenCapture.Shot]) async -> CGImage? {
-    guard case .capture(let capture)? = await run(shots, SelectionSession(mode: .translate))
+  /// 截图翻译 / 识字：在冻结帧上框选，松手返回裁好的图；取消返回 nil。hint 是屏幕上方的提示
+  static func select(_ shots: [ScreenCapture.Shot], hint: String) async -> CGImage? {
+    guard
+      case .capture(let capture)? = await run(shots, SelectionSession(mode: .quick, hint: hint))
     else { return nil }
     return capture.image
   }
@@ -140,26 +144,13 @@ enum RegionSelector {
     let rect = screen.intersection(region).offsetBy(dx: -screen.minX, dy: -screen.minY)
     return (best, rect)
   }
-
-  /// 把 cropping 出来的图拷成独立的图：cropping 的结果仍引用整屏冻结帧（几十 MB），
-  /// 钉图、复制任务长期持有会把整帧一起拖住
-  static func detached(_ image: CGImage) -> CGImage {
-    let space = image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
-    guard
-      let context = CGContext(
-        data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: 0,
-        space: space,
-        bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
-          | CGBitmapInfo.byteOrder32Little.rawValue)
-    else { return image }
-    context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
-    return context.makeImage() ?? image
-  }
 }
 
 /// 一次框选会话：管各屏遮罩、选区只留一块屏、D 键上次区域、结束时收起遮罩并交回结果
 final class SelectionSession {
   let mode: SelectionView.Mode
+  /// 松手即确认时屏幕上方的提示（截图模式自己拼）
+  let hint: String
   /// 上次截图的区域（全局坐标）
   let lastRegion: CGRect?
   /// 一开始就选中上次的区域
@@ -167,8 +158,9 @@ final class SelectionSession {
   private var overlays: [SelectionOverlay] = []
   private var continuation: CheckedContinuation<RegionSelector.Outcome?, Never>?
 
-  init(mode: SelectionView.Mode, lastRegion: CGRect? = nil) {
+  init(mode: SelectionView.Mode, hint: String = "", lastRegion: CGRect? = nil) {
     self.mode = mode
+    self.hint = hint
     self.lastRegion = lastRegion
   }
 

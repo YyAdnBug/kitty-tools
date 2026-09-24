@@ -101,7 +101,7 @@ struct HotKey: Codable, Hashable {
 /// 追加动作只能加在末尾：注册时用 allCases 的下标当热键 id
 enum HotKeyAction: String, CaseIterable {
   case clipboard, selectionTranslate, inputTranslate, screenshotTranslate, launcher, screenshot,
-    screenshotLastRegion
+    screenshotLastRegion, recognizeText
 
   var title: String {
     switch self {
@@ -112,6 +112,7 @@ enum HotKeyAction: String, CaseIterable {
     case .launcher: "启动器"
     case .screenshot: "截图"
     case .screenshotLastRegion: "截取上次区域"
+    case .recognizeText: "识字"
     }
   }
 
@@ -128,6 +129,8 @@ enum HotKeyAction: String, CaseIterable {
     case .screenshot: HotKey(keyCode: kVK_ANSI_A, modifiers: optionKey)
     // iShot 的默认键，可以连按
     case .screenshotLastRegion: HotKey(keyCode: kVK_ANSI_X, modifiers: optionKey)
+    // iShot 的默认键（O = OCR）
+    case .recognizeText: HotKey(keyCode: kVK_ANSI_O, modifiers: optionKey)
     }
   }
 

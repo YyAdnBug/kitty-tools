@@ -51,6 +51,9 @@ enum Prefs {
   /// 上次截图的区域（NSStringFromRect，全局坐标）：框选时按 D、或用「截取上次区域」热键
   static let screenshotLastRegion = "screenshotLastRegion"
 
+  /// 识字后把同一段的换行合成一行（中日文直接连、其它加空格）
+  static let ocrJoinLines = "ocrJoinLines"
+
   /// 上次启动的版本号：没有 = 首次安装（打开通用页），和当前不同 = 刚更新（打开关于页看更新内容）
   static let lastSeenVersion = "lastSeenVersion"
 
@@ -83,6 +86,7 @@ enum Prefs {
       translateHistoryEnabled: true,
       translateHistoryLimit: 500,
       translateCopyToTranslate: false,
+      ocrJoinLines: false,
     ])
   }
 }

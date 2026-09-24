@@ -3,6 +3,7 @@
 // （锁住 §11 #21：写死一组语言、或给语言提示时，混排图里日文假名、韩文、俄文会丢）。
 
 import AppKit
+import CoreImage.CIFilterBuiltins
 import Foundation
 import Testing
 
@@ -152,6 +153,99 @@ struct ScreenshotTests {
     #expect(
       ScreenshotOutput.availableURL(in: directory, date: date).lastPathComponent
         == "截图 2026-09-04 08.05.03 2.png")
+  }
+
+  @Test func annotationHitTesting() {
+    let rectangle = Annotation(shape: .rectangle(CGRect(x: 100, y: 100, width: 200, height: 100)))
+    #expect(rectangle.contains(CGPoint(x: 101, y: 150)))  // 左边线上
+    #expect(!rectangle.contains(CGPoint(x: 200, y: 150)))  // 空心框里面点不中，免得挡住下面的标注
+    #expect(!rectangle.contains(CGPoint(x: 90, y: 150)))
+    let arrow = Annotation(shape: .arrow(from: CGPoint(x: 0, y: 0), to: CGPoint(x: 100, y: 100)))
+    #expect(arrow.contains(CGPoint(x: 52, y: 48)))
+    #expect(!arrow.contains(CGPoint(x: 60, y: 40)))
+    let mosaic = Annotation(shape: .mosaic(CGRect(x: 0, y: 0, width: 50, height: 50)))
+    #expect(mosaic.contains(CGPoint(x: 25, y: 25)))
+    // 文字框从左上角往下长；占的范围再按字号留边（泰文声调等会画出框外）
+    let frame = Annotation.textFrame("标注", origin: CGPoint(x: 10, y: 100), weight: .medium)
+    #expect(frame.maxY == 100 && frame.minX == 10 && frame.height > 10)
+    let text = Annotation(shape: .text("标注", origin: CGPoint(x: 10, y: 100)))
+    #expect(text.bounds.contains(frame) && text.bounds.maxY > 100)
+    #expect(text.contains(CGPoint(x: 15, y: 95)))
+    #expect(!Annotation(shape: .rectangle(CGRect(x: 0, y: 0, width: 2, height: 40))).isMeaningful)
+    #expect(!Annotation(shape: .text(" \n", origin: .zero)).isMeaningful)
+  }
+
+  @Test func shiftConstrainsShapes() {
+    // ⇧：矩形变正方形（跟着拖的方向），箭头吸附到 45°
+    #expect(
+      Annotation.shape(
+        for: .rectangle, from: CGPoint(x: 10, y: 10), to: CGPoint(x: 40, y: -5), constrained: true)
+        == .rectangle(CGRect(x: 10, y: -20, width: 30, height: 30)))
+    guard
+      case .arrow(_, let end)? = Annotation.shape(
+        for: .arrow, from: .zero, to: CGPoint(x: 100, y: 10), constrained: true)
+    else { return #expect(Bool(false)) }
+    #expect(abs(end.y) < 0.001 && abs(end.x - hypot(100, 10)) < 0.001)
+    #expect(Annotation.shape(for: .text, from: .zero, to: .zero, constrained: false) == nil)
+  }
+
+  @Test func renderDrawsAnnotationsIntoTheSelection() throws {
+    // 2x 白底图（视图 100×50 点）；选区是右半边，矩形左边线在 x = 60 点 → 选区图里 x = 20 像素
+    let image = try Self.image(size: 200) { context in
+      context.setFillColor(CGColor(gray: 1, alpha: 1))
+      context.fill(CGRect(x: 0, y: 0, width: 200, height: 200))
+    }
+    let viewSize = CGSize(width: 100, height: 100)
+    let rectangle = Annotation(
+      shape: .rectangle(CGRect(x: 60, y: 20, width: 30, height: 60)),
+      style: .init(color: .red, weight: .medium))
+    let result = try #require(
+      Annotation.render(
+        [rectangle], over: image, pixelRect: CGRect(x: 100, y: 0, width: 100, height: 200),
+        viewSize: viewSize))
+    #expect(result.width == 100 && result.height == 200)
+    let pixels = try #require(result.dataProvider?.data as Data?)
+    // BGRA（premultipliedFirst + little endian）；第 100 行是图的正中
+    let pixel = { (x: Int, y: Int) -> (red: UInt8, green: UInt8) in
+      let offset = y * result.bytesPerRow + x * 4
+      return (pixels[offset + 2], pixels[offset + 1])
+    }
+    #expect(pixel(20, 100) == (255, 59))  // 边线：#FF3B30
+    #expect(pixel(50, 100) == (255, 255))  // 框里面还是白的
+    #expect(pixel(5, 100) == (255, 255))
+  }
+
+  @Test func mosaicHidesTextFromRecognition() async throws {
+    // 打码后的合成图识别不出原来的字（修旧版把未打码的原图拿去识字，§11 #44）
+    let image = try Self.render(["Secret password 12345"])
+    let viewSize = CGSize(width: 600, height: 60)
+    let full = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+    let plain = try #require(
+      Annotation.render([], over: image, pixelRect: full, viewSize: viewSize))
+    #expect(await OCR.recognizeText(in: plain)?.contains("Secret") == true)
+    let masked = try #require(
+      Annotation.render(
+        [Annotation(shape: .mosaic(CGRect(origin: .zero, size: viewSize)))], over: image,
+        pixelRect: full, viewSize: viewSize))
+    #expect(await OCR.recognizeText(in: masked)?.contains("Secret") == false)
+  }
+
+  @Test func recognizesQRCode() async throws {
+    let filter = CIFilter.qrCodeGenerator()
+    filter.message = Data("https://example.com/kitty".utf8)
+    let output = try #require(filter.outputImage?.transformed(by: .init(scaleX: 8, y: 8)))
+    let image = try #require(CIContext().createCGImage(output, from: output.extent))
+    #expect(await OCR.barcodes(in: image) == ["https://example.com/kitty"])
+    #expect(await OCR.barcodes(in: try Self.render(["no code here"])).isEmpty)
+  }
+
+  @Test func joiningLinesKeepsCJKTight() {
+    #expect(OCR.joiningLines("第一行文字\n接着第二行") == "第一行文字接着第二行")
+    #expect(OCR.joiningLines("hello\nworld") == "hello world")
+    #expect(OCR.joiningLines("an exam-\nple") == "an example")
+    #expect(OCR.joiningLines("中文\nEnglish") == "中文English")
+    #expect(OCR.joiningLines("한국어\n텍스트") == "한국어 텍스트")
+    #expect(OCR.joiningLines("第一行\r\n  second line \n\n第三行") == "第一行second line第三行")
   }
 
   @Test func recognizesMixedScripts() async throws {

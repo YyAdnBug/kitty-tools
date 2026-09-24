@@ -34,7 +34,8 @@ struct LauncherItem: Identifiable, Hashable {
     action("clipboard", "剪贴板历史", "Clipboard"),
     action("translate-input", "输入翻译", "Translate"),
     action("screenshot", "截图", "Screenshot Capture"),
-    action("translate-screenshot", "截图翻译", "Screenshot Translate OCR"),
+    action("translate-screenshot", "截图翻译", "Screenshot Translate"),
+    action("ocr", "识字", "OCR Recognize Text QR"),
     action("settings", "设置", "Settings Preferences"),
   ]
 
@@ -52,6 +53,7 @@ struct LauncherItem: Identifiable, Hashable {
     case (.action, "translate-input"): "character.bubble"
     case (.action, "screenshot"): "camera.viewfinder"
     case (.action, "translate-screenshot"): "text.viewfinder"
+    case (.action, "ocr"): "doc.text.viewfinder"
     case (.action, _): "gearshape"
     case (.url, _): "globe"
     case (.search, _): "magnifyingglass"

@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private let serviceStore = TranslateServiceStore()
   private lazy var coordinator = TranslateCoordinator(services: serviceStore, history: historyStore)
   private let speaker = Speaker()
+  private let toast = Toast()
   /// 钉图（菜单栏显示「隐藏 / 关闭全部钉图」）
   lazy var pins: PinBoard = {
     let board = PinBoard()
@@ -119,6 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ),
     ("剪贴板", "doc.on.clipboard", AnyView(ClipboardTab(store: clipboardStore))),
     ("启动器", "magnifyingglass", AnyView(LauncherTab())),
+    ("截图", "camera.viewfinder", AnyView(ScreenshotTab())),
     ("翻译", "character.bubble", AnyView(TranslateTab(services: serviceStore))),
     ("快捷键", "keyboard", AnyView(HotkeysTab(center: hotKeys))),
     ("关于", "info.circle", AnyView(AboutTab())),
@@ -159,6 +161,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     hotKeys.setHandler(for: .screenshotLastRegion) { [unowned self] in
       screenshot(repeatingLastRegion: true)
     }
+    hotKeys.setHandler(for: .recognizeText) { [unowned self] in recognizeText() }
     hotKeys.reload()
     launcherModel.rescanApps()  // 约 65ms，放在启动时，第一次呼出就不用等
     showWelcomeIfNeeded()
@@ -206,6 +209,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     case "clipboard": toggleClipboard()
     case "translate-input": showInputTranslate()
     case "screenshot": screenshot()
+    case "ocr": recognizeText()
     case "translate-screenshot": screenshotTranslate()
     default: showSettings()
     }
@@ -242,19 +246,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 截图翻译：冻结各屏 → 框选 → 本机识别文字 → 原文记进剪贴板历史 → 翻译浮窗走现有的多服务翻译
   func screenshotTranslate() {
     beginCapture { [self] in
-      guard let region = await frozenSelection("截图翻译", RegionSelector.select) else { return }
-      // ponytail: 识别期间不显示「识别中」：常见选区 0.04–0.13s，整屏密集文字约 0.9s；大选区嫌慢再加
-      guard let text = await OCR.recognizeText(in: region) else {
-        return showScreenshotNotice("文字识别失败，请重试")
-      }
-      guard !text.isEmpty else { return showScreenshotNotice("没有识别到文字，可以把选区框大一些再试") }
-      recordInHistory(text)
-      coordinator.translate(text)
-      translatePanel.present()
+      guard
+        let region = await frozenSelection(
+          "截图翻译", { await RegionSelector.select($0, hint: "拖动框选要翻译的文字　Esc 取消") })
+      else { return }
+      await translateImage(region)
     }
   }
 
-  /// 截图：框选后 ↩ 复制（同时记进剪贴板历史）、⌘S 快速保存、另存为、T 钉图，C 复制色值。
+  /// 识字：框选后静默复制识别出的文字（有二维码 / 条码时复制它的内容），轻提示结果，不弹窗
+  func recognizeText() {
+    beginCapture { [self] in
+      guard
+        let region = await frozenSelection(
+          "识字", { await RegionSelector.select($0, hint: "拖动框选要识别的文字或二维码　Esc 取消") })
+      else { return }
+      await copyRecognizedText(in: region)
+    }
+  }
+
+  /// 截图：框选后可标注；↩ 复制（同时记进剪贴板历史）、⌘S 快速保存、另存为、T 钉图、识字、翻译，C 复制色值。
   /// repeatingLastRegion：一开始就选中上次的区域（「截取上次区域」热键，可以连按）
   func screenshot(repeatingLastRegion: Bool = false) {
     beginCapture { [self] in
@@ -272,6 +283,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       case .color(let hex):
         Paster.write(string: hex)
         recordInHistory(hex)
+        toast.show("已复制 \(hex)")
       case .capture(let capture):
         UserDefaults.standard.set(
           NSStringFromRect(capture.frame), forKey: Prefs.screenshotLastRegion)
@@ -280,6 +292,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .pin: pins.pin(capture.image, frame: capture.frame)
         case .save: await saveImage(capture.image, scale: capture.scale, asking: false)
         case .saveAs: await saveImage(capture.image, scale: capture.scale, asking: true)
+        case .recognize: await copyRecognizedText(in: capture.image)
+        case .translate: await translateImage(capture.image)
         }
       }
     }
@@ -339,6 +353,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
+  /// 本机识别文字 → 原文记进剪贴板历史 → 翻译浮窗走现有的多服务翻译（截图翻译、截图工具栏的翻译共用）
+  private func translateImage(_ image: CGImage) async {
+    // ponytail: 识别期间不显示「识别中」：常见选区 0.04–0.13s，整屏密集文字约 0.9s；大选区嫌慢再加
+    guard let text = await OCR.recognizeText(in: image) else {
+      return showScreenshotNotice("文字识别失败，请重试")
+    }
+    guard !text.isEmpty else { return showScreenshotNotice("没有识别到文字，可以把选区框大一些再试") }
+    recordInHistory(text)
+    coordinator.translate(text)
+    translatePanel.present()
+  }
+
+  /// 有二维码 / 条码就复制它的内容，否则复制识别出的文字（设置里开了就把换行合成一段）；记进剪贴板历史
+  private func copyRecognizedText(in image: CGImage) async {
+    let codes = await OCR.barcodes(in: image)
+    var text = codes.joined(separator: "\n")
+    if text.isEmpty {
+      guard let recognized = await OCR.recognizeText(in: image) else {
+        return toast.show("文字识别失败，请重试", symbol: "exclamationmark.triangle.fill")
+      }
+      text =
+        UserDefaults.standard.bool(forKey: Prefs.ocrJoinLines)
+        ? OCR.joiningLines(recognized) : recognized
+    }
+    guard !text.isEmpty else {
+      return toast.show("没有识别到文字", symbol: "exclamationmark.triangle.fill")
+    }
+    Paster.write(string: text)
+    recordInHistory(text)
+    let preview = text.prefix { $0 != "\n" }.prefix(24)
+    toast.show(
+      (codes.isEmpty ? "已复制：" : "已复制二维码：") + preview + (preview.count < text.count ? "…" : ""))
+  }
+
   /// 截图复制：PNG 写进剪贴板（经 Paster，watcher 会跳过），所以自己记进剪贴板历史
   private func copyImage(_ image: CGImage, scale: CGFloat) async {
     guard let png = await ScreenshotOutput.png(image, scale: scale) else {
@@ -364,7 +412,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       if asking {
         try await ScreenshotOutput.saveAs(png)
       } else {
-        try ScreenshotOutput.quickSave(png)
+        let url = try ScreenshotOutput.quickSave(png)
+        toast.show("已保存到「\(url.deletingLastPathComponent().lastPathComponent)」")
       }
     } catch {
       await copyPNG(png)

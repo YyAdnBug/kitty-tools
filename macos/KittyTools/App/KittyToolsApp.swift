@@ -21,6 +21,7 @@ struct KittyToolsApp: App {
       hotKeyButton("截取上次区域", .screenshotLastRegion) {
         appDelegate.screenshot(repeatingLastRegion: true)
       }
+      hotKeyButton("识字", .recognizeText) { appDelegate.recognizeText() }
       if !appDelegate.pins.panels.isEmpty {
         Button(appDelegate.pins.isHidden ? "显示全部钉图" : "隐藏全部钉图") {
           appDelegate.pins.toggleHidden()

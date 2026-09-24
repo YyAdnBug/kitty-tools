@@ -233,13 +233,13 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 | 目录 | 文件 |
 |---|---|
 | `App/` | `KittyToolsApp.swift`（@main 和 MenuBarExtra）、`AppDelegate.swift`（单实例检查、组装对象、生命周期、退出和锁屏清理） |
-| `Shell/` | `OverlayPanel.swift`、`HotKeyCenter.swift`、`HotKeyRecorder.swift`、`Permissions.swift`、`Paster.swift`、`SettingsWindow.swift` |
+| `Shell/` | `OverlayPanel.swift`、`HotKeyCenter.swift`、`HotKeyRecorder.swift`、`Permissions.swift`、`Paster.swift`、`SettingsWindow.swift`、`Toast.swift`（轻提示，M10） |
 | `Storage/` | `Database.swift`、`Keychain.swift`、`Prefs.swift`、`LegacyImport.swift` |
 | `Clipboard/` | `ClipboardWatcher.swift`、`ClipboardStore.swift`、`ClipItem.swift`、`ClipboardFilter.swift`、`ContentForm.swift`、`Search.swift`、`ImageStore.swift`、`OCR.swift`、`ClipboardPanelView.swift`、`ClipRowView.swift`、`PreviewView.swift`、`Dialogs.swift` |
 | `Translate/` | `TranslateCoordinator.swift`、`LanguageResolver.swift`、`SelectionReader.swift`、`SSE.swift`、`Providers/`（`Zhipu`、`AIService`、`Baidu`、`Youdao`、`Google`、`DeepL`、`Microsoft`、`Volcengine`、`Tencent` 各一个 `.swift`）、`TranslatePanelView.swift`、`ProviderCardView.swift`、`HistoryStore.swift`、`HistoryView.swift` |
-| `Settings/` | `GeneralTab.swift`、`HotkeysTab.swift`、`ClipboardTab.swift`、`TranslateTab.swift`、`AboutTab.swift` |
+| `Settings/` | `GeneralTab.swift`、`HotkeysTab.swift`、`ClipboardTab.swift`、`TranslateTab.swift`、`AboutTab.swift`、`LauncherTab.swift`、`ScreenshotTab.swift` |
 | `Launcher/` | `LauncherItem.swift`（结果项与内置动作）、`AppCatalog.swift`（App 目录 + 中文名 + 拼音）、`LauncherMatch.swift`（匹配与排序纯函数）、`LauncherUsage.swift`（使用记录表）、`LauncherModel.swift`、`LauncherPanelView.swift` |
-| `Screenshot/` | `ScreenCapture.swift`（逐屏冻结帧 + 同一刻的窗口 Z 序快照）、`RegionSelector.swift`（框选会话、每屏一个遮罩、选区几何纯函数）、`SelectionView.swift`（遮罩画面与交互：图层绘制、窗口悬停、手柄、放大镜、工具栏）、`ScreenshotOutput.swift`（PNG、快速保存、另存为）、`PinPanel.swift`（钉图）；标注与识字在 M10 |
+| `Screenshot/` | `ScreenCapture.swift`（逐屏冻结帧 + 同一刻的窗口 Z 序快照）、`RegionSelector.swift`（框选会话、每屏一个遮罩、选区几何纯函数）、`SelectionView.swift`（遮罩画面与交互：图层绘制、窗口悬停、手柄、放大镜、工具栏）、`ScreenshotOutput.swift`（PNG、快速保存、另存为）、`PinPanel.swift`（钉图）、`Annotation.swift`（标注模型，显示与导出共用 draw，M10）、`EditorToolbar.swift`（主工具栏 + 样式栏，M10） |
 
 各 provider 函数签名统一，由 coordinator 里的一个 `switch` 分发。不建 registry 或 factory。
 
@@ -720,7 +720,7 @@ echo "$DMG"
 | M7 启动器核心 | `OverlayPanel`（`topAnchored` + `setContentHeight`）、App 目录（文件名 / 显示名 / 中文名 / 拼音全拼与首字母）、内置动作、匹配分档（含跨词首字母 vsc）、`launcher_usage` 使用记录（τ 全局 14 天 / 查询 3 天）、最近使用、旧 JSON 导入、与剪贴板面板互斥 | 已完成 |
 | M8 启动器补全 | Chrome / Edge / Brave 书签（导入时还原被转小写的网址）、网址 / 路径直达（展开 `~`、认 localhost:端口、`Safari.app` 不算网址）、网页搜索（关键词直达 + 兜底，不记使用）、计算器（递归下降，不用 NSExpression）、`cb`（`ClipboardStore.search` 取文本前 30 条）、设置 › 启动器 | 已完成；M9 起按 Alfred / iShot Pro 对标调研重排 |
 | M9 截图框选 + 输出 | 抽出和截图翻译共用的会话（权限 → 冻结 → 框选）；`RegionSelector` 加截图模式：悬停高亮窗口 / 单击截整窗（冻结时拍按 Z 序的窗口快照，§11 #41）、确认后 8 手柄调整 + 方向键微调 + 按住空格平移 + 尺寸标签、放大镜取色（C 复制色值）、D / ⌥X 重拍上次区域；输出 ↩ 复制（同时进剪贴板历史）/ ⌘S 快速保存 / 另存为 / T 钉图；钉图（缩放、透明度、双击或 Esc 关、菜单栏「隐藏全部」） | 已完成（实现要点见下方「截图（Phase 3）」） |
-| M10 标注 + 识字 | 矩形、箭头、文字、马赛克 + 撤销（标注存整屏坐标，调整选区不丢）；工具栏识字 / 翻译按钮；独立识字热键（静默复制、二维码用 Vision `DetectBarcodesRequest`、去换行） | 待做 |
+| M10 标注 + 识字 | 矩形、箭头、文字、马赛克 + 撤销（标注存整屏坐标，调整选区不丢）；工具栏识字 / 翻译按钮；独立识字热键（静默复制、二维码用 Vision `DetectBarcodesRequest`、去换行） | 已完成（实现要点见下方「截图（Phase 3）」） |
 | M11 启动器网址线 + 键盘（对标 Alfred） | 自定义网页搜索（增删排序、多预置引擎）、Quicklink（固定网址 + 别名 + {query}）、兜底列表配置、⌥↩ 访达搜索 / ⌃↩ 网页搜索（按住修饰键换副标题）、Tab 补全（计算结果写回接着算）、cb / 计算结果 ↩ 粘贴、清空 / 单条重置学习记录、呼出时切英文输入法（开关，默认关） | 待做 |
 | M12 翻译补强（对标 Bob） | 窗口快捷键（⌘R 重试、⌘S 收藏、⌘W 关、⌘P 钉住、⌘+/- 字号、⌘1–9 复制第 N 张卡）、用译文替换原文（按钮 + 静默热键，默认不设键）、浮窗高度随内容、卡片折叠状态持久化、收藏筛选与导出 | 待做 |
 | M13 动作面板 + 文件 + 进程 | → / ⌘K 动作面板（打开方式、在访达中显示、复制路径、移到废纸篓，只放零授权动作）；⌘Y Quick Look（先验证 `QLPreviewPanel`，不行嵌 `QLPreviewView`）；open / find 文件搜索（NSMetadataQuery）；kill（GUI App 用 `terminate()`，⌘↩ 才强杀）。quit / hide / forcequit 是否做：D2 用户选了「系统命令都不做」，开工前再问一次 | 待做 |
@@ -748,9 +748,11 @@ echo "$DMG"
 - 热键：截图 ⌥A、截取上次区域 ⌥X（iShot 的默认键，可连按）、截图翻译 ⌥S（都是只带 ⌥ 的组合，15.0–15.1 注册不了时快捷键页会提示）。
 - **截图已实现（M9，2026-09-24）**：`AppDelegate.screenshot` 与截图翻译共用 `beginCapture`（互斥、收起没固定的浮层）+ `frozenSelection`（授权 → 冻结 → 暂停热键框选 → 恢复）。
   - 冻结：`ScreenCapture.freeze(keeping:)` 放行钉图窗口（钉图会出现在之后的截图里），同一时刻用 `CGWindowListCopyWindowInfo` 拍窗口快照（从前到后，只要低于程序坞的层和展开的弹出菜单，去掉全透明、太小和自家窗口），悬停与单击按 Z 序命中（§11 #41）。
-  - 遮罩画面全是图层：冻结帧放在 layer-hosting 的 `Canvas` 上，暗色蒙层 / 边框 / 手柄 / 尺寸 / 放大镜是 CALayer，拖动时只改路径，不重画整屏；工具栏是 AppKit 按钮（`acceptsFirstMouse`），NSVisualEffectView 用 `.withinWindow`（模糊冻结帧，不是背后的真桌面）。
+  - 遮罩画面全是图层：冻结帧是 `SelectionView` 自己图层的内容，暗色蒙层 / 边框 / 手柄 / 尺寸 / 放大镜是 layer-hosting 的 `Canvas` 上的 CALayer（M10 起标注层夹在两者之间），拖动时只改路径，不重画整屏；工具栏是 AppKit 按钮（`acceptsFirstMouse`），NSVisualEffectView 用 `.withinWindow`（模糊冻结帧，不是背后的真桌面）。
   - 交互：悬停高亮窗口，单击截该窗口（没有窗口截整屏）；拖动框选（按住空格整块平移）；确认后 8 手柄、拖动平移、方向键 1 点 / ⇧ 10 点，选区外单击不动（免得误点丢选区）、拖出新选区，右键回到待选、Esc 取消；尺寸标签显示像素。放大镜 15×15 像素、取样转 sRGB 显示 #RRGGBB，C 复制色值（同时记进剪贴板历史）。D 选中上次区域（按相交面积最大的屏放，外接屏拔掉时提示音）。
   - 输出：↩ / ⌘C / 双击选区 = 复制（PNG 带 DPI，经 `Paster.write`，自己记进剪贴板历史）；⌘S 快速保存到上次「另存为」的目录（旧版的 `screenshot_save_prefs.json` 可导入，没有时用系统截屏位置，再没有是桌面），文件名「截图 yyyy-MM-dd HH.mm.ss.png」、重名追加序号；⇧⌘S 另存为（遮罩已收起，激活本 App 弹 NSSavePanel，存完还前台）；T 钉图。裁出的图都拷成独立的图，不拖住整屏冻结帧。
+  - **标注（M10）**：1–4 切矩形 / 箭头 / 文字 / 马赛克（再按一次收起，回到拖动平移选区），⇧ 画正方形 / 45° 箭头；6 种固定 sRGB 颜色 × 3 档粗细，默认红色中号（旧版用户全是红色 4 点矩形）。点中标注（矩形只认边线）可拖动、⌫ 删除、方向键挪、改样式（作用于选中项，§11 #47），双击文字重新编辑；⌘Z / ⇧⌘Z 撤销重做（数组快照栈）。标注存整屏视图坐标，调整选区不丢（§11 #43）；显示（标注层只重画变了的那块）和导出（`Annotation.render`）共用一个 draw。文字用叠在上面的 NSTextView 输入（输入法正常；Esc、点外面收下，↩ 换行）；马赛克从冻结帧缩小再不插值放大。
+  - **识字（M10）**：⌥O 框选后静默复制（二维码 / 条码优先，`DetectBarcodesRequest`）；设置 › 截图可开「把换行合成一段」（整段合成一行：中日文直接连、其它加空格、行尾连字符接回；Vision 不分段落，要保留段落得按行框间距切，未做）；截图工具栏也有识字、翻译按钮，识别的是打码后的合成图（§11 #44）。结果记进剪贴板历史，用轻提示 `Toast`（不抢键盘的 OverlayPanel）反馈；⌘S 快速保存、复制色值也有轻提示。
   - 钉图 `PinPanel`：原位置出现、不激活本 App 也不抢键盘；拖动移动，滚轮 / 捏合以鼠标为锚点缩放（24 点到 5 倍），双击或 Esc（先点一下）关闭，⌘C / ⌘S / ⌘W / ⌘0，右键菜单含透明度；菜单栏有钉图时显示「隐藏 / 显示全部钉图」「关闭全部钉图」。
 
 ---
@@ -771,7 +773,9 @@ echo "$DMG"
 
 - M9 截图框选 + 输出（2026-09-24）：⌥A 截图 / ⌥X 截取上次区域，窗口悬停与 Z 序命中、调整选区、放大镜取色、复制 / 快速保存 / 另存为 / 钉图，启动器内置动作「截图」，旧版保存目录导入；对抗式审查确认的 12 条问题已修（多屏按键与选区、边界、钉图缩放、保存失败兜底、另存为不阻塞主线程等）。单测 74 个全过。
 
-**下一步（新会话从这里接着做）**：M10 标注 + 识字（§10）。标注存整屏坐标、显示与导出共用一个 draw；文字工具叠 NSTextView（候选窗会不会被遮罩压住要实测）；识字识别打码后的合成图。
+- M10 标注 + 识字（2026-09-25）：矩形 / 箭头 / 文字 / 马赛克 + 撤销重做、选中改样式、⌥O 识字（二维码优先、可去换行）、截图工具栏识字 / 翻译、设置 › 截图、轻提示；对抗式审查确认的 14 条问题已修（输入文字后焦点归还、栏间隙误触、残留草稿、输入法组字时输入框跟随、每个输入框独立撤销等）。单测 80 个全过。
+
+**下一步（新会话从这里接着做）**：M11 启动器网址线 + 键盘（§10，对标 Alfred）。
 
 **暂不发版**（用户决定，2026-09-24）：0.1.0 只在本地用 `macos/build-dmg.sh` 打包自用（arm64、Apple Development 签名、无 get-task-allow），不打 tag、不发 GitHub / GitCode；以后要发时再按下面的「发布 0.1.0」步骤，且须先经用户确认。
 
@@ -791,6 +795,13 @@ echo "$DMG"
   5. T 钉图：原位置出现、不抢键盘；拖动、滚轮 / 捏合缩放、右键透明度、双击和（点过后）Esc 关闭；菜单栏隐藏 / 显示 / 关闭全部；钉图出现在下一次截图里。
   6. ⌥X / 框选里按 D：选中上次区域，可连按；内屏 2x + 外接 1x 各试一次，外接屏拔掉后按 D 只有提示音。
   7. 截图翻译回归：上面「截图翻译手测」1–7 再走一遍（行为应与 M9 前完全一致）。
+- 标注与识字（M10）手测：
+  1. 框选后按 1–4 / 点工具栏切工具，再按一次收起；画矩形、箭头（⇧ 正方形、45°）、马赛克；↩ 粘出来的图里标注和马赛克都在、位置对。
+  2. 文字：点一下出输入框，**中文输入法打字时候选窗不被遮罩压住**（被压住就记下来，改遮罩层级）；↩ 换行、Esc 或点外面收下；双击已有文字重新编辑。
+  3. 点中标注拖动、方向键挪、⌫ 删除、改颜色粗细只改它；⌘Z / ⇧⌘Z 撤销重做；拖手柄调整选区后标注不丢。
+  4. 工具栏「识字」：打码处的字识别不出来；「翻译」走翻译浮窗。
+  5. ⌥O：框文字 → 轻提示「已复制：…」，剪贴板历史里有；框二维码 → 复制链接；设置 › 截图开「合成一段」后中文不插空格。
+  6. ⌘S 后有「已保存到『下载』」提示；设置 › 截图「更改…」换目录后 ⌘S 存到新目录。
 
 **发布 0.1.0**：`macos/build-dmg.sh` 出 arm64 DMG → GitHub（`yyandbug-coder/kitty-tools`）**prerelease**、不勾 Set as latest（见 build-dmg.sh 头部注释），**发布前须经用户确认**；tag `macos-v0.1.0` 打在 `macos-native`；发完在 master 工作区跑 `pnpm release:verify`。
 
@@ -857,11 +868,11 @@ echo "$DMG"
 | 40 | `bookmarks.rs:139-147` | 30 秒缓存期内不看开关变化 | 按文件修改时间和开关失效（M8） |
 | 41 | `useWindowHitTest.ts:41-50`、`window_hit_test.rs:221` | 窗口候选按面积排而不是 Z 序，会选中被遮挡的小窗；读的是实时窗口列表 | 冻结时拍窗口快照，按 Z 序命中（M9） |
 | 42 | `capture.rs:119-122` | 长边硬压到 4096px，5K / 6K 屏截图变糊 | 保持原生像素（M9） |
-| 43 | `RegionSelectApp:870-915`、`history_db.rs:274` | 调整选区会静默清空全部标注 | 标注存整屏坐标，导出时才裁剪（M10） |
-| 44 | `ScreenshotEditor:797`、`commands.rs:533-558` | 识字把未打码的原图上传智谱 | 本机 Vision，识别打码后的合成图（M10） |
+| 43 | `RegionSelectApp:870-915`、`history_db.rs:274` | 调整选区会静默清空全部标注 | 标注存整屏坐标，导出时才裁剪（M10 已做） |
+| 44 | `ScreenshotEditor:797`、`commands.rs:533-558` | 识字把未打码的原图上传智谱 | 本机 Vision，识别打码后的合成图（M10 已做，单测锁住） |
 | 45 | `export.rs:115-137` | JPEG 透明区域变黑；WebP 无视质量设置 | 首版只出 PNG（M9） |
 | 46 | `export.rs:245-252,349-362` | 同一秒快速保存两次，前一张被覆盖 | 重名追加序号（M9） |
-| 47 | `excalidraw-layer.tsx:104-108,455-489`、`ScreenshotEditor:1186-1189` | 高亮颜色选择不生效；所有工具共用线宽；改样式不作用于选中的标注 | 样式改动作用于选中的标注（M10） |
+| 47 | `excalidraw-layer.tsx:104-108,455-489`、`ScreenshotEditor:1186-1189` | 高亮颜色选择不生效；所有工具共用线宽；改样式不作用于选中的标注 | 样式改动作用于选中的标注（M10 已做） |
 | 48 | `pin_click_through.rs:24-33`、`windows/mod.rs:4457-4461` | 钉图穿透时全局抢走 ⇧⌘P；钉图显示时抢焦点 | 不做穿透；钉图窗口不激活 App（M9） |
 | 49 | `history_db.rs:234-313`、`pin_history_db.rs:206-230` | 缩略图泄漏（本机 351 个孤儿、目录 43MB）；淘汰时删掉仍开着的钉图的 PNG | 不做这两个历史 |
 | 50 | `focused_window.rs:120-144` | 窗口置顶在 macOS 上是空实现，却提示「已切换」 | 不迁 |

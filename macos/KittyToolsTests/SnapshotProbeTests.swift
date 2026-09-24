@@ -81,7 +81,7 @@ struct SnapshotProbeTests {
       ClipboardTab(store: store), size: NSSize(width: 520, height: 760), dark: false,
       to: "\(out)/settings-clipboard.png")
     try snapshot(
-      HotkeysTab(center: HotKeyCenter()), size: NSSize(width: 520, height: 340), dark: false,
+      HotkeysTab(center: HotKeyCenter()), size: NSSize(width: 520, height: 380), dark: false,
       to: "\(out)/settings-hotkeys.png")
     try snapshot(
       GeneralTab { "" }, size: NSSize(width: 520, height: 480), dark: false,
@@ -96,6 +96,16 @@ struct SnapshotProbeTests {
     try snapshot(
       LauncherTab(), size: NSSize(width: 520, height: 560), dark: false,
       to: "\(out)/settings-launcher.png")
+    try snapshot(
+      ScreenshotTab(), size: NSSize(width: 520, height: 420), dark: false,
+      to: "\(out)/settings-screenshot.png")
+    let toast = Toast()
+    toast.message = "已复制：https://example.com/kitty-tools"
+    for dark in [false, true] {
+      try snapshot(
+        ToastView(toast: toast), size: NSSize(width: 330, height: 44), dark: dark,
+        to: "\(out)/toast\(dark ? "-dark" : "").png")
+    }
   }
 
   private func renderTranslate(_ out: String) throws {
@@ -190,7 +200,9 @@ struct SnapshotProbeTests {
     ]
     for (name, configure) in translate {
       try renderLayers(
-        SelectionView(image: frozen, session: SelectionSession(mode: .translate)),
+        SelectionView(
+          image: frozen,
+          session: SelectionSession(mode: .quick, hint: "拖动框选要翻译的文字　Esc 取消")),
         size: NSSize(width: 600, height: 180), dark: false, configure: configure,
         to: "\(out)/\(name).png")
     }
@@ -202,6 +214,23 @@ struct SnapshotProbeTests {
       CGRect(x: 40, y: 250, width: 360, height: 130), CGRect(x: 0, y: 0, width: 600, height: 480),
     ]
     let selection = CGRect(x: 60, y: 200, width: 300, height: 150)
+    // 四种标注各一个，选中蓝色箭头（样式栏显示它的颜色和粗细），当前工具是矩形
+    let annotate: (SelectionView) -> Void = { view in
+      view.select(selection)
+      let arrow = Annotation(
+        shape: .arrow(from: CGPoint(x: 240, y: 230), to: CGPoint(x: 330, y: 300)),
+        style: .init(color: .blue, weight: .medium))
+      view.annotations = [
+        Annotation(shape: .rectangle(CGRect(x: 76, y: 282, width: 130, height: 40))),
+        Annotation(shape: .mosaic(CGRect(x: 70, y: 206, width: 150, height: 34))),
+        Annotation(
+          shape: .text("看这里", origin: CGPoint(x: 230, y: 345)),
+          style: .init(color: .red, weight: .large)),
+        arrow,
+      ]
+      view.tool = .rectangle
+      view.selectedAnnotation = arrow.id
+    }
     let capture: [(String, Bool, (SelectionView) -> Void)] = [
       ("capture-hover", false, { $0.mouse = CGPoint(x: 150, y: 330) }),
       (
@@ -213,6 +242,18 @@ struct SnapshotProbeTests {
       ),
       ("capture-adjust", false, { $0.select(selection) }),
       ("capture-adjust-dark", true, { $0.select(selection) }),
+      ("capture-annotate", false, annotate),
+      ("capture-annotate-dark", true, annotate),
+      (
+        "capture-text", false,
+        {
+          $0.select(selection)
+          $0.tool = .text
+          $0.beginEditing(at: CGPoint(x: 90, y: 340))
+          ($0.window?.firstResponder as? NSTextView)?.insertText(
+            "输入中的文字", replacementRange: NSRange(location: NSNotFound, length: 0))
+        }
+      ),
     ]
     for (name, dark, configure) in capture {
       try renderLayers(
