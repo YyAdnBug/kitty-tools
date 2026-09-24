@@ -1,5 +1,5 @@
 // 设置 › 翻译：语言（源、目标、智能模式的母语 / 常用外语）、行为（去换行、自动复制、历史），
-// 服务（启用、排序、智谱模型与 key、自建 AI 实例的增删改、获取模型、测试连接）。密钥直接读写钥匙串。
+// 服务（启用、排序、各服务的选项与密钥、自建 AI 实例的增删改、获取模型、测试连接）。密钥直接读写钥匙串。
 
 import SwiftUI
 
@@ -124,15 +124,18 @@ private struct ServiceRow: View {
     case .ai:
       [service.aiProtocol?.title, service.model].compactMap { $0 }.filter { !$0.isEmpty }
         .joined(separator: " · ")
+    case .deepl: service.usesDeepLX == true ? "DeepLX" : "官方 API"
+    case .microsoft: service.secret("subscriptionKey") == nil ? "免费 Edge 接口" : "Azure 翻译"
+    default: service.secretFields.allSatisfy { service.secret($0.name) != nil } ? "已配置" : "未配置密钥"
     }
   }
 }
 
-/// 展开在服务行下面的配置表单
+/// 展开在服务行下面的配置表单：各服务自己的选项 + 钥匙串里的密钥字段 + 测试连接
 private struct ServiceEditor: View {
   @Binding var service: TranslateService
   let onDelete: () -> Void
-  @State private var key = ""
+  @State private var secrets: [String: String] = [:]
   @State private var models: [String] = []
   @State private var status: String?
   @State private var isBusy = false
@@ -140,30 +143,11 @@ private struct ServiceEditor: View {
 
   var body: some View {
     Group {
-      switch service.kind {
-      case .zhipu:
-        Picker("模型", selection: Binding($service.model, default: TranslateService.zhipuModels[0])) {
-          ForEach(TranslateService.zhipuModels, id: \.self) { Text($0).tag($0) }
-        }
-        SecureField("API Key", text: $key, prompt: Text("留空使用内置免费额度"))
-      case .ai:
-        TextField("名称", text: $service.name)
-        Picker("协议", selection: Binding($service.aiProtocol, default: .openai)) {
-          ForEach(TranslateService.AIProtocol.allCases, id: \.self) { Text($0.title).tag($0) }
-        }
-        TextField("服务地址", text: Binding($service.baseURL, default: ""), prompt: Text(addressHint))
-        SecureField("API Key", text: $key, prompt: Text("本机模型可留空"))
-        HStack {
-          TextField("模型", text: Binding($service.model, default: ""), prompt: Text("如 gpt-4o-mini"))
-          Menu("获取模型") {
-            if models.isEmpty { Text("点「获取」读取服务端的模型列表") }
-            ForEach(models, id: \.self) { model in Button(model) { service.model = model } }
-            Divider()
-            Button("获取", action: fetchModels)
-          }
-          .fixedSize()
-        }
+      options
+      ForEach(service.secretFields, id: \.name) { field in
+        SecureField(field.label, text: secretBinding(field.name), prompt: Text(field.prompt))
       }
+      if service.kind == .ai { modelRow }
       HStack {
         Button("测试连接", action: test).disabled(isBusy)
         if isBusy { ProgressView().controlSize(.small) }
@@ -174,13 +158,67 @@ private struct ServiceEditor: View {
         }
       }
     }
-    .task(id: service.id) { key = service.secret() ?? "" }
-    .onChange(of: key) { service.setSecret(key.trimmingCharacters(in: .whitespaces)) }
+    .task(id: service.id) {
+      secrets = Dictionary(
+        uniqueKeysWithValues: service.secretFields.map { ($0.name, service.secret($0.name) ?? "") })
+    }
     .confirmationDialog("删除「\(service.name)」？", isPresented: $confirmDelete) {
       Button("删除", role: .destructive, action: onDelete)
     } message: {
       Text("会同时删除它保存在钥匙串里的密钥")
     }
+  }
+
+  @ViewBuilder private var options: some View {
+    switch service.kind {
+    case .zhipu:
+      Picker("模型", selection: Binding($service.model, default: TranslateService.zhipuModels[0])) {
+        ForEach(TranslateService.zhipuModels, id: \.self) { Text($0).tag($0) }
+      }
+    case .ai:
+      TextField("名称", text: $service.name)
+      Picker("协议", selection: Binding($service.aiProtocol, default: .openai)) {
+        ForEach(TranslateService.AIProtocol.allCases, id: \.self) { Text($0.title).tag($0) }
+      }
+      TextField("服务地址", text: Binding($service.baseURL, default: ""), prompt: Text(addressHint))
+    case .deepl:
+      Picker("接口", selection: Binding($service.usesDeepLX, default: false)) {
+        Text("官方 API").tag(false)
+        Text("DeepLX（自建）").tag(true)
+      }
+      if service.usesDeepLX == true {
+        TextField(
+          "DeepLX 地址", text: Binding($service.baseURL, default: ""),
+          prompt: Text("如 http://127.0.0.1:1188/translate"))
+      }
+    case .microsoft:
+      TextField(
+        "区域", text: Binding($service.region, default: ""), prompt: Text("填了 Key 才需要，如 eastasia"))
+    default:
+      EmptyView()
+    }
+  }
+
+  private var modelRow: some View {
+    HStack {
+      TextField("模型", text: Binding($service.model, default: ""), prompt: Text("如 gpt-4o-mini"))
+      Menu("获取模型") {
+        if models.isEmpty { Text("点「获取」读取服务端的模型列表") }
+        ForEach(models, id: \.self) { model in Button(model) { service.model = model } }
+        Divider()
+        Button("获取", action: fetchModels)
+      }
+      .fixedSize()
+    }
+  }
+
+  private func secretBinding(_ field: String) -> Binding<String> {
+    Binding(
+      get: { secrets[field] ?? "" },
+      set: { value in
+        secrets[field] = value
+        service.setSecret(value.trimmingCharacters(in: .whitespacesAndNewlines), field)
+      })
   }
 
   private var addressHint: String {
@@ -212,7 +250,8 @@ private struct ServiceEditor: View {
   private func fetchModels() {
     isBusy = true
     status = nil
-    let (baseURL, aiProtocol, key) = (service.baseURL ?? "", service.aiProtocol ?? .openai, key)
+    let key = secrets["apiKey"] ?? ""
+    let (baseURL, aiProtocol) = (service.baseURL ?? "", service.aiProtocol ?? .openai)
     Task {
       defer { isBusy = false }
       do {

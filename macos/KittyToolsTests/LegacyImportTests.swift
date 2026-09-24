@@ -49,10 +49,13 @@ struct LegacyImportTests {
 
   @Test func servicesFollowOldOrderAndNormalize() throws {
     let services = try #require(LegacyImport.plan(from: config).services)
-    #expect(services.map(\.id) == ["ai:b", "zhipu", "ai:a"])  // baidu 本阶段不支持，跳过；非法 id 丢弃
-    #expect(services[0].aiProtocol == .anthropic && !services[0].isEnabled)
-    #expect(services[1].model == "glm-4.6v-flash" && !services[1].isEnabled)
-    #expect(services[2].name == "AI 服务" && services[2].aiProtocol == .openai)  // 空名、未知协议兜底
+    // 旧顺序在前（旧版的 builtin 就是智谱），没排过序的内置服务按名字补在后面；非法 id 丢弃
+    #expect(Array(services.map(\.id).prefix(4)) == ["baidu", "ai:b", "zhipu", "ai:a"])
+    #expect(services.count == 10)
+    #expect(services[0].isEnabled && !services[2].isEnabled)
+    #expect(services[1].aiProtocol == .anthropic && !services[1].isEnabled)
+    #expect(services[2].model == "glm-4.6v-flash")
+    #expect(services[3].name == "AI 服务" && services[3].aiProtocol == .openai)  // 空名、未知协议兜底
   }
 
   @Test func unknownConfigHasNoServices() {

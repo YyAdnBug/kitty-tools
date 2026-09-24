@@ -23,6 +23,10 @@ alwaysApply: false
 - **max_tokens**：智谱域名 1024；OpenAI 官方与 Azure 不传；其余 4096；Anthropic 必填 4096。
 - **关思考分档**（`AIService.tiers`，按 host / 模型）：只有 400 / 422 才降一档，401 / 429 / 5xx 直接报错；成功档位按「地址 + 模型」记在 `Mutex` 里。
 - 本机 / 局域网地址（`HTTP.isLocalNetwork`）超时 180s，其余 30s；Info.plist 已开 `NSAllowsArbitraryLoads`（用户会填 http 自建服务）与本地网络用途说明。
+- **传统接口**（M5，`Providers/RESTProviders.swift`、`CloudProviders.swift`）：非流式，用 `Signing.oneShot` 包成流；译文按纯文本显示（只有 `isStreaming` 的大模型渲染 Markdown）。百度 6000 字 / 有道 5000 字上限。
+- **微软免 key**：旧的 `edge.microsoft.com/translate/auth` 换 token 流程 2026-08 起 404，改调免登录 `edge.microsoft.com/translate/translatetext?to=&from=&isEnterpriseClient=false`（body 是字符串数组）；填了 key 走 Azure 认知服务。
+- **DeepL 语言码**：源只收基础码（简繁都是 ZH），目标用 ZH-HANS / ZH-HANT / EN-US / PT-BR；key 以 `:fx` 结尾走 api-free。
+- **签名**（火山 HMAC-SHA256 类 SigV4、腾讯 TC3、有道 v3、百度 MD5）是纯函数、时间由参数传入；单测期望值来自官方示例或 Python 独立实现，改签名必须让这些测试继续通过。
 - 错误信息只给用户可读的中文（状态码分类 + 服务端说明前 160 字），**日志和错误里不出现 URL、请求头、密钥**。
 
 ## 4. 流式与取消

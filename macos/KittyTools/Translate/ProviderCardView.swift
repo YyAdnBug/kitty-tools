@@ -46,7 +46,8 @@ struct ProviderCardView: View {
     case .waiting:
       Text("翻译中…").foregroundStyle(.secondary)
     case .running(let text), .done(let text):
-      Text(Self.markdown(text))
+      // 只有大模型按行内 Markdown 渲染；传统接口原样显示，免得吞掉 * # 之类的字符
+      Text(card.service.isStreaming ? Self.markdown(text) : AttributedString(text))
         .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
     case .failed(let message):

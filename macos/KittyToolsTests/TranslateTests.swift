@@ -114,6 +114,14 @@ struct AIServiceTests {
     for try await text in TranslateService.zhipu.translate(request) { result = text }
     #expect(result.contains("你好"), "\(result)")
   }
+
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_LIVE_TRANSLATE"] != nil))
+  func liveMicrosoftEdge() async throws {
+    let request = TranslateRequest(text: "Good morning", from: nil, to: .zhHans)
+    var result = ""
+    for try await text in TranslateService.builtin(.microsoft).translate(request) { result = text }
+    #expect(result.contains("早"), "\(result)")
+  }
 }
 
 struct HistoryStoreTests {

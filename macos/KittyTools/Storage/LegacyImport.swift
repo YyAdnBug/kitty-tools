@@ -10,7 +10,7 @@ enum LegacyImport {
     var preferences: [String: Any] = [:]
     /// 钥匙串账户名 "<服务 id>.<字段>" → 值
     var secrets: [String: String] = [:]
-    /// 旧版里本阶段已支持的服务（按旧顺序）；nil 表示旧配置里没有服务信息
+    /// 旧版的全部服务（按旧顺序）；nil 表示旧配置里没有服务信息
     var services: [TranslateService]?
   }
 
@@ -93,16 +93,25 @@ enum LegacyImport {
       }
     }
 
-    // 服务：智谱 + AI 实例，按旧顺序
+    // 服务：8 个内置服务 + AI 实例，按旧顺序（旧版的 builtin 就是智谱）
     guard let enabled = config["translateServiceEnabled"] as? [String: Any] else { return plan }
-    var zhipu = TranslateService.zhipu
-    zhipu.isEnabled = enabled["builtin"] as? Bool ?? true
+    var available: [String: TranslateService] = [:]
+    for kind in TranslateService.Kind.allCases where kind != .ai {
+      let oldID = kind == .zhipu ? "builtin" : kind.rawValue
+      var service = TranslateService.builtin(kind)
+      service.isEnabled = enabled[oldID] as? Bool ?? (kind == .zhipu)
+      available[oldID] = service
+    }
     if let model = (config["zhipu"] as? [String: Any])?["textModel"] as? String,
       TranslateService.zhipuModels.contains(model)
     {
-      zhipu.model = model
+      available["builtin"]?.model = model
     }
-    var available = ["builtin": zhipu]
+    if let deepl = config["deepl"] as? [String: Any] {
+      available["deepl"]?.usesDeepLX = deepl["apiType"] as? String == "deeplx"
+      available["deepl"]?.baseURL = deepl["deeplxUrl"] as? String
+    }
+    available["microsoft"]?.region = (config["microsoft"] as? [String: Any])?["region"] as? String
     for raw in config["aiServices"] as? [[String: Any]] ?? [] {
       guard let id = raw["id"] as? String, id.hasPrefix("ai:"), available[id] == nil else {
         continue
@@ -119,7 +128,7 @@ enum LegacyImport {
     let order = config["translateServiceOrder"] as? [String] ?? []
     let ordered = order.compactMap { available[$0] }
     let rest = available.filter { !order.contains($0.key) }.sorted { $0.key < $1.key }.map(\.value)
-    plan.services = ordered + rest
+    plan.services = TranslateServiceStore.withBuiltins(ordered + rest)
     return plan
   }
 

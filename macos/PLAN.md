@@ -731,6 +731,22 @@ echo "$DMG"
 
 ---
 
+## 12. 进度与交接（2026-09-24，新会话从这里接着做）
+
+**已完成并推送到 `origin/macos-native`**（单测 48 个全过，`xcrun swift-format lint --strict` 无输出，Debug 构建零警告）：
+- M0 工程骨架 / 规则 / DMG 脚本；M1 浮层、热键、粘贴；M2 剪贴板数据层；M3 剪贴板面板（原生重新设计）+ 设置窗 + 快捷键录制；
+- M4 翻译核心（智谱、AI 三协议、划词、复制即译、历史、翻译浮窗与设置页、旧版偏好与密钥导入）；
+- M5 其余 7 家服务（百度、有道、Google、DeepL/DeepLX、微软、火山、腾讯）+ 各服务设置表单 + 导入扩展到全部内置服务。
+
+**待用户手测**（代码已就绪，清单见各里程碑验收标准）：M1 #1–#5、M2 #2、M3 #1–#3、M4 #2–#8、M5 #1（百度 / 有道 / AI 实例需先在「设置 › 通用」点「导入旧版设置」）。
+
+**下一步：M6**（见 §7 M6）
+1. `LegacyImport` 数据部分：旧 `kitty-settings.db` 里保留类剪贴板条目（收藏 / 片段 / 已归组）+ 图片（`clipboard_images/{id}.kchi`，本机全是 PNG 头）+ 分组 + 全部翻译历史，按 §6 的去重合并规则；注意旧库 WAL，走 `LegacyImport.copyDatabase`；旧表结构要先用 sqlite3 读出来再映射到新表（新表见 `ClipboardStore` / `HistoryStore`）。
+2. 通用页补：开机自启（`SMAppService.mainApp`，从 DMG 运行时不注册）、关于（版本号、打开发布页）、更新后首次启动打开关于页并显示 changelog（`lastSeenVersion`）。
+3. 版本号改 0.1.0 + `changelog.json` 条目（用户视角，只写 feat/fix/perf/ui）→ `macos/build-dmg.sh` → GitHub **prerelease**（不勾 latest，见 build-dmg.sh 头部注释）。
+
+**接手须知**：先读 `AGENTS.md`、`.cursor/rules/mac-native.mdc`，改哪块读哪块的技能（mac-overlay-panel / mac-clipboard / mac-translate）。界面改动用 SnapshotProbeTests 屏幕外渲染自检，**不要**为截图弹出浮层（会抢用户键盘）；联网冒烟 `TEST_RUNNER_KITTY_LIVE_TRANSLATE=1`。用户要求：只兼容 macOS、不照搬 Tauri 实现、样式与交互可按 macOS 习惯重新设计、照搬行为前先核对旧逻辑有没有 bug（记入 §11）。
+
 ## 11. 实现原则与旧逻辑问题
 
 **实现原则（用户要求，2026-09-24）**：只需兼容 macOS，**不照搬 Tauri 实现**。§5 的 Tauri path:line 只当「用户可见行为清单」；算法、数据结构、表结构、时序 hack 全部按原生方式重新设计。§6 的旧库只在 M6 导入时做一次格式转换，不约束新表结构。
@@ -744,6 +760,8 @@ echo "$DMG"
 | 1 | `src-tauri/src/clipboard/filter.rs` `looks_like_sensitive_text` | `sk-` 后要求紧跟 20 个字母数字，`sk-proj-…`、`sk-ant-api03-…` 等现行密钥格式全部漏拦 | 允许 `-` `_`；另要求 prefix 前是词边界、token 含数字，防连字符英文误伤 |
 | 2 | 同上 | `bearer ` 之后量的是**整段剩余文字**长度，任何提到 bearer token 的长文本都被当成密钥、整段不进历史 | 只量紧跟的 token（`[A-Za-z0-9-_.~+/=]`），≥24 且含数字 |
 | 3 | `src/features/clipboard/lib/clipboard-snippet.ts` | 片段 `{cursor}` 只是被删掉，光标不会定位过去（功能缺失） | 原生版暂保持同样行为并在代码里标 `ponytail:`；要做需在粘贴完成后按左方向键，时序难保证 |
+| 4 | `src-tauri/src/translate/api.rs` 微软翻译（未填 key） | 依赖 `edge.microsoft.com/translate/auth` 换 token，该地址 2026-08 起返回 404，**旧版微软免费翻译已失效** | 改调免登录的 `edge.microsoft.com/translate/translatetext`（字符串数组请求体，返回结构与认知服务相同）；填了 key 仍走 Azure 认知服务 |
+| 5 | `src-tauri/src/translate/api.rs` DeepL 语言码 | 源 / 目标共用一张映射：简繁都映射成 `ZH`（繁体丢失），目标 `EN` / `PT` 已被 DeepL 弃用 | 源用基础码，目标用 `ZH-HANS` / `ZH-HANT` / `EN-US` / `PT-BR`，配单测 |
 
 ## 附录：评审处理记录
 
