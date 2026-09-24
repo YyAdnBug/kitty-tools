@@ -1,0 +1,40 @@
+// 全部构建设置的唯一数据源（PLAN §8.1）。pbxproj 的 target / project 层 buildSettings 必须保持为空：
+// 那两层的值优先级高于 xcconfig，写进去就会把这里的设置静默盖掉。
+// project 层的 Debug / Release 配置分别引用 Debug.xcconfig / Release.xcconfig，二者都 #include 本文件。
+
+// 版本号唯一数据源；build-dmg.sh 从产物的 Info.plist 读回
+MARKETING_VERSION = 0.0.1
+CURRENT_PROJECT_VERSION = 1
+APP_BUNDLE_ID = com.yy.kitty-tools.native
+PRODUCT_BUNDLE_IDENTIFIER = $(APP_BUNDLE_ID)$(BUNDLE_ID_SUFFIX)
+PRODUCT_NAME = Kitty Tools Native
+PRODUCT_MODULE_NAME = KittyTools
+SDKROOT = macosx
+MACOSX_DEPLOYMENT_TARGET = 15.0
+// 只支持 Apple 芯片（D10）
+ARCHS = arm64
+SWIFT_VERSION = 6.0
+SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor
+SWIFT_APPROACHABLE_CONCURRENCY = YES
+SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES
+CODE_SIGN_STYLE = Automatic
+DEVELOPMENT_TEAM = HTX9F4KG39
+ENABLE_APP_SANDBOX = NO
+ENABLE_HARDENED_RUNTIME = YES
+GENERATE_INFOPLIST_FILE = YES
+INFOPLIST_FILE = Config/Info.plist
+INFOPLIST_KEY_LSUIElement = YES
+INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.productivity
+
+// 以下从 Xcode 26 macOS SwiftUI App 模板的 target 层搬来，值照抄。
+// 没搬：REGISTER_APP_GROUPS、ENABLE_USER_SELECTED_FILES（沙盒专用）；AccentColor（跟随系统强调色，D13）；
+// String Catalog 相关（不建 xcstrings）；CLANG_* / GCC_* 告警（没有 C / ObjC 源码）。
+ALWAYS_SEARCH_USER_PATHS = NO
+ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon
+COMBINE_HIDPI_IMAGES = YES
+ENABLE_PREVIEWS = YES
+ENABLE_USER_SCRIPT_SANDBOXING = YES
+LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/../Frameworks
+
+// 内置智谱 key 等不入库的值（ZHIPU_BUILTIN_KEY）；文件不存在时静默跳过
+#include? "Secrets.xcconfig"

@@ -1,0 +1,69 @@
+---
+description: kitty-tools 原生 macOS 分支（macos-native）唯一常驻规则：结构、技术栈白名单、并发红线、风格、剪贴板写入、签名、发版、语言与 commit
+globs:
+alwaysApply: true
+---
+
+# mac-native：原生 macOS 分支红线
+
+行为规格以 `macos/PLAN.md` 为准（§4 架构、§5 逐行映射、§6 数据、§8 打包）。下面每条都是硬约束，违反即返工。
+
+## 1. 结构
+- 唯一开发区是 `macos/`：源码在 `KittyTools/{App,Shell,Storage,Clipboard,Translate,Settings,Resources}`，文件归属照 PLAN §4 的表格；`KittyToolsTests/` 只测纯函数。
+- 一个概念一个文件；不预建空目录、空文件。每个入口文件（`@main`、AppDelegate、面板 / 窗口 / Tab 根视图、脚本）头部写注释说明用途。
+- 禁止为「以后可能用到」建 protocol、manager、registry、factory、DI 容器；不为测试抽 protocol。翻译服务由 coordinator 里一个 `switch` 分发。
+- `src/`、`src-tauri/`、`html/`、`public/`、`scripts/` 是 Tauri 快照，只读参考，不改不删；看最新行为读 master 工作区 `/Users/yy/Desktop/yy/Codes/Tauri/kitty-tools/`。
+
+## 2. 技术栈白名单
+- 只用 PLAN §2 表里的 Apple 框架 + 系统 libsqlite3（`import SQLite3`）。**禁止任何 SPM / 第三方依赖**（Sparkle、GRDB、KeyboardShortcuts、XcodeGen、Tuist、SwiftLint、create-dmg 等都不行）。
+- 部署目标 macOS 15.0；`ARCHS = arm64`，只支持 Apple 芯片。构建设置只写在 `macos/Config/*.xcconfig`，pbxproj 的 target 层 buildSettings 保持为空。
+- 用到 macOS 26 API 时就地写 `if #available(macOS 26, *)`，回退 `.regularMaterial` / `NSVisualEffectView`，不另建封装。
+- 持久化用 libsqlite3，不用 SwiftData。偏好用 `@AppStorage` / UserDefaults，键名集中在 `Prefs.swift`。密钥只进钥匙串；UserDefaults 和日志里不得出现密钥、请求 URL、请求头。
+- 不建 String Catalog：开发语言 zh-Hans，界面直接写中文字面量。
+
+## 3. 并发红线（Swift 6 语言模式）
+- 默认 `MainActor`（xcconfig：`SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`、`SWIFT_APPROACHABLE_CONCURRENCY = YES`）。UI、store、`Database`、`NSPasteboard` 读写、热键、搜索都在主线程。
+- `@concurrent` 只允许 3 类：图片编码 / hash / 缩略图；Vision OCR；AX 读选中文本（先设 `AXUIElementSetMessagingTimeout(0.5)`）。参数和返回值必须是 `Sendable` 值类型。
+- 翻译服务写成 `nonisolated` async 函数；取消靠持有的 `Task` 调 `cancel()`，并行用 `withTaskGroup`。
+- 禁止 `Task.detached`、`@unchecked Sendable`、`nonisolated(unsafe)`（仅 C 全局变量例外，且必须注释原因），禁止到处写 `DispatchQueue`。主线程投递的 C 回调里用 `MainActor.assumeIsolated {}`。
+- 和 C API 交互的代码只放在 `HotKeyCenter`、`Database`、`SelectionReader` 三个类型里。
+- 并发写法以 Xcode 自带的 `Swift-Concurrency-Updates.md`（路径见文末）为准，不用社区 concurrency 技能。
+
+## 4. 风格
+- 遵循 Swift API 设计规范；`xcrun swift-format lint --strict -r macos/KittyTools` 无输出是唯一格式标准（配置 `macos/.swift-format`），提交前 `xcrun swift-format format -i -r macos/KittyTools`。
+- 日期显示统一用 `Date.FormatStyle`。
+- 单行文本用 `.lineLimit(1)` + `.truncationMode(.tail)`。
+- 跟随系统强调色和系统材质，不做主题 preset；优先标准控件（HIG）。
+- 刻意的简化写 `ponytail:` 注释，写明上限和升级路径；为某个 App 补的时序延迟必须注明是哪个 App。
+
+## 5. 剪贴板写入
+- 自家写剪贴板（粘贴、复制、自动复制、划词后还原）**一律经 `Paster.write`**：它记下写后的 `changeCount` 让 watcher 跳过，并加 `org.nspasteboard.TransientType`（共存的 Tauri 也会跳过）。
+- 其它地方禁止直接 `setString` / `setData` / `writeObjects`；唯一例外是 `SelectionReader` 发 ⌘C 前的 `clearContents()`。
+
+## 6. 签名
+- Apple Development 自动签名，`DEVELOPMENT_TEAM = HTX9F4KG39`；**禁止「Sign to Run Locally」/ adhoc**（TCC 按 cdhash 记账，每次重建授权都会作废）。
+- Bundle ID：Release `com.yy.kitty-tools.native`，Debug `com.yy.kitty-tools.native.dev`，以后不再改（改了会丢设置、授权和钥匙串条目）。
+- 自检：`codesign -d -r- <app>` 的输出必须含 `anchor apple generic` 和 bundle id，不能是 cdhash。
+- 授权卡住：`tccutil reset Accessibility com.yy.kitty-tools.native.dev`，然后重新授权。
+- **永不公证**（只走路径 B）：不建 `ExportOptions.plist`，不写 `notarytool` / `stapler` 步骤。Release 保持 `CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO`，发布包里不能有 `get-task-allow`。
+
+## 7. 发版
+- 版本号唯一数据源是 Base.xcconfig 的 `MARKETING_VERSION`。改它必须在 `macos/KittyTools/Resources/changelog.json` 追加该版本条目（`{version, date, summary, changes:[{type, scope, text}]}`），`type` 只允许 feat / fix / perf / ui；缺条目时 `build-dmg.sh` 会中止。
+- 打包只用 `macos/build-dmg.sh`（arm64 DMG）；tag 用 `macos-v*`，打在 `macos-native` 分支。
+- GitHub 只发 **pre-release**，禁止勾 Set as latest（会让 Tauri updater 全平台 404）；GitCode 暂不发；发完在 master 工作区跑 `pnpm release:verify`；不改 `releases/latest.json`。细节见 `build-dmg.sh` 头部注释。
+
+## 8. 语言与 commit
+- 用中文回答；文档写中文，代码注释可以写中文。
+- commit 格式 `<type>: <description>`，type 取 feat / fix / ui / refactor / docs / perf / build / chore。
+
+## 测量与诊断
+- 测内存看 `phys_footprint`（`footprint -p <pid>` / 活动监视器），不看 RSS：两者偏差方向随内存压力变化，任何换算系数都不成立。
+- 编译诊断以 `xcodebuild` 输出为准（sourcekit-lsp 不认 `.xcodeproj`）。
+
+## 查资料
+- Apple API 文档：任意 `https://developer.apple.com/documentation/<path>` 后面加 `.md` 就能拿到 Markdown，直接 WebFetch。HIG 没有 `.md` 版。
+- Xcode 自带的 Apple agent 文档，只按绝对路径读，**不要拷进仓库**：
+  `/Applications/Xcode.app/Contents/PlugIns/IDEIntelligenceChat.framework/Versions/A/Resources/AdditionalDocumentation/`
+  - `Swift-Concurrency-Updates.md`（并发唯一准绳）
+  - `AppKit-Implementing-Liquid-Glass-Design.md`、`SwiftUI-Implementing-Liquid-Glass-Design.md`
+  - `Foundation-AttributedString-Updates.md`、`SwiftUI-New-Toolbar-Features.md`

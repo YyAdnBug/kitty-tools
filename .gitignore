@@ -1,0 +1,94 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+
+# Rust / Tauri 构建产物（勿提交）
+src-tauri/target/
+# tauri dev 占用 target/ 构建锁时，测试用的独立 target 目录
+src-tauri/target-test/
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+.idea
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+*.tsbuildinfo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+example
+
+# 发版本地产物（本地 pnpm release 生成，勿提交；latest.json 除外需随发版提交）
+releases/*
+!releases/latest.json
+
+# 本地环境变量（密钥、Token；见 .env.example）
+.env
+.env.*
+!.env.example
+
+# 更新签名私钥（项目内 .secrets/kitty-tools.key，见 .secrets/README.md）
+.secrets/*
+!.secrets/README.md
+
+
+snow-shot/
+pot-desktop/
+
+# 本地 AI / agent 工具目录（整目录不进仓库；本地文件保留）。
+# 注意：gitignore 不作用于已跟踪文件；若目录仍出现在变更里，说明历史提交过，须 git rm --cached。
+.agents/
+.codegraph/
+# 原生分支例外：只放行 .cursor/rules/、.cursor/mcp.json、.claude/skills/mac-*/
+# （npx skills 装的社区技能是指向 .agents/ 的符号链接，放行会提交成断链）
+.cursor/*
+!.cursor/rules/
+!.cursor/mcp.json
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/mac-*/
+
+# 原生 macOS 工程：构建产物、内置密钥（不入库）、Xcode 用户态
+macos/build/
+macos/Config/Secrets.xcconfig
+xcuserdata/
+
+# Trellis：spec / scripts / config 可入库；工作区与会话状态仅本机（运行时细节见 .trellis/.gitignore）。
+.trellis/workspace/
+.trellis/tasks/
+.trellis/.developer
+.trellis/.current-task
+.trellis/.runtime/
+.trellis/.ralph-state.json
+.trellis/.agents/
+.trellis/.agent-log
+.trellis/.session-id
+.trellis/**/.plan-log
+.trellis/**/*.tmp
+.trellis/**/.backup-*
+.trellis/**/*.new
+.trellis/**/__pycache__/
+.trellis/**/*.pyc
+
+# 常见误写文件名（不忽略正确的 AGENTS.md / CLAUDE.md）
+AGENTs.md
+CALUDE.md

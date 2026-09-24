@@ -1,0 +1,7 @@
+// Debug 配置：独立 bundle id（.dev），数据、偏好、TCC 授权与 Release 隔离
+#include "Base.xcconfig"
+BUNDLE_ID_SUFFIX = .dev
+INFOPLIST_KEY_CFBundleDisplayName = Kitty Tools Native Dev
+SWIFT_OPTIMIZATION_LEVEL = -Onone
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG $(inherited)
+DEBUG_INFORMATION_FORMAT = dwarf

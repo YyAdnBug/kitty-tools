@@ -1,0 +1,7 @@
+// Release 配置：build-dmg.sh 打包用
+#include "Base.xcconfig"
+BUNDLE_ID_SUFFIX =
+// 不让 get-task-allow 进入发布包（否则以后公证会被拒）
+CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
+SWIFT_COMPILATION_MODE = wholemodule
+DEBUG_INFORMATION_FORMAT = dwarf-with-dsym
