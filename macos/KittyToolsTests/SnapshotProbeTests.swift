@@ -93,6 +93,9 @@ struct SnapshotProbeTests {
     }
     try renderSelection(out)
     try renderLauncher(out)
+    try snapshot(
+      LauncherTab(), size: NSSize(width: 520, height: 560), dark: false,
+      to: "\(out)/settings-launcher.png")
   }
 
   private func renderTranslate(_ out: String) throws {
@@ -162,6 +165,7 @@ struct SnapshotProbeTests {
     for dark in [false, true] {
       for (name, query) in [
         ("launcher-recent", ""), ("launcher-search", "huo"), ("launcher-empty", "zzzz"),
+        ("launcher-calc", "12*3+1"),
       ] {
         model.query = query
         let rows = model.results.isEmpty ? 1 : min(Double(model.results.count), 8.5)

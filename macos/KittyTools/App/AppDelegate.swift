@@ -54,6 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.hidePanel = { [unowned panel] in panel.hide() }
     model.resize = { [unowned panel] in panel.setContentHeight($0) }
     model.runAction = { [unowned self] in runLauncherAction($0) }
+    model.searchClipboard = { [unowned self] in clipboardStore.search($0) }
     return panel
   }()
 
@@ -105,6 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         })
     ),
     ("剪贴板", "doc.on.clipboard", AnyView(ClipboardTab(store: clipboardStore))),
+    ("启动器", "magnifyingglass", AnyView(LauncherTab())),
     ("翻译", "character.bubble", AnyView(TranslateTab(services: serviceStore))),
     ("快捷键", "keyboard", AnyView(HotkeysTab(center: hotKeys))),
     ("关于", "info.circle", AnyView(AboutTab())),

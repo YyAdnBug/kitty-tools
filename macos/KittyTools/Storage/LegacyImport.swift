@@ -60,7 +60,8 @@ enum LegacyImport {
       let launcherAdded = try launcher.importLegacy(
         launcherEntries(
           frecency: try readIfExists("launcher_frecency.json"),
-          affinity: try readIfExists("launcher_query_affinity.json")))
+          affinity: try readIfExists("launcher_query_affinity.json"),
+          bookmarkURLs: Bookmarks.items().map(\.target)))
       lines.append("✓ 启动器使用记录：新增 \(launcherAdded)")
     } catch {
       lines.append("✗ " + ((error as? LocalizedError)?.errorDescription ?? "\(error)"))
@@ -90,7 +91,11 @@ enum LegacyImport {
   /// 旧版启动器的两份 JSON（{items: {key: {count, last_ms}}}）→ 使用记录。纯函数（只查文件是否存在），配单测。
   /// frecency 的 key 是「类型::目标」，查询记录的是「规范化查询::类型::目标」。丢弃：原生没有的类型
   /// （结束进程 / 端口、复制文本、旧版粘贴、系统命令等）、搜索结果页网址（修旧版把它们记进频率，§11 #32）
-  static func launcherEntries(frecency: Data?, affinity: Data?) throws -> [LauncherUsage.Entry] {
+  /// bookmarkURLs：旧版把网址转成了小写（§11 #30），能在书签里找到原样的就还原
+  static func launcherEntries(frecency: Data?, affinity: Data?, bookmarkURLs: [String] = [])
+    throws -> [LauncherUsage.Entry]
+  {
+    let originalCase = Dictionary(bookmarkURLs.map { ($0.lowercased(), $0) }) { first, _ in first }
     var result: [LauncherUsage.Entry] = []
     for (data, hasQuery) in [(frecency, false), (affinity, true)] {
       guard let data else { continue }
@@ -103,7 +108,8 @@ enum LegacyImport {
         guard parts.count >= 2, let count = value["count"] as? Double,
           let lastMS = value["last_ms"] as? Double,
           case (let kind, let target, let title)? = launcherTarget(
-            kind: parts[0], payload: parts.dropFirst().joined(separator: "::"))
+            kind: parts[0], payload: parts.dropFirst().joined(separator: "::"),
+            originalCase: originalCase)
         else { continue }
         result.append(
           LauncherUsage.Entry(
@@ -114,16 +120,16 @@ enum LegacyImport {
     return result
   }
 
-  private static func launcherTarget(kind: String, payload: String) -> (
-    LauncherItem.Kind, String, String
-  )? {
+  private static func launcherTarget(
+    kind: String, payload: String, originalCase: [String: String]
+  ) -> (LauncherItem.Kind, String, String)? {
     switch kind {
     case "open_url":
-      guard let url = URL(string: payload), let host = url.host(), !isSearchResultPage(url)
-      else { return nil }
-      let path = url.path(percentEncoded: false)
-      let port = url.port.map { ":\($0)" } ?? ""  // 同一 IP 不同端口的服务要分得开
-      return (.url, payload, host + port + (path == "/" ? "" : path))
+      let payload = originalCase[payload] ?? payload
+      guard let url = URL(string: payload), url.host() != nil, !isSearchResultPage(url) else {
+        return nil
+      }
+      return (.url, payload, DirectItems.displayName(of: url))
     case "open_path" where payload.hasSuffix(".app"):
       return (.app, payload, AppCatalog.item(path: payload).title)
     case "open_path":
@@ -351,6 +357,9 @@ enum LegacyImport {
     for (old, new) in [
       ("clipboardHideOnUnfocus", Prefs.clipboardHideOnUnfocus),
       ("launcherHideOnUnfocus", Prefs.launcherHideOnUnfocus),
+      ("launcherBookmarksChrome", Prefs.launcherBookmarksChrome),
+      ("launcherBookmarksEdge", Prefs.launcherBookmarksEdge),
+      ("launcherBookmarksBrave", Prefs.launcherBookmarksBrave),
       ("clipboardHistoryMax", Prefs.clipboardHistoryMax),
       ("clipboardHistoryRetentionDays", Prefs.clipboardRetentionDays),
       ("clipboardImageCacheMaxMb", Prefs.clipboardImageBudgetMB),
@@ -387,6 +396,14 @@ enum LegacyImport {
       plan.preferences[Prefs.translateSecond] = pair.second.rawValue
     }
     plan.launchAtLogin = config["launchOnStartup"] as? Bool ?? false
+    // 网页搜索引擎：旧版字段和 SearchEngine 一致，转成 JSON 存
+    if let engines = config["launcherWebSearchEngines"] as? [[String: Any]],
+      let data = try? JSONSerialization.data(withJSONObject: engines),
+      let decoded = try? JSONDecoder().decode([SearchEngine].self, from: data), !decoded.isEmpty,
+      let encoded = try? JSONEncoder().encode(decoded)
+    {
+      plan.preferences[Prefs.launcherWebSearchEngines] = encoded
+    }
 
     // 密钥：账户名沿用旧字段名，后续补的服务（百度、有道等）直接按这个名字读
     for (provider, fields) in [

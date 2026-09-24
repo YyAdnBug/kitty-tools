@@ -131,4 +131,89 @@ struct LauncherTests {
     #expect(abs(calculator.score - (3 + 2 * exp(-1.0 / 14))) < 1e-9)
     #expect(try usage.importLegacy(entries) == 0)  // 重复导入不叠加
   }
+
+  @Test func directURLsAndPaths() {
+    let url = { DirectItems.url(from: $0)?.absoluteString }
+    #expect(url("https://a.com/x") == "https://a.com/x")
+    #expect(url("linux.do") == "https://linux.do")
+    #expect(url("ui.shadcn.com/docs") == "https://ui.shadcn.com/docs")
+    #expect(url("localhost:3000") == "http://localhost:3000")  // 旧版不认
+    #expect(url("10.10.33.176:8089/app") == "http://10.10.33.176:8089/app")
+    #expect(url("www.example.app") == "https://www.example.app")
+    #expect(url("Safari.app") == nil)  // 旧版当成网址
+    #expect(url("file.txt") == nil)
+    #expect(url("hello world.com") == nil)
+    #expect(url("1.2.3") == nil)
+    #expect(DirectItems.existingPath(from: "~") == NSHomeDirectory())
+    #expect(DirectItems.existingPath(from: "/tmp") == "/tmp")
+    #expect(DirectItems.existingPath(from: "./tmp") == nil)  // 不认相对路径
+    #expect(DirectItems.existingPath(from: "/no/such/path") == nil)
+  }
+
+  @Test func calculator() {
+    let value = { Calculator.evaluate($0) }
+    #expect(value("1+2*3") == 7)
+    #expect(value("(1+2)*3") == 9)
+    #expect(value("2^3^2") == 512)  // 幂右结合
+    #expect(value("2**10") == 1024)
+    #expect(value("-2^2") == -4)
+    #expect(value("10%3") == 1)
+    #expect(value("sqrt(16)+abs(-1)") == 5)
+    #expect(value("0x10+0b11") == 19)
+    #expect(value("1/0") == nil)
+    #expect(value("1+") == nil)
+    #expect(value("sqrt(") == nil)  // 半截表达式不能崩
+    #expect(Calculator.format(0.1 + 0.2) == "0.3")
+    #expect(Calculator.format(2 * .pi) == "6.28318530718")
+    #expect(Calculator.item(for: "1+2")?.payload == "3")
+    #expect(Calculator.item(for: "2024-01-01") == nil)  // 日期不当算式
+    #expect(Calculator.item(for: "abc") == nil)
+    #expect(Calculator.item(for: "12") == nil)
+  }
+
+  @Test func webSearch() throws {
+    let engines = [
+      SearchEngine(
+        id: "g", name: "Google", keyword: "g", urlTemplate: "https://g.com/?q={query}",
+        enabled: true),
+      SearchEngine(
+        id: "b", name: "Bing", keyword: "", urlTemplate: "https://b.com/?q=", enabled: true),
+      SearchEngine(
+        id: "x", name: "Off", keyword: "", urlTemplate: "https://x.com/?q={query}", enabled: false),
+    ]
+    let keyword = try #require(WebSearch.keywordItem(for: "g c++ 教程", engines: engines))
+    #expect(
+      keyword.kind == .search && keyword.target == "https://g.com/?q=c%2B%2B%20%E6%95%99%E7%A8%8B")
+    #expect(WebSearch.keywordItem(for: "g", engines: engines) == nil)  // 关键词后面要有内容
+    let fallback = WebSearch.fallbackItems(for: "swift", engines: engines)
+    // 第二个引擎漏写 {query}：搜索词追加到末尾
+    #expect(fallback.map(\.target) == ["https://g.com/?q=swift", "https://b.com/?q=swift"])
+    #expect(WebSearch.fallbackItems(for: "s", engines: engines).isEmpty)
+    #expect(!LauncherItem.Kind.search.isRecorded)  // 搜索页不记使用
+  }
+
+  @Test func bookmarksAndClipCommand() {
+    let json = Data(
+      """
+      {"roots": {
+        "bookmark_bar": {"type": "folder", "children": [
+          {"type": "url", "name": "shadcn/ui", "url": "https://ui.shadcn.com/Docs"},
+          {"type": "folder", "children": [{"type": "url", "name": "内网", "url": "http://10.0.0.1/"}]},
+          {"type": "url", "name": "js", "url": "javascript:alert(1)"}
+        ]},
+        "other": {"type": "folder", "children": []}
+      }}
+      """.utf8)
+    #expect(Bookmarks.parse(json).map(\.url) == ["https://ui.shadcn.com/Docs", "http://10.0.0.1/"])
+    #expect(LauncherModel.clipQuery("cb") == "")
+    #expect(LauncherModel.clipQuery("cb  token") == "token")
+    #expect(LauncherModel.clipQuery("cbx") == nil)
+    // 旧版把网址转成了小写：书签里有原样的就还原
+    let frecency = Data(
+      #"{"items": {"open_url::https://ui.shadcn.com/docs": {"count": 2, "last_ms": 1790000000000}}}"#
+        .utf8)
+    let entries = try? LegacyImport.launcherEntries(
+      frecency: frecency, affinity: nil, bookmarkURLs: ["https://ui.shadcn.com/Docs"])
+    #expect(entries?.first?.target == "https://ui.shadcn.com/Docs")
+  }
 }

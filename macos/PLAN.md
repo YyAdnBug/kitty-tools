@@ -718,7 +718,7 @@ echo "$DMG"
 | 里程碑 | 内容 | 状态 |
 |---|---|---|
 | M7 启动器核心 | `OverlayPanel`（`topAnchored` + `setContentHeight`）、App 目录（文件名 / 显示名 / 中文名 / 拼音全拼与首字母）、内置动作、匹配分档（含跨词首字母 vsc）、`launcher_usage` 使用记录（τ 全局 14 天 / 查询 3 天）、最近使用、旧 JSON 导入、与剪贴板面板互斥 | 已完成 |
-| M8 启动器补全 | Chrome 书签（导入时还原被转小写的网址）、网址 / 路径直达（展开 `~`、认 localhost:端口、`Safari.app` 不算网址）、网页搜索兜底、计算器（递归下降，不用 NSExpression）、`cb`（`ClipboardStore.search` 取文本前 30 条）、设置 › 启动器 | 待做 |
+| M8 启动器补全 | Chrome / Edge / Brave 书签（导入时还原被转小写的网址）、网址 / 路径直达（展开 `~`、认 localhost:端口、`Safari.app` 不算网址）、网页搜索（关键词直达 + 兜底，不记使用）、计算器（递归下降，不用 NSExpression）、`cb`（`ClipboardStore.search` 取文本前 30 条）、设置 › 启动器 | 已完成；M9 起按 Alfred / iShot Pro 对标调研重排 |
 | M9 截图框选 + 输出 | 抽出和截图翻译共用的会话（权限 → 冻结 → 框选）；`RegionSelector` 加截图模式（悬停高亮窗口、单击截整窗、确认后 8 手柄调整 + 方向键微调、工具栏）；取色（放大镜 + C 复制颜色）；复制（同时进剪贴板历史）/ ⌘S 快速保存 / 另存为 / 钉图 | 待做 |
 | M10 标注 | 矩形、箭头、文字、马赛克，6 色 3 档线宽，撤销；标注存整屏坐标（调整选区不丢）；识字（本机、识别打码后的图）、翻译按钮 | 待做 |
 | M11 | `open` / `find` 文件搜索（NSMetadataQuery）、kill（GUI App 用 `terminate()`，⌘↩ 才强杀） | 待做 |
@@ -764,6 +764,8 @@ echo "$DMG"
 **接手须知**：先读 `AGENTS.md`、`.cursor/rules/mac-native.mdc`，改哪块读哪块的技能（mac-overlay-panel / mac-clipboard / mac-translate）。界面改动用 SnapshotProbeTests 屏幕外渲染自检，**不要**为截图弹出浮层（会抢用户键盘）；联网冒烟 `TEST_RUNNER_KITTY_LIVE_TRANSLATE=1`；真实旧库演练 `TEST_RUNNER_KITTY_LEGACY_DRY_RUN=1`。用户要求：只兼容 macOS、不照搬 Tauri 实现、样式与交互可按 macOS 习惯重新设计、照搬行为前先核对旧逻辑有没有 bug（记入 §11）。
 
 ## 11. 实现原则与旧逻辑问题
+
+**对标成熟产品（用户要求，2026-09-24）**：功能与交互对标 Alfred（启动器）、Bob（翻译）、iShot Pro（截图）等成熟 App，不对标自家 Tauri 旧版；旧版只提供用户真实使用数据（排优先级）、旧数据导入和旧 bug 核对。
 
 **实现原则（用户要求，2026-09-24）**：只需兼容 macOS，**不照搬 Tauri 实现**。§5 的 Tauri path:line 只当「用户可见行为清单」；算法、数据结构、表结构、时序 hack 全部按原生方式重新设计。§6 的旧库只在 M6 导入时做一次格式转换，不约束新表结构。
 

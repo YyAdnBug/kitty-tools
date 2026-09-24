@@ -7,6 +7,12 @@ enum Prefs {
   static let clipboardHideOnUnfocus = "clipboardHideOnUnfocus"
   /// 启动器点外即关（同上，键名沿用旧版）
   static let launcherHideOnUnfocus = "launcherHideOnUnfocus"
+  /// 启动器搜哪些浏览器的书签
+  static let launcherBookmarksChrome = "launcherBookmarksChrome"
+  static let launcherBookmarksEdge = "launcherBookmarksEdge"
+  static let launcherBookmarksBrave = "launcherBookmarksBrave"
+  /// 网页搜索引擎列表（JSON，见 WebSearch）
+  static let launcherWebSearchEngines = "launcherWebSearchEngines"
   /// 翻译浮窗固定：失焦不隐藏、Esc 不关闭
   static let floatingPinned = "floatingPinned"
 
@@ -47,6 +53,10 @@ enum Prefs {
     UserDefaults.standard.register(defaults: [
       clipboardHideOnUnfocus: true,
       launcherHideOnUnfocus: true,
+      // Chrome 书签不需要额外授权，默认开（网址是启动器里用得最多的）
+      launcherBookmarksChrome: true,
+      launcherBookmarksEdge: false,
+      launcherBookmarksBrave: false,
       floatingPinned: false,
       clipboardHistoryMax: 100,
       clipboardRetentionDays: 7,

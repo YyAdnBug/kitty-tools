@@ -1,4 +1,5 @@
-// 启动器状态与操作：查询 → 结果（App 目录 + 内置动作 + 用过的网址 / 文件），空查询显示「最近使用」。
+// 启动器状态与操作：查询 → 结果，空查询显示「最近使用」。结果顺序：直达网址 / 路径、计算结果、关键词搜索，
+// 然后 App 目录 + 内置动作 + 书签 + 用过的网址 / 文件按匹配分排序，网页搜索兜底；「cb [关键词]」只列剪贴板文本。
 // 键盘：↑↓ 循环、↩ 执行、⌘↩ 在访达中显示、⌘C 复制路径 / 网址、⌘1–9 执行第 N 项、Esc 先清空再关闭；
 // 单击选中、双击执行（和剪贴板面板一致）。执行成功才收起并记使用（修旧版先收起、失败提示看不见，§11 #33）。
 
@@ -23,6 +24,8 @@ import Observation
   @ObservationIgnored var runAction: (String) -> Void = { _ in }
   /// 面板按内容伸缩高度（顶边不动）
   @ObservationIgnored var resize: (CGFloat) -> Void = { _ in }
+  /// cb 指令：按关键词搜剪贴板历史（ClipboardStore.search）
+  @ObservationIgnored var searchClipboard: (String) -> [ClipItem] = { _ in [] }
 
   static let recentLimit = 8
   static let rescanInterval: TimeInterval = 300
@@ -63,20 +66,53 @@ import Observation
   private func search() {
     error = nil
     selection = 0
-    if isShowingRecent {
+    let query = query.trimmingCharacters(in: .whitespaces)
+    if query.isEmpty {
       results = recent()
-    } else {
-      let query = query
-      results = LauncherMatch.rank(apps + LauncherItem.actions + usedLocations, query: query) {
-        usage.boost(for: $0, query: query)
-      }
+      return
+    }
+    if let clipQuery = Self.clipQuery(query) {
+      results = clipItems(clipQuery)
+      return
+    }
+    let direct = DirectItems.items(for: query)
+    let keyword = WebSearch.keywordItem(for: query)
+    let top = direct + [Calculator.item(for: query), keyword].compactMap { $0 }
+    // 书签至少 2 个字才搜（1 个字母命中太多）
+    let bookmarks = query.count >= 2 ? Bookmarks.items() : []
+    let local = LauncherMatch.rank(
+      apps + LauncherItem.actions + bookmarks + usedLocations(excluding: bookmarks), query: query
+    ) { usage.boost(for: $0, query: query) }
+    let fallback = keyword == nil && direct.isEmpty ? WebSearch.fallbackItems(for: query) : []
+    results = top + (local.isEmpty || query.contains(" ") ? fallback + local : local + fallback)
+  }
+
+  /// 「cb」或「cb 关键词」
+  static func clipQuery(_ query: String) -> String? {
+    guard query == "cb" || query.hasPrefix("cb ") else { return nil }
+    return String(query.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+  }
+
+  /// cb：最近的文本条目，最多 30 条；↩ 复制全文
+  private func clipItems(_ query: String) -> [LauncherItem] {
+    searchClipboard(query).lazy.filter { $0.kind == .text }.prefix(30).map { clip in
+      let ago = clip.copiedAt.formatted(
+        .relative(presentation: .named).locale(Locale(identifier: "zh-Hans")))
+      return LauncherItem(
+        kind: .clip, target: clip.id.uuidString, title: clip.title,
+        subtitle: [clip.sourceName, ago, "↩ 复制"].compactMap { $0 }.joined(separator: " · "),
+        payload: clip.text)
     }
   }
 
-  /// 用过的网址 / 文件：不在任何目录里，靠使用记录找回来（书签接上后同一网址去重）
-  private var usedLocations: [LauncherItem] {
-    usage.entries.values
-      .filter { $0.query.isEmpty && ($0.kind == .url || $0.kind == .path) }
+  /// 用过的网址 / 文件：不在任何目录里，靠使用记录找回来；和书签同一网址（不分大小写）时只留书签
+  private func usedLocations(excluding bookmarks: [LauncherItem]) -> [LauncherItem] {
+    let bookmarked = Set(bookmarks.map { $0.target.lowercased() })
+    return usage.entries.values
+      .filter {
+        $0.query.isEmpty && ($0.kind == .url || $0.kind == .path)
+          && !bookmarked.contains($0.target.lowercased())
+      }
       .map(Self.item(for:))
   }
 
@@ -110,6 +146,8 @@ import Observation
         if FileManager.default.fileExists(atPath: entry.target) {
           items.append(Self.item(for: entry))
         }
+      case .search, .calculation, .clip:
+        break  // 不记使用，不会出现
       }
     }
     return items
@@ -119,6 +157,15 @@ import Observation
 
   func execute(_ item: LauncherItem) {
     switch item.kind {
+    case .calculation, .clip:
+      Paster.write(string: item.payload ?? "")
+      hidePanel()
+    case .search:
+      guard let url = URL(string: item.target), NSWorkspace.shared.open(url) else {
+        error = "打不开搜索页"
+        return
+      }
+      hidePanel()
     case .action:
       usage.record(item, query: query)
       hidePanel()
@@ -184,7 +231,7 @@ import Observation
       hidePanel()
     case kVK_ANSI_C where !fieldHasSelection:
       guard let item = selectedItem, item.kind != .action else { return false }
-      Paster.write(string: item.target)
+      Paster.write(string: item.payload ?? item.target)
       hidePanel()
     case kVK_ANSI_Comma:
       hidePanel()

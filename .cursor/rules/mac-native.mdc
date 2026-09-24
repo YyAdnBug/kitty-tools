@@ -13,6 +13,7 @@ alwaysApply: true
 - 一个概念一个文件；不预建空目录、空文件。每个入口文件（`@main`、AppDelegate、面板 / 窗口 / Tab 根视图、脚本）头部写注释说明用途。
 - 禁止为「以后可能用到」建 protocol、manager、registry、factory、DI 容器；不为测试抽 protocol。翻译服务由 coordinator 里一个 `switch` 分发。
 - `src/`、`src-tauri/`、`html/`、`public/`、`scripts/` 是 Tauri 快照，只读参考，不改不删；看最新行为读 master 工作区 `/Users/yy/Desktop/yy/Codes/Tauri/kitty-tools/`。
+- **对标成熟产品**（用户要求，2026-09-24）：启动器对标 Alfred、翻译对标 Bob、截图对标 iShot Pro 等成熟 App；新功能动手前先调研对应产品，给出「差距 + 推荐范围」让用户拍板。Tauri 旧版只作用户使用数据、旧数据导入、旧 bug 核对的参考，不决定功能上限。
 - **不照搬 Tauri 实现**（用户要求，2026-09-24）：Tauri 代码和 PLAN §5 的 path:line 只当「用户可见行为清单」看；算法、数据结构、表结构、时间窗 / 吞键这类跨平台或 WebView 专用 hack 一律按 macOS 原生方式自己设计。照着清单核对行为时发现旧逻辑有 bug，原生版直接做对，并记入 PLAN §11「旧逻辑问题」。
 
 ## 2. 技术栈白名单
