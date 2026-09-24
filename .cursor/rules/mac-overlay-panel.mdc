@@ -1,0 +1,51 @@
+---
+description: 原生分支 macOS 热键浮层规范（OverlayPanel / 全局热键 / 粘贴回原 App / 浮层内输入框 / 划词时序）
+globs: macos/KittyTools/Shell/**,macos/KittyTools/Translate/SelectionReader.swift
+alwaysApply: false
+---
+
+# mac-overlay-panel：热键浮层红线
+
+M1 实测结论 + master 旧规则 `macos-overlay-panel.mdc` 删减。代码：`Shell/OverlayPanel.swift`、`HotKeyCenter.swift`、`Paster.swift`、`Permissions.swift`、`CommandTextField.swift`，`Translate/SourceTextView.swift`。
+
+## 1. 浮层只有 OverlayPanel 一种
+- 剪贴板面板、翻译浮窗（Phase 2 启动器同理）都是 `OverlayPanel` 实例，**禁止**另写 NSPanel / NSWindow 子类。
+- `styleMask` 在 init 里一次写全，含 `.nonactivatingPanel`（初始化后再加不生效）；`.titled + .fullSizeContentView` + 隐藏三个按钮，拿系统圆角、阴影和缩放。
+- 显示只走 `present()`（`orderFrontRegardless` + `makeKey`）；**永远不对浮层调 `NSApp.activate`**，否则前台 App 变成自己，⌘V / ⌘C 会落空。
+- `NSHostingView.sizingOptions = []`：窗口尺寸由 `OverlayPanel` 定，不让 SwiftUI 理想尺寸反推。
+- 设置窗不是浮层（M3）：普通 `NSWindow`，打开前先收起两个浮层，再切 `.regular` + `activate()`。
+
+## 2. 自动隐藏与 Esc
+| | 剪贴板面板 `.clickOutside` | 翻译浮窗 `.resignKey` |
+|---|---|---|
+| 何时关 | 点本 App 浮层以外（global + local 鼠标监听） | 失去 key |
+| 固定时 | 点外不关，Esc 仍关 | 失焦不关，Esc 也不关 |
+| 例外 | 点中任一 `OverlayPanel` 不关（兄弟豁免，点击时实时判断） | key 让给自己的 sheet（`attachedSheet != nil`）不算失焦 |
+- 鼠标监听在 `present()` 装、`hide()` 卸，成对出现；不依赖 resignKey 判断点外（非激活应用的 resignKey 时机不可靠）。
+- 翻译浮窗收起时剪贴板面板还开着 → 把 key 还给剪贴板面板（`onHide`）。
+
+## 3. 浮层里的输入框
+- 单行用 `CommandTextField`，多行用 `SourceTextView`：方向键 / 回车 / Esc 一律走 `doCommandBy`。输入法组字期间这些键被输入法消费、不会回调，所以**不要**用 SwiftUI `TextField` + `.onKeyPress` 抢方向键和回车，也不要写吞键 hack。
+- 未处理的 `cancelOperation:` 转给 `window.cancelOperation`，浮层据此按上表关闭。
+- 聚焦：输入框在 `viewDidMoveToWindow` 里把自己设为 `initialFirstResponder`；`present()` 先 `layoutSubtreeIfNeeded()` 再 `makeFirstResponder`（首次显示时 SwiftUI 还没建出视图）。
+
+## 4. 全局热键
+- Carbon `RegisterEventHotKey`，**非独占**注册。实测：`kEventHotKeyExclusive` 既不能让别的进程注册失败，也不会因别的进程已占用而失败（先后两个方向都返回 0）→ **检测不到跨进程冲突**。与 Tauri 版共存期间，须在 Tauri 设置里清空剪贴板 / 划词 / 输入翻译热键，否则按一次两边都弹。
+- 同进程重复注册同一组合返回 -9878；15.0–15.1 上只带 ⌥ 的组合返回 -9868 → 快捷键 Tab 显示错误，不按组合一刀切。
+- Carbon 回调在主线程投递，回调里用 `MainActor.assumeIsolated`；热键为 nil 就不注册。
+- 划词热键（M4）回调第一件事：快照 `NSWorkspace.frontmostApplication`（排除自己）。
+
+## 5. 粘贴回原 App
+- 顺序：`hide()` → `Paster.write` → `Paster.pasteToFrontmost()`。浮层不激活本 App，前台一直是原 App，**不加任何等待**。
+- ⌘V 事件：`CGEventSource(.combinedSessionState)`，keyDown / keyUp 都显式 `flags = .maskCommand`（热键里还按着的 ⇧ 不会混进来），投递 `.cgSessionEventTap`。
+- 某个 App 实测粘不进去时，才为它加延迟或换事件源，并用 `ponytail:` 注释写明是哪个 App。
+- 未授权辅助功能：内容留在剪贴板，面板内提示「去授权」；不要静默失败。
+
+## 6. 划词时序（M4，沿用旧规则，禁止回退）
+- **复制完成前禁止显示翻译浮窗**：先显示会取消原 App 的选区，⌘C 拿到空内容。
+- 取词顺序：AX `kAXSelectedText`（`@concurrent`，先 `AXUIElementSetMessagingTimeout(0.5)`）→ 自家面板是 key 时先交还 key 并激活快照的前台 App 再读一次 AX → 最后才备份剪贴板、发 ⌘C、轮询 changeCount、经 `Paster.write` 还原。
+
+## 7. Swift 6 细节
+- `NSEvent` 监听和 Carbon 的回调闭包不是 MainActor 隔离的，里面一律 `MainActor.assumeIsolated {}`。
+- `kAXTrustedCheckOptionPrompt` 这类 C 全局 var 在 Swift 6 下不算并发安全，用字符串字面量（`"AXTrustedCheckOptionPrompt"`）。
+- 发测试按键的脚本自己也要有辅助功能授权，否则事件被系统丢弃；热键 / 粘贴只能手测（见 PLAN §7 M1 清单）。

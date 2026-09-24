@@ -66,7 +66,7 @@ tccutil reset Accessibility com.yy.kitty-tools.native.dev
 |---|---|---|---|
 | `mac-native` | 常驻规则 `.cursor/rules/mac-native.mdc` | 已有 | 始终加载 |
 | `ponytail` | 常驻规则 `.cursor/rules/ponytail.mdc` | 已有 | 只给 Cursor；Claude 侧由用户级插件生效 |
-| `mac-overlay-panel` | 技能 | 待写（M1 结束） | `Shell/**`、`Translate/SelectionReader.swift`；NSPanel、热键、前台快照、粘贴回原 App、划词时序、设置窗激活 |
+| `mac-overlay-panel` | 技能 | 已有（M1） | `Shell/**`、`Translate/SelectionReader.swift`；NSPanel、热键、前台快照、粘贴回原 App、划词时序、设置窗激活 |
 | `mac-clipboard` | 技能 | 待写（M3 结束） | `Clipboard/**`、`Storage/Database.swift` |
 | `mac-translate` | 技能 | 待写（M4 结束） | `Translate/**` |
 
