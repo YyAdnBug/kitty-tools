@@ -104,6 +104,24 @@ final class LauncherUsage {
       .prefix(limit).map { $0 }
   }
 
+  /// 忘掉一项的全部使用记录（全局和各个查询）：「最近使用」里 ⌘⌫
+  func forget(_ item: LauncherItem) {
+    for (key, entry) in entries where entry.kind == item.kind && entry.target == item.target {
+      entries[key] = nil
+    }
+    catchingErrors {
+      try db.execute(
+        "DELETE FROM launcher_usage WHERE kind = ? AND target = ?",
+        [item.kind.rawValue, item.target])
+    }
+  }
+
+  /// 设置 › 启动器「清空使用记录」：排序和「最近使用」从头学
+  func clearAll() {
+    entries = [:]
+    catchingErrors { try db.execute("DELETE FROM launcher_usage") }
+  }
+
   /// 旧版导入：已有的行不动（重复导入不叠加），一个事务写完再改内存；返回新增条数
   func importLegacy(_ imported: [Entry]) throws -> Int {
     var fresh: [String: Entry] = [:]

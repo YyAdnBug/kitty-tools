@@ -169,6 +169,10 @@ struct LauncherTests {
     #expect(Calculator.format(pow(2, 53)) == "9007199254740992")  // 能精确表示的整数原样
     #expect(Calculator.format(pow(2, 60)).contains("E"))  // 更大的用科学计数，不显示成补 0 的「精确」整数
     #expect(Calculator.item(for: "1+2")?.payload == "3")
+    // Tab 写回的科学计数要能接着算；单独的 e 仍是常数
+    #expect(Calculator.evaluate("1.15292150461e18*2") == 2.30584300922e18)
+    #expect(Calculator.evaluate("9e-3+1") == 1.009)
+    #expect(Calculator.evaluate("2*e") == 2 * M_E)
     #expect(Calculator.item(for: "2024-01-01") == nil)  // 日期不当算式
     #expect(Calculator.item(for: "abc") == nil)
     #expect(Calculator.item(for: "12") == nil)
@@ -180,7 +184,7 @@ struct LauncherTests {
         id: "g", name: "Google", keyword: "g", urlTemplate: "https://g.com/?q={query}",
         enabled: true),
       SearchEngine(
-        id: "b", name: "Bing", keyword: "", urlTemplate: "https://b.com/?q=", enabled: true),
+        id: "b", name: "Bing", keyword: "", urlTemplate: "https://b.com/?q={query}", enabled: true),
       SearchEngine(
         id: "x", name: "Off", keyword: "", urlTemplate: "https://x.com/?q={query}", enabled: false),
     ]
@@ -197,10 +201,96 @@ struct LauncherTests {
     #expect(WebSearch.keywordItem(for: "gh swift", engines: keywordOnly) != nil)
     #expect(WebSearch.fallbackItems(for: "swift", engines: keywordOnly).isEmpty)
     let fallback = WebSearch.fallbackItems(for: "swift", engines: engines)
-    // 第二个引擎漏写 {query}：搜索词追加到末尾
     #expect(fallback.map(\.target) == ["https://g.com/?q=swift", "https://b.com/?q=swift"])
+    #expect(fallback.first?.completion == "g swift")  // Tab 补成「关键词 内容」，没关键词的不补
+    #expect(fallback.last?.completion == nil)
+    #expect(WebSearch.primary(in: engines)?.id == "g")
     #expect(WebSearch.fallbackItems(for: "s", engines: engines).isEmpty)
     #expect(!LauncherItem.Kind.search.isRecorded)  // 搜索页不记使用
+  }
+
+  @Test func quicklinksAndPrompts() throws {
+    let engines = [
+      SearchEngine(
+        id: "docs", name: "苹果文档", keyword: "ad",
+        urlTemplate: "https://developer.apple.com/documentation",
+        enabled: true),
+      SearchEngine(id: "notes", name: "笔记", keyword: "", urlTemplate: "~/Notes", enabled: false),
+      SearchEngine(
+        id: "gh", name: "GitHub", keyword: "gh", urlTemplate: "https://github.com/search?q={query}",
+        enabled: false),
+      SearchEngine(
+        id: "nokw", name: "无关键词", keyword: "", urlTemplate: "https://x.com/?q={query}",
+        enabled: true),
+    ]
+    let items = WebSearch.quicklinkItems(engines: engines)
+    // 没有 {query} 的是快捷链接：网址记成 .url（记使用、进「最近使用」），路径展开 ~
+    #expect(items.count == 2)
+    #expect(items[0].kind == .url && items[0].target == "https://developer.apple.com/documentation")
+    #expect(items[0].names.contains("pingguowendang") && items[0].names.contains("ad"))
+    #expect(
+      items[1].kind == .path && items[1].target.hasSuffix("/Notes")
+        && !items[1].target.hasPrefix("~"))
+    // 有关键词的搜索出一条提示，↩ / Tab 补「关键词 」：正好是关键词时排最前，名字开头时排本地结果后面
+    let exact = WebSearch.promptItems(for: "gh", engines: engines)
+    #expect(exact.exact.map(\.completion) == ["gh "] && exact.partial.isEmpty)
+    let partial = WebSearch.promptItems(for: "git", engines: engines)
+    #expect(partial.exact.isEmpty && partial.partial.first?.kind == .prompt)
+    #expect(WebSearch.promptItems(for: "x", engines: engines).partial.isEmpty)  // 一个字不出
+    #expect(!LauncherItem.Kind.prompt.isRecorded)
+    // 快捷链接不参与关键词直达和兜底，勾了「兜底」也不算
+    #expect(WebSearch.keywordItem(for: "ad swift", engines: engines) == nil)
+    #expect(
+      WebSearch.fallbackItems(for: "swift", engines: engines).map(\.title) == ["用 无关键词 搜索「swift」"])
+    #expect(WebSearch.primary(in: engines)?.id == "nokw")
+    // 预置里的关键词互不重复，网址都是搜索
+    #expect(Set(WebSearch.presets.map(\.keyword)).count == WebSearch.presets.count)
+    #expect(WebSearch.presets.allSatisfy { !$0.isQuicklink })
+  }
+
+  @Test func tabCompletionAndAlternates() throws {
+    let calculation = try #require(Calculator.item(for: "12*3+1"))
+    #expect(LauncherModel.completion(for: calculation) == "37")  // 结果写回输入框接着算
+    let directory = LauncherItem(
+      kind: .path, target: "/System/Library", title: "Library", subtitle: "")
+    #expect(LauncherModel.completion(for: directory) == "/System/Library/")
+    let file = LauncherItem(
+      kind: .path, target: "/System/Library/CoreServices/SystemVersion.plist", title: "",
+      subtitle: "")
+    #expect(
+      LauncherModel.completion(for: file) == "/System/Library/CoreServices/SystemVersion.plist")
+    let app = AppCatalog.item(path: "/System/Applications/Calculator.app")
+    #expect(LauncherModel.completion(for: app) == app.title)
+    // 输入的网址 Tab 保留原样（显示名去掉了协议和查询串）
+    let typed = try #require(DirectItems.items(for: "localhost:3000/api?x=1").first)
+    #expect(LauncherModel.completion(for: typed) == "localhost:3000/api?x=1")
+    #expect(
+      LauncherModel.completion(
+        for: LauncherItem(kind: .clip, target: "x", title: "t", subtitle: ""))
+        == nil)
+    // 按住修饰键时选中行的副标题
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [app])
+    model.query = "swift ui"
+    model.alternate = .option
+    #expect(model.alternateSubtitle(for: app) == "⌥↩ 在访达里搜索「swift ui」")
+    model.alternate = .command
+    #expect(model.alternateSubtitle(for: app) == "⌘↩ 在访达中显示")
+    #expect(model.alternateSubtitle(for: calculation) == "⌘↩ 只复制，不粘贴")
+    model.alternate = .none
+    #expect(model.alternateSubtitle(for: app) == nil)
+  }
+
+  @Test func forgetAndClearUsage() throws {
+    let usage = try LauncherUsage(db: Database(path: ":memory:"))
+    let app = LauncherItem(kind: .app, target: "/Applications/A.app", title: "A", subtitle: "")
+    let other = LauncherItem(kind: .url, target: "https://b.com", title: "B", subtitle: "")
+    usage.record(app, query: "a")
+    usage.record(other, query: "")
+    #expect(usage.entries.count == 3)  // A 的全局 + 查询「a」，B 的全局
+    usage.forget(app)
+    #expect(usage.entries.values.map(\.target) == ["https://b.com"])
+    usage.clearAll()
+    #expect(usage.entries.isEmpty && usage.top(10).isEmpty)
   }
 
   @Test func bookmarksAndClipCommand() {

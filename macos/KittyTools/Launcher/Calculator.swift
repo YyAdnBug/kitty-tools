@@ -9,8 +9,8 @@ enum Calculator {
     guard looksLikeMath(query), let value = evaluate(query) else { return nil }
     let result = format(value)
     return LauncherItem(
-      kind: .calculation, target: query, title: "= \(result)", subtitle: "计算结果 · ↩ 复制",
-      payload: result)
+      kind: .calculation, target: query, title: "= \(result)", subtitle: "计算结果 · ↩ 粘贴 · Tab 接着算",
+      payload: result, completion: result)
   }
 
   static func looksLikeMath(_ query: String) -> Bool {
@@ -144,6 +144,20 @@ enum Calculator {
       while let current, current.isNumber || current == "." {
         text.append(current)
         index += 1
+      }
+      // 科学计数（1.15e18、9e-13）：Tab 把很大 / 很小的结果写回输入框后要能接着算。
+      // 只有 e 后面紧跟数字（或正负号加数字）才算指数，单独的 e 仍是常数
+      if !text.isEmpty, current == "e" {
+        var end = index + 1
+        if end < characters.count, "+-".contains(characters[end]) { end += 1 }
+        if end < characters.count, characters[end].isNumber {
+          text += String(characters[index..<end])
+          index = end
+          while let current, current.isNumber {
+            text.append(current)
+            index += 1
+          }
+        }
       }
       return Double(text)
     }

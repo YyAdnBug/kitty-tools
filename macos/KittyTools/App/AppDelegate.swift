@@ -68,6 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.copyClip = { [unowned self] id in
       if let item = clipboardStore.items.first(where: { $0.id == id }) { clipboardModel.copy(item) }
     }
+    model.bumpClip = { [unowned self] id in clipboardStore.bump(id) }
     return panel
   }()
 
@@ -119,7 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         })
     ),
     ("剪贴板", "doc.on.clipboard", AnyView(ClipboardTab(store: clipboardStore))),
-    ("启动器", "magnifyingglass", AnyView(LauncherTab())),
+    ("启动器", "magnifyingglass", AnyView(LauncherTab { [unowned self] in launcherUsage.clearAll() })),
     ("截图", "camera.viewfinder", AnyView(ScreenshotTab())),
     ("翻译", "character.bubble", AnyView(TranslateTab(services: serviceStore))),
     ("快捷键", "keyboard", AnyView(HotkeysTab(center: hotKeys))),

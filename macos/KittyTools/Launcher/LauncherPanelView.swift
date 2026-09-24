@@ -9,6 +9,7 @@ struct LauncherPanelView: View {
   @Bindable var model: LauncherModel
   var openSettings: () -> Void = {}
   @AppStorage(Prefs.launcherHideOnUnfocus) private var hideOnUnfocus = true
+  @AppStorage(Prefs.launcherRomanInput) private var romanInput = false
 
   static let searchHeight: CGFloat = 56
   static let rowHeight: CGFloat = 44
@@ -38,6 +39,12 @@ struct LauncherPanelView: View {
       Spacer(minLength: 0)
     }
     .onChange(of: height, initial: true) { model.resize(height) }
+    // 按住 ⌘ / ⌥ / ⌃ 时选中行的副标题换成替代动作
+    .onModifierKeysChanged(mask: [.command, .option, .control]) { _, keys in
+      model.alternate =
+        keys.contains(.command)
+        ? .command : keys.contains(.option) ? .option : keys.contains(.control) ? .control : .none
+    }
   }
 
   private var showsNoResults: Bool { !model.isShowingRecent && model.results.isEmpty }
@@ -59,7 +66,7 @@ struct LauncherPanelView: View {
         .font(.system(size: 18, weight: .medium))
         .foregroundStyle(.secondary)
       CommandTextField(
-        text: $model.query, placeholder: "搜索 App、网址或文件", fontSize: 20,
+        text: $model.query, placeholder: "搜索 App、网址或文件", fontSize: 20, romanOnly: romanInput,
         onCommand: model.handleCommand)
       Button("设置", systemImage: "gearshape", action: openSettings).help("设置（⌘,）")
       Toggle(isOn: pinned) { Image(systemName: hideOnUnfocus ? "pin" : "pin.fill") }
@@ -90,7 +97,9 @@ struct LauncherPanelView: View {
             } label: {
               LauncherRow(
                 item: item, shortcutIndex: index < 9 ? index : nil,
-                isSelected: index == model.selection, isRecent: model.isShowingRecent)
+                isSelected: index == model.selection, isRecent: model.isShowingRecent,
+                alternateSubtitle: index == model.selection
+                  ? model.alternateSubtitle(for: item) : nil)
             }
             .buttonStyle(.plain)
             .id(item.id)
@@ -114,6 +123,8 @@ private struct LauncherRow: View {
   let shortcutIndex: Int?
   let isSelected: Bool
   let isRecent: Bool
+  /// 按住修饰键时的替代动作说明（只给选中行）
+  var alternateSubtitle: String?
 
   var body: some View {
     HStack(spacing: 10) {
@@ -123,7 +134,7 @@ private struct LauncherRow: View {
           .font(.system(size: 14))
           .lineLimit(1)
           .truncationMode(.tail)
-        Text(isRecent ? "最近使用 · \(item.subtitle)" : item.subtitle)
+        Text(alternateSubtitle ?? (isRecent ? "最近使用 · \(item.subtitle)" : item.subtitle))
           .font(.system(size: 11))
           .foregroundStyle(
             isSelected ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.secondary)

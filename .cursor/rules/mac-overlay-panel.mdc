@@ -29,6 +29,8 @@ M1 实测结论 + master 旧规则 `macos-overlay-panel.mdc` 删减。代码：`
 ## 3. 浮层里的输入框
 - 单行用 `CommandTextField`，多行用 `SourceTextView`：方向键 / 回车 / Esc 一律走 `doCommandBy`。输入法组字期间这些键被输入法消费、不会回调，所以**不要**用 SwiftUI `TextField` + `.onKeyPress` 抢方向键和回车，也不要写吞键 hack。
 - 未处理的 `cancelOperation:` 转给 `window.cancelOperation`，浮层据此按上表关闭。
+- Tab 同样走 `doCommandBy(insertTab:)`（启动器拿来补全）；⌥↩ 是 `insertNewlineIgnoringFieldEditor:`、⌃↩ 是 `insertLineBreak:`。
+- 「只用英文输入法」（启动器开关）设在字段编辑器的 `inputContext.allowedInputSourceLocales` 上：字段编辑器整个窗口共用，关掉时要显式设回 nil。
 - 聚焦：输入框在 `viewDidMoveToWindow` 里把自己设为 `initialFirstResponder`；`present()` 先 `layoutSubtreeIfNeeded()` 再 `makeFirstResponder`（首次显示时 SwiftUI 还没建出视图）。
 
 ## 4. 全局热键

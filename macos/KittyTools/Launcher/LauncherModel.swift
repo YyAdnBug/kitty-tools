@@ -1,6 +1,8 @@
 // 启动器状态与操作：查询 → 结果，空查询显示「最近使用」。结果顺序：直达网址 / 路径、计算结果、关键词搜索，
-// 然后 App 目录 + 内置动作 + 书签 + 用过的网址 / 文件按匹配分排序，网页搜索兜底；「cb [关键词]」只列剪贴板文本。
-// 键盘：↑↓ 循环、↩ 执行、⌘↩ 在访达中显示、⌘C 复制路径 / 网址、⌘1–9 执行第 N 项、Esc 先清空再关闭；
+// 然后 App 目录 + 内置动作 + 快捷链接 / 搜索提示 + 书签 + 用过的网址 / 文件按匹配分排序，网页搜索兜底；
+// 「cb [关键词]」只列剪贴板文本。键盘（对标 Alfred）：↑↓ 循环、↩ 执行（计算结果、cb 是粘贴）、⌘↩ 在访达中显示
+// （计算结果、cb 只复制）、⌥↩ 在访达里搜索、⌃↩ 网页搜索（按住修饰键时选中行的副标题换成替代动作）、Tab 补全、
+// ⌘C 复制路径 / 网址、⌘1–9 执行第 N 项、「最近使用」里 ⌘⌫ 移除一项、Esc 先清空再关闭；
 // 单击选中、双击执行（和剪贴板面板一致）。执行成功才收起并记使用（修旧版先收起、失败提示看不见，§11 #33）。
 
 import AppKit
@@ -13,6 +15,12 @@ import Observation
   var selection = 0
   /// 执行失败的提示（面板不收起）
   private(set) var error: String?
+  /// 按住的修饰键：选中行的副标题换成它对应的替代动作（面板的 onModifierKeysChanged 推过来）
+  var alternate = Alternate.none
+
+  enum Alternate {
+    case none, command, option, control
+  }
 
   @ObservationIgnored let usage: LauncherUsage
   @ObservationIgnored private var apps: [LauncherItem] = []
@@ -27,6 +35,8 @@ import Observation
   /// cb 指令：按关键词搜剪贴板历史（ClipboardStore.search）；复制走剪贴板面板的逻辑（展开片段、保留格式）
   @ObservationIgnored var searchClipboard: (String) -> [ClipItem] = { _ in [] }
   @ObservationIgnored var copyClip: (UUID) -> Void = { _ in }
+  /// cb 粘贴过的那条挪到剪贴板历史最前（和面板里粘贴一样）
+  @ObservationIgnored var bumpClip: (UUID) -> Void = { _ in }
 
   static let recentLimit = 8
   static let rescanInterval: TimeInterval = 300
@@ -78,20 +88,24 @@ import Observation
     }
     let direct = DirectItems.items(for: query)
     let keyword = WebSearch.keywordItem(for: query)
-    let top = direct + [Calculator.item(for: query), keyword].compactMap { $0 }
+    let prompts = WebSearch.promptItems(for: query)
+    let top = direct + [Calculator.item(for: query), keyword].compactMap { $0 } + prompts.exact
     // 书签至少 2 个字才搜（1 个字母命中太多）
     let bookmarks = query.count >= 2 ? Bookmarks.items() : []
     let local = LauncherMatch.rank(
-      apps + LauncherItem.actions + bookmarks + usedLocations(excluding: bookmarks), query: query
+      apps + LauncherItem.actions + WebSearch.quicklinkItems() + bookmarks
+        + usedLocations(excluding: bookmarks), query: query
     ) { usage.boost(for: $0, query: query) }
-    // 兜底只在没有本地结果时出现（和 Alfred 一样；以前带空格的查询把兜底排到匹配的 App 前面）。
-    // 显式的 http(s) 网址、存在的路径就不再兜底
+    // 兜底默认只在没有本地结果时出现（和 Alfred 一样；以前带空格的查询把兜底排到匹配的 App 前面），
+    // 设置里可改成总是附在最后。显式的 http(s) 网址、存在的路径就不再兜底
     let explicit = direct.contains { $0.kind == .path } || query.lowercased().hasPrefix("http")
+    let wantsFallback =
+      local.isEmpty || UserDefaults.standard.bool(forKey: Prefs.launcherFallbackAlways)
     let fallback =
-      keyword == nil && local.isEmpty && !explicit ? WebSearch.fallbackItems(for: query) : []
+      keyword == nil && wantsFallback && !explicit ? WebSearch.fallbackItems(for: query) : []
     // 直达项和书签 / 用过的网址可能是同一项：按 id 去重，保留靠前的
     var seen = Set<String>()
-    results = (top + local + fallback).filter { seen.insert($0.id).inserted }
+    results = (top + local + prompts.partial + fallback).filter { seen.insert($0.id).inserted }
   }
 
   /// 「cb」或「cb 关键词」
@@ -100,14 +114,14 @@ import Observation
     return String(query.dropFirst(2)).trimmingCharacters(in: .whitespaces)
   }
 
-  /// cb：最近的文本条目，最多 30 条；↩ 复制全文
+  /// cb：最近的文本条目，最多 30 条；↩ 粘贴全文
   private func clipItems(_ query: String) -> [LauncherItem] {
     searchClipboard(query).lazy.filter { $0.kind == .text }.prefix(30).map { clip in
       let ago = clip.copiedAt.formatted(
         .relative(presentation: .named).locale(Locale(identifier: "zh-Hans")))
       return LauncherItem(
         kind: .clip, target: clip.id.uuidString, title: clip.title,
-        subtitle: [clip.sourceName, ago, "↩ 复制"].compactMap { $0 }.joined(separator: " · "),
+        subtitle: [clip.sourceName, ago, "↩ 粘贴"].compactMap { $0 }.joined(separator: " · "),
         payload: clip.text)
     }
   }
@@ -153,7 +167,7 @@ import Observation
         if FileManager.default.fileExists(atPath: entry.target) {
           items.append(Self.item(for: entry))
         }
-      case .search, .calculation, .clip:
+      case .search, .calculation, .clip, .prompt:
         break  // 不记使用，不会出现
       }
     }
@@ -165,11 +179,13 @@ import Observation
   func execute(_ item: LauncherItem) {
     switch item.kind {
     case .calculation:
-      Paster.write(string: item.payload ?? "")
-      hidePanel()
+      paste { Paster.write(string: item.payload ?? "") }
     case .clip:
-      if let id = UUID(uuidString: item.target) { copyClip(id) }
-      hidePanel()
+      // 不借剪贴板面板的 paste：它会连带收起钉住的剪贴板面板、提交还能撤销的删除
+      guard let id = UUID(uuidString: item.target) else { return }
+      if paste({ copyClip(id) }) { bumpClip(id) }
+    case .prompt:
+      if let completion = item.completion { query = completion }
     case .search:
       guard let url = URL(string: item.target), NSWorkspace.shared.open(url) else {
         error = "打不开搜索页"
@@ -188,6 +204,83 @@ import Observation
         return
       }
       open(url, item)
+    }
+  }
+
+  /// 计算结果、cb：收起后写剪贴板、发 ⌘V 粘贴回原 App（和剪贴板面板一样不激活本 App、不等待）。
+  /// 没有辅助功能授权时只复制，面板留着提示去授权。返回是否粘贴了
+  @discardableResult
+  private func paste(_ copy: () -> Void) -> Bool {
+    guard Permissions.isAccessibilityTrusted else {
+      copy()
+      error = "已复制到剪贴板。授权辅助功能后才能直接粘贴"
+      Permissions.requestAccessibility()
+      return false
+    }
+    hidePanel()
+    copy()
+    _ = Paster.pasteToFrontmost()
+    return true
+  }
+
+  /// ⌥↩：在访达里用 Spotlight 搜当前查询（不需要额外授权）
+  private func searchInFinder() {
+    let text = query.trimmingCharacters(in: .whitespaces)
+    guard !text.isEmpty, NSWorkspace.shared.showSearchResults(forQueryString: text) else {
+      return NSSound.beep()
+    }
+    hidePanel()
+  }
+
+  /// ⌃↩：不管有没有本地结果，用第一个兜底搜索搜当前查询
+  private func searchWeb() {
+    let text = query.trimmingCharacters(in: .whitespaces)
+    guard !text.isEmpty, let engine = WebSearch.primary(),
+      let url = URL(string: WebSearch.url(engine, text))
+    else { return NSSound.beep() }
+    guard NSWorkspace.shared.open(url) else {
+      error = "打不开搜索页"
+      return
+    }
+    hidePanel()
+  }
+
+  /// Tab：把选中项补进输入框（计算结果接着算、目录接着往下找、「关键词 」接着输搜索词）
+  func complete() {
+    guard let item = selectedItem, let text = Self.completion(for: item) else { return }
+    query = text
+  }
+
+  static func completion(for item: LauncherItem) -> String? {
+    if let completion = item.completion { return completion }
+    switch item.kind {
+    case .app, .action, .url: return item.title
+    case .path:
+      var isDirectory: ObjCBool = false
+      let exists = FileManager.default.fileExists(atPath: item.target, isDirectory: &isDirectory)
+      let path = (item.target as NSString).abbreviatingWithTildeInPath
+      return exists && isDirectory.boolValue && !path.hasSuffix("/") ? path + "/" : path
+    case .search, .calculation, .clip, .prompt: return nil
+    }
+  }
+
+  /// 按住修饰键时选中行的副标题：说明松手前按 ↩ 会做什么
+  func alternateSubtitle(for item: LauncherItem) -> String? {
+    let text = query.trimmingCharacters(in: .whitespaces)
+    switch alternate {
+    case .none:
+      return nil
+    case .command:
+      switch item.kind {
+      case .app, .path: return "⌘↩ 在访达中显示"
+      case .calculation, .clip: return "⌘↩ 只复制，不粘贴"
+      default: return nil
+      }
+    case .option:
+      return text.isEmpty ? nil : "⌥↩ 在访达里搜索「\(text)」"
+    case .control:
+      guard !text.isEmpty, let engine = WebSearch.primary() else { return nil }
+      return "⌃↩ 用 \(engine.name) 搜索「\(text)」"
     }
   }
 
@@ -218,8 +311,23 @@ import Observation
     switch selector {
     case #selector(NSResponder.moveUp(_:)): move(by: -1)
     case #selector(NSResponder.moveDown(_:)): move(by: 1)
-    case #selector(NSResponder.insertNewline(_:)):
-      if let selectedItem { execute(selectedItem) }
+    // ⌥↩ 来的是 insertNewlineIgnoringFieldEditor:、⌃↩ 是 insertLineBreak:；⌃O 这类别的键绑定也会发这两个，
+    // 所以要确认真是回车键，再按当时按住的修饰键分（别的键绑定吞掉，不做事）
+    case #selector(NSResponder.insertNewline(_:)),
+      #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)),
+      #selector(NSResponder.insertLineBreak(_:)):
+      guard let event = NSApp.currentEvent,
+        [kVK_Return, kVK_ANSI_KeypadEnter].contains(Int(event.keyCode))
+      else { return true }
+      if event.modifierFlags.contains(.option) {
+        searchInFinder()
+      } else if event.modifierFlags.contains(.control) {
+        searchWeb()
+      } else if let selectedItem {
+        execute(selectedItem)
+      }
+    case #selector(NSResponder.insertTab(_:)):
+      complete()  // 没得补也吞掉，不让焦点跳到别的控件
     case #selector(NSResponder.cancelOperation(_:)):
       guard !query.isEmpty else { return false }  // 没有查询：交给窗口关闭
       query = ""
@@ -236,11 +344,29 @@ import Observation
       ((event.window?.firstResponder as? NSTextView)?.selectedRange().length ?? 0) > 0
     switch Int(event.keyCode) {
     case kVK_Return:
-      guard let item = selectedItem, item.kind == .app || item.kind == .path else { return true }
-      NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: item.target)])
+      guard let item = selectedItem else { return true }
+      switch item.kind {
+      case .app, .path:
+        NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: item.target)])
+      case .calculation:
+        Paster.write(string: item.payload ?? "")
+      case .clip:
+        guard let id = UUID(uuidString: item.target) else { return true }
+        copyClip(id)
+      default:
+        return true
+      }
       hidePanel()
+    // 「最近使用」里 ⌘⌫：忘掉这一项（有查询时 ⌘⌫ 照常删到行首）
+    case kVK_Delete where isShowingRecent:
+      guard let item = selectedItem, item.kind.isRecorded else { return true }
+      usage.forget(item)
+      search()
     case kVK_ANSI_C where !fieldHasSelection:
-      guard let item = selectedItem, item.kind != .action else { return false }
+      // 内置动作、搜索提示没有可复制的东西：交给输入框
+      guard let item = selectedItem, item.kind != .action, item.kind != .prompt else {
+        return false
+      }
       Paster.write(string: item.payload ?? item.target)
       hidePanel()
     case kVK_ANSI_Comma:

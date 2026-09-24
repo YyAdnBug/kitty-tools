@@ -1,4 +1,5 @@
-// 启动器的一条结果：App、内置动作、网址、文件路径（这四类记使用），以及网页搜索、计算结果、剪贴板文本（不记）。
+// 启动器的一条结果：App、内置动作、网址、文件路径（这四类记使用），以及网页搜索、关键词提示、计算结果、
+// 剪贴板文本（不记）。
 // id = 类型 + 目标，使用记录按它累计。
 
 import Foundation
@@ -8,8 +9,10 @@ struct LauncherItem: Identifiable, Hashable {
     case app, action, url, path
     /// 网页搜索（目标是搜索页网址；不记使用，修旧版把搜索结果页记进频率，§11 #32）
     case search
-    /// 计算结果、cb 列出的剪贴板文本：↩ 复制 payload
+    /// 计算结果、cb 列出的剪贴板文本：↩ 粘贴 payload
     case calculation, clip
+    /// 有关键词的网页搜索的提示：↩ / Tab 把「关键词 」补进输入框
+    case prompt
 
     /// 只有这些记使用、能出现在「最近使用」里
     var isRecorded: Bool { [.app, .action, .url, .path].contains(self) }
@@ -24,8 +27,10 @@ struct LauncherItem: Identifiable, Hashable {
   var names: [String] = []
   /// 首字母缩写（已折叠）：Visual Studio Code → vsc，活动监视器 → hdjsq
   var initials: [String] = []
-  /// ↩ 复制的内容（计算结果、剪贴板全文）
+  /// ↩ 粘贴的内容（计算结果、剪贴板全文）
   var payload: String?
+  /// Tab 补进输入框的文字（计算结果、目录路径、「关键词 」）；nil 时 App、动作、网址补标题
+  var completion: String?
 
   var id: String { kind.rawValue + "\n" + target }
 
@@ -56,7 +61,7 @@ struct LauncherItem: Identifiable, Hashable {
     case (.action, "ocr"): "doc.text.viewfinder"
     case (.action, _): "gearshape"
     case (.url, _): "globe"
-    case (.search, _): "magnifyingglass"
+    case (.search, _), (.prompt, _): "magnifyingglass"
     case (.calculation, _): "equal.square"
     case (.clip, _): "doc.on.clipboard"
     default: "doc"

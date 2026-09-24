@@ -11,8 +11,12 @@ enum Prefs {
   static let launcherBookmarksChrome = "launcherBookmarksChrome"
   static let launcherBookmarksEdge = "launcherBookmarksEdge"
   static let launcherBookmarksBrave = "launcherBookmarksBrave"
-  /// 网页搜索引擎列表（JSON，见 WebSearch）
+  /// 网页搜索与快捷链接列表（JSON，见 WebSearch）
   static let launcherWebSearchEngines = "launcherWebSearchEngines"
+  /// 兜底搜索在有本地结果时也附在最后（默认只在没有结果时出现）
+  static let launcherFallbackAlways = "launcherFallbackAlways"
+  /// 呼出启动器时搜索框只用英文输入法（Alfred 的 Force Keyboard；离开启动器后恢复）
+  static let launcherRomanInput = "launcherRomanInput"
   /// 翻译浮窗固定：失焦不隐藏、Esc 不关闭
   static let floatingPinned = "floatingPinned"
 
@@ -65,6 +69,8 @@ enum Prefs {
       launcherBookmarksChrome: true,
       launcherBookmarksEdge: false,
       launcherBookmarksBrave: false,
+      launcherFallbackAlways: false,
+      launcherRomanInput: false,
       floatingPinned: false,
       clipboardHistoryMax: 100,
       clipboardRetentionDays: 7,

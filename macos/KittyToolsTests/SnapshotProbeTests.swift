@@ -94,7 +94,7 @@ struct SnapshotProbeTests {
     try renderSelection(out)
     try renderLauncher(out)
     try snapshot(
-      LauncherTab(), size: NSSize(width: 520, height: 560), dark: false,
+      LauncherTab(), size: NSSize(width: 560, height: 640), dark: false,
       to: "\(out)/settings-launcher.png")
     try snapshot(
       ScreenshotTab(), size: NSSize(width: 520, height: 420), dark: false,
@@ -175,9 +175,10 @@ struct SnapshotProbeTests {
     for dark in [false, true] {
       for (name, query) in [
         ("launcher-recent", ""), ("launcher-search", "huo"), ("launcher-empty", "zzzz"),
-        ("launcher-calc", "12*3+1"),
+        ("launcher-calc", "12*3+1"), ("launcher-prompt", "gh"), ("launcher-alternate", "swift ui"),
       ] {
         model.query = query
+        model.alternate = name == "launcher-alternate" ? .control : .none
         let rows = model.results.isEmpty ? 1 : min(Double(model.results.count), 8.5)
         try snapshot(
           LauncherPanelView(model: model),
