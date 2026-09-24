@@ -9,15 +9,21 @@ enum Paster {
   /// 自家最近一次写入后的 changeCount
   private(set) static var ownChangeCount = -1
 
-  /// 一个 item 的多种表示一次写完（分两次 declare 会互相清空）
+  /// 一次写完全部 item（每个 item 的多种表示也要一次写完，分两次 declare 会互相清空）
+  static func write(_ items: [NSPasteboardItem]) {
+    guard let first = items.first else { return }
+    first.setData(Data(), forType: transientType)
+    let pasteboard = NSPasteboard.general
+    pasteboard.clearContents()
+    pasteboard.writeObjects(items)
+    ownChangeCount = pasteboard.changeCount
+  }
+
+  /// 单个 item 的多种表示
   static func write(_ representations: [NSPasteboard.PasteboardType: Data]) {
     let item = NSPasteboardItem()
     for (type, data) in representations { item.setData(data, forType: type) }
-    item.setData(Data(), forType: transientType)
-    let pasteboard = NSPasteboard.general
-    pasteboard.clearContents()
-    pasteboard.writeObjects([item])
-    ownChangeCount = pasteboard.changeCount
+    write([item])
   }
 
   static func write(string: String) {

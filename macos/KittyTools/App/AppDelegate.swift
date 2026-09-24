@@ -1,16 +1,23 @@
-// 应用生命周期：单实例检查，按顺序组装各模块（PLAN §4 依赖注入），后续在这里做退出清理。
+// 应用生命周期：单实例检查，按依赖顺序组装各模块（PLAN §4），退出 / 锁屏时的清理。
 
 import AppKit
+import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+  /// 只有真正跑起来的实例才做退出清理：让位退出的重复实例不能碰数据库
+  private var isRunning = false
   private let hotKeys = HotKeyCenter()
+  private lazy var clipboardStore = Self.openClipboardStore()
+  private lazy var watcher = ClipboardWatcher(store: clipboardStore)
 
   private lazy var clipboardPanel = OverlayPanel(
     size: NSSize(width: 680, height: 520), autoHide: .clickOutside,
     isPinned: { !UserDefaults.standard.bool(forKey: Prefs.clipboardHideOnUnfocus) },
     content: ClipboardPanelView(
       onPaste: { [unowned self] in paste($0) },
-      onOpenTranslate: { [unowned self] in translatePanel.present() }))
+      onOpenTranslate: { [unowned self] in translatePanel.present() }
+    )
+    .environment(clipboardStore))
 
   private lazy var translatePanel: OverlayPanel = {
     let panel = OverlayPanel(
@@ -26,19 +33,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }()
 
   func applicationDidFinishLaunching(_ notification: Notification) {
+    // 单测以本 App 为宿主运行：不碰真实数据、不起热键
+    if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil { return }
     if yieldToOlderInstance() { return }
+    isRunning = true
     Prefs.registerDefaults()
+
+    let launchedAt = Date.now
+    clipboardStore.enforceLimits()
+    clipboardStore.images.removeOrphans(
+      keeping: Set(clipboardStore.items.map(\.id)), createdBefore: launchedAt)
+    clipboardStore.recognizePendingImages()
+    watcher.start()
+    DistributedNotificationCenter.default().addObserver(
+      forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main
+    ) { [unowned self] _ in
+      MainActor.assumeIsolated {
+        if UserDefaults.standard.bool(forKey: Prefs.clipboardClearOnLock) {
+          clipboardStore.clearOrdinary()
+        }
+      }
+    }
+
     hotKeys.register(.clipboardDefault) { [unowned self] in toggleClipboard() }
     hotKeys.register(.inputTranslateDefault) { [unowned self] in showInputTranslate() }
   }
 
-  func toggleClipboard() { clipboardPanel.toggle() }
+  func applicationWillTerminate(_ notification: Notification) {
+    if isRunning, UserDefaults.standard.bool(forKey: Prefs.clipboardClearOnQuit) {
+      clipboardStore.clearOrdinary()
+    }
+  }
+
+  func toggleClipboard() {
+    if !clipboardPanel.isVisible { clipboardStore.enforceLimits() }
+    clipboardPanel.toggle()
+  }
 
   func showInputTranslate() { translatePanel.present() }
 
-  private func paste(_ text: String) {
+  private func paste(_ item: ClipItem) {
     clipboardPanel.hide()
-    Paster.write(string: text)
+    Paster.write(clipboardStore.pasteboardItems(for: item))
+    clipboardStore.bump(item.id)
     if !Paster.pasteToFrontmost() { Permissions.requestAccessibility() }
   }
 
@@ -58,5 +95,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     older.activate()
     NSApp.terminate(nil)
     return true
+  }
+
+  /// 数据目录：~/Library/Application Support/<bundle id>/（Debug 与 Release 的 bundle id 不同，数据天然隔离）
+  private static func openClipboardStore() -> ClipboardStore {
+    do {
+      let directory = URL.applicationSupportDirectory.appending(
+        path: Bundle.main.bundleIdentifier ?? "com.yy.kitty-tools.native")
+      let imagesDirectory = directory.appending(path: "images")
+      try FileManager.default.createDirectory(
+        at: imagesDirectory, withIntermediateDirectories: true)
+      let database = try Database(path: directory.appending(path: "kitty.sqlite3").path)
+      return try ClipboardStore(db: database, images: ImageStore(directory: imagesDirectory))
+    } catch {
+      let alert = NSAlert()
+      alert.alertStyle = .critical
+      alert.messageText = "无法打开剪贴板历史数据库"
+      alert.informativeText = String(describing: error)
+      NSApp.activate()
+      alert.runModal()
+      exit(1)
+    }
   }
 }

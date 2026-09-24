@@ -78,6 +78,7 @@ tccutil reset Accessibility com.yy.kitty-tools.native.dev
 
 - `src/`、`src-tauri/`、`html/`、`public/`、`scripts/` 等是 master `ee615b3` 的 Tauri 快照，**只作行为参考，不改不删**。本分支不 merge master，也不以合回 master 为目标。
 - PLAN 里的 path:line 引用以这份快照为准。
+- **只当行为清单，不照搬实现**：原生版只需兼容 macOS，算法 / 数据结构 / 表结构 / 时序 hack 按原生方式自己设计；发现的旧逻辑 bug 记入 PLAN §11。
 - 最新 Tauri 行为和旧规则原文，读 master 工作区绝对路径 `/Users/yy/Desktop/yy/Codes/Tauri/kitty-tools`（例如 `…/src-tauri/src/…`、`…/.cursor/rules/…`），只读。
 
 ## 开发约定

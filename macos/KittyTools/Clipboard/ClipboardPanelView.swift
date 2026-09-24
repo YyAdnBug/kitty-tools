@@ -1,31 +1,30 @@
-// 剪贴板面板根视图。M1 只是浮层外壳的验证版：搜索框（测输入法）、固定样例列表（测粘贴回原 App）、
-// 打开翻译浮窗（测兄弟窗口豁免）、图钉（测固定）。M2 / M3 换成真实历史。
+// 剪贴板面板根视图。M2 过渡版：搜索框 + 真实历史列表（点击或 Enter 粘贴回原 App）+ 图钉 + 打开翻译浮窗。
+// M3 换成完整界面（筛选、分组、预览、多选、右键菜单等）。
 
 import SwiftUI
 
 struct ClipboardPanelView: View {
-  var onPaste: (String) -> Void
+  var onPaste: (ClipItem) -> Void
   var onOpenTranslate: () -> Void
 
+  @Environment(ClipboardStore.self) private var store
   @AppStorage(Prefs.clipboardHideOnUnfocus) private var hideOnUnfocus = true
   @State private var query = ""
   @State private var selection = 0
   @State private var trusted = Permissions.isAccessibilityTrusted
 
-  private let samples = [
-    "M1 粘贴测试：Hello, Kitty!",
-    "多行文本\n第二行\n第三行",
-    "中文 English 混排 😺 ⌘⇧V",
-  ]
+  private var results: [ClipItem] { store.search(query) }
 
   var body: some View {
+    let results = results
     VStack(spacing: 0) {
       HStack(spacing: 10) {
         Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-        CommandTextField(text: $query, placeholder: "搜索（M1：测试输入法）", onCommand: handleCommand)
+        CommandTextField(text: $query, placeholder: "搜索剪贴板历史") { handleCommand($0, results) }
+        Text("\(results.count) 条").font(.caption).foregroundStyle(.secondary)
         Button("翻译浮窗", systemImage: "character.bubble", action: onOpenTranslate)
           .labelStyle(.iconOnly)
-          .help("打开翻译浮窗（测试兄弟窗口豁免）")
+          .help("打开翻译浮窗")
         Toggle(isOn: pinned) { Image(systemName: hideOnUnfocus ? "pin" : "pin.fill") }
           .toggleStyle(.button)
           .help("固定：点外面不关闭")
@@ -47,32 +46,66 @@ struct ClipboardPanelView: View {
         .padding(10)
         .background(.yellow.opacity(0.15))
       }
-      ScrollView {
-        VStack(spacing: 2) {
-          ForEach(samples.indices, id: \.self) { index in
-            Text(samples[index])
-              .lineLimit(1)
-              .truncationMode(.tail)
-              .frame(maxWidth: .infinity, alignment: .leading)
-              .padding(.horizontal, 10)
-              .padding(.vertical, 8)
-              .background(
-                index == selection ? Color.accentColor.opacity(0.2) : .clear,
-                in: .rect(cornerRadius: 6)
-              )
-              .contentShape(.rect)
-              .onTapGesture { onPaste(samples[index]) }
+      if results.isEmpty {
+        ContentUnavailableView(
+          query.isEmpty ? "还没有剪贴板历史" : "没有匹配的条目", systemImage: "doc.on.clipboard")
+      } else {
+        ScrollViewReader { proxy in
+          ScrollView {
+            LazyVStack(spacing: 2) {
+              ForEach(Array(results.enumerated()), id: \.element.id) { index, item in
+                row(item, selected: index == selection)
+                  .id(index)
+                  .onTapGesture { onPaste(item) }
+              }
+            }
+            .padding(8)
           }
+          .onChange(of: selection) { proxy.scrollTo(selection) }
         }
-        .padding(8)
       }
-      Text("↑↓ 选择 · Enter 粘贴 · Esc 关闭")
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .padding(8)
     }
+    .onChange(of: query) { selection = 0 }
     .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
       trusted = Permissions.isAccessibilityTrusted
+    }
+  }
+
+  private func row(_ item: ClipItem, selected: Bool) -> some View {
+    HStack(spacing: 8) {
+      Image(systemName: icon(item.kind)).foregroundStyle(.secondary).frame(width: 16)
+      Text(summary(item))
+        .lineLimit(1)
+        .truncationMode(.tail)
+      Spacer(minLength: 0)
+      if item.richType != nil { Image(systemName: "textformat").foregroundStyle(.tertiary) }
+      if item.favorite { Image(systemName: "star.fill").foregroundStyle(.yellow) }
+    }
+    .padding(.horizontal, 10)
+    .padding(.vertical, 7)
+    .background(selected ? Color.accentColor.opacity(0.2) : .clear, in: .rect(cornerRadius: 6))
+    .contentShape(.rect)
+  }
+
+  private func icon(_ kind: ClipItem.Kind) -> String {
+    switch kind {
+    case .text: "doc.plaintext"
+    case .image: "photo"
+    case .file: "folder"
+    }
+  }
+
+  private func summary(_ item: ClipItem) -> String {
+    switch item.kind {
+    case .text:
+      return (item.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        .replacingOccurrences(of: "\n", with: " ⏎ ")
+    case .image:
+      guard let image = item.image else { return "图片" }
+      return "图片 \(image.width)×\(image.height)"
+    case .file:
+      let names = (item.filePaths ?? []).map { URL(filePath: $0).lastPathComponent }
+      return names.count == 1 ? names[0] : "\(names.count) 个文件：\(names.joined(separator: "、"))"
     }
   }
 
@@ -80,14 +113,15 @@ struct ClipboardPanelView: View {
     Binding(get: { !hideOnUnfocus }, set: { hideOnUnfocus = !$0 })
   }
 
-  private func handleCommand(_ selector: Selector) -> Bool {
+  private func handleCommand(_ selector: Selector, _ results: [ClipItem]) -> Bool {
+    guard !results.isEmpty else { return false }
     switch selector {
     case #selector(NSResponder.moveUp(_:)):
-      selection = (selection + samples.count - 1) % samples.count
+      selection = (selection + results.count - 1) % results.count
     case #selector(NSResponder.moveDown(_:)):
-      selection = (selection + 1) % samples.count
+      selection = (selection + 1) % results.count
     case #selector(NSResponder.insertNewline(_:)):
-      onPaste(samples[selection])
+      onPaste(results[min(selection, results.count - 1)])
     default:
       return false
     }

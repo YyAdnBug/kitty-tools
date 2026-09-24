@@ -1,0 +1,9 @@
+// 单测 target：宿主是 App（@testable import KittyTools），只覆盖与 App 不同的设置；其余沿用 project 层的 Debug / Release
+PRODUCT_NAME = KittyToolsTests
+PRODUCT_MODULE_NAME = KittyToolsTests
+PRODUCT_BUNDLE_IDENTIFIER = com.yy.kitty-tools.native.tests
+INFOPLIST_FILE =
+ASSETCATALOG_COMPILER_APPICON_NAME =
+TEST_HOST = $(BUILT_PRODUCTS_DIR)/Kitty Tools Native.app/Contents/MacOS/Kitty Tools Native
+BUNDLE_LOADER = $(TEST_HOST)
+LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/../Frameworks @loader_path/../Frameworks
