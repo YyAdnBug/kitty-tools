@@ -40,7 +40,7 @@ src/ src-tauri/ html/ public/ scripts/ …   # Tauri 快照，只读参考
 ## 常用命令（仓库根目录执行）
 
 ```bash
-# 构建 / 单测（test 在 M2 建出 KittyToolsTests 后可用）
+# 构建 / 单测（联网冒烟：前面加 TEST_RUNNER_KITTY_LIVE_TRANSLATE=1，会真请求内置智谱）
 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools build
 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools test
 
@@ -72,7 +72,7 @@ tccutil reset Accessibility com.yy.kitty-tools.native.dev
 | `ponytail` | 常驻规则 `.cursor/rules/ponytail.mdc` | 已有 | 只给 Cursor；Claude 侧由用户级插件生效 |
 | `mac-overlay-panel` | 技能 | 已有（M1） | `Shell/**`、`Translate/SelectionReader.swift`；NSPanel、热键、前台快照、粘贴回原 App、划词时序、设置窗激活 |
 | `mac-clipboard` | 技能 | 已有（M3） | `Clipboard/**`、`Storage/Database.swift` |
-| `mac-translate` | 技能 | 待写（M4 结束） | `Translate/**` |
+| `mac-translate` | 技能 | 已有（M4） | `Translate/**` |
 
 - 规则正文只写在 `.cursor/rules/mac-*.mdc`。技能目录 `.claude/skills/mac-<name>/` 里 `SKILL.md` 只写触发描述和红线速查，`rule.mdc` 是符号链接：`ln -s ../../../.cursor/rules/mac-<name>.mdc .claude/skills/mac-<name>/rule.mdc`。
 - 动手前先读对应技能的 `rule.mdc` 全文。技能写成之前，按 PLAN 对应章节（§4、§5、§9）执行。

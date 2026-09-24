@@ -76,12 +76,62 @@ struct SnapshotProbeTests {
           to: "\(out)/\(name)\(dark ? "-dark" : "").png")
       }
     }
+    try renderTranslate(out)
     try snapshot(
       ClipboardTab(store: store), size: NSSize(width: 520, height: 760), dark: false,
       to: "\(out)/settings-clipboard.png")
     try snapshot(
       HotkeysTab(center: HotKeyCenter()), size: NSSize(width: 520, height: 200), dark: false,
       to: "\(out)/settings-hotkeys.png")
+  }
+
+  private func renderTranslate(_ out: String) throws {
+    let history = try HistoryStore(db: Database(path: ":memory:"))
+    history.add(
+      source: "The quick brown fox", target: .zhHans, result: "敏捷的棕色狐狸", service: "智谱", limit: 0)
+    history.add(source: "会议纪要", target: .en, result: "Meeting minutes", service: "智谱", limit: 0)
+    let services = TranslateServiceStore()
+    let coordinator = TranslateCoordinator(services: services, history: history)
+    let speaker = Speaker()
+    let zhipu = TranslateService.zhipu
+    var gpt = TranslateService.newAI()
+    gpt.name = "GPT-4o mini"
+    gpt.model = "gpt-4o-mini"
+    var claude = TranslateService.newAI()
+    claude.name = "Claude"
+    claude.aiProtocol = .anthropic
+    let states: [(String, (TranslateCoordinator) -> Void)] = [
+      ("translate-empty", { _ in }),
+      (
+        "translate-cards",
+        { c in
+          c.sourceText =
+            "SwiftUI provides views, controls, and layout structures for declaring your app's user interface."
+          c.detected = .en
+          c.target = .zhHans
+          c.cards = [
+            .init(service: zhipu, state: .done("SwiftUI 提供了视图、控件和布局结构，用来**声明**应用的用户界面。")),
+            .init(service: gpt, state: .running("SwiftUI 提供视图、控件以及")),
+            .init(service: claude, state: .failed("密钥无效或没有权限")),
+          ]
+        }
+      ),
+      ("translate-history", { c in c.showsHistory = true }),
+      ("translate-notice", { c in c.showNotice("划词翻译需要「辅助功能」授权") }),
+    ]
+    for dark in [false, true] {
+      for (name, configure) in states {
+        coordinator.beginInput()
+        configure(coordinator)
+        try snapshot(
+          TranslatePanelView(coordinator: coordinator, speaker: speaker),
+          size: NSSize(width: 420, height: 560), dark: dark,
+          to: "\(out)/\(name)\(dark ? "-dark" : "").png")
+      }
+    }
+    try snapshot(
+      TranslateTab(services: services), size: NSSize(width: 540, height: 600), dark: false,
+      to: "\(out)/settings-translate.png")
   }
 
   private func snapshot(_ view: some View, size: NSSize, dark: Bool, to path: String) throws {

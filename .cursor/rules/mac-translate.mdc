@@ -1,0 +1,46 @@
+---
+description: 原生分支翻译规范（语言规则、服务分发与密钥、智谱 / 大模型接口约束、流式与取消、划词与复制即译、旧版导入）
+globs: macos/KittyTools/Translate/**,macos/KittyTools/Settings/TranslateTab.swift,macos/KittyTools/Storage/LegacyImport.swift,macos/KittyTools/Storage/Keychain.swift
+alwaysApply: false
+---
+
+# mac-translate：翻译红线
+
+代码：`Translate/`（Language、TranslateService、Providers/*、HTTP、SSE、TranslateCoordinator、HistoryStore、SelectionReader、Speaker、各视图）、`Storage/Keychain.swift`、`Storage/LegacyImport.swift`。旧版只当行为清单。
+
+## 1. 语言
+- 检测用 NaturalLanguage（限定在 `Lang.allCases`，能分简繁），置信度 < 0.4 或太短返回 nil → 交给服务自己识别。
+- 解析只在 `Lang.resolve`：目标「智能」= 原文是母语译常用外语、否则译母语；固定目标与原文同一种语言（简繁算同一种）→ 改译另一端。发给服务的目标语言永远是具体语言。
+
+## 2. 服务
+- 分发只有 `TranslateService.translate` 的一个 `switch`；加服务 = 一个 `Providers/*.swift` + 一个 case，不建 registry / factory / protocol。
+- 列表顺序 = 卡片顺序；**第一个服务**的结果写历史、按设置自动复制（「复制即译」开着时不自动复制，否则自己触发自己）。
+- 密钥只进钥匙串，账户名 `"<服务 id>.<字段>"`，字段名沿用旧版（`baidu.appId`、`baidu.secret`、`youdao.appKey`、`youdao.appSecret`、`google.apiKey`、`deepl.authKey`、`microsoft.subscriptionKey`、`volcengine.accessKey/secretKey`、`tencent.secretId/secretKey`、`ai:<id>.apiKey`、`zhipu.apiKey`）。删服务连带删密钥。
+
+## 3. 接口约束（外部 API 事实，改之前先查官方文档）
+- **智谱**：`max_tokens` 合法范围 [1, 1024]（`Zhipu.maxTokens`，禁止写死 4096）；混合推理模型默认开思考，必须传 `thinking: {type: disabled}`，否则 content 可能为空；提示词用中文，与大模型英文提示词分开；内置 key 来自不入库的 `Secrets.xcconfig` → Info.plist `KittyBuiltinZhipuKey`。
+- **AI 实例地址补全**（`AIService.endpoint`）：含 `/chat/completions`（Anthropic 为 `/messages`）原样用；末段 `v<数字>` / `openai` 补后缀；否则补 `/v1/...`；没协议补 https；Anthropic 空地址用 api.anthropic.com。
+- **max_tokens**：智谱域名 1024；OpenAI 官方与 Azure 不传；其余 4096；Anthropic 必填 4096。
+- **关思考分档**（`AIService.tiers`，按 host / 模型）：只有 400 / 422 才降一档，401 / 429 / 5xx 直接报错；成功档位按「地址 + 模型」记在 `Mutex` 里。
+- 本机 / 局域网地址（`HTTP.isLocalNetwork`）超时 180s，其余 30s；Info.plist 已开 `NSAllowsArbitraryLoads`（用户会填 http 自建服务）与本地网络用途说明。
+- 错误信息只给用户可读的中文（状态码分类 + 服务端说明前 160 字），**日志和错误里不出现 URL、请求头、密钥**。
+
+## 4. 流式与取消
+- 流式增量交给 `StreamingText`：只剥开头的 `<think>…</think>`（开标签被拆开时先不显示），完成后去整段外层引号；结果为空报 `TranslateError.emptyResult`。
+- **取消时 AsyncThrowingStream 是正常结束、不抛错**：`for try await` 循环之后必须先 `guard !Task.isCancelled`，否则会把半截译文当成完成写进历史（实测踩过的坑的同类）。
+- 新会话 `cancel()` 旧会话全部 Task；浮窗收起也 cancel（省额度）；单卡重试只替换自己的 Task。
+
+## 5. 入口
+- **划词**（`AppDelegate.selectionTranslate`）：忙时忽略重复热键 → 自家浮层是 key 先收起 → `SelectionReader.read`（AX 读选区，0.5s 超时；读不到再备份剪贴板 → ⌘C（显式 `.maskCommand`）→ 轮询 changeCount ≤ 约 500ms → 还原，期间暂停 watcher）→ **取词完成后**才显示浮窗。没授权显示提示；没选区当输入翻译。
+- **复制即译**：watcher 文本回调 → `present(makingKey: false)`（只露出来不抢键盘，靠点外关闭）。
+- **剪贴板预览里的「翻译」**：剪贴板面板保持打开（兄弟浮层）。
+
+## 6. 旧版导入（`LegacyImport`，可重复执行）
+- 旧库 WAL：连同 `-wal`/`-shm` 拷到临时目录读写打开副本 + `quick_check`，原文件只拷不开；读失败中止，绝不用默认值覆盖。
+- 「回到默认」用 NSNull 表示，写入时 `removeObject`：**UserDefaults.set(NSNull) 会直接崩**。
+- 不导热键（共存期间会两边都响应）、主题、窗口位置。本机实测：21 项设置、6 个密钥、3 个服务（旧顺序 DeepSeek → 智谱 → CLIProxyAPI）。
+
+## 7. 测试
+- 纯逻辑都有单测（语言解析、StreamingText、地址 / 参数、局域网判断、历史、导入计划）。
+- 联网冒烟（真请求内置智谱）按需：`TEST_RUNNER_KITTY_LIVE_TRANSLATE=1 xcodebuild … test`。
+- 界面用 SnapshotProbeTests（见 mac-clipboard 技能 §6），翻译浮窗状态靠直接设 `coordinator.cards` 摆出来。

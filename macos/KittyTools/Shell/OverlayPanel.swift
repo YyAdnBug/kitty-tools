@@ -68,14 +68,17 @@ final class OverlayPanel: NSPanel {
   override var canBecomeKey: Bool { true }
   override var canBecomeMain: Bool { false }
 
-  func present() {
+  /// makingKey = false：只露出来、不抢键盘（复制即译），此时靠点外关闭
+  func present(makingKey: Bool = true) {
     if !isVisible { placeForShow() }
     orderFrontRegardless()
-    makeKey()
-    // 首次显示时 SwiftUI 还没建出输入框，先把布局跑完再聚焦
-    contentView?.layoutSubtreeIfNeeded()
-    if let field = initialFirstResponder { makeFirstResponder(field) }
-    if autoHide == .clickOutside, mouseMonitors.isEmpty { installMouseMonitors() }
+    if makingKey {
+      makeKey()
+      // 首次显示时 SwiftUI 还没建出输入框，先把布局跑完再聚焦
+      contentView?.layoutSubtreeIfNeeded()
+      if let field = initialFirstResponder { makeFirstResponder(field) }
+    }
+    if autoHide == .clickOutside || !makingKey, mouseMonitors.isEmpty { installMouseMonitors() }
   }
 
   func hide() {

@@ -23,6 +23,20 @@ enum Prefs {
   static let clipboardClearOnLock = "clipboardClearOnLock"
   static let clipboardShowPreview = "clipboardShowPreview"
 
+  /// 源语言：没设 = 自动检测
+  static let translateSource = "translateSourceLang"
+  /// 目标语言：没设 = 智能（母语 ⇄ 常用外语）
+  static let translateTarget = "translateTargetLang"
+  static let translateNative = "translateNativeLang"
+  static let translateForeign = "translateForeignLang"
+  static let translateRemoveNewlines = "translateDeleteNewline"
+  /// 自动复制第一个服务的译文
+  static let translateAutoCopy = "autoCopy"
+  static let translateHistoryEnabled = "translateHistoryEnabled"
+  static let translateHistoryLimit = "translateHistoryLimit"
+  /// 复制即译：复制文本后自动弹出翻译浮窗（不抢键盘）
+  static let translateCopyToTranslate = "translateClipboardMonitor"
+
   static func registerDefaults() {
     UserDefaults.standard.register(defaults: [
       clipboardHideOnUnfocus: true,
@@ -40,6 +54,13 @@ enum Prefs {
       clipboardClearOnQuit: false,
       clipboardClearOnLock: false,
       clipboardShowPreview: true,
+      translateNative: Lang.zhHans.rawValue,
+      translateForeign: Lang.en.rawValue,
+      translateRemoveNewlines: false,
+      translateAutoCopy: false,
+      translateHistoryEnabled: true,
+      translateHistoryLimit: 500,
+      translateCopyToTranslate: false,
     ])
   }
 }

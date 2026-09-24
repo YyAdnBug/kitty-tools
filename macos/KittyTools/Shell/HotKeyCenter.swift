@@ -99,11 +99,12 @@ struct HotKey: Codable, Hashable {
 }
 
 enum HotKeyAction: String, CaseIterable {
-  case clipboard, inputTranslate
+  case clipboard, selectionTranslate, inputTranslate
 
   var title: String {
     switch self {
     case .clipboard: "剪贴板历史"
+    case .selectionTranslate: "划词翻译"
     case .inputTranslate: "输入翻译"
     }
   }
@@ -111,6 +112,7 @@ enum HotKeyAction: String, CaseIterable {
   var defaultHotKey: HotKey {
     switch self {
     case .clipboard: HotKey(keyCode: kVK_ANSI_V, modifiers: cmdKey | shiftKey)
+    case .selectionTranslate: HotKey(keyCode: kVK_ANSI_T, modifiers: cmdKey | shiftKey)
     case .inputTranslate: HotKey(keyCode: kVK_ANSI_I, modifiers: cmdKey | shiftKey)
     }
   }

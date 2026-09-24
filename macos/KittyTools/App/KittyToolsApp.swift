@@ -6,11 +6,14 @@ import SwiftUI
 @main
 struct KittyToolsApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+  @AppStorage(Prefs.translateCopyToTranslate) private var copyToTranslate = false
 
   var body: some Scene {
     MenuBarExtra("Kitty Tools Native", systemImage: "cat") {
       hotKeyButton("剪贴板历史", .clipboard) { appDelegate.toggleClipboard() }
+      hotKeyButton("划词翻译", .selectionTranslate) { appDelegate.selectionTranslate() }
       hotKeyButton("输入翻译", .inputTranslate) { appDelegate.showInputTranslate() }
+      Toggle("复制即译", isOn: $copyToTranslate)
       Divider()
       Button("设置…") { appDelegate.showSettings() }
         .keyboardShortcut(",")
