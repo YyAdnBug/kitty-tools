@@ -733,19 +733,19 @@ echo "$DMG"
 
 ## 12. 进度与交接（2026-09-24，新会话从这里接着做）
 
-**已完成并推送到 `origin/macos-native`**（单测 48 个全过，`xcrun swift-format lint --strict` 无输出，Debug 构建零警告）：
+**已完成并推送到 `origin/macos-native`**（单测 51 个全过，`xcrun swift-format lint --strict` 无输出，Debug 构建零警告）：
 - M0 工程骨架 / 规则 / DMG 脚本；M1 浮层、热键、粘贴；M2 剪贴板数据层；M3 剪贴板面板（原生重新设计）+ 设置窗 + 快捷键录制；
 - M4 翻译核心（智谱、AI 三协议、划词、复制即译、历史、翻译浮窗与设置页、旧版偏好与密钥导入）；
-- M5 其余 7 家服务（百度、有道、Google、DeepL/DeepLX、微软、火山、腾讯）+ 各服务设置表单 + 导入扩展到全部内置服务。
+- M5 其余 7 家服务（百度、有道、Google、DeepL/DeepLX、微软、火山、腾讯）+ 各服务设置表单 + 导入扩展到全部内置服务；
+- M6 代码部分：`LegacyImport` 数据导入（保留类剪贴板条目 + 图片 + 分组 + 全部翻译历史，一个事务、可重复执行；本机真实旧库演练：保留 10 条全新增，翻译 500 条 → 新增 495、合并 5，第二次全部合并）；通用页（开机自启 `SMAppService.mainApp`、辅助功能与剪贴板访问状态、一键导入）；关于页（版本、发布页、随包 changelog）；首次安装打开通用页、更新后打开关于页（`lastSeenVersion`）；`MARKETING_VERSION = 0.1.0` + changelog 条目。
 
-**待用户手测**（代码已就绪，清单见各里程碑验收标准）：M1 #1–#5、M2 #2、M3 #1–#3、M4 #2–#8、M5 #1（百度 / 有道 / AI 实例需先在「设置 › 通用」点「导入旧版设置」）。
+**进行中**：翻译语言模型重新设计（用户反馈「自动 - 自动」「英文 - 日语」等组合混乱），参考 Bob / Easydict / Pot 等成熟 App 调研后定方案，定稿前不发 0.1.0。
 
-**下一步：M6**（见 §7 M6）
-1. `LegacyImport` 数据部分：旧 `kitty-settings.db` 里保留类剪贴板条目（收藏 / 片段 / 已归组）+ 图片（`clipboard_images/{id}.kchi`，本机全是 PNG 头）+ 分组 + 全部翻译历史，按 §6 的去重合并规则；注意旧库 WAL，走 `LegacyImport.copyDatabase`；旧表结构要先用 sqlite3 读出来再映射到新表（新表见 `ClipboardStore` / `HistoryStore`）。
-2. 通用页补：开机自启（`SMAppService.mainApp`，从 DMG 运行时不注册）、关于（版本号、打开发布页）、更新后首次启动打开关于页并显示 changelog（`lastSeenVersion`）。
-3. 版本号改 0.1.0 + `changelog.json` 条目（用户视角，只写 feat/fix/perf/ui）→ `macos/build-dmg.sh` → GitHub **prerelease**（不勾 latest，见 build-dmg.sh 头部注释）。
+**待用户手测**（代码已就绪，清单见各里程碑验收标准）：M1 #1–#5、M2 #2、M3 #1–#3、M4 #2–#8、M5 #1、M6 #1–#5（导入用「设置 › 通用 › 导入旧版 Kitty Tools 的数据…」）。
 
-**接手须知**：先读 `AGENTS.md`、`.cursor/rules/mac-native.mdc`，改哪块读哪块的技能（mac-overlay-panel / mac-clipboard / mac-translate）。界面改动用 SnapshotProbeTests 屏幕外渲染自检，**不要**为截图弹出浮层（会抢用户键盘）；联网冒烟 `TEST_RUNNER_KITTY_LIVE_TRANSLATE=1`。用户要求：只兼容 macOS、不照搬 Tauri 实现、样式与交互可按 macOS 习惯重新设计、照搬行为前先核对旧逻辑有没有 bug（记入 §11）。
+**发布 0.1.0**：`macos/build-dmg.sh` 出 arm64 DMG → GitHub（`yyandbug-coder/kitty-tools`）**prerelease**、不勾 Set as latest（见 build-dmg.sh 头部注释），**发布前须经用户确认**；tag `macos-v0.1.0` 打在 `macos-native`；发完在 master 工作区跑 `pnpm release:verify`。
+
+**接手须知**：先读 `AGENTS.md`、`.cursor/rules/mac-native.mdc`，改哪块读哪块的技能（mac-overlay-panel / mac-clipboard / mac-translate）。界面改动用 SnapshotProbeTests 屏幕外渲染自检，**不要**为截图弹出浮层（会抢用户键盘）；联网冒烟 `TEST_RUNNER_KITTY_LIVE_TRANSLATE=1`；真实旧库演练 `TEST_RUNNER_KITTY_LEGACY_DRY_RUN=1`。用户要求：只兼容 macOS、不照搬 Tauri 实现、样式与交互可按 macOS 习惯重新设计、照搬行为前先核对旧逻辑有没有 bug（记入 §11）。
 
 ## 11. 实现原则与旧逻辑问题
 
@@ -762,6 +762,7 @@ echo "$DMG"
 | 3 | `src/features/clipboard/lib/clipboard-snippet.ts` | 片段 `{cursor}` 只是被删掉，光标不会定位过去（功能缺失） | 原生版暂保持同样行为并在代码里标 `ponytail:`；要做需在粘贴完成后按左方向键，时序难保证 |
 | 4 | `src-tauri/src/translate/api.rs` 微软翻译（未填 key） | 依赖 `edge.microsoft.com/translate/auth` 换 token，该地址 2026-08 起返回 404，**旧版微软免费翻译已失效** | 改调免登录的 `edge.microsoft.com/translate/translatetext`（字符串数组请求体，返回结构与认知服务相同）；填了 key 仍走 Azure 认知服务 |
 | 5 | `src-tauri/src/translate/api.rs` DeepL 语言码 | 源 / 目标共用一张映射：简繁都映射成 `ZH`（繁体丢失），目标 `EN` / `PT` 已被 DeepL 弃用 | 源用基础码，目标用 `ZH-HANS` / `ZH-HANT` / `EN-US` / `PT-BR`，配单测 |
+| 6 | `src-tauri/src/translate/history_db.rs` `record_blocking`、`FloatingResult` 写历史处 | 翻译历史的 `target_lang` 记的是**设置值**（常为 `auto`；双向互译时也不是实际方向），去重键 `(source_text, target_lang)` 因此让同一原文在「自动」和固定语言下各存一条，应用历史时也还原不出实际目标语言 | 记实际译成的语言；M6 导入时以译文的语种检测为准还原（本机 500 条里 5 条因此合并） |
 
 ## 附录：评审处理记录
 

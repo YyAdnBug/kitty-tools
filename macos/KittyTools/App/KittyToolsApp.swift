@@ -17,11 +17,7 @@ struct KittyToolsApp: App {
       Divider()
       Button("设置…") { appDelegate.showSettings() }
         .keyboardShortcut(",")
-      Button("关于 Kitty Tools Native") {
-        // LSUIElement 应用不先激活，关于面板会被压在其它 App 后面
-        NSApp.activate()
-        NSApp.orderFrontStandardAboutPanel(nil)
-      }
+      Button("关于 Kitty Tools Native") { appDelegate.showSettings(tab: "关于") }
       Button("退出") { NSApp.terminate(nil) }
         .keyboardShortcut("q")
     }

@@ -83,6 +83,14 @@ struct SnapshotProbeTests {
     try snapshot(
       HotkeysTab(center: HotKeyCenter()), size: NSSize(width: 520, height: 200), dark: false,
       to: "\(out)/settings-hotkeys.png")
+    try snapshot(
+      GeneralTab { "" }, size: NSSize(width: 520, height: 480), dark: false,
+      to: "\(out)/settings-general.png")
+    for dark in [false, true] {
+      try snapshot(
+        AboutTab(), size: NSSize(width: 520, height: 460), dark: dark,
+        to: "\(out)/settings-about\(dark ? "-dark" : "").png")
+    }
   }
 
   private func renderTranslate(_ out: String) throws {

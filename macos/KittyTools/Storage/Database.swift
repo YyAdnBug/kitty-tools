@@ -34,7 +34,6 @@ final class Database {
     }
   }
 
-  // ponytail: 不写 deinit 关连接，连接跟随进程一辈子；真要多开再补 close()
   private var handle: OpaquePointer?
 
   /// path 传 ":memory:" 得到内存库（单测用）
@@ -45,6 +44,13 @@ final class Database {
     }
     sqlite3_busy_timeout(handle, 2000)
     try execute("PRAGMA journal_mode = WAL")
+  }
+
+  /// 主库跟随进程一辈子不关；旧版导入的临时副本用完要关，不然删掉的副本文件一直占着磁盘。
+  /// （deinit 做不了：默认 MainActor 隔离下 nonisolated deinit 不能碰 handle）
+  func close() {
+    sqlite3_close_v2(handle)
+    handle = nil
   }
 
   /// 执行一条不关心结果行的语句
@@ -68,6 +74,9 @@ final class Database {
       }
     }
   }
+
+  /// 上一条 INSERT / UPDATE / DELETE 改动的行数（INSERT OR IGNORE 被忽略时为 0）
+  var changes: Int { Int(sqlite3_changes(handle)) }
 
   /// body 抛错则整体回滚
   func transaction(_ body: () throws -> Void) throws {

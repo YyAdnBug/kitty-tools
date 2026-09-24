@@ -37,6 +37,9 @@ enum Prefs {
   /// 复制即译：复制文本后自动弹出翻译浮窗（不抢键盘）
   static let translateCopyToTranslate = "translateClipboardMonitor"
 
+  /// 上次启动的版本号：没有 = 首次安装（打开通用页），和当前不同 = 刚更新（打开关于页看更新内容）
+  static let lastSeenVersion = "lastSeenVersion"
+
   static func registerDefaults() {
     UserDefaults.standard.register(defaults: [
       clipboardHideOnUnfocus: true,

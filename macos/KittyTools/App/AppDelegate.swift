@@ -1,4 +1,5 @@
-// 应用生命周期：单实例检查，按依赖顺序组装各模块（PLAN §4），热键与各翻译入口，退出 / 锁屏时的清理。
+// 应用生命周期：单实例检查，按依赖顺序组装各模块（PLAN §4），热键与各翻译入口，首次安装 / 更新后打开设置窗，
+// 退出 / 锁屏时的清理。
 
 import AppKit
 import SwiftUI
@@ -70,10 +71,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }()
 
   private lazy var settingsWindow = SettingsWindow(tabs: [
-    ("通用", "gearshape", AnyView(GeneralTab(services: serviceStore))),
+    (
+      "通用", "gearshape",
+      AnyView(
+        GeneralTab { [unowned self] in
+          await LegacyImport.run(
+            services: serviceStore, clipboard: clipboardStore, history: historyStore,
+            db: database)
+        })
+    ),
     ("剪贴板", "doc.on.clipboard", AnyView(ClipboardTab(store: clipboardStore))),
     ("翻译", "character.bubble", AnyView(TranslateTab(services: serviceStore))),
     ("快捷键", "keyboard", AnyView(HotkeysTab(center: hotKeys))),
+    ("关于", "info.circle", AnyView(AboutTab())),
   ])
 
   // MARK: 生命周期
@@ -106,6 +116,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     hotKeys.setHandler(for: .selectionTranslate) { [unowned self] in selectionTranslate() }
     hotKeys.setHandler(for: .inputTranslate) { [unowned self] in showInputTranslate() }
     hotKeys.reload()
+    showWelcomeIfNeeded()
   }
 
   func applicationWillTerminate(_ notification: Notification) {
@@ -160,14 +171,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     translatePanel.present(makingKey: false)
   }
 
-  /// 打开设置窗：先按正常隐藏路径收起两个浮层（固定的浮层会盖在设置窗上）
-  func showSettings() {
+  /// 打开设置窗（tab 为标签标题，nil 保持上次的标签）：先按正常隐藏路径收起两个浮层（固定的浮层会盖在设置窗上）
+  func showSettings(tab: String? = nil) {
     clipboardPanel.hide()
     translatePanel.hide()
-    settingsWindow.show()
+    settingsWindow.show(tab: tab)
   }
 
   // MARK: 启动辅助
+
+  /// 首次安装打开通用页（权限、导入旧版）；更新后第一次启动打开关于页看本版更新内容
+  private func showWelcomeIfNeeded() {
+    let last = UserDefaults.standard.string(forKey: Prefs.lastSeenVersion)
+    UserDefaults.standard.set(AboutTab.version, forKey: Prefs.lastSeenVersion)
+    if last == nil {
+      showSettings(tab: "通用")
+    } else if last != AboutTab.version {
+      showSettings(tab: "关于")
+    }
+  }
 
   /// LaunchServices 不保证同一 bundle id 只跑一份（例如 DMG 里一份、/Applications 里又一份）：
   /// 发现更早启动的实例就把它激活，自己退出。只让「更晚的」退出：两份同时启动时

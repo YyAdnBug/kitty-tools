@@ -8,6 +8,7 @@ import SwiftUI
 
 final class SettingsWindow: NSObject, NSWindowDelegate {
   private let window: NSWindow
+  private let tabController: NSTabViewController
 
   init(tabs: [(title: String, symbol: String, view: AnyView)]) {
     let controller = NSTabViewController()
@@ -20,6 +21,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
       item.image = NSImage(systemSymbolName: tab.symbol, accessibilityDescription: tab.title)
       controller.addTabViewItem(item)
     }
+    tabController = controller
     window = NSWindow(contentViewController: controller)
     window.styleMask = [.titled, .closable]
     window.isReleasedWhenClosed = false
@@ -28,7 +30,11 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     window.delegate = self
   }
 
-  func show() {
+  /// tab：要切到的标签标题（如「关于」）；nil 保持上次的标签
+  func show(tab: String? = nil) {
+    if let index = tabController.tabViewItems.firstIndex(where: { $0.label == tab }) {
+      tabController.selectedTabViewItemIndex = index
+    }
     NSApp.setActivationPolicy(.regular)
     if !window.isVisible { window.center() }
     window.makeKeyAndOrderFront(nil)
