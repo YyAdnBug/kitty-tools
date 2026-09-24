@@ -14,6 +14,8 @@ final class OverlayPanel: NSPanel {
   }
 
   var onHide: (() -> Void)?
+  /// ⌘ 组合键先给它处理，返回 true 表示已处理
+  var keyEquivalentHandler: ((NSEvent) -> Bool)?
   private let autoHide: AutoHide
   private let isPinned: () -> Bool
   private let centersOnEveryShow: Bool
@@ -50,7 +52,15 @@ final class OverlayPanel: NSPanel {
     if let minSize { contentMinSize = minSize }
     let host = NSHostingView(rootView: content.ignoresSafeArea())
     host.sizingOptions = []  // 窗口大小由这里定，不让 SwiftUI 的理想尺寸反推窗口
-    contentView = host
+    // 系统毛玻璃底：state 必须 .active，本 App 从不激活，跟随窗口状态会一直是灰的非激活外观
+    let background = NSVisualEffectView()
+    background.material = .popover
+    background.blendingMode = .behindWindow
+    background.state = .active
+    host.frame = background.bounds
+    host.autoresizingMask = [.width, .height]
+    background.addSubview(host)
+    contentView = background
     if let autosaveName, !setFrameUsingName(autosaveName) { center() }
     if let autosaveName { setFrameAutosaveName(autosaveName) }
   }
@@ -78,6 +88,23 @@ final class OverlayPanel: NSPanel {
   func toggle() {
     if isVisible && isKeyWindow { hide() } else { present() }
   }
+
+  override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    if keyEquivalentHandler?(event) == true || super.performKeyEquivalent(with: event) {
+      return true
+    }
+    // 浮层不激活本 App，主菜单的 ⌘C / ⌘V 等不一定收得到：直接发给当前输入框
+    guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+      let action = Self.editActions[event.charactersIgnoringModifiers?.lowercased() ?? ""]
+    else { return false }
+    return NSApp.sendAction(action, to: nil, from: self)
+  }
+
+  private static let editActions: [String: Selector] = [
+    "x": #selector(NSText.cut(_:)), "c": #selector(NSText.copy(_:)),
+    "v": #selector(NSText.paste(_:)), "a": #selector(NSText.selectAll(_:)),
+    "z": Selector(("undo:")),
+  ]
 
   override func cancelOperation(_ sender: Any?) {
     if autoHide == .resignKey && isPinned() { return }

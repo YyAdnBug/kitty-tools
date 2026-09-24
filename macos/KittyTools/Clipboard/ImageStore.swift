@@ -44,6 +44,17 @@ nonisolated struct ImageStore: Sendable {
     return ClipItem.ImageInfo(width: width, height: height, byteCount: png.count, sha256: sha256)
   }
 
+  /// 按需生成缩略图（长边 maxPixel），不解码整张原图
+  @concurrent func thumbnail(for id: UUID, maxPixel: Int) async -> CGImage? {
+    guard let source = CGImageSourceCreateWithURL(url(for: id) as CFURL, nil) else { return nil }
+    let options: [CFString: Any] = [
+      kCGImageSourceCreateThumbnailFromImageAlways: true,
+      kCGImageSourceCreateThumbnailWithTransform: true,
+      kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+    ]
+    return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+  }
+
   func delete(_ id: UUID) {
     try? FileManager.default.removeItem(at: url(for: id))
   }

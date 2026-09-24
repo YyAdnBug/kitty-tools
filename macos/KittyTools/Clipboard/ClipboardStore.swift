@@ -23,6 +23,10 @@ import Observation
   }
 
   private(set) var items: [ClipItem] = []
+  /// 按创建时间升序
+  private(set) var groups: [ClipGroup] = []
+  /// 已从列表拿掉、等撤销窗口结束才真正删的条目
+  private(set) var pendingDeletion: [ClipItem] = []
   @ObservationIgnored let images: ImageStore
   @ObservationIgnored private let db: Database
   @ObservationIgnored private var isRecognizing = false
@@ -50,6 +54,16 @@ import Observation
         snippet INTEGER NOT NULL DEFAULT 0, note TEXT, group_id TEXT)
       """)
     try db.execute("CREATE INDEX IF NOT EXISTS clips_copied_at ON clips(copied_at DESC)")
+    try db.execute(
+      "CREATE TABLE IF NOT EXISTS clip_groups(id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at REAL NOT NULL)"
+    )
+    groups = try db.query("SELECT id, name, created_at FROM clip_groups ORDER BY created_at") {
+      row in
+      guard let id = row.text(0).flatMap(UUID.init(uuidString:)), let name = row.text(1),
+        let created = row.double(2)
+      else { return nil }
+      return ClipGroup(id: id, name: name, createdAt: Date(timeIntervalSinceReferenceDate: created))
+    }.compactMap { $0 }
     items = try db.query("SELECT \(Self.columns) FROM clips ORDER BY copied_at DESC, rowid DESC") {
       row in
       Self.decode(row)
@@ -108,12 +122,122 @@ import Observation
 
   func delete(_ ids: Set<UUID>) {
     guard !ids.isEmpty else { return }
-    for item in items where ids.contains(item.id) && item.kind == .image { images.delete(item.id) }
+    purge(items.filter { ids.contains($0.id) })
     items.removeAll { ids.contains($0.id) }
-    for id in ids { searchKeys[id] = nil }
+  }
+
+  /// 可撤销的删除：先从列表拿掉，commitDeletion 时才真正删库删图片。上一批没提交的先提交
+  func deleteWithUndo(_ ids: Set<UUID>) {
+    commitDeletion()
+    pendingDeletion = items.filter { ids.contains($0.id) }
+    items.removeAll { ids.contains($0.id) }
+  }
+
+  /// 撤销：按复制时间插回原位
+  func undoDeletion() {
+    for item in pendingDeletion {
+      items.insert(item, at: items.firstIndex { $0.copiedAt < item.copiedAt } ?? items.endIndex)
+    }
+    pendingDeletion = []
+  }
+
+  func commitDeletion() {
+    purge(pendingDeletion)
+    pendingDeletion = []
+  }
+
+  /// 改条目的可编辑字段并落库（正文、收藏、备注、片段、分组）。正文改了就丢掉格式
+  func update(_ ids: Set<UUID>, _ change: (inout ClipItem) -> Void) {
+    for index in items.indices where ids.contains(items[index].id) {
+      var item = items[index]
+      change(&item)
+      if item.text != items[index].text { item.richType = nil }
+      items[index] = item
+      searchKeys[item.id] = nil
+      write {
+        try db.execute(
+          """
+          UPDATE clips SET text = ?, favorite = ?, note = ?, snippet = ?, group_id = ?, rich_type = ?,
+            rich_data = CASE WHEN ? IS NULL THEN NULL ELSE rich_data END WHERE id = ?
+          """,
+          [
+            item.text, item.favorite, item.note, item.isSnippet, item.groupID?.uuidString,
+            item.richType?.rawValue, item.richType?.rawValue, item.id.uuidString,
+          ])
+      }
+    }
+  }
+
+  /// 全部已收藏 → 全部取消，否则全部收藏。取消收藏时普通历史连带清掉备注（片段的备注保留）
+  func toggleFavorite(_ ids: Set<UUID>) {
+    let favorite = !items.filter { ids.contains($0.id) }.allSatisfy(\.favorite)
+    update(ids) { item in
+      item.favorite = favorite
+      if !favorite && !item.isSnippet { item.note = nil }
+    }
+  }
+
+  /// 存成片段：已有同样正文的条目就把它标成片段并置顶，否则新建
+  func saveSnippet(_ text: String) {
+    if let existing = items.first(where: { $0.kind == .text && $0.text == text }) {
+      update([existing.id]) { $0.isSnippet = true }
+      bump(existing.id)
+    } else {
+      var item = ClipItem(kind: .text)
+      item.text = text
+      item.isSnippet = true
+      record(item)
+    }
+  }
+
+  /// 新建分组：名称去空白后截到 24 字，空名或与已有分组重名返回 nil
+  @discardableResult
+  func createGroup(named rawName: String) -> ClipGroup? {
+    guard let name = validGroupName(rawName) else { return nil }
+    let group = ClipGroup(id: UUID(), name: name, createdAt: .now)
+    groups.append(group)
+    write {
+      try db.execute(
+        "INSERT INTO clip_groups(id, name, created_at) VALUES (?, ?, ?)",
+        [group.id.uuidString, name, group.createdAt.timeIntervalSinceReferenceDate])
+    }
+    return group
+  }
+
+  func renameGroup(_ id: UUID, to rawName: String) -> Bool {
+    guard let index = groups.firstIndex(where: { $0.id == id }),
+      let name = validGroupName(rawName, excluding: id)
+    else { return false }
+    groups[index].name = name
+    write { try db.execute("UPDATE clip_groups SET name = ? WHERE id = ?", [name, id.uuidString]) }
+    return true
+  }
+
+  /// 删除分组只解除条目的归属，不删条目
+  func deleteGroup(_ id: UUID) {
+    update(Set(items.filter { $0.groupID == id }.map(\.id))) { $0.groupID = nil }
+    groups.removeAll { $0.id == id }
+    write { try db.execute("DELETE FROM clip_groups WHERE id = ?", [id.uuidString]) }
+  }
+
+  private func validGroupName(_ rawName: String, excluding id: UUID? = nil) -> String? {
+    let name = String(rawName.trimmingCharacters(in: .whitespacesAndNewlines).prefix(24))
+    guard !name.isEmpty, !groups.contains(where: { $0.name == name && $0.id != id }) else {
+      return nil
+    }
+    return name
+  }
+
+  /// 删库删图片（条目本身已经不在 items 里，或调用方随后移除）
+  private func purge(_ doomed: [ClipItem]) {
+    guard !doomed.isEmpty else { return }
+    for item in doomed where item.kind == .image { images.delete(item.id) }
+    for item in doomed { searchKeys[item.id] = nil }
     write {
       try db.transaction {
-        for id in ids { try db.execute("DELETE FROM clips WHERE id = ?", [id.uuidString]) }
+        for item in doomed {
+          try db.execute("DELETE FROM clips WHERE id = ?", [item.id.uuidString])
+        }
       }
     }
   }

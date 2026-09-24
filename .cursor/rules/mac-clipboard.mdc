@@ -1,0 +1,52 @@
+---
+description: 原生分支剪贴板历史规范（采集、存储、上限、搜索、面板交互与视觉、实测坑）
+globs: macos/KittyTools/Clipboard/**,macos/KittyTools/Storage/Database.swift,macos/KittyTools/Settings/ClipboardTab.swift
+alwaysApply: false
+---
+
+# mac-clipboard：剪贴板历史红线
+
+代码：`Clipboard/`（ClipItem、ClipboardStore、ClipboardWatcher、ClipboardFilter、ImageStore、OCR、Search、ContentForm、Snippet、ClipboardPanelModel + 各视图）、`Storage/Database.swift`。旧版只当行为清单，实现与界面都是原生重新设计。
+
+## 1. 数据
+- 表 `clips`（一行一条，rich_data 只在粘贴时读）+ `clip_groups`；时间存 `Date.timeIntervalSinceReferenceDate`（REAL，读写无精度损失；存 1970 秒会有浮点误差，读回不相等）。
+- 列表按 `copied_at DESC, rowid DESC` 读：同一时刻的两条，后插入的在前，和内存顺序一致。
+- 「留下的条目」只看 `ClipItem.isRetained`（收藏 ∨ 片段 ∨ 已归组），条数 / 天数 / 图片占用上限、退出与锁屏清空都只动普通历史。
+- 同内容再次复制 = 原条目挪到最前（保留 id、收藏、备注、分组、OCR），格式以最近一次为准。
+- 图片存 `images/<id>.png`，按 PNG 字节 SHA256 去重；编码 / 缩略图 / OCR 都在 `@concurrent`，结果回主线程写库。
+- 删除走 `deleteWithUndo` → 面板收起、下一次删除或 toast 到期时 `commitDeletion` 才删库删文件。
+
+## 2. 采集（ClipboardWatcher）
+- 只能轮询 `changeCount`（0.3s）。顺序：自家写入（`Paster.ownChangeCount`）→ nspasteboard.org 隐私标记 → 排除 App（名称或 bundle ID 关键词）→ 文件 → 文本（附 RTF/HTML，≤2MB）→ PNG/TIFF。
+- 启动时直接对齐当前 changeCount，不记启动前的内容。
+- App Nap 实测（空闲 11 分钟后 1 秒内连复制 3 条全部入库）：**不需要** `beginActivity`，别加。
+- 敏感文本：`sk-` / `bearer ` 后的 token 要求词边界 + 字符集 + 长度 + 含数字（修正旧版 sk-proj 漏拦、bearer 误拦），卡号整段 13–19 位且过 Luhn。
+
+## 3. 搜索
+- `Search`：空白分词 AND，大小写 / 全半角 / 变音符号不敏感；权重 备注 3 > 正文 / 图片文字 / 路径 2 > 来源 1。
+- 必须走 `ClipboardStore.search`（折叠后 UTF-8 字节缓存 + `memmem`）：直接 `range(of:options:)` 5000 条要 1 秒，缓存后 9ms（Debug）。改条目正文、备注、OCR、来源的地方都要清对应的 `searchKeys`。
+
+## 4. 面板交互（macOS 习惯，不沿用旧版）
+| 输入 | 行为 |
+|---|---|
+| 单击 / ⌘单击 / ⇧单击 | 选中预览 / 切换勾选 / 从锚点整段选 |
+| 双击、↩ | 粘贴（多选全是文本 → 按复制先后换行合并成一条并记新历史；含图片文件 → 逐条粘贴间隔 250ms） |
+| ⌥↩ / ⌘↩ / ⌘C | 纯文本粘贴 / 仅复制 / 仅复制（搜索框有选中文字时 ⌘C 交还系统） |
+| ⌘1–9 | 直接粘贴第 N 条 |
+| ↑↓ / ⇧↑↓ | 移动 / 扩展多选 |
+| ⌘D ⌘⌫ ⌘Z ⌘E ⌘N ⌘A ⌘, | 收藏 / 删除（不确认）/ 撤销删除 / 编辑 / 新建片段 / 全选（搜索框为空时）/ 设置 |
+| Esc | 关对话框 → 清空搜索词 → 取消多选 → 关面板 |
+- 焦点始终在搜索框（`CommandTextField`）；编辑命令走 doCommandBy，⌘ 组合键走 `OverlayPanel.keyEquivalentHandler`。
+- 对话框画在面板里（`DialogOverlay`），不开 sheet 窗口；输入框用 `isDialogField`，关闭后焦点回搜索框。
+- 每次隐藏都 `reset()`：搜索、筛选、多选、选中回第一条，并提交未撤销的删除。
+
+## 5. 视觉
+- 命令面板式：大号搜索框、范围胶囊 + 生效筛选标签 +「筛选」菜单、两行式列表行（选中强调色填充反白）、检查器式预览（信息区 + 两列操作）、底栏键帽提示。
+- 背景 `NSVisualEffectView(.popover)` 且 `state = .active`（本 App 从不激活，跟随窗口状态会一直灰）。
+- 可点的都用 `Button`（`.plain` 样式），不用 `onTapGesture`；`ForEach` 的 id 用元素 id，不用 offset。
+
+## 6. 界面自检
+- 用 `SnapshotProbeTests`：屏幕外、不激活的窗口渲染各状态（含深色）写 PNG，**不弹面板、不抢键盘、不需要屏幕录制权限**：
+  `TEST_RUNNER_KITTY_SNAPSHOT_DIR=<目录> xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools test -only-testing:KittyToolsTests/SnapshotProbeTests`
+- **禁止**用启动参数 / 热键在用户使用时弹出面板截图：非激活面板一出现就接管键盘，用户正在打的字会进搜索框（实测踩过）。
+- `ImageRenderer` 画不了 AppKit 控件（NSTextField、Picker、Menu 全是占位块），别用它做界面检查。

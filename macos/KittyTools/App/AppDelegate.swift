@@ -6,18 +6,25 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 只有真正跑起来的实例才做退出清理：让位退出的重复实例不能碰数据库
   private var isRunning = false
-  private let hotKeys = HotKeyCenter()
+  let hotKeys = HotKeyCenter()
   private lazy var clipboardStore = Self.openClipboardStore()
   private lazy var watcher = ClipboardWatcher(store: clipboardStore)
 
-  private lazy var clipboardPanel = OverlayPanel(
-    size: NSSize(width: 680, height: 520), autoHide: .clickOutside,
-    isPinned: { !UserDefaults.standard.bool(forKey: Prefs.clipboardHideOnUnfocus) },
-    content: ClipboardPanelView(
-      onPaste: { [unowned self] in paste($0) },
-      onOpenTranslate: { [unowned self] in translatePanel.present() }
-    )
-    .environment(clipboardStore))
+  private lazy var clipboardModel = ClipboardPanelModel(store: clipboardStore)
+
+  private lazy var clipboardPanel: OverlayPanel = {
+    let model = clipboardModel
+    let panel = OverlayPanel(
+      size: NSSize(width: 680, height: 520), autoHide: .clickOutside,
+      isPinned: { !UserDefaults.standard.bool(forKey: Prefs.clipboardHideOnUnfocus) },
+      content: ClipboardPanelView(model: model))
+    panel.keyEquivalentHandler = { [unowned model] in model.handleKeyEquivalent($0) }
+    panel.onHide = { [unowned model] in model.reset() }
+    model.hidePanel = { [unowned panel] in panel.hide() }
+    model.openTranslate = { [unowned self] _ in translatePanel.present() }
+    model.openSettings = { [unowned self] in showSettings() }
+    return panel
+  }()
 
   private lazy var translatePanel: OverlayPanel = {
     let panel = OverlayPanel(
@@ -31,6 +38,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     return panel
   }()
+
+  private lazy var settingsWindow = SettingsWindow(tabs: [
+    ("剪贴板", "doc.on.clipboard", AnyView(ClipboardTab(store: clipboardStore))),
+    ("快捷键", "keyboard", AnyView(HotkeysTab(center: hotKeys))),
+  ])
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     // 单测以本 App 为宿主运行：不碰真实数据、不起热键
@@ -55,8 +67,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
     }
 
-    hotKeys.register(.clipboardDefault) { [unowned self] in toggleClipboard() }
-    hotKeys.register(.inputTranslateDefault) { [unowned self] in showInputTranslate() }
+    hotKeys.setHandler(for: .clipboard) { [unowned self] in toggleClipboard() }
+    hotKeys.setHandler(for: .inputTranslate) { [unowned self] in showInputTranslate() }
+    hotKeys.reload()
   }
 
   func applicationWillTerminate(_ notification: Notification) {
@@ -72,11 +85,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   func showInputTranslate() { translatePanel.present() }
 
-  private func paste(_ item: ClipItem) {
+  /// 打开设置窗：先按正常隐藏路径收起两个浮层（固定的浮层会盖在设置窗上）
+  func showSettings() {
     clipboardPanel.hide()
-    Paster.write(clipboardStore.pasteboardItems(for: item))
-    clipboardStore.bump(item.id)
-    if !Paster.pasteToFrontmost() { Permissions.requestAccessibility() }
+    translatePanel.hide()
+    settingsWindow.show()
+  }
+
+  /// 程序坞图标被点（设置窗打开期间才有程序坞图标）
+  func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+    showSettings()
+    return false
   }
 
   /// LaunchServices 不保证同一 bundle id 只跑一份（例如 DMG 里一份、/Applications 里又一份）：

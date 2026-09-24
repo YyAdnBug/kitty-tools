@@ -21,6 +21,7 @@ enum Prefs {
   static let clipboardImageOCR = "clipboardImageOcr"
   static let clipboardClearOnQuit = "clipboardClearOnExit"
   static let clipboardClearOnLock = "clipboardClearOnLock"
+  static let clipboardShowPreview = "clipboardShowPreview"
 
   static func registerDefaults() {
     UserDefaults.standard.register(defaults: [
@@ -38,6 +39,7 @@ enum Prefs {
       clipboardImageOCR: true,
       clipboardClearOnQuit: false,
       clipboardClearOnLock: false,
+      clipboardShowPreview: true,
     ])
   }
 }

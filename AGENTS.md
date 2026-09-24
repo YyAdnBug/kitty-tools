@@ -52,6 +52,10 @@ xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools -configuration
 xcrun swift-format lint --strict -r macos/KittyTools
 xcrun swift-format format -i -r macos/KittyTools
 
+# 界面截图自检：屏幕外渲染各状态（含深色）为 PNG，不弹窗、不抢键盘
+TEST_RUNNER_KITTY_SNAPSHOT_DIR=/tmp/kitty-shots xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -only-testing:KittyToolsTests/SnapshotProbeTests
+
 # 打 Release DMG（产物在 macos/build/）
 macos/build-dmg.sh
 
@@ -67,7 +71,7 @@ tccutil reset Accessibility com.yy.kitty-tools.native.dev
 | `mac-native` | 常驻规则 `.cursor/rules/mac-native.mdc` | 已有 | 始终加载 |
 | `ponytail` | 常驻规则 `.cursor/rules/ponytail.mdc` | 已有 | 只给 Cursor；Claude 侧由用户级插件生效 |
 | `mac-overlay-panel` | 技能 | 已有（M1） | `Shell/**`、`Translate/SelectionReader.swift`；NSPanel、热键、前台快照、粘贴回原 App、划词时序、设置窗激活 |
-| `mac-clipboard` | 技能 | 待写（M3 结束） | `Clipboard/**`、`Storage/Database.swift` |
+| `mac-clipboard` | 技能 | 已有（M3） | `Clipboard/**`、`Storage/Database.swift` |
 | `mac-translate` | 技能 | 待写（M4 结束） | `Translate/**` |
 
 - 规则正文只写在 `.cursor/rules/mac-*.mdc`。技能目录 `.claude/skills/mac-<name>/` 里 `SKILL.md` 只写触发描述和红线速查，`rule.mdc` 是符号链接：`ln -s ../../../.cursor/rules/mac-<name>.mdc .claude/skills/mac-<name>/rule.mdc`。

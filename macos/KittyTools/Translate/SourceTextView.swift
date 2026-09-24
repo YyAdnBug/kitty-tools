@@ -1,12 +1,17 @@
-// 翻译原文输入框（包一层 NSTextView）：Enter 提交、Shift+Enter 换行。回车走 doCommandBy，
-// 输入法组字期间由输入法消费、不会误提交。挂进窗口时设为 initialFirstResponder。
+// 多行输入框（包一层 NSTextView）：翻译原文、剪贴板备注 / 编辑 / 片段都用它。回车走 doCommandBy，
+// 输入法组字期间由输入法消费、不会误提交。主输入框挂进窗口时设为 initialFirstResponder；
+// 对话框里的输入框出现时抢焦点、消失时把焦点还给主输入框。
 
 import AppKit
 import SwiftUI
 
 struct SourceTextView: NSViewRepresentable {
   @Binding var text: String
-  var onSubmit: () -> Void
+  /// true：Enter 提交、Shift+Enter 换行；false：Enter 换行（编辑正文）
+  var submitsOnEnter = true
+  var isDialogField = false
+  var onCancel: (() -> Void)?
+  var onSubmit: () -> Void = {}
 
   func makeNSView(context: Context) -> FocusScrollView {
     let textView = NSTextView(frame: .zero)
@@ -22,6 +27,7 @@ struct SourceTextView: NSViewRepresentable {
     textView.textContainer?.widthTracksTextView = true
     textView.delegate = context.coordinator
     let scroll = FocusScrollView()
+    scroll.isDialogField = isDialogField
     scroll.drawsBackground = false
     scroll.hasVerticalScroller = true
     scroll.documentView = textView
@@ -49,11 +55,16 @@ struct SourceTextView: NSViewRepresentable {
     func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
       switch selector {
       case #selector(NSResponder.insertNewline(_:)):
-        if NSApp.currentEvent?.modifierFlags.contains(.shift) == true { return false }
+        guard parent.submitsOnEnter, NSApp.currentEvent?.modifierFlags.contains(.shift) != true
+        else { return false }
         parent.onSubmit()
         return true
       case #selector(NSResponder.cancelOperation(_:)):
-        textView.window?.cancelOperation(nil)
+        if let onCancel = parent.onCancel {
+          onCancel()
+        } else {
+          textView.window?.cancelOperation(nil)
+        }
         return true
       default:
         return false
@@ -62,9 +73,22 @@ struct SourceTextView: NSViewRepresentable {
   }
 
   final class FocusScrollView: NSScrollView {
+    var isDialogField = false
+
     override func viewDidMoveToWindow() {
       super.viewDidMoveToWindow()
-      window?.initialFirstResponder = documentView
+      if isDialogField {
+        window?.makeFirstResponder(documentView)
+      } else {
+        window?.initialFirstResponder = documentView
+      }
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+      if isDialogField, newWindow == nil, let window {
+        window.makeFirstResponder(window.initialFirstResponder)
+      }
+      super.viewWillMove(toWindow: newWindow)
     }
   }
 }

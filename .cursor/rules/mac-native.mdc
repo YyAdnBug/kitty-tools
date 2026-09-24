@@ -35,6 +35,7 @@ alwaysApply: true
 - 日期显示统一用 `Date.FormatStyle`。
 - 单行文本用 `.lineLimit(1)` + `.truncationMode(.tail)`。
 - 跟随系统强调色和系统材质，不做主题 preset；优先标准控件（HIG）。
+- **界面与交互也不沿用旧版**（用户要求）：按 macOS 习惯重新设计，参考 HIG 与 swiftui-expert-skill；界面改动用 SnapshotProbeTests 屏幕外渲染自检，禁止为截图弹出浮层抢用户键盘。
 - 刻意的简化写 `ponytail:` 注释，写明上限和升级路径；为某个 App 补的时序延迟必须注明是哪个 App。
 
 ## 5. 剪贴板写入

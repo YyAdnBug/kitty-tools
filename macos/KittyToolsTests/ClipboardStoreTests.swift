@@ -108,4 +108,69 @@ struct ClipboardStoreTests {
     #expect(first.sha256 == second.sha256)  // 同一份数据编码结果稳定，去重靠它
     #expect(await images.save(Data("not an image".utf8), isPNG: true, id: UUID()) == nil)
   }
+
+  @Test func favoriteToggleClearsNoteOfOrdinaryItemsOnly() throws {
+    let (store, _) = try makeStore()
+    var snippet = text("s")
+    snippet.isSnippet = true
+    store.record(snippet)
+    store.record(text("h"))
+    let ids = Set(store.items.map(\.id))
+    store.toggleFavorite(ids)
+    #expect(store.items.allSatisfy { $0.favorite })
+    store.update(ids) { $0.note = "备注" }
+    store.toggleFavorite(ids)
+    #expect(store.items.first { $0.isSnippet }?.note == "备注")
+    #expect(store.items.first { !$0.isSnippet }?.note == nil)
+  }
+
+  @Test func editDropsRichFormat() throws {
+    let (store, db) = try makeStore()
+    var rich = text("原文")
+    rich.richType = .html
+    store.record(rich, rich: Data("<b>原文</b>".utf8))
+    store.update([rich.id]) { $0.text = "改过" }
+    let (reloaded, _) = try makeStore(db)
+    #expect(reloaded.items[0].text == "改过" && reloaded.items[0].richType == nil)
+    #expect(reloaded.pasteboardItems(for: reloaded.items[0])[0].data(forType: .html) == nil)
+  }
+
+  @Test func undoDeletionRestoresPositionAndCommitPurges() throws {
+    let (store, db) = try makeStore()
+    for (name, age) in [("c", 3.0), ("b", 2), ("a", 1)] { store.record(text(name, ago: age)) }
+    let b = try #require(store.items.first { $0.text == "b" })
+    store.deleteWithUndo([b.id])
+    #expect(store.items.map(\.text) == ["a", "c"])
+    store.undoDeletion()
+    #expect(store.items.map(\.text) == ["a", "b", "c"])
+    store.deleteWithUndo([b.id])
+    store.commitDeletion()
+    let (reloaded, _) = try makeStore(db)
+    #expect(reloaded.items.map(\.text) == ["a", "c"])
+  }
+
+  @Test func snippetsMergeWithSameText() throws {
+    let (store, _) = try makeStore()
+    store.record(text("常用"))
+    store.saveSnippet("常用")
+    store.saveSnippet("新的")
+    #expect(store.items.count == 2)
+    #expect(store.items.allSatisfy { $0.isSnippet })
+  }
+
+  @Test func groups() throws {
+    let (store, db) = try makeStore()
+    let work = try #require(store.createGroup(named: "  工作  "))
+    #expect(work.name == "工作")
+    #expect(store.createGroup(named: "工作") == nil)  // 重名
+    #expect(store.createGroup(named: "   ") == nil)
+    #expect(store.createGroup(named: String(repeating: "长", count: 30))?.name.count == 24)
+    store.record(text("x"))
+    store.update([store.items[0].id]) { $0.groupID = work.id }
+    #expect(store.renameGroup(work.id, to: "项目"))
+    store.deleteGroup(work.id)
+    let (reloaded, _) = try makeStore(db)
+    #expect(reloaded.items[0].groupID == nil)
+    #expect(reloaded.groups.map(\.name) == [String(repeating: "长", count: 24)])
+  }
 }

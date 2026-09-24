@@ -8,17 +8,21 @@ import SwiftUI
 struct CommandTextField: NSViewRepresentable {
   @Binding var text: String
   var placeholder: String
+  /// 面板里的对话框输入框：出现时抢焦点，消失时把焦点还给面板的主输入框（搜索框）
+  var isDialogField = false
+  var fontSize: CGFloat = 14
   /// 返回 true 表示已处理（moveUp: / moveDown: / insertNewline: / cancelOperation: …）。
   /// 没处理的 cancelOperation: 交给窗口（浮层据此关闭）
   var onCommand: (Selector) -> Bool = { _ in false }
 
   func makeNSView(context: Context) -> FocusField {
     let field = FocusField()
+    field.isDialogField = isDialogField
     field.placeholderString = placeholder
     field.isBordered = false
     field.drawsBackground = false
     field.focusRingType = .none
-    field.font = .systemFont(ofSize: 15)
+    field.font = .systemFont(ofSize: fontSize)
     field.cell?.usesSingleLineMode = true
     field.cell?.lineBreakMode = .byTruncatingTail
     field.delegate = context.coordinator
@@ -53,9 +57,22 @@ struct CommandTextField: NSViewRepresentable {
   }
 
   final class FocusField: NSTextField {
+    var isDialogField = false
+
     override func viewDidMoveToWindow() {
       super.viewDidMoveToWindow()
-      window?.initialFirstResponder = self
+      if isDialogField {
+        window?.makeFirstResponder(self)
+      } else {
+        window?.initialFirstResponder = self
+      }
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+      if isDialogField, newWindow == nil, let window {
+        window.makeFirstResponder(window.initialFirstResponder)
+      }
+      super.viewWillMove(toWindow: newWindow)
     }
   }
 }

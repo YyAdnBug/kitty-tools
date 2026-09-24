@@ -14,12 +14,13 @@ nonisolated enum Search {
   /// ponytail: 正文只索引前 2 万字，超长文本后面的内容搜不到；真有需要再改成分段索引
   static let maxIndexedCharacters = 20_000
 
+  /// 搜索和预览高亮共用的比较口径
+  static let options: String.CompareOptions = [
+    .caseInsensitive, .diacriticInsensitive, .widthInsensitive,
+  ]
+
   static func fold(_ text: String) -> [UInt8] {
-    Array(
-      text.folding(
-        options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil
-      )
-      .utf8)
+    Array(text.folding(options: options, locale: nil).utf8)
   }
 
   static func key(for item: ClipItem) -> Key {

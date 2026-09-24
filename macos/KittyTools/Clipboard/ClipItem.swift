@@ -53,3 +53,10 @@ struct ClipItem: Identifiable, Hashable, Sendable {
     }
   }
 }
+
+/// 用户自建的剪贴板分组
+struct ClipGroup: Identifiable, Hashable, Sendable {
+  let id: UUID
+  var name: String
+  let createdAt: Date
+}
