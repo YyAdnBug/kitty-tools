@@ -26,6 +26,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     try FileManager.default.createDirectory(at: images, withIntermediateDirectories: true)
     return try ClipboardStore(db: database, images: ImageStore(directory: images))
   }
+  private lazy var launcherUsage: LauncherUsage = Self.openOrQuit { [database] in
+    try LauncherUsage(db: database)
+  }
   private lazy var historyStore: HistoryStore = Self.openOrQuit { [database] in
     try HistoryStore(db: database)
   }
@@ -37,6 +40,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   // MARK: 窗口
 
   private lazy var clipboardModel = ClipboardPanelModel(store: clipboardStore)
+  private lazy var launcherModel = LauncherModel(usage: launcherUsage)
+
+  private lazy var launcherPanel: OverlayPanel = {
+    let model = launcherModel
+    let panel = OverlayPanel(
+      size: NSSize(width: 680, height: LauncherPanelView.searchHeight), topAnchored: true,
+      autoHide: .clickOutside,
+      isPinned: { !UserDefaults.standard.bool(forKey: Prefs.launcherHideOnUnfocus) },
+      content: LauncherPanelView(model: model) { [unowned self] in showSettings() })
+    panel.keyEquivalentHandler = { [unowned model] in model.handleKeyEquivalent($0) }
+    panel.onHide = { [unowned model] in model.didHide() }
+    model.hidePanel = { [unowned panel] in panel.hide() }
+    model.resize = { [unowned panel] in panel.setContentHeight($0) }
+    model.runAction = { [unowned self] in runLauncherAction($0) }
+    return panel
+  }()
 
   private lazy var clipboardPanel: OverlayPanel = {
     let model = clipboardModel
@@ -64,10 +83,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       content: TranslatePanelView(coordinator: coordinator, speaker: speaker) { [unowned self] in
         showSettings()
       })
-    panel.onHide = { [unowned self] in
-      // 收起即作废进行中的请求（省额度）；剪贴板面板还开着就把 key 还给它
+    panel.onHide = { [unowned self, unowned panel] in
+      // 收起即作废进行中的请求（省额度）；把 key 还给之前处于 key 的浮层（剪贴板面板 / 启动器）。
+      // 已有别的窗口成了 key（因失焦而收起）就不抢
       coordinator.cancel()
-      if clipboardPanel.isVisible { clipboardPanel.makeKey() }
+      if NSApp.keyWindow == nil, let previous = panel.previousKeyPanel, previous.isVisible {
+        previous.makeKey()
+      }
     }
     return panel
   }()
@@ -79,7 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         GeneralTab { [unowned self] in
           await LegacyImport.run(
             services: serviceStore, clipboard: clipboardStore, history: historyStore,
-            db: database)
+            launcher: launcherUsage, db: database)
         })
     ),
     ("剪贴板", "doc.on.clipboard", AnyView(ClipboardTab(store: clipboardStore))),
@@ -118,7 +140,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     hotKeys.setHandler(for: .selectionTranslate) { [unowned self] in selectionTranslate() }
     hotKeys.setHandler(for: .inputTranslate) { [unowned self] in showInputTranslate() }
     hotKeys.setHandler(for: .screenshotTranslate) { [unowned self] in screenshotTranslate() }
+    hotKeys.setHandler(for: .launcher) { [unowned self] in toggleLauncher() }
     hotKeys.reload()
+    launcherModel.rescanApps()  // 约 65ms，放在启动时，第一次呼出就不用等
     showWelcomeIfNeeded()
   }
 
@@ -136,9 +160,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   // MARK: 入口
 
+  /// 启动器和剪贴板面板没固定时只开一个（PLAN §10）
   func toggleClipboard() {
+    // 已开着但不是 key 时 toggle 是「聚焦」而不是收起：同样要收起另一个
+    if !(clipboardPanel.isVisible && clipboardPanel.isKeyWindow) {
+      hideUnpinned(launcherPanel, Prefs.launcherHideOnUnfocus)
+    }
     if !clipboardPanel.isVisible { clipboardStore.enforceLimits() }
     clipboardPanel.toggle()
+  }
+
+  func toggleLauncher() {
+    if !(launcherPanel.isVisible && launcherPanel.isKeyWindow) {
+      hideUnpinned(clipboardPanel, Prefs.clipboardHideOnUnfocus)
+    }
+    if !launcherPanel.isVisible { launcherModel.prepareForShow() }
+    launcherPanel.toggle()
+  }
+
+  private func hideUnpinned(_ panel: OverlayPanel, _ hideOnUnfocusKey: String) {
+    if UserDefaults.standard.bool(forKey: hideOnUnfocusKey) { panel.hide() }
+  }
+
+  /// 启动器里的内置动作（id 沿用旧版，见 LauncherItem.actions）；启动器已收起
+  private func runLauncherAction(_ id: String) {
+    switch id {
+    case "clipboard": toggleClipboard()
+    case "translate-input": showInputTranslate()
+    case "translate-screenshot": screenshotTranslate()
+    default: showSettings()
+    }
   }
 
   func showInputTranslate() {
@@ -153,6 +204,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard !isReadingSelection, !isCapturing else { return }
     isReadingSelection = true
     if clipboardPanel.isKeyWindow { clipboardPanel.hide() }
+    if launcherPanel.isKeyWindow { launcherPanel.hide() }
     if translatePanel.isKeyWindow { translatePanel.orderOut(nil) }
     Task {
       defer { isReadingSelection = false }
@@ -175,7 +227,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard !isCapturing, !isReadingSelection else { return }
     isCapturing = true
     let defaults = UserDefaults.standard
-    if defaults.bool(forKey: Prefs.clipboardHideOnUnfocus) { clipboardPanel.hide() }
+    hideUnpinned(clipboardPanel, Prefs.clipboardHideOnUnfocus)
+    hideUnpinned(launcherPanel, Prefs.launcherHideOnUnfocus)
     if !defaults.bool(forKey: Prefs.floatingPinned) { translatePanel.hide() }
     Task {
       defer { isCapturing = false }
@@ -237,6 +290,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 打开设置窗（tab 为标签标题，nil 保持上次的标签）：先按正常隐藏路径收起两个浮层（固定的浮层会盖在设置窗上）
   func showSettings(tab: String? = nil) {
     clipboardPanel.hide()
+    launcherPanel.hide()
     translatePanel.hide()
     settingsWindow.show(tab: tab)
   }

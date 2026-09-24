@@ -237,6 +237,15 @@ struct LegacyImportTests {
     #expect(second.added == 0 && second.merged == first.added + first.merged)
     #expect(second.historyAdded == 0 && history.counts.total == first.historyAdded)
     #expect(clipboard.items.count == first.added)
+
+    let read = { (name: String) in
+      try? Data(contentsOf: LegacyImport.directory.appending(path: name))
+    }
+    let launcher = try LegacyImport.launcherEntries(
+      frecency: read("launcher_frecency.json"), affinity: read("launcher_query_affinity.json"))
+    print(
+      "启动器记录：全局 \(launcher.filter { $0.query.isEmpty }.count)、按查询 \(launcher.filter { !$0.query.isEmpty }.count)，"
+        + "类型 \(Dictionary(grouping: launcher, by: \.kind.rawValue).mapValues(\.count))")
   }
 
   /// 旧版 kitty-settings.db 里用到的表（sqlite3 .schema 读出来的，列顺序一致）

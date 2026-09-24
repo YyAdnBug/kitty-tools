@@ -100,7 +100,7 @@ struct HotKey: Codable, Hashable {
 
 /// 追加动作只能加在末尾：注册时用 allCases 的下标当热键 id
 enum HotKeyAction: String, CaseIterable {
-  case clipboard, selectionTranslate, inputTranslate, screenshotTranslate
+  case clipboard, selectionTranslate, inputTranslate, screenshotTranslate, launcher
 
   var title: String {
     switch self {
@@ -108,6 +108,7 @@ enum HotKeyAction: String, CaseIterable {
     case .selectionTranslate: "划词翻译"
     case .inputTranslate: "输入翻译"
     case .screenshotTranslate: "截图翻译"
+    case .launcher: "启动器"
     }
   }
 
@@ -118,6 +119,8 @@ enum HotKeyAction: String, CaseIterable {
     case .inputTranslate: HotKey(keyCode: kVK_ANSI_I, modifiers: cmdKey | shiftKey)
     // 用户旧版实际用的键；不占各 App 的 ⌘⇧S「另存为」。15.0–15.1 上只带 ⌥ 的组合注册不了，快捷键页会提示
     case .screenshotTranslate: HotKey(keyCode: kVK_ANSI_S, modifiers: optionKey)
+    // 用户旧版实际用的键（15.0–15.1 上只带 ⌥ 的组合注册不了，快捷键页会提示）
+    case .launcher: HotKey(keyCode: kVK_Space, modifiers: optionKey)
     }
   }
 

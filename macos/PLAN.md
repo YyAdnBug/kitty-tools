@@ -238,6 +238,7 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 | `Clipboard/` | `ClipboardWatcher.swift`、`ClipboardStore.swift`、`ClipItem.swift`、`ClipboardFilter.swift`、`ContentForm.swift`、`Search.swift`、`ImageStore.swift`、`OCR.swift`、`ClipboardPanelView.swift`、`ClipRowView.swift`、`PreviewView.swift`、`Dialogs.swift` |
 | `Translate/` | `TranslateCoordinator.swift`、`LanguageResolver.swift`、`SelectionReader.swift`、`SSE.swift`、`Providers/`（`Zhipu`、`AIService`、`Baidu`、`Youdao`、`Google`、`DeepL`、`Microsoft`、`Volcengine`、`Tencent` 各一个 `.swift`）、`TranslatePanelView.swift`、`ProviderCardView.swift`、`HistoryStore.swift`、`HistoryView.swift` |
 | `Settings/` | `GeneralTab.swift`、`HotkeysTab.swift`、`ClipboardTab.swift`、`TranslateTab.swift`、`AboutTab.swift` |
+| `Launcher/` | `LauncherItem.swift`（结果项与内置动作）、`AppCatalog.swift`（App 目录 + 中文名 + 拼音）、`LauncherMatch.swift`（匹配与排序纯函数）、`LauncherUsage.swift`（使用记录表）、`LauncherModel.swift`、`LauncherPanelView.swift` |
 | `Screenshot/` | `ScreenCapture.swift`（逐屏冻结帧）、`RegionSelector.swift`（每屏一个框选遮罩 + 选区到像素的换算）；截图翻译提前到 Phase 1 做，标注 / 钉图 / 保存仍在 Phase 3 |
 
 各 provider 函数签名统一，由 coordinator 里的一个 `switch` 分发。不建 registry 或 factory。
@@ -710,13 +711,20 @@ echo "$DMG"
 
 这里只列约束，现在不写任何脚手架。
 
-**启动器（Phase 2）**
-- 默认的 ⌥Space 只在 macOS 15.0–15.1 上注册失败（-9868），15.2 起可用。录制器已经把 -9868 映射成提示，不需要换默认组合或改用 `CGEventTap`。
-- 未固定的启动器和剪贴板面板只能同时开一个（`W:931-953`），复用 `OverlayPanel` 实现。
-- 如果用 Apple Events 控制 Finder 或 System Events（`src-tauri/src/launcher/mod.rs:1071`），在 Hardened Runtime 下需要 `com.apple.security.automation.apple-events` entitlement 和 `NSAppleEventsUsageDescription`，缺了会静默失败并返回 -1743。App 继续不开沙盒。
-- `cb` 指令需要给 `ClipboardStore` 加一个查询：文本条目做 LIKE 匹配，取最近 30 条。
-- 需要导入 `launcher_frecency.json` 和 `launcher_query_affinity.json`。
-- App 图标用 `NSWorkspace.icon(forFile:)` + `NSCache`，不做磁盘缓存。
+**启动器与截图工具的迁移计划（2026-09-24 定，按用户真实使用数据排优先级）**
+
+用户数据：启动器 3 个月 834 次，网址 82%（书签 / 手输）、App 次之，文件 8 次、kill 7 次、系统命令 0 次；截图历史 24 条里 5 条有标注、全是矩形，美化 / 水印 / 长截图 / 整屏 0 次，钉图 24 次（至 09-17），08-13 后没存过文件；热键 ⌥Space / ⌥A。
+
+| 里程碑 | 内容 | 状态 |
+|---|---|---|
+| M7 启动器核心 | `OverlayPanel`（`topAnchored` + `setContentHeight`）、App 目录（文件名 / 显示名 / 中文名 / 拼音全拼与首字母）、内置动作、匹配分档（含跨词首字母 vsc）、`launcher_usage` 使用记录（τ 全局 14 天 / 查询 3 天）、最近使用、旧 JSON 导入、与剪贴板面板互斥 | 已完成 |
+| M8 启动器补全 | Chrome 书签（导入时还原被转小写的网址）、网址 / 路径直达（展开 `~`、认 localhost:端口、`Safari.app` 不算网址）、网页搜索兜底、计算器（递归下降，不用 NSExpression）、`cb`（`ClipboardStore.search` 取文本前 30 条）、设置 › 启动器 | 待做 |
+| M9 截图框选 + 输出 | 抽出和截图翻译共用的会话（权限 → 冻结 → 框选）；`RegionSelector` 加截图模式（悬停高亮窗口、单击截整窗、确认后 8 手柄调整 + 方向键微调、工具栏）；取色（放大镜 + C 复制颜色）；复制（同时进剪贴板历史）/ ⌘S 快速保存 / 另存为 / 钉图 | 待做 |
+| M10 标注 | 矩形、箭头、文字、马赛克，6 色 3 档线宽，撤销；标注存整屏坐标（调整选区不丢）；识字（本机、识别打码后的图）、翻译按钮 | 待做 |
+| M11 | `open` / `find` 文件搜索（NSMetadataQuery）、kill（GUI App 用 `terminate()`，⌘↩ 才强杀） | 待做 |
+
+**不迁**：系统命令（锁屏已坏 §11 #24，且要 Apple Events 授权）、ts / b64 / url / case / uuid / ip 小工具、网站图标、Safari / Firefox 书签；长截图、延时、美化 / 水印、比例条、Enter 全屏、焦点窗口截图、窗口置顶、屏幕清洁、WebP；截图历史与钉图历史（复制的截图进剪贴板历史，作为唯一的历史）。
+- 热键：启动器 ⌥Space、截图 ⌥A（用户实际用的键）；编辑器工具键不带修饰的 1–4、钉图 T（沿用用户改键），不做编辑器内改键。⌥Space 只在 15.0–15.1 上注册失败，录制器已提示。
 
 **截图（Phase 3）**
 - 屏幕录制权限（TCC）：用 `CGPreflightScreenCaptureAccess` / `CGRequestScreenCaptureAccess` 检查和申请，同样绑定签名。授权提示由系统提供，App 不能自定义文案（没有对应的 Info.plist 键）。macOS 15 会周期性地再次询问屏幕录制授权。
@@ -737,6 +745,7 @@ echo "$DMG"
 - M6 代码部分：`LegacyImport` 数据导入（保留类剪贴板条目 + 图片 + 分组 + 全部翻译历史，一个事务、可重复执行；本机真实旧库演练：保留 10 条全新增，翻译 500 条 → 新增 495、合并 5，第二次全部合并）；通用页（开机自启 `SMAppService.mainApp`、辅助功能与剪贴板访问状态、一键导入）；关于页（版本、发布页、随包 changelog）；首次安装打开通用页、更新后打开关于页（`lastSeenVersion`）；`MARKETING_VERSION = 0.1.0` + changelog 条目。
 
 - 翻译语言模型重做（用户反馈「自动 - 自动」「英文 - 日语」混乱；调研 Bob / Easydict / Pot / DeepL / Google 后按 §11「翻译语言」实现，单测 54 个全过）。
+- M7 启动器核心（§10 迁移计划）：⌥Space 呼出，App 目录（中文名 / 拼音 / 跨词首字母）、内置动作、使用记录与最近使用、旧版启动器记录导入、与剪贴板面板互斥。
 - 截图翻译（提前到 Phase 1，§10）：⌥S → 冻结帧逐屏框选 → Vision 本机识字（自动识别语种、不给提示）→ 原文记剪贴板历史 → 多服务翻译；通用页加「屏幕录制」授权行；剪贴板图片 OCR 顺带修掉只认中英（§11 #21）。单测 58 个全过。
 
 **暂不发版**（用户决定，2026-09-24）：0.1.0 只在本地用 `macos/build-dmg.sh` 打包自用（arm64、Apple Development 签名、无 get-task-allow），不打 tag、不发 GitHub / GitCode；以后要发时再按下面的「发布 0.1.0」步骤，且须先经用户确认。
@@ -794,6 +803,33 @@ echo "$DMG"
 | 21 | `clipboard/ocr_local.rs:14`（原生 M2 照搬到 `Clipboard/OCR.swift`） | Vision 语言写死简中 / 繁中 / 英文：日文假名丢失、韩文为空、俄文变拉丁乱码 | 只开自动识别语种、不给提示（实测给第一 / 第二语言作提示时，中日韩混排图里日文、韩文整行丢失），配单测 |
 | 22 | `translate/api.rs:1640` | 智谱识图 max_tokens 1024 且不看 finish_reason，长截图被静默截断 | 不接智谱识图 |
 | 23 | `src/features/settings/lib/translate-provider-settings.tsx:127,197-201` | 设置说明与实际不符（「由划词默认引擎翻译」「百度 OCR 兜底」） | 这些设置项不迁 |
+| 24 | `launcher/mod.rs:1059-1065` | 锁屏调用的 CGSession 在 15.7 上已不存在，命令必失败 | 系统命令不迁 |
+| 25 | `system_apps.rs:468-540` + `installed_apps.rs:529-535` | 9 个系统 App 各出现两行，使用次数也被拆开 | 只有一个 App 目录，不写死系统 App（M7） |
+| 26 | `installed_apps.rs:602-619` | 标题用文件名，中文名和拼音搜不到（本机 7/50 个 App 显示名与文件名不同） | 索引显示名、文件名、zh loctable / strings 里的中文名及其拼音（M7） |
+| 27 | `mod.rs:634-648,1283-1312` | `~` 不展开，`./` 按 GUI 进程目录解析 | 展开 `~`，不认相对路径（M8） |
+| 28 | `files.rs:901-913` | find 回车打开父目录、文件没被选中 | `activateFileViewerSelecting`（M11） |
+| 29 | `recency.rs:143-153,247,356` | 另起线程非原子整份写 JSON，可能乱序覆盖；key 用 `::` 拼接有歧义 | SQLite 表，每个字段一列（M7） |
+| 30 | `recency.rs:157-164`、`mod.rs:832-856` | 网址被转成小写再打开 | 存原始网址；导入时用书签还原大小写（M8） |
+| 31 | `recency.rs:171-175` | 次数永不衰减；注释里的「半衰期」其实是时间常数 | 每用一次：衰减后的分 + 1（M7） |
+| 32 | `mod.rs:1516-1541`、`kill.rs:795-805` | 搜索结果页、reveal_path、kill_port 也记进频率，挤占「最近使用」 | 只记能还原的类型；导入时丢掉搜索结果页（M7） |
+| 33 | `mod.rs:1394-1399` | 先隐藏再执行，失败提示显示在看不见的窗口里 | 先执行，成功才收起；失败在面板里显示（M7） |
+| 34 | `windows/mod.rs:1249-1287` | 启动器总在上次那块屏幕上弹出 | 鼠标所在屏（M7） |
+| 35 | `launcherCommandToken.ts:158-167` | 刚打全的指令词要按两次 ↩ | 不做 chip，↩ 直接执行首项（M8） |
+| 36 | `mod.rs:1339-1346` | `Safari.app` 被当成网址，`localhost:3000` 反而不认 | 去掉 .app 后缀判断，识别 localhost[:端口]（M8） |
+| 37 | `launcherCalculator.ts:32-47` | `2024-01-01` 被算成 2022 并置顶，还吞掉网页搜索 | 日期形式不算式；计算结果不压掉网页搜索（M8） |
+| 38 | `launcherFilePrefix.ts:12-29` | 「find my」被文件搜索截走 | 指令模式的列表末尾仍附整句的 App 匹配（M11） |
+| 39 | `kill.rs:1678-1696` | 普通结束 400ms 后自动升级 SIGKILL | GUI App 用 `terminate()`，其它进程只发 SIGTERM；⌘↩ 才强杀（M11） |
+| 40 | `bookmarks.rs:139-147` | 30 秒缓存期内不看开关变化 | 按文件修改时间和开关失效（M8） |
+| 41 | `useWindowHitTest.ts:41-50`、`window_hit_test.rs:221` | 窗口候选按面积排而不是 Z 序，会选中被遮挡的小窗；读的是实时窗口列表 | 冻结时拍窗口快照，按 Z 序命中（M9） |
+| 42 | `capture.rs:119-122` | 长边硬压到 4096px，5K / 6K 屏截图变糊 | 保持原生像素（M9） |
+| 43 | `RegionSelectApp:870-915`、`history_db.rs:274` | 调整选区会静默清空全部标注 | 标注存整屏坐标，导出时才裁剪（M10） |
+| 44 | `ScreenshotEditor:797`、`commands.rs:533-558` | 识字把未打码的原图上传智谱 | 本机 Vision，识别打码后的合成图（M10） |
+| 45 | `export.rs:115-137` | JPEG 透明区域变黑；WebP 无视质量设置 | 首版只出 PNG（M9） |
+| 46 | `export.rs:245-252,349-362` | 同一秒快速保存两次，前一张被覆盖 | 重名追加序号（M9） |
+| 47 | `excalidraw-layer.tsx:104-108,455-489`、`ScreenshotEditor:1186-1189` | 高亮颜色选择不生效；所有工具共用线宽；改样式不作用于选中的标注 | 样式改动作用于选中的标注（M10） |
+| 48 | `pin_click_through.rs:24-33`、`windows/mod.rs:4457-4461` | 钉图穿透时全局抢走 ⇧⌘P；钉图显示时抢焦点 | 不做穿透；钉图窗口不激活 App（M9） |
+| 49 | `history_db.rs:234-313`、`pin_history_db.rs:206-230` | 缩略图泄漏（本机 351 个孤儿、目录 43MB）；淘汰时删掉仍开着的钉图的 PNG | 不做这两个历史 |
+| 50 | `focused_window.rs:120-144` | 窗口置顶在 macOS 上是空实现，却提示「已切换」 | 不迁 |
 
 ## 附录：评审处理记录
 
@@ -849,3 +885,5 @@ echo "$DMG"
 - 翻译服务：全部迁移（D11）。
 - CPU 架构：只支持 Apple 芯片（arm64），应用基本自用（D10）。
 - 其余决策点按推荐执行。
+- 截图翻译（2026-09-24）：只用 Vision 本机识字；原文写剪贴板历史；默认热键 ⌥S。
+- 启动器 / 截图（2026-09-24）：启动器首版做 App、书签、直达、网页搜索、最近使用、内置动作、计算器、cb，文件搜索与 kill 放 M11；标注首版做矩形、箭头、文字、马赛克；附加功能只做取色（长截图、延时、美化 / 水印不做）；做钉图，不做截图历史和钉图历史。

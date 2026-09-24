@@ -5,6 +5,8 @@ import Foundation
 enum Prefs {
   /// 剪贴板面板点外即关；面板上的图钉 = 把它关掉
   static let clipboardHideOnUnfocus = "clipboardHideOnUnfocus"
+  /// 启动器点外即关（同上，键名沿用旧版）
+  static let launcherHideOnUnfocus = "launcherHideOnUnfocus"
   /// 翻译浮窗固定：失焦不隐藏、Esc 不关闭
   static let floatingPinned = "floatingPinned"
 
@@ -44,6 +46,7 @@ enum Prefs {
   static func registerDefaults() {
     UserDefaults.standard.register(defaults: [
       clipboardHideOnUnfocus: true,
+      launcherHideOnUnfocus: true,
       floatingPinned: false,
       clipboardHistoryMax: 100,
       clipboardRetentionDays: 7,

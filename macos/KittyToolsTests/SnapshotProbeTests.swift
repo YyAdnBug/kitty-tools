@@ -92,6 +92,7 @@ struct SnapshotProbeTests {
         to: "\(out)/settings-about\(dark ? "-dark" : "").png")
     }
     try renderSelection(out)
+    try renderLauncher(out)
   }
 
   private func renderTranslate(_ out: String) throws {
@@ -142,6 +143,35 @@ struct SnapshotProbeTests {
     try snapshot(
       TranslateTab(services: services), size: NSSize(width: 540, height: 600), dark: false,
       to: "\(out)/settings-translate.png")
+  }
+
+  /// 启动器：最近使用、搜索结果（中文名 / 拼音）、没有结果；深浅色
+  private func renderLauncher(_ out: String) throws {
+    let usage = try LauncherUsage(db: Database(path: ":memory:"))
+    let apps = [
+      "/System/Applications/Calculator.app", "/System/Applications/Utilities/Activity Monitor.app",
+      "/System/Applications/Utilities/Terminal.app", "/System/Applications/Notes.app",
+      "/System/Applications/System Settings.app",
+    ].map(AppCatalog.item(path:))
+    let model = LauncherModel(usage: usage, apps: apps)
+    let linux = LauncherItem(
+      kind: .url, target: "https://linux.do/latest", title: "linux.do/latest", subtitle: "")
+    for (item, times) in [(apps[1], 3), (linux, 5), (LauncherItem.actions[0], 1), (apps[2], 2)] {
+      for _ in 0..<times { usage.record(item, query: "") }
+    }
+    for dark in [false, true] {
+      for (name, query) in [
+        ("launcher-recent", ""), ("launcher-search", "huo"), ("launcher-empty", "zzzz"),
+      ] {
+        model.query = query
+        let rows = model.results.isEmpty ? 1 : min(Double(model.results.count), 8.5)
+        try snapshot(
+          LauncherPanelView(model: model),
+          size: NSSize(width: 680, height: LauncherPanelView.searchHeight + 9 + rows * 44),
+          dark: dark,
+          to: "\(out)/\(name)\(dark ? "-dark" : "").png")
+      }
+    }
   }
 
   /// 截图翻译的框选遮罩：待选（整屏轻暗 + 提示）和拖动中（选区外变暗）

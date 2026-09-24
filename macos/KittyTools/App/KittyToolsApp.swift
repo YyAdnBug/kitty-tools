@@ -10,6 +10,7 @@ struct KittyToolsApp: App {
 
   var body: some Scene {
     MenuBarExtra("Kitty Tools Native", systemImage: "cat") {
+      hotKeyButton("启动器", .launcher) { appDelegate.toggleLauncher() }
       hotKeyButton("剪贴板历史", .clipboard) { appDelegate.toggleClipboard() }
       hotKeyButton("划词翻译", .selectionTranslate) { appDelegate.selectionTranslate() }
       hotKeyButton("截图翻译", .screenshotTranslate) { appDelegate.screenshotTranslate() }

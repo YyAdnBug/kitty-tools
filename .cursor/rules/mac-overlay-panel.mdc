@@ -9,7 +9,7 @@ alwaysApply: false
 M1 实测结论 + master 旧规则 `macos-overlay-panel.mdc` 删减。代码：`Shell/OverlayPanel.swift`、`HotKeyCenter.swift`、`Paster.swift`、`Permissions.swift`、`CommandTextField.swift`，`Translate/SourceTextView.swift`。
 
 ## 1. 浮层只有 OverlayPanel 一种
-- 剪贴板面板、翻译浮窗（Phase 2 启动器同理）都是 `OverlayPanel` 实例，**禁止**另写 NSPanel / NSWindow 子类。唯一例外是截图框选遮罩 `SelectionOverlay`（§8）：无边框、全屏、每屏一个、用完即释放，和浮层的行为没有交集。
+- 剪贴板面板、翻译浮窗、启动器（`topAnchored`：鼠标所在屏、顶边在可见区 20% 处，`setContentHeight` 顶边不动地伸缩）都是 `OverlayPanel` 实例，**禁止**另写 NSPanel / NSWindow 子类。唯一例外是截图框选遮罩 `SelectionOverlay`（§8）：无边框、全屏、每屏一个、用完即释放，和浮层的行为没有交集。
 - `styleMask` 在 init 里一次写全，含 `.nonactivatingPanel`（初始化后再加不生效）；`.titled + .fullSizeContentView` + 隐藏三个按钮，拿系统圆角、阴影和缩放。
 - 显示只走 `present()`（`orderFrontRegardless` + `makeKey`）；**永远不对浮层调 `NSApp.activate`**，否则前台 App 变成自己，⌘V / ⌘C 会落空。
 - `NSHostingView.sizingOptions = []`：窗口尺寸由 `OverlayPanel` 定，不让 SwiftUI 理想尺寸反推。
@@ -22,7 +22,8 @@ M1 实测结论 + master 旧规则 `macos-overlay-panel.mdc` 删减。代码：`
 | 固定时 | 点外不关，Esc 仍关 | 失焦不关，Esc 也不关 |
 | 例外 | 点中任一 `OverlayPanel` 不关（兄弟豁免，点击时实时判断） | key 让给自己的 sheet（`attachedSheet != nil`）不算失焦 |
 - 鼠标监听在 `present()` 装、`hide()` 卸，成对出现；不依赖 resignKey 判断点外（非激活应用的 resignKey 时机不可靠）。
-- 翻译浮窗收起时剪贴板面板还开着 → 把 key 还给剪贴板面板（`onHide`）。
+- 翻译浮窗收起时剪贴板面板 / 启动器还开着 → 把 key 还给它（`onHide`）。
+- 启动器和剪贴板面板没固定时只开一个（`toggleLauncher` / `toggleClipboard` 打开时收起对方没固定的那个）；划词、截图、打开设置也会收起启动器。
 - `present(makingKey: false)`：只露出来、不抢键盘（复制即译用），此时不论哪种面板都装点外监听、靠点外关闭。
 
 ## 3. 浮层里的输入框

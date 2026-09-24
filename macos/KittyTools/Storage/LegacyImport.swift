@@ -37,7 +37,7 @@ enum LegacyImport {
   /// 「设置 › 通用」的导入按钮：设置与密钥 → 剪贴板与翻译历史，遇错即停。返回逐行结果（✓ / ✗ 开头）
   static func run(
     services: TranslateServiceStore, clipboard: ClipboardStore, history: HistoryStore,
-    db: Database
+    launcher: LauncherUsage, db: Database
   ) async -> String {
     var lines: [String] = []
     do {
@@ -57,6 +57,11 @@ enum LegacyImport {
       lines.append(
         "✓ 翻译历史：新增 \(report.historyAdded)、合并 \(report.historyMerged)"
           + (report.historySkipped > 0 ? "、跳过 \(report.historySkipped)（原文或译文为空）" : ""))
+      let launcherAdded = try launcher.importLegacy(
+        launcherEntries(
+          frecency: try readIfExists("launcher_frecency.json"),
+          affinity: try readIfExists("launcher_query_affinity.json")))
+      lines.append("✓ 启动器使用记录：新增 \(launcherAdded)")
     } catch {
       lines.append("✗ " + ((error as? LocalizedError)?.errorDescription ?? "\(error)"))
     }
@@ -80,6 +85,76 @@ enum LegacyImport {
     if plan.launchAtLogin, LaunchAtLogin.isInstalled { try? LaunchAtLogin.set(true) }
     return
       "已导入 \(plan.preferences.count) 项设置、\(plan.secrets.count) 个密钥、\(plan.services?.count ?? 0) 个翻译服务"
+  }
+
+  /// 旧版启动器的两份 JSON（{items: {key: {count, last_ms}}}）→ 使用记录。纯函数（只查文件是否存在），配单测。
+  /// frecency 的 key 是「类型::目标」，查询记录的是「规范化查询::类型::目标」。丢弃：原生没有的类型
+  /// （结束进程 / 端口、复制文本、旧版粘贴、系统命令等）、搜索结果页网址（修旧版把它们记进频率，§11 #32）
+  static func launcherEntries(frecency: Data?, affinity: Data?) throws -> [LauncherUsage.Entry] {
+    var result: [LauncherUsage.Entry] = []
+    for (data, hasQuery) in [(frecency, false), (affinity, true)] {
+      guard let data else { continue }
+      guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+        let items = json["items"] as? [String: [String: Any]]
+      else { throw Failure(errorDescription: "旧版启动器记录格式不认识") }
+      for (key, value) in items {
+        var parts = key.components(separatedBy: "::")
+        let query = hasQuery && parts.count >= 3 ? parts.removeFirst() : ""
+        guard parts.count >= 2, let count = value["count"] as? Double,
+          let lastMS = value["last_ms"] as? Double,
+          case (let kind, let target, let title)? = launcherTarget(
+            kind: parts[0], payload: parts.dropFirst().joined(separator: "::"))
+        else { continue }
+        result.append(
+          LauncherUsage.Entry(
+            query: LauncherUsage.normalize(query), kind: kind, target: target, title: title,
+            score: count, usedAt: Date(timeIntervalSince1970: lastMS / 1000)))
+      }
+    }
+    return result
+  }
+
+  private static func launcherTarget(kind: String, payload: String) -> (
+    LauncherItem.Kind, String, String
+  )? {
+    switch kind {
+    case "open_url":
+      guard let url = URL(string: payload), let host = url.host(), !isSearchResultPage(url)
+      else { return nil }
+      let path = url.path(percentEncoded: false)
+      let port = url.port.map { ":\($0)" } ?? ""  // 同一 IP 不同端口的服务要分得开
+      return (.url, payload, host + port + (path == "/" ? "" : path))
+    case "open_path" where payload.hasSuffix(".app"):
+      return (.app, payload, AppCatalog.item(path: payload).title)
+    case "open_path":
+      return (.path, payload, (payload as NSString).lastPathComponent)
+    case "mac_open":
+      // 旧版写死的系统 App 只存了名字（如 Activity Monitor）
+      let candidates = ["/System/Applications", "/System/Applications/Utilities", "/Applications"]
+        .map { "\($0)/\(payload).app" }
+      guard let path = candidates.first(where: FileManager.default.fileExists) else { return nil }
+      return (.app, path, AppCatalog.item(path: path).title)
+    case "action":
+      guard let action = LauncherItem.actions.first(where: { $0.target == payload }) else {
+        return nil
+      }
+      return (.action, payload, action.title)
+    default:
+      return nil
+    }
+  }
+
+  private static func isSearchResultPage(_ url: URL) -> Bool {
+    let host = url.host() ?? ""
+    return (host.contains("google.") && url.path() == "/search")
+      || (host.hasSuffix("bing.com") && url.path() == "/search")
+      || (host.hasSuffix("baidu.com") && url.path() == "/s")
+  }
+
+  private static func readIfExists(_ name: String) throws -> Data? {
+    let url = directory.appending(path: name)
+    guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+    return try Data(contentsOf: url)
   }
 
   /// 旧库副本 → 剪贴板保留条目、分组、图片与全部翻译历史。先把要写的全读出来，再在一个事务里写；
@@ -275,6 +350,7 @@ enum LegacyImport {
     }
     for (old, new) in [
       ("clipboardHideOnUnfocus", Prefs.clipboardHideOnUnfocus),
+      ("launcherHideOnUnfocus", Prefs.launcherHideOnUnfocus),
       ("clipboardHistoryMax", Prefs.clipboardHistoryMax),
       ("clipboardHistoryRetentionDays", Prefs.clipboardRetentionDays),
       ("clipboardImageCacheMaxMb", Prefs.clipboardImageBudgetMB),
