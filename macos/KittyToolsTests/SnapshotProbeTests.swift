@@ -9,7 +9,8 @@ import Testing
 //   TEST_RUNNER_KITTY_SNAPSHOT_DIR=/tmp/shots xcodebuild -project macos/KittyTools.xcodeproj \
 //     -scheme KittyTools test -only-testing:KittyToolsTests/SnapshotProbeTests
 struct SnapshotProbeTests {
-  nonisolated private static let directory = ProcessInfo.processInfo.environment["KITTY_SNAPSHOT_DIR"]
+  nonisolated private static let directory =
+    ProcessInfo.processInfo.environment["KITTY_SNAPSHOT_DIR"]
 
   @Test(.enabled(if: directory != nil)) func renderPanels() throws {
     let out = try #require(Self.directory)
