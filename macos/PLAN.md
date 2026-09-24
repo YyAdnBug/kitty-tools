@@ -741,7 +741,7 @@ echo "$DMG"
 
 - 翻译语言模型重做（用户反馈「自动 - 自动」「英文 - 日语」混乱；调研 Bob / Easydict / Pot / DeepL / Google 后按 §11「翻译语言」实现，单测 54 个全过）。
 
-**待发布**：0.1.0 的 DMG 已由 `macos/build-dmg.sh` 产出并自检（arm64、Apple Development 签名、无 get-task-allow），**等用户确认后**再打 tag、发 GitHub prerelease。
+**暂不发版**（用户决定，2026-09-24）：0.1.0 只在本地用 `macos/build-dmg.sh` 打包自用（arm64、Apple Development 签名、无 get-task-allow），不打 tag、不发 GitHub / GitCode；以后要发时再按下面的「发布 0.1.0」步骤，且须先经用户确认。
 
 **待用户手测**（代码已就绪，清单见各里程碑验收标准）：M1 #1–#5、M2 #2、M3 #1–#3、M4 #2–#8、M5 #1、M6 #1–#5（导入用「设置 › 通用 › 导入旧版 Kitty Tools 的数据…」），以及 §11「翻译语言」的几种组合。
 
