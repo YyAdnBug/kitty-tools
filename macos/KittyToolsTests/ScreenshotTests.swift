@@ -1,4 +1,5 @@
-// 截图翻译单测：选区（点）→ 冻结帧像素矩形的换算（各种缩放、y 翻转、夹边），以及 Vision 识别多语种
+// 截图 / 截图翻译单测：选区（点）→ 冻结帧像素矩形的换算（各种缩放、y 翻转、夹边）、窗口快照（Z 序、坐标翻转、过滤）、
+// 手柄调整与平移、上次区域落到哪块屏、放大镜取色（sRGB、y 方向）、快速保存不覆盖，以及 Vision 识别多语种
 // （锁住 §11 #21：写死一组语言、或给语言提示时，混排图里日文假名、韩文、俄文会丢）。
 
 import AppKit
@@ -39,6 +40,120 @@ struct ScreenshotTests {
         == CGRect(x: 90, y: 85, width: 10, height: 15))
   }
 
+  @Test func windowFramesKeepZOrder() {
+    let own: pid_t = 42
+    func window(
+      _ rect: CGRect, layer: Int = 0, pid: Int32 = 7, id: Int = 1, alpha: Double = 1
+    ) -> [String: Any] {
+      [
+        kCGWindowBounds as String: rect.dictionaryRepresentation, kCGWindowLayer as String: layer,
+        kCGWindowOwnerPID as String: pid, kCGWindowNumber as String: id,
+        kCGWindowAlpha as String: alpha,
+      ]
+    }
+    let info = [
+      window(CGRect(x: 100, y: 100, width: 200, height: 100)),  // 前面的小窗
+      window(CGRect(x: 0, y: 0, width: 800, height: 600)),  // 后面的大窗
+      window(CGRect(x: 0, y: 0, width: 1512, height: 24), layer: 25),  // 菜单栏图标层：不要
+      window(CGRect(x: 0, y: 0, width: 300, height: 300), alpha: 0),  // 全透明：不要
+      window(CGRect(x: 0, y: 0, width: 10, height: 300)),  // 太窄：不要
+      window(CGRect(x: 0, y: 0, width: 300, height: 300), pid: own, id: 9),  // 自家浮层：不要
+      window(CGRect(x: 500, y: 500, width: 100, height: 100), pid: own, id: 5),  // 钉图：要
+      window(CGRect(x: 10, y: 10, width: 120, height: 200), layer: 101),  // 展开的菜单：要
+    ]
+    let frames = ScreenCapture.windowFrames(info, ownPID: own, keeping: [5], primaryHeight: 1000)
+    // CG 原点在左上、y 向下 → AppKit 原点在左下
+    #expect(
+      frames == [
+        CGRect(x: 100, y: 800, width: 200, height: 100),
+        CGRect(x: 0, y: 400, width: 800, height: 600),
+        CGRect(x: 500, y: 400, width: 100, height: 100),
+        CGRect(x: 10, y: 790, width: 120, height: 200),
+      ])
+    // 命中按 Z 序：点在两个窗口里取前面的小窗（旧版按面积排会选中被挡住的，§11 #41）
+    #expect(frames.first { $0.contains(CGPoint(x: 150, y: 850)) } == frames[0])
+  }
+
+  @Test func handlesResizeAndMove() {
+    let bounds = CGRect(x: 0, y: 0, width: 500, height: 400)
+    let rect = CGRect(x: 100, y: 100, width: 200, height: 100)
+    #expect(RegionSelector.handle(at: CGPoint(x: 302, y: 199), in: rect) == .topRight)
+    #expect(RegionSelector.handle(at: CGPoint(x: 200, y: 100), in: rect) == .bottom)
+    #expect(RegionSelector.handle(at: CGPoint(x: 200, y: 150), in: rect) == nil)
+    // 右边拖过左边：翻过去；只动这条边
+    #expect(
+      RegionSelector.resized(rect, .right, to: CGPoint(x: 50, y: 999), within: bounds)
+        == CGRect(x: 50, y: 100, width: 50, height: 100))
+    // 角：两条边一起动，点先夹进屏内
+    #expect(
+      RegionSelector.resized(rect, .topLeft, to: CGPoint(x: -20, y: 450), within: bounds)
+        == CGRect(x: 0, y: 100, width: 300, height: 300))
+    // 拖到和对边重合：至少 1 点
+    #expect(
+      RegionSelector.resized(rect, .top, to: CGPoint(x: 0, y: 100), within: bounds).height == 1)
+    // 选区贴着屏幕上边，把下边拖到最上沿：补出的 1 点留在屏内（越界的选区裁不出图，↩ 会静默取消）
+    let top = CGRect(x: 0, y: 300, width: 500, height: 100)
+    #expect(
+      RegionSelector.resized(top, .bottom, to: CGPoint(x: 0, y: 400), within: bounds)
+        == CGRect(x: 0, y: 399, width: 500, height: 1))
+    // 平移（方向键、拖动）整块留在屏内
+    #expect(
+      RegionSelector.moved(rect, by: CGSize(width: 1000, height: -1000), within: bounds)
+        == CGRect(x: 300, y: 0, width: 200, height: 100))
+  }
+
+  @Test func lastRegionPlacement() {
+    let screens = [
+      CGRect(x: 0, y: 0, width: 1512, height: 982),
+      CGRect(x: 1512, y: 0, width: 1920, height: 1080),
+    ]
+    // 大部分在外接屏：放到外接屏，夹掉越界的部分，换成屏内坐标
+    let placed = RegionSelector.placement(
+      of: CGRect(x: 1400, y: 100, width: 400, height: 200), in: screens)
+    #expect(placed?.index == 1)
+    #expect(placed?.rect == CGRect(x: 0, y: 100, width: 288, height: 200))
+    // 外接屏拔掉后落在屏外
+    #expect(
+      RegionSelector.placement(of: CGRect(x: 5000, y: 0, width: 10, height: 10), in: screens) == nil
+    )
+  }
+
+  @Test func magnifierSamplesSRGB() throws {
+    // 上半红、下半蓝（sRGB）：按左上原点取像素，色值按 sRGB 原样读出；靠边时超出图的部分补黑、中心仍是该像素
+    let image = try Self.image(size: 20) { context in
+      context.setFillColor(
+        CGColor(srgbRed: 0x34 / 255, green: 0x78 / 255, blue: 0xF6 / 255, alpha: 1))
+      context.fill(CGRect(x: 0, y: 0, width: 20, height: 10))
+      context.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+      context.fill(CGRect(x: 0, y: 10, width: 20, height: 10))
+    }
+    #expect(SelectionView.sample(image, x: 10, y: 15, size: 15)?.hex == "#3478F6")
+    let corner = try #require(SelectionView.sample(image, x: 0, y: 2, size: 15))
+    #expect(corner.hex == "#FF0000")
+    #expect(corner.image.width == 15 && corner.image.height == 15)
+    // 放大的图也是正的：顶上 5 行、左边 7 列在图外（黑），其余是红
+    let pixels = try #require(corner.image.dataProvider?.data as Data?)
+    let red = { (row: Int, column: Int) in pixels[row * corner.image.bytesPerRow + column * 4] }
+    #expect(red(0, 10) == 0 && red(4, 10) == 0 && red(5, 10) == 255)
+    #expect(red(10, 6) == 0 && red(10, 7) == 255)
+  }
+
+  @Test func quickSaveNamesNeverOverwrite() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let date = try #require(
+      Calendar.current.date(
+        from: DateComponents(year: 2026, month: 9, day: 4, hour: 8, minute: 5, second: 3)))
+    let first = ScreenshotOutput.availableURL(in: directory, date: date)
+    #expect(first.lastPathComponent == "截图 2026-09-04 08.05.03.png")
+    try Data().write(to: first)
+    // 同一秒再存一张：追加序号（旧版会覆盖前一张，§11 #46）
+    #expect(
+      ScreenshotOutput.availableURL(in: directory, date: date).lastPathComponent
+        == "截图 2026-09-04 08.05.03 2.png")
+  }
+
   @Test func recognizesMixedScripts() async throws {
     let image = try Self.render(["中文识别测试", "日本語のテキストです", "한국어 텍스트", "Привет мир", "Hello World"])
     let text = try #require(await OCR.recognizeText(in: image))
@@ -50,6 +165,17 @@ struct ScreenshotTests {
   @Test func blankImageHasNoText() async throws {
     let text = await OCR.recognizeText(in: try Self.render([]))
     #expect(text == "")
+  }
+
+  /// size×size 的 sRGB 图，fill 在原点左下的上下文里画
+  static func image(size: Int, _ fill: (CGContext) -> Void) throws -> CGImage {
+    let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+    let context = try #require(
+      CGContext(
+        data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    fill(context)
+    return try #require(context.makeImage())
   }
 
   /// 白底黑字，一行一段，2x 像素

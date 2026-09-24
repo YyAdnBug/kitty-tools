@@ -1,5 +1,5 @@
 // 应用入口：@main + 菜单栏菜单（唯一的 scene）。LSUIElement 应用，不显示 Dock 图标。
-// 菜单项随里程碑补全（PLAN §4）。热键菜单项显示当前生效的组合，没设置时标「未设置」。
+// 菜单项随里程碑补全（PLAN §4）。热键菜单项显示当前生效的组合，没设置时标「未设置」；有钉图时可隐藏 / 关闭全部。
 
 import SwiftUI
 
@@ -16,6 +16,17 @@ struct KittyToolsApp: App {
       hotKeyButton("截图翻译", .screenshotTranslate) { appDelegate.screenshotTranslate() }
       hotKeyButton("输入翻译", .inputTranslate) { appDelegate.showInputTranslate() }
       Toggle("复制即译", isOn: $copyToTranslate)
+      Divider()
+      hotKeyButton("截图", .screenshot) { appDelegate.screenshot() }
+      hotKeyButton("截取上次区域", .screenshotLastRegion) {
+        appDelegate.screenshot(repeatingLastRegion: true)
+      }
+      if !appDelegate.pins.panels.isEmpty {
+        Button(appDelegate.pins.isHidden ? "显示全部钉图" : "隐藏全部钉图") {
+          appDelegate.pins.toggleHidden()
+        }
+        Button("关闭全部钉图") { appDelegate.pins.closeAll() }
+      }
       Divider()
       Button("设置…") { appDelegate.showSettings() }
         .keyboardShortcut(",")

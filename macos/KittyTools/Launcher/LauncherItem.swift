@@ -29,10 +29,11 @@ struct LauncherItem: Identifiable, Hashable {
 
   var id: String { kind.rawValue + "\n" + target }
 
-  /// 内置动作：只放原生已有的功能（旧版的截图、贴图历史、开发者工具箱等到迁过来再加）
+  /// 内置动作：只放原生已有的功能（旧版的贴图历史、开发者工具箱等不迁）
   static let actions: [LauncherItem] = [
     action("clipboard", "剪贴板历史", "Clipboard"),
     action("translate-input", "输入翻译", "Translate"),
+    action("screenshot", "截图", "Screenshot Capture"),
     action("translate-screenshot", "截图翻译", "Screenshot Translate OCR"),
     action("settings", "设置", "Settings Preferences"),
   ]
@@ -49,6 +50,7 @@ struct LauncherItem: Identifiable, Hashable {
     switch (kind, target) {
     case (.action, "clipboard"): "doc.on.clipboard"
     case (.action, "translate-input"): "character.bubble"
+    case (.action, "screenshot"): "camera.viewfinder"
     case (.action, "translate-screenshot"): "text.viewfinder"
     case (.action, _): "gearshape"
     case (.url, _): "globe"

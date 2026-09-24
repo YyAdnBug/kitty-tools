@@ -9,7 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var isRunning = false
   /// 划词取词进行中：重复按热键直接忽略
   private var isReadingSelection = false
-  /// 截图翻译进行中（截屏 → 框选 → 识别）：重复按热键直接忽略
+  /// 截图 / 截图翻译进行中（截屏 → 框选 → 识别或输出）：重复按热键直接忽略
   private var isCapturing = false
   let hotKeys = HotKeyCenter()
 
@@ -36,6 +36,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private let serviceStore = TranslateServiceStore()
   private lazy var coordinator = TranslateCoordinator(services: serviceStore, history: historyStore)
   private let speaker = Speaker()
+  /// 钉图（菜单栏显示「隐藏 / 关闭全部钉图」）
+  lazy var pins: PinBoard = {
+    let board = PinBoard()
+    board.copy = { [unowned self] image, scale in Task { await copyImage(image, scale: scale) } }
+    board.saveAs = { [unowned self] image, scale in
+      Task { await saveImage(image, scale: scale, asking: true) }
+    }
+    return board
+  }()
 
   // MARK: 窗口
 
@@ -146,6 +155,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     hotKeys.setHandler(for: .inputTranslate) { [unowned self] in showInputTranslate() }
     hotKeys.setHandler(for: .screenshotTranslate) { [unowned self] in screenshotTranslate() }
     hotKeys.setHandler(for: .launcher) { [unowned self] in toggleLauncher() }
+    hotKeys.setHandler(for: .screenshot) { [unowned self] in screenshot() }
+    hotKeys.setHandler(for: .screenshotLastRegion) { [unowned self] in
+      screenshot(repeatingLastRegion: true)
+    }
     hotKeys.reload()
     launcherModel.rescanApps()  // 约 65ms，放在启动时，第一次呼出就不用等
     showWelcomeIfNeeded()
@@ -192,6 +205,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     switch id {
     case "clipboard": toggleClipboard()
     case "translate-input": showInputTranslate()
+    case "screenshot": screenshot()
     case "translate-screenshot": screenshotTranslate()
     default: showSettings()
     }
@@ -225,58 +239,136 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
-  /// 截图翻译：冻结各屏 → 框选 → 本机识别文字 → 原文记进剪贴板历史 → 翻译浮窗走现有的多服务翻译。
-  /// 固定着的面板不收（冻结帧本来就排除了自家窗口，取消后也还在）；没固定的先收剪贴板面板再收翻译浮窗：
-  /// 反过来浮窗的 onHide 会把 key 还给剪贴板面板
+  /// 截图翻译：冻结各屏 → 框选 → 本机识别文字 → 原文记进剪贴板历史 → 翻译浮窗走现有的多服务翻译
   func screenshotTranslate() {
-    guard !isCapturing, !isReadingSelection else { return }
-    isCapturing = true
-    let defaults = UserDefaults.standard
-    hideUnpinned(clipboardPanel, Prefs.clipboardHideOnUnfocus)
-    hideUnpinned(launcherPanel, Prefs.launcherHideOnUnfocus)
-    if !defaults.bool(forKey: Prefs.floatingPinned) { translatePanel.hide() }
-    Task {
-      defer { isCapturing = false }
-      guard Permissions.isScreenRecordingAllowed else {
-        Permissions.requestScreenRecording()
-        showScreenshotNotice("截图翻译需要「屏幕录制」授权（授权后可能要重新打开本 App）", .screenRecording)
-        return
-      }
-      let shots: [ScreenCapture.Shot]
-      do {
-        shots = try await ScreenCapture.freeze()
-      } catch {
-        showScreenshotNotice("截屏失败：\(error.localizedDescription)", .screenRecording)
-        return
-      }
-      // 框选期间别的热键会弹出浮层抢走 key（遮罩就收不到 Esc）。设置里正在录快捷键时热键本来就停着，
-      // 结束后不能替它恢复
-      let hotKeysWereActive = !hotKeys.bindings.isEmpty
-      hotKeys.suspend()
-      let region = await RegionSelector.select(shots)
-      if hotKeysWereActive { hotKeys.reload() }
-      guard let region else { return }
+    beginCapture { [self] in
+      guard let region = await frozenSelection("截图翻译", RegionSelector.select) else { return }
       // ponytail: 识别期间不显示「识别中」：常见选区 0.04–0.13s，整屏密集文字约 0.9s；大选区嫌慢再加
       guard let text = await OCR.recognizeText(in: region) else {
         return showScreenshotNotice("文字识别失败，请重试")
       }
       guard !text.isEmpty else { return showScreenshotNotice("没有识别到文字，可以把选区框大一些再试") }
-      // 原文记进剪贴板历史（和复制进来的一样过敏感文本过滤；来源 App 为空）。已有同样正文的只挪到最前：
-      // 走 record 会把那条的格式和来源冲掉，而这次并不是一次复制
-      if !(defaults.bool(forKey: Prefs.clipboardBlockSensitive)
-        && ClipboardFilter.looksSensitive(text))
-      {
-        if let existing = clipboardStore.items.first(where: { $0.kind == .text && $0.text == text })
-        {
-          clipboardStore.bump(existing.id)
-        } else {
-          var item = ClipItem(kind: .text)
-          item.text = text
-          clipboardStore.record(item)
-        }
-      }
+      recordInHistory(text)
       coordinator.translate(text)
       translatePanel.present()
+    }
+  }
+
+  /// 截图：框选后 ↩ 复制（同时记进剪贴板历史）、⌘S 快速保存、另存为、T 钉图，C 复制色值。
+  /// repeatingLastRegion：一开始就选中上次的区域（「截取上次区域」热键，可以连按）
+  func screenshot(repeatingLastRegion: Bool = false) {
+    beginCapture { [self] in
+      let lastRegion = UserDefaults.standard.string(forKey: Prefs.screenshotLastRegion).map(
+        NSRectFromString)
+      guard
+        let outcome = await frozenSelection(
+          "截图",
+          {
+            await RegionSelector.capture(
+              $0, lastRegion: lastRegion, preselect: repeatingLastRegion)
+          })
+      else { return }
+      switch outcome {
+      case .color(let hex):
+        Paster.write(string: hex)
+        recordInHistory(hex)
+      case .capture(let capture):
+        UserDefaults.standard.set(
+          NSStringFromRect(capture.frame), forKey: Prefs.screenshotLastRegion)
+        switch capture.action {
+        case .copy: await copyImage(capture.image, scale: capture.scale)
+        case .pin: pins.pin(capture.image, frame: capture.frame)
+        case .save: await saveImage(capture.image, scale: capture.scale, asking: false)
+        case .saveAs: await saveImage(capture.image, scale: capture.scale, asking: true)
+        }
+      }
+    }
+  }
+
+  /// 截图和截图翻译共用的开头：互斥、收起没固定的浮层；work 跑完才算这次截图结束。
+  /// 固定着的面板不收（冻结帧本来就排除了自家窗口，取消后也还在）；没固定的先收剪贴板面板再收翻译浮窗：
+  /// 反过来浮窗的 onHide 会把 key 还给剪贴板面板
+  private func beginCapture(_ work: @escaping () async -> Void) {
+    guard !isCapturing, !isReadingSelection else { return }
+    isCapturing = true
+    hideUnpinned(clipboardPanel, Prefs.clipboardHideOnUnfocus)
+    hideUnpinned(launcherPanel, Prefs.launcherHideOnUnfocus)
+    if !UserDefaults.standard.bool(forKey: Prefs.floatingPinned) { translatePanel.hide() }
+    Task {
+      defer { isCapturing = false }
+      await work()
+    }
+  }
+
+  /// 查屏幕录制授权 → 冻结各屏（钉图留在画面里）→ 暂停全局热键框选。没授权 / 截屏失败时在浮窗里提示，返回 nil。
+  /// 框选期间别的热键会弹出浮层抢走 key（遮罩就收不到 Esc）；设置里正在录快捷键时热键本来就停着，结束后不能替它恢复
+  private func frozenSelection<T>(
+    _ feature: String, _ select: ([ScreenCapture.Shot]) async -> T?
+  ) async -> T? {
+    guard Permissions.isScreenRecordingAllowed else {
+      Permissions.requestScreenRecording()
+      showScreenshotNotice("\(feature)需要「屏幕录制」授权（授权后可能要重新打开本 App）", .screenRecording)
+      return nil
+    }
+    let shots: [ScreenCapture.Shot]
+    do {
+      shots = try await ScreenCapture.freeze(keeping: pins.windowNumbers)
+    } catch {
+      showScreenshotNotice("截屏失败：\(error.localizedDescription)", .screenRecording)
+      return nil
+    }
+    let hotKeysWereActive = !hotKeys.bindings.isEmpty
+    hotKeys.suspend()
+    defer { if hotKeysWereActive { hotKeys.reload() } }
+    return await select(shots)
+  }
+
+  /// 截图 / 截图翻译 / 取色得到的文字记进剪贴板历史（和复制进来的一样过敏感文本过滤；来源 App 为空）。
+  /// 已有同样正文的只挪到最前：走 record 会把那条的格式和来源冲掉，而这次并不是一次复制
+  private func recordInHistory(_ text: String) {
+    guard
+      !(UserDefaults.standard.bool(forKey: Prefs.clipboardBlockSensitive)
+        && ClipboardFilter.looksSensitive(text))
+    else { return }
+    if let existing = clipboardStore.items.first(where: { $0.kind == .text && $0.text == text }) {
+      clipboardStore.bump(existing.id)
+    } else {
+      var item = ClipItem(kind: .text)
+      item.text = text
+      clipboardStore.record(item)
+    }
+  }
+
+  /// 截图复制：PNG 写进剪贴板（经 Paster，watcher 会跳过），所以自己记进剪贴板历史
+  private func copyImage(_ image: CGImage, scale: CGFloat) async {
+    guard let png = await ScreenshotOutput.png(image, scale: scale) else {
+      return showScreenshotNotice("截图编码失败，请重试")
+    }
+    await copyPNG(png)
+  }
+
+  private func copyPNG(_ png: Data) async {
+    Paster.write([.png: png])
+    var item = ClipItem(kind: .image)
+    guard let info = await clipboardStore.images.save(png, isPNG: true, id: item.id) else { return }
+    item.image = info
+    clipboardStore.record(item)
+  }
+
+  /// ⌘S 快速保存 / 另存为（asking）。失败时截图改放进剪贴板，别让这张图就这么丢了
+  private func saveImage(_ image: CGImage, scale: CGFloat, asking: Bool) async {
+    guard let png = await ScreenshotOutput.png(image, scale: scale) else {
+      return showScreenshotNotice("截图编码失败，请重试")
+    }
+    do {
+      if asking {
+        try await ScreenshotOutput.saveAs(png)
+      } else {
+        try ScreenshotOutput.quickSave(png)
+      }
+    } catch {
+      await copyPNG(png)
+      showScreenshotNotice("保存失败（\(error.localizedDescription)），截图已复制到剪贴板")
     }
   }
 

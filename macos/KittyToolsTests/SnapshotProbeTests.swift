@@ -81,7 +81,7 @@ struct SnapshotProbeTests {
       ClipboardTab(store: store), size: NSSize(width: 520, height: 760), dark: false,
       to: "\(out)/settings-clipboard.png")
     try snapshot(
-      HotkeysTab(center: HotKeyCenter()), size: NSSize(width: 520, height: 200), dark: false,
+      HotkeysTab(center: HotKeyCenter()), size: NSSize(width: 520, height: 340), dark: false,
       to: "\(out)/settings-hotkeys.png")
     try snapshot(
       GeneralTab { "" }, size: NSSize(width: 520, height: 480), dark: false,
@@ -178,23 +178,75 @@ struct SnapshotProbeTests {
     }
   }
 
-  /// 截图翻译的框选遮罩：待选（整屏轻暗 + 提示）和拖动中（选区外变暗）
+  /// 框选遮罩：截图翻译的待选（整屏轻暗 + 提示）和拖动中（选区外变暗），截图的悬停窗口 + 放大镜、拖动中（尺寸）、
+  /// 调整（手柄 + 工具栏，深浅色）。图层要在窗口里显示过才有内容，所以放进屏外窗口再 render
   private func renderSelection(_ out: String) throws {
     let frozen = try ScreenshotTests.render([
       "The quick brown fox jumps over the lazy dog", "敏捷的棕色狐狸跳过了懒狗", "日本語のテキスト",
     ])
-    let size = NSSize(width: 600, height: 180)
-    for (name, selection) in [
-      ("select-idle", nil), ("select-drag", CGRect(x: 10, y: 95, width: 440, height: 60)),
-    ] as [(String, CGRect?)] {
-      let view = SelectionView(image: frozen) { _ in }
-      view.frame = NSRect(origin: .zero, size: size)
-      view.selection = selection
-      let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
-      view.cacheDisplay(in: view.bounds, to: bitmap)
-      try #require(bitmap.representation(using: .png, properties: [:]))
-        .write(to: URL(filePath: "\(out)/\(name).png"))
+    let translate: [(String, (SelectionView) -> Void)] = [
+      ("select-idle", { _ in }),
+      ("select-drag", { $0.selection = CGRect(x: 10, y: 95, width: 440, height: 60) }),
+    ]
+    for (name, configure) in translate {
+      try renderLayers(
+        SelectionView(image: frozen, session: SelectionSession(mode: .translate)),
+        size: NSSize(width: 600, height: 180), dark: false, configure: configure,
+        to: "\(out)/\(name).png")
     }
+    let desktop = try ScreenshotTests.render([
+      "Finder  File  Edit  View", "The quick brown fox jumps over the lazy dog", "敏捷的棕色狐狸跳过了懒狗",
+      "日本語のテキスト", "한국어 텍스트", "Привет мир", "Hello World", "#3478F6",
+    ])
+    let windows = [
+      CGRect(x: 40, y: 250, width: 360, height: 130), CGRect(x: 0, y: 0, width: 600, height: 480),
+    ]
+    let selection = CGRect(x: 60, y: 200, width: 300, height: 150)
+    let capture: [(String, Bool, (SelectionView) -> Void)] = [
+      ("capture-hover", false, { $0.mouse = CGPoint(x: 150, y: 330) }),
+      (
+        "capture-draw", false,
+        {
+          $0.selection = selection
+          $0.mouse = CGPoint(x: selection.maxX, y: selection.minY)
+        }
+      ),
+      ("capture-adjust", false, { $0.select(selection) }),
+      ("capture-adjust-dark", true, { $0.select(selection) }),
+    ]
+    for (name, dark, configure) in capture {
+      try renderLayers(
+        SelectionView(
+          image: desktop, windows: windows,
+          session: SelectionSession(mode: .capture, lastRegion: .zero)),
+        size: NSSize(width: 600, height: 480), dark: dark, configure: configure,
+        to: "\(out)/\(name).png")
+    }
+  }
+
+  private func renderLayers(
+    _ view: NSView, size: NSSize, dark: Bool, configure: (SelectionView) -> Void, to path: String
+  ) throws {
+    let window = NSWindow(
+      contentRect: NSRect(origin: NSPoint(x: -20000, y: -20000), size: size),
+      styleMask: [.borderless], backing: .buffered, defer: false)
+    window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+    view.wantsLayer = true
+    window.contentView = view
+    if let view = view as? SelectionView { configure(view) }
+    window.orderFront(nil)
+    for _ in 0..<5 { RunLoop.main.run(until: Date.now.addingTimeInterval(0.1)) }
+    let scale = 2
+    let bitmap = try #require(
+      NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: Int(size.width) * scale,
+        pixelsHigh: Int(size.height) * scale, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+        isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+    let context = try #require(NSGraphicsContext(bitmapImageRep: bitmap)).cgContext
+    context.scaleBy(x: CGFloat(scale), y: CGFloat(scale))
+    try #require(view.layer).render(in: context)
+    try #require(bitmap.representation(using: .png, properties: [:])).write(to: URL(filePath: path))
+    window.orderOut(nil)
   }
 
   private func snapshot(_ view: some View, size: NSSize, dark: Bool, to path: String) throws {

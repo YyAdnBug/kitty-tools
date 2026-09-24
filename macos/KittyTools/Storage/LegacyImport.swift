@@ -82,6 +82,14 @@ enum LegacyImport {
     }
     for (account, value) in plan.secrets { Keychain.set(value, for: account) }
     if let services = plan.services { store.services = services }
+    // 旧版截图「另存为」记住的目录 → ⌘S 快速保存的位置（目录已不在就不导）
+    if let data = try readIfExists("screenshot_save_prefs.json"),
+      let directory = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?[
+        "lastSaveDirectory"] as? String,
+      FileManager.default.fileExists(atPath: directory)
+    {
+      UserDefaults.standard.set(directory, forKey: Prefs.screenshotSaveDirectory)
+    }
     // 从 DMG 里运行时不注册（见 LaunchAtLogin）；失败不影响其余导入，通用页的开关会显示实际状态
     if plan.launchAtLogin, LaunchAtLogin.isInstalled { try? LaunchAtLogin.set(true) }
     return

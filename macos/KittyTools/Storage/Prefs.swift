@@ -46,6 +46,11 @@ enum Prefs {
   /// 复制即译：复制文本后自动弹出翻译浮窗（不抢键盘）
   static let translateCopyToTranslate = "translateClipboardMonitor"
 
+  /// 截图 ⌘S 快速保存的目录（上次「另存为」选的目录）；没设 = 系统截屏的存储位置
+  static let screenshotSaveDirectory = "screenshotSaveDirectory"
+  /// 上次截图的区域（NSStringFromRect，全局坐标）：框选时按 D、或用「截取上次区域」热键
+  static let screenshotLastRegion = "screenshotLastRegion"
+
   /// 上次启动的版本号：没有 = 首次安装（打开通用页），和当前不同 = 刚更新（打开关于页看更新内容）
   static let lastSeenVersion = "lastSeenVersion"
 

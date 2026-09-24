@@ -7,7 +7,7 @@
 **kitty-tools 原生 macOS 版**：用 Swift 6 + SwiftUI / AppKit 重写的纯原生菜单栏工具，替代 Tauri 版的 macOS 端。基本自用：只支持 Apple 芯片（arm64），最低 macOS 15.0。
 
 - **Phase 1（当前）**：剪贴板历史 + 翻译（划词 / 输入 / 复制即译 / 截图翻译，全部翻译服务），目标版本 0.1.0。截图翻译提前做了（Vision 本机识字，`Screenshot/`）。
-- **Phase 2 / 3（进行中）**：启动器（`Launcher/`，M7 已完成）/ 截图工具（复用截图翻译的冻结帧和框选，标注、钉图、保存）。里程碑 M7–M11 与不迁清单见 PLAN §10。
+- **Phase 2 / 3（进行中）**：启动器（`Launcher/`，M7、M8 已完成）/ 截图工具（`Screenshot/`，复用截图翻译的冻结帧和框选；M9 框选 + 复制 / 保存 / 钉图已完成，标注与识字在 M10）。里程碑 M7–M13、已拍板的 D1–D4 与不迁清单见 PLAN §10。
 - 迁移期与 Tauri 版共存：Bundle ID `com.yy.kitty-tools.native`（Debug `com.yy.kitty-tools.native.dev`），显示名 `Kitty Tools Native`。
 - **行为规格**：`macos/PLAN.md`。§4 架构与文件表，§5 逐行对应 Tauri 代码的 path:line，§6 数据迁移，§7 里程碑 M0–M6 与验收，§9 已知坑。
 
@@ -70,7 +70,7 @@ tccutil reset Accessibility com.yy.kitty-tools.native.dev
 |---|---|---|---|
 | `mac-native` | 常驻规则 `.cursor/rules/mac-native.mdc` | 已有 | 始终加载 |
 | `ponytail` | 常驻规则 `.cursor/rules/ponytail.mdc` | 已有 | 只给 Cursor；Claude 侧由用户级插件生效 |
-| `mac-overlay-panel` | 技能 | 已有（M1） | `Shell/**`、`Screenshot/**`、`Translate/SelectionReader.swift`；NSPanel、热键、前台快照、粘贴回原 App、划词时序、设置窗激活、截图框选遮罩 |
+| `mac-overlay-panel` | 技能 | 已有（M1，M9 补截图与钉图） | `Shell/**`、`Screenshot/**`、`Translate/SelectionReader.swift`；NSPanel、热键、前台快照、粘贴回原 App、划词时序、设置窗激活、截图框选遮罩、钉图 |
 | `mac-clipboard` | 技能 | 已有（M3） | `Clipboard/**`、`Storage/Database.swift` |
 | `mac-translate` | 技能 | 已有（M4） | `Translate/**` |
 

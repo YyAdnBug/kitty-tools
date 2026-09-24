@@ -1,40 +1,63 @@
-// 截图翻译的框选：每块屏幕盖一个全屏遮罩，画冻结帧；拖动框选（选区外变暗），松手确认，Esc / 右键取消。
+// 框选会话：每块屏幕盖一个全屏遮罩（SelectionOverlay）画冻结帧，选区只在一块屏上。两种用法：
+// - 截图翻译 select：拖动框选，松手确认，Esc / 右键取消（行为不变）；
+// - 截图 capture：悬停高亮窗口 / 单击截整窗、确认后可调整选区，↩ 复制、⌘S 保存、⇧⌘S 另存为、T 钉图，
+//   C 复制放大镜中心的色值，D 选中上次的区域。
 // 遮罩是不激活前台的 NSPanel（和 OverlayPanel 一样不抢前台 App），会话结束立即 orderOut 释放，不常驻
-// （全屏窗口的 backing store 是内存大头）。不做旧版的窗口吸附、放大镜、比例条、延时、Enter 全屏（PLAN §11）。
+// （全屏窗口的 backing store 是内存大头）。画面与交互在 SelectionView。
 
 import AppKit
-import Carbon.HIToolbox
 
 enum RegionSelector {
   /// 选区短边小于这个（点）当作误触：回到待选状态，不确认
   static let minimumSide: CGFloat = 8
 
-  /// 在冻结帧上框选，返回裁好的图；取消返回 nil
-  static func select(_ shots: [ScreenCapture.Shot]) async -> CGImage? {
-    await withCheckedContinuation { continuation in
-      var overlays: [SelectionOverlay] = []
-      var finished = false
-      let finish = { (image: CGImage?) in
-        guard !finished else { return }
-        finished = true
-        for overlay in overlays { overlay.orderOut(nil) }
-        overlays = []
-        NSCursor.arrow.set()
-        continuation.resume(returning: image)
-      }
-      overlays = shots.map { SelectionOverlay(shot: $0, onFinish: finish) }
-      guard !overlays.isEmpty else { return finish(nil) }
-      for overlay in overlays { overlay.orderFrontRegardless() }
-      // 鼠标不动时收不到 mouseMoved：先设一次十字光标
-      NSCursor.crosshair.set()
-      // 鼠标所在屏的遮罩接收 Esc；其它屏的遮罩靠 acceptsFirstMouse 直接响应拖动
-      let mouse = NSEvent.mouseLocation
-      let key = overlays.first { $0.frame.contains(mouse) } ?? overlays[0]
-      key.makeKey()
-    }
+  enum Action {
+    case copy, save, saveAs, pin
   }
 
-  /// 视图里的选区（点，原点左下）→ 图里的像素矩形（原点左上），取整并夹在图内。纯函数，配单测
+  struct Capture {
+    /// 选区的像素图（截图模式下已拷成独立的图，不再引用整屏冻结帧）
+    let image: CGImage
+    /// 选区（点，AppKit 全局坐标）
+    let frame: CGRect
+    /// 截图翻译只取图，不看它
+    let action: Action
+
+    /// 像素 / 点
+    var scale: CGFloat { frame.width > 0 ? CGFloat(image.width) / frame.width : 1 }
+  }
+
+  enum Outcome {
+    case capture(Capture)
+    /// 放大镜中心像素的色值（#RRGGBB，sRGB）
+    case color(String)
+  }
+
+  /// 截图翻译：在冻结帧上框选，返回裁好的图；取消返回 nil
+  static func select(_ shots: [ScreenCapture.Shot]) async -> CGImage? {
+    guard case .capture(let capture)? = await run(shots, SelectionSession(mode: .translate))
+    else { return nil }
+    return capture.image
+  }
+
+  /// 截图：lastRegion 是上次截图的区域（全局坐标，D 键选中）；preselect 时一开始就选中它（⌥X 截上次区域）
+  static func capture(_ shots: [ScreenCapture.Shot], lastRegion: CGRect?, preselect: Bool) async
+    -> Outcome?
+  {
+    let session = SelectionSession(mode: .capture, lastRegion: lastRegion)
+    session.preselectsLastRegion = preselect
+    return await run(shots, session)
+  }
+
+  private static func run(_ shots: [ScreenCapture.Shot], _ session: SelectionSession) async
+    -> Outcome?
+  {
+    await withCheckedContinuation { session.start(shots, continuation: $0) }
+  }
+
+  // MARK: 几何（纯函数，配单测）
+
+  /// 视图里的选区（点，原点左下）→ 图里的像素矩形（原点左上），取整并夹在图内
   static func pixelRect(_ selection: CGRect, viewSize: CGSize, imageSize: CGSize) -> CGRect {
     let scaleX = imageSize.width / viewSize.width
     let scaleY = imageSize.height / viewSize.height
@@ -44,11 +67,170 @@ enum RegionSelector {
     ).integral
     return rect.intersection(CGRect(origin: .zero, size: imageSize))
   }
+
+  /// 选区的 8 个调整手柄（四个角在前：选区很小时点中的优先算角）
+  enum Handle: CaseIterable {
+    case bottomLeft, bottomRight, topRight, topLeft, bottom, right, top, left
+
+    /// 这个手柄拖动的是哪几条边
+    var movesMinX: Bool { [.bottomLeft, .topLeft, .left].contains(self) }
+    var movesMaxX: Bool { [.bottomRight, .topRight, .right].contains(self) }
+    var movesMinY: Bool { [.bottomLeft, .bottom, .bottomRight].contains(self) }
+    var movesMaxY: Bool { [.topLeft, .top, .topRight].contains(self) }
+
+    func point(in rect: CGRect) -> CGPoint {
+      CGPoint(
+        x: movesMinX ? rect.minX : movesMaxX ? rect.maxX : rect.midX,
+        y: movesMinY ? rect.minY : movesMaxY ? rect.maxY : rect.midY)
+    }
+  }
+
+  /// 点中的手柄（容差 tolerance 点）
+  static func handle(at point: CGPoint, in rect: CGRect, tolerance: CGFloat = 6) -> Handle? {
+    Handle.allCases.first {
+      let handle = $0.point(in: rect)
+      return abs(handle.x - point.x) <= tolerance && abs(handle.y - point.y) <= tolerance
+    }
+  }
+
+  /// 拖手柄：从按下时的选区 original 出发，把手柄管的边移到 point（先夹进 bounds）；越过对边就翻过去。
+  /// 宽高至少 1 点
+  static func resized(
+    _ original: CGRect, _ handle: Handle, to point: CGPoint, within bounds: CGRect
+  )
+    -> CGRect
+  {
+    let x = min(max(point.x, bounds.minX), bounds.maxX)
+    let y = min(max(point.y, bounds.minY), bounds.maxY)
+    let xs =
+      handle.movesMinX
+      ? (x, original.maxX) : handle.movesMaxX ? (original.minX, x) : (original.minX, original.maxX)
+    let ys =
+      handle.movesMinY
+      ? (y, original.maxY) : handle.movesMaxY ? (original.minY, y) : (original.minY, original.maxY)
+    var rect = CGRect(
+      x: min(xs.0, xs.1), y: min(ys.0, ys.1), width: abs(xs.1 - xs.0), height: abs(ys.1 - ys.0))
+    rect.size.width = max(rect.width, 1)
+    rect.size.height = max(rect.height, 1)
+    // 补出来的 1 点别越过屏幕边（越界的选区裁不出图）
+    rect.origin.x = min(rect.minX, bounds.maxX - rect.width)
+    rect.origin.y = min(rect.minY, bounds.maxY - rect.height)
+    return rect
+  }
+
+  /// 平移选区，整块留在 bounds 里（大小不变）
+  static func moved(_ rect: CGRect, by delta: CGSize, within bounds: CGRect) -> CGRect {
+    var moved = rect.offsetBy(dx: delta.width, dy: delta.height)
+    moved.origin.x = min(max(moved.minX, bounds.minX), bounds.maxX - rect.width)
+    moved.origin.y = min(max(moved.minY, bounds.minY), bounds.maxY - rect.height)
+    return moved
+  }
+
+  /// 上次的区域（全局坐标）放到哪块屏上：相交面积最大的那块，夹进该屏，返回屏的下标和屏内坐标。
+  /// 屏幕变了（外接屏拔掉）、完全落在屏外时返回 nil
+  static func placement(of region: CGRect, in screens: [CGRect]) -> (index: Int, rect: CGRect)? {
+    let areas = screens.map { screen -> CGFloat in
+      let overlap = screen.intersection(region)
+      return overlap.isNull ? 0 : overlap.width * overlap.height
+    }
+    guard let best = areas.indices.max(by: { areas[$0] < areas[$1] }), areas[best] > 0 else {
+      return nil
+    }
+    let screen = screens[best]
+    let rect = screen.intersection(region).offsetBy(dx: -screen.minX, dy: -screen.minY)
+    return (best, rect)
+  }
+
+  /// 把 cropping 出来的图拷成独立的图：cropping 的结果仍引用整屏冻结帧（几十 MB），
+  /// 钉图、复制任务长期持有会把整帧一起拖住
+  static func detached(_ image: CGImage) -> CGImage {
+    let space = image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
+    guard
+      let context = CGContext(
+        data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: 0,
+        space: space,
+        bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+          | CGBitmapInfo.byteOrder32Little.rawValue)
+    else { return image }
+    context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+    return context.makeImage() ?? image
+  }
+}
+
+/// 一次框选会话：管各屏遮罩、选区只留一块屏、D 键上次区域、结束时收起遮罩并交回结果
+final class SelectionSession {
+  let mode: SelectionView.Mode
+  /// 上次截图的区域（全局坐标）
+  let lastRegion: CGRect?
+  /// 一开始就选中上次的区域
+  var preselectsLastRegion = false
+  private var overlays: [SelectionOverlay] = []
+  private var continuation: CheckedContinuation<RegionSelector.Outcome?, Never>?
+
+  init(mode: SelectionView.Mode, lastRegion: CGRect? = nil) {
+    self.mode = mode
+    self.lastRegion = lastRegion
+  }
+
+  func start(
+    _ shots: [ScreenCapture.Shot],
+    continuation: CheckedContinuation<RegionSelector.Outcome?, Never>
+  ) {
+    self.continuation = continuation
+    overlays = shots.map { SelectionOverlay(shot: $0, session: self) }
+    guard !overlays.isEmpty else { return finish(nil) }
+    for overlay in overlays { overlay.orderFrontRegardless() }
+    // 鼠标不动时收不到 mouseMoved：先设一次十字光标
+    NSCursor.crosshair.set()
+    // 鼠标所在屏的遮罩接收按键；其它屏的遮罩靠 acceptsFirstMouse 直接响应拖动。
+    // 含上边（NSMouseInRect）：光标在屏幕最上一行时 y 正好等于 frame.maxY
+    let mouse = NSEvent.mouseLocation
+    let key = overlays.first { NSMouseInRect(mouse, $0.frame, false) } ?? overlays[0]
+    key.makeKey()
+    if mode == .capture {  // 放大镜一出来就在光标处
+      let view = key.selectionView
+      view.mouse = view.clamped(view.convert(key.convertPoint(fromScreen: mouse), from: nil))
+    }
+    if preselectsLastRegion { selectLastRegion() }
+  }
+
+  /// 除 view 以外有没有屏上有选区（view 为 nil 时看全部屏）
+  func hasSelection(besides view: SelectionView?) -> Bool {
+    overlays.contains { $0.selectionView !== view && $0.selectionView.selection != nil }
+  }
+
+  /// 这块屏开始操作：别的屏清掉选区、悬停和放大镜（选区只在一块屏上）
+  func activate(_ view: SelectionView) {
+    for overlay in overlays where overlay.selectionView !== view { overlay.selectionView.reset() }
+  }
+
+  /// D 键 / ⌥X：选中上次的区域（落在哪块屏就在哪块屏上）；没有或已不在任何屏上时提示音
+  func selectLastRegion() {
+    guard let lastRegion,
+      let (index, rect) = RegionSelector.placement(of: lastRegion, in: overlays.map(\.frame))
+    else { return NSSound.beep() }
+    let overlay = overlays[index]
+    activate(overlay.selectionView)
+    overlay.makeKey()
+    overlay.selectionView.select(rect)
+  }
+
+  func finish(_ outcome: RegionSelector.Outcome?) {
+    guard let continuation else { return }
+    self.continuation = nil
+    for overlay in overlays { overlay.orderOut(nil) }
+    overlays = []
+    NSCursor.arrow.set()
+    continuation.resume(returning: outcome)
+  }
 }
 
 /// 一块屏幕的遮罩。无边框窗口默认当不了 key（收不到 Esc），所以要子类化
 final class SelectionOverlay: NSPanel {
-  init(shot: ScreenCapture.Shot, onFinish: @escaping (CGImage?) -> Void) {
+  let selectionView: SelectionView
+
+  init(shot: ScreenCapture.Shot, session: SelectionSession) {
+    selectionView = SelectionView(image: shot.image, windows: shot.windows, session: session)
     // styleMask 必须在 init 里一次写全：.nonactivatingPanel 初始化后再加不生效
     super.init(
       contentRect: shot.screen.frame, styleMask: [.borderless, .nonactivatingPanel],
@@ -59,10 +241,12 @@ final class SelectionOverlay: NSPanel {
     hidesOnDeactivate = false
     isReleasedWhenClosed = false
     hasShadow = false
+    animationBehavior = .none
     acceptsMouseMovedEvents = true
-    let view = SelectionView(image: shot.image, onFinish: onFinish)
-    contentView = view
-    initialFirstResponder = view
+    // 本 App 从不激活：不设的话工具栏按钮的提示（快捷键、保存位置）永远不出来
+    allowsToolTipsWhenApplicationIsInactive = true
+    contentView = selectionView
+    initialFirstResponder = selectionView
     setFrame(shot.screen.frame, display: false)
   }
 
@@ -71,112 +255,5 @@ final class SelectionOverlay: NSPanel {
   /// 无边框窗口也别被挪到菜单栏下面
   override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
     frameRect
-  }
-}
-
-/// 冻结帧 + 选区。选区限定在按下时所在的这块屏幕
-final class SelectionView: NSView {
-  let image: CGImage
-  /// 当前选区（点，视图坐标）；截图自检直接设它摆出「拖动中」
-  var selection: CGRect? { didSet { needsDisplay = true } }
-  private let onFinish: (CGImage?) -> Void
-  private var anchor: CGPoint?
-
-  init(image: CGImage, onFinish: @escaping (CGImage?) -> Void) {
-    self.image = image
-    self.onFinish = onFinish
-    super.init(frame: .zero)
-  }
-
-  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-  override var acceptsFirstResponder: Bool { true }
-  override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-
-  override func draw(_ dirtyRect: NSRect) {
-    NSGraphicsContext.current?.cgContext.draw(image, in: bounds)
-    // 待选时整屏轻微变暗提示「在截图模式」；拖动时选区外更暗、选区保持原样
-    let dim = NSBezierPath(rect: bounds)
-    if let selection {
-      dim.append(NSBezierPath(rect: selection))
-      dim.windingRule = .evenOdd
-    }
-    NSColor.black.withAlphaComponent(selection == nil ? 0.15 : 0.4).setFill()
-    dim.fill()
-    if let selection {
-      NSColor.white.setStroke()
-      NSBezierPath(rect: selection.insetBy(dx: -0.5, dy: -0.5)).stroke()
-    } else {
-      drawHint()
-    }
-  }
-
-  /// 屏幕上方居中的提示胶囊
-  private func drawHint() {
-    let text = NSAttributedString(
-      string: "拖动框选要翻译的文字　Esc 取消",
-      attributes: [
-        .font: NSFont.systemFont(ofSize: 13, weight: .medium), .foregroundColor: NSColor.white,
-      ])
-    let size = text.size()
-    let pill = NSRect(
-      x: bounds.midX - size.width / 2 - 14, y: bounds.maxY - 80, width: size.width + 28,
-      height: size.height + 12)
-    NSColor.black.withAlphaComponent(0.6).setFill()
-    NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2).fill()
-    text.draw(at: NSPoint(x: pill.minX + 14, y: pill.minY + 6))
-  }
-
-  override func updateTrackingAreas() {
-    super.updateTrackingAreas()
-    for area in trackingAreas { removeTrackingArea(area) }
-    // 本 App 从不激活：.activeAlways 才收得到移动事件（.cursorUpdate 不支持 .activeAlways，光标只能手动设）
-    addTrackingArea(
-      NSTrackingArea(
-        rect: .zero, options: [.activeAlways, .inVisibleRect, .mouseMoved], owner: self))
-  }
-
-  override func mouseMoved(with event: NSEvent) { NSCursor.crosshair.set() }
-
-  override func mouseDown(with event: NSEvent) {
-    window?.makeKey()  // Esc 跟着最后操作的那块屏幕走
-    anchor = point(event)
-    selection = nil
-  }
-
-  override func mouseDragged(with event: NSEvent) {
-    NSCursor.crosshair.set()
-    guard let anchor else { return }
-    let current = point(event)
-    selection = CGRect(
-      x: min(anchor.x, current.x), y: min(anchor.y, current.y), width: abs(current.x - anchor.x),
-      height: abs(current.y - anchor.y))
-  }
-
-  override func mouseUp(with event: NSEvent) {
-    anchor = nil
-    guard let selection, min(selection.width, selection.height) >= RegionSelector.minimumSide
-    else {
-      self.selection = nil  // 单击或太小：回到待选，可以重新拖
-      return
-    }
-    let rect = RegionSelector.pixelRect(
-      selection, viewSize: bounds.size,
-      imageSize: CGSize(width: image.width, height: image.height))
-    onFinish(image.cropping(to: rect))
-  }
-
-  override func rightMouseDown(with event: NSEvent) { onFinish(nil) }
-
-  override func keyDown(with event: NSEvent) {
-    if Int(event.keyCode) == kVK_Escape { onFinish(nil) } else { super.keyDown(with: event) }
-  }
-
-  /// 事件位置（视图坐标），夹在本屏范围内
-  private func point(_ event: NSEvent) -> CGPoint {
-    let point = convert(event.locationInWindow, from: nil)
-    return CGPoint(
-      x: min(max(point.x, bounds.minX), bounds.maxX), y: min(max(point.y, bounds.minY), bounds.maxY)
-    )
   }
 }

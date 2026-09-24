@@ -1,5 +1,5 @@
 ---
-description: 原生分支 macOS 热键浮层规范（OverlayPanel / 全局热键 / 粘贴回原 App / 浮层内输入框 / 划词时序）
+description: 原生分支 macOS 热键浮层规范（OverlayPanel / 全局热键 / 粘贴回原 App / 浮层内输入框 / 划词时序 / 截图框选遮罩 / 钉图）
 globs: macos/KittyTools/Shell/**,macos/KittyTools/Screenshot/**,macos/KittyTools/Translate/SelectionReader.swift
 alwaysApply: false
 ---
@@ -9,7 +9,7 @@ alwaysApply: false
 M1 实测结论 + master 旧规则 `macos-overlay-panel.mdc` 删减。代码：`Shell/OverlayPanel.swift`、`HotKeyCenter.swift`、`Paster.swift`、`Permissions.swift`、`CommandTextField.swift`，`Translate/SourceTextView.swift`。
 
 ## 1. 浮层只有 OverlayPanel 一种
-- 剪贴板面板、翻译浮窗、启动器（`topAnchored`：鼠标所在屏、顶边在可见区 20% 处，`setContentHeight` 顶边不动地伸缩）都是 `OverlayPanel` 实例，**禁止**另写 NSPanel / NSWindow 子类。唯一例外是截图框选遮罩 `SelectionOverlay`（§8）：无边框、全屏、每屏一个、用完即释放，和浮层的行为没有交集。
+- 剪贴板面板、翻译浮窗、启动器（`topAnchored`：鼠标所在屏、顶边在可见区 20% 处，`setContentHeight` 顶边不动地伸缩）都是 `OverlayPanel` 实例，**禁止**另写 NSPanel / NSWindow 子类。例外只有两个，都是无边框、要当 key 收 Esc 才子类化：截图框选遮罩 `SelectionOverlay`（§8，全屏、每屏一个、用完即释放）和钉图 `PinPanel`（§9）；它们和浮层的行为没有交集。
 - `styleMask` 在 init 里一次写全，含 `.nonactivatingPanel`（初始化后再加不生效）；`.titled + .fullSizeContentView` + 隐藏三个按钮，拿系统圆角、阴影和缩放。
 - 显示只走 `present()`（`orderFrontRegardless` + `makeKey`）；**永远不对浮层调 `NSApp.activate`**，否则前台 App 变成自己，⌘V / ⌘C 会落空。
 - `NSHostingView.sizingOptions = []`：窗口尺寸由 `OverlayPanel` 定，不让 SwiftUI 理想尺寸反推。
@@ -63,3 +63,14 @@ M1 实测结论 + master 旧规则 `macos-overlay-panel.mdc` 删减。代码：`
 - 截图原文已在剪贴板历史里时只 `bump`，不走 `record`（会冲掉那条的格式和来源）。
 - 选区（点、原点左下）→ 像素（原点左上）只走 `RegionSelector.pixelRect`，配单测；各屏按自己的像素尺寸换算（混合缩放多屏）。
 - 识字 `OCR.recognizeText(in: CGImage)`：只开自动识别语种、**不给语言提示**（给提示时中日韩混排图里日文、韩文整行丢失，单测锁住）。
+- 截图与截图翻译共用 `AppDelegate.beginCapture`（互斥、收面板）+ `frozenSelection`（授权 → 冻结 → 暂停热键框选 → 恢复）；`RegionSelector.select`（截图翻译）的行为不能被截图模式带着改。
+- 遮罩画面走图层（`SelectionView`）：冻结帧放在 layer-hosting 的 `Canvas` 上，蒙层、边框、手柄、放大镜是 CALayer，更新都包在 `CATransaction.setDisableActions(true)` 里；**不要**改回在 `draw(_:)` 里每次画整张冻结帧（5K 屏拖动卡）。`contentsScale` 跟 `backingScaleFactor` 走，否则 Retina 上线条发糊。
+- 窗口吸附只读冻结那一刻的 `Shot.windows`（从前到后，第一个包含点的就是），不读实时窗口列表、不按面积排（§11 #41）。
+- 选区只在一块屏上：一块屏开始操作就 `session.activate(self)` 清掉别的屏；截图模式下选区外单击不动，拖动才开新选区。
+- 输出：遮罩先收起（`session.finish`）再做复制 / 保存 / 钉图；另存为要先激活本 App 才弹 NSSavePanel，存完还前台。裁出的图用 `RegionSelector.detached` 拷成独立的图（`cropping` 的结果引用整屏冻结帧）。复制也经 `Paster.write`，所以要自己记进剪贴板历史。
+- 截图自检：`SnapshotProbeTests.renderLayers` 把视图放进屏外窗口跑几轮 RunLoop 再 `layer.render(in:)`（`cacheDisplay` 画不出直接加的子图层）。
+
+## 9. 钉图（`Screenshot/PinPanel.swift`）
+- `PinPanel`：`.borderless + .nonactivatingPanel`、`.floating`、`canBecomeKey`；显示只 `orderFrontRegardless`，**不 makeKey**（出现时不抢键盘，修旧版 §11 #48）；用户点了它才 makeKey，Esc / ⌘C 才归它。
+- 原位置出现（选区的全局坐标），`constrainFrameRect` 原样返回，别被挪出菜单栏区域。拖动用 `performDrag(with:)`，双击关闭；缩放以鼠标为锚点、保持宽高比。
+- 不做点击穿透、不做钉图历史；`freeze(keeping: pins.windowNumbers)` 让钉图留在之后的截图里。
