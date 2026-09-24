@@ -11,6 +11,7 @@ struct SearchEngine: Codable, Hashable, Identifiable {
   var keyword: String
   /// {query} 处替换成编码后的搜索词；漏写时追加到末尾
   var urlTemplate: String
+  /// 没有本地结果时是否作为兜底（关键词直达不受它影响）
   var enabled: Bool
 }
 
@@ -39,13 +40,14 @@ enum WebSearch {
     }
   }
 
-  /// 「g swift」→ 用关键词为 g 的引擎搜 swift
+  /// 「g swift」→ 用关键词为 g 的引擎搜 swift。关键词直达不看 enabled（enabled 只管兜底，和旧版、Alfred 一致）；
+  /// 关键词重复时取列表里靠前的
   static func keywordItem(for query: String, engines: [SearchEngine] = engines) -> LauncherItem? {
     let parts = query.trimmingCharacters(in: .whitespaces).split(
       separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
     guard parts.count == 2,
       let engine = engines.first(where: {
-        $0.enabled && !$0.keyword.isEmpty && $0.keyword.lowercased() == parts[0].lowercased()
+        !$0.keyword.isEmpty && $0.keyword.lowercased() == parts[0].lowercased()
       })
     else { return nil }
     return item(engine, String(parts[1]))

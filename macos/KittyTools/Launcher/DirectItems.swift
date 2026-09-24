@@ -8,7 +8,8 @@ import Foundation
 enum DirectItems {
   static let topLevelDomains: Set<String> = [
     "com", "cn", "net", "org", "io", "dev", "me", "co", "tv", "ai", "edu", "gov", "info", "biz",
-    "uk", "jp", "de", "fr", "cc", "top", "xyz", "do", "so", "sh", "gg", "im", "ly", "to", "tech",
+    // 不收 sh / so / cc 这类同时是常见文件扩展名的后缀（install.sh、libfoo.so 会被当成网址）
+    "uk", "jp", "de", "fr", "top", "xyz", "do", "gg", "im", "ly", "to", "tech",
     "site", "online", "app",
   ]
 

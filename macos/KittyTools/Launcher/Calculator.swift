@@ -31,12 +31,14 @@ enum Calculator {
     return value
   }
 
-  /// 整数原样；其余最多 12 位有效数字、去掉末尾的 0
+  /// 能精确表示的整数（≤ 2^53）原样；太大太小用科学计数（2^60 以前被显示成末尾补 0 的「精确」整数）；
+  /// 其余最多 12 位有效数字、去掉末尾的 0
   static func format(_ value: Double) -> String {
-    if value == value.rounded(), abs(value) < 1e15 { return String(Int64(value)) }
-    return value.formatted(
-      .number.precision(.significantDigits(1...12)).grouping(.never)
-        .locale(Locale(identifier: "en_US_POSIX")))
+    if value == value.rounded(), abs(value) <= 9_007_199_254_740_992 { return String(Int64(value)) }
+    let style = FloatingPointFormatStyle<Double>.number.precision(.significantDigits(1...12))
+      .grouping(.never).locale(Locale(identifier: "en_US_POSIX"))
+    return abs(value) >= 1e15 || abs(value) < 1e-9
+      ? value.formatted(style.notation(.scientific)) : value.formatted(style)
   }
 
   private struct Parser {

@@ -142,6 +142,7 @@ struct LauncherTests {
     #expect(url("www.example.app") == "https://www.example.app")
     #expect(url("Safari.app") == nil)  // 旧版当成网址
     #expect(url("file.txt") == nil)
+    #expect(url("install.sh") == nil)  // 常见文件扩展名不当域名后缀
     #expect(url("hello world.com") == nil)
     #expect(url("1.2.3") == nil)
     #expect(DirectItems.existingPath(from: "~") == NSHomeDirectory())
@@ -165,6 +166,8 @@ struct LauncherTests {
     #expect(value("sqrt(") == nil)  // 半截表达式不能崩
     #expect(Calculator.format(0.1 + 0.2) == "0.3")
     #expect(Calculator.format(2 * .pi) == "6.28318530718")
+    #expect(Calculator.format(pow(2, 53)) == "9007199254740992")  // 能精确表示的整数原样
+    #expect(Calculator.format(pow(2, 60)).contains("E"))  // 更大的用科学计数，不显示成补 0 的「精确」整数
     #expect(Calculator.item(for: "1+2")?.payload == "3")
     #expect(Calculator.item(for: "2024-01-01") == nil)  // 日期不当算式
     #expect(Calculator.item(for: "abc") == nil)
@@ -185,6 +188,14 @@ struct LauncherTests {
     #expect(
       keyword.kind == .search && keyword.target == "https://g.com/?q=c%2B%2B%20%E6%95%99%E7%A8%8B")
     #expect(WebSearch.keywordItem(for: "g", engines: engines) == nil)  // 关键词后面要有内容
+    // 关键词直达不看「兜底」开关
+    let keywordOnly = [
+      SearchEngine(
+        id: "gh", name: "GitHub", keyword: "gh", urlTemplate: "https://github.com/search?q={query}",
+        enabled: false)
+    ]
+    #expect(WebSearch.keywordItem(for: "gh swift", engines: keywordOnly) != nil)
+    #expect(WebSearch.fallbackItems(for: "swift", engines: keywordOnly).isEmpty)
     let fallback = WebSearch.fallbackItems(for: "swift", engines: engines)
     // 第二个引擎漏写 {query}：搜索词追加到末尾
     #expect(fallback.map(\.target) == ["https://g.com/?q=swift", "https://b.com/?q=swift"])

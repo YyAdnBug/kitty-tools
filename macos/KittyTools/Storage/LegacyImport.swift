@@ -61,7 +61,7 @@ enum LegacyImport {
         launcherEntries(
           frecency: try readIfExists("launcher_frecency.json"),
           affinity: try readIfExists("launcher_query_affinity.json"),
-          bookmarkURLs: Bookmarks.items().map(\.target)))
+          bookmarkURLs: Bookmarks.allURLs()))
       lines.append("✓ 启动器使用记录：新增 \(launcherAdded)")
     } catch {
       lines.append("✗ " + ((error as? LocalizedError)?.errorDescription ?? "\(error)"))

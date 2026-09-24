@@ -24,8 +24,9 @@ import Observation
   @ObservationIgnored var runAction: (String) -> Void = { _ in }
   /// 面板按内容伸缩高度（顶边不动）
   @ObservationIgnored var resize: (CGFloat) -> Void = { _ in }
-  /// cb 指令：按关键词搜剪贴板历史（ClipboardStore.search）
+  /// cb 指令：按关键词搜剪贴板历史（ClipboardStore.search）；复制走剪贴板面板的逻辑（展开片段、保留格式）
   @ObservationIgnored var searchClipboard: (String) -> [ClipItem] = { _ in [] }
+  @ObservationIgnored var copyClip: (UUID) -> Void = { _ in }
 
   static let recentLimit = 8
   static let rescanInterval: TimeInterval = 300
@@ -83,8 +84,14 @@ import Observation
     let local = LauncherMatch.rank(
       apps + LauncherItem.actions + bookmarks + usedLocations(excluding: bookmarks), query: query
     ) { usage.boost(for: $0, query: query) }
-    let fallback = keyword == nil && direct.isEmpty ? WebSearch.fallbackItems(for: query) : []
-    results = top + (local.isEmpty || query.contains(" ") ? fallback + local : local + fallback)
+    // 兜底只在没有本地结果时出现（和 Alfred 一样；以前带空格的查询把兜底排到匹配的 App 前面）。
+    // 显式的 http(s) 网址、存在的路径就不再兜底
+    let explicit = direct.contains { $0.kind == .path } || query.lowercased().hasPrefix("http")
+    let fallback =
+      keyword == nil && local.isEmpty && !explicit ? WebSearch.fallbackItems(for: query) : []
+    // 直达项和书签 / 用过的网址可能是同一项：按 id 去重，保留靠前的
+    var seen = Set<String>()
+    results = (top + local + fallback).filter { seen.insert($0.id).inserted }
   }
 
   /// 「cb」或「cb 关键词」
@@ -157,8 +164,11 @@ import Observation
 
   func execute(_ item: LauncherItem) {
     switch item.kind {
-    case .calculation, .clip:
+    case .calculation:
       Paster.write(string: item.payload ?? "")
+      hidePanel()
+    case .clip:
+      if let id = UUID(uuidString: item.target) { copyClip(id) }
       hidePanel()
     case .search:
       guard let url = URL(string: item.target), NSWorkspace.shared.open(url) else {

@@ -284,6 +284,11 @@ import Observation
     showToast(.message("已复制"))
   }
 
+  /// 启动器 cb 复制一条：和面板里一样展开片段占位符、带格式的连格式一起写
+  func copy(_ item: ClipItem) {
+    Paster.write(pasteboardPayloads([item], plainText: false)[0])
+  }
+
   private func pasteboardPayloads(_ items: [ClipItem], plainText: Bool) -> [[NSPasteboardItem]] {
     if items.count > 1, items.allSatisfy({ $0.kind == .text }) {
       return [[plainItem(mergedText(items))]]

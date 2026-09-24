@@ -55,6 +55,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.resize = { [unowned panel] in panel.setContentHeight($0) }
     model.runAction = { [unowned self] in runLauncherAction($0) }
     model.searchClipboard = { [unowned self] in clipboardStore.search($0) }
+    model.copyClip = { [unowned self] id in
+      if let item = clipboardStore.items.first(where: { $0.id == id }) { clipboardModel.copy(item) }
+    }
     return panel
   }()
 
