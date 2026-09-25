@@ -66,8 +66,10 @@ enum Prefs {
   /// 识字后把同一段的换行合成一行（中日文直接连、其它加空格）
   static let ocrJoinLines = "ocrJoinLines"
 
-  /// 上次启动的版本号：没有 = 首次安装（打开通用页），和当前不同 = 刚更新（打开关于页看更新内容）
+  /// 上次启动的版本号：没有 = 首次安装（打开欢迎引导），和当前不同 = 刚更新（打开关于页看更新内容）
   static let lastSeenVersion = "lastSeenVersion"
+  /// 设置窗上次看的页（SettingsPage.rawValue）
+  static let settingsPage = "settingsPage"
 
   static func registerDefaults() {
     UserDefaults.standard.register(defaults: [

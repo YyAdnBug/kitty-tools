@@ -1,5 +1,6 @@
-// 设置 › 翻译：语言（第一 / 第二语言；源、目标只在浮窗顶部切换）、行为（去换行、自动复制、历史与导出），
-// 服务（启用、排序、各服务的选项与密钥、自建 AI 实例的增删改、获取模型、测试连接）。密钥直接读写钥匙串。
+// 设置 › 翻译：语言（第一 / 第二语言；源、目标只在浮窗顶部切换）、译文字号（真卡片实时预览，和浮窗 ⌘± 是同一个值）、
+// 行为（去换行、自动复制、历史与导出），服务（启用、排序、各服务的选项与密钥、自建 AI 实例的增删改、获取模型、测试连接）。
+// 密钥直接读写钥匙串。控件分工（Whisker §6）：2–3 项分段、3–5 项单选、> 5 项弹出菜单。
 
 import AppKit
 import SwiftUI
@@ -8,6 +9,8 @@ import UniformTypeIdentifiers
 struct TranslateTab: View {
   @Bindable var services: TranslateServiceStore
   let history: HistoryStore
+  let speaker: Speaker
+  @AppStorage(Prefs.translateFontScale) private var fontScale = 1.0
   @AppStorage(Prefs.translateFirst) private var first = Lang.zhHans.rawValue
   @AppStorage(Prefs.translateSecond) private var second = Lang.en.rawValue
   @AppStorage(Prefs.translateRemoveNewlines) private var removeNewlines = false
@@ -35,14 +38,35 @@ struct TranslateTab: View {
       // 两个选成同一种语言（简繁也算）就互换，免得「自动」变成中译中
       .onChange(of: first) { old, new in if sameLanguage(new, second) { second = old } }
       .onChange(of: second) { old, new in if sameLanguage(new, first) { first = old } }
+      Section("译文字号") {
+        LabeledContent {
+          HStack(spacing: 10) {
+            Slider(value: $fontScale, in: TranslateCoordinator.fontScales, step: 0.1)
+            Text(fontScale.formatted(.percent.precision(.fractionLength(0))))
+              .font(.system(size: 12, weight: .medium)).monospacedDigit()
+              .contentTransition(.numericText(value: fontScale))
+              .frame(width: 40, alignment: .trailing)
+          }
+        } label: {
+          Text("大小")
+        }
+        // 实时预览：浮窗里的同一张卡（第一个服务），字号跟着滑块变
+        ProviderCardView(
+          card: .init(service: services.services.first ?? .zhipu, state: .done(Self.sample)),
+          index: 0, language: .zhHans, speaker: speaker, fontScale: fontScale, onRetry: {}
+        )
+        .animation(.smooth(duration: 0.18), value: fontScale)
+      }
       Section {
         Toggle("翻译前把换行合成一段（适合 PDF 复制的文字）", isOn: $removeNewlines)
         Toggle("自动复制第一个服务的译文", isOn: $autoCopy)
           .help("「复制即译」开着时不会自动复制，免得自己触发自己")
         Toggle("记录翻译历史", isOn: $historyEnabled)
-        Picker("历史最多保留", selection: $historyLimit) {
-          ForEach([100, 200, 500, 1000, 2000], id: \.self) { Text("\($0) 条").tag($0) }
+        Picker("历史最多保留（条）", selection: $historyLimit) {
+          ForEach([100, 200, 500, 1000, 2000], id: \.self) { Text(verbatim: "\($0)").tag($0) }
         }
+        .pickerStyle(.radioGroup)
+        .horizontalRadioGroupLayout()
         .disabled(!historyEnabled)
         LabeledContent("导出") {
           Menu("导出…") {
@@ -99,8 +123,9 @@ struct TranslateTab: View {
       }
     }
     .formStyle(.grouped)
-    .frame(width: 540, height: 600)
   }
+
+  private static let sample = "SwiftUI 提供了声明 App 界面所需的视图、控件和布局结构。"
 
   private func sameLanguage(_ a: String, _ b: String) -> Bool {
     guard let a = Lang(rawValue: a), let b = Lang(rawValue: b) else { return false }
@@ -218,17 +243,20 @@ private struct ServiceEditor: View {
       Picker("模型", selection: Binding($service.model, default: TranslateService.zhipuModels[0])) {
         ForEach(TranslateService.zhipuModels, id: \.self) { Text($0).tag($0) }
       }
+      .pickerStyle(.segmented)
     case .ai:
       TextField("名称", text: $service.name)
       Picker("协议", selection: Binding($service.aiProtocol, default: .openai)) {
         ForEach(TranslateService.AIProtocol.allCases, id: \.self) { Text($0.title).tag($0) }
       }
+      .pickerStyle(.segmented)
       TextField("服务地址", text: Binding($service.baseURL, default: ""), prompt: Text(addressHint))
     case .deepl:
       Picker("接口", selection: Binding($service.usesDeepLX, default: false)) {
         Text("官方 API").tag(false)
         Text("DeepLX（自建）").tag(true)
       }
+      .pickerStyle(.segmented)
       if service.usesDeepLX == true {
         TextField(
           "DeepLX 地址", text: Binding($service.baseURL, default: ""),

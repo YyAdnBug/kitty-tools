@@ -1,4 +1,5 @@
-// 设置 › 截图：⌘S 快速保存的位置、快门声、识字是否把换行合成一段，以及框选、长截图的按键说明。快捷键在「快捷键」页。
+// 设置 › 截图：⌘S 快速保存的位置、快门声（可试听）、识字是否把换行合成一段（开关旁边实时对照效果），
+// 以及框选、长截图的按键说明。快捷键在「快捷键」页。
 
 import AppKit
 import SwiftUI
@@ -25,12 +26,22 @@ struct ScreenshotTab: View {
         caption("框选后按 ⌘S 存到这里，文件名是「截图 日期 时间.png」，重名自动加序号；「另存为」选的文件夹也会记成这里。")
       }
       Section {
-        Toggle("截图时播放快门声", isOn: $shutterSound)
+        Toggle(isOn: $shutterSound) {
+          HStack(spacing: 6) {
+            Text("截图时播放快门声")
+            Button("试听", systemImage: "speaker.wave.2.fill") { FlyCard.playShutter() }
+              .labelStyle(.iconOnly)
+              .buttonStyle(.borderless)
+              .disabled(!shutterSound)
+              .help("试听快门声")
+          }
+        }
       } footer: {
         caption("复制、保存、钉图时响；还要系统设置 › 声音里的「播放用户界面音效」开着。截图翻译、识字不出声。")
       }
       Section {
         Toggle("识字后把换行合成一段", isOn: $joinLines)
+        JoinLinesPreview(joins: joinLines)
       } footer: {
         caption("整段合成一行：中文、日文的行直接接上，其它文字之间加空格。框选里有二维码或条码时复制它的内容。")
       }
@@ -48,8 +59,6 @@ struct ScreenshotTab: View {
       }
     }
     .formStyle(.grouped)
-    .frame(width: 520)
-    .fixedSize(horizontal: false, vertical: true)
   }
 
   private var displayPath: String {
@@ -71,5 +80,27 @@ struct ScreenshotTab: View {
 
   private func caption(_ text: String) -> some View {
     Text(text).font(.caption).foregroundStyle(.secondary)
+  }
+}
+
+/// 「合成一段」的实时对照：同一段识别结果，开关打开时按 OCR.joiningLines 接成一行（中文直接连、英文加空格）
+private struct JoinLinesPreview: View {
+  let joins: Bool
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  private static let sample = "敏捷的棕色狐狸\n跳过了懒狗。The quick\nbrown fox jumps."
+
+  var body: some View {
+    Text(joins ? OCR.joiningLines(Self.sample) : Self.sample)
+      .font(.system(size: 12, design: .monospaced))
+      .foregroundStyle(.secondary)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(8)
+      .background(
+        Style.controlFill, in: .rect(cornerRadius: Style.Radius.control, style: .continuous)
+      )
+      .contentTransition(.opacity)
+      .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: joins)
+      .accessibilityLabel("效果示例")
   }
 }

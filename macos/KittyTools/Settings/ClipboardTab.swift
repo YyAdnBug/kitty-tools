@@ -1,5 +1,5 @@
-// 设置 › 剪贴板：历史上限、面板行为、格式与图片文字、隐私（敏感文本 / 排除 App）、清空时机。
-// 上限类设置改了立即生效（执行一次清理）。
+// 设置 › 剪贴板：历史上限、面板行为（带实时示意图）、格式与图片文字、隐私（敏感文本 / 排除 App）、清空时机。
+// 上限类设置改了立即生效（执行一次清理）。控件分工（Whisker §6）：> 5 项弹出菜单、3–5 项单选。
 
 import SwiftUI
 
@@ -38,10 +38,14 @@ struct ClipboardTab: View {
           }
           Text("不限").tag(0)
         }
+        .pickerStyle(.radioGroup)
+        .horizontalRadioGroupLayout()
         LabeledContent("图片当前占用", value: imageUsage)
         Text("收藏、片段和已归组的条目不受以上限制").font(.caption).foregroundStyle(.secondary)
       }
       Section("面板") {
+        ClipboardPanelSketch(showsPreview: showPreview, showsLinkPreview: linkPreview)
+          .frame(maxWidth: .infinity)
         Toggle("显示预览栏", isOn: $showPreview)
         Toggle(isOn: $linkPreview) {
           Text("链接显示网页标题和图片")
@@ -95,8 +99,6 @@ struct ClipboardTab: View {
       }
     }
     .formStyle(.grouped)
-    // 固定高度、表单内滚动：内容全展开比小屏笔记本还高
-    .frame(width: 520, height: 560)
     .onChange(of: historyMax) { store.enforceLimits() }
     .onChange(of: retentionDays) { store.enforceLimits() }
     .onChange(of: imageBudgetMB) { store.enforceLimits() }
@@ -133,5 +135,81 @@ struct ClipboardTab: View {
       .filter { $0.activationPolicy == .regular && $0 != .current }
       .compactMap { app in app.bundleIdentifier.map { ($0, app.localizedName ?? $0) } }
       .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+  }
+}
+
+/// 剪贴板面板的示意图（实时预览）：跟着「显示预览栏」「链接显示网页标题和图片」变——
+/// 没有预览栏时列表占满；链接卡有没有头图。只是线框，不画真内容
+private struct ClipboardPanelSketch: View {
+  let showsPreview: Bool
+  let showsLinkPreview: Bool
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    let panel = RoundedRectangle(cornerRadius: 12, style: .continuous)
+    VStack(spacing: 0) {
+      // 搜索栏
+      HStack(spacing: 6) {
+        Image(systemName: "magnifyingglass").font(.system(size: 9, weight: .semibold))
+        Capsule().fill(.primary.opacity(0.12)).frame(width: 70, height: 5)
+        Spacer()
+      }
+      .foregroundStyle(.tertiary)
+      .padding(.horizontal, 10)
+      .frame(height: 22)
+      Style.hairline.frame(height: 0.5)
+      HStack(spacing: 0) {
+        VStack(spacing: 5) {
+          ForEach(0..<5, id: \.self) { index in
+            HStack(spacing: 5) {
+              RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                .fill(index == 1 ? Style.Family.url.opacity(0.7) : .primary.opacity(0.14))
+                .frame(width: 11, height: 11)
+              Capsule().fill(.primary.opacity(0.12)).frame(height: 4)
+            }
+            .padding(.horizontal, 5)
+            .frame(height: 16)
+            .background(
+              index == 1 ? Style.selectedFill : .clear,
+              in: .rect(cornerRadius: 4, style: .continuous))
+          }
+          Spacer(minLength: 0)
+        }
+        .padding(5)
+        .frame(width: showsPreview ? 96 : nil)
+        .frame(maxWidth: showsPreview ? nil : .infinity)
+        if showsPreview {
+          Style.hairline.frame(width: 0.5)
+          VStack(alignment: .leading, spacing: 5) {
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+              .fill(Color(nsColor: .systemBlue).opacity(0.75)).frame(height: 10)
+            if showsLinkPreview {
+              RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .fill(
+                  LinearGradient(
+                    colors: [Style.Family.url.opacity(0.5), Style.Family.search.opacity(0.35)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing)
+                )
+                .frame(height: 34)
+                .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
+            }
+            Capsule().fill(.primary.opacity(0.22)).frame(width: 80, height: 5)
+            Capsule().fill(.primary.opacity(0.12)).frame(width: 60, height: 4)
+            Spacer(minLength: 0)
+          }
+          .padding(6)
+          .transition(.opacity.combined(with: .move(edge: .trailing)))
+        }
+      }
+    }
+    .frame(width: 240, height: 124)
+    .background(.background, in: panel)
+    .overlay(panel.strokeBorder(Style.hairline, lineWidth: 0.5))
+    .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
+    .clipShape(panel)
+    .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: showsPreview)
+    .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: showsLinkPreview)
+    .padding(.vertical, 6)
+    .accessibilityHidden(true)
   }
 }

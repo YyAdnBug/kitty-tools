@@ -32,7 +32,7 @@ struct KittyToolsApp: App {
       Divider()
       Button("设置…") { appDelegate.showSettings() }
         .keyboardShortcut(",")
-      Button("关于 Kitty Tools Native") { appDelegate.showSettings(tab: "关于") }
+      Button("关于 Kitty Tools Native") { appDelegate.showSettings(page: .about) }
       Button("退出") { NSApp.terminate(nil) }
         .keyboardShortcut("q")
     }

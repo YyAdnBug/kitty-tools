@@ -41,7 +41,7 @@ alwaysApply: false
 - 焦点始终在搜索框（`CommandTextField`）；编辑命令走 doCommandBy，⌘ 组合键走 `OverlayPanel.keyEquivalentHandler`。
 - 对话框画在面板里（`DialogOverlay`），不开 sheet 窗口；输入框用 `isDialogField`，关闭后焦点回搜索框。
 - 每次隐藏都 `reset()`：搜索、筛选、多选、选中回第一条，并提交未撤销的删除。
-- ⌘Y 放大预览（`QuickLookView`）：单独一个 `OverlayPanel` 实例，内容是检查器同一张卡的 enlarged 版（文件嵌 `QLPreviewView`）。**不用系统 `QLPreviewPanel`**：它没有 `.nonactivatingPanel`，当 key 会把键盘还给原 App 之外的地方、点它会激活本 App。预览浮层 `becomesKeyOnlyIfNeeded`（只有点里面的文字才当 key），剪贴板面板一直是 key；收起时（onHide）把 key 还给剪贴板面板。开操作面板、对话框、剪贴板面板收起、粘贴时预览直接消失（不缩回）。
+- ⌘Y 放大预览（`QuickLookView`）：单独一个 `OverlayPanel` 实例，内容是检查器同一张卡的 enlarged 版（文件嵌 `QLPreviewView`）。**不用系统 `QLPreviewPanel`**：它没有 `.nonactivatingPanel`，当 key 时键盘不再归本 App 的非激活浮层、点它会激活本 App（前台 App 变成自己，粘贴会落空）。预览浮层 `becomesKeyOnlyIfNeeded`（只有点里面的文字才当 key），剪贴板面板一直是 key；收起时（onHide）把 key 还给剪贴板面板。开操作面板、对话框、剪贴板面板收起、粘贴时预览直接消失（不缩回）。
 
 ## 5. 视觉
 - 按 Whisker（`mac-whisker.mdc` §6 剪贴板）：760×480；56 pt 搜索框、22 pt 范围胶囊 + 生效筛选标签 +「筛选」菜单；列表宽 320、行 44、30 pt 图标块（代码 / JSON / 链接有角标），⌘1–9 键帽按住 ⌘ 才出现；**选中是列表背后一块滑动的中性高亮，不填强调色、不反白**（按前缀和定位，键盘 snap、连发与筛选变化不动画）；分组标题只有吸顶时才加材质底。检查器是一张卡片：页眉取来源 App 图标颜色（`AppIcons.accentColor` → `PreviewView.headerStyle`：白字不到 4.5:1 时，偏暗的底色压暗到够、偏亮的改黑字），按类型出大预览（颜色四种写法点击复制、代码 / JSON 语法着色 `SyntaxHighlight`、链接卡 `LinkPreview`、图片棋盘格 + 尺寸胶囊、文件 Quick Look 缩略图），页脚最多 4 个胶囊按钮。

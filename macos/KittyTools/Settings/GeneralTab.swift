@@ -1,4 +1,5 @@
-// 设置 › 通用：开机自启、权限状态（辅助功能、屏幕录制、剪贴板访问）、从旧版导入（设置、密钥、剪贴板保留条目、翻译历史）。
+// 设置 › 通用：开机自启、权限状态（辅助功能、屏幕录制、剪贴板访问；从未授权变已授权时符号替换 + 弹一下）、
+// 从旧版导入（设置、密钥、剪贴板保留条目、翻译历史）。
 
 import ServiceManagement
 import SwiftUI
@@ -33,28 +34,20 @@ struct GeneralTab: View {
         if let loginError { caption(loginError).foregroundStyle(.red) }
       }
       Section("权限") {
-        LabeledContent("辅助功能") {
-          if trusted {
-            Label("已授权", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-          } else {
-            Button("去授权") {
-              Permissions.requestAccessibility()
-              Permissions.openAccessibilitySettings()
-            }
-          }
+        PermissionRow(
+          title: "辅助功能", detail: "粘贴回原 App、划词翻译、长截图自动滚动", symbol: "hand.raised.fill",
+          color: Style.Family.command, granted: trusted
+        ) {
+          Permissions.requestAccessibility()
+          Permissions.openAccessibilitySettings()
         }
-        caption("粘贴回原 App、划词翻译都需要「辅助功能」授权。")
-        LabeledContent("屏幕录制") {
-          if screenRecording {
-            Label("已授权", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-          } else {
-            Button("去授权") {
-              Permissions.requestScreenRecording()
-              Permissions.Kind.screenRecording.openSettings()
-            }
-          }
+        PermissionRow(
+          title: "屏幕录制", detail: "截图、截图翻译、识字；授权后可能要重新打开本 App 才生效",
+          symbol: "record.circle", color: Style.Family.screenshot, granted: screenRecording
+        ) {
+          Permissions.requestScreenRecording()
+          Permissions.Kind.screenRecording.openSettings()
         }
-        caption("截图翻译需要「屏幕录制」授权；授权后可能要重新打开本 App 才生效。")
         if #available(macOS 15.4, *) { pasteboardAccess }
       }
       Section("从旧版导入") {
@@ -71,8 +64,6 @@ struct GeneralTab: View {
       }
     }
     .formStyle(.grouped)
-    .frame(width: 520)
-    .fixedSize(horizontal: false, vertical: true)
     .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
       trusted = Permissions.isAccessibilityTrusted
       screenRecording = Permissions.isScreenRecordingAllowed
@@ -135,6 +126,36 @@ struct GeneralTab: View {
 
   private func caption(_ text: String) -> some View {
     Text(text).font(.caption).foregroundStyle(.secondary)
+  }
+}
+
+/// 一行权限：家族色块 + 名字 + 用途，右边是状态（未授权时带「去授权」）。从未授权变已授权时符号替换 + 弹一下
+/// （Whisker §6 设置）；通用页和欢迎引导共用
+struct PermissionRow: View {
+  let title: String
+  let detail: String
+  let symbol: String
+  let color: Color
+  let granted: Bool
+  let grant: () -> Void
+
+  var body: some View {
+    HStack(spacing: 10) {
+      KindTile(symbol: symbol, color: color, size: 24)
+      VStack(alignment: .leading, spacing: 1) {
+        Text(title)
+        Text(detail).font(.caption).foregroundStyle(.secondary)
+      }
+      Spacer(minLength: 8)
+      if !granted { Button("去授权", action: grant) }
+      Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+        .font(.system(size: 16, weight: .medium))
+        .foregroundStyle(Color(nsColor: granted ? .systemGreen : .systemOrange))
+        .contentTransition(.symbolEffect(.replace))
+        .symbolEffect(.bounce, value: granted)
+        .accessibilityLabel(granted ? "已授权" : "未授权")
+    }
+    .accessibilityElement(children: .combine)
   }
 }
 

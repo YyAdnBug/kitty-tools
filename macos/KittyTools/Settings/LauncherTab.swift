@@ -71,8 +71,6 @@ struct LauncherTab: View {
       }
     }
     .formStyle(.grouped)
-    // 列表会越加越长：固定高度、表单自己滚（按内容撑高时笔记本屏幕上底部的开关够不着）
-    .frame(width: 560, height: 640)
     .sheet(item: $editing) { draft in
       EngineEditor(engine: draft.engine, isNew: draft.isNew) { saved in
         var list = engines.wrappedValue

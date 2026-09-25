@@ -111,29 +111,44 @@ struct SnapshotProbeTests {
       }
     }
     try renderTranslate(out)
-    try snapshot(
-      ClipboardTab(store: store), size: NSSize(width: 520, height: 760), dark: false,
-      to: "\(out)/settings-clipboard.png")
-    try snapshot(
-      HotkeysTab(center: HotKeyCenter()), size: NSSize(width: 520, height: 380), dark: false,
-      to: "\(out)/settings-hotkeys.png")
-    try snapshot(
-      GeneralTab { "" }, size: NSSize(width: 520, height: 480), dark: false,
-      to: "\(out)/settings-general.png")
-    for dark in [false, true] {
+    // 设置窗：侧栏 + 页头 + 各页表单（关于是品牌页），深色看两页；欢迎引导的每一步
+    let hotKeys = HotKeyCenter()
+    let services = TranslateServiceStore()
+    let history = try HistoryStore(db: Database(path: ":memory:"))
+    let speaker = Speaker()
+    let pages: (SettingsPage) -> AnyView = { page in
+      switch page {
+      case .general: AnyView(GeneralTab { "" })
+      case .clipboard: AnyView(ClipboardTab(store: store))
+      case .launcher: AnyView(LauncherTab())
+      case .screenshot: AnyView(ScreenshotTab())
+      case .translate:
+        AnyView(TranslateTab(services: services, history: history, speaker: speaker))
+      case .hotkeys: AnyView(HotkeysTab(center: hotKeys))
+      case .about: AnyView(AboutTab())
+      }
+    }
+    let navigation = SettingsNavigation()
+    let savedPage = navigation.page
+    for (page, dark) in SettingsPage.allCases.map({ ($0, false) }) + [
+      (.about, true), (.clipboard, true),
+    ] {
+      navigation.page = page
       try snapshot(
-        AboutTab(), size: NSSize(width: 520, height: 460), dark: dark,
-        to: "\(out)/settings-about\(dark ? "-dark" : "").png")
+        SettingsRoot(navigation: navigation, page: pages) { AnyView(EmptyView()) },
+        size: NSSize(width: 780, height: 600), dark: dark,
+        to: "\(out)/settings-\(page.rawValue)\(dark ? "-dark" : "").png")
+    }
+    navigation.page = savedPage  // 别把自检摆的页写进用户偏好
+    for step in OnboardingView.Step.allCases {
+      try snapshot(
+        OnboardingView(importLegacy: { "" }, step: step),
+        size: NSSize(width: 580, height: 460), dark: step == .welcome,
+        to: "\(out)/onboarding-\(step.rawValue).png")
     }
     try renderSelection(out)
     try renderScrollCapture(out)
     try renderLauncher(out)
-    try snapshot(
-      LauncherTab(), size: NSSize(width: 560, height: 640), dark: false,
-      to: "\(out)/settings-launcher.png")
-    try snapshot(
-      ScreenshotTab(), size: NSSize(width: 520, height: 420), dark: false,
-      to: "\(out)/settings-screenshot.png")
     // 刘海岛：刘海屏的下巴（成功 / 进行中）、无刘海屏的胶囊（取色色块 / 错误）
     let notch = Island.Geometry.notch(width: 200, height: 32)
     let islands: [(String, Island.Content, Island.Geometry)] = [
@@ -226,10 +241,6 @@ struct SnapshotProbeTests {
           to: "\(out)/\(name)\(dark ? "-dark" : "").png")
       }
     }
-    try snapshot(
-      TranslateTab(services: services, history: history), size: NSSize(width: 540, height: 600),
-      dark: false,
-      to: "\(out)/settings-translate.png")
   }
 
   /// 启动器：最近使用、搜索结果（中文名 / 拼音）、没有结果；深浅色

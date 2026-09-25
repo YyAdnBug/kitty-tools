@@ -133,6 +133,13 @@ enum Style {
   static let brand = dynamic(
     light: NSColor(red: 1, green: 0.302, blue: 0.494, alpha: 1),
     dark: NSColor(red: 1, green: 0.42, blue: 0.576, alpha: 1))
+  /// 品牌粉的文字色（#D12A5F / 深 #FF8FAB）和奶油底（#FFF5F0 / 深 #2A1D22）
+  static let brandInk = dynamic(
+    light: NSColor(red: 0.82, green: 0.165, blue: 0.373, alpha: 1),
+    dark: NSColor(red: 1, green: 0.561, blue: 0.671, alpha: 1))
+  static let brandCream = dynamic(
+    light: NSColor(red: 1, green: 0.961, blue: 0.941, alpha: 1),
+    dark: NSColor(red: 0.165, green: 0.114, blue: 0.133, alpha: 1))
 }
 
 /// 种类色块：非 App 结果（命令、网址、搜索、计算…）和设置页头用，视觉重量和 App 图标一致
