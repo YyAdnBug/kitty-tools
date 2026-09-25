@@ -1,6 +1,6 @@
-// 翻译浮窗根视图（原生重新设计，不沿用旧版样式）：
-// 顶栏：源语言 ⇄ 目标语言（在这里切换、全局记住）+ 复制即译 / 历史 / 设置 / 固定；
-// 原文区（↩ 翻译，⇧↩ / ⌘↩ 换行）+ 实际方向与原文操作（收藏、划词来的可「替换原文」）；
+// 翻译浮窗根视图（Whisker，mac-whisker §6 翻译）：三层、没有分割线（内边距 12、层间距 10）——
+// 顶栏：两个 28 pt 语言胶囊（显示实际语言，自动时带「自动」标签）+ 圆形互换钮（转半圈）+ 复制即译 / 历史 / 设置 / 固定；
+// 原文卡片（15 pt，↩ 翻译，⇧↩ / ⌘↩ 换行；只在出乎所选时写一行方向说明）+ 原文操作（收藏、划词来的可「替换原文」）；
 // 下方是各服务结果卡片（折叠状态记住），历史覆盖在结果区上。高度随内容伸缩（Bob 的做法：只让人拖宽度），
 // 字号可调（⌘+ / ⌘- / ⌘0）。状态和操作都在 TranslateCoordinator，窗口快捷键见它的 handleKeyEquivalent。
 
@@ -28,15 +28,19 @@ struct TranslatePanelView: View {
   @AppStorage(Prefs.translateSecond) private var second: String?
   @State private var chromeHeight: CGFloat = 0
   @State private var resultsHeight: CGFloat = 0
+  /// 互换钮转了几个半圈
+  @State private var swaps = 0
+  @Environment(\.colorScheme) private var scheme
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
-    VStack(spacing: 0) {
-      VStack(spacing: 0) {
+    VStack(spacing: 10) {
+      VStack(spacing: 10) {
         header
-        Divider()
         sourceArea
-        Divider()
       }
+      .padding(.horizontal, 12)
+      .padding(.top, 12)
       .onGeometryChange(for: CGFloat.self) {
         $0.size.height
       } action: {
@@ -53,6 +57,7 @@ struct TranslatePanelView: View {
         results.frame(maxHeight: .infinity)
       }
     }
+    .padding(.bottom, coordinator.showsHistory ? 0 : 2)
     // 一次操作只重译一次（交换、撞同语言时两个值在同一次更新里一起改）
     .onChange(of: [source, target]) { retranslate() }
     .onChange(of: desiredHeight, initial: true) { resize(desiredHeight) }
@@ -64,49 +69,93 @@ struct TranslatePanelView: View {
       coordinator.notice == nil && !coordinator.services.enabled.isEmpty
       && !coordinator.cards.isEmpty
     let body: CGFloat = coordinator.showsHistory ? 420 : showsCards ? resultsHeight : 200
-    return ceil(chromeHeight + body)
+    return ceil(chromeHeight + 10 + body + 2)
   }
 
   // MARK: 顶栏
 
   private var header: some View {
-    HStack(spacing: 6) {
-      Picker("源语言", selection: choose(\.source, other: \.target)) {
-        Text("自动检测").tag(String?.none)
-        Divider()
-        ForEach(Lang.allCases, id: \.self) { Text($0.title).tag(String?.some($0.rawValue)) }
+    HStack(spacing: 8) {
+      Menu {
+        Picker("源语言", selection: choose(\.source, other: \.target)) {
+          Text("自动检测").tag(String?.none)
+          Divider()
+          ForEach(Lang.allCases, id: \.self) { Text($0.title).tag(String?.some($0.rawValue)) }
+        }
+        .pickerStyle(.inline)
+      } label: {
+        LanguageCapsule(title: sourceTitle, showsAutoTag: source == nil && sourceTitle != "自动检测")
       }
+      .menuStyle(.button)
+      .buttonStyle(.plain)
+      .menuIndicator(.hidden)
+      .help("源语言")
       // 原样互换，「自动」也照换（Bob 的做法）；两边都自动时本来就是双向的，不用换
-      Button("交换语言", systemImage: "arrow.left.arrow.right") { (source, target) = (target, source) }
-        .disabled(source == nil && target == nil)
-      Picker("目标语言", selection: choose(\.target, other: \.source)) {
-        let pair = Lang.pair(first: first, second: second)
-        Text("自动（\(pair.first.title) ⇄ \(pair.second.title)）").tag(String?.none)
-        Divider()
-        ForEach(Lang.allCases, id: \.self) { Text($0.title).tag(String?.some($0.rawValue)) }
+      Button {
+        swaps += 1
+        (source, target) = (target, source)
+      } label: {
+        Image(systemName: "arrow.left.arrow.right")
+          .font(.system(size: 11, weight: .semibold))
+          .rotationEffect(.degrees(Double(swaps) * 180))
+          .animation(reduceMotion ? nil : .spring(duration: 0.35, bounce: 0.28), value: swaps)
+          .frame(width: 24, height: 24)
+          .background(Style.controlFill, in: .circle)
+          .contentShape(.circle)
       }
+      .buttonStyle(PressScale())
+      .disabled(source == nil && target == nil)
+      .opacity(source == nil && target == nil ? 0.35 : 1)
+      .help("交换语言")
+      Menu {
+        Picker("目标语言", selection: choose(\.target, other: \.source)) {
+          let pair = Lang.pair(first: first, second: second)
+          Text("自动（\(pair.first.title) ⇄ \(pair.second.title)）").tag(String?.none)
+          Divider()
+          ForEach(Lang.allCases, id: \.self) { Text($0.title).tag(String?.some($0.rawValue)) }
+        }
+        .pickerStyle(.inline)
+      } label: {
+        LanguageCapsule(title: targetTitle, showsAutoTag: target == nil && targetTitle != "自动")
+      }
+      .menuStyle(.button)
+      .buttonStyle(.plain)
+      .menuIndicator(.hidden)
+      .help("目标语言")
       Spacer(minLength: 4)
-      Toggle(isOn: $copyToTranslate) { Image(systemName: "doc.on.clipboard") }
-        .toggleStyle(.button)
-        .help(copyToTranslate ? "复制即译：已开启（复制文字后自动翻译）" : "复制即译：复制文字后自动翻译")
-      Toggle(isOn: $coordinator.showsHistory) { Image(systemName: "clock.arrow.circlepath") }
-        .toggleStyle(.button)
-        .help("翻译历史")
-      Button("设置", systemImage: "gearshape", action: openSettings)
-        .help("翻译设置。浮窗快捷键：⌘R 重新翻译、⌘S 收藏、⌘1–9 复制第几个结果、⌘P 固定、⌘W 关闭、⌘+ / ⌘- / ⌘0 字号")
-      Toggle(isOn: $pinned) { Image(systemName: pinned ? "pin.fill" : "pin") }
-        .toggleStyle(.button)
-        .help(pinned ? "已固定：失焦不收起、Esc 不关闭（⌘P）" : "固定浮窗（⌘P）")
+      Group {
+        Toggle(isOn: $copyToTranslate) { Image(systemName: "doc.on.clipboard") }
+          .toggleStyle(.button)
+          .foregroundStyle(copyToTranslate ? Color.accentColor : .secondary)
+          .help(copyToTranslate ? "复制即译：已开启（复制文字后自动翻译）" : "复制即译：复制文字后自动翻译")
+        Toggle(isOn: $coordinator.showsHistory) { Image(systemName: "clock.arrow.circlepath") }
+          .toggleStyle(.button)
+          .help("翻译历史")
+        Button("设置", systemImage: "gearshape", action: openSettings)
+          .help("翻译设置。浮窗快捷键：⌘R 重新翻译、⌘S 收藏、⌘1–9 复制第几个结果、⌘P 固定、⌘W 关闭、⌘+ / ⌘- / ⌘0 字号")
+        Toggle(isOn: $pinned) { Image(systemName: pinned ? "pin.fill" : "pin") }
+          .toggleStyle(.button)
+          .help(pinned ? "已固定：失焦不收起、Esc 不关闭（⌘P）" : "固定浮窗（⌘P）")
+      }
+      .font(.system(size: 13, weight: .medium))
+      .symbolRenderingMode(.hierarchical)
+      .fixedSize()
     }
-    .pickerStyle(.menu)
-    .labelsHidden()
     .labelStyle(.iconOnly)
     .buttonStyle(.borderless)
-    .controlSize(.small)
-    .fixedSize(horizontal: false, vertical: true)
-    .padding(.horizontal, 12)
-    .padding(.top, 12)
-    .padding(.bottom, 8)
+    .frame(height: 28)
+  }
+
+  /// 源语言胶囊：自动时显示检测到的语言（还没翻译时写「自动检测」）
+  private var sourceTitle: String {
+    if let source, let lang = Lang(rawValue: source) { return lang.title }
+    return (coordinator.fixedSource ?? coordinator.detected)?.title ?? "自动检测"
+  }
+
+  /// 目标语言胶囊：自动时显示这次实际译成的语言（还没翻译时写「自动」，菜单里有「自动（A ⇄ B）」）
+  private var targetTitle: String {
+    if let target, let lang = Lang(rawValue: target) { return lang.title }
+    return coordinator.target?.title ?? "自动"
   }
 
   /// 选成和另一边相同的固定语言时，另一边换成这边原来的值（像交换一样），不会出现「英 → 英」
@@ -128,104 +177,143 @@ struct TranslatePanelView: View {
   // MARK: 原文区
 
   private var sourceArea: some View {
-    VStack(alignment: .leading, spacing: 6) {
-      SourceTextView(text: $coordinator.sourceText, fontSize: 14 * fontScale) {
+    let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
+    return VStack(alignment: .leading, spacing: 6) {
+      SourceTextView(text: $coordinator.sourceText, fontSize: 15 * fontScale) {
         coordinator.start()
       }
-      .frame(height: 84)
+      .frame(height: 76)
       .overlay(alignment: .topLeading) {
         if coordinator.sourceText.isEmpty {
           Text("输入或粘贴文字，↩ 翻译，⇧↩ 换行")
+            .font(.system(size: 15 * fontScale))
             .foregroundStyle(.tertiary)
-            .padding(.leading, 6)
-            .padding(.top, 6)
+            .padding(.leading, 5)
+            .padding(.top, 1)
             .allowsHitTesting(false)
         }
       }
-      HStack(spacing: 8) {
-        if let direction { Text(direction).font(.caption).foregroundStyle(.secondary) }
-        Spacer()
+      if let note = directionNote {
+        Text(note).font(.system(size: 11)).foregroundStyle(.secondary)
+      }
+      HStack(spacing: 12) {
         Group {
           Button(
             "朗读原文",
-            systemImage: speaker.speaking == coordinator.sourceText ? "stop.fill" : "speaker.wave.2"
+            systemImage: speaker.speaking == coordinator.sourceText
+              ? "speaker.wave.2.fill" : "speaker.wave.2"
           ) {
             speaker.toggle(
               coordinator.sourceText,
               language: coordinator.fixedSource ?? coordinator.detected)
           }
+          .symbolEffect(
+            .variableColor.iterative.reversing,
+            isActive: speaker.speaking == coordinator.sourceText && !coordinator.sourceText.isEmpty)
           Button("复制原文", systemImage: "doc.on.doc") { Paster.write(string: coordinator.sourceText) }
           Button("清空", systemImage: "xmark.circle") { coordinator.beginInput() }
         }
-        .labelStyle(.iconOnly)
+        .foregroundStyle(.secondary)
         .disabled(coordinator.sourceText.isEmpty)
+        Spacer()
         Button(
           coordinator.isFavorite ? "取消收藏" : "收藏",
           systemImage: coordinator.isFavorite ? "star.fill" : "star"
         ) {
           coordinator.toggleFavorite()
         }
-        .labelStyle(.iconOnly)
-        .foregroundStyle(coordinator.isFavorite ? AnyShapeStyle(.yellow) : AnyShapeStyle(.primary))
+        .foregroundStyle(coordinator.isFavorite ? Color(nsColor: .systemYellow) : .secondary)
+        .contentTransition(.symbolEffect(.replace))
+        .symbolEffect(.bounce, value: coordinator.isFavorite)
         .disabled(coordinator.primaryResult == nil)
         .help("收藏这次翻译（⌘S），在历史里可以只看收藏")
         if coordinator.replaceSource != nil {
-          Button("替换原文", action: replaceOriginal)
+          Button("替换原文", systemImage: "arrow.uturn.backward", action: replaceOriginal)
+            .labelStyle(.titleAndIcon)
             .disabled(coordinator.primaryResult == nil)
             .help("用第一个服务的译文替换原 App 里选中的文字")
         }
-        Button("翻译") { coordinator.start() }
-          .buttonStyle(.borderedProminent)
-          .disabled(coordinator.sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        Button {
+          coordinator.start()
+        } label: {
+          HStack(spacing: 5) {
+            Text("翻译")
+            Text("↩").opacity(0.75)
+          }
+          .font(.system(size: 12, weight: .semibold))
+          .foregroundStyle(.white)
+          .padding(.horizontal, 12)
+          .frame(height: 24)
+          .background(Color.accentColor, in: .capsule)
+          .contentShape(.capsule)
+        }
+        .buttonStyle(PressScale())
+        .disabled(coordinator.sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        .opacity(
+          coordinator.sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.45 : 1)
       }
+      .labelStyle(.iconOnly)
       .buttonStyle(.borderless)
-      .controlSize(.small)
+      .font(.system(size: 13, weight: .medium))
     }
-    .padding(.horizontal, 12)
-    .padding(.vertical, 8)
+    .padding(.horizontal, 10)
+    .padding(.top, 8)
+    .padding(.bottom, 8)
+    .background(scheme == .dark ? Color.white.opacity(0.07) : Color.black.opacity(0.045), in: shape)
+    .overlay(shape.strokeBorder(Style.hairline, lineWidth: 0.5))
   }
 
-  /// 这次会话的实际方向「英语 → 简体中文」（源自动时显示检测结果），出乎所选的地方写明原因：
-  /// 固定目标正好是原文语言而改译了另一端；固定源和检测结果对不上（照所选发出，只提示）
-  private var direction: String? {
-    guard let to = coordinator.target else { return nil }
-    let fixedSource = coordinator.fixedSource
-    var text = "\((fixedSource ?? coordinator.detected)?.title ?? "自动识别") → \(to.title)"
-    if let abandoned = coordinator.abandonedTarget {
-      text += "（原文已是\(abandoned.title)）"
-    } else if let fixedSource, let detected = coordinator.detected,
+  /// 只在出乎所选时写一行：固定目标正好是原文语言而改译了另一端；固定源和检测结果对不上（照所选发出，只提示）
+  private var directionNote: String? {
+    if let abandoned = coordinator.abandonedTarget, let to = coordinator.target {
+      return "原文已是\(abandoned.title)，改译成\(to.title)"
+    }
+    if let fixedSource = coordinator.fixedSource, let detected = coordinator.detected,
       !detected.isSameLanguage(as: fixedSource)
     {
-      text += " · 检测到\(detected.title)"
+      return "检测到\(detected.title)，仍按\(fixedSource.title)翻译"
     }
-    return text
+    return nil
   }
 
   // MARK: 结果
 
   @ViewBuilder private var results: some View {
     if let notice = coordinator.notice {
-      ContentUnavailableView {
-        Label(notice, systemImage: "exclamationmark.bubble")
-      } actions: {
+      EmptyStateView(symbol: "exclamationmark.bubble", title: notice) {
         // 只有授权类提示才给按钮（以前任何提示都挂「打开辅助功能设置」）
         if let permission = coordinator.noticePermission {
           Button(permission.settingsTitle, action: permission.openSettings)
         }
       }
     } else if coordinator.services.enabled.isEmpty {
-      ContentUnavailableView {
-        Label("没有启用的翻译服务", systemImage: "character.bubble")
-      } actions: {
+      EmptyStateView(symbol: "character.bubble", title: "没有启用的翻译服务") {
         Button("打开翻译设置", action: openSettings)
       }
     } else if coordinator.cards.isEmpty {
-      ContentUnavailableView(
-        "划词、截图或输入后开始翻译", systemImage: "character.bubble",
-        description: Text("划词翻译、截图翻译、输入翻译的快捷键可在设置里修改"))
+      EmptyStateView(symbol: "character.bubble", title: "划词、截图或输入后开始翻译") {
+        VStack(spacing: 6) {
+          ForEach(
+            [HotKeyAction.selectionTranslate, .screenshotTranslate, .inputTranslate], id: \.self
+          ) {
+            action in
+            HStack {
+              Text(action.title).foregroundStyle(.secondary)
+              Spacer()
+              if let hotKey = action.hotKey {
+                KeyCap(hotKey.display)
+              } else {
+                Text("未设置").foregroundStyle(.tertiary)
+              }
+            }
+            .font(.system(size: 12))
+            .frame(width: 200)
+          }
+        }
+      }
     } else {
       ScrollView {
-        VStack(spacing: 8) {
+        VStack(spacing: 10) {
           ForEach(Array(coordinator.cards.enumerated()), id: \.element.id) { index, card in
             ProviderCardView(
               card: card, index: index, language: coordinator.target, speaker: speaker,
@@ -237,10 +325,13 @@ struct TranslatePanelView: View {
               coordinator.copyCard(card.id)
             } onToggleCollapse: {
               toggleCollapse(card.id)
+            } onOpenSettings: {
+              openSettings()
             }
           }
         }
-        .padding(10)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 10)
         .onGeometryChange(for: CGFloat.self) {
           $0.size.height
         } action: {
@@ -258,5 +349,59 @@ struct TranslatePanelView: View {
     var set = collapsed
     if set.remove(id) == nil { set.insert(id) }
     collapsedServices = set.sorted().joined(separator: "\n")
+  }
+}
+
+/// 28 pt 语言胶囊：语言名 +（自动且已知实际语言时）「自动」标签 + 9 pt 下拉箭头；窄时语言名截断
+private struct LanguageCapsule: View {
+  let title: String
+  let showsAutoTag: Bool
+
+  var body: some View {
+    HStack(spacing: 5) {
+      Text(title)
+        .font(.system(size: 13, weight: .medium))
+        .lineLimit(1)
+        .truncationMode(.middle)
+        .contentTransition(.interpolate)
+      if showsAutoTag {
+        Text("自动")
+          .font(.system(size: 10, weight: .semibold))
+          .foregroundStyle(Color.accentColor)
+          .padding(.horizontal, 5)
+          .padding(.vertical, 1)
+          .background(Color.accentColor.opacity(0.14), in: .capsule)
+      }
+      Image(systemName: "chevron.down")
+        .font(.system(size: 9, weight: .semibold))
+        .foregroundStyle(.secondary)
+    }
+    .padding(.leading, 12)
+    .padding(.trailing, 10)
+    .frame(height: 28)
+    .background(Style.controlFill, in: .capsule)
+    .contentShape(.capsule)
+  }
+}
+
+/// 空状态 / 提示：28 pt 图标 + 14 semibold 标题 + 下方内容（按钮、快捷键）
+private struct EmptyStateView<Actions: View>: View {
+  let symbol: String
+  let title: String
+  @ViewBuilder var actions: Actions
+
+  var body: some View {
+    VStack(spacing: 12) {
+      Image(systemName: symbol)
+        .font(.system(size: 28, weight: .regular))
+        .symbolRenderingMode(.hierarchical)
+        .foregroundStyle(.tertiary)
+      Text(title)
+        .font(.system(size: 14, weight: .semibold))
+        .multilineTextAlignment(.center)
+      actions
+    }
+    .padding(20)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 }

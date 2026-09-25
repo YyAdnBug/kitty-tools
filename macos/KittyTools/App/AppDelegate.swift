@@ -111,7 +111,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           let height = min(max(height, 220), visible * 0.85)
           panel.minSize = NSSize(width: 360, height: height)
           panel.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: height)
-          panel.setContentHeight(height)
+          // 变化 8 pt 以上才带动画：流式输出时每来几个字都会长一点，小变化直接设
+          panel.setContentHeight(height, animated: abs(panel.frame.height - height) >= 8)
         },
         replaceOriginal: { [unowned self] in replaceOriginal() }))
     created = panel

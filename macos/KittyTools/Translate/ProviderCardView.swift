@@ -1,5 +1,7 @@
-// 一个翻译服务的结果卡片：标题行（图标、名称、⌘数字、进行中指示、朗读 / 复制 / 重试 / 折叠），正文四种状态
-// （等待、流式输出中、完成、失败）。大模型输出按行内 Markdown 渲染（加粗、链接等），译文可选中。
+// 一个翻译服务的结果卡片（Whisker，mac-whisker §6 翻译）：标题行 = 18 pt 品牌色块 + 服务名 12 semibold + 模型 11 tertiary，
+// 右侧朗读 / 复制 / 重试 / 折叠（平时 0.45 透明度）；正文四种状态：等待和「生成中还没有字」是骨架条 + 扫光，
+// 生成中用 RevealText 显影 + 边框上一段强调色彗星光绕行（2.4 s 一圈），完成时整圈闪一下，失败是淡红错误卡
+// （图标晃一下，给「重试 · 打开设置」）。复制时对勾替换 + 整卡闪 accent。大模型完成后按行内 Markdown 渲染。
 // 折叠状态由浮窗按服务记住（跨重启），不再因为出结果自动展开；复制的对勾状态在会话里（⌘1–9 也亮）。
 
 import SwiftUI
@@ -16,58 +18,172 @@ struct ProviderCardView: View {
   let onRetry: () -> Void
   var onCopy: () -> Void = {}
   var onToggleCollapse: () -> Void = {}
+  var onOpenSettings: () -> Void = {}
+  @Environment(\.colorScheme) private var scheme
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var retries = 0
+  @State private var errorTicks = 0
+
+  private var isGenerating: Bool {
+    guard card.service.isStreaming else { return false }
+    switch card.state {
+    case .waiting, .running: return true
+    default: return false
+    }
+  }
+
+  private var isFailed: Bool {
+    if case .failed = card.state { true } else { false }
+  }
+
+  private var isDone: Bool {
+    if case .done = card.state { true } else { false }
+  }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 6) {
-      HStack(spacing: 6) {
-        Image(systemName: card.service.symbol).foregroundStyle(.tint)
-        Text(card.service.name).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-          .lineLimit(1)
-        if case .running = card.state { ProgressView().controlSize(.mini) }
-        if case .waiting = card.state { ProgressView().controlSize(.mini) }
-        Spacer()
+    let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
+    VStack(alignment: .leading, spacing: 7) {
+      header
+      if !isCollapsed {
+        content.transition(.move(edge: .top).combined(with: .opacity))
+      }
+    }
+    .padding(.horizontal, 12)
+    .padding(.top, 10)
+    .padding(.bottom, isCollapsed ? 10 : 12)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .clipped()
+    .background(background, in: shape)
+    .overlay(shape.strokeBorder(stroke, lineWidth: 0.5))
+    .overlay { if isGenerating { CometBorder() } }
+    // 完成：整圈边框闪一下 accent 0.45 → 0（0.6 s）
+    .overlay {
+      shape.strokeBorder(Color.accentColor, lineWidth: 1.5)
+        .keyframeAnimator(initialValue: 0.0, trigger: isDone) { view, value in
+          view.opacity(value)
+        } keyframes: { _ in
+          KeyframeTrack {
+            LinearKeyframe(
+              isDone && card.service.isStreaming && !reduceMotion ? 0.45 : 0, duration: 0.01)
+            LinearKeyframe(0, duration: 0.6)
+          }
+        }
+        .allowsHitTesting(false)
+    }
+    // 复制：整卡闪 accent 0 → 0.12 → 0（0.4 s）
+    .overlay {
+      shape.fill(Color.accentColor)
+        .keyframeAnimator(initialValue: 0.0, trigger: isCopied) { view, value in
+          view.opacity(value)
+        } keyframes: { _ in
+          KeyframeTrack {
+            LinearKeyframe(isCopied && !reduceMotion ? 0.12 : 0, duration: 0.15)
+            LinearKeyframe(0, duration: 0.25)
+          }
+        }
+        .allowsHitTesting(false)
+    }
+    .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: isCollapsed)
+  }
+
+  private var background: Color {
+    if isFailed { return Color(nsColor: .systemRed).opacity(0.05) }
+    return scheme == .dark ? .white.opacity(0.06) : .white.opacity(0.55)
+  }
+
+  private var stroke: Color {
+    isFailed ? Color(nsColor: .systemRed).opacity(0.18) : Style.hairline
+  }
+
+  private var header: some View {
+    HStack(spacing: 8) {
+      ServiceTile(service: card.service)
+      Text(Self.displayName(card.service))
+        .font(.system(size: 12, weight: .semibold))
+        .opacity(0.85)
+        .lineLimit(1)
+      if let model = card.service.model, !model.isEmpty, card.service.isStreaming {
+        Text(model).font(.system(size: 11)).foregroundStyle(.tertiary).lineLimit(1)
+      }
+      Spacer(minLength: 6)
+      Group {
         if let text = card.state.text, !text.isEmpty {
           Button(
-            "朗读", systemImage: speaker.speaking == text ? "stop.fill" : "speaker.wave.2"
+            "朗读", systemImage: speaker.speaking == text ? "speaker.wave.2.fill" : "speaker.wave.2"
           ) { speaker.toggle(text, language: language) }
+          .symbolEffect(
+            .variableColor.iterative.reversing, isActive: speaker.speaking == text && !reduceMotion)
           Button("复制", systemImage: isCopied ? "checkmark" : "doc.on.doc", action: onCopy)
+            .contentTransition(.symbolEffect(.replace))
             .help(index < 9 ? "复制（⌘\(index + 1)）" : "复制")
         }
-        Button("重新翻译", systemImage: "arrow.clockwise", action: onRetry)
-        Button(
-          isCollapsed ? "展开" : "收起", systemImage: isCollapsed ? "chevron.down" : "chevron.up",
-          action: onToggleCollapse
-        )
-        .help(isCollapsed ? "展开（会一直记住）" : "收起（会一直记住）")
+        Button("重新翻译", systemImage: "arrow.clockwise") {
+          retries += 1
+          onRetry()
+        }
+        .symbolEffect(.rotate, value: retries)
+        Button(isCollapsed ? "展开" : "收起", systemImage: "chevron.down", action: onToggleCollapse)
+          .rotationEffect(.degrees(isCollapsed ? 0 : 180))
+          .help(isCollapsed ? "展开（会一直记住）" : "收起（会一直记住）")
       }
-      .labelStyle(.iconOnly)
-      .buttonStyle(.borderless)
-      .controlSize(.small)
-      if !isCollapsed { content }
+      .opacity(0.45)
     }
-    .padding(10)
-    .background(.background.opacity(0.55), in: .rect(cornerRadius: 10))
+    .labelStyle(.iconOnly)
+    .buttonStyle(.borderless)
+    .font(.system(size: 12, weight: .medium))
+    .frame(height: 20)
   }
 
   @ViewBuilder private var content: some View {
     switch card.state {
     case .waiting:
-      Text("翻译中…").foregroundStyle(.secondary)
-    case .running(let text), .done(let text):
-      // 只有大模型按行内 Markdown 渲染；传统接口原样显示，免得吞掉 * # 之类的字符
-      Text(card.service.isStreaming ? Self.markdown(text) : AttributedString(text))
-        .font(.system(size: 13 * fontScale))
-        .textSelection(.enabled)
+      Skeleton()
+    case .running(let text) where text.isEmpty:
+      Skeleton()
+    case .running(let text):
+      RevealText(text: text, isStreaming: true, fontSize: 15 * fontScale)
         .frame(maxWidth: .infinity, alignment: .leading)
-    case .failed(let message):
-      HStack(alignment: .firstTextBaseline) {
-        Label(message, systemImage: "exclamationmark.triangle.fill")
-          .foregroundStyle(.red)
-          .font(.callout)
-        Spacer()
-        Button("重试", action: onRetry).controlSize(.small)
+    case .done(let text):
+      // 大模型输出里有行内 Markdown 才按 Markdown 渲染；否则保持显影后的纯文本（完成那一下不重排）
+      Group {
+        if card.service.isStreaming, Self.hasMarkdown(text) {
+          Text(Self.markdown(text)).font(.system(size: 15 * fontScale)).lineSpacing(3.5)
+        } else {
+          RevealText(text: text, isStreaming: false, fontSize: 15 * fontScale)
+        }
       }
+      .textSelection(.enabled)
+      .frame(maxWidth: .infinity, alignment: .leading)
+    case .failed(let message):
+      HStack(alignment: .firstTextBaseline, spacing: 8) {
+        Image(systemName: "exclamationmark.triangle.fill")
+          .foregroundStyle(Color(nsColor: .systemRed))
+          .symbolEffect(.wiggle, value: errorTicks)
+        Text(message)
+          .font(.system(size: 13))
+          .foregroundStyle(Color(nsColor: .systemRed))
+          .fixedSize(horizontal: false, vertical: true)
+        Spacer(minLength: 8)
+        Button("重试") {
+          retries += 1
+          onRetry()
+        }
+        Text("·").foregroundStyle(.tertiary)
+        Button("打开设置", action: onOpenSettings)
+      }
+      .buttonStyle(.link)
+      .font(.system(size: 12))
+      .onAppear { errorTicks += 1 }
     }
+  }
+
+  /// 「智谱 GLM（免费）」这类默认名去掉括号里的说明
+  static func displayName(_ service: TranslateService) -> String {
+    service.name.replacing(/（.*）$/, with: "")
+  }
+
+  static func hasMarkdown(_ text: String) -> Bool {
+    text.contains("**") || text.contains("__") || text.contains("`") || text.contains("](")
   }
 
   /// 行内 Markdown（块级标记原样显示）；解析失败按纯文本
@@ -75,5 +191,124 @@ struct ProviderCardView: View {
     (try? AttributedString(
       markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
       ?? AttributedString(text)
+  }
+}
+
+/// 服务身份：18 pt 品牌色块 + 白色首字母（圆角 = 边长 × 0.225）
+struct ServiceTile: View {
+  let service: TranslateService
+  var size: CGFloat = 18
+
+  var body: some View {
+    let color = Self.color(for: service)
+    RoundedRectangle(cornerRadius: Style.Radius.tile(size), style: .continuous)
+      .fill(
+        LinearGradient(
+          colors: [color, color.mix(with: .black, by: 0.15)], startPoint: .top, endPoint: .bottom)
+      )
+      .overlay(
+        Text(Self.monogram(service))
+          .font(.system(size: size * 0.55, weight: .heavy, design: .rounded))
+          .foregroundStyle(.white)
+          .minimumScaleFactor(0.6)
+      )
+      .frame(width: size, height: size)
+  }
+
+  /// 服务品牌色（mac-whisker §3）；自定义 AI 按协议，其余按名字哈希取色相
+  static func color(for service: TranslateService) -> Color {
+    let hex: Int? =
+      switch service.kind {
+      case .zhipu: 0x3D5AFE
+      case .baidu: 0x2932E1
+      case .youdao: 0xE1251B
+      case .google: 0x4285F4
+      case .deepl: 0x0F2B46
+      case .microsoft: 0x0078D4
+      case .volcengine: 0x1664FF
+      case .tencent: 0x0052D9
+      case .ai:
+        switch service.aiProtocol {
+        case .anthropic: 0xD97757
+        case .azure: 0x0078D4
+        case .openai, nil: service.name.localizedCaseInsensitiveContains("gemini") ? 0x4F7DF3 : nil
+        }
+      }
+    if let hex {
+      return Color(
+        red: Double(hex >> 16 & 0xFF) / 255, green: Double(hex >> 8 & 0xFF) / 255,
+        blue: Double(hex & 0xFF) / 255)
+    }
+    if service.name.localizedCaseInsensitiveContains("gpt")
+      || service.name.localizedCaseInsensitiveContains("openai")
+    {
+      return Color(red: 0x10 / 255, green: 0xA3 / 255, blue: 0x7F / 255)
+    }
+    let hue =
+      Double(service.name.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0xFFFF } % 360)
+      / 360
+    return Color(hue: hue, saturation: 0.55, brightness: 0.85)
+  }
+
+  /// 首字母：名字以中文开头取第一个字（智谱 GLM → 智），否则取第一个拉丁字母（大写）
+  static func monogram(_ service: TranslateService) -> String {
+    let name = ProviderCardView.displayName(service).trimmingCharacters(in: .whitespaces)
+    guard let first = name.first else { return "?" }
+    if !first.isASCII { return String(first) }
+    return name.first(where: { $0.isLetter }).map { String($0).uppercased() } ?? String(first)
+  }
+}
+
+/// 生成中的彗星边框：一段强调色光沿边框绕行（2.4 s 一圈，只做旋转）；减弱动态效果时静止
+private struct CometBorder: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    TimelineView(.animation(paused: reduceMotion)) { context in
+      let turn =
+        context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.4) / 2.4
+      RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
+        .strokeBorder(
+          AngularGradient(
+            stops: [
+              .init(color: .clear, location: 0), .init(color: .clear, location: 0.62),
+              .init(color: .accentColor.opacity(0.35), location: 0.78),
+              .init(color: .accentColor, location: 0.92), .init(color: .clear, location: 1),
+            ], center: .center, angle: .degrees(turn * 360)), lineWidth: 1.5)
+    }
+    .transition(.opacity.animation(.easeOut(duration: 0.35)))
+    .allowsHitTesting(false)
+  }
+}
+
+/// 等第一个字时的骨架：三根条（高 9，宽 94 / 72 / 48%）+ 扫光（1.3 s 一趟）
+private struct Skeleton: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    TimelineView(.animation(paused: reduceMotion)) { context in
+      let phase =
+        context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.3) / 1.3
+      GeometryReader { geometry in
+        VStack(alignment: .leading, spacing: 7) {
+          ForEach([0.94, 0.72, 0.48], id: \.self) { width in
+            Capsule()
+              .fill(
+                LinearGradient(
+                  stops: [
+                    .init(color: .primary.opacity(0.07), location: 0),
+                    .init(color: .primary.opacity(0.14), location: 0.5),
+                    .init(color: .primary.opacity(0.07), location: 1),
+                  ],
+                  startPoint: UnitPoint(x: phase * 3 - 2, y: 0.5),
+                  endPoint: UnitPoint(x: phase * 3 - 1, y: 0.5))
+              )
+              .frame(width: geometry.size.width * width, height: 9)
+          }
+        }
+      }
+      .frame(height: 41)
+    }
+    .accessibilityLabel("翻译中")
   }
 }
