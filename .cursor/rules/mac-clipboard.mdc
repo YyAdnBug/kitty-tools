@@ -42,7 +42,8 @@ alwaysApply: false
 - 每次隐藏都 `reset()`：搜索、筛选、多选、选中回第一条，并提交未撤销的删除。
 
 ## 5. 视觉
-- 按 Whisker（`mac-whisker.mdc` §6 剪贴板）：760×480；56 pt 搜索框、22 pt 范围胶囊 + 生效筛选标签 +「筛选」菜单；列表宽 320、行 44、30 pt 图标块（代码 / JSON / 链接有角标），⌘1–9 键帽按住 ⌘ 才出现；**选中是列表背后一块滑动的中性高亮，不填强调色、不反白**（按前缀和定位，键盘 snap、连发与筛选变化不动画）；分组标题只有吸顶时才加材质底。检查器是一张卡片：页眉取来源 App 图标颜色（`AppIcons.accentColor` → `PreviewView.headerStyle`：白字不到 4.5:1 时，偏暗的底色压暗到够、偏亮的改黑字），按类型出大预览（颜色四种写法点击复制、代码 / JSON 语法着色 `SyntaxHighlight`、图片棋盘格 + 尺寸胶囊、文件 Quick Look 缩略图），页脚最多 4 个胶囊按钮。底栏只留「条数 / 提示 ｜ 粘贴 ↩ · 操作 ⌘K」。新条目从顶部挤入、删除缩小淡出（`listMotion`，搜索筛选换列表那一帧不动画，画完靠 `listGeneration` 恢复）。吸顶判断只存「已吸顶的分组数」这个整数，**不要**把滚动位置存进 `@State`（每帧重算整个面板）。⌘K 里有勾选时只给批量操作。
+- 按 Whisker（`mac-whisker.mdc` §6 剪贴板）：760×480；56 pt 搜索框、22 pt 范围胶囊 + 生效筛选标签 +「筛选」菜单；列表宽 320、行 44、30 pt 图标块（代码 / JSON / 链接有角标），⌘1–9 键帽按住 ⌘ 才出现；**选中是列表背后一块滑动的中性高亮，不填强调色、不反白**（按前缀和定位，键盘 snap、连发与筛选变化不动画）；分组标题只有吸顶时才加材质底。检查器是一张卡片：页眉取来源 App 图标颜色（`AppIcons.accentColor` → `PreviewView.headerStyle`：白字不到 4.5:1 时，偏暗的底色压暗到够、偏亮的改黑字），按类型出大预览（颜色四种写法点击复制、代码 / JSON 语法着色 `SyntaxHighlight`、链接卡 `LinkPreview`、图片棋盘格 + 尺寸胶囊、文件 Quick Look 缩略图），页脚最多 4 个胶囊按钮。
+- 链接预览（`Clipboard/LinkPreview.swift`）：只在检查器显示链接、停留 0.25 s 后取，换条目即取消；`isFetchable` 拦本机 / 内网 / 私有地址 / IPv6 字面量 / 带账号密码 / 一次性令牌样子的网址（查询参数名、路径关键词、32 位以上字母数字混排段），跳转也经 `RedirectGuard` 同样拦；会话是 ephemeral、不收发 Cookie、不缓存。只读 `<head>`（≤ 512 KB）、头图 ≤ 4 MB、图标 ≤ 512 KB，缩略图走 `@concurrent`。内存里最多 16 条，网络错误和中途取消不记。改规则先跑 `LinkPreviewTests`。底栏只留「条数 / 提示 ｜ 粘贴 ↩ · 操作 ⌘K」。新条目从顶部挤入、删除缩小淡出（`listMotion`，搜索筛选换列表那一帧不动画，画完靠 `listGeneration` 恢复）。吸顶判断只存「已吸顶的分组数」这个整数，**不要**把滚动位置存进 `@State`（每帧重算整个面板）。⌘K 里有勾选时只给批量操作。
 - 背景 `NSVisualEffectView(.popover)` 且 `state = .active`（本 App 从不激活，跟随窗口状态会一直灰）。
 - 可点的都用 `Button`（`.plain` 样式），不用 `onTapGesture`；`ForEach` 的 id 用元素 id，不用 offset。
 

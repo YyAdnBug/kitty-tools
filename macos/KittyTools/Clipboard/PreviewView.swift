@@ -1,7 +1,7 @@
 // 剪贴板检查器卡片（Whisker，mac-whisker §6 剪贴板）：内缩 6、圆角 10 的一张卡。
 // 页眉 40 pt 取来源 App 图标的颜色（对比度不够时改黑字），写 App 名和「类型 · 大小 · 时间」；
 // 主体按类型出大预览：颜色 = 满宽色块 + HEX / RGB / HSL / SwiftUI 四行点击复制；代码 / JSON = SF Mono + 语法着色；
-// 链接 = 大号网站卡；图片 = 棋盘格 + 尺寸胶囊 + 识别文字；文件 = Quick Look 缩略图网格；文本高亮搜索词。
+// 链接 = 头图 + 标题 + 网站名（LinkPreview 联网取）；图片 = 棋盘格 + 尺寸胶囊 + 识别文字；文件 = Quick Look 缩略图网格；文本高亮搜索词。
 // 页脚最多 4 个无边框胶囊按钮，其余操作在 ⌘K 面板。换条目时内容淡入上浮、页眉颜色渐变过去。
 
 import AppKit
@@ -109,7 +109,7 @@ struct PreviewView: View {
       } else if form == .link, let url = ContentForm.firstLink(in: item.text ?? ""),
         (item.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).count < 2048
       {
-        LinkCard(url: url)
+        LinkCard(url: url, text: item.text ?? "")
       } else {
         ReadOnlyTextView(
           text: displayText, style: form == .json ? .json : form == .code ? .code : .plain,
@@ -307,31 +307,117 @@ struct ColorCard: View {
   }
 }
 
-/// 链接：大号网站卡（域名 + 完整网址）。ponytail: 头图和标题要联网取（LinkPresentation），D 阶段再加
+/// 链接：头图 + 标题 + 网站图标和名字 + 完整网址。设置里开着链接预览时，选中停留 0.25 s 后联网取（LinkPreview）：
+/// 取的时候头图区扫光，标题、头图到了就淡入；网页没给头图时是取网站图标颜色的渐变 + 大图标
 private struct LinkCard: View {
   let url: URL
+  let text: String
+  @AppStorage(Prefs.clipboardLinkPreview) private var fetches = true
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      ZStack {
-        LinearGradient(
-          colors: [Style.Family.url.opacity(0.35), Style.Family.search.opacity(0.35)],
-          startPoint: .topLeading, endPoint: .bottomTrailing)
-        KindTile(symbol: "globe", color: Style.Family.url, size: 48)
-      }
-      .frame(height: 120)
-      .clipShape(.rect(cornerRadius: 8, style: .continuous))
-      Text(url.host() ?? url.absoluteString)
+    let entry = LinkPreview.shared.entry(for: url)
+    let host = url.host() ?? url.absoluteString
+    VStack(alignment: .leading, spacing: 8) {
+      LinkHero(entry: entry)
+        .frame(height: 132)
+        .clipShape(.rect(cornerRadius: 8, style: .continuous))
+        .overlay(
+          RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(
+            Style.hairline, lineWidth: 0.5))
+      Text(entry?.metadata.title ?? host)
         .font(.system(size: 15, weight: .semibold))
         .lineLimit(2)
+        .contentTransition(.opacity)
+        .padding(.top, 2)
+      HStack(spacing: 6) {
+        if let icon = entry?.icon {
+          Image(nsImage: icon).resizable().interpolation(.high)
+            .frame(width: 14, height: 14)
+            .clipShape(.rect(cornerRadius: Style.Radius.tile(14), style: .continuous))
+        } else {
+          Image(systemName: "globe").font(.system(size: 11, weight: .medium))
+        }
+        Text(entry?.metadata.siteName.map { "\($0) · \(host)" } ?? host)
+          .lineLimit(1)
+          .truncationMode(.tail)
+      }
+      .font(.system(size: 12))
+      .foregroundStyle(.secondary)
       Text(url.absoluteString)
         .font(.system(size: 11, design: .monospaced))
-        .foregroundStyle(.secondary)
+        .foregroundStyle(.tertiary)
         .lineLimit(2)
         .truncationMode(.middle)
         .textSelection(.enabled)
     }
     .padding(10)
+    .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: entry?.metadata)
+    .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: entry?.isLoading)
+    .task(id: url) {
+      guard fetches, LinkPreview.isFetchable(url), !ClipboardFilter.looksSensitive(text) else {
+        return
+      }
+      try? await Task.sleep(for: .milliseconds(250))
+      guard !Task.isCancelled else { return }
+      await LinkPreview.shared.load(url)
+    }
+  }
+}
+
+/// 链接卡的头图区：头图铺满裁切；没有时渐变（网站图标的主色，没有就网址家族色）+ 44 pt 图标
+private struct LinkHero: View {
+  let entry: LinkPreview.Entry?
+
+  var body: some View {
+    let tint = entry?.tint.map { Color(nsColor: $0) }
+    ZStack {
+      LinearGradient(
+        colors: [
+          (tint ?? Style.Family.url).opacity(0.45), (tint ?? Style.Family.search).opacity(0.25),
+        ],
+        startPoint: .topLeading, endPoint: .bottomTrailing)
+      if let icon = entry?.icon {
+        Image(nsImage: icon).resizable().interpolation(.high)
+          .frame(width: 44, height: 44)
+          .clipShape(.rect(cornerRadius: Style.Radius.tile(44), style: .continuous))
+          .shadow(color: .black.opacity(0.18), radius: 4, y: 2)
+      } else {
+        KindTile(symbol: "globe", color: Style.Family.url, size: 44)
+      }
+      if let image = entry?.image {
+        // 放在 overlay 里铺满：scaledToFill 的图不参与布局，不会把卡片撑宽
+        Color.clear
+          .overlay { Image(nsImage: image).resizable().scaledToFill() }
+          .clipped()
+          .transition(.opacity)
+      }
+      if entry?.isLoading == true {
+        SweepHighlight().transition(.opacity)
+      }
+    }
+  }
+}
+
+/// 取预览时头图区的扫光（ambient：1.3 s 一趟，只在取的时候挂着；减弱动态效果时不动）
+private struct SweepHighlight: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    TimelineView(.animation(paused: reduceMotion)) { context in
+      let phase =
+        context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.3) / 1.3
+      LinearGradient(
+        stops: [
+          .init(color: .white.opacity(0), location: 0),
+          .init(color: .white.opacity(0.28), location: 0.5),
+          .init(color: .white.opacity(0), location: 1),
+        ],
+        startPoint: UnitPoint(x: phase * 3 - 2, y: 0.3),
+        endPoint: UnitPoint(x: phase * 3 - 1, y: 0.7))
+    }
+    .allowsHitTesting(false)
+    .accessibilityLabel("正在读取网页")
   }
 }
 

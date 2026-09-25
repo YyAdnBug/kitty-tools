@@ -34,6 +34,8 @@ enum Prefs {
   static let clipboardClearOnQuit = "clipboardClearOnExit"
   static let clipboardClearOnLock = "clipboardClearOnLock"
   static let clipboardShowPreview = "clipboardShowPreview"
+  /// 检查器的链接卡联网取网页标题、头图和图标（LinkPreview）
+  static let clipboardLinkPreview = "clipboardLinkPreview"
 
   /// 源语言：没设 = 自动检测。只在翻译浮窗顶部切换，全局记住
   static let translateSource = "translateSourceLang"
@@ -91,6 +93,7 @@ enum Prefs {
       clipboardClearOnQuit: false,
       clipboardClearOnLock: false,
       clipboardShowPreview: true,
+      clipboardLinkPreview: true,
       translateFirst: Lang.zhHans.rawValue,
       translateSecond: Lang.en.rawValue,
       translateRemoveNewlines: false,

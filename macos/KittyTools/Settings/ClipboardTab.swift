@@ -9,6 +9,7 @@ struct ClipboardTab: View {
   @AppStorage(Prefs.clipboardRetentionDays) private var retentionDays = 7
   @AppStorage(Prefs.clipboardImageBudgetMB) private var imageBudgetMB = 1024
   @AppStorage(Prefs.clipboardShowPreview) private var showPreview = true
+  @AppStorage(Prefs.clipboardLinkPreview) private var linkPreview = true
   @AppStorage(Prefs.clipboardHideOnUnfocus) private var hideOnUnfocus = true
   @AppStorage(Prefs.clipboardKeepRichText) private var keepRichText = true
   @AppStorage(Prefs.clipboardImageOCR) private var imageOCR = true
@@ -42,6 +43,10 @@ struct ClipboardTab: View {
       }
       Section("面板") {
         Toggle("显示预览栏", isOn: $showPreview)
+        Toggle(isOn: $linkPreview) {
+          Text("链接显示网页标题和图片")
+          Text("选中链接时联网读取；本机、内网和带登录令牌的网址不读")
+        }
         Toggle("点击面板外部时关闭", isOn: $hideOnUnfocus)
       }
       Section("内容") {

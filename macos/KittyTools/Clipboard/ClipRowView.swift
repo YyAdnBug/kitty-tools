@@ -104,7 +104,7 @@ struct ClipRowView: View {
 }
 
 /// 行首 30 pt 图标块（圆角 7）：颜色 = 色块（透明时垫棋盘格）；图片 = 缩略图；文本 = 来源 App 图标，
-/// JSON / 代码 / 链接在右下角加角标；都没有时是种类图标
+/// JSON / 代码 / 链接在右下角加角标（链接取过预览后是网站图标）；都没有时是网站图标或种类图标
 private struct IconTile: View {
   let item: ClipItem
   let form: ContentForm?
@@ -125,17 +125,27 @@ private struct IconTile: View {
         Image(nsImage: icon).resizable().scaledToFit()
           .overlay(alignment: .bottomTrailing) {
             if let form, form != .color {
-              Image(systemName: form.symbol)
-                .font(.system(size: 7, weight: .bold))
-                .frame(width: 13, height: 13)
-                .background(.regularMaterial, in: .rect(cornerRadius: 4, style: .continuous))
-                .overlay(
-                  RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(
-                    Style.hairline, lineWidth: 0.5)
-                )
-                .offset(x: 2, y: 2)
+              Group {
+                // 链接取过预览后，角标换成网站图标
+                if let favicon {
+                  Image(nsImage: favicon).resizable().interpolation(.high).padding(1)
+                } else {
+                  Image(systemName: form.symbol).font(.system(size: 7, weight: .bold))
+                }
+              }
+              .frame(width: 13, height: 13)
+              .background(.regularMaterial, in: .rect(cornerRadius: 4, style: .continuous))
+              .overlay(
+                RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(
+                  Style.hairline, lineWidth: 0.5)
+              )
+              .offset(x: 2, y: 2)
             }
           }
+      } else if let favicon {
+        Image(nsImage: favicon).resizable().interpolation(.high)
+          .clipShape(shape)
+          .overlay(shape.strokeBorder(Style.hairline, lineWidth: 0.5))
       } else {
         Image(systemName: form?.symbol ?? item.kind.symbol)
           .font(.system(size: 13, weight: .medium))
@@ -146,6 +156,10 @@ private struct IconTile: View {
     }
     .frame(width: 30, height: 30)
     .accessibilityHidden(true)
+  }
+
+  private var favicon: NSImage? {
+    form == .link ? LinkPreview.shared.favicon(forLink: item.text ?? "") : nil
   }
 }
 
@@ -230,7 +244,8 @@ enum AppIcons {
     return color
   }
 
-  private static func average(of image: NSImage) -> NSColor? {
+  /// 图标主色（也给链接预览的网站图标用）
+  static func average(of image: NSImage) -> NSColor? {
     let side = 12
     var pixels = [UInt8](repeating: 0, count: side * side * 4)
     let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in

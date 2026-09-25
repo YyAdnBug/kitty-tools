@@ -27,6 +27,7 @@ struct SnapshotProbeTests {
         "Xcode", "com.apple.dt.Xcode"
       ),
       ("https://developer.apple.com/documentation/appkit", 200, "Safari", "com.apple.Safari"),
+      ("https://sspai.com/post/73145", 250, "微信", "com.tencent.xinWeChat"),
       (
         "{\"name\": \"kitty\", \"tags\": [1, 2], \"nested\": {\"ok\": true}}", 120, "访达",
         "com.apple.finder"
@@ -45,13 +46,25 @@ struct SnapshotProbeTests {
       copiedAt: Date.now.addingTimeInterval(-30))
     file.filePaths = ["/Applications/Safari.app", "/System/Library/CoreServices/Finder.app"]
     store.record(file)
-    let link = try #require(store.items.first { $0.text?.hasPrefix("https") == true })
+    let link = try #require(store.items.first { $0.text?.hasPrefix("https://developer") == true })
     store.toggleFavorite([link.id])
     store.update([link.id]) { $0.note = "AppKit 文档" }
     let group = try #require(store.createGroup(named: "工作"))
     let meeting = try #require(store.items.first { $0.text?.hasPrefix("会议") == true })
     store.update([meeting.id]) { $0.groupID = group.id }
     let model = ClipboardPanelModel(store: store)
+    // 链接预览：摆好取到的样子（不联网），另一条停在「正在取」
+    var preview = LinkPreview.Entry()
+    preview.metadata = LinkMetadata(
+      title: "AppKit | Apple Developer Documentation", siteName: "Apple Developer")
+    preview.image = NSImage(
+      cgImage: try ScreenshotTests.render(["AppKit", "NSWindow · NSView"]), size: .zero)
+    preview.icon = NSImage(systemSymbolName: "apple.logo", accessibilityDescription: nil)
+    preview.tint = .systemGray
+    preview.isLoading = false
+    LinkPreview.shared.store(preview, for: try #require(URL(string: link.text ?? "")))
+    LinkPreview.shared.store(
+      LinkPreview.Entry(), for: try #require(URL(string: "https://sspai.com/post/73145")))
     let states: [(String, (ClipboardPanelModel) -> Void)] = [
       ("list", { _ in }),
       ("json", { m in m.select(m.visibleItems.first { $0.text?.hasPrefix("{") == true }!) }),
@@ -67,6 +80,13 @@ struct SnapshotProbeTests {
       ),
       ("empty-snippets", { m in m.scope = .snippets }),
       ("color", { m in m.select(m.visibleItems.first { $0.text == "#3478F6" }!) }),
+      ("link", { m in m.select(link) }),
+      (
+        "link-loading",
+        { m in
+          m.select(m.visibleItems.first { $0.text?.hasPrefix("https://sspai") == true }!)
+        }
+      ),
       ("actions", { m in m.showsActions = true }),
     ]
     for dark in [false, true] {
