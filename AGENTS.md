@@ -73,10 +73,11 @@ tccutil reset Accessibility com.yy.kitty-tools.native.dev
 | `mac-overlay-panel` | 技能 | 已有（M1，M9 补截图与钉图） | `Shell/**`、`Screenshot/**`、`Translate/SelectionReader.swift`；NSPanel、热键、前台快照、粘贴回原 App、划词时序、设置窗激活、截图框选遮罩、钉图 |
 | `mac-clipboard` | 技能 | 已有（M3） | `Clipboard/**`、`Storage/Database.swift` |
 | `mac-translate` | 技能 | 已有（M4） | `Translate/**` |
+| `mac-whisker` | 技能 | 已有（2026-09-25） | 任何界面、动效、图标改动：Whisker 设计语言（三种皮肤、刻度、七条弹簧曲线、五个招牌时刻、各界面规范、无障碍、验收）；**用户要求以后都按它执行** |
 
 - 规则正文只写在 `.cursor/rules/mac-*.mdc`。技能目录 `.claude/skills/mac-<name>/` 里 `SKILL.md` 只写触发描述和红线速查，`rule.mdc` 是符号链接：`ln -s ../../../.cursor/rules/mac-<name>.mdc .claude/skills/mac-<name>/rule.mdc`。
 - 动手前先读对应技能的 `rule.mdc` 全文。技能写成之前，按 PLAN 对应章节（§4、§5、§9）执行。
-- 不另建 `mac-ui`、`mac-release`：UI 约定在 `mac-native.mdc`，发布约束在 `build-dmg.sh` 头部注释。
+- 不另建 `mac-ui`、`mac-release`：视觉与动效在 `mac-whisker`，其余 UI 约定在 `mac-native.mdc`，发布约束在 `build-dmg.sh` 头部注释。
 
 ## Tauri 代码只作参考
 

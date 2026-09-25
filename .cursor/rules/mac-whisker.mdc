@@ -1,0 +1,105 @@
+---
+description: 原生分支的视觉与动效设计语言 Whisker（三种皮肤、圆角 / 字号 / 颜色刻度、七条弹簧曲线、五个招牌时刻、各界面规范、无障碍与验收）。任何界面、动效、图标改动都按它执行
+globs: macos/KittyTools/**/*.swift
+alwaysApply: false
+---
+
+# mac-whisker：Whisker 设计语言
+
+用户 2026-09-25 看过方案页后拍板：「这些视觉、交互、动画非常完美，以后也要按照这个去执行，所有的效果我都要」。
+可操作的方案页（动效演示用的是下面同一套弹簧参数）：https://claude.ai/artifact/1iPQSF1Vr6XswMp4mDkZyN
+对标：Alcove、Wins、Paste 6、Raycast、macOS 26 Spotlight、CleanShot X、Shottr、Bob、Apple Writing Tools。
+
+优先级：用户的话 > `mac-native.mdc` 红线（依赖、并发、签名等）> `mac-overlay-panel.mdc`（窗口行为：不激活前台、key、粘贴时序）> 本规则（长什么样、怎么动）。三者冲突时先改规则再动代码。
+
+## 1. 原则
+1. **先瞬时，再动画。** 粘贴（↩ / ⌘1–9 / 双击）、按键连发（`NSEvent.isARepeat`）、拖选区 / 拖手柄、放大镜跟随、每次按键后的结果刷新一律 0 ms。其余动画都是可打断的弹簧（中途换目标保留速度）；按键到看见结果之间的动画不超过 0.22 s。
+2. **强调色只标「现在该操作的东西」。** 表面中性；列表选中用灰色高亮、文字不反白。颜色来自内容：App 图标、复制的色值、favicon、服务品牌色、功能家族色。系统强调色只出现在：光标、焦点环、主按钮、当前工具、多选勾、「正在生成」的光。
+3. **东西从它来的地方长出来。** 轻提示从刘海长出，截图从选区飞到右下角，⌘K 菜单从右下角放大，选中高亮滑过去不跳，截图悬停高亮在窗口间磁吸变形。
+4. **在 macOS 15 上就得完整。** 质感靠发丝线、同心圆角、克制的材质和动效。Liquid Glass 只是 `#available(macOS 26, *)` 里的材质替换，不引入新布局，不叠玻璃，选中高亮不用玻璃。
+5. **一个家族，三种皮肤。** 共用同一套圆角、字号、弹簧。
+
+## 2. 三种皮肤
+| 皮肤 | macOS 15（主路径） | macOS 26 | 用在 |
+|---|---|---|---|
+| Panel | `NSVisualEffectView` `.popover` / `.behindWindow` / `state = .active`；无边框 + `maskImage` 裁 16 pt 圆角（系统阴影跟随 mask）；Rim：外圈 0.5 pt 发丝线（浅 black 0.10 / 深 black 0.28）+ 内圈 1 pt 顶部高光（浅 white 0.55→0 / 深 white 0.16→0，覆盖顶部约 35%） | `NSGlassEffectView(cornerRadius: 16)`，去掉自绘 Rim | 剪贴板、启动器、翻译 |
+| HUD | `.hudWindow` + `NSAppearance(.vibrantDark)` + `.active`，遮罩里的控件 `.withinWindow`，独立窗口 `.behindWindow`；描边内 0.5 pt white 0.14 + 外 0.5 pt black 0.5；文字 white 0.95 / 0.60 / 0.40 | `NSGlassEffectView` / `NSGlassEffectContainerView` | 截图工具栏、样式托盘、尺寸标签、提示、放大镜信息卡、钉图按钮、长截图 HUD（永远深色） |
+| Island | 纯黑 `#000`、无描边（和硬件刘海融为一体）；无刘海时 black 0.92 + 0.5 pt white 0.12 描边的胶囊；标题 white 0.95、详情 white 0.55 | 保持纯黑 | 全部轻提示、进度、错误 |
+| 系统 | `Form(.grouped)`、系统侧栏材质 | 26 SDK 编译后自动变玻璃 | 设置窗 |
+
+Panel 里的内容表面只用填充、**不叠玻璃**：卡片浅色 white 0.55 + 0.5 pt black 0.06 + 阴影 black 0.05 / r3 / y1；深色 white 0.06 + 0.5 pt white 0.10 + 顶部高光（white 0.12→clear，顶部 40%），不加阴影。输入框 primary 0.045（深 0.07）+ 0.5 pt primary 0.08。
+
+## 3. 刻度（代码里只从 `Shell/Style.swift` 取）
+- **圆角**（一律 continuous）：`panel` 16（浮层、截图主工具栏、长截图 HUD）/ `card` 10（选中高亮、检查器卡片、翻译卡片、输入框、钉图、飞行卡片、放大镜、样式托盘）/ `control` 6（尺寸标签、小图标按钮悬停底、分组标签）/ `mini` 4（键帽、行内高亮、角标）/ 胶囊 = 高 / 2 / 色块 = 边长 × 0.225（18→4、24→5.5、30→7、40→9）/ 岛：耳朵 6→10、底角 14→22。同心规则：内缩 ≤ 8 时内圆角 = 外圆角 − 内缩（最小 4），否则用 `card`。
+- **层级**：列表行 / 卡片不加阴影；遮罩里的浮动控件 black 0.35 / r18 / y6 且**必须设 `shadowPath`**；面板用系统窗口阴影（改尺寸 / 圆角后 `invalidateShadow()`）；飞行卡片 black 0.28 / r16 / y6；岛只有展开态有阴影 black 0.45 / r14 / y6。
+- **间距**：4 pt 网格，允许 2 的半步。列表型面板四周内缩 6、行内边距 10、图标到文字 10、行内元素 8；文档型面板（翻译）内边距 12、层间距 10；设置窗边距 20。
+- **字体**（只用系统字体，最小 10 pt）：大数字 SF Pro Rounded 28 semibold + monospacedDigit（计算结果）/ 读数 Rounded 22 semibold（长截图高度、颜色 HEX）/ 搜索 20 regular（占位 tertiary，搜索栏高 56）/ 阅读 15 regular 行距 3.5 × fontScale（翻译）/ 行标题：启动器 14 medium、剪贴板 13 regular，选中不换字重 / 正文与控件 13 / 标签 12 semibold（服务名）、12 medium（胶囊、按钮）/ 元信息 11 secondary / 键帽 10–11 medium rounded + monospacedDigit / 代码 SF Mono 12 行距 2 / 品牌 SF Pro Rounded Bold 26（只用于关于页、引导、空状态）。
+- **颜色**：功能强调色 = `NSColor.controlAccentColor`。中性：`fill.hover` 浅 black 0.04 / 深 white 0.05；`fill.selected` 浅 black 0.07 / 深 white 0.10；`fill.control` primary 0.06；`hairline` 浅 black 0.08 / 深 white 0.10。语义：成功 systemGreen、警告 systemYellow、配置 / 密钥问题 systemOrange、网络 / 服务错误 systemRed。**功能家族色**（全 App 统一：启动器种类色块、设置页头、菜单图标）：剪贴板 systemBlue、命令 systemPurple、截图 systemPink、翻译 systemGreen、快捷键 / 计算 systemOrange、通用 systemGray、网址 systemTeal、网页搜索 systemIndigo。服务品牌色（翻译卡片色块）：DeepL #0F2B46、Google #4285F4、百度 #2932E1、有道 #E1251B、微软 #0078D4、火山 #1664FF、腾讯 #0052D9、智谱 #3D5AFE、OpenAI #10A37F、Anthropic #D97757、Gemini #4F7DF3，其余按服务名哈希取色相（饱和度 0.55、亮度 0.85）。**品牌粉只在品牌时刻**（App 图标、关于页、引导、空状态、DMG）：填充 #FF4D7E / 深 #FF6B93，文字 #D12A5F / 深 #FF8FAB，奶油 #FFF5F0 / 深 #2A1D22；AccentColor asset 设成品牌粉（只有选「多色」强调色的用户会看到）。
+- **图标**：SF Symbols 一律 `.hierarchical` + `.medium`：外框 13 pt、截图工具栏 15–16 pt、色块里的白色符号 12 pt semibold；不用 `.multicolor`。非 App 结果统一放进**种类色块**：24 pt、圆角 5.5、`LinearGradient(c 0.95 → c 0.75)` + 0.5 pt white 0.18 内描边 + 白色符号，视觉重量和 App 图标一致。菜单栏用 App 角色的单色剪影模板图（视觉高 16、宽 ≤ 22、最细笔画 1.5 pt），**禁止**从 SF Symbols 改出来当 logo。
+- **状态**：选中 = 一块 `fill.selected` 在行间滑动、文字不变色；悬停 `fill.hover` 0.10 s 淡入；输入框焦点 1 pt accent 0.55 描边 + accent 0.18 r4 外发光；多选 accent 0.14 底 + `checkmark.circle.fill`；当前工具（仅 HUD）accent 实心底块圆角 12 + 白图标（全 App 唯一一处 accent 填满的块）；主按钮 accent 实心（截图 ✓ 28 pt 圆、翻译胶囊）；按下 scale 0.97（工具栏按钮 0.90）；禁用 opacity 0.35。
+
+## 4. 动效系统
+七条命名曲线（SwiftUI `Spring(duration:bounce:)` ↔ Core Animation `CASpringAnimation(perceptualDuration:bounce:)`，参数一致；`Style.Motion` 里各有 SwiftUI `Animation` 和 CA 两种取法）：
+| 名字 | 参数 | 用在 |
+|---|---|---|
+| `instant` | `Transaction(animation: nil)` / `setDisableActions(true)` | 连发、结果刷新、拖选区 / 手柄、放大镜跟随、画标注、粘贴收起面板 |
+| `snap` | spring(0.16, bounce 0.15) | 键盘驱动的选中高亮、范围胶囊、按住 ⌘ 键帽依次出现 |
+| `glide` | spring(0.26, 0.10) | 指针驱动的位移：截图悬停洞、工具滑块、语言胶囊互换、放大镜翻边 |
+| `settle` | smooth(0.24)（bounce 0） | 高度变化、内容交叉淡变、列表插入 / 删除、折叠 |
+| `pop` | spring(0.32, 0.25) | 小东西出现：✓ 徽标、手柄、色块、钉图（工具栏浮现用 bounce 0.18） |
+| `island` | spring(0.42, 0.22) | 岛长出、飞行卡片落地 |
+| `retract` | smooth(0.34) | 岛缩回；配套 `fadeIn` 0.12 s easeOut、`fadeOut` 0.10 s easeIn |
+| `ambient` | 线性循环 | 彗星边框 2.4 s 一圈、扫光 1.3 s、呼吸 1.2 s 往返、光标闪烁 0.55 s 往返 |
+
+规则：bounce ≤ 0.25，> 0.2 只用在「出现」；和精度有关的交互一律 `instant`。同一表面同时最多一个 `ambient`，只在可见且在工作时运行，结束立刻移除。
+- **面板进出**（`OverlayPanel` 统一做）：`animationBehavior = .none`；入场 alpha 0→1（`fadeIn`）+ 内容 y −6→0（spring 0.24 / 0.12）；材质本身不缩放。退场 `fadeOut` 后 orderOut 并复位 alpha。`onHide`、key 归还、卸载鼠标监听**同步立刻执行**；淡出中又被呼出就取消淡出直接回 1。**粘贴路径没有退场动画**：立刻 orderOut → `Paster.write` → ⌘V。
+- **选中高亮**（启动器、剪贴板同一套）：列表背景里只画**一块** `RoundedRectangle(card)`，`offset(y:)` 用分组数据的前缀和算，**不用** `matchedGeometryEffect`（LazyVStack 回收行时会跳）。键盘移动 `snap`，`isARepeat` 与结果变化时 `instant`；越界滚动 `snap`，连发时不动画。
+- **高度变化**：`setContentHeight(_:animated:)`，顶边不动，变高 0.18 s、变矮 0.14 s；首次显示和用户拖动改尺寸时不动画；流式输出合并更新（变化 < 8 pt 不动，每 120 ms 最多一次）。
+- **列表**：新条目 `.move(edge: .top) + .opacity`（`settle`），图标块 0.85→1（`pop`，只播一次）；删除 opacity + scale 0.96（左锚点，spring 0.22 / 0.15），⌘Z 反向插回；重新翻译时卡片原位不动，只让正文交叉淡变 0.18 s。
+- **符号动效**：复制→对勾 `.contentTransition(.symbolEffect(.replace))`（1.2 s 后换回）；收藏 / 成功 / 授权 `.symbolEffect(.bounce, value:)`；朗读中 `.variableColor.iterative.reversing`；数字 `.contentTransition(.numericText(value:))` + monospacedDigit；重试 `.rotate`（15）；错误 `.wiggle`（15）；岛里进行中 `.breathe.pulse`（15）；进度→结果 `.replace.magic(fallback: .downUp.byLayer)`（15）；✓ 描画 `.drawOn`（26，15 回退 bounce）。
+
+## 5. 招牌时刻（必须保持）
+- **S1 截图「咔嚓，飞入」**：`session.finish` 收遮罩后同一 runloop 在选区位置放过渡窗口；快门声（跟随系统「播放用户界面音效」，设置 › 截图可关；截图翻译 / 识字不出声；系统音效文件先判断存在）；闪白 opacity [0, 0.55, 0] 0.20 s；抬起 scale 1→1.03 + 阴影 + 圆角 0→10，0.18 s；t=0.10 起飞：x spring(0.42, 0.10)、y spring(0.50, 0.10)（两轴时长不同走出弧线）、尺寸 spring(0.45, 0) 缩到 200×140 内，落在 visibleFrame 右下角内缩 16；落地弹 22 pt accent ✓（`pop`），保存时换 `folder.fill` + 目录名；停 0.9 s 后向右滑出 0.28 s easeIn；全程 `ignoresMouseEvents`；图层里放缩略图，不放整屏冻结帧。
+- **S2 刘海岛**：有刘海（`auxiliaryTopLeftArea` 与 `auxiliaryTopRightArea` 都非 nil 且 `safeAreaInsets.top > 0`）时从刘海长出下巴（`island`），刘海宽 = 屏宽 − 两个 auxiliary 区宽 + 4；没有刘海时是菜单栏下方 8 pt 的黑色胶囊。窗口尺寸一次定死，只让 SwiftUI 的岛形状变形，不动画窗口 frame。内容晚 60 ms 出场：blur 8→0、scale 0.9→1（顶部锚点）、opacity（smooth 0.28）。原地更新只换宽度（spring 0.32）+ magic replace；错误整岛 x 抖 [0, −7, 6, −4, 2, 0] 0.4 s；消失先退内容 0.12 s，0.08 s 后形体 `retract`。停留：只有标题 1.4 s、带详情 2.0 s、错误 3.0 s、进度一直挂着（60 s 兜底）。前导槽按场景：取色 = 色块、截图 = 26×18 缩略图、文字 = 对勾。窗口不接鼠标，要主动发 VoiceOver 播报。
+- **S3 译文显影**：`TextRenderer`（macOS 15）逐段显影：新文字 opacity 0→1（0.26 s）、blur ~3→0、y +2.5→0；末尾 accent 胶囊光标（2 pt × 0.82 行高）。大模型生成时边框上一段 accent 彗星光绕行 2.4 s 一圈，结束时 0.35 s 淡出 + 整圈边框闪 accent 0.45→0（0.6 s）。等第一个字时骨架条（高 9、宽 94 / 72 / 48%）+ 扫光；`<think>` 期间「思考中」扫光。只用强调色，不做彩虹。
+- **S4 会呼吸的面板**：入场淡入 + 6 pt 下落、高亮滑动、高度随结果伸缩、按住 ⌘ 150 ms 后键帽依次浮现（每个 0.12 s，错开 index × 0.015 s）。从来没有「跳」的瞬间。
+- **S5 窗口磁吸**：截图蒙层的洞和 accent 高亮框（圆角 10、填充 accent 0.12、2 pt 描边）在窗口之间用 `glide` 变形滑动；`fromValue` 取 `presentation()` 可随时打断；路径元素数恒定（bounds 矩形 + 一个圆角洞，没有窗口时放零尺寸占位）。
+
+## 6. 各界面规范
+- **启动器**：宽 720、搜索栏 56；单行 40 pt（图标 24，标题 14 medium + 13 secondary 副标题同一行 `.middle` 截断，右侧类型 12 tertiary）；分组标题只在空查询时出现；种类色块按家族色；计算卡 64 pt（表达式 13 secondary → 结果 28 Rounded + numericText）；底栏 36：修饰键替代动作 + 主动作键帽 + 齿轮 / 图钉。高度 = 56 + 0.5 +（有结果时）12 + 28（最近使用）+ min(n, 8.5) × 40 + 36。
+- **剪贴板**：760×480；保留「搜索 + 列表 + 检查器」，不做横向货架。范围胶囊 22 pt（选中 accent 0.16 底 + accent 字）；列表宽 320、行 44、图标块 30 / 圆角 7；分组标题 11 semibold tertiary、无灰条；⌘1–9 按住 ⌘ 才显示；按类型出图标块（颜色色块、图片缩略图、链接 favicon、文件 QL 缩略图、代码 / JSON 加 `{}` `</>` 角标）。检查器卡片（内缩 6、圆角 10）：页眉 40 pt 取来源 App 图标颜色（12×12 采样、饱和度 ×1.25+0.08、亮度夹 0.35–0.75、纵向渐变到亮度 −8%，白字对比度不到 4.5:1 改 black 0.85）；颜色 = 满宽色块 + HEX / RGB / HSL / `Color(...)` 点击复制；代码 / JSON = SF Mono 12 + 语法着色；链接 = 头图 + 标题 + 域名（LinkPresentation，只在选中时取，跳过内网 / 私有 IP / 敏感条目，3 s 超时，默认开）；图片 = 8 pt 棋盘格 + 尺寸胶囊；文件 = 64 pt QL 缩略图网格。卡片按钮 = 无边框胶囊（高 26、最多 4 个）。底栏只留「条数 / 内联提示 ｜ 粘贴 ↩ · 操作 ⌘K」；⌘K 面板画在面板内、锚右下角（宽 260、`.menu` 材质、行高 28、可过滤、`snap` 从锚点放大）。
+- **翻译**：宽 420（只能拖宽）；三层（头部 / 输入框 / 卡片堆）、无分割线；语言 = 两个 28 pt 胶囊 + 24 pt 圆形互换钮（转 180°，胶囊交换位置，spring 0.35 / 0.28）；自动检测是行内「自动」标签；服务身份 = 18 pt 品牌色块 + 白符号或首字母（有真 logo 用 logo）、服务名 12 semibold、模型 11 tertiary；卡片操作平时 0.45 透明度；错误卡红 0.05 底 / 红 0.18 描边，图标 wiggle，给「重试 · 打开设置」；复制时整卡闪 accent 0→0.12→0（0.4 s）；空状态 28 pt 图标 + 14 semibold 标题 + 三行快捷键键帽。
+- **截图**：待选蒙层 black 0.18（0.15 s 淡入），有选区时洞外 0.45；选区双描边（内 1 pt white 0.9 + 外 1 pt black 0.28）、角手柄 9 pt 白圆、边中点 16×5 白胶囊、命中容差 8；尺寸标签 HUD（12 semibold mono，「×」white 0.5）。工具栏 = 一条深色 HUD 主栏（高 40、圆角 16，按钮 32×32，分组分隔线 1×18 white 0.14，当前工具 accent 底块 `glide` 滑动，松手 40 ms 后浮现 y 6→0 + scale 0.96→1，拖动 / 缩放选区时 0.10 s 淡出）+ 附属样式托盘（高 34、圆角 10、主栏下 6 pt，选中色点外加 2 pt 环并放大 1.1）。放大镜 15×15 像素、每格 9 pt、圆角 10、0.5 pt 像素网格、中心十字条带 accent 0.18、中心格描边按亮度选黑白、外环 2 pt 白 + 阴影，下贴 40 pt HUD 信息卡（色块 + HEX + 坐标 +「C 复制」），出现 scale 0.7→1（`pop`）、平时死贴光标、翻边 `glide`。顶部提示 = HUD 胶囊距屏顶 64 pt，浮上 8 pt，3 s 后淡出。标注：阴影 black 0.28 / blur 3、锥形实心箭头（头长 4 × 线宽、半角 28°）、矩形圆角 3、文字 SF Pro Rounded semibold。可选十字准线：按住 ⌘ 时 1 pt white 0.6 + 1 pt black 0.25。
+- **钉图**：圆角 10、系统阴影；钉上 1.04→1（spring 0.35 / 0.3）；悬停 0.3 s 后右上角淡入透明度 / 关闭两个 22 pt 圆钮；缩放时中央 HUD 百分比 0.7 s 后淡出；关闭 1→0.92 + 淡出 0.16 s。CleanShot 式常驻缩略图（悬停操作、拖出成文件、横滑关掉）按 D 阶段做。
+- **长截图**：面板 = HUD 皮肤（216 宽、圆角 16、behindWindow）；预览像纸带滚动、上下 18 pt 渐隐；高度数字 22 pt Rounded + numericText；选区边框 `CAShapeLayer` 2 pt accent + 外发光呼吸（shadowOpacity 0.25↔0.6，1.2 s）；自动滚动时蚂蚁线（dash [8,6]，0.5 s 一轮）；每拼上一帧预览底部闪 accent 0.25→0；对不上时边框 systemOrange、状态文字抖一下 0.35 s。
+- **设置**：每页 `hosting.title` 跟随、恢复上次的页；页头 40 pt 家族色块 + title2 + callout 说明；2–3 个选项用分段、3–5 个用单选、> 5 才用弹出菜单；权限从未授权变已授权时符号替换 + 弹一下。关于页 = 品牌页：128 pt 图标（点一下 KeyframeAnimator 摇一摇，悬停 3D 倾斜 ≤ 6°）+ 26 pt Rounded 字标 + 版本胶囊 + changelog 时间线。D 阶段换 `NavigationSplitView` 侧栏 + 搜索 + 实时预览 + 首次引导。
+- **菜单栏与图标**：菜单栏用角色剪影模板图；菜单项左侧加家族符号；D 阶段迁到 `NSStatusItem` 做符号动效（主动完成一件事时弹一下，长任务期间呼吸，被动剪贴板采集不播）。App 图标：1024 画布、主体 824、四边留 100、连续圆角约 185、烘焙阴影（dy 10 / σ 10 / black 0.3），10 张 PNG，16 / 32 手调剪影；`.icon`（Icon Composer）等有 26 测试机再做。DMG 背景（左 App、右 Applications、中间箭头）只用 `hdiutil` + AppleScript。
+
+## 7. 无障碍（不许省）
+- 「减弱动态效果」：`snap` / `glide` → `instant`；`settle` / `pop` / `island` / `retract` → 0.2 s easeInOut 只改透明度；`ambient` 静态；飞行卡片改成轻提示；`.symbolEffectsRemoved()`。判断统一走 `Style.reduceMotion`（SwiftUI 读 `@Environment(\.accessibilityReduceMotion)`，AppKit 读 `NSWorkspace.shared.accessibilityDisplayShouldReduceMotion`）。
+- 「降低透明度」：自绘半透明卡片提到 0.9 不透明；岛本来不透明。
+- 「增强对比度」：发丝线 1 pt / 0.25，中性选中行加 1 pt accent 0.6 描边。
+- 岛、飞行卡片不接鼠标，主动发 `NSAccessibility.post(.announcementRequested)`。
+
+## 8. 性能红线
+- 截图遮罩的每次鼠标移动继续包 `setDisableActions(true)`，动画只加在状态切换那一刻；动效只动 `CAShapeLayer` 路径 / 变换，不重画整张冻结帧。
+- 彗星边框只做旋转，只在生成期间挂载；不做「定时器随机换渐变色标」。不写 `.metal` 着色器（Metal Toolchain 要单独下载）。
+- 5000 条列表的高亮用 offset，连发关动画。
+- 飞行窗口只取起终点并集大小、约 1.7 s 后关闭；岛窗口约 508×94，不开全屏透明窗；上线后用 `phys_footprint` 复测。
+- 窗口 frame 动画与 SwiftUI 重新布局要合并更新，用户拖动改尺寸期间跳过。
+
+## 9. 验收
+- `SnapshotProbeTests` 补新状态；动效类视图给一个 `elapsed` / 静态参数，能渲染动画中间帧和终态。屏幕外渲染材质会发灰、拍不到动画，只能锁布局。
+- 每阶段结束给用户一份真机清单：浅色 / 深色 / 降低透明度 / 减弱动态效果各看一遍；质感和手感以真机为准。红线禁止为截图弹面板抢键盘。
+
+## 10. 新界面上线前检查清单
+1. 选了哪种皮肤？圆角、间距、字号都从 `Style` 取了吗？没有硬编码的 16 / 10 / 0.07。
+2. 这个界面从哪里来、回哪里去？进出动画用的是哪条命名曲线？
+3. 粘贴、连发、拖动、结果刷新这些路径是不是 0 ms？
+4. 强调色只用在 §1.2 列的六处吗？选中是不是中性高亮？
+5. 减弱动态效果 / 降低透明度 / 增强对比度下各是什么样？
+6. 有没有持续运行的 `ambient`？不可见时停了吗？
+7. 截图自检补了吗？真机清单写了吗？
+
+## 11. 许可
+boring.notch、Easydict、Ice、Loop 是 GPL，Capso 是 BSL：只看效果，一行代码都不拷。DynamicNotchKit、copyo、Pesty 是 MIT，Snapzy 是 BSD：只借数值和思路自己重写（本项目禁止任何依赖）。系统快门声在私有路径，先判断存在。Hello Kitty 是 Sanrio 的商标和版权形象：公开发布前换原创角色（D1）。
