@@ -114,13 +114,17 @@ struct LauncherPanelView: View {
               .padding(.bottom, 2)
           }
           ForEach(Array(model.results.enumerated()), id: \.element.id) { index, item in
-            LauncherRow(
-              item: item, index: index, showsShortcut: showsShortcuts && index < 9,
-              isSelected: index == model.selection
-            )
-            .frame(height: rowHeight(item))
-            .contentShape(.rect)
-            .onTapGesture { model.click(item) }
+            Button {
+              model.click(item)
+            } label: {
+              LauncherRow(
+                item: item, index: index, showsShortcut: showsShortcuts && index < 9,
+                isSelected: index == model.selection
+              )
+              .frame(height: rowHeight(item))
+              .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
             .id(item.id)
           }
         }

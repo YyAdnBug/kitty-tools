@@ -78,7 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private lazy var clipboardPanel: OverlayPanel = {
     let model = clipboardModel
     let panel = OverlayPanel(
-      size: NSSize(width: 680, height: 520), autoHide: .clickOutside,
+      size: NSSize(width: 760, height: 480), autoHide: .clickOutside,
       isPinned: { !UserDefaults.standard.bool(forKey: Prefs.clipboardHideOnUnfocus) },
       content: ClipboardPanelView(model: model))
     panel.keyEquivalentHandler = { [unowned model] in model.handleKeyEquivalent($0) }

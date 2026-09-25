@@ -1,7 +1,8 @@
 // 剪贴板面板的界面状态与操作：筛选、选中 / 多选、键盘命令、粘贴 / 复制 / 删除撤销。视图只负责画。
 // 焦点始终在搜索框：方向键 / 回车 / Esc 从搜索框的 doCommandBy 进来，⌘ 组合键从面板的
 // performKeyEquivalent 进来（handleKeyEquivalent）。交互按 macOS 习惯重新设计，不沿用旧版：
-// 单击选中、双击或 ↩ 粘贴、⌥↩ 纯文本、⌘↩ 仅复制、⌘1–9 直接粘贴第 N 条、删除不确认可撤销。
+// 单击选中、双击或 ↩ 粘贴、⌥↩ 纯文本、⌘↩ 仅复制、⌘1–9 直接粘贴第 N 条、删除不确认可撤销；
+// ⌘K 打开操作面板（全部操作都在里面，搜索框这时用来过滤操作，↑↓ ↩ 选择执行，Esc 关掉）。
 
 import AppKit
 import Carbon.HIToolbox
@@ -65,6 +66,19 @@ import Observation
   var multiSelection: Set<UUID> = []
   var dialog: Dialog?
   var toast: Toast?
+  /// ⌘K 操作面板开着：搜索框改成过滤操作
+  var showsActions = false {
+    didSet {
+      actionQuery = ""
+      actionSelection = 0
+    }
+  }
+  var actionQuery = "" { didSet { actionSelection = 0 } }
+  var actionSelection = 0
+  /// 选中高亮这次怎么移动（Whisker §4）：键盘单按 snap，连发与筛选变化不动画，点选 glide
+  private(set) var selectionMotion = Style.Motion.instant
+  /// 列表增删这次要不要动画：新条目进来、删除 / 撤销用 settle，搜索和筛选变化不动画
+  private(set) var listMotion = Style.Motion.instant
   /// 预览里的 JSON 美化开关，切换条目时复位
   var prettyJSON = false
 
@@ -134,7 +148,9 @@ import Observation
   func handleCommand(_ selector: Selector) -> Bool {
     switch selector {
     case #selector(NSResponder.cancelOperation(_:)):
-      if dialog != nil {
+      if showsActions {
+        showsActions = false
+      } else if dialog != nil {
         dialog = nil
       } else if !query.isEmpty {
         query = ""
@@ -144,6 +160,10 @@ import Observation
         return false
       }
     case _ where dialog != nil: return false
+    case #selector(NSResponder.moveUp(_:)) where showsActions: moveAction(by: -1)
+    case #selector(NSResponder.moveDown(_:)) where showsActions: moveAction(by: 1)
+    case #selector(NSResponder.insertNewline(_:)) where showsActions: runSelectedAction()
+    case _ where showsActions: return false
     case #selector(NSResponder.moveUp(_:)): move(by: -1)
     case #selector(NSResponder.moveDown(_:)): move(by: 1)
     case #selector(NSResponder.moveUpAndModifySelection(_:)): move(by: -1, extending: true)
@@ -160,6 +180,11 @@ import Observation
   func handleKeyEquivalent(_ event: NSEvent) -> Bool {
     let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
     guard dialog == nil, modifiers == .command else { return false }
+    if Int(event.keyCode) == kVK_ANSI_K {
+      if showsActions || selectedItem != nil { showsActions.toggle() }
+      return true
+    }
+    if showsActions { showsActions = false }
     let fieldEditor = event.window?.firstResponder as? NSTextView
     let fieldHasSelection = (fieldEditor?.selectedRange().length ?? 0) > 0
     switch Int(event.keyCode) {
@@ -197,6 +222,7 @@ import Observation
       ? min(max(current + offset, 0), items.count - 1)
       : (current + offset + items.count) % items.count
     isBrowsing = true
+    selectionMotion = NSApp.currentEvent?.isARepeat == true ? .instant : .snap
     if extending {
       if anchorID == nil || multiSelection.isEmpty { anchorID = items[current].id }
       let anchor = items.firstIndex { $0.id == anchorID } ?? current
@@ -214,6 +240,8 @@ import Observation
     let event = NSApp.currentEvent
     let modifiers = event?.modifierFlags ?? []
     isBrowsing = true
+    selectionMotion = .glide
+    showsActions = false
     if modifiers.contains(.command) {
       if multiSelection.isEmpty, let current = selectedItem { multiSelection = [current.id] }
       multiSelection.formSymmetricDifference([item.id])
@@ -317,6 +345,7 @@ import Observation
   /// 删除一律不确认：底栏可撤销，⌘Z 也能撤销（面板收起时才真正删）
   func delete(_ ids: Set<UUID>) {
     guard !ids.isEmpty else { return }
+    listMotion = .settle
     store.deleteWithUndo(ids)
     multiSelection.subtract(ids)
     showToast(.undo(count: ids.count), seconds: 5)
@@ -324,6 +353,7 @@ import Observation
 
   func undoDelete() {
     toastTask?.cancel()
+    listMotion = .settle
     store.undoDeletion()
     toast = nil
   }
@@ -353,6 +383,111 @@ import Observation
     }
   }
 
+  // MARK: ⌘K 操作面板
+
+  struct Action: Identifiable {
+    let title: String
+    let symbol: String
+    /// 快捷键提示（没有就空）
+    let shortcut: String
+    let run: () -> Void
+    var id: String { title }
+  }
+
+  /// 当前条目（或多选）能做的全部操作，按常用程度排
+  var actions: [Action] {
+    guard let item = selectedItem else { return [] }
+    let many = multiSelection.count > 1
+    var actions = [
+      Action(title: many ? "合并粘贴" : "粘贴到当前 App", symbol: "arrow.turn.down.left", shortcut: "↩") {
+        [unowned self] in pasteSelection()
+      }
+    ]
+    if item.kind == .text || many {
+      actions.append(
+        Action(title: "粘贴为纯文本", symbol: "doc.plaintext", shortcut: "⌥↩") { [unowned self] in
+          pasteSelection(plainText: true)
+        })
+    }
+    actions.append(
+      Action(title: "仅复制", symbol: "doc.on.doc", shortcut: "⌘↩") { [unowned self] in copySelection()
+      })
+    let favorite = targets.allSatisfy(\.favorite)
+    actions.append(
+      Action(
+        title: favorite ? "取消收藏" : "收藏", symbol: favorite ? "star.slash" : "star", shortcut: "⌘D"
+      ) {
+        [unowned self] in store.toggleFavorite(targetIDs)
+      })
+    if !many, item.kind == .text || !(item.ocrText ?? "").isEmpty {
+      actions.append(
+        Action(title: "翻译", symbol: "character.bubble", shortcut: "") { [unowned self] in
+          translate(item)
+        })
+    }
+    if !many, let link = ContentForm.firstLink(in: item.text ?? "") {
+      actions.append(
+        Action(title: "打开链接", symbol: "safari", shortcut: "") { NSWorkspace.shared.open(link) })
+    }
+    if !many, item.kind == .text {
+      actions.append(
+        Action(title: "编辑内容…", symbol: "pencil", shortcut: "⌘E") { [unowned self] in
+          dialog = .edit(item.id)
+        })
+      if !item.isSnippet {
+        actions.append(
+          Action(title: "存为片段", symbol: "text.badge.star", shortcut: "") { [unowned self] in
+            store.update([item.id]) { $0.isSnippet = true }
+          })
+      }
+    }
+    if !many, item.favorite || item.isSnippet {
+      actions.append(
+        Action(title: "备注…", symbol: "note.text", shortcut: "") { [unowned self] in
+          dialog = .note(item.id)
+        })
+    }
+    if !many, item.kind == .file {
+      actions.append(
+        Action(title: "在访达中显示", symbol: "folder", shortcut: "") {
+          NSWorkspace.shared.activateFileViewerSelecting(
+            (item.filePaths ?? []).map { URL(filePath: $0) })
+        })
+    }
+    actions.append(
+      Action(title: "放进新分组…", symbol: "folder.badge.plus", shortcut: "") { [unowned self] in
+        dialog = .newGroup(targetIDs)
+      })
+    actions.append(
+      Action(title: "删除", symbol: "trash", shortcut: "⌘⌫") { [unowned self] in delete(targetIDs) })
+    return actions
+  }
+
+  /// 按 actionQuery 过滤（标题包含，不分大小写）
+  var filteredActions: [Action] {
+    let query = actionQuery.trimmingCharacters(in: .whitespaces)
+    guard !query.isEmpty else { return actions }
+    return actions.filter { $0.title.localizedCaseInsensitiveContains(query) }
+  }
+
+  private func moveAction(by offset: Int) {
+    let count = filteredActions.count
+    guard count > 0 else { return }
+    actionSelection = (actionSelection + offset + count) % count
+  }
+
+  func runSelectedAction() {
+    let actions = filteredActions
+    guard actions.indices.contains(actionSelection) else { return NSSound.beep() }
+    showsActions = false
+    actions[actionSelection].run()
+  }
+
+  func run(_ action: Action) {
+    showsActions = false
+    action.run()
+  }
+
   // MARK: 显示 / 隐藏
 
   /// 每次隐藏都复位：搜索、筛选、多选、选中项回到第一条；没撤销的删除落库
@@ -368,6 +503,7 @@ import Observation
     multiSelection = []
     dialog = nil
     toast = nil
+    showsActions = false
     isBrowsing = false
     selectedID = nil
     anchorID = nil
@@ -379,11 +515,17 @@ import Observation
     isBrowsing = false
     selectedID = nil
     prettyJSON = false
+    selectionMotion = .instant
+    listMotion = .instant
   }
 
   /// 新条目进来：用户没在浏览就让选中回到第一条
   func itemsChanged() {
-    if !isBrowsing { selectedID = nil }
+    listMotion = .settle
+    if !isBrowsing {
+      selectionMotion = .instant
+      selectedID = nil
+    }
     if let sourceBundleID, !store.items.contains(where: { $0.sourceBundleID == sourceBundleID }) {
       self.sourceBundleID = nil
     }

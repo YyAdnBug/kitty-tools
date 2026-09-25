@@ -1,5 +1,6 @@
-// ContentForm / Snippet 单测：颜色解析、JSON / 链接 / 代码识别、片段占位符。
+// ContentForm / Snippet 单测：颜色解析、JSON / 链接 / 代码识别、片段占位符；检查器卡片的语法着色与页眉黑白字。
 
+import AppKit
 import Foundation
 import Testing
 
@@ -47,5 +48,35 @@ struct ContentFormTests {
         }, now: date) == expected)
     #expect(!asked)  // 没用到 {clipboard} 就不读剪贴板
     #expect(Snippet.expand("无占位符 {other}", clipboard: { nil }) == "无占位符 {other}")
+  }
+
+  @Test func syntaxHighlight() {
+    let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+    func color(_ text: String, _ language: SyntaxHighlight.Language, at token: String) -> NSColor? {
+      let attributed = SyntaxHighlight.attributed(text, language: language, font: font)
+      let range = (text as NSString).range(of: token)
+      return attributed.attribute(.foregroundColor, at: range.location, effectiveRange: nil)
+        as? NSColor
+    }
+    let json = #"{"name": "kitty", "count": 12, "ok": true}"#
+    #expect(color(json, .json, at: #""name""#) == .systemBlue)  // 键
+    #expect(color(json, .json, at: #""kitty""#) == .systemRed)  // 字符串值
+    #expect(color(json, .json, at: "12") == .systemPurple)
+    #expect(color(json, .json, at: "true") == .systemPink)
+    let code = "let x = 42 // answer\nreturn \"ok\""
+    #expect(color(code, .code, at: "let") == .systemPink)
+    #expect(color(code, .code, at: "// answer") == .secondaryLabelColor)
+    #expect(color(code, .code, at: "42") == .systemPurple)
+    #expect(color(code, .code, at: #""ok""#) == .systemRed)
+    #expect(color("let x", .plain, at: "let") == .labelColor)  // 纯文本不着色
+  }
+
+  @Test func inspectorHeaderText() {
+    // 备忘录黄、浅灰上用黑字；系统蓝、深紫上用白字
+    #expect(PreviewView.needsDarkText(on: NSColor(srgbRed: 0.96, green: 0.77, blue: 0, alpha: 1)))
+    #expect(PreviewView.needsDarkText(on: NSColor(white: 0.85, alpha: 1)))
+    #expect(
+      !PreviewView.needsDarkText(on: NSColor(srgbRed: 0.12, green: 0.45, blue: 0.9, alpha: 1)))
+    #expect(!PreviewView.needsDarkText(on: NSColor(srgbRed: 0.35, green: 0.2, blue: 0.6, alpha: 1)))
   }
 }

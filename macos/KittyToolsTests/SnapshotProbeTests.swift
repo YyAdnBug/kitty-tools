@@ -66,13 +66,15 @@ struct SnapshotProbeTests {
         }
       ),
       ("empty-snippets", { m in m.scope = .snippets }),
+      ("color", { m in m.select(m.visibleItems.first { $0.text == "#3478F6" }!) }),
+      ("actions", { m in m.showsActions = true }),
     ]
     for dark in [false, true] {
       for (name, configure) in states {
         model.reset()
         configure(model)
         try snapshot(
-          ClipboardPanelView(model: model), size: NSSize(width: 680, height: 520), dark: dark,
+          ClipboardPanelView(model: model), size: NSSize(width: 760, height: 480), dark: dark,
           to: "\(out)/\(name)\(dark ? "-dark" : "").png")
       }
     }
