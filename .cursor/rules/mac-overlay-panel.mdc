@@ -82,6 +82,7 @@ M1 实测结论 + master 旧规则 `macos-overlay-panel.mdc` 删减。代码：`
 - `PinPanel`：`.borderless + .nonactivatingPanel`、`.floating`、`canBecomeKey`；显示只 `orderFrontRegardless`，**不 makeKey**（出现时不抢键盘，修旧版 §11 #48）；用户点了它才 makeKey，Esc / ⌘C 才归它。
 - 原位置出现（选区的全局坐标），`constrainFrameRect` 原样返回，别被挪出菜单栏区域。拖动用 `performDrag(with:)`，双击关闭；缩放以鼠标为锚点、保持宽高比。
 - 不做点击穿透、不做钉图历史；`freeze(keeping: pins.windowNumbers)` 让钉图留在之后的截图里。
+- 外观（Whisker）：透明窗口 + 内容图层圆角 10、系统阴影（改尺寸后 `invalidateShadow()`）。钉上用窗口帧动画（从 1.04 倍回弹，`animator().setFrame`），不给内容图层做放大（会被窗口边裁掉圆角）；关闭先从 `board.panels` 移除、再缩到 0.92 淡出后 `orderOut`。悬停圆钮和缩放百分比是 `HUDBar`（材质 `withinWindow` 模糊的是钉图本身）。
 
 ## 10. 长截图（`Screenshot/ScrollCapture.swift`、`ScrollStitcher.swift`）
 - 冻结帧只管框选：截图框选里按 S 后遮罩收起（`session.finish`），在**实时画面**上截；这是「先截后选」的唯一例外，不要把它扩散到截图 / 截图翻译的框选。
