@@ -2,7 +2,8 @@
 // （AnnotationCanvas，只重画变了的那块）→ 暗色蒙层、选区边框、手柄、尺寸、放大镜（CALayer，拖动时只改路径和位置，
 // 不重画整屏）→ 文字输入框 → 工具栏与样式栏（EditorToolbar）。
 // 截图翻译 / 识字：拖动框选、松手即确认。截图：悬停高亮窗口、单击截整窗，拖出或单击后进入调整：8 个手柄、拖动平移、
-// 方向键微调（⇧ 10 点）、拖动框选时按住空格平移；放大镜显示中心像素的色值（C 复制）；S 长截图；标注 1–4（矩形、箭头、文字、
+// 方向键微调（⇧ 10 点）、拖动框选时按住空格平移；放大镜显示中心像素的色值（C 复制），按住 ⌘ 出整屏十字准线；S 长截图；
+// 标注 1–4（矩形、箭头、文字、
 // 马赛克，⇧ 画正方形 / 45° 箭头），点中标注可拖动、改颜色粗细、⌫ 删除、双击文字重新编辑，⌘Z 撤销、⇧⌘Z 重做。
 
 import AppKit
@@ -30,6 +31,10 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private var drag: Drag? { didSet { refresh() } }
   /// 截图：按住空格时拖动框选变成整块平移（系统截屏的习惯）
   private var isSpaceDown = false
+  /// 按住 ⌘：出十字准线。按键和鼠标事件都带着修饰键，鼠标从别的屏移过来时也是准的
+  private var isCommandDown = false {
+    didSet { if isCommandDown != oldValue { refresh() } }
+  }
 
   // 标注（截图模式）。截图自检直接设它们摆出各种状态
   var annotations: [Annotation] = [] { didSet { syncAnnotations() } }
@@ -74,6 +79,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private let annotationOutline = CAShapeLayer()
   /// 选区双描边的外圈（内圈 white 0.9 是 outline）
   private let outlineOuter = CAShapeLayer()
+  /// 按住 ⌘ 时穿过光标的十字准线：1 pt white 0.6 贴 1 pt black 0.25，亮底暗底都看得见
+  private let crossLight = CAShapeLayer()
+  private let crossDark = CAShapeLayer()
   private let sizeLabel = Pill(fontSize: 12, weight: .semibold, radius: Style.Radius.control)
   private let hint = Pill(
     fontSize: 13, padding: CGSize(width: 14, height: 7), digits: false, weight: .regular)
@@ -141,10 +149,18 @@ final class SelectionView: NSView, NSTextViewDelegate {
     annotationOutline.strokeColor = NSColor.controlAccentColor.cgColor
     annotationOutline.lineWidth = 1
     annotationOutline.lineDashPattern = [4, 3]
+    for (layer, color) in [
+      (crossLight, NSColor.white.withAlphaComponent(0.6)),
+      (crossDark, .black.withAlphaComponent(0.25)),
+    ] {
+      layer.fillColor = nil
+      layer.strokeColor = color.cgColor
+      layer.lineWidth = 1
+    }
     setUpMagnifier()
     for layer in [
-      shade, highlight, outlineOuter, outline, handles, annotationOutline, sizeLabel.layer,
-      hint.layer, magnifier,
+      shade, highlight, outlineOuter, outline, crossDark, crossLight, handles, annotationOutline,
+      sizeLabel.layer, hint.layer, magnifier,
     ] {
       root.addSublayer(layer)
     }
@@ -283,8 +299,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private func updateScale() {
     let scale = window?.backingScaleFactor ?? 2
     for layer in [
-      shade, outline, outlineOuter, highlight, handles, annotationOutline, loupeGrid, loupeBands,
-      loupeCenter, infoText, infoKey,
+      shade, outline, outlineOuter, crossLight, crossDark, highlight, handles, annotationOutline,
+      loupeGrid, loupeBands, loupeCenter, infoText, infoKey,
     ] as [CALayer] {
       layer.contentsScale = scale
     }
@@ -417,6 +433,28 @@ final class SelectionView: NSView, NSTextViewDelegate {
       sizeLabel.place(at: CGPoint(x: x, y: y))
     }
     updateMagnifier()
+    updateCrosshair()
+  }
+
+  /// 十字准线跟放大镜同时出现（待选、拖动框选、拖手柄），只在按住 ⌘ 时；对齐到整点，白线盖住光标所在的那一点
+  private func updateCrosshair() {
+    guard let mouse, isCommandDown, showsMagnifier else {
+      crossLight.path = nil
+      crossDark.path = nil
+      return
+    }
+    let x = mouse.x.rounded(.down)
+    let y = mouse.y.rounded(.down)
+    for (layer, dx, dy) in [(crossLight, 0.5, 0.5), (crossDark, 1.5, -0.5)]
+      as [(CAShapeLayer, CGFloat, CGFloat)]
+    {
+      let path = CGMutablePath()
+      path.move(to: CGPoint(x: x + dx, y: bounds.minY))
+      path.addLine(to: CGPoint(x: x + dx, y: bounds.maxY))
+      path.move(to: CGPoint(x: bounds.minX, y: y + dy))
+      path.addLine(to: CGPoint(x: bounds.maxX, y: y + dy))
+      layer.path = path
+    }
   }
 
   /// 手柄命中容差 8 pt；选区很小时按比例缩（不然整块都是手柄，没法拖着平移）
@@ -764,10 +802,15 @@ final class SelectionView: NSView, NSTextViewDelegate {
     syncAnnotations()  // 没改动时 commit 不触发，也要把编辑时藏起来的那条显示回来
   }
 
+  /// 输入框里的文字和收下后画出来的一样：同字体、同颜色、同阴影
   private func apply(_ style: Annotation.Style, to field: NSTextView) {
     field.font = Annotation.font(style.weight)
     field.textColor = style.color.color
     field.insertionPointColor = style.color.color
+    field.typingAttributes[.shadow] = Annotation.textShadow
+    field.textStorage?.addAttribute(
+      .shadow, value: Annotation.textShadow,
+      range: NSRange(location: 0, length: field.textStorage?.length ?? 0))
   }
 
   /// 输入框和最后画出来的文字一样大、左上角不动（往下长）
@@ -846,6 +889,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
       mouse = nil
     } else {
       if window?.isKeyWindow == false { window?.makeKey() }
+      isCommandDown = event.modifierFlags.contains(.command)
       mouse = point(event)
     }
     refreshCursor()
@@ -911,7 +955,10 @@ final class SelectionView: NSView, NSTextViewDelegate {
 
   override func mouseDragged(with event: NSEvent) {
     let point = point(event)
-    if mode == .capture, !session.hasSelection(besides: self) { mouse = point }
+    if mode == .capture, !session.hasSelection(besides: self) {
+      isCommandDown = event.modifierFlags.contains(.command)
+      mouse = point
+    }
     switch drag {
     case .pending(let start)?:
       guard hypot(point.x - start.x, point.y - start.y) >= 3 else { return }
@@ -1094,6 +1141,12 @@ final class SelectionView: NSView, NSTextViewDelegate {
     }
   }
 
+  /// ⌘ 按下 / 松开：十字准线跟着出现 / 消失
+  override func flagsChanged(with event: NSEvent) {
+    isCommandDown = event.modifierFlags.contains(.command)
+    super.flagsChanged(with: event)
+  }
+
   override func keyUp(with event: NSEvent) {
     if Int(event.keyCode) == kVK_Space { isSpaceDown = false } else { super.keyUp(with: event) }
   }
@@ -1161,7 +1214,7 @@ private final class AnnotationCanvas: NSView {
 
   override func draw(_ dirtyRect: NSRect) {
     guard let context = NSGraphicsContext.current?.cgContext else { return }
-    for annotation in annotations where annotation.bounds.intersects(dirtyRect) {
+    for annotation in annotations where annotation.drawBounds.intersects(dirtyRect) {
       annotation.draw(in: context, image: image, viewSize: bounds.size)
     }
   }
@@ -1170,13 +1223,13 @@ private final class AnnotationCanvas: NSView {
     let before = Dictionary(old.map { ($0.id, $0) }) { first, _ in first }
     let now = Set(annotations.map(\.id))
     for annotation in annotations where before[annotation.id] != annotation {
-      setNeedsDisplay(annotation.bounds.insetBy(dx: -2, dy: -2))
+      setNeedsDisplay(annotation.drawBounds.insetBy(dx: -2, dy: -2))
       if let previous = before[annotation.id] {
-        setNeedsDisplay(previous.bounds.insetBy(dx: -2, dy: -2))
+        setNeedsDisplay(previous.drawBounds.insetBy(dx: -2, dy: -2))
       }
     }
     for annotation in old where !now.contains(annotation.id) {
-      setNeedsDisplay(annotation.bounds.insetBy(dx: -2, dy: -2))
+      setNeedsDisplay(annotation.drawBounds.insetBy(dx: -2, dy: -2))
     }
   }
 }

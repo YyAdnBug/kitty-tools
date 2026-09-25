@@ -1,6 +1,8 @@
 // 截图标注（值类型）：矩形、箭头、文字、马赛克。坐标存整屏视图坐标（点，原点左下）：调整选区不丢标注（修旧版 #43）。
 // 屏幕显示（SelectionView 的标注层）和导出（render）共用同一个 draw，所见即所得；马赛克从冻结帧取像素，
 // 所以导出、识字拿到的都是打码后的图（修旧版把原图拿去识字，#44）。颜色是固定的 sRGB 值，不随深浅色变。
+// 外观（Whisker §6）：矩形圆角 3、锥形实心箭头（头长 4 × 线宽、半角 28°）、文字 SF Pro Rounded semibold，
+// 除马赛克外都带 black 0.28 / blur 3 的阴影（白色标注在白底上也看得见）。
 
 import AppKit
 
@@ -88,14 +90,14 @@ struct Annotation: Identifiable, Equatable {
 
   // MARK: 几何
 
-  /// 画出来占的范围（含线宽、箭头），用来局部重画和画选中框
+  /// 画出来占的范围（含线宽、箭头，不含阴影），用来画选中框、点中文字和马赛克
   var bounds: CGRect {
     let width = style.weight.lineWidth
     switch shape {
     case .rectangle(let rect):
       return rect.insetBy(dx: -width / 2, dy: -width / 2)
     case .arrow(let from, let to):
-      let pad = Self.headLength(from: from, to: to, width: width) * 0.5 + width
+      let pad = max(Self.arrowWing(from: from, to: to, width: width), width)
       return CGRect(
         x: min(from.x, to.x), y: min(from.y, to.y), width: abs(to.x - from.x),
         height: abs(to.y - from.y)
@@ -110,7 +112,12 @@ struct Annotation: Identifiable, Equatable {
     }
   }
 
-  /// 点中它没有：矩形只认边线（空心框里面点不中，免得挡住下面的标注），箭头认杆，文字、马赛克认整块
+  /// 连阴影一起占的范围：局部重画按它来，不然挪走后留下一圈阴影残影
+  var drawBounds: CGRect {
+    isMosaic ? bounds : bounds.insetBy(dx: -Self.shadowReach, dy: -Self.shadowReach)
+  }
+
+  /// 点中它没有：矩形只认边线（空心框里面点不中，免得挡住下面的标注），箭头认杆和箭头，文字、马赛克认整块
   func contains(_ point: CGPoint, tolerance: CGFloat = 4) -> Bool {
     let width = style.weight.lineWidth
     switch shape {
@@ -121,6 +128,7 @@ struct Annotation: Identifiable, Equatable {
         && (inner.isNull || inner.isEmpty || !inner.contains(point))
     case .arrow(let from, let to):
       return Self.distance(from: point, toSegment: from, to) <= width / 2 + tolerance
+        || Self.arrowPath(from: from, to: to, width: width)?.contains(point) == true
     case .text, .mosaic:
       return bounds.insetBy(dx: -tolerance, dy: -tolerance).contains(point)
     }
@@ -187,8 +195,12 @@ struct Annotation: Identifiable, Equatable {
 
   // MARK: 文字
 
+  /// SF Pro Rounded semibold（中文回退到苹方，没有圆体）
   static func font(_ weight: Weight) -> NSFont {
-    .systemFont(ofSize: weight.fontSize, weight: .semibold)
+    let font = NSFont.systemFont(ofSize: weight.fontSize, weight: .semibold)
+    return font.fontDescriptor.withDesign(.rounded).flatMap {
+      NSFont(descriptor: $0, size: weight.fontSize)
+    } ?? font
   }
 
   /// 文字框（origin 是左上角）。空串和末尾换行也留出一行的高度（输入框里光标要有地方）
@@ -206,35 +218,43 @@ struct Annotation: Identifiable, Equatable {
 
   // MARK: 绘制
 
-  /// 在视图坐标的上下文里画（导出时由 render 把上下文变换成视图坐标）。马赛克要从冻结帧取像素
-  func draw(in context: CGContext, image: CGImage, viewSize: CGSize) {
+  /// 阴影模糊半径（点）和它最远能画到的地方（高斯拖尾，留足了才不会在局部重画时留残影）
+  private static let shadowBlur: CGFloat = 3
+  private static let shadowReach: CGFloat = 8
+  private static let shadowColor = NSColor.black.withAlphaComponent(0.28)
+
+  /// 文字输入框用的同一个阴影（所见即所得）
+  static var textShadow: NSShadow {
+    let shadow = NSShadow()
+    shadow.shadowBlurRadius = shadowBlur
+    shadow.shadowColor = shadowColor
+    return shadow
+  }
+
+  /// 在视图坐标的上下文里画（导出时由 render 把上下文变换成视图坐标）。马赛克要从冻结帧取像素。
+  /// shadowScale：Quartz 的阴影参数不跟 CTM 走——视图 / 图层的上下文按点算（系统设了基础变换），
+  /// 自建位图按像素算，所以 render 要传每点几像素，屏幕上传 1
+  func draw(in context: CGContext, image: CGImage, viewSize: CGSize, shadowScale: CGFloat = 1) {
     let color = style.color.color.cgColor
     let width = style.weight.lineWidth
     context.saveGState()
     defer { context.restoreGState() }
+    if !isMosaic {
+      context.setShadow(
+        offset: .zero, blur: Self.shadowBlur * shadowScale, color: Self.shadowColor.cgColor)
+    }
     switch shape {
     case .rectangle(let rect):
+      let radius = min(3, rect.width / 2, rect.height / 2)
       context.setStrokeColor(color)
       context.setLineWidth(width)
-      context.stroke(rect)
-    case .arrow(let from, let to):
-      let length = hypot(to.x - from.x, to.y - from.y)
-      guard length > 0 else { return }
-      let head = Self.headLength(from: from, to: to, width: width)
-      let unit = CGPoint(x: (to.x - from.x) / length, y: (to.y - from.y) / length)
-      let base = CGPoint(x: to.x - unit.x * head, y: to.y - unit.y * head)
-      let half = head * 0.45
-      context.setStrokeColor(color)
-      context.setFillColor(color)
-      context.setLineWidth(width)
-      context.setLineCap(.round)
-      context.move(to: from)
-      context.addLine(to: base)
+      context.addPath(
+        CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil))
       context.strokePath()
-      context.move(to: to)
-      context.addLine(to: CGPoint(x: base.x - unit.y * half, y: base.y + unit.x * half))
-      context.addLine(to: CGPoint(x: base.x + unit.y * half, y: base.y - unit.x * half))
-      context.closePath()
+    case .arrow(let from, let to):
+      guard let path = Self.arrowPath(from: from, to: to, width: width) else { return }
+      context.setFillColor(color)
+      context.addPath(path)
       context.fillPath()
     case .text(let string, let origin):
       NSGraphicsContext.saveGraphicsState()
@@ -301,13 +321,38 @@ struct Annotation: Identifiable, Equatable {
     context.translateBy(
       x: -pixelRect.minX / scaleX, y: -(CGFloat(image.height) - pixelRect.maxY) / scaleY)
     for annotation in annotations {
-      annotation.draw(in: context, image: image, viewSize: viewSize)
+      annotation.draw(in: context, image: image, viewSize: viewSize, shadowScale: scaleX)
     }
     return context.makeImage()
   }
 
-  private static func headLength(from: CGPoint, to: CGPoint, width: CGFloat) -> CGFloat {
-    min(hypot(to.x - from.x, to.y - from.y), max(width * 3.5, 12))
+  /// 锥形实心箭头：一个填充多边形，杆从尾部 0.3 × 线宽渐粗到箭头处 1.2 × 线宽；箭头长 4 × 线宽、半角 28°
+  /// （比这还短的箭头只剩箭头）。零长度返回 nil
+  static func arrowPath(from: CGPoint, to: CGPoint, width: CGFloat) -> CGPath? {
+    let length = hypot(to.x - from.x, to.y - from.y)
+    guard length > 0 else { return nil }
+    let head = min(length, width * 4)
+    let wing = arrowWing(from: from, to: to, width: width)
+    let unit = CGPoint(x: (to.x - from.x) / length, y: (to.y - from.y) / length)
+    let base = CGPoint(x: to.x - unit.x * head, y: to.y - unit.y * head)
+    /// 沿法向偏出 side 点（正数在箭头方向的左边）
+    func beside(_ point: CGPoint, _ side: CGFloat) -> CGPoint {
+      CGPoint(x: point.x - unit.y * side, y: point.y + unit.x * side)
+    }
+    let tail = width * 0.15
+    let neck = min(width * 0.6, wing)
+    let path = CGMutablePath()
+    path.addLines(between: [
+      beside(from, tail), beside(base, neck), beside(base, wing), to, beside(base, -wing),
+      beside(base, -neck), beside(from, -tail),
+    ])
+    path.closeSubpath()
+    return path
+  }
+
+  /// 箭头底边的半宽：头长 × tan 28°
+  private static func arrowWing(from: CGPoint, to: CGPoint, width: CGFloat) -> CGFloat {
+    min(hypot(to.x - from.x, to.y - from.y), width * 4) * tan(28 * .pi / 180)
   }
 
   private static func distance(from point: CGPoint, toSegment a: CGPoint, _ b: CGPoint) -> CGFloat {

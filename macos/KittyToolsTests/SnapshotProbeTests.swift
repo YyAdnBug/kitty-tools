@@ -276,6 +276,19 @@ struct SnapshotProbeTests {
     let capture: [(String, Bool, (SelectionView) -> Void)] = [
       ("capture-hover", false, { $0.mouse = CGPoint(x: 150, y: 330) }),
       (
+        "capture-crosshair", false,
+        {
+          $0.mouse = CGPoint(x: 150.4, y: 330.6)
+          if let command = NSEvent.keyEvent(
+            with: .flagsChanged, location: .zero, modifierFlags: .command, timestamp: 0,
+            windowNumber: 0, context: nil, characters: "", charactersIgnoringModifiers: "",
+            isARepeat: false, keyCode: 55)
+          {
+            $0.flagsChanged(with: command)
+          }
+        }
+      ),
+      (
         "capture-draw", false,
         {
           $0.selection = selection

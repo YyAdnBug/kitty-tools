@@ -215,6 +215,33 @@ struct ScreenshotTests {
     #expect(pixel(5, 100) == (255, 255))
   }
 
+  @Test func exportedShadowIsMeasuredInPoints() throws {
+    // Quartz 在自建位图里按像素算阴影、不跟 CTM 走：render 不乘每点几像素的话，2x 导出的阴影只有屏幕上的一半。
+    // 黑色矩形左边线外缘在 38 点，取 36–37 点那一列：1x、2x 一样深，而且确实有阴影
+    func shadow(scale: Int) throws -> Int {
+      let side = 100 * scale
+      let image = try Self.image(size: side) { context in
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: side, height: side))
+      }
+      let rectangle = Annotation(
+        shape: .rectangle(CGRect(x: 40, y: 20, width: 40, height: 60)),
+        style: .init(color: .black, weight: .medium))
+      let result = try #require(
+        Annotation.render(
+          [rectangle], over: image, pixelRect: CGRect(x: 0, y: 0, width: side, height: side),
+          viewSize: CGSize(width: 100, height: 100)))
+      let pixels = try #require(result.dataProvider?.data as Data?)
+      let row = 50 * scale  // 视图 y = 50 点
+      let columns = (36 * scale)..<(37 * scale)
+      return columns.map { Int(pixels[row * result.bytesPerRow + $0 * 4 + 1]) }.reduce(0, +)
+        / columns.count
+    }
+    let one = try shadow(scale: 1)
+    let two = try shadow(scale: 2)
+    #expect(one < 250 && abs(one - two) <= 4, "1x \(one) / 2x \(two)")
+  }
+
   @Test func mosaicHidesTextFromRecognition() async throws {
     // 打码后的合成图识别不出原来的字（修旧版把未打码的原图拿去识字，§11 #44）
     let image = try Self.render(["Secret password 12345"])
