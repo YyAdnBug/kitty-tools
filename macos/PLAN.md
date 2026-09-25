@@ -240,7 +240,7 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 | `Translate/` | `TranslateCoordinator.swift`、`LanguageResolver.swift`、`SelectionReader.swift`、`SSE.swift`、`Providers/`（`Zhipu`、`AIService`、`Baidu`、`Youdao`、`Google`、`DeepL`、`Microsoft`、`Volcengine`、`Tencent` 各一个 `.swift`）、`TranslatePanelView.swift`、`ProviderCardView.swift`（含服务品牌色块、彗星边框、骨架扫光）、`RevealText.swift`（流式译文显影，TextRenderer）、`HistoryStore.swift`、`HistoryView.swift` |
 | `Settings/` | `GeneralTab.swift`、`HotkeysTab.swift`、`ClipboardTab.swift`、`TranslateTab.swift`、`AboutTab.swift`、`LauncherTab.swift`、`ScreenshotTab.swift` |
 | `Launcher/` | `LauncherItem.swift`（结果项与内置动作）、`AppCatalog.swift`（App 目录 + 中文名 + 拼音）、`LauncherMatch.swift`（匹配与排序纯函数）、`LauncherUsage.swift`（使用记录表）、`LauncherModel.swift`、`LauncherPanelView.swift` |
-| `Screenshot/` | `ScreenCapture.swift`（逐屏冻结帧 + 同一刻的窗口 Z 序快照）、`RegionSelector.swift`（框选会话、每屏一个遮罩、选区几何纯函数）、`SelectionView.swift`（遮罩画面与交互：图层绘制、窗口悬停、手柄、放大镜、工具栏）、`ScreenshotOutput.swift`（PNG、快速保存、另存为）、`PinPanel.swift`（钉图）、`Annotation.swift`（标注模型，显示与导出共用 draw，M10）、`EditorToolbar.swift`（主工具栏 + 样式栏，M10）、`ScrollCapture.swift`（长截图会话：边框、侧边面板、抓帧循环、自动滚动）、`ScrollStitcher.swift`（长截图拼接，纯逻辑） |
+| `Screenshot/` | `ScreenCapture.swift`（逐屏冻结帧 + 同一刻的窗口 Z 序快照）、`RegionSelector.swift`（框选会话、每屏一个遮罩、选区几何纯函数）、`SelectionView.swift`（遮罩画面与交互：图层绘制、窗口悬停、手柄、放大镜、工具栏）、`ScreenshotOutput.swift`（PNG、快速保存、另存为）、`PinPanel.swift`（钉图）、`Annotation.swift`（标注模型，显示与导出共用 draw，M10）、`EditorToolbar.swift`（HUD 主工具栏 + 样式托盘，M10，Whisker 重做）、`FlyCard.swift`（截图飞入右下角 + 快门声，Whisker S1）、`ScrollCapture.swift`（长截图会话：边框、侧边面板、抓帧循环、自动滚动）、`ScrollStitcher.swift`（长截图拼接，纯逻辑） |
 
 各 provider 函数签名统一，由 coordinator 里的一个 `switch` 分发。不建 registry 或 factory。
 
@@ -792,8 +792,8 @@ echo "$DMG"
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
-| A 基础与招牌时刻 | A1 `Shell/Style.swift`（圆角、七条曲线、描边、减弱动态效果）；A2 `OverlayPanel` 进出与高度动画 + 无边框 16 pt（先验证 key / 输入法 / Esc / 点外关闭 / 粘贴 / 固定 / 拖宽）；A3 启动器与剪贴板共用的滑动选中 + 按住 ⌘ 键帽；A4 刘海岛替换 `Toast`；A5 截图飞入 + 快门声 + 窗口磁吸 + 新手柄；A6 译文显影 + 光标 + 骨架扫光 | 进行中 |
-| B 界面重做 | 启动器单行 / 色块 / 计算卡 / 底栏；翻译语言胶囊 / 服务色块 / 彗星边框 / 错误卡；截图 HUD 工具栏 / 样式托盘 / 放大镜；剪贴板检查器卡片 / QL 缩略图 / ⌘K 面板；钉图打磨 | 待做 |
+| A 基础与招牌时刻 | A1 `Shell/Style.swift`（圆角、七条曲线、描边、减弱动态效果）；A2 `OverlayPanel` 进出与高度动画 + 无边框 16 pt（先验证 key / 输入法 / Esc / 点外关闭 / 粘贴 / 固定 / 拖宽）；A3 启动器与剪贴板共用的滑动选中 + 按住 ⌘ 键帽；A4 刘海岛替换 `Toast`；A5 截图飞入 + 快门声 + 窗口磁吸 + 新手柄；A6 译文显影 + 光标 + 骨架扫光 | 已完成（待手测） |
+| B 界面重做 | 启动器单行 / 色块 / 计算卡 / 底栏；翻译语言胶囊 / 服务色块 / 彗星边框 / 错误卡；截图 HUD 工具栏 / 样式托盘 / 放大镜；剪贴板检查器卡片 / QL 缩略图 / ⌘K 面板；钉图打磨 | 除钉图打磨外已完成（待手测） |
 | C 品牌 | App 图标、菜单栏角色剪影（等用户素材）、设置页头与控件分工、关于品牌页、DMG 背景 | 待做 |
 | D 深度 | 长截图 HUD 与边框动效、标注渲染升级、链接富预览、⌘Y 放大预览、设置侧栏 + 搜索 + 实时预览 + 引导、菜单栏 `NSStatusItem` 动画、CleanShot 式常驻缩略图、Spotlight 挤压入场实验、macOS 26 玻璃 + `.icon` | 待做 |
 

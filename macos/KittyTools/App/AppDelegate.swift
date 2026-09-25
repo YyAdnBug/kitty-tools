@@ -394,10 +394,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(
           NSStringFromRect(capture.frame), forKey: Prefs.screenshotLastRegion)
         switch capture.action {
-        case .copy: await copyImage(capture.image, scale: capture.scale)
-        case .pin: pins.pin(capture.image, frame: capture.frame)
-        case .save: await saveImage(capture.image, scale: capture.scale, asking: false)
-        case .saveAs: await saveImage(capture.image, scale: capture.scale, asking: true)
+        case .copy:
+          captured(capture.image, frame: capture.frame, badge: .copied)
+          await copyImage(capture.image, scale: capture.scale)
+        case .pin:
+          FlyCard.playShutter()
+          pins.pin(capture.image, frame: capture.frame)
+        case .save:
+          captured(capture.image, frame: capture.frame, badge: Self.savedBadge)
+          await saveImage(capture.image, scale: capture.scale, asking: false)
+        case .saveAs:
+          FlyCard.playShutter()
+          await saveImage(capture.image, scale: capture.scale, asking: true)
         case .recognize: await copyRecognizedText(in: capture.image)
         case .translate: await translateImage(capture.image)
         }
@@ -411,9 +419,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     do {
       guard let result = try await ScrollCapture.run(region: region) else { return }
       switch result.action {
-      case .copy: await copyImage(result.image, scale: result.scale)
-      case .save: await saveImage(result.image, scale: result.scale, asking: false)
-      case .saveAs: await saveImage(result.image, scale: result.scale, asking: true)
+      case .copy:
+        captured(result.image, frame: region, badge: .copied)
+        await copyImage(result.image, scale: result.scale)
+      case .save:
+        captured(result.image, frame: region, badge: Self.savedBadge)
+        await saveImage(result.image, scale: result.scale, asking: false)
+      case .saveAs:
+        FlyCard.playShutter()
+        await saveImage(result.image, scale: result.scale, asking: true)
       }
     } catch {
       showScreenshotNotice("长截图失败：\(error.localizedDescription)", .screenRecording)
@@ -535,14 +549,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       if asking {
         try await ScreenshotOutput.saveAs(png)
       } else {
-        let url = try ScreenshotOutput.quickSave(png)
-        island.show(
-          "已保存", detail: url.deletingLastPathComponent().lastPathComponent, symbol: "folder.fill")
+        _ = try ScreenshotOutput.quickSave(png)
       }
     } catch {
       await copyPNG(png)
       showScreenshotNotice("保存失败（\(error.localizedDescription)），截图已复制到剪贴板")
     }
+  }
+
+  /// 截图落地：快门声 + 飞行卡片（遮罩刚收起就飞，不等编码）；减弱动态效果时换成带缩略图的轻提示
+  private func captured(_ image: CGImage, frame: CGRect, badge: FlyCard.Badge) {
+    FlyCard.playShutter()
+    guard Style.reduceMotion else { return FlyCard.fly(image, from: frame, badge: badge) }
+    let thumbnail = Island.Leading.thumbnail(NSImage(cgImage: image, size: frame.size))
+    switch badge {
+    case .copied: island.show("已复制截图", leading: thumbnail)
+    case .saved(let folder): island.show("已保存", detail: folder, leading: thumbnail)
+    }
+  }
+
+  /// 快速保存的角标：目标目录名（保存失败时另有提示）
+  private static var savedBadge: FlyCard.Badge {
+    .saved(folder: ScreenshotOutput.saveDirectory.lastPathComponent)
   }
 
   /// "#RRGGBB" → 色块（取色的轻提示用）

@@ -1,4 +1,4 @@
-// 设置 › 截图：⌘S 快速保存的位置、识字是否把换行合成一段，以及框选、长截图的按键说明。快捷键在「快捷键」页。
+// 设置 › 截图：⌘S 快速保存的位置、快门声、识字是否把换行合成一段，以及框选、长截图的按键说明。快捷键在「快捷键」页。
 
 import AppKit
 import SwiftUI
@@ -7,6 +7,7 @@ struct ScreenshotTab: View {
   /// 读它只为了在「更改…」之后刷新显示；实际位置以 ScreenshotOutput.saveDirectory 为准（有兜底）
   @AppStorage(Prefs.screenshotSaveDirectory) private var savedDirectory: String?
   @AppStorage(Prefs.ocrJoinLines) private var joinLines = false
+  @AppStorage(Prefs.screenshotShutterSound) private var shutterSound = true
 
   var body: some View {
     Form {
@@ -22,6 +23,11 @@ struct ScreenshotTab: View {
         }
       } footer: {
         caption("框选后按 ⌘S 存到这里，文件名是「截图 日期 时间.png」，重名自动加序号；「另存为」选的文件夹也会记成这里。")
+      }
+      Section {
+        Toggle("截图时播放快门声", isOn: $shutterSound)
+      } footer: {
+        caption("复制、保存、钉图时响；还要系统设置 › 声音里的「播放用户界面音效」开着。截图翻译、识字不出声。")
       }
       Section {
         Toggle("识字后把换行合成一段", isOn: $joinLines)

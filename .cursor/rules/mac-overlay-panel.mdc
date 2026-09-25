@@ -74,6 +74,8 @@ M1 实测结论 + master 旧规则 `macos-overlay-panel.mdc` 删减。代码：`
 - 截图自检：`SnapshotProbeTests.renderLayers` 把视图放进屏外窗口跑几轮 RunLoop 再 `layer.render(in:)`（`cacheDisplay` 画不出直接加的子图层）。
 - 标注（M10）：`Annotation` 值类型、存整屏视图坐标；屏幕上的标注层 `AnnotationCanvas` 按变了的标注 `setNeedsDisplay(rect)` 局部重画，导出走 `Annotation.render`，两边共用 `Annotation.draw`，不要各写一份。输出（复制 / 保存 / 钉图 / 识字 / 翻译）一律用合成图。
 - 文字标注用叠在遮罩里的 `NSTextView`（`EditorField`，输入法靠它）：它是第一响应者时按键都归它；⌘C / ⌘V / ⌘Z 经 `OverlayPanel.editActions` 发给它（本 App 不激活，主菜单收不到），每个输入框用自己的 UndoManager；Esc 走 `doCommandBy(cancelOperation:)` 收下文字；收下时**先** `makeFirstResponder(self)` 再移除输入框（反过来第一响应者落到窗口上，单键快捷键全失灵）。右键不弹文本菜单（菜单层级低于遮罩）。两条栏的按钮 `refusesFirstResponder`，点了不打断输入；栏的间隙、边距落到 `SelectionView.mouseDown` 时直接忽略。
+- 遮罩外观（Whisker §6 截图）：动画只在三处——换悬停窗口时洞和高亮框从 `presentation()` 路径弹簧变形过去（S5 磁吸，路径元素数恒定：外框矩形 + 圆角矩形）、蒙层深浅切换（0.18 ↔ 0.45）、放大镜出现（pop）/ 翻边（glide 叠加动画）；拖动、跟随一律 `setDisableActions(true)` 直接设值。两条栏是 `HUDBar`（深色 HUD 皮肤，`setShown` 负责弹出 / 淡出，不要直接改 `isHidden`）。手柄命中容差 8 pt。
+- 飞行卡片 `FlyCard`（`Screenshot/FlyCard.swift`，S1）：复制 / 快速保存（含长截图）在遮罩收起后**先**飞、再编码，不等 PNG；钉图、另存为只放快门声；截图翻译、识字不出声。快门声跟 `Prefs.screenshotShutterSound` 和系统「播放用户界面音效」（`com.apple.systemsound` 的 `com.apple.sound.uiaudio.enabled`，没设 = 开），声音文件在系统私有路径、先判断存在。减弱动态效果时换成带缩略图的岛（`AppDelegate.captured`）。快速保存成功不再单独弹岛（角标已写目录名）。
 - 轻提示是刘海岛 `Island`（`Shell/Island.swift`，Whisker S2）：普通 `NSPanel` 实例（不子类化、`ignoresMouseEvents`、level 状态栏、尺寸固定只让 SwiftUI 形状变形），不抢键盘；接口 `show(_:detail:tone:symbol:leading:)`。
 
 ## 9. 钉图（`Screenshot/PinPanel.swift`）

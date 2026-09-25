@@ -58,6 +58,8 @@ enum Prefs {
   static let screenshotSaveDirectory = "screenshotSaveDirectory"
   /// 上次截图的区域（NSStringFromRect，全局坐标）：框选时按 D、或用「截取上次区域」热键
   static let screenshotLastRegion = "screenshotLastRegion"
+  /// 截图（复制、保存、钉图）时放快门声；还要系统「播放用户界面音效」开着
+  static let screenshotShutterSound = "screenshotShutterSound"
 
   /// 识字后把同一段的换行合成一行（中日文直接连、其它加空格）
   static let ocrJoinLines = "ocrJoinLines"
@@ -99,6 +101,7 @@ enum Prefs {
       translateFontScale: 1.0,
       translateCollapsedServices: "",
       ocrJoinLines: false,
+      screenshotShutterSound: true,
     ])
   }
 }
