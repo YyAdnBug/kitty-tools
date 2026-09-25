@@ -361,7 +361,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
-  /// 截图：框选后可标注；↩ 复制（同时记进剪贴板历史）、⌘S 快速保存、另存为、T 钉图、识字、翻译，C 复制色值。
+  /// 截图：框选后可标注；↩ 复制（同时记进剪贴板历史）、⌘S 快速保存、另存为、T 钉图、S 长截图、识字、翻译，C 复制色值。
   /// repeatingLastRegion：一开始就选中上次的区域（「截取上次区域」热键，可以连按）
   func screenshot(repeatingLastRegion: Bool = false) {
     beginCapture { [self] in
@@ -380,6 +380,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Paster.write(string: hex)
         recordInHistory(hex)
         toast.show("已复制 \(hex)")
+      case .scroll(let region):
+        UserDefaults.standard.set(NSStringFromRect(region), forKey: Prefs.screenshotLastRegion)
+        await scrollCapture(region)
       case .capture(let capture):
         UserDefaults.standard.set(
           NSStringFromRect(capture.frame), forKey: Prefs.screenshotLastRegion)
@@ -392,6 +395,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .translate: await translateImage(capture.image)
         }
       }
+    }
+  }
+
+  /// 长截图（截图框选后按 S）：遮罩已收起，在实时画面上边滚边拼，结束后按选的方式输出。整个过程都算在这次截图里
+  /// （isCapturing），期间别的截图热键不响应
+  private func scrollCapture(_ region: CGRect) async {
+    do {
+      guard let result = try await ScrollCapture.run(region: region) else { return }
+      switch result.action {
+      case .copy: await copyImage(result.image, scale: result.scale)
+      case .save: await saveImage(result.image, scale: result.scale, asking: false)
+      case .saveAs: await saveImage(result.image, scale: result.scale, asking: true)
+      }
+    } catch {
+      showScreenshotNotice("长截图失败：\(error.localizedDescription)", .screenRecording)
     }
   }
 

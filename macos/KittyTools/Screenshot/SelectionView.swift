@@ -2,7 +2,7 @@
 // （AnnotationCanvas，只重画变了的那块）→ 暗色蒙层、选区边框、手柄、尺寸、放大镜（CALayer，拖动时只改路径和位置，
 // 不重画整屏）→ 文字输入框 → 工具栏与样式栏（EditorToolbar）。
 // 截图翻译 / 识字：拖动框选、松手即确认。截图：悬停高亮窗口、单击截整窗，拖出或单击后进入调整：8 个手柄、拖动平移、
-// 方向键微调（⇧ 10 点）、拖动框选时按住空格平移；放大镜显示中心像素的色值（C 复制）；标注 1–4（矩形、箭头、文字、
+// 方向键微调（⇧ 10 点）、拖动框选时按住空格平移；放大镜显示中心像素的色值（C 复制）；S 长截图；标注 1–4（矩形、箭头、文字、
 // 马赛克，⇧ 画正方形 / 45° 箭头），点中标注可拖动、改颜色粗细、⌫ 删除、双击文字重新编辑，⌘Z 撤销、⇧⌘Z 重做。
 
 import AppKit
@@ -342,6 +342,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
       case .tool(let tool): choose(tool)
       case .undo: undo()
       case .output(let action): output(action)
+      case .scroll: startScroll()
       case .cancel: session.finish(nil)
       }
     }
@@ -573,6 +574,14 @@ final class SelectionView: NSView, NSTextViewDelegate {
         .init(
           image: result, frame: selection.offsetBy(dx: window.frame.minX, dy: window.frame.minY),
           action: action)))
+  }
+
+  /// 长截图：只交出选区位置，边滚边截的是实时画面（标注不带过去）；太矮的选区两帧之间没几行可比
+  private func startScroll() {
+    endEditing()
+    guard let selection, let window else { return }
+    guard selection.height >= ScrollCapture.minimumHeight else { return NSSound.beep() }
+    session.finish(.scroll(selection.offsetBy(dx: window.frame.minX, dy: window.frame.minY)))
   }
 
   /// 本屏在 point 下最前面的窗口（夹在本屏内）
@@ -824,6 +833,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
       if isAdjusting { output(.copy) }
     case kVK_ANSI_T:
       if isAdjusting { output(.pin) }
+    case kVK_ANSI_S:
+      if isAdjusting { startScroll() }
     case kVK_ANSI_D:
       session.selectLastRegion()
     case kVK_ANSI_C:

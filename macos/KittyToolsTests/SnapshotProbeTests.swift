@@ -92,6 +92,7 @@ struct SnapshotProbeTests {
         to: "\(out)/settings-about\(dark ? "-dark" : "").png")
     }
     try renderSelection(out)
+    try renderScrollCapture(out)
     try renderLauncher(out)
     try snapshot(
       LauncherTab(), size: NSSize(width: 560, height: 640), dark: false,
@@ -279,8 +280,56 @@ struct SnapshotProbeTests {
     }
   }
 
+  /// 长截图面板：刚开始（还没预览）、拼了一段（预览 + 尺寸）、对不上（橙色提示）、自动滚动中，深浅色
+  private func renderScrollCapture(_ out: String) throws {
+    let page = try ScreenshotTests.render([
+      "The quick brown fox jumps over the lazy dog", "敏捷的棕色狐狸跳过了懒狗", "日本語のテキスト",
+      "한국어 텍스트", "Привет мир", "Hello World", "第七行", "第八行",
+    ])
+    let first = try #require(page.cropping(to: CGRect(x: 0, y: 0, width: 1200, height: 480)))
+    var stitcher = try #require(
+      ScrollStitcher(first: first, scrollbarWidth: 32, maxHeight: 30_000))
+    _ = stitcher.add(
+      try #require(page.cropping(to: CGRect(x: 0, y: 360, width: 1200, height: 480))))
+    let size = "\(stitcher.width) × \(stitcher.outputHeight) 像素"
+    let states: [(String, Bool, (ScrollCaptureHUD) -> Void)] = [
+      (
+        "scroll-start", false, { $0.show("在选区里滚动，或按空格自动滚动", warning: false, size: "1200 × 480 像素") }
+      ),
+      (
+        "scroll-preview", false,
+        {
+          $0.show("在选区里滚动，或按空格自动滚动", warning: false, size: size)
+          $0.updatePreview(stitcher: stitcher, scale: 2)
+        }
+      ),
+      (
+        "scroll-lost", false,
+        {
+          $0.show("对不上了：往回滚一点，再慢慢滚", warning: true, size: size)
+          $0.updatePreview(stitcher: stitcher, scale: 2)
+        }
+      ),
+      (
+        "scroll-auto-dark", true,
+        {
+          $0.isAutoScrolling = true
+          $0.show("自动滚动中：按空格或移开鼠标停止", warning: false, size: size)
+          $0.updatePreview(stitcher: stitcher, scale: 2)
+        }
+      ),
+    ]
+    for (name, dark, configure) in states {
+      let hud = ScrollCaptureHUD()
+      try renderLayers(
+        hud, size: NSSize(width: ScrollCaptureHUD.width, height: 360), dark: dark,
+        configure: { _ in }, prepare: { configure(hud) }, to: "\(out)/\(name).png")
+    }
+  }
+
   private func renderLayers(
-    _ view: NSView, size: NSSize, dark: Bool, configure: (SelectionView) -> Void, to path: String
+    _ view: NSView, size: NSSize, dark: Bool, configure: (SelectionView) -> Void,
+    prepare: () -> Void = {}, to path: String
   ) throws {
     let window = NSWindow(
       contentRect: NSRect(origin: NSPoint(x: -20000, y: -20000), size: size),
@@ -290,6 +339,8 @@ struct SnapshotProbeTests {
     window.contentView = view
     if let view = view as? SelectionView { configure(view) }
     window.orderFront(nil)
+    window.layoutIfNeeded()
+    prepare()  // 布局之后再设（预览按自己的实际大小出图）
     for _ in 0..<5 { RunLoop.main.run(until: Date.now.addingTimeInterval(0.1)) }
     let scale = 2
     let bitmap = try #require(

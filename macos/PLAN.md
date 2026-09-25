@@ -96,11 +96,11 @@ xcuserdata/
 | AppKit：`NSPanel`、`NSHostingView`、`NSWindow` + `NSTabViewController(.toolbar)`、`NSTextField`/`NSTextView`、`NSEvent` 监听、`NSWorkspace`、`NSRunningApplication` | 10.x | 不激活前台的浮层、设置窗、兼容输入法的输入框、来源 App、单实例检查 |
 | Carbon HIToolbox `RegisterEventHotKey`；`TISCopyCurrentKeyboardLayoutInputSource` + `UCKeyTranslate` | 10.0（26.2 SDK 中未废弃） | 全局热键；录制快捷键时显示键名 |
 | ApplicationServices：`AXIsProcessTrustedWithOptions`、`AXUIElement`、`AXUIElementSetMessagingTimeout` | 10.x | 辅助功能授权、读取选中文本 |
-| CoreGraphics `CGEvent` | 10.x | 模拟 ⌘V / ⌘C |
+| CoreGraphics `CGEvent` | 10.x | 模拟 ⌘V / ⌘C；长截图自动滚动发像素级滚轮事件（`CGWarpMouseCursorPosition` 先把光标挪进选区） |
 | `NSPasteboard`（`changeCount`、`accessBehavior`） | 10.0 / 15.4 | 剪贴板采集、剪贴板隐私状态 |
 | ImageIO + UniformTypeIdentifiers | 10.x / 11 | PNG 编码、读取尺寸、按需生成缩略图 |
 | Vision `RecognizeTextRequest` | 15.0 | 剪贴板图片 OCR、截图翻译识字 |
-| ScreenCaptureKit `SCShareableContent` + `SCScreenshotManager` | 14.0 | 截图翻译的冻结帧（逐屏截图） |
+| ScreenCaptureKit `SCShareableContent` + `SCScreenshotManager` | 14.0 | 截图翻译的冻结帧（逐屏截图）；长截图用 `SCStreamConfiguration.sourceRect`（12.3+）反复截选区 |
 | NaturalLanguage `NLLanguageRecognizer` | 10.14 | 语种检测（替代 Lingua，能识别繁体） |
 | AVFoundation `AVSpeechSynthesizer` | 10.14 | 朗读 |
 | Foundation `URLSession.bytes(for:)`、`AttributedString(markdown:)` | 12 | SSE 流式输出、行内 Markdown |
@@ -239,7 +239,7 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 | `Translate/` | `TranslateCoordinator.swift`、`LanguageResolver.swift`、`SelectionReader.swift`、`SSE.swift`、`Providers/`（`Zhipu`、`AIService`、`Baidu`、`Youdao`、`Google`、`DeepL`、`Microsoft`、`Volcengine`、`Tencent` 各一个 `.swift`）、`TranslatePanelView.swift`、`ProviderCardView.swift`、`HistoryStore.swift`、`HistoryView.swift` |
 | `Settings/` | `GeneralTab.swift`、`HotkeysTab.swift`、`ClipboardTab.swift`、`TranslateTab.swift`、`AboutTab.swift`、`LauncherTab.swift`、`ScreenshotTab.swift` |
 | `Launcher/` | `LauncherItem.swift`（结果项与内置动作）、`AppCatalog.swift`（App 目录 + 中文名 + 拼音）、`LauncherMatch.swift`（匹配与排序纯函数）、`LauncherUsage.swift`（使用记录表）、`LauncherModel.swift`、`LauncherPanelView.swift` |
-| `Screenshot/` | `ScreenCapture.swift`（逐屏冻结帧 + 同一刻的窗口 Z 序快照）、`RegionSelector.swift`（框选会话、每屏一个遮罩、选区几何纯函数）、`SelectionView.swift`（遮罩画面与交互：图层绘制、窗口悬停、手柄、放大镜、工具栏）、`ScreenshotOutput.swift`（PNG、快速保存、另存为）、`PinPanel.swift`（钉图）、`Annotation.swift`（标注模型，显示与导出共用 draw，M10）、`EditorToolbar.swift`（主工具栏 + 样式栏，M10） |
+| `Screenshot/` | `ScreenCapture.swift`（逐屏冻结帧 + 同一刻的窗口 Z 序快照）、`RegionSelector.swift`（框选会话、每屏一个遮罩、选区几何纯函数）、`SelectionView.swift`（遮罩画面与交互：图层绘制、窗口悬停、手柄、放大镜、工具栏）、`ScreenshotOutput.swift`（PNG、快速保存、另存为）、`PinPanel.swift`（钉图）、`Annotation.swift`（标注模型，显示与导出共用 draw，M10）、`EditorToolbar.swift`（主工具栏 + 样式栏，M10）、`ScrollCapture.swift`（长截图会话：边框、侧边面板、抓帧循环、自动滚动）、`ScrollStitcher.swift`（长截图拼接，纯逻辑） |
 
 各 provider 函数签名统一，由 coordinator 里的一个 `switch` 分发。不建 registry 或 factory。
 
@@ -723,10 +723,11 @@ echo "$DMG"
 | M10 标注 + 识字 | 矩形、箭头、文字、马赛克 + 撤销（标注存整屏坐标，调整选区不丢）；工具栏识字 / 翻译按钮；独立识字热键（静默复制、二维码用 Vision `DetectBarcodesRequest`、去换行） | 已完成（实现要点见下方「截图（Phase 3）」） |
 | M11 启动器网址线 + 键盘（对标 Alfred） | 自定义网页搜索（增删排序、多预置引擎）、Quicklink（固定网址 + 别名 + {query}）、兜底列表配置、⌥↩ 访达搜索 / ⌃↩ 网页搜索（按住修饰键换副标题）、Tab 补全（计算结果写回接着算）、cb / 计算结果 ↩ 粘贴、清空 / 单条重置学习记录、呼出时切英文输入法（开关，默认关） | 已完成（实现要点见下方「启动器网址线（M11）」） |
 | M12 翻译补强（对标 Bob） | 窗口快捷键（⌘R 重试、⌘S 收藏、⌘W 关、⌘P 钉住、⌘+/- 字号、⌘1–9 复制第 N 张卡）、用译文替换原文（按钮 + 静默热键，默认不设键）、浮窗高度随内容、卡片折叠状态持久化、收藏筛选与导出 | 已完成（实现要点见下方「翻译补强（M12）」） |
+| 长截图（2026-09-25 插入，用户改主意） | 截图框选后 S / 工具栏进入；实时画面上边滚边拼（往下、往上都行）、侧边预览、空格自动滚动；↩ 复制 / ⌘S 保存 / ⇧⌘S 另存为。原生实现，不参考旧版 | 代码已完成，待手测（实现要点见下方「长截图」） |
 | M13 动作面板 + 文件 + 进程 | → / ⌘K 动作面板（打开方式、在访达中显示、复制路径、移到废纸篓，只放零授权动作）；⌘Y Quick Look（先验证 `QLPreviewPanel`，不行嵌 `QLPreviewView`）；open / find 文件搜索（NSMetadataQuery）；kill（GUI App 用 `terminate()`，⌘↩ 才强杀）。quit / hide / forcequit 不做（D2） | 待做 |
 
 **已拍板（2026-09-24，对标调研后用户选定）**：
-- D1 长截图、录屏：**都不做**（旧版 0 次；长截图边滚边截与冻结帧冲突、`captureImage(in:)` 要 15.2；以后真要录屏用 `SCRecordingOutput` 单独立项）。
+- D1 长截图、录屏：~~都不做~~ → **长截图做（2026-09-25 用户改主意，要求按 macOS 原生方式实现、不参考旧版）；录屏仍不做**（以后真要录屏用 `SCRecordingOutput` 单独立项）。原先顾虑的两点已解决：冻结帧只管框选，框完收起遮罩再在实时画面上截；不用 15.2 的 `captureImage(in:)`，用 14.0 的 `captureImage(contentFilter:configuration:)` + `sourceRect`。
 - D2 系统命令：**都不做**（锁屏、睡眠、推出磁盘、重启、关机、清空废纸篓、切深浅色，以及退出 / 隐藏 / 强制退出 App 都不做，2026-09-25 用户确认；以后再考虑）。
 - D3 文件动作面板与 Quick Look：**动作面板进 M13，只放零授权动作**；⌘Y Quick Look 先验证 `QLPreviewPanel` 在不激活面板里能否拿到控制权，不行改嵌 `QLPreviewView`；不做目录导航和多文件缓冲。
 - D4 查词 / 生词本：**M12 之后，只用系统能力**：系统词典（`DCSCopyTextDefinition`）+ 单词模式提示词；生词本 = 收藏筛选 + CSV / TSV 导出；不引入 ECDICT。
@@ -737,7 +738,7 @@ echo "$DMG"
 - 可借鉴：多屏冻结帧用 TaskGroup 并发截（我们已排除自家窗口，比它们先藏窗口更稳）；`CGWindowListCreateImage` 在 15 SDK 已标废弃、不能用；标注用值类型 + 显示与导出共用一个 draw；文字工具叠一个 NSTextView 编辑完再提交；钉图用不激活的 NSPanel、以鼠标为锚点缩放。
 - 本机调研原始记录（不入库）：`macos/build/research/`（对标路线 benchmark-roadmap.md、Alfred / iShot / Bob 明细、macshot / Snapzy 源码研究、旧版启动器 / 截图行为清单）。
 
-**不迁**：系统命令（锁屏已坏 §11 #24，且要 Apple Events 授权）、ts / b64 / url / case / uuid / ip 小工具、网站图标、Safari / Firefox 书签；长截图、延时、美化 / 水印、比例条、Enter 全屏、焦点窗口截图、窗口置顶、屏幕清洁、WebP；截图历史与钉图历史（复制的截图进剪贴板历史，作为唯一的历史）。
+**不迁**：系统命令（锁屏已坏 §11 #24，且要 Apple Events 授权）、ts / b64 / url / case / uuid / ip 小工具、网站图标、Safari / Firefox 书签；延时、美化 / 水印、比例条、Enter 全屏、焦点窗口截图、窗口置顶、屏幕清洁、WebP；截图历史与钉图历史（复制的截图进剪贴板历史，作为唯一的历史）。
 - 热键：启动器 ⌥Space、截图 ⌥A（用户实际用的键）；编辑器工具键不带修饰的 1–4、钉图 T（沿用用户改键），不做编辑器内改键。⌥Space 只在 15.0–15.1 上注册失败，录制器已提示。
 
 **启动器网址线（M11，2026-09-25）**
@@ -755,6 +756,15 @@ echo "$DMG"
 - 替换原文：划词时记下前台 App 的 pid 和原选区（`replaceSource`），会话里显示「替换原文」按钮（收起浮窗 → `Paster.write` → ⌘V）；静默热键「划词翻译并替换」（默认不设键，翻译中再按一次取消）：取词 → `translateOnce`（只用第一个服务、等完整结果、不合并换行、记历史）→ 粘回，全程轻提示。两条都按原选区补回首尾空白（`rewrap`，三击整行不吞段落），**前台已不是取词的 App 或自家浮层成了 key 时只复制不粘**；`OverlayPanel.present` 每次重记 previousKeyPanel，收起浮窗不会把 key 还给不相干的面板。
 - 导出：CSV 按 Unicode 标量判断要不要加引号（Swift 把 \r\n 当一个字符）、= + - @ 开头加 '、时间写本地时间；Anki TSV 带 `#separator:tab` / `#html:true` 头，字段 HTML 转义、各种换行写成 `<br>`、含引号或以 # 开头的加引号。关着历史时取消收藏会删掉那条。
 - 高度随内容（Bob 的做法，只让人拖宽度：min / maxSize 的高度钉在当前值）：视图量出顶栏 + 原文区 + 卡片内容的高度，`setContentHeight` 夹在 220 到屏幕可见区 85% 之间；`setContentHeight` 往下出屏就整体上挪。卡片折叠按服务 id 存 `translateCollapsedServices`，不再因出结果自动展开。
+
+**长截图（2026-09-25）**
+- 入口：截图框选后按 S 或工具栏「长截图」（选区至少 60 点高，否则提示音）；标注不带过去。框选会话交回 `Outcome.scroll(选区)`，不裁图（裁出的图会拖住整屏冻结帧直到长截图结束）。遮罩收起（冻结帧只管框选），`AppDelegate.scrollCapture` 在 `beginCapture` 里跑，整个过程 `isCapturing`，别的截图热键不响应。独立热键、启动器动作没做（要时再加）。
+- 抓帧（`ScrollCapture`）：`SCContentFilter(display:excludingApplications:[本 App])`（之后才建的边框、面板也滤掉，钉图也不进长图）+ `SCStreamConfiguration.sourceRect`（屏内、点、原点左上，对齐到像素）+ 宽高 = 选区像素，不画光标；`SCScreenshotManager.captureImage` 手动滚时每 40 毫秒一帧、自动滚时每步 160 毫秒。拼接在主线程（1600×1400 帧 < 10 毫秒）。
+- 拼接（`ScrollStitcher`，纯逻辑、单测锁住）：逐行哈希（右边 16 点滚动条不比）投票，最高票 ≥ 6、≥ 第二名 2 倍、≥ 重叠可比行 25% 才接；纯色行、帧内重复超 8 次的行、原地不变的行不投票。画布记每帧位置，往下、往上都能接（聊天记录），往回滚只挪位置；吸顶栏 / 页脚：长图 =「最上面那帧的吸顶栏 + 内容 + 最下面那帧的页脚」，页脚取「原地不变的尾行」和「对上的最后一行以下」中大的（页脚里光标闪烁时前者估小，会在长图中间留下页脚碎片，单测锁住）；回弹：刚接过的那头往回滚时，画布那头和新帧那头逐字节相同的行（页脚、还露着的越界底色）换成新帧的，再往里多出来的行全是纯色才去掉，有字的行一行不丢（真实的多帧回弹、小幅回滚都有单测）。上限 30000 像素高、4000 万像素（= 剪贴板历史收图上限，复制后能进历史）。
+- 选型实测（合成页面：吸顶栏、页脚、浮动滚动条、动画块、光标、半像素、往上滚，150 对帧）：逐行哈希投票零误接；Vision `VNTranslationalImageRegistrationRequest` / `TranslationalImageRegistrationRequest` 有吸顶栏时 50%–90% 算错、置信度却恒为 1，不能用；容差行签名更慢、召回更低。原始记录在 scratchpad，不入库。
+- 界面：选区外 2 点强调色边框（`ignoresMouseEvents`，滚轮落到下面的窗口；状态栏层级，低了会被 AppKit 挪到菜单栏下面）；侧边面板 `ScrollCapturePanel`（不激活、能当 key），贴选区右边、和选区一样高（放不下放左边，再放不下以 320 点高放进选区右上角），内容：预览（最近接的那头，最多每 0.2 秒重画）、状态、尺寸、按钮（自动滚动、取消、另存为、保存、复制）。按键：↩ / ⌘C 复制、⌘S 保存、⇧⌘S 另存为、空格自动滚动（按住不重复开关）、Esc 取消；点了目标 App 后面板不再是 key，鼠标移回面板就拿回键盘（不激活本 App），按钮一直能点；状态文字不可选中（否则点一下就抢走第一响应者）。对不上时橙色提示「往回滚一点，再慢慢滚」，拼上新内容后恢复。
+- 自动滚动：要辅助功能授权（没有就提示并申请）；光标不在选区里或停在面板上，先挪到选区中间，按下就先滚一步；发像素级滚轮事件到 HID 层（交给光标下的窗口）；每步目标滚出选区 40%，按实测位移调步长；对不上就退回、步子减半，连续 4 帧对不上就停；实测位移和发出去的方向相反就翻转滚轮正负号；在已拼范围里滚也算在动，只有连续 3 帧不动（到头）才停；光标移到面板附近（去点 ⏸）只暂停不停，移出选区到别处就停；方向跟着用户手动滚的方向；截屏出错后抓帧停止，只能复制 / 保存 / 取消。
+- 输出沿用截图的 `copyImage` / `saveImage`（复制进剪贴板历史；保存失败改放剪贴板）。
 
 **截图（Phase 3）**
 - 屏幕录制权限（TCC）：用 `CGPreflightScreenCaptureAccess` / `CGRequestScreenCaptureAccess` 检查和申请，同样绑定签名。授权提示由系统提供，App 不能自定义文案（没有对应的 Info.plist 键）。macOS 15 会周期性地再次询问屏幕录制授权。
@@ -795,6 +805,8 @@ echo "$DMG"
 
 - M12 翻译补强（2026-09-25）：浮窗快捷键、收藏（生词本）与只看收藏、导出 CSV / Anki TSV、替换原文按钮与静默「划词翻译并替换」、高度随内容、字号、卡片折叠记住。对抗式审查确认的问题已修（替换粘错 App / 粘进自家面板、段落被吞、Anki / CSV 转义、⌘↩ 不换行、高度可拖等）。单测 87 个全过。
 
+- 长截图（2026-09-25，用户改主意、要求原生实现）：截图框选后 S / 工具栏进入，边滚边拼（往下 / 往上）、侧边预览、空格自动滚动，↩ 复制 / ⌘S / ⇧⌘S；拼接选型先做了合成页面实测（逐行哈希投票零误接，Vision 平移配准不可用）。对抗式审查确认的 11 条问题已修（回弹修剪查错行会丢字、在已拼范围里自动滚动误报到底、点 ⏸ 反而重启、面板在选区里时滚轮发给自己、连续对不上一直倒退、按住空格反复开关、状态文字抢第一响应者、边框贴屏顶被挪位、长截图拖住冻结帧、超 4000 万像素不进剪贴板历史等）。单测 96 个全过。
+
 **下一步（新会话从这里接着做）**：D4 查词（M12 之后，只用系统词典 + 单词模式提示词）或 M13 动作面板 + 文件 + kill（§10），先问用户做哪个。
 
 **暂不发版**（用户决定，2026-09-24）：0.1.0 只在本地用 `macos/build-dmg.sh` 打包自用（arm64、Apple Development 签名、无 get-task-allow），不打 tag、不发 GitHub / GitCode；以后要发时再按下面的「发布 0.1.0」步骤，且须先经用户确认。
@@ -815,6 +827,14 @@ echo "$DMG"
   5. T 钉图：原位置出现、不抢键盘；拖动、滚轮 / 捏合缩放、右键透明度、双击和（点过后）Esc 关闭；菜单栏隐藏 / 显示 / 关闭全部；钉图出现在下一次截图里。
   6. ⌥X / 框选里按 D：选中上次区域，可连按；内屏 2x + 外接 1x 各试一次，外接屏拔掉后按 D 只有提示音。
   7. 截图翻译回归：上面「截图翻译手测」1–7 再走一遍（行为应与 M9 前完全一致）。
+- 长截图手测：
+  1. ⌥A 框一段网页正文（别框进侧栏）→ S：遮罩收起、选区有蓝色边框、右边出面板；触控板慢慢往下滚，预览跟着长，尺寸变大；↩ 后剪贴板历史里有这张长图，粘到备忘录里文字清晰、没有重复行或断层。
+  2. 快速一甩：面板变橙色「对不上了」；往回滚一点再慢慢滚，恢复拼接，结果里没有缺口。滚到页面底部回弹后，长图末尾没有多出一截空白。
+  3. 带吸顶导航栏的网页、微信 / 飞书聊天窗口（输入框里光标在闪）：往下滚时导航栏只在长图顶上出现一次；聊天记录往上翻，长图最上面是标题栏、最下面是输入框，中间没有输入框碎片。
+  4. 空格自动滚动：未授权辅助功能时提示并弹授权；授权后光标跳到选区中间、页面自己一段段往下滚，到底自动停并提示「已经滚到底了」；中途移开鼠标或再按空格停止。上翻过聊天记录再按空格时往上滚。
+  5. ⌘S 存到快速保存目录、⇧⌘S 弹保存面板存完回到原 App；Esc 取消后什么都不留下、能直接在原 App 打字。
+  6. 选区占满屏宽（比如整个浏览器窗口）时面板放进选区右上角；外接屏（1x）上也试一次；面板和边框不出现在长图里。
+  7. 框选时 S 的提示（工具栏按钮悬停显示「长截图（S）」）；选区太矮（< 60 点）按 S 只有提示音。
 - 翻译（M12）手测：
   1. 浮窗里 ⌘R 重译、⌘S 收藏（星标变黄，历史里只看收藏能看到）、⌘1 / ⌘2 复制对应卡片（卡片上出对勾）、⌘P 固定、⌘W 收起、⌘+ / ⌘- / ⌘0 字号；⌘C / ⌘V / ⌘A 在输入框里照常。
   2. 划词翻译后点「替换原文」：浮窗收起，原 App 里选中的文字换成第一个服务的译文（备忘录、浏览器输入框、微信各试一次）。
@@ -966,4 +986,4 @@ echo "$DMG"
 - CPU 架构：只支持 Apple 芯片（arm64），应用基本自用（D10）。
 - 其余决策点按推荐执行。
 - 截图翻译（2026-09-24）：只用 Vision 本机识字；原文写剪贴板历史；默认热键 ⌥S。
-- 启动器 / 截图（2026-09-24）：启动器首版做 App、书签、直达、网页搜索、最近使用、内置动作、计算器、cb，文件搜索与 kill 放 M11；标注首版做矩形、箭头、文字、马赛克；附加功能只做取色（长截图、延时、美化 / 水印不做）；做钉图，不做截图历史和钉图历史。
+- 启动器 / 截图（2026-09-24）：启动器首版做 App、书签、直达、网页搜索、最近使用、内置动作、计算器、cb，文件搜索与 kill 放 M11；标注首版做矩形、箭头、文字、马赛克；附加功能只做取色（长截图、延时、美化 / 水印不做；长截图 2026-09-25 改为做，见 §10 D1）；做钉图，不做截图历史和钉图历史。

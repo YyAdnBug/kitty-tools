@@ -1,5 +1,5 @@
 // 截图调整选区时贴在选区旁的两条栏（AppKit 按钮；SelectionView 推状态、收回调）：
-// - 主栏 EditorToolbar：标注工具 1–4、撤销、识字、翻译、钉图、另存为、保存、取消、复制；
+// - 主栏 EditorToolbar：标注工具 1–4、撤销、识字、翻译、长截图、钉图、另存为、保存、取消、复制；
 // - 样式栏 StyleBar：颜色、粗细，选了工具或标注时出现（马赛克只有粗细）。
 // 按钮都 acceptsFirstMouse（遮罩不是 key 的那块屏上也一点就响应）、不抢第一响应者（输入文字时点按钮不打断输入）。
 
@@ -10,6 +10,7 @@ final class EditorToolbar: NSVisualEffectView {
     case tool(Annotation.Tool)
     case undo
     case output(RegionSelector.Action)
+    case scroll
     case cancel
   }
 
@@ -26,6 +27,7 @@ final class EditorToolbar: NSVisualEffectView {
         (.output(.translate), "character.bubble", "翻译"),
       ],
       [
+        (.scroll, "rectangle.expand.vertical", "长截图（S，不带标注）"),
         (.output(.pin), "pin", "钉图（T）"),
         (.output(.saveAs), "square.and.arrow.down.on.square", "另存为…（⇧⌘S）"),
         (
@@ -182,7 +184,8 @@ extension NSVisualEffectView {
     frame.size = fittingSize
   }
 
-  fileprivate func barButton(_ image: NSImage, tip: String, action: Selector) -> NSButton {
+  /// 长截图的面板也用（ScrollCaptureHUD）
+  func barButton(_ image: NSImage, tip: String, action: Selector) -> NSButton {
     let button = BarButton(image: image, target: self, action: action)
     button.toolTip = tip
     button.isBordered = false
@@ -193,7 +196,7 @@ extension NSVisualEffectView {
     return button
   }
 
-  fileprivate func barSeparator() -> NSView {
+  func barSeparator() -> NSView {
     let separator = NSBox()
     separator.boxType = .separator
     separator.heightAnchor.constraint(equalToConstant: 18).isActive = true

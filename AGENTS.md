@@ -7,7 +7,7 @@
 **kitty-tools 原生 macOS 版**：用 Swift 6 + SwiftUI / AppKit 重写的纯原生菜单栏工具，替代 Tauri 版的 macOS 端。基本自用：只支持 Apple 芯片（arm64），最低 macOS 15.0。
 
 - **Phase 1（当前）**：剪贴板历史 + 翻译（划词 / 输入 / 复制即译 / 截图翻译，全部翻译服务），目标版本 0.1.0。截图翻译提前做了（Vision 本机识字，`Screenshot/`）；M12 按 Bob 补了浮窗快捷键、收藏导出、替换原文。
-- **Phase 2 / 3（进行中）**：启动器（`Launcher/`，M7、M8、M11 已完成）/ 截图工具（`Screenshot/`，复用截图翻译的冻结帧和框选；M9 框选 + 复制 / 保存 / 钉图、M10 标注 + 识字已完成）。里程碑 M7–M13、已拍板的 D1–D4 与不迁清单见 PLAN §10。
+- **Phase 2 / 3（进行中）**：启动器（`Launcher/`，M7、M8、M11 已完成）/ 截图工具（`Screenshot/`，复用截图翻译的冻结帧和框选；M9 框选 + 复制 / 保存 / 钉图、M10 标注 + 识字已完成；长截图 2026-09-25 插入，代码完成待手测）。里程碑 M7–M13、已拍板的 D1–D4（D1 长截图已改为做）与不迁清单见 PLAN §10。
 - 迁移期与 Tauri 版共存：Bundle ID `com.yy.kitty-tools.native`（Debug `com.yy.kitty-tools.native.dev`），显示名 `Kitty Tools Native`。
 - **行为规格**：`macos/PLAN.md`。§4 架构与文件表，§5 逐行对应 Tauri 代码的 path:line，§6 数据迁移，§7 里程碑 M0–M6 与验收，§9 已知坑。
 

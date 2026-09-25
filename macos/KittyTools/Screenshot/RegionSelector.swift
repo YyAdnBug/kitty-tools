@@ -1,7 +1,7 @@
 // 框选会话：每块屏幕盖一个全屏遮罩（SelectionOverlay）画冻结帧，选区只在一块屏上。两种用法：
 // - 截图翻译 / 识字 select：拖动框选，松手确认，Esc / 右键取消；
 // - 截图 capture：悬停高亮窗口 / 单击截整窗、确认后可调整选区和标注，↩ 复制、⌘S 保存、⇧⌘S 另存为、T 钉图、
-//   工具栏识字 / 翻译，C 复制放大镜中心的色值，D 选中上次的区域。
+//   S 长截图、工具栏识字 / 翻译，C 复制放大镜中心的色值，D 选中上次的区域。
 // 遮罩是不激活前台的 NSPanel（和 OverlayPanel 一样不抢前台 App），会话结束立即 orderOut 释放，不常驻
 // （全屏窗口的 backing store 是内存大头）。画面与交互在 SelectionView。
 
@@ -34,6 +34,8 @@ enum RegionSelector {
     case capture(Capture)
     /// 放大镜中心像素的色值（#RRGGBB，sRGB）
     case color(String)
+    /// 长截图：只带选区（点，AppKit 全局坐标），不裁图（裁出的图会拖住整屏冻结帧直到长截图结束）
+    case scroll(CGRect)
   }
 
   /// 截图翻译 / 识字：在冻结帧上框选，松手返回裁好的图；取消返回 nil。hint 是屏幕上方的提示
