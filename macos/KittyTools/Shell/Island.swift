@@ -214,7 +214,9 @@ struct IslandView: View {
 
   @ViewBuilder private func shape(_ geometry: Island.Geometry) -> some View {
     let open = island.isOpen
-    let held = open && island.content == nil ? heldWidth : 0
+    // 减弱动态效果：刘海下巴不伸缩，只淡入淡出
+    let sized = open || reduceMotion
+    let held = sized && island.content == nil ? heldWidth : 0
     switch geometry {
     case .notch(let notchWidth, let notchHeight):
       row
@@ -222,9 +224,9 @@ struct IslandView: View {
         .padding(.top, notchHeight)
         // 只设最小宽度、横向贴合内容（内容自己限宽）；收起时就是刘海大小
         .frame(
-          minWidth: open ? max(notchWidth + 64, held) : notchWidth,
-          minHeight: open ? notchHeight + Island.chin : notchHeight,
-          maxHeight: open ? notchHeight + Island.chin : notchHeight, alignment: .top
+          minWidth: sized ? max(notchWidth + 64, held) : notchWidth,
+          minHeight: sized ? notchHeight + Island.chin : notchHeight,
+          maxHeight: sized ? notchHeight + Island.chin : notchHeight, alignment: .top
         )
         .fixedSize(horizontal: true, vertical: false)
         .clipped()
@@ -234,7 +236,7 @@ struct IslandView: View {
           if island.content != nil { heldWidth = width }
         }
         .background(
-          IslandShape(ear: open ? 10 : 6, bottom: open ? 22 : 10)
+          IslandShape(ear: sized ? 10 : 6, bottom: sized ? 22 : 10)
             .fill(.black)
             .shadow(color: .black.opacity(open ? 0.45 : 0), radius: 14, y: 6)
         )

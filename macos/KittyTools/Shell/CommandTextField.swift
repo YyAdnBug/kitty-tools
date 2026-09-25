@@ -33,6 +33,7 @@ struct CommandTextField: NSViewRepresentable {
 
   func updateNSView(_ field: FocusField, context: Context) {
     context.coordinator.parent = self
+    if field.placeholderString != placeholder { field.placeholderString = placeholder }
     if field.romanOnly != romanOnly {
       field.romanOnly = romanOnly
       field.applyInputSources()

@@ -14,7 +14,8 @@ struct ProviderCardView: View {
   let speaker: Speaker
   var fontScale = 1.0
   var isCollapsed = false
-  var isCopied = false
+  /// 这张卡被复制时 = 协调器的复制计数（每次都不同，好重放闪光），平时 0
+  var copyTick = 0
   let onRetry: () -> Void
   var onCopy: () -> Void = {}
   var onToggleCollapse: () -> Void = {}
@@ -23,6 +24,17 @@ struct ProviderCardView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var retries = 0
   @State private var errorTicks = 0
+  /// 上次出完的正文高度：重新翻译时骨架先撑到这么高，面板不先缩再一行行长回来
+  @State private var settledHeight: CGFloat = 0
+
+  private var isCopied: Bool { copyTick != 0 }
+
+  private var isPending: Bool {
+    switch card.state {
+    case .waiting, .running: true
+    default: false
+    }
+  }
 
   private var isGenerating: Bool {
     guard card.service.isStreaming else { return false }
@@ -42,11 +54,24 @@ struct ProviderCardView: View {
 
   var body: some View {
     let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
-    VStack(alignment: .leading, spacing: 7) {
+    VStack(alignment: .leading, spacing: 0) {
       header
-      if !isCollapsed {
-        content.transition(.move(edge: .top).combined(with: .opacity))
+      // 正文放进裁剪的容器里收起 / 展开：往上收时不会滑过标题行
+      VStack(spacing: 0) {
+        if !isCollapsed {
+          content
+            .frame(minHeight: isPending ? settledHeight : 0, alignment: .topLeading)
+            .onGeometryChange(for: CGFloat.self) {
+              $0.size.height
+            } action: { height in
+              if isDone { settledHeight = height }
+            }
+            .padding(.top, 7)
+            .transition(
+              reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
+        }
       }
+      .clipped()
     }
     .padding(.horizontal, 12)
     .padding(.top, 10)
@@ -73,7 +98,7 @@ struct ProviderCardView: View {
     // 复制：整卡闪 accent 0 → 0.12 → 0（0.4 s）
     .overlay {
       shape.fill(Color.accentColor)
-        .keyframeAnimator(initialValue: 0.0, trigger: isCopied) { view, value in
+        .keyframeAnimator(initialValue: 0.0, trigger: copyTick) { view, value in
           view.opacity(value)
         } keyframes: { _ in
           KeyframeTrack {
@@ -134,27 +159,27 @@ struct ProviderCardView: View {
     .frame(height: 20)
   }
 
-  @ViewBuilder private var content: some View {
+  /// 用 RevealText 显示的正文：生成中有字、或完成且不按 Markdown 渲染。两种状态放在同一个结构位置，
+  /// 完成那一下还是同一个视图（身份一变就会整段重新显影）
+  private var revealed: (text: String, isStreaming: Bool)? {
     switch card.state {
-    case .waiting:
-      Skeleton()
-    case .running(let text) where text.isEmpty:
-      Skeleton()
-    case .running(let text):
-      RevealText(text: text, isStreaming: true, fontSize: 15 * fontScale)
+    case .running(let text) where !text.isEmpty: (text, true)
+    case .done(let text) where !(card.service.isStreaming && Self.hasMarkdown(text)): (text, false)
+    default: nil
+    }
+  }
+
+  @ViewBuilder private var content: some View {
+    if let revealed {
+      RevealText(text: revealed.text, isStreaming: revealed.isStreaming, fontSize: 15 * fontScale)
+        .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
-    case .done(let text):
-      // 大模型输出里有行内 Markdown 才按 Markdown 渲染；否则保持显影后的纯文本（完成那一下不重排）
-      Group {
-        if card.service.isStreaming, Self.hasMarkdown(text) {
-          Text(Self.markdown(text)).font(.system(size: 15 * fontScale)).lineSpacing(3.5)
-        } else {
-          RevealText(text: text, isStreaming: false, fontSize: 15 * fontScale)
-        }
-      }
-      .textSelection(.enabled)
-      .frame(maxWidth: .infinity, alignment: .leading)
-    case .failed(let message):
+    } else if case .done(let text) = card.state {
+      // 大模型输出里有行内 Markdown 才按 Markdown 渲染
+      Text(Self.markdown(text)).font(.system(size: 15 * fontScale)).lineSpacing(3.5)
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    } else if case .failed(let message) = card.state {
       HStack(alignment: .firstTextBaseline, spacing: 8) {
         Image(systemName: "exclamationmark.triangle.fill")
           .foregroundStyle(Color(nsColor: .systemRed))
@@ -174,6 +199,8 @@ struct ProviderCardView: View {
       .buttonStyle(.link)
       .font(.system(size: 12))
       .onAppear { errorTicks += 1 }
+    } else {
+      Skeleton()
     }
   }
 

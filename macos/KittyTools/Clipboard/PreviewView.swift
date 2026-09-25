@@ -42,8 +42,7 @@ struct PreviewView: View {
   // MARK: 页眉
 
   private var header: some View {
-    let tint = AppIcons.accentColor(for: item.sourceBundleID)
-    let darkText = Self.needsDarkText(on: tint)
+    let (tint, darkText) = Self.headerStyle(for: AppIcons.accentColor(for: item.sourceBundleID))
     let ink: Color = darkText ? .black.opacity(0.85) : .white
     return HStack(spacing: 8) {
       if let icon = AppIcons.icon(for: item.sourceBundleID) {
@@ -55,7 +54,6 @@ struct PreviewView: View {
       Spacer(minLength: 8)
       Text(meta)
         .font(.system(size: 11))
-        .opacity(0.78)
         .lineLimit(1)
     }
     .foregroundStyle(ink)
@@ -83,16 +81,22 @@ struct PreviewView: View {
     return "\(detail) · \(ago)"
   }
 
-  /// 白字对比度不到 3 : 1 就用黑字（WCAG 相对亮度；页眉是 13 pt semibold，按大字号的标准）
-  static func needsDarkText(on color: NSColor) -> Bool {
-    guard let rgb = color.usingColorSpace(.sRGB) else { return false }
-    func linear(_ c: CGFloat) -> CGFloat {
-      c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+  /// 页眉底色和字色（WCAG AA 4.5 : 1）：白字够就用白字；差得不多（相对亮度 < 0.3）就把底色压暗到够，
+  /// 保住「彩色页眉 + 白字」；再亮的（黄、浅灰、亮绿）用黑字
+  static func headerStyle(for tint: NSColor) -> (background: NSColor, darkText: Bool) {
+    guard var color = tint.usingColorSpace(.sRGB) else { return (tint, false) }
+    func luminance(_ c: NSColor) -> CGFloat {
+      func linear(_ v: CGFloat) -> CGFloat {
+        v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+      }
+      return 0.2126 * linear(c.redComponent) + 0.7152 * linear(c.greenComponent) + 0.0722
+        * linear(c.blueComponent)
     }
-    let luminance =
-      0.2126 * linear(rgb.redComponent) + 0.7152 * linear(rgb.greenComponent) + 0.0722
-      * linear(rgb.blueComponent)
-    return 1.05 / (luminance + 0.05) < 3
+    if luminance(color) >= 0.3 { return (color, true) }
+    for _ in 0..<12 where 1.05 / (luminance(color) + 0.05) < 4.5 {
+      color = color.blended(withFraction: 0.08, of: .black)?.usingColorSpace(.sRGB) ?? color
+    }
+    return (color, false)
   }
 
   // MARK: 主体
@@ -220,7 +224,7 @@ struct PressScale: ButtonStyle {
 }
 
 /// 颜色：满宽色块（中央写 HEX，按亮度选黑白字）+ HEX / RGB / HSL / SwiftUI 四行，点一下复制
-private struct ColorCard: View {
+struct ColorCard: View {
   let color: ContentForm.RGBA
   @State private var copied: Int?
 
@@ -268,6 +272,7 @@ private struct ColorCard: View {
     .padding(10)
   }
 
+  /// 半透明时 HEX 带 AA、HSL 用 hsla、SwiftUI 带 opacity
   static func values(_ c: ContentForm.RGBA) -> [String] {
     let r = Int((c.red * 255).rounded())
     let g = Int((c.green * 255).rounded())
@@ -282,17 +287,23 @@ private struct ColorCard: View {
     let hslSaturation =
       lightness == 0 || lightness == 1
       ? 0 : (brightness - lightness) / min(lightness, 1 - lightness)
+    let translucent = c.alpha < 1
+    let alpha = String(format: "%.2f", c.alpha)
+    let hsl =
+      "\(Int((hue * 360).rounded())), \(Int((hslSaturation * 100).rounded()))%, \(Int((lightness * 100).rounded()))%"
     return [
-      String(format: "#%02X%02X%02X", r, g, b),
-      c.alpha < 1
-        ? "rgba(\(r), \(g), \(b), \(String(format: "%.2f", c.alpha)))" : "rgb(\(r), \(g), \(b))",
-      "hsl(\(Int((hue * 360).rounded())), \(Int((hslSaturation * 100).rounded()))%, \(Int((lightness * 100).rounded()))%)",
-      String(format: "Color(red: %.2f, green: %.2f, blue: %.2f)", c.red, c.green, c.blue),
+      String(format: "#%02X%02X%02X", r, g, b)
+        + (translucent ? String(format: "%02X", Int((c.alpha * 255).rounded())) : ""),
+      translucent ? "rgba(\(r), \(g), \(b), \(alpha))" : "rgb(\(r), \(g), \(b))",
+      translucent ? "hsla(\(hsl), \(alpha))" : "hsl(\(hsl))",
+      String(format: "Color(red: %.2f, green: %.2f, blue: %.2f", c.red, c.green, c.blue)
+        + (translucent ? ", opacity: \(alpha))" : ")"),
     ]
   }
 
+  /// 色块上的字用黑还是白：很透明时底下是浅色棋盘格，按浅色算
   static func isLight(_ c: ContentForm.RGBA) -> Bool {
-    0.299 * c.red + 0.587 * c.green + 0.114 * c.blue > 0.62
+    c.alpha < 0.5 || 0.299 * c.red + 0.587 * c.green + 0.114 * c.blue > 0.62
   }
 }
 
@@ -427,14 +438,21 @@ enum SyntaxHighlight {
     paint(
       #"\b("# + words.joined(separator: "|") + #")\b"#,
       [.foregroundColor: NSColor.systemPink, .font: bold])
-    paint(#""(?:\\.|[^"\\\n])*""#, [.foregroundColor: NSColor.systemRed])
     if style == .json {
+      paint(#""(?:\\.|[^"\\\n])*""#, [.foregroundColor: NSColor.systemRed])
       paint(#"("(?:\\.|[^"\\\n])*")\s*:"#, [.foregroundColor: NSColor.systemBlue], group: 1)
-    } else {
-      paint(#"'(?:\\.|[^'\\\n])*'"#, [.foregroundColor: NSColor.systemRed])
-      let italic = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
-      paint(
-        #"//[^\n]*|/\*[\s\S]*?\*/"#, [.foregroundColor: NSColor.secondaryLabelColor, .font: italic])
+      return result
+    }
+    // 字符串和注释一趟从左往右扫：先开始的赢（字符串里的 // 不是注释，注释里的引号也不是字符串）
+    let italic = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
+    let tokens = try? NSRegularExpression(
+      pattern: #""(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|//[^\n]*|/\*[\s\S]*?\*/"#)
+    for match in tokens?.matches(in: text, range: range) ?? [] {
+      let isComment = (text as NSString).substring(with: match.range).hasPrefix("/")
+      result.addAttributes(
+        isComment
+          ? [.foregroundColor: NSColor.secondaryLabelColor, .font: italic]
+          : [.foregroundColor: NSColor.systemRed, .font: font], range: match.range)
     }
     return result
   }

@@ -90,6 +90,8 @@ struct TranslatePanelView: View {
       .buttonStyle(.plain)
       .menuIndicator(.hidden)
       .help("源语言")
+      .accessibilityLabel("源语言")
+      .accessibilityValue(sourceTitle)
       // 原样互换，「自动」也照换（Bob 的做法）；两边都自动时本来就是双向的，不用换
       Button {
         swaps += 1
@@ -107,6 +109,7 @@ struct TranslatePanelView: View {
       .disabled(source == nil && target == nil)
       .opacity(source == nil && target == nil ? 0.35 : 1)
       .help("交换语言")
+      .accessibilityLabel("交换语言")
       Menu {
         Picker("目标语言", selection: choose(\.target, other: \.source)) {
           let pair = Lang.pair(first: first, second: second)
@@ -122,6 +125,8 @@ struct TranslatePanelView: View {
       .buttonStyle(.plain)
       .menuIndicator(.hidden)
       .help("目标语言")
+      .accessibilityLabel("目标语言")
+      .accessibilityValue(targetTitle)
       Spacer(minLength: 4)
       Group {
         Toggle(isOn: $copyToTranslate) { Image(systemName: "doc.on.clipboard") }
@@ -318,7 +323,7 @@ struct TranslatePanelView: View {
             ProviderCardView(
               card: card, index: index, language: coordinator.target, speaker: speaker,
               fontScale: fontScale, isCollapsed: collapsed.contains(card.id),
-              isCopied: coordinator.copiedCard == card.id
+              copyTick: coordinator.copiedCard == card.id ? coordinator.copyTick : 0
             ) {
               coordinator.retry(card.id)
             } onCopy: {
@@ -359,11 +364,13 @@ private struct LanguageCapsule: View {
 
   var body: some View {
     HStack(spacing: 5) {
+      // 窄的时候只让语言名截断，「自动」标签和箭头不挤
       Text(title)
         .font(.system(size: 13, weight: .medium))
         .lineLimit(1)
         .truncationMode(.middle)
         .contentTransition(.interpolate)
+        .layoutPriority(-1)
       if showsAutoTag {
         Text("自动")
           .font(.system(size: 10, weight: .semibold))
@@ -371,10 +378,12 @@ private struct LanguageCapsule: View {
           .padding(.horizontal, 5)
           .padding(.vertical, 1)
           .background(Color.accentColor.opacity(0.14), in: .capsule)
+          .fixedSize()
       }
       Image(systemName: "chevron.down")
         .font(.system(size: 9, weight: .semibold))
         .foregroundStyle(.secondary)
+        .fixedSize()
     }
     .padding(.leading, 12)
     .padding(.trailing, 10)

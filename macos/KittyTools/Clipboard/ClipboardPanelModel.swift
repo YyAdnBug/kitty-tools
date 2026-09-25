@@ -78,7 +78,12 @@ import Observation
   /// 选中高亮这次怎么移动（Whisker §4）：键盘单按 snap，连发与筛选变化不动画，点选 glide
   private(set) var selectionMotion = Style.Motion.instant
   /// 列表增删这次要不要动画：新条目进来、删除 / 撤销用 settle，搜索和筛选变化不动画
-  private(set) var listMotion = Style.Motion.instant
+  /// 列表增删的动画：筛选 / 搜索换列表时这一次不动画（instant），视图画完这次后调 settleList() 恢复
+  private(set) var listMotion = Style.Motion.settle
+  /// 每次换列表（筛选 / 搜索）加一：视图据此在画完后恢复 listMotion
+  private(set) var listGeneration = 0
+  /// 选中条目里的第一个链接（⌘K「打开链接」；按条目缓存，别每次渲染都跑 NSDataDetector）
+  @ObservationIgnored private var linkCache: (id: UUID, url: URL?)?
   /// 预览里的 JSON 美化开关，切换条目时复位
   var prettyJSON = false
 
@@ -397,9 +402,13 @@ import Observation
   /// 当前条目（或多选）能做的全部操作，按常用程度排
   var actions: [Action] {
     guard let item = selectedItem else { return [] }
-    let many = multiSelection.count > 1
+    // 有勾选就只给批量操作：单条操作对着预览的那条，批量操作对着勾选的，混在一起会弄错对象
+    let many = !multiSelection.isEmpty
     var actions = [
-      Action(title: many ? "合并粘贴" : "粘贴到当前 App", symbol: "arrow.turn.down.left", shortcut: "↩") {
+      Action(
+        title: multiSelection.count > 1 ? "合并粘贴" : "粘贴到当前 App", symbol: "arrow.turn.down.left",
+        shortcut: "↩"
+      ) {
         [unowned self] in pasteSelection()
       }
     ]
@@ -412,6 +421,12 @@ import Observation
     actions.append(
       Action(title: "仅复制", symbol: "doc.on.doc", shortcut: "⌘↩") { [unowned self] in copySelection()
       })
+    if item.kind == .text || many {
+      actions.append(
+        Action(title: "复制为纯文本", symbol: "doc.on.clipboard", shortcut: "") { [unowned self] in
+          copySelection(plainText: true)
+        })
+    }
     let favorite = targets.allSatisfy(\.favorite)
     actions.append(
       Action(
@@ -425,7 +440,7 @@ import Observation
           translate(item)
         })
     }
-    if !many, let link = ContentForm.firstLink(in: item.text ?? "") {
+    if !many, let link = firstLink(of: item) {
       actions.append(
         Action(title: "打开链接", symbol: "safari", shortcut: "") { NSWorkspace.shared.open(link) })
     }
@@ -461,6 +476,13 @@ import Observation
     actions.append(
       Action(title: "删除", symbol: "trash", shortcut: "⌘⌫") { [unowned self] in delete(targetIDs) })
     return actions
+  }
+
+  private func firstLink(of item: ClipItem) -> URL? {
+    if let linkCache, linkCache.id == item.id { return linkCache.url }
+    let url = item.kind == .text ? ContentForm.firstLink(in: item.text ?? "") : nil
+    linkCache = (item.id, url)
+    return url
   }
 
   /// 按 actionQuery 过滤（标题包含，不分大小写）
@@ -517,7 +539,11 @@ import Observation
     prettyJSON = false
     selectionMotion = .instant
     listMotion = .instant
+    listGeneration += 1
   }
+
+  /// 换列表那一帧画完了：之后的增删（新复制、删除、撤销）照常动画
+  func settleList() { listMotion = .settle }
 
   /// 新条目进来：用户没在浏览就让选中回到第一条
   func itemsChanged() {

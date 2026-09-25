@@ -28,6 +28,10 @@ final class OverlayPanel: NSPanel {
   private var mouseMonitors: [Any] = []
   /// SwiftUI 内容：入场时它下落，材质本身不动
   private let host: NSView
+  /// 上次系统淡出的时刻：淡出的快照窗口还在时又被呼出，就不再淡入（不然旧内容叠在新内容上）
+  private var lastDismiss: CFTimeInterval = 0
+  /// 用户正在拖左右边改宽度：这期间改高度不做动画（动画结束会盖掉拖动设的帧）
+  fileprivate var isUserResizing = false
 
   /// - Parameters:
   ///   - minSize: 传了就允许拖左右边改宽度（无边框窗口没有系统的拖边，用两条 ResizeEdge）
@@ -41,7 +45,7 @@ final class OverlayPanel: NSPanel {
     self.isPinned = isPinned
     centersOnEveryShow = autosaveName == nil
     self.topAnchored = topAnchored
-    let hosting = NSHostingView(rootView: content.ignoresSafeArea().overlay(PanelRim()))
+    let hosting = NSHostingView(rootView: PanelRoot(content: content))
     hosting.sizingOptions = []  // 窗口大小由这里定，不让 SwiftUI 的理想尺寸反推窗口
     hosting.wantsLayer = true
     host = hosting
@@ -85,10 +89,12 @@ final class OverlayPanel: NSPanel {
   /// makingKey = false：只露出来、不抢键盘（复制即译），此时靠点外关闭
   func present(makingKey: Bool = true) {
     let appearing = !isVisible
+    // 系统淡出约 0.13 s，期间快照窗口还在：直接不透明盖住它
+    let fades = appearing && CACurrentMediaTime() - lastDismiss > 0.15
     if appearing {
       placeForShow()
       animationBehavior = .none
-      alphaValue = 0
+      alphaValue = fades ? 0 : 1
     }
     orderFrontRegardless()
     if makingKey {
@@ -101,7 +107,7 @@ final class OverlayPanel: NSPanel {
       if let field = initialFirstResponder { makeFirstResponder(field) }
     }
     if autoHide == .clickOutside || !makingKey, mouseMonitors.isEmpty { installMouseMonitors() }
-    if appearing { animateIn() }
+    if fades { animateIn() }
   }
 
   /// 入场：窗口淡入（fadeIn），内容从上方 6 pt 落下（弹簧）；减弱动态效果时只淡入
@@ -134,6 +140,7 @@ final class OverlayPanel: NSPanel {
   func dismiss() {
     guard isVisible else { return }
     animationBehavior = Style.reduceMotion ? .none : .utilityWindow
+    lastDismiss = CACurrentMediaTime()
     orderOut(nil)
     animationBehavior = .none
     alphaValue = 1
@@ -175,7 +182,8 @@ final class OverlayPanel: NSPanel {
   }
 
   /// 改高度时顶边不动，只往下伸缩（启动器随结果条数、翻译浮窗随内容变化）；往下出了屏幕可见区就整体往上挪。
-  /// animated：变高 0.18 s、变矮 0.14 s（首次显示和减弱动态效果时不动画）
+  /// animated：变高 0.18 s、变矮 0.14 s（首次显示、拖边改宽和减弱动态效果时不动画）。
+  /// 不动画时也走零时长的 animator：直接 setFrame 盖不掉正在跑的帧动画，动画结束会把旧目标写回来
   func setContentHeight(_ height: CGFloat, animated: Bool = false) {
     guard abs(frame.height - height) > 0.5 else { return }
     var target = frame
@@ -184,11 +192,10 @@ final class OverlayPanel: NSPanel {
     if let visible = screen?.visibleFrame, target.minY < visible.minY {
       target.origin.y = min(visible.minY, visible.maxY - height)
     }
-    guard animated, isVisible, alphaValue == 1, !Style.reduceMotion else {
-      return setFrame(target, display: true)
-    }
+    let animates =
+      animated && isVisible && alphaValue == 1 && !isUserResizing && !Style.reduceMotion
     NSAnimationContext.runAnimationGroup { context in
-      context.duration = height > frame.height ? 0.18 : 0.14
+      context.duration = animates ? (height > frame.height ? 0.18 : 0.14) : 0
       context.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.9, 0.3, 1)
       animator().setFrame(target, display: true)
     } completionHandler: {
@@ -260,6 +267,16 @@ final class OverlayPanel: NSPanel {
   }
 }
 
+/// 浮层内容的根：描边 + 减弱动态效果时去掉全部 SF Symbol 动效（mac-whisker §7，一处管三个面板）
+private struct PanelRoot<Content: View>: View {
+  let content: Content
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    content.ignoresSafeArea().overlay(PanelRim()).symbolEffectsRemoved(reduceMotion)
+  }
+}
+
 /// 无边框窗口的左右拖边（改宽度，夹在 minSize / maxSize 之间，另一边不动）。
 /// 本 App 不激活，光标矩形不生效：用 activeAlways 的追踪区手动设光标
 private final class ResizeEdge: NSView {
@@ -302,23 +319,38 @@ private final class ResizeEdge: NSView {
   override func mouseDown(with event: NSEvent) {
     guard let window else { return }
     start = (NSEvent.mouseLocation.x, window.frame)
+    (window as? OverlayPanel)?.isUserResizing = true
   }
 
+  /// 只改 x 和宽度；高度和 y 取当前的（宽度一变内容重排，高度会跟着 setContentHeight 变）
   override func mouseDragged(with event: NSEvent) {
     guard let window, let start else { return }
     let delta = NSEvent.mouseLocation.x - start.mouse
     let minWidth = max(window.minSize.width, window.contentMinSize.width)
     let maxWidth = min(
       window.maxSize.width, window.screen?.visibleFrame.width ?? .greatestFiniteMagnitude)
-    var frame = start.frame
+    var frame = window.frame
     frame.size.width = min(
       max(start.frame.width + (side == .left ? -delta : delta), minWidth), maxWidth)
-    if side == .left { frame.origin.x = start.frame.maxX - frame.width }
-    window.setFrame(frame, display: true)
+    frame.origin.x = side == .left ? start.frame.maxX - frame.width : start.frame.minX
+    NSAnimationContext.runAnimationGroup { context in
+      context.duration = 0
+      window.animator().setFrame(frame, display: true)
+    }
   }
 
   override func mouseUp(with event: NSEvent) {
     start = nil
+    (window as? OverlayPanel)?.isUserResizing = false
     NSCursor.arrow.set()
+  }
+
+  /// 拖边盖在内容的最左 / 最右 6 pt 上：滚轮转给下面的内容（结果列表的滚动条在这里）
+  override func scrollWheel(with event: NSEvent) {
+    guard let superview,
+      let content = superview.subviews.first(where: { !($0 is ResizeEdge) }),
+      let target = content.hitTest(superview.convert(event.locationInWindow, from: nil))
+    else { return super.scrollWheel(with: event) }
+    target.scrollWheel(with: event)
   }
 }

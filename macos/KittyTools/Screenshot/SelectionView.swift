@@ -355,6 +355,10 @@ final class SelectionView: NSView, NSTextViewDelegate {
         copy.fromValue = oldHighlight
         highlight.add(copy, forKey: "morph")
       }
+    } else if hovered != shownHover || selection != nil {
+      // 路径结构变了（选中了、移到桌面）：还在跑的变形动画插值会乱，去掉
+      shade.removeAnimation(forKey: "morph")
+      highlight.removeAnimation(forKey: "morph")
     }
     shownHover = hovered
     // 待选时整屏轻暗 0.18；有选区（或悬停的窗口）时洞外 0.45，切换时过渡 0.12 s
@@ -413,6 +417,11 @@ final class SelectionView: NSView, NSTextViewDelegate {
       sizeLabel.place(at: CGPoint(x: x, y: y))
     }
     updateMagnifier()
+  }
+
+  /// 手柄命中容差 8 pt；选区很小时按比例缩（不然整块都是手柄，没法拖着平移）
+  private static func handleTolerance(_ selection: CGRect) -> CGFloat {
+    min(8, max(3, min(selection.width, selection.height) / 4))
   }
 
   /// 悬停窗口的洞 / 高亮：圆角 10（窗口本身就是圆角的）
@@ -873,7 +882,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
       if event.clickCount == 2, tool == nil, hit == nil, selection.contains(point) {
         return output(.copy)
       }
-      if let handle = RegionSelector.handle(at: point, in: selection, tolerance: 8) {
+      if let handle = RegionSelector.handle(
+        at: point, in: selection, tolerance: Self.handleTolerance(selection))
+      {
         drag = .resize(handle, original: selection)
         return
       }
@@ -1004,7 +1015,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
     if let editor {  // 输入框里是文字光标；外面点一下只是收下文字
       return (editor.field.frame.contains(point) ? NSCursor.iBeam : NSCursor.arrow).set()
     }
-    if let handle = RegionSelector.handle(at: point, in: selection, tolerance: 8) {
+    if let handle = RegionSelector.handle(
+      at: point, in: selection, tolerance: Self.handleTolerance(selection))
+    {
       return NSCursor.frameResize(position: Self.position(of: handle), directions: .all).set()
     }
     if annotation(at: point) != nil { return NSCursor.openHand.set() }

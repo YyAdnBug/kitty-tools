@@ -45,6 +45,8 @@ import Observation
   var replaceSource: (pid: pid_t, text: String)?
   /// 刚被复制的卡片（⌘1–9 或卡片上的复制按钮），卡片上短暂显示对勾
   private(set) var copiedCard: String?
+  /// 每复制一次加一：同一张卡 1.5 s 内再复制也要再闪一次，对勾计时也从头算
+  private(set) var copyTick = 0
   /// 原文区的提示（取词失败、识别不到文字、原文过长等）
   private(set) var notice: String?
   /// 提示要引导去授权的那一项；nil 就不显示授权按钮
@@ -120,9 +122,11 @@ import Observation
     }
     Paster.write(string: text)
     copiedCard = id
+    copyTick += 1
+    let tick = copyTick
     Task {
       try? await Task.sleep(for: .seconds(1.5))
-      if copiedCard == id { copiedCard = nil }
+      if copyTick == tick { copiedCard = nil }
     }
     return true
   }
@@ -231,9 +235,16 @@ import Observation
     run(service)
   }
 
+  /// 停掉还在跑的服务，没出完的卡片标成中断（不然卡片一直是「生成中」，隐藏的浮窗里骨架、彗星、光标动画停不下来）
   func cancel() {
     for task in tasks.values { task.cancel() }
     tasks = [:]
+    for index in cards.indices {
+      switch cards[index].state {
+      case .waiting, .running: cards[index].state = .failed("已中断，点重试重新翻译")
+      default: break
+      }
+    }
   }
 
   private func run(_ service: TranslateService) {

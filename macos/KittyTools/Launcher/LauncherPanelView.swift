@@ -109,11 +109,14 @@ struct LauncherPanelView: View {
             Text("最近使用")
               .font(.system(size: 11, weight: .semibold))
               .foregroundStyle(.tertiary)
-              .frame(maxWidth: .infinity, minHeight: Self.groupHeight, alignment: .bottomLeading)
               .padding(.leading, 12)
               .padding(.bottom, 2)
+              // 高度必须正好是 groupHeight：高亮和面板高度都按它算
+              .frame(
+                maxWidth: .infinity, minHeight: Self.groupHeight, maxHeight: Self.groupHeight,
+                alignment: .bottomLeading)
           }
-          ForEach(Array(model.results.enumerated()), id: \.element.id) { index, item in
+          ForEach(Array(model.results.enumerated()), id: \.element.rowID) { index, item in
             Button {
               model.click(item)
             } label: {
@@ -125,7 +128,7 @@ struct LauncherPanelView: View {
               .contentShape(.rect)
             }
             .buttonStyle(.plain)
-            .id(item.id)
+            .id(item.rowID)
           }
         }
         .background(alignment: .topLeading) { highlight }
@@ -138,12 +141,12 @@ struct LauncherPanelView: View {
           model.selectionMotion == .instant
             ? nil : Style.Motion.snap.animation(reduced: reduceMotion)
         ) {
-          proxy.scrollTo(model.results[selection].id)
+          proxy.scrollTo(model.results[selection].rowID)
         }
       }
       // 新结果时选中项回到第 0 行，但 selection 本来就是 0 时上面不触发：列表也要回到顶部
       .onChange(of: model.results) {
-        if let first = model.results.first { proxy.scrollTo(first.id, anchor: .top) }
+        if let first = model.results.first { proxy.scrollTo(first.rowID, anchor: .top) }
       }
     }
   }
@@ -335,4 +338,9 @@ enum LauncherIcons {
     cache.setObject(image, forKey: path as NSString)
     return image
   }
+}
+
+extension LauncherItem {
+  /// 列表里的身份：计算结果行跨按键保持同一个（id 含算式，每敲一个字都会变），结果数字才能滚动变化
+  fileprivate var rowID: String { kind == .calculation ? "calculation" : id }
 }

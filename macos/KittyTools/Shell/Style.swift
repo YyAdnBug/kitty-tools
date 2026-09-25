@@ -86,18 +86,27 @@ enum Style {
 
   // MARK: 颜色
 
-  /// 浅色取 light、深色取 dark 的动态色
-  static func dynamic(light: NSColor, dark: NSColor) -> Color {
+  /// 浅色取 light、深色取 dark 的动态色；「增强对比度」时换成 contrast（没给就不变）
+  static func dynamic(
+    light: NSColor, dark: NSColor, contrast: (light: NSColor, dark: NSColor)? = nil
+  ) -> Color {
     Color(
-      nsColor: NSColor(name: nil) {
-        $0.bestMatch(from: [.darkAqua, .vibrantDark, .accessibilityHighContrastDarkAqua]) != nil
-          ? dark : light
+      nsColor: NSColor(name: nil) { appearance in
+        let isDark =
+          appearance.bestMatch(from: [.darkAqua, .vibrantDark, .accessibilityHighContrastDarkAqua])
+          != nil
+        // 高对比外观按名字匹配不到（NSAppearance 会归到普通外观），直接读系统开关；开关一变系统会重画
+        if let contrast, NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast {
+          return isDark ? contrast.dark : contrast.light
+        }
+        return isDark ? dark : light
       })
   }
 
   /// 列表选中（一块灰色高亮，文字不反白）
   static let selectedFill = dynamic(
-    light: .black.withAlphaComponent(0.07), dark: .white.withAlphaComponent(0.10))
+    light: .black.withAlphaComponent(0.07), dark: .white.withAlphaComponent(0.10),
+    contrast: (.black.withAlphaComponent(0.16), .white.withAlphaComponent(0.22)))
   /// 悬停
   static let hoverFill = dynamic(
     light: .black.withAlphaComponent(0.04), dark: .white.withAlphaComponent(0.05))
@@ -105,7 +114,8 @@ enum Style {
   static let controlFill = Color.primary.opacity(0.06)
   /// 发丝线
   static let hairline = dynamic(
-    light: .black.withAlphaComponent(0.08), dark: .white.withAlphaComponent(0.10))
+    light: .black.withAlphaComponent(0.08), dark: .white.withAlphaComponent(0.10),
+    contrast: (.black.withAlphaComponent(0.35), .white.withAlphaComponent(0.4)))
 
   /// 功能家族色：启动器种类色块、设置页头、菜单图标全 App 统一
   enum Family {

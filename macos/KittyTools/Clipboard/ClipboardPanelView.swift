@@ -13,8 +13,9 @@ struct ClipboardPanelView: View {
   /// 按住 ⌘ 超过 150 ms：亮出 ⌘1–9 键帽
   @State private var holdsCommand = false
   @State private var showsShortcuts = false
-  /// 列表滚动位置：分组标题只有真的吸顶时才加材质底（平时没有灰条）
-  @State private var scrollY: CGFloat = 0
+  /// 已经滚过顶部的分组数：这些分组的标题正吸顶（或已滚走），加材质底；平时没有灰条。
+  /// 只存这个整数，别存滚动位置（每帧都会让整个面板重算）
+  @State private var pinnedSections = 0
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   static let listWidth: CGFloat = 320
@@ -204,11 +205,11 @@ struct ClipboardPanelView: View {
       emptyState.frame(maxWidth: .infinity, maxHeight: .infinity)
     } else {
       let sections = model.query.isEmpty ? Self.daySections(items) : nil
+      let tops = sections.map(Self.sectionTops) ?? []
       ScrollViewReader { proxy in
         ScrollView {
           LazyVStack(alignment: .leading, spacing: 0, pinnedViews: .sectionHeaders) {
             if let sections {
-              let tops = Self.sectionTops(sections)
               ForEach(Array(sections.enumerated()), id: \.element.title) { index, section in
                 Section {
                   rows(section.rows, selected: selected)
@@ -217,12 +218,15 @@ struct ClipboardPanelView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.tertiary)
                     .padding(.leading, 8)
-                    .frame(
-                      maxWidth: .infinity, minHeight: Self.headerHeight, alignment: .bottomLeading
-                    )
                     .padding(.bottom, 2)
+                    // 高度必须正好是 headerHeight：高亮按它累加定位
+                    .frame(
+                      maxWidth: .infinity, minHeight: Self.headerHeight,
+                      maxHeight: Self.headerHeight,
+                      alignment: .bottomLeading
+                    )
                     .background(
-                      scrollY > tops[index] + 0.5
+                      index < pinnedSections
                         ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(.clear))
                 }
               }
@@ -234,14 +238,15 @@ struct ClipboardPanelView: View {
             highlight(items: items, sections: sections, selected: selected)
           }
           .animation(model.listMotion.animation(reduced: reduceMotion), value: items.map(\.id))
+          .onChange(of: model.listGeneration) { model.settleList() }
           .padding(.horizontal, 6)
           .padding(.bottom, 6)
         }
-        .onScrollGeometryChange(for: CGFloat.self) {
-          $0.contentOffset.y + $0.contentInsets.top
-        } action: {
-          _, y in
-          scrollY = y
+        .onScrollGeometryChange(for: Int.self) { geometry in
+          let y = geometry.contentOffset.y + geometry.contentInsets.top
+          return tops.lastIndex { y > $0 + 0.5 }.map { $0 + 1 } ?? 0
+        } action: { _, count in
+          pinnedSections = count
         }
         .onChange(of: selected?.id) { _, id in
           guard let id else { return }
@@ -317,9 +322,11 @@ struct ClipboardPanelView: View {
       .id(item.id)
       .contextMenu { contextMenu(for: item) }
       .transition(
-        .asymmetric(
-          insertion: .move(edge: .top).combined(with: .opacity),
-          removal: .opacity.combined(with: .scale(scale: 0.96, anchor: .leading))))
+        reduceMotion
+          ? .opacity
+          : .asymmetric(
+            insertion: .move(edge: .top).combined(with: .opacity),
+            removal: .opacity.combined(with: .scale(scale: 0.96, anchor: .leading))))
     }
   }
 
@@ -440,7 +447,7 @@ struct ClipboardPanelView: View {
             }
           }
         }
-        .transition(.blurReplace)
+        .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
         Spacer()
       } else if !model.multiSelection.isEmpty {
         multiSelectBar
@@ -448,7 +455,7 @@ struct ClipboardPanelView: View {
         Text(countText(count))
           .foregroundStyle(.secondary)
           .contentTransition(.numericText())
-          .transition(.blurReplace)
+          .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
         Spacer()
         if count > 0 {
           hint("↩", "粘贴")
@@ -555,15 +562,16 @@ private struct ActionMenu: View {
             if !action.shortcut.isEmpty {
               Text(action.shortcut)
                 .font(.system(size: 11, weight: .medium, design: .rounded))
-                .foregroundStyle(selected ? .white.opacity(0.8) : .secondary)
+                .foregroundStyle(.secondary)
             }
           }
           .font(.system(size: 13))
-          .foregroundStyle(selected ? .white : .primary)
           .padding(.horizontal, 8)
           .frame(height: 28)
+          // 和列表一样是中性高亮，不填强调色、不反白（面板内缩 5，圆角 10 − 5 同心 ≈ control）
           .background(
-            selected ? Color.accentColor : .clear, in: .rect(cornerRadius: 6, style: .continuous)
+            selected ? Style.selectedFill : .clear,
+            in: .rect(cornerRadius: Style.Radius.control, style: .continuous)
           )
           .contentShape(.rect)
         }

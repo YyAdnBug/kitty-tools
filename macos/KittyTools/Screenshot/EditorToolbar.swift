@@ -74,7 +74,8 @@ class HUDBar: NSView {
 
   /// 出现：40 ms 后从下方 6 pt、0.96 倍弹到位（spring 0.32 / 0.18）；收起：0.10 s 淡出。减弱动态效果时只改透明度
   func setShown(_ show: Bool) {
-    guard show != shown || isHidden == show else { return }
+    // 只看目标状态：淡出途中重复调 setShown(false) 不能把淡出截断
+    guard show != shown else { return }
     shown = show
     guard let layer else {
       isHidden = !show

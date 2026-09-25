@@ -72,11 +72,47 @@ struct ContentFormTests {
   }
 
   @Test func inspectorHeaderText() {
-    // 备忘录黄、浅灰上用黑字；系统蓝、深紫上用白字
-    #expect(PreviewView.needsDarkText(on: NSColor(srgbRed: 0.96, green: 0.77, blue: 0, alpha: 1)))
-    #expect(PreviewView.needsDarkText(on: NSColor(white: 0.85, alpha: 1)))
+    // 备忘录黄、浅灰上用黑字；系统蓝、深紫上用白字；中等亮度的蓝压暗到白字够 4.5 : 1
     #expect(
-      !PreviewView.needsDarkText(on: NSColor(srgbRed: 0.12, green: 0.45, blue: 0.9, alpha: 1)))
-    #expect(!PreviewView.needsDarkText(on: NSColor(srgbRed: 0.35, green: 0.2, blue: 0.6, alpha: 1)))
+      PreviewView.headerStyle(for: NSColor(srgbRed: 0.96, green: 0.77, blue: 0, alpha: 1)).darkText)
+    #expect(PreviewView.headerStyle(for: NSColor(white: 0.85, alpha: 1)).darkText)
+    #expect(
+      !PreviewView.headerStyle(for: NSColor(srgbRed: 0.12, green: 0.45, blue: 0.9, alpha: 1))
+        .darkText)
+    #expect(
+      !PreviewView.headerStyle(for: NSColor(srgbRed: 0.35, green: 0.2, blue: 0.6, alpha: 1))
+        .darkText)
+    let mid = PreviewView.headerStyle(for: NSColor(srgbRed: 0.3, green: 0.55, blue: 0.95, alpha: 1))
+    #expect(!mid.darkText)
+    let rgb = mid.background
+    func linear(_ v: CGFloat) -> CGFloat {
+      v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+    }
+    let luminance =
+      0.2126 * linear(rgb.redComponent) + 0.7152 * linear(rgb.greenComponent)
+      + 0.0722 * linear(rgb.blueComponent)
+    #expect(1.05 / (luminance + 0.05) >= 4.5)
   }
+
+  @Test func syntaxHighlightSkipsCommentsInStrings() {
+    let text = #"let u = "https://a.b" // note"#
+    let result = SyntaxHighlight.attributed(
+      text, language: .code, font: .monospacedSystemFont(ofSize: 12, weight: .regular))
+    let url = (text as NSString).range(of: "a.b")
+    let note = (text as NSString).range(of: "note")
+    #expect(
+      result.attribute(.foregroundColor, at: url.location, effectiveRange: nil) as? NSColor
+        == .systemRed)
+    #expect(
+      result.attribute(.foregroundColor, at: note.location, effectiveRange: nil) as? NSColor
+        == .secondaryLabelColor)
+  }
+
+  @Test func translucentColorValues() {
+    let values = ColorCard.values(.init(red: 1, green: 0, blue: 0, alpha: 0.5))
+    #expect(values[0] == "#FF000080")
+    #expect(values[2].hasPrefix("hsla("))
+    #expect(values[3].hasSuffix("opacity: 0.50)"))
+  }
+
 }

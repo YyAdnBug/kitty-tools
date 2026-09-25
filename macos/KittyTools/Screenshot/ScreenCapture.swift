@@ -23,10 +23,17 @@ enum ScreenCapture {
       CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
         as? [[String: Any]] ?? [],
       ownPID: getpid(), keeping: keeping, primaryHeight: NSScreen.screens.first?.frame.height ?? 0)
-    // 排除自家窗口（浮层、设置窗、正在淡出的菜单栏菜单、上一次的框选遮罩），只保留菜单栏图标本身和钉图
+    // 排除自家窗口（浮层、设置窗、正在淡出的菜单栏菜单、上一次的框选遮罩），只保留菜单栏图标本身和钉图。
+    // 同在状态栏层级的刘海岛、飞行卡片、长截图边框按窗口号排除（菜单栏图标的窗口类名带 StatusBar）
+    let statusLevel = Set(
+      NSApp.windows.filter {
+        $0.level == .statusBar && !String(describing: type(of: $0)).contains("StatusBar")
+      }.map { CGWindowID($0.windowNumber) })
     let ownWindows = content.windows.filter {
       $0.owningApplication?.processID == getpid()
-        && $0.windowLayer != NSWindow.Level.statusBar.rawValue && !keeping.contains($0.windowID)
+        && ($0.windowLayer != NSWindow.Level.statusBar.rawValue
+          || statusLevel.contains($0.windowID))
+        && !keeping.contains($0.windowID)
     }
     var shots: [Shot] = []
     for display in content.displays {

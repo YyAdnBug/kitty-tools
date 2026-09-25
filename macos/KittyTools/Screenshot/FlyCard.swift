@@ -1,7 +1,8 @@
 // 截图「咔嚓，飞入」（Whisker 招牌时刻 S1，mac-whisker §5）：复制 / 快速保存截图后，选区原地闪白、抬起，
 // 沿弧线（x、y 两轴弹簧时长不同）飞到所在屏幕右下角缩成缩略图，落地弹出 ✓（保存时是文件夹 + 目录名），
-// 停 0.9 s 后向右滑出屏幕。窗口只取起终点的并集、不接鼠标，飞完就关。快门声跟随系统「播放用户界面音效」
-// 和设置 › 截图的开关。减弱动态效果时由调用方改成刘海岛轻提示。
+// 停 0.9 s 后向右滑出屏幕。窗口只取起终点的并集、不接鼠标，飞完就关。卡片先飞，角标等复制 / 保存真的成功了
+// 才由调用方 land（失败就没有角标）。快门声跟随系统「播放用户界面音效」和设置 › 截图的开关。
+// 减弱动态效果时由调用方改成刘海岛轻提示。
 
 import AppKit
 import SwiftUI
@@ -12,8 +13,28 @@ enum FlyCard {
     case saved(folder: String)
   }
 
-  /// 飞行中的窗口（飞完移除；连截几张时各飞各的）
+  /// 一张飞行卡片的结局：复制 / 保存成功后 land，落地（或已落地）时弹出角标
+  @Observable final class Landing {
+    fileprivate(set) var badge: Badge?
+
+    func land(_ badge: Badge) {
+      self.badge = badge
+      let text =
+        switch badge {
+        case .copied: "已复制截图"
+        case .saved(let folder): "截图已保存到\(folder)"
+        }
+      NSAccessibility.post(
+        element: NSApp as Any, notification: .announcementRequested,
+        userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+    }
+  }
+
+  /// 飞行中的窗口（连截几张时各飞各的）
   private static var windows: Set<NSPanel> = []
+  /// 飞完的窗口留着复用：挂过 NSHostingView 的窗口 close 后 AppKit 不释放窗口对象（实测，空 Text 也一样），
+  /// 每次新建会越攒越多。close 会销毁窗口服务器那边的缓冲区，清掉 contentView 会放掉视图和截图
+  private static var idle: [NSPanel] = []
   /// 正在放的快门声（NSSound 放完之前要有人持有）
   private static var shutter: NSSound?
 
@@ -21,17 +42,23 @@ enum FlyCard {
   private static let maxSize = CGSize(width: 200, height: 140)
   private static let inset: CGFloat = 16
 
-  /// image：选区的图（长截图取和选区同比例的顶部）；frame：选区（点，AppKit 全局坐标）
-  static func fly(_ image: CGImage, from frame: CGRect, badge: Badge) {
+  /// 和选区同比例的顶部（长截图很高，只露开头那一屏）；cropping 共享像素，不复制
+  static func visiblePart(of image: CGImage, frame: CGRect) -> CGImage {
+    guard frame.width >= 1 else { return image }
+    let rows = min(image.height, Int((CGFloat(image.width) * frame.height / frame.width).rounded()))
+    return image.cropping(to: CGRect(x: 0, y: 0, width: image.width, height: max(rows, 1))) ?? image
+  }
+
+  /// image：选区的图；frame：选区（点，AppKit 全局坐标）
+  static func fly(_ image: CGImage, from frame: CGRect) -> Landing {
+    let landing = Landing()
     guard frame.width >= 1, frame.height >= 1,
       let screen = NSScreen.screens.first(where: {
         $0.frame.contains(CGPoint(x: frame.midX, y: frame.midY))
       })
         ?? NSScreen.main
-    else { return }
-    let rows = min(image.height, Int((CGFloat(image.width) * frame.height / frame.width).rounded()))
-    let shown =
-      image.cropping(to: CGRect(x: 0, y: 0, width: image.width, height: max(rows, 1))) ?? image
+    else { return landing }
+    let shown = visiblePart(of: image, frame: frame)
     let fit = min(1, maxSize.width / frame.width, maxSize.height / frame.height)
     let visible = screen.visibleFrame
     let end = CGRect(
@@ -46,9 +73,33 @@ enum FlyCard {
       )
     }
 
+    let panel = idle.popLast() ?? makePanel()
+    panel.setFrame(union, display: false)
+    let host = NSHostingView(
+      rootView: FlyCardView(
+        image: shown, start: local(frame), end: local(end), exit: exit, landing: landing
+      ) { [weak panel] in
+        // weak：窗口 → 视图 → 这个闭包，强引用会成环，每飞一次漏一个窗口和整张图
+        guard let panel else { return }
+        panel.close()
+        // 下一轮再拆视图：别在它自己的 SwiftUI 任务里把它释放
+        Task {
+          panel.contentView = nil
+          windows.remove(panel)
+          idle.append(panel)
+        }
+      })
+    host.sizingOptions = []
+    panel.contentView = host
+    windows.insert(panel)
+    panel.orderFrontRegardless()
+    return landing
+  }
+
+  private static func makePanel() -> NSPanel {
     let panel = NSPanel(
-      contentRect: union, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,
-      defer: false)
+      contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,
+      defer: true)
     panel.isOpaque = false
     panel.backgroundColor = .clear
     panel.hasShadow = false
@@ -57,25 +108,7 @@ enum FlyCard {
     panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
     panel.animationBehavior = .none
     panel.isReleasedWhenClosed = false
-    let host = NSHostingView(
-      rootView: FlyCardView(
-        image: shown, start: local(frame), end: local(end), exit: exit, badge: badge
-      ) {
-        panel.orderOut(nil)
-        windows.remove(panel)
-      })
-    host.sizingOptions = []
-    panel.contentView = host
-    windows.insert(panel)
-    panel.orderFrontRegardless()
-    let text =
-      switch badge {
-      case .copied: "已复制截图"
-      case .saved(let folder): "截图已保存到\(folder)"
-      }
-    NSAccessibility.post(
-      element: NSApp as Any, notification: .announcementRequested,
-      userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+    return panel
   }
 
   /// 系统截屏的快门声。跟随系统「播放用户界面音效」（没设过 = 开）；声音文件在系统私有路径，找不到就不响
@@ -101,7 +134,7 @@ private struct FlyCardView: View {
   let end: CGRect
   /// 滑出的距离
   let exit: CGFloat
-  let badge: FlyCard.Badge
+  let landing: FlyCard.Landing
   let onFinish: () -> Void
 
   @State private var lifted = false
@@ -133,13 +166,13 @@ private struct FlyCardView: View {
           .scaleEffect(lifted && !flying ? 1.03 : 1)
       }
       .overlay(alignment: .bottomTrailing) {
-        if landed {
-          badgeView
+        if landed, let badge = landing.badge {
+          badgeView(badge)
             .offset(x: 6, y: 6)
             .transition(.scale(scale: 0.4).combined(with: .opacity))
         }
       }
-      .animation(Style.Motion.pop.animation(reduced: false), value: landed)
+      .animation(Style.Motion.pop.animation(reduced: false), value: landed && landing.badge != nil)
       // 两轴弹簧时长不同，走出一道弧线
       .animation(.spring(duration: 0.50, bounce: 0.10)) { $0.offset(y: rect.midY) }
       .animation(.spring(duration: 0.42, bounce: 0.10)) { $0.offset(x: rect.midX) }
@@ -159,7 +192,7 @@ private struct FlyCardView: View {
       }
   }
 
-  @ViewBuilder private var badgeView: some View {
+  @ViewBuilder private func badgeView(_ badge: FlyCard.Badge) -> some View {
     switch badge {
     case .copied:
       Image(systemName: "checkmark")

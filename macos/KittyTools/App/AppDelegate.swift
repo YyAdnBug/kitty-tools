@@ -395,14 +395,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           NSStringFromRect(capture.frame), forKey: Prefs.screenshotLastRegion)
         switch capture.action {
         case .copy:
-          captured(capture.image, frame: capture.frame, badge: .copied)
-          await copyImage(capture.image, scale: capture.scale)
+          let land = captured(capture.image, frame: capture.frame)
+          if await copyImage(capture.image, scale: capture.scale) { land(.copied) }
         case .pin:
           FlyCard.playShutter()
           pins.pin(capture.image, frame: capture.frame)
         case .save:
-          captured(capture.image, frame: capture.frame, badge: Self.savedBadge)
-          await saveImage(capture.image, scale: capture.scale, asking: false)
+          let land = captured(capture.image, frame: capture.frame)
+          if await saveImage(capture.image, scale: capture.scale, asking: false) {
+            land(Self.savedBadge)
+          }
         case .saveAs:
           FlyCard.playShutter()
           await saveImage(capture.image, scale: capture.scale, asking: true)
@@ -420,11 +422,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       guard let result = try await ScrollCapture.run(region: region) else { return }
       switch result.action {
       case .copy:
-        captured(result.image, frame: region, badge: .copied)
-        await copyImage(result.image, scale: result.scale)
+        let land = captured(result.image, frame: region)
+        if await copyImage(result.image, scale: result.scale) { land(.copied) }
       case .save:
-        captured(result.image, frame: region, badge: Self.savedBadge)
-        await saveImage(result.image, scale: result.scale, asking: false)
+        let land = captured(result.image, frame: region)
+        if await saveImage(result.image, scale: result.scale, asking: false) {
+          land(Self.savedBadge)
+        }
       case .saveAs:
         FlyCard.playShutter()
         await saveImage(result.image, scale: result.scale, asking: true)
@@ -525,11 +529,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   /// 截图复制：PNG 写进剪贴板（经 Paster，watcher 会跳过），所以自己记进剪贴板历史
-  private func copyImage(_ image: CGImage, scale: CGFloat) async {
+  @discardableResult
+  private func copyImage(_ image: CGImage, scale: CGFloat) async -> Bool {
     guard let png = await ScreenshotOutput.png(image, scale: scale) else {
-      return showScreenshotNotice("截图编码失败，请重试")
+      showScreenshotNotice("截图编码失败，请重试")
+      return false
     }
     await copyPNG(png)
+    return true
   }
 
   private func copyPNG(_ png: Data) async {
@@ -540,10 +547,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     clipboardStore.record(item)
   }
 
-  /// ⌘S 快速保存 / 另存为（asking）。失败时截图改放进剪贴板，别让这张图就这么丢了
-  private func saveImage(_ image: CGImage, scale: CGFloat, asking: Bool) async {
+  /// ⌘S 快速保存 / 另存为（asking）；返回是否存好了。失败时截图改放进剪贴板，别让这张图就这么丢了
+  @discardableResult
+  private func saveImage(_ image: CGImage, scale: CGFloat, asking: Bool) async -> Bool {
     guard let png = await ScreenshotOutput.png(image, scale: scale) else {
-      return showScreenshotNotice("截图编码失败，请重试")
+      showScreenshotNotice("截图编码失败，请重试")
+      return false
     }
     do {
       if asking {
@@ -551,20 +560,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       } else {
         _ = try ScreenshotOutput.quickSave(png)
       }
+      return true
     } catch {
       await copyPNG(png)
       showScreenshotNotice("保存失败（\(error.localizedDescription)），截图已复制到剪贴板")
+      return false
     }
   }
 
-  /// 截图落地：快门声 + 飞行卡片（遮罩刚收起就飞，不等编码）；减弱动态效果时换成带缩略图的轻提示
-  private func captured(_ image: CGImage, frame: CGRect, badge: FlyCard.Badge) {
+  /// 截图落地：快门声 + 飞行卡片（遮罩刚收起就飞，不等编码）。返回的 land 在复制 / 保存成功后调，给卡片角标；
+  /// 减弱动态效果时 land 才弹带缩略图的轻提示。失败不调（另有提示）
+  private func captured(_ image: CGImage, frame: CGRect) -> (FlyCard.Badge) -> Void {
     FlyCard.playShutter()
-    guard Style.reduceMotion else { return FlyCard.fly(image, from: frame, badge: badge) }
-    let thumbnail = Island.Leading.thumbnail(NSImage(cgImage: image, size: frame.size))
-    switch badge {
-    case .copied: island.show("已复制截图", leading: thumbnail)
-    case .saved(let folder): island.show("已保存", detail: folder, leading: thumbnail)
+    guard Style.reduceMotion else { return FlyCard.fly(image, from: frame).land }
+    return { [island] badge in
+      let thumbnail = Island.Leading.thumbnail(
+        NSImage(cgImage: FlyCard.visiblePart(of: image, frame: frame), size: frame.size))
+      switch badge {
+      case .copied: island.show("已复制截图", leading: thumbnail)
+      case .saved(let folder): island.show("已保存", detail: folder, leading: thumbnail)
+      }
     }
   }
 

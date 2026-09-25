@@ -62,20 +62,22 @@ struct ClipRowView: View {
         .font(.system(size: 11))
         .foregroundStyle(Color(nsColor: .systemYellow))
         .opacity(item.favorite ? 1 : 0)
-        .scaleEffect(item.favorite ? 1 : 0.4)
+        .scaleEffect(item.favorite || reduceMotion ? 1 : 0.4)
         .symbolEffect(.bounce, value: item.favorite)
-        .animation(Style.Motion.pop.animation(reduced: reduceMotion), value: item.favorite)
+        // 宽度也在动画里：收藏时星星挤开旁边的标记，而不是跳
         .frame(width: item.favorite ? nil : 0)
-      if isChecked == nil, let shortcutIndex {
+        .animation(Style.Motion.pop.animation(reduced: reduceMotion), value: item.favorite)
+      // 没按 ⌘ 时不在布局里（占着宽度和间距的话，前九行的标题比别的行早截断）
+      if isChecked == nil, let shortcutIndex, showsShortcut {
         KeyCap("⌘\(shortcutIndex + 1)")
-          .opacity(showsShortcut ? 1 : 0)
-          .scaleEffect(showsShortcut ? 1 : 0.9)
-          .animation(
-            reduceMotion
-              ? .easeOut(duration: 0.12)
-              : .easeOut(duration: 0.12).delay(Double(shortcutIndex) * 0.015), value: showsShortcut)
+          .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.9)))
       }
     }
+    .animation(
+      reduceMotion
+        ? .easeOut(duration: 0.12)
+        : .easeOut(duration: 0.12).delay(Double(shortcutIndex ?? 0) * 0.015), value: showsShortcut
+    )
     .padding(.horizontal, 10)
     .frame(height: Self.height)
     .background(

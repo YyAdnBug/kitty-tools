@@ -161,6 +161,7 @@ private final class PinView: NSView {
     controls.frame.size = controls.fittingSize
     controls.autoresizingMask = [.minXMargin, .minYMargin]
     controls.alphaValue = 0
+    controls.isHidden = true  // 看不见时也不能点到（点击不看透明度）
     addSubview(controls)
     zoomLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
     zoomLabel.textColor = NSColor.white.withAlphaComponent(0.95)
@@ -200,7 +201,8 @@ private final class PinView: NSView {
       try? await Task.sleep(for: .seconds(0.3))
       guard let self, self.hovering else { return }
       // 钉图太小时不放按钮（会盖住图）
-      self.controls.isHidden = self.bounds.width < 64 || self.bounds.height < 34
+      guard self.bounds.width >= 64, self.bounds.height >= 34 else { return }
+      self.controls.isHidden = false
       self.fade(self.controls, in: true)
     }
   }
@@ -208,6 +210,11 @@ private final class PinView: NSView {
   override func mouseExited(with event: NSEvent) {
     hovering = false
     fade(controls, in: false)
+    Task { [weak self] in
+      try? await Task.sleep(for: .seconds(Style.fadeOut))
+      guard let self, !self.hovering else { return }
+      self.controls.isHidden = true
+    }
   }
 
   private func fade(_ view: NSView, in show: Bool) {
