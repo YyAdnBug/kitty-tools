@@ -40,6 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private let speaker = Speaker()
   /// 刘海岛（全局轻提示）
   private let island = Island()
+  /// 菜单栏图标与菜单（启动后才建：单测以本 App 为宿主时不往菜单栏加东西）
+  private var statusItem: StatusItem?
   /// 钉图（菜单栏显示「隐藏 / 关闭全部钉图」）
   lazy var pins: PinBoard = {
     let board = PinBoard()
@@ -245,6 +247,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     hotKeys.setHandler(for: .recognizeText) { [unowned self] in recognizeText() }
     hotKeys.setHandler(for: .translateReplace) { [unowned self] in translateAndReplace() }
     hotKeys.reload()
+    let statusItem = StatusItem()
+    statusItem.buildMenu = { [unowned self] in buildStatusMenu($0) }
+    island.onToneChange = { [weak statusItem] in statusItem?.reflect($0) }
+    self.statusItem = statusItem
     launcherModel.rescanApps()  // 约 65ms，放在启动时，第一次呼出就不用等
     showWelcomeIfNeeded()
   }
@@ -630,7 +636,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 减弱动态效果时 land 才弹带缩略图的轻提示。失败不调（另有提示）
   private func captured(_ image: CGImage, frame: CGRect) -> (FlyCard.Badge) -> Void {
     FlyCard.playShutter()
-    guard Style.reduceMotion else { return FlyCard.fly(image, from: frame).land }
+    guard Style.reduceMotion else {
+      let land = FlyCard.fly(image, from: frame).land
+      return { [weak self] badge in
+        land(badge)
+        self?.statusItem?.pop()
+      }
+    }
     return { [island] badge in
       let thumbnail = Island.Leading.thumbnail(
         NSImage(cgImage: FlyCard.visiblePart(of: image, frame: frame), size: frame.size))
@@ -673,6 +685,69 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     launcherPanel.hide()
     translatePanel.hide()
     settingsWindow.show(page: page, onboarding: onboarding)
+  }
+
+  // MARK: 菜单栏菜单
+
+  /// 每次打开菜单前重建：快捷键显示当前生效的组合（注册失败 / 没设的注明「未设置快捷键」），有钉图时才出钉图两项
+  private func buildStatusMenu(_ menu: NSMenu) {
+    let translate = NSColor.systemGreen
+    let shot = NSColor.systemPink
+    let gray = NSColor.systemGray
+    func hotKeyItem(
+      _ title: String, _ action: HotKeyAction, _ symbol: String, _ color: NSColor,
+      run: @escaping () -> Void
+    ) {
+      let binding = hotKeys.bindings[action]
+      menu.addAction(
+        binding == nil ? "\(title)（未设置快捷键）" : title, symbol: symbol, color: color,
+        key: binding?.menuKeyEquivalent ?? "", modifiers: binding?.modifierFlags ?? [], run: run)
+    }
+    hotKeyItem("启动器", .launcher, "command", .systemPurple) { [unowned self] in toggleLauncher() }
+    hotKeyItem("剪贴板历史", .clipboard, "doc.on.clipboard", .systemBlue) {
+      [unowned self] in toggleClipboard()
+    }
+    hotKeyItem("划词翻译", .selectionTranslate, "character.bubble", translate) {
+      [unowned self] in selectionTranslate()
+    }
+    hotKeyItem("划词翻译并替换", .translateReplace, "arrow.left.arrow.right", translate) {
+      [unowned self] in translateAndReplace()
+    }
+    hotKeyItem("截图翻译", .screenshotTranslate, "text.viewfinder", translate) {
+      [unowned self] in screenshotTranslate()
+    }
+    hotKeyItem("输入翻译", .inputTranslate, "character.cursor.ibeam", translate) {
+      [unowned self] in showInputTranslate()
+    }
+    let copyToTranslate = UserDefaults.standard.bool(forKey: Prefs.translateCopyToTranslate)
+    menu.addAction("复制即译", symbol: "doc.on.doc", color: translate) {
+      UserDefaults.standard.set(!copyToTranslate, forKey: Prefs.translateCopyToTranslate)
+    }
+    .state = copyToTranslate ? .on : .off
+    menu.addItem(.separator())
+    hotKeyItem("截图", .screenshot, "camera.viewfinder", shot) { [unowned self] in screenshot() }
+    hotKeyItem("截取上次区域", .screenshotLastRegion, "rectangle.dashed", shot) {
+      [unowned self] in screenshot(repeatingLastRegion: true)
+    }
+    hotKeyItem("识字", .recognizeText, "text.magnifyingglass", shot) {
+      [unowned self] in recognizeText()
+    }
+    if !pins.panels.isEmpty {
+      menu.addAction(pins.isHidden ? "显示全部钉图" : "隐藏全部钉图", symbol: "pin", color: shot) {
+        [unowned self] in pins.toggleHidden()
+      }
+      menu.addAction("关闭全部钉图", symbol: "pin.slash", color: shot) { [unowned self] in
+        pins.closeAll()
+      }
+    }
+    menu.addItem(.separator())
+    menu.addAction("设置…", symbol: "gearshape", color: gray, key: ",") { [unowned self] in
+      showSettings()
+    }
+    menu.addAction("关于 Kitty Tools Native", symbol: "info.circle", color: gray) {
+      [unowned self] in showSettings(page: .about)
+    }
+    menu.addAction("退出", symbol: "power", color: gray, key: "q") { NSApp.terminate(nil) }
   }
 
   // MARK: 启动辅助

@@ -38,6 +38,8 @@ import SwiftUI
   @ObservationIgnored private(set) var geometry = Geometry.capsule(menuBar: 24)
   @ObservationIgnored private var window: NSPanel?
   @ObservationIgnored private var dwell: Task<Void, Never>?
+  /// 语气变了（nil = 收起）：菜单栏图标据此呼吸 / 弹一下（StatusItem.reflect）
+  @ObservationIgnored var onToneChange: ((Tone?) -> Void)?
 
   /// 刘海屏：从刘海长出下巴；其它屏：菜单栏下方的胶囊
   enum Geometry: Equatable {
@@ -83,6 +85,7 @@ import SwiftUI
       open(with: next)
     }
     if tone == .error { shakes += 1 }
+    onToneChange?(tone)
     announce(next)
     let seconds: Double =
       switch tone {
@@ -100,6 +103,7 @@ import SwiftUI
   func dismiss() {
     dwell?.cancel()
     guard isOpen else { return }
+    onToneChange?(nil)
     withAnimation(.easeIn(duration: 0.12)) { content = nil }
     dwell = Task { [weak self] in
       try? await Task.sleep(for: .seconds(0.2))
