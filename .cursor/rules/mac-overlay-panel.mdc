@@ -10,7 +10,8 @@ M1 实测结论 + master 旧规则 `macos-overlay-panel.mdc` 删减。代码：`
 
 ## 1. 浮层只有 OverlayPanel 一种
 - 剪贴板面板、翻译浮窗、启动器（`topAnchored`：鼠标所在屏、顶边在可见区 20% 处，`setContentHeight` 顶边不动地伸缩）都是 `OverlayPanel` 实例，**禁止**另写 NSPanel / NSWindow 子类。例外只有三个，都是无边框、要当 key 收 Esc 才子类化：截图框选遮罩 `SelectionOverlay`（§8，全屏、每屏一个、用完即释放）、钉图 `PinPanel`（§9）和长截图面板 `ScrollCapturePanel`（§10，会话结束即释放）；它们和浮层的行为没有交集。长截图的选区边框是普通 `NSPanel` 实例（不接鼠标、不当 key），不子类化。
-- `styleMask` 在 init 里一次写全，含 `.nonactivatingPanel`（初始化后再加不生效）；`.titled + .fullSizeContentView` + 隐藏三个按钮，拿系统圆角、阴影和缩放。
+- `styleMask` 在 init 里一次写全：`[.nonactivatingPanel, .borderless]`（`.nonactivatingPanel` 初始化后再加不生效）。外观是 Whisker 的 Panel 皮肤：`NSVisualEffectView.maskImage` 裁 16 pt 连续圆角（系统阴影跟着 mask 走）+ SwiftUI `PanelRim` 描边；无边框窗口没有系统拖边，要改宽度的面板（翻译浮窗）用左右两条 `ResizeEdge`。
+- 进出：`present()` 新出现时淡入 + 内容下落 6 pt；**用户关掉**（Esc、点外面、再按热键、失焦、⌘W）走 `dismiss()`：临时设 `animationBehavior = .utilityWindow` 再 orderOut，由系统淡出，窗口逻辑上立刻移走、键盘马上回到原 App；**程序收起**（粘贴前、打开设置、互斥收起）走 `hide()`，立刻消失、没有退场动画。`setContentHeight(_:animated:)` 可带 0.18 / 0.14 s 动画。
 - 显示只走 `present()`（`orderFrontRegardless` + `makeKey`）；**永远不对浮层调 `NSApp.activate`**，否则前台 App 变成自己，⌘V / ⌘C 会落空。
 - `NSHostingView.sizingOptions = []`：窗口尺寸由 `OverlayPanel` 定，不让 SwiftUI 理想尺寸反推。
 - 设置窗不是浮层（M3）：普通 `NSWindow`，打开前先收起两个浮层，再切 `.regular` + `activate()`。
@@ -73,7 +74,7 @@ M1 实测结论 + master 旧规则 `macos-overlay-panel.mdc` 删减。代码：`
 - 截图自检：`SnapshotProbeTests.renderLayers` 把视图放进屏外窗口跑几轮 RunLoop 再 `layer.render(in:)`（`cacheDisplay` 画不出直接加的子图层）。
 - 标注（M10）：`Annotation` 值类型、存整屏视图坐标；屏幕上的标注层 `AnnotationCanvas` 按变了的标注 `setNeedsDisplay(rect)` 局部重画，导出走 `Annotation.render`，两边共用 `Annotation.draw`，不要各写一份。输出（复制 / 保存 / 钉图 / 识字 / 翻译）一律用合成图。
 - 文字标注用叠在遮罩里的 `NSTextView`（`EditorField`，输入法靠它）：它是第一响应者时按键都归它；⌘C / ⌘V / ⌘Z 经 `OverlayPanel.editActions` 发给它（本 App 不激活，主菜单收不到），每个输入框用自己的 UndoManager；Esc 走 `doCommandBy(cancelOperation:)` 收下文字；收下时**先** `makeFirstResponder(self)` 再移除输入框（反过来第一响应者落到窗口上，单键快捷键全失灵）。右键不弹文本菜单（菜单层级低于遮罩）。两条栏的按钮 `refusesFirstResponder`，点了不打断输入；栏的间隙、边距落到 `SelectionView.mouseDown` 时直接忽略。
-- 轻提示用 `Toast`（不抢键盘的 `OverlayPanel` 实例），不另写窗口类。
+- 轻提示是刘海岛 `Island`（`Shell/Island.swift`，Whisker S2）：普通 `NSPanel` 实例（不子类化、`ignoresMouseEvents`、level 状态栏、尺寸固定只让 SwiftUI 形状变形），不抢键盘；接口 `show(_:detail:tone:symbol:leading:)`。
 
 ## 9. 钉图（`Screenshot/PinPanel.swift`）
 - `PinPanel`：`.borderless + .nonactivatingPanel`、`.floating`、`canBecomeKey`；显示只 `orderFrontRegardless`，**不 makeKey**（出现时不抢键盘，修旧版 §11 #48）；用户点了它才 makeKey，Esc / ⌘C 才归它。

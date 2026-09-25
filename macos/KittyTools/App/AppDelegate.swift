@@ -38,7 +38,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private let serviceStore = TranslateServiceStore()
   private lazy var coordinator = TranslateCoordinator(services: serviceStore, history: historyStore)
   private let speaker = Speaker()
-  private let toast = Toast()
+  /// 刘海岛（全局轻提示）
+  private let island = Island()
   /// 钉图（菜单栏显示「隐藏 / 关闭全部钉图」）
   lazy var pins: PinBoard = {
     let board = PinBoard()
@@ -115,7 +116,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         replaceOriginal: { [unowned self] in replaceOriginal() }))
     created = panel
     panel.keyEquivalentHandler = { [unowned self] in coordinator.handleKeyEquivalent($0) }
-    coordinator.hidePanel = { [unowned panel] in panel.hide() }
+    coordinator.hidePanel = { [unowned panel] in panel.dismiss() }
     panel.onHide = { [unowned self, unowned panel] in
       // 收起即作废进行中的请求（省额度）；把 key 还给之前处于 key 的浮层（剪贴板面板 / 启动器）。
       // 已有别的窗口成了 key（因失焦而收起）就不抢
@@ -275,11 +276,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let text = TranslateCoordinator.rewrap(result, like: source.text)
     guard NSWorkspace.shared.frontmostApplication?.processIdentifier == source.pid else {
       Paster.write(string: text)
-      return toast.show("已复制译文：前台已不是取词的 App，没有替换", symbol: "doc.on.doc")
+      return island.show(
+        "已复制译文", detail: "前台已不是取词的 App，没有替换", tone: .info, symbol: "doc.on.doc")
     }
     guard Permissions.isAccessibilityTrusted else {
       Paster.write(string: text)
-      toast.show("已复制译文。授权辅助功能后才能直接替换", symbol: "exclamationmark.triangle.fill")
+      island.show("已复制译文", detail: "授权辅助功能后才能直接替换", tone: .warning)
       return Permissions.requestAccessibility()
     }
     translatePanel.hide()
@@ -294,11 +296,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if let replaceTask {
       replaceTask.cancel()
       self.replaceTask = nil
-      return toast.show("已取消划词翻译并替换", symbol: "xmark.circle.fill")
+      return island.show("已取消划词翻译并替换", tone: .info, symbol: "xmark.circle.fill")
     }
     guard !isReadingSelection, !isCapturing else { return }
     guard Permissions.isAccessibilityTrusted else {
-      toast.show("划词翻译并替换需要「辅助功能」授权", symbol: "exclamationmark.triangle.fill")
+      island.show("需要「辅助功能」授权", detail: "划词翻译并替换要用", tone: .warning)
       return Permissions.requestAccessibility()
     }
     let sourceApp = NSWorkspace.shared.frontmostApplication?.processIdentifier
@@ -320,8 +322,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
       let text = await SelectionReader.read(pausing: watcher)
       isReadingSelection = false  // 取完词就放开，等网络时不挡别的热键
-      guard let text else { return toast.show("没有选中文字", symbol: "exclamationmark.triangle.fill") }
-      toast.show("翻译中…（再按一次取消）", symbol: "character.bubble")
+      guard let text else { return island.show("没有选中文字", tone: .warning) }
+      island.show("翻译中…", detail: "再按一次快捷键取消", tone: .progress, symbol: "character.bubble.fill")
       do {
         let result = TranslateCoordinator.rewrap(
           try await coordinator.translateOnce(text), like: text)
@@ -329,12 +331,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Paster.write(string: result)
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == sourceApp,
           NSApp.keyWindow == nil
-        else { return toast.show("已复制译文：前台已不是取词的 App，没有替换", symbol: "doc.on.doc") }
+        else {
+          return island.show(
+            "已复制译文", detail: "前台已不是取词的 App，没有替换", tone: .info, symbol: "doc.on.doc")
+        }
         _ = Paster.pasteToFrontmost()
-        toast.show("已替换为译文")
+        island.show("已替换为译文", detail: String(result.prefix(24)))
       } catch {
         guard !Task.isCancelled else { return }
-        toast.show("翻译失败：\(error.localizedDescription)", symbol: "exclamationmark.triangle.fill")
+        island.show("翻译失败", detail: error.localizedDescription, tone: .error)
       }
     }
   }
@@ -379,7 +384,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       case .color(let hex):
         Paster.write(string: hex)
         recordInHistory(hex)
-        toast.show("已复制 \(hex)")
+        island.show(
+          "已复制色值", detail: hex, leading: Self.color(hex).map(Island.Leading.color) ?? .tone)
       case .scroll(let region):
         UserDefaults.standard.set(NSStringFromRect(region), forKey: Prefs.screenshotLastRegion)
         await scrollCapture(region)
@@ -485,20 +491,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var text = codes.joined(separator: "\n")
     if text.isEmpty {
       guard let recognized = await OCR.recognizeText(in: image) else {
-        return toast.show("文字识别失败，请重试", symbol: "exclamationmark.triangle.fill")
+        return island.show("文字识别失败", detail: "请重试", tone: .error)
       }
       text =
         UserDefaults.standard.bool(forKey: Prefs.ocrJoinLines)
         ? OCR.joiningLines(recognized) : recognized
     }
     guard !text.isEmpty else {
-      return toast.show("没有识别到文字", symbol: "exclamationmark.triangle.fill")
+      return island.show("没有识别到文字", tone: .warning)
     }
     Paster.write(string: text)
     recordInHistory(text)
     let preview = text.prefix { $0 != "\n" }.prefix(24)
-    toast.show(
-      (codes.isEmpty ? "已复制：" : "已复制二维码：") + preview + (preview.count < text.count ? "…" : ""))
+    island.show(
+      codes.isEmpty ? "已复制" : "已复制二维码",
+      detail: preview + (preview.count < text.count ? "…" : ""),
+      symbol: codes.isEmpty ? nil : "qrcode")
   }
 
   /// 截图复制：PNG 写进剪贴板（经 Paster，watcher 会跳过），所以自己记进剪贴板历史
@@ -527,12 +535,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         try await ScreenshotOutput.saveAs(png)
       } else {
         let url = try ScreenshotOutput.quickSave(png)
-        toast.show("已保存到「\(url.deletingLastPathComponent().lastPathComponent)」")
+        island.show(
+          "已保存", detail: url.deletingLastPathComponent().lastPathComponent, symbol: "folder.fill")
       }
     } catch {
       await copyPNG(png)
       showScreenshotNotice("保存失败（\(error.localizedDescription)），截图已复制到剪贴板")
     }
+  }
+
+  /// "#RRGGBB" → 色块（取色的轻提示用）
+  private static func color(_ hex: String) -> NSColor? {
+    guard hex.count == 7, let value = Int(hex.dropFirst(), radix: 16) else { return nil }
+    return NSColor(
+      srgbRed: CGFloat(value >> 16 & 0xFF) / 255, green: CGFloat(value >> 8 & 0xFF) / 255,
+      blue: CGFloat(value & 0xFF) / 255, alpha: 1)
   }
 
   private func showScreenshotNotice(_ text: String, _ permission: Permissions.Kind? = nil) {

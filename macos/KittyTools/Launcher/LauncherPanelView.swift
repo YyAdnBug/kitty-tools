@@ -143,7 +143,7 @@ private struct LauncherRow: View {
           .truncationMode(.middle)
       }
       Spacer(minLength: 6)
-      if let shortcutIndex { KeyCap("⌘\(shortcutIndex + 1)", inverted: isSelected) }
+      if let shortcutIndex { KeyCap("⌘\(shortcutIndex + 1)") }
     }
     .foregroundStyle(isSelected ? .white : .primary)
     .padding(.horizontal, 10)

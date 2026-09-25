@@ -54,7 +54,7 @@ struct ClipRowView: View {
           .foregroundStyle(isSelected ? .white : .yellow)
       }
       if isChecked == nil, let shortcutIndex {
-        KeyCap("⌘\(shortcutIndex + 1)", inverted: isSelected)
+        KeyCap("⌘\(shortcutIndex + 1)")
       }
     }
     .foregroundStyle(isSelected ? .white : .primary)
@@ -108,28 +108,6 @@ private struct IconTile: View {
 }
 
 /// 键帽样式的快捷键提示
-struct KeyCap: View {
-  let text: String
-  var inverted = false
-
-  init(_ text: String, inverted: Bool = false) {
-    self.text = text
-    self.inverted = inverted
-  }
-
-  var body: some View {
-    Text(text)
-      .font(.system(size: 10, weight: .medium, design: .rounded))
-      .monospacedDigit()
-      .padding(.horizontal, 5)
-      .padding(.vertical, 1)
-      .foregroundStyle(inverted ? AnyShapeStyle(.white.opacity(0.9)) : AnyShapeStyle(.secondary))
-      .background(
-        RoundedRectangle(cornerRadius: 4)
-          .fill(inverted ? .white.opacity(0.15) : .primary.opacity(0.06)))
-  }
-}
-
 extension ClipItem.Kind {
   var symbol: String {
     switch self {

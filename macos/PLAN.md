@@ -233,7 +233,7 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 | 目录 | 文件 |
 |---|---|
 | `App/` | `KittyToolsApp.swift`（@main 和 MenuBarExtra）、`AppDelegate.swift`（单实例检查、组装对象、生命周期、退出和锁屏清理） |
-| `Shell/` | `OverlayPanel.swift`、`HotKeyCenter.swift`、`HotKeyRecorder.swift`、`Permissions.swift`、`Paster.swift`、`SettingsWindow.swift`、`Toast.swift`（轻提示，M10） |
+| `Shell/` | `OverlayPanel.swift`、`HotKeyCenter.swift`、`HotKeyRecorder.swift`、`Permissions.swift`、`Paster.swift`、`SettingsWindow.swift`、`Style.swift`（Whisker 刻度：圆角、七条弹簧曲线、中性色 / 家族色、种类色块、键帽、面板描边）、`Island.swift`（刘海岛：全局轻提示，替换原来的 Toast） |
 | `Storage/` | `Database.swift`、`Keychain.swift`、`Prefs.swift`、`LegacyImport.swift` |
 | `Clipboard/` | `ClipboardWatcher.swift`、`ClipboardStore.swift`、`ClipItem.swift`、`ClipboardFilter.swift`、`ContentForm.swift`、`Search.swift`、`ImageStore.swift`、`OCR.swift`、`ClipboardPanelView.swift`、`ClipRowView.swift`、`PreviewView.swift`、`Dialogs.swift` |
 | `Translate/` | `TranslateCoordinator.swift`、`LanguageResolver.swift`、`SelectionReader.swift`、`SSE.swift`、`Providers/`（`Zhipu`、`AIService`、`Baidu`、`Youdao`、`Google`、`DeepL`、`Microsoft`、`Volcengine`、`Tencent` 各一个 `.swift`）、`TranslatePanelView.swift`、`ProviderCardView.swift`、`HistoryStore.swift`、`HistoryView.swift` |
@@ -778,7 +778,7 @@ echo "$DMG"
   - 交互：悬停高亮窗口，单击截该窗口（没有窗口截整屏）；拖动框选（按住空格整块平移）；确认后 8 手柄、拖动平移、方向键 1 点 / ⇧ 10 点，选区外单击不动（免得误点丢选区）、拖出新选区，右键回到待选、Esc 取消；尺寸标签显示像素。放大镜 15×15 像素、取样转 sRGB 显示 #RRGGBB，C 复制色值（同时记进剪贴板历史）。D 选中上次区域（按相交面积最大的屏放，外接屏拔掉时提示音）。
   - 输出：↩ / ⌘C / 双击选区 = 复制（PNG 带 DPI，经 `Paster.write`，自己记进剪贴板历史）；⌘S 快速保存到上次「另存为」的目录（旧版的 `screenshot_save_prefs.json` 可导入，没有时用系统截屏位置，再没有是桌面），文件名「截图 yyyy-MM-dd HH.mm.ss.png」、重名追加序号；⇧⌘S 另存为（遮罩已收起，激活本 App 弹 NSSavePanel，存完还前台）；T 钉图。裁出的图都拷成独立的图，不拖住整屏冻结帧。
   - **标注（M10）**：1–4 切矩形 / 箭头 / 文字 / 马赛克（再按一次收起，回到拖动平移选区），⇧ 画正方形 / 45° 箭头；6 种固定 sRGB 颜色 × 3 档粗细，默认红色中号（旧版用户全是红色 4 点矩形）。点中标注（矩形只认边线）可拖动、⌫ 删除、方向键挪、改样式（作用于选中项，§11 #47），双击文字重新编辑；⌘Z / ⇧⌘Z 撤销重做（数组快照栈）。标注存整屏视图坐标，调整选区不丢（§11 #43）；显示（标注层只重画变了的那块）和导出（`Annotation.render`）共用一个 draw。文字用叠在上面的 NSTextView 输入（输入法正常；Esc、点外面收下，↩ 换行）；马赛克从冻结帧缩小再不插值放大。
-  - **识字（M10）**：⌥O 框选后静默复制（二维码 / 条码优先，`DetectBarcodesRequest`）；设置 › 截图可开「把换行合成一段」（整段合成一行：中日文直接连、其它加空格、行尾连字符接回；Vision 不分段落，要保留段落得按行框间距切，未做）；截图工具栏也有识字、翻译按钮，识别的是打码后的合成图（§11 #44）。结果记进剪贴板历史，用轻提示 `Toast`（不抢键盘的 OverlayPanel）反馈；⌘S 快速保存、复制色值也有轻提示。
+  - **识字（M10）**：⌥O 框选后静默复制（二维码 / 条码优先，`DetectBarcodesRequest`）；设置 › 截图可开「把换行合成一段」（整段合成一行：中日文直接连、其它加空格、行尾连字符接回；Vision 不分段落，要保留段落得按行框间距切，未做）；截图工具栏也有识字、翻译按钮，识别的是打码后的合成图（§11 #44）。结果记进剪贴板历史，用轻提示（2026-09-25 起是刘海岛 `Island`）反馈；⌘S 快速保存、复制色值也有轻提示。
   - 钉图 `PinPanel`：原位置出现、不激活本 App 也不抢键盘；拖动移动，滚轮 / 捏合以鼠标为锚点缩放（24 点到 5 倍），双击或 Esc（先点一下）关闭，⌘C / ⌘S / ⌘W / ⌘0，右键菜单含透明度；菜单栏有钉图时显示「隐藏 / 显示全部钉图」「关闭全部钉图」。
 
 ---

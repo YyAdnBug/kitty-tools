@@ -100,12 +100,38 @@ struct SnapshotProbeTests {
     try snapshot(
       ScreenshotTab(), size: NSSize(width: 520, height: 420), dark: false,
       to: "\(out)/settings-screenshot.png")
-    let toast = Toast()
-    toast.message = "已复制：https://example.com/kitty-tools"
-    for dark in [false, true] {
+    // 刘海岛：刘海屏的下巴（成功 / 进行中）、无刘海屏的胶囊（取色色块 / 错误）
+    let notch = Island.Geometry.notch(width: 200, height: 32)
+    let islands: [(String, Island.Content, Island.Geometry)] = [
+      (
+        "island-copied",
+        .init(
+          title: "已复制", detail: "https://example.com/kitty-tools", tone: .success,
+          symbol: "checkmark.circle.fill", leading: .tone), notch
+      ),
+      (
+        "island-progress",
+        .init(
+          title: "翻译中…", detail: "再按一次快捷键取消", tone: .progress,
+          symbol: "character.bubble.fill", leading: .tone), notch
+      ),
+      (
+        "island-color",
+        .init(
+          title: "已复制色值", detail: "#3478F6", tone: .success, symbol: "checkmark.circle.fill",
+          leading: .color(.systemBlue)), .capsule(menuBar: 24)
+      ),
+      (
+        "island-error",
+        .init(
+          title: "翻译失败", detail: "网络超时，请重试", tone: .error,
+          symbol: "exclamationmark.circle.fill", leading: .tone), .capsule(menuBar: 24)
+      ),
+    ]
+    for (name, content, geometry) in islands {
       try snapshot(
-        ToastView(toast: toast), size: NSSize(width: 330, height: 44), dark: dark,
-        to: "\(out)/toast\(dark ? "-dark" : "").png")
+        IslandView(island: Island(showing: content, geometry: geometry)),
+        size: geometry.windowSize, dark: false, to: "\(out)/\(name).png")
     }
   }
 
