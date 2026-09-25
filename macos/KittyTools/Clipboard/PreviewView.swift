@@ -3,6 +3,7 @@
 // 主体按类型出大预览：颜色 = 满宽色块 + HEX / RGB / HSL / SwiftUI 四行点击复制；代码 / JSON = SF Mono + 语法着色；
 // 链接 = 头图 + 标题 + 网站名（LinkPreview 联网取）；图片 = 棋盘格 + 尺寸胶囊 + 识别文字；文件 = Quick Look 缩略图网格；文本高亮搜索词。
 // 页脚最多 4 个无边框胶囊按钮，其余操作在 ⌘K 面板。换条目时内容淡入上浮、页眉颜色渐变过去。
+// ⌘Y 放大预览（QuickLookView）用同一张卡的 enlarged 版：大图不带识别文字、文件用 Quick Look 预览、字号放大。
 
 import AppKit
 import QuickLookThumbnailing
@@ -11,6 +12,8 @@ import SwiftUI
 struct PreviewView: View {
   let item: ClipItem
   @Bindable var model: ClipboardPanelModel
+  /// ⌘Y 放大预览
+  var enlarged = false
   @Environment(\.colorScheme) private var scheme
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -105,22 +108,25 @@ struct PreviewView: View {
     switch item.kind {
     case .text:
       if form == .color, let color = ContentForm.color(in: item.text ?? "") {
-        ColorCard(color: color)
+        ColorCard(color: color, enlarged: enlarged)
       } else if form == .link, let url = ContentForm.firstLink(in: item.text ?? ""),
         (item.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).count < 2048
       {
-        LinkCard(url: url, text: item.text ?? "")
+        LinkCard(url: url, text: item.text ?? "", heroHeight: enlarged ? 300 : 132)
       } else {
         ReadOnlyTextView(
           text: displayText, style: form == .json ? .json : form == .code ? .code : .plain,
-          highlights: highlightTokens)
+          highlights: highlightTokens, fontScale: enlarged ? 1.2 : 1)
       }
     case .image:
       VStack(alignment: .leading, spacing: 8) {
         ZStack(alignment: .topTrailing) {
           Checkerboard()
-          ThumbnailView(id: item.id, images: model.store.images, maxPixel: 1024, contentMode: .fit)
-            .padding(8)
+          ThumbnailView(
+            id: item.id, images: model.store.images, maxPixel: enlarged ? 2400 : 1024,
+            contentMode: .fit
+          )
+          .padding(8)
           if let image = item.image {
             Text(
               "\(image.width)×\(image.height) · \(image.byteCount.formatted(.byteCount(style: .file)))"
@@ -133,15 +139,19 @@ struct PreviewView: View {
           }
         }
         .clipShape(.rect(cornerRadius: 8, style: .continuous))
-        .frame(maxHeight: 220)
-        if let ocr = item.ocrText, !ocr.isEmpty {
+        .frame(maxHeight: enlarged ? .infinity : 220)
+        if !enlarged, let ocr = item.ocrText, !ocr.isEmpty {
           Text("识别到的文字").font(.system(size: 11, weight: .semibold)).foregroundStyle(.tertiary)
           ScrollView { Text(ocr).font(.system(size: 12)).textSelection(.enabled) }
         }
       }
       .padding(10)
     case .file:
-      FileGrid(paths: item.filePaths ?? [])
+      if enlarged, let first = item.filePaths?.first {
+        QuickLookFile(url: URL(filePath: first))
+      } else {
+        FileGrid(paths: item.filePaths ?? [])
+      }
     }
   }
 
@@ -226,6 +236,7 @@ struct PressScale: ButtonStyle {
 /// 颜色：满宽色块（中央写 HEX，按亮度选黑白字）+ HEX / RGB / HSL / SwiftUI 四行，点一下复制
 struct ColorCard: View {
   let color: ContentForm.RGBA
+  var enlarged = false
   @State private var copied: Int?
 
   var body: some View {
@@ -244,7 +255,7 @@ struct ColorCard: View {
             .foregroundStyle(Self.isLight(color) ? .black.opacity(0.8) : .white)
         }
         // 高度自适应：卡片矮时色块让出空间给四行色值
-        .frame(minHeight: 72, maxHeight: 150)
+        .frame(minHeight: 72, maxHeight: enlarged ? .infinity : 150)
       ForEach(Array(values.enumerated()), id: \.offset) { index, value in
         Button {
           Paster.write(string: value)
@@ -312,6 +323,7 @@ struct ColorCard: View {
 private struct LinkCard: View {
   let url: URL
   let text: String
+  let heroHeight: CGFloat
   @AppStorage(Prefs.clipboardLinkPreview) private var fetches = true
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -320,7 +332,7 @@ private struct LinkCard: View {
     let host = url.host() ?? url.absoluteString
     VStack(alignment: .leading, spacing: 8) {
       LinkHero(entry: entry)
-        .frame(height: 132)
+        .frame(height: heroHeight)
         .clipShape(.rect(cornerRadius: 8, style: .continuous))
         .overlay(
           RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(
@@ -549,6 +561,7 @@ private struct ReadOnlyTextView: NSViewRepresentable {
   let text: String
   let style: SyntaxHighlight.Language
   let highlights: [String]
+  var fontScale: CGFloat = 1
 
   func makeNSView(context: Context) -> NSScrollView {
     let scroll = NSTextView.scrollableTextView()
@@ -565,7 +578,8 @@ private struct ReadOnlyTextView: NSViewRepresentable {
     guard let textView = scroll.documentView as? NSTextView else { return }
     let font: NSFont =
       style == .plain
-      ? .systemFont(ofSize: 13) : .monospacedSystemFont(ofSize: 12, weight: .regular)
+      ? .systemFont(ofSize: 13 * fontScale)
+      : .monospacedSystemFont(ofSize: 12 * fontScale, weight: .regular)
     let attributed = NSMutableAttributedString(
       attributedString: SyntaxHighlight.attributed(text, language: style, font: font))
     let paragraph = NSMutableParagraphStyle()

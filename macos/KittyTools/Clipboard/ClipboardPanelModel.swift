@@ -2,7 +2,8 @@
 // 焦点始终在搜索框：方向键 / 回车 / Esc 从搜索框的 doCommandBy 进来，⌘ 组合键从面板的
 // performKeyEquivalent 进来（handleKeyEquivalent）。交互按 macOS 习惯重新设计，不沿用旧版：
 // 单击选中、双击或 ↩ 粘贴、⌥↩ 纯文本、⌘↩ 仅复制、⌘1–9 直接粘贴第 N 条、删除不确认可撤销；
-// ⌘K 打开操作面板（全部操作都在里面，搜索框这时用来过滤操作，↑↓ ↩ 选择执行，Esc 关掉）。
+// ⌘K 打开操作面板（全部操作都在里面，搜索框这时用来过滤操作，↑↓ ↩ 选择执行，Esc 关掉）；
+// ⌘Y 放大预览（QuickLookView，单独的浮层，不抢键盘：↑↓ 照样在这里换条目）。
 
 import AppKit
 import Carbon.HIToolbox
@@ -44,6 +45,11 @@ import Observation
   @ObservationIgnored var hidePanel: () -> Void = {}
   @ObservationIgnored var openTranslate: (String) -> Void = { _ in }
   @ObservationIgnored var openSettings: () -> Void = {}
+  @ObservationIgnored var openQuickLook: () -> Void = {}
+  /// animated = false：面板收起、粘贴时直接消失
+  @ObservationIgnored var closeQuickLook: (_ animated: Bool) -> Void = { _ in }
+  /// 检查器卡片在面板里的位置（窗口坐标，原点左上）：放大预览从这里长出来、缩回这里
+  @ObservationIgnored var cardFrame: CGRect?
 
   var query = "" { didSet { restartBrowsing() } }
   var scope = Scope.all { didSet { restartBrowsing() } }
@@ -64,13 +70,16 @@ import Observation
   var sourceBundleID: String? { didSet { restartBrowsing() } }
   var groupFilter = GroupFilter.all { didSet { restartBrowsing() } }
   var multiSelection: Set<UUID> = []
-  var dialog: Dialog?
+  var dialog: Dialog? { didSet { if dialog != nil { endQuickLook() } } }
+  /// ⌘Y 放大预览开着
+  private(set) var isQuickLooking = false
   var toast: Toast?
   /// ⌘K 操作面板开着：搜索框改成过滤操作
   var showsActions = false {
     didSet {
       actionQuery = ""
       actionSelection = 0
+      if showsActions { endQuickLook() }  // 操作面板在剪贴板面板里，被预览挡着
     }
   }
   var actionQuery = "" { didSet { actionSelection = 0 } }
@@ -153,7 +162,9 @@ import Observation
   func handleCommand(_ selector: Selector) -> Bool {
     switch selector {
     case #selector(NSResponder.cancelOperation(_:)):
-      if showsActions {
+      if isQuickLooking {
+        toggleQuickLook()
+      } else if showsActions {
         showsActions = false
       } else if dialog != nil {
         dialog = nil
@@ -187,6 +198,10 @@ import Observation
     guard dialog == nil, modifiers == .command else { return false }
     if Int(event.keyCode) == kVK_ANSI_K {
       if showsActions || selectedItem != nil { showsActions.toggle() }
+      return true
+    }
+    if Int(event.keyCode) == kVK_ANSI_Y {
+      toggleQuickLook()
       return true
     }
     if showsActions { showsActions = false }
@@ -236,6 +251,31 @@ import Observation
       multiSelection = []
     }
     select(items[next])
+  }
+
+  // MARK: 放大预览
+
+  /// ⌘Y：打开 / 缩回放大预览（没有选中条目时只有提示音）
+  func toggleQuickLook() {
+    if isQuickLooking {
+      isQuickLooking = false
+      closeQuickLook(true)
+    } else if selectedItem != nil {
+      showsActions = false
+      isQuickLooking = true
+      openQuickLook()
+    } else {
+      NSSound.beep()
+    }
+  }
+
+  /// 预览浮层自己收起了（点了外面）：只同步状态
+  func quickLookDidHide() { isQuickLooking = false }
+
+  private func endQuickLook() {
+    guard isQuickLooking else { return }
+    isQuickLooking = false
+    closeQuickLook(false)
   }
 
   // MARK: 鼠标
@@ -462,6 +502,12 @@ import Observation
           dialog = .note(item.id)
         })
     }
+    if !many {
+      actions.append(
+        Action(title: "放大预览", symbol: "eye", shortcut: "⌘Y") { [unowned self] in
+          toggleQuickLook()
+        })
+    }
     if !many, item.kind == .file {
       actions.append(
         Action(title: "在访达中显示", symbol: "folder", shortcut: "") {
@@ -514,6 +560,7 @@ import Observation
 
   /// 每次隐藏都复位：搜索、筛选、多选、选中项回到第一条；没撤销的删除落库
   func reset() {
+    endQuickLook()
     toastTask?.cancel()
     store.commitDeletion()
     query = ""

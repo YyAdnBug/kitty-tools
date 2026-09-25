@@ -36,6 +36,13 @@ struct ClipboardPanelView: View {
         if showPreview, let selected {
           Style.hairline.frame(width: 0.5)
           PreviewView(item: selected, model: model)
+            // 卡片（去掉内缩 6）的位置：⌘Y 放大预览从这里长出来
+            .onGeometryChange(for: CGRect.self) {
+              $0.frame(in: .global).insetBy(dx: 6, dy: 6)
+            } action: {
+              model.cardFrame = $0
+            }
+            .onDisappear { model.cardFrame = nil }
         }
       }
       bottomBar(count: items.count)

@@ -98,6 +98,18 @@ struct SnapshotProbeTests {
           to: "\(out)/\(name)\(dark ? "-dark" : "").png")
       }
     }
+    // ⌘Y 放大预览：代码（放大的字）、链接（大头图），按各自的理想尺寸
+    for (name, prefix) in [("quicklook-code", "import"), ("quicklook-link", "https://developer")] {
+      model.reset()
+      let item = try #require(model.visibleItems.first { $0.text?.hasPrefix(prefix) == true })
+      model.select(item)
+      let size = QuickLookView.idealSize(for: item, form: model.contentForm(of: item))
+      for dark in [false, true] {
+        try snapshot(
+          QuickLookView(model: model) { _ in }, size: size, dark: dark,
+          to: "\(out)/\(name)\(dark ? "-dark" : "").png")
+      }
+    }
     try renderTranslate(out)
     try snapshot(
       ClipboardTab(store: store), size: NSSize(width: 520, height: 760), dark: false,

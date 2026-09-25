@@ -90,6 +90,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       translatePanel.present()
     }
     model.openSettings = { [unowned self] in showSettings() }
+    model.openQuickLook = { [unowned self] in showQuickLook() }
+    model.closeQuickLook = { [unowned self] animated in
+      if animated { quickLookPanel.unzoom(to: cardScreenFrame) } else { quickLookPanel.hide() }
+    }
+    return panel
+  }()
+
+  /// ⌘Y 放大预览：剪贴板选中条目的大卡片。不抢键盘（点它里面的文字才当 key），点外面就关
+  private lazy var quickLookPanel: OverlayPanel = {
+    weak var created: OverlayPanel?
+    let panel = OverlayPanel(
+      size: NSSize(width: 820, height: 640), autoHide: .clickOutside, isPinned: { false },
+      content: QuickLookView(model: clipboardModel) { [unowned self] size in
+        // 连按方向键时直接换尺寸（先瞬时，再动画）
+        created?.move(
+          to: quickLookFrame(size), animated: NSApp.currentEvent?.isARepeat != true)
+      })
+    created = panel
+    panel.becomesKeyOnlyIfNeeded = true
+    panel.keyEquivalentHandler = { [unowned self] in clipboardModel.handleKeyEquivalent($0) }
+    panel.onHide = { [unowned self] in
+      clipboardModel.quickLookDidHide()
+      if NSApp.keyWindow == nil, clipboardPanel.isVisible { clipboardPanel.makeKey() }
+    }
     return panel
   }()
 
@@ -128,6 +152,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     return panel
   }()
+
+  private func showQuickLook() {
+    guard let item = clipboardModel.selectedItem else { return }
+    let size = QuickLookView.idealSize(for: item, form: clipboardModel.contentForm(of: item))
+    quickLookPanel.zoom(from: cardScreenFrame ?? clipboardPanel.frame, to: quickLookFrame(size))
+  }
+
+  /// 检查器卡片的屏幕坐标（没显示检查器、剪贴板面板不在时为 nil）
+  private var cardScreenFrame: NSRect? {
+    guard clipboardPanel.isVisible, let card = clipboardModel.cardFrame else { return nil }
+    let window = clipboardPanel.frame
+    return NSRect(
+      x: window.minX + card.minX, y: window.maxY - card.maxY, width: card.width,
+      height: card.height)
+  }
+
+  /// 放大预览的位置：以剪贴板面板为中心，最大到屏幕可见区的 90%，再整个挪进可见区
+  private func quickLookFrame(_ size: NSSize) -> NSRect {
+    let visible = (clipboardPanel.screen ?? NSScreen.main)?.visibleFrame ?? .zero
+    let width = min(size.width, visible.width * 0.9)
+    let height = min(size.height, visible.height * 0.9)
+    let center = CGPoint(x: clipboardPanel.frame.midX, y: clipboardPanel.frame.midY)
+    return NSRect(
+      x: min(max(center.x - width / 2, visible.minX), visible.maxX - width),
+      y: min(max(center.y - height / 2, visible.minY), visible.maxY - height), width: width,
+      height: height)
+  }
 
   private lazy var settingsWindow = SettingsWindow(tabs: [
     (

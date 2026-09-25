@@ -100,6 +100,7 @@ xcuserdata/
 | `NSPasteboard`（`changeCount`、`accessBehavior`） | 10.0 / 15.4 | 剪贴板采集、剪贴板隐私状态 |
 | ImageIO + UniformTypeIdentifiers | 10.x / 11 | PNG 编码、读取尺寸、按需生成缩略图 |
 | QuickLookThumbnailing `QLThumbnailGenerator` | 10.15 | 剪贴板检查器里文件的真实缩略图（PDF 首页、图片、视频帧） |
+| QuickLookUI `QLPreviewView` | 10.6 | 剪贴板 ⌘Y 放大预览里的文件（嵌在自己的浮层里；不用 `QLPreviewPanel`，见 D3） |
 | Vision `RecognizeTextRequest` | 15.0 | 剪贴板图片 OCR、截图翻译识字 |
 | ScreenCaptureKit `SCShareableContent` + `SCScreenshotManager` | 14.0 | 截图翻译的冻结帧（逐屏截图）；长截图用 `SCStreamConfiguration.sourceRect`（12.3+）反复截选区 |
 | NaturalLanguage `NLLanguageRecognizer` | 10.14 | 语种检测（替代 Lingua，能识别繁体） |
@@ -795,11 +796,11 @@ echo "$DMG"
 | A 基础与招牌时刻 | A1 `Shell/Style.swift`（圆角、七条曲线、描边、减弱动态效果）；A2 `OverlayPanel` 进出与高度动画 + 无边框 16 pt（先验证 key / 输入法 / Esc / 点外关闭 / 粘贴 / 固定 / 拖宽）；A3 启动器与剪贴板共用的滑动选中 + 按住 ⌘ 键帽；A4 刘海岛替换 `Toast`；A5 截图飞入 + 快门声 + 窗口磁吸 + 新手柄；A6 译文显影 + 光标 + 骨架扫光 | 已完成（待手测） |
 | B 界面重做 | 启动器单行 / 色块 / 计算卡 / 底栏；翻译语言胶囊 / 服务色块 / 彗星边框 / 错误卡；截图 HUD 工具栏 / 样式托盘 / 放大镜；剪贴板检查器卡片 / QL 缩略图 / ⌘K 面板；钉图打磨 | 已完成（待手测） |
 | C 品牌 | App 图标、菜单栏角色剪影（等用户素材）、设置页头与控件分工、关于品牌页、DMG 背景 | 待做 |
-| D 深度 | 长截图 HUD 与边框动效、标注渲染升级、链接富预览、⌘Y 放大预览、设置侧栏 + 搜索 + 实时预览 + 引导、菜单栏 `NSStatusItem` 动画、CleanShot 式常驻缩略图、Spotlight 挤压入场实验、macOS 26 玻璃 + `.icon` | 进行中：长截图 HUD 与边框、标注渲染升级、链接富预览已完成（待手测），其余待做 |
+| D 深度 | 长截图 HUD 与边框动效、标注渲染升级、链接富预览、⌘Y 放大预览、设置侧栏 + 搜索 + 实时预览 + 引导、菜单栏 `NSStatusItem` 动画、CleanShot 式常驻缩略图、Spotlight 挤压入场实验、macOS 26 玻璃 + `.icon` | 进行中：长截图 HUD 与边框、标注渲染升级、链接富预览、⌘Y 放大预览已完成（待手测），其余待做 |
 
 **交接（2026-09-25 晚，新会话从这里接着做）**
 - 已推送：A、B 全部；两轮对抗式审查（外壳 / 岛 / 启动器 / 剪贴板 / 翻译一轮，截图 / 钉图一轮）确认的问题已修（`df37395`）；D 的长截图 HUD。单测 101 个全过，lint 无输出。测试包 `macos/build/Kitty Tools Native_0.1.0_arm64.dmg`（不含长截图 HUD 这一步）。
-- D 已做：长截图 HUD、标注渲染升级（阴影 / 锥形箭头 / 圆角 / 圆体字 / ⌘ 十字准线）、链接富预览（实测后没用 LinkPresentation，见 mac-whisker §6；单测 106 个）。剩余顺序建议：⌘Y 放大预览（Quick Look）→ 设置（`NavigationSplitView` 侧栏 + 搜索 + 页头家族色块 + 控件分工 + 权限状态动效 + 关于品牌页 + 首次引导，C 阶段的设置部分一起做）→ 菜单栏 `NSStatusItem` 符号动效 → CleanShot 式常驻缩略图 → Spotlight 挤压入场实验 → macOS 26 玻璃 + `.icon`（等测试机）。
+- D 已做：长截图 HUD、标注渲染升级（阴影 / 锥形箭头 / 圆角 / 圆体字 / ⌘ 十字准线）、链接富预览（实测后没用 LinkPresentation，见 mac-whisker §6）、⌘Y 放大预览（`QLPreviewPanel` 不是 nonactivating，改嵌 `QLPreviewView`；单测 106 个）。剩余顺序建议：设置（`NavigationSplitView` 侧栏 + 搜索 + 页头家族色块 + 控件分工 + 权限状态动效 + 关于品牌页 + 首次引导，C 阶段的设置部分一起做）→ 菜单栏 `NSStatusItem` 符号动效 → CleanShot 式常驻缩略图 → Spotlight 挤压入场实验 → macOS 26 玻璃 + `.icon`（等测试机）。
 - C 阶段等用户给素材：App 图标、菜单栏角色剪影（mac-whisker §8 写了需要的尺寸与规格）；DMG 背景可以先做。
 - 验证手段：界面用 `SnapshotProbeTests`（`layer.render(in:)` 画不出 mask 和材质，长截图预览的渐隐只能真机看）；窗口动画 / 真实合成用临时测试 + `SCScreenshotManager` 截窗口，看完删掉测试文件。
 - 每步：构建 → lint → 单测 → 快照自检 → 规则 / PLAN 同步 → 提交（中文、按改动逐条写清）→ 推送；阶段节点打 DMG 给用户手测。
@@ -856,6 +857,13 @@ echo "$DMG"
   3. 快速按 ↓ 扫过一串链接：不会每条都联网（停下来的那条才取）；断网时只显示域名卡，联网后再选中会重取。
   4. `http://192.168.1.1`、`http://localhost:3000`、带 `?token=` 的网址、登录 / 重置密码 / 退订链接：只显示域名卡、不联网（可用「小飞机」之类的抓包工具确认没有请求）。
   5. 设置 › 剪贴板关掉「链接显示网页标题和图片」后只显示域名卡；深色、减弱动态效果（扫光静止）各看一次；`footprint` 看取完预览后没有多出 WebKit 进程。
+- ⌘Y 放大预览手测（Whisker D）：
+  1. 剪贴板面板里选中一张截图按 ⌘Y：大卡片从右边检查器卡片的位置长出来（不是凭空淡入），图按原尺寸显示（太大时缩到屏幕 90%）；再按 ⌘Y 或 Esc 缩回卡片。
+  2. 预览开着时按 ↑↓：剪贴板里的选中照常移动，预览即时换内容、窗口换尺寸（按住方向键连发时不做尺寸动画）；键盘一直在剪贴板面板里（能继续打字搜索）。
+  3. 文件条目（PDF、视频、Keynote 各一个）：预览里是 Quick Look 的内容，PDF 能滚动翻页、视频能播放；本 App 没有被激活（菜单栏左上角还是原 App 的名字）。
+  4. 代码 / JSON / 长文本：字变大，短文本窗口矮、长文本高；点选文字后 ⌘C 能复制，Esc 回到剪贴板面板继续用键盘。
+  5. 预览开着时：点预览里的「粘贴」、双击列表行、⌘K、⌘E、点面板外面，预览都跟着消失，粘贴落到原 App；关掉「显示预览栏」后按 ⌘Y 从整个面板长出来。
+  6. 减弱动态效果：只淡入淡出、不放大；深色下看一次。
 - 长截图手测：
   1. ⌥A 框一段网页正文（别框进侧栏）→ S：遮罩收起、选区有蓝色边框、右边出面板；触控板慢慢往下滚，预览跟着长，尺寸变大；↩ 后剪贴板历史里有这张长图，粘到备忘录里文字清晰、没有重复行或断层。
   2. 快速一甩：面板变橙色「对不上了」；往回滚一点再慢慢滚，恢复拼接，结果里没有缺口。滚到页面底部回弹后，长图末尾没有多出一截空白。

@@ -3,6 +3,7 @@
 // 粘贴时发的 ⌘V、划词时发的 ⌘C 才会落到它身上。
 // 外观是 Whisker 的 Panel 皮肤（mac-whisker §2）：无边框、16 pt 连续圆角（maskImage 裁，系统阴影跟着走）+ 描边；
 // 出现时淡入 + 内容下落 6 pt，用户关掉时系统淡出（窗口逻辑上立刻移走，键盘马上回到原 App），高度可带动画伸缩。
+// ⌘Y 放大预览用 zoom / unzoom：从检查器卡片的位置长出来、缩回去。
 
 import AppKit
 import SwiftUI
@@ -32,6 +33,8 @@ final class OverlayPanel: NSPanel {
   private var lastDismiss: CFTimeInterval = 0
   /// 用户正在拖左右边改宽度：这期间改高度不做动画（动画结束会盖掉拖动设的帧）
   fileprivate var isUserResizing = false
+  /// 每次出现 / 收起加一：缩回动画的收尾发现期间又被打开（或已被别处收起）就什么都不做
+  private var showGeneration = 0
 
   /// - Parameters:
   ///   - minSize: 传了就允许拖左右边改宽度（无边框窗口没有系统的拖边，用两条 ResizeEdge）
@@ -129,6 +132,7 @@ final class OverlayPanel: NSPanel {
   /// 立刻收起（粘贴前、打开设置、程序切换）：没有退场动画，⌘V 发出时面板已经不在
   func hide() {
     guard isVisible else { return }
+    showGeneration += 1
     animationBehavior = .none
     orderOut(nil)
     alphaValue = 1
@@ -139,6 +143,7 @@ final class OverlayPanel: NSPanel {
   /// 用户关掉（Esc、点外面、再按热键、失焦）：系统淡出。窗口逻辑上立刻移走，键盘马上回到原 App
   func dismiss() {
     guard isVisible else { return }
+    showGeneration += 1
     animationBehavior = Style.reduceMotion ? .none : .utilityWindow
     lastDismiss = CACurrentMediaTime()
     orderOut(nil)
@@ -146,6 +151,68 @@ final class OverlayPanel: NSPanel {
     alphaValue = 1
     removeMouseMonitors()
     onHide?()
+  }
+
+  /// ⌘Y 放大预览：从 source（屏幕坐标，检查器卡片）长到 target。不抢键盘、点外关闭；已经开着就直接挪到 target。
+  /// 窗口本身在长（毛玻璃由窗口服务器按真实大小画），不缩放内容图层；减弱动态效果时在 target 淡入
+  func zoom(from source: NSRect, to target: NSRect) {
+    showGeneration += 1
+    let grows = (!isVisible || alphaValue < 1) && !Style.reduceMotion
+    animationBehavior = .none
+    if !isVisible {
+      move(to: grows ? source : target, animated: false)
+      alphaValue = 0
+    }
+    orderFrontRegardless()
+    if mouseMonitors.isEmpty { installMouseMonitors() }
+    NSAnimationContext.runAnimationGroup { context in
+      context.duration = Style.fadeIn
+      context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+      animator().alphaValue = 1
+    }
+    NSAnimationContext.runAnimationGroup { context in
+      // island 曲线（0.42 s）的近似：窗口帧动画只能用贝塞尔
+      context.duration = grows ? 0.36 : 0
+      context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.95, 0.3, 1)
+      animator().setFrame(target, display: true)
+    } completionHandler: {
+      MainActor.assumeIsolated { self.invalidateShadow() }
+    }
+  }
+
+  /// 缩回 source 并淡出（⌘Y / Esc 关掉放大预览）。没有 source（剪贴板面板已经不在）或减弱动态效果时照常淡出
+  func unzoom(to source: NSRect?) {
+    guard isVisible else { return }
+    guard let source, !Style.reduceMotion else { return dismiss() }
+    showGeneration += 1
+    let generation = showGeneration
+    removeMouseMonitors()
+    NSAnimationContext.runAnimationGroup { context in
+      context.duration = 0.24
+      context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+      animator().setFrame(source, display: true)
+      animator().alphaValue = 0
+    } completionHandler: {
+      MainActor.assumeIsolated {
+        guard self.showGeneration == generation else { return }
+        self.orderOut(nil)
+        self.alphaValue = 1
+        self.onHide?()
+      }
+    }
+  }
+
+  /// 换位置和大小（放大预览换了条目）；animated 走 0.24 s（settle 的近似），连按方向键时调用方传 false。
+  /// 不动画也走零时长的 animator，理由同 setContentHeight
+  func move(to target: NSRect, animated: Bool) {
+    guard target != frame else { return }
+    NSAnimationContext.runAnimationGroup { context in
+      context.duration = animated && isVisible && !Style.reduceMotion ? 0.24 : 0
+      context.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.9, 0.3, 1)
+      animator().setFrame(target, display: true)
+    } completionHandler: {
+      MainActor.assumeIsolated { self.invalidateShadow() }
+    }
   }
 
   func toggle() {
