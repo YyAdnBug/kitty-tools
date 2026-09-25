@@ -13,6 +13,8 @@ import Observation
   var query = "" { didSet { search() } }
   private(set) var results: [LauncherItem] = []
   var selection = 0
+  /// 选中高亮这次怎么移动（Whisker §4）：键盘单按 snap，连发和结果刷新不动画，鼠标点选 glide
+  private(set) var selectionMotion = Style.Motion.instant
   /// 执行失败的提示（面板不收起）
   private(set) var error: String?
   /// 按住的修饰键：选中行的副标题换成它对应的替代动作（面板的 onModifierKeysChanged 推过来）
@@ -76,6 +78,7 @@ import Observation
 
   private func search() {
     error = nil
+    selectionMotion = .instant
     selection = 0
     let query = query.trimmingCharacters(in: .whitespaces)
     if query.isEmpty {
@@ -297,6 +300,7 @@ import Observation
     if NSApp.currentEvent?.clickCount == 2 {
       execute(item)
     } else if let index = results.firstIndex(of: item) {
+      selectionMotion = .glide
       selection = index
     }
   }
@@ -381,6 +385,7 @@ import Observation
 
   private func move(by offset: Int) {
     guard !results.isEmpty else { return }
+    selectionMotion = NSApp.currentEvent?.isARepeat == true ? .instant : .snap
     selection = (selection + offset + results.count) % results.count
   }
 

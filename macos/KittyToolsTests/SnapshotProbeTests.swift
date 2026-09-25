@@ -219,10 +219,9 @@ struct SnapshotProbeTests {
       ] {
         model.query = query
         model.alternate = name == "launcher-alternate" ? .control : .none
-        let rows = model.results.isEmpty ? 1 : min(Double(model.results.count), 8.5)
         try snapshot(
           LauncherPanelView(model: model),
-          size: NSSize(width: 680, height: LauncherPanelView.searchHeight + 9 + rows * 44),
+          size: NSSize(width: 720, height: LauncherPanelView.height(for: model)),
           dark: dark,
           to: "\(out)/\(name)\(dark ? "-dark" : "").png")
       }

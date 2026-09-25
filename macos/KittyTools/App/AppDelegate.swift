@@ -58,14 +58,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private lazy var launcherPanel: OverlayPanel = {
     let model = launcherModel
     let panel = OverlayPanel(
-      size: NSSize(width: 680, height: LauncherPanelView.searchHeight), topAnchored: true,
+      size: NSSize(width: 720, height: LauncherPanelView.searchHeight), topAnchored: true,
       autoHide: .clickOutside,
       isPinned: { !UserDefaults.standard.bool(forKey: Prefs.launcherHideOnUnfocus) },
       content: LauncherPanelView(model: model) { [unowned self] in showSettings() })
     panel.keyEquivalentHandler = { [unowned model] in model.handleKeyEquivalent($0) }
     panel.onHide = { [unowned model] in model.didHide() }
     model.hidePanel = { [unowned panel] in panel.hide() }
-    model.resize = { [unowned panel] in panel.setContentHeight($0) }
+    model.resize = { [unowned panel] in panel.setContentHeight($0, animated: true) }
     model.runAction = { [unowned self] in runLauncherAction($0) }
     model.searchClipboard = { [unowned self] in clipboardStore.search($0) }
     model.copyClip = { [unowned self] id in
