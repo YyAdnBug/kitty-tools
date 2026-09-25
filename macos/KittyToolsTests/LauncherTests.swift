@@ -293,6 +293,28 @@ struct LauncherTests {
     #expect(usage.entries.isEmpty && usage.top(10).isEmpty)
   }
 
+  /// 新版 Chrome 登录账号后书签存在 AccountBookmarks，本机的 Bookmarks 是空的：两个都要读（锁住「搜不到书签」）
+  @Test func readsAccountBookmarks() throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    func write(_ file: String, _ urls: [String]) throws {
+      let children = urls.map { "{\"type\": \"url\", \"name\": \"x\", \"url\": \"\($0)\"}" }
+      let json =
+        "{\"roots\": {\"bookmark_bar\": {\"type\": \"folder\", \"children\": [\(children.joined(separator: ","))]}}}"
+      let url = root.appending(path: file)
+      try FileManager.default.createDirectory(
+        at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+      try Data(json.utf8).write(to: url)
+    }
+    try write("Default/Bookmarks", [])
+    try write("Default/AccountBookmarks", ["https://github.com/"])
+    try write("Profile 1/AccountBookmarks", ["https://developer.apple.com/"])
+    try write("System Profile/AccountBookmarks", ["https://ignored.example/"])
+    let urls = Bookmarks.profileFiles(in: root).compactMap { try? Data(contentsOf: $0) }
+      .flatMap(Bookmarks.parse).map(\.url)
+    #expect(urls == ["https://github.com/", "https://developer.apple.com/"])
+  }
+
   @Test func bookmarksAndClipCommand() {
     let json = Data(
       """

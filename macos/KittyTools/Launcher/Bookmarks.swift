@@ -1,5 +1,7 @@
-// 启动器的浏览器书签：只读 Chromium 系（Chrome / Edge / Brave）的 Bookmarks JSON，不需要完全磁盘访问
+// 启动器的浏览器书签：只读 Chromium 系（Chrome / Edge / Brave）的书签 JSON，不需要完全磁盘访问
 // （Safari 书签要，所以不做）。各浏览器 Default / Profile N 目录；同一网址只留一条。
+// 每个目录读两个文件：Bookmarks（本机书签）和 AccountBookmarks（登录 Google 账号后存在账号里的书签，
+// 新版 Chrome 把书签挪到这里后 Bookmarks 可能是空的），格式相同。
 // 缓存到文件修改时间或开关变了才重读（修旧版 30 秒内不看开关，§11 #40）。
 
 import Foundation
@@ -54,10 +56,18 @@ enum Bookmarks {
   }
 
   private static func profileFiles(_ browser: Browser) -> [URL] {
-    let root = URL.applicationSupportDirectory.appending(path: browser.directory)
+    profileFiles(in: URL.applicationSupportDirectory.appending(path: browser.directory))
+  }
+
+  /// 浏览器数据目录下各配置的书签文件（存在的才算）。
+  /// ponytail: Chrome 同时还写了加密版（EncryptedAccountBookmarks2 等），哪天不再写明文就读不到了；
+  /// 解密要钥匙串里的「Chrome Safe Storage」（得用户授权），真到那天再做
+  static func profileFiles(in root: URL) -> [URL] {
     let profiles = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
     return profiles.filter { $0 == "Default" || $0.hasPrefix("Profile ") }.sorted()
-      .map { root.appending(path: "\($0)/Bookmarks") }
+      .flatMap { profile in
+        ["Bookmarks", "AccountBookmarks"].map { root.appending(path: "\(profile)/\($0)") }
+      }
       .filter { FileManager.default.fileExists(atPath: $0.path) }
   }
 
