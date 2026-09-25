@@ -88,6 +88,7 @@ M1 实测结论 + master 旧规则 `macos-overlay-panel.mdc` 删减。代码：`
 - 冻结帧只管框选：截图框选里按 S 后遮罩收起（`session.finish`），在**实时画面**上截；这是「先截后选」的唯一例外，不要把它扩散到截图 / 截图翻译的框选。
 - 冻结帧排除自家窗口：状态栏层级（25）里只留菜单栏图标本身（`NSStatusBarWindow`），同层的刘海岛、飞行卡片、长截图边框按窗口号排除（`ScreenCapture.freeze`）。
 - 截选区只用 `SCScreenshotManager.captureImage(contentFilter:configuration:)`（14.0）+ `SCStreamConfiguration.sourceRect`（屏内、点、原点左上）；不用 15.2 的 `captureImage(in:)`，不用已废弃的 `CGWindowListCreateImage`。filter 用 `excludingApplications: [本 App]`：之后才建的边框、面板、轻提示都自动滤掉，不靠 `sharingType`。
+- Whisker 外观：面板 `ScrollCaptureHUD` 永远深色（`.hudWindow` + vibrantDark，216 宽、圆角 16），高度读数是嵌进去的 SwiftUI（numericText）；预览上下渐隐用 `CAGradientLayer` 蒙版（布局和每次更新预览都要同步尺寸），纸带滑动走 `sublayerTransform`。边框 `ScrollBorderView` 窗口每边外扩 14 pt 给外发光，线画在选区外 1 pt；蚂蚁线 / 呼吸只动 `lineDashPhase` / `shadowOpacity`，减弱动态效果时静止。
 - 选区外的边框 `ignoresMouseEvents`，滚轮直接落到下面的窗口；层级 `.statusBar`（更低的无边框窗口贴屏顶时会被 AppKit 挪到菜单栏下面）。面板 `ScrollCapturePanel` 不激活本 App、出现时 makeKey 收 Esc / ↩ / 空格；用户点了目标 App 后就不是 key，鼠标移回面板（`.activeAlways` 追踪区的 mouseEntered）再 makeKey，按钮 `acceptsFirstMouse` 一直能点；**不要**为了抢回键盘去激活本 App。面板里的文字标签不可选中（可选中的一点就被字段编辑器抢走第一响应者）。
 - 框选会话交回 `Outcome.scroll(选区)`，不裁图：`cropping` 的结果会拖住整屏冻结帧直到长截图结束。
 - 拼接只用逐行哈希投票（`ScrollStitcher`，最高票 ≥ 第二名 2 倍才接，宁可报「对不上」也不误接）；**不要换成 Vision 平移配准**：实测有吸顶栏时大半算错、置信度恒为 1。页脚高度宁大勿小（估小会在长图中间留下页脚碎片）；改算法先跑 `ScrollStitcherTests`。

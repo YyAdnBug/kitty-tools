@@ -318,22 +318,24 @@ struct SnapshotProbeTests {
       ScrollStitcher(first: first, scrollbarWidth: 32, maxHeight: 30_000))
     _ = stitcher.add(
       try #require(page.cropping(to: CGRect(x: 0, y: 360, width: 1200, height: 480))))
-    let size = "\(stitcher.width) × \(stitcher.outputHeight) 像素"
     let states: [(String, Bool, (ScrollCaptureHUD) -> Void)] = [
       (
-        "scroll-start", false, { $0.show("在选区里滚动，或按空格自动滚动", warning: false, size: "1200 × 480 像素") }
+        "scroll-start", false,
+        { $0.show("在选区里滚动，或按空格自动滚动", warning: false, width: 1200, height: 480) }
       ),
       (
         "scroll-preview", false,
         {
-          $0.show("在选区里滚动，或按空格自动滚动", warning: false, size: size)
+          $0.show(
+            "在选区里滚动，或按空格自动滚动", warning: false, width: stitcher.width, height: stitcher.outputHeight)
           $0.updatePreview(stitcher: stitcher, scale: 2)
         }
       ),
       (
         "scroll-lost", false,
         {
-          $0.show("对不上了：往回滚一点，再慢慢滚", warning: true, size: size)
+          $0.show(
+            "对不上了：往回滚一点，再慢慢滚", warning: true, width: stitcher.width, height: stitcher.outputHeight)
           $0.updatePreview(stitcher: stitcher, scale: 2)
         }
       ),
@@ -341,7 +343,9 @@ struct SnapshotProbeTests {
         "scroll-auto-dark", true,
         {
           $0.isAutoScrolling = true
-          $0.show("自动滚动中：按空格或移开鼠标停止", warning: false, size: size)
+          $0.show(
+            "自动滚动中：按空格或移开鼠标停止", warning: false, width: stitcher.width, height: stitcher.outputHeight
+          )
           $0.updatePreview(stitcher: stitcher, scale: 2)
         }
       ),

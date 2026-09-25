@@ -2,10 +2,14 @@
 // （拼接预览、状态、按钮）。用户在选区里滚动（滚轮、触控板都行），或按空格自动滚动；一直用 ScreenCaptureKit
 // 截选区（滤掉本 App 的所有窗口），交给 ScrollStitcher 拼。↩ 复制、⌘S 保存、⇧⌘S 另存为，Esc 取消。
 // 边框和面板是不激活前台的 NSPanel（面板要当 key 收按键），会话结束立即释放；前台 App 一直不变。
+// Whisker（mac-whisker §6 长截图）：面板是永远深色的 HUD（216 宽、圆角 16）；预览像纸带一样滚动、上下 18 pt 渐隐，
+// 每拼上一段接缝处闪一下强调色；高度数字 22 pt 圆体滚动变化；选区边框 2 pt 强调色 + 外发光呼吸，自动滚动时走蚂蚁线，
+// 对不上时变橙、状态文字抖一下。减弱动态效果时发光和蚂蚁线静止、不抖、不滚。
 
 import AppKit
 import Carbon.HIToolbox
 import ScreenCaptureKit
+import SwiftUI
 
 final class ScrollCapture {
   enum Action { case copy, save, saveAs }
@@ -45,6 +49,7 @@ final class ScrollCapture {
   private let configuration: SCStreamConfiguration
   private var stitcher: ScrollStitcher
   private let border: NSPanel
+  private let borderView: ScrollBorderView
   private let panel: ScrollCapturePanel
   private var continuation: CheckedContinuation<Result?, Never>?
   private var loop: Task<Void, Never>?
@@ -105,7 +110,8 @@ final class ScrollCapture {
     else { throw CaptureError.tooSmall }
     self.stitcher = stitcher
     step = self.region.height * 0.4
-    border = Self.makeBorder(around: self.region)
+    borderView = ScrollBorderView()
+    border = Self.makeBorder(around: self.region, view: borderView)
     panel = ScrollCapturePanel(region: self.region, screen: screen)
   }
 
@@ -209,7 +215,8 @@ final class ScrollCapture {
       warning = false
     }
     panel.hudView.show(
-      text, warning: warning, size: "\(stitcher.width) × \(stitcher.outputHeight) 像素")
+      text, warning: warning, width: stitcher.width, height: stitcher.outputHeight)
+    borderView.update(lost: isLost && !isFull, marching: isAutoScrolling)
   }
 
   // MARK: 自动滚动
@@ -306,11 +313,12 @@ final class ScrollCapture {
     continuation.resume(returning: result)
   }
 
-  /// 选区外一圈 2 点的边框：不接鼠标（滚轮直接落到下面的窗口）
-  private static func makeBorder(around region: CGRect) -> NSPanel {
+  /// 选区外一圈 2 点的边框（窗口外扩 ScrollBorderView.margin 给外发光）：不接鼠标（滚轮直接落到下面的窗口）
+  private static func makeBorder(around region: CGRect, view: ScrollBorderView) -> NSPanel {
+    let margin = ScrollBorderView.margin
     let panel = NSPanel(
-      contentRect: region.insetBy(dx: -2, dy: -2), styleMask: [.borderless, .nonactivatingPanel],
-      backing: .buffered, defer: false)
+      contentRect: region.insetBy(dx: -margin, dy: -margin),
+      styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     // 状态栏层级：低于它的无边框窗口会被 AppKit 挪到菜单栏下面，选区贴着屏幕顶时边框就画进内容里了
     panel.level = .statusBar
     panel.collectionBehavior = [.fullScreenAuxiliary, .ignoresCycle]
@@ -320,12 +328,82 @@ final class ScrollCapture {
     panel.ignoresMouseEvents = true
     panel.isReleasedWhenClosed = false
     panel.animationBehavior = .none
-    let view = NSView()
-    view.wantsLayer = true
-    view.layer?.borderWidth = 2
-    view.layer?.borderColor = NSColor.controlAccentColor.cgColor
     panel.contentView = view
     return panel
+  }
+}
+
+/// 选区边框：2 pt 线画在选区外 1 pt（不压内容），外发光 1.2 s 呼吸；自动滚动时虚线 [8, 6] 0.5 s 走一轮；对不上时变橙
+final class ScrollBorderView: NSView {
+  /// 窗口比选区每边大这么多：线 2 pt + 发光
+  static let margin: CGFloat = 14
+  private let line = CAShapeLayer()
+  private var lost = false
+  private var marching = false
+
+  init() {
+    super.init(frame: .zero)
+    wantsLayer = true
+    line.fillColor = nil
+    line.lineWidth = 2
+    line.shadowOffset = .zero
+    line.shadowRadius = 6
+    layer?.addSublayer(line)
+    applyColor()
+    let reduced = Style.reduceMotion
+    line.shadowOpacity = reduced ? 0.4 : 0.25
+    guard !reduced else { return }
+    let breathe = CABasicAnimation(keyPath: "shadowOpacity")
+    breathe.fromValue = 0.25
+    breathe.toValue = 0.6
+    breathe.duration = 1.2
+    breathe.autoreverses = true
+    breathe.repeatCount = .infinity
+    breathe.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+    line.add(breathe, forKey: "breathe")
+  }
+
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  override func layout() {
+    super.layout()
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    line.frame = bounds
+    line.contentsScale = window?.backingScaleFactor ?? 2
+    let inset = Self.margin - 1
+    line.path = CGPath(rect: bounds.insetBy(dx: inset, dy: inset), transform: nil)
+    CATransaction.commit()
+  }
+
+  func update(lost: Bool, marching: Bool) {
+    if lost != self.lost {
+      self.lost = lost
+      applyColor()
+    }
+    guard marching != self.marching else { return }
+    self.marching = marching
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    line.lineDashPattern = marching ? [8, 6] : nil
+    CATransaction.commit()
+    line.removeAnimation(forKey: "march")
+    guard marching, !Style.reduceMotion else { return }
+    let march = CABasicAnimation(keyPath: "lineDashPhase")
+    march.fromValue = 0
+    march.toValue = -14
+    march.duration = 0.5
+    march.repeatCount = .infinity
+    line.add(march, forKey: "march")
+  }
+
+  private func applyColor() {
+    let color = (lost ? NSColor.systemOrange : NSColor.controlAccentColor).cgColor
+    CATransaction.begin()
+    CATransaction.setAnimationDuration(0.2)
+    line.strokeColor = color
+    line.shadowColor = color
+    CATransaction.commit()
   }
 }
 
@@ -372,54 +450,79 @@ final class ScrollCapturePanel: NSPanel {
   override var canBecomeMain: Bool { false }
 }
 
-/// 面板内容：预览（最近拼上的那头）、状态、按钮（自动滚动、取消、另存为、保存、复制）。按键也在这里收
+/// 面板内容：预览（最近拼上的那头）、状态、高度、按钮（自动滚动、取消、另存为、保存、复制）。按键也在这里收。
+/// 永远深色的 HUD 皮肤（和截图工具栏一致）
 final class ScrollCaptureHUD: NSVisualEffectView {
   enum Item {
     case toggleAuto, cancel
     case output(ScrollCapture.Action)
   }
 
-  static let width: CGFloat = 200
+  static let width: CGFloat = 216
+  /// 预览上下渐隐的高度
+  private static let fade: CGFloat = 18
 
   var onAction: (Item) -> Void = { _ in }
   var isAutoScrolling = false {
     didSet {
       autoButton.image = Self.symbol(isAutoScrolling ? "pause.fill" : "play.fill")
-      autoButton.contentTintColor = isAutoScrolling ? .controlAccentColor : .labelColor
+      autoButton.contentTintColor =
+        isAutoScrolling ? .controlAccentColor : NSColor.white.withAlphaComponent(0.9)
     }
   }
   private let preview = NSImageView()
+  private let fadeMask = CAGradientLayer()
+  /// 接缝处的强调色闪光（每拼上一段）
+  private let seam = CAGradientLayer()
   private let status = NSTextField(wrappingLabelWithString: "")
-  private let sizeLabel = NSTextField(labelWithString: "")
+  private let reading = HeightReading()
   private var autoButton = NSButton()
   private var buttons: [(item: Item, button: NSButton)] = []
+  /// 上次预览时长图的高度（像素）：算这次往前推了多少
+  private var previewedHeight = 0
+  private var lastWarning = false
 
   init() {
     super.init(frame: CGRect(x: 0, y: 0, width: Self.width, height: 260))
-    material = .popover
+    material = .hudWindow
     blendingMode = .behindWindow
     state = .active  // 本 App 从不激活，跟随窗口状态会一直是灰的
+    appearance = NSAppearance(named: .vibrantDark)
     wantsLayer = true
-    layer?.cornerRadius = 10
+    layer?.cornerRadius = Style.Radius.panel
+    layer?.cornerCurve = .continuous
     layer?.masksToBounds = true
+    layer?.borderWidth = 0.5
+    layer?.borderColor = NSColor.white.withAlphaComponent(0.14).cgColor
 
     preview.imageScaling = .scaleProportionallyDown
     preview.imageAlignment = .alignTop
     preview.wantsLayer = true
-    preview.layer?.borderWidth = 1
-    preview.layer?.borderColor = NSColor.separatorColor.cgColor
-    preview.layer?.cornerRadius = 4
+    preview.layer?.cornerRadius = Style.Radius.control
+    preview.layer?.cornerCurve = .continuous
+    preview.layer?.masksToBounds = true
+    preview.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.04).cgColor
+    fadeMask.colors = [
+      NSColor.clear.cgColor, NSColor.black.cgColor, NSColor.black.cgColor, NSColor.clear.cgColor,
+    ]
+    preview.layer?.mask = fadeMask
+    seam.colors = [
+      NSColor.controlAccentColor.cgColor, NSColor.controlAccentColor.withAlphaComponent(0).cgColor,
+    ]
+    seam.opacity = 0
+    preview.layer?.addSublayer(seam)
     preview.setContentCompressionResistancePriority(.init(1), for: .vertical)
     preview.setContentHuggingPriority(.init(1), for: .vertical)
 
     status.font = .systemFont(ofSize: 11)
-    status.textColor = .secondaryLabelColor
+    status.textColor = NSColor.white.withAlphaComponent(0.6)
     status.alignment = .center
     status.maximumNumberOfLines = 2
     status.isSelectable = false  // 可选中的话点一下就被字段编辑器抢走第一响应者，Esc / ↩ / 空格全失灵
+    status.wantsLayer = true
     status.setContentCompressionResistancePriority(.required, for: .vertical)
-    sizeLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-    sizeLabel.textColor = .tertiaryLabelColor
+    let readingView = NSHostingView(rootView: HeightReadingView(reading: reading))
+    readingView.sizingOptions = [.intrinsicContentSize]
 
     let items: [(Item, String, String)] = [
       (.toggleAuto, "play.fill", "自动滚动（空格）"),
@@ -436,6 +539,7 @@ final class ScrollCaptureHUD: NSVisualEffectView {
       if index == 1 { row.append(barSeparator()) }
       let button = barButton(Self.symbol(symbol), tip: tip, action: #selector(clicked(_:)))
       button.tag = buttons.count
+      button.contentTintColor = NSColor.white.withAlphaComponent(0.9)
       buttons.append((item, button))
       row.append(button)
     }
@@ -443,16 +547,17 @@ final class ScrollCaptureHUD: NSVisualEffectView {
     buttons.last?.button.contentTintColor = .controlAccentColor
     let bar = NSStackView(views: row)
     bar.spacing = 2
-    for view in [status, sizeLabel, bar] as [NSView] {
+    for view in [status, readingView, bar] as [NSView] {
       view.setContentHuggingPriority(.required, for: .vertical)
     }
 
-    let stack = NSStackView(views: [preview, status, sizeLabel, bar])
+    let stack = NSStackView(views: [preview, readingView, status, bar])
     stack.orientation = .vertical
     stack.alignment = .centerX
     stack.distribution = .fill  // 预览（抗拉伸优先级最低）吃掉剩下的高度
     stack.spacing = 6
-    stack.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 6, right: 8)
+    stack.setCustomSpacing(2, after: readingView)
+    stack.edgeInsets = NSEdgeInsets(top: 10, left: 10, bottom: 8, right: 10)
     stack.translatesAutoresizingMaskIntoConstraints = false
     addSubview(stack)
     NSLayoutConstraint.activate([
@@ -460,9 +565,25 @@ final class ScrollCaptureHUD: NSVisualEffectView {
       stack.trailingAnchor.constraint(equalTo: trailingAnchor),
       stack.topAnchor.constraint(equalTo: topAnchor),
       stack.bottomAnchor.constraint(equalTo: bottomAnchor),
-      preview.widthAnchor.constraint(equalToConstant: Self.width - 16),
-      status.widthAnchor.constraint(equalToConstant: Self.width - 16),
+      preview.widthAnchor.constraint(equalToConstant: Self.width - 20),
+      status.widthAnchor.constraint(equalToConstant: Self.width - 20),
     ])
+  }
+
+  override func layout() {
+    super.layout()
+    layoutFade()
+  }
+
+  /// 渐隐蒙版跟着预览的大小走（布局时和每次更新预览时都设，免得蒙版是 0 大小把预览整个遮掉）
+  private func layoutFade() {
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    let bounds = preview.bounds
+    fadeMask.frame = bounds
+    let edge = NSNumber(value: Double(min(Self.fade / max(bounds.height, 1), 0.3)))
+    fadeMask.locations = [0, edge, NSNumber(value: 1 - edge.doubleValue), 1]
+    CATransaction.commit()
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -485,10 +606,19 @@ final class ScrollCaptureHUD: NSVisualEffectView {
     if window?.isKeyWindow == false { window?.makeKey() }
   }
 
-  func show(_ text: String, warning: Bool, size: String) {
+  /// warning：对不上 / 到头 / 出错等要注意的提示，文字变橙（刚变成警告时抖一下）
+  func show(_ text: String, warning: Bool, width: Int, height: Int) {
     status.stringValue = text
-    status.textColor = warning ? .systemOrange : .secondaryLabelColor
-    sizeLabel.stringValue = size
+    status.textColor = warning ? .systemOrange : NSColor.white.withAlphaComponent(0.6)
+    if warning, !lastWarning, !Style.reduceMotion, let layer = status.layer {
+      let shake = CAKeyframeAnimation(keyPath: "transform.translation.x")
+      shake.values = [0, -6, 6, -4, 4, 0]
+      shake.duration = 0.35
+      layer.add(shake, forKey: "shake")
+    }
+    lastWarning = warning
+    reading.width = width
+    reading.height = height
   }
 
   func updatePreview(stitcher: ScrollStitcher, scale: CGFloat) {
@@ -497,10 +627,39 @@ final class ScrollCaptureHUD: NSVisualEffectView {
       let image = stitcher.preview(
         width: Int(box.width * scale), maxHeight: Int(box.height * scale))
     else { return }
-    preview.imageAlignment = stitcher.isGrowingUp ? .alignBottom : .alignTop
+    layoutFade()
+    let growingUp = stitcher.isGrowingUp
+    preview.imageAlignment = growingUp ? .alignBottom : .alignTop
     preview.image = NSImage(
       cgImage: image,
       size: CGSize(width: CGFloat(image.width) / scale, height: CGFloat(image.height) / scale))
+    let grown = stitcher.outputHeight - previewedHeight
+    previewedHeight = stitcher.outputHeight
+    guard grown > 0, !Style.reduceMotion, let layer = preview.layer else { return }
+    // 纸带：预览已经撑满时，新内容从长的那头推进来（旧内容先停在原位，再滑过去）
+    let shift = CGFloat(grown) * box.width / CGFloat(max(stitcher.width, 1))
+    if CGFloat(image.height) / scale >= box.height - 1 {
+      let slide = CABasicAnimation(keyPath: "sublayerTransform.translation.y")
+      slide.fromValue = growingUp ? min(shift, box.height) : -min(shift, box.height)
+      slide.toValue = 0
+      slide.duration = 0.2
+      slide.timingFunction = CAMediaTimingFunction(name: .easeOut)
+      layer.add(slide, forKey: "tape")
+    }
+    // 接缝闪一下：强调色 0.25 → 0，从长的那头往里渐隐 24 pt
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    let height: CGFloat = 24
+    seam.frame = CGRect(
+      x: 0, y: growingUp ? box.height - height : 0, width: box.width, height: height)
+    seam.startPoint = CGPoint(x: 0.5, y: growingUp ? 1 : 0)
+    seam.endPoint = CGPoint(x: 0.5, y: growingUp ? 0 : 1)
+    CATransaction.commit()
+    let flash = CABasicAnimation(keyPath: "opacity")
+    flash.fromValue = 0.25
+    flash.toValue = 0
+    flash.duration = 0.4
+    seam.add(flash, forKey: "flash")
   }
 
   @objc private func clicked(_ sender: NSButton) { onAction(buttons[sender.tag].item) }
@@ -531,5 +690,31 @@ final class ScrollCaptureHUD: NSVisualEffectView {
 
   private static func symbol(_ name: String) -> NSImage {
     NSImage(systemSymbolName: name, accessibilityDescription: nil)!
+  }
+}
+
+/// 长图的高度读数（SwiftUI：数字滚动变化）
+@Observable final class HeightReading {
+  var width = 0
+  var height = 0
+}
+
+private struct HeightReadingView: View {
+  let reading: HeightReading
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    VStack(spacing: 0) {
+      Text(reading.height, format: .number.grouping(.never))
+        .font(.system(size: 22, weight: .semibold, design: .rounded))
+        .monospacedDigit()
+        .contentTransition(.numericText(value: Double(reading.height)))
+        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: reading.height)
+      Text("像素高 · 宽 \(String(reading.width))")
+        .font(.system(size: 10))
+        .foregroundStyle(.white.opacity(0.4))
+    }
+    .foregroundStyle(.white.opacity(0.95))
+    .accessibilityElement(children: .combine)
   }
 }
