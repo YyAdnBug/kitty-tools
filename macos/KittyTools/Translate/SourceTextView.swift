@@ -3,12 +3,14 @@
 // 对话框里的输入框出现时抢焦点、消失时把焦点还给主输入框。
 
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 
 struct SourceTextView: NSViewRepresentable {
   @Binding var text: String
-  /// true：Enter 提交、Shift+Enter 换行；false：Enter 换行（编辑正文）
+  /// true：Enter 提交、Shift+Enter / ⌘Enter 换行；false：Enter 换行（编辑正文）
   var submitsOnEnter = true
+  var fontSize: CGFloat = 14
   var isDialogField = false
   var onCancel: (() -> Void)?
   var onSubmit: () -> Void = {}
@@ -17,7 +19,7 @@ struct SourceTextView: NSViewRepresentable {
     let textView = NSTextView(frame: .zero)
     textView.isRichText = false
     textView.allowsUndo = true
-    textView.font = .systemFont(ofSize: 14)
+    textView.font = .systemFont(ofSize: fontSize)
     textView.drawsBackground = false
     textView.textContainerInset = NSSize(width: 2, height: 6)
     textView.isAutomaticQuoteSubstitutionEnabled = false
@@ -36,9 +38,9 @@ struct SourceTextView: NSViewRepresentable {
 
   func updateNSView(_ scroll: FocusScrollView, context: Context) {
     context.coordinator.parent = self
-    if let textView = scroll.documentView as? NSTextView, textView.string != text {
-      textView.string = text
-    }
+    guard let textView = scroll.documentView as? NSTextView else { return }
+    if textView.string != text { textView.string = text }
+    if textView.font?.pointSize != fontSize { textView.font = .systemFont(ofSize: fontSize) }
   }
 
   func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
@@ -55,9 +57,19 @@ struct SourceTextView: NSViewRepresentable {
     func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
       switch selector {
       case #selector(NSResponder.insertNewline(_:)):
-        guard parent.submitsOnEnter, NSApp.currentEvent?.modifierFlags.contains(.shift) != true
-        else { return false }
+        let flags = NSApp.currentEvent?.modifierFlags ?? []
+        guard parent.submitsOnEnter, !flags.contains(.shift), !flags.contains(.command) else {
+          return false
+        }
         parent.onSubmit()
+        return true
+      // ⌘↩ 系统发的是 noop:（不是 insertNewline:）：提交模式下当换行用
+      case Selector(("noop:")):
+        guard parent.submitsOnEnter, let event = NSApp.currentEvent,
+          [kVK_Return, kVK_ANSI_KeypadEnter].contains(Int(event.keyCode)),
+          event.modifierFlags.contains(.command)
+        else { return false }
+        textView.insertNewlineIgnoringFieldEditor(nil)
         return true
       case #selector(NSResponder.cancelOperation(_:)):
         if let onCancel = parent.onCancel {

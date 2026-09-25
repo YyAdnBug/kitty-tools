@@ -1,8 +1,10 @@
 // 翻译会话：一段原文 → 预处理 → 检测语种、解析源 / 目标 → 所有启用的服务并行翻译（大模型逐字流式）。
 // 新会话取消旧会话的全部请求；单张卡片可单独重试。列表第一个服务出结果后写历史、按设置自动复制。
-// 服务分发在 TranslateService.translate 的一个 switch 里。
+// 服务分发在 TranslateService.translate 的一个 switch 里。浮窗的收藏（⌘S）、复制第 N 张卡（⌘1–9）、
+// 替换原文（划词来的会话）都以这里的状态为准；静默替换走 translateOnce（只用第一个服务、不开浮窗）。
 
-import Foundation
+import AppKit
+import Carbon.HIToolbox
 import Observation
 
 @Observable final class TranslateCoordinator {
@@ -38,6 +40,11 @@ import Observation
   /// 选的固定目标正好是原文语言、这次改按「自动」译了：记下原来选的目标，标签写「原文已是 X」
   var abandonedTarget: Lang?
   var cards: [Card] = []
+  /// 这次原文来自划词：取词时的前台 App 和原选区。浮窗里显示「替换原文」（只粘回这个 App，
+  /// 并照原选区补回首尾的空白和换行）
+  var replaceSource: (pid: pid_t, text: String)?
+  /// 刚被复制的卡片（⌘1–9 或卡片上的复制按钮），卡片上短暂显示对勾
+  private(set) var copiedCard: String?
   /// 原文区的提示（取词失败、识别不到文字、原文过长等）
   private(set) var notice: String?
   /// 提示要引导去授权的那一项；nil 就不显示授权按钮
@@ -65,10 +72,66 @@ import Observation
     }
   }
 
+  /// 第一个服务的完成结果（写历史、自动复制、收藏、替换原文都认它）
+  var primaryResult: (service: TranslateService, text: String)? {
+    guard let first = cards.first, case .done(let text) = first.state, !text.isEmpty else {
+      return nil
+    }
+    return (first.service, text)
+  }
+
+  /// 这次翻译收藏了没有（星标）；读 history.revision 让收藏变化时刷新
+  var isFavorite: Bool {
+    _ = history.revision
+    guard let request, let target else { return false }
+    return history.isFavorite(source: request.text, target: target)
+  }
+
+  /// ⌘S / 星标：收藏或取消这次翻译（第一个服务出结果后才能收藏）；返回是否做了。
+  /// 关着历史时取消收藏就把这条删掉（收藏时才记进去的，留着就成了「关了历史却有历史」）
+  @discardableResult
+  func toggleFavorite() -> Bool {
+    guard let request, let primary = primaryResult else { return false }
+    let favorite = !isFavorite
+    if !favorite, !UserDefaults.standard.bool(forKey: Prefs.translateHistoryEnabled) {
+      history.remove(source: request.text, target: request.to)
+    } else {
+      history.setFavorite(
+        source: request.text, target: request.to, result: primary.text,
+        service: primary.service.name, favorite)
+    }
+    return true
+  }
+
+  /// 替换原文用：译文去掉首尾空白后，套上原选区的首尾空白（三击选中的整行带着换行，替换后段落不能被接起来）。
+  /// 纯函数，配单测
+  static func rewrap(_ translation: String, like original: String) -> String {
+    let leading = String(original.prefix { $0.isWhitespace || $0.isNewline })
+    let trailing = String(original.reversed().prefix { $0.isWhitespace || $0.isNewline }.reversed())
+    guard leading.count < original.count else { return translation }  // 原文全是空白
+    return leading + translation.trimmingCharacters(in: .whitespacesAndNewlines) + trailing
+  }
+
+  /// ⌘1–9 / 卡片上的复制：复制这张卡当前的译文（流式中也可以复制已出来的部分）；返回是否复制了
+  @discardableResult
+  func copyCard(_ id: String) -> Bool {
+    guard let text = cards.first(where: { $0.id == id })?.state.text, !text.isEmpty else {
+      return false
+    }
+    Paster.write(string: text)
+    copiedCard = id
+    Task {
+      try? await Task.sleep(for: .seconds(1.5))
+      if copiedCard == id { copiedCard = nil }
+    }
+    return true
+  }
+
   /// 输入翻译：清空上一次的内容，等用户输入
   func beginInput() {
     cancel()
     sourceText = ""
+    replaceSource = nil
     cards = []
     detected = nil
     target = nil
@@ -85,8 +148,10 @@ import Observation
     noticePermission = permission
   }
 
-  func translate(_ text: String) {
+  /// selectedIn：原文是从这个 App 划词取来的（浮窗里给「替换原文」）
+  func translate(_ text: String, selectedIn app: pid_t? = nil) {
     sourceText = text
+    replaceSource = app.map { ($0, text) }
     start()
   }
 
@@ -96,29 +161,69 @@ import Observation
     showsHistory = false
     notice = nil
     noticePermission = nil
-    let defaults = UserDefaults.standard
-    var text = sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
-    if defaults.bool(forKey: Prefs.translateRemoveNewlines) {
-      // 行尾连字符断开的单词接回去，其余换行变空格（PDF 复制出来的段落）
-      text = text.replacing(/-\n\s*/, with: "").replacing(/\s*\n\s*/, with: " ")
-    }
+    let text = Self.preprocess(sourceText)
     guard !text.isEmpty else { return }
     guard text.utf8.count <= Self.maxSourceBytes else {
       notice = "原文太长（上限 32 KB），请分段翻译"
       cards = []
       return
     }
-    let (first, second) = Lang.preferredPair
-    detected = Lang.detect(text, preferring: [first, second])
-    let chosenTarget = defaults.string(forKey: Prefs.translateTarget).flatMap(Lang.init(rawValue:))
-    fixedSource = defaults.string(forKey: Prefs.translateSource).flatMap(Lang.init(rawValue:))
-    let plan = Lang.resolve(
-      source: fixedSource, target: chosenTarget, detected: detected, first: first, second: second)
-    target = plan.to
-    abandonedTarget = plan.fellBack ? chosenTarget : nil
-    request = TranslateRequest(text: text, from: plan.from, to: plan.to)
+    let plan = Self.plan(for: text)
+    detected = plan.detected
+    fixedSource = plan.fixedSource
+    target = plan.request.to
+    abandonedTarget = plan.abandonedTarget
+    request = plan.request
     cards = services.enabled.map { Card(service: $0, state: .waiting) }
     for card in cards { run(card.service) }
+  }
+
+  /// 去首尾空白；设置里开了就把换行合成一段（行尾连字符断开的单词接回去，其余换行变空格，PDF 复制出来的段落）
+  private static func preprocess(_ source: String) -> String {
+    let text = source.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard UserDefaults.standard.bool(forKey: Prefs.translateRemoveNewlines) else { return text }
+    return text.replacing(/-\n\s*/, with: "").replacing(/\s*\n\s*/, with: " ")
+  }
+
+  /// 按浮窗上选的源 / 目标（全局记住的）和检测结果定这次的请求
+  private static func plan(for text: String) -> (
+    request: TranslateRequest, detected: Lang?, fixedSource: Lang?, abandonedTarget: Lang?
+  ) {
+    let defaults = UserDefaults.standard
+    let (first, second) = Lang.preferredPair
+    let detected = Lang.detect(text, preferring: [first, second])
+    let chosenTarget = defaults.string(forKey: Prefs.translateTarget).flatMap(Lang.init(rawValue:))
+    let fixedSource = defaults.string(forKey: Prefs.translateSource).flatMap(Lang.init(rawValue:))
+    let plan = Lang.resolve(
+      source: fixedSource, target: chosenTarget, detected: detected, first: first, second: second)
+    return (
+      TranslateRequest(text: text, from: plan.from, to: plan.to), detected, fixedSource,
+      plan.fellBack ? chosenTarget : nil
+    )
+  }
+
+  /// 静默替换：不开浮窗、不动当前会话，只用第一个启用的服务、等完整结果；记历史（开着的话）。
+  /// 不套「把换行合成一段」：要替换回去的文字，段落得保住
+  func translateOnce(_ source: String) async throws -> String {
+    let text = source.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty, text.utf8.count <= Self.maxSourceBytes else {
+      throw TranslateError(message: "原文为空或太长")
+    }
+    guard let service = services.enabled.first else {
+      throw TranslateError(message: "没有启用的翻译服务")
+    }
+    let request = Self.plan(for: text).request
+    var latest = ""
+    for try await partial in service.translate(request) { latest = partial }
+    try Task.checkCancellation()
+    guard !latest.isEmpty else { throw TranslateError.emptyResult }
+    let defaults = UserDefaults.standard
+    if defaults.bool(forKey: Prefs.translateHistoryEnabled) {
+      history.add(
+        source: text, target: request.to, result: latest, service: service.name,
+        limit: defaults.integer(forKey: Prefs.translateHistoryLimit))
+    }
+    return latest
   }
 
   func retry(_ id: String) {
@@ -173,4 +278,53 @@ import Observation
       Paster.write(string: text)
     }
   }
+
+  // MARK: 浮窗快捷键（对标 Bob）
+
+  /// 收起浮窗（⌘W，固定着也收），由 AppDelegate 接上
+  @ObservationIgnored var hidePanel: () -> Void = {}
+
+  static let fontScales = 0.8...1.6
+
+  /// ⌘R 重新翻译、⌘S 收藏、⌘W 关闭、⌘P 固定、⌘+ / ⌘- / ⌘0 字号、⌘1–9 复制第 N 张卡。
+  /// ⌘C / ⌘V / ⌘A 等编辑键不在这里（交给输入框）。返回 true 表示处理了
+  func handleKeyEquivalent(_ event: NSEvent) -> Bool {
+    let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
+    let code = Int(event.keyCode)
+    // ⌘+ 在多数键盘上要按 ⇧（⌘⇧=），两种都认
+    guard flags == .command || (flags == [.command, .shift] && code == kVK_ANSI_Equal) else {
+      return false
+    }
+    let defaults = UserDefaults.standard
+    let scale = defaults.double(forKey: Prefs.translateFontScale)
+    switch code {
+    case kVK_ANSI_R:
+      if sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        NSSound.beep()
+      } else {
+        start()
+      }
+    case kVK_ANSI_S:
+      if !toggleFavorite() { NSSound.beep() }
+    case kVK_ANSI_W:
+      hidePanel()
+    case kVK_ANSI_P:
+      defaults.set(!defaults.bool(forKey: Prefs.floatingPinned), forKey: Prefs.floatingPinned)
+    case kVK_ANSI_Equal, kVK_ANSI_KeypadPlus:
+      defaults.set(min(scale + 0.1, Self.fontScales.upperBound), forKey: Prefs.translateFontScale)
+    case kVK_ANSI_Minus, kVK_ANSI_KeypadMinus:
+      defaults.set(max(scale - 0.1, Self.fontScales.lowerBound), forKey: Prefs.translateFontScale)
+    case kVK_ANSI_0:
+      defaults.set(1.0, forKey: Prefs.translateFontScale)
+    default:
+      guard let digit = Self.digitKeys.firstIndex(of: code) else { return false }
+      if !(cards.indices.contains(digit) && copyCard(cards[digit].id)) { NSSound.beep() }
+    }
+    return true
+  }
+
+  private static let digitKeys = [
+    kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4, kVK_ANSI_5, kVK_ANSI_6, kVK_ANSI_7, kVK_ANSI_8,
+    kVK_ANSI_9,
+  ]
 }

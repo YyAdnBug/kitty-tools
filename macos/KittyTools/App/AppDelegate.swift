@@ -9,6 +9,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var isRunning = false
   /// 划词取词进行中：重复按热键直接忽略
   private var isReadingSelection = false
+  /// 进行中的「划词翻译并替换」：再按一次热键取消
+  private var replaceTask: Task<Void, Never>?
   /// 截图 / 截图翻译进行中（截屏 → 框选 → 识别或输出）：重复按热键直接忽略
   private var isCapturing = false
   let hotKeys = HotKeyCenter()
@@ -91,13 +93,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }()
 
   private lazy var translatePanel: OverlayPanel = {
+    // 视图在面板建好之前就可能要求改高度：用弱引用接，别在 lazy 初始化里回头访问 translatePanel
+    weak var created: OverlayPanel?
     let panel = OverlayPanel(
-      size: NSSize(width: 420, height: 560), minSize: NSSize(width: 360, height: 400),
+      size: NSSize(width: 420, height: 560), minSize: NSSize(width: 360, height: 200),
       autosaveName: "TranslatePanel", autoHide: .resignKey,
       isPinned: { UserDefaults.standard.bool(forKey: Prefs.floatingPinned) },
-      content: TranslatePanelView(coordinator: coordinator, speaker: speaker) { [unowned self] in
-        showSettings()
-      })
+      content: TranslatePanelView(
+        coordinator: coordinator, speaker: speaker,
+        openSettings: { [unowned self] in showSettings() },
+        resize: { height in
+          // 高度随内容（Bob 的做法）：最矮 220，最高到屏幕可见区的 85%，再多就在卡片区里滚。
+          // 最小 / 最大高度都钉在这个值上：用户只能拖宽度，拖高度会和自动高度打架
+          guard let panel = created else { return }
+          let visible = (panel.screen ?? NSScreen.main)?.visibleFrame.height ?? 800
+          let height = min(max(height, 220), visible * 0.85)
+          panel.minSize = NSSize(width: 360, height: height)
+          panel.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: height)
+          panel.setContentHeight(height)
+        },
+        replaceOriginal: { [unowned self] in replaceOriginal() }))
+    created = panel
+    panel.keyEquivalentHandler = { [unowned self] in coordinator.handleKeyEquivalent($0) }
+    coordinator.hidePanel = { [unowned panel] in panel.hide() }
     panel.onHide = { [unowned self, unowned panel] in
       // 收起即作废进行中的请求（省额度）；把 key 还给之前处于 key 的浮层（剪贴板面板 / 启动器）。
       // 已有别的窗口成了 key（因失焦而收起）就不抢
@@ -122,7 +140,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ("剪贴板", "doc.on.clipboard", AnyView(ClipboardTab(store: clipboardStore))),
     ("启动器", "magnifyingglass", AnyView(LauncherTab { [unowned self] in launcherUsage.clearAll() })),
     ("截图", "camera.viewfinder", AnyView(ScreenshotTab())),
-    ("翻译", "character.bubble", AnyView(TranslateTab(services: serviceStore))),
+    (
+      "翻译", "character.bubble", AnyView(TranslateTab(services: serviceStore, history: historyStore))
+    ),
     ("快捷键", "keyboard", AnyView(HotkeysTab(center: hotKeys))),
     ("关于", "info.circle", AnyView(AboutTab())),
   ])
@@ -163,6 +183,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       screenshot(repeatingLastRegion: true)
     }
     hotKeys.setHandler(for: .recognizeText) { [unowned self] in recognizeText() }
+    hotKeys.setHandler(for: .translateReplace) { [unowned self] in translateAndReplace() }
     hotKeys.reload()
     launcherModel.rescanApps()  // 约 65ms，放在启动时，第一次呼出就不用等
     showWelcomeIfNeeded()
@@ -227,13 +248,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 截图框选中不划词：取词结束时显示的浮窗会被遮罩盖住、还抢走遮罩的 key
     guard !isReadingSelection, !isCapturing else { return }
     isReadingSelection = true
+    // 本 App 从不激活：此刻的前台就是取词的 App（「替换原文」只粘回它）
+    let sourceApp = NSWorkspace.shared.frontmostApplication?.processIdentifier
     if clipboardPanel.isKeyWindow { clipboardPanel.hide() }
     if launcherPanel.isKeyWindow { launcherPanel.hide() }
     if translatePanel.isKeyWindow { translatePanel.orderOut(nil) }
     Task {
       defer { isReadingSelection = false }
       if let text = await SelectionReader.read(pausing: watcher) {
-        coordinator.translate(text)
+        coordinator.translate(text, selectedIn: sourceApp)
       } else if !Permissions.isAccessibilityTrusted {
         coordinator.showNotice("划词翻译需要「辅助功能」授权", permission: .accessibility)
         Permissions.requestAccessibility()
@@ -241,6 +264,78 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.beginInput()  // 没有选中文字：当输入翻译用
       }
       translatePanel.present()
+    }
+  }
+
+  /// 浮窗「替换原文」（划词来的会话）：收起浮窗 → 写剪贴板 → ⌘V。浮窗从不激活本 App，前台一直是原 App，
+  /// 选区还在，粘贴就替换掉它。前台已经换了（浮窗固定着、用户点了别的 App）或没有辅助功能授权时只复制
+  private func replaceOriginal() {
+    guard let source = coordinator.replaceSource, let result = coordinator.primaryResult?.text
+    else { return NSSound.beep() }
+    let text = TranslateCoordinator.rewrap(result, like: source.text)
+    guard NSWorkspace.shared.frontmostApplication?.processIdentifier == source.pid else {
+      Paster.write(string: text)
+      return toast.show("已复制译文：前台已不是取词的 App，没有替换", symbol: "doc.on.doc")
+    }
+    guard Permissions.isAccessibilityTrusted else {
+      Paster.write(string: text)
+      toast.show("已复制译文。授权辅助功能后才能直接替换", symbol: "exclamationmark.triangle.fill")
+      return Permissions.requestAccessibility()
+    }
+    translatePanel.hide()
+    Paster.write(string: text)
+    _ = Paster.pasteToFrontmost()
+  }
+
+  /// 划词翻译并替换（静默，对标 Bob 1.18）：取词 → 第一个服务翻译（等完整结果）→ 粘回替换选区；
+  /// 不开浮窗，用轻提示报进度和结果；翻译期间再按一次热键取消。默认不设快捷键。
+  /// 等结果的几秒里前台换了 App、或自家浮层成了 key，就只复制不粘（免得粘进别处）
+  func translateAndReplace() {
+    if let replaceTask {
+      replaceTask.cancel()
+      self.replaceTask = nil
+      return toast.show("已取消划词翻译并替换", symbol: "xmark.circle.fill")
+    }
+    guard !isReadingSelection, !isCapturing else { return }
+    guard Permissions.isAccessibilityTrusted else {
+      toast.show("划词翻译并替换需要「辅助功能」授权", symbol: "exclamationmark.triangle.fill")
+      return Permissions.requestAccessibility()
+    }
+    let sourceApp = NSWorkspace.shared.frontmostApplication?.processIdentifier
+    isReadingSelection = true
+    // 和划词翻译一样：自家浮层是 key 时先收起，否则读到的、粘贴进去的都是自己。翻译浮窗只 orderOut
+    // （hide 的 onHide 会把 key 还给别的浮层）：没固定就顺手作废它的请求，固定着的替换完再露出来
+    let pinned = UserDefaults.standard.bool(forKey: Prefs.floatingPinned)
+    let restoresPanel = translatePanel.isKeyWindow && pinned
+    if clipboardPanel.isKeyWindow { clipboardPanel.hide() }
+    if launcherPanel.isKeyWindow { launcherPanel.hide() }
+    if translatePanel.isKeyWindow {
+      translatePanel.orderOut(nil)
+      if !pinned { coordinator.cancel() }
+    }
+    replaceTask = Task {
+      defer {
+        replaceTask = nil
+        if restoresPanel { translatePanel.present(makingKey: false) }
+      }
+      let text = await SelectionReader.read(pausing: watcher)
+      isReadingSelection = false  // 取完词就放开，等网络时不挡别的热键
+      guard let text else { return toast.show("没有选中文字", symbol: "exclamationmark.triangle.fill") }
+      toast.show("翻译中…（再按一次取消）", symbol: "character.bubble")
+      do {
+        let result = TranslateCoordinator.rewrap(
+          try await coordinator.translateOnce(text), like: text)
+        guard !Task.isCancelled else { return }
+        Paster.write(string: result)
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == sourceApp,
+          NSApp.keyWindow == nil
+        else { return toast.show("已复制译文：前台已不是取词的 App，没有替换", symbol: "doc.on.doc") }
+        _ = Paster.pasteToFrontmost()
+        toast.show("已替换为译文")
+      } catch {
+        guard !Task.isCancelled else { return }
+        toast.show("翻译失败：\(error.localizedDescription)", symbol: "exclamationmark.triangle.fill")
+      }
     }
   }
 

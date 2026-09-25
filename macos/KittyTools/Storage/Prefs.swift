@@ -47,6 +47,10 @@ enum Prefs {
   static let translateAutoCopy = "autoCopy"
   static let translateHistoryEnabled = "translateHistoryEnabled"
   static let translateHistoryLimit = "translateHistoryLimit"
+  /// 翻译浮窗字号倍数（⌘+ / ⌘- / ⌘0）
+  static let translateFontScale = "translateFontScale"
+  /// 折叠着的服务 id（换行分隔），跨重启记住
+  static let translateCollapsedServices = "translateCollapsedServices"
   /// 复制即译：复制文本后自动弹出翻译浮窗（不抢键盘）
   static let translateCopyToTranslate = "translateClipboardMonitor"
 
@@ -92,6 +96,8 @@ enum Prefs {
       translateHistoryEnabled: true,
       translateHistoryLimit: 500,
       translateCopyToTranslate: false,
+      translateFontScale: 1.0,
+      translateCollapsedServices: "",
       ocrJoinLines: false,
     ])
   }

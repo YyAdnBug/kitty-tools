@@ -42,6 +42,12 @@ alwaysApply: false
 - **剪贴板预览里的「翻译」**：剪贴板面板保持打开（兄弟浮层）。
 - **截图翻译**（`AppDelegate.screenshotTranslate`，默认 ⌥S）：冻结帧框选 → Vision 识字 → 原文过敏感过滤后记进剪贴板历史 → `coordinator.translate`。识别失败 / 没有文字只显示提示、不开翻译会话；缺屏幕录制授权时提示带「打开屏幕录制设置」按钮（`showNotice(_:permission:)`，只有授权类提示才带按钮）。框选细节见 mac-overlay-panel §8。
 
+## 5.1 浮窗补强（M12，对标 Bob）
+- 浮窗快捷键只在 `TranslateCoordinator.handleKeyEquivalent`：只收纯 ⌘（和 ⌘⇧=），编辑键不拦；「第一个服务」的完成结果 `primaryResult` 是收藏、替换原文的唯一来源（和写历史、自动复制一致）。
+- 收藏存 translations 表（「原文 + 实际目标语言」唯一），`HistoryStore.stored` 统一去空白截断，收藏和 add 必须找同一条。
+- 替换原文 / 静默替换都是「收起 → `Paster.write` → `pasteToFrontmost`」，不激活本 App、不等待；粘之前核对前台还是取词时记下的 pid（`replaceSource` / 静默替换取词前记），对不上或自家浮层是 key 就只复制；译文用 `rewrap` 补回原选区的首尾空白。静默替换用 `translateOnce`（不动浮窗会话、不合并换行，再按热键取消）。
+- 浮窗高度由视图量出来、`OverlayPanel.setContentHeight` 设（夹在 220 到屏幕 85%）；lazy 建面板时用弱引用接 resize，别在初始化里回头访问 `translatePanel`。
+
 ## 6. 旧版导入（`LegacyImport`，可重复执行）
 - 旧库 WAL：连同 `-wal`/`-shm` 拷到临时目录读写打开副本 + `quick_check`，原文件只拷不开；读失败中止，绝不用默认值覆盖。
 - 「回到默认」用 NSNull 表示，写入时 `removeObject`：**UserDefaults.set(NSNull) 会直接崩**。

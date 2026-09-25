@@ -79,9 +79,9 @@ final class OverlayPanel: NSPanel {
     if !isVisible { placeForShow() }
     orderFrontRegardless()
     if makingKey {
-      if let current = NSApp.keyWindow as? OverlayPanel, current !== self {
-        previousKeyPanel = current
-      }
+      // 每次都重新记：key 不是别的自家浮层时清掉旧值，免得收起时把 key 还给早就不相干的面板
+      let current = NSApp.keyWindow as? OverlayPanel
+      if current !== self { previousKeyPanel = current }
       makeKey()
       // 首次显示时 SwiftUI 还没建出输入框，先把布局跑完再聚焦
       contentView?.layoutSubtreeIfNeeded()
@@ -130,12 +130,15 @@ final class OverlayPanel: NSPanel {
     if autoHide == .resignKey, isVisible, attachedSheet == nil, !isPinned() { hide() }
   }
 
-  /// 改高度时顶边不动，只往下伸缩（启动器随结果条数变化）
+  /// 改高度时顶边不动，只往下伸缩（启动器随结果条数、翻译浮窗随内容变化）；往下出了屏幕可见区就整体往上挪
   func setContentHeight(_ height: CGFloat) {
     guard abs(frame.height - height) > 0.5 else { return }
     var frame = frame
     frame.origin.y = frame.maxY - height
     frame.size.height = height
+    if let visible = screen?.visibleFrame, frame.minY < visible.minY {
+      frame.origin.y = min(visible.minY, visible.maxY - height)
+    }
     setFrame(frame, display: true)
   }
 

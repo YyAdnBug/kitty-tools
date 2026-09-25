@@ -139,6 +139,18 @@ struct SnapshotProbeTests {
           ]
         }
       ),
+      (
+        "translate-replace",
+        { c in
+          c.sourceText = "Ship it"
+          c.detected = .en
+          c.target = .zhHans
+          c.replaceSource = (1, "Ship it")
+          c.cards = [
+            .init(service: zhipu, state: .done("发布吧")), .init(service: gpt, state: .done("上线")),
+          ]
+        }
+      ),
       ("translate-history", { c in c.showsHistory = true }),
       ("translate-notice", { c in c.showNotice("划词翻译需要「辅助功能」授权", permission: .accessibility) }),
       ("translate-screenshot-empty", { c in c.showNotice("没有识别到文字，可以把选区框大一些再试") }),
@@ -154,7 +166,8 @@ struct SnapshotProbeTests {
       }
     }
     try snapshot(
-      TranslateTab(services: services), size: NSSize(width: 540, height: 600), dark: false,
+      TranslateTab(services: services, history: history), size: NSSize(width: 540, height: 600),
+      dark: false,
       to: "\(out)/settings-translate.png")
   }
 

@@ -101,7 +101,7 @@ struct HotKey: Codable, Hashable {
 /// 追加动作只能加在末尾：注册时用 allCases 的下标当热键 id
 enum HotKeyAction: String, CaseIterable {
   case clipboard, selectionTranslate, inputTranslate, screenshotTranslate, launcher, screenshot,
-    screenshotLastRegion, recognizeText
+    screenshotLastRegion, recognizeText, translateReplace
 
   var title: String {
     switch self {
@@ -113,10 +113,12 @@ enum HotKeyAction: String, CaseIterable {
     case .screenshot: "截图"
     case .screenshotLastRegion: "截取上次区域"
     case .recognizeText: "识字"
+    case .translateReplace: "划词翻译并替换"
     }
   }
 
-  var defaultHotKey: HotKey {
+  /// nil = 默认不设键（静默替换这类用得少、又容易误触的）
+  var defaultHotKey: HotKey? {
     switch self {
     case .clipboard: HotKey(keyCode: kVK_ANSI_V, modifiers: cmdKey | shiftKey)
     case .selectionTranslate: HotKey(keyCode: kVK_ANSI_T, modifiers: cmdKey | shiftKey)
@@ -131,6 +133,8 @@ enum HotKeyAction: String, CaseIterable {
     case .screenshotLastRegion: HotKey(keyCode: kVK_ANSI_X, modifiers: optionKey)
     // iShot 的默认键（O = OCR）
     case .recognizeText: HotKey(keyCode: kVK_ANSI_O, modifiers: optionKey)
+    // 选中文字直接换成译文，不弹窗（Bob 的静默划词翻译也不设默认键）
+    case .translateReplace: nil
     }
   }
 

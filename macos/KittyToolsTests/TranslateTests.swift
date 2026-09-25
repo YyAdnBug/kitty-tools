@@ -180,4 +180,60 @@ struct HistoryStoreTests {
     store.clearNonFavorites()
     #expect(store.counts.total == 0)
   }
+
+  @Test func favoritesWithoutHistoryAndFilter() throws {
+    let store = try HistoryStore(db: Database(path: ":memory:"))
+    // 关了历史（库里没有这条）也能收藏：连译文一起记一条
+    #expect(!store.isFavorite(source: " apple ", target: .zhHans))
+    store.setFavorite(source: " apple ", target: .zhHans, result: "苹果", service: "智谱", true)
+    #expect(store.isFavorite(source: "apple", target: .zhHans))  // 和 add 一样去首尾空白
+    store.add(source: "banana", target: .zhHans, result: "香蕉", service: "智谱", limit: 0)
+    // 再次写同一条译文不改收藏；取消收藏只改收藏
+    store.add(source: "apple", target: .zhHans, result: "苹果（新）", service: "智谱", limit: 0)
+    #expect(store.isFavorite(source: "apple", target: .zhHans))
+    #expect(store.search("", favoritesOnly: true).map(\.source) == ["apple"])
+    #expect(store.search("香", favoritesOnly: true).isEmpty)
+    store.setFavorite(source: "apple", target: .zhHans, result: "苹果", service: "智谱", false)
+    #expect(store.search("", favoritesOnly: true).isEmpty)
+    #expect(store.search("", limit: 0).count == 2)
+    store.remove(source: " apple", target: .zhHans)  // 关着历史时取消收藏：删掉这条
+    #expect(store.search("", limit: 0).map(\.source) == ["banana"])
+  }
+
+  @Test func exportCSVAndAnkiTSV() {
+    let entry = HistoryStore.Entry(
+      id: UUID(), source: "say \"hi\", ok\r\nline2", target: .zhHans, result: "-ing\t<b>&",
+      service: "智谱", createdAt: Date(timeIntervalSince1970: 0), favorite: true)
+    let csv = HistoryStore.csv([entry], timeZone: TimeZone(identifier: "Asia/Shanghai")!)
+    // 表头 + 一行；含逗号 / 引号 / 换行（包括 \r\n）的字段加引号、引号双写；- 开头的前面加 '（防 Excel 公式）；
+    // 时间写本地时间；行尾 CRLF
+    #expect(csv.hasPrefix("原文,译文,目标语言,服务,时间,收藏\r\n"))
+    #expect(csv.contains("\"say \"\"hi\"\", ok\r\nline2\","))
+    #expect(csv.contains(",'-ing\t<b>&,"))
+    #expect(csv.hasSuffix(",1970-01-01 08:00:00,是\r\n"))
+    // Anki：带 #separator / #html 头；HTML 转义、换行变 <br>、Tab 变空格；含引号、以 # 开头的字段加引号
+    let tsv = HistoryStore.tsv([
+      entry,
+      HistoryStore.Entry(
+        id: UUID(), source: "# Getting Started", target: .zhHans, result: "a\rb\u{2028}c",
+        service: "", createdAt: .now, favorite: false),
+    ])
+    #expect(
+      tsv
+        == "#separator:tab\n#html:true\n"
+        + "\"say \"\"hi\"\", ok<br>line2\"\t-ing &lt;b&gt;&amp;\n"
+        + "\"# Getting Started\"\ta<br>b<br>c\n")
+  }
+
+  @Test func replacementKeepsSelectionWhitespace() {
+    // 三击选中的整行带换行：替换后段落不能被接起来
+    #expect(TranslateCoordinator.rewrap("你好，世界。 ", like: "Hello world.\n") == "你好，世界。\n")
+    #expect(TranslateCoordinator.rewrap("你好", like: "  Hello  ") == "  你好  ")
+    #expect(TranslateCoordinator.rewrap("你好", like: "\n\n") == "你好")
+  }
+
+  @Test func silentReplaceHasNoDefaultHotKey() {
+    #expect(HotKeyAction.translateReplace.defaultHotKey == nil)
+    #expect(HotKeyAction.allCases.last == .translateReplace)  // 只能加在末尾（注册 id 是下标）
+  }
 }

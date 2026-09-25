@@ -1,7 +1,8 @@
 // 翻译浮窗根视图（原生重新设计，不沿用旧版样式）：
 // 顶栏：源语言 ⇄ 目标语言（在这里切换、全局记住）+ 复制即译 / 历史 / 设置 / 固定；
-// 原文区（Enter 翻译，Shift+Enter 换行）+ 实际方向与原文操作；
-// 下方是各服务结果卡片，历史覆盖在结果区上。状态和操作都在 TranslateCoordinator。
+// 原文区（↩ 翻译，⇧↩ / ⌘↩ 换行）+ 实际方向与原文操作（收藏、划词来的可「替换原文」）；
+// 下方是各服务结果卡片（折叠状态记住），历史覆盖在结果区上。高度随内容伸缩（Bob 的做法：只让人拖宽度），
+// 字号可调（⌘+ / ⌘- / ⌘0）。状态和操作都在 TranslateCoordinator，窗口快捷键见它的 handleKeyEquivalent。
 
 import SwiftUI
 
@@ -9,22 +10,38 @@ struct TranslatePanelView: View {
   @Bindable var coordinator: TranslateCoordinator
   let speaker: Speaker
   var openSettings: () -> Void = {}
+  /// 内容要的高度（浮窗据此伸缩，顶边不动）
+  var resize: (CGFloat) -> Void = { _ in }
+  /// 把第一个服务的译文粘回原 App 的选区
+  var replaceOriginal: () -> Void = {}
 
   @AppStorage(Prefs.floatingPinned) private var pinned = false
   @AppStorage(Prefs.translateCopyToTranslate) private var copyToTranslate = false
+  @AppStorage(Prefs.translateFontScale) private var fontScale = 1.0
+  /// 折叠着的服务 id（换行分隔）：跨重启记住
+  @AppStorage(Prefs.translateCollapsedServices) private var collapsedServices = ""
   /// nil = 自动检测
   @AppStorage(Prefs.translateSource) private var source: String?
   /// nil = 自动（第一 ⇄ 第二语言）
   @AppStorage(Prefs.translateTarget) private var target: String?
   @AppStorage(Prefs.translateFirst) private var first: String?
   @AppStorage(Prefs.translateSecond) private var second: String?
+  @State private var chromeHeight: CGFloat = 0
+  @State private var resultsHeight: CGFloat = 0
 
   var body: some View {
     VStack(spacing: 0) {
-      header
-      Divider()
-      sourceArea
-      Divider()
+      VStack(spacing: 0) {
+        header
+        Divider()
+        sourceArea
+        Divider()
+      }
+      .onGeometryChange(for: CGFloat.self) {
+        $0.size.height
+      } action: {
+        chromeHeight = $0
+      }
       // 历史打开时整块替换结果区（材质半透明，叠在上面会透出下面的内容）
       if coordinator.showsHistory {
         HistoryView(history: coordinator.history) { entry in
@@ -38,6 +55,16 @@ struct TranslatePanelView: View {
     }
     // 一次操作只重译一次（交换、撞同语言时两个值在同一次更新里一起改）
     .onChange(of: [source, target]) { retranslate() }
+    .onChange(of: desiredHeight, initial: true) { resize(desiredHeight) }
+  }
+
+  /// 顶栏 + 原文区 + 结果（卡片按实际高度；历史、提示、没有服务、空态给固定的高度，和 results 的分支一致）
+  private var desiredHeight: CGFloat {
+    let showsCards =
+      coordinator.notice == nil && !coordinator.services.enabled.isEmpty
+      && !coordinator.cards.isEmpty
+    let body: CGFloat = coordinator.showsHistory ? 420 : showsCards ? resultsHeight : 200
+    return ceil(chromeHeight + body)
   }
 
   // MARK: 顶栏
@@ -65,10 +92,11 @@ struct TranslatePanelView: View {
       Toggle(isOn: $coordinator.showsHistory) { Image(systemName: "clock.arrow.circlepath") }
         .toggleStyle(.button)
         .help("翻译历史")
-      Button("设置", systemImage: "gearshape", action: openSettings).help("翻译设置")
+      Button("设置", systemImage: "gearshape", action: openSettings)
+        .help("翻译设置。浮窗快捷键：⌘R 重新翻译、⌘S 收藏、⌘1–9 复制第几个结果、⌘P 固定、⌘W 关闭、⌘+ / ⌘- / ⌘0 字号")
       Toggle(isOn: $pinned) { Image(systemName: pinned ? "pin.fill" : "pin") }
         .toggleStyle(.button)
-        .help(pinned ? "已固定：失焦不收起、Esc 不关闭" : "固定浮窗")
+        .help(pinned ? "已固定：失焦不收起、Esc 不关闭（⌘P）" : "固定浮窗（⌘P）")
     }
     .pickerStyle(.menu)
     .labelsHidden()
@@ -101,17 +129,19 @@ struct TranslatePanelView: View {
 
   private var sourceArea: some View {
     VStack(alignment: .leading, spacing: 6) {
-      SourceTextView(text: $coordinator.sourceText) { coordinator.start() }
-        .frame(height: 84)
-        .overlay(alignment: .topLeading) {
-          if coordinator.sourceText.isEmpty {
-            Text("输入或粘贴文字，↩ 翻译，⇧↩ 换行")
-              .foregroundStyle(.tertiary)
-              .padding(.leading, 6)
-              .padding(.top, 6)
-              .allowsHitTesting(false)
-          }
+      SourceTextView(text: $coordinator.sourceText, fontSize: 14 * fontScale) {
+        coordinator.start()
+      }
+      .frame(height: 84)
+      .overlay(alignment: .topLeading) {
+        if coordinator.sourceText.isEmpty {
+          Text("输入或粘贴文字，↩ 翻译，⇧↩ 换行")
+            .foregroundStyle(.tertiary)
+            .padding(.leading, 6)
+            .padding(.top, 6)
+            .allowsHitTesting(false)
         }
+      }
       HStack(spacing: 8) {
         if let direction { Text(direction).font(.caption).foregroundStyle(.secondary) }
         Spacer()
@@ -129,6 +159,21 @@ struct TranslatePanelView: View {
         }
         .labelStyle(.iconOnly)
         .disabled(coordinator.sourceText.isEmpty)
+        Button(
+          coordinator.isFavorite ? "取消收藏" : "收藏",
+          systemImage: coordinator.isFavorite ? "star.fill" : "star"
+        ) {
+          coordinator.toggleFavorite()
+        }
+        .labelStyle(.iconOnly)
+        .foregroundStyle(coordinator.isFavorite ? AnyShapeStyle(.yellow) : AnyShapeStyle(.primary))
+        .disabled(coordinator.primaryResult == nil)
+        .help("收藏这次翻译（⌘S），在历史里可以只看收藏")
+        if coordinator.replaceSource != nil {
+          Button("替换原文", action: replaceOriginal)
+            .disabled(coordinator.primaryResult == nil)
+            .help("用第一个服务的译文替换原 App 里选中的文字")
+        }
         Button("翻译") { coordinator.start() }
           .buttonStyle(.borderedProminent)
           .disabled(coordinator.sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -181,14 +226,37 @@ struct TranslatePanelView: View {
     } else {
       ScrollView {
         VStack(spacing: 8) {
-          ForEach(coordinator.cards) { card in
-            ProviderCardView(card: card, language: coordinator.target, speaker: speaker) {
+          ForEach(Array(coordinator.cards.enumerated()), id: \.element.id) { index, card in
+            ProviderCardView(
+              card: card, index: index, language: coordinator.target, speaker: speaker,
+              fontScale: fontScale, isCollapsed: collapsed.contains(card.id),
+              isCopied: coordinator.copiedCard == card.id
+            ) {
               coordinator.retry(card.id)
+            } onCopy: {
+              coordinator.copyCard(card.id)
+            } onToggleCollapse: {
+              toggleCollapse(card.id)
             }
           }
         }
         .padding(10)
+        .onGeometryChange(for: CGFloat.self) {
+          $0.size.height
+        } action: {
+          resultsHeight = $0
+        }
       }
     }
+  }
+
+  private var collapsed: Set<String> {
+    Set(collapsedServices.split(separator: "\n").map(String.init))
+  }
+
+  private func toggleCollapse(_ id: String) {
+    var set = collapsed
+    if set.remove(id) == nil { set.insert(id) }
+    collapsedServices = set.sorted().joined(separator: "\n")
   }
 }

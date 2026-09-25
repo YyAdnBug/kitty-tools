@@ -13,6 +13,7 @@ struct KittyToolsApp: App {
       hotKeyButton("启动器", .launcher) { appDelegate.toggleLauncher() }
       hotKeyButton("剪贴板历史", .clipboard) { appDelegate.toggleClipboard() }
       hotKeyButton("划词翻译", .selectionTranslate) { appDelegate.selectionTranslate() }
+      hotKeyButton("划词翻译并替换", .translateReplace) { appDelegate.translateAndReplace() }
       hotKeyButton("截图翻译", .screenshotTranslate) { appDelegate.screenshotTranslate() }
       hotKeyButton("输入翻译", .inputTranslate) { appDelegate.showInputTranslate() }
       Toggle("复制即译", isOn: $copyToTranslate)

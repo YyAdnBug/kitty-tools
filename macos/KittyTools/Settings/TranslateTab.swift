@@ -1,10 +1,13 @@
-// 设置 › 翻译：语言（第一 / 第二语言；源、目标只在浮窗顶部切换）、行为（去换行、自动复制、历史），
+// 设置 › 翻译：语言（第一 / 第二语言；源、目标只在浮窗顶部切换）、行为（去换行、自动复制、历史与导出），
 // 服务（启用、排序、各服务的选项与密钥、自建 AI 实例的增删改、获取模型、测试连接）。密钥直接读写钥匙串。
 
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct TranslateTab: View {
   @Bindable var services: TranslateServiceStore
+  let history: HistoryStore
   @AppStorage(Prefs.translateFirst) private var first = Lang.zhHans.rawValue
   @AppStorage(Prefs.translateSecond) private var second = Lang.en.rawValue
   @AppStorage(Prefs.translateRemoveNewlines) private var removeNewlines = false
@@ -32,7 +35,7 @@ struct TranslateTab: View {
       // 两个选成同一种语言（简繁也算）就互换，免得「自动」变成中译中
       .onChange(of: first) { old, new in if sameLanguage(new, second) { second = old } }
       .onChange(of: second) { old, new in if sameLanguage(new, first) { first = old } }
-      Section("行为") {
+      Section {
         Toggle("翻译前把换行合成一段（适合 PDF 复制的文字）", isOn: $removeNewlines)
         Toggle("自动复制第一个服务的译文", isOn: $autoCopy)
           .help("「复制即译」开着时不会自动复制，免得自己触发自己")
@@ -41,6 +44,28 @@ struct TranslateTab: View {
           ForEach([100, 200, 500, 1000, 2000], id: \.self) { Text("\($0) 条").tag($0) }
         }
         .disabled(!historyEnabled)
+        LabeledContent("导出") {
+          Menu("导出…") {
+            Section("全部历史") {
+              Button("CSV（表格）…") { export(favoritesOnly: false, anki: false) }
+              Button("TSV（Anki 卡片）…") { export(favoritesOnly: false, anki: true) }
+            }
+            Section("只导收藏（生词本）") {
+              Button("CSV（表格）…") { export(favoritesOnly: true, anki: false) }
+              Button("TSV（Anki 卡片）…") { export(favoritesOnly: true, anki: true) }
+            }
+          }
+          .fixedSize()
+        }
+      } header: {
+        Text("行为")
+      } footer: {
+        Text(
+          "浮窗快捷键：↩ 翻译，⇧↩ / ⌘↩ 换行，⌘R 重新翻译，⌘S 收藏，⌘1–9 复制第几个结果，⌘P 固定，⌘W 关闭，"
+            + "⌘+ / ⌘- / ⌘0 字号。划词来的翻译可以「替换原文」；「划词翻译并替换」可在快捷键页设置（默认不设）。"
+        )
+        .font(.caption)
+        .foregroundStyle(.secondary)
       }
       Section {
         ForEach($services.services) { $service in
@@ -80,6 +105,23 @@ struct TranslateTab: View {
   private func sameLanguage(_ a: String, _ b: String) -> Bool {
     guard let a = Lang(rawValue: a), let b = Lang(rawValue: b) else { return false }
     return a.isSameLanguage(as: b)
+  }
+
+  /// 导出翻译历史 / 收藏：CSV 给表格（带 BOM，Excel 才认 UTF-8），TSV 给 Anki（正面原文、背面译文）
+  private func export(favoritesOnly: Bool, anki: Bool) {
+    let entries = history.search("", favoritesOnly: favoritesOnly, limit: 0)
+    let panel = NSSavePanel()
+    panel.allowedContentTypes = [anki ? .tabSeparatedText : .commaSeparatedText]
+    panel.nameFieldStringValue = (favoritesOnly ? "翻译收藏" : "翻译历史") + (anki ? ".tsv" : ".csv")
+    panel.begin { response in
+      guard response == .OK, let url = panel.url else { return }
+      let text = anki ? HistoryStore.tsv(entries) : "\u{FEFF}" + HistoryStore.csv(entries)
+      do {
+        try text.write(to: url, atomically: true, encoding: .utf8)
+      } catch {
+        NSAlert(error: error).runModal()
+      }
+    }
   }
 
   private func move(_ id: String, by offset: Int) {

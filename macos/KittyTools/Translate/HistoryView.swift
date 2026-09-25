@@ -1,5 +1,5 @@
-// 翻译历史（覆盖在浮窗结果区上）：搜索原文 / 译文，点一条把原文放回去重新翻译；收藏、复制译文、删除；
-// 底部「共 N 条 · 收藏 M」与清空（只清非收藏，先确认）。
+// 翻译历史（覆盖在浮窗结果区上）：搜索原文 / 译文、可只看收藏（生词本），点一条把原文放回去重新翻译；
+// 收藏、复制译文、删除；底部「共 N 条 · 收藏 M」与清空（只清非收藏，先确认）。导出在设置 › 翻译。
 
 import SwiftUI
 
@@ -8,16 +8,23 @@ struct HistoryView: View {
   let onApply: (HistoryStore.Entry) -> Void
   let onClose: () -> Void
   @State private var query = ""
+  @State private var favoritesOnly = false
   @State private var confirmClear = false
 
   var body: some View {
     let _ = history.revision  // 改动后刷新查询
-    let entries = history.search(query)
+    let entries = history.search(query, favoritesOnly: favoritesOnly)
     let counts = history.counts
     VStack(spacing: 0) {
       HStack {
         Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
         TextField("搜索翻译历史", text: $query).textFieldStyle(.plain)
+        Toggle(isOn: $favoritesOnly) {
+          Image(systemName: favoritesOnly ? "star.fill" : "star")
+        }
+        .toggleStyle(.button)
+        .foregroundStyle(favoritesOnly ? AnyShapeStyle(.yellow) : AnyShapeStyle(.secondary))
+        .help(favoritesOnly ? "显示全部" : "只看收藏")
         Button("关闭", systemImage: "xmark", action: onClose)
           .labelStyle(.iconOnly)
           .buttonStyle(.borderless)
@@ -25,8 +32,11 @@ struct HistoryView: View {
       .padding(10)
       Divider()
       if entries.isEmpty {
-        ContentUnavailableView(query.isEmpty ? "还没有翻译历史" : "没有匹配的记录", systemImage: "clock")
-          .frame(maxHeight: .infinity)
+        ContentUnavailableView(
+          query.isEmpty ? (favoritesOnly ? "还没有收藏（⌘S 收藏当前翻译）" : "还没有翻译历史") : "没有匹配的记录",
+          systemImage: favoritesOnly ? "star" : "clock"
+        )
+        .frame(maxHeight: .infinity)
       } else {
         List(entries) { entry in
           Button {
