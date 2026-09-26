@@ -10,7 +10,8 @@
 # DMG 窗口（Whisker 品牌时刻）：背景 Config/dmg-background.tiff（设计区 600×400 在左上角：左 App、右「应用程序」、中间品牌粉箭头，
 #   底下写着「仍要打开」的路径；整张 2560×1600 pt、@1x + @2x——访达从窗口左上角 1:1 贴背景、不缩放，窗口拉大时靠多出来的
 #   奶油底盖住，不露白；由 swift macos/brand-icons.swift 生成，字标写死 Kitty Tools，改名要改那个脚本重跑），
-#   用 hdiutil 做可写映像 + AppleScript 让访达摆位置，再压成只读。第一次跑会问能不能控制访达；
+#   用 hdiutil 做可写映像 + AppleScript 让访达摆位置（隐藏的 .background 挪到默认窗口外、删掉 .fseventsd，
+#   免得开了「显示隐藏文件」时压在字标上），再压成只读。第一次跑会问能不能控制访达；
 #   不允许或 DMG_LAYOUT=0 时照样出包，只是没有背景和摆位。
 set -euo pipefail
 M="$(cd "$(dirname "$0")" && pwd)"; OUT="$M/build"; CHANGELOG="$M/KittyTools/Resources/changelog.json"
@@ -54,12 +55,19 @@ tell application "Finder"
     set background picture of viewOptions to file ".background:background.tiff"
     set position of item "$NAME.app" of container window to {150, 205}
     set position of item "Applications" of container window to {450, 205}
+    -- 开了「显示隐藏文件」的访达会把 .background 画出来：挪到默认窗口右边（扩展背景上），不压字标和图标；
+    -- 没开时访达拿不到这个隐藏项，忽略
+    try
+      set position of item ".background" of container window to {860, 205}
+    end try
     update without registering applications
     delay 1
     close
   end tell
 end tell
 APPLESCRIPT
+  # 挂载时系统写进来的事件日志目录：开了「显示隐藏文件」会露在窗口里，只读映像里也用不上
+  rm -rf "$MOUNT/.fseventsd"
   sync
   hdiutil detach "$MOUNT" >/dev/null || hdiutil detach "$MOUNT" -force >/dev/null
   hdiutil convert "$RW" -format UDZO -ov -o "$DMG"
