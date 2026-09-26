@@ -75,7 +75,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
       ]
     case .launcher:
       [
-        "点外", "关闭", "英文", "输入法", "书签", "Chrome", "Edge", "Brave", "搜索", "引擎", "快捷链接", "关键词",
+        "英文", "输入法", "书签", "Chrome", "Edge", "Brave", "搜索", "引擎", "快捷链接", "关键词",
         "兜底", "使用记录", "最近", "挤压", "弹开", "动画", "实验", "文件", "open", "find", "Spotlight",
       ]
     case .screenshot:
@@ -139,7 +139,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
 
   /// page：要切到的页；nil 保持上次的页。onboarding：盖上欢迎引导（首次安装、关于页里重看）
   func show(page: SettingsPage? = nil, onboarding: Bool = false) {
-    // 页面上开着 sheet（启动器的编辑框等）时不换页：换页会把那一页连同 sheet 和没保存的输入一起拆掉
+    // 页面上开着 sheet（快捷键速查表、确认框等）时不换页：换页会把那一页连同 sheet 和没保存的输入一起拆掉
     if let page, window.attachedSheet == nil { navigation.page = page }
     if onboarding { navigation.showsOnboarding = true }
     NSApp.setActivationPolicy(.regular)

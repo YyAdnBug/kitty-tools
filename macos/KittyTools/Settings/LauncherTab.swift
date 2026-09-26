@@ -55,7 +55,8 @@ struct LauncherTab: View {
       } footer: {
         HStack(alignment: .firstTextBaseline) {
           caption("搜 App、文件、书签、网址、路径和算式，↩ 打开，⌘K 看这一项的全部动作。")
-          // 合并后在这里放 ShortcutsButton()
+          Spacer(minLength: 8)
+          ShortcutsButton()
         }
       }
       Section {

@@ -143,7 +143,7 @@ struct TranslateTab: View {
             .font(.caption)
             .foregroundStyle(.secondary)
           Spacer(minLength: 8)
-          // 合并后在这里放 ShortcutsButton()
+          ShortcutsButton()
         }
       }
       Section {

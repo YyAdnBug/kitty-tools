@@ -5,8 +5,6 @@ import Foundation
 enum Prefs {
   /// 剪贴板面板点外即关；面板上的图钉 = 把它关掉
   static let clipboardHideOnUnfocus = "clipboardHideOnUnfocus"
-  /// 启动器点外即关（同上）
-  static let launcherHideOnUnfocus = "launcherHideOnUnfocus"
   /// 启动器搜哪些浏览器的书签
   static let launcherBookmarksChrome = "launcherBookmarksChrome"
   static let launcherBookmarksEdge = "launcherBookmarksEdge"
@@ -85,7 +83,6 @@ enum Prefs {
   static func registerDefaults() {
     UserDefaults.standard.register(defaults: [
       clipboardHideOnUnfocus: true,
-      launcherHideOnUnfocus: true,
       // Chrome 书签不需要额外授权，默认开（网址是启动器里用得最多的）
       launcherBookmarksChrome: true,
       launcherBookmarksEdge: false,

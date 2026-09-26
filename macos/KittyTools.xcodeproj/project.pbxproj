@@ -19,7 +19,7 @@
 /* Begin PBXFileReference section */
 		6A0000000000000000000021 /* KittyToolsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KittyToolsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6A0000000000000000000022 /* Tests.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Tests.xcconfig; sourceTree = "<group>"; };
-		6A0000000000000000000006 /* Kitty Tools Native.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Kitty Tools Native.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		6A0000000000000000000006 /* Kitty Tools.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Kitty Tools.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		6A0000000000000000000007 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
 		6A0000000000000000000008 /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
 		6A0000000000000000000009 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
@@ -70,7 +70,7 @@
 		6A0000000000000000000003 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				6A0000000000000000000006 /* Kitty Tools Native.app */,
+				6A0000000000000000000006 /* Kitty Tools.app */,
 				6A0000000000000000000021 /* KittyToolsTests.xctest */,
 			);
 			name = Products;
@@ -133,7 +133,7 @@
 			packageProductDependencies = (
 			);
 			productName = KittyTools;
-			productReference = 6A0000000000000000000006 /* Kitty Tools Native.app */;
+			productReference = 6A0000000000000000000006 /* Kitty Tools.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */

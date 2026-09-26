@@ -16,7 +16,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "6A000000000000000000000B"
-               BuildableName = "Kitty Tools Native.app"
+               BuildableName = "Kitty Tools.app"
                BlueprintName = "KittyTools"
                ReferencedContainer = "container:KittyTools.xcodeproj">
             </BuildableReference>
@@ -57,7 +57,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "6A000000000000000000000B"
-            BuildableName = "Kitty Tools Native.app"
+            BuildableName = "Kitty Tools.app"
             BlueprintName = "KittyTools"
             ReferencedContainer = "container:KittyTools.xcodeproj">
          </BuildableReference>
@@ -74,7 +74,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "6A000000000000000000000B"
-            BuildableName = "Kitty Tools Native.app"
+            BuildableName = "Kitty Tools.app"
             BlueprintName = "KittyTools"
             ReferencedContainer = "container:KittyTools.xcodeproj">
          </BuildableReference>
