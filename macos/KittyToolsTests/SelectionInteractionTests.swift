@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import Testing
 
 @testable import KittyTools
@@ -63,14 +64,37 @@ struct SelectionInteractionTests {
 
     /// 按下 → 分 4 步拖到 end → 松手
     func drag(_ start: CGPoint, _ end: CGPoint) {
+      begin(start, to: end)
+      release(end)
+    }
+
+    /// 按下 → 分 4 步拖到 end，不松手（看拖动中的状态）
+    func begin(_ start: CGPoint, to end: CGPoint) {
       down(start)
       for step in 1...4 {
         let t = CGFloat(step) / 4
         let point = CGPoint(x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t)
         target?.mouseDragged(with: event(.leftMouseDragged, point))
       }
+    }
+
+    func release(_ end: CGPoint) {
       target?.mouseUp(with: event(.leftMouseUp, end))
       target = nil
+    }
+
+    /// 鼠标移到 point（不按下）
+    func move(_ point: CGPoint) {
+      view.mouseMoved(with: event(.mouseMoved, point))
+    }
+
+    /// 按一下键（不带修饰键）
+    func key(_ code: Int, _ characters: String) {
+      let event = NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+        windowNumber: window.windowNumber, context: nil, characters: characters,
+        charactersIgnoringModifiers: characters, isARepeat: false, keyCode: UInt16(code))!
+      view.keyDown(with: event)
     }
 
     func click(_ point: CGPoint) {
@@ -84,7 +108,8 @@ struct SelectionInteractionTests {
       drag(CGPoint(x: 300, y: 200), CGPoint(x: 700, y: 500))
     }
 
-    var toolbar: NSView? { view.subviews.first { $0 is EditorToolbar } }
+    var toolbar: EditorToolbar? { view.subviews.lazy.compactMap { $0 as? EditorToolbar }.first }
+    var menu: HUDMenu? { view.subviews.lazy.compactMap { $0 as? HUDMenu }.first }
   }
 
   static let initial = CGRect(x: 300, y: 200, width: 400, height: 300)
@@ -244,5 +269,109 @@ struct SelectionInteractionTests {
     h.drag(CGPoint(x: 700, y: 193), CGPoint(x: 760, y: 150))
     #expect(h.intercepted == nil, "被 \(String(describing: h.intercepted)) 截走，工具栏 \(toolbar.frame)")
     #expect(h.view.selection == CGRect(x: 300, y: 150, width: 460, height: 350))
+  }
+
+  // 工具栏：在选区下方 10 pt、水平居中；选区贴着屏幕底时翻到上方（D4）
+  @Test func toolbarCenteredUnderSelectionFlipsAboveNearBottom() throws {
+    let h = Harness()
+    h.makeSelection()
+    let toolbar = try #require(h.toolbar)
+    #expect(toolbar.isShown)
+    #expect(abs(toolbar.frame.midX - Self.initial.midX) <= 0.5)
+    #expect(toolbar.frame.maxY == Self.initial.minY - 10)
+    h.view.select(CGRect(x: 300, y: 20, width: 400, height: 300))
+    #expect(abs(toolbar.frame.midX - 500) <= 0.5)
+    #expect(toolbar.frame.minY == 330)
+  }
+
+  // 画标注时栏不动；只有拖动 / 缩放 / 平移选区时才淡出让位
+  @Test func toolbarStaysVisibleWhileAnnotating() throws {
+    let h = Harness()
+    h.makeSelection()
+    let toolbar = try #require(h.toolbar)
+    h.view.tool = .rectangle
+    h.begin(CGPoint(x: 350, y: 250), to: CGPoint(x: 450, y: 350))
+    #expect(toolbar.isShown)
+    h.release(CGPoint(x: 450, y: 350))
+    #expect(toolbar.isShown)
+    #expect(h.view.annotations.count == 1)
+    h.view.tool = nil
+    h.begin(CGPoint(x: 600, y: 450), to: CGPoint(x: 620, y: 460))
+    #expect(!toolbar.isShown)
+    h.release(CGPoint(x: 620, y: 460))
+    #expect(toolbar.isShown)
+    #expect(h.view.selection == Self.initial.offsetBy(dx: 20, dy: 10))
+  }
+
+  // 数字键 1–9、0 按栏里的顺序选工具，再按一次收起
+  @Test func digitKeysChooseAndToggleTools() {
+    let h = Harness()
+    h.makeSelection()
+    h.key(kVK_ANSI_5, "5")
+    #expect(h.view.tool == .pen)
+    h.key(kVK_ANSI_5, "5")
+    #expect(h.view.tool == nil)
+    h.key(kVK_ANSI_0, "0")
+    #expect(h.view.tool == .spotlight)
+  }
+
+  // 保存 ▾ 弹 HUD 菜单（在栏下方）；Esc 先收菜单（工具还在），点外面也只收菜单
+  @Test func saveCaretOpensHUDMenu() throws {
+    let h = Harness()
+    h.makeSelection()
+    h.view.tool = .rectangle
+    let toolbar = try #require(h.toolbar)
+    try #require(toolbar.button(for: .saveMenu)).performClick(nil)
+    let menu = try #require(h.menu)
+    #expect(menu.frame.maxY <= toolbar.frame.minY)
+    h.key(kVK_Escape, "\u{1b}")
+    #expect(h.menu == nil)
+    #expect(h.view.tool == .rectangle)
+    try #require(toolbar.button(for: .saveMenu)).performClick(nil)
+    #expect(h.menu != nil)
+    h.click(CGPoint(x: 900, y: 700))
+    #expect(h.menu == nil)
+    #expect(h.view.selection == Self.initial)
+    #expect(h.view.isAdjusting)
+  }
+
+  // 在选区里 / 边上按下还没拖开（比如点一下取消选中标注）：栏不闪；拖开了才淡出
+  @Test func pressWithoutDragKeepsToolbar() throws {
+    let h = Harness()
+    h.makeSelection()
+    let toolbar = try #require(h.toolbar)
+    for point in [CGPoint(x: 500, y: 350), CGPoint(x: 700, y: 350)] {
+      h.down(point)
+      #expect(toolbar.isShown, "\(point)")
+      h.release(point)
+      #expect(toolbar.isShown)
+    }
+    #expect(h.view.selection == Self.initial)
+  }
+
+  // 进场时光标就在窗口上：洞和粉框从光标处的零尺寸占位长出来，不从屏幕左下角 (0, 0) 飞过来
+  @Test func hoverMorphStartsAtCursor() {
+    let h = Harness(windows: [CGRect(x: 100, y: 100, width: 400, height: 300)])
+    let cursor = CGPoint(x: 300, y: 250)
+    h.view.mouse = cursor
+    let starts = h.view.subviews.compactMap(\.layer).flatMap { $0.sublayers ?? [] }
+      .compactMap { $0.animation(forKey: "morph") as? CABasicAnimation }
+      .map { ($0.fromValue as! CGPath).boundingBoxOfPath }
+    if Style.reduceMotion { return #expect(starts.isEmpty) }
+    #expect(starts.count == 2)
+    #expect(starts.contains(CGRect(origin: cursor, size: .zero)), "\(starts)")
+    #expect(!starts.contains(.zero), "\(starts)")
+  }
+
+  // 悬停在边上：那条边（角）是「热」的，对应手柄放大、边加粗
+  @Test func hoveringEdgeMarksHandleHot() {
+    let h = Harness()
+    h.makeSelection()
+    h.move(CGPoint(x: 400, y: 502))
+    #expect(h.view.hotHandle == .top)
+    h.move(CGPoint(x: 703, y: 198))
+    #expect(h.view.hotHandle == .bottomRight)
+    h.move(CGPoint(x: 500, y: 350))
+    #expect(h.view.hotHandle == nil)
   }
 }

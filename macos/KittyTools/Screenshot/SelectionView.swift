@@ -1,9 +1,10 @@
 // 框选遮罩里一块屏幕的画面与交互（会话见 RegionSelector）。从下到上：冻结帧（本视图图层的内容）→ 标注层
 // （AnnotationCanvas，只重画变了的那块）→ 暗色蒙层、选区边框、手柄、尺寸、放大镜（CALayer，拖动时只改路径和位置，
-// 不重画整屏）→ 文字输入框 → 工具栏与样式栏（EditorToolbar）。
-// 截图翻译 / 识字：拖动框选、松手即确认。截图：悬停高亮窗口、单击截整窗，拖出或单击后进入调整：整条边和四角都能拖、拖动平移、
-// 方向键微调（⇧ 10 点）、拖动框选时按住空格平移；放大镜显示中心像素的色值（C 复制），按住 ⌘ 出整屏十字准线；S 长截图；
-// 标注 1–0（矩形、椭圆、箭头、直线、画笔、荧光笔、文字、序号、马赛克、聚光灯，⇧ 画正方形 / 45° 线），
+// 不重画整屏）→ 文字输入框 → 工具栏、样式托盘、HUD 菜单（EditorToolbar.swift）。外观是 Whisker §6 截图的品牌粉。
+// 截图翻译 / 识字：拖动框选、松手即确认。截图：悬停窗口（洞和粉框磁吸变形、显示窗口尺寸）、单击选中窗口，拖出或单击后进入调整：
+// 整条边和四角都能拖（悬停的边加粗、手柄放大）、拖动平移、方向键微调（⇧ 10 点）、拖动框选时按住空格平移；
+// 放大镜显示中心像素的色值（C 复制），按住 ⌘ 出整屏十字准线；S 长截图、T 钉图、O 识字；
+// 标注 1–0（矩形、椭圆、箭头、直线、画笔、荧光笔、文字、序号、马赛克、聚光灯，⇧ 画正方形 / 45° 线，再按一次收起），
 // 点中标注可拖动、改颜色粗细、⌫ 删除、双击文字重新编辑，⌘Z 撤销、⇧⌘Z 重做。
 
 import AppKit
@@ -81,16 +82,19 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private let shade = CAShapeLayer()
   private let outline = CAShapeLayer()
   private let highlight = CAShapeLayer()
-  private let handles = CAShapeLayer()
+  /// 8 个手柄各一层（依次弹出、悬停的那个放大）；按住的边 / 角加粗的粉线
+  private let handleLayers = Dictionary(
+    uniqueKeysWithValues: RegionSelector.Handle.allCases.map { ($0, CAShapeLayer()) })
+  private let edgeHighlight = CAShapeLayer()
   private let annotationOutline = CAShapeLayer()
-  /// 选区双描边的外圈（内圈 white 0.9 是 outline）
+  /// 选区双描边的外圈（内圈 1.5 pt 粉是 outline）
   private let outlineOuter = CAShapeLayer()
   /// 按住 ⌘ 时穿过光标的十字准线：1 pt white 0.6 贴 1 pt black 0.25，亮底暗底都看得见
   private let crossLight = CAShapeLayer()
   private let crossDark = CAShapeLayer()
-  private let sizeLabel = Pill(fontSize: 12, weight: .semibold, radius: Style.Radius.control)
-  private let hint = Pill(
-    fontSize: 13, padding: CGSize(width: 14, height: 7), digits: false, weight: .regular)
+  private let sizeLabel = Pill(
+    font: .monospacedSystemFont(ofSize: 12, weight: .semibold), radius: Style.Radius.control)
+  private let hint = Pill(font: .systemFont(ofSize: 13), padding: CGSize(width: 14, height: 7))
   private let magnifier = CALayer()
   private let loupe = CALayer()
   private let loupeShadow = CALayer()
@@ -103,12 +107,22 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private let infoKey = CATextLayer()
   private var toolbar: EditorToolbar?
   private var styleBar: StyleBar?
+  /// 开着的 HUD 菜单（同时最多一个）：Esc、点外面先收它
+  private var hudMenu: HUDMenu?
   /// 放大镜上次取样的像素和色值（像素没变就不重取）
   private var sampled: (x: Int, y: Int, hex: String)?
-  /// 上次画的悬停窗口：换到别的窗口时，洞和高亮框磁吸变形过去（S5）
+  /// 上次画的悬停窗口：换到别的窗口 / 桌面时，洞和高亮框磁吸变形过去（S5）
   private var shownHover: CGRect?
+  /// 没悬停窗口时洞缩成光标处的零尺寸占位（路径元素数恒定，桌面 ↔ 窗口也能变形）
+  private var placeholder = CGPoint.zero
+  /// 上次的洞是不是选区（单击窗口选中时洞圆角 10 → 0 用 pop）
+  private var holeIsSelection = false
   /// 上次有没有洞：有无变化时蒙层深浅过渡
   private var hadHole = false
+  /// 悬停（或正在拖）的选区边 / 角：那条边加粗、对应手柄放大 1.3。截图自检、交互测试读它
+  private(set) var hotHandle: RegionSelector.Handle?
+  /// 手柄上次是否显示（进入调整时依次弹出）
+  private var handlesShown = false
   /// 放大镜上次在光标哪一侧（翻边时滑过去）
   private var magnifierSide: (left: Bool, above: Bool)?
   private var hintDismissed = false
@@ -135,24 +149,34 @@ final class SelectionView: NSView, NSTextViewDelegate {
     let root = canvas.layer!
     shade.fillRule = .evenOdd
     shade.fillColor = NSColor.black.withAlphaComponent(0.18).cgColor
+    let pink = Style.Shot.accent
     outline.fillColor = nil
-    outline.strokeColor = NSColor.white.withAlphaComponent(0.9).cgColor
-    outline.lineWidth = 1
+    outline.strokeColor = pink.cgColor
+    outline.lineWidth = 1.5
     outlineOuter.fillColor = nil
     outlineOuter.strokeColor = NSColor.black.withAlphaComponent(0.28).cgColor
     outlineOuter.lineWidth = 1
-    highlight.fillColor = NSColor.controlAccentColor.withAlphaComponent(0.12).cgColor
-    highlight.strokeColor = NSColor.controlAccentColor.cgColor
+    edgeHighlight.fillColor = nil
+    edgeHighlight.strokeColor = pink.cgColor
+    edgeHighlight.lineWidth = 2.5
+    edgeHighlight.lineCap = .round
+    highlight.fillColor = pink.withAlphaComponent(0.12).cgColor
+    highlight.strokeColor = pink.cgColor
     highlight.lineWidth = 2
-    handles.fillColor = NSColor.white.cgColor
-    handles.strokeColor = NSColor.black.withAlphaComponent(0.25).cgColor
-    handles.lineWidth = 0.5
-    handles.shadowColor = NSColor.black.cgColor
-    handles.shadowOpacity = 0.35
-    handles.shadowRadius = 1.5
-    handles.shadowOffset = CGSize(width: 0, height: -0.5)
+    for (handle, layer) in handleLayers {
+      layer.path = Self.handleShape(handle)
+      layer.fillColor = NSColor.white.cgColor
+      layer.strokeColor = pink.cgColor
+      layer.lineWidth = 1.5
+      layer.shadowColor = NSColor.black.cgColor
+      layer.shadowOpacity = 0.3
+      layer.shadowRadius = 1.5
+      layer.shadowOffset = CGSize(width: 0, height: -0.5)
+      layer.shadowPath = layer.path
+      layer.isHidden = true
+    }
     annotationOutline.fillColor = nil
-    annotationOutline.strokeColor = NSColor.controlAccentColor.cgColor
+    annotationOutline.strokeColor = pink.cgColor
     annotationOutline.lineWidth = 1
     annotationOutline.lineDashPattern = [4, 3]
     for (layer, color) in [
@@ -164,21 +188,24 @@ final class SelectionView: NSView, NSTextViewDelegate {
       layer.lineWidth = 1
     }
     setUpMagnifier()
-    for layer in [
-      shade, highlight, outlineOuter, outline, crossDark, crossLight, handles, annotationOutline,
-      sizeLabel.layer, hint.layer, magnifier,
-    ] {
+    for layer in [shade, highlight, outlineOuter, outline, edgeHighlight, crossDark, crossLight]
+      + Self.handleOrder.compactMap({ handleLayers[$0] })
+      + [annotationOutline, sizeLabel.layer, hint.layer, magnifier]
+    {
       root.addSublayer(layer)
     }
-    hint.text =
-      mode == .quick
-      ? session.hint
-      : "拖动框选，单击截取窗口" + (session.lastRegion == nil ? "" : "　D 上次区域") + "　Esc 取消"
+    if mode == .quick {
+      hint.text = session.hint
+    } else {
+      hint.setParts(
+        ["拖动框选", "单击选中窗口", "双击直接拷贝"] + (session.lastRegion == nil ? [] : ["D 上次区域"])
+          + ["Esc 取消"])
+    }
     if mode == .capture { makeBars() }
     updateScale()
   }
 
-  /// 放大镜：15 × 15 像素、每格 9 pt（135 pt，圆角 10，2 pt 白环 + 阴影），0.5 pt 像素网格，中心行列强调色十字条带，
+  /// 放大镜：15 × 15 像素、每格 9 pt（135 pt，圆角 10，2 pt 白环 + 阴影），0.5 pt 像素网格，中心行列粉色十字条带，
   /// 中心格按亮度描黑或白；下贴一张 40 pt 的 HUD 信息卡（色块 + HEX + 坐标 +「C」键帽）
   private func setUpMagnifier() {
     let side = CGFloat(Self.loupePixels) * Self.loupeCell
@@ -218,7 +245,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     bands.addRect(CGRect(x: middle, y: 0, width: cell, height: side))
     loupeBands.frame = loupe.bounds
     loupeBands.path = bands
-    loupeBands.fillColor = NSColor.controlAccentColor.withAlphaComponent(0.18).cgColor
+    loupeBands.fillColor = Style.Shot.accent.withAlphaComponent(0.18).cgColor
     loupeCenter.frame = loupe.bounds
     loupeCenter.path = CGPath(
       rect: CGRect(x: middle, y: middle, width: cell, height: cell), transform: nil)
@@ -227,11 +254,12 @@ final class SelectionView: NSView, NSTextViewDelegate {
     loupeCenter.lineWidth = 1
     for layer in [loupeBands, loupeGrid, loupeCenter] { loupe.addSublayer(layer) }
     infoCard.frame = CGRect(x: 0, y: 0, width: side, height: Self.infoHeight)
-    infoCard.backgroundColor = NSColor(white: 0.11, alpha: 0.86).cgColor
-    infoCard.cornerRadius = 8
-    infoCard.cornerCurve = .continuous
-    infoCard.borderWidth = 0.5
-    infoCard.borderColor = NSColor.white.withAlphaComponent(0.14).cgColor
+    Style.HUD.applySkin(to: infoCard, radius: Style.Radius.card)
+    Style.HUD.applyShadow(
+      to: infoCard,
+      path: CGPath(
+        roundedRect: infoCard.bounds, cornerWidth: Style.Radius.card,
+        cornerHeight: Style.Radius.card, transform: nil))
     infoSwatch.frame = CGRect(x: 10, y: 12, width: 16, height: 16)
     infoSwatch.cornerRadius = 4
     infoSwatch.borderWidth = 0.5
@@ -285,6 +313,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
 
   /// 回到待选（别的屏开始操作、右键重新框时）：标注一起清掉
   func reset() {
+    hudMenu?.dismiss()
     endEditing()
     drag = nil
     draft = nil
@@ -305,9 +334,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private func updateScale() {
     let scale = window?.backingScaleFactor ?? 2
     for layer in [
-      shade, outline, outlineOuter, crossLight, crossDark, highlight, handles, annotationOutline,
-      loupeGrid, loupeBands, loupeCenter, infoText, infoKey,
-    ] as [CALayer] {
+      shade, outline, outlineOuter, edgeHighlight, crossLight, crossDark, highlight,
+      annotationOutline, loupeGrid, loupeBands, loupeCenter, infoText, infoKey,
+    ] + Array(handleLayers.values) as [CALayer] {
       layer.contentsScale = scale
     }
     for pill in [sizeLabel, hint] { pill.scale = scale }
@@ -348,57 +377,18 @@ final class SelectionView: NSView, NSTextViewDelegate {
     hint.layer.add(fade, forKey: "leave")
   }
 
-  /// 按状态摆好全部图层（关掉隐式动画，拖动时跟手；只有换悬停窗口、蒙层深浅切换、放大镜出现 / 翻边时才加动画）
+  /// 按状态摆好全部图层（关掉隐式动画，拖动时跟手；只有换悬停窗口、单击选中窗口、蒙层深浅切换、手柄出现 / 悬停放大、
+  /// 放大镜出现 / 翻边、两条栏长出 / 淡出时才加动画）
   private func refresh() {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     defer { CATransaction.commit() }
     let hovered = selection == nil ? mouse.flatMap(windowRect(at:)) : nil
-    let hole = selection ?? hovered
-    let path = CGMutablePath()
-    path.addRect(bounds)
-    if let selection {
-      path.addRect(selection)
-    } else if let hovered {
-      path.addPath(Self.rounded(hovered))
-    }
-    // S5 窗口磁吸：换到另一个窗口时，洞和高亮框从当前（可能还在动的）形状弹簧变形过去。路径元素数恒定（矩形 + 圆角矩形）
-    let morphs =
-      selection == nil && drag == nil && hovered != nil && shownHover != nil
-      && hovered != shownHover
-    let oldShade = shade.presentation()?.path ?? shade.path
-    let oldHighlight = highlight.presentation()?.path ?? highlight.path
-    shade.path = path
-    highlight.path = hovered.map { Self.rounded($0.insetBy(dx: 1, dy: 1)) }
-    if morphs, let morph = Style.Motion.glide.caAnimation(keyPath: "path") as? CABasicAnimation {
-      morph.fromValue = oldShade
-      shade.add(morph, forKey: "morph")
-      if let copy = morph.copy() as? CABasicAnimation {
-        copy.fromValue = oldHighlight
-        highlight.add(copy, forKey: "morph")
-      }
-    } else if hovered != shownHover || selection != nil {
-      // 路径结构变了（选中了、移到桌面）：还在跑的变形动画插值会乱，去掉
-      shade.removeAnimation(forKey: "morph")
-      highlight.removeAnimation(forKey: "morph")
-    }
-    shownHover = hovered
-    // 待选时整屏轻暗 0.18；有选区（或悬停的窗口）时洞外 0.45，切换时过渡 0.12 s
-    let fill = NSColor.black.withAlphaComponent(hole == nil ? 0.18 : 0.45).cgColor
-    if (hole != nil) != hadHole {
-      let fade = CABasicAnimation(keyPath: "fillColor")
-      fade.fromValue = shade.presentation()?.fillColor ?? shade.fillColor
-      fade.toValue = fill
-      fade.duration = 0.12
-      shade.add(fade, forKey: "fill")
-    }
-    shade.fillColor = fill
-    hadHole = hole != nil
-    // 选区双描边：内 1 pt white 0.9 + 外 1 pt black 0.28（亮底暗底都看得清）
-    outline.path = selection.map { CGPath(rect: $0.insetBy(dx: -0.5, dy: -0.5), transform: nil) }
-    outlineOuter.path = selection.map {
-      CGPath(rect: $0.insetBy(dx: -1.5, dy: -1.5), transform: nil)
-    }
+    if let mouse { placeholder = mouse }
+    updateHole(hovered: hovered)
+    // 选区双描边：内 1.5 pt 粉 + 外 1 pt black 0.28（亮底暗底都看得清）
+    outline.path = selection.map { CGPath(rect: $0.insetBy(dx: -0.75, dy: -0.75), transform: nil) }
+    outlineOuter.path = selection.map { CGPath(rect: $0.insetBy(dx: -2, dy: -2), transform: nil) }
     hint.layer.isHidden = selection != nil || hintDismissed
     if selection == nil {
       hint.place(
@@ -406,40 +396,168 @@ final class SelectionView: NSView, NSTextViewDelegate {
     }
 
     let adjusting = mode == .capture && isAdjusting
-    let wasShowingHandles = handles.path != nil
-    handles.path = adjusting ? selection.map(Self.handlesPath) : nil
-    handles.shadowPath = handles.path
-    if adjusting, !wasShowingHandles {
-      let fade = CABasicAnimation(keyPath: "opacity")
-      fade.fromValue = 0
-      fade.toValue = 1
-      fade.duration = 0.18
-      handles.add(fade, forKey: "appear")
-    }
+    updateHandles(adjusting ? selection : nil)
     // 输入文字时输入框自己有边框，不再画选中框（大小会跟着输入变）
     annotationOutline.path =
       editor == nil
       ? selected.map { CGPath(rect: $0.bounds.insetBy(dx: -4, dy: -4), transform: nil) } : nil
-    placeBars(showing: adjusting && drag == nil)
-    sizeLabel.layer.isHidden = mode == .quick || selection == nil
-    if mode == .capture, let selection {
+    placeBars(showing: adjusting && !movesSelection)
+    // 尺寸：选区（或悬停的窗口）左上角外 8 pt；放不下、或挡到工具栏 / 顶部提示时放进里面
+    let measured = selection ?? hovered
+    sizeLabel.layer.isHidden = mode == .quick || measured == nil
+    if mode == .capture, let measured {
       let pixels = RegionSelector.pixelRect(
-        selection, viewSize: bounds.size,
+        measured, viewSize: bounds.size,
         imageSize: CGSize(width: image.width, height: image.height))
       sizeLabel.setSize(width: Int(pixels.width), height: Int(pixels.height))
-      // 选区左上角外面；放不下、或被翻到上方的工具栏挡住时放进选区里
       let size = sizeLabel.size
-      let x = min(selection.minX, bounds.maxX - size.width)
-      var y = selection.maxY + 6
-      if y + size.height > bounds.maxY
-        || isOverBars(CGRect(x: x, y: y, width: size.width, height: size.height))
+      let x = max(bounds.minX, min(measured.minX, bounds.maxX - size.width))
+      var y = measured.maxY + 8
+      let frame = CGRect(x: x, y: y, width: size.width, height: size.height)
+      if frame.maxY > bounds.maxY || isOverBars(frame)
+        || (!hint.layer.isHidden && hint.frame.intersects(frame))
       {
-        y = selection.maxY - 6 - size.height
+        y = measured.maxY - 8 - size.height
       }
       sizeLabel.place(at: CGPoint(x: x, y: y))
     }
     updateMagnifier()
     updateCrosshair()
+  }
+
+  /// S5 窗口磁吸：洞（蒙层里的圆角矩形）和粉色高亮框。路径元素数恒定（外框 + 一个圆角矩形，没悬停窗口时是光标处的
+  /// 零尺寸占位），窗口之间、桌面 ↔ 窗口用 glide 从当前（可能还在动的）形状变形过去；单击窗口选中时洞圆角 10 → 0 用 pop；
+  /// 拖动、微调一律跟手
+  private func updateHole(hovered: CGRect?) {
+    let spot = CGRect(origin: placeholder, size: .zero)
+    let hole = selection ?? hovered ?? spot
+    let path = CGMutablePath()
+    path.addRect(bounds)
+    path.addPath(Self.roundedPath(hole, radius: selection == nil ? Style.Radius.card : 0))
+    let frame: CGPath? =
+      selection == nil
+      ? Self.roundedPath(hovered?.insetBy(dx: 1, dy: 1) ?? spot, radius: Style.Radius.card - 1)
+      : nil
+    var oldShade = shade.presentation()?.path ?? shade.path
+    var oldHighlight = highlight.presentation()?.path ?? highlight.path
+    var morph: CABasicAnimation?
+    if selection == nil {
+      // 同一状态下占位跟着光标走，只改模型值：正在跑的变形会追着新终点
+      if hovered != shownHover, shade.path != nil, !holeIsSelection {
+        morph = Style.Motion.glide.caAnimation(keyPath: "path") as? CABasicAnimation
+      }
+    } else if !holeIsSelection, shownHover != nil, selection == shownHover, !Style.reduceMotion {
+      morph = Style.Motion.pop.caAnimation(keyPath: "path", reduced: false) as? CABasicAnimation
+    } else if shade.path != path {
+      shade.removeAnimation(forKey: "morph")
+    }
+    // 没变就不设：整屏的蒙层重新光栅化一次不便宜（调整时鼠标每动一下都会走到这里）
+    if shade.path != path { shade.path = path }
+    if highlight.path != frame { highlight.path = frame }
+    if let morph {
+      // 从桌面占位出发（没在变形）时从光标现在的位置长出来：图层里的占位可能还停在进场前的 (0, 0)
+      // 或上次移出本屏的地方，直接用会从屏幕角落飞过来
+      if shownHover == nil, shade.animation(forKey: "morph") == nil {
+        let start = CGMutablePath()
+        start.addRect(bounds)
+        start.addPath(Self.roundedPath(spot, radius: Style.Radius.card))
+        oldShade = start
+        oldHighlight = Self.roundedPath(spot, radius: Style.Radius.card - 1)
+      }
+      morph.fromValue = oldShade
+      shade.add(morph, forKey: "morph")
+      if frame != nil, let copy = morph.copy() as? CABasicAnimation {
+        copy.fromValue = oldHighlight
+        highlight.add(copy, forKey: "morph")
+      }
+    }
+    if frame == nil { highlight.removeAnimation(forKey: "morph") }
+    shownHover = hovered
+    holeIsSelection = selection != nil
+    // 待选时整屏轻暗 0.18；有选区（或悬停的窗口）时洞外 0.45，切换时过渡 0.12 s
+    let hasHole = selection != nil || hovered != nil
+    let fill = NSColor.black.withAlphaComponent(hasHole ? 0.45 : 0.18).cgColor
+    if hasHole != hadHole {
+      let fade = CABasicAnimation(keyPath: "fillColor")
+      fade.fromValue = shade.presentation()?.fillColor ?? shade.fillColor
+      fade.toValue = fill
+      fade.duration = 0.12
+      shade.add(fade, forKey: "fill")
+    }
+    shade.fillColor = fill
+    hadHole = hasHole
+  }
+
+  /// 手柄：角 10 pt 白圆 + 1.5 pt 粉环，边中点 16 × 5 白胶囊 + 粉环（短边 < 40 不画边中点）；进入调整时从左上角顺时针
+  /// 依次弹出（错开 15 ms）；悬停 / 正在拖的边加 2.5 pt 粉线、对应手柄放大 1.3（pop）
+  private func updateHandles(_ rect: CGRect?) {
+    let appearing = rect != nil && !handlesShown
+    handlesShown = rect != nil
+    let reduced = Style.reduceMotion
+    for (index, handle) in Self.handleOrder.enumerated() {
+      guard let layer = handleLayers[handle] else { continue }
+      guard let rect else {
+        layer.isHidden = true
+        continue
+      }
+      let isEdge = [.top, .bottom, .left, .right].contains(handle)
+      layer.isHidden = isEdge && min(rect.width, rect.height) < 40
+      layer.position = handle.point(in: rect)
+      guard appearing else { continue }
+      if reduced {
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0
+        fade.toValue = 1
+        fade.duration = 0.2
+        layer.add(fade, forKey: "appear")
+      } else if let pop = Style.Motion.pop.caAnimation(keyPath: "transform.scale", reduced: false)
+        as? CABasicAnimation
+      {
+        pop.fromValue = 0
+        pop.beginTime = CACurrentMediaTime() + Double(index) * 0.015
+        pop.fillMode = .backwards
+        layer.add(pop, forKey: "appear")
+      }
+    }
+    let hot = rect.flatMap(hotHandle(in:))
+    if hot != hotHandle {
+      for (handle, scale) in [(hotHandle, 1), (hot, 1.3)] as [(RegionSelector.Handle?, CGFloat)] {
+        guard let handle, let layer = handleLayers[handle] else { continue }
+        let from = layer.presentation()?.value(forKeyPath: "transform.scale") ?? 1
+        layer.transform = CATransform3DMakeScale(scale, scale, 1)
+        guard !reduced,
+          let pop = Style.Motion.pop.caAnimation(keyPath: "transform.scale", reduced: false)
+            as? CABasicAnimation
+        else { continue }
+        pop.fromValue = from
+        layer.add(pop, forKey: "hot")
+      }
+      hotHandle = hot
+    }
+    if let hot, let rect {
+      edgeHighlight.path = Self.edgePath(hot, of: rect)
+    } else {
+      edgeHighlight.path = nil
+    }
+  }
+
+  /// 悬停（或正在拖）的边 / 角：拖手柄时就是那个手柄；其余拖动、输入文字、开着菜单、鼠标在栏上时没有
+  private func hotHandle(in rect: CGRect) -> RegionSelector.Handle? {
+    if case .resize(let handle, _)? = drag { return handle }
+    guard drag == nil, editor == nil, hudMenu == nil, let mouse, !isOverBars(mouse) else {
+      return nil
+    }
+    return Self.handle(at: mouse, in: rect)
+  }
+
+  /// 正在拖动 / 缩放 / 平移选区：两条栏只在这时让位淡出（画标注、拖标注时不动）。按在选区里 / 边上还没拖开不算，
+  /// 不然单击一下（取消选中标注）栏就闪一下
+  private var movesSelection: Bool {
+    switch drag {
+    case .move(_, let original)?, .resize(_, let original)?: selection != original
+    case .draw?: true
+    default: false
+    }
   }
 
   /// 十字准线跟放大镜同时出现（待选、拖动框选、拖手柄），只在按住 ⌘ 时；对齐到整点，白线盖住光标所在的那一点
@@ -470,10 +588,32 @@ final class SelectionView: NSView, NSTextViewDelegate {
       inner: min(8, max(3, min(selection.width, selection.height) / 4)))
   }
 
-  /// 悬停窗口的洞 / 高亮：圆角 10（窗口本身就是圆角的）
-  private static func rounded(_ rect: CGRect) -> CGPath {
-    let radius = min(Style.Radius.card, rect.width / 2, rect.height / 2)
-    return CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
+  /// 圆角矩形，元素恒为 move + 4 ×（line + curve）+ close：半径 0、零尺寸时也一样，洞和高亮框才能在窗口、
+  /// 桌面占位、选区之间做路径插值（S5）。半径夹在短边一半以内
+  static func roundedPath(_ rect: CGRect, radius: CGFloat) -> CGPath {
+    let r = max(0, min(radius, rect.width / 2, rect.height / 2))
+    let k = r * 0.4477  // 四分之一圆的三次贝塞尔：控制点离角 r × (1 − 0.5523)
+    let (minX, minY, maxX, maxY) = (rect.minX, rect.minY, rect.maxX, rect.maxY)
+    let path = CGMutablePath()
+    path.move(to: CGPoint(x: minX + r, y: minY))
+    path.addLine(to: CGPoint(x: maxX - r, y: minY))
+    path.addCurve(
+      to: CGPoint(x: maxX, y: minY + r), control1: CGPoint(x: maxX - k, y: minY),
+      control2: CGPoint(x: maxX, y: minY + k))
+    path.addLine(to: CGPoint(x: maxX, y: maxY - r))
+    path.addCurve(
+      to: CGPoint(x: maxX - r, y: maxY), control1: CGPoint(x: maxX, y: maxY - k),
+      control2: CGPoint(x: maxX - k, y: maxY))
+    path.addLine(to: CGPoint(x: minX + r, y: maxY))
+    path.addCurve(
+      to: CGPoint(x: minX, y: maxY - r), control1: CGPoint(x: minX + k, y: maxY),
+      control2: CGPoint(x: minX, y: maxY - k))
+    path.addLine(to: CGPoint(x: minX, y: minY + r))
+    path.addCurve(
+      to: CGPoint(x: minX + r, y: minY), control1: CGPoint(x: minX, y: minY + k),
+      control2: CGPoint(x: minX + k, y: minY))
+    path.closeSubpath()
+    return path
   }
 
   private func updateMagnifier() {
@@ -564,23 +704,40 @@ final class SelectionView: NSView, NSTextViewDelegate {
     }
   }
 
-  /// 手柄：四角 9 pt 白圆点，四边中点 16 × 5 白胶囊（左右边竖着）
-  private static func handlesPath(_ rect: CGRect) -> CGPath {
+  /// 以原点为中心的手柄形状：角 10 pt 圆，边中点 16 × 5 胶囊（左右边竖着）
+  private static func handleShape(_ handle: RegionSelector.Handle) -> CGPath {
+    switch handle {
+    case .bottomLeft, .bottomRight, .topRight, .topLeft:
+      CGPath(ellipseIn: CGRect(x: -5, y: -5, width: 10, height: 10), transform: nil)
+    case .top, .bottom:
+      CGPath(
+        roundedRect: CGRect(x: -8, y: -2.5, width: 16, height: 5), cornerWidth: 2.5,
+        cornerHeight: 2.5, transform: nil)
+    case .left, .right:
+      CGPath(
+        roundedRect: CGRect(x: -2.5, y: -8, width: 5, height: 16), cornerWidth: 2.5,
+        cornerHeight: 2.5, transform: nil)
+    }
+  }
+
+  /// 手柄依次弹出的顺序：从左上角顺时针
+  private static let handleOrder: [RegionSelector.Handle] = [
+    .topLeft, .top, .topRight, .right, .bottomRight, .bottom, .bottomLeft, .left,
+  ]
+
+  /// 悬停的边（角 = 两条边），画在内描边的中线上
+  private static func edgePath(_ handle: RegionSelector.Handle, of rect: CGRect) -> CGPath {
+    let edge = rect.insetBy(dx: -0.75, dy: -0.75)
     let path = CGMutablePath()
-    for handle in RegionSelector.Handle.allCases {
-      let point = handle.point(in: rect)
-      switch handle {
-      case .bottomLeft, .bottomRight, .topRight, .topLeft:
-        path.addEllipse(in: CGRect(x: point.x - 4.5, y: point.y - 4.5, width: 9, height: 9))
-      case .top, .bottom:
-        path.addRoundedRect(
-          in: CGRect(x: point.x - 8, y: point.y - 2.5, width: 16, height: 5), cornerWidth: 2.5,
-          cornerHeight: 2.5)
-      case .left, .right:
-        path.addRoundedRect(
-          in: CGRect(x: point.x - 2.5, y: point.y - 8, width: 5, height: 16), cornerWidth: 2.5,
-          cornerHeight: 2.5)
-      }
+    if handle.movesMinX || handle.movesMaxX {
+      let x = handle.movesMinX ? edge.minX : edge.maxX
+      path.move(to: CGPoint(x: x, y: edge.minY))
+      path.addLine(to: CGPoint(x: x, y: edge.maxY))
+    }
+    if handle.movesMinY || handle.movesMaxY {
+      let y = handle.movesMinY ? edge.minY : edge.maxY
+      path.move(to: CGPoint(x: edge.minX, y: y))
+      path.addLine(to: CGPoint(x: edge.maxX, y: y))
     }
     return path
   }
@@ -618,17 +775,21 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private func makeBars() {
     let toolbar = EditorToolbar()
     toolbar.onClick = { [unowned self] item in
+      if item != .saveMenu { hudMenu?.dismiss() }
       switch item {
       case .tool(let tool): choose(tool)
       case .undo: undo()
+      case .redo: redo()
       case .output(let action): output(action)
       case .scroll: startScroll()
+      case .saveMenu: toggleSaveMenu()
       case .cancel: session.finish(nil)
       }
     }
     let styleBar = StyleBar()
     styleBar.onColor = { [unowned self] color in restyle { $0.color = color } }
     styleBar.onWeight = { [unowned self] weight in restyle { $0.weight = weight } }
+    styleBar.onOption = { [unowned self] option in restyle { $0.option = option } }
     for bar in [toolbar, styleBar] as [NSView] {
       bar.isHidden = true
       addSubview(bar)
@@ -637,43 +798,93 @@ final class SelectionView: NSView, NSTextViewDelegate {
     self.styleBar = styleBar
   }
 
-  /// 主栏在选区右下角下方 10 pt（下面放不下放上面，都放不下放进选区里）；样式托盘贴在主栏外侧 6 pt，
-  /// 选了工具、选中标注或正在输入文字时才出现。出现 / 收起都带动画（HUDBar.setShown）
+  /// 工具栏在选区下方 10 pt、水平居中；样式托盘锚在当前工具（或选中标注的工具、输入中的文字）按钮外侧 6 pt，
+  /// 水平以按钮为中心（夹在屏内 10 pt），换工具时 settle 滑过去。出现 / 收起都带动画（PopView.setShown）
   private func placeBars(showing: Bool) {
     guard let toolbar, let styleBar else { return }
-    let showsToolbar = showing && selection != nil
-    let showsStyle = showsToolbar && (tool != nil || selected != nil || editor != nil)
-    toolbar.setShown(showsToolbar)
-    styleBar.setShown(showsStyle)
-    guard showsToolbar, let selection else { return }
-    toolbar.update(tool: tool, canUndo: !undoStack.isEmpty)
-    let gap: CGFloat = 10
-    let size = toolbar.frame.size
-    var y = selection.minY - gap - size.height
-    if y < bounds.minY + gap { y = selection.maxY + gap }
-    if y + size.height > bounds.maxY - gap { y = selection.minY + gap }
-    let x = min(max(selection.maxX - size.width, bounds.minX + gap), bounds.maxX - size.width - gap)
-    toolbar.frame.origin = CGPoint(x: x, y: y)
-    guard showsStyle else { return }
-    let hasColor = editor != nil || ((selected?.tool ?? tool)?.hasColor ?? true)
-    styleBar.update(shownStyle, showsColors: hasColor)
-    // 主栏在选区下方就往下叠，在上方就往上叠；叠不下换另一边
-    let height = styleBar.frame.height
-    let below = toolbar.frame.minY - 6 - height
-    let above = toolbar.frame.maxY + 6
-    let outward = toolbar.frame.midY < selection.midY ? below : above
-    let fits = outward >= bounds.minY && outward + height <= bounds.maxY
-    styleBar.frame.origin = CGPoint(
-      x: min(x, bounds.maxX - styleBar.frame.width - gap),
-      y: fits ? outward : (outward == below ? above : below))
+    guard showing, let selection else {
+      toolbar.setShown(false)
+      styleBar.setShown(false)
+      hudMenu?.dismiss()
+      return
+    }
+    toolbar.update(tool: tool, canUndo: !undoStack.isEmpty, canRedo: !redoStack.isEmpty)
+    let (origin, edge) = Self.toolbarPlacement(
+      size: toolbar.frame.size, selection: selection, in: bounds)
+    let moved = toolbar.frame.origin != origin
+    if moved { toolbar.setFrameOrigin(origin) }
+    toolbar.setShown(true, growingFrom: edge)
+    let owner: Annotation.Tool? = editor != nil ? .text : selected?.tool ?? tool
+    guard let owner else { return styleBar.setShown(false) }
+    styleBar.update(tool: owner, style: shownStyle)
+    let button = toolbar.toolButtonFrame(owner).offsetBy(dx: origin.x, dy: origin.y)
+    let size = styleBar.preferredSize
+    let x = max(bounds.minX + 10, min(button.midX - size.width / 2, bounds.maxX - size.width - 10))
+      .rounded()
+    // 栏在选区下方就往下叠，在上方 / 选区里就往上叠；叠不下换另一边
+    let below = origin.y - 6 - size.height
+    let above = origin.y + toolbar.frame.height + 6
+    var y = edge == .top ? below : above
+    if y < bounds.minY || y + size.height > bounds.maxY { y = edge == .top ? above : below }
+    styleBar.move(
+      to: CGRect(x: x, y: y, width: size.width, height: size.height),
+      animated: styleBar.isShown && !moved)
+    styleBar.setShown(true, anchorX: button.midX - x, growingFrom: y < origin.y ? .top : .bottom)
   }
 
+  /// 工具栏放哪、从哪条边长出来：选区下方 10 pt（从顶边长出），放不下放上方，都放不下放进选区底部（这两种从底边长出）；
+  /// 水平以选区为中心、夹在屏内 10 pt。选区是鼠标给的小数点，取整到整点，栏里的图标和描边才不发糊
+  static func toolbarPlacement(size: CGSize, selection: CGRect, in bounds: CGRect)
+    -> (origin: CGPoint, edge: PopView.Edge)
+  {
+    let margin: CGFloat = 10
+    let x = max(
+      bounds.minX + margin, min(selection.midX - size.width / 2, bounds.maxX - size.width - margin)
+    ).rounded()
+    let below = (selection.minY - margin - size.height).rounded()
+    if below >= bounds.minY + margin { return (CGPoint(x: x, y: below), .top) }
+    let above = (selection.maxY + margin).rounded()
+    if above + size.height <= bounds.maxY - margin { return (CGPoint(x: x, y: above), .bottom) }
+    return (CGPoint(x: x, y: (selection.minY + margin).rounded()), .bottom)
+  }
+
+  /// 保存 ▾：HUD 菜单锚在保存按钮下方；开着时再点一下收起
+  private func toggleSaveMenu() {
+    if let hudMenu { return hudMenu.dismiss() }
+    guard let toolbar, let body = toolbar.button(for: .output(.save)),
+      let caret = toolbar.button(for: .saveMenu)
+    else { return }
+    let directory = FileManager.default.displayName(atPath: ScreenshotOutput.saveDirectory.path)
+    present(
+      HUDMenu([
+        .init(title: "存储到「\(directory)」", key: "⌘S") { [weak self] in self?.output(.save) },
+        .init(title: "另存为…", key: "⇧⌘S") { [weak self] in self?.output(.saveAs) },
+      ]),
+      anchor: body.convert(body.bounds, to: self).union(caret.convert(caret.bounds, to: self)))
+  }
+
+  /// 同时最多开一个 HUD 菜单
+  private func present(_ next: HUDMenu, anchor: CGRect) {
+    hudMenu?.dismiss()
+    hudMenu = next
+    next.onDismiss = { [weak self, weak next] in
+      guard let self, self.hudMenu === next else { return }
+      self.hudMenu = nil
+      self.refreshCursor()
+    }
+    next.present(in: self, anchor: anchor)
+    refresh()
+  }
+
+  /// 两条栏和开着的菜单（按钮间隙、边距会顺着响应链落到遮罩上）
+  private var bars: [NSView] { [toolbar as NSView?, styleBar, hudMenu].compactMap { $0 } }
+
   private func isOverBars(_ point: CGPoint) -> Bool {
-    [toolbar, styleBar].contains { $0.map { !$0.isHidden && $0.frame.contains(point) } ?? false }
+    bars.contains { !$0.isHidden && $0.frame.contains(point) }
   }
 
   private func isOverBars(_ rect: CGRect) -> Bool {
-    [toolbar, styleBar].contains { $0.map { !$0.isHidden && $0.frame.intersects(rect) } ?? false }
+    bars.contains { !$0.isHidden && $0.frame.intersects(rect) }
   }
 
   // MARK: 标注
@@ -699,10 +910,13 @@ final class SelectionView: NSView, NSTextViewDelegate {
     Annotation.topmost(in: annotations, at: point)
   }
 
-  /// 再按一次同一个工具就收起（回到拖动平移选区）
+  /// 再按一次同一个工具就收起（回到拖动平移选区）；选上时读这个工具上次的样式
   private func choose(_ next: Annotation.Tool) {
     endEditing()
-    tool = tool == next ? nil : next
+    let chosen = tool == next ? nil : next
+    // 先换样式再换工具：托盘换工具那一下拿到的就是这个工具的样式（反过来色点先显示旧样式、再弹一下）
+    if let chosen { style = Annotation.Style.remembered(for: chosen) }
+    tool = chosen
     selectedAnnotation = nil
     refreshCursor()
   }
@@ -724,28 +938,41 @@ final class SelectionView: NSView, NSTextViewDelegate {
   }
 
   private func redo() {
+    endEditing()
     guard let next = redoStack.popLast() else { return NSSound.beep() }
     undoStack.append(annotations)
     annotations = next
     if selected == nil { selectedAnnotation = nil }
   }
 
-  /// 改颜色 / 粗细：新标注以后都用它；同时作用于正在输入的文字或选中的标注（修旧版改样式不作用于选中项，#47）
+  /// 改颜色 / 粗细 / 选项：作用于正在输入的文字、选中的标注（修旧版改样式不作用于选中项，#47）或当前工具的新标注，
+  /// 并记成那个工具的样式（Prefs.screenshotToolStyles）
   private func restyle(_ change: (inout Annotation.Style) -> Void) {
-    change(&style)
     if var editor {
       change(&editor.style)
       self.editor = editor
       apply(editor.style, to: editor.field)
       layoutEditor()
+      remember(editor.style, for: .text)
     } else if let id = selectedAnnotation,
       let index = annotations.firstIndex(where: { $0.id == id })
     {
       var next = annotations
       change(&next[index].style)
       commit(next)
+      remember(next[index].style, for: next[index].tool)
+    } else if let tool {
+      var changed = style
+      change(&changed)
+      remember(changed, for: tool)
     }
     refresh()
+  }
+
+  /// 记住这个工具的样式；是当前工具的话新标注也用它
+  private func remember(_ changed: Annotation.Style, for owner: Annotation.Tool) {
+    Annotation.Style.remember(changed, for: owner)
+    if owner == tool { style = changed }
   }
 
   private func deleteSelected() {
@@ -773,7 +1000,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
       width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
     field.wantsLayer = true
     field.layer?.borderWidth = 1
-    field.layer?.borderColor = NSColor.controlAccentColor.cgColor
+    field.layer?.borderColor = Style.Shot.accent.cgColor
     field.delegate = self
     let style = existing?.style ?? style
     apply(style, to: field)
@@ -916,6 +1143,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
       drag = .draw(anchor: point, last: point)
       return
     }
+    // 开着 HUD 菜单时点外面：只收菜单
+    if let hudMenu { return hudMenu.dismiss() }
     // 别的屏上有选区：先记下按下的点，拖开了才算在这块屏开始（见 mouseDragged）
     if !session.hasSelection(besides: self) {
       window?.makeKey()
@@ -1116,9 +1345,11 @@ final class SelectionView: NSView, NSTextViewDelegate {
 
   override func keyDown(with event: NSEvent) {
     let code = Int(event.keyCode)
-    // Esc：先取消选中的标注，再收起工具，最后才取消截图（免得一下把画好的标注全丢了）
+    // Esc：先收菜单，再取消选中的标注，再收起工具，最后才取消截图（免得一下把画好的标注全丢了）
     if code == kVK_Escape {
-      if selectedAnnotation != nil {
+      if let hudMenu {
+        hudMenu.dismiss()
+      } else if selectedAnnotation != nil {
         selectedAnnotation = nil
       } else if tool != nil {
         tool = nil
@@ -1139,6 +1370,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
       if isAdjusting { output(.pin) }
     case kVK_ANSI_S:
       if isAdjusting { startScroll() }
+    case kVK_ANSI_O:
+      if isAdjusting { output(.recognize) }
     case kVK_ANSI_D:
       session.selectLastRegion()
     case kVK_ANSI_C:
@@ -1281,7 +1514,7 @@ private final class Canvas: NSView {
   override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-/// HUD 胶囊 / 圆角块里一行白字（rgba(28,28,30) 底 + 0.5 pt white 0.14 描边）：顶部提示、尺寸标签共用
+/// HUD 胶囊 / 圆角块里一行白字（Style.HUD 皮肤 + 阴影）：顶部提示、尺寸标签共用
 private struct Pill {
   let layer = CALayer()
   private let textLayer = CATextLayer()
@@ -1290,23 +1523,13 @@ private struct Pill {
   /// nil = 胶囊（半高圆角）
   private let radius: CGFloat?
 
-  /// digits：数字等宽（尺寸跟着鼠标变时不抖）
-  init(
-    fontSize: CGFloat, padding: CGSize = CGSize(width: 8, height: 5), digits: Bool = true,
-    weight: NSFont.Weight = .medium, radius: CGFloat? = nil
-  ) {
-    font =
-      digits
-      ? .monospacedDigitSystemFont(ofSize: fontSize, weight: weight)
-      : .systemFont(ofSize: fontSize, weight: weight)
+  init(font: NSFont, padding: CGSize = CGSize(width: 8, height: 5), radius: CGFloat? = nil) {
+    self.font = font
     self.padding = padding
     self.radius = radius
-    layer.backgroundColor = NSColor(white: 0.11, alpha: 0.78).cgColor
-    layer.borderColor = NSColor.white.withAlphaComponent(0.14).cgColor
-    layer.borderWidth = 0.5
-    layer.cornerCurve = .continuous
+    Style.HUD.applySkin(to: layer, radius: radius ?? 0)
     layer.anchorPoint = .zero
-    textLayer.foregroundColor = NSColor.white.cgColor
+    textLayer.foregroundColor = Style.HUD.text.cgColor
     layer.addSublayer(textLayer)
   }
 
@@ -1315,25 +1538,43 @@ private struct Pill {
     nonmutating set {
       set(
         NSAttributedString(
-          string: newValue, attributes: [.font: font, .foregroundColor: NSColor.white]))
+          string: newValue, attributes: [.font: font, .foregroundColor: Style.HUD.text]))
     }
+  }
+
+  /// 顶部提示：几段之间用「 · 」隔开，点是次要文字色
+  func setParts(_ parts: [String]) {
+    let string = NSMutableAttributedString()
+    for (index, part) in parts.enumerated() {
+      if index > 0 {
+        string.append(
+          NSAttributedString(
+            string: " · ", attributes: [.font: font, .foregroundColor: Style.HUD.tertiaryText]))
+      }
+      string.append(
+        NSAttributedString(
+          string: part, attributes: [.font: font, .foregroundColor: Style.HUD.text]))
+    }
+    set(string)
   }
 
   /// 尺寸标签：「600 × 300」，乘号 white 0.5
   func setSize(width: Int, height: Int) {
     let string = NSMutableAttributedString(
-      string: "\(width)", attributes: [.font: font, .foregroundColor: NSColor.white])
+      string: "\(width)", attributes: [.font: font, .foregroundColor: Style.HUD.text])
     string.append(
       NSAttributedString(
         string: " × ",
         attributes: [.font: font, .foregroundColor: NSColor.white.withAlphaComponent(0.5)]))
     string.append(
       NSAttributedString(
-        string: "\(height)", attributes: [.font: font, .foregroundColor: NSColor.white]))
+        string: "\(height)", attributes: [.font: font, .foregroundColor: Style.HUD.text]))
     set(string)
   }
 
+  /// 文字没变就不动（尺寸跟着鼠标移动一直在设）
   private func set(_ string: NSAttributedString) {
+    guard (textLayer.string as? NSAttributedString) != string else { return }
     let textSize = string.size()
     textLayer.string = string
     textLayer.frame = CGRect(
@@ -1343,15 +1584,23 @@ private struct Pill {
       width: ceil(textSize.width) + padding.width * 2,
       height: ceil(textSize.height) + padding.height * 2)
     layer.cornerRadius = radius ?? layer.bounds.height / 2
+    Style.HUD.applyShadow(
+      to: layer,
+      path: CGPath(
+        roundedRect: layer.bounds, cornerWidth: layer.cornerRadius,
+        cornerHeight: layer.cornerRadius, transform: nil))
   }
 
   var size: CGSize { layer.bounds.size }
+  var frame: CGRect { CGRect(origin: layer.position, size: size) }
 
   var scale: CGFloat {
     get { textLayer.contentsScale }
     nonmutating set { textLayer.contentsScale = newValue }
   }
 
-  /// 左下角放在 origin
-  func place(at origin: CGPoint) { layer.position = origin }
+  /// 左下角放在 origin（取整到整点：选区给的是小数点，文字落在半像素上会糊）
+  func place(at origin: CGPoint) {
+    layer.position = CGPoint(x: origin.x.rounded(), y: origin.y.rounded())
+  }
 }
