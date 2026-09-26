@@ -159,8 +159,9 @@ final class ShotShelf {
       if Style.reduceMotion {
         panel.animator().alphaValue = 0
       } else {
+        // y 用逻辑位置：让位的上移动画可能还在半路
         panel.animator().setFrameOrigin(
-          CGPoint(x: panel.frame.minX + exit, y: panel.frame.minY))
+          CGPoint(x: panel.frame.minX + exit, y: rect.minY - ShotShelf.margin))
       }
     } completionHandler: {
       MainActor.assumeIsolated(completion)
@@ -175,7 +176,8 @@ final class ShotShelf {
     guard !isBusy, let shelf else { return }
     isBusy = true
     Task {
-      if await shelf.copy(image, scale) { badge = .copied }
+      // 角标不换（存过的还要留着文件夹和「在访达中显示」），只播报
+      if await shelf.copy(image, scale) { FlyCard.announce(.copied) }
       isBusy = false
     }
   }
@@ -192,8 +194,18 @@ final class ShotShelf {
     }
   }
 
+  /// 钉到选区的位置；长截图比选区高得多，按选区宽度钉整张，太高就等比缩到屏幕可见高度的 90%（顶边对齐选区）
   func pin() {
-    shelf?.pin(image, source)
+    let aspect = CGFloat(image.height) / CGFloat(max(image.width, 1))
+    var size = CGSize(width: source.width, height: source.width * aspect)
+    let visible = screen?.visibleFrame ?? source
+    if size.height > visible.height * 0.9 {
+      size = CGSize(width: visible.height * 0.9 / aspect, height: visible.height * 0.9)
+    }
+    let frame = CGRect(
+      x: source.minX, y: max(source.maxY - size.height, visible.minY), width: size.width,
+      height: size.height)
+    shelf?.pin(image, frame)
     close()
   }
 
@@ -201,8 +213,22 @@ final class ShotShelf {
     if case .saved(let url) = badge { NSWorkspace.shared.activateFileViewerSelecting([url]) }
   }
 
+  /// 双击用默认 App 打开：没存过先快速保存（临时目录的文件下次启动会清掉，在预览里改了也会丢）
   func open() {
-    if let fileURL { NSWorkspace.shared.open(fileURL) }
+    if case .saved(let url) = badge {
+      NSWorkspace.shared.open(url)
+      return
+    }
+    guard !isBusy, let shelf else { return }
+    isBusy = true
+    Task {
+      if let url = await shelf.save(image, scale) {
+        badge = .saved(url)
+        fileURL = url
+        NSWorkspace.shared.open(url)
+      }
+      isBusy = false
+    }
   }
 
   /// 拖出去的东西：文件（还没编码好时给一张图）
@@ -240,10 +266,10 @@ final class ShotShelf {
       swipe = 0
       NSAnimationContext.runAnimationGroup { context in
         context.duration = Style.reduceMotion ? 0 : 0.26
-        panel.animator().setFrameOrigin(CGPoint(x: base, y: panel.frame.minY))
+        panel.animator().setFrameOrigin(CGPoint(x: base, y: rect.minY - ShotShelf.margin))
       }
     } else {
-      panel.setFrameOrigin(CGPoint(x: base + swipe, y: panel.frame.minY))
+      panel.setFrameOrigin(CGPoint(x: base + swipe, y: rect.minY - ShotShelf.margin))
     }
   }
 }
@@ -262,11 +288,20 @@ private final class ShelfHostingView: NSHostingView<ShelfCardView> {
     addTrackingArea(
       NSTrackingArea(
         rect: bounds.insetBy(dx: ShotShelf.margin, dy: ShotShelf.margin),
-        options: [.activeAlways, .mouseEnteredAndExited], owner: self))
+        options: [.activeAlways, .mouseEnteredAndExited, .mouseMoved], owner: self))
   }
 
-  override func mouseEntered(with event: NSEvent) { onHover(true) }
-  override func mouseExited(with event: NSEvent) { onHover(false) }
+  /// 卡片出现在静止的光标下时没有 mouseEntered：动一下鼠标（mouseMoved）也算进来
+  private var isInside = false
+
+  override func mouseEntered(with event: NSEvent) { setInside(true) }
+  override func mouseExited(with event: NSEvent) { setInside(false) }
+  override func mouseMoved(with event: NSEvent) { if !isInside { setInside(true) } }
+
+  private func setInside(_ inside: Bool) {
+    isInside = inside
+    onHover(inside)
+  }
 
   /// 手指往右的距离：「自然滚动」开着时 scrollingDeltaX 和手指同向，关着时相反
   override func scrollWheel(with event: NSEvent) {
@@ -305,28 +340,48 @@ struct ShelfCardView: View {
         FlyCardBadge(badge: card.badge)
           .offset(x: 6, y: 6)
           .id(card.badge.folder ?? "copied")
-          .transition(.scale(scale: 0.4).combined(with: .opacity))
+          .transition(reduceMotion ? .opacity : .scale(scale: 0.4).combined(with: .opacity))
       }
       .animation(Style.Motion.pop.animation(reduced: reduceMotion), value: card.badge.folder)
       .animation(.easeOut(duration: 0.12), value: card.isHovered)
       .onDrag { card.dragItem() }
       .onTapGesture(count: 2) { card.open() }
+      // 右键菜单：小卡片上放不下按钮时也能操作；VoiceOver 也从这里找到全部操作
+      .contextMenu {
+        Button("拷贝", action: card.copyAgain)
+        Button("存储", action: card.save)
+        Button("钉图", action: card.pin)
+        if case .saved = card.badge { Button("在访达中显示", action: card.revealInFinder) }
+        Divider()
+        Button("关闭", action: card.close)
+      }
       .padding(ShotShelf.margin)
       .accessibilityElement(children: .contain)
       .accessibilityLabel("截图缩略图")
   }
 
-  /// 中间拷贝 / 存储；四角关闭、钉图、在访达中显示。卡片矮的时候胶囊只留图标
-  private var actions: some View {
+  /// 中间拷贝 / 存储；四角关闭、钉图、在访达中显示。卡片矮的时候胶囊只留图标；再小就不画四角圆钮（会和胶囊叠在一起，
+  /// 点拷贝变成点钉图），更小的只剩右键菜单
+  @ViewBuilder private var actions: some View {
     GeometryReader { geometry in
-      let compact = geometry.size.height < 90 || geometry.size.width < 150
-      ZStack {
-        HStack(spacing: 6) {
-          pill("拷贝", "doc.on.doc", compact: compact, action: card.copyAgain)
-          pill("存储", "square.and.arrow.down", compact: compact, action: card.save)
-        }
-        .opacity(card.isBusy ? 0.5 : 1)
-        .overlay { if card.isBusy { ProgressView().controlSize(.small).tint(.white) } }
+      let size = geometry.size
+      let compact = size.height < 90 || size.width < 150
+      let corners = size.width >= 120 && size.height >= 84
+      if size.width >= 76 && size.height >= 34 {
+        actionButtons(compact: compact, corners: corners)
+      }
+    }
+  }
+
+  private func actionButtons(compact: Bool, corners: Bool) -> some View {
+    ZStack {
+      HStack(spacing: 6) {
+        pill("拷贝", "doc.on.doc", compact: compact, action: card.copyAgain)
+        pill("存储", "square.and.arrow.down", compact: compact, action: card.save)
+      }
+      .opacity(card.isBusy ? 0.5 : 1)
+      .overlay { if card.isBusy { ProgressView().controlSize(.small).tint(.white) } }
+      if corners {
         round("xmark", "关闭", action: card.close).frame(
           maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         round("pin.fill", "钉图", action: card.pin).frame(
@@ -336,8 +391,10 @@ struct ShelfCardView: View {
             maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
         }
       }
-      .padding(6)
     }
+    .padding(6)
+    // 撑满：没有四角圆钮时胶囊也要居中（GeometryReader 默认把内容放左上角）
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 
   private func pill(

@@ -71,11 +71,12 @@ enum SettingsPage: String, CaseIterable, Identifiable {
       [
         "历史", "条数", "天数", "保留", "图片", "占用", "预览", "链接", "网页", "点外", "关闭", "格式", "RTF",
         "HTML", "识别", "文字", "OCR", "隐私", "密钥", "银行卡", "清空", "退出", "锁屏", "排除", "App",
+        "收藏", "片段", "分组", "密码", "敏感", "网站", "标题",
       ]
     case .launcher:
       [
         "点外", "关闭", "英文", "输入法", "书签", "Chrome", "Edge", "Brave", "搜索", "引擎", "快捷链接", "关键词",
-        "兜底", "使用记录", "最近",
+        "兜底", "使用记录", "最近", "挤压", "弹开", "动画", "实验",
       ]
     case .screenshot:
       ["保存", "目录", "文件夹", "快门", "声音", "识字", "换行", "二维码", "标注", "长截图", "钉图", "按键"]
@@ -85,7 +86,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         "智谱", "OpenAI", "Anthropic", "DeepL", "Google", "百度", "有道", "微软", "火山", "腾讯", "AI", "模型",
       ]
     case .hotkeys:
-      ["快捷键", "热键", "启动器", "剪贴板", "划词", "输入翻译", "截图", "识字", "替换", "冲突"]
+      ["快捷键", "热键", "冲突"] + HotKeyAction.allCases.map(\.title)
     case .about: ["版本", "更新", "日志", "发布", "欢迎", "引导"]
     }
   }
@@ -137,7 +138,8 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
 
   /// page：要切到的页；nil 保持上次的页。onboarding：盖上欢迎引导（首次安装、关于页里重看）
   func show(page: SettingsPage? = nil, onboarding: Bool = false) {
-    if let page { navigation.page = page }
+    // 页面上开着 sheet（启动器的编辑框等）时不换页：换页会把那一页连同 sheet 和没保存的输入一起拆掉
+    if let page, window.attachedSheet == nil { navigation.page = page }
     if onboarding { navigation.showsOnboarding = true }
     NSApp.setActivationPolicy(.regular)
     window.makeKeyAndOrderFront(nil)
@@ -196,6 +198,10 @@ struct SettingsRoot: View {
     .toolbar(removing: .sidebarToggle)
     .onChange(of: query) {
       if let first = matches.first, !matches.contains(navigation.page) { navigation.page = first }
+    }
+    // 从菜单栏等处直接跳到一页，而旧搜索词把它筛掉了：清掉搜索词（侧栏不留一个没选中的残局）
+    .onChange(of: navigation.page) {
+      if !matches.contains(navigation.page) { query = "" }
     }
     .sheet(isPresented: $navigation.showsOnboarding) {
       onboarding().symbolEffectsRemoved(reduceMotion)

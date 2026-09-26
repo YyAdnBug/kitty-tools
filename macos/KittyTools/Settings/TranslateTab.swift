@@ -11,6 +11,7 @@ struct TranslateTab: View {
   let history: HistoryStore
   let speaker: Speaker
   @AppStorage(Prefs.translateFontScale) private var fontScale = 1.0
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @AppStorage(Prefs.translateFirst) private var first = Lang.zhHans.rawValue
   @AppStorage(Prefs.translateSecond) private var second = Lang.en.rawValue
   @AppStorage(Prefs.translateRemoveNewlines) private var removeNewlines = false
@@ -55,7 +56,10 @@ struct TranslateTab: View {
           card: .init(service: services.services.first ?? .zhipu, state: .done(Self.sample)),
           index: 0, language: .zhHans, speaker: speaker, fontScale: fontScale, onRetry: {}
         )
-        .animation(.smooth(duration: 0.18), value: fontScale)
+        // 只是预览：上面的按钮（复制、重试、收起）不接点击
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.18), value: fontScale)
       }
       Section {
         Toggle("翻译前把换行合成一段（适合 PDF 复制的文字）", isOn: $removeNewlines)

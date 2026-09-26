@@ -119,7 +119,7 @@ struct SnapshotProbeTests {
     let speaker = Speaker()
     let pages: (SettingsPage) -> AnyView = { page in
       switch page {
-      case .general: AnyView(GeneralTab { "" })
+      case .general: AnyView(GeneralTab(importer: LegacyImportTask { "" }))
       case .clipboard: AnyView(ClipboardTab(store: store))
       case .launcher: AnyView(LauncherTab())
       case .screenshot: AnyView(ScreenshotTab())
@@ -143,7 +143,7 @@ struct SnapshotProbeTests {
     navigation.page = savedPage  // 别把自检摆的页写进用户偏好
     for step in OnboardingView.Step.allCases {
       try snapshot(
-        OnboardingView(importLegacy: { "" }, step: step),
+        OnboardingView(importer: LegacyImportTask { "" }, step: step),
         size: NSSize(width: 580, height: 460), dark: step == .welcome,
         to: "\(out)/onboarding-\(step.rawValue).png")
     }

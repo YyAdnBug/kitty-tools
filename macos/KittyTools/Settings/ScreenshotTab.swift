@@ -102,5 +102,6 @@ private struct JoinLinesPreview: View {
       .contentTransition(.opacity)
       .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: joins)
       .accessibilityLabel("效果示例")
+      .accessibilityValue(joins ? OCR.joiningLines(Self.sample) : Self.sample)
   }
 }

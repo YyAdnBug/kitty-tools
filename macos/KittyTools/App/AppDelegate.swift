@@ -198,7 +198,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     weak var created: SettingsWindow?
     let window = SettingsWindow { [unowned self] page in
       switch page {
-      case .general: AnyView(GeneralTab(importLegacy: importLegacy))
+      case .general: AnyView(GeneralTab(importer: legacyImport))
       case .clipboard: AnyView(ClipboardTab(store: clipboardStore))
       case .launcher: AnyView(LauncherTab { [unowned self] in launcherUsage.clearAll() })
       case .screenshot: AnyView(ScreenshotTab())
@@ -208,14 +208,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       case .about: AnyView(AboutTab { created?.navigation.showsOnboarding = true })
       }
     } onboarding: { [unowned self] in
-      AnyView(OnboardingView(importLegacy: importLegacy))
+      AnyView(OnboardingView(importer: legacyImport))
     }
     created = window
     return window
   }()
 
-  /// 导入旧版的全部内容（通用页、欢迎引导共用）
-  private func importLegacy() async -> String {
+  /// 导入旧版的全部内容（通用页、欢迎引导共用；状态在这里，换页不丢）
+  private lazy var legacyImport = LegacyImportTask { [unowned self] in
     await LegacyImport.run(
       services: serviceStore, clipboard: clipboardStore, history: historyStore,
       launcher: launcherUsage, db: database)
@@ -652,11 +652,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       self?.shelf.add(image, scale: scale, source: frame, at: rect, badge: badge)
     }
     guard Style.reduceMotion else {
-      let land = FlyCard.fly(image, from: frame, linger: linger).land
-      return { [weak self] badge in
-        land(badge)
-        self?.statusItem?.pop()
-      }
+      let landing = FlyCard.fly(image, from: frame, linger: linger)
+      landing.onShow = { [weak self] in self?.statusItem?.pop() }
+      return landing.land
     }
     return { badge in
       guard let rect = FlyCard.landingRect(for: frame) else { return }

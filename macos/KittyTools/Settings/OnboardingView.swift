@@ -6,7 +6,7 @@ import SwiftUI
 
 struct OnboardingView: View {
   /// 导入旧版的全部内容，返回逐行结果（LegacyImport.run）
-  let importLegacy: () async -> String
+  let importer: LegacyImportTask
   @Environment(\.dismiss) private var dismiss
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var step: Step
@@ -14,8 +14,8 @@ struct OnboardingView: View {
   @State private var forward = true
 
   /// step：从第几步开始（截图自检摆各步用）
-  init(importLegacy: @escaping () async -> String, step: Step = .welcome) {
-    self.importLegacy = importLegacy
+  init(importer: LegacyImportTask, step: Step = .welcome) {
+    self.importer = importer
     _step = State(initialValue: step)
   }
 
@@ -55,7 +55,7 @@ struct OnboardingView: View {
     case .welcome: WelcomeStep()
     case .permissions: PermissionsStep()
     case .shortcuts: ShortcutsStep()
-    case .legacy: LegacyStep(importLegacy: importLegacy)
+    case .legacy: LegacyStep(importer: importer)
     case .done: DoneStep()
     }
   }
@@ -64,7 +64,10 @@ struct OnboardingView: View {
     let index = steps.firstIndex(of: step) ?? 0
     return HStack {
       if step != .done {
-        Button("跳过") { dismiss() }.buttonStyle(.plain).foregroundStyle(.secondary)
+        Button("跳过") { dismiss() }
+          .buttonStyle(.plain)
+          .foregroundStyle(.secondary)
+          .keyboardShortcut(.cancelAction)
       }
       Spacer()
       HStack(spacing: 6) {
@@ -220,36 +223,30 @@ private struct ShortcutsStep: View {
 }
 
 private struct LegacyStep: View {
-  let importLegacy: () async -> String
-  @State private var result: String?
-  @State private var isImporting = false
+  let importer: LegacyImportTask
 
   var body: some View {
     StepLayout(
       title: "带上旧版的数据", subtitle: "发现这台 Mac 上有旧版 Kitty Tools。可以把设置、密钥、收藏的剪贴板条目和翻译历史搬过来。"
     ) {
       VStack(spacing: 12) {
-        Button {
-          isImporting = true
-          Task {
-            result = await importLegacy()
-            isImporting = false
-          }
-        } label: {
-          Label(result == nil ? "导入旧版数据" : "再导入一次", systemImage: "square.and.arrow.down")
-            .padding(.horizontal, 6)
+        Button(action: importer.start) {
+          Label(
+            importer.result == nil ? "导入旧版数据" : "再导入一次", systemImage: "square.and.arrow.down"
+          )
+          .padding(.horizontal, 6)
         }
         .controlSize(.large)
-        .disabled(isImporting)
-        if isImporting { ProgressView().controlSize(.small) }
-        if let result {
+        .disabled(importer.isRunning)
+        if importer.isRunning { ProgressView().controlSize(.small) }
+        if let result = importer.result {
           Text(result).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
             .transition(.opacity)
         }
         Text("可以重复导入，不会产生重复；旧版的数据不会被改动。也可以以后在「设置 › 通用」里导入。")
           .font(.caption).foregroundStyle(.tertiary).multilineTextAlignment(.center)
       }
-      .animation(Style.Motion.settle.animation(), value: result)
+      .animation(Style.Motion.settle.animation(), value: importer.result)
     }
   }
 }

@@ -191,24 +191,27 @@ private struct ClipboardPanelSketch: View {
                     startPoint: .topLeading, endPoint: .bottomTrailing)
                 )
                 .frame(height: 34)
-                .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
+                .transition(
+                  reduceMotion
+                    ? .opacity : .opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
             }
             Capsule().fill(.primary.opacity(0.22)).frame(width: 80, height: 5)
             Capsule().fill(.primary.opacity(0.12)).frame(width: 60, height: 4)
             Spacer(minLength: 0)
           }
           .padding(6)
-          .transition(.opacity.combined(with: .move(edge: .trailing)))
+          .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .trailing)))
         }
       }
     }
     .frame(width: 240, height: 124)
     .background(.background, in: panel)
     .overlay(panel.strokeBorder(Style.hairline, lineWidth: 0.5))
-    .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
     .clipShape(panel)
-    .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: showsPreview)
-    .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: showsLinkPreview)
+    .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
+    // 减弱动态效果：只淡入淡出，列宽直接变（不滑、不缩放）
+    .animation(reduceMotion ? nil : Style.Motion.settle.animation(), value: showsPreview)
+    .animation(reduceMotion ? nil : Style.Motion.settle.animation(), value: showsLinkPreview)
     .padding(.vertical, 6)
     .accessibilityHidden(true)
   }

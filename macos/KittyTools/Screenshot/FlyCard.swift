@@ -26,6 +26,8 @@ enum FlyCard {
   /// 一张飞行卡片的结局：复制 / 保存成功后 land，落地（或已落地）时弹出角标
   @Observable final class Landing {
     fileprivate(set) var badge: Badge?
+    /// 角标真的弹出来的那一刻（卡片落地且复制 / 保存成功；卡片已经滑走就不会调）：菜单栏图标跟着弹一下
+    @ObservationIgnored var onShow: (() -> Void)?
 
     func land(_ badge: Badge) {
       self.badge = badge
@@ -200,6 +202,7 @@ private struct FlyCardView: View {
         }
       }
       .animation(Style.Motion.pop.animation(reduced: false), value: landed && landing.badge != nil)
+      .onChange(of: landed && landing.badge != nil) { _, shown in if shown { landing.onShow?() } }
       // 两轴弹簧时长不同，走出一道弧线
       .animation(.spring(duration: 0.50, bounce: 0.10)) { $0.offset(y: rect.midY) }
       .animation(.spring(duration: 0.42, bounce: 0.10)) { $0.offset(x: rect.midX) }

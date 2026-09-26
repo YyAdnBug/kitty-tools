@@ -519,3 +519,23 @@ enum LegacyImport {
     return copy
   }
 }
+
+/// 「导入旧版」的进行状态：设置 › 通用和欢迎引导共用，AppDelegate 持有——设置窗换页、引导翻步时视图会重建，
+/// 状态放在视图里会丢（转圈消失、按钮又能点，再点就叠一次导入）。正在导入时再点什么都不做
+@Observable final class LegacyImportTask {
+  private(set) var isRunning = false
+  /// 上次导入的逐行结果（LegacyImport.run）
+  private(set) var result: String?
+  private let work: () async -> String
+
+  init(_ work: @escaping () async -> String) { self.work = work }
+
+  func start() {
+    guard !isRunning else { return }
+    isRunning = true
+    Task {
+      result = await work()
+      isRunning = false
+    }
+  }
+}
