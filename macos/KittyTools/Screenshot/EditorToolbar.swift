@@ -1,7 +1,7 @@
 // 截图调整选区时贴在选区旁的两条栏（Whisker HUD 皮肤，mac-whisker §6 截图；AppKit 按钮，SelectionView 推状态、收回调）：
-// - 主栏 EditorToolbar：高 40、圆角 16，标注工具 1–4、撤销、识字、翻译、长截图、钉图、另存为、保存、取消、复制（强调色圆钮）；
+// - 主栏 EditorToolbar：高 40、圆角 16，标注工具 1–0、撤销、识字、翻译、长截图、钉图、另存为、保存、取消、复制（强调色圆钮）；
 //   当前工具的强调色底块在工具间滑动（glide）；松手 40 ms 后浮现（下落 6 pt + 放大到 1，弹簧），拖动 / 缩放选区时淡出让位；
-// - 样式托盘 StyleBar：高 34、圆角 10，颜色、粗细，选了工具或标注时出现（马赛克只有粗细），选中的色点加环并放大。
+// - 样式托盘 StyleBar：高 34、圆角 10，颜色、粗细，选了工具或标注时出现（马赛克、聚光灯只有粗细），选中的色点加环并放大。
 // 永远深色（和系统 ⌘⇧5 一致）：模糊的是窗口里的冻结帧（withinWindow）。按钮都 acceptsFirstMouse（遮罩不是 key 的
 // 那块屏上也一点就响应）、不抢第一响应者（输入文字时点按钮不打断输入）。
 
@@ -143,7 +143,7 @@ final class EditorToolbar: HUDBar {
   init() {
     super.init(radius: Style.Radius.panel, height: 40)
     let groups: [[(Item, String, String)]] = [
-      Annotation.Tool.allCases.map { (.tool($0), $0.symbol, "\($0.title)（\($0.rawValue)）") },
+      Annotation.Tool.allCases.map { (.tool($0), $0.symbol, "\($0.title)（\($0.key)）") },
       [(.undo, "arrow.uturn.backward", "撤销（⌘Z）")],
       [
         (.output(.recognize), "text.viewfinder", "识字并复制"),
@@ -274,7 +274,7 @@ final class StyleBar: HUDBar {
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-  /// 选中的颜色和粗细套个圈（色点放大到 1.1）；马赛克没有颜色，只留粗细（格子大小）
+  /// 选中的颜色和粗细套个圈（色点放大到 1.1）；马赛克、聚光灯没有颜色，只留粗细（格子大小 / 压暗程度）
   func update(_ style: Annotation.Style, showsColors: Bool) {
     guard shown?.style != style || shown?.showsColors != showsColors else { return }
     shown = (style, showsColors)

@@ -68,6 +68,9 @@ enum Prefs {
   static let screenshotSaveDirectory = "screenshotSaveDirectory"
   /// 上次截图的区域（NSStringFromRect，全局坐标）：框选时按 D、或用「截取上次区域」热键
   static let screenshotLastRegion = "screenshotLastRegion"
+  /// 每个标注工具上次用的样式（JSON 字典，键是 Annotation.Tool 的 rawValue 字符串）；没存过的工具
+  /// 由 Annotation.Style.remembered 给默认（红色中号、荧光笔黄色），不进 registerDefaults
+  static let screenshotToolStyles = "screenshotToolStyles"
   /// 截图（复制、保存、钉图）时放快门声；还要系统「播放用户界面音效」开着
   static let screenshotShutterSound = "screenshotShutterSound"
 

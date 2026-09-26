@@ -3,8 +3,8 @@
 // 不重画整屏）→ 文字输入框 → 工具栏与样式栏（EditorToolbar）。
 // 截图翻译 / 识字：拖动框选、松手即确认。截图：悬停高亮窗口、单击截整窗，拖出或单击后进入调整：整条边和四角都能拖、拖动平移、
 // 方向键微调（⇧ 10 点）、拖动框选时按住空格平移；放大镜显示中心像素的色值（C 复制），按住 ⌘ 出整屏十字准线；S 长截图；
-// 标注 1–4（矩形、箭头、文字、
-// 马赛克，⇧ 画正方形 / 45° 箭头），点中标注可拖动、改颜色粗细、⌫ 删除、双击文字重新编辑，⌘Z 撤销、⇧⌘Z 重做。
+// 标注 1–0（矩形、椭圆、箭头、直线、画笔、荧光笔、文字、序号、马赛克、聚光灯，⇧ 画正方形 / 45° 线），
+// 点中标注可拖动、改颜色粗细、⌫ 删除、双击文字重新编辑，⌘Z 撤销、⇧⌘Z 重做。
 
 import AppKit
 import Carbon.HIToolbox
@@ -23,7 +23,12 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private var mode: SelectionView.Mode { session.mode }
 
   /// 当前选区（点，视图坐标）；截图自检直接设它摆出各种状态
-  var selection: CGRect? { didSet { refresh() } }
+  var selection: CGRect? {
+    didSet {
+      annotationCanvas?.selection = selection
+      refresh()
+    }
+  }
   /// 截图：选区已确定，可以调整、标注、选输出方式
   var isAdjusting = false { didSet { refresh() } }
   /// 截图：鼠标位置（悬停窗口、放大镜）；nil = 鼠标不在这块屏上
@@ -650,8 +655,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
     let x = min(max(selection.maxX - size.width, bounds.minX + gap), bounds.maxX - size.width - gap)
     toolbar.frame.origin = CGPoint(x: x, y: y)
     guard showsStyle else { return }
-    let isMosaic = editor == nil && (selected?.isMosaic ?? (tool == .mosaic))
-    styleBar.update(shownStyle, showsColors: !isMosaic)
+    let hasColor = editor != nil || ((selected?.tool ?? tool)?.hasColor ?? true)
+    styleBar.update(shownStyle, showsColors: hasColor)
     // 主栏在选区下方就往下叠，在上方就往上叠；叠不下换另一边
     let height = styleBar.frame.height
     let below = toolbar.frame.minY - 6 - height
@@ -689,9 +694,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
     refresh()
   }
 
-  /// 最上面那条被点中的标注
+  /// 最上面那条被点中的标注（按画的层次，见 Annotation.topmost）
   private func annotation(at point: CGPoint) -> Annotation? {
-    annotations.last { $0.contains(point) }
+    Annotation.topmost(in: annotations, at: point)
   }
 
   /// 再按一次同一个工具就收起（回到拖动平移选区）
@@ -1101,9 +1106,13 @@ final class SelectionView: NSView, NSTextViewDelegate {
 
   // MARK: 键盘（输入文字时按键都归输入框，不到这里）
 
-  private static let toolKeys: [Int: Annotation.Tool] = [
-    kVK_ANSI_1: .rectangle, kVK_ANSI_2: .arrow, kVK_ANSI_3: .text, kVK_ANSI_4: .mosaic,
-  ]
+  /// 数字键 1–9、0 依次对应 10 个工具（Tool.rawValue 1–10）
+  private static let toolKeys: [Int: Annotation.Tool] = Dictionary(
+    uniqueKeysWithValues: zip(
+      [
+        kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4, kVK_ANSI_5, kVK_ANSI_6, kVK_ANSI_7,
+        kVK_ANSI_8, kVK_ANSI_9, kVK_ANSI_0,
+      ], Annotation.Tool.allCases))
 
   override func keyDown(with event: NSEvent) {
     let code = Int(event.keyCode)
@@ -1205,10 +1214,23 @@ private final class EditorField: NSTextView {
   override func rightMouseDown(with event: NSEvent) { nextResponder?.rightMouseDown(with: event) }
 }
 
-/// 标注层：只重画变了的标注所在的那块（整屏重画在 5K 屏上太慢）。不接事件
+/// 标注层：只重画变了的标注所在的那块（整屏重画在 5K 屏上太慢；聚光灯压暗的档变了才整块重画）。不接事件
 private final class AnnotationCanvas: NSView {
   let image: CGImage
   var annotations: [Annotation] = [] { didSet { invalidate(from: oldValue) } }
+  /// 选区：聚光灯只压暗选区里面。有聚光灯时选区一变，只重画新旧选区不重合的那几条（拖边、平移时每次几点宽）
+  var selection: CGRect? {
+    didSet {
+      guard selection != oldValue, Annotation.dimLevel(of: annotations) != nil else { return }
+      guard let old = oldValue, let selection else {
+        needsDisplay = true
+        return
+      }
+      for strip in Annotation.dimChange(from: old, to: selection) {
+        setNeedsDisplay(strip.insetBy(dx: -2, dy: -2))
+      }
+    }
+  }
 
   init(image: CGImage) {
     self.image = image
@@ -1222,12 +1244,16 @@ private final class AnnotationCanvas: NSView {
 
   override func draw(_ dirtyRect: NSRect) {
     guard let context = NSGraphicsContext.current?.cgContext else { return }
-    for annotation in annotations where annotation.drawBounds.intersects(dirtyRect) {
-      annotation.draw(in: context, image: image, viewSize: bounds.size)
-    }
+    Annotation.drawAll(
+      annotations, in: context, image: image, viewSize: bounds.size, shadowScale: 1,
+      dirty: dirtyRect, spotlightBounds: selection ?? .zero)
   }
 
   private func invalidate(from old: [Annotation]) {
+    guard Annotation.dimLevel(of: annotations) == Annotation.dimLevel(of: old) else {
+      needsDisplay = true
+      return
+    }
     let before = Dictionary(old.map { ($0.id, $0) }) { first, _ in first }
     let now = Set(annotations.map(\.id))
     for annotation in annotations where before[annotation.id] != annotation {
