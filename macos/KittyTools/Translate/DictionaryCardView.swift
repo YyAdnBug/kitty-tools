@@ -27,7 +27,7 @@ struct DictionaryCardView: View {
       }
       if hiddenCount > 0 || expanded {
         Button(expanded ? "收起" : "展开全部 \(entry.senseCount) 条释义") { expanded.toggle() }
-          .buttonStyle(.link)
+          .buttonStyle(.plain).foregroundStyle(Style.brandInk).pointerStyle(.link)
           .font(.system(size: 12))
       }
     }

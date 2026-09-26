@@ -1,6 +1,6 @@
 // 翻译服务配置：8 个内置服务（智谱、百度、有道、Google、DeepL、微软、火山、腾讯）常驻列表，
 // 外加用户自建的 AI 实例（OpenAI 兼容 / Azure / Anthropic）。列表顺序即结果卡片顺序。
-// 非密钥配置以 JSON 存 UserDefaults，密钥存钥匙串（账户名 "<服务 id>.<字段>"，字段名沿用旧版）。
+// 非密钥配置以 JSON 存 UserDefaults，密钥存钥匙串（账户名 "<服务 id>.<字段>"，字段名已定，改名会读不到已存的密钥）。
 
 import Foundation
 import Observation

@@ -46,13 +46,6 @@ final class Database {
     try execute("PRAGMA journal_mode = WAL")
   }
 
-  /// 主库跟随进程一辈子不关；旧版导入的临时副本用完要关，不然删掉的副本文件一直占着磁盘。
-  /// （deinit 做不了：默认 MainActor 隔离下 nonisolated deinit 不能碰 handle）
-  func close() {
-    sqlite3_close_v2(handle)
-    handle = nil
-  }
-
   /// 执行一条不关心结果行的语句
   func execute(_ sql: String, _ arguments: [Any?] = []) throws {
     _ = try query(sql, arguments) { _ in () }
@@ -74,9 +67,6 @@ final class Database {
       }
     }
   }
-
-  /// 上一条 INSERT / UPDATE / DELETE 改动的行数（INSERT OR IGNORE 被忽略时为 0）
-  var changes: Int { Int(sqlite3_changes(handle)) }
 
   /// body 抛错则整体回滚
   func transaction(_ body: () throws -> Void) throws {

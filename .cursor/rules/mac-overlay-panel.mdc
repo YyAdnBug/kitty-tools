@@ -6,7 +6,7 @@ alwaysApply: false
 
 # mac-overlay-panel：热键浮层红线
 
-M1 实测结论 + master 旧规则 `macos-overlay-panel.mdc` 删减。代码：`Shell/OverlayPanel.swift`、`HotKeyCenter.swift`、`Paster.swift`、`Permissions.swift`、`CommandTextField.swift`，`Translate/SourceTextView.swift`。
+M1 起的实测结论。代码：`Shell/OverlayPanel.swift`、`HotKeyCenter.swift`、`Paster.swift`、`Permissions.swift`、`CommandTextField.swift`，`Translate/SourceTextView.swift`。
 
 ## 1. 浮层只有 OverlayPanel 一种
 - 剪贴板面板、翻译浮窗、启动器（`topAnchored`：鼠标所在屏、顶边在可见区 20% 处，`setContentHeight` 顶边不动地伸缩）都是 `OverlayPanel` 实例，**禁止**另写 NSPanel / NSWindow 子类。例外只有三个，都是无边框、要当 key 收 Esc 才子类化：截图框选遮罩 `SelectionOverlay`（§8，全屏、每屏一个、用完即释放）、钉图 `PinPanel`（§9）和长截图面板 `ScrollCapturePanel`（§10，会话结束即释放）；它们和浮层的行为没有交集。长截图的选区边框是普通 `NSPanel` 实例（不接鼠标、不当 key），不子类化。
@@ -36,7 +36,7 @@ M1 实测结论 + master 旧规则 `macos-overlay-panel.mdc` 删减。代码：`
 - 聚焦：输入框在 `viewDidMoveToWindow` 里把自己设为 `initialFirstResponder`；`present()` 先 `layoutSubtreeIfNeeded()` 再 `makeFirstResponder`（首次显示时 SwiftUI 还没建出视图）。
 
 ## 4. 全局热键
-- Carbon `RegisterEventHotKey`，**非独占**注册。实测：`kEventHotKeyExclusive` 既不能让别的进程注册失败，也不会因别的进程已占用而失败（先后两个方向都返回 0）→ **检测不到跨进程冲突**。与 Tauri 版共存期间，须在 Tauri 设置里清空剪贴板 / 划词 / 输入翻译热键，否则按一次两边都弹。
+- Carbon `RegisterEventHotKey`，**非独占**注册。实测：`kEventHotKeyExclusive` 既不能让别的进程注册失败，也不会因别的进程已占用而失败（先后两个方向都返回 0）→ **检测不到跨进程冲突**。
 - 同进程重复注册同一组合返回 -9878；15.0–15.1 上只带 ⌥ 的组合返回 -9868 → 快捷键 Tab 显示错误，不按组合一刀切。
 - Carbon 回调在主线程投递，回调里用 `MainActor.assumeIsolated`；热键为 nil 就不注册。
 
@@ -80,7 +80,7 @@ M1 实测结论 + master 旧规则 `macos-overlay-panel.mdc` 删减。代码：`
 - 轻提示是刘海岛 `Island`（`Shell/Island.swift`，Whisker S2）：普通 `NSPanel` 实例（不子类化、`ignoresMouseEvents`、level 状态栏、尺寸固定只让 SwiftUI 形状变形），不抢键盘；接口 `show(_:detail:tone:symbol:leading:)`。
 
 ## 9. 钉图（`Screenshot/PinPanel.swift`）
-- `PinPanel`：`.borderless + .nonactivatingPanel`、`.floating`、`canBecomeKey`；显示只 `orderFrontRegardless`，**不 makeKey**（出现时不抢键盘，修旧版 §11 #48）；用户点了它才 makeKey，Esc / ⌘C 才归它。
+- `PinPanel`：`.borderless + .nonactivatingPanel`、`.floating`、`canBecomeKey`；显示只 `orderFrontRegardless`，**不 makeKey**（出现时不抢键盘）；用户点了它才 makeKey，Esc / ⌘C 才归它。
 - 原位置出现（选区的全局坐标），`constrainFrameRect` 原样返回，别被挪出菜单栏区域。拖动用 `performDrag(with:)`，双击关闭；缩放以鼠标为锚点、保持宽高比。
 - 不做点击穿透、不做钉图历史；钉图是看得见的浮动窗口，按 §8 的留用名单留在之后的截图里（隐藏着的不截）。
 - 外观（Whisker）：透明窗口 + 内容图层圆角 10、系统阴影（改尺寸后 `invalidateShadow()`）。钉上 = 窗口从 1.04 倍（以中心为准）弹簧回到原位 + 0.12 s 淡入：窗口帧动画只支持贝塞尔、冲不过头也不认时长，所以用内容视图的 `displayLink` 逐帧按 SwiftUI `Spring(duration: 0.35, bounce: 0.25)` 算帧（`popIn` / `stepPop`，同 `OverlayPanel.squeezeIn`），不给内容图层做放大（会被窗口边裁掉圆角）；用户开始拖动、缩放、关闭前先 `finishPopIn()`（停掉 display link、落到原位、`invalidateShadow`），不然下一帧又把窗口按回去；减弱动态效果时只淡入，超过半屏的钉图也只淡入（几乎整屏的透明窗口逐帧改尺寸，窗口服务器每帧重分配缓冲、重算阴影）。关闭先从 `board.panels` 移除、再缩到 0.92 淡出后 `orderOut`。悬停圆钮和缩放百分比是 `HUDBar`（材质 `withinWindow` 模糊的是钉图本身）。

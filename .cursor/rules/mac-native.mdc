@@ -6,15 +6,14 @@ alwaysApply: true
 
 # mac-native：原生 macOS 分支红线
 
-行为规格以 `macos/PLAN.md` 为准（§4 架构、§5 逐行映射、§6 数据、§8 打包）。下面每条都是硬约束，违反即返工。
+`macos/PLAN.md` 里§2 技术栈白名单、§4 架构与文件表、§8 打包、§10 / §12 里程碑与手测清单、§11 旧逻辑问题与语言规则仍有效（其余是迁移期的历史记录）；行为、界面、默认值、文案以各 `mac-*` 规则、`mac-whisker.mdc` 和对标产品为准。下面每条都是硬约束，违反即返工。
 
 ## 1. 结构
 - 唯一开发区是 `macos/`：源码在 `KittyTools/{App,Shell,Storage,Clipboard,Translate,Launcher,Screenshot,Settings,Resources}`，文件归属照 PLAN §4 的表格；`KittyToolsTests/` 只测纯函数。
 - 一个概念一个文件；不预建空目录、空文件。每个入口文件（`@main`、AppDelegate、面板 / 窗口 / Tab 根视图、脚本）头部写注释说明用途。
 - 禁止为「以后可能用到」建 protocol、manager、registry、factory、DI 容器；不为测试抽 protocol。翻译服务由 coordinator 里一个 `switch` 分发。
-- `src/`、`src-tauri/`、`html/`、`public/`、`scripts/` 是 Tauri 快照，只读参考，不改不删；看最新行为读 master 工作区 `/Users/yy/Desktop/yy/Codes/Tauri/kitty-tools/`。
-- **对标成熟产品**（用户要求，2026-09-24）：启动器对标 Alfred、翻译对标 Bob、截图对标 iShot Pro 等成熟 App；新功能动手前先调研对应产品，给出「差距 + 推荐范围」让用户拍板。Tauri 旧版只作用户使用数据、旧数据导入、旧 bug 核对的参考，不决定功能上限。
-- **不照搬 Tauri 实现**（用户要求，2026-09-24）：Tauri 代码和 PLAN §5 的 path:line 只当「用户可见行为清单」看；算法、数据结构、表结构、时间窗 / 吞键这类跨平台或 WebView 专用 hack 一律按 macOS 原生方式自己设计。照着清单核对行为时发现旧逻辑有 bug，原生版直接做对，并记入 PLAN §11「旧逻辑问题」。
+- `src/`、`src-tauri/`、`html/`、`public/`、`scripts/` 是 Tauri 快照，只读、不改不删，**不作行为、界面、默认值、文案的参考**（用户要求，2026-09-26：原生版有自己的样式和逻辑，不兼容 Tauri 版的数据和设置）。PLAN §5 的 path:line 只是历史记录。
+- **对标成熟产品**（用户要求，2026-09-24）：启动器对标 Alfred / Raycast、翻译对标 Bob、截图对标 iShot Pro / CleanShot、剪贴板对标 Paste；新功能动手前先调研对应产品，给出「差距 + 推荐范围」让用户拍板。算法、数据结构、表结构按 macOS 原生方式自己设计。
 
 ## 2. 技术栈白名单
 - 只用 PLAN §2 表里的 Apple 框架 + 系统 libsqlite3（`import SQLite3`）。**禁止任何 SPM / 第三方依赖**（Sparkle、GRDB、KeyboardShortcuts、XcodeGen、Tuist、SwiftLint、create-dmg 等都不行）。
@@ -35,12 +34,12 @@ alwaysApply: true
 - 遵循 Swift API 设计规范；`xcrun swift-format lint --strict -r macos/KittyTools` 无输出是唯一格式标准（配置 `macos/.swift-format`），提交前 `xcrun swift-format format -i -r macos/KittyTools`。
 - 日期显示统一用 `Date.FormatStyle`。
 - 单行文本用 `.lineLimit(1)` + `.truncationMode(.tail)`。
-- **视觉与动效一律按 `mac-whisker.mdc`（Whisker 设计语言）执行**（用户 2026-09-25 拍板，所有效果都要）：三种皮肤、`Shell/Style.swift` 刻度、七条弹簧曲线、五个招牌时刻。功能界面跟随系统强调色，品牌粉只在品牌时刻；不做主题 preset。
-- **界面与交互也不沿用旧版**（用户要求）：按 macOS 习惯重新设计，参考 HIG 与 swiftui-expert-skill；界面改动用 SnapshotProbeTests 屏幕外渲染自检，禁止为截图弹出浮层抢用户键盘。
+- **视觉与动效一律按 `mac-whisker.mdc`（Whisker 设计语言）执行**（用户 2026-09-25 拍板，所有效果都要）：三种皮肤、`Shell/Style.swift` 刻度、七条弹簧曲线、五个招牌时刻。全 App 功能强调色 = 品牌粉 `Style.brand`（文字 `Style.brandInk`），`AccentColor.colorset` 同值（用户 2026-09-26）；家族色只用于种类色块和设置页头，内容色（来源 App、服务品牌色、语法着色等）不算强调色；不做主题 preset。
+- **界面与交互按 macOS 习惯设计**（用户要求）：参考 HIG 与 swiftui-expert-skill；界面改动用 SnapshotProbeTests 屏幕外渲染自检，禁止为截图弹出浮层抢用户键盘。
 - 刻意的简化写 `ponytail:` 注释，写明上限和升级路径；为某个 App 补的时序延迟必须注明是哪个 App。
 
 ## 5. 剪贴板写入
-- 自家写剪贴板（粘贴、复制、自动复制、划词后还原）**一律经 `Paster.write`**：它记下写后的 `changeCount` 让 watcher 跳过，并加 `org.nspasteboard.TransientType`（共存的 Tauri 也会跳过）。
+- 自家写剪贴板（粘贴、复制、自动复制、划词后还原）**一律经 `Paster.write`**：它记下写后的 `changeCount` 让 watcher 跳过。只有划词后还原剪贴板加 `org.nspasteboard.TransientType`（`transient: true`，别的剪贴板工具也不记）；用户主动的复制、粘贴、自动复制不加。
 - 其它地方禁止直接 `setString` / `setData` / `writeObjects`；唯一例外是 `SelectionReader` 发 ⌘C 前的 `clearContents()`。
 
 ## 6. 签名

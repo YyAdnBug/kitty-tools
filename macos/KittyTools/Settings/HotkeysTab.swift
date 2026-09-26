@@ -11,10 +11,6 @@ struct HotkeysTab: View {
         ForEach(HotKeyAction.allCases, id: \.self) { action in
           LabeledContent(action.title) { HotKeyRecorder(action: action, center: center) }
         }
-      } footer: {
-        Text("和旧版 Kitty Tools 同时运行时，请在旧版里清空相同的快捷键，否则按一次两边都会响应。")
-          .font(.caption)
-          .foregroundStyle(.secondary)
       }
     }
     .formStyle(.grouped)

@@ -1,5 +1,6 @@
-// 自家写剪贴板与模拟粘贴的唯一出口（mac-native §5）。写入后记下 changeCount 让 watcher 跳过，
-// 并加 nspasteboard.org 的 TransientType：共存的 Tauri 版和别的剪贴板工具也不会把它记进历史。
+// 自家写剪贴板与模拟粘贴的唯一出口（mac-native §5）。写入后记下 changeCount 让 watcher 跳过；
+// 划词取词后还原剪贴板时加 nspasteboard.org 的 TransientType（transient），别的剪贴板工具不会把还原记成新条目。
+// 用户主动的复制不加，照常进别的剪贴板工具。
 
 import AppKit
 import Carbon.HIToolbox
@@ -10,9 +11,9 @@ enum Paster {
   private(set) static var ownChangeCount = -1
 
   /// 一次写完全部 item（每个 item 的多种表示也要一次写完，分两次 declare 会互相清空）
-  static func write(_ items: [NSPasteboardItem]) {
+  static func write(_ items: [NSPasteboardItem], transient: Bool = false) {
     guard let first = items.first else { return }
-    first.setData(Data(), forType: transientType)
+    if transient { first.setData(Data(), forType: transientType) }
     let pasteboard = NSPasteboard.general
     pasteboard.clearContents()
     pasteboard.writeObjects(items)
@@ -39,7 +40,7 @@ enum Paster {
     for keyDown in [true, false] {
       let event = CGEvent(
         keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: keyDown)
-      // 显式设 flags：热键里还按着的 ⇧ 不会混进来变成 ⌘⇧V
+      // 显式设 flags：热键里还按着的 ⌥ / ⇧ 不会混进来变成 ⌥⌘V / ⌘⇧V
       event?.flags = .maskCommand
       event?.post(tap: .cgSessionEventTap)
     }

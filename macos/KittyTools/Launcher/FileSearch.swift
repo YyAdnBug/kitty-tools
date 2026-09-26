@@ -48,7 +48,7 @@ final class FileSearch {
   /// node_modules），只看前面一小段会漏掉干净的结果。ponytail: 2 万条约 60 ms，单个汉字这种更宽的词才会碰到上限
   static let processLimit = 20_000
 
-  /// 路径上有这些目录的不要（旧版的默认排除；隐藏目录 .git 等 Spotlight 本来就不收）
+  /// 路径上有这些目录的不要（常见的依赖和构建产物目录；隐藏目录 .git 等 Spotlight 本来就不收）
   static let excludedFolders: Set<String> = [
     "node_modules", "bower_components", "DerivedData", "build", "dist", "target", "out", "Pods",
     "Carthage", "vendor", "venv", "__pycache__", "coverage",

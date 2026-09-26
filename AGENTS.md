@@ -8,8 +8,8 @@
 
 - **Phase 1（当前）**：剪贴板历史 + 翻译（划词 / 输入 / 复制即译 / 截图翻译，全部翻译服务），目标版本 0.1.0。截图翻译提前做了（Vision 本机识字，`Screenshot/`）；M12 按 Bob 补了浮窗快捷键、收藏导出、替换原文。
 - **Phase 2 / 3（进行中）**：启动器（`Launcher/`，M7、M8、M11 已完成；M13 文件搜索 open / find 代码完成待手测）/ 截图工具（`Screenshot/`，复用截图翻译的冻结帧和框选；M9 框选 + 复制 / 保存 / 钉图、M10 标注 + 识字已完成；长截图 2026-09-25 插入，代码完成待手测）。里程碑 M7–M13、已拍板的 D1–D4（D1 长截图已改为做）与不迁清单见 PLAN §10。
-- 迁移期与 Tauri 版共存：Bundle ID `com.yy.kitty-tools.native`（Debug `com.yy.kitty-tools.native.dev`），显示名 `Kitty Tools Native`。
-- **行为规格**：`macos/PLAN.md`。§4 架构与文件表，§5 逐行对应 Tauri 代码的 path:line，§6 数据迁移，§7 里程碑 M0–M6 与验收，§9 已知坑。
+- Bundle ID `com.yy.kitty-tools.native`（Debug `com.yy.kitty-tools.native.dev`），显示名 `Kitty Tools Native`；Bundle ID 不再改（改了会丢偏好、钥匙串和授权）。
+- **规格**：各 `mac-*` 规则（界面与动效按 `mac-whisker`）+ 对标产品（启动器 Alfred / Raycast、翻译 Bob、截图 iShot / CleanShot、剪贴板 Paste）。`macos/PLAN.md` 是迁移期的历史方案：§2 技术栈白名单、§4 架构与文件表、§8 打包、§10 / §12 里程碑与手测清单、§11 旧逻辑问题与语言规则仍有效，其余（§5 的 Tauri 映射、§6 数据迁移等）只是历史记录。
 
 ## 技术栈
 
@@ -30,10 +30,10 @@ macos/                       # 本分支唯一开发区
 ├── build-dmg.sh             # 打包：archive → 自检 → DMG → notes
 ├── brand-icons.swift        # 品牌图标：角色「探头」的 AppIcon 10 张 + 菜单栏剪影 StatusIcon（CoreGraphics 生成）
 ├── .swift-format
-└── PLAN.md                  # 行为规格
+└── PLAN.md                  # 迁移期历史方案（§2、§4、§8、§10–§12 仍有效）
 .cursor/rules/               # mac-native.mdc（常驻）、ponytail.mdc（只给 Cursor）
 .claude/skills/mac-*/        # 按需技能，里程碑结束后补
-src/ src-tauri/ html/ public/ scripts/ …   # Tauri 快照，只读参考
+src/ src-tauri/ html/ public/ scripts/ …   # Tauri 快照，只读、不作参考
 ```
 
 新文件放哪、叫什么，照 PLAN §4 的文件表；一个概念一个文件，不预建空目录。
@@ -82,15 +82,14 @@ defaults delete com.yy.kitty-tools.native.dev folderAccessRequested
 | `mac-whisker` | 技能 | 已有（2026-09-25） | 任何界面、动效、图标改动：Whisker 设计语言（三种皮肤、刻度、七条弹簧曲线、五个招牌时刻、各界面规范、无障碍、验收）；**用户要求以后都按它执行** |
 
 - 规则正文只写在 `.cursor/rules/mac-*.mdc`。技能目录 `.claude/skills/mac-<name>/` 里 `SKILL.md` 只写触发描述和红线速查，`rule.mdc` 是符号链接：`ln -s ../../../.cursor/rules/mac-<name>.mdc .claude/skills/mac-<name>/rule.mdc`。
-- 动手前先读对应技能的 `rule.mdc` 全文。技能写成之前，按 PLAN 对应章节（§4、§5、§9）执行。
+- 动手前先读对应技能的 `rule.mdc` 全文。没有对应技能的地方按 `mac-native.mdc` 和 `mac-whisker` 执行，文件归属看 PLAN §4。
 - 不另建 `mac-ui`、`mac-release`：视觉与动效在 `mac-whisker`，其余 UI 约定在 `mac-native.mdc`，发布约束在 `build-dmg.sh` 头部注释。
 
-## Tauri 代码只作参考
+## Tauri 代码不作参考
 
-- `src/`、`src-tauri/`、`html/`、`public/`、`scripts/` 等是 master `ee615b3` 的 Tauri 快照，**只作行为参考，不改不删**。本分支不 merge master，也不以合回 master 为目标。
-- PLAN 里的 path:line 引用以这份快照为准。
-- **只当行为清单，不照搬实现**：原生版只需兼容 macOS，算法 / 数据结构 / 表结构 / 时序 hack 按原生方式自己设计；发现的旧逻辑 bug 记入 PLAN §11。
-- 最新 Tauri 行为和旧规则原文，读 master 工作区绝对路径 `/Users/yy/Desktop/yy/Codes/Tauri/kitty-tools`（例如 `…/src-tauri/src/…`、`…/.cursor/rules/…`），只读。
+- `src/`、`src-tauri/`、`html/`、`public/`、`scripts/` 等是 master `ee615b3` 的 Tauri 快照，只读、不改不删。本分支不 merge master，也不以合回 master 为目标。
+- **不作行为、界面、默认值、文案的参考**（用户 2026-09-26）：原生版有自己的样式和逻辑，不兼容 Tauri 版的数据和设置（它已不再运行）；以各 `mac-*` 规则、Whisker 和对标产品为准。
+- PLAN §5 的 path:line 只是迁移期的历史记录，不再是规格。
 
 ## 开发约定
 

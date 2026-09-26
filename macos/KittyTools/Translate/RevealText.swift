@@ -32,7 +32,7 @@ struct RevealText: View {
         .textRenderer(
           RevealRenderer(
             now: context.date, showsCursor: isStreaming, blinks: !reduceMotion,
-            cursorColor: .accentColor))
+            cursorColor: Style.brand))
     }
     .onChange(of: text, initial: true) { old, new in
       absorb(new, replacing: old != new && !new.hasPrefix(old))

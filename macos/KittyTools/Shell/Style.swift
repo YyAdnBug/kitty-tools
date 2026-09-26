@@ -1,5 +1,6 @@
-// Whisker 设计刻度（mac-whisker.mdc §3–4）：圆角、七条命名弹簧曲线、中性色与功能家族色、面板描边、
-// 种类色块与键帽。界面里的圆角、曲线、选中色一律从这里取，不硬编码；新增的值至少要被三处复用才放进来。
+// Whisker 设计刻度（mac-whisker.mdc §3–4）：圆角、七条命名弹簧曲线、品牌粉强调色、中性色与功能家族色、
+// 面板描边、种类色块与键帽。界面里的圆角、曲线、强调色、选中色一律从这里取，不硬编码；
+// 新增的值至少要被三处复用才放进来。
 
 import AppKit
 import SwiftUI
@@ -151,11 +152,11 @@ enum Style {
     NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
   }
 
-  // MARK: 截图家族（品牌粉例外，2026-09-26 用户拍板）
+  // MARK: 截图家族
 
-  /// 截图家族（遮罩、工具栏、样式托盘、放大镜、钉图、常驻缩略图、长截图、飞行卡片）的强调色是品牌粉，
-  /// 不是系统强调色。这些控件永远画在深色 HUD 或任意画面上，所以不跟随深浅色，固定 #FF4D7E
+  /// 截图家族（遮罩、工具栏、样式托盘、放大镜、钉图、常驻缩略图、长截图、飞行卡片）
   enum Shot {
+    /// = `Style.brand` 浅色值 #FF4D7E，固定不随深浅色，给永远深色的 HUD / CALayer 用
     static let accent = NSColor(srgbRed: 1, green: 0.302, blue: 0.494, alpha: 1)
     /// 当前工具的实心底块圆角（全 App 唯一一处强调色填满的块）
     static let toolRadius: CGFloat = 12
@@ -225,10 +226,14 @@ enum Style {
     }
   }
 
-  /// 品牌粉：品牌时刻（App 图标、关于页、引导、空状态）和截图家族（`Style.Shot`）
+  /// 品牌粉：全 App 功能强调色 + 品牌色，AccentColor.colorset 同值（系统控件走 asset，自绘的直接用它）。
+  /// 深浅色同值（= `Shot.accent`）：深色若提亮，白字只剩 2.7:1；增强对比度时压深到 #D12A5F（白字 5:1）
   static let brand = dynamic(
-    light: NSColor(red: 1, green: 0.302, blue: 0.494, alpha: 1),
-    dark: NSColor(red: 1, green: 0.42, blue: 0.576, alpha: 1))
+    light: Shot.accent, dark: Shot.accent,
+    contrast: (
+      NSColor(red: 0.82, green: 0.165, blue: 0.373, alpha: 1),
+      NSColor(red: 0.82, green: 0.165, blue: 0.373, alpha: 1)
+    ))
   /// 品牌粉的文字色（#D12A5F / 深 #FF8FAB）和奶油底（#FFF5F0 / 深 #2A1D22）
   static let brandInk = dynamic(
     light: NSColor(red: 0.82, green: 0.165, blue: 0.373, alpha: 1),

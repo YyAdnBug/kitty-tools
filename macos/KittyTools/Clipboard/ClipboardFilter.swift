@@ -1,8 +1,7 @@
 // 剪贴板入库前的过滤（纯函数，配单测）：排除指定 App、拦截看起来像密钥 / 卡号的文本。
-// 对 Tauri 版 filter.rs 的两处修正（PLAN §5.1「旧逻辑问题」）：
-// 1. sk- 后面允许 - 和 _：旧版要求紧跟 20 个字母数字，sk-proj-… / sk-ant-api03-… 全部漏拦；
-//    为防误伤另加两条：prefix 前是词边界、token 里有数字；
-// 2. bearer 只量 token 本身：旧版量的是 bearer 之后整段剩余文字，文章里提到 bearer token 就整段丢弃。
+// 密钥规则：
+// 1. sk- 后面允许 - 和 _（sk-proj-… / sk-ant-api03-… 也拦）；为防误伤，prefix 前是词边界、token 里有数字；
+// 2. bearer 只量 token 本身，文章里提到 bearer token 不会整段丢弃。
 
 import Foundation
 

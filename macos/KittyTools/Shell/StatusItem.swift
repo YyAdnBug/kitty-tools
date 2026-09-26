@@ -19,7 +19,7 @@ final class StatusItem: NSObject, NSMenuDelegate {
     super.init()
     let image = NSImage(named: "StatusIcon")
     image?.isTemplate = true
-    image?.accessibilityDescription = "Kitty Tools Native"
+    image?.accessibilityDescription = "Kitty Tools"
     item.button?.image = image
     item.button?.wantsLayer = true
     menu.delegate = self

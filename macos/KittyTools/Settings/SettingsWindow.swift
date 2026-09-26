@@ -52,7 +52,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   /// 页头下面的一句说明
   var summary: String {
     switch self {
-    case .general: "开机自启、权限和从旧版导入"
+    case .general: "开机自启和权限"
     case .clipboard: "历史上限、面板、内容格式和隐私"
     case .launcher: "搜索 App、文件、书签、网页搜索与快捷链接"
     case .screenshot: "快速保存、快门声、识字和按键说明"
@@ -66,7 +66,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   var keywords: [String] {
     switch self {
     case .general:
-      ["开机", "登录", "自启", "权限", "辅助功能", "屏幕录制", "剪贴板访问", "隐私", "导入", "旧版", "迁移"]
+      ["开机", "登录", "自启", "权限", "辅助功能", "屏幕录制", "剪贴板访问", "隐私"]
     case .clipboard:
       [
         "历史", "条数", "天数", "保留", "图片", "占用", "预览", "链接", "网页", "点外", "关闭", "格式", "RTF",

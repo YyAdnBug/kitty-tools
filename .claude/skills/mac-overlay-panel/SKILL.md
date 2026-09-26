@@ -15,6 +15,6 @@ description: 原生分支 macOS 热键浮层规范（OverlayPanel、全局热键
 - 标注显示与导出共用 `Annotation.drawAll`；输出一律用合成图（打码后的内容识别不出来）；文字输入用 NSTextView + `doCommandBy`。
 - 剪贴板面板点外关（鼠标监听成对装卸，兄弟浮层豁免）；翻译浮窗失焦关；固定时翻译浮窗 Esc 也不关。
 - 浮层里的输入框只用 `CommandTextField` / `SourceTextView`（doCommandBy），不用 `.onKeyPress` 抢方向键和回车。
-- 热键非独占，跨进程冲突检测不到；共存期间清空 Tauri 的同名热键。
+- 热键非独占，跨进程冲突检测不到。
 - 粘贴：hide → `Paster.write` → `pasteToFrontmost`，不加等待，⌘V 显式 `.maskCommand`。
 - 划词：复制完成前禁止显示翻译浮窗。

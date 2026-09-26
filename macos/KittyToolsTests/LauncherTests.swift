@@ -1,4 +1,4 @@
-// 启动器单测：匹配分档（含缩写 vsc、拼音）、使用分衰减与加成、排序、旧版使用记录导入映射。
+// 启动器单测：匹配分档（含缩写 vsc、拼音）、使用分衰减与加成、排序。
 
 import AppKit
 import Testing
@@ -29,7 +29,7 @@ struct LauncherTests {
     #expect(score("visual studio code") == 100)
     #expect(score("vis") == 80)  // 名字开头
     #expect(score("stu") == 60)  // 词首
-    #expect(score("vsc") == 50)  // 跨词首字母（旧版搜不到）
+    #expect(score("vsc") == 50)  // 跨词首字母
     #expect(score("dio") == 40)  // 子串
     #expect(score("visual code") == 60)  // 每个词都要命中，取最差的一词
     #expect(score("xyz") == 0)
@@ -91,47 +91,6 @@ struct LauncherTests {
       ])
   }
 
-  @Test func legacyUsageMapping() throws {
-    let frecency = Data(
-      """
-      {"items": {
-        "open_url::https://linux.do/latest": {"count": 12, "last_ms": 1790000000000},
-        "open_url::https://www.google.com/search?q=swift": {"count": 3, "last_ms": 1790000000000},
-        "mac_open::Calculator": {"count": 2, "last_ms": 1790000000000},
-        "action::clipboard": {"count": 2, "last_ms": 1790000000000},
-        "action::dev-tools": {"count": 3, "last_ms": 1790000000000},
-        "kill_process::1234": {"count": 1, "last_ms": 1790000000000},
-        "open_path::/tmp/a.md": {"count": 1, "last_ms": 1790000000000},
-        "open_url::http://10.10.33.176:8089/app/": {"count": 1, "last_ms": 1790000000000},
-        "open_url::https://zh.wikipedia.org/wiki/%E8%8B%B9%E6%9E%9C": {"count": 1, "last_ms": 1790000000000},
-        "open_path::/System/Applications/Calculator.app": {"count": 3, "last_ms": 1790086400000}
-      }}
-      """.utf8)
-    let affinity = Data(
-      """
-      {"items": {"li::open_url::https://linux.do/latest": {"count": 4, "last_ms": 1790000000000}}}
-      """.utf8)
-    let entries = try LegacyImport.launcherEntries(frecency: frecency, affinity: affinity)
-    let byTarget = Dictionary(entries.map { ($0.query + "|" + $0.target, $0) }) { a, _ in a }
-    #expect(entries.count == 8)  // 丢掉搜索结果页、dev-tools（原生还没有）、结束进程
-    #expect(byTarget["|https://linux.do/latest"]?.title == "linux.do/latest")
-    #expect(byTarget["|https://linux.do/latest"]?.score == 12)
-    #expect(byTarget["li|https://linux.do/latest"]?.kind == .url)
-    #expect(entries.contains { $0.kind == .app && $0.target.hasSuffix("/Calculator.app") })
-    #expect(entries.contains { $0.kind == .action && $0.target == "clipboard" })
-    #expect(entries.contains { $0.kind == .path && $0.title == "a.md" })
-    #expect(entries.contains { $0.title == "10.10.33.176:8089/app/" })  // 保留端口
-    #expect(entries.contains { $0.title == "zh.wikipedia.org/wiki/苹果" })  // 不显示百分号编码
-
-    let usage = try LauncherUsage(db: Database(path: ":memory:"))
-    // mac_open::Calculator 与 open_path 的计算器落到同一行：分数合并（2 衰减一天后 + 3），不随机丢一条
-    #expect(try usage.importLegacy(entries) == 7)
-    let calculator = try #require(
-      usage.entries.values.first { $0.target.hasSuffix("/Calculator.app") })
-    #expect(abs(calculator.score - (3 + 2 * exp(-1.0 / 14))) < 1e-9)
-    #expect(try usage.importLegacy(entries) == 0)  // 重复导入不叠加
-  }
-
   @Test func directURLsAndPaths() {
     let url = { DirectItems.url(from: $0)?.absoluteString }
     #expect(url("https://a.com/x") == "https://a.com/x")
@@ -145,6 +104,11 @@ struct LauncherTests {
     #expect(url("install.sh") == nil)  // 常见文件扩展名不当域名后缀
     #expect(url("hello world.com") == nil)
     #expect(url("1.2.3") == nil)
+    // 标题：去掉协议，保留端口，路径不显示百分号编码
+    let title = { DirectItems.displayName(of: URL(string: $0)!) }
+    #expect(title("https://linux.do/latest") == "linux.do/latest")
+    #expect(title("http://10.10.33.176:8089/app/") == "10.10.33.176:8089/app/")
+    #expect(title("https://zh.wikipedia.org/wiki/%E8%8B%B9%E6%9E%9C") == "zh.wikipedia.org/wiki/苹果")
     #expect(DirectItems.existingPath(from: "~") == NSHomeDirectory())
     #expect(DirectItems.existingPath(from: "/tmp") == "/tmp")
     #expect(DirectItems.existingPath(from: "./tmp") == nil)  // 不认相对路径
@@ -348,12 +312,5 @@ struct LauncherTests {
     #expect(LauncherModel.clipQuery("cb") == "")
     #expect(LauncherModel.clipQuery("cb  token") == "token")
     #expect(LauncherModel.clipQuery("cbx") == nil)
-    // 旧版把网址转成了小写：书签里有原样的就还原
-    let frecency = Data(
-      #"{"items": {"open_url::https://ui.shadcn.com/docs": {"count": 2, "last_ms": 1790000000000}}}"#
-        .utf8)
-    let entries = try? LegacyImport.launcherEntries(
-      frecency: frecency, affinity: nil, bookmarkURLs: ["https://ui.shadcn.com/Docs"])
-    #expect(entries?.first?.target == "https://ui.shadcn.com/Docs")
   }
 }

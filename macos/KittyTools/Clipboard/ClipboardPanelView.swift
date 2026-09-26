@@ -450,7 +450,8 @@ struct ClipboardPanelView: View {
           case .undo(let count):
             HStack(spacing: 8) {
               Text("已删除 \(count) 条").foregroundStyle(.secondary)
-              Button("撤销（⌘Z）", action: model.undoDelete).buttonStyle(.link)
+              Button("撤销（⌘Z）", action: model.undoDelete)
+                .buttonStyle(.plain).foregroundStyle(Style.brandInk).pointerStyle(.link)
             }
           }
         }
@@ -516,7 +517,7 @@ struct ClipboardPanelView: View {
   }
 }
 
-/// 22 pt 胶囊：范围切换（选中 accent 0.16 底 + accent 字，未选中无底色）与生效筛选标签
+/// 22 pt 胶囊：范围切换（选中品牌粉 0.16 底 + 粉字，未选中无底色）与生效筛选标签
 private struct Chip: View {
   let title: String
   let isOn: Bool
@@ -531,8 +532,8 @@ private struct Chip: View {
       }
       .padding(.horizontal, 10)
       .frame(height: 22)
-      .foregroundStyle(isOn ? Color.accentColor : .secondary)
-      .background(isOn ? Color.accentColor.opacity(0.16) : .clear, in: .capsule)
+      .foregroundStyle(isOn ? Style.brandInk : .secondary)
+      .background(isOn ? Style.brand.opacity(0.16) : .clear, in: .capsule)
       .contentShape(.capsule)
     }
     .buttonStyle(PressScale())

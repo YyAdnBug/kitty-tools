@@ -196,7 +196,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     weak var created: SettingsWindow?
     let window = SettingsWindow { [unowned self] page in
       switch page {
-      case .general: AnyView(GeneralTab(importer: legacyImport))
+      case .general: AnyView(GeneralTab())
       case .clipboard: AnyView(ClipboardTab(store: clipboardStore))
       case .launcher: AnyView(LauncherTab { [unowned self] in launcherUsage.clearAll() })
       case .screenshot: AnyView(ScreenshotTab())
@@ -206,18 +206,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       case .about: AnyView(AboutTab { created?.navigation.showsOnboarding = true })
       }
     } onboarding: { [unowned self] in
-      AnyView(OnboardingView(importer: legacyImport))
+      AnyView(OnboardingView())
     }
     created = window
     return window
   }()
-
-  /// 导入旧版的全部内容（通用页、欢迎引导共用；状态在这里，换页不丢）
-  private lazy var legacyImport = LegacyImportTask { [unowned self] in
-    await LegacyImport.run(
-      services: serviceStore, clipboard: clipboardStore, history: historyStore,
-      launcher: launcherUsage, db: database)
-  }
 
   // MARK: 生命周期
 
@@ -308,7 +301,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if UserDefaults.standard.bool(forKey: hideOnUnfocusKey) { panel.hide() }
   }
 
-  /// 启动器里的内置动作（id 沿用旧版，见 LauncherItem.actions）；启动器已收起
+  /// 启动器里的内置动作（id 见 LauncherItem.actions）；启动器已收起
   private func runLauncherAction(_ id: String) {
     switch id {
     case "clipboard": toggleClipboard()
@@ -799,7 +792,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     menu.addAction("设置…", symbol: "gearshape", color: gray, key: ",") { [unowned self] in
       showSettings()
     }
-    menu.addAction("关于 Kitty Tools Native", symbol: "info.circle", color: gray) {
+    menu.addAction("关于 Kitty Tools", symbol: "info.circle", color: gray) {
       [unowned self] in showSettings(page: .about)
     }
     menu.addAction("退出", symbol: "power", color: gray, key: "q") { NSApp.terminate(nil) }
@@ -807,7 +800,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   // MARK: 启动辅助
 
-  /// 首次安装打开欢迎引导（授权、快捷键、导入旧版；引导下面是通用页）；更新后第一次启动打开关于页看本版更新内容
+  /// 首次安装打开欢迎引导（授权、快捷键；引导下面是通用页）；更新后第一次启动打开关于页看本版更新内容
   private func showWelcomeIfNeeded() {
     let last = UserDefaults.standard.string(forKey: Prefs.lastSeenVersion)
     UserDefaults.standard.set(AboutTab.version, forKey: Prefs.lastSeenVersion)

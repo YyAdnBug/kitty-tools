@@ -1,11 +1,11 @@
-// 偏好键名与默认值的唯一出处（PLAN §4）。键名字符串沿用旧版 camelCase，M4 导入旧配置时一一对应。
+// 偏好键名与默认值的唯一出处（PLAN §4）。键名一经发布不改（改名会丢用户设置），新键一律 camelCase。
 
 import Foundation
 
 enum Prefs {
   /// 剪贴板面板点外即关；面板上的图钉 = 把它关掉
   static let clipboardHideOnUnfocus = "clipboardHideOnUnfocus"
-  /// 启动器点外即关（同上，键名沿用旧版）
+  /// 启动器点外即关（同上）
   static let launcherHideOnUnfocus = "launcherHideOnUnfocus"
   /// 启动器搜哪些浏览器的书签
   static let launcherBookmarksChrome = "launcherBookmarksChrome"
@@ -94,9 +94,9 @@ enum Prefs {
       launcherRomanInput: false,
       launcherSqueezeEntrance: false,
       floatingPinned: false,
-      clipboardHistoryMax: 100,
+      clipboardHistoryMax: 0,  // 不限条数，只按天数裁剪
       clipboardRetentionDays: 7,
-      clipboardImageBudgetMB: 1024,
+      clipboardImageBudgetMB: 512,
       // 密码管理器大多会打 ConcealedType 标记，这里兜底；「密码」是 macOS 15 自带的 Passwords
       clipboardExcludedApps: [
         "1Password", "Bitwarden", "KeePass", "Keychain", "钥匙串", "com.apple.Passwords",

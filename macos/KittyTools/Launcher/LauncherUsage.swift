@@ -122,29 +122,6 @@ final class LauncherUsage {
     catchingErrors { try db.execute("DELETE FROM launcher_usage") }
   }
 
-  /// 旧版导入：已有的行不动（重复导入不叠加），一个事务写完再改内存；返回新增条数
-  func importLegacy(_ imported: [Entry]) throws -> Int {
-    var fresh: [String: Entry] = [:]
-    for entry in imported where entries[Self.key(entry)] == nil {
-      // 旧版两条记录落到同一行（mac_open 与 open_path 的同一个 App、折叠后相同的查询）：分数合并
-      fresh[Self.key(entry)] = fresh[Self.key(entry)].map { Self.merge($0, entry) } ?? entry
-    }
-    try db.transaction { for entry in fresh.values { try insert(entry) } }
-    entries.merge(fresh) { old, _ in old }
-    return fresh.count
-  }
-
-  /// 两次记录合成一行：各自衰减到较晚的那次再相加
-  static func merge(_ a: Entry, _ b: Entry) -> Entry {
-    let (older, newer) = a.usedAt <= b.usedAt ? (a, b) : (b, a)
-    let timeConstant = a.query.isEmpty ? globalTimeConstant : queryTimeConstant
-    var merged = newer
-    merged.score =
-      newer.score
-      + decayed(older.score, from: older.usedAt, to: newer.usedAt, timeConstant: timeConstant)
-    return merged
-  }
-
   private func prune(now: Date) {
     for (isGlobal, limit, timeConstant) in [
       (true, Self.globalLimit, Self.globalTimeConstant),
@@ -169,19 +146,17 @@ final class LauncherUsage {
   }
 
   private func write(_ entry: Entry) {
-    catchingErrors { try insert(entry, replacing: true) }
-  }
-
-  private func insert(_ entry: Entry, replacing: Bool = false) throws {
-    try db.execute(
-      """
-      INSERT OR \(replacing ? "REPLACE" : "IGNORE") INTO launcher_usage(query, kind, target, title, score, used_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-      """,
-      [
-        entry.query, entry.kind.rawValue, entry.target, entry.title, entry.score,
-        entry.usedAt.timeIntervalSinceReferenceDate,
-      ])
+    catchingErrors {
+      try db.execute(
+        """
+        INSERT OR REPLACE INTO launcher_usage(query, kind, target, title, score, used_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        [
+          entry.query, entry.kind.rawValue, entry.target, entry.title, entry.score,
+          entry.usedAt.timeIntervalSinceReferenceDate,
+        ])
+    }
   }
 
   /// 写库失败只记日志：内存里的记录仍可用，下次启动以库为准

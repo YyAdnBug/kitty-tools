@@ -5,9 +5,9 @@ import SwiftUI
 
 struct ClipboardTab: View {
   let store: ClipboardStore
-  @AppStorage(Prefs.clipboardHistoryMax) private var historyMax = 100
+  @AppStorage(Prefs.clipboardHistoryMax) private var historyMax = 0
   @AppStorage(Prefs.clipboardRetentionDays) private var retentionDays = 7
-  @AppStorage(Prefs.clipboardImageBudgetMB) private var imageBudgetMB = 1024
+  @AppStorage(Prefs.clipboardImageBudgetMB) private var imageBudgetMB = 512
   @AppStorage(Prefs.clipboardShowPreview) private var showPreview = true
   @AppStorage(Prefs.clipboardLinkPreview) private var linkPreview = true
   @AppStorage(Prefs.clipboardHideOnUnfocus) private var hideOnUnfocus = true

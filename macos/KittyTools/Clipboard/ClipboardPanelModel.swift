@@ -1,6 +1,6 @@
 // 剪贴板面板的界面状态与操作：筛选、选中 / 多选、键盘命令、粘贴 / 复制 / 删除撤销。视图只负责画。
 // 焦点始终在搜索框：方向键 / 回车 / Esc 从搜索框的 doCommandBy 进来，⌘ 组合键从面板的
-// performKeyEquivalent 进来（handleKeyEquivalent）。交互按 macOS 习惯重新设计，不沿用旧版：
+// performKeyEquivalent 进来（handleKeyEquivalent）。交互按 macOS 习惯设计：
 // 单击选中、双击或 ↩ 粘贴、⌥↩ 纯文本、⌘↩ 仅复制、⌘1–9 直接粘贴第 N 条、删除不确认可撤销；
 // ⌘K 打开操作面板（全部操作都在里面，搜索框这时用来过滤操作，↑↓ ↩ 选择执行，Esc 关掉）；
 // ⌘Y 放大预览（QuickLookView，单独的浮层，不抢键盘：↑↓ 照样在这里换条目）。

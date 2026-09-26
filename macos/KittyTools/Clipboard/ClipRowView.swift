@@ -1,6 +1,6 @@
 // 剪贴板列表的一行（Whisker，mac-whisker §6 剪贴板）：44 pt，30 pt 图标块（色块 > 缩略图 > 来源 App 图标 + 代码角标
 // > 种类图标），标题 13 + 副标题 11（有备注显示备注，否则「来源 · 多久前 · 大小」），右侧分组 / 片段 / 收藏标记；
-// ⌘1–9 键帽只在按住 ⌘ 时出现。选中是列表背后一块滑动的中性高亮，行本身不填色、文字不反白；多选勾选行 accent 0.14 底。
+// ⌘1–9 键帽只在按住 ⌘ 时出现。选中是列表背后一块滑动的中性高亮，行本身不填色、文字不反白；多选勾选行品牌粉 0.14 底。
 // 行内用到的摘要文字、图标与取色缓存、缩略图也放在这里。
 
 import AppKit
@@ -28,7 +28,7 @@ struct ClipRowView: View {
       if let isChecked {
         Image(systemName: isChecked ? "checkmark.circle.fill" : "circle")
           .font(.system(size: 15))
-          .foregroundStyle(isChecked ? Color.accentColor : .secondary)
+          .foregroundStyle(isChecked ? Style.brand : .secondary)
           .contentTransition(.symbolEffect(.replace))
       }
       IconTile(item: item, form: form, images: images)
@@ -82,7 +82,7 @@ struct ClipRowView: View {
     .padding(.horizontal, 10)
     .frame(height: Self.height)
     .background(
-      isChecked == true ? Color.accentColor.opacity(0.14) : .clear,
+      isChecked == true ? Style.brand.opacity(0.14) : .clear,
       in: .rect(cornerRadius: Style.Radius.card, style: .continuous)
     )
     .contentShape(.rect)

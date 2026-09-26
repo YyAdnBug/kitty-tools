@@ -1,4 +1,4 @@
-// 启动器的网页搜索与快捷链接：一张列表存在 UserDefaults（字段沿用旧版）。网址里有 {query} 的是搜索：
+// 启动器的网页搜索与快捷链接：一张列表存在 UserDefaults（字段名已定，改名会丢用户的列表）。网址里有 {query} 的是搜索：
 // 「关键词 空格 内容」直达，勾了「兜底」的在没有本地结果时（或设置成总是）列在最后；单输关键词（排最前）
 // 或名字的开头（排在本地结果后面，不抢同名 App）时出一条「↩ 补全关键词」的提示。没有 {query} 的是快捷链接（对标 Raycast Quicklinks）：按名字 / 关键词 / 拼音搜到，
 // ↩ 打开固定网址（也可以是 / 或 ~ 开头的路径），和书签一样记使用。网页搜索不记使用（§11 #32）。
@@ -55,7 +55,7 @@ enum WebSearch {
     }
   }
 
-  /// 「g swift」→ 用关键词为 g 的搜索搜 swift。关键词直达不看 enabled（enabled 只管兜底，和旧版、Alfred 一致）；
+  /// 「g swift」→ 用关键词为 g 的搜索搜 swift。关键词直达不看 enabled（enabled 只管兜底，和 Alfred 一致）；
   /// 关键词重复时取列表里靠前的
   static func keywordItem(for query: String, engines: [SearchEngine] = engines) -> LauncherItem? {
     let parts = query.trimmingCharacters(in: .whitespaces).split(

@@ -23,7 +23,7 @@ struct AboutTab: View {
   /// 重看欢迎引导
   var showOnboarding: () -> Void = {}
 
-  // 只发 GitHub 预发布版（tag macos-v*），和旧版的正式版在同一个仓库里，按 tag 过滤
+  // 只发 GitHub 预发布版（tag macos-v*）；仓库里还有别的发布，按 tag 过滤
   private static let releasesURL = URL(
     string: "https://github.com/yyandbug-coder/kitty-tools/releases?q=macos-v&expanded=true")!
 
@@ -43,7 +43,7 @@ struct AboutTab: View {
       VStack(spacing: 0) {
         VStack(spacing: 12) {
           BrandIcon(size: 128)
-          Text("Kitty Tools Native")
+          Text("Kitty Tools")
             .font(.system(size: 26, weight: .bold, design: .rounded))
           Text("版本 \(Self.version)" + (Self.build.map { "（\($0)）" } ?? ""))
             .font(.system(size: 12, weight: .medium))
@@ -56,7 +56,7 @@ struct AboutTab: View {
             Button("打开发布页") { NSWorkspace.shared.open(Self.releasesURL) }
             Button("重看欢迎指南", action: showOnboarding)
           }
-          .buttonStyle(.link)
+          .buttonStyle(.plain).foregroundStyle(Style.brandInk).pointerStyle(.link)
           .font(.callout)
         }
         .padding(.top, 36)

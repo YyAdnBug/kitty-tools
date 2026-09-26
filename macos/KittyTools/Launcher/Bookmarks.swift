@@ -49,12 +49,6 @@ enum Bookmarks {
     return items
   }
 
-  /// 全部浏览器的书签网址，不看开关（导入旧记录时还原网址大小写用；旧版默认关书签）
-  static func allURLs() -> [String] {
-    browsers.flatMap(profileFiles).compactMap { try? Data(contentsOf: $0) }.flatMap(parse).map(
-      \.url)
-  }
-
   private static func profileFiles(_ browser: Browser) -> [URL] {
     profileFiles(in: URL.applicationSupportDirectory.appending(path: browser.directory))
   }

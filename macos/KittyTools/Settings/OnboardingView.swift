@@ -1,12 +1,9 @@
-// 首次安装的欢迎引导（Whisker 品牌时刻，D 阶段）：盖在设置窗上的 sheet，四五步——欢迎 → 授权（辅助功能、屏幕录制，
-// 状态实时刷新）→ 快捷键一览 → 导入旧版（本机有旧版数据才出现）→ 完成。每步从右边滑进来（settle），
-// 减弱动态效果时只淡入淡出。「关于」页里可以重看。
+// 首次安装的欢迎引导（Whisker 品牌时刻，D 阶段）：盖在设置窗上的 sheet，四步——欢迎 → 授权（辅助功能、屏幕录制，
+// 状态实时刷新）→ 快捷键一览 → 完成。每步从右边滑进来（settle），减弱动态效果时只淡入淡出。「关于」页里可以重看。
 
 import SwiftUI
 
 struct OnboardingView: View {
-  /// 导入旧版的全部内容，返回逐行结果（LegacyImport.run）
-  let importer: LegacyImportTask
   @Environment(\.dismiss) private var dismiss
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var step: Step
@@ -14,21 +11,15 @@ struct OnboardingView: View {
   @State private var forward = true
 
   /// step：从第几步开始（截图自检摆各步用）
-  init(importer: LegacyImportTask, step: Step = .welcome) {
-    self.importer = importer
+  init(step: Step = .welcome) {
     _step = State(initialValue: step)
   }
 
   enum Step: Int, CaseIterable {
-    case welcome, permissions, shortcuts, legacy, done
+    case welcome, permissions, shortcuts, done
   }
 
-  /// 本机没有旧版数据就跳过导入那一步
-  private var steps: [Step] {
-    Step.allCases.filter {
-      $0 != .legacy || FileManager.default.fileExists(atPath: LegacyImport.directory.path)
-    }
-  }
+  private let steps = Step.allCases
 
   var body: some View {
     VStack(spacing: 0) {
@@ -55,7 +46,6 @@ struct OnboardingView: View {
     case .welcome: WelcomeStep()
     case .permissions: PermissionsStep()
     case .shortcuts: ShortcutsStep()
-    case .legacy: LegacyStep(importer: importer)
     case .done: DoneStep()
     }
   }
@@ -87,6 +77,7 @@ struct OnboardingView: View {
         if index + 1 < steps.count { go(to: steps[index + 1]) } else { dismiss() }
       }
       .buttonStyle(.borderedProminent)
+      .tint(Style.brand)
       .keyboardShortcut(.defaultAction)
     }
     .padding(.horizontal, 20)
@@ -218,35 +209,6 @@ private struct ShortcutsStep: View {
       KindTile(symbol: entry.1, color: entry.2, size: 24)
       Text(entry.0.title).frame(width: 84, alignment: .leading)
       KeyCap(entry.0.hotKey?.display ?? "未设置")
-    }
-  }
-}
-
-private struct LegacyStep: View {
-  let importer: LegacyImportTask
-
-  var body: some View {
-    StepLayout(
-      title: "带上旧版的数据", subtitle: "发现这台 Mac 上有旧版 Kitty Tools。可以把设置、密钥、收藏的剪贴板条目和翻译历史搬过来。"
-    ) {
-      VStack(spacing: 12) {
-        Button(action: importer.start) {
-          Label(
-            importer.result == nil ? "导入旧版数据" : "再导入一次", systemImage: "square.and.arrow.down"
-          )
-          .padding(.horizontal, 6)
-        }
-        .controlSize(.large)
-        .disabled(importer.isRunning)
-        if importer.isRunning { ProgressView().controlSize(.small) }
-        if let result = importer.result {
-          Text(result).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
-            .transition(.opacity)
-        }
-        Text("可以重复导入，不会产生重复；旧版的数据不会被改动。也可以以后在「设置 › 通用」里导入。")
-          .font(.caption).foregroundStyle(.tertiary).multilineTextAlignment(.center)
-      }
-      .animation(Style.Motion.settle.animation(), value: importer.result)
     }
   }
 }

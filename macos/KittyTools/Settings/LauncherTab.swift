@@ -13,7 +13,7 @@ struct LauncherTab: View {
   @AppStorage(Prefs.launcherBookmarksChrome) private var chrome = true
   @AppStorage(Prefs.launcherBookmarksEdge) private var edge = false
   @AppStorage(Prefs.launcherBookmarksBrave) private var brave = false
-  /// 直接读写偏好里的 JSON，不留一份拷贝（设置窗常驻：导入旧版后拷贝会过期，再改一下就把导入的覆盖掉）
+  /// 直接读写偏好里的 JSON，不留一份拷贝（设置窗常驻：别处改了偏好，拷贝会过期，再改一下就把别处的改动覆盖掉）
   @AppStorage(Prefs.launcherWebSearchEngines) private var enginesData: Data?
   @State private var editing: Draft?
   @State private var confirmsClear = false
@@ -202,7 +202,7 @@ private struct EngineRow: View {
   var body: some View {
     HStack(spacing: 8) {
       Image(systemName: engine.isQuicklink ? "link" : "magnifyingglass")
-        .foregroundStyle(.tint)
+        .foregroundStyle(engine.isQuicklink ? Style.Family.url : Style.Family.search)
         .frame(width: 18)
       VStack(alignment: .leading, spacing: 1) {
         Text(engine.name).lineLimit(1)

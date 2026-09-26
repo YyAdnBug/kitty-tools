@@ -1,6 +1,6 @@
 // 片段占位符（不区分大小写）：{date} → 当天日期（yyyy-MM-dd），{clipboard} → 粘贴时剪贴板里的文本，
-// {cursor} → 去掉。ponytail: {cursor} 还不会把光标挪到该处（要在粘贴完成后按左方向键，时序难保证），
-// 和旧版一致，见 PLAN §11。
+// {cursor} → 去掉。ponytail: 还不会把光标挪到该处；要做就在粘贴完成后按 ← 键挪回去（Alfred / Raycast 的做法），
+// 难点是等粘贴落地的时序。
 
 import Foundation
 

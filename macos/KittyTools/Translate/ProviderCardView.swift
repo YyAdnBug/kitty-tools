@@ -1,7 +1,7 @@
 // 一个翻译服务的结果卡片（Whisker，mac-whisker §6 翻译）：标题行 = 18 pt 品牌色块 + 服务名 12 semibold + 模型 11 tertiary，
 // 右侧朗读 / 复制 / 重试 / 折叠（平时 0.45 透明度）；正文四种状态：等待和「生成中还没有字」是骨架条 + 扫光，
 // 生成中用 RevealText 显影 + 边框上一段强调色彗星光绕行（2.4 s 一圈），完成时整圈闪一下，失败是淡红错误卡
-// （图标晃一下，给「重试 · 打开设置」）。复制时对勾替换 + 整卡闪 accent。大模型完成后按行内 Markdown 渲染。
+// （图标晃一下，给「重试 · 打开设置」）。复制时对勾替换 + 整卡闪品牌粉。大模型完成后按行内 Markdown 渲染。
 // 折叠状态由浮窗按服务记住（跨重启），不再因为出结果自动展开；复制的对勾状态在会话里（⌘1–9 也亮）。
 
 import SwiftUI
@@ -82,9 +82,9 @@ struct ProviderCardView: View {
     .background(background, in: shape)
     .overlay(shape.strokeBorder(stroke, lineWidth: 0.5))
     .overlay { if isGenerating { CometBorder() } }
-    // 完成：整圈边框闪一下 accent 0.45 → 0（0.6 s）
+    // 完成：整圈边框闪一下品牌粉 0.45 → 0（0.6 s）
     .overlay {
-      shape.strokeBorder(Color.accentColor, lineWidth: 1.5)
+      shape.strokeBorder(Style.brand, lineWidth: 1.5)
         .keyframeAnimator(initialValue: 0.0, trigger: isDone) { view, value in
           view.opacity(value)
         } keyframes: { _ in
@@ -96,9 +96,9 @@ struct ProviderCardView: View {
         }
         .allowsHitTesting(false)
     }
-    // 复制：整卡闪 accent 0 → 0.12 → 0（0.4 s）
+    // 复制：整卡闪品牌粉 0 → 0.12 → 0（0.4 s）
     .overlay {
-      shape.fill(Color.accentColor)
+      shape.fill(Style.brand)
         .keyframeAnimator(initialValue: 0.0, trigger: copyTick) { view, value in
           view.opacity(value)
         } keyframes: { _ in
@@ -197,7 +197,7 @@ struct ProviderCardView: View {
         Text("·").foregroundStyle(.tertiary)
         Button("打开设置", action: onOpenSettings)
       }
-      .buttonStyle(.link)
+      .buttonStyle(.plain).foregroundStyle(Style.brandInk).pointerStyle(.link)
       .font(.system(size: 12))
       .onAppear { errorTicks += 1 }
     } else {
@@ -342,8 +342,8 @@ private struct CometBorder: View {
           AngularGradient(
             stops: [
               .init(color: .clear, location: 0), .init(color: .clear, location: 0.62),
-              .init(color: .accentColor.opacity(0.35), location: 0.78),
-              .init(color: .accentColor, location: 0.92), .init(color: .clear, location: 1),
+              .init(color: Style.brand.opacity(0.35), location: 0.78),
+              .init(color: Style.brand, location: 0.92), .init(color: .clear, location: 1),
             ], center: .center, angle: .degrees(turn * 360)), lineWidth: 1.5)
     }
     .transition(.opacity.animation(.easeOut(duration: 0.35)))

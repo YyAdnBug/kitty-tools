@@ -1,19 +1,15 @@
-// 设置 › 通用：开机自启、权限状态（辅助功能、屏幕录制、剪贴板访问；从未授权变已授权时符号替换 + 弹一下）、
-// 从旧版导入（设置、密钥、剪贴板保留条目、翻译历史）。
+// 设置 › 通用：开机自启、权限状态（辅助功能、屏幕录制、剪贴板访问；从未授权变已授权时符号替换 + 弹一下）。
 
 import ServiceManagement
 import SwiftUI
 
 struct GeneralTab: View {
-  /// 导入旧版（状态由 AppDelegate 持有：换页回来还在）
-  let importer: LegacyImportTask
   @State private var trusted = Permissions.isAccessibilityTrusted
   @State private var screenRecording = Permissions.isScreenRecordingAllowed
   @State private var loginStatus = SMAppService.mainApp.status
   @State private var loginError: String?
   /// NSPasteboard.AccessBehavior 的 rawValue（这个类型 macOS 15.4 才有），窗口变成 key 时刷新
   @State private var pasteboardBehavior = Self.currentPasteboardBehavior
-  @State private var confirmImport = false
 
   var body: some View {
     Form {
@@ -48,20 +44,6 @@ struct GeneralTab: View {
         }
         if #available(macOS 15.4, *) { pasteboardAccess }
       }
-      Section("从旧版导入") {
-        LabeledContent {
-          if importer.isRunning { ProgressView().controlSize(.small) }
-        } label: {
-          Button("导入旧版 Kitty Tools 的数据…") { confirmImport = true }
-            .disabled(importer.isRunning)
-        }
-        if let result = importer.result {
-          Text(result).font(.callout).foregroundStyle(.secondary)
-        }
-        caption(
-          "导入翻译服务与密钥、语言和剪贴板偏好，收藏、片段和分组里的剪贴板条目（含图片），以及全部翻译历史。"
-            + "不导入快捷键（两个版本同时运行时会冲突）和普通剪贴板历史。可以重复导入，不会产生重复，旧版数据不会被改动。")
-      }
     }
     .formStyle(.grouped)
     .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
@@ -69,13 +51,6 @@ struct GeneralTab: View {
       screenRecording = Permissions.isScreenRecordingAllowed
       loginStatus = SMAppService.mainApp.status
       pasteboardBehavior = Self.currentPasteboardBehavior
-    }
-    // 旧版开了开机自启的话，导入时已注册
-    .onChange(of: importer.isRunning) { loginStatus = SMAppService.mainApp.status }
-    .confirmationDialog("导入旧版数据？", isPresented: $confirmImport) {
-      Button("导入", action: importer.start)
-    } message: {
-      Text("会覆盖当前的翻译服务列表和相关偏好；剪贴板条目和翻译历史会合并进来。建议先退出旧版再导入。")
     }
   }
 

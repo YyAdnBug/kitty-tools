@@ -20,7 +20,7 @@ struct LauncherItem: Identifiable, Hashable {
   }
 
   let kind: Kind
-  /// App / 文件的路径、网址、内置动作 id（沿用旧版 id，导入使用记录时直接对上）
+  /// App / 文件的路径、网址、内置动作 id（存进使用记录，改名会丢记录）
   let target: String
   let title: String
   let subtitle: String
@@ -38,7 +38,7 @@ struct LauncherItem: Identifiable, Hashable {
 
   var id: String { kind.rawValue + "\n" + target }
 
-  /// 内置动作：只放原生已有的功能（旧版的贴图历史、开发者工具箱等不迁）
+  /// 内置动作：只放本 App 已有的功能
   static let actions: [LauncherItem] = [
     action("clipboard", "剪贴板历史", "Clipboard"),
     action("translate-input", "输入翻译", "Translate"),

@@ -120,14 +120,18 @@ enum HotKeyAction: String, CaseIterable {
   /// nil = 默认不设键（静默替换这类用得少、又容易误触的）
   var defaultHotKey: HotKey? {
     switch self {
-    case .clipboard: HotKey(keyCode: kVK_ANSI_V, modifiers: cmdKey | shiftKey)
-    case .selectionTranslate: HotKey(keyCode: kVK_ANSI_T, modifiers: cmdKey | shiftKey)
+    // C = Clipboard，和 ⌥D / ⌥S / ⌥Space / ⌥A 同一组单 ⌥ 键。
+    // 15.0–15.1 上只带 ⌥ 的组合注册不了，快捷键页会提示（下面的 ⌥ 键同样）
+    case .clipboard: HotKey(keyCode: kVK_ANSI_C, modifiers: optionKey)
+    // Bob 的划词翻译默认键；⌘⇧T 会占浏览器的「重新打开关闭的标签页」
+    case .selectionTranslate: HotKey(keyCode: kVK_ANSI_D, modifiers: optionKey)
+    // Bob 的输入翻译用 ⌥A，这里 ⌥A 给了截图
     case .inputTranslate: HotKey(keyCode: kVK_ANSI_I, modifiers: cmdKey | shiftKey)
-    // 用户旧版实际用的键；不占各 App 的 ⌘⇧S「另存为」。15.0–15.1 上只带 ⌥ 的组合注册不了，快捷键页会提示
+    // Bob 的截图翻译默认键；不占各 App 的 ⌘⇧S「另存为」
     case .screenshotTranslate: HotKey(keyCode: kVK_ANSI_S, modifiers: optionKey)
-    // 用户旧版实际用的键（15.0–15.1 上只带 ⌥ 的组合注册不了，快捷键页会提示）
+    // Alfred 的默认键
     case .launcher: HotKey(keyCode: kVK_Space, modifiers: optionKey)
-    // 用户旧版实际用的键（同上，15.0–15.1 注册不了会提示）
+    // iShot 的框选截图默认键
     case .screenshot: HotKey(keyCode: kVK_ANSI_A, modifiers: optionKey)
     // iShot 的默认键，可以连按
     case .screenshotLastRegion: HotKey(keyCode: kVK_ANSI_X, modifiers: optionKey)

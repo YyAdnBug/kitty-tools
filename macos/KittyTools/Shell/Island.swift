@@ -334,7 +334,7 @@ struct IslandView: View {
   private func tint(_ tone: Island.Tone) -> Color {
     switch tone {
     case .success: Color(nsColor: .systemGreen)
-    case .info, .progress: Color.accentColor
+    case .info, .progress: Style.brand
     case .warning: Color(nsColor: .systemOrange)
     case .error: Color(nsColor: .systemRed)
     }

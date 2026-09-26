@@ -131,7 +131,7 @@ struct TranslatePanelView: View {
       Group {
         Toggle(isOn: $copyToTranslate) { Image(systemName: "doc.on.clipboard") }
           .toggleStyle(.button)
-          .foregroundStyle(copyToTranslate ? Color.accentColor : .secondary)
+          .foregroundStyle(copyToTranslate ? Style.brand : .secondary)
           .help(copyToTranslate ? "复制即译：已开启（复制文字后自动翻译）" : "复制即译：复制文字后自动翻译")
         Toggle(isOn: $coordinator.showsHistory) { Image(systemName: "clock.arrow.circlepath") }
           .toggleStyle(.button)
@@ -250,7 +250,7 @@ struct TranslatePanelView: View {
           .foregroundStyle(.white)
           .padding(.horizontal, 12)
           .frame(height: 24)
-          .background(Color.accentColor, in: .capsule)
+          .background(Style.brand, in: .capsule)
           .contentShape(.capsule)
         }
         .buttonStyle(PressScale())
@@ -384,10 +384,10 @@ private struct LanguageCapsule: View {
       if showsAutoTag {
         Text("自动")
           .font(.system(size: 10, weight: .semibold))
-          .foregroundStyle(Color.accentColor)
+          .foregroundStyle(Style.brandInk)
           .padding(.horizontal, 5)
           .padding(.vertical, 1)
-          .background(Color.accentColor.opacity(0.14), in: .capsule)
+          .background(Style.brand.opacity(0.14), in: .capsule)
           .fixedSize()
       }
       Image(systemName: "chevron.down")

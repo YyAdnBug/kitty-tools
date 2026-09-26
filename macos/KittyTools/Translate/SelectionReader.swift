@@ -52,14 +52,14 @@ enum SelectionReader {
     for keyDown in [true, false] {
       let event = CGEvent(
         keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_C), keyDown: keyDown)
-      event?.flags = .maskCommand  // 热键里还按着的 ⇧ 不能混进来
+      event?.flags = .maskCommand  // 热键里还按着的 ⌥ / ⇧ 不能混进来
       event?.post(tap: .cgSessionEventTap)
     }
     for _ in 0..<40 where pasteboard.changeCount == cleared {
       try? await Task.sleep(for: .milliseconds(12))
     }
     let text = pasteboard.changeCount == cleared ? nil : pasteboard.string(forType: .string)
-    if backup.isEmpty { pasteboard.clearContents() } else { Paster.write(backup) }
+    if backup.isEmpty { pasteboard.clearContents() } else { Paster.write(backup, transient: true) }
     return text.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
   }
 }

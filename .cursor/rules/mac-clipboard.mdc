@@ -6,7 +6,7 @@ alwaysApply: false
 
 # mac-clipboard：剪贴板历史红线
 
-代码：`Clipboard/`（ClipItem、ClipboardStore、ClipboardWatcher、ClipboardFilter、ImageStore、OCR、Search、ContentForm、Snippet、ClipboardPanelModel + 各视图）、`Storage/Database.swift`。旧版只当行为清单，实现与界面都是原生重新设计。
+代码：`Clipboard/`（ClipItem、ClipboardStore、ClipboardWatcher、ClipboardFilter、ImageStore、OCR、Search、ContentForm、Snippet、ClipboardPanelModel + 各视图）、`Storage/Database.swift`。
 
 ## 1. 数据
 - 表 `clips`（一行一条，rich_data 只在粘贴时读）+ `clip_groups`；时间存 `Date.timeIntervalSinceReferenceDate`（REAL，读写无精度损失；存 1970 秒会有浮点误差，读回不相等）。
@@ -20,13 +20,13 @@ alwaysApply: false
 - 只能轮询 `changeCount`（0.3s）。顺序：自家写入（`Paster.ownChangeCount`）→ nspasteboard.org 隐私标记 → 排除 App（名称或 bundle ID 关键词）→ 文件 → 文本（附 RTF/HTML，≤2MB）→ PNG/TIFF。
 - 启动时直接对齐当前 changeCount，不记启动前的内容。
 - App Nap 实测（空闲 11 分钟后 1 秒内连复制 3 条全部入库）：**不需要** `beginActivity`，别加。
-- 敏感文本：`sk-` / `bearer ` 后的 token 要求词边界 + 字符集 + 长度 + 含数字（修正旧版 sk-proj 漏拦、bearer 误拦），卡号整段 13–19 位且过 Luhn。
+- 敏感文本：`sk-` / `bearer ` 后的 token 要求词边界 + 字符集 + 长度 + 含数字（`sk-proj-…` 也拦，普通单词跟在 bearer 后不拦），卡号整段 13–19 位且过 Luhn。
 
 ## 3. 搜索
 - `Search`：空白分词 AND，大小写 / 全半角 / 变音符号不敏感；权重 备注 3 > 正文 / 图片文字 / 路径 2 > 来源 1。
 - 必须走 `ClipboardStore.search`（折叠后 UTF-8 字节缓存 + `memmem`）：直接 `range(of:options:)` 5000 条要 1 秒，缓存后 9ms（Debug）。改条目正文、备注、OCR、来源的地方都要清对应的 `searchKeys`。
 
-## 4. 面板交互（macOS 习惯，不沿用旧版）
+## 4. 面板交互（macOS 习惯）
 | 输入 | 行为 |
 |---|---|
 | 单击 / ⌘单击 / ⇧单击 | 选中预览 / 切换勾选 / 从锚点整段选 |

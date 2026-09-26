@@ -1,5 +1,7 @@
 # kitty-tools 原生 macOS 分支迁移方案（Phase 1：剪贴板历史 + 翻译）
 
+> 2026-09-26 起：本文是迁移期的历史方案。原生版不再参考 Tauri：§5 的「照搬 / 一致」只代表当时的实现；行为、界面、默认值、文案以各 mac-* 规则、Whisker 和对标产品为准。旧版导入（§6）已删除，强调色改为品牌粉（D13 作废）。
+
 **基线**
 - master 在 `ee615b3`，工作区干净（已核实）。
 - 现有 Tauri 版：v0.1.13，`com.yy.kitty-tools`，最低 macOS 13（`src-tauri/tauri.conf.json:5,43`）。
@@ -21,15 +23,15 @@
 | D2 | 在哪个目录开发 | `git worktree add ../kitty-tools-macos -b macos-native master` | `.cursor/`、`.claude/`、`.agents/` 都在 .gitignore 里（`.gitignore:58-61`）。在同一目录切分支，Tauri 的规则和技能会继续被加载；独立 worktree 自带一套干净的 agent 上下文 | 同目录切分支（规则会混在一起） |
 | D3 | 原生工程放哪 | 仓库根目录下的 `macos/` | 和 `src/`、`src-tauri/` 平级，自成一体 | 把 xcodeproj 放根目录（会弄乱根目录） |
 | D4 | 规则是否提交进 git | 本分支提交：`.cursor/rules/mac-native.mdc`、`.cursor/rules/ponytail.mdc`（给 Cursor 用），以及各里程碑结束后写的 `.claude/skills/mac-*`。`.gitignore` 只放行这几项 | 规则跟着代码走，删掉 worktree 也不会丢 | 沿用 master 的做法，只存在本机 |
-| D5 | Bundle ID | Release 用 `com.yy.kitty-tools.native`，Debug 用 `com.yy.kitty-tools.native.dev`，**以后不再改** | Phase 1–3 期间启动器和截图还得用 Tauri 版，两个 App 一定会在同一台机器上共存。ID 相同会争用 TCC 授权、UserDefaults 域（`~/Library/Preferences/com.yy.kitty-tools.plist` 已被占用）和数据目录。Debug 要避开 Tauri dev 已占用的 `.dev` | 直接接替 `com.yy.kitty-tools`：只有不再共存时才成立。以后再改 ID 会丢设置和授权 |
+| D5 | Bundle ID | Release 用 `com.yy.kitty-tools.native`，Debug 用 `com.yy.kitty-tools.native.dev`，**以后不再改** | Phase 1–3 期间启动器和截图还得用 Tauri 版，两个 App 一定会在同一台机器上共存。ID 相同会争用 TCC 授权、UserDefaults 域（`~/Library/Preferences/com.yy.kitty-tools.plist` 已被占用）和数据目录。Debug 要避开 Tauri dev 已占用的 `.dev` | 直接接替 `com.yy.kitty-tools`：只有不再共存时才成立。以后再改 ID 会丢设置和授权（2026-09-26：共存期结束，ID 仍不改） |
 | D6 | 显示名 | `Kitty Tools Native`（Debug：`Kitty Tools Native Dev`） | 能和 `Kitty Tools.app` 同时放在 /Applications | Tauri mac 版退役后改 `PRODUCT_NAME` 即可，ID 不变 |
 | D7 | Developer ID 与公证 | **✅ 已定（2026-09-24）：长期不公证**，只走路径 B（Apple Development 签名，Team `HTX9F4KG39`，证书 2027-06-10 到期） | 没有 Apple Developer Program 付费会员，拿不到 Developer ID。代价：macOS 15 用户每装一个新版本都要去系统设置点「仍要打开」，发布说明固定写上这个步骤 | 将来入会后按 §8.4 补公证 |
 | D8 | 应用内更新 | Phase 1 不做；关于页只显示版本号和「打开发布页」按钮 | Apple 没有面向 DMG 分发的官方更新框架。不公证时每次都要手动放行，自己写的检查器体验和手动更新差不多 | 以后要做：自写约 60 行的检查器（读 GitHub release），或 Sparkle 2（第三方，需要你同意） |
-| D9 | 旧 Tauri 数据 | 手动触发的一次性导入，**分两步**：M4 导偏好和密钥；M6 导**保留类**剪贴板条目（收藏、片段、已归组）及其图片、分组，以及**全部**翻译历史。**普通历史和热键不导** | 普通历史只保留 7 天，共存期间原生版自己已经采集到了，导进来只会重复。热键导进来一定和共存的 Tauri 冲突。偏好和密钥提前到 M4，M4/M5 就能直接拿真实配置测 | 连普通历史一起导（差别只是去掉一个 WHERE 条件）；或者从空库开始 |
+| D9 | 旧 Tauri 数据 | 手动触发的一次性导入，**分两步**：M4 导偏好和密钥；M6 导**保留类**剪贴板条目（收藏、片段、已归组）及其图片、分组，以及**全部**翻译历史。**普通历史和热键不导** | 普通历史只保留 7 天，共存期间原生版自己已经采集到了，导进来只会重复。热键导进来一定和共存的 Tauri 冲突。偏好和密钥提前到 M4，M4/M5 就能直接拿真实配置测 | 连普通历史一起导（差别只是去掉一个 WHERE 条件）；或者从空库开始（2026-09-26：导入已删除） |
 | D10 | CPU 架构 | **✅ 已定（2026-09-24）：只支持 Apple 芯片**，`ARCHS = arm64` 写在 Base.xcconfig | 基本自用，Intel 不在目标内；构建更快、包更小 | — |
 | D11 | 翻译服务迁多少 | **✅ 已定（2026-09-24）：全部迁移**：智谱内置、百度、有道、Google、DeepL / DeepLX、微软、火山、腾讯，以及 AI 实例的 openai / azure / anthropic 三种协议 | 与 Tauri 版功能对齐。M4 做智谱 + AI 三协议，M5 做其余 7 家（火山、腾讯的手写签名各算 M） | — |
 | D12 | 是否新增 Apple Translation 引擎 | Phase 1 不做，功能对齐后作为第一个候选 | 不在迁移范围内。macOS 15 上 `TranslationSession` 只能依附 SwiftUI 视图获取（脱离视图的 init 需要 macOS 26）；语言包下载 sheet 在不激活的浮层里能否工作也没验证 | 放进 M5（优点：离线、不需要密钥） |
-| D13 | 主题 | 去掉 `appThemePreset`、`customHue`、`backgroundOpacity`、`transparentBackground`，跟随系统强调色和系统材质 | 符合 HIG，少维护一套主题系统 | 保留 preset（纯 UI 工作，约 S–M） |
+| D13 | 主题 | 去掉 `appThemePreset`、`customHue`、`backgroundOpacity`、`transparentBackground`，~~跟随系统强调色~~和系统材质（2026-09-26 作废：强调色固定为品牌粉 `Style.brand` + AccentColor.colorset，材质仍跟随系统） | 符合 HIG，少维护一套主题系统 | 保留 preset（纯 UI 工作，约 S–M） |
 | D14 | 开发机是否升级到 macOS 26.6+ | 暂不升级 | 部署目标是 15，剪贴板隐私、NSPanel、热键这些坑都要在 15 上实测。Xcode 27 官方 skills 偏 SwiftUI/iOS；mcpbridge 能做的事直接跑 `xcodebuild` 也能做 | 升级：能用 Apple 官方 agent skills 和 Xcode MCP，但要另备一台 macOS 15 测试机或虚拟机 |
 | D15 | 「划词 / 浮窗默认服务」设置 | 删掉。翻译历史和自动复制都取**列表中第一个已启用的服务**，想换就拖动排序 | 原生版所有服务并行翻译，这个设置只剩「决定哪条结果写进历史」一个作用，而 Tauri 的自动复制本来就是取列表首个。删掉后少一个设置，也少一套默认服务修正规则 | 保留下拉，语义改为「写入历史的服务」 |
 
@@ -202,7 +204,7 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 2. **技术栈白名单**：§2 的清单；禁止引入任何 SPM 依赖；部署目标 15.0；需要 macOS 26 API 时就地写 `#available`，回退到 `.regularMaterial` / `NSVisualEffectView`。
 3. **并发红线**：默认 MainActor；只有 §4 列出的 3 类工作可以用 `@concurrent`；禁止 `Task.detached`、`@unchecked Sendable`、`nonisolated(unsafe)`（C 全局变量除外，且必须加注释），禁止到处写 `DispatchQueue`。以 Xcode 自带的 `Swift-Concurrency-Updates.md`（绝对路径）为准。
 4. **风格**：Swift API 设计规范；`xcrun swift-format lint --strict` 是唯一的格式标准；日期统一用 `Date.FormatStyle`；单行文本用 `lineLimit(1)` + `.truncationMode(.tail)`。
-5. **剪贴板写入**：自己写剪贴板一律经过 `Paster.write`，它负责记下 changeCount 并加上 `org.nspasteboard.TransientType`。
+5. **剪贴板写入**：自己写剪贴板一律经过 `Paster.write`，它负责记下 changeCount 并加上 `org.nspasteboard.TransientType`（2026-09-26 改：只有划词还原加 TransientType）。
 6. **签名**：固定 `DEVELOPMENT_TEAM`，用 Apple Development 自动签名，禁止「Sign to Run Locally」；ID 见 D5；用 `codesign -d -r-` 自检；授权卡住时执行 `tccutil reset Accessibility com.yy.kitty-tools.native.dev`。
 7. **发版**：改 `MARKETING_VERSION` 必须在 `macos/KittyTools/Resources/changelog.json` 追加条目，type 只允许 feat / fix / perf / ui；tag 用 `macos-v*`；GitHub 只发 prerelease（详见 `build-dmg.sh` 头部注释）。
 8. 用中文回答；commit 格式 `<type>: <description>`。
@@ -285,7 +287,7 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
   - 在 `AppDelegate.applicationDidFinishLaunching` 里按顺序创建：`Database` → `ClipboardStore`、`HistoryStore` → `ClipboardWatcher` → `TranslateCoordinator` → 两个面板 → `HotKeyCenter`，通过 init 传递。
   - 根视图用 `.environment(store)` 注入。
   - 偏好用 `@AppStorage`，键名集中写在 `Prefs.swift`，**沿用旧的 camelCase 键名**，默认值用 `UserDefaults.register(defaults:)` 注册。
-  - 默认值基本照搬 Tauri，只有一处不同：`translateServiceEnabled` 默认只开 builtin。Tauri 默认还开了有道，全新安装没有密钥，浮窗里会一直挂着一张有道的错误卡。
+  - （2026-09-26：默认值以 `Prefs.swift` 为准，不再对齐 Tauri）默认值基本照搬 Tauri，只有一处不同：`translateServiceEnabled` 默认只开 builtin。Tauri 默认还开了有道，全新安装没有密钥，浮窗里会一直挂着一张有道的错误卡。
   - 热键在模型里用 Optional 表示，nil 就是不注册。
   - 不用 DI 容器，也不为了测试去抽 protocol。
 
@@ -310,10 +312,10 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 | 图片 `R/image_cache.rs`、`R/image_budget.rs:17-68` | `ImageStore`（@concurrent）：读 png/tiff；尺寸用 `CGImageSourceCopyPropertiesAtIndex` 读取，不解码；对编码字节做 SHA256 去重（有 PNG 用 PNG 字节，否则用转换后的 PNG 字节）；写 `images/{id}.png`。缩略图用 `CGImageSourceCreateThumbnailAtIndex` + `NSCache` | M | 像素上限 128MiB（按宽×高×4 算）；摘要为「图片 W×H」。`ponytail:` 注释写明「同一张图换了编码不会被去重」。字节预算 = `SUM(image_byte_size)`，超出时从最旧的可淘汰项开始，同时删文件和行。启动对账：cutoff 时间要在读 keep 集合**之前**取，keep 集合读失败绝不清理 |
 | 文件 `R/paste.rs:383-419`、`R/image_cache.rs:460-493` | `readObjects(forClasses:[NSURL.self], options:[.urlReadingFileURLsOnly: true])`；大小取自 `attributesOfItem` | S | 摘要：单个显示文件名，多个显示「N 个文件」；目录不递归统计；按路径列表去重 |
 | OCR `R/ocr_indexer.rs`、`R/ocr_local.rs:14-100` | `OCR`（@concurrent）：`RecognizeTextRequest`，`.accurate`，语言 `zh-Hans, zh-Hant, en-US`，开语言纠错，最多 4096 字符 | S | 语言必须显式指定；识别为无文字时写 `''`，之后不再重试；失败时留 NULL，下次启动重试；启动后串行补齐存量 |
-| 自写抑制 `R/suppress.rs`、`F/lib/clipboard-hotkeys.ts:37-50` | `Paster.write`：写完记下 `changeCount`，watcher 遇到这个值就跳过；同时加 `org.nspasteboard.TransientType`，共存的 Tauri watcher 也会跳过。划词期间 `watcher.pause`，结束后把 lastChangeCount 对齐到当前值 | S | 删掉所有时间窗常量（450/500/250/800ms）；跳过时仍更新指纹 |
+| 自写抑制 `R/suppress.rs`、`F/lib/clipboard-hotkeys.ts:37-50` | `Paster.write`：写完记下 `changeCount`，watcher 遇到这个值就跳过；同时加 `org.nspasteboard.TransientType`，共存的 Tauri watcher 也会跳过（2026-09-26 改：只有划词还原加 TransientType）。划词期间 `watcher.pause`，结束后把 lastChangeCount 对齐到当前值 | S | 删掉所有时间窗常量（450/500/250/800ms）；跳过时仍更新指纹 |
 | 存储 `R/history_db.rs`，以及 `UC:280-331` 的 diff 持久化 | `Database`（libsqlite3 单连接 WAL）+ `ClipboardStore`（@Observable，内存数组，每次变更直接写一行） | M | 表结构见 §6。保留规则 `isRetained = 收藏 ∨ 片段 ∨ 已归组` 只在 Swift 里定义一处 |
 | 合并去重 `F/lib/cloud-sync.ts:19-95` | `ClipboardStore.insert` | S | text 比内容，file 比路径，image 比 hash。合并后用新 id 和新时间戳；收藏取 OR；备注优先保留非空；kind 和 groupId 保留旧值 |
-| 条数与天数上限 `F/lib/history-settings.ts:15-42` | 每次插入后、面板显示时各执行一次 | S | 默认 100 条 / 7 天，0 表示不限；只裁普通历史；删掉 10 分钟定时器 |
+| 条数与天数上限 `F/lib/history-settings.ts:15-42` | 每次插入后、面板显示时各执行一次 | S | 默认 100 条 / 7 天，0 表示不限（2026-09-26 改：默认不限条数 / 7 天、图片 512 MB）；只裁普通历史；删掉 10 分钟定时器 |
 | 退出与锁屏清空 `src-tauri/src/lib.rs:43-57`、`R/clear_on_lock.rs:45-74` | `applicationWillTerminate`；`DistributedNotificationCenter` 监听 `com.apple.screenIsLocked` | S | 只清普通历史及其图片 |
 | 浮层 `MOP:82-233`、`W:775-806` | `OverlayPanel`（见 §4）+ `NSHostingView` | L | 最大风险，M1 先打通 |
 | 点外关闭 / Esc / 图钉 / 兄弟窗口豁免 `MOP:112-175,300-420`、`W:821-892` | global + local 鼠标监听、`cancelOperation`、`clipboardHideOnUnfocus` | M | 监听成对安装、成对卸载；图钉状态持久化 |
@@ -493,10 +495,10 @@ CREATE TABLE clip_groups(id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at INT
 **交付物**：`OverlayPanel`（两个实例，翻译浮窗先只放一个输入框，用来测兄弟窗口豁免和输入法）、`HotKeyCenter`（默认热键写死，非独占注册）、`Permissions`、`Paster`（最简版），以及接好的菜单项。结束时写 `mac-overlay-panel` 技能。
 
 **验收标准**（手动测试清单，写进 PR 描述）
-1. 分别以 Safari、VS Code、微信、全屏 Keynote 为前台时按 ⌘⇧V，面板都能弹出，而且前台 App 的菜单栏名称不变（说明没有激活本应用）。
+1. 分别以 Safari、VS Code、微信、全屏 Keynote 为前台时按 ⌥C，面板都能弹出，而且前台 App 的菜单栏名称不变（说明没有激活本应用）。
 2. 面板里的输入框能用拼音、双拼、日文输入，候选窗位置正确；组字过程中按 Enter 不会触发提交。
 3. 点其它 App 时面板关闭；点另一个自家面板时不关；固定（pin）后都不关；按 Esc 关闭。
-4. 按住 ⌘⇧V 触发面板后，点测试按钮：文本成功粘贴到 TextEdit、Chrome 地址栏、VS Code、微信输入框、飞书。某个 App 失败时，才加对应的延迟或改用 HID 事件源，并用 `ponytail:` 注释写明是哪个 App 需要。
+4. 按住 ⌥C 触发面板后，点测试按钮：文本成功粘贴到 TextEdit、Chrome 地址栏、VS Code、微信输入框、飞书。某个 App 失败时，才加对应的延迟或改用 HID 事件源，并用 `ponytail:` 注释写明是哪个 App 需要。
 5. 连续重新编译 5 次，辅助功能授权仍然有效。
 6. 热键实验：Tauri 版运行、占用同一组合时，确认两边都会响应（非独占的预期行为）。再用 `kEventHotKeyExclusive` 注册试一次：如果能稳定拿到错误，就改成独占注册（改一个 flag），让快捷键 Tab 能显示冲突；拿不到就保持非独占。
 
@@ -528,11 +530,11 @@ CREATE TABLE clip_groups(id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at INT
 
 **验收标准**
 1. 单测：`LanguageResolver` 的全部分支；SSE 解析（`<think>` 标签跨 chunk、去引号、错误事件、`[DONE]`）；原文预处理；max_tokens 按 host 取值（照搬 Tauri 的 `max_tokens_rules` 测试）；本机 host 判定。
-2. 分别在 Safari、Chrome、VS Code、Pages、微信里划词后按 ⌘⇧T：
+2. 分别在 Safari、Chrome、VS Code、Pages、微信里划词后按 ⌥D：
    - 浮窗显示原文，译文逐段流式出现；
    - 划词前后用户的剪贴板内容不变，原生和 Tauri 的剪贴板历史里都没有新增条目；
    - 连续快速划词两次，两路译文不会交错。
-3. 浮窗固定且处于 key 状态时，在 Safari 选中文字后按 ⌘⇧T，能取到词。
+3. 浮窗固定且处于 key 状态时，在 Safari 选中文字后按 ⌥D，能取到词。
 4. Esc：历史面板开着时只收起面板；未固定时关闭浮窗；固定时不关。
 5. 从翻译浮窗的齿轮打开设置窗，Safari 在前台时设置窗也在最前面。
 6. 没有辅助功能授权时，划词会给出引导卡片。
@@ -694,8 +696,8 @@ echo "$DMG"
 | 中文输入法 | 非激活面板里候选窗位置不对；组字时按 Enter 被误当成提交 | 输入框用 `NSTextField` / `NSTextView` + `doCommandBy`（组字期间不会回调）；M1 实测拼音、双拼、日文 |
 | 粘贴回原 App 失败 | 热键的 ⇧ 还按着，发出去的是 ⌘⇧V；Electron 应用协商剪贴板格式较慢 | ⌘V 事件显式设 `flags = .maskCommand`；先不加任何等待，按 M1 实测结果逐个 App 补延迟，并用 `ponytail:` 注释写明原因 |
 | 划词取词 | Chromium/Electron 的 AX 返回空；自家面板是 key 窗口时，AX 和 ⌘C 都落在自家面板上；延迟提供（promised）的数据无法完整还原；AX 调用卡住；先显示浮窗会把原 App 的选区取消掉 | AX 读不到时先交还焦点、激活快照 App、再读 AX，最后才用 ⌘C 兜底；promised 数据接受还原不完整；AX 放进 `@concurrent` 并设超时；「复制完成前不显示浮窗」写进 `mac-overlay-panel` 的红线 |
-| 全局热键 | `RegisterEventHotKey` 默认非独占：和 Tauri 版注册同一组合时注册会成功，按一次两个 App 都响应。只带 ⌥ 或 ⌥⇧ 的组合只在 15.0–15.1 上被拒（-9868），15.2 起已恢复 | 共存期间在 Tauri 设置里清空剪贴板、划词、输入翻译三个热键（原生不导入热键，用同样的默认组合）；M1 实验 `kEventHotKeyExclusive` 能否检测冲突；录制器不按组合一刀切，直接注册并把 -9868 映射成提示 |
-| 与 Tauri 版共存 | 两边的 watcher 都会采集剪贴板；两边都开复制即译时，一次 ⌘C 弹两个浮窗；一方的自动复制、粘贴、划词还原会进另一方的历史 | 原生自己写剪贴板时一律加 `org.nspasteboard.TransientType`，Tauri watcher 会跳过（`R/privacy_markers.rs:38-42`）。共存期操作：Tauri 只保留 ⌘⇧S 截图翻译（本机 500 条翻译历史里 358 条是截图翻译），关掉 Tauri 的复制即译。Tauri 的自动复制如果开着，截图翻译的译文会进原生的历史，接受或者关掉它 |
+| 全局热键 | `RegisterEventHotKey` 默认非独占：和别的 App 注册同一组合时注册会成功，按一次两个 App 都响应。只带 ⌥ 或 ⌥⇧ 的组合只在 15.0–15.1 上被拒（-9868），15.2 起已恢复 | ~~共存期间在 Tauri 设置里清空剪贴板、划词、输入翻译三个热键（原生不导入热键，用同样的默认组合）~~（2026-09-26：共存期结束，默认改为剪贴板 ⌥C、划词翻译 ⌥D）；M1 实验 `kEventHotKeyExclusive` 能否检测冲突；录制器不按组合一刀切，直接注册并把 -9868 映射成提示 |
+| ~~与 Tauri 版共存~~（2026-09-26：共存期结束） | 两边的 watcher 都会采集剪贴板；两边都开复制即译时，一次 ⌘C 弹两个浮窗；一方的自动复制、粘贴、划词还原会进另一方的历史 | 原生自己写剪贴板时一律加 `org.nspasteboard.TransientType`，Tauri watcher 会跳过（`R/privacy_markers.rs:38-42`）。共存期操作：Tauri 只保留 ⌘⇧S 截图翻译（本机 500 条翻译历史里 358 条是截图翻译），关掉 Tauri 的复制即译。Tauri 的自动复制如果开着，截图翻译的译文会进原生的历史，接受或者关掉它 |
 | 多实例 | 从 DMG 里运行一份、/Applications 再启动一份，热键重复、两个进程写同一个库 | 启动时检查同 bundle id 的其它实例（§4） |
 | App Nap | 空闲时 timer 被降频，连续快速复制可能漏条 | M2 实测，漏了再持有 `beginActivity` |
 | 旧库导入 | WAL 库只读打开失败；Tauri 运行中复制可能拿到写到一半的副本 | 复制到临时目录后读写打开，`PRAGMA quick_check` 不通过就中止并提示先退出旧版（§6） |
@@ -847,11 +849,11 @@ echo "$DMG"
 
 **暂不发版**（用户决定，2026-09-24）：0.1.0 只在本地用 `macos/build-dmg.sh` 打包自用（arm64、Apple Development 签名、无 get-task-allow），不打 tag、不发 GitHub / GitCode；以后要发时再按下面的「发布 0.1.0」步骤，且须先经用户确认。
 
-**待用户手测**（代码已就绪，清单见各里程碑验收标准）：M1 #1–#5、M2 #2、M3 #1–#3、M4 #2–#8、M5 #1、M6 #1–#5（导入用「设置 › 通用 › 导入旧版 Kitty Tools 的数据…」），以及 §11「翻译语言」的几种组合；截图翻译手测：
+**待用户手测**（代码已就绪，清单见各里程碑验收标准）：M1 #1–#5、M2 #2、M3 #1–#3、M4 #2–#8、M5 #1、~~M6 #1–#5~~（2026-09-26：导入已删除），以及 §11「翻译语言」的几种组合；截图翻译手测：
   1. 首次按 ⌥S：弹一次系统「屏幕录制」授权框，浮窗提示并带「打开屏幕录制设置」；授权（必要时重开 App）后再按能进入框选。
   2. 内屏 2x + 外接 1x 各框一次文字，识别内容与框选一致；鼠标所在屏按 Esc / 右键能取消，取消后不用点击就能继续在原 App 打字。
   3. 其它 App 开着右键菜单时按 ⌥S，菜单在冻结帧里；全屏 App 的空间里能用；从菜单栏点「截图翻译」时冻结帧里没有自家菜单残影（有就给菜单入口加短延迟）。
-  4. 框选期间按 ⌘⇧V 等热键没反应，结束后恢复；固定着的翻译浮窗不被收起，在冻结帧里（2026-09-26 起截得到本 App，见 #13）。
+  4. 框选期间按 ⌥C 等热键没反应，结束后恢复；固定着的翻译浮窗不被收起，在冻结帧里（2026-09-26 起截得到本 App，见 #13）。
   5. 中文 / 英文 / 日文 / 韩文网页截图：各服务卡并发翻译，第一个服务写历史、自动复制；剪贴板历史里出现原文（无来源 App），画面里有 `sk-…` 密钥时不入历史。
   6. 框选空白处：只提示「没有识别到文字」、没有卡片；十字光标在按下热键后立即出现、结束后恢复箭头。
   7. `footprint` 看框选结束后内存回落（遮罩和冻结帧不常驻）。

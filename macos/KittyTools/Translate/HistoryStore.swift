@@ -66,32 +66,6 @@ import Observation
     }
   }
 
-  /// 旧版导入（LegacyImport 在它的事务里调用，抛错整体回滚）。entries 按新→旧传入：
-  /// 同 id 或同「原文 + 目标语言」已有的算合并（内容以已有的为准，只把收藏取或），否则插入。返回 (新增, 合并)
-  func importLegacy(_ entries: [Entry]) throws -> (added: Int, merged: Int) {
-    var added = 0
-    for entry in entries {
-      try db.execute(
-        """
-        INSERT OR IGNORE INTO translations(id, source, target, result, service, created_at, favorite)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-        [
-          entry.id.uuidString, entry.source, entry.target.rawValue, entry.result, entry.service,
-          entry.createdAt.timeIntervalSinceReferenceDate, entry.favorite,
-        ])
-      if db.changes > 0 {
-        added += 1
-      } else if entry.favorite {
-        try db.execute(
-          "UPDATE translations SET favorite = 1 WHERE id = ? OR (source = ? AND target = ?)",
-          [entry.id.uuidString, entry.source, entry.target.rawValue])
-      }
-    }
-    revision += 1
-    return (added, entries.count - added)
-  }
-
   /// 原文或译文包含关键词（不区分大小写），新→旧，最多 limit 条（0 = 不限，导出用）；favoritesOnly 只看收藏
   func search(_ query: String, favoritesOnly: Bool = false, limit: Int = 200) -> [Entry] {
     let trimmed = query.trimmingCharacters(in: .whitespaces)

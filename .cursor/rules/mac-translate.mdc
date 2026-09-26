@@ -1,12 +1,12 @@
 ---
-description: 原生分支翻译规范（语言规则、服务分发与密钥、智谱 / 大模型接口约束、流式与取消、划词与复制即译、旧版导入）
-globs: macos/KittyTools/Translate/**,macos/KittyTools/Settings/TranslateTab.swift,macos/KittyTools/Storage/LegacyImport.swift,macos/KittyTools/Storage/Keychain.swift
+description: 原生分支翻译规范（语言规则、服务分发与密钥、智谱 / 大模型接口约束、流式与取消、划词与复制即译）
+globs: macos/KittyTools/Translate/**,macos/KittyTools/Settings/TranslateTab.swift,macos/KittyTools/Storage/Keychain.swift
 alwaysApply: false
 ---
 
 # mac-translate：翻译红线
 
-代码：`Translate/`（Language、TranslateService、Providers/*、HTTP、SSE、TranslateCoordinator、HistoryStore、SelectionReader、Speaker、各视图）、`Storage/Keychain.swift`、`Storage/LegacyImport.swift`。旧版只当行为清单。
+代码：`Translate/`（Language、TranslateService、Providers/*、HTTP、SSE、TranslateCoordinator、HistoryStore、SelectionReader、Speaker、各视图）、`Storage/Keychain.swift`。
 
 ## 1. 语言（参照 Bob / Easydict，PLAN §11「翻译语言」）
 - 模型：源 = 自动检测 / 固定；目标 = 自动（第一 ⇄ 第二语言）/ 固定。源、目标只在浮窗顶部改、全局记住；设置页只有第一 / 第二语言（键名仍是 `translateNativeLang` / `translateForeignLang`，读取走 `Lang.preferredPair`，同属一种时第二语言兜底）。
@@ -17,7 +17,7 @@ alwaysApply: false
 ## 2. 服务
 - 分发只有 `TranslateService.translate` 的一个 `switch`；加服务 = 一个 `Providers/*.swift` + 一个 case，不建 registry / factory / protocol。
 - 列表顺序 = 卡片顺序；**第一个服务**的结果写历史、按设置自动复制（「复制即译」开着时不自动复制，否则自己触发自己）。
-- 密钥只进钥匙串，账户名 `"<服务 id>.<字段>"`，字段名沿用旧版（`baidu.appId`、`baidu.secret`、`youdao.appKey`、`youdao.appSecret`、`google.apiKey`、`deepl.authKey`、`microsoft.subscriptionKey`、`volcengine.accessKey/secretKey`、`tencent.secretId/secretKey`、`ai:<id>.apiKey`、`zhipu.apiKey`）。删服务连带删密钥。
+- 密钥只进钥匙串，账户名 `"<服务 id>.<字段>"`，字段名已定，改名读不到已存的密钥（`baidu.appId`、`baidu.secret`、`youdao.appKey`、`youdao.appSecret`、`google.apiKey`、`deepl.authKey`、`microsoft.subscriptionKey`、`volcengine.accessKey/secretKey`、`tencent.secretId/secretKey`、`ai:<id>.apiKey`、`zhipu.apiKey`）。删服务连带删密钥。
 
 ## 3. 接口约束（外部 API 事实，改之前先查官方文档）
 - **智谱**：`max_tokens` 合法范围 [1, 1024]（`Zhipu.maxTokens`，禁止写死 4096）；混合推理模型默认开思考，必须传 `thinking: {type: disabled}`，否则 content 可能为空；提示词用中文，与大模型英文提示词分开；内置 key 来自不入库的 `Secrets.xcconfig` → Info.plist `KittyBuiltinZhipuKey`。
@@ -54,17 +54,7 @@ alwaysApply: false
   - **大模型单词模式**（`TranslateRequest.isWord`，智谱和 AI 实例）：提示词给**一个完整示例**让它照着写（`WordLookup.example`：释义是中文时示例 run、其它语言示例 苹果）；**不要**写成「第一行写读音、英语写『美 /音标/』」这种说明——免费的 glm-4-flash 会把说明原样抄出来（实测）。联网看格式：`TEST_RUNNER_KITTY_LIVE_TRANSLATE=1`（`liveZhipuWordMode`）。
 - 单词模式的结果是释义不是译文：不自动复制、不给「替换原文」；静默「划词翻译并替换」一律不用单词模式。生词本 = 收藏 + 只看收藏 + CSV / TSV 导出（M12 已有），不另做。
 
-## 6. 旧版导入（`LegacyImport`，可重复执行）
-- 旧库 WAL：连同 `-wal`/`-shm` 拷到临时目录读写打开副本 + `quick_check`，原文件只拷不开；读失败中止，绝不用默认值覆盖。
-- 「回到默认」用 NSNull 表示，写入时 `removeObject`：**UserDefaults.set(NSNull) 会直接崩**。
-- 不导热键（共存期间会两边都响应）、主题、窗口位置。本机实测：21 项设置、6 个密钥、3 个服务（旧顺序 DeepSeek → 智谱 → CLIProxyAPI）。
-- 数据部分（M6，`importData`）：先把分组、保留类剪贴板条目（收藏 / 片段 / 已归组）、全部翻译历史读完、图片存好，再在**一个事务**里写（`ClipboardStore.importLegacy` / `HistoryStore.importLegacy` 只写库，提交或回滚后 `clipboard.reload()`）；失败删掉这次拷进来的图片。
-- 合并：分组按 id 再按名称；条目按 id 再按内容（收藏 / 片段取或，备注、分组、图片文字取已有非空，时间取较新）；翻译历史 `INSERT OR IGNORE` + 收藏取或。**新库 id 一律存大写 `uuidString`**：旧库是小写，`WHERE id = ?` 区分大小写，存小写会让删除 / 收藏永远命中不了。
-- 旧翻译历史的 `target_lang` 是设置值（常为 auto），导入时以译文检测出的语言为实际目标（和记录值同属一种时取记录值保简繁）。本机实测：保留条目 10 条全新增；翻译 500 条 → 新增 495、合并 5；第二次全部合并。
-- 临时副本的 `Database` 用完 `close()`（默认 MainActor 隔离下 deinit 碰不了 handle），不然删掉的副本一直占磁盘。
-
-## 7. 测试
-- 纯逻辑都有单测（语言解析、StreamingText、地址 / 参数、局域网判断、历史、导入计划）。
+## 6. 测试
+- 纯逻辑都有单测（语言解析、StreamingText、地址 / 参数、局域网判断、历史）。
 - 联网冒烟（真请求内置智谱）按需：`TEST_RUNNER_KITTY_LIVE_TRANSLATE=1 xcodebuild … test`。
-- 真实旧库演练（只拷贝旧库、导进内存库，验证「新增 + 合并 + 跳过 = 旧库保留条数」和重复导入）：`TEST_RUNNER_KITTY_LEGACY_DRY_RUN=1 xcodebuild … test -only-testing:KittyToolsTests/LegacyImportTests`。
 - 界面用 SnapshotProbeTests（见 mac-clipboard 技能 §6），翻译浮窗状态靠直接设 `coordinator.cards` 摆出来。

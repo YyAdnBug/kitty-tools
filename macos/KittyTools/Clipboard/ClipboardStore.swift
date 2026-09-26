@@ -60,7 +60,7 @@ import Observation
     try reload()
   }
 
-  /// 从库里读分组和条目（启动时；旧版导入提交或回滚后再读一次）
+  /// 从库里读分组和条目（启动时）
   func reload() throws {
     searchKeys = [:]
     groups = try db.query("SELECT id, name, created_at FROM clip_groups ORDER BY created_at") {
@@ -232,65 +232,6 @@ import Observation
       return nil
     }
     return name
-  }
-
-  /// 旧版导入：只写库、不动内存，LegacyImport 在它的事务里调用（抛错整体回滚），之后调 reload()。
-  /// 分组按 id、再按名称并入已有分组；条目按 id、再按内容并入已有条目（收藏 / 片段取或，备注、分组、
-  /// 图片文字取已有的非空值，时间取较新），否则按原 id、原时间插入。返回 (新增, 合并)
-  func importLegacy(_ imported: [(item: ClipItem, rich: Data?)], groups oldGroups: [ClipGroup])
-    throws -> (added: Int, merged: Int)
-  {
-    var knownGroups = groups
-    var groupIDs: [UUID: UUID] = [:]
-    for group in oldGroups {
-      if let same = knownGroups.first(where: { $0.id == group.id })
-        ?? knownGroups.first(where: { $0.name == group.name })
-      {
-        groupIDs[group.id] = same.id
-        continue
-      }
-      try db.execute(
-        "INSERT INTO clip_groups(id, name, created_at) VALUES (?, ?, ?)",
-        [group.id.uuidString, group.name, group.createdAt.timeIntervalSinceReferenceDate])
-      knownGroups.append(group)
-      groupIDs[group.id] = group.id
-    }
-    var current = items
-    var added = 0
-    for (var item, rich) in imported {
-      item.groupID = item.groupID.flatMap { groupIDs[$0] }
-      guard
-        let index = current.firstIndex(where: { $0.id == item.id })
-          ?? current.firstIndex(where: { $0.hasSameContent(as: item) })
-      else {
-        current.append(item)
-        let values = Self.encode(item) + [rich]
-        let placeholders = Array(repeating: "?", count: values.count).joined(separator: ", ")
-        try db.execute(
-          "INSERT INTO clips(\(Self.columns), rich_data) VALUES (\(placeholders))", values)
-        added += 1
-        continue
-      }
-      var existing = current[index]
-      existing.favorite = existing.favorite || item.favorite
-      existing.isSnippet = existing.isSnippet || item.isSnippet
-      if existing.note?.isEmpty ?? true { existing.note = item.note }
-      existing.groupID = existing.groupID ?? item.groupID
-      existing.ocrText = existing.ocrText ?? item.ocrText
-      existing.copiedAt = max(existing.copiedAt, item.copiedAt)
-      current[index] = existing
-      try db.execute(
-        """
-        UPDATE clips SET favorite = ?, snippet = ?, note = ?, group_id = ?, ocr_text = ?,
-          copied_at = ? WHERE id = ?
-        """,
-        [
-          existing.favorite, existing.isSnippet, existing.note, existing.groupID?.uuidString,
-          existing.ocrText, existing.copiedAt.timeIntervalSinceReferenceDate,
-          existing.id.uuidString,
-        ])
-    }
-    return (added, imported.count - added)
   }
 
   /// 删库删图片（条目本身已经不在 items 里，或调用方随后移除）
