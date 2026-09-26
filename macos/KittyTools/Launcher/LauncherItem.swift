@@ -59,17 +59,13 @@ struct LauncherItem: Identifiable, Hashable {
   }
 
   var symbol: String {
-    switch (kind, target) {
-    case (.action, "clipboard"): "doc.on.clipboard"
-    case (.action, "translate-input"): "character.bubble"
-    case (.action, "screenshot"): "camera.viewfinder"
-    case (.action, "translate-screenshot"): "text.viewfinder"
-    case (.action, "ocr"): "doc.text.viewfinder"
+    // 对得上全局热键的内置动作（和 cb 那一行）用 HotKeyAction 的符号：和菜单栏、快捷键页是同一个图标
+    if kind == .action || kind == .clip, let action = hotKeyAction { return action.symbol }
+    return switch (kind, target) {
     case (.action, _): "gearshape"
     case (.url, _): "globe"
     case (.search, _), (.prompt, _): "magnifyingglass"
     case (.calculation, _): "equal.square"
-    case (.clip, _): "doc.on.clipboard"
     default: "doc"
     }
   }
