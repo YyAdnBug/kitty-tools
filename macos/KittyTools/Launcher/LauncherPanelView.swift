@@ -228,7 +228,7 @@ struct LauncherPanelView: View {
         } label: {
           HStack(spacing: 6) {
             Text(primary)
-            ReturnKeyCap()
+            KeyCap("↩", primary: true).accessibilityHidden(true)
           }
         }
         .accessibilityLabel(primary)
@@ -250,27 +250,6 @@ struct LauncherPanelView: View {
     .padding(.horizontal, 14)
     .frame(height: Self.barHeight)
     .overlay(alignment: .top) { Style.hairline.frame(height: 0.5) }
-  }
-
-  /// 全局快捷键的显示串拆成一组键帽：⌥C → ⌥ C，⌘⇧I → ⌘ ⇧ I，⌥空格 → ⌥ 空格
-  static func keyCaps(_ display: String) -> [String] {
-    let modifiers = display.prefix { "⌃⌥⇧⌘".contains($0) }
-    let key = display.dropFirst(modifiers.count)
-    return modifiers.map(String.init) + (key.isEmpty ? [] : [String(key)])
-  }
-}
-
-/// 主动作的 ↩ 键帽：品牌粉实心 + 白色符号（mac-whisker §3 状态：主按钮，键帽里只放符号）。
-/// 剪贴板底栏的「粘贴 ↩」是同一个东西，合并后可以挪进 Style.swift 的 KeyCap
-private struct ReturnKeyCap: View {
-  var body: some View {
-    Text("↩")
-      .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-      .foregroundStyle(.white)
-      .padding(.horizontal, 5)
-      .frame(minWidth: 20, minHeight: 18)
-      .background(Style.brand, in: .rect(cornerRadius: Style.Radius.mini, style: .continuous))
-      .accessibilityHidden(true)
   }
 }
 
@@ -322,11 +301,7 @@ private struct LauncherRow: View {
       }
       Spacer(minLength: 8)
       if let hotKey, !showsShortcut {
-        HStack(spacing: 4) {
-          ForEach(LauncherPanelView.keyCaps(hotKey), id: \.self) { KeyCap($0) }
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("快捷键 \(hotKey)")
+        KeyCombo(hotKey).accessibilityLabel("快捷键 \(hotKey)")
       }
       kind
     }

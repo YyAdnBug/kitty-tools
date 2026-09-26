@@ -36,6 +36,15 @@ enum Style {
     return event.isARepeat
   }
 
+  /// 当前事件是不是鼠标双击（按钮动作里区分单击 / 双击）。只读鼠标事件的 clickCount：用键盘或 VoiceOver
+  /// 激活按钮时 currentEvent 是按键事件，直接读 clickCount 会抛 NSInternalInconsistencyException
+  static var isDoubleClick: Bool {
+    guard let event = NSApp.currentEvent,
+      event.type == .leftMouseDown || event.type == .leftMouseUp
+    else { return false }
+    return event.clickCount >= 2
+  }
+
   /// 七条命名曲线（SwiftUI `Spring(duration:bounce:)` 与 `CASpringAnimation(perceptualDuration:bounce:)` 参数一致）
   enum Motion {
     /// 按键连发、结果刷新、拖动、放大镜跟随、粘贴时收起面板：不做动画
@@ -268,17 +277,47 @@ struct KindTile: View {
 /// 键帽（⌘1–9、↩、⌘K）
 struct KeyCap: View {
   let text: String
+  /// 主按钮（底栏「粘贴 ↩」「打开 ↩」）：品牌粉实心 + 白色符号。只放符号：白字在 #FF4D7E 上约 3.2:1，只够非文本 3:1
+  var isPrimary = false
 
-  init(_ text: String) { self.text = text }
+  init(_ text: String, primary: Bool = false) {
+    self.text = text
+    isPrimary = primary
+  }
 
   var body: some View {
     Text(text)
-      .font(.system(size: 10.5, weight: .medium, design: .rounded))
+      .font(.system(size: 10.5, weight: isPrimary ? .semibold : .medium, design: .rounded))
       .monospacedDigit()
       .padding(.horizontal, 5)
       .frame(minWidth: 20, minHeight: 18)
-      .foregroundStyle(.secondary)
-      .background(Style.controlFill, in: .rect(cornerRadius: Style.Radius.mini, style: .continuous))
+      .foregroundStyle(isPrimary ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+      .background(
+        isPrimary ? AnyShapeStyle(Style.brand) : AnyShapeStyle(Style.controlFill),
+        in: .rect(cornerRadius: Style.Radius.mini, style: .continuous))
+  }
+}
+
+/// 一个组合拆成键帽（⌘ ⇧ 这类修饰键各一个，剩下的是一个）：「⇧⌘S」→ ⇧ ⌘ S。
+/// 快捷键录制框、速查表、引导、启动器选中行共用
+struct KeyCombo: View {
+  let combo: String
+
+  init(_ combo: String) { self.combo = combo }
+
+  var body: some View {
+    HStack(spacing: 3) {
+      ForEach(Self.caps(combo), id: \.self) { KeyCap($0) }
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(combo)
+  }
+
+  /// 前面的修饰键逐个拆开，其余整体一个键帽；只有修饰键时就是这几个修饰键
+  static func caps(_ combo: String) -> [String] {
+    let modifiers = combo.prefix { "⌃⌥⇧⌘".contains($0) }
+    let rest = combo.dropFirst(modifiers.count).trimmingCharacters(in: .whitespaces)
+    return modifiers.map(String.init) + (rest.isEmpty ? [] : [rest])
   }
 }
 

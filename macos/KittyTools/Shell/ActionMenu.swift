@@ -53,6 +53,7 @@ struct ActionMenu: View {
   static let rowHeight: CGFloat = 28
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.colorSchemeContrast) private var contrast
 
   var body: some View {
     let checkable = items.contains { $0.isChecked != nil }
@@ -140,6 +141,13 @@ struct ActionMenu: View {
         isSelected ? Style.selectedFill : .clear,
         in: .rect(cornerRadius: Style.Radius.control, style: .continuous)
       )
+      // 增强对比度：中性选中行加 1 pt 品牌粉 0.6 描边（mac-whisker §7）
+      .overlay {
+        if isSelected, contrast == .increased {
+          RoundedRectangle(cornerRadius: Style.Radius.control, style: .continuous)
+            .strokeBorder(Style.brand.opacity(0.6))
+        }
+      }
       .contentShape(.rect)
     }
     .buttonStyle(.plain)

@@ -458,7 +458,7 @@ import Observation
         let to = items.firstIndex(where: { $0.id == item.id })
       else { return }
       multiSelection = Set(items[min(from, to)...max(from, to)].map(\.id))
-    } else if event?.clickCount == 2 {
+    } else if Style.isDoubleClick {
       paste([selectedItem ?? item])
       return
     } else {

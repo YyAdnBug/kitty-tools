@@ -257,7 +257,7 @@ struct HistoryView: View {
     let hoverShape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
     return Button {
       // 单击选中，双击重新翻译（和 ↩ 一样）
-      if (NSApp.currentEvent?.clickCount ?? 1) >= 2 {
+      if Style.isDoubleClick {
         coordinator.translate(entry.source)
       } else {
         list.select(entry)

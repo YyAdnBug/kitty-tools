@@ -446,7 +446,7 @@ import Observation
 
   func click(_ item: LauncherItem) {
     showsActions = false
-    if NSApp.currentEvent?.clickCount == 2 {
+    if Style.isDoubleClick {
       execute(item)
     } else if let index = results.firstIndex(of: item) {
       selectionMotion = .glide

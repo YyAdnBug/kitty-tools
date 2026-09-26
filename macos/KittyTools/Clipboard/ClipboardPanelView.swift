@@ -618,7 +618,7 @@ struct ClipboardPanelView: View {
       if leadingKey { KeyCap(key) }
       Text(title).foregroundStyle(.primary)
       if !leadingKey {
-        if primary { PrimaryKeyCap(key) } else { KeyCap(key) }
+        KeyCap(key, primary: primary)
       }
     }
     .contentShape(.rect)
@@ -826,22 +826,6 @@ private struct TokenChip: View {
     .accessibilityAddTraits(.isButton)
     .accessibilityAction { open() }
     .accessibilityAction(named: "移除", remove)
-  }
-}
-
-/// 品牌粉实心键帽（主按钮）：白色符号，键帽里只放符号（白字在 #FF4D7E 上约 3.2:1，只够非文本 3:1）
-private struct PrimaryKeyCap: View {
-  let text: String
-
-  init(_ text: String) { self.text = text }
-
-  var body: some View {
-    Text(text)
-      .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-      .padding(.horizontal, 5)
-      .frame(minWidth: 20, minHeight: 18)
-      .foregroundStyle(.white)
-      .background(Style.brand, in: .rect(cornerRadius: Style.Radius.mini, style: .continuous))
   }
 }
 

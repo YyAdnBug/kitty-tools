@@ -328,26 +328,3 @@ private struct KeyAlternatives: View {
     }
   }
 }
-
-/// 一个组合拆成键帽（⌘ ⇧ 这类修饰键各一个，剩下的是一个）：「⇧⌘S」→ ⇧ ⌘ S。
-/// 快捷键录制框、速查表、引导共用
-struct KeyCombo: View {
-  let combo: String
-
-  init(_ combo: String) { self.combo = combo }
-
-  var body: some View {
-    HStack(spacing: 3) {
-      ForEach(Self.caps(combo), id: \.self) { KeyCap($0) }
-    }
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel(combo)
-  }
-
-  /// 前面的修饰键逐个拆开，其余整体一个键帽；只有修饰键时就是这几个修饰键
-  static func caps(_ combo: String) -> [String] {
-    let modifiers = combo.prefix { "⌃⌥⇧⌘".contains($0) }
-    let rest = combo.dropFirst(modifiers.count).trimmingCharacters(in: .whitespaces)
-    return modifiers.map(String.init) + (rest.isEmpty ? [] : [rest])
-  }
-}

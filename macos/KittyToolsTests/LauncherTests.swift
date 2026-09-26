@@ -383,9 +383,9 @@ struct LauncherTests {
     #expect(LauncherMatch.score("capture", item: screenshot) > 0)
     #expect(screenshot.hotKeyAction == .screenshot)
     #expect(LauncherItem.actions.first { $0.target == "settings" }?.hotKeyAction == nil)
-    #expect(LauncherPanelView.keyCaps("⌥C") == ["⌥", "C"])
-    #expect(LauncherPanelView.keyCaps("⌃⌥⇧⌘I") == ["⌃", "⌥", "⇧", "⌘", "I"])
-    #expect(LauncherPanelView.keyCaps("⌥空格") == ["⌥", "空格"])
-    #expect(LauncherPanelView.keyCaps("F5") == ["F5"])
+    #expect(KeyCombo.caps("⌥C") == ["⌥", "C"])
+    #expect(KeyCombo.caps("⌃⌥⇧⌘I") == ["⌃", "⌥", "⇧", "⌘", "I"])
+    #expect(KeyCombo.caps("⌥空格") == ["⌥", "空格"])
+    #expect(KeyCombo.caps("F5") == ["F5"])
   }
 }
