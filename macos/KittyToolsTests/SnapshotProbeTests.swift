@@ -115,6 +115,7 @@ struct SnapshotProbeTests {
       ("lens-file", { m in pick(m) { $0.kind == .file } }),
       ("search", { m in m.query = "上下键" }),
       ("search-code", { m in m.query = "swift" }),
+      ("search-ocr", { m in m.query = "原地" }),
       (
         "tokens-filters",
         { m in
@@ -132,10 +133,24 @@ struct SnapshotProbeTests {
         }
       ),
       ("actions", { m in m.showsActions = true }),
+      (
+        "actions-groups",
+        { m in
+          m.showsActions = true
+          m.actionQuery = "分组"
+        }
+      ),
       ("multi", { m in m.multiSelection = Set(m.visibleItems.prefix(3).map(\.id)) }),
       ("snippets", { m in m.scope = .snippets }),
       ("dialog", { m in m.dialog = .note(link.id) }),
       ("empty-search", { m in m.query = "zzzz" }),
+      (
+        "snippets-empty-search",
+        { m in
+          m.scope = .snippets
+          m.query = "zzzz"
+        }
+      ),
     ]
     for dark in [false, true] {
       for (name, configure) in states {

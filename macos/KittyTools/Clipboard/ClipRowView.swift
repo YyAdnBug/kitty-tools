@@ -96,14 +96,25 @@ struct ClipRowView: View {
     )
   }
 
-  /// 标题：有搜索词且命中不在开头时从命中处摘录（前 12 字 + 「…」），命中词黄底
+  /// 标题：有搜索词且命中不在开头时从命中处摘录（前 12 字 + 「…」），命中词黄底。
+  /// 图片靠识别文字搜到的，「图片 宽×高」后面接上命中的那段识别文字
   private var title: AttributedString {
     let full = item.title
     guard !query.isEmpty else { return AttributedString(full) }
-    let source = item.kind == .text ? String((item.text ?? "").prefix(20_000)) : full
-    let excerpt = Search.excerpt(of: source, query: query, before: 12, after: 160)
-    var attributed = AttributedString(
-      excerpt.map { $0.replacing(/\s+/, with: " ") } ?? full)
+    var shown = full
+    switch item.kind {
+    case .text:
+      let text = String((item.text ?? "").prefix(20_000))
+      shown = Search.excerpt(of: text, query: query, before: 12, after: 160) ?? full
+    case .image:
+      if let ocr = item.ocrText, Search.firstHit(in: ocr, query: query) != nil {
+        shown =
+          full + " · " + (Search.excerpt(of: ocr, query: query, before: 12, after: 160) ?? ocr)
+      }
+    case .file:
+      shown = Search.excerpt(of: full, query: query, before: 12, after: 160) ?? full
+    }
+    var attributed = AttributedString(shown.replacing(/\s+/, with: " "))
     attributed.highlight(query)
     return attributed
   }
@@ -122,12 +133,14 @@ struct ClipRowView: View {
 }
 
 /// 行首 24 pt 图标块（圆角 tile(24)）：颜色 = 色块（透明时垫棋盘格）；图片 = 缩略图；文本 = 来源 App 图标，
-/// JSON / 代码 / 链接在右下角加 11 pt 角标（链接取过预览后是网站图标）；都没有时是网站图标或种类图标
+/// JSON / 代码 / 链接在右下角加 11 pt 角标（链接取过预览后是网站图标）；都没有时是网站图标或种类图标。
+/// 新条目插进来时 0.85→1（pop，只播一次，见 IconPop）
 private struct IconTile: View {
   let item: ClipItem
   let form: ContentForm?
   let images: ImageStore
   @AppStorage(Prefs.clipboardLinkPreview) private var showsLinkPreview = true
+  @Environment(\.clipRowArriving) private var arriving
 
   static let side: CGFloat = 24
   static let badge: CGFloat = 11
@@ -177,11 +190,27 @@ private struct IconTile: View {
       }
     }
     .frame(width: Self.side, height: Self.side)
+    .scaleEffect(arriving ? 0.85 : 1)
+    .animation(Style.Motion.pop.animation(), value: arriving)
     .accessibilityHidden(true)
   }
 
   private var favicon: NSImage? {
     form == .link && showsLinkPreview ? LinkPreview.shared.favicon(forLink: item.text ?? "") : nil
+  }
+}
+
+extension EnvironmentValues {
+  /// 这一行正随插入过渡出现（IconPop）
+  @Entry var clipRowArriving = false
+}
+
+/// 行插入过渡里带上它：把「正在插入」写进环境，IconTile 自己按 pop 从 0.85 长到 1。
+/// 所以只在列表真的插入一行时播（新复制进来、撤销删除）：搜索 / 筛选换列表那一帧不动画、
+/// 滚动时 LazyVStack 新建的行不算插入，都不播；减弱动态效果时行只淡入，不带它
+struct IconPop: Transition {
+  func body(content: Content, phase: TransitionPhase) -> some View {
+    content.environment(\.clipRowArriving, phase == .willAppear)
   }
 }
 

@@ -201,6 +201,10 @@ struct ClipboardStoreTests {
     model.dialog = nil
     model.scope = .snippets
     #expect(ClipboardPanelView.height(for: model, showsLens: true, banner: false) == 144.5)
+    // 片段范围里搜索没有结果：不画「新建片段」，给「没有匹配的条目」空态（高 140）
+    model.query = "zzzz"
+    #expect(model.isFiltered && !model.showsNewSnippetRow(in: model.visibleItems))
+    #expect(ClipboardPanelView.height(for: model, showsLens: true, banner: false) == 232.5)
   }
 
   @Test func listLayoutPrefixSums() {
@@ -217,6 +221,28 @@ struct ClipboardStoreTests {
     let flat = ListLayout(leading: 40, items: [a, b, c], lens: nil)
     #expect(flat.offset(of: c.id) == 120)
     #expect(flat.sectionTops.isEmpty)
+  }
+
+  /// ⌘K 里的分组操作和右键菜单一样全：移到已有分组（已在里面的那组不列）、移出分组、放进新分组
+  @Test func actionsMoveBetweenGroups() throws {
+    let (store, _) = try makeStore()
+    store.record(text("a", ago: 2))
+    store.record(text("b", ago: 1))
+    let work = try #require(store.createGroup(named: "工作"))
+    let home = try #require(store.createGroup(named: "生活"))
+    let model = ClipboardPanelModel(store: store)
+    let groupActions = { model.actions.filter { $0.detail == "分组" }.map(\.title) }
+    #expect(groupActions() == ["移到「工作」", "移到「生活」", "放进新分组…"])
+    model.actions.first { $0.title == "移到「工作」" }?.run()
+    #expect(store.items[0].groupID == work.id)
+    #expect(groupActions() == ["移到「生活」", "移出分组", "放进新分组…"])
+    // 多选：都在「工作」里才不列它；有一条在分组里就给「移出分组」
+    model.multiSelection = Set(store.items.map(\.id))
+    #expect(groupActions() == ["移到「工作」", "移到「生活」", "移出分组", "放进新分组…"])
+    model.actions.first { $0.title == "移到「生活」" }?.run()
+    #expect(store.items.allSatisfy { $0.groupID == home.id })
+    model.actions.first { $0.title == "移出分组" }?.run()
+    #expect(store.items.allSatisfy { $0.groupID == nil })
   }
 
   @Test func tokensAndKeys() throws {

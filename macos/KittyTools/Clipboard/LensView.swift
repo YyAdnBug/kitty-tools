@@ -140,7 +140,7 @@ struct LensView: View {
           .fixedSize(horizontal: false, vertical: true)
       }
     case .image:
-      ImageLens(item: item, images: model.store.images)
+      ImageLens(item: item, images: model.store.images, query: model.query)
     case .file:
       FileStrip(paths: item.filePaths ?? [])
     }
@@ -343,10 +343,12 @@ private struct ColorLens: View {
   }
 }
 
-/// 图片：8 pt 棋盘格上的缩略图（高 108、保持比例、左对齐），右边「宽×高 · 大小」胶囊 + 识别文字前 3 行
+/// 图片：8 pt 棋盘格上的缩略图（高 108、保持比例、左对齐），右边「宽×高 · 大小」胶囊 + 识别文字 3 行
+/// （有搜索词时从第一个命中处摘录、命中词黄底：靠图片文字搜到的，看得出为什么命中）
 private struct ImageLens: View {
   let item: ClipItem
   let images: ImageStore
+  let query: String
 
   var body: some View {
     let shape = RoundedRectangle(cornerRadius: Style.Radius.control, style: .continuous)
@@ -371,13 +373,21 @@ private struct ImageLens: View {
           .background(Style.controlFill, in: .capsule)
         }
         if let ocr = item.ocrText, !ocr.isEmpty {
-          Text(ocr)
+          Text(recognized(ocr))
             .font(.system(size: 11))
             .foregroundStyle(.secondary)
             .lineLimit(3)
         }
       }
     }
+  }
+
+  /// 命中前只留 12 字（同行标题）：只有 3 行，留多了命中会被挤出去
+  private func recognized(_ ocr: String) -> AttributedString {
+    var shown = AttributedString(
+      Search.excerpt(of: ocr, query: query, before: 12, after: 200) ?? ocr)
+    shown.highlight(query)
+    return shown
   }
 }
 

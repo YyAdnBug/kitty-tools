@@ -173,18 +173,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   private func showQuickLook() {
     guard let item = clipboardModel.selectedItem else { return }
+    // 右键菜单 / 无障碍的「放大预览」同一拍里先换选中再打开：先让面板把布局做完，新选中的透镜才报上位置
+    if clipboardModel.cardFrame?.id != item.id {
+      clipboardPanel.contentView?.layoutSubtreeIfNeeded()
+    }
     clipboardModel.showsQuickLookContent = true
     let size = QuickLookView.idealSize(for: item, form: clipboardModel.contentForm(of: item))
     quickLookPanel.zoom(from: cardScreenFrame ?? clipboardPanel.frame, to: quickLookFrame(size))
   }
 
-  /// 检查器卡片的屏幕坐标（没显示检查器、剪贴板面板不在时为 nil）
+  /// 透镜（选中行）的屏幕坐标：剪贴板面板不在、透镜滚出可见区、报上来的不是当前选中项时为 nil（放大卡退回从面板长出）
   private var cardScreenFrame: NSRect? {
-    guard clipboardPanel.isVisible, let card = clipboardModel.cardFrame else { return nil }
+    guard clipboardPanel.isVisible, let card = clipboardModel.cardFrame,
+      card.id == clipboardModel.selectedItem?.id
+    else { return nil }
     let window = clipboardPanel.frame
     return NSRect(
-      x: window.minX + card.minX, y: window.maxY - card.maxY, width: card.width,
-      height: card.height)
+      x: window.minX + card.rect.minX, y: window.maxY - card.rect.maxY, width: card.rect.width,
+      height: card.rect.height)
   }
 
   /// 放大预览的位置：以剪贴板面板为中心，最大到屏幕可见区的 90%，再整个挪进可见区

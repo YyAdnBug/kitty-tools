@@ -15,10 +15,11 @@ struct ClipboardPanelView: View {
   @AppStorage(Prefs.clipboardHideOnUnfocus) private var hideOnUnfocus = true
   @AppStorage(Prefs.clipboardShowPreview) private var showsLens = true
   @State private var trusted = Permissions.isAccessibilityTrusted
-  /// 按住 ⌘ 超过 150 ms：亮出 ⌘1–9 键帽；按住 ⌘ / ⌥：底栏左边换成对应的替代动作
-  @State private var holdsCommand = false
-  @State private var holdsOption = false
-  @State private var showsShortcuts = false
+  /// 正按着的 ⌘ / ⌥
+  @State private var heldKeys: EventModifiers = []
+  /// 按住超过 150 ms 才算「按住」（S4）：⌘ 亮出 ⌘1–9 键帽，⌘ / ⌥ 把底栏左边换成对应的替代动作。
+  /// 按 ⌘K、⌘D 这类组合键时一闪而过的 ⌘ 不换，底栏不闪；松开立刻收
+  @State private var shownKeys: EventModifiers = []
   /// 已经滚过顶部的分组数：这些分组的标题正吸顶（或已滚走），加材质底；平时没有灰条。
   /// 只存这个整数，别存滚动位置（每帧都会让整个面板重算）
   @State private var pinnedSections = 0
@@ -27,6 +28,7 @@ struct ClipboardPanelView: View {
   @State private var viewport = Viewport()
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.colorSchemeContrast) private var contrast
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
   static let width: CGFloat = 720
   static let searchHeight: CGFloat = 56
@@ -46,8 +48,9 @@ struct ClipboardPanelView: View {
     let selected = model.selectedItem(in: items)
     let sections = model.query.isEmpty ? Self.daySections(items) : nil
     let lensOpen = showsLens && model.multiSelection.isEmpty
+    let newSnippet = model.showsNewSnippetRow(in: items)
     let layout = ListLayout(
-      leading: model.scope == .snippets ? ClipRowView.height : 0, sections: sections,
+      leading: newSnippet ? ClipRowView.height : 0, sections: sections,
       items: items,
       lens: lensOpen
         ? selected.map { ($0.id, Lens.height(for: $0, form: model.contentForm(of: $0))) } : nil)
@@ -87,21 +90,15 @@ struct ClipboardPanelView: View {
     )
     .onChange(
       of: Self.height(
-        rows: items.count + (model.scope == .snippets ? 1 : 0), sections: sections?.count ?? 0,
+        rows: items.count + (newSnippet ? 1 : 0), sections: sections?.count ?? 0,
         reservesLens: showsLens && !items.isEmpty, banner: !trusted, model: model),
       initial: true
     ) { _, height in model.resize(height) }
-    .onModifierKeysChanged(mask: [.command, .option]) { _, keys in
-      holdsCommand = keys.contains(.command)
-      holdsOption = keys.contains(.option)
-    }
-    .task(id: holdsCommand) {
-      guard holdsCommand else {
-        showsShortcuts = false
-        return
-      }
+    .onModifierKeysChanged(mask: [.command, .option]) { _, keys in heldKeys = keys }
+    .task(id: heldKeys) {
+      shownKeys.formIntersection(heldKeys)
       try? await Task.sleep(for: .milliseconds(150))
-      if !Task.isCancelled { showsShortcuts = true }
+      if !Task.isCancelled { shownKeys = heldKeys }
     }
     .onChange(of: model.store.items.first?.id) { model.itemsChanged() }
     .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
@@ -141,7 +138,7 @@ struct ClipboardPanelView: View {
   ) -> CGFloat {
     let items = model.visibleItems
     return height(
-      rows: items.count + (model.scope == .snippets ? 1 : 0),
+      rows: items.count + (model.showsNewSnippetRow(in: items) ? 1 : 0),
       sections: model.query.isEmpty ? daySections(items).count : 0,
       reservesLens: showsLens && !items.isEmpty, banner: banner, model: model)
   }
@@ -163,13 +160,15 @@ struct ClipboardPanelView: View {
           token: token, armed: model.armsLastToken && token.id == tokens.last?.id,
           open: { model.palette = .filters }, remove: { model.remove(token.kind) }
         )
+        // 对话框开着时标签点不动：压暗只盖列表区，别在对话框上面再弹筛选面板
+        .disabled(model.dialog != nil)
         .transition(
           .asymmetric(
             insertion: reduceMotion
               ? .opacity
               : .scale(scale: 0.85, anchor: .leading).combined(with: .opacity)
                 .animation(Style.Motion.pop.animation()),
-            removal: .opacity))
+            removal: reduceMotion ? .opacity : AnyTransition(TokenCollapse())))
       }
       // 筛选面板 / ⌘K 开着时，搜索框改成过滤它们的条目
       CommandTextField(
@@ -227,7 +226,7 @@ struct ClipboardPanelView: View {
   @ViewBuilder private func listArea(
     _ items: [ClipItem], layout: ListLayout, selected: ClipItem?, lensOpen: Bool
   ) -> some View {
-    if items.isEmpty && model.scope != .snippets {
+    if items.isEmpty && layout.leading == 0 {
       emptyState
     } else {
       list(items, layout: layout, selected: selected, lensOpen: lensOpen)
@@ -240,7 +239,7 @@ struct ClipboardPanelView: View {
     let tops = layout.sectionTops.map { $0 + Self.inset }
     return ScrollView {
       LazyVStack(alignment: .leading, spacing: 0, pinnedViews: .sectionHeaders) {
-        if model.scope == .snippets { newSnippetRow }
+        if layout.leading > 0 { newSnippetRow }
         if let sections = layout.sections {
           ForEach(Array(sections.enumerated()), id: \.element.title) { index, section in
             Section {
@@ -309,6 +308,10 @@ struct ClipboardPanelView: View {
     if let selected, model.multiSelection.isEmpty, let offset = layout.offset(of: selected.id) {
       let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
       shape.fill(Style.selectedFill)
+        // 降低透明度：透镜底提到 0.9 不透明（Whisker §7），不透出后面的材质
+        .background {
+          if reduceTransparency { shape.fill(Color(nsColor: .windowBackgroundColor).opacity(0.9)) }
+        }
         .overlay {
           // 增强对比度：中性选中加 1 pt 品牌粉 0.6 描边（Whisker §7）
           if contrast == .increased { shape.strokeBorder(Style.brand.opacity(0.6), lineWidth: 1) }
@@ -365,7 +368,7 @@ struct ClipboardPanelView: View {
       let isSelected = item.id == selected?.id
       ClipListRow(
         item: item, form: model.contentForm(of: item), model: model,
-        shortcutIndex: index < 9 ? index : nil, showsShortcut: showsShortcuts,
+        shortcutIndex: index < 9 ? index : nil, showsShortcut: shownKeys.contains(.command),
         isSelected: isSelected, lensOpen: lensOpen && isSelected, groupName: groupBadge(for: item)
       )
       .id(item.id)
@@ -374,7 +377,8 @@ struct ClipboardPanelView: View {
         reduceMotion
           ? .opacity
           : .asymmetric(
-            insertion: .move(edge: .top).combined(with: .opacity),
+            insertion: .move(edge: .top).combined(with: .opacity).combined(
+              with: AnyTransition(IconPop())),
             removal: .opacity.combined(with: .scale(scale: 0.96, anchor: .leading))))
     }
   }
@@ -458,10 +462,7 @@ struct ClipboardPanelView: View {
 
   /// 翻译空态的规格：28 pt 符号 + 14 semibold 标题 + 说明 / 品牌粉文字按钮
   @ViewBuilder private var emptyState: some View {
-    let filtered =
-      !model.query.isEmpty || model.kind != nil || model.form != nil
-      || model.sourceBundleID != nil || model.groupFilter != .all
-    if filtered {
+    if model.isFiltered {
       EmptyState(symbol: "magnifyingglass", title: "没有匹配的条目") {
         Button("清除搜索和筛选", action: model.clearSearchAndFilters)
           .buttonStyle(.plain)
@@ -522,6 +523,8 @@ struct ClipboardPanelView: View {
     .font(.system(size: 12))
     .foregroundStyle(.secondary)
     .buttonStyle(.plain)
+    // 对话框开着时底栏不接点击：点「粘贴」会收起面板、丢掉对话框里没保存的字，点「操作」会在对话框上面弹 ⌘K
+    .disabled(model.dialog != nil)
     .padding(.horizontal, 14)
     .frame(height: Self.barHeight)
     .overlay(alignment: .top) { Style.hairline.frame(height: 0.5) }
@@ -531,8 +534,8 @@ struct ClipboardPanelView: View {
   private func barState(count: Int) -> String {
     if let toast = model.toast { return "toast \(toast)" }
     if !model.multiSelection.isEmpty { return "multi" }
-    if count > 0, holdsOption { return "option" }
-    if count > 0, holdsCommand { return "command" }
+    if count > 0, shownKeys.contains(.option) { return "option" }
+    if count > 0, shownKeys.contains(.command) { return "command" }
     return "count"
   }
 
@@ -558,13 +561,13 @@ struct ClipboardPanelView: View {
       }
     } else if !model.multiSelection.isEmpty {
       multiSelectVerbs
-    } else if count > 0, holdsOption {
+    } else if count > 0, shownKeys.contains(.option) {
       Button {
         model.pasteSelection(plainText: true)
       } label: {
         hint("粘贴为纯文本", key: "⌥↩", leadingKey: true)
       }
-    } else if count > 0, holdsCommand {
+    } else if count > 0, shownKeys.contains(.command) {
       HStack(spacing: 12) {
         Button(action: { model.copySelection() }) {
           hint("仅复制", key: "⌘↩", leadingKey: true)
@@ -632,7 +635,7 @@ struct ClipboardPanelView: View {
 
 /// 列表几何（前缀和）：行 40、分组标题 24、透镜按类型的常数（Lens.height）；高亮、滚动、吸顶都从这里算，不量真实尺寸
 struct ListLayout {
-  /// 片段范围第一行「新建片段」的高度（别的范围是 0）
+  /// 片段范围第一行「新建片段」的高度；0 = 不画这一行（别的范围，或片段范围里搜索 / 筛选没有结果，改画空态）
   var leading: CGFloat = 0
   /// nil = 平铺（有搜索词）
   var sections: [ClipboardPanelView.DaySection]?
@@ -720,14 +723,18 @@ private struct ClipListRow: View {
     .background {
       HoverTracker { inside in withAnimation(.easeOut(duration: 0.10)) { hovered = inside } }
     }
-    // 放大预览从这里长出来（透镜开着就是整块透镜）
+    // 放大预览从这里长出来（透镜开着就是整块透镜）。只报列表可见区里的部分：滚出去的透镜不当起点，退回面板
     .background {
       if isSelected {
-        Color.clear.onGeometryChange(for: CGRect.self) {
-          $0.frame(in: .global)
-        } action: {
-          model.cardFrame = $0
+        Color.clear.onGeometryChange(for: CGRect.self) { proxy in
+          let global = proxy.frame(in: .global)
+          let visible = CGRect(origin: .zero, size: proxy.size)
+            .intersection(proxy.bounds(of: .scrollView) ?? .infinite)
+          return visible.isEmpty ? .null : visible.offsetBy(dx: global.minX, dy: global.minY)
+        } action: { rect in
+          model.cardFrame = rect.isNull ? nil : (item.id, rect)
         }
+        .onDisappear { if model.cardFrame?.id == item.id { model.cardFrame = nil } }
       }
     }
     .accessibilityElement(children: .combine)
@@ -826,6 +833,18 @@ private struct TokenChip: View {
     .accessibilityAddTraits(.isButton)
     .accessibilityAction { open() }
     .accessibilityAction(named: "移除", remove)
+  }
+}
+
+/// 标签移除 = 宽度收拢（settle，跟着搜索线 HStack 的动画走）：遮罩从右往左收到 0 + 淡出，
+/// 被移除的标签不占布局，输入框同时滑过来，收拢的右边缘走在它前面，不叠在一起
+private struct TokenCollapse: Transition {
+  func body(content: Content, phase: TransitionPhase) -> some View {
+    content
+      .mask(alignment: .leading) {
+        Rectangle().scaleEffect(x: phase.isIdentity ? 1 : 0.01, anchor: .leading)
+      }
+      .opacity(phase.isIdentity ? 1 : 0)
   }
 }
 

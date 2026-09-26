@@ -71,8 +71,9 @@ import Observation
   @ObservationIgnored var openQuickLook: () -> Void = {}
   /// animated = false：面板收起、粘贴时直接消失
   @ObservationIgnored var closeQuickLook: (_ animated: Bool) -> Void = { _ in }
-  /// 透镜（透镜关掉时是选中行）在面板里的位置（窗口坐标，原点左上）：放大预览从这里长出来、缩回这里
-  @ObservationIgnored var cardFrame: CGRect?
+  /// 透镜（透镜关掉时是选中行）在面板里的位置（窗口坐标，原点左上；只算列表可见区里的那部分）和它是哪一条：
+  /// 放大预览从这里长出来、缩回这里。滚出可见区、行被回收时为 nil；id 不是当前选中项（刚换了选中、新行还没上报）时别用
+  @ObservationIgnored var cardFrame: (id: UUID, rect: CGRect)?
 
   /// 启动器「cb 关键词」呼出面板后直接设它；reset() 清空
   var query = "" {
@@ -172,6 +173,16 @@ import Observation
   /// 列表已经算好时用它，省一次搜索
   func selectedItem(in items: [ClipItem]) -> ClipItem? {
     items.first { $0.id == selectedID } ?? items.first
+  }
+
+  /// 有搜索词，或类型 / 形态 / 来源 / 分组筛选生效（范围不算）：没有结果时是「没有匹配的条目」
+  var isFiltered: Bool {
+    !query.isEmpty || kind != nil || form != nil || sourceBundleID != nil || groupFilter != .all
+  }
+
+  /// 片段范围第一行的「＋ 新建片段」：片段范围里搜索 / 筛选没有结果时不画，让位给「没有匹配的条目」和清除按钮
+  func showsNewSnippetRow(in items: [ClipItem]) -> Bool {
+    scope == .snippets && !(items.isEmpty && isFiltered)
   }
 
   /// 空态的「清除搜索和筛选」：不像 reset() 那样提交删除、关对话框
@@ -628,6 +639,7 @@ import Observation
           copySelection(plainText: true)
         })
     }
+    let targets = self.targets
     let favorite = targets.allSatisfy(\.favorite)
     actions.append(
       ActionMenu.Item(
@@ -682,9 +694,22 @@ import Observation
             (item.filePaths ?? []).map { URL(filePath: $0) })
         })
     }
+    // 分组（和右键菜单、多选底栏的「分组」一样全）：移到已有分组（都已在里面的那组不列）、移出分组、放进新分组
+    for group in store.groups where !targets.allSatisfy({ $0.groupID == group.id }) {
+      actions.append(
+        ActionMenu.Item(
+          title: "移到「\(group.name)」", symbol: "folder", detail: "分组", id: "group.\(group.id)"
+        ) { [unowned self] in assign(targetIDs, to: group.id) })
+    }
+    if targets.contains(where: { $0.groupID != nil }) {
+      actions.append(
+        ActionMenu.Item(title: "移出分组", symbol: "folder.badge.minus", detail: "分组") {
+          [unowned self] in assign(targetIDs, to: nil)
+        })
+    }
     actions.append(
-      ActionMenu.Item(title: "放进新分组…", symbol: "folder.badge.plus") { [unowned self] in
-        dialog = .newGroup(targetIDs)
+      ActionMenu.Item(title: "放进新分组…", symbol: "folder.badge.plus", detail: "分组") {
+        [unowned self] in dialog = .newGroup(targetIDs)
       })
     actions.append(
       ActionMenu.Item(title: "删除", symbol: "trash", shortcut: "⌘⌫") { [unowned self] in
