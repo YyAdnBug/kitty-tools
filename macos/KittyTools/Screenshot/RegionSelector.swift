@@ -256,12 +256,12 @@ enum RegionSelector {
     return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
   }
 
-  /// 尺寸胶囊输入的像素宽高 → 选区：左上角 (minX, maxY) 不动（先对齐到像素格），按每点几像素 scale 换成点，
-  /// 往右下长、夹进 bounds（至少 1 点）
+  /// 尺寸胶囊输入的像素宽高 → 选区：左上角 (minX, maxY) 不动（先对齐到像素格，和 pixelRect 往外取整的一样：左边向下、
+  /// 上边向上，不然小数点的选区一输入左上角就挪一像素），按每点几像素 scale 换成点，往右下长、夹进 bounds（至少 1 点）
   static func sized(_ rect: CGRect, pixels: CGSize, scale: CGSize, within bounds: CGRect) -> CGRect
   {
-    let left = (rect.minX * scale.width).rounded() / scale.width
-    let top = (rect.maxY * scale.height).rounded() / scale.height
+    let left = (rect.minX * scale.width).rounded(.down) / scale.width
+    let top = (rect.maxY * scale.height).rounded(.up) / scale.height
     let width = min(max(pixels.width / scale.width, 1), bounds.maxX - left)
     let height = min(max(pixels.height / scale.height, 1), top - bounds.minY)
     return CGRect(x: left, y: top - height, width: width, height: height)
@@ -323,6 +323,8 @@ final class SelectionSession {
   /// 尺寸胶囊里锁着的比例（宽 / 高，RegionSelector.ratios 里的一个）：之后框选、拖边都按它，选「自由」解锁。整个会话共用
   var lockedRatio: CGFloat?
   private var overlays: [SelectionOverlay] = []
+  /// 各屏的画面（start 时填上；单测直接放几个屏外窗口里的视图进来，不弹遮罩）
+  var views: [SelectionView] = []
   /// 交回结果（单测直接接上它，不走 start 弹遮罩）
   var continuation: CheckedContinuation<RegionSelector.Outcome?, Never>?
 
@@ -338,6 +340,7 @@ final class SelectionSession {
   ) {
     self.continuation = continuation
     overlays = shots.map { SelectionOverlay(shot: $0, session: self) }
+    views = overlays.map(\.selectionView)
     guard !overlays.isEmpty else { return finish(nil) }
     for overlay in overlays { overlay.orderFrontRegardless() }
     // 鼠标不动时收不到 mouseMoved：先设一次十字光标
@@ -355,53 +358,52 @@ final class SelectionSession {
 
   /// 除 view 以外有没有屏上有选区（view 为 nil 时看全部屏）
   func hasSelection(besides view: SelectionView?) -> Bool {
-    overlays.contains { $0.selectionView !== view && $0.selectionView.selection != nil }
+    views.contains { $0 !== view && $0.selection != nil }
   }
 
-  /// 除 view 以外有没有屏上画了标注（右键不清空）
+  /// 除 view 以外有没有屏上画了标注（含正在输入、还没收下的文字）：会清掉那块屏的操作（右键、换屏框选、D）不做
   func hasAnnotations(besides view: SelectionView) -> Bool {
-    overlays.contains { $0.selectionView !== view && !$0.selectionView.annotations.isEmpty }
+    views.contains { $0 !== view && $0.hasAnnotations }
   }
 
   /// 这块屏开始操作：别的屏清掉选区、悬停和放大镜（选区只在一块屏上）
   func activate(_ view: SelectionView) {
-    for overlay in overlays where overlay.selectionView !== view { overlay.selectionView.reset() }
+    for other in views where other !== view { other.reset() }
   }
 
-  /// D 键 / ⌥X：选中上次的区域（落在哪块屏就在哪块屏上）；没有或已不在任何屏上时提示音
-  func selectLastRegion() {
+  /// D 键 / ⌥X：选中上次的区域（落在哪块屏就在哪块屏上）；没有或已不在任何屏上时提示音。
+  /// 返回 false = 上次的区域在别的屏上、跳过去会清掉这边画的标注，没跳（调用方提示，同右键）
+  @discardableResult
+  func selectLastRegion() -> Bool {
     guard let lastRegion,
-      let (index, rect) = RegionSelector.placement(of: lastRegion, in: overlays.map(\.frame))
-    else { return NSSound.beep() }
-    let overlay = overlays[index]
-    activate(overlay.selectionView)
-    overlay.makeKey()
-    overlay.selectionView.select(rect)
+      let (index, rect) = RegionSelector.placement(
+        of: lastRegion, in: views.map { $0.window?.frame ?? .zero })
+    else {
+      NSSound.beep()
+      return true
+    }
+    let view = views[index]
+    guard !hasAnnotations(besides: view) else { return false }
+    activate(view)
+    view.window?.makeKey()
+    view.select(rect)
+    return true
   }
 
-  /// 结果立刻交回；取消时遮罩 0.10 s 淡出再收起（期间不接鼠标），出图时立刻收起（S1 飞行卡片接手）
+  /// 结果立刻交回、遮罩立刻收起，键盘马上回到原 App（淡出期间还当着 key 的话，接着打的字全被吞掉）。
+  /// 取消时由系统淡出（临时 .utilityWindow 再 orderOut，同 OverlayPanel.dismiss；减弱动态效果时直接消失），
+  /// 出图时没有退场动画（S1 飞行卡片接手）
   func finish(_ outcome: RegionSelector.Outcome?) {
     guard let continuation else { return }
     self.continuation = nil
     let closing = overlays
     overlays = []
+    views = []
     NSCursor.arrow.set()
-    if outcome == nil, !closing.isEmpty {
-      for overlay in closing { overlay.ignoresMouseEvents = true }
-      NSAnimationContext.runAnimationGroup { context in
-        context.duration = Style.fadeOut
-        context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-        for overlay in closing { overlay.animator().alphaValue = 0 }
-      } completionHandler: {
-        MainActor.assumeIsolated {
-          for overlay in closing {
-            overlay.orderOut(nil)
-            overlay.alphaValue = 1
-          }
-        }
-      }
-    } else {
-      for overlay in closing { overlay.orderOut(nil) }
+    for overlay in closing {
+      overlay.animationBehavior = outcome == nil && !Style.reduceMotion ? .utilityWindow : .none
+      overlay.orderOut(nil)
+      overlay.animationBehavior = .none
     }
     continuation.resume(returning: outcome)
   }

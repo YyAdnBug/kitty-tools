@@ -261,8 +261,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     hotKeys.setHandler(for: .translateReplace) { [unowned self] in translateAndReplace() }
     hotKeys.reload()
     try? FileManager.default.removeItem(at: ShotShelf.dragDirectory)
-    shelf.copy = { [unowned self] in await copyImage($0, scale: $1) }
-    shelf.save = { [unowned self] in await saveImage($0, scale: $1, asking: false) }
+    shelf.copy = { [unowned self] png in
+      await copyPNG(png)
+      return true
+    }
+    shelf.save = { [unowned self] in await savePNG($0, asking: false) }
     shelf.pin = { [unowned self] in pins.pin($0, frame: $1) }
     let statusItem = StatusItem()
     statusItem.buildMenu = { [unowned self] in buildStatusMenu($0) }
@@ -496,14 +499,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch capture.action {
         case .copy:
           let land = captured(capture.image, scale: capture.scale, frame: capture.frame)
-          if await copyImage(capture.image, scale: capture.scale) { land(.copied) }
+          if let png = await copyImage(capture.image, scale: capture.scale) { land(.copied, png) }
         case .pin:
           FlyCard.playShutter()
           pins.pin(capture.image, frame: capture.frame)
         case .save:
           let land = captured(capture.image, scale: capture.scale, frame: capture.frame)
-          if let url = await saveImage(capture.image, scale: capture.scale, asking: false) {
-            land(.saved(url))
+          if let saved = await saveImage(capture.image, scale: capture.scale, asking: false) {
+            land(.saved(saved.url), saved.png)
           }
         case .saveAs:
           FlyCard.playShutter()
@@ -523,11 +526,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       switch result.action {
       case .copy:
         let land = captured(result.image, scale: result.scale, frame: region)
-        if await copyImage(result.image, scale: result.scale) { land(.copied) }
+        if let png = await copyImage(result.image, scale: result.scale) { land(.copied, png) }
       case .save:
         let land = captured(result.image, scale: result.scale, frame: region)
-        if let url = await saveImage(result.image, scale: result.scale, asking: false) {
-          land(.saved(url))
+        if let saved = await saveImage(result.image, scale: result.scale, asking: false) {
+          land(.saved(saved.url), saved.png)
         }
       case .saveAs:
         FlyCard.playShutter()
@@ -628,15 +631,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       symbol: codes.isEmpty ? nil : "qrcode")
   }
 
-  /// 截图复制：PNG 写进剪贴板（经 Paster，watcher 会跳过），所以自己记进剪贴板历史
+  /// 截图复制：PNG 写进剪贴板（经 Paster，watcher 会跳过），所以自己记进剪贴板历史。返回编码好的 PNG（常驻缩略图接着用，
+  /// 不再编码一遍），失败 nil
   @discardableResult
-  private func copyImage(_ image: CGImage, scale: CGFloat) async -> Bool {
+  private func copyImage(_ image: CGImage, scale: CGFloat) async -> Data? {
     guard let png = await ScreenshotOutput.png(image, scale: scale) else {
       showScreenshotNotice("截图编码失败，请重试")
-      return false
+      return nil
     }
     await copyPNG(png)
-    return true
+    return png
   }
 
   private func copyPNG(_ png: Data) async {
@@ -647,13 +651,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     clipboardStore.record(item)
   }
 
-  /// ⌘S 快速保存 / 另存为（asking）；返回存到的文件（取消、失败为 nil）。失败时截图改放进剪贴板，别让这张图就这么丢了
+  /// ⌘S 快速保存 / 另存为（asking）；返回存到的文件和编码好的 PNG（取消、失败为 nil）
   @discardableResult
-  private func saveImage(_ image: CGImage, scale: CGFloat, asking: Bool) async -> URL? {
+  private func saveImage(_ image: CGImage, scale: CGFloat, asking: Bool) async -> (
+    url: URL, png: Data
+  )? {
     guard let png = await ScreenshotOutput.png(image, scale: scale) else {
       showScreenshotNotice("截图编码失败，请重试")
       return nil
     }
+    return await savePNG(png, asking: asking).map { ($0, png) }
+  }
+
+  /// 存编码好的 PNG；返回存到的文件（取消、失败为 nil）。失败时截图改放进剪贴板，别让这张图就这么丢了
+  private func savePNG(_ png: Data, asking: Bool) async -> URL? {
     do {
       return asking ? try await ScreenshotOutput.saveAs(png) : try ScreenshotOutput.quickSave(png)
     } catch {
@@ -663,20 +674,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
-  /// 截图落地：快门声 + 飞行卡片（遮罩刚收起就飞，不等编码）。返回的 land 在复制 / 保存成功后调，给卡片角标，
-  /// 角标弹完后交给常驻缩略图（ShotShelf）；减弱动态效果时不飞，land 时缩略图直接在角落淡入。失败不调（另有提示）
-  private func captured(_ image: CGImage, scale: CGFloat, frame: CGRect) -> (FlyCard.Badge) -> Void
-  {
+  /// 截图落地：快门声 + 飞行卡片（遮罩刚收起就飞，不等编码）。返回的 land 在复制 / 保存成功后调，给卡片角标和编码好的
+  /// PNG，角标弹完后交给常驻缩略图（ShotShelf：拷贝、存储、拖出都用这份 PNG，不留整张解码的图）；减弱动态效果时不飞，
+  /// land 时缩略图直接在角落淡入。失败不调（另有提示）
+  private func captured(_ image: CGImage, scale: CGFloat, frame: CGRect) -> (
+    FlyCard.Badge, Data
+  ) -> Void {
     FlyCard.playShutter()
+    var png = Data()
     let linger: (CGRect, FlyCard.Badge) -> Void = { [weak self] rect, badge in
-      self?.shelf.add(image, scale: scale, source: frame, at: rect, badge: badge)
+      self?.shelf.add(image, png: png, scale: scale, source: frame, at: rect, badge: badge)
     }
     guard Style.reduceMotion else {
       let landing = FlyCard.fly(image, from: frame, linger: linger)
       landing.onShow = { [weak self] in self?.statusItem?.pop() }
-      return landing.land
+      return { badge, data in
+        png = data
+        landing.land(badge)
+      }
     }
-    return { badge in
+    return { badge, data in
+      png = data
       guard let rect = FlyCard.landingRect(for: frame) else { return }
       linger(rect, badge)
       FlyCard.announce(badge)

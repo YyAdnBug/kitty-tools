@@ -1,7 +1,7 @@
 // 钉图：把截图钉在原位置当参考。不激活本 App、出现时不抢键盘（修旧版钉图抢焦点，§11 #48）；
 // 拖动移动，滚轮 / 双指捏合以鼠标为锚点缩放，双击或 Esc 关闭（Esc、⌘C 要先点一下钉图），
 // 右键菜单：复制、存储为…、透明度、原始大小、关闭。菜单栏可隐藏 / 显示、关闭全部。
-// Whisker（mac-whisker §6 钉图）：圆角 10 + 系统阴影；钉上时窗口 1.04 → 1 弹簧回弹；悬停 0.3 s 后右上角淡入透明度 / 关闭两个
+// Whisker（mac-whisker §6 钉图）：圆角 10 + 系统阴影；钉上时窗口 1.04 → 1 弹簧回弹（超过半屏的只淡入）；悬停 0.3 s 后右上角淡入透明度 / 关闭两个
 // 22 pt HUD 圆钮；缩放时中央 HUD 显示百分比、停手 0.7 s 淡出；关闭时缩到 0.92 并淡出 0.16 s。
 // 不做点击穿透（旧版穿透时全局抢 ⇧⌘P）、不做钉图历史；钉图会出现在之后的截图里。
 
@@ -81,16 +81,21 @@ final class PinPanel: NSPanel {
 
   /// 钉上：窗口从 1.04 倍（以中心为准）弹簧回到原位，同时 0.12 s 淡入。窗口帧动画只支持贝塞尔、实测冲不过头
   /// 也不认时长（同 OverlayPanel.squeezeIn），所以跟着显示器刷新逐帧按 SwiftUI Spring 算帧；不给内容图层放大
-  /// （会被窗口边裁掉圆角）。减弱动态效果时只淡入
+  /// （会被窗口边裁掉圆角）。减弱动态效果时只淡入；超过半屏的钉图也只淡入：几乎整屏的透明窗口逐帧改尺寸，窗口服务器
+  /// 每帧都要重新分配几十 MB 的缓冲、按透明度重算阴影（ponytail: 大钉图没有回弹，要的话改成窗口定在 1.04 倍、只缩内容图层）
   func popIn() {
     let target = frame
     alphaValue = 0
     orderFrontRegardless()
+    let reduced = Style.reduceMotion
     NSAnimationContext.runAnimationGroup { context in
-      context.duration = Style.fadeIn
+      // 减弱动态效果时 pop 退成 0.2 s easeInOut 淡入（§7）
+      context.duration = reduced ? 0.2 : Style.fadeIn
+      context.timingFunction = CAMediaTimingFunction(name: reduced ? .easeInEaseOut : .easeOut)
       animator().alphaValue = 1
     }
-    guard !Style.reduceMotion,
+    let area = (self.screen ?? NSScreen.main)?.frame.size ?? .zero
+    guard !reduced, target.width * target.height <= area.width * area.height / 2,
       let link = contentView?.displayLink(target: self, selector: #selector(stepPop))
     else { return }
     popping = (target, CACurrentMediaTime())

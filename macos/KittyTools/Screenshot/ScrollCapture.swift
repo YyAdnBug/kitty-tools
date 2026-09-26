@@ -364,7 +364,12 @@ final class ScrollBorderView: NSView {
     line.frame = bounds
     line.contentsScale = window?.backingScaleFactor ?? 2
     let inset = Self.margin - 1
-    line.path = CGPath(rect: bounds.insetBy(dx: inset, dy: inset), transform: nil)
+    let path = CGPath(rect: bounds.insetBy(dx: inset, dy: inset), transform: nil)
+    line.path = path
+    // 发光按实线描边的轮廓给 shadowPath（Whisker §3）：不然呼吸的每一帧都要按图层内容离屏算一遍整框的阴影。
+    // 蚂蚁线时发光也是整圈实线（静止在中间值）
+    line.shadowPath = path.copy(
+      strokingWithWidth: line.lineWidth, lineCap: .butt, lineJoin: .miter, miterLimit: 10)
     CATransaction.commit()
   }
 
@@ -752,7 +757,7 @@ private struct HeightReadingView: View {
         .font(.system(size: 22, weight: .semibold, design: .rounded))
         .monospacedDigit()
         .contentTransition(.numericText(value: Double(reading.height)))
-        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: reading.height)
+        .animation(Style.Motion.snap.animation(reduced: reduceMotion), value: reading.height)
       Text("像素高 · 宽 \(String(reading.width))")
         .font(.system(size: 10))
         .foregroundStyle(Color(nsColor: Style.HUD.tertiaryText))

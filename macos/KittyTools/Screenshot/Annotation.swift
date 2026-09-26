@@ -224,7 +224,8 @@ struct Annotation: Identifiable, Equatable {
   }
 
   /// 连阴影一起占的范围：局部重画按它来，不然挪走后留下一圈阴影残影。聚光灯是它的洞：洞外的压暗铺满压暗范围（选区）、
-  /// 只随压暗的档（见 dimLevel）和压暗范围（见 dimChange）变，挪洞、改洞只重画洞
+  /// 只随压暗的档（见 dimLevel）和压暗范围（见 dimChange）变，挪洞、改洞只重画洞（屏幕上压暗在标注层下面的图层里，
+  /// 重画的只是洞里垫底的标注补的那层压暗）
   var drawBounds: CGRect {
     switch tool {
     case .mosaic, .highlighter, .spotlight: bounds
@@ -530,23 +531,40 @@ struct Annotation: Identifiable, Equatable {
   /// dirty：局部重画的范围，只画碰到它的（聚光灯压暗铺满整个压暗范围，有就总会画）。
   /// spotlightBounds：聚光灯压暗的范围。屏幕上传选区（选区外已经有遮罩的暗色蒙层，不再叠一层）；
   /// nil = 整个视图（导出的位图本来就只有选区那么大）。
+  /// dimsUnderlaysOnly：屏幕上压暗由标注层下面的图层画（SelectionView，拖选区时只换路径，不重画这一层），这里只给画在
+  /// 这一层里、本该压在暗色下面的（荧光笔垫的底、马赛克）补上同样的压暗，合起来和导出一样。
   /// shadowScale：Quartz 的阴影参数不跟 CTM 走——视图 / 图层的上下文按点算（系统设了基础变换），
   /// 自建位图按像素算，所以 render 要传每点几像素，屏幕上传 1
   static func drawAll(
     _ annotations: [Annotation], in context: CGContext, image: CGImage, viewSize: CGSize,
-    shadowScale: CGFloat, dirty: CGRect? = nil, spotlightBounds: CGRect? = nil
+    shadowScale: CGFloat, dirty: CGRect? = nil, spotlightBounds: CGRect? = nil,
+    dimsUnderlaysOnly: Bool = false
   ) {
     let shown =
       dirty.map { dirty in annotations.filter { $0.drawBounds.intersects(dirty) } } ?? annotations
     for annotation in shown where annotation.tool == .highlighter {
-      annotation.drawBackdrop(in: context, image: image, viewSize: viewSize)
+      annotation.banded(in: context) {
+        annotation.drawBackdrop(in: context, image: image, viewSize: viewSize)
+      }
     }
     for annotation in shown where annotation.layer == 0 {
       annotation.draw(in: context, image: image, viewSize: viewSize, shadowScale: shadowScale)
     }
-    drawSpotlights(
-      annotations.filter { $0.layer == 1 }, in: context,
-      bounds: spotlightBounds ?? CGRect(origin: .zero, size: viewSize))
+    let spotlights = annotations.filter { $0.layer == 1 }
+    let dimBounds = spotlightBounds ?? CGRect(origin: .zero, size: viewSize)
+    if !dimsUnderlaysOnly {
+      drawSpotlights(spotlights, in: context, bounds: dimBounds)
+    } else if !spotlights.isEmpty {
+      // 垫底的几块合成一个区域再压暗一次（马赛克压着荧光笔时重叠处不压两遍）
+      let underlays = shown.compactMap(\.underlayRegion)
+      if let first = underlays.first {
+        context.saveGState()
+        context.addPath(underlays.dropFirst().reduce(first) { $0.union($1) })
+        context.clip()
+        drawSpotlights(spotlights, in: context, bounds: dimBounds)
+        context.restoreGState()
+      }
+    }
     for layer in 2...3 {
       for annotation in shown where annotation.layer == layer {
         annotation.draw(in: context, image: image, viewSize: viewSize, shadowScale: shadowScale)
@@ -554,7 +572,158 @@ struct Annotation: Identifiable, Equatable {
     }
   }
 
+  /// 画在标注层里、本该压在聚光灯暗色下面的那块：马赛克的范围、荧光笔垫的底（笔迹）。其余 nil
+  private var underlayRegion: CGPath? {
+    switch shape {
+    case .mosaic(let rect): CGPath(rect: rect, transform: nil)
+    case .highlighter(let from, let to):
+      Self.segmentPath(from, to).copy(
+        strokingWithWidth: style.weight.highlighterHeight, lineCap: .butt, lineJoin: .miter,
+        miterLimit: 10)
+    default: nil
+    }
+  }
+
   private func draw(in context: CGContext, image: CGImage, viewSize: CGSize, shadowScale: CGFloat) {
+    // 实心矩形 / 椭圆：先铺 0.28 的底（不带阴影，免得底下透出一片灰；铺满整块，不切条），再描带阴影的边
+    if style.option == 1, let path = boxPath {
+      context.setFillColor(style.color.color.withAlphaComponent(0.28).cgColor)
+      context.addPath(path)
+      context.fillPath()
+    }
+    banded(in: context) {
+      drawInk(in: context, image: image, viewSize: viewSize, shadowScale: shadowScale)
+    }
+  }
+
+  /// 矩形（圆角 3）/ 椭圆的路径；别的工具 nil
+  private var boxPath: CGPath? {
+    switch shape {
+    case .rectangle(let rect):
+      CGPath(
+        roundedRect: rect, cornerWidth: min(3, rect.width / 2),
+        cornerHeight: min(3, rect.height / 2), transform: nil)
+    case .ellipse(let rect): CGPath(ellipseIn: rect, transform: nil)
+    default: nil
+    }
+  }
+
+  // MARK: 切条画
+
+  /// 线条外框（连阴影）和裁剪区重叠超过这么大（点²）就切条画。单测改大它，对比切条前后逐像素相同
+  static var bandingArea: CGFloat = 250_000
+
+  /// 大的线条沿着骨架切成不重叠的细条、各自裁剪后画：CG 画阴影时按「图形外框 ∩ 裁剪区」开一整块透明层再模糊，
+  /// 2000 × 1100 的空心矩形在 5K 屏上一次十几毫秒，拖出、挪动、改大小时跟不上鼠标；细条只模糊线条附近那一圈
+  /// （阴影按裁剪区外扩模糊半径取内容，条和条之间接得上，结果逐像素相同）。小的、没有骨架的直接画
+  private func banded(in context: CGContext, _ body: () -> Void) {
+    let clip = context.boundingBoxOfClipPath
+    let overlap = drawBounds.intersection(clip)
+    guard let (lines, reach) = skeleton, !overlap.isNull,
+      overlap.width * overlap.height > Self.bandingArea
+    else { return body() }
+    for band in Self.bands(along: lines, reach: reach, in: clip) {
+      context.saveGState()
+      context.clip(to: band)
+      body()
+      context.restoreGState()
+    }
+  }
+
+  /// 线条的骨架（折线）和画出来的东西（连阴影）离骨架最远多少；文字、序号（小）、马赛克、聚光灯（整块都要画）、画笔没有
+  private var skeleton: (lines: [[CGPoint]], reach: CGFloat)? {
+    let width = style.weight.lineWidth
+    let reach = width / 2 + Self.shadowReach
+    switch shape {
+    case .rectangle(let rect):
+      let corners = [
+        CGPoint(x: rect.minX, y: rect.minY), CGPoint(x: rect.maxX, y: rect.minY),
+        CGPoint(x: rect.maxX, y: rect.maxY), CGPoint(x: rect.minX, y: rect.maxY),
+      ]
+      return ([corners + [corners[0]]], reach)
+    case .ellipse(let rect):
+      // 64 边形：弦离弧最多 长半轴 × (1 − cos(π / 64))
+      let sides = 64
+      let points = (0...sides).map { index -> CGPoint in
+        let angle = CGFloat(index) / CGFloat(sides) * 2 * .pi
+        return CGPoint(
+          x: rect.midX + rect.width / 2 * cos(angle), y: rect.midY + rect.height / 2 * sin(angle))
+      }
+      let sag = max(rect.width, rect.height) / 2 * (1 - cos(.pi / CGFloat(sides)))
+      return ([points], reach + sag)
+    case .arrow(let from, let to):
+      return (
+        [[from, to]],
+        max(Self.arrowWing(from: from, to: to, width: width), width) + Self.shadowReach
+      )
+    case .line(let from, let to): return ([[from, to]], reach)
+    case .highlighter(let from, let to):
+      return ([[from, to]], style.weight.highlighterHeight / 2 + 1)
+    // ponytail: 画笔不切条（笔迹来回拐，一大条要切几百条，每条都要挑一遍附近的线段，反而更慢）；很长的笔迹整条挪动时
+    // 还是按外框模糊，要快就给线段按横条分桶再切
+    case .pen, .text, .counter, .mosaic, .spotlight: return nil
+    }
+  }
+
+  /// 把 area 里骨架 ± reach 碰到的地方切成不重叠的整点矩形：横条高 16，每条里只留骨架碰到的 x 区间（重叠的合并）。
+  /// 边界是整点：屏幕、导出的缩放都是整数倍，条和条的接缝落在整像素上，不会重复画半个像素
+  private static func bands(along lines: [[CGPoint]], reach: CGFloat, in area: CGRect) -> [CGRect] {
+    let height: CGFloat = 16
+    var rows: [Int: [(low: CGFloat, high: CGFloat)]] = [:]
+    for line in lines {
+      let segments = line.count == 1 ? [(line[0], line[0])] : Array(zip(line, line.dropFirst()))
+      for (a, b) in segments {
+        let first = Int(((min(a.y, b.y) - reach) / height).rounded(.down))
+        let last = Int(((max(a.y, b.y) + reach) / height).rounded(.down))
+        for row in first...last {
+          // 这一段落在「本条 ± reach」高度里的那截，左右再各放 reach
+          let bottom = CGFloat(row) * height - reach
+          let top = CGFloat(row + 1) * height + reach
+          var low = min(a.x, b.x)
+          var high = max(a.x, b.x)
+          if a.y != b.y {
+            let t0 = (bottom - a.y) / (b.y - a.y)
+            let t1 = (top - a.y) / (b.y - a.y)
+            let from = max(0, min(t0, t1))
+            let to = min(1, max(t0, t1))
+            guard from <= to else { continue }
+            low = min(a.x + (b.x - a.x) * from, a.x + (b.x - a.x) * to)
+            high = max(a.x + (b.x - a.x) * from, a.x + (b.x - a.x) * to)
+          }
+          rows[row, default: []].append(
+            ((low - reach).rounded(.down), (high + reach).rounded(.up)))
+        }
+      }
+    }
+    var bands: [CGRect] = []
+    for (row, spans) in rows {
+      let y = CGFloat(row) * height
+      guard y < area.maxY, y + height > area.minY else { continue }
+      var merged: [(low: CGFloat, high: CGFloat)] = []
+      for span in spans.sorted(by: { $0.low < $1.low }) {
+        if let last = merged.last, span.low <= last.high {
+          merged[merged.count - 1].high = max(last.high, span.high)
+        } else {
+          merged.append(span)
+        }
+      }
+      for span in merged {
+        let band = CGRect(x: span.low, y: y, width: span.high - span.low, height: height)
+        if band.intersects(area) { bands.append(band) }
+      }
+    }
+    return bands
+  }
+
+  /// 折线最长的一段
+  private static func longestSegment(_ points: [CGPoint]) -> CGFloat {
+    zip(points, points.dropFirst()).map { hypot($1.x - $0.x, $1.y - $0.y) }.max() ?? 0
+  }
+
+  /// 一个标注本身的线条（实心的底色在 draw 里先铺好了）：切条时每条各画一遍
+  private func drawInk(
+    in context: CGContext, image: CGImage, viewSize: CGSize, shadowScale: CGFloat
+  ) {
     let color = style.color.color
     let width = style.weight.lineWidth
     context.saveGState()
@@ -565,20 +734,8 @@ struct Annotation: Identifiable, Equatable {
     }
     let noShadow = { context.setShadow(offset: .zero, blur: 0, color: nil) }
     switch shape {
-    case .rectangle(let rect), .ellipse(let rect):
-      let path =
-        tool == .ellipse
-        ? CGPath(ellipseIn: rect, transform: nil)
-        : CGPath(
-          roundedRect: rect, cornerWidth: min(3, rect.width / 2),
-          cornerHeight: min(3, rect.height / 2),
-          transform: nil)
-      // 实心：先铺 0.28 的底（不带阴影，免得底下透出一片灰），再描带阴影的边
-      if style.option == 1 {
-        context.setFillColor(color.withAlphaComponent(0.28).cgColor)
-        context.addPath(path)
-        context.fillPath()
-      }
+    case .rectangle, .ellipse:
+      guard let path = boxPath else { return }
       shadow()
       context.setStrokeColor(color.cgColor)
       context.setLineWidth(width)
@@ -602,7 +759,9 @@ struct Annotation: Identifiable, Equatable {
       context.setLineWidth(width)
       context.setLineCap(.round)
       context.setLineJoin(.round)
-      context.addPath(Self.penPath(points))
+      context.addPath(
+        Self.penPath(
+          points, near: context.boundingBoxOfClipPath, reach: width / 2 + Self.shadowReach))
       context.strokePath()
     case .highlighter(let from, let to):
       // 半透明 + 正片叠底：底下的字不被盖浅；没有阴影
@@ -672,6 +831,34 @@ struct Annotation: Identifiable, Equatable {
     return path
   }
 
+  /// 画笔只画 rect 附近的那几截（局部重画时整条笔迹上千个点，每次都描整条、再裁掉，越画越慢）：离 rect 不到
+  /// reach 的线段连同前后各两段连成一截，各截照 penPath 画。截头截尾和整条笔迹不一样的只有最外面两段附近，离 rect 都远于
+  /// reach，裁剪区里逐像素相同。二次曲线离折线最多半段长，远近按线段外框再放宽最长一段的一半
+  static func penPath(_ points: [CGPoint], near rect: CGRect, reach: CGFloat) -> CGPath {
+    guard points.count > 2 else { return penPath(points) }
+    let pad = reach + longestSegment(points) / 2
+    let (left, right) = (rect.minX - pad, rect.maxX + pad)
+    let (bottom, top) = (rect.minY - pad, rect.maxY + pad)
+    var ranges: [ClosedRange<Int>] = []
+    for index in 0..<(points.count - 1) {
+      let a = points[index]
+      let b = points[index + 1]
+      guard max(a.x, b.x) >= left, min(a.x, b.x) <= right, max(a.y, b.y) >= bottom,
+        min(a.y, b.y) <= top
+      else { continue }
+      let range = max(0, index - 2)...min(points.count - 1, index + 3)
+      if let last = ranges.last, range.lowerBound <= last.upperBound {
+        ranges[ranges.count - 1] = last.lowerBound...range.upperBound
+      } else {
+        ranges.append(range)
+      }
+    }
+    if ranges == [0...(points.count - 1)] { return penPath(points) }
+    let path = CGMutablePath()
+    for range in ranges { path.addPath(penPath(Array(points[range]))) }
+    return path
+  }
+
   /// 序号数字：SF Pro Rounded bold，按字形本身的外框居中（数字没有下伸部，按行框居中会偏上）；
   /// 两位以上缩到圆的 0.78 宽以内
   private static func drawNumber(
@@ -700,26 +887,42 @@ struct Annotation: Identifiable, Equatable {
     CTLineDraw(text, context)
   }
 
-  /// 聚光灯合成一层：压暗范围 + 所有聚光灯的圆角 8 洞（先合并，重叠的洞按偶奇规则不会又被压暗），
-  /// 压暗程度取最后一个聚光灯的档。先裁到压暗范围：洞伸出范围的那截按偶奇规则会反过来压暗范围外
-  private static func drawSpotlights(
-    _ spotlights: [Annotation], in context: CGContext, bounds: CGRect
-  ) {
+  /// 聚光灯合成一层的压暗（偶奇填充）：压暗范围 + 所有聚光灯的圆角 8 洞（先合并，重叠的洞按偶奇规则不会又被压暗；
+  /// 再裁进范围，伸出范围的那截按偶奇规则会反过来压暗范围外），压暗程度取最后一个聚光灯的档。没有聚光灯是 nil。
+  /// 导出、屏幕上垫底的（drawSpotlights）和屏幕上标注层下面的压暗图层（SelectionView）共用
+  static func spotlightDim(_ spotlights: [Annotation], bounds: CGRect) -> (
+    path: CGPath, alpha: CGFloat
+  )? {
     let holes = spotlights.compactMap { annotation -> CGPath? in
       guard case .spotlight(let rect) = annotation.shape else { return nil }
       let radius = min(8, rect.width / 2, rect.height / 2)
       return CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
     }
-    guard let first = holes.first, let last = spotlights.last else { return }
+    guard let first = holes.first, let last = spotlights.last, !bounds.isEmpty else { return nil }
     let path = CGMutablePath()
     path.addRect(bounds)
-    path.addPath(holes.dropFirst().reduce(first) { $0.union($1) })
+    path.addPath(
+      holes.dropFirst().reduce(first) { $0.union($1) }.intersection(
+        CGPath(rect: bounds, transform: nil)))
+    return (path, last.style.weight.spotlightDim)
+  }
+
+  private static func drawSpotlights(
+    _ spotlights: [Annotation], in context: CGContext, bounds: CGRect
+  ) {
+    guard let (path, alpha) = spotlightDim(spotlights, bounds: bounds) else { return }
     context.saveGState()
-    context.clip(to: bounds)
-    context.setFillColor(CGColor(gray: 0, alpha: last.style.weight.spotlightDim))
+    context.setFillColor(CGColor(gray: 0, alpha: alpha))
     context.addPath(path)
     context.fillPath(using: .evenOdd)
     context.restoreGState()
+  }
+
+  /// 一条线段的路径
+  private static func segmentPath(_ from: CGPoint, _ to: CGPoint) -> CGPath {
+    let path = CGMutablePath()
+    path.addLines(between: [from, to])
+    return path
   }
 
   /// 荧光笔垫底：在笔迹范围里先铺一遍冻结帧，正片叠底才有东西可叠——屏幕上的标注层是透明的（冻结帧在下面的图层里），
@@ -742,8 +945,33 @@ struct Annotation: Identifiable, Equatable {
   /// 马赛克：冻结帧这一块缩小到每格一个像素，再放大回去。像素 = 不插值放大；
   /// 模糊（option 1）= 格子放大到 1.5 倍、再平滑插值放大（信息已经在缩小时丢掉，不像高斯模糊还能反卷积还原）
   private func drawMosaic(_ rect: CGRect, in context: CGContext, image: CGImage, viewSize: CGSize) {
+    let blurred = style.option == 1
+    guard let (blocks, frame) = mosaicBlocks(rect, image: image, viewSize: viewSize) else { return }
+    context.clip(to: rect)
+    context.interpolationQuality = blurred ? .high : .none
+    context.draw(blocks, in: frame)
+  }
+
+  /// 最近画过的马赛克缩小图（按 id、范围、粗细、像素 / 模糊认；id 不会重复，换了冻结帧也认不错）：在它上面画箭头、
+  /// 写字时局部重画不用每次都从冻结帧重新裁一大块、重新缩小（2000 × 1100 的一次 5–7 ms）。
+  /// ponytail: 只留 8 张；拖着马赛克本身改范围时每下还是要重算，要更快就拖动中用图层预览
+  private static var mosaicCache: [(key: MosaicKey, blocks: CGImage, frame: CGRect)] = []
+
+  private struct MosaicKey: Equatable {
+    let id: UUID
+    let rect: CGRect
+    let weight: Weight
+    let option: Int
+  }
+
+  /// 冻结帧里这块缩小到每格一个像素的图，和它放回去的位置（视图坐标）
+  private func mosaicBlocks(_ rect: CGRect, image: CGImage, viewSize: CGSize) -> (
+    CGImage, CGRect
+  )? {
+    let key = MosaicKey(id: id, rect: rect, weight: style.weight, option: style.option)
+    if let hit = Self.mosaicCache.first(where: { $0.key == key }) { return (hit.blocks, hit.frame) }
     guard case (let crop, let frame)? = Self.frozen(rect, image: image, viewSize: viewSize) else {
-      return
+      return nil
     }
     let blurred = style.option == 1
     let cell =
@@ -756,13 +984,13 @@ struct Annotation: Identifiable, Equatable {
         space: crop.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!,
         bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
           | CGBitmapInfo.byteOrder32Little.rawValue)
-    else { return }
+    else { return nil }
     small.interpolationQuality = blurred ? .high : .medium
     small.draw(crop, in: CGRect(x: 0, y: 0, width: columns, height: rows))
-    guard let blocks = small.makeImage() else { return }
-    context.clip(to: rect)
-    context.interpolationQuality = blurred ? .high : .none
-    context.draw(blocks, in: frame)
+    guard let blocks = small.makeImage() else { return nil }
+    Self.mosaicCache.append((key, blocks, frame))
+    if Self.mosaicCache.count > 8 { Self.mosaicCache.removeFirst() }
+    return (blocks, frame)
   }
 
   /// 冻结帧里 rect（视图坐标）那块像素，和这块像素换回视图坐标的位置（取整后可能比 rect 大一点，调用方自己 clip）

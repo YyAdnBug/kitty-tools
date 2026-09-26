@@ -29,10 +29,12 @@ struct SelectionInteractionTests {
     private var target: NSView?
     private(set) var intercepted: NSView?
 
-    /// image：冻结帧（默认 1200 × 800 纯色；截图自检传一张假桌面）；hint：松手即确认模式的顶部提示
+    /// image：冻结帧（默认 1200 × 800 纯色；截图自检传一张假桌面）；hint：松手即确认模式的顶部提示；
+    /// session / origin：多屏时几块「屏幕」共用一个会话，窗口摆在各自的位置（见 screens）
     init(
       mode: SelectionView.Mode = .capture, windows: [CGRect] = [], image: CGImage? = nil,
-      hint: String = ""
+      hint: String = "", session: SelectionSession? = nil,
+      origin: CGPoint = CGPoint(x: -20000, y: -20000)
     ) {
       let size = CGSize(width: 1200, height: 800)
       let context = CGContext(
@@ -41,11 +43,11 @@ struct SelectionInteractionTests {
         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
       context.setFillColor(CGColor(red: 0.2, green: 0.5, blue: 0.9, alpha: 1))
       context.fill(CGRect(origin: .zero, size: size))
-      session = SelectionSession(mode: mode, hint: hint)
+      self.session = session ?? SelectionSession(mode: mode, hint: hint)
       view = SelectionView(
-        image: image ?? context.makeImage()!, windows: windows, session: session)
+        image: image ?? context.makeImage()!, windows: windows, session: self.session)
       window = KeyWindow(
-        contentRect: NSRect(origin: NSPoint(x: -20000, y: -20000), size: size),
+        contentRect: NSRect(origin: origin, size: size),
         styleMask: [.borderless], backing: .buffered, defer: false)
       window.isReleasedWhenClosed = false
       window.contentView = view
@@ -54,22 +56,32 @@ struct SelectionInteractionTests {
 
     deinit { MainActor.assumeIsolated { NSCursor.arrow.set() } }
 
+    /// 两块 1200 × 800 的「屏幕」左右挨着、共用一个会话（lastRegion 是全局坐标：右边那块从 x = -18800 起）
+    static func screens(lastRegion: CGRect? = nil) -> (Harness, Harness) {
+      let session = SelectionSession(mode: .capture, lastRegion: lastRegion)
+      let left = Harness(session: session)
+      let right = Harness(session: session, origin: CGPoint(x: -18800, y: -20000))
+      session.views = [left.view, right.view]
+      return (left, right)
+    }
+
     func event(
-      _ type: NSEvent.EventType, _ point: CGPoint, _ flags: NSEvent.ModifierFlags = []
+      _ type: NSEvent.EventType, _ point: CGPoint, _ flags: NSEvent.ModifierFlags = [],
+      clicks: Int = 1
     ) -> NSEvent {
       NSEvent.mouseEvent(
         with: type, location: point, modifierFlags: flags,
         timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
-        context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1)!
+        context: nil, eventNumber: 0, clickCount: clicks, pressure: type == .leftMouseUp ? 0 : 1)!
     }
 
-    func down(_ point: CGPoint, flags: NSEvent.ModifierFlags = []) {
+    func down(_ point: CGPoint, flags: NSEvent.ModifierFlags = [], clicks: Int = 1) {
       let content = window.contentView!
       let hit = content.hitTest(content.superview?.convert(point, from: nil) ?? point)
       if let hit, hit === view || hit is SizeField {
         target = hit
         intercepted = nil
-        hit.mouseDown(with: event(.leftMouseDown, point, flags))
+        hit.mouseDown(with: event(.leftMouseDown, point, flags, clicks: clicks))
       } else {
         target = nil
         intercepted = hit
@@ -150,11 +162,14 @@ struct SelectionInteractionTests {
       view.rightMouseDown(with: event(.rightMouseDown, point))
     }
 
-    func click(_ point: CGPoint) {
-      down(point)
-      target?.mouseUp(with: event(.leftMouseUp, point))
+    /// clicks：第几下（2 = 双击的第二下）
+    func click(_ point: CGPoint, clicks: Int = 1) {
+      down(point, clicks: clicks)
+      target?.mouseUp(with: event(.leftMouseUp, point, clicks: clicks))
       target = nil
     }
+
+    var styleBar: StyleBar? { view.subviews.lazy.compactMap { $0 as? StyleBar }.first }
 
     /// 接上会话的结果，跑 actions；actions 里没交回结果时交一个占位，别把测试挂住
     func outcome(of actions: () -> Void) async -> RegionSelector.Outcome? {
@@ -706,6 +721,133 @@ struct SelectionInteractionTests {
     h.rightClick(CGPoint(x: 500, y: 350))
     #expect(h.view.selection == Self.initial)
     #expect(h.window.firstResponder === field)
+  }
+
+  // 很小的选区（菜单栏图标、程序坞图标）：尺寸胶囊放不进里面，挪到旁边，不盖角、边和中间（拖角改大小、拖中间平移照样行）
+  @Test func sizeFieldStaysOffSmallSelection() throws {
+    let icon = CGRect(x: 500, y: 770, width: 60, height: 24)
+    let h = Harness()
+    h.view.select(icon)
+    let field = try #require(h.sizeField)
+    #expect(!field.frame.intersects(icon.insetBy(dx: -8, dy: -8)), "\(field.frame)")
+    #expect(field.isInteractive)
+    h.drag(CGPoint(x: 560, y: 770), CGPoint(x: 600, y: 740))
+    #expect(h.view.selection == CGRect(x: 500, y: 740, width: 100, height: 54))
+    // 贴着屏幕底：工具栏翻到上方，左上角外面被栏占着
+    let dock = Harness()
+    dock.view.select(CGRect(x: 500, y: 5, width: 60, height: 60))
+    dock.drag(CGPoint(x: 530, y: 40), CGPoint(x: 560, y: 60))
+    #expect(dock.sizeField?.isEditing == false)
+    #expect(dock.view.selection == CGRect(x: 530, y: 25, width: 60, height: 60))
+  }
+
+  // 选区底边离屏幕底不到一个工具栏加托盘：工具栏不放下面（托盘会翻进选区、压住下边），下边照样拖得动
+  @Test func styleTrayStaysOffSelectionEdges() throws {
+    let selection = CGRect(x: 100, y: 70, width: 1000, height: 650)
+    let h = Harness()
+    h.view.select(selection)
+    h.key(kVK_ANSI_1, "1")
+    let tray = try #require(h.styleBar)
+    #expect(tray.isShown)
+    #expect(selection.insetBy(dx: 8, dy: 8).contains(tray.frame), "\(tray.frame)")
+    h.drag(CGPoint(x: tray.frame.midX, y: 70), CGPoint(x: tray.frame.midX, y: 40))
+    #expect(h.view.selection == CGRect(x: 100, y: 40, width: 1000, height: 680))
+  }
+
+  // 待选时单击桌面选中整屏，栏长在按下的地方：紧跟的第二下（双击）照样拷贝，不落到栏上
+  @Test func idleDoubleClickCopiesThroughFreshToolbar() async throws {
+    let h = Harness()
+    let point = CGPoint(x: 600, y: 30)
+    h.click(point)
+    #expect(h.view.selection == CGRect(x: 0, y: 0, width: 1200, height: 800))
+    #expect(try #require(h.toolbar).frame.contains(point))
+    let outcome = await h.outcome { h.click(point, clicks: 2) }
+    guard case .capture(let capture)? = outcome else {
+      Issue.record("双击没有拷贝：\(String(describing: outcome))")
+      return
+    }
+    #expect(capture.action == .copy)
+  }
+
+  // 输入文字时重做钮灰掉（点了只会收下文字、清空重做）
+  @Test func redoDisabledWhileTyping() throws {
+    let h = Harness()
+    h.makeSelection()
+    h.view.tool = .rectangle
+    h.drag(CGPoint(x: 350, y: 250), CGPoint(x: 450, y: 350))
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: .command)
+    let redo = try #require(h.toolbar?.button(for: .redo))
+    #expect(redo.isEnabled)
+    h.view.beginEditing(at: CGPoint(x: 400, y: 450))
+    try #require(h.fieldEditor).insertText(
+      "hi", replacementRange: NSRange(location: NSNotFound, length: 0))
+    #expect(!redo.isEnabled)
+  }
+
+  // 开着比例菜单点保存 ▾（或反过来）：直接换成另一个菜单；再点同一个才收起。点托盘也先收菜单
+  @Test func hudMenusSwitchAndTrayClosesThem() throws {
+    let saved = UserDefaults.standard.data(forKey: Prefs.screenshotToolStyles)
+    defer { UserDefaults.standard.set(saved, forKey: Prefs.screenshotToolStyles) }
+    let h = Harness()
+    h.makeSelection()
+    let caret = try #require(h.toolbar?.button(for: .saveMenu))
+    h.clickSize(nil)
+    #expect(h.menu?.accessibilityLabel() == "比例")
+    caret.performClick(nil)
+    #expect(h.menu?.accessibilityLabel() == "存储选项")
+    h.clickSize(nil)
+    #expect(h.menu?.accessibilityLabel() == "比例")
+    h.clickSize(nil)
+    #expect(h.menu == nil)
+    h.key(kVK_ANSI_1, "1")
+    caret.performClick(nil)
+    #expect(h.menu != nil)
+    try #require(h.styleBar).onColor(.blue)
+    #expect(h.menu == nil)
+    #expect(h.view.style.color == .blue)
+  }
+
+  // 两块屏：在另一块屏上一点误拖（短边 < 8）不把这边的选区弄丢；拖得够大才换过去
+  @Test func tinyDragOnOtherScreenKeepsSelection() {
+    let (left, right) = Harness.screens()
+    left.makeSelection()
+    right.drag(CGPoint(x: 600, y: 400), CGPoint(x: 605, y: 403))
+    #expect(left.view.selection == Self.initial)
+    #expect(left.view.isAdjusting)
+    #expect(right.view.selection == nil)
+    right.drag(CGPoint(x: 600, y: 400), CGPoint(x: 700, y: 500))
+    #expect(left.view.selection == nil)
+    #expect(right.view.selection == CGRect(x: 600, y: 400, width: 100, height: 100))
+    #expect(right.view.isAdjusting)
+  }
+
+  // 两块屏：这边画了标注，到另一块屏框选、按 D 跳到那块屏上的上次区域都不清空；正在输入的文字到另一块屏右键也不清空
+  @Test func otherScreenNeverWipesAnnotations() throws {
+    let region = CGRect(x: -18700, y: -19900, width: 200, height: 100)
+    let (left, right) = Harness.screens(lastRegion: region)
+    left.makeSelection()
+    left.view.tool = .rectangle
+    left.drag(CGPoint(x: 350, y: 250), CGPoint(x: 450, y: 350))
+    #expect(left.view.annotations.count == 1)
+    right.drag(CGPoint(x: 600, y: 400), CGPoint(x: 800, y: 600))
+    left.key(kVK_ANSI_D, "d")
+    #expect(left.view.annotations.count == 1)
+    #expect(left.view.selection == Self.initial)
+    #expect(right.view.selection == nil)
+    // 没有标注时 D 照样跳过去
+    left.keyEquivalent(kVK_ANSI_Z, "z", flags: .command)
+    left.key(kVK_ANSI_D, "d")
+    #expect(left.view.selection == nil)
+    #expect(right.view.selection == CGRect(x: 100, y: 100, width: 200, height: 100))
+
+    let (typing, other) = Harness.screens()
+    typing.makeSelection()
+    typing.view.beginEditing(at: CGPoint(x: 400, y: 400))
+    let field = try #require(typing.fieldEditor)
+    field.insertText("hello", replacementRange: NSRange(location: NSNotFound, length: 0))
+    other.rightClick(CGPoint(x: 600, y: 400))
+    #expect(typing.view.selection == Self.initial)
+    #expect(typing.window.firstResponder === field)
   }
 
   // 尺寸输入框里右键不弹文本菜单（菜单层级比遮罩低，会压在下面）

@@ -4,14 +4,17 @@
 // 鼠标不在上面时 6 s 后自己滑走（移开后 2.5 s）。同一块屏上连截几张时往上叠，最多 3 张，更早的滑走。
 // 窗口是普通 NSPanel 实例（不当 key、不激活本 App；层级状态栏，之后的截图冻结帧会排除它），用完放回复用池
 // （挂过 NSHostingView 的窗口 close 后 AppKit 不释放，同 FlyCard）。减弱动态效果时不飞，直接在角落淡入、淡出。
+// 卡片只留缩到卡片大小的图和复制 / 保存时编码好的 PNG（不再编码一遍，也不留整张解码的图：5K 一张 59 MB、长截图上百 MB），
+// 钉图时才解码；拖出用的临时 PNG 在主线程外写。
 
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 final class ShotShelf {
-  /// 再拷贝一次 / 快速保存 / 钉到原来的位置（AppDelegate 给）
-  var copy: (CGImage, CGFloat) async -> Bool = { _, _ in false }
-  var save: (CGImage, CGFloat) async -> URL? = { _, _ in nil }
+  /// 再拷贝一次 / 快速保存（都用编码好的 PNG）/ 钉到原来的位置（AppDelegate 给）
+  var copy: (Data) async -> Bool = { _ in false }
+  var save: (Data) async -> URL? = { _ in nil }
   var pin: (CGImage, CGRect) -> Void = { _, _ in }
 
   private var cards: [ShelfCard] = []
@@ -24,9 +27,10 @@ final class ShotShelf {
   static let dragDirectory = FileManager.default.temporaryDirectory.appending(
     path: "Kitty Tools 截图")
 
-  /// 接手一张截图：rect 是落地位置（屏幕坐标），source 是选区（钉图钉回那里）
+  /// 接手一张截图：png 是复制 / 保存时编码好的，rect 是落地位置（屏幕坐标），source 是选区（钉图钉回那里）
   func add(
-    _ image: CGImage, scale: CGFloat, source: CGRect, at rect: CGRect, badge: FlyCard.Badge
+    _ image: CGImage, png: Data, scale: CGFloat, source: CGRect, at rect: CGRect,
+    badge: FlyCard.Badge
   ) {
     let screen = NSScreen.screens.first { $0.frame.intersects(rect) }
     // 同一块屏上已有的往上挪给新的让位；超过 3 张的最早那张滑走
@@ -34,8 +38,8 @@ final class ShotShelf {
     for card in neighbours { card.shift(by: rect.height + Self.gap) }
     if neighbours.count >= Self.maxPerScreen, let oldest = neighbours.first { dismiss(oldest) }
     let card = ShelfCard(
-      image: image, scale: scale, source: source, rect: rect, badge: badge, screen: screen,
-      panel: idle.popLast() ?? Self.makePanel(), shelf: self)
+      image: image, png: png, scale: scale, source: source, rect: rect, badge: badge,
+      screen: screen, panel: idle.popLast() ?? Self.makePanel(), shelf: self)
     cards.append(card)
     card.show()
   }
@@ -81,10 +85,14 @@ final class ShotShelf {
 
 /// 一张常驻缩略图：窗口、界面状态、自动滑走的计时
 @Observable final class ShelfCard {
-  let image: CGImage
-  /// 显示的部分（长截图只露开头一屏；缩到卡片尺寸，原图 image 留给拷贝、拖出）
+  /// 显示的部分（长截图只露开头一屏；缩到卡片尺寸）
   let shown: CGImage
   let scale: CGFloat
+  /// 原图的像素尺寸（钉图按它的宽高比）
+  @ObservationIgnored private let pixels: CGSize
+  /// 编码好的 PNG（拷贝、存储、拖出、钉图都从它来）；没给时先留着原图，第一次用到时在主线程外编码、编完就放掉原图
+  @ObservationIgnored private var png: Data?
+  @ObservationIgnored private var image: CGImage?
   let source: CGRect
   @ObservationIgnored let screen: NSScreen?
   @ObservationIgnored let panel: NSPanel
@@ -103,10 +111,12 @@ final class ShotShelf {
   @ObservationIgnored private var swipe: CGFloat = 0
 
   init(
-    image: CGImage, scale: CGFloat, source: CGRect, rect: CGRect, badge: FlyCard.Badge,
-    screen: NSScreen?, panel: NSPanel, shelf: ShotShelf
+    image: CGImage, png: Data? = nil, scale: CGFloat, source: CGRect, rect: CGRect,
+    badge: FlyCard.Badge, screen: NSScreen?, panel: NSPanel, shelf: ShotShelf
   ) {
-    self.image = image
+    self.png = png
+    self.image = png == nil ? image : nil
+    pixels = CGSize(width: image.width, height: image.height)
     shown = FlyCard.cardImage(
       of: image, frame: source, size: rect.size, backingScale: screen?.backingScaleFactor ?? 2)
     self.scale = scale
@@ -178,7 +188,7 @@ final class ShotShelf {
     isBusy = true
     Task {
       // 角标不换（存过的还要留着文件夹和「在访达中显示」），只播报
-      if await shelf.copy(image, scale) { FlyCard.announce(.copied) }
+      if let png = await encoded(), await shelf.copy(png) { FlyCard.announce(.copied) }
       isBusy = false
     }
   }
@@ -187,7 +197,7 @@ final class ShotShelf {
     guard !isBusy, let shelf else { return }
     isBusy = true
     Task {
-      if let url = await shelf.save(image, scale) {
+      if let png = await encoded(), let url = await shelf.save(png) {
         badge = .saved(url)
         fileURL = url
       }
@@ -195,9 +205,16 @@ final class ShotShelf {
     }
   }
 
-  /// 钉到选区的位置；长截图比选区高得多，按选区宽度钉整张，太高就等比缩到屏幕可见高度的 90%（顶边对齐选区）
+  /// 钉到选区的位置；长截图比选区高得多，按选区宽度钉整张，太高就等比缩到屏幕可见高度的 90%（顶边对齐选区）。
+  /// 钉图要整张图：没留原图就从 PNG 解码
   func pin() {
-    let aspect = CGFloat(image.height) / CGFloat(max(image.width, 1))
+    guard
+      let full = image
+        ?? png.flatMap({ CGImageSourceCreateWithData($0 as CFData, nil) }).flatMap({
+          CGImageSourceCreateImageAtIndex($0, 0, nil)
+        })
+    else { return }
+    let aspect = pixels.height / max(pixels.width, 1)
     var size = CGSize(width: source.width, height: source.width * aspect)
     let visible = screen?.visibleFrame ?? source
     if size.height > visible.height * 0.9 {
@@ -206,7 +223,7 @@ final class ShotShelf {
     let frame = CGRect(
       x: source.minX, y: max(source.maxY - size.height, visible.minY), width: size.width,
       height: size.height)
-    shelf?.pin(image, frame)
+    shelf?.pin(full, frame)
     close()
   }
 
@@ -223,7 +240,7 @@ final class ShotShelf {
     guard !isBusy, let shelf else { return }
     isBusy = true
     Task {
-      if let url = await shelf.save(image, scale) {
+      if let png = await encoded(), let url = await shelf.save(png) {
         badge = .saved(url)
         fileURL = url
         NSWorkspace.shared.open(url)
@@ -232,19 +249,37 @@ final class ShotShelf {
     }
   }
 
-  /// 拖出去的东西：文件（还没编码好时给一张图）
+  /// 拖出去的东西：文件（临时文件还没写好时给 PNG 数据）
   func dragItem() -> NSItemProvider {
     if let fileURL, let provider = NSItemProvider(contentsOf: fileURL) { return provider }
-    return NSItemProvider(object: NSImage(cgImage: image, size: .zero))
+    if let png { return NSItemProvider(item: png as NSData, typeIdentifier: UTType.png.identifier) }
+    return NSItemProvider(object: NSImage(cgImage: shown, size: .zero))
+  }
+
+  /// PNG：有就直接用；没有就在主线程外编码原图，编完放掉原图
+  private func encoded() async -> Data? {
+    if let png { return png }
+    guard let image else { return nil }
+    let data = await ScreenshotOutput.png(image, scale: scale)
+    if let data, png == nil {
+      png = data
+      self.image = nil
+    }
+    return png
   }
 
   private func writeDragFile() async {
-    guard let png = await ScreenshotOutput.png(image, scale: scale) else { return }
-    try? FileManager.default.createDirectory(
-      at: ShotShelf.dragDirectory, withIntermediateDirectories: true)
+    guard let png = await encoded() else { return }
     let url = ScreenshotOutput.availableURL(in: ShotShelf.dragDirectory)
-    guard (try? png.write(to: url)) != nil, fileURL == nil else { return }
+    guard await Self.write(png, to: url), fileURL == nil else { return }
     fileURL = url
+  }
+
+  /// 写临时文件（几 MB 到几十 MB，不在主线程写）
+  @concurrent nonisolated private static func write(_ png: Data, to url: URL) async -> Bool {
+    try? FileManager.default.createDirectory(
+      at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    return (try? png.write(to: url)) != nil
   }
 
   private func scheduleDismiss(after seconds: Double) {

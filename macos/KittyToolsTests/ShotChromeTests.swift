@@ -1,4 +1,5 @@
-// 截图遮罩外观的纯几何：洞 / 高亮框的圆角路径元素数恒定（S5 变形要求）、工具栏放哪、工具栏图标在 macOS 15 上都有
+// 截图遮罩外观的纯几何：洞 / 高亮框的圆角路径元素数恒定（S5 变形要求）、工具栏放哪、HUD 小控件的外圈描边、
+// 工具栏图标在 macOS 15 上都有
 
 import AppKit
 import Testing
@@ -46,6 +47,23 @@ struct ShotChromeTests {
     let fractional = SelectionView.toolbarPlacement(
       size: size, selection: CGRect(x: 300.3, y: 200.6, width: 400.5, height: 300), in: bounds)
     #expect(fractional.origin == CGPoint(x: 151, y: 151))
+  }
+
+  // 纯图层画的 HUD 小控件（尺寸胶囊、提示、信息卡）也有外圈 0.5 pt black 0.5：边外 0.5、圆角大 0.5，跟着尺寸走，不重复加
+  @Test func hudSkinHasOuterStroke() throws {
+    let layer = CALayer()
+    Style.HUD.applySkin(to: layer, radius: 6)
+    layer.bounds = CGRect(x: 0, y: 0, width: 120, height: 26)
+    Style.HUD.applySkin(to: layer, radius: 13, curve: .circular)
+    #expect(layer.sublayers?.count == 1)
+    let ring = try #require(layer.sublayers?.first)
+    #expect(ring.frame == CGRect(x: -0.5, y: -0.5, width: 121, height: 27))
+    #expect(ring.borderWidth == 0.5 && ring.cornerRadius == 13.5 && ring.cornerCurve == .circular)
+    #expect(ring.borderColor == Style.HUD.outerStroke.cgColor)
+    let field = SizeField()
+    field.show(width: 640, height: 480, interactive: true, ratio: "自由", locked: false)
+    let outer = try #require(field.layer?.sublayers?.first { $0.name == ring.name })
+    #expect(outer.frame == field.bounds.insetBy(dx: -0.5, dy: -0.5))
   }
 
   // 栏里用到的 SF Symbols 在最低系统上都存在（force unwrap 不会崩）

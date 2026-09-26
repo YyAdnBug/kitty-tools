@@ -303,6 +303,115 @@ struct AnnotationToolTests {
     #expect(Annotation.dimChange(from: selection, to: selection).isEmpty)
   }
 
+  @Test func onScreenSpotlightLayerMatchesExport() throws {
+    // 屏幕上：冻结帧 → 标注层下面的压暗图层（spotlightDim 的偶奇路径）→ 标注层（只给垫底的马赛克、荧光笔补同样的压暗）；
+    // 导出：冻结帧上一次 drawAll。叠出来要一样（拖选区时只换压暗图层的路径，不重画标注层）
+    let base = try ScreenshotTests.image(size: 100) { context in
+      for index in 0..<10 {
+        context.setFillColor(
+          CGColor(
+            red: CGFloat(index) / 10, green: 1 - CGFloat(index) / 10, blue: 0.6, alpha: 1))
+        context.fill(CGRect(x: 0, y: index * 10, width: 100, height: 10))
+      }
+    }
+    let selection = CGRect(x: 5, y: 5, width: 90, height: 90)
+    let annotations = [
+      Annotation(shape: .mosaic(CGRect(x: 10, y: 10, width: 40, height: 30))),
+      Annotation(
+        shape: .highlighter(from: CGPoint(x: 10, y: 75), to: CGPoint(x: 90, y: 75)),
+        style: .init(color: .yellow)),
+      Annotation(shape: .rectangle(CGRect(x: 58, y: 15, width: 30, height: 30))),
+      Annotation(shape: .spotlight(CGRect(x: 30, y: 30, width: 40, height: 30))),
+    ]
+    let export = try Self.context()
+    export.draw(base, in: CGRect(origin: .zero, size: view))
+    Annotation.drawAll(
+      annotations, in: export, image: base, viewSize: view, shadowScale: 1,
+      spotlightBounds: selection)
+    let exported = try Pixels(try #require(export.makeImage()))
+
+    let screen = try Self.context()
+    screen.draw(base, in: CGRect(origin: .zero, size: view))
+    let dim = try #require(
+      Annotation.spotlightDim(annotations.filter { $0.tool == .spotlight }, bounds: selection))
+    screen.setFillColor(CGColor(gray: 0, alpha: dim.alpha))
+    screen.addPath(dim.path)
+    screen.fillPath(using: .evenOdd)
+    let layer = try Self.context()
+    Annotation.drawAll(
+      annotations, in: layer, image: base, viewSize: view, shadowScale: 1,
+      spotlightBounds: selection, dimsUnderlaysOnly: true)
+    screen.draw(try #require(layer.makeImage()), in: CGRect(origin: .zero, size: view))
+    let onScreen = try Pixels(try #require(screen.makeImage()))
+    // 马赛克里（洞外、洞里）、荧光笔上、矩形边上、洞里、洞外、选区外
+    for (x, y) in [(15, 15), (40, 35), (20, 75), (60, 75), (58, 30), (50, 45), (80, 55), (2, 2)] {
+      let delta = zip(onScreen(x, y), exported(x, y)).map { abs(Int($0) - Int($1)) }.max() ?? 0
+      #expect(delta <= 2, "(\(x), \(y))")
+    }
+    // 整张：只有垫底标注的抗锯齿边上差一点
+    let deltas = zip(onScreen.data, exported.data).map { abs(Int($0) - Int($1)) }
+    #expect(deltas.filter { $0 > 2 }.count < 200, "\(deltas.max() ?? 0)")
+  }
+
+  @Test func bandedDrawingMatchesWholeDraw() throws {
+    // 大的线条切成不重叠的细条各画一遍（Annotation.bands），和整块画一样：矩形、椭圆逐像素；斜线 CG 按裁剪区大小栅格化本来就
+    // 差零点几像素（局部重画也一样），只比墨迹总量——切条漏了一截的话总量会少一大块
+    let size = CGSize(width: 1200, height: 800)
+    let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+    let bitmap = {
+      CGContext(
+        data: nil, width: 1200, height: 800, bitsPerComponent: 8, bytesPerRow: 1200 * 4,
+        space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+    }
+    let base = try #require(bitmap()?.makeImage())
+    let cases: [(Annotation, exact: Bool)] = [
+      (Annotation(shape: .rectangle(CGRect(x: 100.3, y: 100.7, width: 900, height: 550))), true),
+      (
+        Annotation(
+          shape: .rectangle(CGRect(x: 100, y: 100, width: 900, height: 550)),
+          style: .init(color: .blue, weight: .large, option: 1)), true
+      ),
+      (Annotation(shape: .ellipse(CGRect(x: 100, y: 100, width: 900, height: 550))), true),
+      (
+        Annotation(
+          shape: .arrow(from: CGPoint(x: 100, y: 100), to: CGPoint(x: 1100, y: 700)),
+          style: .init(weight: .large)), false
+      ),
+      (
+        Annotation(shape: .line(from: CGPoint(x: 100, y: 700), to: CGPoint(x: 1100, y: 100))), false
+      ),
+      (
+        Annotation(
+          shape: .highlighter(from: CGPoint(x: 100, y: 100), to: CGPoint(x: 1100, y: 700)),
+          style: .init(color: .yellow)), false
+      ),
+    ]
+    let saved = Annotation.bandingArea
+    defer { Annotation.bandingArea = saved }
+    for (annotation, exact) in cases {
+      var renders: [CGContext] = []
+      for area in [CGFloat.infinity, 250_000] {
+        Annotation.bandingArea = area
+        let context = try #require(bitmap())
+        Annotation.drawAll(
+          [annotation], in: context, image: base, viewSize: size, shadowScale: 1)
+        renders.append(context)
+      }
+      let count = 1200 * 800 * 4
+      let whole = try #require(renders[0].data).bindMemory(to: UInt8.self, capacity: count)
+      let banded = try #require(renders[1].data).bindMemory(to: UInt8.self, capacity: count)
+      var (maxDelta, wholeMass, bandedMass) = (0, 0, 0)
+      for index in 0..<count {
+        let (a, b) = (Int(whole[index]), Int(banded[index]))
+        maxDelta = max(maxDelta, abs(a - b))
+        wholeMass += a
+        bandedMass += b
+      }
+      if exact { #expect(maxDelta <= 1, "\(annotation.tool)") }
+      #expect(abs(wholeMass - bandedMass) * 200 < wholeMass, "\(annotation.tool)")
+    }
+  }
+
   @Test func hitTestingFollowsPaintOrder() {
     // 后加的马赛克画在矩形下面：点矩形的边拿到矩形；序号压在后画的矩形上面：点序号拿到序号
     let rectangle = Annotation(shape: .rectangle(CGRect(x: 50, y: 10, width: 40, height: 80)))

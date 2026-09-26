@@ -159,6 +159,20 @@ struct SelectionGeometryTests {
     #expect(snapped.minX == 10)
     #expect(snapped.maxY == 120)
     #expect(snapped.size == CGSize(width: 50, height: 50))
+    // 左上角和显示、裁出来的一样（pixelRect 往外取整：左边向下、上边向上），输入宽高不挪它
+    let view = CGSize(width: 1200, height: 800)
+    for (dragged, scale) in [
+      (CGRect(x: 300.7, y: 200.2, width: 399.5, height: 300.2), CGSize(width: 1, height: 1)),
+      (CGRect(x: 300.3, y: 200.2, width: 399.5, height: 300.1), CGSize(width: 2, height: 2)),
+    ] {
+      let image = CGSize(width: view.width * scale.width, height: view.height * scale.height)
+      let before = RegionSelector.pixelRect(dragged, viewSize: view, imageSize: image)
+      let typed = RegionSelector.sized(
+        dragged, pixels: CGSize(width: 300, height: 300), scale: scale, within: bounds)
+      let after = RegionSelector.pixelRect(typed, viewSize: view, imageSize: image)
+      #expect(after.origin == before.origin, "\(dragged) @\(scale.width)x")
+      #expect(after.size == CGSize(width: 300, height: 300))
+    }
   }
 
   // 比例预设：宽不变、顶边和水平中心不动；下面放不下按剩下的高反推（只会变窄）

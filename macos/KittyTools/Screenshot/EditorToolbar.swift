@@ -17,7 +17,7 @@ class PopView: NSView {
   private(set) var isShown = false
 
   /// 出现：delay 后从 anchor（自身坐标）处 scale → 1、竖直偏 rise → 0（curve 弹簧）+ 淡入；收起：0.10 s 淡出后隐藏。
-  /// 减弱动态效果时只改透明度
+  /// 减弱动态效果时按 §7 只改透明度：pop / settle 退成 0.2 s easeInOut 淡入，snap / glide 直接出现
   func setShown(
     _ show: Bool, anchor: CGPoint, rise: CGFloat, scale: CGFloat, delay: Double = 0,
     curve: Style.Motion = .pop, bounce: Double? = nil
@@ -33,12 +33,21 @@ class PopView: NSView {
     if show {
       isHidden = false
       layer.opacity = 1
-      let fade = CABasicAnimation(keyPath: "opacity")
+      let reduced = Style.reduceMotion
+      let fade: CABasicAnimation
+      if reduced {
+        guard let basic = curve.caAnimation(keyPath: "opacity", reduced: true) as? CABasicAnimation
+        else { return }
+        fade = basic
+      } else {
+        fade = CABasicAnimation(keyPath: "opacity")
+        fade.duration = Style.fadeIn
+        fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+      }
       fade.fromValue = 0
       fade.toValue = 1
-      fade.duration = Style.fadeIn
       var animations: [CAAnimation] = [fade]
-      if !Style.reduceMotion,
+      if !reduced,
         let grow = curve.caAnimation(keyPath: "transform", reduced: false, bounce: bounce)
           as? CABasicAnimation
       {
@@ -325,9 +334,16 @@ final class EditorToolbar: PopView {
     toolHighlight.transform = CATransform3DIdentity
     if previous == nil {
       toolHighlight.removeAnimation(forKey: "slide")
-      let fade = CABasicAnimation(keyPath: "opacity")
+      // 减弱动态效果时 pop 退成 0.2 s easeInOut 淡入（§7）
+      let fade =
+        (reduced
+          ? Style.Motion.pop.caAnimation(keyPath: "opacity", reduced: true) as? CABasicAnimation
+          : nil) ?? CABasicAnimation(keyPath: "opacity")
+      if !reduced {
+        fade.duration = Style.fadeIn
+        fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+      }
       fade.fromValue = fromOpacity
-      fade.duration = Style.fadeIn
       toolHighlight.add(fade, forKey: "fade")
       if !reduced,
         let pop = Style.Motion.pop.caAnimation(keyPath: "transform.scale", reduced: false)
@@ -361,11 +377,14 @@ final class StyleBar: HUDBar {
   private var weights: [Swatch] = []
   private var options: [BarButton] = []
 
+  /// 托盘高（工具栏放哪时要给它留地方）
+  static let height: CGFloat = 34
+
   init() {
-    super.init(radius: Style.Radius.card, height: 34)
+    super.init(radius: Style.Radius.card, height: Self.height)
     stack.edgeInsets = NSEdgeInsets(top: 0, left: 6, bottom: 0, right: 6)
     // 先给个尺寸：零宽的材质和 stack 的最小宽度约束冲突（第一次 move 前就会排一次版）
-    frame.size = CGSize(width: 100, height: 34)
+    frame.size = CGSize(width: 100, height: Self.height)
     applyGeometry()
   }
 
@@ -439,7 +458,7 @@ final class StyleBar: HUDBar {
       views += [barSeparator(), segment]
     }
     views.forEach(stack.addArrangedSubview)
-    preferredSize = CGSize(width: ceil(stack.fittingSize.width + 1), height: 34)
+    preferredSize = CGSize(width: ceil(stack.fittingSize.width + 1), height: Self.height)
   }
 
   /// 选项分段：选中 HUD 选中底 + 主文字色，其余次文字色

@@ -5,7 +5,7 @@ import Testing
 @testable import KittyTools
 
 // 截图重设计（Whisker §6 截图，2026-09-26）的屏外截图自检（按需启用，同 SnapshotProbeTests）：遮罩待选 / 框选 / 调整、
-// 工具栏上下、按工具的样式托盘、10 种标注与选中手柄、尺寸输入、比例和保存菜单、右键提示、截图翻译框选、常驻缩略图
+// 工具栏上下、按工具的样式托盘、10 种标注与选中手柄、尺寸输入、文字输入（三种样式）、比例和保存菜单、右键提示、截图翻译框选、常驻缩略图
 // （飞行卡片落地后交接的同一张卡）、长截图面板与边框，按 2x 写成 PNG（带 -crop 的是局部，看线和图标对不对齐）。
 // 状态用 SelectionInteractionTests 的屏外窗口 + 合成事件摆（不弹遮罩、不抢键盘）；图层要在窗口里显示过才有内容，
 // 所以把屏外 (-20000, -20000) 的无边框窗口（当不了 key）orderFront 一下再 layer.render(in:)。材质在屏外会发灰，只锁布局。
@@ -117,6 +117,21 @@ struct ScreenshotSnapshotTests {
     h.clickSize(.width)
     let field = try #require(h.sizeField)
     try shoot(h.window, "size-editing", crop: field.frame.insetBy(dx: -40, dy: -30))
+    // 文字输入中：焦点环（1 pt 粉 0.55 + 粉色外发光，底色时圆角同色块）、粉色光标；无底 / 描边 / 底色
+    for (name, style) in [
+      ("text-editing", Annotation.Style(color: .red, weight: .medium, option: 0)),
+      ("text-editing-outline", .init(color: .white, weight: .medium, option: 1)),
+      ("text-editing-plate", .init(color: .yellow, weight: .medium, option: 2)),
+    ] {
+      h = adjust()
+      h.view.style = style
+      h.view.tool = .text
+      h.view.beginEditing(at: CGPoint(x: 420, y: 470))
+      h.fieldEditor?.insertText(
+        "输入中 Typing", replacementRange: NSRange(location: NSNotFound, length: 0))
+      try shoot(h.window, name, crop: CGRect(x: 380, y: 400, width: 320, height: 110))
+    }
+
     h = adjust()
     h.clickSize(nil)
     let menu = try #require(h.menu)

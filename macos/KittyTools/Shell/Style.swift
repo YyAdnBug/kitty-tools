@@ -188,13 +188,31 @@ enum Style {
       layer.shadowPath = path
     }
 
-    /// 纯图层画的 HUD 小控件（尺寸胶囊、提示、信息卡）：底色 + 内描边 + 圆角
-    static func applySkin(to layer: CALayer, radius: CGFloat) {
+    /// 纯图层画的 HUD 小控件（尺寸胶囊、提示、信息卡）：底色 + 内描边 + 圆角，外圈 0.5 pt black 0.5 是边外 0.5 的子图层
+    /// （跟着宽高伸缩，圆角大 0.5 同心；亮底上才有和工具栏一样的深色发丝边）。改了尺寸 / 圆角再调一次就行
+    static func applySkin(
+      to layer: CALayer, radius: CGFloat, curve: CALayerCornerCurve = .continuous
+    ) {
       layer.backgroundColor = fill.cgColor
       layer.borderColor = innerStroke.cgColor
       layer.borderWidth = strokeWidth
       layer.cornerRadius = radius
-      layer.cornerCurve = .continuous
+      layer.cornerCurve = curve
+      let name = "hud.outerStroke"
+      let ring =
+        layer.sublayers?.first { $0.name == name }
+        ?? {
+          let ring = CALayer()
+          ring.name = name
+          ring.borderWidth = 0.5
+          ring.borderColor = outerStroke.cgColor
+          ring.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+          layer.addSublayer(ring)
+          return ring
+        }()
+      ring.frame = layer.bounds.insetBy(dx: -0.5, dy: -0.5)
+      ring.cornerRadius = radius + 0.5
+      ring.cornerCurve = curve
     }
   }
 

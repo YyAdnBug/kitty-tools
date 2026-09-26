@@ -168,6 +168,7 @@ final class SizeField: NSView, NSTextFieldDelegate {
     }
     setFrameSize(CGSize(width: width, height: Self.height))
     if let layer {
+      Style.HUD.applySkin(to: layer, radius: Style.Radius.control)  // 外圈描边跟着新宽度
       Style.HUD.applyShadow(
         to: layer,
         path: CGPath(
@@ -267,10 +268,10 @@ private final class NumberField: NSTextField {
   override func becomeFirstResponder() -> Bool {
     let became = super.becomeFirstResponder()
     guard became else { return false }
-    // 选中底色用品牌粉（截图家族不用系统强调色）；字段编辑器是窗口共用的，每次拿到键盘都设一遍
-    (currentEditor() as? NSTextView)?.selectedTextAttributes = [
-      .backgroundColor: Style.Shot.accent.withAlphaComponent(0.4)
-    ]
+    // 选中底色、光标用品牌粉（截图家族不用系统强调色，14 起光标默认跟随它）；字段编辑器是窗口共用的，每次拿到键盘都设一遍
+    let editor = currentEditor() as? NSTextView
+    editor?.selectedTextAttributes = [.backgroundColor: Style.Shot.accent.withAlphaComponent(0.4)]
+    editor?.insertionPointColor = Style.Shot.accent
     onFocus()
     return true
   }
