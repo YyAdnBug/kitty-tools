@@ -1,4 +1,5 @@
-// 翻译相关单测：语言解析、流式文本清洗、AI 服务地址 / 参数、局域网判断、翻译历史、服务 logo 都在 asset catalog 里；
+// 翻译相关单测：语言解析、流式文本清洗、AI 服务地址 / 参数、局域网判断、翻译历史（存储、撤销删除、列表分组与选中）、
+// 「翻译 ↩」胶囊的出现条件、服务 logo 都在 asset catalog 里；
 // 以及按需启用的联网冒烟测试（TEST_RUNNER_KITTY_LIVE_TRANSLATE=1，用内置智谱 key 真翻一句）。
 
 import AppKit
@@ -248,6 +249,87 @@ struct HistoryStoreTests {
   @Test func silentReplaceHasNoDefaultHotKey() {
     #expect(HotKeyAction.translateReplace.defaultHotKey == nil)
     #expect(HotKeyAction.allCases.last == .translateReplace)  // 只能加在末尾（注册 id 是下标）
+  }
+
+  /// 「翻译 ↩」胶囊（N5）：原文非空、且和上次翻译的原文（去首尾空白）不同才出现
+  @Test func translateCapsuleOnlyAfterEditing() {
+    #expect(TranslateCoordinator.isEdited("hello", since: nil))  // 输入翻译：打了字还没翻
+    #expect(!TranslateCoordinator.isEdited("  \n", since: nil))
+    #expect(!TranslateCoordinator.isEdited("hello \n", since: "hello"))  // 只多了空白不算改
+    #expect(TranslateCoordinator.isEdited("hello world", since: "hello"))
+    #expect(!TranslateCoordinator.isEdited("", since: "hello"))  // 清空了：没东西可翻
+  }
+
+  /// 撤销删除原样插回；这期间又翻译过同一句（同原文 + 同目标已有新记录）就不插
+  @Test func restoreAfterDelete() throws {
+    let store = try HistoryStore(db: Database(path: ":memory:"))
+    store.add(source: "hello", target: .zhHans, result: "你好", service: "A", limit: 0)
+    let entry = try #require(store.search("").first)
+    store.setFavorite(entry.id, true)
+    let favorite = try #require(store.search("").first)
+    store.delete(favorite.id)
+    #expect(store.search("").isEmpty)
+    store.restore(favorite)
+    #expect(store.search("") == [favorite])
+    store.delete(favorite.id)
+    store.add(source: "hello", target: .zhHans, result: "您好", service: "B", limit: 0)
+    store.restore(favorite)
+    #expect(store.search("").map(\.result) == ["您好"])
+  }
+}
+
+/// 翻译历史列表（N7）：按天分组、高亮前缀和、↑↓ 循环、⌘⌫ 删后选中下一条、⌘Z 插回
+struct HistoryListTests {
+  @Test func groupsByDayAndOffsets() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try #require(TimeZone(identifier: "Asia/Shanghai"))
+    // 2026-09-26 10:00（上海）
+    let now = try #require(
+      calendar.date(from: DateComponents(year: 2026, month: 9, day: 26, hour: 10)))
+    func entry(_ hoursAgo: Double) -> HistoryStore.Entry {
+      HistoryStore.Entry(
+        id: UUID(), source: "s", target: .zhHans, result: "r", service: "",
+        createdAt: now.addingTimeInterval(-hoursAgo * 3600), favorite: false)
+    }
+    // 今天 9:00、今天 0:30、昨天 23:00、9 月 20 日、去年 12 月 31 日
+    let entries = [entry(1), entry(9.5), entry(11), entry(6 * 24), entry(269 * 24)]
+    let sections = HistoryView.sections(entries, now: now, calendar: calendar)
+    #expect(sections.map(\.title) == ["今天", "昨天", "9月20日", "2025年12月31日"])
+    #expect(sections.map(\.entries.count) == [2, 1, 1, 1])
+    // 标题 24 + 行 44 累加：第一条在 24，昨天那条在 24 + 88 + 24
+    #expect(HistoryView.offset(of: entries[0].id, in: sections) == 24)
+    #expect(HistoryView.offset(of: entries[2].id, in: sections) == 136)
+    #expect(HistoryView.offset(of: entries[4].id, in: sections) == 272)  // 4 个标题 + 4 行
+    #expect(HistoryView.offset(of: UUID(), in: sections) == nil)
+  }
+
+  @Test func moveDeleteUndo() throws {
+    let store = try HistoryStore(db: Database(path: ":memory:"))
+    for word in ["c", "b", "a"] {  // 新→旧：a b c
+      store.add(source: word, target: .en, result: word.uppercased(), service: "", limit: 0)
+    }
+    let list = HistoryList(store: store)
+    #expect(list.selected?.source == "a")  // 没选时是第一条
+    list.move(by: -1)
+    #expect(list.selected?.source == "c")  // 首尾循环
+    list.move(by: -1)
+    #expect(list.selected?.source == "b")
+    let b = try #require(list.selected)
+    list.delete(b)
+    #expect(list.entries.map(\.source) == ["a", "c"])
+    #expect(list.selected?.source == "c")  // 删掉选中的：挪到下一条
+    let c = try #require(list.selected)
+    list.delete(c)
+    #expect(list.selected?.source == "a")  // 删的是最后一条：挪到上一条
+    #expect(list.undoDelete())
+    #expect(list.undoDelete())
+    #expect(!list.undoDelete())
+    #expect(list.entries.map(\.source) == ["a", "b", "c"])
+    #expect(list.selected?.source == "b")  // 插回的那条被选中
+    list.query = "c"
+    #expect(list.selected?.source == "c")  // 搜索词变了：选中回到第一条
+    list.reset()
+    #expect(list.query.isEmpty && list.entries.count == 3)
   }
 }
 

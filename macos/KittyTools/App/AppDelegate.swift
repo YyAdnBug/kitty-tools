@@ -133,7 +133,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       isPinned: { UserDefaults.standard.bool(forKey: Prefs.floatingPinned) },
       content: TranslatePanelView(
         coordinator: coordinator, speaker: speaker,
-        openSettings: { [unowned self] in showSettings() },
         resize: { height in
           // 高度随内容（Bob 的做法）：最矮 220，最高到屏幕可见区的 85%，再多就在卡片区里滚。
           // 最小 / 最大高度都钉在这个值上：用户只能拖宽度，拖高度会和自动高度打架
@@ -149,6 +148,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     created = panel
     panel.keyEquivalentHandler = { [unowned self] in coordinator.handleKeyEquivalent($0) }
     coordinator.hidePanel = { [unowned panel] in panel.dismiss() }
+    // ⌘,、「⋯」菜单、错误卡片和空状态都直接到设置 › 翻译
+    coordinator.openSettings = { [unowned self] in showSettings(page: .translate) }
     panel.onHide = { [unowned self, unowned panel] in
       // 收起即作废进行中的请求（省额度）；把 key 还给之前处于 key 的浮层（剪贴板面板 / 启动器）。
       // 已有别的窗口成了 key（因失焦而收起）就不抢

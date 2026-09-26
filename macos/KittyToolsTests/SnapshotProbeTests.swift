@@ -260,11 +260,25 @@ struct SnapshotProbeTests {
     }
   }
 
+  /// 翻译浮窗：空态、结果（没有「翻译」按钮）、原文改过（弹出「翻译 ↩」）、复制即译状态胶囊 + 固定、
+  /// 替换原文、查词、历史（分组 + 选中第三条 + 范围胶囊）、收藏范围、空历史、提示；「⋯」菜单是 NSMenu，屏外画不出来
   private func renderTranslate(_ out: String) throws {
+    // 历史：今天两条（一条收藏）、昨天一条、三天前两条，按天分组
     let history = try HistoryStore(db: Database(path: ":memory:"))
-    history.add(
-      source: "The quick brown fox", target: .zhHans, result: "敏捷的棕色狐狸", service: "智谱", limit: 0)
-    history.add(source: "会议纪要", target: .en, result: "Meeting minutes", service: "智谱", limit: 0)
+    let day: TimeInterval = 86_400
+    let samples: [(String, String, Lang, TimeInterval, Bool)] = [
+      ("The quick brown fox jumps over the lazy dog", "敏捷的棕色狐狸跳过了懒狗", .zhHans, 60, false),
+      ("会议纪要", "Meeting minutes", .en, 120, true),
+      ("serendipity", "意外发现珍奇事物的本领", .zhHans, day, true),
+      ("Ship it", "发布吧", .zhHans, day * 3, false),
+      ("请帮我 review 一下这个 PR", "Please help me review this PR", .en, day * 3 + 60, false),
+    ]
+    for (source, result, target, ago, favorite) in samples {
+      history.restore(
+        .init(
+          id: UUID(), source: source, target: target, result: result, service: "智谱",
+          createdAt: .now.addingTimeInterval(-ago), favorite: favorite))
+    }
     let services = TranslateServiceStore()
     let coordinator = TranslateCoordinator(services: services, history: history)
     let speaker = Speaker()
@@ -284,11 +298,23 @@ struct SnapshotProbeTests {
             "SwiftUI provides views, controls, and layout structures for declaring your app's user interface."
           c.detected = .en
           c.target = .zhHans
+          c.translatedSource = c.sourceText
           c.cards = [
             .init(service: zhipu, state: .done("SwiftUI 提供了视图、控件和布局结构，用来**声明**应用的用户界面。")),
             .init(service: gpt, state: .running("SwiftUI 提供视图、控件以及")),
             .init(service: claude, state: .failed("密钥无效或没有权限")),
           ]
+        }
+      ),
+      // 原文改过、还没重译：原文框右下角弹出「翻译 ↩」
+      (
+        "translate-edited",
+        { c in
+          c.sourceText = "SwiftUI provides views and controls."
+          c.translatedSource = "SwiftUI provides views."
+          c.detected = .en
+          c.target = .zhHans
+          c.cards = [.init(service: zhipu, state: .done("SwiftUI 提供视图。"))]
         }
       ),
       (
@@ -297,6 +323,7 @@ struct SnapshotProbeTests {
           c.sourceText = "Ship it"
           c.detected = .en
           c.target = .zhHans
+          c.translatedSource = c.sourceText
           c.replaceSource = (1, "Ship it")
           c.cards = [
             .init(service: zhipu, state: .done("发布吧")), .init(service: gpt, state: .done("上线")),
@@ -307,6 +334,7 @@ struct SnapshotProbeTests {
         "translate-word",
         { c in
           c.sourceText = "run"
+          c.translatedSource = c.sourceText
           c.detected = .en
           c.target = .zhHans
           c.dictionary = WordLookup.parse(WordLookupTests.run, query: "run")
@@ -319,7 +347,22 @@ struct SnapshotProbeTests {
           ]
         }
       ),
-      ("translate-history", { c in c.showsHistory = true }),
+      (
+        "translate-history",
+        { c in
+          c.sourceText = "serendipity"
+          c.translatedSource = c.sourceText
+          c.showsHistory = true
+          c.historyList.select(c.historyList.entries[2])
+        }
+      ),
+      (
+        "translate-history-favorites",
+        { c in
+          c.showsHistory = true
+          c.historyList.favoritesOnly = true
+        }
+      ),
       ("translate-notice", { c in c.showNotice("划词翻译需要「辅助功能」授权", permission: .accessibility) }),
       ("translate-screenshot-empty", { c in c.showNotice("没有识别到文字，可以把选区框大一些再试") }),
     ]
@@ -332,6 +375,38 @@ struct SnapshotProbeTests {
           size: NSSize(width: 420, height: 560), dark: dark,
           to: "\(out)/\(name)\(dark ? "-dark" : "").png")
       }
+    }
+    // 复制即译开着（顶栏品牌粉状态胶囊）+ 固定（粉色图钉）：偏好放进临时的 suite，不碰 dev 版的真实设置
+    let suiteName = "KittyToolsSnapshot.\(UUID().uuidString)"
+    let suite = try #require(UserDefaults(suiteName: suiteName))
+    defer { suite.removePersistentDomain(forName: suiteName) }
+    suite.set(true, forKey: Prefs.translateCopyToTranslate)
+    suite.set(true, forKey: Prefs.floatingPinned)
+    coordinator.beginInput()
+    coordinator.sourceText = "Copy anything and it translates itself."
+    coordinator.translatedSource = coordinator.sourceText
+    coordinator.detected = .en
+    coordinator.target = .zhHans
+    coordinator.cards = [.init(service: zhipu, state: .done("复制任何内容，它都会自己翻译。"))]
+    // 空历史：另一个空库
+    let empty = TranslateCoordinator(
+      services: services, history: try HistoryStore(db: Database(path: ":memory:")))
+    empty.showsHistory = true
+    for dark in [false, true] {
+      let suffix = dark ? "-dark" : ""
+      try snapshot(
+        TranslatePanelView(coordinator: coordinator, speaker: speaker).defaultAppStorage(suite),
+        size: NSSize(width: 420, height: 360), dark: dark,
+        to: "\(out)/translate-copy-to-translate\(suffix).png")
+      // 拖到最窄 360：两个胶囊一起收掉「自动」标签
+      try snapshot(
+        TranslatePanelView(coordinator: coordinator, speaker: speaker).defaultAppStorage(suite),
+        size: NSSize(width: 360, height: 200), dark: dark,
+        to: "\(out)/translate-copy-to-translate-narrow\(suffix).png")
+      try snapshot(
+        TranslatePanelView(coordinator: empty, speaker: speaker),
+        size: NSSize(width: 420, height: 560), dark: dark,
+        to: "\(out)/translate-history-empty\(suffix).png")
     }
     // 服务身份：官方 logo（满版 / 垫白底）和还没有 logo 的色块首字母，18 pt 一排 + 36 pt 一排
     var gemini = TranslateService.newAI()

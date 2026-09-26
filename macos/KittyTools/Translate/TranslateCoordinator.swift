@@ -2,6 +2,8 @@
 // 新会话取消旧会话的全部请求；单张卡片可单独重试。列表第一个服务出结果后写历史、按设置自动复制。
 // 服务分发在 TranslateService.translate 的一个 switch 里。浮窗的收藏（⌘S）、复制第 N 张卡（⌘1–9）、
 // 替换原文（划词来的会话）都以这里的状态为准；静默替换走 translateOnce（只用第一个服务、不开浮窗）。
+// 原文改过还没重译（needsTranslate）时浮窗才出「翻译 ↩」胶囊（N5）；翻译历史的列表状态在 historyList，
+// 它的搜索框命令和 ⌘ 键（N7）也从这里分发。
 
 import AppKit
 import Carbon.HIToolbox
@@ -29,7 +31,14 @@ import Observation
   }
 
   var sourceText = ""
-  var showsHistory = false
+  /// 翻译历史盖在结果区上（⌘Y、「⋯」菜单）；开 / 关都让列表复位（搜索词、范围、选中、撤销）
+  var showsHistory = false {
+    didSet { if showsHistory != oldValue { historyList.reset() } }
+  }
+  /// 翻译历史的键盘列表（N7）
+  let historyList: HistoryList
+  /// 最近一次翻译的原文（去首尾空白）。setter 不设 private 只为截图自检
+  var translatedSource: String?
   // 以下几项只由会话自己改；setter 不设 private 只为截图自检能直接摆出各种状态
   /// 本地检测出的原文语种（偏向第一 / 第二语言；纯数字等认不出时为 nil）
   var detected: Lang?
@@ -69,6 +78,16 @@ import Observation
   init(services: TranslateServiceStore, history: HistoryStore) {
     self.services = services
     self.history = history
+    historyList = HistoryList(store: history)
+  }
+
+  /// 原文改过、还没重新翻译：原文框右下角弹出「翻译 ↩」（N5），开始翻译就收回
+  var needsTranslate: Bool { Self.isEdited(sourceText, since: translatedSource) }
+
+  /// 原文非空、且和最近一次翻译的原文（去首尾空白后）不同。纯函数，配单测
+  static func isEdited(_ source: String, since translated: String?) -> Bool {
+    let text = source.trimmingCharacters(in: .whitespacesAndNewlines)
+    return !text.isEmpty && text != translated
   }
 
   var isRunning: Bool {
@@ -141,6 +160,7 @@ import Observation
   func beginInput() {
     cancel()
     sourceText = ""
+    translatedSource = nil
     replaceSource = nil
     cards = []
     dictionary = nil
@@ -173,6 +193,7 @@ import Observation
     showsHistory = false
     notice = nil
     noticePermission = nil
+    translatedSource = sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
     let text = Self.preprocess(sourceText)
     guard !text.isEmpty else { return }
     guard text.utf8.count <= Self.maxSourceBytes else {
@@ -322,10 +343,13 @@ import Observation
 
   /// 收起浮窗（⌘W，固定着也收），由 AppDelegate 接上
   @ObservationIgnored var hidePanel: () -> Void = {}
+  /// 打开设置 › 翻译（⌘,、「⋯」菜单、错误卡片和空状态的按钮），由 AppDelegate 接上
+  @ObservationIgnored var openSettings: () -> Void = {}
 
   static let fontScales = 0.8...1.6
 
-  /// ⌘R 重新翻译、⌘S 收藏、⌘W 关闭、⌘P 固定、⌘+ / ⌘- / ⌘0 字号、⌘1–9 复制第 N 张卡。
+  /// ⌘R 重新翻译、⌘S 收藏、⌘W 关闭、⌘P 固定、⌘Y 历史、⌘, 设置（和「⋯」菜单的键位一致）、
+  /// ⌘+ / ⌘- / ⌘0 字号、⌘1–9 复制第 N 张卡；历史开着时先给列表（⌘⌫ ⌘Z ⌘C ⌘S，见 HistoryList）。
   /// ⌘C / ⌘V / ⌘A 等编辑键不在这里（交给输入框）。返回 true 表示处理了
   func handleKeyEquivalent(_ event: NSEvent) -> Bool {
     let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
@@ -334,9 +358,14 @@ import Observation
     guard flags == .command || (flags == [.command, .shift] && code == kVK_ANSI_Equal) else {
       return false
     }
+    if showsHistory, historyList.handleKeyEquivalent(event) { return true }
     let defaults = UserDefaults.standard
     let scale = defaults.double(forKey: Prefs.translateFontScale)
     switch code {
+    case kVK_ANSI_Y:
+      showsHistory.toggle()
+    case kVK_ANSI_Comma:
+      openSettings()
     case kVK_ANSI_R:
       if sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
         NSSound.beep()
@@ -366,4 +395,24 @@ import Observation
     kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4, kVK_ANSI_5, kVK_ANSI_6, kVK_ANSI_7, kVK_ANSI_8,
     kVK_ANSI_9,
   ]
+
+  /// 历史搜索框的编辑命令（doCommandBy，输入法组字时不会来）：↑↓ 选、↩ 重新翻译这条、⇧Tab 换范围、
+  /// Esc 先清搜索词再关历史（回到浮窗）。返回 false 交还字段编辑器
+  func handleHistoryCommand(_ selector: Selector) -> Bool {
+    switch selector {
+    case #selector(NSResponder.moveUp(_:)): historyList.move(by: -1)
+    case #selector(NSResponder.moveDown(_:)): historyList.move(by: 1)
+    case #selector(NSResponder.insertNewline(_:)):
+      guard let entry = historyList.selected else {
+        NSSound.beep()
+        return true
+      }
+      translate(entry.source)
+    case #selector(NSResponder.insertBacktab(_:)): historyList.favoritesOnly.toggle()
+    case #selector(NSResponder.cancelOperation(_:)):
+      if historyList.query.isEmpty { showsHistory = false } else { historyList.query = "" }
+    default: return false
+    }
+    return true
+  }
 }

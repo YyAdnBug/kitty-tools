@@ -1,6 +1,7 @@
 // 翻译历史（translations 表，与剪贴板共用一个库）：一次翻译记一条（列表里第一个启用服务的结果），
 // 同原文 + 同目标语言只留最新一条（收藏状态保留）；超出条数上限时从最旧的非收藏开始删。
-// 收藏就是生词本（Bob 也是收藏夹代替）：可只看收藏，导出 CSV / Anki 能导入的 TSV（设置 › 翻译）。
+// 收藏就是生词本（Bob 也是收藏夹代替）：历史的「收藏」范围，导出 CSV / Anki 能导入的 TSV（设置 › 翻译）。
+// 删除不确认，⌘Z 用 restore 原样插回（HistoryList 记着删掉的条目）。
 
 import Foundation
 import OSLog
@@ -149,6 +150,21 @@ import Observation
 
   func delete(_ id: UUID) {
     write { try db.execute("DELETE FROM translations WHERE id = ?", [id.uuidString]) }
+  }
+
+  /// ⌘Z 撤销删除：按原样插回（同一个 id、时间、收藏）。这期间又翻译过同一句（已有同原文 + 同目标的记录）就不插
+  func restore(_ entry: Entry) {
+    write {
+      try db.execute(
+        """
+        INSERT OR IGNORE INTO translations(id, source, target, result, service, created_at, favorite)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+          entry.id.uuidString, entry.source, entry.target.rawValue, entry.result, entry.service,
+          entry.createdAt.timeIntervalSinceReferenceDate, entry.favorite,
+        ])
+    }
   }
 
   /// 清空非收藏的历史

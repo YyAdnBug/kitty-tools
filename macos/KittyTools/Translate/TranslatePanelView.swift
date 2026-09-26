@@ -1,7 +1,10 @@
 // 翻译浮窗根视图（Whisker，mac-whisker §6 翻译）：三层、没有分割线（内边距 12、层间距 10）——
-// 顶栏：两个 28 pt 语言胶囊（显示实际语言，自动时带「自动」标签）+ 圆形互换钮（转半圈）+ 复制即译 / 历史 / 设置 / 固定；
-// 原文卡片（15 pt，↩ 翻译，⇧↩ / ⌘↩ 换行；只在出乎所选时写一行方向说明）+ 原文操作（收藏、划词来的可「替换原文」）；
-// 下方是各服务结果卡片（折叠状态记住；查单个词时最上面多一张系统词典卡），历史覆盖在结果区上。高度随内容伸缩（Bob 的做法：只让人拖宽度），
+// 顶栏（N6，对标 Bob）：两个 28 pt 语言胶囊（显示实际语言，自动时带「自动」标签）+ 圆形互换钮（转半圈），右边只有
+// 复制即译开着时的品牌粉状态胶囊（点一下关掉）、图钉、「⋯」菜单（翻译历史 ⌘Y、条数与清空、复制即译、设置 ⌘,）；
+// 原文卡片（15 pt，↩ 就是翻译，⇧↩ / ⌘↩ 换行；只在出乎所选时写一行方向说明）+ 原文操作（收藏、划词来的可「替换原文」），
+// 没有常驻「翻译」按钮（N5）：原文改过还没重译时右下角才弹出品牌粉「翻译 ↩」胶囊（pop），开始翻译就收回（settle）；
+// 下方是各服务结果卡片（折叠状态记住；查单个词时最上面多一张系统词典卡）。翻译历史（N7，HistoryView）整块替换结果区，
+// 开 / 关时只有这块 settle 交叉淡变、原文区不动。高度随内容伸缩（Bob 的做法：只让人拖宽度），
 // 字号可调（⌘+ / ⌘- / ⌘0）。状态和操作都在 TranslateCoordinator，窗口快捷键见它的 handleKeyEquivalent。
 
 import SwiftUI
@@ -9,13 +12,13 @@ import SwiftUI
 struct TranslatePanelView: View {
   @Bindable var coordinator: TranslateCoordinator
   let speaker: Speaker
-  var openSettings: () -> Void = {}
   /// 内容要的高度（浮窗据此伸缩，顶边不动）
   var resize: (CGFloat) -> Void = { _ in }
   /// 把第一个服务的译文粘回原 App 的选区
   var replaceOriginal: () -> Void = {}
 
   @AppStorage(Prefs.floatingPinned) private var pinned = false
+  /// 和菜单栏的勾、设置 › 翻译读写同一个偏好
   @AppStorage(Prefs.translateCopyToTranslate) private var copyToTranslate = false
   @AppStorage(Prefs.translateFontScale) private var fontScale = 1.0
   /// 折叠着的服务 id（换行分隔）：跨重启记住
@@ -30,7 +33,6 @@ struct TranslatePanelView: View {
   @State private var resultsHeight: CGFloat = 0
   /// 互换钮转了几个半圈
   @State private var swaps = 0
-  @Environment(\.colorScheme) private var scheme
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
@@ -46,16 +48,17 @@ struct TranslatePanelView: View {
       } action: {
         chromeHeight = $0
       }
-      // 历史打开时整块替换结果区（材质半透明，叠在上面会透出下面的内容）
-      if coordinator.showsHistory {
-        HistoryView(history: coordinator.history) { entry in
-          coordinator.translate(entry.source)
-        } onClose: {
-          coordinator.showsHistory = false
+      // 历史打开时整块替换结果区（材质半透明，叠在上面会透出下面的内容）；开 / 关只让这块 settle 交叉淡变
+      ZStack {
+        if coordinator.showsHistory {
+          HistoryView(coordinator: coordinator).transition(.opacity)
+        } else {
+          results.transition(.opacity)
         }
-      } else {
-        results.frame(maxHeight: .infinity)
       }
+      .frame(maxHeight: .infinity)
+      .animation(
+        Style.Motion.settle.animation(reduced: reduceMotion), value: coordinator.showsHistory)
     }
     .padding(.bottom, coordinator.showsHistory ? 0 : 2)
     // 一次操作只重译一次（交换、撞同语言时两个值在同一次更新里一起改）
@@ -74,8 +77,49 @@ struct TranslatePanelView: View {
 
   // MARK: 顶栏
 
+  /// 窄时（复制即译胶囊占了顶栏、浮窗拖窄）两个胶囊一起收掉「自动」标签（只收一个会让它看着像固定语言），
+  /// 还不够才截断语言名
   private var header: some View {
     HStack(spacing: 8) {
+      ViewThatFits(in: .horizontal) {
+        languages(showsAutoTags: true)
+        languages(showsAutoTags: false)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      if copyToTranslate {
+        CopyToTranslateBadge { copyToTranslate = false }
+          .transition(reduceMotion ? .opacity : .scale(scale: 0.85).combined(with: .opacity))
+      }
+      HStack(spacing: 2) {
+        // 开关类按钮：开着时品牌粉（mac-whisker §1.2）
+        Button {
+          pinned.toggle()
+        } label: {
+          Image(systemName: pinned ? "pin.fill" : "pin")
+            .contentTransition(.symbolEffect(.replace))
+            .frame(width: 24, height: 24)
+            .contentShape(.rect)
+        }
+        .foregroundStyle(pinned ? Style.brand : .secondary)
+        .help(pinned ? "已固定：失焦不收起、Esc 不关闭（⌘P）" : "固定浮窗（⌘P）")
+        .accessibilityLabel("固定浮窗")
+        .accessibilityValue(pinned ? "已固定" : "未固定")
+        MoreMenu(coordinator: coordinator)
+      }
+      .font(.system(size: 13, weight: .medium))
+      .symbolRenderingMode(.hierarchical)
+      .fixedSize()
+    }
+    .buttonStyle(.plain)
+    .frame(height: 28)
+    .animation(
+      (copyToTranslate ? Style.Motion.pop : .settle).animation(reduced: reduceMotion),
+      value: copyToTranslate)
+  }
+
+  /// 源语言胶囊 + 互换钮 + 目标语言胶囊
+  private func languages(showsAutoTags: Bool) -> some View {
+    HStack(spacing: 6) {
       Menu {
         Picker("源语言", selection: choose(\.source, other: \.target)) {
           Text("自动检测").tag(String?.none)
@@ -84,7 +128,9 @@ struct TranslatePanelView: View {
         }
         .pickerStyle(.inline)
       } label: {
-        LanguageCapsule(title: sourceTitle, showsAutoTag: source == nil && sourceTitle != "自动检测")
+        LanguageCapsule(
+          title: sourceTitle,
+          showsAutoTag: showsAutoTags && source == nil && sourceTitle != "自动检测")
       }
       .menuStyle(.button)
       .buttonStyle(.plain)
@@ -119,7 +165,8 @@ struct TranslatePanelView: View {
         }
         .pickerStyle(.inline)
       } label: {
-        LanguageCapsule(title: targetTitle, showsAutoTag: target == nil && targetTitle != "自动")
+        LanguageCapsule(
+          title: targetTitle, showsAutoTag: showsAutoTags && target == nil && targetTitle != "自动")
       }
       .menuStyle(.button)
       .buttonStyle(.plain)
@@ -127,28 +174,7 @@ struct TranslatePanelView: View {
       .help("目标语言")
       .accessibilityLabel("目标语言")
       .accessibilityValue(targetTitle)
-      Spacer(minLength: 4)
-      Group {
-        Toggle(isOn: $copyToTranslate) { Image(systemName: "doc.on.clipboard") }
-          .toggleStyle(.button)
-          .foregroundStyle(copyToTranslate ? Style.brand : .secondary)
-          .help(copyToTranslate ? "复制即译：已开启（复制文字后自动翻译）" : "复制即译：复制文字后自动翻译")
-        Toggle(isOn: $coordinator.showsHistory) { Image(systemName: "clock.arrow.circlepath") }
-          .toggleStyle(.button)
-          .help("翻译历史")
-        Button("设置", systemImage: "gearshape", action: openSettings)
-          .help("翻译设置。浮窗快捷键：⌘R 重新翻译、⌘S 收藏、⌘1–9 复制第几个结果、⌘P 固定、⌘W 关闭、⌘+ / ⌘- / ⌘0 字号")
-        Toggle(isOn: $pinned) { Image(systemName: pinned ? "pin.fill" : "pin") }
-          .toggleStyle(.button)
-          .help(pinned ? "已固定：失焦不收起、Esc 不关闭（⌘P）" : "固定浮窗（⌘P）")
-      }
-      .font(.system(size: 13, weight: .medium))
-      .symbolRenderingMode(.hierarchical)
-      .fixedSize()
     }
-    .labelStyle(.iconOnly)
-    .buttonStyle(.borderless)
-    .frame(height: 28)
   }
 
   /// 源语言胶囊：自动时显示检测到的语言（还没翻译时写「自动检测」）
@@ -182,9 +208,12 @@ struct TranslatePanelView: View {
   // MARK: 原文区
 
   private var sourceArea: some View {
-    let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
-    return VStack(alignment: .leading, spacing: 6) {
-      SourceTextView(text: $coordinator.sourceText, fontSize: 15 * fontScale) {
+    VStack(alignment: .leading, spacing: 6) {
+      // 历史开着时焦点在原文框里按 Esc：先关历史（不然会直接关掉浮窗）
+      SourceTextView(
+        text: $coordinator.sourceText, fontSize: 15 * fontScale,
+        onCancel: coordinator.showsHistory ? { coordinator.showsHistory = false } : nil
+      ) {
         coordinator.start()
       }
       .frame(height: 76)
@@ -239,34 +268,27 @@ struct TranslatePanelView: View {
             .disabled(coordinator.primaryResult == nil)
             .help("用第一个服务的译文替换原 App 里选中的文字")
         }
-        Button {
-          coordinator.start()
-        } label: {
-          HStack(spacing: 5) {
-            Text("翻译")
-            Text("↩").opacity(0.75)
-          }
-          .font(.system(size: 12, weight: .semibold))
-          .foregroundStyle(.white)
-          .padding(.horizontal, 12)
-          .frame(height: 24)
-          .background(Style.brand, in: .capsule)
-          .contentShape(.capsule)
+        // 没有常驻「翻译」按钮（N5）：↩ 就是翻译，原文改过、还没重译时才从右下角弹出来
+        if coordinator.needsTranslate {
+          TranslateCapsule { coordinator.start() }
+            .transition(
+              reduceMotion
+                ? .opacity : .scale(scale: 0.6, anchor: .trailing).combined(with: .opacity))
         }
-        .buttonStyle(PressScale())
-        .disabled(coordinator.sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        .opacity(
-          coordinator.sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.45 : 1)
       }
       .labelStyle(.iconOnly)
       .buttonStyle(.borderless)
       .font(.system(size: 13, weight: .medium))
+      // 定高：胶囊弹出、收回时原文框不跟着变高
+      .frame(height: 24)
+      .animation(
+        (coordinator.needsTranslate ? Style.Motion.pop : .settle).animation(reduced: reduceMotion),
+        value: coordinator.needsTranslate)
     }
     .padding(.horizontal, 10)
     .padding(.top, 8)
     .padding(.bottom, 8)
-    .background(scheme == .dark ? Color.white.opacity(0.07) : Color.black.opacity(0.045), in: shape)
-    .overlay(shape.strokeBorder(Style.hairline, lineWidth: 0.5))
+    .modifier(InputBox())
   }
 
   /// 只在出乎所选时写一行：固定目标正好是原文语言而改译了另一端；固定源和检测结果对不上（照所选发出，只提示）
@@ -294,7 +316,7 @@ struct TranslatePanelView: View {
       }
     } else if coordinator.services.enabled.isEmpty {
       EmptyStateView(symbol: "character.bubble", title: "没有启用的翻译服务") {
-        Button("打开翻译设置", action: openSettings)
+        Button("打开翻译设置") { coordinator.openSettings() }
       }
     } else if coordinator.cards.isEmpty {
       EmptyStateView(symbol: "character.bubble", title: "划词、截图或输入后开始翻译") {
@@ -338,7 +360,7 @@ struct TranslatePanelView: View {
             } onToggleCollapse: {
               toggleCollapse(card.id)
             } onOpenSettings: {
-              openSettings()
+              coordinator.openSettings()
             }
           }
         }
@@ -403,8 +425,110 @@ private struct LanguageCapsule: View {
   }
 }
 
-/// 空状态 / 提示：28 pt 图标 + 14 semibold 标题 + 下方内容（按钮、快捷键）
-private struct EmptyStateView<Actions: View>: View {
+/// 顶栏「⋯」菜单（N6）：翻译历史 ⌘Y、清空历史与条数、复制即译开关、设置 ⌘,。菜单项的键位和
+/// TranslateCoordinator.handleKeyEquivalent 一致（那边先处理，这里只是显示）；浮窗快捷键不再塞进按钮 help
+private struct MoreMenu: View {
+  @Bindable var coordinator: TranslateCoordinator
+  @AppStorage(Prefs.translateCopyToTranslate) private var copyToTranslate = false
+  @State private var confirmsClear = false
+
+  var body: some View {
+    let history = coordinator.history
+    let _ = history.revision  // 增删、收藏后刷新条数
+    let counts = history.counts
+    Menu {
+      Toggle("翻译历史", isOn: $coordinator.showsHistory)
+        .keyboardShortcut("y")
+      Button("清空历史…") { confirmsClear = true }
+        .disabled(counts.total == counts.favorites)
+      Text("共 \(counts.total) 条 · 收藏 \(counts.favorites)")
+      Divider()
+      Toggle("复制即译", isOn: $copyToTranslate)
+      Divider()
+      Button("设置…") { coordinator.openSettings() }
+        .keyboardShortcut(",")
+    } label: {
+      Image(systemName: "ellipsis")
+        .frame(width: 24, height: 24)
+        .contentShape(.rect)
+    }
+    .menuStyle(.button)
+    .buttonStyle(.plain)
+    .menuIndicator(.hidden)
+    .foregroundStyle(.secondary)
+    .help("更多：翻译历史、复制即译、设置")
+    .accessibilityLabel("更多")
+    .confirmationDialog("清空翻译历史？", isPresented: $confirmsClear) {
+      Button("清空", role: .destructive) { history.clearNonFavorites() }
+    } message: {
+      Text("收藏的记录会保留")
+    }
+  }
+}
+
+/// 复制即译开着时顶栏的品牌粉状态胶囊（N6）：点一下关掉。只放字（22 高、12 medium、左右 10）：
+/// 默认 420 宽、两边都自动时顶栏正好放得下两个「自动」标签和它
+private struct CopyToTranslateBadge: View {
+  let turnOff: () -> Void
+
+  var body: some View {
+    Button(action: turnOff) {
+      Text("复制即译")
+        .font(.system(size: 12, weight: .medium))
+        .foregroundStyle(Style.brandInk)
+        .padding(.horizontal, 10)
+        .frame(height: 22)
+        .background(Style.brand.opacity(0.16), in: .capsule)
+        .contentShape(.capsule)
+    }
+    .buttonStyle(PressScale())
+    .fixedSize()
+    .help("复制即译已开启：复制文字后自动翻译。点一下关闭")
+    .accessibilityLabel("复制即译已开启")
+    .accessibilityHint("关闭复制即译")
+  }
+}
+
+/// 原文框右下角的「翻译 ↩」（N5）：品牌粉实心胶囊（主按钮），只在原文改过、还没重译时出现
+private struct TranslateCapsule: View {
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      HStack(spacing: 5) {
+        Text("翻译")
+        Text("↩").opacity(0.75)
+      }
+      .font(.system(size: 12, weight: .semibold))
+      .foregroundStyle(.white)
+      .padding(.horizontal, 12)
+      .frame(height: 24)
+      .background(Style.brand, in: .capsule)
+      .contentShape(.capsule)
+    }
+    .buttonStyle(PressScale())
+    .help("翻译改过的原文（↩）")
+    .accessibilityLabel("翻译")
+    .accessibilityHint("原文改过了，按回车键也可以翻译")
+  }
+}
+
+/// 输入框底（Whisker §2：primary 0.045 / 深 0.07 + 0.5 pt 发丝线，圆角 card）：原文框、历史搜索框共用
+struct InputBox: ViewModifier {
+  @Environment(\.colorScheme) private var scheme
+
+  func body(content: Content) -> some View {
+    let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
+    content
+      .background(
+        scheme == .dark ? Color.white.opacity(0.07) : Color.black.opacity(0.045), in: shape
+      )
+      .overlay(shape.strokeBorder(Style.hairline, lineWidth: 0.5))
+  }
+}
+
+/// 空状态 / 提示：28 pt 图标 + 14 semibold 标题 + 下方内容（按钮、快捷键）；翻译历史的空态也用它
+struct EmptyStateView<Actions: View>: View {
   let symbol: String
   let title: String
   @ViewBuilder var actions: Actions
