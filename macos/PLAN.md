@@ -812,7 +812,7 @@ echo "$DMG"
 - 各项的手测清单在 §12「待用户手测」里（标注外观 7–8、链接预览、⌘Y、设置、菜单栏、常驻缩略图、挤压入场）。
 - C 阶段还剩：App 图标、菜单栏角色剪影（mac-whisker §8 写了尺寸与规格），等用户素材；菜单栏图标现在是 cat 符号占位（`Shell/StatusItem.swift`）。
 - 验证手段：界面用 `SnapshotProbeTests`；窗口动画用不抢键盘的 scratch 程序实测（本轮用它确认了：窗口帧动画冲不过头且会忽略时长、`QLPreviewPanel` 不是 nonactivating、`isARepeat` 问鼠标事件会抛异常、主线程上逐字节 await `AsyncBytes` 每字节约 5 µs）。
-- 打包：`macos/build-dmg.sh`（访达摆位要控制访达的权限，第一次跑会问；`DMG_LAYOUT=0` 跳过）。测试包 `macos/build/Kitty Tools Native_0.1.0_arm64.dmg`（`078a0e5`，含 D 阶段全部、两轮审查修复和 D4 查词；用 `DMG_LAYOUT=0` 打的，没有背景摆位，要看 DMG 背景就自己再跑一次脚本）。
+- 打包：`macos/build-dmg.sh`（访达摆位要控制访达的权限，第一次跑会问；`DMG_LAYOUT=0` 跳过）。测试包 `macos/build/Kitty Tools Native_0.1.0_arm64.dmg`（`4a2b924`，含 D 阶段全部、两轮审查修复、D4 查词、截图框选整边拖动修复和 M13 文件搜索；从干净的 HEAD 临时 worktree 用 `DMG_LAYOUT=0` 打的，不含工作区里别的会话没提交的改动，没有背景摆位）。
 
 ## 12. 进度与交接（2026-09-24，新会话从这里接着做）
 
