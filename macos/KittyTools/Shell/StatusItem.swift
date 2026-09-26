@@ -2,7 +2,7 @@
 // 主动完成一件事时弹一下（pop），长任务期间呼吸（opacity 1 ↔ 0.45，1.2 s 往返），被动的剪贴板采集不播；
 // 减弱动态效果时都不动。刘海岛出「进行中」就呼吸、出「成功」就弹（Island.onToneChange），截图飞行卡片落地也弹。
 // 菜单每次打开前重建（快捷键、钉图状态会变），菜单项左侧是家族色符号。
-// ponytail: 图标暂用系统 cat 符号当模板图，等用户给角色剪影（C 阶段，mac-whisker §8）再换。
+// 图标是角色「探头」的剪影（资源 StatusIcon，22 × 16 pt 模板图，由 macos/brand-icons.swift 生成）。
 
 import AppKit
 import Carbon.HIToolbox
@@ -17,8 +17,9 @@ final class StatusItem: NSObject, NSMenuDelegate {
 
   override init() {
     super.init()
-    let image = NSImage(systemSymbolName: "cat", accessibilityDescription: "Kitty Tools Native")
+    let image = NSImage(named: "StatusIcon")
     image?.isTemplate = true
+    image?.accessibilityDescription = "Kitty Tools Native"
     item.button?.image = image
     item.button?.wantsLayer = true
     menu.delegate = self

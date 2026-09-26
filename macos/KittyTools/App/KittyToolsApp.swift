@@ -9,7 +9,7 @@ struct KittyToolsApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
   var body: some Scene {
-    MenuBarExtra("Kitty Tools Native", systemImage: "cat", isInserted: .constant(false)) {
+    MenuBarExtra("Kitty Tools Native", image: "StatusIcon", isInserted: .constant(false)) {
       EmptyView()
     }
   }

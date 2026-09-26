@@ -28,6 +28,7 @@ macos/                       # 本分支唯一开发区
 ├── KittyToolsTests/         # 纯函数单测（Swift Testing），M2 起建
 ├── Config/                  # Base/Debug/Release.xcconfig、Info.plist（局部）、Secrets.xcconfig（不入库）
 ├── build-dmg.sh             # 打包：archive → 自检 → DMG → notes
+├── brand-icons.swift        # 品牌图标：角色「探头」的 AppIcon 10 张 + 菜单栏剪影 StatusIcon（CoreGraphics 生成）
 ├── .swift-format
 └── PLAN.md                  # 行为规格
 .cursor/rules/               # mac-native.mdc（常驻）、ponytail.mdc（只给 Cursor）
@@ -58,6 +59,9 @@ TEST_RUNNER_KITTY_SNAPSHOT_DIR=/tmp/kitty-shots xcodebuild -project macos/KittyT
 
 # 打 Release DMG（产物在 macos/build/）
 macos/build-dmg.sh
+
+# 重新生成 App 图标和菜单栏剪影（改角色只改这个脚本；加一个目录参数另存放大预览）
+swift macos/brand-icons.swift
 
 # 签名自检；辅助功能授权卡住时重置
 codesign -d -r- <App 路径>
