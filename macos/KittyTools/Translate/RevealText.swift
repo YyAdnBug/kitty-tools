@@ -22,7 +22,7 @@ struct RevealText: View {
   }
 
   /// 一段显影多久
-  static let duration: TimeInterval = 0.26
+  nonisolated static let duration: TimeInterval = 0.26
 
   var body: some View {
     TimelineView(.animation(paused: !isStreaming && chunks.isEmpty || reduceMotion)) { context in
@@ -88,11 +88,12 @@ struct RevealText: View {
 }
 
 /// 新段的出生时间（TextRenderer 按它算显影进度）
-struct RevealBirth: TextAttribute {
+nonisolated struct RevealBirth: TextAttribute {
   let date: Date
 }
 
-struct RevealRenderer: TextRenderer {
+/// nonisolated：SwiftUI 异步渲染时会在显示链接线程上调 draw，不能绑定主线程（同 Style.dynamic）
+nonisolated struct RevealRenderer: TextRenderer {
   var now: Date
   var showsCursor: Bool
   var blinks: Bool

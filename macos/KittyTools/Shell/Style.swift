@@ -117,7 +117,9 @@ enum Style {
   // MARK: 颜色
 
   /// 浅色取 light、深色取 dark 的动态色；「增强对比度」时换成 contrast（没给就不变）
-  static func dynamic(
+  /// nonisolated：取色闭包由 AppKit 在解析颜色的线程上调，SwiftUI 在显示链接线程异步渲染动画（彗星边框、扫光）时
+  /// 也会调；闭包默认继承主线程隔离的话，一到后台就触发执行器断言闪退（2026-09-27 实测）。闭包里只读传进来的颜色和系统开关
+  nonisolated static func dynamic(
     light: NSColor, dark: NSColor, contrast: (light: NSColor, dark: NSColor)? = nil
   ) -> Color {
     Color(

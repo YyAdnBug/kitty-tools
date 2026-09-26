@@ -374,7 +374,8 @@ private struct Shake: ViewModifier {
 }
 
 /// 刘海岛形体：顶边两侧向外弯出的「耳朵」（凹弧接到菜单栏顶边）+ 圆角下巴。耳朵和底角半径可动画
-struct IslandShape: Shape {
+/// nonisolated：path(in:) 可能在 SwiftUI 的异步渲染线程上调，纯几何计算，不绑定主线程
+nonisolated struct IslandShape: Shape {
   var ear: CGFloat
   var bottom: CGFloat
 
