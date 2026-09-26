@@ -1,8 +1,8 @@
 // 截图「咔嚓，飞入」（Whisker 招牌时刻 S1，mac-whisker §5）：复制 / 快速保存截图后，选区原地闪白、抬起，
-// 沿弧线（x、y 两轴弹簧时长不同）飞到所在屏幕右下角缩成缩略图，落地弹出 ✓（保存时是文件夹 + 目录名），
+// 沿弧线（x、y 两轴弹簧时长不同）飞到所在屏幕右下角缩成缩略图，落地在右上角弹出品牌粉 ✓（保存时是文件夹 + 目录名），
 // 角标弹完后交给常驻缩略图（ShotShelf，CleanShot 式，同一个位置接着显示）；没有接手的（失败、没给 linger）停 0.9 s
-// 后向右滑出屏幕。窗口只取起终点的并集、不接鼠标，飞完就关。卡片先飞，角标等复制 / 保存真的成功了
-// 才由调用方 land（失败就没有角标）。快门声跟随系统「播放用户界面音效」和设置 › 截图的开关。
+// 后向右滑出屏幕。窗口只取起终点的并集、不接鼠标，飞完就关；飞的是缩小过的图（原图留给常驻缩略图拷贝、拖出）。
+// 卡片先飞，角标等复制 / 保存真的成功了才由调用方 land（失败就没有角标）。快门声跟随系统「播放用户界面音效」和设置 › 截图的开关。
 // 减弱动态效果时调用方不飞，直接让常驻缩略图在角落淡入。
 
 import AppKit
@@ -59,6 +59,36 @@ enum FlyCard {
   private static let maxSize = CGSize(width: 200, height: 140)
   private static let inset: CGFloat = 16
 
+  /// 卡片上显示的图：选区比例的顶部，最大是卡片尺寸的 2 倍（按屏幕像素）。飞行卡片和常驻缩略图共用（交接时像素一样）；
+  /// 整张原图（5K 选区几十 MB）不进卡片窗口的图层，原图只留给拷贝、拖出
+  static func cardImage(of image: CGImage, frame: CGRect, size: CGSize, backingScale: CGFloat)
+    -> CGImage
+  {
+    let pixels = 2 * backingScale
+    return thumbnail(
+      of: visiblePart(of: image, frame: frame),
+      fitting: CGSize(width: size.width * pixels, height: size.height * pixels))
+  }
+
+  /// 等比缩到 limit（像素）以内，本来就小的原样返回
+  static func thumbnail(of image: CGImage, fitting limit: CGSize) -> CGImage {
+    let fit = min(1, limit.width / CGFloat(image.width), limit.height / CGFloat(image.height))
+    guard fit < 1 else { return image }
+    // 保留原图的色彩空间（P3 屏）；位图上下文只收 RGB，别的换成 sRGB
+    let rgb = image.colorSpace.flatMap { $0.model == .rgb ? $0 : nil }
+    guard let space = rgb ?? CGColorSpace(name: CGColorSpace.sRGB),
+      let context = CGContext(
+        data: nil, width: max(Int((CGFloat(image.width) * fit).rounded()), 1),
+        height: max(Int((CGFloat(image.height) * fit).rounded()), 1), bitsPerComponent: 8,
+        bytesPerRow: 0, space: space,
+        bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+          | CGBitmapInfo.byteOrder32Little.rawValue)
+    else { return image }
+    context.interpolationQuality = .high
+    context.draw(image, in: CGRect(x: 0, y: 0, width: context.width, height: context.height))
+    return context.makeImage() ?? image
+  }
+
   /// 和选区同比例的顶部（长截图很高，只露开头那一屏）；cropping 共享像素，不复制
   static func visiblePart(of image: CGImage, frame: CGRect) -> CGImage {
     guard frame.width >= 1 else { return image }
@@ -89,7 +119,9 @@ enum FlyCard {
     guard let end = landingRect(for: frame),
       let screen = NSScreen.screens.first(where: { $0.frame.intersects(end) })
     else { return landing }
-    let shown = visiblePart(of: image, frame: frame)
+    // 飞行只要缩略图（按落地尺寸），起飞那一下（闪白、抬起）糊一点看不出来
+    let shown = cardImage(
+      of: image, frame: frame, size: end.size, backingScale: screen.backingScaleFactor)
     // 滑出去要整张离开屏幕右边
     let exit = screen.frame.maxX - end.minX + 30
     let union = frame.union(end).union(end.offsetBy(dx: exit, dy: 0)).insetBy(dx: -40, dy: -40)
@@ -171,6 +203,9 @@ private struct FlyCardView: View {
   @State private var landed = false
   @State private var leaving = false
 
+  // 下面的弹簧、缓动是 S1 专用参数（mac-whisker §5 S1 写死的数，不是 §4 七条命名曲线之一）：
+  // 闪白 0.20 s、抬起 easeOut 0.18 s、x spring(0.42, 0.10) 与 y spring(0.50, 0.10)（时长不同走出弧线）、
+  // 尺寸 spring(0.45, 0)、滑出 easeIn 0.28 s；角标出现是命名曲线 pop
   var body: some View {
     let rect = flying ? end : start
     let shape = RoundedRectangle(cornerRadius: lifted ? Style.Radius.card : 0, style: .continuous)
@@ -194,10 +229,10 @@ private struct FlyCardView: View {
           .shadow(color: .black.opacity(lifted ? 0.28 : 0), radius: 16, y: 6)
           .scaleEffect(lifted && !flying ? 1.03 : 1)
       }
-      .overlay(alignment: .bottomTrailing) {
+      .overlay(alignment: .topTrailing) {
         if landed, let badge = landing.badge {
-          FlyCardBadge(badge: badge)
-            .offset(x: 6, y: 6)
+          FlyCardBadge(badge: badge, drawsOn: true)
+            .offset(FlyCardBadge.offset)
             .transition(.scale(scale: 0.4).combined(with: .opacity))
         }
       }
@@ -233,28 +268,51 @@ private struct FlyCardView: View {
   }
 }
 
-/// 落地角标：复制 = 22 pt accent 圆 + 对勾；保存 = accent 胶囊 + 文件夹 + 目录名（常驻缩略图也用它，看起来是同一张卡）
+/// 落地角标：复制 = 22 pt 品牌粉圆 + 对勾；保存 = 品牌粉胶囊 + 文件夹 + 目录名。贴在卡片右上角，
+/// 常驻缩略图也用它、同样的位置（交接时对得上，看起来是同一张卡）
 struct FlyCardBadge: View {
   let badge: FlyCard.Badge
+  /// 刚落地：对勾描出来（26 上 drawOn，15 上弹一下）；常驻缩略图接手时已经画好了，不再播
+  var drawsOn = false
+  @State private var drawn = false
+
+  /// 放在卡片右上角（overlay 的 topTrailing）再挪这么多：右边、上边各伸出 10，
+  /// 圆形角标左上角 = (x + w − 12, y − 10)（方案页）；胶囊右边和圆对齐，往左长
+  static let offset = CGSize(width: 10, height: -10)
+  private static let pink = Color(nsColor: Style.Shot.accent)
 
   var body: some View {
-    switch badge {
-    case .copied:
-      Image(systemName: "checkmark")
-        .font(.system(size: 11, weight: .bold))
-        .foregroundStyle(.white)
-        .frame(width: 22, height: 22)
-        .background(Circle().fill(Color.accentColor))
-        .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
-    case .saved:
-      Label(badge.folder ?? "", systemImage: "folder.fill")
+    Group {
+      switch badge {
+      case .copied:
+        check
+          .font(.system(size: 11, weight: .bold))
+          .frame(width: 22, height: 22)
+          .background(Circle().fill(Self.pink))
+      case .saved:
+        Label {
+          Text(badge.folder ?? "")
+        } icon: {
+          Image(systemName: "folder.fill").symbolEffect(.bounce, value: drawn)
+        }
         .font(.system(size: 11, weight: .semibold))
         .lineLimit(1)
-        .foregroundStyle(.white)
         .padding(.horizontal, 8)
         .frame(height: 22)
-        .background(Capsule().fill(Color.accentColor))
-        .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
+        .background(Capsule().fill(Self.pink))
+      }
+    }
+    .foregroundStyle(.white)
+    .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
+    .onAppear { if drawsOn { drawn = true } }
+  }
+
+  @ViewBuilder private var check: some View {
+    if #available(macOS 26, *) {
+      // drawOn 生效期间对勾藏着，一关掉就描出来
+      Image(systemName: "checkmark").symbolEffect(.drawOn, isActive: drawsOn && !drawn)
+    } else {
+      Image(systemName: "checkmark").symbolEffect(.bounce, value: drawn)
     }
   }
 }

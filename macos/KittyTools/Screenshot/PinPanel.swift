@@ -1,13 +1,14 @@
 // 钉图：把截图钉在原位置当参考。不激活本 App、出现时不抢键盘（修旧版钉图抢焦点，§11 #48）；
 // 拖动移动，滚轮 / 双指捏合以鼠标为锚点缩放，双击或 Esc 关闭（Esc、⌘C 要先点一下钉图），
 // 右键菜单：复制、存储为…、透明度、原始大小、关闭。菜单栏可隐藏 / 显示、关闭全部。
-// Whisker（mac-whisker §6 钉图）：圆角 10 + 系统阴影；钉上时 1.04 → 1 弹入；悬停 0.3 s 后右上角淡入透明度 / 关闭两个
+// Whisker（mac-whisker §6 钉图）：圆角 10 + 系统阴影；钉上时窗口 1.04 → 1 弹簧回弹；悬停 0.3 s 后右上角淡入透明度 / 关闭两个
 // 22 pt HUD 圆钮；缩放时中央 HUD 显示百分比、停手 0.7 s 淡出；关闭时缩到 0.92 并淡出 0.16 s。
 // 不做点击穿透（旧版穿透时全局抢 ⇧⌘P）、不做钉图历史；钉图会出现在之后的截图里。
 
 import AppKit
 import Carbon.HIToolbox
 import Observation
+import SwiftUI
 
 @Observable final class PinBoard {
   private(set) var panels: [PinPanel] = []
@@ -72,31 +73,60 @@ final class PinPanel: NSPanel {
   override var canBecomeKey: Bool { true }
   override var canBecomeMain: Bool { false }
 
-  /// 钉上：从 1.04 倍（以中心为准）回弹到原位，同时 0.12 s 淡入。减弱动态效果时只淡入
+  /// 钉上的回弹：终点（原位）、开始时间、逐帧驱动
+  private var popping: (target: NSRect, began: CFTimeInterval)?
+  private var popLink: CADisplayLink?
+  /// 规则写的是 spring(0.35, 0.3)，§4 规定 bounce ≤ 0.25，按 pop 的上限取 0.25
+  private static let popSpring = Spring(duration: 0.35, bounce: 0.25)
+
+  /// 钉上：窗口从 1.04 倍（以中心为准）弹簧回到原位，同时 0.12 s 淡入。窗口帧动画只支持贝塞尔、实测冲不过头
+  /// 也不认时长（同 OverlayPanel.squeezeIn），所以跟着显示器刷新逐帧按 SwiftUI Spring 算帧；不给内容图层放大
+  /// （会被窗口边裁掉圆角）。减弱动态效果时只淡入
   func popIn() {
     let target = frame
     alphaValue = 0
-    if !Style.reduceMotion {
-      setFrame(target.insetBy(dx: -target.width * 0.02, dy: -target.height * 0.02), display: false)
-    }
     orderFrontRegardless()
     NSAnimationContext.runAnimationGroup { context in
       context.duration = Style.fadeIn
       animator().alphaValue = 1
     }
-    guard !Style.reduceMotion else { return }
-    NSAnimationContext.runAnimationGroup { context in
-      context.duration = 0.35
-      // 轻微回弹（约等于 spring 0.35 / 0.3）
-      context.timingFunction = CAMediaTimingFunction(controlPoints: 0.3, 1.35, 0.6, 1)
-      animator().setFrame(target, display: true)
-    } completionHandler: { [weak self] in
-      MainActor.assumeIsolated { self?.invalidateShadow() }
+    guard !Style.reduceMotion,
+      let link = contentView?.displayLink(target: self, selector: #selector(stepPop))
+    else { return }
+    popping = (target, CACurrentMediaTime())
+    setFrame(Self.scaled(target, by: 1.04), display: true)
+    link.add(to: .main, forMode: .common)
+    popLink = link
+  }
+
+  @objc private func stepPop(_ link: CADisplayLink) {
+    guard let popping else { return finishPopIn() }
+    let time = CACurrentMediaTime() - popping.began
+    guard time < Self.popSpring.settlingDuration(target: 1.0, epsilon: 0.002) else {
+      return finishPopIn()
     }
+    let progress = Self.popSpring.value(target: 1.0, time: time)
+    setFrame(Self.scaled(popping.target, by: 1.04 - 0.04 * progress), display: true)
+  }
+
+  /// 回弹停在原位：放完、用户开始拖动 / 缩放、关闭时都走这里（不然下一帧又把窗口按回去）
+  func finishPopIn() {
+    popLink?.invalidate()
+    popLink = nil
+    guard let target = popping?.target else { return }
+    popping = nil
+    setFrame(target, display: true)
+    invalidateShadow()
+  }
+
+  /// 以中心为准缩放
+  private static func scaled(_ rect: NSRect, by scale: CGFloat) -> NSRect {
+    rect.insetBy(dx: rect.width * (1 - scale) / 2, dy: rect.height * (1 - scale) / 2)
   }
 
   /// 关闭：内容缩到 0.92（以中心为准）并淡出 0.16 s，完了再收窗口
   func fadeOut() {
+    finishPopIn()
     if !Style.reduceMotion, let layer = contentView?.layer {
       let size = layer.bounds.size
       let shrink = CABasicAnimation(keyPath: "transform")
@@ -164,7 +194,7 @@ private final class PinView: NSView {
     controls.isHidden = true  // 看不见时也不能点到（点击不看透明度）
     addSubview(controls)
     zoomLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
-    zoomLabel.textColor = NSColor.white.withAlphaComponent(0.95)
+    zoomLabel.textColor = Style.HUD.text
     zoomHUD.stack.edgeInsets = NSEdgeInsets(top: 0, left: 10, bottom: 0, right: 10)
     zoomHUD.install([zoomLabel])
     zoomHUD.autoresizingMask = [.minXMargin, .maxXMargin, .minYMargin, .maxYMargin]
@@ -178,7 +208,7 @@ private final class PinView: NSView {
   /// 22 pt HUD 圆钮（按钮 21：HUDBar 的材质内缩 0.5）
   private func circle(_ button: NSButton) -> HUDBar {
     button.symbolConfiguration = .init(pointSize: 10, weight: .bold)
-    button.contentTintColor = NSColor.white.withAlphaComponent(0.9)
+    button.contentTintColor = Style.HUD.text
     let bar = HUDBar(radius: 11, height: 22)
     bar.stack.edgeInsets = NSEdgeInsets()
     bar.install([button])
@@ -245,6 +275,7 @@ private final class PinView: NSView {
 
   override func mouseDown(with event: NSEvent) {
     if event.clickCount == 2 { return close() }
+    panel?.finishPopIn()
     window?.makeKey()  // 点过之后 Esc、⌘C 才归它
     window?.performDrag(with: event)
   }
@@ -260,6 +291,7 @@ private final class PinView: NSView {
   /// 以鼠标为锚点缩放，保持宽高比：最小到原大的 10%、且宽高都不小于 24 点（原图本来更小就是原大），最大 5 倍
   private func zoom(by factor: CGFloat) {
     guard let window, factor.isFinite, factor > 0 else { return }
+    panel?.finishPopIn()
     let frame = window.frame
     let minimum = max(min(1, max(0.1, 24 / originalSize.width)), min(1, 24 / originalSize.height))
     let scale = min(max(frame.width / originalSize.width * factor, minimum), 5)
@@ -351,6 +383,7 @@ private final class PinView: NSView {
   /// 回到钉上时的大小，左上角不动
   @objc private func actualSize() {
     guard let window else { return }
+    panel?.finishPopIn()
     let frame = window.frame
     window.setFrame(
       CGRect(

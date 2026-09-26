@@ -3,8 +3,9 @@
 // 截选区（滤掉本 App 的所有窗口），交给 ScrollStitcher 拼。↩ 复制、⌘S 保存、⇧⌘S 另存为，Esc 取消。
 // 边框和面板是不激活前台的 NSPanel（面板要当 key 收按键），会话结束立即释放；前台 App 一直不变。
 // Whisker（mac-whisker §6 长截图）：面板是永远深色的 HUD（216 宽、圆角 16）；预览像纸带一样滚动、上下 18 pt 渐隐，
-// 每拼上一段接缝处闪一下强调色；高度数字 22 pt 圆体滚动变化；选区边框 2 pt 强调色 + 外发光呼吸，自动滚动时走蚂蚁线，
-// 对不上时变橙、状态文字抖一下。减弱动态效果时发光和蚂蚁线静止、不抖、不滚。
+// 每拼上一段接缝处闪一下品牌粉；高度数字 22 pt 圆体滚动变化；选区边框 2 pt 品牌粉 + 外发光呼吸，自动滚动时只走蚂蚁线
+// （同一表面只留一个循环动画，呼吸暂停），对不上时变橙、状态文字抖一下；拷贝钮和截图工具栏一样是 28 pt 品牌粉实心圆。
+// 减弱动态效果时发光和蚂蚁线静止、不抖、不滚。
 
 import AppKit
 import Carbon.HIToolbox
@@ -333,7 +334,8 @@ final class ScrollCapture {
   }
 }
 
-/// 选区边框：2 pt 线画在选区外 1 pt（不压内容），外发光 1.2 s 呼吸；自动滚动时虚线 [8, 6] 0.5 s 走一轮；对不上时变橙
+/// 选区边框：2 pt 品牌粉线画在选区外 1 pt（不压内容），外发光 1.2 s 呼吸；自动滚动时换成虚线 [8, 6] 0.5 s 走一轮
+/// （呼吸停在中间值：同一表面同时只有一个循环动画）；对不上时变橙
 final class ScrollBorderView: NSView {
   /// 窗口比选区每边大这么多：线 2 pt + 发光
   static let margin: CGFloat = 14
@@ -350,17 +352,7 @@ final class ScrollBorderView: NSView {
     line.shadowRadius = 6
     layer?.addSublayer(line)
     applyColor()
-    let reduced = Style.reduceMotion
-    line.shadowOpacity = reduced ? 0.4 : 0.25
-    guard !reduced else { return }
-    let breathe = CABasicAnimation(keyPath: "shadowOpacity")
-    breathe.fromValue = 0.25
-    breathe.toValue = 0.6
-    breathe.duration = 1.2
-    breathe.autoreverses = true
-    breathe.repeatCount = .infinity
-    breathe.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-    line.add(breathe, forKey: "breathe")
+    applyAmbient()
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -383,22 +375,41 @@ final class ScrollBorderView: NSView {
     }
     guard marching != self.marching else { return }
     self.marching = marching
+    applyAmbient()
+  }
+
+  /// 唯一的循环动画：自动滚动时蚂蚁线（发光停在呼吸的中间值），平时发光呼吸；减弱动态效果时都静止
+  private func applyAmbient() {
+    line.removeAnimation(forKey: "breathe")
+    line.removeAnimation(forKey: "march")
+    let reduced = Style.reduceMotion
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     line.lineDashPattern = marching ? [8, 6] : nil
+    line.shadowOpacity = reduced || marching ? 0.4 : 0.25
     CATransaction.commit()
-    line.removeAnimation(forKey: "march")
-    guard marching, !Style.reduceMotion else { return }
-    let march = CABasicAnimation(keyPath: "lineDashPhase")
-    march.fromValue = 0
-    march.toValue = -14
-    march.duration = 0.5
-    march.repeatCount = .infinity
-    line.add(march, forKey: "march")
+    guard !reduced else { return }
+    if marching {
+      let march = CABasicAnimation(keyPath: "lineDashPhase")
+      march.fromValue = 0
+      march.toValue = -14
+      march.duration = 0.5
+      march.repeatCount = .infinity
+      line.add(march, forKey: "march")
+    } else {
+      let breathe = CABasicAnimation(keyPath: "shadowOpacity")
+      breathe.fromValue = 0.25
+      breathe.toValue = 0.6
+      breathe.duration = 1.2
+      breathe.autoreverses = true
+      breathe.repeatCount = .infinity
+      breathe.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+      line.add(breathe, forKey: "breathe")
+    }
   }
 
   private func applyColor() {
-    let color = (lost ? NSColor.systemOrange : NSColor.controlAccentColor).cgColor
+    let color = (lost ? NSColor.systemOrange : Style.Shot.accent).cgColor
     CATransaction.begin()
     CATransaction.setAnimationDuration(0.2)
     line.strokeColor = color
@@ -466,14 +477,15 @@ final class ScrollCaptureHUD: NSVisualEffectView {
   var isAutoScrolling = false {
     didSet {
       autoButton.image = Self.symbol(isAutoScrolling ? "pause.fill" : "play.fill")
-      autoButton.contentTintColor =
-        isAutoScrolling ? .controlAccentColor : NSColor.white.withAlphaComponent(0.9)
+      autoButton.contentTintColor = isAutoScrolling ? Style.Shot.accent : Style.HUD.text
     }
   }
   private let preview = NSImageView()
   private let fadeMask = CAGradientLayer()
-  /// 接缝处的强调色闪光（每拼上一段）
+  /// 接缝处的品牌粉闪光（每拼上一段）
   private let seam = CAGradientLayer()
+  /// HUD 内圈描边（外圈是自己图层的边）
+  private let rim = CALayer()
   private let status = NSTextField(wrappingLabelWithString: "")
   private let reading = HeightReading()
   private var autoButton = NSButton()
@@ -492,8 +504,13 @@ final class ScrollCaptureHUD: NSVisualEffectView {
     layer?.cornerRadius = Style.Radius.panel
     layer?.cornerCurve = .continuous
     layer?.masksToBounds = true
+    // HUD 描边：外 0.5 pt black 0.5（图层边）+ 内 0.5 pt white 0.14（往里 0.5，增强对比度时 1 pt white 0.35）
     layer?.borderWidth = 0.5
-    layer?.borderColor = NSColor.white.withAlphaComponent(0.14).cgColor
+    layer?.borderColor = Style.HUD.outerStroke.cgColor
+    rim.cornerRadius = Style.Radius.panel - 0.5
+    rim.cornerCurve = .continuous
+    rim.borderWidth = Style.HUD.strokeWidth
+    rim.borderColor = Style.HUD.innerStroke.cgColor
 
     preview.imageScaling = .scaleProportionallyDown
     preview.imageAlignment = .alignTop
@@ -506,16 +523,14 @@ final class ScrollCaptureHUD: NSVisualEffectView {
       NSColor.clear.cgColor, NSColor.black.cgColor, NSColor.black.cgColor, NSColor.clear.cgColor,
     ]
     preview.layer?.mask = fadeMask
-    seam.colors = [
-      NSColor.controlAccentColor.cgColor, NSColor.controlAccentColor.withAlphaComponent(0).cgColor,
-    ]
+    seam.colors = [Style.Shot.accent.cgColor, Style.Shot.accent.withAlphaComponent(0).cgColor]
     seam.opacity = 0
     preview.layer?.addSublayer(seam)
     preview.setContentCompressionResistancePriority(.init(1), for: .vertical)
     preview.setContentHuggingPriority(.init(1), for: .vertical)
 
     status.font = .systemFont(ofSize: 11)
-    status.textColor = NSColor.white.withAlphaComponent(0.6)
+    status.textColor = Style.HUD.secondaryText
     status.alignment = .center
     status.maximumNumberOfLines = 2
     status.isSelectable = false  // 可选中的话点一下就被字段编辑器抢走第一响应者，Esc / ↩ / 空格全失灵
@@ -537,14 +552,18 @@ final class ScrollCaptureHUD: NSVisualEffectView {
     var row: [NSView] = []
     for (index, (item, symbol, tip)) in items.enumerated() {
       if index == 1 { row.append(barSeparator()) }
-      let button = barButton(Self.symbol(symbol), tip: tip, action: #selector(clicked(_:)))
+      // 复制是主按钮：和截图工具栏的拷贝钮一样，28 pt 品牌粉实心圆 + 白对勾
+      let primary = index == items.count - 1
+      let button = barButton(
+        primary ? Self.primaryImage() : Self.symbol(symbol), tip: tip,
+        action: #selector(clicked(_:)),
+        size: primary ? CGSize(width: 28, height: 28) : CGSize(width: 30, height: 28))
       button.tag = buttons.count
-      button.contentTintColor = NSColor.white.withAlphaComponent(0.9)
+      button.contentTintColor = Style.HUD.text
       buttons.append((item, button))
       row.append(button)
     }
     autoButton = buttons[0].button
-    buttons.last?.button.contentTintColor = .controlAccentColor
     let bar = NSStackView(views: row)
     bar.spacing = 2
     for view in [status, readingView, bar] as [NSView] {
@@ -568,11 +587,16 @@ final class ScrollCaptureHUD: NSVisualEffectView {
       preview.widthAnchor.constraint(equalToConstant: Self.width - 20),
       status.widthAnchor.constraint(equalToConstant: Self.width - 20),
     ])
+    layer?.addSublayer(rim)  // 盖在内容上面（只是一圈 0.5 pt，挨着边，碰不到内容）
   }
 
   override func layout() {
     super.layout()
     layoutFade()
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    rim.frame = bounds.insetBy(dx: 0.5, dy: 0.5)
+    CATransaction.commit()
   }
 
   /// 渐隐蒙版跟着预览的大小走（布局时和每次更新预览时都设，免得蒙版是 0 大小把预览整个遮掉）
@@ -609,7 +633,7 @@ final class ScrollCaptureHUD: NSVisualEffectView {
   /// warning：对不上 / 到头 / 出错等要注意的提示，文字变橙（刚变成警告时抖一下）
   func show(_ text: String, warning: Bool, width: Int, height: Int) {
     status.stringValue = text
-    status.textColor = warning ? .systemOrange : NSColor.white.withAlphaComponent(0.6)
+    status.textColor = warning ? .systemOrange : Style.HUD.secondaryText
     if warning, !lastWarning, !Style.reduceMotion, let layer = status.layer {
       let shake = CAKeyframeAnimation(keyPath: "transform.translation.x")
       shake.values = [0, -6, 6, -4, 4, 0]
@@ -691,6 +715,24 @@ final class ScrollCaptureHUD: NSVisualEffectView {
   private static func symbol(_ name: String) -> NSImage {
     NSImage(systemSymbolName: name, accessibilityDescription: nil)!
   }
+
+  /// 粉圆 + 白对勾画成一张图：按钮的图层比 28 pt 的对齐矩形高，直接给图层上底色会变成竖胶囊（实测）。
+  /// 画图闭包在绘制时才跑（不保证在主 actor 上）：用到的值先取出来
+  private static func primaryImage() -> NSImage {
+    let fill = Style.Shot.accent
+    let check = symbol("checkmark").withSymbolConfiguration(
+      .init(pointSize: 13, weight: .bold).applying(.init(paletteColors: [.white])))!
+    return NSImage(size: NSSize(width: 28, height: 28), flipped: false) { rect in
+      fill.setFill()
+      NSBezierPath(ovalIn: rect).fill()
+      let size = check.size
+      check.draw(
+        in: NSRect(
+          x: rect.midX - size.width / 2, y: rect.midY - size.height / 2, width: size.width,
+          height: size.height))
+      return true
+    }
+  }
 }
 
 /// 长图的高度读数（SwiftUI：数字滚动变化）
@@ -712,9 +754,9 @@ private struct HeightReadingView: View {
         .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: reading.height)
       Text("像素高 · 宽 \(String(reading.width))")
         .font(.system(size: 10))
-        .foregroundStyle(.white.opacity(0.4))
+        .foregroundStyle(Color(nsColor: Style.HUD.tertiaryText))
     }
-    .foregroundStyle(.white.opacity(0.95))
+    .foregroundStyle(Color(nsColor: Style.HUD.text))
     .accessibilityElement(children: .combine)
   }
 }

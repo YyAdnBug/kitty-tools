@@ -1,5 +1,5 @@
 // CleanShot 式常驻缩略图（Whisker D8）：截图飞到右下角、角标弹完以后由这里接手，留在原地（同一个位置、同样的圆角阴影）。
-// 悬停时出 HUD 操作：中间「拷贝」「存储」两个胶囊，左上关闭、右上钉图，存过的左下「在访达中显示」；
+// 悬停时出 HUD 操作：中间「拷贝」「存储」两个胶囊，左上关闭、右下钉图（右上角是品牌粉角标），存过的左下「在访达中显示」；
 // 拖出去是一个 PNG 文件（拖进访达、邮件、聊天窗口），双击用默认 App 打开；触控板往右轻扫就滑走；
 // 鼠标不在上面时 6 s 后自己滑走（移开后 2.5 s）。同一块屏上连截几张时往上叠，最多 3 张，更早的滑走。
 // 窗口是普通 NSPanel 实例（不当 key、不激活本 App；层级状态栏，之后的截图冻结帧会排除它），用完放回复用池
@@ -82,7 +82,7 @@ final class ShotShelf {
 /// 一张常驻缩略图：窗口、界面状态、自动滑走的计时
 @Observable final class ShelfCard {
   let image: CGImage
-  /// 显示的部分（长截图只露开头一屏）
+  /// 显示的部分（长截图只露开头一屏；缩到卡片尺寸，原图 image 留给拷贝、拖出）
   let shown: CGImage
   let scale: CGFloat
   let source: CGRect
@@ -107,7 +107,8 @@ final class ShotShelf {
     screen: NSScreen?, panel: NSPanel, shelf: ShotShelf
   ) {
     self.image = image
-    shown = FlyCard.visiblePart(of: image, frame: source)
+    shown = FlyCard.cardImage(
+      of: image, frame: source, size: rect.size, backingScale: screen?.backingScaleFactor ?? 2)
     self.scale = scale
     self.source = source
     self.rect = rect
@@ -336,9 +337,10 @@ struct ShelfCardView: View {
       .clipShape(shape)
       .overlay(shape.strokeBorder(.white.opacity(0.25), lineWidth: 0.5))
       .shadow(color: .black.opacity(0.28), radius: 16, y: 6)
-      .overlay(alignment: .bottomTrailing) {
+      // 和飞行卡片同一个位置（FlyCardBadge.offset），交接时对齐
+      .overlay(alignment: .topTrailing) {
         FlyCardBadge(badge: card.badge)
-          .offset(x: 6, y: 6)
+          .offset(FlyCardBadge.offset)
           .id(card.badge.folder ?? "copied")
           .transition(reduceMotion ? .opacity : .scale(scale: 0.4).combined(with: .opacity))
       }
@@ -360,8 +362,8 @@ struct ShelfCardView: View {
       .accessibilityLabel("截图缩略图")
   }
 
-  /// 中间拷贝 / 存储；四角关闭、钉图、在访达中显示。卡片矮的时候胶囊只留图标；再小就不画四角圆钮（会和胶囊叠在一起，
-  /// 点拷贝变成点钉图），更小的只剩右键菜单
+  /// 中间拷贝 / 存储；三个角关闭、钉图、在访达中显示（右上角留给角标）。卡片矮的时候胶囊只留图标；
+  /// 再小就不画角上的圆钮（会和胶囊叠在一起，点拷贝变成点钉图），更小的只剩右键菜单
   @ViewBuilder private var actions: some View {
     GeometryReader { geometry in
       let size = geometry.size
@@ -385,7 +387,7 @@ struct ShelfCardView: View {
         round("xmark", "关闭", action: card.close).frame(
           maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         round("pin.fill", "钉图", action: card.pin).frame(
-          maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+          maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         if case .saved = card.badge {
           round("folder", "在访达中显示", action: card.revealInFinder).frame(
             maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
@@ -406,12 +408,9 @@ struct ShelfCardView: View {
         if !compact { Text(title) }
       }
       .font(.system(size: 12, weight: .medium))
-      .foregroundStyle(.white.opacity(0.95))
       .padding(.horizontal, compact ? 7 : 10)
       .frame(height: 26)
-      .background(.black.opacity(0.55), in: .capsule)
-      .overlay(Capsule().strokeBorder(.white.opacity(0.14), lineWidth: 0.5))
-      .contentShape(.capsule)
+      .hudSkin(Capsule())
     }
     .buttonStyle(PressScale())
     .disabled(card.isBusy)
@@ -422,14 +421,27 @@ struct ShelfCardView: View {
     Button(action: action) {
       Image(systemName: symbol)
         .font(.system(size: 10, weight: .bold))
-        .foregroundStyle(.white.opacity(0.95))
         .frame(width: 22, height: 22)
-        .background(.black.opacity(0.55), in: .circle)
-        .overlay(Circle().strokeBorder(.white.opacity(0.14), lineWidth: 0.5))
-        .contentShape(.circle)
+        .hudSkin(Circle())
     }
     .buttonStyle(PressScale())
     .help(title)
     .accessibilityLabel(title)
+  }
+}
+
+extension View {
+  /// HUD 皮肤（`Style.HUD`）：底色、内描边、外 0.5 pt 描边、主文字色。降低透明度（底色 0.97）、增强对比度（内描边
+  /// 1 pt white 0.35）在取值时判断：悬停才建这些按钮，每次悬停都重新取
+  fileprivate func hudSkin<S: InsettableShape>(_ shape: S) -> some View {
+    foregroundStyle(Color(nsColor: Style.HUD.text))
+      .background(Color(nsColor: Style.HUD.fill), in: shape)
+      .overlay(
+        shape.strokeBorder(Color(nsColor: Style.HUD.innerStroke), lineWidth: Style.HUD.strokeWidth)
+      )
+      .overlay(
+        shape.inset(by: -0.5).strokeBorder(Color(nsColor: Style.HUD.outerStroke), lineWidth: 0.5)
+      )
+      .contentShape(shape)
   }
 }
