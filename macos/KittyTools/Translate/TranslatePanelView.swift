@@ -1,7 +1,7 @@
 // 翻译浮窗根视图（Whisker，mac-whisker §6 翻译）：三层、没有分割线（内边距 12、层间距 10）——
 // 顶栏：两个 28 pt 语言胶囊（显示实际语言，自动时带「自动」标签）+ 圆形互换钮（转半圈）+ 复制即译 / 历史 / 设置 / 固定；
 // 原文卡片（15 pt，↩ 翻译，⇧↩ / ⌘↩ 换行；只在出乎所选时写一行方向说明）+ 原文操作（收藏、划词来的可「替换原文」）；
-// 下方是各服务结果卡片（折叠状态记住），历史覆盖在结果区上。高度随内容伸缩（Bob 的做法：只让人拖宽度），
+// 下方是各服务结果卡片（折叠状态记住；查单个词时最上面多一张系统词典卡），历史覆盖在结果区上。高度随内容伸缩（Bob 的做法：只让人拖宽度），
 // 字号可调（⌘+ / ⌘- / ⌘0）。状态和操作都在 TranslateCoordinator，窗口快捷键见它的 handleKeyEquivalent。
 
 import SwiftUI
@@ -232,7 +232,8 @@ struct TranslatePanelView: View {
         .symbolEffect(.bounce, value: coordinator.isFavorite)
         .disabled(coordinator.primaryResult == nil)
         .help("收藏这次翻译（⌘S），在历史里可以只看收藏")
-        if coordinator.replaceSource != nil {
+        // 查单个词时结果是一段释义，不能拿去替换
+        if coordinator.replaceSource != nil, !coordinator.isWordLookup {
           Button("替换原文", systemImage: "arrow.uturn.backward", action: replaceOriginal)
             .labelStyle(.titleAndIcon)
             .disabled(coordinator.primaryResult == nil)
@@ -319,6 +320,12 @@ struct TranslatePanelView: View {
     } else {
       ScrollView {
         VStack(spacing: 10) {
+          if let entry = coordinator.dictionary {
+            DictionaryCardView(
+              entry: entry, language: coordinator.detected, speaker: speaker, fontScale: fontScale
+            )
+            .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
+          }
           ForEach(Array(coordinator.cards.enumerated()), id: \.element.id) { index, card in
             ProviderCardView(
               card: card, index: index, language: coordinator.target, speaker: speaker,
@@ -337,6 +344,9 @@ struct TranslatePanelView: View {
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 10)
+        .animation(
+          Style.Motion.settle.animation(reduced: reduceMotion), value: coordinator.dictionary
+        )
         .onGeometryChange(for: CGFloat.self) {
           $0.size.height
         } action: {

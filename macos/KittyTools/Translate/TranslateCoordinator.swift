@@ -52,9 +52,15 @@ import Observation
   /// 提示要引导去授权的那一项；nil 就不显示授权按钮
   private(set) var noticePermission: Permissions.Kind?
 
+  /// 查单个词时系统词典的释义（不是单个词、查不到、设置关掉时为 nil）；setter 不设 private 只为截图自检
+  var dictionary: DictionaryEntry?
+  /// 这次原文是单个词、大模型按词典格式回答（结果是释义不是译文：不自动复制、不给「替换原文」）
+  private(set) var isWordLookup = false
+
   let services: TranslateServiceStore
   let history: HistoryStore
   @ObservationIgnored private var request: TranslateRequest?
+  @ObservationIgnored private var dictionaryTask: Task<Void, Never>?
   @ObservationIgnored private var tasks: [String: Task<Void, Never>] = [:]
 
   /// 原文上限（字节）：再长的文本请求和渲染都不划算
@@ -137,6 +143,8 @@ import Observation
     sourceText = ""
     replaceSource = nil
     cards = []
+    dictionary = nil
+    isWordLookup = false
     detected = nil
     target = nil
     fixedSource = nil
@@ -178,8 +186,24 @@ import Observation
     target = plan.request.to
     abandonedTarget = plan.abandonedTarget
     request = plan.request
+    isWordLookup = plan.request.isWord
     cards = services.enabled.map { Card(service: $0, state: .waiting) }
     for card in cards { run(card.service) }
+    lookUpDictionary(text)
+  }
+
+  /// 单个词：后台查系统词典（首查要加载词典），查到就在结果区最上面出词典卡片
+  private func lookUpDictionary(_ text: String) {
+    dictionaryTask?.cancel()
+    dictionary = nil
+    guard WordLookup.isWord(text),
+      UserDefaults.standard.bool(forKey: Prefs.translateSystemDictionary)
+    else { return }
+    dictionaryTask = Task {
+      let entry = await WordLookup.systemDictionary(text)
+      guard !Task.isCancelled else { return }
+      dictionary = entry
+    }
   }
 
   /// 去首尾空白；设置里开了就把换行合成一段（行尾连字符断开的单词接回去，其余换行变空格，PDF 复制出来的段落）
@@ -189,8 +213,8 @@ import Observation
     return text.replacing(/-\n\s*/, with: "").replacing(/\s*\n\s*/, with: " ")
   }
 
-  /// 按浮窗上选的源 / 目标（全局记住的）和检测结果定这次的请求
-  private static func plan(for text: String) -> (
+  /// 按浮窗上选的源 / 目标（全局记住的）和检测结果定这次的请求；wordMode：单个词时让大模型按词典格式回答
+  private static func plan(for text: String, wordMode: Bool = true) -> (
     request: TranslateRequest, detected: Lang?, fixedSource: Lang?, abandonedTarget: Lang?
   ) {
     let defaults = UserDefaults.standard
@@ -200,14 +224,16 @@ import Observation
     let fixedSource = defaults.string(forKey: Prefs.translateSource).flatMap(Lang.init(rawValue:))
     let plan = Lang.resolve(
       source: fixedSource, target: chosenTarget, detected: detected, first: first, second: second)
+    let isWord =
+      wordMode && defaults.bool(forKey: Prefs.translateWordMode) && WordLookup.isWord(text)
     return (
-      TranslateRequest(text: text, from: plan.from, to: plan.to), detected, fixedSource,
-      plan.fellBack ? chosenTarget : nil
+      TranslateRequest(text: text, from: plan.from, to: plan.to, isWord: isWord), detected,
+      fixedSource, plan.fellBack ? chosenTarget : nil
     )
   }
 
   /// 静默替换：不开浮窗、不动当前会话，只用第一个启用的服务、等完整结果；记历史（开着的话）。
-  /// 不套「把换行合成一段」：要替换回去的文字，段落得保住
+  /// 不套「把换行合成一段」：要替换回去的文字，段落得保住；也不用单词模式（替换回去的要是译文，不是释义）
   func translateOnce(_ source: String) async throws -> String {
     let text = source.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty, text.utf8.count <= Self.maxSourceBytes else {
@@ -216,7 +242,7 @@ import Observation
     guard let service = services.enabled.first else {
       throw TranslateError(message: "没有启用的翻译服务")
     }
-    let request = Self.plan(for: text).request
+    let request = Self.plan(for: text, wordMode: false).request
     var latest = ""
     for try await partial in service.translate(request) { latest = partial }
     try Task.checkCancellation()
@@ -237,6 +263,7 @@ import Observation
 
   /// 停掉还在跑的服务，没出完的卡片标成中断（不然卡片一直是「生成中」，隐藏的浮窗里骨架、彗星、光标动画停不下来）
   func cancel() {
+    dictionaryTask?.cancel()
     for task in tasks.values { task.cancel() }
     tasks = [:]
     for index in cards.indices {
@@ -283,8 +310,9 @@ import Observation
         source: request.text, target: request.to, result: text, service: service.name,
         limit: defaults.integer(forKey: Prefs.translateHistoryLimit))
     }
+    // 单词模式的结果是一段释义，不自动复制（划个词查一下，剪贴板不该被换掉）
     if defaults.bool(forKey: Prefs.translateAutoCopy),
-      !defaults.bool(forKey: Prefs.translateCopyToTranslate)
+      !defaults.bool(forKey: Prefs.translateCopyToTranslate), !request.isWord
     {
       Paster.write(string: text)
     }

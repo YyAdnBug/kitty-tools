@@ -83,6 +83,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .translate:
       [
         "语言", "第一语言", "第二语言", "字号", "换行", "自动复制", "历史", "导出", "CSV", "Anki", "服务", "密钥",
+        "查词", "词典", "单词", "音标", "例句", "生词本", "收藏",
         "智谱", "OpenAI", "Anthropic", "DeepL", "Google", "百度", "有道", "微软", "火山", "腾讯", "AI", "模型",
       ]
     case .hotkeys:

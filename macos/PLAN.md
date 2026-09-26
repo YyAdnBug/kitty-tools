@@ -238,7 +238,7 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 | `Shell/` | `OverlayPanel.swift`、`HotKeyCenter.swift`、`HotKeyRecorder.swift`、`Permissions.swift`、`Paster.swift`、`Style.swift`（Whisker 刻度：圆角、七条弹簧曲线、中性色 / 家族色、种类色块、键帽、面板描边）、`Island.swift`（刘海岛：全局轻提示，替换原来的 Toast）、`StatusItem.swift`（菜单栏图标与菜单，NSStatusItem，Whisker D 的呼吸 / 弹一下） |
 | `Storage/` | `Database.swift`、`Keychain.swift`、`Prefs.swift`、`LegacyImport.swift` |
 | `Clipboard/` | `ClipboardWatcher.swift`、`ClipboardStore.swift`、`ClipItem.swift`、`ClipboardFilter.swift`、`ContentForm.swift`、`Search.swift`、`ImageStore.swift`、`OCR.swift`、`ClipboardPanelView.swift`、`ClipRowView.swift`、`PreviewView.swift`、`Dialogs.swift`、`LinkPreview.swift`（链接富预览：按块读网页 og 标签、isFetchable、内存缓存）、`QuickLookView.swift`（⌘Y 放大预览） |
-| `Translate/` | `TranslateCoordinator.swift`、`LanguageResolver.swift`、`SelectionReader.swift`、`SSE.swift`、`Providers/`（`Zhipu`、`AIService`、`Baidu`、`Youdao`、`Google`、`DeepL`、`Microsoft`、`Volcengine`、`Tencent` 各一个 `.swift`）、`TranslatePanelView.swift`、`ProviderCardView.swift`（含服务品牌色块、彗星边框、骨架扫光）、`RevealText.swift`（流式译文显影，TextRenderer）、`HistoryStore.swift`、`HistoryView.swift` |
+| `Translate/` | `TranslateCoordinator.swift`、`LanguageResolver.swift`、`SelectionReader.swift`、`SSE.swift`、`Providers/`（`Zhipu`、`AIService`、`Baidu`、`Youdao`、`Google`、`DeepL`、`Microsoft`、`Volcengine`、`Tencent` 各一个 `.swift`）、`TranslatePanelView.swift`、`ProviderCardView.swift`（含服务品牌色块、彗星边框、骨架扫光）、`RevealText.swift`（流式译文显影，TextRenderer）、`HistoryStore.swift`、`HistoryView.swift`、`WordLookup.swift`（查词：是不是一个词、系统词典查询与解析、单词模式示例，D4）、`DictionaryCardView.swift`（系统词典卡） |
 | `Settings/` | `GeneralTab.swift`、`HotkeysTab.swift`、`ClipboardTab.swift`、`TranslateTab.swift`、`AboutTab.swift`、`LauncherTab.swift`、`ScreenshotTab.swift`、`SettingsWindow.swift`（D 阶段从 Shell 搬来：NavigationSplitView 侧栏 + 搜索 + 页头）、`OnboardingView.swift`（首次安装的欢迎引导） |
 | `Launcher/` | `LauncherItem.swift`（结果项与内置动作）、`AppCatalog.swift`（App 目录 + 中文名 + 拼音）、`LauncherMatch.swift`（匹配与排序纯函数）、`LauncherUsage.swift`（使用记录表）、`LauncherModel.swift`、`LauncherPanelView.swift` |
 | `Screenshot/` | `ScreenCapture.swift`（逐屏冻结帧 + 同一刻的窗口 Z 序快照）、`RegionSelector.swift`（框选会话、每屏一个遮罩、选区几何纯函数）、`SelectionView.swift`（遮罩画面与交互：图层绘制、窗口悬停、手柄、放大镜、工具栏）、`ScreenshotOutput.swift`（PNG、快速保存、另存为）、`PinPanel.swift`（钉图）、`Annotation.swift`（标注模型，显示与导出共用 draw，M10）、`EditorToolbar.swift`（HUD 主工具栏 + 样式托盘，M10，Whisker 重做）、`FlyCard.swift`（截图飞入右下角 + 快门声，Whisker S1）、`ScrollCapture.swift`（长截图会话：边框、侧边面板、抓帧循环、自动滚动）、`ScrollStitcher.swift`（长截图拼接，纯逻辑）、`ShotShelf.swift`（CleanShot 式常驻缩略图，Whisker D） |
@@ -732,7 +732,7 @@ echo "$DMG"
 - D1 长截图、录屏：~~都不做~~ → **长截图做（2026-09-25 用户改主意，要求按 macOS 原生方式实现、不参考旧版）；录屏仍不做**（以后真要录屏用 `SCRecordingOutput` 单独立项）。原先顾虑的两点已解决：冻结帧只管框选，框完收起遮罩再在实时画面上截；不用 15.2 的 `captureImage(in:)`，用 14.0 的 `captureImage(contentFilter:configuration:)` + `sourceRect`。
 - D2 系统命令：**都不做**（锁屏、睡眠、推出磁盘、重启、关机、清空废纸篓、切深浅色，以及退出 / 隐藏 / 强制退出 App 都不做，2026-09-25 用户确认；以后再考虑）。
 - D3 文件动作面板与 Quick Look：**动作面板进 M13，只放零授权动作**；⌘Y Quick Look 先验证 `QLPreviewPanel` 在不激活面板里能否拿到控制权，不行改嵌 `QLPreviewView`；不做目录导航和多文件缓冲。
-- D4 查词 / 生词本：**M12 之后，只用系统能力**：系统词典（`DCSCopyTextDefinition`）+ 单词模式提示词；生词本 = 收藏筛选 + CSV / TSV 导出；不引入 ECDICT。
+- D4 查词 / 生词本：**M12 之后，只用系统能力**：系统词典（`DCSCopyTextDefinition`）+ 单词模式提示词；生词本 = 收藏筛选 + CSV / TSV 导出；不引入 ECDICT。**已完成（2026-09-26，待手测）**，规则见 mac-translate §5.2。
 
 **开源参考（只借鉴思路，不拷代码）**：
 - macshot（github.com/sw33tLie/macshot）：**GPL-3.0**，任何代码 / 文案 / 逐行改写都不能进仓库。约 6 万行 AppKit，截图 / 标注 / 钉图 / 识字 / 长截图 / 录屏都有，可看交互细节。
@@ -831,7 +831,7 @@ echo "$DMG"
 
 - 修：启动器搜不到 Chrome 书签（2026-09-25）。新版 Chrome（本机 154）登录 Google 账号后把书签存进配置目录里的 `AccountBookmarks`，本机的 `Bookmarks` 变成空的（本机 432 条全在前者）；原来只读后者。现在每个配置目录两个文件都读（格式相同），单测锁住。Chrome 同时写了加密版（`EncryptedAccountBookmarks2`），哪天不再写明文就得解密（要钥匙串「Chrome Safe Storage」授权），到时再做。
 
-**下一步（新会话从这里接着做）**：D4 查词（M12 之后，只用系统词典 + 单词模式提示词）或 M13 动作面板 + 文件 + kill（§10），先问用户做哪个。
+**下一步（新会话从这里接着做）**：D4 查词已完成（2026-09-26）；接下来 M13 动作面板 + 文件 + kill（§10），动手前先按对标规则给用户「差距 + 推荐范围」。
 
 **暂不发版**（用户决定，2026-09-24）：0.1.0 只在本地用 `macos/build-dmg.sh` 打包自用（arm64、Apple Development 签名、无 get-task-allow），不打 tag、不发 GitHub / GitCode；以后要发时再按下面的「发布 0.1.0」步骤，且须先经用户确认。
 
@@ -885,6 +885,13 @@ echo "$DMG"
   5. 连截三四张：新的在最下面，旧的往上让，超过 3 张时最早的滑走；关掉中间一张，上面的落下来。
   6. 点缩略图不会激活本 App（菜单栏左上角还是原 App），之后再截图时画面里没有它；减弱动态效果时不飞、在角落淡入。
 - 挤压入场手测（Whisker D 实验）：设置 › 启动器打开「呼出时挤压弹开」，⌥空格：启动器从窄一点、矮一点弹开，略冲过头再回来（约 0.4 s，毛玻璃和阴影跟着窗口走）；呼出后马上打字，结果照常往下长、宽度不会停在半路；关掉开关或打开减弱动态效果后是原来的淡入下落。
+- 查词手测（D4）：
+  1. 划词 / 输入 `serendipity`：结果区最上面出「系统词典」卡（词头、音标、按词性分组的释义和斜体例句，「展开全部」看完）；智谱卡片是「读音 / 词性行 / 例：」三段的词条格式。
+  2. 查 `ran`、`went`、`children`：词典卡显示原形（run / go / child）并写「ran 的原形」；查 `look up`、`give up`：没有词典卡，只有大模型的词条。
+  3. 查 `苹果`、`一丝不苟`：词典卡出拼音和中文释义；查一整句话：没有词典卡、大模型照常翻译。
+  4. 开着「自动复制」查单个词：剪贴板没被换掉；划词查单个词时没有「替换原文」；「划词翻译并替换」对单个词照常替换成译文。
+  5. 「词典」App › 设置里勾上牛津英汉汉英并拖到最前：再查英文词，词典卡变成中文释义；卡上的书本按钮打开「词典」App 到这个词。
+  6. 设置 › 翻译关掉两个查词开关：词典卡不出、大模型回到普通翻译；⌘+ / ⌘- 时词典卡字号跟着变。
 - 长截图手测：
   1. ⌥A 框一段网页正文（别框进侧栏）→ S：遮罩收起、选区有蓝色边框、右边出面板；触控板慢慢往下滚，预览跟着长，尺寸变大；↩ 后剪贴板历史里有这张长图，粘到备忘录里文字清晰、没有重复行或断层。
   2. 快速一甩：面板变橙色「对不上了」；往回滚一点再慢慢滚，恢复拼接，结果里没有缺口。滚到页面底部回弹后，长图末尾没有多出一截空白。

@@ -48,6 +48,12 @@ alwaysApply: false
 - 替换原文 / 静默替换都是「收起 → `Paster.write` → `pasteToFrontmost`」，不激活本 App、不等待；粘之前核对前台还是取词时记下的 pid（`replaceSource` / 静默替换取词前记），对不上或自家浮层是 key 就只复制；译文用 `rewrap` 补回原选区的首尾空白。静默替换用 `translateOnce`（不动浮窗会话、不合并换行，再按热键取消）。
 - 浮窗高度由视图量出来、`OverlayPanel.setContentHeight` 设（夹在 220 到屏幕 85%）；lazy 建面板时用弱引用接 resize，别在初始化里回头访问 `translatePanel`。
 
+## 5.2 查词（D4，对标 Bob：不单开模式）
+- 原文是「一个词」（`WordLookup.isWord`：字母文字 1–3 个词、只含字母 / 连字符 / 撇号、≤ 40 字；中日文 1–4 个字）时自动出词典信息，两个开关（设置 › 翻译 › 查词）默认都开：
+  - **系统词典卡**（`DictionaryCardView`，结果区最上面）：`WordLookup.systemDictionary` → `DCSCopyTextDefinition`（`@concurrent`），返回一整行纯文本，按实测格式解析（`词头 音节 | 音标 | 词性 (变形) 1 释义: 例句 | … • 子义项 … PHRASES …`；汉语是「词 拼音 词性 释义」）。它会模糊匹配：词头和原文对不上又不是变形（ran → run，看第一组的变形表）就不要（look up → lookup、give up → give 都丢掉）。义项编号只认依次递增的。改解析先跑 `WordLookupTests`（样本是本机真实返回）。英文默认是英英词典，要中文释义得在「词典」App 里勾上牛津英汉并拖到最前。
+  - **大模型单词模式**（`TranslateRequest.isWord`，智谱和 AI 实例）：提示词给**一个完整示例**让它照着写（`WordLookup.example`：释义是中文时示例 run、其它语言示例 苹果）；**不要**写成「第一行写读音、英语写『美 /音标/』」这种说明——免费的 glm-4-flash 会把说明原样抄出来（实测）。联网看格式：`TEST_RUNNER_KITTY_LIVE_TRANSLATE=1`（`liveZhipuWordMode`）。
+- 单词模式的结果是释义不是译文：不自动复制、不给「替换原文」；静默「划词翻译并替换」一律不用单词模式。生词本 = 收藏 + 只看收藏 + CSV / TSV 导出（M12 已有），不另做。
+
 ## 6. 旧版导入（`LegacyImport`，可重复执行）
 - 旧库 WAL：连同 `-wal`/`-shm` 拷到临时目录读写打开副本 + `quick_check`，原文件只拷不开；读失败中止，绝不用默认值覆盖。
 - 「回到默认」用 NSNull 表示，写入时 `removeObject`：**UserDefaults.set(NSNull) 会直接崩**。

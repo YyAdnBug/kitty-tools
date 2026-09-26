@@ -18,8 +18,10 @@ nonisolated enum AIService {
     let target = request.to.englishName
     let from = request.from.map { " from \($0.englishName)" } ?? ""
     let system =
-      "You are a translation engine. Translate the user's text\(from) into \(target). "
-      + "Output only the translation: no explanations, no quotes. Keep line breaks and Markdown structure."
+      request.isWord
+      ? wordPrompt(to: request.to)
+      : "You are a translation engine. Translate the user's text\(from) into \(target). "
+        + "Output only the translation: no explanations, no quotes. Keep line breaks and Markdown structure."
     switch aiProtocol {
     case .openai, .azure:
       var body: [String: Any] = [
@@ -44,6 +46,20 @@ nonisolated enum AIService {
         url: url, headers: ["x-api-key": key, "anthropic-version": "2023-06-01"], body: body,
         tiers: tiers(url, aiProtocol, model), model: model, delta: anthropicDelta)
     }
+  }
+
+  /// 单词模式（查词，D4）：照示例写一条简明双语词典词条（示例和智谱的一样，见 WordLookup.example）
+  static func wordPrompt(to target: Lang) -> String {
+    let example = WordLookup.example(to: target)
+    return """
+      You are a concise bilingual dictionary. Write the user's word as one dictionary entry with meanings in \
+      \(target.englishName), in exactly the same format as the example: pronunciation on the first line, one line \
+      per part of speech, then one or two example sentences with translations. Output only the entry.
+
+      Example input: \(example.word)
+      Example output:
+      \(example.entry)
+      """
   }
 
   /// 获取服务端可用模型（设置页「获取模型」）
@@ -212,4 +228,6 @@ nonisolated struct TranslateRequest: Sendable {
   let text: String
   let from: Lang?
   let to: Lang
+  /// 原文是单个词、且开着「单词模式」：大模型按词典格式回答（读音、词性释义、例句）
+  var isWord = false
 }

@@ -146,6 +146,18 @@ struct AIServiceTests {
     #expect(result.contains("你好"), "\(result)")
   }
 
+  /// 单词模式（D4）：按词典格式回答——有音标行、词性行、例句行，打印出来人工看格式
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_LIVE_TRANSLATE"] != nil))
+  func liveZhipuWordMode() async throws {
+    for (word, target) in [("serendipity", Lang.zhHans), ("苹果", .en)] {
+      let request = TranslateRequest(text: word, from: nil, to: target, isWord: true)
+      var result = ""
+      for try await text in TranslateService.zhipu.translate(request) { result = text }
+      print("单词模式「\(word)」→\n\(result)\n")
+      #expect(result.split(separator: "\n").count >= 2, "\(result)")
+    }
+  }
+
   @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_LIVE_TRANSLATE"] != nil))
   func liveMicrosoftEdge() async throws {
     let request = TranslateRequest(text: "Good morning", from: nil, to: .zhHans)

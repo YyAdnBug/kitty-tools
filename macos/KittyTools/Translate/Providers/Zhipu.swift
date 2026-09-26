@@ -23,9 +23,22 @@ nonisolated enum Zhipu {
       return AsyncThrowingStream { $0.finish(throwing: TranslateError(message: "没有可用的智谱 API Key")) }
     }
     let from = request.from.map { "\($0.title)" } ?? ""
+    let target = request.to.title
     let prompt =
-      "请把下面的\(from)文本翻译成\(request.to.title)。只输出译文，不要解释，不要加引号，保留原文的换行和段落。\n\n"
-      + request.text
+      request.isWord
+      ? """
+      你是一部简明词典。把输入的词写成一条词条，释义用\(target)，格式和示例完全一样：第一行读音，\
+      然后每个词性一行，最后一到两行例句。只输出词条本身，不要任何说明。
+
+      输入：\(WordLookup.example(to: request.to).word)
+      输出：
+      \(WordLookup.example(to: request.to).entry)
+
+      输入：\(request.text)
+      输出：
+      """
+      : "请把下面的\(from)文本翻译成\(target)。只输出译文，不要解释，不要加引号，保留原文的换行和段落。\n\n"
+        + request.text
     let model = service.model ?? TranslateService.zhipuModels[0]
     let body: [String: Any] = [
       "model": model, "max_tokens": maxTokens, "stream": true,

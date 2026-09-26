@@ -244,6 +244,22 @@ struct SnapshotProbeTests {
           ]
         }
       ),
+      (
+        "translate-word",
+        { c in
+          c.sourceText = "run"
+          c.detected = .en
+          c.target = .zhHans
+          c.dictionary = WordLookup.parse(WordLookupTests.run, query: "run")
+          c.cards = [
+            .init(
+              service: zhipu,
+              state: .done(
+                "美 /rʌn/ 英 /rʌn/\nv. 跑；运转；经营；竞选\nn. 跑步；一段时间；连续\n例：I run every morning. 我每天早上跑步。")
+            )
+          ]
+        }
+      ),
       ("translate-history", { c in c.showsHistory = true }),
       ("translate-notice", { c in c.showNotice("划词翻译需要「辅助功能」授权", permission: .accessibility) }),
       ("translate-screenshot-empty", { c in c.showNotice("没有识别到文字，可以把选区框大一些再试") }),

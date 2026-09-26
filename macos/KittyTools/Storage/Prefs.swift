@@ -57,6 +57,10 @@ enum Prefs {
   static let translateCollapsedServices = "translateCollapsedServices"
   /// 复制即译：复制文本后自动弹出翻译浮窗（不抢键盘）
   static let translateCopyToTranslate = "translateClipboardMonitor"
+  /// 查单个词时在结果区最上面出系统词典的释义（D4）
+  static let translateSystemDictionary = "translateSystemDictionary"
+  /// 查单个词时大模型按词典格式回答：读音、词性释义、例句（D4）
+  static let translateWordMode = "translateWordMode"
 
   /// 截图 ⌘S 快速保存的目录（上次「另存为」选的目录）；没设 = 系统截屏的存储位置
   static let screenshotSaveDirectory = "screenshotSaveDirectory"
@@ -106,6 +110,8 @@ enum Prefs {
       translateHistoryEnabled: true,
       translateHistoryLimit: 500,
       translateCopyToTranslate: false,
+      translateSystemDictionary: true,
+      translateWordMode: true,
       translateFontScale: 1.0,
       translateCollapsedServices: "",
       ocrJoinLines: false,

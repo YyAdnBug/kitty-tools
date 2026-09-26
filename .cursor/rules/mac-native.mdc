@@ -25,10 +25,10 @@ alwaysApply: true
 
 ## 3. 并发红线（Swift 6 语言模式）
 - 默认 `MainActor`（xcconfig：`SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`、`SWIFT_APPROACHABLE_CONCURRENCY = YES`）。UI、store、`Database`、`NSPasteboard` 读写、热键、搜索都在主线程。
-- `@concurrent` 只允许 3 类：图片编码 / hash / 缩略图；Vision OCR；AX 读选中文本（先设 `AXUIElementSetMessagingTimeout(0.5)`）。参数和返回值必须是 `Sendable`（值类型，或 SDK 自己标了 Sendable 的 `CGImage`）。ScreenCaptureKit 截屏是系统 async API，主线程直接 await，不算例外。
+- `@concurrent` 只允许 4 类：图片编码 / hash / 缩略图；Vision OCR；AX 读选中文本（先设 `AXUIElementSetMessagingTimeout(0.5)`）；系统词典查词（`DCSCopyTextDefinition`，首查要加载词典，实测最多约 0.3 s）。参数和返回值必须是 `Sendable`（值类型，或 SDK 自己标了 Sendable 的 `CGImage`）。ScreenCaptureKit 截屏是系统 async API，主线程直接 await，不算例外。
 - 翻译服务写成 `nonisolated` async 函数；取消靠持有的 `Task` 调 `cancel()`，并行用 `withTaskGroup`。
 - 禁止 `Task.detached`、`@unchecked Sendable`、`nonisolated(unsafe)`（仅 C 全局变量例外，且必须注释原因），禁止到处写 `DispatchQueue`。主线程投递的 C 回调里用 `MainActor.assumeIsolated {}`。
-- 和 C API 交互的代码只放在 `HotKeyCenter`、`Database`、`SelectionReader`、`Permissions`（AX / 屏幕录制授权）、`ScreenCapture`（`CGWindowListCopyWindowInfo` 窗口快照）、`ScrollCapture`（长截图自动滚动的 `CGWarpMouseCursorPosition`）里。
+- 和 C API 交互的代码只放在 `HotKeyCenter`、`Database`、`SelectionReader`、`Permissions`（AX / 屏幕录制授权）、`ScreenCapture`（`CGWindowListCopyWindowInfo` 窗口快照）、`ScrollCapture`（长截图自动滚动的 `CGWarpMouseCursorPosition`）、`WordLookup`（系统词典 `DCSCopyTextDefinition`）里。
 - 并发写法以 Xcode 自带的 `Swift-Concurrency-Updates.md`（路径见文末）为准，不用社区 concurrency 技能。
 
 ## 4. 风格

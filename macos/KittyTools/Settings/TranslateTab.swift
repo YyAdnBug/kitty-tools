@@ -11,6 +11,8 @@ struct TranslateTab: View {
   let history: HistoryStore
   let speaker: Speaker
   @AppStorage(Prefs.translateFontScale) private var fontScale = 1.0
+  @AppStorage(Prefs.translateSystemDictionary) private var systemDictionary = true
+  @AppStorage(Prefs.translateWordMode) private var wordMode = true
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @AppStorage(Prefs.translateFirst) private var first = Lang.zhHans.rawValue
   @AppStorage(Prefs.translateSecond) private var second = Lang.en.rawValue
@@ -60,6 +62,21 @@ struct TranslateTab: View {
         .allowsHitTesting(false)
         .accessibilityHidden(true)
         .animation(reduceMotion ? nil : .smooth(duration: 0.18), value: fontScale)
+      }
+      Section {
+        Toggle("查单个词时显示系统词典的释义", isOn: $systemDictionary)
+        Toggle("查单个词时大模型按词典回答（读音、词性、例句）", isOn: $wordMode)
+      } header: {
+        Text("查词")
+      } footer: {
+        HStack(alignment: .firstTextBaseline) {
+          Text("系统词典默认给英文词英英释义：在「词典」App 的设置里勾上「牛津英汉汉英词典」并拖到最前面，就会显示中文释义。查单个词时不自动复制、不给「替换原文」。")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          Spacer(minLength: 8)
+          Button("打开「词典」") { NSWorkspace.shared.open(URL(string: "dict://")!) }
+            .font(.caption)
+        }
       }
       Section {
         Toggle("翻译前把换行合成一段（适合 PDF 复制的文字）", isOn: $removeNewlines)
