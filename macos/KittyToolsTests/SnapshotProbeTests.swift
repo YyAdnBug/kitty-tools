@@ -340,7 +340,8 @@ struct SnapshotProbeTests {
   }
 
   /// 翻译浮窗：空态、结果（没有「翻译」按钮）、原文改过（弹出「翻译 ↩」）、复制即译状态胶囊 + 固定、
-  /// 替换原文、查词、历史（分组 + 选中第三条 + 范围胶囊）、收藏范围、空历史、提示；「⋯」菜单是 NSMenu，屏外画不出来
+  /// 替换原文、查词、历史（分组 + 选中第三条 + 范围胶囊）、收藏范围、空历史、提示、长译文（卡内滚动 + 渐隐，
+  /// 默认和 140% 字号）；「⋯」菜单是 NSMenu，屏外画不出来
   private func renderTranslate(_ out: String) throws {
     // 历史：今天两条（一条收藏）、昨天一条、三天前两条，按天分组
     let history = try HistoryStore(db: Database(path: ":memory:"))
@@ -456,6 +457,41 @@ struct SnapshotProbeTests {
           size: NSSize(width: 420, height: 560), dark: dark,
           to: "\(out)/\(name)\(dark ? "-dark" : "").png")
       }
+    }
+    // 长译文：每张卡正文最多 8 行、在卡片里滚动（完成的从开头看、底部渐隐；生成中的跟着末尾）；
+    // 字号 140% 再拍一张，看上限跟着字号走。浮窗高度按内容估的（屏外拿不到 resize 回调）
+    let long = """
+      SwiftUI 用声明式的方式描述界面：你只需要写出界面在某个状态下应该是什么样子，状态一变，框架就会自动更新对应的视图。\
+      视图是轻量的值类型，组合起来很便宜，所以可以放心地把大界面拆成许多小视图。\
+      布局由父视图提议尺寸、子视图自己决定大小，再由父视图摆放位置，三步走完。
+      数据流方面，@State 管视图自己的状态，@Binding 把状态的读写权交给子视图，@Observable 的模型对象则在多个视图之间共享；\
+      只有真正读到的属性变化时，视图才会重新计算。动画可以挂在某个值上，也可以用 withAnimation 包住一次状态修改。\
+      在 macOS 上，SwiftUI 还能和 AppKit 混用：NSHostingView 把 SwiftUI 视图放进 AppKit 窗口，NSViewRepresentable 反过来把 AppKit 视图包进 SwiftUI。
+      """
+    coordinator.beginInput()
+    coordinator.sourceText =
+      "SwiftUI lets you describe your interface declaratively: say what it should look like for a state, and the framework keeps it up to date."
+    coordinator.translatedSource = coordinator.sourceText
+    coordinator.detected = .en
+    coordinator.target = .zhHans
+    coordinator.cards = [
+      .init(service: zhipu, state: .done(long)),
+      .init(service: gpt, state: .running(String(long.prefix(long.count * 3 / 4)))),
+    ]
+    let largeName = "KittyToolsSnapshot.\(UUID().uuidString)"
+    let large = try #require(UserDefaults(suiteName: largeName))
+    defer { large.removePersistentDomain(forName: largeName) }
+    large.set(1.4, forKey: Prefs.translateFontScale)
+    for dark in [false, true] {
+      let suffix = dark ? "-dark" : ""
+      try snapshot(
+        TranslatePanelView(coordinator: coordinator, speaker: speaker),
+        size: NSSize(width: 420, height: 640), dark: dark,
+        to: "\(out)/translate-long\(suffix).png")
+      try snapshot(
+        TranslatePanelView(coordinator: coordinator, speaker: speaker).defaultAppStorage(large),
+        size: NSSize(width: 420, height: 760), dark: dark,
+        to: "\(out)/translate-long-large\(suffix).png")
     }
     // 复制即译开着（顶栏品牌粉状态胶囊）+ 固定（粉色图钉）：偏好放进临时的 suite，不碰 dev 版的真实设置
     let suiteName = "KittyToolsSnapshot.\(UUID().uuidString)"

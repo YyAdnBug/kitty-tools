@@ -3,6 +3,8 @@
 // 生成中用 RevealText 显影 + 边框上一段强调色彗星光绕行（2.4 s 一圈），完成时整圈闪一下，失败是淡红错误卡
 // （图标晃一下，给「重试 · 打开设置」）。复制时对勾替换 + 整卡闪品牌粉。大模型完成后按行内 Markdown 渲染。
 // 折叠状态由浮窗按服务记住（跨重启），不再因为出结果自动展开；复制的对勾状态在会话里（⌘1–9 也亮）。
+// 正文最高 8 行（按字号算的常数），再长就在卡片里滚动：下面还有时底部渐隐、滚下去后顶部也渐隐；
+// 大模型生成中跟着末尾走，用户往上滚就停、滚回底部再接着跟。
 
 import SwiftUI
 
@@ -26,6 +28,28 @@ struct ProviderCardView: View {
   @State private var errorTicks = 0
   /// 上次出完的正文高度：重新翻译时骨架先撑到这么高，面板不先缩再一行行长回来
   @State private var settledHeight: CGFloat = 0
+  /// 正文超过上限时的滚动位置；生成中是否跟着末尾走；上下渐隐的程度（0–1）
+  @State private var scroll = ScrollPosition(edge: .top)
+  @State private var followsEnd = true
+  @State private var fade = Fade()
+
+  /// 正文最多显示几行
+  static let bodyLines = 8
+  /// 正文行距（Whisker §3：阅读 15 regular 行距 3.5）
+  static let bodyLineSpacing: CGFloat = 3.5
+
+  /// 正文一行的高度：正文字体（系统字体 15 × 字号）的 ascender、descender 各自向上取整到整点。
+  /// 默认 15 pt 得 19，和 SwiftUI 实排一致；个别字号多 1–2 pt，末行下面露出一点下一行，正好在底部渐隐里
+  static func bodyLineHeight(fontSize: CGFloat) -> CGFloat {
+    let font = NSFont.systemFont(ofSize: fontSize)
+    return font.ascender.rounded(.up) + (-font.descender).rounded(.up) + font.leading
+  }
+
+  /// 正文区的高度上限 = 8 行 + 7 个行距：只和字号有关，浮窗高度可预期
+  static func bodyCap(fontSize: CGFloat) -> CGFloat {
+    let lines = CGFloat(bodyLines)
+    return lines * bodyLineHeight(fontSize: fontSize) + (lines - 1) * bodyLineSpacing
+  }
 
   private var isCopied: Bool { copyTick != 0 }
 
@@ -59,13 +83,7 @@ struct ProviderCardView: View {
       // 正文放进裁剪的容器里收起 / 展开：往上收时不会滑过标题行
       VStack(spacing: 0) {
         if !isCollapsed {
-          content
-            .frame(minHeight: isPending ? settledHeight : 0, alignment: .topLeading)
-            .onGeometryChange(for: CGFloat.self) {
-              $0.size.height
-            } action: { height in
-              if isDone { settledHeight = height }
-            }
+          scroller
             .padding(.top, 3)
             .transition(
               reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
@@ -160,6 +178,74 @@ struct ProviderCardView: View {
     .frame(height: 18)
   }
 
+  /// 正文的滚动区：放得下时和内容一样高（和不滚动时一模一样），超过 8 行就停在上限、在卡片里滚。
+  /// 外层结果区纵向不给高度，滚动区自然取内容高度；fixedSize 让它放在别处（设置页预览）也这样。
+  /// 高度只跟着内容变（越过上限那一下由浮窗的高度动画接住），滚动时不变
+  private var scroller: some View {
+    let fontSize = 15 * fontScale
+    let cap = Self.bodyCap(fontSize: fontSize)
+    let fadeLength = Self.bodyLineHeight(fontSize: fontSize)
+    return ScrollView {
+      content
+        .frame(minHeight: isPending ? min(settledHeight, cap) : 0, alignment: .topLeading)
+        .onGeometryChange(for: CGFloat.self) {
+          $0.size.height
+        } action: { height in
+          if isDone { settledHeight = height }
+        }
+    }
+    .scrollPosition($scroll)
+    .scrollBounceBehavior(.basedOnSize)
+    .frame(maxHeight: cap)
+    .fixedSize(horizontal: false, vertical: true)
+    .onScrollGeometryChange(for: ScrollMetrics.self) {
+      ScrollMetrics(
+        offset: $0.contentOffset.y, content: $0.contentSize.height,
+        container: $0.containerSize.height)
+    } action: { old, new in
+      follow(old, new)
+      fade = Fade(
+        top: min(max(new.offset / fadeLength, 0), 1),
+        bottom: min(max(new.remaining / fadeLength, 0), 1))
+    }
+    // 渐隐是遮罩（只动透明度，深浅色、降低透明度都不用另配颜色），一行高；没溢出时两端都是 1，等于没有
+    .mask {
+      VStack(spacing: 0) {
+        LinearGradient(
+          colors: [.black.opacity(1 - fade.top), .black], startPoint: .top, endPoint: .bottom
+        )
+        .frame(height: fadeLength)
+        Color.black
+        LinearGradient(
+          colors: [.black, .black.opacity(1 - fade.bottom)], startPoint: .top, endPoint: .bottom
+        )
+        .frame(height: fadeLength)
+      }
+    }
+  }
+
+  /// 大模型生成时跟着末尾走：内容变高且还在跟就滚到底（瞬时，同结果刷新；最后一段和「完成」可能在同一次
+  /// 更新里到，所以看「变高」不看「生成中」）。只有偏移变了 = 用户在滚：离开底部就停，滚回底部再接着跟；
+  /// 内容放得下（新一轮的骨架）时复位。完成后内容不再变高，位置就留着
+  private func follow(_ old: ScrollMetrics, _ new: ScrollMetrics) {
+    // 第一次量到（新旧相同）：卡片刚出现，比如关掉历史时还在生成，也要贴到末尾
+    let appeared = old == new
+    if appeared || new.content != old.content || new.container != old.container {
+      if new.content <= new.container + 0.5 {
+        followsEnd = true
+      } else if followsEnd, card.service.isStreaming,
+        appeared ? isPending : new.content > old.content
+      {
+        scroll.scrollTo(y: new.content - new.container)
+      } else if appeared {
+        // 刚出现、不用跟（完成的长结果从开头看）：之后改字号变高也不自己滚到底
+        followsEnd = false
+      }
+    } else if new.offset != old.offset {
+      followsEnd = new.remaining <= 1
+    }
+  }
+
   /// 用 RevealText 显示的正文：生成中有字、或完成且不按 Markdown 渲染。两种状态放在同一个结构位置，
   /// 完成那一下还是同一个视图（身份一变就会整段重新显影）
   private var revealed: (text: String, isStreaming: Bool)? {
@@ -220,6 +306,21 @@ struct ProviderCardView: View {
       markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
       ?? AttributedString(text)
   }
+}
+
+/// 正文滚动区的几何：偏移、内容高、可视高
+private struct ScrollMetrics: Equatable {
+  var offset: CGFloat
+  var content: CGFloat
+  var container: CGFloat
+  /// 下面还没露出来的高度
+  var remaining: CGFloat { content - container - offset }
+}
+
+/// 正文上下渐隐的程度（0 = 不渐隐，1 = 一整行从实到透明）
+private struct Fade: Equatable {
+  var top: CGFloat = 0
+  var bottom: CGFloat = 0
 }
 
 /// 服务身份：18 pt 方块（圆角 = 边长 × 0.225）。有官方 logo 用 logo，没有的用品牌色块 + 白色首字母

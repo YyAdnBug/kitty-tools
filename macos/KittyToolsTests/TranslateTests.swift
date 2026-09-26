@@ -1,5 +1,5 @@
 // 翻译相关单测：语言解析、流式文本清洗、AI 服务地址 / 参数、局域网判断、翻译历史（存储、撤销删除、列表分组与选中）、
-// 「翻译 ↩」胶囊的出现条件、服务 logo 都在 asset catalog 里；
+// 「翻译 ↩」胶囊的出现条件、服务 logo 都在 asset catalog 里、结果卡片正文的高度上限；
 // 以及按需启用的联网冒烟测试（TEST_RUNNER_KITTY_LIVE_TRANSLATE=1，用内置智谱 key 真翻一句）。
 
 import AppKit
@@ -389,5 +389,27 @@ struct ServiceLogoTests {
       #expect(NSImage(named: logo.name) != nil, "\(logo.name)")
     }
     #expect(ServiceTile.logo(for: .newAI()) == nil)
+  }
+}
+
+struct ResultCardCapTests {
+  /// 结果卡片正文最高 8 行 + 7 个行距，行高按正文字体（系统字体 15 × 字号）算，每档字号一个常数
+  @Test func capIsEightLinesOfBodyFont() {
+    // 默认 15 pt：一行 19（和 SwiftUI 实排一致）
+    #expect(ProviderCardView.bodyLineHeight(fontSize: 15) == 19)
+    #expect(ProviderCardView.bodyCap(fontSize: 15) == 8 * 19 + 7 * 3.5)
+    var previous: CGFloat = 0
+    for step in 8...16 {  // 字号 80%–160%
+      let size = 15 * CGFloat(step) / 10
+      let line = ProviderCardView.bodyLineHeight(fontSize: size)
+      let cap = ProviderCardView.bodyCap(fontSize: size)
+      #expect(cap == 8 * line + 7 * ProviderCardView.bodyLineSpacing)
+      // 行高来自字体度量：不小于 ascender + descender，取整最多多 2 pt
+      let font = NSFont.systemFont(ofSize: size)
+      let natural = font.ascender - font.descender + font.leading
+      #expect(line >= natural && line < natural + 2, "\(size)")
+      #expect(cap > previous, "\(size)")  // 字号越大上限越高
+      previous = cap
+    }
   }
 }
