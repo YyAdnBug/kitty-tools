@@ -450,7 +450,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     beginCapture { [self] in
       guard
         let region = await frozenSelection(
-          "截图翻译", { await RegionSelector.select($0, hint: "拖动框选要翻译的文字　Esc 取消") })
+          "截图翻译", { await RegionSelector.select($0, hint: "拖动框选要翻译的文字 · Esc 取消") })
       else { return }
       await translateImage(region)
     }
@@ -461,7 +461,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     beginCapture { [self] in
       guard
         let region = await frozenSelection(
-          "识字", { await RegionSelector.select($0, hint: "拖动框选要识别的文字或二维码　Esc 取消") })
+          "识字", { await RegionSelector.select($0, hint: "拖动框选要识别的文字或二维码 · Esc 取消") })
       else { return }
       await copyRecognizedText(in: region)
     }

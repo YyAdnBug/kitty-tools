@@ -1,8 +1,11 @@
 // 框选遮罩里一块屏幕的画面与交互（会话见 RegionSelector）。从下到上：冻结帧（本视图图层的内容）→ 标注层
-// （AnnotationCanvas，只重画变了的那块）→ 暗色蒙层、选区边框、手柄、尺寸、放大镜（CALayer，拖动时只改路径和位置，
-// 不重画整屏）→ 文字输入框 → 工具栏、样式托盘、HUD 菜单（EditorToolbar.swift）。外观是 Whisker §6 截图的品牌粉。
-// 截图翻译 / 识字：拖动框选、松手即确认。截图：悬停窗口（洞和粉框磁吸变形、显示窗口尺寸）、单击选中窗口，拖出或单击后进入调整：
-// 整条边和四角都能拖（悬停的边加粗、手柄放大）、拖动平移、方向键微调（⇧ 10 点）、拖动框选时按住空格平移；
+// （AnnotationCanvas，只重画变了的那块）→ 暗色蒙层、选区边框、吸附参考线、手柄、放大镜（CALayer，拖动时只改路径和位置，
+// 不重画整屏）→ 尺寸胶囊（SizeField）→ 文字输入框 → 工具栏、样式托盘、HUD 菜单（EditorToolbar.swift）。外观是 Whisker §6
+// 截图的品牌粉。框选、拖边：⇧ 锁比例（新框正方形，或按锁着的比例）、⌥ 从中心、空格平移、⌃ 暂停吸附（6 pt 内吸到冻结时的
+// 窗口边和屏幕边，吸上时画粉色虚线参考线），拖动中按下 / 松开修饰键立刻重算。
+// 截图翻译 / 识字：拖动框选、松手即确认（同样的放大镜、修饰键和吸附）。截图：悬停窗口（洞和粉框磁吸变形、显示窗口尺寸）、
+// 单击选中窗口，拖出或单击后进入调整：整条边和四角都能拖（悬停的边加粗、手柄放大）、拖动平移、方向键微调（⇧ 10 点）、
+// ⌘ / ⌥ + 方向键推 / 收那条边；尺寸胶囊点数字输入像素宽高、比例菜单锁比例；右键没有标注时回到待选，有标注时只提示；
 // 放大镜显示中心像素的色值（C 复制），按住 ⌘ 出整屏十字准线；S 长截图、T 钉图、O 识字；
 // 标注 1–0（矩形、椭圆、箭头、直线、画笔、荧光笔、文字、序号、马赛克、聚光灯，⇧ 画正方形 / 45° 线，再按一次收起），
 // 点中标注可拖动、改颜色粗细、⌫ 删除、双击文字重新编辑，⌘Z 撤销、⇧⌘Z 重做。
@@ -27,20 +30,27 @@ final class SelectionView: NSView, NSTextViewDelegate {
   var selection: CGRect? {
     didSet {
       annotationCanvas?.selection = selection
+      // 选区一动（方向键、拖边）开着的 HUD 菜单就收起：它锚着的栏 / 胶囊跟着挪了
+      if selection != oldValue { hudMenu?.dismiss() }
       refresh()
     }
   }
   /// 截图：选区已确定，可以调整、标注、选输出方式
   var isAdjusting = false { didSet { refresh() } }
-  /// 截图：鼠标位置（悬停窗口、放大镜）；nil = 鼠标不在这块屏上
+  /// 鼠标位置（悬停窗口、放大镜）；nil = 鼠标不在这块屏上
   var mouse: CGPoint? { didSet { refresh() } }
   private var drag: Drag? { didSet { refresh() } }
-  /// 截图：按住空格时拖动框选变成整块平移（系统截屏的习惯）
+  /// 按住空格时拖动框选变成整块平移（系统截屏的习惯）
   private var isSpaceDown = false
-  /// 按住 ⌘：出十字准线。按键和鼠标事件都带着修饰键，鼠标从别的屏移过来时也是准的
-  private var isCommandDown = false {
-    didSet { if isCommandDown != oldValue { refresh() } }
+  /// 当前的修饰键（取自事件：flagsChanged、鼠标事件都带着，鼠标从别的屏移过来时也是准的）：⌘ 十字准线，
+  /// ⇧ 锁比例、⌥ 从中心、⌃ 暂停吸附
+  private var modifiers: NSEvent.ModifierFlags = [] {
+    didSet { if modifiers.contains(.command) != oldValue.contains(.command) { refresh() } }
   }
+  /// 拖动中上一次的鼠标位置：按下 / 松开修饰键时按它重算
+  private var dragPoint: CGPoint?
+  /// 吸上的边（x 竖线、y 横线），拖动时整屏画粉色虚线参考线；交互测试读它
+  private(set) var guides: (x: CGFloat?, y: CGFloat?) = (nil, nil)
 
   // 标注（截图模式）。截图自检直接设它们摆出各种状态
   var annotations: [Annotation] = [] { didSet { syncAnnotations() } }
@@ -92,8 +102,10 @@ final class SelectionView: NSView, NSTextViewDelegate {
   /// 按住 ⌘ 时穿过光标的十字准线：1 pt white 0.6 贴 1 pt black 0.25，亮底暗底都看得见
   private let crossLight = CAShapeLayer()
   private let crossDark = CAShapeLayer()
-  private let sizeLabel = Pill(
-    font: .monospacedSystemFont(ofSize: 12, weight: .semibold), radius: Style.Radius.control)
+  /// 吸附参考线：1 pt 粉色虚线 [4, 3] 横穿整屏
+  private let guideLayer = CAShapeLayer()
+  /// 选区（或悬停窗口）的像素尺寸；调整时可输入、可锁比例
+  private let sizeField = SizeField()
   private let hint = Pill(font: .systemFont(ofSize: 13), padding: CGSize(width: 14, height: 7))
   private let magnifier = CALayer()
   private let loupe = CALayer()
@@ -125,7 +137,10 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private var handlesShown = false
   /// 放大镜上次在光标哪一侧（翻边时滑过去）
   private var magnifierSide: (left: Bool, above: Bool)?
-  private var hintDismissed = false
+  /// 顶部提示临时换了一句（右键不清空）：有选区时也显示
+  private var hintFlashing = false
+  /// 每次显示提示加一：旧的淡出计时作废
+  private var hintGeneration = 0
 
   /// 放大镜取样边长（像素，奇数才有中心）、每个像素放大后的边长（点）、下方信息卡高度
   private static let loupePixels = 15
@@ -179,6 +194,10 @@ final class SelectionView: NSView, NSTextViewDelegate {
     annotationOutline.strokeColor = pink.cgColor
     annotationOutline.lineWidth = 1
     annotationOutline.lineDashPattern = [4, 3]
+    guideLayer.fillColor = nil
+    guideLayer.strokeColor = pink.cgColor
+    guideLayer.lineWidth = 1
+    guideLayer.lineDashPattern = [4, 3]
     for (layer, color) in [
       (crossLight, NSColor.white.withAlphaComponent(0.6)),
       (crossDark, .black.withAlphaComponent(0.25)),
@@ -188,14 +207,23 @@ final class SelectionView: NSView, NSTextViewDelegate {
       layer.lineWidth = 1
     }
     setUpMagnifier()
-    for layer in [shade, highlight, outlineOuter, outline, edgeHighlight, crossDark, crossLight]
+    infoKey.isHidden = mode == .quick  // 截图翻译 / 识字不能按 C 复制色值
+    for layer in [
+      shade, highlight, outlineOuter, outline, guideLayer, edgeHighlight, crossDark, crossLight,
+    ]
       + Self.handleOrder.compactMap({ handleLayers[$0] })
-      + [annotationOutline, sizeLabel.layer, hint.layer, magnifier]
+      + [annotationOutline, hint.layer, magnifier]
     {
       root.addSublayer(layer)
     }
+    sizeField.isHidden = true
+    sizeField.onEdit = { [unowned self] which in beginSizeEditing(which) }
+    sizeField.onCommit = { [unowned self] in finishSizeEditing(commit: true) }
+    sizeField.onCancel = { [unowned self] in escape() }
+    sizeField.onRatio = { [unowned self] in toggleRatioMenu() }
+    addSubview(sizeField)
     if mode == .quick {
-      hint.text = session.hint
+      hint.setParts(session.hint.components(separatedBy: " · "))
     } else {
       hint.setParts(
         ["拖动框选", "单击选中窗口", "双击直接拷贝"] + (session.lastRegion == nil ? [] : ["D 上次区域"])
@@ -314,7 +342,10 @@ final class SelectionView: NSView, NSTextViewDelegate {
   /// 回到待选（别的屏开始操作、右键重新框时）：标注一起清掉
   func reset() {
     hudMenu?.dismiss()
+    finishSizeEditing(commit: false)
     endEditing()
+    guides = (nil, nil)
+    dragPoint = nil
     drag = nil
     draft = nil
     selection = nil
@@ -334,15 +365,15 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private func updateScale() {
     let scale = window?.backingScaleFactor ?? 2
     for layer in [
-      shade, outline, outlineOuter, edgeHighlight, crossLight, crossDark, highlight,
+      shade, outline, outlineOuter, edgeHighlight, crossLight, crossDark, highlight, guideLayer,
       annotationOutline, loupeGrid, loupeBands, loupeCenter, infoText, infoKey,
     ] + Array(handleLayers.values) as [CALayer] {
       layer.contentsScale = scale
     }
-    for pill in [sizeLabel, hint] { pill.scale = scale }
+    hint.scale = scale
   }
 
-  /// 出场：蒙层 0.15 s 淡入；提示从下方 8 pt 浮上来，3 s 后淡出
+  /// 出场：蒙层 0.15 s 淡入；提示浮上来，3 s 后淡出
   override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
     guard window != nil else { return }
@@ -352,6 +383,18 @@ final class SelectionView: NSView, NSTextViewDelegate {
     fade.toValue = 1
     fade.duration = 0.15
     shade.add(fade, forKey: "enter")
+    showHint(for: 3)
+  }
+
+  /// 提示从下方 8 pt 浮上来，seconds 秒后淡出（再显示一次时旧的计时作废）
+  private func showHint(for seconds: Double) {
+    hintGeneration += 1
+    let generation = hintGeneration
+    hint.layer.removeAnimation(forKey: "leave")
+    hint.layer.opacity = 1
+    let fade = CABasicAnimation(keyPath: "opacity")
+    fade.fromValue = 0
+    fade.toValue = 1
     let rise = CABasicAnimation(keyPath: "transform.translation.y")
     rise.fromValue = Style.reduceMotion ? 0 : -8
     rise.toValue = 0
@@ -361,20 +404,32 @@ final class SelectionView: NSView, NSTextViewDelegate {
     group.timingFunction = CAMediaTimingFunction(name: .easeOut)
     hint.layer.add(group, forKey: "enter")
     Task { [weak self] in
-      try? await Task.sleep(for: .seconds(3))
-      self?.dismissHint()
+      try? await Task.sleep(for: .seconds(seconds))
+      guard let self, self.hintGeneration == generation else { return }
+      self.dismissHint()
     }
   }
 
+  /// 淡出后停在透明（不设 isHidden：下一次 refresh 会把淡出截断）
   private func dismissHint() {
-    guard !hintDismissed else { return }
-    hintDismissed = true
     let fade = CABasicAnimation(keyPath: "opacity")
     fade.fromValue = hint.layer.presentation()?.opacity ?? 1
     fade.toValue = 0
     fade.duration = 0.3
     hint.layer.opacity = 0
     hint.layer.add(fade, forKey: "leave")
+  }
+
+  /// 顶部提示临时换一句（右键不清空）：有选区时也显示，1.5 s 后淡出
+  private func flashHint(_ parts: [String]) {
+    // 换字时胶囊的宽、圆角、阴影不做隐式动画（它挂在 layer-hosting 的图层树上，默认会补 0.25 s）
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    hint.setParts(parts)
+    CATransaction.commit()
+    hintFlashing = true
+    refresh()
+    showHint(for: 1.5)
   }
 
   /// 按状态摆好全部图层（关掉隐式动画，拖动时跟手；只有换悬停窗口、单击选中窗口、蒙层深浅切换、手柄出现 / 悬停放大、
@@ -389,11 +444,12 @@ final class SelectionView: NSView, NSTextViewDelegate {
     // 选区双描边：内 1.5 pt 粉 + 外 1 pt black 0.28（亮底暗底都看得清）
     outline.path = selection.map { CGPath(rect: $0.insetBy(dx: -0.75, dy: -0.75), transform: nil) }
     outlineOuter.path = selection.map { CGPath(rect: $0.insetBy(dx: -2, dy: -2), transform: nil) }
-    hint.layer.isHidden = selection != nil || hintDismissed
-    if selection == nil {
+    hint.layer.isHidden = selection != nil && !hintFlashing
+    if !hint.layer.isHidden {
       hint.place(
         at: CGPoint(x: bounds.midX - hint.size.width / 2, y: bounds.maxY - 64 - hint.size.height))
     }
+    updateGuides()
 
     let adjusting = mode == .capture && isAdjusting
     updateHandles(adjusting ? selection : nil)
@@ -402,24 +458,28 @@ final class SelectionView: NSView, NSTextViewDelegate {
       editor == nil
       ? selected.map { CGPath(rect: $0.bounds.insetBy(dx: -4, dy: -4), transform: nil) } : nil
     placeBars(showing: adjusting && !movesSelection)
-    // 尺寸：选区（或悬停的窗口）左上角外 8 pt；放不下、或挡到工具栏 / 顶部提示时放进里面
+    // 尺寸：选区（或悬停的窗口）左上角外 8 pt；放不下、或挡到工具栏 / 顶部提示时放进里面。调整时可输入
     let measured = selection ?? hovered
-    sizeLabel.layer.isHidden = mode == .quick || measured == nil
-    if mode == .capture, let measured {
+    sizeField.isHidden = measured == nil
+    if let measured {
       let pixels = RegionSelector.pixelRect(
         measured, viewSize: bounds.size,
         imageSize: CGSize(width: image.width, height: image.height))
-      sizeLabel.setSize(width: Int(pixels.width), height: Int(pixels.height))
-      let size = sizeLabel.size
+      sizeField.show(
+        width: Int(pixels.width), height: Int(pixels.height), interactive: adjusting,
+        ratio: RegionSelector.ratioTitle(session.lockedRatio), locked: session.lockedRatio != nil)
+      let size = sizeField.frame.size
       let x = max(bounds.minX, min(measured.minX, bounds.maxX - size.width))
       var y = measured.maxY + 8
       let frame = CGRect(x: x, y: y, width: size.width, height: size.height)
       if frame.maxY > bounds.maxY || isOverBars(frame)
-        || (!hint.layer.isHidden && hint.frame.intersects(frame))
+        || (!hint.layer.isHidden && hint.layer.opacity > 0 && hint.frame.intersects(frame))
       {
         y = measured.maxY - 8 - size.height
       }
-      sizeLabel.place(at: CGPoint(x: x, y: y))
+      // 取整到整点：选区给的是小数点，文字落在半像素上会糊
+      let origin = CGPoint(x: x.rounded(), y: y.rounded())
+      if sizeField.frame.origin != origin { sizeField.setFrameOrigin(origin) }
     }
     updateMagnifier()
     updateCrosshair()
@@ -541,13 +601,27 @@ final class SelectionView: NSView, NSTextViewDelegate {
     }
   }
 
-  /// 悬停（或正在拖）的边 / 角：拖手柄时就是那个手柄；其余拖动、输入文字、开着菜单、鼠标在栏上时没有
+  /// 悬停（或正在拖）的边 / 角：拖手柄时就是那个手柄；其余拖动、输入文字 / 尺寸、开着菜单、鼠标在栏上时没有
   private func hotHandle(in rect: CGRect) -> RegionSelector.Handle? {
     if case .resize(let handle, _)? = drag { return handle }
-    guard drag == nil, editor == nil, hudMenu == nil, let mouse, !isOverBars(mouse) else {
-      return nil
-    }
+    guard drag == nil, editor == nil, !sizeField.isEditing, hudMenu == nil, let mouse,
+      !isOverControls(mouse)
+    else { return nil }
     return Self.handle(at: mouse, in: rect)
+  }
+
+  /// 吸附参考线：吸上的边各一条 1 pt 粉色虚线横穿整屏
+  private func updateGuides() {
+    let path = CGMutablePath()
+    if let x = guides.x {
+      path.move(to: CGPoint(x: x, y: bounds.minY))
+      path.addLine(to: CGPoint(x: x, y: bounds.maxY))
+    }
+    if let y = guides.y {
+      path.move(to: CGPoint(x: bounds.minX, y: y))
+      path.addLine(to: CGPoint(x: bounds.maxX, y: y))
+    }
+    guideLayer.path = path.isEmpty ? nil : path
   }
 
   /// 正在拖动 / 缩放 / 平移选区：两条栏只在这时让位淡出（画标注、拖标注时不动）。按在选区里 / 边上还没拖开不算，
@@ -562,7 +636,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
 
   /// 十字准线跟放大镜同时出现（待选、拖动框选、拖手柄），只在按住 ⌘ 时；对齐到整点，白线盖住光标所在的那一点
   private func updateCrosshair() {
-    guard let mouse, isCommandDown, showsMagnifier else {
+    guard let mouse, modifiers.contains(.command), showsMagnifier else {
       crossLight.path = nil
       crossDark.path = nil
       return
@@ -694,9 +768,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
       blue: CGFloat(value & 0xFF) / 255, alpha: 1)
   }
 
-  /// 截图：待选、拖动框选、拖手柄时显示放大镜；平移、标注、鼠标在工具栏上时不显示
-  private var showsMagnifier: Bool {
-    guard mode == .capture, let mouse, !isOverBars(mouse) else { return false }
+  /// 待选、拖动框选、拖手柄时显示放大镜（截图翻译 / 识字也是）；平移、标注、鼠标在工具栏上时不显示。交互测试读它
+  var showsMagnifier: Bool {
+    guard let mouse, !isOverBars(mouse) else { return false }
     switch drag {
     case .move?, .annotate?, .moveAnnotation?: return false
     case .pending?, .draw?, .resize?: return true
@@ -775,6 +849,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private func makeBars() {
     let toolbar = EditorToolbar()
     toolbar.onClick = { [unowned self] item in
+      finishSizeEditing(commit: true)  // 输入着尺寸点了栏：先按输入的改选区再出图
       if item != .saveMenu { hudMenu?.dismiss() }
       switch item {
       case .tool(let tool): choose(tool)
@@ -863,6 +938,74 @@ final class SelectionView: NSView, NSTextViewDelegate {
       anchor: body.convert(body.bounds, to: self).union(caret.convert(caret.bounds, to: self)))
   }
 
+  /// 尺寸胶囊的比例按钮：HUD 菜单（自由 / 1:1 / 4:3 / 3:2 / 16:9 / 9:16，勾着锁住的那个）；开着时再点一下收起
+  private func toggleRatioMenu() {
+    if let hudMenu { return hudMenu.dismiss() }
+    endEditing()
+    let locked = session.lockedRatio
+    present(
+      HUDMenu(
+        RegionSelector.ratios.map { preset in
+          HUDMenu.Entry(title: preset.title, checked: preset.value == locked) { [weak self] in
+            self?.lockRatio(preset.value)
+          }
+        }),
+      anchor: sizeField.convert(sizeField.ratioFrame, to: self))
+  }
+
+  /// 选了比例：立刻套到选区上（顶边和水平中心不动）并锁住，之后框选、拖边都按它；nil（自由）解锁
+  private func lockRatio(_ ratio: CGFloat?) {
+    session.lockedRatio = ratio
+    if let ratio, let selection {
+      self.selection = RegionSelector.applying(ratio, to: selection, within: bounds)
+    }
+    refresh()
+    refreshCursor()
+  }
+
+  /// 点了尺寸胶囊的数字：收掉菜单和输入中的文字，两个数变成输入框
+  private func beginSizeEditing(_ which: SizeField.Dimension) {
+    hudMenu?.dismiss()
+    endEditing()
+    sizeField.beginEditing(which)
+    refresh()
+  }
+
+  /// 收下尺寸输入：先把键盘要回来再把输入框变回数字（反过来第一响应者落到窗口上，单键快捷键全失灵）；
+  /// commit 时按输入的像素改选区（左上角不动）
+  private func finishSizeEditing(commit: Bool) {
+    guard sizeField.isEditing else { return }
+    window?.makeFirstResponder(self)
+    let pixels = sizeField.typedPixels
+    sizeField.endEditing()
+    if commit, let pixels, let selection {
+      self.selection = RegionSelector.sized(
+        selection, pixels: pixels,
+        scale: CGSize(
+          width: CGFloat(image.width) / bounds.width, height: CGFloat(image.height) / bounds.height),
+        within: bounds)
+    }
+    refresh()
+  }
+
+  /// Esc 依次：HUD 菜单 → 尺寸输入 → 输入中的文字 → 选中的标注 → 工具 → 取消截图（免得一下把画好的标注全丢了）
+  private func escape() {
+    if let hudMenu {
+      hudMenu.dismiss()
+    } else if sizeField.isEditing {
+      finishSizeEditing(commit: false)
+    } else if editor != nil {
+      endEditing()
+    } else if selectedAnnotation != nil {
+      selectedAnnotation = nil
+    } else if tool != nil {
+      tool = nil
+      refreshCursor()
+    } else {
+      session.finish(nil)
+    }
+  }
+
   /// 同时最多开一个 HUD 菜单
   private func present(_ next: HUDMenu, anchor: CGRect) {
     hudMenu?.dismiss()
@@ -881,6 +1024,12 @@ final class SelectionView: NSView, NSTextViewDelegate {
 
   private func isOverBars(_ point: CGPoint) -> Bool {
     bars.contains { !$0.isHidden && $0.frame.contains(point) }
+  }
+
+  /// 栏、菜单或能点的尺寸胶囊上：光标是箭头、边不热
+  private func isOverControls(_ point: CGPoint) -> Bool {
+    isOverBars(point)
+      || (sizeField.isInteractive && !sizeField.isHidden && sizeField.frame.contains(point))
   }
 
   private func isOverBars(_ rect: CGRect) -> Bool {
@@ -948,6 +1097,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
   /// 改颜色 / 粗细 / 选项：作用于正在输入的文字、选中的标注（修旧版改样式不作用于选中项，#47）或当前工具的新标注，
   /// 并记成那个工具的样式（Prefs.screenshotToolStyles）
   private func restyle(_ change: (inout Annotation.Style) -> Void) {
+    finishSizeEditing(commit: true)  // 输入着尺寸点了托盘：点别处提交
     if var editor {
       change(&editor.style)
       self.editor = editor
@@ -1064,10 +1214,10 @@ final class SelectionView: NSView, NSTextViewDelegate {
 
   func undoManager(for view: NSTextView) -> UndoManager? { editor?.undo }
 
-  /// Esc 收下文字（输入法组字时 Esc 先给输入法，不会走到这里）；↩ 换行
+  /// Esc 收下文字（开着 HUD 菜单时先收菜单；输入法组字时 Esc 先给输入法，不会走到这里）；↩ 换行
   func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
     guard selector == #selector(NSResponder.cancelOperation(_:)) else { return false }
-    endEditing()
+    escape()
     return true
   }
 
@@ -1117,34 +1267,36 @@ final class SelectionView: NSView, NSTextViewDelegate {
   }
 
   override func mouseMoved(with event: NSEvent) {
-    guard mode == .capture else { return NSCursor.crosshair.set() }
     // 别的屏上有选区时这块屏不悬停、不出放大镜（单击不会抢走那边的选区，拖动才开新选区）；
-    // 否则鼠标到哪块屏，哪块屏收按键（C 复制的是眼前放大镜的色值）。不激活本 App
+    // 否则鼠标到哪块屏，哪块屏收按键（C 复制的是眼前放大镜的色值、Esc 取消）。不激活本 App
     if session.hasSelection(besides: self) {
       mouse = nil
     } else {
       if window?.isKeyWindow == false { window?.makeKey() }
-      isCommandDown = event.modifierFlags.contains(.command)
+      modifiers = event.modifierFlags
       mouse = point(event)
     }
-    refreshCursor()
+    if mode == .capture { refreshCursor() } else { NSCursor.crosshair.set() }
   }
 
   override func mouseExited(with event: NSEvent) {
-    if mode == .capture { mouse = nil }
+    mouse = nil
   }
 
   override func mouseDown(with event: NSEvent) {
     let point = point(event)
+    modifiers = event.modifierFlags
     guard mode == .capture else {
       window?.makeKey()  // 按键跟着最后操作的那块屏幕走
       session.activate(self)
+      mouse = point
       selection = nil
       drag = .draw(anchor: point, last: point)
       return
     }
-    // 开着 HUD 菜单时点外面：只收菜单
+    // 开着 HUD 菜单时点外面：只收菜单；输入着尺寸时点别处：按输入的改选区，这一下不做别的
     if let hudMenu { return hudMenu.dismiss() }
+    if sizeField.isEditing { return finishSizeEditing(commit: true) }
     // 别的屏上有选区：先记下按下的点，拖开了才算在这块屏开始（见 mouseDragged）
     if !session.hasSelection(besides: self) {
       window?.makeKey()
@@ -1190,10 +1342,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
 
   override func mouseDragged(with event: NSEvent) {
     let point = point(event)
-    if mode == .capture, !session.hasSelection(besides: self) {
-      isCommandDown = event.modifierFlags.contains(.command)
-      mouse = point
-    }
+    modifiers = event.modifierFlags
+    dragPoint = point
+    if !session.hasSelection(besides: self) { mouse = point }
     switch drag {
     case .pending(let start)?:
       guard hypot(point.x - start.x, point.y - start.y) >= 3 else { return }
@@ -1210,7 +1361,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
       selection = RegionSelector.moved(
         original, by: CGSize(width: point.x - start.x, height: point.y - start.y), within: bounds)
     case .resize(let handle, let original)?:
-      selection = RegionSelector.resized(original, handle, to: point, within: bounds)
+      resize(handle, from: original, to: point)
     case .annotate(let start)?:
       guard let tool,
         let shape = Annotation.shape(
@@ -1229,26 +1380,73 @@ final class SelectionView: NSView, NSTextViewDelegate {
     }
   }
 
-  /// 拖动框选：从锚点拉到当前点；截图时按住空格整块平移，锚点跟着走
+  /// 拖动框选：从锚点拉到当前点（锁着比例时按它，否则 ⇧ 正方形；⌥ 从中心、吸附）；按住空格整块平移，锚点跟着走
   private func extend(to point: CGPoint) {
     guard case .draw(var anchor, let last, let restore)? = drag else { return }
     NSCursor.crosshair.set()
-    if mode == .capture, isSpaceDown, let current = selection {
+    if isSpaceDown, let current = selection {
       let moved = RegionSelector.moved(
         current, by: CGSize(width: point.x - last.x, height: point.y - last.y), within: bounds)
       anchor.x += moved.minX - current.minX
       anchor.y += moved.minY - current.minY
+      guides = (nil, nil)
       selection = moved
     } else {
-      selection = CGRect(
-        x: min(anchor.x, point.x), y: min(anchor.y, point.y), width: abs(point.x - anchor.x),
-        height: abs(point.y - anchor.y))
+      let target = snap(point, x: true, y: true)
+      let rect = RegionSelector.drawn(
+        from: anchor, to: target.point,
+        ratio: session.lockedRatio ?? (modifiers.contains(.shift) ? 1 : nil),
+        fromCenter: modifiers.contains(.option), within: bounds)
+      showGuides(target, on: rect)
+      selection = rect
     }
     drag = .draw(anchor: anchor, last: point, restore: restore)
   }
 
+  /// 拖边 / 角：锁着比例时按它，否则 ⇧ 保持原选区的比例；⌥ 从中心、吸附在动的那条边
+  private func resize(_ handle: RegionSelector.Handle, from original: CGRect, to point: CGPoint) {
+    let target = snap(
+      point, x: handle.movesMinX || handle.movesMaxX, y: handle.movesMinY || handle.movesMaxY)
+    let rect = RegionSelector.resized(
+      original, handle, to: target.point, within: bounds,
+      ratio: session.lockedRatio
+        ?? (modifiers.contains(.shift) ? original.width / original.height : nil),
+      fromCenter: modifiers.contains(.option))
+    showGuides(target, on: rect)
+    selection = rect
+  }
+
+  /// 吸附（⌃ 暂停）：在动的轴上 6 pt 内吸到冻结时本屏窗口的边和屏幕边
+  private func snap(_ point: CGPoint, x: Bool, y: Bool) -> (
+    point: CGPoint, x: CGFloat?, y: CGFloat?
+  ) {
+    guard !modifiers.contains(.control) else { return (point, nil, nil) }
+    let (snappedX, edgeX) =
+      x
+      ? RegionSelector.snapped(
+        point.x, to: windows.flatMap { [$0.minX, $0.maxX] } + [bounds.minX, bounds.maxX])
+      : (point.x, nil)
+    let (snappedY, edgeY) =
+      y
+      ? RegionSelector.snapped(
+        point.y, to: windows.flatMap { [$0.minY, $0.maxY] } + [bounds.minY, bounds.maxY])
+      : (point.y, nil)
+    return (CGPoint(x: snappedX, y: snappedY), edgeX, edgeY)
+  }
+
+  /// 参考线只画真落在选区边上的（锁比例时由另一边定大小的那条边不算）；先设它再设选区，refresh 一次画对
+  private func showGuides(_ target: (point: CGPoint, x: CGFloat?, y: CGFloat?), on rect: CGRect) {
+    func lands(_ edge: CGFloat?, _ low: CGFloat, _ high: CGFloat) -> CGFloat? {
+      guard let edge, abs(edge - low) < 0.01 || abs(edge - high) < 0.01 else { return nil }
+      return edge
+    }
+    guides = (lands(target.x, rect.minX, rect.maxX), lands(target.y, rect.minY, rect.maxY))
+  }
+
   override func mouseUp(with event: NSEvent) {
     let finished = drag
+    guides = (nil, nil)
+    dragPoint = nil
     drag = nil
     switch finished {
     case .pending(let point)?:
@@ -1283,7 +1481,15 @@ final class SelectionView: NSView, NSTextViewDelegate {
 
   override func rightMouseDown(with event: NSEvent) {
     // 截图：有选区时（不管在哪块屏）右键回到待选、重新框，没有才取消；截图翻译 / 识字直接取消
-    guard mode == .capture, session.hasSelection(besides: nil) else { return session.finish(nil) }
+    guard mode == .capture, selection != nil || session.hasSelection(besides: self) else {
+      return session.finish(nil)
+    }
+    // 画了标注（含正在输入、还没收下的文字）就不清空（一下丢掉太亏）：提示音 + 顶部提示怎么退出
+    let typing = editor.map { !$0.field.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    if !annotations.isEmpty || typing == true || session.hasAnnotations(besides: self) {
+      NSSound.beep()
+      return flashHint(["有标注时右键不清空", "Esc 退出"])
+    }
     session.activate(self)
     reset()
     window?.makeKey()
@@ -1295,7 +1501,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private func refreshCursor() {
     guard mode == .capture else { return }
     guard isAdjusting, let selection, let point = mouse else { return NSCursor.crosshair.set() }
-    if isOverBars(point) { return NSCursor.arrow.set() }
+    if isOverControls(point) { return NSCursor.arrow.set() }
     if let editor {  // 输入框里是文字光标；外面点一下只是收下文字
       return (editor.field.frame.contains(point) ? NSCursor.iBeam : NSCursor.arrow).set()
     }
@@ -1343,26 +1549,27 @@ final class SelectionView: NSView, NSTextViewDelegate {
         kVK_ANSI_8, kVK_ANSI_9, kVK_ANSI_0,
       ], Annotation.Tool.allCases))
 
+  /// 方向键对应的选区边（AppKit 坐标 y 朝上：↑ 是上边 maxY）
+  private static let arrowEdges: [Int: RegionSelector.Handle] = [
+    kVK_LeftArrow: .left, kVK_RightArrow: .right, kVK_UpArrow: .top, kVK_DownArrow: .bottom,
+  ]
+
   override func keyDown(with event: NSEvent) {
     let code = Int(event.keyCode)
-    // Esc：先收菜单，再取消选中的标注，再收起工具，最后才取消截图（免得一下把画好的标注全丢了）
-    if code == kVK_Escape {
-      if let hudMenu {
-        hudMenu.dismiss()
-      } else if selectedAnnotation != nil {
-        selectedAnnotation = nil
-      } else if tool != nil {
-        tool = nil
-        refreshCursor()
-      } else {
-        session.finish(nil)
-      }
+    if code == kVK_Escape { return escape() }
+    // 空格：拖动框选时整块平移（截图翻译 / 识字也是）
+    if code == kVK_Space {
+      isSpaceDown = true
       return
     }
-    // 单字母键不带 ⌘ ⌃ ⌥（⌘C 之类走 performKeyEquivalent）。ponytail: 按物理键位，Dvorak 等布局下位置不同
-    guard mode == .capture, event.modifierFlags.intersection([.command, .control, .option]).isEmpty
-    else { return super.keyDown(with: event) }
+    let flags = event.modifierFlags.intersection([.command, .control, .option])
     let step: CGFloat = event.modifierFlags.contains(.shift) ? 10 : 1
+    // ⌥ + 方向键：那条边往里收（⌘ + 方向键走 performKeyEquivalent）
+    if mode == .capture, flags == .option, let edge = Self.arrowEdges[code] {
+      return push(edge, by: -step)
+    }
+    // 单字母键不带 ⌘ ⌃ ⌥（⌘C 之类走 performKeyEquivalent）。ponytail: 按物理键位，Dvorak 等布局下位置不同
+    guard mode == .capture, flags.isEmpty else { return super.keyDown(with: event) }
     switch code {
     case kVK_Return, kVK_ANSI_KeypadEnter:
       if isAdjusting { output(.copy) }
@@ -1380,8 +1587,6 @@ final class SelectionView: NSView, NSTextViewDelegate {
       if isAdjusting, let tool = Self.toolKeys[code] { choose(tool) }
     case kVK_Delete, kVK_ForwardDelete:
       deleteSelected()
-    case kVK_Space:
-      isSpaceDown = true
     case kVK_LeftArrow: nudge(-step, 0)
     case kVK_RightArrow: nudge(step, 0)
     case kVK_UpArrow: nudge(0, step)
@@ -1391,9 +1596,16 @@ final class SelectionView: NSView, NSTextViewDelegate {
     }
   }
 
-  /// ⌘ 按下 / 松开：十字准线跟着出现 / 消失
+  /// 修饰键按下 / 松开：⌘ 十字准线跟着出现 / 消失；框选、拖边途中按上次的鼠标位置重算（⇧ ⌥ ⌃ 立刻生效）
   override func flagsChanged(with event: NSEvent) {
-    isCommandDown = event.modifierFlags.contains(.command)
+    modifiers = event.modifierFlags
+    if let dragPoint {
+      switch drag {
+      case .draw(_, let last, _)?: extend(to: last)
+      case .resize(let handle, let original)?: resize(handle, from: original, to: dragPoint)
+      default: break
+      }
+    }
     super.flagsChanged(with: event)
   }
 
@@ -1407,8 +1619,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
     }
     let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
     let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
-    // 输入文字时：⌘C / ⌘V / ⌘Z 等发给输入框（本 App 不激活，主菜单收不到）
-    if editor != nil {
+    // 输入文字 / 尺寸时：⌘C / ⌘V / ⌘Z 等发给输入框（本 App 不激活，主菜单收不到）
+    if editor != nil || sizeField.isEditing {
       let action =
         flags == [.command, .shift] && key == "z"
         ? Selector(("redo:")) : flags == .command ? OverlayPanel.editActions[key] : nil
@@ -1416,6 +1628,11 @@ final class SelectionView: NSView, NSTextViewDelegate {
       return NSApp.sendAction(action, to: nil, from: self)
     }
     guard isAdjusting else { return super.performKeyEquivalent(with: event) }
+    // ⌘ + 方向键：那条边往外推（⇧ 10 点）
+    if flags.subtracting(.shift) == .command, let edge = Self.arrowEdges[Int(event.keyCode)] {
+      push(edge, by: flags.contains(.shift) ? 10 : 1)
+      return true
+    }
     switch (Int(event.keyCode), flags == .command, flags == [.command, .shift]) {
     case (kVK_ANSI_C, true, _): output(.copy)
     case (kVK_ANSI_S, true, _): output(.save)
@@ -1425,6 +1642,13 @@ final class SelectionView: NSView, NSTextViewDelegate {
     default: return super.performKeyEquivalent(with: event)
     }
     return true
+  }
+
+  /// ⌘ / ⌥ + 方向键：选区那条边往外推（delta > 0）/ 往里收，短边不小于 8
+  private func push(_ edge: RegionSelector.Handle, by delta: CGFloat) {
+    guard isAdjusting, let selection else { return }
+    self.selection = RegionSelector.pushed(selection, edge, by: delta, within: bounds)
+    refreshCursor()
   }
 
   /// 方向键：选中了标注就挪标注（每下记一步撤销），否则微调选区
@@ -1514,35 +1738,23 @@ private final class Canvas: NSView {
   override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-/// HUD 胶囊 / 圆角块里一行白字（Style.HUD 皮肤 + 阴影）：顶部提示、尺寸标签共用
+/// HUD 胶囊里一行白字（Style.HUD 皮肤 + 阴影）：顶部提示
 private struct Pill {
   let layer = CALayer()
   private let textLayer = CATextLayer()
   private let font: NSFont
   private let padding: CGSize
-  /// nil = 胶囊（半高圆角）
-  private let radius: CGFloat?
 
-  init(font: NSFont, padding: CGSize = CGSize(width: 8, height: 5), radius: CGFloat? = nil) {
+  init(font: NSFont, padding: CGSize) {
     self.font = font
     self.padding = padding
-    self.radius = radius
-    Style.HUD.applySkin(to: layer, radius: radius ?? 0)
+    Style.HUD.applySkin(to: layer, radius: 0)
     layer.anchorPoint = .zero
     textLayer.foregroundColor = Style.HUD.text.cgColor
     layer.addSublayer(textLayer)
   }
 
-  var text: String {
-    get { (textLayer.string as? NSAttributedString)?.string ?? "" }
-    nonmutating set {
-      set(
-        NSAttributedString(
-          string: newValue, attributes: [.font: font, .foregroundColor: Style.HUD.text]))
-    }
-  }
-
-  /// 顶部提示：几段之间用「 · 」隔开，点是次要文字色
+  /// 几段之间用「 · 」隔开，点是次要文字色
   func setParts(_ parts: [String]) {
     let string = NSMutableAttributedString()
     for (index, part) in parts.enumerated() {
@@ -1558,21 +1770,7 @@ private struct Pill {
     set(string)
   }
 
-  /// 尺寸标签：「600 × 300」，乘号 white 0.5
-  func setSize(width: Int, height: Int) {
-    let string = NSMutableAttributedString(
-      string: "\(width)", attributes: [.font: font, .foregroundColor: Style.HUD.text])
-    string.append(
-      NSAttributedString(
-        string: " × ",
-        attributes: [.font: font, .foregroundColor: NSColor.white.withAlphaComponent(0.5)]))
-    string.append(
-      NSAttributedString(
-        string: "\(height)", attributes: [.font: font, .foregroundColor: Style.HUD.text]))
-    set(string)
-  }
-
-  /// 文字没变就不动（尺寸跟着鼠标移动一直在设）
+  /// 文字没变就不动
   private func set(_ string: NSAttributedString) {
     guard (textLayer.string as? NSAttributedString) != string else { return }
     let textSize = string.size()
@@ -1583,7 +1781,7 @@ private struct Pill {
     layer.bounds.size = CGSize(
       width: ceil(textSize.width) + padding.width * 2,
       height: ceil(textSize.height) + padding.height * 2)
-    layer.cornerRadius = radius ?? layer.bounds.height / 2
+    layer.cornerRadius = layer.bounds.height / 2
     Style.HUD.applyShadow(
       to: layer,
       path: CGPath(

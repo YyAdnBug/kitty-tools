@@ -1,5 +1,5 @@
 // 框选会话：每块屏幕盖一个全屏遮罩（SelectionOverlay）画冻结帧，选区只在一块屏上。两种用法：
-// - 截图翻译 / 识字 select：拖动框选，松手确认，Esc / 右键取消；
+// - 截图翻译 / 识字 select：拖动框选（⇧ 正方形、⌥ 从中心、空格平移、吸附窗口边），松手确认，Esc / 右键取消；
 // - 截图 capture：悬停高亮窗口 / 单击截整窗、确认后可调整选区和标注，↩ 复制、⌘S 保存、⇧⌘S 另存为、T 钉图、
 //   S 长截图、工具栏识字 / 翻译，C 复制放大镜中心的色值，D 选中上次的区域。
 // 遮罩是不激活前台的 NSPanel（和 OverlayPanel 一样不抢前台 App），会话结束立即 orderOut 释放，不常驻
@@ -120,29 +120,158 @@ enum RegionSelector {
     }
   }
 
-  /// 拖手柄：从按下时的选区 original 出发，把手柄管的边移到 point（先夹进 bounds）；越过对边就翻过去。
-  /// 宽高至少 1 点
+  /// 拖手柄：从按下时的选区 original 出发，把手柄管的边移到 point（先夹进 bounds）；越过对边就翻过去。宽高至少 1 点。
+  /// ratio（宽 / 高：⇧ 时是原选区的比例，或锁着的预设）：拖角按拖得更远的那边定大小，拖边时另一边跟着变、以原中心对齐；
+  /// fromCenter（⌥）：对边反向一起动，中心不动
   static func resized(
-    _ original: CGRect, _ handle: Handle, to point: CGPoint, within bounds: CGRect
-  )
-    -> CGRect
-  {
+    _ original: CGRect, _ handle: Handle, to point: CGPoint, within bounds: CGRect,
+    ratio: CGFloat? = nil, fromCenter: Bool = false
+  ) -> CGRect {
     let x = min(max(point.x, bounds.minX), bounds.maxX)
     let y = min(max(point.y, bounds.minY), bounds.maxY)
-    let xs =
-      handle.movesMinX
-      ? (x, original.maxX) : handle.movesMaxX ? (original.minX, x) : (original.minX, original.maxX)
-    let ys =
-      handle.movesMinY
-      ? (y, original.maxY) : handle.movesMaxY ? (original.minY, y) : (original.minY, original.maxY)
-    var rect = CGRect(
-      x: min(xs.0, xs.1), y: min(ys.0, ys.1), width: abs(xs.1 - xs.0), height: abs(ys.1 - ys.0))
-    rect.size.width = max(rect.width, 1)
-    rect.size.height = max(rect.height, 1)
-    // 补出来的 1 点别越过屏幕边（越界的选区裁不出图）
-    rect.origin.x = min(rect.minX, bounds.maxX - rect.width)
-    rect.origin.y = min(rect.minY, bounds.maxY - rect.height)
-    return rect
+    let movesX = handle.movesMinX || handle.movesMaxX
+    let movesY = handle.movesMinY || handle.movesMaxY
+    // 不动的是对边，⌥ 时是中心；锁比例拖边时另一个方向也以中心对齐
+    let centerX = fromCenter || (!movesX && ratio != nil)
+    let centerY = fromCenter || (!movesY && ratio != nil)
+    let fixed = CGPoint(
+      x: centerX ? original.midX : handle.movesMinX ? original.maxX : original.minX,
+      y: centerY ? original.midY : handle.movesMinY ? original.maxY : original.minY)
+    var width = movesX ? abs(x - fixed.x) * (centerX ? 2 : 1) : original.width
+    var height = movesY ? abs(y - fixed.y) * (centerY ? 2 : 1) : original.height
+    if let ratio {
+      if movesX, movesY {
+        if width >= height * ratio { height = width / ratio } else { width = height * ratio }
+      } else if movesX {
+        height = width / ratio
+      } else {
+        width = height * ratio
+      }
+    }
+    /// 固定点在框里的位置：往哪侧拖就往哪侧长（正好压在对边上时按手柄那一侧）
+    func side(_ moves: Bool, _ center: Bool, _ value: CGFloat, _ fixed: CGFloat, _ low: Bool)
+      -> CGFloat
+    {
+      if center { return 0.5 }
+      guard moves else { return 0 }
+      return value > fixed ? 0 : value < fixed ? 1 : low ? 1 : 0
+    }
+    return fitted(
+      fixed: fixed, size: CGSize(width: width, height: height),
+      anchor: CGPoint(
+        x: side(movesX, centerX, x, fixed.x, handle.movesMinX),
+        y: side(movesY, centerY, y, fixed.y, handle.movesMinY)),
+      keepsRatio: ratio != nil, within: bounds)
+  }
+
+  /// 拖出新框：从锚点拉到 point。ratio（宽 / 高：⇧ 时 1，或锁着的预设）按拖得更远的那边定大小；fromCenter（⌥）时锚点是中心。
+  /// 超出 bounds 就缩小（锁比例时等比缩），锚点不动
+  static func drawn(
+    from anchor: CGPoint, to point: CGPoint, ratio: CGFloat? = nil, fromCenter: Bool = false,
+    within bounds: CGRect
+  ) -> CGRect {
+    var width = abs(point.x - anchor.x)
+    var height = abs(point.y - anchor.y)
+    if let ratio {
+      width = max(width, height * ratio)
+      height = width / ratio
+    }
+    let scale: CGFloat = fromCenter ? 2 : 1
+    return fitted(
+      fixed: anchor, size: CGSize(width: width * scale, height: height * scale),
+      anchor: CGPoint(
+        x: fromCenter ? 0.5 : point.x >= anchor.x ? 0 : 1,
+        y: fromCenter ? 0.5 : point.y >= anchor.y ? 0 : 1),
+      keepsRatio: ratio != nil, within: bounds)
+  }
+
+  /// 固定点 fixed 在框里的相对位置是 anchor（0 左 / 下边、0.5 中心、1 右 / 上边）：超出 bounds 就缩小（keepsRatio 时等比缩），
+  /// 宽高至少 1 点，补出来的那点也别越过 bounds（越界的选区裁不出图）
+  private static func fitted(
+    fixed: CGPoint, size: CGSize, anchor: CGPoint, keepsRatio: Bool, within bounds: CGRect
+  ) -> CGRect {
+    /// 固定点往两侧各还有多少地方，折成这个方向最多多长
+    func room(_ value: CGFloat, _ k: CGFloat, _ low: CGFloat, _ high: CGFloat) -> CGFloat {
+      max(
+        0, min(k < 1 ? (high - value) / (1 - k) : .infinity, k > 0 ? (value - low) / k : .infinity))
+    }
+    let maxWidth = room(fixed.x, anchor.x, bounds.minX, bounds.maxX)
+    let maxHeight = room(fixed.y, anchor.y, bounds.minY, bounds.maxY)
+    var width = size.width
+    var height = size.height
+    if keepsRatio {
+      let shrink = min(
+        1, width > maxWidth ? maxWidth / width : 1, height > maxHeight ? maxHeight / height : 1)
+      width *= shrink
+      height *= shrink
+    } else {
+      width = min(width, maxWidth)
+      height = min(height, maxHeight)
+    }
+    width = max(width, 1)
+    height = max(height, 1)
+    return CGRect(
+      x: min(max(fixed.x - width * anchor.x, bounds.minX), bounds.maxX - width),
+      y: min(max(fixed.y - height * anchor.y, bounds.minY), bounds.maxY - height),
+      width: width, height: height)
+  }
+
+  /// 吸附：threshold 内离 value 最近的候选边；没有就原值，edge 为 nil（吸上了才画参考线）
+  static func snapped(_ value: CGFloat, to edges: [CGFloat], threshold: CGFloat = 6)
+    -> (value: CGFloat, edge: CGFloat?)
+  {
+    guard let nearest = edges.min(by: { abs($0 - value) < abs($1 - value) }),
+      abs(nearest - value) <= threshold
+    else { return (value, nil) }
+    return (nearest, nearest)
+  }
+
+  /// ⌘ / ⌥ + 方向键：把 edge 那条边往外推 delta（负数往里收）；短边不小于 minimumSide（本来就更小的不再收），夹在 bounds 里
+  static func pushed(_ rect: CGRect, _ edge: Handle, by delta: CGFloat, within bounds: CGRect)
+    -> CGRect
+  {
+    var (minX, minY, maxX, maxY) = (rect.minX, rect.minY, rect.maxX, rect.maxY)
+    let minWidth = min(rect.width, minimumSide)
+    let minHeight = min(rect.height, minimumSide)
+    switch edge {
+    case .left: minX = min(max(minX - delta, bounds.minX), maxX - minWidth)
+    case .right: maxX = max(min(maxX + delta, bounds.maxX), minX + minWidth)
+    case .bottom: minY = min(max(minY - delta, bounds.minY), maxY - minHeight)
+    case .top: maxY = max(min(maxY + delta, bounds.maxY), minY + minHeight)
+    default: return rect
+    }
+    return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+  }
+
+  /// 尺寸胶囊输入的像素宽高 → 选区：左上角 (minX, maxY) 不动（先对齐到像素格），按每点几像素 scale 换成点，
+  /// 往右下长、夹进 bounds（至少 1 点）
+  static func sized(_ rect: CGRect, pixels: CGSize, scale: CGSize, within bounds: CGRect) -> CGRect
+  {
+    let left = (rect.minX * scale.width).rounded() / scale.width
+    let top = (rect.maxY * scale.height).rounded() / scale.height
+    let width = min(max(pixels.width / scale.width, 1), bounds.maxX - left)
+    let height = min(max(pixels.height / scale.height, 1), top - bounds.minY)
+    return CGRect(x: left, y: top - height, width: width, height: height)
+  }
+
+  /// 比例预设（尺寸胶囊的菜单）：宽 / 高，nil = 自由
+  static let ratios: [(title: String, value: CGFloat?)] = [
+    ("自由", nil), ("1:1", 1), ("4:3", 4.0 / 3), ("3:2", 1.5), ("16:9", 16.0 / 9), ("9:16", 9.0 / 16),
+  ]
+
+  static func ratioTitle(_ ratio: CGFloat?) -> String {
+    ratios.first { $0.value == ratio }?.title ?? "自由"
+  }
+
+  /// 套用比例预设：宽不变、高按比例，顶边和水平中心不动；下面放不下就按剩下的高反推宽（只会变窄，不会出屏）
+  static func applying(_ ratio: CGFloat, to rect: CGRect, within bounds: CGRect) -> CGRect {
+    var width = rect.width
+    var height = width / ratio
+    if rect.maxY - height < bounds.minY {
+      height = rect.maxY - bounds.minY
+      width = height * ratio
+    }
+    return CGRect(x: rect.midX - width / 2, y: rect.maxY - height, width: width, height: height)
   }
 
   /// 平移选区，整块留在 bounds 里（大小不变）
@@ -169,17 +298,20 @@ enum RegionSelector {
   }
 }
 
-/// 一次框选会话：管各屏遮罩、选区只留一块屏、D 键上次区域、结束时收起遮罩并交回结果
+/// 一次框选会话：管各屏遮罩、选区只留一块屏、D 键上次区域、锁着的比例、结束时收起遮罩并交回结果
 final class SelectionSession {
   let mode: SelectionView.Mode
-  /// 松手即确认时屏幕上方的提示（截图模式自己拼）
+  /// 松手即确认时屏幕上方的提示，几段之间用「 · 」隔开（截图模式自己拼）
   let hint: String
   /// 上次截图的区域（全局坐标）
   let lastRegion: CGRect?
   /// 一开始就选中上次的区域
   var preselectsLastRegion = false
+  /// 尺寸胶囊里锁着的比例（宽 / 高，RegionSelector.ratios 里的一个）：之后框选、拖边都按它，选「自由」解锁。整个会话共用
+  var lockedRatio: CGFloat?
   private var overlays: [SelectionOverlay] = []
-  private var continuation: CheckedContinuation<RegionSelector.Outcome?, Never>?
+  /// 交回结果（单测直接接上它，不走 start 弹遮罩）
+  var continuation: CheckedContinuation<RegionSelector.Outcome?, Never>?
 
   init(mode: SelectionView.Mode, hint: String = "", lastRegion: CGRect? = nil) {
     self.mode = mode
@@ -202,16 +334,20 @@ final class SelectionSession {
     let mouse = NSEvent.mouseLocation
     let key = overlays.first { NSMouseInRect(mouse, $0.frame, false) } ?? overlays[0]
     key.makeKey()
-    if mode == .capture {  // 放大镜一出来就在光标处
-      let view = key.selectionView
-      view.mouse = view.clamped(view.convert(key.convertPoint(fromScreen: mouse), from: nil))
-    }
+    // 放大镜一出来就在光标处
+    let view = key.selectionView
+    view.mouse = view.clamped(view.convert(key.convertPoint(fromScreen: mouse), from: nil))
     if preselectsLastRegion { selectLastRegion() }
   }
 
   /// 除 view 以外有没有屏上有选区（view 为 nil 时看全部屏）
   func hasSelection(besides view: SelectionView?) -> Bool {
     overlays.contains { $0.selectionView !== view && $0.selectionView.selection != nil }
+  }
+
+  /// 除 view 以外有没有屏上画了标注（右键不清空）
+  func hasAnnotations(besides view: SelectionView) -> Bool {
+    overlays.contains { $0.selectionView !== view && !$0.selectionView.annotations.isEmpty }
   }
 
   /// 这块屏开始操作：别的屏清掉选区、悬停和放大镜（选区只在一块屏上）
@@ -230,12 +366,30 @@ final class SelectionSession {
     overlay.selectionView.select(rect)
   }
 
+  /// 结果立刻交回；取消时遮罩 0.10 s 淡出再收起（期间不接鼠标），出图时立刻收起（S1 飞行卡片接手）
   func finish(_ outcome: RegionSelector.Outcome?) {
     guard let continuation else { return }
     self.continuation = nil
-    for overlay in overlays { overlay.orderOut(nil) }
+    let closing = overlays
     overlays = []
     NSCursor.arrow.set()
+    if outcome == nil, !closing.isEmpty {
+      for overlay in closing { overlay.ignoresMouseEvents = true }
+      NSAnimationContext.runAnimationGroup { context in
+        context.duration = Style.fadeOut
+        context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+        for overlay in closing { overlay.animator().alphaValue = 0 }
+      } completionHandler: {
+        MainActor.assumeIsolated {
+          for overlay in closing {
+            overlay.orderOut(nil)
+            overlay.alphaValue = 1
+          }
+        }
+      }
+    } else {
+      for overlay in closing { overlay.orderOut(nil) }
+    }
     continuation.resume(returning: outcome)
   }
 }
