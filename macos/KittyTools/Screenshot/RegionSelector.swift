@@ -91,11 +91,32 @@ enum RegionSelector {
     }
   }
 
-  /// 点中的手柄（容差 tolerance 点）
-  static func handle(at point: CGPoint, in rect: CGRect, tolerance: CGFloat = 6) -> Handle? {
-    Handle.allCases.first {
-      let handle = $0.point(in: rect)
-      return abs(handle.x - point.x) <= tolerance && abs(handle.y - point.y) <= tolerance
+  /// 点中的手柄：整条边都能拖（系统截屏、CleanShot 的习惯），不只是 8 个手柄点。每条边一条带：边外 tolerance、
+  /// 边内 inner（默认同 tolerance；选区很小时调用方缩小它，中间还能拖着平移），横竖两条带交叠处是角
+  static func handle(
+    at point: CGPoint, in rect: CGRect, tolerance: CGFloat = 8, inner: CGFloat? = nil
+  ) -> Handle? {
+    let inner = inner ?? tolerance
+    /// 靠近哪一侧：-1 小的那条边、1 大的那条边、0 都不靠近、nil 在带外（两侧都靠近时取近的）
+    func side(_ value: CGFloat, _ low: CGFloat, _ high: CGFloat) -> Int? {
+      guard value >= low - tolerance, value <= high + tolerance else { return nil }
+      let nearLow = value <= low + inner
+      let nearHigh = value >= high - inner
+      if nearLow, nearHigh { return value - low <= high - value ? -1 : 1 }
+      return nearLow ? -1 : nearHigh ? 1 : 0
+    }
+    guard let x = side(point.x, rect.minX, rect.maxX), let y = side(point.y, rect.minY, rect.maxY)
+    else { return nil }
+    switch (x, y) {
+    case (-1, -1): return .bottomLeft
+    case (1, -1): return .bottomRight
+    case (1, 1): return .topRight
+    case (-1, 1): return .topLeft
+    case (0, -1): return .bottom
+    case (0, 1): return .top
+    case (-1, 0): return .left
+    case (1, 0): return .right
+    default: return nil
     }
   }
 

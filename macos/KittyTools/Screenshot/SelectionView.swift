@@ -1,7 +1,7 @@
 // 框选遮罩里一块屏幕的画面与交互（会话见 RegionSelector）。从下到上：冻结帧（本视图图层的内容）→ 标注层
 // （AnnotationCanvas，只重画变了的那块）→ 暗色蒙层、选区边框、手柄、尺寸、放大镜（CALayer，拖动时只改路径和位置，
 // 不重画整屏）→ 文字输入框 → 工具栏与样式栏（EditorToolbar）。
-// 截图翻译 / 识字：拖动框选、松手即确认。截图：悬停高亮窗口、单击截整窗，拖出或单击后进入调整：8 个手柄、拖动平移、
+// 截图翻译 / 识字：拖动框选、松手即确认。截图：悬停高亮窗口、单击截整窗，拖出或单击后进入调整：整条边和四角都能拖、拖动平移、
 // 方向键微调（⇧ 10 点）、拖动框选时按住空格平移；放大镜显示中心像素的色值（C 复制），按住 ⌘ 出整屏十字准线；S 长截图；
 // 标注 1–4（矩形、箭头、文字、
 // 马赛克，⇧ 画正方形 / 45° 箭头），点中标注可拖动、改颜色粗细、⌫ 删除、双击文字重新编辑，⌘Z 撤销、⇧⌘Z 重做。
@@ -61,7 +61,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private enum Drag {
     /// 截图：按下还没拖开，松手算单击（截窗口 / 整屏）
     case pending(CGPoint)
-    case draw(anchor: CGPoint, last: CGPoint)
+    /// restore：调整时在选区外拖出新框之前的选区（新框太小算误触，恢复它）
+    case draw(anchor: CGPoint, last: CGPoint, restore: CGRect? = nil)
     case move(start: CGPoint, original: CGRect)
     case resize(RegionSelector.Handle, original: CGRect)
     /// 用当前工具拖出新标注
@@ -457,9 +458,11 @@ final class SelectionView: NSView, NSTextViewDelegate {
     }
   }
 
-  /// 手柄命中容差 8 pt；选区很小时按比例缩（不然整块都是手柄，没法拖着平移）
-  private static func handleTolerance(_ selection: CGRect) -> CGFloat {
-    min(8, max(3, min(selection.width, selection.height) / 4))
+  /// 点中哪条边 / 哪个角：边外 8 pt、边内也是 8 pt；选区很小时边内按比例缩（不然整块都是边，没法拖着平移）
+  private static func handle(at point: CGPoint, in selection: CGRect) -> RegionSelector.Handle? {
+    RegionSelector.handle(
+      at: point, in: selection, tolerance: 8,
+      inner: min(8, max(3, min(selection.width, selection.height) / 4)))
   }
 
   /// 悬停窗口的洞 / 高亮：圆角 10（窗口本身就是圆角的）
@@ -926,9 +929,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
       if event.clickCount == 2, tool == nil, hit == nil, selection.contains(point) {
         return output(.copy)
       }
-      if let handle = RegionSelector.handle(
-        at: point, in: selection, tolerance: Self.handleTolerance(selection))
-      {
+      if let handle = Self.handle(at: point, in: selection) {
         drag = .resize(handle, original: selection)
         return
       }
@@ -964,8 +965,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
       guard hypot(point.x - start.x, point.y - start.y) >= 3 else { return }
       window?.makeKey()
       session.activate(self)
+      let restore = isAdjusting ? selection : nil
       isAdjusting = false
-      drag = .draw(anchor: start, last: start)
+      drag = .draw(anchor: start, last: start, restore: restore)
       extend(to: point)
     case .draw?:
       extend(to: point)
@@ -995,7 +997,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
 
   /// 拖动框选：从锚点拉到当前点；截图时按住空格整块平移，锚点跟着走
   private func extend(to point: CGPoint) {
-    guard case .draw(var anchor, let last)? = drag else { return }
+    guard case .draw(var anchor, let last, let restore)? = drag else { return }
     NSCursor.crosshair.set()
     if mode == .capture, isSpaceDown, let current = selection {
       let moved = RegionSelector.moved(
@@ -1008,7 +1010,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
         x: min(anchor.x, point.x), y: min(anchor.y, point.y), width: abs(point.x - anchor.x),
         height: abs(point.y - anchor.y))
     }
-    drag = .draw(anchor: anchor, last: point)
+    drag = .draw(anchor: anchor, last: point, restore: restore)
   }
 
   override func mouseUp(with event: NSEvent) {
@@ -1021,10 +1023,11 @@ final class SelectionView: NSView, NSTextViewDelegate {
       if !isAdjusting, !session.hasSelection(besides: self) {
         select(windowRect(at: point) ?? bounds)
       }
-    case .draw?:
+    case .draw(_, _, let restore)?:
       guard let selection, min(selection.width, selection.height) >= RegionSelector.minimumSide
       else {
-        self.selection = nil  // 单击或太小：回到待选，可以重新拖
+        // 太小算误触：调整时恢复原来的选区（想拖边差了几点不该把选区弄丢），否则回到待选
+        if let restore { select(restore) } else { self.selection = nil }
         return
       }
       if mode == .quick { output(.copy) } else { isAdjusting = true }
@@ -1062,9 +1065,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     if let editor {  // 输入框里是文字光标；外面点一下只是收下文字
       return (editor.field.frame.contains(point) ? NSCursor.iBeam : NSCursor.arrow).set()
     }
-    if let handle = RegionSelector.handle(
-      at: point, in: selection, tolerance: Self.handleTolerance(selection))
-    {
+    if let handle = Self.handle(at: point, in: selection) {
       return NSCursor.frameResize(position: Self.position(of: handle), directions: .all).set()
     }
     if annotation(at: point) != nil { return NSCursor.openHand.set() }
@@ -1106,9 +1107,16 @@ final class SelectionView: NSView, NSTextViewDelegate {
 
   override func keyDown(with event: NSEvent) {
     let code = Int(event.keyCode)
-    // Esc：先取消选中的标注，再取消截图
+    // Esc：先取消选中的标注，再收起工具，最后才取消截图（免得一下把画好的标注全丢了）
     if code == kVK_Escape {
-      if selectedAnnotation != nil { selectedAnnotation = nil } else { session.finish(nil) }
+      if selectedAnnotation != nil {
+        selectedAnnotation = nil
+      } else if tool != nil {
+        tool = nil
+        refreshCursor()
+      } else {
+        session.finish(nil)
+      }
       return
     }
     // 单字母键不带 ⌘ ⌃ ⌥（⌘C 之类走 performKeyEquivalent）。ponytail: 按物理键位，Dvorak 等布局下位置不同

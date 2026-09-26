@@ -81,6 +81,13 @@ struct ScreenshotTests {
     #expect(RegionSelector.handle(at: CGPoint(x: 302, y: 199), in: rect) == .topRight)
     #expect(RegionSelector.handle(at: CGPoint(x: 200, y: 100), in: rect) == .bottom)
     #expect(RegionSelector.handle(at: CGPoint(x: 200, y: 150), in: rect) == nil)
+    // 整条边都能拖：离手柄远的边上、边外 8 点内都算；再远就不算
+    #expect(RegionSelector.handle(at: CGPoint(x: 140, y: 200), in: rect) == .top)
+    #expect(RegionSelector.handle(at: CGPoint(x: 140, y: 207), in: rect) == .top)
+    #expect(RegionSelector.handle(at: CGPoint(x: 140, y: 209), in: rect) == nil)
+    #expect(RegionSelector.handle(at: CGPoint(x: 96, y: 130), in: rect) == .left)
+    // 边内的带可以收窄（小选区中间留给平移）
+    #expect(RegionSelector.handle(at: CGPoint(x: 140, y: 195), in: rect, inner: 3) == nil)
     // 右边拖过左边：翻过去；只动这条边
     #expect(
       RegionSelector.resized(rect, .right, to: CGPoint(x: 50, y: 999), within: bounds)
