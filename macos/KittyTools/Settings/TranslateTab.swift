@@ -1,6 +1,7 @@
 // 设置 › 翻译：语言（第一 / 第二语言；源、目标只在浮窗顶部切换）、译文字号（真卡片实时预览，和浮窗 ⌘± 是同一个值）、
-// 行为（去换行、自动复制、历史与导出），服务（启用、排序、各服务的选项与密钥、自建 AI 实例的增删改、获取模型、测试连接）。
-// 密钥直接读写钥匙串。控件分工（Whisker §6）：2–3 项分段、3–5 项单选、> 5 项弹出菜单。
+// 行为（去换行、自动复制、历史与导出），翻译服务列表（N12：行 = 图标 / 名称 / 状态 / 开关，拖动排序，「+ −」增删自建
+// AI 实例，推进到 TranslateServiceDetail 改选项、密钥、测试连接）。浮窗按键不写在这里（N11，进快捷键速查表）。
+// 控件分工（Whisker §6）：2–3 项分段、3–5 项单选、> 5 项弹出菜单。
 
 import AppKit
 import SwiftUI
@@ -20,9 +21,41 @@ struct TranslateTab: View {
   @AppStorage(Prefs.translateAutoCopy) private var autoCopy = false
   @AppStorage(Prefs.translateHistoryEnabled) private var historyEnabled = true
   @AppStorage(Prefs.translateHistoryLimit) private var historyLimit = 500
-  @State private var editing: String?
+  /// 推进的详情页（服务 id）
+  @State private var path: [String] = []
+  /// 列表里选中的服务（「−」和 ⌫ 删它）
+  @State private var selection: String?
+  /// 等确认删除的自建 AI 服务
+  @State private var removing: String?
+  @State private var keysRevision = 0
 
   var body: some View {
+    NavigationStack(path: $path) {
+      form
+        .navigationTitle(SettingsPage.translate.title)
+        .navigationDestination(for: String.self) { id in
+          TranslateServiceDetail(store: services, id: id)
+        }
+    }
+    .onChange(of: path) { keysRevision += 1 }
+    .confirmationDialog(
+      "删除「\(services.services.first { $0.id == removing }?.name ?? "")」？",
+      isPresented: Binding {
+        removing != nil
+      } set: {
+        if !$0 { removing = nil }
+      }
+    ) {
+      Button("删除", role: .destructive) {
+        if let removing { services.remove(removing) }
+        selection = nil
+      }
+    } message: {
+      Text("会同时删除它保存在钥匙串里的密钥")
+    }
+  }
+
+  private var form: some View {
     Form {
       Section("语言") {
         Picker("第一语言", selection: $first) {
@@ -105,42 +138,34 @@ struct TranslateTab: View {
       } header: {
         Text("行为")
       } footer: {
-        Text(
-          "浮窗快捷键：↩ 翻译，⇧↩ / ⌘↩ 换行，⌘R 重新翻译，⌘S 收藏，⌘1–9 复制第几个结果，⌘P 固定，⌘W 关闭，"
-            + "⌘+ / ⌘- / ⌘0 字号。划词来的翻译可以「替换原文」；「划词翻译并替换」可在快捷键页设置（默认不设）。"
-        )
-        .font(.caption)
-        .foregroundStyle(.secondary)
+        HStack(alignment: .firstTextBaseline) {
+          Text("划词来的翻译可以「替换原文」，浮窗里的按键见快捷键速查表。")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          Spacer(minLength: 8)
+          // 合并后在这里放 ShortcutsButton()
+        }
       }
       Section {
-        ForEach($services.services) { $service in
-          ServiceRow(
-            service: $service, isEditing: editing == service.id,
-            canMoveUp: service.id != services.services.first?.id,
-            canMoveDown: service.id != services.services.last?.id
-          ) { offset in
-            move(service.id, by: offset)
-          } onEdit: {
-            editing = editing == service.id ? nil : service.id
+        serviceList
+        ListEditBar(
+          removeTitle: "删除所选的 AI 服务", canRemove: selection.map(isRemovable) ?? false,
+          remove: { removing = selection }
+        ) {
+          Button("添加 AI 服务", systemImage: "plus") {
+            let service = TranslateService.newAI()
+            services.services.append(service)
+            selection = service.id
+            path.append(service.id)
           }
-          if editing == service.id {
-            ServiceEditor(service: $service) {
-              services.remove(service.id)
-              editing = nil
-            }
-          }
-        }
-        Button("添加 AI 服务", systemImage: "plus") {
-          let service = TranslateService.newAI()
-          services.services.append(service)
-          editing = service.id
+          .labelStyle(.iconOnly)
+          .help("添加 AI 服务（OpenAI 兼容 / Azure / Anthropic）")
         }
       } header: {
         Text("翻译服务")
       } footer: {
-        Text("结果按列表顺序显示；第一个服务的结果写入历史、用于自动复制。")
-          .font(.caption)
-          .foregroundStyle(.secondary)
+        OrderedList.footnote(
+          "拖动调整顺序，结果按这个顺序显示，第一个服务的结果写入历史、用于自动复制；双击一行或点 › 进入设置。")
       }
     }
     .formStyle(.grouped)
@@ -170,195 +195,73 @@ struct TranslateTab: View {
     }
   }
 
-  private func move(_ id: String, by offset: Int) {
-    guard let index = services.services.firstIndex(where: { $0.id == id }),
-      services.services.indices.contains(index + offset)
-    else { return }
-    services.services.swapAt(index, index + offset)
+  // MARK: 服务列表（N12）
+
+  /// 单击选中（给「−」和 ⌫ 用）、拖动排序、双击 / ↩ / 行尾 › 推进详情页。
+  /// 不做「单击就推进」：选中要留给「−」和拖动（系统设置「登录项」、Bob 服务页都是单击选中）
+  private var serviceList: some View {
+    List(selection: $selection) {
+      ForEach($services.services) { $service in
+        ServiceListRow(
+          service: $service, status: service.settingsStatus, open: { path.append(service.id) }
+        )
+        .tag(service.id)
+      }
+      .onMove { services.services.move(fromOffsets: $0, toOffset: $1) }
+    }
+    .listStyle(.plain)
+    .scrollContentBackground(.hidden)
+    .scrollDisabled(services.services.count <= OrderedList.visibleRows)
+    .frame(height: OrderedList.height(rows: services.services.count))
+    .contextMenu(forSelectionType: String.self) { ids in
+      if let id = ids.first {
+        Button("设置…") { path.append(id) }
+        if isRemovable(id) { Button("删除…", role: .destructive) { removing = id } }
+      }
+    } primaryAction: { ids in
+      if let id = ids.first { path.append(id) }
+    }
+    .onDeleteCommand { if let selection, isRemovable(selection) { removing = selection } }
+    // 从详情页回来时重建一次：行的状态读钥匙串，改了密钥不会让列表自己重画
+    .id(keysRevision)
+  }
+
+  /// 只有自建的 AI 服务能删；内置服务只能关掉
+  private func isRemovable(_ id: String) -> Bool {
+    services.services.first { $0.id == id }?.kind == .ai
   }
 }
 
-private struct ServiceRow: View {
+/// 服务行：服务图标、名称 + 状态、启用开关、›（推进详情页）
+private struct ServiceListRow: View {
   @Binding var service: TranslateService
-  let isEditing: Bool
-  let canMoveUp: Bool
-  let canMoveDown: Bool
-  let onMove: (Int) -> Void
-  let onEdit: () -> Void
+  let status: (text: String, isProblem: Bool)
+  let open: () -> Void
 
   var body: some View {
-    HStack(spacing: 8) {
-      Toggle("启用", isOn: $service.isEnabled).labelsHidden()
-      ServiceTile(service: service)
+    HStack(spacing: 10) {
+      ServiceTile(service: service, size: 24)
       VStack(alignment: .leading, spacing: 1) {
-        Text(service.name).lineLimit(1)
-        Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        Text(service.name).font(.system(size: 13))
+        Text(status.text)
+          .font(.system(size: 11))
+          .foregroundStyle(OrderedList.statusStyle(isProblem: status.isProblem))
       }
-      Spacer()
-      Group {
-        Button("上移", systemImage: "chevron.up") { onMove(-1) }.disabled(!canMoveUp)
-        Button("下移", systemImage: "chevron.down") { onMove(1) }.disabled(!canMoveDown)
-        Button(
-          isEditing ? "完成" : "编辑",
-          systemImage: isEditing ? "checkmark.circle" : "slider.horizontal.3", action: onEdit)
-      }
-      .labelStyle(.iconOnly)
-      .buttonStyle(.borderless)
+      .lineLimit(1)
+      .truncationMode(.tail)
+      .accessibilityElement(children: .combine)
+      Spacer(minLength: 8)
+      Toggle("启用「\(service.name)」", isOn: $service.isEnabled)
+        .labelsHidden()
+        .toggleStyle(.switch)
+        .controlSize(.small)
+      Button("设置「\(service.name)」", systemImage: "chevron.forward", action: open)
+        .labelStyle(.iconOnly)
+        .buttonStyle(.borderless)
+        .foregroundStyle(.tertiary)
+        .help("设置")
     }
-  }
-
-  private var detail: String {
-    switch service.kind {
-    case .zhipu: service.model ?? ""
-    case .ai:
-      [service.aiProtocol?.title, service.model].compactMap { $0 }.filter { !$0.isEmpty }
-        .joined(separator: " · ")
-    case .deepl: service.usesDeepLX == true ? "DeepLX" : "官方 API"
-    case .microsoft: service.secret("subscriptionKey") == nil ? "免费 Edge 接口" : "Azure 翻译"
-    default: service.secretFields.allSatisfy { service.secret($0.name) != nil } ? "已配置" : "未配置密钥"
-    }
-  }
-}
-
-/// 展开在服务行下面的配置表单：各服务自己的选项 + 钥匙串里的密钥字段 + 测试连接
-private struct ServiceEditor: View {
-  @Binding var service: TranslateService
-  let onDelete: () -> Void
-  @State private var secrets: [String: String] = [:]
-  @State private var models: [String] = []
-  @State private var status: String?
-  @State private var isBusy = false
-  @State private var confirmDelete = false
-
-  var body: some View {
-    Group {
-      options
-      ForEach(service.secretFields, id: \.name) { field in
-        SecureField(field.label, text: secretBinding(field.name), prompt: Text(field.prompt))
-      }
-      if service.kind == .ai { modelRow }
-      HStack {
-        Button("测试连接", action: test).disabled(isBusy)
-        if isBusy { ProgressView().controlSize(.small) }
-        if let status { Text(status).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
-        Spacer()
-        if service.kind == .ai {
-          Button("删除服务", role: .destructive) { confirmDelete = true }
-        }
-      }
-    }
-    .task(id: service.id) {
-      secrets = Dictionary(
-        uniqueKeysWithValues: service.secretFields.map { ($0.name, service.secret($0.name) ?? "") })
-    }
-    .confirmationDialog("删除「\(service.name)」？", isPresented: $confirmDelete) {
-      Button("删除", role: .destructive, action: onDelete)
-    } message: {
-      Text("会同时删除它保存在钥匙串里的密钥")
-    }
-  }
-
-  @ViewBuilder private var options: some View {
-    switch service.kind {
-    case .zhipu:
-      Picker("模型", selection: Binding($service.model, default: TranslateService.zhipuModels[0])) {
-        ForEach(TranslateService.zhipuModels, id: \.self) { Text($0).tag($0) }
-      }
-      .pickerStyle(.segmented)
-    case .ai:
-      TextField("名称", text: $service.name)
-      Picker("协议", selection: Binding($service.aiProtocol, default: .openai)) {
-        ForEach(TranslateService.AIProtocol.allCases, id: \.self) { Text($0.title).tag($0) }
-      }
-      .pickerStyle(.segmented)
-      TextField("服务地址", text: Binding($service.baseURL, default: ""), prompt: Text(addressHint))
-    case .deepl:
-      Picker("接口", selection: Binding($service.usesDeepLX, default: false)) {
-        Text("官方 API").tag(false)
-        Text("DeepLX（自建）").tag(true)
-      }
-      .pickerStyle(.segmented)
-      if service.usesDeepLX == true {
-        TextField(
-          "DeepLX 地址", text: Binding($service.baseURL, default: ""),
-          prompt: Text("如 http://127.0.0.1:1188/translate"))
-      }
-    case .microsoft:
-      TextField(
-        "区域", text: Binding($service.region, default: ""), prompt: Text("填了 Key 才需要，如 eastasia"))
-    default:
-      EmptyView()
-    }
-  }
-
-  private var modelRow: some View {
-    HStack {
-      TextField("模型", text: Binding($service.model, default: ""), prompt: Text("如 gpt-4o-mini"))
-      Menu("获取模型") {
-        if models.isEmpty { Text("点「获取」读取服务端的模型列表") }
-        ForEach(models, id: \.self) { model in Button(model) { service.model = model } }
-        Divider()
-        Button("获取", action: fetchModels)
-      }
-      .fixedSize()
-    }
-  }
-
-  private func secretBinding(_ field: String) -> Binding<String> {
-    Binding(
-      get: { secrets[field] ?? "" },
-      set: { value in
-        secrets[field] = value
-        service.setSecret(value.trimmingCharacters(in: .whitespacesAndNewlines), field)
-      })
-  }
-
-  private var addressHint: String {
-    switch service.aiProtocol ?? .openai {
-    case .openai: "https://api.openai.com/v1 或本机 http://127.0.0.1:11434/v1"
-    case .azure: "https://<资源名>.openai.azure.com/openai/v1"
-    case .anthropic: "留空即 https://api.anthropic.com"
-    }
-  }
-
-  /// 用 Hello, world 做一次英译中
-  private func test() {
-    isBusy = true
-    status = nil
-    let request = TranslateRequest(text: "Hello, world", from: .en, to: .zhHans)
-    let service = service
-    Task {
-      defer { isBusy = false }
-      do {
-        var result = ""
-        for try await text in service.translate(request) { result = text }
-        status = "✓ \(result)"
-      } catch {
-        status = "✗ \(error.localizedDescription)"
-      }
-    }
-  }
-
-  private func fetchModels() {
-    isBusy = true
-    status = nil
-    let key = secrets["apiKey"] ?? ""
-    let (baseURL, aiProtocol) = (service.baseURL ?? "", service.aiProtocol ?? .openai)
-    Task {
-      defer { isBusy = false }
-      do {
-        models = try await AIService.fetchModels(baseURL: baseURL, aiProtocol: aiProtocol, key: key)
-        status = models.isEmpty ? "服务端没有返回模型" : "找到 \(models.count) 个模型，在「获取模型」里选择"
-      } catch {
-        status = "✗ \(error.localizedDescription)"
-      }
-    }
-  }
-}
-
-extension Binding {
-  /// 把可选值绑定成非可选（读空时用默认值，写回原样）
-  init(_ source: Binding<Value?>, default value: Value) {
-    self.init(get: { source.wrappedValue ?? value }, set: { source.wrappedValue = $0 })
+    .frame(height: OrderedList.rowHeight - 8)
+    .accessibilityAction(named: "设置", open)
   }
 }

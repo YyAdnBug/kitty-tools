@@ -153,6 +153,42 @@ struct SnapshotProbeTests {
     }
     hotKeys.recording = nil
     navigation.page = savedPage  // 别把自检摆的页写进用户偏好
+    // 设置 › 翻译 / 启动器的有序列表（N12）：整页拉长看到列表和「+ −」，外加一个详情页（不改用户的偏好和钥匙串）。
+    // 网页搜索用临时的偏好域摆出各种状态：兜底、重复关键词（橙色）、网址 / 路径快捷链接、刚新建还没填的
+    let suite = "kitty-snapshot-\(UUID().uuidString)"
+    let engines = try #require(UserDefaults(suiteName: suite))
+    defer { engines.removePersistentDomain(forName: suite) }
+    engines.set(
+      SearchEngineDetail.encode(
+        WebSearch.defaults.prefix(3) + [
+          SearchEngine(
+            id: "scholar", name: "Google 学术", keyword: "g",
+            urlTemplate: "https://scholar.google.com/scholar?q={query}", enabled: false),
+          SearchEngine(
+            id: "docs", name: "Apple 开发文档", keyword: "doc",
+            urlTemplate: "https://developer.apple.com/documentation", enabled: false),
+          SearchEngine(
+            id: "downloads", name: "下载", keyword: "", urlTemplate: "~/Downloads", enabled: false),
+          SearchEngine(id: "new", name: "", keyword: "", urlTemplate: "https://", enabled: false),
+        ]), forKey: Prefs.launcherWebSearchEngines)
+    for dark in [false, true] {
+      let suffix = dark ? "-dark" : ""
+      try snapshot(
+        TranslateTab(services: services, history: history, speaker: speaker),
+        size: NSSize(width: 590, height: 1720), dark: dark,
+        to: "\(out)/settings-translate-list\(suffix).png")
+      try snapshot(
+        TranslateServiceDetail(store: services, id: TranslateService.Kind.deepl.rawValue),
+        size: NSSize(width: 590, height: 460), dark: dark,
+        to: "\(out)/settings-translate-detail\(suffix).png")
+      try snapshot(
+        LauncherTab().defaultAppStorage(engines), size: NSSize(width: 590, height: 1400),
+        dark: dark, to: "\(out)/settings-launcher-list\(suffix).png")
+      try snapshot(
+        SearchEngineDetail(id: "scholar").defaultAppStorage(engines),
+        size: NSSize(width: 590, height: 400), dark: dark,
+        to: "\(out)/settings-launcher-detail\(suffix).png")
+    }
     // 快捷键速查表（N11）：sheet 的尺寸，另出一张拉长的看全部分组
     for (name, height, dark) in [
       ("shortcuts", 640.0, false), ("shortcuts-dark", 640, true), ("shortcuts-full", 3500, false),
