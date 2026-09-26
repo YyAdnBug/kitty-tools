@@ -3,9 +3,9 @@
 // 用法：swift macos/brand-icons.swift [预览目录]
 // 写入 KittyTools/Resources/Assets.xcassets：AppIcon 10 张 PNG（1024 画布、主体 824、四边留 100、超椭圆圆角约 185、
 // 烘焙阴影 y 10 / σ 10 / 黑 30%；16、32 像素用手调的简化版）和菜单栏模板图 StatusIcon（22 × 16 pt，@1x / @2x）；
-// 另写 Config/dmg-background.tiff（DMG 窗口背景 600 × 400 pt，@1x + @2x：奶油底、字标 Kitty Tools、虚点弧线箭头、
-// 「仍要打开」路径；改产品名或文案也改这里）。
-// 只用 AppKit / CoreGraphics / CoreText，几何都在这一个文件里：改角色就改这里再跑一遍。给了预览目录时另存放大的预览图。
+// 另写 Config/dmg-background.tiff（DMG 窗口背景：设计区 600 × 400 pt 在左上角，奶油底、字标 Kitty Tools、虚点弧线箭头、
+// 「仍要打开」路径；整张画布 2560 × 1600 pt，窗口拉大也不露白；@1x + @2x，Deflate；改产品名或文案也改这里）。
+// 只用 AppKit / CoreGraphics / CoreText / ImageIO，几何都在这一个文件里：改角色就改这里再跑一遍。给了预览目录时另存放大的预览图。
 
 import AppKit
 
@@ -311,6 +311,41 @@ func dmgBackground(scale: Int) -> CGImage {
   return ctx.makeImage()!
 }
 
+/// 整张背景：访达按 1 pt 对 1 pt 从窗口左上角贴、不缩放，用户把窗口拉大时图外露白，所以画布做大。
+/// 设计区（上面 600 × 400 那张）逐像素原样贴在左上角——直接画在大画布上，CG 渐变的抖动按设备坐标走，会差 1 个色阶；
+/// 外面是奶油底 + 右下那团淡蓝紫光的自然延续（圆心就在设计区右下角），逐像素算、不抖动，纯色段长，压缩后只多一百来 KB。
+/// ponytail: 画布 2560 × 1600 pt 盖住 Apple 各屏默认分辨率下的全屏窗口（Pro Display XDR 的 3008 × 1692 除外），
+/// 再大的窗口右 / 下还会露白；要盖就加大这里（访达 @2x 解码内存按面积涨，现在约 65 MB）
+let dmgCanvas = (width: 2560, height: 1600)
+
+func dmgCanvasImage(scale: Int) -> CGImage {
+  let (width, height) = (dmgCanvas.width * scale, dmgCanvas.height * scale)
+  let ctx = CGContext(
+    data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: sRGB,
+    bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!  // 本来就全不透明：不存 alpha，TIFF 小一截
+  ctx.setFillColor(cream)
+  ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+  // 和 dmgBackground 里那团光同参数：圆心 (600, 400)、半径 340、#C8D8FF 不透明度 0.3 → 0，叠在奶油底上
+  let pixels = ctx.data!.assumingMemoryBound(to: UInt8.self)  // 第 0 行是最上面一行
+  let (base, tint): ([Double], [Double]) = ([0xFF, 0xF5, 0xF0], [0xC8, 0xD8, 0xFF])
+  let s = Double(scale)
+  for y in Int(60 * s)..<Int(740 * s) {
+    for x in Int(260 * s)..<Int(940 * s) {
+      let r = hypot((Double(x) + 0.5) / s - 600, (Double(y) + 0.5) / s - 400)
+      let alpha = 0.3 * max(0, 1 - r / 340)
+      for c in 0..<3 {
+        let value = base[c] + (tint[c] - base[c]) * alpha
+        pixels[y * ctx.bytesPerRow + x * 4 + c] = UInt8(value.rounded())
+      }
+    }
+  }
+  // CG 坐标原点在左下：设计区贴到最上面
+  ctx.draw(
+    dmgBackground(scale: scale),
+    in: CGRect(x: 0, y: height - 400 * scale, width: 600 * scale, height: 400 * scale))
+  return ctx.makeImage()!
+}
+
 // MARK: 写文件
 
 func writePNG(_ image: CGImage, to url: URL) {
@@ -343,14 +378,19 @@ try! """
 }
 
 """.write(to: statusSet.appending(path: "Contents.json"), atomically: true, encoding: .utf8)
-// DMG 背景：@1x、@2x 两张合进一个 TIFF（访达按屏幕倍率挑）
-let dmgReps = [1, 2].map { scale in
-  let rep = NSBitmapImageRep(cgImage: dmgBackground(scale: scale))
-  rep.size = NSSize(width: 600, height: 400)
-  return rep
+// DMG 背景：@1x、@2x 两张合进一个 TIFF（dpi 72 / 144，访达按屏幕倍率挑）。用 ImageIO 写 Deflate：
+// 画布大半是纯色，NSBitmapImageRep 只有 LZW，每条带都从头建字典，同一张图大 60%
+let dmg = CGImageDestinationCreateWithURL(
+  macos.appending(path: "Config/dmg-background.tiff") as CFURL, "public.tiff" as CFString, 2, nil)!
+for scale in [1, 2] {
+  CGImageDestinationAddImage(
+    dmg, dmgCanvasImage(scale: scale),
+    [
+      kCGImagePropertyDPIWidth: 72 * scale, kCGImagePropertyDPIHeight: 72 * scale,
+      kCGImagePropertyTIFFDictionary: [kCGImagePropertyTIFFCompression: 8],  // 8 = Adobe Deflate
+    ] as CFDictionary)
 }
-try! NSBitmapImageRep.tiffRepresentationOfImageReps(in: dmgReps, using: .lzw, factor: 0)!
-  .write(to: macos.appending(path: "Config/dmg-background.tiff"))
+precondition(CGImageDestinationFinalize(dmg))
 print("已写入 AppIcon 10 张、StatusIcon @1x / @2x、DMG 背景 @1x / @2x")
 
 // 预览：大图原样，小图按像素放大 8 倍（不插值），菜单栏放在浅 / 深两条栏上
