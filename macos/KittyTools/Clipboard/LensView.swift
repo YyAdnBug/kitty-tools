@@ -3,7 +3,7 @@
 // 正文区高度只查表（Lens.bodyHeight），不量内在尺寸、不按行数估：高亮块的前缀和、滚动、窗口的透镜预留都靠它算得准；
 // 正文放进固定高度的 frame 裁切、底部 12 pt 渐隐。文本 90（短文本 36）、代码 / JSON 128（行号 + 语法着色）、
 // 颜色 72（色块 + 四枚值胶囊，点一下复制）、链接 90（头图 + 标题 + 网址，LinkPreview 停留 0.25 s 才取）、
-// 图片 108（缩略图 + 尺寸 + 识别文字）、文件 76（Quick Look 缩略图条）。
+// 图片 108（缩略图 + 尺寸；识别文字只用来搜索，不在这里显示）、文件 76（Quick Look 缩略图条）。
 // 正文不可选中（焦点一直在搜索框，⌘ 快捷键都有效），要选文字按 ⌘Y。有搜索词时从第一个命中处摘录并高亮。
 
 import AppKit
@@ -140,7 +140,7 @@ struct LensView: View {
           .fixedSize(horizontal: false, vertical: true)
       }
     case .image:
-      ImageLens(item: item, images: model.store.images, query: model.query)
+      ImageLens(item: item, images: model.store.images)
     case .file:
       FileStrip(paths: item.filePaths ?? [])
     }
@@ -343,51 +343,24 @@ private struct ColorLens: View {
   }
 }
 
-/// 图片：8 pt 棋盘格上的缩略图（高 108、保持比例、左对齐），右边「宽×高 · 大小」胶囊 + 识别文字 3 行
-/// （有搜索词时从第一个命中处摘录、命中词黄底：靠图片文字搜到的，看得出为什么命中）
+/// 图片：8 pt 棋盘格上的缩略图（高 108、保持比例、左对齐），尺寸和大小在下面的元信息行。识别文字不在这里显示
+/// （用户 2026-09-27 嫌干扰；对标 Maccy / Paste / PastePal 都只拿它做搜索）：靠它搜到时行标题接命中那段，
+/// 全文在 ⌘Y 大卡里，⌘K「复制图中文字」
 private struct ImageLens: View {
   let item: ClipItem
   let images: ImageStore
-  let query: String
 
   var body: some View {
     let shape = RoundedRectangle(cornerRadius: Style.Radius.control, style: .continuous)
     let ratio = item.image.map { CGFloat($0.width) / CGFloat(max($0.height, 1)) } ?? 1.5
-    HStack(alignment: .top, spacing: 12) {
-      ZStack {
-        Checkerboard(cell: 8)
-        ThumbnailView(id: item.id, images: images, maxPixel: 720, contentMode: .fit)
-      }
-      .frame(width: min(max(108 * ratio, 60), 360), height: 108)
-      .clipShape(shape)
-      .overlay(shape.strokeBorder(Style.hairline, lineWidth: 0.5))
-      VStack(alignment: .leading, spacing: 6) {
-        if let image = item.image {
-          Text(
-            verbatim:
-              "\(image.width)×\(image.height) · \(image.byteCount.formatted(.byteCount(style: .file)))"
-          )
-          .font(.system(size: 11, weight: .medium))
-          .padding(.horizontal, 8)
-          .frame(height: 20)
-          .background(Style.controlFill, in: .capsule)
-        }
-        if let ocr = item.ocrText, !ocr.isEmpty {
-          Text(recognized(ocr))
-            .font(.system(size: 11))
-            .foregroundStyle(.secondary)
-            .lineLimit(3)
-        }
-      }
+    ZStack {
+      Checkerboard(cell: 8)
+      ThumbnailView(id: item.id, images: images, maxPixel: 720, contentMode: .fit)
     }
-  }
-
-  /// 命中前只留 12 字（同行标题）：只有 3 行，留多了命中会被挤出去
-  private func recognized(_ ocr: String) -> AttributedString {
-    var shown = AttributedString(
-      Search.excerpt(of: ocr, query: query, before: 12, after: 200) ?? ocr)
-    shown.highlight(query)
-    return shown
+    .frame(width: min(max(108 * ratio, 60), 360), height: 108)
+    .clipShape(shape)
+    .overlay(shape.strokeBorder(Style.hairline, lineWidth: 0.5))
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 }
 

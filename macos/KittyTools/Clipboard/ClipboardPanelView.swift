@@ -436,6 +436,9 @@ struct ClipboardPanelView: View {
       }
       Button("编辑内容…") { model.dialog = .edit(item.id) }
     }
+    if item.kind == .image, !(item.ocrText ?? "").isEmpty {
+      Button("复制图中文字") { model.copyRecognizedText(item) }
+    }
     if item.kind == .text || !(item.ocrText ?? "").isEmpty {
       Button("翻译") { model.translate(item) }
     }

@@ -113,6 +113,22 @@ import Observation
     if new.kind == .image { recognizePendingImages() }
   }
 
+  /// 本 App 自己写进剪贴板的一段文字（取色、截图翻译、识字、复制图中文字：Paster.write 让 watcher 跳过了）记进历史：
+  /// 照样过「屏蔽敏感文本」；已有同样正文的条目只挪到最前（保留它的格式、来源），没有才新记一条
+  func recordOwnText(_ text: String) {
+    guard
+      !(UserDefaults.standard.bool(forKey: Prefs.clipboardBlockSensitive)
+        && ClipboardFilter.looksSensitive(text))
+    else { return }
+    if let existing = items.first(where: { $0.kind == .text && $0.text == text }) {
+      bump(existing.id)
+    } else {
+      var item = ClipItem(kind: .text)
+      item.text = text
+      record(item)
+    }
+  }
+
   /// 粘贴过的条目挪到最前
   func bump(_ id: UUID) {
     guard let index = items.firstIndex(where: { $0.id == id }) else { return }

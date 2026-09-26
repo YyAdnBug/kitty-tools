@@ -537,6 +537,15 @@ import Observation
     showToast(.message("已复制"))
   }
 
+  /// 复制图片里识别出的文字（对标 Raycast「Copy Text from Image」、Maccy 的复制识别文字）：是新内容，记进历史
+  /// （和截图识字同一条路：过敏感文本过滤、已有同文只挪到最前）
+  func copyRecognizedText(_ item: ClipItem) {
+    guard let text = item.ocrText, !text.isEmpty else { return }
+    Paster.write(string: text)
+    store.recordOwnText(text)
+    showToast(.message("已复制图中文字"))
+  }
+
   /// 启动器 cb 复制一条：和面板里一样展开片段占位符、带格式的连格式一起写
   func copy(_ item: ClipItem) {
     Paster.write(pasteboardPayloads([item], plainText: false).payloads[0])
@@ -645,6 +654,12 @@ import Observation
       actions.append(
         ActionMenu.Item(title: "复制为纯文本", symbol: "doc.on.clipboard") { [unowned self] in
           copySelection(plainText: true)
+        })
+    }
+    if !many, item.kind == .image, !(item.ocrText ?? "").isEmpty {
+      actions.append(
+        ActionMenu.Item(title: "复制图中文字", symbol: "text.viewfinder") { [unowned self] in
+          copyRecognizedText(item)
         })
     }
     let targets = self.targets

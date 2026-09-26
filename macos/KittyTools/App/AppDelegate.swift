@@ -604,17 +604,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 截图 / 截图翻译 / 取色得到的文字记进剪贴板历史（和复制进来的一样过敏感文本过滤；来源 App 为空）。
   /// 已有同样正文的只挪到最前：走 record 会把那条的格式和来源冲掉，而这次并不是一次复制
   private func recordInHistory(_ text: String) {
-    guard
-      !(UserDefaults.standard.bool(forKey: Prefs.clipboardBlockSensitive)
-        && ClipboardFilter.looksSensitive(text))
-    else { return }
-    if let existing = clipboardStore.items.first(where: { $0.kind == .text && $0.text == text }) {
-      clipboardStore.bump(existing.id)
-    } else {
-      var item = ClipItem(kind: .text)
-      item.text = text
-      clipboardStore.record(item)
-    }
+    clipboardStore.recordOwnText(text)
   }
 
   /// 本机识别文字 → 原文记进剪贴板历史 → 翻译浮窗走现有的多服务翻译（截图翻译、截图工具栏的翻译共用）
