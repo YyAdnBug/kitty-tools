@@ -423,6 +423,19 @@ final class SelectionView: NSView, NSTextViewDelegate {
     return "\(size.width) × \(size.height)"
   }
 
+  /// 选区往外取整到冻结帧的像素（和 pixelRect 裁出来的正好一样）：洞、边框、手柄画在整像素上。鼠标给的是小数点
+  /// （触控板），不取整时 1.5 pt 的粉线发糊，洞边还会在粉线里侧透出一道半像素的暗边
+  private func pixelAligned(_ rect: CGRect) -> CGRect {
+    let scaleX = CGFloat(image.width) / max(bounds.width, 1)
+    let scaleY = CGFloat(image.height) / max(bounds.height, 1)
+    let pixels = RegionSelector.pixelRect(
+      rect, viewSize: bounds.size, imageSize: CGSize(width: image.width, height: image.height))
+    guard !pixels.isEmpty else { return rect }
+    return CGRect(
+      x: pixels.minX / scaleX, y: bounds.height - pixels.maxY / scaleY,
+      width: pixels.width / scaleX, height: pixels.height / scaleY)
+  }
+
   // MARK: 画面
 
   /// 图层的像素密度跟着屏幕走，不然 Retina 上线条和文字是糊的
@@ -504,10 +517,11 @@ final class SelectionView: NSView, NSTextViewDelegate {
     defer { CATransaction.commit() }
     let hovered = selection == nil ? mouse.flatMap(windowRect(at:)) : nil
     if let mouse { placeholder = mouse }
-    updateHole(hovered: hovered)
+    let shown = selection.map(pixelAligned)
+    updateHole(hovered: hovered, shown: shown)
     // 选区双描边：内 1.5 pt 粉 + 外 1 pt black 0.28（亮底暗底都看得清）
-    outline.path = selection.map { CGPath(rect: $0.insetBy(dx: -0.75, dy: -0.75), transform: nil) }
-    outlineOuter.path = selection.map { CGPath(rect: $0.insetBy(dx: -2, dy: -2), transform: nil) }
+    outline.path = shown.map { CGPath(rect: $0.insetBy(dx: -0.75, dy: -0.75), transform: nil) }
+    outlineOuter.path = shown.map { CGPath(rect: $0.insetBy(dx: -2, dy: -2), transform: nil) }
     hint.layer.isHidden = selection != nil && !hintFlashing
     if !hint.layer.isHidden {
       hint.place(
@@ -516,7 +530,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     updateGuides()
 
     let adjusting = mode == .capture && isAdjusting
-    updateHandles(adjusting ? selection : nil)
+    updateHandles(adjusting ? shown : nil)
     updateAnnotationChrome()
     placeBars(showing: adjusting && !movesSelection)
     // 尺寸：选区（或悬停的窗口）左上角外 8 pt；放不下、或挡到工具栏 / 顶部提示时放进里面。调整时可输入
@@ -528,12 +542,14 @@ final class SelectionView: NSView, NSTextViewDelegate {
         width: pixels.width, height: pixels.height, interactive: adjusting,
         ratio: RegionSelector.ratioTitle(session.lockedRatio), locked: session.lockedRatio != nil)
       let size = sizeField.frame.size
-      let x = max(bounds.minX, min(measured.minX, bounds.maxX - size.width))
+      var x = max(bounds.minX, min(measured.minX, bounds.maxX - size.width))
       var y = measured.maxY + 8
       let frame = CGRect(x: x, y: y, width: size.width, height: size.height)
       if frame.maxY > bounds.maxY || isOverBars(frame)
         || (!hint.layer.isHidden && hint.layer.opacity > 0 && hint.frame.intersects(frame))
       {
+        // 放进里面：离左边、上边都 8 pt（贴着左边会盖住角手柄和能拖的边）
+        x = max(bounds.minX, min(measured.minX + 8, bounds.maxX - size.width))
         y = measured.maxY - 8 - size.height
       }
       // 取整到整点：选区给的是小数点，文字落在半像素上会糊
@@ -546,10 +562,10 @@ final class SelectionView: NSView, NSTextViewDelegate {
 
   /// S5 窗口磁吸：洞（蒙层里的圆角矩形）和粉色高亮框。路径元素数恒定（外框 + 一个圆角矩形，没悬停窗口时是光标处的
   /// 零尺寸占位），窗口之间、桌面 ↔ 窗口用 glide 从当前（可能还在动的）形状变形过去；单击窗口选中时洞圆角 10 → 0 用 pop；
-  /// 拖动、微调一律跟手
-  private func updateHole(hovered: CGRect?) {
+  /// 拖动、微调一律跟手。shown 是按像素取整后的选区（见 pixelAligned）
+  private func updateHole(hovered: CGRect?, shown: CGRect?) {
     let spot = CGRect(origin: placeholder, size: .zero)
-    let hole = selection ?? hovered ?? spot
+    let hole = shown ?? hovered ?? spot
     let path = CGMutablePath()
     path.addRect(bounds)
     path.addPath(Self.roundedPath(hole, radius: selection == nil ? Style.Radius.card : 0))
@@ -621,7 +637,11 @@ final class SelectionView: NSView, NSTextViewDelegate {
       }
       let isEdge = [.top, .bottom, .left, .right].contains(handle)
       layer.isHidden = isEdge && min(rect.width, rect.height) < 40
-      layer.position = handle.point(in: rect)
+      // 对齐到屏幕像素（边中点落在半像素上时胶囊发糊）
+      let point = handle.point(in: rect)
+      let pixel = window?.backingScaleFactor ?? 2
+      layer.position = CGPoint(
+        x: (point.x * pixel).rounded() / pixel, y: (point.y * pixel).rounded() / pixel)
       guard appearing else { continue }
       if reduced {
         let fade = CABasicAnimation(keyPath: "opacity")
@@ -811,9 +831,11 @@ final class SelectionView: NSView, NSTextViewDelegate {
     let size = magnifier.bounds.size
     let left = mouse.x + 20 + size.width > bounds.maxX
     let above = mouse.y - 20 - size.height < bounds.minY
+    // 对齐到屏幕像素：光标是小数点时整块放大镜（网格、色值文字）落在半像素上会糊
+    let pixel = window?.backingScaleFactor ?? 2
     let origin = CGPoint(
-      x: left ? mouse.x - 20 - size.width : mouse.x + 20,
-      y: above ? mouse.y + 20 : mouse.y - 20 - size.height)
+      x: ((left ? mouse.x - 20 - size.width : mouse.x + 20) * pixel).rounded() / pixel,
+      y: ((above ? mouse.y + 20 : mouse.y - 20 - size.height) * pixel).rounded() / pixel)
     let center = CGPoint(x: origin.x + size.width / 2, y: origin.y + size.height / 2)
     let appearing = magnifier.isHidden
     let flipped = magnifierSide.map { $0.left != left || $0.above != above } ?? false
@@ -1290,6 +1312,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
     field.wantsLayer = true
     field.layer?.borderWidth = 1
     field.layer?.borderColor = Style.Shot.accent.cgColor
+    // 双击重新编辑时全选：选中底色用品牌粉，字保留自己的颜色（截图家族不用系统强调色）
+    field.selectedTextAttributes = [.backgroundColor: Style.Shot.accent.withAlphaComponent(0.4)]
     field.delegate = self
     let style = existing?.style ?? style
     apply(style, to: field)
@@ -2042,6 +2066,8 @@ private struct Pill {
       width: ceil(textSize.width) + padding.width * 2,
       height: ceil(textSize.height) + padding.height * 2)
     layer.cornerRadius = layer.bounds.height / 2
+    // 胶囊两端是半圆：continuous 的圆角到了高的一半会被夹住，描边在两端多出一道竖线（截图自检看到的）
+    layer.cornerCurve = .circular
     Style.HUD.applyShadow(
       to: layer,
       path: CGPath(

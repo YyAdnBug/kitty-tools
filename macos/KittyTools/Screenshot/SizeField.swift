@@ -1,5 +1,5 @@
 // 截图遮罩里的尺寸胶囊 SizeField（mac-whisker §6 截图「尺寸胶囊」）：HUD 皮肤（圆角 control 6 + 阴影），SF Mono 12 semibold
-// 的像素宽高，中间「×」white 0.5。悬停窗口、框选时只读、不接事件；调整选区时点数字就地变成两个输入框（Tab / ⇧Tab 切宽高、
+// 的像素宽高，中间「×」次文字色。悬停窗口、框选时只读、不接事件；调整选区时点数字就地变成两个输入框（Tab / ⇧Tab 切宽高、
 // ↩ 生效、Esc 放弃、点别处提交；焦点环 1 pt 粉 0.75 + 粉 0.22 r3 外发光），右边比例按钮「自由 ▾」（锁住时粉底）弹 HUD 菜单。
 // 状态和几何归 SelectionView：这里只显示、收点击、把 ↩ / Esc / Tab 交出去。输入框当第一响应者时按键归它；收下时
 // SelectionView 先把第一响应者要回去、再调 endEditing（同文字标注的 EditorField，反过来单键快捷键全失灵）。
@@ -266,8 +266,13 @@ private final class NumberField: NSTextField {
 
   override func becomeFirstResponder() -> Bool {
     let became = super.becomeFirstResponder()
-    if became { onFocus() }
-    return became
+    guard became else { return false }
+    // 选中底色用品牌粉（截图家族不用系统强调色）；字段编辑器是窗口共用的，每次拿到键盘都设一遍
+    (currentEditor() as? NSTextView)?.selectedTextAttributes = [
+      .backgroundColor: Style.Shot.accent.withAlphaComponent(0.4)
+    ]
+    onFocus()
+    return true
   }
 
   override func accessibilityPerformPress() -> Bool {

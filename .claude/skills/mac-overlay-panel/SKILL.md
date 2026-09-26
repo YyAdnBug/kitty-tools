@@ -12,7 +12,7 @@ description: 原生分支 macOS 热键浮层规范（OverlayPanel、全局热键
 - 截图 / 截图翻译先截后选（冻结帧），截屏前先查屏幕录制授权；识字不给语言提示；遮罩画面走图层，不在 draw 里重画整张冻结帧；窗口吸附只读冻结时的 Z 序快照。
 - 钉图出现时不 makeKey（不抢键盘），原位置出现。
 - 长截图：框完收起遮罩在实时画面上截（`captureImage(contentFilter:configuration:)` + `sourceRect`，filter 滤掉本 App）；拼接只用逐行哈希投票，不换 Vision 配准；页脚宁大勿小；自动滚动先把光标挪进选区、移出即停。
-- 标注显示与导出共用 `Annotation.draw`；输出一律用合成图（打码后的内容识别不出来）；文字输入用 NSTextView + `doCommandBy`。
+- 标注显示与导出共用 `Annotation.drawAll`；输出一律用合成图（打码后的内容识别不出来）；文字输入用 NSTextView + `doCommandBy`。
 - 剪贴板面板点外关（鼠标监听成对装卸，兄弟浮层豁免）；翻译浮窗失焦关；固定时翻译浮窗 Esc 也不关。
 - 浮层里的输入框只用 `CommandTextField` / `SourceTextView`（doCommandBy），不用 `.onKeyPress` 抢方向键和回车。
 - 热键非独占，跨进程冲突检测不到；共存期间清空 Tauri 的同名热键。

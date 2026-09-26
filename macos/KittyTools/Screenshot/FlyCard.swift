@@ -14,9 +14,10 @@ enum FlyCard {
     /// 存到的文件
     case saved(URL)
 
+    /// 存到的文件夹的显示名（访达里的名字：中文系统上 Desktop 是「桌面」，同保存 ▾ 菜单的「存储到「桌面」」）
     var folder: String? {
       if case .saved(let url) = self {
-        url.deletingLastPathComponent().lastPathComponent
+        FileManager.default.displayName(atPath: url.deletingLastPathComponent().path)
       } else {
         nil
       }
@@ -40,7 +41,7 @@ enum FlyCard {
     let text =
       switch badge {
       case .copied: "已复制截图"
-      case .saved(let url): "截图已保存到\(url.deletingLastPathComponent().lastPathComponent)"
+      case .saved: "截图已保存到\(badge.folder ?? "")"
       }
     NSAccessibility.post(
       element: NSApp as Any, notification: .announcementRequested,

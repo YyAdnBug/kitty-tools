@@ -29,7 +29,11 @@ struct SelectionInteractionTests {
     private var target: NSView?
     private(set) var intercepted: NSView?
 
-    init(mode: SelectionView.Mode = .capture, windows: [CGRect] = []) {
+    /// image：冻结帧（默认 1200 × 800 纯色；截图自检传一张假桌面）；hint：松手即确认模式的顶部提示
+    init(
+      mode: SelectionView.Mode = .capture, windows: [CGRect] = [], image: CGImage? = nil,
+      hint: String = ""
+    ) {
       let size = CGSize(width: 1200, height: 800)
       let context = CGContext(
         data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8,
@@ -37,8 +41,9 @@ struct SelectionInteractionTests {
         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
       context.setFillColor(CGColor(red: 0.2, green: 0.5, blue: 0.9, alpha: 1))
       context.fill(CGRect(origin: .zero, size: size))
-      session = SelectionSession(mode: mode)
-      view = SelectionView(image: context.makeImage()!, windows: windows, session: session)
+      session = SelectionSession(mode: mode, hint: hint)
+      view = SelectionView(
+        image: image ?? context.makeImage()!, windows: windows, session: session)
       window = KeyWindow(
         contentRect: NSRect(origin: NSPoint(x: -20000, y: -20000), size: size),
         styleMask: [.borderless], backing: .buffered, defer: false)
