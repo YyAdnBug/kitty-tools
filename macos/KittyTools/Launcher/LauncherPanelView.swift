@@ -1,11 +1,13 @@
 // 启动器根视图（Whisker 设计语言，mac-whisker §6 启动器）：56 pt 大搜索框；单行 40 pt 结果（24 pt 图标 / 种类色块，
-// 标题 14 medium 后面紧跟灰色副标题，右侧写类型），空查询时带「最近使用」分组标题；计算结果是 64 pt 的大数字卡；
+// 标题 14 medium 后面紧跟灰色副标题，右侧写类型；文件搜索的结果按 Spotlight 类型取图标、右侧写扩展名），
+// 空查询时带「最近使用」、文件搜索只输关键词时带「最近打开和下载的文件」分组标题；计算结果是 64 pt 的大数字卡；
 // 一块中性高亮在行间滑动（键盘 snap、连发不动画、点选 glide）；按住 ⌘ 150 ms 后类型依次换成 ⌘1–9 键帽；
 // 底栏：按住修饰键时的替代动作 + 主动作 ↩ + 设置 / 图钉。面板高度随行数伸缩（带动画），顶边不动。
 // 状态和操作都在 LauncherModel。
 
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct LauncherPanelView: View {
   @Bindable var model: LauncherModel
@@ -21,6 +23,8 @@ struct LauncherPanelView: View {
   static let calcHeight: CGFloat = 64
   static let groupHeight: CGFloat = 28
   static let barHeight: CGFloat = 36
+  /// 分组标题在列表里的 id（滚回顶部时滚到它，不然标题被滚出去）
+  static let groupID = "launcher-group-title"
   /// 多出半行，让人看得出下面还能滚
   static let visibleRows = 8.5
 
@@ -36,7 +40,7 @@ struct LauncherPanelView: View {
           .padding(.horizontal, 16)
       }
       if showsNoResults {
-        Text("没有匹配的结果")
+        Text(model.emptyText)
           .font(.system(size: 13))
           .foregroundStyle(.secondary)
           .frame(maxWidth: .infinity, minHeight: Self.rowHeight + 12)
@@ -71,7 +75,7 @@ struct LauncherPanelView: View {
     item.kind == .calculation ? calcHeight : rowHeight
   }
 
-  private var listTop: CGFloat { model.isShowingRecent ? Self.groupHeight : 0 }
+  private var listTop: CGFloat { model.groupTitle != nil ? Self.groupHeight : 0 }
 
   /// 面板高度 = 搜索栏 + 发丝线 +（错误）+ 列表（最多 8.5 行）+ 底栏
   static func height(for model: LauncherModel) -> CGFloat {
@@ -84,7 +88,7 @@ struct LauncherPanelView: View {
       let full = Int(visibleRows)
       var rows = heights.prefix(full).reduce(0, +)
       if heights.count > full { rows += heights[full] / 2 }
-      height += 12 + (model.isShowingRecent ? groupHeight : 0) + rows
+      height += 12 + (model.groupTitle != nil ? groupHeight : 0) + rows
     }
     return height
   }
@@ -105,8 +109,9 @@ struct LauncherPanelView: View {
     ScrollViewReader { proxy in
       ScrollView {
         LazyVStack(spacing: 0) {
-          if model.isShowingRecent {
-            Text("最近使用")
+          if let groupTitle = model.groupTitle {
+            Text(groupTitle)
+              .id(Self.groupID)
               .font(.system(size: 11, weight: .semibold))
               .foregroundStyle(.tertiary)
               .padding(.leading, 12)
@@ -141,12 +146,20 @@ struct LauncherPanelView: View {
           model.selectionMotion == .instant
             ? nil : Style.Motion.snap.animation(reduced: reduceMotion)
         ) {
-          proxy.scrollTo(model.results[selection].rowID)
+          // 回到第一行时连分组标题一起露出来
+          proxy.scrollTo(
+            selection == 0 && model.groupTitle != nil
+              ? Self.groupID : model.results[selection].rowID)
         }
       }
-      // 新结果时选中项回到第 0 行，但 selection 本来就是 0 时上面不触发：列表也要回到顶部
+      // 新结果时选中项回到第 0 行，但 selection 本来就是 0 时上面不触发：列表也要回到顶部（有分组标题就到标题）；
+      // 文件结果后续批次保留了用户选的那行时滚到那行
       .onChange(of: model.results) {
-        if let first = model.results.first { proxy.scrollTo(first.rowID, anchor: .top) }
+        if model.selection > 0, model.results.indices.contains(model.selection) {
+          proxy.scrollTo(model.results[model.selection].rowID)
+        } else if let first = model.results.first {
+          proxy.scrollTo(model.groupTitle != nil ? Self.groupID : first.rowID, anchor: .top)
+        }
       }
     }
   }
@@ -184,7 +197,8 @@ struct LauncherPanelView: View {
       Spacer(minLength: 8)
       if let selected {
         HStack(spacing: 6) {
-          Text(Self.primaryAction(selected)).foregroundStyle(.primary)
+          Text(model.revealsOnReturn(selected) ? "在访达中显示" : Self.primaryAction(selected))
+            .foregroundStyle(.primary)
           KeyCap("↩")
         }
       }
@@ -218,7 +232,7 @@ struct LauncherPanelView: View {
     case .action: "运行"
     case .url: "打开网址"
     case .search: "搜索"
-    case .prompt: "补全关键词"
+    case .prompt: item.target == FileSearch.accessTarget ? "授权" : "补全关键词"
     case .calculation, .clip: "粘贴"
     }
   }
@@ -271,7 +285,11 @@ private struct LauncherRow: View {
   }
 
   @ViewBuilder private var icon: some View {
-    if item.kind == .app || item.kind == .path, let image = LauncherIcons.icon(for: item.target) {
+    if let type = item.contentType {
+      Image(nsImage: LauncherIcons.icon(for: type)).resizable().frame(width: 24, height: 24)
+    } else if item.kind == .app || item.kind == .path,
+      let image = LauncherIcons.icon(for: item.target)
+    {
       Image(nsImage: image).resizable().frame(width: 24, height: 24)
     } else {
       KindTile(symbol: tileSymbol, color: tileColor)
@@ -298,6 +316,8 @@ private struct LauncherRow: View {
   private var tileSymbol: String {
     switch item.kind {
     case .calculation: "equal"
+    case .prompt where item.target == FileSearch.accessTarget: "lock.open.fill"
+    case .prompt where item.target.hasPrefix("file-"): "doc.text.magnifyingglass"
     case .search, .prompt: "magnifyingglass"
     default: item.symbol
     }
@@ -307,6 +327,9 @@ private struct LauncherRow: View {
     switch item.kind {
     case .action: item.target == "settings" ? Style.Family.general : Style.Family.command
     case .url: Style.Family.url
+    // 配置 / 授权问题用橙色（Whisker §3 语义色）
+    case .prompt where item.target == FileSearch.accessTarget: Color(nsColor: .systemOrange)
+    case .prompt where item.target.hasPrefix("file-"): Style.Family.general
     case .search, .prompt: Style.Family.search
     case .calculation: Style.Family.keyboard
     case .clip: Style.Family.clipboard
@@ -317,9 +340,12 @@ private struct LauncherRow: View {
   static func kindTitle(_ item: LauncherItem) -> String {
     switch item.kind {
     case .app: "应用"
-    case .path: "文件"
+    case .path:
+      item.contentType.map { FileSearch.kindTitle(path: item.target, contentType: $0.identifier) }
+        ?? "文件"
     case .action: "命令"
     case .url: "网址"
+    case .prompt where item.target == FileSearch.accessTarget: "授权"
     case .search, .prompt: "搜索"
     case .calculation: "计算"
     case .clip: "剪贴板"
@@ -330,6 +356,15 @@ private struct LauncherRow: View {
 /// App / 文件图标（按路径缓存，面板每次重绘不重复读）
 enum LauncherIcons {
   private static let cache = NSCache<NSString, NSImage>()
+
+  /// 文件搜索的结果按类型取：不碰文件本身（桌面 / 文稿 / 下载里的文件读图标可能弹授权框）
+  static func icon(for type: UTType) -> NSImage {
+    let key = "type:" + type.identifier as NSString
+    if let cached = cache.object(forKey: key) { return cached }
+    let image = NSWorkspace.shared.icon(for: type)
+    cache.setObject(image, forKey: key)
+    return image
+  }
 
   static func icon(for path: String) -> NSImage? {
     if let cached = cache.object(forKey: path as NSString) { return cached }

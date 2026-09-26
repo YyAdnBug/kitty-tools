@@ -1,7 +1,9 @@
 // 启动器状态与操作：查询 → 结果，空查询显示「最近使用」。结果顺序：直达网址 / 路径、计算结果、关键词搜索，
 // 然后 App 目录 + 内置动作 + 快捷链接 / 搜索提示 + 书签 + 用过的网址 / 文件按匹配分排序，网页搜索兜底；
-// 「cb [关键词]」只列剪贴板文本。键盘（对标 Alfred）：↑↓ 循环、↩ 执行（计算结果、cb 是粘贴）、⌘↩ 在访达中显示
-// （计算结果、cb 只复制）、⌥↩ 在访达里搜索、⌃↩ 网页搜索（按住修饰键时选中行的副标题换成替代动作）、Tab 补全、
+// 「cb [关键词]」只列剪贴板文本；「open / find 词」、空格开头搜文件（FileSearch，结果异步到，先留着上一次的结果，
+// 后面仍接整句匹配到的 App）。键盘（对标 Alfred）：↑↓ 循环、↩ 执行（计算结果、cb 是粘贴，find 的文件是在访达中
+// 显示）、⌘↩ 在访达中显示（计算结果、cb 只复制，find 的文件是打开）、⌥↩ 在访达里搜索、⌃↩ 网页搜索（按住修饰键时
+// 选中行的副标题换成替代动作）、Tab 补全、
 // ⌘C 复制路径 / 网址、⌘1–9 执行第 N 项、「最近使用」里 ⌘⌫ 移除一项、Esc 先清空再关闭；
 // 单击选中、双击执行（和剪贴板面板一致）。执行成功才收起并记使用（修旧版先收起、失败提示看不见，§11 #33）。
 
@@ -19,6 +21,10 @@ import Observation
   private(set) var error: String?
   /// 按住的修饰键：选中行的副标题换成它对应的替代动作（面板的 onModifierKeysChanged 推过来）
   var alternate = Alternate.none
+  /// 文件搜索模式（open / find / 空格开头）；nil = 普通搜索
+  private(set) var fileRequest: FileSearch.Request?
+  /// 没有结果时显示的话。和结果一起换：文件搜索还在查时留着上一句，不闪「没有匹配」
+  private(set) var emptyText = "没有匹配的结果"
 
   enum Alternate {
     case none, command, option, control
@@ -27,8 +33,11 @@ import Observation
   @ObservationIgnored let usage: LauncherUsage
   @ObservationIgnored private var apps: [LauncherItem] = []
   @ObservationIgnored private var appsScannedAt: Date?
-  /// 单测 / 截图自检传入固定的 App 列表，不扫本机
-  @ObservationIgnored private let fixedApps: Bool
+  /// 单测 / 截图自检：传入固定的 App 列表，不扫本机、不查 Spotlight（文件结果由 showFiles 直接给）
+  @ObservationIgnored private let isFixture: Bool
+  @ObservationIgnored private let files = FileSearch()
+  /// 这次文件搜索已经显示过一批：后面的批次到了保持选中项，不跳回第一行
+  @ObservationIgnored private var shownFileRequest: FileSearch.Request?
   // 以下由 AppDelegate 接上
   @ObservationIgnored var hidePanel: () -> Void = {}
   @ObservationIgnored var runAction: (String) -> Void = { _ in }
@@ -39,30 +48,48 @@ import Observation
   @ObservationIgnored var copyClip: (UUID) -> Void = { _ in }
   /// cb 粘贴过的那条挪到剪贴板历史最前（和面板里粘贴一样）
   @ObservationIgnored var bumpClip: (UUID) -> Void = { _ in }
+  /// 文件搜索的授权提示 ↩：没问过就逐个弹系统框，问过就打开系统设置
+  @ObservationIgnored var requestFolderAccess: () -> Void = {}
+  /// 文件结果最后一行的授权提示：每次呼出后第一次进文件搜索时算一次（要读受保护目录，问过之前不读）。
+  /// ponytail: 授权被重置（tccutil reset、撤掉完全磁盘访问）后，第一次进文件搜索时系统会弹框
+  @ObservationIgnored var folderHint: LauncherItem?
+  @ObservationIgnored private var checksFolderAccess = false
+  /// 用户按过 ↑↓ / 点选过：文件结果后续批次到了才按 id 保持选中项，否则回到第一行（最佳匹配）
+  @ObservationIgnored private var userMovedSelection = false
 
   static let recentLimit = 8
   static let rescanInterval: TimeInterval = 300
 
   init(usage: LauncherUsage, apps: [LauncherItem]? = nil) {
     self.usage = usage
-    fixedApps = apps != nil
+    isFixture = apps != nil
     if let apps {
       self.apps = apps
       appsScannedAt = .now
     }
   }
 
-  var isShowingRecent: Bool { query.trimmingCharacters(in: .whitespaces).isEmpty }
+  /// 空查询的「最近使用」（一个空格是文件搜索，不算）
+  var isShowingRecent: Bool {
+    fileRequest == nil && query.trimmingCharacters(in: .whitespaces).isEmpty
+  }
+
+  /// 列表上方的分组标题：空查询「最近使用」，文件搜索只输了关键词时「最近的文件」
+  var groupTitle: String? {
+    if isShowingRecent { return "最近使用" }
+    return fileRequest?.terms.isEmpty == true ? "最近打开和下载的文件" : nil
+  }
 
   /// 启动时和第一次呼出前扫 App 目录
   func rescanApps() {
-    guard !fixedApps else { return }
+    guard !isFixture else { return }
     apps = AppCatalog.scan()
     appsScannedAt = .now
   }
 
   func prepareForShow() {
     if appsScannedAt == nil { rescanApps() }
+    checksFolderAccess = !isFixture
     search()
   }
 
@@ -80,6 +107,15 @@ import Observation
     error = nil
     selectionMotion = .instant
     selection = 0
+    userMovedSelection = false
+    shownFileRequest = nil
+    fileRequest = FileSearch.request(for: query)
+    if let fileRequest {
+      searchFiles(fileRequest)
+      return
+    }
+    files.stop()
+    emptyText = "没有匹配的结果"
     let query = query.trimmingCharacters(in: .whitespaces)
     if query.isEmpty {
       results = recent()
@@ -92,7 +128,10 @@ import Observation
     let direct = DirectItems.items(for: query)
     let keyword = WebSearch.keywordItem(for: query)
     let prompts = WebSearch.promptItems(for: query)
-    let top = direct + [Calculator.item(for: query), keyword].compactMap { $0 } + prompts.exact
+    let filePrompts = FileSearch.promptItems(for: query)
+    let top =
+      direct + [Calculator.item(for: query), keyword].compactMap { $0 } + prompts.exact
+      + filePrompts.exact
     // 书签至少 2 个字才搜（1 个字母命中太多）
     let bookmarks = query.count >= 2 ? Bookmarks.items() : []
     let local = LauncherMatch.rank(
@@ -108,7 +147,51 @@ import Observation
       keyword == nil && wantsFallback && !explicit ? WebSearch.fallbackItems(for: query) : []
     // 直达项和书签 / 用过的网址可能是同一项：按 id 去重，保留靠前的
     var seen = Set<String>()
-    results = (top + local + prompts.partial + fallback).filter { seen.insert($0.id).inserted }
+    results = (top + local + prompts.partial + filePrompts.partial + fallback).filter {
+      seen.insert($0.id).inserted
+    }
+  }
+
+  /// 文件搜索：查询还在跑时留着上一次的结果（约 40 ms 后换掉，免得列表先空再长）；1 个字母不查
+  private func searchFiles(_ request: FileSearch.Request) {
+    guard !request.isTooShort else {
+      files.stop()
+      results = []
+      emptyText = "再输入一个字母"
+      return
+    }
+    guard !isFixture else { return }
+    if checksFolderAccess {
+      checksFolderAccess = false
+      folderHint = FileSearch.accessHint(denied: Permissions.deniedFolders())
+    }
+    files.start(request) { [weak self] hits in self?.showFiles(hits, for: request) }
+  }
+
+  /// 文件结果到了（分批，每批都是到目前为止的全部）：排好序，前面放整句（连关键词）匹配到的 App / 内置动作
+  /// （「find my」照样能打开「查找」，修旧版被文件搜索截走，§11 #38；关键词也得匹配上，所以很少见）。
+  /// 空格开头是明确要搜文件，不放
+  func showFiles(_ hits: [FileSearch.Hit], for request: FileSearch.Request) {
+    guard request == fileRequest else { return }  // 已经换了查询
+    let found = FileSearch.rank(hits, terms: request.terms) { usage.boost(for: $0, query: query) }
+    let whole = query.trimmingCharacters(in: .whitespaces)
+    let named =
+      request.terms.isEmpty || query.first?.isWhitespace == true
+      ? []
+      : LauncherMatch.rank(apps + LauncherItem.actions, query: whole) {
+        usage.boost(for: $0, query: whole)
+      }
+    let selected = results.indices.contains(selection) ? results[selection].id : nil
+    var seen = Set<String>()
+    results = (named + found + [folderHint].compactMap { $0 }).filter {
+      seen.insert($0.id).inserted
+    }
+    emptyText = request.terms.isEmpty ? "最近没有打开或下载的文件" : "没有匹配的文件"
+    selectionMotion = .instant
+    selection =
+      request == shownFileRequest && userMovedSelection
+      ? selected.flatMap { id in results.firstIndex { $0.id == id } } ?? 0 : 0
+    shownFileRequest = request
   }
 
   /// 「cb」或「cb 关键词」
@@ -187,6 +270,9 @@ import Observation
       // 不借剪贴板面板的 paste：它会连带收起钉住的剪贴板面板、提交还能撤销的删除
       guard let id = UUID(uuidString: item.target) else { return }
       if paste({ copyClip(id) }) { bumpClip(id) }
+    case .prompt where item.target == FileSearch.accessTarget:
+      hidePanel()
+      requestFolderAccess()
     case .prompt:
       if let completion = item.completion { query = completion }
     case .search:
@@ -200,7 +286,11 @@ import Observation
       hidePanel()
       runAction(item.target)
     case .app, .path:
-      open(URL(filePath: item.target), item)
+      if revealsOnReturn(item) {
+        reveal(item)
+      } else {
+        open(URL(filePath: item.target), item)
+      }
     case .url:
       guard let url = URL(string: item.target) else {
         error = "打不开「\(item.title)」"
@@ -208,6 +298,24 @@ import Observation
       }
       open(url, item)
     }
+  }
+
+  /// find 搜到的文件：↩ 在访达中显示、⌘↩ 打开（和 open 反过来）
+  func revealsOnReturn(_ item: LauncherItem) -> Bool {
+    fileRequest?.mode == .find && item.contentType != nil
+  }
+
+  /// 在访达里选中（find 的 ↩ 记使用，和打开一样）
+  private func reveal(_ item: LauncherItem) {
+    NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: item.target)])
+    usage.record(item, query: query)
+    hidePanel()
+  }
+
+  /// ⌥↩ / ⌃↩ 搜的文字：文件搜索时去掉关键词
+  private var searchText: String {
+    fileRequest.map { $0.terms.joined(separator: " ") }
+      ?? query.trimmingCharacters(in: .whitespaces)
   }
 
   /// 计算结果、cb：收起后写剪贴板、发 ⌘V 粘贴回原 App（和剪贴板面板一样不激活本 App、不等待）。
@@ -228,7 +336,7 @@ import Observation
 
   /// ⌥↩：在访达里用 Spotlight 搜当前查询（不需要额外授权）
   private func searchInFinder() {
-    let text = query.trimmingCharacters(in: .whitespaces)
+    let text = searchText
     guard !text.isEmpty, NSWorkspace.shared.showSearchResults(forQueryString: text) else {
       return NSSound.beep()
     }
@@ -237,7 +345,7 @@ import Observation
 
   /// ⌃↩：不管有没有本地结果，用第一个兜底搜索搜当前查询
   private func searchWeb() {
-    let text = query.trimmingCharacters(in: .whitespaces)
+    let text = searchText
     guard !text.isEmpty, let engine = WebSearch.primary(),
       let url = URL(string: WebSearch.url(engine, text))
     else { return NSSound.beep() }
@@ -269,13 +377,13 @@ import Observation
 
   /// 按住修饰键时选中行的副标题：说明松手前按 ↩ 会做什么
   func alternateSubtitle(for item: LauncherItem) -> String? {
-    let text = query.trimmingCharacters(in: .whitespaces)
+    let text = searchText
     switch alternate {
     case .none:
       return nil
     case .command:
       switch item.kind {
-      case .app, .path: return "⌘↩ 在访达中显示"
+      case .app, .path: return revealsOnReturn(item) ? "⌘↩ 打开" : "⌘↩ 在访达中显示"
       case .calculation, .clip: return "⌘↩ 只复制，不粘贴"
       default: return nil
       }
@@ -302,6 +410,7 @@ import Observation
     } else if let index = results.firstIndex(of: item) {
       selectionMotion = .glide
       selection = index
+      userMovedSelection = true
     }
   }
 
@@ -351,6 +460,10 @@ import Observation
       guard let item = selectedItem else { return true }
       switch item.kind {
       case .app, .path:
+        if revealsOnReturn(item) {
+          open(URL(filePath: item.target), item)  // find 搜到的文件反过来：⌘↩ 打开（成功才收起）
+          return true
+        }
         NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: item.target)])
       case .calculation:
         Paster.write(string: item.payload ?? "")
@@ -387,6 +500,7 @@ import Observation
     guard !results.isEmpty else { return }
     selectionMotion = NSApp.currentEvent?.isARepeat == true ? .instant : .snap
     selection = (selection + offset + results.count) % results.count
+    userMovedSelection = true
   }
 
   private static let digitKeys = [

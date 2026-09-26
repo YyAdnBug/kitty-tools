@@ -54,7 +54,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     switch self {
     case .general: "开机自启、权限和从旧版导入"
     case .clipboard: "历史上限、面板、内容格式和隐私"
-    case .launcher: "搜索 App、书签、网页搜索与快捷链接"
+    case .launcher: "搜索 App、文件、书签、网页搜索与快捷链接"
     case .screenshot: "快速保存、快门声、识字和按键说明"
     case .translate: "语言、翻译服务与密钥、历史"
     case .hotkeys: "所有全局快捷键"
@@ -76,7 +76,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .launcher:
       [
         "点外", "关闭", "英文", "输入法", "书签", "Chrome", "Edge", "Brave", "搜索", "引擎", "快捷链接", "关键词",
-        "兜底", "使用记录", "最近", "挤压", "弹开", "动画", "实验",
+        "兜底", "使用记录", "最近", "挤压", "弹开", "动画", "实验", "文件", "open", "find", "Spotlight",
       ]
     case .screenshot:
       ["保存", "目录", "文件夹", "快门", "声音", "识字", "换行", "二维码", "标注", "长截图", "钉图", "按键"]

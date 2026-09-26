@@ -19,6 +19,8 @@ enum Prefs {
   static let launcherRomanInput = "launcherRomanInput"
   /// 启动器呼出时用挤压入场（实验，像 macOS 26 的 Spotlight）
   static let launcherSqueezeEntrance = "launcherSqueezeEntrance"
+  /// 文件搜索已经请求过桌面 / 文稿 / 下载 / iCloud 云盘的访问授权（之后才能读目录判断授权状态，读之前会弹框）
+  static let folderAccessRequested = "folderAccessRequested"
   /// 翻译浮窗固定：失焦不隐藏、Esc 不关闭
   static let floatingPinned = "floatingPinned"
 

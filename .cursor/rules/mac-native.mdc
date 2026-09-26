@@ -28,7 +28,7 @@ alwaysApply: true
 - `@concurrent` 只允许 4 类：图片编码 / hash / 缩略图；Vision OCR；AX 读选中文本（先设 `AXUIElementSetMessagingTimeout(0.5)`）；系统词典查词（`DCSCopyTextDefinition`，首查要加载词典，实测最多约 0.3 s）。参数和返回值必须是 `Sendable`（值类型，或 SDK 自己标了 Sendable 的 `CGImage`）。ScreenCaptureKit 截屏是系统 async API，主线程直接 await，不算例外。
 - 翻译服务写成 `nonisolated` async 函数；取消靠持有的 `Task` 调 `cancel()`，并行用 `withTaskGroup`。
 - 禁止 `Task.detached`、`@unchecked Sendable`、`nonisolated(unsafe)`（仅 C 全局变量例外，且必须注释原因），禁止到处写 `DispatchQueue`。主线程投递的 C 回调里用 `MainActor.assumeIsolated {}`。
-- 和 C API 交互的代码只放在 `HotKeyCenter`、`Database`、`SelectionReader`、`Permissions`（AX / 屏幕录制授权）、`ScreenCapture`（`CGWindowListCopyWindowInfo` 窗口快照）、`ScrollCapture`（长截图自动滚动的 `CGWarpMouseCursorPosition`）、`WordLookup`（系统词典 `DCSCopyTextDefinition`）里。
+- 和 C API 交互的代码只放在 `HotKeyCenter`、`Database`、`SelectionReader`、`Permissions`（AX / 屏幕录制授权、文件搜索的文件夹授权 `opendir`）、`ScreenCapture`（`CGWindowListCopyWindowInfo` 窗口快照）、`ScrollCapture`（长截图自动滚动的 `CGWarpMouseCursorPosition`）、`WordLookup`（系统词典 `DCSCopyTextDefinition`）里。
 - 并发写法以 Xcode 自带的 `Swift-Concurrency-Updates.md`（路径见文末）为准，不用社区 concurrency 技能。
 
 ## 4. 风格
@@ -47,7 +47,7 @@ alwaysApply: true
 - Apple Development 自动签名，`DEVELOPMENT_TEAM = HTX9F4KG39`；**禁止「Sign to Run Locally」/ adhoc**（TCC 按 cdhash 记账，每次重建授权都会作废）。
 - Bundle ID：Release `com.yy.kitty-tools.native`，Debug `com.yy.kitty-tools.native.dev`，以后不再改（改了会丢设置、授权和钥匙串条目）。
 - 自检：`codesign -d -r- <app>` 的输出必须含 `anchor apple generic` 和 bundle id，不能是 cdhash。
-- 授权卡住：`tccutil reset Accessibility com.yy.kitty-tools.native.dev`，然后重新授权。
+- 授权卡住：`tccutil reset Accessibility com.yy.kitty-tools.native.dev`，然后重新授权。重置文件夹授权时顺手 `defaults delete com.yy.kitty-tools.native.dev folderAccessRequested`（文件搜索问过之后才读受保护目录判断授权，状态被重置后读会弹框）。
 - **永不公证**（只走路径 B）：不建 `ExportOptions.plist`，不写 `notarytool` / `stapler` 步骤。Release 保持 `CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO`，发布包里不能有 `get-task-allow`。
 
 ## 7. 发版

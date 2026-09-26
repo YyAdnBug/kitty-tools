@@ -3,6 +3,7 @@
 // id = 类型 + 目标，使用记录按它累计。
 
 import Foundation
+import UniformTypeIdentifiers
 
 struct LauncherItem: Identifiable, Hashable {
   enum Kind: String {
@@ -11,7 +12,7 @@ struct LauncherItem: Identifiable, Hashable {
     case search
     /// 计算结果、cb 列出的剪贴板文本：↩ 粘贴 payload
     case calculation, clip
-    /// 有关键词的网页搜索的提示：↩ / Tab 把「关键词 」补进输入框
+    /// 有关键词的网页搜索、文件搜索的提示：↩ / Tab 把「关键词 」补进输入框
     case prompt
 
     /// 只有这些记使用、能出现在「最近使用」里
@@ -31,6 +32,9 @@ struct LauncherItem: Identifiable, Hashable {
   var payload: String?
   /// Tab 补进输入框的文字（计算结果、目录路径、「关键词 」）；nil 时 App、动作、网址补标题
   var completion: String?
+  /// 文件搜索的结果：Spotlight 给的类型。图标、右侧种类按它取，不碰文件本身（桌面 / 文稿 / 下载里的文件
+  /// 读图标、stat 都可能弹授权框）；有它的才算文件搜索结果（find 模式下 ↩ 在访达中显示）
+  var contentType: UTType?
 
   var id: String { kind.rawValue + "\n" + target }
 

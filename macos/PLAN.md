@@ -235,12 +235,12 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 | 目录 | 文件 |
 |---|---|
 | `App/` | `KittyToolsApp.swift`（@main 和 MenuBarExtra）、`AppDelegate.swift`（单实例检查、组装对象、生命周期、退出和锁屏清理） |
-| `Shell/` | `OverlayPanel.swift`、`HotKeyCenter.swift`、`HotKeyRecorder.swift`、`Permissions.swift`、`Paster.swift`、`Style.swift`（Whisker 刻度：圆角、七条弹簧曲线、中性色 / 家族色、种类色块、键帽、面板描边）、`Island.swift`（刘海岛：全局轻提示，替换原来的 Toast）、`StatusItem.swift`（菜单栏图标与菜单，NSStatusItem，Whisker D 的呼吸 / 弹一下） |
+| `Shell/` | `OverlayPanel.swift`、`HotKeyCenter.swift`、`HotKeyRecorder.swift`、`Permissions.swift`（辅助功能、屏幕录制、文件和文件夹授权）、`Paster.swift`、`Style.swift`（Whisker 刻度：圆角、七条弹簧曲线、中性色 / 家族色、种类色块、键帽、面板描边）、`Island.swift`（刘海岛：全局轻提示，替换原来的 Toast）、`StatusItem.swift`（菜单栏图标与菜单，NSStatusItem，Whisker D 的呼吸 / 弹一下） |
 | `Storage/` | `Database.swift`、`Keychain.swift`、`Prefs.swift`、`LegacyImport.swift` |
 | `Clipboard/` | `ClipboardWatcher.swift`、`ClipboardStore.swift`、`ClipItem.swift`、`ClipboardFilter.swift`、`ContentForm.swift`、`Search.swift`、`ImageStore.swift`、`OCR.swift`、`ClipboardPanelView.swift`、`ClipRowView.swift`、`PreviewView.swift`、`Dialogs.swift`、`LinkPreview.swift`（链接富预览：按块读网页 og 标签、isFetchable、内存缓存）、`QuickLookView.swift`（⌘Y 放大预览） |
 | `Translate/` | `TranslateCoordinator.swift`、`LanguageResolver.swift`、`SelectionReader.swift`、`SSE.swift`、`Providers/`（`Zhipu`、`AIService`、`Baidu`、`Youdao`、`Google`、`DeepL`、`Microsoft`、`Volcengine`、`Tencent` 各一个 `.swift`）、`TranslatePanelView.swift`、`ProviderCardView.swift`（含服务品牌色块、彗星边框、骨架扫光）、`RevealText.swift`（流式译文显影，TextRenderer）、`HistoryStore.swift`、`HistoryView.swift`、`WordLookup.swift`（查词：是不是一个词、系统词典查询与解析、单词模式示例，D4）、`DictionaryCardView.swift`（系统词典卡） |
 | `Settings/` | `GeneralTab.swift`、`HotkeysTab.swift`、`ClipboardTab.swift`、`TranslateTab.swift`、`AboutTab.swift`、`LauncherTab.swift`、`ScreenshotTab.swift`、`SettingsWindow.swift`（D 阶段从 Shell 搬来：NavigationSplitView 侧栏 + 搜索 + 页头）、`OnboardingView.swift`（首次安装的欢迎引导） |
-| `Launcher/` | `LauncherItem.swift`（结果项与内置动作）、`AppCatalog.swift`（App 目录 + 中文名 + 拼音）、`LauncherMatch.swift`（匹配与排序纯函数）、`LauncherUsage.swift`（使用记录表）、`LauncherModel.swift`、`LauncherPanelView.swift` |
+| `Launcher/` | `LauncherItem.swift`（结果项与内置动作）、`AppCatalog.swift`（App 目录 + 中文名 + 拼音）、`LauncherMatch.swift`（匹配与排序纯函数）、`LauncherUsage.swift`（使用记录表）、`LauncherModel.swift`、`LauncherPanelView.swift`、`FileSearch.swift`（文件搜索：open / find / 空格开头，NSMetadataQuery 查询、排除、排序、最近的文件、授权提示，M13） |
 | `Screenshot/` | `ScreenCapture.swift`（逐屏冻结帧 + 同一刻的窗口 Z 序快照）、`RegionSelector.swift`（框选会话、每屏一个遮罩、选区几何纯函数）、`SelectionView.swift`（遮罩画面与交互：图层绘制、窗口悬停、手柄、放大镜、工具栏）、`ScreenshotOutput.swift`（PNG、快速保存、另存为）、`PinPanel.swift`（钉图）、`Annotation.swift`（标注模型，显示与导出共用 draw，M10）、`EditorToolbar.swift`（HUD 主工具栏 + 样式托盘，M10，Whisker 重做）、`FlyCard.swift`（截图飞入右下角 + 快门声，Whisker S1）、`ScrollCapture.swift`（长截图会话：边框、侧边面板、抓帧循环、自动滚动）、`ScrollStitcher.swift`（长截图拼接，纯逻辑）、`ShotShelf.swift`（CleanShot 式常驻缩略图，Whisker D） |
 
 各 provider 函数签名统一，由 coordinator 里的一个 `switch` 分发。不建 registry 或 factory。
@@ -726,7 +726,7 @@ echo "$DMG"
 | M11 启动器网址线 + 键盘（对标 Alfred） | 自定义网页搜索（增删排序、多预置引擎）、Quicklink（固定网址 + 别名 + {query}）、兜底列表配置、⌥↩ 访达搜索 / ⌃↩ 网页搜索（按住修饰键换副标题）、Tab 补全（计算结果写回接着算）、cb / 计算结果 ↩ 粘贴、清空 / 单条重置学习记录、呼出时切英文输入法（开关，默认关） | 已完成（实现要点见下方「启动器网址线（M11）」） |
 | M12 翻译补强（对标 Bob） | 窗口快捷键（⌘R 重试、⌘S 收藏、⌘W 关、⌘P 钉住、⌘+/- 字号、⌘1–9 复制第 N 张卡）、用译文替换原文（按钮 + 静默热键，默认不设键）、浮窗高度随内容、卡片折叠状态持久化、收藏筛选与导出 | 已完成（实现要点见下方「翻译补强（M12）」） |
 | 长截图（2026-09-25 插入，用户改主意） | 截图框选后 S / 工具栏进入；实时画面上边滚边拼（往下、往上都行）、侧边预览、空格自动滚动；↩ 复制 / ⌘S 保存 / ⇧⌘S 另存为。原生实现，不参考旧版 | 代码已完成，待手测（实现要点见下方「长截图」） |
-| M13 动作面板 + 文件 + 进程 | → / ⌘K 动作面板（打开方式、在访达中显示、复制路径、移到废纸篓，只放零授权动作）；⌘Y Quick Look（先验证 `QLPreviewPanel`，不行嵌 `QLPreviewView`）；open / find 文件搜索（NSMetadataQuery）；kill（GUI App 用 `terminate()`，⌘↩ 才强杀）。quit / hide / forcequit 不做（D2） | 待做 |
+| M13 动作面板 + 文件 + 进程 | → / ⌘K 动作面板（打开方式、在访达中显示、复制路径、移到废纸篓，只放零授权动作）；⌘Y Quick Look（先验证 `QLPreviewPanel`，不行嵌 `QLPreviewView`）；open / find 文件搜索（NSMetadataQuery）；kill（GUI App 用 `terminate()`，⌘↩ 才强杀）。quit / hide / forcequit 不做（D2） | 文件搜索已完成（待手测，实现要点见下方「文件搜索（M13）」）；动作面板、⌘Y、kill 待做 |
 
 **已拍板（2026-09-24，对标调研后用户选定）**：
 - D1 长截图、录屏：~~都不做~~ → **长截图做（2026-09-25 用户改主意，要求按 macOS 原生方式实现、不参考旧版）；录屏仍不做**（以后真要录屏用 `SCRecordingOutput` 单独立项）。原先顾虑的两点已解决：冻结帧只管框选，框完收起遮罩再在实时画面上截；不用 15.2 的 `captureImage(in:)`，用 14.0 的 `captureImage(contentFilter:configuration:)` + `sourceRect`。
@@ -751,6 +751,15 @@ echo "$DMG"
 - ↩ / ⌥↩ / ⌃↩ 先确认是回车键（⌃O 等别的键绑定也会发这两个选择器，吞掉）；cb ↩ 自己写剪贴板 + ⌘V + 置顶，不借剪贴板面板的 paste（会收起钉住的面板、提交可撤销的删除）；计算器认科学计数，Tab 写回的大 / 小结果能接着算；输入的网址 Tab 保留原样。设置页固定 640 高、表单自己滚。
 - 学习记录：「最近使用」里 ⌘⌫ 忘掉一项（有查询时 ⌘⌫ 照常删到行首）；设置里「清空使用记录…」。
 - 呼出时切英文输入法（`launcherRomanInput`，默认关）：搜索框字段编辑器的 `allowedInputSourceLocales = [NSAllRomanInputSourcesLocaleIdentifier]`，离开后系统恢复；关掉时显式设回 nil（字段编辑器整个窗口共用）。
+
+**文件搜索（M13，2026-09-26）**
+- 对标 Alfred（Raycast v2、macOS 26 聚焦搜索为辅），用户拍板：`open 词` 打开、`find 词` 在访达里选中（`activateFileViewerSelecting`，修 §11 #28），⌘↩ 两者互换；空格开头 = open；只输 `open` / `find` 时出「↩ / Tab 补全关键词」提示（同网页搜索关键词，不抢同名 App；open / find 和 cb 一样是保留关键词）。普通搜索不混排文件（打开过的文件照样靠使用记录搜到、进「最近使用」）；in（内容）/ tags、⌘Y、目录导航、自定义关键词、可编辑排除目录不做。
+- 查询（`Launcher/FileSearch.swift`，本机实测）：每个词一个 `kMDItemFSName == "词*"cdw` 用 && 连（中文按词切、**拼音也能命中**），加 `kMDItemSupportFileType != "MDSystemFile"`（去掉 ~/Library 的绝大部分），范围只用主目录，按修改时间降序；≥ 2 个字 P50 约 40 ms。子串写法「ab」要 1–17 s、1 个拉丁字母要 1–7 s → 1 个字母不查（提示「再输入一个字母」），1 个汉字照查。`kMDItemPath` 进不了谓词，路径在客户端滤：主目录外、~/Library（iCloud 云盘、CloudStorage 除外）、node_modules / build / DerivedData / dist / target / out / Pods / Carthage / vendor / venv / __pycache__ / coverage；隐藏文件、包内部 Spotlight 本来不收。只读路径每条约 3 µs，最多处理 2 万条（「readme」6000 多条里九成在 node_modules，只看前 2000 条会漏）；预取名字 / 类型 / 日期（每条每个属性单取约 0.2 ms）。
+- 最近的文件（只输关键词或一个空格）：`kMDItemLastUsedDate` 30 天内 ∪ 14 天内下载的（`kMDItemWhereFroms` + `kMDItemDateAdded`），约 70 ms。「最近修改 / 添加」不能用：代码目录在桌面，全是源码；上次打开时间只有千分之一的文件有，只够做「最近」。
+- 排序：匹配分 × 使用加成（同启动器公式；Spotlight 靠驼峰 / 中文词中间命中、我们匹配分为 0 的给底分 30）→ 最近一次打开 / 修改 / 下载 → 路径浅；最多 50 条。前面放整句（连关键词）匹配到的 App / 内置动作（「find my」→「查找」，修 §11 #38），空格开头不放。
+- 结果分批到：查询中留着上一次的结果（不闪空、不闪「没有匹配」），同一查询的后续批次保持选中项；过期查询的结果丢掉；收起面板停查询。
+- 行：图标按 Spotlight 类型（`NSWorkspace.icon(for: UTType)`，不碰文件）、副标题是所在文件夹（iCloud 云盘写成「iCloud 云盘/…」）、右侧扩展名大写或「文件夹」；Tab 直接补路径（文件夹带 /，不 stat）。⌥↩ / ⌃↩ 搜去掉关键词后的词。
+- **授权（实测，用户选「按需申请」）**：Spotlight 按调用方的「文件和文件夹」授权过滤结果，没授权的文稿、下载、iCloud 云盘一条都没有，也不弹框（本 App 身份：文稿 / 下载 / iCloud 0 条；Claude.app 身份：都有）。所以文件结果最后一行是授权提示（橙色锁）：没问过 → ↩ 收起启动器、逐个 `opendir` 桌面 / 文稿 / 下载 / iCloud 云盘让系统弹框（主线程停到用户点完），刘海岛报结果；问过有被拒的 → ↩ 打开系统设置 › 文件和文件夹。问过之前一律不碰这些目录（`Prefs.folderAccessRequested`）。设置 › 启动器「文件搜索」有一行状态（`PermissionRow`）。Info.plist 补了桌面 / 文稿 / 下载的用途说明。
 
 **翻译补强（M12，2026-09-25）**
 - 浮窗快捷键在 `TranslateCoordinator.handleKeyEquivalent`（接到 `OverlayPanel.keyEquivalentHandler`）：⌘R 重新翻译、⌘S 收藏 / 取消（第一个服务出结果后）、⌘W 收起（固定着也收）、⌘P 固定、⌘+（含 ⌘⇧=）/ ⌘- / ⌘0 字号（0.8–1.6 倍，存 `translateFontScale`）、⌘1–9 复制第 N 张卡；⌘C / ⌘V 等编辑键仍给输入框。原文里 ⇧↩ / ⌘↩ 换行（⌘↩ 系统发的是 `noop:`，在 doCommandBy 里接）。
@@ -831,7 +840,7 @@ echo "$DMG"
 
 - 修：启动器搜不到 Chrome 书签（2026-09-25）。新版 Chrome（本机 154）登录 Google 账号后把书签存进配置目录里的 `AccountBookmarks`，本机的 `Bookmarks` 变成空的（本机 432 条全在前者）；原来只读后者。现在每个配置目录两个文件都读（格式相同），单测锁住。Chrome 同时写了加密版（`EncryptedAccountBookmarks2`），哪天不再写明文就得解密（要钥匙串「Chrome Safe Storage」授权），到时再做。
 
-**下一步（新会话从这里接着做）**：D4 查词已完成（2026-09-26）；接下来 M13 动作面板 + 文件 + kill（§10），动手前先按对标规则给用户「差距 + 推荐范围」。
+**下一步（新会话从这里接着做）**：D4 查词、M13 文件搜索已完成（2026-09-26，待手测）；接下来 M13 的动作面板（→ / ⌘K）+ ⌘Y Quick Look + kill（§10），动手前先按对标规则给用户「差距 + 推荐范围」。
 
 **暂不发版**（用户决定，2026-09-24）：0.1.0 只在本地用 `macos/build-dmg.sh` 打包自用（arm64、Apple Development 签名、无 get-task-allow），不打 tag、不发 GitHub / GitCode；以后要发时再按下面的「发布 0.1.0」步骤，且须先经用户确认。
 
@@ -907,6 +916,14 @@ echo "$DMG"
   4. 浮窗高度：查一个词时很矮、长段落变高，最高不超过屏幕 85%，流式输出时跟着长；靠近屏幕底部时不跑出屏幕。
   5. 收起某个服务卡片 → 重启 App 后仍是收起的。
   6. 设置 › 翻译「导出…」：CSV 用 Numbers / Excel 打开中文不乱码；TSV 导入 Anki 正反面正确。
+- 文件搜索手测（M13）：
+  1. 第一次输 `open 报告`：结果最后一行是橙色锁「搜不到桌面、文稿、下载、iCloud 云盘里的文件？」，↩ 后启动器收起、系统依次问桌面 / 文稿 / 下载 / iCloud 云盘（没开 iCloud 云盘就少一个），都允许后刘海岛「已允许访问」；再搜能搜到下载、文稿里的文件，提示行消失。拒绝一个：刘海岛写哪个被拒，提示行变成「没有权限搜「下载」…」，↩ 打开系统设置 › 文件和文件夹。设置 › 启动器「文件搜索」那一行状态跟着变。
+  2. 搜索和显示结果时不弹任何授权框（授权之前也不弹）；中文文件名用中文、拼音（`open jidu`）都能搜到；多个词（`open kitty dmg`）每个都要命中；`open a` 提示「再输入一个字母」、`open 报` 照查。
+  3. `open 词` ↩ 用默认 App 打开、⌘↩ 在访达里选中；`find 词` 反过来（↩ 访达里选中该文件，不是打开父目录）；按住 ⌘ 时底栏说明跟着换；⌘C 复制路径、Tab 把路径补进输入框（文件夹带 /）、⌥↩ 用去掉关键词的词在访达里搜。
+  4. 只输 `open ` 或一个空格：「最近打开和下载的文件」，刚下载的 dmg、最近打开的文档在前；node_modules、build、~/Library 里的不出现；iCloud 云盘里的副标题写「iCloud 云盘/…」。
+  5. `find my`：「查找」App 在最前、↩ 打开它；` find my`（空格开头）只有文件。单输 `open` / `find`：第一行是补全提示，↩ / Tab 变成「open 」；设置里网页搜索关键词填 open / find 会提示被文件搜索占用。
+  6. 快速连打 / 删字：列表不闪空、不闪「没有匹配的文件」，高度平滑变化；打开过的文件之后不带关键词也能搜到、出现在「最近使用」。深色、减弱动态效果各看一次。
+
 - 启动器（M11）手测：
   1. 设置 › 启动器：添加预置 / 自定义搜索、自定义快捷链接（网址和 ~ 路径各一个），上移下移、改关键词、删除；「gh swift」直达，单输「gh」出提示、↩ 或 Tab 变成「gh 」。
   2. 快捷链接按名字、关键词、拼音都能搜到，↩ 打开，之后出现在「最近使用」；「最近使用」里 ⌘⌫ 移除一项，设置里清空后「最近使用」为空。
@@ -997,6 +1014,8 @@ echo "$DMG"
 | 48 | `pin_click_through.rs:24-33`、`windows/mod.rs:4457-4461` | 钉图穿透时全局抢走 ⇧⌘P；钉图显示时抢焦点 | 不做穿透；钉图窗口不激活 App（M9） |
 | 49 | `history_db.rs:234-313`、`pin_history_db.rs:206-230` | 缩略图泄漏（本机 351 个孤儿、目录 43MB）；淘汰时删掉仍开着的钉图的 PNG | 不做这两个历史 |
 | 50 | `focused_window.rs:120-144` | 窗口置顶在 macOS 上是空实现，却提示「已切换」 | 不迁 |
+| 51 | `files.rs`（find / open） | 文件搜索起 `mdfind` 子进程用子串 `*词*`，短词要几秒、靠看门狗强杀；每条结果 stat 判断是不是目录，碰到受保护文件夹会弹授权框 | 进程内 `NSMetadataQuery` + 词首谓词，只读 Spotlight 属性、图标按类型取（M13） |
+| 52 | `file_search_filter.rs` | 排除目录默认值靠 serde default，老用户收不到新增的默认项（本机缺 8 项） | 排除规则写死在代码里，想再排除用系统 Spotlight 隐私（M13） |
 
 ## 附录：评审处理记录
 

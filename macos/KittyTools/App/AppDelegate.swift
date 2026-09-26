@@ -77,6 +77,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       if let item = clipboardStore.items.first(where: { $0.id == id }) { clipboardModel.copy(item) }
     }
     model.bumpClip = { [unowned self] id in clipboardStore.bump(id) }
+    model.requestFolderAccess = { [unowned self] in requestFolderAccess() }
     return panel
   }()
 
@@ -316,6 +317,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     case "ocr": recognizeText()
     case "translate-screenshot": screenshotTranslate()
     default: showSettings()
+    }
+  }
+
+  /// 启动器文件搜索的授权提示（启动器已收起）：第一次逐个弹系统授权框（桌面、文稿、下载、iCloud 云盘），
+  /// 结果用刘海岛说；问过了就打开系统设置的「文件和文件夹」
+  private func requestFolderAccess() {
+    guard Permissions.deniedFolders() == nil else {
+      return Permissions.Kind.filesAndFolders.openSettings()
+    }
+    // 启动器刚 orderOut，下面读目录会停住主线程直到用户点完系统框：先把窗口变化提交给 WindowServer，
+    // 否则冻住的启动器在授权框期间一直挂在屏幕上（审查时实测）
+    CATransaction.flush()
+    let denied = Permissions.requestFolderAccess()
+    if denied.isEmpty {
+      island.show("已允许访问", detail: "文件搜索现在能搜到桌面、文稿、下载里的文件")
+    } else {
+      island.show(
+        "没有权限搜" + denied.map { "「\($0)」" }.joined(), detail: "可在系统设置 › 隐私与安全性 › 文件和文件夹里打开",
+        tone: .warning)
     }
   }
 

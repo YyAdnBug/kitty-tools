@@ -276,7 +276,8 @@ struct SnapshotProbeTests {
     }
   }
 
-  /// 启动器：最近使用、搜索结果（中文名 / 拼音）、没有结果；深浅色
+  /// 启动器：最近使用、搜索结果（中文名 / 拼音）、没有结果；文件搜索（结果、最近的文件、find 按住 ⌘、
+  /// 只输 1 个字母，结果是假的、不查 Spotlight）；深浅色
   private func renderLauncher(_ out: String) throws {
     let usage = try LauncherUsage(db: Database(path: ":memory:"))
     let apps = [
@@ -297,6 +298,47 @@ struct SnapshotProbeTests {
       ] {
         model.query = query
         model.alternate = name == "launcher-alternate" ? .control : .none
+        try snapshot(
+          LauncherPanelView(model: model),
+          size: NSSize(width: 720, height: LauncherPanelView.height(for: model)),
+          dark: dark,
+          to: "\(out)/\(name)\(dark ? "-dark" : "").png")
+      }
+    }
+    let home = NSHomeDirectory()
+    func hit(_ path: String, _ type: String, daysAgo: Double) -> FileSearch.Hit {
+      FileSearch.Hit(
+        path: home + path, name: (path as NSString).lastPathComponent, contentType: type,
+        date: .now.addingTimeInterval(-daysAgo * 86_400))
+    }
+    let found = [
+      hit("/Documents/工作/季度报告汇总.md", "net.daringfireball.markdown", daysAgo: 1),
+      hit("/Documents/报告", "public.folder", daysAgo: 3),
+      hit("/Downloads/年度报告 2025.pdf", "com.adobe.pdf", daysAgo: 2),
+      hit("/Desktop/报告模板.key", "com.apple.keynote.key", daysAgo: 9),
+      hit(
+        "/Library/Mobile Documents/com~apple~CloudDocs/周报/2026/09/第 39 周工作报告（终版）.docx",
+        "org.openxmlformats.wordprocessingml.document", daysAgo: 5),
+    ]
+    let recent = [
+      hit("/Downloads/Kitty Tools Native_0.1.0_arm64.dmg", "com.apple.disk-image-udif", daysAgo: 0),
+      hit("/Downloads/report.html", "public.html", daysAgo: 1),
+      hit("/Desktop/notes.md", "net.daringfireball.markdown", daysAgo: 2),
+      hit("/Documents/Projects", "public.folder", daysAgo: 4),
+    ]
+    for dark in [false, true] {
+      for (name, query, hits) in [
+        ("launcher-files", "open 报告", found), ("launcher-files-recent", " ", recent),
+        ("launcher-files-find", "find 报告", found), ("launcher-files-short", "open a", []),
+      ] {
+        model.query = query
+        // 最近的文件那张带上最后一行的授权提示
+        model.folderHint =
+          name == "launcher-files-recent" ? FileSearch.accessHint(denied: nil) : nil
+        if let request = model.fileRequest, !request.isTooShort {
+          model.showFiles(hits, for: request)
+        }
+        model.alternate = name == "launcher-files-find" ? .command : .none
         try snapshot(
           LauncherPanelView(model: model),
           size: NSSize(width: 720, height: LauncherPanelView.height(for: model)),

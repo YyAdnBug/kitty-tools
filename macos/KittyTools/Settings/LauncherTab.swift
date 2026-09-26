@@ -1,5 +1,5 @@
 // 设置 › 启动器：点外关闭、呼出时切英文输入法、浏览器书签、网页搜索与快捷链接（增删、排序、关键词、兜底）、
-// 兜底时机、清空使用记录。快捷键在「快捷键」页。
+// 兜底时机、清空使用记录；说明里写键位和文件搜索（open / find，排除目录走系统 Spotlight 隐私）。快捷键在「快捷键」页。
 
 import SwiftUI
 
@@ -17,6 +17,9 @@ struct LauncherTab: View {
   @AppStorage(Prefs.launcherWebSearchEngines) private var enginesData: Data?
   @State private var editing: Draft?
   @State private var confirmsClear = false
+  /// 文件搜索的文件夹授权：nil = 还没问过，否则是被拒绝的文件夹（出现、设置窗成为 key 时刷新；
+  /// 不写成初始值：初始值每次重建视图都会求值，要去读受保护目录）
+  @State private var deniedFolders: [String]?
 
   /// 编辑中的一条（新建或改已有的）
   private struct Draft: Identifiable {
@@ -40,6 +43,25 @@ struct LauncherTab: View {
             + "Tab 补全（计算结果接着算、目录接着往下找），⌘C 复制路径或网址，⌘1–9 打开第几项，Esc 先清空再关闭。"
             + "输入网址或 / ~ 开头的路径可直接打开；输入算式得到计算结果；「cb 关键词」搜剪贴板里的文本。"
             + "切英文输入法只在搜索框里生效，离开后恢复；要搜中文时先关掉。")
+      }
+      Section {
+        PermissionRow(
+          title: "桌面、文稿、下载、iCloud 云盘", detail: folderDetail, symbol: "folder.fill",
+          color: Style.Family.general, granted: deniedFolders == []
+        ) {
+          if deniedFolders == nil {
+            deniedFolders = Permissions.requestFolderAccess()
+          } else {
+            Permissions.Kind.filesAndFolders.openSettings()
+          }
+        }
+      } header: {
+        Text("文件搜索")
+      } footer: {
+        caption(
+          "「open 文件名」或空格开头搜文件并打开，「find 文件名」搜文件并在访达中显示（⌘↩ 反过来），只输 open 列出最近打开和下载的文件。"
+            + "Spotlight 只给本 App 能访问的文件夹里的结果，所以桌面、文稿、下载、iCloud 云盘要先允许访问（系统会逐个询问）；"
+            + "不想被搜到的文件夹加到系统设置 › Spotlight › 搜索隐私。")
       }
       Section("浏览器书签") {
         Toggle("Chrome", isOn: $chrome)
@@ -76,6 +98,10 @@ struct LauncherTab: View {
       }
     }
     .formStyle(.grouped)
+    .onAppear { deniedFolders = Permissions.deniedFolders() }
+    .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+      deniedFolders = Permissions.deniedFolders()
+    }
     .sheet(item: $editing) { draft in
       EngineEditor(engine: draft.engine, isNew: draft.isNew) { saved in
         var list = engines.wrappedValue
@@ -138,11 +164,19 @@ struct LauncherTab: View {
     engines.wrappedValue = list
   }
 
+  private var folderDetail: String {
+    switch deniedFolders {
+    case nil: "还没允许：这些文件夹里的文件搜不到"
+    case let denied? where denied.isEmpty: "都已允许"
+    case let denied?: "没有权限：" + denied.joined(separator: "、") + "（去系统设置里打开）"
+    }
+  }
+
   /// 关键词和排在前面的一条重复（或是保留的 cb）时，返回提示里说的名字（只提示，不替用户改）
   private func duplicate(of engine: SearchEngine) -> String? {
     let keyword = engine.keyword.lowercased()
     guard !keyword.isEmpty else { return nil }
-    if WebSearch.reservedKeywords.contains(keyword) { return "剪贴板指令" }
+    if let owner = WebSearch.reservedKeywords[keyword] { return owner }
     let list = engines.wrappedValue
     guard let index = list.firstIndex(of: engine) else { return nil }
     return list[..<index].first { $0.keyword.lowercased() == keyword }?.name
@@ -265,7 +299,7 @@ private struct EngineEditor: View {
       } ?? false
     let keyword = engine.keyword.trimmingCharacters(in: .whitespaces).lowercased()
     guard !engine.name.trimmingCharacters(in: .whitespaces).isEmpty,
-      !WebSearch.reservedKeywords.contains(keyword)
+      WebSearch.reservedKeywords[keyword] == nil
     else { return false }
     if engine.isQuicklink { return hasScheme || url.hasPrefix("/") || url.hasPrefix("~") }
     return hasScheme && (!keyword.isEmpty || engine.enabled)

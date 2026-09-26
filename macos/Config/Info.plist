@@ -14,6 +14,12 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>用于打开、显示你在启动器和剪贴板历史里选中的桌面文件</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>用于打开、显示你在启动器和剪贴板历史里选中的文稿文件</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>用于打开、显示你在启动器和剪贴板历史里选中的下载文件</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>用于连接局域网内的大模型翻译服务</string>
 </dict>
