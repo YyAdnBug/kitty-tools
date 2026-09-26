@@ -63,9 +63,13 @@ enum Style {
       return .spring(duration: duration, bounce: bounce)
     }
 
-    /// Core Animation 版本；减弱动态效果时退成 0.2 s 基本动画（snap / glide 返回 nil，直接设值）
-    func caAnimation(keyPath: String, reduced: Bool = Style.reduceMotion) -> CAAnimation? {
-      guard let (duration, bounce) = parameters else { return nil }
+    /// Core Animation 版本；减弱动态效果时退成 0.2 s 基本动画（snap / glide 返回 nil，直接设值）。
+    /// bounce 只给「工具栏浮现」这类规则里写明的变体用（pop 配 0.18）
+    func caAnimation(
+      keyPath: String, reduced: Bool = Style.reduceMotion, bounce override: Double? = nil
+    ) -> CAAnimation? {
+      guard let (duration, standard) = parameters else { return nil }
+      let bounce = override ?? standard
       if reduced {
         guard self != .snap, self != .glide else { return nil }
         let basic = CABasicAnimation(keyPath: keyPath)
@@ -129,7 +133,65 @@ enum Style {
     static let search = Color(nsColor: .systemIndigo)
   }
 
-  /// 品牌粉：只在品牌时刻（App 图标、关于页、引导、空状态）
+  // MARK: 无障碍开关（AppKit 侧）
+
+  static var reduceTransparency: Bool {
+    NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+  }
+  static var increaseContrast: Bool {
+    NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+  }
+
+  // MARK: 截图家族（品牌粉例外，2026-09-26 用户拍板）
+
+  /// 截图家族（遮罩、工具栏、样式托盘、放大镜、钉图、常驻缩略图、长截图、飞行卡片）的强调色是品牌粉，
+  /// 不是系统强调色。这些控件永远画在深色 HUD 或任意画面上，所以不跟随深浅色，固定 #FF4D7E
+  enum Shot {
+    static let accent = NSColor(srgbRed: 1, green: 0.302, blue: 0.494, alpha: 1)
+    /// 当前工具的实心底块圆角（全 App 唯一一处强调色填满的块）
+    static let toolRadius: CGFloat = 12
+  }
+
+  /// HUD 皮肤（永远深色，mac-whisker §2）：截图工具栏、样式托盘、尺寸胶囊、提示、放大镜信息卡、钉图圆钮、
+  /// 常驻缩略图胶囊、长截图面板共用。有材质的用 NSVisualEffectView（`.hudWindow` + vibrantDark），
+  /// 纯图层画的小控件用 fill；降低透明度时不透明、增强对比度时内描边加粗
+  enum HUD {
+    /// 纯图层控件的底色
+    static var fill: NSColor { NSColor(white: 0.11, alpha: reduceTransparency ? 0.97 : 0.82) }
+    /// 内圈描边 0.5 pt white 0.14（增强对比度 1 pt white 0.35）
+    static var innerStroke: NSColor { .white.withAlphaComponent(increaseContrast ? 0.35 : 0.14) }
+    static var strokeWidth: CGFloat { increaseContrast ? 1 : 0.5 }
+    /// 外圈 0.5 pt black 0.5
+    static let outerStroke = NSColor.black.withAlphaComponent(0.5)
+    /// 文字三档：主 / 次 / 再次
+    static let text = NSColor.white.withAlphaComponent(0.95)
+    static let secondaryText = NSColor.white.withAlphaComponent(0.60)
+    static let tertiaryText = NSColor.white.withAlphaComponent(0.40)
+    /// 悬停底（按钮后面 control 圆角的浅色块）
+    static let hoverFill = NSColor.white.withAlphaComponent(0.10)
+    /// 分组分隔线 1 × 18
+    static let separator = NSColor.white.withAlphaComponent(0.14)
+
+    /// 遮罩里的浮动控件阴影：black 0.35、模糊 18（CALayer shadowRadius 取一半）、向下 6，必须设 shadowPath
+    static func applyShadow(to layer: CALayer, path: CGPath) {
+      layer.shadowColor = NSColor.black.cgColor
+      layer.shadowOpacity = 0.35
+      layer.shadowRadius = 9
+      layer.shadowOffset = CGSize(width: 0, height: -6)
+      layer.shadowPath = path
+    }
+
+    /// 纯图层画的 HUD 小控件（尺寸胶囊、提示、信息卡）：底色 + 内描边 + 圆角
+    static func applySkin(to layer: CALayer, radius: CGFloat) {
+      layer.backgroundColor = fill.cgColor
+      layer.borderColor = innerStroke.cgColor
+      layer.borderWidth = strokeWidth
+      layer.cornerRadius = radius
+      layer.cornerCurve = .continuous
+    }
+  }
+
+  /// 品牌粉：品牌时刻（App 图标、关于页、引导、空状态）和截图家族（`Style.Shot`）
   static let brand = dynamic(
     light: NSColor(red: 1, green: 0.302, blue: 0.494, alpha: 1),
     dark: NSColor(red: 1, green: 0.42, blue: 0.576, alpha: 1))
