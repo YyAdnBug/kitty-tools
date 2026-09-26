@@ -189,7 +189,7 @@ private struct ServiceRow: View {
   var body: some View {
     HStack(spacing: 8) {
       Toggle("启用", isOn: $service.isEnabled).labelsHidden()
-      Image(systemName: service.symbol).foregroundStyle(.tint).frame(width: 18)
+      ServiceTile(service: service)
       VStack(alignment: .leading, spacing: 1) {
         Text(service.name).lineLimit(1)
         Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)

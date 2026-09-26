@@ -77,20 +77,6 @@ nonisolated struct TranslateService: Codable, Identifiable, Hashable, Sendable {
   /// 流式输出（逐字显示、按行内 Markdown 渲染）的服务：大模型类
   var isStreaming: Bool { kind == .zhipu || kind == .ai }
 
-  var symbol: String {
-    switch kind {
-    case .zhipu: "sparkles"
-    case .ai: "cpu"
-    case .baidu: "b.circle"
-    case .youdao: "book"
-    case .google: "globe"
-    case .deepl: "d.circle"
-    case .microsoft: "square.grid.2x2"
-    case .volcengine: "flame"
-    case .tencent: "cloud"
-    }
-  }
-
   var secretFields: [SecretField] {
     switch kind {
     case .zhipu: [SecretField(name: "apiKey", label: "API Key", prompt: "留空使用内置免费额度")]

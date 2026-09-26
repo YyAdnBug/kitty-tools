@@ -221,25 +221,55 @@ struct ProviderCardView: View {
   }
 }
 
-/// 服务身份：18 pt 品牌色块 + 白色首字母（圆角 = 边长 × 0.225）
+/// 服务身份：18 pt 方块（圆角 = 边长 × 0.225）。有官方 logo 用 logo，没有的用品牌色块 + 白色首字母
 struct ServiceTile: View {
   let service: TranslateService
   var size: CGFloat = 18
 
   var body: some View {
-    let color = Self.color(for: service)
-    RoundedRectangle(cornerRadius: Style.Radius.tile(size), style: .continuous)
-      .fill(
-        LinearGradient(
-          colors: [color, color.mix(with: .black, by: 0.15)], startPoint: .top, endPoint: .bottom)
-      )
-      .overlay(
-        Text(Self.monogram(service))
-          .font(.system(size: size * 0.55, weight: .heavy, design: .rounded))
-          .foregroundStyle(.white)
-          .minimumScaleFactor(0.6)
-      )
-      .frame(width: size, height: size)
+    let shape = RoundedRectangle(cornerRadius: Style.Radius.tile(size), style: .continuous)
+    if let logo = Self.logo(for: service) {
+      Image(decorative: logo.name)
+        .resizable()
+        .interpolation(.high)
+        .scaledToFit()
+        .padding(logo.onPlate ? size * 0.14 : 0)
+        .frame(width: size, height: size)
+        .background(logo.onPlate ? Color.white : .clear)
+        .clipShape(shape)
+        .overlay(shape.strokeBorder(Style.hairline, lineWidth: 0.5))
+    } else {
+      let color = Self.color(for: service)
+      shape
+        .fill(
+          LinearGradient(
+            colors: [color, color.mix(with: .black, by: 0.15)], startPoint: .top, endPoint: .bottom)
+        )
+        .overlay(
+          Text(Self.monogram(service))
+            .font(.system(size: size * 0.55, weight: .heavy, design: .rounded))
+            .foregroundStyle(.white)
+            .minimumScaleFactor(0.6)
+        )
+        .frame(width: size, height: size)
+    }
+  }
+
+  /// 官方 logo（`Assets.xcassets/ServiceLogo`，取自各家官网的图标）：自带底色的满版图直接裁圆角，
+  /// 只有图形的垫白底留边（onPlate）。百度、腾讯官网只有 32 px、OpenAI 取不到，先用色块首字母
+  static func logo(for service: TranslateService) -> (name: String, onPlate: Bool)? {
+    let name: String? =
+      switch service.kind {
+      case .zhipu, .youdao, .google, .deepl, .microsoft, .volcengine: service.kind.rawValue
+      case .baidu, .tencent: nil
+      case .ai:
+        switch service.aiProtocol {
+        case .anthropic: "anthropic"
+        case .azure: "microsoft"
+        case .openai, nil: service.name.localizedCaseInsensitiveContains("gemini") ? "gemini" : nil
+        }
+      }
+    return name.map { ("ServiceLogo/" + $0, !["zhipu", "youdao", "anthropic"].contains($0)) }
   }
 
   /// 服务品牌色（mac-whisker §3）；自定义 AI 按协议，其余按名字哈希取色相

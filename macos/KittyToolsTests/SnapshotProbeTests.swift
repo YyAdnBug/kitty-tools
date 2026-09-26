@@ -274,6 +274,26 @@ struct SnapshotProbeTests {
           to: "\(out)/\(name)\(dark ? "-dark" : "").png")
       }
     }
+    // 服务身份：官方 logo（满版 / 垫白底）和还没有 logo 的色块首字母，18 pt 一排 + 36 pt 一排
+    var gemini = TranslateService.newAI()
+    gemini.name = "Gemini"
+    let everyService =
+      TranslateService.Kind.allCases.filter { $0 != .ai }.map(TranslateService.builtin) + [
+        claude, gemini, gpt,
+      ]
+    let tiles = VStack(alignment: .leading, spacing: 12) {
+      ForEach([18.0, 36.0], id: \.self) { size in
+        HStack(spacing: size / 2) {
+          ForEach(everyService, id: \.id) { ServiceTile(service: $0, size: size) }
+        }
+      }
+    }
+    .padding(16)
+    for dark in [false, true] {
+      try snapshot(
+        tiles, size: NSSize(width: 640, height: 110), dark: dark,
+        to: "\(out)/translate-logos\(dark ? "-dark" : "").png")
+    }
   }
 
   /// 启动器：最近使用、搜索结果（中文名 / 拼音）、没有结果；文件搜索（结果、最近的文件、find 按住 ⌘、

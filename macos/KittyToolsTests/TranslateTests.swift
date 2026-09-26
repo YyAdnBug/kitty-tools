@@ -1,6 +1,7 @@
-// 翻译相关单测：语言解析、流式文本清洗、AI 服务地址 / 参数、局域网判断、翻译历史；
+// 翻译相关单测：语言解析、流式文本清洗、AI 服务地址 / 参数、局域网判断、翻译历史、服务 logo 都在 asset catalog 里；
 // 以及按需启用的联网冒烟测试（TEST_RUNNER_KITTY_LIVE_TRANSLATE=1，用内置智谱 key 真翻一句）。
 
+import AppKit
 import Foundation
 import Testing
 
@@ -247,5 +248,25 @@ struct HistoryStoreTests {
   @Test func silentReplaceHasNoDefaultHotKey() {
     #expect(HotKeyAction.translateReplace.defaultHotKey == nil)
     #expect(HotKeyAction.allCases.last == .translateReplace)  // 只能加在末尾（注册 id 是下标）
+  }
+}
+
+struct ServiceLogoTests {
+  @Test func logosExistInAssetCatalog() throws {
+    var services = TranslateService.Kind.allCases.filter { $0 != .ai }.map(TranslateService.builtin)
+    for proto in [TranslateService.AIProtocol.anthropic, .azure] {
+      var ai = TranslateService.newAI()
+      ai.aiProtocol = proto
+      services.append(ai)
+    }
+    var gemini = TranslateService.newAI()
+    gemini.name = "Gemini 2.5 Flash"
+    services.append(gemini)
+    let named = services.compactMap(ServiceTile.logo(for:))
+    #expect(named.count == 9)  // 百度、腾讯还没有清晰的官方图
+    for logo in named {
+      #expect(NSImage(named: logo.name) != nil, "\(logo.name)")
+    }
+    #expect(ServiceTile.logo(for: .newAI()) == nil)
   }
 }
