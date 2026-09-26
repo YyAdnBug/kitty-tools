@@ -68,6 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       content: LauncherPanelView(model: model) { [unowned self] in showSettings() })
     panel.keyEquivalentHandler = { [unowned model] in model.handleKeyEquivalent($0) }
     panel.onHide = { [unowned model] in model.didHide() }
+    panel.squeezesIn = { UserDefaults.standard.bool(forKey: Prefs.launcherSqueezeEntrance) }
     model.hidePanel = { [unowned panel] in panel.hide() }
     model.resize = { [unowned panel] in panel.setContentHeight($0, animated: true) }
     model.runAction = { [unowned self] in runLauncherAction($0) }

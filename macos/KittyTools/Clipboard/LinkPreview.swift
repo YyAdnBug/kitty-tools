@@ -149,7 +149,7 @@ nonisolated struct LinkMetadata: Equatable, Sendable {
 /// 按块收的下载：URLSessionDataDelegate，回调投递到主队列（里面 MainActor.assumeIsolated）。看过响应头再决定收不收
 /// （类型、长度不对立刻取消），网页收到 </head> 或上限就停、图片超过上限就放弃；跳转按同样的规则拦。
 /// 不用 `for try await byte in AsyncBytes`：在主线程上逐字节 await 每个字节都要来回跳一次，512 KB 要近 3 s（审查实测）
-private final class Fetcher: NSObject, URLSessionDataDelegate {
+@MainActor private final class Fetcher: NSObject, URLSessionDataDelegate {
   enum Kind {
     /// 网页（链接本身是图片时按 4 MB 收）
     case page

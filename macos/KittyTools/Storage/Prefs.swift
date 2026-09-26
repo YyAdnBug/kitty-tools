@@ -17,6 +17,8 @@ enum Prefs {
   static let launcherFallbackAlways = "launcherFallbackAlways"
   /// 呼出启动器时搜索框只用英文输入法（Alfred 的 Force Keyboard；离开启动器后恢复）
   static let launcherRomanInput = "launcherRomanInput"
+  /// 启动器呼出时用挤压入场（实验，像 macOS 26 的 Spotlight）
+  static let launcherSqueezeEntrance = "launcherSqueezeEntrance"
   /// 翻译浮窗固定：失焦不隐藏、Esc 不关闭
   static let floatingPinned = "floatingPinned"
 
@@ -81,6 +83,7 @@ enum Prefs {
       launcherBookmarksBrave: false,
       launcherFallbackAlways: false,
       launcherRomanInput: false,
+      launcherSqueezeEntrance: false,
       floatingPinned: false,
       clipboardHistoryMax: 100,
       clipboardRetentionDays: 7,

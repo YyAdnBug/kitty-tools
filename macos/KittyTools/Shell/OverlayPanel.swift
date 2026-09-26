@@ -3,7 +3,7 @@
 // 粘贴时发的 ⌘V、划词时发的 ⌘C 才会落到它身上。
 // 外观是 Whisker 的 Panel 皮肤（mac-whisker §2）：无边框、16 pt 连续圆角（maskImage 裁，系统阴影跟着走）+ 描边；
 // 出现时淡入 + 内容下落 6 pt，用户关掉时系统淡出（窗口逻辑上立刻移走，键盘马上回到原 App），高度可带动画伸缩。
-// ⌘Y 放大预览用 zoom / unzoom：从检查器卡片的位置长出来、缩回去。
+// ⌘Y 放大预览用 zoom / unzoom：从检查器卡片的位置长出来、缩回去。启动器可选「挤压入场」（实验，squeezesIn）。
 
 import AppKit
 import SwiftUI
@@ -35,6 +35,11 @@ final class OverlayPanel: NSPanel {
   fileprivate var isUserResizing = false
   /// 每次出现 / 收起加一：缩回动画的收尾发现期间又被打开（或已被别处收起）就什么都不做
   private var showGeneration = 0
+  /// 出现时用挤压入场（启动器的实验开关）；false 用标准的淡入 + 下落
+  var squeezesIn: () -> Bool = { false }
+  /// 正在挤压入场：起止帧、开始时刻、逐帧驱动的显示器刷新
+  private var squeeze: (start: NSRect, end: NSRect, began: CFTimeInterval)?
+  private var squeezeLink: CADisplayLink?
 
   /// - Parameters:
   ///   - minSize: 传了就允许拖左右边改宽度（无边框窗口没有系统的拖边，用两条 ResizeEdge）
@@ -110,7 +115,55 @@ final class OverlayPanel: NSPanel {
       if let field = initialFirstResponder { makeFirstResponder(field) }
     }
     if autoHide == .clickOutside || !makingKey, mouseMonitors.isEmpty { installMouseMonitors() }
-    if fades { animateIn() }
+    if fades {
+      if squeezesIn() && !Style.reduceMotion { squeezeIn() } else { animateIn() }
+    }
+  }
+
+  /// 挤压入场（实验，像 macOS 26 的 Spotlight）：窗口从窄一成、矮四分之一（顶边不动、左右居中）弹开到原尺寸，
+  /// 冲过头一点再回来（island 曲线 0.42 s / bounce 0.22）。动的是窗口本身（毛玻璃、阴影由窗口服务器按真实大小画）；
+  /// 窗口帧动画只支持贝塞尔，实测冲不过头（还会忽略时长），所以跟着显示器刷新逐帧按 SwiftUI 的 Spring 算帧
+  private func squeezeIn() {
+    NSAnimationContext.runAnimationGroup { context in
+      context.duration = Style.fadeIn
+      context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+      animator().alphaValue = 1
+    }
+    let end = frame
+    let size = NSSize(width: end.width * 0.9, height: end.height * 0.75)
+    let start = NSRect(
+      x: end.midX - size.width / 2, y: end.maxY - size.height, width: size.width,
+      height: size.height)
+    squeeze = (start, end, CACurrentMediaTime())
+    setFrame(start, display: false)
+    guard let link = contentView?.displayLink(target: self, selector: #selector(stepSqueeze))
+    else { return endSqueeze() }
+    link.add(to: .main, forMode: .common)
+    squeezeLink = link
+  }
+
+  @objc private func stepSqueeze(_ link: CADisplayLink) {
+    guard let squeeze else { return endSqueeze() }
+    let spring = Spring(duration: 0.42, bounce: 0.22)
+    let time = CACurrentMediaTime() - squeeze.began
+    guard time < spring.settlingDuration(target: 1.0, epsilon: 0.002) else { return endSqueeze() }
+    let progress = spring.value(target: 1.0, time: time)
+    let (a, b) = (squeeze.start, squeeze.end)
+    setFrame(
+      NSRect(
+        x: a.minX + (b.minX - a.minX) * progress, y: a.minY + (b.minY - a.minY) * progress,
+        width: a.width + (b.width - a.width) * progress,
+        height: a.height + (b.height - a.height) * progress), display: true)
+  }
+
+  /// 停下挤压，落到终点（收起、放完、中途被打断都走这里）
+  private func endSqueeze() {
+    squeezeLink?.invalidate()
+    squeezeLink = nil
+    guard let end = squeeze?.end else { return }
+    squeeze = nil
+    setFrame(end, display: true)
+    invalidateShadow()
   }
 
   /// 入场：窗口淡入（fadeIn），内容从上方 6 pt 落下（弹簧）；减弱动态效果时只淡入
@@ -131,6 +184,7 @@ final class OverlayPanel: NSPanel {
 
   /// 立刻收起（粘贴前、打开设置、程序切换）：没有退场动画，⌘V 发出时面板已经不在
   func hide() {
+    endSqueeze()
     guard isVisible else { return }
     showGeneration += 1
     animationBehavior = .none
@@ -142,6 +196,7 @@ final class OverlayPanel: NSPanel {
 
   /// 用户关掉（Esc、点外面、再按热键、失焦）：系统淡出。窗口逻辑上立刻移走，键盘马上回到原 App
   func dismiss() {
+    endSqueeze()
     guard isVisible else { return }
     showGeneration += 1
     animationBehavior = Style.reduceMotion ? .none : .utilityWindow
@@ -254,6 +309,13 @@ final class OverlayPanel: NSPanel {
   /// animated：变高 0.18 s、变矮 0.14 s（首次显示、拖边改宽和减弱动态效果时不动画）。
   /// 不动画时也走零时长的 animator：直接 setFrame 盖不掉正在跑的帧动画，动画结束会把旧目标写回来
   func setContentHeight(_ height: CGFloat, animated: Bool = false) {
+    // 挤压入场还在弹：改它的终点（顶边不动），别另起一段帧动画和它抢
+    if var running = squeeze {
+      running.end.origin.y = running.end.maxY - height
+      running.end.size.height = height
+      squeeze = running
+      return
+    }
     guard abs(frame.height - height) > 0.5 else { return }
     var target = frame
     target.origin.y = target.maxY - height

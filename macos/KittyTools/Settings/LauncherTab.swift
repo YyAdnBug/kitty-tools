@@ -8,6 +8,7 @@ struct LauncherTab: View {
   var clearUsage: () -> Void = {}
   @AppStorage(Prefs.launcherHideOnUnfocus) private var hideOnUnfocus = true
   @AppStorage(Prefs.launcherRomanInput) private var romanInput = false
+  @AppStorage(Prefs.launcherSqueezeEntrance) private var squeezeEntrance = false
   @AppStorage(Prefs.launcherFallbackAlways) private var fallbackAlways = false
   @AppStorage(Prefs.launcherBookmarksChrome) private var chrome = true
   @AppStorage(Prefs.launcherBookmarksEdge) private var edge = false
@@ -29,6 +30,10 @@ struct LauncherTab: View {
       Section {
         Toggle("点面板外面时自动关闭", isOn: $hideOnUnfocus)
         Toggle("呼出时切到英文输入法", isOn: $romanInput)
+        Toggle(isOn: $squeezeEntrance) {
+          Text("呼出时挤压弹开（实验）")
+          Text("像 macOS 26 的聚焦搜索：从窄一点、矮一点弹开到原尺寸；减弱动态效果时不弹")
+        }
       } footer: {
         caption(
           "↩ 打开（计算结果、cb 是粘贴），⌘↩ 在访达中显示（计算结果、cb 只复制），⌥↩ 在访达里搜索，⌃↩ 网页搜索，"
