@@ -66,16 +66,17 @@ struct ProviderCardView: View {
             } action: { height in
               if isDone { settledHeight = height }
             }
-            .padding(.top, 7)
+            .padding(.top, 3)
             .transition(
               reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
         }
       }
       .clipped()
     }
+    // 紧凑（对标 Bob）：一行译文的卡约 54 pt（上 7 + 标题 18 + 间距 3 + 一行 + 下 8）
     .padding(.horizontal, 12)
-    .padding(.top, 10)
-    .padding(.bottom, isCollapsed ? 10 : 12)
+    .padding(.top, 7)
+    .padding(.bottom, isCollapsed ? 7 : 8)
     .frame(maxWidth: .infinity, alignment: .leading)
     .clipped()
     .background(background, in: shape)
@@ -156,7 +157,7 @@ struct ProviderCardView: View {
     .labelStyle(.iconOnly)
     .buttonStyle(.borderless)
     .font(.system(size: 12, weight: .medium))
-    .frame(height: 20)
+    .frame(height: 18)
   }
 
   /// 用 RevealText 显示的正文：生成中有字、或完成且不按 Markdown 渲染。两种状态放在同一个结构位置，
@@ -350,7 +351,7 @@ private struct CometBorder: View {
   }
 }
 
-/// 等第一个字时的骨架：三根条（高 9，宽 94 / 72 / 48%）+ 扫光（1.3 s 一趟）
+/// 等第一个字时的骨架：两根条（高 8，宽 94 / 58%，约一行半译文高）+ 扫光（1.3 s 一趟）
 private struct Skeleton: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -359,8 +360,8 @@ private struct Skeleton: View {
       let phase =
         context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.3) / 1.3
       GeometryReader { geometry in
-        VStack(alignment: .leading, spacing: 7) {
-          ForEach([0.94, 0.72, 0.48], id: \.self) { width in
+        VStack(alignment: .leading, spacing: 6) {
+          ForEach([0.94, 0.58], id: \.self) { width in
             Capsule()
               .fill(
                 LinearGradient(
@@ -372,11 +373,12 @@ private struct Skeleton: View {
                   startPoint: UnitPoint(x: phase * 3 - 2, y: 0.5),
                   endPoint: UnitPoint(x: phase * 3 - 1, y: 0.5))
               )
-              .frame(width: geometry.size.width * width, height: 9)
+              .frame(width: geometry.size.width * width, height: 8)
           }
         }
+        .padding(.vertical, 2)
       }
-      .frame(height: 41)
+      .frame(height: 26)
     }
     .accessibilityLabel("翻译中")
   }
