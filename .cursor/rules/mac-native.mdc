@@ -35,7 +35,7 @@ alwaysApply: true
 - 遵循 Swift API 设计规范；`xcrun swift-format lint --strict -r macos/KittyTools` 无输出是唯一格式标准（配置 `macos/.swift-format`），提交前 `xcrun swift-format format -i -r macos/KittyTools`。
 - 日期显示统一用 `Date.FormatStyle`。
 - 单行文本用 `.lineLimit(1)` + `.truncationMode(.tail)`。
-- **视觉与动效一律按 `mac-whisker.mdc`（Whisker 设计语言）执行**（用户 2026-09-25 拍板，所有效果都要）：三种皮肤、`Shell/Style.swift` 刻度、七条弹簧曲线、五个招牌时刻。全 App 功能强调色 = 品牌粉 `Style.brand`（文字 `Style.brandInk`），`AccentColor.colorset` 同值（用户 2026-09-26）；家族色只用于种类色块和设置页头，内容色（来源 App、服务品牌色、语法着色等）不算强调色；不做主题 preset。
+- **视觉与动效一律按 `mac-whisker.mdc`（Whisker 设计语言）执行**（用户 2026-09-25 拍板，所有效果都要）：三种皮肤、`Shell/Style.swift` 刻度、七条弹簧曲线、五个招牌时刻。全 App 功能强调色 = `Style.brand`（文字 `Style.brandInk`、填充上的符号 `Style.onBrand`），取自 `Shell/Accent.swift`：默认跟随系统（系统「多色」时是 `AccentColor.colorset` 的品牌粉），设置 › 通用可换成系统设置那一排 8 色（用户 2026-09-27；细节 mac-whisker §3「颜色」）；家族色只用于种类色块和设置页头，内容色（来源 App、服务品牌色、语法着色等）不算强调色；不做主题 preset。
 - **界面与交互按 macOS 习惯设计**（用户要求）：参考 HIG 与 swiftui-expert-skill；界面改动用 SnapshotProbeTests 屏幕外渲染自检，禁止为截图弹出浮层抢用户键盘。
 - 刻意的简化写 `ponytail:` 注释，写明上限和升级路径；为某个 App 补的时序延迟必须注明是哪个 App。
 

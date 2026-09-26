@@ -24,6 +24,7 @@ alwaysApply: false
 
 ## 3. 搜索
 - `Search`：空白分词 AND，大小写 / 全半角 / 变音符号不敏感；权重 备注 3 > 正文 / 图片文字 / 路径 2 > 来源 1。
+- 图片识别文字只用来搜索：透镜、行标题平时不显示（用户 2026-09-27 嫌干扰），有搜索词且靠它命中时行标题接命中那段；全文只在 ⌘Y 大卡里；⌘K / 右键「复制图中文字」（`copyRecognizedText`，写剪贴板并记一条文本进历史）。
 - 必须走 `ClipboardStore.search`（折叠后 UTF-8 字节缓存 + `memmem`）：直接 `range(of:options:)` 5000 条要 1 秒，缓存后 9ms（Debug）。改条目正文、备注、OCR、来源的地方都要清对应的 `searchKeys`。
 
 ## 4. 面板交互（macOS 习惯；Lens Bar，2026-09-26 N1–N4）

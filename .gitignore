@@ -1,5 +1,9 @@
 .DS_Store
 
+# 本地环境变量（密钥；原生版的内置密钥在 macos/Config/Secrets.xcconfig）
+.env
+.env.*
+
 # 本地 AI / agent 工具目录（整目录不进仓库；本地文件保留）
 .agents/
 .codegraph/
