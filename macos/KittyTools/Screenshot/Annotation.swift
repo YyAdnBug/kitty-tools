@@ -35,7 +35,7 @@ struct Annotation: Identifiable, Equatable {
       case .line: "line.diagonal"
       case .pen: "scribble.variable"
       case .highlighter: "highlighter"
-      case .text: "textformat"
+      case .text: "t.square"  // textformat 在中文系统上画成「格式」两个字；带拉丁字母的不跟系统语言换字形
       case .counter: "1.circle"
       case .mosaic: "checkerboard.rectangle"
       case .spotlight: "circle.square.fill"
@@ -230,6 +230,23 @@ struct Annotation: Identifiable, Equatable {
     case .mosaic, .highlighter, .spotlight: bounds
     default: bounds.insetBy(dx: -Self.shadowReach, dy: -Self.shadowReach)
     }
+  }
+
+  /// 画笔拖动中往后接了点（previous 的点是现在的开头）时要重画的那一截：penPath 只有收尾变了（原来最后一段直线换成
+  /// 曲线 + 新的收尾直线），都在倒数第三个旧点起的这些点围成的范围里（含线宽、阴影）。不是接着画的 = nil，按整条重画。
+  /// 整条笔迹的外框在 5K 屏上可能是大半屏，每动一下都重画太慢
+  func penGrowth(from previous: Annotation) -> CGRect? {
+    guard case .pen(let points) = shape, case .pen(let old) = previous.shape,
+      style == previous.style, old.count >= 2, points.count > old.count, points.starts(with: old)
+    else { return nil }
+    let tail = points[(old.count - 2)...]
+    let xs = tail.map(\.x)
+    let ys = tail.map(\.y)
+    guard let minX = xs.min(), let maxX = xs.max(), let minY = ys.min(), let maxY = ys.max()
+    else { return nil }
+    let pad = style.weight.lineWidth / 2 + Self.shadowReach
+    return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+      .insetBy(dx: -pad, dy: -pad)
   }
 
   /// 聚光灯压暗的档（最后一个聚光灯的；没有 = nil）。它变了，局部重画的调用方要整块重画
@@ -479,6 +496,14 @@ struct Annotation: Identifiable, Equatable {
       height: ceil(size.height))
   }
 
+  /// 「描边」样式的外描边：字宽 1/7（一半压在字里，随后填上的字把它盖住），白色（白字用黑）。输入框所见即所得也用它
+  static func outlineAttributes(_ style: Style) -> [NSAttributedString.Key: Any] {
+    [
+      .font: font(style.weight), .strokeWidth: 100.0 / 7,
+      .strokeColor: style.color == .white ? NSColor.black : NSColor.white,
+    ]
+  }
+
   /// 「底色」样式的色块：文字框左右各留 6、上下各留 2，圆角 6（输入框所见即所得也用它）
   static let platePadding = CGSize(width: 6, height: 2)
   static func textPlate(_ frame: CGRect) -> CGRect {
@@ -598,13 +623,8 @@ struct Annotation: Identifiable, Equatable {
       case 1:
         // 描边：先画带阴影的外描边（字宽 1/7，一半压在字里），再不带阴影地把字填上去
         context.setLineJoin(.round)
-        NSAttributedString(
-          string: string,
-          attributes: [
-            .font: font, .strokeWidth: 100.0 / 7,
-            .strokeColor: style.color == .white ? NSColor.black : .white,
-          ]
-        ).draw(in: frame)
+        NSAttributedString(string: string, attributes: Self.outlineAttributes(style))
+          .draw(in: frame)
         noShadow()
       case 2:
         // 底色：带阴影的圆角色块 + 白字（黄 / 白底黑字）

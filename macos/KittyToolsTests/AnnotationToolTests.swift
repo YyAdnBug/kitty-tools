@@ -1,5 +1,5 @@
-// 截图标注模型单测（Whisker §6「工具」）：10 个工具的元数据、拖出的形状与 ⇧ 约束、点中判断（按画的层次）、手柄与改大小、复制、
-// 序号编号、每个工具记住的样式，以及 drawAll 的像素：聚光灯只压暗选区里的洞外、重叠的洞不再压暗、挪洞 / 挪选区只需重画变了的几块、
+// 截图标注模型单测（Whisker §6「工具」）：10 个工具的元数据（图标不随系统语言换字形）、拖出的形状与 ⇧ 约束、点中判断（按画的层次）、手柄与改大小、复制、
+// 序号编号、每个工具记住的样式，以及 drawAll 的像素：聚光灯只压暗选区里的洞外、重叠的洞不再压暗、挪洞 / 挪选区 / 画笔累点只需重画变了的几块、
 // 序号压在后画的标注上面、模糊马赛克和像素马赛克不同且都认不出字、荧光笔正片叠底在屏幕（透明标注层）和导出上一样、文字底色块。
 
 import AppKit
@@ -29,6 +29,30 @@ struct AnnotationToolTests {
     #expect(Annotation.Tool.mosaic.optionTitles == ["像素", "模糊"])
     #expect(Annotation.Tool.arrow.optionTitles.isEmpty)
     #expect(Annotation.Palette.allCases.first == .pink && Annotation.Palette.allCases.count == 8)
+  }
+
+  @Test func toolSymbolsDoNotFollowSystemLanguage() throws {
+    // textformat 在中文系统上画成「格式」：工具栏图标在中文、英文下要画得一模一样
+    func png(_ name: String, _ locale: String) throws -> Data? {
+      let image = try #require(
+        NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+          .withSymbolConfiguration(.init(pointSize: 30, weight: .medium))?
+          .withLocale(Locale(identifier: locale)))
+      let rep = try #require(
+        NSBitmapImageRep(
+          bitmapDataPlanes: nil, pixelsWide: 48, pixelsHigh: 48, bitsPerSample: 8,
+          samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+          bytesPerRow: 0, bitsPerPixel: 0))
+      NSGraphicsContext.saveGraphicsState()
+      NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+      image.draw(in: NSRect(x: 4, y: 4, width: 40, height: 40))
+      NSGraphicsContext.restoreGraphicsState()
+      return rep.representation(using: .png, properties: [:])
+    }
+    #expect(try png("textformat", "en") != png("textformat", "zh-Hans"), "这台机器上验证不出本地化字形")
+    for tool in Annotation.Tool.allCases {
+      #expect(try png(tool.symbol, "en") == png(tool.symbol, "zh-Hans"), "\(tool)")
+    }
   }
 
   // MARK: 几何
@@ -213,6 +237,36 @@ struct AnnotationToolTests {
     }
     let partial = try Pixels(try #require(context.makeImage()))
     #expect(partial.data == (try draw([moved], over: white, transparent: true)).data)
+  }
+
+  @Test func growingAPenOnlyRedrawsItsTail() throws {
+    // 画笔边画边累点：只重画 penGrowth 给的那一截，结果和整条重画一样；不是接着画的（挪动、改样式、变短）给 nil
+    let white = try Self.solid(gray: 1)
+    let points = [
+      CGPoint(x: 10, y: 10), CGPoint(x: 30, y: 70), CGPoint(x: 50, y: 20), CGPoint(x: 70, y: 60),
+    ]
+    let old = Annotation(shape: .pen(points))
+    var grown = old
+    grown.shape = .pen(points + [CGPoint(x: 80, y: 50)])
+    let tail = try #require(grown.penGrowth(from: old))
+    #expect(tail.minX > grown.drawBounds.minX + 30)
+    let context = try Self.context()
+    Annotation.drawAll([old], in: context, image: white, viewSize: view, shadowScale: 1)
+    context.saveGState()
+    context.clip(to: tail)
+    context.clear(tail)
+    Annotation.drawAll(
+      [grown], in: context, image: white, viewSize: view, shadowScale: 1, dirty: tail)
+    context.restoreGState()
+    let partial = try Pixels(try #require(context.makeImage()))
+    // 带阴影的整条重画和局部重画之间有 1/255 的舍入差（阴影按不同大小的缓冲模糊），看不出来
+    let full = try draw([grown], over: white, transparent: true)
+    #expect(zip(partial.data, full.data).allSatisfy { abs(Int($0) - Int($1)) <= 1 })
+    var restyled = grown
+    restyled.style.color = .blue
+    #expect(restyled.penGrowth(from: old) == nil)
+    #expect(grown.offset(by: CGSize(width: 1, height: 0)).penGrowth(from: old) == nil)
+    #expect(old.penGrowth(from: grown) == nil)
   }
 
   @Test func spotlightDimsOnlyInsideTheSelection() throws {

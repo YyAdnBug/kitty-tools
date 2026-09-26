@@ -7,8 +7,9 @@
 // 单击选中窗口，拖出或单击后进入调整：整条边和四角都能拖（悬停的边加粗、手柄放大）、拖动平移、方向键微调（⇧ 10 点）、
 // ⌘ / ⌥ + 方向键推 / 收那条边；尺寸胶囊点数字输入像素宽高、比例菜单锁比例；右键没有标注时回到待选，有标注时只提示；
 // 放大镜显示中心像素的色值（C 复制），按住 ⌘ 出整屏十字准线；S 长截图、T 钉图、O 识字；
-// 标注 1–0（矩形、椭圆、箭头、直线、画笔、荧光笔、文字、序号、马赛克、聚光灯，⇧ 画正方形 / 45° 线，再按一次收起），
-// 点中标注可拖动、改颜色粗细、⌫ 删除、双击文字重新编辑，⌘Z 撤销、⇧⌘Z 重做。
+// 标注 1–0（矩形、椭圆、箭头、直线、画笔、荧光笔、文字、序号、马赛克、聚光灯，⇧ 画正方形 / 45° 线，再按一次收起；
+// 序号单击放、画笔一路累点），画完自动选中（工具保持）：粉色虚线框 + 手柄，拖手柄改大小（⇧ 约束）、拖本体移动（⇧ 锁轴）、
+// ⌥ 拖动复制、⌘D 复制、改颜色粗细、⌫ 删除、双击文字重新编辑，⌘Z 撤销、⇧⌘Z 重做。
 
 import AppKit
 import Carbon.HIToolbox
@@ -66,7 +67,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private var editor: Editor?
 
   private struct Editor {
-    let field: NSTextView
+    let field: EditorField
     /// 每个输入框自己的撤销记录（共用窗口的会串到已经收掉的输入框上）
     let undo = UndoManager()
     let id: UUID?
@@ -81,10 +82,13 @@ final class SelectionView: NSView, NSTextViewDelegate {
     case draw(anchor: CGPoint, last: CGPoint, restore: CGRect? = nil)
     case move(start: CGPoint, original: CGRect)
     case resize(RegionSelector.Handle, original: CGRect)
-    /// 用当前工具拖出新标注
+    /// 用当前工具拖出新标注（画笔一路累点）
     case annotate(start: CGPoint)
-    /// 拖动已有的标注；before 是拖之前的全部标注（松手时记一步撤销）
-    case moveAnnotation(UUID, start: CGPoint, before: [Annotation])
+    /// 拖动标注：original 是按下时的样子（⌥ 拖动时是刚复制出的那份、单击放的序号是刚放的那个）；before 是按下前的全部标注
+    /// （松手时记一步撤销）；copyOf 是 ⌥ 复制的原件
+    case moveAnnotation(Annotation, start: CGPoint, before: [Annotation], copyOf: UUID?)
+    /// 拖选中标注的手柄改大小
+    case resizeAnnotation(Annotation, Annotation.Handle, before: [Annotation])
   }
 
   private var annotationCanvas: AnnotationCanvas?
@@ -96,7 +100,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private let handleLayers = Dictionary(
     uniqueKeysWithValues: RegionSelector.Handle.allCases.map { ($0, CAShapeLayer()) })
   private let edgeHighlight = CAShapeLayer()
+  /// 选中标注的 1 pt 粉色虚线框和手柄（白 9 pt 圆 + 1.5 pt 粉环）
   private let annotationOutline = CAShapeLayer()
+  private let annotationHandles = CAShapeLayer()
   /// 选区双描边的外圈（内圈 1.5 pt 粉是 outline）
   private let outlineOuter = CAShapeLayer()
   /// 按住 ⌘ 时穿过光标的十字准线：1 pt white 0.6 贴 1 pt black 0.25，亮底暗底都看得见
@@ -194,6 +200,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
     annotationOutline.strokeColor = pink.cgColor
     annotationOutline.lineWidth = 1
     annotationOutline.lineDashPattern = [4, 3]
+    annotationHandles.fillColor = NSColor.white.cgColor
+    annotationHandles.strokeColor = pink.cgColor
+    annotationHandles.lineWidth = 1.5
     guideLayer.fillColor = nil
     guideLayer.strokeColor = pink.cgColor
     guideLayer.lineWidth = 1
@@ -212,7 +221,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
       shade, highlight, outlineOuter, outline, guideLayer, edgeHighlight, crossDark, crossLight,
     ]
       + Self.handleOrder.compactMap({ handleLayers[$0] })
-      + [annotationOutline, hint.layer, magnifier]
+      + [annotationOutline, annotationHandles, hint.layer, magnifier]
     {
       root.addSublayer(layer)
     }
@@ -366,7 +375,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     let scale = window?.backingScaleFactor ?? 2
     for layer in [
       shade, outline, outlineOuter, edgeHighlight, crossLight, crossDark, highlight, guideLayer,
-      annotationOutline, loupeGrid, loupeBands, loupeCenter, infoText, infoKey,
+      annotationOutline, annotationHandles, loupeGrid, loupeBands, loupeCenter, infoText, infoKey,
     ] + Array(handleLayers.values) as [CALayer] {
       layer.contentsScale = scale
     }
@@ -453,10 +462,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
 
     let adjusting = mode == .capture && isAdjusting
     updateHandles(adjusting ? selection : nil)
-    // 输入文字时输入框自己有边框，不再画选中框（大小会跟着输入变）
-    annotationOutline.path =
-      editor == nil
-      ? selected.map { CGPath(rect: $0.bounds.insetBy(dx: -4, dy: -4), transform: nil) } : nil
+    updateAnnotationChrome()
     placeBars(showing: adjusting && !movesSelection)
     // 尺寸：选区（或悬停的窗口）左上角外 8 pt；放不下、或挡到工具栏 / 顶部提示时放进里面。调整时可输入
     let measured = selection ?? hovered
@@ -601,13 +607,32 @@ final class SelectionView: NSView, NSTextViewDelegate {
     }
   }
 
-  /// 悬停（或正在拖）的边 / 角：拖手柄时就是那个手柄；其余拖动、输入文字 / 尺寸、开着菜单、鼠标在栏上时没有
+  /// 悬停（或正在拖）的边 / 角：拖手柄时就是那个手柄；其余拖动、输入文字 / 尺寸、开着菜单、鼠标在栏上或选中标注的手柄上时没有
   private func hotHandle(in rect: CGRect) -> RegionSelector.Handle? {
     if case .resize(let handle, _)? = drag { return handle }
     guard drag == nil, editor == nil, !sizeField.isEditing, hudMenu == nil, let mouse,
-      !isOverControls(mouse)
+      !isOverControls(mouse), annotationHandle(at: mouse) == nil
     else { return nil }
     return Self.handle(at: mouse, in: rect)
+  }
+
+  /// 选中的标注：1 pt 粉色虚线框 [4, 3]（箭头、直线、荧光笔不画）+ 手柄（白 9 pt 圆 + 1.5 pt 粉环；矩形类四角、线类两端，
+  /// 文字、序号、画笔没有）。输入文字时不画（输入框自己有边框，大小跟着输入变）
+  private func updateAnnotationChrome() {
+    guard editor == nil, let selected else {
+      annotationOutline.path = nil
+      annotationHandles.path = nil
+      return
+    }
+    let isSegment = [.arrow, .line, .highlighter].contains(selected.tool)
+    // 取整到整点：1 pt 虚线落在半像素上会糊
+    let frame = selected.bounds.insetBy(dx: -3, dy: -3).integral
+    annotationOutline.path = isSegment ? nil : CGPath(rect: frame, transform: nil)
+    let dots = CGMutablePath()
+    for (_, point) in selected.handles {
+      dots.addEllipse(in: CGRect(x: point.x - 4.5, y: point.y - 4.5, width: 9, height: 9))
+    }
+    annotationHandles.path = dots.isEmpty ? nil : dots
   }
 
   /// 吸附参考线：吸上的边各一条 1 pt 粉色虚线横穿整屏
@@ -772,7 +797,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
   var showsMagnifier: Bool {
     guard let mouse, !isOverBars(mouse) else { return false }
     switch drag {
-    case .move?, .annotate?, .moveAnnotation?: return false
+    case .move?, .annotate?, .moveAnnotation?, .resizeAnnotation?: return false
     case .pending?, .draw?, .resize?: return true
     case nil: return !isAdjusting
     }
@@ -1059,6 +1084,49 @@ final class SelectionView: NSView, NSTextViewDelegate {
     Annotation.topmost(in: annotations, at: point)
   }
 
+  /// 按在选中标注的哪个手柄上（半径 7 内最近的）：按下时比选区边优先，两者叠在一起时拖的是标注
+  private func annotationHandle(at point: CGPoint) -> (
+    annotation: Annotation, handle: Annotation.Handle
+  )? {
+    guard editor == nil, let selected else { return nil }
+    let distance = { (grip: (Annotation.Handle, CGPoint)) in
+      hypot(grip.1.x - point.x, grip.1.y - point.y)
+    }
+    return selected.handles.filter { distance($0) <= 7 }.min { distance($0) < distance($1) }
+      .map { (selected, $0.0) }
+  }
+
+  /// 换掉同 id 的那条（拖动、改大小时跟手，撤销在松手时记）
+  private func replace(_ annotation: Annotation) {
+    guard let index = annotations.firstIndex(where: { $0.id == annotation.id }) else { return }
+    annotations[index] = annotation
+  }
+
+  /// 复制一份（新 id，序号换成下一个号），调用方放到最上面
+  private func duplicate(_ original: Annotation, offset: CGSize) -> Annotation {
+    var copy = original.duplicated(offset: offset)
+    if case .counter(_, let center) = copy.shape {
+      copy.shape = .counter(Annotation.nextCounter(in: annotations), center: center)
+    }
+    return copy
+  }
+
+  /// ⌘D：选中的标注复制一份，往右下偏 12（原点左下，y 是 −12），选中副本
+  private func duplicateSelected() {
+    guard let selected else { return }
+    let copy = duplicate(selected, offset: CGSize(width: 12, height: -12))
+    commit(annotations + [copy])
+    selectedAnnotation = copy.id
+  }
+
+  /// 一次拖动（挪、改大小、⌥ 复制、放序号）松手时记一步撤销；没变不记
+  private func recordUndo(from before: [Annotation]) {
+    guard annotations != before else { return }
+    undoStack.append(before)
+    redoStack = []
+    refresh()
+  }
+
   /// 再按一次同一个工具就收起（回到拖动平移选区）；选上时读这个工具上次的样式
   private func choose(_ next: Annotation.Tool) {
     endEditing()
@@ -1173,6 +1241,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     if window?.firstResponder === editor.field { window?.makeFirstResponder(self) }
     editor.field.removeFromSuperview()
     var next = annotations
+    var chosen = editor.id
     let index = editor.id.flatMap { id in next.firstIndex { $0.id == id } }
     if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
       if let index { next.remove(at: index) }
@@ -1180,31 +1249,54 @@ final class SelectionView: NSView, NSTextViewDelegate {
       next[index].shape = .text(text, origin: editor.origin)
       next[index].style = editor.style
     } else {
-      next.append(Annotation(shape: .text(text, origin: editor.origin), style: editor.style))
+      let added = Annotation(shape: .text(text, origin: editor.origin), style: editor.style)
+      next.append(added)
+      chosen = added.id
     }
     commit(next)
-    if selected == nil { selectedAnnotation = nil }  // 文字清空后那条已经删了
+    // 收下后选中这条（新写的也是，同画完自动选中）；文字清空后那条已经删了
+    selectedAnnotation = next.contains { $0.id == chosen } ? chosen : nil
     syncAnnotations()  // 没改动时 commit 不触发，也要把编辑时藏起来的那条显示回来
   }
 
-  /// 输入框里的文字和收下后画出来的一样：同字体、同颜色、同阴影
-  private func apply(_ style: Annotation.Style, to field: NSTextView) {
+  /// 输入框里的文字和收下后画出来的一样（输入中改样式也立刻变）：同字体；无底 = 字带阴影；描边 = 输入框先画带阴影的外描边、
+  /// 再画不带阴影的字；底色 = 输入框的底就是带阴影的圆角色块（圆角 6），字用压在色块上的颜色（黄 / 白底黑字）
+  private func apply(_ style: Annotation.Style, to field: EditorField) {
+    let plate = style.option == 2
+    let ink = plate ? style.color.ink : style.color.color
     field.font = Annotation.font(style.weight)
-    field.textColor = style.color.color
-    field.insertionPointColor = style.color.color
-    field.typingAttributes[.shadow] = Annotation.textShadow
-    field.textStorage?.addAttribute(
-      .shadow, value: Annotation.textShadow,
-      range: NSRange(location: 0, length: field.textStorage?.length ?? 0))
+    field.textColor = ink
+    field.insertionPointColor = ink
+    let shadow = style.option == 0 ? Annotation.textShadow : nil
+    let all = NSRange(location: 0, length: field.textStorage?.length ?? 0)
+    field.typingAttributes[.shadow] = shadow
+    if let shadow {
+      field.textStorage?.addAttribute(.shadow, value: shadow, range: all)
+    } else {
+      field.textStorage?.removeAttribute(.shadow, range: all)
+    }
+    field.outline = style.option == 1 ? Annotation.outlineAttributes(style) : nil
+    guard let layer = field.layer else { return }
+    layer.backgroundColor = plate ? style.color.color.cgColor : nil
+    layer.cornerRadius = plate ? 6 : 0
+    // 色块的阴影同 Annotation.textShadow（black 0.28、模糊 3）
+    layer.shadowColor = NSColor.black.cgColor
+    layer.shadowOffset = .zero
+    layer.shadowRadius = 1.5
+    layer.shadowOpacity = plate ? 0.28 : 0
   }
 
-  /// 输入框和最后画出来的文字一样大、左上角不动（往下长）
+  /// 输入框比最后画出来的文字框大一圈、字的位置不变（左上角不动，往下长）：底色时这一圈就是色块的留边
+  /// （Annotation.platePadding），其余留 3 给字的阴影和外描边（不被输入框的边裁掉），也给行尾的光标留地方
   private func layoutEditor() {
     guard let editor else { return }
     let frame = Annotation.textFrame(
       editor.field.string, origin: editor.origin, weight: editor.style.weight)
-    editor.field.frame = CGRect(
-      x: frame.minX, y: frame.minY, width: frame.width + 2, height: frame.height)
+    let pad = editor.style.option == 2 ? Annotation.platePadding : CGSize(width: 3, height: 3)
+    if editor.field.textContainerInset != pad { editor.field.textContainerInset = pad }
+    editor.field.frame = frame.insetBy(dx: -pad.width, dy: -pad.height)
+    // 外描边画在字外面一圈，NSTextView 只重画改了的字形那块，会留残影：整块重画（输入框很小）
+    if editor.field.outline != nil { editor.field.needsDisplay = true }
   }
 
   func textDidChange(_ notification: Notification) { layoutEditor() }
@@ -1315,20 +1407,42 @@ final class SelectionView: NSView, NSTextViewDelegate {
       if event.clickCount == 2, tool == nil, hit == nil, selection.contains(point) {
         return output(.copy)
       }
+      // 优先级：选中标注的手柄 → 选区边 → 标注本体 → 工具作画 / 平移选区 → 选区外
+      if let grip = annotationHandle(at: point) {
+        drag = .resizeAnnotation(grip.annotation, grip.handle, before: annotations)
+        return
+      }
       if let handle = Self.handle(at: point, in: selection) {
         drag = .resize(handle, original: selection)
         return
       }
       if let hit {
-        selectedAnnotation = hit.id
+        // ⌥：先复制一份（序号换下一个号）放在最上面，拖的是副本
+        let before = annotations
+        let target = modifiers.contains(.option) ? duplicate(hit, offset: .zero) : hit
+        if target.id != hit.id { annotations.append(target) }
+        selectedAnnotation = target.id
         NSCursor.closedHand.set()
-        drag = .moveAnnotation(hit.id, start: point, before: annotations)
+        drag = .moveAnnotation(
+          target, start: point, before: before, copyOf: target.id == hit.id ? nil : hit.id)
         return
       }
       selectedAnnotation = nil
       if let tool, selection.contains(point) {
-        if tool == .text { return beginEditing(at: point) }
-        drag = .annotate(start: point)
+        switch tool {
+        case .text:
+          beginEditing(at: point)
+        case .counter:
+          // 单击放一个序号（编号自动 +1）并选中；按着拖就是挪它，松手一共记一步撤销
+          let before = annotations
+          let counter = Annotation(
+            shape: .counter(Annotation.nextCounter(in: annotations), center: point), style: style)
+          annotations.append(counter)
+          selectedAnnotation = counter.id
+          drag = .moveAnnotation(counter, start: point, before: before, copyOf: nil)
+        default:
+          drag = .annotate(start: point)
+        }
         return
       }
       if selection.contains(point) {
@@ -1362,20 +1476,42 @@ final class SelectionView: NSView, NSTextViewDelegate {
         original, by: CGSize(width: point.x - start.x, height: point.y - start.y), within: bounds)
     case .resize(let handle, let original)?:
       resize(handle, from: original, to: point)
-    case .annotate(let start)?:
-      guard let tool,
-        let shape = Annotation.shape(
-          for: tool, from: start, to: point, constrained: event.modifierFlags.contains(.shift))
-      else { return }
-      draft = Annotation(id: draft?.id ?? UUID(), shape: shape, style: style)
-    case .moveAnnotation(let id, let start, let before)?:
-      guard let original = before.first(where: { $0.id == id }),
-        let index = annotations.firstIndex(where: { $0.id == id })
-      else { return }
-      NSCursor.closedHand.set()
-      annotations[index] = original.offset(
-        by: CGSize(width: point.x - start.x, height: point.y - start.y))
+    case .annotate?, .moveAnnotation?, .resizeAnnotation?:
+      dragAnnotation(to: point)
     case nil:
+      break
+    }
+  }
+
+  /// 画标注、拖标注、拖标注的手柄跟到 point。⇧（取自 modifiers，拖动中按下 / 松开时 flagsChanged 也走这里重算）：
+  /// 正方形 / 正圆 / 45° 线，拖本体时锁在移动多的那个方向上
+  private func dragAnnotation(to point: CGPoint) {
+    let constrained = modifiers.contains(.shift)
+    switch drag {
+    case .annotate(let start)?:
+      guard let tool else { return }
+      guard tool == .pen else {
+        guard
+          let shape = Annotation.shape(for: tool, from: start, to: point, constrained: constrained)
+        else { return }
+        draft = Annotation(id: draft?.id ?? UUID(), shape: shape, style: style)
+        return
+      }
+      // 画笔：一路累点，离上一个点不到 1.5 点的不要（笔迹由 penPath 平滑，点太密只是白算）
+      var points = [start]
+      if case .pen(let drawn)? = draft?.shape { points = drawn }
+      if let last = points.last, hypot(point.x - last.x, point.y - last.y) < 1.5 { return }
+      draft = Annotation(id: draft?.id ?? UUID(), shape: .pen(points + [point]), style: style)
+    case .moveAnnotation(let original, let start, _, _)?:
+      NSCursor.closedHand.set()
+      var delta = CGSize(width: point.x - start.x, height: point.y - start.y)
+      if constrained {
+        if abs(delta.width) > abs(delta.height) { delta.height = 0 } else { delta.width = 0 }
+      }
+      replace(original.offset(by: delta))
+    case .resizeAnnotation(let original, let handle, _)?:
+      replace(original.resized(handle, to: point, constrained: constrained))
+    default:
       break
     }
   }
@@ -1466,13 +1602,25 @@ final class SelectionView: NSView, NSTextViewDelegate {
     case .annotate?:
       let drawn = draft
       draft = nil
-      if let drawn, drawn.isMeaningful { commit(annotations + [drawn]) }
-    case .moveAnnotation(_, _, let before)?:
-      if annotations != before {
-        undoStack.append(before)
-        redoStack = []
-        refresh()
+      // 画完自动选中（工具保持）：接着就能改样式、拖手柄
+      if let drawn, drawn.isMeaningful {
+        commit(annotations + [drawn])
+        selectedAnnotation = drawn.id
       }
+    case .moveAnnotation(let moved, _, let before, let source)?:
+      // ⌥ 单击没拖开：不留一份叠在原处、看不出来的副本
+      if let source, annotations.contains(moved) {
+        annotations = before
+        selectedAnnotation = source
+      } else {
+        recordUndo(from: before)
+      }
+    case .resizeAnnotation(let original, _, let before)?:
+      // 对角 / 两端拖到叠在一起、看不出来了：算误操作，恢复原样（不然留下一条看不见却点得中的标注）
+      if annotations.first(where: { $0.id == original.id })?.isMeaningful == false {
+        replace(original)
+      }
+      recordUndo(from: before)
     case .move?, .resize?, nil:
       break
     }
@@ -1485,7 +1633,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
       return session.finish(nil)
     }
     // 画了标注（含正在输入、还没收下的文字）就不清空（一下丢掉太亏）：提示音 + 顶部提示怎么退出
-    let typing = editor.map { !$0.field.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    let typing = editor.map {
+      !$0.field.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
     if !annotations.isEmpty || typing == true || session.hasAnnotations(besides: self) {
       NSSound.beep()
       return flashHint(["有标注时右键不清空", "Esc 退出"])
@@ -1505,6 +1655,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
     if let editor {  // 输入框里是文字光标；外面点一下只是收下文字
       return (editor.field.frame.contains(point) ? NSCursor.iBeam : NSCursor.arrow).set()
     }
+    // 顺序同按下的优先级（mouseDown）
+    if let grip = annotationHandle(at: point) { return Self.cursor(for: grip.handle).set() }
     if let handle = Self.handle(at: point, in: selection) {
       return NSCursor.frameResize(position: Self.position(of: handle), directions: .all).set()
     }
@@ -1513,6 +1665,17 @@ final class SelectionView: NSView, NSTextViewDelegate {
       return (tool == .text ? NSCursor.iBeam : NSCursor.crosshair).set()
     }
     (selection.contains(point) ? NSCursor.openHand : NSCursor.crosshair).set()
+  }
+
+  /// 标注手柄上的光标：矩形类的角是斜向缩放，线类两端是手指（端点往哪儿拖都行）
+  private static func cursor(for handle: Annotation.Handle) -> NSCursor {
+    switch handle {
+    case .topLeft: .frameResize(position: .topLeft, directions: .all)
+    case .topRight: .frameResize(position: .topRight, directions: .all)
+    case .bottomLeft: .frameResize(position: .bottomLeft, directions: .all)
+    case .bottomRight: .frameResize(position: .bottomRight, directions: .all)
+    case .start, .end: .pointingHand
+    }
   }
 
   private static func position(of handle: RegionSelector.Handle) -> NSCursor.FrameResizePosition {
@@ -1596,13 +1759,14 @@ final class SelectionView: NSView, NSTextViewDelegate {
     }
   }
 
-  /// 修饰键按下 / 松开：⌘ 十字准线跟着出现 / 消失；框选、拖边途中按上次的鼠标位置重算（⇧ ⌥ ⌃ 立刻生效）
+  /// 修饰键按下 / 松开：⌘ 十字准线跟着出现 / 消失；框选、拖边、画 / 拖标注途中按上次的鼠标位置重算（⇧ ⌥ ⌃ 立刻生效）
   override func flagsChanged(with event: NSEvent) {
     modifiers = event.modifierFlags
     if let dragPoint {
       switch drag {
       case .draw(_, let last, _)?: extend(to: last)
       case .resize(let handle, let original)?: resize(handle, from: original, to: dragPoint)
+      case .annotate?, .moveAnnotation?, .resizeAnnotation?: dragAnnotation(to: dragPoint)
       default: break
       }
     }
@@ -1639,6 +1803,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     case (kVK_ANSI_S, _, true): output(.saveAs)
     case (kVK_ANSI_Z, true, _): undo()
     case (kVK_ANSI_Z, _, true): redo()
+    case (kVK_ANSI_D, true, _) where selectedAnnotation != nil: duplicateSelected()
     default: return super.performKeyEquivalent(with: event)
     }
     return true
@@ -1665,8 +1830,26 @@ final class SelectionView: NSView, NSTextViewDelegate {
   }
 }
 
-/// 文字标注的输入框。右键不出文本菜单（菜单层级比遮罩低，会被压在下面看不见），交给遮罩（回到待选）
+/// 文字标注的输入框。「描边」样式时先画带阴影的外描边、再让 NSTextView 画字（和收下后画出来的一样）。
+/// 右键不出文本菜单（菜单层级比遮罩低，会被压在下面看不见），交给遮罩（回到待选）
 private final class EditorField: NSTextView {
+  /// 外描边（Annotation.outlineAttributes）；nil = 不描边
+  var outline: [NSAttributedString.Key: Any]? { didSet { needsDisplay = true } }
+
+  override func draw(_ dirtyRect: NSRect) {
+    if let outline {
+      NSGraphicsContext.saveGraphicsState()
+      NSGraphicsContext.current?.cgContext.setLineJoin(.round)
+      var attributes = outline
+      attributes[.shadow] = Annotation.textShadow
+      // 同 Annotation.draw 的 draw(in:)，字从文字容器的左上角排起（视图是翻转的）
+      NSAttributedString(string: string, attributes: attributes).draw(
+        in: CGRect(origin: textContainerOrigin, size: bounds.size))
+      NSGraphicsContext.restoreGraphicsState()
+    }
+    super.draw(dirtyRect)
+  }
+
   override func menu(for event: NSEvent) -> NSMenu? { nil }
   override func rightMouseDown(with event: NSEvent) { nextResponder?.rightMouseDown(with: event) }
 }
@@ -1714,6 +1897,11 @@ private final class AnnotationCanvas: NSView {
     let before = Dictionary(old.map { ($0.id, $0) }) { first, _ in first }
     let now = Set(annotations.map(\.id))
     for annotation in annotations where before[annotation.id] != annotation {
+      // 画笔边画边累点：只重画新接上的那一截
+      if let previous = before[annotation.id], let tail = annotation.penGrowth(from: previous) {
+        setNeedsDisplay(tail.insetBy(dx: -2, dy: -2))
+        continue
+      }
       setNeedsDisplay(annotation.drawBounds.insetBy(dx: -2, dy: -2))
       if let previous = before[annotation.id] {
         setNeedsDisplay(previous.drawBounds.insetBy(dx: -2, dy: -2))

@@ -1,0 +1,282 @@
+// 截图标注编辑的交互（Whisker §6「标注编辑」）：单击放序号、画笔累点、画完自动选中、拖手柄改大小（⇧ 约束，拖到看不出来就恢复）、
+// ⌥ 拖动复制、⇧ 锁轴、⌘D、撤销 / 重做、⌫ 删除、标注手柄比选区边优先、双击文字重新编辑 / 双击空白拷贝、文字三种样式在输入框里所见即所得。
+// 用 SelectionInteractionTests 的屏外窗口 + 合成事件（不弹遮罩、不抢键盘）；选区都是 (300, 200, 400 × 300)。
+
+import AppKit
+import Carbon.HIToolbox
+import Testing
+
+@testable import KittyTools
+
+@MainActor @Suite(.serialized)
+struct AnnotationEditingTests {
+  typealias Harness = SelectionInteractionTests.Harness
+
+  /// 拖出选区、选上工具（直接设，不读写记住的样式）
+  private func harness(tool: Annotation.Tool?) -> Harness {
+    let h = Harness()
+    h.makeSelection()
+    h.view.tool = tool
+    return h
+  }
+
+  private func annotation(_ h: Harness, _ id: UUID?) -> Annotation? {
+    h.view.annotations.first { $0.id == id }
+  }
+
+  @Test func counterClicksPlaceNumbersAndSelectTheNewOne() {
+    let h = harness(tool: .counter)
+    h.click(CGPoint(x: 400, y: 300))
+    h.click(CGPoint(x: 500, y: 300))
+    #expect(
+      h.view.annotations.map(\.shape) == [
+        .counter(1, center: CGPoint(x: 400, y: 300)), .counter(2, center: CGPoint(x: 500, y: 300)),
+      ])
+    #expect(h.view.selectedAnnotation == h.view.annotations.last?.id)
+    #expect(h.view.tool == .counter)
+    // 点在已有的序号上是选中它，不再放一个
+    h.click(CGPoint(x: 400, y: 300))
+    #expect(h.view.annotations.count == 2)
+    #expect(h.view.selectedAnnotation == h.view.annotations.first?.id)
+    // 放一个算一步撤销
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: .command)
+    #expect(h.view.annotations.count == 1)
+  }
+
+  @Test func penDragAccumulatesPointsAndSelects() throws {
+    let h = harness(tool: .pen)
+    h.drag(CGPoint(x: 350, y: 250), CGPoint(x: 450, y: 330))
+    let pen = try #require(h.view.annotations.first)
+    guard case .pen(let points) = pen.shape else {
+      Issue.record("\(pen.shape)")
+      return
+    }
+    #expect(points.count > 2)
+    #expect(points.first == CGPoint(x: 350, y: 250) && points.last == CGPoint(x: 450, y: 330))
+    #expect(h.view.selectedAnnotation == pen.id)
+    #expect(h.view.tool == .pen)
+  }
+
+  @Test func drawingSelectsTheNewAnnotationAndKeepsTheTool() {
+    let h = harness(tool: .ellipse)
+    h.drag(CGPoint(x: 350, y: 250), CGPoint(x: 450, y: 350))
+    #expect(
+      h.view.annotations.map(\.shape) == [.ellipse(CGRect(x: 350, y: 250, width: 100, height: 100))]
+    )
+    #expect(h.view.selectedAnnotation == h.view.annotations.first?.id)
+    #expect(h.view.tool == .ellipse)
+    // 接着在空白处画第二个：前一个取消选中、选中新的
+    h.drag(CGPoint(x: 500, y: 250), CGPoint(x: 560, y: 300))
+    #expect(h.view.annotations.count == 2)
+    #expect(h.view.selectedAnnotation == h.view.annotations.last?.id)
+  }
+
+  @Test func rectangleCornerHandleResizesThenUndoRedo() {
+    let h = harness(tool: .rectangle)
+    h.drag(CGPoint(x: 350, y: 250), CGPoint(x: 450, y: 350))
+    let id = h.view.selectedAnnotation
+    // 右上角手柄（差 5 点也算按上）拖到 (480, 380)：左下角不动
+    h.drag(CGPoint(x: 454, y: 347), CGPoint(x: 480, y: 380))
+    let resized = CGRect(x: 350, y: 250, width: 130, height: 130)
+    #expect(annotation(h, id)?.shape == .rectangle(resized))
+    #expect(h.view.annotations.count == 1)
+    #expect(h.view.selection == SelectionInteractionTests.initial)
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: .command)
+    #expect(annotation(h, id)?.shape == .rectangle(CGRect(x: 350, y: 250, width: 100, height: 100)))
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: [.command, .shift])
+    #expect(annotation(h, id)?.shape == .rectangle(resized))
+    // 按在手柄上没拖开：不记撤销
+    h.click(CGPoint(x: 480, y: 380))
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: .command)
+    #expect(annotation(h, id)?.shape == .rectangle(CGRect(x: 350, y: 250, width: 100, height: 100)))
+  }
+
+  @Test func collapsingByAHandleRestoresTheAnnotation() {
+    let h = harness(tool: .rectangle)
+    h.drag(CGPoint(x: 350, y: 250), CGPoint(x: 450, y: 350))
+    let id = h.view.selectedAnnotation
+    // 右上角拖到左下角上：看不出来了，恢复原样、不记撤销
+    h.drag(CGPoint(x: 450, y: 350), CGPoint(x: 350, y: 250))
+    #expect(annotation(h, id)?.shape == .rectangle(CGRect(x: 350, y: 250, width: 100, height: 100)))
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: .command)
+    #expect(h.view.annotations.isEmpty)
+  }
+
+  @Test func lineEndpointResizeSnapsTo45WithShift() throws {
+    let h = harness(tool: .line)
+    h.drag(CGPoint(x: 350, y: 300), CGPoint(x: 450, y: 300))
+    let id = h.view.selectedAnnotation
+    h.drag(CGPoint(x: 450, y: 300), CGPoint(x: 480, y: 400), flags: .shift)
+    guard case .line(let from, let to)? = annotation(h, id)?.shape else {
+      Issue.record("\(String(describing: annotation(h, id)))")
+      return
+    }
+    #expect(from == CGPoint(x: 350, y: 300))
+    #expect(abs((to.x - from.x) - (to.y - from.y)) < 0.001)
+    #expect(abs(hypot(to.x - from.x, to.y - from.y) - hypot(130, 100)) < 0.001)
+  }
+
+  @Test func optionDragDuplicatesAndMovesTheCopy() throws {
+    let h = harness(tool: nil)
+    let original = Annotation(shape: .rectangle(CGRect(x: 350, y: 250, width: 100, height: 100)))
+    h.view.annotations = [original]
+    // 按在左边线中间（不在手柄上），⌥ 往右拖 30
+    h.drag(CGPoint(x: 350, y: 300), CGPoint(x: 380, y: 300), flags: .option)
+    #expect(h.view.annotations.count == 2)
+    #expect(h.view.annotations.first == original)
+    let copy = try #require(h.view.annotations.last)
+    #expect(copy.id != original.id)
+    #expect(copy.shape == .rectangle(CGRect(x: 380, y: 250, width: 100, height: 100)))
+    #expect(h.view.selectedAnnotation == copy.id)
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: .command)
+    #expect(h.view.annotations == [original])
+    // ⌥ 单击没拖开：不留叠在原处的副本，选中原件
+    h.click(CGPoint(x: 350, y: 300))
+    h.down(CGPoint(x: 350, y: 300), flags: .option)
+    h.release(CGPoint(x: 350, y: 300), flags: .option)
+    #expect(h.view.annotations == [original])
+    #expect(h.view.selectedAnnotation == original.id)
+  }
+
+  @Test func optionDragCounterGetsNextNumber() throws {
+    let h = harness(tool: nil)
+    h.view.annotations = [Annotation(shape: .counter(1, center: CGPoint(x: 400, y: 300)))]
+    h.drag(CGPoint(x: 400, y: 300), CGPoint(x: 440, y: 300), flags: .option)
+    #expect(
+      h.view.annotations.map(\.shape) == [
+        .counter(1, center: CGPoint(x: 400, y: 300)), .counter(2, center: CGPoint(x: 440, y: 300)),
+      ])
+  }
+
+  @Test func shiftLocksMoveToTheDominantAxis() {
+    let h = harness(tool: nil)
+    let arrow = Annotation(
+      shape: .arrow(from: CGPoint(x: 350, y: 300), to: CGPoint(x: 450, y: 300)))
+    h.view.annotations = [arrow]
+    h.drag(CGPoint(x: 400, y: 300), CGPoint(x: 430, y: 310), flags: .shift)
+    #expect(annotation(h, arrow.id)?.shape == arrow.offset(by: CGSize(width: 30, height: 0)).shape)
+    // 拖动中松开 ⇧：立刻跟手
+    h.begin(CGPoint(x: 430, y: 300), to: CGPoint(x: 435, y: 340), flags: .shift)
+    #expect(annotation(h, arrow.id)?.shape == arrow.offset(by: CGSize(width: 30, height: 40)).shape)
+    h.modifiers([])
+    #expect(annotation(h, arrow.id)?.shape == arrow.offset(by: CGSize(width: 35, height: 40)).shape)
+    h.release(CGPoint(x: 435, y: 340))
+  }
+
+  @Test func commandDDuplicatesDownRightAndDeleteRemoves() throws {
+    let h = harness(tool: .counter)
+    h.click(CGPoint(x: 400, y: 300))
+    #expect(h.keyEquivalent(kVK_ANSI_D, "d", flags: .command))
+    #expect(
+      h.view.annotations.map(\.shape) == [
+        .counter(1, center: CGPoint(x: 400, y: 300)), .counter(2, center: CGPoint(x: 412, y: 288)),
+      ])
+    #expect(h.view.selectedAnnotation == h.view.annotations.last?.id)
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: .command)
+    #expect(h.view.annotations.count == 1)
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: [.command, .shift])
+    #expect(h.view.annotations.count == 2)
+    // ⌫ 删掉选中的（副本）
+    h.view.selectedAnnotation = h.view.annotations.last?.id
+    h.key(kVK_Delete, "\u{7f}")
+    #expect(h.view.annotations.map(\.shape) == [.counter(1, center: CGPoint(x: 400, y: 300))])
+    #expect(h.view.selectedAnnotation == nil)
+    // 没选中时 ⌘D 不接
+    #expect(!h.keyEquivalent(kVK_ANSI_D, "d", flags: .command))
+  }
+
+  @Test func annotationHandleWinsOverSelectionEdge() {
+    let h = harness(tool: nil)
+    // 左上角手柄 (303, 350) 落在选区左边的拖动带里（边外 8、边内 8）
+    let box = Annotation(shape: .rectangle(CGRect(x: 303, y: 250, width: 97, height: 100)))
+    h.view.annotations = [box]
+    h.view.selectedAnnotation = box.id
+    h.move(CGPoint(x: 303, y: 350))
+    #expect(h.view.hotHandle == nil, "标注手柄上选区边不该变热")
+    h.drag(CGPoint(x: 303, y: 350), CGPoint(x: 320, y: 380))
+    #expect(
+      annotation(h, box.id)?.shape == .rectangle(CGRect(x: 320, y: 250, width: 80, height: 130)))
+    #expect(h.view.selection == SelectionInteractionTests.initial)
+    // 没选中它时同一点拖的是选区边
+    h.view.selectedAnnotation = nil
+    h.drag(CGPoint(x: 303, y: 400), CGPoint(x: 280, y: 400))
+    #expect(h.view.selection?.minX == 280)
+  }
+
+  @Test func doubleClickReeditsTextOrCopiesTheSelection() async throws {
+    let h = harness(tool: nil)
+    // 底色白字标注：重新编辑时输入框一打开就是白色色块 + 黑字
+    let text = Annotation(
+      shape: .text("hi", origin: CGPoint(x: 400, y: 400)), style: .init(color: .white, option: 2))
+    h.view.annotations = [text]
+    func doubleClick(_ point: CGPoint) {
+      for count in 1...2 {
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+          let event = NSEvent.mouseEvent(
+            with: type, location: point, modifierFlags: [], timestamp: 0,
+            windowNumber: h.window.windowNumber, context: nil, eventNumber: 0, clickCount: count,
+            pressure: type == .leftMouseUp ? 0 : 1)!
+          if type == .leftMouseDown {
+            h.view.mouseDown(with: event)
+          } else {
+            h.view.mouseUp(with: event)
+          }
+        }
+      }
+    }
+    doubleClick(CGPoint(x: 405, y: 390))
+    let field = try #require(h.fieldEditor)
+    #expect(field.string == "hi")
+    #expect(field.layer?.backgroundColor == Annotation.Palette.white.color.cgColor)
+    #expect(field.textColor == Annotation.Palette.white.ink)
+    h.key(kVK_Escape, "\u{1b}")
+    #expect(h.view.annotations == [text])
+    #expect(h.view.selectedAnnotation == text.id)
+    // 选区里的空白处双击：拷贝（第一下取消选中标注）
+    let outcome = await h.outcome { doubleClick(CGPoint(x: 600, y: 250)) }
+    guard case .capture(let capture)? = outcome else {
+      Issue.record("双击没有拷贝：\(String(describing: outcome))")
+      return
+    }
+    #expect(capture.action == .copy)
+  }
+
+  @Test func textEditorShowsStylesLive() throws {
+    // 托盘改样式会写记住的样式（测试挂在 App 里，是真的偏好）：测完放回去
+    let saved = UserDefaults.standard.data(forKey: Prefs.screenshotToolStyles)
+    defer { UserDefaults.standard.set(saved, forKey: Prefs.screenshotToolStyles) }
+    let h = harness(tool: .text)
+    h.view.style = Annotation.Style(color: .yellow)
+    let origin = CGPoint(x: 400, y: 400)
+    h.view.beginEditing(at: origin)
+    let field = try #require(h.fieldEditor)
+    field.insertText("hi", replacementRange: NSRange(location: NSNotFound, length: 0))
+    let styleBar = try #require(h.view.subviews.lazy.compactMap { $0 as? StyleBar }.first)
+    /// 字从哪儿排起（视图坐标，左上角）：换样式时不能动
+    func textOrigin() -> CGPoint {
+      CGPoint(
+        x: field.frame.minX + field.textContainerOrigin.x,
+        y: field.frame.maxY - field.textContainerOrigin.y)
+    }
+    #expect(textOrigin() == origin)
+    #expect(field.textColor == Annotation.Palette.yellow.color)
+    // 底色：输入框的底就是色块，黄底黑字，左右留 6
+    styleBar.onOption(2)
+    #expect(field.layer?.backgroundColor == Annotation.Palette.yellow.color.cgColor)
+    #expect(field.textColor == Annotation.Palette.yellow.ink)
+    #expect(field.textContainerInset == Annotation.platePadding)
+    #expect(textOrigin() == origin)
+    // 描边：没有底，字是原色；输入中换颜色也立刻变
+    styleBar.onOption(1)
+    #expect(field.layer?.backgroundColor == nil)
+    styleBar.onColor(.blue)
+    #expect(field.textColor == Annotation.Palette.blue.color)
+    #expect(textOrigin() == origin)
+    // 收下：样式跟着存进标注，并选中它
+    h.key(kVK_Escape, "\u{1b}")
+    let text = try #require(h.view.annotations.first)
+    #expect(text.shape == .text("hi", origin: origin))
+    #expect(text.style == Annotation.Style(color: .blue, weight: .medium, option: 1))
+    #expect(h.view.selectedAnnotation == text.id)
+  }
+}
