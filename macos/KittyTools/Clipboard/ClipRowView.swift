@@ -53,7 +53,8 @@ struct ClipRowView: View {
           .background(.primary.opacity(0.07), in: .capsule)
       }
       if item.richType != nil {
-        Image(systemName: "textformat").imageScale(.small).foregroundStyle(.tertiary)
+        // 带格式（RTF / HTML）。textformat 在中文系统上画成「格式」两个字；B I U 不跟系统语言换字形
+        Image(systemName: "bold.italic.underline").imageScale(.small).foregroundStyle(.tertiary)
       }
       if item.isSnippet {
         Image(systemName: "text.badge.star").imageScale(.small).foregroundStyle(.secondary)
