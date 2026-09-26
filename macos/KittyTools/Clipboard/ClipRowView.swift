@@ -109,7 +109,9 @@ struct ClipRowView: View {
     case .image:
       if let ocr = item.ocrText, Search.firstHit(in: ocr, query: query) != nil {
         shown =
-          full + " · " + (Search.excerpt(of: ocr, query: query, before: 12, after: 160) ?? ocr)
+          full + " · "
+          + (Search.excerpt(of: ocr, query: query, before: 12, after: 160)
+            ?? String(ocr.prefix(200)))
       }
     case .file:
       shown = Search.excerpt(of: full, query: query, before: 12, after: 160) ?? full

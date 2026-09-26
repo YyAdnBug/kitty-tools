@@ -328,8 +328,10 @@ import Observation
     case #selector(NSResponder.insertNewline(_:)) where palette != nil: runSelectedAction()
     case #selector(NSResponder.moveLeft(_:)) where palette == .actions && actionQuery.isEmpty:
       palette = nil
-    // ⌥↩ 在操作面板里就是菜单上写的「粘贴为纯文本」；筛选面板里吞掉（交给字段编辑器会往过滤框插一个换行）
-    case #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)) where palette == .actions:
+    // ⌥↩ 在操作面板里就是菜单上写的「粘贴为纯文本」；筛选面板里、以及 ⌃O 这类同选择器的非回车键一律吞掉
+    // （交给字段编辑器会往过滤框插一个换行）
+    case #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:))
+    where palette == .actions && Style.isReturnKey:
       palette = nil
       pasteSelection(plainText: true)
     case #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)) where palette != nil: break
@@ -343,8 +345,9 @@ import Observation
     case #selector(NSResponder.moveUpAndModifySelection(_:)): move(by: -1, extending: true)
     case #selector(NSResponder.moveDownAndModifySelection(_:)): move(by: 1, extending: true)
     case #selector(NSResponder.insertNewline(_:)): pasteSelection()
-    case #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)):
+    case #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)) where Style.isReturnKey:
       pasteSelection(plainText: true)
+    case #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)): break
     default: return false
     }
     return true

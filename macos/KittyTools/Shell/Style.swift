@@ -36,6 +36,13 @@ enum Style {
     return event.isARepeat
   }
 
+  /// 当前事件是不是回车键（含小键盘 Enter）。⌃O 等也会发 insertNewline… 选择器，按选择器区分不了；
+  /// 当前事件不是按键时问 keyCode 会抛异常，先看类型。36 = kVK_Return，76 = kVK_ANSI_KeypadEnter
+  static var isReturnKey: Bool {
+    guard let event = NSApp.currentEvent, event.type == .keyDown else { return false }
+    return event.keyCode == 36 || event.keyCode == 76
+  }
+
   /// 当前事件是不是鼠标双击（按钮动作里区分单击 / 双击）。只读鼠标事件的 clickCount：用键盘或 VoiceOver
   /// 激活按钮时 currentEvent 是按键事件，直接读 clickCount 会抛 NSInternalInconsistencyException
   static var isDoubleClick: Bool {

@@ -472,7 +472,7 @@ import Observation
     case #selector(NSResponder.insertNewline(_:)),
       #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)),
       #selector(NSResponder.insertLineBreak(_:)):
-      guard let event = NSApp.currentEvent, Self.isReturnKey(event) else { return true }
+      guard Style.isReturnKey, let event = NSApp.currentEvent else { return true }
       if event.modifierFlags.contains(.option) {
         searchInFinder()
       } else if event.modifierFlags.contains(.control) {
@@ -503,17 +503,12 @@ import Observation
       complete()
     case #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)),
       #selector(NSResponder.insertLineBreak(_:)):
-      guard let event = NSApp.currentEvent, Self.isReturnKey(event) else { break }
+      guard Style.isReturnKey else { break }
       showsActions = false
       return handleCommand(selector)
     default: return false
     }
     return true
-  }
-
-  /// 回车键（含小键盘 Enter）；当前事件不是按键时问 keyCode 会抛异常，先看类型
-  private static func isReturnKey(_ event: NSEvent) -> Bool {
-    event.type == .keyDown && [kVK_Return, kVK_ANSI_KeypadEnter].contains(Int(event.keyCode))
   }
 
   func handleKeyEquivalent(_ event: NSEvent) -> Bool {

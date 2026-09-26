@@ -242,7 +242,11 @@ struct TranslateTab: View {
   }
 
   /// 推进详情页（直接换掉路径：双击时第一下已经推进了，第二下的 primaryAction 不再叠一层）
-  private func open(_ id: String) { path = [id] }
+  /// 推进详情页并清掉选中（↩ 推进后回来，再单击同一行时选中会变、才推得进去）
+  private func open(_ id: String) {
+    selection = nil
+    path = [id]
+  }
 
   /// 右键菜单和无障碍动作里的上移 / 下移（键盘、读屏用户没法拖）；到头了什么都不做
   private func move(_ id: String, by offset: Int) {
