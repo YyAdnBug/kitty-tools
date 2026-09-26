@@ -251,9 +251,11 @@ struct SnapshotProbeTests {
         size: NSSize(width: 590, height: 400), dark: dark,
         to: "\(out)/settings-launcher-detail\(suffix).png")
     }
-    // 快捷键速查表（N11）：sheet 的尺寸，另出一张拉长的看全部分组
+    // 快捷键速查表（N11）：默认大小的设置窗里 sheet 的尺寸，另出一张拉长的看全部分组
+    let sheetHeight = ShortcutsButton.sheetHeight(available: 600 - 52)
     for (name, height, dark) in [
-      ("shortcuts", 640.0, false), ("shortcuts-dark", 640, true), ("shortcuts-full", 3500, false),
+      ("shortcuts", sheetHeight, false), ("shortcuts-dark", sheetHeight, true),
+      ("shortcuts-full", 3700, false),
     ] {
       try snapshot(
         ShortcutsSheet(), size: NSSize(width: 560, height: height), dark: dark,

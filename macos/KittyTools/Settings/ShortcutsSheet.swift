@@ -15,8 +15,16 @@ struct ShortcutsButton: View {
       .foregroundStyle(Style.brandInk)
       .pointerStyle(.link)
       .sheet(isPresented: $isPresented) {
-        ShortcutsSheet().frame(width: 560, height: 640)
+        ShortcutsSheet().frame(
+          width: 560,
+          height: Self.sheetHeight(available: NSApp.keyWindow?.contentLayoutRect.height ?? 548))
       }
+  }
+
+  /// sheet 挂在设置窗工具栏下沿，不能比窗口内容区（去掉工具栏）高：设置窗默认 600、最小 460，工具栏约 52。
+  /// 按打开时窗口的可用高度取，最高 520，最矮 360（内容在 ScrollView 里）
+  static func sheetHeight(available: CGFloat) -> CGFloat {
+    min(520, max(360, available - 16))
   }
 }
 
@@ -125,10 +133,11 @@ struct ShortcutsSheet: View {
         Entry("⌘↩", "⌘C", text: "只复制，不粘贴"),
         Entry("⌘1–9", text: "直接粘贴第 1–9 条"),
         Entry("↑↓", text: "移动选中，透镜跟着走"),
-        Entry("⇧↑↓", text: "扩展多选"),
+        Entry("⇧↑↓", text: "扩展多选（⇧ 单击选一段，⌘ 单击逐条勾选）"),
         Entry("Tab", text: "打开 / 关闭筛选面板（范围、类型、来源、分组）"),
         Entry("⇧Tab", text: "在 全部 / 收藏 / 片段 之间切换"),
-        Entry("⌘K", "→", text: "操作面板（→ 要在搜索词末尾按）"),
+        Entry("⌘K", "→", text: "打开 / 关闭操作面板（→ 要在搜索词末尾按）"),
+        Entry("←", text: "操作面板开着、过滤词为空时关掉它"),
         Entry("⌫", text: "搜索框为空时：选中最后一个筛选标签，再按一次删掉"),
         Entry("⌘Y", text: "放大预览"),
         Entry("⌘D", text: "收藏"),
@@ -138,24 +147,24 @@ struct ShortcutsSheet: View {
         Entry("⌘Z", text: "撤销删除"),
         Entry("⌘A", text: "全选（搜索框为空时）"),
         Entry("⌘,", text: "设置"),
-        Entry("Esc", text: "逐级退出：预览、面板、搜索词、多选，最后关闭"),
+        Entry("Esc", text: "逐级退出：放大预览、菜单、对话框、待删标签、搜索词、多选，最后关闭（固定着也关）"),
       ]),
     // mac-whisker §6 启动器（N8–N10）；代码在 LauncherModel.handleCommand / handleKeyEquivalent
     Group(
       title: "启动器", symbol: "command", color: Style.Family.command, globals: [.launcher],
       entries: [
-        Entry("↩", text: "打开选中项（计算结果是粘贴）"),
-        Entry("⌘↩", text: "在访达中显示（计算结果只复制）"),
+        Entry("↩", text: "打开选中项（计算结果是粘贴；双击同样）"),
+        Entry("⌘↩", text: "在访达中显示（find 搜到的是打开，计算结果只复制）"),
         Entry("⌥↩", text: "在访达里搜索输入的文字"),
         Entry("⌃↩", text: "用第一个网页搜索搜输入的文字"),
-        Entry("⌘K", text: "动作菜单：选中项的全部动作"),
+        Entry("⌘K", text: "打开 / 关闭动作菜单：选中项的全部动作"),
         Entry("Tab", text: "补全（计算结果接着算、目录接着往下找）"),
-        Entry("⌘C", text: "复制路径或网址"),
+        Entry("⌘C", text: "复制路径、网址或计算结果"),
         Entry("⌘1–9", text: "打开第 1–9 项"),
         Entry("↑↓", text: "移动选中"),
         Entry("⌘⌫", text: "从「最近使用」里移除"),
         Entry("⌘,", text: "设置"),
-        Entry("Esc", text: "先清空搜索，再关闭"),
+        Entry("Esc", text: "先关动作菜单，再清空搜索，最后关闭"),
         Entry("open", text: "搜文件并打开（空格开头同样）"),
         Entry("find", text: "搜文件并在访达中显示"),
         Entry("cb", text: "在剪贴板历史里搜索"),
@@ -170,21 +179,24 @@ struct ShortcutsSheet: View {
         Entry("⌘R", text: "重新翻译"),
         Entry("⌘S", text: "收藏这次翻译"),
         Entry("⌘1–9", text: "复制第 1–9 个结果"),
-        Entry("⌘Y", text: "翻译历史"),
-        Entry("⌘P", text: "固定浮窗"),
+        Entry("⌘Y", text: "打开 / 关闭翻译历史"),
+        Entry("⌘P", text: "固定 / 取消固定浮窗"),
         Entry("⌘+", "⌘-", "⌘0", text: "放大 / 缩小 / 还原字号"),
         Entry("⌘,", text: "设置"),
-        Entry("⌘W", "Esc", text: "关闭"),
+        Entry("⌘W", text: "关闭（固定着也关）"),
+        Entry("Esc", text: "关闭（固定时不关）"),
       ]),
-    // mac-translate「翻译历史」（N7）
+    // mac-translate「翻译历史」（N7）；代码在 TranslateCoordinator.handleHistoryCommand、HistoryList.handleKeyEquivalent
     Group(
       title: "翻译 · 历史", symbol: "clock.arrow.circlepath", color: Style.Family.translate,
       entries: [
         Entry("↑↓", text: "移动选中"),
-        Entry("↩", text: "重新翻译这条"),
+        Entry("↩", text: "重新翻译这条（双击同样）"),
+        Entry("⇧Tab", text: "在 全部 / 收藏 之间切换"),
         Entry("⌘C", text: "复制译文"),
+        Entry("⌘S", text: "收藏 / 取消收藏这条"),
         Entry("⌘⌫", text: "删除（⌘Z 撤销）"),
-        Entry("Esc", text: "回到浮窗"),
+        Entry("Esc", text: "先清空搜索，再回到浮窗"),
       ]),
     // mac-whisker §6 截图「待选」「框选 / 拖边」「键盘调整」；代码在 SelectionView.keyDown
     Group(
@@ -195,10 +207,11 @@ struct ShortcutsSheet: View {
         Entry("⌥", text: "从中心拉框"),
         Entry("空格", text: "按住平移选区"),
         Entry("⌃", text: "暂停吸附"),
+        Entry("⌘", text: "按住显示十字准线"),
         Entry("D", text: "选中上次的区域"),
         Entry("方向键", text: "移动选区 1 点（按住 ⇧ 10 点）"),
-        Entry("⌘方向键", text: "把那条边往外推"),
-        Entry("⌥方向键", text: "把那条边往里收"),
+        Entry("⌘方向键", text: "把那条边往外推（按住 ⇧ 10 点）"),
+        Entry("⌥方向键", text: "把那条边往里收（按住 ⇧ 10 点）"),
         Entry("C", text: "复制放大镜里的色值"),
         Entry("Esc", text: "逐级退出，最后取消截图"),
       ]),

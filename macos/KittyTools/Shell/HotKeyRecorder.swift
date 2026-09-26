@@ -89,12 +89,21 @@ struct HotKeyRecorder: View {
         .disabled(current == nil)
     }
     .onChange(of: center.recording) { _, recording in
-      // 点了别的录制框：这里停止监听，热键由那一个录完再恢复
-      if recording != action { removeMonitor() }
+      // 点了别的录制框：这里停止监听、收掉这一行录错的提示，热键由那一个录完再恢复
+      if recording != action, monitor != nil {
+        removeMonitor()
+        message = nil
+      }
     }
-    // 设置窗失去键盘（切到别的 App、关窗）就停：不然全局热键一直停着
-    .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in
-      if isRecording { stop() }
+    // 设置窗失去键盘（切到别的 App、点了钉图、关窗）就停：不然全局热键一直停着。只看设置窗自己（普通 NSWindow；
+    // 浮层、截图遮罩、钉图都是 NSPanel，它们失去 key 不相干）。录制中从菜单栏开截图、key 让给遮罩也不停：
+    // 停了会重新注册热键，框选中按别的热键会弹出浮层抢走遮罩的 key；框选完 frozenSelection 把 key 还给设置窗，接着录
+    .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) {
+      note in
+      guard isRecording, !(note.object is NSPanel),
+        !OverlayPanel.isSelectingRegion(in: NSApp.windows)
+      else { return }
+      stop()
     }
     .onDisappear { if isRecording { stop() } }
   }
@@ -163,7 +172,8 @@ struct HotKeyRecorder: View {
     action.hotKey = hotKey
     current = hotKey
     message = nil
-    if isRecording { stop() } else { center.reload() }
+    // 别的行正在录（点了这一行的 ⓧ 或右键菜单）：热键先别恢复，等那一行录完 stop 时一起重新注册
+    if isRecording { stop() } else if center.recording == nil { center.reload() }
   }
 
   /// 修饰键按系统菜单的顺序：⌃⌥⇧⌘

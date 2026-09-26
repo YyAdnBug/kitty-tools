@@ -1,4 +1,5 @@
-// 快捷键界面的纯函数单测：键帽拆分（速查表 / 录制框 / 引导共用）、注册失败原因（-9868 只在只带 ⌥ 时才是系统限制）。
+// 快捷键界面的纯函数单测：键帽拆分（速查表 / 录制框 / 引导共用）、注册失败原因（-9868 只在只带 ⌥ 时才是系统限制）、
+// 速查表 sheet 的高度放得进设置窗。
 
 import Carbon.HIToolbox
 import Testing
@@ -44,5 +45,12 @@ struct ShortcutsTests {
     let grouped = HotKeyAction.sections.flatMap(\.actions)
     #expect(
       Set(grouped) == Set(HotKeyAction.allCases) && grouped.count == HotKeyAction.allCases.count)
+  }
+
+  /// 速查表 sheet 挂在设置窗工具栏下沿：默认内容 600、最小 460，减去约 52 的工具栏后都放得下，窗口再大也只到 520
+  @Test func cheatSheetFitsSettingsWindow() {
+    #expect(ShortcutsButton.sheetHeight(available: 600 - 52) <= 600 - 52)
+    #expect(ShortcutsButton.sheetHeight(available: 460 - 52) <= 460 - 52)
+    #expect(ShortcutsButton.sheetHeight(available: 2000) == 520)
   }
 }

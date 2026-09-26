@@ -1,8 +1,9 @@
 // 首次安装的欢迎引导（N14，Whisker 品牌时刻，对标 Apple 自家 App 的首次启动页 / Raycast）：盖在设置窗上的 sheet，奶油底，两屏。
 // 第一屏 = 品牌图标 + 大标题 + 四行功能（家族色块 + 一句话），要授权的那两行右边直接是授权状态（PermissionStatus，每秒刷新）；
 // 第二屏「按一下试试」= 主要全局快捷键一行一个（Whisker 键帽），用户真的按下、热键触发时（热键照常执行，面板照样弹出）
-// 那一行弹出品牌粉 ✓（pop）。两屏之间 settle 滑过去，减弱动态效果时只淡入淡出；没有跳过、页码点、上一步 / 下一步，
-// 只有一个品牌粉主按钮。「关于」页可以重看。
+// 那一行弹出品牌粉 ✓（pop）：热键弹出的面板 / 截图遮罩正盖在引导上，所以 ✓ 等引导所在的 sheet 重新成为 key
+// （用户关掉面板、截完图回来）再弹，播报是即时的。两屏之间 settle 滑过去，减弱动态效果时只淡入淡出；
+// 没有跳过、页码点、上一步 / 下一步，只有一个品牌粉主按钮（Esc 照样关：藏着一个 cancelAction 按钮）。「关于」页可以重看。
 
 import SwiftUI
 
@@ -15,6 +16,10 @@ struct OnboardingView: View {
   @State private var screen: Screen
   /// 引导开着时按过的全局快捷键
   @State private var tried: Set<HotKeyAction>
+  /// 按过、✓ 还没弹的（等引导重新成为 key）
+  @State private var pending: Set<HotKeyAction> = []
+  /// 引导所在的窗口（sheet），只认它重新成为 key
+  @State private var window: ObjectIdentifier?
 
   /// screen / tried：从哪一屏开始、哪些已经按过（截图自检摆状态用）
   init(center: HotKeyCenter, screen: Screen = .welcome, tried: Set<HotKeyAction> = []) {
@@ -51,10 +56,29 @@ struct OnboardingView: View {
     }
     .frame(width: 580, height: 480)
     .background(Style.brandCream)
+    .background {
+      // 没有可见的「跳过」（N14），Esc 靠这个看不见的按钮：macOS 上 sheet 没有 cancelAction 就不认 Esc
+      Button("关闭引导") { dismiss() }
+        .keyboardShortcut(.cancelAction)
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
+      WindowProbe { window = ObjectIdentifier($0) }
+    }
     .onChange(of: center.fireCount) {
       guard let action = center.lastFired, !tried.contains(action) else { return }
-      withAnimation(Style.Motion.pop.animation(reduced: reduceMotion)) { _ = tried.insert(action) }
+      pending.insert(action)
       AccessibilityNotification.Announcement("按过了「\(action.title)」").post()
+    }
+    // ponytail: 热键什么也没弹出（截图 / 取词进行中又按）时 ✓ 等下次引导重新成为 key 才弹；真遇到再加兜底计时
+    .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) {
+      note in
+      // 键盘回到引导：sheet 自己，或 AppKit 先交给了挂着它的设置窗
+      guard let key = note.object as? NSWindow, let window, !pending.isEmpty,
+        [key, key.attachedSheet].contains(where: { $0.map(ObjectIdentifier.init) == window })
+      else { return }
+      withAnimation(Style.Motion.pop.animation(reduced: reduceMotion)) { tried.formUnion(pending) }
+      pending = []
     }
   }
 
@@ -224,5 +248,31 @@ private struct TryScreen: View {
     }
     .accessibilityElement(children: .combine)
     .accessibilityValue(done ? "已试过" : "还没按过")
+  }
+}
+
+/// 报告自己所在的窗口（引导靠它认出自己的 sheet 重新成为 key）
+private struct WindowProbe: NSViewRepresentable {
+  let found: (NSWindow) -> Void
+
+  func makeNSView(context: Context) -> ProbeView { ProbeView(found: found) }
+  func updateNSView(_ view: ProbeView, context: Context) {}
+
+  final class ProbeView: NSView {
+    let found: (NSWindow) -> Void
+
+    init(found: @escaping (NSWindow) -> Void) {
+      self.found = found
+      super.init(frame: .zero)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func viewDidMoveToWindow() {
+      super.viewDidMoveToWindow()
+      // 挂进窗口可能发生在 SwiftUI 更新视图的中途：下一轮再改状态
+      guard let window else { return }
+      Task { found(window) }
+    }
   }
 }
