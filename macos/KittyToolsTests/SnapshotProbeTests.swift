@@ -341,7 +341,7 @@ struct SnapshotProbeTests {
         "org.openxmlformats.wordprocessingml.document", daysAgo: 5),
     ]
     let recent = [
-      hit("/Downloads/Kitty Tools Native_0.1.0_arm64.dmg", "com.apple.disk-image-udif", daysAgo: 0),
+      hit("/Downloads/Kitty Tools_0.1.0_arm64.dmg", "com.apple.disk-image-udif", daysAgo: 0),
       hit("/Downloads/report.html", "public.html", daysAgo: 1),
       hit("/Desktop/notes.md", "net.daringfireball.markdown", daysAgo: 2),
       hit("/Documents/Projects", "public.folder", daysAgo: 4),

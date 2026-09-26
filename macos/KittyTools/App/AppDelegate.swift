@@ -737,7 +737,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   // MARK: 菜单栏菜单
 
-  /// 每次打开菜单前重建：快捷键显示当前生效的组合（注册失败 / 没设的注明「未设置快捷键」），有钉图时才出钉图两项
+  /// 每次打开菜单前重建（N15）：三节 剪贴板与启动器 / 翻译 / 截图（和快捷键页同名同序），右边是当前生效的快捷键，
+  /// 没设 / 注册失败的留空；有钉图时截图节才出钉图两项；最后是设置、关于、退出
   private func buildStatusMenu(_ menu: NSMenu) {
     let translate = NSColor.systemGreen
     let shot = NSColor.systemPink
@@ -748,13 +749,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) {
       let binding = hotKeys.bindings[action]
       menu.addAction(
-        binding == nil ? "\(title)（未设置快捷键）" : title, symbol: symbol, color: color,
-        key: binding?.menuKeyEquivalent ?? "", modifiers: binding?.modifierFlags ?? [], run: run)
+        title, symbol: symbol, color: color, key: binding?.menuKeyEquivalent ?? "",
+        modifiers: binding?.modifierFlags ?? [], run: run)
     }
-    hotKeyItem("启动器", .launcher, "command", .systemPurple) { [unowned self] in toggleLauncher() }
+    menu.addItem(.sectionHeader(title: "剪贴板与启动器"))
     hotKeyItem("剪贴板历史", .clipboard, "doc.on.clipboard", .systemBlue) {
       [unowned self] in toggleClipboard()
     }
+    hotKeyItem("启动器", .launcher, "command", .systemPurple) { [unowned self] in toggleLauncher() }
+    menu.addItem(.separator())
+    menu.addItem(.sectionHeader(title: "翻译"))
     hotKeyItem("划词翻译", .selectionTranslate, "character.bubble", translate) {
       [unowned self] in selectionTranslate()
     }
@@ -773,6 +777,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     .state = copyToTranslate ? .on : .off
     menu.addItem(.separator())
+    menu.addItem(.sectionHeader(title: "截图"))
     hotKeyItem("截图", .screenshot, "camera.viewfinder", shot) { [unowned self] in screenshot() }
     hotKeyItem("截取上次区域", .screenshotLastRegion, "rectangle.dashed", shot) {
       [unowned self] in screenshot(repeatingLastRegion: true)

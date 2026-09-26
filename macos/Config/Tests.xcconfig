@@ -4,6 +4,7 @@ PRODUCT_MODULE_NAME = KittyToolsTests
 PRODUCT_BUNDLE_IDENTIFIER = com.yy.kitty-tools.native.tests
 INFOPLIST_FILE =
 ASSETCATALOG_COMPILER_APPICON_NAME =
-TEST_HOST = $(BUILT_PRODUCTS_DIR)/Kitty Tools Native.app/Contents/MacOS/Kitty Tools Native
+// APP_PRODUCT_NAME 来自 project 层的 Debug / Release.xcconfig（Kitty Tools Dev / Kitty Tools）
+TEST_HOST = $(BUILT_PRODUCTS_DIR)/$(APP_PRODUCT_NAME).app/Contents/MacOS/$(APP_PRODUCT_NAME)
 BUNDLE_LOADER = $(TEST_HOST)
 LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/../Frameworks @loader_path/../Frameworks
