@@ -40,6 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private let speaker = Speaker()
   /// 刘海岛（全局轻提示）
   private let island = Island()
+  /// CleanShot 式常驻缩略图（截图飞入右下角后留在那里）
+  private let shelf = ShotShelf()
   /// 菜单栏图标与菜单（启动后才建：单测以本 App 为宿主时不往菜单栏加东西）
   private var statusItem: StatusItem?
   /// 钉图（菜单栏显示「隐藏 / 关闭全部钉图」）
@@ -247,6 +249,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     hotKeys.setHandler(for: .recognizeText) { [unowned self] in recognizeText() }
     hotKeys.setHandler(for: .translateReplace) { [unowned self] in translateAndReplace() }
     hotKeys.reload()
+    try? FileManager.default.removeItem(at: ShotShelf.dragDirectory)
+    shelf.copy = { [unowned self] in await copyImage($0, scale: $1) }
+    shelf.save = { [unowned self] in await saveImage($0, scale: $1, asking: false) }
+    shelf.pin = { [unowned self] in pins.pin($0, frame: $1) }
     let statusItem = StatusItem()
     statusItem.buildMenu = { [unowned self] in buildStatusMenu($0) }
     island.onToneChange = { [weak statusItem] in statusItem?.reflect($0) }
@@ -459,15 +465,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           NSStringFromRect(capture.frame), forKey: Prefs.screenshotLastRegion)
         switch capture.action {
         case .copy:
-          let land = captured(capture.image, frame: capture.frame)
+          let land = captured(capture.image, scale: capture.scale, frame: capture.frame)
           if await copyImage(capture.image, scale: capture.scale) { land(.copied) }
         case .pin:
           FlyCard.playShutter()
           pins.pin(capture.image, frame: capture.frame)
         case .save:
-          let land = captured(capture.image, frame: capture.frame)
-          if await saveImage(capture.image, scale: capture.scale, asking: false) {
-            land(Self.savedBadge)
+          let land = captured(capture.image, scale: capture.scale, frame: capture.frame)
+          if let url = await saveImage(capture.image, scale: capture.scale, asking: false) {
+            land(.saved(url))
           }
         case .saveAs:
           FlyCard.playShutter()
@@ -486,12 +492,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       guard let result = try await ScrollCapture.run(region: region) else { return }
       switch result.action {
       case .copy:
-        let land = captured(result.image, frame: region)
+        let land = captured(result.image, scale: result.scale, frame: region)
         if await copyImage(result.image, scale: result.scale) { land(.copied) }
       case .save:
-        let land = captured(result.image, frame: region)
-        if await saveImage(result.image, scale: result.scale, asking: false) {
-          land(Self.savedBadge)
+        let land = captured(result.image, scale: result.scale, frame: region)
+        if let url = await saveImage(result.image, scale: result.scale, asking: false) {
+          land(.saved(url))
         }
       case .saveAs:
         FlyCard.playShutter()
@@ -611,51 +617,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     clipboardStore.record(item)
   }
 
-  /// ⌘S 快速保存 / 另存为（asking）；返回是否存好了。失败时截图改放进剪贴板，别让这张图就这么丢了
+  /// ⌘S 快速保存 / 另存为（asking）；返回存到的文件（取消、失败为 nil）。失败时截图改放进剪贴板，别让这张图就这么丢了
   @discardableResult
-  private func saveImage(_ image: CGImage, scale: CGFloat, asking: Bool) async -> Bool {
+  private func saveImage(_ image: CGImage, scale: CGFloat, asking: Bool) async -> URL? {
     guard let png = await ScreenshotOutput.png(image, scale: scale) else {
       showScreenshotNotice("截图编码失败，请重试")
-      return false
+      return nil
     }
     do {
-      if asking {
-        try await ScreenshotOutput.saveAs(png)
-      } else {
-        _ = try ScreenshotOutput.quickSave(png)
-      }
-      return true
+      return asking ? try await ScreenshotOutput.saveAs(png) : try ScreenshotOutput.quickSave(png)
     } catch {
       await copyPNG(png)
       showScreenshotNotice("保存失败（\(error.localizedDescription)），截图已复制到剪贴板")
-      return false
+      return nil
     }
   }
 
-  /// 截图落地：快门声 + 飞行卡片（遮罩刚收起就飞，不等编码）。返回的 land 在复制 / 保存成功后调，给卡片角标；
-  /// 减弱动态效果时 land 才弹带缩略图的轻提示。失败不调（另有提示）
-  private func captured(_ image: CGImage, frame: CGRect) -> (FlyCard.Badge) -> Void {
+  /// 截图落地：快门声 + 飞行卡片（遮罩刚收起就飞，不等编码）。返回的 land 在复制 / 保存成功后调，给卡片角标，
+  /// 角标弹完后交给常驻缩略图（ShotShelf）；减弱动态效果时不飞，land 时缩略图直接在角落淡入。失败不调（另有提示）
+  private func captured(_ image: CGImage, scale: CGFloat, frame: CGRect) -> (FlyCard.Badge) -> Void
+  {
     FlyCard.playShutter()
+    let linger: (CGRect, FlyCard.Badge) -> Void = { [weak self] rect, badge in
+      self?.shelf.add(image, scale: scale, source: frame, at: rect, badge: badge)
+    }
     guard Style.reduceMotion else {
-      let land = FlyCard.fly(image, from: frame).land
+      let land = FlyCard.fly(image, from: frame, linger: linger).land
       return { [weak self] badge in
         land(badge)
         self?.statusItem?.pop()
       }
     }
-    return { [island] badge in
-      let thumbnail = Island.Leading.thumbnail(
-        NSImage(cgImage: FlyCard.visiblePart(of: image, frame: frame), size: frame.size))
-      switch badge {
-      case .copied: island.show("已复制截图", leading: thumbnail)
-      case .saved(let folder): island.show("已保存", detail: folder, leading: thumbnail)
-      }
+    return { badge in
+      guard let rect = FlyCard.landingRect(for: frame) else { return }
+      linger(rect, badge)
+      FlyCard.announce(badge)
     }
-  }
-
-  /// 快速保存的角标：目标目录名（保存失败时另有提示）
-  private static var savedBadge: FlyCard.Badge {
-    .saved(folder: ScreenshotOutput.saveDirectory.lastPathComponent)
   }
 
   /// "#RRGGBB" → 色块（取色的轻提示用）

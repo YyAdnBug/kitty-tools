@@ -1,8 +1,9 @@
 // 截图「咔嚓，飞入」（Whisker 招牌时刻 S1，mac-whisker §5）：复制 / 快速保存截图后，选区原地闪白、抬起，
 // 沿弧线（x、y 两轴弹簧时长不同）飞到所在屏幕右下角缩成缩略图，落地弹出 ✓（保存时是文件夹 + 目录名），
-// 停 0.9 s 后向右滑出屏幕。窗口只取起终点的并集、不接鼠标，飞完就关。卡片先飞，角标等复制 / 保存真的成功了
+// 角标弹完后交给常驻缩略图（ShotShelf，CleanShot 式，同一个位置接着显示）；没有接手的（失败、没给 linger）停 0.9 s
+// 后向右滑出屏幕。窗口只取起终点的并集、不接鼠标，飞完就关。卡片先飞，角标等复制 / 保存真的成功了
 // 才由调用方 land（失败就没有角标）。快门声跟随系统「播放用户界面音效」和设置 › 截图的开关。
-// 减弱动态效果时由调用方改成刘海岛轻提示。
+// 减弱动态效果时调用方不飞，直接让常驻缩略图在角落淡入。
 
 import AppKit
 import SwiftUI
@@ -10,7 +11,16 @@ import SwiftUI
 enum FlyCard {
   enum Badge {
     case copied
-    case saved(folder: String)
+    /// 存到的文件
+    case saved(URL)
+
+    var folder: String? {
+      if case .saved(let url) = self {
+        url.deletingLastPathComponent().lastPathComponent
+      } else {
+        nil
+      }
+    }
   }
 
   /// 一张飞行卡片的结局：复制 / 保存成功后 land，落地（或已落地）时弹出角标
@@ -19,15 +29,20 @@ enum FlyCard {
 
     func land(_ badge: Badge) {
       self.badge = badge
-      let text =
-        switch badge {
-        case .copied: "已复制截图"
-        case .saved(let folder): "截图已保存到\(folder)"
-        }
-      NSAccessibility.post(
-        element: NSApp as Any, notification: .announcementRequested,
-        userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+      FlyCard.announce(badge)
     }
+  }
+
+  /// 卡片不接鼠标：主动给 VoiceOver 播报结果
+  static func announce(_ badge: Badge) {
+    let text =
+      switch badge {
+      case .copied: "已复制截图"
+      case .saved(let url): "截图已保存到\(url.deletingLastPathComponent().lastPathComponent)"
+      }
+    NSAccessibility.post(
+      element: NSApp as Any, notification: .announcementRequested,
+      userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
   }
 
   /// 飞行中的窗口（连截几张时各飞各的）
@@ -49,21 +64,30 @@ enum FlyCard {
     return image.cropping(to: CGRect(x: 0, y: 0, width: image.width, height: max(rows, 1))) ?? image
   }
 
-  /// image：选区的图；frame：选区（点，AppKit 全局坐标）
-  static func fly(_ image: CGImage, from frame: CGRect) -> Landing {
-    let landing = Landing()
+  /// 落地的位置：frame 所在屏幕可见区右下角内缩 16，缩进 200×140（不放大）；常驻缩略图也按它摆
+  static func landingRect(for frame: CGRect) -> CGRect? {
     guard frame.width >= 1, frame.height >= 1,
       let screen = NSScreen.screens.first(where: {
         $0.frame.contains(CGPoint(x: frame.midX, y: frame.midY))
-      })
-        ?? NSScreen.main
-    else { return landing }
-    let shown = visiblePart(of: image, frame: frame)
+      }) ?? NSScreen.main
+    else { return nil }
     let fit = min(1, maxSize.width / frame.width, maxSize.height / frame.height)
     let visible = screen.visibleFrame
-    let end = CGRect(
+    return CGRect(
       x: visible.maxX - inset - frame.width * fit, y: visible.minY + inset,
       width: frame.width * fit, height: frame.height * fit)
+  }
+
+  /// image：选区的图；frame：选区（点，AppKit 全局坐标）。linger：角标弹完后交给常驻缩略图（落地位置、角标），
+  /// 给了它卡片就不自己滑走
+  static func fly(
+    _ image: CGImage, from frame: CGRect, linger: ((CGRect, Badge) -> Void)? = nil
+  ) -> Landing {
+    let landing = Landing()
+    guard let end = landingRect(for: frame),
+      let screen = NSScreen.screens.first(where: { $0.frame.intersects(end) })
+    else { return landing }
+    let shown = visiblePart(of: image, frame: frame)
     // 滑出去要整张离开屏幕右边
     let exit = screen.frame.maxX - end.minX + 30
     let union = frame.union(end).union(end.offsetBy(dx: exit, dy: 0)).insetBy(dx: -40, dy: -40)
@@ -77,7 +101,8 @@ enum FlyCard {
     panel.setFrame(union, display: false)
     let host = NSHostingView(
       rootView: FlyCardView(
-        image: shown, start: local(frame), end: local(end), exit: exit, landing: landing
+        image: shown, start: local(frame), end: local(end), exit: exit, landing: landing,
+        linger: linger.map { linger in { linger(end, $0) } }
       ) { [weak panel] in
         // weak：窗口 → 视图 → 这个闭包，强引用会成环，每飞一次漏一个窗口和整张图
         guard let panel else { return }
@@ -135,6 +160,8 @@ private struct FlyCardView: View {
   /// 滑出的距离
   let exit: CGFloat
   let landing: FlyCard.Landing
+  /// 角标弹完后交给常驻缩略图
+  let linger: ((FlyCard.Badge) -> Void)?
   let onFinish: () -> Void
 
   @State private var lifted = false
@@ -167,7 +194,7 @@ private struct FlyCardView: View {
       }
       .overlay(alignment: .bottomTrailing) {
         if landed, let badge = landing.badge {
-          badgeView(badge)
+          FlyCardBadge(badge: badge)
             .offset(x: 6, y: 6)
             .transition(.scale(scale: 0.4).combined(with: .opacity))
         }
@@ -185,14 +212,29 @@ private struct FlyCardView: View {
         flying = true
         try? await Task.sleep(for: .seconds(0.40))
         landed = true
+        // 等复制 / 保存成功（最多 2 s）：成功就在角标弹完后交给常驻缩略图，自己直接关（同一个位置接着显示，看不出换了窗口）
+        for _ in 0..<20 where landing.badge == nil {
+          try? await Task.sleep(for: .milliseconds(100))
+        }
+        if let badge = landing.badge, let linger {
+          try? await Task.sleep(for: .seconds(0.4))
+          linger(badge)
+          onFinish()
+          return
+        }
         try? await Task.sleep(for: .seconds(0.9))
         leaving = true
         try? await Task.sleep(for: .seconds(0.3))
         onFinish()
       }
   }
+}
 
-  @ViewBuilder private func badgeView(_ badge: FlyCard.Badge) -> some View {
+/// 落地角标：复制 = 22 pt accent 圆 + 对勾；保存 = accent 胶囊 + 文件夹 + 目录名（常驻缩略图也用它，看起来是同一张卡）
+struct FlyCardBadge: View {
+  let badge: FlyCard.Badge
+
+  var body: some View {
     switch badge {
     case .copied:
       Image(systemName: "checkmark")
@@ -201,8 +243,8 @@ private struct FlyCardView: View {
         .frame(width: 22, height: 22)
         .background(Circle().fill(Color.accentColor))
         .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
-    case .saved(let folder):
-      Label(folder, systemImage: "folder.fill")
+    case .saved:
+      Label(badge.folder ?? "", systemImage: "folder.fill")
         .font(.system(size: 11, weight: .semibold))
         .lineLimit(1)
         .foregroundStyle(.white)

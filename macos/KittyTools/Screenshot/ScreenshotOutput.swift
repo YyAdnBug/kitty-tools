@@ -66,8 +66,10 @@ enum ScreenshotOutput {
   }
 
   /// 另存为：遮罩已收起。先激活本 App（面板才拿得到键盘），存完把前台还给原来的 App；选的目录记成快速保存目录。
-  /// 用不模态的 begin 而不是 runModal：runModal 在主 actor 的任务里会卡住其它主线程任务（流式译文、截图热键）
-  static func saveAs(_ png: Data) async throws {
+  /// 用不模态的 begin 而不是 runModal：runModal 在主 actor 的任务里会卡住其它主线程任务（流式译文、截图热键）。
+  /// 返回存到的文件（取消时为 nil）
+  @discardableResult
+  static func saveAs(_ png: Data) async throws -> URL? {
     let panel = NSSavePanel()
     panel.allowedContentTypes = [.png]
     panel.canCreateDirectories = true
@@ -81,9 +83,10 @@ enum ScreenshotOutput {
     let response = await withCheckedContinuation { continuation in
       panel.begin { continuation.resume(returning: $0) }
     }
-    guard response == .OK, let url = panel.url else { return }
+    guard response == .OK, let url = panel.url else { return nil }
     try png.write(to: url, options: .atomic)
     UserDefaults.standard.set(
       url.deletingLastPathComponent().path, forKey: Prefs.screenshotSaveDirectory)
+    return url
   }
 }

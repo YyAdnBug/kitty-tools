@@ -147,6 +147,22 @@ struct SnapshotProbeTests {
         to: "\(out)/onboarding-\(step.rawValue).png")
     }
     try renderSelection(out)
+    // 常驻缩略图：存过（文件夹角标）、悬停（拷贝 / 存储 + 四角圆钮）
+    let shot = try ScreenshotTests.render(["The quick brown fox", "敏捷的棕色狐狸"])
+    for (name, badge, hovered) in [
+      ("shelf", FlyCard.Badge.saved(URL(filePath: "/Users/me/Desktop/a.png")), false),
+      ("shelf-hover", .saved(URL(filePath: "/Users/me/Desktop/a.png")), true),
+    ] {
+      let card = ShelfCard(
+        image: shot, scale: 2, source: CGRect(x: 0, y: 0, width: 600, height: 120),
+        rect: CGRect(x: 0, y: 0, width: 200, height: 40 * 2), badge: badge, screen: nil,
+        panel: NSPanel(), shelf: ShotShelf())
+      card.isHovered = hovered
+      try snapshot(
+        ShelfCardView(card: card),
+        size: NSSize(width: 200 + ShotShelf.margin * 2, height: 80 + ShotShelf.margin * 2),
+        dark: false, to: "\(out)/\(name).png")
+    }
     try renderScrollCapture(out)
     try renderLauncher(out)
     // 刘海岛：刘海屏的下巴（成功 / 进行中）、无刘海屏的胶囊（取色色块 / 错误）
