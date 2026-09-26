@@ -112,11 +112,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let panel = OverlayPanel(
       size: NSSize(width: 820, height: 640), autoHide: .clickOutside, isPinned: { false },
       content: QuickLookView(model: clipboardModel) { [unowned self] size in
-        // 连按方向键时直接换尺寸（先瞬时，再动画）。isARepeat 只能问按键事件，问鼠标事件会抛异常
-        let event = NSApp.currentEvent
-        created?.move(
-          to: quickLookFrame(size), animated: !(event?.type == .keyDown && event?.isARepeat == true)
-        )
+        // 连按方向键时直接换尺寸（先瞬时，再动画）
+        created?.move(to: quickLookFrame(size), animated: !Style.isKeyRepeat)
       })
     created = panel
     panel.becomesKeyOnlyIfNeeded = true

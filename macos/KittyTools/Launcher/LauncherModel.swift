@@ -498,7 +498,7 @@ import Observation
 
   private func move(by offset: Int) {
     guard !results.isEmpty else { return }
-    selectionMotion = NSApp.currentEvent?.isARepeat == true ? .instant : .snap
+    selectionMotion = Style.isKeyRepeat ? .instant : .snap
     selection = (selection + offset + results.count) % results.count
     userMovedSelection = true
   }

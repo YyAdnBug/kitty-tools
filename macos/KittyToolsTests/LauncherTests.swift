@@ -1,6 +1,6 @@
 // 启动器单测：匹配分档（含缩写 vsc、拼音）、使用分衰减与加成、排序、旧版使用记录导入映射。
 
-import Foundation
+import AppKit
 import Testing
 
 @testable import KittyTools
@@ -278,6 +278,23 @@ struct LauncherTests {
     #expect(model.alternateSubtitle(for: calculation) == "⌘↩ 只复制，不粘贴")
     model.alternate = .none
     #expect(model.alternateSubtitle(for: app) == nil)
+  }
+
+  @Test func moveOutsideKeyEventDoesNotThrow() throws {
+    // 回归：当前事件不是按键（鼠标悬停、KitDefined）时问 isARepeat 会抛异常，整个测试进程卡死
+    let event = try #require(
+      NSEvent.otherEvent(
+        with: .applicationDefined, location: .zero, modifierFlags: [], timestamp: 0,
+        windowNumber: 0, context: nil, subtype: 0, data1: 0, data2: 0))
+    NSApp.postEvent(event, atStart: true)
+    _ = NSApp.nextEvent(matching: .any, until: .distantPast, inMode: .default, dequeue: true)
+    #expect(NSApp.currentEvent?.type == .applicationDefined)
+    let model = LauncherModel(
+      usage: try LauncherUsage(db: Database(path: ":memory:")),
+      apps: [app("Safari"), app("Slack")])
+    model.query = "s"
+    #expect(model.handleCommand(#selector(NSResponder.moveDown(_:))))
+    #expect(model.selection == 1 && model.selectionMotion == .snap)
   }
 
   @Test func forgetAndClearUsage() throws {

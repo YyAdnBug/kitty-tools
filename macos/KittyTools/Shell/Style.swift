@@ -26,6 +26,15 @@ enum Style {
   /// 「减弱动态效果」（AppKit 侧；SwiftUI 视图读 `@Environment(\.accessibilityReduceMotion)`）
   static var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
+  /// 当前事件是按住不放的按键连发（先瞬时，再动画）。isARepeat 只能问 keyDown / keyUp，
+  /// 问鼠标、KitDefined 等事件会抛 NSInternalInconsistencyException，所以先看类型
+  static var isKeyRepeat: Bool {
+    guard let event = NSApp.currentEvent, event.type == .keyDown || event.type == .keyUp else {
+      return false
+    }
+    return event.isARepeat
+  }
+
   /// 七条命名曲线（SwiftUI `Spring(duration:bounce:)` 与 `CASpringAnimation(perceptualDuration:bounce:)` 参数一致）
   enum Motion {
     /// 按键连发、结果刷新、拖动、放大镜跟随、粘贴时收起面板：不做动画

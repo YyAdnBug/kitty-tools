@@ -247,7 +247,7 @@ import Observation
       ? min(max(current + offset, 0), items.count - 1)
       : (current + offset + items.count) % items.count
     isBrowsing = true
-    selectionMotion = NSApp.currentEvent?.isARepeat == true ? .instant : .snap
+    selectionMotion = Style.isKeyRepeat ? .instant : .snap
     if extending {
       if anchorID == nil || multiSelection.isEmpty { anchorID = items[current].id }
       let anchor = items.firstIndex { $0.id == anchorID } ?? current
