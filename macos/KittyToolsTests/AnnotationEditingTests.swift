@@ -138,6 +138,50 @@ struct AnnotationEditingTests {
     #expect(h.view.selectedAnnotation == original.id)
   }
 
+  // ⌥ 拖动复制时光标带 +（拖原件是抓手）
+  @Test func optionDragShowsCopyCursor() {
+    let h = harness(tool: nil)
+    h.view.annotations = [
+      Annotation(shape: .rectangle(CGRect(x: 350, y: 250, width: 100, height: 100)))
+    ]
+    h.begin(CGPoint(x: 350, y: 300), to: CGPoint(x: 380, y: 300), flags: .option)
+    #expect(NSCursor.current.image.tiffRepresentation == NSCursor.dragCopy.image.tiffRepresentation)
+    h.release(CGPoint(x: 380, y: 300), flags: .option)
+    h.begin(CGPoint(x: 380, y: 300), to: CGPoint(x: 400, y: 300))
+    #expect(
+      NSCursor.current.image.tiffRepresentation == NSCursor.closedHand.image.tiffRepresentation)
+    h.release(CGPoint(x: 400, y: 300))
+  }
+
+  // 拖着标注（画、挪、改大小）时 ⌘Z / ⇧⌘Z / ⌫ / ⌘D 不响应：不然松手时记的那一步撤销和标注列表对不上
+  @Test func undoDeleteDuplicateIgnoredWhileDragging() {
+    let h = harness(tool: .rectangle)
+    h.drag(CGPoint(x: 350, y: 250), CGPoint(x: 400, y: 300))
+    // 画第二个的途中按 ⌘Z：不撤销第一个；松手后两个都在，撤销一步只去掉第二个
+    h.begin(CGPoint(x: 500, y: 250), to: CGPoint(x: 560, y: 300))
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: .command)
+    h.release(CGPoint(x: 560, y: 300))
+    #expect(h.view.annotations.count == 2)
+    let first = h.view.annotations.first
+    // 按住第二个（空心矩形认边线）挪的途中按 ⌫ / ⌘D / ⇧⌘Z：都不动
+    h.begin(CGPoint(x: 530, y: 250), to: CGPoint(x: 540, y: 260))
+    h.key(kVK_Delete, "\u{7f}")
+    h.keyEquivalent(kVK_ANSI_D, "d", flags: .command)
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: [.command, .shift])
+    #expect(h.view.annotations.count == 2)
+    #expect(
+      h.view.annotations.last?.shape == .rectangle(CGRect(x: 510, y: 260, width: 60, height: 50)))
+    h.release(CGPoint(x: 540, y: 260))
+    // 撤销依次是：挪 → 画第二个 → 画第一个
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: .command)
+    #expect(
+      h.view.annotations.last?.shape == .rectangle(CGRect(x: 500, y: 250, width: 60, height: 50)))
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: .command)
+    #expect(h.view.annotations == [first].compactMap { $0 })
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: .command)
+    #expect(h.view.annotations.isEmpty)
+  }
+
   @Test func optionDragCounterGetsNextNumber() throws {
     let h = harness(tool: nil)
     h.view.annotations = [Annotation(shape: .counter(1, center: CGPoint(x: 400, y: 300)))]

@@ -3,6 +3,7 @@
 // ↩ 生效、Esc 放弃、点别处提交；焦点环 1 pt 粉 0.75 + 粉 0.22 r3 外发光），右边比例按钮「自由 ▾」（锁住时粉底）弹 HUD 菜单。
 // 状态和几何归 SelectionView：这里只显示、收点击、把 ↩ / Esc / Tab 交出去。输入框当第一响应者时按键归它；收下时
 // SelectionView 先把第一响应者要回去、再调 endEditing（同文字标注的 EditorField，反过来单键快捷键全失灵）。
+// 旁白：宽、高两个数字各有名字（按下 = 点数字开始输入），比例按钮是按钮（按下弹菜单），「×」不读。
 
 import AppKit
 
@@ -24,7 +25,7 @@ final class SizeField: NSView, NSTextFieldDelegate {
   private let widthField = NumberField()
   private let heightField = NumberField()
   private let times = NSTextField(labelWithString: "×")
-  private let chip = NSView()
+  private let chip = RatioChip()
   private let chipLabel = NSTextField(labelWithString: "")
   private let ring = CALayer()
   /// 上次显示的：像素宽高、比例按钮文字、是否锁住（没变就不重排，遮罩每次鼠标移动都会调 show）
@@ -45,11 +46,19 @@ final class SizeField: NSView, NSTextFieldDelegate {
       field.alignment = .center
       field.delegate = self
       field.onFocus = { [unowned self, unowned field] in placeRing(on: field) }
+      field.onPress = { [unowned self, unowned field] in
+        if isInteractive, !isEditing { onEdit(field === widthField ? .width : .height) }
+      }
       addSubview(field)
     }
+    widthField.setAccessibilityLabel("宽（像素）")
+    heightField.setAccessibilityLabel("高（像素）")
     times.font = Self.font
-    times.textColor = .white.withAlphaComponent(0.5)
+    times.textColor = Style.HUD.secondaryText
+    times.setAccessibilityElement(false)
     addSubview(times)
+    chip.onPress = { [unowned self] in onRatio() }
+    chipLabel.setAccessibilityElement(false)
     chip.wantsLayer = true
     chip.layer?.cornerRadius = Style.Radius.mini
     chip.layer?.cornerCurve = .continuous
@@ -82,9 +91,10 @@ final class SizeField: NSView, NSTextFieldDelegate {
     heightField.stringValue = "\(height)"
     chip.isHidden = !interactive
     chip.layer?.backgroundColor =
-      (next.3 ? Style.Shot.accent.withAlphaComponent(0.9) : .white.withAlphaComponent(0.08)).cgColor
+      (next.3 ? Style.Shot.accent.withAlphaComponent(0.9) : Style.HUD.chipFill).cgColor
     chipLabel.stringValue = "\(ratio) ▾"
-    chipLabel.textColor = next.3 ? .white : .white.withAlphaComponent(0.78)
+    chipLabel.textColor = next.3 ? .white : Style.HUD.text
+    chip.setAccessibilityLabel("比例：\(ratio)")
     layoutParts()
   }
 
@@ -221,9 +231,23 @@ final class SizeField: NSView, NSTextFieldDelegate {
   }
 }
 
-/// 数字框：平时是只读的标签，输入时可编辑；拿到键盘时通知胶囊挪焦点环。不画系统焦点环
+/// 比例按钮（画面是圆角底 + 文字标签，点击由胶囊的 mouseDown 按位置分）：旁白里是个按钮，按下弹比例菜单
+private final class RatioChip: NSView {
+  var onPress: () -> Void = {}
+
+  override func isAccessibilityElement() -> Bool { true }
+  override func accessibilityRole() -> NSAccessibility.Role? { .button }
+  override func accessibilityPerformPress() -> Bool {
+    onPress()
+    return true
+  }
+}
+
+/// 数字框：平时是只读的标签，输入时可编辑；拿到键盘时通知胶囊挪焦点环。不画系统焦点环。
+/// 旁白按下（只读时）= 点了这个数字
 private final class NumberField: NSTextField {
   var onFocus: () -> Void = {}
+  var onPress: () -> Void = {}
 
   override init(frame: NSRect) {
     super.init(frame: frame)
@@ -246,10 +270,16 @@ private final class NumberField: NSTextField {
     return became
   }
 
+  override func accessibilityPerformPress() -> Bool {
+    onPress()
+    return true
+  }
+
   /// 输入时右键不弹文本菜单：菜单层级比遮罩低，会压在下面看不见、还占着下一次点击（同文字标注的 EditorField）。
   /// 字段编辑器的代理是正在编辑的这个框，它问代理要菜单时给 nil
   @objc(textView:menu:forEvent:atIndex:)
-  func textView(_ view: NSTextView, menu: NSMenu, for event: NSEvent, at charIndex: Int) -> NSMenu? {
+  func textView(_ view: NSTextView, menu: NSMenu, for event: NSEvent, at charIndex: Int) -> NSMenu?
+  {
     nil
   }
 }

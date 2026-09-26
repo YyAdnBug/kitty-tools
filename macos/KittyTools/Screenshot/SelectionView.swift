@@ -9,7 +9,9 @@
 // 放大镜显示中心像素的色值（C 复制），按住 ⌘ 出整屏十字准线；S 长截图、T 钉图、O 识字；
 // 标注 1–0（矩形、椭圆、箭头、直线、画笔、荧光笔、文字、序号、马赛克、聚光灯，⇧ 画正方形 / 45° 线，再按一次收起；
 // 序号单击放、画笔一路累点），画完自动选中（工具保持）：粉色虚线框 + 手柄，拖手柄改大小（⇧ 约束）、拖本体移动（⇧ 锁轴）、
-// ⌥ 拖动复制、⌘D 复制、改颜色粗细、⌫ 删除、双击文字重新编辑，⌘Z 撤销、⇧⌘Z 重做。
+// ⌥ 拖动复制、⌘D 复制、改颜色粗细、⌫ 删除、双击文字重新编辑，⌘Z 撤销、⇧⌘Z 重做（拖着标注时这几个键不响应）。
+// 旁白（Whisker §7）：遮罩整块是一个分组，标签读状态（待选 / 选区像素尺寸、当前工具、锁着的比例），顶部提示是帮助；
+// 进入调整、换工具、锁比例时主动播报（取色后的「已复制色值」由刘海岛播报）。
 
 import AppKit
 import Carbon.HIToolbox
@@ -37,11 +39,19 @@ final class SelectionView: NSView, NSTextViewDelegate {
     }
   }
   /// 截图：选区已确定，可以调整、标注、选输出方式
-  var isAdjusting = false { didSet { refresh() } }
+  var isAdjusting = false {
+    didSet {
+      if isAdjusting, !oldValue, let selection {
+        announce("已选中 \(sizeText(selection))")
+      }
+      refresh()
+    }
+  }
   /// 鼠标位置（悬停窗口、放大镜）；nil = 鼠标不在这块屏上
   var mouse: CGPoint? { didSet { refresh() } }
   private var drag: Drag? { didSet { refresh() } }
-  /// 按住空格时拖动框选变成整块平移（系统截屏的习惯）
+  /// 拖动框选途中按下空格：整块平移（系统截屏的习惯）。按下鼠标前就按着的不算（自动重复的按键也不算），
+  /// 不然按着空格从选区外拖，会去平移旧选区而不是框新的
   private var isSpaceDown = false
   /// 当前的修饰键（取自事件：flagsChanged、鼠标事件都带着，鼠标从别的屏移过来时也是准的）：⌘ 十字准线，
   /// ⇧ 锁比例、⌥ 从中心、⌃ 暂停吸附
@@ -143,8 +153,12 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private var handlesShown = false
   /// 放大镜上次在光标哪一侧（翻边时滑过去）
   private var magnifierSide: (left: Bool, above: Bool)?
+  /// 顶部提示的几段（旁白的帮助也读它）
+  private let hintParts: [String]
   /// 顶部提示临时换了一句（右键不清空）：有选区时也显示
   private var hintFlashing = false
+  /// 上一次主动播报的话（交互测试读它）
+  private(set) var announcement: String?
   /// 每次显示提示加一：旧的淡出计时作废
   private var hintGeneration = 0
 
@@ -157,6 +171,11 @@ final class SelectionView: NSView, NSTextViewDelegate {
     self.image = image
     self.windows = windows
     self.session = session
+    hintParts =
+      session.mode == .quick
+      ? session.hint.components(separatedBy: " · ")
+      : ["拖动框选", "单击选中窗口", "双击直接拷贝"]
+        + (session.lastRegion == nil ? [] : ["D 上次区域"]) + ["Esc 取消"]
     super.init(frame: .zero)
     wantsLayer = true
     if session.mode == .capture {
@@ -231,13 +250,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     sizeField.onCancel = { [unowned self] in escape() }
     sizeField.onRatio = { [unowned self] in toggleRatioMenu() }
     addSubview(sizeField)
-    if mode == .quick {
-      hint.setParts(session.hint.components(separatedBy: " · "))
-    } else {
-      hint.setParts(
-        ["拖动框选", "单击选中窗口", "双击直接拷贝"] + (session.lastRegion == nil ? [] : ["D 上次区域"])
-          + ["Esc 取消"])
-    }
+    hint.setParts(hintParts)
     if mode == .capture { makeBars() }
     updateScale()
   }
@@ -300,18 +313,18 @@ final class SelectionView: NSView, NSTextViewDelegate {
     infoSwatch.frame = CGRect(x: 10, y: 12, width: 16, height: 16)
     infoSwatch.cornerRadius = 4
     infoSwatch.borderWidth = 0.5
-    infoSwatch.borderColor = NSColor.white.withAlphaComponent(0.3).cgColor
+    infoSwatch.borderColor = Style.HUD.swatchStroke.cgColor
     infoText.frame = CGRect(x: 34, y: 5, width: side - 34 - 34, height: 30)
     infoText.isWrapped = false
     infoKey.frame = CGRect(x: side - 30, y: 11, width: 20, height: 18)
-    infoKey.backgroundColor = NSColor.white.withAlphaComponent(0.12).cgColor
+    infoKey.backgroundColor = Style.HUD.chipFill.cgColor
     infoKey.cornerRadius = 4
     infoKey.alignmentMode = .center
     infoKey.string = NSAttributedString(
       string: "C",
       attributes: [
         .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
-        .foregroundColor: NSColor.white.withAlphaComponent(0.85),
+        .foregroundColor: Style.HUD.text,
         .baselineOffset: -2,
       ])
     for layer in [infoSwatch, infoText, infoKey] { infoCard.addSublayer(layer) }
@@ -366,6 +379,48 @@ final class SelectionView: NSView, NSTextViewDelegate {
     undoStack = []
     redoStack = []
     annotations = []
+  }
+
+  // MARK: 旁白
+
+  override func isAccessibilityElement() -> Bool { true }
+  override func accessibilityRole() -> NSAccessibility.Role? { .group }
+  override func accessibilityLabel() -> String? { accessibilityState }
+  override func accessibilityHelp() -> String? { hintParts.joined(separator: "，") }
+
+  /// 旁白读的状态：待选（悬停着窗口时带窗口尺寸）/ 选区像素尺寸，调整时加当前工具、锁着的比例
+  private var accessibilityState: String {
+    guard let selection else {
+      return mouse.flatMap(windowRect(at:)).map { "待选，窗口 \(sizeText($0)) 像素" } ?? "待选"
+    }
+    var parts = ["选区 \(sizeText(selection)) 像素"]
+    if mode == .capture, isAdjusting {
+      if let tool { parts.append("当前工具：\(tool.title)") }
+      if let ratio = session.lockedRatio {
+        parts.append("比例 \(RegionSelector.ratioTitle(ratio))")
+      }
+    }
+    return parts.joined(separator: "，")
+  }
+
+  /// 主动播报：本 App 不激活，VoiceOver 的焦点多半不在遮罩上，状态切换要自己说出来
+  private func announce(_ text: String) {
+    announcement = text
+    NSAccessibility.post(
+      element: NSApp as Any, notification: .announcementRequested,
+      userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+  }
+
+  /// 选区（点）在冻结帧上的像素宽高：尺寸胶囊、旁白共用
+  private func pixelSize(of rect: CGRect) -> (width: Int, height: Int) {
+    let pixels = RegionSelector.pixelRect(
+      rect, viewSize: bounds.size, imageSize: CGSize(width: image.width, height: image.height))
+    return (Int(pixels.width), Int(pixels.height))
+  }
+
+  private func sizeText(_ rect: CGRect) -> String {
+    let size = pixelSize(of: rect)
+    return "\(size.width) × \(size.height)"
   }
 
   // MARK: 画面
@@ -468,11 +523,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
     let measured = selection ?? hovered
     sizeField.isHidden = measured == nil
     if let measured {
-      let pixels = RegionSelector.pixelRect(
-        measured, viewSize: bounds.size,
-        imageSize: CGSize(width: image.width, height: image.height))
+      let pixels = pixelSize(of: measured)
       sizeField.show(
-        width: Int(pixels.width), height: Int(pixels.height), interactive: adjusting,
+        width: pixels.width, height: pixels.height, interactive: adjusting,
         ratio: RegionSelector.ratioTitle(session.lockedRatio), locked: session.lockedRatio != nil)
       let size = sizeField.frame.size
       let x = max(bounds.minX, min(measured.minX, bounds.maxX - size.width))
@@ -607,9 +660,12 @@ final class SelectionView: NSView, NSTextViewDelegate {
     }
   }
 
-  /// 悬停（或正在拖）的边 / 角：拖手柄时就是那个手柄；其余拖动、输入文字 / 尺寸、开着菜单、鼠标在栏上或选中标注的手柄上时没有
+  /// 悬停（或正在拖）的边 / 角：拖手柄时是在动的那侧（拖过对边就换到另一侧）；其余拖动、输入文字 / 尺寸、开着菜单、
+  /// 鼠标在栏上或选中标注的手柄上时没有
   private func hotHandle(in rect: CGRect) -> RegionSelector.Handle? {
-    if case .resize(let handle, _)? = drag { return handle }
+    if case .resize(let handle, _)? = drag {
+      return (dragPoint ?? mouse).map { handle.facing($0, in: rect) } ?? handle
+    }
     guard drag == nil, editor == nil, !sizeField.isEditing, hudMenu == nil, let mouse,
       !isOverControls(mouse), annotationHandle(at: mouse) == nil
     else { return nil }
@@ -740,14 +796,14 @@ final class SelectionView: NSView, NSTextViewDelegate {
         string: sample.hex,
         attributes: [
           .font: NSFont.monospacedSystemFont(ofSize: 13, weight: .semibold),
-          .foregroundColor: NSColor.white.withAlphaComponent(0.95),
+          .foregroundColor: Style.HUD.text,
         ])
       info.append(
         NSAttributedString(
           string: "\n\(x), \(y)",
           attributes: [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular),
-            .foregroundColor: NSColor.white.withAlphaComponent(0.6),
+            .foregroundColor: Style.HUD.secondaryText,
           ]))
       infoText.string = info
     }
@@ -956,10 +1012,11 @@ final class SelectionView: NSView, NSTextViewDelegate {
     else { return }
     let directory = FileManager.default.displayName(atPath: ScreenshotOutput.saveDirectory.path)
     present(
-      HUDMenu([
-        .init(title: "存储到「\(directory)」", key: "⌘S") { [weak self] in self?.output(.save) },
-        .init(title: "另存为…", key: "⇧⌘S") { [weak self] in self?.output(.saveAs) },
-      ]),
+      HUDMenu(
+        [
+          .init(title: "存储到「\(directory)」", key: "⌘S") { [weak self] in self?.output(.save) },
+          .init(title: "另存为…", key: "⇧⌘S") { [weak self] in self?.output(.saveAs) },
+        ], label: "存储选项"),
       anchor: body.convert(body.bounds, to: self).union(caret.convert(caret.bounds, to: self)))
   }
 
@@ -974,7 +1031,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
           HUDMenu.Entry(title: preset.title, checked: preset.value == locked) { [weak self] in
             self?.lockRatio(preset.value)
           }
-        }),
+        }, label: "比例"),
       anchor: sizeField.convert(sizeField.ratioFrame, to: self))
   }
 
@@ -986,6 +1043,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     }
     refresh()
     refreshCursor()
+    announce(ratio.map { "已锁定比例 \(RegionSelector.ratioTitle($0))" } ?? "已解锁比例")
   }
 
   /// 点了尺寸胶囊的数字：收掉菜单和输入中的文字，两个数变成输入框
@@ -1026,6 +1084,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     } else if tool != nil {
       tool = nil
       refreshCursor()
+      announce("已收起工具")
     } else {
       session.finish(nil)
     }
@@ -1111,9 +1170,18 @@ final class SelectionView: NSView, NSTextViewDelegate {
     return copy
   }
 
+  /// 正拖着标注（画、挪、改大小）：撤销 / 重做 / 删除 / 复制 / 方向键挪标注都不响应。松手时要按按下前的样子记一步撤销，
+  /// 中途改了标注列表，撤销栈和松手时的那一步就对不上了
+  private var isDraggingAnnotation: Bool {
+    switch drag {
+    case .annotate?, .moveAnnotation?, .resizeAnnotation?: true
+    default: false
+    }
+  }
+
   /// ⌘D：选中的标注复制一份，往右下偏 12（原点左下，y 是 −12），选中副本
   private func duplicateSelected() {
-    guard let selected else { return }
+    guard !isDraggingAnnotation, let selected else { return }
     let copy = duplicate(selected, offset: CGSize(width: 12, height: -12))
     commit(annotations + [copy])
     selectedAnnotation = copy.id
@@ -1136,6 +1204,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     tool = chosen
     selectedAnnotation = nil
     refreshCursor()
+    announce(chosen.map { "\($0.title)工具" } ?? "已收起工具")
   }
 
   /// 改了标注就记一步撤销（没变不记）
@@ -1147,6 +1216,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
   }
 
   private func undo() {
+    guard !isDraggingAnnotation else { return }
     endEditing()
     guard let previous = undoStack.popLast() else { return NSSound.beep() }
     redoStack.append(annotations)
@@ -1155,6 +1225,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
   }
 
   private func redo() {
+    guard !isDraggingAnnotation else { return }
     endEditing()
     guard let next = redoStack.popLast() else { return NSSound.beep() }
     undoStack.append(annotations)
@@ -1194,7 +1265,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
   }
 
   private func deleteSelected() {
-    guard let id = selectedAnnotation else { return }
+    guard !isDraggingAnnotation, let id = selectedAnnotation else { return }
     selectedAnnotation = nil
     commit(annotations.filter { $0.id != id })
   }
@@ -1378,6 +1449,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
   override func mouseDown(with event: NSEvent) {
     let point = point(event)
     modifiers = event.modifierFlags
+    isSpaceDown = false  // 按下前就按着的空格不算平移（见 isSpaceDown）
     guard mode == .capture else {
       window?.makeKey()  // 按键跟着最后操作的那块屏幕走
       session.activate(self)
@@ -1417,12 +1489,12 @@ final class SelectionView: NSView, NSTextViewDelegate {
         return
       }
       if let hit {
-        // ⌥：先复制一份（序号换下一个号）放在最上面，拖的是副本
+        // ⌥：先复制一份（序号换下一个号）放在最上面，拖的是副本，光标带 +
         let before = annotations
         let target = modifiers.contains(.option) ? duplicate(hit, offset: .zero) : hit
         if target.id != hit.id { annotations.append(target) }
         selectedAnnotation = target.id
-        NSCursor.closedHand.set()
+        (target.id == hit.id ? NSCursor.closedHand : .dragCopy).set()
         drag = .moveAnnotation(
           target, start: point, before: before, copyOf: target.id == hit.id ? nil : hit.id)
         return
@@ -1467,7 +1539,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
       let restore = isAdjusting ? selection : nil
       isAdjusting = false
       drag = .draw(anchor: start, last: start, restore: restore)
-      extend(to: point)
+      extend(to: point, pans: false)  // 这时的选区还是旧的：先框出新框，之后按空格才平移它
     case .draw?:
       extend(to: point)
     case .move(let start, let original)?:
@@ -1502,8 +1574,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
       if case .pen(let drawn)? = draft?.shape { points = drawn }
       if let last = points.last, hypot(point.x - last.x, point.y - last.y) < 1.5 { return }
       draft = Annotation(id: draft?.id ?? UUID(), shape: .pen(points + [point]), style: style)
-    case .moveAnnotation(let original, let start, _, _)?:
-      NSCursor.closedHand.set()
+    case .moveAnnotation(let original, let start, _, let copyOf)?:
+      (copyOf == nil ? NSCursor.closedHand : .dragCopy).set()
       var delta = CGSize(width: point.x - start.x, height: point.y - start.y)
       if constrained {
         if abs(delta.width) > abs(delta.height) { delta.height = 0 } else { delta.width = 0 }
@@ -1517,10 +1589,10 @@ final class SelectionView: NSView, NSTextViewDelegate {
   }
 
   /// 拖动框选：从锚点拉到当前点（锁着比例时按它，否则 ⇧ 正方形；⌥ 从中心、吸附）；按住空格整块平移，锚点跟着走
-  private func extend(to point: CGPoint) {
+  private func extend(to point: CGPoint, pans: Bool? = nil) {
     guard case .draw(var anchor, let last, let restore)? = drag else { return }
     NSCursor.crosshair.set()
-    if isSpaceDown, let current = selection {
+    if pans ?? isSpaceDown, let current = selection {
       let moved = RegionSelector.moved(
         current, by: CGSize(width: point.x - last.x, height: point.y - last.y), within: bounds)
       anchor.x += moved.minX - current.minX
@@ -1720,9 +1792,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
   override func keyDown(with event: NSEvent) {
     let code = Int(event.keyCode)
     if code == kVK_Escape { return escape() }
-    // 空格：拖动框选时整块平移（截图翻译 / 识字也是）
+    // 空格：拖动框选时整块平移（截图翻译 / 识字也是）；按住不放的自动重复不算新按下
     if code == kVK_Space {
-      isSpaceDown = true
+      if !event.isARepeat { isSpaceDown = true }
       return
     }
     let flags = event.modifierFlags.intersection([.command, .control, .option])
@@ -1818,7 +1890,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
 
   /// 方向键：选中了标注就挪标注（每下记一步撤销），否则微调选区
   private func nudge(_ dx: CGFloat, _ dy: CGFloat) {
-    guard isAdjusting, let selection else { return }
+    guard isAdjusting, !isDraggingAnnotation, let selection else { return }
     if let id = selectedAnnotation, let index = annotations.firstIndex(where: { $0.id == id }) {
       var next = annotations
       next[index] = next[index].offset(by: CGSize(width: dx, height: dy))

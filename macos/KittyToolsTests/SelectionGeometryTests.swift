@@ -175,4 +175,15 @@ struct SelectionGeometryTests {
     #expect(RegionSelector.ratioTitle(16.0 / 9) == "16:9")
     #expect(RegionSelector.ratioTitle(nil) == "自由")
   }
+
+  // 拖过对边后在动的是另一侧：左边拖到右边外面就是右边，角两个方向各自翻；只看这个手柄管的方向
+  @Test func handleFacingFlipsAcrossOppositeEdge() {
+    let rect = CGRect(x: 700, y: 200, width: 100, height: 300)
+    #expect(RegionSelector.Handle.left.facing(CGPoint(x: 800, y: 350), in: rect) == .right)
+    #expect(RegionSelector.Handle.left.facing(CGPoint(x: 700, y: 350), in: rect) == .left)
+    #expect(RegionSelector.Handle.top.facing(CGPoint(x: 900, y: 200), in: rect) == .bottom)
+    #expect(RegionSelector.Handle.topLeft.facing(CGPoint(x: 800, y: 500), in: rect) == .topRight)
+    #expect(
+      RegionSelector.Handle.topLeft.facing(CGPoint(x: 800, y: 200), in: rect) == .bottomRight)
+  }
 }

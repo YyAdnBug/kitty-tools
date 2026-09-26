@@ -518,7 +518,7 @@ final class ScrollCaptureHUD: NSVisualEffectView {
     preview.layer?.cornerRadius = Style.Radius.control
     preview.layer?.cornerCurve = .continuous
     preview.layer?.masksToBounds = true
-    preview.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.04).cgColor
+    preview.layer?.backgroundColor = Style.HUD.chipFill.cgColor
     fadeMask.colors = [
       NSColor.clear.cgColor, NSColor.black.cgColor, NSColor.black.cgColor, NSColor.clear.cgColor,
     ]
@@ -560,6 +560,7 @@ final class ScrollCaptureHUD: NSVisualEffectView {
         size: primary ? CGSize(width: 28, height: 28) : CGSize(width: 30, height: 28))
       button.tag = buttons.count
       button.contentTintColor = Style.HUD.text
+      button.showsHover = !primary  // 粉圆是图，悬停底会在圆后面露出一块方角
       buttons.append((item, button))
       row.append(button)
     }

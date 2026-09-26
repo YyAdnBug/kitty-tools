@@ -89,6 +89,29 @@ enum RegionSelector {
         x: movesMinX ? rect.minX : movesMaxX ? rect.maxX : rect.midX,
         y: movesMinY ? rect.minY : movesMaxY ? rect.maxY : rect.midY)
     }
+
+    /// 横、竖各靠哪一侧（-1 小的那条边、1 大的那条边、0 都不靠）；两个都是 0 时没有手柄
+    init?(x: Int, y: Int) {
+      switch (x, y) {
+      case (-1, -1): self = .bottomLeft
+      case (1, -1): self = .bottomRight
+      case (1, 1): self = .topRight
+      case (-1, 1): self = .topLeft
+      case (0, -1): self = .bottom
+      case (0, 1): self = .top
+      case (-1, 0): self = .left
+      case (1, 0): self = .right
+      default: return nil
+      }
+    }
+
+    /// 拖动中实际在动的边 / 角：拖过对边后选区翻了过去，动的是另一侧（加粗的边、放大的手柄跟着走）。
+    /// 只看这个手柄管的方向，按拖动点在选区中线的哪一侧定
+    func facing(_ point: CGPoint, in rect: CGRect) -> Handle {
+      let x = movesMinX || movesMaxX ? (point.x < rect.midX ? -1 : 1) : 0
+      let y = movesMinY || movesMaxY ? (point.y < rect.midY ? -1 : 1) : 0
+      return Handle(x: x, y: y) ?? self
+    }
   }
 
   /// 点中的手柄：整条边都能拖（系统截屏、CleanShot 的习惯），不只是 8 个手柄点。每条边一条带：边外 tolerance、
@@ -107,17 +130,7 @@ enum RegionSelector {
     }
     guard let x = side(point.x, rect.minX, rect.maxX), let y = side(point.y, rect.minY, rect.maxY)
     else { return nil }
-    switch (x, y) {
-    case (-1, -1): return .bottomLeft
-    case (1, -1): return .bottomRight
-    case (1, 1): return .topRight
-    case (-1, 1): return .topLeft
-    case (0, -1): return .bottom
-    case (0, 1): return .top
-    case (-1, 0): return .left
-    case (1, 0): return .right
-    default: return nil
-    }
+    return Handle(x: x, y: y)
   }
 
   /// 拖手柄：从按下时的选区 original 出发，把手柄管的边移到 point（先夹进 bounds）；越过对边就翻过去。宽高至少 1 点。

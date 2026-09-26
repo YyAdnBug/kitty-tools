@@ -154,7 +154,8 @@ enum Style {
 
   /// HUD 皮肤（永远深色，mac-whisker §2）：截图工具栏、样式托盘、尺寸胶囊、提示、放大镜信息卡、钉图圆钮、
   /// 常驻缩略图胶囊、长截图面板共用。有材质的用 NSVisualEffectView（`.hudWindow` + vibrantDark），
-  /// 纯图层画的小控件用 fill；降低透明度时不透明、增强对比度时内描边加粗
+  /// 纯图层画的小控件用 fill；降低透明度时不透明、增强对比度时内描边加粗、小底块和分隔线加深。
+  /// 截图家族里自绘的半透明 HUD 零件一律从这里取色，不写字面量（不然两个无障碍开关管不到）
   enum HUD {
     /// 纯图层控件的底色
     static var fill: NSColor { NSColor(white: 0.11, alpha: reduceTransparency ? 0.97 : 0.82) }
@@ -167,10 +168,16 @@ enum Style {
     static let text = NSColor.white.withAlphaComponent(0.95)
     static let secondaryText = NSColor.white.withAlphaComponent(0.60)
     static let tertiaryText = NSColor.white.withAlphaComponent(0.40)
-    /// 悬停底（按钮后面 control 圆角的浅色块）
-    static let hoverFill = NSColor.white.withAlphaComponent(0.10)
-    /// 分组分隔线 1 × 18
-    static let separator = NSColor.white.withAlphaComponent(0.14)
+    /// 悬停底（按钮后面 control 圆角的浅色块）white 0.10（增强对比度 0.20）
+    static var hoverFill: NSColor { .white.withAlphaComponent(increaseContrast ? 0.20 : 0.10) }
+    /// 分组分隔线 1 × 18 white 0.14（增强对比度 0.35）
+    static var separator: NSColor { .white.withAlphaComponent(increaseContrast ? 0.35 : 0.14) }
+    /// 小底块（键帽、比例按钮、分段轨道、预览槽）white 0.08（增强对比度 0.20）
+    static var chipFill: NSColor { .white.withAlphaComponent(increaseContrast ? 0.20 : 0.08) }
+    /// 分段里选中的那段 white 0.16（增强对比度 0.32）
+    static var selectedFill: NSColor { .white.withAlphaComponent(increaseContrast ? 0.32 : 0.16) }
+    /// 色点描边（黑色点在深色栏上也看得见）white 0.35（增强对比度 0.60）
+    static var swatchStroke: NSColor { .white.withAlphaComponent(increaseContrast ? 0.60 : 0.35) }
 
     /// 遮罩里的浮动控件阴影：black 0.35、模糊 18（CALayer shadowRadius 取一半）、向下 6，必须设 shadowPath
     static func applyShadow(to layer: CALayer, path: CGPath) {

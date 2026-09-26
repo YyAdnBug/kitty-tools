@@ -197,7 +197,7 @@ final class EditorToolbar: PopView {
       ],
       [
         (.output(.save), "square.and.arrow.down", "保存", "保存到「\(directory)」（⌘S）"),
-        (.saveMenu, "chevron.down", "更多存储方式", "存储到… / 另存为…"),
+        (.saveMenu, "chevron.down", "更多存储选项", "存储到… / 另存为…"),
       ],
       [(.cancel, "xmark", "取消", "取消（Esc）"), (.output(.copy), "checkmark", "拷贝", "拷贝（↩）")],
     ]
@@ -395,7 +395,8 @@ final class StyleBar: HUDBar {
     colors =
       tool.hasColor
       ? Annotation.Palette.allCases.map { color in
-        let swatch = Swatch(fill: color.color, diameter: 14, outlined: true, label: color.title)
+        let swatch = Swatch(
+          fill: color.color, diameter: 14, outlined: true, label: "\(color.title)色")
         swatch.tag = color.rawValue
         swatch.target = self
         swatch.action = #selector(pickColor(_:))
@@ -403,7 +404,7 @@ final class StyleBar: HUDBar {
       } : []
     weights = tool.weightTitles.enumerated().map { index, title in
       let swatch = Swatch(
-        fill: .white.withAlphaComponent(0.92), diameter: [4, 7, 10][index], outlined: false,
+        fill: Style.HUD.text, diameter: [4, 7, 10][index], outlined: false,
         label: title)
       swatch.tag = index
       swatch.target = self
@@ -432,7 +433,7 @@ final class StyleBar: HUDBar {
       segment.spacing = 0
       segment.edgeInsets = NSEdgeInsets(top: 2, left: 2, bottom: 2, right: 2)
       segment.wantsLayer = true
-      segment.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.07).cgColor
+      segment.layer?.backgroundColor = Style.HUD.chipFill.cgColor
       segment.layer?.cornerRadius = 7
       segment.layer?.cornerCurve = .continuous
       views += [barSeparator(), segment]
@@ -441,15 +442,15 @@ final class StyleBar: HUDBar {
     preferredSize = CGSize(width: ceil(stack.fittingSize.width + 1), height: 34)
   }
 
-  /// 选项分段：选中 white 0.16 底 + 白字，其余 white 0.7 字
+  /// 选项分段：选中 HUD 选中底 + 主文字色，其余次文字色
   private static func mark(_ button: NSButton, on: Bool) {
     button.attributedTitle = NSAttributedString(
       string: button.title,
       attributes: [
         .font: NSFont.systemFont(ofSize: 11.5, weight: .medium),
-        .foregroundColor: on ? NSColor.white : NSColor.white.withAlphaComponent(0.7),
+        .foregroundColor: on ? Style.HUD.text : Style.HUD.secondaryText,
       ])
-    button.layer?.backgroundColor = on ? NSColor.white.withAlphaComponent(0.16).cgColor : nil
+    button.layer?.backgroundColor = on ? Style.HUD.selectedFill.cgColor : nil
   }
 
   /// 从 anchorX（自身坐标，工具按钮的中线）靠栏那一侧长出来
@@ -525,7 +526,7 @@ private final class Swatch: BarButton {
     dot.backgroundColor = fill.cgColor
     if outlined {  // 黑色在深色栏上也看得见
       dot.borderWidth = 0.5
-      dot.borderColor = NSColor.white.withAlphaComponent(0.35).cgColor
+      dot.borderColor = Style.HUD.swatchStroke.cgColor
     }
     let ringSide = diameter + 8
     ring.frame = CGRect(
@@ -567,7 +568,7 @@ private final class Swatch: BarButton {
 // MARK: - HUD 菜单
 
 /// 遮罩里的 HUD 弹出菜单：锚点下方 6 pt（放不下放上方），snap 从锚点那侧放大出来；点了一项先收起再执行。
-/// 调用方（SelectionView）同时最多开一个，Esc、点外面都先收它
+/// 调用方（SelectionView）同时最多开一个，Esc、点外面都先收它。旁白里是一组按钮（label 是组名），勾着的那项值是「已选中」
 final class HUDMenu: HUDBar {
   struct Entry {
     let title: String
@@ -579,7 +580,7 @@ final class HUDMenu: HUDBar {
   var onDismiss: () -> Void = {}
   private static let rowHeight: CGFloat = 28
 
-  init(_ entries: [Entry]) {
+  init(_ entries: [Entry], label: String) {
     let checks = entries.contains { $0.checked }
     let rows = entries.map { HUDMenuRow($0, checkColumn: checks) }
     let width = max(130, rows.map(\.fittingWidth).max() ?? 0)
@@ -599,7 +600,8 @@ final class HUDMenu: HUDBar {
       effect.addSubview(row)
     }
     setAccessibilityElement(true)
-    setAccessibilityRole(.menu)
+    setAccessibilityRole(.group)
+    setAccessibilityLabel(label)
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -667,10 +669,10 @@ private final class HUDMenuRow: NSView {
       NSTrackingArea(
         rect: .zero, options: [.activeAlways, .inVisibleRect, .mouseEnteredAndExited], owner: self))
     setAccessibilityElement(true)
-    setAccessibilityRole(.menuItem)
+    setAccessibilityRole(.button)
     setAccessibilityLabel(entry.title)
     setAccessibilityHelp(entry.key)
-    setAccessibilitySelected(entry.checked)
+    setAccessibilityValue(entry.checked ? "已选中" : nil)
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -715,7 +717,7 @@ private final class HUDMenuRow: NSView {
     let cap = CGRect(
       x: bounds.maxX - 9 - size.width - 10, y: (bounds.height - 18) / 2, width: size.width + 10,
       height: 18)
-    NSColor.white.withAlphaComponent(0.1).setFill()
+    Style.HUD.chipFill.setFill()
     NSBezierPath(roundedRect: cap, xRadius: Style.Radius.mini, yRadius: Style.Radius.mini).fill()
     key.draw(at: CGPoint(x: cap.minX + 5, y: cap.midY - size.height / 2))
   }

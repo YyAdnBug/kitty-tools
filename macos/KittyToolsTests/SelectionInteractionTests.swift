@@ -457,6 +457,34 @@ struct SelectionInteractionTests {
     #expect(h.view.hotHandle == nil)
   }
 
+  // 拖左边翻过右边：加粗的边、放大的手柄换到右边（光标那一侧），松手后选区在原右边的右侧
+  @Test func hotEdgeFollowsWhenDraggedAcrossOppositeEdge() {
+    let h = Harness()
+    h.makeSelection()
+    h.begin(CGPoint(x: 300, y: 350), to: CGPoint(x: 800, y: 350))
+    #expect(h.view.selection == CGRect(x: 700, y: 200, width: 100, height: 300))
+    #expect(h.view.hotHandle == .right)
+    h.release(CGPoint(x: 800, y: 350))
+    #expect(h.view.selection == CGRect(x: 700, y: 200, width: 100, height: 300))
+  }
+
+  // 空格只平移这一次拖出来的新框：拖之前就按着空格，从选区外拖是框新选区（不是平移旧的）；拖动中按下空格才平移
+  @Test func spaceHeldBeforeDragStillDrawsNewSelection() {
+    let h = Harness()
+    h.makeSelection()
+    h.key(kVK_Space, " ")
+    h.drag(CGPoint(x: 800, y: 550), CGPoint(x: 1000, y: 700))
+    #expect(h.view.selection == CGRect(x: 800, y: 550, width: 200, height: 150))
+    #expect(h.view.isAdjusting)
+    // 拖动中按下空格：整块平移，锚点跟着走
+    let fresh = Harness()
+    fresh.begin(CGPoint(x: 100, y: 100), to: CGPoint(x: 300, y: 200))
+    fresh.key(kVK_Space, " ")
+    fresh.view.mouseDragged(with: fresh.event(.leftMouseDragged, CGPoint(x: 350, y: 220)))
+    #expect(fresh.view.selection == CGRect(x: 150, y: 120, width: 200, height: 100))
+    fresh.release(CGPoint(x: 350, y: 220))
+  }
+
   // ⇧ 框选：正方形；拖动中按下 / 松开 ⇧ 立刻重算
   @Test func shiftDrawsSquareAndReactsMidDrag() {
     let h = Harness()
