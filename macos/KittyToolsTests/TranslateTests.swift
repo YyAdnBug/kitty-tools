@@ -278,7 +278,8 @@ struct HistoryStoreTests {
   }
 }
 
-/// 翻译历史列表（N7）：按天分组、高亮前缀和、↑↓ 循环、⌘⌫ 删后选中下一条、⌘Z 插回
+/// 翻译历史列表（N7）：按天分组、高亮前缀和、↑↓ 循环、⌘⌫ 删 / 收藏范围里取消收藏后选中下一条、⌘Z 插回、
+/// 关历史时焦点回原文框
 struct HistoryListTests {
   @Test func groupsByDayAndOffsets() throws {
     var calendar = Calendar(identifier: .gregorian)
@@ -330,6 +331,42 @@ struct HistoryListTests {
     #expect(list.selected?.source == "c")  // 搜索词变了：选中回到第一条
     list.reset()
     #expect(list.query.isEmpty && list.entries.count == 3)
+  }
+
+  /// 「收藏」范围里 ⌘S 取消收藏选中的一条：这行消失，选中和删除一样挪到下一条（不跳回第一条）
+  @Test func unfavoriteInFavoritesScopeMovesSelection() throws {
+    let store = try HistoryStore(db: Database(path: ":memory:"))
+    for word in ["c", "b", "a"] {
+      store.add(source: word, target: .en, result: word.uppercased(), service: "", limit: 0)
+    }
+    for entry in store.search("") { store.setFavorite(entry.id, true) }
+    let list = HistoryList(store: store)
+    list.favoritesOnly = true
+    list.move(by: 1)
+    let b = try #require(list.selected)
+    #expect(b.source == "b")
+    list.toggleFavorite(b)
+    #expect(list.entries.map(\.source) == ["a", "c"])
+    #expect(list.selected?.source == "c")
+    list.toggleFavorite(try #require(list.selected))
+    #expect(list.selected?.source == "a")  // 取消的是最后一条：挪到上一条
+  }
+
+  /// 关历史时焦点立刻回原文框；历史已关（搜索框还在淡出）时搜索框的命令一律交还，↩ 不会重译第一条、Esc 不被吞
+  @Test func closingHistoryReturnsFocusAndReleasesCommands() throws {
+    let coordinator = TranslateCoordinator(
+      services: TranslateServiceStore(), history: try HistoryStore(db: Database(path: ":memory:")))
+    var focused = 0
+    coordinator.focusSource = { focused += 1 }
+    coordinator.showsHistory = true
+    #expect(focused == 0)
+    coordinator.showsHistory = false
+    #expect(focused == 1)
+    coordinator.showsHistory = false
+    #expect(focused == 1)  // 本来就关着：不动焦点
+    #expect(!coordinator.handleHistoryCommand(#selector(NSResponder.insertNewline(_:))))
+    #expect(!coordinator.handleHistoryCommand(#selector(NSResponder.cancelOperation(_:))))
+    #expect(!coordinator.handleHistoryCommand(#selector(NSResponder.moveDown(_:))))
   }
 }
 

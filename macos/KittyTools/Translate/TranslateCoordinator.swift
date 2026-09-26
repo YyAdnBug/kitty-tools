@@ -31,9 +31,14 @@ import Observation
   }
 
   var sourceText = ""
-  /// 翻译历史盖在结果区上（⌘Y、「⋯」菜单）；开 / 关都让列表复位（搜索词、范围、选中、撤销）
+  /// 翻译历史盖在结果区上（⌘Y、「⋯」菜单）；开 / 关都让列表复位（搜索词、范围、选中、撤销）。
+  /// 关上时焦点立刻还给原文框：不等历史区淡出，不然淡出期间按的键落进看不见、已复位的搜索框
   var showsHistory = false {
-    didSet { if showsHistory != oldValue { historyList.reset() } }
+    didSet {
+      guard showsHistory != oldValue else { return }
+      historyList.reset()
+      if !showsHistory { focusSource() }
+    }
   }
   /// 翻译历史的键盘列表（N7）
   let historyList: HistoryList
@@ -345,6 +350,8 @@ import Observation
   @ObservationIgnored var hidePanel: () -> Void = {}
   /// 打开设置 › 翻译（⌘,、「⋯」菜单、错误卡片和空状态的按钮），由 AppDelegate 接上
   @ObservationIgnored var openSettings: () -> Void = {}
+  /// 把焦点还给原文框（关历史时），由 AppDelegate 接上
+  @ObservationIgnored var focusSource: () -> Void = {}
 
   static let fontScales = 0.8...1.6
 
@@ -397,8 +404,9 @@ import Observation
   ]
 
   /// 历史搜索框的编辑命令（doCommandBy，输入法组字时不会来）：↑↓ 选、↩ 重新翻译这条、⇧Tab 换范围、
-  /// Esc 先清搜索词再关历史（回到浮窗）。返回 false 交还字段编辑器
+  /// Esc 先清搜索词再关历史（回到浮窗）。返回 false 交还字段编辑器；历史已关（搜索框还在淡出）时一律交还
   func handleHistoryCommand(_ selector: Selector) -> Bool {
+    guard showsHistory else { return false }
     switch selector {
     case #selector(NSResponder.moveUp(_:)): historyList.move(by: -1)
     case #selector(NSResponder.moveDown(_:)): historyList.move(by: 1)

@@ -33,6 +33,8 @@ struct TranslatePanelView: View {
   @State private var resultsHeight: CGFloat = 0
   /// 互换钮转了几个半圈
   @State private var swaps = 0
+  /// 原文框拿着焦点：输入框底画焦点环（和历史搜索框只有一个亮）
+  @State private var sourceFocused = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
@@ -215,6 +217,8 @@ struct TranslatePanelView: View {
         onCancel: coordinator.showsHistory ? { coordinator.showsHistory = false } : nil
       ) {
         coordinator.start()
+      } onFocusChange: {
+        sourceFocused = $0
       }
       .frame(height: 76)
       .overlay(alignment: .topLeading) {
@@ -288,7 +292,7 @@ struct TranslatePanelView: View {
     .padding(.horizontal, 10)
     .padding(.top, 8)
     .padding(.bottom, 8)
-    .modifier(InputBox())
+    .modifier(InputBox(isFocused: sourceFocused))
   }
 
   /// 只在出乎所选时写一行：固定目标正好是原文语言而改译了另一端；固定源和检测结果对不上（照所选发出，只提示）
@@ -513,17 +517,32 @@ private struct TranslateCapsule: View {
   }
 }
 
-/// 输入框底（Whisker §2：primary 0.045 / 深 0.07 + 0.5 pt 发丝线，圆角 card）：原文框、历史搜索框共用
+/// 输入框底（Whisker §2：primary 0.045 / 深 0.07 + 0.5 pt 发丝线，圆角 card）：原文框、历史搜索框共用。
+/// 拿着焦点时换成焦点环（Whisker §1.3：1 pt 品牌粉 0.55 描边 + 粉 0.18 外发光，画法同剪贴板对话框），淡入淡出
 struct InputBox: ViewModifier {
+  var isFocused = false
   @Environment(\.colorScheme) private var scheme
 
   func body(content: Content) -> some View {
     let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
+    let fade = Animation.easeOut(duration: Style.fadeIn)
     content
       .background(
         scheme == .dark ? Color.white.opacity(0.07) : Color.black.opacity(0.045), in: shape
       )
-      .overlay(shape.strokeBorder(Style.hairline, lineWidth: 0.5))
+      // 外发光画在描边上再模糊（不给整块加 shadow：那样连里面的字都带光晕）
+      .background {
+        shape.stroke(Style.brand.opacity(0.18), lineWidth: 4).blur(radius: 2)
+          .opacity(isFocused ? 1 : 0)
+          .animation(fade, value: isFocused)
+      }
+      .overlay {
+        shape
+          .strokeBorder(
+            isFocused ? Style.brand.opacity(0.55) : Style.hairline, lineWidth: isFocused ? 1 : 0.5
+          )
+          .animation(fade, value: isFocused)
+      }
   }
 }
 

@@ -1,6 +1,7 @@
 // 多行输入框（包一层 NSTextView）：翻译原文、剪贴板备注 / 编辑 / 片段都用它。回车走 doCommandBy，
 // 输入法组字期间由输入法消费、不会误提交。主输入框挂进窗口时设为 initialFirstResponder；
-// 对话框里的输入框出现时抢焦点、消失时把焦点还给主输入框。插入点和选中文字底色是品牌粉（mac-overlay-panel §3）。
+// 对话框里的输入框出现时抢焦点、消失时把焦点还给主输入框（焦点已在别的输入框里就不抢）。插入点和选中文字底色是
+// 品牌粉（mac-overlay-panel §3）；onFocusChange：焦点进出时回调（外面的输入框底据此画 Whisker 焦点环）。
 
 import AppKit
 import Carbon.HIToolbox
@@ -14,9 +15,12 @@ struct SourceTextView: NSViewRepresentable {
   var isDialogField = false
   var onCancel: (() -> Void)?
   var onSubmit: () -> Void = {}
+  /// 焦点进出（画焦点环用）
+  var onFocusChange: ((Bool) -> Void)?
 
   func makeNSView(context: Context) -> FocusScrollView {
-    let textView = NSTextView(frame: .zero)
+    let textView = FocusTextView(frame: .zero)
+    textView.onFocusChange = onFocusChange
     textView.isRichText = false
     textView.allowsUndo = true
     textView.font = .systemFont(ofSize: fontSize)
@@ -43,7 +47,8 @@ struct SourceTextView: NSViewRepresentable {
 
   func updateNSView(_ scroll: FocusScrollView, context: Context) {
     context.coordinator.parent = self
-    guard let textView = scroll.documentView as? NSTextView else { return }
+    guard let textView = scroll.documentView as? FocusTextView else { return }
+    textView.onFocusChange = onFocusChange
     if textView.string != text { textView.string = text }
     if textView.font?.pointSize != fontSize { textView.font = .systemFont(ofSize: fontSize) }
   }
@@ -89,6 +94,29 @@ struct SourceTextView: NSViewRepresentable {
     }
   }
 
+  final class FocusTextView: NSTextView {
+    var onFocusChange: ((Bool) -> Void)?
+
+    override func becomeFirstResponder() -> Bool {
+      defer { reportFocus() }
+      return super.becomeFirstResponder()
+    }
+
+    override func resignFirstResponder() -> Bool {
+      defer { reportFocus() }
+      return super.resignFirstResponder()
+    }
+
+    /// 晚一拍（下一轮 run loop）、按那时的第一响应者报（焦点常在 SwiftUI 更新中途变，当场改状态会出警告）
+    private func reportFocus() {
+      if onFocusChange != nil { perform(#selector(reportFocusNow), with: nil, afterDelay: 0) }
+    }
+
+    @objc private func reportFocusNow() {
+      onFocusChange?(window?.firstResponder === self)
+    }
+  }
+
   final class FocusScrollView: NSScrollView {
     var isDialogField = false
 
@@ -101,8 +129,11 @@ struct SourceTextView: NSViewRepresentable {
       }
     }
 
+    /// 消失时还焦点，但焦点已经在别的输入框里（新弹出的对话框、已经还给主输入框）就不抢回来
     override func viewWillMove(toWindow newWindow: NSWindow?) {
-      if isDialogField, newWindow == nil, let window {
+      if isDialogField, newWindow == nil, let window,
+        !(window.firstResponder is NSText) || window.firstResponder === documentView
+      {
         window.makeFirstResponder(window.initialFirstResponder)
       }
       super.viewWillMove(toWindow: newWindow)

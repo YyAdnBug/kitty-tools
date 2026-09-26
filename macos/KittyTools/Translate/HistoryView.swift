@@ -72,14 +72,9 @@ import SwiftUI
     selectedID = entry.id
   }
 
-  /// 删一条（不确认，⌘Z 撤销）：删的是选中的就把选中挪到下一条（最后一条时挪到上一条）
+  /// 删一条（不确认，⌘Z 撤销）
   func delete(_ entry: HistoryStore.Entry) {
-    let entries = self.entries
-    if selectedID == entry.id, let index = entries.firstIndex(where: { $0.id == entry.id }) {
-      let rest = entries.filter { $0.id != entry.id }
-      selectedID = rest.isEmpty ? nil : rest[min(index, rest.count - 1)].id
-      selectionMotion = .snap
-    }
+    moveSelection(awayFrom: entry)
     deleted.append(entry)
     withAnimation(Style.Motion.settle.animation()) { store.delete(entry.id) }
     Self.announce("已删除，⌘Z 撤销")
@@ -108,8 +103,21 @@ import SwiftUI
     Self.announce("已复制译文")
   }
 
+  /// 选中的这条要从列表里消失（删除、「收藏」范围里取消收藏）：选中挪到下一条（最后一条时挪到上一条）
+  private func moveSelection(awayFrom entry: HistoryStore.Entry) {
+    let entries = self.entries
+    guard selectedID == entry.id, let index = entries.firstIndex(where: { $0.id == entry.id })
+    else {
+      return
+    }
+    let rest = entries.filter { $0.id != entry.id }
+    selectedID = rest.isEmpty ? nil : rest[min(index, rest.count - 1)].id
+    selectionMotion = .snap
+  }
+
   func toggleFavorite(_ entry: HistoryStore.Entry) {
-    // 「收藏」范围里取消收藏会让这行消失：和删除一样收拢
+    // 「收藏」范围里取消收藏会让这行消失：选中和删除一样挪到下一条，不跳回第一条
+    if favoritesOnly, entry.favorite { moveSelection(awayFrom: entry) }
     withAnimation(Style.Motion.settle.animation()) {
       store.setFavorite(entry.id, !entry.favorite)
     }
@@ -149,6 +157,8 @@ import SwiftUI
 struct HistoryView: View {
   @Bindable var coordinator: TranslateCoordinator
   @State private var hovered: UUID?
+  /// 搜索框拿着焦点：输入框底画焦点环（原文框和它只有一个亮）
+  @State private var searchFocused = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.colorSchemeContrast) private var contrast
 
@@ -173,11 +183,11 @@ struct HistoryView: View {
           // 对话框式输入框：出现时抢焦点，关历史时把焦点还给原文框
           CommandTextField(
             text: $list.query, placeholder: "搜索原文或译文", isDialogField: true, fontSize: 13,
-            onCommand: coordinator.handleHistoryCommand)
+            onCommand: coordinator.handleHistoryCommand, onFocusChange: { searchFocused = $0 })
         }
         .padding(.horizontal, 8)
         .frame(height: 28)
-        .modifier(InputBox())
+        .modifier(InputBox(isFocused: searchFocused))
         ScopeCapsule(title: "全部", isOn: !list.favoritesOnly) { list.favoritesOnly = false }
         ScopeCapsule(title: "收藏", isOn: list.favoritesOnly) { list.favoritesOnly = true }
       }

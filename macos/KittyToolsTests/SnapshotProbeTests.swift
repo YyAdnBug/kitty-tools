@@ -434,8 +434,10 @@ struct SnapshotProbeTests {
       for (name, configure) in states {
         coordinator.beginInput()
         configure(coordinator)
+        // 焦点像 present() 那样给原文框（焦点环）；历史开着时焦点在它自己抢走的搜索框
         try snapshot(
-          TranslatePanelView(coordinator: coordinator, speaker: speaker),
+          TranslatePanelView(coordinator: coordinator, speaker: speaker)
+            .background { if !coordinator.showsHistory { InitialFocusProbe() } },
           size: NSSize(width: 420, height: 560), dark: dark,
           to: "\(out)/\(name)\(dark ? "-dark" : "").png")
       }
@@ -760,5 +762,23 @@ struct SnapshotProbeTests {
     background.cacheDisplay(in: background.bounds, to: bitmap)
     try #require(bitmap.representation(using: .png, properties: [:])).write(to: URL(filePath: path))
     window.orderOut(nil)
+  }
+}
+
+/// 截图自检：挂进窗口后晚一拍把焦点给窗口的主输入框（同 OverlayPanel.present()），看翻译原文框的焦点环
+private struct InitialFocusProbe: NSViewRepresentable {
+  func makeNSView(context: Context) -> Probe { Probe() }
+  func updateNSView(_ view: Probe, context: Context) {}
+
+  final class Probe: NSView {
+    override func viewDidMoveToWindow() {
+      super.viewDidMoveToWindow()
+      // 用 run loop 延后（测试在主队列里嵌套跑 run loop，Task 等不到）
+      perform(#selector(focus), with: nil, afterDelay: 0)
+    }
+
+    @objc private func focus() {
+      window?.makeFirstResponder(window?.initialFirstResponder)
+    }
   }
 }

@@ -157,6 +157,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     coordinator.hidePanel = { [unowned panel] in panel.dismiss() }
     // ⌘,、「⋯」菜单、错误卡片和空状态都直接到设置 › 翻译
     coordinator.openSettings = { [unowned self] in showSettings(page: .translate) }
+    coordinator.focusSource = { [unowned panel] in
+      panel.makeFirstResponder(panel.initialFirstResponder)
+    }
     panel.onHide = { [unowned self, unowned panel] in
       // 收起即作废进行中的请求（省额度）；把 key 还给之前处于 key 的浮层（剪贴板面板 / 启动器）。
       // 已有别的窗口成了 key（因失焦而收起）就不抢
