@@ -2,8 +2,10 @@
 // 品牌图标生成脚本（Whisker C 阶段，D1 原创角色「探头」：小黑猫扒在剪贴板卡片边上往下看）。
 // 用法：swift macos/brand-icons.swift [预览目录]
 // 写入 KittyTools/Resources/Assets.xcassets：AppIcon 10 张 PNG（1024 画布、主体 824、四边留 100、超椭圆圆角约 185、
-// 烘焙阴影 y 10 / σ 10 / 黑 30%；16、32 像素用手调的简化版）和菜单栏模板图 StatusIcon（22 × 16 pt，@1x / @2x）。
-// 只用 AppKit / CoreGraphics，几何都在这一个文件里：改角色就改这里再跑一遍。给了预览目录时另存放大的预览图。
+// 烘焙阴影 y 10 / σ 10 / 黑 30%；16、32 像素用手调的简化版）和菜单栏模板图 StatusIcon（22 × 16 pt，@1x / @2x）；
+// 另写 Config/dmg-background.tiff（DMG 窗口背景 600 × 400 pt，@1x + @2x：奶油底、字标 Kitty Tools、虚点弧线箭头、
+// 「仍要打开」路径；改产品名或文案也改这里）。
+// 只用 AppKit / CoreGraphics / CoreText，几何都在这一个文件里：改角色就改这里再跑一遍。给了预览目录时另存放大的预览图。
 
 import AppKit
 
@@ -251,6 +253,64 @@ func statusIcon(scale: Int) -> CGImage {
   return ctx.makeImage()!
 }
 
+// MARK: DMG 窗口背景（600 × 400 pt；访达里 App 在 (150, 205)、「应用程序」在 (450, 205)，见 build-dmg.sh）
+
+func dmgBackground(scale: Int) -> CGImage {
+  let brand = hex(0xFF4D7E)
+  let ctx = CGContext(
+    data: nil, width: 600 * scale, height: 400 * scale, bitsPerComponent: 8, bytesPerRow: 0,
+    space: sRGB, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+  ctx.translateBy(x: 0, y: CGFloat(400 * scale))
+  ctx.scaleBy(x: CGFloat(scale), y: -CGFloat(scale))
+  // 奶油底，左上一团品牌粉、右下一团淡蓝紫
+  ctx.setFillColor(cream)
+  ctx.fill(CGRect(x: 0, y: 0, width: 600, height: 400))
+  for (color, center, radii) in [
+    (hex(0xFF4D7E, 0.15), point(30, 0), (20.0, 355.0)),
+    (hex(0xC8D8FF, 0.3), point(600, 400), (0, 340)),
+  ] {
+    let glow = CGGradient(
+      colorsSpace: sRGB, colors: [color, color.copy(alpha: 0)!] as CFArray, locations: [0, 1])!
+    ctx.drawRadialGradient(
+      glow, startCenter: center, startRadius: radii.0, endCenter: center, endRadius: radii.1,
+      options: .drawsBeforeStartLocation)
+  }
+  // 字标和两行说明：水平居中，y 是基线（上下翻转的画布里字形要再翻回来）
+  func text(_ string: String, _ font: NSFont, _ color: CGColor, y: CGFloat) {
+    let line = CTLineCreateWithAttributedString(
+      NSAttributedString(
+        string: string,
+        attributes: [
+          .font: font, NSAttributedString.Key(kCTForegroundColorAttributeName as String): color,
+        ]))
+    ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
+    ctx.textPosition = point((600 - CTLineGetTypographicBounds(line, nil, nil, nil)) / 2, y)
+    CTLineDraw(line, ctx)
+  }
+  text("Kitty Tools", .systemFont(ofSize: 24, weight: .bold), hex(0xD12A5F), y: 62.5)
+  // 系统字体回退到的 .PingFangUITextSC 会把「」挤成半宽，这行直接用 PingFang SC 保持全宽
+  text(
+    "把左边的图标拖到「应用程序」文件夹，就装好了", NSFont(name: "PingFangSC-Regular", size: 13)!,
+    hex(0x000000, 0.55), y: 86)
+  text(
+    "首次打开被拦下时：系统设置 › 隐私与安全性 › 仍要打开", .systemFont(ofSize: 11), hex(0x000000, 0.45),
+    y: 366)
+  // 中间的虚点弧线：零长虚线 + 圆头 = 等弧长的圆点（直径 4、间距 11.1），末端圆角三角箭头
+  let arc = CGMutablePath()
+  arc.move(to: point(235, 211))
+  arc.addQuadCurve(to: point(355, 213.5), control: point(302, 178))
+  ctx.saveGState()
+  ctx.setStrokeColor(brand)
+  ctx.setLineWidth(4)
+  ctx.setLineCap(.round)
+  ctx.setLineDash(phase: 0, lengths: [0, 11.1])
+  ctx.addPath(arc)
+  ctx.strokePath()
+  ctx.restoreGState()
+  triangle(ctx, [point(362.4, 212.6), point(354.9, 204.3), point(351.1, 213.5)], brand, round: 4)
+  return ctx.makeImage()!
+}
+
 // MARK: 写文件
 
 func writePNG(_ image: CGImage, to url: URL) {
@@ -283,13 +343,22 @@ try! """
 }
 
 """.write(to: statusSet.appending(path: "Contents.json"), atomically: true, encoding: .utf8)
-print("已写入 AppIcon 10 张、StatusIcon @1x / @2x")
+// DMG 背景：@1x、@2x 两张合进一个 TIFF（访达按屏幕倍率挑）
+let dmgReps = [1, 2].map { scale in
+  let rep = NSBitmapImageRep(cgImage: dmgBackground(scale: scale))
+  rep.size = NSSize(width: 600, height: 400)
+  return rep
+}
+try! NSBitmapImageRep.tiffRepresentationOfImageReps(in: dmgReps, using: .lzw, factor: 0)!
+  .write(to: macos.appending(path: "Config/dmg-background.tiff"))
+print("已写入 AppIcon 10 张、StatusIcon @1x / @2x、DMG 背景 @1x / @2x")
 
 // 预览：大图原样，小图按像素放大 8 倍（不插值），菜单栏放在浅 / 深两条栏上
 if CommandLine.arguments.count > 1 {
   let preview = URL(fileURLWithPath: CommandLine.arguments[1])
   try! FileManager.default.createDirectory(at: preview, withIntermediateDirectories: true)
   writePNG(appIcon(pixels: 1024), to: preview.appending(path: "icon-1024.png"))
+  writePNG(dmgBackground(scale: 2), to: preview.appending(path: "dmg-background@2x.png"))
   func magnify(_ image: CGImage, _ factor: Int, background: CGColor?) -> CGImage {
     let ctx = CGContext(
       data: nil, width: image.width * factor, height: image.height * factor, bitsPerComponent: 8,

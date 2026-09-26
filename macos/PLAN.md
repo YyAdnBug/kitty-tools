@@ -566,6 +566,8 @@ CREATE TABLE clip_groups(id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at INT
 
 ### 8.1 配置文件
 
+下面是 M0 时的骨架，完整的值以 `macos/Config/*.xcconfig` 为准。
+
 **`macos/Config/Base.xcconfig`**
 ```
 // 版本号唯一数据源；build-dmg.sh 从产物的 Info.plist 读回
@@ -573,7 +575,9 @@ MARKETING_VERSION = 0.0.1
 CURRENT_PROJECT_VERSION = 1
 APP_BUNDLE_ID = com.yy.kitty-tools.native
 PRODUCT_BUNDLE_IDENTIFIER = $(APP_BUNDLE_ID)$(BUNDLE_ID_SUFFIX)
-PRODUCT_NAME = Kitty Tools Native
+// .app 名、可执行文件名和显示名（N16，之前叫 Kitty Tools Native）；Tests.xcconfig 的 TEST_HOST 也读它
+APP_PRODUCT_NAME = Kitty Tools
+PRODUCT_NAME = $(APP_PRODUCT_NAME)
 PRODUCT_MODULE_NAME = KittyTools
 MACOSX_DEPLOYMENT_TARGET = 15.0
 ARCHS = arm64
@@ -596,7 +600,7 @@ INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.productivity
 ```
 #include "Base.xcconfig"
 BUNDLE_ID_SUFFIX = .dev
-INFOPLIST_KEY_CFBundleDisplayName = Kitty Tools Native Dev
+APP_PRODUCT_NAME = Kitty Tools Dev
 ```
 
 **`Release.xcconfig`**
@@ -617,37 +621,11 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 
 ### 8.2 `macos/build-dmg.sh`（只有路径 B）
 
-```bash
-#!/usr/bin/env bash
-# 原生版打包（路径 B：Apple Development 签名、不公证）：archive → 自检 → DMG → notes
-# 发布约束：GitHub 只发 pre-release，不要勾 Set as latest（Tauri updater 读 releases/latest/.../latest.json，
-#   被顶掉会让 Tauri 全平台更新 404）；GitCode 在确认 latest 排除预发布之前不发；
-#   发完在 master 工作区跑 pnpm release:verify。不公证（D7），发布说明固定附「仍要打开」步骤。
-set -euo pipefail
-M="$(cd "$(dirname "$0")" && pwd)"; OUT="$M/build"; CHANGELOG="$M/KittyTools/Resources/changelog.json"
-rm -rf "$OUT" && mkdir -p "$OUT/dmg"
-xcodebuild archive -project "$M/KittyTools.xcodeproj" -scheme KittyTools -configuration Release \
-  -destination 'generic/platform=macOS' -archivePath "$OUT/KittyTools.xcarchive" -quiet
-APP=$(ls -d "$OUT"/KittyTools.xcarchive/Products/Applications/*.app)
-NAME=$(basename "$APP" .app)
-VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")
-jq -e --arg v "$VERSION" 'any(.[]; .version == $v)' "$CHANGELOG" >/dev/null \
-  || { echo "changelog.json 缺少 $VERSION 条目"; exit 1; }
-codesign --verify --deep --strict --verbose=2 "$APP"
-ENT=$(codesign -d --entitlements - "$APP" 2>&1 || true)
-[[ "$ENT" != *get-task-allow* ]] || { echo "get-task-allow 混入发布包"; exit 1; }
-lipo -archs "$APP/Contents/MacOS/$NAME"
-ditto "$APP" "$OUT/dmg/$NAME.app" && ln -s /Applications "$OUT/dmg/Applications"
-DMG="$OUT/${NAME}_${VERSION}_arm64.dmg"
-hdiutil create -volname "$NAME" -srcfolder "$OUT/dmg" -format UDZO -ov "$DMG"
-hdiutil verify "$DMG"
-jq -r --arg v "$VERSION" '.[] | select(.version == $v) | .summary, (.changes[] | "- \(.scope)：\(.text)")' \
-  "$CHANGELOG" > "$OUT/notes.txt"
-echo "$DMG"
-```
+以脚本本身为准（发布约束写在它头部注释里），这里不再贴全文。流程：archive → 校验 changelog 有本版条目 → `codesign --verify` → 查 `get-task-allow` → `lipo -archs` → 拷进暂存目录并放 Applications 链接 → 出 DMG（产物名跟 `PRODUCT_NAME` 走：`Kitty Tools_<版本>_arm64.dmg`，卷名 `Kitty Tools`）→ `hdiutil verify` → 生成 `notes.txt`。
 
 几个选择：
-- DMG 格式用 UDZO，这是 Apple DTS 的建议；不做背景图和图标排版。
+- DMG 格式用 UDZO，这是 Apple DTS 的建议。
+- 默认带窗口背景和访达摆位：背景 `Config/dmg-background.tiff`（600×400 @1x + @2x，由 `swift macos/brand-icons.swift` 生成，改产品名或文案时改脚本重跑），先做可写映像、AppleScript 让访达摆好图标再压成只读；摆位是尽力而为，没有控制访达的权限或 `DMG_LAYOUT=0` 时照样出包，只是没有背景。
 - 路径 B 的 DMG 不签名。用 Apple Development 签 DMG 也过不了 Gatekeeper，只会多一次评估。
 - entitlements 检查先存进变量再判断，避免 `pipefail` 下 `grep -q` 提前退出导致漏报。
 - 如果 archive 时报 `No Account for Team`，加 `-allowProvisioningUpdates`。
@@ -657,9 +635,9 @@ echo "$DMG"
 
 - 签名：Apple Development，开 Hardened Runtime，不公证。
 - 用户安装步骤：
-  1. 打开 DMG，把 App 拖进 Applications。
+  1. 打开 DMG，把 App 拖进 Applications。和 Tauri 旧版同名：先删掉（或让访达替换）/Applications 里旧版的 `Kitty Tools.app`；从 Kitty Tools Native 升上来的，把旧的 `Kitty Tools Native.app` 也删掉，开机自启可能要在 设置 › 通用 重新打开一次。
   2. 双击时被系统拦下，提示「未打开」。签名是有效的，所以提示不是「已损坏」。
-  3. 到「系统设置 › 隐私与安全性」点「仍要打开」（尝试打开后约 1 小时内有效），然后输入密码。也可以直接执行 `xattr -dr com.apple.quarantine "/Applications/Kitty Tools Native.app"`。
+  3. 到「系统设置 › 隐私与安全性」点「仍要打开」（尝试打开后约 1 小时内有效），然后输入密码。也可以直接执行 `xattr -dr com.apple.quarantine "/Applications/Kitty Tools.app"`。
 - **每个新版本都要重复一次上面的步骤。**
 - 比现在的 adhoc 签名好的一点：签名要求绑定在证书上，所以更新后辅助功能授权不会丢。
 

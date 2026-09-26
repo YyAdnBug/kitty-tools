@@ -8,7 +8,8 @@
 #   从 Kitty Tools Native 升上来的，把旧的 Kitty Tools Native.app 也删掉（同一个 bundle id，留着会让开机自启指错），
 #   开机自启可能要在 设置 › 通用 重新打开一次。
 # DMG 窗口（Whisker 品牌时刻）：背景 Config/dmg-background.tiff（600×400，@1x + @2x，左 App、右「应用程序」、中间品牌粉箭头，
-#   底下写着「仍要打开」的路径），用 hdiutil 做可写映像 + AppleScript 让访达摆位置，再压成只读。第一次跑会问能不能控制访达；
+#   底下写着「仍要打开」的路径；由 swift macos/brand-icons.swift 生成，字标写死 Kitty Tools，改名要改那个脚本重跑），
+#   用 hdiutil 做可写映像 + AppleScript 让访达摆位置，再压成只读。第一次跑会问能不能控制访达；
 #   不允许或 DMG_LAYOUT=0 时照样出包，只是没有背景和摆位。
 set -euo pipefail
 M="$(cd "$(dirname "$0")" && pwd)"; OUT="$M/build"; CHANGELOG="$M/KittyTools/Resources/changelog.json"

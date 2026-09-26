@@ -741,62 +741,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   // MARK: 菜单栏菜单
 
-  /// 每次打开菜单前重建（N15）：三节 剪贴板与启动器 / 翻译 / 截图（和快捷键页同名同序），右边是当前生效的快捷键，
-  /// 没设 / 注册失败的留空；有钉图时截图节才出钉图两项；最后是设置、关于、退出
+  /// 每次打开菜单前重建（N15）：按 HotKeyAction.sections 分节，和快捷键页同名同序，标题、符号、家族色也取自那里；
+  /// 右边是当前生效的快捷键，没设 / 注册失败的留空；复制即译接在翻译节末尾，有钉图时截图节末尾多钉图两项；
+  /// 最后是设置、关于、退出
   private func buildStatusMenu(_ menu: NSMenu) {
-    let translate = NSColor.systemGreen
-    let shot = NSColor.systemPink
+    for (index, section) in HotKeyAction.sections.enumerated() {
+      if index > 0 { menu.addItem(.separator()) }
+      menu.addItem(.sectionHeader(title: section.title))
+      for action in section.actions {
+        let binding = hotKeys.bindings[action]
+        menu.addAction(
+          action.title, symbol: action.symbol, color: NSColor(action.color),
+          key: binding?.menuKeyEquivalent ?? "", modifiers: binding?.modifierFlags ?? []
+        ) { [unowned self] in
+          switch action {
+          case .clipboard: toggleClipboard()
+          case .launcher: toggleLauncher()
+          case .selectionTranslate: selectionTranslate()
+          case .inputTranslate: showInputTranslate()
+          case .translateReplace: translateAndReplace()
+          case .screenshotTranslate: screenshotTranslate()
+          case .screenshot: screenshot()
+          case .screenshotLastRegion: screenshot(repeatingLastRegion: true)
+          case .recognizeText: recognizeText()
+          }
+        }
+      }
+      let color = NSColor(section.actions[0].color)
+      if section.actions.contains(.selectionTranslate) {
+        let copyToTranslate = UserDefaults.standard.bool(forKey: Prefs.translateCopyToTranslate)
+        menu.addAction("复制即译", symbol: "doc.on.doc", color: color) {
+          UserDefaults.standard.set(!copyToTranslate, forKey: Prefs.translateCopyToTranslate)
+        }
+        .state = copyToTranslate ? .on : .off
+      }
+      if section.actions.contains(.screenshot), !pins.panels.isEmpty {
+        menu.addAction(pins.isHidden ? "显示全部钉图" : "隐藏全部钉图", symbol: "pin", color: color) {
+          [unowned self] in pins.toggleHidden()
+        }
+        menu.addAction("关闭全部钉图", symbol: "pin.slash", color: color) { [unowned self] in
+          pins.closeAll()
+        }
+      }
+    }
     let gray = NSColor.systemGray
-    func hotKeyItem(
-      _ title: String, _ action: HotKeyAction, _ symbol: String, _ color: NSColor,
-      run: @escaping () -> Void
-    ) {
-      let binding = hotKeys.bindings[action]
-      menu.addAction(
-        title, symbol: symbol, color: color, key: binding?.menuKeyEquivalent ?? "",
-        modifiers: binding?.modifierFlags ?? [], run: run)
-    }
-    menu.addItem(.sectionHeader(title: "剪贴板与启动器"))
-    hotKeyItem("剪贴板历史", .clipboard, "doc.on.clipboard", .systemBlue) {
-      [unowned self] in toggleClipboard()
-    }
-    hotKeyItem("启动器", .launcher, "command", .systemPurple) { [unowned self] in toggleLauncher() }
-    menu.addItem(.separator())
-    menu.addItem(.sectionHeader(title: "翻译"))
-    hotKeyItem("划词翻译", .selectionTranslate, "character.bubble", translate) {
-      [unowned self] in selectionTranslate()
-    }
-    hotKeyItem("划词翻译并替换", .translateReplace, "arrow.left.arrow.right", translate) {
-      [unowned self] in translateAndReplace()
-    }
-    hotKeyItem("截图翻译", .screenshotTranslate, "text.viewfinder", translate) {
-      [unowned self] in screenshotTranslate()
-    }
-    hotKeyItem("输入翻译", .inputTranslate, "character.cursor.ibeam", translate) {
-      [unowned self] in showInputTranslate()
-    }
-    let copyToTranslate = UserDefaults.standard.bool(forKey: Prefs.translateCopyToTranslate)
-    menu.addAction("复制即译", symbol: "doc.on.doc", color: translate) {
-      UserDefaults.standard.set(!copyToTranslate, forKey: Prefs.translateCopyToTranslate)
-    }
-    .state = copyToTranslate ? .on : .off
-    menu.addItem(.separator())
-    menu.addItem(.sectionHeader(title: "截图"))
-    hotKeyItem("截图", .screenshot, "camera.viewfinder", shot) { [unowned self] in screenshot() }
-    hotKeyItem("截取上次区域", .screenshotLastRegion, "rectangle.dashed", shot) {
-      [unowned self] in screenshot(repeatingLastRegion: true)
-    }
-    hotKeyItem("识字", .recognizeText, "text.magnifyingglass", shot) {
-      [unowned self] in recognizeText()
-    }
-    if !pins.panels.isEmpty {
-      menu.addAction(pins.isHidden ? "显示全部钉图" : "隐藏全部钉图", symbol: "pin", color: shot) {
-        [unowned self] in pins.toggleHidden()
-      }
-      menu.addAction("关闭全部钉图", symbol: "pin.slash", color: shot) { [unowned self] in
-        pins.closeAll()
-      }
-    }
     menu.addItem(.separator())
     menu.addAction("设置…", symbol: "gearshape", color: gray, key: ",") { [unowned self] in
       showSettings()
