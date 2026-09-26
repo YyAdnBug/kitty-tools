@@ -813,7 +813,7 @@ echo "$DMG"
 - 各项的手测清单在 §12「待用户手测」里（标注外观 7–8、链接预览、⌘Y、设置、菜单栏、常驻缩略图、挤压入场）。
 - C 阶段已全部完成（2026-09-26）：原创角色「探头」（方案页 https://claude.ai/artifact/QmFQcLjNPvgaN5xWiYtDNL ，用户在四个方向里选了 B：小黑猫扒在奶油色剪贴板卡片边上、低头看卡片），App 图标 10 张（16 / 32 px 手调）和菜单栏模板图 `StatusIcon` 都由 `macos/brand-icons.swift` 用 CoreGraphics 生成，替换了 Hello Kitty 和 cat 符号；关于页、引导、设置侧栏读的是 App 图标，自动跟着换。macOS 26 的 `.icon`（深色 / 着色版）等测试机。
 - 验证手段：界面用 `SnapshotProbeTests`；窗口动画用不抢键盘的 scratch 程序实测（本轮用它确认了：窗口帧动画冲不过头且会忽略时长、`QLPreviewPanel` 不是 nonactivating、`isARepeat` 问鼠标事件会抛异常、主线程上逐字节 await `AsyncBytes` 每字节约 5 µs）。
-- 打包：`macos/build-dmg.sh`（访达摆位要控制访达的权限，第一次跑会问；`DMG_LAYOUT=0` 跳过）。测试包 `macos/build/Kitty Tools Native_0.1.0_arm64.dmg`（`4a2b924`，含 D 阶段全部、两轮审查修复、D4 查词、截图框选整边拖动修复和 M13 文件搜索；从干净的 HEAD 临时 worktree 用 `DMG_LAYOUT=0` 打的，不含工作区里别的会话没提交的改动，没有背景摆位）。
+- 打包：`macos/build-dmg.sh`（访达摆位要控制访达的权限，第一次跑会问；`DMG_LAYOUT=0` 跳过）。测试包 `macos/build/Kitty Tools Native_0.1.0_arm64.dmg`（`cfe5d65`，含 D 阶段全部、两轮审查修复、D4 查词、M13 文件搜索、截图框选整边拖动 / 10 种标注 / 周边换品牌粉，以及新的角色图标「探头」；从干净的 HEAD 临时 worktree 用 `DMG_LAYOUT=0` 打的，不含工作区里别的会话没提交的改动，没有背景摆位）。
 
 ## 12. 进度与交接（2026-09-24，新会话从这里接着做）
 
