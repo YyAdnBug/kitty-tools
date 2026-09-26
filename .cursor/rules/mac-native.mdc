@@ -12,7 +12,7 @@ alwaysApply: true
 - 唯一开发区是 `macos/`：源码在 `KittyTools/{App,Shell,Storage,Clipboard,Translate,Launcher,Screenshot,Settings,Resources}`，文件归属照 PLAN §4 的表格；`KittyToolsTests/` 只测纯函数。
 - 一个概念一个文件；不预建空目录、空文件。每个入口文件（`@main`、AppDelegate、面板 / 窗口 / Tab 根视图、脚本）头部写注释说明用途。
 - 禁止为「以后可能用到」建 protocol、manager、registry、factory、DI 容器；不为测试抽 protocol。翻译服务由 coordinator 里一个 `switch` 分发。
-- `src/`、`src-tauri/`、`html/`、`public/`、`scripts/` 是 Tauri 快照，只读、不改不删，**不作行为、界面、默认值、文案的参考**（用户要求，2026-09-26：原生版有自己的样式和逻辑，不兼容 Tauri 版的数据和设置）。PLAN §5 的 path:line 只是历史记录。
+- Tauri 快照 2026-09-27 已从本分支删除（旧代码只在 master `ee615b3` 和 git 历史里），Tauri 版**不作行为、界面、默认值、文案的参考**（用户要求，2026-09-26：原生版有自己的样式和逻辑，不兼容 Tauri 版的数据和设置）。PLAN §5 的 path:line 只是历史记录。
 - **对标成熟产品**（用户要求，2026-09-24）：启动器对标 Alfred / Raycast、翻译对标 Bob、截图对标 iShot Pro / CleanShot、剪贴板对标 Paste；新功能动手前先调研对应产品，给出「差距 + 推荐范围」让用户拍板。算法、数据结构、表结构按 macOS 原生方式自己设计。
 
 ## 2. 技术栈白名单
@@ -54,7 +54,7 @@ alwaysApply: true
 ## 7. 发版
 - 版本号唯一数据源是 Base.xcconfig 的 `MARKETING_VERSION`。改它必须在 `macos/KittyTools/Resources/changelog.json` 追加该版本条目（`{version, date, summary, changes:[{type, scope, text}]}`），`type` 只允许 feat / fix / perf / ui；缺条目时 `build-dmg.sh` 会中止。
 - 打包只用 `macos/build-dmg.sh`（arm64 DMG）；tag 用 `macos-v*`，打在 `macos-native` 分支。
-- GitHub 只发 **pre-release**，禁止勾 Set as latest（会让 Tauri updater 全平台 404）；GitCode 暂不发；发完在 master 工作区跑 `pnpm release:verify`；不改 `releases/latest.json`。细节见 `build-dmg.sh` 头部注释。
+- GitHub 只发 **pre-release**，禁止勾 Set as latest（会让 Tauri updater 全平台 404）；GitCode 暂不发；发完在 master 工作区跑 `pnpm release:verify`（Tauri 的发版脚本和 `releases/latest.json` 只在 master 上）。细节见 `build-dmg.sh` 头部注释。
 
 ## 8. 语言与 commit
 - 用中文回答；文档写中文，代码注释可以写中文。
