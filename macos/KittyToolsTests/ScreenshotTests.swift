@@ -58,8 +58,10 @@ struct ScreenshotTests {
       window(CGRect(x: 0, y: 0, width: 1512, height: 24), layer: 25),  // 菜单栏图标层：不要
       window(CGRect(x: 0, y: 0, width: 300, height: 300), alpha: 0),  // 全透明：不要
       window(CGRect(x: 0, y: 0, width: 10, height: 300)),  // 太窄：不要
-      window(CGRect(x: 0, y: 0, width: 300, height: 300), pid: own, id: 9),  // 自家浮层：不要
-      window(CGRect(x: 500, y: 500, width: 100, height: 100), pid: own, id: 5),  // 钉图：要
+      // 不在留用名单里的自家窗口（刚收起 / 淡出中的浮层）：不要
+      window(CGRect(x: 0, y: 0, width: 300, height: 300), pid: own, id: 9),
+      // 留用名单里的自家窗口（开着的浮层、设置窗、钉图）：要，Z 序照旧
+      window(CGRect(x: 500, y: 500, width: 100, height: 100), pid: own, id: 5),
       window(CGRect(x: 10, y: 10, width: 120, height: 200), layer: 101),  // 展开的菜单：要
     ]
     let frames = ScreenCapture.windowFrames(info, ownPID: own, keeping: [5], primaryHeight: 1000)
@@ -73,6 +75,57 @@ struct ScreenshotTests {
       ])
     // 命中按 Z 序：点在两个窗口里取前面的小窗（旧版按面积排会选中被挡住的，§11 #41）
     #expect(frames.first { $0.contains(CGPoint(x: 150, y: 850)) } == frames[0])
+  }
+
+  /// 用户 2026-09-26：截图要能截到本 App 开着的窗口（能悬停、单击选中），截图自己的装饰和收起中的窗口不截
+  @Test func keptOwnWindowsAreOpenOrdinaryWindows() {
+    func window(
+      _ id: CGWindowID, _ className: String, level: NSWindow.Level = .floating,
+      visible: Bool = true, alpha: CGFloat = 1
+    ) -> ScreenCapture.OwnWindow {
+      ScreenCapture.OwnWindow(
+        id: id, className: className, level: level.rawValue, isVisible: visible, alpha: alpha)
+    }
+    let kept = ScreenCapture.keptOwnWindows([
+      window(1, "OverlayPanel"),  // 剪贴板面板 / 翻译浮窗 / 启动器 / ⌘Y 放大预览
+      window(2, "NSWindow", level: .normal),  // 设置窗、引导
+      window(3, "PinPanel", alpha: 0.6),  // 调过透明度的钉图
+      window(4, "NSStatusBarWindow", level: .statusBar),  // 菜单栏图标
+      window(5, "_NSPopoverWindow"),  // 面板上开着的弹出框：也是开着的窗口
+      window(10, "OverlayPanel", visible: false),  // 刚 orderOut（系统还在淡出）
+      window(11, "OverlayPanel", alpha: 0),  // 淡入前 / 缩回后
+      window(12, "NSPanel", level: .statusBar),  // 刘海岛、飞行卡片、常驻缩略图、长截图边框
+      window(
+        13, "SelectionOverlay",
+        level: NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue + 1)),
+      window(14, "ScrollCapturePanel"),  // 长截图面板（浮动层级，只能按类名认）
+      window(15, "NSMenuWindowManagerWindow", level: .popUpMenu),  // 正在淡出的菜单
+      window(16, "NSToolTipPanel", level: .normal),
+      window(18, "NSPanel", level: .screenSaver),
+    ])
+    #expect(kept == [1, 2, 3, 4, 5])
+  }
+
+  /// 截图遮罩开着时浮层不因失焦 / 点击收起；遮罩收起（orderOut）后照常。
+  /// 遮罩放在屏外 (-20000, -20000) 只 orderFront、不 makeKey：不遮屏、不抢键盘
+  @Test func selectionOverlayKeepsPanelsOpen() throws {
+    let screen = try #require(NSScreen.screens.first)
+    let context = try #require(
+      CGContext(
+        data: nil, width: 4, height: 4, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpace(name: CGColorSpace.sRGB)!,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    let overlay = SelectionOverlay(
+      shot: ScreenCapture.Shot(screen: screen, image: try #require(context.makeImage())),
+      session: SelectionSession(mode: .capture))
+    overlay.setFrame(NSRect(x: -20000, y: -20000, width: 40, height: 40), display: false)
+    let other = NSWindow()
+    #expect(!OverlayPanel.isSelectingRegion(in: [overlay, other]))
+    overlay.orderFrontRegardless()
+    #expect(OverlayPanel.isSelectingRegion(in: [other, overlay]))
+    #expect(!OverlayPanel.isSelectingRegion(in: [other]))
+    overlay.orderOut(nil)
+    #expect(!OverlayPanel.isSelectingRegion(in: [overlay, other]))
   }
 
   @Test func handlesResizeAndMove() {

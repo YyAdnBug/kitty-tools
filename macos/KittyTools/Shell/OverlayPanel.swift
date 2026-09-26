@@ -301,8 +301,18 @@ final class OverlayPanel: NSPanel {
 
   override func resignKey() {
     super.resignKey()
-    // key 让给自己的 sheet（确认框等）时不算失焦
-    if autoHide == .resignKey, isVisible, attachedSheet == nil, !isPinned() { dismiss() }
+    // key 让给自己的 sheet（确认框等）、让给截图遮罩时不算失焦
+    if autoHide == .resignKey, isVisible, attachedSheet == nil, !isPinned(),
+      !Self.isSelectingRegion(in: NSApp.windows)
+    {
+      dismiss()
+    }
+  }
+
+  /// 截图框选中（有看得见的遮罩）：遮罩当 key、点遮罩都不算失焦 / 点外。用户 2026-09-26：截图时本 App 开着的窗口
+  /// 留在冻结帧里、能悬停和单击选中，截完还开着（mac-overlay-panel §2）
+  static func isSelectingRegion(in windows: [NSWindow]) -> Bool {
+    windows.contains { $0 is SelectionOverlay && $0.isVisible }
   }
 
   /// 改高度时顶边不动，只往下伸缩（启动器随结果条数、翻译浮窗随内容变化）；往下出了屏幕可见区就整体往上挪。
@@ -351,8 +361,8 @@ final class OverlayPanel: NSPanel {
     setFrameOrigin(NSPoint(x: visible.midX - frame.width / 2, y: visible.midY - frame.height / 2))
   }
 
-  /// 点外即关：global 监听管别的 App，local 监听管自家窗口。点中任一自家浮层不关（兄弟窗口豁免），
-  /// 点击时实时判断；显示时装、隐藏时卸，成对出现
+  /// 点外即关：global 监听管别的 App，local 监听管自家窗口。点中任一自家浮层、截图框选中点遮罩都不关
+  /// （兄弟窗口豁免），点击时实时判断；显示时装、隐藏时卸，成对出现
   private func installMouseMonitors() {
     let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
     let global = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] _ in
@@ -360,7 +370,9 @@ final class OverlayPanel: NSPanel {
     }
     let local = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
       MainActor.assumeIsolated {
-        if !(event.window is OverlayPanel) { self?.clickedOutside() }
+        if !(event.window is OverlayPanel || Self.isSelectingRegion(in: NSApp.windows)) {
+          self?.clickedOutside()
+        }
       }
       return event
     }

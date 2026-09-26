@@ -17,9 +17,6 @@ import SwiftUI
   @ObservationIgnored var copy: @MainActor (CGImage, CGFloat) -> Void = { _, _ in }
   @ObservationIgnored var saveAs: @MainActor (CGImage, CGFloat) -> Void = { _, _ in }
 
-  /// 冻结帧里要留下的钉图窗口
-  var windowNumbers: Set<CGWindowID> { Set(panels.map { CGWindowID($0.windowNumber) }) }
-
   /// frame：截图时选区的位置（点，全局坐标）
   func pin(_ image: CGImage, frame: CGRect) {
     if isHidden { toggleHidden() }

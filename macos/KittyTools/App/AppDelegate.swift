@@ -447,7 +447,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 截图翻译：冻结各屏 → 框选 → 本机识别文字 → 原文记进剪贴板历史 → 翻译浮窗走现有的多服务翻译
   func screenshotTranslate() {
-    beginCapture { [self] in
+    beginCapture(hidingPanels: true) { [self] in
       guard
         let region = await frozenSelection(
           "截图翻译", { await RegionSelector.select($0, hint: "拖动框选要翻译的文字 · Esc 取消") })
@@ -458,7 +458,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 识字：框选后静默复制识别出的文字（有二维码 / 条码时复制它的内容），轻提示结果，不弹窗
   func recognizeText() {
-    beginCapture { [self] in
+    beginCapture(hidingPanels: true) { [self] in
       guard
         let region = await frozenSelection(
           "识字", { await RegionSelector.select($0, hint: "拖动框选要识别的文字或二维码 · Esc 取消") })
@@ -470,7 +470,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 截图：框选后可标注；↩ 复制（同时记进剪贴板历史）、⌘S 快速保存、另存为、T 钉图、S 长截图、识字、翻译，C 复制色值。
   /// repeatingLastRegion：一开始就选中上次的区域（「截取上次区域」热键，可以连按）
   func screenshot(repeatingLastRegion: Bool = false) {
-    beginCapture { [self] in
+    beginCapture(hidingPanels: false) { [self] in
       let lastRegion = UserDefaults.standard.string(forKey: Prefs.screenshotLastRegion).map(
         NSRectFromString)
       guard
@@ -489,6 +489,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           "已复制色值", detail: hex, leading: Self.color(hex).map(Island.Leading.color) ?? .tone)
       case .scroll(let region):
         UserDefaults.standard.set(NSStringFromRect(region), forKey: Prefs.screenshotLastRegion)
+        // 长截图在实时画面上截、滤掉本 App：没固定的浮层留着只会盖住选区，挡住滚轮和自动滚动
+        hideUnpinnedPanels()
         await scrollCapture(region)
       case .capture(let capture):
         UserDefaults.standard.set(
@@ -538,22 +540,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
-  /// 截图和截图翻译共用的开头：互斥、收起没固定的浮层；work 跑完才算这次截图结束。
-  /// 固定着的面板不收（冻结帧本来就排除了自家窗口，取消后也还在）；没固定的先收剪贴板面板再收翻译浮窗：
-  /// 反过来浮窗的 onHide 会把 key 还给剪贴板面板
-  private func beginCapture(_ work: @escaping () async -> Void) {
+  /// 截图和截图翻译共用的开头：互斥；work 跑完才算这次截图结束。
+  /// 截图（热键、⌥X、启动器、菜单栏）不收自家窗口：用户 2026-09-26 要能截到本 App，开着的浮层、设置窗、钉图留在
+  /// 冻结帧里、能悬停和单击选中，截完还开着（遮罩当 key、被点时浮层不自动收起，OverlayPanel.isSelectingRegion）；
+  /// 按 S 转长截图时才收起没固定的。截图翻译 / 识字（hidingPanels）照旧收起没固定的浮层；固定着的不收，照样截进去
+  private func beginCapture(hidingPanels: Bool, _ work: @escaping () async -> Void) {
     guard !isCapturing, !isReadingSelection else { return }
     isCapturing = true
-    hideUnpinned(clipboardPanel, Prefs.clipboardHideOnUnfocus)
-    hideUnpinned(launcherPanel, Prefs.launcherHideOnUnfocus)
-    if !UserDefaults.standard.bool(forKey: Prefs.floatingPinned) { translatePanel.hide() }
+    if hidingPanels { hideUnpinnedPanels() }
     Task {
       defer { isCapturing = false }
       await work()
     }
   }
 
-  /// 查屏幕录制授权 → 冻结各屏（钉图留在画面里）→ 暂停全局热键框选。没授权 / 截屏失败时在浮窗里提示，返回 nil。
+  /// 收起没固定的浮层。先收剪贴板面板再收翻译浮窗：反过来浮窗的 onHide 会把 key 还给剪贴板面板
+  private func hideUnpinnedPanels() {
+    hideUnpinned(clipboardPanel, Prefs.clipboardHideOnUnfocus)
+    hideUnpinned(launcherPanel, Prefs.launcherHideOnUnfocus)
+    if !UserDefaults.standard.bool(forKey: Prefs.floatingPinned) { translatePanel.hide() }
+  }
+
+  /// 查屏幕录制授权 → 冻结各屏（本 App 开着的窗口留在画面里）→ 暂停全局热键框选 → 遮罩收起后把 key 还给截图前的
+  /// key 窗口（还开着的话；只 makeKey，不激活本 App）。没授权 / 截屏失败时在浮窗里提示，返回 nil。
   /// 框选期间别的热键会弹出浮层抢走 key（遮罩就收不到 Esc）；设置里正在录快捷键时热键本来就停着，结束后不能替它恢复
   private func frozenSelection<T>(
     _ feature: String, _ select: ([ScreenCapture.Shot]) async -> T?
@@ -565,7 +574,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     let shots: [ScreenCapture.Shot]
     do {
-      shots = try await ScreenCapture.freeze(keeping: pins.windowNumbers)
+      shots = try await ScreenCapture.freeze()
     } catch {
       showScreenshotNotice("截屏失败：\(error.localizedDescription)", .screenRecording)
       return nil
@@ -573,7 +582,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let hotKeysWereActive = !hotKeys.bindings.isEmpty
     hotKeys.suspend()
     defer { if hotKeysWereActive { hotKeys.reload() } }
-    return await select(shots)
+    let previousKey = NSApp.keyWindow
+    let result = await select(shots)
+    // 本 App 在前台时（设置窗是 key），遮罩 orderOut 后 AppKit 可能把 key 交给别的自家窗口（比如浮层），所以不只看 nil
+    if let previousKey, previousKey.isVisible, NSApp.keyWindow !== previousKey {
+      previousKey.makeKey()
+    }
+    return result
   }
 
   /// 截图 / 截图翻译 / 取色得到的文字记进剪贴板历史（和复制进来的一样过敏感文本过滤；来源 App 为空）。
