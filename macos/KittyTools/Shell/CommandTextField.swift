@@ -1,6 +1,7 @@
-// 单行输入框（包一层 NSTextField）：方向键 / 回车 / Tab / Esc 走 doCommandBy。输入法组字期间这些键由
-// 输入法消费、不会回调过来，所以不需要吞键 hack。挂进窗口时把自己设为 initialFirstResponder，
-// 浮层显示时自动聚焦。romanOnly：聚焦时只允许英文类输入法（系统自动切过去，离开后恢复）。
+// 单行输入框（包一层 NSTextField）：方向键 / 回车 / Tab / ⇧Tab / ← → / ⌫ / Esc 走 doCommandBy（全部转给 onCommand，
+// 返回 false 就交还字段编辑器照常处理）。输入法组字期间这些键由输入法消费、不会回调过来，所以不需要吞键 hack。
+// 挂进窗口时把自己设为 initialFirstResponder，浮层显示时自动聚焦；拿到焦点时插入点和选中底色设成品牌粉。
+// romanOnly：聚焦时只允许英文类输入法（系统自动切过去，离开后恢复）。
 
 import AppKit
 import SwiftUI
@@ -75,7 +76,18 @@ struct CommandTextField: NSViewRepresentable {
     override func becomeFirstResponder() -> Bool {
       guard super.becomeFirstResponder() else { return false }
       applyInputSources()
+      applyBrandColors()
       return true
+    }
+
+    /// 插入点和选中文字底色用品牌粉（mac-overlay-panel §3）。字段编辑器是窗口共用的，别处可能改过，
+    /// 所以每次拿到焦点都设一遍，不露系统蓝
+    private func applyBrandColors() {
+      guard let editor = currentEditor() as? NSTextView else { return }
+      editor.insertionPointColor = NSColor(Style.brand)
+      editor.selectedTextAttributes = [
+        .backgroundColor: Style.Shot.accent.withAlphaComponent(0.28)
+      ]
     }
 
     /// 输入法限制挂在正在编辑的字段编辑器上（它是这个窗口共用的，所以关掉时要显式还原成不限制）

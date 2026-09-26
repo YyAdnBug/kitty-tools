@@ -1,25 +1,47 @@
-// 剪贴板面板内的对话框：备注、编辑正文、新建片段、新建 / 管理分组。
-// 直接画在面板里、不开 sheet 窗口：非激活浮层的 sheet 拿不稳键盘焦点。
+// 剪贴板面板内的对话框：备注、编辑正文、新建片段、新建 / 管理分组（mac-whisker §6 剪贴板）。
+// 直接画在面板里、不开 sheet 窗口：非激活浮层的 sheet 拿不稳键盘焦点。一张宽 708、圆角 card 的卡从搜索栏下沿落下
+// （settle，y −8→0 + 淡入；关掉淡出），只压暗列表区；输入框焦点环品牌粉，保存是品牌粉主按钮。
 // 输入框用 isDialogField：出现时抢焦点，关闭后焦点回到搜索框；Esc 关对话框。
 
 import SwiftUI
 
+/// 盖在列表区上：一直在视图树里，有对话框时才画压暗层和卡片（两者各自转场）
 struct DialogOverlay: View {
   @Bindable var model: ClipboardPanelModel
-  let dialog: ClipboardPanelModel.Dialog
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
-    ZStack {
-      Color.black.opacity(0.2).onTapGesture { close() }
-      card
-        .padding(16)
-        .frame(width: 440)
-        .background(.regularMaterial, in: .rect(cornerRadius: 12))
-        .shadow(radius: 16)
+    let drop: AnyTransition =
+      reduceMotion ? .opacity : .offset(y: -8).combined(with: .opacity)
+    ZStack(alignment: .top) {
+      if model.dialog != nil {
+        Button(action: close) { Color.black.opacity(0.2) }
+          .buttonStyle(.plain)
+          .accessibilityLabel("关闭对话框")
+          .transition(.opacity)
+      }
+      if let dialog = model.dialog {
+        let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
+        card(dialog)
+          .padding(14)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          // 阴影只挂在底上：挂在整张卡上会给里面的每个字都加阴影
+          .background {
+            shape.fill(.regularMaterial).shadow(color: .black.opacity(0.18), radius: 14, y: 6)
+          }
+          .overlay(shape.strokeBorder(Style.hairline, lineWidth: 0.5))
+          .padding(6)
+          .id(dialog.id)
+          .transition(
+            .asymmetric(
+              insertion: drop,
+              removal: .opacity.animation(.easeIn(duration: Style.fadeOut))))
+      }
     }
+    .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: model.dialog?.id)
   }
 
-  @ViewBuilder private var card: some View {
+  @ViewBuilder private func card(_ dialog: ClipboardPanelModel.Dialog) -> some View {
     switch dialog {
     case .note(let id):
       if let item = item(id) {
@@ -44,7 +66,8 @@ struct DialogOverlay: View {
       }
     case .newSnippet:
       TextDialog(
-        title: "新建片段", hint: "⌘↩ 保存。占位符：{date} 当天日期、{clipboard} 当前剪贴板、{cursor}", initial: "",
+        title: "新建片段", hint: "⌘↩ 保存。占位符：{date} 当天日期、{clipboard} 当前剪贴板、{cursor} 粘贴后光标停在这里",
+        initial: "",
         submitsOnEnter: false, onCancel: close
       ) { text in
         if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -99,8 +122,7 @@ private struct TextDialog: View {
         text: $text, submitsOnEnter: submitsOnEnter, isDialogField: true, onCancel: onCancel
       ) { onSave(text) }
       .frame(height: submitsOnEnter ? 80 : 200)
-      .padding(4)
-      .background(.background.opacity(0.6), in: .rect(cornerRadius: 6))
+      .dialogField()
       Text(hint).font(.caption).foregroundStyle(.secondary)
       HStack {
         Spacer()
@@ -108,6 +130,7 @@ private struct TextDialog: View {
         Button("保存") { onSave(text) }
           .keyboardShortcut(.return, modifiers: .command)
           .buttonStyle(.borderedProminent)
+          .tint(Style.brand)
       }
     }
   }
@@ -132,13 +155,12 @@ private struct NewGroupDialog: View {
         }
         return true
       }
-      .padding(6)
-      .background(.background.opacity(0.6), in: .rect(cornerRadius: 6))
+      .dialogField()
       if let error { Text(error).font(.caption).foregroundStyle(.red) }
       HStack {
         Spacer()
         Button("取消", action: onCancel)
-        Button("创建", action: create).buttonStyle(.borderedProminent)
+        Button("创建", action: create).buttonStyle(.borderedProminent).tint(Style.brand)
       }
     }
   }
@@ -202,8 +224,7 @@ private struct ManageGroupsDialog: View {
         }
         return true
       }
-      .padding(6)
-      .background(.background.opacity(0.6), in: .rect(cornerRadius: 6))
+      .dialogField()
       if let error { Text(error).font(.caption).foregroundStyle(.red) }
       HStack {
         if renaming != nil {
@@ -214,7 +235,7 @@ private struct ManageGroupsDialog: View {
         }
         Spacer()
         Button(renaming == nil ? "新建" : "重命名", action: submit)
-        Button("完成", action: onClose).buttonStyle(.borderedProminent)
+        Button("完成", action: onClose).buttonStyle(.borderedProminent).tint(Style.brand)
       }
     }
   }
@@ -231,5 +252,29 @@ private struct ManageGroupsDialog: View {
     renaming = nil
     name = ""
     error = nil
+  }
+}
+
+extension View {
+  /// 对话框里的输入框（Whisker §3）：primary 0.045（深 0.07）底 + 0.5 pt 发丝线，焦点环 1 pt 品牌粉 0.55 + 粉 0.18 外发光。
+  /// 对话框里只有一个输入框、一直拿着焦点，所以焦点环常亮
+  fileprivate func dialogField() -> some View {
+    modifier(DialogField())
+  }
+}
+
+private struct DialogField: ViewModifier {
+  @Environment(\.colorScheme) private var scheme
+
+  func body(content: Content) -> some View {
+    let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
+    content
+      .padding(6)
+      .background(Color.primary.opacity(scheme == .dark ? 0.07 : 0.045), in: shape)
+      // 外发光画在描边上再模糊（不给整块加 shadow：那样连里面的字都带光晕）
+      .background {
+        shape.stroke(Style.brand.opacity(0.18), lineWidth: 4).blur(radius: 2)
+      }
+      .overlay(shape.strokeBorder(Style.brand.opacity(0.55), lineWidth: 1))
   }
 }

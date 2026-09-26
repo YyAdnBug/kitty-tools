@@ -1,5 +1,6 @@
 // 剪贴板搜索（纯函数，配单测）：空白分词，每个词都要命中（AND）；不区分大小写、全半角、变音符号。
 // 排序：各词命中字段的权重之和（备注 3，正文 / 图片文字 / 文件路径 2，来源 App 1），同分按复制时间新→旧。
+// 命中摘录（excerpt）：行标题和透镜正文从第一个命中处截取，调用方只对屏上可见的行算。
 // 性能：每条先折叠成 UTF-8 字节（Key，由调用方缓存），之后每次搜索只做 memmem 字节查找。
 // 直接用 range(of:options:) 做不区分大小写 / 全半角的比较，5000 条要 1 秒（M2 实测）。
 
@@ -51,6 +52,30 @@ nonisolated enum Search {
     }
     .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0.copiedAt > $1.0.copiedAt }
     .map(\.0)
+  }
+
+  static func tokens(_ query: String) -> [String] {
+    query.split(whereSeparator: \.isWhitespace).map(String.init)
+  }
+
+  /// 各词第一次命中里最靠前的那个（比较口径同搜索）
+  static func firstHit(in text: String, query: String) -> Range<String.Index>? {
+    tokens(query).compactMap { text.range(of: $0, options: options) }
+      .min { $0.lowerBound < $1.lowerBound }
+  }
+
+  /// 命中摘录：命中前留 before 个字、命中后留 after 个字，截掉的那头补「…」。
+  /// 没有搜索词、没有命中，或命中就在开头 before 个字以内（照常从头显示就能看到）时返回 nil
+  static func excerpt(of text: String, query: String, before: Int = 40, after: Int = 40)
+    -> String?
+  {
+    guard let hit = firstHit(in: text, query: query),
+      let start = text.index(hit.lowerBound, offsetBy: -before, limitedBy: text.startIndex),
+      start > text.startIndex
+    else { return nil }
+    let end =
+      text.index(hit.upperBound, offsetBy: after, limitedBy: text.endIndex) ?? text.endIndex
+    return "…" + text[start..<end] + (end < text.endIndex ? "…" : "")
   }
 
   /// UTF-8 自同步：完整字符的字节序列只会在字符边界上匹配，字节查找等价于字符查找

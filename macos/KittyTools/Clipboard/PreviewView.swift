@@ -1,9 +1,10 @@
-// 剪贴板检查器卡片（Whisker，mac-whisker §6 剪贴板）：内缩 6、圆角 10 的一张卡。
-// 页眉 40 pt 取来源 App 图标的颜色（对比度不够时改黑字），写 App 名和「类型 · 大小 · 时间」；
-// 主体按类型出大预览：颜色 = 满宽色块 + HEX / RGB / HSL / SwiftUI 四行点击复制；代码 / JSON = SF Mono + 语法着色；
-// 链接 = 头图 + 标题 + 网站名（LinkPreview 联网取）；图片 = 棋盘格 + 尺寸胶囊 + 识别文字；文件 = Quick Look 缩略图网格；文本高亮搜索词。
+// ⌘Y 放大卡 = 剪贴板的完整检查器（Whisker，mac-whisker §6 剪贴板；主界面只有透镜 LensView，这张卡只在 QuickLookView 里）：
+// 内缩 6、圆角 10 的一张卡。页眉 40 pt 取来源 App 图标的颜色（对比度不够时改黑字，**只在这里**，主界面保持中性），
+// 写 App 名和「类型 · 大小 · 时间」；主体按类型出大预览（字号 ×1.2、文字可选中）：颜色 = 大色块 + HEX / RGB / HSL /
+// SwiftUI 四行点击复制；代码 / JSON = SF Mono + 语法着色；链接 = 300 pt 头图 + 标题 + 网站名（LinkPreview 联网取）；
+// 图片 = 棋盘格上的原尺寸图 + 尺寸胶囊 + 识别文字；单个文件 Quick Look、多个文件缩略图网格；文本高亮搜索词。
 // 页脚最多 4 个无边框胶囊按钮，其余操作在 ⌘K 面板。换条目时内容淡入上浮、页眉颜色渐变过去。
-// ⌘Y 放大预览（QuickLookView）用同一张卡的 enlarged 版：大图不带识别文字、文件用 Quick Look 预览、字号放大。
+// 链接卡（compact 版给透镜）、文件缩略图、语法着色也放在这里。
 
 import AppKit
 import QuickLookThumbnailing
@@ -12,8 +13,6 @@ import SwiftUI
 struct PreviewView: View {
   let item: ClipItem
   @Bindable var model: ClipboardPanelModel
-  /// ⌘Y 放大预览
-  var enlarged = false
   @Environment(\.colorScheme) private var scheme
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -108,28 +107,25 @@ struct PreviewView: View {
     switch item.kind {
     case .text:
       if form == .color, let color = ContentForm.color(in: item.text ?? "") {
-        ColorCard(color: color, enlarged: enlarged)
-      } else if form == .link, let url = ContentForm.firstLink(in: item.text ?? ""),
-        (item.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).count < 2048
-      {
-        LinkCard(url: url, text: item.text ?? "", heroHeight: enlarged ? 300 : 132)
+        ColorCard(color: color)
+      } else if form == .link, let url = ContentForm.firstLink(in: item.text ?? "") {
+        LinkCard(url: url, text: item.text ?? "")
       } else {
         ReadOnlyTextView(
-          text: displayText, style: form == .json ? .json : form == .code ? .code : .plain,
-          highlights: highlightTokens, fontScale: enlarged ? 1.2 : 1)
+          text: model.displayText(of: item),
+          style: form == .json ? .json : form == .code ? .code : .plain,
+          highlights: Search.tokens(model.query), fontScale: 1.2)
       }
     case .image:
       VStack(alignment: .leading, spacing: 8) {
         ZStack(alignment: .topTrailing) {
           Checkerboard()
-          ThumbnailView(
-            id: item.id, images: model.store.images, maxPixel: enlarged ? 2400 : 1024,
-            contentMode: .fit
-          )
-          .padding(8)
+          ThumbnailView(id: item.id, images: model.store.images, maxPixel: 2400, contentMode: .fit)
+            .padding(8)
           if let image = item.image {
             Text(
-              "\(image.width)×\(image.height) · \(image.byteCount.formatted(.byteCount(style: .file)))"
+              verbatim:
+                "\(image.width)×\(image.height) · \(image.byteCount.formatted(.byteCount(style: .file)))"
             )
             .font(.system(size: 11, weight: .medium))
             .padding(.horizontal, 8)
@@ -138,36 +134,23 @@ struct PreviewView: View {
             .padding(8)
           }
         }
-        .clipShape(.rect(cornerRadius: 8, style: .continuous))
-        .frame(maxHeight: enlarged ? .infinity : 220)
-        if !enlarged, let ocr = item.ocrText, !ocr.isEmpty {
+        .clipShape(.rect(cornerRadius: Style.Radius.card - 2, style: .continuous))
+        .frame(maxHeight: .infinity)
+        // 完整检查器：大图下面也给识别到的文字（可选中）
+        if let ocr = item.ocrText, !ocr.isEmpty {
           Text("识别到的文字").font(.system(size: 11, weight: .semibold)).foregroundStyle(.tertiary)
-          ScrollView { Text(ocr).font(.system(size: 12)).textSelection(.enabled) }
+          ScrollView { Text(ocr).font(.system(size: 13)).textSelection(.enabled) }
+            .frame(maxHeight: QuickLookView.ocrHeight)
         }
       }
       .padding(10)
     case .file:
-      if enlarged, let first = item.filePaths?.first {
-        QuickLookFile(url: URL(filePath: first))
+      if let paths = item.filePaths, paths.count == 1 {
+        QuickLookFile(url: URL(filePath: paths[0]))
       } else {
         FileGrid(paths: item.filePaths ?? [])
       }
     }
-  }
-
-  /// ponytail: 超长文本只预览前 10 万字，粘贴仍是全文
-  private var displayText: String {
-    let text = String((item.text ?? "").prefix(100_000))
-    guard model.prettyJSON, form == .json,
-      let object = try? JSONSerialization.jsonObject(with: Data(text.utf8)),
-      let data = try? JSONSerialization.data(
-        withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
-    else { return text }
-    return String(decoding: data, as: UTF8.self)
-  }
-
-  private var highlightTokens: [String] {
-    model.query.split(whereSeparator: \.isWhitespace).map(String.init)
   }
 
   // MARK: 页脚
@@ -236,7 +219,6 @@ struct PressScale: ButtonStyle {
 /// 颜色：满宽色块（中央写 HEX，按亮度选黑白字）+ HEX / RGB / HSL / SwiftUI 四行，点一下复制
 struct ColorCard: View {
   let color: ContentForm.RGBA
-  var enlarged = false
   @State private var copied: Int?
 
   var body: some View {
@@ -254,8 +236,7 @@ struct ColorCard: View {
             .font(.system(size: 22, weight: .semibold, design: .rounded))
             .foregroundStyle(Self.isLight(color) ? .black.opacity(0.8) : .white)
         }
-        // 高度自适应：卡片矮时色块让出空间给四行色值
-        .frame(minHeight: 72, maxHeight: enlarged ? .infinity : 150)
+        .frame(minHeight: 72, maxHeight: .infinity)
       ForEach(Array(values.enumerated()), id: \.offset) { index, value in
         Button {
           Paster.write(string: value)
@@ -319,31 +300,59 @@ struct ColorCard: View {
 }
 
 /// 链接：头图 + 标题 + 网站图标和名字 + 完整网址。设置里开着链接预览时，选中停留 0.25 s 后联网取（LinkPreview）：
-/// 取的时候头图区扫光，标题、头图到了就淡入；网页没给头图时是取网站图标颜色的渐变 + 大图标
-private struct LinkCard: View {
+/// 取的时候头图区扫光，标题、头图到了就淡入；网页没给头图时是取网站图标颜色的渐变 + 大图标。
+/// compact：透镜里的横排版（左 160×90 头图，右标题 ≤ 2 行 + 网站 + 网址，不可选中）；否则 ⌘Y 大卡的竖排版（头图 300）
+struct LinkCard: View {
   let url: URL
   let text: String
-  let heroHeight: CGFloat
+  var compact = false
   @AppStorage(Prefs.clipboardLinkPreview) private var fetches = true
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     // 开关关着时连取过的也不显示（设置说的是「显示」）
     let entry = fetches ? LinkPreview.shared.entry(for: url) : nil
+    let heroShape = RoundedRectangle(
+      cornerRadius: compact ? Style.Radius.control : Style.Radius.card - 2, style: .continuous)
+    let hero = LinkHero(entry: entry)
+      .accessibilityHidden(true)  // 标题、网站名已经在旁边说清楚了
+      .clipShape(heroShape)
+      .overlay(heroShape.strokeBorder(Style.hairline, lineWidth: 0.5))
+    Group {
+      if compact {
+        HStack(alignment: .top, spacing: 12) {
+          hero.frame(width: 160, height: 90)
+          details(entry, selectableURL: false).padding(.top, 2)
+        }
+      } else {
+        VStack(alignment: .leading, spacing: 8) {
+          hero.frame(height: 300)
+          details(entry, selectableURL: true)
+        }
+        .padding(10)
+      }
+    }
+    .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: entry?.metadata)
+    .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: entry?.isLoading)
+    .task(id: url) {
+      guard fetches, LinkPreview.isFetchable(url), !ClipboardFilter.looksSensitive(text) else {
+        return
+      }
+      try? await Task.sleep(for: .milliseconds(250))
+      guard !Task.isCancelled else { return }
+      await LinkPreview.shared.load(url)
+    }
+  }
+
+  /// 标题 + 网站 + 网址；大卡的网址可选中、两行，透镜里一行
+  private func details(_ entry: LinkPreview.Entry?, selectableURL selectable: Bool) -> some View {
     let host = url.host() ?? url.absoluteString
-    VStack(alignment: .leading, spacing: 8) {
-      LinkHero(entry: entry)
-        .accessibilityHidden(true)  // 标题、网站名已经在下面说清楚了
-        .frame(height: heroHeight)
-        .clipShape(.rect(cornerRadius: 8, style: .continuous))
-        .overlay(
-          RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(
-            Style.hairline, lineWidth: 0.5))
+    return VStack(alignment: .leading, spacing: compact ? 5 : 8) {
       Text(entry?.metadata.title ?? host)
         .font(.system(size: 15, weight: .semibold))
         .lineLimit(2)
         .contentTransition(.opacity)
-        .padding(.top, 2)
+        .padding(.top, compact ? 0 : 2)
       HStack(spacing: 6) {
         if let icon = entry?.icon {
           Image(nsImage: icon).resizable().interpolation(.high)
@@ -360,23 +369,16 @@ private struct LinkCard: View {
       }
       .font(.system(size: 12))
       .foregroundStyle(.secondary)
-      Text(url.absoluteString)
-        .font(.system(size: 11, design: .monospaced))
-        .foregroundStyle(.tertiary)
-        .lineLimit(2)
-        .truncationMode(.middle)
-        .textSelection(.enabled)
-    }
-    .padding(10)
-    .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: entry?.metadata)
-    .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: entry?.isLoading)
-    .task(id: url) {
-      guard fetches, LinkPreview.isFetchable(url), !ClipboardFilter.looksSensitive(text) else {
-        return
+      Group {
+        if selectable {
+          Text(url.absoluteString).lineLimit(2).textSelection(.enabled)
+        } else {
+          Text(url.absoluteString).lineLimit(1)
+        }
       }
-      try? await Task.sleep(for: .milliseconds(250))
-      guard !Task.isCancelled else { return }
-      await LinkPreview.shared.load(url)
+      .font(.system(size: 11, design: .monospaced))
+      .foregroundStyle(.tertiary)
+      .truncationMode(.middle)
     }
   }
 }
@@ -486,8 +488,9 @@ private struct FileGrid: View {
 }
 
 /// Quick Look 缩略图（PDF 首页、图片、视频帧）；生成前先显示系统图标
-private struct FileThumbnail: View {
+struct FileThumbnail: View {
   let path: String
+  var side: CGFloat = 64
   @State private var image: NSImage?
 
   var body: some View {
@@ -501,7 +504,7 @@ private struct FileThumbnail: View {
     .task(id: path) {
       let scale = NSScreen.main?.backingScaleFactor ?? 2
       let request = QLThumbnailGenerator.Request(
-        fileAt: URL(filePath: path), size: CGSize(width: 64, height: 64), scale: scale,
+        fileAt: URL(filePath: path), size: CGSize(width: side, height: side), scale: scale,
         representationTypes: .thumbnail)
       let cgImage: CGImage? = await withCheckedContinuation { continuation in
         QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { representation, _ in
@@ -568,7 +571,8 @@ enum SyntaxHighlight {
   }
 }
 
-/// 只读长文本（NSTextView，TextKit 2）：可选中、可滚动，高亮搜索词；代码 / JSON 着色
+/// 只读长文本（NSTextView，TextKit 2）：可选中、可滚动，高亮搜索词；代码 / JSON 着色（只给 ⌘Y 大卡：
+/// 透镜里不用它，免得滚轮被它吃掉、点一下抢走搜索框的焦点）
 private struct ReadOnlyTextView: NSViewRepresentable {
   let text: String
   let style: SyntaxHighlight.Language

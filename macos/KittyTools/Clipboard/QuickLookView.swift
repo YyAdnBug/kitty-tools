@@ -1,5 +1,6 @@
-// ⌘Y 放大预览（Whisker D）：剪贴板选中条目的大卡片，从检查器卡片的位置放大出来（OverlayPanel.zoom）。
-// 和检查器是同一张卡（PreviewView 的 enlarged 版）：图片按原尺寸铺开，文件用 Quick Look 预览，文字放大。
+// ⌘Y 放大预览 = 完整检查器（mac-whisker §6 剪贴板）：剪贴板选中条目的大卡片（PreviewView），窗口从透镜的位置
+// （透镜关掉时是选中行）长出来（OverlayPanel.zoom）。来源 App 彩色页眉只在这里；图片按原尺寸铺开并带识别文字，
+// 单个文件用 Quick Look 预览、多个文件是缩略图网格，文字放大且可选中。
 // 不用系统 QLPreviewPanel：它没有 nonactivatingPanel，当 key 会把键盘从原 App 抢走、点它会激活本 App（PLAN D3）。
 // 预览浮层不抢键盘：↑↓ 仍在剪贴板面板里换条目，这里跟着换并按条目重算尺寸；⌘Y / Esc 缩回卡片。
 
@@ -14,7 +15,7 @@ struct QuickLookView: View {
   var body: some View {
     Group {
       if model.showsQuickLookContent, let item = model.selectedItem {
-        PreviewView(item: item, model: model, enlarged: true)
+        PreviewView(item: item, model: model)
       } else if model.showsQuickLookContent {
         Text("没有可预览的条目").font(.system(size: 13)).foregroundStyle(.secondary)
           .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -27,18 +28,24 @@ struct QuickLookView: View {
     }
   }
 
-  /// 按内容定的窗口尺寸（调用方再夹到屏幕可见区的 90%）：图片按原尺寸（像素 / 屏幕倍率）加卡片的页眉页脚，
-  /// 文字按估出来的行数，文件、链接、颜色各给一个比剪贴板面板大的固定尺寸
+  /// 图片下面识别文字区的最高高度
+  static let ocrHeight: CGFloat = 140
+
+  /// 按内容定的窗口尺寸（调用方再夹到屏幕可见区的 90%）：图片按原尺寸（像素 / 屏幕倍率）加卡片的页眉页脚
+  /// （有识别文字再加文字区），文字按估出来的行数，文件、链接、颜色各给一个比剪贴板面板大的固定尺寸
   static func idealSize(for item: ClipItem, form: ContentForm?) -> NSSize {
     switch item.kind {
     case .image:
       let scale = NSScreen.main?.backingScaleFactor ?? 2
       let width = CGFloat(item.image?.width ?? 1600) / scale
       let height = CGFloat(item.image?.height ?? 1000) / scale
-      // 卡片内缩 6、图片区内边距 10 + 8；页眉 40、页脚 42
-      return NSSize(width: max(width + 48, 560), height: max(height + 130, 420))
+      // 卡片内缩 6、图片区内边距 10 + 8；页眉 40、页脚 42；识别文字：标题 + 间距约 30 + 文字区
+      let ocr = (item.ocrText ?? "").isEmpty ? 0 : ocrHeight + 30
+      return NSSize(width: max(width + 48, 560), height: max(height + 130 + ocr, 420))
     case .file:
-      return NSSize(width: 900, height: 680)
+      // 多个文件是缩略图网格，用不着 Quick Look 那么大
+      return (item.filePaths?.count ?? 0) > 1
+        ? NSSize(width: 720, height: 520) : NSSize(width: 900, height: 680)
     case .text:
       switch form {
       case .color: return NSSize(width: 520, height: 600)

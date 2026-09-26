@@ -31,9 +31,13 @@ enum Paster {
     write([.string: Data(string.utf8)])
   }
 
+  /// 片段 {cursor} 最多往回挪这么多个字，再多就不挪（逐个发 ← 太久，用户也看得到光标在跑）
+  static let maxCaretMoves = 500
+
   /// 向前台 App 发 ⌘V。浮层不激活本 App，前台一直是原 App，所以不用等待、不用切前台。
+  /// movingLeft：片段 {cursor}，⌘V 之后紧接着按这么多次 ←，把光标挪回占位符处（超过 maxCaretMoves 不挪）。
   /// 未授权返回 false，内容仍留在剪贴板里
-  static func pasteToFrontmost() -> Bool {
+  static func pasteToFrontmost(movingLeft moves: Int = 0) -> Bool {
     guard Permissions.isAccessibilityTrusted else { return false }
     // ponytail: 按物理键位发 V（kVK_ANSI_V），Dvorak 这类布局下会变成别的键；真有人用再按布局查键码
     let source = CGEventSource(stateID: .combinedSessionState)
@@ -43,6 +47,17 @@ enum Paster {
       // 显式设 flags：热键里还按着的 ⌥ / ⇧ 不会混进来变成 ⌥⌘V / ⌘⇧V
       event?.flags = .maskCommand
       event?.post(tap: .cgSessionEventTap)
+    }
+    // 同一个事件源、flags 清空（不然成了 ⌘← 跳到行首）；事件按顺序排队，不加等待。
+    // 某个 App 实测光标挪错时再为它加延迟，并注明是哪个 App（mac-overlay-panel §5）
+    guard (1...maxCaretMoves).contains(moves) else { return true }
+    for _ in 0..<moves {
+      for keyDown in [true, false] {
+        let event = CGEvent(
+          keyboardEventSource: source, virtualKey: CGKeyCode(kVK_LeftArrow), keyDown: keyDown)
+        event?.flags = []
+        event?.post(tap: .cgSessionEventTap)
+      }
     }
     return true
   }

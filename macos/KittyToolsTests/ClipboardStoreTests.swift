@@ -1,4 +1,5 @@
-// ClipboardStore / ImageStore 单测：去重置顶、各项上限只动普通历史、清空、落库往返、图片编码。
+// ClipboardStore / ImageStore 单测：去重置顶、各项上限只动普通历史、清空、落库往返、图片编码；
+// 剪贴板面板（Lens Bar）的纯逻辑：高度与透镜预留、列表前缀和、筛选标签与 Tab / ⇧Tab / ⌫ / Esc。
 // 用内存库 + 临时目录，不碰真实数据。
 
 import AppKit
@@ -172,5 +173,110 @@ struct ClipboardStoreTests {
     let (reloaded, _) = try makeStore(db)
     #expect(reloaded.items[0].groupID == nil)
     #expect(reloaded.groups.map(\.name) == [String(repeating: "长", count: 24)])
+  }
+
+  // MARK: 面板（Lens Bar）
+
+  @Test func panelHeightReservesLensAndCaps() throws {
+    #expect(ClipboardPanelView.listHeight(rows: 0, sections: 0, reservesLens: true) == 140)
+    // 上下内缩 12 + 分组标题 24 + 两行 80（+ 透镜预留 158）
+    #expect(ClipboardPanelView.listHeight(rows: 2, sections: 1, reservesLens: true) == 274)
+    #expect(ClipboardPanelView.listHeight(rows: 2, sections: 1, reservesLens: false) == 116)
+    #expect(ClipboardPanelView.listHeight(rows: 50, sections: 3, reservesLens: true) == 427.5)
+    let (store, _) = try makeStore()
+    for index in 0..<3 { store.record(text("条目 \(index)", ago: Double(10 - index))) }
+    let model = ClipboardPanelModel(store: store)
+    let height = ClipboardPanelView.height(for: model, showsLens: true, banner: false)
+    #expect(height == 406.5)  // 56 + 0.5 + (12 + 24 + 120 + 158) + 36
+    // ↑↓ 换选中不改窗口高度（透镜预留是常数）
+    model.select(store.items[2])
+    #expect(ClipboardPanelView.height(for: model, showsLens: true, banner: false) == height)
+    // 浮起的菜单要放得下 8.5 行、对话框给满
+    model.palette = .filters
+    #expect(ClipboardPanelView.height(for: model, showsLens: false, banner: false) == 356.5)
+    model.palette = nil
+    model.dialog = .newSnippet
+    #expect(ClipboardPanelView.height(for: model, showsLens: true, banner: true) == 550)
+    // 片段范围多一行「新建片段」，没有片段时也不是空态
+    model.dialog = nil
+    model.scope = .snippets
+    #expect(ClipboardPanelView.height(for: model, showsLens: true, banner: false) == 144.5)
+  }
+
+  @Test func listLayoutPrefixSums() {
+    let (a, b, c) = (text("a"), text("b"), text("c"))
+    let sections: [ClipboardPanelView.DaySection] = [
+      ("今天", [(0, a), (1, b)]), ("昨天", [(2, c)]),
+    ]
+    let layout = ListLayout(sections: sections, items: [a, b, c], lens: (b.id, 198))
+    #expect(layout.offset(of: a.id) == 24)
+    #expect(layout.offset(of: b.id) == 64)
+    #expect(layout.offset(of: c.id) == 286)  // 24 + 40 + 198 + 24
+    #expect(layout.sectionTops == [0, 262])
+    #expect(layout.height(of: b.id) == 198 && layout.height(of: a.id) == 40)
+    let flat = ListLayout(leading: 40, items: [a, b, c], lens: nil)
+    #expect(flat.offset(of: c.id) == 120)
+    #expect(flat.sectionTops.isEmpty)
+  }
+
+  @Test func tokensAndKeys() throws {
+    let (store, _) = try makeStore()
+    var safari = text("s")
+    safari.sourceBundleID = "com.apple.Safari"
+    safari.sourceName = "Safari"
+    safari.favorite = true
+    store.record(safari)
+    let model = ClipboardPanelModel(store: store)
+    model.scope = .favorites
+    model.sourceBundleID = "com.apple.Safari"
+    #expect(model.tokens.map(\.title) == ["收藏", "Safari"])
+    // ⌫（搜索为空）：第一下只待删，第二下删最后一个标签；Esc 取消待删
+    #expect(model.handleCommand(#selector(NSResponder.deleteBackward(_:))))
+    #expect(model.armsLastToken && model.sourceBundleID != nil)
+    #expect(model.handleCommand(#selector(NSResponder.cancelOperation(_:))))
+    #expect(!model.armsLastToken)
+    _ = model.handleCommand(#selector(NSResponder.deleteBackward(_:)))
+    _ = model.handleCommand(#selector(NSResponder.deleteBackward(_:)))
+    #expect(model.sourceBundleID == nil && model.tokens.map(\.title) == ["收藏"])
+    // 有搜索词时 ⌫ 交还输入框删字
+    model.query = "x"
+    #expect(!model.handleCommand(#selector(NSResponder.deleteBackward(_:))))
+    model.query = ""
+    // ⇧Tab 循环范围：收藏 → 片段 → 全部 → 收藏
+    _ = model.handleCommand(#selector(NSResponder.insertBacktab(_:)))
+    #expect(model.scope == .snippets)
+    _ = model.handleCommand(#selector(NSResponder.insertBacktab(_:)))
+    #expect(model.scope == .all && model.tokens.isEmpty)
+    // Tab 开关筛选面板；开着时搜索框过滤条目，↩ 应用并关面板，再应用一次取消
+    _ = model.handleCommand(#selector(NSResponder.insertTab(_:)))
+    #expect(model.palette == .filters)
+    model.actionQuery = "json"
+    #expect(model.filteredActions.map(\.title) == ["JSON"])
+    _ = model.handleCommand(#selector(NSResponder.insertNewline(_:)))
+    #expect(model.palette == nil && model.form == .json && model.kind == .text)
+    #expect(model.tokens.map(\.title) == ["JSON"])
+    model.palette = .filters
+    model.actionQuery = "来源"
+    #expect(model.filteredActions.map(\.title) == ["Safari"])
+    model.actionQuery = "json"
+    #expect(model.filteredActions.first?.isChecked == true)
+    model.runSelectedAction()
+    #expect(model.form == nil && model.kind == nil)
+    // Esc：先关面板，再清搜索词
+    model.palette = .filters
+    model.query = "abc"
+    _ = model.handleCommand(#selector(NSResponder.cancelOperation(_:)))
+    #expect(model.palette == nil && model.query == "abc")
+    _ = model.handleCommand(#selector(NSResponder.cancelOperation(_:)))
+    #expect(model.query.isEmpty)
+    // ⌘K 开着、过滤词为空时 ← 关掉
+    model.palette = .actions
+    #expect(model.handleCommand(#selector(NSResponder.moveLeft(_:))))
+    #expect(model.palette == nil)
+    // reset 清掉标签、待删和面板
+    model.scope = .favorites
+    model.armsLastToken = true
+    model.reset()
+    #expect(model.tokens.isEmpty && !model.armsLastToken && model.palette == nil)
   }
 }

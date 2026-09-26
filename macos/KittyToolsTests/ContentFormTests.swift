@@ -1,4 +1,5 @@
-// ContentForm / Snippet 单测：颜色解析、JSON / 链接 / 代码识别、片段占位符；检查器卡片的语法着色与页眉黑白字。
+// ContentForm / Snippet / Lens 单测：颜色解析、JSON / 链接 / 代码识别、片段占位符与 {cursor} 偏移、透镜定高表；
+// 语法着色与放大卡页眉黑白字。
 
 import AppKit
 import Foundation
@@ -37,7 +38,8 @@ struct ContentFormTests {
       Date.ISO8601FormatStyle(timeZone: .current).year().month().day().dateSeparator(.dash))
     let expanded = Snippet.expand(
       "日期 {DATE}，剪贴板 {clipboard}{cursor}", clipboard: { "abc" }, now: date)
-    #expect(expanded == "日期 \(expected)，剪贴板 abc")
+    #expect(expanded.text == "日期 \(expected)，剪贴板 abc")
+    #expect(expanded.charactersAfterCursor == 0)
     var asked = false
     #expect(
       Snippet.expand(
@@ -45,9 +47,40 @@ struct ContentFormTests {
         clipboard: {
           asked = true
           return nil
-        }, now: date) == expected)
+        }, now: date
+      ).text == expected)
     #expect(!asked)  // 没用到 {clipboard} 就不读剪贴板
-    #expect(Snippet.expand("无占位符 {other}", clipboard: { nil }) == "无占位符 {other}")
+    #expect(Snippet.expand("无占位符 {other}", clipboard: { nil }) == ("无占位符 {other}", 0))
+  }
+
+  /// {cursor}：展开后它后面的字数（按字形簇，和 ← 一次挪一个字对应）；只认第一个，其余去掉
+  @Test func snippetCursorOffset() {
+    let result = Snippet.expand("Hi {Cursor}, see {clipboard}{cursor}!", clipboard: { "今天" })
+    #expect(result.text == "Hi , see 今天!")
+    #expect(result.charactersAfterCursor == 9)
+    #expect(Snippet.expand("{cursor}", clipboard: { nil }) == ("", 0))
+    #expect(Snippet.expand("a{cursor}b\r\nc👍🏽", clipboard: { nil }).charactersAfterCursor == 4)
+    #expect(Snippet.expand("前{cursor}", clipboard: { nil }) == ("前", 0))
+  }
+
+  /// 透镜正文按类型定高（查表，不量内在尺寸）：前缀和、滚动、窗口预留都靠它
+  @Test func lensHeights() {
+    func text(_ value: String) -> ClipItem {
+      var item = ClipItem(kind: .text)
+      item.text = value
+      return item
+    }
+    #expect(Lens.bodyHeight(for: text("  一句短话  "), form: nil) == 36)
+    #expect(Lens.bodyHeight(for: text(String(repeating: "长", count: 61)), form: nil) == 90)
+    #expect(Lens.bodyHeight(for: text("两行\n文本"), form: nil) == 90)
+    #expect(Lens.bodyHeight(for: text("x"), form: .code) == 128)
+    #expect(Lens.bodyHeight(for: text("{}"), form: .json) == 128)
+    #expect(Lens.bodyHeight(for: text("#fff"), form: .color) == 72)
+    #expect(Lens.bodyHeight(for: text("https://a.com"), form: .link) == 90)
+    #expect(Lens.bodyHeight(for: ClipItem(kind: .image), form: nil) == 108)
+    #expect(Lens.bodyHeight(for: ClipItem(kind: .file), form: nil) == 76)
+    #expect(Lens.height(for: text("{}"), form: .json) == 198)  // 最高的透镜
+    #expect(Lens.reserve == 198 - ClipRowView.height)
   }
 
   @Test func syntaxHighlight() {

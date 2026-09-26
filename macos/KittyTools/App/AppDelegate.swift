@@ -79,13 +79,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   private lazy var clipboardPanel: OverlayPanel = {
     let model = clipboardModel
+    // 透镜指令条：和启动器同位置同宽（顶边在可见区 20%），高度按条数伸缩、顶边不动
     let panel = OverlayPanel(
-      size: NSSize(width: 760, height: 480), autoHide: .clickOutside,
+      size: NSSize(
+        width: ClipboardPanelView.width, height: ClipboardPanelView.height(for: model)),
+      topAnchored: true, autoHide: .clickOutside,
       isPinned: { !UserDefaults.standard.bool(forKey: Prefs.clipboardHideOnUnfocus) },
       content: ClipboardPanelView(model: model))
     panel.keyEquivalentHandler = { [unowned model] in model.handleKeyEquivalent($0) }
     panel.onHide = { [unowned model] in model.reset() }
     model.hidePanel = { [unowned panel] in panel.hide() }
+    model.resize = { [unowned panel] in panel.setContentHeight($0, animated: true) }
     // 剪贴板面板保持打开（兄弟浮层），翻译浮窗出现在旁边
     model.openTranslate = { [unowned self] text in
       coordinator.translate(text)

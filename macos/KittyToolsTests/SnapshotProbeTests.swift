@@ -13,7 +13,7 @@ struct SnapshotProbeTests {
   nonisolated private static let directory =
     ProcessInfo.processInfo.environment["KITTY_SNAPSHOT_DIR"]
 
-  @Test(.enabled(if: directory != nil)) func renderPanels() throws {
+  @Test(.enabled(if: directory != nil)) func renderPanels() async throws {
     let out = try #require(Self.directory)
     Prefs.registerDefaults()
     let dir = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
@@ -34,6 +34,11 @@ struct SnapshotProbeTests {
         "com.apple.finder"
       ),
       ("#3478F6", 60, "Safari", "com.apple.Safari"),
+      (
+        "透镜指令条的设计说明：单列、贴在屏幕上方的键盘指令条。\n选中哪条，哪条就在原地展开成预览，"
+          + "范围和筛选变成搜索框里的粉色标签。\nTab 选筛选，→ 打开动作，⌫ 删标签。视线只沿一条竖线走，"
+          + "手不用离开键盘。高度按类型定死，上下键永远不改窗口高度。", 7200, "备忘录", "com.apple.Notes"
+      ),
     ]
     for (text, ago, name, bundle) in samples {
       var item = ClipItem(
@@ -47,6 +52,27 @@ struct SnapshotProbeTests {
       copiedAt: Date.now.addingTimeInterval(-30))
     file.filePaths = ["/Applications/Safari.app", "/System/Library/CoreServices/Finder.app"]
     store.record(file)
+    // 图片：真的写一张 PNG 进图片目录（缩略图异步读它），带识别文字
+    let picture = try ScreenshotTests.render(["Lens Bar", "透镜指令条"])
+    let png = try #require(
+      NSBitmapImageRep(cgImage: picture).representation(using: .png, properties: [:]))
+    var image = ClipItem(
+      kind: .image, sourceName: "微信", sourceBundleID: "com.tencent.xinWeChat",
+      copiedAt: Date.now.addingTimeInterval(-45))
+    try png.write(to: store.images.url(for: image.id))
+    image.image = .init(
+      width: picture.width, height: picture.height, byteCount: png.count, sha256: "snapshot")
+    image.ocrText = "Lens Bar\n透镜指令条\n选中哪条哪条就在原地展开"
+    store.record(image)
+    var snippet = ClipItem(kind: .text, copiedAt: Date.now.addingTimeInterval(-5000))
+    snippet.text = "您好 {cursor}，\n附件是本周的周报，请查收。"
+    snippet.isSnippet = true
+    snippet.note = "邮件开头"
+    store.record(snippet)
+    // 屏外渲染时 .task 来不及跑：先把行图标、透镜、放大卡要用的缩略图放进缓存
+    for maxPixel in [72, 720, 2400] {
+      _ = await ThumbnailView.load(image.id, images: store.images, maxPixel: maxPixel)
+    }
     let link = try #require(store.items.first { $0.text?.hasPrefix("https://developer") == true })
     store.toggleFavorite([link.id])
     store.update([link.id]) { $0.note = "AppKit 文档" }
@@ -66,43 +92,79 @@ struct SnapshotProbeTests {
     LinkPreview.shared.store(preview, for: try #require(URL(string: link.text ?? "")))
     LinkPreview.shared.store(
       LinkPreview.Entry(), for: try #require(URL(string: "https://sspai.com/post/73145")))
+    func pick(_ m: ClipboardPanelModel, _ match: (ClipItem) -> Bool) {
+      if let item = m.visibleItems.first(where: match) { m.select(item) }
+    }
+    // 透镜指令条（Lens Bar）：各类型的透镜、命中摘录、标签 + 筛选面板、标签待删、⌘K、多选、片段范围、对话框、空结果
     let states: [(String, (ClipboardPanelModel) -> Void)] = [
       ("list", { _ in }),
-      ("json", { m in m.select(m.visibleItems.first { $0.text?.hasPrefix("{") == true }!) }),
-      ("search", { m in m.query = "swift" }),
-      ("multi", { m in m.multiSelection = Set(m.visibleItems.prefix(3).map(\.id)) }),
-      ("dialog", { m in m.dialog = .note(link.id) }),
+      ("lens-text", { m in pick(m) { $0.text?.hasPrefix("透镜") == true } }),
       (
-        "filtered",
+        "lens-short",
+        { m in
+          m.sourceBundleID = "com.apple.Notes"
+          pick(m) { $0.text?.hasPrefix("昨天") == true }
+        }
+      ),
+      ("lens-code", { m in m.form = .code }),
+      ("lens-json", { m in m.form = .json }),
+      ("lens-color", { m in pick(m) { $0.text == "#3478F6" } }),
+      ("lens-link", { m in m.scope = .favorites }),
+      ("lens-link-loading", { m in pick(m) { $0.text?.hasPrefix("https://sspai") == true } }),
+      ("lens-image", { m in pick(m) { $0.kind == .image } }),
+      ("lens-file", { m in pick(m) { $0.kind == .file } }),
+      ("search", { m in m.query = "上下键" }),
+      ("search-code", { m in m.query = "swift" }),
+      (
+        "tokens-filters",
+        { m in
+          m.scope = .favorites
+          m.sourceBundleID = "com.apple.Safari"
+          m.palette = .filters
+        }
+      ),
+      (
+        "token-armed",
         { m in
           m.kind = .text
           m.form = .code
-        }
-      ),
-      ("empty-snippets", { m in m.scope = .snippets }),
-      ("color", { m in m.select(m.visibleItems.first { $0.text == "#3478F6" }!) }),
-      ("link", { m in m.select(link) }),
-      (
-        "link-loading",
-        { m in
-          m.select(m.visibleItems.first { $0.text?.hasPrefix("https://sspai") == true }!)
+          m.armsLastToken = true
         }
       ),
       ("actions", { m in m.showsActions = true }),
+      ("multi", { m in m.multiSelection = Set(m.visibleItems.prefix(3).map(\.id)) }),
+      ("snippets", { m in m.scope = .snippets }),
+      ("dialog", { m in m.dialog = .note(link.id) }),
+      ("empty-search", { m in m.query = "zzzz" }),
     ]
     for dark in [false, true] {
       for (name, configure) in states {
         model.reset()
         configure(model)
         try snapshot(
-          ClipboardPanelView(model: model), size: NSSize(width: 760, height: 480), dark: dark,
-          to: "\(out)/\(name)\(dark ? "-dark" : "").png")
+          ClipboardPanelView(model: model),
+          size: NSSize(
+            width: ClipboardPanelView.width, height: ClipboardPanelView.height(for: model)),
+          dark: dark, to: "\(out)/clip-\(name)\(dark ? "-dark" : "").png")
       }
     }
-    // ⌘Y 放大预览：代码（放大的字）、链接（大头图），按各自的理想尺寸
-    for (name, prefix) in [("quicklook-code", "import"), ("quicklook-link", "https://developer")] {
+    // 关掉透镜 = 纯列表（设置 › 剪贴板「显示透镜」）
+    UserDefaults.standard.set(false, forKey: Prefs.clipboardShowPreview)
+    model.reset()
+    try snapshot(
+      ClipboardPanelView(model: model),
+      size: NSSize(width: ClipboardPanelView.width, height: ClipboardPanelView.height(for: model)),
+      dark: false, to: "\(out)/clip-no-lens.png")
+    UserDefaults.standard.removeObject(forKey: Prefs.clipboardShowPreview)
+    // ⌘Y 放大预览 = 完整检查器：代码（放大的字）、链接（大头图）、图片（带识别文字）、多个文件（网格），按各自的理想尺寸
+    for (name, match) in [
+      ("quicklook-code", { (item: ClipItem) in item.text?.hasPrefix("import") == true }),
+      ("quicklook-link", { $0.text?.hasPrefix("https://developer") == true }),
+      ("quicklook-image", { $0.kind == .image }),
+      ("quicklook-files", { $0.kind == .file }),
+    ] {
       model.reset()
-      let item = try #require(model.visibleItems.first { $0.text?.hasPrefix(prefix) == true })
+      let item = try #require(model.visibleItems.first(where: match))
       model.select(item)
       model.showsQuickLookContent = true
       let size = QuickLookView.idealSize(for: item, form: model.contentForm(of: item))

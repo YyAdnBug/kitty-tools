@@ -1,6 +1,8 @@
-// 剪贴板列表的一行（Whisker，mac-whisker §6 剪贴板）：44 pt，30 pt 图标块（色块 > 缩略图 > 来源 App 图标 + 代码角标
-// > 种类图标），标题 13 + 副标题 11（有备注显示备注，否则「来源 · 多久前 · 大小」），右侧分组 / 片段 / 收藏标记；
-// ⌘1–9 键帽只在按住 ⌘ 时出现。选中是列表背后一块滑动的中性高亮，行本身不填色、文字不反白；多选勾选行品牌粉 0.14 底。
+// 剪贴板列表的一行（Lens Bar，mac-whisker §6 剪贴板）：40 pt，24 pt 图标块（色块 > 缩略图 > 来源 App 图标 + 代码角标
+// > 网站图标 / 种类图标），标题 13 regular 单行（代码 / JSON 用 SF Mono 12；有搜索词时从第一个命中处摘录、命中词黄底），
+// 右侧 11 pt「来源 · 多久前」（收藏 / 片段有备注时换成备注），再右是分组 / 带格式 / 片段 / 收藏标记；
+// ⌘1–9 键帽只在按住 ⌘ 时出现。选中是列表背后一块滑动的中性高亮（透镜的底），行本身不填色、文字不反白；
+// 多选时最左边多一个品牌粉勾选圆，勾中的行品牌粉 0.14 底。选中行在它下面展开透镜（LensView）。
 // 行内用到的摘要文字、图标与取色缓存、缩略图也放在这里。
 
 import AppKit
@@ -9,11 +11,12 @@ import SwiftUI
 struct ClipRowView: View {
   let item: ClipItem
   let form: ContentForm?
+  /// 搜索词：标题从命中处摘录、命中词高亮
+  var query = ""
   /// 0...8：显示 ⌘1…⌘9
   let shortcutIndex: Int?
   /// 按住 ⌘：把 ⌘数字键帽亮出来
   let showsShortcut: Bool
-  let isSelected: Bool
   /// nil = 不在多选状态
   let isChecked: Bool?
   /// 只在分组筛选为「全部」时传
@@ -21,7 +24,7 @@ struct ClipRowView: View {
   let images: ImageStore
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-  static let height: CGFloat = 44
+  static let height: CGFloat = 40
 
   var body: some View {
     HStack(spacing: 10) {
@@ -32,32 +35,37 @@ struct ClipRowView: View {
           .contentTransition(.symbolEffect(.replace))
       }
       IconTile(item: item, form: form, images: images)
-      VStack(alignment: .leading, spacing: 2) {
-        Text(item.title)
-          .font(.system(size: 13))
-          .lineLimit(1)
-          .truncationMode(.tail)
-        Text(subtitle)
-          .font(.system(size: 11))
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-          .truncationMode(.tail)
-      }
-      Spacer(minLength: 6)
+      Text(title)
+        .font(
+          form == .code || form == .json
+            ? .system(size: 12, design: .monospaced) : .system(size: 13)
+        )
+        .lineLimit(1)
+        .truncationMode(.tail)
+      Spacer(minLength: 8)
+      trailing
+        .font(.system(size: 11))
+        .lineLimit(1)
+        .truncationMode(.tail)
+        .frame(maxWidth: 220, alignment: .trailing)
+        .layoutPriority(1)
       if let groupName {
         Text(groupName)
           .font(.system(size: 10, weight: .medium))
           .lineLimit(1)
           .padding(.horizontal, 6)
-          .padding(.vertical, 2)
-          .background(.primary.opacity(0.07), in: .capsule)
+          .frame(height: 16)
+          .background(
+            Style.controlFill, in: .rect(cornerRadius: Style.Radius.control, style: .continuous))
       }
       if item.richType != nil {
         // 带格式（RTF / HTML）。textformat 在中文系统上画成「格式」两个字；B I U 不跟系统语言换字形
         Image(systemName: "bold.italic.underline").imageScale(.small).foregroundStyle(.tertiary)
+          .help("带格式")
       }
       if item.isSnippet {
         Image(systemName: "text.badge.star").imageScale(.small).foregroundStyle(.secondary)
+          .help("片段")
       }
       Image(systemName: "star.fill")
         .font(.system(size: 11))
@@ -68,6 +76,7 @@ struct ClipRowView: View {
         // 宽度也在动画里：收藏时星星挤开旁边的标记，而不是跳
         .frame(width: item.favorite ? nil : 0)
         .animation(Style.Motion.pop.animation(reduced: reduceMotion), value: item.favorite)
+        .accessibilityLabel(item.favorite ? "已收藏" : "")
       // 没按 ⌘ 时不在布局里（占着宽度和间距的话，前九行的标题比别的行早截断）
       if isChecked == nil, let shortcutIndex, showsShortcut {
         KeyCap("⌘\(shortcutIndex + 1)")
@@ -85,42 +94,56 @@ struct ClipRowView: View {
       isChecked == true ? Style.brand.opacity(0.14) : .clear,
       in: .rect(cornerRadius: Style.Radius.card, style: .continuous)
     )
-    .contentShape(.rect)
-    .accessibilityElement(children: .combine)
-    .accessibilityAddTraits(isSelected ? .isSelected : [])
   }
 
-  private var subtitle: String {
-    if item.favorite || item.isSnippet, let note = item.note, !note.isEmpty { return note }
-    let detail: String? =
-      switch item.kind {
-      case .text: "\((item.text ?? "").count) 字"
-      case .image: item.image.map { "\($0.width)×\($0.height)" }
-      case .file: (item.filePaths?.count ?? 0) > 1 ? "\(item.filePaths?.count ?? 0) 个文件" : "文件"
-      }
-    let ago = item.copiedAt.formatted(
-      .relative(presentation: .named).locale(Locale(identifier: "zh-Hans")))
-    return [item.sourceName, ago, detail].compactMap { $0 }.joined(separator: " · ")
+  /// 标题：有搜索词且命中不在开头时从命中处摘录（前 12 字 + 「…」），命中词黄底
+  private var title: AttributedString {
+    let full = item.title
+    guard !query.isEmpty else { return AttributedString(full) }
+    let source = item.kind == .text ? String((item.text ?? "").prefix(20_000)) : full
+    let excerpt = Search.excerpt(of: source, query: query, before: 12, after: 160)
+    var attributed = AttributedString(
+      excerpt.map { $0.replacing(/\s+/, with: " ") } ?? full)
+    attributed.highlight(query)
+    return attributed
+  }
+
+  /// 右侧：收藏 / 片段有备注时是备注（secondary），否则「来源 · 多久前」（tertiary）
+  @ViewBuilder private var trailing: some View {
+    if item.favorite || item.isSnippet, let note = item.note, !note.isEmpty {
+      Text(note).foregroundStyle(.secondary)
+    } else {
+      let ago = item.copiedAt.formatted(
+        .relative(presentation: .named).locale(Locale(identifier: "zh-Hans")))
+      Text([item.sourceName, ago].compactMap { $0 }.joined(separator: " · "))
+        .foregroundStyle(.tertiary)
+    }
   }
 }
 
-/// 行首 30 pt 图标块（圆角 7）：颜色 = 色块（透明时垫棋盘格）；图片 = 缩略图；文本 = 来源 App 图标，
-/// JSON / 代码 / 链接在右下角加角标（链接取过预览后是网站图标）；都没有时是网站图标或种类图标
+/// 行首 24 pt 图标块（圆角 tile(24)）：颜色 = 色块（透明时垫棋盘格）；图片 = 缩略图；文本 = 来源 App 图标，
+/// JSON / 代码 / 链接在右下角加 11 pt 角标（链接取过预览后是网站图标）；都没有时是网站图标或种类图标
 private struct IconTile: View {
   let item: ClipItem
   let form: ContentForm?
   let images: ImageStore
   @AppStorage(Prefs.clipboardLinkPreview) private var showsLinkPreview = true
 
+  static let side: CGFloat = 24
+  static let badge: CGFloat = 11
+
   var body: some View {
-    let shape = RoundedRectangle(cornerRadius: Style.Radius.tile(30), style: .continuous)
+    let shape = RoundedRectangle(cornerRadius: Style.Radius.tile(Self.side), style: .continuous)
+    let badgeShape = RoundedRectangle(cornerRadius: Style.Radius.mini - 1, style: .continuous)
     Group {
       if form == .color, let color = ContentForm.color(in: item.text ?? "") {
         shape.fill(Color(color))
-          .background(Checkerboard(cell: 5).clipShape(shape))
+          .background(Checkerboard(cell: 4).clipShape(shape))
           .overlay(shape.strokeBorder(.white.opacity(0.25), lineWidth: 1))
       } else if item.kind == .image {
-        ThumbnailView(id: item.id, images: images, maxPixel: 96)
+        // 先定框再裁：fill 的图比框宽（长截图 5:1），只裁自己的边界会溢出盖住标题
+        ThumbnailView(id: item.id, images: images, maxPixel: 72)
+          .frame(width: Self.side, height: Self.side)
           .clipShape(shape)
           .overlay(shape.strokeBorder(Style.hairline, lineWidth: 0.5))
       } else if let icon = AppIcons.icon(for: item.sourceBundleID) {
@@ -132,15 +155,12 @@ private struct IconTile: View {
                 if let favicon {
                   Image(nsImage: favicon).resizable().interpolation(.high).padding(1)
                 } else {
-                  Image(systemName: form.symbol).font(.system(size: 7, weight: .bold))
+                  Image(systemName: form.symbol).font(.system(size: 6, weight: .bold))
                 }
               }
-              .frame(width: 13, height: 13)
-              .background(.regularMaterial, in: .rect(cornerRadius: 4, style: .continuous))
-              .overlay(
-                RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(
-                  Style.hairline, lineWidth: 0.5)
-              )
+              .frame(width: Self.badge, height: Self.badge)
+              .background(.regularMaterial, in: badgeShape)
+              .overlay(badgeShape.strokeBorder(Style.hairline, lineWidth: 0.5))
               .offset(x: 2, y: 2)
             }
           }
@@ -150,13 +170,13 @@ private struct IconTile: View {
           .overlay(shape.strokeBorder(Style.hairline, lineWidth: 0.5))
       } else {
         Image(systemName: form?.symbol ?? item.kind.symbol)
-          .font(.system(size: 13, weight: .medium))
+          .font(.system(size: 11, weight: .medium))
           .symbolRenderingMode(.hierarchical)
           .frame(maxWidth: .infinity, maxHeight: .infinity)
           .background(Style.controlFill, in: shape)
       }
     }
-    .frame(width: 30, height: 30)
+    .frame(width: Self.side, height: Self.side)
     .accessibilityHidden(true)
   }
 
@@ -186,13 +206,20 @@ struct Checkerboard: View {
   }
 }
 
-/// 键帽样式的快捷键提示
 extension ClipItem.Kind {
   var symbol: String {
     switch self {
     case .text: "text.alignleft"
     case .image: "photo"
     case .file: "doc"
+    }
+  }
+
+  var title: String {
+    switch self {
+    case .text: "文本"
+    case .image: "图片"
+    case .file: "文件"
     }
   }
 }
@@ -236,7 +263,7 @@ enum AppIcons {
   private static var cache: [String: NSImage?] = [:]
   private static var colors: [String: NSColor] = [:]
 
-  /// 检查器页眉色：图标 12×12 采样，跳过透明和过亮 / 过暗的像素求平均，饱和度 ×1.25 + 0.08、亮度 ×0.85
+  /// ⌘Y 放大卡的页眉色：图标 12×12 采样，跳过透明和过亮 / 过暗的像素求平均，饱和度 ×1.25 + 0.08、亮度 ×0.85
   /// 夹在 0.35–0.75（白字才读得清）。取不到时用系统蓝
   static func accentColor(for bundleID: String?) -> NSColor {
     guard let bundleID else { return .systemBlue }
@@ -297,7 +324,7 @@ enum AppIcons {
   }
 }
 
-/// 图片条目的缩略图：后台按需生成，NSCache 复用
+/// 图片条目的缩略图：后台按需生成，NSCache 复用。缓存里有的在建视图时就直接用（滚回来、透镜展开不闪一下占位）
 struct ThumbnailView: View {
   let id: UUID
   let images: ImageStore
@@ -306,6 +333,14 @@ struct ThumbnailView: View {
   @State private var image: NSImage?
 
   private static let cache = NSCache<NSString, NSImage>()
+
+  init(id: UUID, images: ImageStore, maxPixel: Int, contentMode: ContentMode = .fill) {
+    self.id = id
+    self.images = images
+    self.maxPixel = maxPixel
+    self.contentMode = contentMode
+    _image = State(initialValue: Self.cache.object(forKey: Self.key(id, maxPixel)))
+  }
 
   var body: some View {
     Group {
@@ -317,14 +352,21 @@ struct ThumbnailView: View {
     }
     .clipShape(.rect(cornerRadius: 6))
     .task(id: id) {
-      let key = "\(id.uuidString)-\(maxPixel)" as NSString
-      if let cached = Self.cache.object(forKey: key) {
-        image = cached
-      } else if let cgImage = await images.thumbnail(for: id, maxPixel: maxPixel) {
-        let loaded = NSImage(cgImage: cgImage, size: .zero)
-        Self.cache.setObject(loaded, forKey: key)
-        image = loaded
-      }
+      image = await Self.load(id, images: images, maxPixel: maxPixel)
     }
+  }
+
+  /// 缓存里有就直接给，没有就在后台生成再缓存（截图自检也先用它把缓存填好：屏外渲染时 .task 来不及跑）
+  static func load(_ id: UUID, images: ImageStore, maxPixel: Int) async -> NSImage? {
+    let key = key(id, maxPixel)
+    if let cached = cache.object(forKey: key) { return cached }
+    guard let cgImage = await images.thumbnail(for: id, maxPixel: maxPixel) else { return nil }
+    let loaded = NSImage(cgImage: cgImage, size: .zero)
+    cache.setObject(loaded, forKey: key)
+    return loaded
+  }
+
+  private static func key(_ id: UUID, _ maxPixel: Int) -> NSString {
+    "\(id.uuidString)-\(maxPixel)" as NSString
   }
 }

@@ -1,69 +1,100 @@
-// 剪贴板面板根视图（Whisker，mac-whisker §6 剪贴板）：760×480。56 pt 搜索框 + 设置 / 图钉；一行 22 pt 范围胶囊
-// （全部 / 收藏 / 片段）+ 生效筛选标签 +「筛选」菜单；左列表 320（无搜索词按天分组吸顶，有搜索词按相关度，
-// 一块中性高亮在行间滑动，新条目从顶部挤入、删除缩小淡出），右检查器卡片；底栏只留「条数 / 提示 ｜ 粘贴 ↩ · 操作 ⌘K」，
-// ⌘K 操作面板从右下角放大（搜索框这时用来过滤操作）。按住 ⌘ 150 ms 后亮出 ⌘1–9。状态和操作都在 ClipboardPanelModel。
+// 剪贴板面板根视图（透镜指令条 Lens Bar，mac-whisker §6 剪贴板）：宽 720、贴在屏幕上方 20%（和启动器同位置），
+// 高度按条数伸缩、顶边不动、≤ 520（height(for:)；透镜预留是常数，↑↓ 永远不改窗口高度）。
+// 56 pt 搜索线 = 放大镜 + 粉色筛选标签 + 输入框；单列满宽列表（无搜索词按天分组吸顶，有搜索词按相关度平铺），
+// 行 40，选中行原地展开成透镜（LensView），一块中性高亮在行间滑动、和透镜一起伸缩（前缀和定位）；
+// 片段范围第一行固定一条虚线的「＋ 新建片段 ⌘N」；底栏 36 = 条数 / 修饰键提示 / 多选动词 ｜ 粘贴 ↩ · 操作 ⌘K ｜ 齿轮 图钉。
+// Tab 筛选面板从搜索栏左下长出、⌘K 操作面板从底栏右下长出（共用 Shell/ActionMenu）；对话框从搜索栏下沿落下。
+// 状态和操作都在 ClipboardPanelModel。
 
 import SwiftUI
 
 struct ClipboardPanelView: View {
+  typealias DaySection = (title: String, rows: [(offset: Int, element: ClipItem)])
+
   @Bindable var model: ClipboardPanelModel
   @AppStorage(Prefs.clipboardHideOnUnfocus) private var hideOnUnfocus = true
-  @AppStorage(Prefs.clipboardShowPreview) private var showPreview = true
+  @AppStorage(Prefs.clipboardShowPreview) private var showsLens = true
   @State private var trusted = Permissions.isAccessibilityTrusted
-  /// 按住 ⌘ 超过 150 ms：亮出 ⌘1–9 键帽
+  /// 按住 ⌘ 超过 150 ms：亮出 ⌘1–9 键帽；按住 ⌘ / ⌥：底栏左边换成对应的替代动作
   @State private var holdsCommand = false
+  @State private var holdsOption = false
   @State private var showsShortcuts = false
   /// 已经滚过顶部的分组数：这些分组的标题正吸顶（或已滚走），加材质底；平时没有灰条。
   /// 只存这个整数，别存滚动位置（每帧都会让整个面板重算）
   @State private var pinnedSections = 0
+  @State private var position = ScrollPosition()
+  /// 滚动位置放在不被观察的盒子里：只在选中变化时读，改它不重画面板
+  @State private var viewport = Viewport()
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.colorSchemeContrast) private var contrast
 
-  static let listWidth: CGFloat = 320
+  static let width: CGFloat = 720
+  static let searchHeight: CGFloat = 56
+  static let barHeight: CGFloat = 36
   static let headerHeight: CGFloat = 24
+  static let bannerHeight: CGFloat = 30
+  /// 列表四周内缩（面板圆角 16 − 6 = 高亮 / 透镜的圆角 10，同心）
+  static let inset: CGFloat = 6
+  /// 列表区最高 427.5：连同搜索线、发丝线、底栏正好 520
+  static let maxListHeight: CGFloat = 427.5
+  static let emptyListHeight: CGFloat = 140
+  /// 筛选面板 / ⌘K 开着时列表区至少这么高（8.5 行菜单 + 上下余量），短列表时面板先长到放得下
+  static let paletteListHeight: CGFloat = ActionMenu.rowHeight * 8.5 + 26
 
   var body: some View {
     let items = model.visibleItems
-    let selected = model.selectedItem
+    let selected = model.selectedItem(in: items)
+    let sections = model.query.isEmpty ? Self.daySections(items) : nil
+    let lensOpen = showsLens && model.multiSelection.isEmpty
+    let layout = ListLayout(
+      leading: model.scope == .snippets ? ClipRowView.height : 0, sections: sections,
+      items: items,
+      lens: lensOpen
+        ? selected.map { ($0.id, Lens.height(for: $0, form: model.contentForm(of: $0))) } : nil)
     VStack(spacing: 0) {
       searchBar
-      filterBar
       Style.hairline.frame(height: 0.5)
       if !trusted { permissionBanner }
-      HStack(spacing: 0) {
-        list(items, selected: selected)
-          .frame(width: showPreview && selected != nil ? Self.listWidth : nil)
-          .frame(maxWidth: showPreview && selected != nil ? nil : .infinity)
-        if showPreview, let selected {
-          Style.hairline.frame(width: 0.5)
-          PreviewView(item: selected, model: model)
-            // 卡片（去掉内缩 6）的位置：⌘Y 放大预览从这里长出来
-            .onGeometryChange(for: CGRect.self) {
-              $0.frame(in: .global).insetBy(dx: 6, dy: 6)
-            } action: {
-              model.cardFrame = $0
-            }
-            .onDisappear { model.cardFrame = nil }
-        }
-      }
+      listArea(items, layout: layout, selected: selected, lensOpen: lensOpen)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay { DialogOverlay(model: model) }
       bottomBar(count: items.count)
     }
-    .overlay(alignment: .bottomTrailing) {
-      if model.showsActions {
+    .overlay(alignment: .topLeading) {
+      if model.palette == .filters {
         ActionMenu(
-          items: model.filteredActions, selection: model.actionSelection, onRun: model.run
+          items: model.filteredActions, selection: model.actionSelection,
+          emptyText: "没有匹配的筛选", anchor: .topLeading, maxRows: 8.5, onRun: model.run
         )
-        .padding(.trailing, 12)
-        .padding(.bottom, 40)
+        .padding(.leading, 12)
+        .padding(.top, 60 + (trusted ? 0 : Self.bannerHeight))
+      }
+    }
+    .overlay(alignment: .bottomTrailing) {
+      if model.palette == .actions {
+        ActionMenu(
+          items: model.filteredActions, selection: model.actionSelection, maxRows: 8.5,
+          onRun: model.run
+        )
+        // 右缘对着底栏「操作 ⌘K」：右内边距 14 + 图钉 + 齿轮 + 竖线和间距
+        .padding(.trailing, 80)
+        .padding(.bottom, Self.barHeight + 4)
       }
     }
     .animation(
-      Style.Motion.snap.animation(reduced: reduceMotion) ?? .easeOut(duration: 0.15),
-      value: model.showsActions
+      Style.Motion.snap.animation(reduced: reduceMotion) ?? .easeOut(duration: Style.fadeIn),
+      value: model.palette
     )
-    .overlay {
-      if let dialog = model.dialog { DialogOverlay(model: model, dialog: dialog) }
+    .onChange(
+      of: Self.height(
+        rows: items.count + (model.scope == .snippets ? 1 : 0), sections: sections?.count ?? 0,
+        reservesLens: showsLens && !items.isEmpty, banner: !trusted, model: model),
+      initial: true
+    ) { _, height in model.resize(height) }
+    .onModifierKeysChanged(mask: [.command, .option]) { _, keys in
+      holdsCommand = keys.contains(.command)
+      holdsOption = keys.contains(.option)
     }
-    .onModifierKeysChanged(mask: [.command]) { _, keys in holdsCommand = keys.contains(.command) }
     .task(id: holdsCommand) {
       guard holdsCommand else {
         showsShortcuts = false
@@ -78,253 +109,265 @@ struct ClipboardPanelView: View {
     }
   }
 
-  // MARK: 搜索与筛选
+  // MARK: 高度
+
+  /// 面板高度（窗口和截图自检同一个算法）：56 + 0.5 +（授权横幅）+ 列表区 + 36。列表区 =
+  /// min(上下内缩 12 + 24 × 分组数 + 40 × 行数 + 透镜预留, 427.5)，空列表 140；对话框开着给满，浮起的菜单开着至少放得下 8.5 行
+  static func height(
+    rows: Int, sections: Int, reservesLens: Bool, banner: Bool, model: ClipboardPanelModel
+  ) -> CGFloat {
+    var list = listHeight(rows: rows, sections: sections, reservesLens: reservesLens)
+    if model.dialog != nil {
+      list = maxListHeight
+    } else if model.palette != nil {
+      list = max(list, paletteListHeight)
+    }
+    return searchHeight + 0.5 + (banner ? bannerHeight : 0) + list + barHeight
+  }
+
+  static func listHeight(rows: Int, sections: Int, reservesLens: Bool) -> CGFloat {
+    guard rows > 0 else { return emptyListHeight }
+    let content =
+      inset * 2 + headerHeight * CGFloat(sections) + ClipRowView.height * CGFloat(rows)
+      + (reservesLens ? Lens.reserve : 0)
+    return min(content, maxListHeight)
+  }
+
+  /// 按模型现算（AppDelegate 建窗口、截图自检用）；视图里用上面那个，省一次搜索
+  static func height(
+    for model: ClipboardPanelModel,
+    showsLens: Bool = UserDefaults.standard.bool(forKey: Prefs.clipboardShowPreview),
+    banner: Bool = !Permissions.isAccessibilityTrusted
+  ) -> CGFloat {
+    let items = model.visibleItems
+    return height(
+      rows: items.count + (model.scope == .snippets ? 1 : 0),
+      sections: model.query.isEmpty ? daySections(items).count : 0,
+      reservesLens: showsLens && !items.isEmpty, banner: banner, model: model)
+  }
+
+  // MARK: 搜索线
 
   private var searchBar: some View {
-    HStack(spacing: 12) {
-      Image(systemName: model.showsActions ? "command" : "magnifyingglass")
+    let tokens = model.tokens
+    return HStack(spacing: 6) {
+      Image(systemName: searchSymbol)
         .font(.system(size: 17, weight: .medium))
         .foregroundStyle(.tertiary)
         .contentTransition(.symbolEffect(.replace))
-      // ⌘K 面板开着时，搜索框改成过滤操作
+        .frame(width: 22)
+        .padding(.trailing, 4)
+        .accessibilityHidden(true)
+      ForEach(tokens) { token in
+        TokenChip(
+          token: token, armed: model.armsLastToken && token.id == tokens.last?.id,
+          open: { model.palette = .filters }, remove: { model.remove(token.kind) }
+        )
+        .transition(
+          .asymmetric(
+            insertion: reduceMotion
+              ? .opacity
+              : .scale(scale: 0.85, anchor: .leading).combined(with: .opacity)
+                .animation(Style.Motion.pop.animation()),
+            removal: .opacity))
+      }
+      // 筛选面板 / ⌘K 开着时，搜索框改成过滤它们的条目
       CommandTextField(
-        text: model.showsActions ? $model.actionQuery : $model.query,
-        placeholder: model.showsActions ? "搜索操作" : "搜索剪贴板历史", fontSize: 20,
-        onCommand: model.handleCommand)
-      Button("设置", systemImage: "gearshape", action: model.openSettings)
-        .help("设置（⌘,）")
-      Toggle(isOn: pinned) { Image(systemName: hideOnUnfocus ? "pin" : "pin.fill") }
-        .toggleStyle(.button)
-        .help(hideOnUnfocus ? "固定面板：点外面不关闭" : "取消固定")
+        text: model.palette != nil ? $model.actionQuery : $model.query,
+        placeholder: placeholder, fontSize: 20, onCommand: model.handleCommand
+      )
+      .frame(maxWidth: .infinity)
+      .padding(.leading, tokens.isEmpty ? 0 : 2)
     }
-    .labelStyle(.iconOnly)
-    .buttonStyle(.borderless)
-    .foregroundStyle(.secondary)
+    .animation(
+      Style.Motion.settle.animation(reduced: reduceMotion), value: tokens.map(\.id)
+    )
     .padding(.horizontal, 18)
-    .frame(height: 56)
+    .frame(height: Self.searchHeight)
   }
 
-  private var filterBar: some View {
-    HStack(spacing: 6) {
-      ForEach(ClipboardPanelModel.Scope.allCases, id: \.self) { scope in
-        Chip(title: scope.title, isOn: model.scope == scope) { model.scope = scope }
-      }
-      if !activeFilters.isEmpty {
-        Divider().frame(height: 14).padding(.horizontal, 2)
-        ForEach(activeFilters, id: \.title) { filter in
-          Chip(title: filter.title, isOn: true, removable: true, action: filter.clear)
-        }
-      }
-      Spacer(minLength: 0)
-      filterMenu
-      Button("新建片段（⌘N）", systemImage: "plus") { model.dialog = .newSnippet }
-        .labelStyle(.iconOnly)
-        .buttonStyle(.borderless)
-        .help("新建片段（⌘N）")
+  private var searchSymbol: String {
+    switch model.palette {
+    case .filters: "line.3.horizontal.decrease"
+    case .actions: "command"
+    case nil: "magnifyingglass"
     }
-    .font(.system(size: 12, weight: .medium))
-    .padding(.horizontal, 12)
-    .frame(height: 30, alignment: .top)
   }
 
-  /// 「筛选」菜单：类型 / 形态 / 来源 / 分组，各是一个带勾选的子菜单
-  private var filterMenu: some View {
-    Menu {
-      Picker("类型", selection: $model.kind) {
-        Text("全部").tag(ClipItem.Kind?.none)
-        Text("文本").tag(ClipItem.Kind?.some(.text))
-        Text("图片").tag(ClipItem.Kind?.some(.image))
-        Text("文件").tag(ClipItem.Kind?.some(.file))
-      }
-      Picker("形态", selection: $model.form) {
-        Text("全部").tag(ContentForm?.none)
-        ForEach(ContentForm.allCases, id: \.self) { Text($0.title).tag(ContentForm?.some($0)) }
-      }
-      Picker("来源", selection: $model.sourceBundleID) {
-        Text("全部").tag(String?.none)
-        ForEach(model.sources, id: \.bundleID) { Text($0.name).tag(String?.some($0.bundleID)) }
-      }
-      Picker("分组", selection: $model.groupFilter) {
-        Text("全部").tag(ClipboardPanelModel.GroupFilter.all)
-        Text("未分组").tag(ClipboardPanelModel.GroupFilter.ungrouped)
-        ForEach(model.store.groups) {
-          Text($0.name).tag(ClipboardPanelModel.GroupFilter.group($0.id))
-        }
-      }
-      Divider()
-      Button("管理分组…") { model.dialog = .manageGroups }
-    } label: {
-      Label("筛选", systemImage: "line.3.horizontal.decrease")
+  private var placeholder: String {
+    switch model.palette {
+    case .filters: "筛选范围、类型、来源、分组"
+    case .actions: "搜索操作"
+    case nil: model.tokens.isEmpty ? "搜索剪贴板，Tab 筛选" : "搜索"
     }
-    .menuStyle(.borderlessButton)
-    .menuIndicator(.hidden)
-    .fixedSize()
-    .help("按类型、形态、来源、分组筛选")
-  }
-
-  /// 生效中的筛选条件，每个一个可移除的标签
-  private var activeFilters: [(title: String, clear: () -> Void)] {
-    var filters: [(String, () -> Void)] = []
-    if let kind = model.kind, model.form == nil {
-      filters.append(([.text: "文本", .image: "图片", .file: "文件"][kind] ?? "", { model.kind = nil }))
-    }
-    if let form = model.form { filters.append((form.title, { model.form = nil })) }
-    if let source = model.sourceBundleID {
-      let name = model.sources.first { $0.bundleID == source }?.name ?? source
-      filters.append((name, { model.sourceBundleID = nil }))
-    }
-    switch model.groupFilter {
-    case .all: break
-    case .ungrouped: filters.append(("未分组", { model.groupFilter = .all }))
-    case .group(let id):
-      let name = model.store.groups.first { $0.id == id }?.name ?? "分组"
-      filters.append((name, { model.groupFilter = .all }))
-    }
-    return filters
-  }
-
-  private var pinned: Binding<Bool> {
-    Binding(get: { !hideOnUnfocus }, set: { hideOnUnfocus = !$0 })
   }
 
   private var permissionBanner: some View {
     HStack(spacing: 8) {
-      Image(systemName: "lock.shield").foregroundStyle(.orange)
+      Image(systemName: "lock.shield").foregroundStyle(Color(nsColor: .systemOrange))
       Text("授权「辅助功能」后才能直接粘贴回原 App，现在只会写进剪贴板")
       Spacer()
       Button("去授权") {
         Permissions.requestAccessibility()
         Permissions.openAccessibilitySettings()
       }
-      .controlSize(.small)
+      .buttonStyle(.plain)
+      .foregroundStyle(Style.brandInk)
+      .pointerStyle(.link)
     }
     .font(.system(size: 12))
+    .lineLimit(1)
     .padding(.horizontal, 16)
-    .padding(.vertical, 7)
+    .frame(height: Self.bannerHeight)
     .background(Color(nsColor: .systemOrange).opacity(0.08))
   }
 
   // MARK: 列表
 
-  @ViewBuilder private func list(_ items: [ClipItem], selected: ClipItem?) -> some View {
-    if items.isEmpty {
-      emptyState.frame(maxWidth: .infinity, maxHeight: .infinity)
+  @ViewBuilder private func listArea(
+    _ items: [ClipItem], layout: ListLayout, selected: ClipItem?, lensOpen: Bool
+  ) -> some View {
+    if items.isEmpty && model.scope != .snippets {
+      emptyState
     } else {
-      let sections = model.query.isEmpty ? Self.daySections(items) : nil
-      let tops = sections.map(Self.sectionTops) ?? []
-      ScrollViewReader { proxy in
-        ScrollView {
-          LazyVStack(alignment: .leading, spacing: 0, pinnedViews: .sectionHeaders) {
-            if let sections {
-              ForEach(Array(sections.enumerated()), id: \.element.title) { index, section in
-                Section {
-                  rows(section.rows, selected: selected)
-                } header: {
-                  Text(section.title)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-                    .padding(.leading, 8)
-                    .padding(.bottom, 2)
-                    // 高度必须正好是 headerHeight：高亮按它累加定位
-                    .frame(
-                      maxWidth: .infinity, minHeight: Self.headerHeight,
-                      maxHeight: Self.headerHeight,
-                      alignment: .bottomLeading
-                    )
-                    .background(
-                      index < pinnedSections
-                        ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(.clear))
-                }
-              }
-            } else {
-              rows(Array(items.enumerated()), selected: selected)
+      list(items, layout: layout, selected: selected, lensOpen: lensOpen)
+    }
+  }
+
+  private func list(_ items: [ClipItem], layout: ListLayout, selected: ClipItem?, lensOpen: Bool)
+    -> some View
+  {
+    let tops = layout.sectionTops.map { $0 + Self.inset }
+    return ScrollView {
+      LazyVStack(alignment: .leading, spacing: 0, pinnedViews: .sectionHeaders) {
+        if model.scope == .snippets { newSnippetRow }
+        if let sections = layout.sections {
+          ForEach(Array(sections.enumerated()), id: \.element.title) { index, section in
+            Section {
+              rows(section.rows, selected: selected, lensOpen: lensOpen)
+            } header: {
+              sectionHeader(section, pinned: index < pinnedSections)
             }
           }
-          .background(alignment: .topLeading) {
-            highlight(items: items, sections: sections, selected: selected)
-          }
-          .animation(model.listMotion.animation(reduced: reduceMotion), value: items.map(\.id))
-          .onChange(of: model.listGeneration) { model.settleList() }
-          .padding(.horizontal, 6)
-          .padding(.bottom, 6)
-        }
-        .onScrollGeometryChange(for: Int.self) { geometry in
-          let y = geometry.contentOffset.y + geometry.contentInsets.top
-          return tops.lastIndex { y > $0 + 0.5 }.map { $0 + 1 } ?? 0
-        } action: { _, count in
-          pinnedSections = count
-        }
-        .onChange(of: selected?.id) { _, id in
-          guard let id else { return }
-          withAnimation(
-            model.selectionMotion == .instant
-              ? nil : Style.Motion.snap.animation(reduced: reduceMotion)
-          ) {
-            proxy.scrollTo(id)
-          }
+        } else {
+          rows(Array(items.enumerated()), selected: selected, lensOpen: lensOpen)
         }
       }
+      .background(alignment: .topLeading) { highlight(layout: layout, selected: selected) }
+      .animation(model.listMotion.animation(reduced: reduceMotion), value: items.map(\.id))
+      // 透镜移动：高亮的 offset + height、旧行收起、新行展开同一个 transaction、同一条曲线
+      .animation(
+        model.selectionMotion.animation(reduced: reduceMotion),
+        value: LensKey(id: selected?.id, isOpen: lensOpen)
+      )
+      .onChange(of: model.listGeneration) {
+        model.settleList()
+        position.scrollTo(edge: .top)
+      }
+      .padding(Self.inset)
+    }
+    .scrollPosition($position)
+    .onScrollGeometryChange(for: CGRect.self) {
+      $0.visibleRect
+    } action: { _, rect in
+      viewport.rect = rect
+    }
+    .onScrollGeometryChange(for: Int.self) { geometry in
+      let y = geometry.visibleRect.minY
+      return tops.lastIndex { y > $0 + 0.5 }.map { $0 + 1 } ?? 0
+    } action: { _, count in
+      pinnedSections = count
+    }
+    .onChange(of: selected?.id) { _, id in
+      if let id { reveal(id, layout: layout) }
     }
   }
 
-  /// 一块中性高亮：按分组标题和行高的前缀和定位，在行间滑动（不用 matchedGeometryEffect）
-  @ViewBuilder private func highlight(
-    items: [ClipItem], sections: [(title: String, rows: [(offset: Int, element: ClipItem)])]?,
-    selected: ClipItem?
-  ) -> some View {
-    if let selected, model.multiSelection.isEmpty,
-      let offset = Self.offset(of: selected.id, items: items, sections: sections)
-    {
-      RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
-        .fill(Style.selectedFill)
-        .frame(height: ClipRowView.height)
+  /// 让整块透镜露出来：只在它（连同吸顶的分组标题）被挡住时滚，按前缀和算目标位置，不量视图
+  private func reveal(_ id: UUID, layout: ListLayout) {
+    let visible = viewport.rect
+    guard visible.height > 0, let offset = layout.offset(of: id) else { return }
+    let top = offset + Self.inset
+    let bottom = top + layout.height(of: id)
+    let covered = layout.sections != nil ? Self.headerHeight : 0
+    var target: CGFloat
+    if top - covered < visible.minY {
+      target = top - covered - (covered > 0 ? 0 : Self.inset)
+    } else if bottom > visible.maxY {
+      target = bottom + Self.inset - visible.height
+    } else {
+      return
+    }
+    if target < Self.inset * 2 { target = 0 }
+    withAnimation(model.selectionMotion.animation(reduced: reduceMotion)) {
+      position.scrollTo(y: target)
+    }
+  }
+
+  /// 一块中性高亮 = 透镜的底：按前缀和定位，在行间滑动（不用 matchedGeometryEffect：LazyVStack 回收行时会跳）
+  @ViewBuilder private func highlight(layout: ListLayout, selected: ClipItem?) -> some View {
+    if let selected, model.multiSelection.isEmpty, let offset = layout.offset(of: selected.id) {
+      let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
+      shape.fill(Style.selectedFill)
+        .overlay {
+          // 增强对比度：中性选中加 1 pt 品牌粉 0.6 描边（Whisker §7）
+          if contrast == .increased { shape.strokeBorder(Style.brand.opacity(0.6), lineWidth: 1) }
+        }
+        .frame(height: layout.height(of: selected.id))
         .offset(y: offset)
-        .animation(model.selectionMotion.animation(reduced: reduceMotion), value: selected.id)
     }
   }
 
-  /// 各分组在列表里的起始 y（标题 + 行高累加）
-  static func sectionTops(_ sections: [(title: String, rows: [(offset: Int, element: ClipItem)])])
-    -> [CGFloat]
-  {
-    var y: CGFloat = 0
-    return sections.map { section in
-      defer { y += headerHeight + CGFloat(section.rows.count) * ClipRowView.height }
-      return y
+  private func sectionHeader(_ section: DaySection, pinned: Bool) -> some View {
+    HStack(spacing: 8) {
+      Text("\(section.title) · \(section.rows.count)")
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(.tertiary)
+      Style.hairline.frame(height: 0.5)
     }
+    .padding(.horizontal, 10)
+    // 高度必须正好是 headerHeight：高亮、滚动、吸顶都按它累加
+    .frame(height: Self.headerHeight)
+    .background(pinned ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(.clear))
   }
 
-  static func offset(
-    of id: UUID, items: [ClipItem],
-    sections: [(title: String, rows: [(offset: Int, element: ClipItem)])]?
-  ) -> CGFloat? {
-    guard let sections else {
-      return items.firstIndex { $0.id == id }.map { CGFloat($0) * ClipRowView.height }
-    }
-    var y: CGFloat = 0
-    for section in sections {
-      y += headerHeight
-      if let index = section.rows.firstIndex(where: { $0.element.id == id }) {
-        return y + CGFloat(index) * ClipRowView.height
+  /// 片段范围第一行：一条虚线的「＋ 新建片段 ⌘N」（片段为空时就只有它，不另画空态）
+  private var newSnippetRow: some View {
+    Button {
+      model.dialog = .newSnippet
+    } label: {
+      HStack(spacing: 10) {
+        Image(systemName: "plus")
+          .font(.system(size: 12, weight: .semibold))
+          .frame(width: 24, height: 24)
+        Text("新建片段").font(.system(size: 13))
+        Text("支持 {date} {clipboard} {cursor}").font(.system(size: 11)).foregroundStyle(.tertiary)
+        Spacer(minLength: 8)
+        KeyCap("⌘N")
       }
-      y += CGFloat(section.rows.count) * ClipRowView.height
+      .foregroundStyle(.secondary)
+      .padding(.horizontal, 10)
+      .frame(height: ClipRowView.height)
+      .background {
+        RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
+          .strokeBorder(.tertiary, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+          .padding(.vertical, 3)
+      }
+      .contentShape(.rect)
     }
-    return nil
+    .buttonStyle(.plain)
   }
 
-  private func rows(_ rows: [(offset: Int, element: ClipItem)], selected: ClipItem?) -> some View {
+  private func rows(
+    _ rows: [(offset: Int, element: ClipItem)], selected: ClipItem?, lensOpen: Bool
+  ) -> some View {
     ForEach(rows, id: \.element.id) { index, item in
-      Button {
-        model.click(item)
-      } label: {
-        ClipRowView(
-          item: item, form: model.contentForm(of: item),
-          shortcutIndex: index < 9 ? index : nil, showsShortcut: showsShortcuts,
-          isSelected: item.id == selected?.id,
-          isChecked: model.multiSelection.isEmpty ? nil : model.multiSelection.contains(item.id),
-          groupName: groupBadge(for: item), images: model.store.images)
-      }
-      .buttonStyle(.plain)
+      let isSelected = item.id == selected?.id
+      ClipListRow(
+        item: item, form: model.contentForm(of: item), model: model,
+        shortcutIndex: index < 9 ? index : nil, showsShortcut: showsShortcuts,
+        isSelected: isSelected, lensOpen: lensOpen && isSelected, groupName: groupBadge(for: item)
+      )
       .id(item.id)
       .contextMenu { contextMenu(for: item) }
       .transition(
@@ -341,17 +384,19 @@ struct ClipboardPanelView: View {
     return model.store.groups.first { $0.id == id }?.name
   }
 
-  /// 无搜索词时按天分组：今天 / 昨天 / M月d日 / yyyy年M月d日。行号是在整个列表里的序号（⌘数字用）
-  private static func daySections(_ items: [ClipItem]) -> [(
-    title: String, rows: [(offset: Int, element: ClipItem)]
-  )] {
-    var sections: [(title: String, rows: [(offset: Int, element: ClipItem)])] = []
+  /// 无搜索词时按天分组：今天 / 昨天 / M月d日 / yyyy年M月d日。行号是在整个列表里的序号（⌘数字用）。
+  /// 列表按复制时间新→旧，同一天是连续的：只在换天时格式化一次
+  static func daySections(_ items: [ClipItem]) -> [DaySection] {
+    let calendar = Calendar.current
+    var sections: [DaySection] = []
+    var day: Date?
     for row in items.enumerated() {
-      let title = dayTitle(row.element.copiedAt)
-      if sections.last?.title == title {
+      let start = calendar.startOfDay(for: row.element.copiedAt)
+      if start == day {
         sections[sections.count - 1].rows.append(row)
       } else {
-        sections.append((title, [row]))
+        day = start
+        sections.append((dayTitle(start), [row]))
       }
     }
     return sections
@@ -374,6 +419,10 @@ struct ClipboardPanelView: View {
       model.select(item)
       model.copySelection()
     }
+    Button("放大预览") {
+      model.select(item)
+      model.toggleQuickLook()
+    }
     Divider()
     Button(item.favorite ? "取消收藏" : "收藏") { model.store.toggleFavorite([item.id]) }
     if item.favorite || item.isSnippet { Button("备注…") { model.dialog = .note(item.id) } }
@@ -382,6 +431,8 @@ struct ClipboardPanelView: View {
         Button("存为片段") { model.store.update([item.id]) { $0.isSnippet = true } }
       }
       Button("编辑内容…") { model.dialog = .edit(item.id) }
+    }
+    if item.kind == .text || !(item.ocrText ?? "").isEmpty {
       Button("翻译") { model.translate(item) }
     }
     Menu("分组") {
@@ -403,141 +454,412 @@ struct ClipboardPanelView: View {
     Button("删除", role: .destructive) { model.delete([item.id]) }
   }
 
-  // MARK: 空态与底栏
+  // MARK: 空态
 
+  /// 翻译空态的规格：28 pt 符号 + 14 semibold 标题 + 说明 / 品牌粉文字按钮
   @ViewBuilder private var emptyState: some View {
     let filtered =
       !model.query.isEmpty || model.kind != nil || model.form != nil
       || model.sourceBundleID != nil || model.groupFilter != .all
     if filtered {
-      ContentUnavailableView {
-        Label("没有匹配的条目", systemImage: "magnifyingglass")
-      } actions: {
-        Button("清除搜索和筛选") { model.reset() }
+      EmptyState(symbol: "magnifyingglass", title: "没有匹配的条目") {
+        Button("清除搜索和筛选", action: model.clearSearchAndFilters)
+          .buttonStyle(.plain)
+          .foregroundStyle(Style.brandInk)
+          .pointerStyle(.link)
+      }
+    } else if model.scope == .favorites {
+      EmptyState(symbol: "star", title: "还没有收藏") {
+        Text("选中条目按 ⌘D 收藏；收藏不受条数和天数上限影响").foregroundStyle(.secondary)
       }
     } else {
-      switch model.scope {
-      case .all:
-        ContentUnavailableView(
-          "还没有剪贴板历史", systemImage: "doc.on.clipboard",
-          description: Text("复制的文本、图片和文件会出现在这里"))
-      case .favorites:
-        ContentUnavailableView(
-          "还没有收藏", systemImage: "star", description: Text("选中条目按 ⌘D 收藏；收藏不受条数和天数上限影响"))
-      case .snippets:
-        ContentUnavailableView {
-          Label("还没有片段", systemImage: "text.badge.star")
-        } description: {
-          Text("片段是常用文本，支持 {date}、{clipboard} 占位符")
-        } actions: {
-          Button("新建片段") { model.dialog = .newSnippet }
-        }
+      EmptyState(symbol: "doc.on.clipboard", title: "还没有剪贴板历史") {
+        Text("复制的文本、图片和文件会出现在这里").foregroundStyle(.secondary)
       }
     }
   }
 
-  @ViewBuilder private func bottomBar(count: Int) -> some View {
+  // MARK: 底栏
+
+  private func bottomBar(count: Int) -> some View {
     HStack(spacing: 12) {
-      if let toast = model.toast {
-        Group {
-          switch toast {
-          case .message(let text):
-            Label(text, systemImage: "checkmark.circle.fill")
-              .symbolRenderingMode(.palette)
-              .foregroundStyle(Color(nsColor: .systemGreen), Color(nsColor: .systemGreen))
-              .symbolEffect(.bounce, value: text)
-          case .undo(let count):
-            HStack(spacing: 8) {
-              Text("已删除 \(count) 条").foregroundStyle(.secondary)
-              Button("撤销（⌘Z）", action: model.undoDelete)
-                .buttonStyle(.plain).foregroundStyle(Style.brandInk).pointerStyle(.link)
-            }
-          }
-        }
+      barStatus(count: count)
         .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
-        Spacer()
-      } else if !model.multiSelection.isEmpty {
-        multiSelectBar
-      } else {
-        Text(countText(count))
-          .foregroundStyle(.secondary)
-          .contentTransition(.numericText())
-          .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
-        Spacer()
-        if count > 0 {
-          hint("↩", "粘贴")
+        .id(barState(count: count))
+      Spacer(minLength: 8)
+      if count > 0 {
+        if model.multiSelection.isEmpty {
           Button {
-            model.showsActions.toggle()
+            model.pasteSelection()
           } label: {
-            hint("⌘K", "操作")
+            hint("粘贴", key: "↩", primary: true)
           }
-          .buttonStyle(.plain)
+          .help("粘贴到当前 App（↩）")
         }
+        Button {
+          model.palette = model.palette == .actions ? nil : .actions
+        } label: {
+          hint("操作", key: "⌘K")
+        }
+        .help("全部操作（⌘K 或 →）")
+        Style.hairline.frame(width: 0.5, height: 16)
       }
+      Button("设置", systemImage: "gearshape", action: model.openSettings)
+        .labelStyle(.iconOnly)
+        .help("设置（⌘,）")
+      Button(
+        hideOnUnfocus ? "固定面板" : "取消固定", systemImage: hideOnUnfocus ? "pin" : "pin.fill"
+      ) {
+        hideOnUnfocus.toggle()
+      }
+      .labelStyle(.iconOnly)
+      .foregroundStyle(hideOnUnfocus ? AnyShapeStyle(.secondary) : AnyShapeStyle(Style.brandInk))
+      .contentTransition(.symbolEffect(.replace))
+      .help(hideOnUnfocus ? "固定面板：点外面不关闭" : "取消固定")
+      .accessibilityAddTraits(hideOnUnfocus ? [] : .isSelected)
     }
-    .animation(.smooth(duration: 0.24), value: model.toast)
+    .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: barState(count: count))
     .font(.system(size: 12))
-    .buttonStyle(.borderless)
+    .foregroundStyle(.secondary)
+    .buttonStyle(.plain)
     .padding(.horizontal, 14)
-    .frame(height: 36)
+    .frame(height: Self.barHeight)
     .overlay(alignment: .top) { Style.hairline.frame(height: 0.5) }
   }
 
-  private func hint(_ key: String, _ title: String) -> some View {
-    HStack(spacing: 6) {
-      Text(title).foregroundStyle(.primary)
-      KeyCap(key)
+  /// 底栏左边现在显示哪一种（换的时候 blurReplace）
+  private func barState(count: Int) -> String {
+    if let toast = model.toast { return "toast \(toast)" }
+    if !model.multiSelection.isEmpty { return "multi" }
+    if count > 0, holdsOption { return "option" }
+    if count > 0, holdsCommand { return "command" }
+    return "count"
+  }
+
+  @ViewBuilder private func barStatus(count: Int) -> some View {
+    if let toast = model.toast {
+      switch toast {
+      case .message(let text):
+        Label(text, systemImage: "checkmark.circle.fill")
+          .symbolRenderingMode(.palette)
+          .foregroundStyle(Color(nsColor: .systemGreen), Color(nsColor: .systemGreen))
+          .symbolEffect(.bounce, value: text)
+      case .undo(let count):
+        HStack(spacing: 8) {
+          Text("已删除 \(count) 条")
+          Button(action: model.undoDelete) {
+            HStack(spacing: 6) {
+              Text("撤销").foregroundStyle(Style.brandInk)
+              KeyCap("⌘Z")
+            }
+          }
+          .pointerStyle(.link)
+        }
+      }
+    } else if !model.multiSelection.isEmpty {
+      multiSelectVerbs
+    } else if count > 0, holdsOption {
+      Button {
+        model.pasteSelection(plainText: true)
+      } label: {
+        hint("粘贴为纯文本", key: "⌥↩", leadingKey: true)
+      }
+    } else if count > 0, holdsCommand {
+      HStack(spacing: 12) {
+        Button(action: { model.copySelection() }) {
+          hint("仅复制", key: "⌘↩", leadingKey: true)
+        }
+        Text("·").foregroundStyle(.tertiary)
+        HStack(spacing: 6) {
+          KeyCap("⌘1–9")
+          Text("直接粘贴")
+        }
+      }
+    } else {
+      Text(countText(count))
+        .contentTransition(.numericText())
+        .animation(Style.Motion.snap.animation(reduced: reduceMotion), value: count)
     }
+  }
+
+  /// 多选时底栏左边：一排「动词 + 键帽」按钮
+  @ViewBuilder private var multiSelectVerbs: some View {
+    let ids = model.multiSelection
+    let items = model.store.items.filter { ids.contains($0.id) }
+    HStack(spacing: 12) {
+      Text("已选 \(ids.count) 条")
+      Button(action: { model.pasteSelection() }) {
+        hint(items.allSatisfy { $0.kind == .text } ? "合并粘贴" : "依次粘贴", key: "↩", primary: true)
+      }
+      Button(action: { model.store.toggleFavorite(ids) }) {
+        hint(items.allSatisfy(\.favorite) ? "取消收藏" : "收藏", key: "⌘D")
+      }
+      Menu("分组…") {
+        ForEach(model.store.groups) { group in
+          Button(group.name) { model.assign(ids, to: group.id) }
+        }
+        Button("移出分组") { model.assign(ids, to: nil) }
+        Divider()
+        Button("新建分组…") { model.dialog = .newGroup(ids) }
+      }
+      .menuStyle(.borderlessButton)
+      .menuIndicator(.hidden)
+      .fixedSize()
+      Button(action: { model.delete(ids) }) { hint("删除", key: "⌘⌫") }
+      Button(action: { model.multiSelection = [] }) { hint("取消", key: "Esc") }
+    }
+  }
+
+  /// 「动词 键帽」；primary：↩ 是品牌粉实心键帽（主按钮）；leadingKey：键帽在前（按住修饰键时的替代动作）
+  private func hint(_ title: String, key: String, primary: Bool = false, leadingKey: Bool = false)
+    -> some View
+  {
+    HStack(spacing: 6) {
+      if leadingKey { KeyCap(key) }
+      Text(title).foregroundStyle(.primary)
+      if !leadingKey {
+        if primary { PrimaryKeyCap(key) } else { KeyCap(key) }
+      }
+    }
+    .contentShape(.rect)
   }
 
   private func countText(_ count: Int) -> String {
     let total = model.store.items.count
     return count == total ? "\(total) 条" : "\(count) / \(total) 条"
   }
+}
 
-  @ViewBuilder private var multiSelectBar: some View {
-    let ids = model.multiSelection
-    let items = model.store.items.filter { ids.contains($0.id) }
-    Text("已选 \(ids.count) 条").foregroundStyle(.secondary)
-    Button("取消选择") { model.multiSelection = [] }
-    Spacer()
-    Button(items.allSatisfy { $0.kind == .text } ? "合并粘贴" : "依次粘贴") { model.pasteSelection() }
-    Button(items.allSatisfy(\.favorite) ? "取消收藏" : "收藏") { model.store.toggleFavorite(ids) }
-    Menu("分组") {
-      ForEach(model.store.groups) { group in Button(group.name) { model.assign(ids, to: group.id) }
-      }
-      Button("移出分组") { model.assign(ids, to: nil) }
-      Divider()
-      Button("新建分组…") { model.dialog = .newGroup(ids) }
+/// 列表几何（前缀和）：行 40、分组标题 24、透镜按类型的常数（Lens.height）；高亮、滚动、吸顶都从这里算，不量真实尺寸
+struct ListLayout {
+  /// 片段范围第一行「新建片段」的高度（别的范围是 0）
+  var leading: CGFloat = 0
+  /// nil = 平铺（有搜索词）
+  var sections: [ClipboardPanelView.DaySection]?
+  var items: [ClipItem]
+  /// 展开透镜的那一行和它的总高
+  var lens: (id: UUID, height: CGFloat)?
+
+  func height(of id: UUID) -> CGFloat {
+    if let lens, lens.id == id { lens.height } else { ClipRowView.height }
+  }
+
+  /// 行顶在列表内容里的 y（不含四周内缩）。透镜那一行上面都是普通行，所以不用加透镜多出的高度
+  func offset(of id: UUID) -> CGFloat? {
+    guard let sections else {
+      return items.firstIndex { $0.id == id }.map { leading + CGFloat($0) * ClipRowView.height }
     }
-    .menuStyle(.borderlessButton)
-    .fixedSize()
-    Button("删除", role: .destructive) { model.delete(ids) }
+    var y = leading
+    for section in sections {
+      y += ClipboardPanelView.headerHeight
+      if let index = section.rows.firstIndex(where: { $0.element.id == id }) {
+        return y + CGFloat(index) * ClipRowView.height
+      }
+      y += sectionBody(section)
+    }
+    return nil
+  }
+
+  /// 各分组标题的 y（不含四周内缩）：透镜所在分组之后的都往下挪透镜多出的高度
+  var sectionTops: [CGFloat] {
+    var y = leading
+    return (sections ?? []).map { section in
+      defer { y += ClipboardPanelView.headerHeight + sectionBody(section) }
+      return y
+    }
+  }
+
+  private func sectionBody(_ section: ClipboardPanelView.DaySection) -> CGFloat {
+    let extra =
+      lens.map { lens in
+        section.rows.contains { $0.element.id == lens.id } ? lens.height - ClipRowView.height : 0
+      } ?? 0
+    return CGFloat(section.rows.count) * ClipRowView.height + extra
   }
 }
 
-/// 22 pt 胶囊：范围切换（选中品牌粉 0.16 底 + 粉字，未选中无底色）与生效筛选标签
-private struct Chip: View {
-  let title: String
-  let isOn: Bool
-  var removable = false
-  let action: () -> Void
+/// 列表的一行 + 选中时展开的透镜。整行是一个按钮（单击选中、双击粘贴），透镜里的值胶囊、「美化」是里面的小按钮
+private struct ClipListRow: View {
+  let item: ClipItem
+  let form: ContentForm?
+  let model: ClipboardPanelModel
+  let shortcutIndex: Int?
+  let showsShortcut: Bool
+  let isSelected: Bool
+  let lensOpen: Bool
+  let groupName: String?
+  @State private var hovered = false
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
-    Button(action: action) {
-      HStack(spacing: 4) {
-        Text(title).lineLimit(1)
-        if removable { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)) }
+    Button {
+      model.click(item)
+    } label: {
+      VStack(alignment: .leading, spacing: 0) {
+        ClipRowView(
+          item: item, form: form, query: model.query, shortcutIndex: shortcutIndex,
+          showsShortcut: showsShortcut,
+          isChecked: model.multiSelection.isEmpty ? nil : model.multiSelection.contains(item.id),
+          groupName: groupName, images: model.store.images
+        )
+        // 悬停只出 fill.hover，不移动透镜（选中行下面已经有高亮）
+        .background(
+          hovered && !isSelected ? Style.hoverFill : .clear,
+          in: .rect(cornerRadius: Style.Radius.card, style: .continuous))
+        if lensOpen {
+          LensView(item: item, form: form, model: model).transition(lensTransition)
+        }
       }
-      .padding(.horizontal, 10)
-      .frame(height: 22)
-      .foregroundStyle(isOn ? Style.brandInk : .secondary)
-      .background(isOn ? Style.brand.opacity(0.16) : .clear, in: .capsule)
-      .contentShape(.capsule)
+      .frame(
+        height: lensOpen ? Lens.height(for: item, form: form) : ClipRowView.height, alignment: .top
+      )
+      .clipped()
+      .contentShape(.rect)
     }
-    .buttonStyle(PressScale())
-    .animation(Style.Motion.snap.animation(), value: isOn)
-    .accessibilityAddTraits(isOn ? .isSelected : [])
-    .accessibilityHint(removable ? "移除这个筛选" : "")
+    .buttonStyle(.plain)
+    .background {
+      HoverTracker { inside in withAnimation(.easeOut(duration: 0.10)) { hovered = inside } }
+    }
+    // 放大预览从这里长出来（透镜开着就是整块透镜）
+    .background {
+      if isSelected {
+        Color.clear.onGeometryChange(for: CGRect.self) {
+          $0.frame(in: .global)
+        } action: {
+          model.cardFrame = $0
+        }
+      }
+    }
+    .accessibilityElement(children: .combine)
+    .accessibilityAddTraits(isSelected ? .isSelected : [])
+    .accessibilityValue(lensOpen ? Lens.accessibilityValue(for: item, form: form) : "")
+    .accessibilityAction(named: "粘贴") { model.paste([item]) }
+    .accessibilityAction(named: "放大预览") {
+      model.select(item)
+      model.toggleQuickLook()
+    }
+    .accessibilityAction(named: item.favorite ? "取消收藏" : "收藏") {
+      model.store.toggleFavorite([item.id])
+    }
+  }
+
+  /// 透镜换内容：opacity + y 4→0（≤ 0.18 s）；连发、换列表、减弱动态效果时瞬间展开收起
+  private var lensTransition: AnyTransition {
+    guard !reduceMotion, model.selectionMotion != .instant else { return .identity }
+    return .asymmetric(
+      insertion: .opacity.combined(with: .offset(y: 4)).animation(.easeOut(duration: 0.16)),
+      removal: .opacity.animation(.easeIn(duration: Style.fadeOut)))
+  }
+}
+
+/// 行的悬停：本 App 从不激活，SwiftUI 的 onHover 在非激活面板里不可靠（同 ShotShelf），用 activeAlways 追踪区自己报。
+/// 不接点击（hitTest 为 nil），行被回收时补一个「移出」
+private struct HoverTracker: NSViewRepresentable {
+  let onChange: (Bool) -> Void
+
+  func makeNSView(context: Context) -> TrackingView {
+    let view = TrackingView()
+    view.addTrackingArea(
+      NSTrackingArea(
+        rect: .zero, options: [.activeAlways, .mouseEnteredAndExited, .inVisibleRect], owner: view))
+    return view
+  }
+
+  func updateNSView(_ view: TrackingView, context: Context) { view.onChange = onChange }
+
+  final class TrackingView: NSView {
+    var onChange: (Bool) -> Void = { _ in }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func mouseEntered(with event: NSEvent) { onChange(true) }
+    override func mouseExited(with event: NSEvent) { onChange(false) }
+    override func viewDidMoveToWindow() { if window == nil { onChange(false) } }
+  }
+}
+
+/// 透镜移动的动画触发值：选中换了、或透镜开关变了（多选时收起）
+private struct LensKey: Equatable {
+  let id: UUID?
+  let isOpen: Bool
+}
+
+/// 滚动视口（内容坐标）。故意不是 @Observable：滚动时改它不触发重画
+private final class Viewport {
+  var rect = CGRect.zero
+}
+
+/// 搜索框里的粉色筛选标签：高 22、12 medium、品牌粉 0.12 底 + brandInk 字（⌫ 待删时 0.30 底），尾部 8 pt ×。
+/// 点标签打开筛选面板，点 × 移除
+private struct TokenChip: View {
+  let token: ClipboardPanelModel.Token
+  let armed: Bool
+  let open: () -> Void
+  let remove: () -> Void
+
+  var body: some View {
+    HStack(spacing: 0) {
+      Button(action: open) {
+        Text(token.title)
+          .lineLimit(1)
+          .padding(.leading, 10)
+          .padding(.trailing, 5)
+          .frame(height: 22)
+          .contentShape(.rect)
+      }
+      Button(action: remove) {
+        Image(systemName: "xmark")
+          .font(.system(size: 8, weight: .bold))
+          .frame(width: 8, height: 22)
+          .padding(.trailing, 8)
+          .contentShape(.rect)
+      }
+    }
+    .buttonStyle(.plain)
+    .font(.system(size: 12, weight: .medium))
+    .foregroundStyle(Style.brandInk)
+    .background(Style.brand.opacity(armed ? 0.30 : 0.12), in: .capsule)
+    .fixedSize()
+    .animation(Style.Motion.snap.animation(), value: armed)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("筛选：\(token.title)")
+    .accessibilityHint("按删除键移除")
+    .accessibilityAddTraits(.isButton)
+    .accessibilityAction { open() }
+    .accessibilityAction(named: "移除", remove)
+  }
+}
+
+/// 品牌粉实心键帽（主按钮）：白色符号，键帽里只放符号（白字在 #FF4D7E 上约 3.2:1，只够非文本 3:1）
+private struct PrimaryKeyCap: View {
+  let text: String
+
+  init(_ text: String) { self.text = text }
+
+  var body: some View {
+    Text(text)
+      .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+      .padding(.horizontal, 5)
+      .frame(minWidth: 20, minHeight: 18)
+      .foregroundStyle(.white)
+      .background(Style.brand, in: .rect(cornerRadius: Style.Radius.mini, style: .continuous))
+  }
+}
+
+/// 空状态：28 pt 符号 + 14 semibold 标题 + 下方说明或按钮（同翻译浮窗的空态）
+private struct EmptyState<Detail: View>: View {
+  let symbol: String
+  let title: String
+  @ViewBuilder var detail: Detail
+
+  var body: some View {
+    VStack(spacing: 8) {
+      Image(systemName: symbol)
+        .font(.system(size: 28))
+        .symbolRenderingMode(.hierarchical)
+        .foregroundStyle(.tertiary)
+      Text(title).font(.system(size: 14, weight: .semibold))
+      detail.font(.system(size: 12))
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 }

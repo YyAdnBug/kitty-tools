@@ -1,4 +1,4 @@
-// 设置 › 剪贴板：历史上限、面板行为（带实时示意图）、格式与图片文字、隐私（敏感文本 / 排除 App）、清空时机。
+// 设置 › 剪贴板：历史上限、面板行为（带实时示意图：单列 + 透镜 + 底栏）、格式与图片文字、隐私（敏感文本 / 排除 App）、清空时机。
 // 上限类设置改了立即生效（执行一次清理）。控件分工（Whisker §6）：> 5 项弹出菜单、3–5 项单选。
 
 import SwiftUI
@@ -44,9 +44,12 @@ struct ClipboardTab: View {
         Text("收藏、片段和已归组的条目不受以上限制").font(.caption).foregroundStyle(.secondary)
       }
       Section("面板") {
-        ClipboardPanelSketch(showsPreview: showPreview, showsLinkPreview: linkPreview)
+        ClipboardPanelSketch(showsLens: showPreview, showsLinkPreview: linkPreview)
           .frame(maxWidth: .infinity)
-        Toggle("显示预览栏", isOn: $showPreview)
+        Toggle(isOn: $showPreview) {
+          Text("显示透镜")
+          Text("选中的条目在原地展开预览；关掉就是纯列表，一屏多露出几行")
+        }
         Toggle(isOn: $linkPreview) {
           Text("链接显示网页标题和图片")
           Text("选中链接时联网读取；本机、内网和带登录令牌的网址不读")
@@ -138,81 +141,101 @@ struct ClipboardTab: View {
   }
 }
 
-/// 剪贴板面板的示意图（实时预览）：跟着「显示预览栏」「链接显示网页标题和图片」变——
-/// 没有预览栏时列表占满；链接卡有没有头图。只是线框，不画真内容
+/// 剪贴板面板的示意图（实时预览，Sleeve 式）：单列 + 一块透镜 + 底栏，跟着「显示透镜」「链接显示网页标题和图片」变——
+/// 关掉透镜时选中行只是一条中性高亮（纯列表，多露出几行）；透镜里的链接有没有头图。只是线框，不画真内容
 private struct ClipboardPanelSketch: View {
-  let showsPreview: Bool
+  let showsLens: Bool
   let showsLinkPreview: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     let panel = RoundedRectangle(cornerRadius: 12, style: .continuous)
     VStack(spacing: 0) {
-      // 搜索栏
-      HStack(spacing: 6) {
+      // 搜索线：放大镜 + 一枚粉色筛选标签 + 占位
+      HStack(spacing: 5) {
         Image(systemName: "magnifyingglass").font(.system(size: 9, weight: .semibold))
+          .foregroundStyle(.tertiary)
+        Capsule().fill(Style.brand.opacity(0.22)).frame(width: 22, height: 8)
         Capsule().fill(.primary.opacity(0.12)).frame(width: 70, height: 5)
         Spacer()
       }
-      .foregroundStyle(.tertiary)
       .padding(.horizontal, 10)
       .frame(height: 22)
       Style.hairline.frame(height: 0.5)
-      HStack(spacing: 0) {
-        VStack(spacing: 5) {
-          ForEach(0..<5, id: \.self) { index in
-            HStack(spacing: 5) {
-              RoundedRectangle(cornerRadius: 2.5, style: .continuous)
-                .fill(index == 1 ? Style.Family.url.opacity(0.7) : .primary.opacity(0.14))
-                .frame(width: 11, height: 11)
-              Capsule().fill(.primary.opacity(0.12)).frame(height: 4)
-            }
-            .padding(.horizontal, 5)
-            .frame(height: 16)
-            .background(
-              index == 1 ? Style.selectedFill : .clear,
-              in: .rect(cornerRadius: 4, style: .continuous))
-          }
-          Spacer(minLength: 0)
-        }
-        .padding(5)
-        .frame(width: showsPreview ? 96 : nil)
-        .frame(maxWidth: showsPreview ? nil : .infinity)
-        if showsPreview {
-          Style.hairline.frame(width: 0.5)
-          VStack(alignment: .leading, spacing: 5) {
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-              .fill(Color(nsColor: .systemBlue).opacity(0.75)).frame(height: 10)
-            if showsLinkPreview {
-              RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .fill(
-                  LinearGradient(
-                    colors: [Style.Family.url.opacity(0.5), Style.Family.search.opacity(0.35)],
-                    startPoint: .topLeading, endPoint: .bottomTrailing)
-                )
-                .frame(height: 34)
-                .transition(
-                  reduceMotion
-                    ? .opacity : .opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
-            }
-            Capsule().fill(.primary.opacity(0.22)).frame(width: 80, height: 5)
-            Capsule().fill(.primary.opacity(0.12)).frame(width: 60, height: 4)
-            Spacer(minLength: 0)
-          }
-          .padding(6)
-          .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .trailing)))
-        }
+      VStack(spacing: 0) {
+        row(tile: .primary.opacity(0.14))
+        lens
+        row(tile: .primary.opacity(0.14))
+        row(tile: Style.Family.clipboard.opacity(0.5))
+        if !showsLens { row(tile: .primary.opacity(0.14)) }
+        Spacer(minLength: 0)
       }
+      .padding(4)
+      Style.hairline.frame(height: 0.5)
+      // 底栏：条数 ｜ 粘贴 [↩] · 操作 ⌘K
+      HStack(spacing: 4) {
+        Capsule().fill(.primary.opacity(0.12)).frame(width: 22, height: 4)
+        Spacer()
+        Capsule().fill(.primary.opacity(0.16)).frame(width: 14, height: 4)
+        RoundedRectangle(cornerRadius: 2, style: .continuous).fill(Style.brand)
+          .frame(width: 9, height: 8)
+        Capsule().fill(.primary.opacity(0.16)).frame(width: 18, height: 4)
+      }
+      .padding(.horizontal, 8)
+      .frame(height: 14)
     }
-    .frame(width: 240, height: 124)
+    .frame(width: 240, height: 136)
     .background(.background, in: panel)
     .overlay(panel.strokeBorder(Style.hairline, lineWidth: 0.5))
     .clipShape(panel)
     .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
-    // 减弱动态效果：只淡入淡出，列宽直接变（不滑、不缩放）
-    .animation(reduceMotion ? nil : Style.Motion.settle.animation(), value: showsPreview)
+    // 减弱动态效果：直接变（不展开、不缩放）
+    .animation(reduceMotion ? nil : Style.Motion.settle.animation(), value: showsLens)
     .animation(reduceMotion ? nil : Style.Motion.settle.animation(), value: showsLinkPreview)
     .padding(.vertical, 6)
     .accessibilityHidden(true)
+  }
+
+  private func row(tile: some ShapeStyle) -> some View {
+    HStack(spacing: 5) {
+      RoundedRectangle(cornerRadius: 2.5, style: .continuous).fill(tile).frame(width: 9, height: 9)
+      Capsule().fill(.primary.opacity(0.12)).frame(width: 110, height: 4)
+      Spacer()
+      Capsule().fill(.primary.opacity(0.08)).frame(width: 26, height: 3)
+    }
+    .padding(.horizontal, 5)
+    .frame(height: 14)
+  }
+
+  /// 选中行：一块中性高亮；开着透镜时在原地展开成链接预览（头图 + 标题）+ 元信息
+  private var lens: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      row(tile: Style.Family.url.opacity(0.7))
+      if showsLens {
+        HStack(alignment: .top, spacing: 5) {
+          if showsLinkPreview {
+            RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+              .fill(
+                LinearGradient(
+                  colors: [Style.Family.url.opacity(0.5), Style.Family.search.opacity(0.35)],
+                  startPoint: .topLeading, endPoint: .bottomTrailing)
+              )
+              .frame(width: 40, height: 23)
+              .transition(.opacity)
+          }
+          VStack(alignment: .leading, spacing: 4) {
+            Capsule().fill(.primary.opacity(0.22)).frame(width: 80, height: 5)
+            Capsule().fill(.primary.opacity(0.12)).frame(width: 60, height: 4)
+          }
+        }
+        .padding(.leading, 19)
+        .transition(.opacity)
+        Capsule().fill(.primary.opacity(0.08)).frame(width: 70, height: 3)
+          .padding(.leading, 19)
+          .padding(.bottom, 4)
+          .transition(.opacity)
+      }
+    }
+    .background(Style.selectedFill, in: .rect(cornerRadius: 4, style: .continuous))
   }
 }
