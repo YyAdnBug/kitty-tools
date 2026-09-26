@@ -180,15 +180,17 @@ final class OverlayPanel: NSPanel {
     }
   }
 
-  /// 缩回 source 并淡出（⌘Y / Esc 关掉放大预览）。没有 source（剪贴板面板已经不在）或减弱动态效果时照常淡出
+  /// 缩回 source 并淡出（⌘Y / Esc 关掉放大预览）；减弱动态效果时原地淡出，没有 source（剪贴板面板已经不在）时系统淡出。
+  /// onHide 在动画放完、窗口收走后才调（调用方先把 key 还回去）
   func unzoom(to source: NSRect?) {
     guard isVisible else { return }
-    guard let source, !Style.reduceMotion else { return dismiss() }
+    // 减弱动态效果：原地淡出（只改透明度）
+    guard let source = Style.reduceMotion ? frame : source else { return dismiss() }
     showGeneration += 1
     let generation = showGeneration
     removeMouseMonitors()
     NSAnimationContext.runAnimationGroup { context in
-      context.duration = 0.24
+      context.duration = Style.reduceMotion ? 0.2 : 0.24
       context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
       animator().setFrame(source, display: true)
       animator().alphaValue = 0

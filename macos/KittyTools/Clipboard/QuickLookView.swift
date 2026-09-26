@@ -12,14 +12,18 @@ struct QuickLookView: View {
   let resize: (NSSize) -> Void
 
   var body: some View {
-    if let item = model.selectedItem {
-      PreviewView(item: item, model: model, enlarged: true)
-        .onChange(of: item.id) {
-          resize(Self.idealSize(for: item, form: model.contentForm(of: item)))
-        }
-    } else {
-      Text("没有可预览的条目").font(.system(size: 13)).foregroundStyle(.secondary)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    Group {
+      if model.showsQuickLookContent, let item = model.selectedItem {
+        PreviewView(item: item, model: model, enlarged: true)
+      } else if model.showsQuickLookContent {
+        Text("没有可预览的条目").font(.system(size: 13)).foregroundStyle(.secondary)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+      }
+    }
+    // 放在 if 外面：中间经过「没有条目」再回来时也要按新条目改尺寸
+    .onChange(of: model.selectedItem?.id) {
+      guard model.showsQuickLookContent, let item = model.selectedItem else { return }
+      resize(Self.idealSize(for: item, form: model.contentForm(of: item)))
     }
   }
 

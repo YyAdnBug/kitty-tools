@@ -25,6 +25,14 @@ struct LinkPreviewTests {
       "https://example.com/a/Xk29fJ3kLm9qP0zT7vB2nH6wR4yU8sE1",
     ]
     for link in blocked { #expect(!LinkPreview.isFetchable(URL(string: link)!), "\(link)") }
+    // 头图 / 图标只查公网：CDN 的长哈希文件名、签名参数照取（取图片用不掉谁的令牌），内网照拦
+    let github = URL(
+      string:
+        "https://opengraph.githubassets.com/7b3088f1e7c031be5fc601b914e7ee7da958299184067e56e2f7ba1f7f91e3a0/swiftlang/swift"
+    )!
+    #expect(!LinkPreview.isFetchable(github) && LinkPreview.isPublicHTTP(github))
+    #expect(LinkPreview.isPublicHTTP(URL(string: "https://cdn.example.com/a.png?Signature=x")!))
+    #expect(!LinkPreview.isPublicHTTP(URL(string: "http://192.168.1.1/a.png")!))
   }
 
   @Test func parsesOpenGraphAndIcons() throws {
@@ -61,10 +69,31 @@ struct LinkPreviewTests {
       using: String.Encoding(rawValue: gbk))!
     #expect(LinkPreview.decode(data, charset: nil).contains("中文标题"))
     #expect(LinkPreview.decode(Data("<title>é</title>".utf8), charset: "utf-8").contains("é"))
+    // 标 gb2312 但混着 GBK 才有的字（喆）：按 GB18030 解；收到上限截在半个字上：只解 </head 之前，后面的半个字不影响
+    let page = "<meta charset=\"gb2312\"><title>张喆的主页</title></head><body>正文".data(
+      using: String.Encoding(rawValue: gbk))!
+    #expect(LinkPreview.decode(page.dropLast(1), charset: nil).contains("张喆的主页"))
+    #expect(
+      LinkPreview.parse(
+        html: "<title>A &mdash; B &raquo; C&hellip;</title>", base: URL(string: "https://a.com")!
+      )
+      .title == "A — B » C…")
   }
 
   @Test func hostOfLinkText() {
     #expect(LinkPreview.host(ofLink: " https://GitHub.com/a ") == "github.com")
     #expect(LinkPreview.host(ofLink: "sspai.com/post/1") == "sspai.com")
+  }
+
+  /// 联网冒烟（TEST_RUNNER_KITTY_LIVE_LINK=1 才跑）：真取 GitHub 仓库页的标题、头图（CDN 长哈希路径）和网站图标
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_LIVE_LINK"] != nil))
+  func liveFetchesGitHub() async throws {
+    let url = try #require(URL(string: "https://github.com/apple/swift"))
+    let clock = ContinuousClock()
+    let elapsed = await clock.measure { await LinkPreview.shared.load(url) }
+    let entry = try #require(LinkPreview.shared.entry(for: url))
+    #expect(entry.metadata.title?.localizedCaseInsensitiveContains("swift") == true)
+    #expect(entry.image != nil && entry.icon != nil && !entry.isLoading, "\(elapsed)")
+    print("GitHub 预览用时", elapsed)
   }
 }

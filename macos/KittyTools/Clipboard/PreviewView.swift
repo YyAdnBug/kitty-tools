@@ -328,10 +328,12 @@ private struct LinkCard: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
-    let entry = LinkPreview.shared.entry(for: url)
+    // 开关关着时连取过的也不显示（设置说的是「显示」）
+    let entry = fetches ? LinkPreview.shared.entry(for: url) : nil
     let host = url.host() ?? url.absoluteString
     VStack(alignment: .leading, spacing: 8) {
       LinkHero(entry: entry)
+        .accessibilityHidden(true)  // 标题、网站名已经在下面说清楚了
         .frame(height: heroHeight)
         .clipShape(.rect(cornerRadius: 8, style: .continuous))
         .overlay(
@@ -347,8 +349,10 @@ private struct LinkCard: View {
           Image(nsImage: icon).resizable().interpolation(.high)
             .frame(width: 14, height: 14)
             .clipShape(.rect(cornerRadius: Style.Radius.tile(14), style: .continuous))
+            .accessibilityHidden(true)
         } else {
           Image(systemName: "globe").font(.system(size: 11, weight: .medium))
+            .accessibilityHidden(true)
         }
         Text(entry?.metadata.siteName.map { "\($0) · \(host)" } ?? host)
           .lineLimit(1)
@@ -398,9 +402,9 @@ private struct LinkHero: View {
         KindTile(symbol: "globe", color: Style.Family.url, size: 44)
       }
       if let image = entry?.image {
-        // 放在 overlay 里铺满：scaledToFill 的图不参与布局，不会把卡片撑宽
+        // 放在 overlay 里铺满：scaledToFill 的图不参与布局，不会把卡片撑宽；裁掉的部分也不接点击
         Color.clear
-          .overlay { Image(nsImage: image).resizable().scaledToFill() }
+          .overlay { Image(nsImage: image).resizable().scaledToFill().allowsHitTesting(false) }
           .clipped()
           .transition(.opacity)
       }
@@ -411,12 +415,20 @@ private struct LinkHero: View {
   }
 }
 
-/// 取预览时头图区的扫光（ambient：1.3 s 一趟，只在取的时候挂着；减弱动态效果时不动）
+/// 取预览时头图区的扫光（ambient：1.3 s 一趟，只在取的时候挂着）；减弱动态效果时是一层静止的淡白
 private struct SweepHighlight: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
-    TimelineView(.animation(paused: reduceMotion)) { context in
+    if reduceMotion {
+      Color.white.opacity(0.14).allowsHitTesting(false).accessibilityLabel("正在读取网页")
+    } else {
+      sweep
+    }
+  }
+
+  private var sweep: some View {
+    TimelineView(.animation) { context in
       let phase =
         context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.3) / 1.3
       LinearGradient(

@@ -109,6 +109,7 @@ private struct IconTile: View {
   let item: ClipItem
   let form: ContentForm?
   let images: ImageStore
+  @AppStorage(Prefs.clipboardLinkPreview) private var showsLinkPreview = true
 
   var body: some View {
     let shape = RoundedRectangle(cornerRadius: Style.Radius.tile(30), style: .continuous)
@@ -159,7 +160,7 @@ private struct IconTile: View {
   }
 
   private var favicon: NSImage? {
-    form == .link ? LinkPreview.shared.favicon(forLink: item.text ?? "") : nil
+    form == .link && showsLinkPreview ? LinkPreview.shared.favicon(forLink: item.text ?? "") : nil
   }
 }
 

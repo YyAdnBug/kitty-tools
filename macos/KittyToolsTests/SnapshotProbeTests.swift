@@ -103,6 +103,7 @@ struct SnapshotProbeTests {
       model.reset()
       let item = try #require(model.visibleItems.first { $0.text?.hasPrefix(prefix) == true })
       model.select(item)
+      model.showsQuickLookContent = true
       let size = QuickLookView.idealSize(for: item, form: model.contentForm(of: item))
       for dark in [false, true] {
         try snapshot(

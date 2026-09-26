@@ -73,6 +73,9 @@ import Observation
   var dialog: Dialog? { didSet { if dialog != nil { endQuickLook() } } }
   /// ⌘Y 放大预览开着
   private(set) var isQuickLooking = false
+  /// 放大预览的浮层上画不画卡片：打开前设上，浮层真正收走（缩回动画放完）才清掉。
+  /// 收走的浮层里别再画：SwiftUI 在看不见的窗口里照样跟着选中重建卡片（Quick Look 视图、2400 px 大图）
+  var showsQuickLookContent = false
   var toast: Toast?
   /// ⌘K 操作面板开着：搜索框改成过滤操作
   var showsActions = false {
@@ -210,7 +213,9 @@ import Observation
     switch Int(event.keyCode) {
     case kVK_Return: copySelection()
     case kVK_ANSI_C where !fieldHasSelection: copySelection()
-    case kVK_ANSI_A where query.isEmpty: multiSelection = Set(visibleItems.map(\.id))
+    // 焦点在放大预览的正文里（不是搜索框）时 ⌘A 是全选那段文字
+    case kVK_ANSI_A where query.isEmpty && fieldEditor?.isFieldEditor != false:
+      multiSelection = Set(visibleItems.map(\.id))
     case kVK_ANSI_D: store.toggleFavorite(targetIDs)
     case kVK_Delete, kVK_ForwardDelete: delete(targetIDs)
     case kVK_ANSI_Z where !store.pendingDeletion.isEmpty: undoDelete()
@@ -269,8 +274,11 @@ import Observation
     }
   }
 
-  /// 预览浮层自己收起了（点了外面）：只同步状态
-  func quickLookDidHide() { isQuickLooking = false }
+  /// 预览浮层收走了（缩回放完、点了外面、跟着面板收起）：同步状态、拆掉卡片
+  func quickLookDidHide() {
+    isQuickLooking = false
+    showsQuickLookContent = false
+  }
 
   private func endQuickLook() {
     guard isQuickLooking else { return }

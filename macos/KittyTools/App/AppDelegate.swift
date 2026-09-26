@@ -96,7 +96,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.openSettings = { [unowned self] in showSettings() }
     model.openQuickLook = { [unowned self] in showQuickLook() }
     model.closeQuickLook = { [unowned self] animated in
-      if animated { quickLookPanel.unzoom(to: cardScreenFrame) } else { quickLookPanel.hide() }
+      guard animated else { return quickLookPanel.hide() }
+      // 缩回动画期间它还在屏幕上：点过里面的文字（它是 key）就先把 key 还给剪贴板，别让这 0.24 s 里按的键落空
+      if quickLookPanel.isKeyWindow, clipboardPanel.isVisible { clipboardPanel.makeKey() }
+      quickLookPanel.unzoom(to: cardScreenFrame)
     }
     return panel
   }()
@@ -107,16 +110,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let panel = OverlayPanel(
       size: NSSize(width: 820, height: 640), autoHide: .clickOutside, isPinned: { false },
       content: QuickLookView(model: clipboardModel) { [unowned self] size in
-        // 连按方向键时直接换尺寸（先瞬时，再动画）
+        // 连按方向键时直接换尺寸（先瞬时，再动画）。isARepeat 只能问按键事件，问鼠标事件会抛异常
+        let event = NSApp.currentEvent
         created?.move(
-          to: quickLookFrame(size), animated: NSApp.currentEvent?.isARepeat != true)
+          to: quickLookFrame(size), animated: !(event?.type == .keyDown && event?.isARepeat == true)
+        )
       })
     created = panel
     panel.becomesKeyOnlyIfNeeded = true
     panel.keyEquivalentHandler = { [unowned self] in clipboardModel.handleKeyEquivalent($0) }
     panel.onHide = { [unowned self] in
       clipboardModel.quickLookDidHide()
-      if NSApp.keyWindow == nil, clipboardPanel.isVisible { clipboardPanel.makeKey() }
+      // 键盘关掉的（它是 key 时按 Esc）把 key 还给剪贴板；点别处关掉的不抢（鼠标还按着：用户正要去别处打字）
+      if NSApp.keyWindow == nil, NSEvent.pressedMouseButtons == 0, clipboardPanel.isVisible {
+        clipboardPanel.makeKey()
+      }
     }
     return panel
   }()
@@ -159,6 +167,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   private func showQuickLook() {
     guard let item = clipboardModel.selectedItem else { return }
+    clipboardModel.showsQuickLookContent = true
     let size = QuickLookView.idealSize(for: item, form: clipboardModel.contentForm(of: item))
     quickLookPanel.zoom(from: cardScreenFrame ?? clipboardPanel.frame, to: quickLookFrame(size))
   }
