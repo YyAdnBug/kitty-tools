@@ -1,5 +1,5 @@
 // 设置 › 启动器 › 某条网页搜索或快捷链接（N12 详情页，从列表推进来）：页头 40 pt 种类色块 + 名称 + 状态，
-// 下面分组表单：名称、关键词、网址、兜底开关（只有搜索有），删除。改动即时写回偏好里的 JSON 列表
+// 下面分组表单：名称、关键词、网址、兜底开关（只有搜索有），删除（自定义的先确认）。改动即时写回偏好里的 JSON 列表
 // （和 LauncherTab 读写同一个键，启动器下次搜索就用上）；有问题（没名称、网址不完整、关键词被占用或重复、
 // 用不上）时页头和列表行的状态变成橙色说明，不拦着保存。
 
@@ -9,6 +9,7 @@ struct SearchEngineDetail: View {
   let id: String
   @AppStorage(Prefs.launcherWebSearchEngines) private var enginesData: Data?
   @Environment(\.dismiss) private var dismiss
+  @State private var confirmsDelete = false
 
   var body: some View {
     let list = Self.decode(enginesData)
@@ -48,15 +49,17 @@ struct SearchEngineDetail: View {
             : "网址里有 {query}：搜索，输入「关键词 空格 内容」时内容替换进 {query}。")
       }
       Section {
-        Button("删除", role: .destructive) {
-          dismiss()
-          var list = Self.decode(enginesData)
-          list.removeAll { $0.id == id }
-          enginesData = Self.encode(list)
+        Button(Self.isPreset(id) ? "删除" : "删除…", role: .destructive) {
+          if Self.isPreset(id) { delete() } else { confirmsDelete = true }
         }
       }
     }
     .formStyle(.grouped)
+    .confirmationDialog("删除「\(Self.title(engine))」？", isPresented: $confirmsDelete) {
+      Button("删除", role: .destructive, action: delete)
+    } message: {
+      Text(Self.deleteMessage)
+    }
     // 名称、网址的首尾空白在离开时去掉（边输边去会吃掉正在打的空格）
     .onDisappear {
       var trimmed = engine
@@ -64,6 +67,13 @@ struct SearchEngineDetail: View {
       trimmed.urlTemplate = trimmed.urlTemplate.trimmingCharacters(in: .whitespaces)
       if trimmed != engine { save(trimmed) }
     }
+  }
+
+  private func delete() {
+    dismiss()
+    var list = Self.decode(enginesData)
+    list.removeAll { $0.id == id }
+    enginesData = Self.encode(list)
   }
 
   private func save(_ engine: SearchEngine) {
@@ -90,6 +100,11 @@ struct SearchEngineDetail: View {
       })
   }
 
+  /// 预置的删了还能从「+」加回来，直接删；自定义的删掉就找不回来，要先确认（列表和详情页同一套）
+  static func isPreset(_ id: String) -> Bool { WebSearch.presets.contains { $0.id == id } }
+
+  static let deleteMessage = "自定义的名称、关键词和网址删掉就找不回来了。"
+
   static func title(_ engine: SearchEngine) -> String {
     let name = engine.name.trimmingCharacters(in: .whitespaces)
     return name.isEmpty ? "未命名" : name
@@ -114,7 +129,8 @@ struct SearchEngineDetail: View {
     return KindTile(symbol: "link", color: Style.Family.url, size: size)
   }
 
-  /// 这一条的问题（橙色提示；nil = 能用）。list 用来查关键词和前面的重复（重复时启动器用靠前的）：
+  /// 这一条的问题（橙色提示；nil = 能用）。list 用来查搜索的关键词和前面的搜索重复（「关键词 空格 内容」直达只看搜索，
+  /// 重复时用靠前的；快捷链接的关键词只参与名称匹配，和谁同名都不算重复）：
   /// 名称不空；搜索的网址要有协议（https:、maps: 之类，http(s) 还得有主机名，默认的「https://」不算填好）；
   /// 快捷链接也可以是 / ~ 开头的路径；关键词不能是保留的 cb / open / find；搜索没关键词又不兜底就用不上
   static func problem(of engine: SearchEngine, in list: [SearchEngine]) -> String? {
@@ -129,8 +145,11 @@ struct SearchEngineDetail: View {
     if !hasScheme && !isPath { return "网址不完整" }
     let keyword = engine.keyword.lowercased()
     if let owner = WebSearch.reservedKeywords[keyword] { return "关键词「\(keyword)」留给\(owner)" }
-    if !keyword.isEmpty, let index = list.firstIndex(where: { $0.id == engine.id }),
-      let earlier = list[..<index].first(where: { $0.keyword.lowercased() == keyword })
+    if !engine.isQuicklink, !keyword.isEmpty,
+      let index = list.firstIndex(where: { $0.id == engine.id }),
+      let earlier = list[..<index].first(where: {
+        !$0.isQuicklink && $0.keyword.lowercased() == keyword
+      })
     {
       return "关键词和「\(title(earlier))」重复，用的是靠前的那个"
     }

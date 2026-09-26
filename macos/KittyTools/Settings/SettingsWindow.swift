@@ -71,7 +71,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
       [
         "历史", "条数", "天数", "保留", "图片", "占用", "预览", "链接", "网页", "点外", "关闭", "格式", "RTF",
         "HTML", "识别", "文字", "OCR", "隐私", "密钥", "银行卡", "清空", "退出", "锁屏", "排除", "App",
-        "收藏", "片段", "分组", "密码", "敏感", "网站", "标题",
+        "收藏", "片段", "分组", "密码", "敏感", "网站", "标题", "透镜", "固定", "图钉",
       ]
     case .launcher:
       [
@@ -82,8 +82,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
       ["保存", "目录", "文件夹", "快门", "声音", "识字", "换行", "二维码", "标注", "长截图", "钉图", "按键", "速查"]
     case .translate:
       [
-        "语言", "第一语言", "第二语言", "字号", "换行", "自动复制", "历史", "导出", "CSV", "Anki", "服务", "密钥",
-        "查词", "词典", "单词", "音标", "例句", "生词本", "收藏",
+        "语言", "第一语言", "第二语言", "字号", "换行", "自动复制", "复制即译", "历史", "导出", "CSV", "Anki",
+        "服务", "密钥", "查词", "词典", "单词", "音标", "例句", "生词本", "收藏",
         "智谱", "OpenAI", "Anthropic", "DeepL", "Google", "百度", "有道", "微软", "火山", "腾讯", "AI", "模型",
       ]
     case .hotkeys:
@@ -190,7 +190,10 @@ struct SettingsRoot: View {
       .navigationSplitViewColumnWidth(min: 170, ideal: 190, max: 240)
     } detail: {
       VStack(spacing: 0) {
-        if navigation.page != .about { PageHeader(page: navigation.page) }
+        // 关于是品牌页、没有页头；翻译、启动器把页头画在自己的 NavigationStack 里，推进详情页时一起换掉（N12）
+        if ![.about, .translate, .launcher].contains(navigation.page) {
+          PageHeader(page: navigation.page)
+        }
         page(navigation.page)
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

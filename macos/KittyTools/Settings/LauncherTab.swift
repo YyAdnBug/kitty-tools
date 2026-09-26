@@ -1,6 +1,7 @@
 // 设置 › 启动器：呼出时切英文输入法、挤压弹开、文件搜索的文件夹授权、浏览器书签、网页搜索与快捷链接
-// （N12：行 = 种类色块 / 名称 / 状态 / 关键词键帽 / 兜底开关，拖动排序，「+ −」增删，推进到 SearchEngineDetail 编辑）、
-// 兜底时机、清空使用记录。按键说明不写在这里（N11，进快捷键速查表）；启动器没有固定，失焦就收起（N8）。
+// （N12：行 = 种类色块 / 名称 / 状态 / 关键词键帽 / 兜底开关，拖动排序，「+ −」增删（自定义的先确认），
+// 单击一行推进到 SearchEngineDetail 编辑）、兜底时机、清空使用记录。页头画在自己的 NavigationStack 里，推进时一起换掉。
+// 按键说明不写在这里（N11，进快捷键速查表）；启动器没有固定，失焦就收起（N8）。
 
 import SwiftUI
 
@@ -17,8 +18,10 @@ struct LauncherTab: View {
   @AppStorage(Prefs.launcherWebSearchEngines) private var enginesData: Data?
   /// 推进的详情页（搜索 / 快捷链接的 id）
   @State private var path: [String] = []
-  /// 列表里选中的一条（「−」和 ⌫ 删它）
+  /// 列表里用键盘选中的一条（「−」和 ⌫ 删它；鼠标单击直接推进，不留选中）
   @State private var selection: String?
+  /// 等确认删除的自定义搜索 / 快捷链接
+  @State private var removing: String?
   @State private var confirmsClear = false
   /// 文件搜索的文件夹授权：nil = 还没问过，否则是被拒绝的文件夹（出现、设置窗成为 key 时刷新；
   /// 不写成初始值：初始值每次重建视图都会求值，要去读受保护目录）
@@ -26,9 +29,12 @@ struct LauncherTab: View {
 
   var body: some View {
     NavigationStack(path: $path) {
-      form
-        .navigationTitle(SettingsPage.launcher.title)
-        .navigationDestination(for: String.self) { id in SearchEngineDetail(id: id) }
+      VStack(spacing: 0) {
+        PageHeader(page: .launcher)
+        form
+      }
+      .navigationTitle(SettingsPage.launcher.title)
+      .navigationDestination(for: String.self) { id in SearchEngineDetail(id: id) }
     }
     .onAppear { deniedFolders = Permissions.deniedFolders() }
     .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
@@ -38,6 +44,20 @@ struct LauncherTab: View {
       Button("清空", role: .destructive, action: clearUsage)
     } message: {
       Text("「最近使用」和按使用习惯的排序会从头开始学。")
+    }
+    .confirmationDialog(
+      "删除「\(engines.first { $0.id == removing }.map(SearchEngineDetail.title) ?? "")」？",
+      isPresented: Binding {
+        removing != nil
+      } set: {
+        if !$0 { removing = nil }
+      }
+    ) {
+      Button("删除", role: .destructive) {
+        if let removing { delete(removing) }
+      }
+    } message: {
+      Text(SearchEngineDetail.deleteMessage)
     }
   }
 
@@ -94,7 +114,7 @@ struct LauncherTab: View {
       } footer: {
         caption(
           "网址里有 {query} 的是搜索（「关键词 空格 内容」直达，开关 = 没有本地结果时兜底），没有的是快捷链接。"
-            + "拖动调整顺序，关键词重复时用靠前的；双击一行或点 › 编辑。")
+            + "拖动调整顺序，搜索的关键词重复时用靠前的；点一行编辑。")
       }
       Section {
         Button("清空使用记录…", role: .destructive) { confirmsClear = true }
@@ -109,10 +129,10 @@ struct LauncherTab: View {
 
   // MARK: 网页搜索与快捷链接列表（N12）
 
-  /// 单击选中（给「−」和 ⌫ 用）、拖动排序、双击 / ↩ / 行尾 › 推进详情页（和翻译服务列表同一套）
+  /// 单击一行推进详情页，↑↓ 选中（给「−」和 ⌫ 用）、↩ 推进，拖动排序（和翻译服务列表同一套）
   private var engineList: some View {
     let list = engines
-    return List(selection: $selection) {
+    return List(selection: OrderedList.selection($selection, open: open)) {
       ForEach(list) { engine in
         EngineListRow(
           engine: engine, problem: SearchEngineDetail.problem(of: engine, in: list),
@@ -121,7 +141,7 @@ struct LauncherTab: View {
           } set: {
             setFallback(engine.id, $0)
           },
-          open: { path.append(engine.id) }
+          open: { open(engine.id) }, move: { move(engine.id, by: $0) }
         )
         .tag(engine.id)
       }
@@ -137,11 +157,17 @@ struct LauncherTab: View {
     .frame(height: OrderedList.height(rows: list.count))
     .contextMenu(forSelectionType: String.self) { ids in
       if let id = ids.first {
-        Button("编辑…") { path.append(id) }
-        Button("删除", role: .destructive) { remove(id) }
+        Button("编辑…") { open(id) }
+        Divider()
+        Button("上移") { move(id, by: -1) }.disabled(id == list.first?.id)
+        Button("下移") { move(id, by: 1) }.disabled(id == list.last?.id)
+        Divider()
+        Button(SearchEngineDetail.isPreset(id) ? "删除" : "删除…", role: .destructive) {
+          remove(id)
+        }
       }
     } primaryAction: { ids in
-      if let id = ids.first { path.append(id) }
+      if let id = ids.first { open(id) }
     }
     .onDeleteCommand(perform: removeSelected)
   }
@@ -159,8 +185,7 @@ struct LauncherTab: View {
           id: "custom-" + UUID().uuidString.prefix(8), name: "", keyword: "",
           urlTemplate: "https://", enabled: false)
         engines.append(engine)
-        selection = engine.id
-        path.append(engine.id)
+        open(engine.id)
       }
     } label: {
       Image(systemName: "plus")
@@ -184,7 +209,24 @@ struct LauncherTab: View {
     engines = list
   }
 
+  /// 推进详情页（直接换掉路径：双击时第一下已经推进了，第二下的 primaryAction 不再叠一层）
+  private func open(_ id: String) { path = [id] }
+
+  /// 右键菜单和无障碍动作里的上移 / 下移（键盘、读屏用户没法拖）；到头了什么都不做
+  private func move(_ id: String, by offset: Int) {
+    var list = engines
+    guard let index = list.firstIndex(where: { $0.id == id }), list.indices.contains(index + offset)
+    else { return }
+    list.swapAt(index, index + offset)
+    engines = list
+  }
+
+  /// 「−」、⌫、右键「删除」：预置的直接删（「+」里能加回来），自定义的先确认
   private func remove(_ id: String) {
+    if SearchEngineDetail.isPreset(id) { delete(id) } else { removing = id }
+  }
+
+  private func delete(_ id: String) {
     engines.removeAll { $0.id == id }
     if selection == id { selection = nil }
   }
@@ -210,12 +252,15 @@ struct LauncherTab: View {
   }
 }
 
-/// 一条搜索 / 快捷链接：种类色块、名称 + 状态（有问题时橙色说明）、关键词键帽、兜底开关（快捷链接没有，留位对齐）、›
+/// 一条搜索 / 快捷链接：种类色块、名称 + 状态（有问题时橙色说明）、关键词键帽、兜底开关（快捷链接没有，留位对齐）、
+/// ›（只是提示能推进，点整行都推进）
 private struct EngineListRow: View {
   let engine: SearchEngine
   let problem: String?
   let enabled: Binding<Bool>
   let open: () -> Void
+  /// 上移（-1）/ 下移（+1）
+  let move: (Int) -> Void
 
   var body: some View {
     let title = SearchEngineDetail.title(engine)
@@ -247,13 +292,13 @@ private struct EngineListRow: View {
         .opacity(engine.isQuicklink ? 0 : 1)
         .disabled(engine.isQuicklink)
         .accessibilityHidden(engine.isQuicklink)
-      Button("编辑「\(title)」", systemImage: "chevron.forward", action: open)
-        .labelStyle(.iconOnly)
-        .buttonStyle(.borderless)
+      Image(systemName: "chevron.forward")
         .foregroundStyle(.tertiary)
-        .help("编辑")
+        .accessibilityHidden(true)
     }
     .frame(height: OrderedList.rowHeight - 8)
     .accessibilityAction(named: "编辑", open)
+    .accessibilityAction(named: "上移") { move(-1) }
+    .accessibilityAction(named: "下移") { move(1) }
   }
 }

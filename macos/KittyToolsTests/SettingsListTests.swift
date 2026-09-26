@@ -1,5 +1,5 @@
-// 设置里有序列表（N12）的单测：网页搜索一条的问题提示（名称、网址、保留 / 重复关键词、用不上）、
-// 列表 JSON 读写（关键词去空白）、翻译服务状态副标题（开着才标橙）。
+// 设置里有序列表（N12）的单测：网页搜索一条的问题提示（名称、网址、保留 / 重复关键词（只算搜索之间）、用不上）、
+// 列表 JSON 读写（关键词去空白）、预置判断（删自定义的要确认）、翻译服务状态副标题（开着才标橙）。
 
 import Foundation
 import Testing
@@ -34,6 +34,12 @@ struct SettingsListTests {
     let copy = engine("b", name: "Google 2", keyword: "G", url: "https://b.com/?q={query}")
     #expect(problem(copy, [google, copy]) == "关键词和「Name」重复，用的是靠前的那个")
     #expect(problem(google, [google, copy]) == nil)
+    // 快捷链接的关键词只参与名称匹配：和搜索同关键词、谁在前都不算重复
+    let docLink = engine("l", keyword: "doc", url: "https://developer.apple.com")
+    let docSearch = engine("s", keyword: "doc", url: "https://d.com/?q={query}")
+    #expect(problem(docSearch, [docLink, docSearch]) == nil)
+    let gLink = engine("l", keyword: "g", url: "https://g.com")
+    #expect(problem(gLink, [google, gLink]) == nil)
     // 搜索没关键词也不兜底就用不上；勾了兜底就行
     #expect(problem(engine("a", url: "https://a.com/?q={query}"), []) == "没有关键词也不兜底，用不上")
     #expect(problem(engine("a", url: "https://a.com/?q={query}", fallback: true), []) == nil)
@@ -53,6 +59,8 @@ struct SettingsListTests {
     #expect(
       SearchEngineDetail.kindTitle(engine("a", url: "https://a.com/?q={query}", fallback: true))
         == "搜索 · 没有本地结果时兜底")
+    #expect(
+      SearchEngineDetail.isPreset("google") && !SearchEngineDetail.isPreset("custom-1a2b3c4d"))
   }
 
   /// 不碰钥匙串的几种：智谱写模型，自建 AI 缺地址 / 模型；关着的服务缺配置不标橙

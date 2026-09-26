@@ -1,6 +1,6 @@
 // 设置里的有序列表（翻译服务、网页搜索，N12；对标 Bob 服务页 / 系统设置「互联网账户」「登录项」）共用的零件：
-// 列表下面系统样式的「+ −」小按钮条、列表高度、详情页的页头（40 pt 图标 + 名称 + 状态）。
-// 列表本身（List + .onMove 拖动排序、单击选中、双击 / ↩ / 行尾 › 推进详情页）在各自的 Tab 里。
+// 列表下面系统样式的「+ −」小按钮条、列表高度、选中绑定（单击推进、键盘选中）、详情页的页头（40 pt 图标 + 名称 + 状态）。
+// 列表本身（List + .onMove 拖动排序、右键菜单与无障碍动作里的上移 / 下移）在各自的 Tab 里。
 
 import SwiftUI
 
@@ -13,6 +13,24 @@ enum OrderedList {
   /// 列表区的高度：按行数定高，不滚动时整块跟着表单一起滚
   static func height(rows: Int) -> CGFloat {
     CGFloat(min(max(rows, 1), visibleRows)) * rowHeight
+  }
+
+  /// 列表的选中绑定：鼠标单击一行 = 推进详情页（N12），↑↓ 只选中（给「−」和 ⌫ 用），↩ 走 primaryAction。
+  /// List 在松开鼠标时才改选中（拖动排序、点行里的开关都不改），所以按当前事件是不是 leftMouseUp 区分点击和键盘。
+  /// 点击不留选中：留着的话从详情页回来再点同一行，选中没变、setter 不来，就推不进去了
+  static func selection(_ selection: Binding<String?>, open: @escaping (String) -> Void)
+    -> Binding<String?>
+  {
+    Binding {
+      selection.wrappedValue
+    } set: { id in
+      if let id, id != selection.wrappedValue, NSApp.currentEvent?.type == .leftMouseUp {
+        selection.wrappedValue = nil
+        open(id)
+      } else {
+        selection.wrappedValue = id
+      }
+    }
   }
 
   /// 分组下面的说明：caption secondary、靠左（分组表单的页脚默认靠右排）
