@@ -69,7 +69,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     panel.onHide = { [unowned model] in model.didHide() }
     panel.squeezesIn = { UserDefaults.standard.bool(forKey: Prefs.launcherSqueezeEntrance) }
     model.hidePanel = { [unowned panel] in panel.hide() }
-    model.resize = { [unowned panel] in panel.setContentHeight($0, animated: true) }
+    // ⌘K 菜单开着时瞬间长高：菜单锚在底栏上方，面板边长边插进来会越过搜索栏被裁，得先长好再从右下角放大
+    model.resize = { [unowned panel, unowned model] in
+      panel.setContentHeight($0, animated: !model.showsActions)
+    }
     model.runAction = { [unowned self] in runLauncherAction($0) }
     model.openClipboard = { [unowned self] in searchClipboard($0) }
     model.boundHotKey = { [unowned self] in hotKeys.bindings[$0] }

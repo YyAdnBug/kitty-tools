@@ -2,6 +2,7 @@
 // 副标题与快捷键键帽（N8–N10）。
 
 import AppKit
+import Carbon.HIToolbox
 import Testing
 
 @testable import KittyTools
@@ -374,6 +375,38 @@ struct LauncherTests {
     for symbol in symbols {
       #expect(NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil, "\(symbol)")
     }
+  }
+
+  /// 回归：菜单开着时标着的 ⇥ 照常补全（以前吞掉），⌃O 这类别的换行键只吞掉；⌘K 过滤框里有字时 ⌘⌫ 交还输入框
+  /// 删过滤词，不把「最近使用」的条目删掉，过滤框空着才执行菜单里的「从最近使用中移除 ⌘⌫」
+  @Test func actionMenuKeysMatchTheirLabels() throws {
+    let usage = try LauncherUsage(db: Database(path: ":memory:"))
+    let calculator = AppCatalog.item(path: "/System/Applications/Calculator.app")
+    usage.record(calculator, query: "")
+    let model = LauncherModel(usage: usage, apps: [calculator])
+    model.query = ""
+    func key(_ code: Int, _ flags: NSEvent.ModifierFlags) throws -> NSEvent {
+      try #require(
+        NSEvent.keyEvent(
+          with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0,
+          context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false,
+          keyCode: UInt16(code)))
+    }
+    model.toggleActions()
+    NSApp.postEvent(try key(kVK_ANSI_O, .control), atStart: true)
+    _ = NSApp.nextEvent(matching: .any, until: .distantPast, inMode: .default, dequeue: true)
+    #expect(model.handleCommand(#selector(NSResponder.insertNewlineIgnoringFieldEditor(_:))))
+    #expect(model.showsActions)
+    let commandDelete = try key(kVK_Delete, .command)
+    model.actionQuery = "移除"
+    #expect(!model.handleKeyEquivalent(commandDelete))
+    #expect(model.showsActions && model.results == [calculator])
+    #expect(model.handleCommand(#selector(NSResponder.insertTab(_:))))
+    #expect(!model.showsActions && model.query == LauncherModel.completion(for: calculator))
+    model.query = ""
+    model.toggleActions()
+    #expect(model.handleKeyEquivalent(commandDelete))
+    #expect(!model.showsActions && model.results.isEmpty)
   }
 
   /// N10：内置动作副标题只写「Kitty Tools」，英文别名照样能搜；选中时显示的全局快捷键拆成一组键帽

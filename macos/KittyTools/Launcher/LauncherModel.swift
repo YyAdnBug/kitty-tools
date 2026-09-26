@@ -6,8 +6,9 @@
 // （计算结果只复制，find 的文件是打开）、⌥↩ 在访达里搜索、⌃↩ 网页搜索（按住修饰键时选中行的副标题换成替代动作）、
 // Tab 补全、⌘C 复制路径 / 网址、⌘1–9 执行第 N 项、「最近使用」里 ⌘⌫ 移除一项、Esc 先关动作菜单再清空再关闭；
 // ⌘K 动作菜单（N8，共用 ActionMenu）：列出选中项的主动作和全部替代动作连同键位，开着时搜索框用来过滤动作，
-// ↑↓ ↩ 选择执行、Esc 关掉。单击选中、双击执行（和剪贴板面板一致）。执行成功才收起并记使用
-// （修旧版先收起、失败提示看不见，§11 #33）。启动器没有固定：点外面就收起（N8）。
+// ↑↓ ↩ 选择执行、Esc 关掉，菜单里标着的其余键位（⇥ ⌥↩ ⌃↩ ⌘ 键）照常可用、先关菜单。
+// 单击选中、双击执行（和剪贴板面板一致）。执行成功才收起并记使用（修旧版先收起、失败提示看不见，§11 #33）。
+// 启动器没有固定：点外面就收起（N8）。
 
 import AppKit
 import Carbon.HIToolbox
@@ -471,9 +472,7 @@ import Observation
     case #selector(NSResponder.insertNewline(_:)),
       #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)),
       #selector(NSResponder.insertLineBreak(_:)):
-      guard let event = NSApp.currentEvent,
-        [kVK_Return, kVK_ANSI_KeypadEnter].contains(Int(event.keyCode))
-      else { return true }
+      guard let event = NSApp.currentEvent, Self.isReturnKey(event) else { return true }
       if event.modifierFlags.contains(.option) {
         searchInFinder()
       } else if event.modifierFlags.contains(.control) {
@@ -491,20 +490,30 @@ import Observation
     return true
   }
 
-  /// 动作菜单开着（和剪贴板一致）：↑↓ 选、↩ 执行、Esc 只关菜单；带修饰键的回车、Tab 吞掉（不往过滤框里插换行、
-  /// 焦点不跳走），其余（左右移光标、删字）交还输入框
+  /// 动作菜单开着（和剪贴板一致）：↑↓ 选、↩ 执行、Esc 只关菜单；菜单里标着的 ⇥ ⌥↩ ⌃↩ 和 ⌘ 键一样先关菜单再照常做，
+  /// ⌃O 这类也发换行命令的别的键吞掉（不往过滤框里插换行），其余（左右移光标、删字）交还输入框
   private func handleMenuCommand(_ selector: Selector) -> Bool {
     switch selector {
     case #selector(NSResponder.moveUp(_:)): moveAction(by: -1)
     case #selector(NSResponder.moveDown(_:)): moveAction(by: 1)
     case #selector(NSResponder.insertNewline(_:)): runSelectedAction()
     case #selector(NSResponder.cancelOperation(_:)): showsActions = false
+    case #selector(NSResponder.insertTab(_:)):
+      showsActions = false
+      complete()
     case #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)),
-      #selector(NSResponder.insertLineBreak(_:)), #selector(NSResponder.insertTab(_:)):
-      break
+      #selector(NSResponder.insertLineBreak(_:)):
+      guard let event = NSApp.currentEvent, Self.isReturnKey(event) else { break }
+      showsActions = false
+      return handleCommand(selector)
     default: return false
     }
     return true
+  }
+
+  /// 回车键（含小键盘 Enter）；当前事件不是按键时问 keyCode 会抛异常，先看类型
+  private static func isReturnKey(_ event: NSEvent) -> Bool {
+    event.type == .keyDown && [kVK_Return, kVK_ANSI_KeypadEnter].contains(Int(event.keyCode))
   }
 
   func handleKeyEquivalent(_ event: NSEvent) -> Bool {
@@ -527,8 +536,8 @@ import Observation
     switch Int(event.keyCode) {
     case kVK_Return:
       if let item = selectedItem { commandReturn(item) }
-    // 「最近使用」里 ⌘⌫：忘掉这一项（有查询时 ⌘⌫ 照常删到行首）
-    case kVK_Delete where isShowingRecent:
+    // 「最近使用」里 ⌘⌫：忘掉这一项（有查询、或 ⌘K 过滤框里有字时 ⌘⌫ 照常删到行首）
+    case kVK_Delete where isShowingRecent && (!showsActions || actionQuery.isEmpty):
       if let item = selectedItem, item.kind.isRecorded { forget(item) }
     case kVK_ANSI_C where !fieldHasSelection:
       guard let item = selectedItem, copyTitle(for: item) != nil else { return false }

@@ -195,7 +195,8 @@ struct LauncherPanelView: View {
     }
   }
 
-  /// ⌘K 动作菜单：从右下角放大出来（转场在 ActionMenu 里），锚在底栏「动作 ⌘K」的上方
+  /// ⌘K 动作菜单：从右下角放大出来（转场在 ActionMenu 里），锚在底栏「动作 ⌘K」的上方。
+  /// 要撑高面板时是瞬间长高（AppDelegate 的 resize 在菜单开着时不动画），菜单一出来就在最终位置
   private var actionMenu: some View {
     ZStack(alignment: .bottomTrailing) {
       if model.showsActions {
