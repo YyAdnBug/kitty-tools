@@ -256,20 +256,32 @@ struct ServiceTile: View {
   }
 
   /// 官方 logo（`Assets.xcassets/ServiceLogo`，取自各家官网的图标）：自带底色的满版图直接裁圆角，
-  /// 只有图形的垫白底留边（onPlate）。百度、腾讯官网只有 32 px、OpenAI 取不到，先用色块首字母
+  /// 只有图形的垫白底留边（onPlate）。自定义的 AI 服务认不出是谁时用色块首字母。
+  /// ponytail: 百度、腾讯只有 32 px 的 favicon，18 pt 下略虚；拿到 ≥ 128 px 的官方图直接替换 PNG
   static func logo(for service: TranslateService) -> (name: String, onPlate: Bool)? {
     let name: String? =
       switch service.kind {
-      case .zhipu, .youdao, .google, .deepl, .microsoft, .volcengine: service.kind.rawValue
-      case .baidu, .tencent: nil
+      case .zhipu, .baidu, .youdao, .google, .deepl, .microsoft, .volcengine, .tencent:
+        service.kind.rawValue
       case .ai:
         switch service.aiProtocol {
         case .anthropic: "anthropic"
         case .azure: "microsoft"
-        case .openai, nil: service.name.localizedCaseInsensitiveContains("gemini") ? "gemini" : nil
+        case .openai, nil:
+          if service.name.localizedCaseInsensitiveContains("gemini") {
+            "gemini"
+          } else if ["gpt", "openai"].contains(where: {
+            service.name.localizedCaseInsensitiveContains($0)
+          }) {
+            "openai"
+          } else {
+            nil
+          }
         }
       }
-    return name.map { ("ServiceLogo/" + $0, !["zhipu", "youdao", "anthropic"].contains($0)) }
+    return name.map {
+      ("ServiceLogo/" + $0, !["zhipu", "baidu", "youdao", "anthropic"].contains($0))
+    }
   }
 
   /// 服务品牌色（mac-whisker §3）；自定义 AI 按协议，其余按名字哈希取色相

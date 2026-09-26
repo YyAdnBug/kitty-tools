@@ -259,11 +259,13 @@ struct ServiceLogoTests {
       ai.aiProtocol = proto
       services.append(ai)
     }
-    var gemini = TranslateService.newAI()
-    gemini.name = "Gemini 2.5 Flash"
-    services.append(gemini)
+    for name in ["Gemini 2.5 Flash", "GPT-4o mini"] {
+      var ai = TranslateService.newAI()
+      ai.name = name
+      services.append(ai)
+    }
     let named = services.compactMap(ServiceTile.logo(for:))
-    #expect(named.count == 9)  // 百度、腾讯还没有清晰的官方图
+    #expect(named.count == services.count)
     for logo in named {
       #expect(NSImage(named: logo.name) != nil, "\(logo.name)")
     }
