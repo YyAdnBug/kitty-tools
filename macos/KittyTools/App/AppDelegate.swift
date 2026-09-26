@@ -63,20 +63,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = launcherModel
     let panel = OverlayPanel(
       size: NSSize(width: 720, height: LauncherPanelView.searchHeight), topAnchored: true,
-      autoHide: .clickOutside,
-      isPinned: { !UserDefaults.standard.bool(forKey: Prefs.launcherHideOnUnfocus) },
-      content: LauncherPanelView(model: model) { [unowned self] in showSettings() })
+      // 启动器没有固定（N8）：点外面就收起
+      autoHide: .clickOutside, isPinned: { false }, content: LauncherPanelView(model: model))
     panel.keyEquivalentHandler = { [unowned model] in model.handleKeyEquivalent($0) }
     panel.onHide = { [unowned model] in model.didHide() }
     panel.squeezesIn = { UserDefaults.standard.bool(forKey: Prefs.launcherSqueezeEntrance) }
     model.hidePanel = { [unowned panel] in panel.hide() }
     model.resize = { [unowned panel] in panel.setContentHeight($0, animated: true) }
     model.runAction = { [unowned self] in runLauncherAction($0) }
-    model.searchClipboard = { [unowned self] in clipboardStore.search($0) }
-    model.copyClip = { [unowned self] id in
-      if let item = clipboardStore.items.first(where: { $0.id == id }) { clipboardModel.copy(item) }
-    }
-    model.bumpClip = { [unowned self] id in clipboardStore.bump(id) }
+    model.openClipboard = { [unowned self] in searchClipboard($0) }
+    model.boundHotKey = { [unowned self] in hotKeys.bindings[$0] }
     model.requestFolderAccess = { [unowned self] in requestFolderAccess() }
     return panel
   }()
@@ -279,22 +275,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   // MARK: 入口
 
-  /// 启动器和剪贴板面板没固定时只开一个（PLAN §10）
+  /// 启动器和剪贴板面板在同一位置，只开一个：呼出一个就收起另一个，固定着的剪贴板面板也收
+  /// （两块叠在同一处没法用，固定只管点外不关；mac-overlay-panel §2）
   func toggleClipboard() {
     // 已开着但不是 key 时 toggle 是「聚焦」而不是收起：同样要收起另一个
-    if !(clipboardPanel.isVisible && clipboardPanel.isKeyWindow) {
-      hideUnpinned(launcherPanel, Prefs.launcherHideOnUnfocus)
-    }
+    if !(clipboardPanel.isVisible && clipboardPanel.isKeyWindow) { launcherPanel.hide() }
     if !clipboardPanel.isVisible { clipboardStore.enforceLimits() }
     clipboardPanel.toggle()
   }
 
   func toggleLauncher() {
-    if !(launcherPanel.isVisible && launcherPanel.isKeyWindow) {
-      hideUnpinned(clipboardPanel, Prefs.clipboardHideOnUnfocus)
-    }
+    if !(launcherPanel.isVisible && launcherPanel.isKeyWindow) { clipboardPanel.hide() }
     if !launcherPanel.isVisible { launcherModel.prepareForShow() }
     launcherPanel.toggle()
+  }
+
+  /// 启动器「cb 关键词」↩（启动器已收起，N9）：呼出剪贴板面板，再把关键词填进它的搜索框
+  private func searchClipboard(_ keyword: String) {
+    if !(clipboardPanel.isVisible && clipboardPanel.isKeyWindow) { toggleClipboard() }
+    clipboardModel.query = keyword
   }
 
   private func hideUnpinned(_ panel: OverlayPanel, _ hideOnUnfocusKey: String) {
@@ -550,7 +549,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 收起没固定的浮层。先收剪贴板面板再收翻译浮窗：反过来浮窗的 onHide 会把 key 还给剪贴板面板
   private func hideUnpinnedPanels() {
     hideUnpinned(clipboardPanel, Prefs.clipboardHideOnUnfocus)
-    hideUnpinned(launcherPanel, Prefs.launcherHideOnUnfocus)
+    launcherPanel.hide()  // 启动器没有固定
     if !UserDefaults.standard.bool(forKey: Prefs.floatingPinned) { translatePanel.hide() }
   }
 

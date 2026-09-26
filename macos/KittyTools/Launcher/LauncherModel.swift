@@ -1,11 +1,13 @@
 // 启动器状态与操作：查询 → 结果，空查询显示「最近使用」。结果顺序：直达网址 / 路径、计算结果、关键词搜索，
 // 然后 App 目录 + 内置动作 + 快捷链接 / 搜索提示 + 书签 + 用过的网址 / 文件按匹配分排序，网页搜索兜底；
-// 「cb [关键词]」只列剪贴板文本；「open / find 词」、空格开头搜文件（FileSearch，结果异步到，先留着上一次的结果，
-// 后面仍接整句匹配到的 App）。键盘（对标 Alfred）：↑↓ 循环、↩ 执行（计算结果、cb 是粘贴，find 的文件是在访达中
-// 显示）、⌘↩ 在访达中显示（计算结果、cb 只复制，find 的文件是打开）、⌥↩ 在访达里搜索、⌃↩ 网页搜索（按住修饰键时
-// 选中行的副标题换成替代动作）、Tab 补全、
-// ⌘C 复制路径 / 网址、⌘1–9 执行第 N 项、「最近使用」里 ⌘⌫ 移除一项、Esc 先清空再关闭；
-// 单击选中、双击执行（和剪贴板面板一致）。执行成功才收起并记使用（修旧版先收起、失败提示看不见，§11 #33）。
+// 「cb [关键词]」只有一行，↩ 收起启动器、呼出剪贴板面板并把关键词填进它的搜索框（N9）；「open / find 词」、
+// 空格开头搜文件（FileSearch，结果异步到，先留着上一次的结果，后面仍接整句匹配到的 App）。
+// 键盘（对标 Alfred / Raycast）：↑↓ 循环、↩ 执行（计算结果是粘贴，find 的文件是在访达中显示）、⌘↩ 在访达中显示
+// （计算结果只复制，find 的文件是打开）、⌥↩ 在访达里搜索、⌃↩ 网页搜索（按住修饰键时选中行的副标题换成替代动作）、
+// Tab 补全、⌘C 复制路径 / 网址、⌘1–9 执行第 N 项、「最近使用」里 ⌘⌫ 移除一项、Esc 先关动作菜单再清空再关闭；
+// ⌘K 动作菜单（N8，共用 ActionMenu）：列出选中项的主动作和全部替代动作连同键位，开着时搜索框用来过滤动作，
+// ↑↓ ↩ 选择执行、Esc 关掉。单击选中、双击执行（和剪贴板面板一致）。执行成功才收起并记使用
+// （修旧版先收起、失败提示看不见，§11 #33）。启动器没有固定：点外面就收起（N8）。
 
 import AppKit
 import Carbon.HIToolbox
@@ -25,6 +27,15 @@ import Observation
   private(set) var fileRequest: FileSearch.Request?
   /// 没有结果时显示的话。和结果一起换：文件搜索还在查时留着上一句，不闪「没有匹配」
   private(set) var emptyText = "没有匹配的结果"
+  /// ⌘K 动作菜单开着：搜索框改成过滤动作
+  var showsActions = false {
+    didSet {
+      actionQuery = ""
+      actionSelection = 0
+    }
+  }
+  var actionQuery = "" { didSet { actionSelection = 0 } }
+  var actionSelection = 0
 
   enum Alternate {
     case none, command, option, control
@@ -43,11 +54,10 @@ import Observation
   @ObservationIgnored var runAction: (String) -> Void = { _ in }
   /// 面板按内容伸缩高度（顶边不动）
   @ObservationIgnored var resize: (CGFloat) -> Void = { _ in }
-  /// cb 指令：按关键词搜剪贴板历史（ClipboardStore.search）；复制走剪贴板面板的逻辑（展开片段、保留格式）
-  @ObservationIgnored var searchClipboard: (String) -> [ClipItem] = { _ in [] }
-  @ObservationIgnored var copyClip: (UUID) -> Void = { _ in }
-  /// cb 粘贴过的那条挪到剪贴板历史最前（和面板里粘贴一样）
-  @ObservationIgnored var bumpClip: (UUID) -> Void = { _ in }
+  /// cb 那一行 ↩（启动器已收起）：呼出剪贴板面板，把关键词填进它的搜索框
+  @ObservationIgnored var openClipboard: (String) -> Void = { _ in }
+  /// 全局热键动作当前生效的组合（选中的内置动作右侧显示键帽）；AppDelegate 接 HotKeyCenter 注册上的那份
+  @ObservationIgnored var boundHotKey: (HotKeyAction) -> HotKey? = { $0.hotKey }
   /// 文件搜索的授权提示 ↩：没问过就逐个弹系统框，问过就打开系统设置
   @ObservationIgnored var requestFolderAccess: () -> Void = {}
   /// 文件结果最后一行的授权提示：每次呼出后第一次进文件搜索时算一次（要读受保护目录，问过之前不读）。
@@ -96,6 +106,7 @@ import Observation
   /// 收起后清空查询；App 目录超过 5 分钟就趁没人看时重扫。
   /// ponytail: 刚装的 App 最迟在下一次收起面板后出现；嫌慢再改成监听应用程序目录
   func didHide() {
+    showsActions = false
     query = ""
     error = nil
     if let scannedAt = appsScannedAt, Date.now.timeIntervalSince(scannedAt) > Self.rescanInterval {
@@ -121,8 +132,8 @@ import Observation
       results = recent()
       return
     }
-    if let clipQuery = Self.clipQuery(query) {
-      results = clipItems(clipQuery)
+    if let keyword = Self.clipQuery(query) {
+      results = [Self.clipItem(keyword)]
       return
     }
     let direct = DirectItems.items(for: query)
@@ -200,16 +211,11 @@ import Observation
     return String(query.dropFirst(2)).trimmingCharacters(in: .whitespaces)
   }
 
-  /// cb：最近的文本条目，最多 30 条；↩ 粘贴全文
-  private func clipItems(_ query: String) -> [LauncherItem] {
-    searchClipboard(query).lazy.filter { $0.kind == .text }.prefix(30).map { clip in
-      let ago = clip.copiedAt.formatted(
-        .relative(presentation: .named).locale(Locale(identifier: "zh-Hans")))
-      return LauncherItem(
-        kind: .clip, target: clip.id.uuidString, title: clip.title,
-        subtitle: [clip.sourceName, ago, "↩ 粘贴"].compactMap { $0 }.joined(separator: " · "),
-        payload: clip.text)
-    }
+  /// cb 那一行：启动器里不再列剪贴板条目，↩ 交给剪贴板面板去搜（类型图标、透镜、⌘K、多选都在那边）
+  static func clipItem(_ keyword: String) -> LauncherItem {
+    LauncherItem(
+      kind: .clip, target: keyword,
+      title: keyword.isEmpty ? "打开剪贴板历史" : "在剪贴板历史里搜索「\(keyword)」", subtitle: "")
   }
 
   /// 用过的网址 / 文件：不在任何目录里，靠使用记录找回来；和书签同一网址（不分大小写）时只留书签
@@ -267,9 +273,8 @@ import Observation
     case .calculation:
       paste { Paster.write(string: item.payload ?? "") }
     case .clip:
-      // 不借剪贴板面板的 paste：它会连带收起钉住的剪贴板面板、提交还能撤销的删除
-      guard let id = UUID(uuidString: item.target) else { return }
-      if paste({ copyClip(id) }) { bumpClip(id) }
+      hidePanel()
+      openClipboard(item.target)
     case .prompt where item.target == FileSearch.accessTarget:
       hidePanel()
       requestFolderAccess()
@@ -312,26 +317,24 @@ import Observation
     hidePanel()
   }
 
-  /// ⌥↩ / ⌃↩ 搜的文字：文件搜索时去掉关键词
+  /// ⌥↩ / ⌃↩ 搜的文字：文件搜索时去掉关键词；cb 是指令，没有可搜的
   private var searchText: String {
-    fileRequest.map { $0.terms.joined(separator: " ") }
-      ?? query.trimmingCharacters(in: .whitespaces)
+    let query = query.trimmingCharacters(in: .whitespaces)
+    guard Self.clipQuery(query) == nil else { return "" }
+    return fileRequest.map { $0.terms.joined(separator: " ") } ?? query
   }
 
-  /// 计算结果、cb：收起后写剪贴板、发 ⌘V 粘贴回原 App（和剪贴板面板一样不激活本 App、不等待）。
-  /// 没有辅助功能授权时只复制，面板留着提示去授权。返回是否粘贴了
-  @discardableResult
-  private func paste(_ copy: () -> Void) -> Bool {
+  /// 计算结果：收起后写剪贴板、发 ⌘V 粘贴回原 App（和剪贴板面板一样不激活本 App、不等待）。
+  /// 没有辅助功能授权时只复制，面板留着提示去授权
+  private func paste(_ copy: () -> Void) {
     guard Permissions.isAccessibilityTrusted else {
       copy()
       error = "已复制到剪贴板。授权辅助功能后才能直接粘贴"
-      Permissions.requestAccessibility()
-      return false
+      return Permissions.requestAccessibility()
     }
     hidePanel()
     copy()
     _ = Paster.pasteToFrontmost()
-    return true
   }
 
   /// ⌥↩：在访达里用 Spotlight 搜当前查询（不需要额外授权）
@@ -377,22 +380,59 @@ import Observation
 
   /// 按住修饰键时选中行的副标题：说明松手前按 ↩ 会做什么
   func alternateSubtitle(for item: LauncherItem) -> String? {
-    let text = searchText
     switch alternate {
-    case .none:
-      return nil
-    case .command:
-      switch item.kind {
-      case .app, .path: return revealsOnReturn(item) ? "⌘↩ 打开" : "⌘↩ 在访达中显示"
-      case .calculation, .clip: return "⌘↩ 只复制，不粘贴"
-      default: return nil
-      }
-    case .option:
-      return text.isEmpty ? nil : "⌥↩ 在访达里搜索「\(text)」"
-    case .control:
-      guard !text.isEmpty, let engine = WebSearch.primary() else { return nil }
-      return "⌃↩ 用 \(engine.name) 搜索「\(text)」"
+    case .none: nil
+    case .command: commandReturnAction(for: item).map { "⌘↩ " + $0.title }
+    case .option: finderSearchTitle.map { "⌥↩ " + $0 }
+    case .control: webSearchTitle.map { "⌃↩ " + $0 }
     }
+  }
+
+  /// ↩ 做什么：底栏右侧的主动作和 ⌘K 菜单的第一行（名字随种类）
+  func primaryAction(for item: LauncherItem) -> (title: String, symbol: String) {
+    switch item.kind {
+    case .app, .path:
+      revealsOnReturn(item) ? ("在访达中显示", "folder") : ("打开", "arrow.up.forward.app")
+    case .action: ("运行", "command")
+    case .url: ("打开网址", "safari")
+    case .search: ("搜索", "magnifyingglass")
+    case .prompt:
+      item.target == FileSearch.accessTarget ? ("授权", "lock.open") : ("补全关键词", "text.cursor")
+    case .calculation: ("粘贴", "arrow.turn.down.left")
+    case .clip: (item.target.isEmpty ? "打开" : "搜索", "doc.on.clipboard")
+    }
+  }
+
+  /// ⌘↩ 做什么；没有就是 nil
+  func commandReturnAction(for item: LauncherItem) -> (title: String, symbol: String)? {
+    switch item.kind {
+    case .app, .path:
+      revealsOnReturn(item) ? ("打开", "arrow.up.forward.app") : ("在访达中显示", "folder")
+    case .calculation: ("只复制，不粘贴", "doc.on.doc")
+    default: nil
+    }
+  }
+
+  /// ⌘C 复制什么；内置动作、提示、cb 那一行没有，⌘C 交给输入框
+  func copyTitle(for item: LauncherItem) -> String? {
+    switch item.kind {
+    case .app, .path: "复制路径"
+    case .url, .search: "复制网址"
+    case .calculation: "复制结果"
+    case .action, .prompt, .clip: nil
+    }
+  }
+
+  /// ⌥↩ / ⌃↩ 做什么：没有查询（或没有兜底搜索）时 nil
+  private var finderSearchTitle: String? {
+    let text = searchText
+    return text.isEmpty ? nil : "在访达里搜索「\(text)」"
+  }
+
+  private var webSearchTitle: String? {
+    let text = searchText
+    guard !text.isEmpty, let engine = WebSearch.primary() else { return nil }
+    return "用 \(engine.name) 搜索「\(text)」"
   }
 
   private func open(_ url: URL, _ item: LauncherItem) {
@@ -405,6 +445,7 @@ import Observation
   }
 
   func click(_ item: LauncherItem) {
+    showsActions = false
     if NSApp.currentEvent?.clickCount == 2 {
       execute(item)
     } else if let index = results.firstIndex(of: item) {
@@ -414,13 +455,14 @@ import Observation
     }
   }
 
-  private var selectedItem: LauncherItem? {
+  var selectedItem: LauncherItem? {
     results.indices.contains(selection) ? results[selection] : nil
   }
 
   // MARK: 键盘
 
   func handleCommand(_ selector: Selector) -> Bool {
+    if showsActions { return handleMenuCommand(selector) }
     switch selector {
     case #selector(NSResponder.moveUp(_:)): move(by: -1)
     case #selector(NSResponder.moveDown(_:)): move(by: 1)
@@ -449,43 +491,48 @@ import Observation
     return true
   }
 
+  /// 动作菜单开着（和剪贴板一致）：↑↓ 选、↩ 执行、Esc 只关菜单；带修饰键的回车、Tab 吞掉（不往过滤框里插换行、
+  /// 焦点不跳走），其余（左右移光标、删字）交还输入框
+  private func handleMenuCommand(_ selector: Selector) -> Bool {
+    switch selector {
+    case #selector(NSResponder.moveUp(_:)): moveAction(by: -1)
+    case #selector(NSResponder.moveDown(_:)): moveAction(by: 1)
+    case #selector(NSResponder.insertNewline(_:)): runSelectedAction()
+    case #selector(NSResponder.cancelOperation(_:)): showsActions = false
+    case #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)),
+      #selector(NSResponder.insertLineBreak(_:)), #selector(NSResponder.insertTab(_:)):
+      break
+    default: return false
+    }
+    return true
+  }
+
   func handleKeyEquivalent(_ event: NSEvent) -> Bool {
     guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command else {
       return false
     }
+    if Int(event.keyCode) == kVK_ANSI_K {
+      toggleActions()
+      return true
+    }
+    // 其余 ⌘ 键照常做，做了就收起动作菜单；没做的（过滤框里的复制、粘贴）菜单留着
+    let handled = handleCommandKey(event)
+    if handled { showsActions = false }
+    return handled
+  }
+
+  private func handleCommandKey(_ event: NSEvent) -> Bool {
     let fieldHasSelection =
       ((event.window?.firstResponder as? NSTextView)?.selectedRange().length ?? 0) > 0
     switch Int(event.keyCode) {
     case kVK_Return:
-      guard let item = selectedItem else { return true }
-      switch item.kind {
-      case .app, .path:
-        if revealsOnReturn(item) {
-          open(URL(filePath: item.target), item)  // find 搜到的文件反过来：⌘↩ 打开（成功才收起）
-          return true
-        }
-        NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: item.target)])
-      case .calculation:
-        Paster.write(string: item.payload ?? "")
-      case .clip:
-        guard let id = UUID(uuidString: item.target) else { return true }
-        copyClip(id)
-      default:
-        return true
-      }
-      hidePanel()
+      if let item = selectedItem { commandReturn(item) }
     // 「最近使用」里 ⌘⌫：忘掉这一项（有查询时 ⌘⌫ 照常删到行首）
     case kVK_Delete where isShowingRecent:
-      guard let item = selectedItem, item.kind.isRecorded else { return true }
-      usage.forget(item)
-      search()
+      if let item = selectedItem, item.kind.isRecorded { forget(item) }
     case kVK_ANSI_C where !fieldHasSelection:
-      // 内置动作、搜索提示没有可复制的东西：交给输入框
-      guard let item = selectedItem, item.kind != .action, item.kind != .prompt else {
-        return false
-      }
-      Paster.write(string: item.payload ?? item.target)
-      hidePanel()
+      guard let item = selectedItem, copyTitle(for: item) != nil else { return false }
+      copy(item)
     case kVK_ANSI_Comma:
       hidePanel()
       runAction("settings")
@@ -494,6 +541,31 @@ import Observation
       if digit < results.count { execute(results[digit]) }
     }
     return true
+  }
+
+  /// ⌘↩：App / 文件在访达中显示（find 搜到的文件反过来是打开，成功才收起），计算结果只复制
+  private func commandReturn(_ item: LauncherItem) {
+    switch item.kind {
+    case .app, .path:
+      if revealsOnReturn(item) { return open(URL(filePath: item.target), item) }
+      NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: item.target)])
+    case .calculation:
+      Paster.write(string: item.payload ?? "")
+    default:
+      return
+    }
+    hidePanel()
+  }
+
+  /// ⌘C：复制路径 / 网址 / 计算结果
+  private func copy(_ item: LauncherItem) {
+    Paster.write(string: item.payload ?? item.target)
+    hidePanel()
+  }
+
+  private func forget(_ item: LauncherItem) {
+    usage.forget(item)
+    search()
   }
 
   private func move(by offset: Int) {
@@ -507,4 +579,86 @@ import Observation
     kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4, kVK_ANSI_5, kVK_ANSI_6, kVK_ANSI_7, kVK_ANSI_8,
     kVK_ANSI_9,
   ]
+
+  // MARK: ⌘K 动作菜单
+
+  /// 选中项能做的全部动作（N8）：主动作 ↩ 在最前，后面是替代动作；每行写上键位，执行的和按键是同一段代码
+  var actions: [ActionMenu.Item] {
+    guard let item = selectedItem else { return [] }
+    let primary = primaryAction(for: item)
+    var actions = [
+      ActionMenu.Item(title: primary.title, symbol: primary.symbol, shortcut: "↩") {
+        [unowned self] in execute(item)
+      }
+    ]
+    if let secondary = commandReturnAction(for: item) {
+      actions.append(
+        ActionMenu.Item(title: secondary.title, symbol: secondary.symbol, shortcut: "⌘↩") {
+          [unowned self] in commandReturn(item)
+        })
+    }
+    // 计算结果的 ⌘C 和 ⌘↩ 一样，不重复列
+    if item.kind != .calculation, let title = copyTitle(for: item) {
+      actions.append(
+        ActionMenu.Item(title: title, symbol: "doc.on.doc", shortcut: "⌘C") { [unowned self] in
+          copy(item)
+        })
+    }
+    // 提示行的主动作就是补全
+    if item.kind != .prompt, Self.completion(for: item) != nil {
+      actions.append(
+        ActionMenu.Item(title: "补全到搜索框", symbol: "arrow.right.to.line", shortcut: "⇥") {
+          [unowned self] in complete()
+        })
+    }
+    if let title = finderSearchTitle {
+      actions.append(
+        ActionMenu.Item(title: title, symbol: "doc.text.magnifyingglass", shortcut: "⌥↩") {
+          [unowned self] in searchInFinder()
+        })
+    }
+    if let title = webSearchTitle {
+      actions.append(
+        ActionMenu.Item(title: title, symbol: "globe", shortcut: "⌃↩") { [unowned self] in
+          searchWeb()
+        })
+    }
+    if isShowingRecent, item.kind.isRecorded {
+      actions.append(
+        ActionMenu.Item(title: "从最近使用中移除", symbol: "clock.badge.xmark", shortcut: "⌘⌫") {
+          [unowned self] in forget(item)
+        })
+    }
+    return actions
+  }
+
+  /// 按 actionQuery 过滤（标题包含，不分大小写）
+  var filteredActions: [ActionMenu.Item] {
+    let query = actionQuery.trimmingCharacters(in: .whitespaces)
+    guard !query.isEmpty else { return actions }
+    return actions.filter { $0.title.localizedCaseInsensitiveContains(query) }
+  }
+
+  /// ⌘K / 底栏「动作」：没有选中项时不打开
+  func toggleActions() {
+    if showsActions || selectedItem != nil { showsActions.toggle() }
+  }
+
+  private func moveAction(by offset: Int) {
+    let count = filteredActions.count
+    guard count > 0 else { return }
+    actionSelection = (actionSelection + offset + count) % count
+  }
+
+  private func runSelectedAction() {
+    let actions = filteredActions
+    guard actions.indices.contains(actionSelection) else { return NSSound.beep() }
+    run(actions[actionSelection])
+  }
+
+  /// 先关菜单再执行：执行里要改查询（补全）、收起面板
+  func run(_ action: ActionMenu.Item) {
+    showsActions = false
+    action.run()
+  }
 }

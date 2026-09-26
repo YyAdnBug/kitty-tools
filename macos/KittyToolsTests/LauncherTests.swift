@@ -1,4 +1,5 @@
-// 启动器单测：匹配分档（含缩写 vsc、拼音）、使用分衰减与加成、排序。
+// 启动器单测：匹配分档（含缩写 vsc、拼音）、使用分衰减与加成、排序；⌘K 动作菜单、cb 转剪贴板、内置动作的
+// 副标题与快捷键键帽（N8–N10）。
 
 import AppKit
 import Testing
@@ -312,5 +313,79 @@ struct LauncherTests {
     #expect(LauncherModel.clipQuery("cb") == "")
     #expect(LauncherModel.clipQuery("cb  token") == "token")
     #expect(LauncherModel.clipQuery("cbx") == nil)
+  }
+
+  /// N9：cb 不再列剪贴板条目，只有一行，↩ 收起启动器、把关键词交给剪贴板面板
+  @Test func clipCommandHandsOffToClipboardPanel() throws {
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    var opened: [String] = []
+    var hidden = 0
+    model.openClipboard = { opened.append($0) }
+    model.hidePanel = { hidden += 1 }
+    model.query = "cb  发票 抬头"
+    #expect(model.results.map(\.title) == ["在剪贴板历史里搜索「发票 抬头」"])
+    model.execute(model.results[0])
+    #expect(opened == ["发票 抬头"] && hidden == 1)
+    model.query = "cb"
+    let row = try #require(model.results.first)
+    #expect(model.results.count == 1 && row.title == "打开剪贴板历史")
+    #expect(model.primaryAction(for: row).title == "打开" && row.hotKeyAction == .clipboard)
+    // 没有可复制、可补全的东西：⌘C 交给输入框，菜单里只有主动作
+    #expect(model.copyTitle(for: row) == nil && LauncherModel.completion(for: row) == nil)
+    model.toggleActions()
+    #expect(model.actions.map(\.shortcut) == ["↩"])
+  }
+
+  /// N8：⌘K 列出主动作和全部替代动作（连同键位），搜索框过滤，Esc 只关菜单；没有选中项时不打开
+  @Test func actionMenuListsPrimaryAndAlternates() throws {
+    let usage = try LauncherUsage(db: Database(path: ":memory:"))
+    let calculator = AppCatalog.item(path: "/System/Applications/Calculator.app")
+    usage.record(calculator, query: "")
+    let model = LauncherModel(usage: usage, apps: [calculator])
+    model.query = ""
+    #expect(model.results.first == calculator)
+    model.toggleActions()
+    #expect(model.showsActions)
+    #expect(model.actions.map(\.shortcut) == ["↩", "⌘↩", "⌘C", "⇥", "⌘⌫"])
+    #expect(model.actions.prefix(3).map(\.title) == ["打开", "在访达中显示", "复制路径"])
+    #expect(model.handleCommand(#selector(NSResponder.moveDown(_:))) && model.actionSelection == 1)
+    model.actionQuery = "访达"
+    #expect(model.filteredActions.map(\.shortcut) == ["⌘↩"] && model.actionSelection == 0)
+    #expect(model.handleCommand(#selector(NSResponder.cancelOperation(_:))))
+    #expect(!model.showsActions && model.actionQuery.isEmpty && model.results.first == calculator)
+    // 有查询时多出 ⌥↩；计算结果的 ⌘C 和 ⌘↩ 一样，不重复列；不是「最近使用」没有 ⌘⌫
+    model.query = "12*3"
+    model.toggleActions()
+    #expect(model.actions.prefix(3).map(\.shortcut) == ["↩", "⌘↩", "⇥"])
+    #expect(model.actions.contains { $0.shortcut == "⌥↩" && $0.title == "在访达里搜索「12*3」" })
+    #expect(!model.actions.contains { $0.shortcut == "⌘C" || $0.shortcut == "⌘⌫" })
+    model.toggleActions()
+    model.query = "open a"  // 只输 1 个字母的文件搜索：没有结果
+    model.toggleActions()
+    #expect(model.results.isEmpty && !model.showsActions)
+    // 菜单和底栏用到的符号都在系统里（名字拼错时 Image 什么都不画）
+    let symbols =
+      [model.primaryAction(for: calculator).symbol, "doc.on.doc", "arrow.right.to.line"]
+      + [
+        "doc.text.magnifyingglass", "globe", "clock.badge.xmark", "square.grid.2x2.fill",
+        "folder.fill", "doc.fill", "command", "folder", "safari", "lock.open", "text.cursor",
+        "arrow.turn.down.left", "doc.on.clipboard",
+      ]
+    for symbol in symbols {
+      #expect(NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil, "\(symbol)")
+    }
+  }
+
+  /// N10：内置动作副标题只写「Kitty Tools」，英文别名照样能搜；选中时显示的全局快捷键拆成一组键帽
+  @Test func builtInActionsAndHotKeyCaps() throws {
+    #expect(LauncherItem.actions.allSatisfy { $0.subtitle == "Kitty Tools" })
+    let screenshot = try #require(LauncherItem.actions.first { $0.target == "screenshot" })
+    #expect(LauncherMatch.score("capture", item: screenshot) > 0)
+    #expect(screenshot.hotKeyAction == .screenshot)
+    #expect(LauncherItem.actions.first { $0.target == "settings" }?.hotKeyAction == nil)
+    #expect(LauncherPanelView.keyCaps("⌥C") == ["⌥", "C"])
+    #expect(LauncherPanelView.keyCaps("⌃⌥⇧⌘I") == ["⌃", "⌥", "⇧", "⌘", "I"])
+    #expect(LauncherPanelView.keyCaps("⌥空格") == ["⌥", "空格"])
+    #expect(LauncherPanelView.keyCaps("F5") == ["F5"])
   }
 }

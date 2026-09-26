@@ -1,9 +1,11 @@
 // 启动器根视图（Whisker 设计语言，mac-whisker §6 启动器）：56 pt 大搜索框；单行 40 pt 结果（24 pt 图标 / 种类色块，
 // 标题 14 medium 后面紧跟灰色副标题，右侧写类型；文件搜索的结果按 Spotlight 类型取图标、右侧写扩展名），
 // 空查询时带「最近使用」、文件搜索只输关键词时带「最近打开和下载的文件」分组标题；计算结果是 64 pt 的大数字卡；
-// 一块中性高亮在行间滑动（键盘 snap、连发不动画、点选 glide）；按住 ⌘ 150 ms 后类型依次换成 ⌘1–9 键帽；
-// 底栏：按住修饰键时的替代动作 + 主动作 ↩ + 设置 / 图钉。面板高度随行数伸缩（带动画），顶边不动。
-// 状态和操作都在 LauncherModel。
+// 一块中性高亮在行间滑动（键盘 snap、连发不动画、点选 glide）；选中的内置动作右侧多一组全局快捷键键帽（N10）；
+// 按住修饰键时选中行的副标题换成替代动作，按住 ⌘ 150 ms 后类型依次换成 ⌘1–9 键帽。
+// 底栏 36（N8，对标 Raycast）：左边选中项的种类（16 pt 家族色块 + 种类名），右边「主动作 ↩」（品牌粉实心键帽）·
+// 「动作 ⌘K」，都能点；⌘K 动作菜单（共用 ActionMenu）锚在右下，开着时面板至少高到放得下它。没有图钉、齿轮
+// （⌘, 照样开设置）。面板高度随行数伸缩（带动画），顶边不动。状态和操作都在 LauncherModel。
 
 import AppKit
 import SwiftUI
@@ -11,10 +13,9 @@ import UniformTypeIdentifiers
 
 struct LauncherPanelView: View {
   @Bindable var model: LauncherModel
-  var openSettings: () -> Void = {}
-  @AppStorage(Prefs.launcherHideOnUnfocus) private var hideOnUnfocus = true
   @AppStorage(Prefs.launcherRomanInput) private var romanInput = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.colorSchemeContrast) private var contrast
   /// 按住 ⌘ 超过 150 ms：类型标签换成键帽
   @State private var showsShortcuts = false
 
@@ -25,7 +26,7 @@ struct LauncherPanelView: View {
   static let barHeight: CGFloat = 36
   /// 分组标题在列表里的 id（滚回顶部时滚到它，不然标题被滚出去）
   static let groupID = "launcher-group-title"
-  /// 多出半行，让人看得出下面还能滚
+  /// 多出半行，让人看得出下面还能滚（动作菜单同样）
   static let visibleRows = 8.5
 
   var body: some View {
@@ -50,6 +51,7 @@ struct LauncherPanelView: View {
       Spacer(minLength: 0)
       bar
     }
+    .overlay(alignment: .bottomTrailing) { actionMenu }
     .onChange(of: Self.height(for: model), initial: true) { _, height in model.resize(height) }
     .onModifierKeysChanged(mask: [.command, .option, .control]) { _, keys in
       model.alternate =
@@ -77,7 +79,7 @@ struct LauncherPanelView: View {
 
   private var listTop: CGFloat { model.groupTitle != nil ? Self.groupHeight : 0 }
 
-  /// 面板高度 = 搜索栏 + 发丝线 +（错误）+ 列表（最多 8.5 行）+ 底栏
+  /// 面板高度 = 搜索栏 + 发丝线 +（错误）+ 列表（最多 8.5 行）+ 底栏；⌘K 菜单开着时至少放得下它
   static func height(for model: LauncherModel) -> CGFloat {
     var height = searchHeight + 0.5 + barHeight
     if model.error != nil { height += 28 }
@@ -90,16 +92,26 @@ struct LauncherPanelView: View {
       if heights.count > full { rows += heights[full] / 2 }
       height += 12 + (model.groupTitle != nil ? groupHeight : 0) + rows
     }
+    // 菜单画在面板里、锚在底栏上方 4 pt，离搜索栏至少 8 pt；按没过滤的行数算，边打字过滤面板不跳。
+    // 菜单高 = 行数 × 28 + 上下内缩各 5
+    if model.showsActions {
+      let menu = min(CGFloat(model.actions.count), visibleRows) * ActionMenu.rowHeight + 10
+      height = max(height, searchHeight + 0.5 + 8 + menu + 4 + barHeight)
+    }
     return height
   }
 
   private var searchBar: some View {
     HStack(spacing: 12) {
-      Image(systemName: "magnifyingglass")
+      Image(systemName: model.showsActions ? "command" : "magnifyingglass")
         .font(.system(size: 17, weight: .medium))
         .foregroundStyle(.tertiary)
+        .contentTransition(.symbolEffect(.replace))
+        .accessibilityHidden(true)
+      // ⌘K 菜单开着时，搜索框改成过滤动作
       CommandTextField(
-        text: $model.query, placeholder: "搜索 App、网址、命令或文件", fontSize: 20,
+        text: model.showsActions ? $model.actionQuery : $model.query,
+        placeholder: model.showsActions ? "搜索动作" : "搜索 App、网址、命令或文件", fontSize: 20,
         romanOnly: romanInput, onCommand: model.handleCommand)
     }
     .padding(.horizontal, 18)
@@ -125,9 +137,12 @@ struct LauncherPanelView: View {
             Button {
               model.click(item)
             } label: {
+              let isSelected = index == model.selection
               LauncherRow(
                 item: item, index: index, showsShortcut: showsShortcuts && index < 9,
-                isSelected: index == model.selection
+                isSelected: isSelected,
+                alternate: isSelected ? model.alternateSubtitle(for: item) : nil,
+                hotKey: isSelected ? item.hotKeyAction.flatMap(model.boundHotKey)?.display : nil
               )
               .frame(height: rowHeight(item))
               .contentShape(.rect)
@@ -168,8 +183,11 @@ struct LauncherPanelView: View {
   @ViewBuilder private var highlight: some View {
     if model.results.indices.contains(model.selection) {
       let offset = listTop + model.results.prefix(model.selection).map(rowHeight).reduce(0, +)
-      RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
+      let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
+      shape
         .fill(Style.selectedFill)
+        // 增强对比度：中性高亮加 1 pt 品牌粉 0.6 描边（mac-whisker §7）
+        .overlay { if contrast == .increased { shape.strokeBorder(Style.brand.opacity(0.6)) } }
         .frame(height: rowHeight(model.results[model.selection]))
         .offset(y: offset)
         .animation(model.selectionMotion.animation(reduced: reduceMotion), value: model.selection)
@@ -177,64 +195,82 @@ struct LauncherPanelView: View {
     }
   }
 
-  /// 底栏：左边是按住修饰键时的替代动作（平时提示可以按），右边主动作 + 设置 / 图钉
+  /// ⌘K 动作菜单：从右下角放大出来（转场在 ActionMenu 里），锚在底栏「动作 ⌘K」的上方
+  private var actionMenu: some View {
+    ZStack(alignment: .bottomTrailing) {
+      if model.showsActions {
+        ActionMenu(
+          items: model.filteredActions, selection: model.actionSelection,
+          emptyText: "没有匹配的动作", maxRows: Self.visibleRows, onRun: model.run
+        )
+        .padding(.trailing, 12)
+        .padding(.bottom, Self.barHeight + 4)
+      }
+    }
+    .animation(
+      Style.Motion.snap.animation(reduced: reduceMotion) ?? .easeOut(duration: Style.fadeIn),
+      value: model.showsActions)
+  }
+
+  /// 底栏（N8）：左边选中项的种类，右边主动作 ↩ 和动作菜单 ⌘K，都能点。没有选中项时空着
   private var bar: some View {
-    let selected =
-      model.results.indices.contains(model.selection) ? model.results[model.selection] : nil
-    let alternate = selected.flatMap(model.alternateSubtitle(for:))
-    return HStack(spacing: 12) {
-      Group {
-        if let alternate {
-          Text(alternate).foregroundStyle(.primary)
-        } else {
-          Text("按住 ⌘ ⌥ ⌃ 看更多动作").foregroundStyle(.tertiary)
+    HStack(spacing: 12) {
+      if let selected = model.selectedItem {
+        HStack(spacing: 8) {
+          KindTile(symbol: selected.familySymbol, color: selected.familyColor, size: 16)
+          Text(selected.kindTitle).foregroundStyle(.secondary)
         }
-      }
-      .lineLimit(1)
-      .truncationMode(.tail)
-      .contentTransition(.opacity)
-      .animation(.easeOut(duration: 0.12), value: alternate)
-      Spacer(minLength: 8)
-      if let selected {
-        HStack(spacing: 6) {
-          Text(model.revealsOnReturn(selected) ? "在访达中显示" : Self.primaryAction(selected))
-            .foregroundStyle(.primary)
-          KeyCap("↩")
+        .accessibilityElement(children: .combine)
+        Spacer(minLength: 8)
+        let primary = model.primaryAction(for: selected).title
+        Button {
+          model.execute(selected)
+        } label: {
+          HStack(spacing: 6) {
+            Text(primary)
+            ReturnKeyCap()
+          }
         }
+        .accessibilityLabel(primary)
+        Style.hairline.frame(width: 0.5, height: 16)
+        Button(action: model.toggleActions) {
+          HStack(spacing: 6) {
+            Text("动作")
+            KeyCap("⌘K")
+          }
+        }
+        .accessibilityLabel("动作")
+      } else {
+        Spacer()
       }
-      Style.hairline.frame(width: 0.5, height: 16)
-      Button("设置", systemImage: "gearshape", action: openSettings).help("设置（⌘,）")
-      Toggle(isOn: pinned) { Image(systemName: hideOnUnfocus ? "pin" : "pin.fill") }
-        .toggleStyle(.button)
-        .help(hideOnUnfocus ? "固定面板：点外面不关闭" : "取消固定")
     }
     .font(.system(size: 12))
-    .foregroundStyle(.secondary)
-    .labelStyle(.iconOnly)
-    .buttonStyle(.borderless)
+    .lineLimit(1)
+    .buttonStyle(.plain)
     .padding(.horizontal, 14)
     .frame(height: Self.barHeight)
     .overlay(alignment: .top) { Style.hairline.frame(height: 0.5) }
   }
 
-  private var pinned: Binding<Bool> {
-    Binding {
-      !hideOnUnfocus
-    } set: {
-      hideOnUnfocus = !$0
-    }
+  /// 全局快捷键的显示串拆成一组键帽：⌥C → ⌥ C，⌘⇧I → ⌘ ⇧ I，⌥空格 → ⌥ 空格
+  static func keyCaps(_ display: String) -> [String] {
+    let modifiers = display.prefix { "⌃⌥⇧⌘".contains($0) }
+    let key = display.dropFirst(modifiers.count)
+    return modifiers.map(String.init) + (key.isEmpty ? [] : [String(key)])
   }
+}
 
-  /// 底栏右侧的主动作（↩ 做什么）
-  static func primaryAction(_ item: LauncherItem) -> String {
-    switch item.kind {
-    case .app, .path: "打开"
-    case .action: "运行"
-    case .url: "打开网址"
-    case .search: "搜索"
-    case .prompt: item.target == FileSearch.accessTarget ? "授权" : "补全关键词"
-    case .calculation, .clip: "粘贴"
-    }
+/// 主动作的 ↩ 键帽：品牌粉实心 + 白色符号（mac-whisker §3 状态：主按钮，键帽里只放符号）。
+/// 剪贴板底栏的「粘贴 ↩」是同一个东西，合并后可以挪进 Style.swift 的 KeyCap
+private struct ReturnKeyCap: View {
+  var body: some View {
+    Text("↩")
+      .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+      .foregroundStyle(.white)
+      .padding(.horizontal, 5)
+      .frame(minWidth: 20, minHeight: 18)
+      .background(Style.brand, in: .rect(cornerRadius: Style.Radius.mini, style: .continuous))
+      .accessibilityHidden(true)
   }
 }
 
@@ -243,16 +279,24 @@ private struct LauncherRow: View {
   let index: Int
   let showsShortcut: Bool
   let isSelected: Bool
+  /// 按住修饰键时的替代动作说明（只有选中行有）：换掉副标题，计算结果换掉算式
+  let alternate: String?
+  /// 选中的内置动作当前的全局快捷键（N10，没设就是 nil）
+  let hotKey: String?
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     HStack(spacing: 10) {
       icon
       if item.kind == .calculation {
-        Text(item.target)
-          .font(.system(size: 13, design: .monospaced))
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
+        if let alternate {
+          Text(alternate).font(.system(size: 13)).lineLimit(1)
+        } else {
+          Text(item.target)
+            .font(.system(size: 13, design: .monospaced))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
         Image(systemName: "arrow.right")
           .font(.system(size: 11, weight: .semibold))
           .foregroundStyle(.tertiary)
@@ -268,15 +312,22 @@ private struct LauncherRow: View {
           .font(.system(size: 14, weight: .medium))
           .lineLimit(1)
           .layoutPriority(1)
-        if !item.subtitle.isEmpty {
-          Text(item.subtitle)
+        if let subtitle = alternate ?? (item.subtitle.isEmpty ? nil : item.subtitle) {
+          Text(subtitle)
             .font(.system(size: 13))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(alternate == nil ? .secondary : .primary)
             .lineLimit(1)
             .truncationMode(.middle)
         }
       }
       Spacer(minLength: 8)
+      if let hotKey, !showsShortcut {
+        HStack(spacing: 4) {
+          ForEach(LauncherPanelView.keyCaps(hotKey), id: \.self) { KeyCap($0) }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("快捷键 \(hotKey)")
+      }
       kind
     }
     .padding(.horizontal, 10)
@@ -292,14 +343,14 @@ private struct LauncherRow: View {
     {
       Image(nsImage: image).resizable().frame(width: 24, height: 24)
     } else {
-      KindTile(symbol: tileSymbol, color: tileColor)
+      KindTile(symbol: item.tileSymbol, color: item.familyColor)
     }
   }
 
   /// 右侧：类型标签；按住 ⌘ 时依次换成 ⌘1–9 键帽（每行错开 15 ms）
   private var kind: some View {
     ZStack(alignment: .trailing) {
-      Text(Self.kindTitle(item))
+      Text(item.kindTitle)
         .font(.system(size: 12))
         .foregroundStyle(.tertiary)
         .opacity(showsShortcut ? 0 : 1)
@@ -312,24 +363,38 @@ private struct LauncherRow: View {
         ? .easeOut(duration: 0.12) : .easeOut(duration: 0.12).delay(Double(index) * 0.015),
       value: showsShortcut)
   }
+}
 
-  private var tileSymbol: String {
-    switch item.kind {
+extension LauncherItem {
+  /// 行里种类色块的符号：内置动作用它自己的
+  fileprivate var tileSymbol: String {
+    switch kind {
     case .calculation: "equal"
-    case .prompt where item.target == FileSearch.accessTarget: "lock.open.fill"
-    case .prompt where item.target.hasPrefix("file-"): "doc.text.magnifyingglass"
+    case .prompt where target == FileSearch.accessTarget: "lock.open.fill"
+    case .prompt where target.hasPrefix("file-"): "doc.text.magnifyingglass"
     case .search, .prompt: "magnifyingglass"
-    default: item.symbol
+    default: symbol
     }
   }
 
-  private var tileColor: Color {
-    switch item.kind {
-    case .action: item.target == "settings" ? Style.Family.general : Style.Family.command
+  /// 底栏左边 16 pt 小色块的符号：只看种类，不看具体哪一项
+  fileprivate var familySymbol: String {
+    switch kind {
+    case .app: "square.grid.2x2.fill"
+    case .path: contentType?.conforms(to: .folder) == true ? "folder.fill" : "doc.fill"
+    case .action: "command"
+    default: tileSymbol
+    }
+  }
+
+  /// 功能家族色（mac-whisker §3）：行里的种类色块、底栏左边的小色块
+  fileprivate var familyColor: Color {
+    switch kind {
+    case .action: target == "settings" ? Style.Family.general : Style.Family.command
     case .url: Style.Family.url
     // 配置 / 授权问题用橙色（Whisker §3 语义色）
-    case .prompt where item.target == FileSearch.accessTarget: Color(nsColor: .systemOrange)
-    case .prompt where item.target.hasPrefix("file-"): Style.Family.general
+    case .prompt where target == FileSearch.accessTarget: Color(nsColor: .systemOrange)
+    case .prompt where target.hasPrefix("file-"): Style.Family.general
     case .search, .prompt: Style.Family.search
     case .calculation: Style.Family.keyboard
     case .clip: Style.Family.clipboard
@@ -337,15 +402,15 @@ private struct LauncherRow: View {
     }
   }
 
-  static func kindTitle(_ item: LauncherItem) -> String {
-    switch item.kind {
+  /// 行右侧的类型、底栏左边的种类名
+  fileprivate var kindTitle: String {
+    switch kind {
     case .app: "应用"
     case .path:
-      item.contentType.map { FileSearch.kindTitle(path: item.target, contentType: $0.identifier) }
-        ?? "文件"
+      contentType.map { FileSearch.kindTitle(path: target, contentType: $0.identifier) } ?? "文件"
     case .action: "命令"
     case .url: "网址"
-    case .prompt where item.target == FileSearch.accessTarget: "授权"
+    case .prompt where target == FileSearch.accessTarget: "授权"
     case .search, .prompt: "搜索"
     case .calculation: "计算"
     case .clip: "剪贴板"

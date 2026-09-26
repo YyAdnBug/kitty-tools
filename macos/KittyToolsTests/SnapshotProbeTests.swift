@@ -355,8 +355,9 @@ struct SnapshotProbeTests {
     }
   }
 
-  /// 启动器：最近使用、搜索结果（中文名 / 拼音）、没有结果；文件搜索（结果、最近的文件、find 按住 ⌘、
-  /// 只输 1 个字母，结果是假的、不查 Spotlight）；深浅色
+  /// 启动器：最近使用（底栏种类 + 主动作 ↩ + 动作 ⌘K）、⌘K 动作菜单、搜索结果（中文名 / 拼音）、没有结果、
+  /// cb 那一行、选中的内置动作带全局快捷键键帽；文件搜索（结果、最近的文件、find 按住 ⌘、只输 1 个字母，
+  /// 结果是假的、不查 Spotlight）；深浅色
   private func renderLauncher(_ out: String) throws {
     let usage = try LauncherUsage(db: Database(path: ":memory:"))
     let apps = [
@@ -365,6 +366,7 @@ struct SnapshotProbeTests {
       "/System/Applications/System Settings.app",
     ].map(AppCatalog.item(path:))
     let model = LauncherModel(usage: usage, apps: apps)
+    model.boundHotKey = { $0.defaultHotKey }  // 不读本机设置，键帽固定是默认键
     let linux = LauncherItem(
       kind: .url, target: "https://linux.do/latest", title: "linux.do/latest", subtitle: "")
     for (item, times) in [(apps[1], 3), (linux, 5), (LauncherItem.actions[0], 1), (apps[2], 2)] {
@@ -374,9 +376,14 @@ struct SnapshotProbeTests {
       for (name, query) in [
         ("launcher-recent", ""), ("launcher-search", "huo"), ("launcher-empty", "zzzz"),
         ("launcher-calc", "12*3+1"), ("launcher-prompt", "gh"), ("launcher-alternate", "swift ui"),
+        ("launcher-actions", ""), ("launcher-actions-short", "截图"), ("launcher-cb", "cb 发票抬头"),
+        ("launcher-hotkey", "截图"),
       ] {
         model.query = query
         model.alternate = name == "launcher-alternate" ? .control : .none
+        // 动作菜单那张选中第二行的 App（有 ⌘↩ ⌘C ⇥ ⌘⌫ 这些替代动作）；short 那张看面板撑高到放得下菜单
+        if name == "launcher-actions" { model.selection = 1 }
+        model.showsActions = name.hasPrefix("launcher-actions")
         try snapshot(
           LauncherPanelView(model: model),
           size: NSSize(width: 720, height: LauncherPanelView.height(for: model)),
