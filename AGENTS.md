@@ -8,7 +8,7 @@
 
 - **Phase 1（当前）**：剪贴板历史 + 翻译（划词 / 输入 / 复制即译 / 截图翻译，全部翻译服务），目标版本 0.1.0。截图翻译提前做了（Vision 本机识字，`Screenshot/`）；M12 按 Bob 补了浮窗快捷键、收藏导出、替换原文。
 - **Phase 2 / 3（进行中）**：启动器（`Launcher/`，M7、M8、M11 已完成；M13 文件搜索 open / find 代码完成待手测）/ 截图工具（`Screenshot/`，复用截图翻译的冻结帧和框选；M9 框选 + 复制 / 保存 / 钉图、M10 标注 + 识字已完成；长截图 2026-09-25 插入，代码完成待手测）。里程碑 M7–M13、已拍板的 D1–D4（D1 长截图已改为做）与不迁清单见 PLAN §10。
-- Bundle ID `com.yy.kitty-tools.native`（Debug `com.yy.kitty-tools.native.dev`），显示名 `Kitty Tools Native`；Bundle ID 不再改（改了会丢偏好、钥匙串和授权）。
+- Bundle ID `com.yy.kitty-tools.native`（Debug `com.yy.kitty-tools.native.dev`），不再改（改了会丢偏好、钥匙串和授权）；产品名 / .app 名 `Kitty Tools`（Debug `Kitty Tools Dev`，2026-09-26 起，之前叫 Kitty Tools Native）。和 Tauri 旧版同名：安装前先删掉 /Applications 里旧版的 `Kitty Tools.app`。
 - **规格**：各 `mac-*` 规则（界面与动效按 `mac-whisker`）+ 对标产品（启动器 Alfred / Raycast、翻译 Bob、截图 iShot / CleanShot、剪贴板 Paste）。`macos/PLAN.md` 是迁移期的历史方案：§2 技术栈白名单、§4 架构与文件表、§8 打包、§10 / §12 里程碑与手测清单、§11 旧逻辑问题与语言规则仍有效，其余（§5 的 Tauri 映射、§6 数据迁移等）只是历史记录。
 
 ## 技术栈
@@ -63,7 +63,7 @@ macos/build-dmg.sh
 # 重新生成 App 图标和菜单栏剪影（改角色只改这个脚本；加一个目录参数另存放大预览）
 swift macos/brand-icons.swift
 
-# 签名自检；辅助功能授权卡住时重置
+# 签名自检；辅助功能授权卡住时重置（按 bundle id，.app 改名不影响）
 codesign -d -r- <App 路径>
 tccutil reset Accessibility com.yy.kitty-tools.native.dev
 # 重置了文件夹授权（SystemPolicyDownloadsFolder 等）时，把「问过」的标记也清掉，免得启动器文件搜索按旧状态读目录弹框

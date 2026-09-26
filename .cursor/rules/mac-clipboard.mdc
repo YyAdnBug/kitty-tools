@@ -26,31 +26,42 @@ alwaysApply: false
 - `Search`：空白分词 AND，大小写 / 全半角 / 变音符号不敏感；权重 备注 3 > 正文 / 图片文字 / 路径 2 > 来源 1。
 - 必须走 `ClipboardStore.search`（折叠后 UTF-8 字节缓存 + `memmem`）：直接 `range(of:options:)` 5000 条要 1 秒，缓存后 9ms（Debug）。改条目正文、备注、OCR、来源的地方都要清对应的 `searchKeys`。
 
-## 4. 面板交互（macOS 习惯）
+## 4. 面板交互（macOS 习惯；Lens Bar，2026-09-26 N1–N4）
 | 输入 | 行为 |
 |---|---|
-| 单击 / ⌘单击 / ⇧单击 | 选中预览 / 切换勾选 / 从锚点整段选 |
-| 双击、↩ | 粘贴（多选全是文本 → 按复制先后换行合并成一条并记新历史；含图片文件 → 逐条粘贴间隔 250ms） |
+| 单击 / ⌘单击 / ⇧单击 | 选中（透镜滑过去）/ 切换勾选 / 从锚点整段选 |
+| 双击、↩ | 粘贴；双击以**第一下选中的条目**为准（透镜收放会让行位移，第二下可能落到别的行上）。多选全是文本 → 按复制先后换行合并成一条并记新历史；含图片文件 → 逐条粘贴间隔 250ms |
 | ⌥↩ / ⌘↩ / ⌘C | 纯文本粘贴 / 仅复制 / 仅复制（搜索框有选中文字时 ⌘C 交还系统） |
 | ⌘1–9 | 直接粘贴第 N 条 |
-| ↑↓ / ⇧↑↓ | 移动 / 扩展多选 |
+| ↑↓ / ⇧↑↓ | 移动（透镜跟着走）/ 扩展多选（有勾选时透镜收起） |
+| Tab | 开 / 关筛选面板（范围、类型、形态、来源、分组，最后「管理分组…」）；开着时搜索框用来过滤筛选项，↑↓ 选、↩ 应用（对已生效的项 ↩ = 取消），应用后生成标签并关面板 |
+| ⇧Tab | 范围在 全部 → 收藏 → 片段 之间循环 |
+| → / ← | 光标在搜索词末尾（或搜索为空）且有选中项时 → 打开 ⌘K；⌘K 开着且过滤词为空时 ← 关掉；其余照常移光标 |
+| ⌫ | 搜索为空且有标签时：第一下选中最后一个标签（待删），第二下删掉；其余照常删字 |
 | ⌘D ⌘⌫ ⌘Z ⌘E ⌘N ⌘A ⌘, | 收藏 / 删除（不确认）/ 撤销删除 / 编辑 / 新建片段 / 全选（搜索框为空时）/ 设置 |
-| ⌘K | 打开 / 关掉操作面板（全部操作；搜索框这时用来过滤操作，↑↓ ↩ 选择执行） |
-| ⌘Y | 放大预览（从检查器卡片长出来的大卡片；↑↓ 照样换条目，它跟着换） |
-| Esc | 缩回放大预览 → 关操作面板 → 关对话框 → 清空搜索词 → 取消多选 → 关面板 |
-- 焦点始终在搜索框（`CommandTextField`）；编辑命令走 doCommandBy，⌘ 组合键走 `OverlayPanel.keyEquivalentHandler`。
-- 对话框画在面板里（`DialogOverlay`），不开 sheet 窗口；输入框用 `isDialogField`，关闭后焦点回搜索框。
-- 每次隐藏都 `reset()`：搜索、筛选、多选、选中回第一条，并提交未撤销的删除。
-- ⌘Y 放大预览（`QuickLookView`）：单独一个 `OverlayPanel` 实例，内容是检查器同一张卡的 enlarged 版（文件嵌 `QLPreviewView`）。**不用系统 `QLPreviewPanel`**：它没有 `.nonactivatingPanel`，当 key 时键盘不再归本 App 的非激活浮层、点它会激活本 App（前台 App 变成自己，粘贴会落空）。预览浮层 `becomesKeyOnlyIfNeeded`（只有点里面的文字才当 key），剪贴板面板一直是 key；收起时（onHide）把 key 还给剪贴板面板。开操作面板、对话框、剪贴板面板收起、粘贴时预览直接消失（不缩回）。
+| ⌘K | 打开 / 关掉操作面板（全部操作；搜索框这时用来过滤操作，↑↓ ↩ 选择执行；没有选中项时不打开） |
+| ⌘Y | 放大预览（从透镜长出来的完整检查器；↑↓ 照样换条目，它跟着换） |
+| Esc | 缩回放大预览 → 关筛选面板或操作面板 → 关对话框 → 取消标签待删 → 清空搜索词 → 取消多选 → 关面板（标签不被 Esc 清掉，隐藏时 `reset()` 才清） |
+- 鼠标：悬停只出 `fill.hover`，**不移动透镜**；点标签的 × 移除、点标签本身开筛选面板；底栏的提示、多选动词都是按钮；右键菜单有全部操作。
+- 焦点始终在搜索框（`CommandTextField`）；编辑命令走 doCommandBy（Tab / ⇧Tab / → / ← / ⌫ 是 `insertTab:` / `insertBacktab:` / `moveRight:` / `moveLeft:` / `deleteBackward:`，条件不满足就交还字段编辑器；输入法组字期间系统不回调这些键），⌘ 组合键走 `OverlayPanel.keyEquivalentHandler`。启动器里 Tab 仍是补全，别把两边的 Tab 合成一套。
+- 范围、类型、形态、来源、分组只以搜索框里的标签出现（底层仍是 model 的 scope / kind / form / sourceBundleID / groupFilter）；联动不变：选了形态自动把类型切到文本，选图片或文件清掉形态；来源候选按条数从多到少，某来源的条目都没了自动清掉这个筛选。
+- 对话框画在面板里（`DialogOverlay`，从搜索栏下沿落下），不开 sheet 窗口；输入框用 `isDialogField`，关闭后焦点回搜索框。
+- 每次隐藏都 `reset()`：搜索、筛选标签、待删标签、筛选 / 操作面板、多选、对话框，选中回第一条，并提交未撤销的删除。
+- 片段占位符 `{date}` `{clipboard}` `{cursor}` 粘贴时展开、一律按纯文本。`{cursor}`（N17，Alfred / Raycast 做法）：`Snippet.expand` 同时返回「`{cursor}` 之后的字符数」（配单测），单条粘贴落地后按这么多次 ← 把光标挪回去（按键见 mac-overlay-panel §5）；超过 500 字、多条合并粘贴、没授权辅助功能时不挪。
+- ⌘Y 放大预览（`QuickLookView`）：单独一个 `OverlayPanel` 实例，内容是完整检查器（`PreviewView` enlarged：来源 App 彩色页眉、页脚胶囊、可选中文字；图片带识别文字，单个文件嵌 `QLPreviewView`、多个文件 `FileGrid`）；起点 frame 由透镜上报（透镜关掉时由选中行上报）。**不用系统 `QLPreviewPanel`**：它没有 `.nonactivatingPanel`，当 key 时键盘不再归本 App 的非激活浮层、点它会激活本 App（前台 App 变成自己，粘贴会落空）。预览浮层 `becomesKeyOnlyIfNeeded`（只有点里面的文字才当 key），剪贴板面板一直是 key；收起时（onHide）把 key 还给剪贴板面板。开筛选 / 操作面板、对话框、剪贴板面板收起、粘贴时预览直接消失（不缩回）。
 
 ## 5. 视觉
-- 按 Whisker（`mac-whisker.mdc` §6 剪贴板）：760×480；56 pt 搜索框、22 pt 范围胶囊 + 生效筛选标签 +「筛选」菜单；列表宽 320、行 44、30 pt 图标块（代码 / JSON / 链接有角标），⌘1–9 键帽按住 ⌘ 才出现；**选中是列表背后一块滑动的中性高亮，不填强调色、不反白**（按前缀和定位，键盘 snap、连发与筛选变化不动画）；分组标题只有吸顶时才加材质底。检查器是一张卡片：页眉取来源 App 图标颜色（`AppIcons.accentColor` → `PreviewView.headerStyle`：白字不到 4.5:1 时，偏暗的底色压暗到够、偏亮的改黑字），按类型出大预览（颜色四种写法点击复制、代码 / JSON 语法着色 `SyntaxHighlight`、链接卡 `LinkPreview`、图片棋盘格 + 尺寸胶囊、文件 Quick Look 缩略图），页脚最多 4 个胶囊按钮。
-- 链接预览（`Clipboard/LinkPreview.swift`）：只在检查器显示链接、停留 0.25 s 后取，开始了就取完（`inFlight`：同一条再选中时等它，不重开）；设置关掉时连缓存也不显示（卡片和行角标）。链接本身用 `isFetchable`（`isPublicHTTP` + 不像一次性令牌：查询参数名、路径关键词、32 位以上字母数字混排段），头图 / 图标只用 `isPublicHTTP`（本机 / 内网 / 私有地址 / IPv6 字面量 / 带账号密码）——CDN 长哈希不是令牌；跳转按同样的分工拦。下载是 `Fetcher`（`URLSessionDataDelegate`、代理队列 `.main`、回调里 `MainActor.assumeIsolated`）：看过响应头再决定收不收，按块收、网页收到 `</head` 或 512 KB 就停、图片超上限（4 MB / 512 KB）放弃；**不要**改回在主线程上 `for try await byte in AsyncBytes`（每个字节跳一次线程，512 KB 近 3 s）。会话 ephemeral、不收发 Cookie、不缓存、不强升 https（ATS 已放开）。解码只取 `</head` 之前、gb2312 / gbk 按 GB18030。头图缩到长边 1200、内存里最多 12 条；跳到别的网站的不记网站图标。改规则先跑 `LinkPreviewTests`（联网冒烟 `TEST_RUNNER_KITTY_LIVE_LINK=1`）。底栏只留「条数 / 提示 ｜ 粘贴 ↩ · 操作 ⌘K」。新条目从顶部挤入、删除缩小淡出（`listMotion`，搜索筛选换列表那一帧不动画，画完靠 `listGeneration` 恢复）。吸顶判断只存「已吸顶的分组数」这个整数，**不要**把滚动位置存进 `@State`（每帧重算整个面板）。⌘K 里有勾选时只给批量操作。
+- 按 Whisker（`mac-whisker.mdc` §6 剪贴板 = 透镜指令条 Lens Bar，尺寸、常数和动效以那里为准）：720 宽、顶部锚定（和启动器同位置）、高度按条数伸缩 ≤ 520；56 pt 搜索线里是放大镜 + 粉色标签 + 输入框；单列满宽、行 40、24 pt 图标块，⌘1–9 键帽按住 ⌘ 才出现；**选中是列表背后一块滑动的中性高亮，就是透镜的底，不填强调色、不反白**（按前缀和定位，键盘 snap、连发与筛选变化不动画、点选 glide）；底栏「条数 / 提示 ｜ 粘贴 ↩ · 操作 ⌘K ｜ 齿轮 图钉」；筛选面板和 ⌘K 共用 `Shell/ActionMenu.swift`；来源 App 彩色页眉只在 ⌘Y 大卡（`AppIcons.accentColor` → `PreviewView.headerStyle`：白字不到 4.5:1 时，偏暗的底色压暗到够、偏亮的改黑字）。
+- 透镜高度只用按类型的常数（`lensHeight` 查表，文本 90（无换行且 ≤ 60 字的短文本 36）/ 代码与 JSON 128 / 颜色 72 / 链接 90 / 图片 108 / 文件 76，再加行头 40 + 元信息 22 + 底 8），**不量内在尺寸、不按行数估**：高亮块的前缀和、`scrollTo`、窗口的透镜预留都靠它算得准；正文放进固定高度的 frame 裁切 + 底部渐隐。上下键不改窗口高度。
+- 命中摘录走 `Search.excerpt`（纯函数，单测），只算屏上可见的行；搜索词高亮 systemYellow 0.35。
+- 链接预览（`Clipboard/LinkPreview.swift`）：只在透镜 / ⌘Y 大卡显示链接、停留 0.25 s 后取，开始了就取完（`inFlight`：同一条再选中时等它，不重开）；设置关掉时连缓存也不显示（透镜、大卡和行角标）。链接本身用 `isFetchable`（`isPublicHTTP` + 不像一次性令牌：查询参数名、路径关键词、32 位以上字母数字混排段），头图 / 图标只用 `isPublicHTTP`（本机 / 内网 / 私有地址 / IPv6 字面量 / 带账号密码）——CDN 长哈希不是令牌；跳转按同样的分工拦。下载是 `Fetcher`（`URLSessionDataDelegate`、代理队列 `.main`、回调里 `MainActor.assumeIsolated`）：看过响应头再决定收不收，按块收、网页收到 `</head` 或 512 KB 就停、图片超上限（4 MB / 512 KB）放弃；**不要**改回在主线程上 `for try await byte in AsyncBytes`（每个字节跳一次线程，512 KB 近 3 s）。会话 ephemeral、不收发 Cookie、不缓存、不强升 https（ATS 已放开）。解码只取 `</head` 之前、gb2312 / gbk 按 GB18030。头图缩到长边 1200、内存里最多 12 条；跳到别的网站的不记网站图标。改规则先跑 `LinkPreviewTests`（联网冒烟 `TEST_RUNNER_KITTY_LIVE_LINK=1`）。
+- 新条目从顶部挤入、删除缩小淡出（`listMotion`，搜索筛选换列表那一帧不动画，画完靠 `listGeneration` 恢复）。吸顶判断只存「已吸顶的分组数」这个整数，**不要**把滚动位置存进 `@State`（每帧重算整个面板）。⌘K 里有勾选时只给批量操作。
 - 背景 `NSVisualEffectView(.popover)` 且 `state = .active`（本 App 从不激活，跟随窗口状态会一直灰）。
 - 可点的都用 `Button`（`.plain` 样式），不用 `onTapGesture`；`ForEach` 的 id 用元素 id，不用 offset。
 
 ## 6. 界面自检
 - 用 `SnapshotProbeTests`：屏幕外、不激活的窗口渲染各状态（含深色）写 PNG，**不弹面板、不抢键盘、不需要屏幕录制权限**：
   `TEST_RUNNER_KITTY_SNAPSHOT_DIR=<目录> xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools test -only-testing:KittyToolsTests/SnapshotProbeTests`
+- 面板尺寸 720 × `ClipboardPanelView.height(for:)`（和窗口同一个算法）；状态至少覆盖：标签（收藏 + 来源）、筛选面板、标签待删、⌘K、各类型的透镜（文本 / 代码 / JSON / 颜色 / 链接 / 图片 / 文件）、命中摘录、片段范围的「新建片段」行、多选底栏，每个都出深色版。
 - **禁止**用启动参数 / 热键在用户使用时弹出面板截图：非激活面板一出现就接管键盘，用户正在打的字会进搜索框（实测踩过）。
 - `ImageRenderer` 画不了 AppKit 控件（NSTextField、Picker、Menu 全是占位块），别用它做界面检查。

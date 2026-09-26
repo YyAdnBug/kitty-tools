@@ -45,6 +45,7 @@ alwaysApply: true
 ## 6. 签名
 - Apple Development 自动签名，`DEVELOPMENT_TEAM = HTX9F4KG39`；**禁止「Sign to Run Locally」/ adhoc**（TCC 按 cdhash 记账，每次重建授权都会作废）。
 - Bundle ID：Release `com.yy.kitty-tools.native`，Debug `com.yy.kitty-tools.native.dev`，以后不再改（改了会丢设置、授权和钥匙串条目）。
+- 产品名（`PRODUCT_NAME`，也是 .app 名和显示名）：Release `Kitty Tools`，Debug `Kitty Tools Dev`（用户 2026-09-26，N16；之前叫 Kitty Tools Native）。只改名、Bundle ID 不动，所以下面的 `tccutil` / `defaults` 命令照旧用 bundle id；和 Tauri 旧版的 `Kitty Tools.app` 同名，安装前要先删掉 /Applications 里的旧版，改名后开机自启可能要在设置 › 通用重新打开一次（写进发布说明）。
 - 自检：`codesign -d -r- <app>` 的输出必须含 `anchor apple generic` 和 bundle id，不能是 cdhash。
 - 授权卡住：`tccutil reset Accessibility com.yy.kitty-tools.native.dev`，然后重新授权。重置文件夹授权时顺手 `defaults delete com.yy.kitty-tools.native.dev folderAccessRequested`（文件搜索问过之后才读受保护目录判断授权，状态被重置后读会弹框）。
 - **永不公证**（只走路径 B）：不建 `ExportOptions.plist`，不写 `notarytool` / `stapler` 步骤。Release 保持 `CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO`，发布包里不能有 `get-task-allow`。

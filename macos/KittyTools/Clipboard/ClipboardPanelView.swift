@@ -49,12 +49,11 @@ struct ClipboardPanelView: View {
     }
     .overlay(alignment: .bottomTrailing) {
       if model.showsActions {
-        ActionMenu(model: model)
-          .padding(.trailing, 12)
-          .padding(.bottom, 40)
-          .transition(
-            reduceMotion
-              ? .opacity : .scale(scale: 0.92, anchor: .bottomTrailing).combined(with: .opacity))
+        ActionMenu(
+          items: model.filteredActions, selection: model.actionSelection, onRun: model.run
+        )
+        .padding(.trailing, 12)
+        .padding(.bottom, 40)
       }
     }
     .animation(
@@ -540,59 +539,5 @@ private struct Chip: View {
     .animation(Style.Motion.snap.animation(), value: isOn)
     .accessibilityAddTraits(isOn ? .isSelected : [])
     .accessibilityHint(removable ? "移除这个筛选" : "")
-  }
-}
-
-/// ⌘K 操作面板：宽 260，锚在右下角，行高 28，行尾写快捷键；搜索框里输入的字过滤它，↑↓ ↩ 选择执行
-private struct ActionMenu: View {
-  @Bindable var model: ClipboardPanelModel
-
-  var body: some View {
-    let actions = model.filteredActions
-    VStack(alignment: .leading, spacing: 0) {
-      if actions.isEmpty {
-        Text("没有匹配的操作")
-          .font(.system(size: 12))
-          .foregroundStyle(.secondary)
-          .frame(maxWidth: .infinity, minHeight: 28)
-      }
-      ForEach(Array(actions.enumerated()), id: \.element.id) { index, action in
-        let selected = index == model.actionSelection
-        Button {
-          model.run(action)
-        } label: {
-          HStack(spacing: 8) {
-            Image(systemName: action.symbol)
-              .font(.system(size: 12, weight: .medium))
-              .frame(width: 16)
-            Text(action.title).lineLimit(1)
-            Spacer(minLength: 8)
-            if !action.shortcut.isEmpty {
-              Text(action.shortcut)
-                .font(.system(size: 11, weight: .medium, design: .rounded))
-                .foregroundStyle(.secondary)
-            }
-          }
-          .font(.system(size: 13))
-          .padding(.horizontal, 8)
-          .frame(height: 28)
-          // 和列表一样是中性高亮，不填强调色、不反白（面板内缩 5，圆角 10 − 5 同心 ≈ control）
-          .background(
-            selected ? Style.selectedFill : .clear,
-            in: .rect(cornerRadius: Style.Radius.control, style: .continuous)
-          )
-          .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-      }
-    }
-    .padding(5)
-    .frame(width: 260)
-    .background(.regularMaterial, in: .rect(cornerRadius: Style.Radius.card, style: .continuous))
-    .overlay(
-      RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous).strokeBorder(
-        Style.hairline, lineWidth: 0.5)
-    )
-    .shadow(color: .black.opacity(0.25), radius: 18, y: 8)
   }
 }

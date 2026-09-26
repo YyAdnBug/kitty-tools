@@ -438,22 +438,13 @@ import Observation
 
   // MARK: ⌘K 操作面板
 
-  struct Action: Identifiable {
-    let title: String
-    let symbol: String
-    /// 快捷键提示（没有就空）
-    let shortcut: String
-    let run: () -> Void
-    var id: String { title }
-  }
-
   /// 当前条目（或多选）能做的全部操作，按常用程度排
-  var actions: [Action] {
+  var actions: [ActionMenu.Item] {
     guard let item = selectedItem else { return [] }
     // 有勾选就只给批量操作：单条操作对着预览的那条，批量操作对着勾选的，混在一起会弄错对象
     let many = !multiSelection.isEmpty
     var actions = [
-      Action(
+      ActionMenu.Item(
         title: multiSelection.count > 1 ? "合并粘贴" : "粘贴到当前 App", symbol: "arrow.turn.down.left",
         shortcut: "↩"
       ) {
@@ -462,73 +453,77 @@ import Observation
     ]
     if item.kind == .text || many {
       actions.append(
-        Action(title: "粘贴为纯文本", symbol: "doc.plaintext", shortcut: "⌥↩") { [unowned self] in
+        ActionMenu.Item(title: "粘贴为纯文本", symbol: "doc.plaintext", shortcut: "⌥↩") {
+          [unowned self] in
           pasteSelection(plainText: true)
         })
     }
     actions.append(
-      Action(title: "仅复制", symbol: "doc.on.doc", shortcut: "⌘↩") { [unowned self] in copySelection()
+      ActionMenu.Item(title: "仅复制", symbol: "doc.on.doc", shortcut: "⌘↩") { [unowned self] in
+        copySelection()
       })
     if item.kind == .text || many {
       actions.append(
-        Action(title: "复制为纯文本", symbol: "doc.on.clipboard", shortcut: "") { [unowned self] in
+        ActionMenu.Item(title: "复制为纯文本", symbol: "doc.on.clipboard") { [unowned self] in
           copySelection(plainText: true)
         })
     }
     let favorite = targets.allSatisfy(\.favorite)
     actions.append(
-      Action(
+      ActionMenu.Item(
         title: favorite ? "取消收藏" : "收藏", symbol: favorite ? "star.slash" : "star", shortcut: "⌘D"
       ) {
         [unowned self] in store.toggleFavorite(targetIDs)
       })
     if !many, item.kind == .text || !(item.ocrText ?? "").isEmpty {
       actions.append(
-        Action(title: "翻译", symbol: "character.bubble", shortcut: "") { [unowned self] in
+        ActionMenu.Item(title: "翻译", symbol: "character.bubble") { [unowned self] in
           translate(item)
         })
     }
     if !many, let link = firstLink(of: item) {
       actions.append(
-        Action(title: "打开链接", symbol: "safari", shortcut: "") { NSWorkspace.shared.open(link) })
+        ActionMenu.Item(title: "打开链接", symbol: "safari") { NSWorkspace.shared.open(link) })
     }
     if !many, item.kind == .text {
       actions.append(
-        Action(title: "编辑内容…", symbol: "pencil", shortcut: "⌘E") { [unowned self] in
+        ActionMenu.Item(title: "编辑内容…", symbol: "pencil", shortcut: "⌘E") { [unowned self] in
           dialog = .edit(item.id)
         })
       if !item.isSnippet {
         actions.append(
-          Action(title: "存为片段", symbol: "text.badge.star", shortcut: "") { [unowned self] in
+          ActionMenu.Item(title: "存为片段", symbol: "text.badge.star") { [unowned self] in
             store.update([item.id]) { $0.isSnippet = true }
           })
       }
     }
     if !many, item.favorite || item.isSnippet {
       actions.append(
-        Action(title: "备注…", symbol: "note.text", shortcut: "") { [unowned self] in
+        ActionMenu.Item(title: "备注…", symbol: "note.text") { [unowned self] in
           dialog = .note(item.id)
         })
     }
     if !many {
       actions.append(
-        Action(title: "放大预览", symbol: "eye", shortcut: "⌘Y") { [unowned self] in
+        ActionMenu.Item(title: "放大预览", symbol: "eye", shortcut: "⌘Y") { [unowned self] in
           toggleQuickLook()
         })
     }
     if !many, item.kind == .file {
       actions.append(
-        Action(title: "在访达中显示", symbol: "folder", shortcut: "") {
+        ActionMenu.Item(title: "在访达中显示", symbol: "folder") {
           NSWorkspace.shared.activateFileViewerSelecting(
             (item.filePaths ?? []).map { URL(filePath: $0) })
         })
     }
     actions.append(
-      Action(title: "放进新分组…", symbol: "folder.badge.plus", shortcut: "") { [unowned self] in
+      ActionMenu.Item(title: "放进新分组…", symbol: "folder.badge.plus") { [unowned self] in
         dialog = .newGroup(targetIDs)
       })
     actions.append(
-      Action(title: "删除", symbol: "trash", shortcut: "⌘⌫") { [unowned self] in delete(targetIDs) })
+      ActionMenu.Item(title: "删除", symbol: "trash", shortcut: "⌘⌫") { [unowned self] in
+        delete(targetIDs)
+      })
     return actions
   }
 
@@ -540,7 +535,7 @@ import Observation
   }
 
   /// 按 actionQuery 过滤（标题包含，不分大小写）
-  var filteredActions: [Action] {
+  var filteredActions: [ActionMenu.Item] {
     let query = actionQuery.trimmingCharacters(in: .whitespaces)
     guard !query.isEmpty else { return actions }
     return actions.filter { $0.title.localizedCaseInsensitiveContains(query) }
@@ -559,7 +554,7 @@ import Observation
     actions[actionSelection].run()
   }
 
-  func run(_ action: Action) {
+  func run(_ action: ActionMenu.Item) {
     showsActions = false
     action.run()
   }
