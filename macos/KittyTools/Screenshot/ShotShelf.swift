@@ -1,6 +1,6 @@
 // CleanShot 式常驻缩略图（Whisker D8）：截图飞到右下角、角标弹完以后由这里接手，留在原地（同一个位置、同样的圆角阴影）。
 // 悬停时出 HUD 操作：中间「拷贝」「存储」两个胶囊，左上关闭、右下钉图（右上角是品牌粉角标），存过的左下「在访达中显示」；
-// 拖出去是一个 PNG 文件（拖进访达、邮件、聊天窗口），双击用默认 App 打开；触控板往右轻扫就滑走；
+// 拖出去是一个 PNG 文件（拖进访达、邮件、聊天窗口），双击用默认 App 打开；触控板往右扫跟手，松手时扫得够远或够快就滑走、否则弹回；
 // 鼠标不在上面时 6 s 后自己滑走（移开后 2.5 s）。同一块屏上连截几张时往上叠，最多 3 张，更早的滑走。
 // 窗口是普通 NSPanel 实例（不当 key、不激活本 App；层级状态栏，之后的截图冻结帧会排除它），用完放回复用池
 // （挂过 NSHostingView 的窗口 close 后 AppKit 不释放，同 FlyCard）。减弱动态效果时不飞，直接在角落淡入、淡出。
@@ -107,8 +107,9 @@ final class ShotShelf {
   /// 拖出去用的文件：存过就是存的那个，否则是临时目录里编码好的 PNG
   @ObservationIgnored private(set) var fileURL: URL?
   @ObservationIgnored private var timer: Task<Void, Never>?
-  /// 触控板横扫时跟手的偏移
+  /// 触控板横扫时跟手的偏移，和最近一次非零位移与它的时间（松手前还在快速往右 = 甩出去；停住再松手不算）
   @ObservationIgnored private var swipe: CGFloat = 0
+  @ObservationIgnored private var lastSwipe: (delta: CGFloat, time: CFTimeInterval) = (0, 0)
 
   init(
     image: CGImage, png: Data? = nil, scale: CGFloat, source: CGRect, rect: CGRect,
@@ -292,20 +293,26 @@ final class ShotShelf {
     }
   }
 
-  /// 触控板横扫：卡片跟着手指往右走（往左不动），松手时过了 50 pt 就滑走，否则弹回
+  /// 触控板横扫：卡片跟着手指往右走（往左不动），松手时过了 50 pt、或还在快速往右甩（过了 16 pt、80 ms 内最后一下
+  /// ≥ 6 pt）就滑走，否则弹回原位
   private func swiped(_ delta: CGFloat, ended: Bool) {
     guard !isLeaving else { return }
     swipe = max(0, swipe + delta)
+    let now = CACurrentMediaTime()
+    if delta != 0 { lastSwipe = (delta, now) }
     let base = rect.minX - ShotShelf.margin
     if ended {
-      if swipe > 50 { return close() }
+      let flung = lastSwipe.delta >= 6 && now - lastSwipe.time < 0.08
+      if swipe > 50 || (swipe > 16 && flung) { return close() }
       swipe = 0
-      NSAnimationContext.runAnimationGroup { context in
-        context.duration = Style.reduceMotion ? 0 : 0.26
-        panel.animator().setFrameOrigin(CGPoint(x: base, y: rect.minY - ShotShelf.margin))
-      }
-    } else {
-      panel.setFrameOrigin(CGPoint(x: base + swipe, y: rect.minY - ShotShelf.margin))
+      lastSwipe = (0, 0)
+    }
+    // 都走 animator：跟手的 0 秒动画会顶掉还没播完的弹回 / 让位动画（直接 setFrameOrigin 打断不了，两边抢位置）
+    NSAnimationContext.runAnimationGroup { context in
+      context.duration = ended && !Style.reduceMotion ? 0.26 : 0
+      context.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.9, 0.3, 1)
+      panel.animator().setFrameOrigin(
+        CGPoint(x: base + swipe, y: rect.minY - ShotShelf.margin))
     }
   }
 }
@@ -339,13 +346,60 @@ private final class ShelfHostingView: NSHostingView<ShelfCardView> {
     onHover(inside)
   }
 
-  /// 手指往右的距离：「自然滚动」开着时 scrollingDeltaX 和手指同向，关着时相反
+  /// 正在跟的这一次横扫的事件监听。卡片跟着手指一挪开，光标底下就不是它了，后面的滚动事件（包括松手那一下）
+  /// 会发给光标下的别的窗口、别的 App，卡片就卡在半路。所以横扫一开始就装 local（自家窗口，吞掉）+ global（别的 App，
+  /// 只旁听；滚动事件不需要辅助功能授权）监听，把这次手势接到松手，松手就卸
+  private var swipeMonitors: [Any] = []
+
   override func scrollWheel(with event: NSEvent) {
-    // 只跟触控板的手势阶段（惯性阶段、鼠标滚轮的 phase 都是空的，不跟）
-    guard event.phase != [] else { return }
+    // 只跟触控板的手势阶段（惯性阶段、鼠标滚轮的 phase 都是空的，不跟），横向为主才开始跟
+    guard swipeMonitors.isEmpty, event.phase == .began || event.phase == .changed,
+      abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY)
+    else { return }
+    let local = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+      let ours = MainActor.assumeIsolated { self?.follow(event) ?? false }
+      return ours ? nil : event
+    }
+    let global = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+      MainActor.assumeIsolated { _ = self?.follow(event) }
+    }
+    swipeMonitors = [local, global].compactMap { $0 }
+    follow(event)
+  }
+
+  /// 跟一个滚动事件，返回是不是这次横扫的（是的话 local 监听把它吞掉）。又来一个 began 说明上一次的松手没收到
+  /// （不该发生，兜底）：当作松手结束，这个事件照常分发
+  @discardableResult private func follow(_ event: NSEvent) -> Bool {
+    guard event.phase != [] else { return false }
+    if event.phase == .began, !swipeMonitors.isEmpty, event.window != window {
+      finishSwipe(0)
+      return false
+    }
+    // 手指往右的距离：「自然滚动」开着时 scrollingDeltaX 和手指同向，关着时相反
     let fingers =
       event.isDirectionInvertedFromDevice ? event.scrollingDeltaX : -event.scrollingDeltaX
-    onSwipe(fingers, event.phase == .ended || event.phase == .cancelled)
+    if event.phase == .ended || event.phase == .cancelled {
+      finishSwipe(fingers)
+    } else {
+      onSwipe(fingers, false)
+    }
+    return true
+  }
+
+  private func finishSwipe(_ delta: CGFloat) {
+    removeSwipeMonitors()
+    onSwipe(delta, true)
+  }
+
+  private func removeSwipeMonitors() {
+    swipeMonitors.forEach(NSEvent.removeMonitor)
+    swipeMonitors = []
+  }
+
+  /// 扫到一半卡片就被收走（到点自己滑走、放回复用池时拆掉视图）：监听跟着卸，别留下一个吞滚动事件的
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    if window == nil { removeSwipeMonitors() }
   }
 }
 

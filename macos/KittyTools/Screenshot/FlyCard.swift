@@ -1,7 +1,7 @@
-// 截图「咔嚓，飞入」（Whisker 招牌时刻 S1，mac-whisker §5）：复制 / 快速保存截图后，选区原地闪白、抬起，
-// 沿弧线（x、y 两轴弹簧时长不同）飞到所在屏幕右下角缩成缩略图，落地在右上角弹出品牌粉 ✓（保存时是文件夹 + 目录名），
+// 截图「咔嚓，飞入」（Whisker 招牌时刻 S1，mac-whisker §5）：复制 / 快速保存截图后，遮罩一收起选区就起飞（不闪白、不原地抬起：
+// 用户 2026-09-27 觉得闪一下不对，⌘⇧4 / CleanShot 都只有快门声），圆角和阴影在飞的头 0.18 s 里长出来，沿弧线（x、y 两轴弹簧时长不同）飞到所在屏幕右下角缩成缩略图，落地在右上角弹出品牌粉 ✓（保存时是文件夹 + 目录名），
 // 角标弹完后交给常驻缩略图（ShotShelf，CleanShot 式，同一个位置接着显示）；没有接手的（失败、没给 linger）停 0.9 s
-// 后向右滑出屏幕。窗口只取起终点的并集、不接鼠标，飞完就关；飞的是缩小过的图（原图留给常驻缩略图拷贝、拖出）。
+// 后向右滑出屏幕。窗口只取起终点的并集、不接鼠标，飞完就关；飞行中显示选区原图（cropping，不复制），落地后换成缩小过的图（和常驻缩略图同一张）。
 // 卡片先飞，角标等复制 / 保存真的成功了才由调用方 land（失败就没有角标）。快门声跟随系统「播放用户界面音效」和设置 › 截图的开关。
 // 减弱动态效果时调用方不飞，直接让常驻缩略图在角落淡入。
 
@@ -120,7 +120,10 @@ enum FlyCard {
     guard let end = landingRect(for: frame),
       let screen = NSScreen.screens.first(where: { $0.frame.intersects(end) })
     else { return landing }
-    // 飞行只要缩略图（按落地尺寸），起飞那一下（闪白、抬起）糊一点看不出来
+    // 起飞到落地显示选区原图（cropping 共享像素、不另编码；复制 / 保存编码期间本来就持有它）：第一帧和刚收起的
+    // 遮罩一模一样，大选区也不会先糊一下（缩略图放大到选区那么大会糊，以前被闪白盖住了）。落地后换成按落地尺寸
+    // 做的缩略图（和常驻缩略图同一张，交接时像素一样），大图跟着窗口一起放掉
+    let full = visiblePart(of: image, frame: frame)
     let shown = cardImage(
       of: image, frame: frame, size: end.size, backingScale: screen.backingScaleFactor)
     // 滑出去要整张离开屏幕右边
@@ -136,7 +139,8 @@ enum FlyCard {
     panel.setFrame(union, display: false)
     let host = NSHostingView(
       rootView: FlyCardView(
-        image: shown, start: local(frame), end: local(end), exit: exit, landing: landing,
+        full: full, image: shown, start: local(frame), end: local(end), exit: exit,
+        landing: landing,
         linger: linger.map { linger in { linger(end, $0) } }
       ) { [weak panel] in
         // weak：窗口 → 视图 → 这个闭包，强引用会成环，每飞一次漏一个窗口和整张图
@@ -188,6 +192,8 @@ enum FlyCard {
 }
 
 private struct FlyCardView: View {
+  /// 选区原图（飞行中）和落地尺寸的缩略图（落地后）
+  let full: CGImage
   let image: CGImage
   /// 起点（选区）、终点（右下角），窗口内坐标（原点左上）
   let start: CGRect
@@ -199,36 +205,27 @@ private struct FlyCardView: View {
   let linger: ((FlyCard.Badge) -> Void)?
   let onFinish: () -> Void
 
-  @State private var lifted = false
   @State private var flying = false
   @State private var landed = false
   @State private var leaving = false
 
   // 下面的弹簧、缓动是 S1 专用参数（mac-whisker §5 S1 写死的数，不是 §4 七条命名曲线之一）：
-  // 闪白 0.20 s、抬起 easeOut 0.18 s、x spring(0.42, 0.10) 与 y spring(0.50, 0.10)（时长不同走出弧线）、
+  // 圆角 / 描边 / 阴影 easeOut 0.18 s、x spring(0.42, 0.10) 与 y spring(0.50, 0.10)（时长不同走出弧线）、
   // 尺寸 spring(0.45, 0)、滑出 easeIn 0.28 s；角标出现是命名曲线 pop
   var body: some View {
     let rect = flying ? end : start
-    let shape = RoundedRectangle(cornerRadius: lifted ? Style.Radius.card : 0, style: .continuous)
-    Image(decorative: image, scale: 1)
+    let shape = RoundedRectangle(cornerRadius: flying ? Style.Radius.card : 0, style: .continuous)
+    Image(decorative: landed ? image : full, scale: 1)
       .resizable()
       .aspectRatio(contentMode: .fill)
-      // 闪白 [0, 0.55, 0] 0.2 s
-      .keyframeAnimator(initialValue: 0.0, trigger: lifted) { content, flash in
-        content.overlay(Color.white.opacity(flash))
-      } keyframes: { _ in
-        LinearKeyframe(0.55, duration: 0.06)
-        LinearKeyframe(0, duration: 0.14)
-      }
       .animation(.spring(duration: 0.45, bounce: 0)) {
         $0.frame(width: rect.width, height: rect.height)
       }
       .animation(.easeOut(duration: 0.18)) {
         $0
           .clipShape(shape)
-          .overlay(shape.strokeBorder(.white.opacity(lifted ? 0.25 : 0), lineWidth: 0.5))
-          .shadow(color: .black.opacity(lifted ? 0.28 : 0), radius: 16, y: 6)
-          .scaleEffect(lifted && !flying ? 1.03 : 1)
+          .overlay(shape.strokeBorder(.white.opacity(flying ? 0.25 : 0), lineWidth: 0.5))
+          .shadow(color: .black.opacity(flying ? 0.28 : 0), radius: 16, y: 6)
       }
       .overlay(alignment: .topTrailing) {
         if landed, let badge = landing.badge {
@@ -246,10 +243,9 @@ private struct FlyCardView: View {
       .position(x: 0, y: 0)
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
       .task {
-        lifted = true
-        try? await Task.sleep(for: .seconds(0.10))
+        // 第一帧就是选区原样（原图，和刚收起的遮罩里一模一样），下一帧起飞
         flying = true
-        try? await Task.sleep(for: .seconds(0.40))
+        try? await Task.sleep(for: .seconds(0.45))
         landed = true
         // 等复制 / 保存成功（最多 2 s）：成功就在角标弹完后交给常驻缩略图，自己直接关（同一个位置接着显示，看不出换了窗口）
         for _ in 0..<20 where landing.badge == nil {
@@ -280,7 +276,7 @@ struct FlyCardBadge: View {
   /// 放在卡片右上角（overlay 的 topTrailing）再挪这么多：右边、上边各伸出 10，
   /// 圆形角标左上角 = (x + w − 12, y − 10)（方案页）；胶囊右边和圆对齐，往左长
   static let offset = CGSize(width: 10, height: -10)
-  private static let pink = Color(nsColor: Style.Shot.accent)
+  private static var pink: Color { Color(nsColor: Style.Shot.accent) }
 
   var body: some View {
     Group {
@@ -303,7 +299,7 @@ struct FlyCardBadge: View {
         .background(Capsule().fill(Self.pink))
       }
     }
-    .foregroundStyle(.white)
+    .foregroundStyle(Color(nsColor: Style.Shot.onAccent))
     .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
     .onAppear { if drawsOn { drawn = true } }
   }
