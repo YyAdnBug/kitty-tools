@@ -117,7 +117,22 @@ struct PermissionRow: View {
         Text(detail).font(.caption).foregroundStyle(.secondary)
       }
       Spacer(minLength: 8)
-      if !granted { Button("去授权", action: grant) }
+      PermissionStatus(granted: granted, grant: grant)
+    }
+    .accessibilityElement(children: .combine)
+  }
+}
+
+/// 授权状态：未授权时一个授权按钮 + 橙色 !，已授权是绿色 ✓（从未授权变已授权时符号替换 + 弹一下）。
+/// PermissionRow 和欢迎引导的功能行共用；button 是按钮文字（引导里写明授权哪一项）
+struct PermissionStatus: View {
+  let granted: Bool
+  var button = "去授权"
+  let grant: () -> Void
+
+  var body: some View {
+    HStack(spacing: 10) {
+      if !granted { Button(button, action: grant) }
       Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
         .font(.system(size: 16, weight: .medium))
         .foregroundStyle(Color(nsColor: granted ? .systemGreen : .systemOrange))
@@ -125,7 +140,6 @@ struct PermissionRow: View {
         .symbolEffect(.bounce, value: granted)
         .accessibilityLabel(granted ? "已授权" : "未授权")
     }
-    .accessibilityElement(children: .combine)
   }
 }
 

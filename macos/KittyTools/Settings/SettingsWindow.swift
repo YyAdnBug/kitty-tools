@@ -55,7 +55,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .general: "开机自启和权限"
     case .clipboard: "历史上限、面板、内容格式和隐私"
     case .launcher: "搜索 App、文件、书签、网页搜索与快捷链接"
-    case .screenshot: "快速保存、快门声、识字和按键说明"
+    case .screenshot: "快速保存、快门声和识字"
     case .translate: "语言、翻译服务与密钥、历史"
     case .hotkeys: "所有全局快捷键"
     case .about: "版本与更新内容"
@@ -79,7 +79,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         "兜底", "使用记录", "最近", "挤压", "弹开", "动画", "实验", "文件", "open", "find", "Spotlight",
       ]
     case .screenshot:
-      ["保存", "目录", "文件夹", "快门", "声音", "识字", "换行", "二维码", "标注", "长截图", "钉图", "按键"]
+      ["保存", "目录", "文件夹", "快门", "声音", "识字", "换行", "二维码", "标注", "长截图", "钉图", "按键", "速查"]
     case .translate:
       [
         "语言", "第一语言", "第二语言", "字号", "换行", "自动复制", "历史", "导出", "CSV", "Anki", "服务", "密钥",
@@ -87,7 +87,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         "智谱", "OpenAI", "Anthropic", "DeepL", "Google", "百度", "有道", "微软", "火山", "腾讯", "AI", "模型",
       ]
     case .hotkeys:
-      ["快捷键", "热键", "冲突"] + HotKeyAction.allCases.map(\.title)
+      ["快捷键", "热键", "冲突", "录制", "恢复默认", "速查", "按键"] + HotKeyAction.allCases.map(\.title)
     case .about: ["版本", "更新", "日志", "发布", "欢迎", "引导"]
     }
   }

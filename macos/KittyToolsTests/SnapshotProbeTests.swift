@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 import Testing
 
@@ -114,6 +115,7 @@ struct SnapshotProbeTests {
     try renderTranslate(out)
     // 设置窗：侧栏 + 页头 + 各页表单（关于是品牌页），深色看两页；欢迎引导的每一步
     let hotKeys = HotKeyCenter()
+    hotKeys.failures[.launcher] = OSStatus(eventInternalErr)  // 快捷键页 / 引导里的橙字（不真注册）
     let services = TranslateServiceStore()
     let history = try HistoryStore(db: Database(path: ":memory:"))
     let speaker = Speaker()
@@ -132,7 +134,7 @@ struct SnapshotProbeTests {
     let navigation = SettingsNavigation()
     let savedPage = navigation.page
     for (page, dark) in SettingsPage.allCases.map({ ($0, false) }) + [
-      (.about, true), (.clipboard, true),
+      (.about, true), (.clipboard, true), (.hotkeys, true),
     ] {
       navigation.page = page
       try snapshot(
@@ -140,12 +142,33 @@ struct SnapshotProbeTests {
         size: NSSize(width: 780, height: 600), dark: dark,
         to: "\(out)/settings-\(page.rawValue)\(dark ? "-dark" : "").png")
     }
-    navigation.page = savedPage  // 别把自检摆的页写进用户偏好
-    for step in OnboardingView.Step.allCases {
+    // 快捷键页拉长看到底（最后的速查表入口），「划词翻译」那一行摆成正在录制（只改外观，不装按键监听）
+    navigation.page = .hotkeys
+    hotKeys.recording = .selectionTranslate
+    for dark in [false, true] {
       try snapshot(
-        OnboardingView(step: step),
-        size: NSSize(width: 580, height: 460), dark: step == .welcome,
-        to: "\(out)/onboarding-\(step.rawValue).png")
+        SettingsRoot(navigation: navigation, page: pages) { AnyView(EmptyView()) },
+        size: NSSize(width: 780, height: 1000), dark: dark,
+        to: "\(out)/settings-hotkeys-recording\(dark ? "-dark" : "").png")
+    }
+    hotKeys.recording = nil
+    navigation.page = savedPage  // 别把自检摆的页写进用户偏好
+    // 快捷键速查表（N11）：sheet 的尺寸，另出一张拉长的看全部分组
+    for (name, height, dark) in [
+      ("shortcuts", 640.0, false), ("shortcuts-dark", 640, true), ("shortcuts-full", 3500, false),
+    ] {
+      try snapshot(
+        ShortcutsSheet(), size: NSSize(width: 560, height: height), dark: dark,
+        to: "\(out)/\(name).png")
+    }
+    // 欢迎引导（N14）：第一屏、第二屏「按一下试试」（两行已按过），各出深色
+    for (name, screen) in [("welcome", OnboardingView.Screen.welcome), ("try", .tryIt)] {
+      for dark in [false, true] {
+        try snapshot(
+          OnboardingView(center: hotKeys, screen: screen, tried: [.clipboard, .screenshot]),
+          size: NSSize(width: 580, height: 480), dark: dark,
+          to: "\(out)/onboarding-\(name)\(dark ? "-dark" : "").png")
+      }
     }
     try renderSelection(out)
     // 常驻缩略图：存过（文件夹角标）、悬停（拷贝 / 存储 + 四角圆钮）

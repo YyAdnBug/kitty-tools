@@ -1,173 +1,171 @@
-// 首次安装的欢迎引导（Whisker 品牌时刻，D 阶段）：盖在设置窗上的 sheet，四步——欢迎 → 授权（辅助功能、屏幕录制，
-// 状态实时刷新）→ 快捷键一览 → 完成。每步从右边滑进来（settle），减弱动态效果时只淡入淡出。「关于」页里可以重看。
+// 首次安装的欢迎引导（N14，Whisker 品牌时刻，对标 Apple 自家 App 的首次启动页 / Raycast）：盖在设置窗上的 sheet，奶油底，两屏。
+// 第一屏 = 品牌图标 + 大标题 + 四行功能（家族色块 + 一句话），要授权的那两行右边直接是授权状态（PermissionStatus，每秒刷新）；
+// 第二屏「按一下试试」= 主要全局快捷键一行一个（Whisker 键帽），用户真的按下、热键触发时（热键照常执行，面板照样弹出）
+// 那一行弹出品牌粉 ✓（pop）。两屏之间 settle 滑过去，减弱动态效果时只淡入淡出；没有跳过、页码点、上一步 / 下一步，
+// 只有一个品牌粉主按钮。「关于」页可以重看。
 
 import SwiftUI
 
 struct OnboardingView: View {
+  enum Screen { case welcome, tryIt }
+
+  let center: HotKeyCenter
   @Environment(\.dismiss) private var dismiss
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @State private var step: Step
-  /// 往前翻还是往回翻（决定从哪边滑进来）
-  @State private var forward = true
+  @State private var screen: Screen
+  /// 引导开着时按过的全局快捷键
+  @State private var tried: Set<HotKeyAction>
 
-  /// step：从第几步开始（截图自检摆各步用）
-  init(step: Step = .welcome) {
-    _step = State(initialValue: step)
+  /// screen / tried：从哪一屏开始、哪些已经按过（截图自检摆状态用）
+  init(center: HotKeyCenter, screen: Screen = .welcome, tried: Set<HotKeyAction> = []) {
+    self.center = center
+    _screen = State(initialValue: screen)
+    _tried = State(initialValue: tried)
   }
-
-  enum Step: Int, CaseIterable {
-    case welcome, permissions, shortcuts, done
-  }
-
-  private let steps = Step.allCases
 
   var body: some View {
     VStack(spacing: 0) {
       ZStack {
-        content(step)
-          .id(step)
-          .transition(
-            reduceMotion
-              ? .opacity
-              : .asymmetric(
-                insertion: .move(edge: forward ? .trailing : .leading).combined(with: .opacity),
-                removal: .move(edge: forward ? .leading : .trailing).combined(with: .opacity)))
+        switch screen {
+        case .welcome: WelcomeScreen().transition(slide)
+        case .tryIt: TryScreen(center: center, tried: tried).transition(slide)
+        }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       .clipped()
-      footer
-    }
-    .frame(width: 580, height: 460)
-    .background(Style.brandCream)
-  }
-
-  @ViewBuilder private func content(_ step: Step) -> some View {
-    switch step {
-    case .welcome: WelcomeStep()
-    case .permissions: PermissionsStep()
-    case .shortcuts: ShortcutsStep()
-    case .done: DoneStep()
-    }
-  }
-
-  private var footer: some View {
-    let index = steps.firstIndex(of: step) ?? 0
-    return HStack {
-      if step != .done {
-        Button("跳过") { dismiss() }
-          .buttonStyle(.plain)
-          .foregroundStyle(.secondary)
-          .keyboardShortcut(.cancelAction)
-      }
-      Spacer()
-      HStack(spacing: 6) {
-        ForEach(steps, id: \.self) { item in
-          Capsule()
-            .fill(item == step ? Style.brand : Color.primary.opacity(0.15))
-            .frame(width: item == step ? 18 : 6, height: 6)
+      Button {
+        if screen == .welcome {
+          withAnimation(Style.Motion.settle.animation(reduced: reduceMotion)) { screen = .tryIt }
+        } else {
+          dismiss()
         }
-      }
-      .animation(Style.Motion.snap.animation(reduced: reduceMotion), value: step)
-      .accessibilityLabel("第 \(index + 1) 步，共 \(steps.count) 步")
-      Spacer()
-      if index > 0, step != .done {
-        Button("上一步") { go(to: steps[index - 1]) }
-      }
-      Button(step == .done ? "开始使用" : "下一步") {
-        if index + 1 < steps.count { go(to: steps[index + 1]) } else { dismiss() }
+      } label: {
+        Text(screen == .welcome ? "继续" : "开始使用").frame(minWidth: 160)
       }
       .buttonStyle(.borderedProminent)
+      .controlSize(.large)
       .tint(Style.brand)
       .keyboardShortcut(.defaultAction)
+      .padding(.top, 12)
+      .padding(.bottom, 24)
     }
-    .padding(.horizontal, 20)
-    .frame(height: 56)
-    .overlay(alignment: .top) { Style.hairline.frame(height: 0.5) }
+    .frame(width: 580, height: 480)
+    .background(Style.brandCream)
+    .onChange(of: center.fireCount) {
+      guard let action = center.lastFired, !tried.contains(action) else { return }
+      withAnimation(Style.Motion.pop.animation(reduced: reduceMotion)) { _ = tried.insert(action) }
+      AccessibilityNotification.Announcement("按过了「\(action.title)」").post()
+    }
   }
 
-  private func go(to next: Step) {
-    forward = next.rawValue > step.rawValue
-    withAnimation(Style.Motion.settle.animation(reduced: reduceMotion)) { step = next }
+  /// 只往前翻：第二屏从右边滑进来，第一屏往左滑出去
+  private var slide: AnyTransition {
+    guard !reduceMotion else { return .opacity }
+    return .asymmetric(
+      insertion: .move(edge: .trailing).combined(with: .opacity),
+      removal: .move(edge: .leading).combined(with: .opacity))
   }
 }
 
-/// 一步的排版：大标题（品牌圆体）+ 一句说明 + 内容
-private struct StepLayout<Content: View>: View {
+/// 大标题（品牌圆体 26）+ 一句说明
+private struct Heading: View {
   let title: String
   let subtitle: String
-  @ViewBuilder let content: Content
 
   var body: some View {
-    VStack(spacing: 18) {
-      VStack(spacing: 6) {
-        Text(title).font(.system(size: 26, weight: .bold, design: .rounded))
-        Text(subtitle).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
-      }
-      content
+    VStack(spacing: 4) {
+      Text(title).font(.system(size: 26, weight: .bold, design: .rounded))
+      Text(subtitle)
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
     }
+    .accessibilityElement(children: .combine)
+    .accessibilityAddTraits(.isHeader)
+  }
+}
+
+/// 白底卡片里的一列行，行间发丝线（从文字列开始）
+private struct RowCard<Item: Hashable, Row: View>: View {
+  let items: [Item]
+  @ViewBuilder let row: (Item) -> Row
+
+  var body: some View {
+    let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
+    VStack(spacing: 0) {
+      ForEach(items, id: \.self) { item in
+        VStack(spacing: 0) {
+          if item != items.first { Style.hairline.frame(height: 0.5).padding(.leading, 46) }
+          row(item).padding(.horizontal, 12).padding(.vertical, 8).frame(minHeight: 40)
+        }
+      }
+    }
+    .background(.background, in: shape)
+    .overlay(shape.strokeBorder(Style.hairline, lineWidth: 0.5))
     .padding(.horizontal, 36)
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 }
 
-private struct WelcomeStep: View {
-  var body: some View {
-    VStack(spacing: 20) {
-      BrandIcon(size: 104)
-      VStack(spacing: 6) {
-        Text("欢迎使用 Kitty Tools")
-          .font(.system(size: 26, weight: .bold, design: .rounded))
-        Text("剪贴板历史、启动器、翻译和截图，都住在菜单栏里。")
-          .font(.callout).foregroundStyle(.secondary)
-      }
-      HStack(spacing: 22) {
-        feature("剪贴板", "doc.on.clipboard.fill", Style.Family.clipboard)
-        feature("启动器", "command", Style.Family.command)
-        feature("翻译", "character.bubble.fill", Style.Family.translate)
-        feature("截图", "camera.viewfinder", Style.Family.screenshot)
-      }
-    }
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-  }
-
-  private func feature(_ title: String, _ symbol: String, _ color: Color) -> some View {
-    VStack(spacing: 6) {
-      KindTile(symbol: symbol, color: color, size: 40)
-      Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
-    }
-  }
-}
-
-/// 授权：状态每秒刷新一次（在系统设置里打开开关后，回到这里马上变成已授权）
-private struct PermissionsStep: View {
+/// 第一屏：品牌图标 + 大标题 + 四行功能；辅助功能、屏幕录制的状态每秒刷新（在系统设置里打开开关后，回到这里马上变）
+private struct WelcomeScreen: View {
   @State private var trusted = Permissions.isAccessibilityTrusted
   @State private var screenRecording = Permissions.isScreenRecordingAllowed
 
+  private struct Feature: Hashable {
+    let title: String
+    let detail: String
+    let symbol: String
+    let color: Color
+    /// 这一行要的授权（粘贴回原 App、划词翻译靠辅助功能；截图、识字靠屏幕录制）
+    var permission: Permissions.Kind?
+  }
+
+  private static let features = [
+    Feature(
+      title: "剪贴板历史", detail: "复制过的文字、图片、文件都记下来，选一条直接粘贴回原 App",
+      symbol: "doc.on.clipboard.fill", color: Style.Family.clipboard, permission: .accessibility),
+    Feature(
+      title: "启动器", detail: "搜 App、文件、书签和网页，顺手算个算式",
+      symbol: "command", color: Style.Family.command),
+    Feature(
+      title: "翻译", detail: "划词、输入、截图都能翻，内置服务不用配密钥",
+      symbol: "character.bubble.fill", color: Style.Family.translate),
+    Feature(
+      title: "截图", detail: "框选、标注、钉图、长截图，还能识别图里的文字",
+      symbol: "camera.viewfinder", color: Style.Family.screenshot, permission: .screenRecording),
+  ]
+
   var body: some View {
-    StepLayout(title: "两项授权", subtitle: "都只在本机使用；不授权也能用，只是对应的功能用不了。") {
-      VStack(spacing: 0) {
-        PermissionRow(
-          title: "辅助功能", detail: "把剪贴板内容粘贴回原 App、划词翻译、长截图自动滚动",
-          symbol: "hand.raised.fill", color: Style.Family.command, granted: trusted
-        ) {
-          Permissions.requestAccessibility()
-          Permissions.openAccessibilitySettings()
+    VStack(spacing: 0) {
+      BrandIcon(size: 84)
+      Heading(title: "欢迎使用 Kitty Tools", subtitle: "剪贴板、启动器、翻译和截图，都住在菜单栏里。")
+        .padding(.top, 10)
+      RowCard(items: Self.features) { feature in
+        HStack(spacing: 10) {
+          KindTile(symbol: feature.symbol, color: feature.color, size: 24)
+          VStack(alignment: .leading, spacing: 1) {
+            Text(feature.title).fontWeight(.medium)
+            Text(feature.detail).font(.caption).foregroundStyle(.secondary)
+          }
+          Spacer(minLength: 8)
+          switch feature.permission {
+          case .accessibility:
+            PermissionStatus(granted: trusted, button: "授权辅助功能") {
+              Permissions.requestAccessibility()
+              Permissions.openAccessibilitySettings()
+            }
+          case .screenRecording:
+            PermissionStatus(granted: screenRecording, button: "授权屏幕录制") {
+              Permissions.requestScreenRecording()
+              Permissions.Kind.screenRecording.openSettings()
+            }
+          default: EmptyView()
+          }
         }
-        .padding(12)
-        Style.hairline.frame(height: 0.5).padding(.leading, 46)
-        PermissionRow(
-          title: "屏幕录制", detail: "截图、截图翻译、识字；授权后可能要重新打开本 App",
-          symbol: "record.circle", color: Style.Family.screenshot, granted: screenRecording
-        ) {
-          Permissions.requestScreenRecording()
-          Permissions.Kind.screenRecording.openSettings()
-        }
-        .padding(12)
+        .accessibilityElement(children: .combine)
       }
-      .background(.background, in: .rect(cornerRadius: Style.Radius.card, style: .continuous))
-      .overlay(
-        RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous).strokeBorder(
-          Style.hairline, lineWidth: 0.5))
+      .padding(.top, 20)
     }
     .task {
       while !Task.isCancelled {
@@ -179,50 +177,52 @@ private struct PermissionsStep: View {
   }
 }
 
-/// 显示设好的组合（不是注册成功的：15.0–15.1 上只带 ⌥ 的注册不了，那种情况快捷键页会提示）
-private struct ShortcutsStep: View {
-  private static let shown: [(HotKeyAction, String, Color)] = [
-    (.launcher, "command", Style.Family.command),
-    (.clipboard, "doc.on.clipboard.fill", Style.Family.clipboard),
-    (.selectionTranslate, "character.bubble.fill", Style.Family.translate),
-    (.inputTranslate, "keyboard.fill", Style.Family.translate),
-    (.screenshot, "camera.viewfinder", Style.Family.screenshot),
-    (.screenshotTranslate, "text.viewfinder", Style.Family.screenshot),
-    (.recognizeText, "text.magnifyingglass", Style.Family.screenshot),
+/// 第二屏「按一下试试」：列的是设好的组合；注册失败的那一行下面橙字写原因（按了也不会响）
+private struct TryScreen: View {
+  let center: HotKeyCenter
+  let tried: Set<HotKeyAction>
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  private static let shown: [HotKeyAction] = [
+    .clipboard, .launcher, .selectionTranslate, .inputTranslate, .screenshot, .screenshotTranslate,
   ]
 
   var body: some View {
-    StepLayout(title: "记住这几个键", subtitle: "在任何 App 里都能按；想换可以到「设置 › 快捷键」里改。") {
-      Grid(alignment: .leading, horizontalSpacing: 28, verticalSpacing: 10) {
-        ForEach(Array(stride(from: 0, to: Self.shown.count, by: 2)), id: \.self) { index in
-          GridRow {
-            row(Self.shown[index])
-            if index + 1 < Self.shown.count { row(Self.shown[index + 1]) }
-          }
+    let actions = Self.shown.filter { $0.hotKey != nil }
+    VStack(spacing: 0) {
+      Heading(title: "按一下试试", subtitle: "在任何 App 里按下这些键，对应的功能就会出来。\n现在按一下，按过的会打勾。")
+      RowCard(items: actions) { row($0) }
+        .padding(.top, 18)
+      Text("想换键或看面板里的按键：设置 › 快捷键")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.top, 10)
+    }
+  }
+
+  private func row(_ action: HotKeyAction) -> some View {
+    let done = tried.contains(action)
+    return HStack(spacing: 10) {
+      KindTile(symbol: action.symbol, color: action.color, size: 24)
+      VStack(alignment: .leading, spacing: 1) {
+        Text(action.title)
+        if let problem = center.failureMessage(for: action) {
+          Text(problem).font(.caption).foregroundStyle(Color(nsColor: .systemOrange))
         }
       }
+      Spacer(minLength: 8)
+      KeyCombo(action.hotKey?.display ?? "")
+      ZStack {
+        if done {
+          Image(systemName: "checkmark.circle.fill")
+            .font(.system(size: 18, weight: .medium))
+            .foregroundStyle(Style.brand)
+            .transition(reduceMotion ? .opacity : .scale(scale: 0.3).combined(with: .opacity))
+        }
+      }
+      .frame(width: 20, height: 20)
     }
-  }
-
-  private func row(_ entry: (HotKeyAction, String, Color)) -> some View {
-    HStack(spacing: 10) {
-      KindTile(symbol: entry.1, color: entry.2, size: 24)
-      Text(entry.0.title).frame(width: 84, alignment: .leading)
-      KeyCap(entry.0.hotKey?.display ?? "未设置")
-    }
-  }
-}
-
-private struct DoneStep: View {
-  @State private var shown = false
-
-  var body: some View {
-    StepLayout(title: "都准备好了", subtitle: "点菜单栏里的图标，随时打开这些功能和设置。") {
-      Image(systemName: "checkmark.circle.fill")
-        .font(.system(size: 56, weight: .medium))
-        .foregroundStyle(Style.brand)
-        .symbolEffect(.bounce, value: shown)
-        .onAppear { shown = true }
-    }
+    .accessibilityElement(children: .combine)
+    .accessibilityValue(done ? "已试过" : "还没按过")
   }
 }

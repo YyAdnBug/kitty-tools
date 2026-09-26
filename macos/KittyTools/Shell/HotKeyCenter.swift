@@ -1,6 +1,7 @@
 // 全局热键（Carbon RegisterEventHotKey，唯一能「按下即消费」的公开 API）。
 // 每个动作的组合存在 UserDefaults；清除后为 nil、不注册。默认非独占注册：别的 App 注册了同一组合也会成功，
 // 按一次两边都响应，且检测不到这种跨进程冲突（M1 实测，见 mac-overlay-panel 技能）。
+// 另外给界面用：动作的分组 / 色块（快捷键页、速查表、引导、菜单栏共用）、注册失败的原因、最近一次触发（引导「按一下试试」）。
 
 import AppKit
 import Carbon.HIToolbox
@@ -155,13 +156,52 @@ enum HotKeyAction: String, CaseIterable {
   }
 
   private var prefsKey: String { "hotkey." + rawValue }
+
+  /// 快捷键页和菜单栏的分组（N13 / N15：同名同序）
+  static let sections: [(title: String, actions: [HotKeyAction])] = [
+    ("剪贴板与启动器", [.clipboard, .launcher]),
+    ("翻译", [.selectionTranslate, .inputTranslate, .translateReplace, .screenshotTranslate]),
+    ("截图", [.screenshot, .screenshotLastRegion, .recognizeText]),
+  ]
+
+  /// 种类色块里的符号
+  var symbol: String {
+    switch self {
+    case .clipboard: "doc.on.clipboard.fill"
+    case .launcher: "command"
+    case .selectionTranslate: "character.bubble.fill"
+    case .inputTranslate: "character.cursor.ibeam"
+    case .translateReplace: "arrow.left.arrow.right"
+    case .screenshotTranslate: "text.viewfinder"
+    case .screenshot: "camera.viewfinder"
+    case .screenshotLastRegion: "rectangle.dashed"
+    case .recognizeText: "text.magnifyingglass"
+    }
+  }
+
+  /// 功能家族色（截图翻译算翻译，和菜单栏一致）
+  var color: Color {
+    switch self {
+    case .clipboard: Style.Family.clipboard
+    case .launcher: Style.Family.command
+    case .selectionTranslate, .inputTranslate, .translateReplace, .screenshotTranslate:
+      Style.Family.translate
+    case .screenshot, .screenshotLastRegion, .recognizeText: Style.Family.screenshot
+    }
+  }
 }
 
 @Observable final class HotKeyCenter {
   /// 当前生效的组合（菜单显示用）
   private(set) var bindings: [HotKeyAction: HotKey] = [:]
-  /// 注册失败的动作及 OSStatus（-9868：15.0/15.1 上只带 ⌥ 的组合；-9878：本进程重复）
-  private(set) var failures: [HotKeyAction: OSStatus] = [:]
+  /// 注册失败的动作及 OSStatus（-9868：15.0/15.1 上只带 ⌥ 的组合；-9878：本进程重复）。
+  /// 只由 reload / suspend 写；不是 private(set) 只为截图自检直接摆出失败态（自检不能真注册热键，会吞用户的按键）
+  var failures: [HotKeyAction: OSStatus] = [:]
+  /// 最近一次触发的动作和累计触发次数（引导「按一下试试」看次数变化打勾：同一个键再按一次也要算）
+  private(set) var lastFired: HotKeyAction?
+  private(set) var fireCount = 0
+  /// 正在录制的动作（设置 › 快捷键）：同一时刻只录一个，点了别的录制框，前一个就停下
+  var recording: HotKeyAction?
   @ObservationIgnored private var handlers: [HotKeyAction: () -> Void] = [:]
   @ObservationIgnored private var refs: [EventHotKeyRef] = []
   @ObservationIgnored private var handlerRef: EventHandlerRef?
@@ -199,9 +239,31 @@ enum HotKeyAction: String, CaseIterable {
     failures = [:]
   }
 
+  /// 注册失败的原因（快捷键页、引导里那一行下面的橙字）；注册成功或没设键时为 nil
+  func failureMessage(for action: HotKeyAction) -> String? {
+    failures[action].map { Self.failureMessage($0, hotKey: action.hotKey) }
+  }
+
+  static func failureMessage(_ status: OSStatus, hotKey: HotKey?) -> String {
+    let modifiers = hotKey?.modifiers ?? 0
+    let optionOnly =
+      modifiers & UInt32(cmdKey | controlKey) == 0 && modifiers & UInt32(optionKey) != 0
+    // 15.0–15.1 上只带 ⌥（或 ⌥⇧）的组合返回 -9868（eventInternalErr，M1 实测；以前按 eventHotKeyInvalidErr
+    // -9879 判断，从来没对上过），两个都认，但只在组合确实只带 ⌥ 时才这么说
+    return switch Int(status) {
+    case eventInternalErr where optionOnly, eventHotKeyInvalidErr where optionOnly:
+      "macOS 15.0 / 15.1 不支持只带 ⌥ 的组合，加上 ⌘ 或 ⌃ 再录一次"
+    case eventHotKeyExistsErr: "和本 App 的另一个快捷键重复，没有注册上"
+    default: "没有注册上（错误 \(status)），换一个组合试试"
+    }
+  }
+
   private func fire(_ id: UInt32) {
     guard Int(id) < HotKeyAction.allCases.count else { return }
-    handlers[HotKeyAction.allCases[Int(id)]]?()
+    let action = HotKeyAction.allCases[Int(id)]
+    lastFired = action
+    fireCount += 1
+    handlers[action]?()
   }
 
   private func installHandlerIfNeeded() {

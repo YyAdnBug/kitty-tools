@@ -206,7 +206,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       case .about: AnyView(AboutTab { created?.navigation.showsOnboarding = true })
       }
     } onboarding: { [unowned self] in
-      AnyView(OnboardingView())
+      AnyView(OnboardingView(center: hotKeys))
     }
     created = window
     return window
