@@ -1,4 +1,4 @@
-// Whisker 设计刻度（mac-whisker.mdc §3–4）：圆角、七条命名弹簧曲线、品牌粉强调色、中性色与功能家族色、
+// Whisker 设计刻度（mac-whisker.mdc §3–4）：圆角、七条命名弹簧曲线、强调色（取自 Accent）、中性色与功能家族色、
 // 面板描边、种类色块与键帽。界面里的圆角、曲线、强调色、选中色一律从这里取，不硬编码；
 // 新增的值至少要被三处复用才放进来。
 
@@ -174,8 +174,10 @@ enum Style {
 
   /// 截图家族（遮罩、工具栏、样式托盘、放大镜、钉图、常驻缩略图、长截图、飞行卡片）
   enum Shot {
-    /// = `Style.brand` 浅色值 #FF4D7E，固定不随深浅色，给永远深色的 HUD / CALayer 用
-    static let accent = NSColor(srgbRed: 1, green: 0.302, blue: 0.494, alpha: 1)
+    /// 强调色的深色值（默认品牌粉 #FF4D7E），固定不随深浅色，给永远深色的 HUD / CALayer 用；图层在创建时取
+    static var accent: NSColor { Accent.shared.palette.fill.dark }
+    /// 强调色填充上的符号 / 文字（白；黄色这种亮色上是 black 0.85）
+    static var onAccent: NSColor { Accent.shared.palette.onFill.dark }
     /// 当前工具的实心底块圆角（全 App 唯一一处强调色填满的块）
     static let toolRadius: CGFloat = 12
   }
@@ -244,18 +246,14 @@ enum Style {
     }
   }
 
-  /// 品牌粉：全 App 功能强调色 + 品牌色，AccentColor.colorset 同值（系统控件走 asset，自绘的直接用它）。
-  /// 深浅色同值（= `Shot.accent`）：深色若提亮，白字只剩 2.7:1；增强对比度时压深到 #D12A5F（白字 5:1）
-  static let brand = dynamic(
-    light: Shot.accent, dark: Shot.accent,
-    contrast: (
-      NSColor(red: 0.82, green: 0.165, blue: 0.373, alpha: 1),
-      NSColor(red: 0.82, green: 0.165, blue: 0.373, alpha: 1)
-    ))
-  /// 品牌粉的文字色（#D12A5F / 深 #FF8FAB）和奶油底（#FFF5F0 / 深 #2A1D22）
-  static let brandInk = dynamic(
-    light: NSColor(red: 0.82, green: 0.165, blue: 0.373, alpha: 1),
-    dark: NSColor(red: 1, green: 0.561, blue: 0.671, alpha: 1))
+  /// 全 App 功能强调色（设置 › 通用「强调色」，默认跟随系统：系统是「多色」时就是品牌粉 #FF4D7E，深浅色同值、
+  /// 增强对比度时压深到 #D12A5F）。取自 `Accent`：换色后读过它的视图自动重画
+  static var brand: Color { Accent.shared.brand }
+  /// 强调色的文字色（品牌粉：#D12A5F / 深 #FF8FAB）
+  static var brandInk: Color { Accent.shared.ink }
+  /// 强调色填充上的符号 / 文字（白；黄色这种亮色上是 black 0.85）
+  static var onBrand: Color { Accent.shared.onBrand }
+  /// 品牌奶油底（#FFF5F0 / 深 #2A1D22）：关于页、引导的底色，是品牌色、不随强调色变
   static let brandCream = dynamic(
     light: NSColor(red: 1, green: 0.961, blue: 0.941, alpha: 1),
     dark: NSColor(red: 0.165, green: 0.114, blue: 0.133, alpha: 1))
@@ -286,7 +284,7 @@ struct KindTile: View {
 /// 键帽（⌘1–9、↩、⌘K）
 struct KeyCap: View {
   let text: String
-  /// 主按钮（底栏「粘贴 ↩」「打开 ↩」）：品牌粉实心 + 白色符号。只放符号：白字在 #FF4D7E 上约 3.2:1，只够非文本 3:1
+  /// 主按钮（底栏「粘贴 ↩」「打开 ↩」）：强调色实心 + 白色符号。只放符号：白字在品牌粉上约 3.2:1，只够非文本 3:1
   var isPrimary = false
 
   init(_ text: String, primary: Bool = false) {
@@ -300,7 +298,7 @@ struct KeyCap: View {
       .monospacedDigit()
       .padding(.horizontal, 5)
       .frame(minWidth: 20, minHeight: 18)
-      .foregroundStyle(isPrimary ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+      .foregroundStyle(isPrimary ? AnyShapeStyle(Style.onBrand) : AnyShapeStyle(.secondary))
       .background(
         isPrimary ? AnyShapeStyle(Style.brand) : AnyShapeStyle(Style.controlFill),
         in: .rect(cornerRadius: Style.Radius.mini, style: .continuous))

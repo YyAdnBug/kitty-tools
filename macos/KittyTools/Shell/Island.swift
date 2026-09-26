@@ -323,7 +323,10 @@ struct IslandView: View {
       Image(systemName: content.symbol)
         .font(.system(size: 18, weight: .semibold))
         .symbolRenderingMode(.palette)
-        .foregroundStyle(.white, tint(content.tone))
+        .foregroundStyle(
+          content.tone == .info || content.tone == .progress ? Style.onBrand : .white,
+          tint(content.tone)
+        )
         .contentTransition(.symbolEffect(.replace.magic(fallback: .downUp.byLayer)))
         .symbolEffect(.breathe.pulse, isActive: content.tone == .progress && !reduceMotion)
         .symbolEffect(.bounce, value: content.tone == .success ? content.title : "")

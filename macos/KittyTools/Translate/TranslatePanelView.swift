@@ -504,7 +504,7 @@ private struct TranslateCapsule: View {
         Text("↩").opacity(0.75)
       }
       .font(.system(size: 12, weight: .semibold))
-      .foregroundStyle(.white)
+      .foregroundStyle(Style.onBrand)
       .padding(.horizontal, 12)
       .frame(height: 24)
       .background(Style.brand, in: .capsule)

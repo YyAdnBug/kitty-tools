@@ -93,7 +93,7 @@ final class SizeField: NSView, NSTextFieldDelegate {
     chip.layer?.backgroundColor =
       (next.3 ? Style.Shot.accent.withAlphaComponent(0.9) : Style.HUD.chipFill).cgColor
     chipLabel.stringValue = "\(ratio) ▾"
-    chipLabel.textColor = next.3 ? .white : Style.HUD.text
+    chipLabel.textColor = next.3 ? Style.Shot.onAccent : Style.HUD.text
     chip.setAccessibilityLabel("比例：\(ratio)")
     layoutParts()
   }

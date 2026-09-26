@@ -9,7 +9,9 @@ import Testing
 
 struct StyleTests {
   @Test func dynamicColorsResolveOffMainThread() async {
-    let colors = [Style.brand, Style.brandInk, Style.selectedFill, Style.hairline].map(NSColor.init)
+    let colors = [Style.brand, Style.brandInk, Style.onBrand, Style.selectedFill, Style.hairline]
+      .map(
+        NSColor.init)
     for color in colors {
       #expect(await Self.resolveOffMain(color) != nil)
     }

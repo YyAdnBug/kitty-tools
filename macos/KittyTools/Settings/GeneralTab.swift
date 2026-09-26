@@ -1,4 +1,4 @@
-// 设置 › 通用：外观（跟随系统 / 浅色 / 深色，改了立刻生效）、开机自启、权限状态（辅助功能、屏幕录制、剪贴板访问；从未授权变已授权时符号替换 + 弹一下）。
+// 设置 › 通用：外观（跟随系统 / 浅色 / 深色）与强调色（跟随系统 + 系统设置那一排 8 色，都是改了立刻生效）、开机自启、权限状态（辅助功能、屏幕录制、剪贴板访问；从未授权变已授权时符号替换 + 弹一下）。
 
 import ServiceManagement
 import SwiftUI
@@ -21,6 +21,11 @@ struct GeneralTab: View {
         .pickerStyle(.segmented)
         .onChange(of: appearance) { AppAppearance.apply() }
         caption("截图工具栏和刘海岛提示始终是深色。")
+        LabeledContent("强调色") { AccentPicker() }
+        caption(
+          Accent.shared.choice == .system
+            ? "系统强调色选「多色」时使用品牌粉。"
+            : "菜单高亮、焦点环和侧栏选中由系统绘制，仍使用系统强调色。")
       }
       Section("启动") {
         Toggle("登录时自动打开", isOn: launchAtLogin)
@@ -149,6 +154,60 @@ struct PermissionStatus: View {
         .symbolEffect(.bounce, value: granted)
         .accessibilityLabel(granted ? "已授权" : "未授权")
     }
+  }
+}
+
+/// 强调色：和系统设置同样的一排色块（第一个多色 = 跟随系统），选中的那个中间一个白点、名字写在它下面
+private struct AccentPicker: View {
+  private let accent = Accent.shared
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    HStack(spacing: 10) {
+      ForEach(AccentChoice.allCases) { swatch($0) }
+    }
+    // 选中项的名字挂在色块下面
+    .padding(.bottom, 16)
+    .animation(Style.Motion.pop.animation(reduced: reduceMotion), value: accent.choice)
+  }
+
+  private func swatch(_ choice: AccentChoice) -> some View {
+    let selected = accent.choice == choice
+    return Button {
+      accent.select(choice)
+    } label: {
+      Circle()
+        .fill(fill(of: choice))
+        .overlay(Circle().strokeBorder(.black.opacity(0.14), lineWidth: 0.5))
+        .overlay {
+          if selected {
+            Circle().fill(.white).frame(width: 6, height: 6)
+              .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
+          }
+        }
+        .frame(width: 20, height: 20)
+        .contentShape(Circle())
+    }
+    .buttonStyle(.plain)
+    .overlay(alignment: .bottom) {
+      if selected {
+        Text(choice.title).font(.caption).foregroundStyle(.secondary).fixedSize().offset(y: 17)
+      }
+    }
+    .help(choice.title)
+    .accessibilityLabel(choice.title)
+    .accessibilityAddTraits(selected ? .isSelected : [])
+  }
+
+  /// 跟随系统 = 系统设置「多色」那样的一圈彩虹
+  private func fill(of choice: AccentChoice) -> AnyShapeStyle {
+    guard let fixed = choice.fixed else {
+      let ring: [AccentChoice] = [.red, .orange, .yellow, .green, .blue, .purple, .pink, .red]
+      return AnyShapeStyle(
+        AngularGradient(
+          colors: ring.compactMap { $0.fixed.map { Color(nsColor: $0.light) } }, center: .center))
+    }
+    return AnyShapeStyle(Style.dynamic(light: fixed.light, dark: fixed.dark))
   }
 }
 

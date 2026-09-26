@@ -39,6 +39,8 @@ struct CommandTextField: NSViewRepresentable {
   func updateNSView(_ field: FocusField, context: Context) {
     context.coordinator.parent = self
     field.onFocusChange = onFocusChange
+    // 读了 Style.brand：设置里换了强调色时这里会重跑，正在编辑的插入点和选中底色跟着换
+    field.applyBrandColors(NSColor(Style.brand))
     if field.placeholderString != placeholder { field.placeholderString = placeholder }
     if field.romanOnly != romanOnly {
       field.romanOnly = romanOnly
@@ -104,14 +106,12 @@ struct CommandTextField: NSViewRepresentable {
       onFocusChange?(editor != nil && window?.firstResponder === editor)
     }
 
-    /// 插入点和选中文字底色用品牌粉（mac-overlay-panel §3）。字段编辑器是窗口共用的，别处可能改过，
+    /// 插入点和选中文字底色用强调色（mac-overlay-panel §3）。字段编辑器是窗口共用的，别处可能改过，
     /// 所以每次拿到焦点都设一遍，不露系统蓝
-    private func applyBrandColors() {
+    func applyBrandColors(_ brand: NSColor = NSColor(Style.brand)) {
       guard let editor = currentEditor() as? NSTextView else { return }
-      editor.insertionPointColor = NSColor(Style.brand)
-      editor.selectedTextAttributes = [
-        .backgroundColor: Style.Shot.accent.withAlphaComponent(0.28)
-      ]
+      editor.insertionPointColor = brand
+      editor.selectedTextAttributes = [.backgroundColor: brand.withAlphaComponent(0.28)]
     }
 
     /// 输入法限制挂在正在编辑的字段编辑器上（它是这个窗口共用的，所以关掉时要显式还原成不限制）

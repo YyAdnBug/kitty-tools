@@ -727,7 +727,7 @@ final class ScrollCaptureHUD: NSVisualEffectView {
   private static func primaryImage() -> NSImage {
     let fill = Style.Shot.accent
     let check = symbol("checkmark").withSymbolConfiguration(
-      .init(pointSize: 13, weight: .bold).applying(.init(paletteColors: [.white])))!
+      .init(pointSize: 13, weight: .bold).applying(.init(paletteColors: [Style.Shot.onAccent])))!
     return NSImage(size: NSSize(width: 28, height: 28), flipped: false) { rect in
       fill.setFill()
       NSBezierPath(ovalIn: rect).fill()

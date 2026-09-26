@@ -416,7 +416,7 @@ private struct PanelRoot<Content: View>: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
-    content.ignoresSafeArea().overlay(PanelRim()).symbolEffectsRemoved(reduceMotion)
+    content.ignoresSafeArea().overlay(PanelRim()).symbolEffectsRemoved(reduceMotion).appAccent()
   }
 }
 

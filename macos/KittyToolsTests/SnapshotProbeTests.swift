@@ -171,6 +171,32 @@ struct SnapshotProbeTests {
       size: NSSize(width: ClipboardPanelView.width, height: ClipboardPanelView.height(for: model)),
       dark: false, to: "\(out)/clip-no-lens.png")
     UserDefaults.standard.removeObject(forKey: Prefs.clipboardShowPreview)
+    // 换了强调色（设置 › 通用）：黄色最难（填充上的符号换深色、文字压深），石墨色看中性；
+    // 用的是 Debug 版的真实偏好，试完恢复原样（没设过就删掉）
+    let bundleID = Bundle.main.bundleIdentifier ?? ""
+    let savedAccent =
+      UserDefaults.standard.persistentDomain(forName: bundleID)?[Prefs.accent] as? String
+    defer {
+      Accent.shared.select(AccentChoice(rawValue: savedAccent ?? "") ?? .system)
+      if savedAccent == nil { UserDefaults.standard.removeObject(forKey: Prefs.accent) }
+    }
+    for choice in [AccentChoice.yellow, .graphite] {
+      Accent.shared.select(choice)
+      for dark in [false, true] {
+        model.reset()
+        model.scope = .favorites
+        model.palette = .filters
+        try snapshot(
+          ClipboardPanelView(model: model),
+          size: NSSize(
+            width: ClipboardPanelView.width, height: ClipboardPanelView.height(for: model)),
+          dark: dark, to: "\(out)/clip-accent-\(choice.rawValue)\(dark ? "-dark" : "").png")
+        try snapshot(
+          GeneralTab(), size: NSSize(width: 640, height: 560), dark: dark,
+          to: "\(out)/settings-general-accent-\(choice.rawValue)\(dark ? "-dark" : "").png")
+      }
+    }
+    Accent.shared.select(AccentChoice(rawValue: savedAccent ?? "") ?? .system)
     // ⌘Y 放大预览 = 完整检查器：代码（放大的字）、链接（大头图）、图片（带识别文字）、多个文件（网格），按各自的理想尺寸
     for (name, match) in [
       ("quicklook-code", { (item: ClipItem) in item.text?.hasPrefix("import") == true }),

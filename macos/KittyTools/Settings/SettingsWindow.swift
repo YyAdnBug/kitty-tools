@@ -45,7 +45,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .screenshot: Style.Family.screenshot
     case .translate: Style.Family.translate
     case .hotkeys: Style.Family.keyboard
-    case .about: Style.brand
+    case .about: Color(nsColor: AccentPalette.brandPink)  // 关于是品牌页，不随强调色变
     }
   }
 
@@ -67,7 +67,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     switch self {
     case .general:
       [
-        "外观", "浅色", "深色", "暗黑", "主题", "跟随系统", "开机", "登录", "自启", "权限", "辅助功能", "屏幕录制",
+        "外观", "浅色", "深色", "暗黑", "主题", "跟随系统", "强调色", "主题色", "颜色", "开机", "登录", "自启", "权限", "辅助功能",
+        "屏幕录制",
         "剪贴板访问", "隐私",
       ]
     case .clipboard:
@@ -211,9 +212,10 @@ struct SettingsRoot: View {
       if !matches.contains(navigation.page) { query = "" }
     }
     .sheet(isPresented: $navigation.showsOnboarding) {
-      onboarding().symbolEffectsRemoved(reduceMotion)
+      onboarding().symbolEffectsRemoved(reduceMotion).appAccent()
     }
     .symbolEffectsRemoved(reduceMotion)
+    .appAccent()
   }
 
   /// List 的单选要可选值；点空白处（nil）时保持当前页

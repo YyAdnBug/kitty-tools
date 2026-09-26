@@ -103,7 +103,7 @@ struct Annotation: Identifiable, Equatable {
 
     var color: NSColor {
       switch self {
-      case .pink: KittyTools.Style.Shot.accent  // 品牌粉（这里的 Style 是标注样式，要带模块名）
+      case .pink: AccentPalette.brandPink  // 品牌粉（标注颜色是内容色，不随强调色变）
       case .red: Self.srgb(0xFF3B30)
       case .orange: Self.srgb(0xFF9500)
       case .yellow: Self.srgb(0xFFCC00)

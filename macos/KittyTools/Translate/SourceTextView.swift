@@ -28,11 +28,6 @@ struct SourceTextView: NSViewRepresentable {
     textView.textContainerInset = NSSize(width: 2, height: 6)
     textView.isAutomaticQuoteSubstitutionEnabled = false
     textView.isAutomaticDashSubstitutionEnabled = false
-    // 不露系统蓝：插入点品牌粉，选中文字底色粉 0.28（普通 NSTextView 不是共用的字段编辑器，建时设一次就行）
-    textView.insertionPointColor = NSColor(Style.brand)
-    textView.selectedTextAttributes = [
-      .backgroundColor: NSColor(Style.brand).withAlphaComponent(0.28)
-    ]
     textView.isVerticallyResizable = true
     textView.autoresizingMask = [.width]
     textView.textContainer?.widthTracksTextView = true
@@ -51,6 +46,12 @@ struct SourceTextView: NSViewRepresentable {
     textView.onFocusChange = onFocusChange
     if textView.string != text { textView.string = text }
     if textView.font?.pointSize != fontSize { textView.font = .systemFont(ofSize: fontSize) }
+    // 不露系统蓝：插入点强调色，选中文字底色强调色 0.28（普通 NSTextView 不是共用的字段编辑器；
+    // 在这里设，设置里换了强调色也跟着变）
+    textView.insertionPointColor = NSColor(Style.brand)
+    textView.selectedTextAttributes = [
+      .backgroundColor: NSColor(Style.brand).withAlphaComponent(0.28)
+    ]
   }
 
   func makeCoordinator() -> Coordinator { Coordinator(parent: self) }

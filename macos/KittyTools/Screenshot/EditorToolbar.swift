@@ -250,11 +250,11 @@ final class EditorToolbar: PopView {
         button.tag = buttons.count
         switch item {
         case .output(.copy):
-          // 拷贝：28 pt 品牌粉实心圆 + 白对勾（主按钮），不出悬停底
+          // 拷贝：28 pt 强调色实心圆 + 对勾（主按钮），不出悬停底
           button.showsHover = false
           button.layer?.backgroundColor = Style.Shot.accent.cgColor
           button.layer?.cornerRadius = 14
-          button.contentTintColor = .white
+          button.contentTintColor = Style.Shot.onAccent
           button.symbolConfiguration = .init(pointSize: 13, weight: .bold)
         case .saveMenu:
           button.contentTintColor = Style.HUD.secondaryText
@@ -284,7 +284,7 @@ final class EditorToolbar: PopView {
       rise: edge == .top ? 8 : -8, scale: 0.94, delay: 0.04, bounce: 0.18)
   }
 
-  /// 当前工具的底块滑过去、图标变白；撤销 / 重做没得做时变灰。跟着鼠标移动一直在调，状态没变就不动
+  /// 当前工具的底块滑过去、图标换成强调色上的符号色（白，黄色这类亮色上是深色）；撤销 / 重做没得做时变灰。跟着鼠标移动一直在调，状态没变就不动
   func update(tool: Annotation.Tool?, canUndo: Bool, canRedo: Bool) {
     if let state, state.tool == tool, state.canUndo == canUndo, state.canRedo == canRedo { return }
     let previous = state?.tool
@@ -292,8 +292,8 @@ final class EditorToolbar: PopView {
     for (item, button) in buttons {
       switch item {
       case .tool(let each):
-        button.contentTintColor = each == tool ? .white : Style.HUD.text
-        button.showsHover = each != tool  // 粉色底块上不叠悬停底
+        button.contentTintColor = each == tool ? Style.Shot.onAccent : Style.HUD.text
+        button.showsHover = each != tool  // 强调色底块上不叠悬停底
       case .undo: button.isEnabled = canUndo
       case .redo: button.isEnabled = canRedo
       case .output(.copy), .saveMenu: break

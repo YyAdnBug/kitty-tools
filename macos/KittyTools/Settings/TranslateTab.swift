@@ -84,6 +84,7 @@ struct TranslateTab: View {
         LabeledContent {
           HStack(spacing: 10) {
             Slider(value: $fontScale, in: TranslateCoordinator.fontScales, step: 0.1)
+              .tint(Style.brand)  // 根视图的 .accentColor 管不到滑块（实测），单独给
             Text(fontScale.formatted(.percent.precision(.fractionLength(0))))
               .font(.system(size: 12, weight: .medium)).monospacedDigit()
               .contentTransition(.numericText(value: fontScale))
