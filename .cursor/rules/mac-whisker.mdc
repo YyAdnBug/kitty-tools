@@ -29,6 +29,8 @@ alwaysApply: false
 | Island | 纯黑 `#000`、无描边（和硬件刘海融为一体）；无刘海时 black 0.92 + 0.5 pt white 0.12 描边的胶囊；标题 white 0.95、详情 white 0.55 | 保持纯黑 | 全部轻提示、进度、错误 |
 | 系统 | `Form(.grouped)`、系统侧栏材质 | 26 SDK 编译后自动变玻璃 | 设置窗 |
 
+**外观**（2026-09-26 用户要求）：设置 › 通用「外观」= 跟随系统 / 浅色 / 深色（分段，默认跟随系统，`Prefs.appearance`），改的是 `NSApp.appearance`（`AppAppearance.apply()`：启动时在任何窗口出现前设一次，改了立刻生效、不用重启）。Panel、系统皮肤、菜单栏菜单、引导 / 关于页都跟着它走，所以判断深浅色只看视图自己的外观（SwiftUI `colorScheme`、`Style.dynamic`、在 `updateLayer` / `draw` 里才解析的动态色），不读系统的 `AppleInterfaceStyle`、不在 init 里把动态色转成 `cgColor` 存下来；HUD（`vibrantDark`）、Island（纯黑）、飞行卡片自己定死深色，不受它影响。只切深浅，不做主题 preset。
+
 Panel 里的内容表面只用填充、**不叠玻璃**：卡片浅色 white 0.55 + 0.5 pt black 0.06 + 阴影 black 0.05 / r3 / y1；深色 white 0.06 + 0.5 pt white 0.10 + 顶部高光（white 0.12→clear，顶部 40%），不加阴影。输入框 primary 0.045（深 0.07）+ 0.5 pt primary 0.08。
 
 ## 3. 刻度（代码里只从 `Shell/Style.swift` 取）

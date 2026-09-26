@@ -190,7 +190,7 @@ struct SnapshotProbeTests {
       }
     }
     try renderTranslate(out)
-    // 设置窗：侧栏 + 页头 + 各页表单（关于是品牌页），深色看两页；欢迎引导的每一步
+    // 设置窗：侧栏 + 页头 + 各页表单（关于是品牌页），深色看几页；欢迎引导的每一步
     let hotKeys = HotKeyCenter()
     hotKeys.failures[.launcher] = OSStatus(eventInternalErr)  // 快捷键页 / 引导里的橙字（不真注册）
     let services = TranslateServiceStore()
@@ -211,7 +211,7 @@ struct SnapshotProbeTests {
     let navigation = SettingsNavigation()
     let savedPage = navigation.page
     for (page, dark) in SettingsPage.allCases.map({ ($0, false) }) + [
-      (.about, true), (.clipboard, true), (.hotkeys, true),
+      (.general, true), (.about, true), (.clipboard, true), (.hotkeys, true),
     ] {
       navigation.page = page
       try snapshot(

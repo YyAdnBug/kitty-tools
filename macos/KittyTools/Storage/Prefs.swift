@@ -3,6 +3,8 @@
 import Foundation
 
 enum Prefs {
+  /// 外观（AppAppearance.rawValue）：system 跟随系统 / light 浅色 / dark 深色
+  static let appearance = "appearance"
   /// 剪贴板面板点外即关；面板上的图钉 = 把它关掉
   static let clipboardHideOnUnfocus = "clipboardHideOnUnfocus"
   /// 启动器搜哪些浏览器的书签
@@ -82,6 +84,7 @@ enum Prefs {
 
   static func registerDefaults() {
     UserDefaults.standard.register(defaults: [
+      appearance: AppAppearance.system.rawValue,
       clipboardHideOnUnfocus: true,
       // Chrome 书签不需要额外授权，默认开（网址是启动器里用得最多的）
       launcherBookmarksChrome: true,

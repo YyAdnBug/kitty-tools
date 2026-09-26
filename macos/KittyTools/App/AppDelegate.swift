@@ -233,6 +233,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if yieldToOlderInstance() { return }
     isRunning = true
     Prefs.registerDefaults()
+    AppAppearance.apply()  // 在任何浮层、设置窗、菜单出现之前
 
     let launchedAt = Date.now
     clipboardStore.enforceLimits()

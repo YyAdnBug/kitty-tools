@@ -1,9 +1,10 @@
-// 设置 › 通用：开机自启、权限状态（辅助功能、屏幕录制、剪贴板访问；从未授权变已授权时符号替换 + 弹一下）。
+// 设置 › 通用：外观（跟随系统 / 浅色 / 深色，改了立刻生效）、开机自启、权限状态（辅助功能、屏幕录制、剪贴板访问；从未授权变已授权时符号替换 + 弹一下）。
 
 import ServiceManagement
 import SwiftUI
 
 struct GeneralTab: View {
+  @AppStorage(Prefs.appearance) private var appearance = AppAppearance.system
   @State private var trusted = Permissions.isAccessibilityTrusted
   @State private var screenRecording = Permissions.isScreenRecordingAllowed
   @State private var loginStatus = SMAppService.mainApp.status
@@ -13,6 +14,14 @@ struct GeneralTab: View {
 
   var body: some View {
     Form {
+      Section {
+        Picker("外观", selection: $appearance) {
+          ForEach(AppAppearance.allCases) { Text($0.title).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .onChange(of: appearance) { AppAppearance.apply() }
+        caption("截图工具栏和刘海岛提示始终是深色。")
+      }
       Section("启动") {
         Toggle("登录时自动打开", isOn: launchAtLogin)
           .disabled(!LaunchAtLogin.isInstalled)
@@ -140,6 +149,37 @@ struct PermissionStatus: View {
         .symbolEffect(.bounce, value: granted)
         .accessibilityLabel(granted ? "已授权" : "未授权")
     }
+  }
+}
+
+/// 外观：改 NSApp.appearance，没自己定外观的窗口（浮层毛玻璃、设置窗、菜单栏菜单、欢迎引导）立刻跟着变；
+/// 截图 HUD（vibrantDark）、刘海岛（纯黑）、飞行卡片本来就固定深色，不受影响（mac-whisker §2）
+enum AppAppearance: String, CaseIterable, Identifiable {
+  case system, light, dark
+
+  var id: String { rawValue }
+
+  var title: String {
+    switch self {
+    case .system: "跟随系统"
+    case .light: "浅色"
+    case .dark: "深色"
+    }
+  }
+
+  /// 偏好值 → NSApp.appearance 的名字；nil = 跟随系统（没存过、存了认不得的值都算跟随系统）
+  static func name(for pref: String?) -> NSAppearance.Name? {
+    switch pref.flatMap(Self.init) {
+    case .light: .aqua
+    case .dark: .darkAqua
+    case .system, nil: nil
+    }
+  }
+
+  /// 按偏好设 NSApp.appearance：启动时（任何窗口出现前）和设置改了时各调一次
+  static func apply() {
+    NSApp.appearance = name(for: UserDefaults.standard.string(forKey: Prefs.appearance))
+      .flatMap(NSAppearance.init(named:))
   }
 }
 
