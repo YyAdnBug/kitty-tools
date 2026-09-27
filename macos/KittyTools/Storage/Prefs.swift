@@ -81,6 +81,10 @@ enum Prefs {
 
   /// 上次启动的版本号：没有 = 首次安装（打开欢迎引导），和当前不同 = 刚更新（打开关于页看更新内容）
   static let lastSeenVersion = "lastSeenVersion"
+  /// 自动检查更新（启动后一次、之后每天一次）
+  static let updateAutoCheck = "updateAutoCheck"
+  /// 已经用刘海岛提示过的新版本号（后台检查每个版本只提示一次）
+  static let updateNotifiedVersion = "updateNotifiedVersion"
   /// 设置窗上次看的页（SettingsPage.rawValue）
   static let settingsPage = "settingsPage"
 
@@ -97,6 +101,7 @@ enum Prefs {
       launcherRomanInput: false,
       launcherSqueezeEntrance: false,
       floatingPinned: false,
+      updateAutoCheck: true,
       clipboardHistoryMax: 0,  // 不限条数，只按天数裁剪
       clipboardRetentionDays: 7,
       clipboardImageBudgetMB: 512,

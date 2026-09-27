@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# 原生版打包（路径 B：Apple Development 签名、不公证，D7）：archive → 自检 → arm64 DMG → notes
-# 发布约束：GitHub 只发 pre-release，不要勾 Set as latest（Tauri updater 读 releases/latest/.../latest.json，
-#   被顶掉会让 Tauri 全平台更新 404）；GitCode 在确认 latest 排除预发布之前不发；
-#   发完在 master 工作区跑 pnpm release:verify。发布说明固定附「系统设置 › 隐私与安全性 › 仍要打开」步骤。
+# 原生版打包（路径 B：Apple Development 签名、不公证，D7）：archive → 自检 → arm64 DMG + 更新用 zip → notes
+# 发布（2026-09-27 起，和 Tauri 版的仓库无关）：发到本仓库 github.com/YyAdnBug/kitty-tools，tag macos-v<版本>、
+#   正式 release（标 latest：App 内更新读 releases/latest），附两个文件：DMG（首次安装）和 <名字>_<版本>_arm64.zip
+#   （App 内更新下载它，文件名后缀 _arm64.zip 别改）。发布说明固定附「系统设置 › 隐私与安全性 › 仍要打开」步骤
+#   （只有第一次安装要；之后 App 内更新下载的包不带隔离标记，不用再放行）。
 # 产物名跟 PRODUCT_NAME 走（N16：Kitty Tools.app、卷名 Kitty Tools、Kitty Tools_<版本>_arm64.dmg，之前叫 Kitty Tools Native）。
 #   和 Tauri 旧版同名，发布说明还要附：安装前先删掉（或让访达替换）/Applications 里旧版的 Kitty Tools.app；
 #   从 Kitty Tools Native 升上来的，把旧的 Kitty Tools Native.app 也删掉（同一个 bundle id，留着会让开机自启指错），
@@ -74,6 +75,15 @@ APPLESCRIPT
   rm -f "$RW"
 fi
 hdiutil verify "$DMG"
+# App 内更新用的 zip（Updater 下载后 ditto 解开、按同样的签名要求验签）：打完就解开验一次，别发出去才发现装不上
+ZIP="$OUT/${NAME}_${VERSION}_arm64.zip"
+ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
+CHECK="$OUT/zip-check" && rm -rf "$CHECK" && ditto -x -k "$ZIP" "$CHECK"
+codesign --verify --deep --strict \
+  -R '=identifier "com.yy.kitty-tools.native" and anchor apple generic and certificate leaf[subject.OU] = "HTX9F4KG39"' \
+  "$CHECK/$NAME.app"
+rm -rf "$CHECK"
 jq -r --arg v "$VERSION" '.[] | select(.version == $v) | .summary, (.changes[] | "- \(.scope)：\(.text)")' \
   "$CHANGELOG" > "$OUT/notes.txt"
 echo "$DMG"
+echo "$ZIP"

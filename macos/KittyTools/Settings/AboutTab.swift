@@ -1,6 +1,6 @@
 // 设置 › 关于（Whisker 品牌页）：128 pt 大图标（点一下摇一摇，悬停时跟着指针 3D 倾斜 ≤ 6°）+ 26 pt 圆体字标 +
-// 版本胶囊 + 更新日志时间线（随包分发的 changelog.json，最新版在前）；可以重看欢迎引导。
-// 更新后第一次启动会自动打开这一页（AppDelegate 比较 lastSeenVersion）。不做在线更新（PLAN D8）。
+// 版本胶囊 + 应用内更新（Updater：检查更新、发现新版本时「更新并重新打开」、自动检查开关）+ 更新日志时间线
+// （随包分发的 changelog.json，最新版在前）；可以重看欢迎引导。更新后第一次启动会自动打开这一页（AppDelegate 比较 lastSeenVersion）。
 
 import SwiftUI
 
@@ -20,12 +20,11 @@ struct AboutTab: View {
     var id: String { version }
   }
 
+  /// 应用内更新（截图自检里传一个摆好状态的；nil 就不显示更新那一行）
+  var updater: Updater?
   /// 重看欢迎引导
   var showOnboarding: () -> Void = {}
-
-  // 只发 GitHub 预发布版（tag macos-v*）；仓库里还有别的发布，按 tag 过滤
-  private static let releasesURL = URL(
-    string: "https://github.com/yyandbug-coder/kitty-tools/releases?q=macos-v&expanded=true")!
+  @AppStorage(Prefs.updateAutoCheck) private var autoCheck = true
 
   static let version =
     Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
@@ -52,8 +51,9 @@ struct AboutTab: View {
             .padding(.vertical, 4)
             .background(Style.brand.opacity(0.12), in: .capsule)
             .textSelection(.enabled)
+          if let updater { updateRow(updater) }
           HStack(spacing: 16) {
-            Button("打开发布页") { NSWorkspace.shared.open(Self.releasesURL) }
+            Button("打开发布页") { NSWorkspace.shared.open(Updater.releasesPage) }
             Button("重看欢迎指南", action: showOnboarding)
           }
           .buttonStyle(.plain).foregroundStyle(Style.brandInk).pointerStyle(.link)
@@ -79,6 +79,49 @@ struct AboutTab: View {
         .frame(maxWidth: .infinity, alignment: .leading)
       }
     }
+  }
+
+  /// 版本胶囊下面的更新状态。强调色只给「现在该操作的」：有新版本时的「更新并重新打开」；其余是文字链接
+  private func updateRow(_ updater: Updater) -> some View {
+    VStack(spacing: 8) {
+      HStack(spacing: 8) {
+        switch updater.state {
+        case .idle:
+          link("检查更新") { await updater.check(.page) }
+        case .checking:
+          ProgressView().controlSize(.small)
+          Text("正在检查更新…").foregroundStyle(.secondary)
+        case .upToDate:
+          Label("已是最新版本", systemImage: "checkmark.circle.fill").foregroundStyle(.secondary)
+          link("再查一次") { await updater.check(.page) }
+        case .available(let release):
+          Text("有新版本 \(release.version)")
+          Button("更新并重新打开") { Task { await updater.install(.page) } }
+            .buttonStyle(.borderedProminent).tint(Style.brand)
+          link("更新内容") { NSWorkspace.shared.open(release.page) }
+        case .installing(let release):
+          ProgressView().controlSize(.small)
+          Text("正在更新到 \(release.version)…").foregroundStyle(.secondary)
+        case .failed(let message):
+          Text(message).foregroundStyle(Color(nsColor: .systemRed))
+            .lineLimit(1).truncationMode(.tail)
+          link("重试") { await updater.check(.page) }
+        }
+      }
+      .font(.callout)
+      // 定高：有按钮和只有文字的状态一样高，切换时下面的内容不跳
+      .frame(height: 24)
+      .animation(Style.Motion.settle.animation(), value: updater.state)
+      Toggle("自动检查更新", isOn: $autoCheck)
+        .toggleStyle(.checkbox)
+        .font(.callout)
+        .foregroundStyle(.secondary)
+    }
+  }
+
+  private func link(_ title: String, _ action: @escaping () async -> Void) -> some View {
+    Button(title) { Task { await action() } }
+      .buttonStyle(.plain).foregroundStyle(Style.brandInk).pointerStyle(.link)
   }
 }
 

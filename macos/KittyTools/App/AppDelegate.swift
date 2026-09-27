@@ -40,6 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private let speaker = Speaker()
   /// 刘海岛（全局轻提示）
   private let island = Island()
+  /// 应用内更新（读本仓库的 GitHub release）
+  private let updater = Updater()
   /// CleanShot 式常驻缩略图（截图飞入右下角后留在那里）
   private let shelf = ShotShelf()
   /// 菜单栏图标与菜单（启动后才建：单测以本 App 为宿主时不往菜单栏加东西）
@@ -235,7 +237,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           TranslateTab(services: serviceStore, history: historyStore, speaker: speaker)
             .environment(island))
       case .hotkeys: AnyView(HotkeysTab(center: hotKeys))
-      case .about: AnyView(AboutTab { created?.navigation.showsOnboarding = true })
+      case .about:
+        // 开发版（bundle id 不同）不更新，不显示更新那一行
+        AnyView(
+          AboutTab(updater: updater.isSupported ? updater : nil) {
+            created?.navigation.showsOnboarding = true
+          })
       }
     } onboarding: { [unowned self] in
       AnyView(OnboardingView(center: hotKeys))
@@ -303,6 +310,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     statusItem.buildMenu = { [unowned self] in buildStatusMenu($0) }
     island.onToneChange = { [weak statusItem] in statusItem?.reflect($0) }
     self.statusItem = statusItem
+    updater.island = island
+    updater.start()
     launcherModel.rescanApps()  // 约 65ms，放在启动时，第一次呼出就不用等
     showWelcomeIfNeeded()
   }
@@ -780,8 +789,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 每次打开菜单前重建（N15）：按 HotKeyAction.sections 分节，和快捷键页同名同序，标题、符号、家族色也取自那里；
   /// 右边是当前生效的快捷键，没设 / 注册失败的留空；复制即译接在翻译节末尾，有钉图时截图节末尾多钉图两项；
-  /// 最后是设置、关于、退出
+  /// 有新版本时最上面是「更新到 x…」；最后是设置、关于、检查更新（正式版）、退出
   private func buildStatusMenu(_ menu: NSMenu) {
+    // 有新版本时最上面一项就是更新（强调色：现在该操作的东西）
+    if let release = updater.available {
+      menu.addAction(
+        "更新到 \(release.version)…", symbol: "arrow.down.circle.fill", color: NSColor(Style.brand)
+      ) { [unowned self] in Task { await updater.install() } }
+      menu.addItem(.separator())
+    }
     for (index, section) in HotKeyAction.sections.enumerated() {
       if index > 0 { menu.addItem(.separator()) }
       menu.addItem(.sectionHeader(title: section.title))
@@ -836,6 +852,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     menu.addAction("关于 Kitty Tools", symbol: "info.circle", color: gray) {
       [unowned self] in showSettings(page: .about)
+    }
+    if updater.isSupported {
+      menu.addAction("检查更新…", symbol: "arrow.triangle.2.circlepath", color: gray) {
+        [unowned self] in Task { await updater.check(.menu) }
+      }
     }
     menu.addAction("退出", symbol: "power", color: gray, key: "q") { NSApp.terminate(nil) }
   }

@@ -54,7 +54,8 @@ alwaysApply: true
 ## 7. 发版
 - 版本号唯一数据源是 Base.xcconfig 的 `MARKETING_VERSION`。改它必须在 `macos/KittyTools/Resources/changelog.json` 追加该版本条目（`{version, date, summary, changes:[{type, scope, text}]}`），`type` 只允许 feat / fix / perf / ui；缺条目时 `build-dmg.sh` 会中止。
 - 打包只用 `macos/build-dmg.sh`（arm64 DMG）；tag 用 `macos-v*`，打在 `main` 分支（2026-09-27 前叫 `macos-native`）。
-- GitHub 只发 **pre-release**，禁止勾 Set as latest（会让 Tauri updater 全平台 404）；GitCode 暂不发；发完在 master 工作区跑 `pnpm release:verify`（Tauri 的发版脚本和 `releases/latest.json` 只在 master 上）。细节见 `build-dmg.sh` 头部注释。
+- 发布到本仓库 github.com/YyAdnBug/kitty-tools（2026-09-27 起；**和 Tauri 版的仓库无关**，不往那边发）：正式 release、标 latest，附 DMG 和 `_arm64.zip` 两个文件——App 内更新（`App/Updater.swift`）读 `releases/latest`、下载 `_arm64.zip`，文件名后缀和 tag 前缀 `macos-v` 都别改。细节见 `build-dmg.sh` 头部注释。
+- 应用内更新的红线：只认本团队签名（`Updater.requirement`：bundle id + `anchor apple generic` + `leaf[subject.OU] = HTX9F4KG39`）且版本号和 release 一致的包；解包、验签交给系统的 `ditto` / `codesign`（`Process`，进程外），不在主线程做重活；换证书（团队不变）也能更新，但签名要求变了授权会重新要一次。
 
 ## 8. 语言与 commit
 - 用中文回答；文档写中文，代码注释可以写中文。

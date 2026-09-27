@@ -27,7 +27,7 @@ macos/                       # 本分支唯一开发区
 ├── KittyTools/              # 同步文件夹：App/ Shell/ Storage/ Clipboard/ Translate/ Screenshot/ Settings/ Resources/
 ├── KittyToolsTests/         # 纯函数单测（Swift Testing），M2 起建
 ├── Config/                  # Base/Debug/Release.xcconfig、Info.plist（局部）、Secrets.xcconfig（不入库）
-├── build-dmg.sh             # 打包：archive → 自检 → DMG → notes
+├── build-dmg.sh             # 打包：archive → 自检 → DMG + App 内更新用的 zip → notes
 ├── brand-icons.swift        # 品牌图标：角色「探头」的 AppIcon 10 张 + 菜单栏剪影 StatusIcon + DMG 背景（CoreGraphics 生成）
 ├── .swift-format
 └── PLAN.md                  # 迁移期历史方案（§2、§4、§8、§10–§12 仍有效）
@@ -41,7 +41,8 @@ macos/                       # 本分支唯一开发区
 
 ```bash
 # 构建 / 单测（联网冒烟：前面加 TEST_RUNNER_KITTY_LIVE_TRANSLATE=1，会真请求内置智谱；
-# 菜单开着时热键自检：TEST_RUNNER_KITTY_LIVE_HOTKEY=1 跑 HotKeyMenuTests，会弹真菜单、发一次合成按键）
+# 菜单开着时热键自检：TEST_RUNNER_KITTY_LIVE_HOTKEY=1 跑 HotKeyMenuTests，会弹真菜单、发一次合成按键；
+# 应用内更新整条链路：TEST_RUNNER_KITTY_UPDATE_ZIP=<build-dmg.sh 出的 _arm64.zip 绝对路径> 跑 UpdaterTests，只替换临时目录里的假 App）
 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools build
 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools test
 
@@ -57,7 +58,7 @@ xcrun swift-format format -i -r macos/KittyTools
 TEST_RUNNER_KITTY_SNAPSHOT_DIR=/tmp/kitty-shots xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:KittyToolsTests/SnapshotProbeTests
 
-# 打 Release DMG（产物在 macos/build/）
+# 打 Release DMG + App 内更新用的 zip（产物在 macos/build/）
 macos/build-dmg.sh
 
 # 重新生成 App 图标、菜单栏剪影和 DMG 背景（改角色或产品名只改这个脚本；加一个目录参数另存放大预览）
@@ -100,7 +101,7 @@ defaults delete com.yy.kitty-tools.native.dev folderAccessRequested
 - 刻意的简化写 `ponytail:` 注释，写明上限和升级路径。
 - commit 格式 `<type>: <description>`，type 取 feat / fix / ui / refactor / docs / perf / build / chore。
 - **更新日志（必遵）**：改 `MARKETING_VERSION` 必须在 `macos/KittyTools/Resources/changelog.json` 追加该版本条目，`type` 只允许 feat / fix / perf / ui（refactor / build / chore 不进用户日志）；缺条目时 `build-dmg.sh` 直接中止。
-- 发布：tag `macos-v*`；GitHub 只发 pre-release，不勾 Set as latest；不公证，发布说明固定附「系统设置 › 隐私与安全性 › 仍要打开」步骤。
+- 发布：本仓库 github.com/YyAdnBug/kitty-tools（不碰 Tauri 版的仓库），tag `macos-v*`，正式 release、标 latest，附 DMG 和 `_arm64.zip`（App 内更新用）；不公证，发布说明固定附「系统设置 › 隐私与安全性 › 仍要打开」步骤（只有第一次安装要，之后 App 内更新）。
 
 ## 给 agent 的工具
 

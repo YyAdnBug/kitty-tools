@@ -26,8 +26,8 @@
 | D4 | 规则是否提交进 git | 本分支提交：`.cursor/rules/mac-native.mdc`、`.cursor/rules/ponytail.mdc`（给 Cursor 用），以及各里程碑结束后写的 `.claude/skills/mac-*`。`.gitignore` 只放行这几项 | 规则跟着代码走，删掉 worktree 也不会丢 | 沿用 master 的做法，只存在本机 |
 | D5 | Bundle ID | Release 用 `com.yy.kitty-tools.native`，Debug 用 `com.yy.kitty-tools.native.dev`，**以后不再改** | Phase 1–3 期间启动器和截图还得用 Tauri 版，两个 App 一定会在同一台机器上共存。ID 相同会争用 TCC 授权、UserDefaults 域（`~/Library/Preferences/com.yy.kitty-tools.plist` 已被占用）和数据目录。Debug 要避开 Tauri dev 已占用的 `.dev` | 直接接替 `com.yy.kitty-tools`：只有不再共存时才成立。以后再改 ID 会丢设置和授权（2026-09-26：共存期结束，ID 仍不改） |
 | D6 | 显示名 | `Kitty Tools Native`（Debug：`Kitty Tools Native Dev`） | 能和 `Kitty Tools.app` 同时放在 /Applications | Tauri mac 版退役后改 `PRODUCT_NAME` 即可，ID 不变 |
-| D7 | Developer ID 与公证 | **✅ 已定（2026-09-24）：长期不公证**，只走路径 B（Apple Development 签名，Team `HTX9F4KG39`，证书 2027-06-10 到期） | 没有 Apple Developer Program 付费会员，拿不到 Developer ID。代价：macOS 15 用户每装一个新版本都要去系统设置点「仍要打开」，发布说明固定写上这个步骤 | 将来入会后按 §8.4 补公证 |
-| D8 | 应用内更新 | Phase 1 不做；关于页只显示版本号和「打开发布页」按钮 | Apple 没有面向 DMG 分发的官方更新框架。不公证时每次都要手动放行，自己写的检查器体验和手动更新差不多 | 以后要做：自写约 60 行的检查器（读 GitHub release），或 Sparkle 2（第三方，需要你同意） |
+| D7 | Developer ID 与公证 | **✅ 已定（2026-09-24）：长期不公证**，只走路径 B（Apple Development 签名，Team `HTX9F4KG39`，证书 2027-06-10 到期） | 没有 Apple Developer Program 付费会员，拿不到 Developer ID。代价：macOS 15 用户第一次安装要去系统设置点「仍要打开」，发布说明固定写上这个步骤（2026-09-27 起之后的版本走 App 内更新，不用再放行，D8） | 将来入会后按 §8.4 补公证 |
+| D8 | 应用内更新 | **2026-09-27 改为做**（用户要求）：`App/Updater.swift` 读本仓库 github.com/YyAdnBug/kitty-tools 的 latest release（tag `macos-v*`，和 Tauri 版的仓库无关），下载 `*_arm64.zip` → `ditto` 解到 App 所在卷 → `codesign -R` 校验 bundle id + Apple 签发 + 团队 HTX9F4KG39、核对版本号 → 原子替换正在运行的 .app → 等进程退出后重新打开 | 原来的顾虑「不公证时每次都要手动放行」不成立：App 自己用 URLSession 下载的文件不带隔离标记（实测），只有第一次安装要「仍要打开」；证书不变授权不丢 | 不用 Sparkle（禁止第三方依赖）；解包、验签用系统的 ditto / codesign（Process，进程外），不新增 C API 代码 |
 | D9 | 旧 Tauri 数据 | 手动触发的一次性导入，**分两步**：M4 导偏好和密钥；M6 导**保留类**剪贴板条目（收藏、片段、已归组）及其图片、分组，以及**全部**翻译历史。**普通历史和热键不导** | 普通历史只保留 7 天，共存期间原生版自己已经采集到了，导进来只会重复。热键导进来一定和共存的 Tauri 冲突。偏好和密钥提前到 M4，M4/M5 就能直接拿真实配置测 | 连普通历史一起导（差别只是去掉一个 WHERE 条件）；或者从空库开始（2026-09-26：导入已删除） |
 | D10 | CPU 架构 | **✅ 已定（2026-09-24）：只支持 Apple 芯片**，`ARCHS = arm64` 写在 Base.xcconfig | 基本自用，Intel 不在目标内；构建更快、包更小 | — |
 | D11 | 翻译服务迁多少 | **✅ 已定（2026-09-24）：全部迁移**：智谱内置、百度、有道、Google、DeepL / DeepLX、微软、火山、腾讯，以及 AI 实例的 openai / azure / anthropic 三种协议 | 与 Tauri 版功能对齐。M4 做智谱 + AI 三协议，M5 做其余 7 家（火山、腾讯的手写签名各算 M） | — |
@@ -112,6 +112,7 @@ xcuserdata/
 | Foundation `URLSession.bytes(for:)`、`AttributedString(markdown:)` | 12 | SSE 流式输出、行内 Markdown |
 | CryptoKit：`Insecure.MD5`、`SHA256` | 10.15 | 百度 / 有道签名、图片去重 hash |
 | Security `SecItem*` | — | API Key 存钥匙串 |
+| Foundation `URLSession.download`、`Process`（调系统的 `/usr/bin/ditto`、`/usr/bin/codesign`） | — | 应用内更新：下载更新包、解包、验签（D8） |
 | 系统 libsqlite3（`import SQLite3`；本机 3.43.2，带 FTS5） | — | 剪贴板历史和翻译历史 |
 | ServiceManagement `SMAppService.mainApp` | 13 | 开机自启 |
 | `os.Logger`、Swift Testing | 11 / Xcode 16 | 日志、单元测试 |
@@ -207,7 +208,7 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 4. **风格**：Swift API 设计规范；`xcrun swift-format lint --strict` 是唯一的格式标准；日期统一用 `Date.FormatStyle`；单行文本用 `lineLimit(1)` + `.truncationMode(.tail)`。
 5. **剪贴板写入**：自己写剪贴板一律经过 `Paster.write`，它负责记下 changeCount 并加上 `org.nspasteboard.TransientType`（2026-09-26 改：只有划词还原加 TransientType）。
 6. **签名**：固定 `DEVELOPMENT_TEAM`，用 Apple Development 自动签名，禁止「Sign to Run Locally」；ID 见 D5；用 `codesign -d -r-` 自检；授权卡住时执行 `tccutil reset Accessibility com.yy.kitty-tools.native.dev`。
-7. **发版**：改 `MARKETING_VERSION` 必须在 `macos/KittyTools/Resources/changelog.json` 追加条目，type 只允许 feat / fix / perf / ui；tag 用 `macos-v*`；GitHub 只发 prerelease（详见 `build-dmg.sh` 头部注释）。
+7. **发版**：改 `MARKETING_VERSION` 必须在 `macos/KittyTools/Resources/changelog.json` 追加条目，type 只允许 feat / fix / perf / ui；tag 用 `macos-v*`；发到本仓库 github.com/YyAdnBug/kitty-tools，正式 release、标 latest，附 DMG 和 `_arm64.zip`（2026-09-27 起，详见 `build-dmg.sh` 头部注释）。
 8. 用中文回答；commit 格式 `<type>: <description>`。
 
 **按需技能**：等对应里程碑结束、真的踩过坑之后再写。`SKILL.md` 只写触发描述和红线，`rule.mdc` 是指向 `.cursor/rules/mac-*.mdc` 的符号链接。
@@ -238,7 +239,7 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 
 | 目录 | 文件 |
 |---|---|
-| `App/` | `KittyToolsApp.swift`（@main 和 MenuBarExtra）、`AppDelegate.swift`（单实例检查、组装对象、生命周期、退出和锁屏清理） |
+| `App/` | `KittyToolsApp.swift`（@main 和 MenuBarExtra）、`AppDelegate.swift`（单实例检查、组装对象、生命周期、退出和锁屏清理）、`Updater.swift`（应用内更新，D8） |
 | `Shell/` | `OverlayPanel.swift`、`HotKeyCenter.swift`、`HotKeyRecorder.swift`、`Permissions.swift`（辅助功能、屏幕录制、文件和文件夹授权）、`Paster.swift`、`Style.swift`（Whisker 刻度：圆角、七条弹簧曲线、中性色 / 家族色、种类色块、键帽、面板描边）、`Accent.swift`（强调色：跟随系统 + 8 色、配色计算、根视图的 `.appAccent()`）、`Island.swift`（刘海岛：全局轻提示，替换原来的 Toast）、`StatusItem.swift`（菜单栏图标与菜单，NSStatusItem，Whisker D 的呼吸 / 弹一下）、`ActionMenu.swift`（剪贴板 ⌘K、剪贴板筛选面板、启动器 ⌘K 共用的动作菜单） |
 | `Storage/` | `Database.swift`、`Keychain.swift`、`Prefs.swift`、`LegacyImport.swift` |
 | `Clipboard/` | `ClipboardWatcher.swift`、`ClipboardStore.swift`、`ClipItem.swift`、`ClipboardFilter.swift`、`ContentForm.swift`、`Search.swift`、`ImageStore.swift`、`OCR.swift`、`ClipboardPanelView.swift`、`ClipRowView.swift`、`PreviewView.swift`、`Dialogs.swift`、`LinkPreview.swift`（链接富预览：按块读网页 og 标签、isFetchable、内存缓存）、`QuickLookView.swift`（⌘Y 放大预览） |
@@ -404,7 +405,7 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 | `ALLOW_APP_EXIT` 退出拦截 | 不需要（AppKit 关掉最后一个窗口不会退出） | S | 清理逻辑放在 `applicationWillTerminate` |
 | 通用 Tab | `SMAppService.mainApp`（状态为 `.requiresApproval` 时引导；从 DMG 里直接运行时不注册）；外观（浅色 / 深色 / 跟随系统）用 `NSApp.appearance`；权限卡片；「从旧版导入」按钮（M4 先放这个按钮） | S | 权限卡片：<br>• 辅助功能：调一次带 prompt 的 `AXIsProcessTrustedWithOptions`。<br>• 剪贴板访问（`#available(macOS 15.4, *)`）：`.default` 和 `.alwaysAllow` 不显示卡片（`.default` 表示从未触发过弹窗，此时系统设置面板里根本没有本 App）；`.ask` 引导用户到「隐私与安全性 › 从其他 App 粘贴」改成始终允许；`.alwaysDeny` 显示错误卡片，说明剪贴板采集已被系统拒绝 |
 | 快捷键 Tab | `HotKeyRecorder`：用本地 keyDown 监听录制 | M | 不按修饰键组合一刀切：直接尝试注册，把 -9868 映射成「当前系统（15.0/15.1）不支持只带 ⌥ 的组合」。有「清除」按钮（设为 nil，显示「未设置」）。录制期间注销全部全局热键 |
-| 关于 Tab 和更新日志弹窗 `src-tauri/src/commands/app_update.rs` 的 `arm_whats_new_release` | `lastSeenVersion` 存 UserDefaults；版本变化且不是首次安装时，打开设置窗的关于 Tab；`changelog.json` 随包分发 | S | 不做在线更新（见 D8） |
+| 关于 Tab 和更新日志弹窗 `src-tauri/src/commands/app_update.rs` 的 `arm_whats_new_release` | `lastSeenVersion` 存 UserDefaults；版本变化且不是首次安装时，打开设置窗的关于 Tab；`changelog.json` 随包分发 | S | 在线更新见 D8（`App/Updater.swift`） |
 | 功能主页、7 步欢迎引导 | 砍掉 | — | 首次启动直接打开设置窗通用页 |
 
 ---
@@ -488,7 +489,7 @@ CREATE TABLE clip_groups(id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at INT
 4. 运行 Debug 版：菜单栏出现图标，Dock 没有图标；「关于」面板是中文。
 5. `codesign -d -r- <Debug.app>` 的输出里包含 `anchor apple generic` 和 `com.yy.kitty-tools.native.dev`，而不是 cdhash。
 6. `macos/build-dmg.sh` 产出 `Kitty Tools Native_0.0.1_arm64.dmg`，`lipo -archs` 输出 `arm64`，`hdiutil verify` 通过。
-7. **模拟真实下载**：本机生成的 DMG 没有隔离属性，Gatekeeper 不会评估它，直接测等于没测。先执行 `xattr -w com.apple.quarantine "0081;$(printf %x $(date +%s));Safari;" "$DMG"`（或者从 GitHub prerelease 用 Safari 下载），再挂载、拖进 Applications。`spctl -a -vvv -t exec "/Applications/Kitty Tools Native.app"` 应显示 rejected；到系统设置点「仍要打开」后能正常启动。
+7. **模拟真实下载**：本机生成的 DMG 没有隔离属性，Gatekeeper 不会评估它，直接测等于没测。先执行 `xattr -w com.apple.quarantine "0081;$(printf %x $(date +%s));Safari;" "$DMG"`（或者从本仓库的 GitHub release 用 Safari 下载），再挂载、拖进 Applications。`spctl -a -vvv -t exec "/Applications/Kitty Tools Native.app"` 应显示 rejected；到系统设置点「仍要打开」后能正常启动。
    - 注：开发机 Gatekeeper 已关闭（`spctl --status` = assessments disabled，M0 实测），本机一律 accepted；这条只能在开着 Gatekeeper 的 Mac 上验证。
 8. 在 worktree 里新开一个会话：只加载了 `mac-native`，没有加载 Tauri 规则；`claude mcp list` 能看到 sosumi；swiftui-expert-skill 可用。
 
@@ -551,15 +552,15 @@ CREATE TABLE clip_groups(id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at INT
 3. `log show --predicate 'subsystem == "com.yy.kitty-tools.native.dev"'` 的输出里找不到任何密钥。
 
 ### M6：旧数据导入、收尾、发布 0.1.0
-**交付物**：`LegacyImport` 的数据部分；通用页（权限卡片、剪贴板访问卡片、导入按钮）；开机自启；关于页和更新日志；0.1.0 prerelease。
+**交付物**：`LegacyImport` 的数据部分；通用页（权限卡片、剪贴板访问卡片、导入按钮）；开机自启；关于页和更新日志；0.1.0 发布（2026-09-27 起：本仓库正式 release，见 §8.5）。
 
 **验收标准**
 1. 用本机真实旧数据导入：导入结果里「新增 + 合并 + 跳过」= 旧库 `SELECT count(*) FROM clipboard_history WHERE favorited=1 OR kind='snippet' OR group_id IS NOT NULL`；收藏、片段、分组、备注都在，图片能预览；翻译历史里旧库的收藏仍是收藏；第二次导入全部计入「合并」，不产生重复。
 2. Tauri 已退出时导入成功；Tauri 运行中导入也成功，或者明确提示「请先退出旧版」，不会导进半截数据。
 3. 导入前后，旧库文件（含 `-wal`、`-shm`）的 mtime 不变。
 4. `security find-generic-password -s com.yy.kitty-tools.native -a baidu.secret` 能找到条目；`defaults read com.yy.kitty-tools.native` 的输出里没有任何密钥。
-5. 在另一台机器或另一个 macOS 15 用户账户上，从 GitHub prerelease 下载 DMG 全新安装，首次启动流程能走通。
-6. GitHub prerelease 发布后，在 master 工作区运行 `pnpm release:verify` 仍然通过。
+5. 在另一台机器或另一个 macOS 15 用户账户上，从本仓库的 GitHub release 下载 DMG 全新安装，首次启动流程能走通。
+6. ~~GitHub prerelease 发布后，在 master 工作区运行 `pnpm release:verify` 仍然通过。~~（2026-09-27 废止：原生版发在本仓库，不碰 Tauri 仓库）
 
 ---
 
@@ -622,7 +623,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 
 ### 8.2 `macos/build-dmg.sh`（只有路径 B）
 
-以脚本本身为准（发布约束写在它头部注释里），这里不再贴全文。流程：archive → 校验 changelog 有本版条目 → `codesign --verify` → 查 `get-task-allow` → `lipo -archs` → 拷进暂存目录并放 Applications 链接 → 出 DMG（产物名跟 `PRODUCT_NAME` 走：`Kitty Tools_<版本>_arm64.dmg`，卷名 `Kitty Tools`）→ `hdiutil verify` → 生成 `notes.txt`。
+以脚本本身为准（发布约束写在它头部注释里），这里不再贴全文。流程：archive → 校验 changelog 有本版条目 → `codesign --verify` → 查 `get-task-allow` → `lipo -archs` → 拷进暂存目录并放 Applications 链接 → 出 DMG（产物名跟 `PRODUCT_NAME` 走：`Kitty Tools_<版本>_arm64.dmg`，卷名 `Kitty Tools`）→ `hdiutil verify` → `ditto -c -k --sequesterRsrc --keepParent` 出 App 内更新用的 `<名字>_<版本>_arm64.zip`，当场解开按 `Updater.requirement` 验签 → 生成 `notes.txt`。
 
 几个选择：
 - DMG 格式用 UDZO，这是 Apple DTS 的建议。
@@ -639,7 +640,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   1. 打开 DMG，把 App 拖进 Applications。和 Tauri 旧版同名：先删掉（或让访达替换）/Applications 里旧版的 `Kitty Tools.app`；从 Kitty Tools Native 升上来的，把旧的 `Kitty Tools Native.app` 也删掉，开机自启可能要在 设置 › 通用 重新打开一次。
   2. 双击时被系统拦下，提示「未打开」。签名是有效的，所以提示不是「已损坏」。
   3. 到「系统设置 › 隐私与安全性」点「仍要打开」（尝试打开后约 1 小时内有效），然后输入密码。也可以直接执行 `xattr -dr com.apple.quarantine "/Applications/Kitty Tools.app"`。
-- **每个新版本都要重复一次上面的步骤。**
+- **只有第一次安装要做上面的步骤**；之后走 App 内更新（D8），下载的包不带隔离标记，不用再放行。
 - 比现在的 adhoc 签名好的一点：签名要求绑定在证书上，所以更新后辅助功能授权不会丢。
 
 ### 8.4 路径 A：有 Developer ID（D7 已定不做；仅留作将来入会时的步骤备忘，不写任何文件）
@@ -657,9 +658,9 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 ### 8.5 发布
 
 1. 版本和 tag：Phase 1 发布版为 `0.1.0`，tag 是 `macos-v0.1.0`（打在 `main` 分支上，原名 `macos-native`）。原生版的版本号与 Tauri 版的 0.1.x 各自独立。
-2. 在 GitHub 网页上发 Release（本机没装 `gh`）：**勾选 pre-release，不要勾 Set as latest release**。Tauri 的 updater 读的是 `releases/latest/.../latest.json`，一旦被原生版顶成 latest，Tauri 全平台的更新都会 404。
-3. GitCode：在确认它的 `releases/latest` 会排除预发布版本之前，不在 GitCode 上发布。
-4. 发布后，在 master 工作区执行 `pnpm release:verify`。不修改 `releases/latest.json`。
+2. （2026-09-27 起）在本仓库 github.com/YyAdnBug/kitty-tools 的网页上发**正式 Release**（标 latest，本机没装 `gh`）：tag `macos-v<版本>`，附 `build-dmg.sh` 出的 DMG（首次安装）和 `_arm64.zip`（App 内更新下载它）。和 Tauri 版的仓库无关。~~旧：勾选 pre-release，不要勾 Set as latest release。~~Tauri 的 updater 读的是 `releases/latest/.../latest.json`，一旦被原生版顶成 latest，Tauri 全平台的更新都会 404。
+3. ~~GitCode：在确认它的 `releases/latest` 会排除预发布版本之前，不在 GitCode 上发布。~~（2026-09-27 废止，同下）
+4. ~~发布后，在 master 工作区执行 `pnpm release:verify`。不修改 `releases/latest.json`。~~（2026-09-27 废止：那是 Tauri 仓库的约束，原生版发在本仓库）
 5. CI：Phase 1 不做。以后需要时用 `macos-15` runner，并 `xcode-select` 到 `Xcode_26.3`，保持和本机同一版本。
 
 ---
@@ -680,8 +681,8 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 | 多实例 | 从 DMG 里运行一份、/Applications 再启动一份，热键重复、两个进程写同一个库 | 启动时检查同 bundle id 的其它实例（§4） |
 | App Nap | 空闲时 timer 被降频，连续快速复制可能漏条 | M2 实测，漏了再持有 `beginActivity` |
 | 旧库导入 | WAL 库只读打开失败；Tauri 运行中复制可能拿到写到一半的副本 | 复制到临时目录后读写打开，`PRAGMA quick_check` 不通过就中止并提示先退出旧版（§6） |
-| Gatekeeper | 没有 Developer ID，每个新版本都要手动放行 | D7 长期如此；发布说明固定写「仍要打开」和 `xattr` 两种做法 |
-| Tauri 更新被影响 | 原生版如果成为 GitHub 的 latest release，Tauri 更新会 404 | 只发 prerelease；GitCode 确认前不发；发完跑 `pnpm release:verify` |
+| Gatekeeper | 没有 Developer ID，第一次安装要手动放行 | D7 长期如此；发布说明固定写「仍要打开」和 `xattr` 两种做法；之后走 App 内更新（D8）不用再放行 |
+| ~~Tauri 更新被影响~~ | 2026-09-27 起原生版发在自己的仓库（YyAdnBug/kitty-tools），不再影响 Tauri 仓库的 latest | 本仓库正常标 latest |
 | ATS 与本地网络隐私 | http 地址被 ATS 拦截；访问局域网 LLM 时弹授权 | 设置 `NSAllowsArbitraryLoads` 和 `NSLocalNetworkUsageDescription`；127.0.0.1 不受影响 |
 | Swift 6 严格并发和 C API（Carbon、AX、sqlite3） | 编译报错一大片 | 和 C 交互的代码只放在 `HotKeyCenter`、`Database`、`SelectionReader` 三个类型里；主线程回调里用 `MainActor.assumeIsolated`；禁止用 `@unchecked Sendable` 糊过去 |
 | LSUIElement 应用的设置窗 | 窗口被压在其它 App 后面；固定的浮层盖在设置窗上面 | 先收起两个浮层，再切 `.regular` 并 `activate()`；macOS 14 起激活是协作式的，M3/M4 从三个入口实测，不行就退回 `activate(ignoringOtherApps:)` |
@@ -826,7 +827,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 
 **下一步（新会话从这里接着做）**：D4 查词、M13 文件搜索已完成（2026-09-26，待手测）；接下来 M13 的动作面板（→ / ⌘K）+ ⌘Y Quick Look + kill（§10），动手前先按对标规则给用户「差距 + 推荐范围」。
 
-**暂不发版**（用户决定，2026-09-24）：0.1.0 只在本地用 `macos/build-dmg.sh` 打包自用（arm64、Apple Development 签名、无 get-task-allow），不打 tag、不发 GitHub / GitCode；以后要发时再按下面的「发布 0.1.0」步骤，且须先经用户确认。
+**暂不发版**（用户决定，2026-09-24）：0.1.0 只在本地用 `macos/build-dmg.sh` 打包自用（arm64、Apple Development 签名、无 get-task-allow），不打 tag、不发 GitHub / GitCode；以后要发时再按下面的「发布 0.1.0」步骤（2026-09-27 已改成发到本仓库），且须先经用户确认。
 
 **待用户手测**（代码已就绪，清单见各里程碑验收标准）：M1 #1–#5、M2 #2、M3 #1–#3、M4 #2–#8、M5 #1、~~M6 #1–#5~~（2026-09-26：导入已删除），以及 §11「翻译语言」的几种组合；截图翻译手测：
   1. 首次按 ⌥S：弹一次系统「屏幕录制」授权框，同时打开系统设置 › 屏幕录制，刘海岛警告「需要「屏幕录制」授权」（2026-09-27 起不再借翻译浮窗说）；授权（必要时重开 App）后再按能进入框选。
@@ -971,14 +972,14 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
     21. N10 搜「剪贴板」：副标题只写「Kitty Tools」，选中时右侧有它的快捷键键帽（⌥C）；没设快捷键的动作不显示键帽；输 Clipboard 仍能搜到。
   - 设置与引导：
     22. N11 启动器 / 翻译 / 截图三页没有大段按键说明，「查看全部快捷键…」弹出速查表：按家族分组、键帽显示，全局热键是当前设置的组合（改了快捷键再开跟着变）。
-    23. N12 翻译服务、网页搜索列表：拖动排序（重开 App 仍是新顺序），行上开关，下面「+ −」；点一行进详情页（大图标 + 名称、表单、密钥、测试连接），能返回列表。
+    23. N12 翻译服务、网页搜索列表：拖动排序（重开 App 仍是新顺序），行上开关，下面「+ −」；点一行进详情页（大图标 + 名称、表单、密钥、测试连接），点工具栏「‹」或 ⌘[ 返回列表（别的页上「‹」置灰，推进 / 返回时标题栏和内容不跳）。
     24. N13 快捷键页：按 剪贴板与启动器 / 翻译 / 截图 分组，行首家族色块；点输入框按下组合即录入，ⓧ 清除，右键「恢复默认」；注册失败（15.0–15.1 上只带 ⌥ 的组合）在那一行下面出橙字说明。
     25. N14 `defaults delete com.yy.kitty-tools.native.dev lastSeenVersion` 后重开：一页欢迎（图标、大标题、四行功能，授权状态嵌在对应行、授权后一秒内变绿）→「按一下试试」：真按 ⌥C 等热键时那一行打勾弹 ✓；没有跳过、页码点、上一步；关于页能重看。
   - 菜单栏与名字：
     26. N15 菜单分三节（剪贴板与启动器 / 翻译 / 截图，带节标题），复制即译在翻译节；没设快捷键的项右边空着，不写「未设置快捷键」。
     27. N16 先删掉 /Applications 里旧版 Tauri 的「Kitty Tools.app」再装：程序坞、访达、菜单栏「关于」都叫 Kitty Tools（Debug 叫 Kitty Tools Dev）；授权、偏好、钥匙串里的密钥都还在（Bundle ID 没变）；开机自启不生效就在设置 › 通用重新打开一次。
 
-**发布 0.1.0**：`macos/build-dmg.sh` 出 arm64 DMG → GitHub（`yyandbug-coder/kitty-tools`）**prerelease**、不勾 Set as latest（见 build-dmg.sh 头部注释），**发布前须经用户确认**；tag `macos-v0.1.0` 打在 `macos-native`；发完在 master 工作区跑 `pnpm release:verify`。
+**发布 0.1.0**（2026-09-27 改）：`macos/build-dmg.sh` 出 arm64 DMG 和 `_arm64.zip` → 本仓库 github.com/YyAdnBug/kitty-tools 发**正式 release、标 latest**（App 内更新读 `releases/latest`；不碰 Tauri 版的仓库，不跑 `pnpm release:verify`），两个文件都附上，**发布前须经用户确认**；tag `macos-v0.1.0` 打在 `main`。发布前先把 changelog.json 的 0.1.0 条目补全（启动器、截图、应用内更新等还没写进去）。
 
 **接手须知**：先读 `AGENTS.md`、`.cursor/rules/mac-native.mdc`，改哪块读哪块的技能（mac-overlay-panel / mac-clipboard / mac-translate）。界面改动用 SnapshotProbeTests 屏幕外渲染自检，**不要**为截图弹出浮层（会抢用户键盘）；联网冒烟 `TEST_RUNNER_KITTY_LIVE_TRANSLATE=1`；真实旧库演练 `TEST_RUNNER_KITTY_LEGACY_DRY_RUN=1`。用户要求：只兼容 macOS、不照搬 Tauri 实现、样式与交互可按 macOS 习惯重新设计、照搬行为前先核对旧逻辑有没有 bug（记入 §11）。
 

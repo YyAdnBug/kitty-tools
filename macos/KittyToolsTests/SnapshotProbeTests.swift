@@ -236,7 +236,7 @@ struct SnapshotProbeTests {
       case .translate:
         AnyView(TranslateTab(services: services, history: history, speaker: speaker))
       case .hotkeys: AnyView(HotkeysTab(center: hotKeys))
-      case .about: AnyView(AboutTab())
+      case .about: AnyView(AboutTab(updater: Updater()))
       }
     }
     let navigation = SettingsNavigation()
@@ -249,6 +249,27 @@ struct SnapshotProbeTests {
         SettingsRoot(navigation: navigation, page: pages) { AnyView(EmptyView()) },
         size: NSSize(width: 780, height: 600), dark: dark,
         to: "\(out)/settings-\(page.rawValue)\(dark ? "-dark" : "").png")
+    }
+    // 关于页的应用内更新：有新版本（强调色按钮）、正在更新、已是最新、检查失败
+    let release = Updater.Release(
+      version: "0.2.0", archive: URL(string: "https://example.com/Kitty.zip")!,
+      page: Updater.releasesPage)
+    let updateStates: [(String, Updater.State, Bool)] = [
+      ("available", .available(release), false), ("available", .available(release), true),
+      ("installing", .installing(release), false), ("latest", .upToDate, false),
+      ("failed", .failed("检查更新失败：网络连接已中断。"), false),
+    ]
+    navigation.page = .about
+    for (name, state, dark) in updateStates {
+      let updater = Updater(state: state)
+      try snapshot(
+        SettingsRoot(navigation: navigation) { page in
+          page == .about ? AnyView(AboutTab(updater: updater)) : pages(page)
+        } onboarding: {
+          AnyView(EmptyView())
+        },
+        size: NSSize(width: 780, height: 600), dark: dark,
+        to: "\(out)/settings-about-update-\(name)\(dark ? "-dark" : "").png")
     }
     // 最小窗口（contentMinSize 700 × 460）下的通用页：外观缩略图、强调色两排放得下
     navigation.page = .general
