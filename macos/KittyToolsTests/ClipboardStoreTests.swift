@@ -4,6 +4,7 @@
 
 import AppKit
 import Foundation
+import SwiftUI
 import Testing
 
 @testable import KittyTools
@@ -44,16 +45,19 @@ struct ClipboardStoreTests {
     snippet.isSnippet = true
     var grouped = text("grouped", ago: 100 * 86_400)
     grouped.groupID = UUID()
+    // record 末尾按偏好（Limits.current，读宿主的 UserDefaults，别的测试可能 registerDefaults）先裁一次：
+    // 普通条目都记成「此刻或以后」，再把 now 拨后 10 天造出超期，偏好怎么设（最少 1 天 / 50 条）都裁不到
+    let later = Date.now.addingTimeInterval(10 * 86_400)
     for item in [
-      favorite, snippet, grouped, text("old", ago: 10 * 86_400), text("x", ago: 2),
-      text("y", ago: 1),
+      favorite, snippet, grouped, text("old"), text("x", ago: -9 * 86_400),
+      text("y", ago: -9 * 86_400),
     ] {
       store.record(item)
     }
     // 删了几条要报给设置页的刘海提示：old（超天数）+ x（超条数）
-    #expect(store.enforceLimits(.init(maxCount: 1, maxAge: 7 * 86_400)) == 2)
+    #expect(store.enforceLimits(.init(maxCount: 1, maxAge: 7 * 86_400), now: later) == 2)
     #expect(Set(store.items.compactMap(\.text)) == ["fav", "snippet", "grouped", "y"])
-    #expect(store.enforceLimits(.init(maxCount: 1, maxAge: 7 * 86_400)) == 0)
+    #expect(store.enforceLimits(.init(maxCount: 1, maxAge: 7 * 86_400), now: later) == 0)
   }
 
   @Test func imageBudgetEvictsOldestOrdinaryImages() throws {
@@ -213,7 +217,7 @@ struct ClipboardStoreTests {
   @Test func listLayoutPrefixSums() {
     let (a, b, c) = (text("a"), text("b"), text("c"))
     let sections: [ClipboardPanelView.DaySection] = [
-      ("今天", [(0, a), (1, b)]), ("昨天", [(2, c)]),
+      (.now, "今天", [(0, a), (1, b)]), (.distantPast, "昨天", [(2, c)]),
     ]
     let layout = ListLayout(sections: sections, items: [a, b, c], lens: (b.id, 198))
     #expect(layout.offset(of: a.id) == 24)
@@ -224,6 +228,113 @@ struct ClipboardStoreTests {
     let flat = ListLayout(leading: 40, items: [a, b, c], lens: nil)
     #expect(flat.offset(of: c.id) == 120)
     #expect(flat.sectionTops.isEmpty)
+  }
+
+  /// 剪贴板面板挂进屏外窗口（不弹面板、不抢键盘）；「显示透镜」等用临时偏好域，不读 Dev 版里手测时改过的设置
+  private func showPanel(_ model: ClipboardPanelModel) throws -> (
+    window: NSWindow, close: () -> Void
+  ) {
+    let window = NSWindow(
+      contentRect: NSRect(x: -20000, y: -20000, width: ClipboardPanelView.width, height: 520),
+      styleMask: [.borderless], backing: .buffered, defer: false)
+    let suite = "kitty-lens-test-\(UUID().uuidString)"
+    let prefs = try #require(UserDefaults(suiteName: suite))
+    window.contentView = NSHostingView(
+      rootView: ClipboardPanelView(model: model).defaultAppStorage(prefs))
+    window.orderFront(nil)
+    return (
+      window,
+      {
+        window.orderOut(nil)
+        prefs.removePersistentDomain(forName: suite)
+      }
+    )
+  }
+
+  /// 每行背景里的 HoverTracker 是一个和整行（含透镜）一样大的 NSView：拿它的 frame（窗口坐标，原点左下）当行实际画在哪
+  private func drawnRows(in view: NSView) -> [CGRect] {
+    (String(describing: type(of: view)) == "TrackingView"
+      ? [view.convert(view.bounds, to: nil)] : [])
+      + view.subviews.flatMap(drawnRows(in:))
+  }
+
+  /// 实际画出来的行里正好一行展开成选中项的透镜，⌘Y 的起点（cardFrame，窗口坐标、原点左上）就是这一行；返回这一行
+  @discardableResult
+  private func expectLens(
+    _ model: ClipboardPanelModel, in window: NSWindow, _ step: Comment
+  ) throws -> (item: ClipItem, row: CGRect, drawn: [CGRect]) {
+    let view = try #require(window.contentView)
+    let item = try #require(model.selectedItem)
+    let lens = Lens.height(for: item, form: model.contentForm(of: item))
+    let drawn = drawnRows(in: view).sorted { $0.maxY > $1.maxY }
+    let expanded = drawn.filter { $0.height > ClipRowView.height + 1 }
+    #expect(expanded.count == 1 && abs(expanded[0].height - lens) < 0.5, step)
+    let row = try #require(expanded.first, step)
+    let card = try #require(model.cardFrame, step)
+    #expect(card.id == item.id, step)
+    #expect(
+      abs(card.rect.minY - (view.bounds.height - row.maxY)) < 0.5
+        && abs(card.rect.height - lens) < 0.5, step)
+    return (item, row, drawn)
+  }
+
+  /// 选中行换了所在分组（有没有搜索词在分组 / 平铺间切换、昨天的条目再复制挪进「今天」）后照样按透镜高度展开、跟着选中走：
+  /// 透镜那一行离第一行的距离 = 前缀和里的差（高亮按前缀和画）。行的身份只有条目 id 时这里失败：旧行被原样搬过去、
+  /// 不再更新，透镜不展开，高亮盖住下面几行。昨天那条取昨天最后一秒，保留天数最短 1 天也不会被裁掉
+  @Test func lensFollowsRowsAcrossSections() throws {
+    let (store, _) = try makeStore()
+    let sinceMidnight = Date.now.timeIntervalSince(Calendar.current.startOfDay(for: .now))
+    store.record(text("昨天的一段文字", ago: sinceMidnight + 1))
+    store.record(text("YyAdnBug/kitty-tools", ago: 600))
+    store.record(text("https://github.com/YyAdnBug/kitty-tools.git", ago: 400))
+    store.record(text("短文本", ago: 100))
+    let model = ClipboardPanelModel(store: store)
+    let (window, close) = try showPanel(model)
+    defer { close() }
+    func check(_ step: Comment) throws {
+      let items = model.visibleItems
+      // 至少等 0.5 s 让透镜动画走完；删掉的行还在播退场就再等（最多 2 s），一直多出来的行（搬走没清掉的旧行）照样失败
+      for tick in 0..<25 {
+        RunLoop.main.run(until: .now.addingTimeInterval(0.1))
+        if tick >= 4, drawnRows(in: try #require(window.contentView)).count == items.count { break }
+      }
+      let (item, row, drawn) = try expectLens(model, in: window, step)
+      #expect(drawn.count == items.count, step)
+      let layout = ListLayout(
+        sections: model.query.isEmpty ? ClipboardPanelView.daySections(items) : nil, items: items,
+        lens: (item.id, row.height))
+      let offset = try #require(layout.offset(of: item.id)) - (layout.offset(of: items[0].id) ?? 0)
+      #expect(abs((drawn.first?.maxY ?? 0) - row.maxY - offset) < 0.5, step)
+    }
+    let down = { _ = model.handleCommand(#selector(NSResponder.moveDown(_:))) }
+    try check("分组")
+    model.query = "kitty"
+    try check("分组 → 平铺")
+    down()
+    try check("平铺里 ↓")
+    model.query = ""
+    try check("平铺 → 分组")
+    for _ in 0..<3 { down() }
+    #expect(model.selectedItem?.text == "昨天的一段文字")
+    store.record(text("昨天的一段文字"))
+    try check("昨天的条目再复制，挪进「今天」")
+    down()
+    try check("挪完再 ↓")
+  }
+
+  /// ↓ 带着列表滚动时 ⌘Y 的起点照样是新的透镜：换下去的上报视图要是跟着选中动画淡出，滚动中它还会报旧 id，
+  /// 拿掉时再把新的清成 nil，放大卡就从整个面板长出来
+  @Test func lensOriginFollowsScrolling() throws {
+    let (store, _) = try makeStore()
+    for index in 0..<12 { store.record(text("第 \(index) 条", ago: Double(100 - index))) }
+    let model = ClipboardPanelModel(store: store)
+    let (window, close) = try showPanel(model)
+    defer { close() }
+    for step in 1...10 {
+      _ = model.handleCommand(#selector(NSResponder.moveDown(_:)))
+      for _ in 0..<6 { RunLoop.main.run(until: .now.addingTimeInterval(0.1)) }
+      try expectLens(model, in: window, "↓ 第 \(step) 下")
+    }
   }
 
   /// ⌘K 里的分组操作和右键菜单一样全：移到已有分组（已在里面的那组不列）、移出分组、放进新分组

@@ -73,8 +73,9 @@ import Observation
   @ObservationIgnored var island: Island?
   /// animated = false：面板收起、粘贴时直接消失
   @ObservationIgnored var closeQuickLook: (_ animated: Bool) -> Void = { _ in }
-  /// 透镜（透镜关掉时是选中行）在面板里的位置（窗口坐标，原点左上；只算列表可见区里的那部分）和它是哪一条：
-  /// 放大预览从这里长出来、缩回这里。滚出可见区、行被回收时为 nil；id 不是当前选中项（刚换了选中、新行还没上报）时别用
+  /// 透镜（透镜关掉 / 多选时是选中行那一格）在面板里的位置（窗口坐标，原点左上；只算列表可见区里的那部分）和它是哪一条，
+  /// 由选中高亮按前缀和上报：放大预览从这里长出来、缩回这里。滚出可见区、列表清空时为 nil；
+  /// id 不是当前选中项（刚换了选中、还没布局）时别用
   @ObservationIgnored var cardFrame: (id: UUID, rect: CGRect)?
 
   /// 启动器「cb 关键词」呼出面板后直接设它；reset() 清空

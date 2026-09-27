@@ -9,7 +9,8 @@
 import SwiftUI
 
 struct ClipboardPanelView: View {
-  typealias DaySection = (title: String, rows: [(offset: Int, element: ClipItem)])
+  /// day = 那天的零点：分组和行的身份按它，不按标题（过了午夜「今天」改叫「昨天」，还是同一组、同一批行）
+  typealias DaySection = (day: Date, title: String, rows: [(offset: Int, element: ClipItem)])
 
   @Bindable var model: ClipboardPanelModel
   @AppStorage(Prefs.clipboardHideOnUnfocus) private var hideOnUnfocus = true
@@ -241,15 +242,15 @@ struct ClipboardPanelView: View {
       LazyVStack(alignment: .leading, spacing: 0, pinnedViews: .sectionHeaders) {
         if layout.leading > 0 { newSnippetRow }
         if let sections = layout.sections {
-          ForEach(Array(sections.enumerated()), id: \.element.title) { index, section in
+          ForEach(Array(sections.enumerated()), id: \.element.day) { index, section in
             Section {
-              rows(section.rows, selected: selected, lensOpen: lensOpen)
+              rows(section.rows, in: section.day, selected: selected, lensOpen: lensOpen)
             } header: {
               sectionHeader(section, pinned: index < pinnedSections)
             }
           }
         } else {
-          rows(Array(items.enumerated()), selected: selected, lensOpen: lensOpen)
+          rows(Array(items.enumerated()), in: nil, selected: selected, lensOpen: lensOpen)
         }
       }
       .background(alignment: .topLeading) { highlight(layout: layout, selected: selected) }
@@ -305,19 +306,42 @@ struct ClipboardPanelView: View {
 
   /// 一块中性高亮 = 透镜的底：按前缀和定位，在行间滑动（不用 matchedGeometryEffect：LazyVStack 回收行时会跳）
   @ViewBuilder private func highlight(layout: ListLayout, selected: ClipItem?) -> some View {
-    if let selected, model.multiSelection.isEmpty, let offset = layout.offset(of: selected.id) {
+    if let selected, let offset = layout.offset(of: selected.id) {
       let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
-      shape.fill(Style.selectedFill)
-        // 降低透明度：透镜底提到 0.9 不透明（Whisker §7），不透出后面的材质
-        .background {
-          if reduceTransparency { shape.fill(Color(nsColor: .windowBackgroundColor).opacity(0.9)) }
+      let height = layout.height(of: selected.id)
+      if model.multiSelection.isEmpty {
+        shape.fill(Style.selectedFill)
+          // 降低透明度：透镜底提到 0.9 不透明（Whisker §7），不透出后面的材质
+          .background {
+            if reduceTransparency {
+              shape.fill(Color(nsColor: .windowBackgroundColor).opacity(0.9))
+            }
+          }
+          .overlay {
+            // 增强对比度：中性选中加 1 pt 品牌粉 0.6 描边（Whisker §7）
+            if contrast == .increased { shape.strokeBorder(Style.brand.opacity(0.6), lineWidth: 1) }
+          }
+          .frame(height: height)
+          .offset(y: offset)
+      }
+      // 放大预览从透镜长出来（透镜关掉、多选时是选中行那一格）：按同样的前缀和报位置，只报列表可见区里的部分，
+      // 滚出去的不当起点、退回面板。按选中项换一个新视图，一出现就报终点位置（不等高亮滑完），换下去的立刻拿掉
+      // （不跟选中动画淡出：淡出中随滚动还会报旧 id，拿掉时再把新的清成 nil）；
+      // 不交给行去报：行换分组时新旧两行短暂并存，旧行的退场会把新行报的位置冲掉
+      Color.clear
+        .frame(height: height)
+        .onGeometryChange(for: CGRect.self) { proxy in
+          let global = proxy.frame(in: .global)
+          let visible = CGRect(origin: .zero, size: proxy.size)
+            .intersection(proxy.bounds(of: .scrollView) ?? .infinite)
+          return visible.isEmpty ? .null : visible.offsetBy(dx: global.minX, dy: global.minY)
+        } action: { rect in
+          model.cardFrame = rect.isNull ? nil : (selected.id, rect)
         }
-        .overlay {
-          // 增强对比度：中性选中加 1 pt 品牌粉 0.6 描边（Whisker §7）
-          if contrast == .increased { shape.strokeBorder(Style.brand.opacity(0.6), lineWidth: 1) }
-        }
-        .frame(height: layout.height(of: selected.id))
         .offset(y: offset)
+        .onDisappear { if model.cardFrame?.id == selected.id { model.cardFrame = nil } }
+        .transition(.identity)
+        .id(selected.id)
     }
   }
 
@@ -361,26 +385,37 @@ struct ClipboardPanelView: View {
     .buttonStyle(.plain)
   }
 
+  /// 行的身份 = 所在分组（那天的零点，平铺时 nil）+ 条目，行上也别再挂 `.id(item.id)`：条目换了分组（旧条目再次复制挪进「今天」、
+  /// 有没有搜索词在分组 / 平铺间切换）就是删一行再插一行。身份只有条目 id 时 LazyVStack 会把旧行原样搬过去、之后不再跟着
+  /// 父视图更新：选中和透镜停在搬之前，按前缀和走的高亮对不上行（高亮盖住下面几行、透镜不展开、时间也不刷新）
   private func rows(
-    _ rows: [(offset: Int, element: ClipItem)], selected: ClipItem?, lensOpen: Bool
+    _ rows: [(offset: Int, element: ClipItem)], in section: Date?, selected: ClipItem?,
+    lensOpen: Bool
   ) -> some View {
-    ForEach(rows, id: \.element.id) { index, item in
+    ForEach(rows.map { (id: RowID(section: section, item: $0.element.id), row: $0) }, id: \.id) {
+      entry in
+      let (index, item) = entry.row
       let isSelected = item.id == selected?.id
       ClipListRow(
         item: item, form: model.contentForm(of: item), model: model,
         shortcutIndex: index < 9 ? index : nil, showsShortcut: shownKeys.contains(.command),
         isSelected: isSelected, lensOpen: lensOpen && isSelected, groupName: groupBadge(for: item)
       )
-      .id(item.id)
       .contextMenu { contextMenu(for: item) }
-      .transition(
-        reduceMotion
-          ? .opacity
-          : .asymmetric(
-            insertion: .move(edge: .top).combined(with: .opacity).combined(
-              with: AnyTransition(IconPop())),
-            removal: .opacity.combined(with: .scale(scale: 0.96, anchor: .leading))))
+      .transition(rowTransition)
     }
+  }
+
+  /// 新条目从顶部挤入（图标 pop）、删除缩小淡出。换列表（搜索 / 筛选，含分组 ↔ 平铺整批换身份）那一帧插进来的行不带
+  /// 插入过渡，否则每一行都按「新插入」播一次图标 pop。退场一直是缩小淡出：行的过渡在它插进来那一帧就定了，
+  /// 跟着切成无过渡的话，这些行以后删掉时就没有退场
+  private var rowTransition: AnyTransition {
+    if reduceMotion { return .opacity }
+    return .asymmetric(
+      insertion: model.listMotion == .instant
+        ? .identity
+        : .move(edge: .top).combined(with: .opacity).combined(with: AnyTransition(IconPop())),
+      removal: .opacity.combined(with: .scale(scale: 0.96, anchor: .leading)))
   }
 
   private func groupBadge(for item: ClipItem) -> String? {
@@ -400,7 +435,7 @@ struct ClipboardPanelView: View {
         sections[sections.count - 1].rows.append(row)
       } else {
         day = start
-        sections.append((dayTitle(start), [row]))
+        sections.append((start, dayTitle(start), [row]))
       }
     }
     return sections
@@ -723,20 +758,6 @@ private struct ClipListRow: View {
     .background {
       HoverTracker { inside in withAnimation(.easeOut(duration: 0.10)) { hovered = inside } }
     }
-    // 放大预览从这里长出来（透镜开着就是整块透镜）。只报列表可见区里的部分：滚出去的透镜不当起点，退回面板
-    .background {
-      if isSelected {
-        Color.clear.onGeometryChange(for: CGRect.self) { proxy in
-          let global = proxy.frame(in: .global)
-          let visible = CGRect(origin: .zero, size: proxy.size)
-            .intersection(proxy.bounds(of: .scrollView) ?? .infinite)
-          return visible.isEmpty ? .null : visible.offsetBy(dx: global.minX, dy: global.minY)
-        } action: { rect in
-          model.cardFrame = rect.isNull ? nil : (item.id, rect)
-        }
-        .onDisappear { if model.cardFrame?.id == item.id { model.cardFrame = nil } }
-      }
-    }
     .accessibilityElement(children: .combine)
     .accessibilityAddTraits(isSelected ? .isSelected : [])
     .accessibilityValue(lensOpen ? Lens.accessibilityValue(for: item, form: form) : "")
@@ -782,6 +803,12 @@ private struct HoverTracker: NSViewRepresentable {
     override func mouseExited(with event: NSEvent) { onChange(false) }
     override func viewDidMoveToWindow() { if window == nil { onChange(false) } }
   }
+}
+
+/// 列表行的身份：所在分组（那天的零点，平铺时 nil）+ 条目（见 rows(_:in:selected:lensOpen:)）
+private struct RowID: Hashable {
+  let section: Date?
+  let item: UUID
 }
 
 /// 透镜移动的动画触发值：选中换了、或透镜开关变了（多选时收起）
