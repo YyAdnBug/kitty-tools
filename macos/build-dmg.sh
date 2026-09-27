@@ -29,6 +29,9 @@ codesign --verify --deep --strict --verbose=2 "$APP"
 ENT=$(codesign -d --entitlements - "$APP" 2>&1 || true)
 [[ "$ENT" != *get-task-allow* ]] || { echo "get-task-allow 混入发布包"; exit 1; }
 lipo -archs "$APP/Contents/MacOS/$NAME"
+# 内置智谱 key（来自不入库的 Secrets.xcconfig）要真打进包里，否则「装好就能用」不成立；只判断非空，不打印
+[[ -n "$(/usr/libexec/PlistBuddy -c 'Print :KittyBuiltinZhipuKey' "$APP/Contents/Info.plist" 2>/dev/null)" ]] \
+  || { echo "内置智谱 key 没打进包（缺 macos/Config/Secrets.xcconfig？）"; exit 1; }
 ditto "$APP" "$OUT/dmg/$NAME.app" && ln -s /Applications "$OUT/dmg/Applications"
 DMG="$OUT/${NAME}_${VERSION}_arm64.dmg"
 if [[ "${DMG_LAYOUT:-1}" == 0 ]]; then
