@@ -98,8 +98,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
     /// 拖动标注：original 是按下时的样子（⌥ 拖动时是刚复制出的那份、单击放的序号是刚放的那个）；before 是按下前的全部标注
     /// （松手时记一步撤销）；copyOf 是 ⌥ 复制的原件
     case moveAnnotation(Annotation, start: CGPoint, before: [Annotation], copyOf: UUID?)
-    /// 拖选中标注的手柄改大小
-    case resizeAnnotation(Annotation, Annotation.Handle, before: [Annotation])
+    /// 拖选中标注的手柄改大小；offset 是按下时手柄离按下的点多远（线类两端、弯曲手柄：按在手柄边上一拖，手柄不先跳到光标上）
+    case resizeAnnotation(Annotation, Annotation.Handle, before: [Annotation], offset: CGVector)
   }
 
   private var annotationCanvas: AnnotationCanvas?
@@ -166,6 +166,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
   /// 待选时单击选中了窗口 / 整屏、栏又正好长在按下的地方（整屏、贴着屏幕底的窗口）：双击间隔内的第二下归自己（hitTest），
   /// 算双击拷贝，不落到刚长出来的栏上
   private var clickSelected: (time: TimeInterval, point: CGPoint)?
+  /// 上一下按在了哪条箭头的弯曲手柄上：双击要两下都按在弯曲手柄上才拉直（第一下点弧线选中箭头、第二下正好落在刚出现的
+  /// 弯曲手柄上不算）。每次按下都先取出清掉
+  private var bendPressed: UUID?
   /// 每次显示提示加一：旧的淡出计时作废
   private var hintGeneration = 0
 
@@ -1277,16 +1280,16 @@ final class SelectionView: NSView, NSTextViewDelegate {
     Annotation.topmost(in: annotations, at: point)
   }
 
-  /// 按在选中标注的哪个手柄上（半径 7 内最近的）：按下时比选区边优先，两者叠在一起时拖的是标注
+  /// 按在选中标注的哪个手柄上（半径 7 内最近的，point 是手柄的位置）：按下时比选区边优先，两者叠在一起时拖的是标注
   private func annotationHandle(at point: CGPoint) -> (
-    annotation: Annotation, handle: Annotation.Handle
+    annotation: Annotation, handle: Annotation.Handle, point: CGPoint
   )? {
     guard editor == nil, let selected else { return nil }
     let distance = { (grip: (Annotation.Handle, CGPoint)) in
       hypot(grip.1.x - point.x, grip.1.y - point.y)
     }
     return selected.handles.filter { distance($0) <= 7 }.min { distance($0) < distance($1) }
-      .map { (selected, $0.0) }
+      .map { (selected, $0.0, $0.1) }
   }
 
   /// 换掉同 id 的那条（拖动、改大小时跟手，撤销在松手时记）
@@ -1597,6 +1600,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
     // 单击选中后紧跟的第二下（双击）：直接拷贝（见 clickSelected）
     let armed = clickSelected
     clickSelected = nil
+    let pressedBend = bendPressed
+    bendPressed = nil
     if let armed, event.clickCount == 2, event.timestamp - armed.time < NSEvent.doubleClickInterval,
       isAdjusting, tool == nil, selection?.contains(point) == true
     {
@@ -1616,8 +1621,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
     // 在输入文字时点了输入框外面：先把文字收下，这一下不做别的
     if editor != nil { return endEditing() }
     if isAdjusting, let selection {
-      // 双击箭头的弯曲手柄：拉直（记一步撤销，本来就直的不记）
-      if event.clickCount == 2, let grip = annotationHandle(at: point), grip.handle == .bend,
+      // 双击箭头的弯曲手柄：拉直（记一步撤销，本来就直的不记）。第一下也得按在它上面（见 bendPressed）
+      let grip = annotationHandle(at: point)
+      if event.clickCount == 2, let grip, grip.handle == .bend, grip.annotation.id == pressedBend,
         case .arrow(let from, let to, _) = grip.annotation.shape
       {
         var straight = grip.annotation
@@ -1632,8 +1638,14 @@ final class SelectionView: NSView, NSTextViewDelegate {
         return output(.copy)
       }
       // 优先级：选中标注的手柄 → 选区边 → 标注本体 → 工具作画 / 平移选区 → 选区外
-      if let grip = annotationHandle(at: point) {
-        drag = .resizeAnnotation(grip.annotation, grip.handle, before: annotations)
+      if let grip {
+        if grip.handle == .bend { bendPressed = grip.annotation.id }
+        // 线类两端、弯曲手柄记住按下时离手柄多远（直箭头的弯曲手柄压在杆上，按偏几点一拖就弯出几点）；矩形类的角照旧对到光标上
+        let segment = [Annotation.Handle.start, .end, .bend].contains(grip.handle)
+        drag = .resizeAnnotation(
+          grip.annotation, grip.handle, before: annotations,
+          offset: segment
+            ? CGVector(dx: grip.point.x - point.x, dy: grip.point.y - point.y) : .zero)
         return
       }
       if let handle = Self.handle(at: point, in: selection) {
@@ -1737,8 +1749,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
         if abs(delta.width) > abs(delta.height) { delta.height = 0 } else { delta.width = 0 }
       }
       replace(original.offset(by: delta))
-    case .resizeAnnotation(let original, let handle, _)?:
-      replace(original.resized(handle, to: point, constrained: constrained))
+    case .resizeAnnotation(let original, let handle, _, let offset)?:
+      let target = CGPoint(x: point.x + offset.dx, y: point.y + offset.dy)
+      replace(original.resized(handle, to: target, constrained: constrained))
     default:
       break
     }
@@ -1850,7 +1863,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
       } else {
         recordUndo(from: before)
       }
-    case .resizeAnnotation(let original, _, let before)?:
+    case .resizeAnnotation(let original, _, let before, _)?:
       // 对角 / 两端拖到叠在一起、看不出来了：算误操作，恢复原样（不然留下一条看不见却点得中的标注）
       if annotations.first(where: { $0.id == original.id })?.isMeaningful == false {
         replace(original)

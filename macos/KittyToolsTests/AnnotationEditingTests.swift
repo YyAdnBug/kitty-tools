@@ -1,6 +1,7 @@
 // 截图标注编辑的交互（Whisker §6「标注编辑」）：单击放序号、画笔累点、画完自动选中、拖手柄改大小（⇧ 约束，拖到看不出来就恢复）、
 // ⌥ 拖动复制、⇧ 锁轴、⌘D、撤销 / 重做、⌫ 删除、标注手柄比选区边优先、双击文字重新编辑 / 双击空白拷贝、文字三种样式在输入框里所见即所得、
-// 箭头的弯曲手柄（拖弯、⇧ 对称、吸回直的、双击拉直）和弯度跟着改两端 / 方向键 / ⌘D / ⌥ 拖动走。
+// 箭头的弯曲手柄（拖弯、⇧ 对称、吸回直的、双击拉直，双击没选中的弯箭头不拉直）、按在手柄边上拖不跳、短箭头拖到头弯曲手柄还在，
+// 弯度跟着改两端 / 方向键 / ⌘D / ⌥ 拖动走。
 // 用 SelectionInteractionTests 的屏外窗口 + 合成事件（不弹遮罩、不抢键盘）；选区都是 (300, 200, 400 × 300)。
 
 import AppKit
@@ -164,6 +165,62 @@ struct AnnotationEditingTests {
     #expect(h.view.selectedAnnotation == id)
     h.keyEquivalent(kVK_ANSI_Z, "z", flags: .command)
     #expect(near(midpoint(h, id), CGPoint(x: 400, y: 360)))
+  }
+
+  @Test func doubleClickOnAnUnselectedBentArrowOnlySelectsIt() {
+    // 双击没选中的弯箭头的弧线中点：第一下选中它（弯曲手柄这才出现在按下的地方），第二下不算双击弯曲手柄，不拉直
+    let h = harness(tool: nil)
+    let arrow = Annotation(
+      shape: .arrow(
+        from: CGPoint(x: 350, y: 300), to: CGPoint(x: 450, y: 300), bend: CGVector(dx: 0, dy: 0.5)))
+    h.view.annotations = [arrow]
+    h.click(CGPoint(x: 400, y: 350))
+    h.click(CGPoint(x: 400, y: 350), clicks: 2)
+    #expect(h.view.selectedAnnotation == arrow.id)
+    #expect(annotation(h, arrow.id) == arrow)
+    // 选中后两下都按在弯曲手柄上才拉直
+    h.click(CGPoint(x: 400, y: 350))
+    h.click(CGPoint(x: 400, y: 350), clicks: 2)
+    #expect(
+      annotation(h, arrow.id)?.shape
+        == .arrow(from: CGPoint(x: 350, y: 300), to: CGPoint(x: 450, y: 300)))
+  }
+
+  @Test func handlesDoNotJumpToThePointerAndTheBendHandleStaysNearAnEnd() {
+    let h = harness(tool: .arrow)
+    h.drag(CGPoint(x: 350, y: 300), CGPoint(x: 450, y: 300))
+    let id = h.view.selectedAnnotation
+    let straight = Annotation.Shape.arrow(
+      from: CGPoint(x: 350, y: 300), to: CGPoint(x: 450, y: 300))
+    // 按在弯曲手柄（弦中点）上方 5 点、拖 1 点：弧线中点只跟着挪 1 点（还在吸直的 4 点内），不先跳到光标上弯 6 点
+    h.begin(CGPoint(x: 400, y: 305), to: CGPoint(x: 400, y: 306))
+    #expect(annotation(h, id)?.shape == straight)
+    h.release(CGPoint(x: 400, y: 306))
+    // 接着往上拖 40：中点落在 (400, 340)，和按下的点一直差 5
+    h.drag(CGPoint(x: 400, y: 305), CGPoint(x: 400, y: 345))
+    #expect(near(midpoint(h, id), CGPoint(x: 400, y: 340)))
+    // 端点手柄也一样：按在尖端左下 3 点处往右拖 50，尖端到 (500, 300)
+    h.drag(CGPoint(x: 447, y: 297), CGPoint(x: 497, y: 297))
+    guard case .arrow(let from, let to, _)? = annotation(h, id)?.shape else {
+      return #expect(Bool(false))
+    }
+    #expect(from == CGPoint(x: 350, y: 300) && to == CGPoint(x: 500, y: 300))
+    // 弦 48 的短箭头：弯曲手柄往尖端拖过头，弧线中点停在 ¾ 处、离尖端不到 16 点，拖着和松手后手柄都还在，能接着拖
+    let short = Annotation(
+      shape: .arrow(from: CGPoint(x: 350, y: 400), to: CGPoint(x: 398, y: 400)))
+    h.view.annotations = [short]
+    h.view.selectedAnnotation = short.id
+    let bendHandle = {
+      h.view.annotations.first { $0.id == short.id }?.handles.first { $0.0 == .bend }?.1
+    }
+    h.begin(CGPoint(x: 374, y: 400), to: CGPoint(x: 420, y: 406))
+    let dragged = bendHandle()
+    #expect(dragged.map { near($0, CGPoint(x: 386, y: 406)) } == true)
+    #expect(dragged.map { hypot(398 - $0.x, 400 - $0.y) < 16 } == true)
+    h.release(CGPoint(x: 420, y: 406))
+    #expect(bendHandle() == dragged)
+    h.drag(CGPoint(x: 386, y: 406), CGPoint(x: 380, y: 420))
+    #expect(near(bendHandle(), CGPoint(x: 380, y: 420)))
   }
 
   @Test func bentArrowKeepsItsBendWhenEditedMovedAndCopied() throws {

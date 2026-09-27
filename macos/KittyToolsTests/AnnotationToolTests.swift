@@ -1,7 +1,8 @@
 // 截图标注模型单测（Whisker §6「工具」）：10 个工具的元数据（图标不随系统语言换字形）、拖出的形状与 ⇧ 约束、点中判断（按画的层次）、手柄与改大小、复制、
 // 序号编号、每个工具记住的样式，以及 drawAll 的像素：聚光灯只压暗选区里的洞外、重叠的洞不再压暗、挪洞 / 挪选区 / 画笔累点只需重画变了的几块、
 // 序号压在后画的标注上面、模糊马赛克和像素马赛克不同且都认不出字、荧光笔正片叠底在屏幕（透明标注层）和导出上一样、文字底色块；
-// 弯箭头：弯曲手柄 ↔ 弯度 / 控制点、吸回直的、拖两端等比、外框和点中跟着弧线、沿弧线画，直箭头的七边形不变。
+// 弯箭头：弯曲手柄 ↔ 弯度 / 控制点、沿弦停在 ¼ / ¾、吸回直的、拖两端等比、外框和点中跟着弧线（远处先按外框排除）、沿弧线画、
+// 颈部不折、拖短了照样沿弧线画且都在外框里，直箭头的七边形不变。
 
 import AppKit
 import Foundation
@@ -212,9 +213,114 @@ struct AnnotationToolTests {
     #expect(
       near(Annotation.arrowMidpoint(from: from, to: to, bend: dragged), CGPoint(x: 30, y: -40)))
     #expect(bent.handles.last.map { $0.0 == .bend && near($0.1, CGPoint(x: 30, y: -40)) } == true)
-    // 短箭头（中点离两端不到 16）不给弯曲手柄
+    // 弦短于 32 的短箭头不给弯曲手柄；只看弦：弧线中点被拖到离尖端不到 16（弦 40、中点在 ¾ 处离弦 4）也还在，
+    // 拖着它的时候不会从光标下消失
     #expect(Annotation(shape: .arrow(from: from, to: CGPoint(x: 30, y: 0))).handles.count == 2)
     #expect(Annotation(shape: .arrow(from: from, to: CGPoint(x: 32, y: 0))).handles.count == 3)
+    let short = Annotation(
+      shape: .arrow(from: from, to: CGPoint(x: 40, y: 0), bend: CGVector(dx: 0.25, dy: 0.1)))
+    let grip = short.handles.first { $0.0 == .bend }?.1
+    #expect(grip.map { near($0, CGPoint(x: 30, y: 4)) && hypot(40 - $0.x, $0.y) < 16 } == true)
+  }
+
+  @Test func bendHandleStopsAtAQuarterOfTheChord() {
+    // 手柄沿弦拖过尖端 / 尾端：弧线中点停在弦的 ¾ / ¼ 处（离弦的那份照旧跟手），控制点落在那一端的垂线上，弧线在弦上的
+    // 投影从头到尾单调、不出两端（以前拖过尖端弧线拐过去再折回来，杆叠成两层、箭头朝反方向）
+    let (from, to) = (CGPoint(x: 40, y: 150), CGPoint(x: 200, y: 150))
+    for (handle, along) in [(CGPoint(x: 330, y: 156), 0.25), (CGPoint(x: -90, y: 144), -0.25)] {
+      let bend = Annotation.arrowBend(from: from, to: to, through: handle, constrained: false)
+      #expect(bend.dx == along && abs(bend.dy - (handle.y - 150) / 160) < 1e-12)
+      let control = Annotation.arrowControl(from: from, to: to, bend: bend)
+      #expect(abs(control.x - (along > 0 ? to.x : from.x)) < 1e-9)
+      let xs = (0...1000).map { step -> CGFloat in
+        let t = CGFloat(step) / 1000
+        return (1 - t) * (1 - t) * from.x + 2 * t * (1 - t) * control.x + t * t * to.x
+      }
+      #expect(zip(xs, xs.dropFirst()).allSatisfy { $0 <= $1 + 1e-9 })
+      #expect(xs.min()! >= from.x - 1e-9 && xs.max()! <= to.x + 1e-9)
+    }
+  }
+
+  @Test func curvedArrowHeadMeetsTheShaftWithoutAKink() throws {
+    // 手柄拖到弦的 ¾ 处、离弦 12：弧线贴着尖端拐个钩，底边中点到尖端的弦和杆在颈部差 20° 多。箭头底边垂直于杆（颈部不折），
+    // 尖端还在终点上
+    let (from, to) = (CGPoint.zero, CGPoint(x: 160, y: 0))
+    let bend = Annotation.arrowBend(
+      from: from, to: to, through: CGPoint(x: 120, y: 12), constrained: false)
+    #expect(bend.dx == 0.25)
+    /// 两个方向的夹角（度）
+    func angle(_ a: CGVector, _ b: CGVector) -> CGFloat {
+      abs(atan2(a.dx * b.dy - a.dy * b.dx, a.dx * b.dx + a.dy * b.dy)) * 180 / .pi
+    }
+    /// 左右一对偏移点（左减右）转回前进方向
+    func heading(_ left: CGPoint, _ right: CGPoint) -> CGVector {
+      CGVector(dx: left.y - right.y, dy: right.x - left.x)
+    }
+    for width: CGFloat in [4, 6] {
+      let path = try #require(Annotation.arrowPath(from: from, to: to, width: width, bend: bend))
+      var points: [CGPoint] = []
+      path.applyWithBlock { element in
+        if element.pointee.type != .closeSubpath { points.append(element.pointee.points[0]) }
+      }
+      // 轮廓：左侧杆 … 颈、翼、尖端、翼、颈 … 右侧杆
+      let tip = try #require(points.firstIndex(of: to))
+      let shaft = heading(points[tip - 3], points[tip + 3])  // 杆最后一个采样点的走向
+      let across = heading(points[tip - 1], points[tip + 1])  // 箭头底边的法向
+      let neck = CGPoint(
+        x: (points[tip - 2].x + points[tip + 2].x) / 2,
+        y: (points[tip - 2].y + points[tip + 2].y) / 2)
+      #expect(angle(CGVector(dx: to.x - neck.x, dy: to.y - neck.y), shaft) > 15)
+      #expect(angle(across, shaft) < 3)
+    }
+  }
+
+  @Test func curvedArrowIsAlwaysDrawnInsideItsBounds() throws {
+    // 弯过的粗箭头被拖短（弦 10、弧线鼓出 18）：整条弧都离尖端不到一个头长，箭头缩短照样沿弧线画，不退回画直的，
+    // 和外框、点中对得上
+    let degenerate = Annotation(
+      shape: .arrow(
+        from: CGPoint(x: 100, y: 100), to: CGPoint(x: 110, y: 100), bend: CGVector(dx: 0, dy: 1.8)),
+      style: .init(weight: .large))
+    let path = try #require(
+      Annotation.arrowPath(
+        from: CGPoint(x: 100, y: 100), to: CGPoint(x: 110, y: 100), width: 6,
+        bend: CGVector(dx: 0, dy: 1.8)))
+    #expect(path.boundingBoxOfPath.maxY > 112)  // 直的短箭头只到 y ≈ 105
+    #expect(degenerate.contains(CGPoint(x: 105, y: 118)))
+    #expect(path.contains(CGPoint(x: 104, y: 115)))
+    #expect(degenerate.handles.count == 2)  // 弦太短，不给弯曲手柄
+    // 各种弯法、粗细：画出来的都在外框里（点中先按外框排除，不能排掉画出来的部分）
+    for weight in Annotation.Weight.allCases {
+      for length: CGFloat in [10, 32, 80, 400] {
+        for bend in [
+          CGVector(dx: 0, dy: 0.03), CGVector(dx: 0.25, dy: 0.05), CGVector(dx: -0.25, dy: -0.2),
+          CGVector(dx: 0.1, dy: 0.6), CGVector(dx: 0.25, dy: 1.5), CGVector(dx: 0, dy: -3),
+        ] {
+          let (from, to) = (
+            CGPoint(x: 20, y: 30), CGPoint(x: 20 + length * 0.6, y: 30 + length * 0.8)
+          )
+          let arrow = Annotation(
+            shape: .arrow(from: from, to: to, bend: bend), style: .init(weight: weight))
+          let drawn = try #require(
+            Annotation.arrowPath(from: from, to: to, width: weight.lineWidth, bend: bend))
+          #expect(arrow.bounds.insetBy(dx: -1e-6, dy: -1e-6).contains(drawn.boundingBoxOfPath))
+        }
+      }
+    }
+  }
+
+  @Test func hitTestingSkipsArrowsFarFromThePointer() {
+    // 每次鼠标移动都要问一遍所有标注：光标离弯箭头很远时先按外框排除，不逐段量距离、不建轮廓（没排除时 Debug 下一次
+    // 几百微秒，2000 次要一秒上下）
+    let arrow = Annotation(
+      shape: .arrow(
+        from: CGPoint(x: 100, y: 100), to: CGPoint(x: 1500, y: 900),
+        bend: CGVector(dx: 0.1, dy: 0.4)),
+      style: .init(weight: .large))
+    let start = ContinuousClock.now
+    let hits = (0..<2000).filter { arrow.contains(CGPoint(x: 3000 + $0, y: 50)) }
+    #expect(ContinuousClock.now - start < .milliseconds(250))
+    #expect(hits.isEmpty)
   }
 
   @Test func arrowEndsKeepTheBendProportional() throws {
