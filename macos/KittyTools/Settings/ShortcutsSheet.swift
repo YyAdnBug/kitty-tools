@@ -65,7 +65,7 @@ struct ShortcutsSheet: View {
         KindTile(symbol: "keyboard.fill", color: Style.Family.keyboard, size: 40)
         VStack(alignment: .leading, spacing: 2) {
           Text("快捷键速查").font(.title2.weight(.semibold))
-          Text("标着「全局」的在任何 App 里都能按，可到「设置 › 快捷键」里改；其余是面板里的按键。")
+          Text("标着「全局」的在任何 App 里都能按，可到「设置 › 快捷键」里改；其余是面板和设置窗里的按键。")
             .font(.callout).foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
         }
@@ -257,6 +257,12 @@ struct ShortcutsSheet: View {
         Entry("⌘S", text: "另存为…"),
         Entry("⌘0", text: "原始大小（滚轮、捏合缩放）"),
         Entry("⌘W", "Esc", text: "关闭（双击同样）"),
+      ]),
+    // mac-whisker §6 设置；代码在 SettingsWindow 的 SettingsCommands（主菜单「显示 › 返回」）
+    Group(
+      title: "设置", symbol: "gearshape.fill", color: Style.Family.general,
+      entries: [
+        Entry("⌘[", text: "从翻译服务、网页搜索的详情页返回列表")
       ]),
   ]
 }

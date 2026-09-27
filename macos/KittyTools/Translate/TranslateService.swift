@@ -144,11 +144,14 @@ nonisolated struct TranslateService: Codable, Identifiable, Hashable, Sendable {
 
   var enabled: [TranslateService] { services.filter(\.isEnabled) }
 
-  init() {
-    let saved = UserDefaults.standard.data(forKey: Self.key).flatMap {
-      try? JSONDecoder().decode([TranslateService].self, from: $0)
-    }
-    services = Self.withBuiltins(saved ?? [])
+  /// services：不传就读偏好（单测传一份，不读用户的偏好；只要不改 services 也不会写回）
+  init(services: [TranslateService]? = nil) {
+    let saved =
+      services
+      ?? UserDefaults.standard.data(forKey: Self.key).flatMap {
+        try? JSONDecoder().decode([TranslateService].self, from: $0)
+      }
+    self.services = Self.withBuiltins(saved ?? [])
   }
 
   /// 保证每个内置服务恰好出现一次（缺的按默认值补在末尾）

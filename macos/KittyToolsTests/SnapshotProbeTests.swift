@@ -324,7 +324,8 @@ struct SnapshotProbeTests {
     for dark in [false, true] {
       let suffix = dark ? "-dark" : ""
       try snapshot(
-        TranslateTab(services: services, history: history, speaker: speaker),
+        TranslateTab(services: services, history: history, speaker: speaker)
+          .environment(navigation),
         size: NSSize(width: 590, height: 1720), dark: dark,
         to: "\(out)/settings-translate-list\(suffix).png")
       try snapshot(
@@ -332,7 +333,8 @@ struct SnapshotProbeTests {
         size: NSSize(width: 590, height: 460), dark: dark,
         to: "\(out)/settings-translate-detail\(suffix).png")
       try snapshot(
-        LauncherTab().defaultAppStorage(engines), size: NSSize(width: 590, height: 1400),
+        LauncherTab().defaultAppStorage(engines).environment(navigation),
+        size: NSSize(width: 590, height: 1400),
         dark: dark, to: "\(out)/settings-launcher-list\(suffix).png")
       try snapshot(
         SearchEngineDetail(id: "scholar").defaultAppStorage(engines),

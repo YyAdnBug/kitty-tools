@@ -25,8 +25,8 @@ struct TranslateTab: View {
   @AppStorage(Prefs.translateAutoCopy) private var autoCopy = false
   @AppStorage(Prefs.translateHistoryEnabled) private var historyEnabled = true
   @AppStorage(Prefs.translateHistoryLimit) private var historyLimit = 500
-  /// 推进的详情页（服务 id）
-  @State private var path: [String] = []
+  /// 推进的详情页在 navigation.path（主菜单「返回」也要读写它）
+  @Environment(SettingsNavigation.self) private var navigation
   /// 列表里用键盘选中的服务（「−」和 ⌫ 删它；鼠标单击直接推进，不留选中）
   @State private var selection: String?
   /// 等确认删除的自建 AI 服务
@@ -34,7 +34,7 @@ struct TranslateTab: View {
   @State private var keysRevision = 0
 
   var body: some View {
-    NavigationStack(path: $path) {
+    NavigationStack(path: Bindable(navigation).path) {
       VStack(spacing: 0) {
         PageHeader(page: .translate)
         form
@@ -44,7 +44,7 @@ struct TranslateTab: View {
         TranslateServiceDetail(store: services, id: id)
       }
     }
-    .onChange(of: path) { keysRevision += 1 }
+    .onChange(of: navigation.path) { keysRevision += 1 }
     .confirmationDialog(
       "删除「\(services.services.first { $0.id == removing }?.name ?? "")」？",
       isPresented: Binding {
@@ -255,7 +255,7 @@ struct TranslateTab: View {
   /// 推进详情页并清掉选中（↩ 推进后回来，再单击同一行时选中会变、才推得进去）
   private func open(_ id: String) {
     selection = nil
-    path = [id]
+    navigation.path = [id]
   }
 
   /// 右键菜单和无障碍动作里的上移 / 下移（键盘、读屏用户没法拖）；到头了什么都不做

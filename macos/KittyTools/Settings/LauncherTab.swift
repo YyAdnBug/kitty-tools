@@ -16,8 +16,8 @@ struct LauncherTab: View {
   @AppStorage(Prefs.launcherBookmarksBrave) private var brave = false
   /// 直接读写偏好里的 JSON，不留一份拷贝（设置窗常驻：别处改了偏好，拷贝会过期，再改一下就把别处的改动覆盖掉）
   @AppStorage(Prefs.launcherWebSearchEngines) private var enginesData: Data?
-  /// 推进的详情页（搜索 / 快捷链接的 id）
-  @State private var path: [String] = []
+  /// 推进的详情页在 navigation.path（主菜单「返回」也要读写它）
+  @Environment(SettingsNavigation.self) private var navigation
   /// 列表里用键盘选中的一条（「−」和 ⌫ 删它；鼠标单击直接推进，不留选中）
   @State private var selection: String?
   /// 等确认删除的自定义搜索 / 快捷链接
@@ -28,7 +28,7 @@ struct LauncherTab: View {
   @State private var deniedFolders: [String]?
 
   var body: some View {
-    NavigationStack(path: $path) {
+    NavigationStack(path: Bindable(navigation).path) {
       VStack(spacing: 0) {
         PageHeader(page: .launcher)
         form
@@ -213,7 +213,7 @@ struct LauncherTab: View {
   /// 推进详情页并清掉选中（↩ 推进后回来，再单击同一行时选中会变、才推得进去）
   private func open(_ id: String) {
     selection = nil
-    path = [id]
+    navigation.path = [id]
   }
 
   /// 右键菜单和无障碍动作里的上移 / 下移（键盘、读屏用户没法拖）；到头了什么都不做

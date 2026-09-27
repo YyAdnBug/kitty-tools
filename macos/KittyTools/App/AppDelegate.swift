@@ -217,9 +217,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       height: height)
   }
 
+  /// 设置窗的导航状态：窗口懒建，主菜单的「显示 › 返回」（KittyToolsApp 的 SettingsCommands）一启动就要读它
+  let settingsNavigation = SettingsNavigation()
+
   private lazy var settingsWindow: SettingsWindow = {
     weak var created: SettingsWindow?
-    let window = SettingsWindow { [unowned self] page in
+    let window = SettingsWindow(navigation: settingsNavigation) { [unowned self] page in
       switch page {
       case .general: AnyView(GeneralTab())
       case .clipboard: AnyView(ClipboardTab(store: clipboardStore).environment(island))

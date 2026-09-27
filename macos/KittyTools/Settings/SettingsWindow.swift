@@ -1,7 +1,8 @@
 // 设置窗（Whisker §6 设置）：普通 NSWindow 里放 SwiftUI 的 NavigationSplitView。左边侧栏 = 家族色块 + 页名，
 // 顶上的搜索框按每页的关键词筛页；右边每页一个页头（40 pt 家族色块 + 标题 + 一句说明）+ 分组表单。
 // 记住上次看的页，窗口标题跟着页走；首次安装时盖一层欢迎引导（OnboardingView）。
-// 工具栏常驻「‹ 返回」（SettingsBackButton，同系统设置）：翻译服务、网页搜索的详情页里点它或 ⌘[ 回列表，别处置灰。
+// 工具栏常驻「‹ 返回」（SettingsBackButton，同系统设置）：翻译服务、网页搜索的详情页里点它或 ⌘[ 回列表，别处置灰；
+// 主菜单「显示 › 返回 ⌘[」同效（SettingsCommands，HIG：工具栏上的操作菜单栏里也要有）。
 // 不用 SwiftUI Settings scene：LSUIElement 应用里它会被压到别的 App 后面，浮层上的齿轮也调不到 openSettings。
 // 打开：先收起浮层 → 切成 .regular（出现 Dock 图标）并激活；关闭时切回 .accessory。
 // 侧栏选中自己画（SidebarRow）：AppKit 画侧栏选中时会把 App 的强调色大幅压深（品牌粉变成暗红，截图实测约 #9C2F3E），
@@ -109,12 +110,28 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   }
 }
 
-/// 设置窗的导航状态：当前页（记住）、欢迎引导开没开
+/// 设置窗的导航状态：当前页（记住）、页里推进的详情页、欢迎引导开没开、窗口是不是 key
 @Observable final class SettingsNavigation {
   var page: SettingsPage {
-    didSet { UserDefaults.standard.set(page.rawValue, forKey: Prefs.settingsPage) }
+    didSet {
+      UserDefaults.standard.set(page.rawValue, forKey: Prefs.settingsPage)
+      if page != oldValue { path = [] }
+    }
   }
+  /// 当前页推进的详情页（翻译服务 / 网页搜索的 id；TranslateTab、LauncherTab 的 NavigationStack 用它），换页时清空
+  var path: [String] = []
   var showsOnboarding = false
+  /// 设置窗是 key（SettingsWindow 的窗口代理写）。开着 sheet（确认框、速查表、引导）或别的面板在前时不是
+  var isKey = false
+
+  /// 主菜单「返回」能不能用：只在设置窗自己在前、推进了详情页时
+  var canGoBack: Bool { isKey && !path.isEmpty }
+
+  /// 主菜单「返回」：菜单项的可用状态要到打开菜单时才同步（SwiftUI 在 menuNeedsUpdate 里刷，实测），
+  /// 过期的可用状态可能还在，所以这里再判断一次（空路径 removeLast 会崩）
+  func goBack() {
+    if canGoBack { path.removeLast() }
+  }
 
   init() {
     page =
@@ -125,12 +142,17 @@ enum SettingsPage: String, CaseIterable, Identifiable {
 
 final class SettingsWindow: NSObject, NSWindowDelegate {
   private let window: NSWindow
-  let navigation = SettingsNavigation()
+  let navigation: SettingsNavigation
 
   /// - Parameters:
+  ///   - navigation: 导航状态（AppDelegate 持有，主菜单的「返回」也读它；窗口是懒建的）
   ///   - page: 每页的表单
   ///   - onboarding: 欢迎引导（sheet 里，关掉用 dismiss）
-  init(page: @escaping (SettingsPage) -> AnyView, onboarding: @escaping () -> AnyView) {
+  init(
+    navigation: SettingsNavigation, page: @escaping (SettingsPage) -> AnyView,
+    onboarding: @escaping () -> AnyView
+  ) {
+    self.navigation = navigation
     let hosting = NSHostingController(
       rootView: SettingsRoot(navigation: navigation, page: page, onboarding: onboarding))
     hosting.sceneBridgingOptions = [.title, .toolbars]
@@ -162,8 +184,26 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
   }
 
+  func windowDidBecomeKey(_ notification: Notification) { navigation.isKey = true }
+  func windowDidResignKey(_ notification: Notification) { navigation.isKey = false }
+
   func windowWillClose(_ notification: Notification) {
     NSApp.setActivationPolicy(.accessory)
+  }
+}
+
+/// 主菜单「显示 › 返回 ⌘[」：设置窗不是 key（开着 sheet、别的面板在前）或没推进详情页时置灰。
+/// 工具栏按钮上也挂着 ⌘[：SwiftUI 到打开菜单时才把状态同步到菜单项（实测），只靠菜单的话推进后没打开过菜单
+/// 就按不动；两边做的是同一件事（这边经 goBack 再判断一次），谁接住都一样。这里主要是让菜单栏里看得到、点得到
+struct SettingsCommands: Commands {
+  let navigation: SettingsNavigation
+
+  var body: some Commands {
+    CommandGroup(before: .toolbar) {
+      Button("返回", action: navigation.goBack)
+        .keyboardShortcut("[")
+        .disabled(!navigation.canGoBack)
+    }
   }
 }
 
@@ -204,6 +244,7 @@ struct SettingsRoot: View {
       .toolbar { SettingsBackButton() }
     }
     .toolbar(removing: .sidebarToggle)
+    .environment(navigation)
     .onChange(of: query) {
       if let first = matches.first, !matches.contains(navigation.page) { navigation.page = first }
     }
@@ -299,9 +340,9 @@ private struct NativeHighlightOff: NSViewRepresentable {
 }
 
 /// 工具栏的「‹ 返回」：各页上置灰占位，推进的详情页（TranslateServiceDetail、SearchEngineDetail）自己再声明一个
-/// 能点的（action = dismiss）。要自己放、还得两处都放（macOS 15 实测）：NavigationStack 自带的返回按钮桥接不进
-/// NSHostingController 的窗口工具栏；外层声明的工具栏项在内层 NavigationStack 推进后整个丢掉。常驻是因为工具栏
-/// 一出一没，标题栏高度（28 ↔ 52）和整页内容都会跳
+/// 能点的（action = dismiss），⌘[ 同效。要自己放、还得两处都放（macOS 15 实测）：NavigationStack 自带的返回按钮
+/// 桥接不进 NSHostingController 的窗口工具栏；外层声明的工具栏项在内层 NavigationStack 推进后整个丢掉。常驻是因为
+/// 工具栏一出一没，标题栏高度（28 ↔ 52）和整页内容都会跳
 struct SettingsBackButton: ToolbarContent {
   var action: (() -> Void)?
 

@@ -1,6 +1,6 @@
 // 设置里有序列表（N12）的单测：网页搜索一条的问题提示（名称、网址、保留 / 重复关键词（只算搜索之间）、用不上）、
 // 列表 JSON 读写（关键词去空白）、预置判断（删自定义的要确认）、翻译服务状态副标题（开着才标橙）；
-// 另有通用页的外观偏好 → NSAppearance 名字、设置窗侧栏不画原生选中高亮（自绘那块才是选中）、工具栏的「‹ 返回」。
+// 另有通用页的外观偏好 → NSAppearance 名字、设置窗侧栏不画原生选中高亮（自绘那块才是选中）、工具栏的「‹ 返回」和主菜单「显示 › 返回」。
 
 import AppKit
 import SwiftUI
@@ -119,20 +119,24 @@ struct SettingsListTests {
   }
 
   /// 工具栏的「‹ 返回」（SettingsBackButton）：各页上都有（置灰，⌘[ 不响应），推进详情页后还在、标题栏不变高，
-  /// ⌘[ 回列表。按 SettingsWindow 的配法建有标题栏的窗口（工具栏桥接要它），放在屏外（OffscreenWindow）、不激活；
-  /// 页面是和 TranslateTab / LauncherTab 同样结构的 NavigationStack（真页面会读钥匙串、受保护的文件夹）
-  @Test func backButtonInToolbar() throws {
+  /// ⌘[ 回列表。翻译服务、网页搜索两种真的详情页各推一次（推进走 navigation.path，和点一行一样）；按 SettingsWindow
+  /// 的配法建有标题栏的窗口（工具栏桥接要它），放在屏外（OffscreenWindow）、不激活
+  @Test(arguments: [SettingsPage.translate, .launcher])
+  func backButtonInToolbar(page: SettingsPage) throws {
     let navigation = SettingsNavigation()
     let saved = navigation.page
     defer { navigation.page = saved }
-    navigation.page = .launcher
+    navigation.page = page
     let suite = "kitty-test-\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
-    let stack = DetailStack()
+    // 新建的自建 AI 服务：钥匙串里不会有它的条目（详情页读密钥查不到，不会弹钥匙串确认），也不碰用户的服务偏好
+    let ai = TranslateService.newAI()
+    let services = TranslateServiceStore(services: [ai])
+    let (id, title) = page == .translate ? (ai.id, ai.name) : ("google", "Google")
     let hosting = NSHostingController(
-      rootView: SettingsRoot(navigation: navigation) { _ in
-        AnyView(stack.defaultAppStorage(defaults))
+      rootView: SettingsRoot(navigation: navigation) { page in
+        AnyView(DetailStack(page: page, services: services).defaultAppStorage(defaults))
       } onboarding: {
         AnyView(EmptyView())
       })
@@ -158,15 +162,40 @@ struct SettingsListTests {
     #expect(window.toolbar?.items.count == 1)
     let height = window.contentLayoutRect.height
     #expect(try !back())
-    stack.model.path = ["google"]
+    navigation.path = [id]
     settle()
-    #expect(window.title == "Google")
+    #expect(window.title == title)
     #expect(window.toolbar?.items.count == 1)
     #expect(window.contentLayoutRect.height == height)
     #expect(try back())
     settle()
-    #expect(stack.model.path.isEmpty)
+    #expect(navigation.path.isEmpty)
+    #expect(window.title == page.title)
     #expect(window.toolbar?.items.count == 1)
+  }
+
+  /// 主菜单「显示 › 返回 ⌘[」（SettingsCommands）：菜单里有；只在设置窗是 key、推进了详情页时能退，
+  /// 状态过期时再按也不崩；换页清空推进的详情页
+  @Test func backMenuCommand() throws {
+    let items = NSApp.mainMenu?.items.compactMap(\.submenu).flatMap(\.items) ?? []
+    let item = try #require(items.first { $0.title == "返回" })
+    #expect(item.keyEquivalent == "[" && item.keyEquivalentModifierMask == .command)
+    let navigation = SettingsNavigation()
+    let saved = navigation.page
+    defer { navigation.page = saved }
+    navigation.page = .translate
+    navigation.path = ["zhipu"]
+    #expect(!navigation.canGoBack)  // 设置窗不是 key（开着 sheet、别的面板在前）
+    navigation.goBack()
+    #expect(navigation.path == ["zhipu"])
+    navigation.isKey = true
+    #expect(navigation.canGoBack)
+    navigation.goBack()
+    #expect(navigation.path.isEmpty && !navigation.canGoBack)
+    navigation.goBack()  // 过期的可用状态：空路径再退一次不崩
+    navigation.path = ["google"]
+    navigation.page = .launcher
+    #expect(navigation.path.isEmpty)
   }
 }
 
@@ -177,22 +206,28 @@ private final class OffscreenWindow: NSWindow {
   }
 }
 
-/// 和 TranslateTab / LauncherTab 一样：页头 + 表单包在 NavigationStack 里，推进 SearchEngineDetail
+/// 和 TranslateTab / LauncherTab 同样的结构：页头 + 表单包在 NavigationStack(path: navigation.path) 里，推进真的
+/// TranslateServiceDetail / SearchEngineDetail。不用真页面：启动器页一出现就按用户的真实偏好读受保护的文件夹，
+/// 翻译页的服务行读钥匙串，重置过授权、换过签名时会弹系统框把测试卡住（这个单测每次都跑）
 private struct DetailStack: View {
-  @Observable final class Model {
-    var path: [String] = []
-  }
-
-  @Bindable var model = Model()
+  let page: SettingsPage
+  let services: TranslateServiceStore
+  @Environment(SettingsNavigation.self) private var navigation
 
   var body: some View {
-    NavigationStack(path: $model.path) {
+    NavigationStack(path: Bindable(navigation).path) {
       VStack(spacing: 0) {
-        PageHeader(page: .launcher)
+        PageHeader(page: page)
         Form { Text(verbatim: "list") }.formStyle(.grouped)
       }
-      .navigationTitle(SettingsPage.launcher.title)
-      .navigationDestination(for: String.self) { SearchEngineDetail(id: $0) }
+      .navigationTitle(page.title)
+      .navigationDestination(for: String.self) { id in
+        if page == .translate {
+          TranslateServiceDetail(store: services, id: id)
+        } else {
+          SearchEngineDetail(id: id)
+        }
+      }
     }
   }
 }
