@@ -20,7 +20,7 @@
 
 | # | 决策 | 推荐 | 理由 | 备选 |
 |---|---|---|---|---|
-| D1 | 分支从哪里建 | 从 master 建 `macos-native`；**不 merge master，也不以合回 master 为目标** | 分支里带着 Tauri 代码快照，本方案所有 path:line 引用都指向它。原生版不需要 Tauri 的后续修复，需要看 Tauri 最新行为时，直接读 master 工作区的绝对路径 `/Users/yy/Desktop/yy/Codes/Tauri/kitty-tools/...` | orphan 分支：更干净，但没有参考代码 |
+| D1 | 分支从哪里建 | 从 master 建 `macos-native`（2026-09-27 改名 `main`，`master` 留给 Tauri 版）；**不 merge master，也不以合回 master 为目标** | 分支里带着 Tauri 代码快照，本方案所有 path:line 引用都指向它。原生版不需要 Tauri 的后续修复，需要看 Tauri 最新行为时，直接读 master 工作区的绝对路径 `/Users/yy/Desktop/yy/Codes/Tauri/kitty-tools/...` | orphan 分支：更干净，但没有参考代码 |
 | D2 | 在哪个目录开发 | `git worktree add ../kitty-tools-macos -b macos-native master` | `.cursor/`、`.claude/`、`.agents/` 都在 .gitignore 里（`.gitignore:58-61`）。在同一目录切分支，Tauri 的规则和技能会继续被加载；独立 worktree 自带一套干净的 agent 上下文 | 同目录切分支（规则会混在一起） |
 | D3 | 原生工程放哪 | 仓库根目录下的 `macos/` | 和 `src/`、`src-tauri/` 平级，自成一体 | 把 xcodeproj 放根目录（会弄乱根目录） |
 | D4 | 规则是否提交进 git | 本分支提交：`.cursor/rules/mac-native.mdc`、`.cursor/rules/ponytail.mdc`（给 Cursor 用），以及各里程碑结束后写的 `.claude/skills/mac-*`。`.gitignore` 只放行这几项 | 规则跟着代码走，删掉 worktree 也不会丢 | 沿用 master 的做法，只存在本机 |
@@ -656,7 +656,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 
 ### 8.5 发布
 
-1. 版本和 tag：Phase 1 发布版为 `0.1.0`，tag 是 `macos-v0.1.0`（打在 `macos-native` 分支上）。原生版的版本号与 Tauri 版的 0.1.x 各自独立。
+1. 版本和 tag：Phase 1 发布版为 `0.1.0`，tag 是 `macos-v0.1.0`（打在 `main` 分支上，原名 `macos-native`）。原生版的版本号与 Tauri 版的 0.1.x 各自独立。
 2. 在 GitHub 网页上发 Release（本机没装 `gh`）：**勾选 pre-release，不要勾 Set as latest release**。Tauri 的 updater 读的是 `releases/latest/.../latest.json`，一旦被原生版顶成 latest，Tauri 全平台的更新都会 404。
 3. GitCode：在确认它的 `releases/latest` 会排除预发布版本之前，不在 GitCode 上发布。
 4. 发布后，在 master 工作区执行 `pnpm release:verify`。不修改 `releases/latest.json`。
@@ -1102,7 +1102,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 
 
 ## 附录：用户决策记录（2026-09-24）
-- 分支：独立 worktree `../kitty-tools-macos`，分支 `macos-native`，基于 master `ee615b3`。
+- 分支：独立 worktree `../kitty-tools-macos`，分支 `main`（原名 `macos-native`，2026-09-27 改名），基于 master `ee615b3`。
 - 签名：Apple Development，Team `HTX9F4KG39`（证书 2027-06-10 到期，续期后在 Xcode 里重新生成即可，签名要求不变）。
 - 公证：长期不公证（D7）。
 - 翻译服务：全部迁移（D11）。

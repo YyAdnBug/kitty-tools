@@ -1,5 +1,5 @@
 ---
-description: kitty-tools 原生 macOS 分支（macos-native）唯一常驻规则：结构、技术栈白名单、并发红线、风格、剪贴板写入、签名、发版、语言与 commit
+description: kitty-tools 原生 macOS 分支（main，原名 macos-native）唯一常驻规则：结构、技术栈白名单、并发红线、风格、剪贴板写入、签名、发版、语言与 commit
 globs:
 alwaysApply: true
 ---
@@ -53,7 +53,7 @@ alwaysApply: true
 
 ## 7. 发版
 - 版本号唯一数据源是 Base.xcconfig 的 `MARKETING_VERSION`。改它必须在 `macos/KittyTools/Resources/changelog.json` 追加该版本条目（`{version, date, summary, changes:[{type, scope, text}]}`），`type` 只允许 feat / fix / perf / ui；缺条目时 `build-dmg.sh` 会中止。
-- 打包只用 `macos/build-dmg.sh`（arm64 DMG）；tag 用 `macos-v*`，打在 `macos-native` 分支。
+- 打包只用 `macos/build-dmg.sh`（arm64 DMG）；tag 用 `macos-v*`，打在 `main` 分支（2026-09-27 前叫 `macos-native`）。
 - GitHub 只发 **pre-release**，禁止勾 Set as latest（会让 Tauri updater 全平台 404）；GitCode 暂不发；发完在 master 工作区跑 `pnpm release:verify`（Tauri 的发版脚本和 `releases/latest.json` 只在 master 上）。细节见 `build-dmg.sh` 头部注释。
 
 ## 8. 语言与 commit
