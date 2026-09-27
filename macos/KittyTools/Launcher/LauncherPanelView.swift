@@ -2,7 +2,8 @@
 // 标题 14 medium 后面紧跟灰色副标题，右侧写类型；文件搜索的结果按 Spotlight 类型取图标、右侧写扩展名），
 // 空查询时带「最近使用」、文件搜索只输关键词时带「最近打开和下载的文件」分组标题；计算结果是 64 pt 的大数字卡；
 // 一块中性高亮在行间滑动（键盘 snap、连发不动画、点选 glide）；选中的内置动作右侧多一组全局快捷键键帽（N10）；
-// 按住修饰键时选中行的副标题换成替代动作，按住 ⌘ 150 ms 后类型依次换成 ⌘1–9 键帽。
+// 按住修饰键时选中行的副标题换成替代动作，按住 ⌘ 150 ms 后类型依次换成 ⌘1–9 键帽；系统命令上了膛（清倒废纸篓、
+// 全部退出、强制退出的第一下）时选中行副标题换成 systemRed 的「再按 ↩ …」。
 // 底栏 36（N8，对标 Raycast）：左边选中项的种类（16 pt 家族色块 + 种类名），右边「主动作 ↩」（品牌粉实心键帽）·
 // 「动作 ⌘K」，都能点；⌘K 动作菜单（共用 ActionMenu）锚在右下，开着时面板至少高到放得下它。没有图钉、齿轮
 // （⌘, 照样开设置）。面板高度随行数伸缩（带动画），顶边不动。状态和操作都在 LauncherModel。
@@ -140,7 +141,7 @@ struct LauncherPanelView: View {
               let isSelected = index == model.selection
               LauncherRow(
                 item: item, index: index, showsShortcut: showsShortcuts && index < 9,
-                isSelected: isSelected,
+                isSelected: isSelected, isArmed: model.isArmed(item),
                 alternate: isSelected ? model.alternateSubtitle(for: item) : nil,
                 hotKey: isSelected ? item.hotKeyAction.flatMap(model.boundHotKey)?.display : nil
               )
@@ -259,6 +260,8 @@ private struct LauncherRow: View {
   let index: Int
   let showsShortcut: Bool
   let isSelected: Bool
+  /// 不可撤销的系统命令等着再按一次：副标题（确认提示）用 systemRed，和 macOS 的破坏性按钮同色
+  let isArmed: Bool
   /// 按住修饰键时的替代动作说明（只有选中行有）：换掉副标题，计算结果换掉算式
   let alternate: String?
   /// 选中的内置动作当前的全局快捷键（N10，没设就是 nil）
@@ -295,7 +298,11 @@ private struct LauncherRow: View {
         if let subtitle = alternate ?? (item.subtitle.isEmpty ? nil : item.subtitle) {
           Text(subtitle)
             .font(.system(size: 13))
-            .foregroundStyle(alternate == nil ? .secondary : .primary)
+            .foregroundStyle(
+              isArmed
+                ? AnyShapeStyle(Color(nsColor: .systemRed))
+                : alternate == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary)
+            )
             .lineLimit(1)
             .truncationMode(.middle)
         }
@@ -312,7 +319,10 @@ private struct LauncherRow: View {
   }
 
   @ViewBuilder private var icon: some View {
-    if let type = item.contentType {
+    if item.contentType?.conforms(to: .volume) == true {
+      // 宗卷（eject 列出来的）：磁盘色块，不读宗卷本身取图标（按类型取是个文件夹，读宗卷可能要授权）
+      KindTile(symbol: item.tileSymbol, color: item.familyColor)
+    } else if let type = item.contentType {
       Image(nsImage: LauncherIcons.icon(for: type)).resizable().frame(width: 24, height: 24)
     } else if item.kind == .app || item.kind == .path,
       let image = LauncherIcons.icon(for: item.target)
@@ -346,8 +356,11 @@ extension LauncherItem {
   fileprivate var tileSymbol: String {
     switch kind {
     case .calculation: "equal"
+    case .path where contentType?.conforms(to: .volume) == true: "externaldrive.fill"
     case .prompt where target == FileSearch.accessTarget: "lock.open.fill"
     case .prompt where target.hasPrefix("file-"): "doc.text.magnifyingglass"
+    case .prompt where target.hasPrefix("system-"):
+      SystemCommands.Verb(rawValue: String(target.dropFirst("system-".count)))?.symbol ?? "power"
     case .search, .prompt: "magnifyingglass"
     default: symbol
     }
@@ -357,8 +370,10 @@ extension LauncherItem {
   fileprivate var familySymbol: String {
     switch kind {
     case .app: "square.grid.2x2.fill"
+    case .path where contentType?.conforms(to: .volume) == true: "externaldrive.fill"
     case .path: contentType?.conforms(to: .folder) == true ? "folder.fill" : "doc.fill"
     case .action: "command"
+    case .system: "power"
     default: tileSymbol
     }
   }
@@ -367,6 +382,8 @@ extension LauncherItem {
   fileprivate var familyColor: Color {
     switch kind {
     case .action: target == "settings" ? Style.Family.general : Style.Family.command
+    case .system: Style.Family.command
+    case .prompt where target.hasPrefix("system-"): Style.Family.command
     case .url: Style.Family.url
     // 配置 / 授权问题用橙色（Whisker §3 语义色）
     case .prompt where target == FileSearch.accessTarget: Color(nsColor: .systemOrange)
@@ -382,9 +399,12 @@ extension LauncherItem {
   fileprivate var kindTitle: String {
     switch kind {
     case .app: "应用"
+    case .path where contentType?.conforms(to: .volume) == true: "宗卷"
     case .path:
       contentType.map { FileSearch.kindTitle(path: target, contentType: $0.identifier) } ?? "文件"
     case .action: "命令"
+    case .system: "系统"
+    case .prompt where target.hasPrefix("system-"): "系统"
     case .url: "网址"
     case .prompt where target == FileSearch.accessTarget: "授权"
     case .search, .prompt: "搜索"
@@ -405,6 +425,11 @@ enum LauncherIcons {
     let image = NSWorkspace.shared.icon(for: type)
     cache.setObject(image, forKey: key)
     return image
+  }
+
+  /// 已经拿到的图标（正在运行的 App 从 NSRunningApplication 取）：放进缓存，行里就不按路径读文件
+  static func remember(_ image: NSImage, for path: String) {
+    cache.setObject(image, forKey: path as NSString)
   }
 
   static func icon(for path: String) -> NSImage? {

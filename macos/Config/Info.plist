@@ -20,6 +20,8 @@
 	<string>用于打开、显示你在启动器和剪贴板历史里选中的文稿文件</string>
 	<key>NSDownloadsFolderUsageDescription</key>
 	<string>用于打开、显示你在启动器和剪贴板历史里选中的下载文件</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>用于启动器的系统命令：让访达清倒废纸篓，弹出退出登录、重新启动、关机的系统确认框</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>用于连接局域网内的大模型翻译服务</string>
 </dict>

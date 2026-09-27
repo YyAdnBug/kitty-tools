@@ -28,7 +28,7 @@ alwaysApply: true
 - 翻译服务写成 `nonisolated` async 函数；取消靠持有的 `Task` 调 `cancel()`，并行用 `withTaskGroup`。
 - **系统在渲染线程回调的代码必须 `nonisolated`**：`NSColor(name:dynamicProvider:)` 的取色闭包（`Style.dynamic`）、`TextRenderer` 和它用的 `TextAttribute`、自定义 `Shape` 的 `path(in:)`、`Canvas(rendersAsynchronously: true)`。SwiftUI 在显示链接线程异步渲染动画时会调它们，默认 MainActor 隔离会在后台触发执行器断言直接闪退（2026-09-27 真机崩溃，回归测试 `StyleTests`）。这些地方只读传进来的值和线程安全的系统开关。
 - 禁止 `Task.detached`、`@unchecked Sendable`、`nonisolated(unsafe)`（仅 C 全局变量例外，且必须注释原因），禁止到处写 `DispatchQueue`。主线程投递的 C 回调里用 `MainActor.assumeIsolated {}`。
-- 和 C API 交互的代码只放在 `HotKeyCenter`、`Database`、`SelectionReader`、`Permissions`（AX / 屏幕录制授权、文件搜索的文件夹授权 `opendir`）、`ScreenCapture`（`CGWindowListCopyWindowInfo` 窗口快照）、`ScrollCapture`（长截图自动滚动的 `CGWarpMouseCursorPosition`）、`WordLookup`（系统词典 `DCSCopyTextDefinition`）里。
+- 和 C API 交互的代码只放在 `HotKeyCenter`、`Database`、`SelectionReader`、`Permissions`（AX / 屏幕录制授权、文件搜索的文件夹授权 `opendir`）、`ScreenCapture`（`CGWindowListCopyWindowInfo` 窗口快照）、`ScrollCapture`（长截图自动滚动的 `CGWarpMouseCursorPosition`）、`WordLookup`（系统词典 `DCSCopyTextDefinition`）、`SystemControl`（启动器系统命令：锁屏的私有 `SACLockScreenImmediate` 用 `dlopen` / `dlsym`，找不到退回 `CGEvent` 模拟 ⌃⌘Q）里。
 - 并发写法以 Xcode 自带的 `Swift-Concurrency-Updates.md`（路径见文末）为准，不用社区 concurrency 技能。
 
 ## 4. 风格
@@ -60,6 +60,7 @@ alwaysApply: true
 ## 8. 语言与 commit
 - 用中文回答；文档写中文，代码注释可以写中文。
 - commit 格式 `<type>: <description>`，type 取 feat / fix / ui / refactor / docs / perf / build / chore。
+- **界面文案不出现其他 App / 产品**（用户 2026-09-27）：设置页、速查表、提示、刘海岛、更新日志、系统权限说明里不写「同 Alfred」「像聚焦搜索」这类名字和对比；对标只写在规则、PLAN 和代码注释里。功能本身要用的名字照写（翻译服务名、浏览器书签、系统设置里的路径如 系统设置 › Spotlight）。
 
 ## 测量与诊断
 - 测内存看 `phys_footprint`（`footprint -p <pid>` / 活动监视器），不看 RSS：两者偏差方向随内存压力变化，任何换算系数都不成立。

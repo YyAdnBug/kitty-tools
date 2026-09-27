@@ -1,4 +1,4 @@
-// 启动器的一条结果：App、内置动作、网址、文件路径（这四类记使用），以及网页搜索、关键词提示、计算结果、
+// 启动器的一条结果：App、内置动作、网址、文件路径、系统命令（这五类记使用），以及网页搜索、关键词提示、计算结果、
 // 「cb」那一行（不记）。
 // id = 类型 + 目标，使用记录按它累计。内置动作副标题只写「Kitty Tools」，英文别名只进 names 参与匹配（N10）。
 
@@ -8,6 +8,8 @@ import UniformTypeIdentifiers
 struct LauncherItem: Identifiable, Hashable {
   enum Kind: String {
     case app, action, url, path
+    /// 系统命令（锁定屏幕、清倒废纸篓…，目标是 Alfred 关键词，见 SystemCommands）
+    case system
     /// 网页搜索（目标是搜索页网址；不记使用，修旧版把搜索结果页记进频率，§11 #32）
     case search
     /// 计算结果：↩ 粘贴 payload
@@ -18,11 +20,11 @@ struct LauncherItem: Identifiable, Hashable {
     case prompt
 
     /// 只有这些记使用、能出现在「最近使用」里
-    var isRecorded: Bool { [.app, .action, .url, .path].contains(self) }
+    var isRecorded: Bool { [.app, .action, .url, .path, .system].contains(self) }
   }
 
   let kind: Kind
-  /// App / 文件的路径、网址、内置动作 id（存进使用记录，改名会丢记录）
+  /// App / 文件的路径、网址、内置动作 id、系统命令关键词（存进使用记录，改名会丢记录）
   let target: String
   let title: String
   let subtitle: String
@@ -63,6 +65,7 @@ struct LauncherItem: Identifiable, Hashable {
     if kind == .action || kind == .clip, let action = hotKeyAction { return action.symbol }
     return switch (kind, target) {
     case (.action, _): "gearshape"
+    case (.system, _): SystemCommand(rawValue: target)?.symbol ?? "power"
     case (.url, _): "globe"
     case (.search, _), (.prompt, _): "magnifyingglass"
     case (.calculation, _): "equal.square"

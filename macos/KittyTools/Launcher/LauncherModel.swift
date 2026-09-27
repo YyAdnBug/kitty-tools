@@ -2,12 +2,16 @@
 // 然后 App 目录 + 内置动作 + 快捷链接 / 搜索提示 + 书签 + 用过的网址 / 文件按匹配分排序，网页搜索兜底；
 // 「cb [关键词]」只有一行，↩ 收起启动器、呼出剪贴板面板并把关键词填进它的搜索框（N9）；「open / find 词」、
 // 空格开头搜文件（FileSearch，结果异步到，先留着上一次的结果，后面仍接整句匹配到的 App）。
+// 系统命令（SystemCommands，对标 Alfred）：锁定屏幕、清倒废纸篓这类固定命令一行一个，按中文名 / 拼音 / Alfred 关键词
+// 搜到；「quit / hide / forcequit / eject 空格」列正在运行的 App / 可推出的宗卷；清倒废纸篓、全部退出、强制退出
+// 不可撤销，第一下只上膛（选中行的副标题换成确认提示），同一个键再按一次才执行（SystemControl，面板先收起）。
 // 键盘（对标 Alfred / Raycast）：↑↓ 循环、↩ 执行（计算结果是粘贴，find 的文件是在访达中显示）、⌘↩ 在访达中显示
 // （计算结果只复制，find 的文件是打开）、⌥↩ 在访达里搜索、⌃↩ 网页搜索（按住修饰键时选中行的副标题换成替代动作）、
 // Tab 补全、⌘C 复制路径 / 网址、⌘1–9 执行第 N 项、「最近使用」里 ⌘⌫ 移除一项、Esc 先关动作菜单再清空再关闭；
 // ⌘K 动作菜单（N8，共用 ActionMenu）：列出选中项的主动作和全部替代动作连同键位，开着时搜索框用来过滤动作，
 // ↑↓ ↩ 选择执行、Esc 关掉，菜单里标着的其余键位（⇥ ⌥↩ ⌃↩ ⌘ 键）照常可用、先关菜单。
-// 单击选中、双击执行（和剪贴板面板一致）。执行成功才收起并记使用（修旧版先收起、失败提示看不见，§11 #33）。
+// 单击选中、双击执行（和剪贴板面板一致）。打开 App / 文件 / 网址 / 搜索页：↩ 当下就收起，系统在后台打开，不等 App
+// 启动完（2026-09-27 用户要求）；打开成功才记使用，打不开用刘海岛说。其余先执行、成功才收起（失败在面板里显示，§11 #33）。
 // 启动器没有固定：点外面就收起（N8）。
 
 import AppKit
@@ -26,6 +30,10 @@ import Observation
   var alternate = Alternate.none
   /// 文件搜索模式（open / find / 空格开头）；nil = 普通搜索
   private(set) var fileRequest: FileSearch.Request?
+  /// 系统命令的带对象模式（quit / hide / forcequit / eject 空格）；nil = 不在这个模式
+  private(set) var commandRequest: SystemCommands.Request?
+  /// 上膛的那一行：不可撤销的命令第一下按下后，等同一个键再按一次（打字、移动选中、Esc、收起都撤掉）
+  private(set) var armed: Armed?
   /// 没有结果时显示的话。和结果一起换：文件搜索还在查时留着上一句，不闪「没有匹配」
   private(set) var emptyText = "没有匹配的结果"
   /// ⌘K 动作菜单开着：搜索框改成过滤动作
@@ -40,6 +48,14 @@ import Observation
 
   enum Alternate {
     case none, command, option, control
+  }
+
+  struct Armed: Equatable {
+    let id: String
+    /// 是 ⌘↩ 上的膛（quit / hide 里的强制退出），要再按 ⌘↩
+    let commandKey: Bool
+    /// 选中行副标题换成的确认提示
+    let text: String
   }
 
   @ObservationIgnored let usage: LauncherUsage
@@ -69,6 +85,13 @@ import Observation
   @ObservationIgnored private var checksFolderAccess = false
   /// 用户按过 ↑↓ / 点选过：文件结果后续批次到了才按 id 保持选中项，否则回到第一行（最佳匹配）
   @ObservationIgnored private var userMovedSelection = false
+  /// 执行系统命令（启动器已收起）：AppDelegate 接 SystemControl；单测、截图自检里什么都不做，不会真锁屏、关机
+  @ObservationIgnored var perform: (SystemControl.Action) -> Void = { _ in }
+  /// 带对象模式列哪些（正在运行的 App / 可推出的宗卷）；单测、截图自检换成固定的
+  @ObservationIgnored var commandTargets: @MainActor (SystemCommands.Verb) -> [LauncherItem] =
+    SystemCommands.targets(for:)
+  /// 这次带对象模式列出来的：进模式时列一次，之后打字只过滤，列表不跟着重排
+  @ObservationIgnored private var commandItems: (verb: SystemCommands.Verb, items: [LauncherItem])?
 
   static let recentLimit = 8
   static let rescanInterval: TimeInterval = 300
@@ -87,9 +110,13 @@ import Observation
     fileRequest == nil && query.trimmingCharacters(in: .whitespaces).isEmpty
   }
 
-  /// 列表上方的分组标题：空查询「最近使用」，文件搜索只输了关键词时「最近的文件」
+  /// 列表上方的分组标题：空查询「最近使用」，文件搜索只输了关键词时「最近的文件」，
+  /// 系统命令只输了关键词时「正在运行的 App」/「可推出的磁盘」
   var groupTitle: String? {
     if isShowingRecent { return "最近使用" }
+    if let commandRequest, commandRequest.terms.isEmpty {
+      return commandRequest.verb == .eject ? "可推出的磁盘" : "正在运行的 App"
+    }
     return fileRequest?.terms.isEmpty == true ? "最近打开和下载的文件" : nil
   }
 
@@ -119,16 +146,23 @@ import Observation
 
   private func search() {
     error = nil
+    armed = nil
     selectionMotion = .instant
     selection = 0
     userMovedSelection = false
     shownFileRequest = nil
     fileRequest = FileSearch.request(for: query)
+    commandRequest = fileRequest == nil ? SystemCommands.request(for: query) : nil
+    if commandRequest == nil { commandItems = nil }
     if let fileRequest {
       searchFiles(fileRequest)
       return
     }
     files.stop()
+    if let commandRequest {
+      showTargets(commandRequest)
+      return
+    }
     emptyText = "没有匹配的结果"
     let query = query.trimmingCharacters(in: .whitespaces)
     if query.isEmpty {
@@ -143,13 +177,14 @@ import Observation
     let keyword = WebSearch.keywordItem(for: query)
     let prompts = WebSearch.promptItems(for: query)
     let filePrompts = FileSearch.promptItems(for: query)
+    let systemPrompts = SystemCommands.promptItems(for: query)
     let top =
       direct + [Calculator.item(for: query), keyword].compactMap { $0 } + prompts.exact
-      + filePrompts.exact
+      + filePrompts.exact + systemPrompts.exact
     // 书签至少 2 个字才搜（1 个字母命中太多）
     let bookmarks = query.count >= 2 ? Bookmarks.items() : []
     let local = LauncherMatch.rank(
-      apps + LauncherItem.actions + WebSearch.quicklinkItems() + bookmarks
+      apps + LauncherItem.actions + SystemCommands.items + WebSearch.quicklinkItems() + bookmarks
         + usedLocations(excluding: bookmarks), query: query
     ) { usage.boost(for: $0, query: query) }
     // 兜底默认只在没有本地结果时出现（和 Alfred 一样；以前带空格的查询把兜底排到匹配的 App 前面），
@@ -161,9 +196,26 @@ import Observation
       keyword == nil && wantsFallback && !explicit ? WebSearch.fallbackItems(for: query) : []
     // 直达项和书签 / 用过的网址可能是同一项：按 id 去重，保留靠前的
     var seen = Set<String>()
-    results = (top + local + prompts.partial + filePrompts.partial + fallback).filter {
-      seen.insert($0.id).inserted
+    results =
+      (top + local + prompts.partial + filePrompts.partial + systemPrompts.partial + fallback)
+      .filter { seen.insert($0.id).inserted }
+  }
+
+  /// quit / hide / forcequit / eject 模式：进模式时列一次，之后按输入的词过滤（不加使用分，全按名字）
+  private func showTargets(_ request: SystemCommands.Request) {
+    if commandItems?.verb != request.verb {
+      commandItems = (request.verb, commandTargets(request.verb))
     }
+    let targets = commandItems?.items ?? []
+    let terms = request.terms.joined(separator: " ")
+    results = terms.isEmpty ? targets : LauncherMatch.rank(targets, query: terms) { _ in (0, 0) }
+    emptyText =
+      switch (request.verb, terms.isEmpty) {
+      case (.eject, true): "没有可推出的磁盘"
+      case (.eject, false): "没有匹配的磁盘"
+      case (_, true): "没有正在运行的 App"
+      case (_, false): "没有匹配的 App"
+      }
   }
 
   /// 文件搜索：查询还在跑时留着上一次的结果（约 40 ms 后换掉，免得列表先空再长）；1 个字母不查
@@ -256,6 +308,10 @@ import Observation
         if let action = LauncherItem.actions.first(where: { $0.target == entry.target }) {
           items.append(action)
         }
+      case .system:
+        if let command = SystemCommands.items.first(where: { $0.target == entry.target }) {
+          items.append(command)
+        }
       case .url:
         items.append(Self.item(for: entry))
       case .path:
@@ -272,6 +328,9 @@ import Observation
   // MARK: 执行
 
   func execute(_ item: LauncherItem) {
+    if let request = commandRequest, item.kind == .app || item.kind == .path {
+      return runTarget(item, request.verb)
+    }
     switch item.kind {
     case .calculation:
       paste { Paster.write(string: item.payload ?? "") }
@@ -284,15 +343,21 @@ import Observation
     case .prompt:
       if let completion = item.completion { query = completion }
     case .search:
-      guard let url = URL(string: item.target), NSWorkspace.shared.open(url) else {
+      guard let url = URL(string: item.target) else {
         error = "打不开搜索页"
         return
       }
-      hidePanel()
+      open(url, nil)
     case .action:
       usage.record(item, query: query)
       hidePanel()
       runAction(item.target)
+    case .system:
+      guard let command = SystemCommand(rawValue: item.target) else { return }
+      if let text = command.confirmation, !confirm(item, commandKey: false, text: text) { return }
+      usage.record(item, query: query)
+      hidePanel()
+      perform(.command(command))
     case .app, .path:
       if revealsOnReturn(item) {
         reveal(item)
@@ -308,22 +373,81 @@ import Observation
     }
   }
 
+  /// 带对象模式的行：↩ 退出 / 隐藏 / 强制退出 / 推出。不记使用（退出过的 App 不该因此在普通搜索里排前面）。
+  /// 强制退出（forcequit 的 ↩、quit / hide 的 ⌘↩）不可撤销：先上膛
+  private func runTarget(
+    _ item: LauncherItem, _ verb: SystemCommands.Verb, commandKey: Bool = false
+  ) {
+    let force = verb == .forcequit || commandKey
+    if force {
+      let text = SystemCommands.forceQuitConfirmation(key: commandKey ? "⌘↩" : "↩")
+      guard confirm(item, commandKey: commandKey, text: text) else { return }
+    }
+    let action: SystemControl.Action
+    if force {
+      action = .forceQuit(item.target)
+    } else {
+      action =
+        switch verb {
+        case .eject: .eject(item.target)
+        case .hide: .hide(item.target)
+        default: .quit(item.target)
+        }
+    }
+    hidePanel()
+    perform(action)
+  }
+
+  /// 不可撤销的：第一下只上膛（选中这一行、副标题换成确认提示、播报），同一行同一个键再按一次才放行
+  private func confirm(_ item: LauncherItem, commandKey: Bool, text: String) -> Bool {
+    let armed = Armed(id: item.id, commandKey: commandKey, text: text)
+    if self.armed == armed {
+      // 按住不放的自动连发、三击的第三下都不算「再按一次」：确认必须是新的一下
+      guard !Self.isContinuation else { return false }
+      self.armed = nil
+      return true
+    }
+    // ⌘1–9 执行的不一定是选中那行：先选中它，提示才看得见
+    if let index = results.firstIndex(of: item), index != selection {
+      selectionMotion = .snap
+      selection = index
+    }
+    self.armed = armed
+    NSAccessibility.post(
+      element: NSApp as Any, notification: .announcementRequested,
+      userInfo: [
+        .announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue,
+      ])
+    return false
+  }
+
+  func isArmed(_ item: LauncherItem) -> Bool { armed?.id == item.id }
+
+  /// 这次按键 / 点击是不是上一下的延续：键盘自动连发，或连击的第三下以后
+  private static var isContinuation: Bool {
+    if Style.isKeyRepeat { return true }
+    guard let event = NSApp.currentEvent,
+      event.type == .leftMouseDown || event.type == .leftMouseUp
+    else { return false }
+    return event.clickCount > 2
+  }
+
   /// find 搜到的文件：↩ 在访达中显示、⌘↩ 打开（和 open 反过来）
   func revealsOnReturn(_ item: LauncherItem) -> Bool {
     fileRequest?.mode == .find && item.contentType != nil
   }
 
-  /// 在访达里选中（find 的 ↩ 记使用，和打开一样）
+  /// 在访达里选中（find 的 ↩ 记使用，和打开一样）；先收起再叫访达
   private func reveal(_ item: LauncherItem) {
-    NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: item.target)])
     usage.record(item, query: query)
     hidePanel()
+    NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: item.target)])
   }
 
-  /// ⌥↩ / ⌃↩ 搜的文字：文件搜索时去掉关键词；cb 是指令，没有可搜的
+  /// ⌥↩ / ⌃↩ 搜的文字：文件搜索时去掉关键词；cb、系统命令是指令，没有可搜的
   private var searchText: String {
     let query = query.trimmingCharacters(in: .whitespaces)
-    guard Self.clipQuery(query) == nil else { return "" }
+    guard Self.clipQuery(query) == nil, commandRequest == nil else { return "" }
     return fileRequest.map { $0.terms.joined(separator: " ") } ?? query
   }
 
@@ -356,11 +480,7 @@ import Observation
     guard !text.isEmpty, let engine = WebSearch.primary(),
       let url = URL(string: WebSearch.url(engine, text))
     else { return NSSound.beep() }
-    guard NSWorkspace.shared.open(url) else {
-      error = "打不开搜索页"
-      return
-    }
-    hidePanel()
+    open(url, nil)
   }
 
   /// Tab：把选中项补进输入框（计算结果接着算、目录接着往下找、「关键词 」接着输搜索词）
@@ -372,7 +492,7 @@ import Observation
   static func completion(for item: LauncherItem) -> String? {
     if let completion = item.completion { return completion }
     switch item.kind {
-    case .app, .action, .url: return item.title
+    case .app, .action, .url, .system: return item.title
     case .path:
       var isDirectory: ObjCBool = false
       let exists = FileManager.default.fileExists(atPath: item.target, isDirectory: &isDirectory)
@@ -382,9 +502,10 @@ import Observation
     }
   }
 
-  /// 按住修饰键时选中行的副标题：说明松手前按 ↩ 会做什么
+  /// 按住修饰键时选中行的副标题：说明松手前按 ↩ 会做什么；上了膛的换成确认提示
   func alternateSubtitle(for item: LauncherItem) -> String? {
-    switch alternate {
+    if let armed, armed.id == item.id { return armed.text }
+    return switch alternate {
     case .none: nil
     case .command: commandReturnAction(for: item).map { "⌘↩ " + $0.title }
     case .option: finderSearchTitle.map { "⌥↩ " + $0 }
@@ -394,10 +515,18 @@ import Observation
 
   /// ↩ 做什么：底栏右侧的主动作和 ⌘K 菜单的第一行（名字随种类）
   func primaryAction(for item: LauncherItem) -> (title: String, symbol: String) {
-    switch item.kind {
+    let confirming = armed?.id == item.id && armed?.commandKey == false
+    if let request = commandRequest, item.kind == .app || item.kind == .path {
+      return ((confirming ? "确认" : "") + request.verb.title, request.verb.symbol)
+    }
+    return switch item.kind {
     case .app, .path:
       revealsOnReturn(item) ? ("在访达中显示", "folder") : ("打开", "arrow.up.forward.app")
     case .action: ("运行", "command")
+    case .system:
+      confirming
+        ? ("确认" + item.title, "exclamationmark.triangle")
+        : ("运行", SystemCommand(rawValue: item.target)?.symbol ?? "power")
     case .url: ("打开网址", "safari")
     case .search: ("搜索", "magnifyingglass")
     case .prompt:
@@ -409,7 +538,13 @@ import Observation
 
   /// ⌘↩ 做什么；没有就是 nil
   func commandReturnAction(for item: LauncherItem) -> (title: String, symbol: String)? {
-    switch item.kind {
+    if let request = commandRequest, item.kind == .app {
+      // 访达只能隐藏（hide 里列着它），不给强制退出
+      guard request.verb != .forcequit, item.target != SystemCommands.finderPath else { return nil }
+      let confirming = armed?.id == item.id && armed?.commandKey == true
+      return (confirming ? "确认强制退出" : "强制退出", "xmark.octagon")
+    }
+    return switch item.kind {
     case .app, .path:
       revealsOnReturn(item) ? ("打开", "arrow.up.forward.app") : ("在访达中显示", "folder")
     case .calculation: ("只复制，不粘贴", "doc.on.doc")
@@ -423,7 +558,7 @@ import Observation
     case .app, .path: "复制路径"
     case .url, .search: "复制网址"
     case .calculation: "复制结果"
-    case .action, .prompt, .clip: nil
+    case .action, .system, .prompt, .clip: nil
     }
   }
 
@@ -439,13 +574,24 @@ import Observation
     return "用 \(engine.name) 搜索「\(text)」"
   }
 
-  private func open(_ url: URL, _ item: LauncherItem) {
-    guard NSWorkspace.shared.open(url) else {
-      error = "打不开「\(item.title)」"
-      return
-    }
-    usage.record(item, query: query)
+  /// 打开 App / 文件 / 网址 / 搜索页：先收起，再交给系统在后台打开（NSWorkspace 同步的 open 要等 App 启动完才返回，
+  /// 面板会一直挂着）；打开成功才记使用（item 为 nil 的搜索页不记），打不开时面板已经收起，用刘海岛说
+  private func open(_ url: URL, _ item: LauncherItem?) {
+    let query = query  // 收起时查询会被清空
     hidePanel()
+    NSWorkspace.shared.open(url, configuration: NSWorkspace.OpenConfiguration()) {
+      [weak self] _, error in
+      Task { @MainActor in
+        guard let self else { return }
+        if error == nil {
+          if let item { self.usage.record(item, query: query) }
+        } else {
+          self.island?.show(
+            "打不开「\(item?.title ?? url.absoluteString)」", detail: error?.localizedDescription,
+            tone: .error)
+        }
+      }
+    }
   }
 
   func click(_ item: LauncherItem) {
@@ -453,6 +599,7 @@ import Observation
     if Style.isDoubleClick {
       execute(item)
     } else if let index = results.firstIndex(of: item) {
+      if armed?.id != item.id { armed = nil }
       selectionMotion = .glide
       selection = index
       userMovedSelection = true
@@ -486,8 +633,12 @@ import Observation
     case #selector(NSResponder.insertTab(_:)):
       complete()  // 没得补也吞掉，不让焦点跳到别的控件
     case #selector(NSResponder.cancelOperation(_:)):
-      guard !query.isEmpty else { return false }  // 没有查询：交给窗口关闭
-      query = ""
+      if armed != nil {
+        armed = nil  // 先撤掉上膛，再清空搜索
+      } else {
+        guard !query.isEmpty else { return false }  // 没有查询：交给窗口关闭
+        query = ""
+      }
     default: return false
     }
     return true
@@ -550,18 +701,24 @@ import Observation
     return true
   }
 
-  /// ⌘↩：App / 文件在访达中显示（find 搜到的文件反过来是打开，成功才收起），计算结果只复制
+  /// ⌘↩：App / 文件在访达中显示（find 搜到的文件反过来是打开），计算结果只复制
   private func commandReturn(_ item: LauncherItem) {
+    if let request = commandRequest, item.kind == .app {
+      if request.verb != .forcequit, item.target != SystemCommands.finderPath {
+        runTarget(item, request.verb, commandKey: true)
+      }
+      return
+    }
     switch item.kind {
     case .app, .path:
       if revealsOnReturn(item) { return open(URL(filePath: item.target), item) }
+      hidePanel()
       NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: item.target)])
     case .calculation:
-      return copy(item)
+      copy(item)
     default:
-      return
+      break
     }
-    hidePanel()
   }
 
   /// ⌘C：复制路径 / 网址 / 计算结果（⌘↩ 的计算结果也走这里）。面板同时收起，用刘海说复制了什么
@@ -583,6 +740,7 @@ import Observation
 
   private func move(by offset: Int) {
     guard !results.isEmpty else { return }
+    armed = nil
     selectionMotion = Style.isKeyRepeat ? .instant : .snap
     selection = (selection + offset + results.count) % results.count
     userMovedSelection = true

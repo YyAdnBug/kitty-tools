@@ -245,21 +245,7 @@ import AppKit
 
   /// 跑系统命令（ditto / codesign）：在进程外，等它结束，非 0 退出就抛 failure
   private static func run(_ tool: String, _ arguments: [String], failure: String) async throws {
-    let process = Process()
-    process.executableURL = URL(filePath: tool)
-    process.arguments = arguments
-    process.standardOutput = FileHandle.nullDevice
-    process.standardError = FileHandle.nullDevice
-    let status: Int32 = try await withCheckedThrowingContinuation { continuation in
-      process.terminationHandler = { continuation.resume(returning: $0.terminationStatus) }
-      do {
-        try process.run()
-      } catch {
-        process.terminationHandler = nil
-        continuation.resume(throwing: error)
-      }
-    }
-    guard status == 0 else { throw UpdateError(failure) }
+    guard try await Subprocess.run(tool, arguments).status == 0 else { throw UpdateError(failure) }
   }
 }
 

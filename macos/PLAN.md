@@ -112,7 +112,8 @@ xcuserdata/
 | Foundation `URLSession.bytes(for:)`、`AttributedString(markdown:)` | 12 | SSE 流式输出、行内 Markdown |
 | CryptoKit：`Insecure.MD5`、`SHA256` | 10.15 | 百度 / 有道签名、图片去重 hash |
 | Security `SecItem*` | — | API Key 存钥匙串 |
-| Foundation `URLSession.download`、`Process`（调系统的 `/usr/bin/ditto`、`/usr/bin/codesign`） | — | 应用内更新：下载更新包、解包、验签（D8） |
+| Foundation `URLSession.download`、`Process`（调系统的 `/usr/bin/ditto`、`/usr/bin/codesign`；共用 `Shell/Subprocess.swift`） | — | 应用内更新：下载更新包、解包、验签（D8） |
+| 启动器系统命令（D2，2026-09-27）：`Process` 调 `/usr/bin/pmset`（睡眠、关闭显示器）和 `/usr/bin/osascript`（访达清倒废纸篓、loginwindow 的退出登录 / 重新启动 / 关机 Apple Event、`set volume`）；`NSRunningApplication` 的 `terminate` / `forceTerminate` / `hide`；`FileManager.unmountVolume`；`dlopen` / `dlsym` 系统私有 `login.framework` 的 `SACLockScreenImmediate`（锁屏，用户拍板的唯一私有 API，找不到退回 `CGEvent` 模拟 ⌃⌘Q）；entitlement `com.apple.security.automation.apple-events` + `NSAppleEventsUsageDescription` | 10.x | 锁屏、睡眠、屏保、废纸篓、退出登录 / 重启 / 关机、退出 / 隐藏 / 强制退出 App、推出磁盘、音量 |
 | 系统 libsqlite3（`import SQLite3`；本机 3.43.2，带 FTS5） | — | 剪贴板历史和翻译历史 |
 | ServiceManagement `SMAppService.mainApp` | 13 | 开机自启 |
 | `os.Logger`、Swift Testing | 11 / Xcode 16 | 日志、单元测试 |
@@ -240,12 +241,12 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 | 目录 | 文件 |
 |---|---|
 | `App/` | `KittyToolsApp.swift`（@main 和 MenuBarExtra）、`AppDelegate.swift`（单实例检查、组装对象、生命周期、退出和锁屏清理）、`Updater.swift`（应用内更新，D8） |
-| `Shell/` | `OverlayPanel.swift`、`HotKeyCenter.swift`、`HotKeyRecorder.swift`、`Permissions.swift`（辅助功能、屏幕录制、文件和文件夹授权）、`Paster.swift`、`Style.swift`（Whisker 刻度：圆角、七条弹簧曲线、中性色 / 家族色、种类色块、键帽、面板描边）、`Accent.swift`（强调色：跟随系统 + 8 色、配色计算、根视图的 `.appAccent()`）、`Island.swift`（刘海岛：全局轻提示，替换原来的 Toast）、`StatusItem.swift`（菜单栏图标与菜单，NSStatusItem，Whisker D 的呼吸 / 弹一下）、`ActionMenu.swift`（剪贴板 ⌘K、剪贴板筛选面板、启动器 ⌘K 共用的动作菜单） |
+| `Shell/` | `OverlayPanel.swift`、`HotKeyCenter.swift`、`HotKeyRecorder.swift`、`Permissions.swift`（辅助功能、屏幕录制、文件和文件夹授权；自动化被拒时打开系统设置）、`Paster.swift`、`Subprocess.swift`（进程外跑系统命令行工具：更新的 ditto / codesign、系统命令的 pmset / osascript）、`Style.swift`（Whisker 刻度：圆角、七条弹簧曲线、中性色 / 家族色、种类色块、键帽、面板描边）、`Accent.swift`（强调色：跟随系统 + 8 色、配色计算、根视图的 `.appAccent()`）、`Island.swift`（刘海岛：全局轻提示，替换原来的 Toast）、`StatusItem.swift`（菜单栏图标与菜单，NSStatusItem，Whisker D 的呼吸 / 弹一下）、`ActionMenu.swift`（剪贴板 ⌘K、剪贴板筛选面板、启动器 ⌘K 共用的动作菜单） |
 | `Storage/` | `Database.swift`、`Keychain.swift`、`Prefs.swift`、`LegacyImport.swift` |
 | `Clipboard/` | `ClipboardWatcher.swift`、`ClipboardStore.swift`、`ClipItem.swift`、`ClipboardFilter.swift`、`ContentForm.swift`、`Search.swift`、`ImageStore.swift`、`OCR.swift`、`ClipboardPanelView.swift`、`ClipRowView.swift`、`PreviewView.swift`、`Dialogs.swift`、`LinkPreview.swift`（链接富预览：按块读网页 og 标签、isFetchable、内存缓存）、`QuickLookView.swift`（⌘Y 放大预览） |
 | `Translate/` | `TranslateCoordinator.swift`、`LanguageResolver.swift`、`SelectionReader.swift`、`SSE.swift`、`Providers/`（`Zhipu`、`AIService`、`Baidu`、`Youdao`、`Google`、`DeepL`、`Microsoft`、`Volcengine`、`Tencent` 各一个 `.swift`）、`TranslatePanelView.swift`、`ProviderCardView.swift`（含服务身份 `ServiceTile`：官方 logo 或品牌色块，彗星边框、骨架扫光）、`RevealText.swift`（流式译文显影，TextRenderer）、`HistoryStore.swift`、`HistoryView.swift`、`WordLookup.swift`（查词：是不是一个词、系统词典查询与解析、单词模式示例，D4）、`DictionaryCardView.swift`（系统词典卡） |
 | `Settings/` | `GeneralTab.swift`、`HotkeysTab.swift`、`ClipboardTab.swift`、`TranslateTab.swift`、`AboutTab.swift`、`LauncherTab.swift`、`ScreenshotTab.swift`、`SettingsWindow.swift`（D 阶段从 Shell 搬来：NavigationSplitView 侧栏 + 搜索 + 页头）、`OnboardingView.swift`（首次安装的欢迎引导：欢迎 + 按一下试试）、`ShortcutsSheet.swift`（快捷键速查表 + `ShortcutsButton`）、`OrderedList.swift`（可拖动排序列表共用的「+ −」按钮条、行高、详情页页头）、`TranslateServiceDetail.swift`（翻译服务详情页）、`SearchEngineDetail.swift`（网页搜索 / 快捷链接详情页） |
-| `Launcher/` | `LauncherItem.swift`（结果项与内置动作）、`AppCatalog.swift`（App 目录 + 中文名 + 拼音）、`LauncherMatch.swift`（匹配与排序纯函数）、`LauncherUsage.swift`（使用记录表）、`LauncherModel.swift`、`LauncherPanelView.swift`、`FileSearch.swift`（文件搜索：open / find / 空格开头，NSMetadataQuery 查询、排除、排序、最近的文件、授权提示，M13） |
+| `Launcher/` | `LauncherItem.swift`（结果项与内置动作）、`AppCatalog.swift`（App 目录 + 中文名 + 拼音）、`LauncherMatch.swift`（匹配与排序纯函数）、`LauncherUsage.swift`（使用记录表）、`LauncherModel.swift`、`LauncherPanelView.swift`、`FileSearch.swift`（文件搜索：open / find / 空格开头，NSMetadataQuery 查询、排除、排序、最近的文件、授权提示，M13）、`SystemCommands.swift`（系统命令目录、quit / hide / forcequit / eject 解析与只读列举，D2）、`SystemControl.swift`（系统命令的执行：锁屏、pmset、osascript、退出 App、推出） |
 | `Screenshot/` | `ScreenCapture.swift`（逐屏冻结帧 + 同一刻的窗口 Z 序快照）、`RegionSelector.swift`（框选会话、每屏一个遮罩、选区几何纯函数）、`SelectionView.swift`（遮罩画面与交互：图层绘制、窗口悬停、手柄、放大镜、工具栏）、`ScreenshotOutput.swift`（PNG、快速保存、另存为）、`PinPanel.swift`（钉图）、`Annotation.swift`（标注模型，显示与导出共用 draw，M10）、`EditorToolbar.swift`（HUD 主工具栏 + 样式托盘，M10，Whisker 重做）、`FlyCard.swift`（截图飞入右下角 + 快门声，Whisker S1）、`ScrollCapture.swift`（长截图会话：边框、侧边面板、抓帧循环、自动滚动）、`ScrollStitcher.swift`（长截图拼接，纯逻辑）、`ShotShelf.swift`（CleanShot 式常驻缩略图，Whisker D） |
 
 各 provider 函数签名统一，由 coordinator 里的一个 `switch` 分发。不建 registry 或 factory。
@@ -709,11 +710,11 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 | M11 启动器网址线 + 键盘（对标 Alfred） | 自定义网页搜索（增删排序、多预置引擎）、Quicklink（固定网址 + 别名 + {query}）、兜底列表配置、⌥↩ 访达搜索 / ⌃↩ 网页搜索（按住修饰键换副标题）、Tab 补全（计算结果写回接着算）、cb / 计算结果 ↩ 粘贴、清空 / 单条重置学习记录、呼出时切英文输入法（开关，默认关） | 已完成（实现要点见下方「启动器网址线（M11）」） |
 | M12 翻译补强（对标 Bob） | 窗口快捷键（⌘R 重试、⌘S 收藏、⌘W 关、⌘P 钉住、⌘+/- 字号、⌘1–9 复制第 N 张卡）、用译文替换原文（按钮 + 静默热键，默认不设键）、浮窗高度随内容、卡片折叠状态持久化、收藏筛选与导出 | 已完成（实现要点见下方「翻译补强（M12）」） |
 | 长截图（2026-09-25 插入，用户改主意） | 截图框选后 S / 工具栏进入；实时画面上边滚边拼（往下、往上都行）、侧边预览、空格自动滚动；↩ 复制 / ⌘S 保存 / ⇧⌘S 另存为。原生实现，不参考旧版 | 代码已完成，待手测（实现要点见下方「长截图」） |
-| M13 动作面板 + 文件 + 进程 | → / ⌘K 动作面板（打开方式、在访达中显示、复制路径、移到废纸篓，只放零授权动作）；⌘Y Quick Look（先验证 `QLPreviewPanel`，不行嵌 `QLPreviewView`）；open / find 文件搜索（NSMetadataQuery）；kill（GUI App 用 `terminate()`，⌘↩ 才强杀）。quit / hide / forcequit 不做（D2） | 文件搜索已完成（待手测，实现要点见下方「文件搜索（M13）」）；动作面板、⌘Y、kill 待做 |
+| M13 动作面板 + 文件 + 进程 | → / ⌘K 动作面板（打开方式、在访达中显示、复制路径、移到废纸篓，只放零授权动作）；⌘Y Quick Look（先验证 `QLPreviewPanel`，不行嵌 `QLPreviewView`）；open / find 文件搜索（NSMetadataQuery）；kill（GUI App 用 `terminate()`，⌘↩ 才强杀）。quit / hide / forcequit 已随系统命令做了（D2，2026-09-27），kill 只剩非 GUI 进程（SIGTERM） | 文件搜索已完成（待手测，实现要点见下方「文件搜索（M13）」）；动作面板、⌘Y、kill 待做 |
 
 **已拍板（2026-09-24，对标调研后用户选定）**：
 - D1 长截图、录屏：~~都不做~~ → **长截图做（2026-09-25 用户改主意，要求按 macOS 原生方式实现、不参考旧版）；录屏仍不做**（以后真要录屏用 `SCRecordingOutput` 单独立项）。原先顾虑的两点已解决：冻结帧只管框选，框完收起遮罩再在实时画面上截；不用 15.2 的 `captureImage(in:)`，用 14.0 的 `captureImage(contentFilter:configuration:)` + `sourceRect`。
-- D2 系统命令：**都不做**（锁屏、睡眠、推出磁盘、重启、关机、清空废纸篓、切深浅色，以及退出 / 隐藏 / 强制退出 App 都不做，2026-09-25 用户确认；以后再考虑）。
+- D2 系统命令：~~都不做（2026-09-25）~~ → **2026-09-27 用户要求做**（「quit、lock、unlock、screen 等指令，主要参考 Alfred」），拍板：Alfred 的 18 个全做（screensaver、trash、emptytrash、logout、sleep、sleepdisplays、lock、restart、shutdown、hide、quit、forcequit、quitall、volup、voldown、mute、eject、ejectall）；锁屏用系统私有函数 `SACLockScreenImmediate`（Raycast / Hammerspoon 同做法，找不到退回 ⌃⌘Q）；只确认不可撤销的（清倒废纸篓、全部退出、强制退出再按一次 ↩；退出登录 / 重启 / 关机弹 macOS 自己的确认框）；标题用中文、Alfred 关键词做副标题。unlock 做不了（锁屏时启动器呼不出来，解锁要密码 / Touch ID），screen 按前缀搜到屏幕保护程序、锁定屏幕。切深浅色、kill 非 GUI 进程不在这次范围。实现要点见下方「系统命令（D2）」。
 - D3 文件动作面板与 Quick Look：**动作面板进 M13，只放零授权动作**；⌘Y Quick Look 先验证 `QLPreviewPanel` 在不激活面板里能否拿到控制权，不行改嵌 `QLPreviewView`；不做目录导航和多文件缓冲。
 - D4 查词 / 生词本：**M12 之后，只用系统能力**：系统词典（`DCSCopyTextDefinition`）+ 单词模式提示词；生词本 = 收藏筛选 + CSV / TSV 导出；不引入 ECDICT。**已完成（2026-09-26，待手测）**，规则见 mac-translate §5.2。
 
@@ -723,7 +724,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 - 可借鉴：多屏冻结帧用 TaskGroup 并发截（我们已排除自家窗口，比它们先藏窗口更稳）；`CGWindowListCreateImage` 在 15 SDK 已标废弃、不能用；标注用值类型 + 显示与导出共用一个 draw；文字工具叠一个 NSTextView 编辑完再提交；钉图用不激活的 NSPanel、以鼠标为锚点缩放。
 - 本机调研原始记录（不入库）：`macos/build/research/`（对标路线 benchmark-roadmap.md、Alfred / iShot / Bob 明细、macshot / Snapzy 源码研究、旧版启动器 / 截图行为清单）。
 
-**不迁**：系统命令（锁屏已坏 §11 #24，且要 Apple Events 授权）、ts / b64 / url / case / uuid / ip 小工具、网站图标、Safari / Firefox 书签；延时、美化 / 水印、比例条、Enter 全屏、焦点窗口截图、窗口置顶、屏幕清洁、WebP；截图历史与钉图历史（复制的截图进剪贴板历史，作为唯一的历史）。
+**不迁**：ts / b64 / url / case / uuid / ip 小工具、网站图标、Safari / Firefox 书签；延时、美化 / 水印、比例条、Enter 全屏、焦点窗口截图、窗口置顶、屏幕清洁、WebP；截图历史与钉图历史（复制的截图进剪贴板历史，作为唯一的历史）。
 - 热键：启动器 ⌥Space、截图 ⌥A（用户实际用的键）；编辑器工具键不带修饰的 1–4、钉图 T（沿用用户改键），不做编辑器内改键。⌥Space 只在 15.0–15.1 上注册失败，录制器已提示。
 
 **启动器网址线（M11，2026-09-25）**
@@ -743,6 +744,13 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 - 结果分批到：查询中留着上一次的结果（不闪空、不闪「没有匹配」），同一查询的后续批次保持选中项；过期查询的结果丢掉；收起面板停查询。
 - 行：图标按 Spotlight 类型（`NSWorkspace.icon(for: UTType)`，不碰文件）、副标题是所在文件夹（iCloud 云盘写成「iCloud 云盘/…」）、右侧扩展名大写或「文件夹」；Tab 直接补路径（文件夹带 /，不 stat）。⌥↩ / ⌃↩ 搜去掉关键词后的词。
 - **授权（实测，用户选「按需申请」）**：Spotlight 按调用方的「文件和文件夹」授权过滤结果，没授权的文稿、下载、iCloud 云盘一条都没有，也不弹框（本 App 身份：文稿 / 下载 / iCloud 0 条；Claude.app 身份：都有）。所以文件结果最后一行是授权提示（橙色锁）：没问过 → ↩ 收起启动器、逐个 `opendir` 桌面 / 文稿 / 下载 / iCloud 云盘让系统弹框（主线程停到用户点完），刘海岛报结果；问过有被拒的 → ↩ 打开系统设置 › 文件和文件夹。问过之前一律不碰这些目录（`Prefs.folderAccessRequested`）。设置 › 启动器「文件搜索」有一行状态（`PermissionRow`）。Info.plist 补了桌面 / 文稿 / 下载的用途说明。
+
+**系统命令（D2，2026-09-27）**
+- 对标 Alfred System（关键词照抄，默认全开，不做改关键词 / 逐个开关 / 排除名单这些设置）；规格在 mac-whisker §6 启动器「系统命令」。固定命令 = `LauncherItem.Kind.system`（目标 = Alfred 关键词，进使用记录、能进「最近使用」，⌘⌫ 能移除），标题是 macOS 自己的中文叫法，names 里另有 Alfred 关键词、英文名、口语（锁屏 / 重启 / 屏保 / 注销…）和它们的拼音。带对象的 quit / hide / forcequit / eject 照文件搜索的做法：「关键词 空格」进模式（`SystemCommands.request`），只输关键词出补全提示；进模式时列一次对象（`commandTargets`，单测换成固定的），之后打字只过滤；行复用 App / 路径行：App 的名字和图标取自 `NSRunningApplication`（不读 App 包，桌面 / 文稿 / 下载里跑着的 App 读一下会弹文件夹授权框），宗卷是磁盘色块（`contentType = .volume`，不读宗卷）；不记使用；再按一次的确认不认键盘自动连发和连击的第三下；hide 里的访达没有 ⌘↩ 强制退出；四个关键词进 `WebSearch.reservedKeywords`。
+- 执行（`SystemControl`，面板先收起；`LauncherModel.perform` 默认空，单测、截图自检从不真执行）：锁屏 `dlsym` 私有 `SACLockScreenImmediate`（本机 15.7.7 导出、26.5 仍在；找不到时模拟 ⌃⌘Q，要辅助功能）；睡眠 / 关闭显示器 `pmset sleepnow` / `displaysleepnow`；屏保打开 `/System/Library/CoreServices/ScreenSaverEngine.app`；打开废纸篓 `NSWorkspace.open`；清倒废纸篓 osascript 让访达先数再清（空的只说一声，`with timeout of 600 seconds`）；退出登录 / 重新启动 / 关机 osascript 给 loginwindow 发 `aevtlogo` / `aevtrrst` / `aevtrsdn`（弹系统确认框，`ignoring application responses`）；音量 osascript `set volume`（1/16 一档同音量键，调高顺便取消静音；设备没有音量时报「不能调音量」）；quit / hide / forcequit = `NSRunningApplication` 的 `terminate` / `hide` / `forceTerminate`（只列程序坞里的普通 App、不含本 App，quit / forcequit 不含访达；前台 App 排第一）；推出 `FileManager.unmountVolume(.allPartitionsAndEjectDisk, .withoutUI)`，列宗卷用 `.skipHiddenVolumes`（本机 Xcode 模拟器运行时是隐藏的「可推出」磁盘映像，不跳过「推出全部」会卸掉它），被占用时报占用的 App（`NSFileManagerUnmountDissentingProcessIdentifierErrorKey`）。
+- 授权：apple-events entitlement（`Config/KittyTools.entitlements`，强化运行时下没有它发给别的 App 的 Apple Event 会被静默拒绝）+ `NSAppleEventsUsageDescription`；第一次清倒废纸篓 / 退出登录等时系统自己弹「允许控制」框，osascript 在进程外等，主线程不卡；被拒（-1743 / -1744）时刘海岛说明并打开 系统设置 › 自动化。其余命令不要新授权。
+- 确认：清倒废纸篓、全部退出、强制退出（forcequit 的 ↩、quit / hide 里的 ⌘↩）第一下只上膛（`LauncherModel.armed`），同一行同一个键再按一次才执行；打字、移动选中、Esc（先于清空搜索）、收起面板都撤掉；⌘1–9 执行的先选中那一行。
+- 反馈（mac-whisker S2）：音量、静音、清倒废纸篓、推出、全部退出和所有错误 / 授权问题走刘海岛；锁屏、睡眠、屏保、关显示器、打开废纸篓、退出单个 App 不出岛。锁屏会触发「锁屏时清空剪贴板」（开着的话），这是预期。
 
 **翻译补强（M12，2026-09-25）**
 - 浮窗快捷键在 `TranslateCoordinator.handleKeyEquivalent`（接到 `OverlayPanel.keyEquivalentHandler`）：⌘R 重新翻译、⌘S 收藏 / 取消（第一个服务出结果后）、⌘W 收起（固定着也收）、⌘P 固定、⌘+（含 ⌘⇧=）/ ⌘- / ⌘0 字号（0.8–1.6 倍，存 `translateFontScale`）、⌘1–9 复制第 N 张卡；⌘C / ⌘V 等编辑键仍给输入框。原文里 ⇧↩ / ⌘↩ 换行（⌘↩ 系统发的是 `noop:`，在 doCommandBy 里接）。
@@ -825,7 +833,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 
 - 修：启动器搜不到 Chrome 书签（2026-09-25）。新版 Chrome（本机 154）登录 Google 账号后把书签存进配置目录里的 `AccountBookmarks`，本机的 `Bookmarks` 变成空的（本机 432 条全在前者）；原来只读后者。现在每个配置目录两个文件都读（格式相同），单测锁住。Chrome 同时写了加密版（`EncryptedAccountBookmarks2`），哪天不再写明文就得解密（要钥匙串「Chrome Safe Storage」授权），到时再做。
 
-**下一步（新会话从这里接着做）**：D4 查词、M13 文件搜索已完成（2026-09-26，待手测）；接下来 M13 的动作面板（→ / ⌘K）+ ⌘Y Quick Look + kill（§10），动手前先按对标规则给用户「差距 + 推荐范围」。
+**下一步（新会话从这里接着做）**：D4 查词、M13 文件搜索已完成（2026-09-26，待手测）；系统命令（D2 改为做，2026-09-27）代码完成待手测（§12「系统命令手测」）；接下来 M13 的动作面板（→ / ⌘K）+ ⌘Y Quick Look + kill（只剩非 GUI 进程，§10），动手前先按对标规则给用户「差距 + 推荐范围」。
 
 **暂不发版**（用户决定，2026-09-24）：0.1.0 只在本地用 `macos/build-dmg.sh` 打包自用（arm64、Apple Development 签名、无 get-task-allow），不打 tag、不发 GitHub / GitCode；以后要发时再按下面的「发布 0.1.0」步骤（2026-09-27 已改成发到本仓库），且须先经用户确认。
 
@@ -978,6 +986,16 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   - 菜单栏与名字：
     26. N15 菜单分三节（剪贴板与启动器 / 翻译 / 截图，带节标题），复制即译在翻译节；没设快捷键的项右边空着，不写「未设置快捷键」。
     27. N16 先删掉 /Applications 里旧版 Tauri 的「Kitty Tools.app」再装：程序坞、访达、菜单栏「关于」都叫 Kitty Tools（Debug 叫 Kitty Tools Dev）；授权、偏好、钥匙串里的密钥都还在（Bundle ID 没变）；开机自启不生效就在设置 › 通用重新打开一次。
+- 系统命令手测（2026-09-27，D2；浅色 / 深色、减弱动态效果各走一遍，先存好手头的东西）：
+  1. 搜「lock」「锁屏」「suoping」：第一行都是「锁定屏幕 lock」，↩ 立刻锁屏（开着「锁屏时清空剪贴板」的话普通历史被清空）；远程桌面 App 在前台时也能锁。
+  2. sleep / sleepdisplays / screensaver / trash 各 ↩ 一次：睡眠、关闭显示器、启动屏幕保护程序、打开废纸篓窗口；「screen」能搜到屏幕保护程序和锁定屏幕。
+  3. emptytrash：第一下 ↩ 只让副标题变红「再按 ↩ 清倒废纸篓，不能撤销」、底栏变「确认清倒废纸篓」；Esc 撤掉（搜索词还在），再 ↩ ↩ 才清；第一次系统弹「允许控制访达」，点允许后清倒、刘海岛说几个项目；废纸篓空的时候说「废纸篓是空的」；在系统设置 › 自动化里关掉后再试，刘海岛提示并打开那一页。
+  4. logout / restart / shutdown：弹 macOS 自己的确认框（60 秒倒计时），点取消什么都不发生、不报错。
+  5. 「quit 」列正在运行的 App（前台那个排第一，没有本 App、访达、菜单栏 App），「quit 备」按拼音过滤，↩ 退出（有没存的文稿时它自己问）；⌘↩ 第一下只提示「再按 ⌘↩ 强制退出」；「hide 」能隐藏访达；「forcequit 」↩ 要按两下；只输「quit」时第一行是补全提示，↩ / Tab 补成「quit 」。
+  6. quitall：按两下 ↩ 后程序坞里的 App 都收到退出（本 App、访达、菜单栏 App 不退），刘海岛说退出了几个。
+  7. 插 U 盘 / 挂一个 DMG：「eject 」列出来（不列 Xcode 模拟器的隐藏磁盘），↩ 推出、刘海岛「已推出」；U 盘上有文件在用时报是哪个 App 在用；ejectall 一次推出全部，没有可推出的说一声。
+  8. volup / voldown / mute：刘海岛显示「音量 NN%」或「已静音」，一档和键盘音量键一样；静音时 volup 顺便取消静音；输出到 HDMI 显示器时说不能调音量。
+  9. 设置 › 网页搜索里把关键词填成 quit / eject：提示「留给系统命令」。
 
 **发布 0.1.0**（2026-09-27 改）：`macos/build-dmg.sh` 出 arm64 DMG 和 `_arm64.zip` → 本仓库 github.com/YyAdnBug/kitty-tools 发**正式 release、标 latest**（App 内更新读 `releases/latest`；不碰 Tauri 版的仓库，不跑 `pnpm release:verify`），两个文件都附上，**发布前须经用户确认**；tag `macos-v0.1.0` 打在 `main`。发布前先把 changelog.json 的 0.1.0 条目补全（启动器、截图、应用内更新等还没写进去）。
 
@@ -1025,7 +1043,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 | 21 | `clipboard/ocr_local.rs:14`（原生 M2 照搬到 `Clipboard/OCR.swift`） | Vision 语言写死简中 / 繁中 / 英文：日文假名丢失、韩文为空、俄文变拉丁乱码 | 只开自动识别语种、不给提示（实测给第一 / 第二语言作提示时，中日韩混排图里日文、韩文整行丢失），配单测 |
 | 22 | `translate/api.rs:1640` | 智谱识图 max_tokens 1024 且不看 finish_reason，长截图被静默截断 | 不接智谱识图 |
 | 23 | `src/features/settings/lib/translate-provider-settings.tsx:127,197-201` | 设置说明与实际不符（「由划词默认引擎翻译」「百度 OCR 兜底」） | 这些设置项不迁 |
-| 24 | `launcher/mod.rs:1059-1065` | 锁屏调用的 CGSession 在 15.7 上已不存在，命令必失败 | 系统命令不迁 |
+| 24 | `launcher/mod.rs:1059-1065` | 锁屏调用的 CGSession 在 15.7 上已不存在，命令必失败 | 锁屏改用私有 `SACLockScreenImmediate`，找不到退回 ⌃⌘Q（D2，2026-09-27） |
 | 25 | `system_apps.rs:468-540` + `installed_apps.rs:529-535` | 9 个系统 App 各出现两行，使用次数也被拆开 | 只有一个 App 目录，不写死系统 App（M7） |
 | 26 | `installed_apps.rs:602-619` | 标题用文件名，中文名和拼音搜不到（本机 7/50 个 App 显示名与文件名不同） | 索引显示名、文件名、zh loctable / strings 里的中文名及其拼音（M7） |
 | 27 | `mod.rs:634-648,1283-1312` | `~` 不展开，`./` 按 GUI 进程目录解析 | 展开 `~`，不认相对路径（M8） |
@@ -1034,7 +1052,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 | 30 | `recency.rs:157-164`、`mod.rs:832-856` | 网址被转成小写再打开 | 存原始网址；导入时用书签还原大小写（M8） |
 | 31 | `recency.rs:171-175` | 次数永不衰减；注释里的「半衰期」其实是时间常数 | 每用一次：衰减后的分 + 1（M7） |
 | 32 | `mod.rs:1516-1541`、`kill.rs:795-805` | 搜索结果页、reveal_path、kill_port 也记进频率，挤占「最近使用」 | 只记能还原的类型；导入时丢掉搜索结果页（M7） |
-| 33 | `mod.rs:1394-1399` | 先隐藏再执行，失败提示显示在看不见的窗口里 | 先执行，成功才收起；失败在面板里显示（M7） |
+| 33 | `mod.rs:1394-1399` | 先隐藏再执行，失败提示显示在看不见的窗口里 | 先执行，成功才收起；失败在面板里显示（M7）。例外（2026-09-27 用户要求）：打开 App / 文件 / 网址 / 搜索页 ↩ 当下就收起、系统在后台打开（同步的 `NSWorkspace.open` 要等 App 启动完才返回，面板一直挂着），打开成功才记使用，打不开用刘海岛说 |
 | 34 | `windows/mod.rs:1249-1287` | 启动器总在上次那块屏幕上弹出 | 鼠标所在屏（M7） |
 | 35 | `launcherCommandToken.ts:158-167` | 刚打全的指令词要按两次 ↩ | 不做 chip，↩ 直接执行首项（M8） |
 | 36 | `mod.rs:1339-1346` | `Safari.app` 被当成网址，`localhost:3000` 反而不认 | 去掉 .app 后缀判断，识别 localhost[:端口]（M8） |
@@ -1109,5 +1127,6 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 - 翻译服务：全部迁移（D11）。
 - CPU 架构：只支持 Apple 芯片（arm64），应用基本自用（D10）。
 - 其余决策点按推荐执行。
+- 启动器系统命令（2026-09-27，推翻 D2）：Alfred 的 18 个全做、锁屏用系统私有函数、只确认不可撤销的、中文名 + Alfred 关键词（四项都按推荐）。
 - 截图翻译（2026-09-24）：只用 Vision 本机识字；原文写剪贴板历史；默认热键 ⌥S。
 - 启动器 / 截图（2026-09-24）：启动器首版做 App、书签、直达、网页搜索、最近使用、内置动作、计算器、cb，文件搜索与 kill 放 M11；标注首版做矩形、箭头、文字、马赛克；附加功能只做取色（长截图、延时、美化 / 水印不做；长截图 2026-09-25 改为做，见 §10 D1）；做钉图，不做截图历史和钉图历史。

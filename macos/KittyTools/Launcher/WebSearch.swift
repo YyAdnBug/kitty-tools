@@ -121,7 +121,10 @@ enum WebSearch {
   }
 
   /// 关键词不能用的（值是设置里提示的占用者）：cb 留给剪贴板指令，open / find 留给文件搜索
-  static let reservedKeywords = ["cb": "剪贴板指令", "open": "文件搜索", "find": "文件搜索"]
+  static let reservedKeywords = [
+    "cb": "剪贴板指令", "open": "文件搜索", "find": "文件搜索", "quit": "系统命令", "hide": "系统命令",
+    "forcequit": "系统命令", "eject": "系统命令",
+  ]
 
   static func url(_ engine: SearchEngine, _ text: String) -> String {
     let encoded =

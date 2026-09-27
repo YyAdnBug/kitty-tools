@@ -70,11 +70,11 @@ struct LauncherTab: View {
         }
         Toggle(isOn: $squeezeEntrance) {
           Text("呼出时挤压弹开（实验）")
-          Text("像 macOS 26 的聚焦搜索：从窄一点、矮一点弹开到原尺寸；减弱动态效果时不弹")
+          Text("从窄一点、矮一点弹开到原尺寸；减弱动态效果时不弹")
         }
       } footer: {
         HStack(alignment: .firstTextBaseline) {
-          caption("搜 App、文件、书签、网址、路径和算式，↩ 打开，⌘K 看这一项的全部动作。")
+          caption("搜 App、文件、书签、网址、路径、算式和系统命令（lock、quit 这些），↩ 打开，⌘K 看这一项的全部动作。")
           Spacer(minLength: 8)
           ShortcutsButton()
         }

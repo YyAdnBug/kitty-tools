@@ -164,10 +164,24 @@ struct ShortcutsSheet: View {
         Entry("↑↓", text: "移动选中"),
         Entry("⌘⌫", text: "从「最近使用」里移除"),
         Entry("⌘,", text: "设置"),
-        Entry("Esc", text: "先关动作菜单，再清空搜索，最后关闭"),
+        Entry("Esc", text: "先关动作菜单，再撤掉待确认的命令，再清空搜索，最后关闭"),
         Entry("open", text: "搜文件并打开（空格开头同样）"),
         Entry("find", text: "搜文件并在访达中显示"),
         Entry("cb", text: "在剪贴板历史里搜索"),
+      ]),
+    // mac-whisker §6 启动器「系统命令」；代码在 SystemCommands / SystemControl。在启动器里输入关键词（中文名、拼音也行）
+    Group(
+      title: "系统命令", symbol: "power", color: Style.Family.command,
+      entries: SystemCommand.allCases.map { command in
+        let note =
+          command.confirmation != nil
+          ? "（再按一次 ↩ 确认）" : [.logout, .restart, .shutdown].contains(command) ? "（弹系统确认框）" : ""
+        return Entry(command.rawValue, text: command.title.replacing("…", with: "") + note)
+      } + [
+        Entry("quit", text: "列出正在运行的 App：↩ 退出，⌘↩ 强制退出（再按一次确认）"),
+        Entry("hide", text: "列出正在运行的 App：↩ 隐藏"),
+        Entry("forcequit", text: "列出正在运行的 App：↩ 强制退出（再按一次确认）"),
+        Entry("eject", text: "列出可推出的磁盘：↩ 推出"),
       ]),
     // mac-translate「浮窗快捷键」「翻译浮窗」（N5–N6）；代码在 TranslateCoordinator.handleKeyEquivalent、SourceTextView
     Group(

@@ -2,6 +2,7 @@ import AppKit
 import Carbon.HIToolbox
 import SwiftUI
 import Testing
+import UniformTypeIdentifiers
 
 @testable import KittyTools
 
@@ -692,6 +693,35 @@ struct SnapshotProbeTests {
           model.showFiles(hits, for: request)
         }
         model.alternate = name == "launcher-files-find" ? .command : .none
+        try snapshot(
+          LauncherPanelView(model: model),
+          size: NSSize(width: 720, height: LauncherPanelView.height(for: model)),
+          dark: dark,
+          to: "\(out)/\(name)\(dark ? "-dark" : "").png")
+      }
+    }
+    // 系统命令：固定命令（screen 搜到屏保 / 锁屏）、上膛（清倒废纸篓按了一下）、quit 的补全提示、
+    // quit 列正在运行的 App（按住 ⌘ 看强制退出）、eject 列宗卷。执行是默认的空 perform，不会真做
+    model.folderHint = nil
+    model.commandTargets = { verb in
+      verb == .eject
+        ? [
+          LauncherItem(
+            kind: .path, target: "/Volumes/Kitty Tools", title: "Kitty Tools",
+            subtitle: "/Volumes/Kitty Tools", contentType: .volume)
+        ]
+        : [apps[3], apps[0], apps[2]]
+    }
+    for dark in [false, true] {
+      for (name, query) in [
+        ("launcher-system", "screen"), ("launcher-system-armed", "emptytrash"),
+        ("launcher-quit-prompt", "quit"), ("launcher-quit", "quit "),
+        ("launcher-quit-force", "quit "),
+        ("launcher-eject", "eject "),
+      ] {
+        model.query = query
+        if name == "launcher-system-armed", let first = model.results.first { model.execute(first) }
+        model.alternate = name == "launcher-quit-force" ? .command : .none
         try snapshot(
           LauncherPanelView(model: model),
           size: NSSize(width: 720, height: LauncherPanelView.height(for: model)),

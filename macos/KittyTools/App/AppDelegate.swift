@@ -85,6 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.openClipboard = { [unowned self] in searchClipboard($0) }
     model.boundHotKey = { [unowned self] in hotKeys.bindings[$0] }
     model.requestFolderAccess = { [unowned self] in requestFolderAccess() }
+    model.perform = { [unowned self] in SystemControl.perform($0, island: island) }
     model.island = island
     return panel
   }()
