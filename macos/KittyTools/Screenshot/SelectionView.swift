@@ -166,7 +166,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
   /// 待选时单击选中了窗口 / 整屏、栏又正好长在按下的地方（整屏、贴着屏幕底的窗口）：双击间隔内的第二下归自己（hitTest），
   /// 算双击拷贝，不落到刚长出来的栏上
   private var clickSelected: (time: TimeInterval, point: CGPoint)?
-  /// 上一下按在了哪条箭头的弯曲手柄上：双击要两下都按在弯曲手柄上才拉直（第一下点弧线选中箭头、第二下正好落在刚出现的
+  /// 上一下按在了哪条箭头 / 直线的弯曲手柄上：双击要两下都按在弯曲手柄上才拉直（第一下点弧线选中它、第二下正好落在刚出现的
   /// 弯曲手柄上不算）。每次按下都先取出清掉
   private var bendPressed: UUID?
   /// 每次显示提示加一：旧的淡出计时作废
@@ -783,7 +783,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
   }
 
   /// 选中的标注：1 pt 粉色虚线框 [4, 3]（箭头、直线、荧光笔不画）+ 手柄（白 9 pt 圆 + 1.5 pt 粉环；矩形类四角、线类两端，
-  /// 箭头的弧线中点是小一号的 7 pt 弯曲手柄；文字、序号、画笔没有）。输入文字时不画（输入框自己有边框，大小跟着输入变）
+  /// 箭头、直线的弧线中点是小一号的 7 pt 弯曲手柄；文字、序号、画笔没有）。输入文字时不画（输入框自己有边框，大小跟着输入变）
   private func updateAnnotationChrome() {
     guard editor == nil, let selected else {
       annotationOutline.path = nil
@@ -1621,13 +1621,10 @@ final class SelectionView: NSView, NSTextViewDelegate {
     // 在输入文字时点了输入框外面：先把文字收下，这一下不做别的
     if editor != nil { return endEditing() }
     if isAdjusting, let selection {
-      // 双击箭头的弯曲手柄：拉直（记一步撤销，本来就直的不记）。第一下也得按在它上面（见 bendPressed）
+      // 双击箭头 / 直线的弯曲手柄：拉直（记一步撤销，本来就直的不记）。第一下也得按在它上面（见 bendPressed）
       let grip = annotationHandle(at: point)
-      if event.clickCount == 2, let grip, grip.handle == .bend, grip.annotation.id == pressedBend,
-        case .arrow(let from, let to, _) = grip.annotation.shape
-      {
-        var straight = grip.annotation
-        straight.shape = .arrow(from: from, to: to)
+      if event.clickCount == 2, let grip, grip.handle == .bend, grip.annotation.id == pressedBend {
+        let straight = grip.annotation.straightened
         return commit(annotations.map { $0.id == straight.id ? straight : $0 })
       }
       let hit = annotation(at: point)

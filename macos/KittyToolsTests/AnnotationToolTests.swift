@@ -1,8 +1,8 @@
 // 截图标注模型单测（Whisker §6「工具」）：10 个工具的元数据（图标不随系统语言换字形）、拖出的形状与 ⇧ 约束、点中判断（按画的层次）、手柄与改大小、复制、
 // 序号编号、每个工具记住的样式，以及 drawAll 的像素：聚光灯只压暗选区里的洞外、重叠的洞不再压暗、挪洞 / 挪选区 / 画笔累点只需重画变了的几块、
 // 序号压在后画的标注上面、模糊马赛克和像素马赛克不同且都认不出字、荧光笔正片叠底在屏幕（透明标注层）和导出上一样、文字底色块；
-// 弯箭头：弯曲手柄 ↔ 弯度 / 控制点、沿弦停在 ¼ / ¾、吸回直的、拖两端等比、外框和点中跟着弧线（远处先按外框排除）、沿弧线画、
-// 颈部不折、拖短了照样沿弧线画且都在外框里，直箭头的七边形不变。
+// 弯箭头 / 弯直线（两种走同一套断言）：弯曲手柄 ↔ 弯度 / 控制点、沿弦停在 ¼ / ¾、吸回直的、拖两端等比、拉直、外框和点中跟着
+// 弧线（远处先按外框排除）、沿弧线画；箭头颈部不折、拖短了照样沿弧线画且都在外框里，直箭头的七边形、直线的像素都不变。
 
 import AppKit
 import Foundation
@@ -147,11 +147,16 @@ struct AnnotationToolTests {
       box.resized(.bottomRight, to: CGPoint(x: 70, y: 40), constrained: true).shape
         == .rectangle(CGRect(x: 10, y: -10, width: 60, height: 60)))
     #expect(box.resized(.start, to: .zero, constrained: false) == box)
-    // 线类两端：另一端不动，⇧ 吸 45°；箭头还有弧线中点的弯曲手柄（直的在弦中点），直线、荧光笔没有
+    // 线类两端：另一端不动，⇧ 吸 45°；箭头、直线还有弧线中点的弯曲手柄（直的在弦中点），荧光笔没有
     let arrow = Annotation(shape: .arrow(from: .zero, to: CGPoint(x: 100, y: 0)))
     #expect(arrow.handles.map(\.0) == [.start, .end, .bend])
     #expect(arrow.handles.map(\.1) == [.zero, CGPoint(x: 100, y: 0), CGPoint(x: 50, y: 0)])
-    #expect(Annotation(shape: .line(from: .zero, to: CGPoint(x: 100, y: 0))).handles.count == 2)
+    let line = Annotation(shape: .line(from: .zero, to: CGPoint(x: 100, y: 0)))
+    #expect(line.handles.map(\.0) == [.start, .end, .bend])
+    #expect(line.handles.map(\.1) == arrow.handles.map(\.1))
+    #expect(
+      Annotation(shape: .highlighter(from: .zero, to: CGPoint(x: 100, y: 0))).handles.map(\.0)
+        == [.start, .end])
     #expect(
       arrow.resized(.start, to: CGPoint(x: 10, y: 10), constrained: false).shape
         == .arrow(from: CGPoint(x: 10, y: 10), to: CGPoint(x: 100, y: 0)))
@@ -168,57 +173,72 @@ struct AnnotationToolTests {
     #expect(Annotation(shape: .pen([.zero, CGPoint(x: 9, y: 9)])).handles.isEmpty)
   }
 
-  // MARK: 弯箭头
+  // MARK: 弯箭头 / 弯直线
 
   private func near(_ a: CGPoint, _ b: CGPoint) -> Bool { hypot(a.x - b.x, a.y - b.y) < 1e-9 }
 
-  @Test func arrowBendFollowsTheMidpointHandle() {
+  @Test(arguments: [Annotation.Tool.arrow, .line])
+  func curveBendFollowsTheMidpointHandle(_ tool: Annotation.Tool) {
     let (from, to) = (CGPoint.zero, CGPoint(x: 100, y: 0))
     // 弯曲手柄拖到 (50, 25)：弧线中点就在那儿，二次贝塞尔的控制点 = 2 · 中点 − 弦中点
-    let bend = Annotation.arrowBend(
+    let bend = Annotation.curveBend(
       from: from, to: to, through: CGPoint(x: 50, y: 25), constrained: false)
     #expect(bend == CGVector(dx: 0, dy: 0.25))
-    #expect(Annotation.arrowMidpoint(from: from, to: to, bend: bend) == CGPoint(x: 50, y: 25))
-    #expect(Annotation.arrowControl(from: from, to: to, bend: bend) == CGPoint(x: 50, y: 50))
+    #expect(Annotation.curveMidpoint(from: from, to: to, bend: bend) == CGPoint(x: 50, y: 25))
+    #expect(Annotation.curveControl(from: from, to: to, bend: bend) == CGPoint(x: 50, y: 50))
     // 斜的弦、偏向一端地拖：中点照样落在手柄上
     let (a, b) = (CGPoint(x: 10, y: 20), CGPoint(x: 70, y: 100))
-    let skewed = Annotation.arrowBend(
+    let skewed = Annotation.curveBend(
       from: a, to: b, through: CGPoint(x: 20, y: 80), constrained: false)
     #expect(skewed.dx != 0)
-    #expect(near(Annotation.arrowMidpoint(from: a, to: b, bend: skewed), CGPoint(x: 20, y: 80)))
+    #expect(near(Annotation.curveMidpoint(from: a, to: b, bend: skewed), CGPoint(x: 20, y: 80)))
     // ⇧：只留垂直弦的那份，弯成对称的弧
     #expect(
-      Annotation.arrowBend(from: from, to: to, through: CGPoint(x: 80, y: -50), constrained: true)
+      Annotation.curveBend(from: from, to: to, through: CGPoint(x: 80, y: -50), constrained: true)
         == CGVector(dx: 0, dy: -0.5))
     // 离弦不到 4 点吸回直的（弦的延长线上也是）；弦长为 0 是直的
     for point in [CGPoint(x: 70, y: 3.9), CGPoint(x: 70, y: -3.9), CGPoint(x: 160, y: 0)] {
       #expect(
-        Annotation.arrowBend(from: from, to: to, through: point, constrained: false) == .zero)
+        Annotation.curveBend(from: from, to: to, through: point, constrained: false) == .zero)
     }
     #expect(
-      Annotation.arrowBend(from: from, to: to, through: CGPoint(x: 50, y: 4), constrained: false)
+      Annotation.curveBend(from: from, to: to, through: CGPoint(x: 50, y: 4), constrained: false)
         != .zero)
     #expect(
-      Annotation.arrowBend(from: from, to: from, through: CGPoint(x: 5, y: 50), constrained: false)
+      Annotation.curveBend(from: from, to: from, through: CGPoint(x: 5, y: 50), constrained: false)
         == .zero)
-    // 拖弯曲手柄：两端不动，弧线中点跟到手柄上；原来的箭头默认是直的
-    let arrow = Annotation(shape: .arrow(from: from, to: to))
-    #expect(arrow.shape == .arrow(from: from, to: to, bend: .zero))
-    let bent = arrow.resized(.bend, to: CGPoint(x: 30, y: -40), constrained: false)
-    #expect(bent.id == arrow.id)
-    guard case .arrow(let start, let end, let dragged) = bent.shape else {
-      return #expect(Bool(false))
-    }
+    // 拖弯曲手柄：两端不动，弧线中点跟到手柄上（沿弦停在 ¾ 处、⇧ 对称、离弦 4 点内拉直同上）；原来的默认是直的
+    let straight = Annotation(shape: .bendable(tool, from: from, to: to))
+    #expect(Annotation.shape(for: tool, from: from, to: to, constrained: false) == straight.shape)
+    #expect(straight.shape.curve?.bend == .zero)
+    let bent = straight.resized(.bend, to: CGPoint(x: 30, y: -40), constrained: false)
+    #expect(bent.id == straight.id && bent.tool == tool)
+    guard let (start, end, dragged) = bent.shape.curve else { return #expect(Bool(false)) }
     #expect(start == from && end == to)
     #expect(
-      near(Annotation.arrowMidpoint(from: from, to: to, bend: dragged), CGPoint(x: 30, y: -40)))
+      near(Annotation.curveMidpoint(from: from, to: to, bend: dragged), CGPoint(x: 30, y: -40)))
     #expect(bent.handles.last.map { $0.0 == .bend && near($0.1, CGPoint(x: 30, y: -40)) } == true)
-    // 弦短于 32 的短箭头不给弯曲手柄；只看弦：弧线中点被拖到离尖端不到 16（弦 40、中点在 ¾ 处离弦 4）也还在，
+    #expect(
+      straight.resized(.bend, to: CGPoint(x: 400, y: 20), constrained: false).shape.curve?.bend
+        == CGVector(dx: 0.25, dy: 0.2))
+    #expect(
+      straight.resized(.bend, to: CGPoint(x: 80, y: -50), constrained: true).shape
+        == .bendable(tool, from: from, to: to, bend: CGVector(dx: 0, dy: -0.5)))
+    #expect(bent.resized(.bend, to: CGPoint(x: 20, y: 3), constrained: false) == straight)
+    // 拉直：两端不动、弯度清零，id 和样式不变；不能弯的原样
+    #expect(bent.straightened == straight)
+    let box = Annotation(shape: .rectangle(CGRect(x: 0, y: 0, width: 9, height: 9)))
+    #expect(box.straightened == box)
+    // 弦短于 32 的短的不给弯曲手柄；只看弦：弧线中点被拖到离尖端不到 16（弦 40、中点在 ¾ 处离弦 4）也还在，
     // 拖着它的时候不会从光标下消失
-    #expect(Annotation(shape: .arrow(from: from, to: CGPoint(x: 30, y: 0))).handles.count == 2)
-    #expect(Annotation(shape: .arrow(from: from, to: CGPoint(x: 32, y: 0))).handles.count == 3)
+    #expect(
+      Annotation(shape: .bendable(tool, from: from, to: CGPoint(x: 30, y: 0))).handles.count == 2)
+    #expect(
+      Annotation(shape: .bendable(tool, from: from, to: CGPoint(x: 32, y: 0))).handles.count == 3)
     let short = Annotation(
-      shape: .arrow(from: from, to: CGPoint(x: 40, y: 0), bend: CGVector(dx: 0.25, dy: 0.1)))
+      shape: .bendable(
+        tool, from: from, to: CGPoint(x: 40, y: 0), bend: CGVector(dx: 0.25, dy: 0.1))
+    )
     let grip = short.handles.first { $0.0 == .bend }?.1
     #expect(grip.map { near($0, CGPoint(x: 30, y: 4)) && hypot(40 - $0.x, $0.y) < 16 } == true)
   }
@@ -228,9 +248,9 @@ struct AnnotationToolTests {
     // 投影从头到尾单调、不出两端（以前拖过尖端弧线拐过去再折回来，杆叠成两层、箭头朝反方向）
     let (from, to) = (CGPoint(x: 40, y: 150), CGPoint(x: 200, y: 150))
     for (handle, along) in [(CGPoint(x: 330, y: 156), 0.25), (CGPoint(x: -90, y: 144), -0.25)] {
-      let bend = Annotation.arrowBend(from: from, to: to, through: handle, constrained: false)
+      let bend = Annotation.curveBend(from: from, to: to, through: handle, constrained: false)
       #expect(bend.dx == along && abs(bend.dy - (handle.y - 150) / 160) < 1e-12)
-      let control = Annotation.arrowControl(from: from, to: to, bend: bend)
+      let control = Annotation.curveControl(from: from, to: to, bend: bend)
       #expect(abs(control.x - (along > 0 ? to.x : from.x)) < 1e-9)
       let xs = (0...1000).map { step -> CGFloat in
         let t = CGFloat(step) / 1000
@@ -245,7 +265,7 @@ struct AnnotationToolTests {
     // 手柄拖到弦的 ¾ 处、离弦 12：弧线贴着尖端拐个钩，底边中点到尖端的弦和杆在颈部差 20° 多。箭头底边垂直于杆（颈部不折），
     // 尖端还在终点上
     let (from, to) = (CGPoint.zero, CGPoint(x: 160, y: 0))
-    let bend = Annotation.arrowBend(
+    let bend = Annotation.curveBend(
       from: from, to: to, through: CGPoint(x: 120, y: 12), constrained: false)
     #expect(bend.dx == 0.25)
     /// 两个方向的夹角（度）
@@ -309,12 +329,13 @@ struct AnnotationToolTests {
     }
   }
 
-  @Test func hitTestingSkipsArrowsFarFromThePointer() {
-    // 每次鼠标移动都要问一遍所有标注：光标离弯箭头很远时先按外框排除，不逐段量距离、不建轮廓（没排除时 Debug 下一次
+  @Test(arguments: [Annotation.Tool.arrow, .line])
+  func hitTestingSkipsCurvesFarFromThePointer(_ tool: Annotation.Tool) {
+    // 每次鼠标移动都要问一遍所有标注：光标离弯的很远时先按外框排除，不逐段量距离、不建轮廓（没排除时 Debug 下一次
     // 几百微秒，2000 次要一秒上下）
     let arrow = Annotation(
-      shape: .arrow(
-        from: CGPoint(x: 100, y: 100), to: CGPoint(x: 1500, y: 900),
+      shape: .bendable(
+        tool, from: CGPoint(x: 100, y: 100), to: CGPoint(x: 1500, y: 900),
         bend: CGVector(dx: 0.1, dy: 0.4)),
       style: .init(weight: .large))
     let start = ContinuousClock.now
@@ -323,50 +344,53 @@ struct AnnotationToolTests {
     #expect(hits.isEmpty)
   }
 
-  @Test func arrowEndsKeepTheBendProportional() throws {
+  @Test(arguments: [Annotation.Tool.arrow, .line])
+  func endsKeepTheBendProportional(_ tool: Annotation.Tool) throws {
     // 弦从 (0,0)→(100,0) 拖成 (0,0)→(0,200)：放大 2 倍、逆时针转 90°，弧线中点 (50, 25) 跟着变到 (−50, 100)
     let arrow = Annotation(
-      shape: .arrow(from: .zero, to: CGPoint(x: 100, y: 0), bend: CGVector(dx: 0, dy: 0.25)))
+      shape: .bendable(
+        tool, from: .zero, to: CGPoint(x: 100, y: 0), bend: CGVector(dx: 0, dy: 0.25)))
     let resized = arrow.resized(.end, to: CGPoint(x: 0, y: 200), constrained: false)
-    guard case .arrow(let from, let to, let bend) = resized.shape else {
-      return #expect(Bool(false))
-    }
+    #expect(resized.tool == tool)
+    guard let (from, to, bend) = resized.shape.curve else { return #expect(Bool(false)) }
     #expect(from == .zero && to == CGPoint(x: 0, y: 200) && bend == CGVector(dx: 0, dy: 0.25))
     let mid = try #require(resized.handles.first { $0.0 == .bend }?.1)
     #expect(near(mid, CGPoint(x: -50, y: 100)))
     // 拖起点同样；挪动、复制、⌘D 偏移都带着弯度
-    guard
-      case .arrow(_, _, let moved) = arrow.resized(
-        .start, to: CGPoint(x: -30, y: 7), constrained: true
-      )
-      .shape
-    else { return #expect(Bool(false)) }
-    #expect(moved == CGVector(dx: 0, dy: 0.25))
+    #expect(
+      arrow.resized(.start, to: CGPoint(x: -30, y: 7), constrained: true).shape.curve?.bend
+        == CGVector(dx: 0, dy: 0.25))
     #expect(
       arrow.offset(by: CGSize(width: 5, height: -3)).shape
-        == .arrow(
-          from: CGPoint(x: 5, y: -3), to: CGPoint(x: 105, y: -3), bend: CGVector(dx: 0, dy: 0.25)))
+        == .bendable(
+          tool, from: CGPoint(x: 5, y: -3), to: CGPoint(x: 105, y: -3),
+          bend: CGVector(dx: 0, dy: 0.25)))
     #expect(
       arrow.duplicated().shape
-        == .arrow(
-          from: CGPoint(x: 12, y: -12), to: CGPoint(x: 112, y: -12),
+        == .bendable(
+          tool, from: CGPoint(x: 12, y: -12), to: CGPoint(x: 112, y: -12),
           bend: CGVector(dx: 0, dy: 0.25)))
   }
 
-  @Test func curvedArrowBoundsAndHitTestingFollowTheCurve() {
+  @Test(arguments: [Annotation.Tool.arrow, .line])
+  func curvedBoundsAndHitTestingFollowTheCurve(_ tool: Annotation.Tool) {
     // 弦 (0,0)→(100,0)，弧线顶点 (50, 25)：外框、点中都认鼓出来的那截，弦上（离弧线 25 点）点不中
     let arrow = Annotation(
-      shape: .arrow(from: .zero, to: CGPoint(x: 100, y: 0), bend: CGVector(dx: 0, dy: 0.25)))
-    let straight = Annotation(shape: .arrow(from: .zero, to: CGPoint(x: 100, y: 0)))
-    let pad = straight.bounds.maxY  // 直箭头的外框 = 两端的框外扩 max(箭头半宽, 线宽)
+      shape: .bendable(
+        tool, from: .zero, to: CGPoint(x: 100, y: 0), bend: CGVector(dx: 0, dy: 0.25)))
+    let straight = Annotation(shape: .bendable(tool, from: .zero, to: CGPoint(x: 100, y: 0)))
+    // 直的外框 = 两端的框外扩：箭头 max(箭头半宽, 线宽)，直线半个线宽
+    let pad = straight.bounds.maxY
+    #expect(tool == .arrow || pad == 2)
     #expect(abs(arrow.bounds.maxY - (25 + pad)) < 1e-9)
     #expect(arrow.bounds.minX == straight.bounds.minX && arrow.bounds.minY == straight.bounds.minY)
     #expect(arrow.drawBounds.contains(arrow.bounds))
     // 往下鼓、偏向一端的也一样：y 的极值在 t = 0.5（控制点 y 的一半），控制点偏到弦的右端外面、弧线鼓出右端
     // （x 的极值在 t ≈ 0.92，逐点找最右）
     let skewed = Annotation(
-      shape: .arrow(from: .zero, to: CGPoint(x: 100, y: 0), bend: CGVector(dx: 0.3, dy: -0.4)))
-    let control = Annotation.arrowControl(
+      shape: .bendable(
+        tool, from: .zero, to: CGPoint(x: 100, y: 0), bend: CGVector(dx: 0.3, dy: -0.4)))
+    let control = Annotation.curveControl(
       from: .zero, to: CGPoint(x: 100, y: 0), bend: CGVector(dx: 0.3, dy: -0.4))
     #expect(abs(skewed.bounds.minY - (control.y / 2 - pad)) < 1e-9)
     var rightmost: CGFloat = 0
@@ -418,13 +442,98 @@ struct AnnotationToolTests {
       [Annotation(shape: .arrow(from: from, to: to, bend: CGVector(dx: 0, dy: 1e-7)))], over: white)
     #expect(zip(straight.data, almost.data).allSatisfy { abs(Int($0) - Int($1)) <= 2 })
     // 手柄拖到 (50, 60)：弧线顶点上是红色的，弦中点上是白底；箭头沿弧线末端的走向（朝右下 63°）
-    let bend = Annotation.arrowBend(
+    let bend = Annotation.curveBend(
       from: from, to: to, through: CGPoint(x: 50, y: 60), constrained: false)
     let curved = try draw([Annotation(shape: .arrow(from: from, to: to, bend: bend))], over: white)
     #expect(Array(curved(50, 59)[0..<3]) == [255, 59, 48])
     #expect(curved(50, 20)[1] > 240)
     #expect(Array(curved(87, 25)[0..<3]) == [255, 59, 48])  // 尖端往回沿切线 6 点：箭头里
     #expect(curved(83, 20)[1] > 150)  // 顺着弦往回 6 点：直箭头的箭头在这里，弯的不在
+  }
+
+  @Test func straightLineIsDrawnAsBefore() throws {
+    // 直线还是原来那样描一段（圆头、线宽、同样的阴影），一个像素都不变；几乎直的弯直线（弯度远小于一个像素）看不出差别
+    let white = try Self.solid(gray: 1)
+    for (from, to, weight) in [
+      (CGPoint(x: 20.3, y: 20.7), CGPoint(x: 80.2, y: 70.4), Annotation.Weight.small),
+      (CGPoint(x: 10, y: 50), CGPoint(x: 90, y: 50), .medium),
+      (CGPoint(x: 70.5, y: 15), CGPoint(x: 30, y: 85.25), .large),
+    ] {
+      let style = Annotation.Style(color: .blue, weight: weight)
+      let drawn = try draw(
+        [Annotation(shape: .line(from: from, to: to), style: style)], over: white)
+      let reference = try Self.context()
+      reference.draw(white, in: CGRect(origin: .zero, size: view))
+      reference.setShadow(
+        offset: .zero, blur: 3, color: NSColor.black.withAlphaComponent(0.28).cgColor)
+      reference.setStrokeColor(Annotation.Palette.blue.color.cgColor)
+      reference.setLineWidth(weight.lineWidth)
+      reference.setLineCap(.round)
+      reference.strokeLineSegments(between: [from, to])
+      #expect(drawn.data == (try Pixels(try #require(reference.makeImage()))).data, "\(weight)")
+      let almost = try draw(
+        [
+          Annotation(
+            shape: .line(from: from, to: to, bend: CGVector(dx: 0, dy: 1e-7)), style: style)
+        ],
+        over: white)
+      #expect(zip(drawn.data, almost.data).allSatisfy { abs(Int($0) - Int($1)) <= 2 }, "\(weight)")
+    }
+  }
+
+  @Test func curvedLineDrawsAlongTheCurveInsideItsBounds() throws {
+    // 手柄拖到 (50, 60)：弧线顶点上是红色的（线宽 4），弦中点上是白底；圆头的终点在弧线末端，顺着弦往回 6 点是白底
+    let white = try Self.solid(gray: 1)
+    let (from, to) = (CGPoint(x: 10, y: 20), CGPoint(x: 90, y: 20))
+    let bend = Annotation.curveBend(
+      from: from, to: to, through: CGPoint(x: 50, y: 60), constrained: false)
+    let curved = try draw([Annotation(shape: .line(from: from, to: to, bend: bend))], over: white)
+    #expect(Array(curved(50, 59)[0..<3]) == [255, 59, 48])
+    #expect(curved(50, 20)[1] > 240)
+    #expect(Array(curved(87, 25)[0..<3]) == [255, 59, 48])
+    #expect(curved(83, 20)[1] > 150)
+    // 各种弯法、粗细真画出来：墨迹（不透明度过半）都在外框里、连阴影都在 drawBounds 里（点中先按外框排除，局部重画按
+    // drawBounds；外框多留 1 点给抗锯齿）
+    let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+    for weight in Annotation.Weight.allCases {
+      for length: CGFloat in [10, 32, 80] {
+        for bend in [
+          CGVector(dx: 0, dy: 0.03), CGVector(dx: 0.25, dy: 0.05), CGVector(dx: -0.25, dy: -0.2),
+          CGVector(dx: 0.1, dy: 0.6), CGVector(dx: 0.25, dy: 1.5), CGVector(dx: 0, dy: -3),
+        ] {
+          let (from, to) = (
+            CGPoint(x: 20.3, y: 30.6), CGPoint(x: 20.3 + length * 0.6, y: 30.6 + length * 0.8)
+          )
+          let line = Annotation(
+            shape: .line(from: from, to: to, bend: bend), style: .init(weight: weight))
+          let frame = line.drawBounds.insetBy(dx: -10, dy: -10).integral
+          let context = try #require(
+            CGContext(
+              data: nil, width: Int(frame.width), height: Int(frame.height), bitsPerComponent: 8,
+              bytesPerRow: 0, space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+          )
+          context.translateBy(x: -frame.minX, y: -frame.minY)
+          Annotation.drawAll([line], in: context, image: white, viewSize: view, shadowScale: 1)
+          let image = try #require(context.makeImage())
+          let data = try Pixels(image).data
+          let (ink, reach) = (
+            line.bounds.insetBy(dx: -1, dy: -1), line.drawBounds.insetBy(dx: -1, dy: -1)
+          )
+          var stray = 0
+          for row in 0..<image.height {
+            for column in 0..<image.width {
+              let alpha = data[row * image.bytesPerRow + column * 4 + 3]
+              let center = CGPoint(
+                x: frame.minX + CGFloat(column) + 0.5, y: frame.maxY - CGFloat(row) - 0.5)
+              if alpha > 0 && !reach.contains(center) || alpha > 128 && !ink.contains(center) {
+                stray += 1
+              }
+            }
+          }
+          #expect(stray == 0, "\(weight) \(length) \(bend)")
+        }
+      }
+    }
   }
 
   @Test func duplicateAndCounterNumbers() {
@@ -653,6 +762,14 @@ struct AnnotationToolTests {
         Annotation(shape: .line(from: CGPoint(x: 100, y: 700), to: CGPoint(x: 1100, y: 100))), false
       ),
       (
+        // 弯直线同弯箭头：沿着弧线切
+        Annotation(
+          shape: .line(
+            from: CGPoint(x: 100, y: 150), to: CGPoint(x: 1100, y: 250),
+            bend: CGVector(dx: -0.1, dy: 0.4)),
+          style: .init(color: .blue, weight: .large)), false
+      ),
+      (
         Annotation(
           shape: .highlighter(from: CGPoint(x: 100, y: 100), to: CGPoint(x: 1100, y: 700)),
           style: .init(color: .yellow)), false
@@ -824,5 +941,22 @@ struct AnnotationToolTests {
     context.draw(base, in: CGRect(x: 0, y: 0, width: 100, height: 100))
     context.draw(layer, in: CGRect(x: 0, y: 0, width: 100, height: 100))
     return try Pixels(try #require(context.makeImage()))
+  }
+}
+
+/// 能弯的两种（箭头、直线）走同一套断言（AnnotationEditingTests 也用）
+extension Annotation.Shape {
+  static func bendable(
+    _ tool: Annotation.Tool, from: CGPoint, to: CGPoint, bend: CGVector = .zero
+  ) -> Self {
+    tool == .line ? .line(from: from, to: to, bend: bend) : .arrow(from: from, to: to, bend: bend)
+  }
+
+  /// 两端和弯度；不能弯的是 nil
+  var curve: (from: CGPoint, to: CGPoint, bend: CGVector)? {
+    switch self {
+    case .arrow(let from, let to, let bend), .line(let from, let to, let bend): (from, to, bend)
+    default: nil
+    }
   }
 }
