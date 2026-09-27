@@ -180,6 +180,11 @@ struct SnapshotProbeTests {
       Accent.shared.select(AccentChoice(rawValue: savedAccent ?? "") ?? .system)
       if savedAccent == nil { UserDefaults.standard.removeObject(forKey: Prefs.accent) }
     }
+    // 通用页同时摆成外观选了「深色」：最右那张缩略图的强调色描边（临时偏好域，不动用户的外观）
+    let looksSuite = "kitty-snapshot-\(UUID().uuidString)"
+    let looks = try #require(UserDefaults(suiteName: looksSuite))
+    defer { looks.removePersistentDomain(forName: looksSuite) }
+    looks.set(AppAppearance.dark.rawValue, forKey: Prefs.appearance)
     for choice in [AccentChoice.yellow, .graphite] {
       Accent.shared.select(choice)
       for dark in [false, true] {
@@ -192,7 +197,7 @@ struct SnapshotProbeTests {
             width: ClipboardPanelView.width, height: ClipboardPanelView.height(for: model)),
           dark: dark, to: "\(out)/clip-accent-\(choice.rawValue)\(dark ? "-dark" : "").png")
         try snapshot(
-          GeneralTab(), size: NSSize(width: 640, height: 560), dark: dark,
+          GeneralTab().defaultAppStorage(looks), size: NSSize(width: 640, height: 560), dark: dark,
           to: "\(out)/settings-general-accent-\(choice.rawValue)\(dark ? "-dark" : "").png")
       }
     }
@@ -245,6 +250,11 @@ struct SnapshotProbeTests {
         size: NSSize(width: 780, height: 600), dark: dark,
         to: "\(out)/settings-\(page.rawValue)\(dark ? "-dark" : "").png")
     }
+    // 最小窗口（contentMinSize 700 × 460）下的通用页：外观缩略图、强调色两排放得下
+    navigation.page = .general
+    try snapshot(
+      SettingsRoot(navigation: navigation, page: pages) { AnyView(EmptyView()) },
+      size: NSSize(width: 700, height: 460), dark: false, to: "\(out)/settings-general-min.png")
     // 快捷键页拉长看到底（最后的速查表入口），「划词翻译」那一行摆成正在录制（只改外观，不装按键监听）
     navigation.page = .hotkeys
     hotKeys.recording = .selectionTranslate

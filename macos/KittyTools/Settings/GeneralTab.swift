@@ -1,4 +1,4 @@
-// 设置 › 通用：外观（跟随系统 / 浅色 / 深色）与强调色（跟随系统 + 系统设置那一排 8 色，都是改了立刻生效）、开机自启、权限状态（辅助功能、屏幕录制、剪贴板访问；从未授权变已授权时符号替换 + 弹一下）。
+// 设置 › 通用：外观（跟随系统 / 浅色 / 深色三张缩略图）与强调色（跟随系统 + 系统设置那一排 8 色，都是改了立刻生效）、开机自启、权限状态（辅助功能、屏幕录制、剪贴板访问；从未授权变已授权时符号替换 + 弹一下）。
 
 import ServiceManagement
 import SwiftUI
@@ -15,12 +15,8 @@ struct GeneralTab: View {
   var body: some View {
     Form {
       Section {
-        Picker("外观", selection: $appearance) {
-          ForEach(AppAppearance.allCases) { Text($0.title).tag($0) }
-        }
-        .pickerStyle(.segmented)
-        .onChange(of: appearance) { AppAppearance.apply() }
-        caption("截图工具栏和刘海岛提示始终是深色。")
+        LabeledContent("外观") { AppearancePicker(selection: $appearance) }
+          .onChange(of: appearance) { AppAppearance.apply() }
         LabeledContent("强调色") { AccentPicker() }
         caption(
           Accent.shared.choice == .system
@@ -154,6 +150,103 @@ struct PermissionStatus: View {
         .symbolEffect(.bounce, value: granted)
         .accessibilityLabel(granted ? "已授权" : "未授权")
     }
+  }
+}
+
+/// 外观：和系统设置 › 外观一样的三张小缩略图，名字写在下面；选中的名字加粗，外面一圈强调色描边（隔 1.5 pt 缝，快速淡入）
+private struct AppearancePicker: View {
+  @Binding var selection: AppAppearance
+
+  var body: some View {
+    HStack(spacing: 6) {
+      ForEach(AppAppearance.allCases) { option($0) }
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("外观")
+  }
+
+  private func option(_ appearance: AppAppearance) -> some View {
+    let selected = selection == appearance
+    return Button {
+      selection = appearance
+    } label: {
+      VStack(spacing: 3) {
+        AppearanceThumbnail(appearance: appearance)
+          .padding(4)
+          .overlay {
+            if selected {
+              RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
+                .strokeBorder(Style.brand, lineWidth: 2.5)
+                .transition(.opacity)
+            }
+          }
+        Text(appearance.title)
+          .font(.system(size: 12, weight: selected ? .semibold : .regular))
+          .foregroundStyle(selected ? .primary : .secondary)
+      }
+      .contentShape(.rect)
+    }
+    .buttonStyle(.plain)
+    .animation(.easeOut(duration: Style.fadeIn), value: selected)
+    .accessibilityLabel(appearance.title)
+    .accessibilityAddTraits(selected ? .isSelected : [])
+  }
+}
+
+/// 一张外观缩略图：桌面渐变 + 一扇从左上角露出来的小窗口（标题栏、两条内容、一个强调色小点）；
+/// 跟随系统 = 浅色、深色沿斜线各取一半。颜色是示意用的定值，不跟当前外观走（强调色点按缩略图自己的深浅取）
+private struct AppearanceThumbnail: View {
+  let appearance: AppAppearance
+  static let size = CGSize(width: 58, height: 38)
+
+  var body: some View {
+    let shape = RoundedRectangle(cornerRadius: Style.Radius.control, style: .continuous)
+    let (w, h) = (Self.size.width, Self.size.height)
+    ZStack {
+      switch appearance {
+      case .light: Self.desktop(dark: false)
+      case .dark: Self.desktop(dark: true)
+      case .system:
+        Self.desktop(dark: false)
+        Self.desktop(dark: true).mask(
+          Path {
+            $0.addLines([
+              CGPoint(x: w * 0.62, y: 0), CGPoint(x: w, y: 0), CGPoint(x: w, y: h),
+              CGPoint(x: w * 0.38, y: h),
+            ])
+          })
+      }
+    }
+    .frame(width: w, height: h)
+    .clipShape(shape)
+    .overlay(shape.strokeBorder(Style.hairline, lineWidth: 0.5))
+  }
+
+  private static func desktop(dark: Bool) -> some View {
+    let window = RoundedRectangle(cornerRadius: Style.Radius.mini, style: .continuous)
+    let bar = Color(white: dark ? 1 : 0, opacity: dark ? 0.22 : 0.13)
+    let wallpaper: [Color] =
+      dark
+      ? [Color(red: 0.11, green: 0.16, blue: 0.29), Color(red: 0.20, green: 0.15, blue: 0.31)]
+      : [Color(red: 0.62, green: 0.74, blue: 0.92), Color(red: 0.84, green: 0.80, blue: 0.94)]
+    return LinearGradient(colors: wallpaper, startPoint: .top, endPoint: .bottom)
+      .overlay(alignment: .topLeading) {
+        VStack(alignment: .leading, spacing: 4) {
+          Color(white: dark ? 0.24 : 0.91).frame(height: 7)  // 标题栏
+          HStack(spacing: 3) {
+            Circle().fill(Style.brand).frame(width: 5, height: 5)
+            Capsule().fill(bar).frame(width: 20, height: 3)
+          }
+          .padding(.leading, 5)
+          Capsule().fill(bar).frame(width: 28, height: 3).padding(.leading, 5)
+        }
+        .frame(width: 50, height: 32, alignment: .topLeading)
+        .background(Color(white: dark ? 0.16 : 1))
+        .clipShape(window)
+        .overlay(window.strokeBorder(Color(white: dark ? 1 : 0, opacity: 0.12), lineWidth: 0.5))
+        .offset(x: 10, y: 8)
+      }
+      .environment(\.colorScheme, dark ? .dark : .light)
   }
 }
 
