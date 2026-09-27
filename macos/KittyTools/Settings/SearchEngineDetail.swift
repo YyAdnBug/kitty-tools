@@ -1,7 +1,7 @@
 // 设置 › 启动器 › 某条网页搜索或快捷链接（N12 详情页，从列表推进来）：页头 40 pt 种类色块 + 名称 + 状态，
 // 下面分组表单：名称、关键词、网址、兜底开关（只有搜索有），删除（自定义的先确认）。改动即时写回偏好里的 JSON 列表
 // （和 LauncherTab 读写同一个键，启动器下次搜索就用上）；有问题（没名称、网址不完整、关键词被占用或重复、
-// 用不上）时页头和列表行的状态变成橙色说明，不拦着保存。
+// 用不上）时页头和列表行的状态变成橙色说明，不拦着保存。工具栏「‹ 返回」/ ⌘[ 回列表（SettingsBackButton）。
 
 import SwiftUI
 
@@ -17,6 +17,7 @@ struct SearchEngineDetail: View {
     if let engine = list.first(where: { $0.id == id }) {
       form(engine, problem: Self.problem(of: engine, in: list))
         .navigationTitle(Self.title(engine))
+        .toolbar { SettingsBackButton { dismiss() } }
     }
   }
 

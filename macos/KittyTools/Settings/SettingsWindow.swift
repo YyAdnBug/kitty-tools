@@ -1,6 +1,7 @@
 // 设置窗（Whisker §6 设置）：普通 NSWindow 里放 SwiftUI 的 NavigationSplitView。左边侧栏 = 家族色块 + 页名，
 // 顶上的搜索框按每页的关键词筛页；右边每页一个页头（40 pt 家族色块 + 标题 + 一句说明）+ 分组表单。
 // 记住上次看的页，窗口标题跟着页走；首次安装时盖一层欢迎引导（OnboardingView）。
+// 工具栏常驻「‹ 返回」（SettingsBackButton，同系统设置）：翻译服务、网页搜索的详情页里点它或 ⌘[ 回列表，别处置灰。
 // 不用 SwiftUI Settings scene：LSUIElement 应用里它会被压到别的 App 后面，浮层上的齿轮也调不到 openSettings。
 // 打开：先收起浮层 → 切成 .regular（出现 Dock 图标）并激活；关闭时切回 .accessory。
 // 侧栏选中自己画（SidebarRow）：AppKit 画侧栏选中时会把 App 的强调色大幅压深（品牌粉变成暗红，截图实测约 #9C2F3E），
@@ -134,6 +135,8 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
       rootView: SettingsRoot(navigation: navigation, page: page, onboarding: onboarding))
     hosting.sceneBridgingOptions = [.title, .toolbars]
     window = NSWindow(contentViewController: hosting)
+    // 标题桥接要等 SwiftUI 那边第一次变化才写进窗口，刚建出来是「未命名」（实测，换一次页才对）：先按当前页填上
+    window.title = navigation.page.title
     window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
     window.toolbarStyle = .unified
     window.isReleasedWhenClosed = false
@@ -198,6 +201,7 @@ struct SettingsRoot: View {
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
       .navigationTitle(navigation.page.title)
+      .toolbar { SettingsBackButton() }
     }
     .toolbar(removing: .sidebarToggle)
     .onChange(of: query) {
@@ -290,6 +294,23 @@ private struct NativeHighlightOff: NSViewRepresentable {
       let table = sequence(first: self as NSView, next: \.superview).lazy
         .compactMap { $0 as? NSTableView }.first
       table?.selectionHighlightStyle = .none
+    }
+  }
+}
+
+/// 工具栏的「‹ 返回」：各页上置灰占位，推进的详情页（TranslateServiceDetail、SearchEngineDetail）自己再声明一个
+/// 能点的（action = dismiss）。要自己放、还得两处都放（macOS 15 实测）：NavigationStack 自带的返回按钮桥接不进
+/// NSHostingController 的窗口工具栏；外层声明的工具栏项在内层 NavigationStack 推进后整个丢掉。常驻是因为工具栏
+/// 一出一没，标题栏高度（28 ↔ 52）和整页内容都会跳
+struct SettingsBackButton: ToolbarContent {
+  var action: (() -> Void)?
+
+  var body: some ToolbarContent {
+    ToolbarItem(placement: .navigation) {
+      Button("返回", systemImage: "chevron.backward") { action?() }
+        .disabled(action == nil)
+        .keyboardShortcut("[")
+        .help("返回")
     }
   }
 }

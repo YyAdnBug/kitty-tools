@@ -1,6 +1,7 @@
 // 设置 › 翻译 › 某个服务（N12 详情页，从服务列表推进来）：页头 40 pt 服务图标 + 名称 + 状态，
 // 下面分组表单：启用、各服务自己的选项（自建 AI 实例的名称 / 协议 / 地址 / 模型与「获取模型」）、钥匙串里的密钥、
 // 测试连接；自建 AI 实例可以删除（连同密钥）。改动即时生效（服务列表写 UserDefaults，密钥直接写钥匙串）。
+// 工具栏「‹ 返回」/ ⌘[ 回列表（SettingsBackButton）。
 
 import SwiftUI
 
@@ -20,6 +21,7 @@ struct TranslateServiceDetail: View {
     if let current = store.services.first(where: { $0.id == id }) {
       form(current)
         .navigationTitle(current.name)
+        .toolbar { SettingsBackButton { dismiss() } }
     }
   }
 

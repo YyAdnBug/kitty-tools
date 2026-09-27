@@ -1,6 +1,6 @@
 // 设置里有序列表（N12）的单测：网页搜索一条的问题提示（名称、网址、保留 / 重复关键词（只算搜索之间）、用不上）、
 // 列表 JSON 读写（关键词去空白）、预置判断（删自定义的要确认）、翻译服务状态副标题（开着才标橙）；
-// 另有通用页的外观偏好 → NSAppearance 名字、设置窗侧栏不画原生选中高亮（自绘那块才是选中）。
+// 另有通用页的外观偏好 → NSAppearance 名字、设置窗侧栏不画原生选中高亮（自绘那块才是选中）、工具栏的「‹ 返回」。
 
 import AppKit
 import SwiftUI
@@ -116,5 +116,83 @@ struct SettingsListTests {
     settle()
     #expect(sidebar.selectionHighlightStyle == .none)
     #expect(sidebar.selectedRow != before && sidebar.selectedRow >= 0)
+  }
+
+  /// 工具栏的「‹ 返回」（SettingsBackButton）：各页上都有（置灰，⌘[ 不响应），推进详情页后还在、标题栏不变高，
+  /// ⌘[ 回列表。按 SettingsWindow 的配法建有标题栏的窗口（工具栏桥接要它），放在屏外（OffscreenWindow）、不激活；
+  /// 页面是和 TranslateTab / LauncherTab 同样结构的 NavigationStack（真页面会读钥匙串、受保护的文件夹）
+  @Test func backButtonInToolbar() throws {
+    let navigation = SettingsNavigation()
+    let saved = navigation.page
+    defer { navigation.page = saved }
+    navigation.page = .launcher
+    let suite = "kitty-test-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let stack = DetailStack()
+    let hosting = NSHostingController(
+      rootView: SettingsRoot(navigation: navigation) { _ in
+        AnyView(stack.defaultAppStorage(defaults))
+      } onboarding: {
+        AnyView(EmptyView())
+      })
+    hosting.sceneBridgingOptions = [.title, .toolbars]
+    let window = OffscreenWindow(contentViewController: hosting)
+    window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+    window.toolbarStyle = .unified
+    window.setContentSize(NSSize(width: 780, height: 600))
+    window.setFrameOrigin(NSPoint(x: -20000, y: -20000))
+    window.orderFront(nil)
+    defer { window.orderOut(nil) }
+    #expect(window.screen == nil)  // 没被挪进屏幕里（跑测试时不闪窗口）
+    let settle = { for _ in 0..<5 { RunLoop.main.run(until: .now.addingTimeInterval(0.1)) } }
+    let back = {
+      window.performKeyEquivalent(
+        with: try #require(
+          NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, characters: "[",
+            charactersIgnoringModifiers: "[", isARepeat: false, keyCode: 33)))
+    }
+    settle()
+    #expect(window.toolbar?.items.count == 1)
+    let height = window.contentLayoutRect.height
+    #expect(try !back())
+    stack.model.path = ["google"]
+    settle()
+    #expect(window.title == "Google")
+    #expect(window.toolbar?.items.count == 1)
+    #expect(window.contentLayoutRect.height == height)
+    #expect(try back())
+    settle()
+    #expect(stack.model.path.isEmpty)
+    #expect(window.toolbar?.items.count == 1)
+  }
+}
+
+/// 有标题栏的窗口 orderFront 时 AppKit 会把它挪回屏幕里（无边框的不会）：测试里不让挪，留在屏外
+private final class OffscreenWindow: NSWindow {
+  override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+    frameRect
+  }
+}
+
+/// 和 TranslateTab / LauncherTab 一样：页头 + 表单包在 NavigationStack 里，推进 SearchEngineDetail
+private struct DetailStack: View {
+  @Observable final class Model {
+    var path: [String] = []
+  }
+
+  @Bindable var model = Model()
+
+  var body: some View {
+    NavigationStack(path: $model.path) {
+      VStack(spacing: 0) {
+        PageHeader(page: .launcher)
+        Form { Text(verbatim: "list") }.formStyle(.grouped)
+      }
+      .navigationTitle(SettingsPage.launcher.title)
+      .navigationDestination(for: String.self) { SearchEngineDetail(id: $0) }
+    }
   }
 }
