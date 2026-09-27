@@ -1,5 +1,6 @@
 // 截图标注编辑的交互（Whisker §6「标注编辑」）：单击放序号、画笔累点、画完自动选中、拖手柄改大小（⇧ 约束，拖到看不出来就恢复）、
-// ⌥ 拖动复制、⇧ 锁轴、⌘D、撤销 / 重做、⌫ 删除、标注手柄比选区边优先、双击文字重新编辑 / 双击空白拷贝、文字三种样式在输入框里所见即所得。
+// ⌥ 拖动复制、⇧ 锁轴、⌘D、撤销 / 重做、⌫ 删除、标注手柄比选区边优先、双击文字重新编辑 / 双击空白拷贝、文字三种样式在输入框里所见即所得、
+// 箭头的弯曲手柄（拖弯、⇧ 对称、吸回直的、双击拉直）和弯度跟着改两端 / 方向键 / ⌘D / ⌥ 拖动走。
 // 用 SelectionInteractionTests 的屏外窗口 + 合成事件（不弹遮罩、不抢键盘）；选区都是 (300, 200, 400 × 300)。
 
 import AppKit
@@ -116,6 +117,95 @@ struct AnnotationEditingTests {
     #expect(abs(hypot(to.x - from.x, to.y - from.y) - hypot(130, 100)) < 0.001)
   }
 
+  /// 箭头的弧线中点（弯曲手柄的位置）
+  private func midpoint(_ h: Harness, _ id: UUID?) -> CGPoint? {
+    guard case .arrow(let from, let to, let bend)? = annotation(h, id)?.shape else { return nil }
+    return Annotation.arrowMidpoint(from: from, to: to, bend: bend)
+  }
+
+  private func near(_ a: CGPoint?, _ b: CGPoint) -> Bool {
+    a.map { hypot($0.x - b.x, $0.y - b.y) < 1e-9 } ?? false
+  }
+
+  @Test func arrowMidpointHandleBendsSnapsAndDoubleClickStraightens() {
+    let h = harness(tool: .arrow)
+    h.drag(CGPoint(x: 350, y: 300), CGPoint(x: 450, y: 300))
+    let id = h.view.selectedAnnotation
+    let straight = Annotation.Shape.arrow(
+      from: CGPoint(x: 350, y: 300), to: CGPoint(x: 450, y: 300))
+    #expect(annotation(h, id)?.shape == straight)
+    // 按在弦中点（直箭头的弯曲手柄，压在箭头杆上）往上拖：两端不动、弧线中点跟手（拖动中就是弯的），不是挪整条
+    h.begin(CGPoint(x: 400, y: 300), to: CGPoint(x: 410, y: 340))
+    #expect(near(midpoint(h, id), CGPoint(x: 410, y: 340)))
+    h.release(CGPoint(x: 410, y: 340))
+    guard case .arrow(let from, let to, let bend)? = annotation(h, id)?.shape else {
+      return #expect(Bool(false))
+    }
+    #expect(from == CGPoint(x: 350, y: 300) && to == CGPoint(x: 450, y: 300) && bend != .zero)
+    #expect(h.view.annotations.count == 1)
+    // 一次拖动一步撤销
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: .command)
+    #expect(annotation(h, id)?.shape == straight)
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: [.command, .shift])
+    #expect(near(midpoint(h, id), CGPoint(x: 410, y: 340)))
+    // ⇧：对称的弧（中点落在弦的垂直平分线上）
+    h.drag(CGPoint(x: 410, y: 340), CGPoint(x: 430, y: 280), flags: .shift)
+    #expect(near(midpoint(h, id), CGPoint(x: 400, y: 280)))
+    // 拖回离弦不到 4 点：吸回直的
+    h.drag(CGPoint(x: 400, y: 280), CGPoint(x: 380, y: 297))
+    #expect(annotation(h, id)?.shape == straight)
+    // 双击弯曲手柄拉直，记一步撤销
+    h.drag(CGPoint(x: 400, y: 300), CGPoint(x: 400, y: 360))
+    for clicks in 1...2 {
+      h.down(CGPoint(x: 401, y: 359), clicks: clicks)
+      h.release(CGPoint(x: 401, y: 359))
+    }
+    #expect(annotation(h, id)?.shape == straight)
+    #expect(h.view.selectedAnnotation == id)
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: .command)
+    #expect(near(midpoint(h, id), CGPoint(x: 400, y: 360)))
+  }
+
+  @Test func bentArrowKeepsItsBendWhenEditedMovedAndCopied() throws {
+    let h = harness(tool: nil)
+    let bend = CGVector(dx: 0, dy: 0.5)
+    let arrow = Annotation(
+      shape: .arrow(from: CGPoint(x: 350, y: 300), to: CGPoint(x: 450, y: 300), bend: bend))
+    h.view.annotations = [arrow]
+    // 点弧线（顶点 (400, 350)）选中它；弦中点离弧线 50 点，点不中
+    h.click(CGPoint(x: 400, y: 300))
+    #expect(h.view.selectedAnnotation == nil)
+    h.click(CGPoint(x: 420, y: 347))
+    #expect(h.view.selectedAnnotation == arrow.id)
+    // 拖终点：弯度跟着弦等比变，弯曲手柄还在弧线中点
+    h.drag(CGPoint(x: 450, y: 300), CGPoint(x: 550, y: 300))
+    #expect(
+      annotation(h, arrow.id)?.shape
+        == .arrow(from: CGPoint(x: 350, y: 300), to: CGPoint(x: 550, y: 300), bend: bend))
+    #expect(near(midpoint(h, arrow.id), CGPoint(x: 450, y: 400)))
+    // 方向键挪、⌘D 复制（右下 12）、⌥ 拖动复制都带着弯度；撤销回到挪之前
+    h.arrow(kVK_RightArrow)
+    #expect(
+      annotation(h, arrow.id)?.shape
+        == .arrow(from: CGPoint(x: 351, y: 300), to: CGPoint(x: 551, y: 300), bend: bend))
+    #expect(h.keyEquivalent(kVK_ANSI_D, "d", flags: .command))
+    let copy = try #require(h.view.annotations.last)
+    #expect(copy.id != arrow.id && h.view.selectedAnnotation == copy.id)
+    #expect(
+      copy.shape
+        == .arrow(from: CGPoint(x: 363, y: 288), to: CGPoint(x: 563, y: 288), bend: bend))
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: .command)
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: .command)
+    #expect(h.view.annotations.count == 1)
+    #expect(near(midpoint(h, arrow.id), CGPoint(x: 450, y: 400)))
+    h.drag(CGPoint(x: 450, y: 399), CGPoint(x: 450, y: 379), flags: .option)
+    let dragged = try #require(h.view.annotations.last)
+    #expect(h.view.annotations.count == 2 && dragged.id != arrow.id)
+    #expect(
+      dragged.shape
+        == .arrow(from: CGPoint(x: 350, y: 280), to: CGPoint(x: 550, y: 280), bend: bend))
+  }
+
   @Test func optionDragDuplicatesAndMovesTheCopy() throws {
     let h = harness(tool: nil)
     let original = Annotation(shape: .rectangle(CGRect(x: 350, y: 250, width: 100, height: 100)))
@@ -199,12 +289,12 @@ struct AnnotationEditingTests {
     h.view.annotations = [arrow]
     h.drag(CGPoint(x: 400, y: 300), CGPoint(x: 430, y: 310), flags: .shift)
     #expect(annotation(h, arrow.id)?.shape == arrow.offset(by: CGSize(width: 30, height: 0)).shape)
-    // 拖动中松开 ⇧：立刻跟手
-    h.begin(CGPoint(x: 430, y: 300), to: CGPoint(x: 435, y: 340), flags: .shift)
+    // 拖动中松开 ⇧：立刻跟手（现在选中了：按在弦中点是弯曲手柄，挪要按在杆的别处）
+    h.begin(CGPoint(x: 410, y: 300), to: CGPoint(x: 415, y: 340), flags: .shift)
     #expect(annotation(h, arrow.id)?.shape == arrow.offset(by: CGSize(width: 30, height: 40)).shape)
     h.modifiers([])
     #expect(annotation(h, arrow.id)?.shape == arrow.offset(by: CGSize(width: 35, height: 40)).shape)
-    h.release(CGPoint(x: 435, y: 340))
+    h.release(CGPoint(x: 415, y: 340))
   }
 
   @Test func commandDDuplicatesDownRightAndDeleteRemoves() throws {

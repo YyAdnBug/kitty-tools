@@ -8,8 +8,9 @@
 // ⌘ / ⌥ + 方向键推 / 收那条边；尺寸胶囊点数字输入像素宽高、比例菜单锁比例；右键没有标注时回到待选，有标注时只提示；
 // 放大镜显示中心像素的色值（C 复制），按住 ⌘ 出整屏十字准线；S 长截图、T 钉图、O 识字；
 // 标注 1–0（矩形、椭圆、箭头、直线、画笔、荧光笔、文字、序号、马赛克、聚光灯，⇧ 画正方形 / 45° 线，再按一次收起；
-// 序号单击放、画笔一路累点），画完自动选中（工具保持）：粉色虚线框 + 手柄，拖手柄改大小（⇧ 约束）、拖本体移动（⇧ 锁轴）、
-// ⌥ 拖动复制、⌘D 复制、改颜色粗细、⌫ 删除、双击文字重新编辑，⌘Z 撤销、⇧⌘Z 重做（拖着标注时这几个键不响应）。
+// 序号单击放、画笔一路累点），画完自动选中（工具保持）：粉色虚线框 + 手柄，拖手柄改大小（⇧ 约束）、拖箭头中间的手柄弯曲
+// （⇧ 对称、拖回弦上拉直、双击拉直）、拖本体移动（⇧ 锁轴）、⌥ 拖动复制、⌘D 复制、改颜色粗细、⌫ 删除、双击文字重新编辑，
+// ⌘Z 撤销、⇧⌘Z 重做（拖着标注时这几个键不响应）。
 // 旁白（Whisker §7）：遮罩整块是一个分组，标签读状态（待选 / 选区像素尺寸、当前工具、锁着的比例），顶部提示是帮助；
 // 进入调整、换工具、锁比例时主动播报（取色后的「已复制色值」由刘海岛播报）。
 
@@ -779,7 +780,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
   }
 
   /// 选中的标注：1 pt 粉色虚线框 [4, 3]（箭头、直线、荧光笔不画）+ 手柄（白 9 pt 圆 + 1.5 pt 粉环；矩形类四角、线类两端，
-  /// 文字、序号、画笔没有）。输入文字时不画（输入框自己有边框，大小跟着输入变）
+  /// 箭头的弧线中点是小一号的 7 pt 弯曲手柄；文字、序号、画笔没有）。输入文字时不画（输入框自己有边框，大小跟着输入变）
   private func updateAnnotationChrome() {
     guard editor == nil, let selected else {
       annotationOutline.path = nil
@@ -791,8 +792,10 @@ final class SelectionView: NSView, NSTextViewDelegate {
     let frame = selected.bounds.insetBy(dx: -3, dy: -3).integral
     annotationOutline.path = isSegment ? nil : CGPath(rect: frame, transform: nil)
     let dots = CGMutablePath()
-    for (_, point) in selected.handles {
-      dots.addEllipse(in: CGRect(x: point.x - 4.5, y: point.y - 4.5, width: 9, height: 9))
+    for (handle, point) in selected.handles {
+      let radius: CGFloat = handle == .bend ? 3.5 : 4.5
+      dots.addEllipse(
+        in: CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2))
     }
     annotationHandles.path = dots.isEmpty ? nil : dots
   }
@@ -1613,6 +1616,14 @@ final class SelectionView: NSView, NSTextViewDelegate {
     // 在输入文字时点了输入框外面：先把文字收下，这一下不做别的
     if editor != nil { return endEditing() }
     if isAdjusting, let selection {
+      // 双击箭头的弯曲手柄：拉直（记一步撤销，本来就直的不记）
+      if event.clickCount == 2, let grip = annotationHandle(at: point), grip.handle == .bend,
+        case .arrow(let from, let to, _) = grip.annotation.shape
+      {
+        var straight = grip.annotation
+        straight.shape = .arrow(from: from, to: to)
+        return commit(annotations.map { $0.id == straight.id ? straight : $0 })
+      }
       let hit = annotation(at: point)
       if event.clickCount == 2, let hit, case .text(_, let origin) = hit.shape {
         return beginEditing(at: origin, existing: hit)
@@ -1887,14 +1898,14 @@ final class SelectionView: NSView, NSTextViewDelegate {
     (selection.contains(point) ? NSCursor.openHand : NSCursor.crosshair).set()
   }
 
-  /// 标注手柄上的光标：矩形类的角是斜向缩放，线类两端是手指（端点往哪儿拖都行）
+  /// 标注手柄上的光标：矩形类的角是斜向缩放，线类两端和箭头的弯曲手柄是手指（往哪儿拖都行）
   private static func cursor(for handle: Annotation.Handle) -> NSCursor {
     switch handle {
     case .topLeft: .frameResize(position: .topLeft, directions: .all)
     case .topRight: .frameResize(position: .topRight, directions: .all)
     case .bottomLeft: .frameResize(position: .bottomLeft, directions: .all)
     case .bottomRight: .frameResize(position: .bottomRight, directions: .all)
-    case .start, .end: .pointingHand
+    case .start, .end, .bend: .pointingHand
     }
   }
 

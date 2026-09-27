@@ -5,7 +5,7 @@ import Testing
 @testable import KittyTools
 
 // 截图重设计（Whisker §6 截图，2026-09-26）的屏外截图自检（按需启用，同 SnapshotProbeTests）：遮罩待选 / 框选 / 调整、
-// 工具栏上下、按工具的样式托盘、10 种标注与选中手柄、尺寸输入、文字输入（三种样式）、比例和保存菜单、右键提示、截图翻译框选、常驻缩略图
+// 工具栏上下、按工具的样式托盘、10 种标注与选中手柄、弯箭头（选中 / 拖弯曲手柄 / 各种颜色粗细）、尺寸输入、文字输入（三种样式）、比例和保存菜单、右键提示、截图翻译框选、常驻缩略图
 // （飞行卡片落地后交接的同一张卡）、长截图面板与边框，按 2x 写成 PNG（带 -crop 的是局部，看线和图标对不对齐）。
 // 状态用 SelectionInteractionTests 的屏外窗口 + 合成事件摆（不弹遮罩、不抢键盘）；图层要在窗口里显示过才有内容，
 // 所以把屏外 (-20000, -20000) 的无边框窗口（当不了 key）orderFront 一下再 layer.render(in:)。材质在屏外会发灰，只锁布局。
@@ -111,6 +111,30 @@ struct ScreenshotSnapshotTests {
       h.move(CGPoint(x: 1150, y: 760))
       try shoot(h.window, name, crop: CGRect(x: 150, y: 150, width: 900, height: 460))
     }
+    // 选中的弯箭头：两端手柄 + 弧线中点小一号的弯曲手柄；拖着弯曲手柄（跟手、放大镜不出）
+    let curved = Annotation(
+      shape: .arrow(
+        from: CGPoint(x: 400, y: 330), to: CGPoint(x: 720, y: 380), bend: CGVector(dx: 0, dy: 0.3)
+      ), style: .init(color: .pink))
+    for (name, dragging) in [("selected-curved-arrow", false), ("bending-arrow", true)] {
+      let h = adjust()
+      h.view.annotations = [curved]
+      h.view.tool = .arrow
+      h.view.selectedAnnotation = curved.id
+      if dragging {
+        let handle = try #require(curved.handles.first { $0.0 == .bend }?.1)
+        h.begin(handle, to: CGPoint(x: 600, y: 280))
+      } else {
+        h.move(CGPoint(x: 1150, y: 760))
+      }
+      try shoot(h.window, name, crop: CGRect(x: 360, y: 250, width: 400, height: 220))
+    }
+    // 各种颜色、粗细的弯箭头：往两边弯、偏向一端、弯成 U 形，各配一条同样式的直箭头对照
+    h = capture()
+    h.view.select(selection)
+    h.view.annotations = Self.curvedArrows
+    h.move(CGPoint(x: 1150, y: 760))
+    try shoot(h.window, "curved-arrows", crop: CGRect(x: 120, y: 150, width: 480, height: 300))
 
     // 尺寸胶囊：输入中（宽拿到键盘，粉色焦点环）；比例菜单开着；保存 ▾ 菜单开着
     h = adjust()
@@ -278,6 +302,46 @@ struct ScreenshotSnapshotTests {
     }
     return list
   }
+
+  /// 弯箭头一组（选区 (120, 150, 960 × 580) 里）：左列细 / 中 / 粗各一条弯的 + 一条同样式直的，右边偏向一端、U 形、
+  /// 压在表格上的白色和黄色
+  private static let curvedArrows: [Annotation] = {
+    func arrow(_ from: CGPoint, _ to: CGPoint, _ bend: CGVector, _ style: Annotation.Style)
+      -> Annotation
+    {
+      Annotation(shape: .arrow(from: from, to: to, bend: bend), style: style)
+    }
+    return [
+      arrow(
+        CGPoint(x: 160, y: 180), CGPoint(x: 380, y: 190), CGVector(dx: 0, dy: 0.15),
+        .init(color: .pink, weight: .small)),
+      arrow(
+        CGPoint(x: 160, y: 300), CGPoint(x: 380, y: 300), CGVector(dx: 0, dy: -0.2),
+        .init(color: .red, weight: .medium)),
+      arrow(CGPoint(x: 160, y: 350), CGPoint(x: 380, y: 350), .zero, .init(color: .red)),
+      arrow(
+        CGPoint(x: 420, y: 170), CGPoint(x: 470, y: 420), CGVector(dx: 0, dy: 0.25),
+        .init(color: .blue, weight: .large)),
+      arrow(
+        CGPoint(x: 520, y: 170), CGPoint(x: 570, y: 420), .zero,
+        .init(color: .blue, weight: .large)),
+      arrow(
+        CGPoint(x: 160, y: 560), CGPoint(x: 420, y: 700), CGVector(dx: 0.3, dy: -0.25),
+        .init(color: .green, weight: .medium)),
+      arrow(
+        CGPoint(x: 640, y: 660), CGPoint(x: 540, y: 660), CGVector(dx: 0, dy: 1.1),
+        .init(color: .orange, weight: .large)),
+      arrow(
+        CGPoint(x: 760, y: 300), CGPoint(x: 1040, y: 480), CGVector(dx: -0.15, dy: -0.3),
+        .init(color: .white, weight: .large)),
+      arrow(
+        CGPoint(x: 1050, y: 680), CGPoint(x: 780, y: 600), CGVector(dx: 0, dy: 0.45),
+        .init(color: .yellow, weight: .medium)),
+      arrow(
+        CGPoint(x: 660, y: 720), CGPoint(x: 900, y: 725), CGVector(dx: 0, dy: -0.2),
+        .init(color: .black, weight: .small)),
+    ]
+  }()
 
   /// 工具栏 + 样式托盘（+ 开着的菜单）外扩 24
   private func barsFrame(_ h: Harness) -> CGRect {

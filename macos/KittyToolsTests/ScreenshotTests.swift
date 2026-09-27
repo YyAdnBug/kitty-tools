@@ -242,7 +242,7 @@ struct ScreenshotTests {
         for: .rectangle, from: CGPoint(x: 10, y: 10), to: CGPoint(x: 40, y: -5), constrained: true)
         == .rectangle(CGRect(x: 10, y: -20, width: 30, height: 30)))
     guard
-      case .arrow(_, let end)? = Annotation.shape(
+      case .arrow(_, let end, _)? = Annotation.shape(
         for: .arrow, from: .zero, to: CGPoint(x: 100, y: 10), constrained: true)
     else { return #expect(Bool(false)) }
     #expect(abs(end.y) < 0.001 && abs(end.x - hypot(100, 10)) < 0.001)

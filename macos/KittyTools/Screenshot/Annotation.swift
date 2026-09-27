@@ -1,4 +1,5 @@
-// 截图标注（值类型）：矩形、椭圆、箭头、直线、画笔、荧光笔、文字、序号、马赛克、聚光灯（mac-whisker §6「工具」）。
+// 截图标注（值类型）：矩形、椭圆、箭头（拖中间的手柄弯成弧线）、直线、画笔、荧光笔、文字、序号、马赛克、聚光灯
+// （mac-whisker §6「工具」）。
 // 坐标存整屏视图坐标（点，原点左下）：调整选区不丢标注（修旧版 #43）。屏幕显示（SelectionView 的标注层）和导出（render）
 // 只走同一个 drawAll，所见即所得；马赛克从冻结帧取像素，所以导出、识字拿到的都是打码后的图（修旧版把原图拿去识字，#44）。
 // 颜色是固定的 sRGB 值，不随深浅色变。除马赛克、聚光灯、荧光笔外都带 black 0.28 / blur 3 的阴影（白色标注在白底上也看得见）。
@@ -73,7 +74,9 @@ struct Annotation: Identifiable, Equatable {
   enum Shape: Equatable {
     case rectangle(CGRect)
     case ellipse(CGRect)
-    case arrow(from: CGPoint, to: CGPoint)
+    /// bend：弯箭头的弧线中点（弯曲手柄）离弦中点的偏移，按弦记——dx 沿弦（from → to）、dy 在弦的左侧，单位是弦长；
+    /// .zero = 直的。存相对量：整条挪动、⌘D / ⌥ 复制、方向键、撤销都不用另算，拖两端时弯度跟着弦等比缩放、旋转
+    case arrow(from: CGPoint, to: CGPoint, bend: CGVector = .zero)
     case line(from: CGPoint, to: CGPoint)
     /// 画笔经过的点（调用方拖动时累点）
     case pen([CGPoint])
@@ -164,8 +167,8 @@ struct Annotation: Identifiable, Equatable {
     }
   }
 
-  /// 选中标注的调整手柄：矩形类四角，线类两端
-  enum Handle { case start, end, topLeft, topRight, bottomLeft, bottomRight }
+  /// 选中标注的调整手柄：矩形类四角，线类两端，箭头还有弧线中点（bend，拖它弯曲）
+  enum Handle { case start, end, bend, topLeft, topRight, bottomLeft, bottomRight }
 
   var id = UUID()
   var shape: Shape
@@ -194,9 +197,10 @@ struct Annotation: Identifiable, Equatable {
     switch shape {
     case .rectangle(let rect), .ellipse(let rect):
       return rect.insetBy(dx: -width / 2, dy: -width / 2)
-    case .arrow(let from, let to):
-      let pad = max(Self.arrowWing(from: from, to: to, width: width), width)
-      return Self.box(from, to).insetBy(dx: -pad, dy: -pad)
+    case .arrow(let from, let to, let bend):
+      // 弯的：弧线会鼓出两端围成的框，按弧线的外框算
+      let pad = max(Self.arrowWing(from: from, to: to, width: width, bend: bend), width)
+      return Self.arrowBox(from, to, bend).insetBy(dx: -pad, dy: -pad)
     case .line(let from, let to):
       return Self.box(from, to).insetBy(dx: -width / 2, dy: -width / 2)
     case .highlighter(let from, let to):
@@ -302,9 +306,12 @@ struct Annotation: Identifiable, Equatable {
       // 到椭圆线的距离按短半轴近似（长轴两端偏宽容）
       let distance = (k - 1) * min(rx, ry)
       return filled ? distance <= width / 2 + tolerance : abs(distance) <= width / 2 + tolerance
-    case .arrow(let from, let to):
-      return Self.distance(from: point, toSegment: from, to) <= width / 2 + tolerance
-        || Self.arrowPath(from: from, to: to, width: width)?.contains(point) == true
+    case .arrow(let from, let to, let bend):
+      // 弯的认弧线（按 arrowLine 的折线算）
+      let line = Self.arrowLine(from, to, bend)
+      return zip(line, line.dropFirst()).contains {
+        Self.distance(from: point, toSegment: $0, $1) <= width / 2 + tolerance
+      } || Self.arrowPath(from: from, to: to, width: width, bend: bend)?.contains(point) == true
     case .line(let from, let to):
       return Self.distance(from: point, toSegment: from, to) <= width / 2 + tolerance
     case .highlighter(let from, let to):
@@ -330,7 +337,7 @@ struct Annotation: Identifiable, Equatable {
     switch shape {
     case .rectangle(let rect), .ellipse(let rect), .mosaic(let rect), .spotlight(let rect):
       rect.width >= 3 && rect.height >= 3
-    case .arrow(let from, let to), .line(let from, let to), .highlighter(let from, let to):
+    case .arrow(let from, let to, _), .line(let from, let to), .highlighter(let from, let to):
       hypot(to.x - from.x, to.y - from.y) >= 6
     case .pen(let points):
       points.count >= 2 && max(bounds.width, bounds.height) - style.weight.lineWidth >= 3
@@ -347,8 +354,8 @@ struct Annotation: Identifiable, Equatable {
     switch shape {
     case .rectangle(let rect), .ellipse(let rect), .mosaic(let rect), .spotlight(let rect):
       moved.shape = Self.boxed(tool, rect.offsetBy(dx: delta.width, dy: delta.height))
-    case .arrow(let from, let to), .line(let from, let to), .highlighter(let from, let to):
-      moved.shape = Self.segment(tool, from: shift(from), to: shift(to))
+    case .arrow(let from, let to, _), .line(let from, let to), .highlighter(let from, let to):
+      moved.shape = Self.segment(tool, from: shift(from), to: shift(to), bend: bend)
     case .pen(let points): moved.shape = .pen(points.map(shift))
     case .text(let string, let origin): moved.shape = .text(string, origin: shift(origin))
     case .counter(let number, let center): moved.shape = .counter(number, center: shift(center))
@@ -363,23 +370,30 @@ struct Annotation: Identifiable, Equatable {
     return copy
   }
 
-  /// 选中时的调整手柄：矩形类四角，线类两端；文字、序号、画笔只能拖动（空）
+  /// 选中时的调整手柄：矩形类四角，线类两端；箭头还有弧线中点（弯曲手柄，直的在弦中点：CleanShot 也是直箭头就给，
+  /// 看得见才知道能弯），离两端不到 16 点的短箭头不给（和端点手柄挤在一起）；文字、序号、画笔只能拖动（空）
   var handles: [(Handle, CGPoint)] {
     switch shape {
     case .rectangle(let rect), .ellipse(let rect), .mosaic(let rect), .spotlight(let rect):
-      [
+      return [
         (.topLeft, CGPoint(x: rect.minX, y: rect.maxY)),
         (.topRight, CGPoint(x: rect.maxX, y: rect.maxY)),
         (.bottomLeft, CGPoint(x: rect.minX, y: rect.minY)),
         (.bottomRight, CGPoint(x: rect.maxX, y: rect.minY)),
       ]
-    case .arrow(let from, let to), .line(let from, let to), .highlighter(let from, let to):
-      [(.start, from), (.end, to)]
-    case .pen, .text, .counter: []
+    case .arrow(let from, let to, let bend):
+      let mid = Self.arrowMidpoint(from: from, to: to, bend: bend)
+      let roomy =
+        min(hypot(mid.x - from.x, mid.y - from.y), hypot(mid.x - to.x, mid.y - to.y)) >= 16
+      return [(.start, from), (.end, to)] + (roomy ? [(.bend, mid)] : [])
+    case .line(let from, let to), .highlighter(let from, let to):
+      return [(.start, from), (.end, to)]
+    case .pen, .text, .counter: return []
     }
   }
 
-  /// 拖手柄改大小：矩形类对角不动（拖过头会翻过去）、⇧ 正方形；线类另一端不动、⇧ 吸 45°。不认的手柄原样返回
+  /// 拖手柄改大小：矩形类对角不动（拖过头会翻过去）、⇧ 正方形；线类另一端不动、⇧ 吸 45°（箭头的弯度跟着弦等比变）；
+  /// 箭头的弯曲手柄见 arrowBend（⇧ 对称的弧）。不认的手柄原样返回
   func resized(_ handle: Handle, to point: CGPoint, constrained: Bool) -> Annotation {
     var next = self
     switch (shape, handle) {
@@ -391,18 +405,30 @@ struct Annotation: Identifiable, Equatable {
       case .topRight: fixed = CGPoint(x: rect.minX, y: rect.minY)
       case .bottomLeft: fixed = CGPoint(x: rect.maxX, y: rect.maxY)
       case .bottomRight: fixed = CGPoint(x: rect.minX, y: rect.maxY)
-      case .start, .end: return self
+      case .start, .end, .bend: return self
       }
       next.shape = Self.shape(for: tool, from: fixed, to: point, constrained: constrained) ?? shape
-    case (.arrow(_, let to), .start), (.line(_, let to), .start), (.highlighter(_, let to), .start):
-      next.shape = Self.segment(tool, from: constrained ? Self.snapped(to, point) : point, to: to)
-    case (.arrow(let from, _), .end), (.line(let from, _), .end), (.highlighter(let from, _), .end):
+    case (.arrow(let from, let to, _), .bend):
+      next.shape = .arrow(
+        from: from, to: to,
+        bend: Self.arrowBend(from: from, to: to, through: point, constrained: constrained))
+    case (.arrow(_, let to, _), .start), (.line(_, let to), .start),
+      (.highlighter(_, let to), .start):
       next.shape = Self.segment(
-        tool, from: from, to: constrained ? Self.snapped(from, point) : point)
+        tool, from: constrained ? Self.snapped(to, point) : point, to: to, bend: bend)
+    case (.arrow(let from, _, _), .end), (.line(let from, _), .end),
+      (.highlighter(let from, _), .end):
+      next.shape = Self.segment(
+        tool, from: from, to: constrained ? Self.snapped(from, point) : point, bend: bend)
     default:
       return self
     }
     return next
+  }
+
+  /// 箭头的弯度（别的工具 .zero）
+  private var bend: CGVector {
+    if case .arrow(_, _, let bend) = shape { bend } else { .zero }
   }
 
   /// 拖动画出的形状（文字、序号是单击放置，返回 nil；画笔先给起止两点，由调用方累点）。
@@ -449,12 +475,14 @@ struct Annotation: Identifiable, Equatable {
     }
   }
 
-  /// 线类工具的形状（别的工具不会走到这里）
-  private static func segment(_ tool: Tool, from: CGPoint, to: CGPoint) -> Shape {
+  /// 线类工具的形状（别的工具不会走到这里；bend 只有箭头用）
+  private static func segment(_ tool: Tool, from: CGPoint, to: CGPoint, bend: CGVector = .zero)
+    -> Shape
+  {
     switch tool {
     case .line: .line(from: from, to: to)
     case .highlighter: .highlighter(from: from, to: to)
-    default: .arrow(from: from, to: to)
+    default: .arrow(from: from, to: to, bend: bend)
     }
   }
 
@@ -651,10 +679,19 @@ struct Annotation: Identifiable, Equatable {
       }
       let sag = max(rect.width, rect.height) / 2 * (1 - cos(.pi / CGFloat(sides)))
       return ([points], reach + sag)
-    case .arrow(let from, let to):
+    case .arrow(let from, let to, let bend):
+      // 弯的：沿弧线的折线，再放宽折线离弧线最远的那点（直的是 0）
+      let line = Self.arrowLine(from, to, bend)
+      let control = Self.arrowControl(from: from, to: to, bend: bend)
+      let sag =
+        bend == .zero
+        ? 0
+        : hypot(from.x - 2 * control.x + to.x, from.y - 2 * control.y + to.y)
+          / (4 * CGFloat((line.count - 1) * (line.count - 1)))
       return (
-        [[from, to]],
-        max(Self.arrowWing(from: from, to: to, width: width), width) + Self.shadowReach
+        [line],
+        max(Self.arrowWing(from: from, to: to, width: width, bend: bend), width) + Self.shadowReach
+          + sag
       )
     case .line(let from, let to): return ([[from, to]], reach)
     case .highlighter(let from, let to):
@@ -741,8 +778,8 @@ struct Annotation: Identifiable, Equatable {
       context.setLineWidth(width)
       context.addPath(path)
       context.strokePath()
-    case .arrow(let from, let to):
-      guard let path = Self.arrowPath(from: from, to: to, width: width) else { return }
+    case .arrow(let from, let to, let bend):
+      guard let path = Self.arrowPath(from: from, to: to, width: width, bend: bend) else { return }
       shadow()
       context.setFillColor(color.cgColor)
       context.addPath(path)
@@ -1036,8 +1073,13 @@ struct Annotation: Identifiable, Equatable {
   }
 
   /// 锥形实心箭头：一个填充多边形，杆从尾部 0.3 × 线宽渐粗到箭头处 1.2 × 线宽；箭头长 4 × 线宽、半角 28°
-  /// （比这还短的箭头只剩箭头）。零长度返回 nil
-  static func arrowPath(from: CGPoint, to: CGPoint, width: CGFloat) -> CGPath? {
+  /// （比这还短的箭头只剩箭头）。弯的见 curvedArrowPath（直的还是这个多边形，一个像素都不变）。零长度返回 nil
+  static func arrowPath(from: CGPoint, to: CGPoint, width: CGFloat, bend: CGVector = .zero)
+    -> CGPath?
+  {
+    if bend != .zero, let curved = curvedArrowPath(from: from, to: to, width: width, bend: bend) {
+      return curved
+    }
     let length = hypot(to.x - from.x, to.y - from.y)
     guard length > 0 else { return nil }
     let head = min(length, width * 4)
@@ -1059,9 +1101,152 @@ struct Annotation: Identifiable, Equatable {
     return path
   }
 
-  /// 箭头底边的半宽：头长 × tan 28°
-  private static func arrowWing(from: CGPoint, to: CGPoint, width: CGFloat) -> CGFloat {
-    min(hypot(to.x - from.x, to.y - from.y), width * 4) * tan(28 * .pi / 180)
+  /// 箭头底边的半宽：头长 × tan 28°（弯的头长按 4 × 线宽算，外框、切条宁大勿小）
+  private static func arrowWing(
+    from: CGPoint, to: CGPoint, width: CGFloat, bend: CGVector = .zero
+  ) -> CGFloat {
+    let head = bend == .zero ? min(hypot(to.x - from.x, to.y - from.y), width * 4) : width * 4
+    return head * tan(28 * .pi / 180)
+  }
+
+  // MARK: 弯箭头
+
+  /// 弧线中点（弯曲手柄）：弦中点 + bend.dx · d + bend.dy · d⊥（d = to − from，d⊥ 是它逆时针转 90°，即弦的左侧）
+  static func arrowMidpoint(from: CGPoint, to: CGPoint, bend: CGVector) -> CGPoint {
+    let d = CGVector(dx: to.x - from.x, dy: to.y - from.y)
+    return CGPoint(
+      x: (from.x + to.x) / 2 + bend.dx * d.dx - bend.dy * d.dy,
+      y: (from.y + to.y) / 2 + bend.dx * d.dy + bend.dy * d.dx)
+  }
+
+  /// 二次贝塞尔的控制点：t = 0.5 处是 ¼ 起点 + ½ 控制点 + ¼ 终点，要它落在弧线中点上，控制点 = 2 · 中点 − 弦中点
+  static func arrowControl(from: CGPoint, to: CGPoint, bend: CGVector) -> CGPoint {
+    let mid = arrowMidpoint(from: from, to: to, bend: bend)
+    return CGPoint(x: 2 * mid.x - (from.x + to.x) / 2, y: 2 * mid.y - (from.y + to.y) / 2)
+  }
+
+  /// 离弦（所在的直线）不到这么远就拉直：弯曲手柄拖回弦上时吸回直的
+  static let straightSnap: CGFloat = 4
+
+  /// 弯曲手柄拖到 point 时的弯度（弧线中点就在 point 上）：离弦不到 straightSnap 拉直；constrained（⇧）只留垂直弦的那份，
+  /// 弯成左右对称的弧。弦长为 0 时是直的
+  static func arrowBend(from: CGPoint, to: CGPoint, through point: CGPoint, constrained: Bool)
+    -> CGVector
+  {
+    let d = CGVector(dx: to.x - from.x, dy: to.y - from.y)
+    let lengthSquared = d.dx * d.dx + d.dy * d.dy
+    let v = CGVector(dx: point.x - (from.x + to.x) / 2, dy: point.y - (from.y + to.y) / 2)
+    let side = v.dy * d.dx - v.dx * d.dy  // v · d⊥ = 离弦的距离 × 弦长
+    guard lengthSquared > 0, abs(side) >= straightSnap * lengthSquared.squareRoot() else {
+      return .zero
+    }
+    let along = constrained ? 0 : (v.dx * d.dx + v.dy * d.dy) / lengthSquared
+    return CGVector(dx: along, dy: side / lengthSquared)
+  }
+
+  /// 箭头的骨架折线：直的是两端，弯的是弧线上的采样点（curve）
+  private static func arrowLine(_ from: CGPoint, _ to: CGPoint, _ bend: CGVector) -> [CGPoint] {
+    bend == .zero ? [from, to] : curve(from, arrowControl(from: from, to: to, bend: bend), to)
+  }
+
+  /// 箭头弧线的外框：两端 + 每个轴上的极值点（导数为 0 的 t）。直的就是两端围成的框
+  private static func arrowBox(_ from: CGPoint, _ to: CGPoint, _ bend: CGVector) -> CGRect {
+    guard bend != .zero else { return box(from, to) }
+    let control = arrowControl(from: from, to: to, bend: bend)
+    /// 这一轴上 (1−t)²a + 2t(1−t)b + t²c 的极值点
+    func extremum(_ a: CGFloat, _ b: CGFloat, _ c: CGFloat) -> CGFloat? {
+      let denominator = a - 2 * b + c
+      guard denominator != 0 else { return nil }
+      let t = (a - b) / denominator
+      return t > 0 && t < 1 ? t : nil
+    }
+    let turns = [extremum(from.x, control.x, to.x), extremum(from.y, control.y, to.y)]
+      .compactMap { $0 }.map { quad(from, control, to, $0) }
+    return turns.reduce(box(from, to)) { $0.union(CGRect(origin: $1, size: .zero)) }
+  }
+
+  /// 二次贝塞尔上 t 处的点
+  private static func quad(_ start: CGPoint, _ control: CGPoint, _ end: CGPoint, _ t: CGFloat)
+    -> CGPoint
+  {
+    let u = 1 - t
+    return CGPoint(
+      x: u * u * start.x + 2 * u * t * control.x + t * t * end.x,
+      y: u * u * start.y + 2 * u * t * control.y + t * t * end.y)
+  }
+
+  /// 二次贝塞尔上按 t 均分的点（含两端）：按控制折线长每 3 点一段、16–400 段（在 2x 屏上看不出折角）
+  private static func curve(_ start: CGPoint, _ control: CGPoint, _ end: CGPoint) -> [CGPoint] {
+    let length =
+      hypot(control.x - start.x, control.y - start.y) + hypot(end.x - control.x, end.y - control.y)
+    let segments = min(400, max(16, Int(length / 3)))
+    return (0...segments).map { quad(start, control, end, CGFloat($0) / CGFloat(segments)) }
+  }
+
+  /// 弯箭头：同直箭头的锥形实心多边形，沿二次贝塞尔（arrowControl）弯过去。箭头底边落在弧线上离尖端 4 × 线宽处，
+  /// 朝向是那里到尖端的方向（弧线末端的走向；尖端正是弧线的终点，箭头盖住弧线最后一截）；杆是弧线到底边的那一段
+  /// （de Casteljau 截出来，和弧线重合，弯曲手柄就在杆上），沿弧长从尾部半宽 0.15 × 线宽渐粗到底边 0.6 × 线宽，
+  /// 按每个采样点的法向往两侧偏出；头长、半角、颈宽同直箭头。整条弧都离尖端不到 4 × 线宽（很短）时 nil，按直的画。
+  /// ponytail: 按法向偏移的轮廓在弧线半径小于杆的半宽（最粗 3.6 点）处内侧自交，那一小块可能描不满；弯曲手柄拖出的弧
+  /// 几乎到不了这么尖，真遇到再改成逐段取并集
+  private static func curvedArrowPath(
+    from: CGPoint, to: CGPoint, width: CGFloat, bend: CGVector
+  ) -> CGPath? {
+    let control = arrowControl(from: from, to: to, bend: bend)
+    let head = width * 4
+    let far = { (point: CGPoint) in hypot(to.x - point.x, to.y - point.y) >= head }
+    let samples = curve(from, control, to)
+    guard let index = samples.lastIndex(where: far) else { return nil }
+    // 最后一个够远的采样点和下一个（不够远：最后一个采样点就是尖端）之间二分出底边
+    let step = 1 / CGFloat(samples.count - 1)
+    var (low, high) = (CGFloat(index) * step, CGFloat(index + 1) * step)
+    for _ in 0..<24 {
+      let middle = (low + high) / 2
+      if far(quad(from, control, to, middle)) { low = middle } else { high = middle }
+    }
+    let base = quad(from, control, to, low)
+    let length = hypot(to.x - base.x, to.y - base.y)
+    guard length > 0 else { return nil }
+    let axis = CGVector(dx: (to.x - base.x) / length, dy: (to.y - base.y) / length)
+    /// 沿法向偏出 side 点（正数在前进方向的左边）
+    func beside(_ point: CGPoint, _ direction: CGVector, _ side: CGFloat) -> CGPoint {
+      CGPoint(x: point.x - direction.dy * side, y: point.y + direction.dx * side)
+    }
+    // 杆：[0, low] 那段弧的控制点是 from → control 的 low 处
+    let bodyControl = CGPoint(
+      x: from.x + (control.x - from.x) * low, y: from.y + (control.y - from.y) * low)
+    let body = curve(from, bodyControl, base)
+    var run: [CGFloat] = [0]
+    for (a, b) in zip(body, body.dropFirst()) {
+      run.append(run.last! + hypot(b.x - a.x, b.y - a.y))
+    }
+    let total = max(run.last ?? 0, .ulpOfOne)
+    let wing = head * tan(28 * .pi / 180)
+    let tail = width * 0.15
+    let neck = min(width * 0.6, wing)
+    var left: [CGPoint] = []
+    var right: [CGPoint] = []
+    for (index, point) in body.enumerated().dropLast() {
+      // 切线：B'(s) ∝ (1 − s)(c − a) + s(b − c)；退化成 0 时用箭头的朝向
+      let s = CGFloat(index) / CGFloat(body.count - 1)
+      let tangent = CGVector(
+        dx: (1 - s) * (bodyControl.x - from.x) + s * (base.x - bodyControl.x),
+        dy: (1 - s) * (bodyControl.y - from.y) + s * (base.y - bodyControl.y))
+      let size = hypot(tangent.dx, tangent.dy)
+      let direction =
+        size > 0 ? CGVector(dx: tangent.dx / size, dy: tangent.dy / size) : axis
+      let half = tail + (neck - tail) * run[index] / total
+      left.append(beside(point, direction, half))
+      right.append(beside(point, direction, -half))
+    }
+    let path = CGMutablePath()
+    path.addLines(
+      between: left + [
+        beside(base, axis, neck), beside(base, axis, wing), to, beside(base, axis, -wing),
+        beside(base, axis, -neck),
+      ] + right.reversed())
+    path.closeSubpath()
+    return path
   }
 
   private static func distance(from point: CGPoint, toSegment a: CGPoint, _ b: CGPoint) -> CGFloat {
