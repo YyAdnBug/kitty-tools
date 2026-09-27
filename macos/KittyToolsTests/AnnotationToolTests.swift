@@ -536,6 +536,61 @@ struct AnnotationToolTests {
     }
   }
 
+  @Test func curvedLineHookAtTheEndIsFullyDrawn() throws {
+    // 手柄拖过终点 100 点、离弦 4.5 点松手：沿弦夹在 ¼，终点处是个很短的钩。2x 下画终点附近 40 × 40 点，理想描边（弧线 ±
+    // 半个线宽）里离边缘半点以上的像素都要画满。整条交给 CG 描二次曲线时圆头下面挖掉一块；按 t 等分 8 段描时弦 2400 以上
+    // 还挖得出来。弦 300 的是弦 1200 那条弯好后把终点拖近（相对弯度不变，钩跟着缩到四分之一）
+    let white = try Self.solid(gray: 1)
+    let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+    let dragged = { (chord: CGFloat) in
+      Annotation.curveBend(
+        from: .zero, to: CGPoint(x: chord, y: 0), through: CGPoint(x: chord + 100, y: 4.5),
+        constrained: false)
+    }
+    for weight in [Annotation.Weight.medium, .large] {
+      for (chord, bend) in [
+        (CGFloat(1200), dragged(1200)), (3000, dragged(3000)), (300, dragged(1200)),
+      ] {
+        #expect(bend.dx == Annotation.maxAlong)
+        let (from, to) = (CGPoint(x: 50, y: 100), CGPoint(x: 50 + chord, y: 100))
+        let line = Annotation(
+          shape: .line(from: from, to: to, bend: bend), style: .init(weight: weight))
+        let frame = CGRect(x: to.x - 20, y: to.y - 20, width: 40, height: 40)
+        let context = try #require(
+          CGContext(
+            data: nil, width: 80, height: 80, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.scaleBy(x: 2, y: 2)
+        context.translateBy(x: -frame.minX, y: -frame.minY)
+        Annotation.drawAll([line], in: context, image: white, viewSize: view, shadowScale: 2)
+        let image = try #require(context.makeImage())
+        let data = try Pixels(image).data
+        let control = Annotation.curveControl(from: from, to: to, bend: bend)
+        // 弧线上的点（采得粗只会把距离算大、少查几个像素，不会误报）
+        let samples = (0...4000).map { step -> CGPoint in
+          let t = CGFloat(step) / 4000
+          let (a, b, c): (CGFloat, CGFloat, CGFloat) = ((1 - t) * (1 - t), 2 * (1 - t) * t, t * t)
+          return CGPoint(
+            x: a * from.x + b * control.x + c * to.x, y: a * from.y + b * control.y + c * to.y)
+        }.filter { frame.insetBy(dx: -10, dy: -10).contains($0) }
+        let half = weight.lineWidth / 2
+        var missing = 0
+        for row in 0..<image.height {
+          for column in 0..<image.width {
+            let center = CGPoint(
+              x: frame.minX + (CGFloat(column) + 0.5) / 2, y: frame.maxY - (CGFloat(row) + 0.5) / 2)
+            let distance =
+              samples.lazy.map { hypot($0.x - center.x, $0.y - center.y) }.min() ?? .infinity
+            if distance < half - 0.5 && data[row * image.bytesPerRow + column * 4 + 3] < 250 {
+              missing += 1
+            }
+          }
+        }
+        #expect(missing == 0, "\(weight) \(chord)")
+      }
+    }
+  }
+
   @Test func duplicateAndCounterNumbers() {
     let counter = Annotation(shape: .counter(3, center: CGPoint(x: 20, y: 20)))
     let copy = counter.duplicated()

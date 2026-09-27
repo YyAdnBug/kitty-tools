@@ -353,7 +353,8 @@ struct ScreenshotSnapshotTests {
   }
 
   /// 弯到头的箭头 / 直线（选区 (120, 150, 960 × 580) 里）：左列三档粗细的手柄拖过尖端、离弦不远（尖端带钩）+ 拖过尾端；
-  /// 右边拖过尖端很远（J 形，一白一橙）、斜弦上的钩、弦 30 的深 U、弯过后被拖到弦 10 的粗 / 细（箭头头缩短）
+  /// 右边拖过尖端很远（J 形，一白一橙）、斜弦上的钩、弦 30 的深 U、弯过后被拖到弦 10 的粗 / 细（箭头头缩短）；
+  /// 横贯选区的一条弦 900、手柄拖过尖端 20 点、离弦 4.5 点（长弦上很短的钩）
   private static func extreme(_ tool: Annotation.Tool) -> [Annotation] {
     func stored(_ from: CGPoint, _ to: CGPoint, _ bend: CGVector, _ style: Annotation.Style)
       -> Annotation
@@ -398,6 +399,9 @@ struct ScreenshotSnapshotTests {
       stored(
         CGPoint(x: 1010, y: 300), CGPoint(x: 1020, y: 300), CGVector(dx: 0, dy: 2),
         .init(color: .black, weight: .small)),
+      dragged(
+        CGPoint(x: 140, y: 175), CGPoint(x: 1040, y: 175), CGPoint(x: 1060, y: 179.5),
+        .init(color: .red, weight: .large)),
     ]
   }
 

@@ -636,14 +636,19 @@ struct Annotation: Identifiable, Equatable {
       context.addPath(path)
       context.fillPath()
     }
-    // 箭头的轮廓只建一次：切条时每条都画一遍，弯的轮廓要沿弧线采样几百个点（长弧切出近百条，拖着就掉帧）
-    var arrow: CGPath?
-    if case .arrow(let from, let to, let bend) = shape {
-      arrow = Self.arrowPath(from: from, to: to, width: style.weight.lineWidth, bend: bend)
-    }
+    // 箭头、弯直线的轮廓只建一次：切条时每条都画一遍，弯箭头要沿弧线采样几百个点、弯直线要描一遍整条曲线
+    // （长弧切出近百条，每条重建拖着就掉帧）
+    let width = style.weight.lineWidth
+    let ink: CGPath? =
+      switch shape {
+      case .arrow(let from, let to, let bend):
+        Self.arrowPath(from: from, to: to, width: width, bend: bend)
+      case .line(let from, let to, let bend) where bend != .zero:
+        Self.curvedLinePath(from: from, to: to, width: width, bend: bend)
+      default: nil
+      }
     banded(in: context) {
-      drawInk(
-        in: context, image: image, viewSize: viewSize, shadowScale: shadowScale, arrow: arrow)
+      drawInk(in: context, image: image, viewSize: viewSize, shadowScale: shadowScale, ink: ink)
     }
   }
 
@@ -778,9 +783,9 @@ struct Annotation: Identifiable, Equatable {
     zip(points, points.dropFirst()).map { hypot($1.x - $0.x, $1.y - $0.y) }.max() ?? 0
   }
 
-  /// 一个标注本身的线条（实心的底色在 draw 里先铺好了）：切条时每条各画一遍；arrow 是 draw 建好的箭头轮廓
+  /// 一个标注本身的线条（实心的底色在 draw 里先铺好了）：切条时每条各画一遍；ink 是 draw 建好的箭头 / 弯直线轮廓
   private func drawInk(
-    in context: CGContext, image: CGImage, viewSize: CGSize, shadowScale: CGFloat, arrow: CGPath?
+    in context: CGContext, image: CGImage, viewSize: CGSize, shadowScale: CGFloat, ink: CGPath?
   ) {
     let color = style.color.color
     let width = style.weight.lineWidth
@@ -799,24 +804,20 @@ struct Annotation: Identifiable, Equatable {
       context.setLineWidth(width)
       context.addPath(path)
       context.strokePath()
-    case .arrow:
-      guard let path = arrow else { return }
+    // 箭头、弯直线：填 draw 建好的轮廓
+    case .arrow,
+      .line where ink != nil:
+      guard let path = ink else { return }
       shadow()
       context.setFillColor(color.cgColor)
       context.addPath(path)
       context.fillPath()
-    case .line(let from, let to, let bend):
+    case .line(let from, let to, _):
       shadow()
       context.setStrokeColor(color.cgColor)
       context.setLineWidth(width)
       context.setLineCap(.round)
-      if bend == .zero {
-        context.strokeLineSegments(between: [from, to])  // 直的照旧（一个像素都不变）
-      } else {
-        context.move(to: from)
-        context.addQuadCurve(to: to, control: Self.curveControl(from: from, to: to, bend: bend))
-        context.strokePath()
-      }
+      context.strokeLineSegments(between: [from, to])  // 直的照旧（一个像素都不变）
     case .pen(let points):
       shadow()
       context.setStrokeColor(color.cgColor)
@@ -1210,6 +1211,41 @@ struct Annotation: Identifiable, Equatable {
       hypot(control.x - start.x, control.y - start.y) + hypot(end.x - control.x, end.y - control.y)
     let segments = min(400, max(16, Int(length / 3)))
     return (0...segments).map { quad(start, control, end, CGFloat($0) / CGFloat(segments)) }
+  }
+
+  /// 弯直线描好的轮廓（圆头、圆接头，draw 建一次、各条切条只填充）：二次贝塞尔按切线每转 15° 切一段再描。整条交给 CG 描时，
+  /// 端点处拐得急（手柄拖过端点、离弦只有几点：沿弦夹在 ¼ / ¾，控制点落在端点的垂线上，端点处是个很短的钩）CG 会把钩那里的
+  /// 偏移算错，圆头下面挖掉一块、旁边多个小尖；按 t 等分成 8 段弦长两三千点时还挖得出来，按转角切的每段都转得不急才描得对
+  private static func curvedLinePath(
+    from: CGPoint, to: CGPoint, width: CGFloat, bend: CGVector
+  ) -> CGPath {
+    let control = curveControl(from: from, to: to, bend: bend)
+    // 切线 B'(t) ∝ (1 − t) · head + t · tail，在 head 到 tail 这条线段上：转过 k / n 的方向和它交在哪个 t 就在哪切
+    let head = CGVector(dx: control.x - from.x, dy: control.y - from.y)
+    let tail = CGVector(dx: to.x - control.x, dy: to.y - control.y)
+    let cross = { (a: CGVector, b: CGVector) in a.dx * b.dy - a.dy * b.dx }
+    let turn = atan2(cross(head, tail), head.dx * tail.dx + head.dy * tail.dy)
+    let pieces = max(1, Int((abs(turn) / (.pi / 12)).rounded(.up)))
+    let cuts =
+      (1..<pieces).map { index -> CGFloat in
+        let angle = atan2(head.dy, head.dx) + turn * CGFloat(index) / CGFloat(pieces)
+        let direction = CGVector(dx: cos(angle), dy: sin(angle))
+        let (a, b) = (cross(head, direction), cross(tail, direction))
+        return a / (a - b)
+      } + [1]
+    let path = CGMutablePath()
+    path.move(to: from)
+    var low: CGFloat = 0
+    for high in cuts {
+      // [low, high] 这段子曲线的控制点（de Casteljau）
+      let (a, b, c) = ((1 - low) * (1 - high), (1 - low) * high + low * (1 - high), low * high)
+      path.addQuadCurve(
+        to: quad(from, control, to, high),
+        control: CGPoint(
+          x: a * from.x + b * control.x + c * to.x, y: a * from.y + b * control.y + c * to.y))
+      low = high
+    }
+    return path.copy(strokingWithWidth: width, lineCap: .round, lineJoin: .round, miterLimit: 10)
   }
 
   /// 弯箭头：同直箭头的锥形实心多边形，沿二次贝塞尔（curveControl）弯过去。尖端是弧线的终点，箭头底边的中点落在弧线上
