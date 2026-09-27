@@ -22,6 +22,14 @@ macos/build/
 macos/Config/Secrets.xcconfig
 xcuserdata/
 
+# 签名证书、私钥、描述文件（任何位置都不入库）
+.secrets/
+*.p12
+*.p8
+*.pem
+*.key
+*.mobileprovision
+
 # 常见误写文件名（不忽略正确的 AGENTS.md / CLAUDE.md）
 AGENTs.md
 CALUDE.md
