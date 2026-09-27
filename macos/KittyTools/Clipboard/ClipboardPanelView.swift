@@ -452,10 +452,7 @@ struct ClipboardPanelView: View {
       Button("新建分组…") { model.dialog = .newGroup([item.id]) }
     }
     if item.kind == .file {
-      Button("在访达中显示") {
-        NSWorkspace.shared.activateFileViewerSelecting(
-          (item.filePaths ?? []).map { URL(filePath: $0) })
-      }
+      Button("在访达中显示") { model.revealInFinder(item) }
     }
     Divider()
     Button("删除", role: .destructive) { model.delete([item.id]) }

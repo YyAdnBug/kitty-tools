@@ -16,6 +16,7 @@ struct TranslateTab: View {
   @AppStorage(Prefs.translateSystemDictionary) private var systemDictionary = true
   @AppStorage(Prefs.translateWordMode) private var wordMode = true
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(Island.self) private var island: Island?
   @AppStorage(Prefs.translateFirst) private var first = Lang.zhHans.rawValue
   @AppStorage(Prefs.translateSecond) private var second = Lang.en.rawValue
   @AppStorage(Prefs.translateRemoveNewlines) private var removeNewlines = false
@@ -188,9 +189,15 @@ struct TranslateTab: View {
     return a.isSameLanguage(as: b)
   }
 
-  /// 导出翻译历史 / 收藏：CSV 给表格（带 BOM，Excel 才认 UTF-8），TSV 给 Anki（正面原文、背面译文）
+  /// 导出翻译历史 / 收藏：CSV 给表格（带 BOM，Excel 才认 UTF-8），TSV 给 Anki（正面原文、背面译文）。
+  /// 结果（含没东西可导、写失败）用刘海说
   private func export(favoritesOnly: Bool, anki: Bool) {
     let entries = history.search("", favoritesOnly: favoritesOnly, limit: 0)
+    guard !entries.isEmpty else {
+      island?.show(favoritesOnly ? "还没有收藏" : "还没有翻译历史", detail: "没有可导出的记录", tone: .warning)
+      return
+    }
+    let island = island
     let panel = NSSavePanel()
     panel.allowedContentTypes = [anki ? .tabSeparatedText : .commaSeparatedText]
     panel.nameFieldStringValue = (favoritesOnly ? "翻译收藏" : "翻译历史") + (anki ? ".tsv" : ".csv")
@@ -199,8 +206,10 @@ struct TranslateTab: View {
       let text = anki ? HistoryStore.tsv(entries) : "\u{FEFF}" + HistoryStore.csv(entries)
       do {
         try text.write(to: url, atomically: true, encoding: .utf8)
+        island?.show(
+          "已导出 \(entries.count) 条", detail: url.lastPathComponent, symbol: "square.and.arrow.up")
       } catch {
-        NSAlert(error: error).runModal()
+        island?.show("导出失败", detail: error.localizedDescription, tone: .error)
       }
     }
   }

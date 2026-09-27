@@ -14,6 +14,14 @@ enum FlyCard {
     /// 存到的文件
     case saved(URL)
 
+    /// 结果的一句话（旁白；减弱动态效果时不飞，刘海岛说这句）
+    var title: String {
+      switch self {
+      case .copied: "已复制截图"
+      case .saved: "已保存到「\(folder ?? "")」"
+      }
+    }
+
     /// 存到的文件夹的显示名（访达里的名字：中文系统上 Desktop 是「桌面」，同保存 ▾ 菜单的「存储到「桌面」」）
     var folder: String? {
       if case .saved(let url) = self {
@@ -38,14 +46,9 @@ enum FlyCard {
 
   /// 卡片不接鼠标：主动给 VoiceOver 播报结果
   static func announce(_ badge: Badge) {
-    let text =
-      switch badge {
-      case .copied: "已复制截图"
-      case .saved: "截图已保存到\(badge.folder ?? "")"
-      }
     NSAccessibility.post(
       element: NSApp as Any, notification: .announcementRequested,
-      userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+      userInfo: [.announcement: badge.title, .priority: NSAccessibilityPriorityLevel.high.rawValue])
   }
 
   /// 飞行中的窗口（连截几张时各飞各的）

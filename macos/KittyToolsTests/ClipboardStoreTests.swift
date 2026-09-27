@@ -50,8 +50,10 @@ struct ClipboardStoreTests {
     ] {
       store.record(item)
     }
-    store.enforceLimits(.init(maxCount: 1, maxAge: 7 * 86_400))
+    // 删了几条要报给设置页的刘海提示：old（超天数）+ x（超条数）
+    #expect(store.enforceLimits(.init(maxCount: 1, maxAge: 7 * 86_400)) == 2)
     #expect(Set(store.items.compactMap(\.text)) == ["fav", "snippet", "grouped", "y"])
+    #expect(store.enforceLimits(.init(maxCount: 1, maxAge: 7 * 86_400)) == 0)
   }
 
   @Test func imageBudgetEvictsOldestOrdinaryImages() throws {
@@ -72,8 +74,9 @@ struct ClipboardStoreTests {
     favorite.favorite = true
     store.record(favorite)
     store.record(text("temp"))
-    store.clearOrdinary()
+    #expect(store.clearOrdinary() == 1)
     #expect(store.items.map(\.text) == ["fav"])
+    #expect(store.clearOrdinary() == 0)
   }
 
   @Test func persistsAndReloads() throws {

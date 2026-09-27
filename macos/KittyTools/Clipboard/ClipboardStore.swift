@@ -307,7 +307,9 @@ import Observation
   }
 
   /// 按条数 / 天数 / 图片总占用清理普通历史（收藏、片段、已归组的不动）
-  func enforceLimits(_ limits: Limits = .current, now: Date = .now) {
+  /// 返回删了几条（设置页改小上限时用刘海说一声）
+  @discardableResult
+  func enforceLimits(_ limits: Limits = .current, now: Date = .now) -> Int {
     let ordinary = items.filter { !$0.isRetained }
     var doomed = Set<UUID>()
     if limits.maxCount > 0 { doomed.formUnion(ordinary.dropFirst(limits.maxCount).map(\.id)) }
@@ -325,11 +327,15 @@ import Observation
       }
     }
     delete(doomed)
+    return doomed.count
   }
 
-  /// 退出 / 锁屏时清空普通历史
-  func clearOrdinary() {
-    delete(Set(items.filter { !$0.isRetained }.map(\.id)))
+  /// 退出 / 锁屏、设置里「立即清空」时清空普通历史；返回删了几条
+  @discardableResult
+  func clearOrdinary() -> Int {
+    let doomed = Set(items.filter { !$0.isRetained }.map(\.id))
+    delete(doomed)
+    return doomed.count
   }
 
   /// 串行识别还没有文字的图片；设置关掉时不做

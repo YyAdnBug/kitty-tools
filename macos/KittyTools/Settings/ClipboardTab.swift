@@ -20,6 +20,7 @@ struct ClipboardTab: View {
     UserDefaults.standard.stringArray(forKey: Prefs.clipboardExcludedApps) ?? []
   @State private var newExcluded = ""
   @State private var confirmClear = false
+  @Environment(Island.self) private var island: Island?
 
   var body: some View {
     Form {
@@ -102,18 +103,31 @@ struct ClipboardTab: View {
       }
     }
     .formStyle(.grouped)
-    .onChange(of: historyMax) { store.enforceLimits() }
-    .onChange(of: retentionDays) { store.enforceLimits() }
-    .onChange(of: imageBudgetMB) { store.enforceLimits() }
+    .onChange(of: historyMax) { pruned(store.enforceLimits()) }
+    .onChange(of: retentionDays) { pruned(store.enforceLimits()) }
+    .onChange(of: imageBudgetMB) { pruned(store.enforceLimits()) }
     .onChange(of: imageOCR) { store.recognizePendingImages() }
     .onChange(of: excluded) {
       UserDefaults.standard.set(excluded, forKey: Prefs.clipboardExcludedApps)
     }
     .confirmationDialog("清空所有普通历史？", isPresented: $confirmClear) {
-      Button("清空", role: .destructive) { store.clearOrdinary() }
+      Button("清空", role: .destructive) {
+        let count = store.clearOrdinary()
+        island?.show(
+          count > 0 ? "已清空普通历史" : "没有可清空的普通历史",
+          detail: count > 0 ? "删了 \(count) 条，收藏、片段和已归组的留着" : nil,
+          tone: count > 0 ? .success : .info, symbol: "trash")
+      }
     } message: {
       Text("收藏、片段和已归组的条目会保留")
     }
+  }
+
+  /// 上限改小、当场删掉的条目在设置页上看不出来：用刘海说一声
+  private func pruned(_ count: Int) {
+    guard count > 0 else { return }
+    island?.show(
+      "已按新上限清理 \(count) 条", detail: "收藏、片段和已归组的不受影响", tone: .info, symbol: "trash")
   }
 
   private var imageUsage: String {

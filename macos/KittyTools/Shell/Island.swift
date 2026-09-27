@@ -62,6 +62,22 @@ import SwiftUI
     self.geometry = geometry
   }
 
+  /// 详情里的一句摘录：第一行前 24 个字，后面还有就补「…」（\r\n、\r、U+2028 都算换行）
+  static func excerpt(_ text: String) -> String {
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    let head = trimmed.prefix { !$0.isNewline }.prefix(24)
+    return head + (head.count < trimmed.count ? "…" : "")
+  }
+
+  /// 前导位置的截图缩略图：同飞行卡片取顶部一段，缩到 26×18 的两倍像素。
+  /// 不把整张原图放进岛（长截图可到 4000 万像素，岛要挂 1.4–2 s）
+  static func thumbnail(of image: CGImage) -> Leading {
+    let top = FlyCard.visiblePart(of: image, frame: CGRect(x: 0, y: 0, width: 26, height: 18))
+    return .thumbnail(
+      NSImage(
+        cgImage: FlyCard.thumbnail(of: top, fitting: CGSize(width: 52, height: 36)), size: .zero))
+  }
+
   /// 下巴 / 胶囊高度
   static let chin: CGFloat = 36
   static let maxWidth: CGFloat = 460

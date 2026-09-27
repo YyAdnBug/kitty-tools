@@ -61,7 +61,7 @@ import Observation
   private(set) var copiedCard: String?
   /// 每复制一次加一：同一张卡 1.5 s 内再复制也要再闪一次，对勾计时也从头算
   private(set) var copyTick = 0
-  /// 原文区的提示（取词失败、识别不到文字、原文过长等）
+  /// 原文区的提示（划词缺「辅助功能」授权、原文过长等）；截图识字失败这类走刘海岛，不走这里
   private(set) var notice: String?
   /// 提示要引导去授权的那一项；nil 就不显示授权按钮
   private(set) var noticePermission: Permissions.Kind?
@@ -337,10 +337,11 @@ import Observation
         limit: defaults.integer(forKey: Prefs.translateHistoryLimit))
     }
     // 单词模式的结果是一段释义，不自动复制（划个词查一下，剪贴板不该被换掉）
+    // 和 ⌘1–9 一样对勾 + 整卡闪一下：剪贴板被换掉了要看得出来
     if defaults.bool(forKey: Prefs.translateAutoCopy),
       !defaults.bool(forKey: Prefs.translateCopyToTranslate), !request.isWord
     {
-      Paster.write(string: text)
+      copyCard(service.id)
     }
   }
 

@@ -24,6 +24,8 @@ import SwiftUI
   /// 删掉的条目（⌘Z 从后往前插回）；开 / 关历史时清空
   @ObservationIgnored private var deleted: [HistoryStore.Entry] = []
   @ObservationIgnored private var copyTask: Task<Void, Never>?
+  /// 刘海岛（AppDelegate 给，单测里是 nil）：删除后告诉用户可以 ⌘Z
+  @ObservationIgnored var island: Island?
 
   init(store: HistoryStore) {
     self.store = store
@@ -77,7 +79,8 @@ import SwiftUI
     moveSelection(awayFrom: entry)
     deleted.append(entry)
     withAnimation(Style.Motion.settle.animation()) { store.delete(entry.id) }
-    Self.announce("已删除，⌘Z 撤销")
+    // 行消失看得见，能 ⌘Z 撤销却只有读屏用户知道（岛自己也会播报）
+    island?.show("已删除", detail: "⌘Z 撤销", tone: .info, symbol: "trash")
   }
 
   /// ⌘Z：插回最近删掉的一条并选中它；没有可撤销的返回 false（交还输入框自己的撤销）
@@ -91,16 +94,16 @@ import SwiftUI
     return true
   }
 
-  /// ⌘C / 右键：复制译文
-  func copy(_ entry: HistoryStore.Entry) {
-    Paster.write(string: entry.result)
+  /// ⌘C / 右键：复制译文（source：复制原文）；行尾同样换成「✓ 已复制」
+  func copy(_ entry: HistoryStore.Entry, source: Bool = false) {
+    Paster.write(string: source ? entry.source : entry.result)
     copiedID = entry.id
     copyTask?.cancel()
     copyTask = Task {
       try? await Task.sleep(for: .seconds(1.2))
       if !Task.isCancelled { copiedID = nil }
     }
-    Self.announce("已复制译文")
+    Self.announce(source ? "已复制原文" : "已复制译文")
   }
 
   /// 选中的这条要从列表里消失（删除、「收藏」范围里取消收藏）：选中挪到下一条（最后一条时挪到上一条）
@@ -290,7 +293,7 @@ struct HistoryView: View {
     .contextMenu {
       Button("重新翻译") { coordinator.translate(entry.source) }
       Divider()
-      Button("复制原文") { Paster.write(string: entry.source) }
+      Button("复制原文") { list.copy(entry, source: true) }
       Button("复制译文") { list.copy(entry) }
       Button(entry.favorite ? "取消收藏" : "收藏") { list.toggleFavorite(entry) }
       Divider()

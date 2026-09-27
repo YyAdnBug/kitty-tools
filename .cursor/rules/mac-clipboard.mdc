@@ -49,6 +49,7 @@ alwaysApply: false
 - 对话框画在面板里（`DialogOverlay`，从搜索栏下沿落下），不开 sheet 窗口；输入框用 `isDialogField`，关闭后焦点回搜索框。
 - 每次隐藏都 `reset()`：搜索、筛选标签、待删标签、筛选 / 操作面板、多选、对话框，选中回第一条，并提交未撤销的删除。
 - 片段占位符 `{date}` `{clipboard}` `{cursor}` 粘贴时展开、一律按纯文本。`{cursor}`（N17，Alfred / Raycast 做法）：`Snippet.expand` 同时返回「`{cursor}` 之后的字符数」（配单测），单条粘贴落地后按这么多次 ← 把光标挪回去（按键见 mac-overlay-panel §5）；超过 500 字、多条合并粘贴、没授权辅助功能时不挪。
+- 粘贴 / 复制前先查条目还能不能用（`ClipboardPanelModel.unavailable`）：图片的 PNG 丢了、文件全都被移走时写进剪贴板的是空的，⌘V 会粘出剪贴板里原来的内容，所以不写、不粘，刘海岛报「没能粘贴 / 没能复制」；「在访达中显示」文件都不在了也用岛说。没授权辅助功能时只复制第一条，警告岛「已复制到剪贴板」（点系统授权框会收掉没固定的面板，底栏提示会丢）。⌘Y 大卡开着时复制、删除的结果改走岛（底栏被大卡盖住）；⌘N 新片段被当前范围 / 筛选 / 搜索挡住时岛说「已存为片段」。
 - ⌘Y 放大预览（`QuickLookView`）：单独一个 `OverlayPanel` 实例，内容是完整检查器（`PreviewView` enlarged：来源 App 彩色页眉、页脚胶囊、可选中文字；图片带识别文字，单个文件嵌 `QLPreviewView`、多个文件 `FileGrid`）；起点 frame 由透镜上报（透镜关掉时由选中行上报）。**不用系统 `QLPreviewPanel`**：它没有 `.nonactivatingPanel`，当 key 时键盘不再归本 App 的非激活浮层、点它会激活本 App（前台 App 变成自己，粘贴会落空）。预览浮层 `becomesKeyOnlyIfNeeded`（只有点里面的文字才当 key），剪贴板面板一直是 key；收起时（onHide）把 key 还给剪贴板面板。开筛选 / 操作面板、对话框、剪贴板面板收起、粘贴时预览直接消失（不缩回）。
 
 ## 5. 视觉

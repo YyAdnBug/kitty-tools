@@ -47,9 +47,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 钉图（菜单栏显示「隐藏 / 关闭全部钉图」）
   lazy var pins: PinBoard = {
     let board = PinBoard()
-    board.copy = { [unowned self] image, scale in Task { await copyImage(image, scale: scale) } }
+    // 钉图不变、不飞卡片：复制、存好了都用刘海说
+    board.copy = { [unowned self] image, scale in
+      Task {
+        guard await copyImage(image, scale: scale) != nil else { return }
+        island.show("已复制钉图", leading: Island.thumbnail(of: image))
+      }
+    }
     board.saveAs = { [unowned self] image, scale in
-      Task { await saveImage(image, scale: scale, asking: true) }
+      Task { await saveImageAs(image, scale: scale) }
     }
     return board
   }()
@@ -77,6 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.openClipboard = { [unowned self] in searchClipboard($0) }
     model.boundHotKey = { [unowned self] in hotKeys.bindings[$0] }
     model.requestFolderAccess = { [unowned self] in requestFolderAccess() }
+    model.island = island
     return panel
   }()
 
@@ -100,6 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     model.openSettings = { [unowned self] in showSettings() }
     model.openQuickLook = { [unowned self] in showQuickLook() }
+    model.island = island
     model.closeQuickLook = { [unowned self] animated in
       guard animated else { return quickLookPanel.hide() }
       // 缩回动画期间它还在屏幕上：点过里面的文字（它是 key）就先把 key 还给剪贴板，别让这 0.24 s 里按的键落空
@@ -151,8 +159,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           // 变化 8 pt 以上才带动画：流式输出时每来几个字都会长一点，小变化直接设
           panel.setContentHeight(height, animated: abs(panel.frame.height - height) >= 8)
         },
-        replaceOriginal: { [unowned self] in replaceOriginal() }))
+        replaceOriginal: { [unowned self] in replaceOriginal() }
+      ).environment(island))
     created = panel
+    coordinator.historyList.island = island
     panel.keyEquivalentHandler = { [unowned self] in coordinator.handleKeyEquivalent($0) }
     coordinator.hidePanel = { [unowned panel] in panel.dismiss() }
     // ⌘,、「⋯」菜单、错误卡片和空状态都直接到设置 › 翻译
@@ -210,11 +220,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let window = SettingsWindow { [unowned self] page in
       switch page {
       case .general: AnyView(GeneralTab())
-      case .clipboard: AnyView(ClipboardTab(store: clipboardStore))
-      case .launcher: AnyView(LauncherTab { [unowned self] in launcherUsage.clearAll() })
+      case .clipboard: AnyView(ClipboardTab(store: clipboardStore).environment(island))
+      case .launcher:
+        AnyView(
+          LauncherTab { [unowned self] in
+            launcherUsage.clearAll()
+            // 设置页上不显示条数，清完看不出变化
+            island.show(
+              "已清空启动器使用记录", detail: "「最近使用」和排序会从头开始学", symbol: "clock.arrow.circlepath")
+          })
       case .screenshot: AnyView(ScreenshotTab())
       case .translate:
-        AnyView(TranslateTab(services: serviceStore, history: historyStore, speaker: speaker))
+        AnyView(
+          TranslateTab(services: serviceStore, history: historyStore, speaker: speaker)
+            .environment(island))
       case .hotkeys: AnyView(HotkeysTab(center: hotKeys))
       case .about: AnyView(AboutTab { created?.navigation.showsOnboarding = true })
       }
@@ -264,11 +283,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     hotKeys.setHandler(for: .recognizeText) { [unowned self] in recognizeText() }
     hotKeys.setHandler(for: .translateReplace) { [unowned self] in translateAndReplace() }
     hotKeys.reload()
+    // 有快捷键没注册上（15.0 / 15.1 上只带 ⌥ 的组合）：按了没反应又不知道为什么，启动时说一次
+    if let failed = hotKeys.failures.keys.first {
+      let count = hotKeys.failures.count
+      island.show(
+        count == 1 ? "「\(failed.title)」快捷键没注册上" : "有 \(count) 个快捷键没注册上",
+        detail: "到 设置 › 快捷键 里看原因、换一个组合",
+        tone: .warning, symbol: "keyboard")
+    }
     try? FileManager.default.removeItem(at: ShotShelf.dragDirectory)
     shelf.copy = { [unowned self] png in
       await copyPNG(png)
       return true
     }
+    shelf.island = island
     shelf.save = { [unowned self] in await savePNG($0, asking: false) }
     shelf.pin = { [unowned self] in pins.pin($0, frame: $1) }
     let statusItem = StatusItem()
@@ -447,7 +475,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "已复制译文", detail: "前台已不是取词的 App，没有替换", tone: .info, symbol: "doc.on.doc")
         }
         _ = Paster.pasteToFrontmost()
-        island.show("已替换为译文", detail: String(result.prefix(24)))
+        island.show("已替换为译文", detail: Island.excerpt(result))
       } catch {
         guard !Task.isCancelled else { return }
         island.show("翻译失败", detail: error.localizedDescription, tone: .error)
@@ -519,7 +547,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           }
         case .saveAs:
           FlyCard.playShutter()
-          await saveImage(capture.image, scale: capture.scale, asking: true)
+          await saveImageAs(capture.image, scale: capture.scale)
         case .recognize: await copyRecognizedText(in: capture.image)
         case .translate: await translateImage(capture.image)
         }
@@ -543,10 +571,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
       case .saveAs:
         FlyCard.playShutter()
-        await saveImage(result.image, scale: result.scale, asking: true)
+        await saveImageAs(result.image, scale: result.scale)
       }
     } catch {
-      showScreenshotNotice("长截图失败：\(error.localizedDescription)", .screenRecording)
+      island.show("长截图失败", detail: error.localizedDescription, tone: .error)
     }
   }
 
@@ -572,21 +600,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   /// 查屏幕录制授权 → 冻结各屏（本 App 开着的窗口留在画面里）→ 暂停全局热键框选 → 遮罩收起后把 key 还给截图前的
-  /// key 窗口（还开着的话；只 makeKey，不激活本 App）。没授权 / 截屏失败时在浮窗里提示，返回 nil。
+  /// key 窗口（还开着的话；只 makeKey，不激活本 App）。没授权 / 截屏失败时用刘海提示，返回 nil。
   /// 框选期间别的热键会弹出浮层抢走 key（遮罩就收不到 Esc）；设置里正在录快捷键时热键本来就停着，结束后不能替它恢复
   private func frozenSelection<T>(
     _ feature: String, _ select: ([ScreenCapture.Shot]) async -> T?
   ) async -> T? {
     guard Permissions.isScreenRecordingAllowed else {
+      // 同设置 › 通用、引导里的授权按钮：系统框只弹一次，所以同时打开系统设置的「屏幕录制」
       Permissions.requestScreenRecording()
-      showScreenshotNotice("\(feature)需要「屏幕录制」授权（授权后可能要重新打开本 App）", .screenRecording)
+      Permissions.Kind.screenRecording.openSettings()
+      island.show(
+        "需要「屏幕录制」授权", detail: "\(feature)要用，授权后可能要重新打开本 App", tone: .warning)
       return nil
     }
     let shots: [ScreenCapture.Shot]
     do {
       shots = try await ScreenCapture.freeze()
     } catch {
-      showScreenshotNotice("截屏失败：\(error.localizedDescription)", .screenRecording)
+      island.show("截屏失败", detail: error.localizedDescription, tone: .error)
       return nil
     }
     let hotKeysWereActive = !hotKeys.bindings.isEmpty
@@ -610,10 +641,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 本机识别文字 → 原文记进剪贴板历史 → 翻译浮窗走现有的多服务翻译（截图翻译、截图工具栏的翻译共用）
   private func translateImage(_ image: CGImage) async {
     // ponytail: 识别期间不显示「识别中」：常见选区 0.04–0.13s，整屏密集文字约 0.9s；大选区嫌慢再加
+    // 同识字：失败不为一句话开浮窗
     guard let text = await OCR.recognizeText(in: image) else {
-      return showScreenshotNotice("文字识别失败，请重试")
+      return island.show("文字识别失败", detail: "请重试", tone: .error)
     }
-    guard !text.isEmpty else { return showScreenshotNotice("没有识别到文字，可以把选区框大一些再试") }
+    guard !text.isEmpty else {
+      return island.show("没有识别到文字", detail: "可以把选区框大一些再试", tone: .warning)
+    }
     recordInHistory(text)
     coordinator.translate(text)
     translatePanel.present()
@@ -636,10 +670,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     Paster.write(string: text)
     recordInHistory(text)
-    let preview = text.prefix { $0 != "\n" }.prefix(24)
     island.show(
-      codes.isEmpty ? "已复制" : "已复制二维码",
-      detail: preview + (preview.count < text.count ? "…" : ""),
+      codes.isEmpty ? "已复制" : "已复制二维码", detail: Island.excerpt(text),
       symbol: codes.isEmpty ? nil : "qrcode")
   }
 
@@ -648,7 +680,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   @discardableResult
   private func copyImage(_ image: CGImage, scale: CGFloat) async -> Data? {
     guard let png = await ScreenshotOutput.png(image, scale: scale) else {
-      showScreenshotNotice("截图编码失败，请重试")
+      island.show("截图编码失败", detail: "请重试", tone: .error)
       return nil
     }
     await copyPNG(png)
@@ -669,10 +701,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     url: URL, png: Data
   )? {
     guard let png = await ScreenshotOutput.png(image, scale: scale) else {
-      showScreenshotNotice("截图编码失败，请重试")
+      island.show("截图编码失败", detail: "请重试", tone: .error)
       return nil
     }
     return await savePNG(png, asking: asking).map { ($0, png) }
+  }
+
+  /// 另存为（截图、长截图、钉图）：不飞卡片、不进常驻缩略图，存好了用刘海说
+  private func saveImageAs(_ image: CGImage, scale: CGFloat) async {
+    guard let saved = await saveImage(image, scale: scale, asking: true) else { return }
+    island.show("已保存", detail: saved.url.lastPathComponent, leading: Island.thumbnail(of: image))
   }
 
   /// 存编码好的 PNG；返回存到的文件（取消、失败为 nil）。失败时截图改放进剪贴板，别让这张图就这么丢了
@@ -681,7 +719,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       return asking ? try await ScreenshotOutput.saveAs(png) : try ScreenshotOutput.quickSave(png)
     } catch {
       await copyPNG(png)
-      showScreenshotNotice("保存失败（\(error.localizedDescription)），截图已复制到剪贴板")
+      island.show("保存失败，截图已复制到剪贴板", detail: error.localizedDescription, tone: .warning)
       return nil
     }
   }
@@ -705,11 +743,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         landing.land(badge)
       }
     }
-    return { badge, data in
+    return { [weak self] badge, data in
       png = data
+      // 不飞就没有落地的角标：结果用刘海说（Whisker：减弱动态效果时飞行卡片改成轻提示；岛自己会播报）
+      self?.island.show(badge.title, leading: Island.thumbnail(of: image))
       guard let rect = FlyCard.landingRect(for: frame) else { return }
       linger(rect, badge)
-      FlyCard.announce(badge)
     }
   }
 
@@ -719,11 +758,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     return NSColor(
       srgbRed: CGFloat(value >> 16 & 0xFF) / 255, green: CGFloat(value >> 8 & 0xFF) / 255,
       blue: CGFloat(value & 0xFF) / 255, alpha: 1)
-  }
-
-  private func showScreenshotNotice(_ text: String, _ permission: Permissions.Kind? = nil) {
-    coordinator.showNotice(text, permission: permission)
-    translatePanel.present()
   }
 
   /// 复制即译：只露出浮窗、不抢键盘（用户可能正在别的 App 里继续打字）
@@ -773,8 +807,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       let color = NSColor(section.actions[0].color)
       if section.actions.contains(.selectionTranslate) {
         let copyToTranslate = UserDefaults.standard.bool(forKey: Prefs.translateCopyToTranslate)
-        menu.addAction("复制即译", symbol: "doc.on.doc", color: color) {
+        menu.addAction("复制即译", symbol: "doc.on.doc", color: color) { [unowned self] in
           UserDefaults.standard.set(!copyToTranslate, forKey: Prefs.translateCopyToTranslate)
+          // 菜单一关就看不出开没开，这个后台模式会影响之后的每次复制
+          island.show(
+            copyToTranslate ? "已关闭复制即译" : "已开启复制即译",
+            detail: copyToTranslate ? nil : "复制文字后会弹出翻译", tone: .info,
+            symbol: copyToTranslate ? "character.bubble" : "character.bubble.fill")
         }
         .state = copyToTranslate ? .on : .off
       }
@@ -783,7 +822,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           [unowned self] in pins.toggleHidden()
         }
         menu.addAction("关闭全部钉图", symbol: "pin.slash", color: color) { [unowned self] in
+          // 关了就回不来；隐藏着时屏幕上什么也看不到
+          let count = pins.panels.count
           pins.closeAll()
+          island.show("已关闭全部钉图", detail: "\(count) 张", tone: .info, symbol: "pin.slash")
         }
       }
     }

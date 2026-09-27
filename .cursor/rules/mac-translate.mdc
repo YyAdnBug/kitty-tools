@@ -16,7 +16,7 @@ alwaysApply: false
 
 ## 2. 服务
 - 分发只有 `TranslateService.translate` 的一个 `switch`；加服务 = 一个 `Providers/*.swift` + 一个 case，不建 registry / factory / protocol。
-- 列表顺序 = 卡片顺序；**第一个服务**的结果写历史、按设置自动复制（「复制即译」开着时不自动复制，否则自己触发自己）。
+- 列表顺序 = 卡片顺序；**第一个服务**的结果写历史、按设置自动复制（「复制即译」开着时不自动复制，否则自己触发自己）；自动复制走 `copyCard`，和 ⌘1–9 一样对勾 + 整卡闪。
 - 密钥只进钥匙串，账户名 `"<服务 id>.<字段>"`，字段名已定，改名读不到已存的密钥（`baidu.appId`、`baidu.secret`、`youdao.appKey`、`youdao.appSecret`、`google.apiKey`、`deepl.authKey`、`microsoft.subscriptionKey`、`volcengine.accessKey/secretKey`、`tencent.secretId/secretKey`、`ai:<id>.apiKey`、`zhipu.apiKey`）。删服务连带删密钥。
 
 ## 3. 接口约束（外部 API 事实，改之前先查官方文档）
@@ -40,7 +40,7 @@ alwaysApply: false
 - **划词**（`AppDelegate.selectionTranslate`）：忙时忽略重复热键 → 自家浮层是 key 先收起 → `SelectionReader.read`（AX 读选区，0.5s 超时；读不到再备份剪贴板 → ⌘C（显式 `.maskCommand`）→ 轮询 changeCount ≤ 约 500ms → 还原，期间暂停 watcher）→ **取词完成后**才显示浮窗。没授权显示提示；没选区当输入翻译。
 - **复制即译**：watcher 文本回调 → `present(makingKey: false)`（只露出来不抢键盘，靠点外关闭）。
 - **剪贴板预览里的「翻译」**：剪贴板面板保持打开（兄弟浮层）。
-- **截图翻译**（`AppDelegate.screenshotTranslate`，默认 ⌥S）：冻结帧框选 → Vision 识字 → 原文过敏感过滤后记进剪贴板历史 → `coordinator.translate`。识别失败 / 没有文字只显示提示、不开翻译会话；缺屏幕录制授权时提示带「打开屏幕录制设置」按钮（`showNotice(_:permission:)`，只有授权类提示才带按钮）。框选细节见 mac-overlay-panel §8。
+- **截图翻译**（`AppDelegate.screenshotTranslate`，默认 ⌥S）：冻结帧框选 → Vision 识字 → 原文过敏感过滤后记进剪贴板历史 → `coordinator.translate`。识别失败 / 没有文字、缺屏幕录制授权、截屏失败都走刘海岛（同识字），不为一句提示开浮窗、不开翻译会话；缺授权时同时打开系统设置的「屏幕录制」。浮窗的 `showNotice(_:permission:)` 只剩划词缺辅助功能授权（浮窗本来就要开）。框选细节见 mac-overlay-panel §8。
 
 ## 5.1 浮窗补强（M12，对标 Bob）
 - 浮窗快捷键只在 `TranslateCoordinator.handleKeyEquivalent`：只收纯 ⌘（和 ⌘⇧=），编辑键不拦；⌘Y 开 / 关历史、⌘, 打开设置（N6，和「⋯」菜单项的键位一致）；「第一个服务」的完成结果 `primaryResult` 是收藏、替换原文的唯一来源（和写历史、自动复制一致）。
@@ -57,7 +57,7 @@ alwaysApply: false
 ## 5.3 浮窗与历史界面（N5–N7，2026-09-26；外观按 mac-whisker §6 翻译）
 - 没有常驻「翻译」按钮：原文框里 ↩ 就是翻译（`SourceTextView` 的 doCommandBy）。原文非空、且和最近一次翻译的原文不同时，原文框右下角才出品牌粉「翻译 ↩」胶囊（点它 = ↩），开始翻译就收回。
 - 顶栏只有语言胶囊、图钉、「⋯」菜单（`NSMenu` 或 SwiftUI `Menu`：历史 ⌘Y、复制即译开关、设置 ⌘,，菜单项带键位）。复制即译开着时顶栏显示品牌粉状态胶囊「复制即译」，点一下关掉；它和菜单栏的勾、设置 › 翻译读写同一个偏好。设置钮 help 里那串浮窗快捷键删掉（键位在 ⋯ 菜单和设置里的快捷键速查表）。
-- 翻译历史 = 和剪贴板同一套键盘列表：搜索框用 `CommandTextField`（方向键 / ↩ / Esc 走 doCommandBy），↑↓ 选（中性高亮滑动，snap / instant / glide 规则同剪贴板）、↩ 重新翻译这条、⌘⌫ 删（不确认，⌘Z 撤销）、⌘C 复制译文（搜索框有选中文字时交还系统）、Esc 关历史回到浮窗；按 今天 / 昨天 / 日期 分组；全部 / 收藏 两枚范围胶囊取代「只看收藏」开关；没有「共 N 条 · 收藏 M」底栏，单条操作（复制原文 / 译文、收藏、删除）进行的右键菜单，条数和清空历史进「⋯」菜单。打开 / 关上历史时原文区不动，只让结果区交叉淡变。
+- 翻译历史 = 和剪贴板同一套键盘列表：搜索框用 `CommandTextField`（方向键 / ↩ / Esc 走 doCommandBy），↑↓ 选（中性高亮滑动，snap / instant / glide 规则同剪贴板）、↩ 重新翻译这条、⌘⌫ 删（不确认，⌘Z 撤销）、⌘C 复制译文（搜索框有选中文字时交还系统）、Esc 关历史回到浮窗；按 今天 / 昨天 / 日期 分组；全部 / 收藏 两枚范围胶囊取代「只看收藏」开关；没有「共 N 条 · 收藏 M」底栏，单条操作（复制原文 / 译文、收藏、删除）进行的右键菜单，条数和清空历史进「⋯」菜单。复制原文 / 译文都是行尾「✓ 已复制」；删除后刘海岛「已删除 · ⌘Z 撤销」（没有底栏能放撤销）；清空历史后刘海岛说保留了几条收藏。打开 / 关上历史时原文区不动，只让结果区交叉淡变。
 - 结果卡正文最多 8 行（按正文字体和译文字号算出的行高 × 8，每档字号一个定值），超出的在卡片里滚动（滚动条贴卡片右边，不压字）：下面还有时底部渐隐、滚下去后顶部也渐隐（遮罩只改透明度）；大模型生成中跟随末尾，用户往上滚就停、滚回底部再跟；传统服务的长结果从开头显示；复制、⌘1–9、朗读仍是整段译文（2026-09-26 用户要求）。
 - 历史里还有：⇧Tab 在 全部 / 收藏 间切换、⌘S 收藏选中行、双击也是重新翻译（和剪贴板一致）；⌘, 和错误卡 / 空状态的设置按钮直达设置 › 翻译。
 ## 6. 测试

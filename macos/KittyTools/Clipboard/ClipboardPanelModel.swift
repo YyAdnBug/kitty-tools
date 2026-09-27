@@ -69,6 +69,8 @@ import Observation
   @ObservationIgnored var openTranslate: (String) -> Void = { _ in }
   @ObservationIgnored var openSettings: () -> Void = {}
   @ObservationIgnored var openQuickLook: () -> Void = {}
+  /// 刘海岛（AppDelegate 给，单测里是 nil）：面板收起、底栏被放大预览挡住、出错时的提示走它
+  @ObservationIgnored var island: Island?
   /// animated = false：面板收起、粘贴时直接消失
   @ObservationIgnored var closeQuickLook: (_ animated: Bool) -> Void = { _ in }
   /// 透镜（透镜关掉时是选中行）在面板里的位置（窗口坐标，原点左上；只算列表可见区里的那部分）和它是哪一条：
@@ -505,10 +507,18 @@ import Observation
   /// 含图片 / 文件：逐条粘贴，间隔 250ms（目标 App 要时间处理上一次 ⌘V）
   func paste(_ items: [ClipItem], plainText: Bool = false) {
     guard !items.isEmpty else { return }
+    if let gone = unavailable(items) {
+      island?.show("没能粘贴", detail: gone, tone: .error)
+      return
+    }
     let (payloads, caretMoves) = pasteboardPayloads(items, plainText: plainText)
     guard Permissions.isAccessibilityTrusted else {
       Paster.write(payloads[0])
-      showToast(.message("已写入剪贴板。授权辅助功能后才能直接粘贴"))
+      // 是警告不是成功；系统授权框一点，没固定的面板就收了，底栏提示会跟着丢
+      island?.show(
+        "已复制到剪贴板",
+        detail: payloads.count > 1 ? "只复制了第 1 条，授权辅助功能后才能直接粘贴" : "授权辅助功能后才能直接粘贴",
+        tone: .warning)
       Permissions.requestAccessibility()
       return
     }
@@ -529,12 +539,59 @@ import Observation
     }
   }
 
-  /// ⌘C：只写剪贴板，不关面板、不置顶
+  /// ⌘C：只写剪贴板，不关面板、不置顶。底栏说「已复制」；放大预览开着时底栏被它盖住，改走刘海
   func copySelection(plainText: Bool = false) {
     let items = targets
     guard !items.isEmpty else { return }
+    // 多条全是文本合成一段复制；否则只复制第一条（payloads[0]），只查真会写进去的
+    let merged = items.count > 1 && items.allSatisfy { $0.kind == .text }
+    if let gone = unavailable(merged ? items : [items[0]]) {
+      island?.show("没能复制", detail: gone, tone: .error)
+      return
+    }
     Paster.write(pasteboardPayloads(items, plainText: plainText).payloads[0])
-    showToast(.message("已复制"))
+    guard isQuickLooking, let island else { return showToast(.message("已复制")) }
+    island.show(
+      "已复制", detail: merged ? "\(items.count) 条合成一段" : Island.excerpt(items[0].title))
+  }
+
+  /// 粘不出东西的条目（图片文件丢了、文件都已被移走）：写进去是空的，⌘V 会粘出剪贴板里原来的内容，
+  /// 所以先拦下来说清楚。nil = 都能用
+  private func unavailable(_ items: [ClipItem]) -> String? {
+    for item in items {
+      switch item.kind {
+      case .text: continue
+      case .image:
+        if !FileManager.default.fileExists(atPath: store.images.url(for: item.id).path) {
+          return "这张图片的文件已丢失"
+        }
+      case .file:
+        if !(item.filePaths ?? []).contains(where: { FileManager.default.fileExists(atPath: $0) }) {
+          return "文件已被移走或删除"
+        }
+      }
+    }
+    return nil
+  }
+
+  /// 在访达中显示：文件都不在了 activateFileViewerSelecting 什么也不做，要说一声
+  func revealInFinder(_ item: ClipItem) {
+    let urls = (item.filePaths ?? []).filter { FileManager.default.fileExists(atPath: $0) }
+      .map { URL(filePath: $0) }
+    guard !urls.isEmpty else {
+      island?.show("文件已不存在", detail: "已被移走或删除", tone: .warning, symbol: "questionmark.folder")
+      return
+    }
+    NSWorkspace.shared.activateFileViewerSelecting(urls)
+  }
+
+  /// 新建片段：被当前范围、筛选、搜索挡住看不见时（像没存上），用刘海说一声
+  func saveSnippet(_ text: String) {
+    store.saveSnippet(text)
+    guard let saved = store.items.first, saved.text == text,
+      !visibleItems.contains(where: { $0.id == saved.id })
+    else { return }
+    island?.show("已存为片段", detail: Island.excerpt(text), symbol: "text.badge.star")
   }
 
   /// 复制图片里识别出的文字（对标 Raycast「Copy Text from Image」、Maccy 的复制识别文字）：是新内容，记进历史
@@ -590,6 +647,10 @@ import Observation
     store.deleteWithUndo(ids)
     multiSelection.subtract(ids)
     showToast(.undo(count: ids.count), seconds: 5)
+    // 放大预览开着时底栏的「撤销」被它盖住
+    if isQuickLooking {
+      island?.show("已删除 \(ids.count) 条", detail: "⌘Z 撤销", tone: .info, symbol: "trash")
+    }
   }
 
   func undoDelete() {
@@ -712,9 +773,8 @@ import Observation
     }
     if !many, item.kind == .file {
       actions.append(
-        ActionMenu.Item(title: "在访达中显示", symbol: "folder") {
-          NSWorkspace.shared.activateFileViewerSelecting(
-            (item.filePaths ?? []).map { URL(filePath: $0) })
+        ActionMenu.Item(title: "在访达中显示", symbol: "folder") { [unowned self] in
+          revealInFinder(item)
         })
     }
     // 分组（和右键菜单、多选底栏的「分组」一样全）：移到已有分组（都已在里面的那组不列）、移出分组、放进新分组

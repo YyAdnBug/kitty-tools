@@ -36,6 +36,7 @@ struct TranslatePanelView: View {
   /// 原文框拿着焦点：输入框底画焦点环（和历史搜索框只有一个亮）
   @State private var sourceFocused = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(Island.self) private var island: Island?
 
   var body: some View {
     VStack(spacing: 10) {
@@ -250,7 +251,10 @@ struct TranslatePanelView: View {
           .symbolEffect(
             .variableColor.iterative.reversing,
             isActive: speaker.speaking == coordinator.sourceText && !coordinator.sourceText.isEmpty)
-          Button("复制原文", systemImage: "doc.on.doc") { Paster.write(string: coordinator.sourceText) }
+          Button("复制原文", systemImage: "doc.on.doc") {
+            Paster.write(string: coordinator.sourceText)
+            island?.show("已复制原文", detail: Island.excerpt(coordinator.sourceText))
+          }
           Button("清空", systemImage: "xmark.circle") { coordinator.beginInput() }
         }
         .foregroundStyle(.secondary)
@@ -438,6 +442,7 @@ private struct MoreMenu: View {
   @Bindable var coordinator: TranslateCoordinator
   @AppStorage(Prefs.translateCopyToTranslate) private var copyToTranslate = false
   @State private var confirmsClear = false
+  @Environment(Island.self) private var island: Island?
 
   var body: some View {
     let history = coordinator.history
@@ -466,7 +471,13 @@ private struct MoreMenu: View {
     .help("更多：翻译历史、复制即译、设置")
     .accessibilityLabel("更多")
     .confirmationDialog("清空翻译历史？", isPresented: $confirmsClear) {
-      Button("清空", role: .destructive) { history.clearNonFavorites() }
+      Button("清空", role: .destructive) {
+        history.clearNonFavorites()
+        // 历史列表多半没开着，清没清看不出来
+        island?.show(
+          "已清空翻译历史", detail: counts.favorites > 0 ? "保留了 \(counts.favorites) 条收藏" : nil,
+          symbol: "trash")
+      }
     } message: {
       Text("收藏的记录会保留")
     }

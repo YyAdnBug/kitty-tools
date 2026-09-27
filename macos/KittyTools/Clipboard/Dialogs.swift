@@ -71,7 +71,7 @@ struct DialogOverlay: View {
         submitsOnEnter: false, onCancel: close
       ) { text in
         if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-          model.store.saveSnippet(text)
+          model.saveSnippet(text)
         }
         close()
       }

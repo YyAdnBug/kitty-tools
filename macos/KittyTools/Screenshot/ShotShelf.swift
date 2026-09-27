@@ -16,6 +16,8 @@ final class ShotShelf {
   var copy: (Data) async -> Bool = { _ in false }
   var save: (Data) async -> URL? = { _ in nil }
   var pin: (CGImage, CGRect) -> Void = { _, _ in }
+  /// 刘海岛（AppDelegate 给）：缩略图看起来没变的结果（再拷贝、存到同一个文件夹）、文件已不在时用它说
+  var island: Island?
 
   private var cards: [ShelfCard] = []
   private var idle: [NSPanel] = []
@@ -188,8 +190,10 @@ final class ShotShelf {
     guard !isBusy, let shelf else { return }
     isBusy = true
     Task {
-      // 角标不换（存过的还要留着文件夹和「在访达中显示」），只播报
-      if let png = await encoded(), await shelf.copy(png) { FlyCard.announce(.copied) }
+      // 角标不换（存过的还要留着文件夹和「在访达中显示」），缩略图看不出拷没拷上：用刘海说（岛自己也播报）
+      if let png = await encoded(), await shelf.copy(png) {
+        shelf.island?.show("已复制截图", leading: Island.thumbnail(of: shown))
+      }
       isBusy = false
     }
   }
@@ -199,11 +203,26 @@ final class ShotShelf {
     isBusy = true
     Task {
       if let png = await encoded(), let url = await shelf.save(png) {
+        // 已经存过同一个文件夹时角标不变，看不出又存了一份
+        if case .saved(let old) = badge,
+          old.deletingLastPathComponent() == url.deletingLastPathComponent()
+        {
+          shelf.island?.show(
+            "已保存", detail: url.lastPathComponent, leading: Island.thumbnail(of: shown))
+        }
         badge = .saved(url)
         fileURL = url
       }
       isBusy = false
     }
+  }
+
+  /// 存过的文件还在不在；被移走 / 删掉了用刘海说（访达、打开都会什么也不做）
+  private func exists(_ url: URL) -> Bool {
+    guard !FileManager.default.fileExists(atPath: url.path) else { return true }
+    shelf?.island?.show(
+      "文件已不存在", detail: url.lastPathComponent, tone: .warning, symbol: "questionmark.folder")
+    return false
   }
 
   /// 钉到选区的位置；长截图比选区高得多，按选区宽度钉整张，太高就等比缩到屏幕可见高度的 90%（顶边对齐选区）。
@@ -229,13 +248,15 @@ final class ShotShelf {
   }
 
   func revealInFinder() {
-    if case .saved(let url) = badge { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+    if case .saved(let url) = badge, exists(url) {
+      NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
   }
 
   /// 双击用默认 App 打开：没存过先快速保存（临时目录的文件下次启动会清掉，在预览里改了也会丢）
   func open() {
     if case .saved(let url) = badge {
-      NSWorkspace.shared.open(url)
+      if exists(url) { NSWorkspace.shared.open(url) }
       return
     }
     guard !isBusy, let shelf else { return }

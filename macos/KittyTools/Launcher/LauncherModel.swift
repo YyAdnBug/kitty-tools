@@ -61,6 +61,8 @@ import Observation
   @ObservationIgnored var boundHotKey: (HotKeyAction) -> HotKey? = { $0.hotKey }
   /// 文件搜索的授权提示 ↩：没问过就逐个弹系统框，问过就打开系统设置
   @ObservationIgnored var requestFolderAccess: () -> Void = {}
+  /// 刘海岛（单测里是 nil）：只复制不粘贴时面板同时收起，结果看不见，用它说
+  @ObservationIgnored var island: Island?
   /// 文件结果最后一行的授权提示：每次呼出后第一次进文件搜索时算一次（要读受保护目录，问过之前不读）。
   /// ponytail: 授权被重置（tccutil reset、撤掉完全磁盘访问）后，第一次进文件搜索时系统会弹框
   @ObservationIgnored var folderHint: LauncherItem?
@@ -326,11 +328,12 @@ import Observation
   }
 
   /// 计算结果：收起后写剪贴板、发 ⌘V 粘贴回原 App（和剪贴板面板一样不激活本 App、不等待）。
-  /// 没有辅助功能授权时只复制，面板留着提示去授权
+  /// 没有辅助功能授权时只复制，刘海岛警告去授权（授权框一点启动器就收了，面板里的提示会丢）
   private func paste(_ copy: () -> Void) {
     guard Permissions.isAccessibilityTrusted else {
       copy()
-      error = "已复制到剪贴板。授权辅助功能后才能直接粘贴"
+      // 系统授权框一点，启动器就收了，面板里的提示会跟着丢
+      island?.show("已复制到剪贴板", detail: "授权辅助功能后才能直接粘贴", tone: .warning)
       return Permissions.requestAccessibility()
     }
     hidePanel()
@@ -554,17 +557,23 @@ import Observation
       if revealsOnReturn(item) { return open(URL(filePath: item.target), item) }
       NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: item.target)])
     case .calculation:
-      Paster.write(string: item.payload ?? "")
+      return copy(item)
     default:
       return
     }
     hidePanel()
   }
 
-  /// ⌘C：复制路径 / 网址 / 计算结果
+  /// ⌘C：复制路径 / 网址 / 计算结果（⌘↩ 的计算结果也走这里）。面板同时收起，用刘海说复制了什么
   private func copy(_ item: LauncherItem) {
-    Paster.write(string: item.payload ?? item.target)
+    let text = item.payload ?? item.target
+    Paster.write(string: text)
     hidePanel()
+    guard let title = copyTitle(for: item) else { return }
+    let isPath = item.kind == .app || item.kind == .path
+    island?.show(
+      "已" + title,
+      detail: isPath ? (text as NSString).abbreviatingWithTildeInPath : Island.excerpt(text))
   }
 
   private func forget(_ item: LauncherItem) {
