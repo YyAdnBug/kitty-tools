@@ -1,8 +1,9 @@
 // 设置里有序列表（N12）的单测：网页搜索一条的问题提示（名称、网址、保留 / 重复关键词（只算搜索之间）、用不上）、
 // 列表 JSON 读写（关键词去空白）、预置判断（删自定义的要确认）、翻译服务状态副标题（开着才标橙）；
-// 另有通用页的外观偏好 → NSAppearance 名字。
+// 另有通用页的外观偏好 → NSAppearance 名字、设置窗侧栏不画原生选中高亮（自绘那块才是选中）。
 
 import AppKit
+import SwiftUI
 import Testing
 
 @testable import KittyTools
@@ -84,5 +85,36 @@ struct SettingsListTests {
     #expect(AppAppearance.name(for: "dark") == .darkAqua)
     #expect(AppAppearance.name(for: nil) == nil)
     #expect(AppAppearance.name(for: "sepia") == nil)
+  }
+
+  /// 设置窗侧栏的选中自绘：外面那个表格不画原生高亮（换页后也不会被改回来），原生选中照旧跟着当前页走
+  /// （↑↓、VoiceOver 靠它）。屏外无边框窗口，不抢键盘
+  @Test func sidebarNativeHighlightIsOff() throws {
+    let navigation = SettingsNavigation()
+    let saved = navigation.page
+    defer { navigation.page = saved }  // 别把测试摆的页写进偏好
+    navigation.page = .clipboard
+    let host = NSHostingView(
+      rootView: SettingsRoot(navigation: navigation, page: { _ in AnyView(EmptyView()) }) {
+        AnyView(EmptyView())
+      })
+    let window = NSWindow(
+      contentRect: NSRect(x: -20000, y: -20000, width: 780, height: 600), styleMask: [.borderless],
+      backing: .buffered, defer: false)
+    window.contentView = host
+    window.orderFront(nil)
+    defer { window.orderOut(nil) }
+    let settle = { for _ in 0..<3 { RunLoop.main.run(until: .now.addingTimeInterval(0.1)) } }
+    settle()
+    func table(in view: NSView) -> NSTableView? {
+      view as? NSTableView ?? view.subviews.lazy.compactMap(table(in:)).first
+    }
+    let sidebar = try #require(table(in: host))
+    #expect(sidebar.selectionHighlightStyle == .none)
+    let before = sidebar.selectedRow
+    navigation.page = .about
+    settle()
+    #expect(sidebar.selectionHighlightStyle == .none)
+    #expect(sidebar.selectedRow != before && sidebar.selectedRow >= 0)
   }
 }

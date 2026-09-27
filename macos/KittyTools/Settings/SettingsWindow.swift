@@ -3,6 +3,11 @@
 // 记住上次看的页，窗口标题跟着页走；首次安装时盖一层欢迎引导（OnboardingView）。
 // 不用 SwiftUI Settings scene：LSUIElement 应用里它会被压到别的 App 后面，浮层上的齿轮也调不到 openSettings。
 // 打开：先收起浮层 → 切成 .regular（出现 Dock 图标）并激活；关闭时切回 .accessory。
+// 侧栏选中自己画（SidebarRow）：AppKit 画侧栏选中时会把 App 的强调色大幅压深（品牌粉变成暗红，截图实测约 #9C2F3E），
+// 选了 8 色时也仍是系统强调色，没有公开 API 改。保留 List(selection:)（点选、↑↓、VoiceOver「已选中」、
+// 跟着 navigation.page 走都还是系统的），只把外面那个 NSTableView 的 selectionHighlightStyle 设成 .none
+// 让它不画（NativeHighlightOff），再用 listRowBackground 按系统同样的几何画一块。不自己写行 + 键盘导航：
+// 那样焦点、↑↓、无障碍都要重做，代码多、手感还不如系统的。
 
 import AppKit
 import SwiftUI
@@ -173,16 +178,7 @@ struct SettingsRoot: View {
     NavigationSplitView {
       List(selection: selection) {
         ForEach(matches) { page in
-          Label {
-            Text(page.title)
-          } icon: {
-            if page == .about {
-              Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 20, height: 20)
-            } else {
-              KindTile(symbol: page.symbol, color: page.color, size: 20)
-            }
-          }
-          .tag(page)
+          SidebarRow(page: page, isSelected: page == navigation.page).tag(page)
         }
       }
       .overlay {
@@ -224,6 +220,76 @@ struct SettingsRoot: View {
       navigation.page
     } set: {
       if let page = $0 { navigation.page = page }
+    }
+  }
+}
+
+/// 侧栏一行 + 选中高亮（为什么自己画见文件头）：窗口是 key 时 = 强调色填充 + onBrand 字（系统侧栏的样子，
+/// 颜色取 Style.brand，增强对比度时它自己换压深的填充）；不是 key 时退成中性 selectedFill + 普通字，像系统那样
+/// 在后台不喊人。换页是瞬时的，和系统侧栏一样不滑（不用管减弱动态效果）
+private struct SidebarRow: View {
+  let page: SettingsPage
+  let isSelected: Bool
+  @Environment(\.controlActiveState) private var activeState
+  @Environment(\.colorSchemeContrast) private var contrast
+
+  /// 系统侧栏选中块的几何（macOS 15.7 屏外实测，和原生高亮逐像素对过）：左右各内缩 10、整行高、圆角 5
+  private static let inset: CGFloat = 10
+  private static let radius: CGFloat = 5
+
+  var body: some View {
+    let emphasized = isSelected && activeState == .key
+    Group {
+      // 只在强调色上设字色：显式设了前景（哪怕是 .foreground）会盖掉侧栏自己的字色（后台窗口变灰那套）
+      if emphasized { label.foregroundStyle(Style.onBrand) } else { label }
+    }
+    .background(NativeHighlightOff())
+    .listRowBackground(isSelected ? highlight(emphasized: emphasized) : nil)
+  }
+
+  private var label: some View {
+    Label {
+      Text(page.title)
+    } icon: {
+      if page == .about {
+        Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 20, height: 20)
+      } else {
+        KindTile(symbol: page.symbol, color: page.color, size: 20)
+      }
+    }
+  }
+
+  private func highlight(emphasized: Bool) -> some View {
+    let shape = RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
+    return shape.fill(emphasized ? Style.brand : Style.selectedFill)
+      .overlay {
+        // 增强对比度：中性选中加 1 pt 强调色 0.6 描边（mac-whisker §7）
+        if !emphasized, contrast == .increased { shape.strokeBorder(Style.brand.opacity(0.6)) }
+      }
+      .padding(.horizontal, Self.inset)
+  }
+}
+
+/// 关掉外面那个 NSTableView（SwiftUI 的侧栏 List 在 macOS 上就是它）的原生选中高亮。每行挂一个，行建出来时设一次。
+/// ponytail: 依赖 List 由 NSTableView 实现（macOS 15 实测是 NSOutlineView 子类）；哪天不是了就找不到，原生高亮
+/// 回来垫在自绘那块下面（key 时被不透明的强调色盖住、后台时灰得深一点），那时改成自己画行 + onKeyPress 导航
+private struct NativeHighlightOff: NSViewRepresentable {
+  func makeNSView(context: Context) -> Probe { Probe() }
+  func updateNSView(_ view: Probe, context: Context) { view.apply() }
+
+  final class Probe: NSView {
+    override func viewDidMoveToWindow() {
+      super.viewDidMoveToWindow()
+      apply()
+    }
+
+    /// 不接鼠标：点选照旧交给表格
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    func apply() {
+      let table = sequence(first: self as NSView, next: \.superview).lazy
+        .compactMap { $0 as? NSTableView }.first
+      table?.selectionHighlightStyle = .none
     }
   }
 }

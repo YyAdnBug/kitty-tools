@@ -255,6 +255,22 @@ struct SnapshotProbeTests {
         to: "\(out)/settings-hotkeys-recording\(dark ? "-dark" : "").png")
     }
     hotKeys.recording = nil
+    // 侧栏选中是自绘的（SettingsWindow 文件头）：屏外窗口永远不是 key，上面那些都是后台的中性样子。这里用环境摆成
+    // key，再把原生行强制成强调态（key 窗口里系统就这么标），看原生高亮确实没画、只剩自绘那块。
+    // 跟随系统（本机「多色」= 品牌粉）和黄色（字换深色），深浅色各一张
+    navigation.page = .clipboard
+    for choice in [AccentChoice.system, .yellow] {
+      Accent.shared.select(choice)
+      for dark in [false, true] {
+        try snapshot(
+          SettingsRoot(navigation: navigation, page: pages) { AnyView(EmptyView()) }
+            .environment(\.controlActiveState, .key),
+          size: NSSize(width: 780, height: 600), dark: dark,
+          to: "\(out)/settings-sidebar-key-\(choice.rawValue)\(dark ? "-dark" : "").png",
+          prepare: Self.emphasizeTableRows)
+      }
+    }
+    Accent.shared.select(AccentChoice(rawValue: savedAccent ?? "") ?? .system)
     navigation.page = savedPage  // 别把自检摆的页写进用户偏好
     // 设置 › 翻译 / 启动器的有序列表（N12）：整页拉长看到列表和「+ −」，外加一个详情页（不改用户的偏好和钥匙串）。
     // 网页搜索用临时的偏好域摆出各种状态：兜底、重复关键词（橙色）、网址 / 路径快捷链接、刚新建还没填的
@@ -821,7 +837,21 @@ struct SnapshotProbeTests {
     window.orderOut(nil)
   }
 
-  private func snapshot(_ view: some View, size: NSSize, dark: Bool, to path: String) throws {
+  /// 把视图树里表格的每一行摆成强调态（key 窗口里第一响应者表格的样子）
+  private static func emphasizeTableRows(_ view: NSView) {
+    if let table = view as? NSTableView {
+      for row in 0..<table.numberOfRows {
+        table.rowView(atRow: row, makeIfNecessary: false)?.isEmphasized = true
+      }
+    }
+    view.subviews.forEach(emphasizeTableRows)
+  }
+
+  /// prepare：布局完、出图前对窗口内容做点手脚（比如 emphasizeTableRows）
+  private func snapshot(
+    _ view: some View, size: NSSize, dark: Bool, to path: String,
+    prepare: ((NSView) -> Void)? = nil
+  ) throws {
     let window = NSWindow(
       contentRect: NSRect(origin: NSPoint(x: -20000, y: -20000), size: size),
       styleMask: [.borderless], backing: .buffered, defer: false)
@@ -835,6 +865,10 @@ struct SnapshotProbeTests {
     window.contentView = background
     window.orderFront(nil)
     for _ in 0..<5 { RunLoop.main.run(until: Date.now.addingTimeInterval(0.1)) }
+    if let prepare {
+      prepare(background)
+      RunLoop.main.run(until: Date.now.addingTimeInterval(0.1))
+    }
     let bitmap = try #require(background.bitmapImageRepForCachingDisplay(in: background.bounds))
     background.cacheDisplay(in: background.bounds, to: bitmap)
     try #require(bitmap.representation(using: .png, properties: [:])).write(to: URL(filePath: path))

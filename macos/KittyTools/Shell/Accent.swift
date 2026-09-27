@@ -3,7 +3,8 @@
 // （系统强调色变了自绘部分跟着重算）；选了 8 色之一 = 自绘部分用它，系统控件（开关、复选框、单选、进度条、主按钮、
 // 文字选中）靠面板和设置窗根视图的 `.accentColor(_:)` 跟上（`.tint` 会把没设前景色的无边框图标按钮一起染色，
 // 还管不到复选框和单选；实测 macOS 15.7）。
-// ponytail: 菜单高亮、键盘焦点环、侧栏选中是 AppKit 自己画的，没有公开 API 能改，选了 8 色时它们仍是系统强调色。
+// ponytail: 菜单高亮、键盘焦点环是 AppKit 自己画的，没有公开 API 能改，选了 8 色时它们仍是系统强调色
+// （设置窗侧栏选中改成了自绘，SettingsWindow.swift 文件头）。
 // 界面一律从 Style.brand / brandInk / onBrand / Shot.accent 取，它们读这里（@Observable：换色后读过它的视图自动重画）；
 // AppKit 图层在创建时取一次（截图遮罩、长截图每次新建）。不读 NSColor.controlAccentColor（社区报告调用它会让「多色」下
 // 部分 AppKit 控件退回系统蓝，FB13688723），跟随系统时用 NSColor(Color.accentColor) 解析。

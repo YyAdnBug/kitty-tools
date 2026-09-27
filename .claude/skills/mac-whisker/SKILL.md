@@ -11,7 +11,7 @@ description: 原生分支的视觉与动效设计语言 Whisker（用户 2026-09
 - 三种皮肤：Panel（系统毛玻璃，深浅跟随设置 › 通用的「外观」，16 pt）/ HUD（永远深色）/ Island（纯黑）。圆角、字号、颜色、曲线只从 `Shell/Style.swift` 取，不硬编码。
 - 七条曲线：instant / snap 0.16·0.15 / glide 0.26·0.10 / settle 0.24 / pop 0.32·0.25 / island 0.42·0.22 / retract 0.34，外加 ambient；bounce ≤ 0.25。
 - 先瞬时再动画：粘贴、连发、拖动、结果刷新 0 ms；粘贴路径无退场动画。
-- 强调色 = `Style.brand`（文字 `Style.brandInk`、填充上的符号 `Style.onBrand`，截图家族 `Style.Shot.accent` / `onAccent`），全 App 统一，取自 `Shell/Accent.swift`：默认跟随系统（系统「多色」= 品牌粉），设置 › 通用可换 8 色；不用 `Color.accentColor` / `controlAccentColor`、不写死品牌粉或白字；只给光标、焦点环、主按钮、当前工具、多选勾、生成中的光；列表选中用中性灰高亮、文字不反白，一块高亮滑动（不用 matchedGeometryEffect）；剪贴板的高亮就是透镜的底（按类型定高的常数）。浮起的菜单 / ⌘K 共用 `Shell/ActionMenu.swift`。
+- 强调色 = `Style.brand`（文字 `Style.brandInk`、填充上的符号 `Style.onBrand`，截图家族 `Style.Shot.accent` / `onAccent`），全 App 统一，取自 `Shell/Accent.swift`：默认跟随系统（系统「多色」= 品牌粉），设置 › 通用可换 8 色；不用 `Color.accentColor` / `controlAccentColor`、不写死品牌粉或白字；只给光标、焦点环、主按钮、当前工具、多选勾、生成中的光；列表选中用中性灰高亮、文字不反白，一块高亮滑动（不用 matchedGeometryEffect）；设置窗侧栏例外：选中自绘，窗口 key 时强调色填充 + `onBrand` 字、否则中性灰（原生高亮关掉，rule §6 设置）；剪贴板的高亮就是透镜的底（按类型定高的常数）。浮起的菜单 / ⌘K 共用 `Shell/ActionMenu.swift`。
 - 五个招牌时刻：截图咔嚓飞入、刘海岛、译文显影 + 彗星边框、会呼吸的面板、窗口磁吸——改相关代码不能丢。
 - 在 macOS 15 上就要完整，Liquid Glass 只在 `#available(macOS 26, *)` 里替换材质。
 - 减弱动态效果 / 降低透明度 / 增强对比度都要处理；岛和飞行卡片要发 VoiceOver 播报。
