@@ -40,7 +40,8 @@ macos/                       # 本分支唯一开发区
 ## 常用命令（仓库根目录执行）
 
 ```bash
-# 构建 / 单测（联网冒烟：前面加 TEST_RUNNER_KITTY_LIVE_TRANSLATE=1，会真请求内置智谱）
+# 构建 / 单测（联网冒烟：前面加 TEST_RUNNER_KITTY_LIVE_TRANSLATE=1，会真请求内置智谱；
+# 菜单开着时热键自检：TEST_RUNNER_KITTY_LIVE_HOTKEY=1 跑 HotKeyMenuTests，会弹真菜单、发一次合成按键）
 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools build
 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools test
 

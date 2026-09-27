@@ -42,6 +42,7 @@ M1 起的实测结论。代码：`Shell/OverlayPanel.swift`、`HotKeyCenter.swif
 - Carbon `RegisterEventHotKey`，**非独占**注册。实测：`kEventHotKeyExclusive` 既不能让别的进程注册失败，也不会因别的进程已占用而失败（先后两个方向都返回 0）→ **检测不到跨进程冲突**。
 - 同进程重复注册同一组合返回 -9878；15.0–15.1 上只带 ⌥ 的组合返回 -9868 → 快捷键 Tab 显示错误，不按组合一刀切。
 - Carbon 回调在主线程投递，回调里用 `MainActor.assumeIsolated`；热键为 nil 就不注册。
+- **本 App 自己的菜单开着时**（菜单栏、右键、⋯、设置里的弹出菜单、主菜单），热键事件压在队列里、菜单关了才派发（系统行为，KeyboardShortcuts #1 / HotKey #17 同一现象；2026-09-27 用户报「下拉开着时快捷键唤不起窗口」）。`HotKeyCenter.watch` 在 `NSMenu.didBeginTrackingNotification` 后挂一个 `.eventTracking` 的 50 ms 定时器，用 `AcquireFirstMatchingEventInQueue` 只看不取 `kEventHotKeyPressed`，看到就 `cancelTrackingWithoutAnimation()`（带淡出要多等约 0.25 s），压着的事件随后由主循环照常派发给 `fire()`；不反注册、不自己匹配键位。别的 App 的菜单不影响（不是本进程在跟踪）。按需自检 `HotKeyMenuTests`（弹真菜单 + 合成 ⌃⌥⇧⌘F19，F 键要带 fn 标志才认成热键）。
 
 ## 5. 粘贴回原 App
 - 顺序：`hide()` → `Paster.write` → `Paster.pasteToFrontmost()`。浮层不激活本 App，前台一直是原 App，**不加任何等待**。
@@ -58,7 +59,7 @@ M1 起的实测结论。代码：`Shell/OverlayPanel.swift`、`HotKeyCenter.swif
 ## 7. Swift 6 细节
 - `NSEvent` 监听和 Carbon 的回调闭包不是 MainActor 隔离的，里面一律 `MainActor.assumeIsolated {}`。
 - `kAXTrustedCheckOptionPrompt` 这类 C 全局 var 在 Swift 6 下不算并发安全，用字符串字面量（`"AXTrustedCheckOptionPrompt"`）。
-- 发测试按键的脚本自己也要有辅助功能授权，否则事件被系统丢弃；热键 / 粘贴只能手测（见 PLAN §7 M1 清单）。
+- 发测试按键的脚本自己也要有辅助功能授权，否则事件被系统丢弃；热键 / 粘贴原则上手测（见 PLAN §7 M1 清单），唯一例外是按需启用的 `HotKeyMenuTests`（只注册、只按一个没人用的组合）。同步测试挡住了 `NSApp.run`，热键要自己 `nextEvent` + `sendEvent` 才派发（以 `systemDefined` subtype 6 到）。
 
 ## 8. 截图翻译框选（`Screenshot/`）
 - **先截后选**：按下热键先 `ScreenCapture.freeze()` 把每块屏幕截成冻结帧，再盖遮罩；框选、裁剪只读这一帧，禁止改成「框完再截」（其它 App 靠失焦关闭的菜单 / 弹层会先消失）。

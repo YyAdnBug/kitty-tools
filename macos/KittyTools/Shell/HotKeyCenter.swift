@@ -2,6 +2,7 @@
 // 每个动作的组合存在 UserDefaults；清除后为 nil、不注册。默认非独占注册：别的 App 注册了同一组合也会成功，
 // 按一次两边都响应，且检测不到这种跨进程冲突（M1 实测，见 mac-overlay-panel 技能）。
 // 另外给界面用：动作的分组 / 色块（快捷键页、速查表、引导、菜单栏共用）、注册失败的原因、最近一次触发（引导「按一下试试」）。
+// 本 App 自己的菜单开着时热键事件会压在队列里、关了才派发，所以看到热键就先关菜单（watch(_:)）。
 
 import AppKit
 import Carbon.HIToolbox
@@ -205,6 +206,8 @@ enum HotKeyAction: String, CaseIterable {
   @ObservationIgnored private var handlers: [HotKeyAction: () -> Void] = [:]
   @ObservationIgnored private var refs: [EventHotKeyRef] = []
   @ObservationIgnored private var handlerRef: EventHandlerRef?
+  @ObservationIgnored private var menuObservers: [NSObjectProtocol] = []
+  @ObservationIgnored private var menuWatch: CFRunLoopTimer?
   private static let signature: OSType = 0x4B54_5459  // 'KTTY'
 
   func setHandler(for action: HotKeyAction, _ handler: @escaping () -> Void) {
@@ -266,8 +269,53 @@ enum HotKeyAction: String, CaseIterable {
     handlers[action]?()
   }
 
+  /// 本 App 的菜单（菜单栏、右键、⋯、设置里的弹出菜单）跟踪期间，热键事件压在队列里，菜单关了才派发
+  /// （同 KeyboardShortcuts #1、HotKey #17；实测按下后菜单一直开着，关掉那一刻才触发）。
+  /// 跟踪期间一直看着 Carbon 主队列：有热键就先关菜单，压着的那个事件随后由主循环照常派发给
+  /// fire()——只用它这一个，不会重复触发，也不用反注册、自己匹配键位。定时器 50 ms 看一次、只在菜单开着时跑
+  /// （不指望热键唤醒跟踪中的 run loop）；关菜单不带淡出，带淡出浮层要多等约 0.25 s。实测按下到触发 15–65 ms，
+  /// 见 HotKeyMenuTests
+  private func watch(_ menu: NSMenu?) {
+    if let menuWatch { CFRunLoopTimerInvalidate(menuWatch) }
+    menuWatch = nil
+    // 录快捷键、框选截图时热键停着，不用看
+    guard let menu, !refs.isEmpty else { return }
+    let timer = CFRunLoopTimerCreateWithHandler(
+      nil, CFAbsoluteTimeGetCurrent() + 0.05, 0.05, 0, 0
+    ) { timer in
+      MainActor.assumeIsolated {
+        var spec = EventTypeSpec(
+          eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        // 只看不取（会顺带从 WindowServer 拉新事件）：留在队列里，菜单关了由主循环派发
+        guard
+          let event = AcquireFirstMatchingEventInQueue(
+            GetMainEventQueue(), 1, &spec, OptionBits(kEventQueueOptionsNone))
+        else { return }
+        ReleaseEvent(event)
+        CFRunLoopTimerInvalidate(timer)
+        menu.cancelTrackingWithoutAnimation()
+      }
+    }
+    CFRunLoopAddTimer(
+      CFRunLoopGetMain(), timer, CFRunLoopMode(RunLoop.Mode.eventTracking.rawValue as CFString))
+    menuWatch = timer
+  }
+
   private func installHandlerIfNeeded() {
     guard handlerRef == nil else { return }
+    let center = NotificationCenter.default
+    menuObservers = [
+      center.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: nil) {
+        [weak self] note in
+        // 菜单通知在主线程发（queue: nil = 在发通知的线程上同步调）
+        nonisolated(unsafe) let menu = note.object as? NSMenu
+        MainActor.assumeIsolated { self?.watch(menu) }
+      },
+      center.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: nil) {
+        [weak self] _ in
+        MainActor.assumeIsolated { self?.watch(nil) }
+      },
+    ]
     var spec = EventTypeSpec(
       eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
     // Carbon 事件在主线程投递
