@@ -212,8 +212,9 @@ struct TranslatePanelView: View {
   private var sourceArea: some View {
     VStack(alignment: .leading, spacing: 6) {
       // 历史开着时焦点在原文框里按 Esc：先关历史（不然会直接关掉浮窗）
+      // 左右不加内边距（文字缩进 10 + 2 在 horizontalInset 里）：滚动条贴原文框右边
       SourceTextView(
-        text: $coordinator.sourceText, fontSize: 15 * fontScale,
+        text: $coordinator.sourceText, fontSize: 15 * fontScale, horizontalInset: 12,
         onCancel: coordinator.showsHistory ? { coordinator.showsHistory = false } : nil
       ) {
         coordinator.start()
@@ -226,13 +227,14 @@ struct TranslatePanelView: View {
           Text("输入或粘贴文字，↩ 翻译，⇧↩ 换行")
             .font(.system(size: 15 * fontScale))
             .foregroundStyle(.tertiary)
-            .padding(.leading, 5)
+            .padding(.leading, 15)
             .padding(.top, 1)
             .allowsHitTesting(false)
         }
       }
       if let note = directionNote {
         Text(note).font(.system(size: 11)).foregroundStyle(.secondary)
+          .padding(.horizontal, 10)
       }
       HStack(spacing: 12) {
         Group {
@@ -287,9 +289,10 @@ struct TranslatePanelView: View {
       .frame(height: 24)
       .animation(
         (coordinator.needsTranslate ? Style.Motion.pop : .settle).animation(reduced: reduceMotion),
-        value: coordinator.needsTranslate)
+        value: coordinator.needsTranslate
+      )
+      .padding(.horizontal, 10)
     }
-    .padding(.horizontal, 10)
     .padding(.top, 8)
     .padding(.bottom, 8)
     .modifier(InputBox(isFocused: sourceFocused))

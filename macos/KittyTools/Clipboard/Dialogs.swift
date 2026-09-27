@@ -118,11 +118,13 @@ private struct TextDialog: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
       Text(title).font(.headline)
+      // 框的左右内边距改在文字上（6 + 2）：滚动条贴框的右边
       SourceTextView(
-        text: $text, submitsOnEnter: submitsOnEnter, isDialogField: true, onCancel: onCancel
+        text: $text, submitsOnEnter: submitsOnEnter, horizontalInset: 8, isDialogField: true,
+        onCancel: onCancel
       ) { onSave(text) }
       .frame(height: submitsOnEnter ? 80 : 200)
-      .dialogField()
+      .dialogField(horizontalPadding: 0)
       Text(hint).font(.caption).foregroundStyle(.secondary)
       HStack {
         Spacer()
@@ -258,18 +260,20 @@ private struct ManageGroupsDialog: View {
 extension View {
   /// 对话框里的输入框（Whisker §3）：primary 0.045（深 0.07）底 + 0.5 pt 发丝线，焦点环 1 pt 品牌粉 0.55 + 粉 0.18 外发光。
   /// 对话框里只有一个输入框、一直拿着焦点，所以焦点环常亮
-  fileprivate func dialogField() -> some View {
-    modifier(DialogField())
+  fileprivate func dialogField(horizontalPadding: CGFloat = 6) -> some View {
+    modifier(DialogField(horizontalPadding: horizontalPadding))
   }
 }
 
 private struct DialogField: ViewModifier {
+  var horizontalPadding: CGFloat = 6
   @Environment(\.colorScheme) private var scheme
 
   func body(content: Content) -> some View {
     let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
     content
-      .padding(6)
+      .padding(.horizontal, horizontalPadding)
+      .padding(.vertical, 6)
       .background(Color.primary.opacity(scheme == .dark ? 0.07 : 0.045), in: shape)
       // 外发光画在描边上再模糊（不给整块加 shadow：那样连里面的字都带光晕）
       .background {

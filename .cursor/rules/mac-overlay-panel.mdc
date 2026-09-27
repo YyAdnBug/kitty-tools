@@ -31,6 +31,7 @@ M1 起的实测结论。代码：`Shell/OverlayPanel.swift`、`HotKeyCenter.swif
 ## 3. 浮层里的输入框
 - 单行用 `CommandTextField`，多行用 `SourceTextView`：方向键 / 回车 / Esc 一律走 `doCommandBy`。输入法组字期间这些键被输入法消费、不会回调，所以**不要**用 SwiftUI `TextField` + `.onKeyPress` 抢方向键和回车，也不要写吞键 hack。
 - 未处理的 `cancelOperation:` 转给 `window.cancelOperation`，浮层据此按上表关闭。
+- 多行框（翻译原文框、剪贴板的备注 / 编辑 / 新片段）的滚动条贴框的右边（2026-09-27 用户要求，同翻译结果卡）：外面的框不给 `SourceTextView` 左右内边距，文字缩进改用它的 `horizontalInset`（= 原来的框内边距 + 2，文字位置逐像素不变），滚动区铺满框宽。
 - Tab 同样走 `doCommandBy(insertTab:)`（启动器拿来补全，剪贴板拿来开关筛选面板）；⇧Tab 是 `insertBacktab:`、→ / ← 是 `moveRight:` / `moveLeft:`、⌫ 是 `deleteBackward:`（剪贴板只在 mac-clipboard §4 的条件下截走，其余返回 false 交还字段编辑器）；⌥↩ 是 `insertNewlineIgnoringFieldEditor:`、⌃↩ 是 `insertLineBreak:`。
 - 插入点和选中文字底色用品牌粉（`insertionPointColor` 用 `NSColor(Style.brand)`，`selectedTextAttributes` 背景粉 0.28）：字段编辑器整个窗口共用，在 `becomeFirstResponder` 里每次都设，不露系统蓝。
 - 「只用英文输入法」（启动器开关）设在字段编辑器的 `inputContext.allowedInputSourceLocales` 上：字段编辑器整个窗口共用，关掉时要显式设回 nil。

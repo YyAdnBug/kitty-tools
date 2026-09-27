@@ -3,7 +3,8 @@
 // 生成中用 RevealText 显影 + 边框上一段强调色彗星光绕行（2.4 s 一圈），完成时整圈闪一下，失败是淡红错误卡
 // （图标晃一下，给「重试 · 打开设置」）。复制时对勾替换 + 整卡闪品牌粉。大模型完成后按行内 Markdown 渲染。
 // 折叠状态由浮窗按服务记住（跨重启），不再因为出结果自动展开；复制的对勾状态在会话里（⌘1–9 也亮）。
-// 正文最高 8 行（按字号算的常数），再长就在卡片里滚动：下面还有时底部渐隐、滚下去后顶部也渐隐；
+// 正文最高 8 行（按字号算的常数），再长就在卡片里滚动：滚动区铺满卡宽，系统滚动条贴卡片右边、落在内边距里不压字；
+// 下面还有时底部渐隐、滚下去后顶部也渐隐；
 // 大模型生成中跟着末尾走，用户往上滚就停、滚回底部再接着跟。
 
 import SwiftUI
@@ -37,6 +38,15 @@ struct ProviderCardView: View {
   static let bodyLines = 8
   /// 正文行距（Whisker §3：阅读 15 regular 行距 3.5）
   static let bodyLineSpacing: CGFloat = 3.5
+  /// 左右内边距：标题行和正文各自缩进，滚动区不缩，滚动条才在卡片最右边
+  static let sideInset: CGFloat = 12
+
+  /// 渐隐遮罩不盖的右边条宽：浮动滚动条的细条落在内边距里；「总是显示滚动条」时滚动条另占一条
+  /// （15 pt，正文离卡边 27），整条都不盖
+  private static var unfadedStrip: CGFloat {
+    NSScroller.preferredScrollerStyle == .legacy
+      ? NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy) : sideInset
+  }
 
   /// 正文一行的高度：正文字体（系统字体 15 × 字号）的 ascender、descender 各自向上取整到整点。
   /// 默认 15 pt 得 19，和 SwiftUI 实排一致；个别字号多 1–2 pt，末行下面露出一点下一行，正好在底部渐隐里
@@ -79,7 +89,7 @@ struct ProviderCardView: View {
   var body: some View {
     let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
     VStack(alignment: .leading, spacing: 0) {
-      header
+      header.padding(.horizontal, Self.sideInset)
       // 正文放进裁剪的容器里收起 / 展开：往上收时不会滑过标题行
       VStack(spacing: 0) {
         if !isCollapsed {
@@ -92,7 +102,6 @@ struct ProviderCardView: View {
       .clipped()
     }
     // 紧凑（对标 Bob）：一行译文的卡约 54 pt（上 7 + 标题 18 + 间距 3 + 一行 + 下 8）
-    .padding(.horizontal, 12)
     .padding(.top, 7)
     .padding(.bottom, isCollapsed ? 7 : 8)
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -180,13 +189,15 @@ struct ProviderCardView: View {
 
   /// 正文的滚动区：放得下时和内容一样高（和不滚动时一模一样），超过 8 行就停在上限、在卡片里滚。
   /// 外层结果区纵向不给高度，滚动区自然取内容高度；fixedSize 让它放在别处（设置页预览）也这样。
-  /// 高度只跟着内容变（越过上限那一下由浮窗的高度动画接住），滚动时不变
+  /// 高度只跟着内容变（越过上限那一下由浮窗的高度动画接住），滚动时不变。
+  /// 左右内边距在正文上：滚动区铺满卡宽，滚动条贴卡片右边
   private var scroller: some View {
     let fontSize = 15 * fontScale
     let cap = Self.bodyCap(fontSize: fontSize)
     let fadeLength = Self.bodyLineHeight(fontSize: fontSize)
     return ScrollView {
       content
+        .padding(.horizontal, Self.sideInset)
         .frame(minHeight: isPending ? min(settledHeight, cap) : 0, alignment: .topLeading)
         .onGeometryChange(for: CGFloat.self) {
           $0.size.height
@@ -208,18 +219,22 @@ struct ProviderCardView: View {
         top: min(max(new.offset / fadeLength, 0), 1),
         bottom: min(max(new.remaining / fadeLength, 0), 1))
     }
-    // 渐隐是遮罩（只动透明度，深浅色、降低透明度都不用另配颜色），一行高；没溢出时两端都是 1，等于没有
+    // 渐隐是遮罩（只动透明度，深浅色、降低透明度都不用另配颜色），一行高；没溢出时两端都是 1，等于没有。
+    // 右边滚动条那条（没有正文）不渐隐，滚动条两头不跟着淡掉
     .mask {
-      VStack(spacing: 0) {
-        LinearGradient(
-          colors: [.black.opacity(1 - fade.top), .black], startPoint: .top, endPoint: .bottom
-        )
-        .frame(height: fadeLength)
-        Color.black
-        LinearGradient(
-          colors: [.black, .black.opacity(1 - fade.bottom)], startPoint: .top, endPoint: .bottom
-        )
-        .frame(height: fadeLength)
+      HStack(spacing: 0) {
+        VStack(spacing: 0) {
+          LinearGradient(
+            colors: [.black.opacity(1 - fade.top), .black], startPoint: .top, endPoint: .bottom
+          )
+          .frame(height: fadeLength)
+          Color.black
+          LinearGradient(
+            colors: [.black, .black.opacity(1 - fade.bottom)], startPoint: .top, endPoint: .bottom
+          )
+          .frame(height: fadeLength)
+        }
+        Color.black.frame(width: Self.unfadedStrip)
       }
     }
   }

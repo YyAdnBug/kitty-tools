@@ -2,6 +2,7 @@
 // 输入法组字期间由输入法消费、不会误提交。主输入框挂进窗口时设为 initialFirstResponder；
 // 对话框里的输入框出现时抢焦点、消失时把焦点还给主输入框（焦点已在别的输入框里就不抢）。插入点和选中文字底色是
 // 品牌粉（mac-overlay-panel §3）；onFocusChange：焦点进出时回调（外面的输入框底据此画 Whisker 焦点环）。
+// 外面的输入框底不给它左右内边距、改由 horizontalInset 缩进文字：滚动区铺满框宽，滚动条贴框的右边（同翻译结果卡）。
 
 import AppKit
 import Carbon.HIToolbox
@@ -12,6 +13,9 @@ struct SourceTextView: NSViewRepresentable {
   /// true：Enter 提交、Shift+Enter / ⌘Enter 换行；false：Enter 换行（编辑正文）
   var submitsOnEnter = true
   var fontSize: CGFloat = 14
+  /// 文字离滚动区左右边的距离（NSTextView 的 textContainerInset.width，另有 lineFragmentPadding 5）：
+  /// 外面框的左右内边距挪到这里，滚动条才贴框边
+  var horizontalInset: CGFloat = 2
   var isDialogField = false
   var onCancel: (() -> Void)?
   var onSubmit: () -> Void = {}
@@ -25,7 +29,7 @@ struct SourceTextView: NSViewRepresentable {
     textView.allowsUndo = true
     textView.font = .systemFont(ofSize: fontSize)
     textView.drawsBackground = false
-    textView.textContainerInset = NSSize(width: 2, height: 6)
+    textView.textContainerInset = NSSize(width: horizontalInset, height: 6)
     textView.isAutomaticQuoteSubstitutionEnabled = false
     textView.isAutomaticDashSubstitutionEnabled = false
     textView.isVerticallyResizable = true
