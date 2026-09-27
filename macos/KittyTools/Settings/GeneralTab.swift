@@ -21,7 +21,7 @@ struct GeneralTab: View {
         caption(
           Accent.shared.choice == .system
             ? "系统强调色选「多色」时使用品牌粉。"
-            : "菜单高亮、焦点环和侧栏选中由系统绘制，仍使用系统强调色。")
+            : "菜单高亮和焦点环由系统绘制，仍使用系统强调色。")
       }
       Section("启动") {
         Toggle("登录时自动打开", isOn: launchAtLogin)
