@@ -160,7 +160,7 @@ private struct IconTile: View {
         ThumbnailView(id: item.id, images: images, maxPixel: 72)
           .frame(width: Self.side, height: Self.side)
           .clipShape(shape)
-          .overlay(shape.strokeBorder(Style.hairline, lineWidth: 0.5))
+          .overlay(shape.hairlineBorder())
       } else if let icon = AppIcons.icon(for: item.sourceBundleID) {
         Image(nsImage: icon).resizable().scaledToFit()
           .overlay(alignment: .bottomTrailing) {
@@ -175,14 +175,14 @@ private struct IconTile: View {
               }
               .frame(width: Self.badge, height: Self.badge)
               .background(.regularMaterial, in: badgeShape)
-              .overlay(badgeShape.strokeBorder(Style.hairline, lineWidth: 0.5))
+              .overlay(badgeShape.hairlineBorder())
               .offset(x: 2, y: 2)
             }
           }
       } else if let favicon {
         Image(nsImage: favicon).resizable().interpolation(.high)
           .clipShape(shape)
-          .overlay(shape.strokeBorder(Style.hairline, lineWidth: 0.5))
+          .overlay(shape.hairlineBorder())
       } else {
         Image(systemName: form?.symbol ?? item.kind.symbol)
           .font(.system(size: 11, weight: .medium))
@@ -378,10 +378,11 @@ struct ThumbnailView: View {
       if let image {
         Image(nsImage: image).resizable().aspectRatio(contentMode: contentMode)
       } else {
-        Color.primary.opacity(0.06)
+        Style.controlFill
       }
     }
-    .clipShape(.rect(cornerRadius: 6))
+    // 不自己裁：调用方按自己的圆角裁 ThumbnailView 本身（行图标 tile、透镜和 ⌘Y 大卡 control），
+    // .fit 时图片比容器小，只裁外面的容器图片会是直角
     .task(id: id) {
       image = await Self.load(id, images: images, maxPixel: maxPixel)
     }

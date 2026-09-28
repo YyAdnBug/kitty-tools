@@ -86,8 +86,7 @@ struct ActionMenu: View {
     .frame(width: Self.width)
     .background(.regularMaterial, in: .rect(cornerRadius: Style.Radius.card, style: .continuous))
     .overlay(
-      RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous).strokeBorder(
-        Style.hairline, lineWidth: 0.5)
+      RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous).hairlineBorder()
     )
     .shadow(color: .black.opacity(0.25), radius: 18, y: 8)
     // 转场绑在这里：调用方只要 if 显示 + 用动画改那个开关（出现 snap，减弱动态效果时只淡入）

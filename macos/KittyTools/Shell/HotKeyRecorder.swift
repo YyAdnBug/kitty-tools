@@ -2,7 +2,8 @@
 // 没有键时写占位「按下快捷键」；点一下开始录（品牌粉焦点环，按住的修饰键实时显示成键帽），按下组合即保存并重新注册，
 // Esc 取消、⌫ 清除；右侧 ⓧ 清除（录制中是取消），「恢复默认」在右键菜单里。录制期间注销全部全局热键。
 // 不按组合一刀切：直接尝试注册，注册失败的原因由那一行自己显示（HotKeyCenter.failureMessage）；
-// 录制时的提示（缺修饰键、和别的动作重复）经 message 交给那一行，同样显示在行下面。
+// 录制时的提示（缺修饰键、各 App 通用的编辑键如 ⌘C、和别的动作重复）经 message 交给那一行，同样显示在行下面，
+// 并主动发 VoiceOver 播报。
 
 import AppKit
 import Carbon.HIToolbox
@@ -18,7 +19,6 @@ struct HotKeyRecorder: View {
   @State private var monitor: Any?
   /// 录制中按住的修饰键（例如「⌥⇧」）
   @State private var held = ""
-  @Environment(\.colorScheme) private var scheme
   @Environment(\.colorSchemeContrast) private var contrast
 
   init(action: HotKeyAction, center: HotKeyCenter, message: Binding<String?>) {
@@ -67,12 +67,11 @@ struct HotKeyRecorder: View {
     }
     .font(.system(size: 12))
     .frame(width: 164, height: 26)
-    .background(fieldFill, in: shape)
+    .background(Style.inputFill, in: shape)
     .overlay(
       shape.strokeBorder(
-        isRecording
-          ? Style.brand.opacity(0.55) : Color.primary.opacity(contrast == .increased ? 0.25 : 0.08),
-        lineWidth: isRecording || contrast == .increased ? 1 : 0.5)
+        isRecording ? Style.brand.opacity(0.55) : Style.hairline,
+        lineWidth: isRecording ? 1 : Style.hairlineWidth(contrast))
     )
     // 焦点外发光：框外一圈粉 0.18、3 pt（Whisker §3 状态「输入框焦点」）
     .background {
@@ -106,10 +105,11 @@ struct HotKeyRecorder: View {
       stop()
     }
     .onDisappear { if isRecording { stop() } }
+    // 录制被拒（缺修饰键、通用编辑键、重复）只在行下改橙字，VoiceOver 看不到：主动播报
+    .onChange(of: message) { _, text in
+      if let text { AccessibilityNotification.Announcement(text).post() }
+    }
   }
-
-  /// 输入框底：primary 0.045（深色 0.07）
-  private var fieldFill: Color { Color.primary.opacity(scheme == .dark ? 0.07 : 0.045) }
 
   private func toggle() {
     if isRecording { stop() } else { start() }
@@ -163,6 +163,11 @@ struct HotKeyRecorder: View {
   }
 
   private func save(_ hotKey: HotKey?) {
+    // ⌘C、⌘V 这类各 App 通用的键设成全局热键，会在所有 App 里被吞掉：拒绝，继续录
+    if let hotKey, hotKey.isReservedEditKey {
+      message = "这是各 App 通用的快捷键，设成全局会让它在所有 App 里失效"
+      return
+    }
     if let hotKey,
       let other = HotKeyAction.allCases.first(where: { $0 != action && $0.hotKey == hotKey })
     {

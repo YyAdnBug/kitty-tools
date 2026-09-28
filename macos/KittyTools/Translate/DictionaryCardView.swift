@@ -11,14 +11,12 @@ struct DictionaryCardView: View {
   let speaker: Speaker
   var fontScale = 1.0
   @State private var expanded = false
-  @Environment(\.colorScheme) private var scheme
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private static let collapsedGroups = 3
   private static let collapsedSenses = 2
 
   var body: some View {
-    let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
     VStack(alignment: .leading, spacing: 8) {
       header
       headword
@@ -36,8 +34,7 @@ struct DictionaryCardView: View {
     .padding(.top, 10)
     .padding(.bottom, 12)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(scheme == .dark ? .white.opacity(0.06) : .white.opacity(0.55), in: shape)
-    .overlay(shape.strokeBorder(Style.hairline, lineWidth: 0.5))
+    .cardSurface()
     .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: expanded)
   }
 

@@ -66,11 +66,11 @@ struct ShotChromeTests {
     #expect(outer.frame == field.bounds.insetBy(dx: -0.5, dy: -0.5))
   }
 
-  // 栏里用到的 SF Symbols 在最低系统上都存在（force unwrap 不会崩）
+  // 栏里用到的 SF Symbols（连同菜单栏 / 快捷键页的热键动作图标）在最低系统上都存在（force unwrap 不会崩）
   @Test func toolbarSymbolsExist() {
     let symbols =
-      Annotation.Tool.allCases.map(\.symbol) + [
-        "arrow.uturn.backward", "arrow.uturn.forward", "text.viewfinder", "character.bubble",
+      Annotation.Tool.allCases.map(\.symbol) + HotKeyAction.allCases.map(\.symbol) + [
+        "arrow.uturn.backward", "arrow.uturn.forward", "text.viewfinder", "translate",
         "rectangle.expand.vertical", "pin", "square.and.arrow.down", "chevron.down", "xmark",
         "checkmark",
       ]

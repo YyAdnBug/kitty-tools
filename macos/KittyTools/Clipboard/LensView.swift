@@ -314,10 +314,11 @@ private struct ColorLens: View {
 
   private func chip(_ values: [String], _ index: Int) -> some View {
     Button {
+      // 面板开着时复制的色值块不记进历史（记新条目会把选中跳走，mac-native §5）
       Paster.write(string: values[index])
       copied = index
       Task {
-        try? await Task.sleep(for: .seconds(1.2))
+        try? await Task.sleep(for: Style.copiedHold)
         if copied == index { copied = nil }
       }
     } label: {
@@ -355,11 +356,12 @@ private struct ImageLens: View {
     let ratio = item.image.map { CGFloat($0.width) / CGFloat(max($0.height, 1)) } ?? 1.5
     ZStack {
       Checkerboard(cell: 8)
-      ThumbnailView(id: item.id, images: images, maxPixel: 720, contentMode: .fit)
+      // 比例超出 60–360 宽时图片在格子里留边，图片自己也裁圆角
+      ThumbnailView(id: item.id, images: images, maxPixel: 720, contentMode: .fit).clipShape(shape)
     }
     .frame(width: min(max(108 * ratio, 60), 360), height: 108)
     .clipShape(shape)
-    .overlay(shape.strokeBorder(Style.hairline, lineWidth: 0.5))
+    .overlay(shape.hairlineBorder())
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 }

@@ -43,9 +43,10 @@ alwaysApply: false
 - **截图翻译**（`AppDelegate.screenshotTranslate`，默认 ⌥S）：冻结帧框选 → Vision 识字 → 原文过敏感过滤后记进剪贴板历史 → `coordinator.translate`。识别失败 / 没有文字、缺屏幕录制授权、截屏失败都走刘海岛（同识字），不为一句提示开浮窗、不开翻译会话；缺授权时同时打开系统设置的「屏幕录制」。浮窗的 `showNotice(_:permission:)` 只剩划词缺辅助功能授权（浮窗本来就要开）。框选细节见 mac-overlay-panel §8。
 
 ## 5.1 浮窗补强（M12，对标 Bob）
-- 浮窗快捷键只在 `TranslateCoordinator.handleKeyEquivalent`：只收纯 ⌘（和 ⌘⇧=），编辑键不拦；⌘Y 开 / 关历史、⌘, 打开设置（N6，和「⋯」菜单项的键位一致）；「第一个服务」的完成结果 `primaryResult` 是收藏、替换原文的唯一来源（和写历史、自动复制一致）。
+- 浮窗快捷键只在 `TranslateCoordinator.handleKeyEquivalent`：只收纯 ⌘（和 ⌘⇧=），编辑键不拦；⌘Y 开 / 关历史、⌘, 打开设置（N6，和「⋯」菜单项的键位一致）；⌘W 由 `OverlayPanel` 统一处理（各浮层都认）。固定（⌘P / 图钉）只管失焦不收起，Esc、⌘W 固定着也关（体检 A9，2026-09-28；历史开着时 Esc 先关历史）；「第一个服务」的完成结果 `primaryResult` 是收藏、替换原文的唯一来源（和写历史、自动复制一致）。
 - 收藏存 translations 表（「原文 + 实际目标语言」唯一），`HistoryStore.stored` 统一去空白截断，收藏和 add 必须找同一条。
-- 替换原文 / 静默替换都是「收起 → `Paster.write` → `pasteToFrontmost`」，不激活本 App、不等待；粘之前核对前台还是取词时记下的 pid（`replaceSource` / 静默替换取词前记），对不上或自家浮层是 key 就只复制；译文用 `rewrap` 补回原选区的首尾空白。静默替换用 `translateOnce`（不动浮窗会话、不合并换行，再按热键取消）。
+- 复制出去的译文、原文、单词释义（卡片复制、⌘1–9、自动复制、「复制原文」、历史 ⌘C / 右键）和替换原文写进去的译文都是本 App 生成的新文字，一律 `Paster.write(string:record: true)` 同时记进剪贴板历史（mac-native §5，体检 A30）；卡片对勾停 `Style.copiedHold`（1.2 s）。
+- 替换原文 / 静默替换都是「收起 → `Paster.write` → `pasteToFrontmost`」，不激活本 App、不等待；粘之前核对前台还是取词时记下的 pid（`replaceSource` / 静默替换取词前记），对不上或自家浮层是 key 就只复制；译文用 `rewrap` 补回原选区的首尾空白。静默替换用 `translateOnce`（不动浮窗会话、不合并换行，再按热键取消；取词一返回先看是否已取消，免得「没有选中文字」「翻译中…」盖掉「已取消」，后者会挂到 60 s 兜底）。
 - 浮窗高度由视图量出来、`OverlayPanel.setContentHeight` 设（夹在 220 到屏幕 85%）；lazy 建面板时用弱引用接 resize，别在初始化里回头访问 `translatePanel`。
 
 ## 5.2 查词（D4，对标 Bob：不单开模式）

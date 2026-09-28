@@ -3,6 +3,7 @@
 // 用内存库 + 临时目录，不碰真实数据。
 
 import AppKit
+import Carbon.HIToolbox
 import Foundation
 import SwiftUI
 import Testing
@@ -335,6 +336,27 @@ struct ClipboardStoreTests {
       for _ in 0..<6 { RunLoop.main.run(until: .now.addingTimeInterval(0.1)) }
       try expectLens(model, in: window, "↓ 第 \(step) 下")
     }
+  }
+
+  /// ⌘W：对话框开着时只关对话框（同 Esc 逐级退，没保存的字不随面板一起丢；大写锁定开着也一样），
+  /// 没有对话框时交给 OverlayPanel 收起面板
+  @Test func commandWClosesDialogFirst() throws {
+    let (store, _) = try makeStore()
+    let model = ClipboardPanelModel(store: store)
+    func commandW(_ flags: NSEvent.ModifierFlags) throws -> NSEvent {
+      try #require(
+        NSEvent.keyEvent(
+          with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0,
+          context: nil, characters: "w", charactersIgnoringModifiers: "w", isARepeat: false,
+          keyCode: UInt16(kVK_ANSI_W)))
+    }
+    model.dialog = .newSnippet
+    #expect(model.handleKeyEquivalent(try commandW(.command)))
+    #expect(model.dialog == nil)
+    model.dialog = .newSnippet
+    #expect(model.handleKeyEquivalent(try commandW([.command, .capsLock])))
+    #expect(model.dialog == nil)
+    #expect(!model.handleKeyEquivalent(try commandW(.command)))
   }
 
   /// ⌘K 里的分组操作和右键菜单一样全：移到已有分组（已在里面的那组不列）、移出分组、放进新分组

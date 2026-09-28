@@ -6,13 +6,15 @@
 // ⌘Y 放大预览用 zoom / unzoom：从检查器卡片的位置长出来、缩回去。启动器可选「挤压入场」（实验，squeezesIn）。
 
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 
 final class OverlayPanel: NSPanel {
+  /// 自动收起的时机。固定（isPinned）只管这一条「点别处不收起」；Esc、⌘W、再按热键一律收起（mac-overlay-panel §2）
   enum AutoHide {
-    /// 点本 App 浮层以外的地方就关（剪贴板面板）；Esc 固定时也关
+    /// 点本 App 浮层以外的地方就关（剪贴板面板、启动器）
     case clickOutside
-    /// 失去 key 就关（翻译浮窗）；固定时 Esc 也不关
+    /// 失去 key 就关（翻译浮窗）
     case resignKey
   }
 
@@ -194,7 +196,7 @@ final class OverlayPanel: NSPanel {
     onHide?()
   }
 
-  /// 用户关掉（Esc、点外面、再按热键、失焦）：系统淡出。窗口逻辑上立刻移走，键盘马上回到原 App
+  /// 用户关掉（Esc、⌘W、点外面、再按热键、失焦）：系统淡出。窗口逻辑上立刻移走，键盘马上回到原 App
   func dismiss() {
     endSqueeze()
     guard isVisible else { return }
@@ -280,9 +282,17 @@ final class OverlayPanel: NSPanel {
     if keyEquivalentHandler?(event) == true || super.performKeyEquivalent(with: event) {
       return true
     }
+    // 不看 Caps Lock（deviceIndependentFlagsMask 含 .capsLock，大写锁定开着 ⌘W 会失灵）
+    guard event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command else {
+      return false
+    }
+    // ⌘W 关闭（各浮层都认，固定着也关：固定只管点别处不收起）。本 App 不激活，主菜单的「关闭」收不到
+    if Int(event.keyCode) == kVK_ANSI_W {
+      dismiss()
+      return true
+    }
     // 浮层不激活本 App，主菜单的 ⌘C / ⌘V 等不一定收得到：直接发给当前输入框
-    guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
-      let action = Self.editActions[event.charactersIgnoringModifiers?.lowercased() ?? ""]
+    guard let action = Self.editActions[event.charactersIgnoringModifiers?.lowercased() ?? ""]
     else { return false }
     return NSApp.sendAction(action, to: nil, from: self)
   }
@@ -294,8 +304,8 @@ final class OverlayPanel: NSPanel {
     "z": Selector(("undo:")),
   ]
 
+  /// Esc（面板里有展开的层时各自先逐级退，退到头才转到这里）：固定着也关
   override func cancelOperation(_ sender: Any?) {
-    if autoHide == .resignKey && isPinned() { return }
     dismiss()
   }
 

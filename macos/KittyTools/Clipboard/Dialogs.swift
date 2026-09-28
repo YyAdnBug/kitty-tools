@@ -29,7 +29,7 @@ struct DialogOverlay: View {
           .background {
             shape.fill(.regularMaterial).shadow(color: .black.opacity(0.18), radius: 14, y: 6)
           }
-          .overlay(shape.strokeBorder(Style.hairline, lineWidth: 0.5))
+          .overlay(shape.hairlineBorder())
           .padding(6)
           .id(dialog.id)
           .transition(
@@ -131,8 +131,7 @@ private struct TextDialog: View {
         Button("取消", action: onCancel)
         Button("保存") { onSave(text) }
           .keyboardShortcut(.return, modifiers: .command)
-          .buttonStyle(.borderedProminent)
-          .tint(Style.brand)
+          .buttonStyle(BrandButtonStyle())
       }
     }
   }
@@ -162,7 +161,7 @@ private struct NewGroupDialog: View {
       HStack {
         Spacer()
         Button("取消", action: onCancel)
-        Button("创建", action: create).buttonStyle(.borderedProminent).tint(Style.brand)
+        Button("创建", action: create).buttonStyle(BrandButtonStyle())
       }
     }
   }
@@ -237,7 +236,7 @@ private struct ManageGroupsDialog: View {
         }
         Spacer()
         Button(renaming == nil ? "新建" : "重命名", action: submit)
-        Button("完成", action: onClose).buttonStyle(.borderedProminent).tint(Style.brand)
+        Button("完成", action: onClose).buttonStyle(BrandButtonStyle())
       }
     }
   }
@@ -258,7 +257,7 @@ private struct ManageGroupsDialog: View {
 }
 
 extension View {
-  /// 对话框里的输入框（Whisker §3）：primary 0.045（深 0.07）底 + 0.5 pt 发丝线，焦点环 1 pt 品牌粉 0.55 + 粉 0.18 外发光。
+  /// 对话框里的输入框（Whisker §3）：Style.inputFill 底，焦点环 1 pt 品牌粉 0.55 + 粉 0.18 外发光。
   /// 对话框里只有一个输入框、一直拿着焦点，所以焦点环常亮
   fileprivate func dialogField(horizontalPadding: CGFloat = 6) -> some View {
     modifier(DialogField(horizontalPadding: horizontalPadding))
@@ -267,14 +266,13 @@ extension View {
 
 private struct DialogField: ViewModifier {
   var horizontalPadding: CGFloat = 6
-  @Environment(\.colorScheme) private var scheme
 
   func body(content: Content) -> some View {
     let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
     content
       .padding(.horizontal, horizontalPadding)
       .padding(.vertical, 6)
-      .background(Color.primary.opacity(scheme == .dark ? 0.07 : 0.045), in: shape)
+      .background(Style.inputFill, in: shape)
       // 外发光画在描边上再模糊（不给整块加 shadow：那样连里面的字都带光晕）
       .background {
         shape.stroke(Style.brand.opacity(0.18), lineWidth: 4).blur(radius: 2)

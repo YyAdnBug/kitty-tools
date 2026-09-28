@@ -14,5 +14,6 @@ description: 原生分支的视觉与动效设计语言 Whisker（用户 2026-09
 - 强调色 = `Style.brand`（文字 `Style.brandInk`、填充上的符号 `Style.onBrand`，截图家族 `Style.Shot.accent` / `onAccent`），全 App 统一，取自 `Shell/Accent.swift`：默认跟随系统（系统「多色」= 品牌粉），设置 › 通用可换 8 色；不用 `Color.accentColor` / `controlAccentColor`、不写死品牌粉或白字；只给光标、焦点环、主按钮、当前工具、多选勾、生成中的光；列表选中用中性灰高亮、文字不反白，一块高亮滑动（不用 matchedGeometryEffect）；设置窗侧栏例外：选中自绘，窗口 key 时强调色填充 + `onBrand` 字、否则中性灰（原生高亮关掉，rule §6 设置）；剪贴板的高亮就是透镜的底（按类型定高的常数）。浮起的菜单 / ⌘K 共用 `Shell/ActionMenu.swift`。
 - 五个招牌时刻：截图咔嚓飞入、刘海岛、译文显影 + 彗星边框、会呼吸的面板、窗口磁吸——改相关代码不能丢。
 - 在 macOS 15 上就要完整，Liquid Glass 只在 `#available(macOS 26, *)` 里替换材质。
+- 现成件（体检 2026-09-28）：卡片 `.cardSurface()`（不加阴影）、输入框底 `Style.inputFill`、分隔线 `Hairline()` / 描边 `shape.hairlineBorder()`（增强对比度自动 1 pt，别写死 `lineWidth: 0.5`）、带文字的主按钮 `BrandButtonStyle`（不用 `.borderedProminent` + tint）、复制对勾停 `Style.copiedHold`、列表行悬停 `Shell/HoverTracker`（不用 `onHover`）。
 - 减弱动态效果 / 降低透明度 / 增强对比度都要处理；岛和飞行卡片要发 VoiceOver 播报。
 - 每个新界面过一遍 rule §10 的检查清单；截图自检补新状态。

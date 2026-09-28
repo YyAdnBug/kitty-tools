@@ -1,6 +1,7 @@
 // 设置 › 关于（Whisker 品牌页）：128 pt 大图标（点一下摇一摇，悬停时跟着指针 3D 倾斜 ≤ 6°）+ 26 pt 圆体字标 +
 // 版本胶囊 + 应用内更新（Updater：检查更新、发现新版本时「更新并重新打开」、自动检查开关）+ 更新日志时间线
-// （随包分发的 changelog.json，最新版在前）；可以重看欢迎引导。更新后第一次启动会自动打开这一页（AppDelegate 比较 lastSeenVersion）。
+// （随包分发的 changelog.json，最新版在前）；可以重看欢迎引导。更新后第一次启动不再自动打开这一页，只由刘海岛说
+// 「已更新到 x」+ 本版摘要（AppDelegate 比较 lastSeenVersion，体检 A29），全文在这里。
 
 import SwiftUI
 
@@ -54,7 +55,7 @@ struct AboutTab: View {
           if let updater { updateRow(updater) }
           HStack(spacing: 16) {
             Button("打开发布页") { NSWorkspace.shared.open(Updater.releasesPage) }
-            Button("重看欢迎指南", action: showOnboarding)
+            Button("重看欢迎引导", action: showOnboarding)
           }
           .buttonStyle(.plain).foregroundStyle(Style.brandInk).pointerStyle(.link)
           .font(.callout)
@@ -97,7 +98,7 @@ struct AboutTab: View {
         case .available(let release):
           Text("有新版本 \(release.version)")
           Button("更新并重新打开") { Task { await updater.install(.page) } }
-            .buttonStyle(.borderedProminent).tint(Style.brand)
+            .buttonStyle(BrandButtonStyle())
           link("更新内容") { NSWorkspace.shared.open(release.page) }
         case .installing(let release):
           ProgressView().controlSize(.small)

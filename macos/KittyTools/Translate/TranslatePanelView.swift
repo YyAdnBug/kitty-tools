@@ -104,7 +104,7 @@ struct TranslatePanelView: View {
             .contentShape(.rect)
         }
         .foregroundStyle(pinned ? Style.brand : .secondary)
-        .help(pinned ? "已固定：失焦不收起、Esc 不关闭（⌘P）" : "固定浮窗（⌘P）")
+        .help(pinned ? "已固定：点别处不收起（⌘P）" : "固定浮窗（⌘P）")
         .accessibilityLabel("固定浮窗")
         .accessibilityValue(pinned ? "已固定" : "未固定")
         MoreMenu(coordinator: coordinator)
@@ -252,7 +252,7 @@ struct TranslatePanelView: View {
             .variableColor.iterative.reversing,
             isActive: speaker.speaking == coordinator.sourceText && !coordinator.sourceText.isEmpty)
           Button("复制原文", systemImage: "doc.on.doc") {
-            Paster.write(string: coordinator.sourceText)
+            Paster.write(string: coordinator.sourceText, record: true)
             island?.show("已复制原文", detail: Island.excerpt(coordinator.sourceText))
           }
           Button("清空", systemImage: "xmark.circle") { coordinator.beginInput() }
@@ -531,19 +531,17 @@ private struct TranslateCapsule: View {
   }
 }
 
-/// 输入框底（Whisker §2：primary 0.045 / 深 0.07 + 0.5 pt 发丝线，圆角 card）：原文框、历史搜索框共用。
+/// 输入框底（Whisker §2：Style.inputFill + 发丝线（增强对比度 1 pt），圆角 card）：原文框、历史搜索框共用。
 /// 拿着焦点时换成焦点环（Whisker §1.3：1 pt 品牌粉 0.55 描边 + 粉 0.18 外发光，画法同剪贴板对话框），淡入淡出
 struct InputBox: ViewModifier {
   var isFocused = false
-  @Environment(\.colorScheme) private var scheme
+  @Environment(\.colorSchemeContrast) private var contrast
 
   func body(content: Content) -> some View {
     let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
     let fade = Animation.easeOut(duration: Style.fadeIn)
     content
-      .background(
-        scheme == .dark ? Color.white.opacity(0.07) : Color.black.opacity(0.045), in: shape
-      )
+      .background(Style.inputFill, in: shape)
       // 外发光画在描边上再模糊（不给整块加 shadow：那样连里面的字都带光晕）
       .background {
         shape.stroke(Style.brand.opacity(0.18), lineWidth: 4).blur(radius: 2)
@@ -553,7 +551,8 @@ struct InputBox: ViewModifier {
       .overlay {
         shape
           .strokeBorder(
-            isFocused ? Style.brand.opacity(0.55) : Style.hairline, lineWidth: isFocused ? 1 : 0.5
+            isFocused ? Style.brand.opacity(0.55) : Style.hairline,
+            lineWidth: isFocused ? 1 : Style.hairlineWidth(contrast)
           )
           .animation(fade, value: isFocused)
       }

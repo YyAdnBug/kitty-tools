@@ -1,6 +1,8 @@
 // 自家写剪贴板与模拟粘贴的唯一出口（mac-native §5）。写入后记下 changeCount 让 watcher 跳过；
 // 划词取词后还原剪贴板时加 nspasteboard.org 的 TransientType（transient），别的剪贴板工具不会把还原记成新条目。
 // 用户主动的复制不加，照常进别的剪贴板工具。
+// 本 App 生成的新文字（译文、原文、计算结果、路径 / 网址、替换原文、识字、取色…）用 write(string:record: true)
+// 写并同时记进剪贴板历史（recordText）；从历史取出的已有条目、划词还原、剪贴板面板里的色值块不记。
 
 import AppKit
 import Carbon.HIToolbox
@@ -27,8 +29,15 @@ enum Paster {
     write([item])
   }
 
-  static func write(string: String) {
+  /// 把本 App 生成的一段文字记进剪贴板历史：AppDelegate 启动时接到 `ClipboardStore.recordOwnText`（过敏感文本过滤、
+  /// 已有同文只挪到最前）；单测里没接，是 nil，不记
+  static var recordText: ((String) -> Void)?
+
+  /// record：这段文字是本 App 生成的新内容（watcher 会跳过自家写入，所以自己记）。
+  /// 从历史里取出的条目、划词还原、剪贴板面板开着时的色值块传 false（面板开着时记新条目会把选中跳走）
+  static func write(string: String, record: Bool = false) {
     write([.string: Data(string.utf8)])
+    if record { recordText?(string) }
   }
 
   /// 片段 {cursor} 最多往回挪这么多个字，再多就不挪（逐个发 ← 太久，用户也看得到光标在跑）

@@ -57,7 +57,7 @@ struct ClipboardPanelView: View {
         ? selected.map { ($0.id, Lens.height(for: $0, form: model.contentForm(of: $0))) } : nil)
     VStack(spacing: 0) {
       searchBar
-      Style.hairline.frame(height: 0.5)
+      Hairline()
       if !trusted { permissionBanner }
       listArea(items, layout: layout, selected: selected, lensOpen: lensOpen)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -350,7 +350,7 @@ struct ClipboardPanelView: View {
       Text("\(section.title) · \(section.rows.count)")
         .font(.system(size: 11, weight: .semibold))
         .foregroundStyle(.tertiary)
-      Style.hairline.frame(height: 0.5)
+      Hairline()
     }
     .padding(.horizontal, 10)
     // 高度必须正好是 headerHeight：高亮、滚动、吸顶都按它累加
@@ -538,20 +538,20 @@ struct ClipboardPanelView: View {
           hint("操作", key: "⌘K")
         }
         .help("全部操作（⌘K 或 →）")
-        Style.hairline.frame(width: 0.5, height: 16)
+        Hairline(vertical: true).frame(height: 16)
       }
-      Button("设置", systemImage: "gearshape", action: model.openSettings)
+      Button("剪贴板设置", systemImage: "gearshape", action: model.openSettings)
         .labelStyle(.iconOnly)
-        .help("设置（⌘,）")
+        .help("剪贴板设置（⌘,）")
+      // 固定只管点外面不收起（Esc、⌘W 照样关）；和 ⌘P 同一个开关，底栏就地提示
       Button(
-        hideOnUnfocus ? "固定面板" : "取消固定", systemImage: hideOnUnfocus ? "pin" : "pin.fill"
-      ) {
-        hideOnUnfocus.toggle()
-      }
+        hideOnUnfocus ? "固定面板" : "取消固定", systemImage: hideOnUnfocus ? "pin" : "pin.fill",
+        action: model.togglePinned
+      )
       .labelStyle(.iconOnly)
       .foregroundStyle(hideOnUnfocus ? AnyShapeStyle(.secondary) : AnyShapeStyle(Style.brandInk))
       .contentTransition(.symbolEffect(.replace))
-      .help(hideOnUnfocus ? "固定面板：点外面不关闭" : "取消固定")
+      .help(hideOnUnfocus ? "固定面板（⌘P）" : "取消固定（⌘P）")
       .accessibilityAddTraits(hideOnUnfocus ? [] : .isSelected)
     }
     .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: barState(count: count))
@@ -562,7 +562,7 @@ struct ClipboardPanelView: View {
     .disabled(model.dialog != nil)
     .padding(.horizontal, 14)
     .frame(height: Self.barHeight)
-    .overlay(alignment: .top) { Style.hairline.frame(height: 0.5) }
+    .overlay(alignment: .top) { Hairline() }
   }
 
   /// 底栏左边现在显示哪一种（换的时候 blurReplace）
@@ -777,31 +777,6 @@ private struct ClipListRow: View {
     return .asymmetric(
       insertion: .opacity.combined(with: .offset(y: 4)).animation(.easeOut(duration: 0.16)),
       removal: .opacity.animation(.easeIn(duration: Style.fadeOut)))
-  }
-}
-
-/// 行的悬停：本 App 从不激活，SwiftUI 的 onHover 在非激活面板里不可靠（同 ShotShelf），用 activeAlways 追踪区自己报。
-/// 不接点击（hitTest 为 nil），行被回收时补一个「移出」
-private struct HoverTracker: NSViewRepresentable {
-  let onChange: (Bool) -> Void
-
-  func makeNSView(context: Context) -> TrackingView {
-    let view = TrackingView()
-    view.addTrackingArea(
-      NSTrackingArea(
-        rect: .zero, options: [.activeAlways, .mouseEnteredAndExited, .inVisibleRect], owner: view))
-    return view
-  }
-
-  func updateNSView(_ view: TrackingView, context: Context) { view.onChange = onChange }
-
-  final class TrackingView: NSView {
-    var onChange: (Bool) -> Void = { _ in }
-
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-    override func mouseEntered(with event: NSEvent) { onChange(true) }
-    override func mouseExited(with event: NSEvent) { onChange(false) }
-    override func viewDidMoveToWindow() { if window == nil { onChange(false) } }
   }
 }
 

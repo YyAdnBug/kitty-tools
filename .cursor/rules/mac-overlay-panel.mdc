@@ -11,7 +11,7 @@ M1 起的实测结论。代码：`Shell/OverlayPanel.swift`、`HotKeyCenter.swif
 ## 1. 浮层只有 OverlayPanel 一种
 - 剪贴板面板、启动器（都是 `topAnchored`：鼠标所在屏、顶边在可见区 20% 处、宽 720，`setContentHeight` 顶边不动地伸缩；两者同一位置，2026-09-26 N2）和翻译浮窗都是 `OverlayPanel` 实例，**禁止**另写 NSPanel / NSWindow 子类。例外只有三个，都是无边框、要当 key 收 Esc 才子类化：截图框选遮罩 `SelectionOverlay`（§8，全屏、每屏一个、用完即释放）、钉图 `PinPanel`（§9）和长截图面板 `ScrollCapturePanel`（§10，会话结束即释放）；它们和浮层的行为没有交集。长截图的选区边框是普通 `NSPanel` 实例（不接鼠标、不当 key），不子类化。
 - `styleMask` 在 init 里一次写全：`[.nonactivatingPanel, .borderless]`（`.nonactivatingPanel` 初始化后再加不生效）。外观是 Whisker 的 Panel 皮肤：`NSVisualEffectView.maskImage` 裁 16 pt 连续圆角（系统阴影跟着 mask 走）+ SwiftUI `PanelRim` 描边；无边框窗口没有系统拖边，要改宽度的面板（翻译浮窗）用左右两条 `ResizeEdge`。
-- 进出：`present()` 新出现时淡入 + 内容下落 6 pt；**用户关掉**（Esc、点外面、再按热键、失焦、⌘W）走 `dismiss()`：临时设 `animationBehavior = .utilityWindow` 再 orderOut，由系统淡出，窗口逻辑上立刻移走、键盘马上回到原 App；**程序收起**（粘贴前、打开设置、互斥收起）走 `hide()`，立刻消失、没有退场动画；系统淡出的快照窗口约 0.13 s 还在，这期间又被呼出就直接不透明（不淡入）。`setContentHeight(_:animated:)` 可带 0.18 / 0.14 s 动画；**不动画时也走零时长的 animator**（直接 `setFrame` 盖不掉正在跑的帧动画，动画结束会把旧目标写回来）。`ResizeEdge` 拖动只改 x 和宽度、高度取当前的，拖动期间（`isUserResizing`）改高度不动画；滚轮转给下面的内容。减弱动态效果时 `PanelRoot` 统一 `symbolEffectsRemoved`。
+- 进出：`present()` 新出现时淡入 + 内容下落 6 pt；**用户关掉**（Esc、点外面、再按热键、失焦、⌘W；⌘W 在 `performKeyEquivalent` 里统一处理，`keyEquivalentHandler` 没接的才轮到它，各浮层都认；修饰键只比 ⌘⌃⌥⇧、不看大写锁定；面板里开着会丢输入的层（剪贴板对话框）时由 `keyEquivalentHandler` 先截住、只关那一层）走 `dismiss()`：临时设 `animationBehavior = .utilityWindow` 再 orderOut，由系统淡出，窗口逻辑上立刻移走、键盘马上回到原 App；**程序收起**（粘贴前、打开设置、互斥收起）走 `hide()`，立刻消失、没有退场动画；系统淡出的快照窗口约 0.13 s 还在，这期间又被呼出就直接不透明（不淡入）。`setContentHeight(_:animated:)` 可带 0.18 / 0.14 s 动画；**不动画时也走零时长的 animator**（直接 `setFrame` 盖不掉正在跑的帧动画，动画结束会把旧目标写回来）。`ResizeEdge` 拖动只改 x 和宽度、高度取当前的，拖动期间（`isUserResizing`）改高度不动画；滚轮转给下面的内容。减弱动态效果时 `PanelRoot` 统一 `symbolEffectsRemoved`。
 - 显示只走 `present()`（`orderFrontRegardless` + `makeKey`）；**永远不对浮层调 `NSApp.activate`**，否则前台 App 变成自己，⌘V / ⌘C 会落空。例外是 ⌘Y 放大预览（剪贴板的 `quickLookPanel`）：`zoom(from:to:)` 显示（不 makeKey、自己装点外监听，窗口帧从透镜（透镜关掉时是选中行）长到目标）、`unzoom(to:)` 缩回（卸监听、0.24 s 帧 + 透明度动画，放完才 orderOut + onHide；调用方**先**把 key 还给剪贴板面板）、`move(to:animated:)` 换条目时改尺寸；它设了 `becomesKeyOnlyIfNeeded`，只有点里面的文字才当 key。收起 `hide()` / `dismiss()` 都让缩回动画的收尾作废（`showGeneration`）。
 - `NSHostingView.sizingOptions = []`：窗口尺寸由 `OverlayPanel` 定，不让 SwiftUI 理想尺寸反推。
 - 设置窗不是浮层（M3）：普通 `NSWindow`，打开前先收起两个浮层，再切 `.regular` + `activate()`。
@@ -20,8 +20,9 @@ M1 起的实测结论。代码：`Shell/OverlayPanel.swift`、`HotKeyCenter.swif
 | | 剪贴板面板 `.clickOutside` | 启动器 `.clickOutside` | 翻译浮窗 `.resignKey` |
 |---|---|---|---|
 | 何时关 | 点本 App 浮层以外（global + local 鼠标监听） | 同剪贴板面板 | 失去 key |
-| 固定时 | 点外不关，Esc 仍关 | **没有固定**（N8：没有图钉和「点面板外面时自动关闭」开关，偏好键 `launcherHideOnUnfocus` 连同所有引用删掉） | 失焦不关，Esc 也不关 |
+| 固定时 | 点外不关，Esc / ⌘W 仍关（⌘P 或底栏图钉切换，偏好 `clipboardHideOnUnfocus`；设置页不再有同一个开关） | **没有固定**（N8：没有图钉和「点面板外面时自动关闭」开关，偏好键 `launcherHideOnUnfocus` 连同所有引用删掉） | 失焦不关，Esc / ⌘W 仍关（⌘P 或顶栏图钉） |
 | 例外 | 点中任一 `OverlayPanel` 不关（兄弟豁免，点击时实时判断） | 同剪贴板面板 | key 让给自己的 sheet（`attachedSheet != nil`）不算失焦 |
+- **固定只管「点别处 / 失焦不收起」**（体检 A9，2026-09-28 用户拍板，推翻 PLAN 附录评审 #34 照搬的「翻译浮窗固定时 Esc 不关」）：Esc、⌘W、再按热键一律收起，面板里有展开的层（⌘Y 大卡、菜单、对话框、翻译历史）时 Esc 先逐级退，退到头 `cancelOperation` 直接 `dismiss()`，不看 `isPinned`。
 - 鼠标监听在 `present()` 装、`hide()` 卸，成对出现；不依赖 resignKey 判断点外（非激活应用的 resignKey 时机不可靠）。
 - 翻译浮窗收起时剪贴板面板 / 启动器还开着 → 把 key 还给它（`onHide`）。
 - 启动器和剪贴板面板在同一位置，只开一个：`toggleClipboard` 收起启动器，`toggleLauncher` 收起剪贴板面板（固定着的也收：两块叠在同一处没法用，固定只管点外不关）；启动器「cb 关键词」↩ 先 `hide()` 启动器，再呼出剪贴板面板并把关键词填进搜索框（N9）；划词、截图翻译 / 识字、打开设置也会收起启动器（截图不收，§8）。
@@ -41,8 +42,10 @@ M1 起的实测结论。代码：`Shell/OverlayPanel.swift`、`HotKeyCenter.swif
 ## 4. 全局热键
 - Carbon `RegisterEventHotKey`，**非独占**注册。实测：`kEventHotKeyExclusive` 既不能让别的进程注册失败，也不会因别的进程已占用而失败（先后两个方向都返回 0）→ **检测不到跨进程冲突**。
 - 同进程重复注册同一组合返回 -9878；15.0–15.1 上只带 ⌥ 的组合返回 -9868 → 快捷键 Tab 显示错误，不按组合一刀切。
+- 录制时拒绝各 App 通用的编辑 / 窗口键（`HotKey.reservedEditKeys`：⌘Q ⌘W ⌘A ⌘S ⌘Z ⇧⌘Z ⌘X ⌘C ⌘V ⌘H ⌘M ⌘`，注册成全局后所有 App 里都收不到），不保存、继续录；被拒（缺修饰键、通用键、重复）的橙字同时发 VoiceOver 播报。系统自己拦截的组合（⌘⇧4、⌘Space）录制框收不到，不用管（体检 B48）。
+- 默认键全是单 ⌥（⌥C / ⌥Space / ⌥D / ⌥T / ⌥S / ⌥A / ⌥X / ⌥O；输入翻译 2026-09-28 由旧版的 ⌘⇧I 改 ⌥T，体检 A15），只影响没改过的人。
 - Carbon 回调在主线程投递，回调里用 `MainActor.assumeIsolated`；热键为 nil 就不注册。
-- **本 App 自己的菜单开着时**（菜单栏、右键、⋯、设置里的弹出菜单、主菜单），热键事件压在队列里、菜单关了才派发（系统行为，KeyboardShortcuts #1 / HotKey #17 同一现象；2026-09-27 用户报「下拉开着时快捷键唤不起窗口」）。`HotKeyCenter.watch` 在 `NSMenu.didBeginTrackingNotification` 后挂一个 `.eventTracking` 的 50 ms 定时器，用 `AcquireFirstMatchingEventInQueue` 只看不取 `kEventHotKeyPressed`，看到就 `cancelTrackingWithoutAnimation()`（带淡出要多等约 0.25 s），压着的事件随后由主循环照常派发给 `fire()`；不反注册、不自己匹配键位。别的 App 的菜单不影响（不是本进程在跟踪）。按需自检 `HotKeyMenuTests`（弹真菜单 + 合成 ⌃⌥⇧⌘F19，F 键要带 fn 标志才认成热键）。
+- **本 App 自己的菜单开着时**（菜单栏、右键、⋯、设置里的弹出菜单、主菜单），热键事件压在队列里、菜单关了才派发（系统行为，KeyboardShortcuts #1 / HotKey #17 同一现象；2026-09-27 用户报「下拉开着时快捷键唤不起窗口」）。`HotKeyCenter.watch` 在 `NSMenu.didBeginTrackingNotification`（selector 形式的观察者 `MenuTracking`：@objc 方法按 MainActor 隔离，不用 `nonisolated(unsafe)`，体检 B52）后挂一个 `.eventTracking` 的 50 ms 定时器，用 `AcquireFirstMatchingEventInQueue` 只看不取 `kEventHotKeyPressed`，看到就 `cancelTrackingWithoutAnimation()`（带淡出要多等约 0.25 s），压着的事件随后由主循环照常派发给 `fire()`；不反注册、不自己匹配键位。别的 App 的菜单不影响（不是本进程在跟踪）。按需自检 `HotKeyMenuTests`（弹真菜单 + 合成 ⌃⌥⇧⌘F19，F 键要带 fn 标志才认成热键）。
 
 ## 5. 粘贴回原 App
 - 顺序：`hide()` → `Paster.write` → `Paster.pasteToFrontmost()`。浮层不激活本 App，前台一直是原 App，**不加任何等待**。

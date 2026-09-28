@@ -33,7 +33,7 @@ struct LauncherPanelView: View {
   var body: some View {
     VStack(spacing: 0) {
       searchBar.frame(height: Self.searchHeight)
-      Style.hairline.frame(height: 0.5)
+      Hairline()
       if let error = model.error {
         Label(error, systemImage: "exclamationmark.triangle.fill")
           .font(.system(size: 12))
@@ -234,7 +234,7 @@ struct LauncherPanelView: View {
           }
         }
         .accessibilityLabel(primary)
-        Style.hairline.frame(width: 0.5, height: 16)
+        Hairline(vertical: true).frame(height: 16)
         Button(action: model.toggleActions) {
           HStack(spacing: 6) {
             Text("动作")
@@ -251,7 +251,7 @@ struct LauncherPanelView: View {
     .buttonStyle(.plain)
     .padding(.horizontal, 14)
     .frame(height: Self.barHeight)
-    .overlay(alignment: .top) { Style.hairline.frame(height: 0.5) }
+    .overlay(alignment: .top) { Hairline() }
   }
 }
 

@@ -368,6 +368,14 @@ import Observation
   /// 面板收到的 ⌘ 组合键；返回 false 交还系统（搜索框里的复制、粘贴、撤销等）
   func handleKeyEquivalent(_ event: NSEvent) -> Bool {
     let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    // ⌘W 在对话框开着时先关对话框（同 Esc 逐级退），不让 OverlayPanel 连面板带没保存的字一起收掉；
+    // 不看 Caps Lock，和 OverlayPanel 的 ⌘W 同一套判断
+    if dialog != nil, Int(event.keyCode) == kVK_ANSI_W,
+      event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command
+    {
+      dialog = nil
+      return true
+    }
     guard dialog == nil, modifiers == .command else { return false }
     if Int(event.keyCode) == kVK_ANSI_K {
       if palette == .actions {
@@ -397,6 +405,7 @@ import Observation
       guard let item = selectedItem, item.kind == .text, multiSelection.isEmpty else { return true }
       dialog = .edit(item.id)
     case kVK_ANSI_N: dialog = .newSnippet
+    case kVK_ANSI_P: togglePinned()
     case kVK_ANSI_Comma: openSettings()
     default:
       guard let digit = Self.digitKeys.firstIndex(of: Int(event.keyCode)) else { return false }
@@ -596,12 +605,26 @@ import Observation
   }
 
   /// 复制图片里识别出的文字（对标 Raycast「Copy Text from Image」、Maccy 的复制识别文字）：是新内容，记进历史
-  /// （和截图识字同一条路：过敏感文本过滤、已有同文只挪到最前）
+  /// （和截图识字同一个入口 Paster.write(string:record:)：过敏感文本过滤、已有同文只挪到最前）
   func copyRecognizedText(_ item: ClipItem) {
     guard let text = item.ocrText, !text.isEmpty else { return }
-    Paster.write(string: text)
-    store.recordOwnText(text)
+    Paster.write(string: text, record: true)
     showToast(.message("已复制图中文字"))
+  }
+
+  /// ⌘P / 底栏图钉：固定 = 点面板外面不收起（Esc、⌘W、再按热键照样收，mac-overlay-panel §2）。
+  /// 和底栏图钉读写同一个偏好（clipboardHideOnUnfocus 为 false 即固定），底栏就地提示
+  func togglePinned() {
+    let defaults = UserDefaults.standard
+    let pinning = defaults.bool(forKey: Prefs.clipboardHideOnUnfocus)
+    defaults.set(!pinning, forKey: Prefs.clipboardHideOnUnfocus)
+    let text = pinning ? "已固定" : "已取消固定"
+    // 放大预览开着时底栏和图钉都被它盖住，改走刘海（岛自己会播报）；底栏提示不播报，另发一次
+    guard isQuickLooking, let island else {
+      showToast(.message(text))
+      return announce(text)
+    }
+    island.show(text, symbol: pinning ? "pin.fill" : "pin")
   }
 
   /// 启动器 cb 复制一条：和面板里一样展开片段占位符、带格式的连格式一起写

@@ -1,5 +1,5 @@
 // Style 的动态色要能在任意线程解析：SwiftUI 在显示链接线程异步渲染动画时会解析它们，
-// 取色闭包绑定主线程的话会在后台触发执行器断言闪退（2026-09-27 真机崩溃）
+// 取色闭包绑定主线程的话会在后台触发执行器断言闪退（2026-09-27 真机崩溃）；发丝线宽跟着增强对比度走（Whisker §7）
 
 import AppKit
 import SwiftUI
@@ -9,12 +9,20 @@ import Testing
 
 struct StyleTests {
   @Test func dynamicColorsResolveOffMainThread() async {
-    let colors = [Style.brand, Style.brandInk, Style.onBrand, Style.selectedFill, Style.hairline]
-      .map(
-        NSColor.init)
+    let colors = [
+      Style.brand, Style.brandInk, Style.onBrand, Style.selectedFill, Style.hairline,
+      Style.inputFill,
+    ]
+    .map(NSColor.init)
     for color in colors {
       #expect(await Self.resolveOffMain(color) != nil)
     }
+  }
+
+  /// 发丝线：平时 0.5 pt，增强对比度 1 pt（Hairline、hairlineBorder、输入框、录制框共用这一个判断）
+  @Test func hairlineWidthFollowsContrast() {
+    #expect(Style.hairlineWidth(.standard) == 0.5)
+    #expect(Style.hairlineWidth(.increased) == 1)
   }
 
   /// 在并发线程池里解析（会调到动态色的取色闭包）

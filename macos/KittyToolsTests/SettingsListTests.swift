@@ -9,6 +9,14 @@ import Testing
 @testable import KittyTools
 
 struct SettingsListTests {
+  /// 侧栏顺序和菜单栏、快捷键页、引导同序：翻译在截图前面（体检 B51）
+  @Test func sidebarOrderMatchesMenu() {
+    let pages = SettingsPage.allCases
+    #expect(pages == [.general, .clipboard, .launcher, .translate, .screenshot, .hotkeys, .about])
+    let sections = HotKeyAction.sections.map(\.title)
+    #expect(sections.firstIndex(of: "翻译")! < sections.firstIndex(of: "截图")!)
+  }
+
   private func engine(
     _ id: String, name: String = "Name", keyword: String = "", url: String, fallback: Bool = false
   ) -> SearchEngine {

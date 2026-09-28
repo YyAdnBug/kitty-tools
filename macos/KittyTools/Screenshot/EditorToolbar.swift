@@ -200,7 +200,7 @@ final class EditorToolbar: PopView {
     let right: [[Spec]] = [
       [
         (.output(.recognize), "text.viewfinder", "识字并拷贝", "识字并拷贝（O）"),
-        (.output(.translate), "character.bubble", "翻译", "翻译"),
+        (.output(.translate), "translate", "翻译", "翻译"),
         (.scroll, "rectangle.expand.vertical", "长截图", "长截图（S，不带标注）"),
         (.output(.pin), "pin", "钉到屏幕", "钉到屏幕（T）"),
       ],

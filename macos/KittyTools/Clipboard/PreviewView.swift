@@ -1,8 +1,9 @@
 // ⌘Y 放大卡 = 剪贴板的完整检查器（Whisker，mac-whisker §6 剪贴板；主界面只有透镜 LensView，这张卡只在 QuickLookView 里）：
-// 内缩 6、圆角 10 的一张卡。页眉 40 pt 取来源 App 图标的颜色（对比度不够时改黑字，**只在这里**，主界面保持中性），
-// 写 App 名和「类型 · 大小 · 时间」；主体按类型出大预览（字号 ×1.2、文字可选中）：颜色 = 大色块 + HEX / RGB / HSL /
+// 内缩 6、圆角 10 的一张卡（Style.CardSurface，不加阴影）。页眉 40 pt 取来源 App 图标的颜色（对比度不够时改黑字，**只在这里**，主界面保持中性），
+// 写 App 名和「类型 · 大小 · 精确时间」（同透镜）；主体按类型出大预览（字号 ×1.2、文字可选中）：颜色 = 大色块 + HEX / RGB / HSL /
 // SwiftUI 四行点击复制；代码 / JSON = SF Mono + 语法着色；链接 = 300 pt 头图 + 标题 + 网站名（LinkPreview 联网取）；
-// 图片 = 棋盘格上的原尺寸图 + 尺寸胶囊 + 识别文字；单个文件 Quick Look、多个文件缩略图网格；文本高亮搜索词。
+// 图片 = 棋盘格上的原尺寸图 + 宽×高胶囊（大小只在页眉）+ 识别文字；单个文件 Quick Look、多个文件缩略图网格
+// （超过 120 个时末尾写「还有 N 个」）；文本高亮搜索词。
 // 页脚最多 4 个无边框胶囊按钮，其余操作在 ⌘K 面板。换条目时内容淡入上浮、页眉颜色渐变过去。
 // 链接卡（compact 版给透镜）、文件缩略图、语法着色也放在这里。
 
@@ -13,7 +14,6 @@ import SwiftUI
 struct PreviewView: View {
   let item: ClipItem
   @Bindable var model: ClipboardPanelModel
-  @Environment(\.colorScheme) private var scheme
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private var form: ContentForm? { model.contentForm(of: item) }
@@ -34,10 +34,8 @@ struct PreviewView: View {
       model.selectionMotion == .instant || reduceMotion ? nil : .easeOut(duration: 0.12),
       value: item.id
     )
-    .background(scheme == .dark ? Color.white.opacity(0.06) : Color.white.opacity(0.55), in: shape)
     .clipShape(shape)
-    .overlay(shape.strokeBorder(Style.hairline, lineWidth: 0.5))
-    .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.05), radius: 3, y: 1)
+    .cardSurface()
     .padding(6)
   }
 
@@ -69,10 +67,9 @@ struct PreviewView: View {
     .animation(.smooth(duration: 0.25), value: item.sourceBundleID)
   }
 
-  /// 「JSON · 57 字 · 2 分钟前」
+  /// 「JSON · 57 字 · 14:02」（时间写法同透镜的元信息行）
   private var meta: String {
-    let ago = item.copiedAt.formatted(
-      .relative(presentation: .named).locale(Locale(identifier: "zh-Hans")))
+    let time = LensView.exactTime(item.copiedAt)
     let detail: String =
       switch item.kind {
       case .text: "\(form?.title ?? "文本") · \((item.text ?? "").count) 字"
@@ -80,7 +77,7 @@ struct PreviewView: View {
         item.image.map { "图片 · \($0.byteCount.formatted(.byteCount(style: .file)))" } ?? "图片"
       case .file: "\(item.filePaths?.count ?? 0) 个文件"
       }
-    return "\(detail) · \(ago)"
+    return "\(detail) · \(time)"
   }
 
   /// 页眉底色和字色（WCAG AA 4.5 : 1）：白字够就用白字；差得不多（相对亮度 < 0.3）就把底色压暗到够，
@@ -121,17 +118,16 @@ struct PreviewView: View {
         ZStack(alignment: .topTrailing) {
           Checkerboard()
           ThumbnailView(id: item.id, images: model.store.images, maxPixel: 2400, contentMode: .fit)
+            .clipShape(.rect(cornerRadius: Style.Radius.control, style: .continuous))
             .padding(8)
+          // 大小已在页眉，这里只写宽×高
           if let image = item.image {
-            Text(
-              verbatim:
-                "\(image.width)×\(image.height) · \(image.byteCount.formatted(.byteCount(style: .file)))"
-            )
-            .font(.system(size: 11, weight: .medium))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(.ultraThinMaterial, in: .capsule)
-            .padding(8)
+            Text(verbatim: "\(image.width)×\(image.height)")
+              .font(.system(size: 11, weight: .medium))
+              .padding(.horizontal, 8)
+              .padding(.vertical, 3)
+              .background(.ultraThinMaterial, in: .capsule)
+              .padding(8)
           }
         }
         .clipShape(.rect(cornerRadius: Style.Radius.card - 2, style: .continuous))
@@ -176,7 +172,7 @@ struct PreviewView: View {
       Pill(title: "操作", symbol: "ellipsis", shortcut: "⌘K") { model.showsActions.toggle() }
     }
     .padding(8)
-    .overlay(alignment: .top) { Style.hairline.frame(height: 0.5) }
+    .overlay(alignment: .top) { Hairline() }
   }
 }
 
@@ -223,14 +219,13 @@ struct ColorCard: View {
 
   var body: some View {
     let values = Self.values(color)
+    // 大卡内缩 10 > 8：色块圆角用 card（Whisker §3 同心规则）
+    let swatch = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
     VStack(alignment: .leading, spacing: 8) {
-      RoundedRectangle(cornerRadius: 8, style: .continuous)
+      swatch
         .fill(Color(color))
-        .background(Checkerboard().clipShape(.rect(cornerRadius: 8, style: .continuous)))
-        .overlay(
-          RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(
-            .white.opacity(0.2), lineWidth: 1)
-        )
+        .background(Checkerboard().clipShape(swatch))
+        .overlay(swatch.strokeBorder(.white.opacity(0.2), lineWidth: 1))
         .overlay {
           Text(values[0])
             .font(.system(size: 22, weight: .semibold, design: .rounded))
@@ -239,10 +234,11 @@ struct ColorCard: View {
         .frame(minHeight: 72, maxHeight: .infinity)
       ForEach(Array(values.enumerated()), id: \.offset) { index, value in
         Button {
+          // 面板开着时复制的色值块不记进历史（记新条目会把选中跳走，mac-native §5）
           Paster.write(string: value)
           copied = index
           Task {
-            try? await Task.sleep(for: .seconds(1.2))
+            try? await Task.sleep(for: Style.copiedHold)
             if copied == index { copied = nil }
           }
         } label: {
@@ -317,7 +313,7 @@ struct LinkCard: View {
     let hero = LinkHero(entry: entry)
       .accessibilityHidden(true)  // 标题、网站名已经在旁边说清楚了
       .clipShape(heroShape)
-      .overlay(heroShape.strokeBorder(Style.hairline, lineWidth: 0.5))
+      .overlay(heroShape.hairlineBorder())
     Group {
       if compact {
         HStack(alignment: .top, spacing: 12) {
@@ -450,6 +446,7 @@ private struct SweepHighlight: View {
 /// 文件：6 个以内排 64 pt 的 Quick Look 缩略图网格加文件名，更多时用列表
 private struct FileGrid: View {
   let paths: [String]
+  static let listLimit = 120
 
   var body: some View {
     if paths.count <= 6 {
@@ -470,15 +467,22 @@ private struct FileGrid: View {
         .padding(12)
       }
     } else {
-      List(paths.prefix(120), id: \.self) { path in
-        HStack(spacing: 8) {
-          Image(nsImage: NSWorkspace.shared.icon(forFile: path)).resizable().frame(
-            width: 18, height: 18)
-          VStack(alignment: .leading, spacing: 0) {
-            Text(URL(filePath: path).lastPathComponent).lineLimit(1).truncationMode(.middle)
-            Text(path).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
-              .truncationMode(.middle)
+      // ponytail: 最多列 120 个（每行都要取系统图标），多的在末尾说一声；真有人复制上千个文件再改成懒加载
+      List {
+        ForEach(paths.prefix(Self.listLimit), id: \.self) { path in
+          HStack(spacing: 8) {
+            Image(nsImage: NSWorkspace.shared.icon(forFile: path)).resizable().frame(
+              width: 18, height: 18)
+            VStack(alignment: .leading, spacing: 0) {
+              Text(URL(filePath: path).lastPathComponent).lineLimit(1).truncationMode(.middle)
+              Text(path).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                .truncationMode(.middle)
+            }
           }
+        }
+        if paths.count > Self.listLimit {
+          Text("还有 \(paths.count - Self.listLimit) 个")
+            .font(.system(size: 11)).foregroundStyle(.secondary)
         }
       }
       .listStyle(.plain)

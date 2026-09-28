@@ -1,5 +1,5 @@
-// 应用生命周期：单实例检查，按依赖顺序组装各模块（PLAN §4），热键与各翻译入口，首次安装 / 更新后打开设置窗，
-// 退出 / 锁屏时的清理。
+// 应用生命周期：单实例检查，按依赖顺序组装各模块（PLAN §4），热键与各翻译入口，首次安装打开欢迎引导、
+// 更新后第一次启动用刘海岛说一声，退出 / 锁屏时的清理。
 
 import AppKit
 import SwiftUI
@@ -11,6 +11,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var isReadingSelection = false
   /// 进行中的「划词翻译并替换」：再按一次热键取消
   private var replaceTask: Task<Void, Never>?
+  /// 这次替换的标记：旧任务收尾时只清自己的引用，别把紧接着启动的新任务清掉
+  private var replaceID: UUID?
   /// 截图 / 截图翻译进行中（截屏 → 框选 → 识别或输出）：重复按热键直接忽略
   private var isCapturing = false
   let hotKeys = HotKeyCenter()
@@ -82,6 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       panel.setContentHeight($0, animated: !model.showsActions)
     }
     model.runAction = { [unowned self] in runLauncherAction($0) }
+    model.openSettings = { [unowned self] in showSettings(page: .launcher) }
     model.openClipboard = { [unowned self] in searchClipboard($0) }
     model.boundHotKey = { [unowned self] in hotKeys.bindings[$0] }
     model.requestFolderAccess = { [unowned self] in requestFolderAccess() }
@@ -108,7 +111,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       coordinator.translate(text)
       translatePanel.present()
     }
-    model.openSettings = { [unowned self] in showSettings() }
+    // ⌘, 和底栏齿轮直达 设置 › 剪贴板（同翻译浮窗直达 设置 › 翻译）
+    model.openSettings = { [unowned self] in showSettings(page: .clipboard) }
     model.openQuickLook = { [unowned self] in showQuickLook() }
     model.island = island
     model.closeQuickLook = { [unowned self] animated in
@@ -167,7 +171,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     created = panel
     coordinator.historyList.island = island
     panel.keyEquivalentHandler = { [unowned self] in coordinator.handleKeyEquivalent($0) }
-    coordinator.hidePanel = { [unowned panel] in panel.dismiss() }
     // ⌘,、「⋯」菜单、错误卡片和空状态都直接到设置 › 翻译
     coordinator.openSettings = { [unowned self] in showSettings(page: .translate) }
     coordinator.focusSource = { [unowned panel] in
@@ -218,6 +221,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       height: height)
   }
 
+  /// 这次的欢迎引导是首次安装（「登录时自动打开」默认勾）；关于页重看时清掉，勾选框跟随当前状态
+  private var firstInstall = false
+
   /// 设置窗的导航状态：窗口懒建，主菜单的「显示 › 返回」（KittyToolsApp 的 SettingsCommands）一启动就要读它
   let settingsNavigation = SettingsNavigation()
 
@@ -245,11 +251,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 开发版（bundle id 不同）不更新，不显示更新那一行
         AnyView(
           AboutTab(updater: updater.isSupported ? updater : nil) {
+            self.firstInstall = false
             created?.navigation.showsOnboarding = true
           })
       }
     } onboarding: { [unowned self] in
-      AnyView(OnboardingView(center: hotKeys))
+      AnyView(OnboardingView(center: hotKeys, firstRun: firstInstall).environment(island))
     }
     created = window
     return window
@@ -265,6 +272,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     Prefs.registerDefaults()
     AppAppearance.apply()  // 在任何浮层、设置窗、菜单出现之前
 
+    // 本 App 生成的新文字写剪贴板时同时记进历史（Paster.write(string:record:)，mac-native §5）
+    Paster.recordText = { [unowned self] in clipboardStore.recordOwnText($0) }
     let launchedAt = Date.now
     clipboardStore.enforceLimits()
     clipboardStore.images.removeOrphans(
@@ -294,14 +303,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     hotKeys.setHandler(for: .recognizeText) { [unowned self] in recognizeText() }
     hotKeys.setHandler(for: .translateReplace) { [unowned self] in translateAndReplace() }
     hotKeys.reload()
-    // 有快捷键没注册上（15.0 / 15.1 上只带 ⌥ 的组合）：按了没反应又不知道为什么，启动时说一次
-    if let failed = hotKeys.failures.keys.first {
-      let count = hotKeys.failures.count
-      island.show(
-        count == 1 ? "「\(failed.title)」快捷键没注册上" : "有 \(count) 个快捷键没注册上",
-        detail: "到 设置 › 快捷键 里看原因、换一个组合",
-        tone: .warning, symbol: "keyboard")
-    }
     try? FileManager.default.removeItem(at: ShotShelf.dragDirectory)
     shelf.copy = { [unowned self] png in
       await copyPNG(png)
@@ -318,6 +319,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     updater.start()
     launcherModel.rescanApps()  // 约 65ms，放在启动时，第一次呼出就不用等
     showWelcomeIfNeeded()
+    // 有快捷键没注册上（15.0 / 15.1 上只带 ⌥ 的组合）：按了没反应又不知道为什么，启动时说一次
+    // （放在「已更新」之后：同一座岛原地换内容，警告不能被盖掉）
+    if let failed = hotKeys.failures.keys.first {
+      let count = hotKeys.failures.count
+      island.show(
+        count == 1 ? "「\(failed.title)」快捷键没注册上" : "有 \(count) 个快捷键没注册上",
+        detail: "到 设置 › 快捷键 里看原因、换一个组合",
+        tone: .warning, symbol: "keyboard")
+    }
   }
 
   func applicationWillTerminate(_ notification: Notification) {
@@ -426,18 +436,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard let source = coordinator.replaceSource, let result = coordinator.primaryResult?.text
     else { return NSSound.beep() }
     let text = TranslateCoordinator.rewrap(result, like: source.text)
+    // 写进去的译文是新内容，三条路都记进剪贴板历史（mac-native §5）
     guard NSWorkspace.shared.frontmostApplication?.processIdentifier == source.pid else {
-      Paster.write(string: text)
+      Paster.write(string: text, record: true)
       return island.show(
         "已复制译文", detail: "前台已不是取词的 App，没有替换", tone: .info, symbol: "doc.on.doc")
     }
     guard Permissions.isAccessibilityTrusted else {
-      Paster.write(string: text)
+      Paster.write(string: text, record: true)
       island.show("已复制译文", detail: "授权辅助功能后才能直接替换", tone: .warning)
       return Permissions.requestAccessibility()
     }
     translatePanel.hide()
-    Paster.write(string: text)
+    Paster.write(string: text, record: true)
     _ = Paster.pasteToFrontmost()
   }
 
@@ -467,20 +478,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       translatePanel.orderOut(nil)
       if !pinned { coordinator.cancel() }
     }
+    let id = UUID()
+    replaceID = id
     replaceTask = Task {
       defer {
-        replaceTask = nil
+        if replaceID == id { replaceTask = nil }
         if restoresPanel { translatePanel.present(makingKey: false) }
       }
       let text = await SelectionReader.read(pausing: watcher)
       isReadingSelection = false  // 取完词就放开，等网络时不挡别的热键
+      // 取词期间被再按一次取消了：岛上已是「已取消」，别再用「没有选中文字」「翻译中…」盖掉它
+      // （后者会一直挂到 60 秒兜底）
+      guard !Task.isCancelled else { return }
       guard let text else { return island.show("没有选中文字", tone: .warning) }
       island.show("翻译中…", detail: "再按一次快捷键取消", tone: .progress, symbol: "character.bubble.fill")
       do {
         let result = TranslateCoordinator.rewrap(
           try await coordinator.translateOnce(text), like: text)
         guard !Task.isCancelled else { return }
-        Paster.write(string: result)
+        Paster.write(string: result, record: true)
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == sourceApp,
           NSApp.keyWindow == nil
         else {
@@ -534,8 +550,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       else { return }
       switch outcome {
       case .color(let hex):
-        Paster.write(string: hex)
-        recordInHistory(hex)
+        Paster.write(string: hex, record: true)
         island.show(
           "已复制色值", detail: hex, leading: Self.color(hex).map(Island.Leading.color) ?? .tone)
       case .scroll(let region):
@@ -645,12 +660,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     return result
   }
 
-  /// 截图 / 截图翻译 / 取色得到的文字记进剪贴板历史（和复制进来的一样过敏感文本过滤；来源 App 为空）。
-  /// 已有同样正文的只挪到最前：走 record 会把那条的格式和来源冲掉，而这次并不是一次复制
-  private func recordInHistory(_ text: String) {
-    clipboardStore.recordOwnText(text)
-  }
-
   /// 本机识别文字 → 原文记进剪贴板历史 → 翻译浮窗走现有的多服务翻译（截图翻译、截图工具栏的翻译共用）
   private func translateImage(_ image: CGImage) async {
     // ponytail: 识别期间不显示「识别中」：常见选区 0.04–0.13s，整屏密集文字约 0.9s；大选区嫌慢再加
@@ -661,7 +670,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard !text.isEmpty else {
       return island.show("没有识别到文字", detail: "可以把选区框大一些再试", tone: .warning)
     }
-    recordInHistory(text)
+    // 原文不写剪贴板、只记进历史（同一个入口：过敏感文本过滤、已有同文只挪到最前）
+    Paster.recordText?(text)
     coordinator.translate(text)
     translatePanel.present()
   }
@@ -681,8 +691,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard !text.isEmpty else {
       return island.show("没有识别到文字", tone: .warning)
     }
-    Paster.write(string: text)
-    recordInHistory(text)
+    Paster.write(string: text, record: true)
     island.show(
       codes.isEmpty ? "已复制" : "已复制二维码", detail: Island.excerpt(text),
       symbol: codes.isEmpty ? nil : "qrcode")
@@ -862,19 +871,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         [unowned self] in Task { await updater.check(.menu) }
       }
     }
-    menu.addAction("退出", symbol: "power", color: gray, key: "q") { NSApp.terminate(nil) }
+    menu.addAction("退出 Kitty Tools", symbol: "power", color: gray, key: "q") {
+      NSApp.terminate(nil)
+    }
   }
 
   // MARK: 启动辅助
 
-  /// 首次安装打开欢迎引导（授权、快捷键；引导下面是通用页）；更新后第一次启动打开关于页看本版更新内容
+  /// 首次安装打开欢迎引导（授权、快捷键；引导下面是通用页）。更新后第一次启动不开设置窗、不抢前台：
+  /// 刘海岛说「已更新到 x」+ 本版摘要（菜单栏图标照常弹一下），全文在菜单「关于 Kitty Tools」
   private func showWelcomeIfNeeded() {
     let last = UserDefaults.standard.string(forKey: Prefs.lastSeenVersion)
     UserDefaults.standard.set(AboutTab.version, forKey: Prefs.lastSeenVersion)
     if last == nil {
+      firstInstall = true
       showSettings(page: .general, onboarding: true)
     } else if last != AboutTab.version {
-      showSettings(page: .about)
+      let summary = AboutTab.releases.first { $0.version == AboutTab.version }?.summary
+      island.show(
+        "已更新到 \(AboutTab.version)", detail: summary.map(Island.excerpt), tone: .success,
+        symbol: "sparkles")
     }
   }
 

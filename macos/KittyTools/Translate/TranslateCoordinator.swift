@@ -59,7 +59,7 @@ import Observation
   var replaceSource: (pid: pid_t, text: String)?
   /// 刚被复制的卡片（⌘1–9 或卡片上的复制按钮），卡片上短暂显示对勾
   private(set) var copiedCard: String?
-  /// 每复制一次加一：同一张卡 1.5 s 内再复制也要再闪一次，对勾计时也从头算
+  /// 每复制一次加一：同一张卡对勾还在（Style.copiedHold）时再复制也要再闪一次，对勾计时也从头算
   private(set) var copyTick = 0
   /// 原文区的提示（划词缺「辅助功能」授权、原文过长等）；截图识字失败这类走刘海岛，不走这里
   private(set) var notice: String?
@@ -150,12 +150,13 @@ import Observation
     guard let text = cards.first(where: { $0.id == id })?.state.text, !text.isEmpty else {
       return false
     }
-    Paster.write(string: text)
+    // 译文 / 单词释义是本 App 给出的新文字：同时记进剪贴板历史（mac-native §5）
+    Paster.write(string: text, record: true)
     copiedCard = id
     copyTick += 1
     let tick = copyTick
     Task {
-      try? await Task.sleep(for: .seconds(1.5))
+      try? await Task.sleep(for: Style.copiedHold)
       if copyTick == tick { copiedCard = nil }
     }
     return true
@@ -347,8 +348,6 @@ import Observation
 
   // MARK: 浮窗快捷键（对标 Bob）
 
-  /// 收起浮窗（⌘W，固定着也收），由 AppDelegate 接上
-  @ObservationIgnored var hidePanel: () -> Void = {}
   /// 打开设置 › 翻译（⌘,、「⋯」菜单、错误卡片和空状态的按钮），由 AppDelegate 接上
   @ObservationIgnored var openSettings: () -> Void = {}
   /// 把焦点还给原文框（关历史时），由 AppDelegate 接上
@@ -356,9 +355,9 @@ import Observation
 
   static let fontScales = 0.8...1.6
 
-  /// ⌘R 重新翻译、⌘S 收藏、⌘W 关闭、⌘P 固定、⌘Y 历史、⌘, 设置（和「⋯」菜单的键位一致）、
+  /// ⌘R 重新翻译、⌘S 收藏、⌘P 固定、⌘Y 历史、⌘, 设置（和「⋯」菜单的键位一致）、
   /// ⌘+ / ⌘- / ⌘0 字号、⌘1–9 复制第 N 张卡；历史开着时先给列表（⌘⌫ ⌘Z ⌘C ⌘S，见 HistoryList）。
-  /// ⌘C / ⌘V / ⌘A 等编辑键不在这里（交给输入框）。返回 true 表示处理了
+  /// ⌘C / ⌘V / ⌘A 等编辑键不在这里（交给输入框），⌘W 在 OverlayPanel。返回 true 表示处理了
   func handleKeyEquivalent(_ event: NSEvent) -> Bool {
     let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
     let code = Int(event.keyCode)
@@ -382,8 +381,7 @@ import Observation
       }
     case kVK_ANSI_S:
       if !toggleFavorite() { NSSound.beep() }
-    case kVK_ANSI_W:
-      hidePanel()
+    // ⌘W 在 OverlayPanel 里统一处理（各浮层都认，固定着也关）
     case kVK_ANSI_P:
       defaults.set(!defaults.bool(forKey: Prefs.floatingPinned), forKey: Prefs.floatingPinned)
     case kVK_ANSI_Equal, kVK_ANSI_KeypadPlus:

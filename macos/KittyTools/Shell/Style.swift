@@ -1,5 +1,6 @@
-// Whisker 设计刻度（mac-whisker.mdc §3–4）：圆角、七条命名弹簧曲线、强调色（取自 Accent）、中性色与功能家族色、
-// 面板描边、种类色块与键帽。界面里的圆角、曲线、强调色、选中色一律从这里取，不硬编码；
+// Whisker 设计刻度（mac-whisker.mdc §2–4、§7）：圆角、七条命名弹簧曲线、强调色（取自 Accent）、中性色与功能家族色、
+// 面板描边、卡片表面（CardSurface）、发丝线（Hairline / hairlineBorder，增强对比度时 1 pt）、输入框底、复制对勾停留、
+// 种类色块与键帽。界面里的圆角、曲线、强调色、选中色、发丝线一律从这里取，不硬编码；
 // 新增的值至少要被三处复用才放进来。
 
 import AppKit
@@ -113,6 +114,9 @@ enum Style {
   /// 淡入 0.12 s easeOut / 淡出 0.10 s easeIn（面板进出、岛的内容）
   static let fadeIn: Double = 0.12
   static let fadeOut: Double = 0.10
+  /// 复制后图标换成对勾、停这么久再换回（Whisker §4 符号动效）：翻译卡片、透镜 / ⌘Y 色值、翻译历史行尾共用。
+  /// 剪贴板底栏的文字提示（showToast）不是符号动效，不走它
+  static let copiedHold: Duration = .seconds(1.2)
 
   // MARK: 颜色
 
@@ -142,12 +146,19 @@ enum Style {
   /// 悬停
   static let hoverFill = dynamic(
     light: .black.withAlphaComponent(0.04), dark: .white.withAlphaComponent(0.05))
-  /// 控件底（胶囊按钮、键帽、输入框）
+  /// 控件底（胶囊按钮、键帽）
   static let controlFill = Color.primary.opacity(0.06)
-  /// 发丝线
+  /// 输入框底（Whisker §2：primary 0.045 / 深 0.07）：翻译原文框、历史搜索框、剪贴板对话框、快捷键录制框
+  static let inputFill = dynamic(
+    light: .black.withAlphaComponent(0.045), dark: .white.withAlphaComponent(0.07))
+  /// 发丝线的颜色（增强对比度时 0.25，线宽由 Hairline / hairlineBorder 换成 1 pt，Whisker §7）
   static let hairline = dynamic(
     light: .black.withAlphaComponent(0.08), dark: .white.withAlphaComponent(0.10),
-    contrast: (.black.withAlphaComponent(0.35), .white.withAlphaComponent(0.4)))
+    contrast: (.black.withAlphaComponent(0.25), .white.withAlphaComponent(0.25)))
+  /// 发丝线宽：平时 0.5 pt，增强对比度 1 pt
+  static func hairlineWidth(_ contrast: ColorSchemeContrast) -> CGFloat {
+    contrast == .increased ? 1 : 0.5
+  }
 
   /// 功能家族色：启动器种类色块、设置页头、菜单图标全 App 统一
   enum Family {
@@ -305,6 +316,30 @@ struct KeyCap: View {
   }
 }
 
+/// 主按钮（Whisker §3 状态：强调色实心 + onBrand 文字，按下 0.97，禁用 0.35）：关于页「更新并重新打开」、引导「继续 /
+/// 开始使用」、速查表「完成」、剪贴板对话框的保存 / 创建 / 完成共用。不用系统的 .borderedProminent + tint：它的文字色
+/// 由系统定，黄、橙、绿、浅色石墨这些亮强调色上也是白字（AccentPalette.onFill 这时是 black 0.85，AccentTests 锁住），
+/// 而且屏外截图自检里画成灰的、看不出来。胶囊形，高度跟 controlSize（regular 22、large 30，和旁边的系统按钮一样高）；
+/// 键盘等价（.defaultAction 等）照常挂在按钮上
+struct BrandButtonStyle: ButtonStyle {
+  @Environment(\.controlSize) private var controlSize
+  @Environment(\.isEnabled) private var isEnabled
+
+  func makeBody(configuration: Configuration) -> some View {
+    let large = controlSize == .large
+    configuration.label
+      .lineLimit(1)
+      .foregroundStyle(Style.onBrand)
+      .padding(.horizontal, large ? 16 : 11)
+      .frame(minHeight: large ? 30 : 22)
+      .background(Style.brand, in: .capsule)
+      .contentShape(.capsule)
+      .opacity(isEnabled ? 1 : 0.35)
+      .scaleEffect(configuration.isPressed ? 0.97 : 1)
+      .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+  }
+}
+
 /// 一个组合拆成键帽（⌘ ⇧ 这类修饰键各一个，剩下的是一个）：「⇧⌘S」→ ⇧ ⌘ S。
 /// 快捷键录制框、速查表、引导、启动器选中行共用
 struct KeyCombo: View {
@@ -326,6 +361,82 @@ struct KeyCombo: View {
     let rest = combo.dropFirst(modifiers.count).trimmingCharacters(in: .whitespaces)
     return modifiers.map(String.init) + (rest.isEmpty ? [] : [rest])
   }
+}
+
+/// 发丝线（分隔线）：横线（vertical 时竖线），0.5 pt `Style.hairline`，增强对比度时 1 pt。
+/// 长度由外面定：横线铺满宽度，竖线用 `.frame(height:)` 给高
+struct Hairline: View {
+  var vertical = false
+  @Environment(\.colorSchemeContrast) private var contrast
+
+  var body: some View {
+    let width = Style.hairlineWidth(contrast)
+    Style.hairline.frame(width: vertical ? width : nil, height: vertical ? nil : width)
+      .accessibilityHidden(true)
+  }
+}
+
+extension InsettableShape {
+  /// 沿形状内侧描一圈发丝线：0.5 pt（增强对比度 1 pt）；color 默认 `Style.hairline`（错误卡等传自己的颜色）
+  func hairlineBorder(_ color: Color = Style.hairline) -> some View {
+    HairlineBorder(shape: self, color: color)
+  }
+}
+
+private struct HairlineBorder<S: InsettableShape>: View {
+  let shape: S
+  let color: Color
+  @Environment(\.colorSchemeContrast) private var contrast
+
+  var body: some View {
+    shape.strokeBorder(color, lineWidth: Style.hairlineWidth(contrast)).allowsHitTesting(false)
+  }
+}
+
+/// Panel 里的内容卡片表面（Whisker §2，翻译卡、词典卡、剪贴板 ⌘Y 大卡共用）：圆角 card；浅色 white 0.55、深色 white 0.06 底
+/// + 发丝线描边（增强对比度 1 pt）+ 深色的顶部高光（内圈 1 pt white 0.12→clear，顶部 40%，同 PanelRim 的画法）；
+/// 不加阴影（§3 层级：卡片不加阴影）。降低透明度时底换成 windowBackground 0.9（§7）。
+/// tint：错误卡（systemRed）= tint 0.05 底 + tint 0.18 描边、没有高光
+struct CardSurface: ViewModifier {
+  var tint: Color?
+  @Environment(\.colorScheme) private var scheme
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+  func body(content: Content) -> some View {
+    let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
+    let dark = scheme == .dark
+    content
+      .background {
+        ZStack {
+          if reduceTransparency {
+            shape.fill(Color(nsColor: .windowBackgroundColor).opacity(0.9))
+          }
+          if let tint {
+            shape.fill(tint.opacity(0.05))
+          } else if !reduceTransparency {
+            shape.fill(.white.opacity(dark ? 0.06 : 0.55))
+          }
+        }
+      }
+      .overlay {
+        shape.hairlineBorder(tint?.opacity(0.18) ?? Style.hairline)
+        if dark, tint == nil {
+          shape.strokeBorder(
+            LinearGradient(
+              stops: [
+                .init(color: .white.opacity(0.12), location: 0),
+                .init(color: .white.opacity(0), location: 0.4),
+              ], startPoint: .top, endPoint: .bottom), lineWidth: 1
+          )
+          .allowsHitTesting(false)
+        }
+      }
+  }
+}
+
+extension View {
+  /// 内容卡片表面，见 `CardSurface`
+  func cardSurface(tint: Color? = nil) -> some View { modifier(CardSurface(tint: tint)) }
 }
 
 /// Panel 皮肤的描边：外圈 0.5 pt 发丝线 + 内圈 1 pt 顶部高光（macOS 26 用玻璃时不画）

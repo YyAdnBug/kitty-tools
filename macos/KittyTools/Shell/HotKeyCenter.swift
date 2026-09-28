@@ -38,6 +38,18 @@ struct HotKey: Codable, Hashable {
     self.modifiers = modifiers
   }
 
+  /// 各 App 通用的编辑 / 窗口快捷键（⌘Q ⌘W ⌘A ⌘S ⌘Z ⇧⌘Z ⌘X ⌘C ⌘V ⌘H ⌘M ⌘`）：注册成全局热键后所有 App 里都收不到，
+  /// 录制时直接拒绝。系统自己拦截的（⌘⇧4、⌘Space 等）根本录不进来，不用列
+  static let reservedEditKeys: Set<HotKey> = Set(
+    [
+      (kVK_ANSI_Q, cmdKey), (kVK_ANSI_W, cmdKey), (kVK_ANSI_A, cmdKey), (kVK_ANSI_S, cmdKey),
+      (kVK_ANSI_Z, cmdKey), (kVK_ANSI_Z, cmdKey | shiftKey), (kVK_ANSI_X, cmdKey),
+      (kVK_ANSI_C, cmdKey), (kVK_ANSI_V, cmdKey), (kVK_ANSI_H, cmdKey), (kVK_ANSI_M, cmdKey),
+      (kVK_ANSI_Grave, cmdKey),
+    ].map { HotKey(keyCode: $0.0, modifiers: $0.1) })
+
+  var isReservedEditKey: Bool { Self.reservedEditKeys.contains(self) }
+
   /// 例如 ⌘⇧V
   var display: String {
     let symbols = [(controlKey, "⌃"), (optionKey, "⌥"), (shiftKey, "⇧"), (cmdKey, "⌘")]
@@ -127,8 +139,9 @@ enum HotKeyAction: String, CaseIterable {
     case .clipboard: HotKey(keyCode: kVK_ANSI_C, modifiers: optionKey)
     // Bob 的划词翻译默认键；⌘⇧T 会占浏览器的「重新打开关闭的标签页」
     case .selectionTranslate: HotKey(keyCode: kVK_ANSI_D, modifiers: optionKey)
-    // Bob 的输入翻译用 ⌥A，这里 ⌥A 给了截图
-    case .inputTranslate: HotKey(keyCode: kVK_ANSI_I, modifiers: cmdKey | shiftKey)
+    // Bob 的输入翻译用 ⌥A（这里给了截图），取 ⌥T（T = Translate），和其它功能一样是单 ⌥ 键（体检 A15，2026-09-28）；
+    // 只影响没改过这个键的人（hotKey 没存过才取默认）
+    case .inputTranslate: HotKey(keyCode: kVK_ANSI_T, modifiers: optionKey)
     // Bob 的截图翻译默认键；不占各 App 的 ⌘⇧S「另存为」
     case .screenshotTranslate: HotKey(keyCode: kVK_ANSI_S, modifiers: optionKey)
     // Alfred 的默认键
@@ -146,10 +159,7 @@ enum HotKeyAction: String, CaseIterable {
 
   /// 没存过 → 默认组合；存了空数据 → 已清除（nil）
   var hotKey: HotKey? {
-    get {
-      guard let data = UserDefaults.standard.data(forKey: prefsKey) else { return defaultHotKey }
-      return try? JSONDecoder().decode(HotKey.self, from: data)
-    }
+    get { resolve { UserDefaults.standard.data(forKey: $0.prefsKey) } }
     nonmutating set {
       let data = newValue.flatMap { try? JSONEncoder().encode($0) } ?? Data()
       UserDefaults.standard.set(data, forKey: prefsKey)
@@ -157,6 +167,18 @@ enum HotKeyAction: String, CaseIterable {
   }
 
   private var prefsKey: String { "hotkey." + rawValue }
+
+  /// stored：各动作存的数据（nil = 没存过）。没存过取默认，但默认键已被别的动作自己设走时让给它、这个当没设：
+  /// 改了默认键（A15 输入翻译 ⌘⇧I → ⌥T）以后，早先把 ⌥T 手动给了别的动作的人不该被新默认顶掉（抢先注册会让那个动作
+  /// 每次启动都注册失败）。只比别的动作存下的值，不递归取默认
+  func resolve(stored: (HotKeyAction) -> Data?) -> HotKey? {
+    let decode = { (data: Data) in try? JSONDecoder().decode(HotKey.self, from: data) }
+    if let data = stored(self) { return decode(data) }
+    guard let fallback = defaultHotKey,
+      !Self.allCases.contains(where: { $0 != self && stored($0).flatMap(decode) == fallback })
+    else { return nil }
+    return fallback
+  }
 
   /// 快捷键页和菜单栏的分组（N13 / N15：同名同序）
   static let sections: [(title: String, actions: [HotKeyAction])] = [
@@ -173,10 +195,11 @@ enum HotKeyAction: String, CaseIterable {
     case .selectionTranslate: "character.bubble.fill"
     case .inputTranslate: "character.cursor.ibeam"
     case .translateReplace: "arrow.left.arrow.right"
-    case .screenshotTranslate: "text.viewfinder"
+    // 截图家族同一个动作到处同一个图标（体检 B44）：截图翻译 = translate，识字 = text.viewfinder（同截图工具栏、剪贴板 ⌘K）
+    case .screenshotTranslate: "translate"
     case .screenshot: "camera.viewfinder"
     case .screenshotLastRegion: "rectangle.dashed"
-    case .recognizeText: "text.magnifyingglass"
+    case .recognizeText: "text.viewfinder"
     }
   }
 
@@ -206,7 +229,8 @@ enum HotKeyAction: String, CaseIterable {
   @ObservationIgnored private var handlers: [HotKeyAction: () -> Void] = [:]
   @ObservationIgnored private var refs: [EventHotKeyRef] = []
   @ObservationIgnored private var handlerRef: EventHandlerRef?
-  @ObservationIgnored private var menuObservers: [NSObjectProtocol] = []
+  /// 菜单跟踪通知的接收者（selector 形式，见 MenuTracking）
+  @ObservationIgnored private var menuTracking: MenuTracking?
   @ObservationIgnored private var menuWatch: CFRunLoopTimer?
   private static let signature: OSType = 0x4B54_5459  // 'KTTY'
 
@@ -275,7 +299,7 @@ enum HotKeyAction: String, CaseIterable {
   /// fire()——只用它这一个，不会重复触发，也不用反注册、自己匹配键位。定时器 50 ms 看一次、只在菜单开着时跑
   /// （不指望热键唤醒跟踪中的 run loop）；关菜单不带淡出，带淡出浮层要多等约 0.25 s。实测按下到触发 15–65 ms，
   /// 见 HotKeyMenuTests
-  private func watch(_ menu: NSMenu?) {
+  fileprivate func watch(_ menu: NSMenu?) {
     if let menuWatch { CFRunLoopTimerInvalidate(menuWatch) }
     menuWatch = nil
     // 录快捷键、框选截图时热键停着，不用看
@@ -303,19 +327,15 @@ enum HotKeyAction: String, CaseIterable {
 
   private func installHandlerIfNeeded() {
     guard handlerRef == nil else { return }
+    let tracking = MenuTracking(center: self)
     let center = NotificationCenter.default
-    menuObservers = [
-      center.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: nil) {
-        [weak self] note in
-        // 菜单通知在主线程发（queue: nil = 在发通知的线程上同步调）
-        nonisolated(unsafe) let menu = note.object as? NSMenu
-        MainActor.assumeIsolated { self?.watch(menu) }
-      },
-      center.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: nil) {
-        [weak self] _ in
-        MainActor.assumeIsolated { self?.watch(nil) }
-      },
-    ]
+    center.addObserver(
+      tracking, selector: #selector(MenuTracking.began(_:)),
+      name: NSMenu.didBeginTrackingNotification, object: nil)
+    center.addObserver(
+      tracking, selector: #selector(MenuTracking.ended(_:)),
+      name: NSMenu.didEndTrackingNotification, object: nil)
+    menuTracking = tracking
     var spec = EventTypeSpec(
       eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
     // Carbon 事件在主线程投递
@@ -333,4 +353,15 @@ enum HotKeyAction: String, CaseIterable {
         return noErr
       }, 1, &spec, Unmanaged.passUnretained(self).toOpaque(), &handlerRef)
   }
+}
+
+/// 菜单开始 / 结束跟踪的通知接收者。菜单通知在主线程同步发出，@objc 方法按默认的 MainActor 隔离
+/// （Swift 6 对 @objc 入口有运行时隔离检查兜底），所以不用在闭包里把 note.object 标成 nonisolated(unsafe)（mac-native §3）
+private final class MenuTracking: NSObject {
+  weak var center: HotKeyCenter?
+
+  init(center: HotKeyCenter) { self.center = center }
+
+  @objc func began(_ note: Notification) { center?.watch(note.object as? NSMenu) }
+  @objc func ended(_ note: Notification) { center?.watch(nil) }
 }

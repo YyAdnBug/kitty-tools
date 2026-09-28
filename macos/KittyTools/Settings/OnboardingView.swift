@@ -4,7 +4,10 @@
 // 那一行弹出品牌粉 ✓（pop）：热键弹出的面板 / 截图遮罩正盖在引导上，所以 ✓ 等引导所在的 sheet 重新成为 key
 // （用户关掉面板、截完图回来）再弹，播报是即时的。两屏之间 settle 滑过去，减弱动态效果时只淡入淡出；
 // 没有跳过、页码点、上一步 / 下一步，只有一个品牌粉主按钮（Esc 照样关：藏着一个 cancelAction 按钮）。「关于」页可以重看。
+// 第二屏底下一个勾选框「登录时自动打开」（首次安装默认勾，体检 D20：不开机自启的话重启后快捷键全都没反应；重看时跟随当前状态），点「开始使用」时生效，
+// 失败走刘海岛；从磁盘映像等临时位置运行时换成一行说明。关掉引导后照旧停在通用页（下面就是这个开关）。
 
+import ServiceManagement
 import SwiftUI
 
 struct OnboardingView: View {
@@ -13,7 +16,10 @@ struct OnboardingView: View {
   let center: HotKeyCenter
   @Environment(\.dismiss) private var dismiss
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(Island.self) private var island: Island?
   @State private var screen: Screen
+  /// 第二屏的「登录时自动打开」，点「开始使用」时生效
+  @State private var launchAtLogin: Bool
   /// 引导开着时按过的全局快捷键
   @State private var tried: Set<HotKeyAction>
   /// 按过、✓ 还没弹的（等引导重新成为 key）
@@ -21,9 +27,14 @@ struct OnboardingView: View {
   /// 引导所在的窗口（sheet），只认它重新成为 key
   @State private var window: ObjectIdentifier?
 
+  /// firstRun：首次安装，「登录时自动打开」默认勾；关于页重看时跟随当前状态（不把用户在通用页关掉的又打开）。
   /// screen / tried：从哪一屏开始、哪些已经按过（截图自检摆状态用）
-  init(center: HotKeyCenter, screen: Screen = .welcome, tried: Set<HotKeyAction> = []) {
+  init(
+    center: HotKeyCenter, firstRun: Bool = false, screen: Screen = .welcome,
+    tried: Set<HotKeyAction> = []
+  ) {
     self.center = center
+    _launchAtLogin = State(initialValue: firstRun || SMAppService.mainApp.status == .enabled)
     _screen = State(initialValue: screen)
     _tried = State(initialValue: tried)
   }
@@ -33,7 +44,8 @@ struct OnboardingView: View {
       ZStack {
         switch screen {
         case .welcome: WelcomeScreen().transition(slide)
-        case .tryIt: TryScreen(center: center, tried: tried).transition(slide)
+        case .tryIt:
+          TryScreen(center: center, tried: tried, launchAtLogin: $launchAtLogin).transition(slide)
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -42,14 +54,13 @@ struct OnboardingView: View {
         if screen == .welcome {
           withAnimation(Style.Motion.settle.animation(reduced: reduceMotion)) { screen = .tryIt }
         } else {
-          dismiss()
+          finish()
         }
       } label: {
         Text(screen == .welcome ? "继续" : "开始使用").frame(minWidth: 160)
       }
-      .buttonStyle(.borderedProminent)
+      .buttonStyle(BrandButtonStyle())
       .controlSize(.large)
-      .tint(Style.brand)
       .keyboardShortcut(.defaultAction)
       .padding(.top, 12)
       .padding(.bottom, 24)
@@ -80,6 +91,18 @@ struct OnboardingView: View {
       withAnimation(Style.Motion.pop.animation(reduced: reduceMotion)) { tried.formUnion(pending) }
       pending = []
     }
+  }
+
+  /// 「开始使用」：勾着「登录时自动打开」就加入登录项（已经加过的不再加；没勾不去关，用户可能早就在通用页开了）
+  private func finish() {
+    if launchAtLogin, LaunchAtLogin.isInstalled, SMAppService.mainApp.status != .enabled {
+      do {
+        try LaunchAtLogin.set(true)
+      } catch {
+        island?.show("没能加入登录项", detail: error.localizedDescription, tone: .warning)
+      }
+    }
+    dismiss()
   }
 
   /// 只往前翻：第二屏从右边滑进来，第一屏往左滑出去
@@ -120,13 +143,13 @@ private struct RowCard<Item: Hashable, Row: View>: View {
     VStack(spacing: 0) {
       ForEach(items, id: \.self) { item in
         VStack(spacing: 0) {
-          if item != items.first { Style.hairline.frame(height: 0.5).padding(.leading, 46) }
+          if item != items.first { Hairline().padding(.leading, 46) }
           row(item).padding(.horizontal, 12).padding(.vertical, 8).frame(minHeight: 40)
         }
       }
     }
     .background(.background, in: shape)
-    .overlay(shape.strokeBorder(Style.hairline, lineWidth: 0.5))
+    .overlay(shape.hairlineBorder())
     .padding(.horizontal, 36)
   }
 }
@@ -205,6 +228,7 @@ private struct WelcomeScreen: View {
 private struct TryScreen: View {
   let center: HotKeyCenter
   let tried: Set<HotKeyAction>
+  @Binding var launchAtLogin: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private static let shown: [HotKeyAction] = [
@@ -217,6 +241,18 @@ private struct TryScreen: View {
       Heading(title: "按一下试试", subtitle: "在任何 App 里按下这些键，对应的功能就会出来。\n现在按一下，按过的会打勾。")
       RowCard(items: actions) { row($0) }
         .padding(.top, 18)
+      Group {
+        if LaunchAtLogin.isInstalled {
+          Toggle("登录时自动打开，开机后快捷键就能用", isOn: $launchAtLogin)
+            .toggleStyle(.checkbox)
+            .font(.callout)
+        } else {
+          Text("拖进「应用程序」后可在 设置 › 通用 里开启登录时打开")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+      .padding(.top, 12)
       Text("想换键或看面板里的按键：设置 › 快捷键")
         .font(.caption)
         .foregroundStyle(.secondary)

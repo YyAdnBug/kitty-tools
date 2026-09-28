@@ -23,7 +23,6 @@ struct ProviderCardView: View {
   var onCopy: () -> Void = {}
   var onToggleCollapse: () -> Void = {}
   var onOpenSettings: () -> Void = {}
-  @Environment(\.colorScheme) private var scheme
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var retries = 0
   @State private var errorTicks = 0
@@ -106,8 +105,8 @@ struct ProviderCardView: View {
     .padding(.bottom, isCollapsed ? 7 : 8)
     .frame(maxWidth: .infinity, alignment: .leading)
     .clipped()
-    .background(background, in: shape)
-    .overlay(shape.strokeBorder(stroke, lineWidth: 0.5))
+    // 卡片表面（Style.CardSurface）；错误卡红 0.05 底 / 红 0.18 描边
+    .cardSurface(tint: isFailed ? Color(nsColor: .systemRed) : nil)
     .overlay { if isGenerating { CometBorder() } }
     // 完成：整圈边框闪一下品牌粉 0.45 → 0（0.6 s）
     .overlay {
@@ -137,15 +136,6 @@ struct ProviderCardView: View {
         .allowsHitTesting(false)
     }
     .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: isCollapsed)
-  }
-
-  private var background: Color {
-    if isFailed { return Color(nsColor: .systemRed).opacity(0.05) }
-    return scheme == .dark ? .white.opacity(0.06) : .white.opacity(0.55)
-  }
-
-  private var stroke: Color {
-    isFailed ? Color(nsColor: .systemRed).opacity(0.18) : Style.hairline
   }
 
   private var header: some View {
@@ -354,7 +344,7 @@ struct ServiceTile: View {
         .frame(width: size, height: size)
         .background(logo.onPlate ? Color.white : .clear)
         .clipShape(shape)
-        .overlay(shape.strokeBorder(Style.hairline, lineWidth: 0.5))
+        .overlay(shape.hairlineBorder())
     } else {
       let color = Self.color(for: service)
       shape

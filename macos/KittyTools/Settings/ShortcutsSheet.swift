@@ -43,18 +43,25 @@ struct ShortcutsSheet: View {
           .padding(.horizontal, 20)
           .padding(.vertical, 14)
         }
-        .overlay(alignment: .top) { Style.hairline.frame(height: 0.5) }
+        .overlay(alignment: .top) { Hairline() }
         HStack {
           Spacer()
+          // 主按钮 = ↩（defaultAction）；Esc 靠下面那个看不见的 cancelAction 按钮（同欢迎引导）
           Button("完成") { dismiss() }
-            .buttonStyle(.borderedProminent)
-            .tint(Style.brand)
-            .keyboardShortcut(.cancelAction)
+            .buttonStyle(BrandButtonStyle())
+            .keyboardShortcut(.defaultAction)
         }
         .padding(.horizontal, 20)
         .frame(height: 52)
-        .overlay(alignment: .top) { Style.hairline.frame(height: 0.5) }
+        .overlay(alignment: .top) { Hairline() }
       }
+    }
+    .background {
+      Button("关闭") { dismiss() }
+        .keyboardShortcut(.cancelAction)
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
     }
   }
 
@@ -146,8 +153,10 @@ struct ShortcutsSheet: View {
         Entry("⌘⌫", text: "删除"),
         Entry("⌘Z", text: "撤销删除"),
         Entry("⌘A", text: "全选（搜索框为空时）"),
-        Entry("⌘,", text: "设置"),
+        Entry("⌘P", text: "固定 / 取消固定（固定后点面板外面不收起）"),
+        Entry("⌘,", text: "打开 设置 › 剪贴板"),
         Entry("Esc", text: "逐级退出：放大预览、菜单、对话框、待删标签、搜索词、多选，最后关闭（固定着也关）"),
+        Entry("⌘W", text: "关闭（固定着也关；对话框开着时先关对话框）"),
       ]),
     // mac-whisker §6 启动器（N8–N10）；代码在 LauncherModel.handleCommand / handleKeyEquivalent
     Group(
@@ -163,8 +172,9 @@ struct ShortcutsSheet: View {
         Entry("⌘1–9", text: "打开第 1–9 项"),
         Entry("↑↓", text: "移动选中"),
         Entry("⌘⌫", text: "从「最近使用」里移除"),
-        Entry("⌘,", text: "设置"),
+        Entry("⌘,", text: "打开 设置 › 启动器"),
         Entry("Esc", text: "先关动作菜单，再撤掉待确认的命令，再清空搜索，最后关闭"),
+        Entry("⌘W", text: "关闭"),
         Entry("open", text: "搜文件并打开（空格开头同样）"),
         Entry("find", text: "搜文件并在访达中显示"),
         Entry("cb", text: "在剪贴板历史里搜索"),
@@ -194,11 +204,10 @@ struct ShortcutsSheet: View {
         Entry("⌘S", text: "收藏这次翻译"),
         Entry("⌘1–9", text: "复制第 1–9 个结果"),
         Entry("⌘Y", text: "打开 / 关闭翻译历史"),
-        Entry("⌘P", text: "固定 / 取消固定浮窗"),
+        Entry("⌘P", text: "固定 / 取消固定浮窗（固定后点别处不收起）"),
         Entry("⌘+", "⌘-", "⌘0", text: "放大 / 缩小 / 还原字号"),
-        Entry("⌘,", text: "设置"),
-        Entry("⌘W", text: "关闭（固定着也关）"),
-        Entry("Esc", text: "关闭（固定时不关）"),
+        Entry("⌘,", text: "打开 设置 › 翻译"),
+        Entry("Esc", "⌘W", text: "关闭（固定着也关；历史开着时 Esc 先关历史）"),
       ]),
     // mac-translate「翻译历史」（N7）；代码在 TranslateCoordinator.handleHistoryCommand、HistoryList.handleKeyEquivalent
     Group(
@@ -324,7 +333,7 @@ private struct GroupCard: View {
         }
       }
       .background(.background, in: shape)
-      .overlay(shape.strokeBorder(Style.hairline, lineWidth: 0.5))
+      .overlay(shape.hairlineBorder())
     }
   }
 
@@ -340,7 +349,7 @@ private struct GroupCard: View {
     .padding(.vertical, 5)
     .frame(minHeight: 30)
     .overlay(alignment: .top) {
-      if divided { Style.hairline.frame(height: 0.5).padding(.horizontal, 12) }
+      if divided { Hairline().padding(.horizontal, 12) }
     }
     .accessibilityElement(children: .combine)
   }

@@ -1,5 +1,5 @@
 // 快捷键界面的纯函数单测：键帽拆分（速查表 / 录制框 / 引导共用）、注册失败原因（-9868 只在只带 ⌥ 时才是系统限制）、
-// 速查表 sheet 的高度放得进设置窗。
+// 速查表 sheet 的高度放得进设置窗、录制时拒绝各 App 通用的编辑键、默认键（输入翻译 ⌥T）。
 
 import Carbon.HIToolbox
 import Testing
@@ -45,6 +45,46 @@ struct ShortcutsTests {
     let grouped = HotKeyAction.sections.flatMap(\.actions)
     #expect(
       Set(grouped) == Set(HotKeyAction.allCases) && grouped.count == HotKeyAction.allCases.count)
+  }
+
+  /// ⌘C、⇧⌘Z 这类各 App 通用的键设成全局会在所有 App 里失效：录制时拒绝；⌥C、⌘⇧C 照常能录
+  @Test func reservedEditKeys() {
+    #expect(HotKey(keyCode: kVK_ANSI_C, modifiers: cmdKey).isReservedEditKey)
+    #expect(HotKey(keyCode: kVK_ANSI_Z, modifiers: cmdKey | shiftKey).isReservedEditKey)
+    #expect(HotKey(keyCode: kVK_ANSI_Grave, modifiers: cmdKey).isReservedEditKey)
+    #expect(!HotKey(keyCode: kVK_ANSI_C, modifiers: optionKey).isReservedEditKey)
+    #expect(!HotKey(keyCode: kVK_ANSI_C, modifiers: cmdKey | shiftKey).isReservedEditKey)
+    #expect(HotKey.reservedEditKeys.count == 12)
+  }
+
+  /// 默认键：输入翻译是 ⌥T（体检 A15，和其它功能一样单 ⌥）；默认键互不重复、都不是通用编辑键
+  @Test func defaultHotKeys() {
+    #expect(
+      HotKeyAction.inputTranslate.defaultHotKey == HotKey(keyCode: kVK_ANSI_T, modifiers: optionKey)
+    )
+    let defaults = HotKeyAction.allCases.compactMap(\.defaultHotKey)
+    #expect(Set(defaults).count == defaults.count)
+    #expect(defaults.allSatisfy { !$0.isReservedEditKey })
+  }
+
+  /// 默认键让给用户自己设的：早先把 ⌥T 手动给了「划词翻译并替换」，输入翻译没设过也不再取默认 ⌥T（免得抢先注册、
+  /// 那个动作每次启动都注册失败）；清除过（空数据）照旧是 nil，别的动作没占就照常取默认
+  @Test func defaultYieldsToUserBinding() throws {
+    let optionT = HotKey(keyCode: kVK_ANSI_T, modifiers: optionKey)
+    let optionTData = try JSONEncoder().encode(optionT)
+    var stored: [HotKeyAction: Data] = [:]
+    #expect(HotKeyAction.inputTranslate.resolve { stored[$0] } == optionT)
+    stored[.translateReplace] = optionTData
+    #expect(HotKeyAction.inputTranslate.resolve { stored[$0] } == nil)
+    #expect(HotKeyAction.translateReplace.resolve { stored[$0] } == optionT)
+    // 输入翻译自己存了 ⌥T（两边都存同一个键不该出现，存了就照存的）；清除过的是 nil
+    stored[.inputTranslate] = optionTData
+    #expect(HotKeyAction.inputTranslate.resolve { stored[$0] } == optionT)
+    stored[.inputTranslate] = Data()
+    #expect(HotKeyAction.inputTranslate.resolve { stored[$0] } == nil)
+    // 被清除的动作不占默认键
+    stored = [.translateReplace: Data()]
+    #expect(HotKeyAction.inputTranslate.resolve { stored[$0] } == optionT)
   }
 
   /// 速查表 sheet 挂在设置窗工具栏下沿：默认内容 600、最小 460，减去约 52 的工具栏后都放得下，窗口再大也只到 520

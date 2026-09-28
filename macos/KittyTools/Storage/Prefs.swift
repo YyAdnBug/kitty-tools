@@ -7,7 +7,7 @@ enum Prefs {
   static let appearance = "appearance"
   /// 强调色（AccentChoice.rawValue）：system 跟随系统（默认）/ blue / purple / pink（品牌粉）/ red / orange / yellow / green / graphite
   static let accent = "accent"
-  /// 剪贴板面板点外即关；面板上的图钉 = 把它关掉
+  /// 剪贴板面板点外即关；底栏图钉 / ⌘P = 把它关掉（固定）。设置页不再有这个开关（体检 A9），只存图钉状态
   static let clipboardHideOnUnfocus = "clipboardHideOnUnfocus"
   /// 启动器搜哪些浏览器的书签
   static let launcherBookmarksChrome = "launcherBookmarksChrome"
@@ -23,7 +23,7 @@ enum Prefs {
   static let launcherSqueezeEntrance = "launcherSqueezeEntrance"
   /// 文件搜索已经请求过桌面 / 文稿 / 下载 / iCloud 云盘的访问授权（之后才能读目录判断授权状态，读之前会弹框）
   static let folderAccessRequested = "folderAccessRequested"
-  /// 翻译浮窗固定：失焦不隐藏、Esc 不关闭
+  /// 翻译浮窗固定：失焦不隐藏（Esc、⌘W 照样关，体检 A9）
   static let floatingPinned = "floatingPinned"
 
   /// 普通历史（非收藏 / 片段 / 分组）最多保留几条，0 = 不限
@@ -79,7 +79,7 @@ enum Prefs {
   /// 识字后把同一段的换行合成一行（中日文直接连、其它加空格）
   static let ocrJoinLines = "ocrJoinLines"
 
-  /// 上次启动的版本号：没有 = 首次安装（打开欢迎引导），和当前不同 = 刚更新（打开关于页看更新内容）
+  /// 上次启动的版本号：没有 = 首次安装（打开欢迎引导），和当前不同 = 刚更新（刘海岛「已更新到 x」+ 本版摘要，不开设置窗，体检 A29）
   static let lastSeenVersion = "lastSeenVersion"
   /// 自动检查更新（启动后一次、之后每天一次）
   static let updateAutoCheck = "updateAutoCheck"

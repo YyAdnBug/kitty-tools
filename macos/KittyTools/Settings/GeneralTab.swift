@@ -1,4 +1,5 @@
-// 设置 › 通用：外观（跟随系统 / 浅色 / 深色三张缩略图）与强调色（跟随系统 + 系统设置那一排 8 色，都是改了立刻生效）、开机自启、权限状态（辅助功能、屏幕录制、剪贴板访问；从未授权变已授权时符号替换 + 弹一下）。
+// 设置 › 通用：外观（跟随系统 / 浅色 / 深色三张缩略图）与强调色（跟随系统 + 系统设置那一排 8 色，都是改了立刻生效）、
+// 登录时打开、权限状态（辅助功能、屏幕录制、15.4 起的剪贴板访问，三行同一种 PermissionRow；从未授权变已授权时符号替换 + 弹一下）。
 
 import ServiceManagement
 import SwiftUI
@@ -78,25 +79,22 @@ struct GeneralTab: View {
     }
   }
 
-  /// macOS 15.4 起的剪贴板隐私：「默认」时本 App 还不在系统设置的列表里，「始终允许」没问题，都不提示
+  /// macOS 15.4 起的剪贴板隐私，和上面两行同一种权限行：「默认」（本 App 还不在系统设置的列表里）和「始终允许」
+  /// 都算已授权；「询问」「拒绝」给「打开设置」。拒绝的后果写进说明，不另加红字
   @available(macOS 15.4, *)
-  @ViewBuilder private var pasteboardAccess: some View {
-    switch pasteboardBehavior.flatMap(NSPasteboard.AccessBehavior.init(rawValue:)) {
-    case .ask:
-      LabeledContent("剪贴板访问") {
-        Button("打开隐私设置") {
-          NSWorkspace.shared.open(
-            URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy")!)
-        }
-      }
-      caption("系统会在读取剪贴板时询问。请到「隐私与安全性 › 从其他 App 粘贴」里把本 App 改成「始终允许」。")
-    case .alwaysDeny:
-      LabeledContent("剪贴板访问") {
-        Label("已被拒绝", systemImage: "xmark.octagon.fill").foregroundStyle(.red)
-      }
-      caption("系统已拒绝本 App 读取剪贴板，剪贴板历史不会再记录新内容。到「隐私与安全性 › 从其他 App 粘贴」里改成「始终允许」。")
-    default:
-      EmptyView()
+  private var pasteboardAccess: some View {
+    let behavior = pasteboardBehavior.flatMap(NSPasteboard.AccessBehavior.init(rawValue:))
+    return PermissionRow(
+      title: "剪贴板访问",
+      detail: behavior == .alwaysDeny
+        ? "已被拒绝，剪贴板历史不会再记录新内容；到「从其他 App 粘贴」里改成始终允许"
+        : "后台记录剪贴板历史；系统询问时到「从其他 App 粘贴」里改成始终允许",
+      symbol: "doc.on.clipboard.fill", color: Style.Family.clipboard,
+      granted: behavior != .ask && behavior != .alwaysDeny, button: "打开设置"
+    ) {
+      // ponytail: 打开「隐私与安全性」总页；「从其他 App 粘贴」的专用锚点真机查到再换
+      NSWorkspace.shared.open(
+        URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy")!)
     }
   }
 
@@ -117,6 +115,8 @@ struct PermissionRow: View {
   let symbol: String
   let color: Color
   let granted: Bool
+  /// 未授权时的按钮文字
+  var button = "去授权"
   let grant: () -> Void
 
   var body: some View {
@@ -127,7 +127,7 @@ struct PermissionRow: View {
         Text(detail).font(.caption).foregroundStyle(.secondary)
       }
       Spacer(minLength: 8)
-      PermissionStatus(granted: granted, grant: grant)
+      PermissionStatus(granted: granted, button: button, grant: grant)
     }
     .accessibilityElement(children: .combine)
   }
@@ -219,7 +219,7 @@ private struct AppearanceThumbnail: View {
     }
     .frame(width: w, height: h)
     .clipShape(shape)
-    .overlay(shape.strokeBorder(Style.hairline, lineWidth: 0.5))
+    .overlay(shape.hairlineBorder())
   }
 
   private static func desktop(dark: Bool) -> some View {
@@ -335,7 +335,7 @@ enum AppAppearance: String, CaseIterable, Identifiable {
   }
 }
 
-/// 开机自启（登录项）：SMAppService.mainApp，系统设置里显示为本 App
+/// 登录时打开（登录项）：SMAppService.mainApp，系统设置里显示为本 App；通用页开关和欢迎引导第二屏的勾选框共用
 enum LaunchAtLogin {
   /// 从 DMG（/Volumes/…）或 App Translocation 的随机只读路径运行时不注册：登录项会指向一个很快就失效的位置
   static var isInstalled: Bool {

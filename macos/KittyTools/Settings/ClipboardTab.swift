@@ -10,7 +10,6 @@ struct ClipboardTab: View {
   @AppStorage(Prefs.clipboardImageBudgetMB) private var imageBudgetMB = 512
   @AppStorage(Prefs.clipboardShowPreview) private var showPreview = true
   @AppStorage(Prefs.clipboardLinkPreview) private var linkPreview = true
-  @AppStorage(Prefs.clipboardHideOnUnfocus) private var hideOnUnfocus = true
   @AppStorage(Prefs.clipboardKeepRichText) private var keepRichText = true
   @AppStorage(Prefs.clipboardImageOCR) private var imageOCR = true
   @AppStorage(Prefs.clipboardBlockSensitive) private var blockSensitive = true
@@ -55,7 +54,6 @@ struct ClipboardTab: View {
           Text("链接显示网页标题和图片")
           Text("选中链接时联网读取；本机、内网和带登录令牌的网址不读")
         }
-        Toggle("点击面板外部时关闭", isOn: $hideOnUnfocus)
       }
       Section("内容") {
         Toggle("保留文本格式（RTF / HTML）", isOn: $keepRichText)
@@ -175,7 +173,7 @@ private struct ClipboardPanelSketch: View {
       }
       .padding(.horizontal, 10)
       .frame(height: 22)
-      Style.hairline.frame(height: 0.5)
+      Hairline()
       VStack(spacing: 0) {
         row(tile: .primary.opacity(0.14))
         lens
@@ -185,7 +183,7 @@ private struct ClipboardPanelSketch: View {
         Spacer(minLength: 0)
       }
       .padding(4)
-      Style.hairline.frame(height: 0.5)
+      Hairline()
       // 底栏：条数 ｜ 粘贴 [↩] · 操作 ⌘K
       HStack(spacing: 4) {
         Capsule().fill(.primary.opacity(0.12)).frame(width: 22, height: 4)
@@ -200,7 +198,7 @@ private struct ClipboardPanelSketch: View {
     }
     .frame(width: 240, height: 136)
     .background(.background, in: panel)
-    .overlay(panel.strokeBorder(Style.hairline, lineWidth: 0.5))
+    .overlay(panel.hairlineBorder())
     .clipShape(panel)
     .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
     // 减弱动态效果：直接变（不展开、不缩放）

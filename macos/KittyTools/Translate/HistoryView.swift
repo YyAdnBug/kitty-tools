@@ -19,7 +19,7 @@ import SwiftUI
   private(set) var selectedID: UUID?
   /// 选中高亮这次怎么移动（Whisker §4）：键盘单按 snap，连发与搜索 / 范围变化不动画，点选 glide
   private(set) var selectionMotion = Style.Motion.instant
-  /// 刚复制了译文的那条：行尾的时间换成「✓ 已复制」1.2 s
+  /// 刚复制了译文的那条：行尾的时间换成「✓ 已复制」（Style.copiedHold）
   private(set) var copiedID: UUID?
   /// 删掉的条目（⌘Z 从后往前插回）；开 / 关历史时清空
   @ObservationIgnored private var deleted: [HistoryStore.Entry] = []
@@ -96,11 +96,12 @@ import SwiftUI
 
   /// ⌘C / 右键：复制译文（source：复制原文）；行尾同样换成「✓ 已复制」
   func copy(_ entry: HistoryStore.Entry, source: Bool = false) {
-    Paster.write(string: source ? entry.source : entry.result)
+    // 原文、译文都是本 App 给出的文字：同时记进剪贴板历史（mac-native §5）
+    Paster.write(string: source ? entry.source : entry.result, record: true)
     copiedID = entry.id
     copyTask?.cancel()
     copyTask = Task {
-      try? await Task.sleep(for: .seconds(1.2))
+      try? await Task.sleep(for: Style.copiedHold)
       if !Task.isCancelled { copiedID = nil }
     }
     Self.announce(source ? "已复制原文" : "已复制译文")
@@ -266,6 +267,17 @@ struct HistoryView: View {
     }
   }
 
+  /// 悬停底 0.10 s 淡入淡出；移出时只清自己（快速划过时下一行的「移入」可能先到）
+  private func hover(_ id: UUID, inside: Bool) {
+    withAnimation(.easeOut(duration: 0.10)) {
+      if inside {
+        hovered = id
+      } else if hovered == id {
+        hovered = nil
+      }
+    }
+  }
+
   private func row(_ entry: HistoryStore.Entry, isSelected: Bool, list: HistoryList) -> some View {
     let hoverShape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
     return Button {
@@ -278,17 +290,12 @@ struct HistoryView: View {
     } label: {
       HistoryRow(entry: entry, isCopied: list.copiedID == entry.id)
         .background(
-          hovered == entry.id && !isSelected ? Style.hoverFill : .clear, in: hoverShape)
+          hovered == entry.id && !isSelected ? Style.hoverFill : .clear, in: hoverShape
+        )
+        // 翻译浮窗不激活本 App：SwiftUI 的 onHover 在这里不可靠，用 activeAlways 追踪区（同剪贴板行）
+        .background(HoverTracker { hover(entry.id, inside: $0) })
     }
     .buttonStyle(.plain)
-    .onHover { inside in
-      if inside {
-        hovered = entry.id
-      } else if hovered == entry.id {
-        hovered = nil
-      }
-    }
-    .animation(.easeOut(duration: 0.10), value: hovered == entry.id)
     .id(entry.id)
     .contextMenu {
       Button("重新翻译") { coordinator.translate(entry.source) }

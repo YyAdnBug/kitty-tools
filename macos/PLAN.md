@@ -241,7 +241,7 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 | 目录 | 文件 |
 |---|---|
 | `App/` | `KittyToolsApp.swift`（@main 和 MenuBarExtra）、`AppDelegate.swift`（单实例检查、组装对象、生命周期、退出和锁屏清理）、`Updater.swift`（应用内更新，D8） |
-| `Shell/` | `OverlayPanel.swift`、`HotKeyCenter.swift`、`HotKeyRecorder.swift`、`Permissions.swift`（辅助功能、屏幕录制、文件和文件夹授权；自动化被拒时打开系统设置）、`Paster.swift`、`Subprocess.swift`（进程外跑系统命令行工具：更新的 ditto / codesign、系统命令的 pmset / osascript）、`Style.swift`（Whisker 刻度：圆角、七条弹簧曲线、中性色 / 家族色、种类色块、键帽、面板描边）、`Accent.swift`（强调色：跟随系统 + 8 色、配色计算、根视图的 `.appAccent()`）、`Island.swift`（刘海岛：全局轻提示，替换原来的 Toast）、`StatusItem.swift`（菜单栏图标与菜单，NSStatusItem，Whisker D 的呼吸 / 弹一下）、`ActionMenu.swift`（剪贴板 ⌘K、剪贴板筛选面板、启动器 ⌘K 共用的动作菜单） |
+| `Shell/` | `OverlayPanel.swift`、`HotKeyCenter.swift`、`HotKeyRecorder.swift`、`Permissions.swift`（辅助功能、屏幕录制、文件和文件夹授权；自动化被拒时打开系统设置）、`Paster.swift`（自家写剪贴板的唯一出口；`write(string:record:)` 把本 App 生成的新文字同时记进剪贴板历史）、`Subprocess.swift`（进程外跑系统命令行工具：更新的 ditto / codesign、系统命令的 pmset / osascript）、`Style.swift`（Whisker 刻度：圆角、七条弹簧曲线、中性色 / 家族色、输入框底、复制对勾停留、卡片表面 `CardSurface`、发丝线 `Hairline` / `hairlineBorder`、主按钮 `BrandButtonStyle`、种类色块、键帽、面板描边）、`HoverTracker.swift`（列表行悬停：`.activeAlways` 追踪区，非激活浮层里代替 `onHover`）、`Accent.swift`（强调色：跟随系统 + 8 色、配色计算、根视图的 `.appAccent()`）、`Island.swift`（刘海岛：全局轻提示，替换原来的 Toast）、`StatusItem.swift`（菜单栏图标与菜单，NSStatusItem，Whisker D 的呼吸 / 弹一下）、`ActionMenu.swift`（剪贴板 ⌘K、剪贴板筛选面板、启动器 ⌘K 共用的动作菜单） |
 | `Storage/` | `Database.swift`、`Keychain.swift`、`Prefs.swift`、`LegacyImport.swift` |
 | `Clipboard/` | `ClipboardWatcher.swift`、`ClipboardStore.swift`、`ClipItem.swift`、`ClipboardFilter.swift`、`ContentForm.swift`、`Search.swift`、`ImageStore.swift`、`OCR.swift`、`ClipboardPanelView.swift`、`ClipRowView.swift`、`PreviewView.swift`、`Dialogs.swift`、`LinkPreview.swift`（链接富预览：按块读网页 og 标签、isFetchable、内存缓存）、`QuickLookView.swift`（⌘Y 放大预览） |
 | `Translate/` | `TranslateCoordinator.swift`、`LanguageResolver.swift`、`SelectionReader.swift`、`SSE.swift`、`Providers/`（`Zhipu`、`AIService`、`Baidu`、`Youdao`、`Google`、`DeepL`、`Microsoft`、`Volcengine`、`Tencent` 各一个 `.swift`）、`TranslatePanelView.swift`、`ProviderCardView.swift`（含服务身份 `ServiceTile`：官方 logo 或品牌色块，彗星边框、骨架扫光）、`RevealText.swift`（流式译文显影，TextRenderer）、`HistoryStore.swift`、`HistoryView.swift`、`WordLookup.swift`（查词：是不是一个词、系统词典查询与解析、单词模式示例，D4）、`DictionaryCardView.swift`（系统词典卡） |
@@ -277,15 +277,16 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
   - 显示只调 `orderFrontRegardless()` + `makeKey()`，**永远不调** `NSApp.activate`。
   - **点外关闭**（剪贴板面板）：显示时装一个 global 和一个 local 的左右键按下监听，隐藏时在主线程成对卸载。点中的窗口如果是任意一个 `OverlayPanel`，不关闭（点击时实时判断）；固定（pin）状态下也不关闭。
   - **翻译浮窗失焦隐藏**：`windowDidResignKey`，未固定才隐藏。
+  - **固定只管「点别处 / 失焦不收起」**（2026-09-28 体检 A9 用户拍板，推翻下面原来照搬 Tauri 的「翻译浮窗固定时 Esc 不关」）：Esc、⌘W（`OverlayPanel.performKeyEquivalent` 统一处理，三块浮层都认）、再按热键一律收起；剪贴板面板 ⌘P / 底栏图钉切换固定，设置页不再有「点击面板外部时关闭」。
   - **Esc**：通过响应链的 `cancelOperation(_:)` 交给 SwiftUI 状态逐层处理。
-    - 剪贴板面板：对话框 > 多选 > 关闭（固定时也关闭，和 Tauri 前端一致）。
-    - 翻译浮窗：对话框 > 历史面板 > **未固定才关闭**，固定时什么也不做。
+    - 剪贴板面板：对话框 > 多选 > 关闭（固定时也关闭）。
+    - 翻译浮窗：对话框 > 历史面板 > 关闭（固定时也关闭，2026-09-28 起）。
     - 顺带修掉 Tauri 版原生 Esc 监听抢先关闭面板的问题（`src-tauri/src/plugins/mac_overlay_panel.rs:365-370`）。
 - **设置窗**：`SettingsWindow` 用 `NSWindow` + `NSTabViewController(tabStyle: .toolbar)`，每个 Tab 一个 `NSHostingController`。
   - 不用 SwiftUI `Settings` scene：在 LSUIElement 应用里它会被压到其它 App 后面，而且 `openSettings` 只能在 SwiftUI scene 环境里调用，浮层上的齿轮按钮调不到。
   - `show()` 的顺序：先把两个 OverlayPanel 按正常隐藏路径收起（包括作废翻译会话，对应 `src-tauri/src/windows/mod.rs:3683-3685`），再 `setActivationPolicy(.regular)` + `NSApp.activate()` + `makeKeyAndOrderFront`；关闭时切回 `.accessory`。
   - macOS 14 起 `activate()` 是协作式的，不保证一定成功。M3 实测三个入口，到不了最前面就退回 `NSApp.activate(ignoringOtherApps: true)`（已废弃但可用），并写进 `mac-overlay-panel` 技能。
-  - 首次启动和版本更新后自动打开（分别打开通用页和关于页），不再单独做引导窗口。
+  - 首次安装打开通用页并盖欢迎引导（N14）；~~版本更新后自动打开关于页~~（2026-09-28 体检 A29：更新后不开设置窗、不抢前台，刘海岛「已更新到 x」+ 本版摘要，全文在「关于」）。
 - **依赖注入**：
   - 在 `AppDelegate.applicationDidFinishLaunching` 里按顺序创建：`Database` → `ClipboardStore`、`HistoryStore` → `ClipboardWatcher` → `TranslateCoordinator` → 两个面板 → `HotKeyCenter`，通过 init 传递。
   - 根视图用 `.environment(store)` 注入。
@@ -315,7 +316,7 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 | 图片 `R/image_cache.rs`、`R/image_budget.rs:17-68` | `ImageStore`（@concurrent）：读 png/tiff；尺寸用 `CGImageSourceCopyPropertiesAtIndex` 读取，不解码；对编码字节做 SHA256 去重（有 PNG 用 PNG 字节，否则用转换后的 PNG 字节）；写 `images/{id}.png`。缩略图用 `CGImageSourceCreateThumbnailAtIndex` + `NSCache` | M | 像素上限 128MiB（按宽×高×4 算）；摘要为「图片 W×H」。`ponytail:` 注释写明「同一张图换了编码不会被去重」。字节预算 = `SUM(image_byte_size)`，超出时从最旧的可淘汰项开始，同时删文件和行。启动对账：cutoff 时间要在读 keep 集合**之前**取，keep 集合读失败绝不清理 |
 | 文件 `R/paste.rs:383-419`、`R/image_cache.rs:460-493` | `readObjects(forClasses:[NSURL.self], options:[.urlReadingFileURLsOnly: true])`；大小取自 `attributesOfItem` | S | 摘要：单个显示文件名，多个显示「N 个文件」；目录不递归统计；按路径列表去重 |
 | OCR `R/ocr_indexer.rs`、`R/ocr_local.rs:14-100` | `OCR`（@concurrent）：`RecognizeTextRequest`，`.accurate`，语言 `zh-Hans, zh-Hant, en-US`，开语言纠错，最多 4096 字符 | S | 语言必须显式指定；识别为无文字时写 `''`，之后不再重试；失败时留 NULL，下次启动重试；启动后串行补齐存量 |
-| 自写抑制 `R/suppress.rs`、`F/lib/clipboard-hotkeys.ts:37-50` | `Paster.write`：写完记下 `changeCount`，watcher 遇到这个值就跳过；同时加 `org.nspasteboard.TransientType`，共存的 Tauri watcher 也会跳过（2026-09-26 改：只有划词还原加 TransientType）。划词期间 `watcher.pause`，结束后把 lastChangeCount 对齐到当前值 | S | 删掉所有时间窗常量（450/500/250/800ms）；跳过时仍更新指纹 |
+| 自写抑制 `R/suppress.rs`、`F/lib/clipboard-hotkeys.ts:37-50` | `Paster.write`：写完记下 `changeCount`，watcher 遇到这个值就跳过（2026-09-28 体检 A30：本 App 生成的新文字用 `write(string:record: true)` 自己记进历史，见 mac-native §5）；同时加 `org.nspasteboard.TransientType`，共存的 Tauri watcher 也会跳过（2026-09-26 改：只有划词还原加 TransientType）。划词期间 `watcher.pause`，结束后把 lastChangeCount 对齐到当前值 | S | 删掉所有时间窗常量（450/500/250/800ms）；跳过时仍更新指纹 |
 | 存储 `R/history_db.rs`，以及 `UC:280-331` 的 diff 持久化 | `Database`（libsqlite3 单连接 WAL）+ `ClipboardStore`（@Observable，内存数组，每次变更直接写一行） | M | 表结构见 §6。保留规则 `isRetained = 收藏 ∨ 片段 ∨ 已归组` 只在 Swift 里定义一处 |
 | 合并去重 `F/lib/cloud-sync.ts:19-95` | `ClipboardStore.insert` | S | text 比内容，file 比路径，image 比 hash。合并后用新 id 和新时间戳；收藏取 OR；备注优先保留非空；kind 和 groupId 保留旧值 |
 | 条数与天数上限 `F/lib/history-settings.ts:15-42` | 每次插入后、面板显示时各执行一次 | S | 默认 100 条 / 7 天，0 表示不限（2026-09-26 改：默认不限条数 / 7 天、图片 512 MB）；只裁普通历史；删掉 10 分钟定时器 |
@@ -364,7 +365,7 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 | 语言解析 `T/api.rs:116-344` | `LanguageResolver` 纯函数，配单测 | S | 双向互译的 4 个分支；按语系比较（zh-CN 和 zh-TW 算同一族）；兜底目标语言；发给智谱前目标语言不能是 auto；整个流程只检测一次 |
 | 浮窗 `TF/components/FloatingResult` | `OverlayPanel` + `TranslatePanelView` | M | 顶栏：固定（`floatingPinned`）、复制即译、历史、设置、关闭。位置用 `setFrameAutosaveName` 记忆，替代约 120 行的屏内校验 |
 | 失焦隐藏 `W:1743-1882` | `windowDidResignKey` + 判断是否固定 | M | 隐藏时若剪贴板面板还开着，把焦点交还给它；不还原前台 App。Tauri 的「显示后 500ms 内不自动隐藏」先不搬，M4 出现「刚显示就被隐藏」再加 |
-| Esc `FloatingResult:859-873` | `cancelOperation` | S | 历史面板开着 → 只收起面板；否则**未固定才关闭**，固定时什么也不做 |
+| Esc `FloatingResult:859-873` | `cancelOperation` | S | 历史面板开着 → 只收起面板；否则关闭（~~未固定才关闭，固定时什么也不做~~：2026-09-28 体检 A9 改为固定着也关） |
 | 输入框 `FloatingResult:993-1005` | 包一层 `NSTextView`，在 `doCommandBy` 收到 insertNewline 时看 Shift 是否按下 | S | Enter 提交，Shift+Enter 换行；输入法组字时不触发；修改原文会立即取消进行中的请求 |
 | 原文操作行 `FloatingResult:903-971,1160-1238` | `AVSpeechSynthesizer`；复制走 `Paster.write` | S | 朗读：源语言为 auto 时用检测结果，再点一次停止，中文优先普通话、排除粤语声线。复制后图标变对勾 1.6s。还有清空、检测语种徽标。「翻译」按钮强制重译，3 种情况下禁用 |
 | 语言栏 `FloatingResult:931-953,1241-1267` | 两个 `Picker` + 交换按钮 | S | 切换语言会写回全局 `sourceLang` / `targetLang` 并自动重译；交换规则照搬；两边都是 auto 时禁用交换 |
@@ -406,7 +407,7 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 | `ALLOW_APP_EXIT` 退出拦截 | 不需要（AppKit 关掉最后一个窗口不会退出） | S | 清理逻辑放在 `applicationWillTerminate` |
 | 通用 Tab | `SMAppService.mainApp`（状态为 `.requiresApproval` 时引导；从 DMG 里直接运行时不注册）；外观（浅色 / 深色 / 跟随系统）用 `NSApp.appearance`；权限卡片；「从旧版导入」按钮（M4 先放这个按钮） | S | 权限卡片：<br>• 辅助功能：调一次带 prompt 的 `AXIsProcessTrustedWithOptions`。<br>• 剪贴板访问（`#available(macOS 15.4, *)`）：`.default` 和 `.alwaysAllow` 不显示卡片（`.default` 表示从未触发过弹窗，此时系统设置面板里根本没有本 App）；`.ask` 引导用户到「隐私与安全性 › 从其他 App 粘贴」改成始终允许；`.alwaysDeny` 显示错误卡片，说明剪贴板采集已被系统拒绝 |
 | 快捷键 Tab | `HotKeyRecorder`：用本地 keyDown 监听录制 | M | 不按修饰键组合一刀切：直接尝试注册，把 -9868 映射成「当前系统（15.0/15.1）不支持只带 ⌥ 的组合」。有「清除」按钮（设为 nil，显示「未设置」）。录制期间注销全部全局热键 |
-| 关于 Tab 和更新日志弹窗 `src-tauri/src/commands/app_update.rs` 的 `arm_whats_new_release` | `lastSeenVersion` 存 UserDefaults；版本变化且不是首次安装时，打开设置窗的关于 Tab；`changelog.json` 随包分发 | S | 在线更新见 D8（`App/Updater.swift`） |
+| 关于 Tab 和更新日志弹窗 `src-tauri/src/commands/app_update.rs` 的 `arm_whats_new_release` | `lastSeenVersion` 存 UserDefaults；版本变化且不是首次安装时~~打开设置窗的关于 Tab~~ 弹刘海岛「已更新到 x」（2026-09-28 体检 A29）；`changelog.json` 随包分发 | S | 在线更新见 D8（`App/Updater.swift`） |
 | 功能主页、7 步欢迎引导 | 砍掉 | — | 首次启动直接打开设置窗通用页 |
 
 ---
@@ -538,7 +539,7 @@ CREATE TABLE clip_groups(id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at INT
    - 划词前后用户的剪贴板内容不变，原生和 Tauri 的剪贴板历史里都没有新增条目；
    - 连续快速划词两次，两路译文不会交错。
 3. 浮窗固定且处于 key 状态时，在 Safari 选中文字后按 ⌥D，能取到词。
-4. Esc：历史面板开着时只收起面板；未固定时关闭浮窗；固定时不关。
+4. Esc：历史面板开着时只收起面板；否则关闭浮窗（2026-09-28 起固定着也关，体检 A9）。
 5. 从翻译浮窗的齿轮打开设置窗，Safari 在前台时设置窗也在最前面。
 6. 没有辅助功能授权时，划词会给出引导卡片。
 7. 本机 Ollama（127.0.0.1）能调通；局域网上的大模型也能调通（第一次会弹一次本地网络授权）。
@@ -677,7 +678,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 | 中文输入法 | 非激活面板里候选窗位置不对；组字时按 Enter 被误当成提交 | 输入框用 `NSTextField` / `NSTextView` + `doCommandBy`（组字期间不会回调）；M1 实测拼音、双拼、日文 |
 | 粘贴回原 App 失败 | 热键的 ⇧ 还按着，发出去的是 ⌘⇧V；Electron 应用协商剪贴板格式较慢 | ⌘V 事件显式设 `flags = .maskCommand`；先不加任何等待，按 M1 实测结果逐个 App 补延迟，并用 `ponytail:` 注释写明原因 |
 | 划词取词 | Chromium/Electron 的 AX 返回空；自家面板是 key 窗口时，AX 和 ⌘C 都落在自家面板上；延迟提供（promised）的数据无法完整还原；AX 调用卡住；先显示浮窗会把原 App 的选区取消掉 | AX 读不到时先交还焦点、激活快照 App、再读 AX，最后才用 ⌘C 兜底；promised 数据接受还原不完整；AX 放进 `@concurrent` 并设超时；「复制完成前不显示浮窗」写进 `mac-overlay-panel` 的红线 |
-| 全局热键 | `RegisterEventHotKey` 默认非独占：和别的 App 注册同一组合时注册会成功，按一次两个 App 都响应。只带 ⌥ 或 ⌥⇧ 的组合只在 15.0–15.1 上被拒（-9868），15.2 起已恢复 | ~~共存期间在 Tauri 设置里清空剪贴板、划词、输入翻译三个热键（原生不导入热键，用同样的默认组合）~~（2026-09-26：共存期结束，默认改为剪贴板 ⌥C、划词翻译 ⌥D）；M1 实验 `kEventHotKeyExclusive` 能否检测冲突；录制器不按组合一刀切，直接注册并把 -9868 映射成提示 |
+| 全局热键 | `RegisterEventHotKey` 默认非独占：和别的 App 注册同一组合时注册会成功，按一次两个 App 都响应。只带 ⌥ 或 ⌥⇧ 的组合只在 15.0–15.1 上被拒（-9868），15.2 起已恢复 | ~~共存期间在 Tauri 设置里清空剪贴板、划词、输入翻译三个热键（原生不导入热键，用同样的默认组合）~~（2026-09-26：共存期结束，默认改为剪贴板 ⌥C、划词翻译 ⌥D；2026-09-28 体检 A15：输入翻译 ⌘⇧I → ⌥T，默认键全是单 ⌥）；M1 实验 `kEventHotKeyExclusive` 能否检测冲突；录制器不按组合一刀切，直接注册并把 -9868 映射成提示 |
 | ~~与 Tauri 版共存~~（2026-09-26：共存期结束） | 两边的 watcher 都会采集剪贴板；两边都开复制即译时，一次 ⌘C 弹两个浮窗；一方的自动复制、粘贴、划词还原会进另一方的历史 | 原生自己写剪贴板时一律加 `org.nspasteboard.TransientType`，Tauri watcher 会跳过（`R/privacy_markers.rs:38-42`）。共存期操作：Tauri 只保留 ⌘⇧S 截图翻译（本机 500 条翻译历史里 358 条是截图翻译），关掉 Tauri 的复制即译。Tauri 的自动复制如果开着，截图翻译的译文会进原生的历史，接受或者关掉它 |
 | 多实例 | 从 DMG 里运行一份、/Applications 再启动一份，热键重复、两个进程写同一个库 | 启动时检查同 bundle id 的其它实例（§4） |
 | App Nap | 空闲时 timer 被降频，连续快速复制可能漏条 | M2 实测，漏了再持有 `beginActivity` |
@@ -753,7 +754,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 - 反馈（mac-whisker S2）：音量、静音、清倒废纸篓、推出、全部退出和所有错误 / 授权问题走刘海岛；锁屏、睡眠、屏保、关显示器、打开废纸篓、退出单个 App 不出岛。锁屏会触发「锁屏时清空剪贴板」（开着的话），这是预期。
 
 **翻译补强（M12，2026-09-25）**
-- 浮窗快捷键在 `TranslateCoordinator.handleKeyEquivalent`（接到 `OverlayPanel.keyEquivalentHandler`）：⌘R 重新翻译、⌘S 收藏 / 取消（第一个服务出结果后）、⌘W 收起（固定着也收）、⌘P 固定、⌘+（含 ⌘⇧=）/ ⌘- / ⌘0 字号（0.8–1.6 倍，存 `translateFontScale`）、⌘1–9 复制第 N 张卡；⌘C / ⌘V 等编辑键仍给输入框。原文里 ⇧↩ / ⌘↩ 换行（⌘↩ 系统发的是 `noop:`，在 doCommandBy 里接）。
+- 浮窗快捷键在 `TranslateCoordinator.handleKeyEquivalent`（接到 `OverlayPanel.keyEquivalentHandler`）：⌘R 重新翻译、⌘S 收藏 / 取消（第一个服务出结果后）、⌘W 收起（固定着也收；2026-09-28 起在 `OverlayPanel` 统一处理，剪贴板面板、启动器也认）、⌘P 固定、⌘+（含 ⌘⇧=）/ ⌘- / ⌘0 字号（0.8–1.6 倍，存 `translateFontScale`）、⌘1–9 复制第 N 张卡；⌘C / ⌘V 等编辑键仍给输入框。原文里 ⇧↩ / ⌘↩ 换行（⌘↩ 系统发的是 `noop:`，在 doCommandBy 里接）。
 - 收藏 = 生词本：星标 / ⌘S 按「原文 + 实际目标语言」写 translations 表（关了历史也能收藏，连译文记一条）；历史里可只看收藏；设置 › 翻译「导出…」：全部 / 只收藏 × CSV（带 BOM，Excel 认 UTF-8）/ TSV（Anki：正面原文、背面译文，换行写成 `<br>`）。
 - 替换原文：划词时记下前台 App 的 pid 和原选区（`replaceSource`），会话里显示「替换原文」按钮（收起浮窗 → `Paster.write` → ⌘V）；静默热键「划词翻译并替换」（默认不设键，翻译中再按一次取消）：取词 → `translateOnce`（只用第一个服务、等完整结果、不合并换行、记历史）→ 粘回，全程轻提示。两条都按原选区补回首尾空白（`rewrap`，三击整行不吞段落），**前台已不是取词的 App 或自家浮层成了 key 时只复制不粘**；`OverlayPanel.present` 每次重记 previousKeyPanel，收起浮窗不会把 key 还给不相干的面板。
 - 导出：CSV 按 Unicode 标量判断要不要加引号（Swift 把 \r\n 当一个字符）、= + - @ 开头加 '、时间写本地时间；Anki TSV 带 `#separator:tab` / `#html:true` 头，字段 HTML 转义、各种换行写成 `<br>`、含引号或以 # 开头的加引号。关着历史时取消收藏会删掉那条。
@@ -813,7 +814,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 - M0 工程骨架 / 规则 / DMG 脚本；M1 浮层、热键、粘贴；M2 剪贴板数据层；M3 剪贴板面板（原生重新设计）+ 设置窗 + 快捷键录制；
 - M4 翻译核心（智谱、AI 三协议、划词、复制即译、历史、翻译浮窗与设置页、旧版偏好与密钥导入）；
 - M5 其余 7 家服务（百度、有道、Google、DeepL/DeepLX、微软、火山、腾讯）+ 各服务设置表单 + 导入扩展到全部内置服务；
-- M6 代码部分：`LegacyImport` 数据导入（保留类剪贴板条目 + 图片 + 分组 + 全部翻译历史，一个事务、可重复执行；本机真实旧库演练：保留 10 条全新增，翻译 500 条 → 新增 495、合并 5，第二次全部合并）；通用页（开机自启 `SMAppService.mainApp`、辅助功能与剪贴板访问状态、一键导入）；关于页（版本、发布页、随包 changelog）；首次安装打开通用页、更新后打开关于页（`lastSeenVersion`）；`MARKETING_VERSION = 0.1.0` + changelog 条目。
+- M6 代码部分：`LegacyImport` 数据导入（保留类剪贴板条目 + 图片 + 分组 + 全部翻译历史，一个事务、可重复执行；本机真实旧库演练：保留 10 条全新增，翻译 500 条 → 新增 495、合并 5，第二次全部合并）；通用页（开机自启 `SMAppService.mainApp`、辅助功能与剪贴板访问状态、一键导入）；关于页（版本、发布页、随包 changelog）；首次安装打开通用页、~~更新后打开关于页~~（2026-09-28 体检 A29：改弹刘海岛）（`lastSeenVersion`）；`MARKETING_VERSION = 0.1.0` + changelog 条目。
 
 - 翻译语言模型重做（用户反馈「自动 - 自动」「英文 - 日语」混乱；调研 Bob / Easydict / Pot / DeepL / Google 后按 §11「翻译语言」实现，单测 54 个全过）。
 - M7 启动器核心（§10 迁移计划）：⌥Space 呼出，App 目录（中文名 / 拼音 / 跨词首字母）、内置动作、使用记录与最近使用、旧版启动器记录导入、与剪贴板面板互斥。
@@ -887,7 +888,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   4. 翻译页：拖字号滑块，下面的卡片字号实时变，打开翻译浮窗也是这个字号（和 ⌘± 同一个值）；智谱模型、AI 协议、DeepL 接口是分段控件，历史条数是单选。
   5. 截图页：点喇叭试听快门声（关掉快门声后喇叭变灰）；切「识字后把换行合成一段」，下面的示例在三行和一行之间切换。
   6. 通用页：先在系统设置里关掉辅助功能授权，回到设置窗看到橙色感叹号 +「去授权」；重新授权后回来，图标换成绿色对勾并弹一下。
-  7. 关于页：大图标点一下摇一摇、鼠标在上面移动时轻微 3D 倾斜；版本胶囊和当前版本圆点是品牌粉；「重看欢迎指南」打开引导。
+  7. 关于页：大图标点一下摇一摇、鼠标在上面移动时轻微 3D 倾斜；版本胶囊和当前版本圆点是品牌粉；「重看欢迎引导」打开引导。
   8. 欢迎引导：已改成一页欢迎 +「按一下试试」，手测见下面「N1–N17」第 25 条。
 - 菜单栏手测（Whisker D）：
   1. 菜单栏图标点开：各项左边是家族色符号，右边显示当前快捷键（没设的留空，分节见下面「N1–N17」第 26 条）；「复制即译」打勾切换；有钉图时出现钉图两项；⌘, / ⌘Q 能用。
@@ -996,6 +997,23 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   7. 插 U 盘 / 挂一个 DMG：「eject 」列出来（不列 Xcode 模拟器的隐藏磁盘），↩ 推出、刘海岛「已推出」；U 盘上有文件在用时报是哪个 App 在用；ejectall 一次推出全部，没有可推出的说一声。
   8. volup / voldown / mute：刘海岛显示「音量 NN%」或「已静音」，一档和键盘音量键一样；静音时 volup 顺便取消静音；输出到 HDMI 显示器时说不能调音量。
   9. 设置 › 网页搜索里把关键词填成 quit / eject：提示「留给系统命令」。
+- 体检第 1 批「外壳基础与全局」手测（2026-09-28，A9 A15 A29 A30 B15 B17 B29 B30 B44 B48–B55 D20；浅色 / 深色、降低透明度、增强对比度、减弱动态效果各走一遍）：
+  1. A9 翻译浮窗点图钉固定：点别处不收起，Esc 照样收起（历史开着时 Esc 先关历史）、⌘W 收起；图钉 help「已固定：点别处不收起（⌘P）」。剪贴板面板 ⌘P 固定 / 取消，底栏左边就地提示「已固定 / 已取消固定」、图钉变粉；固定着 Esc、⌘W、再按 ⌥C 都收起；⌘E / ⌘N 对话框开着时 ⌘W 只关对话框（同 Esc）；开着 ⌘Y 大卡按 ⌘P 走刘海岛。开着大写锁定 ⌘W 照样收起。启动器 ⌘W 收起。设置 › 剪贴板没有「点击面板外部时关闭」了。
+  2. A15 没改过输入翻译快捷键的：⌥T 呼出输入翻译（15.0 / 15.1 上注册不了时快捷键页橙字）；自己设过的不变；早先把 ⌥T 手动给了别的动作的，输入翻译显示未设、那个动作照常注册。
+  3. A29 `defaults write com.yy.kitty-tools.native.dev lastSeenVersion 0.0.1` 后重开：不开设置窗、不出程序坞图标、前台不变，刘海岛「已更新到 x」+ 一句摘要，菜单栏图标弹一下；菜单「关于 Kitty Tools」能看全文。
+  4. A30 翻译浮窗 ⌘2 复制第二张卡、「复制原文」、历史 ⌘C、开「自动复制」后翻一次、启动器 ⌘C 复制计算结果 / 路径、计算结果 ↩ 粘贴、「替换原文」：之后在剪贴板历史最上面都能找到（同文只挪到最前、来源为空）；剪贴板透镜 / ⌘Y 里点色值块复制，选中不跳、历史里不多一条；划词翻译后剪贴板历史不多出还原的那条。
+  5. B15 剪贴板面板 ⌘, 和底栏齿轮直达 设置 › 剪贴板；启动器 ⌘, 直达 设置 › 启动器；启动器里搜「设置」回车仍打开上次看的页。
+  6. B17 / B53 翻译卡、词典卡、⌘Y 大卡：浅色没有阴影，深色顶边一道细高光；开「降低透明度」后卡片底不透、错误卡仍是淡红；开「增强对比度」后设置页、速查表、剪贴板面板、启动器、翻译卡的发丝线都变成 1 pt。
+  7. B29 / B30 翻译卡复制后对勾 1.2 s 换回；翻译浮窗开着、前台是别的 App、浮窗不是 key 时，⌘Y 历史里鼠标划过各行出悬停底色，移出消失。
+  8. B44 菜单栏、快捷键页、速查表、启动器里「识字」是取景框文字图标（同截图工具栏、剪贴板 ⌘K「复制图中文字」），「截图翻译」和截图工具栏「翻译」是 translate 图标。
+  9. B48 设置 › 快捷键给「识字」录 ⌘C / ⇧⌘Z：橙字「这是各 App 通用的快捷键…」，不保存、继续录；开着 VoiceOver 时会读出来。
+  10. B49 通用 › 权限第三行「剪贴板访问」和上面两行同样式；系统设置里改成「询问」后回来变橙色 !、按钮「打开设置」。
+  11. B50 设置窗开着时主菜单 App 菜单「关于 Kitty Tools」打开品牌关于页（不弹系统关于面板），没有「帮助」菜单项；菜单栏最后一项「退出 Kitty Tools」。
+  12. B51 设置侧栏 通用 / 剪贴板 / 启动器 / 翻译 / 截图 / 快捷键 / 关于；通用页头「外观、登录时打开和权限」；关于页「重看欢迎引导」。
+  13. B52 菜单栏菜单开着时按 ⌥C：菜单关掉、剪贴板面板出来（`TEST_RUNNER_KITTY_LIVE_HOTKEY=1` 跑一次 HotKeyMenuTests）。
+  14. B54 强调色换黄 / 橙 / 绿 / 石墨：关于页「更新并重新打开」、引导「继续 / 开始使用」、速查表「完成」、剪贴板对话框「保存 / 创建 / 完成」的字是深色、看得清；速查表按 ↩ 关闭、Esc 也关闭。
+  15. B55 给「划词翻译并替换」设键，在 Chrome 里选中文字快速连按两下：岛停在「已取消划词翻译并替换」，不再变成「翻译中…」一直挂着。
+  16. D20 `defaults delete com.yy.kitty-tools.native.dev lastSeenVersion` 后重开：引导第二屏卡片下有勾选框「登录时自动打开，开机后快捷键就能用」（默认勾），点「开始使用」后 设置 › 通用「登录时自动打开」是开的；取消勾再点不会关掉已开的；从 DMG 里直接运行时是一行说明、没有勾选框；在通用页关掉登录项后从「关于 › 重看欢迎引导」重看，勾选框跟随当前状态（不勾），点「开始使用」不会又打开。
 
 **发布 0.1.0**（2026-09-27 改）：`macos/build-dmg.sh` 出 arm64 DMG 和 `_arm64.zip` → 本仓库 github.com/YyAdnBug/kitty-tools 发**正式 release、标 latest**（App 内更新读 `releases/latest`；不碰 Tauri 版的仓库，不跑 `pnpm release:verify`），两个文件都附上，**发布前须经用户确认**；tag `macos-v0.1.0` 打在 `main`。发布前先把 changelog.json 的 0.1.0 条目补全（启动器、截图、应用内更新等还没写进去）。
 
@@ -1072,6 +1090,12 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 | 50 | `focused_window.rs:120-144` | 窗口置顶在 macOS 上是空实现，却提示「已切换」 | 不迁 |
 | 51 | `files.rs`（find / open） | 文件搜索起 `mdfind` 子进程用子串 `*词*`，短词要几秒、靠看门狗强杀；每条结果 stat 判断是不是目录，碰到受保护文件夹会弹授权框 | 进程内 `NSMetadataQuery` + 词首谓词，只读 Spotlight 属性、图标按类型取（M13） |
 | 52 | `file_search_filter.rs` | 排除目录默认值靠 serde default，老用户收不到新增的默认项（本机缺 8 项） | 排除规则写死在代码里，想再排除用系统 Spotlight 隐私（M13） |
+| 53 | `FloatingResult/index.tsx:859-873`（PLAN 附录评审 #34 照搬） | 翻译浮窗固定时 Esc 不关，剪贴板固定时 Esc 照样关，两个图钉语义不同 | 固定只管点别处 / 失焦不收起，Esc、⌘W、再按热键一律收起；剪贴板和启动器也认 ⌘W，剪贴板 ⌘P 切换固定（2026-09-28 体检 A9） |
+| 54 | `SettingsClipboardTab/index.tsx:60-68` | 「失焦时自动关闭」开关和浮层图钉是同一个值，两个入口 | 删掉设置页那一行，只留底栏图钉 / ⌘P，偏好键保留（体检 A9） |
+| 55 | `config.rs:315-317` | 输入翻译默认 ⌘⇧I，别的默认键都是单 ⌥；⌘⇧ 组合常被各 App 占用 | 默认 ⌥T，只影响没改过的人（体检 A15） |
+| 56 | `app_update.rs:177-227`、`WhatsNewDialog` | 更新后第一次启动自动弹设置窗（切 .regular、抢前台，开机由登录项拉起时也弹） | 刘海岛「已更新到 x」+ 摘要，不开窗（体检 A29） |
+| 57 | `clipboard/suppress.rs`、`paste.rs:33-41` | 自家写剪贴板一律抑制，复制的译文、计算结果在剪贴板历史里找不到 | 本 App 生成的新文字经 `Paster.write(string:record: true)` 记进历史，历史里取出的、划词还原、面板里的色值块不记（体检 A30，mac-native §5） |
+| 58 | `tray.rs:522`、`SettingsGeneralTab/index.tsx:46` | 托盘「退出」、页头「开机自启」 | 「退出 Kitty Tools」、「登录时打开」（同系统设置的叫法，体检 B50 / B51） |
 
 ## 附录：评审处理记录
 
@@ -1128,5 +1152,6 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 - CPU 架构：只支持 Apple 芯片（arm64），应用基本自用（D10）。
 - 其余决策点按推荐执行。
 - 启动器系统命令（2026-09-27，推翻 D2）：Alfred 的 18 个全做、锁屏用系统私有函数、只确认不可撤销的、中文名 + Alfred 关键词（四项都按推荐）。
+- 2026-09-28 体检拍板（方案页 https://claude.ai/artifact/1KuAQRafw2E3QYAM4LULFR ，用户「全部按推荐」）。第 1 批外壳基础与全局：A9 固定只管点别处不收起，Esc / ⌘W / 再按热键一律收起，剪贴板、启动器也认 ⌘W，剪贴板 ⌘P 切换固定，删掉设置里的「点击面板外部时关闭」；A15 输入翻译默认 ⌥T；A29 更新后不开设置窗，改弹刘海岛「已更新到 x」+ 摘要；A30 本 App 生成的新文字写剪贴板时同时记进历史（`Paster.write(string:record:)`），历史里取出的、划词还原、面板里的色值块不记；B15 ⌘, 直达对应设置页；B17 卡片表面 `CardSurface` + `Style.inputFill`，卡片一律不加阴影；B29 `Style.copiedHold` 1.2 s；B30 `Shell/HoverTracker` 共用；B44 识字 text.viewfinder、截图翻译 translate；B48 录制拒绝通用编辑键并播报；B49 剪贴板访问改 PermissionRow；B50 主菜单关于 / 帮助、「退出 Kitty Tools」；B51 侧栏翻译在截图前、「登录时打开」「欢迎引导」；B52 菜单通知改 selector 观察者；B53 发丝线增强对比度 1 pt（`Hairline` / `hairlineBorder`）；B54 主按钮 `BrandButtonStyle`、速查表「完成」= ↩；B55 静默替换取词后先看取消；D20 引导第二屏加「登录时自动打开」勾选框（默认勾）。
 - 截图翻译（2026-09-24）：只用 Vision 本机识字；原文写剪贴板历史；默认热键 ⌥S。
 - 启动器 / 截图（2026-09-24）：启动器首版做 App、书签、直达、网页搜索、最近使用、内置动作、计算器、cb，文件搜索与 kill 放 M11；标注首版做矩形、箭头、文字、马赛克；附加功能只做取色（长截图、延时、美化 / 水印不做；长截图 2026-09-25 改为做，见 §10 D1）；做钉图，不做截图历史和钉图历史。

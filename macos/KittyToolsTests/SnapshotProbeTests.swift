@@ -144,6 +144,8 @@ struct SnapshotProbeTests {
       ("multi", { m in m.multiSelection = Set(m.visibleItems.prefix(3).map(\.id)) }),
       ("snippets", { m in m.scope = .snippets }),
       ("dialog", { m in m.dialog = .note(link.id) }),
+      // ⌘P / 底栏图钉：底栏就地提示（体检 A9）
+      ("toast-pinned", { m in m.toast = .message("已固定") }),
       ("empty-search", { m in m.query = "zzzz" }),
       (
         "snippets-empty-search",
@@ -172,6 +174,16 @@ struct SnapshotProbeTests {
       size: NSSize(width: ClipboardPanelView.width, height: ClipboardPanelView.height(for: model)),
       dark: false, to: "\(out)/clip-no-lens.png")
     UserDefaults.standard.removeObject(forKey: Prefs.clipboardShowPreview)
+    // 增强对比度（体检 B53）：发丝线 1 pt（分组标题线、底栏顶线、竖线、透镜里的描边），深浅色各一张
+    for dark in [false, true] {
+      model.reset()
+      pick(model) { $0.kind == .image }
+      try snapshot(
+        ClipboardPanelView(model: model).environment(\._colorSchemeContrast, .increased),
+        size: NSSize(
+          width: ClipboardPanelView.width, height: ClipboardPanelView.height(for: model)),
+        dark: dark, to: "\(out)/clip-contrast\(dark ? "-dark" : "").png")
+    }
     // 换了强调色（设置 › 通用）：黄色最难（填充上的符号换深色、文字压深），石墨色看中性；
     // 用的是 Debug 版的真实偏好，试完恢复原样（没设过就删掉）
     let bundleID = Bundle.main.bundleIdentifier ?? ""
@@ -200,6 +212,23 @@ struct SnapshotProbeTests {
         try snapshot(
           GeneralTab().defaultAppStorage(looks), size: NSSize(width: 640, height: 560), dark: dark,
           to: "\(out)/settings-general-accent-\(choice.rawValue)\(dark ? "-dark" : "").png")
+        // 主按钮的文字色（体检 B54）：关于页「更新并重新打开」、引导「开始使用」、速查表「完成」在亮强调色上要看得清
+        let suffix = "\(choice.rawValue)\(dark ? "-dark" : "")"
+        let available = Updater(
+          state: .available(
+            .init(
+              version: "0.2.0", archive: URL(string: "https://example.com/Kitty.zip")!,
+              page: Updater.releasesPage)))
+        try snapshot(
+          AboutTab(updater: available), size: NSSize(width: 590, height: 330), dark: dark,
+          to: "\(out)/about-update-accent-\(suffix).png")
+        try snapshot(
+          OnboardingView(center: HotKeyCenter(), firstRun: true, screen: .tryIt),
+          size: NSSize(width: 580, height: 480), dark: dark,
+          to: "\(out)/onboarding-try-accent-\(suffix).png")
+        try snapshot(
+          ShortcutsSheet(), size: NSSize(width: 560, height: 400), dark: dark,
+          to: "\(out)/shortcuts-accent-\(suffix).png")
       }
     }
     Accent.shared.select(AccentChoice(rawValue: savedAccent ?? "") ?? .system)
@@ -346,17 +375,27 @@ struct SnapshotProbeTests {
     let sheetHeight = ShortcutsButton.sheetHeight(available: 600 - 52)
     for (name, height, dark) in [
       ("shortcuts", sheetHeight, false), ("shortcuts-dark", sheetHeight, true),
-      ("shortcuts-full", 3700, false),
+      ("shortcuts-full", 3800, false),
     ] {
       try snapshot(
         ShortcutsSheet(), size: NSSize(width: 560, height: height), dark: dark,
         to: "\(out)/\(name).png")
     }
+    // 增强对比度（体检 B53）：速查表、通用页的发丝线 1 pt
+    try snapshot(
+      ShortcutsSheet().environment(\._colorSchemeContrast, .increased),
+      size: NSSize(width: 560, height: sheetHeight), dark: false,
+      to: "\(out)/shortcuts-contrast.png")
+    try snapshot(
+      GeneralTab().environment(\._colorSchemeContrast, .increased),
+      size: NSSize(width: 640, height: 560), dark: true,
+      to: "\(out)/settings-general-contrast-dark.png")
     // 欢迎引导（N14）：第一屏、第二屏「按一下试试」（两行已按过），各出深色
     for (name, screen) in [("welcome", OnboardingView.Screen.welcome), ("try", .tryIt)] {
       for dark in [false, true] {
         try snapshot(
-          OnboardingView(center: hotKeys, screen: screen, tried: [.clipboard, .screenshot]),
+          OnboardingView(
+            center: hotKeys, firstRun: true, screen: screen, tried: [.clipboard, .screenshot]),
           size: NSSize(width: 580, height: 480), dark: dark,
           to: "\(out)/onboarding-\(name)\(dark ? "-dark" : "").png")
       }
@@ -533,6 +572,22 @@ struct SnapshotProbeTests {
           size: NSSize(width: 420, height: 560), dark: dark,
           to: "\(out)/\(name)\(dark ? "-dark" : "").png")
       }
+    }
+    // 卡片表面（体检 B17）：降低透明度时卡片底 windowBackground 0.9、错误卡仍是红底；增强对比度时描边 1 pt
+    let cardsState = try #require(states.first { $0.0 == "translate-cards" }).1
+    for dark in [false, true] {
+      coordinator.beginInput()
+      cardsState(coordinator)
+      try snapshot(
+        TranslatePanelView(coordinator: coordinator, speaker: speaker)
+          .environment(\._accessibilityReduceTransparency, true),
+        size: NSSize(width: 420, height: 560), dark: dark,
+        to: "\(out)/translate-cards-reduce-transparency\(dark ? "-dark" : "").png")
+      try snapshot(
+        TranslatePanelView(coordinator: coordinator, speaker: speaker)
+          .environment(\._colorSchemeContrast, .increased),
+        size: NSSize(width: 420, height: 560), dark: dark,
+        to: "\(out)/translate-cards-contrast\(dark ? "-dark" : "").png")
     }
     // 长译文：每张卡正文最多 8 行、在卡片里滚动（完成的从开头看、底部渐隐；生成中的跟着末尾）；
     // 字号 140% 再拍一张，看上限跟着字号走。浮窗高度按内容估的（屏外拿不到 resize 回调）

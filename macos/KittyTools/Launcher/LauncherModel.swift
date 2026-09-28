@@ -69,6 +69,8 @@ import Observation
   // 以下由 AppDelegate 接上
   @ObservationIgnored var hidePanel: () -> Void = {}
   @ObservationIgnored var runAction: (String) -> Void = { _ in }
+  /// ⌘,：直达 设置 › 启动器（启动器已收起）。搜「设置」那个内置动作仍走 runAction，打开上次看的页
+  @ObservationIgnored var openSettings: () -> Void = {}
   /// 面板按内容伸缩高度（顶边不动）
   @ObservationIgnored var resize: (CGFloat) -> Void = { _ in }
   /// cb 那一行 ↩（启动器已收起）：呼出剪贴板面板，把关键词填进它的搜索框
@@ -333,7 +335,7 @@ import Observation
     }
     switch item.kind {
     case .calculation:
-      paste { Paster.write(string: item.payload ?? "") }
+      paste { Paster.write(string: item.payload ?? "", record: true) }
     case .clip:
       hidePanel()
       openClipboard(item.target)
@@ -693,7 +695,7 @@ import Observation
       copy(item)
     case kVK_ANSI_Comma:
       hidePanel()
-      runAction("settings")
+      openSettings()
     default:
       guard let digit = Self.digitKeys.firstIndex(of: Int(event.keyCode)) else { return false }
       if digit < results.count { execute(results[digit]) }
@@ -721,10 +723,11 @@ import Observation
     }
   }
 
-  /// ⌘C：复制路径 / 网址 / 计算结果（⌘↩ 的计算结果也走这里）。面板同时收起，用刘海说复制了什么
+  /// ⌘C：复制路径 / 网址 / 计算结果（⌘↩ 的计算结果也走这里）。面板同时收起，用刘海说复制了什么；
+  /// 这些是本 App 给出的新文字，同时记进剪贴板历史（mac-native §5）
   private func copy(_ item: LauncherItem) {
     let text = item.payload ?? item.target
-    Paster.write(string: text)
+    Paster.write(string: text, record: true)
     hidePanel()
     guard let title = copyTitle(for: item) else { return }
     let isPath = item.kind == .app || item.kind == .path

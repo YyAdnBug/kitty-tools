@@ -15,7 +15,8 @@ import AppKit
 import SwiftUI
 
 enum SettingsPage: String, CaseIterable, Identifiable {
-  case general, clipboard, launcher, screenshot, translate, hotkeys, about
+  // 翻译在截图前面：和菜单栏、快捷键页、引导、速查表同序（记住的上次页存的是 rawValue，调顺序不受影响）
+  case general, clipboard, launcher, translate, screenshot, hotkeys, about
 
   var id: String { rawValue }
 
@@ -59,7 +60,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   /// 页头下面的一句说明
   var summary: String {
     switch self {
-    case .general: "外观、开机自启和权限"
+    case .general: "外观、登录时打开和权限"
     case .clipboard: "历史上限、面板、内容格式和隐私"
     case .launcher: "搜索 App、文件、书签、网页搜索与快捷链接"
     case .screenshot: "快速保存、快门声和识字"
@@ -80,9 +81,9 @@ enum SettingsPage: String, CaseIterable, Identifiable {
       ]
     case .clipboard:
       [
-        "历史", "条数", "天数", "保留", "图片", "占用", "预览", "链接", "网页", "点外", "关闭", "格式", "RTF",
+        "历史", "条数", "天数", "保留", "图片", "占用", "预览", "链接", "网页", "格式", "RTF",
         "HTML", "识别", "文字", "OCR", "隐私", "密钥", "银行卡", "清空", "退出", "锁屏", "排除", "App",
-        "收藏", "片段", "分组", "密码", "敏感", "网站", "标题", "透镜", "固定", "图钉",
+        "收藏", "片段", "分组", "密码", "敏感", "网站", "标题", "透镜",
       ]
     case .launcher:
       [
