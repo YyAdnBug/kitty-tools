@@ -26,11 +26,14 @@ nonisolated enum Volcengine {
         urlRequest.setValue(value, forHTTPHeaderField: name)
       }
       let object = try await HTTP.send(urlRequest)
-      if let message =
-        ((object["ResponseMetadata"] as? [String: Any])?["Error"] as? [String: Any])?[
-          "Message"] as? String
+      if let error = (object["ResponseMetadata"] as? [String: Any])?["Error"] as? [String: Any],
+        let message = error["Message"] as? String
       {
-        throw TranslateError(message: "火山翻译错误：\(message)")
+        // 签名、Access Key 类是配置错误（橙色、去设置）
+        let code = error["Code"] as? String ?? ""
+        let isKey = ["Signature", "AccessKey", "Auth"].contains { code.contains($0) }
+        throw TranslateError(
+          message: "火山翻译错误：\(message.prefix(160))", kind: isKey ? .config : .service)
       }
       let list = object["TranslationList"] as? [[String: Any]]
       return list?.first?["Translation"] as? String ?? ""
@@ -109,7 +112,10 @@ nonisolated enum Tencent {
       let object = try await HTTP.send(urlRequest)
       let response = object["Response"] as? [String: Any] ?? [:]
       if let error = response["Error"] as? [String: Any] {
-        throw TranslateError(message: "腾讯翻译错误：\(error["Message"] as? String ?? "未知")")
+        // AuthFailure.* 是 SecretId / SecretKey 的问题：配置错误
+        throw TranslateError(
+          message: "腾讯翻译错误：\((error["Message"] as? String ?? "未知").prefix(160))",
+          kind: (error["Code"] as? String ?? "").hasPrefix("AuthFailure") ? .config : .service)
       }
       return response["TargetText"] as? String ?? ""
     }

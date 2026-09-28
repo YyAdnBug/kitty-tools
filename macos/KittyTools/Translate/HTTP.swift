@@ -3,14 +3,36 @@
 
 import Foundation
 
-nonisolated struct TranslateError: LocalizedError, Sendable {
+nonisolated struct TranslateError: LocalizedError, Sendable, Equatable {
+  /// 错误卡按它分（体检 C5，mac-whisker §3 语义色）：配置 / 密钥问题橙色、只给「打开设置」（直达这个服务的详情页）；
+  /// 网络 / 服务错误红色、给「重试」（自建 AI 服务另给「打开设置」：地址可能填错）
+  enum Kind: Sendable {
+    /// 缺密钥、密钥不对、地址或模型没填 / 不存在（401 / 403 / 404、百度 52003 等）：重试没用，要去改设置
+    case config
+    /// 连不上、超时、断网（URLError）
+    case network
+    /// 服务端出错、太频繁、额度用完、空结果、截断、中断
+    case service
+  }
+
   let message: String
   /// HTTP 状态码（400 / 422 时调用方会降级重试）
   var status: Int?
+  var kind = Kind.service
 
   var errorDescription: String? { message }
 
   static let emptyResult = TranslateError(message: "服务没有返回译文（输出额度可能被思考过程占满，可换非推理模型）")
+  /// 流正常结束但服务说输出到上限了（OpenAI 兼容 / 智谱 finish_reason = length，Anthropic stop_reason = max_tokens）：
+  /// 已出来的半截照常显示，但不算完成（不写历史、不自动复制、不给替换原文；体检 B19）
+  static let truncated = TranslateError(message: "只翻了前一部分：超出这个服务单次输出上限")
+  /// 浮窗收起、换了新会话时没出完的卡片（点重试、或再按输入翻译热键重新打开时自动重跑）
+  static let interrupted = TranslateError(message: "已中断，点重试重新翻译")
+
+  /// 配置类错误（缺密钥、地址或模型没填）
+  static func config(_ message: String) -> TranslateError {
+    TranslateError(message: message, kind: .config)
+  }
 }
 
 nonisolated enum HTTP {
@@ -79,7 +101,8 @@ nonisolated enum HTTP {
     let serverMessage = message(in: object)
     guard (200..<300).contains(status), serverMessage == nil else {
       throw TranslateError(
-        message: describe(status: status, serverMessage: serverMessage), status: status)
+        message: describe(status: status, serverMessage: serverMessage), status: status,
+        kind: [401, 403, 404].contains(status) ? .config : .service)
     }
   }
 
@@ -121,7 +144,7 @@ nonisolated enum HTTP {
       case .secureConnectionFailed, .serverCertificateUntrusted: "HTTPS 连接失败（证书问题）"
       default: "网络错误（\(urlError.code.rawValue)）"
       }
-    return TranslateError(message: message)
+    return TranslateError(message: message, kind: .network)
   }
 
   /// 本机或局域网地址：回环、私网 / 链路本地 IP、localhost、*.local、不带点的主机名

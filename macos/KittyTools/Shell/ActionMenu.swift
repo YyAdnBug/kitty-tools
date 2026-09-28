@@ -1,4 +1,5 @@
-// 面板里的动作菜单（mac-whisker §6）：剪贴板 ⌘K、剪贴板 Tab 筛选面板、剪贴板多选底栏「收藏夹…」、启动器 ⌘K 共用。
+// 面板里的动作菜单（mac-whisker §6）：剪贴板 ⌘K、剪贴板 Tab 筛选面板、剪贴板多选底栏「收藏夹…」、启动器 ⌘K、
+// 翻译历史 ⌘K 共用；同一份条目当右键菜单用见 ActionContextMenu。
 // 画在面板里而不是 NSMenu，焦点一直留在搜索框：搜索框里的字由调用方拿来过滤 items（共用 filter：标题 / 说明子串，
 // 中文标题的全拼和首字母前缀），↑↓ 改 selection，↩ / 单击执行。这里只画，不存状态。
 // 宽 260、行高 28、中性高亮（不填强调色、不反白）；section 变了的两行之间一条 0.5 pt 发丝线（上下各 4 pt）；
@@ -252,5 +253,26 @@ struct ActionMenu: View {
     let value = AppCatalog.pinyin(title)
     pinyinCache[title] = value
     return value
+  }
+}
+
+/// 同一份动作条目画成右键菜单（剪贴板行、翻译历史行）：section 变了加分隔线、子列表是子菜单、删除类 destructive，
+/// 不写键位（HIG）
+struct ActionContextMenu: View {
+  /// 闭包：动作表在菜单内容真要画时才建
+  let items: () -> [ActionMenu.Item]
+
+  var body: some View {
+    let items = items()
+    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+      if index > 0, items[index - 1].section != item.section { Divider() }
+      if let submenu = item.submenu {
+        Menu(item.title) { ActionContextMenu { submenu } }
+      } else if let checked = item.isChecked {
+        Toggle(item.title, isOn: Binding(get: { checked }, set: { _ in item.run() }))
+      } else {
+        Button(item.title, role: item.isDestructive ? .destructive : nil, action: item.run)
+      }
+    }
   }
 }

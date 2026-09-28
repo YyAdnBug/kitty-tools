@@ -57,7 +57,13 @@ enum Prefs {
   /// 自动复制第一个服务的译文
   static let translateAutoCopy = "autoCopy"
   static let translateHistoryEnabled = "translateHistoryEnabled"
+  /// 翻译历史保留条数（收藏不算、永不淘汰），0 = 不限（体检 A18：1000 / 5000 / 不限，默认 5000）
   static let translateHistoryLimit = "translateHistoryLimit"
+  /// 「保留条数」的档位（0 = 不限）；旧档位（100–2000）在 migrate 里挪到下一档
+  static let translateHistoryLimitChoices = [1000, 5000, 0]
+  /// 翻译浮窗出现的位置（体检 A13）：mouse 跟随鼠标（默认，划词 / 截图翻译 / 复制即译 / 剪贴板「翻译」在光标右下）/
+  /// last 上次位置（用户拖到哪就在哪）。输入翻译总是上次位置
+  static let translatePanelPosition = "translatePanelPosition"
   /// 翻译浮窗字号倍数（⌘+ / ⌘- / ⌘0）
   static let translateFontScale = "translateFontScale"
   /// 折叠着的服务 id（换行分隔），跨重启记住
@@ -120,7 +126,8 @@ enum Prefs {
       translateRemoveNewlines: false,
       translateAutoCopy: false,
       translateHistoryEnabled: true,
-      translateHistoryLimit: 500,
+      translateHistoryLimit: 5000,
+      translatePanelPosition: "mouse",
       translateCopyToTranslate: false,
       translateSystemDictionary: true,
       translateWordMode: true,
@@ -133,7 +140,8 @@ enum Prefs {
 
   /// 旧偏好升级（启动时在 registerDefaults 之后跑，幂等）：
   /// 排除 App 从关键词换成 bundle ID 列表（只在新键没存过、旧键改过时跑一次，体检 A11）；
-  /// 保留天数不在新档位里的（旧的 3 / 14 天）挪到下一档，免得弹出菜单显示空白（体检 A4）
+  /// 保留天数不在新档位里的（旧的 3 / 14 天）挪到下一档，免得弹出菜单显示空白（体检 A4）；
+  /// 翻译历史保留条数同理（旧的 100–2000 挪到 1000 / 5000，体检 A18）
   static func migrate(
     _ defaults: UserDefaults = .standard, domainName: String? = Bundle.main.bundleIdentifier
   ) {
@@ -149,6 +157,11 @@ enum Prefs {
     if !clipboardRetentionChoices.contains(days) {
       defaults.set(
         clipboardRetentionChoices.first { $0 >= days } ?? 0, forKey: clipboardRetentionDays)
+    }
+    let limit = defaults.integer(forKey: translateHistoryLimit)
+    if !translateHistoryLimitChoices.contains(limit) {
+      defaults.set(
+        translateHistoryLimitChoices.first { $0 >= limit } ?? 0, forKey: translateHistoryLimit)
     }
   }
 }

@@ -20,7 +20,7 @@ alwaysApply: false
 
 ## 2. 采集（ClipboardWatcher）
 - 只能轮询 `changeCount`（0.3s）。顺序：自家写入（`Paster.ownChangeCount`）→ 隐私标记（nspasteboard.org 三种 + 1Password 7、TypeIt4Me、Keyboard Maestro、KeeWeb 等常见的，体检 B4）→ 来源 → 排除 App（按 bundle ID 精确匹配，体检 A11）→ 文件 → 文本（总是附 RTF/HTML，≤2MB；粘贴时用不用看「默认粘贴为纯文本」，体检 A5）→ PNG/TIFF。
-- 来源（体检 B6，`ClipboardWatcher.source` 纯函数）：带 `com.apple.is-remote-clipboard` 的是「其他设备」（没有 bundle ID，来源筛选里不列）；写入方打了 `org.nspasteboard.source` 就用它；都没有才用轮询时的前台 App（推测值）。
+- 来源（体检 B6，`ClipboardWatcher.source` 纯函数）：带 `com.apple.is-remote-clipboard` 的是「其他设备」（没有 bundle ID，来源筛选里不列）；写入方打了 `org.nspasteboard.source` 就用它（排除的 App 照样过滤）；在本 App 自己的窗口里复制的没有来源、不触发复制即译（体检 B20）——浮层不激活本 App、前台还是别的 App，所以**在复制那一刻记**：浮层里的 ⌘C / ⌘X（翻译原文 / 译文、剪贴板备注、⌘Y 大卡、截图里输入文字）走 `OverlayPanel.sendEditAction`，剪贴板变了就记下 `Paster.panelCopyChangeCount`，轮询时对上它（或本 App 在前台）才算；**不在轮询时看 key 窗口猜**（复制后 0.4 s 内按 Esc 收起、或在别处复制后马上呼出浮层都会判反）。右键菜单里的「拷贝」不经这里，照外部复制算；都没有才用轮询时的前台 App（推测值）。
 - 排除 App 存 `clipboardExcludedBundleIDs`（默认 1Password 8 / 7、Bitwarden、KeePassXC、钥匙串访问、密码）；旧版关键词列表（`clipboardExcludedApps`）在 `Prefs.migrate` 里迁一次：含「.」的留下，名称关键词丢掉，并上默认列表。设置页是 App 列表（图标 + 名字，「+」从正在运行的 App 或「应用程序」里选）。
 - 菜单栏「暂停记录剪贴板」（D4）：`ClipboardWatcher.isUserPaused`，和划词用的 `pause()` / `resume()` 分开（取词还原后不能把用户的暂停也解除）；暂停时 changeCount 照走但不记、不触发复制即译，本 App 自己记的文字和截图也不记，面板里合并粘贴 / 一起粘贴 / ⌘C 合成的新条目也不记（`ClipboardPanelModel.remember`）；不存盘，重启自动恢复。
 - 启动时直接对齐当前 changeCount，不记启动前的内容。

@@ -1,6 +1,7 @@
 // 设置 › 翻译：语言（第一 / 第二语言；源、目标只在浮窗顶部切换）、译文字号（真卡片实时预览，和浮窗 ⌘± 是同一个值）、
-// 行为（去换行、复制即译、自动复制、历史与导出），翻译服务列表（N12：行 = 图标 / 名称 / 状态 / 开关，拖动排序，
-// 「+ −」增删自建 AI 实例，单击一行推进到 TranslateServiceDetail 改选项、密钥、测试连接）。
+// 行为（浮窗位置、段内换行、复制即译、自动复制、历史保留条数、导出与清空），翻译服务列表（N12：行 = 图标 / 名称 /
+// 状态 / 开关，拖动排序；「+」菜单加回没加的内置服务或新建 AI 服务（厂商预设，D15），「−」/ ⌫ 删：内置的直接删、
+// 密钥留着，AI 服务先确认、连密钥一起删（体检 B21）；单击一行推进到 TranslateServiceDetail 改选项、密钥、测试连接）。
 // 页头画在自己的 NavigationStack 里，推进时一起换掉。浮窗按键不写在这里（N11，进快捷键速查表）。
 // 控件分工（Whisker §6）：2–3 项分段、3–5 项单选、> 5 项弹出菜单。
 
@@ -24,7 +25,8 @@ struct TranslateTab: View {
   @AppStorage(Prefs.translateCopyToTranslate) private var copyToTranslate = false
   @AppStorage(Prefs.translateAutoCopy) private var autoCopy = false
   @AppStorage(Prefs.translateHistoryEnabled) private var historyEnabled = true
-  @AppStorage(Prefs.translateHistoryLimit) private var historyLimit = 500
+  @AppStorage(Prefs.translateHistoryLimit) private var historyLimit = 5000
+  @AppStorage(Prefs.translatePanelPosition) private var panelPosition = "mouse"
   /// 推进的详情页在 navigation.path（主菜单「返回」也要读写它）
   @Environment(SettingsNavigation.self) private var navigation
   /// 列表里用键盘选中的服务（「−」和 ⌫ 删它；鼠标单击直接推进，不留选中）
@@ -32,6 +34,9 @@ struct TranslateTab: View {
   /// 等确认删除的自建 AI 服务
   @State private var removing: String?
   @State private var keysRevision = 0
+  /// 刚从「+」新建的 AI 服务：推进的详情页把光标放进 API Key
+  @State private var justAdded: String?
+  @State private var confirmsClear = false
 
   var body: some View {
     NavigationStack(path: Bindable(navigation).path) {
@@ -41,7 +46,7 @@ struct TranslateTab: View {
       }
       .navigationTitle(SettingsPage.translate.title)
       .navigationDestination(for: String.self) { id in
-        TranslateServiceDetail(store: services, id: id)
+        TranslateServiceDetail(store: services, id: id, focusesKey: id == justAdded)
       }
     }
     .onChange(of: navigation.path) { keysRevision += 1 }
@@ -59,6 +64,11 @@ struct TranslateTab: View {
       }
     } message: {
       Text("会同时删除它保存在钥匙串里的密钥")
+    }
+    .confirmationDialog("清空翻译历史？", isPresented: $confirmsClear) {
+      Button("清空", role: .destructive) { HistoryMenu.clear(history, island: island) }
+    } message: {
+      Text("收藏的记录会保留")
     }
   }
 
@@ -120,38 +130,51 @@ struct TranslateTab: View {
         }
       }
       Section {
-        Toggle("翻译前把换行合成一段（适合 PDF 复制的文字）", isOn: $removeNewlines)
+        Picker(selection: $panelPosition) {
+          Text("跟随鼠标").tag("mouse")
+          Text("上次位置").tag("last")
+        } label: {
+          Text("浮窗位置")
+          Text("跟随鼠标：划词、截图翻译、复制即译时出现在光标旁边；输入翻译总在上次拖到的位置")
+        }
+        .pickerStyle(.segmented)
+        Toggle("翻译前把同一段里的换行接起来（适合 PDF 复制的文字）", isOn: $removeNewlines)
         Toggle(isOn: $copyToTranslate) {
           Text("复制即译")
-          Text("在别的 App 里复制文字，翻译浮窗自动弹出来翻译（不抢键盘）")
+          Text("在别的 App 里复制外语文字，浮窗自动弹出翻译（网址、路径、数字和第一语言的文字不翻）")
         }
         Toggle("自动复制第一个服务的译文", isOn: $autoCopy)
-          .help("「复制即译」开着时不会自动复制，免得自己触发自己")
+          .help("复制即译弹出的翻译不会自动复制，免得覆盖你刚复制的原文")
         Toggle("记录翻译历史", isOn: $historyEnabled)
-        Picker("历史最多保留（条）", selection: $historyLimit) {
-          ForEach([100, 200, 500, 1000, 2000], id: \.self) { Text(verbatim: "\($0)").tag($0) }
+        Picker("历史最多保留", selection: $historyLimit) {
+          Text("1000 条").tag(1000)
+          Text("5000 条").tag(5000)
+          Text("不限").tag(0)
         }
-        .pickerStyle(.radioGroup)
-        .horizontalRadioGroupLayout()
+        .pickerStyle(.segmented)
         .disabled(!historyEnabled)
-        LabeledContent("导出") {
-          Menu("导出…") {
-            Section("全部历史") {
-              Button("CSV（表格）…") { export(favoritesOnly: false, anki: false) }
-              Button("TSV（Anki 卡片）…") { export(favoritesOnly: false, anki: true) }
+        LabeledContent("导出和清空") {
+          HStack(spacing: 8) {
+            Menu("导出…") {
+              Section("全部历史") {
+                Button("CSV（表格）…") { export(favoritesOnly: false, anki: false) }
+                Button("TSV（Anki 卡片）…") { export(favoritesOnly: false, anki: true) }
+              }
+              Section("只导收藏（生词本）") {
+                Button("CSV（表格）…") { export(favoritesOnly: true, anki: false) }
+                Button("TSV（Anki 卡片）…") { export(favoritesOnly: true, anki: true) }
+              }
             }
-            Section("只导收藏（生词本）") {
-              Button("CSV（表格）…") { export(favoritesOnly: true, anki: false) }
-              Button("TSV（Anki 卡片）…") { export(favoritesOnly: true, anki: true) }
-            }
+            .fixedSize()
+            // 关着「记录翻译历史」也能清（旧记录还在），和浮窗「⋯」菜单同一个确认框、同一句结果
+            Button("清空翻译历史…", role: .destructive) { confirmsClear = true }
           }
-          .fixedSize()
         }
       } header: {
         Text("行为")
       } footer: {
         HStack(alignment: .firstTextBaseline) {
-          Text("划词来的翻译可以「替换原文」，浮窗里的按键见快捷键速查表。")
+          Text("收藏的记录不算在保留条数里、永不清理。划词来的翻译可以「替换原文」，浮窗里的按键见快捷键速查表。")
             .font(.caption)
             .foregroundStyle(.secondary)
           Spacer(minLength: 8)
@@ -161,22 +184,15 @@ struct TranslateTab: View {
       Section {
         serviceList
         ListEditBar(
-          removeTitle: "删除所选的 AI 服务", canRemove: selection.map(isRemovable) ?? false,
-          remove: { removing = selection }
+          removeTitle: "删除所选的服务", canRemove: selection != nil, remove: removeSelected
         ) {
-          Button("添加 AI 服务", systemImage: "plus") {
-            let service = TranslateService.newAI()
-            services.services.append(service)
-            open(service.id)
-          }
-          .labelStyle(.iconOnly)
-          .help("添加 AI 服务（OpenAI 兼容 / Azure / Anthropic）")
+          addMenu
         }
       } header: {
         Text("翻译服务")
       } footer: {
         OrderedList.footnote(
-          "拖动调整顺序，结果按这个顺序显示，第一个服务的结果写入历史、用于自动复制；点一行进入设置。")
+          "拖动调整顺序，结果按这个顺序显示，第一个服务的结果写入历史、用于自动复制；点一行进入设置。删掉的内置服务可以从「+」加回来，密钥还在。")
       }
     }
     .formStyle(.grouped)
@@ -189,29 +205,79 @@ struct TranslateTab: View {
     return a.isSameLanguage(as: b)
   }
 
-  /// 导出翻译历史 / 收藏：CSV 给表格（带 BOM，Excel 才认 UTF-8），TSV 给 Anki（正面原文、背面译文）。
-  /// 结果（含没东西可导、写失败）用刘海说
+  /// 导出翻译历史 / 收藏（和浮窗「⋯」菜单、历史 ⌘K 同一个 HistoryMenu.export）
   private func export(favoritesOnly: Bool, anki: Bool) {
-    let entries = history.search("", favoritesOnly: favoritesOnly, limit: 0)
-    guard !entries.isEmpty else {
-      island?.show(favoritesOnly ? "还没有收藏" : "还没有翻译历史", detail: "没有可导出的记录", tone: .warning)
-      return
-    }
-    let island = island
-    let panel = NSSavePanel()
-    panel.allowedContentTypes = [anki ? .tabSeparatedText : .commaSeparatedText]
-    panel.nameFieldStringValue = (favoritesOnly ? "翻译收藏" : "翻译历史") + (anki ? ".tsv" : ".csv")
-    panel.begin { response in
-      guard response == .OK, let url = panel.url else { return }
-      let text = anki ? HistoryStore.tsv(entries) : "\u{FEFF}" + HistoryStore.csv(entries)
-      do {
-        try text.write(to: url, atomically: true, encoding: .utf8)
-        island?.show(
-          "已导出 \(entries.count) 条", detail: url.lastPathComponent, symbol: "square.and.arrow.up")
-      } catch {
-        island?.show("导出失败", detail: error.localizedDescription, tone: .error)
+    HistoryMenu.export(history, favoritesOnly: favoritesOnly, anki: anki, island: island)
+  }
+
+  /// 「+」（体检 B21 D15）：还没加的内置服务（18 pt 服务图标）｜「AI 服务」子菜单（厂商预设：名称、协议、地址填好）
+  /// + 自定义 / Azure。选了就加到列表末尾、推进详情页（AI 服务光标落在 API Key）
+  private var addMenu: some View {
+    Menu {
+      ForEach(services.missingBuiltins, id: \.self) { kind in
+        let service = TranslateService.builtin(kind)
+        Button {
+          add(service)
+        } label: {
+          Label {
+            Text(service.name)
+          } icon: {
+            ServiceTile.menuIcon(service)
+          }
+        }
       }
+      if !services.missingBuiltins.isEmpty { Divider() }
+      Menu("AI 服务") {
+        ForEach(TranslateService.aiPresets) { preset in
+          Button {
+            add(preset.make(), focusesKey: true)
+          } label: {
+            Label {
+              Text(preset.name)
+            } icon: {
+              ServiceTile.menuIcon(preset.make())
+            }
+          }
+        }
+        Divider()
+        Button("自定义（OpenAI 兼容）…") { add(.newAI(), focusesKey: true) }
+        Button("Azure OpenAI…") {
+          var service = TranslateService.newAI()
+          service.name = "Azure OpenAI"
+          service.aiProtocol = .azure
+          add(service, focusesKey: true)
+        }
+      }
+    } label: {
+      Image(systemName: "plus")
     }
+    .menuStyle(.borderlessButton)
+    .menuIndicator(.hidden)
+    .accessibilityLabel("添加翻译服务")
+    .help("添加翻译服务")
+  }
+
+  /// 加一个服务：内置的直接启用（加回来就是要用；密钥是删之前留下的）、AI 服务等测试连接成功再自动启用；推进详情页
+  private func add(_ service: TranslateService, focusesKey: Bool = false) {
+    var service = service
+    if service.kind != .ai { service.isEnabled = true }
+    services.services.append(service)
+    justAdded = focusesKey ? service.id : nil
+    open(service.id)
+  }
+
+  /// 「−」、⌫、右键「删除」：内置的直接删（「+」里能加回来，密钥留着），AI 服务先确认（连密钥一起删）
+  private func remove(_ id: String) {
+    if isRemovable(id) {
+      removing = id
+    } else {
+      services.remove(id)
+      if selection == id { selection = nil }
+    }
+  }
+
+  private func removeSelected() {
+    if let selection { remove(selection) }
   }
 
   // MARK: 服务列表（N12）
@@ -238,15 +304,13 @@ struct TranslateTab: View {
         Divider()
         Button("上移") { move(id, by: -1) }.disabled(id == services.services.first?.id)
         Button("下移") { move(id, by: 1) }.disabled(id == services.services.last?.id)
-        if isRemovable(id) {
-          Divider()
-          Button("删除…", role: .destructive) { removing = id }
-        }
+        Divider()
+        Button(isRemovable(id) ? "删除…" : "删除", role: .destructive) { remove(id) }
       }
     } primaryAction: { ids in
       if let id = ids.first { open(id) }
     }
-    .onDeleteCommand { if let selection, isRemovable(selection) { removing = selection } }
+    .onDeleteCommand(perform: removeSelected)
     // 从详情页回来时重建一次：行的状态读钥匙串，改了密钥不会让列表自己重画
     .id(keysRevision)
   }
@@ -266,7 +330,7 @@ struct TranslateTab: View {
     services.services.swapAt(index, index + offset)
   }
 
-  /// 只有自建的 AI 服务能删；内置服务只能关掉
+  /// 删之前要确认的：自建的 AI 服务（连钥匙串里的密钥一起删）；内置服务直接删
   private func isRemovable(_ id: String) -> Bool {
     services.services.first { $0.id == id }?.kind == .ai
   }

@@ -63,12 +63,70 @@ struct ProviderSigningTests {
     #expect(body == "q=a%26b%3Dc%2Bd%20%E4%B8%AD")
   }
 
-  @Test func storeAlwaysHasEveryBuiltin() {
-    let services = TranslateServiceStore.withBuiltins([TranslateService.newAI()])
-    #expect(services.count == 9)
+  /// 服务列表只放加进来的（体检 B21）：从没存过时只有智谱（启用）；存过的原样用、删掉的内置服务不补回来，
+  /// 「+」里列出没加的内置服务；删内置服务不碰钥匙串（加回来密钥还在）
+  @Test func storeKeepsOnlyAddedServices() {
+    #expect(TranslateServiceStore.defaults.map(\.id) == ["zhipu"])
+    #expect(TranslateServiceStore.defaults.map(\.isEnabled) == [true])
+    let ai = TranslateService.newAI()
+    let store = TranslateServiceStore(services: [.builtin(.baidu), ai])
+    #expect(store.services.map(\.id) == ["baidu", ai.id])  // 不再自动补齐 8 个内置
+    #expect(store.missingBuiltins.count == 7 && !store.missingBuiltins.contains(.baidu))
+    #expect(!store.missingBuiltins.contains(.ai))
+    // 传进来的列表怎么改都不写用户的偏好（详情页的输入框会把绑定写一遍，曾经这样盖掉过 Dev 版的真实列表）
+    let saved = UserDefaults.standard.data(forKey: "translateServices")
+    store.services.removeAll()
+    store.remove(ai.id)
+    #expect(UserDefaults.standard.data(forKey: "translateServices") == saved)
+  }
+
+  /// 智谱两档免费纯文本模型（体检 A17）：旧的识图模型 glm-4.6v-flash 和不认识的值回落第一档
+  @Test func zhipuModelsAreFreeTextModels() {
+    #expect(TranslateService.zhipuModels == ["glm-4-flash", "glm-4.7-flash"])
+    #expect(TranslateService.zhipuModel("glm-4.7-flash") == "glm-4.7-flash")
+    #expect(TranslateService.zhipuModel("glm-4.6v-flash") == "glm-4-flash")
+    #expect(TranslateService.zhipuModel(nil) == "glm-4-flash")
+  }
+
+  /// 「+ › AI 服务」的厂商预设（D15）：地址经 AIService.endpoint 补全成各家的对话接口，模型留空、默认关
+  @Test func aiPresetsResolveEndpoints() throws {
+    var endpoints: [String] = []
+    for preset in TranslateService.aiPresets {
+      let service = preset.make()
+      #expect(service.kind == .ai && service.name == preset.name && !service.isEnabled)
+      #expect(service.model == "")
+      let url = AIService.endpoint(service.baseURL ?? "", service.aiProtocol ?? .openai)
+      endpoints.append(try #require(url).absoluteString)
+    }
     #expect(
-      services.filter { $0.kind != .ai }.map(\.id)
-        == TranslateService.Kind.allCases.filter { $0 != .ai }.map(\.rawValue))
-    #expect(services.filter(\.isEnabled).map(\.id) == ["zhipu"])  // 新装默认只开智谱
+      endpoints == [
+        "https://api.openai.com/v1/chat/completions",
+        "https://api.deepseek.com/v1/chat/completions",
+        "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+        "https://api.moonshot.cn/v1/chat/completions",
+        "https://api.siliconflow.cn/v1/chat/completions",
+        "https://openrouter.ai/api/v1/chat/completions",
+        "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+        "https://api.anthropic.com/v1/messages", "http://127.0.0.1:11434/v1/chat/completions",
+      ])
+    #expect(Set(TranslateService.aiPresets.map(\.id)).count == TranslateService.aiPresets.count)
+  }
+
+  /// 百度 / 有道的错误码译成中文（体检 B24）；密钥类是配置错误（橙色、去设置）
+  @Test func providerErrorCodesAreReadable() {
+    #expect(Baidu.error(code: "52003") == .config("App ID 或密钥不对"))
+    #expect(
+      Baidu.error(code: "54001").kind == .config && Baidu.error(code: "90107").kind == .config)
+    #expect(Baidu.error(code: "54003").message == "请求太频繁，稍后再试")
+    #expect(Baidu.error(code: "54003").kind == .service)
+    #expect(Baidu.error(code: "58002").kind == .config)
+    #expect(Baidu.error(code: "12345").message == "百度翻译出错（错误码 12345）")
+    #expect(Youdao.error(code: "108") == .config("应用 ID 或应用密钥不对"))
+    #expect(Youdao.error(code: "202").kind == .config && Youdao.error(code: "101").kind == .config)
+    #expect(Youdao.error(code: "401").message == "有道翻译账户已欠费")
+    #expect(Youdao.error(code: "999").message == "有道翻译出错（错误码 999）")
+    // 缺密钥、HTTP 401 / 404 也是配置类；网络错误、5xx 不是
+    #expect(TranslateError.config("x").kind == .config)
+    #expect((HTTP.userFacing(URLError(.timedOut)) as? TranslateError)?.kind == .network)
   }
 }

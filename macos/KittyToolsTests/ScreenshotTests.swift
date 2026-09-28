@@ -332,7 +332,55 @@ struct ScreenshotTests {
     #expect(OCR.joiningLines("an exam-\nple") == "an example")
     #expect(OCR.joiningLines("中文\nEnglish") == "中文English")
     #expect(OCR.joiningLines("한국어\n텍스트") == "한국어 텍스트")
-    #expect(OCR.joiningLines("第一行\r\n  second line \n\n第三行") == "第一行second line第三行")
+    // 空行是段落分隔（体检 A32）：段内接起来，段间保留（翻译送出时是一个空行）
+    #expect(OCR.joiningLines("第一行\r\n  second line \n\n第三行") == "第一行second line\n第三行")
+    #expect(
+      OCR.joiningLines("Hello\nworld\n\nfoo\nbar", paragraphSeparator: "\n\n")
+        == "Hello world\n\nfoo bar")
+    // 中文三行直接连、不插空格；中英混排；连字符后是大写的复合词留着连字符、不加空格
+    #expect(OCR.joiningLines("提供了\n声明 App\n界面") == "提供了声明 App界面")
+    #expect(OCR.joiningLines("State-\nOf-the-art") == "State-Of-the-art")
+    #expect(OCR.joiningLines("price -\nfive") == "price - five")  // 前面是空格的是破折号
+  }
+
+  /// 按行框切段（体检 A32）：间距大于 1.2 倍中位行高、或上一行是句末短行时断段；往回跳（换栏）也断；
+  /// 段内按 joinLine 接，识字段间 \n、截图翻译段间 \n\n
+  @Test func paragraphsFromLineBoxes() {
+    func line(_ text: String, top: CGFloat, width: CGFloat = 0.8, x: CGFloat = 0.1) -> OCR.Line {
+      OCR.Line(text: text, box: CGRect(x: x, y: top - 0.05, width: width, height: 0.05))
+    }
+    // 两段英文：行距 0.02，段间空一行（0.08 > 1.2 × 0.05）
+    let twoParagraphs = [
+      line("The quick brown fox", top: 0.9), line("jumps over the dog", top: 0.83),
+      line("A second paragraph", top: 0.68), line("starts here", top: 0.61),
+    ]
+    #expect(
+      OCR.paragraphs(twoParagraphs) == [
+        ["The quick brown fox", "jumps over the dog"], ["A second paragraph", "starts here"],
+      ])
+    #expect(
+      OCR.text(twoParagraphs, joined: true, separator: "\n\n")
+        == "The quick brown fox jumps over the dog\n\nA second paragraph starts here")
+    #expect(OCR.text(twoParagraphs, joined: false).split(separator: "\n").count == 4)
+    // 单段中文、一行一行挨着：接成一行、不插空格
+    let chinese = [line("敏捷的棕色狐狸", top: 0.9), line("跳过了懒狗", top: 0.83)]
+    #expect(OCR.text(chinese, joined: true) == "敏捷的棕色狐狸跳过了懒狗")
+    // 行距一样，但上一行以句号结尾且明显短（段落最后一行）：断段
+    let shortLast = [
+      line("This is a long line of text", top: 0.9), line("that ends here.", top: 0.83, width: 0.3),
+      line("Next paragraph line", top: 0.76), line("continues on", top: 0.69),
+    ]
+    #expect(OCR.paragraphs(shortLast).count == 2)
+    // 以句号结尾但不短（满行）：不断
+    let fullLine = [line("A sentence that fills the line.", top: 0.9), line("And more", top: 0.83)]
+    #expect(OCR.paragraphs(fullLine).count == 1)
+    // 英文连字符接回；换栏（下一行跑到上面去了）断开
+    let columns = [
+      line("an exam-", top: 0.5, x: 0.05), line("ple of text", top: 0.43, x: 0.05),
+      line("right column", top: 0.9, x: 0.55),
+    ]
+    #expect(OCR.text(columns, joined: true) == "an example of text\nright column")
+    #expect(OCR.paragraphs([]).isEmpty)
   }
 
   @Test func recognizesMixedScripts() async throws {

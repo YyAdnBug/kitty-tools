@@ -20,7 +20,7 @@ nonisolated enum Zhipu {
     -> AsyncThrowingStream<String, Error>
   {
     guard let key = service.secret().flatMap({ $0.isEmpty ? nil : $0 }) ?? builtinKey else {
-      return AsyncThrowingStream { $0.finish(throwing: TranslateError(message: "没有可用的智谱 API Key")) }
+      return AsyncThrowingStream { $0.finish(throwing: TranslateError.config("没有可用的智谱 API Key")) }
     }
     let from = request.from.map { "\($0.title)" } ?? ""
     let target = request.to.title
@@ -39,7 +39,7 @@ nonisolated enum Zhipu {
       """
       : "请把下面的\(from)文本翻译成\(target)。只输出译文，不要解释，不要加引号，保留原文的换行和段落。\n\n"
         + request.text
-    let model = service.model ?? TranslateService.zhipuModels[0]
+    let model = TranslateService.zhipuModel(service.model)
     let body: [String: Any] = [
       "model": model, "max_tokens": maxTokens, "stream": true,
       "messages": [["role": "user", "content": prompt]],

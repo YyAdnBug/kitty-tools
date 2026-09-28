@@ -31,7 +31,7 @@
 | D9 | 旧 Tauri 数据 | 手动触发的一次性导入，**分两步**：M4 导偏好和密钥；M6 导**保留类**剪贴板条目（收藏、片段、已归组）及其图片、分组，以及**全部**翻译历史。**普通历史和热键不导** | 普通历史只保留 7 天，共存期间原生版自己已经采集到了，导进来只会重复。热键导进来一定和共存的 Tauri 冲突。偏好和密钥提前到 M4，M4/M5 就能直接拿真实配置测 | 连普通历史一起导（差别只是去掉一个 WHERE 条件）；或者从空库开始（2026-09-26：导入已删除） |
 | D10 | CPU 架构 | **✅ 已定（2026-09-24）：只支持 Apple 芯片**，`ARCHS = arm64` 写在 Base.xcconfig | 基本自用，Intel 不在目标内；构建更快、包更小 | — |
 | D11 | 翻译服务迁多少 | **✅ 已定（2026-09-24）：全部迁移**：智谱内置、百度、有道、Google、DeepL / DeepLX、微软、火山、腾讯，以及 AI 实例的 openai / azure / anthropic 三种协议 | 与 Tauri 版功能对齐。M4 做智谱 + AI 三协议，M5 做其余 7 家（火山、腾讯的手写签名各算 M） | — |
-| D12 | 是否新增 Apple Translation 引擎 | Phase 1 不做，功能对齐后作为第一个候选 | 不在迁移范围内。macOS 15 上 `TranslationSession` 只能依附 SwiftUI 视图获取（脱离视图的 init 需要 macOS 26）；语言包下载 sheet 在不激活的浮层里能否工作也没验证 | 放进 M5（优点：离线、不需要密钥） |
+| D12 | 是否新增 Apple Translation 引擎 | Phase 1 不做，功能对齐后作为第一个候选 | 不在迁移范围内。macOS 15 上 `TranslationSession` 只能依附 SwiftUI 视图获取（脱离视图的 init 需要 macOS 26）；语言包下载 sheet 在不激活的浮层里能否工作也没验证 | 放进 M5（优点：离线、不需要密钥）。2026-09-28 体检 D16 做了文档层面的可行性验证：文档不足以确认，先不做，结论见 §10「D5 系统翻译」 |
 | D13 | 主题 | 去掉 `appThemePreset`、`customHue`、`backgroundOpacity`、`transparentBackground`，~~跟随系统强调色~~和系统材质（2026-09-26 作废：强调色固定为品牌粉 `Style.brand` + AccentColor.colorset，材质仍跟随系统） | 符合 HIG，少维护一套主题系统 | 保留 preset（纯 UI 工作，约 S–M） |
 | D14 | 开发机是否升级到 macOS 26.6+ | 暂不升级 | 部署目标是 15，剪贴板隐私、NSPanel、热键这些坑都要在 15 上实测。Xcode 27 官方 skills 偏 SwiftUI/iOS；mcpbridge 能做的事直接跑 `xcodebuild` 也能做 | 升级：能用 Apple 官方 agent skills 和 Xcode MCP，但要另备一台 macOS 15 测试机或虚拟机 |
 | D15 | 「划词 / 浮窗默认服务」设置 | 删掉。翻译历史和自动复制都取**列表中第一个已启用的服务**，想换就拖动排序 | 原生版所有服务并行翻译，这个设置只剩「决定哪条结果写进历史」一个作用，而 Tauri 的自动复制本来就是取列表首个。删掉后少一个设置，也少一套默认服务修正规则 | 保留下拉，语义改为「写入历史的服务」 |
@@ -244,7 +244,7 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 | `Shell/` | `OverlayPanel.swift`、`HotKeyCenter.swift`、`HotKeyRecorder.swift`、`Permissions.swift`（辅助功能、屏幕录制、文件和文件夹授权；自动化被拒时打开系统设置）、`Paster.swift`（自家写剪贴板的唯一出口；`write(string:record:)` 把本 App 生成的新文字同时记进剪贴板历史）、`Subprocess.swift`（进程外跑系统命令行工具：更新的 ditto / codesign、系统命令的 pmset / osascript）、`Style.swift`（Whisker 刻度：圆角、七条弹簧曲线、中性色 / 家族色、输入框底、复制对勾停留、卡片表面 `CardSurface`、发丝线 `Hairline` / `hairlineBorder`、主按钮 `BrandButtonStyle`、种类色块、键帽、面板描边）、`HoverTracker.swift`（列表行悬停：`.activeAlways` 追踪区，非激活浮层里代替 `onHover`）、`Accent.swift`（强调色：跟随系统 + 8 色、配色计算、根视图的 `.appAccent()`）、`Island.swift`（刘海岛：全局轻提示，替换原来的 Toast）、`StatusItem.swift`（菜单栏图标与菜单，NSStatusItem，Whisker D 的呼吸 / 弹一下）、`ActionMenu.swift`（剪贴板 ⌘K、剪贴板筛选面板、剪贴板多选的收藏夹列表、启动器 ⌘K 共用的动作菜单：分节、一级子列表、共用过滤 `filter`（子串 + 拼音前缀），体检 C3 C4） |
 | `Storage/` | `Database.swift`、`Keychain.swift`、`Prefs.swift`、`LegacyImport.swift` |
 | `Clipboard/` | `ClipboardWatcher.swift`、`ClipboardStore.swift`、`ClipItem.swift`、`ClipboardFilter.swift`、`ContentForm.swift`、`Search.swift`、`ImageStore.swift`、`OCR.swift`、`ClipboardPanelView.swift`、`ClipRowView.swift`、`PreviewView.swift`、`Dialogs.swift`、`LinkPreview.swift`（链接富预览：按块读网页 og 标签、isFetchable、内存缓存）、`QuickLookView.swift`（⌘Y 放大预览）、`ClipDrag.swift`（行拖到别的 App：AppKit 拖放会话 + 行首图标块和标题的预览，体检 D3） |
-| `Translate/` | `TranslateCoordinator.swift`、`LanguageResolver.swift`、`SelectionReader.swift`、`SSE.swift`、`Providers/`（`Zhipu`、`AIService`、`Baidu`、`Youdao`、`Google`、`DeepL`、`Microsoft`、`Volcengine`、`Tencent` 各一个 `.swift`）、`TranslatePanelView.swift`、`ProviderCardView.swift`（含服务身份 `ServiceTile`：官方 logo 或品牌色块，彗星边框、骨架扫光）、`RevealText.swift`（流式译文显影，TextRenderer）、`HistoryStore.swift`、`HistoryView.swift`、`WordLookup.swift`（查词：是不是一个词、系统词典查询与解析、单词模式示例，D4）、`DictionaryCardView.swift`（系统词典卡） |
+| `Translate/` | `TranslateCoordinator.swift`、`LanguageResolver.swift`、`SelectionReader.swift`、`SSE.swift`、`Providers/`（`Zhipu`、`AIService`、`Baidu`、`Youdao`、`Google`、`DeepL`、`Microsoft`、`Volcengine`、`Tencent` 各一个 `.swift`）、`TranslatePanelView.swift`、`ProviderCardView.swift`（含服务身份 `ServiceTile`：官方 logo 或品牌色块，彗星边框、骨架扫光）、`RevealText.swift`（流式译文显影，TextRenderer）、`HistoryStore.swift`、`HistoryView.swift`（含历史 ⌘K 的动作和 `HistoryMenu`：导出、清空，浮窗「⋯」菜单 / 历史 ⌘K / 设置 › 翻译共用）、`Speaker.swift`（朗读：收起即停、挑高音质声线）、`WordLookup.swift`（查词：是不是一个词、系统词典查询与解析、单词模式示例，D4）、`DictionaryCardView.swift`（系统词典卡） |
 | `Settings/` | `GeneralTab.swift`、`HotkeysTab.swift`、`ClipboardTab.swift`、`TranslateTab.swift`、`AboutTab.swift`、`LauncherTab.swift`、`ScreenshotTab.swift`、`SettingsWindow.swift`（D 阶段从 Shell 搬来：NavigationSplitView 侧栏 + 搜索 + 页头）、`OnboardingView.swift`（首次安装的欢迎引导：欢迎 + 按一下试试）、`ShortcutsSheet.swift`（快捷键速查表 + `ShortcutsButton`）、`OrderedList.swift`（可拖动排序列表共用的「+ −」按钮条、行高、详情页页头）、`TranslateServiceDetail.swift`（翻译服务详情页）、`SearchEngineDetail.swift`（网页搜索 / 快捷链接详情页） |
 | `Launcher/` | `LauncherItem.swift`（结果项与内置动作）、`AppCatalog.swift`（App 目录 + 中文名 + 拼音）、`LauncherMatch.swift`（匹配与排序纯函数）、`LauncherUsage.swift`（使用记录表）、`LauncherModel.swift`、`LauncherPanelView.swift`、`FileSearch.swift`（文件搜索：open / find / 空格开头，NSMetadataQuery 查询、排除、排序、最近的文件、授权提示，M13）、`SystemCommands.swift`（系统命令目录、quit / hide / forcequit / eject 解析与只读列举，D2）、`SystemControl.swift`（系统命令的执行：锁屏、pmset、osascript、退出 App、推出） |
 | `Screenshot/` | `ScreenCapture.swift`（逐屏冻结帧 + 同一刻的窗口 Z 序快照）、`RegionSelector.swift`（框选会话、每屏一个遮罩、选区几何纯函数）、`SelectionView.swift`（遮罩画面与交互：图层绘制、窗口悬停、手柄、放大镜、工具栏）、`ScreenshotOutput.swift`（PNG、快速保存、另存为）、`PinPanel.swift`（钉图）、`Annotation.swift`（标注模型，显示与导出共用 draw，M10）、`EditorToolbar.swift`（HUD 主工具栏 + 样式托盘，M10，Whisker 重做）、`FlyCard.swift`（截图飞入右下角 + 快门声，Whisker S1）、`ScrollCapture.swift`（长截图会话：边框、侧边面板、抓帧循环、自动滚动）、`ScrollStitcher.swift`（长截图拼接，纯逻辑）、`ShotShelf.swift`（CleanShot 式常驻缩略图，Whisker D） |
@@ -272,7 +272,7 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
   - 菜单栏图标用单色模板图。左键点击直接弹菜单（HIG 做法），去掉 Tauri 版「左键打开主界面」。
 - **`OverlayPanel: NSPanel`**，建两个实例：
   - 剪贴板面板：680×520，固定大小。
-  - 翻译浮窗：420×560，最小 360×400，用 `setFrameAutosaveName` 记住位置。
+  - 翻译浮窗：420×560，最小 360×400，~~用 `setFrameAutosaveName` 记住位置~~（2026-09-28 体检 A13：默认跟随鼠标出现在光标右下，只记用户拖过的位置，`present(anchor:)` + `frameName`，见 mac-overlay-panel §1）。
   - `styleMask` 在 `init` 里一次写全，包含 `.nonactivatingPanel`（初始化后再改不会生效，这正是 Tauri 版不得不 swizzle 的原因）。`canBecomeKey=true`，`canBecomeMain=false`，`isFloatingPanel`，`level=.floating`，`hidesOnDeactivate=false`，`becomesKeyOnlyIfNeeded=false`，`collectionBehavior=[.canJoinAllSpaces, .fullScreenAuxiliary]`，`isMovableByWindowBackground=true`。
   - 显示只调 `orderFrontRegardless()` + `makeKey()`，**永远不调** `NSApp.activate`。
   - **点外关闭**（剪贴板面板）：显示时装一个 global 和一个 local 的左右键按下监听，隐藏时在主线程成对卸载。点中的窗口如果是任意一个 `OverlayPanel`，不关闭（点击时实时判断）；固定（pin）状态下也不关闭。
@@ -358,7 +358,7 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 | Tauri 模块 / 文件 | 原生组件 / Apple API | 复杂度 | 备注 / 坑 |
 |---|---|---|---|
 | 划词 `T/pipeline.rs:53-100`、`src-tauri/src/selection.rs:325-581` | `SelectionReader`，三步：<br>① 在 `@concurrent` 里用 AX 读 `kAXFocusedUIElement` → `kAXSelectedText`，超时 0.5s；<br>② 读不到，且当前 key 窗口是自家 OverlayPanel（例如浮窗已固定、刚点过里面的按钮）时：先让面板交出 key，并激活热键时快照的前台 App（macOS 14+ 实测 `activate()` 与 `yieldActivation`），**再读一次 AX**（对应 `selection.rs:337-346`）；<br>③ 仍读不到：按 type 逐项备份剪贴板 → `clearContents` → 发 ⌘C（keycode 0x08，flags 显式设为 `.maskCommand`）→ 每 12ms 轮询 changeCount，最多 500ms → 经 `Paster.write` 还原剪贴板（失败重试 3 次，间隔 20ms，防止丢用户数据） | M | **复制完成前禁止显示浮窗**。已有一次在跑时，重复按热键直接忽略；整个过程暂停 watcher；不用 osascript。Tauri 的「等 40ms」先不搬，M4 实测失败再加。选区为空时打开空白输入面板；失败时浮窗显示错误卡片并引导去授权 |
-| 输入翻译 `T/pipeline.rs:103-125` | 显示空白浮窗并聚焦输入框 | S | 清空上一次的原文和译文；这个热键不做前台快照 |
+| 输入翻译 `T/pipeline.rs:103-125` | 显示空白浮窗并聚焦输入框 | S | ~~清空上一次的原文和译文~~（2026-09-28 体检 A14：热键是开关，再打开保留上次原文和结果、原文全选，中断的卡片重跑）；这个热键不做前台快照 |
 | 会话与多引擎并行 `T/session.rs:21-40`、`TF/components/FloatingResult/index.tsx:111-118,468-756` | `TranslateCoordinator`（@MainActor @Observable）：新会话取消旧 Task，用 `withTaskGroup` 并行跑所有启用的服务 | M | 关闭浮窗时作废整个会话；前端结果缓存和 32s/190s 前端定时器都去掉 |
 | 预处理与长度校验 `T/text_preprocess.rs:4-32`、`T/validation.rs:5-15` | 纯函数 | S | `translateDeleteNewline`；上限 32KB（按 UTF-8 字节）；百度 6000 字符、有道 5000 字符 |
 | 语种检测 `src-tauri/src/lang_detect.rs:7-81` | `NLLanguageRecognizer` + `languageConstraints`（原来的 10 种语言，另加 zh-Hant） | S | 触发阈值照搬：含 CJK/假名/谚文 ≥2 字，或纯拉丁字母 ≥10 字；保留「先显示浮窗、再检测」的顺序 |
@@ -374,7 +374,7 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 | 自动复制 `FloatingResult:246-249,550-558` | 翻译完成的回调，经 `Paster.write` 写入 | S | 条件：`autoCopy` 打开且「复制即译」关闭；复制的是**列表中第一个已启用服务**的结果 |
 | 历史写入 `T/history_db.rs:184-255`、`FloatingResult:283-329` | `HistoryStore`，和剪贴板共用一个 `Database` | S | 一次翻译只记一条，取列表中第一个已启用服务的结果（D15）。mode：输入翻译记 `input`，划词和复制即译记 `selection`。trim 后截到 10000 字；`ON CONFLICT(source_text,target_lang)` 时不覆盖收藏状态和 id；在同一事务里淘汰超出上限的非收藏条目 |
 | 历史面板 `TF/components/TranslateHistoryPanel` | 浮窗内的覆盖视图 | S–M | 搜索防抖 180ms，LIKE 查询并转义 `%` `_` `\`，最多 200 条；↑↓、Enter、鼠标悬停同步选中。行时间：今天 `HH:mm` / `昨天 HH:mm` / 今年 `MM/DD` / 跨年 `YYYY/MM/DD`；底部显示「共 N 条 · 收藏 M」。复制、删除、收藏都是乐观更新，失败回滚。应用某条历史时：若它的目标语言不是 auto，先改全局目标语言，再让所有服务重译。清空时保留收藏并先确认；新会话开始时自动收起面板 |
-| 复制即译 `T/clipboard_monitor.rs:18-58` | watcher 文本分支的回调 | S | 以下情况不触发：自写的 changeCount、开关关闭、与上次翻译过的文本指纹相同 |
+| 复制即译 `T/clipboard_monitor.rs:18-58` | watcher 文本分支的回调 | S | 以下情况不触发：自写的 changeCount、开关关闭、与上次翻译过的文本指纹相同（原生起初漏了去重，2026-09-28 体检 B20 补上，另加自家浮层里的 ⌘C 不触发；A12 再跳过网址、路径、数字、超长和第一语言） |
 | 智谱内置 `T/api.rs:1569-1607,1801-1826`、`src-tauri/src/builtin_translate.rs` | `Providers/Zhipu.swift` | S | `max_tokens=1024` 写成常量。关闭思考依次尝试 `thinking disabled` → `reasoning_effort low` → 不带参数，只有遇到 400/422 才降一档。用中文提示词；不发 system、temperature。文本模型可选 `glm-4-flash` / `glm-4.6v-flash`（`zhipu.textModel`）。用户没填 key 时用内置 key（来自 `Secrets.xcconfig`） |
 | AI 实例 `T/api.rs:419-556,932-2304` | `Providers/AIService.swift` + `SSE.swift`，**openai / azure / anthropic 三种协议**（D11） | M | **azure**：`api-key` 头，`model` 填部署名，不带 max_tokens，关思考档 `effort none → minimal → low → 不带`，不支持获取模型。**anthropic**：URL 含 `/messages` 原样用、末段是版本号补 `/messages`、否则补 `/v1/messages`，默认 `https://api.anthropic.com`；`x-api-key` + `anthropic-version: 2023-06-01`；`system` 放顶层，`max_tokens:4096` 必填；SSE 取 `content_block_delta` 的 `text_delta`；关思考档公网 `thinking disabled → output_config{effort:low} → 不带`，本机 `thinking disabled + chat_template_kwargs → thinking disabled → 不带`；获取模型 `GET …/v1/models?limit=1000`（`api.rs:448-481,502-556,1942-1955`）。<br>**openai** URL 补全：已含 `/chat/completions` 原样用；末段是 `v<数字>` 或 `/openai` 时补 `/chat/completions`；否则补 `/v1/chat/completions`；没写 scheme 补 `https://`。Key 为空不带 Authorization。<br>**max_tokens 按 host 取值**（`api.rs:2004-2010`）：`bigmodel.cn` / `z.ai` 用 1024，OpenAI 官方不传，其余 4096。<br>**本机判定**照搬 `validation.rs:23-35` 的 `is_local_network_host`：loopback、私网 / 链路本地 IP、`localhost`、`*.local`、不带点的主机名。<br>按 host 选关闭思考的参数档，成功的档位按 `url\nmodel` 记在内存里。SSE 按 `data:` 行解析，遇到 `[DONE]` 结束；忽略 reasoning 类字段；只剥掉开头那段 `<think>`（支持标签被拆到多个 chunk）；去掉外层引号；结果为空时报错。本机地址空闲超时 180s，其它 30s（设在 `timeoutIntervalForRequest`，不设总超时）。获取模型列表超时 15s |
 | 百度 `T/api.rs:571-657` | `Providers/Baidu.swift`，`URLSession` + `Insecure.MD5` | S | `sign=md5(appid+q+salt+secret)`；返回 `trans_result[].dst` 用 `\n` 拼接；6000 字符上限；语言码 zh / cht / en / jp / kor / fra / de / spa / ru / pt / it |
@@ -709,7 +709,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 | M9 截图框选 + 输出 | 抽出和截图翻译共用的会话（权限 → 冻结 → 框选）；`RegionSelector` 加截图模式：悬停高亮窗口 / 单击截整窗（冻结时拍按 Z 序的窗口快照，§11 #41）、确认后 8 手柄调整 + 方向键微调 + 按住空格平移 + 尺寸标签、放大镜取色（C 复制色值）、D / ⌥X 重拍上次区域；输出 ↩ 复制（同时进剪贴板历史）/ ⌘S 快速保存 / 另存为 / T 钉图；钉图（缩放、透明度、双击或 Esc 关、菜单栏「隐藏全部」） | 已完成（实现要点见下方「截图（Phase 3）」） |
 | M10 标注 + 识字 | 矩形、箭头、文字、马赛克 + 撤销（标注存整屏坐标，调整选区不丢）；工具栏识字 / 翻译按钮；独立识字热键（静默复制、二维码用 Vision `DetectBarcodesRequest`、去换行） | 已完成（实现要点见下方「截图（Phase 3）」） |
 | M11 启动器网址线 + 键盘（对标 Alfred） | 自定义网页搜索（增删排序、多预置引擎）、Quicklink（固定网址 + 别名 + {query}）、兜底列表配置、⌥↩ 访达搜索 / ⌃↩ 网页搜索（按住修饰键换副标题）、Tab 补全（计算结果写回接着算）、cb / 计算结果 ↩ 粘贴、清空 / 单条重置学习记录、呼出时切英文输入法（开关，默认关） | 已完成（实现要点见下方「启动器网址线（M11）」） |
-| M12 翻译补强（对标 Bob） | 窗口快捷键（⌘R 重试、⌘S 收藏、⌘W 关、⌘P 钉住、⌘+/- 字号、⌘1–9 复制第 N 张卡）、用译文替换原文（按钮 + 静默热键，默认不设键）、浮窗高度随内容、卡片折叠状态持久化、收藏筛选与导出 | 已完成（实现要点见下方「翻译补强（M12）」） |
+| M12 翻译补强（对标 Bob） | 窗口快捷键（⌘R 重试、⌘S 收藏（2026-09-28 体检 A31 改 ⌘D，全 App 收藏统一）、⌘W 关、⌘P 钉住、⌘+/- 字号、⌘1–9 复制第 N 张卡）、用译文替换原文（按钮 + 静默热键，默认不设键）、浮窗高度随内容、卡片折叠状态持久化、收藏筛选与导出 | 已完成（实现要点见下方「翻译补强（M12）」） |
 | 长截图（2026-09-25 插入，用户改主意） | 截图框选后 S / 工具栏进入；实时画面上边滚边拼（往下、往上都行）、侧边预览、空格自动滚动；↩ 复制 / ⌘S 保存 / ⇧⌘S 另存为。原生实现，不参考旧版 | 代码已完成，待手测（实现要点见下方「长截图」） |
 | M13 动作面板 + 文件 + 进程 | → / ⌘K 动作面板（打开方式、在访达中显示、复制路径、移到废纸篓，只放零授权动作）；⌘Y Quick Look（先验证 `QLPreviewPanel`，不行嵌 `QLPreviewView`）；open / find 文件搜索（NSMetadataQuery）；kill（GUI App 用 `terminate()`，⌘↩ 才强杀）。quit / hide / forcequit 已随系统命令做了（D2，2026-09-27），kill 只剩非 GUI 进程（SIGTERM） | 文件搜索已完成（待手测，实现要点见下方「文件搜索（M13）」）；动作面板、⌘Y、kill 待做 |
 
@@ -718,6 +718,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 - D2 系统命令：~~都不做（2026-09-25）~~ → **2026-09-27 用户要求做**（「quit、lock、unlock、screen 等指令，主要参考 Alfred」），拍板：Alfred 的 18 个全做（screensaver、trash、emptytrash、logout、sleep、sleepdisplays、lock、restart、shutdown、hide、quit、forcequit、quitall、volup、voldown、mute、eject、ejectall）；锁屏用系统私有函数 `SACLockScreenImmediate`（Raycast / Hammerspoon 同做法，找不到退回 ⌃⌘Q）；只确认不可撤销的（清倒废纸篓、全部退出、强制退出再按一次 ↩；退出登录 / 重启 / 关机弹 macOS 自己的确认框）；标题用中文、Alfred 关键词做副标题。unlock 做不了（锁屏时启动器呼不出来，解锁要密码 / Touch ID），screen 按前缀搜到屏幕保护程序、锁定屏幕。切深浅色、kill 非 GUI 进程不在这次范围。实现要点见下方「系统命令（D2）」。
 - D3 文件动作面板与 Quick Look：**动作面板进 M13，只放零授权动作**；⌘Y Quick Look 先验证 `QLPreviewPanel` 在不激活面板里能否拿到控制权，不行改嵌 `QLPreviewView`；不做目录导航和多文件缓冲。
 - D4 查词 / 生词本：**M12 之后，只用系统能力**：系统词典（`DCSCopyTextDefinition`）+ 单词模式提示词；生词本 = 收藏筛选 + CSV / TSV 导出；不引入 ECDICT。**已完成（2026-09-26，待手测）**，规则见 mac-translate §5.2。
+- D5 系统翻译（离线、免费；2026-09-28 体检 D16「先验证」）：**文档不足以确认可行，先不做，不加 `Kind.apple`**。查 Apple 文档（`translation/translationsession.md`、`prepareTranslation()`、`init(installedSource:target:)`、`TranslationError.notInstalled`、`View.translationTask(_:action:)`）的结论：① macOS 15 上会话只能经 SwiftUI 的 `.translationTask` 拿到——文档说「视图出现前或配置变化时」跑 action，没说视图藏着（`opacity(0)`、零尺寸、在不激活的 `NSPanel` 里）时会不会跑；② 下载语言包的许可框由 `prepareTranslation()` / 第一次 `translate` 弹出，文档只说「asks the person for permission」，没说挂在哪个窗口、要不要本 App 在前台——我们的浮层从不激活本 App（mac-overlay-panel §1），框很可能弹不出来或被收起；③ 脱离视图的 `init(installedSource:target:)` 要 macOS 26，而且只能用已经下载好的语言，缺语言包时抛 `notInstalled`、不会请求下载（`canRequestDownloads` 为 false）。所以：macOS 15 路线要真机验证（隐藏视图里能不能拿到会话、许可框在浮层里弹不弹得出、弹出来时点外关闭会不会把浮窗收掉），macOS 26 路线可行但只覆盖已装语言（缺包时卡片报配置类错误「需要下载 X 语言包」+ 打开 系统设置 › 通用 › 语言与地区 › 翻译语言），等有 26 测试机再排期。验证清单：在设置 › 翻译里临时挂一个隐藏视图用 `.translationTask` 翻一句（设置窗是激活的，先确认拿得到会话）→ 挪到翻译浮窗的隐藏视图里再试 → 缺语言包时看许可框在哪弹。
 
 **开源参考（只借鉴思路，不拷代码）**：
 - macshot（github.com/sw33tLie/macshot）：**GPL-3.0**，任何代码 / 文案 / 逐行改写都不能进仓库。约 6 万行 AppKit，截图 / 标注 / 钉图 / 识字 / 长截图 / 录屏都有，可看交互细节。
@@ -754,8 +755,8 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 - 反馈（mac-whisker S2）：音量、静音、清倒废纸篓、推出、全部退出和所有错误 / 授权问题走刘海岛；锁屏、睡眠、屏保、关显示器、打开废纸篓、退出单个 App 不出岛。锁屏会触发「锁屏时清空剪贴板」（开着的话），这是预期。
 
 **翻译补强（M12，2026-09-25）**
-- 浮窗快捷键在 `TranslateCoordinator.handleKeyEquivalent`（接到 `OverlayPanel.keyEquivalentHandler`）：⌘R 重新翻译、⌘S 收藏 / 取消（第一个服务出结果后）、⌘W 收起（固定着也收；2026-09-28 起在 `OverlayPanel` 统一处理，剪贴板面板、启动器也认）、⌘P 固定、⌘+（含 ⌘⇧=）/ ⌘- / ⌘0 字号（0.8–1.6 倍，存 `translateFontScale`）、⌘1–9 复制第 N 张卡；⌘C / ⌘V 等编辑键仍给输入框。原文里 ⇧↩ / ⌘↩ 换行（⌘↩ 系统发的是 `noop:`，在 doCommandBy 里接）。
-- 收藏 = 生词本：星标 / ⌘S 按「原文 + 实际目标语言」写 translations 表（关了历史也能收藏，连译文记一条）；历史里可只看收藏；设置 › 翻译「导出…」：全部 / 只收藏 × CSV（带 BOM，Excel 认 UTF-8）/ TSV（Anki：正面原文、背面译文，换行写成 `<br>`）。
+- 浮窗快捷键在 `TranslateCoordinator.handleKeyEquivalent`（接到 `OverlayPanel.keyEquivalentHandler`）：⌘R 重新翻译、⌘S 收藏（2026-09-28 体检 A31 起是 ⌘D） / 取消（第一个服务出结果后）、⌘W 收起（固定着也收；2026-09-28 起在 `OverlayPanel` 统一处理，剪贴板面板、启动器也认）、⌘P 固定、⌘+（含 ⌘⇧=）/ ⌘- / ⌘0 字号（0.8–1.6 倍，存 `translateFontScale`）、⌘1–9 复制第 N 张卡；⌘C / ⌘V 等编辑键仍给输入框。原文里 ⇧↩ / ⌘↩ 换行（⌘↩ 系统发的是 `noop:`，在 doCommandBy 里接）。
+- 收藏 = 生词本：星标 / ⌘S（体检 A31 起 ⌘D）按「原文 + 实际目标语言」写 translations 表（关了历史也能收藏，连译文记一条）；历史里可只看收藏；设置 › 翻译「导出…」：全部 / 只收藏 × CSV（带 BOM，Excel 认 UTF-8）/ TSV（Anki：正面原文、背面译文，换行写成 `<br>`）。
 - 替换原文：划词时记下前台 App 的 pid 和原选区（`replaceSource`），会话里显示「替换原文」按钮（收起浮窗 → `Paster.write` → ⌘V）；静默热键「划词翻译并替换」（默认不设键，翻译中再按一次取消）：取词 → `translateOnce`（只用第一个服务、等完整结果、不合并换行、记历史）→ 粘回，全程轻提示。两条都按原选区补回首尾空白（`rewrap`，三击整行不吞段落），**前台已不是取词的 App 或自家浮层成了 key 时只复制不粘**；`OverlayPanel.present` 每次重记 previousKeyPanel，收起浮窗不会把 key 还给不相干的面板。
 - 导出：CSV 按 Unicode 标量判断要不要加引号（Swift 把 \r\n 当一个字符）、= + - @ 开头加 '、时间写本地时间；Anki TSV 带 `#separator:tab` / `#html:true` 头，字段 HTML 转义、各种换行写成 `<br>`、含引号或以 # 开头的加引号。关着历史时取消收藏会删掉那条。
 - 高度随内容（Bob 的做法，只让人拖宽度：min / maxSize 的高度钉在当前值）：视图量出顶栏 + 原文区 + 卡片内容的高度，`setContentHeight` 夹在 220 到屏幕可见区 85% 之间；`setContentHeight` 往下出屏就整体上挪。卡片折叠按服务 id 存 `translateCollapsedServices`，不再因出结果自动展开。
@@ -781,7 +782,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   - 交互：悬停高亮窗口，单击截该窗口（没有窗口截整屏）；拖动框选（按住空格整块平移）；确认后 8 手柄、拖动平移、方向键 1 点 / ⇧ 10 点，选区外单击不动（免得误点丢选区）、拖出新选区，右键回到待选、Esc 取消；尺寸标签显示像素。放大镜 15×15 像素、取样转 sRGB 显示 #RRGGBB，C 复制色值（同时记进剪贴板历史）。D 选中上次区域（按相交面积最大的屏放，外接屏拔掉时提示音）。
   - 输出：↩ / ⌘C / 双击选区 = 复制（PNG 带 DPI，经 `Paster.write`，自己记进剪贴板历史）；⌘S 快速保存到上次「另存为」的目录（旧版的 `screenshot_save_prefs.json` 可导入，没有时用系统截屏位置，再没有是桌面），文件名「截图 yyyy-MM-dd HH.mm.ss.png」、重名追加序号；⇧⌘S 另存为（遮罩已收起，激活本 App 弹 NSSavePanel，存完还前台）；T 钉图。裁出的图都拷成独立的图，不拖住整屏冻结帧。
   - **标注（M10）**：1–4 切矩形 / 箭头 / 文字 / 马赛克（再按一次收起，回到拖动平移选区），⇧ 画正方形 / 45° 箭头；6 种固定 sRGB 颜色 × 3 档粗细，默认红色中号（旧版用户全是红色 4 点矩形）。点中标注（矩形只认边线）可拖动、⌫ 删除、方向键挪、改样式（作用于选中项，§11 #47），双击文字重新编辑；⌘Z / ⇧⌘Z 撤销重做（数组快照栈）。标注存整屏视图坐标，调整选区不丢（§11 #43）；显示（标注层只重画变了的那块）和导出（`Annotation.render`）共用一个 draw。文字用叠在上面的 NSTextView 输入（输入法正常；Esc、点外面收下，↩ 换行）；马赛克从冻结帧缩小再不插值放大。
-  - **识字（M10）**：⌥O 框选后静默复制（二维码 / 条码优先，`DetectBarcodesRequest`）；设置 › 截图可开「把换行合成一段」（整段合成一行：中日文直接连、其它加空格、行尾连字符接回；Vision 不分段落，要保留段落得按行框间距切，未做）；截图工具栏也有识字、翻译按钮，识别的是打码后的合成图（§11 #44）。结果记进剪贴板历史，用轻提示（2026-09-25 起是刘海岛 `Island`）反馈；⌘S 快速保存、复制色值也有轻提示。
+  - **识字（M10）**：⌥O 框选后静默复制（二维码 / 条码优先，`DetectBarcodesRequest`）；设置 › 截图可开「识字后把同一段里的换行接起来」（体检 A32 起按行框切段：行距大于 1.2 倍中位行高、上一行句末标点且短于中位行宽 80%、往回跳或并排时断段；段内中日文直接连、其它加空格、行尾连字符按下一行大小写接回，段间保留换行）；截图工具栏也有识字、翻译按钮，识别的是打码后的合成图（§11 #44）。结果记进剪贴板历史，用轻提示（2026-09-25 起是刘海岛 `Island`）反馈；⌘S 快速保存、复制色值也有轻提示。
   - 钉图 `PinPanel`：原位置出现、不激活本 App 也不抢键盘；拖动移动，滚轮 / 捏合以鼠标为锚点缩放（24 点到 5 倍），双击或 Esc（先点一下）关闭，⌘C / ⌘S / ⌘W / ⌘0，右键菜单含透明度；菜单栏有钉图时显示「隐藏 / 显示全部钉图」「关闭全部钉图」。
 - **截图重设计（2026-09-26）**：方案页 https://claude.ai/artifact/WQFQonH4urad3hmnceBiko ，D1–D15 全部按推荐（交互对标 ⌘⇧5 / CleanShot / Shottr / iShot / Snipaste，控件全换品牌粉 `Style.Shot.accent`、HUD 刻度 `Style.HUD`），提交 `edb0758^..HEAD`。规格只看 mac-whisker §6「截图」，实现约束在 mac-overlay-panel §8–§10；上面 M9 / M10 里的「8 手柄」「1–4 四种工具」「6 色」已被取代：整条边和四角都能拖（`RegionSelector.handle`）、⇧ / ⌥ / 空格 / ⌃、吸附冻结时的窗口边和屏幕边（粉色虚线参考线）、⌘ / ⌥ + 方向键推收边、可输入的尺寸胶囊 `SizeField` + 比例菜单、两段 HUD 胶囊工具栏（10 个工具 + 撤销 / 重做 ｜ 识字 / 翻译 / 长截图 / 钉图 ｜ 保存 ▾ ｜ 取消 / 拷贝）、按工具的样式托盘（8 色 × 3 档 × 选项，按工具记在 `Prefs.screenshotToolStyles`）、标注编辑（画完自动选中、粉色手柄改大小、⌥ 拖动复制、⌘D、⇧ 锁轴）、Esc 逐级退、有标注时右键不清空、取消时遮罩淡出；截图翻译 / 识字的框选同一套外观。周边：飞行卡片 / 常驻缩略图 / 钉图 / 长截图换粉，钉图弹入改 display link 逐帧弹簧。交互用合成事件锁在 `SelectionInteractionTests` / `AnnotationEditingTests` / `ShotAccessibilityTests`；屏外自检 `ScreenshotSnapshotTests`（`TEST_RUNNER_KITTY_SNAPSHOT_DIR`，假桌面上约 50 张 2x PNG，含局部 `-crop`），看图修了：小数点选区的粉线发糊和洞边半像素暗边（选区外观按像素取整）、放大镜落在半像素上、尺寸胶囊放进选区时贴着左边盖住角手柄、提示胶囊两端多一道竖线（capsule 用 circular 圆角）、输入框选中底色是系统蓝（改粉）、保存角标写 Desktop（改访达显示名「桌面」）。真机手测清单见 §12「截图重设计手测」。
 
@@ -886,7 +887,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   2. 侧栏搜索「快门」「密钥」「书签」「字号」：侧栏只剩对应的页，右边自动跳过去；搜不到时显示「没有匹配的设置」。
   3. 剪贴板页：切「显示透镜」「链接显示网页标题和图片」时上面的面板线框跟着变（有动画）；图片上限是一排单选。
   4. 翻译页：拖字号滑块，下面的卡片字号实时变，打开翻译浮窗也是这个字号（和 ⌘± 同一个值）；智谱模型、AI 协议、DeepL 接口是分段控件，历史条数是单选。
-  5. 截图页：点喇叭试听快门声（关掉快门声后喇叭变灰）；切「识字后把换行合成一段」，下面的示例在三行和一行之间切换。
+  5. 截图页：点喇叭试听快门声（关掉快门声后喇叭变灰）；切「识字后把同一段里的换行接起来」，下面的示例在两段四行和两段两行之间切换（体检 A32）。
   6. 通用页：先在系统设置里关掉辅助功能授权，回到设置窗看到橙色感叹号 +「去授权」；重新授权后回来，图标换成绿色对勾并弹一下。
   7. 关于页：大图标点一下摇一摇、鼠标在上面移动时轻微 3D 倾斜；版本胶囊和当前版本圆点是品牌粉；「重看欢迎引导」打开引导。
   8. 欢迎引导：已改成一页欢迎 +「按一下试试」，手测见下面「N1–N17」第 25 条。
@@ -918,7 +919,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   6. 选区占满屏宽（比如整个浏览器窗口）时面板放进选区右上角；外接屏（1x）上也试一次；面板和边框不出现在长图里。
   7. 框选时 S 的提示（工具栏按钮悬停显示「长截图（S）」）；选区太矮（< 60 点）按 S 只有提示音。
 - 翻译（M12）手测：
-  1. 浮窗里 ⌘R 重译、⌘S 收藏（星标变黄，历史里只看收藏能看到）、⌘1 / ⌘2 复制对应卡片（卡片上出对勾）、⌘P 固定、⌘W 收起、⌘+ / ⌘- / ⌘0 字号；⌘C / ⌘V / ⌘A 在输入框里照常。
+  1. 浮窗里 ⌘R 重译、⌘S 收藏（2026-09-28 体检 A31 起是 ⌘D）（星标变黄，历史里只看收藏能看到）、⌘1 / ⌘2 复制对应卡片（卡片上出对勾）、⌘P 固定、⌘W 收起、⌘+ / ⌘- / ⌘0 字号；⌘C / ⌘V / ⌘A 在输入框里照常。
   2. 划词翻译后点「替换原文」：浮窗收起，原 App 里选中的文字换成第一个服务的译文（备忘录、浏览器输入框、微信各试一次）。
   3. 快捷键页给「划词翻译并替换」设键：选中文字按键 → 轻提示「翻译中…」→ 选区被替换、提示「已替换为译文」；没选中时提示。
   4. 浮窗高度：查一个词时很矮、长段落变高，最高不超过屏幕 85%，流式输出时跟着长；靠近屏幕底部时不跑出屏幕。
@@ -973,7 +974,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   - 翻译：
     15. N5 浮窗里没有「翻译」按钮，↩ 翻译；翻完再改原文，原文框右下角弹出粉色「翻译 ↩」，↩ 或点它后收回。
     16. N6 顶栏只有语言胶囊、图钉、⋯；⋯ 里是 历史 ⌘Y / 复制即译 / 设置 ⌘,，⌘Y、⌘, 在浮窗里直接可用；开复制即译后顶栏出现粉色「复制即译」胶囊，点一下关掉，菜单栏的勾跟着变。
-    17. N7 历史：↑↓ 灰色高亮滑动、↩ 重新翻译、⌘⌫ 删（⌘Z 撤销）、⌘C 复制译文、Esc 回浮窗；按 今天 / 昨天 / 日期 分组，全部 / 收藏 胶囊；右键菜单（或 ⌘K）里有条数、清空、导出；打开时原文区不动、结果区淡变。
+    17. N7 历史：↑↓ 灰色高亮滑动、↩ 重新翻译、⌘⌫ 删（⌘Z 撤销）、⌘C 复制译文、Esc 回浮窗；按 今天 / 昨天 / 日期 分组，全部 / 收藏 胶囊；⌘K / 右键菜单里有单条操作、导出 ›、清空历史…，条数在「⋯」菜单（体检 C6 起，和 mac-translate §5.3 一致）；打开时原文区不动、结果区淡变。
   - 启动器：
     18. N8 底栏左边是选中项的种类色块 + 名字，右边「打开 ↩ · 动作 ⌘K」（↩ 粉色实心）；没有图钉、齿轮（⌘, 仍开设置）；点面板外面总会收起；设置 › 启动器没有「点面板外面时自动关闭」。
     19. N8 ⌘K：弹出和剪贴板同一套的动作菜单，列出 ↩ ⌘↩ ⌥↩ ⌃↩ ⌘C ⌘⌫ 等动作和键位，能过滤、↩ 执行；按住 ⌘ / ⌥ / ⌃ 时选中行副标题照旧变化，底栏不再写「按住 ⌘ ⌥ ⌃ 看更多动作」。
@@ -1051,6 +1052,27 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   15. D1 截一张 Retina 截图后在剪贴板 ⌘K / 右键 / ⌘Y 页脚「钉到屏幕」：面板收起，钉图出现在鼠标所在屏中央、和原来截图一样大（1:1 点尺寸），1.04→1 弹入；一张 6K 大图缩到屏幕 80% 以内；多选 3 张图依次往右下错开；固定着的面板不收；图片文件丢了岛报「没能钉到屏幕」。
   16. D2 文件条目 ⌘O 用默认 App 打开、⌘R 在访达中显示、⌥⌘C 拷贝路径（多个文件每行一个，收起面板后历史最上面是这段路径）；链接 ⌘O；⌘Y 页脚第 3 个胶囊：链接「打开」、文件「在访达中显示」、图片「钉到屏幕」、JSON「原文 / 美化」、其余「收藏」。
   17. D3 把一段带格式的文本行拖进 Pages / 备忘录：带格式；片段拖出去是展开后的纯文本；图片行拖进访达是「图片 宽×高.png」文件、拖进微信 / 邮件是图片；多个文件的条目拖进访达复制全部文件；勾 3 条文本后拖其中一条出去是合成的一段，拖没勾的行只拖它；拖放后历史不变（不置顶、不多条目）、选中不变；拖着经过别的 App 时面板不收起，放进去后面板收起（固定着不收），拖回面板 / 没放成不收；勾两张同尺寸的截图拖进访达是两个不同的文件；深色模式下拖动预览是深色卡；拖动后单击 / 双击行照常选中 / 粘贴（拖放会话接走了鼠标，SwiftUI 的按钮不会卡在按下状态）。
+- 体检第 4 批「翻译」手测（2026-09-28，A12–A14 A16–A19 A31 A32 B19–B28 C5 C6 D15；浅色 / 深色、增强对比度、减弱动态效果、VoiceOver 各走一遍）：
+  1. A12 开复制即译：在浏览器地址栏复制网址、终端复制 `/usr/local/bin`、复制一串数字、复制自己写的中文（目标自动时）都不弹；复制一句英文弹；固定目标语言后复制中文照样弹；复制 40 KB 日志不弹。
+  2. B20 复制即译弹出后，点进译文选中半句 ⌘C：不换会话、剪贴板历史里那条没有来源（不是浏览器）；选中后 ⌘C 马上 Esc 也一样；同一段英文再复制一次不重翻；在排除了的 App（如终端）里 ⌘C 后马上按热键呼出启动器，这次复制仍不进历史。
+  3. A19 开「自动复制」+ 复制即译：复制即译弹的那次剪贴板里还是刚复制的原文；划词翻译、输入翻译照样自动复制；在复制即译的浮窗里改了原文再 ↩，这次自动复制。
+  4. A13 双屏：设置 › 翻译「浮窗位置」默认跟随鼠标，在副屏划词、截图翻译、复制即译、剪贴板 ⌘T：浮窗出现在光标右下 12 pt，靠屏幕右 / 下边时翻到左 / 上；拖到别处后按输入翻译热键出现在拖到的地方；改成「上次位置」后都出现在上次拖到的地方，鼠标换到另一块屏时换算到那块屏同一相对位置。
+  5. A14 按 ⌥T 输入翻译、翻完按 Esc，再按 ⌥T：原文和结果都在、原文全选（直接打字替换，⌫ 清空）；浮窗开着是 key 时按 ⌥T 收起；翻译进行中收起后再 ⌥T：卡片重跑；菜单栏「输入翻译」同样。
+  6. A16 在读不到选区的 App 里 ⌥D：浮窗占位「没取到选中的文字，可以直接输入或粘贴」，VoiceOver 读同一句；打字后占位回到平时（清空后也是平时的）。
+  7. A17 设置 › 翻译 › 智谱：模型分段「glm-4-flash / glm-4.7-flash」；以前选过 glm-4.6v-flash 的显示第一档；选 glm-4.7-flash 翻一段，没有思考过程、不空。
+  8. A18 B22 设置里「历史最多保留」分段 1000 条 / 5000 条 / 不限（默认 5000，以前选 500 的变 1000）；历史超过 500 条时一直往下滚、↓ 走到底能看到更早的；↑↓ 不卡。
+  9. A31 翻译浮窗 ⌘D 收藏（星标弹一下），⌘S 只有系统提示音；历史里 ⌘D 收藏 / 取消，空的收藏范围写「翻译完按 ⌘D 收藏」；速查表「翻译」「翻译 · 历史」是 ⌘D。
+  10. A32 截一段多段落的英文网页 ⌥S：译文按段落来、段间空一行，一句话不再被拆成几截；截中文论文同样、中文字之间没有空格；设置 › 截图「识字后把同一段里的换行接起来」打开后 ⌥O 识字：同一段接成一行、段间换行；翻译开「翻译前把同一段里的换行接起来」后从 PDF 复制两段中文翻译，发出去的原文中文不带空格、两段还是两段。
+  11. B19 用内置智谱翻一篇约 2000 词的长文：译文到上限停下时卡片没有「完成」光，正文下一行灰字「只翻了前一部分：超出这个服务单次输出上限」；历史里没有这条、剪贴板没被自动复制、星标和「替换原文」灰着；静默「划词翻译并替换」遇到截断报「翻译失败」、不粘半截。
+  12. B25 用 deepseek-reasoner 或本机 Qwen3 翻译：思考时骨架上面「思考中」扫光，出字后消失；减弱动态效果时「思考中」不扫；⌘R 重新翻译时正文淡成骨架、卡片不跳。
+  13. B23 朗读一段长译文时 Esc 收起浮窗：声音立刻停；在系统设置下载过「高音质」英文声线后朗读英文用的是它。
+  14. B24 C5 百度填错 App ID：卡片橙色钥匙「App ID 或密钥不对」，只有「打开设置」，点了直接到设置 › 翻译 › 百度翻译；断网时红卡「网络不可用」只有「重试」；自建 AI 服务地址填错时红卡「重试 · 打开设置」；有道填错同样。
+  15. B26 顶栏两个语言胶囊都固定时点互换：两个胶囊交换位置滑过去、箭头转半圈；一边自动时同样。
+  16. B21 D15 设置 › 翻译：选中百度按「−」直接删（不确认），「+」里能加回来、加回来就启用、密钥还在；删自建 AI 服务要确认；「+ › AI 服务 › DeepSeek」：列表多一行 DeepSeek、推进详情页、光标在 API Key；填 Key 后模型框点一下列出服务端模型、打字过滤；↻ 转圈重取；测试连接成功后启用开关自己打开；Ollama 预设不填 Key 也能取到模型。
+  17. B27 AI 服务详情页：没有「获取模型」菜单了，模型框打字时下拉里是服务端的模型。
+  18. B28 设置 › 翻译「导出和清空」一行有「清空翻译历史…」：确认框、岛「已清空翻译历史 · 保留了 N 条收藏」和浮窗「⋯」菜单里一样；关着「记录翻译历史」也能点。
+  19. C6 翻译历史里 ⌘K：从右下角弹出动作菜单（重新翻译 ↩、复制译文 ⌘C、复制原文 ⇧⌘C、收藏 ⌘D、删除 ⌘⌫ ｜ 导出 ›、清空历史…），搜索框变成「搜索动作」；↩ / → 进「导出」、← / Esc 回来；右键菜单是同一份；⇧⌘C 复制原文；「⋯」菜单里有「导出」子菜单，导出时存储面板弹得出来、选完回到原来的 App。
+  20. A13 评审补：默认跟随鼠标，把浮窗拖到 X 收起 → 在别处划词（浮窗在光标旁、不拖）收起 → 按输入翻译：出现在 X，不在刚才划词的地方；浮窗开着是 key 时拖到新位置、直接再按划词热键，退出重开后输入翻译仍在新位置；固定浮窗后「划词翻译并替换」，替换完浮窗在原地露出来、不跳。
 
 **发布 0.1.0**（2026-09-27 改）：`macos/build-dmg.sh` 出 arm64 DMG 和 `_arm64.zip` → 本仓库 github.com/YyAdnBug/kitty-tools 发**正式 release、标 latest**（App 内更新读 `releases/latest`；不碰 Tauri 版的仓库，不跑 `pnpm release:verify`），两个文件都附上，**发布前须经用户确认**；tag `macos-v0.1.0` 打在 `main`。发布前先把 changelog.json 的 0.1.0 条目补全（启动器、截图、应用内更新等还没写进去）。
 
@@ -1146,6 +1168,18 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 | 69 | `ClipboardItemCard/index.tsx:254-327`（原生照搬后又单写了一份 ⌘K） | 右键菜单和 ⌘K 各写一份：名字、条件对不上（带格式才有纯文本粘贴、当前分组置灰），右键缺复制为纯文本 / 打开链接 / 美化；右键「复制」复制的是全部勾选项 | 同一个 `actions(for:targets:)`，右键传被点的那条（体检 B9 B12） |
 | 70 | `useClipboard.ts:589-591,605-608`（原生没带过来） | 原生按 id 选中：删除、收藏范围取消收藏、移出收藏夹后跳回第一条，连按 ⌘⌫ 删错；勾选不随搜索裁剪，批量删到看不见的条目 | `changingList`：选中挪到下一条；勾选裁成看得见的，底栏计数和批量操作只对它们（体检 B7 B8） |
 | 71 | `ClipboardItemEditDialog`、`ClipboardSnippetCreateDialog` | 编辑对话框空白 / 没改动也能保存、不分情况提示丢格式；新建片段没有名称 | 空白或没改动时保存置灰；只在带格式时提示；新建片段加可选名称（存成备注）（体检 C2） |
+| 72 | `clipboard_monitor.rs:43-58`、PLAN §5.2 复制即译行 | 复制即译不挑内容：网址、路径、数字、自己写的中文都弹浮窗、每个服务请求一遍；超过 32 KB 弹一个只有「原文太长」的浮窗；「与上次翻译过的文本指纹相同不触发」原生漏了；自家浮窗里 ⌘C 半句译文也被当成新原文 | 静默跳过网址、路径、纯数字 / 符号、超长、目标自动时的第一语言、刚翻过的同一段（`worthTranslating`）；自家浮层里复制的来源记本 App、不触发（体检 A12 B20） |
+| 73 | `config.rs:466-467` floating_window_x/y、PLAN §5.2 浮窗行 | 浮窗总在上次的位置（双屏时要转头找） | 设置「浮窗位置」跟随鼠标（默认，光标右下 12 pt、放不下翻边）/ 上次位置；输入翻译总在上次拖到的位置；只记用户拖过的位置（体检 A13） |
+| 74 | `pipeline.rs:103-125` | 输入翻译每次清空原文和结果、再按热键不收起 | 热键是开关，再打开保留上次的、原文全选，中断的卡片重跑（体检 A14） |
+| 75 | PLAN §5.2 划词行「选区为空时打开空白输入面板」 | 没取到选中文字时和平时的输入翻译一模一样，看不出是没取到 | 占位换成「没取到选中的文字，可以直接输入或粘贴」+ VoiceOver 播报（体检 A16） |
+| 76 | `translate-services.ts:27-36` | 智谱第二档是识图用的 glm-4.6v-flash | 换成免费纯文本的 glm-4.7-flash，读到旧值回落 glm-4-flash（体检 A17） |
+| 77 | `history_db.rs:19,22`、`config.rs` default 500 | 历史保留 100–2000 五档、默认 500，列表只显示最近 200 条 | 1000 / 5000 / 不限（默认 5000），列表每页 500 条、滚到底取下一页，查询按 (revision, 搜索词, 范围, 页数) 缓存（体检 A18 B22） |
+| 78 | `FloatingResult:246-249` | 开了复制即译，划词、输入、截图翻译都不再自动复制（理由「免得自己触发自己」在原生已不成立） | 只有复制即译带来、没改过的原文不自动复制（体检 A19） |
+| 79 | `text_preprocess.rs` strip_translate_newlines | 「合成一段」把中日文行间插空格、两段并成一段、「State-\nOf」接成「StateOf」；截图翻译按视觉行断开送去翻，一句被拆成几截 | 翻译和识字共用 `OCR.joiningLines` / `OCR.paragraphs`：按行框间距和句末短行切段，段内按中日文 / 其它接、连字符只在小写前去掉；截图翻译总是按段、段间空一行（体检 A32） |
+| 80 | `validation.rs:5`、内置智谱 max_tokens 1024 | 输出到上限被截断时按完成处理：半截写历史、自动复制、能替换原文 | 认 finish_reason = length / stop_reason = max_tokens，卡片 `.truncated`：正文照常 + 一行说明，不写历史、不自动复制、不给收藏和替换（体检 B19） |
+| 81 | PLAN §5.2 翻译设置 Tab「服务列表」 | 8 个内置服务常驻列表、只能关不能删；新建 AI 服务没有厂商预设（PLAN 写了「预设照搬」但没做） | 列表只放加进来的，「+」加回内置 / 新建 AI（9 家预设 + 自定义 / Azure），删内置不确认、密钥留着（体检 B21 D15） |
+| 82 | `speak-text.ts` | 收起浮窗不停朗读；声线只按语言取默认 | 收起时停；按品质挑已下载的高音质声线（体检 B23） |
+| 83 | `api.rs` 百度 / 有道错误 | 错误只给码或英文原文；错误卡不分配置 / 网络，「打开设置」只到列表页 | 错误码译成中文；配置类橙卡只给「打开设置」直达服务详情页，网络 / 服务类红卡给「重试」（体检 B24 C5） |
 
 ## 附录：评审处理记录
 
@@ -1205,5 +1239,6 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 - 2026-09-28 体检拍板（方案页 https://claude.ai/artifact/1KuAQRafw2E3QYAM4LULFR ，用户「全部按推荐」）。第 1 批外壳基础与全局：A9 固定只管点别处不收起，Esc / ⌘W / 再按热键一律收起，剪贴板、启动器也认 ⌘W，剪贴板 ⌘P 切换固定，删掉设置里的「点击面板外部时关闭」；A15 输入翻译默认 ⌥T；A29 更新后不开设置窗，改弹刘海岛「已更新到 x」+ 摘要；A30 本 App 生成的新文字写剪贴板时同时记进历史（`Paster.write(string:record:)`），历史里取出的、划词还原、面板里的色值块不记；B15 ⌘, 直达对应设置页；B17 卡片表面 `CardSurface` + `Style.inputFill`，卡片一律不加阴影；B29 `Style.copiedHold` 1.2 s；B30 `Shell/HoverTracker` 共用；B44 识字 text.viewfinder、截图翻译 translate；B48 录制拒绝通用编辑键并播报；B49 剪贴板访问改 PermissionRow；B50 主菜单关于 / 帮助、「退出 Kitty Tools」；B51 侧栏翻译在截图前、「登录时打开」「欢迎引导」；B52 菜单通知改 selector 观察者；B53 发丝线增强对比度 1 pt（`Hairline` / `hairlineBorder`）；B54 主按钮 `BrandButtonStyle`、速查表「完成」= ↩；B55 静默替换取词后先看取消；D20 引导第二屏加「登录时自动打开」勾选框（默认勾）。
 - 2026-09-28 体检拍板（同一方案页，用户「全部按推荐」）第 2 批剪贴板数据与模型：A1 分组并进收藏（收藏 = 默认收藏夹，分组 = 命名收藏夹，保留规则只剩收藏 ∨ 片段；启动时迁移已归组的置收藏、`clip_groups` 加 `position`；⌘D 取消收藏同时移出收藏夹；删收藏夹不确认、条目留在收藏、⌘Z 可撤；管理收藏夹改键盘列表、拖动排序、24 字拦住不截断；取消收藏后超期的底栏提示、收起面板才清）；A2 删除进撤销栈、⌘Z 连撤，收起 / 退出时才提交，再复制同内容拿回原条目，撤销后播报；A3 备注所有条目都能写、取消收藏不清、不影响保留、单行对话框；A4 只留「保留普通历史」（1 天 / 1 周 / 1 个月 / 3 个月 / 1 年 / 永久，默认 1 周）+ 图片兜底（只算普通图片）；A5 格式总是采集，「默认粘贴为纯文本」开关，⌥↩ 反过来；A6 搜索只过滤、始终按天分组；A7 占位符 {time} {datetime} {weekday} {uuid} {clipboard:N}；A8 ⌘C 收起面板时置顶；A11 排除 App 改 bundle ID 列表；B1 合并粘贴展开片段；B2 图片预算只算普通图片；B3 多选文件一次粘、依次粘贴按复制先后补换行、动词一个函数给；B4 补 5 种隐私标记；B5 补 7 种密钥格式；B6 来源先读来源标记、通用剪贴板记「其他设备」；C1 移出片段；D4 菜单栏「暂停记录剪贴板」（不存盘）。实现时的一处取舍：备注输入框占位按实际行为写「搜索时能搜到」（方案原文「搜索时优先命中」和 A6 只过滤冲突）；「移出收藏夹」留在默认收藏，超期提示只在取消收藏 / 移出片段时出现。
 - 2026-09-28 体检拍板（同一方案页，用户「全部按推荐」）第 3 批剪贴板面板交互：A10 JSON 默认美化，一次呼出里点过「原文」就一直原文、收起面板复位（美化结果按条目缓存）；B7 条目从列表消失后选中挪到下一条（`changingList`），⌘Z 后选中回来的那批最靠前的；B8 勾选随搜索 / 筛选 / 删除裁剪成看得见的，底栏计数和批量操作只对它们；B9 右键 / ⌘Y 页脚「复制」只复制被点的那条；B10 菜单开着时 ⌘ 键做了才收起，过滤框有字时 ⌘⌫ ⌘A ⌘V ⌘X ⌘Z 交给过滤框；B11 ⌘Y 里 ⌘C 只拷纯文本、经 `Paster.write(string:record:)` 记成无来源的新条目，大卡不跳；B12 右键菜单和 ⌘K 共用 `actions(for:targets:)`；B13 打开链接 / 文件、在访达中显示先收起（固定着不收）再后台打开；B14 ⌘T 翻译；B16 底栏提示和色值块复制主动播报；B18 编辑正文清掉链接缓存；C2 编辑 / 新建片段空白或没改动时保存置灰、提示只说相关的、新建片段加可选名称（存成备注）；C3 ActionMenu 分节（0.5 pt 发丝线，上下各 4 pt）+ 一级子列表「移到收藏夹 ›」，多选底栏「收藏夹…」打开同一份列表；C4 三个动作菜单共用 `ActionMenu.filter`（子串 + 中文标题拼音前缀）；D1 图片钉到屏幕（像素 ÷ 屏幕倍率，超 80% 缩小，鼠标所在屏中央，多张错开 24 pt）；D2 文件打开 ⌘O / 在访达中显示 ⌘R / 拷贝路径 ⌥⌘C、链接打开 ⌘O，⌘Y 页脚第 3 个胶囊按类型；D3 行拖到别的 App（AppKit 拖放会话，拖勾选项之一 = 全部勾选项，不算粘贴）。实现时的取舍：子列表那一行叫「移到收藏夹」、行尾 ›，不再加「…」（HIG：打开子菜单的项不写省略号，右键里是同名子菜单）；一个收藏夹都没有时第一级直接是「放进新收藏夹…」（进子列表只有一行没意义）；只勾一条时 ⌘K 和 ⌘E ⌘T ⌘O ⌘R 对着那一条（原来「有勾选就只给批量操作」，一条时没有对象歧义）；替代粘贴 / 复制为纯文本只给带格式的文本或多条；拖出用 AppKit 会话而不是 SwiftUI `onDrag`（一次只给得出一个 NSItemProvider，拖不了多个勾选项和一条里的多个文件）；「拷贝路径」同 ⌘C，面板开着时列表不动、收起时才记成新历史（A8）；⌘Y 里 ⌘C 按审查建议直接记（大卡开着选中不跳）。
+- 2026-09-28 体检拍板（同一方案页，用户「全部按推荐」）第 4 批翻译：A12 复制即译静默跳过网址、路径、纯数字 / 符号、超长、目标自动时的第一语言；A13 设置 › 翻译「浮窗位置」跟随鼠标（默认）/ 上次位置（`OverlayPanel.present(anchor:)`）；A14 输入翻译热键是开关、再打开保留上次的原文和结果（原文全选）、中断的卡片重跑；A16 划词没取到文字时占位换成说明 + 播报；A17 智谱第二档换免费纯文本 glm-4.7-flash（查智谱开放文档：它在「免费模型」目录、纯文本、能关思考，2026-01 替代 GLM-4.5-Flash），旧的 glm-4.6v-flash 回落 glm-4-flash；A18 历史保留 1000 / 5000 / 不限（默认 5000）；A19 只有复制即译带来的原文不自动复制；A31 收藏全 App 统一 ⌘D，翻译浮窗和翻译历史的 ⌘S 不再响应；A32 识字和翻译共用一套分段接行（`OCR.paragraphs` 按行框间距 > 1.2 倍中位行高、或句末标点且短于中位行宽 80% 断段，换栏也断；`OCR.joiningLines` 纯文本按空行分段），截图翻译总是按段（段间空一行），识字设置改名「识字后把同一段里的换行接起来」；B19 截断检测；B20 自家浮层里的 ⌘C 不触发复制即译、来源记本 App，同一段不重翻；B21 内置服务可删、「+」加回；B22 历史分页 + 缓存；B23 收起停朗读、挑高音质声线；B24 百度 / 有道错误码译成中文；B25 「思考中」扫光 + 重译正文交叉淡变 0.18 s；B26 语言胶囊互换（glide）；B27 模型框下拉列服务端模型（`textInputSuggestions`）、进页自动取、↻ 重取；B28 设置 › 翻译加「清空翻译历史…」；C5 错误卡分配置（橙、只给打开设置、直达服务详情页）/ 网络与服务（红、重试，自建 AI 另给打开设置）；C6 历史 ⌘K（`ActionMenu`，右键同一份）、「⋯」菜单能导出；D15 「+ › AI 服务」厂商预设；D16 系统翻译只做文档验证，结论见 §10 D5（不做）。A20、A21 保持现状。实现时的取舍：思考信号用流里的空串（只在推理字段或 `<think>` 段里发，开头 role 那一段的空 content 不发），不改流的元素类型；截断在流结束时先给半截、再抛 `TranslateError.truncated`，静默替换因此照常报错不粘；配置类错误的字用默认色、只有钥匙是橙色（橙字在浅色卡底上对比度不够，同剪贴板底栏的警告）；智谱 `max_tokens` 仍按 mac-translate §3 固定 1024（glm-4.7-flash 文档写最大输出 128K，但没联网实测前不改，截断至少看得见了）；「浮窗位置」只记用户拖过 / 拖宽过的位置（`setFrameAutosaveName` 连跟随鼠标摆的位置也记，改成收起时比对后手动存）；内置服务从「+」加回来直接启用（删之前的密钥还在）、AI 服务等测试连接成功再自动启用；历史 ⌘K 的「导出」是一级子列表（全部 / 只收藏 × CSV / Anki TSV）。评审修复：不带锚点出现（输入翻译、「上次位置」）回到用户拖到的位置（`userFrame`），不再用上次跟随鼠标弹出的位置，直接 `orderOut` 收起的也在下次出现前补记拖动；自家浮层里的复制改在复制那一刻记 `Paster.panelCopyChangeCount`（轮询时看 key 窗口会在「复制后马上 Esc」「别处复制后马上呼出浮层」时判反，后者还会绕过排除的 App），来源标记优先于「自家窗口」；两个语言胶囊合成同一种视图，互换时才会滑到对方位置（分支不同只会原地淡变）；卡片标题的智谱模型名走回落后的值。
 - 截图翻译（2026-09-24）：只用 Vision 本机识字；原文写剪贴板历史；默认热键 ⌥S。
 - 启动器 / 截图（2026-09-24）：启动器首版做 App、书签、直达、网页搜索、最近使用、内置动作、计算器、cb，文件搜索与 kill 放 M11；标注首版做矩形、箭头、文字、马赛克；附加功能只做取色（长截图、延时、美化 / 水印不做；长截图 2026-09-25 改为做，见 §10 D1）；做钉图，不做截图历史和钉图历史。

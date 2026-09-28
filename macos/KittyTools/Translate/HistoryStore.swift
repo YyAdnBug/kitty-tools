@@ -110,7 +110,7 @@ import Observation
     }
   }
 
-  /// 这次翻译（原文 + 实际目标语言）收藏了没有：浮窗的星标、⌘S
+  /// 这次翻译（原文 + 实际目标语言）收藏了没有：浮窗的星标、⌘D
   func isFavorite(source: String, target: Lang) -> Bool {
     let rows = try? db.query(
       "SELECT favorite FROM translations WHERE source = ? AND target = ?",

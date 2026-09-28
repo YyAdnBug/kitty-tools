@@ -4,6 +4,8 @@
 // 外观是 Whisker 的 Panel 皮肤（mac-whisker §2）：无边框、16 pt 连续圆角（maskImage 裁，系统阴影跟着走）+ 描边；
 // 出现时淡入 + 内容下落 6 pt，用户关掉时系统淡出（窗口逻辑上立刻移走，键盘马上回到原 App），高度可带动画伸缩。
 // ⌘Y 放大预览用 zoom / unzoom：从检查器卡片的位置长出来、缩回去。启动器可选「挤压入场」（实验，squeezesIn）。
+// 翻译浮窗（frameName）：present 带 anchor 时出现在光标右下 12 pt（放不下翻到另一侧，体检 A13），不带时回到用户上次拖到的
+// 位置（userFrame；所在屏不是鼠标所在屏时换算到鼠标所在屏同一相对位置）；只有用户拖过、拖宽过才记下新位置。
 
 import AppKit
 import Carbon.HIToolbox
@@ -25,7 +27,14 @@ final class OverlayPanel: NSPanel {
   var keyEquivalentHandler: ((NSEvent) -> Bool)?
   private let autoHide: AutoHide
   private let isPinned: () -> Bool
-  private let centersOnEveryShow: Bool
+  /// 记位置用的名字（翻译浮窗）：nil 时每次都居中到鼠标所在屏
+  private let frameName: String?
+  /// 这次显示时摆好的左上角和宽度：收起时和它不同 = 用户拖过 / 拖宽过，才记下来（跟随鼠标摆的位置不算「上次位置」）
+  private var placed: (topLeft: NSPoint, width: CGFloat)?
+  /// 用户上次拖到的左上角和宽度（启动时从 frameName 读回）：不带锚点出现时回到这里，不用内存里上次弹出的位置
+  private var userFrame: (topLeft: NSPoint, width: CGFloat)?
+  /// 下一次出现时的锚点（present 传进来的鼠标位置）
+  private var anchor: NSPoint?
   /// 启动器：每次都放在鼠标所在屏、顶边在可见区 20% 处，高度随内容往下伸缩
   private let topAnchored: Bool
   private var mouseMonitors: [Any] = []
@@ -45,15 +54,15 @@ final class OverlayPanel: NSPanel {
 
   /// - Parameters:
   ///   - minSize: 传了就允许拖左右边改宽度（无边框窗口没有系统的拖边，用两条 ResizeEdge）
-  ///   - autosaveName: 传了就记住位置和大小（首次居中）；不传则每次显示都居中到鼠标所在屏幕
+  ///   - frameName: 传了就记住用户拖到的位置和宽度（首次居中），present 可带锚点跟随鼠标；不传则每次显示都居中到鼠标所在屏幕
   ///   - topAnchored: 放在屏幕上部（启动器），配合 setContentHeight 伸缩
   init<Content: View>(
-    size: NSSize, minSize: NSSize? = nil, autosaveName: String? = nil, topAnchored: Bool = false,
+    size: NSSize, minSize: NSSize? = nil, frameName: String? = nil, topAnchored: Bool = false,
     autoHide: AutoHide, isPinned: @escaping () -> Bool, content: Content
   ) {
     self.autoHide = autoHide
     self.isPinned = isPinned
-    centersOnEveryShow = autosaveName == nil
+    self.frameName = frameName
     self.topAnchored = topAnchored
     let hosting = NSHostingView(rootView: PanelRoot(content: content))
     hosting.sizingOptions = []  // 窗口大小由这里定，不让 SwiftUI 的理想尺寸反推窗口
@@ -89,20 +98,31 @@ final class OverlayPanel: NSPanel {
       for edge in [ResizeEdge.Side.left, .right] { background.addSubview(ResizeEdge(side: edge)) }
     }
     contentView = background
-    if let autosaveName, !setFrameUsingName(autosaveName) { center() }
-    if let autosaveName { setFrameAutosaveName(autosaveName) }
+    // 不用 setFrameAutosaveName：它连跟随鼠标摆的位置也记，「上次位置」就成了上次弹出的地方
+    if let frameName {
+      if setFrameUsingName(frameName) {
+        userFrame = (NSPoint(x: frame.minX, y: frame.maxY), frame.width)
+      } else {
+        center()
+      }
+    }
   }
 
   override var canBecomeKey: Bool { true }
   override var canBecomeMain: Bool { false }
 
-  /// makingKey = false：只露出来、不抢键盘（复制即译），此时靠点外关闭
-  func present(makingKey: Bool = true) {
+  /// makingKey = false：只露出来、不抢键盘（复制即译），此时靠点外关闭。
+  /// anchor：新出现时放在这一点（鼠标位置）的右下 12 pt（翻译浮窗「跟随鼠标」）；已经开着就不挪。
+  /// keepsPlace：原地重新露出来（划词翻译并替换期间临时 orderOut 的固定浮窗），不重新摆
+  func present(makingKey: Bool = true, anchor: NSPoint? = nil, keepsPlace: Bool = false) {
     let appearing = !isVisible
     // 系统淡出约 0.13 s，期间快照窗口还在：直接不透明盖住它
     let fades = appearing && CACurrentMediaTime() - lastDismiss > 0.15
     if appearing {
-      placeForShow()
+      // 直接 orderOut 收起的（划词时浮窗是 key）没经过 hide / dismiss：这里补记用户拖过的位置
+      saveFrameIfMoved()
+      self.anchor = anchor
+      if !keepsPlace { placeForShow() }
       animationBehavior = .none
       alphaValue = fades ? 0 : 1
     }
@@ -188,6 +208,7 @@ final class OverlayPanel: NSPanel {
   func hide() {
     endSqueeze()
     guard isVisible else { return }
+    saveFrameIfMoved()
     showGeneration += 1
     animationBehavior = .none
     orderOut(nil)
@@ -200,6 +221,7 @@ final class OverlayPanel: NSPanel {
   func dismiss() {
     endSqueeze()
     guard isVisible else { return }
+    saveFrameIfMoved()
     showGeneration += 1
     animationBehavior = Style.reduceMotion ? .none : .utilityWindow
     lastDismiss = CACurrentMediaTime()
@@ -294,7 +316,7 @@ final class OverlayPanel: NSPanel {
     // 浮层不激活本 App，主菜单的 ⌘C / ⌘V 等不一定收得到：直接发给当前输入框
     guard let action = Self.editActions[event.charactersIgnoringModifiers?.lowercased() ?? ""]
     else { return false }
-    return NSApp.sendAction(action, to: nil, from: self)
+    return Self.sendEditAction(action, from: self)
   }
 
   /// 截图里输入文字时也用它（同样不激活本 App）
@@ -303,6 +325,16 @@ final class OverlayPanel: NSPanel {
     "v": #selector(NSText.paste(_:)), "a": #selector(NSText.selectAll(_:)),
     "z": Selector(("undo:")),
   ]
+
+  /// 把编辑动作发给当前输入框；拷贝 / 剪切改了剪贴板就记下这次是在自家浮层里复制的（Paster.panelCopyChangeCount）。
+  /// ponytail: 右键菜单里的「拷贝」不经这里，照外部复制算；真碰上再给浮层里的文本视图接 copy:
+  static func sendEditAction(_ action: Selector, from sender: Any?) -> Bool {
+    let before = NSPasteboard.general.changeCount
+    let handled = NSApp.sendAction(action, to: nil, from: sender)
+    let after = NSPasteboard.general.changeCount
+    if after != before { Paster.panelCopyChangeCount = after }
+    return handled
+  }
 
   /// Esc（面板里有展开的层时各自先逐级退，退到头才转到这里）：固定着也关
   override func cancelOperation(_ sender: Any?) {
@@ -343,6 +375,10 @@ final class OverlayPanel: NSPanel {
     if let visible = screen?.visibleFrame, target.minY < visible.minY {
       target.origin.y = min(visible.minY, visible.maxY - height)
     }
+    // 程序挪的（变高出了屏幕往上挪）不算用户拖过：摆好的位置跟着改
+    if let placed, placed.topLeft == NSPoint(x: frame.minX, y: frame.maxY) {
+      self.placed = (NSPoint(x: target.minX, y: target.maxY), placed.width)
+    }
     let animates =
       animated && isVisible && alphaValue == 1 && !isUserResizing && !Style.reduceMotion
     NSAnimationContext.runAnimationGroup { context in
@@ -358,17 +394,84 @@ final class OverlayPanel: NSPanel {
     let mouse = NSEvent.mouseLocation
     let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
     guard let visible = screen?.visibleFrame else { return }
+    defer { placed = (NSPoint(x: frame.minX, y: frame.maxY), frame.width) }
     if topAnchored {
       let top = visible.maxY - visible.height * 0.2
       setFrameOrigin(NSPoint(x: visible.midX - frame.width / 2, y: top - frame.height))
       return
     }
-    // 记住的位置落在某块屏幕里就沿用（拔掉外接屏后才重新居中）
-    if !centersOnEveryShow, NSScreen.screens.contains(where: { $0.visibleFrame.intersects(frame) })
-    {
-      return
+    if let anchor {
+      return setFrameOrigin(Self.frame(near: anchor, size: frame.size, in: visible).origin)
+    }
+    if frameName != nil {
+      return setFrame(
+        Self.lastFrame(
+          user: userFrame, size: frame.size, screens: NSScreen.screens.map(\.visibleFrame),
+          in: visible), display: false)
     }
     setFrameOrigin(NSPoint(x: visible.midX - frame.width / 2, y: visible.midY - frame.height / 2))
+  }
+
+  /// 收起时：用户拖过、拖宽过（和这次摆好的左上角 / 宽度不同）才记下来。比左上角：高度随内容变、顶边不动。
+  /// 只拖宽没挪（右边的拖边）时位置沿用 userFrame，没有才用当前位置
+  private func saveFrameIfMoved() {
+    let topLeft = NSPoint(x: frame.minX, y: frame.maxY)
+    guard let frameName, let placed, placed.topLeft != topLeft || placed.width != frame.width
+    else { return }
+    let moved = placed.topLeft != topLeft
+    userFrame = (moved ? topLeft : userFrame?.topLeft ?? topLeft, frame.width)
+    self.placed = (topLeft, frame.width)
+    // ponytail: saveFrame 只能存当前帧，只拖宽而 userFrame 在别处时磁盘上不更新（宽度这次运行内有效）；要存再自己写偏好
+    if userFrame?.topLeft == topLeft { saveFrame(usingName: frameName) }
+  }
+
+  /// 不带锚点出现的位置（纯函数配单测，体检 A13）：用户拖到的左上角和宽度，高度沿用当前内容高；所在屏不是鼠标所在屏时
+  /// 换算到鼠标所在屏同一相对位置。没拖过、或哪块屏都不在（拔了外接屏）就居中到鼠标所在屏
+  static func lastFrame(
+    user: (topLeft: NSPoint, width: CGFloat)?, size: NSSize, screens: [NSRect], in visible: NSRect
+  ) -> NSRect {
+    let width = user?.width ?? size.width
+    let centered = NSRect(
+      x: visible.midX - width / 2, y: visible.midY - size.height / 2, width: width,
+      height: size.height)
+    guard let user else { return centered }
+    let frame = NSRect(
+      x: user.topLeft.x, y: user.topLeft.y - size.height, width: width, height: size.height)
+    guard let home = screens.max(by: { overlap($0, frame) < overlap($1, frame) }),
+      overlap(home, frame) > 0
+    else { return centered }
+    return relocated(frame, from: home, to: visible)
+  }
+
+  private static func overlap(_ a: NSRect, _ b: NSRect) -> CGFloat {
+    let common = a.intersection(b)
+    return common.isNull ? 0 : common.width * common.height
+  }
+
+  /// 跟随鼠标（体检 A13，纯函数配单测）：左上角放在光标右下 12 pt；右边放不下翻到光标左边、下边放不下翻到光标上面，
+  /// 最后夹进屏幕可见区（四周内缩 8；比可见区还大时左上角露在里面）
+  static func frame(near mouse: NSPoint, size: NSSize, in visible: NSRect) -> NSRect {
+    let gap: CGFloat = 12
+    let area = visible.insetBy(dx: 8, dy: 8)
+    var x = mouse.x + gap
+    if x + size.width > area.maxX { x = mouse.x - gap - size.width }
+    var top = mouse.y - gap
+    if top - size.height < area.minY { top = mouse.y + gap + size.height }
+    x = max(min(x, area.maxX - size.width), area.minX)
+    top = min(max(top, area.minY + size.height), area.maxY)
+    return NSRect(x: x, y: top - size.height, width: size.width, height: size.height)
+  }
+
+  /// 上次的位置换算到另一块屏（纯函数配单测）：左上角在可见区里的相对位置不变，再夹进新屏的可见区
+  static func relocated(_ frame: NSRect, from old: NSRect, to new: NSRect) -> NSRect {
+    guard old != new, old.width > 0, old.height > 0 else { return frame }
+    let rx = (frame.minX - old.minX) / old.width
+    let ry = (old.maxY - frame.maxY) / old.height
+    var x = new.minX + rx * new.width
+    var top = new.maxY - ry * new.height
+    x = max(min(x, new.maxX - frame.width), new.minX)
+    top = min(max(top, new.minY + frame.height), new.maxY)
+    return NSRect(x: x, y: top - frame.height, width: frame.width, height: frame.height)
   }
 
   /// 点外即关：global 监听管别的 App，local 监听管自家窗口。点中任一自家浮层、截图框选中点遮罩都不关

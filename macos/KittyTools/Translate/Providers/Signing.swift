@@ -46,7 +46,7 @@ nonisolated enum Signing {
   }
 
   static func missing(_ what: String) -> AsyncThrowingStream<String, Error> {
-    AsyncThrowingStream { $0.finish(throwing: TranslateError(message: "请先在设置里填写\(what)")) }
+    AsyncThrowingStream { $0.finish(throwing: TranslateError.config("请先在设置里填写\(what)")) }
   }
 
   static func tooLong(_ limit: Int) -> AsyncThrowingStream<String, Error> {

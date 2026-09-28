@@ -1,6 +1,7 @@
 // 翻译浮窗根视图（Whisker，mac-whisker §6 翻译）：三层、没有分割线（内边距 12、层间距 10）——
-// 顶栏（N6，对标 Bob）：两个 28 pt 语言胶囊（显示实际语言，自动时带「自动」标签）+ 圆形互换钮（转半圈），右边只有
-// 复制即译开着时的品牌粉状态胶囊（点一下关掉）、图钉、「⋯」菜单（翻译历史 ⌘Y、条数与清空、复制即译、设置 ⌘,）；
+// 顶栏（N6，对标 Bob）：两个 28 pt 语言胶囊（显示实际语言，自动时带「自动」标签）+ 圆形互换钮（转半圈，两个胶囊
+// 按 glide 交换位置，体检 B26），右边只有复制即译开着时的品牌粉状态胶囊（点一下关掉）、图钉、「⋯」菜单
+// （翻译历史 ⌘Y、条数、清空与导出、复制即译、设置 ⌘,）；
 // 原文卡片（15 pt，↩ 就是翻译，⇧↩ / ⌘↩ 换行；只在出乎所选时写一行方向说明）+ 原文操作（收藏、划词来的可「替换原文」），
 // 没有常驻「翻译」按钮（N5）：原文改过还没重译时右下角才弹出品牌粉「翻译 ↩」胶囊（pop），开始翻译就收回（settle）；
 // 下方是各服务结果卡片（折叠状态记住；查单个词时最上面多一张系统词典卡）。翻译历史（N7，HistoryView）整块替换结果区，
@@ -67,6 +68,12 @@ struct TranslatePanelView: View {
     // 一次操作只重译一次（交换、撞同语言时两个值在同一次更新里一起改）
     .onChange(of: [source, target]) { retranslate() }
     .onChange(of: desiredHeight, initial: true) { resize(desiredHeight) }
+    // 「⋯」菜单和历史 ⌘K 的「清空历史…」共用一个确认框
+    .confirmationDialog("清空翻译历史？", isPresented: $coordinator.confirmsClearHistory) {
+      Button("清空", role: .destructive) { HistoryMenu.clear(coordinator.history, island: island) }
+    } message: {
+      Text("收藏的记录会保留")
+    }
   }
 
   /// 顶栏 + 原文区 + 结果（卡片按实际高度；历史、提示、没有服务、空态给固定的高度，和 results 的分支一致）
@@ -120,64 +127,89 @@ struct TranslatePanelView: View {
       value: copyToTranslate)
   }
 
-  /// 源语言胶囊 + 互换钮 + 目标语言胶囊
+  /// 顶栏语言区的三格：按语言值标 id（两边都自动时各用自己的），互换时 SwiftUI 把同一个语言的胶囊滑到另一边
+  private struct LanguageSlot: Identifiable {
+    enum Kind { case source, swap, target }
+    let id: String
+    let kind: Kind
+  }
+
+  private var slots: [LanguageSlot] {
+    let bothAuto = source == nil && target == nil
+    return [
+      LanguageSlot(id: source ?? (bothAuto ? "auto-src" : "auto"), kind: .source),
+      LanguageSlot(id: "swap", kind: .swap),
+      LanguageSlot(id: target ?? (bothAuto ? "auto-dst" : "auto"), kind: .target),
+    ]
+  }
+
+  /// 源语言胶囊 + 互换钮 + 目标语言胶囊。两个胶囊是同一种视图（languageMenu），互换后同一个语言的元素身份不变，
+  /// SwiftUI 才会把它滑到另一边；分成两种视图（或 switch 三个分支）时换边 = 换分支，只会原地交叉淡变
   private func languages(showsAutoTags: Bool) -> some View {
     HStack(spacing: 6) {
-      Menu {
-        Picker("源语言", selection: choose(\.source, other: \.target)) {
-          Text("自动检测").tag(String?.none)
-          Divider()
-          ForEach(Lang.allCases, id: \.self) { Text($0.title).tag(String?.some($0.rawValue)) }
+      ForEach(slots) { slot in
+        if slot.kind == .swap {
+          swapButton
+        } else {
+          languageMenu(isSource: slot.kind == .source, showsAutoTags: showsAutoTags)
         }
-        .pickerStyle(.inline)
-      } label: {
-        LanguageCapsule(
-          title: sourceTitle,
-          showsAutoTag: showsAutoTags && source == nil && sourceTitle != "自动检测")
       }
-      .menuStyle(.button)
-      .buttonStyle(.plain)
-      .menuIndicator(.hidden)
-      .help("源语言")
-      .accessibilityLabel("源语言")
-      .accessibilityValue(sourceTitle)
-      // 原样互换，「自动」也照换（Bob 的做法）；两边都自动时本来就是双向的，不用换
-      Button {
-        swaps += 1
-        (source, target) = (target, source)
-      } label: {
-        Image(systemName: "arrow.left.arrow.right")
-          .font(.system(size: 11, weight: .semibold))
-          .rotationEffect(.degrees(Double(swaps) * 180))
-          .animation(reduceMotion ? nil : .spring(duration: 0.35, bounce: 0.28), value: swaps)
-          .frame(width: 24, height: 24)
-          .background(Style.controlFill, in: .circle)
-          .contentShape(.circle)
-      }
-      .buttonStyle(PressScale())
-      .disabled(source == nil && target == nil)
-      .opacity(source == nil && target == nil ? 0.35 : 1)
-      .help("交换语言")
-      .accessibilityLabel("交换语言")
-      Menu {
-        Picker("目标语言", selection: choose(\.target, other: \.source)) {
+    }
+  }
+
+  private func languageMenu(isSource: Bool, showsAutoTags: Bool) -> some View {
+    let title = isSource ? sourceTitle : targetTitle
+    let isAuto = (isSource ? source : target) == nil
+    let label = isSource ? "源语言" : "目标语言"
+    return Menu {
+      Picker(
+        label,
+        selection: isSource ? choose(\.source, other: \.target) : choose(\.target, other: \.source)
+      ) {
+        if isSource {
+          Text("自动检测").tag(String?.none)
+        } else {
           let pair = Lang.pair(first: first, second: second)
           Text("自动（\(pair.first.title) ⇄ \(pair.second.title)）").tag(String?.none)
-          Divider()
-          ForEach(Lang.allCases, id: \.self) { Text($0.title).tag(String?.some($0.rawValue)) }
         }
-        .pickerStyle(.inline)
-      } label: {
-        LanguageCapsule(
-          title: targetTitle, showsAutoTag: showsAutoTags && target == nil && targetTitle != "自动")
+        Divider()
+        ForEach(Lang.allCases, id: \.self) { Text($0.title).tag(String?.some($0.rawValue)) }
       }
-      .menuStyle(.button)
-      .buttonStyle(.plain)
-      .menuIndicator(.hidden)
-      .help("目标语言")
-      .accessibilityLabel("目标语言")
-      .accessibilityValue(targetTitle)
+      .pickerStyle(.inline)
+    } label: {
+      LanguageCapsule(
+        title: title,
+        showsAutoTag: showsAutoTags && isAuto && title != (isSource ? "自动检测" : "自动"))
     }
+    .menuStyle(.button)
+    .buttonStyle(.plain)
+    .menuIndicator(.hidden)
+    .help(label)
+    .accessibilityLabel(label)
+    .accessibilityValue(title)
+  }
+
+  /// 原样互换，「自动」也照换（Bob 的做法）；两边都自动时本来就是双向的，不用换。
+  /// 箭头转半圈、两个胶囊交换位置，都是 glide（指针驱动的位移；减弱动态效果时瞬时）
+  private var swapButton: some View {
+    Button {
+      withAnimation(Style.Motion.glide.animation(reduced: reduceMotion)) {
+        swaps += 1
+        (source, target) = (target, source)
+      }
+    } label: {
+      Image(systemName: "arrow.left.arrow.right")
+        .font(.system(size: 11, weight: .semibold))
+        .rotationEffect(.degrees(Double(swaps) * 180))
+        .frame(width: 24, height: 24)
+        .background(Style.controlFill, in: .circle)
+        .contentShape(.circle)
+    }
+    .buttonStyle(PressScale())
+    .disabled(source == nil && target == nil)
+    .opacity(source == nil && target == nil ? 0.35 : 1)
+    .help("交换语言")
+    .accessibilityLabel("交换语言")
   }
 
   /// 源语言胶囊：自动时显示检测到的语言（还没翻译时写「自动检测」）
@@ -224,8 +256,9 @@ struct TranslatePanelView: View {
       }
       .frame(height: 76)
       .overlay(alignment: .topLeading) {
+        // 划词没取到文字时换一句说明（体检 A16，同一句也播报给 VoiceOver），开始输入就换回平时的
         if coordinator.sourceText.isEmpty {
-          Text("输入或粘贴文字，↩ 翻译，⇧↩ 换行")
+          Text(coordinator.missedSelection ? "没取到选中的文字，可以直接输入或粘贴" : "输入或粘贴文字，↩ 翻译，⇧↩ 换行")
             .font(.system(size: 15 * fontScale))
             .foregroundStyle(.tertiary)
             .padding(.leading, 15)
@@ -270,7 +303,7 @@ struct TranslatePanelView: View {
         .contentTransition(.symbolEffect(.replace))
         .symbolEffect(.bounce, value: coordinator.isFavorite)
         .disabled(coordinator.primaryResult == nil)
-        .help("收藏这次翻译（⌘S），在历史里可以只看收藏")
+        .help("收藏这次翻译（⌘D），在历史里可以只看收藏")
         // 查单个词时结果是一段释义，不能拿去替换
         if coordinator.replaceSource != nil, !coordinator.isWordLookup {
           Button("替换原文", systemImage: "arrow.uturn.backward", action: replaceOriginal)
@@ -327,7 +360,7 @@ struct TranslatePanelView: View {
       }
     } else if coordinator.services.enabled.isEmpty {
       EmptyStateView(symbol: "character.bubble", title: "没有启用的翻译服务") {
-        Button("打开翻译设置") { coordinator.openSettings() }
+        Button("打开翻译设置") { coordinator.openSettings(nil) }
       }
     } else if coordinator.cards.isEmpty {
       EmptyStateView(symbol: "character.bubble", title: "划词、截图或输入后开始翻译") {
@@ -371,7 +404,8 @@ struct TranslatePanelView: View {
             } onToggleCollapse: {
               toggleCollapse(card.id)
             } onOpenSettings: {
-              coordinator.openSettings()
+              // 直达这个服务的详情页（体检 C5）
+              coordinator.openSettings(card.id)
             }
           }
         }
@@ -436,12 +470,12 @@ private struct LanguageCapsule: View {
   }
 }
 
-/// 顶栏「⋯」菜单（N6）：翻译历史 ⌘Y、清空历史与条数、复制即译开关、设置 ⌘,。菜单项的键位和
-/// TranslateCoordinator.handleKeyEquivalent 一致（那边先处理，这里只是显示）；浮窗快捷键不再塞进按钮 help
+/// 顶栏「⋯」菜单（N6）：翻译历史 ⌘Y、清空历史、导出（体检 C6，和设置 › 翻译、历史 ⌘K 同一个 HistoryMenu.export）
+/// 与条数、复制即译开关、设置 ⌘,。菜单项的键位和 TranslateCoordinator.handleKeyEquivalent 一致（那边先处理，这里只是显示）；
+/// 浮窗快捷键不再塞进按钮 help。清空的确认框挂在根视图上（历史 ⌘K 也开它）
 private struct MoreMenu: View {
   @Bindable var coordinator: TranslateCoordinator
   @AppStorage(Prefs.translateCopyToTranslate) private var copyToTranslate = false
-  @State private var confirmsClear = false
   @Environment(Island.self) private var island: Island?
 
   var body: some View {
@@ -451,13 +485,24 @@ private struct MoreMenu: View {
     Menu {
       Toggle("翻译历史", isOn: $coordinator.showsHistory)
         .keyboardShortcut("y")
-      Button("清空历史…") { confirmsClear = true }
+      Button("清空历史…") { coordinator.confirmsClearHistory = true }
         .disabled(counts.total == counts.favorites)
+      Menu("导出") {
+        Section("全部历史") {
+          Button("CSV（表格）…") { export(favoritesOnly: false, anki: false) }
+          Button("TSV（Anki 卡片）…") { export(favoritesOnly: false, anki: true) }
+        }
+        Section("只导收藏（生词本）") {
+          Button("CSV（表格）…") { export(favoritesOnly: true, anki: false) }
+          Button("TSV（Anki 卡片）…") { export(favoritesOnly: true, anki: true) }
+        }
+      }
+      .disabled(counts.total == 0)
       Text("共 \(counts.total) 条 · 收藏 \(counts.favorites)")
       Divider()
       Toggle("复制即译", isOn: $copyToTranslate)
       Divider()
-      Button("设置…") { coordinator.openSettings() }
+      Button("设置…") { coordinator.openSettings(nil) }
         .keyboardShortcut(",")
     } label: {
       Image(systemName: "ellipsis")
@@ -468,19 +513,13 @@ private struct MoreMenu: View {
     .buttonStyle(.plain)
     .menuIndicator(.hidden)
     .foregroundStyle(.secondary)
-    .help("更多：翻译历史、复制即译、设置")
+    .help("更多：翻译历史、导出、复制即译、设置")
     .accessibilityLabel("更多")
-    .confirmationDialog("清空翻译历史？", isPresented: $confirmsClear) {
-      Button("清空", role: .destructive) {
-        history.clearNonFavorites()
-        // 历史列表多半没开着，清没清看不出来
-        island?.show(
-          "已清空翻译历史", detail: counts.favorites > 0 ? "保留了 \(counts.favorites) 条收藏" : nil,
-          symbol: "trash")
-      }
-    } message: {
-      Text("收藏的记录会保留")
-    }
+  }
+
+  private func export(favoritesOnly: Bool, anki: Bool) {
+    HistoryMenu.export(
+      coordinator.history, favoritesOnly: favoritesOnly, anki: anki, island: island)
   }
 }
 

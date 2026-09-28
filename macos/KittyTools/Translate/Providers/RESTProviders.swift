@@ -25,11 +25,23 @@ nonisolated enum Baidu {
         ("sign", sign(appID: appID, text: request.text, salt: salt, secret: secret)),
       ])
       let object = try await HTTP.send(urlRequest)
-      if let code = object["error_code"], "\(code)" != "52000" {
-        throw TranslateError(message: "百度翻译错误 \(code)：\(object["error_msg"] as? String ?? "")")
-      }
+      if let code = object["error_code"], "\(code)" != "52000" { throw error(code: "\(code)") }
       let results = object["trans_result"] as? [[String: Any]] ?? []
       return results.compactMap { $0["dst"] as? String }.joined(separator: "\n")
+    }
+  }
+
+  /// 错误码 → 用户看得懂的中文（mac-translate §3；按百度翻译开放平台的错误码表）。密钥类是配置错误（橙色、去设置）
+  static func error(code: String) -> TranslateError {
+    switch code {
+    case "52001": TranslateError(message: "百度翻译请求超时，请重试")
+    case "52002": TranslateError(message: "百度翻译系统出错，请重试")
+    case "52003", "54001", "90107": .config("App ID 或密钥不对")
+    case "54003": TranslateError(message: "请求太频繁，稍后再试")
+    case "54004": TranslateError(message: "百度翻译账户余额不足")
+    case "58001": TranslateError(message: "百度翻译不支持这个语言方向")
+    case "58002": .config("服务已关闭，请到百度翻译开放平台开通")
+    default: TranslateError(message: "百度翻译出错（错误码 \(code)）")
     }
   }
 
@@ -78,9 +90,19 @@ nonisolated enum Youdao {
       ])
       let object = try await HTTP.send(urlRequest)
       guard "\(object["errorCode"] ?? "")" == "0" else {
-        throw TranslateError(message: "有道翻译错误 \(object["errorCode"] ?? "未知")")
+        throw error(code: "\(object["errorCode"] ?? "未知")")
       }
       return (object["translation"] as? [String] ?? []).joined(separator: "\n")
+    }
+  }
+
+  /// 错误码 → 用户看得懂的中文（按有道智云的错误码表）；应用 ID / 密钥类是配置错误
+  static func error(code: String) -> TranslateError {
+    switch code {
+    case "101", "108", "202": .config("应用 ID 或应用密钥不对")
+    case "401": TranslateError(message: "有道翻译账户已欠费")
+    case "411": TranslateError(message: "请求太频繁，稍后再试")
+    default: TranslateError(message: "有道翻译出错（错误码 \(code)）")
     }
   }
 

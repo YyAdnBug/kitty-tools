@@ -206,7 +206,7 @@ struct ShortcutsSheet: View {
         Entry("↩", text: "翻译"),
         Entry("⇧↩", "⌘↩", text: "换行"),
         Entry("⌘R", text: "重新翻译"),
-        Entry("⌘S", text: "收藏这次翻译"),
+        Entry("⌘D", text: "收藏这次翻译"),
         Entry("⌘1–9", text: "复制第 1–9 个结果"),
         Entry("⌘Y", text: "打开 / 关闭翻译历史"),
         Entry("⌘P", text: "固定 / 取消固定浮窗（固定后点别处不收起）"),
@@ -214,17 +214,22 @@ struct ShortcutsSheet: View {
         Entry("⌘,", text: "打开 设置 › 翻译"),
         Entry("Esc", "⌘W", text: "关闭（固定着也关；历史开着时 Esc 先关历史）"),
       ]),
-    // mac-translate「翻译历史」（N7）；代码在 TranslateCoordinator.handleHistoryCommand、HistoryList.handleKeyEquivalent
+    // mac-translate「翻译历史」（N7，体检 C6）；代码在 TranslateCoordinator.handleHistoryCommand、HistoryList.handleKeyEquivalent
     Group(
       title: "翻译 · 历史", symbol: "clock.arrow.circlepath", color: Style.Family.translate,
       entries: [
         Entry("↑↓", text: "移动选中"),
         Entry("↩", text: "重新翻译这条（双击同样）"),
+        Entry(
+          "⌘K", "→",
+          text: "打开 / 关闭动作菜单：这条的全部操作、导出、清空历史（→ 要在搜索词末尾按；在「导出 ›」上按 → 或 ↩ 进去）"),
+        Entry("←", text: "动作菜单开着、过滤词为空时回上一级 / 关掉它"),
         Entry("⇧Tab", text: "在 全部 / 收藏 之间切换"),
         Entry("⌘C", text: "复制译文"),
-        Entry("⌘S", text: "收藏 / 取消收藏这条"),
+        Entry("⇧⌘C", text: "复制原文"),
+        Entry("⌘D", text: "收藏 / 取消收藏这条"),
         Entry("⌘⌫", text: "删除（⌘Z 撤销）"),
-        Entry("Esc", text: "先清空搜索，再回到浮窗"),
+        Entry("Esc", text: "先关动作菜单，再清空搜索，最后回到浮窗"),
       ]),
     // mac-whisker §6 截图「待选」「框选 / 拖边」「键盘调整」；代码在 SelectionView.keyDown
     Group(

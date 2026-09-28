@@ -1,7 +1,10 @@
 // 一个翻译服务的结果卡片（Whisker，mac-whisker §6 翻译）：标题行 = 18 pt 品牌色块 + 服务名 12 semibold + 模型 11 tertiary，
-// 右侧朗读 / 复制 / 重试 / 折叠（平时 0.45 透明度）；正文四种状态：等待和「生成中还没有字」是骨架条 + 扫光，
-// 生成中用 RevealText 显影 + 边框上一段强调色彗星光绕行（2.4 s 一圈），完成时整圈闪一下，失败是淡红错误卡
-// （图标晃一下，给「重试 · 打开设置」）。复制时对勾替换 + 整卡闪品牌粉。大模型完成后按行内 Markdown 渲染。
+// 右侧朗读 / 复制 / 重试 / 折叠（平时 0.45 透明度）；正文状态：等待是骨架条 + 扫光，模型在思考时骨架上面多一行
+// 「思考中」扫光（mac-whisker S3），生成中用 RevealText 显影 + 边框上一段强调色彗星光绕行（2.4 s 一圈），
+// 完成时整圈闪一下；截断的照常显示正文、下面一行说明（体检 B19）；失败分两种（体检 C5）：配置 / 密钥问题是淡橙卡
+// （钥匙图标，只给「打开设置」，直达这个服务的详情页），网络 / 服务错误是淡红卡（图标晃一下，给「重试」，
+// 自建 AI 服务另给「打开设置」）。重新翻译时卡片原位不动，只让正文交叉淡变 0.18 s（§4）。
+// 复制时对勾替换 + 整卡闪品牌粉。大模型完成后按行内 Markdown 渲染。
 // 折叠状态由浮窗按服务记住（跨重启），不再因为出结果自动展开；复制的对勾状态在会话里（⌘1–9 也亮）。
 // 正文最高 8 行（按字号算的常数），再长就在卡片里滚动：滚动区铺满卡宽，系统滚动条贴卡片右边、落在内边距里不压字；
 // 下面还有时底部渐隐、滚下去后顶部也渐隐；
@@ -77,8 +80,24 @@ struct ProviderCardView: View {
     }
   }
 
-  private var isFailed: Bool {
-    if case .failed = card.state { true } else { false }
+  /// 失败的种类（没失败时 nil）：配置类橙色、网络 / 服务类红色
+  private var failure: TranslateError? {
+    if case .failed(let error) = card.state { error } else { nil }
+  }
+
+  private var failureTint: Color? {
+    failure.map { Color(nsColor: $0.kind == .config ? .systemOrange : .systemRed) }
+  }
+
+  /// 正文区现在是哪一种（等待 / 思考、正文、截断、失败）：变了才交叉淡变；生成中到完成还是同一种（同一个显影视图）
+  private var phase: Int {
+    switch card.state {
+    case .waiting: 0
+    case .running(let text): text.isEmpty ? 0 : 1
+    case .done(let text): card.service.isStreaming && Self.hasMarkdown(text) ? 2 : 1
+    case .truncated: 1
+    case .failed: 3
+    }
   }
 
   private var isDone: Bool {
@@ -105,8 +124,8 @@ struct ProviderCardView: View {
     .padding(.bottom, isCollapsed ? 7 : 8)
     .frame(maxWidth: .infinity, alignment: .leading)
     .clipped()
-    // 卡片表面（Style.CardSurface）；错误卡红 0.05 底 / 红 0.18 描边
-    .cardSurface(tint: isFailed ? Color(nsColor: .systemRed) : nil)
+    // 卡片表面（Style.CardSurface）；错误卡按种类橙 / 红 0.05 底、0.18 描边
+    .cardSurface(tint: failureTint)
     .overlay { if isGenerating { CometBorder() } }
     // 完成：整圈边框闪一下品牌粉 0.45 → 0（0.6 s）
     .overlay {
@@ -145,7 +164,11 @@ struct ProviderCardView: View {
         .font(.system(size: 12, weight: .semibold))
         .opacity(0.85)
         .lineLimit(1)
-      if let model = card.service.model, !model.isEmpty, card.service.isStreaming {
+      // 智谱存的旧值（glm-4.6v-flash 等）实际按回落后的模型请求，这里写同一个（体检 A17）
+      if let model = card.service.kind == .zhipu
+        ? TranslateService.zhipuModel(card.service.model) : card.service.model,
+        !model.isEmpty, card.service.isStreaming
+      {
         Text(model).font(.system(size: 11)).foregroundStyle(.tertiary).lineLimit(1)
       }
       Spacer(minLength: 6)
@@ -257,43 +280,82 @@ struct ProviderCardView: View {
     switch card.state {
     case .running(let text) where !text.isEmpty: (text, true)
     case .done(let text) where !(card.service.isStreaming && Self.hasMarkdown(text)): (text, false)
+    case .truncated(let text): (text, false)
     default: nil
     }
   }
 
-  @ViewBuilder private var content: some View {
+  /// 正文按状态换一种画法；换的时候交叉淡变 0.18 s（重新翻译时正文淡成骨架、出字时骨架淡成正文，卡片原位不动）
+  private var content: some View {
+    // ZStack：换的那一下新旧两种叠在一起淡变（各分支的默认转场就是透明度），不上下错开
+    ZStack(alignment: .topLeading) {
+      stateView(card.state)
+    }
+    .animation(.easeInOut(duration: 0.18), value: phase)
+  }
+
+  @ViewBuilder private func stateView(_ state: TranslateCoordinator.CardState) -> some View {
     if let revealed {
-      RevealText(text: revealed.text, isStreaming: revealed.isStreaming, fontSize: 15 * fontScale)
-        .textSelection(.enabled)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    } else if case .done(let text) = card.state {
+      VStack(alignment: .leading, spacing: 6) {
+        RevealText(text: revealed.text, isStreaming: revealed.isStreaming, fontSize: 15 * fontScale)
+          .textSelection(.enabled)
+          .frame(maxWidth: .infinity, alignment: .leading)
+        if case .truncated = state {
+          // 截断不是配置问题，用 secondary 小字说明（不用橙色）
+          Label("只翻了前一部分：超出这个服务单次输出上限", systemImage: "exclamationmark.triangle")
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+        }
+      }
+      .id(phase)
+    } else if case .done(let text) = state {
       // 大模型输出里有行内 Markdown 才按 Markdown 渲染
       Text(Self.markdown(text)).font(.system(size: 15 * fontScale)).lineSpacing(3.5)
         .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
-    } else if case .failed(let message) = card.state {
-      HStack(alignment: .firstTextBaseline, spacing: 8) {
-        Image(systemName: "exclamationmark.triangle.fill")
-          .foregroundStyle(Color(nsColor: .systemRed))
-          .symbolEffect(.wiggle, value: errorTicks)
-        Text(message)
-          .font(.system(size: 13))
-          .foregroundStyle(Color(nsColor: .systemRed))
-          .fixedSize(horizontal: false, vertical: true)
-        Spacer(minLength: 8)
+        .id(phase)
+    } else if case .failed(let error) = state {
+      failureRow(error).id(phase)
+    } else {
+      VStack(alignment: .leading, spacing: 4) {
+        if state.isThinking { ThinkingLabel() }
+        Skeleton()
+      }
+      .id(phase)
+    }
+  }
+
+  /// 错误行：配置类橙色钥匙 + 只给「打开设置」（直达这个服务）；网络 / 服务类红色三角（晃一下）+「重试」，
+  /// 自建 AI 服务另给「打开设置」（地址可能填错）
+  private func failureRow(_ error: TranslateError) -> some View {
+    let isConfig = error.kind == .config
+    let tint = Color(nsColor: isConfig ? .systemOrange : .systemRed)
+    return HStack(alignment: .firstTextBaseline, spacing: 8) {
+      Image(systemName: isConfig ? "key.fill" : "exclamationmark.triangle.fill")
+        .foregroundStyle(tint)
+        .symbolEffect(.wiggle, value: errorTicks)
+      // 橙字在浅色卡底上对比度不够（同剪贴板底栏的警告）：配置类只有钥匙是橙色，字用默认色
+      Text(error.message)
+        .font(.system(size: 13))
+        .foregroundStyle(isConfig ? Color.primary : tint)
+        .fixedSize(horizontal: false, vertical: true)
+      Spacer(minLength: 8)
+      if !isConfig {
         Button("重试") {
           retries += 1
           onRetry()
         }
+      }
+      if !isConfig, card.service.kind == .ai {
         Text("·").foregroundStyle(.tertiary)
+      }
+      if isConfig || card.service.kind == .ai {
         Button("打开设置", action: onOpenSettings)
       }
-      .buttonStyle(.plain).foregroundStyle(Style.brandInk).pointerStyle(.link)
-      .font(.system(size: 12))
-      .onAppear { errorTicks += 1 }
-    } else {
-      Skeleton()
     }
+    .buttonStyle(.plain).foregroundStyle(Style.brandInk).pointerStyle(.link)
+    .font(.system(size: 12))
+    .onAppear { errorTicks += 1 }
   }
 
   /// 「智谱 GLM（免费）」这类默认名去掉括号里的说明
@@ -361,6 +423,20 @@ struct ServiceTile: View {
         .frame(width: size, height: size)
     }
   }
+
+  /// 菜单项里的服务图标（设置「+」菜单）：NSMenu 只认图片、画不了 SwiftUI 视图，把 18 pt 的它渲染成图，
+  /// 按种类 + 协议 + 名字缓存（菜单每次画都要）
+  static func menuIcon(_ service: TranslateService) -> Image {
+    let key = "\(service.kind.rawValue)|\(service.aiProtocol?.rawValue ?? "")|\(service.name)"
+    if let cached = menuIcons[key] { return Image(nsImage: cached) }
+    let renderer = ImageRenderer(content: ServiceTile(service: service, size: 18))
+    renderer.scale = 2
+    let image = renderer.nsImage ?? NSImage(size: NSSize(width: 18, height: 18))
+    menuIcons[key] = image
+    return Image(nsImage: image)
+  }
+
+  private static var menuIcons: [String: NSImage] = [:]
 
   /// 官方 logo（`Assets.xcassets/ServiceLogo`，取自各家官网的图标）：自带底色的满版图直接裁圆角，
   /// 只有图形的垫白底留边（onPlate）。自定义的 AI 服务认不出是谁时用色块首字母。
@@ -454,6 +530,35 @@ private struct CometBorder: View {
     }
     .transition(.opacity.animation(.easeOut(duration: 0.35)))
     .allowsHitTesting(false)
+  }
+}
+
+/// 推理模型在思考（reasoning 字段或开头的 <think> 段）时骨架上面的「思考中」：12 medium secondary，
+/// 用骨架同一趟 1.3 s 扫光做文字遮罩（mac-whisker S3）；减弱动态效果时静止
+private struct ThinkingLabel: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    TimelineView(.animation(paused: reduceMotion)) { context in
+      let phase =
+        context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.3) / 1.3
+      Text("思考中")
+        .font(.system(size: 12, weight: .medium))
+        .foregroundStyle(.secondary)
+        .overlay {
+          LinearGradient(
+            stops: [
+              .init(color: .clear, location: 0),
+              .init(color: .primary.opacity(0.55), location: 0.5),
+              .init(color: .clear, location: 1),
+            ],
+            startPoint: UnitPoint(x: reduceMotion ? -1 : phase * 3 - 2, y: 0.5),
+            endPoint: UnitPoint(x: reduceMotion ? 0 : phase * 3 - 1, y: 0.5)
+          )
+          .mask(Text("思考中").font(.system(size: 12, weight: .medium)))
+        }
+    }
+    .accessibilityLabel("思考中")
   }
 }
 

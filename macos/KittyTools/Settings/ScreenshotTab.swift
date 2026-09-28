@@ -1,4 +1,4 @@
-// 设置 › 截图：⌘S 快速保存的位置、快门声（可试听）、识字是否把换行合成一段（开关旁边实时对照效果）。
+// 设置 › 截图：⌘S 快速保存的位置、快门声（可试听）、识字是否把同一段里的换行接起来（开关旁边实时对照效果，体检 A32）。
 // 框选、标注、长截图的按键不写进页里（N11）：一句话 +「查看全部快捷键…」打开速查表；全局快捷键在「快捷键」页。
 
 import AppKit
@@ -40,10 +40,10 @@ struct ScreenshotTab: View {
         caption("复制、保存、钉图时响；还要系统设置 › 声音里的「播放用户界面音效」开着。截图翻译、识字不出声。")
       }
       Section {
-        Toggle("识字后把换行合成一段", isOn: $joinLines)
+        Toggle("识字后把同一段里的换行接起来", isOn: $joinLines)
         JoinLinesPreview(joins: joinLines)
       } footer: {
-        caption("整段合成一行：中文、日文的行直接接上，其它文字之间加空格。框选里有二维码或条码时复制它的内容。")
+        caption("同一段里的行接起来，段和段之间保留换行：中文、日文的行直接接上，其它文字之间加空格。截图翻译总是这样接。框选里有二维码或条码时复制它的内容。")
       }
       Section {
         LabeledContent {
@@ -79,15 +79,21 @@ struct ScreenshotTab: View {
   }
 }
 
-/// 「合成一段」的实时对照：同一段识别结果，开关打开时按 OCR.joiningLines 接成一行（中文直接连、英文加空格）
+/// 「接起来」的实时对照：两段四行的识别结果（带行框，两段之间空出一行），开关打开时按 OCR.text 分段接好
+/// （中文直接连、英文加空格，段间换行）
 private struct JoinLinesPreview: View {
   let joins: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-  private static let sample = "敏捷的棕色狐狸\n跳过了懒狗。The quick\nbrown fox jumps."
+  /// 行高 0.1、行距 0.03，两段之间空 0.15（> 1.2 倍行高）
+  private static let sample: [OCR.Line] = [
+    ("敏捷的棕色狐狸", 0.9, 0.7), ("跳过了懒狗。", 0.77, 0.6), ("The quick brown", 0.52, 0.75),
+    ("fox jumps over it.", 0.39, 0.7),
+  ].map { OCR.Line(text: $0.0, box: CGRect(x: 0.1, y: $0.1 - 0.1, width: $0.2, height: 0.1)) }
 
   var body: some View {
-    Text(joins ? OCR.joiningLines(Self.sample) : Self.sample)
+    let text = OCR.text(Self.sample, joined: joins)
+    Text(text)
       .font(.system(size: 12, design: .monospaced))
       .foregroundStyle(.secondary)
       .frame(maxWidth: .infinity, alignment: .leading)
@@ -98,6 +104,6 @@ private struct JoinLinesPreview: View {
       .contentTransition(.opacity)
       .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: joins)
       .accessibilityLabel("效果示例")
-      .accessibilityValue(joins ? OCR.joiningLines(Self.sample) : Self.sample)
+      .accessibilityValue(text)
   }
 }

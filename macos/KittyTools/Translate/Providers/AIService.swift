@@ -1,6 +1,8 @@
 // 大模型翻译（用户自建 AI 实例：OpenAI 兼容 / Azure OpenAI / Anthropic），SSE 流式输出。
 // 也提供智谱内置复用的流式请求：按服务地址分档关闭「思考」，只有 400 / 422 才降一档重试，
 // 成功的档位按「地址 + 模型」记在内存里，下次直接从它开始。
+// 流里的约定：每次给出到目前为止的整段译文；空串 = 模型在思考、还没有正文（reasoning 字段或开头的 <think> 段，
+// 卡片显示「思考中」）；输出到上限（finish_reason = length / stop_reason = max_tokens）时先给出半截、再抛 TranslateError.truncated。
 
 import Foundation
 import Synchronization
@@ -13,7 +15,7 @@ nonisolated enum AIService {
     let model = service.model?.trimmingCharacters(in: .whitespaces) ?? ""
     let key = service.secret()?.trimmingCharacters(in: .whitespaces) ?? ""
     guard let url = endpoint(service.baseURL ?? "", aiProtocol), !model.isEmpty else {
-      return AsyncThrowingStream { $0.finish(throwing: TranslateError(message: "请先在设置里填写服务地址和模型")) }
+      return AsyncThrowingStream { $0.finish(throwing: TranslateError.config("请先在设置里填写服务地址和模型")) }
     }
     let target = request.to.englishName
     let from = request.from.map { " from \($0.englishName)" } ?? ""
@@ -99,7 +101,7 @@ nonisolated enum AIService {
 
   static func chatStream(
     url: URL, headers: [String: String], body: [String: Any], tiers: [[String: Any]], model: String,
-    delta: @escaping @Sendable ([String: Any]) -> String?
+    delta: @escaping @Sendable ([String: Any]) -> StreamDelta
   ) -> AsyncThrowingStream<String, Error> {
     let cacheKey = "\(url.absoluteString)\n\(model)"
     let requests = tiers.map { tier in
@@ -114,20 +116,27 @@ nonisolated enum AIService {
               let events = try await HTTP.events(requests[tier])
               workingTier.withLock { $0[cacheKey] = tier }
               var text = StreamingText()
+              var truncated = false
+              var shown: String?
               for try await payload in events {
                 guard
                   let object = (try? JSONSerialization.jsonObject(with: Data(payload.utf8)))
                     as? [String: Any]
                 else { continue }
                 if let message = HTTP.message(in: object) { throw TranslateError(message: message) }
-                if let piece = delta(object) {
-                  text.append(piece)
-                  continuation.yield(text.visible)
+                let piece = delta(object)
+                if let content = piece.text { text.append(content) }
+                truncated = truncated || piece.isTruncated
+                // 空串只在思考时发（开头 role 那一段的空 content 不算）；内容没变不重复发
+                let visible = text.visible
+                if !visible.isEmpty || piece.isThinking || text.isThinking, visible != shown {
+                  shown = visible
+                  continuation.yield(visible)
                 }
               }
               guard !text.final.isEmpty else { throw TranslateError.emptyResult }
               continuation.yield(text.final)
-              continuation.finish()
+              continuation.finish(throwing: truncated ? TranslateError.truncated : nil)
               return
             } catch let error as TranslateError
               where [400, 422].contains(error.status) && tier < requests.count - 1
@@ -208,19 +217,43 @@ nonisolated enum AIService {
     }
   }
 
-  /// OpenAI 兼容：choices[0].delta.content（reasoning 类字段忽略）
-  @Sendable static func openAIDelta(_ object: [String: Any]) -> String? {
+  /// OpenAI 兼容：choices[0].delta.content；reasoning_content / reasoning 只用来标「在思考」，不显示；
+  /// finish_reason = length 是输出到上限被截断（智谱同）
+  @Sendable static func openAIDelta(_ object: [String: Any]) -> StreamDelta {
     let choice = (object["choices"] as? [[String: Any]])?.first
-    return (choice?["delta"] as? [String: Any])?["content"] as? String
+    let delta = choice?["delta"] as? [String: Any]
+    let reasoning = ["reasoning_content", "reasoning"].contains {
+      !((delta?[$0] as? String) ?? "").isEmpty
+    }
+    return StreamDelta(
+      text: delta?["content"] as? String, isThinking: reasoning,
+      isTruncated: choice?["finish_reason"] as? String == "length")
   }
 
-  /// Anthropic：content_block_delta 里的 text_delta（thinking_delta 忽略）
-  @Sendable static func anthropicDelta(_ object: [String: Any]) -> String? {
-    guard object["type"] as? String == "content_block_delta",
-      let delta = object["delta"] as? [String: Any], delta["type"] as? String == "text_delta"
-    else { return nil }
-    return delta["text"] as? String
+  /// Anthropic：content_block_delta 里的 text_delta；thinking_delta 只标「在思考」；
+  /// message_delta 的 stop_reason = max_tokens 是截断
+  @Sendable static func anthropicDelta(_ object: [String: Any]) -> StreamDelta {
+    let delta = object["delta"] as? [String: Any]
+    switch object["type"] as? String {
+    case "content_block_delta":
+      switch delta?["type"] as? String {
+      case "text_delta": return StreamDelta(text: delta?["text"] as? String)
+      case "thinking_delta": return StreamDelta(isThinking: true)
+      default: return StreamDelta()
+      }
+    case "message_delta":
+      return StreamDelta(isTruncated: delta?["stop_reason"] as? String == "max_tokens")
+    default:
+      return StreamDelta()
+    }
   }
+}
+
+/// 一段 SSE 增量里有用的东西：正文增量、是不是在思考、是不是说输出到上限了
+nonisolated struct StreamDelta: Equatable, Sendable {
+  var text: String?
+  var isThinking = false
+  var isTruncated = false
 }
 
 /// 一次翻译请求：from 为 nil 表示交给服务自动识别

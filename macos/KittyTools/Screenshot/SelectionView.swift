@@ -2030,7 +2030,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
         flags == [.command, .shift] && key == "z"
         ? Selector(("redo:")) : flags == .command ? OverlayPanel.editActions[key] : nil
       guard let action else { return super.performKeyEquivalent(with: event) }
-      return NSApp.sendAction(action, to: nil, from: self)
+      return OverlayPanel.sendEditAction(action, from: self)
     }
     guard isAdjusting else { return super.performKeyEquivalent(with: event) }
     // ⌘ + 方向键：那条边往外推（⇧ 10 点）

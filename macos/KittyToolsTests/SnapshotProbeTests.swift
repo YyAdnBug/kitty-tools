@@ -346,7 +346,8 @@ struct SnapshotProbeTests {
     // 设置窗：侧栏 + 页头 + 各页表单（关于是品牌页），深色看几页；欢迎引导的每一步
     let hotKeys = HotKeyCenter()
     hotKeys.failures[.launcher] = OSStatus(eventInternalErr)  // 快捷键页 / 引导里的橙字（不真注册）
-    let services = TranslateServiceStore()
+    // 读用户的服务列表来画，但传进去的一份不写回偏好（画的时候输入框会把绑定写一遍）
+    let services = TranslateServiceStore(services: TranslateServiceStore().services)
     let history = try HistoryStore(db: Database(path: ":memory:"))
     let speaker = Speaker()
     let pages: (SettingsPage) -> AnyView = { page in
@@ -574,7 +575,8 @@ struct SnapshotProbeTests {
           id: UUID(), source: source, target: target, result: result, service: "智谱",
           createdAt: .now.addingTimeInterval(-ago), favorite: favorite))
     }
-    let services = TranslateServiceStore()
+    // 读用户的服务列表来画，但传进去的一份不写回偏好（画的时候输入框会把绑定写一遍）
+    let services = TranslateServiceStore(services: TranslateServiceStore().services)
     let coordinator = TranslateCoordinator(services: services, history: history)
     let speaker = Speaker()
     let zhipu = TranslateService.zhipu
@@ -584,6 +586,9 @@ struct SnapshotProbeTests {
     var claude = TranslateService.newAI()
     claude.name = "Claude"
     claude.aiProtocol = .anthropic
+    var deepseek = TranslateService.newAI()
+    deepseek.name = "DeepSeek"
+    deepseek.model = "deepseek-chat"
     let states: [(String, (TranslateCoordinator) -> Void)] = [
       ("translate-empty", { _ in }),
       (
@@ -597,10 +602,32 @@ struct SnapshotProbeTests {
           c.cards = [
             .init(service: zhipu, state: .done("SwiftUI 提供了视图、控件和布局结构，用来**声明**应用的用户界面。")),
             .init(service: gpt, state: .running("SwiftUI 提供视图、控件以及")),
-            .init(service: claude, state: .failed("密钥无效或没有权限")),
+            .init(service: claude, state: .failed(.config("密钥无效或没有权限"))),
           ]
         }
       ),
+      // 体检第 4 批：思考中（骨架上的「思考中」扫光）、截断（正文 + 一行说明）、配置类（橙、只给打开设置）、
+      // 网络 / 服务类（红、重试；自建 AI 另给打开设置）
+      (
+        "translate-card-states",
+        { c in
+          c.sourceText = "Explain the difference between a process and a thread."
+          c.detected = .en
+          c.target = .zhHans
+          c.translatedSource = c.sourceText
+          c.cards = [
+            .init(service: zhipu, state: .running("")),
+            .init(service: gpt, state: .truncated("进程是操作系统分配资源的基本单位，线程是 CPU 调度的基本单位。一个进程可以包含多个线程")),
+            .init(service: claude, state: .failed(.config("App ID 或密钥不对"))),
+            .init(service: .builtin(.baidu), state: .failed(TranslateError(message: "请求太频繁，稍后再试"))),
+            .init(
+              service: deepseek,
+              state: .failed(TranslateError(message: "连不上服务地址", kind: .network))),
+          ]
+        }
+      ),
+      // 划词没取到文字：占位换成说明（体检 A16）
+      ("translate-missed-selection", { c in c.beginInput(missedSelection: true) }),
       // 原文改过、还没重译：原文框右下角弹出「翻译 ↩」
       (
         "translate-edited",
@@ -658,6 +685,24 @@ struct SnapshotProbeTests {
           c.historyList.favoritesOnly = true
         }
       ),
+      // 历史 ⌘K（体检 C6）：第一级、进了「导出 ›」的子列表
+      (
+        "translate-history-menu",
+        { c in
+          c.showsHistory = true
+          c.historyList.select(c.historyList.entries[1])
+          c.historyList.showsActions = true
+        }
+      ),
+      (
+        "translate-history-menu-export",
+        { c in
+          c.showsHistory = true
+          c.historyList.showsActions = true
+          c.historyList.actionSelection = 5
+          _ = c.handleHistoryCommand(#selector(NSResponder.insertNewline(_:)))
+        }
+      ),
       ("translate-notice", { c in c.showNotice("划词翻译需要「辅助功能」授权", permission: .accessibility) }),
       ("translate-screenshot-empty", { c in c.showNotice("没有识别到文字，可以把选区框大一些再试") }),
     ]
@@ -669,7 +714,7 @@ struct SnapshotProbeTests {
         try snapshot(
           TranslatePanelView(coordinator: coordinator, speaker: speaker)
             .background { if !coordinator.showsHistory { InitialFocusProbe() } },
-          size: NSSize(width: 420, height: 560), dark: dark,
+          size: NSSize(width: 420, height: name == "translate-card-states" ? 720 : 560), dark: dark,
           to: "\(out)/\(name)\(dark ? "-dark" : "").png")
       }
     }

@@ -143,5 +143,18 @@ struct ClipboardFilterTests {
     #expect(source(false, "com.example.cli") == ("com.example.cli", "com.example.cli"))
     #expect(source(false, nil) == ("Xcode", "com.apple.dt.Xcode"))
     #expect(source(false, "") == ("Xcode", "com.apple.dt.Xcode"))
+    // 在本 App 自己的浮层里 ⌘C（翻译原文 / 译文等）：没有来源（体检 B20），不认轮询时的前台 App
+    let own = { (remote: Bool, marker: String?) in
+      ClipboardWatcher.source(ownWindow: true, remote: remote, marker: marker, frontmost: front) {
+        names[$0]
+      }
+    }
+    #expect(own(false, nil) == (nil, nil))
+    // 写入方打了来源标记的仍按标记算：排除的 App 不会因为本 App 在前台就漏过过滤
+    #expect(own(false, "com.apple.Safari") == ("Safari", "com.apple.Safari"))
+    #expect(
+      ClipboardFilter.isExcluded(
+        bundleID: own(false, "com.apple.Safari").bundleID, excluded: ["com.apple.Safari"]))
+    #expect(own(true, nil) == ("其他设备", nil))
   }
 }

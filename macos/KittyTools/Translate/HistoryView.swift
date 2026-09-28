@@ -2,13 +2,17 @@
 // 和剪贴板同一套键盘列表——顶上搜索框（CommandTextField，↑↓ / ↩ / ⇧Tab / Esc 走 doCommandBy）+ 全部 / 收藏两枚
 // 范围胶囊（品牌粉 0.16 底 + brandInk 字）；按 今天 / 昨天 / 日期 分组（11 semibold tertiary，无灰条、无分割线）；
 // 行 44（原文、译文各一行，右侧时间与星标）；一块中性高亮按前缀和定位、在行间滑动（键盘 snap、连发 instant、点选 glide）。
-// ↩ / 双击重新翻译，⌘⌫ 删（不确认，⌘Z 撤销）、⌘C 复制译文、⌘S 收藏；单条操作在右键菜单，条数和清空历史在浮窗的
-// 「⋯」菜单，没有「共 N 条 · 收藏 M」底栏。列表状态在 HistoryList（协调器持有，搜索框命令和 ⌘ 键由协调器转过来）。
+// ↩ / 双击重新翻译，⌘⌫ 删（不确认，⌘Z 撤销）、⌘C 复制译文、⇧⌘C 复制原文、⌘D 收藏（全 App 收藏都是 ⌘D，体检 A31）；
+// ⌘K 从右下角弹动作菜单（共用 ActionMenu，体检 C6：单条操作 ｜ 导出 › / 清空历史…，开着时搜索框用来过滤它），
+// 右键菜单是同一份；条数在浮窗的「⋯」菜单，没有「共 N 条 · 收藏 M」底栏。
+// 列表一页 500 条、滚到底再取下一页，查询结果按 (revision, 搜索词, 范围, 页数) 记住（体检 B22）。
+// 列表状态在 HistoryList（协调器持有，搜索框命令和 ⌘ 键由协调器转过来）。
 
 import AppKit
 import Carbon.HIToolbox
 import Observation
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// 翻译历史的列表状态：搜索词、范围、选中（nil = 第一条）、撤销删除
 @Observable final class HistoryList {
@@ -26,17 +30,59 @@ import SwiftUI
   @ObservationIgnored private var copyTask: Task<Void, Never>?
   /// 刘海岛（AppDelegate 给，单测里是 nil）：删除后告诉用户可以 ⌘Z
   @ObservationIgnored var island: Island?
+  /// 重新翻译一条（↩、双击、⌘K / 右键），协调器接上
+  @ObservationIgnored var retranslate: (HistoryStore.Entry) -> Void = { _ in }
+  /// 「清空历史…」：开确认框（协调器接上，确认框挂在浮窗根视图上）
+  @ObservationIgnored var confirmClear: () -> Void = {}
+
+  /// ⌘K 动作菜单（体检 C6）开着：搜索框这时改成过滤它（actionQuery），↑↓ ↩ 选择执行
+  var showsActions = false {
+    didSet {
+      actionQuery = ""
+      actionSelection = 0
+      actionSubmenu = nil
+    }
+  }
+  var actionQuery = "" { didSet { actionSelection = 0 } }
+  var actionSelection = 0
+  /// 进了哪一行的子列表（「导出 ›」）；nil = 第一级
+  private(set) var actionSubmenu: String?
 
   init(store: HistoryStore) {
     self.store = store
   }
 
-  /// 当前搜索词和范围下的条目（新→旧，最多 200 条）；读 store.revision，增删改后刷新。
-  /// ponytail: 每次读都查库（走 created_at 索引、最多 200 行，约 1 ms），视图每次重算都查一遍；
-  /// 历史上限最多 2000 条用不着缓存，真卡了再按 (revision, query, favoritesOnly) 记住上次的结果
+  /// 一页多少条：滚到底（或 ↓ 走到最后一条）再取下一页（体检 B22；保留条数可以选「不限」）
+  static let pageSize = 500
+  /// 已经取了几页；搜索词、范围变了和复位时回到 1
+  private(set) var pages = 1
+  @ObservationIgnored private var cache: (key: CacheKey, entries: [HistoryStore.Entry])?
+
+  private struct CacheKey: Equatable {
+    let revision: Int
+    let query: String
+    let favoritesOnly: Bool
+    let limit: Int
+  }
+
+  /// 当前搜索词和范围下的条目（新→旧，前 pages 页）。读 store.revision，增删改后刷新；
+  /// 按 (revision, 搜索词, 范围, 页数) 记住上次的结果，↑↓、悬停这类重画不再查库
   var entries: [HistoryStore.Entry] {
-    _ = store.revision
-    return store.search(query, favoritesOnly: favoritesOnly)
+    let key = CacheKey(
+      revision: store.revision, query: query, favoritesOnly: favoritesOnly,
+      limit: pages * Self.pageSize)
+    if let cache, cache.key == key { return cache.entries }
+    let entries = store.search(query, favoritesOnly: favoritesOnly, limit: key.limit)
+    cache = (key, entries)
+    return entries
+  }
+
+  /// 可能还有下一页（这一页取满了）
+  var hasMore: Bool { entries.count >= pages * Self.pageSize }
+
+  /// 取下一页（最后一行出现时、↓ 走过最后一条时）
+  func loadMore() {
+    if hasMore { pages += 1 }
   }
 
   var selected: HistoryStore.Entry? { Self.selected(selectedID, in: entries) }
@@ -49,6 +95,8 @@ import SwiftUI
   func reset() {
     query = ""
     favoritesOnly = false
+    showsActions = false
+    pages = 1
     deleted = []
     copyTask?.cancel()
     copiedID = nil
@@ -57,13 +105,18 @@ import SwiftUI
   private func resetSelection() {
     selectedID = nil
     selectionMotion = .instant
+    pages = 1
   }
 
-  /// ↑↓：首尾循环（同剪贴板）；按住连发时高亮不做动画
+  /// ↑↓：首尾循环（同剪贴板；还有下一页时 ↓ 先取下一页再往下走）；按住连发时高亮不做动画
   func move(by offset: Int) {
-    let entries = self.entries
+    var entries = self.entries
     guard !entries.isEmpty else { return }
     let current = entries.firstIndex { $0.id == selectedID } ?? 0
+    if offset > 0, current + offset >= entries.count, hasMore {
+      loadMore()
+      entries = self.entries
+    }
     selectionMotion = Style.isKeyRepeat ? .instant : .snap
     selectedID = entries[(current + offset + entries.count) % entries.count].id
   }
@@ -127,27 +180,172 @@ import SwiftUI
     }
   }
 
-  /// 历史开着时的 ⌘ 键（协调器只转纯 ⌘ 过来）：⌘⌫ 删、⌘Z 撤销删除、⌘C 复制译文、⌘S 收藏 / 取消。
-  /// 焦点在原文框（不是字段编辑器）时一律交还，免得在原文里按 ⌘⌫ 删掉历史；搜索框有选中文字时 ⌘C 交还系统
+  /// 历史开着时的 ⌘ 键：⌘K 开 / 关动作菜单、⌘⌫ 删、⌘Z 撤销删除、⌘C 复制译文、⇧⌘C 复制原文、⌘D 收藏 / 取消
+  /// （⌘S 不再响应：全 App 的 ⌘S 只是存储，体检 A31）。修饰键不看大写锁定和 fn。
+  /// 焦点在原文框（不是字段编辑器）时一律交还，免得在原文里按 ⌘⌫ 删掉历史；搜索框有选中文字时 ⌘C 交还系统；
+  /// 动作菜单的过滤框里有字时 ⌘⌫ ⌘A ⌘V ⌘X ⌘Z 交给过滤框。做了才收起动作菜单
   func handleKeyEquivalent(_ event: NSEvent) -> Bool {
     let editor = event.window?.firstResponder as? NSTextView
     if let editor, !editor.isFieldEditor { return false }
+    let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
     let code = Int(event.keyCode)
-    if code == kVK_ANSI_Z { return undoDelete() }
+    if flags == [.command, .shift], code == kVK_ANSI_C {
+      guard let entry = selected else {
+        NSSound.beep()
+        return true
+      }
+      showsActions = false
+      copy(entry, source: true)
+      return true
+    }
+    guard flags == .command else { return false }
+    if code == kVK_ANSI_K {
+      toggleActions()
+      return true
+    }
+    if showsActions, !actionQuery.isEmpty,
+      [kVK_Delete, kVK_ForwardDelete, kVK_ANSI_A, kVK_ANSI_V, kVK_ANSI_X, kVK_ANSI_Z].contains(code)
+    {
+      return false
+    }
+    if code == kVK_ANSI_Z {
+      guard undoDelete() else { return false }
+      showsActions = false
+      return true
+    }
     if code == kVK_ANSI_C, (editor?.selectedRange().length ?? 0) > 0 { return false }
-    guard [kVK_Delete, kVK_ForwardDelete, kVK_ANSI_C, kVK_ANSI_S].contains(code) else {
+    guard [kVK_Delete, kVK_ForwardDelete, kVK_ANSI_C, kVK_ANSI_D].contains(code) else {
       return false
     }
     guard let entry = selected else {
       NSSound.beep()
       return true
     }
+    showsActions = false
     switch code {
     case kVK_ANSI_C: copy(entry)
-    case kVK_ANSI_S: toggleFavorite(entry)
+    case kVK_ANSI_D: toggleFavorite(entry)
     default: delete(entry)
     }
     return true
+  }
+
+  // MARK: ⌘K 动作菜单（体检 C6）
+
+  /// 一条记录的动作（⌘K 和右键菜单同一份）：单条操作 ｜ 导出 ›（全部 / 只收藏 × CSV / Anki TSV）/ 清空历史…
+  func actions(for entry: HistoryStore.Entry) -> [ActionMenu.Item] {
+    typealias Item = ActionMenu.Item
+    let exports = [(false, false), (false, true), (true, false), (true, true)].map {
+      favoritesOnly, anki in
+      Item(
+        title: (favoritesOnly ? "只导收藏" : "全部历史") + (anki ? " · TSV（Anki 卡片）…" : " · CSV（表格）…"),
+        symbol: favoritesOnly ? "star" : "clock"
+      ) { [unowned self] in
+        HistoryMenu.export(store, favoritesOnly: favoritesOnly, anki: anki, island: island)
+      }
+    }
+    var items = [
+      Item(title: "重新翻译", symbol: "arrow.clockwise", shortcut: "↩") { [unowned self] in
+        retranslate(entry)
+      },
+      Item(title: "复制译文", symbol: "doc.on.doc", shortcut: "⌘C") { [unowned self] in copy(entry) },
+      Item(title: "复制原文", symbol: "text.quote", shortcut: "⇧⌘C") { [unowned self] in
+        copy(entry, source: true)
+      },
+      Item(
+        title: entry.favorite ? "取消收藏" : "收藏", symbol: entry.favorite ? "star.slash" : "star",
+        shortcut: "⌘D"
+      ) { [unowned self] in toggleFavorite(entry) },
+      Item(title: "删除", symbol: "trash", shortcut: "⌘⌫", isDestructive: true) {
+        [unowned self] in delete(entry)
+      },
+      Item(
+        title: "导出", symbol: "square.and.arrow.up", id: "export", section: 1, submenu: exports),
+    ]
+    let counts = store.counts
+    if counts.total > counts.favorites {
+      items.append(
+        Item(title: "清空历史…", symbol: "xmark.bin", section: 1, isDestructive: true) {
+          [unowned self] in confirmClear()
+        })
+    }
+    return items
+  }
+
+  /// 开着的这一级（进了「导出 ›」就是它的子列表），按过滤词过滤（ActionMenu.filter，同剪贴板 / 启动器）
+  var filteredActions: [ActionMenu.Item] {
+    guard let entry = selected else { return [] }
+    let root = actions(for: entry)
+    let items = actionSubmenu.flatMap { id in root.first { $0.id == id }?.submenu } ?? root
+    return ActionMenu.filter(items, query: actionQuery)
+  }
+
+  /// 子列表顶上「‹ 导出」的标题；第一级时 nil
+  var submenuTitle: String? {
+    guard let actionSubmenu, let entry = selected else { return nil }
+    return actions(for: entry).first { $0.id == actionSubmenu }?.title
+  }
+
+  /// ⌘K：没有选中的记录时不打开
+  func toggleActions() {
+    if showsActions || selected != nil { showsActions.toggle() }
+  }
+
+  /// 动作菜单开着时搜索框的编辑命令：↑↓ 选、↩ 执行（有子列表的进去）、→ 进子列表（光标在过滤词末尾时）、
+  /// ← 在过滤词为空时回上一级、Esc 先回上一级再关菜单；其余（左右移光标、删字）交还输入框
+  func handleMenuCommand(_ selector: Selector) -> Bool {
+    let actions = filteredActions
+    let selectedAction = actions.indices.contains(actionSelection) ? actions[actionSelection] : nil
+    switch selector {
+    case #selector(NSResponder.moveUp(_:)), #selector(NSResponder.moveDown(_:)):
+      guard !actions.isEmpty else { break }
+      let offset = selector == #selector(NSResponder.moveUp(_:)) ? -1 : 1
+      actionSelection = (actionSelection + offset + actions.count) % actions.count
+    case #selector(NSResponder.insertNewline(_:)):
+      guard let selectedAction else {
+        NSSound.beep()
+        break
+      }
+      run(selectedAction)
+    case #selector(NSResponder.moveRight(_:))
+    where selectedAction?.submenu != nil && Self.caretAtEnd(of: actionQuery):
+      if let selectedAction { run(selectedAction) }
+    case #selector(NSResponder.moveLeft(_:)) where actionQuery.isEmpty,
+      #selector(NSResponder.cancelOperation(_:)):
+      if actionSubmenu != nil { leaveSubmenu() } else { showsActions = false }
+    default: return false
+    }
+    return true
+  }
+
+  /// 有子列表的行：进去（过滤词清空、选第一行，菜单不关）；其余先关菜单再执行
+  func run(_ action: ActionMenu.Item) {
+    if action.submenu != nil {
+      actionSubmenu = action.id
+      actionQuery = ""
+      actionSelection = 0
+      return
+    }
+    showsActions = false
+    action.run()
+  }
+
+  /// ← / Esc / 点「‹」：回到第一级，选中进去的那一行
+  func leaveSubmenu() {
+    guard let id = actionSubmenu else { return }
+    actionSubmenu = nil
+    actionQuery = ""
+    let root = selected.map { actions(for: $0) } ?? []
+    actionSelection = root.firstIndex { $0.id == id } ?? 0
+  }
+
+  /// 搜索框的光标在过滤词最后（没有选中文字）：→ 这时才进子列表，否则照常往右移光标
+  private static func caretAtEnd(of text: String) -> Bool {
+    guard let editor = NSApp.currentEvent?.window?.firstResponder as? NSTextView,
+      editor.isFieldEditor
+    else { return text.isEmpty }
+    let selection = editor.selectedRange()
+    return selection.length == 0 && selection.location == (editor.string as NSString).length
   }
 
   /// 没有底栏提示，删除 / 复制的结果主动播报给 VoiceOver
@@ -184,10 +382,12 @@ struct HistoryView: View {
           Image(systemName: "magnifyingglass")
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(.tertiary)
-          // 对话框式输入框：出现时抢焦点，关历史时把焦点还给原文框
+          // 对话框式输入框：出现时抢焦点，关历史时把焦点还给原文框。⌘K 菜单开着时改成过滤动作
           CommandTextField(
-            text: $list.query, placeholder: "搜索原文或译文", isDialogField: true, fontSize: 13,
-            onCommand: coordinator.handleHistoryCommand, onFocusChange: { searchFocused = $0 })
+            text: list.showsActions ? $list.actionQuery : $list.query,
+            placeholder: list.showsActions ? "搜索动作" : "搜索原文或译文", isDialogField: true,
+            fontSize: 13, onCommand: coordinator.handleHistoryCommand,
+            onFocusChange: { searchFocused = $0 })
         }
         .padding(.horizontal, 8)
         .frame(height: 28)
@@ -202,6 +402,20 @@ struct HistoryView: View {
         listView(entries, list: list)
       }
     }
+    // ⌘K 从右下角弹出（同剪贴板 / 启动器的动作菜单）
+    .overlay(alignment: .bottomTrailing) {
+      if list.showsActions {
+        ActionMenu(
+          items: list.filteredActions, selection: list.actionSelection,
+          header: list.submenuTitle, onBack: list.leaveSubmenu, maxRows: 8.5, onRun: list.run
+        )
+        .padding(.trailing, 12)
+        .padding(.bottom, 12)
+      }
+    }
+    .animation(
+      Style.Motion.snap.animation(reduced: reduceMotion) ?? .easeOut(duration: Style.fadeIn),
+      value: list.showsActions)
   }
 
   // MARK: 列表
@@ -226,6 +440,8 @@ struct HistoryView: View {
               .id(section.title)
             ForEach(section.entries) { entry in
               row(entry, isSelected: entry.id == selected?.id, list: list)
+                // 滚到最后一行时取下一页（体检 B22）
+                .onAppear { if entry.id == entries.last?.id { list.loadMore() } }
             }
           }
         }
@@ -282,6 +498,7 @@ struct HistoryView: View {
     let hoverShape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
     return Button {
       // 单击选中，双击重新翻译（和 ↩ 一样）
+      list.showsActions = false
       if Style.isDoubleClick {
         coordinator.translate(entry.source)
       } else {
@@ -297,15 +514,8 @@ struct HistoryView: View {
     }
     .buttonStyle(.plain)
     .id(entry.id)
-    .contextMenu {
-      Button("重新翻译") { coordinator.translate(entry.source) }
-      Divider()
-      Button("复制原文") { list.copy(entry, source: true) }
-      Button("复制译文") { list.copy(entry) }
-      Button(entry.favorite ? "取消收藏" : "收藏") { list.toggleFavorite(entry) }
-      Divider()
-      Button("删除", role: .destructive) { list.delete(entry) }
-    }
+    // 和 ⌘K 同一份动作（分隔线、子菜单，不写键位）
+    .contextMenu { ActionContextMenu { list.actions(for: entry) } }
     .transition(
       reduceMotion
         ? .opacity
@@ -327,7 +537,7 @@ struct HistoryView: View {
       EmptyStateView(symbol: "magnifyingglass", title: "没有匹配的记录") { EmptyView() }
     } else if list.favoritesOnly {
       EmptyStateView(symbol: "star", title: "还没有收藏") {
-        Text("翻译完按 ⌘S 收藏，收藏就是生词本").font(.system(size: 12)).foregroundStyle(.secondary)
+        Text("翻译完按 ⌘D 收藏，收藏就是生词本").font(.system(size: 12)).foregroundStyle(.secondary)
       }
     } else {
       EmptyStateView(symbol: "clock", title: "还没有翻译历史") {
@@ -380,6 +590,49 @@ struct HistoryView: View {
       y += CGFloat(section.entries.count) * rowHeight
     }
     return nil
+  }
+}
+
+/// 历史的导出和清空：浮窗「⋯」菜单、历史 ⌘K / 右键、设置 › 翻译共用（体检 B28 C6）
+enum HistoryMenu {
+  /// 导出翻译历史 / 收藏：CSV 给表格（带 BOM，Excel 才认 UTF-8），TSV 给 Anki（正面原文、背面译文）。
+  /// 结果（含没东西可导、写失败）用刘海说。从浮窗来的（本 App 不在前台）先激活本 App 才弹得出存储面板，
+  /// 选完把前台还给原来的 App（同截图另存为）
+  static func export(_ history: HistoryStore, favoritesOnly: Bool, anki: Bool, island: Island?) {
+    let entries = history.search("", favoritesOnly: favoritesOnly, limit: 0)
+    guard !entries.isEmpty else {
+      island?.show(favoritesOnly ? "还没有收藏" : "还没有翻译历史", detail: "没有可导出的记录", tone: .warning)
+      return
+    }
+    let panel = NSSavePanel()
+    panel.allowedContentTypes = [anki ? .tabSeparatedText : .commaSeparatedText]
+    panel.nameFieldStringValue = (favoritesOnly ? "翻译收藏" : "翻译历史") + (anki ? ".tsv" : ".csv")
+    let previous = NSApp.isActive ? nil : NSWorkspace.shared.frontmostApplication
+    if previous != nil {
+      NSApp.activate()
+      if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
+    }
+    panel.begin { response in
+      previous?.activate()
+      guard response == .OK, let url = panel.url else { return }
+      let text = anki ? HistoryStore.tsv(entries) : "\u{FEFF}" + HistoryStore.csv(entries)
+      do {
+        try text.write(to: url, atomically: true, encoding: .utf8)
+        island?.show(
+          "已导出 \(entries.count) 条", detail: url.lastPathComponent, symbol: "square.and.arrow.up")
+      } catch {
+        island?.show("导出失败", detail: error.localizedDescription, tone: .error)
+      }
+    }
+  }
+
+  /// 清空非收藏的历史（确认框由调用方弹，文案「清空翻译历史？」「收藏的记录会保留」）；结果用刘海说
+  /// （历史列表多半没开着，清没清看不出来）
+  static func clear(_ history: HistoryStore, island: Island?) {
+    let kept = history.counts.favorites
+    history.clearNonFavorites()
+    island?.show(
+      "已清空翻译历史", detail: kept > 0 ? "保留了 \(kept) 条收藏" : nil, symbol: "trash")
   }
 }
 

@@ -425,7 +425,7 @@ struct ClipboardPanelView: View {
         isSelected: isSelected, lensOpen: lensOpen && isSelected, groupName: groupBadge(for: item)
       )
       // 右键菜单和 ⌘K 同一份动作（体检 B12）；包成视图：菜单打开时才算，不在每次画行时建一遍
-      .contextMenu { ClipContextMenu { model.actions(for: item, targets: [item]) } }
+      .contextMenu { ActionContextMenu { model.actions(for: item, targets: [item]) } }
       .transition(rowTransition)
     }
   }
@@ -789,27 +789,6 @@ private struct ClipListRow: View {
     return .asymmetric(
       insertion: .opacity.combined(with: .offset(y: 4)).animation(.easeOut(duration: 0.16)),
       removal: .opacity.animation(.easeIn(duration: Style.fadeOut)))
-  }
-}
-
-/// 右键菜单（体检 B12）：和 ⌘K 同一份动作（ClipboardPanelModel.actions(for:targets:)），分节处插分隔线，
-/// 子列表是子菜单（当前收藏夹打 ✓，再点一次移出），不显示键位（HIG：右键菜单不写快捷键）
-private struct ClipContextMenu: View {
-  /// 闭包：动作表在菜单内容真要画时才建
-  let items: () -> [ActionMenu.Item]
-
-  var body: some View {
-    let items = items()
-    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-      if index > 0, items[index - 1].section != item.section { Divider() }
-      if let submenu = item.submenu {
-        Menu(item.title) { ClipContextMenu { submenu } }
-      } else if let checked = item.isChecked {
-        Toggle(item.title, isOn: Binding(get: { checked }, set: { _ in item.run() }))
-      } else {
-        Button(item.title, role: item.isDestructive ? .destructive : nil, action: item.run)
-      }
-    }
   }
 }
 

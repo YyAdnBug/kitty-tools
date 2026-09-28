@@ -14,6 +14,7 @@ M1 起的实测结论。代码：`Shell/OverlayPanel.swift`、`HotKeyCenter.swif
 - 进出：`present()` 新出现时淡入 + 内容下落 6 pt；**用户关掉**（Esc、点外面、再按热键、失焦、⌘W；⌘W 在 `performKeyEquivalent` 里统一处理，`keyEquivalentHandler` 没接的才轮到它，各浮层都认；修饰键只比 ⌘⌃⌥⇧、不看大写锁定；面板里开着会丢输入的层（剪贴板对话框）时由 `keyEquivalentHandler` 先截住、只关那一层）走 `dismiss()`：临时设 `animationBehavior = .utilityWindow` 再 orderOut，由系统淡出，窗口逻辑上立刻移走、键盘马上回到原 App；**程序收起**（粘贴前、打开设置、互斥收起）走 `hide()`，立刻消失、没有退场动画；系统淡出的快照窗口约 0.13 s 还在，这期间又被呼出就直接不透明（不淡入）。`setContentHeight(_:animated:)` 可带 0.18 / 0.14 s 动画；**不动画时也走零时长的 animator**（直接 `setFrame` 盖不掉正在跑的帧动画，动画结束会把旧目标写回来）。`ResizeEdge` 拖动只改 x 和宽度、高度取当前的，拖动期间（`isUserResizing`）改高度不动画；滚轮转给下面的内容。减弱动态效果时 `PanelRoot` 统一 `symbolEffectsRemoved`。
 - 显示只走 `present()`（`orderFrontRegardless` + `makeKey`）；**永远不对浮层调 `NSApp.activate`**，否则前台 App 变成自己，⌘V / ⌘C 会落空。例外是 ⌘Y 放大预览（剪贴板的 `quickLookPanel`）：`zoom(from:to:)` 显示（不 makeKey、自己装点外监听，窗口帧从透镜（透镜关掉时是选中行）长到目标）、`unzoom(to:)` 缩回（卸监听、0.24 s 帧 + 透明度动画，放完才 orderOut + onHide；调用方**先**把 key 还给剪贴板面板）、`move(to:animated:)` 换条目时改尺寸；它设了 `becomesKeyOnlyIfNeeded`，只有点里面的文字才当 key。收起 `hide()` / `dismiss()` 都让缩回动画的收尾作废（`showGeneration`）。
 - `NSHostingView.sizingOptions = []`：窗口尺寸由 `OverlayPanel` 定，不让 SwiftUI 理想尺寸反推。
+- 翻译浮窗的位置（体检 A13，`frameName: "TranslatePanel"`）：`present(anchor:)` 带锚点（鼠标位置）时新出现在光标右下 12 pt，右 / 下放不下翻到左 / 上，再夹进鼠标所在屏可见区（内缩 8；`OverlayPanel.frame(near:size:in:)`，纯函数）；不带锚点时回到用户上次拖到的左上角和宽度（`userFrame`，启动时从 `setFrameUsingName` 读回；高度用当前内容高），不用内存里上次弹出的位置——跟随鼠标弹过之后输入翻译照样回到拖过的地方（`lastFrame(user:size:screens:in:)`，纯函数）；所在屏不是鼠标所在屏就换算到鼠标所在屏同一相对位置（`relocated(_:from:to:)`），没拖过或哪块屏都不在才居中。**不用 `setFrameAutosaveName`**（它连跟随鼠标摆的位置也记）：记下每次摆好的左上角和宽度，和当前不同（用户拖过 / 拖宽过）才更新 `userFrame` 并 `saveFrame(usingName:)`；比对在 hide / dismiss 里，也在下次 present 出现前补一次（划词、划词翻译并替换时浮窗是直接 `orderOut` 的）；只拖宽没挪时位置沿用 `userFrame`。程序挪的（变高出了屏幕往上挪）跟着改摆好的位置、不算。已经开着时 present 不挪位置；`present(keepsPlace: true)` 原地重新露出来（划词翻译并替换期间临时收起的固定浮窗）。
 - 设置窗不是浮层（M3）：普通 `NSWindow`，打开前先收起两个浮层，再切 `.regular` + `activate()`。
 
 ## 2. 自动隐藏与 Esc
@@ -28,6 +29,7 @@ M1 起的实测结论。代码：`Shell/OverlayPanel.swift`、`HotKeyCenter.swif
 - 启动器和剪贴板面板在同一位置，只开一个：`toggleClipboard` 收起启动器，`toggleLauncher` 收起剪贴板面板（固定着的也收：两块叠在同一处没法用，固定只管点外不关）；启动器「cb 关键词」↩ 先 `hide()` 启动器，再呼出剪贴板面板并把关键词填进搜索框（N9）；划词、截图翻译 / 识字、打开设置也会收起启动器（截图不收，§8）。
 - 截图框选中（有看得见的 `SelectionOverlay`，`OverlayPanel.isSelectingRegion`）：点遮罩不算点外、key 让给遮罩不算失焦，浮层截完还开着；遮罩收起后 `frozenSelection` 把 key 还给截图前的 key 窗口（还开着、当前 key 不是它才还：本 App 在前台时 AppKit 可能已把 key 交给别的自家窗口；只 makeKey、不激活本 App）。按 S 转长截图时先收起没固定的浮层（长截图在实时画面上截、滤掉本 App，浮层留着只会盖住选区、挡住滚轮和自动滚动）；长截图面板不豁免。
 - `present(makingKey: false)`：只露出来、不抢键盘（复制即译用），此时不论哪种面板都装点外监听、靠点外关闭。
+- 「再按热键收起」：剪贴板、启动器走 `toggle()`；输入翻译热键也是开关（体检 A14：浮窗可见且是 key 就 `dismiss()`，否则保留上次内容打开、原文全选）；划词、截图翻译每次都是新会话，不收起。
 
 ## 3. 浮层里的输入框
 - 单行用 `CommandTextField`，多行用 `SourceTextView`：方向键 / 回车 / Esc 一律走 `doCommandBy`。输入法组字期间这些键被输入法消费、不会回调，所以**不要**用 SwiftUI `TextField` + `.onKeyPress` 抢方向键和回车，也不要写吞键 hack。
@@ -74,7 +76,7 @@ M1 起的实测结论。代码：`Shell/OverlayPanel.swift`、`HotKeyCenter.swif
 - 光标：`.cursorUpdate` 不支持 `.activeAlways`，遮罩显示后手动 `NSCursor.crosshair.set()`、mouseMoved 里再设，结束设回箭头。
 - 截图原文已在剪贴板历史里时只 `bump`，不走 `record`（会冲掉那条的格式和来源）。
 - 选区（点、原点左下）→ 像素（原点左上）只走 `RegionSelector.pixelRect`，配单测；各屏按自己的像素尺寸换算（混合缩放多屏）。
-- 识字 `OCR.recognizeText(in: CGImage)`：只开自动识别语种、**不给语言提示**（给提示时中日韩混排图里日文、韩文整行丢失，单测锁住）。
+- 识字 `OCR.recognizeLines(in: CGImage)`（带行框；`recognizeText` 是一行一行拼起来的便捷版）：只开自动识别语种、**不给语言提示**（给提示时中日韩混排图里日文、韩文整行丢失，单测锁住）。分段（体检 A32）只在 `OCR.paragraphs`：纵向间距 > 1.2 倍中位行高、或上一行句末标点且短于中位行宽 80%、或往回跳 / 并排（换栏）时断段，不看缩进；识字按设置 › 截图的开关接（段间 \n），截图翻译总是接（段间 \n\n）。
 - 截图与截图翻译共用 `AppDelegate.beginCapture`（互斥、按需收面板）+ `frozenSelection`（授权 → 冻结 → 暂停热键框选 → 恢复热键、还 key）；`RegionSelector.select`（截图翻译 / 识字）保持松手即确认、没有窗口悬停和调整阶段（2026-09-26 起外观、放大镜、修饰键、吸附和截图模式一致）。
 - 遮罩画面走图层（`SelectionView`）：冻结帧是 `SelectionView` 自己图层的内容（`updateLayer`），蒙层、边框、手柄、放大镜是 layer-hosting 的 `Canvas` 上的 CALayer，标注在两者之间的 `AnnotationCanvas`，更新都包在 `CATransaction.setDisableActions(true)` 里；**不要**改回在 `draw(_:)` 里每次画整张冻结帧（5K 屏拖动卡）。`contentsScale` 跟 `backingScaleFactor` 走，否则 Retina 上线条发糊。
 - 窗口吸附只读冻结那一刻的 `Shot.windows`（从前到后，第一个包含点的就是），不读实时窗口列表、不按面积排（§11 #41）。

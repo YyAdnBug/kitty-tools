@@ -11,6 +11,9 @@ enum Paster {
   static let transientType = NSPasteboard.PasteboardType("org.nspasteboard.TransientType")
   /// 自家最近一次写入后的 changeCount
   private(set) static var ownChangeCount = -1
+  /// 用户在自家浮层里 ⌘C / ⌘X 之后的 changeCount（走 NSText.copy，不经 write）：照常记进历史，但没有来源、
+  /// 不触发复制即译（体检 B20）。在复制那一刻记，不在轮询时看 key 窗口猜（轮询前浮层可能已收起、或别处已打开浮层）
+  static var panelCopyChangeCount = -1
 
   /// 一次写完全部 item（每个 item 的多种表示也要一次写完，分两次 declare 会互相清空）
   static func write(_ items: [NSPasteboardItem], transient: Bool = false) {

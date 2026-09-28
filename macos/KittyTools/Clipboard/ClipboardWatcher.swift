@@ -1,5 +1,7 @@
 // 剪贴板采集：系统没有剪贴板变化通知，只能轮询 changeCount（0.3s），变了才读内容。
-// 读取顺序：隐私标记 → 来源（写入方的来源标记 / 通用剪贴板 / 前台 App）→ 排除的来源 App → 文件 → 文本（总是附带格式）→ 图片。
+// 读取顺序：隐私标记 → 来源（通用剪贴板 / 写入方的来源标记 / 本 App 自己的窗口 / 前台 App）→ 排除的来源 App → 文件 →
+// 文本（总是附带格式）→ 图片。在自家浮层里 ⌘C（翻译原文 / 译文、剪贴板备注等，走 NSText.copy 不经 Paster，
+// 复制那一刻记下 Paster.panelCopyChangeCount）来源记成本 App（没有来源）、不触发复制即译（体检 B20）。
 // 启动时直接对齐当前 changeCount，不把启动前就在剪贴板里的内容记一遍。
 // 两种暂停互不相干：pause() / resume() 给划词取词用；isUserPaused 是菜单栏「暂停记录剪贴板」（不存盘，重启自动恢复）。
 
@@ -56,13 +58,15 @@ final class ClipboardWatcher {
   }
 
   /// 这次复制的来源（体检 B6）：通用剪贴板过来的是「其他设备」（没有 bundle ID，来源筛选里不列）；
-  /// 写入方打了来源标记就用它（名字按 bundle ID 查）；都没有才用轮询时的前台 App（推测值）
+  /// 写入方打了来源标记就用它（名字按 bundle ID 查，排除的 App 照样认得出）；在本 App 自己的窗口里复制的
+  /// （ownWindow：在自家浮层里 ⌘C，或本 App 在前台）没有来源（体检 B20）；都没有才用轮询时的前台 App（推测值）
   static func source(
-    remote: Bool, marker: String?, frontmost: (name: String?, bundleID: String?)?,
-    appName: (String) -> String?
+    ownWindow: Bool = false, remote: Bool, marker: String?,
+    frontmost: (name: String?, bundleID: String?)?, appName: (String) -> String?
   ) -> (name: String?, bundleID: String?) {
     if remote { return ("其他设备", nil) }
     if let marker, !marker.isEmpty { return (appName(marker) ?? marker, marker) }
+    if ownWindow { return (nil, nil) }
     return frontmost ?? (nil, nil)
   }
 
@@ -76,9 +80,13 @@ final class ClipboardWatcher {
     else { return }
 
     let defaults = UserDefaults.standard
+    // 浮层不激活本 App：在它里面复制时前台还是别的 App，靠复制那一刻记下的 changeCount 认
+    let ownWindow =
+      changeCount == Paster.panelCopyChangeCount
+      || NSWorkspace.shared.frontmostApplication == .current
     let front = NSWorkspace.shared.frontmostApplication.flatMap { $0 == .current ? nil : $0 }
     let source = Self.source(
-      remote: types.contains(Self.remoteMarker),
+      ownWindow: ownWindow, remote: types.contains(Self.remoteMarker),
       marker: pasteboard.string(forType: Self.sourceMarker),
       frontmost: front.map { ($0.localizedName, $0.bundleIdentifier) },
       appName: AppIcons.name(for:))
@@ -118,7 +126,8 @@ final class ClipboardWatcher {
         }
       }
       store.record(item, rich: rich)
-      onText?(text)
+      // 自家窗口里复制的不触发复制即译（来源标记 / 通用剪贴板过来的照常）
+      if !(ownWindow && source.name == nil && source.bundleID == nil) { onText?(text) }
       return
     }
 

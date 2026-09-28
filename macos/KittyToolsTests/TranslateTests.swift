@@ -1,8 +1,12 @@
 // 翻译相关单测：语言解析、流式文本清洗、AI 服务地址 / 参数、局域网判断、翻译历史（存储、撤销删除、列表分组与选中）、
 // 「翻译 ↩」胶囊的出现条件、服务 logo 都在 asset catalog 里、结果卡片正文的高度上限；
+// 体检第 4 批：复制即译过滤、自动复制按来源、截断与思考的流约定、错误种类、划词没取到、输入翻译再打开、⌘D 收藏、
+// 历史 ⌘K 与分页、浮窗跟随鼠标、历史保留档位升级、朗读声线；
 // 以及按需启用的联网冒烟测试（TEST_RUNNER_KITTY_LIVE_TRANSLATE=1，用内置智谱 key 真翻一句）。
 
+import AVFoundation
 import AppKit
+import Carbon.HIToolbox
 import Foundation
 import Testing
 
@@ -355,7 +359,8 @@ struct HistoryListTests {
   /// 关历史时焦点立刻回原文框；历史已关（搜索框还在淡出）时搜索框的命令一律交还，↩ 不会重译第一条、Esc 不被吞
   @Test func closingHistoryReturnsFocusAndReleasesCommands() throws {
     let coordinator = TranslateCoordinator(
-      services: TranslateServiceStore(), history: try HistoryStore(db: Database(path: ":memory:")))
+      services: TranslateServiceStore(services: []),
+      history: try HistoryStore(db: Database(path: ":memory:")))
     var focused = 0
     coordinator.focusSource = { focused += 1 }
     coordinator.showsHistory = true
@@ -397,7 +402,9 @@ struct ResultCardCapTests {
   @Test func capIsEightLinesOfBodyFont() {
     // 默认 15 pt：一行 19（和 SwiftUI 实排一致）
     #expect(ProviderCardView.bodyLineHeight(fontSize: 15) == 19)
-    #expect(ProviderCardView.bodyCap(fontSize: 15) == 8 * 19 + 7 * 3.5)
+    // 先定类型再比（AVFoundation 带进来的 CMTime 运算符会让类型推断超时）
+    let expected: CGFloat = 8 * 19 + 7 * 3.5
+    #expect(ProviderCardView.bodyCap(fontSize: 15) == expected)
     var previous: CGFloat = 0
     for step in 8...16 {  // 字号 80%–160%
       let size = 15 * CGFloat(step) / 10
@@ -411,5 +418,312 @@ struct ResultCardCapTests {
       #expect(cap > previous, "\(size)")  // 字号越大上限越高
       previous = cap
     }
+  }
+}
+
+/// 体检第 4 批（翻译）的纯逻辑：复制即译过滤、自动复制、截断 / 思考的流约定、错误种类、划词没取到、输入翻译再打开、
+/// 浮窗跟随鼠标的位置、历史保留档位升级、朗读声线
+struct TranslateBatch4Tests {
+  private func key(_ code: Int, _ flags: NSEvent.ModifierFlags = .command) throws -> NSEvent {
+    try #require(
+      NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0,
+        context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false,
+        keyCode: UInt16(code)))
+  }
+
+  /// 复制即译不挑内容的问题（体检 A12）：网址、路径、数字、超长、目标自动时的第一语言静默跳过；同一段不重翻（B20）
+  @Test func copyToTranslateSkipsNonText() {
+    func worth(_ text: String, translated: String? = nil, autoTarget: Bool = true) -> Bool {
+      TranslateCoordinator.worthTranslating(
+        copied: text, translated: translated, first: .zhHans, second: .en, autoTarget: autoTarget)
+    }
+    #expect(worth("The quick brown fox jumps over the lazy dog."))
+    #expect(!worth("https://example.com/a?b=c"))
+    #expect(!worth("file:///Users/yy/a.txt"))
+    #expect(worth("see https://example.com for details"))  // 句子里带网址照翻
+    #expect(!worth("/usr/local/bin/swift"))
+    #expect(!worth("~/Library/Application Support"))
+    #expect(!worth("123 456.78 %"))
+    #expect(!worth("  \n "))
+    #expect(!worth(String(repeating: "a ", count: TranslateCoordinator.maxSourceBytes)))
+    #expect(!worth("这是一段中文"))  // 目标自动时第一语言不翻
+    #expect(worth("这是一段中文", autoTarget: false))  // 固定了目标就照翻
+    #expect(!worth(" Ship it \n", translated: "Ship it"))  // 刚翻过的同一段
+    #expect(worth("Ship it", translated: "Ship"))
+  }
+
+  /// 自动复制按来源（体检 A19）：复制即译带来、没改过的不复制；改过了、别的入口照设置；查词不复制
+  @Test func autoCopyFollowsSessionOrigin() {
+    #expect(
+      TranslateCoordinator.autoCopies(enabled: true, isWord: false, copied: nil, translated: "a"))
+    #expect(
+      !TranslateCoordinator.autoCopies(enabled: true, isWord: false, copied: "a", translated: "a"))
+    #expect(
+      TranslateCoordinator.autoCopies(enabled: true, isWord: false, copied: "a", translated: "ab"))
+    #expect(
+      !TranslateCoordinator.autoCopies(enabled: true, isWord: true, copied: nil, translated: "a"))
+    #expect(
+      !TranslateCoordinator.autoCopies(enabled: false, isWord: false, copied: nil, translated: "a"))
+  }
+
+  /// 截断（体检 B19）：已出来的字照常显示成 .truncated（primaryResult 不认它），没有字就是错误；
+  /// 其余错误原样、不是 TranslateError 的包成服务类
+  @Test func truncatedStreamsAreNotDone() throws {
+    #expect(
+      TranslateCoordinator.state(after: TranslateError.truncated, latest: "前半截")
+        == .truncated("前半截"))
+    #expect(
+      TranslateCoordinator.state(after: TranslateError.truncated, latest: "") == .failed(.truncated)
+    )
+    #expect(
+      TranslateCoordinator.state(after: TranslateError.config("缺 Key"), latest: "x")
+        == .failed(.config("缺 Key")))
+    let wrapped = TranslateCoordinator.state(after: CocoaError(.fileNoSuchFile), latest: "")
+    guard case .failed(let error) = wrapped else {
+      Issue.record("不是失败")
+      return
+    }
+    #expect(error.kind == .service)
+    let coordinator = TranslateCoordinator(
+      services: TranslateServiceStore(services: []),
+      history: try HistoryStore(db: Database(path: ":memory:")))
+    coordinator.cards = [.init(service: .zhipu, state: .truncated("半截"))]
+    #expect(coordinator.primaryResult == nil && !coordinator.isRunning)
+    #expect(coordinator.cards[0].state.text == "半截")  // 能复制已出来的部分
+    #expect(TranslateCoordinator.CardState.running("").isThinking)
+    #expect(!TranslateCoordinator.CardState.running("字").isThinking)
+  }
+
+  /// 流的增量解析（体检 B19 B25）：reasoning_content / thinking_delta 只标「在思考」；finish_reason = length、
+  /// stop_reason = max_tokens 是截断
+  @Test func deltaParsingMarksThinkingAndTruncation() {
+    #expect(
+      AIService.openAIDelta(["choices": [["delta": ["content": "你好"]]]]) == StreamDelta(text: "你好"))
+    #expect(
+      AIService.openAIDelta(["choices": [["delta": ["reasoning_content": "想一想"]]]])
+        == StreamDelta(isThinking: true))
+    #expect(
+      AIService.openAIDelta(["choices": [["delta": ["reasoning": "hmm", "content": ""]]]])
+        == StreamDelta(text: "", isThinking: true))
+    #expect(
+      AIService.openAIDelta(["choices": [["delta": [String: Any](), "finish_reason": "length"]]])
+        == StreamDelta(isTruncated: true))
+    #expect(
+      AIService.openAIDelta(["choices": [["delta": [String: Any](), "finish_reason": "stop"]]])
+        == StreamDelta())
+    #expect(
+      AIService.anthropicDelta([
+        "type": "content_block_delta", "delta": ["type": "text_delta", "text": "Hi"],
+      ]) == StreamDelta(text: "Hi"))
+    #expect(
+      AIService.anthropicDelta([
+        "type": "content_block_delta", "delta": ["type": "thinking_delta", "thinking": "…"],
+      ]) == StreamDelta(isThinking: true))
+    #expect(
+      AIService.anthropicDelta(["type": "message_delta", "delta": ["stop_reason": "max_tokens"]])
+        == StreamDelta(isTruncated: true))
+    #expect(
+      AIService.anthropicDelta(["type": "message_delta", "delta": ["stop_reason": "end_turn"]])
+        == StreamDelta())
+  }
+
+  /// 开头的 <think> 段里是「在思考」（开标签还没凑齐也算），闭合后、或正文不是这样开头的都不算
+  @Test func streamingTextThinking() {
+    var text = StreamingText()
+    #expect(!text.isThinking)
+    text.append("  <thi")
+    #expect(text.isThinking && text.visible.isEmpty)
+    text.append("nk>想一想")
+    #expect(text.isThinking)
+    text.append("</think>你好")
+    #expect(!text.isThinking && text.visible == "你好")
+    var plain = StreamingText()
+    plain.append("<b>bold</b>")
+    #expect(!plain.isThinking)
+  }
+
+  /// 划词没取到文字（体检 A16）：占位换成说明，开始输入、翻译、再清空都复位
+  @Test func missedSelectionHintClears() throws {
+    let coordinator = TranslateCoordinator(
+      services: TranslateServiceStore(services: []),
+      history: try HistoryStore(db: Database(path: ":memory:")))
+    coordinator.beginInput(missedSelection: true)
+    #expect(coordinator.missedSelection)
+    coordinator.sourceText = "h"
+    #expect(!coordinator.missedSelection)
+    coordinator.beginInput(missedSelection: true)
+    coordinator.beginInput()
+    #expect(!coordinator.missedSelection)
+  }
+
+  /// 输入翻译再打开（体检 A14）：保留原文和卡片、收起提示和历史，被中断的卡片重跑（AI 服务没填地址，
+  /// 马上报配置错误，不联网）
+  @Test func resumeInputKeepsSessionAndReruns() async throws {
+    // 地址、模型都空：流一开始就报「请先在设置里填写服务地址和模型」。在 init 里给（改 services 会写进用户偏好）
+    var ai = TranslateService.newAI()
+    ai.isEnabled = true
+    let coordinator = TranslateCoordinator(
+      services: TranslateServiceStore(services: [ai]),
+      history: try HistoryStore(db: Database(path: ":memory:")))
+    coordinator.translate("Hello there")
+    coordinator.cancel()
+    #expect(coordinator.cards.map(\.state) == [.failed(.interrupted)])
+    coordinator.showsHistory = true
+    coordinator.resumeInput()
+    #expect(coordinator.sourceText == "Hello there" && !coordinator.showsHistory)
+    #expect(coordinator.cards.map(\.state) == [.waiting])  // 重跑了
+    for _ in 0..<50 where coordinator.isRunning { try await Task.sleep(for: .milliseconds(10)) }
+    guard case .failed(let error) = coordinator.cards.first?.state else {
+      Issue.record("没报错：\(String(describing: coordinator.cards.first?.state))")
+      return
+    }
+    #expect(error.kind == .config)  // 配置类：橙卡、只给「打开设置」
+    coordinator.resumeInput()
+    #expect(coordinator.cards.map(\.state) == [.failed(error)])  // 不是中断的不重跑
+  }
+
+  /// ⌘D 收藏（体检 A31）：浮窗和历史都认 ⌘D，⌘S 不再响应（交还系统）
+  @Test func favoriteIsCommandD() throws {
+    let history = try HistoryStore(db: Database(path: ":memory:"))
+    history.add(source: "hello", target: .zhHans, result: "你好", service: "A", limit: 0)
+    let coordinator = TranslateCoordinator(
+      services: TranslateServiceStore(services: []), history: history)
+    #expect(!coordinator.handleKeyEquivalent(try key(kVK_ANSI_S)))
+    coordinator.showsHistory = true
+    #expect(!coordinator.handleKeyEquivalent(try key(kVK_ANSI_S)))
+    #expect(coordinator.handleKeyEquivalent(try key(kVK_ANSI_D)))
+    #expect(history.search("").first?.favorite == true)
+    #expect(coordinator.handleKeyEquivalent(try key(kVK_ANSI_D)))
+    #expect(history.search("").first?.favorite == false)
+  }
+
+  /// 历史 ⌘K（体检 C6）：单条操作 ｜ 导出 ›（四项）/ 清空历史…（有非收藏时才有）；↩ 进子列表、Esc 先回上一级再关
+  @Test func historyActionMenu() throws {
+    let history = try HistoryStore(db: Database(path: ":memory:"))
+    history.add(source: "hello", target: .zhHans, result: "你好", service: "A", limit: 0)
+    let coordinator = TranslateCoordinator(
+      services: TranslateServiceStore(services: []), history: history)
+    let list = coordinator.historyList
+    coordinator.showsHistory = true
+    let entry = try #require(list.selected)
+    let items = list.actions(for: entry)
+    #expect(items.map(\.title) == ["重新翻译", "复制译文", "复制原文", "收藏", "删除", "导出", "清空历史…"])
+    #expect(items.map(\.shortcut) == ["↩", "⌘C", "⇧⌘C", "⌘D", "⌘⌫", nil, nil])
+    #expect(items.map(\.section) == [0, 0, 0, 0, 0, 1, 1])
+    #expect(items[5].submenu?.count == 4 && items[4].isDestructive)
+    #expect(coordinator.handleKeyEquivalent(try key(kVK_ANSI_K)))
+    #expect(list.showsActions)
+    list.actionSelection = 5
+    #expect(coordinator.handleHistoryCommand(#selector(NSResponder.insertNewline(_:))))
+    #expect(list.showsActions && list.submenuTitle == "导出" && list.filteredActions.count == 4)
+    list.actionQuery = "anki"
+    #expect(list.filteredActions.count == 2)
+    #expect(coordinator.handleHistoryCommand(#selector(NSResponder.cancelOperation(_:))))
+    #expect(list.submenuTitle == nil && list.actionSelection == 5 && list.showsActions)
+    #expect(coordinator.handleHistoryCommand(#selector(NSResponder.cancelOperation(_:))))
+    #expect(!list.showsActions && coordinator.showsHistory)
+    // 清空只在有非收藏的时候列出来；收藏 ⌘D 走菜单也行
+    list.toggleFavorite(entry)
+    let favorite = try #require(list.selected)
+    #expect(!list.actions(for: favorite).map(\.title).contains("清空历史…"))
+    var confirmed = false
+    list.confirmClear = { confirmed = true }
+    history.add(source: "b", target: .en, result: "B", service: "A", limit: 0)
+    let selected = try #require(list.selected)
+    let clear = try #require(list.actions(for: selected).last)
+    list.run(clear)
+    #expect(confirmed && !list.showsActions)
+  }
+
+  /// 历史分页 + 缓存（体检 B22）：一页 500 条，取下一页（滚到底 / ↓ 走过最后一条），搜索词变了回到第一页
+  @Test func historyPages() throws {
+    let history = try HistoryStore(db: Database(path: ":memory:"))
+    for index in 0..<1001 {
+      history.add(
+        source: "s\(index)", target: .en, result: "r\(index)", service: "", limit: 0)
+    }
+    let list = HistoryList(store: history)
+    #expect(list.entries.count == 500 && list.hasMore)
+    list.loadMore()
+    #expect(list.entries.count == 1000 && list.hasMore)
+    list.select(try #require(list.entries.last))
+    list.move(by: 1)  // 走过最后一条：先取下一页再往下
+    #expect(list.entries.count == 1001 && list.selected?.id == list.entries.last?.id)
+    #expect(!list.hasMore)
+    list.move(by: 1)  // 真到底了：首尾循环
+    #expect(list.selected?.id == list.entries.first?.id)
+    list.query = "s1"
+    #expect(list.pages == 1)
+    history.add(source: "new", target: .en, result: "新", service: "", limit: 0)
+    list.query = ""
+    #expect(list.entries.first?.source == "new")  // revision 变了不用旧缓存
+  }
+
+  /// 浮窗跟随鼠标（体检 A13）：光标右下 12 pt，右 / 下放不下翻到另一侧，比可见区还大时左上角露在里面
+  @Test func panelFollowsMouse() {
+    let visible = NSRect(x: 0, y: 0, width: 1440, height: 900)
+    let size = NSSize(width: 420, height: 300)
+    #expect(
+      OverlayPanel.frame(near: NSPoint(x: 500, y: 500), size: size, in: visible)
+        == NSRect(x: 512, y: 188, width: 420, height: 300))
+    #expect(
+      OverlayPanel.frame(near: NSPoint(x: 1400, y: 500), size: size, in: visible).minX == 968)
+    #expect(
+      OverlayPanel.frame(near: NSPoint(x: 500, y: 100), size: size, in: visible).maxY == 412)
+    let huge = OverlayPanel.frame(
+      near: NSPoint(x: 500, y: 500), size: NSSize(width: 2000, height: 1000), in: visible)
+    #expect(huge.minX == 8 && huge.maxY == 892)
+    // 上次的位置换算到另一块屏：左上角相对位置不变
+    let moved = OverlayPanel.relocated(
+      NSRect(x: 144, y: 510, width: 420, height: 300), from: visible,
+      to: NSRect(x: 1440, y: 0, width: 2880, height: 1800))
+    #expect(abs(moved.minX - 1728) < 0.001 && abs(moved.maxY - 1620) < 0.001 && moved.width == 420)
+    #expect(
+      OverlayPanel.relocated(NSRect(x: 1, y: 2, width: 3, height: 4), from: visible, to: visible)
+        == NSRect(x: 1, y: 2, width: 3, height: 4))
+    // 不带锚点（输入翻译、「上次位置」）：回到用户拖到的左上角和宽度，高度用当前内容高，
+    // 不管上次跟随鼠标弹在哪（placeForShow 不读当前位置）
+    let user = (topLeft: NSPoint(x: 100, y: 800), width: CGFloat(500))
+    #expect(
+      OverlayPanel.lastFrame(user: user, size: size, screens: [visible], in: visible)
+        == NSRect(x: 100, y: 500, width: 500, height: 300))
+    // 拖到的位置在副屏、鼠标在主屏：换算到主屏同一相对位置
+    let side = NSRect(x: 1440, y: 0, width: 1440, height: 900)
+    let there = (topLeft: NSPoint(x: 1540, y: 800), width: CGFloat(420))
+    #expect(
+      OverlayPanel.lastFrame(user: there, size: size, screens: [visible, side], in: visible)
+        == NSRect(x: 100, y: 500, width: 420, height: 300))
+    // 没拖过、或那块屏已拔掉：居中到鼠标所在屏
+    #expect(
+      OverlayPanel.lastFrame(user: nil, size: size, screens: [visible], in: visible)
+        == NSRect(x: 510, y: 300, width: 420, height: 300))
+    #expect(
+      OverlayPanel.lastFrame(user: there, size: size, screens: [visible], in: visible).midX == 720)
+  }
+
+  /// 翻译历史保留条数（体检 A18）：旧档位挪到下一档（100–1000 → 1000，2000 → 5000），新档位和不限不动
+  @Test func historyLimitMigration() throws {
+    let suite = "kitty-test-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    for (old, new) in [(100, 1000), (500, 1000), (1000, 1000), (2000, 5000), (5000, 5000), (0, 0)] {
+      defaults.set(old, forKey: Prefs.translateHistoryLimit)
+      Prefs.migrate(defaults, domainName: suite)
+      #expect(defaults.integer(forKey: Prefs.translateHistoryLimit) == new, "\(old)")
+    }
+  }
+
+  /// 朗读挑声线（体检 B23）：不比系统默认的差（下载过高音质的就用它）
+  @Test func speechVoiceIsBestQuality() {
+    for code in ["en-US", "zh-CN"] {
+      guard let voice = Speaker.voice(for: code) else { continue }
+      #expect(voice.language == code)
+      let fallback = AVSpeechSynthesisVoice(language: code)?.quality.rawValue ?? 0
+      #expect(voice.quality.rawValue >= fallback)
+    }
+    let speaker = Speaker()
+    speaker.stop()
+    #expect(speaker.speaking == nil)
   }
 }

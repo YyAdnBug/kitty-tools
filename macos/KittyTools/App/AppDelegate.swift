@@ -109,7 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 剪贴板面板保持打开（兄弟浮层），翻译浮窗出现在旁边
     model.openTranslate = { [unowned self] text in
       coordinator.translate(text)
-      translatePanel.present()
+      presentTranslate()
     }
     // ⌘, 和底栏齿轮直达 设置 › 剪贴板（同翻译浮窗直达 设置 › 翻译）
     model.openSettings = { [unowned self] in showSettings(page: .clipboard) }
@@ -153,7 +153,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     weak var created: OverlayPanel?
     let panel = OverlayPanel(
       size: NSSize(width: 420, height: 560), minSize: NSSize(width: 360, height: 200),
-      autosaveName: "TranslatePanel", autoHide: .resignKey,
+      frameName: "TranslatePanel", autoHide: .resignKey,
       isPinned: { UserDefaults.standard.bool(forKey: Prefs.floatingPinned) },
       content: TranslatePanelView(
         coordinator: coordinator, speaker: speaker,
@@ -173,15 +173,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     created = panel
     coordinator.historyList.island = island
     panel.keyEquivalentHandler = { [unowned self] in coordinator.handleKeyEquivalent($0) }
-    // ⌘,、「⋯」菜单、错误卡片和空状态都直接到设置 › 翻译
-    coordinator.openSettings = { [unowned self] in showSettings(page: .translate) }
+    // ⌘,、「⋯」菜单和空状态到设置 › 翻译；错误卡带服务 id，直达那个服务的详情页（体检 C5）
+    coordinator.openSettings = { [unowned self] service in
+      showSettings(page: .translate)
+      if let service { settingsNavigation.path = [service] }
+    }
     coordinator.focusSource = { [unowned panel] in
       panel.makeFirstResponder(panel.initialFirstResponder)
     }
     panel.onHide = { [unowned self, unowned panel] in
-      // 收起即作废进行中的请求（省额度）；把 key 还给之前处于 key 的浮层（剪贴板面板 / 启动器）。
+      // 收起即作废进行中的请求（省额度）、停下朗读（体检 B23）；把 key 还给之前处于 key 的浮层（剪贴板面板 / 启动器）。
       // 已有别的窗口成了 key（因失焦而收起）就不抢
       coordinator.cancel()
+      speaker.stop()
       if NSApp.keyWindow == nil, let previous = panel.previousKeyPanel, previous.isVisible {
         previous.makeKey()
       }
@@ -408,9 +412,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
+  /// 输入翻译（体检 A14）：热键是开关——浮窗开着且是 key 就收起；否则打开，保留上次的原文和结果、原文全选
+  /// （直接打字就替换，⌫ 清空），上次收起时中断的卡片重跑。总在上次的位置（不跟随鼠标）。菜单栏、启动器同一条路
   func showInputTranslate() {
-    coordinator.beginInput()
+    if translatePanel.isVisible, translatePanel.isKeyWindow { return translatePanel.dismiss() }
+    coordinator.resumeInput()
     translatePanel.present()
+    (translatePanel.firstResponder as? NSTextView)?.selectAll(nil)
+  }
+
+  /// 翻译浮窗出现：设置 › 翻译「浮窗位置」是跟随鼠标（默认）时放在光标右下，否则在上次的位置（体检 A13）
+  private func presentTranslate(makingKey: Bool = true) {
+    let followsMouse =
+      UserDefaults.standard.string(forKey: Prefs.translatePanelPosition) != "last"
+    translatePanel.present(
+      makingKey: makingKey, anchor: followsMouse ? NSEvent.mouseLocation : nil)
   }
 
   /// 划词翻译：取词完成前绝不显示浮窗（先显示会取消原 App 的选区）。自家浮层是 key 时先收起，
@@ -432,9 +448,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.showNotice("划词翻译需要「辅助功能」授权", permission: .accessibility)
         Permissions.requestAccessibility()
       } else {
-        coordinator.beginInput()  // 没有选中文字：当输入翻译用
+        // 没有选中文字：当输入翻译用，占位说清楚是没取到（体检 A16），VoiceOver 同一句
+        coordinator.beginInput(missedSelection: true)
+        NSAccessibility.post(
+          element: NSApp as Any, notification: .announcementRequested,
+          userInfo: [
+            .announcement: "没取到选中的文字，可以直接输入或粘贴",
+            .priority: NSAccessibilityPriorityLevel.high.rawValue,
+          ])
       }
-      translatePanel.present()
+      presentTranslate()
     }
   }
 
@@ -491,7 +514,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     replaceTask = Task {
       defer {
         if replaceID == id { replaceTask = nil }
-        if restoresPanel { translatePanel.present(makingKey: false) }
+        if restoresPanel { translatePanel.present(makingKey: false, keepsPlace: true) }
       }
       let text = await SelectionReader.read(pausing: watcher)
       isReadingSelection = false  // 取完词就放开，等网络时不挡别的热键
@@ -668,20 +691,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     return result
   }
 
-  /// 本机识别文字 → 原文记进剪贴板历史 → 翻译浮窗走现有的多服务翻译（截图翻译、截图工具栏的翻译共用）
+  /// 本机识别文字 → 原文记进剪贴板历史 → 翻译浮窗走现有的多服务翻译（截图翻译、截图工具栏的翻译共用）。
+  /// 总是按段送去翻（体检 A32：同一段的行接起来、段间空一行，不看「接起来」开关），记进历史的原文也是这一份
   private func translateImage(_ image: CGImage) async {
     // ponytail: 识别期间不显示「识别中」：常见选区 0.04–0.13s，整屏密集文字约 0.9s；大选区嫌慢再加
     // 同识字：失败不为一句话开浮窗
-    guard let text = await OCR.recognizeText(in: image) else {
+    guard let lines = await OCR.recognizeLines(in: image) else {
       return island.show("文字识别失败", detail: "请重试", tone: .error)
     }
-    guard !text.isEmpty else {
+    guard !lines.isEmpty else {
       return island.show("没有识别到文字", detail: "可以把选区框大一些再试", tone: .warning)
     }
+    let text = OCR.text(lines, joined: true, separator: "\n\n")
     // 原文不写剪贴板、只记进历史（同一个入口：过敏感文本过滤、已有同文只挪到最前）
     Paster.recordText?(text)
     coordinator.translate(text)
-    translatePanel.present()
+    presentTranslate()
   }
 
   /// 有二维码 / 条码就复制它的内容，否则复制识别出的文字（设置里开了就把换行合成一段）；记进剪贴板历史
@@ -689,12 +714,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let codes = await OCR.barcodes(in: image)
     var text = codes.joined(separator: "\n")
     if text.isEmpty {
-      guard let recognized = await OCR.recognizeText(in: image) else {
+      guard let lines = await OCR.recognizeLines(in: image) else {
         return island.show("文字识别失败", detail: "请重试", tone: .error)
       }
-      text =
-        UserDefaults.standard.bool(forKey: Prefs.ocrJoinLines)
-        ? OCR.joiningLines(recognized) : recognized
+      // 设置 › 截图开着「接起来」：同一段的行接起来、段间换行（体检 A32）；关着一行一行原样
+      text = OCR.text(lines, joined: UserDefaults.standard.bool(forKey: Prefs.ocrJoinLines))
     }
     guard !text.isEmpty else {
       return island.show("没有识别到文字", tone: .warning)
@@ -791,11 +815,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       blue: CGFloat(value & 0xFF) / 255, alpha: 1)
   }
 
-  /// 复制即译：只露出浮窗、不抢键盘（用户可能正在别的 App 里继续打字）
+  /// 复制即译：只露出浮窗、不抢键盘（用户可能正在别的 App 里继续打字）。网址、路径、数字、超长的、本来就是第一语言的
+  /// （目标自动时）和刚翻过的同一段静默跳过（体检 A12 B20）；这次的译文不自动复制（盖掉刚复制的原文，A19）
   private func copyToTranslate(_ text: String) {
-    guard UserDefaults.standard.bool(forKey: Prefs.translateCopyToTranslate) else { return }
-    coordinator.translate(text)
-    translatePanel.present(makingKey: false)
+    let defaults = UserDefaults.standard
+    guard defaults.bool(forKey: Prefs.translateCopyToTranslate) else { return }
+    let (first, second) = Lang.preferredPair
+    guard
+      TranslateCoordinator.worthTranslating(
+        copied: text, translated: coordinator.translatedSource, first: first, second: second,
+        autoTarget: defaults.string(forKey: Prefs.translateTarget) == nil)
+    else { return }
+    coordinator.translate(text, fromCopy: true)
+    presentTranslate(makingKey: false)
   }
 
   /// 打开设置窗（page 为 nil 保持上次的页；onboarding 盖上欢迎引导）：先按正常隐藏路径收起浮层

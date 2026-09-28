@@ -1,6 +1,9 @@
 // 设置 › 翻译 › 某个服务（N12 详情页，从服务列表推进来）：页头 40 pt 服务图标 + 名称 + 状态，
-// 下面分组表单：启用、各服务自己的选项（自建 AI 实例的名称 / 协议 / 地址 / 模型与「获取模型」）、钥匙串里的密钥、
-// 测试连接；自建 AI 实例可以删除（连同密钥）。改动即时生效（服务列表写 UserDefaults，密钥直接写钥匙串）。
+// 下面分组表单：启用、各服务自己的选项（智谱两档免费模型；自建 AI 实例的名称 / 协议 / 地址 / 模型）、钥匙串里的密钥、
+// 测试连接（成功时自动打开启用）；自建 AI 实例可以删除（连同密钥）。改动即时生效（服务列表写 UserDefaults，密钥直接写钥匙串）。
+// AI 实例的模型（体检 B27）：地址（Anthropic 可空）和 Key 齐了（本机 / 局域网地址不要 Key）就在后台取一次服务端的
+// 模型列表，模型框打字时按已输入的字列出来（textInputSuggestions，macOS 15）；右边 ↻ 重新读取，取的时候转圈。
+// 从「+」新建的（厂商预设，D15）光标落在 API Key。
 // 工具栏「‹ 返回」/ ⌘[ 回列表（SettingsBackButton）。
 
 import SwiftUI
@@ -8,13 +11,17 @@ import SwiftUI
 struct TranslateServiceDetail: View {
   @Bindable var store: TranslateServiceStore
   let id: String
+  /// 刚从「+」新建：光标放进 API Key（只有 AI 服务有这一格）
+  var focusesKey = false
   @Environment(\.dismiss) private var dismiss
   @State private var secrets: [String: String] = [:]
   @State private var models: [String] = []
   /// 测试连接 / 获取模型的结果：ok = 成功（绿）、否则失败（红）
   @State private var result: (ok: Bool, text: String)?
   @State private var isBusy = false
+  @State private var isFetching = false
   @State private var confirmsDelete = false
+  @FocusState private var focusedSecret: String?
 
   var body: some View {
     // 删掉之后、退回列表之前的这一帧没有这条服务：什么都不画
@@ -41,6 +48,7 @@ struct TranslateServiceDetail: View {
       Section {
         ForEach(current.secretFields, id: \.name) { field in
           SecureField(field.label, text: secretBinding(field.name), prompt: Text(field.prompt))
+            .focused($focusedSecret, equals: field.name)
         }
       } header: {
         Text("密钥")
@@ -75,6 +83,14 @@ struct TranslateServiceDetail: View {
     .task(id: id) {
       secrets = Dictionary(
         uniqueKeysWithValues: current.secretFields.map { ($0.name, current.secret($0.name) ?? "") })
+      if focusesKey { focusedSecret = current.secretFields.first?.name }
+    }
+    // 地址、协议、Key 齐了就后台取一次模型列表（停手 0.6 s 再取；取不到不报错，点 ↻ 才报）
+    .task(id: fetchKey(current)) {
+      guard current.kind == .ai, canFetch(current) else { return }
+      try? await Task.sleep(for: .seconds(0.6))
+      guard !Task.isCancelled else { return }
+      await fetchModels(current, quiet: true)
     }
     .confirmationDialog("删除「\(current.name)」？", isPresented: $confirmsDelete) {
       Button("删除", role: .destructive) {
@@ -100,7 +116,15 @@ struct TranslateServiceDetail: View {
   @ViewBuilder private func options(_ service: Binding<TranslateService>) -> some View {
     switch service.wrappedValue.kind {
     case .zhipu:
-      Picker("模型", selection: Binding(service.model, default: TranslateService.zhipuModels[0])) {
+      // 两档免费纯文本模型（体检 A17）；存着旧的识图模型等不认识的值时按第一档显示和使用
+      Picker(
+        "模型",
+        selection: Binding {
+          TranslateService.zhipuModel(service.wrappedValue.model)
+        } set: {
+          service.wrappedValue.model = $0
+        }
+      ) {
         ForEach(TranslateService.zhipuModels, id: \.self) { Text($0).tag($0) }
       }
       .pickerStyle(.segmented)
@@ -133,17 +157,50 @@ struct TranslateServiceDetail: View {
   }
 
   private func modelRow(_ service: Binding<TranslateService>) -> some View {
-    HStack {
+    let typed = service.wrappedValue.model ?? ""
+    return HStack {
       TextField("模型", text: Binding(service.model, default: ""), prompt: Text("如 gpt-4o-mini"))
-      Menu("获取模型") {
-        if models.isEmpty { Text("点「获取」读取服务端的模型列表") }
-        ForEach(models, id: \.self) { model in Button(model) { service.wrappedValue.model = model }
+        .textInputSuggestions {
+          ForEach(Self.suggestions(models, typed: typed), id: \.self) { model in
+            Text(model).textInputCompletion(model)
+          }
         }
-        Divider()
-        Button("获取") { fetchModels(service.wrappedValue) }
+      Button {
+        Task { await fetchModels(service.wrappedValue, quiet: false) }
+      } label: {
+        if isFetching {
+          ProgressView().controlSize(.small)
+        } else {
+          Image(systemName: "arrow.clockwise")
+        }
       }
-      .fixedSize()
+      .buttonStyle(.borderless)
+      .font(.system(size: 13, weight: .medium))
+      .frame(width: 20)
+      .disabled(isFetching || !canFetch(service.wrappedValue))
+      .help("重新读取服务端的模型列表")
+      .accessibilityLabel("重新读取模型列表")
     }
+  }
+
+  /// 模型框下拉里列哪些（纯函数，配单测）：没打字时全部，打了字按包含（不分大小写）过滤；已经打全了的那个不再列
+  static func suggestions(_ models: [String], typed: String) -> [String] {
+    let query = typed.trimmingCharacters(in: .whitespaces)
+    guard !query.isEmpty else { return models }
+    let matches = models.filter { $0.localizedCaseInsensitiveContains(query) }
+    return matches == [query] ? [] : matches
+  }
+
+  /// 能不能取模型列表：有地址（Anthropic 可空）且有 Key（本机 / 局域网地址不要）
+  private func canFetch(_ service: TranslateService) -> Bool {
+    let aiProtocol = service.aiProtocol ?? .openai
+    guard let url = AIService.endpoint(service.baseURL ?? "", aiProtocol) else { return false }
+    return !(secrets["apiKey"] ?? "").isEmpty || HTTP.isLocalNetwork(url)
+  }
+
+  /// 自动取模型的触发值：地址、协议、Key 变了才重新取
+  private func fetchKey(_ service: TranslateService) -> String {
+    "\(service.aiProtocol?.rawValue ?? "")\n\(service.baseURL ?? "")\n\(secrets["apiKey"] ?? "")"
   }
 
   private func secretBinding(_ field: String) -> Binding<String> {
@@ -164,7 +221,7 @@ struct TranslateServiceDetail: View {
     }
   }
 
-  /// 用 Hello, world 做一次英译中
+  /// 用 Hello, world 做一次英译中；成功时把启用打开（新加的服务配好了就能用，D15）
   private func test() {
     guard let service = store.services.first(where: { $0.id == id }) else { return }
     isBusy = true
@@ -176,26 +233,33 @@ struct TranslateServiceDetail: View {
         var text = ""
         for try await chunk in service.translate(request) { text = chunk }
         result = (true, text)
+        if let index = store.services.firstIndex(where: { $0.id == id }),
+          !store.services[index].isEnabled
+        {
+          store.services[index].isEnabled = true
+        }
       } catch {
         result = (false, error.localizedDescription)
       }
     }
   }
 
-  private func fetchModels(_ service: TranslateService) {
-    isBusy = true
-    result = nil
+  /// 读服务端的模型列表；quiet：进页 / 改了地址或 Key 时自动取的，失败不写结果行（点 ↻ 才报错）
+  private func fetchModels(_ service: TranslateService, quiet: Bool) async {
+    isFetching = true
+    defer { isFetching = false }
+    if !quiet { result = nil }
     let key = secrets["apiKey"] ?? ""
     let (baseURL, aiProtocol) = (service.baseURL ?? "", service.aiProtocol ?? .openai)
-    Task {
-      defer { isBusy = false }
-      do {
-        models = try await AIService.fetchModels(baseURL: baseURL, aiProtocol: aiProtocol, key: key)
+    do {
+      models = try await AIService.fetchModels(baseURL: baseURL, aiProtocol: aiProtocol, key: key)
+      if !quiet {
         result =
-          models.isEmpty ? (false, "服务端没有返回模型") : (true, "找到 \(models.count) 个模型，在「获取模型」里选择")
-      } catch {
-        result = (false, error.localizedDescription)
+          models.isEmpty
+          ? (false, "服务端没有返回模型") : (true, "找到 \(models.count) 个模型，在「模型」里打字时会列出来")
       }
+    } catch {
+      if !quiet { result = (false, error.localizedDescription) }
     }
   }
 }
@@ -206,7 +270,7 @@ extension TranslateService {
   var settingsStatus: (text: String, isProblem: Bool) {
     let (text, missing): (String, Bool) =
       switch kind {
-      case .zhipu: (model ?? TranslateService.zhipuModels[0], false)
+      case .zhipu: (TranslateService.zhipuModel(model), false)
       case .ai:
         if aiProtocol != .anthropic, (baseURL ?? "").trimmingCharacters(in: .whitespaces).isEmpty {
           ("未填服务地址", true)
