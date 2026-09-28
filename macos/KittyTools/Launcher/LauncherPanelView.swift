@@ -1,12 +1,14 @@
 // 启动器根视图（Whisker 设计语言，mac-whisker §6 启动器）：56 pt 大搜索框；单行 40 pt 结果（24 pt 图标 / 种类色块，
 // 标题 14 medium 后面紧跟灰色副标题，右侧写类型；文件搜索的结果按 Spotlight 类型取图标、右侧写扩展名），
-// 空查询时带「最近使用」、文件搜索只输关键词时带「最近打开和下载的文件」分组标题；计算结果是 64 pt 的大数字卡；
-// 一块中性高亮在行间滑动（键盘 snap、连发不动画、点选 glide）；选中的内置动作右侧多一组全局快捷键键帽（N10）；
-// 按住修饰键时选中行的副标题换成替代动作，按住 ⌘ 150 ms 后类型依次换成 ⌘1–9 键帽；系统命令上了膛（清倒废纸篓、
-// 全部退出、强制退出的第一下）时选中行副标题换成 systemRed 的「再按 ↩ …」。
-// 底栏 36（N8，对标 Raycast）：左边选中项的种类（16 pt 家族色块 + 种类名），右边「主动作 ↩」（品牌粉实心键帽）·
-// 「动作 ⌘K」，都能点；⌘K 动作菜单（共用 ActionMenu）锚在右下，开着时面板至少高到放得下它。没有图钉、齿轮
-// （⌘, 照样开设置）。面板高度随行数伸缩（带动画），顶边不动。状态和操作都在 LauncherModel。
+// 空查询时带「收藏」「常用」、文件搜索只输关键词时带「最近打开和下载的文件」分组标题；计算结果是 64 pt 的大数字卡；
+// 一块中性高亮在行间滑动（键盘 snap、连发不动画、点选 glide）；没选中的行悬停铺 fill.hover（HoverTracker，体检 B37）；
+// 选中的内置动作右侧多一组全局快捷键键帽（N10）；按住修饰键时选中行的副标题换成替代动作，按住 ⌘ 150 ms 后类型依次
+// 换成 ⌘1–9 键帽；系统命令上了膛（清倒废纸篓、全部退出、强制退出的第一下）时选中行副标题换成 systemRed 的「再按 ↩ …」。
+// 行上右键是和 ⌘K 同一份动作（ActionContextMenu，体检 C8），VoiceOver 另有主动作、⌘↩、复制、收藏、移除几个动作。
+// 底栏 36（N8，对标 Raycast）：左边选中项的种类（16 pt 家族色块 + 种类名；收藏、移除常用时换成就地提示，移除带
+// 「撤销 ⌘Z」），右边「主动作 ↩」（品牌粉实心键帽）·「动作 ⌘K」，都能点；⌘K 动作菜单（共用 ActionMenu）锚在右下，
+// 开着时面板至少高到放得下它。没有图钉、齿轮（⌘, 照样开设置）。面板高度随行数伸缩（带动画），顶边不动。
+// 状态和操作都在 LauncherModel。⌘Y 快速查看的预览卡（LauncherQuickLookView）也在这里。
 
 import AppKit
 import SwiftUI
@@ -26,7 +28,7 @@ struct LauncherPanelView: View {
   static let groupHeight: CGFloat = 28
   static let barHeight: CGFloat = 36
   /// 分组标题在列表里的 id（滚回顶部时滚到它，不然标题被滚出去）
-  static let groupID = "launcher-group-title"
+  static func groupID(_ row: Int) -> String { "launcher-group-\(row)" }
   /// 多出半行，让人看得出下面还能滚（动作菜单同样）
   static let visibleRows = 8.5
 
@@ -78,9 +80,13 @@ struct LauncherPanelView: View {
     item.kind == .calculation ? calcHeight : rowHeight
   }
 
-  private var listTop: CGFloat { model.groupTitle != nil ? Self.groupHeight : 0 }
+  /// 第 row 行的顶在列表里的位置：它和它前面的分组标题 + 前面各行的高
+  static func offset(ofRow row: Int, in model: LauncherModel) -> CGFloat {
+    CGFloat(model.groups.filter { $0.row <= row }.count) * groupHeight
+      + model.results.prefix(row).map(rowHeight).reduce(0, +)
+  }
 
-  /// 面板高度 = 搜索栏 + 发丝线 +（错误）+ 列表（最多 8.5 行）+ 底栏；⌘K 菜单开着时至少放得下它
+  /// 面板高度 = 搜索栏 + 发丝线 +（错误）+ 列表（分组标题各 28 + 最多 8.5 行）+ 底栏；⌘K 菜单开着时至少放得下它
   static func height(for model: LauncherModel) -> CGFloat {
     var height = searchHeight + 0.5 + barHeight
     if model.error != nil { height += 28 }
@@ -91,12 +97,12 @@ struct LauncherPanelView: View {
       let full = Int(visibleRows)
       var rows = heights.prefix(full).reduce(0, +)
       if heights.count > full { rows += heights[full] / 2 }
-      height += 12 + (model.groupTitle != nil ? groupHeight : 0) + rows
+      height += 12 + CGFloat(model.groups.count) * groupHeight + rows
     }
-    // 菜单画在面板里、锚在底栏上方 4 pt，离搜索栏至少 8 pt；按没过滤的行数算，边打字过滤面板不跳。
-    // 菜单高 = 行数 × 28 + 上下内缩各 5
+    // 菜单画在面板里、锚在底栏上方 4 pt，离搜索栏至少 8 pt；按没过滤的动作算，边打字过滤面板不跳。
+    // 菜单高 = 行和分节线（最多 8.5 行高）+ 上下内缩各 5
     if model.showsActions {
-      let menu = min(CGFloat(model.actions.count), visibleRows) * ActionMenu.rowHeight + 10
+      let menu = ActionMenu.height(model.actions, maxRows: visibleRows) + 10
       height = max(height, searchHeight + 0.5 + 8 + menu + 4 + barHeight)
     }
     return height
@@ -122,19 +128,11 @@ struct LauncherPanelView: View {
     ScrollViewReader { proxy in
       ScrollView {
         LazyVStack(spacing: 0) {
-          if let groupTitle = model.groupTitle {
-            Text(groupTitle)
-              .id(Self.groupID)
-              .font(.system(size: 11, weight: .semibold))
-              .foregroundStyle(.tertiary)
-              .padding(.leading, 12)
-              .padding(.bottom, 2)
-              // 高度必须正好是 groupHeight：高亮和面板高度都按它算
-              .frame(
-                maxWidth: .infinity, minHeight: Self.groupHeight, maxHeight: Self.groupHeight,
-                alignment: .bottomLeading)
-          }
+          let groups = model.groups
           ForEach(Array(model.results.enumerated()), id: \.element.rowID) { index, item in
+            if let group = groups.first(where: { $0.row == index }) {
+              groupHeader(group)
+            }
             Button {
               model.click(item)
             } label: {
@@ -150,6 +148,9 @@ struct LauncherPanelView: View {
             }
             .buttonStyle(.plain)
             .id(item.rowID)
+            // 右键和 ⌘K 同一份动作（体检 C8）；包成视图：菜单打开时才算，不在每次画行时建一遍
+            .contextMenu { ActionContextMenu { model.actions(for: item) } }
+            .accessibilityActions { accessibilityActions(for: item) }
           }
         }
         .background(alignment: .topLeading) { highlight }
@@ -162,10 +163,10 @@ struct LauncherPanelView: View {
           model.selectionMotion == .instant
             ? nil : Style.Motion.snap.animation(reduced: reduceMotion)
         ) {
-          // 回到第一行时连分组标题一起露出来
+          // 回到一组的第一行时连分组标题一起露出来
           proxy.scrollTo(
-            selection == 0 && model.groupTitle != nil
-              ? Self.groupID : model.results[selection].rowID)
+            model.groups.contains { $0.row == selection }
+              ? Self.groupID(selection) : model.results[selection].rowID)
         }
       }
       // 新结果时选中项回到第 0 行，但 selection 本来就是 0 时上面不触发：列表也要回到顶部（有分组标题就到标题）；
@@ -174,25 +175,74 @@ struct LauncherPanelView: View {
         if model.selection > 0, model.results.indices.contains(model.selection) {
           proxy.scrollTo(model.results[model.selection].rowID)
         } else if let first = model.results.first {
-          proxy.scrollTo(model.groupTitle != nil ? Self.groupID : first.rowID, anchor: .top)
+          proxy.scrollTo(
+            model.groups.first?.row == 0 ? Self.groupID(0) : first.rowID, anchor: .top)
         }
       }
     }
   }
 
+  /// 分组标题：高度必须正好是 groupHeight（高亮和面板高度都按它算）
+  private func groupHeader(_ group: LauncherModel.Group) -> some View {
+    Text(group.title)
+      .id(Self.groupID(group.row))
+      .font(.system(size: 11, weight: .semibold))
+      .foregroundStyle(.tertiary)
+      .padding(.leading, 12)
+      .padding(.bottom, 2)
+      .frame(
+        maxWidth: .infinity, minHeight: Self.groupHeight, maxHeight: Self.groupHeight,
+        alignment: .bottomLeading
+      )
+      .accessibilityAddTraits(.isHeader)
+  }
+
+  /// VoiceOver 的动作（体检 B37）：按一下行只是选中，这里给直接执行的；和 ⌘K 调的是同一批方法
+  @ViewBuilder private func accessibilityActions(for item: LauncherItem) -> some View {
+    Button(model.primaryAction(for: item).title) { model.execute(item) }
+    if let secondary = model.commandReturnAction(for: item) {
+      Button(secondary.title) { model.commandReturn(item) }
+    }
+    if let copy = model.copyTitle(for: item) {
+      Button(copy) { model.copy(item) }
+    }
+    if model.canFavorite(item) {
+      Button(model.isFavorite(item) ? "取消收藏" : "加入收藏") { model.toggleFavorite(item) }
+    }
+    if model.isCommon(item) {
+      Button("从常用中移除") { model.forget(item) }
+    }
+  }
+
   /// 一块中性高亮，按前缀和定位，在行间滑动（不用 matchedGeometryEffect：LazyVStack 回收行时会跳）
   @ViewBuilder private var highlight: some View {
-    if model.results.indices.contains(model.selection) {
-      let offset = listTop + model.results.prefix(model.selection).map(rowHeight).reduce(0, +)
+    if let selected = model.selectedItem {
+      let offset = Self.offset(ofRow: model.selection, in: model)
+      let height = rowHeight(selected)
       let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
       shape
         .fill(Style.selectedFill)
         // 增强对比度：中性高亮加 1 pt 品牌粉 0.6 描边（mac-whisker §7）
         .overlay { if contrast == .increased { shape.strokeBorder(Style.brand.opacity(0.6)) } }
-        .frame(height: rowHeight(model.results[model.selection]))
+        .frame(height: height)
         .offset(y: offset)
         .animation(model.selectionMotion.animation(reduced: reduceMotion), value: model.selection)
         .animation(nil, value: model.results)
+      // ⌘Y 预览从选中行长出来：按同样的前缀和报它在窗口里的位置，只报列表可见区里的部分（滚出去的不当起点）；
+      // 按选中项换一个新视图，一出现就报终点位置（同剪贴板的透镜）
+      Color.clear
+        .frame(height: height)
+        .onGeometryChange(for: CGRect.self) { proxy in
+          let global = proxy.frame(in: .global)
+          let visible = CGRect(origin: .zero, size: proxy.size)
+            .intersection(proxy.bounds(of: .scrollView) ?? .infinite)
+          return visible.isEmpty ? .null : visible.offsetBy(dx: global.minX, dy: global.minY)
+        } action: { rect in
+          model.rowFrame = rect.isNull ? nil : (selected.id, rect)
+        }
+        .offset(y: offset)
+        .onDisappear { if model.rowFrame?.id == selected.id { model.rowFrame = nil } }
+        .id(selected.id)
     }
   }
 
@@ -214,15 +264,23 @@ struct LauncherPanelView: View {
       value: model.showsActions)
   }
 
-  /// 底栏（N8）：左边选中项的种类，右边主动作 ↩ 和动作菜单 ⌘K，都能点。没有选中项时空着
+  /// 底栏（N8）：左边选中项的种类（有就地提示时换成提示），右边主动作 ↩ 和动作菜单 ⌘K，都能点。没有选中项时空着
   private var bar: some View {
     HStack(spacing: 12) {
+      if let notice = model.notice {
+        noticeView(notice)
+          .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
+          .id(notice)
+      }
       if let selected = model.selectedItem {
-        HStack(spacing: 8) {
-          KindTile(symbol: selected.familySymbol, color: selected.familyColor, size: 16)
-          Text(selected.kindTitle).foregroundStyle(.secondary)
+        if model.notice == nil {
+          HStack(spacing: 8) {
+            KindTile(symbol: selected.familySymbol, color: selected.familyColor, size: 16)
+            Text(selected.kindTitle).foregroundStyle(.secondary)
+          }
+          .accessibilityElement(children: .combine)
+          .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
         }
-        .accessibilityElement(children: .combine)
         Spacer(minLength: 8)
         let primary = model.primaryAction(for: selected).title
         Button {
@@ -246,12 +304,64 @@ struct LauncherPanelView: View {
         Spacer()
       }
     }
+    .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: model.notice)
     .font(.system(size: 12))
     .lineLimit(1)
     .buttonStyle(.plain)
     .padding(.horizontal, 14)
     .frame(height: Self.barHeight)
     .overlay(alignment: .top) { Hairline() }
+  }
+
+  /// 底栏左边的就地提示（同剪贴板底栏）：✓ 绿对勾 / ⚠ 只染三角 /「已从常用中移除 · 撤销 ⌘Z」（撤销是 brandInk 文字按钮）
+  @ViewBuilder private func noticeView(_ notice: LauncherModel.Notice) -> some View {
+    switch notice {
+    case .message(let text):
+      Label(text, systemImage: "checkmark.circle.fill")
+        .symbolRenderingMode(.palette)
+        .foregroundStyle(Color(nsColor: .systemGreen), Color(nsColor: .systemGreen))
+        .symbolEffect(.bounce, value: text)
+    case .warning(let text):
+      // 只染三角：橙字在浅色底上对比度不够，字保持默认色
+      Label {
+        Text(text)
+      } icon: {
+        Image(systemName: "exclamationmark.triangle.fill")
+          .foregroundStyle(Color(nsColor: .systemOrange))
+      }
+    case .undo(let text):
+      HStack(spacing: 8) {
+        Text(text).foregroundStyle(.secondary)
+        Text("·").foregroundStyle(.tertiary)
+        Button(action: model.undoForget) {
+          HStack(spacing: 6) {
+            Text("撤销").foregroundStyle(Style.brandInk)
+            KeyCap("⌘Z")
+          }
+        }
+        .pointerStyle(.link)
+        .accessibilityLabel("撤销移除")
+      }
+    }
+  }
+}
+
+/// ⌘Y 快速查看（体检 C7）：选中文件的 Quick Look 预览（和剪贴板 ⌘Y 大卡同一个单文件视图 QuickLookFile），
+/// 浮层从选中行长出来、⌘Y / Esc 缩回；跟着启动器里的选中项换文件，选中的不是文件时写一句话
+struct LauncherQuickLookView: View {
+  let model: LauncherModel
+
+  var body: some View {
+    if model.showsQuickLookContent, let url = model.quickLookURL {
+      QuickLookFile(url: url)
+        .clipShape(.rect(cornerRadius: Style.Radius.card, style: .continuous))
+        .padding(6)
+    } else if model.showsQuickLookContent {
+      Text("没有可预览的文件")
+        .font(.system(size: 13))
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
   }
 }
 
@@ -267,6 +377,8 @@ private struct LauncherRow: View {
   /// 选中的内置动作当前的全局快捷键（N10，没设就是 nil）
   let hotKey: String?
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  /// 悬停（没选中的行铺 fill.hover，0.10 s 淡入；浮层不激活本 App，SwiftUI 的 onHover 不可靠，用 HoverTracker）
+  @State private var hovered = false
 
   var body: some View {
     HStack(spacing: 10) {
@@ -314,6 +426,14 @@ private struct LauncherRow: View {
       kind
     }
     .padding(.horizontal, 10)
+    .frame(maxHeight: .infinity)
+    .background(
+      hovered && !isSelected ? Style.hoverFill : .clear,
+      in: .rect(cornerRadius: Style.Radius.card, style: .continuous)
+    )
+    .background {
+      HoverTracker { inside in withAnimation(.easeOut(duration: 0.10)) { hovered = inside } }
+    }
     .accessibilityElement(children: .combine)
     .accessibilityAddTraits(isSelected ? .isSelected : [])
   }
@@ -361,6 +481,7 @@ extension LauncherItem {
     case .prompt where target.hasPrefix("file-"): "doc.text.magnifyingglass"
     case .prompt where target.hasPrefix("system-"):
       SystemCommands.Verb(rawValue: String(target.dropFirst("system-".count)))?.symbol ?? "power"
+    case .prompt where target == "translate-fy": "character.bubble.fill"
     case .search, .prompt: "magnifyingglass"
     default: symbol
     }
@@ -374,6 +495,7 @@ extension LauncherItem {
     case .path: contentType?.conforms(to: .folder) == true ? "folder.fill" : "doc.fill"
     case .action: "command"
     case .system: "power"
+    case .translate: "character.bubble.fill"
     default: tileSymbol
     }
   }
@@ -381,7 +503,21 @@ extension LauncherItem {
   /// 功能家族色（mac-whisker §3）：行里的种类色块、底栏左边的小色块
   fileprivate var familyColor: Color {
     switch kind {
-    case .action: target == "settings" ? Style.Family.general : Style.Family.command
+    // 内置动作按菜单栏的家族色（体检 A26）：对得上全局热键的用它的，暂停记录算剪贴板、复制即译算翻译、钉图算截图，其余是通用
+    case .action:
+      if let action = hotKeyAction {
+        action.color
+      } else if target == "pause-clipboard" {
+        Style.Family.clipboard
+      } else if target == "copyToTranslate" {
+        Style.Family.translate
+      } else if target.hasPrefix("pins-") {
+        Style.Family.screenshot
+      } else {
+        Style.Family.general
+      }
+    case .translate: Style.Family.translate
+    case .prompt where target == "translate-fy": Style.Family.translate
     case .system: Style.Family.command
     case .prompt where target.hasPrefix("system-"): Style.Family.command
     case .url: Style.Family.url
@@ -405,6 +541,8 @@ extension LauncherItem {
     case .action: "命令"
     case .system: "系统"
     case .prompt where target.hasPrefix("system-"): "系统"
+    case .translate: "翻译"
+    case .prompt where target == "translate-fy": "翻译"
     case .url: "网址"
     case .prompt where target == FileSearch.accessTarget: "授权"
     case .search, .prompt: "搜索"

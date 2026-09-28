@@ -122,6 +122,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   /// 当前页推进的详情页（翻译服务 / 网页搜索的 id；TranslateTab、LauncherTab 的 NavigationStack 用它），换页时清空
   var path: [String] = []
   var showsOnboarding = false
+  /// 快捷键速查表（启动器里的「快捷键速查表」打开设置窗时盖上；页面里的「查看全部快捷键…」按钮自己管）
+  var showsShortcuts = false
   /// 设置窗是 key（SettingsWindow 的窗口代理写）。开着 sheet（确认框、速查表、引导）或别的面板在前时不是
   var isKey = false
 
@@ -255,6 +257,9 @@ struct SettingsRoot: View {
     }
     .sheet(isPresented: $navigation.showsOnboarding) {
       onboarding().symbolEffectsRemoved(reduceMotion).appAccent()
+    }
+    .sheet(isPresented: $navigation.showsShortcuts) {
+      ShortcutsButton.sheet().symbolEffectsRemoved(reduceMotion).appAccent()
     }
     .symbolEffectsRemoved(reduceMotion)
     .appAccent()

@@ -8,7 +8,7 @@
 // ⌘K 或 →（光标在末尾）打开操作面板，← 关掉；两个面板开着时搜索框用来过滤条目，↑↓ ↩ 选择执行，Esc 关掉；
 // ⌘K 里「移到收藏夹 ›」→ / ↩ 进子列表、← / Esc 回来；右键菜单和 ⌘K 是同一份动作表（actions(for:targets:)）；
 // ⌘Y 放大预览（QuickLookView，单独的浮层，不抢键盘：↑↓ 照样在这里换条目）。
-// 按类型的动作：⌘T 翻译、⌘O 打开链接 / 文件、⌘R 在访达中显示、⌥⌘C 拷贝路径、图片钉到屏幕；行能拖到别的 App（dragItems）。
+// 按类型的动作：⌘T 翻译、⌘O 打开链接 / 文件、⌘R 在访达中显示、⌥⌘C 复制路径、图片钉到屏幕；行能拖到别的 App（dragItems）。
 
 import AppKit
 import Carbon.HIToolbox
@@ -439,7 +439,7 @@ import Observation
     }
     guard dialog == nil else { return false }
     if modifiers == [.command, .option] {
-      // ⌥⌘C 拷贝路径（访达同键）：全是文件时才有
+      // ⌥⌘C 复制路径（访达同键）：全是文件时才有
       guard key == kVK_ANSI_C, let items = pathTargets else { return false }
       palette = nil
       copyPaths(items)
@@ -623,7 +623,7 @@ import Observation
     return targets.count == 1 ? targets[0] : nil
   }
 
-  /// ⌥⌘C 拷贝路径的对象：全是文件时才有
+  /// ⌥⌘C 复制路径的对象：全是文件时才有
   private var pathTargets: [ClipItem]? {
     let targets = targets
     return !targets.isEmpty && targets.allSatisfy { $0.kind == .file } ? targets : nil
@@ -804,7 +804,7 @@ import Observation
     }
   }
 
-  /// ⌥⌘C 拷贝路径（体检 D2）：多个按换行拼。是新文字，但面板开着时列表不动：同 ⌘C，收起面板时才记成一条新历史
+  /// ⌥⌘C 复制路径（体检 D2）：多个按换行拼。是新文字，但面板开着时列表不动：同 ⌘C，收起面板时才记成一条新历史
   func copyPaths(_ items: [ClipItem]) {
     let text = items.flatMap { $0.filePaths ?? [] }.joined(separator: "\n")
     guard !text.isEmpty else { return }
@@ -1149,7 +1149,7 @@ import Observation
       }
     }
     if targets.allSatisfy({ $0.kind == .file }) {
-      add("拷贝路径", "link", "⌥⌘C", section: 0) { [unowned self] in copyPaths(targets) }
+      add("复制路径", "link", "⌥⌘C", section: 0) { [unowned self] in copyPaths(targets) }
     }
     // 1 按类型打开 / 查看
     if let single {

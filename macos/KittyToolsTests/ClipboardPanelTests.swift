@@ -1,6 +1,6 @@
 // 剪贴板面板交互（体检第 3 批）的纯逻辑单测：JSON 默认美化与缓存、条目消失后选中挪到下一条、多选随搜索裁剪、
 // 右键 / ⌘Y「复制」只复制被点的那条、菜单开着时过滤框的编辑键、⌘K 与右键同一份动作表（分节、子列表、按类型的动作）、
-// 共用的菜单过滤（拼音前缀）、钉到屏幕的位置、拷贝路径、拖出去的剪贴板条目、对话框能否保存、⌘Y 里的纯文本复制。
+// 共用的菜单过滤（拼音前缀）、钉到屏幕的位置、复制路径、拖出去的剪贴板条目、对话框能否保存、⌘Y 里的纯文本复制。
 // 用内存库 + 临时目录，不碰真实数据；不跑会真的打开网址 / 文件、弹面板的动作。
 
 import AppKit
@@ -184,7 +184,7 @@ struct ClipboardPanelTests {
   }
 
   /// ⌘K 与右键同一份动作表（体检 B12）：顺序、名字、分节一致；替代粘贴 / 复制为纯文本只给带格式的；按类型的动作带键位
-  /// （翻译 ⌘T、打开链接 / 打开 ⌘O、在访达中显示 ⌘R、拷贝路径 ⌥⌘C、图片钉到屏幕，体检 B14 D1 D2）
+  /// （翻译 ⌘T、打开链接 / 打开 ⌘O、在访达中显示 ⌘R、复制路径 ⌥⌘C、图片钉到屏幕，体检 B14 D1 D2）
   @Test func actionTable() throws {
     let (model, store) = try makeModel(["看 https://example.com/a 这篇", "纯文本"])
     let link = try item(model, "看 https://example.com/a 这篇")
@@ -210,14 +210,14 @@ struct ClipboardPanelTests {
     model.edit(link.id, text: "没有网址了")
     let edited = try item(model, "没有网址了")
     #expect(!model.actions(for: edited, targets: [edited]).contains { $0.title == "打开链接" })
-    // 文件：打开 ⌘O、在访达中显示 ⌘R、拷贝路径 ⌥⌘C；没有翻译、编辑
+    // 文件：打开 ⌘O、在访达中显示 ⌘R、复制路径 ⌥⌘C；没有翻译、编辑
     var file = ClipItem(kind: .file)
     file.filePaths = ["/tmp/a.txt", "/tmp/b.txt"]
     store.record(file)
     let files = model.actions(for: file, targets: [file])
     #expect(files.first { $0.title == "打开" }?.shortcut == "⌘O")
     #expect(files.first { $0.title == "在访达中显示" }?.shortcut == "⌘R")
-    #expect(files.first { $0.title == "拷贝路径" }?.shortcut == "⌥⌘C")
+    #expect(files.first { $0.title == "复制路径" }?.shortcut == "⌥⌘C")
     #expect(!files.contains { $0.title == "翻译" || $0.title == "编辑内容…" })
     // 图片：钉到屏幕；多选时只给批量操作（没有备注、放大预览）
     var image = ClipItem(kind: .image)
@@ -330,7 +330,7 @@ struct ClipboardPanelTests {
     #expect(second.origin == CGPoint(x: small.minX + 24, y: small.minY - 24))
   }
 
-  /// ⌥⌘C 拷贝路径（体检 D2）：多个按换行拼；面板开着时列表不动，收起面板时才记成一条新历史（同 ⌘C）
+  /// ⌥⌘C 复制路径（体检 D2）：多个按换行拼；面板开着时列表不动，收起面板时才记成一条新历史（同 ⌘C）
   @Test func copyPaths() throws {
     let (model, store) = try makeModel([])
     var written: [String] = []

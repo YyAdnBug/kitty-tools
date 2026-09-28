@@ -1,6 +1,7 @@
-// 启动器的一条结果：App、内置动作、网址、文件路径、系统命令（这五类记使用），以及网页搜索、关键词提示、计算结果、
-// 「cb」那一行（不记）。
-// id = 类型 + 目标，使用记录按它累计。内置动作副标题只写「Kitty Tools」，英文别名只进 names 参与匹配（N10）。
+// 启动器的一条结果：App、内置动作、网址、文件路径、系统命令（这五类记使用、能收藏），以及网页搜索、关键词提示、
+// 计算结果、「cb」「fy」那一行（不记）。
+// id = 类型 + 目标，使用记录按它累计。内置动作和菜单栏同一份（体检 A26）：副标题只写「Kitty Tools」（两个开关写开没开），
+// 英文别名只进 names 参与匹配（N10）。
 
 import Foundation
 import UniformTypeIdentifiers
@@ -18,8 +19,10 @@ struct LauncherItem: Identifiable, Hashable {
     case clip
     /// 有关键词的网页搜索、文件搜索的提示：↩ / Tab 把「关键词 」补进输入框
     case prompt
+    /// 「fy 文本」那一行（目标是文本）：↩ 收起启动器、翻译浮窗直接翻译（体检 D10）
+    case translate
 
-    /// 只有这些记使用、能出现在「最近使用」里
+    /// 只有这些记使用、能出现在「常用」里、能收藏
     var isRecorded: Bool { [.app, .action, .url, .path, .system].contains(self) }
   }
 
@@ -42,20 +45,89 @@ struct LauncherItem: Identifiable, Hashable {
 
   var id: String { kind.rawValue + "\n" + target }
 
-  /// 内置动作：只放本 App 已有的功能
-  static let actions: [LauncherItem] = [
-    action("clipboard", "剪贴板历史", "Clipboard"),
-    action("translate-input", "输入翻译", "Translate"),
-    action("screenshot", "截图", "Screenshot Capture"),
-    action("translate-screenshot", "截图翻译", "Screenshot Translate"),
-    action("ocr", "识字", "OCR Recognize Text QR"),
-    action("settings", "设置", "Settings Preferences"),
+  /// 内置动作此刻的状态（AppDelegate 在每次搜索时给）：暂停记录剪贴板了没有、复制即译开没开、钉图（nil = 没有钉图，
+  /// true = 藏着）、能不能检查更新（正式版）
+  struct ActionState: Equatable {
+    var recordingPaused = false
+    var copyToTranslate = false
+    var pinsHidden: Bool?
+    var checksUpdates = false
+  }
+
+  /// 内置动作（体检 A26）：和菜单栏同名同序——按 HotKeyAction.sections（启动器自己除外），剪贴板节末尾「暂停记录剪贴板」、
+  /// 翻译节末尾「复制即译」开关、
+  /// 截图节末尾有钉图时的两项，最后设置、快捷键速查表、关于、检查更新（正式版）。老的 6 个 id 保留（使用记录按 id 累计），
+  /// 新加的用 HotKeyAction.rawValue。按状态缓存：每敲一个字都要列一遍，拼音转写不便宜
+  static func actions(_ state: ActionState = .init()) -> [LauncherItem] {
+    if let cached = actionCache, cached.state == state { return cached.items }
+    var items: [LauncherItem] = []
+    for section in HotKeyAction.sections {
+      for hotKey in section.actions where hotKey != .launcher {
+        items.append(action(actionID(hotKey), hotKey.title, aliases[hotKey] ?? ""))
+      }
+      if section.actions.contains(.clipboard) {
+        items.append(
+          action(
+            "pause-clipboard", "暂停记录剪贴板", "Pause Clipboard Recording",
+            subtitle: state.recordingPaused ? "已暂停" : "正在记录"))
+      }
+      if section.actions.contains(.selectionTranslate) {
+        items.append(
+          action(
+            "copyToTranslate", "复制即译", "Copy to Translate",
+            subtitle: state.copyToTranslate ? "已开启" : "已关闭"))
+      }
+      if section.actions.contains(.screenshot), let hidden = state.pinsHidden {
+        items.append(action("pins-toggle", hidden ? "显示全部钉图" : "隐藏全部钉图", "Show Hide Pins"))
+        items.append(action("pins-close", "关闭全部钉图", "Close Pins"))
+      }
+    }
+    items += [
+      action("settings", "设置", "Settings Preferences"),
+      action("shortcuts", "快捷键速查表", "Keyboard Shortcuts"),
+      action("about", "关于 Kitty Tools", "About"),
+    ]
+    if state.checksUpdates { items.append(action("updates", "检查更新", "Check for Updates")) }
+    actionCache = (state, items)
+    return items
+  }
+
+  private static var actionCache: (state: ActionState, items: [LauncherItem])?
+
+  /// 对得上全局热键的内置动作的 id：老的 5 个沿用旧名（使用记录按 id 累计，改名会丢），新加的用 rawValue
+  static func actionID(_ action: HotKeyAction) -> String {
+    switch action {
+    case .clipboard: "clipboard"
+    case .inputTranslate: "translate-input"
+    case .screenshot: "screenshot"
+    case .screenshotTranslate: "translate-screenshot"
+    case .recognizeText: "ocr"
+    default: action.rawValue
+    }
+  }
+
+  /// 英文别名（只进 names）
+  private static let aliases: [HotKeyAction: String] = [
+    .clipboard: "Clipboard History", .selectionTranslate: "Selection Translate",
+    .inputTranslate: "Translate Input", .translateReplace: "Translate Replace",
+    .screenshotTranslate: "Screenshot Translate", .screenshot: "Screenshot Capture",
+    .screenshotLastRegion: "Capture Last Region", .recognizeText: "OCR Recognize Text QR",
   ]
 
-  private static func action(_ id: String, _ title: String, _ alias: String) -> LauncherItem {
+  /// 不对应全局热键的内置动作的符号（和菜单栏同一个）
+  private static let actionSymbols = [
+    "pause-clipboard": "pause.circle", "copyToTranslate": "doc.on.doc", "pins-toggle": "pin",
+    "pins-close": "pin.slash",
+    "settings": "gearshape", "shortcuts": "keyboard", "about": "info.circle",
+    "updates": "arrow.triangle.2.circlepath",
+  ]
+
+  private static func action(
+    _ id: String, _ title: String, _ alias: String, subtitle: String = "Kitty Tools"
+  ) -> LauncherItem {
     let pinyin = AppCatalog.pinyin(title)
     return LauncherItem(
-      kind: .action, target: id, title: title, subtitle: "Kitty Tools",
+      kind: .action, target: id, title: title, subtitle: subtitle,
       names: [title, alias, pinyin?.full].compactMap { $0.map(LauncherMatch.fold) },
       initials: [LauncherMatch.initials(alias), pinyin?.initials].compactMap { $0 })
   }
@@ -64,7 +136,8 @@ struct LauncherItem: Identifiable, Hashable {
     // 对得上全局热键的内置动作（和 cb 那一行）用 HotKeyAction 的符号：和菜单栏、快捷键页是同一个图标
     if kind == .action || kind == .clip, let action = hotKeyAction { return action.symbol }
     return switch (kind, target) {
-    case (.action, _): "gearshape"
+    case (.action, _): Self.actionSymbols[target] ?? "gearshape"
+    case (.translate, _): "character.bubble.fill"
     case (.system, _): SystemCommand(rawValue: target)?.symbol ?? "power"
     case (.url, _): "globe"
     case (.search, _), (.prompt, _): "magnifyingglass"
@@ -73,14 +146,12 @@ struct LauncherItem: Identifiable, Hashable {
     }
   }
 
-  /// 对应的全局热键：内置动作和 cb 那一行选中时右侧显示它的键帽（N10）
+  /// 对应的全局热键：内置动作、cb 那一行（剪贴板）、fy 那一行（输入翻译）选中时右侧显示它的键帽（N10）
   var hotKeyAction: HotKeyAction? {
-    switch (kind, target) {
-    case (.action, "clipboard"), (.clip, _): .clipboard
-    case (.action, "translate-input"): .inputTranslate
-    case (.action, "screenshot"): .screenshot
-    case (.action, "translate-screenshot"): .screenshotTranslate
-    case (.action, "ocr"): .recognizeText
+    switch kind {
+    case .clip: .clipboard
+    case .translate: .inputTranslate
+    case .action: HotKeyAction.allCases.first { Self.actionID($0) == target }
     default: nil
     }
   }

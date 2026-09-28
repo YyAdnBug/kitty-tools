@@ -1,5 +1,7 @@
-// 启动器计算器（纯函数，配单测）：+ - * / %（取模）^ 或 **（幂，右结合）、括号、一元负号、
+// 启动器计算器（纯函数，配单测）：+ - * /、mod（取模）、^ 或 **（幂，右结合）、括号、一元负号、
 // sqrt abs round floor ceil sin cos tan log（常用对数）ln exp、常量 pi e、0x / 0b 字面量。
+// % 是百分号（体检 A23，同 macOS 计算器）：200*15% = 30、100+10% = 110（a ± b% = a ×（1 ± b/100））、50% = 0.5。
+// 中文输入法打出来的全角括号 / 数字 / 符号、× ÷、千分位逗号先归一（体检 B32），算式那一栏照常显示原文。
 // 手写递归下降：NSExpression 遇到半截表达式会直接让进程崩溃。「2024-01-01」这类日期不当算式（修 §11 #37）。
 
 import Foundation
@@ -13,20 +15,30 @@ enum Calculator {
       payload: result, completion: result)
   }
 
+  /// 中文输入法打出来的算式（体检 B32）：全角括号 / 数字 / ＋－＊／％ 转半角（和 Search.options 同一个口径），
+  /// × ✕ 换成 *、÷ 换成 /，去掉数字之间的千分位逗号（1,299 → 1299）
+  static func normalize(_ query: String) -> String {
+    query.folding(options: .widthInsensitive, locale: nil)
+      .replacing(/[×✕]/, with: "*").replacing("÷", with: "/")
+      .replacing(/(\d)[,，](?=\d)/) { String($0.1) }
+  }
+
   static func looksLikeMath(_ query: String) -> Bool {
-    let text = query.trimmingCharacters(in: .whitespaces)
+    let text = normalize(query.trimmingCharacters(in: .whitespaces))
     guard text.count >= 3, text.wholeMatch(of: /[\d\s+\-*\/%.()^a-zA-Z]+/) != nil,
       text.contains(/\d/) || text.contains(/\b(pi|e)\b/),
-      text.contains(/[+\-*\/%^]/) || text.contains(/[a-z]+\s*\(/),
+      text.contains(/[+\-*\/%^]/) || text.contains(/[a-z]+\s*\(/) || text.contains(/\bmod\b/),
       text.wholeMatch(of: /\d{2,4}-\d{1,2}-\d{1,4}/) == nil
     else { return false }
     return true
   }
 
-  /// 解析失败、结果不是有限数时返回 nil
+  /// 解析失败、结果不是有限数时返回 nil。mod 先换成一个字符（|）再去空白：去了空白「pi mod 2」会粘成一个名字
   static func evaluate(_ input: String) -> Double? {
     var parser = Parser(
-      Array(input.lowercased().replacing("**", with: "^").filter { !$0.isWhitespace }))
+      Array(
+        normalize(input).lowercased().replacing("**", with: "^").replacing("mod", with: "|")
+          .filter { !$0.isWhitespace }))
     guard let value = parser.expression(), parser.isAtEnd, value.isFinite else { return nil }
     return value
   }
@@ -56,30 +68,43 @@ enum Calculator {
       return true
     }
 
-    /// expression := term (('+' | '-') term)*
+    /// expression := term (('+' | '-') term)*；右边是单独一个百分数时 a ± b% = a ×（1 ± b/100）
     mutating func expression() -> Double? {
-      guard var value = term() else { return nil }
+      guard var value = term()?.value else { return nil }
       while let op = current, op == "+" || op == "-" {
         index += 1
         guard let rhs = term() else { return nil }
-        value = op == "+" ? value + rhs : value - rhs
+        let amount = rhs.isPercent ? value * rhs.value : rhs.value
+        value = op == "+" ? value + amount : value - amount
       }
       return value
     }
 
-    /// term := unary (('*' | '/' | '%') unary)*
-    private mutating func term() -> Double? {
-      guard var value = unary() else { return nil }
-      while let op = current, "*/%".contains(op) {
+    /// term := factor (('*' | '/' | mod) factor)*。isPercent：整个 term 就是一个百分数（「10%」），给 a ± b% 用
+    private mutating func term() -> (value: Double, isPercent: Bool)? {
+      guard let first = factor() else { return nil }
+      var (value, isPercent) = first
+      while let op = current, "*/|".contains(op) {
         index += 1
-        guard let rhs = unary() else { return nil }
+        guard let rhs = factor()?.value else { return nil }
+        isPercent = false
         switch op {
         case "*": value *= rhs
         case "/": value /= rhs
         default: value = value.truncatingRemainder(dividingBy: rhs)
         }
       }
-      return value
+      return (value, isPercent)
+    }
+
+    /// factor := unary '%'?：% 紧跟在数字 / 右括号后面、再往后是结尾、运算符或右括号时是百分号（b% = b/100）
+    private mutating func factor() -> (value: Double, isPercent: Bool)? {
+      guard let value = unary() else { return nil }
+      let next = index + 1
+      guard current == "%", next == characters.count || "+-*/^|)".contains(characters[next])
+      else { return (value, false) }
+      index = next
+      return (value / 100, true)
     }
 
     /// unary := '-' unary | '+' unary | power

@@ -519,7 +519,7 @@ struct SnapshotProbeTests {
         dark: false, to: "\(out)/\(name).png")
     }
     try renderScrollCapture(out)
-    try renderLauncher(out)
+    try await renderLauncher(out)
     // 刘海岛：刘海屏的下巴（成功 / 进行中）、无刘海屏的胶囊（取色色块 / 错误）
     let notch = Island.Geometry.notch(width: 200, height: 32)
     let islands: [(String, Island.Content, Island.Geometry)] = [
@@ -823,10 +823,10 @@ struct SnapshotProbeTests {
     }
   }
 
-  /// 启动器：最近使用（底栏种类 + 主动作 ↩ + 动作 ⌘K）、⌘K 动作菜单、搜索结果（中文名 / 拼音）、没有结果、
-  /// cb 那一行、选中的内置动作带全局快捷键键帽；文件搜索（结果、最近的文件、find 按住 ⌘、只输 1 个字母，
-  /// 结果是假的、不查 Spotlight）；深浅色
-  private func renderLauncher(_ out: String) throws {
+  /// 启动器：空查询的收藏 + 常用（底栏种类 + 主动作 ↩ + 动作 ⌘K）、⌘K 动作菜单（App、网址）、搜索结果（中文名 / 拼音）、
+  /// 没有结果、cb / fy 那一行、选中的内置动作带全局快捷键键帽、中文输入法打的算式、底栏「已从常用中移除 · 撤销」；
+  /// 文件搜索（结果、最近的文件、find 按住 ⌘、只输 1 个字母、文件的 ⌘K，结果是假的、不查 Spotlight）；深浅色
+  private func renderLauncher(_ out: String) async throws {
     let usage = try LauncherUsage(db: Database(path: ":memory:"))
     let apps = [
       "/System/Applications/Calculator.app", "/System/Applications/Utilities/Activity Monitor.app",
@@ -835,22 +835,42 @@ struct SnapshotProbeTests {
     ].map(AppCatalog.item(path:))
     let model = LauncherModel(usage: usage, apps: apps)
     model.boundHotKey = { $0.defaultHotKey }  // 不读本机设置，键帽固定是默认键
+    // 「用 X 打开」：固定两个浏览器 / 两个编辑器（不问本机的 LaunchServices）；fy 的释义固定一句
+    model.browsers = {
+      ["/Applications/Safari.app", "/Applications/Google Chrome.app"].map { URL(filePath: $0) }
+    }
+    model.applications = { _ in
+      [
+        (URL(filePath: "/System/Applications/TextEdit.app"), true),
+        (URL(filePath: "/System/Applications/Preview.app"), false),
+      ]
+    }
+    model.lookUp = { _ in "used as a greeting or to begin a phone conversation" }
     let linux = LauncherItem(
       kind: .url, target: "https://linux.do/latest", title: "linux.do/latest", subtitle: "")
-    for (item, times) in [(apps[1], 3), (linux, 5), (LauncherItem.actions[0], 1), (apps[2], 2)] {
+    for (item, times) in [(apps[1], 3), (linux, 5), (LauncherItem.actions()[0], 1), (apps[2], 2)] {
       for _ in 0..<times { usage.record(item, query: "") }
     }
+    // 收藏：备忘录、linux.do（空查询上面一组「收藏」，下面「常用」补足）
+    usage.toggleFavorite(apps[3])
+    usage.toggleFavorite(linux)
     for dark in [false, true] {
       for (name, query) in [
         ("launcher-recent", ""), ("launcher-search", "huo"), ("launcher-empty", "zzzz"),
-        ("launcher-calc", "12*3+1"), ("launcher-prompt", "gh"), ("launcher-alternate", "swift ui"),
-        ("launcher-actions", ""), ("launcher-actions-short", "截图"), ("launcher-cb", "cb 发票抬头"),
-        ("launcher-hotkey", "截图"),
+        ("launcher-calc", "12*3+1"), ("launcher-calc-cn", "（1,299+1）×3"),
+        ("launcher-prompt", "gh"), ("launcher-alternate", "swift ui"), ("launcher-actions", ""),
+        ("launcher-actions-url", ""), ("launcher-actions-short", "截图"),
+        ("launcher-cb", "cb 发票抬头"), ("launcher-hotkey", "截图"), ("launcher-fy", "fy hello"),
+        // 内置动作里的「暂停记录剪贴板」（和菜单栏同一份：剪贴板家族色、副标题写开没开）
+        ("launcher-builtins", "剪贴板"),
       ] {
         model.query = query
+        await model.definitionLookup()
         model.alternate = name == "launcher-alternate" ? .control : .none
-        // 动作菜单那张选中第二行的 App（有 ⌘↩ ⌘C ⇥ ⌘⌫ 这些替代动作）；short 那张看面板撑高到放得下菜单
-        if name == "launcher-actions" { model.selection = 1 }
+        // 动作菜单那张选中「常用」里的 App（有 ⌘↩ ⌘C ⇥ ⌘D ⌘⌫ 这些替代动作），url 那张选中收藏的网址；
+        // short 那张看面板撑高到放得下菜单
+        if name == "launcher-actions" { model.selection = 2 }
+        if name == "launcher-actions-url" { model.selection = 1 }
         model.showsActions = name.hasPrefix("launcher-actions")
         try snapshot(
           LauncherPanelView(model: model),
@@ -858,6 +878,15 @@ struct SnapshotProbeTests {
           dark: dark,
           to: "\(out)/\(name)\(dark ? "-dark" : "").png")
       }
+      // 「常用」里 ⌘⌫ 移除一项：底栏换成「已从常用中移除 · 撤销 ⌘Z」，拍完撤回
+      model.query = ""
+      model.selection = 3
+      if let item = model.selectedItem { model.forget(item) }
+      try snapshot(
+        LauncherPanelView(model: model),
+        size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
+        to: "\(out)/launcher-notice-undo\(dark ? "-dark" : "").png")
+      model.undoForget()
     }
     let home = NSHomeDirectory()
     func hit(_ path: String, _ type: String, daysAgo: Double) -> FileSearch.Hit {
@@ -884,6 +913,7 @@ struct SnapshotProbeTests {
       for (name, query, hits) in [
         ("launcher-files", "open 报告", found), ("launcher-files-recent", " ", recent),
         ("launcher-files-find", "find 报告", found), ("launcher-files-short", "open a", []),
+        ("launcher-files-actions", "open 报告", found),
       ] {
         model.query = query
         // 最近的文件那张带上最后一行的授权提示
@@ -893,6 +923,8 @@ struct SnapshotProbeTests {
           model.showFiles(hits, for: request)
         }
         model.alternate = name == "launcher-files-find" ? .command : .none
+        // 文件的 ⌘K：快速查看、打开方式（默认的标「默认」）、移到废纸篓（体检 C7）
+        model.showsActions = name == "launcher-files-actions"
         try snapshot(
           LauncherPanelView(model: model),
           size: NSSize(width: 720, height: LauncherPanelView.height(for: model)),

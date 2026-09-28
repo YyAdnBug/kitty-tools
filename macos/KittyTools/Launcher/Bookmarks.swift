@@ -2,9 +2,10 @@
 // （Safari 书签要，所以不做）。各浏览器 Default / Profile N 目录；同一网址只留一条。
 // 每个目录读两个文件：Bookmarks（本机书签）和 AccountBookmarks（登录 Google 账号后存在账号里的书签，
 // 新版 Chrome 把书签挪到这里后 Bookmarks 可能是空的），格式相同。
-// 缓存到文件修改时间或开关变了才重读（修旧版 30 秒内不看开关，§11 #40）。
+// 按浏览器缓存解析结果，文件修改时间变了才重读；开关只决定列哪几家（修旧版 30 秒内不看开关，§11 #40）。
+// 设置 › 启动器每个开关下写读到了几条 / 没找到书签文件 / 没有安装（体检 B39），用的是同一份缓存。
 
-import Foundation
+import AppKit
 
 enum Bookmarks {
   struct Browser {
@@ -12,41 +13,82 @@ enum Bookmarks {
     let prefsKey: String
     /// ~/Library/Application Support 下的目录
     let directory: String
+    /// 判断装没装（LaunchServices 按 bundle id 找）
+    let bundleID: String
   }
 
   static let browsers = [
-    Browser(name: "Chrome", prefsKey: Prefs.launcherBookmarksChrome, directory: "Google/Chrome"),
-    Browser(name: "Edge", prefsKey: Prefs.launcherBookmarksEdge, directory: "Microsoft Edge"),
+    Browser(
+      name: "Chrome", prefsKey: Prefs.launcherBookmarksChrome, directory: "Google/Chrome",
+      bundleID: "com.google.Chrome"),
+    Browser(
+      name: "Edge", prefsKey: Prefs.launcherBookmarksEdge, directory: "Microsoft Edge",
+      bundleID: "com.microsoft.edgemac"),
     Browser(
       name: "Brave", prefsKey: Prefs.launcherBookmarksBrave,
-      directory: "BraveSoftware/Brave-Browser"),
+      directory: "BraveSoftware/Brave-Browser", bundleID: "com.brave.Browser"),
   ]
 
+  /// 每家浏览器解析出来的书签（同一家里网址去重），按它那几个文件的签名缓存
+  private static var parsed:
+    [String: (signature: String, bookmarks: [(title: String, url: String)])] =
+      [:]
   private static var cache: (signature: String, items: [LauncherItem]) = ("", [])
 
-  /// 启用的浏览器的全部书签（按文件签名缓存）
+  /// 启用且装着的浏览器的全部书签（跨浏览器同一网址只留一条）。没装的不搜：卸载后书签文件通常还在，
+  /// 设置里那个开关却是灰的、显示关着，用户关不掉
   static func items() -> [LauncherItem] {
-    let files = browsers.filter { UserDefaults.standard.bool(forKey: $0.prefsKey) }.flatMap {
-      browser in
-      profileFiles(browser).map { (browser, $0) }
+    let enabled = browsers.filter {
+      UserDefaults.standard.bool(forKey: $0.prefsKey) && isInstalled($0)
     }
-    let signature = files.map { browser, url in
-      let modified =
-        (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
-        .contentModificationDate?.timeIntervalSinceReferenceDate ?? 0
-      return "\(url.path)@\(modified)"
-    }.joined(separator: "\n")
+    let lists = enabled.map { ($0, bookmarks($0)) }
+    let signature = enabled.map { "\($0.name):" + (parsed[$0.name]?.signature ?? "") }
+      .joined(separator: "\n\n")
     if signature == cache.signature { return cache.items }
     var seen = Set<String>()
     var items: [LauncherItem] = []
-    for (browser, url) in files {
-      guard let data = try? Data(contentsOf: url) else { continue }
-      for bookmark in parse(data) where seen.insert(bookmark.url).inserted {
+    for (browser, bookmarks) in lists {
+      for bookmark in bookmarks where seen.insert(bookmark.url).inserted {
         items.append(item(bookmark, browser: browser.name))
       }
     }
     cache = (signature, items)
     return items
+  }
+
+  /// 设置页那一行的状态：没装 / 没找到书签文件 / 读到了几条
+  enum Status: Equatable {
+    case notInstalled, noFile
+    case read(Int)
+  }
+
+  /// 关着的（enabled = false）只看装没装、不读书签文件，装着就是 nil
+  static func status(of browser: Browser, enabled: Bool) -> Status? {
+    guard isInstalled(browser) else { return .notInstalled }
+    guard enabled else { return nil }
+    return profileFiles(browser).isEmpty ? .noFile : .read(bookmarks(browser).count)
+  }
+
+  /// LaunchServices 按 bundle id 找（约 15 µs，搜索时每次都问）
+  static func isInstalled(_ browser: Browser) -> Bool {
+    NSWorkspace.shared.urlForApplication(withBundleIdentifier: browser.bundleID) != nil
+  }
+
+  /// 一家浏览器的书签：各配置的 Bookmarks / AccountBookmarks 修改时间都没变就用上次解析的
+  private static func bookmarks(_ browser: Browser) -> [(title: String, url: String)] {
+    let files = profileFiles(browser)
+    let signature = files.map { url in
+      let modified =
+        (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+        .contentModificationDate?.timeIntervalSinceReferenceDate ?? 0
+      return "\(url.path)@\(modified)"
+    }.joined(separator: "\n")
+    if let cached = parsed[browser.name], cached.signature == signature { return cached.bookmarks }
+    var seen = Set<String>()
+    let bookmarks = files.compactMap { try? Data(contentsOf: $0) }.flatMap(parse)
+      .filter { seen.insert($0.url).inserted }
+    parsed[browser.name] = (signature, bookmarks)
+    return bookmarks
   }
 
   private static func profileFiles(_ browser: Browser) -> [URL] {

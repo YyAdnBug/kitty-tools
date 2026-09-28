@@ -14,11 +14,13 @@ struct ShortcutsButton: View {
       .buttonStyle(.plain)
       .foregroundStyle(Style.brandInk)
       .pointerStyle(.link)
-      .sheet(isPresented: $isPresented) {
-        ShortcutsSheet().frame(
-          width: 560,
-          height: Self.sheetHeight(available: NSApp.keyWindow?.contentLayoutRect.height ?? 548))
-      }
+      .sheet(isPresented: $isPresented) { Self.sheet() }
+  }
+
+  /// 速查表 sheet（这个按钮和启动器的「快捷键速查表」共用），按打开时窗口的可用高度定高
+  static func sheet() -> some View {
+    ShortcutsSheet().frame(
+      width: 560, height: sheetHeight(available: NSApp.keyWindow?.contentLayoutRect.height ?? 548))
   }
 
   /// sheet 挂在设置窗工具栏下沿，不能比窗口内容区（去掉工具栏）高：设置窗默认 600、最小 460，工具栏约 52。
@@ -150,7 +152,7 @@ struct ShortcutsSheet: View {
         Entry("⌘T", text: "翻译（文本，或识别出文字的图片）"),
         Entry("⌘O", text: "打开链接，或用默认 App 打开文件"),
         Entry("⌘R", text: "在访达中显示（文件）"),
-        Entry("⌥⌘C", text: "拷贝文件路径（多个按换行分开）"),
+        Entry("⌥⌘C", text: "复制文件路径（多个按换行分开）"),
         Entry("⌘D", text: "收藏 / 取消收藏（取消时也移出收藏夹）"),
         Entry("⌘E", text: "编辑"),
         Entry("⌘N", text: "新建片段"),
@@ -163,26 +165,32 @@ struct ShortcutsSheet: View {
         Entry("⌘W", text: "关闭（固定着也关；对话框开着时先关对话框）"),
         Entry("↑↓", "↩", text: "管理收藏夹里：选择 / 给选中的改名（双击同样；输入框里有字时 ↩ 是新建）"),
       ]),
-    // mac-whisker §6 启动器（N8–N10）；代码在 LauncherModel.handleCommand / handleKeyEquivalent
+    // mac-whisker §6 启动器（N8–N10，体检第 5 批）；代码在 LauncherModel.handleCommand / handleKeyEquivalent
     Group(
       title: "启动器", symbol: "command", color: Style.Family.command, globals: [.launcher],
       entries: [
         Entry("↩", text: "打开选中项（计算结果是粘贴；双击同样）"),
-        Entry("⌘↩", text: "在访达中显示（find 搜到的是打开，计算结果只复制）"),
+        Entry("⌘↩", text: "在访达中显示（find 搜到的是打开，计算结果只复制，网址用第二个浏览器打开）"),
         Entry("⌥↩", text: "在访达里搜索输入的文字"),
         Entry("⌃↩", text: "用第一个网页搜索搜输入的文字"),
-        Entry("⌘K", text: "打开 / 关闭动作菜单：选中项的全部动作"),
+        Entry("⌘K", "→", text: "打开 / 关闭动作菜单：选中项的全部动作（→ 要在搜索词末尾按；右键同一份）"),
         Entry("Tab", text: "补全（计算结果接着算、目录接着往下找）"),
         Entry("⌘C", text: "复制路径、网址或计算结果"),
+        Entry("⇧⌘C", text: "把网址复制为 Markdown 链接"),
+        Entry("⌘D", text: "加入 / 取消收藏（收藏排在空搜索框的最上面）"),
+        Entry("⌥⌘↑↓", text: "空搜索框里调整选中的收藏的顺序"),
+        Entry("⌘Y", text: "快速查看选中的文件"),
         Entry("⌘1–9", text: "打开第 1–9 项"),
         Entry("↑↓", text: "移动选中"),
-        Entry("⌘⌫", text: "从「最近使用」里移除"),
+        Entry("⌘⌫", text: "从「常用」里移除"),
+        Entry("⌘Z", text: "撤销移除"),
         Entry("⌘,", text: "打开 设置 › 启动器"),
-        Entry("Esc", text: "先关动作菜单，再撤掉待确认的命令，再清空搜索，最后关闭"),
+        Entry("Esc", text: "先关预览和动作菜单，再撤掉待确认的命令，再清空搜索，最后关闭"),
         Entry("⌘W", text: "关闭"),
         Entry("open", text: "搜文件并打开（空格开头同样）"),
         Entry("find", text: "搜文件并在访达中显示"),
         Entry("cb", text: "在剪贴板历史里搜索"),
+        Entry("fy", text: "翻译输入的文字（单个英文词另有词典释义）"),
       ]),
     // mac-whisker §6 启动器「系统命令」；代码在 SystemCommands / SystemControl。在启动器里输入关键词（中文名、拼音也行）
     Group(

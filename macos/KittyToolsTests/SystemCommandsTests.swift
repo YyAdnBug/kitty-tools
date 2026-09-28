@@ -94,7 +94,8 @@ struct SystemCommandsTests {
       #expect(LauncherMatch.score(query, item: notes) > 0, "\(query)")
     }
     let local = SystemCommands.appItem(name: "Demo", path: "/Users/me/Desktop/Demo.app")
-    #expect(local.subtitle == "应用程序" && local.names == ["demo"])
+    // 不在标准目录里：副标题是所在位置（体检 A25，以前写「应用程序」）
+    #expect(local.subtitle == "/Users/me/Desktop" && local.names == ["demo"])
   }
 
   @Test func finderCanOnlyBeHidden() throws {
@@ -169,7 +170,7 @@ struct SystemCommandsTests {
     model.execute(trash)
     #expect(performed == [.command(.emptytrash)] && hides == 1)
     #expect(!usage.entries.isEmpty)
-    // 不用确认的直接执行；用过的进「最近使用」
+    // 不用确认的直接执行；用过的进「常用」
     model.query = "lock"
     model.execute(try #require(model.results.first))
     #expect(performed.last == .command(.lock) && hides == 2)

@@ -208,7 +208,8 @@ enum SystemCommands {
     let pinyin = AppCatalog.pinyin(name)
     let names = [name, fileName, pinyin?.full].compactMap { $0.map(LauncherMatch.fold) }
     return LauncherItem(
-      kind: .app, target: path, title: name, subtitle: fileName != name ? fileName : "应用程序",
+      kind: .app, target: path, title: name,
+      subtitle: fileName != name ? fileName : AppCatalog.location(of: path),
       names: names.reduce(into: []) { if !$0.contains($1) { $0.append($1) } },
       initials: [LauncherMatch.initials(fileName), pinyin?.initials].compactMap { $0 })
   }

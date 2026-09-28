@@ -2,7 +2,10 @@
 // 中文名再转拼音全拼 + 首字母，让「活动监视器」「huodong」「hdjsq」都能搜到（修旧版只认文件名，§11 #26）。
 // 系统 App 不另写死一份、按解开符号链接后的路径去重（修旧版同一个 App 出现两行，§11 #25；
 // 本机 /Applications/Safari.app 就是指向 Cryptexes 的链接）；访达不在应用程序目录里，单独加。
-// 在主线程扫：本机 116 个 App 实测约 65ms（含拼音），由 LauncherModel 决定何时重扫。
+// 在主线程扫：本机 116 个 App 实测约 65ms（含拼音），由 LauncherModel 决定何时重扫：各目录的修改时间（signature，
+// 只 stat）变了就在呼出前重扫（放进 / 删掉 .app 都会改它，体检 B31）。
+// 副标题：显示名是中文时写英文文件名；否则标准目录（及其一层子文件夹）里的留空，别处的写所在位置（~/Downloads），
+// 好分清同名的两份（体检 A25：以前写「应用程序」，和右侧类型「应用」重复）。
 
 import AppKit
 
@@ -57,13 +60,31 @@ enum AppCatalog {
     return LauncherItem(
       kind: .app, target: path, title: title,
       // 本 App 界面是简体中文，displayName 往往已是中文名：副标题用文件名（多为英文原名）
-      subtitle: fileName != title ? fileName : "应用程序",
+      subtitle: fileName != title ? fileName : location(of: path),
       names: names.reduce(into: []) { if !$0.contains($1) { $0.append($1) } },
       // 显示名常是中文（「活」），英文缩写要从文件名取（Activity Monitor → am）
       initials: [
         LauncherMatch.initials(display), LauncherMatch.initials(fileName), pinyin?.initials,
       ]
       .compactMap { $0 }.reduce(into: []) { if !$0.contains($1) { $0.append($1) } })
+  }
+
+  /// App 不在标准目录（应用程序目录及其一层子文件夹、访达所在处）时的位置（~ 缩写的父目录）；在标准目录里是空的
+  static func location(of path: String) -> String {
+    let parent = (path as NSString).deletingLastPathComponent
+    let standard = directories + extraApps.map { ($0 as NSString).deletingLastPathComponent }
+    guard !standard.contains(parent),
+      !directories.contains((parent as NSString).deletingLastPathComponent)
+    else { return "" }
+    return (parent as NSString).abbreviatingWithTildeInPath
+  }
+
+  /// 各应用程序目录的修改时间（只 stat，微秒级）：往目录里放进、删掉 .app 都会改它。
+  /// 子文件夹里升级、改名不改顶层的，由 LauncherModel 的 5 分钟兜底重扫接住
+  static func signature(of directories: [String] = directories) -> [Date?] {
+    directories.map {
+      (try? FileManager.default.attributesOfItem(atPath: $0))?[.modificationDate] as? Date
+    }
   }
 
   /// 简体中文显示名：系统 App 在 InfoPlist.loctable（表里混着非字符串的项，要逐个取），

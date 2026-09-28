@@ -1,6 +1,7 @@
 // 启动器的直达项（纯函数，配单测）：输入像网址就「在浏览器中打开」，像存在的路径就「打开」，都排在最前。
-// 网址：带 http(s):// / mailto:，或 IPv4 / localhost（可带端口），或「域名.常见后缀[/路径]」；
-// 「Safari.app」这类不算（修旧版 .app 被当网址、localhost:3000 反而不认，§11 #36）。
+// 网址：带 http(s):// / mailto:，或 IPv4 / localhost（可带端口），或「域名.后缀[/路径]」：裸域名只认常见后缀白名单
+// （免得 install.sh、Package.swift 被当成网址），域名后面紧跟 / 或 :端口 时最后一段是 2–13 个字母就认
+// （docs.rs/serde、bun.sh/docs，体检 B34）；「Safari.app」这类不算（修旧版 .app 被当网址、localhost:3000 反而不认，§11 #36）。
 // 路径：/ 或 ~ 开头且真实存在；展开 ~，不认 ./ 这类相对路径（修 §11 #27）。
 
 import Foundation
@@ -47,9 +48,16 @@ enum DirectItems {
       && hostName.split(separator: ".").allSatisfy { UInt8($0) != nil }
     let isLocalhost = hostName == "localhost"
     let labels = hostName.split(separator: ".", omittingEmptySubsequences: false)
+    let suffix = String(labels.last ?? "")
+    // 后面跟着路径或端口，说明是在输网址，不是文件名
+    let rest = lower.dropFirst(hostName.count)
+    let followed =
+      rest.first == "/" || rest.first == ":" && rest.dropFirst().first?.isNumber == true
     let isDomain =
       labels.count >= 2 && labels.allSatisfy { !$0.isEmpty }
-      && topLevelDomains.contains(String(labels.last!))
+      && (topLevelDomains.contains(suffix)
+        || followed && (2...13).contains(suffix.count)
+          && suffix.allSatisfy { $0.isASCII && $0.isLetter })
       && hostName.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "." }
       // 「Safari.app」这种单独的 App 名不算网址（带 www. 或路径才算）
       && !(labels.last == "app" && labels.count == 2 && host == lower && !lower.hasPrefix("www."))
@@ -65,7 +73,7 @@ enum DirectItems {
     return FileManager.default.fileExists(atPath: path) ? path : nil
   }
 
-  /// 记使用、「最近使用」里显示的标题：去掉协议，保留端口，路径不显示百分号编码
+  /// 记使用、「常用」里显示的标题：去掉协议，保留端口，路径不显示百分号编码
   static func displayName(of url: URL) -> String {
     guard let host = url.host() else { return url.absoluteString }
     let port = url.port.map { ":\($0)" } ?? ""

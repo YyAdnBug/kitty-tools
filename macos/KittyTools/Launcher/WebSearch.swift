@@ -19,11 +19,12 @@ struct SearchEngine: Codable, Hashable, Identifiable {
 }
 
 enum WebSearch {
-  /// 可添加的预置搜索（设置里「添加」菜单）；新装时默认用前 8 个，前 3 个兜底
+  /// 可添加的预置搜索（设置里「添加」菜单）；新装时默认用前 8 个，只有第 1 个（Google）兜底，Bing、百度只走关键词
+  /// （体检 A24：三个同类的通用搜索兜底是三行做同一件事）。没存过列表的人 engines 取 defaults，会跟着变；改过列表的不变
   static let presets = [
     preset("google", "Google", "g", "https://www.google.com/search?q={query}", fallback: true),
-    preset("bing", "Bing", "bing", "https://www.bing.com/search?q={query}", fallback: true),
-    preset("baidu", "百度", "bd", "https://www.baidu.com/s?wd={query}", fallback: true),
+    preset("bing", "Bing", "bing", "https://www.bing.com/search?q={query}"),
+    preset("baidu", "百度", "bd", "https://www.baidu.com/s?wd={query}"),
     preset("github", "GitHub", "gh", "https://github.com/search?q={query}"),
     preset("zhihu", "知乎", "zh", "https://www.zhihu.com/search?q={query}"),
     preset("bilibili", "哔哩哔哩", "bili", "https://search.bilibili.com/all?keyword={query}"),
@@ -120,10 +121,10 @@ enum WebSearch {
     return (exact, partial)
   }
 
-  /// 关键词不能用的（值是设置里提示的占用者）：cb 留给剪贴板指令，open / find 留给文件搜索
+  /// 关键词不能用的（值是设置里提示的占用者）：cb 留给剪贴板指令，fy 留给翻译，open / find 留给文件搜索
   static let reservedKeywords = [
-    "cb": "剪贴板指令", "open": "文件搜索", "find": "文件搜索", "quit": "系统命令", "hide": "系统命令",
-    "forcequit": "系统命令", "eject": "系统命令",
+    "cb": "剪贴板指令", "fy": "翻译", "open": "文件搜索", "find": "文件搜索", "quit": "系统命令",
+    "hide": "系统命令", "forcequit": "系统命令", "eject": "系统命令",
   ]
 
   static func url(_ engine: SearchEngine, _ text: String) -> String {

@@ -1,4 +1,5 @@
-// 设置 › 启动器：呼出时切英文输入法、挤压弹开、文件搜索的文件夹授权、浏览器书签、网页搜索与快捷链接
+// 设置 › 启动器：呼出时切英文输入法、挤压弹开、文件搜索的文件夹授权、浏览器书签（每家写读到了几条 / 没找到书签文件 /
+// 没有安装，体检 B39）、网页搜索与快捷链接
 // （N12：行 = 种类色块 / 名称 / 状态 / 关键词键帽 / 兜底开关，拖动排序，「+ −」增删（自定义的先确认），
 // 单击一行推进到 SearchEngineDetail 编辑）、兜底时机、清空使用记录。页头画在自己的 NavigationStack 里，推进时一起换掉。
 // 按键说明不写在这里（N11，进快捷键速查表）；启动器没有固定，失焦就收起（N8）。
@@ -43,7 +44,7 @@ struct LauncherTab: View {
     .confirmationDialog("清空启动器的使用记录？", isPresented: $confirmsClear) {
       Button("清空", role: .destructive, action: clearUsage)
     } message: {
-      Text("「最近使用」和按使用习惯的排序会从头开始学。")
+      Text("「常用」和按使用习惯的排序会从头开始学，收藏不动。")
     }
     .confirmationDialog(
       "删除「\(engines.first { $0.id == removing }.map(SearchEngineDetail.title) ?? "")」？",
@@ -97,9 +98,9 @@ struct LauncherTab: View {
           "「open 文件名」搜文件并打开，「find 文件名」在访达中显示；不想被搜到的文件夹加到系统设置 › Spotlight › 搜索隐私。")
       }
       Section("浏览器书签") {
-        Toggle("Chrome", isOn: $chrome)
-        Toggle("Edge", isOn: $edge)
-        Toggle("Brave", isOn: $brave)
+        bookmarkToggle(Bookmarks.browsers[0], isOn: $chrome)
+        bookmarkToggle(Bookmarks.browsers[1], isOn: $edge)
+        bookmarkToggle(Bookmarks.browsers[2], isOn: $brave)
       }
       Section {
         engineList
@@ -121,7 +122,8 @@ struct LauncherTab: View {
       } header: {
         Text("使用记录")
       } footer: {
-        caption("启动器按用过的次数和时间排序、列出「最近使用」。在「最近使用」里选中一项按 ⌘⌫ 可以单独移除。")
+        caption(
+          "启动器按用过的次数和时间排序，空搜索框里先列收藏（⌘D 加入），再列「常用」。在「常用」里选中一项按 ⌘⌫ 可以单独移除，⌘Z 撤销。")
       }
     }
     .formStyle(.grouped)
@@ -237,6 +239,25 @@ struct LauncherTab: View {
 
   private func removeSelected() {
     if let selection { remove(selection) }
+  }
+
+  /// 一家浏览器的书签开关：开着时下面一行写读到了几条，没读到（没有书签文件、文件里一条都没有）时橙字（配置问题的
+  /// 语义色）；没装的置灰、显示关着（启动器也不搜它）。条数和启动器搜的是同一份缓存，文件没变不重读；关着的不读文件
+  @ViewBuilder
+  private func bookmarkToggle(_ browser: Bookmarks.Browser, isOn: Binding<Bool>) -> some View {
+    let status = Bookmarks.status(of: browser, enabled: isOn.wrappedValue)
+    Toggle(isOn: status == .notInstalled ? .constant(false) : isOn) {
+      Text(browser.name)
+      switch status {
+      case .notInstalled: Text("没有安装")
+      case .read(let count) where count > 0: Text("已读到 \(count) 条")
+      case .noFile, .read:
+        Text(status == .noFile ? "没找到书签文件" : "书签文件里一条书签都没有")
+          .foregroundStyle(Color(nsColor: .systemOrange))
+      case nil: EmptyView()
+      }
+    }
+    .disabled(status == .notInstalled)
   }
 
   private var folderDetail: String {

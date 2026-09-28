@@ -1,5 +1,5 @@
 // 启动器单测：匹配分档（含缩写 vsc、拼音）、使用分衰减与加成、排序；⌘K 动作菜单、cb 转剪贴板、内置动作的
-// 副标题与快捷键键帽（N8–N10）。
+// 副标题与快捷键键帽（N8–N10）。体检第 5 批（启动器）的在 LauncherBatch5Tests。
 
 import AppKit
 import Carbon.HIToolbox
@@ -86,6 +86,17 @@ struct LauncherTests {
       usage.boost(for: $0, query: "ch")
     }
     #expect(ranked.map(\.title) == ["Chess", "Google Chrome"])
+    // 同分时系统命令排在 App 后面（体检 B36）：没用过的 Slack 不再被「睡眠」挤到第二、↩ 下去电脑就睡了
+    let slack = app("Slack")
+    let rank = { LauncherMatch.rank([slack] + SystemCommands.items, query: $0) { _ in (0, 0) } }
+    #expect(rank("sl").first == slack)
+    let logseq = app("Logseq")
+    #expect(
+      LauncherMatch.rank([logseq] + SystemCommands.items, query: "lo") { _ in (0, 0) }.first
+        == logseq)
+    for query in ["sleep", "睡眠", "shuimian"] {
+      #expect(rank(query).first?.target == "sleep", "\(query)")
+    }
     // 没用过：同分时标题短的在前
     #expect(
       LauncherMatch.rank([chrome, app("Chroma")], query: "chrom") { _ in (0, 0) }.map(\.title) == [
@@ -106,6 +117,14 @@ struct LauncherTests {
     #expect(url("install.sh") == nil)  // 常见文件扩展名不当域名后缀
     #expect(url("hello world.com") == nil)
     #expect(url("1.2.3") == nil)
+    // 后面跟着路径或端口时不看后缀白名单（体检 B34）；裸的还是按白名单，文件名不当网址
+    #expect(url("docs.rs/serde") == "https://docs.rs/serde")
+    #expect(url("bun.sh/docs") == "https://bun.sh/docs")
+    #expect(url("deno.land/x") == "https://deno.land/x")
+    #expect(url("notion.so/abc") == "https://notion.so/abc")
+    #expect(url("example.test:8080") == "https://example.test:8080")
+    #expect(url("Package.swift") == nil && url("libfoo.so") == nil)
+    #expect(url("README.md:x") == nil)  // 冒号后面不是端口
     // 标题：去掉协议，保留端口，路径不显示百分号编码
     let title = { DirectItems.displayName(of: URL(string: $0)!) }
     #expect(title("https://linux.do/latest") == "linux.do/latest")
@@ -124,7 +143,25 @@ struct LauncherTests {
     #expect(value("2^3^2") == 512)  // 幂右结合
     #expect(value("2**10") == 1024)
     #expect(value("-2^2") == -4)
-    #expect(value("10%3") == 1)
+    // % 是百分号（体检 A23），取模改用 mod
+    #expect(value("200*15%") == 30)
+    #expect(value("100+10%") == 110)
+    #expect(value("100-10%") == 90)
+    #expect(value("50%") == 0.5)
+    #expect(value("80/50%") == 160)
+    #expect(value("(1+1)%") == 0.02)
+    #expect(value("10 mod 3") == 1)
+    #expect(value("pi mod 3") == .pi.truncatingRemainder(dividingBy: 3))
+    #expect(value("10%3") == nil)
+    #expect(Calculator.item(for: "200*15%")?.payload == "30")
+    #expect(Calculator.item(for: "10 mod 3")?.payload == "1")
+    // 中文输入法打出来的（体检 B32）：全角括号 / 数字、× ÷、千分位逗号；算式那一栏照常是原文
+    #expect(value("（1+2）×3") == 9)
+    #expect(value("1,299*3") == 3897)
+    #expect(value("１＋２") == 3)
+    #expect(value("9÷3") == 3)
+    #expect(Calculator.item(for: "（1+2）×3")?.target == "（1+2）×3")
+    #expect(Calculator.item(for: "１＋２")?.payload == "3")
     #expect(value("sqrt(16)+abs(-1)") == 5)
     #expect(value("0x10+0b11") == 19)
     #expect(value("1/0") == nil)
@@ -173,6 +210,11 @@ struct LauncherTests {
     #expect(WebSearch.primary(in: engines)?.id == "g")
     #expect(WebSearch.fallbackItems(for: "s", engines: engines).isEmpty)
     #expect(!LauncherItem.Kind.search.isRecorded)  // 搜索页不记使用
+    // 新装默认只让 Google 兜底，Bing、百度只走关键词（体检 A24）；fy 是保留关键词（体检 D10）
+    #expect(WebSearch.defaults.filter(\.enabled).map(\.id) == ["google"])
+    #expect(
+      WebSearch.defaults.contains { $0.keyword == "bing" }
+        && WebSearch.reservedKeywords["fy"] != nil)
   }
 
   @Test func quicklinksAndPrompts() throws {
@@ -190,7 +232,7 @@ struct LauncherTests {
         enabled: true),
     ]
     let items = WebSearch.quicklinkItems(engines: engines)
-    // 没有 {query} 的是快捷链接：网址记成 .url（记使用、进「最近使用」），路径展开 ~
+    // 没有 {query} 的是快捷链接：网址记成 .url（记使用、进「常用」），路径展开 ~
     #expect(items.count == 2)
     #expect(items[0].kind == .url && items[0].target == "https://developer.apple.com/documentation")
     #expect(items[0].names.contains("pingguowendang") && items[0].names.contains("ad"))
@@ -270,8 +312,12 @@ struct LauncherTests {
     usage.record(app, query: "a")
     usage.record(other, query: "")
     #expect(usage.entries.count == 3)  // A 的全局 + 查询「a」，B 的全局
+    let forgotten = usage.forget(app)
+    #expect(usage.entries.values.map(\.target) == ["https://b.com"] && forgotten.count == 2)
+    // ⌘Z 原样放回（体检 B38）
+    usage.restore(forgotten)
+    #expect(usage.entries.count == 3 && usage.boost(for: app, query: "a").query > 0)
     usage.forget(app)
-    #expect(usage.entries.values.map(\.target) == ["https://b.com"])
     usage.clearAll()
     #expect(usage.entries.isEmpty && usage.top(10).isEmpty)
   }
@@ -314,6 +360,7 @@ struct LauncherTests {
     #expect(LauncherModel.clipQuery("cb") == "")
     #expect(LauncherModel.clipQuery("cb  token") == "token")
     #expect(LauncherModel.clipQuery("cbx") == nil)
+    #expect(LauncherModel.clipQuery("CB 会议") == "会议")  // 不分大小写（体检 B33）
   }
 
   /// N9：cb 不再列剪贴板条目，只有一行，↩ 收起启动器、把关键词交给剪贴板面板
@@ -327,9 +374,12 @@ struct LauncherTests {
     #expect(model.results.map(\.title) == ["在剪贴板历史里搜索「发票 抬头」"])
     model.execute(model.results[0])
     #expect(opened == ["发票 抬头"] && hidden == 1)
+    // 单输 cb：这一行排第一，后面照常接本地结果（体检 B33）；「cb 」带空格还是只有这一行
     model.query = "cb"
     let row = try #require(model.results.first)
-    #expect(model.results.count == 1 && row.title == "打开剪贴板历史")
+    #expect(row.kind == .clip && row.title == "打开剪贴板历史")
+    model.query = "CB "
+    #expect(model.results.map(\.title) == ["打开剪贴板历史"])
     #expect(model.primaryAction(for: row).title == "打开" && row.hotKeyAction == .clipboard)
     // 没有可复制、可补全的东西：⌘C 交给输入框，菜单里只有主动作
     #expect(model.copyTitle(for: row) == nil && LauncherModel.completion(for: row) == nil)
@@ -347,14 +397,14 @@ struct LauncherTests {
     #expect(model.results.first == calculator)
     model.toggleActions()
     #expect(model.showsActions)
-    #expect(model.actions.map(\.shortcut) == ["↩", "⌘↩", "⌘C", "⇥", "⌘⌫"])
+    #expect(model.actions.map(\.shortcut) == ["↩", "⌘↩", "⌘C", "⇥", "⌘D", "⌘⌫"])
     #expect(model.actions.prefix(3).map(\.title) == ["打开", "在访达中显示", "复制路径"])
     #expect(model.handleCommand(#selector(NSResponder.moveDown(_:))) && model.actionSelection == 1)
     model.actionQuery = "访达"
     #expect(model.filteredActions.map(\.shortcut) == ["⌘↩"] && model.actionSelection == 0)
     #expect(model.handleCommand(#selector(NSResponder.cancelOperation(_:))))
     #expect(!model.showsActions && model.actionQuery.isEmpty && model.results.first == calculator)
-    // 有查询时多出 ⌥↩；计算结果的 ⌘C 和 ⌘↩ 一样，不重复列；不是「最近使用」没有 ⌘⌫
+    // 有查询时多出 ⌥↩；计算结果的 ⌘C 和 ⌘↩ 一样，不重复列；不是「常用」没有 ⌘⌫
     model.query = "12*3"
     model.toggleActions()
     #expect(model.actions.prefix(3).map(\.shortcut) == ["↩", "⌘↩", "⇥"])
@@ -370,7 +420,9 @@ struct LauncherTests {
       + [
         "doc.text.magnifyingglass", "globe", "clock.badge.xmark", "square.grid.2x2.fill",
         "folder.fill", "doc.fill", "command", "folder", "safari", "lock.open", "text.cursor",
-        "arrow.turn.down.left", "doc.on.clipboard",
+        "arrow.turn.down.left", "doc.on.clipboard", "star", "star.slash", "eye", "trash",
+        "text.badge.plus", "text.quote", "character.bubble", "character.bubble.fill", "link",
+        "keyboard", "info.circle", "pin", "pin.slash", "arrow.triangle.2.circlepath", "gearshape",
       ]
     for symbol in symbols {
       #expect(NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil, "\(symbol)")
@@ -378,7 +430,7 @@ struct LauncherTests {
   }
 
   /// 回归：菜单开着时标着的 ⇥ 照常补全（以前吞掉），⌃O 这类别的换行键只吞掉；⌘K 过滤框里有字时 ⌘⌫ 交还输入框
-  /// 删过滤词，不把「最近使用」的条目删掉，过滤框空着才执行菜单里的「从最近使用中移除 ⌘⌫」
+  /// 删过滤词，不把「常用」的条目删掉，过滤框空着才执行菜单里的「从常用中移除 ⌘⌫」
   @Test func actionMenuKeysMatchTheirLabels() throws {
     let usage = try LauncherUsage(db: Database(path: ":memory:"))
     let calculator = AppCatalog.item(path: "/System/Applications/Calculator.app")
@@ -409,13 +461,16 @@ struct LauncherTests {
     #expect(!model.showsActions && model.results.isEmpty)
   }
 
-  /// N10：内置动作副标题只写「Kitty Tools」，英文别名照样能搜；选中时显示的全局快捷键拆成一组键帽
+  /// N10：内置动作副标题只写「Kitty Tools」（复制即译、暂停记录写开没开），英文别名照样能搜；选中时显示的全局快捷键拆成一组键帽
   @Test func builtInActionsAndHotKeyCaps() throws {
-    #expect(LauncherItem.actions.allSatisfy { $0.subtitle == "Kitty Tools" })
-    let screenshot = try #require(LauncherItem.actions.first { $0.target == "screenshot" })
+    let actions = LauncherItem.actions()
+    #expect(
+      actions.filter { !["copyToTranslate", "pause-clipboard"].contains($0.target) }
+        .allSatisfy { $0.subtitle == "Kitty Tools" })
+    let screenshot = try #require(actions.first { $0.target == "screenshot" })
     #expect(LauncherMatch.score("capture", item: screenshot) > 0)
     #expect(screenshot.hotKeyAction == .screenshot)
-    #expect(LauncherItem.actions.first { $0.target == "settings" }?.hotKeyAction == nil)
+    #expect(actions.first { $0.target == "settings" }?.hotKeyAction == nil)
     #expect(KeyCombo.caps("⌥C") == ["⌥", "C"])
     #expect(KeyCombo.caps("⌃⌥⇧⌘I") == ["⌃", "⌥", "⇧", "⌘", "I"])
     #expect(KeyCombo.caps("⌥空格") == ["⌥", "空格"])

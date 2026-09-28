@@ -246,7 +246,7 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 | `Clipboard/` | `ClipboardWatcher.swift`、`ClipboardStore.swift`、`ClipItem.swift`、`ClipboardFilter.swift`、`ContentForm.swift`、`Search.swift`、`ImageStore.swift`、`OCR.swift`、`ClipboardPanelView.swift`、`ClipRowView.swift`、`PreviewView.swift`、`Dialogs.swift`、`LinkPreview.swift`（链接富预览：按块读网页 og 标签、isFetchable、内存缓存）、`QuickLookView.swift`（⌘Y 放大预览）、`ClipDrag.swift`（行拖到别的 App：AppKit 拖放会话 + 行首图标块和标题的预览，体检 D3） |
 | `Translate/` | `TranslateCoordinator.swift`、`LanguageResolver.swift`、`SelectionReader.swift`、`SSE.swift`、`Providers/`（`Zhipu`、`AIService`、`Baidu`、`Youdao`、`Google`、`DeepL`、`Microsoft`、`Volcengine`、`Tencent` 各一个 `.swift`）、`TranslatePanelView.swift`、`ProviderCardView.swift`（含服务身份 `ServiceTile`：官方 logo 或品牌色块，彗星边框、骨架扫光）、`RevealText.swift`（流式译文显影，TextRenderer）、`HistoryStore.swift`、`HistoryView.swift`（含历史 ⌘K 的动作和 `HistoryMenu`：导出、清空，浮窗「⋯」菜单 / 历史 ⌘K / 设置 › 翻译共用）、`Speaker.swift`（朗读：收起即停、挑高音质声线）、`WordLookup.swift`（查词：是不是一个词、系统词典查询与解析、单词模式示例，D4）、`DictionaryCardView.swift`（系统词典卡） |
 | `Settings/` | `GeneralTab.swift`、`HotkeysTab.swift`、`ClipboardTab.swift`、`TranslateTab.swift`、`AboutTab.swift`、`LauncherTab.swift`、`ScreenshotTab.swift`、`SettingsWindow.swift`（D 阶段从 Shell 搬来：NavigationSplitView 侧栏 + 搜索 + 页头）、`OnboardingView.swift`（首次安装的欢迎引导：欢迎 + 按一下试试）、`ShortcutsSheet.swift`（快捷键速查表 + `ShortcutsButton`）、`OrderedList.swift`（可拖动排序列表共用的「+ −」按钮条、行高、详情页页头）、`TranslateServiceDetail.swift`（翻译服务详情页）、`SearchEngineDetail.swift`（网页搜索 / 快捷链接详情页） |
-| `Launcher/` | `LauncherItem.swift`（结果项与内置动作）、`AppCatalog.swift`（App 目录 + 中文名 + 拼音）、`LauncherMatch.swift`（匹配与排序纯函数）、`LauncherUsage.swift`（使用记录表）、`LauncherModel.swift`、`LauncherPanelView.swift`、`FileSearch.swift`（文件搜索：open / find / 空格开头，NSMetadataQuery 查询、排除、排序、最近的文件、授权提示，M13）、`SystemCommands.swift`（系统命令目录、quit / hide / forcequit / eject 解析与只读列举，D2）、`SystemControl.swift`（系统命令的执行：锁屏、pmset、osascript、退出 App、推出） |
+| `Launcher/` | `LauncherItem.swift`（结果项与内置动作）、`AppCatalog.swift`（App 目录 + 中文名 + 拼音）、`LauncherMatch.swift`（匹配与排序纯函数）、`LauncherUsage.swift`（使用记录表 + 收藏表 launcher_favorites，体检 D13）、`LauncherModel.swift`、`LauncherPanelView.swift`、`FileSearch.swift`（文件搜索：open / find / 空格开头，NSMetadataQuery 查询、排除、排序、最近的文件、授权提示，M13）、`SystemCommands.swift`（系统命令目录、quit / hide / forcequit / eject 解析与只读列举，D2）、`SystemControl.swift`（系统命令的执行：锁屏、pmset、osascript、退出 App、推出） |
 | `Screenshot/` | `ScreenCapture.swift`（逐屏冻结帧 + 同一刻的窗口 Z 序快照）、`RegionSelector.swift`（框选会话、每屏一个遮罩、选区几何纯函数）、`SelectionView.swift`（遮罩画面与交互：图层绘制、窗口悬停、手柄、放大镜、工具栏）、`ScreenshotOutput.swift`（PNG、快速保存、另存为）、`PinPanel.swift`（钉图）、`Annotation.swift`（标注模型，显示与导出共用 draw，M10）、`EditorToolbar.swift`（HUD 主工具栏 + 样式托盘，M10，Whisker 重做）、`FlyCard.swift`（截图飞入右下角 + 快门声，Whisker S1）、`ScrollCapture.swift`（长截图会话：边框、侧边面板、抓帧循环、自动滚动）、`ScrollStitcher.swift`（长截图拼接，纯逻辑）、`ShotShelf.swift`（CleanShot 式常驻缩略图，Whisker D） |
 
 各 provider 函数签名统一，由 coordinator 里的一个 `switch` 分发。不建 registry 或 factory。
@@ -711,12 +711,12 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 | M11 启动器网址线 + 键盘（对标 Alfred） | 自定义网页搜索（增删排序、多预置引擎）、Quicklink（固定网址 + 别名 + {query}）、兜底列表配置、⌥↩ 访达搜索 / ⌃↩ 网页搜索（按住修饰键换副标题）、Tab 补全（计算结果写回接着算）、cb / 计算结果 ↩ 粘贴、清空 / 单条重置学习记录、呼出时切英文输入法（开关，默认关） | 已完成（实现要点见下方「启动器网址线（M11）」） |
 | M12 翻译补强（对标 Bob） | 窗口快捷键（⌘R 重试、⌘S 收藏（2026-09-28 体检 A31 改 ⌘D，全 App 收藏统一）、⌘W 关、⌘P 钉住、⌘+/- 字号、⌘1–9 复制第 N 张卡）、用译文替换原文（按钮 + 静默热键，默认不设键）、浮窗高度随内容、卡片折叠状态持久化、收藏筛选与导出 | 已完成（实现要点见下方「翻译补强（M12）」） |
 | 长截图（2026-09-25 插入，用户改主意） | 截图框选后 S / 工具栏进入；实时画面上边滚边拼（往下、往上都行）、侧边预览、空格自动滚动；↩ 复制 / ⌘S 保存 / ⇧⌘S 另存为。原生实现，不参考旧版 | 代码已完成，待手测（实现要点见下方「长截图」） |
-| M13 动作面板 + 文件 + 进程 | → / ⌘K 动作面板（打开方式、在访达中显示、复制路径、移到废纸篓，只放零授权动作）；⌘Y Quick Look（先验证 `QLPreviewPanel`，不行嵌 `QLPreviewView`）；open / find 文件搜索（NSMetadataQuery）；kill（GUI App 用 `terminate()`，⌘↩ 才强杀）。quit / hide / forcequit 已随系统命令做了（D2，2026-09-27），kill 只剩非 GUI 进程（SIGTERM） | 文件搜索已完成（待手测，实现要点见下方「文件搜索（M13）」）；动作面板、⌘Y、kill 待做 |
+| M13 动作面板 + 文件 + 进程 | → / ⌘K 动作面板（打开方式、在访达中显示、复制路径、移到废纸篓，只放零授权动作）；⌘Y Quick Look（先验证 `QLPreviewPanel`，不行嵌 `QLPreviewView`）；open / find 文件搜索（NSMetadataQuery）；kill（GUI App 用 `terminate()`，⌘↩ 才强杀）。quit / hide / forcequit 已随系统命令做了（D2，2026-09-27），kill 只剩非 GUI 进程（SIGTERM） | 文件搜索已完成（待手测，实现要点见下方「文件搜索（M13）」）；动作面板（→ / ⌘K、打开方式、快速查看 ⌘Y、复制路径、移到废纸篓，右键同一份）2026-09-28 体检 C7 C8 做完（待手测，⌘Y 嵌 `QLPreviewView`，同剪贴板大卡）；kill 待做 |
 
 **已拍板（2026-09-24，对标调研后用户选定）**：
 - D1 长截图、录屏：~~都不做~~ → **长截图做（2026-09-25 用户改主意，要求按 macOS 原生方式实现、不参考旧版）；录屏仍不做**（以后真要录屏用 `SCRecordingOutput` 单独立项）。原先顾虑的两点已解决：冻结帧只管框选，框完收起遮罩再在实时画面上截；不用 15.2 的 `captureImage(in:)`，用 14.0 的 `captureImage(contentFilter:configuration:)` + `sourceRect`。
 - D2 系统命令：~~都不做（2026-09-25）~~ → **2026-09-27 用户要求做**（「quit、lock、unlock、screen 等指令，主要参考 Alfred」），拍板：Alfred 的 18 个全做（screensaver、trash、emptytrash、logout、sleep、sleepdisplays、lock、restart、shutdown、hide、quit、forcequit、quitall、volup、voldown、mute、eject、ejectall）；锁屏用系统私有函数 `SACLockScreenImmediate`（Raycast / Hammerspoon 同做法，找不到退回 ⌃⌘Q）；只确认不可撤销的（清倒废纸篓、全部退出、强制退出再按一次 ↩；退出登录 / 重启 / 关机弹 macOS 自己的确认框）；标题用中文、Alfred 关键词做副标题。unlock 做不了（锁屏时启动器呼不出来，解锁要密码 / Touch ID），screen 按前缀搜到屏幕保护程序、锁定屏幕。切深浅色、kill 非 GUI 进程不在这次范围。实现要点见下方「系统命令（D2）」。
-- D3 文件动作面板与 Quick Look：**动作面板进 M13，只放零授权动作**；⌘Y Quick Look 先验证 `QLPreviewPanel` 在不激活面板里能否拿到控制权，不行改嵌 `QLPreviewView`；不做目录导航和多文件缓冲。
+- D3 文件动作面板与 Quick Look：**动作面板进 M13，只放零授权动作**；⌘Y Quick Look 先验证 `QLPreviewPanel` 在不激活面板里能否拿到控制权，不行改嵌 `QLPreviewView`；不做目录导航和多文件缓冲。**2026-09-28 体检 C7 做了**：⌘Y 直接嵌 `QLPreviewView`（`QLPreviewPanel` 会激活本 App，剪贴板大卡 PLAN D3 已验证过），动作面板有打开方式（按类型问 LaunchServices，默认的排第一、最多 5 个）、快速查看、复制路径、移到废纸篓（`NSWorkspace.recycle`，能放回、不二次确认）。
 - D4 查词 / 生词本：**M12 之后，只用系统能力**：系统词典（`DCSCopyTextDefinition`）+ 单词模式提示词；生词本 = 收藏筛选 + CSV / TSV 导出；不引入 ECDICT。**已完成（2026-09-26，待手测）**，规则见 mac-translate §5.2。
 - D5 系统翻译（离线、免费；2026-09-28 体检 D16「先验证」）：**文档不足以确认可行，先不做，不加 `Kind.apple`**。查 Apple 文档（`translation/translationsession.md`、`prepareTranslation()`、`init(installedSource:target:)`、`TranslationError.notInstalled`、`View.translationTask(_:action:)`）的结论：① macOS 15 上会话只能经 SwiftUI 的 `.translationTask` 拿到——文档说「视图出现前或配置变化时」跑 action，没说视图藏着（`opacity(0)`、零尺寸、在不激活的 `NSPanel` 里）时会不会跑；② 下载语言包的许可框由 `prepareTranslation()` / 第一次 `translate` 弹出，文档只说「asks the person for permission」，没说挂在哪个窗口、要不要本 App 在前台——我们的浮层从不激活本 App（mac-overlay-panel §1），框很可能弹不出来或被收起；③ 脱离视图的 `init(installedSource:target:)` 要 macOS 26，而且只能用已经下载好的语言，缺语言包时抛 `notInstalled`、不会请求下载（`canRequestDownloads` 为 false）。所以：macOS 15 路线要真机验证（隐藏视图里能不能拿到会话、许可框在浮层里弹不弹得出、弹出来时点外关闭会不会把浮窗收掉），macOS 26 路线可行但只覆盖已装语言（缺包时卡片报配置类错误「需要下载 X 语言包」+ 打开 系统设置 › 通用 › 语言与地区 › 翻译语言），等有 26 测试机再排期。验证清单：在设置 › 翻译里临时挂一个隐藏视图用 `.translationTask` 翻一句（设置窗是激活的，先确认拿得到会话）→ 挪到翻译浮窗的隐藏视图里再试 → 缺语言包时看许可框在哪弹。
 
@@ -731,15 +731,16 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 
 **启动器网址线（M11，2026-09-25）**
 - 网页搜索和快捷链接是**同一张列表**（`SearchEngine`，偏好里的 JSON，字段沿用旧版）：网址里有 `{query}` 的是搜索（「关键词 空格 内容」直达、勾「兜底」的按列表顺序兜底；单输关键词时最前面出一条 `.prompt`「↩ / Tab 补全关键词」，输名字 / 拼音开头时这条提示排在本地结果后面，不抢同名 App；关键词 cb 留给剪贴板指令），没有 `{query}` 的是快捷链接（名字 / 关键词 / 拼音搜到，↩ 打开网址或 / ~ 路径，记成 .url / .path 进使用记录）。旧版设置页强制要求 `{query}`，旧数据不受影响；以前「漏写 {query} 追加到末尾」的兜底去掉。
-- 预置 13 个（Google g、Bing、百度 bd、GitHub gh、知乎 zh、哔哩哔哩 bili、维基 wiki、YouTube yt、地图 map、淘宝 tb、京东 jd、豆瓣 db、MDN），新装默认前 8 个、前 3 个兜底；已有列表不自动加，设置里「添加」菜单挑。
+- 预置 13 个（Google g、Bing、百度 bd、GitHub gh、知乎 zh、哔哩哔哩 bili、维基 wiki、YouTube yt、地图 map、淘宝 tb、京东 jd、豆瓣 db、MDN），新装默认前 8 个、~~前 3 个兜底~~ 只有第 1 个（Google）兜底，Bing、百度只走关键词（2026-09-28 体检 A24：三行同类通用搜索做同一件事；没存过列表的人列表取默认，会跟着变，改过列表的不变）；已有列表不自动加，设置里「添加」菜单挑。
 - 兜底默认只在没有本地结果时出现，可改成总是附在最后（`launcherFallbackAlways`）。
 - 键盘：↩ 计算结果 / cb 粘贴回原 App（无辅助功能授权时只复制并提示）；⌘↩ App / 路径在访达中显示、计算结果 / cb 只复制；⌥↩（`insertNewlineIgnoringFieldEditor:`）`showSearchResults(forQueryString:)`；⌃↩（`insertLineBreak:`）用第一个兜底搜索；按住 ⌘ / ⌥ / ⌃ 时（`onModifierKeysChanged`）选中行副标题换成替代动作；Tab（`insertTab:`）补全：计算结果、目录「路径/」、搜索「关键词 」、App / 动作 / 网址补标题；程序改输入框文字后光标放末尾。
 - ↩ / ⌥↩ / ⌃↩ 先确认是回车键（⌃O 等别的键绑定也会发这两个选择器，吞掉）；cb ↩ 自己写剪贴板 + ⌘V + 置顶，不借剪贴板面板的 paste（会收起钉住的面板、提交可撤销的删除）；计算器认科学计数，Tab 写回的大 / 小结果能接着算；输入的网址 Tab 保留原样。设置页固定 640 高、表单自己滚。
-- 学习记录：「最近使用」里 ⌘⌫ 忘掉一项（有查询时 ⌘⌫ 照常删到行首）；设置里「清空使用记录…」。
+- 学习记录：「常用」（2026-09-28 体检 A22 由「最近使用」改名：按全局使用分排，本来就是常用）里 ⌘⌫ 忘掉一项（有查询时 ⌘⌫ 照常删到行首），底栏「已从常用中移除 · 撤销 ⌘Z」，⌘Z 原样放回（体检 B38）；设置里「清空使用记录…」（收藏不动）。
+- 收藏（2026-09-28 体检 D13）：⌘D / ⌘K「加入收藏 / 取消收藏」，存 `launcher_favorites(kind, target, title, position)`（同一个库）；空查询先列收藏（按加入顺序、⌥⌘↑↓ 调，最多 8 个），再用常用补足到 8 行；还原不出来的（App 已卸载、文件已删）直接从收藏里删掉，不占名额、不夹在中间挡 ⌥⌘↑↓；只在有钉图时才有的两个钉图动作不能收藏；两个分组标题时面板高度多算 28。
 - 呼出时切英文输入法（`launcherRomanInput`，默认关）：搜索框字段编辑器的 `allowedInputSourceLocales = [NSAllRomanInputSourcesLocaleIdentifier]`，离开后系统恢复；关掉时显式设回 nil（字段编辑器整个窗口共用）。
 
 **文件搜索（M13，2026-09-26）**
-- 对标 Alfred（Raycast v2、macOS 26 聚焦搜索为辅），用户拍板：`open 词` 打开、`find 词` 在访达里选中（`activateFileViewerSelecting`，修 §11 #28），⌘↩ 两者互换；空格开头 = open；只输 `open` / `find` 时出「↩ / Tab 补全关键词」提示（同网页搜索关键词，不抢同名 App；open / find 和 cb 一样是保留关键词）。普通搜索不混排文件（打开过的文件照样靠使用记录搜到、进「最近使用」）；in（内容）/ tags、⌘Y、目录导航、自定义关键词、可编辑排除目录不做。
+- 对标 Alfred（Raycast v2、macOS 26 聚焦搜索为辅），用户拍板：`open 词` 打开、`find 词` 在访达里选中（`activateFileViewerSelecting`，修 §11 #28），⌘↩ 两者互换；空格开头 = open；只输 `open` / `find` 时出「↩ / Tab 补全关键词」提示（同网页搜索关键词，不抢同名 App；open / find 和 cb 一样是保留关键词）。普通搜索不混排文件（打开过的文件照样靠使用记录搜到、进「常用」）；in（内容）/ tags、目录导航、自定义关键词、可编辑排除目录不做（⌘Y 原来也写在这里「不做」，和 M13 行的「待做」矛盾；2026-09-28 体检 C7 拍板做了，见 D3）。
 - 查询（`Launcher/FileSearch.swift`，本机实测）：每个词一个 `kMDItemFSName == "词*"cdw` 用 && 连（中文按词切、**拼音也能命中**），加 `kMDItemSupportFileType != "MDSystemFile"`（去掉 ~/Library 的绝大部分），范围只用主目录，按修改时间降序；≥ 2 个字 P50 约 40 ms。子串写法「ab」要 1–17 s、1 个拉丁字母要 1–7 s → 1 个字母不查（提示「再输入一个字母」），1 个汉字照查。`kMDItemPath` 进不了谓词，路径在客户端滤：主目录外、~/Library（iCloud 云盘、CloudStorage 除外）、node_modules / build / DerivedData / dist / target / out / Pods / Carthage / vendor / venv / __pycache__ / coverage；隐藏文件、包内部 Spotlight 本来不收。只读路径每条约 3 µs，最多处理 2 万条（「readme」6000 多条里九成在 node_modules，只看前 2000 条会漏）；预取名字 / 类型 / 日期（每条每个属性单取约 0.2 ms）。
 - 最近的文件（只输关键词或一个空格）：`kMDItemLastUsedDate` 30 天内 ∪ 14 天内下载的（`kMDItemWhereFroms` + `kMDItemDateAdded`），约 70 ms。「最近修改 / 添加」不能用：代码目录在桌面，全是源码；上次打开时间只有千分之一的文件有，只够做「最近」。
 - 排序：匹配分 × 使用加成（同启动器公式；Spotlight 靠驼峰 / 中文词中间命中、我们匹配分为 0 的给底分 30）→ 最近一次打开 / 修改 / 下载 → 路径浅；最多 50 条。前面放整句（连关键词）匹配到的 App / 内置动作（「find my」→「查找」，修 §11 #38），空格开头不放。
@@ -748,7 +749,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 - **授权（实测，用户选「按需申请」）**：Spotlight 按调用方的「文件和文件夹」授权过滤结果，没授权的文稿、下载、iCloud 云盘一条都没有，也不弹框（本 App 身份：文稿 / 下载 / iCloud 0 条；Claude.app 身份：都有）。所以文件结果最后一行是授权提示（橙色锁）：没问过 → ↩ 收起启动器、逐个 `opendir` 桌面 / 文稿 / 下载 / iCloud 云盘让系统弹框（主线程停到用户点完），刘海岛报结果；问过有被拒的 → ↩ 打开系统设置 › 文件和文件夹。问过之前一律不碰这些目录（`Prefs.folderAccessRequested`）。设置 › 启动器「文件搜索」有一行状态（`PermissionRow`）。Info.plist 补了桌面 / 文稿 / 下载的用途说明。
 
 **系统命令（D2，2026-09-27）**
-- 对标 Alfred System（关键词照抄，默认全开，不做改关键词 / 逐个开关 / 排除名单这些设置）；规格在 mac-whisker §6 启动器「系统命令」。固定命令 = `LauncherItem.Kind.system`（目标 = Alfred 关键词，进使用记录、能进「最近使用」，⌘⌫ 能移除），标题是 macOS 自己的中文叫法，names 里另有 Alfred 关键词、英文名、口语（锁屏 / 重启 / 屏保 / 注销…）和它们的拼音。带对象的 quit / hide / forcequit / eject 照文件搜索的做法：「关键词 空格」进模式（`SystemCommands.request`），只输关键词出补全提示；进模式时列一次对象（`commandTargets`，单测换成固定的），之后打字只过滤；行复用 App / 路径行：App 的名字和图标取自 `NSRunningApplication`（不读 App 包，桌面 / 文稿 / 下载里跑着的 App 读一下会弹文件夹授权框），宗卷是磁盘色块（`contentType = .volume`，不读宗卷）；不记使用；再按一次的确认不认键盘自动连发和连击的第三下；hide 里的访达没有 ⌘↩ 强制退出；四个关键词进 `WebSearch.reservedKeywords`。
+- 对标 Alfred System（关键词照抄，默认全开，不做改关键词 / 逐个开关 / 排除名单这些设置）；规格在 mac-whisker §6 启动器「系统命令」。固定命令 = `LauncherItem.Kind.system`（目标 = Alfred 关键词，进使用记录、能进「常用」、能收藏，⌘⌫ 能移除；同分时排在 App 等后面，体检 B36），标题是 macOS 自己的中文叫法，names 里另有 Alfred 关键词、英文名、口语（锁屏 / 重启 / 屏保 / 注销…）和它们的拼音。带对象的 quit / hide / forcequit / eject 照文件搜索的做法：「关键词 空格」进模式（`SystemCommands.request`），只输关键词出补全提示；进模式时列一次对象（`commandTargets`，单测换成固定的），之后打字只过滤；行复用 App / 路径行：App 的名字和图标取自 `NSRunningApplication`（不读 App 包，桌面 / 文稿 / 下载里跑着的 App 读一下会弹文件夹授权框），宗卷是磁盘色块（`contentType = .volume`，不读宗卷）；不记使用；再按一次的确认不认键盘自动连发和连击的第三下；hide 里的访达没有 ⌘↩ 强制退出；四个关键词进 `WebSearch.reservedKeywords`。
 - 执行（`SystemControl`，面板先收起；`LauncherModel.perform` 默认空，单测、截图自检从不真执行）：锁屏 `dlsym` 私有 `SACLockScreenImmediate`（本机 15.7.7 导出、26.5 仍在；找不到时模拟 ⌃⌘Q，要辅助功能）；睡眠 / 关闭显示器 `pmset sleepnow` / `displaysleepnow`；屏保打开 `/System/Library/CoreServices/ScreenSaverEngine.app`；打开废纸篓 `NSWorkspace.open`；清倒废纸篓 osascript 让访达先数再清（空的只说一声，`with timeout of 600 seconds`）；退出登录 / 重新启动 / 关机 osascript 给 loginwindow 发 `aevtlogo` / `aevtrrst` / `aevtrsdn`（弹系统确认框，`ignoring application responses`）；音量 osascript `set volume`（1/16 一档同音量键，调高顺便取消静音；设备没有音量时报「不能调音量」）；quit / hide / forcequit = `NSRunningApplication` 的 `terminate` / `hide` / `forceTerminate`（只列程序坞里的普通 App、不含本 App，quit / forcequit 不含访达；前台 App 排第一）；推出 `FileManager.unmountVolume(.allPartitionsAndEjectDisk, .withoutUI)`，列宗卷用 `.skipHiddenVolumes`（本机 Xcode 模拟器运行时是隐藏的「可推出」磁盘映像，不跳过「推出全部」会卸掉它），被占用时报占用的 App（`NSFileManagerUnmountDissentingProcessIdentifierErrorKey`）。
 - 授权：apple-events entitlement（`Config/KittyTools.entitlements`，强化运行时下没有它发给别的 App 的 Apple Event 会被静默拒绝）+ `NSAppleEventsUsageDescription`；第一次清倒废纸篓 / 退出登录等时系统自己弹「允许控制」框，osascript 在进程外等，主线程不卡；被拒（-1743 / -1744）时刘海岛说明并打开 系统设置 › 自动化。其余命令不要新授权。
 - 确认：清倒废纸篓、全部退出、强制退出（forcequit 的 ↩、quit / hide 里的 ⌘↩）第一下只上膛（`LauncherModel.armed`），同一行同一个键再按一次才执行；打字、移动选中、Esc（先于清空搜索）、收起面板都撤掉；⌘1–9 执行的先选中那一行。
@@ -936,11 +937,11 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   3. `open 词` ↩ 用默认 App 打开、⌘↩ 在访达里选中；`find 词` 反过来（↩ 访达里选中该文件，不是打开父目录）；按住 ⌘ 时选中行副标题跟着换（N8 起底栏不再显示替代动作，⌘K 里能看到全部）；⌘C 复制路径、Tab 把路径补进输入框（文件夹带 /）、⌥↩ 用去掉关键词的词在访达里搜。
   4. 只输 `open ` 或一个空格：「最近打开和下载的文件」，刚下载的 dmg、最近打开的文档在前；node_modules、build、~/Library 里的不出现；iCloud 云盘里的副标题写「iCloud 云盘/…」。
   5. `find my`：「查找」App 在最前、↩ 打开它；` find my`（空格开头）只有文件。单输 `open` / `find`：第一行是补全提示，↩ / Tab 变成「open 」；设置里网页搜索关键词填 open / find 会提示被文件搜索占用。
-  6. 快速连打 / 删字：列表不闪空、不闪「没有匹配的文件」，高度平滑变化；打开过的文件之后不带关键词也能搜到、出现在「最近使用」。深色、减弱动态效果各看一次。
+  6. 快速连打 / 删字：列表不闪空、不闪「没有匹配的文件」，高度平滑变化；打开过的文件之后不带关键词也能搜到、出现在「常用」。深色、减弱动态效果各看一次。
 
 - 启动器（M11）手测：
   1. 设置 › 启动器：添加预置 / 自定义搜索、自定义快捷链接（网址和 ~ 路径各一个），拖动排序、点进详情改关键词、「−」删除（N12）；「gh swift」直达，单输「gh」出提示、↩ 或 Tab 变成「gh 」。
-  2. 快捷链接按名字、关键词、拼音都能搜到，↩ 打开，之后出现在「最近使用」；「最近使用」里 ⌘⌫ 移除一项，设置里清空后「最近使用」为空。
+  2. 快捷链接按名字、关键词、拼音都能搜到，↩ 打开，之后出现在「常用」；「常用」里 ⌘⌫ 移除一项，设置里清空后「常用」为空（收藏还在）。
   3. 算式 ↩ 粘到前台 App、⌘↩ 只复制、Tab 把结果写回接着算；「cb 关键词」改成转交剪贴板面板（见下面「N1–N17」第 20 条）；未授权辅助功能时提示去授权。
   4. 按住 ⌥ / ⌃ / ⌘ 时选中行副标题变化；⌥↩ 在访达里出 Spotlight 搜索窗口；⌃↩ 用第一个兜底搜索。
   5. 开「呼出时切到英文输入法」：中文输入法下呼出启动器自动变英文，关掉启动器后回到中文；开关关掉后再呼出不再切。
@@ -1050,7 +1051,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   13. C3 ⌘K 分四节、分节线清楚；有收藏夹时「移到收藏夹 ›」→ 或 ↩ 进去，顶上「‹ 移到收藏夹」，过滤词只过滤收藏夹，← / Esc / 点「‹」回来、选中停在「移到收藏夹」；没有收藏夹时是「放进新收藏夹…」。多选底栏「收藏夹…」弹同一份列表，从按钮上方长出来，↑↓ ↩ 选、Esc 关。菜单超过一屏时最下面露出半行。
   14. C4 ⌘K 里输 fy 找到「翻译」、zfd 找到「在访达中显示」；筛选面板输 wx 找到来源「微信」；启动器开「只用英文输入法」后 ⌘K 里输拼音首字母能找到中文动作，其余启动器 ⌘K 行为不变。
   15. D1 截一张 Retina 截图后在剪贴板 ⌘K / 右键 / ⌘Y 页脚「钉到屏幕」：面板收起，钉图出现在鼠标所在屏中央、和原来截图一样大（1:1 点尺寸），1.04→1 弹入；一张 6K 大图缩到屏幕 80% 以内；多选 3 张图依次往右下错开；固定着的面板不收；图片文件丢了岛报「没能钉到屏幕」。
-  16. D2 文件条目 ⌘O 用默认 App 打开、⌘R 在访达中显示、⌥⌘C 拷贝路径（多个文件每行一个，收起面板后历史最上面是这段路径）；链接 ⌘O；⌘Y 页脚第 3 个胶囊：链接「打开」、文件「在访达中显示」、图片「钉到屏幕」、JSON「原文 / 美化」、其余「收藏」。
+  16. D2 文件条目 ⌘O 用默认 App 打开、⌘R 在访达中显示、⌥⌘C 复制路径（多个文件每行一个，收起面板后历史最上面是这段路径）；链接 ⌘O；⌘Y 页脚第 3 个胶囊：链接「打开」、文件「在访达中显示」、图片「钉到屏幕」、JSON「原文 / 美化」、其余「收藏」。
   17. D3 把一段带格式的文本行拖进 Pages / 备忘录：带格式；片段拖出去是展开后的纯文本；图片行拖进访达是「图片 宽×高.png」文件、拖进微信 / 邮件是图片；多个文件的条目拖进访达复制全部文件；勾 3 条文本后拖其中一条出去是合成的一段，拖没勾的行只拖它；拖放后历史不变（不置顶、不多条目）、选中不变；拖着经过别的 App 时面板不收起，放进去后面板收起（固定着不收），拖回面板 / 没放成不收；勾两张同尺寸的截图拖进访达是两个不同的文件；深色模式下拖动预览是深色卡；拖动后单击 / 双击行照常选中 / 粘贴（拖放会话接走了鼠标，SwiftUI 的按钮不会卡在按下状态）。
 - 体检第 4 批「翻译」手测（2026-09-28，A12–A14 A16–A19 A31 A32 B19–B28 C5 C6 D15；浅色 / 深色、增强对比度、减弱动态效果、VoiceOver 各走一遍）：
   1. A12 开复制即译：在浏览器地址栏复制网址、终端复制 `/usr/local/bin`、复制一串数字、复制自己写的中文（目标自动时）都不弹；复制一句英文弹；固定目标语言后复制中文照样弹；复制 40 KB 日志不弹。
@@ -1073,6 +1074,26 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   18. B28 设置 › 翻译「导出和清空」一行有「清空翻译历史…」：确认框、岛「已清空翻译历史 · 保留了 N 条收藏」和浮窗「⋯」菜单里一样；关着「记录翻译历史」也能点。
   19. C6 翻译历史里 ⌘K：从右下角弹出动作菜单（重新翻译 ↩、复制译文 ⌘C、复制原文 ⇧⌘C、收藏 ⌘D、删除 ⌘⌫ ｜ 导出 ›、清空历史…），搜索框变成「搜索动作」；↩ / → 进「导出」、← / Esc 回来；右键菜单是同一份；⇧⌘C 复制原文；「⋯」菜单里有「导出」子菜单，导出时存储面板弹得出来、选完回到原来的 App。
   20. A13 评审补：默认跟随鼠标，把浮窗拖到 X 收起 → 在别处划词（浮窗在光标旁、不拖）收起 → 按输入翻译：出现在 X，不在刚才划词的地方；浮窗开着是 key 时拖到新位置、直接再按划词热键，退出重开后输入翻译仍在新位置；固定浮窗后「划词翻译并替换」，替换完浮窗在原地露出来、不跳。
+
+- 体检第 5 批「启动器·改造与缺陷」手测（2026-09-28，A22–A27 B31–B39 C7 C8 D7 D10 D13；浅色 / 深色、增强对比度、减弱动态效果、VoiceOver 各走一遍）：
+  1. A22 D13 空搜索框：上面「收藏」、下面「常用」两个分组标题；在「常用」里选一项 ⌘D：底栏「✓ 已加入收藏」，它挪到收藏里、选中跟着它；⌥⌘↑↓ 调收藏顺序，⌘1–N 跟着固定；收藏满 8 个再 ⌘D 只响提示音、底栏橙三角「收藏最多 8 个，先取消一个」；搜到收藏过的 App 时 ⌘K 是「取消收藏 ⌘D」；设置 › 启动器「清空使用记录…」后收藏还在；卸载一个收藏的 App 后它不再出现，此时收藏只剩 7 个、再 ⌘D 能加进去；收藏上 ⌘⌫ 只响提示音。
+  2. B38「常用」里 ⌘⌫：行消失、底栏「已从常用中移除 · 撤销 ⌘Z」（VoiceOver 读同一句），⌘Z 或点「撤销」放回原位并选中；5 秒后底栏换回种类，⌘Z 仍能撤；打字或按 ↑↓ 后 ⌘Z 交还搜索框。
+  3. A27 输入「term」选中第二行后点屏幕别处，30 秒内 ⌥Space：词还在、全选、选中还是第二行，直接打字替换、↩ 执行上次选中的；↩ 打开过一项后再呼出是空的；Esc 清空再关后再呼出是空的；等 1 分钟再呼出是空的；输入「quit 」后点别处，在程序坞里退出一个 App 再 ⌥Space：它不在列表里、这期间新开的 App 在。
+  4. B31 把一个新 App 拖进「应用程序」，马上 ⌥Space 搜它的名字：第一次就搜得到。
+  5. A23 B32 输入 200*15%（30）、100+10%（110）、50%（0.5）、10 mod 3（1）；中文输入法下打（1+2）×3（9）、1,299*3（3897）、１＋２（3）：都出计算结果，算式那一栏是原样。
+  6. A24 没改过网页搜索列表时输入一串没有本地结果的词：只有一行「用 Google 搜索」；bing / bd 关键词照常；改过列表的人不变。
+  7. A25 应用程序里的 App（英文名）副标题是空的，中文名 App 副标题是英文文件名；quit 空格里桌面上跑着的 App 副标题是 ~/Desktop。
+  8. A26 搜「截取上次区域」「划词翻译并替换」「暂停记录剪贴板」（副标题写正在记录 / 已暂停，↩ 切换、刘海岛说，菜单栏的勾跟着变）「复制即译」（副标题写已开启 / 已关闭，↩ 切换、刘海岛说）「快捷键速查表」（打开设置窗盖上速查表）「关于」「检查更新」（正式版）；钉了图后能搜到「隐藏全部钉图」「关闭全部钉图」；标题、符号、颜色和菜单栏一样；老的「截图」「识字」用过的仍排在前面。
+  9. B33 输入 cb：第一行「打开剪贴板历史」，以 cb 开头的 App 列在后面；「CB 会议」只有一行、↩ 在剪贴板里搜「会议」。
+  10. B34 B35 输入 docs.rs/serde、bun.sh/docs：第一行「在浏览器中打开」；install.sh、Package.swift 不是网址；输入「http 缓存」没有本地结果时有 Google 兜底行，输入 https://a.com 没有兜底。
+  11. B36 没用过 Slack（或清空使用记录）时输入 sl：第一行是 Slack，不是睡眠；lo 第一行是 Logseq（装了的话）；sleep、睡眠、shuimian 第一行仍是睡眠。
+  12. B37 鼠标在没选中的行上移动：浅灰悬停底淡入淡出、选中不动；VoiceOver 在行上打开动作（VO-⌘-空格）：有「打开」「在访达中显示」「复制路径」「加入收藏」，常用里还有「从常用中移除」，执行后照常。
+  13. C8 行上右键：菜单和 ⌘K 同一份（分隔线、不写键位），对着被点的那一行（右键没选中的行选「补全到搜索框」，补的是那一行）。
+  14. C7 open 空格搜一个 PDF：⌘K 有「快速查看 ⌘Y」「用「预览」打开 · 默认」等打开方式、「移到废纸篓」（红字）；⌘Y 从选中行长出预览卡，↑↓ 换文件跟着换、⌘Y / Esc 缩回，键盘一直在启动器里；点进预览卡后按 ⌘Y 缩回、马上按 ↓：选中照常往下走；⌘Y 预览一个视频并播放，缩回后不再出声；移到废纸篓：刘海岛「已移到废纸篓「x」」、行原地消失，访达里能放回；搜索词末尾按 → 打开动作菜单，光标不在末尾时 → 照常移光标。
+  15. D7 输入一个网址：⌘K 有「用「Chrome」打开」等（默认浏览器以外的每个，第一个标 ⌘↩）、「复制为 Markdown 链接 ⇧⌘C」「复制标题」；按住 ⌘ 副标题「⌘↩ 用「Chrome」打开」；只装了一个浏览器时 ⌘↩ 只响提示音、按住 ⌘ 副标题不变。
+  16. D10 输入 fy hello：只有一行「翻译「hello」」（绿色块、右侧键帽 ⌥T），片刻后副标题换成词典释义、行高不变；↩ 收起启动器、翻译浮窗（跟随鼠标）直接出译文；fy 你好世界 同样能翻、没有释义；只输 fy 出「翻译…」补全提示。
+  17. B39 设置 › 启动器「浏览器书签」：Chrome 开着写「已读到 N 条」；没装的 Edge / Brave 置灰写「没有安装」；把 Chrome 书签文件改名后开关下变橙字「没找到书签文件」；把 Chrome 拖进废纸篓后开关置灰写「没有安装」，启动器也搜不到它的书签。
+  18. 剪贴板 ⌘K / 右键里文件的「复制路径」（原「拷贝路径」）、启动器 ⌘K「复制路径」同一个 link 符号；速查表剪贴板组 ⌥⌘C「复制文件路径」，启动器组有 ⇧⌘C ⌘D ⌥⌘↑↓ ⌘Y ⌘Z → fy。
 
 **发布 0.1.0**（2026-09-27 改）：`macos/build-dmg.sh` 出 arm64 DMG 和 `_arm64.zip` → 本仓库 github.com/YyAdnBug/kitty-tools 发**正式 release、标 latest**（App 内更新读 `releases/latest`；不碰 Tauri 版的仓库，不跑 `pnpm release:verify`），两个文件都附上，**发布前须经用户确认**；tag `macos-v0.1.0` 打在 `main`。发布前先把 changelog.json 的 0.1.0 条目补全（启动器、截图、应用内更新等还没写进去）。
 
@@ -1180,6 +1201,16 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 | 81 | PLAN §5.2 翻译设置 Tab「服务列表」 | 8 个内置服务常驻列表、只能关不能删；新建 AI 服务没有厂商预设（PLAN 写了「预设照搬」但没做） | 列表只放加进来的，「+」加回内置 / 新建 AI（9 家预设 + 自定义 / Azure），删内置不确认、密钥留着（体检 B21 D15） |
 | 82 | `speak-text.ts` | 收起浮窗不停朗读；声线只按语言取默认 | 收起时停；按品质挑已下载的高音质声线（体检 B23） |
 | 83 | `api.rs` 百度 / 有道错误 | 错误只给码或英文原文；错误卡不分配置 / 网络，「打开设置」只到列表页 | 错误码译成中文；配置类橙卡只给「打开设置」直达服务详情页，网络 / 服务类红卡给「重试」（体检 B24 C5） |
+| 84 | `launcher/mod.rs:53-56,790-822` | 空查询叫「最近使用」，其实按频率 × 新近取前 8；顺序跟着使用变，⌘1–9 对的不固定 | 改名「常用」；上面加用户自己排的「收藏」（⌘D、⌥⌘↑↓、最多 8 个），⌘1–N 固定（体检 A22 D13） |
+| 85 | `launcherCalculator.ts:169,187` | % 是取模，「200*15%」「100+10%」算不出来、落到网页搜索 | % 是百分号（a ± b% = a ×（1 ± b/100）），取模用 mod（体检 A23） |
+| 86 | `launcherCalculator.ts:9` | 只认 ASCII：中文输入法的全角括号、× ÷、千分位、全角数字都不算算式 | 先归一（widthInsensitive、× ✕ ÷、去千分位逗号），算式那一栏照常显示原文（体检 B32） |
+| 87 | `config.rs:712-728` | 新装默认 Google、Bing、百度三个都兜底，三行做同一件事 | 只让 Google 兜底，另两个只走关键词（体检 A24） |
+| 88 | `installed_apps.rs:613` | App 副标题写「应用程序」，和右侧类型「应用」重复；同名两份分不清 | 标准目录里的留空，别处的写所在位置（体检 A25） |
+| 89 | `launcher/mod.rs:927-976` | 内置动作只有旧版那 6 个，截取上次区域、划词翻译并替换、暂停记录剪贴板、复制即译、钉图、关于、检查更新都搜不到；菜单和启动器各写一份 switch | 按 `HotKeyAction.sections` 生成、和菜单栏同名同序，`AppDelegate.run(_:)` 共用（体检 A26） |
+| 90 | `LauncherSearchBody/index.tsx:506-509` | 一收起就清空查询，点到外面要重打 | 没执行就收起的 60 秒内再呼出保留查询和选中项、全选（体检 A27） |
+| 91 | `catalog.rs:59,108` | App 目录 5 分钟过期才重扫，刚装的 App 第一次呼出搜不到 | 呼出前比较应用程序目录的修改时间，变了先重扫；5 分钟兜底保留（体检 B31） |
+| 92 | `launcherClipboardCommand.ts:21-40` | 单输 cb 独占列表，以 cb 开头的 App、书签被挤掉（原生另把大小写判断弄丢了） | 单输 cb 时 cb 那一行排第一、后面照常；不分大小写（体检 B33） |
+| 93 | `launcherSupplements.ts:7-30,44-60` | 网址靠顶级域白名单，docs.rs/serde、bun.sh/docs 这类不认 | 裸域名仍用白名单，后面跟 / 或 :端口 时 2–13 个字母的后缀都认（体检 B34） |
 
 ## 附录：评审处理记录
 
@@ -1240,5 +1271,6 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 - 2026-09-28 体检拍板（同一方案页，用户「全部按推荐」）第 2 批剪贴板数据与模型：A1 分组并进收藏（收藏 = 默认收藏夹，分组 = 命名收藏夹，保留规则只剩收藏 ∨ 片段；启动时迁移已归组的置收藏、`clip_groups` 加 `position`；⌘D 取消收藏同时移出收藏夹；删收藏夹不确认、条目留在收藏、⌘Z 可撤；管理收藏夹改键盘列表、拖动排序、24 字拦住不截断；取消收藏后超期的底栏提示、收起面板才清）；A2 删除进撤销栈、⌘Z 连撤，收起 / 退出时才提交，再复制同内容拿回原条目，撤销后播报；A3 备注所有条目都能写、取消收藏不清、不影响保留、单行对话框；A4 只留「保留普通历史」（1 天 / 1 周 / 1 个月 / 3 个月 / 1 年 / 永久，默认 1 周）+ 图片兜底（只算普通图片）；A5 格式总是采集，「默认粘贴为纯文本」开关，⌥↩ 反过来；A6 搜索只过滤、始终按天分组；A7 占位符 {time} {datetime} {weekday} {uuid} {clipboard:N}；A8 ⌘C 收起面板时置顶；A11 排除 App 改 bundle ID 列表；B1 合并粘贴展开片段；B2 图片预算只算普通图片；B3 多选文件一次粘、依次粘贴按复制先后补换行、动词一个函数给；B4 补 5 种隐私标记；B5 补 7 种密钥格式；B6 来源先读来源标记、通用剪贴板记「其他设备」；C1 移出片段；D4 菜单栏「暂停记录剪贴板」（不存盘）。实现时的一处取舍：备注输入框占位按实际行为写「搜索时能搜到」（方案原文「搜索时优先命中」和 A6 只过滤冲突）；「移出收藏夹」留在默认收藏，超期提示只在取消收藏 / 移出片段时出现。
 - 2026-09-28 体检拍板（同一方案页，用户「全部按推荐」）第 3 批剪贴板面板交互：A10 JSON 默认美化，一次呼出里点过「原文」就一直原文、收起面板复位（美化结果按条目缓存）；B7 条目从列表消失后选中挪到下一条（`changingList`），⌘Z 后选中回来的那批最靠前的；B8 勾选随搜索 / 筛选 / 删除裁剪成看得见的，底栏计数和批量操作只对它们；B9 右键 / ⌘Y 页脚「复制」只复制被点的那条；B10 菜单开着时 ⌘ 键做了才收起，过滤框有字时 ⌘⌫ ⌘A ⌘V ⌘X ⌘Z 交给过滤框；B11 ⌘Y 里 ⌘C 只拷纯文本、经 `Paster.write(string:record:)` 记成无来源的新条目，大卡不跳；B12 右键菜单和 ⌘K 共用 `actions(for:targets:)`；B13 打开链接 / 文件、在访达中显示先收起（固定着不收）再后台打开；B14 ⌘T 翻译；B16 底栏提示和色值块复制主动播报；B18 编辑正文清掉链接缓存；C2 编辑 / 新建片段空白或没改动时保存置灰、提示只说相关的、新建片段加可选名称（存成备注）；C3 ActionMenu 分节（0.5 pt 发丝线，上下各 4 pt）+ 一级子列表「移到收藏夹 ›」，多选底栏「收藏夹…」打开同一份列表；C4 三个动作菜单共用 `ActionMenu.filter`（子串 + 中文标题拼音前缀）；D1 图片钉到屏幕（像素 ÷ 屏幕倍率，超 80% 缩小，鼠标所在屏中央，多张错开 24 pt）；D2 文件打开 ⌘O / 在访达中显示 ⌘R / 拷贝路径 ⌥⌘C、链接打开 ⌘O，⌘Y 页脚第 3 个胶囊按类型；D3 行拖到别的 App（AppKit 拖放会话，拖勾选项之一 = 全部勾选项，不算粘贴）。实现时的取舍：子列表那一行叫「移到收藏夹」、行尾 ›，不再加「…」（HIG：打开子菜单的项不写省略号，右键里是同名子菜单）；一个收藏夹都没有时第一级直接是「放进新收藏夹…」（进子列表只有一行没意义）；只勾一条时 ⌘K 和 ⌘E ⌘T ⌘O ⌘R 对着那一条（原来「有勾选就只给批量操作」，一条时没有对象歧义）；替代粘贴 / 复制为纯文本只给带格式的文本或多条；拖出用 AppKit 会话而不是 SwiftUI `onDrag`（一次只给得出一个 NSItemProvider，拖不了多个勾选项和一条里的多个文件）；「拷贝路径」同 ⌘C，面板开着时列表不动、收起时才记成新历史（A8）；⌘Y 里 ⌘C 按审查建议直接记（大卡开着选中不跳）。
 - 2026-09-28 体检拍板（同一方案页，用户「全部按推荐」）第 4 批翻译：A12 复制即译静默跳过网址、路径、纯数字 / 符号、超长、目标自动时的第一语言；A13 设置 › 翻译「浮窗位置」跟随鼠标（默认）/ 上次位置（`OverlayPanel.present(anchor:)`）；A14 输入翻译热键是开关、再打开保留上次的原文和结果（原文全选）、中断的卡片重跑；A16 划词没取到文字时占位换成说明 + 播报；A17 智谱第二档换免费纯文本 glm-4.7-flash（查智谱开放文档：它在「免费模型」目录、纯文本、能关思考，2026-01 替代 GLM-4.5-Flash），旧的 glm-4.6v-flash 回落 glm-4-flash；A18 历史保留 1000 / 5000 / 不限（默认 5000）；A19 只有复制即译带来的原文不自动复制；A31 收藏全 App 统一 ⌘D，翻译浮窗和翻译历史的 ⌘S 不再响应；A32 识字和翻译共用一套分段接行（`OCR.paragraphs` 按行框间距 > 1.2 倍中位行高、或句末标点且短于中位行宽 80% 断段，换栏也断；`OCR.joiningLines` 纯文本按空行分段），截图翻译总是按段（段间空一行），识字设置改名「识字后把同一段里的换行接起来」；B19 截断检测；B20 自家浮层里的 ⌘C 不触发复制即译、来源记本 App，同一段不重翻；B21 内置服务可删、「+」加回；B22 历史分页 + 缓存；B23 收起停朗读、挑高音质声线；B24 百度 / 有道错误码译成中文；B25 「思考中」扫光 + 重译正文交叉淡变 0.18 s；B26 语言胶囊互换（glide）；B27 模型框下拉列服务端模型（`textInputSuggestions`）、进页自动取、↻ 重取；B28 设置 › 翻译加「清空翻译历史…」；C5 错误卡分配置（橙、只给打开设置、直达服务详情页）/ 网络与服务（红、重试，自建 AI 另给打开设置）；C6 历史 ⌘K（`ActionMenu`，右键同一份）、「⋯」菜单能导出；D15 「+ › AI 服务」厂商预设；D16 系统翻译只做文档验证，结论见 §10 D5（不做）。A20、A21 保持现状。实现时的取舍：思考信号用流里的空串（只在推理字段或 `<think>` 段里发，开头 role 那一段的空 content 不发），不改流的元素类型；截断在流结束时先给半截、再抛 `TranslateError.truncated`，静默替换因此照常报错不粘；配置类错误的字用默认色、只有钥匙是橙色（橙字在浅色卡底上对比度不够，同剪贴板底栏的警告）；智谱 `max_tokens` 仍按 mac-translate §3 固定 1024（glm-4.7-flash 文档写最大输出 128K，但没联网实测前不改，截断至少看得见了）；「浮窗位置」只记用户拖过 / 拖宽过的位置（`setFrameAutosaveName` 连跟随鼠标摆的位置也记，改成收起时比对后手动存）；内置服务从「+」加回来直接启用（删之前的密钥还在）、AI 服务等测试连接成功再自动启用；历史 ⌘K 的「导出」是一级子列表（全部 / 只收藏 × CSV / Anki TSV）。评审修复：不带锚点出现（输入翻译、「上次位置」）回到用户拖到的位置（`userFrame`），不再用上次跟随鼠标弹出的位置，直接 `orderOut` 收起的也在下次出现前补记拖动；自家浮层里的复制改在复制那一刻记 `Paster.panelCopyChangeCount`（轮询时看 key 窗口会在「复制后马上 Esc」「别处复制后马上呼出浮层」时判反，后者还会绕过排除的 App），来源标记优先于「自家窗口」；两个语言胶囊合成同一种视图，互换时才会滑到对方位置（分支不同只会原地淡变）；卡片标题的智谱模型名走回落后的值。
+- 2026-09-28 体检拍板（同一方案页 https://claude.ai/artifact/1KuAQRafw2E3QYAM4LULFR ，用户「全部按推荐」）第 5 批启动器·改造与缺陷：A22「最近使用」改名「常用」；D13 收藏（⌘D、空查询先列收藏再用常用补足到 8 行、⌥⌘↑↓ 调顺序、最多 8 个、新表 `launcher_favorites`）；A23 % 改百分号、取模用 mod；A24 默认只让 Google 兜底；A25 标准目录里的 App 副标题留空、别处写位置；A26 内置动作和菜单栏同一份（`HotKeyAction.sections` + 复制即译、钉图、速查表、关于、检查更新，老 id 保留，`AppDelegate.run(_:)` 共用）；A27 没执行就收起的 60 秒内保留查询；B31 呼出前按目录修改时间重扫；B32 中文输入法的算式；B33 单输 cb 不独占、不分大小写；B34 带路径 / 端口时放宽网址后缀；B35 兜底只看显式网址；B36 同分系统命令最后；B37 行的 VoiceOver 动作与悬停；B38 移除常用可撤销；B39 书签设置写读到几条；C7 文件 ⌘K 打开方式 / 快速查看 ⌘Y / 移到废纸篓、→ 开动作菜单；C8 行右键 = ⌘K；D7 网址 ⌘K「用「X」打开」（⌘↩ = 第二个浏览器）、Markdown 链接 ⇧⌘C、复制标题；D10 fy 关键词直接翻译（单个英文词副标题是词典释义）。另：剪贴板的「拷贝路径」改叫「复制路径」，和启动器同名同符号（剪贴板、启动器都叫「复制…」，只有截图家族叫「拷贝」）。
 - 截图翻译（2026-09-24）：只用 Vision 本机识字；原文写剪贴板历史；默认热键 ⌥S。
 - 启动器 / 截图（2026-09-24）：启动器首版做 App、书签、直达、网页搜索、最近使用、内置动作、计算器、cb，文件搜索与 kill 放 M11；标注首版做矩形、箭头、文字、马赛克；附加功能只做取色（长截图、延时、美化 / 水印不做；长截图 2026-09-25 改为做，见 §10 D1）；做钉图，不做截图历史和钉图历史。
