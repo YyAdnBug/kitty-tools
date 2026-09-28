@@ -26,16 +26,19 @@ enum Prefs {
   /// 翻译浮窗固定：失焦不隐藏（Esc、⌘W 照样关，体检 A9）
   static let floatingPinned = "floatingPinned"
 
-  /// 普通历史（非收藏 / 片段 / 分组）最多保留几条，0 = 不限
-  static let clipboardHistoryMax = "clipboardHistoryMax"
-  /// 普通历史保留天数，0 = 永久
+  /// 普通历史（非收藏 / 片段）保留天数：1 / 7 / 30 / 90 / 365，0 = 永久（体检 A4：只剩这一个旋钮，条数上限的旧键不再读）
   static let clipboardRetentionDays = "clipboardHistoryRetentionDays"
-  /// 图片总占用上限（MB），0 = 不限；超出时从最旧的普通图片开始删
+  /// 「保留普通历史」的档位（天，0 = 永久）
+  static let clipboardRetentionChoices = [1, 7, 30, 90, 365, 0]
+  /// 普通图片总占用上限（MB），0 = 不限；超出时从最旧的普通图片开始删（收藏 / 片段的不算，体检 B2）
   static let clipboardImageBudgetMB = "clipboardImageCacheMaxMb"
-  /// 来源 App 名称或 bundle ID 包含这些关键词就不记录
-  static let clipboardExcludedApps = "clipboardExcludedApps"
+  /// 来源 App 的 bundle ID 在这里就不记录（精确匹配，体检 A11）
+  static let clipboardExcludedBundleIDs = "clipboardExcludedBundleIDs"
+  /// 旧版排除列表（名称或 bundle ID 关键词，子串匹配）：只在 migrate() 里读一次，换成上面的 bundle ID 列表
+  static let clipboardExcludedAppsLegacy = "clipboardExcludedApps"
   static let clipboardBlockSensitive = "clipboardBlockSensitive"
-  static let clipboardKeepRichText = "clipboardKeepRichText"
+  /// 默认粘贴为纯文本：↩ / 双击 / ⌘1–9 走纯文本，⌥↩ 变「保留格式粘贴」（体检 A5；格式总是记下来，旧的采集开关不再读）
+  static let clipboardPastePlain = "clipboardPastePlainByDefault"
   static let clipboardImageOCR = "clipboardImageOcr"
   static let clipboardClearOnQuit = "clipboardClearOnExit"
   static let clipboardClearOnLock = "clipboardClearOnLock"
@@ -102,15 +105,11 @@ enum Prefs {
       launcherSqueezeEntrance: false,
       floatingPinned: false,
       updateAutoCheck: true,
-      clipboardHistoryMax: 0,  // 不限条数，只按天数裁剪
       clipboardRetentionDays: 7,
       clipboardImageBudgetMB: 512,
-      // 密码管理器大多会打 ConcealedType 标记，这里兜底；「密码」是 macOS 15 自带的 Passwords
-      clipboardExcludedApps: [
-        "1Password", "Bitwarden", "KeePass", "Keychain", "钥匙串", "com.apple.Passwords",
-      ],
+      clipboardExcludedBundleIDs: ClipboardFilter.defaultExcluded,
       clipboardBlockSensitive: true,
-      clipboardKeepRichText: true,
+      clipboardPastePlain: false,
       clipboardImageOCR: true,
       clipboardClearOnQuit: false,
       clipboardClearOnLock: false,
@@ -130,5 +129,26 @@ enum Prefs {
       ocrJoinLines: false,
       screenshotShutterSound: true,
     ])
+  }
+
+  /// 旧偏好升级（启动时在 registerDefaults 之后跑，幂等）：
+  /// 排除 App 从关键词换成 bundle ID 列表（只在新键没存过、旧键改过时跑一次，体检 A11）；
+  /// 保留天数不在新档位里的（旧的 3 / 14 天）挪到下一档，免得弹出菜单显示空白（体检 A4）
+  static func migrate(
+    _ defaults: UserDefaults = .standard, domainName: String? = Bundle.main.bundleIdentifier
+  ) {
+    // 只看用户自己存过的值（registerDefaults 给的默认不在持久域里）
+    let domain = domainName.flatMap(defaults.persistentDomain(forName:)) ?? [:]
+    if domain[clipboardExcludedBundleIDs] == nil,
+      let old = domain[clipboardExcludedAppsLegacy] as? [String]
+    {
+      defaults.set(ClipboardFilter.migratedExcluded(old), forKey: clipboardExcludedBundleIDs)
+      defaults.removeObject(forKey: clipboardExcludedAppsLegacy)
+    }
+    let days = defaults.integer(forKey: clipboardRetentionDays)
+    if !clipboardRetentionChoices.contains(days) {
+      defaults.set(
+        clipboardRetentionChoices.first { $0 >= days } ?? 0, forKey: clipboardRetentionDays)
+    }
   }
 }

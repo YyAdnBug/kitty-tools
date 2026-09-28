@@ -290,7 +290,7 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 - **依赖注入**：
   - 在 `AppDelegate.applicationDidFinishLaunching` 里按顺序创建：`Database` → `ClipboardStore`、`HistoryStore` → `ClipboardWatcher` → `TranslateCoordinator` → 两个面板 → `HotKeyCenter`，通过 init 传递。
   - 根视图用 `.environment(store)` 注入。
-  - 偏好用 `@AppStorage`，键名集中写在 `Prefs.swift`，**沿用旧的 camelCase 键名**，默认值用 `UserDefaults.register(defaults:)` 注册。
+  - 偏好用 `@AppStorage`，键名集中写在 `Prefs.swift`，**沿用旧的 camelCase 键名**，默认值用 `UserDefaults.register(defaults:)` 注册；旧偏好换语义时在 `Prefs.migrate()`（启动时紧跟 registerDefaults，幂等）里升级一次，比如 2026-09-28 的排除 App 关键词 → bundle ID 列表。
   - （2026-09-26：默认值以 `Prefs.swift` 为准，不再对齐 Tauri）默认值基本照搬 Tauri，只有一处不同：`translateServiceEnabled` 默认只开 builtin。Tauri 默认还开了有道，全新安装没有密钥，浮窗里会一直挂着一张有道的错误卡。
   - 热键在模型里用 Optional 表示，nil 就是不注册。
   - 不用 DI 容器，也不为了测试去抽 protocol。
@@ -308,38 +308,38 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 | Tauri 模块 / 文件 | 原生组件 / Apple API | 复杂度 | 备注 / 坑 |
 |---|---|---|---|
 | 轮询采集 `R/watcher.rs:35-61,201-386` | `ClipboardWatcher`：主线程 0.3s `Timer`；`changeCount` 没变就跳过 | M | 处理顺序固定：先查 types 里的隐私标记 → 来源 App → 文件 → 文本 → 图片。被跳过或被过滤的也要提交 changeCount；读不到（被占用）时不提交。启动时直接对齐当前 changeCount，不再像 Tauri 那样把当前内容重记一次（`:216-220`）。LSUIElement 应用符合 App Nap 条件，timer 会被降频，见 M2 验收 |
-| 隐私标记 `R/privacy_markers.rs:38-42` | 把 `pasteboard.types` 和 3 个 nspasteboard.org 字符串比较 | S | 先查 types，再读内容 |
-| 来源 App `R/source.rs:23-66` | `NSWorkspace.frontmostApplication`（排除自身），取名称和 `bundleURL.path` | S | 这是推测值，用户在 300ms 内切换 App 会记错，接受 |
-| 过滤 `R/filter.rs:7-120` | `ClipboardFilter` 纯函数，配单测 | S | 排除 App：名称或路径子串匹配，不区分大小写。敏感文本：`sk-` 后跟 20 位、bearer ≥24、13–19 位且通过 Luhn、整段 ≤64 字节。默认值已注册，不会出现「读配置失败、回退成空列表」 |
+| 隐私标记 `R/privacy_markers.rs:38-42` | 把 `pasteboard.types` 和 3 个 nspasteboard.org 字符串比较（2026-09-28 体检 B4：再加 1Password 7、TypeIt4Me、Keyboard Maestro、KeeWeb 等 5 个常见类型） | S | 先查 types，再读内容 |
+| 来源 App `R/source.rs:23-66` | `NSWorkspace.frontmostApplication`（排除自身），取名称和 `bundleURL.path` | S | ~~这是推测值，用户在 300ms 内切换 App 会记错，接受~~（体检 B6：先读写入方的 `org.nspasteboard.source`，通用剪贴板过来的记「其他设备」，都没有才用前台 App） |
+| 过滤 `R/filter.rs:7-120` | `ClipboardFilter` 纯函数，配单测 | S | 排除 App：~~名称或路径子串匹配，不区分大小写~~ 按 bundle ID 精确匹配，设置里是 App 列表（体检 A11，旧关键词迁一次）。敏感文本：`sk-` 后跟 20 位、bearer ≥24、13–19 位且通过 Luhn、整段 ≤64 字节；体检 B5 补 GitHub / AWS / Slack / Google 密钥、私钥块、JWT。默认值已注册，不会出现「读配置失败、回退成空列表」 |
 | 文本 `R/watcher.rs:276-327` | `string(forType: .string)` | S | trim 后为空或超过 5MB 时丢弃；用上一条的指纹防连续重复 |
-| 富文本 `R/rich_text.rs:18,85-145` | 读：`.rtf` 优先，其次 `.html`，上限 2MB。写：一次 `declareTypes([rich, .string])` | S | 分两次 declare 会互相清空；富文本写失败时退回纯文本；关闭「保留格式」不影响已存富文本的粘贴 |
-| 图片 `R/image_cache.rs`、`R/image_budget.rs:17-68` | `ImageStore`（@concurrent）：读 png/tiff；尺寸用 `CGImageSourceCopyPropertiesAtIndex` 读取，不解码；对编码字节做 SHA256 去重（有 PNG 用 PNG 字节，否则用转换后的 PNG 字节）；写 `images/{id}.png`。缩略图用 `CGImageSourceCreateThumbnailAtIndex` + `NSCache` | M | 像素上限 128MiB（按宽×高×4 算）；摘要为「图片 W×H」。`ponytail:` 注释写明「同一张图换了编码不会被去重」。字节预算 = `SUM(image_byte_size)`，超出时从最旧的可淘汰项开始，同时删文件和行。启动对账：cutoff 时间要在读 keep 集合**之前**取，keep 集合读失败绝不清理 |
+| 富文本 `R/rich_text.rs:18,85-145` | 读：`.rtf` 优先，其次 `.html`，上限 2MB。写：一次 `declareTypes([rich, .string])` | S | 分两次 declare 会互相清空；富文本写失败时退回纯文本；~~关闭「保留格式」不影响已存富文本的粘贴~~ 格式总是采集，设置改为「默认粘贴为纯文本」（体检 A5） |
+| 图片 `R/image_cache.rs`、`R/image_budget.rs:17-68` | `ImageStore`（@concurrent）：读 png/tiff；尺寸用 `CGImageSourceCopyPropertiesAtIndex` 读取，不解码；对编码字节做 SHA256 去重（有 PNG 用 PNG 字节，否则用转换后的 PNG 字节）；写 `images/{id}.png`。缩略图用 `CGImageSourceCreateThumbnailAtIndex` + `NSCache` | M | 像素上限 128MiB（按宽×高×4 算）；摘要为「图片 W×H」。`ponytail:` 注释写明「同一张图换了编码不会被去重」。字节预算 = ~~`SUM(image_byte_size)`~~ 普通图片的字节和（体检 B2：收藏 / 片段的不算，最新一张普通图片这一轮不删），超出时从最旧的可淘汰项开始，同时删文件和行。启动对账：cutoff 时间要在读 keep 集合**之前**取，keep 集合读失败绝不清理 |
 | 文件 `R/paste.rs:383-419`、`R/image_cache.rs:460-493` | `readObjects(forClasses:[NSURL.self], options:[.urlReadingFileURLsOnly: true])`；大小取自 `attributesOfItem` | S | 摘要：单个显示文件名，多个显示「N 个文件」；目录不递归统计；按路径列表去重 |
 | OCR `R/ocr_indexer.rs`、`R/ocr_local.rs:14-100` | `OCR`（@concurrent）：`RecognizeTextRequest`，`.accurate`，语言 `zh-Hans, zh-Hant, en-US`，开语言纠错，最多 4096 字符 | S | 语言必须显式指定；识别为无文字时写 `''`，之后不再重试；失败时留 NULL，下次启动重试；启动后串行补齐存量 |
 | 自写抑制 `R/suppress.rs`、`F/lib/clipboard-hotkeys.ts:37-50` | `Paster.write`：写完记下 `changeCount`，watcher 遇到这个值就跳过（2026-09-28 体检 A30：本 App 生成的新文字用 `write(string:record: true)` 自己记进历史，见 mac-native §5）；同时加 `org.nspasteboard.TransientType`，共存的 Tauri watcher 也会跳过（2026-09-26 改：只有划词还原加 TransientType）。划词期间 `watcher.pause`，结束后把 lastChangeCount 对齐到当前值 | S | 删掉所有时间窗常量（450/500/250/800ms）；跳过时仍更新指纹 |
-| 存储 `R/history_db.rs`，以及 `UC:280-331` 的 diff 持久化 | `Database`（libsqlite3 单连接 WAL）+ `ClipboardStore`（@Observable，内存数组，每次变更直接写一行） | M | 表结构见 §6。保留规则 `isRetained = 收藏 ∨ 片段 ∨ 已归组` 只在 Swift 里定义一处 |
+| 存储 `R/history_db.rs`，以及 `UC:280-331` 的 diff 持久化 | `Database`（libsqlite3 单连接 WAL）+ `ClipboardStore`（@Observable，内存数组，每次变更直接写一行） | M | 表结构见 §6。保留规则 `isRetained = 收藏 ∨ 片段`（~~∨ 已归组~~，体检 A1：分组并进收藏，归进收藏夹就是收藏）只在 Swift 里定义一处 |
 | 合并去重 `F/lib/cloud-sync.ts:19-95` | `ClipboardStore.insert` | S | text 比内容，file 比路径，image 比 hash。合并后用新 id 和新时间戳；收藏取 OR；备注优先保留非空；kind 和 groupId 保留旧值 |
-| 条数与天数上限 `F/lib/history-settings.ts:15-42` | 每次插入后、面板显示时各执行一次 | S | 默认 100 条 / 7 天，0 表示不限（2026-09-26 改：默认不限条数 / 7 天、图片 512 MB）；只裁普通历史；删掉 10 分钟定时器 |
+| 条数与天数上限 `F/lib/history-settings.ts:15-42` | 每次插入后、面板显示时各执行一次 | S | 默认 100 条 / 7 天，0 表示不限（2026-09-26 改：默认不限条数 / 7 天、图片 512 MB；体检 A4：去掉条数，只留「保留普通历史」1 天 / 1 周 / 1 个月 / 3 个月 / 1 年 / 永久）；只裁普通历史；删掉 10 分钟定时器 |
 | 退出与锁屏清空 `src-tauri/src/lib.rs:43-57`、`R/clear_on_lock.rs:45-74` | `applicationWillTerminate`；`DistributedNotificationCenter` 监听 `com.apple.screenIsLocked` | S | 只清普通历史及其图片 |
 | 浮层 `MOP:82-233`、`W:775-806` | `OverlayPanel`（见 §4）+ `NSHostingView` | L | 最大风险，M1 先打通 |
 | 点外关闭 / Esc / 图钉 / 兄弟窗口豁免 `MOP:112-175,300-420`、`W:821-892` | global + local 鼠标监听、`cancelOperation`、`clipboardHideOnUnfocus` | M | 监听成对安装、成对卸载；图钉状态持久化 |
 | 顶栏 `P:284-591` | 搜索框（包一层 `NSTextField`）、`Picker(.segmented)`（全部 / 收藏 / 片段）、计数徽标、图钉、齿轮 | S | 计数徽标的 4 种文案照搬 |
 | 工具栏 `F/components/ClipboardFilterToolbar`、`F/lib/clipboard-content-form.ts:54-122`、`parse-clipboard-color.ts:149-184`、`clipboard-source-app-filter.ts:41-57` | `Menu` / `Picker`；`ContentForm` 纯函数，配单测 | M | 形态优先级：颜色 > JSON > URL > 代码。类型、形态、来源 App 之间的联动重置照搬；选中的来源消失时自动退回「全部」；任何筛选变化都滚到顶部、聚焦搜索框、选中第 0 条 |
-| **分组筛选与管理** `F/components/ClipboardFilterToolbar:140-168`、`ClipboardGroupManageDialog`、`F/lib/clipboard-group-filter.ts:44-51`、`src/shared/services/clipboard-groups-db.ts` | 分组下拉 + 管理 sheet | S | 下拉项：全部分组 / 未分组 / 各分组（带数量，空组也显示）/「管理分组…」。管理对话框支持新建、重命名、删除。名称 trim 后截到 24 字，精确重名拦下；删除分组只解除归属；按创建时间升序 |
-| 列表 `F/components/ClipboardHistoryVirtualList`、`F/lib/clipboard-list-rows.ts:28-66` | `ScrollView` + `LazyVStack(pinnedViews: .sectionHeaders)` + `ScrollViewReader` | M | 无搜索词时按天分组并吸顶（今天 / 昨天 / M月D日 / YYYY年M月D日，用 `Date.FormatStyle`）；有搜索词时按相关度排序、不分组。新条目进来时，除非用户正在浏览（方向键、⌘数字、修饰键点击），选中项回到第 0 条（`UC:200-202`） |
-| **行渲染细则** `F/components/ClipboardItemCard:152-250`、`F/lib/clipboard-list-label.ts:4-31` | `ClipRowView` | S | 图标位优先级：色块 > 缩略图 > App 图标 > 类型图标。主文案：text 取前 120 字；image 为「图片 · W×H · 大小」；file 为文件名或「N Files: a, b」。备注第二行只在收藏或片段上显示。右侧依次：分组徽标（仅当分组筛选为「全部」时）、多选勾、前 9 行 ⌘1–9 提示（多选时隐藏）、带格式图标、收藏星 |
+| **分组筛选与管理** `F/components/ClipboardFilterToolbar:140-168`、`ClipboardGroupManageDialog`、`F/lib/clipboard-group-filter.ts:44-51`、`src/shared/services/clipboard-groups-db.ts` | 分组下拉 + 管理 sheet | S | ~~下拉项：全部分组 / 未分组 / 各分组（带数量，空组也显示）/「管理分组…」。管理对话框支持新建、重命名、删除。名称 trim 后截到 24 字，精确重名拦下；删除分组只解除归属；按创建时间升序~~ 体检 A1：分组并进收藏 = 命名收藏夹，筛选面板里放在「收藏」下面；管理收藏夹是键盘列表（↑↓、↩ / 双击就地改名、⌘⌫ 删除可 ⌘Z、拖动排序存 `position`）；名字超过 24 字拦住输入、不截断；删除后条目留在默认收藏 |
+| 列表 `F/components/ClipboardHistoryVirtualList`、`F/lib/clipboard-list-rows.ts:28-66` | `ScrollView` + `LazyVStack(pinnedViews: .sectionHeaders)` + `ScrollViewReader` | M | 无搜索词时按天分组并吸顶（今天 / 昨天 / M月D日 / YYYY年M月D日，用 `Date.FormatStyle`）；~~有搜索词时按相关度排序、不分组~~ 有搜索词也按天分组、时间顺序（体检 A6）。新条目进来时，除非用户正在浏览（方向键、⌘数字、修饰键点击），选中项回到第 0 条（`UC:200-202`） |
+| **行渲染细则** `F/components/ClipboardItemCard:152-250`、`F/lib/clipboard-list-label.ts:4-31` | `ClipRowView` | S | 图标位优先级：色块 > 缩略图 > App 图标 > 类型图标。主文案：text 取前 120 字；image 为「图片 · W×H · 大小」；file 为文件名或「N Files: a, b」。备注第二行只在收藏或片段上显示（体检 A3 起所有条目都能写、有就显示）。右侧依次：收藏夹徽标（仅当收藏夹筛选为「全部」时）、多选勾、前 9 行 ⌘1–9 提示（多选时隐藏）、带格式图标、收藏星 |
 | 点击语义 `F/lib/clipboard-multi-select.ts:52-85` | `onTapGesture` + `NSEvent.modifierFlags` | S | 普通点击 = 选中并粘贴；⌘ 点击切换选中；⇧ 点击从锚点重新计算区间；多选状态下普通点击只收起多选 |
 | 右键菜单 `ClipboardItemCard:254-327` | `.contextMenu` | S | 9 个菜单项及其出现条件照搬 |
 | 空态 `P:623-678` | `ContentUnavailableView` | S | 4 种文案，加「清除筛选」「新建片段」按钮，附快捷键提示（`ClipboardShortcutsHint`）；骨架屏不做 |
-| 键盘 `UC:874-960`、`P:434-487`、`F/lib/clipboard-hotkeys.ts:18-35` | 搜索框的 `control(_:textView:doCommandBy:)` 接 moveUp / moveDown / insertNewline / cancelOperation；⌘ 组合键在面板获得焦点时用本地 keyDown 监听处理 | M | ↑↓ 首尾循环，列表为空时不动。Enter 受 `clipboardPasteOnEnter` 控制；⌘Enter 总是粘贴，多选时合并粘贴。⌘1–9 按条目序号选中，`pasteOnEnter` 开启时同时粘贴。⌘A 全选可见条目。⌘D 收藏（多选时批量）。⌘⌫ / ⌘Del 删除。**⌘C 只复制**：不关面板、不置顶，面板内提示「已复制」；片段复制同样展开占位符并强制纯文本；搜索框有选中文字时 ⌘C 让给系统。输入法组字时 Enter 和方向键由输入法处理，不会传过来，不再需要吞键 hack。对话框打开时列表热键让位 |
-| 粘贴 `UC:649-708,827-872`、`R/paste.rs:105-307`、`src-tauri/src/platform/macos/mac_input.rs:24-155` | `Paster`：先写最简版本：隐藏面板（orderOut）→ 写剪贴板 → 检查 `AXIsProcessTrusted` → 发 ⌘V（`CGEventSource(.combinedSessionState)`，keyDown/keyUp 都设 `flags = .maskCommand`，投递到 `.cgSessionEventTap`），**不加任何等待** | M | 显式设置 flags 后，热键还按着的 ⇧ 不会混进去。Tauri 的「松修饰键 + 等 30ms」「图片或文件多等 100ms」「每个按键新建 HID 源」都先不搬；M1 手测某个 App 失败时才加对应延迟，并用 `ponytail:` 注释写明是哪个 App。始终注入普通 ⌘V；「纯文本粘贴」靠只写 `.string` 实现。粘贴后该条保持原 id、更新时间戳并置顶。多选全是文本时按复制先后（旧→新）用 `\n` 拼接一次粘贴，并生成一条新历史；含图片或文件时逐条粘贴，间隔 250ms。未授权时内容仍留在剪贴板，面板内给出提示 |
-| 片段 `F/lib/clipboard-snippet.ts:8-42` | 纯函数，配单测 | S | 占位符 `{date}`、`{clipboard}`、`{cursor}`，不区分大小写；片段粘贴强制纯文本。新建片段与已有同文本条目合并（`UC:1045-1063`） |
-| 收藏 / 备注 / 编辑 / 删除 `UC:512-1068` | SwiftUI `sheet` / `alert` + 面板内撤销条 | M | 取消收藏时：普通历史连带清备注，片段保留备注。备注对话框：Enter 保存，Shift+Enter 换行，留空即清除。编辑内容后丢弃富文本。删除后 5 秒内可撤销并插回原位置；收藏或片段单条删除要确认，仅归组的和批量删除不确认 |
-| 多选工具条 `F/components/ClipboardMultiSelectBar` | SwiftUI 工具条 | S | 合并粘贴或依次粘贴、批量收藏（全部已收藏则取消收藏）、归组、删除 |
-| 搜索 `F/lib/clipboard-keyword-search.ts:8-166`、`F/lib/clipboard-search-highlight.ts:31-51` | `Search` 纯函数（主线程），约 100 行照搬，配单测 | S | 多个词取 AND；备注权重 ×3；备注、来源 App、路径这类短字段允许子序列匹配，正文和 OCR 只认连续子串；正文只取前 8192 字 |
+| 键盘 `UC:874-960`、`P:434-487`、`F/lib/clipboard-hotkeys.ts:18-35` | 搜索框的 `control(_:textView:doCommandBy:)` 接 moveUp / moveDown / insertNewline / cancelOperation；⌘ 组合键在面板获得焦点时用本地 keyDown 监听处理 | M | ↑↓ 首尾循环，列表为空时不动。Enter 受 `clipboardPasteOnEnter` 控制；⌘Enter 总是粘贴，多选时合并粘贴。⌘1–9 按条目序号选中，`pasteOnEnter` 开启时同时粘贴。⌘A 全选可见条目。⌘D 收藏（多选时批量）。⌘⌫ / ⌘Del 删除。**⌘C 只复制**：不关面板、~~不置顶~~ 面板开着时列表不动、收起时再置顶（体检 A8），面板内提示「已复制」；片段复制同样展开占位符并强制纯文本；搜索框有选中文字时 ⌘C 让给系统。输入法组字时 Enter 和方向键由输入法处理，不会传过来，不再需要吞键 hack。对话框打开时列表热键让位 |
+| 粘贴 `UC:649-708,827-872`、`R/paste.rs:105-307`、`src-tauri/src/platform/macos/mac_input.rs:24-155` | `Paster`：先写最简版本：隐藏面板（orderOut）→ 写剪贴板 → 检查 `AXIsProcessTrusted` → 发 ⌘V（`CGEventSource(.combinedSessionState)`，keyDown/keyUp 都设 `flags = .maskCommand`，投递到 `.cgSessionEventTap`），**不加任何等待** | M | 显式设置 flags 后，热键还按着的 ⇧ 不会混进去。Tauri 的「松修饰键 + 等 30ms」「图片或文件多等 100ms」「每个按键新建 HID 源」都先不搬；M1 手测某个 App 失败时才加对应延迟，并用 `ponytail:` 注释写明是哪个 App。始终注入普通 ⌘V；「纯文本粘贴」靠只写 `.string` 实现。粘贴后该条保持原 id、更新时间戳并置顶。多选全是文本时按复制先后（旧→新）用 `\n` 拼接一次粘贴（片段展开占位符，体检 B1），并生成一条新历史；~~含图片或文件时逐条粘贴，间隔 250ms~~ 全是文件时一次写进全部文件、一次 ⌘V，其余按复制先后逐条、间隔 250ms、文本间补换行（体检 B3）。未授权时内容仍留在剪贴板，面板内给出提示 |
+| 片段 `F/lib/clipboard-snippet.ts:8-42` | 纯函数，配单测 | S | 占位符 `{date}`、`{clipboard}`、`{cursor}`，不区分大小写（体检 A7 加 `{time}` `{datetime}` `{weekday}` `{uuid}` `{clipboard:N}`）；片段粘贴强制纯文本；体检 C1 加「移出片段」。新建片段与已有同文本条目合并（`UC:1045-1063`） |
+| 收藏 / 备注 / 编辑 / 删除 `UC:512-1068` | SwiftUI `sheet` / `alert` + 面板内撤销条 | M | ~~取消收藏时：普通历史连带清备注，片段保留备注。备注对话框：Enter 保存，Shift+Enter 换行，留空即清除~~（体检 A3：取消收藏不清备注，所有条目都能写，单行 ↩ 保存）。编辑内容后丢弃富文本。~~删除后 5 秒内可撤销并插回原位置~~（体检 A2：删除进撤销栈，⌘Z 连着撤，面板收起 / 退出时才删）；收藏或片段单条删除要确认，仅归组的和批量删除不确认 |
+| 多选工具条 `F/components/ClipboardMultiSelectBar` | SwiftUI 工具条 | S | 合并粘贴 / 一起粘贴 / 依次粘贴（体检 B3）、批量收藏（全部已收藏则取消收藏）、放进收藏夹、删除 |
+| 搜索 `F/lib/clipboard-keyword-search.ts:8-166`、`F/lib/clipboard-search-highlight.ts:31-51` | `Search` 纯函数（主线程），约 100 行照搬，配单测 | S | 多个词取 AND；~~备注权重 ×3~~（体检 A6：只过滤不排序）；备注、来源 App、路径这类短字段允许子序列匹配，正文和 OCR 只认连续子串；正文只取前 8192 字 |
 | 预览 `F/components/ClipboardPreview`、`F/lib/clipboard-preview-actions.ts:14-45` | SwiftUI；长文本用包了一层的 `NSTextView`（TextKit 2） | M | 颜色色块；JSON 美化和字符串互转（只改视图，不改条目，切换条目时重置）；代码用等宽字体、不做高亮；图片；单个图片文件；文件列表最多 120 条；**搜索词高亮**。底栏：时间（今年内 `MM/DD HH:mm`，跨年 `YYYY/MM/DD HH:mm`）和来源 App。操作按钮最多直接显示 3 个，其余进「…」：翻译 / 在浏览器打开 / 复制纯文本 / 在访达中显示（`activateFileViewerSelecting`） |
 | 显示与隐藏 `P:223-277` | 面板的 show / hide 回调 | S | 显示时聚焦搜索框；**每次隐藏都重置**搜索、筛选、多选、选中项（回到第 0 条）和滚动位置，包括粘贴触发的隐藏。去掉 Tauri 的「粘贴除外」特例：原生在隐藏前已经拿到要粘贴的条目，不需要它 |
-| 设置 `src/features/settings/components/SettingsClipboardTab`、`src/shared/lib/clipboard-history-settings.ts:3-27` | `ClipboardTab`（`Form`） | S | 13 项（去掉 `clipboardDisableTextSelection`）+ 图片占用显示；取值范围照搬 `src-tauri/src/core/config.rs:1235-1247` |
+| 设置 `src/features/settings/components/SettingsClipboardTab`、`src/shared/lib/clipboard-history-settings.ts:3-27` | `ClipboardTab`（`Form`） | S | 13 项（去掉 `clipboardDisableTextSelection`）+ 图片占用显示；取值范围照搬 `src-tauri/src/core/config.rs:1235-1247`（体检 A4 A5 A11 起：保留普通历史一行、默认粘贴为纯文本、排除 App 列表，图片占用分「普通 · 留下的」） |
 | 热键与菜单 `src-tauri/src/core/hotkeys.rs:253-292`、`src-tauri/src/core/tray.rs:152-159` | `HotKeyCenter`（Carbon）+ `MenuBarExtra` | S | 热键回调的第一件事是快照前台 App；热键为 nil 时不注册 |
 | 复制即译钩子 `R/watcher.rs:322-325` | watcher 文本分支里回调 `TranslateCoordinator` | S | 只传通过了过滤的文本 |
 
@@ -1014,6 +1014,25 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   14. B54 强调色换黄 / 橙 / 绿 / 石墨：关于页「更新并重新打开」、引导「继续 / 开始使用」、速查表「完成」、剪贴板对话框「保存 / 创建 / 完成」的字是深色、看得清；速查表按 ↩ 关闭、Esc 也关闭。
   15. B55 给「划词翻译并替换」设键，在 Chrome 里选中文字快速连按两下：岛停在「已取消划词翻译并替换」，不再变成「翻译中…」一直挂着。
   16. D20 `defaults delete com.yy.kitty-tools.native.dev lastSeenVersion` 后重开：引导第二屏卡片下有勾选框「登录时自动打开，开机后快捷键就能用」（默认勾），点「开始使用」后 设置 › 通用「登录时自动打开」是开的；取消勾再点不会关掉已开的；从 DMG 里直接运行时是一行说明、没有勾选框；在通用页关掉登录项后从「关于 › 重看欢迎引导」重看，勾选框跟随当前状态（不勾），点「开始使用」不会又打开。
+- 体检第 2 批「剪贴板数据与模型」手测（2026-09-28，A1–A8 A11 B1–B6 C1 D4；浅色 / 深色、增强对比度、减弱动态效果、VoiceOver 各走一遍）：
+  1. A1 旧库升级：装新版前记下哪些条目在分组里、哪些只归组没收藏；装好后这些都带 ★、行上有收藏夹胶囊，⌘K / 筛选面板里收藏夹的顺序和原来按创建时间的一样；再重开一次没有变化（迁移幂等）。
+  2. A1 筛选面板：收藏夹紧跟在「收藏」下面，最后「管理收藏夹…」；⌘K「移到「X」」「移出收藏夹」「放进新收藏夹…」，移进去就带 ★，移出后 ★ 还在；⌘D 取消收藏的条目同时从收藏夹里出来、备注还在。
+  3. A1 管理收藏夹：↑↓ 选、选中行高亮是中性灰（增强对比度有粉描边）；输入框空着时 ↩ 就地改名，↩ 保存、Esc 取消（不关对话框），改完焦点回到下面输入框、↑↓ 还能用；双击一行也改名；⌘⌫ 和行尾「−」删除，不确认，条目留在收藏里，底栏「已删除收藏夹「X」· 撤销 ⌘Z」，对话框开着时 ⌘Z 和「撤销」都能恢复（位置、归属一起回来）；拖动一行排序，别的行让位，松手落位，⌘K 和筛选面板跟着变；新建 / 改名打到第 24 个字后再打不进去、有提示音、右边「24/24」，中文输入法组字中不被打断，确认后超出才整段退回；右键和 VoiceOver 动作里有上移 / 下移 / 改名 / 删除。
+  4. A1 把一条 8 天以上的收藏 ⌘D 取消：底栏「超过 7 天，收起面板后会被清理 · 撤销 ⌘Z」，这时复制点别的它也不会消失；⌘Z 恢复收藏；再取消后收起面板、重新呼出，它没了。移出片段（C1）同样。
+  5. A2 连删三批，⌘Z 连按三次按原位回来；删完等 5 秒提示淡出后 ⌘Z 仍有效；删完在别的 App 复制同样的内容，条目带着原来的收藏、备注回到最前，再 ⌘Z 不会出现两条；固定面板删了之后直接退出 App，重开后删掉的不回来；撤销时 VoiceOver 读「已恢复 N 条」。
+  6. A3 普通条目 ⌘K / 右键都有「备注…」：单行，↩ 保存、Esc 取消、清空后保存 = 删掉备注；有备注的行右侧显示备注；搜索备注里的字能搜到；备注不会让条目躲过保留天数。
+  7. A4 设置 › 剪贴板「保留普通历史」弹出菜单 1 天 / 1 周 / 1 个月 / 3 个月 / 1 年 / 永久，默认 1 周；原来设过 3 天 / 14 天的升级后显示 1 周 / 1 个月；条数那行没了；「图片当前占用」写「普通 X · 留下的 Y」。
+  8. A5 从网页复制带格式的字：↩ 粘出带格式；打开「默认粘贴为纯文本」后 ↩ / 双击 / ⌘1–9 粘纯文本，按住 ⌥ 底栏换成「⌥↩ 保留格式粘贴」，⌘K 和右键同名，⌥↩ 粘出带格式；片段一律纯文本。
+  9. A6 搜索只过滤：结果按时间新→旧、仍按天分组吸顶，标题数字是命中条数；搜索前后透镜照样跟着选中、不盖住别的行。
+  10. A7 新建片段「{weekday} {datetime} {uuid} {clipboard:2}」粘贴：星期几、日期时间、随机编号、历史第 2 条文字（跳过图片 / 文件 / 片段；连粘两次同一个含 {clipboard:1} 的片段，第二次不会粘出它自己的模板）；新建片段行和对话框提示列出全部占位符。
+  11. A8 选中第三条 ⌘C：面板里不动；收起再呼出，它在第一条；⌘V 粘出来的就是它。⌘C 之后再点一个色值块（或固定着去别的 App 复制一段）再收起：第一条是后来那份，⌘C 的那条不被挪上来。暂停记录时多选合并 ⌘C / 合并粘贴不多出新条目。
+  12. A11 设置 › 剪贴板排除列表是 App 图标 + 名字（本机没装的显示 bundle ID），「+」→ 正在运行的 App / 选择 App…（「应用程序」里多选）；排除 VS Code 后 Xcode 里复制照样记；改过旧列表的用户升级后 1Password 等默认项还在、自己加的 bundle ID 还在。
+  13. B1 片段范围 ⌘A → ↩：粘出的日期已展开、没有 {cursor}，新记的那条历史也是展开后的。
+  14. B2 收藏一堆大图超过「图片最多占用」后再截图：新截图还在历史里、能粘。
+  15. B3 选 3 个文件条目 ↩：访达里一次粘出全部文件；⌘C 后底栏「已复制 N 个文件」，访达 ⌘V 全部出来；文本 + 图片多选 ↩ 按复制先后逐条、文本之间有换行，⌘C 底栏橙色三角「只复制了第 1 条」（不是绿色对勾）；⌘K 首项和底栏动词一致（合并粘贴 / 一起粘贴 / 依次粘贴）。
+  16. B4 / B5 1Password 7、KeeWeb 复制的密码不进历史；复制 GitHub token（ghp_…）、AWS Access Key、JWT、私钥块不进历史；复制一句「ghp_ 开头的 token」照常记。
+  17. B6 iPhone 上复制、Mac 上接力：行上「其他设备 · 刚刚」，来源筛选里没有它；用会写来源标记的工具复制时来源是那个工具，不是当时的前台 App。
+  18. D4 菜单栏剪贴板节末尾「暂停记录剪贴板」：点一下岛「已暂停记录剪贴板」、菜单项打勾，之后复制的不进历史、复制即译不弹、面板底栏「⏸ 已暂停记录 · N 条」；再点岛「已恢复记录剪贴板」；暂停时退出重开自动恢复。
 
 **发布 0.1.0**（2026-09-27 改）：`macos/build-dmg.sh` 出 arm64 DMG 和 `_arm64.zip` → 本仓库 github.com/YyAdnBug/kitty-tools 发**正式 release、标 latest**（App 内更新读 `releases/latest`；不碰 Tauri 版的仓库，不跑 `pnpm release:verify`），两个文件都附上，**发布前须经用户确认**；tag `macos-v0.1.0` 打在 `main`。发布前先把 changelog.json 的 0.1.0 条目补全（启动器、截图、应用内更新等还没写进去）。
 
@@ -1096,6 +1115,15 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 | 56 | `app_update.rs:177-227`、`WhatsNewDialog` | 更新后第一次启动自动弹设置窗（切 .regular、抢前台，开机由登录项拉起时也弹） | 刘海岛「已更新到 x」+ 摘要，不开窗（体检 A29） |
 | 57 | `clipboard/suppress.rs`、`paste.rs:33-41` | 自家写剪贴板一律抑制，复制的译文、计算结果在剪贴板历史里找不到 | 本 App 生成的新文字经 `Paster.write(string:record: true)` 记进历史，历史里取出的、划词还原、面板里的色值块不记（体检 A30，mac-native §5） |
 | 58 | `tray.rs:522`、`SettingsGeneralTab/index.tsx:46` | 托盘「退出」、页头「开机自启」 | 「退出 Kitty Tools」、「登录时打开」（同系统设置的叫法，体检 B50 / B51） |
+| 59 | `useClipboard.ts` favorited + snippet + groupId、`ClipboardGroupManageDialog`、`clipboard-groups-db.ts:13,33` | 收藏 / 片段 / 分组三套保留并存；删分组只解除归属，组里的旧条目随后被天数上限静默删光；管理分组铅笔 + 垃圾桶 + 兼用输入框、按创建时间排、名字悄悄截到 24 字 | 分组并进收藏（命名收藏夹，归进去就是收藏），删收藏夹条目留在收藏、可 ⌘Z；键盘列表管理、拖动排序存 `position`；超过 24 字拦住不截断；取消收藏后超期的先提示、收起面板才清（体检 A1） |
+| 60 | `clipboard-delete.tsx:10` | 撤销删除只有 5 秒、只能撤一层；中途弹别的提示后 ⌘Z 又一直有效；退出时不提交；待删期间再复制会多出一条 | 撤销栈，⌘Z 连撤，面板收起 / 退出时才提交；再复制同内容拿回原条目（体检 A2） |
+| 61 | `useClipboard.ts:784-791,1011-1014`、`clipboard-item-note.ts` | 备注只给收藏 / 片段，取消收藏清备注；对话框说「Enter 保存，Shift+Enter 换行」 | 所有条目能写，取消收藏不清，单行 ↩ 保存（体检 A3） |
+| 62 | `SettingsClipboardTab`、`clipboard-history-settings.ts`、`config.rs:828-839` | 条数 / 天数 / MB 三个旋钮；「保留文本格式」关掉就不再采集格式 | 只留「保留普通历史」时间档位 + 图片兜底；格式总是采集，改「默认粘贴为纯文本」（体检 A4 A5） |
+| 63 | `clipboard-keyword-search.ts:8,105-121` | 按字段权重排序、有搜索词改平铺（分组 ↔ 平铺整批换行身份是透镜错位 bug 的根源） | 只过滤、始终按天分组（体检 A6） |
+| 64 | `clipboard-snippet.ts` | 占位符只有 date / clipboard / cursor；多选合并粘贴时原生版没展开占位符（回归） | 加 time / datetime / weekday / uuid / clipboard:N；合并时展开（体检 A7 B1） |
+| 65 | `useClipboard.ts:692` | ⌘C 不置顶，下次打开第一条和剪贴板对不上 | 面板开着不动，收起时置顶（体检 A8） |
+| 66 | `filter.rs:7-22`、`config.rs:671-679`、`privacy_markers.rs`、`source.rs:23-66` | 排除 App 关键词子串匹配（「Code」连 Xcode 一起排除）；隐私标记只有 3 种；敏感文本只认 sk- / bearer / 卡号；来源靠轮询时的前台 App 猜 | bundle ID 精确匹配 + App 列表（旧列表迁一次）；补 5 种标记、7 种密钥格式；先读来源标记、通用剪贴板记「其他设备」（体检 A11 B4 B5 B6） |
+| 67 | `image_budget.rs`、`paste.rs:209-211` | 图片预算把收藏图片也算进去，新截图一进来就被删；多选文件 ⌘C 只写第一个、粘贴逐个等 250 ms、依次粘贴顺序反、文本间没换行 | 只算普通图片、保住最新一张；全是文件一次写、一次 ⌘V，其余按复制先后、文本间补换行（体检 B2 B3） |
 
 ## 附录：评审处理记录
 
@@ -1153,5 +1181,6 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 - 其余决策点按推荐执行。
 - 启动器系统命令（2026-09-27，推翻 D2）：Alfred 的 18 个全做、锁屏用系统私有函数、只确认不可撤销的、中文名 + Alfred 关键词（四项都按推荐）。
 - 2026-09-28 体检拍板（方案页 https://claude.ai/artifact/1KuAQRafw2E3QYAM4LULFR ，用户「全部按推荐」）。第 1 批外壳基础与全局：A9 固定只管点别处不收起，Esc / ⌘W / 再按热键一律收起，剪贴板、启动器也认 ⌘W，剪贴板 ⌘P 切换固定，删掉设置里的「点击面板外部时关闭」；A15 输入翻译默认 ⌥T；A29 更新后不开设置窗，改弹刘海岛「已更新到 x」+ 摘要；A30 本 App 生成的新文字写剪贴板时同时记进历史（`Paster.write(string:record:)`），历史里取出的、划词还原、面板里的色值块不记；B15 ⌘, 直达对应设置页；B17 卡片表面 `CardSurface` + `Style.inputFill`，卡片一律不加阴影；B29 `Style.copiedHold` 1.2 s；B30 `Shell/HoverTracker` 共用；B44 识字 text.viewfinder、截图翻译 translate；B48 录制拒绝通用编辑键并播报；B49 剪贴板访问改 PermissionRow；B50 主菜单关于 / 帮助、「退出 Kitty Tools」；B51 侧栏翻译在截图前、「登录时打开」「欢迎引导」；B52 菜单通知改 selector 观察者；B53 发丝线增强对比度 1 pt（`Hairline` / `hairlineBorder`）；B54 主按钮 `BrandButtonStyle`、速查表「完成」= ↩；B55 静默替换取词后先看取消；D20 引导第二屏加「登录时自动打开」勾选框（默认勾）。
+- 2026-09-28 体检拍板（同一方案页，用户「全部按推荐」）第 2 批剪贴板数据与模型：A1 分组并进收藏（收藏 = 默认收藏夹，分组 = 命名收藏夹，保留规则只剩收藏 ∨ 片段；启动时迁移已归组的置收藏、`clip_groups` 加 `position`；⌘D 取消收藏同时移出收藏夹；删收藏夹不确认、条目留在收藏、⌘Z 可撤；管理收藏夹改键盘列表、拖动排序、24 字拦住不截断；取消收藏后超期的底栏提示、收起面板才清）；A2 删除进撤销栈、⌘Z 连撤，收起 / 退出时才提交，再复制同内容拿回原条目，撤销后播报；A3 备注所有条目都能写、取消收藏不清、不影响保留、单行对话框；A4 只留「保留普通历史」（1 天 / 1 周 / 1 个月 / 3 个月 / 1 年 / 永久，默认 1 周）+ 图片兜底（只算普通图片）；A5 格式总是采集，「默认粘贴为纯文本」开关，⌥↩ 反过来；A6 搜索只过滤、始终按天分组；A7 占位符 {time} {datetime} {weekday} {uuid} {clipboard:N}；A8 ⌘C 收起面板时置顶；A11 排除 App 改 bundle ID 列表；B1 合并粘贴展开片段；B2 图片预算只算普通图片；B3 多选文件一次粘、依次粘贴按复制先后补换行、动词一个函数给；B4 补 5 种隐私标记；B5 补 7 种密钥格式；B6 来源先读来源标记、通用剪贴板记「其他设备」；C1 移出片段；D4 菜单栏「暂停记录剪贴板」（不存盘）。实现时的一处取舍：备注输入框占位按实际行为写「搜索时能搜到」（方案原文「搜索时优先命中」和 A6 只过滤冲突）；「移出收藏夹」留在默认收藏，超期提示只在取消收藏 / 移出片段时出现。
 - 截图翻译（2026-09-24）：只用 Vision 本机识字；原文写剪贴板历史；默认热键 ⌥S。
 - 启动器 / 截图（2026-09-24）：启动器首版做 App、书签、直达、网页搜索、最近使用、内置动作、计算器、cb，文件搜索与 kill 放 M11；标注首版做矩形、箭头、文字、马赛克；附加功能只做取色（长截图、延时、美化 / 水印不做；长截图 2026-09-25 改为做，见 §10 D1）；做钉图，不做截图历史和钉图历史。

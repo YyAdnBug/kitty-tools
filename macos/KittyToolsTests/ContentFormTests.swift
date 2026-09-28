@@ -53,6 +53,33 @@ struct ContentFormTests {
     #expect(Snippet.expand("无占位符 {other}", clipboard: { nil }) == ("无占位符 {other}", 0))
   }
 
+  /// 体检 A7 新增的占位符：时间、日期时间、星期（中文）、UUID（每处各一个）、历史第 N 条（0 = 当前剪贴板），不分大小写；
+  /// 固定 now 和时区
+  @Test func snippetMorePlaceholders() throws {
+    let tokyo = try #require(TimeZone(identifier: "Asia/Tokyo"))
+    // 2026-09-26 13:05（周六，东京）
+    let date = Date(timeIntervalSince1970: 1_790_395_500)
+    let history = ["第一条", "第二条"]
+    let expanded = Snippet.expand(
+      "{TIME}|{datetime}|{weekday}|{clipboard:0}|{clipboard:2}|{clipboard:9}|{clipboard}",
+      clipboard: { "当前" }, history: { $0 <= history.count ? history[$0 - 1] : nil }, now: date,
+      timeZone: tokyo)
+    #expect(expanded.text == "13:05|2026-09-26 13:05|星期六|当前|第二条||当前")
+    let uuids = Snippet.expand("{uuid} {uuid}", clipboard: { nil }).text.split(separator: " ")
+    #expect(
+      uuids.count == 2 && uuids[0] != uuids[1]
+        && uuids.allSatisfy { UUID(uuidString: String($0)) != nil })
+    // 只用到历史时不读剪贴板
+    var asked = false
+    _ = Snippet.expand(
+      "{clipboard:1}",
+      clipboard: {
+        asked = true
+        return nil
+      }, history: { _ in "x" })
+    #expect(!asked)
+  }
+
   /// {cursor}：展开后它后面的字数（按字形簇，和 ← 一次挪一个字对应）；只认第一个，其余去掉
   @Test func snippetCursorOffset() {
     let result = Snippet.expand("Hi {Cursor}, see {clipboard}{cursor}!", clipboard: { "今天" })

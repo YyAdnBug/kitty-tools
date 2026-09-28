@@ -164,7 +164,7 @@ struct PreviewView: View {
         }
       } else {
         Pill(title: item.favorite ? "取消收藏" : "收藏", symbol: item.favorite ? "star.fill" : "star") {
-          model.store.toggleFavorite([item.id])
+          model.toggleFavorite([item.id])
         }
         .symbolEffect(.bounce, value: item.favorite)
       }

@@ -1,4 +1,4 @@
-// Search 单测：AND 分词、忽略大小写 / 全半角、按字段权重排序、同分按时间；命中摘录（行标题和透镜正文）。
+// Search 单测：AND 分词、忽略大小写 / 全半角、只过滤不排序（体检 A6：顺序和没有搜索词时一样）；命中摘录（行标题和透镜正文）。
 
 import Foundation
 import Testing
@@ -18,30 +18,35 @@ struct SearchTests {
 
   @Test func emptyQueryKeepsOrder() {
     let items = [item("a"), item("b")]
-    #expect(Search.rank(items, query: "  ") == items)
+    #expect(Search.filter(items, query: "  ") == items)
   }
 
   @Test func allTokensMustMatch() {
     let items = [item("hello world"), item("hello")]
-    #expect(Search.rank(items, query: "world HELLO").map(\.text) == ["hello world"])
+    #expect(Search.filter(items, query: "world HELLO").map(\.text) == ["hello world"])
   }
 
   @Test func widthAndCaseInsensitive() {
-    #expect(Search.rank([item("ＡＢＣ全角")], query: "abc").count == 1)
+    #expect(Search.filter([item("ＡＢＣ全角")], query: "abc").count == 1)
   }
 
-  @Test func noteOutranksBodyAndTiesGoNewestFirst() {
+  /// 只过滤：备注、正文、来源都能搜到，顺序保持传进来的（复制时间新→旧），备注命中不往前排；词可以分别命中不同字段
+  @Test func filterKeepsOrder() {
     let body = item("json 正文", ago: 1)
     let noted = item("别的", note: "json 备注", ago: 5)
+    var source = item("来自微信", ago: 7)
+    source.sourceName = "json 工具"
     let older = item("json 更早", ago: 10)
+    let items = [body, noted, source, older]
     #expect(
-      Search.rank([older, body, noted], query: "json").map(\.text) == ["别的", "json 正文", "json 更早"])
+      Search.filter(items, query: "json").map(\.text) == ["json 正文", "别的", "来自微信", "json 更早"])
+    #expect(Search.filter(items, query: "备注 别的").map(\.text) == ["别的"])
   }
 
   @Test func matchesImageText() {
     var image = ClipItem(kind: .image)
     image.ocrText = "截图里的发票号码"
-    #expect(Search.rank([image], query: "发票").count == 1)
+    #expect(Search.filter([image], query: "发票").count == 1)
   }
 
   @Test func excerptStartsNearFirstHit() throws {

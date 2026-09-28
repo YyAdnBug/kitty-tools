@@ -270,10 +270,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if yieldToOlderInstance() { return }
     isRunning = true
     Prefs.registerDefaults()
+    Prefs.migrate()
     AppAppearance.apply()  // 在任何浮层、设置窗、菜单出现之前
 
-    // 本 App 生成的新文字写剪贴板时同时记进历史（Paster.write(string:record:)，mac-native §5）
-    Paster.recordText = { [unowned self] in clipboardStore.recordOwnText($0) }
+    // 本 App 生成的新文字写剪贴板时同时记进历史（Paster.write(string:record:)，mac-native §5）；暂停记录时不记
+    Paster.recordText = { [unowned self] in
+      if !watcher.isUserPaused { clipboardStore.recordOwnText($0) }
+    }
     let launchedAt = Date.now
     clipboardStore.enforceLimits()
     clipboardStore.images.removeOrphans(
@@ -331,7 +334,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func applicationWillTerminate(_ notification: Notification) {
-    if isRunning, UserDefaults.standard.bool(forKey: Prefs.clipboardClearOnQuit) {
+    guard isRunning else { return }
+    // 面板固定着删了再退出：删掉的也要落库（撤销栈平时在面板收起时提交，体检 A2），⌘C 复制过的挪到最前
+    clipboardModel.reset()
+    if UserDefaults.standard.bool(forKey: Prefs.clipboardClearOnQuit) {
       clipboardStore.clearOrdinary()
     }
   }
@@ -711,6 +717,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   private func copyPNG(_ png: Data) async {
     Paster.write([.png: png])
+    guard !watcher.isUserPaused else { return }  // 菜单栏暂停了记录
     var item = ClipItem(kind: .image)
     guard let info = await clipboardStore.images.save(png, isPNG: true, id: item.id) else { return }
     item.image = info
@@ -834,6 +841,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
       }
       let color = NSColor(section.actions[0].color)
+      if section.actions.contains(.clipboard) {
+        let paused = watcher.isUserPaused
+        menu.addAction("暂停记录剪贴板", symbol: "pause.circle", color: color) { [unowned self] in
+          watcher.isUserPaused = !paused
+          clipboardModel.isRecordingPaused = !paused
+          // 菜单一关就看不出开没开；不存盘，重启 App 自动恢复记录（免得忘了关）
+          island.show(
+            paused ? "已恢复记录剪贴板" : "已暂停记录剪贴板",
+            detail: paused ? nil : "复制的内容不进历史，再点一次恢复", tone: .info,
+            symbol: paused ? "play.circle" : "pause.circle")
+        }
+        .state = paused ? .on : .off
+      }
       if section.actions.contains(.selectionTranslate) {
         let copyToTranslate = UserDefaults.standard.bool(forKey: Prefs.translateCopyToTranslate)
         menu.addAction("复制即译", symbol: "doc.on.doc", color: color) { [unowned self] in

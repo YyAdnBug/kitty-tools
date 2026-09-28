@@ -53,6 +53,11 @@ struct SnapshotProbeTests {
       copiedAt: Date.now.addingTimeInterval(-30))
     file.filePaths = ["/Applications/Safari.app", "/System/Library/CoreServices/Finder.app"]
     store.record(file)
+    var notes = ClipItem(
+      kind: .file, sourceName: "访达", sourceBundleID: "com.apple.finder",
+      copiedAt: Date.now.addingTimeInterval(-35))
+    notes.filePaths = ["/System/Applications/Notes.app"]
+    store.record(notes)
     // 图片：真的写一张 PNG 进图片目录（缩略图异步读它），带识别文字
     let picture = try ScreenshotTests.render(["Lens Bar", "透镜指令条"])
     let png = try #require(
@@ -78,8 +83,13 @@ struct SnapshotProbeTests {
     store.toggleFavorite([link.id])
     store.update([link.id]) { $0.note = "AppKit 文档" }
     let group = try #require(store.createGroup(named: "工作"))
+    store.createGroup(named: "读书笔记")
+    store.createGroup(named: String(repeating: "长", count: ClipGroup.maxName))
     let meeting = try #require(store.items.first { $0.text?.hasPrefix("会议") == true })
-    store.update([meeting.id]) { $0.groupID = group.id }
+    store.assign([meeting.id], to: group.id)
+    // 普通条目也能写备注（体检 A3），行右侧显示备注
+    let code = try #require(store.items.first { $0.text?.hasPrefix("import") == true })
+    store.update([code.id]) { $0.note = "SwiftUI 示例" }
     let model = ClipboardPanelModel(store: store)
     // 链接预览：摆好取到的样子（不联网），另一条停在「正在取」
     var preview = LinkPreview.Entry()
@@ -138,14 +148,35 @@ struct SnapshotProbeTests {
         "actions-groups",
         { m in
           m.showsActions = true
-          m.actionQuery = "分组"
+          m.actionQuery = "收藏夹"
         }
       ),
       ("multi", { m in m.multiSelection = Set(m.visibleItems.prefix(3).map(\.id)) }),
+      // 全是文件：「一起粘贴」（体检 B3）
+      (
+        "multi-files",
+        { m in m.multiSelection = Set(m.visibleItems.filter { $0.kind == .file }.map(\.id)) }
+      ),
+      // 管理收藏夹（体检 A1）：键盘列表 + 新建框；删掉一个后底栏「撤销 ⌘Z」在对话框下面也能点
+      ("manage-groups", { m in m.dialog = .manageGroups }),
+      (
+        "manage-groups-deleted",
+        { m in
+          m.dialog = .manageGroups
+          m.toast = .undo("已删除收藏夹「旅行」")
+        }
+      ),
+      // 取消收藏后已超过保留天数（体检 A1）
+      ("toast-expiring", { m in m.toast = .undo("超过 7 天，收起面板后会被清理") }),
+      // 菜单栏暂停了记录（D4）
+      ("paused", { m in m.isRecordingPaused = true }),
       ("snippets", { m in m.scope = .snippets }),
       ("dialog", { m in m.dialog = .note(link.id) }),
+      ("dialog-new-group", { m in m.dialog = .newGroup([link.id]) }),
       // ⌘P / 底栏图钉：底栏就地提示（体检 A9）
       ("toast-pinned", { m in m.toast = .message("已固定") }),
+      // 含图片的多选 ⌘C 只写了第 1 条：警告，不带绿色对勾（体检 B3）
+      ("toast-partial", { m in m.toast = .warning("只复制了第 1 条") }),
       ("empty-search", { m in m.query = "zzzz" }),
       (
         "snippets-empty-search",
@@ -158,6 +189,7 @@ struct SnapshotProbeTests {
     for dark in [false, true] {
       for (name, configure) in states {
         model.reset()
+        model.isRecordingPaused = false  // 不归 reset 管（App 级的开关）
         configure(model)
         try snapshot(
           ClipboardPanelView(model: model),
@@ -316,6 +348,14 @@ struct SnapshotProbeTests {
         to: "\(out)/settings-hotkeys-recording\(dark ? "-dark" : "").png")
     }
     hotKeys.recording = nil
+    // 剪贴板页拉长看到底：保留普通历史一行、默认粘贴为纯文本、排除的 App 列表（图标 + 名字，体检 A4 A5 A11）
+    navigation.page = .clipboard
+    for dark in [false, true] {
+      try snapshot(
+        SettingsRoot(navigation: navigation, page: pages) { AnyView(EmptyView()) },
+        size: NSSize(width: 780, height: 1500), dark: dark,
+        to: "\(out)/settings-clipboard-full\(dark ? "-dark" : "").png")
+    }
     // 侧栏选中是自绘的（SettingsWindow 文件头）：屏外窗口永远不是 key，上面那些都是后台的中性样子。这里用环境摆成
     // key，再把原生行强制成强调态（key 窗口里系统就这么标），看原生高亮确实没画、只剩自绘那块。
     // 跟随系统（本机「多色」= 品牌粉）和黄色（字换深色），深浅色各一张

@@ -1,32 +1,44 @@
 // 剪贴板历史：内存列表（按复制时间新→旧）+ clips 表持久化。所有改动都走这里：先改数组，再写库。
-// 同内容再次复制 = 把原条目挪到最前（保留 id、收藏、备注、分组、OCR），不另起一条。
+// 同内容再次复制 = 把原条目挪到最前（保留 id、收藏、备注、收藏夹、OCR），不另起一条；删掉还没提交的也拿回来。
+// 收藏夹（体检 A1）：收藏 = 默认收藏夹，clip_groups 是命名收藏夹（按 position 排，可拖动），归进收藏夹就是收藏。
+// ⌘Z 撤销栈（体检 A2）：删除、删收藏夹、取消收藏后超期的条目一批一批压栈，面板收起或退出 App 时才提交。
 
 import AppKit
 import OSLog
 import Observation
 
 @Observable final class ClipboardStore {
-  /// 条数 / 天数 / 图片占用上限；0 或 nil 表示不限
+  /// 普通历史的保留天数 / 图片占用上限；nil 或 0 表示不限（条数上限已去掉，体检 A4）
   struct Limits {
-    var maxCount = 0
     var maxAge: TimeInterval?
     var imageBytes = 0
 
+    /// 设置里的「保留普通历史」天数，0 = 永久
+    static var days: Int { UserDefaults.standard.integer(forKey: Prefs.clipboardRetentionDays) }
+
     static var current: Limits {
-      let defaults = UserDefaults.standard
-      let days = defaults.integer(forKey: Prefs.clipboardRetentionDays)
-      return Limits(
-        maxCount: defaults.integer(forKey: Prefs.clipboardHistoryMax),
+      Limits(
         maxAge: days > 0 ? TimeInterval(days) * 86_400 : nil,
-        imageBytes: defaults.integer(forKey: Prefs.clipboardImageBudgetMB) * 1_048_576)
+        imageBytes: UserDefaults.standard.integer(forKey: Prefs.clipboardImageBudgetMB) * 1_048_576)
     }
   }
 
+  /// ⌘Z 撤销栈的一批（体检 A2）
+  enum Undo {
+    /// 删掉的条目：已从列表拿掉，commitDeletion 时才删库删图片
+    case deleted([ClipItem])
+    /// 删掉的收藏夹（已删库）、它原来的位置和里面的条目（条目还是收藏，只解除了归属）
+    case group(ClipGroup, index: Int, members: [UUID])
+    /// 取消收藏 / 移出片段后已经超过保留天数的条目（改动前的样子）：提交前不被清理，撤销时改回来
+    case unretained([ClipItem])
+  }
+
   private(set) var items: [ClipItem] = []
-  /// 按创建时间升序
+  /// 命名收藏夹，按 position（拖动排的顺序）
   private(set) var groups: [ClipGroup] = []
-  /// 已从列表拿掉、等撤销窗口结束才真正删的条目
-  private(set) var pendingDeletion: [ClipItem] = []
+  /// 撤销栈：面板收起前 ⌘Z 一批一批连着撤；面板收起、退出 App 时 commitDeletion 清空
+  private(set) var undoStack: [Undo] = []
+  var canUndo: Bool { !undoStack.isEmpty }
   @ObservationIgnored let images: ImageStore
   @ObservationIgnored private let db: Database
   @ObservationIgnored private var isRecognizing = false
@@ -55,15 +67,37 @@ import Observation
       """)
     try db.execute("CREATE INDEX IF NOT EXISTS clips_copied_at ON clips(copied_at DESC)")
     try db.execute(
-      "CREATE TABLE IF NOT EXISTS clip_groups(id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at REAL NOT NULL)"
-    )
+      """
+      CREATE TABLE IF NOT EXISTS clip_groups(id TEXT PRIMARY KEY, name TEXT NOT NULL,
+        created_at REAL NOT NULL, position INTEGER NOT NULL DEFAULT 0)
+      """)
+    try Self.migrate(db)
     try reload()
   }
 
-  /// 从库里读分组和条目（启动时）
+  /// 旧库升级（幂等，每次启动都跑）：clip_groups 补 position 列（按创建时间排好）；
+  /// 分组并进收藏（体检 A1）：已归组的条目都是收藏
+  static func migrate(_ db: Database) throws {
+    let columns = try db.query("PRAGMA table_info(clip_groups)") { $0.text(1) }
+    if !columns.contains("position") {
+      try db.transaction {
+        try db.execute("ALTER TABLE clip_groups ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
+        try db.execute(
+          """
+          UPDATE clip_groups SET position =
+            (SELECT COUNT(*) FROM clip_groups AS g WHERE g.created_at < clip_groups.created_at)
+          """)
+      }
+    }
+    try db.execute("UPDATE clips SET favorite = 1 WHERE group_id IS NOT NULL AND favorite = 0")
+  }
+
+  /// 从库里读收藏夹和条目（启动时）
   func reload() throws {
     searchKeys = [:]
-    groups = try db.query("SELECT id, name, created_at FROM clip_groups ORDER BY created_at") {
+    groups = try db.query(
+      "SELECT id, name, created_at FROM clip_groups ORDER BY position, created_at"
+    ) {
       row in
       guard let id = row.text(0).flatMap(UUID.init(uuidString:)), let name = row.text(1),
         let created = row.double(2)
@@ -76,10 +110,11 @@ import Observation
     }.compactMap { $0 }
   }
 
-  /// 新采集到的内容入库（rich 是带格式文本的原始数据）。之后执行各项上限
+  /// 新采集到的内容入库（rich 是带格式文本的原始数据）。之后执行各项上限。
+  /// 同内容的条目（列表里的，或删了还没提交的）挪到最前，不另起一条
   func record(_ new: ClipItem, rich: Data? = nil) {
-    if let index = items.firstIndex(where: { $0.hasSameContent(as: new) }) {
-      var existing = items.remove(at: index)
+    let index = items.firstIndex { $0.hasSameContent(as: new) }
+    if var existing = index.map({ items.remove(at: $0) }) ?? reclaim(sameContentAs: new) {
       searchKeys[existing.id] = nil
       if existing.kind == .image, existing.id != new.id { images.delete(new.id) }
       existing.copiedAt = new.copiedAt
@@ -148,27 +183,66 @@ import Observation
     items.removeAll { ids.contains($0.id) }
   }
 
-  /// 可撤销的删除：先从列表拿掉，commitDeletion 时才真正删库删图片。上一批没提交的先提交
+  /// 可撤销的删除：先从列表拿掉、压进撤销栈（不提交上一批），commitDeletion 时才真正删库删图片
   func deleteWithUndo(_ ids: Set<UUID>) {
-    commitDeletion()
-    pendingDeletion = items.filter { ids.contains($0.id) }
+    let batch = items.filter { ids.contains($0.id) }
+    guard !batch.isEmpty else { return }
+    undoStack.append(.deleted(batch))
     items.removeAll { ids.contains($0.id) }
   }
 
-  /// 撤销：按复制时间插回原位
-  func undoDeletion() {
-    for item in pendingDeletion {
-      items.insert(item, at: items.firstIndex { $0.copiedAt < item.copiedAt } ?? items.endIndex)
+  /// ⌘Z：撤最近一批（删掉的按复制时间插回原位、删掉的收藏夹连归属一起回来、取消收藏的改回去），返回撤的是哪一批
+  @discardableResult
+  func undo() -> Undo? {
+    guard let last = undoStack.popLast() else { return nil }
+    switch last {
+    case .deleted(let batch):
+      for item in batch {
+        items.insert(item, at: items.firstIndex { $0.copiedAt < item.copiedAt } ?? items.endIndex)
+      }
+    case .group(let group, let index, let members):
+      groups.insert(group, at: min(index, groups.count))
+      write {
+        try db.execute(
+          "INSERT INTO clip_groups(id, name, created_at) VALUES (?, ?, ?)",
+          [group.id.uuidString, group.name, group.createdAt.timeIntervalSinceReferenceDate])
+      }
+      savePositions()
+      assign(Set(members), to: group.id)
+    case .unretained(let before):
+      let groupIDs = Set(groups.map(\.id))
+      for old in before {
+        update([old.id]) { item in
+          item.favorite = old.favorite
+          item.isSnippet = old.isSnippet
+          // 期间收藏夹被删掉（没撤销）就留在默认收藏
+          item.groupID = old.groupID.flatMap { groupIDs.contains($0) ? $0 : nil }
+        }
+      }
     }
-    pendingDeletion = []
+    return last
   }
 
+  /// 面板收起、退出 App 时：删掉的真正删库删文件，撤销栈清空（取消收藏后超期的条目下次清理时删）
   func commitDeletion() {
-    purge(pendingDeletion)
-    pendingDeletion = []
+    for case .deleted(let batch) in undoStack { purge(batch) }
+    undoStack = []
   }
 
-  /// 改条目的可编辑字段并落库（正文、收藏、备注、片段、分组）。正文改了就丢掉格式
+  /// 删了还没提交的同内容条目：从撤销栈里拿回来（再复制一次等于自动撤销，不新建一条）
+  private func reclaim(sameContentAs new: ClipItem) -> ClipItem? {
+    for (index, entry) in undoStack.enumerated() {
+      guard case .deleted(var batch) = entry,
+        let hit = batch.firstIndex(where: { $0.hasSameContent(as: new) })
+      else { continue }
+      let item = batch.remove(at: hit)
+      if batch.isEmpty { undoStack.remove(at: index) } else { undoStack[index] = .deleted(batch) }
+      return item
+    }
+    return nil
+  }
+
+  /// 改条目的可编辑字段并落库（正文、收藏、备注、片段、收藏夹）。正文改了就丢掉格式
   func update(_ ids: Set<UUID>, _ change: (inout ClipItem) -> Void) {
     for index in items.indices where ids.contains(items[index].id) {
       var item = items[index]
@@ -190,12 +264,45 @@ import Observation
     }
   }
 
-  /// 全部已收藏 → 全部取消，否则全部收藏。取消收藏时普通历史连带清掉备注（片段的备注保留）
-  func toggleFavorite(_ ids: Set<UUID>) {
+  /// 全部已收藏 → 全部取消（同时移出收藏夹，备注不动），否则全部收藏。返回取消后超期的条数（见 changeRetention）
+  @discardableResult
+  func toggleFavorite(_ ids: Set<UUID>) -> Int {
     let favorite = !items.filter { ids.contains($0.id) }.allSatisfy(\.favorite)
-    update(ids) { item in
+    return changeRetention(ids) { item in
       item.favorite = favorite
-      if !favorite && !item.isSnippet { item.note = nil }
+      if !favorite { item.groupID = nil }
+    }
+  }
+
+  /// 移出片段（体检 C1）：收藏、收藏夹、备注都不动。返回移出后超期的条数
+  @discardableResult
+  func removeFromSnippets(_ ids: Set<UUID>) -> Int {
+    changeRetention(ids) { $0.isSnippet = false }
+  }
+
+  /// 改收藏 / 片段这类决定保留的字段。改完不再留下、又已超过保留天数的条目压进撤销栈：面板收起前不清理、⌘Z 能改回来。
+  /// 返回这样的条数（界面据此提示「超过 N 天，收起面板后会被清理」）
+  @discardableResult
+  func changeRetention(
+    _ ids: Set<UUID>, limits: Limits = .current, now: Date = .now,
+    _ change: (inout ClipItem) -> Void
+  ) -> Int {
+    let before = items.filter { ids.contains($0.id) }
+    update(ids, change)
+    guard let maxAge = limits.maxAge else { return 0 }
+    let expired = before.filter { old in
+      old.isRetained && now.timeIntervalSince(old.copiedAt) > maxAge
+        && items.first { $0.id == old.id }?.isRetained == false
+    }
+    if !expired.isEmpty { undoStack.append(.unretained(expired)) }
+    return expired.count
+  }
+
+  /// 归进收藏夹就是收藏（不变式：有 groupID 的一定 favorite）；group 为 nil = 移出收藏夹，留在默认收藏
+  func assign(_ ids: Set<UUID>, to group: UUID?) {
+    update(ids) { item in
+      item.groupID = group
+      if group != nil { item.favorite = true }
     }
   }
 
@@ -209,10 +316,12 @@ import Observation
       item.text = text
       item.isSnippet = true
       record(item)
+      // 删了还没提交的同一段被 record 拿回来了：它原来不是片段
+      if let first = items.first, !first.isSnippet { update([first.id]) { $0.isSnippet = true } }
     }
   }
 
-  /// 新建分组：名称去空白后截到 24 字，空名或与已有分组重名返回 nil
+  /// 新建收藏夹（排在最后）：名称去空白，空名、超过 24 字或与已有的重名返回 nil
   @discardableResult
   func createGroup(named rawName: String) -> ClipGroup? {
     guard let name = validGroupName(rawName) else { return nil }
@@ -220,8 +329,11 @@ import Observation
     groups.append(group)
     write {
       try db.execute(
-        "INSERT INTO clip_groups(id, name, created_at) VALUES (?, ?, ?)",
-        [group.id.uuidString, name, group.createdAt.timeIntervalSinceReferenceDate])
+        "INSERT INTO clip_groups(id, name, created_at, position) VALUES (?, ?, ?, ?)",
+        [
+          group.id.uuidString, name, group.createdAt.timeIntervalSinceReferenceDate,
+          groups.count - 1,
+        ])
     }
     return group
   }
@@ -235,18 +347,41 @@ import Observation
     return true
   }
 
-  /// 删除分组只解除条目的归属，不删条目
+  /// 删除收藏夹：里面的条目留在默认收藏（只解除归属），不确认；压进撤销栈，⌘Z 连归属一起回来
   func deleteGroup(_ id: UUID) {
-    update(Set(items.filter { $0.groupID == id }.map(\.id))) { $0.groupID = nil }
-    groups.removeAll { $0.id == id }
+    guard let index = groups.firstIndex(where: { $0.id == id }) else { return }
+    let members = items.filter { $0.groupID == id }.map(\.id)
+    update(Set(members)) { $0.groupID = nil }
+    undoStack.append(.group(groups.remove(at: index), index: index, members: members))
     write { try db.execute("DELETE FROM clip_groups WHERE id = ?", [id.uuidString]) }
+    savePositions()  // 压实成 0…n-1：留着空洞的话，新建的排序号会和后面的撞上，重启后顺序变
   }
 
-  private func validGroupName(_ rawName: String, excluding id: UUID? = nil) -> String? {
-    let name = String(rawName.trimmingCharacters(in: .whitespacesAndNewlines).prefix(24))
-    guard !name.isEmpty, !groups.contains(where: { $0.name == name && $0.id != id }) else {
-      return nil
+  /// 拖动排序：把收藏夹挪到 index（按挪之前的下标算，越界就放两头）
+  func moveGroup(_ id: UUID, to index: Int) {
+    guard let from = groups.firstIndex(where: { $0.id == id }) else { return }
+    let group = groups.remove(at: from)
+    groups.insert(group, at: min(max(index, 0), groups.count))
+    savePositions()
+  }
+
+  private func savePositions() {
+    write {
+      try db.transaction {
+        for (position, group) in groups.enumerated() {
+          try db.execute(
+            "UPDATE clip_groups SET position = ? WHERE id = ?", [position, group.id.uuidString])
+        }
+      }
     }
+  }
+
+  /// 空名、超过 24 字（输入框已经拦住，不截断）或重名返回 nil
+  private func validGroupName(_ rawName: String, excluding id: UUID? = nil) -> String? {
+    let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !name.isEmpty, name.count <= ClipGroup.maxName,
+      !groups.contains(where: { $0.name == name && $0.id != id })
+    else { return nil }
     return name
   }
 
@@ -264,9 +399,9 @@ import Observation
     }
   }
 
-  /// 按关键词搜索（Search.rank + 折叠文本缓存）；空查询原样返回
+  /// 按关键词过滤（Search.filter + 折叠文本缓存），顺序不变（新→旧）；空查询原样返回
   func search(_ query: String) -> [ClipItem] {
-    Search.rank(items, query: query) { item in
+    Search.filter(items, query: query) { item in
       if let key = searchKeys[item.id] { return key }
       let key = Search.key(for: item)
       searchKeys[item.id] = key
@@ -306,33 +441,43 @@ import Observation
     return rows?.first ?? nil
   }
 
-  /// 按条数 / 天数 / 图片总占用清理普通历史（收藏、片段、已归组的不动）
+  /// 按保留天数 / 普通图片总占用清理普通历史（收藏、片段不动；取消收藏后超期、还能 ⌘Z 的也先不动）。
+  /// 图片只算普通图片（收藏 / 片段的不占额度，体检 B2），从最旧的删起，最新的一张普通图片（刚复制的）这一轮不删。
   /// 返回删了几条（设置页改小上限时用刘海说一声）
   @discardableResult
   func enforceLimits(_ limits: Limits = .current, now: Date = .now) -> Int {
-    let ordinary = items.filter { !$0.isRetained }
+    var undoable = Set<UUID>()
+    for case .unretained(let before) in undoStack { undoable.formUnion(before.map(\.id)) }
+    let ordinary = items.filter { !$0.isRetained && !undoable.contains($0.id) }
     var doomed = Set<UUID>()
-    if limits.maxCount > 0 { doomed.formUnion(ordinary.dropFirst(limits.maxCount).map(\.id)) }
     if let maxAge = limits.maxAge {
       doomed.formUnion(ordinary.filter { now.timeIntervalSince($0.copiedAt) > maxAge }.map(\.id))
     }
     if limits.imageBytes > 0 {
-      var total = items.reduce(0) { sum, item in
-        doomed.contains(item.id) ? sum : sum + (item.image?.byteCount ?? 0)
-      }
-      for item in ordinary.reversed() where total > limits.imageBytes {
-        guard let image = item.image, !doomed.contains(item.id) else { continue }
+      let images = ordinary.filter { $0.image != nil && !doomed.contains($0.id) }
+      var total = images.reduce(0) { $0 + ($1.image?.byteCount ?? 0) }
+      for item in images.dropFirst().reversed() where total > limits.imageBytes {
         doomed.insert(item.id)
-        total -= image.byteCount
+        total -= item.image?.byteCount ?? 0
       }
     }
     delete(doomed)
     return doomed.count
   }
 
-  /// 退出 / 锁屏、设置里「立即清空」时清空普通历史；返回删了几条
+  /// 图片占用：普通历史的（算进「图片最多占用」）和留下的（收藏 / 片段）分开算
+  var imageUsage: (ordinary: Int, retained: Int) {
+    items.reduce(into: (0, 0)) { sum, item in
+      guard let bytes = item.image?.byteCount else { return }
+      if item.isRetained { sum.1 += bytes } else { sum.0 += bytes }
+    }
+  }
+
+  /// 退出 / 锁屏、设置里「立即清空」时清空普通历史；返回删了几条。
+  /// 先提交撤销栈：删掉的普通条目不能在清空后再 ⌘Z 回来，取消收藏后等清理的也一并清掉
   @discardableResult
   func clearOrdinary() -> Int {
+    commitDeletion()
     let doomed = Set(items.filter { !$0.isRetained }.map(\.id))
     delete(doomed)
     return doomed.count

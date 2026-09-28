@@ -24,7 +24,9 @@ struct ClipItem: Identifiable, Hashable, Sendable {
   var copiedAt = Date.now
   var favorite = false
   var isSnippet = false
+  /// 备注：所有条目都能写，搜索能搜到；不影响保留（体检 A3）
   var note: String?
+  /// 所在的收藏夹（命名收藏夹，体检 A1）。不变式：有 groupID 的条目一定 favorite = true
   var groupID: UUID?
 
   struct ImageInfo: Hashable, Sendable {
@@ -39,9 +41,9 @@ struct ClipItem: Identifiable, Hashable, Sendable {
     case rtf, html
   }
 
-  /// 用户显式留下的条目（收藏 / 片段 / 已归组）：条数上限、保留天数、退出与锁屏清空都不动它们。
-  /// 这条规则只在这里定义一次
-  var isRetained: Bool { favorite || isSnippet || groupID != nil }
+  /// 用户显式留下的条目（收藏 / 片段；收藏夹里的都是收藏）：保留天数、图片占用、退出与锁屏清空都不动它们。
+  /// 这条规则只在这里定义一次（体检 A1：分组并进收藏，备注不算留下）
+  var isRetained: Bool { favorite || isSnippet }
 
   /// 是否是同一份剪贴板内容：文本比正文，文件比路径列表，图片比 PNG 哈希
   func hasSameContent(as other: ClipItem) -> Bool {
@@ -54,8 +56,11 @@ struct ClipItem: Identifiable, Hashable, Sendable {
   }
 }
 
-/// 用户自建的剪贴板分组
+/// 命名收藏夹（库里仍叫 clip_groups）：收藏 = 默认收藏夹，这些是用户建的（体检 A1）
 struct ClipGroup: Identifiable, Hashable, Sendable {
+  /// 名字最多几个字（超出时输入框拦住并显示「24/24」，不悄悄截断）
+  static let maxName = 24
+
   let id: UUID
   var name: String
   let createdAt: Date

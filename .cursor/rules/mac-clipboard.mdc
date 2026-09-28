@@ -9,22 +9,27 @@ alwaysApply: false
 代码：`Clipboard/`（ClipItem、ClipboardStore、ClipboardWatcher、ClipboardFilter、ImageStore、OCR、Search、ContentForm、Snippet、ClipboardPanelModel + 各视图）、`Storage/Database.swift`。
 
 ## 1. 数据
-- 表 `clips`（一行一条，rich_data 只在粘贴时读）+ `clip_groups`；时间存 `Date.timeIntervalSinceReferenceDate`（REAL，读写无精度损失；存 1970 秒会有浮点误差，读回不相等）。
+- 表 `clips`（一行一条，rich_data 只在粘贴时读）+ `clip_groups`（命名收藏夹，`position` 是拖动排的顺序）；时间存 `Date.timeIntervalSinceReferenceDate`（REAL，读写无精度损失；存 1970 秒会有浮点误差，读回不相等）。
 - 列表按 `copied_at DESC, rowid DESC` 读：同一时刻的两条，后插入的在前，和内存顺序一致。
-- 「留下的条目」只看 `ClipItem.isRetained`（收藏 ∨ 片段 ∨ 已归组），条数 / 天数 / 图片占用上限、退出与锁屏清空都只动普通历史。
-- 同内容再次复制 = 原条目挪到最前（保留 id、收藏、备注、分组、OCR），格式以最近一次为准。
+- **收藏夹**（体检 A1，2026-09-28 拍板：分组并进收藏，对标 Paste 的 Pinboard）：收藏 = 默认收藏夹，`clip_groups` 是命名收藏夹。不变式：有 `groupID` 的条目一定 `favorite`（`ClipboardStore.assign` 归进去时置收藏）；⌘D 取消收藏 = 同时移出收藏夹；「移出收藏夹」留在默认收藏；删除收藏夹只解除归属、条目留在默认收藏，不确认、进撤销栈（⌘Z 连位置和归属一起回来）。名字去空白、不重名、最多 24 字（`ClipGroup.maxName`；输入框 `CommandTextField.maxLength` 拦住超出的那次输入并显示「24/24」，不截断）。
+- 「留下的条目」只看 `ClipItem.isRetained`（收藏 ∨ 片段；备注不算），保留天数 / 图片占用上限、退出与锁屏清空都只动普通历史；图片预算只算普通图片，从最旧的删起，最新的一张普通图片（刚复制的）这一轮不删（体检 B2）。没有条数上限（体检 A4）。
+- 旧库升级在 `ClipboardStore.migrate`（每次打开都跑，幂等）：`clip_groups` 补 `position`（按创建时间排好），已归组没收藏的条目置收藏。改表结构只在这里加，配迁移单测（`migratesOldDatabase`）。
+- 同内容再次复制 = 原条目挪到最前（保留 id、收藏、备注、收藏夹、OCR），格式以最近一次为准；删了还没提交的同内容条目从撤销栈里拿回来（等于自动撤销），不新建。
 - 图片存 `images/<id>.png`，按 PNG 字节 SHA256 去重；编码 / 缩略图 / OCR 都在 `@concurrent`，结果回主线程写库。
-- 删除走 `deleteWithUndo` → 面板收起、下一次删除或 toast 到期时 `commitDeletion` 才删库删文件。
+- **撤销栈**（体检 A2，对齐翻译历史）：`ClipboardStore.undoStack` 一批一批压（删掉的条目、删掉的收藏夹、取消收藏 / 移出片段后已超过保留天数的条目改动前的样子），⌘Z 连着撤、不限时；只在面板收起（`reset()`）和退出 App（`applicationWillTerminate`）时 `commitDeletion` 删库删文件；`clearOrdinary`（锁屏、设置里立即清空）先提交撤销栈，清空后不能再 ⌘Z 找回。取消收藏后超期的条目在提交前不被 `enforceLimits` 清理，底栏「超过 N 天，收起面板后会被清理 · 撤销 ⌘Z」。
 
 ## 2. 采集（ClipboardWatcher）
-- 只能轮询 `changeCount`（0.3s）。顺序：自家写入（`Paster.ownChangeCount`）→ nspasteboard.org 隐私标记 → 排除 App（名称或 bundle ID 关键词）→ 文件 → 文本（附 RTF/HTML，≤2MB）→ PNG/TIFF。
+- 只能轮询 `changeCount`（0.3s）。顺序：自家写入（`Paster.ownChangeCount`）→ 隐私标记（nspasteboard.org 三种 + 1Password 7、TypeIt4Me、Keyboard Maestro、KeeWeb 等常见的，体检 B4）→ 来源 → 排除 App（按 bundle ID 精确匹配，体检 A11）→ 文件 → 文本（总是附 RTF/HTML，≤2MB；粘贴时用不用看「默认粘贴为纯文本」，体检 A5）→ PNG/TIFF。
+- 来源（体检 B6，`ClipboardWatcher.source` 纯函数）：带 `com.apple.is-remote-clipboard` 的是「其他设备」（没有 bundle ID，来源筛选里不列）；写入方打了 `org.nspasteboard.source` 就用它；都没有才用轮询时的前台 App（推测值）。
+- 排除 App 存 `clipboardExcludedBundleIDs`（默认 1Password 8 / 7、Bitwarden、KeePassXC、钥匙串访问、密码）；旧版关键词列表（`clipboardExcludedApps`）在 `Prefs.migrate` 里迁一次：含「.」的留下，名称关键词丢掉，并上默认列表。设置页是 App 列表（图标 + 名字，「+」从正在运行的 App 或「应用程序」里选）。
+- 菜单栏「暂停记录剪贴板」（D4）：`ClipboardWatcher.isUserPaused`，和划词用的 `pause()` / `resume()` 分开（取词还原后不能把用户的暂停也解除）；暂停时 changeCount 照走但不记、不触发复制即译，本 App 自己记的文字和截图也不记，面板里合并粘贴 / 一起粘贴 / ⌘C 合成的新条目也不记（`ClipboardPanelModel.remember`）；不存盘，重启自动恢复。
 - 启动时直接对齐当前 changeCount，不记启动前的内容。
 - App Nap 实测（空闲 11 分钟后 1 秒内连复制 3 条全部入库）：**不需要** `beginActivity`，别加。
 - **自家生成的新文字**（译文、原文、计算结果、路径 / 网址、替换原文、取色、识字、复制图中文字…）经 `Paster.write(string:record: true)` → `recordOwnText` 记进历史（过敏感文本过滤、已有同文只挪到最前、来源为空）；从历史取出的条目、划词还原、面板开着时透镜 / ⌘Y 里的色值块不记（体检 A30，细则见 mac-native §5）。
-- 敏感文本：`sk-` / `bearer ` 后的 token 要求词边界 + 字符集 + 长度 + 含数字（`sk-proj-…` 也拦，普通单词跟在 bearer 后不拦），卡号整段 13–19 位且过 Luhn。
+- 敏感文本：`sk-` / `bearer ` 后的 token 要求词边界 + 字符集 + 长度 + 含数字（`sk-proj-…` 也拦，普通单词跟在 bearer 后不拦），卡号整段 13–19 位且过 Luhn；固定前缀 + 长度的常见密钥（GitHub `ghp_` / `github_pat_`、AWS `AKIA`、Slack `xox?-`、Google `AIza`、私钥块、JWT，前面要求 Unicode 词边界，先用前缀字符串粗筛再跑正则，体检 B5）。
 
 ## 3. 搜索
-- `Search`：空白分词 AND，大小写 / 全半角 / 变音符号不敏感；权重 备注 3 > 正文 / 图片文字 / 路径 2 > 来源 1。
+- `Search.filter`：空白分词 AND，大小写 / 全半角 / 变音符号不敏感；搜备注、正文、图片文字、路径、来源。**只过滤、不排序**（体检 A6）：结果保持复制时间新→旧，照样按天分组（标题后的数字是命中条数）。
 - 图片识别文字只用来搜索：透镜、行标题平时不显示（用户 2026-09-27 嫌干扰），有搜索词且靠它命中时行标题接命中那段；全文只在 ⌘Y 大卡里；⌘K / 右键「复制图中文字」（`copyRecognizedText`，写剪贴板并记一条文本进历史）。
 - 必须走 `ClipboardStore.search`（折叠后 UTF-8 字节缓存 + `memmem`）：直接 `range(of:options:)` 5000 条要 1 秒，缓存后 9ms（Debug）。改条目正文、备注、OCR、来源的地方都要清对应的 `searchKeys`。
 
@@ -32,25 +37,28 @@ alwaysApply: false
 | 输入 | 行为 |
 |---|---|
 | 单击 / ⌘单击 / ⇧单击 | 选中（透镜滑过去）/ 切换勾选 / 从锚点整段选 |
-| 双击、↩ | 粘贴；双击以**第一下选中的条目**为准（透镜收放会让行位移，第二下可能落到别的行上）。多选全是文本 → 按复制先后换行合并成一条并记新历史；含图片文件 → 逐条粘贴间隔 250ms |
-| ⌥↩ / ⌘↩ / ⌘C | 纯文本粘贴 / 仅复制 / 仅复制（搜索框有选中文字时 ⌘C 交还系统） |
+| 双击、↩ | 粘贴；双击以**第一下选中的条目**为准（透镜收放会让行位移，第二下可能落到别的行上）。多选一律按复制先后（体检 B3，`PasteMode`，⌘K 首项和底栏同一个动词）：全是文本 →「合并粘贴」换行合成一条（片段展开占位符，B1）并记新历史；全是文件 →「一起粘贴」一次写进全部文件 URL（去重）、一次 ⌘V，也记一条；其余（含图片，或文本和文件混着）→「依次粘贴」逐条间隔 250ms、文本后面补换行 |
+| ⌥↩ / ⌘↩ / ⌘C | 纯文本粘贴（设置里打开「默认粘贴为纯文本」后 ↩ / 双击 / ⌘1–9 走纯文本、⌥↩ 变「保留格式粘贴」，底栏按住 ⌥、⌘K、右键同步换名，体检 A5）/ 仅复制 / 仅复制（搜索框有选中文字时 ⌘C 交还系统）。复制时面板里不动，收起面板时再把它挪到最前（合成的记新历史，时间按收起那一刻；暂停记录时不记），下次打开第一条就是剪贴板里的（体检 A8）；收起时剪贴板 changeCount 已经变了（之后复制了图中文字、点了色值块、固定着去别处复制）就不挪；含图片的混合多选 ⌘C 只写第 1 条，底栏橙色警告「只复制了第 1 条」（不带绿色对勾）；全是文件时「已复制 N 个文件」 |
 | ⌘1–9 | 直接粘贴第 N 条 |
 | ↑↓ / ⇧↑↓ | 移动（透镜跟着走）/ 扩展多选（有勾选时透镜收起） |
-| Tab | 开 / 关筛选面板（范围、类型、形态、来源、分组，最后「管理分组…」）；开着时搜索框用来过滤筛选项，↑↓ 选、↩ 应用（对已生效的项 ↩ = 取消），应用后生成标签并关面板 |
+| Tab | 开 / 关筛选面板（收藏、各个收藏夹（紧跟在「收藏」下面，按拖动顺序）、片段、类型、形态、来源，最后「管理收藏夹…」）；开着时搜索框用来过滤筛选项，↑↓ 选、↩ 应用（对已生效的项 ↩ = 取消），应用后生成标签并关面板 |
 | ⇧Tab | 范围在 全部 → 收藏 → 片段 之间循环 |
 | → / ← | 光标在搜索词末尾（或搜索为空）且有选中项时 → 打开 ⌘K；⌘K 开着且过滤词为空时 ← 关掉；其余照常移光标 |
 | ⌫ | 搜索为空且有标签时：第一下选中最后一个标签（待删），第二下删掉；其余照常删字 |
-| ⌘D ⌘⌫ ⌘Z ⌘E ⌘N ⌘A ⌘, | 收藏 / 删除（不确认）/ 撤销删除 / 编辑 / 新建片段 / 全选（搜索框为空时）/ 设置 › 剪贴板（底栏齿轮同样直达） |
+| ⌘D ⌘⌫ ⌘Z ⌘E ⌘N ⌘A ⌘, | 收藏 / 取消收藏（同时移出收藏夹，备注不动）/ 删除（不确认）/ 撤销（撤销栈，收起面板前连着撤）/ 编辑 / 新建片段 / 全选（搜索框为空时）/ 设置 › 剪贴板（底栏齿轮同样直达） |
 | ⌘P / ⌘W | 固定 / 取消固定（和底栏图钉同一个偏好 `clipboardHideOnUnfocus`，底栏就地提示「已固定 / 已取消固定」；固定只管点外面不收起）/ 关闭（固定着也关，`OverlayPanel` 统一处理；对话框开着时先只关对话框，同 Esc，免得没保存的字随面板丢掉；⌘Y 大卡开着时 ⌘P 的提示走岛） |
 | ⌘K | 打开 / 关掉操作面板（全部操作；搜索框这时用来过滤操作，↑↓ ↩ 选择执行；没有选中项时不打开） |
 | ⌘Y | 放大预览（从透镜长出来的完整检查器；↑↓ 照样换条目，它跟着换） |
 | Esc | 缩回放大预览 → 关筛选面板或操作面板 → 关对话框 → 取消标签待删 → 清空搜索词 → 取消多选 → 关面板（固定着也关；标签不被 Esc 清掉，隐藏时 `reset()` 才清） |
 - 鼠标：悬停只出 `fill.hover`，**不移动透镜**；点标签的 × 移除、点标签本身开筛选面板；底栏的提示、多选动词都是按钮；右键菜单有全部操作。
 - 焦点始终在搜索框（`CommandTextField`）；编辑命令走 doCommandBy（Tab / ⇧Tab / → / ← / ⌫ 是 `insertTab:` / `insertBacktab:` / `moveRight:` / `moveLeft:` / `deleteBackward:`，条件不满足就交还字段编辑器；输入法组字期间系统不回调这些键），⌘ 组合键走 `OverlayPanel.keyEquivalentHandler`。启动器里 Tab 仍是补全，别把两边的 Tab 合成一套。
-- 范围、类型、形态、来源、分组只以搜索框里的标签出现（底层仍是 model 的 scope / kind / form / sourceBundleID / groupFilter）；联动不变：选了形态自动把类型切到文本，选图片或文件清掉形态；来源候选按条数从多到少，某来源的条目都没了自动清掉这个筛选。
-- 对话框画在面板里（`DialogOverlay`，从搜索栏下沿落下），不开 sheet 窗口；输入框用 `isDialogField`，关闭后焦点回搜索框。
-- 每次隐藏都 `reset()`：搜索、筛选标签、待删标签、筛选 / 操作面板、多选、对话框，选中回第一条，并提交未撤销的删除。
-- 片段占位符 `{date}` `{clipboard}` `{cursor}` 粘贴时展开、一律按纯文本。`{cursor}`（N17，Alfred / Raycast 做法）：`Snippet.expand` 同时返回「`{cursor}` 之后的字符数」（配单测），单条粘贴落地后按这么多次 ← 把光标挪回去（按键见 mac-overlay-panel §5）；超过 500 字、多条合并粘贴、没授权辅助功能时不挪。
+- 范围、类型、形态、来源、收藏夹只以搜索框里的标签出现（底层仍是 model 的 scope / kind / form / sourceBundleID / groupFilter）；联动不变：选了形态自动把类型切到文本，选图片或文件清掉形态；来源候选按条数从多到少，某来源的条目都没了自动清掉这个筛选。
+- **备注**（体检 A3）：所有单条都能写（⌘K / 右键「备注…」，不加专用快捷键），行右侧有备注就显示备注（secondary）；取消收藏、移出收藏夹不清备注；备注不影响保留。对话框单行（`CommandTextField`），↩ 保存、Esc 取消、空着保存 = 清除。
+- **片段**：⌘K / 右键「存为片段」「移出片段」（体检 C1，多选时有片段就给批量移出；收藏、收藏夹、备注都不动）。
+- **管理收藏夹**（体检 A1）：对话框里是键盘列表（行 28、中性 `fill.selected`、行尾 11 pt 条数和「−」）+ 下面「新建收藏夹」输入框。焦点一直在输入框：↑↓ 移动选中，输入框空着时 ↩ 就地改名、⌘⌫ 删除（有字时 ↩ 新建）；双击一行也改名，改名框 ↩ 保存、Esc 取消，关掉后焦点回到新建框（`CommandTextField` 的对话框输入框消失时把焦点还给它之前的输入框）；拖动一行排序（跟手不动画，别的行 `snap` 让位），右键和无障碍动作里有上移 / 下移。删掉后底栏「已删除收藏夹「X」· 撤销 ⌘Z」，对话框开着时 ⌘Z 和「撤销」按钮都能用。
+- 对话框画在面板里（`DialogOverlay`，从搜索栏下沿落下），不开 sheet 窗口；输入框用 `isDialogField`，关闭后焦点回到它之前的输入框（多数是搜索框）。
+- 每次隐藏都 `reset()`：搜索、筛选标签、待删标签、筛选 / 操作面板、多选、对话框，选中回第一条，提交撤销栈（删库删文件），⌘C 复制过的挪到最前（剪贴板没被换掉时）。
+- 片段占位符（体检 A7，不分大小写）`{date}` `{time}` `{datetime}` `{weekday}`（星期六）`{uuid}` `{clipboard}` / `{clipboard:0}`（当前剪贴板）`{clipboard:N}`（N = 1…9，全部历史里第 N 条文本，跳过图片、文件和片段——片段是模板，刚粘过的排在最前，不跳过会取到自己）`{cursor}` 粘贴时展开、一律按纯文本；只在用到时读剪贴板 / 历史，单测固定 now 和时区。`{cursor}`（N17，Alfred / Raycast 做法）：`Snippet.expand` 同时返回「`{cursor}` 之后的字符数」（配单测），单条粘贴落地后按这么多次 ← 把光标挪回去（按键见 mac-overlay-panel §5）；超过 500 字、多条合并粘贴、没授权辅助功能时不挪。
 - 粘贴 / 复制前先查条目还能不能用（`ClipboardPanelModel.unavailable`）：图片的 PNG 丢了、文件全都被移走时写进剪贴板的是空的，⌘V 会粘出剪贴板里原来的内容，所以不写、不粘，刘海岛报「没能粘贴 / 没能复制」；「在访达中显示」文件都不在了也用岛说。没授权辅助功能时只复制第一条，警告岛「已复制到剪贴板」（点系统授权框会收掉没固定的面板，底栏提示会丢）。⌘Y 大卡开着时复制、删除的结果改走岛（底栏被大卡盖住）；⌘N 新片段被当前范围 / 筛选 / 搜索挡住时岛说「已存为片段」。
 - ⌘Y 放大预览（`QuickLookView`）：单独一个 `OverlayPanel` 实例，内容是完整检查器（`PreviewView` enlarged：来源 App 彩色页眉、页脚胶囊、可选中文字；图片带识别文字，单个文件嵌 `QLPreviewView`、多个文件 `FileGrid`）；起点 frame 由选中高亮按前缀和上报（= 透镜的底，透镜关掉 / 多选时是选中行那一格；按选中项换一个上报视图，一出现就报终点位置，换下去的用 `.transition(.identity)` 立刻拿掉——跟着选中动画淡出的话，↓ 带出滚动时它还在报旧 id、拿掉时再把新的清成 nil；不交给行报：行换分组时新旧两行并存，旧行退场会把位置冲掉）。**不用系统 `QLPreviewPanel`**：它没有 `.nonactivatingPanel`，当 key 时键盘不再归本 App 的非激活浮层、点它会激活本 App（前台 App 变成自己，粘贴会落空）。预览浮层 `becomesKeyOnlyIfNeeded`（只有点里面的文字才当 key），剪贴板面板一直是 key；收起时（onHide）把 key 还给剪贴板面板。开筛选 / 操作面板、对话框、剪贴板面板收起、粘贴时预览直接消失（不缩回）。
 
@@ -61,11 +69,11 @@ alwaysApply: false
 - 链接预览（`Clipboard/LinkPreview.swift`）：只在透镜 / ⌘Y 大卡显示链接、停留 0.25 s 后取，开始了就取完（`inFlight`：同一条再选中时等它，不重开）；设置关掉时连缓存也不显示（透镜、大卡和行角标）。链接本身用 `isFetchable`（`isPublicHTTP` + 不像一次性令牌：查询参数名、路径关键词、32 位以上字母数字混排段），头图 / 图标只用 `isPublicHTTP`（本机 / 内网 / 私有地址 / IPv6 字面量 / 带账号密码）——CDN 长哈希不是令牌；跳转按同样的分工拦。下载是 `Fetcher`（`URLSessionDataDelegate`、代理队列 `.main`、回调里 `MainActor.assumeIsolated`）：看过响应头再决定收不收，按块收、网页收到 `</head` 或 512 KB 就停、图片超上限（4 MB / 512 KB）放弃；**不要**改回在主线程上 `for try await byte in AsyncBytes`（每个字节跳一次线程，512 KB 近 3 s）。会话 ephemeral、不收发 Cookie、不缓存、不强升 https（ATS 已放开）。解码只取 `</head` 之前、gb2312 / gbk 按 GB18030。头图缩到长边 1200、内存里最多 12 条；跳到别的网站的不记网站图标。改规则先跑 `LinkPreviewTests`（联网冒烟 `TEST_RUNNER_KITTY_LIVE_LINK=1`）。
 - 新条目从顶部挤入、删除缩小淡出（`listMotion`，搜索筛选换列表那一帧不动画，画完靠 `listGeneration` 恢复）。吸顶判断只存「已吸顶的分组数」这个整数，**不要**把滚动位置存进 `@State`（每帧重算整个面板）。⌘K 里有勾选时只给批量操作。
 - 背景 `NSVisualEffectView(.popover)` 且 `state = .active`（本 App 从不激活，跟随窗口状态会一直灰）。
-- 可点的都用 `Button`（`.plain` 样式），不用 `onTapGesture`；`ForEach` 的 id 用元素 id，不用 offset。列表行的身份是「所在分组 + 条目 id」（`RowID`；分组按那天的零点、不按「今天 / 昨天」标题，过了午夜只改标题不换行；平铺时为 nil），分组的 ForEach 也按零点，行上**不挂** `.id(item.id)`：只用条目 id 时，条目换了所在的 ForEach（有没有搜索词在分组 / 平铺间切换、昨天的条目再复制挪进「今天」），LazyVStack 会把旧行原样搬过去且之后不再跟着父视图更新，透镜不展开、按前缀和画的高亮盖住下面几行、时间也不刷新（2026-09-27 实测，`ClipboardStoreTests.lensFollowsRowsAcrossSections` 锁住）。所以分组 ↔ 平铺是整批删行再插行：`listMotion == .instant`（换列表那一帧）时行的**插入**过渡是 `.identity`，不然每行都按新插入播一次图标 pop；退场过渡一直是缩小淡出（行的过渡在它插进来那一帧就定了，跟着切掉的话这些行以后删掉时没有退场）。
+- 可点的都用 `Button`（`.plain` 样式），不用 `onTapGesture`；`ForEach` 的 id 用元素 id，不用 offset。列表行的身份是「所在分组 + 条目 id」（`RowID`；分组按那天的零点、不按「今天 / 昨天」标题，过了午夜只改标题不换行；有没有搜索词都按天分组，section 永不为 nil，体检 A6 去掉了「有搜索词时平铺」这个整批换身份的根源），分组的 ForEach 也按零点，行上**不挂** `.id(item.id)`：只用条目 id 时，条目换了所在的 ForEach（昨天的条目再复制挪进「今天」），LazyVStack 会把旧行原样搬过去且之后不再跟着父视图更新，透镜不展开、按前缀和画的高亮盖住下面几行、时间也不刷新（2026-09-27 实测，`ClipboardStoreTests.lensFollowsRowsAcrossSections` 锁住）。`listMotion == .instant`（搜索 / 筛选换列表那一帧）时行的**插入**过渡是 `.identity`，不然每行都按新插入播一次图标 pop；退场过渡一直是缩小淡出（行的过渡在它插进来那一帧就定了，跟着切掉的话这些行以后删掉时没有退场）。
 
 ## 6. 界面自检
 - 用 `SnapshotProbeTests`：屏幕外、不激活的窗口渲染各状态（含深色）写 PNG，**不弹面板、不抢键盘、不需要屏幕录制权限**：
   `TEST_RUNNER_KITTY_SNAPSHOT_DIR=<目录> xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools test -only-testing:KittyToolsTests/SnapshotProbeTests`
-- 面板尺寸 720 × `ClipboardPanelView.height(for:)`（和窗口同一个算法）；状态至少覆盖：标签（收藏 + 来源）、筛选面板、标签待删、⌘K、各类型的透镜（文本 / 代码 / JSON / 颜色 / 链接 / 图片 / 文件）、命中摘录、片段范围的「新建片段」行、多选底栏，每个都出深色版。
+- 面板尺寸 720 × `ClipboardPanelView.height(for:)`（和窗口同一个算法）；状态至少覆盖：标签（收藏 + 来源）、筛选面板（收藏夹在「收藏」下面）、标签待删、⌘K、各类型的透镜（文本 / 代码 / JSON / 颜色 / 链接 / 图片 / 文件）、命中摘录、片段范围的「新建片段」行、多选底栏（含全是文件的「一起粘贴」）、备注 / 新建收藏夹 / 管理收藏夹对话框（含删掉后的撤销提示）、超期提示、「只复制了第 1 条」警告、已暂停记录，每个都出深色版；设置页另拉长出一张看到排除 App 列表（`settings-clipboard-full`）。管理收藏夹的行内改名是 `@State`，截不到，靠手测。
 - **禁止**用启动参数 / 热键在用户使用时弹出面板截图：非激活面板一出现就接管键盘，用户正在打的字会进搜索框（实测踩过）。
 - `ImageRenderer` 画不了 AppKit 控件（NSTextField、Picker、Menu 全是占位块），别用它做界面检查。

@@ -1,8 +1,9 @@
 // 剪贴板面板根视图（透镜指令条 Lens Bar，mac-whisker §6 剪贴板）：宽 720、贴在屏幕上方 20%（和启动器同位置），
 // 高度按条数伸缩、顶边不动、≤ 520（height(for:)；透镜预留是常数，↑↓ 永远不改窗口高度）。
-// 56 pt 搜索线 = 放大镜 + 粉色筛选标签 + 输入框；单列满宽列表（无搜索词按天分组吸顶，有搜索词按相关度平铺），
+// 56 pt 搜索线 = 放大镜 + 粉色筛选标签 + 输入框；单列满宽列表（始终按天分组吸顶，搜索只过滤，体检 A6），
 // 行 40，选中行原地展开成透镜（LensView），一块中性高亮在行间滑动、和透镜一起伸缩（前缀和定位）；
-// 片段范围第一行固定一条虚线的「＋ 新建片段 ⌘N」；底栏 36 = 条数 / 修饰键提示 / 多选动词 ｜ 粘贴 ↩ · 操作 ⌘K ｜ 齿轮 图钉。
+// 片段范围第一行固定一条虚线的「＋ 新建片段 ⌘N」；底栏 36 = （已暂停记录）条数 / 修饰键提示 / 多选动词 ｜ 粘贴 ↩ · 操作 ⌘K ｜
+// 齿轮 图钉。
 // Tab 筛选面板从搜索栏左下长出、⌘K 操作面板从底栏右下长出（共用 Shell/ActionMenu）；对话框从搜索栏下沿落下。
 // 状态和操作都在 ClipboardPanelModel。
 
@@ -15,6 +16,8 @@ struct ClipboardPanelView: View {
   @Bindable var model: ClipboardPanelModel
   @AppStorage(Prefs.clipboardHideOnUnfocus) private var hideOnUnfocus = true
   @AppStorage(Prefs.clipboardShowPreview) private var showsLens = true
+  /// 默认粘贴为纯文本：底栏按住 ⌥ 的提示、右键菜单的替代粘贴跟着换名字
+  @AppStorage(Prefs.clipboardPastePlain) private var pastesPlain = false
   @State private var trusted = Permissions.isAccessibilityTrusted
   /// 正按着的 ⌘ / ⌥
   @State private var heldKeys: EventModifiers = []
@@ -47,12 +50,11 @@ struct ClipboardPanelView: View {
   var body: some View {
     let items = model.visibleItems
     let selected = model.selectedItem(in: items)
-    let sections = model.query.isEmpty ? Self.daySections(items) : nil
+    let sections = Self.daySections(items)
     let lensOpen = showsLens && model.multiSelection.isEmpty
     let newSnippet = model.showsNewSnippetRow(in: items)
     let layout = ListLayout(
       leading: newSnippet ? ClipRowView.height : 0, sections: sections,
-      items: items,
       lens: lensOpen
         ? selected.map { ($0.id, Lens.height(for: $0, form: model.contentForm(of: $0))) } : nil)
     VStack(spacing: 0) {
@@ -91,7 +93,7 @@ struct ClipboardPanelView: View {
     )
     .onChange(
       of: Self.height(
-        rows: items.count + (newSnippet ? 1 : 0), sections: sections?.count ?? 0,
+        rows: items.count + (newSnippet ? 1 : 0), sections: sections.count,
         reservesLens: showsLens && !items.isEmpty, banner: !trusted, model: model),
       initial: true
     ) { _, height in model.resize(height) }
@@ -140,7 +142,7 @@ struct ClipboardPanelView: View {
     let items = model.visibleItems
     return height(
       rows: items.count + (model.showsNewSnippetRow(in: items) ? 1 : 0),
-      sections: model.query.isEmpty ? daySections(items).count : 0,
+      sections: daySections(items).count,
       reservesLens: showsLens && !items.isEmpty, banner: banner, model: model)
   }
 
@@ -196,7 +198,7 @@ struct ClipboardPanelView: View {
 
   private var placeholder: String {
     switch model.palette {
-    case .filters: "筛选范围、类型、来源、分组"
+    case .filters: "筛选范围、收藏夹、类型、来源"
     case .actions: "搜索操作"
     case nil: model.tokens.isEmpty ? "搜索剪贴板，Tab 筛选" : "搜索"
     }
@@ -241,16 +243,12 @@ struct ClipboardPanelView: View {
     return ScrollView {
       LazyVStack(alignment: .leading, spacing: 0, pinnedViews: .sectionHeaders) {
         if layout.leading > 0 { newSnippetRow }
-        if let sections = layout.sections {
-          ForEach(Array(sections.enumerated()), id: \.element.day) { index, section in
-            Section {
-              rows(section.rows, in: section.day, selected: selected, lensOpen: lensOpen)
-            } header: {
-              sectionHeader(section, pinned: index < pinnedSections)
-            }
+        ForEach(Array(layout.sections.enumerated()), id: \.element.day) { index, section in
+          Section {
+            rows(section.rows, in: section.day, selected: selected, lensOpen: lensOpen)
+          } header: {
+            sectionHeader(section, pinned: index < pinnedSections)
           }
-        } else {
-          rows(Array(items.enumerated()), in: nil, selected: selected, lensOpen: lensOpen)
         }
       }
       .background(alignment: .topLeading) { highlight(layout: layout, selected: selected) }
@@ -289,10 +287,10 @@ struct ClipboardPanelView: View {
     guard visible.height > 0, let offset = layout.offset(of: id) else { return }
     let top = offset + Self.inset
     let bottom = top + layout.height(of: id)
-    let covered = layout.sections != nil ? Self.headerHeight : 0
+    let covered = Self.headerHeight
     var target: CGFloat
     if top - covered < visible.minY {
-      target = top - covered - (covered > 0 ? 0 : Self.inset)
+      target = top - covered
     } else if bottom > visible.maxY {
       target = bottom + Self.inset - visible.height
     } else {
@@ -368,7 +366,8 @@ struct ClipboardPanelView: View {
           .font(.system(size: 12, weight: .semibold))
           .frame(width: 24, height: 24)
         Text("新建片段").font(.system(size: 13))
-        Text("支持 {date} {clipboard} {cursor}").font(.system(size: 11)).foregroundStyle(.tertiary)
+        Text("支持 {date} {time} {clipboard} {cursor} 等").font(.system(size: 11)).foregroundStyle(
+          .tertiary)
         Spacer(minLength: 8)
         KeyCap("⌘N")
       }
@@ -385,11 +384,11 @@ struct ClipboardPanelView: View {
     .buttonStyle(.plain)
   }
 
-  /// 行的身份 = 所在分组（那天的零点，平铺时 nil）+ 条目，行上也别再挂 `.id(item.id)`：条目换了分组（旧条目再次复制挪进「今天」、
-  /// 有没有搜索词在分组 / 平铺间切换）就是删一行再插一行。身份只有条目 id 时 LazyVStack 会把旧行原样搬过去、之后不再跟着
-  /// 父视图更新：选中和透镜停在搬之前，按前缀和走的高亮对不上行（高亮盖住下面几行、透镜不展开、时间也不刷新）
+  /// 行的身份 = 所在分组（那天的零点）+ 条目，行上也别再挂 `.id(item.id)`：条目换了分组（旧条目再次复制挪进「今天」）
+  /// 就是删一行再插一行。身份只有条目 id 时 LazyVStack 会把旧行原样搬过去、之后不再跟着父视图更新：选中和透镜停在搬之前，
+  /// 按前缀和走的高亮对不上行（高亮盖住下面几行、透镜不展开、时间也不刷新）
   private func rows(
-    _ rows: [(offset: Int, element: ClipItem)], in section: Date?, selected: ClipItem?,
+    _ rows: [(offset: Int, element: ClipItem)], in section: Date, selected: ClipItem?,
     lensOpen: Bool
   ) -> some View {
     ForEach(rows.map { (id: RowID(section: section, item: $0.element.id), row: $0) }, id: \.id) {
@@ -406,7 +405,7 @@ struct ClipboardPanelView: View {
     }
   }
 
-  /// 新条目从顶部挤入（图标 pop）、删除缩小淡出。换列表（搜索 / 筛选，含分组 ↔ 平铺整批换身份）那一帧插进来的行不带
+  /// 新条目从顶部挤入（图标 pop）、删除缩小淡出。换列表（搜索 / 筛选）那一帧插进来的行不带
   /// 插入过渡，否则每一行都按「新插入」播一次图标 pop。退场一直是缩小淡出：行的过渡在它插进来那一帧就定了，
   /// 跟着切成无过渡的话，这些行以后删掉时就没有退场
   private var rowTransition: AnyTransition {
@@ -423,8 +422,8 @@ struct ClipboardPanelView: View {
     return model.store.groups.first { $0.id == id }?.name
   }
 
-  /// 无搜索词时按天分组：今天 / 昨天 / M月d日 / yyyy年M月d日。行号是在整个列表里的序号（⌘数字用）。
-  /// 列表按复制时间新→旧，同一天是连续的：只在换天时格式化一次
+  /// 按天分组：今天 / 昨天 / M月d日 / yyyy年M月d日（有搜索词时也是，标题后的数字就是命中条数）。
+  /// 行号是在整个列表里的序号（⌘数字用）。列表按复制时间新→旧，同一天是连续的：只在换天时格式化一次
   static func daySections(_ items: [ClipItem]) -> [DaySection] {
     let calendar = Calendar.current
     var sections: [DaySection] = []
@@ -453,7 +452,9 @@ struct ClipboardPanelView: View {
 
   @ViewBuilder private func contextMenu(for item: ClipItem) -> some View {
     Button("粘贴") { model.paste([item]) }
-    if item.richType != nil { Button("粘贴为纯文本") { model.paste([item], plainText: true) } }
+    if item.richType != nil {
+      Button(model.alternatePasteTitle) { model.paste([item], plainText: !pastesPlain) }
+    }
     Button("复制") {
       model.select(item)
       model.copySelection()
@@ -463,28 +464,29 @@ struct ClipboardPanelView: View {
       model.toggleQuickLook()
     }
     Divider()
-    Button(item.favorite ? "取消收藏" : "收藏") { model.store.toggleFavorite([item.id]) }
-    if item.favorite || item.isSnippet { Button("备注…") { model.dialog = .note(item.id) } }
+    Button(item.favorite ? "取消收藏" : "收藏") { model.toggleFavorite([item.id]) }
+    Button("备注…") { model.dialog = .note(item.id) }
     if item.kind == .text {
       if !item.isSnippet {
         Button("存为片段") { model.store.update([item.id]) { $0.isSnippet = true } }
       }
       Button("编辑内容…") { model.dialog = .edit(item.id) }
     }
+    if item.isSnippet { Button("移出片段") { model.removeFromSnippets([item.id]) } }
     if item.kind == .image, !(item.ocrText ?? "").isEmpty {
       Button("复制图中文字") { model.copyRecognizedText(item) }
     }
     if item.kind == .text || !(item.ocrText ?? "").isEmpty {
       Button("翻译") { model.translate(item) }
     }
-    Menu("分组") {
+    Menu("收藏夹") {
       ForEach(model.store.groups) { group in
         Button(group.name) { model.assign([item.id], to: group.id) }.disabled(
           item.groupID == group.id)
       }
-      if item.groupID != nil { Button("移出分组") { model.assign([item.id], to: nil) } }
+      if item.groupID != nil { Button("移出收藏夹") { model.assign([item.id], to: nil) } }
       Divider()
-      Button("新建分组…") { model.dialog = .newGroup([item.id]) }
+      Button("新建收藏夹…") { model.dialog = .newGroup([item.id]) }
     }
     if item.kind == .file {
       Button("在访达中显示") { model.revealInFinder(item) }
@@ -506,7 +508,7 @@ struct ClipboardPanelView: View {
       }
     } else if model.scope == .favorites {
       EmptyState(symbol: "star", title: "还没有收藏") {
-        Text("选中条目按 ⌘D 收藏；收藏不受条数和天数上限影响").foregroundStyle(.secondary)
+        Text("选中条目按 ⌘D 收藏；收藏不受保留天数影响").foregroundStyle(.secondary)
       }
     } else {
       EmptyState(symbol: "doc.on.clipboard", title: "还没有剪贴板历史") {
@@ -522,44 +524,48 @@ struct ClipboardPanelView: View {
       barStatus(count: count)
         .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
         .id(barState(count: count))
+        // 对话框开着时只有「撤销」能点（管理收藏夹里删掉的收藏夹）；多选动词里的粘贴会收起面板、丢掉没保存的字
+        .disabled(model.dialog != nil && model.toast == nil)
       Spacer(minLength: 8)
-      if count > 0 {
-        if model.multiSelection.isEmpty {
-          Button {
-            model.pasteSelection()
-          } label: {
-            hint("粘贴", key: "↩", primary: true)
+      Group {
+        if count > 0 {
+          if model.multiSelection.isEmpty {
+            Button {
+              model.pasteSelection()
+            } label: {
+              hint("粘贴", key: "↩", primary: true)
+            }
+            .help("粘贴到当前 App（↩）")
           }
-          .help("粘贴到当前 App（↩）")
+          Button {
+            model.palette = model.palette == .actions ? nil : .actions
+          } label: {
+            hint("操作", key: "⌘K")
+          }
+          .help("全部操作（⌘K 或 →）")
+          Hairline(vertical: true).frame(height: 16)
         }
-        Button {
-          model.palette = model.palette == .actions ? nil : .actions
-        } label: {
-          hint("操作", key: "⌘K")
-        }
-        .help("全部操作（⌘K 或 →）")
-        Hairline(vertical: true).frame(height: 16)
-      }
-      Button("剪贴板设置", systemImage: "gearshape", action: model.openSettings)
+        Button("剪贴板设置", systemImage: "gearshape", action: model.openSettings)
+          .labelStyle(.iconOnly)
+          .help("剪贴板设置（⌘,）")
+        // 固定只管点外面不收起（Esc、⌘W 照样关）；和 ⌘P 同一个开关，底栏就地提示
+        Button(
+          hideOnUnfocus ? "固定面板" : "取消固定", systemImage: hideOnUnfocus ? "pin" : "pin.fill",
+          action: model.togglePinned
+        )
         .labelStyle(.iconOnly)
-        .help("剪贴板设置（⌘,）")
-      // 固定只管点外面不收起（Esc、⌘W 照样关）；和 ⌘P 同一个开关，底栏就地提示
-      Button(
-        hideOnUnfocus ? "固定面板" : "取消固定", systemImage: hideOnUnfocus ? "pin" : "pin.fill",
-        action: model.togglePinned
-      )
-      .labelStyle(.iconOnly)
-      .foregroundStyle(hideOnUnfocus ? AnyShapeStyle(.secondary) : AnyShapeStyle(Style.brandInk))
-      .contentTransition(.symbolEffect(.replace))
-      .help(hideOnUnfocus ? "固定面板（⌘P）" : "取消固定（⌘P）")
-      .accessibilityAddTraits(hideOnUnfocus ? [] : .isSelected)
+        .foregroundStyle(hideOnUnfocus ? AnyShapeStyle(.secondary) : AnyShapeStyle(Style.brandInk))
+        .contentTransition(.symbolEffect(.replace))
+        .help(hideOnUnfocus ? "固定面板（⌘P）" : "取消固定（⌘P）")
+        .accessibilityAddTraits(hideOnUnfocus ? [] : .isSelected)
+      }
+      // 对话框开着时右边不接点击：点「粘贴」会收起面板、丢掉对话框里没保存的字，点「操作」会在对话框上面弹 ⌘K
+      .disabled(model.dialog != nil)
     }
     .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: barState(count: count))
     .font(.system(size: 12))
     .foregroundStyle(.secondary)
     .buttonStyle(.plain)
-    // 对话框开着时底栏不接点击：点「粘贴」会收起面板、丢掉对话框里没保存的字，点「操作」会在对话框上面弹 ⌘K
-    .disabled(model.dialog != nil)
     .padding(.horizontal, 14)
     .frame(height: Self.barHeight)
     .overlay(alignment: .top) { Hairline() }
@@ -582,9 +588,17 @@ struct ClipboardPanelView: View {
           .symbolRenderingMode(.palette)
           .foregroundStyle(Color(nsColor: .systemGreen), Color(nsColor: .systemGreen))
           .symbolEffect(.bounce, value: text)
-      case .undo(let count):
+      case .warning(let text):
+        // 只染三角：橙字在浅色底上对比度不够，字保持默认色
+        Label {
+          Text(text)
+        } icon: {
+          Image(systemName: "exclamationmark.triangle.fill")
+            .foregroundStyle(Color(nsColor: .systemOrange))
+        }
+      case .undo(let text):
         HStack(spacing: 8) {
-          Text("已删除 \(count) 条")
+          Text(text)
           Button(action: model.undoDelete) {
             HStack(spacing: 6) {
               Text("撤销").foregroundStyle(Style.brandInk)
@@ -598,9 +612,9 @@ struct ClipboardPanelView: View {
       multiSelectVerbs
     } else if count > 0, shownKeys.contains(.option) {
       Button {
-        model.pasteSelection(plainText: true)
+        model.pasteSelection(plainText: !pastesPlain)
       } label: {
-        hint("粘贴为纯文本", key: "⌥↩", leadingKey: true)
+        hint(model.alternatePasteTitle, key: "⌥↩", leadingKey: true)
       }
     } else if count > 0, shownKeys.contains(.command) {
       HStack(spacing: 12) {
@@ -614,9 +628,16 @@ struct ClipboardPanelView: View {
         }
       }
     } else {
-      Text(countText(count))
-        .contentTransition(.numericText())
-        .animation(Style.Motion.snap.animation(reduced: reduceMotion), value: count)
+      HStack(spacing: 8) {
+        // 菜单栏「暂停记录剪贴板」开着（D4）：复制的东西不会出现在这里，说一声
+        if model.isRecordingPaused {
+          Label("已暂停记录", systemImage: "pause.circle")
+          Text("·").foregroundStyle(.tertiary)
+        }
+        Text(countText(count))
+          .contentTransition(.numericText())
+          .animation(Style.Motion.snap.animation(reduced: reduceMotion), value: count)
+      }
     }
   }
 
@@ -627,18 +648,20 @@ struct ClipboardPanelView: View {
     HStack(spacing: 12) {
       Text("已选 \(ids.count) 条")
       Button(action: { model.pasteSelection() }) {
-        hint(items.allSatisfy { $0.kind == .text } ? "合并粘贴" : "依次粘贴", key: "↩", primary: true)
+        hint(ClipboardPanelModel.PasteMode(items).verb, key: "↩", primary: true)
       }
-      Button(action: { model.store.toggleFavorite(ids) }) {
+      Button(action: { model.toggleFavorite(ids) }) {
         hint(items.allSatisfy(\.favorite) ? "取消收藏" : "收藏", key: "⌘D")
       }
-      Menu("分组…") {
+      Menu("收藏夹…") {
         ForEach(model.store.groups) { group in
           Button(group.name) { model.assign(ids, to: group.id) }
         }
-        Button("移出分组") { model.assign(ids, to: nil) }
+        if items.contains(where: { $0.groupID != nil }) {
+          Button("移出收藏夹") { model.assign(ids, to: nil) }
+        }
         Divider()
-        Button("新建分组…") { model.dialog = .newGroup(ids) }
+        Button("新建收藏夹…") { model.dialog = .newGroup(ids) }
       }
       .menuStyle(.borderlessButton)
       .menuIndicator(.hidden)
@@ -672,9 +695,8 @@ struct ClipboardPanelView: View {
 struct ListLayout {
   /// 片段范围第一行「新建片段」的高度；0 = 不画这一行（别的范围，或片段范围里搜索 / 筛选没有结果，改画空态）
   var leading: CGFloat = 0
-  /// nil = 平铺（有搜索词）
-  var sections: [ClipboardPanelView.DaySection]?
-  var items: [ClipItem]
+  /// 按天分组（有没有搜索词都一样）
+  var sections: [ClipboardPanelView.DaySection]
   /// 展开透镜的那一行和它的总高
   var lens: (id: UUID, height: CGFloat)?
 
@@ -684,9 +706,6 @@ struct ListLayout {
 
   /// 行顶在列表内容里的 y（不含四周内缩）。透镜那一行上面都是普通行，所以不用加透镜多出的高度
   func offset(of id: UUID) -> CGFloat? {
-    guard let sections else {
-      return items.firstIndex { $0.id == id }.map { leading + CGFloat($0) * ClipRowView.height }
-    }
     var y = leading
     for section in sections {
       y += ClipboardPanelView.headerHeight
@@ -701,7 +720,7 @@ struct ListLayout {
   /// 各分组标题的 y（不含四周内缩）：透镜所在分组之后的都往下挪透镜多出的高度
   var sectionTops: [CGFloat] {
     var y = leading
-    return (sections ?? []).map { section in
+    return sections.map { section in
       defer { y += ClipboardPanelView.headerHeight + sectionBody(section) }
       return y
     }
@@ -767,7 +786,7 @@ private struct ClipListRow: View {
       model.toggleQuickLook()
     }
     .accessibilityAction(named: item.favorite ? "取消收藏" : "收藏") {
-      model.store.toggleFavorite([item.id])
+      model.toggleFavorite([item.id])
     }
   }
 
@@ -780,9 +799,9 @@ private struct ClipListRow: View {
   }
 }
 
-/// 列表行的身份：所在分组（那天的零点，平铺时 nil）+ 条目（见 rows(_:in:selected:lensOpen:)）
+/// 列表行的身份：所在分组（那天的零点）+ 条目（见 rows(_:in:selected:lensOpen:)）
 private struct RowID: Hashable {
-  let section: Date?
+  let section: Date
   let item: UUID
 }
 

@@ -1,5 +1,7 @@
-// ClipboardStore / ImageStore 单测：去重置顶、各项上限只动普通历史、清空、落库往返、图片编码；
-// 剪贴板面板（Lens Bar）的纯逻辑：高度与透镜预留、列表前缀和、筛选标签与 Tab / ⇧Tab / ⌫ / Esc。
+// ClipboardStore / ImageStore 单测：去重置顶、各项上限只动普通历史、清空、落库往返、图片编码、旧库迁移、
+// 收藏夹（归进去就是收藏、删了留在收藏、拖动排序）、撤销栈（连撤、收起时提交、再复制拿回来）、取消收藏后超期的提示与保护；
+// 剪贴板面板（Lens Bar）的纯逻辑：高度与透镜预留、列表前缀和、筛选标签与 Tab / ⇧Tab / ⌫ / Esc、粘贴动词与写进剪贴板的内容、
+// ⌘C 后收起才置顶。
 // 用内存库 + 临时目录，不碰真实数据。
 
 import AppKit
@@ -45,41 +47,54 @@ struct ClipboardStoreTests {
     var snippet = text("snippet", ago: 100 * 86_400)
     snippet.isSnippet = true
     var grouped = text("grouped", ago: 100 * 86_400)
+    grouped.favorite = true  // 收藏夹里的都是收藏
     grouped.groupID = UUID()
+    var noted = text("noted")
+    noted.note = "备注不算留下"
     // record 末尾按偏好（Limits.current，读宿主的 UserDefaults，别的测试可能 registerDefaults）先裁一次：
-    // 普通条目都记成「此刻或以后」，再把 now 拨后 10 天造出超期，偏好怎么设（最少 1 天 / 50 条）都裁不到
+    // 普通条目都记成「此刻或以后」，再把 now 拨后 10 天造出超期，偏好怎么设（最少 1 天）都裁不到
     let later = Date.now.addingTimeInterval(10 * 86_400)
-    for item in [
-      favorite, snippet, grouped, text("old"), text("x", ago: -9 * 86_400),
-      text("y", ago: -9 * 86_400),
-    ] {
+    for item in [favorite, snippet, grouped, noted, text("old"), text("x", ago: -9 * 86_400)] {
       store.record(item)
     }
-    // 删了几条要报给设置页的刘海提示：old（超天数）+ x（超条数）
-    #expect(store.enforceLimits(.init(maxCount: 1, maxAge: 7 * 86_400), now: later) == 2)
-    #expect(Set(store.items.compactMap(\.text)) == ["fav", "snippet", "grouped", "y"])
-    #expect(store.enforceLimits(.init(maxCount: 1, maxAge: 7 * 86_400), now: later) == 0)
+    // 删了几条要报给设置页的刘海提示：old、noted（超天数；条数不再限制）
+    #expect(store.enforceLimits(.init(maxAge: 7 * 86_400), now: later) == 2)
+    #expect(Set(store.items.compactMap(\.text)) == ["fav", "snippet", "grouped", "x"])
+    #expect(store.enforceLimits(.init(maxAge: 7 * 86_400), now: later) == 0)
   }
 
-  @Test func imageBudgetEvictsOldestOrdinaryImages() throws {
+  /// 图片预算只算普通图片（体检 B2）：收藏的大图不占额度；超了从最旧的普通图片删起，最新的一张（刚复制的）这一轮不删
+  @Test func imageBudgetCountsOnlyOrdinaryImages() throws {
     let (store, _) = try makeStore()
+    var favorite = ClipItem(kind: .image, copiedAt: Date.now.addingTimeInterval(-40))
+    favorite.image = .init(width: 1, height: 1, byteCount: 1000, sha256: "fav")
+    favorite.favorite = true
+    store.record(favorite)
     for (index, age) in [30.0, 20, 10].enumerated() {
       var item = ClipItem(kind: .image, copiedAt: Date.now.addingTimeInterval(-age))
       item.image = .init(width: 1, height: 1, byteCount: 100, sha256: "hash\(index)")
-      item.favorite = index == 0  // 最旧的那张是收藏，不能删
       store.record(item)
     }
+    #expect(store.imageUsage == (ordinary: 300, retained: 1000))
     store.enforceLimits(.init(imageBytes: 250))
-    #expect(Set(store.items.compactMap(\.image?.sha256)) == ["hash0", "hash2"])
+    #expect(Set(store.items.compactMap(\.image?.sha256)) == ["fav", "hash1", "hash2"])
+    // 预算比一张还小：普通图片里最新的一张还在
+    store.enforceLimits(.init(imageBytes: 50))
+    #expect(Set(store.items.compactMap(\.image?.sha256)) == ["fav", "hash2"])
   }
 
+  /// 清空（锁屏 / 设置里立即清空）先提交撤销栈：删掉的普通条目清空后不能再 ⌘Z 回来
   @Test func clearOrdinaryKeepsRetained() throws {
     let (store, _) = try makeStore()
     var favorite = text("fav")
     favorite.favorite = true
     store.record(favorite)
     store.record(text("temp"))
+    store.record(text("deleted"))
+    store.deleteWithUndo([store.items[0].id])
     #expect(store.clearOrdinary() == 1)
+    #expect(store.items.map(\.text) == ["fav"])
+    store.undo()
     #expect(store.items.map(\.text) == ["fav"])
     #expect(store.clearOrdinary() == 0)
   }
@@ -118,19 +133,51 @@ struct ClipboardStoreTests {
     #expect(await images.save(Data("not an image".utf8), isPNG: true, id: UUID()) == nil)
   }
 
-  @Test func favoriteToggleClearsNoteOfOrdinaryItemsOnly() throws {
+  /// 取消收藏 = 同时移出收藏夹，备注不动（体检 A1 A3）
+  @Test func unfavoriteLeavesFolderAndKeepsNote() throws {
     let (store, _) = try makeStore()
     var snippet = text("s")
     snippet.isSnippet = true
     store.record(snippet)
     store.record(text("h"))
     let ids = Set(store.items.map(\.id))
-    store.toggleFavorite(ids)
-    #expect(store.items.allSatisfy { $0.favorite })
+    let work = try #require(store.createGroup(named: "工作"))
+    store.assign(ids, to: work.id)
+    #expect(store.items.allSatisfy { $0.favorite && $0.groupID == work.id })
     store.update(ids) { $0.note = "备注" }
     store.toggleFavorite(ids)
-    #expect(store.items.first { $0.isSnippet }?.note == "备注")
-    #expect(store.items.first { !$0.isSnippet }?.note == nil)
+    #expect(store.items.allSatisfy { !$0.favorite && $0.groupID == nil && $0.note == "备注" })
+    // 移出收藏夹（没有取消收藏）：留在默认收藏
+    store.assign(ids, to: work.id)
+    store.assign(ids, to: nil)
+    #expect(store.items.allSatisfy { $0.favorite && $0.groupID == nil })
+  }
+
+  /// 取消收藏 / 移出片段后已超过保留天数的：记进撤销栈、收起面板前不被清理，⌘Z 改回来；提交后下次清理才删（体检 A1）
+  @Test func unretainedExpiredItemsWaitForCommit() throws {
+    let (store, _) = try makeStore()
+    let later = Date.now.addingTimeInterval(10 * 86_400)
+    let week = ClipboardStore.Limits(maxAge: 7 * 86_400)
+    var old = text("旧收藏")
+    old.favorite = true
+    var fresh = text("新收藏", ago: -9 * 86_400)
+    fresh.favorite = true
+    var snippet = text("旧片段")
+    snippet.isSnippet = true
+    for item in [old, fresh, snippet] { store.record(item) }
+    let favorites = Set([old.id, fresh.id])
+    #expect(store.changeRetention(favorites, limits: week, now: later) { $0.favorite = false } == 1)
+    #expect(store.enforceLimits(week, now: later) == 0)  // 还能撤销：不删
+    store.undo()
+    #expect(store.items.first { $0.id == old.id }?.favorite == true)
+    #expect(store.items.first { $0.id == fresh.id }?.favorite == false)  // 没超期的不进撤销栈
+    #expect(
+      store.changeRetention([snippet.id], limits: week, now: later) { $0.isSnippet = false } == 1)
+    #expect(store.changeRetention([old.id], limits: week, now: later) { $0.favorite = false } == 1)
+    store.commitDeletion()
+    #expect(!store.canUndo)
+    #expect(store.enforceLimits(week, now: later) == 2)
+    #expect(store.items.map(\.text) == ["新收藏"])
   }
 
   @Test func editDropsRichFormat() throws {
@@ -144,18 +191,48 @@ struct ClipboardStoreTests {
     #expect(reloaded.pasteboardItems(for: reloaded.items[0])[0].data(forType: .html) == nil)
   }
 
+  /// 撤销栈（体检 A2）：两批连删、连撤两次按原位插回；新的删除不提交上一批；commitDeletion（面板收起、退出）才删库
   @Test func undoDeletionRestoresPositionAndCommitPurges() throws {
     let (store, db) = try makeStore()
-    for (name, age) in [("c", 3.0), ("b", 2), ("a", 1)] { store.record(text(name, ago: age)) }
-    let b = try #require(store.items.first { $0.text == "b" })
-    store.deleteWithUndo([b.id])
-    #expect(store.items.map(\.text) == ["a", "c"])
-    store.undoDeletion()
-    #expect(store.items.map(\.text) == ["a", "b", "c"])
-    store.deleteWithUndo([b.id])
+    for (name, age) in [("d", 4.0), ("c", 3), ("b", 2), ("a", 1)] {
+      store.record(text(name, ago: age))
+    }
+    let id = { (name: String) in store.items.first { $0.text == name }!.id }
+    store.deleteWithUndo([id("b")])
+    store.deleteWithUndo([id("a"), id("d")])
+    #expect(store.items.map(\.text) == ["c"])
+    guard case .deleted(let last) = store.undo() else {
+      Issue.record("没撤到删除")
+      return
+    }
+    #expect(last.count == 2 && store.items.map(\.text) == ["a", "c", "d"])
+    store.undo()
+    #expect(store.items.map(\.text) == ["a", "b", "c", "d"] && !store.canUndo)
+    store.deleteWithUndo([id("b")])
+    store.deleteWithUndo([id("c")])
+    let (beforeCommit, _) = try makeStore(db)
+    #expect(beforeCommit.items.count == 4)  // 没提交前库里还在
     store.commitDeletion()
     let (reloaded, _) = try makeStore(db)
-    #expect(reloaded.items.map(\.text) == ["a", "c"])
+    #expect(reloaded.items.map(\.text) == ["a", "d"])
+  }
+
+  /// 删了还没提交时又复制了同样的内容：从撤销栈里拿回原条目挪到最前（保留收藏、备注），不新建一条，之后 ⌘Z 也不会出现两条
+  @Test func recordReclaimsPendingDeletion() throws {
+    let (store, db) = try makeStore()
+    var noted = text("同一段", ago: 100)
+    noted.favorite = true
+    noted.note = "备注"
+    store.record(noted)
+    store.record(text("别的"))
+    store.deleteWithUndo([noted.id])
+    store.record(text("同一段"))
+    #expect(store.items.map(\.text) == ["同一段", "别的"])
+    #expect(store.items[0].id == noted.id && store.items[0].note == "备注" && store.items[0].favorite)
+    #expect(!store.canUndo)
+    store.commitDeletion()
+    let (reloaded, _) = try makeStore(db)
+    #expect(reloaded.items.map(\.text) == ["同一段", "别的"])
   }
 
   @Test func snippetsMergeWithSameText() throws {
@@ -167,20 +244,74 @@ struct ClipboardStoreTests {
     #expect(store.items.allSatisfy { $0.isSnippet })
   }
 
+  /// 收藏夹：名字去空白、不重名、超过 24 字不收（不截断）；拖动排序落库；删掉后条目留在收藏，⌘Z 连位置和归属一起回来
   @Test func groups() throws {
     let (store, db) = try makeStore()
     let work = try #require(store.createGroup(named: "  工作  "))
     #expect(work.name == "工作")
     #expect(store.createGroup(named: "工作") == nil)  // 重名
     #expect(store.createGroup(named: "   ") == nil)
-    #expect(store.createGroup(named: String(repeating: "长", count: 30))?.name.count == 24)
+    #expect(store.createGroup(named: String(repeating: "长", count: 25)) == nil)
+    let long = try #require(store.createGroup(named: String(repeating: "长", count: 24)))
+    let home = try #require(store.createGroup(named: "生活"))
     store.record(text("x"))
-    store.update([store.items[0].id]) { $0.groupID = work.id }
+    store.assign([store.items[0].id], to: work.id)
+    #expect(store.items[0].favorite)  // 归进收藏夹就是收藏
     #expect(store.renameGroup(work.id, to: "项目"))
+    #expect(!store.renameGroup(work.id, to: "生活"))
+    store.moveGroup(home.id, to: 0)
+    #expect(try makeStore(db).0.groups.map(\.id) == [home.id, work.id, long.id])
     store.deleteGroup(work.id)
+    #expect(store.items[0].groupID == nil && store.items[0].favorite)
     let (reloaded, _) = try makeStore(db)
-    #expect(reloaded.items[0].groupID == nil)
-    #expect(reloaded.groups.map(\.name) == [String(repeating: "长", count: 24)])
+    #expect(reloaded.items[0].groupID == nil && reloaded.items[0].favorite)
+    #expect(reloaded.groups.map(\.id) == [home.id, long.id])
+    guard case .group(let restored, let index, _) = store.undo() else {
+      Issue.record("没撤到删掉的收藏夹")
+      return
+    }
+    #expect(restored.name == "项目" && index == 1)
+    #expect(store.groups.map(\.id) == [home.id, work.id, long.id])
+    #expect(store.items[0].groupID == work.id)
+    let (again, _) = try makeStore(db)
+    #expect(again.groups.map(\.id) == [home.id, work.id, long.id])
+    #expect(again.items[0].groupID == work.id)
+    // 连删两个再新建：排序号压实了，重新打开顺序不变（不压实的话新建的会和剩下的撞号、排到前面）
+    store.deleteGroup(home.id)
+    store.deleteGroup(work.id)
+    store.commitDeletion()
+    let added = try #require(store.createGroup(named: "新的"))
+    #expect(try makeStore(db).0.groups.map(\.id) == [long.id, added.id])
+  }
+
+  /// 旧库升级（幂等）：clip_groups 补 position（按创建时间），已归组没收藏的条目置收藏；再开一次不出错、结果不变
+  @Test func migratesOldDatabase() throws {
+    let db = try Database(path: ":memory:")
+    try db.execute(
+      """
+      CREATE TABLE clips(
+        id TEXT PRIMARY KEY, kind TEXT NOT NULL, text TEXT, file_paths TEXT,
+        image_width INTEGER, image_height INTEGER, image_bytes INTEGER, image_sha256 TEXT,
+        ocr_text TEXT, rich_type TEXT, rich_data BLOB, source_name TEXT, source_bundle_id TEXT,
+        copied_at REAL NOT NULL, favorite INTEGER NOT NULL DEFAULT 0,
+        snippet INTEGER NOT NULL DEFAULT 0, note TEXT, group_id TEXT)
+      """)
+    try db.execute(
+      "CREATE TABLE clip_groups(id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at REAL NOT NULL)")
+    let (early, late) = (UUID(), UUID())
+    try db.execute(
+      "INSERT INTO clip_groups VALUES (?, '后建的', 200), (?, '先建的', 100)",
+      [late.uuidString, early.uuidString])
+    let (grouped, plain) = (UUID(), UUID())
+    try db.execute(
+      "INSERT INTO clips(id, kind, text, copied_at, group_id) VALUES (?, 'text', 'a', 1, ?), (?, 'text', 'b', 2, NULL)",
+      [grouped.uuidString, late.uuidString, plain.uuidString])
+    for _ in 0..<2 {
+      let (store, _) = try makeStore(db)
+      #expect(store.groups.map(\.id) == [early, late])
+      #expect(store.items.first { $0.id == grouped }?.favorite == true)
+      #expect(store.items.first { $0.id == plain }?.favorite == false)
+    }
   }
 
   // MARK: 面板（Lens Bar）
@@ -220,15 +351,16 @@ struct ClipboardStoreTests {
     let sections: [ClipboardPanelView.DaySection] = [
       (.now, "今天", [(0, a), (1, b)]), (.distantPast, "昨天", [(2, c)]),
     ]
-    let layout = ListLayout(sections: sections, items: [a, b, c], lens: (b.id, 198))
+    let layout = ListLayout(sections: sections, lens: (b.id, 198))
     #expect(layout.offset(of: a.id) == 24)
     #expect(layout.offset(of: b.id) == 64)
     #expect(layout.offset(of: c.id) == 286)  // 24 + 40 + 198 + 24
     #expect(layout.sectionTops == [0, 262])
     #expect(layout.height(of: b.id) == 198 && layout.height(of: a.id) == 40)
-    let flat = ListLayout(leading: 40, items: [a, b, c], lens: nil)
-    #expect(flat.offset(of: c.id) == 120)
-    #expect(flat.sectionTops.isEmpty)
+    // 片段范围第一行「新建片段」
+    let leading = ListLayout(leading: 40, sections: sections, lens: nil)
+    #expect(leading.offset(of: c.id) == 168)  // 40 + 24 + 80 + 24
+    #expect(leading.sectionTops == [40, 144])
   }
 
   /// 剪贴板面板挂进屏外窗口（不弹面板、不抢键盘）；「显示透镜」等用临时偏好域，不读 Dev 版里手测时改过的设置
@@ -279,7 +411,7 @@ struct ClipboardStoreTests {
     return (item, row, drawn)
   }
 
-  /// 选中行换了所在分组（有没有搜索词在分组 / 平铺间切换、昨天的条目再复制挪进「今天」）后照样按透镜高度展开、跟着选中走：
+  /// 选中行换了所在分组（搜索前后、昨天的条目再复制挪进「今天」）后照样按透镜高度展开、跟着选中走：
   /// 透镜那一行离第一行的距离 = 前缀和里的差（高亮按前缀和画）。行的身份只有条目 id 时这里失败：旧行被原样搬过去、
   /// 不再更新，透镜不展开，高亮盖住下面几行。昨天那条取昨天最后一秒，保留天数最短 1 天也不会被裁掉
   @Test func lensFollowsRowsAcrossSections() throws {
@@ -302,19 +434,18 @@ struct ClipboardStoreTests {
       let (item, row, drawn) = try expectLens(model, in: window, step)
       #expect(drawn.count == items.count, step)
       let layout = ListLayout(
-        sections: model.query.isEmpty ? ClipboardPanelView.daySections(items) : nil, items: items,
-        lens: (item.id, row.height))
+        sections: ClipboardPanelView.daySections(items), lens: (item.id, row.height))
       let offset = try #require(layout.offset(of: item.id)) - (layout.offset(of: items[0].id) ?? 0)
       #expect(abs((drawn.first?.maxY ?? 0) - row.maxY - offset) < 0.5, step)
     }
     let down = { _ = model.handleCommand(#selector(NSResponder.moveDown(_:))) }
-    try check("分组")
+    try check("没有搜索词")
     model.query = "kitty"
-    try check("分组 → 平铺")
+    try check("搜索（只过滤，照样按天分组）")
     down()
-    try check("平铺里 ↓")
+    try check("搜索结果里 ↓")
     model.query = ""
-    try check("平铺 → 分组")
+    try check("清掉搜索词")
     for _ in 0..<3 { down() }
     #expect(model.selectedItem?.text == "昨天的一段文字")
     store.record(text("昨天的一段文字"))
@@ -359,7 +490,8 @@ struct ClipboardStoreTests {
     #expect(!model.handleKeyEquivalent(try commandW(.command)))
   }
 
-  /// ⌘K 里的分组操作和右键菜单一样全：移到已有分组（已在里面的那组不列）、移出分组、放进新分组
+  /// ⌘K 里的收藏夹操作和右键菜单一样全、按拖动排的顺序：移到已有收藏夹（已在里面的那个不列）、移出收藏夹、放进新收藏夹；
+  /// 放进去就是收藏，移出后留在默认收藏
   @Test func actionsMoveBetweenGroups() throws {
     let (store, _) = try makeStore()
     store.record(text("a", ago: 2))
@@ -367,18 +499,125 @@ struct ClipboardStoreTests {
     let work = try #require(store.createGroup(named: "工作"))
     let home = try #require(store.createGroup(named: "生活"))
     let model = ClipboardPanelModel(store: store)
-    let groupActions = { model.actions.filter { $0.detail == "分组" }.map(\.title) }
-    #expect(groupActions() == ["移到「工作」", "移到「生活」", "放进新分组…"])
+    let groupActions = { model.actions.filter { $0.detail == "收藏夹" }.map(\.title) }
+    #expect(groupActions() == ["移到「工作」", "移到「生活」", "放进新收藏夹…"])
+    store.moveGroup(home.id, to: 0)
+    #expect(groupActions() == ["移到「生活」", "移到「工作」", "放进新收藏夹…"])
     model.actions.first { $0.title == "移到「工作」" }?.run()
-    #expect(store.items[0].groupID == work.id)
-    #expect(groupActions() == ["移到「生活」", "移出分组", "放进新分组…"])
-    // 多选：都在「工作」里才不列它；有一条在分组里就给「移出分组」
+    #expect(store.items[0].groupID == work.id && store.items[0].favorite)
+    #expect(groupActions() == ["移到「生活」", "移出收藏夹", "放进新收藏夹…"])
+    // 多选：都在「工作」里才不列它；有一条在收藏夹里就给「移出收藏夹」
     model.multiSelection = Set(store.items.map(\.id))
-    #expect(groupActions() == ["移到「工作」", "移到「生活」", "移出分组", "放进新分组…"])
+    #expect(groupActions() == ["移到「生活」", "移到「工作」", "移出收藏夹", "放进新收藏夹…"])
     model.actions.first { $0.title == "移到「生活」" }?.run()
-    #expect(store.items.allSatisfy { $0.groupID == home.id })
-    model.actions.first { $0.title == "移出分组" }?.run()
-    #expect(store.items.allSatisfy { $0.groupID == nil })
+    #expect(store.items.allSatisfy { $0.groupID == home.id && $0.favorite })
+    model.actions.first { $0.title == "移出收藏夹" }?.run()
+    #expect(store.items.allSatisfy { $0.groupID == nil && $0.favorite })
+    // 筛选面板：收藏夹紧跟在「收藏」下面，最后是「管理收藏夹…」
+    let filters = model.filterItems.map(\.title)
+    #expect(Array(filters.prefix(4)) == ["收藏", "生活", "工作", "片段"])
+    #expect(filters.last == "管理收藏夹…")
+  }
+
+  /// 粘贴动词（⌘K 首项、底栏同一个名字，体检 B3）；写进剪贴板的内容：多条文本按复制先后合成一段、片段展开占位符（B1），
+  /// 全是文件一次写进去（同一个文件只写一次），其余逐条、文本后面补换行；动作菜单里备注对所有条目开放（A3）、片段能移出（C1）
+  @Test func pastePayloads() throws {
+    let (store, _) = try makeStore()
+    var snippet = text("{date} 日报", ago: 5)
+    snippet.isSnippet = true
+    store.record(snippet)
+    store.record(text("第二段", ago: 4))
+    var fileA = ClipItem(kind: .file, copiedAt: Date.now.addingTimeInterval(-3))
+    fileA.filePaths = ["/tmp/a.txt", "/tmp/b.txt"]
+    var fileB = ClipItem(kind: .file, copiedAt: Date.now.addingTimeInterval(-2))
+    fileB.filePaths = ["/tmp/b.txt", "/tmp/c.txt"]
+    store.record(fileA)
+    store.record(fileB)
+    let model = ClipboardPanelModel(store: store)
+    let (texts, files) = (store.items.filter { $0.kind == .text }, [fileB, fileA])
+    typealias Mode = ClipboardPanelModel.PasteMode
+    #expect(Mode([texts[0]]).verb == "粘贴" && Mode(texts).verb == "合并粘贴")
+    #expect(Mode(files).verb == "一起粘贴" && Mode([texts[0], fileA]).verb == "依次粘贴")
+    let today = Date.now.formatted(
+      Date.ISO8601FormatStyle(timeZone: .current).year().month().day().dateSeparator(.dash))
+    let merged = model.payload(for: texts, plainText: false)
+    #expect(merged.writes.count == 1)
+    #expect(merged.writes[0][0].string(forType: .string) == "\(today) 日报\n第二段")
+    guard case .new(let entry) = merged.entry else {
+      Issue.record("合并粘贴要记新历史")
+      return
+    }
+    #expect(entry.text == "\(today) 日报\n第二段")
+    let together = model.payload(for: [fileA, fileB], plainText: false)
+    #expect(together.writes.count == 1)
+    #expect(
+      together.writes[0].compactMap { $0.string(forType: .fileURL) }
+        == ["/tmp/a.txt", "/tmp/b.txt", "/tmp/c.txt"].map { URL(filePath: $0).absoluteString })
+    let sequential = model.payload(for: [texts[1], fileA], plainText: false)
+    #expect(sequential.writes.count == 2 && sequential.entry == nil)
+    #expect(sequential.writes[0][0].string(forType: .string) == "\(today) 日报\n")
+    // 动作菜单：普通条目也有「备注…」；片段有「移出片段」
+    model.select(texts[0])
+    #expect(model.actions.contains { $0.title == "备注…" })
+    #expect(!model.actions.contains { $0.title == "移出片段" })
+    model.select(texts[1])
+    #expect(model.actions.contains { $0.title == "移出片段" })
+    // {clipboard:N} 跳过片段（A7）：刚粘过的片段排在最前，{clipboard:1} 取下一条复制来的文字，不是它自己的模板
+    var reply = text("{clipboard:1} 已收到")
+    reply.isSnippet = true
+    store.record(reply)
+    let replied = model.payload(for: [store.items[0]], plainText: false)
+    #expect(replied.writes[0][0].string(forType: .string) == "第二段 已收到")
+  }
+
+  /// ⌘C 只写剪贴板，列表不动；收起面板（reset）时才把它挪到最前（体检 A8），剪贴板在这之后被换掉就不挪；
+  /// 合成的新条目时间按收起那一刻、暂停记录时不记（D4）。含图片的多选只写第 1 条，橙色警告如实说
+  @Test func copyBumpsWhenPanelHides() throws {
+    let (store, _) = try makeStore()
+    for (name, age) in [("旧的", 3.0), ("中间", 2), ("新的", 1)] { store.record(text(name, ago: age)) }
+    let model = ClipboardPanelModel(store: store)
+    var written: [[NSPasteboardItem]] = []
+    var changeCount = 0
+    model.writeClipboard = {
+      written.append($0)
+      changeCount += 1
+    }
+    model.clipboardChangeCount = { changeCount }
+    model.select(try #require(store.items.last))
+    model.copySelection()
+    #expect(written.last?.first?.string(forType: .string) == "旧的")
+    #expect(store.items.map(\.text) == ["新的", "中间", "旧的"])
+    #expect(model.toast == .message("已复制"))
+    model.reset()
+    #expect(store.items.map(\.text) == ["旧的", "新的", "中间"])
+    // ⌘C 之后剪贴板被别的内容换掉了（复制图中文字、色值块、固定着去别处复制）：收起时不挪
+    model.select(try #require(store.items.last))
+    model.copySelection()
+    changeCount += 1
+    model.reset()
+    #expect(store.items.map(\.text) == ["旧的", "新的", "中间"])
+    // 多条合成一段：收起时记成最新的一条；暂停记录时不记
+    model.isRecordingPaused = true
+    model.multiSelection = Set(store.items.prefix(2).map(\.id))
+    model.copySelection()
+    model.reset()
+    #expect(store.items.count == 3)
+    model.isRecordingPaused = false
+    model.multiSelection = Set(store.items.prefix(2).map(\.id))
+    model.copySelection()
+    model.reset()
+    #expect(store.items.map(\.text) == ["新的\n旧的", "旧的", "新的", "中间"])
+    #expect(store.items[0].copiedAt >= store.items[1].copiedAt)
+    // 文本 + 图片：剪贴板一次只能放一条，写按复制先后的第 1 条
+    var image = ClipItem(kind: .image, copiedAt: Date.now.addingTimeInterval(1))
+    image.image = .init(width: 1, height: 1, byteCount: 1, sha256: "x")
+    try Data([0]).write(to: store.images.url(for: image.id))
+    store.record(image)
+    model.multiSelection = [image.id, store.items[1].id]
+    model.copySelection()
+    #expect(written.count == 5 && model.toast == .warning("只复制了第 1 条"))
+    #expect(
+      written.last?.count == 1 && written.last?.first?.string(forType: .string) == "新的\n旧的")
   }
 
   @Test func tokensAndKeys() throws {

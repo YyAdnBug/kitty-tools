@@ -1,6 +1,6 @@
 // 剪贴板列表的一行（Lens Bar，mac-whisker §6 剪贴板）：40 pt，24 pt 图标块（色块 > 缩略图 > 来源 App 图标 + 代码角标
 // > 网站图标 / 种类图标），标题 13 regular 单行（代码 / JSON 用 SF Mono 12；有搜索词时从第一个命中处摘录、命中词黄底），
-// 右侧 11 pt「来源 · 多久前」（收藏 / 片段有备注时换成备注），再右是分组 / 带格式 / 片段 / 收藏标记；
+// 右侧 11 pt「来源 · 多久前」（有备注时换成备注），再右是收藏夹 / 带格式 / 片段 / 收藏标记；
 // ⌘1–9 键帽只在按住 ⌘ 时出现。选中是列表背后一块滑动的中性高亮（透镜的底），行本身不填色、文字不反白；
 // 多选时最左边多一个品牌粉勾选圆，勾中的行品牌粉 0.14 底。选中行在它下面展开透镜（LensView）。
 // 行内用到的摘要文字、图标与取色缓存、缩略图也放在这里。
@@ -19,7 +19,7 @@ struct ClipRowView: View {
   let showsShortcut: Bool
   /// nil = 不在多选状态
   let isChecked: Bool?
-  /// 只在分组筛选为「全部」时传
+  /// 所在收藏夹的名字：只在收藏夹筛选为「全部」时传
   let groupName: String?
   let images: ImageStore
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -121,9 +121,9 @@ struct ClipRowView: View {
     return attributed
   }
 
-  /// 右侧：收藏 / 片段有备注时是备注（secondary），否则「来源 · 多久前」（tertiary）
+  /// 右侧：有备注时是备注（secondary，所有条目都能写，体检 A3），否则「来源 · 多久前」（tertiary）
   @ViewBuilder private var trailing: some View {
-    if item.favorite || item.isSnippet, let note = item.note, !note.isEmpty {
+    if let note = item.note, !note.isEmpty {
       Text(note).foregroundStyle(.secondary)
     } else {
       let ago = item.copiedAt.formatted(
@@ -352,6 +352,13 @@ enum AppIcons {
     }
     cache[bundleID] = icon
     return icon
+  }
+
+  /// App 的显示名（按 bundle ID 找到 App 包；找不到是 nil）：来源标记、排除 App 列表用
+  static func name(for bundleID: String) -> String? {
+    NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID).map {
+      FileManager.default.displayName(atPath: $0.path).replacing(/\.app$/, with: "")
+    }
   }
 }
 
