@@ -4,7 +4,9 @@
 // SwiftUI 四行点击复制；代码 / JSON = SF Mono + 语法着色；链接 = 300 pt 头图 + 标题 + 网站名（LinkPreview 联网取）；
 // 图片 = 棋盘格上的原尺寸图 + 宽×高胶囊（大小只在页眉）+ 识别文字；单个文件 Quick Look、多个文件缩略图网格
 // （超过 120 个时末尾写「还有 N 个」）；文本高亮搜索词。
-// 页脚最多 4 个无边框胶囊按钮，其余操作在 ⌘K 面板。换条目时内容淡入上浮、页眉颜色渐变过去。
+// 页脚最多 4 个无边框胶囊按钮：粘贴、复制、按类型的第 3 个（链接「打开」、文件「在访达中显示」、图片「钉到屏幕」、
+// JSON「美化 / 原文」、其余「收藏」）、操作 ⌘K，其余操作在 ⌘K 面板。选中文字 ⌘C 只拷纯文本（CopyPlainTextView）。
+// 换条目时内容淡入上浮、页眉颜色渐变过去。
 // 链接卡（compact 版给透镜）、文件缩略图、语法着色也放在这里。
 
 import AppKit
@@ -111,7 +113,7 @@ struct PreviewView: View {
         ReadOnlyTextView(
           text: model.displayText(of: item),
           style: form == .json ? .json : form == .code ? .code : .plain,
-          highlights: Search.tokens(model.query), fontScale: 1.2)
+          highlights: Search.tokens(model.query), fontScale: 1.2, onCopy: model.copySelectedText)
       }
     case .image:
       VStack(alignment: .leading, spacing: 8) {
@@ -132,11 +134,14 @@ struct PreviewView: View {
         }
         .clipShape(.rect(cornerRadius: Style.Radius.card - 2, style: .continuous))
         .frame(maxHeight: .infinity)
-        // 完整检查器：大图下面也给识别到的文字（可选中）
+        // 完整检查器：大图下面也给识别到的文字（可选中，⌘C 同正文只拷纯文本）
         if let ocr = item.ocrText, !ocr.isEmpty {
           Text("识别到的文字").font(.system(size: 11, weight: .semibold)).foregroundStyle(.tertiary)
-          ScrollView { Text(ocr).font(.system(size: 13)).textSelection(.enabled) }
-            .frame(maxHeight: QuickLookView.ocrHeight)
+          ReadOnlyTextView(
+            text: ocr, style: .plain, highlights: Search.tokens(model.query), inset: .zero,
+            onCopy: model.copySelectedText
+          )
+          .frame(maxHeight: QuickLookView.ocrHeight)
         }
       }
       .padding(10)
@@ -154,25 +159,35 @@ struct PreviewView: View {
   private var footer: some View {
     HStack(spacing: 6) {
       Pill(title: "粘贴", symbol: "arrow.turn.down.left") { model.paste([item]) }
-      Pill(title: "复制", symbol: "doc.on.doc") {
-        model.select(item)
-        model.copySelection()
-      }
-      if form == .json {
-        Pill(title: model.prettyJSON ? "原文" : "美化", symbol: "curlybraces") {
-          model.prettyJSON.toggle()
-        }
-      } else {
-        Pill(title: item.favorite ? "取消收藏" : "收藏", symbol: item.favorite ? "star.fill" : "star") {
-          model.toggleFavorite([item.id])
-        }
-        .symbolEffect(.bounce, value: item.favorite)
-      }
+      // 复制的是这张卡上的这一条，不管列表里勾选了什么（体检 B9）
+      Pill(title: "复制", symbol: "doc.on.doc") { model.copy([item]) }
+      typePill
+
       Spacer(minLength: 0)
       Pill(title: "操作", symbol: "ellipsis", shortcut: "⌘K") { model.showsActions.toggle() }
     }
     .padding(8)
     .overlay(alignment: .top) { Hairline() }
+  }
+
+  /// 第 3 个胶囊按类型（体检 D2）：链接「打开」、文件「在访达中显示」、图片「钉到屏幕」、JSON「美化 / 原文」、其余「收藏」
+  @ViewBuilder private var typePill: some View {
+    if form == .link, let url = ContentForm.firstLink(in: item.text ?? "") {
+      Pill(title: "打开", symbol: "safari") { model.openLink(url) }
+    } else if item.kind == .file {
+      Pill(title: "在访达中显示", symbol: "folder") { model.revealInFinder(item) }
+    } else if item.kind == .image {
+      Pill(title: "钉到屏幕", symbol: "pin") { model.pin([item]) }
+    } else if form == .json {
+      Pill(title: model.prettyJSON ? "原文" : "美化", symbol: "curlybraces") {
+        model.prettyJSON.toggle()
+      }
+    } else {
+      Pill(title: item.favorite ? "取消收藏" : "收藏", symbol: item.favorite ? "star.fill" : "star") {
+        model.toggleFavorite([item.id])
+      }
+      .symbolEffect(.bounce, value: item.favorite)
+    }
   }
 }
 
@@ -234,8 +249,9 @@ struct ColorCard: View {
         .frame(minHeight: 72, maxHeight: .infinity)
       ForEach(Array(values.enumerated()), id: \.offset) { index, value in
         Button {
-          // 面板开着时复制的色值块不记进历史（记新条目会把选中跳走，mac-native §5）
+          // 面板开着时复制的色值块不记进历史（记新条目会把选中跳走，mac-native §5）；焦点在搜索框，主动播报
           Paster.write(string: value)
+          ClipboardPanelModel.announce("已复制 \(value)")
           copied = index
           Task {
             try? await Task.sleep(for: Style.copiedHold)
@@ -575,27 +591,35 @@ enum SyntaxHighlight {
   }
 }
 
-/// 只读长文本（NSTextView，TextKit 2）：可选中、可滚动，高亮搜索词；代码 / JSON 着色（只给 ⌘Y 大卡：
-/// 透镜里不用它，免得滚轮被它吃掉、点一下抢走搜索框的焦点）
+/// 只读长文本（NSTextView）：可选中、可滚动，高亮搜索词；代码 / JSON 着色（只给 ⌘Y 大卡：
+/// 透镜里不用它，免得滚轮被它吃掉、点一下抢走搜索框的焦点）。⌘C 交给 onCopy 只拷纯文本（体检 B11）
 private struct ReadOnlyTextView: NSViewRepresentable {
   let text: String
   let style: SyntaxHighlight.Language
   let highlights: [String]
   var fontScale: CGFloat = 1
+  var inset = NSSize(width: 10, height: 12)
+  let onCopy: (String) -> Void
 
   func makeNSView(context: Context) -> NSScrollView {
-    let scroll = NSTextView.scrollableTextView()
-    let textView = scroll.documentView as! NSTextView
+    let textView = CopyPlainTextView(frame: .zero)
     textView.isEditable = false
     textView.isSelectable = true
     textView.drawsBackground = false
-    textView.textContainerInset = NSSize(width: 10, height: 12)
+    textView.textContainerInset = inset
+    textView.isVerticallyResizable = true
+    textView.autoresizingMask = [.width]
+    textView.textContainer?.widthTracksTextView = true
+    let scroll = NSScrollView()
+    scroll.hasVerticalScroller = true
     scroll.drawsBackground = false
+    scroll.documentView = textView
     return scroll
   }
 
   func updateNSView(_ scroll: NSScrollView, context: Context) {
-    guard let textView = scroll.documentView as? NSTextView else { return }
+    guard let textView = scroll.documentView as? CopyPlainTextView else { return }
+    textView.onCopy = onCopy
     let font: NSFont =
       style == .plain
       ? .systemFont(ofSize: 13 * fontScale)
@@ -619,5 +643,20 @@ private struct ReadOnlyTextView: NSViewRepresentable {
     }
     textView.textStorage?.setAttributedString(attributed)
     textView.scrollToBeginningOfDocument(nil)
+  }
+}
+
+/// ⌘C（和右键「拷贝」）只拷选中的纯文本，交给 onCopy 经 Paster.write 写：系统的复制会把语法着色、搜索词黄底、放大的字号
+/// 一起写成 RTF（这条历史再粘贴会带黄底），watcher 还会把来源记成前台的别的 App、触发复制即译（体检 B11）
+final class CopyPlainTextView: NSTextView {
+  var onCopy: ((String) -> Void)?
+
+  override func copy(_ sender: Any?) {
+    let whole = string as NSString
+    let parts = selectedRanges.map(\.rangeValue).filter { $0.length > 0 }.map {
+      whole.substring(with: $0)
+    }
+    guard let onCopy, !parts.isEmpty else { return super.copy(sender) }
+    onCopy(parts.joined(separator: "\n"))
   }
 }

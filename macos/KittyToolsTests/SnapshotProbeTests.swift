@@ -151,7 +151,44 @@ struct SnapshotProbeTests {
           m.actionQuery = "收藏夹"
         }
       ),
+      // ⌘K 分节 + 「移到收藏夹 ›」子列表（体检 C3）、按类型的动作（D1 D2）、拼音过滤（C4）
+      (
+        "actions-submenu",
+        { m in
+          m.showsActions = true
+          if let groups = m.actions.first(where: { $0.id == "groups" }) { m.run(groups) }
+        }
+      ),
+      (
+        "actions-file",
+        { m in
+          pick(m) { $0.kind == .file }
+          m.showsActions = true
+        }
+      ),
+      (
+        "actions-image",
+        { m in
+          pick(m) { $0.kind == .image }
+          m.showsActions = true
+        }
+      ),
+      (
+        "actions-pinyin",
+        { m in
+          m.showsActions = true
+          m.actionQuery = "fy"
+        }
+      ),
       ("multi", { m in m.multiSelection = Set(m.visibleItems.prefix(3).map(\.id)) }),
+      // 多选底栏「收藏夹…」：同一份收藏夹列表，锚在按钮上方（体检 C3）
+      (
+        "multi-groups",
+        { m in
+          m.multiSelection = Set(m.visibleItems.prefix(3).map(\.id))
+          m.palette = .groups
+        }
+      ),
       // 全是文件：「一起粘贴」（体检 B3）
       (
         "multi-files",
@@ -172,6 +209,9 @@ struct SnapshotProbeTests {
       ("paused", { m in m.isRecordingPaused = true }),
       ("snippets", { m in m.scope = .snippets }),
       ("dialog", { m in m.dialog = .note(link.id) }),
+      // 编辑（没改动时「保存」置灰、不带格式的不提丢格式）、新建片段（顶上可选的名称，体检 C2）
+      ("dialog-edit", { m in m.dialog = .edit(code.id) }),
+      ("dialog-new-snippet", { m in m.dialog = .newSnippet }),
       ("dialog-new-group", { m in m.dialog = .newGroup([link.id]) }),
       // ⌘P / 底栏图钉：底栏就地提示（体检 A9）
       ("toast-pinned", { m in m.toast = .message("已固定") }),
@@ -264,15 +304,18 @@ struct SnapshotProbeTests {
       }
     }
     Accent.shared.select(AccentChoice(rawValue: savedAccent ?? "") ?? .system)
-    // ⌘Y 放大预览 = 完整检查器：代码（放大的字）、链接（大头图）、图片（带识别文字）、多个文件（网格），按各自的理想尺寸
-    for (name, match) in [
-      ("quicklook-code", { (item: ClipItem) in item.text?.hasPrefix("import") == true }),
+    // ⌘Y 放大预览 = 完整检查器：代码（放大的字）、链接（大头图）、图片（带识别文字）、多个文件（网格）、JSON（默认美化），
+    // 按各自的理想尺寸；页脚第 3 个胶囊按类型（打开 / 钉到屏幕 / 在访达中显示 / 原文，体检 D2）
+    let quickLooks: [(String, (ClipItem) -> Bool)] = [
+      ("quicklook-code", { $0.text?.hasPrefix("import") == true }),
+      ("quicklook-json", { $0.text?.hasPrefix("{\"name") == true }),
       ("quicklook-link", { $0.text?.hasPrefix("https://developer") == true }),
       ("quicklook-image", { $0.kind == .image }),
       ("quicklook-files", { $0.kind == .file }),
-    ] {
+    ]
+    for (name, match) in quickLooks {
       model.reset()
-      let item = try #require(model.visibleItems.first(where: match))
+      let item = try #require(model.visibleItems.first { match($0) })
       model.select(item)
       model.showsQuickLookContent = true
       let size = QuickLookView.idealSize(for: item, form: model.contentForm(of: item))
@@ -280,6 +323,23 @@ struct SnapshotProbeTests {
         try snapshot(
           QuickLookView(model: model) { _ in }, size: size, dark: dark,
           to: "\(out)/\(name)\(dark ? "-dark" : "").png")
+      }
+    }
+    // 拖出去时指针下的预览（体检 D3）：这一行画在窗口底色的卡上（深浅按 App 外观，这里两种都画）
+    let dragged: [(String, ClipItem?)] = [
+      ("drag-preview-link", store.items.first { $0.text?.hasPrefix("https://developer") == true }),
+      ("drag-preview-image", store.items.first { $0.kind == .image }),
+    ]
+    for (name, found) in dragged {
+      let item = try #require(found)
+      for dark in [false, true] {
+        let image = try #require(
+          ClipDrag.preview(
+            item, form: model.contentForm(of: item), images: store.images,
+            colorScheme: dark ? .dark : .light))
+        let bitmap = try #require(image.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:)))
+        try #require(bitmap.representation(using: .png, properties: [:]))
+          .write(to: URL(filePath: "\(out)/clip-\(name)\(dark ? "-dark" : "").png"))
       }
     }
     try renderTranslate(out)

@@ -771,10 +771,11 @@ import Observation
           [unowned self] in commandReturn(item)
         })
     }
-    // 计算结果的 ⌘C 和 ⌘↩ 一样，不重复列
+    // 计算结果的 ⌘C 和 ⌘↩ 一样，不重复列；复制路径和剪贴板 ⌘K 的「拷贝路径」同一个符号 link（mac-whisker §3）
     if item.kind != .calculation, let title = copyTitle(for: item) {
+      let symbol = item.kind == .app || item.kind == .path ? "link" : "doc.on.doc"
       actions.append(
-        ActionMenu.Item(title: title, symbol: "doc.on.doc", shortcut: "⌘C") { [unowned self] in
+        ActionMenu.Item(title: title, symbol: symbol, shortcut: "⌘C") { [unowned self] in
           copy(item)
         })
     }
@@ -806,12 +807,8 @@ import Observation
     return actions
   }
 
-  /// 按 actionQuery 过滤（标题包含，不分大小写）
-  var filteredActions: [ActionMenu.Item] {
-    let query = actionQuery.trimmingCharacters(in: .whitespaces)
-    guard !query.isEmpty else { return actions }
-    return actions.filter { $0.title.localizedCaseInsensitiveContains(query) }
-  }
+  /// 按 actionQuery 过滤（和剪贴板的两个菜单同一个 ActionMenu.filter：子串 + 中文标题的拼音前缀）
+  var filteredActions: [ActionMenu.Item] { ActionMenu.filter(actions, query: actionQuery) }
 
   /// ⌘K / 底栏「动作」：没有选中项时不打开
   func toggleActions() {

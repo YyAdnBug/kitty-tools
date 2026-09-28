@@ -241,9 +241,9 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 | 目录 | 文件 |
 |---|---|
 | `App/` | `KittyToolsApp.swift`（@main 和 MenuBarExtra）、`AppDelegate.swift`（单实例检查、组装对象、生命周期、退出和锁屏清理）、`Updater.swift`（应用内更新，D8） |
-| `Shell/` | `OverlayPanel.swift`、`HotKeyCenter.swift`、`HotKeyRecorder.swift`、`Permissions.swift`（辅助功能、屏幕录制、文件和文件夹授权；自动化被拒时打开系统设置）、`Paster.swift`（自家写剪贴板的唯一出口；`write(string:record:)` 把本 App 生成的新文字同时记进剪贴板历史）、`Subprocess.swift`（进程外跑系统命令行工具：更新的 ditto / codesign、系统命令的 pmset / osascript）、`Style.swift`（Whisker 刻度：圆角、七条弹簧曲线、中性色 / 家族色、输入框底、复制对勾停留、卡片表面 `CardSurface`、发丝线 `Hairline` / `hairlineBorder`、主按钮 `BrandButtonStyle`、种类色块、键帽、面板描边）、`HoverTracker.swift`（列表行悬停：`.activeAlways` 追踪区，非激活浮层里代替 `onHover`）、`Accent.swift`（强调色：跟随系统 + 8 色、配色计算、根视图的 `.appAccent()`）、`Island.swift`（刘海岛：全局轻提示，替换原来的 Toast）、`StatusItem.swift`（菜单栏图标与菜单，NSStatusItem，Whisker D 的呼吸 / 弹一下）、`ActionMenu.swift`（剪贴板 ⌘K、剪贴板筛选面板、启动器 ⌘K 共用的动作菜单） |
+| `Shell/` | `OverlayPanel.swift`、`HotKeyCenter.swift`、`HotKeyRecorder.swift`、`Permissions.swift`（辅助功能、屏幕录制、文件和文件夹授权；自动化被拒时打开系统设置）、`Paster.swift`（自家写剪贴板的唯一出口；`write(string:record:)` 把本 App 生成的新文字同时记进剪贴板历史）、`Subprocess.swift`（进程外跑系统命令行工具：更新的 ditto / codesign、系统命令的 pmset / osascript）、`Style.swift`（Whisker 刻度：圆角、七条弹簧曲线、中性色 / 家族色、输入框底、复制对勾停留、卡片表面 `CardSurface`、发丝线 `Hairline` / `hairlineBorder`、主按钮 `BrandButtonStyle`、种类色块、键帽、面板描边）、`HoverTracker.swift`（列表行悬停：`.activeAlways` 追踪区，非激活浮层里代替 `onHover`）、`Accent.swift`（强调色：跟随系统 + 8 色、配色计算、根视图的 `.appAccent()`）、`Island.swift`（刘海岛：全局轻提示，替换原来的 Toast）、`StatusItem.swift`（菜单栏图标与菜单，NSStatusItem，Whisker D 的呼吸 / 弹一下）、`ActionMenu.swift`（剪贴板 ⌘K、剪贴板筛选面板、剪贴板多选的收藏夹列表、启动器 ⌘K 共用的动作菜单：分节、一级子列表、共用过滤 `filter`（子串 + 拼音前缀），体检 C3 C4） |
 | `Storage/` | `Database.swift`、`Keychain.swift`、`Prefs.swift`、`LegacyImport.swift` |
-| `Clipboard/` | `ClipboardWatcher.swift`、`ClipboardStore.swift`、`ClipItem.swift`、`ClipboardFilter.swift`、`ContentForm.swift`、`Search.swift`、`ImageStore.swift`、`OCR.swift`、`ClipboardPanelView.swift`、`ClipRowView.swift`、`PreviewView.swift`、`Dialogs.swift`、`LinkPreview.swift`（链接富预览：按块读网页 og 标签、isFetchable、内存缓存）、`QuickLookView.swift`（⌘Y 放大预览） |
+| `Clipboard/` | `ClipboardWatcher.swift`、`ClipboardStore.swift`、`ClipItem.swift`、`ClipboardFilter.swift`、`ContentForm.swift`、`Search.swift`、`ImageStore.swift`、`OCR.swift`、`ClipboardPanelView.swift`、`ClipRowView.swift`、`PreviewView.swift`、`Dialogs.swift`、`LinkPreview.swift`（链接富预览：按块读网页 og 标签、isFetchable、内存缓存）、`QuickLookView.swift`（⌘Y 放大预览）、`ClipDrag.swift`（行拖到别的 App：AppKit 拖放会话 + 行首图标块和标题的预览，体检 D3） |
 | `Translate/` | `TranslateCoordinator.swift`、`LanguageResolver.swift`、`SelectionReader.swift`、`SSE.swift`、`Providers/`（`Zhipu`、`AIService`、`Baidu`、`Youdao`、`Google`、`DeepL`、`Microsoft`、`Volcengine`、`Tencent` 各一个 `.swift`）、`TranslatePanelView.swift`、`ProviderCardView.swift`（含服务身份 `ServiceTile`：官方 logo 或品牌色块，彗星边框、骨架扫光）、`RevealText.swift`（流式译文显影，TextRenderer）、`HistoryStore.swift`、`HistoryView.swift`、`WordLookup.swift`（查词：是不是一个词、系统词典查询与解析、单词模式示例，D4）、`DictionaryCardView.swift`（系统词典卡） |
 | `Settings/` | `GeneralTab.swift`、`HotkeysTab.swift`、`ClipboardTab.swift`、`TranslateTab.swift`、`AboutTab.swift`、`LauncherTab.swift`、`ScreenshotTab.swift`、`SettingsWindow.swift`（D 阶段从 Shell 搬来：NavigationSplitView 侧栏 + 搜索 + 页头）、`OnboardingView.swift`（首次安装的欢迎引导：欢迎 + 按一下试试）、`ShortcutsSheet.swift`（快捷键速查表 + `ShortcutsButton`）、`OrderedList.swift`（可拖动排序列表共用的「+ −」按钮条、行高、详情页页头）、`TranslateServiceDetail.swift`（翻译服务详情页）、`SearchEngineDetail.swift`（网页搜索 / 快捷链接详情页） |
 | `Launcher/` | `LauncherItem.swift`（结果项与内置动作）、`AppCatalog.swift`（App 目录 + 中文名 + 拼音）、`LauncherMatch.swift`（匹配与排序纯函数）、`LauncherUsage.swift`（使用记录表）、`LauncherModel.swift`、`LauncherPanelView.swift`、`FileSearch.swift`（文件搜索：open / find / 空格开头，NSMetadataQuery 查询、排除、排序、最近的文件、授权提示，M13）、`SystemCommands.swift`（系统命令目录、quit / hide / forcequit / eject 解析与只读列举，D2）、`SystemControl.swift`（系统命令的执行：锁屏、pmset、osascript、退出 App、推出） |
@@ -329,7 +329,7 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 | 列表 `F/components/ClipboardHistoryVirtualList`、`F/lib/clipboard-list-rows.ts:28-66` | `ScrollView` + `LazyVStack(pinnedViews: .sectionHeaders)` + `ScrollViewReader` | M | 无搜索词时按天分组并吸顶（今天 / 昨天 / M月D日 / YYYY年M月D日，用 `Date.FormatStyle`）；~~有搜索词时按相关度排序、不分组~~ 有搜索词也按天分组、时间顺序（体检 A6）。新条目进来时，除非用户正在浏览（方向键、⌘数字、修饰键点击），选中项回到第 0 条（`UC:200-202`） |
 | **行渲染细则** `F/components/ClipboardItemCard:152-250`、`F/lib/clipboard-list-label.ts:4-31` | `ClipRowView` | S | 图标位优先级：色块 > 缩略图 > App 图标 > 类型图标。主文案：text 取前 120 字；image 为「图片 · W×H · 大小」；file 为文件名或「N Files: a, b」。备注第二行只在收藏或片段上显示（体检 A3 起所有条目都能写、有就显示）。右侧依次：收藏夹徽标（仅当收藏夹筛选为「全部」时）、多选勾、前 9 行 ⌘1–9 提示（多选时隐藏）、带格式图标、收藏星 |
 | 点击语义 `F/lib/clipboard-multi-select.ts:52-85` | `onTapGesture` + `NSEvent.modifierFlags` | S | 普通点击 = 选中并粘贴；⌘ 点击切换选中；⇧ 点击从锚点重新计算区间；多选状态下普通点击只收起多选 |
-| 右键菜单 `ClipboardItemCard:254-327` | `.contextMenu` | S | 9 个菜单项及其出现条件照搬 |
+| 右键菜单 `ClipboardItemCard:254-327` | `.contextMenu` | S | ~~9 个菜单项及其出现条件照搬~~ 和 ⌘K 同一份动作表 `actions(for:targets:)`：名字、顺序、条件、分节一致，收藏夹是子菜单（当前的打 ✓、再点一次移出），不显示键位（体检 B12） |
 | 空态 `P:623-678` | `ContentUnavailableView` | S | 4 种文案，加「清除筛选」「新建片段」按钮，附快捷键提示（`ClipboardShortcutsHint`）；骨架屏不做 |
 | 键盘 `UC:874-960`、`P:434-487`、`F/lib/clipboard-hotkeys.ts:18-35` | 搜索框的 `control(_:textView:doCommandBy:)` 接 moveUp / moveDown / insertNewline / cancelOperation；⌘ 组合键在面板获得焦点时用本地 keyDown 监听处理 | M | ↑↓ 首尾循环，列表为空时不动。Enter 受 `clipboardPasteOnEnter` 控制；⌘Enter 总是粘贴，多选时合并粘贴。⌘1–9 按条目序号选中，`pasteOnEnter` 开启时同时粘贴。⌘A 全选可见条目。⌘D 收藏（多选时批量）。⌘⌫ / ⌘Del 删除。**⌘C 只复制**：不关面板、~~不置顶~~ 面板开着时列表不动、收起时再置顶（体检 A8），面板内提示「已复制」；片段复制同样展开占位符并强制纯文本；搜索框有选中文字时 ⌘C 让给系统。输入法组字时 Enter 和方向键由输入法处理，不会传过来，不再需要吞键 hack。对话框打开时列表热键让位 |
 | 粘贴 `UC:649-708,827-872`、`R/paste.rs:105-307`、`src-tauri/src/platform/macos/mac_input.rs:24-155` | `Paster`：先写最简版本：隐藏面板（orderOut）→ 写剪贴板 → 检查 `AXIsProcessTrusted` → 发 ⌘V（`CGEventSource(.combinedSessionState)`，keyDown/keyUp 都设 `flags = .maskCommand`，投递到 `.cgSessionEventTap`），**不加任何等待** | M | 显式设置 flags 后，热键还按着的 ⇧ 不会混进去。Tauri 的「松修饰键 + 等 30ms」「图片或文件多等 100ms」「每个按键新建 HID 源」都先不搬；M1 手测某个 App 失败时才加对应延迟，并用 `ponytail:` 注释写明是哪个 App。始终注入普通 ⌘V；「纯文本粘贴」靠只写 `.string` 实现。粘贴后该条保持原 id、更新时间戳并置顶。多选全是文本时按复制先后（旧→新）用 `\n` 拼接一次粘贴（片段展开占位符，体检 B1），并生成一条新历史；~~含图片或文件时逐条粘贴，间隔 250ms~~ 全是文件时一次写进全部文件、一次 ⌘V，其余按复制先后逐条、间隔 250ms、文本间补换行（体检 B3）。未授权时内容仍留在剪贴板，面板内给出提示 |
@@ -337,7 +337,7 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 | 收藏 / 备注 / 编辑 / 删除 `UC:512-1068` | SwiftUI `sheet` / `alert` + 面板内撤销条 | M | ~~取消收藏时：普通历史连带清备注，片段保留备注。备注对话框：Enter 保存，Shift+Enter 换行，留空即清除~~（体检 A3：取消收藏不清备注，所有条目都能写，单行 ↩ 保存）。编辑内容后丢弃富文本。~~删除后 5 秒内可撤销并插回原位置~~（体检 A2：删除进撤销栈，⌘Z 连着撤，面板收起 / 退出时才删）；收藏或片段单条删除要确认，仅归组的和批量删除不确认 |
 | 多选工具条 `F/components/ClipboardMultiSelectBar` | SwiftUI 工具条 | S | 合并粘贴 / 一起粘贴 / 依次粘贴（体检 B3）、批量收藏（全部已收藏则取消收藏）、放进收藏夹、删除 |
 | 搜索 `F/lib/clipboard-keyword-search.ts:8-166`、`F/lib/clipboard-search-highlight.ts:31-51` | `Search` 纯函数（主线程），约 100 行照搬，配单测 | S | 多个词取 AND；~~备注权重 ×3~~（体检 A6：只过滤不排序）；备注、来源 App、路径这类短字段允许子序列匹配，正文和 OCR 只认连续子串；正文只取前 8192 字 |
-| 预览 `F/components/ClipboardPreview`、`F/lib/clipboard-preview-actions.ts:14-45` | SwiftUI；长文本用包了一层的 `NSTextView`（TextKit 2） | M | 颜色色块；JSON 美化和字符串互转（只改视图，不改条目，切换条目时重置）；代码用等宽字体、不做高亮；图片；单个图片文件；文件列表最多 120 条；**搜索词高亮**。底栏：时间（今年内 `MM/DD HH:mm`，跨年 `YYYY/MM/DD HH:mm`）和来源 App。操作按钮最多直接显示 3 个，其余进「…」：翻译 / 在浏览器打开 / 复制纯文本 / 在访达中显示（`activateFileViewerSelecting`） |
+| 预览 `F/components/ClipboardPreview`、`F/lib/clipboard-preview-actions.ts:14-45` | SwiftUI；长文本用包了一层的 `NSTextView`（TextKit 2） | M | 颜色色块；JSON 美化和字符串互转（只改视图，不改条目，~~切换条目时重置~~ JSON 默认美化，点过「原文」一次呼出里一直看原文、收起面板才复位，体检 A10）；代码用等宽字体、不做高亮；图片；单个图片文件；文件列表最多 120 条；**搜索词高亮**。底栏：时间（今年内 `MM/DD HH:mm`，跨年 `YYYY/MM/DD HH:mm`）和来源 App。操作按钮最多直接显示 3 个，其余进「…」：翻译 / 在浏览器打开 / 复制纯文本 / 在访达中显示（`activateFileViewerSelecting`） |
 | 显示与隐藏 `P:223-277` | 面板的 show / hide 回调 | S | 显示时聚焦搜索框；**每次隐藏都重置**搜索、筛选、多选、选中项（回到第 0 条）和滚动位置，包括粘贴触发的隐藏。去掉 Tauri 的「粘贴除外」特例：原生在隐藏前已经拿到要粘贴的条目，不需要它 |
 | 设置 `src/features/settings/components/SettingsClipboardTab`、`src/shared/lib/clipboard-history-settings.ts:3-27` | `ClipboardTab`（`Form`） | S | 13 项（去掉 `clipboardDisableTextSelection`）+ 图片占用显示；取值范围照搬 `src-tauri/src/core/config.rs:1235-1247`（体检 A4 A5 A11 起：保留普通历史一行、默认粘贴为纯文本、排除 App 列表，图片占用分「普通 · 留下的」） |
 | 热键与菜单 `src-tauri/src/core/hotkeys.rs:253-292`、`src-tauri/src/core/tray.rs:152-159` | `HotKeyCenter`（Carbon）+ `MenuBarExtra` | S | 热键回调的第一件事是快照前台 App；热键为 nil 时不注册 |
@@ -725,7 +725,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 - 可借鉴：多屏冻结帧用 TaskGroup 并发截（我们已排除自家窗口，比它们先藏窗口更稳）；`CGWindowListCreateImage` 在 15 SDK 已标废弃、不能用；标注用值类型 + 显示与导出共用一个 draw；文字工具叠一个 NSTextView 编辑完再提交；钉图用不激活的 NSPanel、以鼠标为锚点缩放。
 - 本机调研原始记录（不入库）：`macos/build/research/`（对标路线 benchmark-roadmap.md、Alfred / iShot / Bob 明细、macshot / Snapzy 源码研究、旧版启动器 / 截图行为清单）。
 
-**不迁**：ts / b64 / url / case / uuid / ip 小工具、网站图标、Safari / Firefox 书签；延时、美化 / 水印、比例条、Enter 全屏、焦点窗口截图、窗口置顶、屏幕清洁、WebP；截图历史与钉图历史（复制的截图进剪贴板历史，作为唯一的历史）。
+**不迁**：ts / b64 / url / case / uuid / ip 小工具、网站图标、Safari / Firefox 书签；延时、美化 / 水印、比例条、Enter 全屏、焦点窗口截图、窗口置顶、屏幕清洁、WebP；截图历史与钉图历史（复制的截图进剪贴板历史，作为唯一的历史；要再钉出来，剪贴板里的图片 ⌘K / 右键 / ⌘Y「钉到屏幕」，2026-09-28 体检 D1）。
 - 热键：启动器 ⌥Space、截图 ⌥A（用户实际用的键）；编辑器工具键不带修饰的 1–4、钉图 T（沿用用户改键），不做编辑器内改键。⌥Space 只在 15.0–15.1 上注册失败，录制器已提示。
 
 **启动器网址线（M11，2026-09-25）**
@@ -1033,6 +1033,24 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   16. B4 / B5 1Password 7、KeeWeb 复制的密码不进历史；复制 GitHub token（ghp_…）、AWS Access Key、JWT、私钥块不进历史；复制一句「ghp_ 开头的 token」照常记。
   17. B6 iPhone 上复制、Mac 上接力：行上「其他设备 · 刚刚」，来源筛选里没有它；用会写来源标记的工具复制时来源是那个工具，不是当时的前台 App。
   18. D4 菜单栏剪贴板节末尾「暂停记录剪贴板」：点一下岛「已暂停记录剪贴板」、菜单项打勾，之后复制的不进历史、复制即译不弹、面板底栏「⏸ 已暂停记录 · N 条」；再点岛「已恢复记录剪贴板」；暂停时退出重开自动恢复。
+- 体检第 3 批「剪贴板面板交互」手测（2026-09-28，A10 B7–B14 B16 B18 C2–C4 D1–D3；浅色 / 深色、增强对比度、减弱动态效果、VoiceOver 各走一遍）：
+  1. A10 复制几段压缩 JSON：透镜和 ⌘Y 默认美化，元信息行按钮写「原文」；点「原文」后 ↑↓ 换条目、搜索、筛选都一直是原文；收起再呼出又是美化。一段 10 万字的 JSON 选中后上下移动不卡。
+  2. B7 选中第 3 条 ⌘⌫：透镜落到原来的第 4 条（不跳回第一条），再 ⌘⌫ 删的是它；⌘Z 两次按原位回来、选中回来的那条；删最后一条选中挪到上一条；「收藏」范围里 ⌘D 取消收藏、收藏夹筛选里移出收藏夹、片段范围里移出片段后同样挪到下一条。
+  3. B8 ⌘ 单击勾 3 条，输入只命中其中 1 条的词：底栏「已选 1 条」，⌘⌫ 只删这 1 条；清掉搜索词后那 2 条也不再是勾选的；换筛选让勾选的都看不见时退出多选。
+  4. B9 勾 2 条后在第三条上右键「仅复制」、在 ⌘Y 页脚点「复制」：剪贴板里是被点的那一条。
+  5. B10 ⌘K 开着在过滤框打字后 ⌘V 粘贴、⌘A 全选、⌘⌫ 删到行首、⌘Z 撤销：都是改过滤词，菜单不关、条目不删；过滤框空着时 ⌘⌫ 删掉条目并关菜单。筛选面板里同样。
+  6. B11 ⌘Y 打开一段代码，选中一句 ⌘C：大卡不跳走、刘海岛「已复制」+ 摘录；历史最上面多一条无来源的纯文本（粘贴出来没有黄底、没有放大的字、没有语法颜色）；前台 App 在排除名单里也照样记；开着复制即译时不弹翻译。图片的识别文字里选中 ⌘C 同样。
+  7. B12 右键菜单和 ⌘K：同样的名字、顺序和分节（右键是分隔线、不写键位）；纯文本没有「粘贴为纯文本」，带格式的有；「移到收藏夹」子菜单里当前的打 ✓，再点一次移出；删除是红字。右键快速划过长列表不卡。
+  8. B13 ⌘K「打开链接」、⌘O、⌘Y 页脚「打开」：面板先收起，浏览器在后台打开、界面不卡；固定着的面板不收；断网 / 打不开的地址岛报错。文件「在访达中显示」⌘R 同样先收起。
+  9. B14 选中文本 ⌘T 翻译浮窗出现在旁边；选中识别出文字的图片 ⌘T 翻译识别文字；选中文件 ⌘T 只有提示音；⌘K 里「翻译」写着 ⌘T，速查表里有。
+  10. B16 开 VoiceOver：⌘C 读「已复制」，⌘⌫ 读「已删除 1 条，按 Command-Z 撤销」，⌘K「复制图中文字」读「已复制图中文字」，点透镜里的色值胶囊读「已复制 #…」。
+  11. B18 选中一条带网址的文本，⌘E 改成另一个网址保存，⌘K「打开链接」开的是新网址。
+  12. C2 ⌘E 编辑纯文本：提示只有「⌘↩ 保存」，没改动时「保存」灰着、⌘↩ 不生效，改成全空格也灰着；带格式的条目提示保存后不保留格式；编辑片段提示占位符。⌘N 新建片段：焦点在名称框（只有它有粉色焦点环），Tab / ↩ 到正文，名称存成备注，搜索名称能找到。
+  13. C3 ⌘K 分四节、分节线清楚；有收藏夹时「移到收藏夹 ›」→ 或 ↩ 进去，顶上「‹ 移到收藏夹」，过滤词只过滤收藏夹，← / Esc / 点「‹」回来、选中停在「移到收藏夹」；没有收藏夹时是「放进新收藏夹…」。多选底栏「收藏夹…」弹同一份列表，从按钮上方长出来，↑↓ ↩ 选、Esc 关。菜单超过一屏时最下面露出半行。
+  14. C4 ⌘K 里输 fy 找到「翻译」、zfd 找到「在访达中显示」；筛选面板输 wx 找到来源「微信」；启动器开「只用英文输入法」后 ⌘K 里输拼音首字母能找到中文动作，其余启动器 ⌘K 行为不变。
+  15. D1 截一张 Retina 截图后在剪贴板 ⌘K / 右键 / ⌘Y 页脚「钉到屏幕」：面板收起，钉图出现在鼠标所在屏中央、和原来截图一样大（1:1 点尺寸），1.04→1 弹入；一张 6K 大图缩到屏幕 80% 以内；多选 3 张图依次往右下错开；固定着的面板不收；图片文件丢了岛报「没能钉到屏幕」。
+  16. D2 文件条目 ⌘O 用默认 App 打开、⌘R 在访达中显示、⌥⌘C 拷贝路径（多个文件每行一个，收起面板后历史最上面是这段路径）；链接 ⌘O；⌘Y 页脚第 3 个胶囊：链接「打开」、文件「在访达中显示」、图片「钉到屏幕」、JSON「原文 / 美化」、其余「收藏」。
+  17. D3 把一段带格式的文本行拖进 Pages / 备忘录：带格式；片段拖出去是展开后的纯文本；图片行拖进访达是「图片 宽×高.png」文件、拖进微信 / 邮件是图片；多个文件的条目拖进访达复制全部文件；勾 3 条文本后拖其中一条出去是合成的一段，拖没勾的行只拖它；拖放后历史不变（不置顶、不多条目）、选中不变；拖着经过别的 App 时面板不收起，放进去后面板收起（固定着不收），拖回面板 / 没放成不收；勾两张同尺寸的截图拖进访达是两个不同的文件；深色模式下拖动预览是深色卡；拖动后单击 / 双击行照常选中 / 粘贴（拖放会话接走了鼠标，SwiftUI 的按钮不会卡在按下状态）。
 
 **发布 0.1.0**（2026-09-27 改）：`macos/build-dmg.sh` 出 arm64 DMG 和 `_arm64.zip` → 本仓库 github.com/YyAdnBug/kitty-tools 发**正式 release、标 latest**（App 内更新读 `releases/latest`；不碰 Tauri 版的仓库，不跑 `pnpm release:verify`），两个文件都附上，**发布前须经用户确认**；tag `macos-v0.1.0` 打在 `main`。发布前先把 changelog.json 的 0.1.0 条目补全（启动器、截图、应用内更新等还没写进去）。
 
@@ -1124,6 +1142,10 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 | 65 | `useClipboard.ts:692` | ⌘C 不置顶，下次打开第一条和剪贴板对不上 | 面板开着不动，收起时置顶（体检 A8） |
 | 66 | `filter.rs:7-22`、`config.rs:671-679`、`privacy_markers.rs`、`source.rs:23-66` | 排除 App 关键词子串匹配（「Code」连 Xcode 一起排除）；隐私标记只有 3 种；敏感文本只认 sk- / bearer / 卡号；来源靠轮询时的前台 App 猜 | bundle ID 精确匹配 + App 列表（旧列表迁一次）；补 5 种标记、7 种密钥格式；先读来源标记、通用剪贴板记「其他设备」（体检 A11 B4 B5 B6） |
 | 67 | `image_budget.rs`、`paste.rs:209-211` | 图片预算把收藏图片也算进去，新截图一进来就被删；多选文件 ⌘C 只写第一个、粘贴逐个等 250 ms、依次粘贴顺序反、文本间没换行 | 只算普通图片、保住最新一张；全是文件一次写、一次 ⌘V，其余按复制先后、文本间补换行（体检 B2 B3） |
+| 68 | `clipboard-preview-actions.ts:27`（套到了 JSON 美化上） | 「切换条目时重置」让压缩 JSON 每换一条都得再点一次「美化」 | 默认美化，一次呼出里看原文就一直原文，收起面板复位；美化结果按条目缓存（体检 A10） |
+| 69 | `ClipboardItemCard/index.tsx:254-327`（原生照搬后又单写了一份 ⌘K） | 右键菜单和 ⌘K 各写一份：名字、条件对不上（带格式才有纯文本粘贴、当前分组置灰），右键缺复制为纯文本 / 打开链接 / 美化；右键「复制」复制的是全部勾选项 | 同一个 `actions(for:targets:)`，右键传被点的那条（体检 B9 B12） |
+| 70 | `useClipboard.ts:589-591,605-608`（原生没带过来） | 原生按 id 选中：删除、收藏范围取消收藏、移出收藏夹后跳回第一条，连按 ⌘⌫ 删错；勾选不随搜索裁剪，批量删到看不见的条目 | `changingList`：选中挪到下一条；勾选裁成看得见的，底栏计数和批量操作只对它们（体检 B7 B8） |
+| 71 | `ClipboardItemEditDialog`、`ClipboardSnippetCreateDialog` | 编辑对话框空白 / 没改动也能保存、不分情况提示丢格式；新建片段没有名称 | 空白或没改动时保存置灰；只在带格式时提示；新建片段加可选名称（存成备注）（体检 C2） |
 
 ## 附录：评审处理记录
 
@@ -1182,5 +1204,6 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 - 启动器系统命令（2026-09-27，推翻 D2）：Alfred 的 18 个全做、锁屏用系统私有函数、只确认不可撤销的、中文名 + Alfred 关键词（四项都按推荐）。
 - 2026-09-28 体检拍板（方案页 https://claude.ai/artifact/1KuAQRafw2E3QYAM4LULFR ，用户「全部按推荐」）。第 1 批外壳基础与全局：A9 固定只管点别处不收起，Esc / ⌘W / 再按热键一律收起，剪贴板、启动器也认 ⌘W，剪贴板 ⌘P 切换固定，删掉设置里的「点击面板外部时关闭」；A15 输入翻译默认 ⌥T；A29 更新后不开设置窗，改弹刘海岛「已更新到 x」+ 摘要；A30 本 App 生成的新文字写剪贴板时同时记进历史（`Paster.write(string:record:)`），历史里取出的、划词还原、面板里的色值块不记；B15 ⌘, 直达对应设置页；B17 卡片表面 `CardSurface` + `Style.inputFill`，卡片一律不加阴影；B29 `Style.copiedHold` 1.2 s；B30 `Shell/HoverTracker` 共用；B44 识字 text.viewfinder、截图翻译 translate；B48 录制拒绝通用编辑键并播报；B49 剪贴板访问改 PermissionRow；B50 主菜单关于 / 帮助、「退出 Kitty Tools」；B51 侧栏翻译在截图前、「登录时打开」「欢迎引导」；B52 菜单通知改 selector 观察者；B53 发丝线增强对比度 1 pt（`Hairline` / `hairlineBorder`）；B54 主按钮 `BrandButtonStyle`、速查表「完成」= ↩；B55 静默替换取词后先看取消；D20 引导第二屏加「登录时自动打开」勾选框（默认勾）。
 - 2026-09-28 体检拍板（同一方案页，用户「全部按推荐」）第 2 批剪贴板数据与模型：A1 分组并进收藏（收藏 = 默认收藏夹，分组 = 命名收藏夹，保留规则只剩收藏 ∨ 片段；启动时迁移已归组的置收藏、`clip_groups` 加 `position`；⌘D 取消收藏同时移出收藏夹；删收藏夹不确认、条目留在收藏、⌘Z 可撤；管理收藏夹改键盘列表、拖动排序、24 字拦住不截断；取消收藏后超期的底栏提示、收起面板才清）；A2 删除进撤销栈、⌘Z 连撤，收起 / 退出时才提交，再复制同内容拿回原条目，撤销后播报；A3 备注所有条目都能写、取消收藏不清、不影响保留、单行对话框；A4 只留「保留普通历史」（1 天 / 1 周 / 1 个月 / 3 个月 / 1 年 / 永久，默认 1 周）+ 图片兜底（只算普通图片）；A5 格式总是采集，「默认粘贴为纯文本」开关，⌥↩ 反过来；A6 搜索只过滤、始终按天分组；A7 占位符 {time} {datetime} {weekday} {uuid} {clipboard:N}；A8 ⌘C 收起面板时置顶；A11 排除 App 改 bundle ID 列表；B1 合并粘贴展开片段；B2 图片预算只算普通图片；B3 多选文件一次粘、依次粘贴按复制先后补换行、动词一个函数给；B4 补 5 种隐私标记；B5 补 7 种密钥格式；B6 来源先读来源标记、通用剪贴板记「其他设备」；C1 移出片段；D4 菜单栏「暂停记录剪贴板」（不存盘）。实现时的一处取舍：备注输入框占位按实际行为写「搜索时能搜到」（方案原文「搜索时优先命中」和 A6 只过滤冲突）；「移出收藏夹」留在默认收藏，超期提示只在取消收藏 / 移出片段时出现。
+- 2026-09-28 体检拍板（同一方案页，用户「全部按推荐」）第 3 批剪贴板面板交互：A10 JSON 默认美化，一次呼出里点过「原文」就一直原文、收起面板复位（美化结果按条目缓存）；B7 条目从列表消失后选中挪到下一条（`changingList`），⌘Z 后选中回来的那批最靠前的；B8 勾选随搜索 / 筛选 / 删除裁剪成看得见的，底栏计数和批量操作只对它们；B9 右键 / ⌘Y 页脚「复制」只复制被点的那条；B10 菜单开着时 ⌘ 键做了才收起，过滤框有字时 ⌘⌫ ⌘A ⌘V ⌘X ⌘Z 交给过滤框；B11 ⌘Y 里 ⌘C 只拷纯文本、经 `Paster.write(string:record:)` 记成无来源的新条目，大卡不跳；B12 右键菜单和 ⌘K 共用 `actions(for:targets:)`；B13 打开链接 / 文件、在访达中显示先收起（固定着不收）再后台打开；B14 ⌘T 翻译；B16 底栏提示和色值块复制主动播报；B18 编辑正文清掉链接缓存；C2 编辑 / 新建片段空白或没改动时保存置灰、提示只说相关的、新建片段加可选名称（存成备注）；C3 ActionMenu 分节（0.5 pt 发丝线，上下各 4 pt）+ 一级子列表「移到收藏夹 ›」，多选底栏「收藏夹…」打开同一份列表；C4 三个动作菜单共用 `ActionMenu.filter`（子串 + 中文标题拼音前缀）；D1 图片钉到屏幕（像素 ÷ 屏幕倍率，超 80% 缩小，鼠标所在屏中央，多张错开 24 pt）；D2 文件打开 ⌘O / 在访达中显示 ⌘R / 拷贝路径 ⌥⌘C、链接打开 ⌘O，⌘Y 页脚第 3 个胶囊按类型；D3 行拖到别的 App（AppKit 拖放会话，拖勾选项之一 = 全部勾选项，不算粘贴）。实现时的取舍：子列表那一行叫「移到收藏夹」、行尾 ›，不再加「…」（HIG：打开子菜单的项不写省略号，右键里是同名子菜单）；一个收藏夹都没有时第一级直接是「放进新收藏夹…」（进子列表只有一行没意义）；只勾一条时 ⌘K 和 ⌘E ⌘T ⌘O ⌘R 对着那一条（原来「有勾选就只给批量操作」，一条时没有对象歧义）；替代粘贴 / 复制为纯文本只给带格式的文本或多条；拖出用 AppKit 会话而不是 SwiftUI `onDrag`（一次只给得出一个 NSItemProvider，拖不了多个勾选项和一条里的多个文件）；「拷贝路径」同 ⌘C，面板开着时列表不动、收起时才记成新历史（A8）；⌘Y 里 ⌘C 按审查建议直接记（大卡开着选中不跳）。
 - 截图翻译（2026-09-24）：只用 Vision 本机识字；原文写剪贴板历史；默认热键 ⌥S。
 - 启动器 / 截图（2026-09-24）：启动器首版做 App、书签、直达、网页搜索、最近使用、内置动作、计算器、cb，文件搜索与 kill 放 M11；标注首版做矩形、箭头、文字、马赛克；附加功能只做取色（长截图、延时、美化 / 水印不做；长截图 2026-09-25 改为做，见 §10 D1）；做钉图，不做截图历史和钉图历史。

@@ -4,7 +4,8 @@
 // 行 40，选中行原地展开成透镜（LensView），一块中性高亮在行间滑动、和透镜一起伸缩（前缀和定位）；
 // 片段范围第一行固定一条虚线的「＋ 新建片段 ⌘N」；底栏 36 = （已暂停记录）条数 / 修饰键提示 / 多选动词 ｜ 粘贴 ↩ · 操作 ⌘K ｜
 // 齿轮 图钉。
-// Tab 筛选面板从搜索栏左下长出、⌘K 操作面板从底栏右下长出（共用 Shell/ActionMenu）；对话框从搜索栏下沿落下。
+// Tab 筛选面板从搜索栏左下长出、⌘K 操作面板从底栏右下长出、多选底栏「收藏夹…」的列表从按钮上方长出（共用 Shell/ActionMenu）；
+// 右键菜单和 ⌘K 同一份动作表；行能拖到别的 App（ClipDrag）；对话框从搜索栏下沿落下。
 // 状态和操作都在 ClipboardPanelModel。
 
 import SwiftUI
@@ -24,6 +25,8 @@ struct ClipboardPanelView: View {
   /// 按住超过 150 ms 才算「按住」（S4）：⌘ 亮出 ⌘1–9 键帽，⌘ / ⌥ 把底栏左边换成对应的替代动作。
   /// 按 ⌘K、⌘D 这类组合键时一闪而过的 ⌘ 不换，底栏不闪；松开立刻收
   @State private var shownKeys: EventModifiers = []
+  /// 多选底栏「收藏夹…」按钮的左缘（面板坐标）：收藏夹列表锚在它上方
+  @State private var groupsButtonX: CGFloat = 0
   /// 已经滚过顶部的分组数：这些分组的标题正吸顶（或已滚走），加材质底；平时没有灰条。
   /// 只存这个整数，别存滚动位置（每帧都会让整个面板重算）
   @State private var pinnedSections = 0
@@ -46,6 +49,8 @@ struct ClipboardPanelView: View {
   static let emptyListHeight: CGFloat = 140
   /// 筛选面板 / ⌘K 开着时列表区至少这么高（8.5 行菜单 + 上下余量），短列表时面板先长到放得下
   static let paletteListHeight: CGFloat = ActionMenu.rowHeight * 8.5 + 26
+  /// 面板根视图的坐标系（多选底栏按钮报位置用）
+  nonisolated private static let space = "clipboardPanel"
 
   var body: some View {
     let items = model.visibleItems
@@ -79,11 +84,26 @@ struct ClipboardPanelView: View {
     .overlay(alignment: .bottomTrailing) {
       if model.palette == .actions {
         ActionMenu(
-          items: model.filteredActions, selection: model.actionSelection, maxRows: 8.5,
-          onRun: model.run
+          items: model.filteredActions, selection: model.actionSelection,
+          emptyText: model.submenuTitle == nil ? "没有匹配的操作" : "没有匹配的收藏夹",
+          header: model.submenuTitle, onBack: model.leaveSubmenu, maxRows: 8.5, onRun: model.run
         )
         // 右缘对着底栏「操作 ⌘K」：右内边距 14 + 图钉 + 齿轮 + 竖线和间距
         .padding(.trailing, 80)
+        .padding(.bottom, Self.barHeight + 4)
+      }
+    }
+    // 多选底栏「收藏夹…」：锚在按钮上方（左缘对齐，放不下时往左挪）
+    .overlay(alignment: .bottomLeading) {
+      if model.palette == .groups {
+        ActionMenu(
+          items: model.filteredActions, selection: model.actionSelection,
+          emptyText: "没有匹配的收藏夹", anchor: .bottomLeading, maxRows: 8.5, onRun: model.run
+        )
+        .padding(
+          .leading,
+          min(max(groupsButtonX - 8, Self.inset), Self.width - ActionMenu.width - Self.inset)
+        )
         .padding(.bottom, Self.barHeight + 4)
       }
     }
@@ -104,6 +124,7 @@ struct ClipboardPanelView: View {
       if !Task.isCancelled { shownKeys = heldKeys }
     }
     .onChange(of: model.store.items.first?.id) { model.itemsChanged() }
+    .coordinateSpace(.named(Self.space))
     .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
       trusted = Permissions.isAccessibilityTrusted
     }
@@ -192,6 +213,7 @@ struct ClipboardPanelView: View {
     switch model.palette {
     case .filters: "line.3.horizontal.decrease"
     case .actions: "command"
+    case .groups: "folder"
     case nil: "magnifyingglass"
     }
   }
@@ -199,7 +221,9 @@ struct ClipboardPanelView: View {
   private var placeholder: String {
     switch model.palette {
     case .filters: "筛选范围、收藏夹、类型、来源"
-    case .actions: "搜索操作"
+    // 子列表只有「移到收藏夹」这一个
+    case .actions: model.submenuTitle == nil ? "搜索操作" : "搜索收藏夹"
+    case .groups: "搜索收藏夹"
     case nil: model.tokens.isEmpty ? "搜索剪贴板，Tab 筛选" : "搜索"
     }
   }
@@ -400,7 +424,8 @@ struct ClipboardPanelView: View {
         shortcutIndex: index < 9 ? index : nil, showsShortcut: shownKeys.contains(.command),
         isSelected: isSelected, lensOpen: lensOpen && isSelected, groupName: groupBadge(for: item)
       )
-      .contextMenu { contextMenu(for: item) }
+      // 右键菜单和 ⌘K 同一份动作（体检 B12）；包成视图：菜单打开时才算，不在每次画行时建一遍
+      .contextMenu { ClipContextMenu { model.actions(for: item, targets: [item]) } }
       .transition(rowTransition)
     }
   }
@@ -448,51 +473,6 @@ struct ClipboardPanelView: View {
     return calendar.isDate(date, equalTo: .now, toGranularity: .year)
       ? date.formatted(.dateTime.month().day().locale(chinese))
       : date.formatted(.dateTime.year().month().day().locale(chinese))
-  }
-
-  @ViewBuilder private func contextMenu(for item: ClipItem) -> some View {
-    Button("粘贴") { model.paste([item]) }
-    if item.richType != nil {
-      Button(model.alternatePasteTitle) { model.paste([item], plainText: !pastesPlain) }
-    }
-    Button("复制") {
-      model.select(item)
-      model.copySelection()
-    }
-    Button("放大预览") {
-      model.select(item)
-      model.toggleQuickLook()
-    }
-    Divider()
-    Button(item.favorite ? "取消收藏" : "收藏") { model.toggleFavorite([item.id]) }
-    Button("备注…") { model.dialog = .note(item.id) }
-    if item.kind == .text {
-      if !item.isSnippet {
-        Button("存为片段") { model.store.update([item.id]) { $0.isSnippet = true } }
-      }
-      Button("编辑内容…") { model.dialog = .edit(item.id) }
-    }
-    if item.isSnippet { Button("移出片段") { model.removeFromSnippets([item.id]) } }
-    if item.kind == .image, !(item.ocrText ?? "").isEmpty {
-      Button("复制图中文字") { model.copyRecognizedText(item) }
-    }
-    if item.kind == .text || !(item.ocrText ?? "").isEmpty {
-      Button("翻译") { model.translate(item) }
-    }
-    Menu("收藏夹") {
-      ForEach(model.store.groups) { group in
-        Button(group.name) { model.assign([item.id], to: group.id) }.disabled(
-          item.groupID == group.id)
-      }
-      if item.groupID != nil { Button("移出收藏夹") { model.assign([item.id], to: nil) } }
-      Divider()
-      Button("新建收藏夹…") { model.dialog = .newGroup([item.id]) }
-    }
-    if item.kind == .file {
-      Button("在访达中显示") { model.revealInFinder(item) }
-    }
-    Divider()
-    Button("删除", role: .destructive) { model.delete([item.id]) }
   }
 
   // MARK: 空态
@@ -641,31 +621,30 @@ struct ClipboardPanelView: View {
     }
   }
 
-  /// 多选时底栏左边：一排「动词 + 键帽」按钮
+  /// 多选时底栏左边：一排「动词 + 键帽」按钮；对象是勾选项里看得见的（model.targets，搜索 / 筛选换了列表后不算看不见的）。
+  /// 「收藏夹…」打开收藏夹列表（ActionMenu，和 ⌘K 的「移到收藏夹」子列表同一份）
   @ViewBuilder private var multiSelectVerbs: some View {
-    let ids = model.multiSelection
-    let items = model.store.items.filter { ids.contains($0.id) }
+    let items = model.targets
+    let ids = Set(items.map(\.id))
     HStack(spacing: 12) {
-      Text("已选 \(ids.count) 条")
+      Text("已选 \(items.count) 条")
       Button(action: { model.pasteSelection() }) {
         hint(ClipboardPanelModel.PasteMode(items).verb, key: "↩", primary: true)
       }
       Button(action: { model.toggleFavorite(ids) }) {
         hint(items.allSatisfy(\.favorite) ? "取消收藏" : "收藏", key: "⌘D")
       }
-      Menu("收藏夹…") {
-        ForEach(model.store.groups) { group in
-          Button(group.name) { model.assign(ids, to: group.id) }
-        }
-        if items.contains(where: { $0.groupID != nil }) {
-          Button("移出收藏夹") { model.assign(ids, to: nil) }
-        }
-        Divider()
-        Button("新建收藏夹…") { model.dialog = .newGroup(ids) }
+      Button {
+        model.palette = model.palette == .groups ? nil : .groups
+      } label: {
+        Text("收藏夹…").foregroundStyle(.primary).contentShape(.rect)
       }
-      .menuStyle(.borderlessButton)
-      .menuIndicator(.hidden)
-      .fixedSize()
+      .onGeometryChange(for: CGFloat.self) {
+        $0.frame(in: .named(Self.space)).minX
+      } action: {
+        groupsButtonX = $0
+      }
+      .accessibilityAddTraits(model.palette == .groups ? .isSelected : [])
       Button(action: { model.delete(ids) }) { hint("删除", key: "⌘⌫") }
       Button(action: { model.multiSelection = [] }) { hint("取消", key: "Esc") }
     }
@@ -746,6 +725,8 @@ private struct ClipListRow: View {
   let lensOpen: Bool
   let groupName: String?
   @State private var hovered = false
+  /// 这次按下已经起了拖放会话（手势结束或被 AppKit 接走后自动复位）
+  @GestureState private var dragging = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
@@ -774,6 +755,18 @@ private struct ClipListRow: View {
       .contentShape(.rect)
     }
     .buttonStyle(.plain)
+    // 拖到别的 App（体检 D3）：拖开 6 pt 就起 AppKit 会话（ClipDrag），之后的鼠标事件归它；不改选中。
+    // 放成了照常收起面板（固定着不收）
+    .simultaneousGesture(
+      DragGesture(minimumDistance: 6).updating($dragging) { _, started, _ in
+        guard !started else { return }
+        started = true
+        ClipDrag.begin(
+          model.dragItems(for: item),
+          preview: ClipDrag.preview(item, form: form, images: model.store.images)
+        ) { [model] in if !model.isPinned { model.hidePanel() } }
+      }
+    )
     .background {
       HoverTracker { inside in withAnimation(.easeOut(duration: 0.10)) { hovered = inside } }
     }
@@ -796,6 +789,27 @@ private struct ClipListRow: View {
     return .asymmetric(
       insertion: .opacity.combined(with: .offset(y: 4)).animation(.easeOut(duration: 0.16)),
       removal: .opacity.animation(.easeIn(duration: Style.fadeOut)))
+  }
+}
+
+/// 右键菜单（体检 B12）：和 ⌘K 同一份动作（ClipboardPanelModel.actions(for:targets:)），分节处插分隔线，
+/// 子列表是子菜单（当前收藏夹打 ✓，再点一次移出），不显示键位（HIG：右键菜单不写快捷键）
+private struct ClipContextMenu: View {
+  /// 闭包：动作表在菜单内容真要画时才建
+  let items: () -> [ActionMenu.Item]
+
+  var body: some View {
+    let items = items()
+    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+      if index > 0, items[index - 1].section != item.section { Divider() }
+      if let submenu = item.submenu {
+        Menu(item.title) { ClipContextMenu { submenu } }
+      } else if let checked = item.isChecked {
+        Toggle(item.title, isOn: Binding(get: { checked }, set: { _ in item.run() }))
+      } else {
+        Button(item.title, role: item.isDestructive ? .destructive : nil, action: item.run)
+      }
+    }
   }
 }
 

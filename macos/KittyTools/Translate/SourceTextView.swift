@@ -1,6 +1,7 @@
 // 多行输入框（包一层 NSTextView）：翻译原文、剪贴板备注 / 编辑 / 片段都用它。回车走 doCommandBy，
 // 输入法组字期间由输入法消费、不会误提交。主输入框挂进窗口时设为 initialFirstResponder；
-// 对话框里的输入框出现时抢焦点、消失时把焦点还给主输入框（焦点已在别的输入框里就不抢）。插入点和选中文字底色是
+// 对话框里的输入框出现时抢焦点（给了 focusRequest 的不抢，等它变了才拿：新建片段先填名称、Tab 过来）、
+// 消失时把焦点还给主输入框（焦点已在别的输入框里就不抢）。插入点和选中文字底色是
 // 品牌粉（mac-overlay-panel §3）；onFocusChange：焦点进出时回调（外面的输入框底据此画 Whisker 焦点环）。
 // 外面的输入框底不给它左右内边距、改由 horizontalInset 缩进文字：滚动区铺满框宽，滚动条贴框的右边（同翻译结果卡）。
 
@@ -17,6 +18,8 @@ struct SourceTextView: NSViewRepresentable {
   /// 外面框的左右内边距挪到这里，滚动条才贴框边
   var horizontalInset: CGFloat = 2
   var isDialogField = false
+  /// 对话框里第二个输入框：出现时不抢焦点，这个数变大一次就拿一次焦点（nil = 照常出现就抢）
+  var focusRequest: Int?
   var onCancel: (() -> Void)?
   var onSubmit: () -> Void = {}
   /// 焦点进出（画焦点环用）
@@ -38,6 +41,7 @@ struct SourceTextView: NSViewRepresentable {
     textView.delegate = context.coordinator
     let scroll = FocusScrollView()
     scroll.isDialogField = isDialogField
+    scroll.grabsFocusOnAppear = focusRequest == nil
     scroll.drawsBackground = false
     scroll.hasVerticalScroller = true
     scroll.documentView = textView
@@ -48,6 +52,10 @@ struct SourceTextView: NSViewRepresentable {
     context.coordinator.parent = self
     guard let textView = scroll.documentView as? FocusTextView else { return }
     textView.onFocusChange = onFocusChange
+    if let request = focusRequest, request != context.coordinator.focusRequest {
+      context.coordinator.focusRequest = request
+      textView.window?.makeFirstResponder(textView)
+    }
     if textView.string != text { textView.string = text }
     if textView.font?.pointSize != fontSize { textView.font = .systemFont(ofSize: fontSize) }
     // 不露系统蓝：插入点强调色，选中文字底色强调色 0.28（普通 NSTextView 不是共用的字段编辑器；
@@ -62,6 +70,8 @@ struct SourceTextView: NSViewRepresentable {
 
   final class Coordinator: NSObject, NSTextViewDelegate {
     var parent: SourceTextView
+    /// 上次处理过的 focusRequest（0 = 还没要过）
+    var focusRequest = 0
     init(parent: SourceTextView) { self.parent = parent }
 
     func textDidChange(_ notification: Notification) {
@@ -124,11 +134,12 @@ struct SourceTextView: NSViewRepresentable {
 
   final class FocusScrollView: NSScrollView {
     var isDialogField = false
+    var grabsFocusOnAppear = true
 
     override func viewDidMoveToWindow() {
       super.viewDidMoveToWindow()
       if isDialogField {
-        window?.makeFirstResponder(documentView)
+        if grabsFocusOnAppear { window?.makeFirstResponder(documentView) }
       } else {
         window?.initialFirstResponder = documentView
       }

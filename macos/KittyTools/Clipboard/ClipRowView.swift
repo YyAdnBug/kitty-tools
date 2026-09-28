@@ -136,8 +136,8 @@ struct ClipRowView: View {
 
 /// 行首 24 pt 图标块（圆角 tile(24)）：颜色 = 色块（透明时垫棋盘格）；图片 = 缩略图；文本 = 来源 App 图标，
 /// JSON / 代码 / 链接在右下角加 11 pt 角标（链接取过预览后是网站图标）；都没有时是网站图标或种类图标。
-/// 新条目插进来时 0.85→1（pop，只播一次，见 IconPop）
-private struct IconTile: View {
+/// 新条目插进来时 0.85→1（pop，只播一次，见 IconPop）。拖动预览（ClipDrag）也用它
+struct IconTile: View {
   let item: ClipItem
   let form: ContentForm?
   let images: ImageStore

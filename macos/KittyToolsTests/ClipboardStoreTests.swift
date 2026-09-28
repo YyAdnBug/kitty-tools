@@ -490,33 +490,44 @@ struct ClipboardStoreTests {
     #expect(!model.handleKeyEquivalent(try commandW(.command)))
   }
 
-  /// ⌘K 里的收藏夹操作和右键菜单一样全、按拖动排的顺序：移到已有收藏夹（已在里面的那个不列）、移出收藏夹、放进新收藏夹；
-  /// 放进去就是收藏，移出后留在默认收藏
+  /// ⌘K 的「移到收藏夹 ›」子列表（体检 C3，和右键子菜单、多选底栏「收藏夹…」同一份）：按拖动排的顺序，
+  /// 都在里面的那个打 ✓、再选一次移出；有一条在收藏夹里就给「移出收藏夹」；最后「新建收藏夹…」。
+  /// 放进去就是收藏，移出后留在默认收藏；一个收藏夹都没有时第一级直接是「放进新收藏夹…」
   @Test func actionsMoveBetweenGroups() throws {
     let (store, _) = try makeStore()
     store.record(text("a", ago: 2))
     store.record(text("b", ago: 1))
+    let model = ClipboardPanelModel(store: store)
+    #expect(model.actions.contains { $0.title == "放进新收藏夹…" && $0.submenu == nil })
     let work = try #require(store.createGroup(named: "工作"))
     let home = try #require(store.createGroup(named: "生活"))
-    let model = ClipboardPanelModel(store: store)
-    let groupActions = { model.actions.filter { $0.detail == "收藏夹" }.map(\.title) }
-    #expect(groupActions() == ["移到「工作」", "移到「生活」", "放进新收藏夹…"])
+    let submenu = { model.actions.first { $0.id == "groups" }?.submenu ?? [] }
+    #expect(submenu().map(\.title) == ["工作", "生活", "新建收藏夹…"])
+    #expect(submenu().allSatisfy { $0.isChecked != true })
     store.moveGroup(home.id, to: 0)
-    #expect(groupActions() == ["移到「生活」", "移到「工作」", "放进新收藏夹…"])
-    model.actions.first { $0.title == "移到「工作」" }?.run()
+    #expect(submenu().map(\.title) == ["生活", "工作", "新建收藏夹…"])
+    submenu().first { $0.title == "工作" }?.run()
     #expect(store.items[0].groupID == work.id && store.items[0].favorite)
-    #expect(groupActions() == ["移到「生活」", "移出收藏夹", "放进新收藏夹…"])
-    // 多选：都在「工作」里才不列它；有一条在收藏夹里就给「移出收藏夹」
+    #expect(submenu().map(\.title) == ["生活", "工作", "移出收藏夹", "新建收藏夹…"])
+    #expect(submenu().first { $0.title == "工作" }?.isChecked == true)
+    // 再选一次打了 ✓ 的：移出，留在默认收藏
+    submenu().first { $0.title == "工作" }?.run()
+    #expect(store.items[0].groupID == nil && store.items[0].favorite)
+    // 多选：都在「生活」里才打 ✓；有一条在收藏夹里就给「移出收藏夹」
     model.multiSelection = Set(store.items.map(\.id))
-    #expect(groupActions() == ["移到「生活」", "移到「工作」", "移出收藏夹", "放进新收藏夹…"])
-    model.actions.first { $0.title == "移到「生活」" }?.run()
+    submenu().first { $0.title == "生活" }?.run()
     #expect(store.items.allSatisfy { $0.groupID == home.id && $0.favorite })
-    model.actions.first { $0.title == "移出收藏夹" }?.run()
+    #expect(submenu().first { $0.title == "生活" }?.isChecked == true)
+    submenu().first { $0.title == "移出收藏夹" }?.run()
     #expect(store.items.allSatisfy { $0.groupID == nil && $0.favorite })
-    // 筛选面板：收藏夹紧跟在「收藏」下面，最后是「管理收藏夹…」
-    let filters = model.filterItems.map(\.title)
-    #expect(Array(filters.prefix(4)) == ["收藏", "生活", "工作", "片段"])
-    #expect(filters.last == "管理收藏夹…")
+    // 多选底栏「收藏夹…」是同一份列表
+    model.palette = .groups
+    #expect(model.filteredActions.map(\.title) == submenu().map(\.title))
+    // 筛选面板：收藏夹紧跟在「收藏」下面，最后是「管理收藏夹…」；范围和收藏夹、类型和形态、来源、管理各是一节
+    let filters = model.filterItems
+    #expect(Array(filters.prefix(4).map(\.title)) == ["收藏", "生活", "工作", "片段"])
+    #expect(filters.last?.title == "管理收藏夹…" && filters.last?.section == 3)
+    #expect(filters.first { $0.title == "文本" }?.section == 1)
   }
 
   /// 粘贴动词（⌘K 首项、底栏同一个名字，体检 B3）；写进剪贴板的内容：多条文本按复制先后合成一段、片段展开占位符（B1），

@@ -1,31 +1,39 @@
-// 面板里的动作菜单（mac-whisker §6）：剪贴板 ⌘K、剪贴板 Tab 筛选面板、启动器 ⌘K 共用。画在面板里而不是 NSMenu，
-// 焦点一直留在搜索框：搜索框里的字由调用方拿来过滤 items，↑↓ 改 selection，↩ / 单击执行。这里只画，不存状态。
-// 宽 260、行高 28、中性高亮（不填强调色、不反白）；出现时 snap 从 anchor 0.92→1 放大 + 淡入，消失淡出 fadeOut。
+// 面板里的动作菜单（mac-whisker §6）：剪贴板 ⌘K、剪贴板 Tab 筛选面板、剪贴板多选底栏「收藏夹…」、启动器 ⌘K 共用。
+// 画在面板里而不是 NSMenu，焦点一直留在搜索框：搜索框里的字由调用方拿来过滤 items（共用 filter：标题 / 说明子串，
+// 中文标题的全拼和首字母前缀），↑↓ 改 selection，↩ / 单击执行。这里只画，不存状态。
+// 宽 260、行高 28、中性高亮（不填强调色、不反白）；section 变了的两行之间一条 0.5 pt 发丝线（上下各 4 pt）；
+// 带子列表的行尾是 ›（一级子列表，进去后顶上一行「‹ 标题」点一下回上一级）。出现时 snap 从 anchor 0.92→1 放大 + 淡入，消失淡出 fadeOut。
 
 import SwiftUI
 
 struct ActionMenu: View {
-  /// 一行：[✓] [图标] 标题 ⋯ 说明 快捷键
+  /// 一行：[✓] [图标] 标题 ⋯ 说明 快捷键 / ›
   struct Item: Identifiable {
-    /// 同一个菜单里不能重复（默认取标题；标题可能撞，比如同名的来源 App 和分组，就自己给）
+    /// 同一个菜单里不能重复（默认取标题；标题可能撞，比如同名的来源 App 和收藏夹，就自己给）
     var id: String
     var title: String
     /// SF Symbol 名；和 image 都没有时留空位对齐
     var symbol: String?
     /// 比 symbol 优先，16 × 16（来源 App 图标之类）
     var image: NSImage?
-    /// 靠右的 tertiary 小字（「来源 42」「分组」）
+    /// 靠右的 tertiary 小字（「来源 42」「收藏夹」）
     var detail: String?
-    /// 行尾的键位提示（「⌘↩」）
+    /// 行尾的键位提示（「⌘↩」）；右键菜单里不显示（HIG）
     var shortcut: String?
     /// nil = 不能勾选；菜单里有一项不是 nil，每行前面就留 12 pt 勾选列，true 画品牌粉 ✓
     var isChecked: Bool?
+    /// 分节：和上一行不同时中间画一条发丝线（右键菜单里是分隔线）
+    var section = 0
+    /// 一级子列表（「移到收藏夹 ›」）：执行 = 进去，run 不用
+    var submenu: [Item]?
+    /// 删除这类：右键菜单里是 .destructive 的按钮
+    var isDestructive = false
     var run: () -> Void
 
     init(
       title: String, symbol: String? = nil, image: NSImage? = nil, detail: String? = nil,
-      shortcut: String? = nil, isChecked: Bool? = nil, id: String? = nil,
-      run: @escaping () -> Void
+      shortcut: String? = nil, isChecked: Bool? = nil, id: String? = nil, section: Int = 0,
+      submenu: [Item]? = nil, isDestructive: Bool = false, run: @escaping () -> Void = {}
     ) {
       self.id = id ?? title
       self.title = title
@@ -34,6 +42,9 @@ struct ActionMenu: View {
       self.detail = detail
       self.shortcut = shortcut
       self.isChecked = isChecked
+      self.section = section
+      self.submenu = submenu
+      self.isDestructive = isDestructive
       self.run = run
     }
   }
@@ -42,15 +53,20 @@ struct ActionMenu: View {
   /// 当前选中行在 items 里的下标（越界就是没选中）
   let selection: Int
   var emptyText = "没有匹配的操作"
+  /// 在子列表里：顶上一行「‹ 标题」，点一下回上一级（onBack）
+  var header: String?
+  var onBack: () -> Void = {}
   /// 放大的锚点：菜单从哪个角长出来（⌘K 右下、筛选面板左上）
   var anchor: UnitPoint = .bottomTrailing
-  /// 超过这么多行就在菜单里滚动（给半行，露出下面还有），选中行自动滚进来
+  /// 超过这么多行高就在菜单里滚动（给半行，露出下面还有），选中行自动滚进来
   var maxRows: CGFloat = .infinity
-  /// 单击一行；执行前关菜单由调用方做
+  /// 单击一行；执行前关菜单（或进子列表）由调用方做
   let onRun: (Item) -> Void
 
   static let width: CGFloat = 260
   static let rowHeight: CGFloat = 28
+  /// 分节线上下各留的空
+  static let sectionGap: CGFloat = 4
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.colorSchemeContrast) private var contrast
@@ -58,28 +74,36 @@ struct ActionMenu: View {
   var body: some View {
     let checkable = items.contains { $0.isChecked != nil }
     let hasIcons = items.contains { $0.symbol != nil || $0.image != nil }
-    let rows = CGFloat(max(items.count, 1))
     let appear: AnyTransition =
       reduceMotion ? .opacity : .scale(scale: 0.92, anchor: anchor).combined(with: .opacity)
-    ScrollViewReader { proxy in
-      ScrollView {
-        VStack(alignment: .leading, spacing: 0) {
-          if items.isEmpty {
-            Text(emptyText)
-              .font(.system(size: 12))
-              .foregroundStyle(.secondary)
-              .frame(maxWidth: .infinity, minHeight: Self.rowHeight)
-          }
-          ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-            row(item, isSelected: index == selection, checkable: checkable, hasIcons: hasIcons)
-              .id(item.id)
+    VStack(spacing: 0) {
+      if let header {
+        headerRow(header)
+        separator
+      }
+      ScrollViewReader { proxy in
+        ScrollView {
+          VStack(alignment: .leading, spacing: 0) {
+            if items.isEmpty {
+              Text(emptyText)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, minHeight: Self.rowHeight)
+            }
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+              if index > 0, items[index - 1].section != item.section { separator }
+              row(item, isSelected: index == selection, checkable: checkable, hasIcons: hasIcons)
+                .id(item.id)
+            }
           }
         }
-      }
-      .scrollBounceBehavior(.basedOnSize)
-      .frame(height: min(rows, maxRows) * Self.rowHeight)
-      .onChange(of: selection) { _, index in
-        if items.indices.contains(index) { proxy.scrollTo(items[index].id) }
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(
+          height: Self.height(items, maxRows: maxRows, header: header != nil, contrast: contrast)
+        )
+        .onChange(of: selection) { _, index in
+          if items.indices.contains(index) { proxy.scrollTo(items[index].id) }
+        }
       }
     }
     .padding(5)
@@ -95,6 +119,51 @@ struct ActionMenu: View {
         insertion: appear.animation(
           Style.Motion.snap.animation(reduced: reduceMotion) ?? .easeOut(duration: Style.fadeIn)),
         removal: .opacity.animation(.easeIn(duration: Style.fadeOut))))
+  }
+
+  /// 滚动区的高：行和分节线的总高（空菜单一行）；超过 maxRows 个行高时截在某一行的一半，露出下面还有
+  /// （分节线也占高，直接按 maxRows × 行高截可能正好截在行缝上，看不出能滚）。截出来的高不超过 maxRows 个行高：
+  /// 放不下的那行半行也超了，就截在上一行的一半。子列表顶上「‹ 标题」和它下面的分节线（≤ 37）也算在里面，
+  /// 滚动区少给 1.5 行（42），整个菜单不比第一级高，调用方按 maxRows 留的地方够用
+  static func height(
+    _ items: [Item], maxRows: CGFloat = .infinity, header: Bool = false,
+    contrast: ColorSchemeContrast = .standard
+  ) -> CGFloat {
+    let limit = (header ? maxRows - 1.5 : maxRows) * rowHeight
+    let line = Style.hairlineWidth(contrast) + sectionGap * 2
+    var y: CGFloat = 0
+    var previousTop: CGFloat = 0
+    for (index, item) in items.enumerated() {
+      if index > 0, items[index - 1].section != item.section { y += line }
+      if y + rowHeight > limit {
+        return y + rowHeight / 2 <= limit ? y + rowHeight / 2 : previousTop + rowHeight / 2
+      }
+      previousTop = y
+      y += rowHeight
+    }
+    return max(y, rowHeight)
+  }
+
+  private var separator: some View {
+    Hairline().padding(.horizontal, 8).padding(.vertical, Self.sectionGap)
+  }
+
+  /// 子列表顶上的「‹ 标题」：点一下回上一级（← / Esc 同样）
+  private func headerRow(_ title: String) -> some View {
+    Button(action: onBack) {
+      HStack(spacing: 6) {
+        Image(systemName: "chevron.left").font(.system(size: 11, weight: .semibold))
+        Text(title).lineLimit(1)
+        Spacer(minLength: 0)
+      }
+      .font(.system(size: 12, weight: .semibold))
+      .foregroundStyle(.secondary)
+      .padding(.horizontal, 8)
+      .frame(height: Self.rowHeight)
+      .contentShape(.rect)
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel("返回上一级：\(title)")
   }
 
   private func row(_ item: Item, isSelected: Bool, checkable: Bool, hasIcons: Bool) -> some View {
@@ -126,7 +195,11 @@ struct ActionMenu: View {
             .foregroundStyle(.tertiary)
             .lineLimit(1)
         }
-        if let shortcut = item.shortcut {
+        if item.submenu != nil {
+          Image(systemName: "chevron.right")
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(.secondary)
+        } else if let shortcut = item.shortcut {
           Text(shortcut)
             .font(.system(size: 11, weight: .medium, design: .rounded))
             .foregroundStyle(.secondary)
@@ -151,5 +224,33 @@ struct ActionMenu: View {
     }
     .buttonStyle(.plain)
     .accessibilityAddTraits(item.isChecked == true ? .isSelected : [])
+    .accessibilityHint(item.submenu != nil ? "打开子列表" : "")
+  }
+
+  // MARK: 过滤（体检 C4）
+
+  /// 三个菜单共用的过滤：标题 / 说明按 LauncherMatch.fold 做子串（不分大小写、全半角、变音符号；输「来源」列出全部来源），
+  /// 中文标题另认全拼和首字母的前缀（fy → 翻译、zfd → 在访达中显示，启动器开着「只用英文输入法」时也找得到）。
+  /// 结果保持原顺序，菜单项位置不乱跳
+  static func filter(_ items: [Item], query: String) -> [Item] {
+    let folded = LauncherMatch.fold(query.trimmingCharacters(in: .whitespaces))
+    guard !folded.isEmpty else { return items }
+    let latin = folded.filter { !$0.isWhitespace }
+    return items.filter { item in
+      if LauncherMatch.fold(item.title).contains(folded) { return true }
+      if let detail = item.detail, LauncherMatch.fold(detail).contains(folded) { return true }
+      guard let pinyin = pinyin(of: item.title) else { return false }
+      return pinyin.full.hasPrefix(latin) || pinyin.initials.hasPrefix(latin)
+    }
+  }
+
+  /// 标题的拼音（按标题缓存：菜单每次打字都过滤一遍，转写不便宜）。ponytail: 只增不减，菜单标题就那么些
+  private static var pinyinCache: [String: (full: String, initials: String)?] = [:]
+
+  private static func pinyin(of title: String) -> (full: String, initials: String)? {
+    if let cached = pinyinCache[title] { return cached }
+    let value = AppCatalog.pinyin(title)
+    pinyinCache[title] = value
+    return value
   }
 }

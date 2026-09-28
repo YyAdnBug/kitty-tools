@@ -157,7 +157,7 @@ struct LensView: View {
     return attributed
   }
 
-  /// 「代码 · 70 字 · 14:02 · [图标] Xcode」，JSON 右边多一个「美化 / 原文」
+  /// 「代码 · 70 字 · 14:02 · [图标] Xcode」，JSON 右边多一个「原文 / 美化」（默认美化，按钮写「原文」，体检 A10）
   private var meta: some View {
     HStack(spacing: 6) {
       Text(metaText).lineLimit(1)
@@ -174,7 +174,7 @@ struct LensView: View {
           .buttonStyle(.plain)
           .foregroundStyle(Style.brandInk)
           .pointerStyle(.link)
-          .help("⌘K 里也有「美化 JSON」")
+          .help(model.prettyJSON ? "显示原文（这次呼出里一直有效）" : "美化 JSON")
       }
     }
     .font(.system(size: 11))
@@ -314,8 +314,9 @@ private struct ColorLens: View {
 
   private func chip(_ values: [String], _ index: Int) -> some View {
     Button {
-      // 面板开着时复制的色值块不记进历史（记新条目会把选中跳走，mac-native §5）
+      // 面板开着时复制的色值块不记进历史（记新条目会把选中跳走，mac-native §5）；焦点在搜索框，主动播报
       Paster.write(string: values[index])
+      ClipboardPanelModel.announce("已复制 \(values[index])")
       copied = index
       Task {
         try? await Task.sleep(for: Style.copiedHold)

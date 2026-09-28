@@ -54,21 +54,24 @@ struct DialogOverlay: View {
       }
     case .edit(let id):
       if let item = item(id) {
-        TextDialog(
-          title: "编辑内容", hint: "⌘↩ 保存。保存后不再保留原来的格式", initial: item.text ?? "",
-          onCancel: close
-        ) { text in
-          if !text.isEmpty { model.edit(id, text: text) }
+        // 提示只说和这条有关的（体检 C2）：片段说占位符（片段本来就按纯文本粘，带格式也不提丢格式），
+        // 其余带格式的才说保存后丢格式
+        let hint =
+          item.isSnippet
+          ? "⌘↩ 保存 · 占位符：" + Snippet.placeholderHelp
+          : item.richType != nil ? "⌘↩ 保存 · 保存后不再保留原来的格式" : "⌘↩ 保存"
+        TextDialog(title: "编辑内容", hint: hint, initial: item.text ?? "", onCancel: close) {
+          text, _ in
+          model.edit(id, text: text)
           close()
         }
       }
     case .newSnippet:
       TextDialog(
-        title: "新建片段", hint: "⌘↩ 保存。占位符：" + Snippet.placeholderHelp, initial: "", onCancel: close
-      ) { text in
-        if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-          model.saveSnippet(text)
-        }
+        title: "新建片段", hint: "⌘↩ 保存 · 占位符：" + Snippet.placeholderHelp, initial: "",
+        asksName: true, onCancel: close
+      ) { text, name in
+        model.saveSnippet(text, name: name)
         close()
       }
     case .newGroup(let ids):
@@ -90,42 +93,72 @@ struct DialogOverlay: View {
   }
 }
 
-/// 多行文本对话框（编辑 / 新建片段）：⌘↩ 保存
+/// 多行文本对话框（编辑 / 新建片段）：⌘↩ 保存。正文去掉空白后为空、或和原文一样时「保存」置灰、⌘↩ 不生效（体检 C2）。
+/// asksName（新建片段）：顶上一行可选的名称（存成备注，搜索时能搜到），焦点先在这里，Tab 切到正文
 private struct TextDialog: View {
   let title: String
   let hint: String
+  let initial: String
+  var asksName = false
   let onCancel: () -> Void
-  let onSave: (String) -> Void
+  /// 正文、名称
+  let onSave: (String, String) -> Void
   @State private var text: String
+  @State private var name = ""
+  /// 名称框里按 Tab 加一：正文框拿焦点
+  @State private var bodyFocus = 0
+  /// 有名称框时两个框轮流拿焦点：焦点环只画在拿着焦点的那个上（名称框出现时就抢焦点）
+  @State private var nameFocused = true
+  @State private var bodyFocused = false
 
   init(
-    title: String, hint: String, initial: String, onCancel: @escaping () -> Void,
-    onSave: @escaping (String) -> Void
+    title: String, hint: String, initial: String, asksName: Bool = false,
+    onCancel: @escaping () -> Void, onSave: @escaping (String, String) -> Void
   ) {
     self.title = title
     self.hint = hint
+    self.initial = initial
+    self.asksName = asksName
     self.onCancel = onCancel
     self.onSave = onSave
     _text = State(initialValue: initial)
   }
 
   var body: some View {
+    let canSave = ClipboardPanelModel.canSave(text, initial: initial)
     VStack(alignment: .leading, spacing: 10) {
       Text(title).font(.headline)
-      // 框的左右内边距改在文字上（6 + 2）：滚动条贴框的右边
+      if asksName {
+        CommandTextField(
+          text: $name, placeholder: "名称（可选，用于搜索）", isDialogField: true,
+          onCommand: { selector in
+            switch selector {
+            case #selector(NSResponder.insertTab(_:)), #selector(NSResponder.insertNewline(_:)):
+              bodyFocus += 1
+            case #selector(NSResponder.cancelOperation(_:)): onCancel()
+            default: return false
+            }
+            return true
+          }, onFocusChange: { nameFocused = $0 }
+        )
+        .dialogField(focused: nameFocused)
+      }
+      // 框的左右内边距改在文字上（6 + 2）：滚动条贴框的右边。有名称框时焦点先给名称框，Tab 过来
       SourceTextView(
         text: $text, submitsOnEnter: false, horizontalInset: 8, isDialogField: true,
-        onCancel: onCancel
-      ) { onSave(text) }
+        focusRequest: asksName ? bodyFocus : nil, onCancel: onCancel,
+        onFocusChange: asksName ? { bodyFocused = $0 } : nil
+      )
       .frame(height: 200)
-      .dialogField(horizontalPadding: 0)
+      .dialogField(horizontalPadding: 0, focused: !asksName || bodyFocused)
       Text(hint).font(.caption).foregroundStyle(.secondary)
       HStack {
         Spacer()
         Button("取消", action: onCancel)
-        Button("保存") { onSave(text) }
+        Button("保存") { onSave(text, name) }
           .keyboardShortcut(.return, modifiers: .command)
           .buttonStyle(BrandButtonStyle())
+          .disabled(!canSave)
       }
     }
   }
@@ -514,14 +547,15 @@ private struct GroupNameField: View {
 
 extension View {
   /// 对话框里的输入框（Whisker §3）：Style.inputFill 底，焦点环 1 pt 品牌粉 0.55 + 粉 0.18 外发光。
-  /// 对话框里只有一个输入框、一直拿着焦点，所以焦点环常亮
-  fileprivate func dialogField(horizontalPadding: CGFloat = 6) -> some View {
-    modifier(DialogField(horizontalPadding: horizontalPadding))
+  /// 只有一个输入框的对话框一直拿着焦点，焦点环常亮；有两个的（新建片段：名称 + 正文）传 focused，没焦点的只描发丝线
+  fileprivate func dialogField(horizontalPadding: CGFloat = 6, focused: Bool = true) -> some View {
+    modifier(DialogField(horizontalPadding: horizontalPadding, focused: focused))
   }
 }
 
 private struct DialogField: ViewModifier {
   var horizontalPadding: CGFloat = 6
+  var focused = true
 
   func body(content: Content) -> some View {
     let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
@@ -531,8 +565,14 @@ private struct DialogField: ViewModifier {
       .background(Style.inputFill, in: shape)
       // 外发光画在描边上再模糊（不给整块加 shadow：那样连里面的字都带光晕）
       .background {
-        shape.stroke(Style.brand.opacity(0.18), lineWidth: 4).blur(radius: 2)
+        if focused { shape.stroke(Style.brand.opacity(0.18), lineWidth: 4).blur(radius: 2) }
       }
-      .overlay(shape.strokeBorder(Style.brand.opacity(0.55), lineWidth: 1))
+      .overlay {
+        if focused {
+          shape.strokeBorder(Style.brand.opacity(0.55), lineWidth: 1)
+        } else {
+          shape.hairlineBorder()
+        }
+      }
   }
 }

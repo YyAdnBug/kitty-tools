@@ -114,6 +114,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // ⌘, 和底栏齿轮直达 设置 › 剪贴板（同翻译浮窗直达 设置 › 翻译）
     model.openSettings = { [unowned self] in showSettings(page: .clipboard) }
     model.openQuickLook = { [unowned self] in showQuickLook() }
+    // 图片条目「钉到屏幕」（体检 D1）：和截图的钉图同一块板
+    model.pinImage = { [unowned self] in pins.pin($0, frame: $1) }
     model.island = island
     model.closeQuickLook = { [unowned self] animated in
       guard animated else { return quickLookPanel.hide() }

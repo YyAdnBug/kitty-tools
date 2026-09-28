@@ -38,7 +38,7 @@ M1 起的实测结论。代码：`Shell/OverlayPanel.swift`、`HotKeyCenter.swif
 - 「只用英文输入法」（启动器开关）设在字段编辑器的 `inputContext.allowedInputSourceLocales` 上：字段编辑器整个窗口共用，关掉时要显式设回 nil。
 - 聚焦：输入框在 `viewDidMoveToWindow` 里把自己设为 `initialFirstResponder`；`present()` 先 `layoutSubtreeIfNeeded()` 再 `makeFirstResponder`（首次显示时 SwiftUI 还没建出视图）。
 
-- 对话框式输入框（`isDialogField`、`SourceTextView` 的对话框）消失时，只有焦点不在别的文本输入框里（或还在自己的字段编辑器里）才还焦点，免得连着换对话框时旧框抢走新框的焦点；`CommandTextField` 还给它出现前拿着焦点的那个输入框（还在同一窗口里的话，如管理收藏夹里行内改名完回到新建框），否则还给主输入框。`CommandTextField` 的 `maxLength`：超出上限的那次输入整段退回并提示音，不截断；输入法还在组字时不判断（改字会打断组字），确认后再判断；要随焦点变样子的界面（输入框焦点环）用 `CommandTextField` / `SourceTextView` 的 `onFocusChange`。快捷键录制器只在设置窗自己失去 key 时停止录制（截图框选、钉图等 NSPanel 抢走 key 不算）。
+- 对话框式输入框（`isDialogField`、`SourceTextView` 的对话框）消失时，只有焦点不在别的文本输入框里（或还在自己的字段编辑器里）才还焦点，免得连着换对话框时旧框抢走新框的焦点；`CommandTextField` 还给它出现前拿着焦点的那个输入框（还在同一窗口里的话，如管理收藏夹里行内改名完回到新建框），否则还给主输入框。`CommandTextField` 的 `maxLength`：超出上限的那次输入整段退回并提示音，不截断；输入法还在组字时不判断（改字会打断组字），确认后再判断；要随焦点变样子的界面（输入框焦点环）用 `CommandTextField` / `SourceTextView` 的 `onFocusChange`。对话框里有两个输入框时（新建片段：名称 + 正文），第二个用 `SourceTextView.focusRequest`：出现时不抢焦点，这个数变一次就拿一次焦点（名称框 Tab / ↩ 时加一）；关掉时照样把焦点还给主输入框。快捷键录制器只在设置窗自己失去 key 时停止录制（截图框选、钉图等 NSPanel 抢走 key 不算）。
 ## 4. 全局热键
 - Carbon `RegisterEventHotKey`，**非独占**注册。实测：`kEventHotKeyExclusive` 既不能让别的进程注册失败，也不会因别的进程已占用而失败（先后两个方向都返回 0）→ **检测不到跨进程冲突**。
 - 同进程重复注册同一组合返回 -9878；15.0–15.1 上只带 ⌥ 的组合返回 -9868 → 快捷键 Tab 显示错误，不按组合一刀切。
@@ -91,6 +91,7 @@ M1 起的实测结论。代码：`Shell/OverlayPanel.swift`、`HotKeyCenter.swif
 - `PinPanel`：`.borderless + .nonactivatingPanel`、`.floating`、`canBecomeKey`；显示只 `orderFrontRegardless`，**不 makeKey**（出现时不抢键盘）；用户点了它才 makeKey，Esc / ⌘C 才归它。
 - 原位置出现（选区的全局坐标），`constrainFrameRect` 原样返回，别被挪出菜单栏区域。拖动用 `performDrag(with:)`，双击关闭；缩放以鼠标为锚点、保持宽高比。
 - 不做点击穿透、不做钉图历史；钉图是看得见的浮动窗口，按 §8 的留用名单留在之后的截图里（隐藏着的不截）。
+- 剪贴板里的图片也能钉（体检 D1，⌘K / 右键 / ⌘Y 页脚「钉到屏幕」）：同一块 `PinBoard`，AppDelegate 接给 `ClipboardPanelModel.pinImage`；位置是鼠标所在屏可见区中央，点尺寸 = 像素 ÷ 该屏 `backingScaleFactor`，超过可见区 80% 等比缩小，多张往右下错开 24 pt（`ClipboardPanelModel.pinFrame`）；剪贴板面板没固定就先 `hide()`。
 - 外观（Whisker）：透明窗口 + 内容图层圆角 10、系统阴影（改尺寸后 `invalidateShadow()`）。钉上 = 窗口从 1.04 倍（以中心为准）弹簧回到原位 + 0.12 s 淡入：窗口帧动画只支持贝塞尔、冲不过头也不认时长，所以用内容视图的 `displayLink` 逐帧按 SwiftUI `Spring(duration: 0.35, bounce: 0.25)` 算帧（`popIn` / `stepPop`，同 `OverlayPanel.squeezeIn`），不给内容图层做放大（会被窗口边裁掉圆角）；用户开始拖动、缩放、关闭前先 `finishPopIn()`（停掉 display link、落到原位、`invalidateShadow`），不然下一帧又把窗口按回去；减弱动态效果时只淡入，超过半屏的钉图也只淡入（几乎整屏的透明窗口逐帧改尺寸，窗口服务器每帧重分配缓冲、重算阴影）。关闭先从 `board.panels` 移除、再缩到 0.92 淡出后 `orderOut`。悬停圆钮和缩放百分比是 `HUDBar`（材质 `withinWindow` 模糊的是钉图本身）。
 
 ## 10. 长截图（`Screenshot/ScrollCapture.swift`、`ScrollStitcher.swift`）
