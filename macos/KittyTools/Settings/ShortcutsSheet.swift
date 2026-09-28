@@ -205,6 +205,7 @@ struct ShortcutsSheet: View {
         Entry("hide", text: "列出正在运行的 App：↩ 隐藏"),
         Entry("forcequit", text: "列出正在运行的 App：↩ 强制退出（再按一次确认）"),
         Entry("eject", text: "列出可推出的磁盘：↩ 推出"),
+        Entry("kill", text: "列出后台进程（kill :端口 按端口列）：↩ 结束，⌘↩ 强制结束（再按一次确认）"),
       ]),
     // mac-translate「浮窗快捷键」「翻译浮窗」（N5–N6）；代码在 TranslateCoordinator.handleKeyEquivalent、SourceTextView
     Group(

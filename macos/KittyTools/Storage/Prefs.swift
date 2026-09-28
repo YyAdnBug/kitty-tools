@@ -13,6 +13,8 @@ enum Prefs {
   static let launcherBookmarksChrome = "launcherBookmarksChrome"
   static let launcherBookmarksEdge = "launcherBookmarksEdge"
   static let launcherBookmarksBrave = "launcherBookmarksBrave"
+  /// 启动器也搜 Chrome 的浏览历史（体检 D8，默认关；Chrome 书签开关关着时不生效）
+  static let launcherHistoryChrome = "launcherHistoryChrome"
   /// 网页搜索与快捷链接列表（JSON，见 WebSearch）
   static let launcherWebSearchEngines = "launcherWebSearchEngines"
   /// 兜底搜索在有本地结果时也附在最后（默认只在没有结果时出现）
@@ -106,6 +108,7 @@ enum Prefs {
       launcherBookmarksChrome: true,
       launcherBookmarksEdge: false,
       launcherBookmarksBrave: false,
+      launcherHistoryChrome: false,
       launcherFallbackAlways: false,
       launcherRomanInput: false,
       launcherSqueezeEntrance: false,

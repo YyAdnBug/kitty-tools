@@ -1,5 +1,6 @@
 // 跑系统自带的命令行工具：在进程外、不占主线程，等它结束拿退出码（和输出）。应用内更新的 ditto / codesign、
-// 启动器系统命令的 pmset / osascript 都走这里（mac-native §3：进程外 + continuation）。
+// 启动器系统命令的 pmset / osascript、kill 列进程的 ps / lsof、读 Chrome 浏览历史的 sqlite3 都走这里
+// （mac-native §3：进程外 + continuation）。
 
 import Foundation
 
@@ -10,28 +11,28 @@ enum Subprocess {
     var error = ""
   }
 
-  /// captures = false 时输出直接丢掉。
-  /// ponytail: 输出在进程结束后才一次读完，超过管道缓冲（64 KB）子进程会卡住写不完；只给输出很短的命令用，
-  /// 要长输出再改成边跑边读
+  /// captures = false 时输出直接丢掉。要的输出写进临时文件、结束后一次读完：管道缓冲只有 64 KB，
+  /// 写满了子进程就卡住、等不到它结束（sqlite3 导出的浏览历史约 460 KB，ps 列几百个进程也可能超）
   static func run(_ tool: String, _ arguments: [String], captures: Bool = false) async throws
     -> Result
   {
     let process = Process()
     process.executableURL = URL(filePath: tool)
     process.arguments = arguments
-    process.standardOutput = captures ? Pipe() : FileHandle.nullDevice
-    process.standardError = captures ? Pipe() : FileHandle.nullDevice
-    return try await withCheckedThrowingContinuation { continuation in
-      process.terminationHandler = { process in
-        func read(_ handle: Any?) -> String {
-          guard let pipe = handle as? Pipe else { return "" }
-          return String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        }
-        continuation.resume(
-          returning: Result(
-            status: process.terminationStatus, output: read(process.standardOutput),
-            error: read(process.standardError)))
-      }
+    let files = captures ? [temporaryFile(), temporaryFile()] : []
+    defer {
+      for file in files { try? FileManager.default.removeItem(at: file) }
+    }
+    if captures {
+      for file in files { FileManager.default.createFile(atPath: file.path, contents: nil) }
+      process.standardOutput = try FileHandle(forWritingTo: files[0])
+      process.standardError = try FileHandle(forWritingTo: files[1])
+    } else {
+      process.standardOutput = FileHandle.nullDevice
+      process.standardError = FileHandle.nullDevice
+    }
+    let status: Int32 = try await withCheckedThrowingContinuation { continuation in
+      process.terminationHandler = { continuation.resume(returning: $0.terminationStatus) }
       do {
         try process.run()
       } catch {
@@ -39,5 +40,22 @@ enum Subprocess {
         continuation.resume(throwing: error)
       }
     }
+    // 只关自己开的（nullDevice 是共用的，关了别处就写不进去了）
+    if captures {
+      for handle in [process.standardOutput, process.standardError] {
+        try? (handle as? FileHandle)?.close()
+      }
+    }
+    func read(_ index: Int) -> String {
+      guard files.indices.contains(index), let data = try? Data(contentsOf: files[index]) else {
+        return ""
+      }
+      return String(decoding: data, as: UTF8.self)
+    }
+    return Result(status: status, output: read(0), error: read(1))
+  }
+
+  private static func temporaryFile() -> URL {
+    FileManager.default.temporaryDirectory.appending(path: "kitty-\(UUID().uuidString)")
   }
 }

@@ -7,6 +7,7 @@
 //   音量：AppleScript 的 set volume（不控制别的 App，不要授权）。都用 osascript 跑在进程外：第一次控制访达 /
 //   loginwindow 时系统弹「允许控制」框，要等用户点，主线程不能跟着等。需要 apple-events entitlement。
 // - App：NSRunningApplication 的 terminate / forceTerminate / hide；推出：FileManager.unmountVolume。
+// - kill 列的后台进程（体检 D12）：kill(2) 发 SIGTERM（↩）/ SIGKILL（⌘↩，启动器里已上膛确认过）。
 
 import AppKit
 import Carbon.HIToolbox
@@ -19,6 +20,8 @@ enum SystemControl {
     case forceQuit(String)
     case hide(String)
     case eject(String)
+    /// 后台进程：SIGTERM，force 时 SIGKILL
+    case signal(pid: Int32, name: String, force: Bool)
   }
 
   static func perform(_ action: Action, island: Island?) {
@@ -29,7 +32,29 @@ enum SystemControl {
       control(path, island: island, failure: "没能强制退出") { $0.forceTerminate() }
     case .hide(let path): control(path, island: island, failure: "没能隐藏") { $0.hide() }
     case .eject(let path): Task { await eject([URL(filePath: path)], island: island) }
+    case .signal(let pid, let name, let force):
+      signal(pid, name: name, force: force, island: island)
     }
+  }
+
+  // MARK: 进程
+
+  /// 结果和错误都走岛：结束了 / 已经不在了 / 权限不够（别的用户的，ps 只列自己的，这里防 PID 被重用）。
+  /// ponytail: 列出来到按下之间 PID 被别的进程重用时会结束错的那个（要几秒内正好轮到同一个号，概率极低）；
+  /// 真要防就在发信号前用 proc_pidpath 比一下可执行文件
+  private static func signal(_ pid: Int32, name: String, force: Bool, island: Island?) {
+    guard kill(pid, force ? SIGKILL : SIGTERM) == 0 else {
+      switch errno {
+      case ESRCH: island?.show("「\(name)」已经不在运行了", tone: .info)
+      case EPERM: island?.show("没能结束「\(name)」", detail: "它属于别的用户", tone: .error)
+      default:
+        island?.show("没能结束「\(name)」", detail: String(cString: strerror(errno)), tone: .error)
+      }
+      return
+    }
+    island?.show(
+      "已\(force ? "强制" : "")结束 \(name)（PID \(pid)）", symbol: force ? "xmark.octagon" : "stop.circle"
+    )
   }
 
   private static func run(_ command: SystemCommand, island: Island?) {

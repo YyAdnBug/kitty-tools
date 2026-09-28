@@ -1,6 +1,6 @@
-// 设置 › 启动器：呼出时切英文输入法、挤压弹开、文件搜索的文件夹授权、浏览器书签（每家写读到了几条 / 没找到书签文件 /
-// 没有安装，体检 B39）、网页搜索与快捷链接
-// （N12：行 = 种类色块 / 名称 / 状态 / 关键词键帽 / 兜底开关，拖动排序，「+ −」增删（自定义的先确认），
+// 设置 › 启动器：呼出时切英文输入法、挤压弹开、文件搜索的文件夹授权、浏览器书签与历史（每家写读到了几条 / 没找到书签文件 /
+// 没有安装，体检 B39；Chrome 下「也搜浏览历史」，默认关，体检 D8）、网页搜索与快捷链接
+// （N12：行 = 网站图标或种类色块 / 名称 / 状态 / 关键词键帽 / 兜底开关，拖动排序，「+ −」增删（自定义的先确认），
 // 单击一行推进到 SearchEngineDetail 编辑）、兜底时机、清空使用记录。页头画在自己的 NavigationStack 里，推进时一起换掉。
 // 按键说明不写在这里（N11，进快捷键速查表）；启动器没有固定，失焦就收起（N8）。
 
@@ -15,6 +15,7 @@ struct LauncherTab: View {
   @AppStorage(Prefs.launcherBookmarksChrome) private var chrome = true
   @AppStorage(Prefs.launcherBookmarksEdge) private var edge = false
   @AppStorage(Prefs.launcherBookmarksBrave) private var brave = false
+  @AppStorage(Prefs.launcherHistoryChrome) private var chromeHistory = false
   /// 直接读写偏好里的 JSON，不留一份拷贝（设置窗常驻：别处改了偏好，拷贝会过期，再改一下就把别处的改动覆盖掉）
   @AppStorage(Prefs.launcherWebSearchEngines) private var enginesData: Data?
   /// 推进的详情页在 navigation.path（主菜单「返回」也要读写它）
@@ -75,7 +76,9 @@ struct LauncherTab: View {
         }
       } footer: {
         HStack(alignment: .firstTextBaseline) {
-          caption("搜 App、文件、书签、网址、路径、算式和系统命令（lock、quit 这些），↩ 打开，⌘K 看这一项的全部动作。")
+          caption(
+            "搜 App、系统设置、文件、书签、网址、路径、算式（也能换算单位和进制）和系统命令（lock、quit、kill 这些），"
+              + "↩ 打开，⌘K 看这一项的全部动作。")
           Spacer(minLength: 8)
           ShortcutsButton()
         }
@@ -97,8 +100,9 @@ struct LauncherTab: View {
         caption(
           "「open 文件名」搜文件并打开，「find 文件名」在访达中显示；不想被搜到的文件夹加到系统设置 › Spotlight › 搜索隐私。")
       }
-      Section("浏览器书签") {
+      Section("浏览器书签与历史") {
         bookmarkToggle(Bookmarks.browsers[0], isOn: $chrome)
+        historyToggle
         bookmarkToggle(Bookmarks.browsers[1], isOn: $edge)
         bookmarkToggle(Bookmarks.browsers[2], isOn: $brave)
       }
@@ -258,6 +262,32 @@ struct LauncherTab: View {
       }
     }
     .disabled(status == .notInstalled)
+  }
+
+  /// Chrome 下的「也搜浏览历史」（体检 D8，默认关）：Chrome 没装、书签开关关着时置灰、显示关着（书签关着时说明写原因）；
+  /// 开着时下一行写读到了几条（同书签），打开时就去读（进程外，读完换上）
+  @ViewBuilder private var historyToggle: some View {
+    let installed = Bookmarks.isInstalled(Bookmarks.chrome)
+    let available = chrome && installed
+    let status = BrowserHistory.shared.status
+    Toggle(isOn: available ? $chromeHistory : .constant(false)) {
+      Text("也搜浏览历史")
+      if available && chromeHistory {
+        switch status {
+        case .read(let count) where count > 0: Text("已读到 \(count) 条")
+        case .noFile, .read:
+          Text(status == .noFile ? "没找到浏览历史文件" : "浏览历史里还没有常去的网页")
+            .foregroundStyle(Color(nsColor: .systemOrange))
+        case .unknown: Text("正在读取…")
+        }
+      } else if installed && !chrome {
+        Text("要先打开上面的 Chrome")
+      } else {
+        Text("去过两次以上或手输过的网页，排在书签后面")
+      }
+    }
+    .disabled(!available)
+    .task(id: available && chromeHistory) { await BrowserHistory.shared.refresh() }
   }
 
   private var folderDetail: String {

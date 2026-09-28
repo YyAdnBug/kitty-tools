@@ -17,6 +17,17 @@ struct SnapshotProbeTests {
   @Test(.enabled(if: directory != nil)) func renderPanels() async throws {
     let out = try #require(Self.directory)
     Prefs.registerDefaults()
+    // 不读本机 Chrome 的网站图标 / 浏览历史（体检 D6 D8）：图标用下面摆的假图，历史用注入的
+    SiteIcons.shared.root = nil
+    BrowserHistory.shared.root = nil
+    for (host, letter, color) in [
+      ("linux.do", "L", NSColor.systemYellow), ("github.com", "G", .black),
+      ("www.google.com", "G", .systemBlue), ("www.bing.com", "b", .systemTeal),
+      ("scholar.google.com", "S", .systemBlue), ("developer.apple.com", "A", .darkGray),
+      ("developer.mozilla.org", "M", .black),
+    ] {
+      SiteIcons.shared.remember(Self.fakeFavicon(letter, color), for: host)
+    }
     let dir = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let store = try ClipboardStore(
@@ -823,6 +834,22 @@ struct SnapshotProbeTests {
     }
   }
 
+  /// 截图自检用的假网站图标：圆角色块里一个字母（不读本机 Chrome）
+  private static func fakeFavicon(_ letter: String, _ color: NSColor) -> NSImage {
+    NSImage(size: NSSize(width: 32, height: 32), flipped: false) { rect in
+      color.setFill()
+      NSBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 1), xRadius: 7, yRadius: 7).fill()
+      let text = NSAttributedString(
+        string: letter,
+        attributes: [
+          .font: NSFont.systemFont(ofSize: 20, weight: .bold), .foregroundColor: NSColor.white,
+        ])
+      let size = text.size()
+      text.draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2))
+      return true
+    }
+  }
+
   /// 启动器：空查询的收藏 + 常用（底栏种类 + 主动作 ↩ + 动作 ⌘K）、⌘K 动作菜单（App、网址）、搜索结果（中文名 / 拼音）、
   /// 没有结果、cb / fy 那一行、选中的内置动作带全局快捷键键帽、中文输入法打的算式、底栏「已从常用中移除 · 撤销」；
   /// 文件搜索（结果、最近的文件、find 按住 ⌘、只输 1 个字母、文件的 ⌘K，结果是假的、不查 Spotlight）；深浅色
@@ -954,6 +981,68 @@ struct SnapshotProbeTests {
         model.query = query
         if name == "launcher-system-armed", let first = model.results.first { model.execute(first) }
         model.alternate = name == "launcher-quit-force" ? .command : .none
+        try snapshot(
+          LauncherPanelView(model: model),
+          size: NSSize(width: 720, height: LauncherPanelView.height(for: model)),
+          dark: dark,
+          to: "\(out)/\(name)\(dark ? "-dark" : "").png")
+      }
+    }
+    model.alternate = .none
+    try await renderLauncherBatch6(out, usage: usage, apps: apps)
+  }
+
+  /// 体检第 6 批：单位换算 / 进制 / 千分位（带 ⌘K 的复制项）、系统设置面板、浏览历史（排在用过的网址后面，网站图标是
+  /// 开头摆的假图）、kill 列后台进程（按端口、⌘↩ 上膛）。进程、历史都是注入的，不跑 ps、不读 Chrome
+  private func renderLauncherBatch6(_ out: String, usage: LauncherUsage, apps: [LauncherItem])
+    async throws
+  {
+    usage.record(
+      LauncherItem(kind: .url, target: "https://github.com/", title: "GitHub", subtitle: ""),
+      query: "")
+    let model = LauncherModel(usage: usage, apps: apps + AppCatalog.panes())
+    model.boundHotKey = { $0.defaultHotKey }
+    model.historyItems = {
+      BrowserHistory.items([
+        .init(
+          url: "https://github.com/trending", title: "Trending repositories on GitHub today",
+          visitedAt: .now - 7200),
+        .init(
+          url: "https://github.com/apple/swift/pulls", title: "Pull requests · apple/swift",
+          visitedAt: .now - 3 * 86_400),
+        .init(
+          url: "https://developer.mozilla.org/en-US/docs/Web/CSS/grid",
+          title: "grid - CSS: Cascading Style Sheets | MDN", visitedAt: .now - 86_400),
+      ])
+    }
+    model.processTargets = {
+      Processes.items(
+        [
+          .init(pid: 4321, memory: 312 << 20, path: "/opt/homebrew/bin/node"),
+          .init(pid: 5173, memory: 180 << 20, path: "/opt/homebrew/bin/node"),
+          .init(
+            pid: 902, memory: 96 << 20, path: "/Users/me/.pyenv/versions/3.12.4/bin/python3.12"),
+          .init(
+            pid: 1474, memory: 64 << 20,
+            path: "/Applications/Clash Verge.app/Contents/MacOS/clash-verge"),
+          .init(pid: 387, memory: 8 << 20, path: "/usr/sbin/cfprefsd"),
+        ], ports: [4321: [3000], 5173: [5173], 902: [8000, 8001]], excluding: [])
+    }
+    for dark in [false, true] {
+      for (name, query) in [
+        ("launcher-units", "10 km to mi"), ("launcher-units-cn", "30 摄氏度 转 华氏度"),
+        ("launcher-radix", "255 in hex"), ("launcher-calc-group", "1234567*3"),
+        ("launcher-actions-calc", "0xff+1"), ("launcher-settings", "蓝牙"),
+        ("launcher-settings-privacy", "yinsi"), ("launcher-history", "git"),
+        ("launcher-kill", "kill "), ("launcher-kill-port", "kill :3000"),
+        ("launcher-kill-force", "kill no"),
+      ] {
+        model.query = query
+        await model.processLookup()
+        model.showsActions = name == "launcher-actions-calc"
+        if name == "launcher-kill-force", let first = model.results.first {
+          model.commandReturn(first)
+        }
         try snapshot(
           LauncherPanelView(model: model),
           size: NSSize(width: 720, height: LauncherPanelView.height(for: model)),

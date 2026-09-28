@@ -1,5 +1,5 @@
-// 启动器的一条结果：App、内置动作、网址、文件路径、系统命令（这五类记使用、能收藏），以及网页搜索、关键词提示、
-// 计算结果、「cb」「fy」那一行（不记）。
+// 启动器的一条结果：App、内置动作、网址（含系统设置面板、浏览历史）、文件路径、系统命令（这五类记使用、能收藏），
+// 以及网页搜索、关键词提示、计算结果、「cb」「fy」那一行、kill 列的进程（不记）。
 // id = 类型 + 目标，使用记录按它累计。内置动作和菜单栏同一份（体检 A26）：副标题只写「Kitty Tools」（两个开关写开没开），
 // 英文别名只进 names 参与匹配（N10）。
 
@@ -21,6 +21,8 @@ struct LauncherItem: Identifiable, Hashable {
     case prompt
     /// 「fy 文本」那一行（目标是文本）：↩ 收起启动器、翻译浮窗直接翻译（体检 D10）
     case translate
+    /// 「kill 空格」列的后台进程（目标是 PID，体检 D12）：↩ 结束、⌘↩ 强制结束
+    case process
 
     /// 只有这些记使用、能出现在「常用」里、能收藏
     var isRecorded: Bool { [.app, .action, .url, .path, .system].contains(self) }
@@ -30,7 +32,8 @@ struct LauncherItem: Identifiable, Hashable {
   /// App / 文件的路径、网址、内置动作 id、系统命令关键词（存进使用记录，改名会丢记录）
   let target: String
   let title: String
-  let subtitle: String
+  /// 浏览历史搜到时拼上「3 天前」（按搜的那一刻算）
+  var subtitle: String
   /// 参与匹配的名字（已折叠）：标题、文件名、中文名、拼音全拼
   var names: [String] = []
   /// 首字母缩写（已折叠）：Visual Studio Code → vsc，活动监视器 → hdjsq
@@ -42,6 +45,8 @@ struct LauncherItem: Identifiable, Hashable {
   /// 文件搜索的结果：Spotlight 给的类型。图标、右侧种类按它取，不碰文件本身（桌面 / 文稿 / 下载里的文件
   /// 读图标、stat 都可能弹授权框）；有它的才算文件搜索结果（find 模式下 ↩ 在访达中显示）
   var contentType: UTType?
+  /// 浏览历史：最后访问的时间（副标题的「3 天前」按它算）
+  var visitedAt: Date?
 
   var id: String { kind.rawValue + "\n" + target }
 
@@ -139,6 +144,7 @@ struct LauncherItem: Identifiable, Hashable {
     case (.action, _): Self.actionSymbols[target] ?? "gearshape"
     case (.translate, _): "character.bubble.fill"
     case (.system, _): SystemCommand(rawValue: target)?.symbol ?? "power"
+    case (.process, _): "terminal.fill"
     case (.url, _): "globe"
     case (.search, _), (.prompt, _): "magnifyingglass"
     case (.calculation, _): "equal.square"

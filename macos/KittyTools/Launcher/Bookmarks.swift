@@ -4,6 +4,8 @@
 // 新版 Chrome 把书签挪到这里后 Bookmarks 可能是空的），格式相同。
 // 按浏览器缓存解析结果，文件修改时间变了才重读；开关只决定列哪几家（修旧版 30 秒内不看开关，§11 #40）。
 // 设置 › 启动器每个开关下写读到了几条 / 没找到书签文件 / 没有安装（体检 B39），用的是同一份缓存。
+// Chrome 的另外两个本机库（网站图标 SiteIcons、浏览历史 BrowserHistory，体检 D6 D8）共用这里的配置目录和克隆：
+// Chrome 装着、书签开关开着才碰；先克隆到临时目录再读（Chrome 开着时库被它独占锁着），读完删。
 
 import AppKit
 
@@ -92,19 +94,58 @@ enum Bookmarks {
   }
 
   private static func profileFiles(_ browser: Browser) -> [URL] {
-    profileFiles(in: URL.applicationSupportDirectory.appending(path: browser.directory))
+    profileFiles(in: root(of: browser))
+  }
+
+  /// ~/Library/Application Support 下这家浏览器的数据目录
+  static func root(of browser: Browser) -> URL {
+    URL.applicationSupportDirectory.appending(path: browser.directory)
+  }
+
+  static var chrome: Browser { browsers[0] }
+
+  /// Chrome 装着、书签开关开着：才读它的网站图标、浏览历史（体检 D6 D8）
+  static var readsChrome: Bool {
+    UserDefaults.standard.bool(forKey: chrome.prefsKey) && isInstalled(chrome)
+  }
+
+  /// 各配置（Default、Profile N）里叫这些名字的文件，存在的才算
+  static func profileFiles(named names: [String], in root: URL) -> [URL] {
+    let profiles = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
+    return profiles.filter { $0 == "Default" || $0.hasPrefix("Profile ") }.sorted()
+      .flatMap { profile in names.map { root.appending(path: "\(profile)/\($0)") } }
+      .filter { FileManager.default.fileExists(atPath: $0.path) }
   }
 
   /// 浏览器数据目录下各配置的书签文件（存在的才算）。
   /// ponytail: Chrome 同时还写了加密版（EncryptedAccountBookmarks2 等），哪天不再写明文就读不到了；
   /// 解密要钥匙串里的「Chrome Safe Storage」（得用户授权），真到那天再做
   static func profileFiles(in root: URL) -> [URL] {
-    let profiles = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
-    return profiles.filter { $0 == "Default" || $0.hasPrefix("Profile ") }.sorted()
-      .flatMap { profile in
-        ["Bookmarks", "AccountBookmarks"].map { root.appending(path: "\(profile)/\($0)") }
-      }
-      .filter { FileManager.default.fileExists(atPath: $0.path) }
+    profileFiles(named: ["Bookmarks", "AccountBookmarks"], in: root)
+  }
+
+  /// 把 Chrome 的库克隆到临时目录（APFS 上是克隆，瞬时、不占空间）：Chrome 开着时库被它独占锁着，直接读会忙等。
+  /// 只克隆主文件：正写到一半的日志不带过来，读到的是上一次提交的内容。用完调用方删掉；失败是 nil
+  static func clone(_ file: URL) -> URL? {
+    let copy = FileManager.default.temporaryDirectory.appending(
+      path: "kitty-\(UUID().uuidString)-\(file.lastPathComponent)")
+    return (try? FileManager.default.copyItem(at: file, to: copy)) != nil ? copy : nil
+  }
+
+  /// 去掉协议和参数的网址（参与匹配）：https://a.com/b?c → a.com/b。不用 Swift Regex：本机 3000 条浏览历史
+  /// 用正则替换两次要约 145 ms
+  static func bare(_ url: String) -> String {
+    var text = Substring(url)
+    if let scheme = ["https://", "http://"].first(where: { text.hasPrefix($0) }) {
+      text = text.dropFirst(scheme.count)
+    }
+    if let end = text.firstIndex(where: { $0 == "?" || $0 == "#" }) { text = text[..<end] }
+    return String(text)
+  }
+
+  /// 文件的修改时间（只 stat）：Chrome 的库变没变
+  static func modified(_ file: URL) -> Date? {
+    (try? FileManager.default.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date
   }
 
   /// Bookmarks JSON → (标题, 网址)。只收书签栏 / 其他书签 / 移动设备书签下的 http(s) 链接。纯函数，配单测
@@ -133,7 +174,7 @@ enum Bookmarks {
     let host = URL(string: bookmark.url)?.host() ?? bookmark.url
     let pinyin = AppCatalog.pinyin(bookmark.title)
     // 网址只拿去掉协议和参数的部分参与匹配
-    let bare = bookmark.url.replacing(/^https?:\/\//, with: "").replacing(/[?#].*$/, with: "")
+    let bare = Self.bare(bookmark.url)
     return LauncherItem(
       kind: .url, target: bookmark.url, title: bookmark.title.isEmpty ? host : bookmark.title,
       subtitle: "书签 · \(browser) · \(host)",

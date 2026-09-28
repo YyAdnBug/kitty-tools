@@ -1,10 +1,11 @@
 // SQLite 单连接封装（系统 libsqlite3，WAL 模式）。全部在主线程执行：每次只写一行，远小于 1ms（PLAN §4）。
 // 和 sqlite3 C API 打交道的代码只在这里，调用方只见 Swift 值。
+// nonisolated：deinit 要关连接（默认 MainActor 的类，deinit 碰不到 OpaquePointer）；实际只在主线程用，不是 Sendable。
 
 import Foundation
 import SQLite3
 
-final class Database {
+nonisolated final class Database {
   struct Failure: Error, CustomStringConvertible {
     let description: String
   }
@@ -36,15 +37,21 @@ final class Database {
 
   private var handle: OpaquePointer?
 
-  /// path 传 ":memory:" 得到内存库（单测用）
-  init(path: String) throws {
-    let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE
+  /// path 传 ":memory:" 得到内存库（单测用）。readOnly：只读打开别人的库（启动器读克隆出来的 Chrome 网站图标库），
+  /// 不建文件、不改日志模式
+  init(path: String, readOnly: Bool = false) throws {
+    let flags = readOnly ? SQLITE_OPEN_READONLY : SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE
     guard sqlite3_open_v2(path, &handle, flags, nil) == SQLITE_OK else {
+      // 打开失败也可能给了连接：关掉并置空，throw 之后 deinit 照样会跑，不能再关一次
+      sqlite3_close(handle)
+      handle = nil
       throw Failure(description: "打开数据库失败：\(path)")
     }
     sqlite3_busy_timeout(handle, 2000)
-    try execute("PRAGMA journal_mode = WAL")
+    if !readOnly { try execute("PRAGMA journal_mode = WAL") }
   }
+
+  deinit { sqlite3_close(handle) }
 
   /// 执行一条不关心结果行的语句
   func execute(_ sql: String, _ arguments: [Any?] = []) throws {

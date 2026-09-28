@@ -1,12 +1,14 @@
 // 启动器状态与操作：查询 → 结果。空查询先列「收藏」（⌘D 加，按加入顺序、⌥⌘↑↓ 调），再用「常用」（全局使用分）补足到
-// 8 行（体检 A22 D13）。结果顺序：直达网址 / 路径、计算结果、关键词搜索，然后 App 目录 + 内置动作 + 快捷链接 / 搜索提示
-// + 书签 + 用过的网址 / 文件按匹配分排序（同分系统命令最后，体检 B36），网页搜索兜底；
+// 8 行（体检 A22 D13）。结果顺序：直达网址 / 路径、计算结果（含单位换算、进制，体检 D11）、关键词搜索，然后 App 目录
+// （含系统设置面板，体检 D9）+ 内置动作 + 快捷链接 / 搜索提示 + 书签 + 用过的网址 / 文件按匹配分排序（同分系统命令最后，
+// 体检 B36），再是 Chrome 浏览历史（开了才有，排在书签后、不和书签 / 用过的重复，最多 5 行，体检 D8），网页搜索兜底；
 // 「cb 关键词」只有一行，↩ 收起启动器、呼出剪贴板面板并把关键词填进它的搜索框（N9；单输 cb 时它排第一、后面照常接本地结果）；
 // 「fy 文本」只有一行，↩ 收起启动器、翻译浮窗直接翻译（体检 D10）；「open / find 词」、空格开头搜文件（FileSearch，
 // 结果异步到，先留着上一次的结果，后面仍接整句匹配到的 App）。
 // 系统命令（SystemCommands，对标 Alfred）：锁定屏幕、清倒废纸篓这类固定命令一行一个，按中文名 / 拼音 / Alfred 关键词
-// 搜到；「quit / hide / forcequit / eject 空格」列正在运行的 App / 可推出的宗卷；清倒废纸篓、全部退出、强制退出
-// 不可撤销，第一下只上膛（选中行的副标题换成确认提示），同一个键再按一次才执行（SystemControl，面板先收起）。
+// 搜到；「quit / hide / forcequit / eject 空格」列正在运行的 App / 可推出的宗卷，「kill 空格」列后台进程（异步，
+// 体检 D12：↩ 结束、⌘↩ 强制结束）；清倒废纸篓、全部退出、强制退出 / 强制结束不可撤销，第一下只上膛（选中行的副标题
+// 换成确认提示），同一个键再按一次才执行（SystemControl，面板先收起）。
 // 键盘（对标 Alfred / Raycast）：↑↓ 循环、↩ 执行（计算结果是粘贴，find 的文件是在访达中显示）、⌘↩ 在访达中显示
 // （计算结果只复制，find 的文件是打开，网址用第二个浏览器打开）、⌥↩ 在访达里搜索、⌃↩ 网页搜索（按住修饰键时选中行的
 // 副标题换成替代动作）、Tab 补全、⌘C 复制路径 / 网址、⇧⌘C 网址复制为 Markdown 链接、⌘D 收藏、⌘Y 快速查看文件、
@@ -40,7 +42,7 @@ import UniformTypeIdentifiers
   var alternate = Alternate.none
   /// 文件搜索模式（open / find / 空格开头）；nil = 普通搜索
   private(set) var fileRequest: FileSearch.Request?
-  /// 系统命令的带对象模式（quit / hide / forcequit / eject 空格）；nil = 不在这个模式
+  /// 系统命令的带对象模式（quit / hide / forcequit / eject / kill 空格）；nil = 不在这个模式
   private(set) var commandRequest: SystemCommands.Request?
   /// 上膛的那一行：不可撤销的命令第一下按下后，等同一个键再按一次（打字、移动选中、Esc、收起都撤掉）
   private(set) var armed: Armed?
@@ -138,6 +140,18 @@ import UniformTypeIdentifiers
     SystemCommands.targets(for:)
   /// 这次带对象模式列出来的：进模式时列一次，之后打字只过滤，列表不跟着重排
   @ObservationIgnored private var commandItems: (verb: SystemCommands.Verb, items: [LauncherItem])?
+  /// kill 空格列哪些进程（ps、lsof 在进程外跑，异步到）；单测、截图自检换成固定的，不跑命令
+  @ObservationIgnored var processTargets: () async -> [LauncherItem] = { await Processes.targets() }
+  @ObservationIgnored private var processTask: Task<Void, Never>?
+  /// Chrome 浏览历史的行（开关关着时是空的）；单测、截图自检换成固定的
+  @ObservationIgnored var historyItems: () -> [LauncherItem] = {
+    BrowserHistory.isEnabled ? BrowserHistory.shared.items : []
+  }
+  /// 呼出时读 / 重读浏览历史（进程外，读完才返回；返回换没换上新的）；单测、截图自检里什么都不做
+  @ObservationIgnored var refreshHistory: () async -> Bool = {
+    await BrowserHistory.shared.refresh()
+  }
+  @ObservationIgnored private var historyTask: Task<Void, Never>?
   /// 网页搜索与快捷链接的列表（偏好里的）；单测、截图自检用预置的
   @ObservationIgnored var engines: () -> [SearchEngine] = { WebSearch.engines }
   /// 默认浏览器以外能开网页的 App（「用 X 打开」、⌘↩）；单测、截图自检换成固定的
@@ -178,6 +192,8 @@ import UniformTypeIdentifiers
   @ObservationIgnored private(set) var resumesQuery = false
 
   static let recentLimit = 8
+  /// 浏览历史最多列几行：排在书签后面，别把兜底搜索、补全提示挤出可见区
+  static let historyLimit = 5
   static let rescanInterval: TimeInterval = 300
   /// 没执行就收起后，多久内再呼出保留查询
   static let keepQueryInterval: TimeInterval = 60
@@ -189,6 +205,9 @@ import UniformTypeIdentifiers
       self.apps = apps
       appsScannedAt = .now
       engines = { WebSearch.defaults }
+      processTargets = { [] }
+      historyItems = { [] }
+      refreshHistory = { false }
     }
   }
 
@@ -209,7 +228,7 @@ import UniformTypeIdentifiers
       return groups
     }
     if let commandRequest, commandRequest.terms.isEmpty {
-      return [Group(row: 0, title: commandRequest.verb == .eject ? "可推出的磁盘" : "正在运行的 App")]
+      return [Group(row: 0, title: commandRequest.verb.groupTitle)]
     }
     return fileRequest?.terms.isEmpty == true ? [Group(row: 0, title: "最近打开和下载的文件")] : []
   }
@@ -245,7 +264,25 @@ import UniformTypeIdentifiers
     if keeps || query.isEmpty { search() } else { query = "" }
     if let kept { reselect(kept) }
     resumesQuery = keeps && !query.isEmpty
+    loadHistory()
   }
+
+  /// 浏览历史该重读就在进程外读（开关关着时清掉）；换上了新读的、正在搜、用户还没挑过选中项，就按新的历史重搜一次
+  private func loadHistory() {
+    guard historyTask == nil else { return }
+    historyTask = Task {
+      let reloaded = await refreshHistory()
+      historyTask = nil
+      if reloaded, !userMovedSelection, armed == nil, fileRequest == nil, commandRequest == nil,
+        query.trimmingCharacters(in: .whitespaces).count >= 2
+      {
+        search()
+      }
+    }
+  }
+
+  /// 等浏览历史读完（单测用）
+  func historyLoad() async { await historyTask?.value }
 
   /// 呼出前要不要重扫 App 目录：没扫过，或者各应用程序目录的修改时间（放进 / 删掉 .app 都会变）和上次扫描时不一样
   static func needsRescan(scannedAt: Date?, scanned: [Date?], now: [Date?]) -> Bool {
@@ -265,13 +302,16 @@ import UniformTypeIdentifiers
       closeQuickLook(false)
       quickLookDidHide()
     }
+    // 还在列的进程不要了（再呼出重列）
+    processTask?.cancel()
+    processTask = nil
     if executed || query.isEmpty {
       keptAt = nil
       if !query.isEmpty { query = "" }
     } else {
       keptAt = now
       files.stop()
-      // 带对象模式（quit / eject 空格）的列表再呼出时重列：这期间可能退出了 App、推出了磁盘
+      // 带对象模式（quit / eject / kill 空格）的列表再呼出时重列：这期间可能退出了 App、推出了磁盘、进程结束了
       commandItems = nil
     }
     executed = false
@@ -328,12 +368,14 @@ import UniformTypeIdentifiers
       clip + Self.translatePrompts(for: query) + direct
       + [Calculator.item(for: query), keyword].compactMap { $0 } + prompts.exact
       + filePrompts.exact + systemPrompts.exact
-    // 书签至少 2 个字才搜（1 个字母命中太多）
+    // 书签、浏览历史至少 2 个字才搜（1 个字母命中太多）
     let bookmarks = query.count >= 2 && !isFixture ? Bookmarks.items() : []
+    let used = usedLocations(excluding: bookmarks)
     let local = LauncherMatch.rank(
       apps + builtIns + SystemCommands.items + WebSearch.quicklinkItems(engines: engines)
-        + bookmarks + usedLocations(excluding: bookmarks), query: query
+        + bookmarks + used, query: query
     ) { usage.boost(for: $0, query: query) }
+    let history = query.count >= 2 ? visited(query, excluding: bookmarks + used) : []
     // 兜底默认只在没有本地结果时出现（和 Alfred 一样；以前带空格的查询把兜底排到匹配的 App 前面），
     // 设置里可改成总是附在最后。已经有网址 / 路径直达项、或明写了 http(s):// 的就不再兜底（体检 B35：
     // 以前只看开头是不是 http，「http 缓存」「https 证书」没有本地结果时什么都不剩）
@@ -348,26 +390,81 @@ import UniformTypeIdentifiers
     // 直达项和书签 / 用过的网址可能是同一项：按 id 去重，保留靠前的
     var seen = Set<String>()
     results =
-      (top + local + prompts.partial + filePrompts.partial + systemPrompts.partial + fallback)
+      (top + local + history + prompts.partial + filePrompts.partial + systemPrompts.partial
+      + fallback)
       .filter { seen.insert($0.id).inserted }
   }
 
-  /// quit / hide / forcequit / eject 模式：进模式时列一次，之后按输入的词过滤（不加使用分，全按名字）
+  /// 浏览历史里匹配上的（体检 D8）：去掉已经是书签 / 用过的网址（不分大小写），只比标题和去协议的网址、不加使用分，
+  /// 最多 5 行；副标题按这一刻拼上「3 天前」。不算「本地结果」：只有历史匹配上时照样出兜底搜索
+  private func visited(_ query: String, excluding known: [LauncherItem]) -> [LauncherItem] {
+    let pages = historyItems()
+    guard !pages.isEmpty else { return [] }
+    let seen = Set(known.map { $0.target.lowercased() })
+    // 先粗筛：每个词都得是某个名字的子串（匹配分档的必要条件）。3000 条直接排序要逐条切词，
+    // Debug 构建实测本机 3000 条一次按键约 45 ms，粗筛后 10–15 ms。
+    // ponytail: 还嫌慢就在 BrowserHistory 里存好拼接的小写名字，只做一次 contains
+    let tokens = LauncherMatch.fold(query).split(whereSeparator: \.isWhitespace)
+    let candidates = pages.filter { page in
+      tokens.allSatisfy { token in page.names.contains { $0.contains(token) } }
+        && !seen.contains(page.target.lowercased())
+    }
+    let now = Date.now
+    return LauncherMatch.rank(candidates, query: query) { _ in (0, 0) }
+      .prefix(Self.historyLimit).map { item in
+        var item = item
+        item.subtitle = BrowserHistory.subtitle(item, now: now)
+        return item
+      }
+  }
+
+  /// quit / hide / forcequit / eject / kill 模式：进模式时列一次，之后按输入的词过滤（不加使用分，全按名字；
+  /// kill 的「:3000」「:」只按进程监听的端口筛）。kill 的进程在进程外列，到之前写「正在读取进程…」
   private func showTargets(_ request: SystemCommands.Request) {
     if commandItems?.verb != request.verb {
-      commandItems = (request.verb, commandTargets(request.verb))
+      guard request.verb == .kill else {
+        commandItems = (request.verb, commandTargets(request.verb))
+        return showTargets(request)
+      }
+      results = []
+      emptyText = "正在读取进程…"
+      if processTask == nil {
+        processTask = Task {
+          let items = await processTargets()
+          guard !Task.isCancelled else { return }
+          processTask = nil
+          guard let request = commandRequest, request.verb == .kill else { return }
+          commandItems = (.kill, items)
+          showTargets(request)
+        }
+      }
+      return
     }
     let targets = commandItems?.items ?? []
     let terms = request.terms.joined(separator: " ")
-    results = terms.isEmpty ? targets : LauncherMatch.rank(targets, query: terms) { _ in (0, 0) }
+    results =
+      if terms.isEmpty {
+        targets
+      } else if request.verb == .kill, terms.hasPrefix(":") {
+        // 只按监听的端口筛、保持原顺序（「postgres: walwriter」这类进程名里也有冒号）
+        targets.filter { Processes.listens($0, on: terms) }
+      } else {
+        LauncherMatch.rank(targets, query: terms) { _ in (0, 0) }
+      }
     emptyText =
       switch (request.verb, terms.isEmpty) {
       case (.eject, true): "没有可推出的磁盘"
       case (.eject, false): "没有匹配的磁盘"
+      case (.kill, true): "没有后台进程"
+      case (.kill, false) where terms.hasPrefix(":"): "没有进程在监听这个端口"
+      case (.kill, false): "没有匹配的进程"
       case (_, true): "没有正在运行的 App"
       case (_, false): "没有匹配的 App"
       }
   }
+
+  /// 等 kill 的进程列完（单测、截图自检用）
+  func processLookup() async { await processTask?.value }
 
   /// 文件搜索：查询还在跑时留着上一次的结果（约 40 ms 后换掉，免得列表先空再长）；1 个字母不查
   private func searchFiles(_ request: FileSearch.Request) {
@@ -462,13 +559,14 @@ import UniformTypeIdentifiers
   /// 等副标题的释义查完（截图自检、单测用）
   func definitionLookup() async { await definitionTask?.value }
 
-  /// 用过的网址 / 文件：不在任何目录里，靠使用记录找回来；和书签同一网址（不分大小写）时只留书签
+  /// 用过的网址 / 文件：不在任何目录里，靠使用记录找回来；和书签同一网址（不分大小写）时只留书签。
+  /// 系统设置面板在 App 目录里，不另列
   private func usedLocations(excluding bookmarks: [LauncherItem]) -> [LauncherItem] {
     let bookmarked = Set(bookmarks.map { $0.target.lowercased() })
     return usage.entries.values
       .filter {
         $0.query.isEmpty && ($0.kind == .url || $0.kind == .path)
-          && !bookmarked.contains($0.target.lowercased())
+          && !bookmarked.contains($0.target.lowercased()) && !AppCatalog.isSettingsPane($0.target)
       }
       .map(Self.item(for:))
   }
@@ -528,11 +626,15 @@ import UniformTypeIdentifiers
       return FileManager.default.fileExists(atPath: target) ? AppCatalog.item(path: target) : nil
     case .action: return actions.first { $0.target == target }
     case .system: return SystemCommands.items.first { $0.target == target }
-    case .url: return Self.item(kind: .url, target: target, title: title)
+    // 系统设置面板从目录里取（副标题「系统设置」、图标）；目录里没有的（系统更新后没了、自己建的这类链接）退回普通网址，
+    // 不删收藏
+    case .url:
+      return apps.first { $0.target == target }
+        ?? Self.item(kind: .url, target: target, title: title)
     case .path:
       return FileManager.default.fileExists(atPath: target)
         ? Self.item(kind: .path, target: target, title: title) : nil
-    case .search, .calculation, .clip, .prompt, .translate: return nil  // 不记使用，不会出现
+    case .search, .calculation, .clip, .prompt, .translate, .process: return nil  // 不记使用，不会出现
     }
   }
 
@@ -556,7 +658,7 @@ import UniformTypeIdentifiers
   // MARK: 执行
 
   func execute(_ item: LauncherItem) {
-    if let request = commandRequest, item.kind == .app || item.kind == .path {
+    if let request = commandRequest, [.app, .path, .process].contains(item.kind) {
       return runTarget(item, request.verb)
     }
     switch item.kind {
@@ -601,6 +703,7 @@ import UniformTypeIdentifiers
         return
       }
       open(url, item)
+    case .process: break  // 只在 kill 模式里出现，上面已经处理
     }
   }
 
@@ -610,18 +713,24 @@ import UniformTypeIdentifiers
     hidePanel()
   }
 
-  /// 带对象模式的行：↩ 退出 / 隐藏 / 强制退出 / 推出。不记使用（退出过的 App 不该因此在普通搜索里排前面）。
-  /// 强制退出（forcequit 的 ↩、quit / hide 的 ⌘↩）不可撤销：先上膛
+  /// 带对象模式的行：↩ 退出 / 隐藏 / 强制退出 / 推出 / 结束进程。不记使用（退出过的 App 不该因此在普通搜索里排前面）。
+  /// 强制退出（forcequit 的 ↩、quit / hide 的 ⌘↩）、强制结束（kill 的 ⌘↩）不可撤销：先上膛
   private func runTarget(
     _ item: LauncherItem, _ verb: SystemCommands.Verb, commandKey: Bool = false
   ) {
     let force = verb == .forcequit || commandKey
     if force {
-      let text = SystemCommands.forceQuitConfirmation(key: commandKey ? "⌘↩" : "↩")
+      let text =
+        verb == .kill
+        ? SystemCommands.killConfirmation
+        : SystemCommands.forceQuitConfirmation(key: commandKey ? "⌘↩" : "↩")
       guard confirm(item, commandKey: commandKey, text: text) else { return }
     }
     let action: SystemControl.Action
-    if force {
+    if verb == .kill {
+      guard let pid = Int32(item.target) else { return }
+      action = .signal(pid: pid, name: item.title, force: force)
+    } else if force {
       action = .forceQuit(item.target)
     } else {
       action =
@@ -745,7 +854,7 @@ import UniformTypeIdentifiers
       let exists = FileManager.default.fileExists(atPath: item.target, isDirectory: &isDirectory)
       let path = (item.target as NSString).abbreviatingWithTildeInPath
       return exists && isDirectory.boolValue && !path.hasSuffix("/") ? path + "/" : path
-    case .search, .calculation, .clip, .prompt, .translate: return nil
+    case .search, .calculation, .clip, .prompt, .translate, .process: return nil
     }
   }
 
@@ -763,7 +872,7 @@ import UniformTypeIdentifiers
   /// ↩ 做什么：底栏右侧的主动作和 ⌘K 菜单的第一行（名字随种类）
   func primaryAction(for item: LauncherItem) -> (title: String, symbol: String) {
     let confirming = armed?.id == item.id && armed?.commandKey == false
-    if let request = commandRequest, item.kind == .app || item.kind == .path {
+    if let request = commandRequest, [.app, .path, .process].contains(item.kind) {
       return ((confirming ? "确认" : "") + request.verb.title, request.verb.symbol)
     }
     return switch item.kind {
@@ -774,6 +883,7 @@ import UniformTypeIdentifiers
       confirming
         ? ("确认" + item.title, "exclamationmark.triangle")
         : ("运行", SystemCommand(rawValue: item.target)?.symbol ?? "power")
+    case .url where AppCatalog.isSettingsPane(item.target): ("打开", "gearshape")
     case .url: ("打开网址", "safari")
     case .search: ("搜索", "magnifyingglass")
     case .prompt:
@@ -781,15 +891,19 @@ import UniformTypeIdentifiers
     case .calculation: ("粘贴", "arrow.turn.down.left")
     case .clip: (item.target.isEmpty ? "打开" : "搜索", "doc.on.clipboard")
     case .translate: ("翻译", "character.bubble")
+    case .process: ("结束", "stop.circle")
     }
   }
 
   /// ⌘↩ 做什么；没有就是 nil（网址没有第二个浏览器时也是 nil：副标题不写，按了只响提示音）
   func commandReturnAction(for item: LauncherItem) -> (title: String, symbol: String)? {
+    let confirming = armed?.id == item.id && armed?.commandKey == true
+    if commandRequest?.verb == .kill, item.kind == .process {
+      return (confirming ? "确认强制结束" : "强制结束", "xmark.octagon")
+    }
     if let request = commandRequest, item.kind == .app {
       // 访达只能隐藏（hide 里列着它），不给强制退出
       guard request.verb != .forcequit, item.target != SystemCommands.finderPath else { return nil }
-      let confirming = armed?.id == item.id && armed?.commandKey == true
       return (confirming ? "确认强制退出" : "强制退出", "xmark.octagon")
     }
     if isWebLink(item) {
@@ -803,13 +917,14 @@ import UniformTypeIdentifiers
     }
   }
 
-  /// ⌘C 复制什么；内置动作、提示、cb / fy 那一行没有，⌘C 交给输入框
+  /// ⌘C 复制什么；内置动作、提示、cb / fy 那一行、进程、系统设置面板没有，⌘C 交给输入框
   func copyTitle(for item: LauncherItem) -> String? {
     switch item.kind {
     case .app, .path: "复制路径"
+    case .url where AppCatalog.isSettingsPane(item.target): nil
     case .url, .search: "复制网址"
     case .calculation: "复制结果"
-    case .action, .system, .prompt, .clip, .translate: nil
+    case .action, .system, .prompt, .clip, .translate, .process: nil
     }
   }
 
@@ -1179,6 +1294,9 @@ import UniformTypeIdentifiers
   /// ⌘↩：App / 文件在访达中显示（find 搜到的文件反过来是打开），计算结果只复制，网址用第二个浏览器打开
   /// （没有就提示音，体检 D7）
   func commandReturn(_ item: LauncherItem) {
+    if commandRequest?.verb == .kill, item.kind == .process {
+      return runTarget(item, .kill, commandKey: true)
+    }
     if let request = commandRequest, item.kind == .app {
       if request.verb != .forcequit, item.target != SystemCommands.finderPath {
         runTarget(item, request.verb, commandKey: true)
@@ -1209,6 +1327,8 @@ import UniformTypeIdentifiers
     /// [标题](网址)（⇧⌘C）
     case markdown
     case title
+    /// 计算结果 ⌘K 里的「复制原始数字」「复制十六进制」…（体检 D11）
+    case calculation(Calculator.Copy)
   }
 
   /// ⌘C：复制路径 / 网址 / 计算结果（⌘↩ 的计算结果也走这里）；网址另有 Markdown 链接、标题。面板同时收起，用刘海说
@@ -1221,11 +1341,12 @@ import UniformTypeIdentifiers
     case .markdown:
       (text, title) = (Self.markdownLink(title: item.title, url: item.target), "复制为 Markdown 链接")
     case .title: (text, title) = (item.title, "复制标题")
+    case .calculation(let copy): (text, title) = (copy.text, copy.title)
     }
     Paster.write(string: text, record: true)
     close()
     guard let title else { return }
-    let isPath = format == .value && (item.kind == .app || item.kind == .path)
+    let isPath = (item.kind == .app || item.kind == .path) && copyTitle(for: item) == title
     island?.show(
       "已" + title,
       detail: isPath ? (text as NSString).abbreviatingWithTildeInPath : Island.excerpt(text))
@@ -1310,6 +1431,14 @@ import UniformTypeIdentifiers
         copy(item, .markdown)
       }
       add("复制标题", "text.quote", section: 2) { [unowned self] in copy(item, .title) }
+    }
+    // 计算结果：原始数字（不分组、不带单位）、别的进制（体检 D11）
+    if item.kind == .calculation {
+      for extra in Calculator.result(for: item.target)?.copies ?? [] {
+        add(extra.title, "doc.on.doc", detail: extra.text, section: 2) { [unowned self] in
+          copy(item, .calculation(extra))
+        }
+      }
     }
     // 3 搜索框：提示行的主动作就是补全
     if item.kind != .prompt, Self.completion(for: item) != nil {

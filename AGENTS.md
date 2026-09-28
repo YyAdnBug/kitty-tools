@@ -7,7 +7,7 @@
 **kitty-tools 原生 macOS 版**：用 Swift 6 + SwiftUI / AppKit 重写的纯原生菜单栏工具，替代 Tauri 版的 macOS 端。基本自用：只支持 Apple 芯片（arm64），最低 macOS 15.0。
 
 - **Phase 1（当前）**：剪贴板历史 + 翻译（划词 / 输入 / 复制即译 / 截图翻译，全部翻译服务），目标版本 0.1.0。截图翻译提前做了（Vision 本机识字，`Screenshot/`）；M12 按 Bob 补了浮窗快捷键、收藏导出、替换原文。
-- **Phase 2 / 3（进行中）**：启动器（`Launcher/`，M7、M8、M11 已完成；M13 文件搜索 open / find 代码完成待手测，动作面板 / ⌘Y 快速查看 2026-09-28 体检第 5 批代码完成待手测、kill 待做；系统命令对标 Alfred 2026-09-27 代码完成待手测）/ 截图工具（`Screenshot/`，复用截图翻译的冻结帧和框选；M9 框选 + 复制 / 保存 / 钉图、M10 标注 + 识字已完成；长截图 2026-09-25 插入，代码完成待手测）。里程碑 M7–M13、已拍板的 D1–D5（D1 长截图、D2 系统命令已改为做；D5 系统翻译文档验证后先不做）与不迁清单见 PLAN §10。
+- **Phase 2 / 3（进行中）**：启动器（`Launcher/`，M7、M8、M11 已完成；M13 文件搜索 open / find 代码完成待手测，动作面板 / ⌘Y 快速查看 2026-09-28 体检第 5 批代码完成待手测；kill（进程 / 端口）、网站图标、Chrome 浏览历史、系统设置面板（还要逐个核对 45 个能跳到，PLAN §12）、单位换算 / 进制 2026-09-28 体检第 6 批代码完成待手测；系统命令对标 Alfred 2026-09-27 代码完成待手测）/ 截图工具（`Screenshot/`，复用截图翻译的冻结帧和框选；M9 框选 + 复制 / 保存 / 钉图、M10 标注 + 识字已完成；长截图 2026-09-25 插入，代码完成待手测）。里程碑 M7–M13、已拍板的 D1–D5（D1 长截图、D2 系统命令已改为做；D5 系统翻译文档验证后先不做）与不迁清单见 PLAN §10。
 - Bundle ID `com.yy.kitty-tools.native`（Debug `com.yy.kitty-tools.native.dev`），不再改（改了会丢偏好、钥匙串和授权）；产品名 / .app 名 `Kitty Tools`（Debug `Kitty Tools Dev`，2026-09-26 起，之前叫 Kitty Tools Native）。和 Tauri 旧版同名：安装前先删掉 /Applications 里旧版的 `Kitty Tools.app`。
 - **规格**：各 `mac-*` 规则（界面与动效按 `mac-whisker`）+ 对标产品（启动器 Alfred / Raycast、翻译 Bob、截图 iShot / CleanShot、剪贴板 Paste）。`macos/PLAN.md` 是迁移期的历史方案：§2 技术栈白名单、§4 架构与文件表、§8 打包、§10 / §12 里程碑与手测清单、§11 旧逻辑问题与语言规则仍有效，其余（§5 的 Tauri 映射、§6 数据迁移等）只是历史记录。
 

@@ -1,5 +1,6 @@
 // 启动器根视图（Whisker 设计语言，mac-whisker §6 启动器）：56 pt 大搜索框；单行 40 pt 结果（24 pt 图标 / 种类色块，
-// 标题 14 medium 后面紧跟灰色副标题，右侧写类型；文件搜索的结果按 Spotlight 类型取图标、右侧写扩展名），
+// 标题 14 medium 后面紧跟灰色副标题，右侧写类型；文件搜索的结果按 Spotlight 类型取图标、右侧写扩展名；网址 / 书签 /
+// 历史 / 网页搜索行是网站图标（SiteIcons，没有才用家族色块，体检 D6），系统设置面板是系统设置的 App 图标），
 // 空查询时带「收藏」「常用」、文件搜索只输关键词时带「最近打开和下载的文件」分组标题；计算结果是 64 pt 的大数字卡；
 // 一块中性高亮在行间滑动（键盘 snap、连发不动画、点选 glide）；没选中的行悬停铺 fill.hover（HoverTracker，体检 B37）；
 // 选中的内置动作右侧多一组全局快捷键键帽（N10）；按住修饰键时选中行的副标题换成替代动作，按住 ⌘ 150 ms 后类型依次
@@ -395,13 +396,14 @@ private struct LauncherRow: View {
         Image(systemName: "arrow.right")
           .font(.system(size: 11, weight: .semibold))
           .foregroundStyle(.tertiary)
-        Text(item.payload ?? item.title)
+        // 大字按千分位分组、单位换算带单位（体检 D11）；粘贴的是不分组的 payload
+        Text(item.title)
           .font(.system(size: 28, weight: .semibold, design: .rounded))
           .monospacedDigit()
           .contentTransition(.numericText())
           .lineLimit(1)
           .minimumScaleFactor(0.5)
-          .animation(Style.Motion.snap.animation(reduced: reduceMotion), value: item.payload)
+          .animation(Style.Motion.snap.animation(reduced: reduceMotion), value: item.title)
       } else {
         Text(item.title)
           .font(.system(size: 14, weight: .medium))
@@ -448,6 +450,13 @@ private struct LauncherRow: View {
       let image = LauncherIcons.icon(for: item.target)
     {
       Image(nsImage: image).resizable().frame(width: 24, height: 24)
+    } else if item.isSettingsPane,
+      let image = LauncherIcons.icon(for: AppCatalog.systemSettingsPath)
+    {
+      Image(nsImage: image).resizable().frame(width: 24, height: 24)
+    } else if item.kind == .url || item.kind == .search, let host = SiteIcons.host(of: item.target)
+    {
+      SiteIcon(host: host, fallback: KindTile(symbol: item.tileSymbol, color: item.familyColor))
     } else {
       KindTile(symbol: item.tileSymbol, color: item.familyColor)
     }
@@ -472,6 +481,9 @@ private struct LauncherRow: View {
 }
 
 extension LauncherItem {
+  /// 系统设置的一个面板（体检 D9）：kind 是 .url，右侧写「设置」、图标是系统设置的
+  fileprivate var isSettingsPane: Bool { kind == .url && AppCatalog.isSettingsPane(target) }
+
   /// 行里种类色块的符号：内置动作用它自己的
   fileprivate var tileSymbol: String {
     switch kind {
@@ -496,6 +508,7 @@ extension LauncherItem {
     case .action: "command"
     case .system: "power"
     case .translate: "character.bubble.fill"
+    case .url where isSettingsPane: "gearshape.fill"
     default: tileSymbol
     }
   }
@@ -518,8 +531,9 @@ extension LauncherItem {
       }
     case .translate: Style.Family.translate
     case .prompt where target == "translate-fy": Style.Family.translate
-    case .system: Style.Family.command
+    case .system, .process: Style.Family.command
     case .prompt where target.hasPrefix("system-"): Style.Family.command
+    case .url where isSettingsPane: Style.Family.general
     case .url: Style.Family.url
     // 配置 / 授权问题用橙色（Whisker §3 语义色）
     case .prompt where target == FileSearch.accessTarget: Color(nsColor: .systemOrange)
@@ -543,11 +557,13 @@ extension LauncherItem {
     case .prompt where target.hasPrefix("system-"): "系统"
     case .translate: "翻译"
     case .prompt where target == "translate-fy": "翻译"
+    case .url where isSettingsPane: "设置"
     case .url: "网址"
     case .prompt where target == FileSearch.accessTarget: "授权"
     case .search, .prompt: "搜索"
     case .calculation: "计算"
     case .clip: "剪贴板"
+    case .process: "进程"
     }
   }
 }

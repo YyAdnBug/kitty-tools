@@ -1,4 +1,4 @@
-// 设置 › 启动器 › 某条网页搜索或快捷链接（N12 详情页，从列表推进来）：页头 40 pt 种类色块 + 名称 + 状态，
+// 设置 › 启动器 › 某条网页搜索或快捷链接（N12 详情页，从列表推进来）：页头 40 pt 网站图标（没有就是种类色块）+ 名称 + 状态，
 // 下面分组表单：名称、关键词、网址、兜底开关（只有搜索有），删除（自定义的先确认）。改动即时写回偏好里的 JSON 列表
 // （和 LauncherTab 读写同一个键，启动器下次搜索就用上）；有问题（没名称、网址不完整、关键词被占用或重复、
 // 用不上）时页头和列表行的状态变成橙色说明，不拦着保存。工具栏「‹ 返回」/ ⌘[ 回列表（SettingsBackButton）。
@@ -117,23 +117,27 @@ struct SearchEngineDetail: View {
     return engine.enabled ? "搜索 · 没有本地结果时兜底" : "搜索 · 只用关键词"
   }
 
-  /// 种类色块（和启动器里同一套家族色）：搜索 = 网页搜索靛蓝，网址快捷链接 = 网址青，路径 = 通用灰。
-  /// ponytail: 不取网站图标（打开设置就去请求每个网站不合适）；以后启动器缓存了 favicon 再换成它
-  static func tile(_ engine: SearchEngine, size: CGFloat) -> KindTile {
+  /// 图标：网址的网站图标（和启动器同一份 SiteIcons：本机 Chrome 的 / 剪贴板链接预览取到的，不联网，体检 D6），
+  /// 没有就是种类色块（和启动器里同一套家族色）：搜索 = 网页搜索靛蓝，网址快捷链接 = 网址青，路径 = 通用灰
+  @ViewBuilder static func tile(_ engine: SearchEngine, size: CGFloat) -> some View {
     let target = engine.urlTemplate.trimmingCharacters(in: .whitespaces)
-    if !engine.isQuicklink {
-      return KindTile(symbol: "magnifyingglass", color: Style.Family.search, size: size)
+    let fallback =
+      !engine.isQuicklink
+      ? KindTile(symbol: "magnifyingglass", color: Style.Family.search, size: size)
+      : target.hasPrefix("/") || target.hasPrefix("~")
+        ? KindTile(symbol: "folder.fill", color: Style.Family.general, size: size)
+        : KindTile(symbol: "link", color: Style.Family.url, size: size)
+    if let host = SiteIcons.host(of: target.replacing("{query}", with: "q")) {
+      SiteIcon(host: host, fallback: fallback)
+    } else {
+      fallback
     }
-    if target.hasPrefix("/") || target.hasPrefix("~") {
-      return KindTile(symbol: "folder.fill", color: Style.Family.general, size: size)
-    }
-    return KindTile(symbol: "link", color: Style.Family.url, size: size)
   }
 
   /// 这一条的问题（橙色提示；nil = 能用）。list 用来查搜索的关键词和前面的搜索重复（「关键词 空格 内容」直达只看搜索，
   /// 重复时用靠前的；快捷链接的关键词只参与名称匹配，和谁同名都不算重复）：
   /// 名称不空；搜索的网址要有协议（https:、maps: 之类，http(s) 还得有主机名，默认的「https://」不算填好）；
-  /// 快捷链接也可以是 / ~ 开头的路径；关键词不能是保留的 cb / open / find / quit / hide / forcequit / eject；搜索没关键词又不兜底就用不上
+  /// 快捷链接也可以是 / ~ 开头的路径；关键词不能是保留的 cb / fy / open / find / quit / hide / forcequit / eject / kill；搜索没关键词又不兜底就用不上
   static func problem(of engine: SearchEngine, in list: [SearchEngine]) -> String? {
     if engine.name.trimmingCharacters(in: .whitespaces).isEmpty { return "还没填名称" }
     let url = engine.urlTemplate.trimmingCharacters(in: .whitespaces)
