@@ -1,10 +1,11 @@
 // 长截图会话：截图框选后按 S（或工具栏按钮）进入。遮罩收起、露出实时画面，选区外画一圈边框，旁边一个面板
 // （拼接预览、状态、按钮）。用户在选区里滚动（滚轮、触控板都行），或按空格自动滚动；一直用 ScreenCaptureKit
-// 截选区（滤掉本 App 的所有窗口），交给 ScrollStitcher 拼。↩ 复制、⌘S 保存、⇧⌘S 另存为，Esc 取消。
+// 截选区（滤掉本 App 的所有窗口），交给 ScrollStitcher 拼。↩ 拷贝、⌘S 存储、⇧⌘S 另存为…，Esc 取消。
 // 边框和面板是不激活前台的 NSPanel（面板要当 key 收按键），会话结束立即释放；前台 App 一直不变。
 // Whisker（mac-whisker §6 长截图）：面板是永远深色的 HUD（216 宽、圆角 16）；预览像纸带一样滚动、上下 18 pt 渐隐，
 // 每拼上一段接缝处闪一下品牌粉；高度数字 22 pt 圆体滚动变化；选区边框 2 pt 品牌粉 + 外发光呼吸，自动滚动时只走蚂蚁线
 // （同一表面只留一个循环动画，呼吸暂停），对不上时变橙、状态文字抖一下；拷贝钮和截图工具栏一样是 28 pt 品牌粉实心圆。
+// 滚到底 / 到顶 / 最长是正常结束，不变色不抖；缺授权、截屏失败橙色不抖（体检 B42）。状态提示变了主动播报。
 // 减弱动态效果时发光和蚂蚁线静止、不抖、不滚。
 
 import AppKit
@@ -68,7 +69,7 @@ final class ScrollCapture {
   /// 连续几步画面都没动（到头了）、连续几帧对不上
   private var stalls = 0
   private var lostStreak = 0
-  /// 截屏出错，抓帧循环已经停了（只剩复制、保存和取消）
+  /// 截屏出错，抓帧循环已经停了（只剩拷贝、存储和取消）
   private var captureStopped = false
 
   private init(region: CGRect, screen: NSScreen) async throws {
@@ -156,7 +157,7 @@ final class ScrollCapture {
         guard continuation != nil else { return }
         captureStopped = true
         stopAutoScroll()
-        notice = "截屏失败，已停止：\(error.localizedDescription)"
+        notice = Status(text: "截屏失败，已停止：\(error.localizedDescription)", tone: .warning)
         updateStatus()
         return refreshPreview(force: true)
       }
@@ -170,7 +171,9 @@ final class ScrollCapture {
   private var isLost = false
   private var isFull = false
   /// 要停留的提示（授权、到头了、截屏失败）：拼上新内容时清掉
-  private var notice: String?
+  private var notice: Status?
+  /// 上一次主动播报的话：同一句不反复念
+  private var announced: String?
   private var previewIsStale = false
   private var lastPreview = ContinuousClock.now - .seconds(1)
 
@@ -203,21 +206,39 @@ final class ScrollCapture {
     panel.hudView.updatePreview(stitcher: stitcher, scale: panel.backingScaleFactor)
   }
 
+  /// 状态行的一句话
+  struct Status: Equatable {
+    var text: String
+    var tone = ScrollCaptureHUD.Tone.normal
+    /// 主动播报（VoiceOver 的焦点多半不在面板上）：提示、到头、最长、对不上；平常的操作说明不播
+    var announces = true
+  }
+
+  /// 要停留的提示 > 最长 > 对不上 > 操作说明。滚到底 / 到顶 / 最长是正常结束，用平常的颜色（体检 B42）；
+  /// 但对不上（没到最长，同边框变橙的条件）盖过平常色的提示：停在「已经滚到底了」后手动滚得太快，要看到橙字、听到播报。纯函数，配单测
+  static func status(notice: Status?, isFull: Bool, isLost: Bool, isAutoScrolling: Bool) -> Status {
+    if let notice, !(isLost && !isFull && notice.tone == .normal) { return notice }
+    if isFull { return Status(text: "已经最长了，按 ↩ 拷贝") }
+    if isLost { return Status(text: "对不上了：往回滚一点，再慢慢滚", tone: .lost) }
+    return Status(
+      text: isAutoScrolling ? "自动滚动中：按空格或把鼠标移出选区停止" : "在选区里滚动，或按空格自动滚动",
+      announces: false)
+  }
+
   private func updateStatus() {
-    var text = isAutoScrolling ? "自动滚动中：按空格或把鼠标移出选区停止" : "在选区里滚动，或按空格自动滚动"
-    var warning = true
-    if let notice {
-      text = notice
-    } else if isFull {
-      text = "已经最长了，按 ↩ 复制"
-    } else if isLost {
-      text = "对不上了：往回滚一点，再慢慢滚"
-    } else {
-      warning = false
-    }
+    let status = Self.status(
+      notice: notice, isFull: isFull, isLost: isLost, isAutoScrolling: isAutoScrolling)
     panel.hudView.show(
-      text, warning: warning, width: stitcher.width, height: stitcher.outputHeight)
+      status.text, tone: status.tone, width: stitcher.width, height: stitcher.outputHeight)
     borderView.update(lost: isLost && !isFull, marching: isAutoScrolling)
+    if status.announces, status.text != announced {
+      NSAccessibility.post(
+        element: panel, notification: .announcementRequested,
+        userInfo: [
+          .announcement: status.text, .priority: NSAccessibilityPriorityLevel.high.rawValue,
+        ])
+    }
+    announced = status.announces ? status.text : nil
   }
 
   // MARK: 自动滚动
@@ -227,7 +248,7 @@ final class ScrollCapture {
     guard !captureStopped else { return NSSound.beep() }
     guard Permissions.isAccessibilityTrusted else {
       Permissions.requestAccessibility()
-      notice = "自动滚动需要「辅助功能」授权，授权后点 ▶ 开始"
+      notice = Status(text: "自动滚动需要「辅助功能」授权，授权后点 ▶ 开始", tone: .warning)
       return updateStatus()
     }
     // 滚轮事件交给光标下的窗口：光标不在选区里、或停在自家面板上，就挪到选区中间
@@ -271,7 +292,7 @@ final class ScrollCapture {
     case .lost:
       lostStreak += 1
       if lostStreak >= 4 {
-        notice = "对不上，已停止自动滚动"
+        notice = Status(text: "对不上，已停止自动滚动", tone: .lost)
         return stopAutoScroll()
       }
       step = max(step / 2, 20)
@@ -281,7 +302,7 @@ final class ScrollCapture {
     case .unchanged:
       stalls += 1
       if stalls >= 3 {
-        notice = direction > 0 ? "已经滚到底了" : "已经滚到顶了"
+        notice = Status(text: direction > 0 ? "已经滚到底了" : "已经滚到顶了")
         return stopAutoScroll()
       }
     }
@@ -466,13 +487,16 @@ final class ScrollCapturePanel: NSPanel {
   override var canBecomeMain: Bool { false }
 }
 
-/// 面板内容：预览（最近拼上的那头）、状态、高度、按钮（自动滚动、取消、另存为、保存、复制）。按键也在这里收。
+/// 面板内容：预览（最近拼上的那头）、状态、高度、按钮（自动滚动、取消、另存为…、存储、拷贝）。按键也在这里收。
 /// 永远深色的 HUD 皮肤（和截图工具栏一致）
 final class ScrollCaptureHUD: NSVisualEffectView {
   enum Item {
     case toggleAuto, cancel
     case output(ScrollCapture.Action)
   }
+
+  /// 状态文字的样子（体检 B42）：平常（含正常结束）次要文字色；缺授权、截屏失败橙色；对不上橙色，刚变成对不上时抖一下
+  enum Tone { case normal, warning, lost }
 
   static let width: CGFloat = 216
   /// 预览上下渐隐的高度
@@ -497,7 +521,7 @@ final class ScrollCaptureHUD: NSVisualEffectView {
   private var buttons: [(item: Item, button: NSButton)] = []
   /// 上次预览时长图的高度（像素）：算这次往前推了多少
   private var previewedHeight = 0
-  private var lastWarning = false
+  private var lastTone = Tone.normal
 
   init() {
     super.init(frame: CGRect(x: 0, y: 0, width: Self.width, height: 260))
@@ -544,20 +568,19 @@ final class ScrollCaptureHUD: NSVisualEffectView {
     let readingView = NSHostingView(rootView: HeightReadingView(reading: reading))
     readingView.sizingOptions = [.intrinsicContentSize]
 
+    // 截图家族同一套叫法（体检 B41）：拷贝 / 存储到「桌面」（访达里的名字，不写 Desktop）/ 另存为…
+    let folder = FileManager.default.displayName(atPath: ScreenshotOutput.saveDirectory.path)
     let items: [(Item, String, String)] = [
       (.toggleAuto, "play.fill", "自动滚动（空格）"),
       (.cancel, "xmark", "取消（Esc）"),
       (.output(.saveAs), "square.and.arrow.down.on.square", "另存为…（⇧⌘S）"),
-      (
-        .output(.save), "square.and.arrow.down",
-        "保存到「\(ScreenshotOutput.saveDirectory.lastPathComponent)」（⌘S）"
-      ),
-      (.output(.copy), "checkmark", "复制（↩）"),
+      (.output(.save), "square.and.arrow.down", "存储到「\(folder)」（⌘S）"),
+      (.output(.copy), "checkmark", "拷贝（↩）"),
     ]
     var row: [NSView] = []
     for (index, (item, symbol, tip)) in items.enumerated() {
       if index == 1 { row.append(barSeparator()) }
-      // 复制是主按钮：和截图工具栏的拷贝钮一样，28 pt 品牌粉实心圆 + 白对勾
+      // 拷贝是主按钮：和截图工具栏的拷贝钮一样，28 pt 品牌粉实心圆 + 白对勾
       let primary = index == items.count - 1
       let button = barButton(
         primary ? Self.primaryImage() : Self.symbol(symbol), tip: tip,
@@ -636,17 +659,17 @@ final class ScrollCaptureHUD: NSVisualEffectView {
     if window?.isKeyWindow == false { window?.makeKey() }
   }
 
-  /// warning：对不上 / 到头 / 出错等要注意的提示，文字变橙（刚变成警告时抖一下）
-  func show(_ text: String, warning: Bool, width: Int, height: Int) {
+  /// tone：平常 / 要注意（缺授权、截屏失败，橙色）/ 对不上（橙色，刚变成对不上时抖一下 0.35 s）
+  func show(_ text: String, tone: Tone = .normal, width: Int, height: Int) {
     status.stringValue = text
-    status.textColor = warning ? .systemOrange : Style.HUD.secondaryText
-    if warning, !lastWarning, !Style.reduceMotion, let layer = status.layer {
+    status.textColor = tone == .normal ? Style.HUD.secondaryText : .systemOrange
+    if tone == .lost, lastTone != .lost, !Style.reduceMotion, let layer = status.layer {
       let shake = CAKeyframeAnimation(keyPath: "transform.translation.x")
       shake.values = [0, -6, 6, -4, 4, 0]
       shake.duration = 0.35
       layer.add(shake, forKey: "shake")
     }
-    lastWarning = warning
+    lastTone = tone
     reading.width = width
     reading.height = height
   }

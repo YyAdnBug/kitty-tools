@@ -249,14 +249,18 @@ struct SnapshotProbeTests {
           dark: dark, to: "\(out)/clip-\(name)\(dark ? "-dark" : "").png")
       }
     }
-    // 关掉透镜 = 纯列表（设置 › 剪贴板「显示透镜」）
-    UserDefaults.standard.set(false, forKey: Prefs.clipboardShowPreview)
+    // 关掉透镜 = 纯列表（设置 › 剪贴板「显示透镜」）：在临时偏好域里关掉，不碰用户自己的设置
+    let lensSuite = "kitty-snapshot-\(UUID().uuidString)"
+    let noLens = try #require(UserDefaults(suiteName: lensSuite))
+    defer { noLens.removePersistentDomain(forName: lensSuite) }
+    noLens.set(false, forKey: Prefs.clipboardShowPreview)
     model.reset()
     try snapshot(
-      ClipboardPanelView(model: model),
-      size: NSSize(width: ClipboardPanelView.width, height: ClipboardPanelView.height(for: model)),
+      ClipboardPanelView(model: model).defaultAppStorage(noLens),
+      size: NSSize(
+        width: ClipboardPanelView.width,
+        height: ClipboardPanelView.height(for: model, showsLens: false)),
       dark: false, to: "\(out)/clip-no-lens.png")
-    UserDefaults.standard.removeObject(forKey: Prefs.clipboardShowPreview)
     // 增强对比度（体检 B53）：发丝线 1 pt（分组标题线、底栏顶线、竖线、透镜里的描边），深浅色各一张
     for dark in [false, true] {
       model.reset()
@@ -268,21 +272,16 @@ struct SnapshotProbeTests {
         dark: dark, to: "\(out)/clip-contrast\(dark ? "-dark" : "").png")
     }
     // 换了强调色（设置 › 通用）：黄色最难（填充上的符号换深色、文字压深），石墨色看中性；
-    // 用的是 Debug 版的真实偏好，试完恢复原样（没设过就删掉）
-    let bundleID = Bundle.main.bundleIdentifier ?? ""
-    let savedAccent =
-      UserDefaults.standard.persistentDomain(forName: bundleID)?[Prefs.accent] as? String
-    defer {
-      Accent.shared.select(AccentChoice(rawValue: savedAccent ?? "") ?? .system)
-      if savedAccent == nil { UserDefaults.standard.removeObject(forKey: Prefs.accent) }
-    }
+    // 只换内存里的颜色（persists: false），不写用户的偏好，试完换回原来的
+    let savedAccent = Accent.shared.choice
+    defer { Accent.shared.select(savedAccent, persists: false) }
     // 通用页同时摆成外观选了「深色」：最右那张缩略图的强调色描边（临时偏好域，不动用户的外观）
     let looksSuite = "kitty-snapshot-\(UUID().uuidString)"
     let looks = try #require(UserDefaults(suiteName: looksSuite))
     defer { looks.removePersistentDomain(forName: looksSuite) }
     looks.set(AppAppearance.dark.rawValue, forKey: Prefs.appearance)
     for choice in [AccentChoice.yellow, .graphite] {
-      Accent.shared.select(choice)
+      Accent.shared.select(choice, persists: false)
       for dark in [false, true] {
         model.reset()
         model.scope = .favorites
@@ -314,7 +313,7 @@ struct SnapshotProbeTests {
           to: "\(out)/shortcuts-accent-\(suffix).png")
       }
     }
-    Accent.shared.select(AccentChoice(rawValue: savedAccent ?? "") ?? .system)
+    Accent.shared.select(savedAccent, persists: false)
     // ⌘Y 放大预览 = 完整检查器：代码（放大的字）、链接（大头图）、图片（带识别文字）、多个文件（网格）、JSON（默认美化），
     // 按各自的理想尺寸；页脚第 3 个胶囊按类型（打开 / 钉到屏幕 / 在访达中显示 / 原文，体检 D2）
     let quickLooks: [(String, (ClipItem) -> Bool)] = [
@@ -373,8 +372,7 @@ struct SnapshotProbeTests {
       case .about: AnyView(AboutTab(updater: Updater()))
       }
     }
-    let navigation = SettingsNavigation()
-    let savedPage = navigation.page
+    let navigation = SettingsNavigation(defaults: nil)  // 换页不写用户的偏好
     for (page, dark) in SettingsPage.allCases.map({ ($0, false) }) + [
       (.general, true), (.about, true), (.clipboard, true), (.hotkeys, true),
     ] {
@@ -405,6 +403,23 @@ struct SnapshotProbeTests {
         size: NSSize(width: 780, height: 600), dark: dark,
         to: "\(out)/settings-about-update-\(name)\(dark ? "-dark" : "").png")
     }
+    // 设置 › 截图选过文件夹（体检 A28）：文件夹图标 + 访达里的名字 +「恢复默认」；常驻缩略图关着（D18）。
+    // 临时偏好域和临时文件夹，不改用户的快速保存位置
+    let shotSuite = "kitty-snapshot-\(UUID().uuidString)"
+    let shotPrefs = try #require(UserDefaults(suiteName: shotSuite))
+    let inbox = FileManager.default.temporaryDirectory.appending(path: "kitty-snapshot/截图收件箱")
+    try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+    defer {
+      shotPrefs.removePersistentDomain(forName: shotSuite)
+      try? FileManager.default.removeItem(at: inbox.deletingLastPathComponent())
+    }
+    shotPrefs.set(inbox.path, forKey: Prefs.screenshotSaveDirectory)
+    shotPrefs.set(false, forKey: Prefs.screenshotShelf)
+    for dark in [false, true] {
+      try snapshot(
+        ScreenshotTab().defaultAppStorage(shotPrefs), size: NSSize(width: 640, height: 640),
+        dark: dark, to: "\(out)/settings-screenshot-custom\(dark ? "-dark" : "").png")
+    }
     // 最小窗口（contentMinSize 700 × 460）下的通用页：外观缩略图、强调色两排放得下
     navigation.page = .general
     try snapshot(
@@ -433,7 +448,7 @@ struct SnapshotProbeTests {
     // 跟随系统（本机「多色」= 品牌粉）和黄色（字换深色），深浅色各一张
     navigation.page = .clipboard
     for choice in [AccentChoice.system, .yellow] {
-      Accent.shared.select(choice)
+      Accent.shared.select(choice, persists: false)
       for dark in [false, true] {
         try snapshot(
           SettingsRoot(navigation: navigation, page: pages) { AnyView(EmptyView()) }
@@ -443,8 +458,7 @@ struct SnapshotProbeTests {
           prepare: Self.emphasizeTableRows)
       }
     }
-    Accent.shared.select(AccentChoice(rawValue: savedAccent ?? "") ?? .system)
-    navigation.page = savedPage  // 别把自检摆的页写进用户偏好
+    Accent.shared.select(savedAccent, persists: false)
     // 设置 › 翻译 / 启动器的有序列表（N12）：整页拉长看到列表和「+ −」，外加一个详情页（不改用户的偏好和钥匙串）。
     // 网页搜索用临时的偏好域摆出各种状态：兜底、重复关键词（橙色）、网址 / 路径快捷链接、刚新建还没填的
     let suite = "kitty-snapshot-\(UUID().uuidString)"
@@ -487,7 +501,7 @@ struct SnapshotProbeTests {
     let sheetHeight = ShortcutsButton.sheetHeight(available: 600 - 52)
     for (name, height, dark) in [
       ("shortcuts", sheetHeight, false), ("shortcuts-dark", sheetHeight, true),
-      ("shortcuts-full", 3800, false),
+      ("shortcuts-full", 5000, false),
     ] {
       try snapshot(
         ShortcutsSheet(), size: NSSize(width: 560, height: height), dark: dark,
@@ -1153,16 +1167,16 @@ struct SnapshotProbeTests {
       ScrollStitcher(first: first, scrollbarWidth: 32, maxHeight: 30_000))
     _ = stitcher.add(
       try #require(page.cropping(to: CGRect(x: 0, y: 360, width: 1200, height: 480))))
-    let states: [(String, Bool, (ScrollCaptureHUD) -> Void)] = [
+    var states: [(String, Bool, (ScrollCaptureHUD) -> Void)] = [
       (
         "scroll-start", false,
-        { $0.show("在选区里滚动，或按空格自动滚动", warning: false, width: 1200, height: 480) }
+        { $0.show("在选区里滚动，或按空格自动滚动", width: 1200, height: 480) }
       ),
       (
         "scroll-preview", false,
         {
           $0.show(
-            "在选区里滚动，或按空格自动滚动", warning: false, width: stitcher.width, height: stitcher.outputHeight)
+            "在选区里滚动，或按空格自动滚动", width: stitcher.width, height: stitcher.outputHeight)
           $0.updatePreview(stitcher: stitcher, scale: 2)
         }
       ),
@@ -1170,7 +1184,8 @@ struct SnapshotProbeTests {
         "scroll-lost", false,
         {
           $0.show(
-            "对不上了：往回滚一点，再慢慢滚", warning: true, width: stitcher.width, height: stitcher.outputHeight)
+            "对不上了：往回滚一点，再慢慢滚", tone: .lost, width: stitcher.width,
+            height: stitcher.outputHeight)
           $0.updatePreview(stitcher: stitcher, scale: 2)
         }
       ),
@@ -1179,12 +1194,37 @@ struct SnapshotProbeTests {
         {
           $0.isAutoScrolling = true
           $0.show(
-            "自动滚动中：按空格或移开鼠标停止", warning: false, width: stitcher.width, height: stitcher.outputHeight
+            "自动滚动中：按空格或移开鼠标停止", width: stitcher.width, height: stitcher.outputHeight
           )
           $0.updatePreview(stitcher: stitcher, scale: 2)
         }
       ),
     ]
+    // 正常结束（到底 / 到顶 / 最长）不变橙（体检 B42），深浅色；缺授权是橙字（不抖）
+    for (name, dark, status) in [
+      (
+        "scroll-full", false,
+        ScrollCapture.status(notice: nil, isFull: true, isLost: false, isAutoScrolling: false)
+      ),
+      (
+        "scroll-full-dark", true,
+        ScrollCapture.status(notice: nil, isFull: true, isLost: false, isAutoScrolling: false)
+      ),
+      (
+        "scroll-permission", false,
+        ScrollCapture.Status(text: "自动滚动需要「辅助功能」授权，授权后点 ▶ 开始", tone: .warning)
+      ),
+    ] {
+      states.append(
+        (
+          name, dark,
+          {
+            $0.show(
+              status.text, tone: status.tone, width: stitcher.width, height: stitcher.outputHeight)
+            $0.updatePreview(stitcher: stitcher, scale: 2)
+          }
+        ))
+    }
     for (name, dark, configure) in states {
       let hud = ScrollCaptureHUD()
       try renderLayers(

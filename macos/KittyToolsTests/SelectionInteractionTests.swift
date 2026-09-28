@@ -25,6 +25,9 @@ struct SelectionInteractionTests {
     let window: NSWindow
     let view: SelectionView
     let session: SelectionSession
+    /// 托盘改样式会记住样式（Prefs.screenshotToolStyles）：记在临时偏好域里，不碰用户的真实偏好，用完删掉
+    private let styleSuite = "kitty-test-styles-\(UUID().uuidString)"
+    private let styles: UserDefaults
     /// 按下时接住事件的视图（不是 SelectionView / 尺寸胶囊就不发 mouseDown，免得进 NSButton 的跟踪循环）
     private var target: NSView?
     private(set) var intercepted: NSView?
@@ -46,6 +49,8 @@ struct SelectionInteractionTests {
       self.session = session ?? SelectionSession(mode: mode, hint: hint)
       view = SelectionView(
         image: image ?? context.makeImage()!, windows: windows, session: self.session)
+      styles = UserDefaults(suiteName: styleSuite)!
+      view.styleDefaults = styles
       window = KeyWindow(
         contentRect: NSRect(origin: origin, size: size),
         styleMask: [.borderless], backing: .buffered, defer: false)
@@ -54,7 +59,12 @@ struct SelectionInteractionTests {
       view.frame = CGRect(origin: .zero, size: size)
     }
 
-    deinit { MainActor.assumeIsolated { NSCursor.arrow.set() } }
+    deinit {
+      MainActor.assumeIsolated {
+        NSCursor.arrow.set()
+        styles.removePersistentDomain(forName: styleSuite)
+      }
+    }
 
     /// 两块 1200 × 800 的「屏幕」左右挨着、共用一个会话（lastRegion 是全局坐标：右边那块从 x = -18800 起）
     static func screens(lastRegion: CGRect? = nil) -> (Harness, Harness) {
@@ -786,8 +796,6 @@ struct SelectionInteractionTests {
 
   // 开着比例菜单点保存 ▾（或反过来）：直接换成另一个菜单；再点同一个才收起。点托盘也先收菜单
   @Test func hudMenusSwitchAndTrayClosesThem() throws {
-    let saved = UserDefaults.standard.data(forKey: Prefs.screenshotToolStyles)
-    defer { UserDefaults.standard.set(saved, forKey: Prefs.screenshotToolStyles) }
     let h = Harness()
     h.makeSelection()
     let caret = try #require(h.toolbar?.button(for: .saveMenu))

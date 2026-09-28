@@ -228,6 +228,22 @@ struct ScreenshotSnapshotTests {
       }
     }
 
+    // 矮卡（体检 B46）：悬停的「拷贝」「存储」胶囊只剩图标（名字靠 accessibilityLabel），四角圆钮不画
+    let compact = CGSize(width: 110, height: 70)
+    let small = ShelfCard(
+      image: shot, scale: 2, source: CGRect(origin: .zero, size: compact),
+      rect: CGRect(origin: .zero, size: compact), badge: .copied, screen: nil, panel: NSPanel(),
+      shelf: ShotShelf())
+    small.isHovered = true
+    for dark in [false, true] {
+      try snapshot(
+        ShelfCardView(card: small), over: desktop,
+        size: NSSize(
+          width: compact.width + ShotShelf.margin * 2, height: compact.height + ShotShelf.margin * 2
+        ),
+        dark: dark, to: "\(out)/shot-shelf-compact-hover\(dark ? "-dark" : "").png")
+    }
+
     // 长截图：选区外的粉色边框（呼吸 / 自动滚动时的蚂蚁线）+ 贴在右边的 HUD 面板（预览、高度读数、粉色自动滚动钮和拷贝钮）
     let page = try ScreenshotTests.render([
       "The quick brown fox jumps over the lazy dog", "敏捷的棕色狐狸跳过了懒狗", "日本語のテキスト",
@@ -256,7 +272,7 @@ struct ScreenshotSnapshotTests {
       let window = offscreen(root)
       try shoot(window, name, crop: region.insetBy(dx: -30, dy: -30).union(hud.frame)) {
         hud.show(
-          auto ? "自动滚动中：按空格或把鼠标移出选区停止" : "在选区里滚动，或按空格自动滚动", warning: false,
+          auto ? "自动滚动中：按空格或把鼠标移出选区停止" : "在选区里滚动，或按空格自动滚动",
           width: stitcher.width, height: stitcher.outputHeight)
         hud.updatePreview(stitcher: stitcher, scale: 2)
       }

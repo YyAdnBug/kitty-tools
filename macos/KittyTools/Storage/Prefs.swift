@@ -77,7 +77,7 @@ enum Prefs {
   /// 查单个词时大模型按词典格式回答：读音、词性释义、例句（D4）
   static let translateWordMode = "translateWordMode"
 
-  /// 截图 ⌘S 快速保存的目录（上次「另存为」选的目录）；没设 = 系统截屏的存储位置
+  /// 截图 ⌘S 快速保存的目录（设置 › 截图「快速保存到」选的；「另存为」不改它，体检 A28）；没设 = 系统截屏的存储位置
   static let screenshotSaveDirectory = "screenshotSaveDirectory"
   /// 上次截图的区域（NSStringFromRect，全局坐标）：框选时按 D、或用「截取上次区域」热键
   static let screenshotLastRegion = "screenshotLastRegion"
@@ -86,6 +86,8 @@ enum Prefs {
   static let screenshotToolStyles = "screenshotToolStyles"
   /// 截图（复制、保存、钉图）时放快门声；还要系统「播放用户界面音效」开着
   static let screenshotShutterSound = "screenshotShutterSound"
+  /// 拷贝 / 快速保存后在屏幕右下角留常驻缩略图（ShotShelf）；关掉后飞行卡片落地停 0.9 s 就滑走（体检 D18）
+  static let screenshotShelf = "screenshotShelf"
 
   /// 识字后把同一段的换行合成一行（中日文直接连、其它加空格）
   static let ocrJoinLines = "ocrJoinLines"
@@ -138,6 +140,7 @@ enum Prefs {
       translateCollapsedServices: "",
       ocrJoinLines: false,
       screenshotShutterSound: true,
+      screenshotShelf: true,
     ])
   }
 

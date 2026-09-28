@@ -171,6 +171,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private var bendPressed: UUID?
   /// 每次显示提示加一：旧的淡出计时作废
   private var hintGeneration = 0
+  /// 每个工具记住的样式存在哪（Prefs.screenshotToolStyles）：交互测试换成临时偏好域，不写用户的真实偏好
+  var styleDefaults = UserDefaults.standard
 
   /// 放大镜取样边长（像素，奇数才有中心）、每个像素放大后的边长（点）、下方信息卡高度
   private static let loupePixels = 15
@@ -1337,7 +1339,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     endEditing()
     let chosen = tool == next ? nil : next
     // 先换样式再换工具：托盘换工具那一下拿到的就是这个工具的样式（反过来色点先显示旧样式、再弹一下）
-    if let chosen { style = Annotation.Style.remembered(for: chosen) }
+    if let chosen { style = Annotation.Style.remembered(for: chosen, in: styleDefaults) }
     tool = chosen
     selectedAnnotation = nil
     refreshCursor()
@@ -1398,7 +1400,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
 
   /// 记住这个工具的样式；是当前工具的话新标注也用它
   private func remember(_ changed: Annotation.Style, for owner: Annotation.Tool) {
-    Annotation.Style.remember(changed, for: owner)
+    Annotation.Style.remember(changed, for: owner, in: styleDefaults)
     if owner == tool { style = changed }
   }
 
@@ -1546,7 +1548,12 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private func startScroll() {
     endEditing()
     guard let selection, let window else { return }
-    guard selection.height >= ScrollCapture.minimumHeight else { return NSSound.beep() }
+    guard selection.height >= ScrollCapture.minimumHeight else {
+      // 不写点数：尺寸胶囊显示的是像素，写「60 点」和看到的数字对不上（体检 B43）
+      NSSound.beep()
+      flashHint(["选区太矮，拉高一点再长截图"])
+      return announce("选区太矮，拉高一点再长截图")
+    }
     session.finish(.scroll(selection.offsetBy(dx: window.frame.minX, dy: window.frame.minY)))
   }
 

@@ -435,9 +435,7 @@ struct AnnotationEditingTests {
   }
 
   @Test func textEditorShowsStylesLive() throws {
-    // 托盘改样式会写记住的样式（测试挂在 App 里，是真的偏好）：测完放回去
-    let saved = UserDefaults.standard.data(forKey: Prefs.screenshotToolStyles)
-    defer { UserDefaults.standard.set(saved, forKey: Prefs.screenshotToolStyles) }
+    // 托盘改样式会写记住的样式：Harness 记在临时偏好域里，不碰真实偏好
     let h = harness(tool: .text)
     h.view.style = Annotation.Style(color: .yellow)
     let origin = CGPoint(x: 400, y: 400)

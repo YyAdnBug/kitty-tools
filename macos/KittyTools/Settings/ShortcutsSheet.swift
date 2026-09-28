@@ -279,7 +279,7 @@ struct ShortcutsSheet: View {
         Entry("⇧⌘S", text: "另存为…"),
         Entry("T", text: "钉在屏幕上"),
         Entry("S", text: "长截图"),
-        Entry("O", text: "识字"),
+        Entry("O", text: "识字并拷贝"),
       ]),
     // mac-overlay-panel §10 长截图；代码在 ScrollCapturePanel.keyDown
     Group(
@@ -296,7 +296,9 @@ struct ShortcutsSheet: View {
       title: "钉图", symbol: "pin.fill", color: Style.Family.screenshot,
       entries: [
         Entry("⌘C", text: "拷贝"),
-        Entry("⌘S", text: "另存为…"),
+        Entry("O", text: "识字并拷贝（翻译在右键菜单里）"),
+        Entry("⌘S", text: "快速保存"),
+        Entry("⇧⌘S", text: "另存为…"),
         Entry("⌘0", text: "原始大小（滚轮、捏合缩放）"),
         Entry("⌘W", "Esc", text: "关闭（双击同样）"),
       ]),

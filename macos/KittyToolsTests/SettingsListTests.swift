@@ -98,9 +98,7 @@ struct SettingsListTests {
   /// 设置窗侧栏的选中自绘：外面那个表格不画原生高亮（换页后也不会被改回来），原生选中照旧跟着当前页走
   /// （↑↓、VoiceOver 靠它）。屏外无边框窗口，不抢键盘
   @Test func sidebarNativeHighlightIsOff() throws {
-    let navigation = SettingsNavigation()
-    let saved = navigation.page
-    defer { navigation.page = saved }  // 别把测试摆的页写进偏好
+    let navigation = SettingsNavigation(defaults: nil)  // 换页不写用户的偏好
     navigation.page = .clipboard
     let host = NSHostingView(
       rootView: SettingsRoot(navigation: navigation, page: { _ in AnyView(EmptyView()) }) {
@@ -131,9 +129,7 @@ struct SettingsListTests {
   /// 的配法建有标题栏的窗口（工具栏桥接要它），放在屏外（OffscreenWindow）、不激活
   @Test(arguments: [SettingsPage.translate, .launcher])
   func backButtonInToolbar(page: SettingsPage) throws {
-    let navigation = SettingsNavigation()
-    let saved = navigation.page
-    defer { navigation.page = saved }
+    let navigation = SettingsNavigation(defaults: nil)
     navigation.page = page
     let suite = "kitty-test-\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
@@ -188,9 +184,7 @@ struct SettingsListTests {
     let items = NSApp.mainMenu?.items.compactMap(\.submenu).flatMap(\.items) ?? []
     let item = try #require(items.first { $0.title == "返回" })
     #expect(item.keyEquivalent == "[" && item.keyEquivalentModifierMask == .command)
-    let navigation = SettingsNavigation()
-    let saved = navigation.page
-    defer { navigation.page = saved }
+    let navigation = SettingsNavigation(defaults: nil)
     navigation.page = .translate
     navigation.path = ["zhipu"]
     #expect(!navigation.canGoBack)  // 设置窗不是 key（开着 sheet、别的面板在前）

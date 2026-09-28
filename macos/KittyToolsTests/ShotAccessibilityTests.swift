@@ -1,5 +1,8 @@
 // 截图的旁白（mac-whisker §7「不许省」）：遮罩是一个分组、标签读状态（待选 / 选区像素尺寸、当前工具、比例），进入调整、
-// 换工具、锁比例时主动播报；工具栏、样式托盘、尺寸胶囊、HUD 菜单的控件都有名字，菜单项是按钮；长截图面板的粉色拷贝钮不出悬停底。
+// 换工具、锁比例时主动播报；工具栏、样式托盘、尺寸胶囊、HUD 菜单的控件都有名字，菜单项是按钮；长截图面板的粉色拷贝钮不出悬停底；
+// 钉图是一个有名字、有值、有自定义动作的图像元素（体检 B45）。
+// （矮的常驻缩略图只剩图标的按钮名字（B46）没法在这里查：屏外的 NSHostingView 没有 VoiceOver 连着时不建无障碍树，
+// 只看得到一个空分组；外观在 ScreenshotSnapshotTests 的 shot-shelf-compact-hover。）
 // 用 SelectionInteractionTests 的屏外窗口 + 合成事件（不弹遮罩、不抢键盘）。
 
 import AppKit
@@ -87,10 +90,44 @@ struct ShotAccessibilityTests {
     h.key(kVK_Escape, "\u{1b}")
   }
 
+  // 钉图（体检 B45）：平时没有看得见的按钮，整张图是一个图像元素，名字「钉图」、值是大小和透明度；
+  // 操作都在自定义动作里，和右键菜单同名（拷贝 / 识字并拷贝 / 翻译 / 存储到 / 另存为… / 原始大小 / 关闭）
+  @Test func pinHasNameAndActions() throws {
+    let context = try #require(
+      CGContext(
+        data: nil, width: 400, height: 200, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpace(name: CGColorSpace.sRGB)!,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    let board = PinBoard()
+    var outputs: [RegionSelector.Action] = []
+    board.output = { action, _, _ in outputs.append(action) }
+    board.pin(
+      try #require(context.makeImage()),
+      frame: CGRect(x: -20000, y: -20000, width: 200, height: 100))
+    defer { board.closeAll() }
+    let panel = try #require(board.panels.first)
+    panel.finishPopIn()
+    RunLoop.main.run(until: Date.now.addingTimeInterval(0.3))  // 淡入放完
+    panel.opacity = 0.8
+    let view = try #require(panel.contentView)
+    #expect(view.isAccessibilityElement())
+    #expect(view.accessibilityRole() == .image)
+    #expect(view.accessibilityLabel() == "钉图")
+    #expect(view.accessibilityValue() as? String == "200 × 100 点，透明度 80%")
+    let actions = try #require(view.accessibilityCustomActions())
+    let folder = FileManager.default.displayName(atPath: ScreenshotOutput.saveDirectory.path)
+    #expect(
+      actions.map(\.name) == ["拷贝", "识字并拷贝", "翻译", "存储到「\(folder)」", "另存为…", "原始大小", "关闭"])
+    for action in actions.prefix(5) { #expect(action.handler?() == true) }
+    #expect(outputs == [.copy, .recognize, .translate, .save, .saveAs])
+    #expect(actions.last?.handler?() == true)
+    #expect(board.panels.isEmpty)
+  }
+
   // 长截图面板：粉色拷贝钮是整张圆图，不出悬停底（不然圆后面露出一块方角）；其余按钮照常
   @Test func scrollCopyButtonHasNoHoverSquare() throws {
     let all = buttons(in: ScrollCaptureHUD()).compactMap { $0 as? BarButton }
-    let copy = try #require(all.first { $0.accessibilityLabel() == "复制（↩）" })
+    let copy = try #require(all.first { $0.accessibilityLabel() == "拷贝（↩）" })
     #expect(!copy.showsHover)
     #expect(all.filter(\.showsHover).count == all.count - 1)
   }

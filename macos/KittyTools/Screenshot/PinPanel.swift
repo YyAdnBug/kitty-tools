@@ -1,6 +1,8 @@
 // 钉图：把截图钉在原位置当参考。不激活本 App、出现时不抢键盘（修旧版钉图抢焦点，§11 #48）；
-// 拖动移动，滚轮 / 双指捏合以鼠标为锚点缩放，双击或 Esc 关闭（Esc、⌘C 要先点一下钉图），
-// 右键菜单：复制、存储为…、透明度、原始大小、关闭。菜单栏可隐藏 / 显示、关闭全部。
+// 拖动移动，滚轮 / 双指捏合以鼠标为锚点缩放，双击或 Esc 关闭（Esc、按键要先点一下钉图）。
+// 按键和截图出图一致（体检 C9 D17）：⌘C 拷贝、O 识字并拷贝、⌘S 存储到快速保存的文件夹、⇧⌘S 另存为…、⌘0 原始大小、⌘W 关闭；
+// 右键菜单：拷贝 / 识字并拷贝 / 翻译 / 存储到「桌面」/ 另存为… ｜ 透明度 / 原始大小 ｜ 关闭，VoiceOver 的自定义动作同一份（B45）。
+// 长截图时和选区相交的钉图让开（B40：不接鼠标、淡到 0.3，滚轮和自动滚动落到下面的窗口）。菜单栏可隐藏 / 显示、关闭全部。
 // Whisker（mac-whisker §6 钉图）：圆角 10 + 系统阴影；钉上时窗口 1.04 → 1 弹簧回弹（超过半屏的只淡入）；悬停 0.3 s 后右上角淡入透明度 / 关闭两个
 // 22 pt HUD 圆钮；缩放时中央 HUD 显示百分比、停手 0.7 s 淡出；关闭时缩到 0.92 并淡出 0.16 s。
 // 不做点击穿透（穿透要全局抢一个热键才能再点回来）、不做钉图历史；钉图会出现在之后的截图里。
@@ -13,16 +15,31 @@ import SwiftUI
 @Observable final class PinBoard {
   private(set) var panels: [PinPanel] = []
   private(set) var isHidden = false
-  /// 复制 / 另存为（图、像素 / 点），由 AppDelegate 接到截图的输出上
-  @ObservationIgnored var copy: @MainActor (CGImage, CGFloat) -> Void = { _, _ in }
-  @ObservationIgnored var saveAs: @MainActor (CGImage, CGFloat) -> Void = { _, _ in }
+  /// 拷贝 / 快速保存 / 另存为 / 识字并拷贝 / 翻译（动作、图、像素 / 点；.pin 不会来），由 AppDelegate 接到截图的输出上
+  @ObservationIgnored var output: @MainActor (RegionSelector.Action, CGImage, CGFloat) -> Void = {
+    _, _, _ in
+  }
 
-  /// frame：截图时选区的位置（点，全局坐标）
+  /// frame：截图时选区的位置（点，全局坐标）。钉图不抢键盘、VoiceOver 的焦点不在它上面：主动播报
   func pin(_ image: CGImage, frame: CGRect) {
     if isHidden { toggleHidden() }
     let panel = PinPanel(image: image, frame: frame, board: self)
     panels.append(panel)
     panel.popIn()
+    NSAccessibility.post(
+      element: NSApp as Any, notification: .announcementRequested,
+      userInfo: [.announcement: "已钉到屏幕", .priority: NSAccessibilityPriorityLevel.high.rawValue])
+  }
+
+  /// 长截图开始（体检 B40）：和选区相交的钉图让开——不接鼠标（滚轮、自动滚动的合成滚轮落到下面的窗口，不再缩放钉图）、
+  /// 淡到 0.3（还看得见）。长截图滤掉了本 App，长图里本来就没有钉图
+  func suspend(covering region: CGRect) {
+    for panel in panels where panel.frame.intersects(region) { panel.suspend() }
+  }
+
+  /// 长截图结束（拷贝、存储、取消、出错都走这里）：放回原来的透明度、重新接鼠标
+  func resume() {
+    for panel in panels { panel.resume() }
   }
 
   func close(_ panel: PinPanel) {
@@ -70,6 +87,28 @@ final class PinPanel: NSPanel {
   override var canBecomeKey: Bool { true }
   override var canBecomeMain: Bool { false }
 
+  /// 用户选的透明度（右键菜单 / 圆钮）：长截图让开时窗口临时淡到 0.3，结束后回到它
+  var opacity: CGFloat = 1 {
+    didSet { if !isSuspended { alphaValue = opacity } }
+  }
+  /// 长截图期间让开着（B40）
+  private(set) var isSuspended = false
+
+  func suspend() {
+    guard !isSuspended else { return }
+    finishPopIn()
+    isSuspended = true
+    ignoresMouseEvents = true
+    alphaValue = min(opacity, 0.3)
+  }
+
+  func resume() {
+    guard isSuspended else { return }
+    isSuspended = false
+    ignoresMouseEvents = false
+    alphaValue = opacity
+  }
+
   /// 钉上的回弹：终点（原位）、开始时间、逐帧驱动
   private var popping: (target: NSRect, began: CFTimeInterval)?
   private var popLink: CADisplayLink?
@@ -89,7 +128,7 @@ final class PinPanel: NSPanel {
       // 减弱动态效果时 pop 退成 0.2 s easeInOut 淡入（§7）
       context.duration = reduced ? 0.2 : Style.fadeIn
       context.timingFunction = CAMediaTimingFunction(name: reduced ? .easeInEaseOut : .easeOut)
-      animator().alphaValue = 1
+      animator().alphaValue = opacity
     }
     let area = (self.screen ?? NSScreen.main)?.frame.size ?? .zero
     guard !reduced, target.width * target.height <= area.width * area.height / 2,
@@ -325,61 +364,131 @@ private final class PinView: NSView {
   }
 
   override func keyDown(with event: NSEvent) {
-    if Int(event.keyCode) == kVK_Escape { close() } else { super.keyDown(with: event) }
+    if Int(event.keyCode) == kVK_Escape { return close() }
+    if !perform(event) { super.keyDown(with: event) }
   }
 
+  /// 钉图是 key 时 ⌘ 组合键先到这里（体检 C9：⌘S 快速保存、⇧⌘S 另存为，同截图出图）
   override func performKeyEquivalent(with event: NSEvent) -> Bool {
-    guard window?.isKeyWindow == true,
-      event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command
-    else { return super.performKeyEquivalent(with: event) }
-    switch Int(event.keyCode) {
-    case kVK_ANSI_C: copyImage()
-    case kVK_ANSI_S: saveImage()
-    case kVK_ANSI_W: close()
-    case kVK_ANSI_0: actualSize()
-    default: return super.performKeyEquivalent(with: event)
+    guard window?.isKeyWindow == true, perform(event) else {
+      return super.performKeyEquivalent(with: event)
     }
     return true
   }
 
+  /// 按键和右键菜单、VoiceOver 动作查同一张 commands 表（单测经 keyDown 锁住）：修饰键只比 ⌘⌃⌥⇧、不看大写锁定；
+  /// 按住不放不反复执行（O 不反复识别、⌘S 不连存几张）
+  private func perform(_ event: NSEvent) -> Bool {
+    let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
+    guard
+      let command = commands.first(where: {
+        $0.keyCode == Int(event.keyCode) && $0.modifiers == flags
+      })
+    else { return false }
+    if !event.isARepeat { NSApp.sendAction(command.action, to: self, from: nil) }
+    return true
+  }
+
+  /// 一条命令：按键、右键菜单和 VoiceOver 自定义动作共用（透明度只在菜单里）
+  private struct Command {
+    let title: String
+    /// 菜单上显示的键；keyCode 是实际认的物理键（nil = 没有按键）
+    let key: String
+    let keyCode: Int?
+    let modifiers: NSEvent.ModifierFlags
+    let action: Selector
+  }
+
+  /// 拷贝 / 识字并拷贝 / 翻译 / 存储到「桌面」/ 另存为… / 原始大小 / 关闭（体检 B41 C9 D17：截图家族同名同键）
+  private var commands: [Command] {
+    let folder = FileManager.default.displayName(atPath: ScreenshotOutput.saveDirectory.path)
+    return [
+      Command(
+        title: "拷贝", key: "c", keyCode: kVK_ANSI_C, modifiers: .command,
+        action: #selector(copyImage)),
+      Command(
+        title: "识字并拷贝", key: "o", keyCode: kVK_ANSI_O, modifiers: [],
+        action: #selector(recognizeText)),
+      Command(
+        title: "翻译", key: "", keyCode: nil, modifiers: [], action: #selector(translateImage)),
+      Command(
+        title: "存储到「\(folder)」", key: "s", keyCode: kVK_ANSI_S, modifiers: .command,
+        action: #selector(saveImage)),
+      Command(
+        title: "另存为…", key: "s", keyCode: kVK_ANSI_S, modifiers: [.command, .shift],
+        action: #selector(saveImageAs)),
+      Command(
+        title: "原始大小", key: "0", keyCode: kVK_ANSI_0, modifiers: .command,
+        action: #selector(actualSize)),
+      Command(
+        title: "关闭", key: "w", keyCode: kVK_ANSI_W, modifiers: .command, action: #selector(close)),
+    ]
+  }
+
   override func menu(for event: NSEvent) -> NSMenu? {
     let menu = NSMenu()
-    menu.addItem(item("复制", #selector(copyImage), "c"))
-    menu.addItem(item("存储为…", #selector(saveImage), "s"))
+    let items = commands.map { command in
+      let item = NSMenuItem(
+        title: command.title, action: command.action, keyEquivalent: command.key)
+      item.keyEquivalentModifierMask = command.modifiers
+      item.target = self
+      return item
+    }
+    items[0..<5].forEach(menu.addItem)
     menu.addItem(.separator())
     let opacity = NSMenuItem(title: "透明度", action: nil, keyEquivalent: "")
     let levels = NSMenu()
     for percent in [100, 80, 60, 40] {
-      let level = item("\(percent)%", #selector(setOpacity(_:)))
+      let level = NSMenuItem(
+        title: "\(percent)%", action: #selector(setOpacity(_:)), keyEquivalent: "")
+      level.target = self
       level.tag = percent
-      level.state = Int(((window?.alphaValue ?? 1) * 100).rounded()) == percent ? .on : .off
+      level.state = Int(((panel?.opacity ?? 1) * 100).rounded()) == percent ? .on : .off
       levels.addItem(level)
     }
     opacity.submenu = levels
     menu.addItem(opacity)
-    menu.addItem(item("原始大小", #selector(actualSize), "0"))
+    menu.addItem(items[5])
     menu.addItem(.separator())
-    menu.addItem(item("关闭", #selector(close)))
+    menu.addItem(items[6])
     return menu
   }
 
-  private func item(_ title: String, _ action: Selector, _ key: String = "") -> NSMenuItem {
-    let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
-    item.target = self
-    return item
+  // MARK: 无障碍（mac-whisker §7，体检 B45）：钉图平时没有看得见的按钮，整张图是一个元素，操作都在自定义动作里
+
+  override func isAccessibilityElement() -> Bool { true }
+  override func accessibilityRole() -> NSAccessibility.Role? { .image }
+  override func accessibilityLabel() -> String? { "钉图" }
+
+  override func accessibilityValue() -> Any? {
+    let size = window?.frame.size ?? bounds.size
+    let percent = Int(((panel?.opacity ?? 1) * 100).rounded())
+    return "\(Int(size.width.rounded())) × \(Int(size.height.rounded())) 点，透明度 \(percent)%"
   }
 
-  @objc private func copyImage() { board.copy(image, scale) }
-  @objc private func saveImage() { board.saveAs(image, scale) }
+  override func accessibilityCustomActions() -> [NSAccessibilityCustomAction]? {
+    commands.map { command in
+      let action = command.action
+      return NSAccessibilityCustomAction(name: command.title) { [weak self] in
+        MainActor.assumeIsolated { NSApp.sendAction(action, to: self, from: nil) }
+      }
+    }
+  }
+
+  @objc private func copyImage() { board.output(.copy, image, scale) }
+  @objc private func saveImage() { board.output(.save, image, scale) }
+  @objc private func saveImageAs() { board.output(.saveAs, image, scale) }
+  @objc private func recognizeText() { board.output(.recognize, image, scale) }
+  @objc private func translateImage() { board.output(.translate, image, scale) }
   @objc private func setOpacity(_ sender: NSMenuItem) {
-    window?.alphaValue = CGFloat(sender.tag) / 100
+    panel?.opacity = CGFloat(sender.tag) / 100
   }
 
   /// 圆钮：100 → 80 → 60 → 40 → 100%
   @objc private func cycleOpacity() {
-    guard let window else { return }
-    let current = Int((window.alphaValue * 100).rounded())
-    window.alphaValue = CGFloat(current <= 40 ? 100 : current - 20) / 100
+    guard let panel else { return }
+    let current = Int((panel.opacity * 100).rounded())
+    panel.opacity = CGFloat(current <= 40 ? 100 : current - 20) / 100
   }
 
   /// 回到钉上时的大小，左上角不动

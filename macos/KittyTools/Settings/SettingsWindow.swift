@@ -63,7 +63,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .general: "外观、登录时打开和权限"
     case .clipboard: "历史上限、面板、内容格式和隐私"
     case .launcher: "搜索 App、文件、书签与历史、网页搜索与快捷链接"
-    case .screenshot: "快速保存、快门声和识字"
+    case .screenshot: "快速保存、快门声、缩略图和识字"
     case .translate: "语言、翻译服务与密钥、历史"
     case .hotkeys: "所有全局快捷键"
     case .about: "版本与更新内容"
@@ -91,7 +91,10 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         "兜底", "使用记录", "最近", "挤压", "弹开", "动画", "实验", "文件", "open", "find", "Spotlight",
       ]
     case .screenshot:
-      ["保存", "目录", "文件夹", "快门", "声音", "识字", "换行", "二维码", "标注", "长截图", "钉图", "按键", "速查"]
+      [
+        "保存", "存储", "目录", "文件夹", "快门", "声音", "缩略图", "识字", "换行", "二维码", "标注", "长截图", "钉图",
+        "按键", "速查",
+      ]
     case .translate:
       [
         "语言", "第一语言", "第二语言", "字号", "换行", "自动复制", "复制即译", "历史", "导出", "CSV", "Anki",
@@ -115,10 +118,12 @@ enum SettingsPage: String, CaseIterable, Identifiable {
 @Observable final class SettingsNavigation {
   var page: SettingsPage {
     didSet {
-      UserDefaults.standard.set(page.rawValue, forKey: Prefs.settingsPage)
+      defaults?.set(page.rawValue, forKey: Prefs.settingsPage)
       if page != oldValue { path = [] }
     }
   }
+  /// 记住上次的页写在哪；单测 / 截图自检传 nil（从通用页开始、换页不写用户的偏好）
+  private let defaults: UserDefaults?
   /// 当前页推进的详情页（翻译服务 / 网页搜索的 id；TranslateTab、LauncherTab 的 NavigationStack 用它），换页时清空
   var path: [String] = []
   var showsOnboarding = false
@@ -136,10 +141,9 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     if canGoBack { path.removeLast() }
   }
 
-  init() {
-    page =
-      UserDefaults.standard.string(forKey: Prefs.settingsPage).flatMap(SettingsPage.init)
-      ?? .general
+  init(defaults: UserDefaults? = .standard) {
+    self.defaults = defaults
+    page = defaults?.string(forKey: Prefs.settingsPage).flatMap(SettingsPage.init) ?? .general
   }
 }
 

@@ -1,6 +1,6 @@
 // 截图调整选区时贴在选区旁的 HUD 控件（Whisker HUD 皮肤，mac-whisker §6 截图；AppKit，SelectionView 推状态、收回调）：
 // - 主栏 EditorToolbar：两段 HUD 胶囊并排（间距 6，高 40、圆角 16，按钮 32）：左段 10 个工具 ｜ 撤销、重做；右段识字、翻译、
-//   长截图、钉图 ｜ 保存（本体快速保存，右侧 ▾ 弹菜单）｜ 取消、拷贝（28 pt 品牌粉圆钮）。当前工具的粉色底块在工具间滑动（glide）；
+//   长截图、钉图 ｜ 存储（本体快速保存，右侧 ▾ 弹菜单）｜ 取消、拷贝（28 pt 品牌粉圆钮）。当前工具的粉色底块在工具间滑动（glide）；
 //   松手 40 ms 后从靠选区的那条边长出来（pop，bounce 0.18），拖动 / 缩放 / 平移选区时淡出让位；
 // - 样式托盘 StyleBar：高 34、圆角 10，按工具出 8 色点 ｜ 三档 ｜ 选项分段，锚在当前工具按钮下方 6 pt，换工具时位置和宽度 settle；
 // - HUDMenu：遮罩里的 HUD 弹出菜单（保存 ▾，之后尺寸胶囊的比例菜单也用它），不用 NSMenu（菜单层级低于遮罩，会被压在下面）。
@@ -205,7 +205,7 @@ final class EditorToolbar: PopView {
         (.output(.pin), "pin", "钉到屏幕", "钉到屏幕（T）"),
       ],
       [
-        (.output(.save), "square.and.arrow.down", "保存", "保存到「\(directory)」（⌘S）"),
+        (.output(.save), "square.and.arrow.down", "存储", "存储到「\(directory)」（⌘S）"),
         (.saveMenu, "chevron.down", "更多存储选项", "存储到… / 另存为…"),
       ],
       [(.cancel, "xmark", "取消", "取消（Esc）"), (.output(.copy), "checkmark", "拷贝", "拷贝（↩）")],

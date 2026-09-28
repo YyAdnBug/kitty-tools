@@ -19,7 +19,7 @@ final class ShotShelf {
   /// 刘海岛（AppDelegate 给）：缩略图看起来没变的结果（再拷贝、存到同一个文件夹）、文件已不在时用它说
   var island: Island?
 
-  private var cards: [ShelfCard] = []
+  private(set) var cards: [ShelfCard] = []
   private var idle: [NSPanel] = []
   /// 卡片四周给阴影留的边（窗口比卡片大这么多）
   static let margin: CGFloat = 24
@@ -66,6 +66,15 @@ final class ShotShelf {
         panel.contentView = nil
         self.idle.append(panel)
       }
+    }
+  }
+
+  /// 长截图开始（体检 B40）：压在选区上的缩略图直接收走（层级在状态栏，会挡住滚轮和自动滚动）
+  func dismiss(covering region: CGRect) {
+    // 一张张收：收走一张时上面的会落到它的位置，落下来的也可能压在选区上，收到没有相交的为止
+    // （dismiss 每次都把 isLeaving 置真，循环一定会结束）
+    while let card = cards.first(where: { !$0.isLeaving && $0.rect.intersects(region) }) {
+      dismiss(card)
     }
   }
 
@@ -525,6 +534,7 @@ struct ShelfCardView: View {
     .buttonStyle(PressScale())
     .disabled(card.isBusy)
     .help(title)
+    .accessibilityLabel(title)  // 矮卡只剩图标：不然 VoiceOver 读符号自带的名字（体检 B46）
   }
 
   private func round(_ symbol: String, _ title: String, action: @escaping () -> Void) -> some View {

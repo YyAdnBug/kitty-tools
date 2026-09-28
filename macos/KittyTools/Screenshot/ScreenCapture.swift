@@ -1,5 +1,6 @@
 // 截图与截图翻译的冻结帧：按下热键时先把每块屏幕截成静止图，框选、裁剪、取色都只读这一帧（先截后选，PLAN §10）。
-// ScreenCaptureKit 逐屏截：各屏的缩放比例可以不同，一屏一张、各按自己的像素尺寸（修旧版混合缩放错位，§11 #14）。
+// ScreenCaptureKit 逐屏截：各屏的缩放比例可以不同，一屏一张、各按自己的像素尺寸（修旧版混合缩放错位，§11 #14）；
+// 几块屏同时截（体检 B47：以前一块截完才截下一块，热键到遮罩的等待随屏幕数线性增加）。
 // 同一时刻拍一份窗口快照（CGWindowList，从前到后），截图模式悬停高亮、单击截整窗都按它命中（§11 #41）。
 // 本 App 开着的窗口（浮层、设置窗、引导、钉图）照常截进去、能悬停选中；截图自己的装饰排除（keptOwnWindows）。
 
@@ -47,31 +48,50 @@ enum ScreenCapture {
         && (known.contains($0.windowID)
           || $0.windowLayer != NSWindow.Level.statusBar.rawValue)
     }
-    var shots: [Shot] = []
-    for display in content.displays {
+    let jobs = content.displays.compactMap { display -> (NSScreen, SCContentFilter)? in
       guard
         let screen = NSScreen.screens.first(where: {
           ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?
             .uint32Value == display.displayID
         })
-      else { continue }
-      let filter = SCContentFilter(display: display, excludingWindows: ownWindows)
-      let configuration = SCStreamConfiguration()
-      let scale = CGFloat(filter.pointPixelScale)
-      configuration.width = Int(filter.contentRect.width * scale)
-      configuration.height = Int(filter.contentRect.height * scale)
-      configuration.showsCursor = false
-      let image = try await SCScreenshotManager.captureImage(
-        contentFilter: filter, configuration: configuration)
-      let origin = screen.frame.origin
-      shots.append(
-        Shot(
-          screen: screen, image: image,
-          windows: windows.filter { $0.intersects(screen.frame) }.map {
-            $0.offsetBy(dx: -origin.x, dy: -origin.y)
-          }))
+      else { return nil }
+      return (screen, SCContentFilter(display: display, excludingWindows: ownWindows))
     }
-    return shots
+    // 几块屏一起等系统截（真正的活在 ScreenCaptureKit 的进程里）：每块屏一个任务，都留在主 actor 上，只带着
+    // Filters（主 actor 隔离的类是 Sendable）和下标走——SCContentFilter 不是 Sendable，不能直接捕获进任务
+    // （TaskGroup 的 @MainActor 子任务在 Swift 6.2 的区域检查器里报「不认识的模式」，所以用一组 Task）。
+    // 按屏幕原来的顺序收；一块失败就取消其余的，整个抛出去
+    let filters = Filters(jobs.map(\.1))
+    let tasks = jobs.indices.map { index in
+      Task {
+        let filter = filters.items[index]
+        let configuration = SCStreamConfiguration()
+        let scale = CGFloat(filter.pointPixelScale)
+        configuration.width = Int(filter.contentRect.width * scale)
+        configuration.height = Int(filter.contentRect.height * scale)
+        configuration.showsCursor = false
+        return try await SCScreenshotManager.captureImage(
+          contentFilter: filter, configuration: configuration)
+      }
+    }
+    defer { for task in tasks { task.cancel() } }
+    var images: [CGImage] = []
+    for task in tasks { images.append(try await task.value) }
+    return zip(jobs, images).map { job, image in
+      let screen = job.0
+      let origin = screen.frame.origin
+      return Shot(
+        screen: screen, image: image,
+        windows: windows.filter { $0.intersects(screen.frame) }.map {
+          $0.offsetBy(dx: -origin.x, dy: -origin.y)
+        })
+    }
+  }
+
+  /// freeze 里各屏截图任务共用的 filter（见 freeze）
+  private final class Filters {
+    let items: [SCContentFilter]
+    init(_ items: [SCContentFilter]) { self.items = items }
   }
 
   /// 本 App 哪些窗口留在冻结帧和悬停列表里（用户 2026-09-26：截图要能截到本 App 自己）：开着的普通窗口都留——

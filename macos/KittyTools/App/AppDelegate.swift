@@ -51,15 +51,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 钉图（菜单栏显示「隐藏 / 关闭全部钉图」）
   lazy var pins: PinBoard = {
     let board = PinBoard()
-    // 钉图不变、不飞卡片：复制、存好了都用刘海说
-    board.copy = { [unowned self] image, scale in
+    // 钉图不变、不飞卡片：拷贝、存好了都用刘海说（体检 C9：⌘S 快速保存，同截图；识字 / 翻译同截图工具栏，D17）
+    board.output = { [unowned self] action, image, scale in
       Task {
-        guard await copyImage(image, scale: scale) != nil else { return }
-        island.show("已复制钉图", leading: Island.thumbnail(of: image))
+        switch action {
+        case .copy:
+          guard await copyImage(image, scale: scale) != nil else { return }
+          island.show("已复制钉图", leading: Island.thumbnail(of: image))
+        case .save:
+          guard let saved = await saveImage(image, scale: scale, asking: false) else { return }
+          island.show(
+            FlyCard.Badge.saved(saved.url).title, detail: saved.url.lastPathComponent,
+            leading: Island.thumbnail(of: image))
+        case .saveAs: await saveImageAs(image, scale: scale)
+        case .recognize: await copyRecognizedText(in: image)
+        case .translate: await translateImage(image)
+        case .pin: break
+        }
       }
-    }
-    board.saveAs = { [unowned self] image, scale in
-      Task { await saveImageAs(image, scale: scale) }
     }
     return board
   }()
@@ -696,6 +705,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       case .scroll(let region):
         UserDefaults.standard.set(NSStringFromRect(region), forKey: Prefs.screenshotLastRegion)
         // 长截图在实时画面上截、滤掉本 App：没固定的浮层留着只会盖住选区，挡住滚轮和自动滚动
+        // （钉图、常驻缩略图同理，体检 B40，在 scrollCapture 里让开）
         hideUnpinnedPanels()
         await scrollCapture(region)
       case .capture(let capture):
@@ -726,8 +736,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 长截图（截图框选后按 S）：遮罩已收起，在实时画面上边滚边拼，结束后按选的方式输出。整个过程都算在这次截图里
   /// （isCapturing），期间别的截图热键不响应
   private func scrollCapture(_ region: CGRect) async {
+    // 压在选区上的钉图会吞掉滚轮、把自动滚动的合成滚轮当缩放（体检 B40）：让开到长截图结束（拷贝、存储、取消、出错），
+    // 另存为的存储面板弹出来之前就放回；常驻缩略图直接收走
+    pins.suspend(covering: region)
+    shelf.dismiss(covering: region)
     do {
-      guard let result = try await ScrollCapture.run(region: region) else { return }
+      let finished = try await ScrollCapture.run(region: region)
+      pins.resume()
+      guard let result = finished else { return }
       switch result.action {
       case .copy:
         let land = captured(result.image, scale: result.scale, frame: region)
@@ -742,6 +758,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         await saveImageAs(result.image, scale: result.scale)
       }
     } catch {
+      pins.resume()
       island.show("长截图失败", detail: error.localizedDescription, tone: .error)
     }
   }
@@ -899,8 +916,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let linger: (CGRect, FlyCard.Badge) -> Void = { [weak self] rect, badge in
       self?.shelf.add(image, png: png, scale: scale, source: frame, at: rect, badge: badge)
     }
+    // 设置 › 截图关了常驻缩略图（体检 D18）：卡片落地弹完角标停 0.9 s 自己滑走（不给 linger）；减弱动态效果时只有岛
+    let keepsThumbnail = UserDefaults.standard.bool(forKey: Prefs.screenshotShelf)
     guard Style.reduceMotion else {
-      let landing = FlyCard.fly(image, from: frame, linger: linger)
+      let landing = FlyCard.fly(image, from: frame, linger: keepsThumbnail ? linger : nil)
       landing.onShow = { [weak self] in self?.statusItem?.pop() }
       return { badge, data in
         png = data
@@ -911,7 +930,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       png = data
       // 不飞就没有落地的角标：结果用刘海说（Whisker：减弱动态效果时飞行卡片改成轻提示；岛自己会播报）
       self?.island.show(badge.title, leading: Island.thumbnail(of: image))
-      guard let rect = FlyCard.landingRect(for: frame) else { return }
+      guard keepsThumbnail, let rect = FlyCard.landingRect(for: frame) else { return }
       linger(rect, badge)
     }
   }

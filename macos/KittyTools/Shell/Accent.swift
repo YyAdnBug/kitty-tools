@@ -143,8 +143,9 @@ struct AccentPalette {
     }
   }
 
-  func select(_ choice: AccentChoice) {
-    UserDefaults.standard.set(choice.rawValue, forKey: Prefs.accent)
+  /// persists：截图自检只换颜色出图、不写用户的偏好（传 false）
+  func select(_ choice: AccentChoice, persists: Bool = true) {
+    if persists { UserDefaults.standard.set(choice.rawValue, forKey: Prefs.accent) }
     self.choice = choice
     refresh()
   }

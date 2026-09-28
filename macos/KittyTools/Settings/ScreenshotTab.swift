@@ -1,29 +1,47 @@
-// 设置 › 截图：⌘S 快速保存的位置、快门声（可试听）、识字是否把同一段里的换行接起来（开关旁边实时对照效果，体检 A32）。
+// 设置 › 截图：⌘S 快速保存的位置（文件夹图标 + 访达里的名字，选过的能恢复默认，体检 A28）、快门声（可试听）、
+// 截图后留不留常驻缩略图（体检 D18）、识字是否把同一段里的换行接起来（开关旁边实时对照效果，体检 A32）。
 // 框选、标注、长截图的按键不写进页里（N11）：一句话 +「查看全部快捷键…」打开速查表；全局快捷键在「快捷键」页。
 
 import AppKit
 import SwiftUI
 
 struct ScreenshotTab: View {
-  /// 读它只为了在「更改…」之后刷新显示；实际位置以 ScreenshotOutput.saveDirectory 为准（有兜底）
+  /// 选过的文件夹（没选过 = nil，跟随系统截屏的存储位置）；实际位置按 ScreenshotOutput.directory 算（有兜底）
   @AppStorage(Prefs.screenshotSaveDirectory) private var savedDirectory: String?
   @AppStorage(Prefs.ocrJoinLines) private var joinLines = false
   @AppStorage(Prefs.screenshotShutterSound) private var shutterSound = true
+  @AppStorage(Prefs.screenshotShelf) private var keepsThumbnail = true
 
   var body: some View {
     Form {
       Section {
         LabeledContent("快速保存到") {
-          HStack {
-            Text(displayPath)
-              .lineLimit(1)
-              .truncationMode(.middle)
-              .foregroundStyle(.secondary)
+          HStack(spacing: 8) {
+            let directory = ScreenshotOutput.directory(saved: savedDirectory)
+            // 同工具栏「存储到「桌面」」：访达里的名字 + 文件夹图标，完整路径在悬停提示里
+            Label {
+              Text(FileManager.default.displayName(atPath: directory.path))
+                .lineLimit(1)
+                .truncationMode(.middle)
+            } icon: {
+              Image(nsImage: NSWorkspace.shared.icon(forFile: directory.path))
+                .resizable()
+                .frame(width: 16, height: 16)
+            }
+            .foregroundStyle(.secondary)
+            .help((directory.path as NSString).abbreviatingWithTildeInPath)
+            if savedDirectory != nil {
+              Button("恢复默认") { savedDirectory = nil }
+                .buttonStyle(.plain)
+                .foregroundStyle(Style.brandInk)
+                .pointerStyle(.link)
+                .help("跟随系统截屏的存储位置")
+            }
             Button("更改…", action: chooseDirectory)
           }
         }
       } footer: {
-        caption("框选后按 ⌘S 存到这里，文件名是「截图 日期 时间.png」，重名自动加序号；「另存为」选的文件夹也会记成这里。")
+        caption("按 ⌘S 或工具栏的「存储」存到这里，文件名是「截图 日期 时间.png」，重名自动加序号。没选过时跟随系统截屏的存储位置。")
       }
       Section {
         Toggle(isOn: $shutterSound) {
@@ -37,7 +55,12 @@ struct ScreenshotTab: View {
           }
         }
       } footer: {
-        caption("复制、保存、钉图时响；还要系统设置 › 声音里的「播放用户界面音效」开着。截图翻译、识字不出声。")
+        caption("拷贝、存储、钉图时响；还要系统设置 › 声音里的「播放用户界面音效」开着。截图翻译、识字不出声。")
+      }
+      Section {
+        Toggle("截图后在屏幕角落留缩略图", isOn: $keepsThumbnail)
+      } footer: {
+        caption("可以拖出、钉图、存储；关掉后截图只在右下角闪一下。")
       }
       Section {
         Toggle("识字后把同一段里的换行接起来", isOn: $joinLines)
@@ -57,17 +80,12 @@ struct ScreenshotTab: View {
     .formStyle(.grouped)
   }
 
-  private var displayPath: String {
-    _ = savedDirectory
-    return (ScreenshotOutput.saveDirectory.path as NSString).abbreviatingWithTildeInPath
-  }
-
   private func chooseDirectory() {
     let panel = NSOpenPanel()
     panel.canChooseDirectories = true
     panel.canChooseFiles = false
     panel.canCreateDirectories = true
-    panel.directoryURL = ScreenshotOutput.saveDirectory
+    panel.directoryURL = ScreenshotOutput.directory(saved: savedDirectory)
     panel.prompt = "选取"
     panel.begin { response in
       if response == .OK, let url = panel.url { savedDirectory = url.path }

@@ -1,6 +1,7 @@
 // 截图的文件输出：PNG 编码（写 DPI，Retina 截图在预览里、粘贴后都按原来的大小显示）、⌘S 快速保存、另存为。
 // 只出 PNG（修旧版 JPEG 透明变黑、WebP 无视质量，§11 #45）；重名追加序号，不覆盖（§11 #46）。
-// 快速保存的目录 = 上次「另存为」选的目录 → 系统截屏的存储位置 → 桌面（不存在的跳过）。
+// 快速保存的目录 = 设置 › 截图「快速保存到」选的文件夹 → 系统截屏的存储位置 → 桌面（不存在的跳过）。
+// 「另存为」不改它（体检 A28）：存储面板自己记住上次访问的文件夹。
 
 import AppKit
 import UniformTypeIdentifiers
@@ -21,10 +22,14 @@ enum ScreenshotOutput {
     return data as Data
   }
 
-  /// 已不存在的目录（拔掉的移动硬盘等）跳过，往下退
   static var saveDirectory: URL {
+    directory(saved: UserDefaults.standard.string(forKey: Prefs.screenshotSaveDirectory))
+  }
+
+  /// saved：设置里选的文件夹（没选过 = nil）。已不存在的目录（拔掉的移动硬盘等）跳过，往下退
+  static func directory(saved: String?) -> URL {
     let candidates = [
-      UserDefaults.standard.string(forKey: Prefs.screenshotSaveDirectory),
+      saved,
       UserDefaults(suiteName: "com.apple.screencapture")?.string(forKey: "location").map {
         ($0 as NSString).expandingTildeInPath
       },
@@ -65,7 +70,8 @@ enum ScreenshotOutput {
     return url
   }
 
-  /// 另存为：遮罩已收起。先激活本 App（面板才拿得到键盘），存完把前台还给原来的 App；选的目录记成快速保存目录。
+  /// 另存为：遮罩已收起。先激活本 App（面板才拿得到键盘），存完把前台还给原来的 App。不设 directoryURL：
+  /// 存储面板按 App 记住上次访问的文件夹（系统行为）；选的文件夹也不记成快速保存的目录（体检 A28，同 ⌘⇧5）。
   /// 用不模态的 begin 而不是 runModal：runModal 在主 actor 的任务里会卡住其它主线程任务（流式译文、截图热键）。
   /// 返回存到的文件（取消时为 nil）
   @discardableResult
@@ -73,7 +79,6 @@ enum ScreenshotOutput {
     let panel = NSSavePanel()
     panel.allowedContentTypes = [.png]
     panel.canCreateDirectories = true
-    panel.directoryURL = saveDirectory
     panel.nameFieldStringValue = availableURL(in: saveDirectory).lastPathComponent
     let previous = NSWorkspace.shared.frontmostApplication
     NSApp.activate()
@@ -85,8 +90,6 @@ enum ScreenshotOutput {
     }
     guard response == .OK, let url = panel.url else { return nil }
     try png.write(to: url, options: .atomic)
-    UserDefaults.standard.set(
-      url.deletingLastPathComponent().path, forKey: Prefs.screenshotSaveDirectory)
     return url
   }
 }
