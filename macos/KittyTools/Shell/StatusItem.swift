@@ -18,6 +18,7 @@ final class StatusItem: NSObject, NSMenuDelegate {
   /// 打开菜单前往里填菜单项（AppDelegate 给）
   var buildMenu: (NSMenu) -> Void = { _ in }
   private var isWorking = false
+  private var isApplying = false
   /// 按钮上现在是哪种图（nil = 还没设）
   private var style: IconStyle?
 
@@ -68,6 +69,12 @@ final class StatusItem: NSObject, NSMenuDelegate {
   /// 按偏好显示 / 隐藏、换样式：启动时（AppDelegate 已 registerDefaults）和偏好一变都调。
   /// behavior 没有 .removalAllowed：按住 ⌘ 只能挪位置、拖不出菜单栏，isVisible 只有这里改，不用反过来同步回偏好
   private func applyPrefs() {
+    // 防重入：isVisible 的 setter 会先把自己的 autosave 键（NSStatusItem Visible Item-N）写进 standard、同步发出
+    // didChangeNotification，这时 isVisible 还没变成新值，上面的「没变不碰」拦不住，会无限递归到栈溢出
+    // （2026-09-29 用户切换「在菜单栏显示图标」时崩溃，macOS 15.7.7）
+    guard !isApplying else { return }
+    isApplying = true
+    defer { isApplying = false }
     let defaults = UserDefaults.standard
     let visible = defaults.bool(forKey: Prefs.statusItemVisible)
     if item.isVisible != visible { item.isVisible = visible }
