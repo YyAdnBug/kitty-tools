@@ -21,14 +21,16 @@ struct LauncherPanelView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   /// 按住 ⌘ 超过 150 ms：类型标签换成键帽
   @State private var showsShortcuts = false
+  /// 列表的滚动位置：选中跟随滚动按前缀和算目标 y（RevealsSelection），不按行 id 滚
+  @State private var position = ScrollPosition()
 
   static let searchHeight: CGFloat = 56
   static let rowHeight: CGFloat = 40
   static let calcHeight: CGFloat = 64
   static let groupHeight: CGFloat = 28
   static let barHeight: CGFloat = 36
-  /// 分组标题在列表里的 id（滚回顶部时滚到它，不然标题被滚出去）
-  static func groupID(_ row: Int) -> String { "launcher-group-\(row)" }
+  /// 列表四周内缩（面板圆角 16 − 6 = 高亮的圆角 10，同心）
+  static let inset: CGFloat = 6
   /// 多出半行，让人看得出下面还能滚（动作菜单同样）
   static let visibleRows = 8.5
 
@@ -86,6 +88,14 @@ struct LauncherPanelView: View {
       + model.results.prefix(row).map(rowHeight).reduce(0, +)
   }
 
+  /// 选中跟随滚动要露出来的区间（滚动内容坐标，含四周内缩）：第 row 行；它是一组的第一行时连分组标题一起
+  static func span(ofRow row: Int, in model: LauncherModel) -> ClosedRange<CGFloat>? {
+    guard model.results.indices.contains(row) else { return nil }
+    let top = inset + offset(ofRow: row, in: model)
+    let header = model.groups.contains { $0.row == row } ? groupHeight : 0
+    return top - header...top + rowHeight(model.results[row])
+  }
+
   /// 面板高度 = 搜索栏 + 发丝线 +（错误）+ 列表（分组标题各 28 + 最多 8.5 行）+ 底栏；⌘K 菜单开着时至少放得下它
   static func height(for model: LauncherModel) -> CGFloat {
     var height = searchHeight + 0.5 + barHeight
@@ -97,7 +107,7 @@ struct LauncherPanelView: View {
       let full = Int(visibleRows)
       var rows = heights.prefix(full).reduce(0, +)
       if heights.count > full { rows += heights[full] / 2 }
-      height += 12 + CGFloat(model.groups.count) * groupHeight + rows
+      height += inset * 2 + CGFloat(model.groups.count) * groupHeight + rows
     }
     // 菜单画在面板里、锚在底栏上方 4 pt，离搜索栏至少 8 pt；按没过滤的动作算，边打字过滤面板不跳。
     // 菜单高 = 行和分节线（最多 8.5 行高）+ 上下内缩各 5
@@ -125,67 +135,49 @@ struct LauncherPanelView: View {
   }
 
   private var list: some View {
-    ScrollViewReader { proxy in
-      ScrollView {
-        LazyVStack(spacing: 0) {
-          let groups = model.groups
-          ForEach(Array(model.results.enumerated()), id: \.element.rowID) { index, item in
-            if let group = groups.first(where: { $0.row == index }) {
-              groupHeader(group)
-            }
-            Button {
-              model.click(item)
-            } label: {
-              let isSelected = index == model.selection
-              LauncherRow(
-                item: item, index: index, showsShortcut: showsShortcuts && index < 9,
-                isSelected: isSelected, isArmed: model.isArmed(item),
-                alternate: isSelected ? model.alternateSubtitle(for: item) : nil,
-                hotKey: isSelected ? item.hotKeyAction.flatMap(model.boundHotKey)?.display : nil
-              )
-              .frame(height: rowHeight(item))
-              .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .id(item.rowID)
-            // 右键和 ⌘K 同一份动作（体检 C8）；包成视图：菜单打开时才算，不在每次画行时建一遍
-            .contextMenu { ActionContextMenu { model.actions(for: item) } }
-            .accessibilityActions { accessibilityActions(for: item) }
+    ScrollView {
+      LazyVStack(spacing: 0) {
+        let groups = model.groups
+        ForEach(Array(model.results.enumerated()), id: \.element.rowID) { index, item in
+          if let group = groups.first(where: { $0.row == index }) {
+            groupHeader(group)
           }
-        }
-        .background(alignment: .topLeading) { highlight }
-        .padding(6)
-      }
-      .scrollIndicators(.automatic)
-      .onChange(of: model.selection) { _, selection in
-        guard model.results.indices.contains(selection) else { return }
-        withAnimation(
-          model.selectionMotion == .instant
-            ? nil : Style.Motion.snap.animation(reduced: reduceMotion)
-        ) {
-          // 回到一组的第一行时连分组标题一起露出来
-          proxy.scrollTo(
-            model.groups.contains { $0.row == selection }
-              ? Self.groupID(selection) : model.results[selection].rowID)
-        }
-      }
-      // 新结果时选中项回到第 0 行，但 selection 本来就是 0 时上面不触发：列表也要回到顶部（有分组标题就到标题）；
-      // 文件结果后续批次保留了用户选的那行时滚到那行
-      .onChange(of: model.results) {
-        if model.selection > 0, model.results.indices.contains(model.selection) {
-          proxy.scrollTo(model.results[model.selection].rowID)
-        } else if let first = model.results.first {
-          proxy.scrollTo(
-            model.groups.first?.row == 0 ? Self.groupID(0) : first.rowID, anchor: .top)
+          Button {
+            model.click(item)
+          } label: {
+            let isSelected = index == model.selection
+            LauncherRow(
+              item: item, index: index, showsShortcut: showsShortcuts && index < 9,
+              isSelected: isSelected, isArmed: model.isArmed(item),
+              alternate: isSelected ? model.alternateSubtitle(for: item) : nil,
+              hotKey: isSelected ? item.hotKeyAction.flatMap(model.boundHotKey)?.display : nil
+            )
+            .frame(height: rowHeight(item))
+            .contentShape(.rect)
+          }
+          .buttonStyle(.plain)
+          // 右键和 ⌘K 同一份动作（体检 C8）；包成视图：菜单打开时才算，不在每次画行时建一遍
+          .contextMenu { ActionContextMenu { model.actions(for: item) } }
+          .accessibilityActions { accessibilityActions(for: item) }
         }
       }
+      .background(alignment: .topLeading) { highlight }
+      .padding(Self.inset)
     }
+    .scrollIndicators(.automatic)
+    // 选中跟随滚动（共用 ListReveal，第 10 批）：选中换了、或结果换了都重新露出选中行。新结果时选中回到第 0 行，
+    // 露出第 0 行（连分组标题）就是回到顶部；文件结果后续批次保留了用户选的那行时露出那行。上下都留一格内缩
+    .modifier(
+      RevealsSelection(
+        position: $position, key: RevealKey(selection: model.selection, results: model.results),
+        motion: model.selectionMotion, coveredTop: Self.inset, inset: Self.inset
+      ) { Self.span(ofRow: model.selection, in: model) }
+    )
   }
 
   /// 分组标题：高度必须正好是 groupHeight（高亮和面板高度都按它算）
   private func groupHeader(_ group: LauncherModel.Group) -> some View {
     Text(group.title)
-      .id(Self.groupID(group.row))
       .font(.system(size: 11, weight: .semibold))
       .foregroundStyle(.tertiary)
       .padding(.leading, 12)
@@ -549,6 +541,12 @@ enum LauncherIcons {
     cache.setObject(image, forKey: path as NSString)
     return image
   }
+}
+
+/// 选中跟随滚动的触发值：选中的行号或结果列表变了
+private struct RevealKey: Equatable {
+  let selection: Int
+  let results: [LauncherItem]
 }
 
 extension LauncherItem {

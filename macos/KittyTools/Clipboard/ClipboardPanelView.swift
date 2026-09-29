@@ -31,8 +31,6 @@ struct ClipboardPanelView: View {
   /// 只存这个整数，别存滚动位置（每帧都会让整个面板重算）
   @State private var pinnedSections = 0
   @State private var position = ScrollPosition()
-  /// 滚动位置放在不被观察的盒子里：只在选中变化时读，改它不重画面板
-  @State private var viewport = Viewport()
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -287,41 +285,22 @@ struct ClipboardPanelView: View {
       }
       .padding(Self.inset)
     }
-    .scrollPosition($position)
-    .onScrollGeometryChange(for: CGRect.self) {
-      $0.visibleRect
-    } action: { _, rect in
-      viewport.rect = rect
-    }
+    // 让整块透镜露出来：只在它（连同吸顶的分组标题）被挡住时滚，按前缀和算（共用 ListReveal）
+    .modifier(
+      RevealsSelection(
+        position: $position, key: selected?.id, motion: model.selectionMotion,
+        coveredTop: Self.headerHeight, inset: Self.inset
+      ) {
+        guard let id = selected?.id, let offset = layout.offset(of: id) else { return nil }
+        let top = offset + Self.inset
+        return top...top + layout.height(of: id)
+      }
+    )
     .onScrollGeometryChange(for: Int.self) { geometry in
       let y = geometry.visibleRect.minY
       return tops.lastIndex { y > $0 + 0.5 }.map { $0 + 1 } ?? 0
     } action: { _, count in
       pinnedSections = count
-    }
-    .onChange(of: selected?.id) { _, id in
-      if let id { reveal(id, layout: layout) }
-    }
-  }
-
-  /// 让整块透镜露出来：只在它（连同吸顶的分组标题）被挡住时滚，按前缀和算目标位置，不量视图
-  private func reveal(_ id: UUID, layout: ListLayout) {
-    let visible = viewport.rect
-    guard visible.height > 0, let offset = layout.offset(of: id) else { return }
-    let top = offset + Self.inset
-    let bottom = top + layout.height(of: id)
-    let covered = Self.headerHeight
-    var target: CGFloat
-    if top - covered < visible.minY {
-      target = top - covered
-    } else if bottom > visible.maxY {
-      target = bottom + Self.inset - visible.height
-    } else {
-      return
-    }
-    if target < Self.inset * 2 { target = 0 }
-    withAnimation(model.selectionMotion.animation(reduced: reduceMotion)) {
-      position.scrollTo(y: target)
     }
   }
 
@@ -764,11 +743,6 @@ private struct RowID: Hashable {
 private struct LensKey: Equatable {
   let id: UUID?
   let isOpen: Bool
-}
-
-/// 滚动视口（内容坐标）。故意不是 @Observable：滚动时改它不触发重画
-private final class Viewport {
-  var rect = CGRect.zero
 }
 
 /// 搜索框里的粉色筛选标签：高 22、12 medium、品牌粉 0.12 底 + brandInk 字（⌫ 待删时 0.30 底），尾部 8 pt ×。

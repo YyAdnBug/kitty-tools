@@ -1026,6 +1026,53 @@ struct SnapshotProbeTests {
     }
     model.alternate = .none
     try await renderLauncherBatch6(out, usage: usage, apps: apps)
+    try renderLauncherFollow(out)
+  }
+
+  /// 第 10 批：结果多时连按 ↓ 列表跟着滚。40 行结果，窗口出来后逐下按 ↓ 到第 30 行（每下只隔 0.03 s，比滚动动画短：
+  /// 以前会有窗口停在半路，见 ListReveal 的补滚），出图时第 30 行（「项目 31」）完整在列表里、带高亮，底下留一格内缩；
+  /// 再按 ↑ 回到第 0 行：列表回到顶部。reset：按到第 30 行后输入没有结果的词（列表换成「没有匹配」）再改回来，
+  /// 重建的列表从顶上开始、第 0 行带高亮（评审：ScrollPosition 在面板上，不复位会停在旧 y）
+  private func renderLauncherFollow(_ out: String) throws {
+    let apps = (1...40).map { index in
+      LauncherItem(
+        kind: .app, target: "/Applications/项目 \(index).app", title: "项目 \(index)",
+        subtitle: "", names: [LauncherMatch.fold("项目 \(index)"), "xiangmu"])
+    }
+    let model = LauncherModel(
+      usage: try LauncherUsage(db: Database(path: ":memory:")), apps: apps)
+    model.boundHotKey = { $0.defaultHotKey }
+    // 没有搜索引擎：搜不到时没有网页搜索兜底行，列表整个换成「没有匹配」（reset 要的就是这个）
+    model.engines = { [] }
+    func press(_ selector: Selector, times: Int) {
+      for _ in 0..<times {
+        _ = model.handleCommand(selector)
+        RunLoop.main.run(until: Date.now.addingTimeInterval(0.03))
+      }
+      RunLoop.main.run(until: Date.now.addingTimeInterval(0.8))
+    }
+    for dark in [false, true] {
+      for (name, up) in [
+        ("launcher-follow", 0), ("launcher-follow-top", 30), ("launcher-follow-reset", 0),
+      ] {
+        model.query = ""
+        model.query = "xiangmu"
+        try snapshot(
+          LauncherPanelView(model: model),
+          size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
+          to: "\(out)/\(name)\(dark ? "-dark" : "").png"
+        ) { _ in
+          press(#selector(NSResponder.moveDown(_:)), times: 30)
+          press(#selector(NSResponder.moveUp(_:)), times: up)
+          guard name == "launcher-follow-reset" else { return }
+          model.query = "zqzqzq"
+          #expect(model.results.isEmpty)
+          RunLoop.main.run(until: Date.now.addingTimeInterval(0.3))
+          model.query = "xiangmu"
+          RunLoop.main.run(until: Date.now.addingTimeInterval(0.8))
+        }
+      }
+    }
   }
 
   /// 体检第 6 批：单位换算 / 进制 / 千分位（带 ⌘K 的复制项）、系统设置面板、浏览历史（排在用过的网址后面，网站图标是

@@ -354,11 +354,15 @@ struct HistoryView: View {
   @State private var hovered: UUID?
   /// 搜索框拿着焦点：输入框底画焦点环（原文框和它只有一个亮）
   @State private var searchFocused = false
+  /// 列表的滚动位置：选中跟随滚动按前缀和算目标 y（RevealsSelection），不按行 id 滚
+  @State private var position = ScrollPosition()
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   /// 分组标题和行高：高亮按它们的前缀和定位，视图里的高度必须正好是这两个值
   static let headerHeight: CGFloat = 24
   static let rowHeight: CGFloat = 44
+  /// 列表底下的内缩；选中跟随滚动时上下都留这么多（顶上没有内缩，往上滚时让出来）
+  static let scrollMargin: CGFloat = 10
 
   struct DayGroup: Equatable {
     let title: String
@@ -415,46 +419,37 @@ struct HistoryView: View {
   private func listView(_ entries: [HistoryStore.Entry], list: HistoryList) -> some View {
     let sections = Self.sections(entries)
     let selected = HistoryList.selected(list.selectedID, in: entries)
-    return ScrollViewReader { proxy in
-      ScrollView {
-        LazyVStack(alignment: .leading, spacing: 0) {
-          ForEach(sections, id: \.title) { section in
-            Text(section.title)
-              .font(.system(size: 11, weight: .semibold))
-              .foregroundStyle(.tertiary)
-              .padding(.leading, 10)
-              .padding(.bottom, 3)
-              .frame(
-                maxWidth: .infinity, minHeight: Self.headerHeight, maxHeight: Self.headerHeight,
-                alignment: .bottomLeading
-              )
-              .accessibilityAddTraits(.isHeader)
-              .id(section.title)
-            ForEach(section.entries) { entry in
-              row(entry, isSelected: entry.id == selected?.id, list: list)
-                // 滚到最后一行时取下一页（体检 B22）
-                .onAppear { if entry.id == entries.last?.id { list.loadMore() } }
-            }
-          }
-        }
-        .background(alignment: .topLeading) { highlight(selected, sections: sections, list: list) }
-        .padding(.horizontal, 12)
-        .padding(.bottom, 10)
-      }
-      .onChange(of: selected?.id) { _, id in
-        guard let id else { return }
-        withAnimation(
-          list.selectionMotion == .snap ? Style.Motion.snap.animation(reduced: reduceMotion) : nil
-        ) {
-          // 回到第一条时连分组标题一起露出来
-          if id == entries.first?.id, let first = sections.first {
-            proxy.scrollTo(first.title, anchor: .top)
-          } else {
-            proxy.scrollTo(id)
+    return ScrollView {
+      LazyVStack(alignment: .leading, spacing: 0) {
+        ForEach(sections, id: \.title) { section in
+          Text(section.title)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.tertiary)
+            .padding(.leading, 10)
+            .padding(.bottom, 3)
+            .frame(
+              maxWidth: .infinity, minHeight: Self.headerHeight, maxHeight: Self.headerHeight,
+              alignment: .bottomLeading
+            )
+            .accessibilityAddTraits(.isHeader)
+          ForEach(section.entries) { entry in
+            row(entry, isSelected: entry.id == selected?.id, list: list)
+              // 滚到最后一行时取下一页（体检 B22）
+              .onAppear { if entry.id == entries.last?.id { list.loadMore() } }
           }
         }
       }
+      .background(alignment: .topLeading) { highlight(selected, sections: sections, list: list) }
+      .padding(.horizontal, 12)
+      .padding(.bottom, Self.scrollMargin)
     }
+    // 选中跟随滚动（共用 ListReveal，第 10 批）：回到一组的第一条时连分组标题一起露出来
+    .modifier(
+      RevealsSelection(
+        position: $position, key: selected?.id, motion: list.selectionMotion,
+        coveredTop: Self.scrollMargin, inset: Self.scrollMargin
+      ) { selected.flatMap { Self.span(of: $0.id, in: sections) } }
+    )
   }
 
   /// 一块中性高亮：按分组标题和行高的前缀和定位，在行间滑动（不用 matchedGeometryEffect：LazyVStack 回收行时会跳）
@@ -502,7 +497,6 @@ struct HistoryView: View {
         .background(HoverTracker { hover(entry.id, inside: $0) })
     }
     .buttonStyle(.plain)
-    .id(entry.id)
     // 和 ⌘K 同一份动作（分隔线、子菜单，不写键位）
     .contextMenu { ActionContextMenu { list.actions(for: entry) } }
     .transition(
@@ -580,6 +574,13 @@ struct HistoryView: View {
       y += CGFloat(section.entries.count) * rowHeight
     }
     return nil
+  }
+
+  /// 选中跟随滚动要露出来的区间（滚动内容坐标；列表顶上没有内缩）：这一行；它是一组的第一条时连分组标题一起
+  static func span(of id: UUID, in sections: [DayGroup]) -> ClosedRange<CGFloat>? {
+    guard let top = offset(of: id, in: sections) else { return nil }
+    let header = sections.contains { $0.entries.first?.id == id } ? headerHeight : 0
+    return top - header...top + rowHeight
   }
 }
 
