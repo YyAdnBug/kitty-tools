@@ -40,6 +40,10 @@ struct SnapshotProbeTests {
       ][browser.id].map { URL(filePath: $0) }
     }
     SiteIcons.shared.roots = { [] }
+    // 翻译服务的官网图标（第 13 批）：不联网、不碰真的缓存目录；要显示的图在设置 › 翻译那一组里直接摆假图
+    ServiceIcons.shared.directory = FileManager.default.temporaryDirectory.appending(
+      path: UUID().uuidString)
+    ServiceIcons.shared.fetch = { _ in nil }
     let (safari, chrome, firefox) = try (
       #require(Browsers.all.first { $0.id == "safari" }),
       #require(Browsers.all.first { $0.id == "chrome" }),
@@ -554,6 +558,34 @@ struct SnapshotProbeTests {
         size: NSSize(width: 590, height: 400), dark: dark,
         to: "\(out)/settings-launcher-detail\(suffix).png")
     }
+    // 设置 › 翻译服务的 logo（第 13 批）：DeepSeek 按地址认、Kimi 按名字认（内置 logo），OpenCode 和「公司网关」是
+    // 自动取的官网图标（注入假图：满版带底色的裁圆角、透明底的垫白底留 14%），本机模型没有图标（色块首字母）；旁边是
+    // 内置的智谱（满版）和 DeepL（垫白底）对照尺寸、圆角和留白
+    ServiceIcons.shared.remember(Self.fakeSiteIcon("O", background: .black), for: "opencode.ai")
+    ServiceIcons.shared.remember(Self.fakeSiteIcon("G", background: nil), for: "example.com")
+    let aiService = { (name: String, baseURL: String, model: String) -> TranslateService in
+      var service = TranslateService.newAI()
+      service.name = name
+      service.baseURL = baseURL
+      service.model = model
+      service.isEnabled = true
+      return service
+    }
+    let logoServices = TranslateServiceStore(services: [
+      .zhipu, TranslateService.builtin(.deepl),
+      aiService("DeepSeek", "https://api.deepseek.com", "deepseek-chat"),
+      aiService("Kimi（公司代理）", "https://llm.corp-proxy.cn/v1", "kimi-k2"),
+      aiService("OpenCode", "https://opencode.ai/zen/go", "qwen3-coder"),
+      aiService("公司网关", "https://llm.example.com/v1", "gpt-oss-120b"),
+      aiService("本机模型", "http://127.0.0.1:8000/v1", "qwen3"),
+    ])
+    for dark in [false, true] {
+      try snapshot(
+        TranslateTab(services: logoServices, history: history, speaker: speaker)
+          .environment(navigation),
+        size: NSSize(width: 590, height: 1720), dark: dark,
+        to: "\(out)/settings-translate-logos\(dark ? "-dark" : "").png")
+    }
     // 设置 › 启动器「浏览器书签与历史」（第 12 批）：只列装了的五家；Safari 没授权（橙字 + 去授权… + 说明）、
     // Chrome 书签和历史都读到、Edge 关着、Arc 没有书签文件（橙字）、Firefox 书签读到（历史关着写它搜什么）。
     // 再给 Safari 授权（数据目录能读了）看「已读到 N 条」
@@ -907,10 +939,17 @@ struct SnapshotProbeTests {
     // 服务身份：官方 logo（满版 / 垫白底）和还没有 logo 的色块首字母，18 pt 一排 + 36 pt 一排
     var gemini = TranslateService.newAI()
     gemini.name = "Gemini"
+    // 第 13 批的各家厂商（按名字认）
+    let vendors = AIVendor.allCases.filter { ![.zhipu, .gemini, .anthropic, .openai].contains($0) }
+      .map { vendor in
+        var service = TranslateService.newAI()
+        service.name = vendor.rawValue
+        return service
+      }
     let everyService =
       TranslateService.Kind.allCases.filter { $0 != .ai }.map(TranslateService.builtin) + [
         claude, gemini, gpt,
-      ]
+      ] + vendors
     let tiles = VStack(alignment: .leading, spacing: 12) {
       ForEach([18.0, 36.0], id: \.self) { size in
         HStack(spacing: size / 2) {
@@ -921,7 +960,7 @@ struct SnapshotProbeTests {
     .padding(16)
     for dark in [false, true] {
       try snapshot(
-        tiles, size: NSSize(width: 640, height: 110), dark: dark,
+        tiles, size: NSSize(width: 1180, height: 110), dark: dark,
         to: "\(out)/translate-logos\(dark ? "-dark" : "").png")
     }
   }
@@ -975,6 +1014,27 @@ struct SnapshotProbeTests {
   }
 
   /// 截图自检用的假网站图标：圆角色块里一个字母（不读本机浏览器）
+  /// 假的官网图标（128 px）：有底色 = 满版方块，没有 = 透明底上一个品牌色字母
+  private static func fakeSiteIcon(_ letter: String, background: NSColor?) -> CGImage {
+    let image = NSImage(size: NSSize(width: 128, height: 128), flipped: false) { rect in
+      if let background {
+        background.setFill()
+        rect.fill()
+      }
+      let text = NSAttributedString(
+        string: letter,
+        attributes: [
+          .font: NSFont.systemFont(ofSize: 96, weight: .heavy),
+          .foregroundColor: background == nil ? NSColor.systemIndigo : NSColor.white,
+        ])
+      let size = text.size()
+      text.draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2))
+      return true
+    }
+    var rect = NSRect(x: 0, y: 0, width: 128, height: 128)
+    return image.cgImage(forProposedRect: &rect, context: nil, hints: nil)!
+  }
+
   private static func fakeFavicon(_ letter: String, _ color: NSColor) -> NSImage {
     NSImage(size: NSSize(width: 32, height: 32), flipped: false) { rect in
       color.setFill()

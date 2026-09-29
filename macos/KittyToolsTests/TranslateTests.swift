@@ -1,5 +1,5 @@
 // 翻译相关单测：语言解析、流式文本清洗、AI 服务地址 / 参数、局域网判断、翻译历史（存储、撤销删除、列表分组与选中）、
-// 「翻译 ↩」胶囊的出现条件、服务 logo 都在 asset catalog 里、结果卡片正文的高度上限；
+// 「翻译 ↩」胶囊的出现条件、服务 logo 都在 asset catalog 里、按地址 / 名字认厂商与官网图标（第 13 批）、结果卡片正文的高度上限；
 // 体检第 4 批：复制即译过滤、自动复制按来源、截断与思考的流约定、错误种类、划词没取到、输入翻译再打开、⌘D 收藏、
 // 历史 ⌘K 与分页、浮窗跟随鼠标、历史保留档位升级、朗读声线；
 // 以及按需启用的联网冒烟测试（TEST_RUNNER_KITTY_LIVE_TRANSLATE=1，用内置智谱 key 真翻一句）。
@@ -388,12 +388,140 @@ struct ServiceLogoTests {
       ai.name = name
       services.append(ai)
     }
+    services += TranslateService.aiPresets.map { $0.make() }
     let named = services.compactMap(ServiceTile.logo(for:))
     #expect(named.count == services.count)
     for logo in named {
       #expect(NSImage(named: logo.name) != nil, "\(logo.name)")
     }
+    // 每家厂商都有内置图（第 13 批）
+    for vendor in AIVendor.allCases {
+      #expect(NSImage(named: "ServiceLogo/" + vendor.rawValue) != nil, "\(vendor)")
+    }
     #expect(ServiceTile.logo(for: .newAI()) == nil)
+  }
+
+  /// 按地址认厂商（第 13 批）：各家的 host（带不带 api.、端口、大小写）、Ollama 的本机 11434、认不出的
+  @Test func vendorByHost() {
+    let vendor = { (url: String) in AIVendor(url: URL(string: url)!) }
+    let cases: [(String, AIVendor)] = [
+      ("https://api.openai.com/v1/chat/completions", .openai),
+      ("https://API.DeepSeek.com/v1", .deepseek), ("https://api.deepseek.com:443/v1", .deepseek),
+      ("https://dashscope.aliyuncs.com/compatible-mode/v1", .qwen),
+      ("https://dashscope-intl.aliyuncs.com/compatible-mode/v1", .qwen),
+      ("https://api.moonshot.cn/v1", .kimi), ("https://api.moonshot.ai/v1", .kimi),
+      ("https://ark.cn-beijing.volces.com/api/v3", .doubao),
+      ("https://api.siliconflow.cn/v1", .siliconflow),
+      ("https://api.siliconflow.com/v1", .siliconflow),
+      ("https://openrouter.ai/api/v1", .openrouter), ("http://localhost:11434/v1", .ollama),
+      ("http://127.0.0.1:11434/v1", .ollama), ("http://192.168.1.8:11434", .ollama),
+      ("https://ollama.com/api", .ollama), ("https://api.mistral.ai/v1", .mistral),
+      ("https://api.x.ai/v1", .grok), ("https://api.minimaxi.com/v1", .minimax),
+      ("https://api.minimax.io/v1", .minimax), ("https://open.bigmodel.cn/api/paas/v4", .zhipu),
+      ("https://api.z.ai/api/paas/v4", .zhipu),
+      ("https://api.anthropic.com/v1/messages", .anthropic),
+      ("https://generativelanguage.googleapis.com/v1beta/openai", .gemini),
+    ]
+    for (url, expected) in cases { #expect(vendor(url) == expected, "\(url)") }
+    // 认不出：自建服务、只是名字像的主机、别的端口的本机服务、Azure
+    for url in [
+      "https://opencode.ai/zen/go", "https://notdeepseek.com/v1", "https://abcz.ai/v1",
+      "http://127.0.0.1:8000/v1", "https://r.openai.azure.com/openai", "https://x.ai.example.com",
+    ] {
+      #expect(vendor(url) == nil, "\(url)")
+    }
+    // 厂商预设各认到自己
+    #expect(
+      TranslateService.aiPresets.map { AIVendor(service: $0.make()) } == [
+        .openai, .deepseek, .qwen, .kimi, .siliconflow, .openrouter, .gemini, .anthropic, .ollama,
+      ])
+  }
+
+  /// 地址认不出再看名字，都认不出时 Anthropic 协议算 Anthropic；Azure 用微软、不归厂商表
+  @Test func vendorByNameAndProtocol() {
+    var proxy = TranslateService.newAI()
+    proxy.baseURL = "https://llm.example.com/v1"
+    proxy.name = "Kimi（公司代理）"
+    #expect(AIVendor(service: proxy) == .kimi)
+    proxy.name = "我的服务"
+    #expect(AIVendor(service: proxy) == nil)
+    proxy.aiProtocol = .anthropic
+    #expect(AIVendor(service: proxy) == .anthropic)
+    // 地址先于名字：DeepSeek 的 Anthropic 兼容接口是 DeepSeek
+    proxy.baseURL = "https://api.deepseek.com/anthropic"
+    proxy.name = "Claude 兼容"
+    #expect(AIVendor(service: proxy) == .deepseek)
+    var azure = TranslateService.newAI()
+    azure.name = "Azure OpenAI"
+    azure.aiProtocol = .azure
+    #expect(AIVendor(service: azure) == nil)
+    #expect(ServiceTile.logo(for: azure)?.name == "ServiceLogo/microsoft")
+    #expect(ServiceIcons.site(for: azure) == nil)
+  }
+
+  /// 官网推断：可注册域名；内置表认得的不推断；IP、本机、内网不取
+  @Test func siteInference() {
+    #expect(ServiceIcons.registrableDomain("api.deepseek.com") == "deepseek.com")
+    #expect(ServiceIcons.registrableDomain("opencode.ai") == "opencode.ai")
+    #expect(ServiceIcons.registrableDomain("API.Example.COM.") == "example.com")
+    #expect(ServiceIcons.registrableDomain("llm.gw.example.com.cn") == "example.com.cn")
+    for host in ["localhost", "127.0.0.1", "8.8.8.8", "192.168.1.5", "nas", "box.local", "com.cn"] {
+      #expect(ServiceIcons.registrableDomain(host) == nil, "\(host)")
+    }
+    let service = { (baseURL: String) -> TranslateService in
+      var service = TranslateService.newAI()
+      service.baseURL = baseURL
+      return service
+    }
+    #expect(
+      ServiceIcons.site(for: service("https://opencode.ai/zen/go"))?.absoluteString
+        == "https://opencode.ai/")
+    #expect(
+      ServiceIcons.site(for: service("api.llm.example.com/v1"))?.absoluteString
+        == "https://example.com/")
+    for baseURL in [
+      "https://api.deepseek.com/v1", "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "http://127.0.0.1:11434/v1", "http://192.168.1.5:8000/v1", "http://8.8.8.8/v1",
+      "http://localhost:1234/v1", "",
+    ] {
+      #expect(ServiceIcons.site(for: service(baseURL)) == nil, "\(baseURL)")
+    }
+    #expect(ServiceIcons.site(for: .zhipu) == nil)
+  }
+
+  /// 磁盘缓存：<目录>/<官网主机>.png；四角透明（只有图形）垫白底，四角都实（满版）裁圆角
+  @Test func cacheFileAndCorners() throws {
+    let icons = ServiceIcons()
+    icons.directory = URL(filePath: "/tmp/icons")
+    #expect(icons.file(for: "opencode.ai").path == "/tmp/icons/opencode.ai.png")
+    let image = { (full: Bool) throws -> CGImage in
+      let context = try #require(
+        CGContext(
+          data: nil, width: 16, height: 16, bitsPerComponent: 8, bytesPerRow: 64,
+          space: CGColorSpaceCreateDeviceRGB(),
+          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+      context.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 1))
+      context.fill(
+        full ? CGRect(x: 0, y: 0, width: 16, height: 16) : CGRect(x: 4, y: 4, width: 8, height: 8))
+      return try #require(context.makeImage())
+    }
+    #expect(ServiceIcons.hasTransparentCorners(try image(false)))
+    #expect(!ServiceIcons.hasTransparentCorners(try image(true)))
+    // 放进内存的图按四角决定垫不垫白底，不碰磁盘
+    icons.remember(try image(true), for: "example.com")
+    #expect(icons.icon(for: "example.com")?.onPlate == false)
+  }
+
+  /// 联网冒烟（TEST_RUNNER_KITTY_LIVE_LINK=1 才跑）：真取 OpenCode、DeepSeek 官网的图标，长边不超过 128，不写磁盘
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_LIVE_LINK"] != nil))
+  func liveSiteIcons() async throws {
+    for site in ["https://opencode.ai/", "https://deepseek.com/"] {
+      let fetched = await LinkPreview.shared.siteIcon(
+        URL(string: site)!, maxPixel: ServiceIcons.maxPixel)
+      let image = try #require(fetched, "\(site)")
+      #expect(max(image.width, image.height) <= ServiceIcons.maxPixel)
+      print(site, image.width, image.height, "透明四角", ServiceIcons.hasTransparentCorners(image))
+    }
   }
 }
 

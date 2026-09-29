@@ -57,6 +57,15 @@ struct LinkPreviewTests {
       metadata.icons.map(\.absoluteString) == [
         "https://cdn.example.com/touch.png", "https://example.com/favicon-32.png",
       ])
+    // 同一种里 sizes 声明得大的在前（没写的排在声明了的后面），其余按网页里的顺序（第 13 批，官网图标要大图）
+    let sized = LinkPreview.parse(
+      html: """
+        <link rel="icon" href="/a.ico"><link rel="icon" sizes="32x32" href="/32.png">
+        <link rel="icon" sizes="16x16 192x192" href="/192.png">
+        <link rel="apple-touch-icon" sizes="76x76" href="/76.png"><link rel="apple-touch-icon" sizes="180x180" href="/180.png">
+        """, base: base)
+    #expect(
+      sized.icons.map(\.path) == ["/180.png", "/76.png", "/192.png", "/32.png", "/a.ico"])
     // 没有 og 标签时用 <title>
     let plain = LinkPreview.parse(html: "<title>\n  Hello\n  World </title>", base: base)
     #expect(plain.title == "Hello World" && plain.image == nil && plain.icons.isEmpty)

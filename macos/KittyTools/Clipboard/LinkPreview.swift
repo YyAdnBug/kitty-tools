@@ -5,6 +5,7 @@
 // （同一条再选中时等它，不重开），网络错误不记、下次选中再试。网页请求 3 s 没动静就放弃。
 // 不取：非 http(s)、本机 / 内网 / 私有地址、带账号密码、像一次性令牌的网址（预取会把魔法登录、邮箱验证、退订链接用掉），
 // 跳转到这些地址也拦下；头图、图标这类子资源只拦前三种（CDN 的文件名常是长哈希，不是令牌）。结果缓存在内存（最多 12 条）。
+// 翻译服务的官网图标（Translate/ServiceIcons，第 13 批）也经这里的 siteIcon 取，同一个下载器、同样的限制。
 
 import AppKit
 import ImageIO
@@ -125,11 +126,35 @@ nonisolated struct LinkMetadata: Equatable, Sendable {
   }
 
   /// 图标候选依次试，最多两个
-  private func fetchIcon(_ candidates: [URL]) async -> CGImage? {
+  private func fetchIcon(_ candidates: [URL], maxPixel: Int = 96) async -> CGImage? {
     for url in candidates.prefix(2) {
-      if let icon = await fetchImage(url, limit: 512_000, maxPixel: 96) { return icon }
+      if let icon = await fetchImage(url, limit: 512_000, maxPixel: maxPixel) { return icon }
     }
     return nil
+  }
+
+  /// 一个网站的图标（翻译服务的官网图标，第 13 批）：同一套下载与取图——首页 <head> 里 apple-touch-icon 优先、
+  /// 再 icon 里声明最大的，都没有用 /favicon.ico；限大小、超时、公网检查、临时会话都照上面。取不到返回 nil，不报错。
+  /// 不看「链接预览」开关：只访问用户自己配置的服务所在的官网
+  func siteIcon(_ site: URL, maxPixel: Int) async -> CGImage? {
+    guard Self.isFetchable(site), let page = try? await fetcher.get(site, as: .page) else {
+      return nil
+    }
+    let base = page.response.url ?? site
+    var icons: [URL] = []
+    if (200..<300).contains(page.response.statusCode),
+      page.response.mimeType?.lowercased().hasPrefix("image/") == false
+    {
+      icons =
+        Self.parse(
+          html: Self.decode(page.data, charset: page.response.textEncodingName), base: base
+        )
+        .icons
+    }
+    if icons.isEmpty, let icon = URL(string: "/favicon.ico", relativeTo: base) {
+      icons = [icon.absoluteURL]
+    }
+    return await fetchIcon(icons, maxPixel: maxPixel)
   }
 
   /// 缩略图（白名单第 1 类）：不解码整张原图
@@ -359,7 +384,8 @@ extension LinkPreview {
     return url?.host(percentEncoded: false)?.lowercased()
   }
 
-  /// 从网页头部读标题、网站名、头图和图标（相对地址按 base 补全；SVG 图标跳过，ImageIO 解不了）
+  /// 从网页头部读标题、网站名、头图和图标（相对地址按 base 补全；SVG 图标跳过，ImageIO 解不了；
+  /// 图标 apple-touch-icon 优先，同一种里 sizes 声明得大的在前）
   nonisolated static func parse(html: String, base: URL) -> LinkMetadata {
     let head =
       html.range(of: "</head", options: .caseInsensitive).map { String(html[..<$0.lowerBound]) }
@@ -384,7 +410,7 @@ extension LinkPreview {
       [
         "og:image:secure_url", "og:image", "og:image:url", "twitter:image", "twitter:image:src",
       ].lazy.compactMap { meta[$0].flatMap { resolve($0, base) } }.first
-    var icons: [(priority: Int, url: URL)] = []
+    var icons: [(priority: Int, size: Int, url: URL)] = []
     for tag in head.matches(of: /<link\b[^>]*>/.ignoresCase()) {
       let attributes = attributes(of: String(tag.output))
       guard let rel = attributes["rel"]?.lowercased().split(separator: " "),
@@ -392,14 +418,21 @@ extension LinkPreview {
         attributes["type"]?.lowercased() != "image/svg+xml",
         let url = resolve(cleaned(href), base)
       else { continue }
+      // 声明的边长（sizes="180x180"，几个尺寸取最大；没写算 0，排在声明了的后面）
+      let size =
+        attributes["sizes"].map {
+          $0.matches(of: /(\d+)[xX]\d+/).compactMap { Int($0.output.1) }.max() ?? 0
+        } ?? 0
       if rel.contains("apple-touch-icon") || rel.contains("apple-touch-icon-precomposed") {
-        icons.append((0, url))
+        icons.append((0, size, url))
       } else if rel.contains("icon") {
-        icons.append((1, url))
+        icons.append((1, size, url))
       }
     }
+    // apple-touch-icon 在前，同一种里声明得大的在前，其余按网页里的顺序
     result.icons = icons.enumerated().sorted {
-      ($0.element.priority, $0.offset) < ($1.element.priority, $1.offset)
+      ($0.element.priority, -$0.element.size, $0.offset)
+        < ($1.element.priority, -$1.element.size, $1.offset)
     }
     .map(\.element.url)
     return result

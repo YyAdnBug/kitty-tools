@@ -390,44 +390,72 @@ private struct Fade: Equatable {
   var bottom: CGFloat = 0
 }
 
-/// 服务身份：18 pt 方块（圆角 = 边长 × 0.225）。有官方 logo 用 logo，没有的用品牌色块 + 白色首字母
+/// 服务身份：18 pt 方块（圆角 = 边长 × 0.225）。有官方 logo 用 logo（内置服务、AIVendor 认出的厂商），
+/// 认不出的自建 AI 服务用官网图标（ServiceIcons，取的时候是色块、到了淡入），都没有的用品牌色块 + 白色首字母
 struct ServiceTile: View {
   let service: TranslateService
   var size: CGFloat = 18
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
-    let shape = RoundedRectangle(cornerRadius: Style.Radius.tile(size), style: .continuous)
     if let logo = Self.logo(for: service) {
-      Image(decorative: logo.name)
-        .resizable()
-        .interpolation(.high)
-        .scaledToFit()
-        .padding(logo.onPlate ? size * 0.14 : 0)
-        .frame(width: size, height: size)
-        .background(logo.onPlate ? Color.white : .clear)
-        .clipShape(shape)
-        .overlay(shape.hairlineBorder())
+      logoTile(Image(decorative: logo.name), onPlate: logo.onPlate)
+    } else if let host = ServiceIcons.site(for: service)?.host() {
+      let icon = ServiceIcons.shared.icon(for: host)
+      ZStack {
+        if let icon {
+          logoTile(Image(nsImage: icon.image), onPlate: icon.onPlate)
+            .accessibilityHidden(true)
+            .transition(.opacity)
+        } else {
+          monogramTile.transition(.opacity)
+        }
+      }
+      // 到了淡入（settle）；减弱动态效果时退成 0.2 s 纯淡入（Whisker §7）
+      .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: icon != nil)
+      .task(id: host) { await ServiceIcons.shared.load(host) }
     } else {
-      let color = Self.color(for: service)
-      shape
-        .fill(
-          LinearGradient(
-            colors: [color, color.mix(with: .black, by: 0.15)], startPoint: .top, endPoint: .bottom)
-        )
-        .overlay(
-          Text(Self.monogram(service))
-            .font(.system(size: size * 0.55, weight: .heavy, design: .rounded))
-            .foregroundStyle(.white)
-            .minimumScaleFactor(0.6)
-        )
-        .frame(width: size, height: size)
+      monogramTile
     }
   }
 
+  /// logo：自带底色的满版图直接裁圆角，只有图形的垫白底、四周留 14%；0.5 pt 发丝线
+  private func logoTile(_ image: Image, onPlate: Bool) -> some View {
+    let shape = RoundedRectangle(cornerRadius: Style.Radius.tile(size), style: .continuous)
+    return
+      image
+      .resizable()
+      .interpolation(.high)
+      .scaledToFit()
+      .padding(onPlate ? size * 0.14 : 0)
+      .frame(width: size, height: size)
+      .background(onPlate ? Color.white : .clear)
+      .clipShape(shape)
+      .overlay(shape.hairlineBorder())
+  }
+
+  /// 品牌色块 + 白色首字母
+  private var monogramTile: some View {
+    let color = Self.color(for: service)
+    return RoundedRectangle(cornerRadius: Style.Radius.tile(size), style: .continuous)
+      .fill(
+        LinearGradient(
+          colors: [color, color.mix(with: .black, by: 0.15)], startPoint: .top, endPoint: .bottom)
+      )
+      .overlay(
+        Text(Self.monogram(service))
+          .font(.system(size: size * 0.55, weight: .heavy, design: .rounded))
+          .foregroundStyle(.white)
+          .minimumScaleFactor(0.6)
+      )
+      .frame(width: size, height: size)
+  }
+
   /// 菜单项里的服务图标（设置「+」菜单）：NSMenu 只认图片、画不了 SwiftUI 视图，把 18 pt 的它渲染成图，
-  /// 按种类 + 协议 + 名字缓存（菜单每次画都要）
+  /// 按种类 + 协议 + 地址 + 名字缓存（菜单每次画都要）
   static func menuIcon(_ service: TranslateService) -> Image {
-    let key = "\(service.kind.rawValue)|\(service.aiProtocol?.rawValue ?? "")|\(service.name)"
+    let key =
+      "\(service.kind.rawValue)|\(service.aiProtocol?.rawValue ?? "")|\(service.baseURL ?? "")|\(service.name)"
     if let cached = menuIcons[key] { return Image(nsImage: cached) }
     let renderer = ImageRenderer(content: ServiceTile(service: service, size: 18))
     renderer.scale = 2
@@ -438,34 +466,24 @@ struct ServiceTile: View {
 
   private static var menuIcons: [String: NSImage] = [:]
 
-  /// 官方 logo（`Assets.xcassets/ServiceLogo`，取自各家官网的图标）：自带底色的满版图直接裁圆角，
-  /// 只有图形的垫白底留边（onPlate）。自定义的 AI 服务认不出是谁时用色块首字母。
-  /// ponytail: 百度、腾讯只有 32 px 的 favicon，18 pt 下略虚；拿到 ≥ 128 px 的官方图直接替换 PNG
+  /// 官方 logo（`Assets.xcassets/ServiceLogo`，取自各家官网自己的图标）：内置服务按种类，AI 服务按厂商（AIVendor：
+  /// 先看地址、再看名字、Anthropic 协议兜底），Azure 用微软。认不出是谁时 nil（再看官网图标、色块首字母）。
+  /// ponytail: 百度、腾讯只有 32 px 的 favicon、Kimi 只有 48 px（官网 512 px 的图带颗粒噪点，小尺寸发脏），18 pt 下略虚；
+  /// 拿到 ≥ 128 px 的干净官方图直接替换 PNG
   static func logo(for service: TranslateService) -> (name: String, onPlate: Bool)? {
     let name: String? =
       switch service.kind {
       case .zhipu, .baidu, .youdao, .google, .deepl, .microsoft, .volcengine, .tencent:
         service.kind.rawValue
-      case .ai:
-        switch service.aiProtocol {
-        case .anthropic: "anthropic"
-        case .azure: "microsoft"
-        case .openai, nil:
-          if service.name.localizedCaseInsensitiveContains("gemini") {
-            "gemini"
-          } else if ["gpt", "openai"].contains(where: {
-            service.name.localizedCaseInsensitiveContains($0)
-          }) {
-            "openai"
-          } else {
-            nil
-          }
-        }
+      case .ai: service.aiProtocol == .azure ? "microsoft" : AIVendor(service: service)?.rawValue
       }
-    return name.map {
-      ("ServiceLogo/" + $0, !["zhipu", "baidu", "youdao", "anthropic"].contains($0))
-    }
+    return name.map { ("ServiceLogo/" + $0, !fullBleed.contains($0)) }
   }
+
+  /// 自带底色的满版 logo（直接裁圆角）；其余只有图形，垫白底
+  private static let fullBleed: Set = [
+    "zhipu", "baidu", "youdao", "anthropic", "kimi", "openrouter", "grok", "minimax",
+  ]
 
   /// 服务品牌色（mac-whisker §3）；自定义 AI 按协议，其余按名字哈希取色相
   static func color(for service: TranslateService) -> Color {

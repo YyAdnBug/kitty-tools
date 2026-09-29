@@ -1,6 +1,6 @@
 // 大模型翻译（用户自建 AI 实例：OpenAI 兼容 / Azure OpenAI / Anthropic），SSE 流式输出。
 // 也提供智谱内置复用的流式请求：按服务地址分档关闭「思考」，只有 400 / 422 才降一档重试，
-// 成功的档位按「地址 + 模型」记在内存里，下次直接从它开始。
+// 成功的档位按「地址 + 模型」记在内存里，下次直接从它开始。按地址认厂商的表（AIVendor）也在这里，服务 logo 共用。
 // 流里的约定：每次给出到目前为止的整段译文；空串 = 模型在思考、还没有正文（reasoning 字段或开头的 <think> 段，
 // 卡片显示「思考中」）；输出到上限（finish_reason = length / stop_reason = max_tokens）时先给出半截、再抛 TranslateError.truncated。
 
@@ -171,17 +171,18 @@ nonisolated enum AIService {
 
   /// 智谱域名上限 1024（超了直接报错）；OpenAI 官方与 Azure 不传；其余 4096
   static func maxTokens(_ url: URL, _ aiProtocol: TranslateService.AIProtocol) -> Int? {
-    let host = url.host()?.lowercased() ?? ""
-    if aiProtocol == .azure || host == "api.openai.com" { return nil }
-    if host.hasSuffix("bigmodel.cn") || host.hasSuffix("z.ai") { return Zhipu.maxTokens }
-    return 4096
+    if aiProtocol == .azure { return nil }
+    switch AIVendor(url: url) {
+    case .openai: return nil
+    case .zhipu: return Zhipu.maxTokens
+    default: return 4096
+    }
   }
 
   /// 关闭「思考」的参数档位（翻译不需要推理，开着会拖慢且可能占满输出额度），最后一档什么都不带
   static func tiers(_ url: URL, _ aiProtocol: TranslateService.AIProtocol, _ model: String)
     -> [[String: Any]]
   {
-    let host = url.host()?.lowercased() ?? ""
     let effort = { (level: String) -> [String: Any] in ["reasoning_effort": level] }
     let disabled: [String: Any] = ["thinking": ["type": "disabled"]]
     switch aiProtocol {
@@ -192,28 +193,20 @@ nonisolated enum AIService {
         let kwargs: [String: Any] = ["chat_template_kwargs": ["enable_thinking": false]]
         return [kwargs.merging(effort("none")) { $1 }, kwargs, [:]]
       }
-      if ["bigmodel.cn", "z.ai", "moonshot.cn", "moonshot.ai", "volces.com"].contains(where: {
-        host.hasSuffix($0)
-      }) {
-        return [disabled, effort("low"), [:]]
-      }
-      if host.contains("deepseek") { return [disabled, [:]] }
-      if host.contains("dashscope") || host.contains("siliconflow") {
-        return [["enable_thinking": false], [:]]
-      }
-      if host.contains("openrouter") {
+      switch AIVendor(url: url) {
+      case .zhipu, .kimi, .doubao: return [disabled, effort("low"), [:]]
+      case .deepseek: return [disabled, [:]]
+      case .qwen, .siliconflow: return [["enable_thinking": false], [:]]
+      case .openrouter:
         return [["reasoning": ["effort": "none"]], ["reasoning": ["effort": "low"]], [:]]
-      }
-      if host.contains("generativelanguage.googleapis.com") {
-        return [effort("none"), effort("minimal"), effort("low"), [:]]
-      }
-      if host == "api.openai.com" {
+      case .gemini: return [effort("none"), effort("minimal"), effort("low"), [:]]
+      case .openai:
         let model = model.lowercased()
         if ["gpt-4", "gpt-3.5", "chatgpt"].contains(where: model.hasPrefix) { return [[:]] }
         if ["o1", "o3", "o4"].contains(where: model.hasPrefix) { return [effort("low"), [:]] }
         return [effort("none"), effort("minimal"), effort("low"), [:]]
+      default: return [effort("none"), [:]]
       }
-      return [effort("none"), [:]]
     }
   }
 
@@ -246,6 +239,93 @@ nonisolated enum AIService {
     default:
       return StreamDelta()
     }
+  }
+}
+
+/// 大模型厂商（第 13 批，一处定义）：按服务地址的 host 认，关思考分档、max_tokens、服务 logo（`ServiceTile`）都读它；
+/// logo 在地址认不出时再按服务名里的关键词认（`init(service:)`）。原值 = `Assets.xcassets/ServiceLogo` 里的图名
+/// （取自各家官网自己发布的图标，来源和日期见 PLAN「翻译服务 logo（第 13 批）」）。
+/// 顺序 = 按名字认时的先后：聚合平台在前（「硅基流动 DeepSeek」是硅基流动），「gpt」这种宽的关键词在最后
+nonisolated enum AIVendor: String, CaseIterable, Sendable {
+  case openrouter, siliconflow, deepseek, kimi, qwen, doubao, ollama, mistral, grok, minimax
+  case zhipu, gemini, anthropic, openai
+
+  /// 地址的 host 等于其中一个、或以「.它」结尾就是这家
+  var domains: [String] {
+    switch self {
+    case .openrouter: ["openrouter.ai"]
+    case .siliconflow: ["siliconflow.cn", "siliconflow.com"]
+    case .deepseek: ["deepseek.com"]
+    case .kimi: ["moonshot.cn", "moonshot.ai"]
+    case .qwen: ["dashscope.aliyuncs.com", "dashscope-intl.aliyuncs.com"]
+    case .doubao: ["volces.com"]
+    case .ollama: ["ollama.com"]
+    case .mistral: ["mistral.ai"]
+    case .grok: ["x.ai"]
+    case .minimax: ["minimax.chat", "minimaxi.com", "minimax.io"]
+    case .zhipu: ["bigmodel.cn", "z.ai"]
+    case .gemini: ["generativelanguage.googleapis.com"]
+    case .anthropic: ["anthropic.com"]
+    case .openai: ["openai.com"]
+    }
+  }
+
+  /// 服务名里出现就是这家（不分大小写）
+  var keywords: [String] {
+    switch self {
+    case .openrouter: ["openrouter"]
+    case .siliconflow: ["siliconflow", "硅基"]
+    case .deepseek: ["deepseek", "深度求索"]
+    case .kimi: ["kimi", "moonshot", "月之暗面"]
+    case .qwen: ["qwen", "通义", "千问", "百炼", "dashscope"]
+    case .doubao: ["doubao", "豆包", "火山方舟"]
+    case .ollama: ["ollama"]
+    case .mistral: ["mistral"]
+    case .grok: ["grok", "xai"]
+    case .minimax: ["minimax", "海螺"]
+    case .zhipu: ["zhipu", "智谱", "glm", "bigmodel"]
+    case .gemini: ["gemini"]
+    case .anthropic: ["anthropic", "claude"]
+    case .openai: ["openai", "gpt"]
+    }
+  }
+
+  /// 按地址认（不分大小写）；端口只用来认 Ollama：本机 / 局域网上的 11434（它的默认端口）
+  init?(url: URL) {
+    guard
+      let host = url.host(percentEncoded: false)?.lowercased()
+        .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+    else { return nil }
+    if url.port == 11434, HTTP.isLocalNetwork(url) {
+      self = .ollama
+      return
+    }
+    guard
+      let vendor = Self.allCases.first(where: {
+        $0.domains.contains { host == $0 || host.hasSuffix("." + $0) }
+      })
+    else { return nil }
+    self = vendor
+  }
+
+  /// 一个 AI 服务是哪家（服务 logo 用）：先按地址（经 `AIService.endpoint` 补全，Anthropic 空地址 = 官方），
+  /// 再按服务名的关键词，都认不出而协议是 Anthropic 的算 Anthropic；内置服务、Azure 不归这里管（nil）
+  init?(service: TranslateService) {
+    guard service.kind == .ai, service.aiProtocol != .azure else { return nil }
+    let aiProtocol = service.aiProtocol ?? .openai
+    if let url = AIService.endpoint(service.baseURL ?? "", aiProtocol),
+      let vendor = AIVendor(url: url)
+    {
+      self = vendor
+      return
+    }
+    let name = service.name.lowercased()
+    if let vendor = Self.allCases.first(where: { $0.keywords.contains(where: name.contains) }) {
+      self = vendor
+      return
+    }
+    guard aiProtocol == .anthropic else { return nil }
+    self = .anthropic
   }
 }
 
