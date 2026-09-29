@@ -4,6 +4,7 @@
 // 状态和几何归 SelectionView：这里只显示、收点击、把 ↩ / Esc / Tab 交出去。输入框当第一响应者时按键归它；收下时
 // SelectionView 先把第一响应者要回去、再调 endEditing（同文字标注的 EditorField，反过来单键快捷键全失灵）。
 // 旁白：宽、高两个数字各有名字（按下 = 点数字开始输入），比例按钮是按钮（按下弹菜单），「×」不读。
+// macOS 26 起底是深色液态玻璃（mac-whisker §2「26 分支」）：零件都放进玻璃的 contentView，不画 HUD 皮肤和阴影。
 
 import AppKit
 
@@ -28,6 +29,10 @@ final class SizeField: NSView, NSTextFieldDelegate {
   private let chip = RatioChip()
   private let chipLabel = NSTextField(labelWithString: "")
   private let ring = CALayer()
+  /// macOS 26：深色液态玻璃的 contentView，零件和焦点环都在它里面（和自己一样大，坐标相同）；15 是 nil，零件直接放在
+  /// 自己上、HUD 皮肤画在自己的图层上
+  private let glassContent: NSView?
+  private var surface: NSView { glassContent ?? self }
   /// 上次显示的：像素宽高、比例按钮文字、是否锁住（没变就不重排，遮罩每次鼠标移动都会调 show）
   private var shown: (width: Int, height: Int, ratio: String, locked: Bool)?
 
@@ -35,11 +40,30 @@ final class SizeField: NSView, NSTextFieldDelegate {
   private static let height: CGFloat = 26
 
   init() {
+    var glass: NSView?
+    if #available(macOS 26, *) {
+      // 圆角交给玻璃；两个无障碍开关交给玻璃（mac-whisker §7）
+      let effect = NSGlassEffectView()
+      effect.cornerRadius = Style.Radius.control
+      effect.autoresizingMask = [.width, .height]
+      let content = NSView()
+      content.wantsLayer = true  // 焦点环是加在它图层上的子图层
+      content.autoresizingMask = [.width, .height]  // 玻璃按 Auto Layout 撑满它；掩码和那组约束一致
+      effect.contentView = content
+      glassContent = content
+      glass = effect
+    } else {
+      glassContent = nil
+    }
     super.init(frame: .zero)
     wantsLayer = true
-    // 输入框的光标、选中底色按深色取（HUD 永远深色）
+    // 输入框的光标、选中底色按深色取（HUD 永远深色）；26 的玻璃也跟着它是深色
     appearance = NSAppearance(named: .darkAqua)
-    if let layer { Style.HUD.applySkin(to: layer, radius: Style.Radius.control) }
+    if let glass {
+      addSubview(glass)
+    } else if let layer {
+      Style.HUD.applySkin(to: layer, radius: Style.Radius.control)
+    }
     for field in [widthField, heightField] {
       field.font = Self.font
       field.textColor = Style.HUD.text
@@ -49,14 +73,14 @@ final class SizeField: NSView, NSTextFieldDelegate {
       field.onPress = { [unowned self, unowned field] in
         if isInteractive, !isEditing { onEdit(field === widthField ? .width : .height) }
       }
-      addSubview(field)
+      surface.addSubview(field)
     }
     widthField.setAccessibilityLabel("宽（像素）")
     heightField.setAccessibilityLabel("高（像素）")
     times.font = Self.font
     times.textColor = Style.HUD.secondaryText
     times.setAccessibilityElement(false)
-    addSubview(times)
+    surface.addSubview(times)
     chip.onPress = { [unowned self] in onRatio() }
     chipLabel.setAccessibilityElement(false)
     chip.wantsLayer = true
@@ -64,7 +88,7 @@ final class SizeField: NSView, NSTextFieldDelegate {
     chip.layer?.cornerCurve = .continuous
     chipLabel.font = .systemFont(ofSize: 11, weight: .medium)
     chip.addSubview(chipLabel)
-    addSubview(chip)
+    surface.addSubview(chip)
     let pink = Style.Shot.accent
     ring.borderWidth = 1
     ring.borderColor = pink.withAlphaComponent(0.75).cgColor
@@ -75,7 +99,7 @@ final class SizeField: NSView, NSTextFieldDelegate {
     ring.shadowOffset = .zero
     ring.isHidden = true
     ring.zPosition = 1
-    layer?.addSublayer(ring)
+    surface.layer?.addSublayer(ring)
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -167,7 +191,7 @@ final class SizeField: NSView, NSTextFieldDelegate {
       width = chip.frame.maxX + 4
     }
     setFrameSize(CGSize(width: width, height: Self.height))
-    if let layer {
+    if glassContent == nil, let layer {
       Style.HUD.applySkin(to: layer, radius: Style.Radius.control)  // 外圈描边跟着新宽度
       Style.HUD.applyShadow(
         to: layer,

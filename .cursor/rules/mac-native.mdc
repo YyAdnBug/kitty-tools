@@ -18,7 +18,7 @@ alwaysApply: true
 ## 2. 技术栈白名单
 - 只用 PLAN §2 表里的 Apple 框架 + 系统 libsqlite3（`import SQLite3`）。**禁止任何 SPM / 第三方依赖**（Sparkle、GRDB、KeyboardShortcuts、XcodeGen、Tuist、SwiftLint、create-dmg 等都不行）。
 - 部署目标 macOS 15.0；`ARCHS = arm64`，只支持 Apple 芯片。构建设置只写在 `macos/Config/*.xcconfig`，pbxproj 的 target 层 buildSettings 保持为空。
-- 用到 macOS 26 API 时就地写 `if #available(macOS 26, *)`，回退 `.regularMaterial` / `NSVisualEffectView`，不另建封装。
+- 用到 macOS 26 API 时就地写 `if #available(macOS 26, *)`，回退 `.regularMaterial` / `NSVisualEffectView`，不另建封装（液态玻璃分支落在哪些文件见 mac-whisker §2「26 分支」；开发机是 15，26 分支只保证编译，改动时截图自检要逐像素不变）。
 - 持久化用 libsqlite3，不用 SwiftData。偏好用 `@AppStorage` / UserDefaults，键名集中在 `Prefs.swift`。密钥只进钥匙串；UserDefaults 和日志里不得出现密钥、请求 URL、请求头。
 - 不建 String Catalog：开发语言 zh-Hans，界面直接写中文字面量。
 

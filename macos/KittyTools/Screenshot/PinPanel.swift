@@ -202,8 +202,8 @@ private final class PinView: NSView {
   private let originalSize: CGSize
   private unowned let board: PinBoard
 
-  /// 悬停后右上角的两个圆钮（透明度、关闭）
-  private let controls = NSStackView()
+  /// 悬停后右上角的两个圆钮（透明度、关闭）：15 就是按钮栈，macOS 26 是包着它的玻璃容器（两块相邻的玻璃共用取样）
+  private let controls: NSView
   /// 缩放时中央的百分比
   private let zoomHUD = HUDBar(radius: Style.Radius.control, height: 26)
   private let zoomLabel = NSTextField(labelWithString: "")
@@ -215,19 +215,29 @@ private final class PinView: NSView {
     self.image = image
     originalSize = size
     self.board = board
+    let buttons = NSStackView()
+    if #available(macOS 26, *) {
+      let container = NSGlassEffectContainerView()  // spacing 0：不融合
+      container.contentView = buttons
+      buttons.autoresizingMask = [.width, .height]
+      controls = container
+    } else {
+      controls = buttons
+    }
     super.init(frame: CGRect(origin: .zero, size: size))
     wantsLayer = true
+    let side = 22 - 2 * HUDBar.materialInset
     let opacity = circle(
       barButton(
         NSImage(systemSymbolName: "circle.lefthalf.filled", accessibilityDescription: "透明度")!,
-        tip: "透明度", action: #selector(cycleOpacity), size: CGSize(width: 21, height: 21)))
+        tip: "透明度", action: #selector(cycleOpacity), size: CGSize(width: side, height: side)))
     let close = circle(
       barButton(
         NSImage(systemSymbolName: "xmark", accessibilityDescription: "关闭")!, tip: "关闭",
-        action: #selector(close), size: CGSize(width: 21, height: 21)))
-    controls.spacing = 6
-    controls.setViews([opacity, close], in: .trailing)
-    controls.frame.size = controls.fittingSize
+        action: #selector(close), size: CGSize(width: side, height: side)))
+    buttons.spacing = 6
+    buttons.setViews([opacity, close], in: .trailing)
+    controls.frame.size = buttons.fittingSize
     controls.autoresizingMask = [.minXMargin, .minYMargin]
     controls.alphaValue = 0
     controls.isHidden = true  // 看不见时也不能点到（点击不看透明度）
@@ -244,7 +254,7 @@ private final class PinView: NSView {
         rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
   }
 
-  /// 22 pt HUD 圆钮（按钮 21：HUDBar 的材质内缩 0.5）
+  /// 22 pt HUD 圆钮（按钮边长 22 − 2 × HUDBar.materialInset：15 的材质内缩 0.5 → 21，26 的玻璃铺满 → 22）
   private func circle(_ button: NSButton) -> HUDBar {
     button.symbolConfiguration = .init(pointSize: 10, weight: .bold)
     button.contentTintColor = Style.HUD.text

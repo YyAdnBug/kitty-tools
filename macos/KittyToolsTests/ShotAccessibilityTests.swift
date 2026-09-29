@@ -77,14 +77,16 @@ struct ShotAccessibilityTests {
         "粉色", "红色", "橙色", "黄色", "绿色", "蓝色", "黑色", "白色", "细", "中", "粗", "空心", "实心",
       ])
     let size = try #require(h.sizeField)
-    let chip = try #require(size.subviews.first { $0.accessibilityRole() == .button })
+    // macOS 26 的零件在玻璃的 contentView 里：往下找
+    func parts(in view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + parts(in: $0) } }
+    let chip = try #require(parts(in: size).first { $0.accessibilityRole() == .button })
     #expect(chip.accessibilityLabel() == "比例：自由")
     #expect(chip.accessibilityPerformPress())
     #expect(h.menu != nil)
     h.key(kVK_Escape, "\u{1b}")
     #expect(h.menu == nil)
-    let width = try #require(size.subviews.first { $0.accessibilityLabel() == "宽（像素）" })
-    #expect(size.subviews.contains { $0.accessibilityLabel() == "高（像素）" })
+    let width = try #require(parts(in: size).first { $0.accessibilityLabel() == "宽（像素）" })
+    #expect(parts(in: size).contains { $0.accessibilityLabel() == "高（像素）" })
     #expect(width.accessibilityPerformPress())
     #expect(size.isEditing)
     h.key(kVK_Escape, "\u{1b}")

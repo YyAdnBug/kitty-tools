@@ -25,6 +25,39 @@ struct StyleTests {
     #expect(Style.hairlineWidth(.increased) == 1)
   }
 
+  /// 降低透明度时的 0.9 不透明底只给 15 的毛玻璃；macOS 26 的玻璃自己变实，不再垫（Whisker §7）
+  @Test func opaqueUnderlayOnlyBeforeGlass() {
+    #expect(!Style.opaqueUnderlay(reduceTransparency: false))
+    if #available(macOS 26, *) {
+      #expect(!Style.opaqueUnderlay(reduceTransparency: true))
+    } else {
+      #expect(Style.opaqueUnderlay(reduceTransparency: true))
+    }
+  }
+
+  /// Panel 皮肤（Whisker §2）：15 是 .popover 毛玻璃 + maskImage 圆角，macOS 26 是 16 pt 圆角的液态玻璃；
+  /// 两种都是内容（SwiftUI）和拖边放在同一个父视图里（拖边把滚轮转给它旁边的内容）
+  @MainActor @Test func panelMaterialPerSystem() throws {
+    let panel = OverlayPanel(
+      size: NSSize(width: 300, height: 200), minSize: NSSize(width: 200, height: 100),
+      autoHide: .resignKey, isPinned: { false }, content: Color.clear)
+    let root = try #require(panel.contentView)
+    let background: NSView
+    if #available(macOS 26, *) {
+      let glass = try #require(root as? NSGlassEffectView)
+      #expect(glass.cornerRadius == Style.Radius.panel)
+      background = try #require(glass.contentView)
+    } else {
+      let effect = try #require(root as? NSVisualEffectView)
+      #expect(effect.material == .popover && effect.state == .active && effect.maskImage != nil)
+      background = effect
+    }
+    // SwiftUI 内容（铺满）+ 左右两条拖边（毛玻璃自己也有子视图，按类型数）
+    let names = background.subviews.map { String(describing: type(of: $0)) }
+    #expect(names.filter { $0.hasPrefix("NSHostingView") }.count == 1, "\(names)")
+    #expect(names.filter { $0 == "ResizeEdge" }.count == 2, "\(names)")
+  }
+
   /// 在并发线程池里解析（会调到动态色的取色闭包）
   @concurrent nonisolated private static func resolveOffMain(_ color: NSColor) async -> NSColor? {
     #expect(pthread_main_np() == 0)  // 确实不在主线程

@@ -60,10 +60,57 @@ struct ShotChromeTests {
     #expect(ring.frame == CGRect(x: -0.5, y: -0.5, width: 121, height: 27))
     #expect(ring.borderWidth == 0.5 && ring.cornerRadius == 13.5 && ring.cornerCurve == .circular)
     #expect(ring.borderColor == Style.HUD.outerStroke.cgColor)
+    // 尺寸胶囊：15 是这套皮肤；macOS 26 是深色液态玻璃（零件在玻璃里，不画皮肤和阴影）
     let field = SizeField()
     field.show(width: 640, height: 480, interactive: true, ratio: "自由", locked: false)
-    let outer = try #require(field.layer?.sublayers?.first { $0.name == ring.name })
-    #expect(outer.frame == field.bounds.insetBy(dx: -0.5, dy: -0.5))
+    if #available(macOS 26, *) {
+      let glass = try #require(field.subviews.first as? NSGlassEffectView)
+      #expect(field.subviews.count == 1 && glass.cornerRadius == Style.Radius.control)
+      #expect(field.layer?.borderWidth == 0 && field.layer?.shadowPath == nil)
+    } else {
+      let outer = try #require(field.layer?.sublayers?.first { $0.name == ring.name })
+      #expect(outer.frame == field.bounds.insetBy(dx: -0.5, dy: -0.5))
+    }
+  }
+
+  // HUD 材质（Whisker §2）：15 是内缩 0.5 的 .hudWindow 毛玻璃 + 外圈描边 + 阴影；macOS 26 是铺满的深色液态玻璃，
+  // 不画描边和自绘阴影；内容（按钮栈）都在 effect 里
+  @Test func hudBarMaterialPerSystem() throws {
+    let bar = HUDBar(radius: Style.Radius.panel, height: 40)
+    bar.install([NSView(frame: CGRect(x: 0, y: 0, width: 60, height: 20))])
+    let material = try #require(bar.subviews.first)
+    #expect(bar.stack.superview === bar.effect)
+    if #available(macOS 26, *) {
+      let glass = try #require(material as? NSGlassEffectView)
+      #expect(glass.cornerRadius == Style.Radius.panel && glass.contentView === bar.effect)
+      #expect(glass.appearance?.name == .darkAqua)
+      #expect(material.frame == bar.bounds)
+      #expect(bar.layer?.borderWidth == 0 && bar.layer?.shadowPath == nil)
+    } else {
+      let effect = try #require(material as? NSVisualEffectView)
+      #expect(effect === bar.effect && effect.material == .hudWindow)
+      #expect(material.frame == bar.bounds.insetBy(dx: 0.5, dy: 0.5))
+      #expect(bar.layer?.borderWidth == 0.5 && bar.layer?.shadowPath != nil)
+    }
+  }
+
+  // 长截图面板：普通 NSView 包材质（15 毛玻璃，圆角裁切和描边在毛玻璃自己的图层上、外壳透明；26 液态玻璃），
+  // 内容都在材质（26 是玻璃的 contentView）里
+  @Test func scrollHUDMaterialPerSystem() throws {
+    let hud = ScrollCaptureHUD()
+    let material = try #require(hud.subviews.first)
+    #expect(hud.subviews.count == 1)
+    #expect(hud.layer?.borderWidth == 0 && hud.layer?.masksToBounds == false)
+    if #available(macOS 26, *) {
+      let glass = try #require(material as? NSGlassEffectView)
+      #expect(glass.cornerRadius == Style.Radius.panel && glass.contentView?.subviews.count == 1)
+    } else {
+      #expect((material as? NSVisualEffectView)?.material == .hudWindow)
+      #expect(material.subviews.filter { $0 is NSStackView }.count == 1)  // 预览、状态、按钮那一列
+      let layer = try #require(material.layer)
+      #expect(
+        layer.borderWidth == 0.5 && layer.masksToBounds && layer.cornerRadius == Style.Radius.panel)
+    }
   }
 
   // 栏里用到的 SF Symbols（连同菜单栏 / 快捷键页的热键动作图标）在最低系统上都存在（force unwrap 不会崩）

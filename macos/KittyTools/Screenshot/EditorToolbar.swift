@@ -4,7 +4,8 @@
 //   松手 40 ms 后从靠选区的那条边长出来（pop，bounce 0.18），拖动 / 缩放 / 平移选区时淡出让位；
 // - 样式托盘 StyleBar：高 34、圆角 10，按工具出 8 色点 ｜ 三档 ｜ 选项分段，锚在当前工具按钮下方 6 pt，换工具时位置和宽度 settle；
 // - HUDMenu：遮罩里的 HUD 弹出菜单（保存 ▾，之后尺寸胶囊的比例菜单也用它），不用 NSMenu（菜单层级低于遮罩，会被压在下面）。
-// 永远深色（和系统 ⌘⇧5 一致）：模糊的是窗口里的冻结帧（withinWindow）。按钮都 acceptsFirstMouse（遮罩不是 key 的
+// 永远深色（和系统 ⌘⇧5 一致）：模糊的是窗口里的冻结帧（withinWindow）；macOS 26 起材质是深色液态玻璃（HUDBar，
+// 主栏两段放进一个 NSGlassEffectContainerView，mac-whisker §2）。按钮都 acceptsFirstMouse（遮罩不是 key 的
 // 那块屏上也一点就响应）、不抢第一响应者（输入文字时点按钮不打断输入）。
 
 import AppKit
@@ -86,9 +87,13 @@ class PopView: NSView {
   }
 }
 
-/// HUD 皮肤的栏（Style.HUD）：深色材质 + 内圈 / 外圈描边 + 阴影（设 shadowPath，材质视图自己会裁掉阴影）
+/// HUD 皮肤的栏（Style.HUD）：深色材质 + 内圈 / 外圈描边 + 阴影（设 shadowPath，材质视图自己会裁掉阴影）。
+/// macOS 26 起材质换成液态玻璃（mac-whisker §2）：铺满、圆角交给玻璃，不画描边和阴影
 class HUDBar: PopView {
-  let effect = NSVisualEffectView()
+  /// 材质：15 是 NSVisualEffectView（内缩 0.5，外圈描边在外面），26 是 NSGlassEffectView（铺满）
+  fileprivate let material: NSView
+  /// 内容的父视图（按钮栈、当前工具底块、菜单行）：15 就是材质本身，26 是玻璃的 contentView
+  let effect: NSView
   let stack = NSStackView()
   private let radius: CGFloat
   private let height: CGFloat
@@ -96,24 +101,41 @@ class HUDBar: PopView {
   init(radius: CGFloat, height: CGFloat) {
     self.radius = radius
     self.height = height
+    if #available(macOS 26, *) {
+      // HUD 永远深色；两个无障碍开关交给玻璃
+      let glass = NSGlassEffectView()
+      glass.cornerRadius = radius
+      glass.appearance = NSAppearance(named: .darkAqua)
+      effect = NSView()
+      effect.wantsLayer = true  // 当前工具的底块是加在它图层上的子图层
+      effect.autoresizingMask = [.width, .height]  // 玻璃按 Auto Layout 撑满它，掩码和那组约束一致
+      glass.contentView = effect
+      material = glass
+    } else {
+      let effect = NSVisualEffectView()
+      effect.material = .hudWindow
+      effect.blendingMode = .withinWindow
+      effect.state = .active
+      effect.appearance = NSAppearance(named: .vibrantDark)
+      effect.wantsLayer = true
+      effect.layer?.cornerRadius = radius - 0.5
+      effect.layer?.cornerCurve = .continuous
+      effect.layer?.masksToBounds = true
+      effect.layer?.borderWidth = Style.HUD.strokeWidth
+      effect.layer?.borderColor = Style.HUD.innerStroke.cgColor
+      self.effect = effect
+      material = effect
+    }
     super.init(frame: .zero)
     wantsLayer = true
-    layer?.cornerRadius = radius
-    layer?.cornerCurve = .continuous
-    layer?.borderWidth = 0.5
-    layer?.borderColor = Style.HUD.outerStroke.cgColor
-    effect.material = .hudWindow
-    effect.blendingMode = .withinWindow
-    effect.state = .active
-    effect.appearance = NSAppearance(named: .vibrantDark)
-    effect.wantsLayer = true
-    effect.layer?.cornerRadius = radius - 0.5
-    effect.layer?.cornerCurve = .continuous
-    effect.layer?.masksToBounds = true
-    effect.layer?.borderWidth = Style.HUD.strokeWidth
-    effect.layer?.borderColor = Style.HUD.innerStroke.cgColor
-    effect.autoresizingMask = [.width, .height]
-    addSubview(effect)
+    if #unavailable(macOS 26) {
+      layer?.cornerRadius = radius
+      layer?.cornerCurve = .continuous
+      layer?.borderWidth = 0.5
+      layer?.borderColor = Style.HUD.outerStroke.cgColor
+    }
+    material.autoresizingMask = [.width, .height]
+    addSubview(material)
     stack.spacing = 2
     stack.edgeInsets = NSEdgeInsets(top: 0, left: 4, bottom: 0, right: 4)
     stack.translatesAutoresizingMaskIntoConstraints = false
@@ -137,22 +159,29 @@ class HUDBar: PopView {
 
   func fit() {
     stack.layoutSubtreeIfNeeded()
-    frame.size = CGSize(width: ceil(stack.fittingSize.width + 1), height: height)
+    frame.size = CGSize(
+      width: ceil(stack.fittingSize.width + 2 * Self.materialInset), height: height)
     applyGeometry()
   }
 
-  /// 材质内缩 0.5（外圈描边在外面）；阴影按圆角矩形设 shadowPath
+  /// 材质内缩 0.5（外圈描边在外面）；阴影按圆角矩形设 shadowPath。26 的玻璃铺满、阴影系统画
   func applyGeometry() {
     guard bounds.width > 1, bounds.height > 1 else { return }  // 零尺寸内缩出来是 null 矩形（原点无穷大）
-    let inner = bounds.insetBy(dx: 0.5, dy: 0.5)
-    if effect.frame != inner {
-      effect.frame = inner
-      effect.needsLayout = true  // 直接改 frame 不会让里面按约束居中的 stack 重排
+    let inner = bounds.insetBy(dx: Self.materialInset, dy: Self.materialInset)
+    if material.frame != inner {
+      material.frame = inner
+      material.needsLayout = true  // 直接改 frame 不会让里面按约束居中的 stack 重排
     }
-    guard let layer else { return }
+    guard #unavailable(macOS 26), let layer else { return }
     Style.HUD.applyShadow(
       to: layer,
       path: CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil))
+  }
+
+  /// 材质离栏边的距离：15 给外圈 0.5 pt 描边让位，26 的玻璃没有这圈描边。栏宽、菜单行、钉图圆钮的按钮都从它算
+  static var materialInset: CGFloat {
+    if #available(macOS 26, *) { return 0 }
+    return 0.5
   }
 
   override func layout() {
@@ -215,8 +244,20 @@ final class EditorToolbar: PopView {
     if let cancel = button(for: .cancel) { outputs.stack.setCustomSpacing(4, after: cancel) }
     outputs.stack.edgeInsets.right = 6
     outputs.fit()
-    addSubview(tools)
-    addSubview(outputs)
+    if #available(macOS 26, *) {
+      // 两段相邻的玻璃放进同一个容器：共用取样、一次渲染；spacing 0 = 不融合成一块
+      let group = NSView()
+      group.autoresizingMask = [.width, .height]  // 同 HUDBar 的 effect：容器按 Auto Layout 撑满它
+      group.addSubview(tools)
+      group.addSubview(outputs)
+      let container = NSGlassEffectContainerView()
+      container.contentView = group
+      container.autoresizingMask = [.width, .height]
+      addSubview(container)
+    } else {
+      addSubview(tools)
+      addSubview(outputs)
+    }
     outputs.frame.origin.x = tools.frame.maxX + 6
     frame.size = CGSize(width: outputs.frame.maxX, height: 40)
     layoutSubtreeIfNeeded()
@@ -457,7 +498,8 @@ final class StyleBar: HUDBar {
       views += [barSeparator(), segment]
     }
     views.forEach(stack.addArrangedSubview)
-    preferredSize = CGSize(width: ceil(stack.fittingSize.width + 1), height: Self.height)
+    preferredSize = CGSize(
+      width: ceil(stack.fittingSize.width + 2 * Self.materialInset), height: Self.height)
   }
 
   /// 选项分段：选中 HUD 选中底 + 主文字色，其余次文字色
@@ -489,14 +531,15 @@ final class StyleBar: HUDBar {
     frame = target
     applyGeometry()
     layoutSubtreeIfNeeded()
-    guard animated, !Style.reduceMotion, let layer, let inner = effect.layer else { return }
+    guard animated, !Style.reduceMotion, let layer, let inner = material.layer else { return }
+    let inset = Self.materialInset * 2
     let changes: [(CALayer, String, Any?)] = [
       (layer, "position", NSValue(point: old.origin)),
       (layer, "bounds", NSValue(rect: CGRect(origin: .zero, size: old.size))),
       (layer, "shadowPath", oldShadow),
       (
         inner, "bounds",
-        NSValue(rect: CGRect(x: 0, y: 0, width: old.width - 1, height: old.height - 1))
+        NSValue(rect: CGRect(x: 0, y: 0, width: old.width - inset, height: old.height - inset))
       ),
     ]
     for (owner, key, from) in changes {
@@ -606,10 +649,13 @@ final class HUDMenu: HUDBar {
     super.init(radius: Style.Radius.card, height: height)
     frame.size = CGSize(width: width + 8, height: height)
     applyGeometry()
+    // 按材质的高排（26 的 effect 是玻璃的 contentView，要等 Auto Layout 跑过才有尺寸；材质的 frame 刚设好）；
+    // 四边离栏边 4：15 的材质已内缩 0.5
+    let pad = 4 - Self.materialInset
     for (index, row) in rows.enumerated() {
       row.frame = CGRect(
-        x: 3.5, y: effect.bounds.height - 3.5 - CGFloat(index + 1) * Self.rowHeight, width: width,
-        height: Self.rowHeight)
+        x: pad, y: material.frame.height - pad - CGFloat(index + 1) * Self.rowHeight,
+        width: width, height: Self.rowHeight)
       let action = entries[index].action
       row.onPick = { [weak self] in
         self?.dismiss()

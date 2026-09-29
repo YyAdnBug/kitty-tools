@@ -1064,6 +1064,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
     styleBar.onColor = { [unowned self] color in restyle { $0.color = color } }
     styleBar.onWeight = { [unowned self] weight in restyle { $0.weight = weight } }
     styleBar.onOption = { [unowned self] option in restyle { $0.option = option } }
+    // ponytail: macOS 26 上工具栏（两段已在同一个玻璃容器里）、样式托盘、HUD 菜单、尺寸胶囊是各自独立的玻璃兄弟视图，
+    // 违反「相邻的玻璃放进同一个 NSGlassEffectContainerView」（玻璃互相取样不到，托盘离工具栏只有 6 pt，颜色会不一致）。
+    // 升级路径：SelectionView 里建一个铺满的容器，四者都挂进它的 contentView（改挂载层级和 z 序，要 26 实机验证）
     for bar in [toolbar, styleBar] as [NSView] {
       bar.isHidden = true
       addSubview(bar)

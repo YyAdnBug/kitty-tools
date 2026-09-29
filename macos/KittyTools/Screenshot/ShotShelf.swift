@@ -494,7 +494,18 @@ struct ShelfCardView: View {
     }
   }
 
-  private func actionButtons(compact: Bool, corners: Bool) -> some View {
+  /// macOS 26：胶囊和圆钮都是玻璃，放进同一个容器共用取样（相邻的玻璃互相取样不到，分开放颜色会不一致）；
+  /// spacing 0 = 隔 6 pt 的两个胶囊不融合成一块
+  @ViewBuilder private func actionButtons(compact: Bool, corners: Bool) -> some View {
+    if #available(macOS 26, *) {
+      GlassEffectContainer(spacing: 0) { buttons(compact: compact, corners: corners) }
+        .environment(\.colorScheme, .dark)
+    } else {
+      buttons(compact: compact, corners: corners)
+    }
+  }
+
+  private func buttons(compact: Bool, corners: Bool) -> some View {
     ZStack {
       HStack(spacing: 6) {
         pill("拷贝", "doc.on.doc", compact: compact, action: card.copyAgain)
@@ -552,16 +563,25 @@ struct ShelfCardView: View {
 
 extension View {
   /// HUD 皮肤（`Style.HUD`）：底色、内描边、外 0.5 pt 描边、主文字色。降低透明度（底色 0.97）、增强对比度（内描边
-  /// 1 pt white 0.35）在取值时判断：悬停才建这些按钮，每次悬停都重新取
-  fileprivate func hudSkin<S: InsettableShape>(_ shape: S) -> some View {
-    foregroundStyle(Color(nsColor: Style.HUD.text))
-      .background(Color(nsColor: Style.HUD.fill), in: shape)
-      .overlay(
-        shape.strokeBorder(Color(nsColor: Style.HUD.innerStroke), lineWidth: Style.HUD.strokeWidth)
-      )
-      .overlay(
-        shape.inset(by: -0.5).strokeBorder(Color(nsColor: Style.HUD.outerStroke), lineWidth: 0.5)
-      )
-      .contentShape(shape)
+  /// 1 pt white 0.35）在取值时判断：悬停才建这些按钮，每次悬停都重新取。
+  /// macOS 26 起是深色液态玻璃（mac-whisker §2「26 分支」），不画底色和描边，两个无障碍开关交给玻璃
+  @ViewBuilder fileprivate func hudSkin<S: InsettableShape>(_ shape: S) -> some View {
+    if #available(macOS 26, *) {
+      foregroundStyle(Color(nsColor: Style.HUD.text))
+        .glassEffect(.regular, in: shape)
+        .environment(\.colorScheme, .dark)
+        .contentShape(shape)
+    } else {
+      foregroundStyle(Color(nsColor: Style.HUD.text))
+        .background(Color(nsColor: Style.HUD.fill), in: shape)
+        .overlay(
+          shape.strokeBorder(
+            Color(nsColor: Style.HUD.innerStroke), lineWidth: Style.HUD.strokeWidth)
+        )
+        .overlay(
+          shape.inset(by: -0.5).strokeBorder(Color(nsColor: Style.HUD.outerStroke), lineWidth: 0.5)
+        )
+        .contentShape(shape)
+    }
   }
 }

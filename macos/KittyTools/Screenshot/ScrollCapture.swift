@@ -488,8 +488,10 @@ final class ScrollCapturePanel: NSPanel {
 }
 
 /// 面板内容：预览（最近拼上的那头）、状态、高度、按钮（自动滚动、取消、另存为…、存储、拷贝）。按键也在这里收。
-/// 永远深色的 HUD 皮肤（和截图工具栏一致）
-final class ScrollCaptureHUD: NSVisualEffectView {
+/// 永远深色的 HUD 皮肤（和截图工具栏一致）：普通 NSView 包一层材质。15 是 `.hudWindow` 的毛玻璃，圆角裁切、描边、
+/// 内圈 rim 都在毛玻璃自己的图层上（和它以前自己就是 NSVisualEffectView 时一样，外层只是透明的壳）；
+/// macOS 26 起是液态玻璃（mac-whisker §2「26 分支」）
+final class ScrollCaptureHUD: NSView {
   enum Item {
     case toggleAuto, cancel
     case output(ScrollCapture.Action)
@@ -513,7 +515,7 @@ final class ScrollCaptureHUD: NSVisualEffectView {
   private let fadeMask = CAGradientLayer()
   /// 接缝处的品牌粉闪光（每拼上一段）
   private let seam = CAGradientLayer()
-  /// HUD 内圈描边（外圈是自己图层的边）
+  /// HUD 内圈描边（外圈是毛玻璃图层的边；26 不画）
   private let rim = CALayer()
   private let status = NSTextField(wrappingLabelWithString: "")
   private let reading = HeightReading()
@@ -524,18 +526,39 @@ final class ScrollCaptureHUD: NSVisualEffectView {
   private var lastTone = Tone.normal
 
   init() {
+    // 材质：15 是毛玻璃，26 是液态玻璃；内容放进 surface：15 就是材质本身（vibrancy 和原来一样），26 是玻璃的 contentView
+    let material: NSView
+    let surface: NSView
+    if #available(macOS 26, *) {
+      // 液态玻璃：圆角交给玻璃，不画描边（两个无障碍开关交给它）；HUD 永远深色
+      let glass = NSGlassEffectView()
+      glass.cornerRadius = Style.Radius.panel
+      glass.appearance = NSAppearance(named: .darkAqua)
+      surface = NSView()
+      surface.autoresizingMask = [.width, .height]  // 玻璃按 Auto Layout 撑满它；掩码和那组约束一致
+      glass.contentView = surface
+      material = glass
+    } else {
+      let effect = NSVisualEffectView()
+      effect.material = .hudWindow
+      effect.blendingMode = .behindWindow
+      effect.state = .active  // 本 App 从不激活，跟随窗口状态会一直是灰的
+      effect.appearance = NSAppearance(named: .vibrantDark)
+      effect.wantsLayer = true
+      effect.layer?.cornerRadius = Style.Radius.panel
+      effect.layer?.cornerCurve = .continuous
+      effect.layer?.masksToBounds = true
+      // HUD 描边：外 0.5 pt black 0.5（图层边）+ 内 0.5 pt white 0.14（往里 0.5，增强对比度时 1 pt white 0.35）
+      effect.layer?.borderWidth = 0.5
+      effect.layer?.borderColor = Style.HUD.outerStroke.cgColor
+      surface = effect
+      material = effect
+    }
     super.init(frame: CGRect(x: 0, y: 0, width: Self.width, height: 260))
-    material = .hudWindow
-    blendingMode = .behindWindow
-    state = .active  // 本 App 从不激活，跟随窗口状态会一直是灰的
-    appearance = NSAppearance(named: .vibrantDark)
     wantsLayer = true
-    layer?.cornerRadius = Style.Radius.panel
-    layer?.cornerCurve = .continuous
-    layer?.masksToBounds = true
-    // HUD 描边：外 0.5 pt black 0.5（图层边）+ 内 0.5 pt white 0.14（往里 0.5，增强对比度时 1 pt white 0.35）
-    layer?.borderWidth = 0.5
-    layer?.borderColor = Style.HUD.outerStroke.cgColor
+    material.frame = bounds
+    material.autoresizingMask = [.width, .height]
+    addSubview(material)
     rim.cornerRadius = Style.Radius.panel - 0.5
     rim.cornerCurve = .continuous
     rim.borderWidth = Style.HUD.strokeWidth
@@ -606,16 +629,17 @@ final class ScrollCaptureHUD: NSVisualEffectView {
     stack.setCustomSpacing(2, after: readingView)
     stack.edgeInsets = NSEdgeInsets(top: 10, left: 10, bottom: 8, right: 10)
     stack.translatesAutoresizingMaskIntoConstraints = false
-    addSubview(stack)
+    surface.addSubview(stack)
     NSLayoutConstraint.activate([
-      stack.leadingAnchor.constraint(equalTo: leadingAnchor),
-      stack.trailingAnchor.constraint(equalTo: trailingAnchor),
-      stack.topAnchor.constraint(equalTo: topAnchor),
-      stack.bottomAnchor.constraint(equalTo: bottomAnchor),
+      stack.leadingAnchor.constraint(equalTo: surface.leadingAnchor),
+      stack.trailingAnchor.constraint(equalTo: surface.trailingAnchor),
+      stack.topAnchor.constraint(equalTo: surface.topAnchor),
+      stack.bottomAnchor.constraint(equalTo: surface.bottomAnchor),
       preview.widthAnchor.constraint(equalToConstant: Self.width - 20),
       status.widthAnchor.constraint(equalToConstant: Self.width - 20),
     ])
-    layer?.addSublayer(rim)  // 盖在内容上面（只是一圈 0.5 pt，挨着边，碰不到内容）
+    // 盖在内容上面（只是一圈 0.5 pt，挨着边，碰不到内容）
+    if #unavailable(macOS 26) { surface.layer?.addSublayer(rim) }
   }
 
   override func layout() {

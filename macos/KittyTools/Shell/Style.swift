@@ -161,6 +161,11 @@ enum Style {
   static func hairlineWidth(_ contrast: ColorSchemeContrast) -> CGFloat {
     contrast == .increased ? 1 : 0.5
   }
+  /// 降低透明度时自绘的卡片 / 剪贴板透镜垫 0.9 不透明底（§7）：只给 15 的毛玻璃；macOS 26 的面板玻璃自己变实，不再垫
+  static func opaqueUnderlay(reduceTransparency: Bool) -> Bool {
+    if #available(macOS 26, *) { return false }
+    return reduceTransparency
+  }
 
   /// 功能家族色：启动器种类色块、设置页头、菜单图标全 App 统一
   enum Family {
@@ -198,6 +203,10 @@ enum Style {
   /// HUD 皮肤（永远深色，mac-whisker §2）：截图工具栏、样式托盘、尺寸胶囊、提示、放大镜信息卡、钉图圆钮、
   /// 常驻缩略图胶囊、长截图面板共用。有材质的用 NSVisualEffectView（`.hudWindow` + vibrantDark），
   /// 纯图层画的小控件用 fill；降低透明度时不透明、增强对比度时内描边加粗、小底块和分隔线加深。
+  /// macOS 26 起 HUDBar、尺寸胶囊、长截图面板、常驻缩略图的胶囊与圆钮换液态玻璃（darkAqua），不用 fill、内外描边和
+  /// applyShadow（两个无障碍开关交给玻璃）；提示、放大镜信息卡 26 上照旧用 fill + applySkin。
+  /// ponytail: 提示和信息卡是遮罩 Canvas 里的 CALayer、放不了 NSGlassEffectView，换玻璃得改成 SelectionView 里的视图、
+  /// 另写布局（超出「只换材质」）；26 实测和玻璃栏不搭时再改（mac-whisker §2「26 分支」）。
   /// 截图家族里自绘的半透明 HUD 零件一律从这里取色，不写字面量（不然两个无障碍开关管不到）
   enum HUD {
     /// 纯图层控件的底色
@@ -442,7 +451,7 @@ struct InputBox: ViewModifier {
 
 /// Panel 里的内容卡片表面（Whisker §2，翻译卡、词典卡、剪贴板 ⌘Y 大卡共用）：圆角 card；浅色 white 0.55、深色 white 0.06 底
 /// + 发丝线描边（增强对比度 1 pt）+ 深色的顶部高光（内圈 1 pt white 0.12→clear，顶部 40%，同 PanelRim 的画法）；
-/// 不加阴影（§3 层级：卡片不加阴影）。降低透明度时底换成 windowBackground 0.9（§7）。
+/// 不加阴影（§3 层级：卡片不加阴影）。降低透明度时底换成 windowBackground 0.9（§7，只在 15；26 交给玻璃）。
 /// tint：错误卡（systemRed）= tint 0.05 底 + tint 0.18 描边、没有高光
 struct CardSurface: ViewModifier {
   var tint: Color?
@@ -452,15 +461,16 @@ struct CardSurface: ViewModifier {
   func body(content: Content) -> some View {
     let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
     let dark = scheme == .dark
+    let opaque = Style.opaqueUnderlay(reduceTransparency: reduceTransparency)
     content
       .background {
         ZStack {
-          if reduceTransparency {
+          if opaque {
             shape.fill(Color(nsColor: .windowBackgroundColor).opacity(0.9))
           }
           if let tint {
             shape.fill(tint.opacity(0.05))
-          } else if !reduceTransparency {
+          } else if !opaque {
             shape.fill(.white.opacity(dark ? 0.06 : 0.55))
           }
         }
@@ -486,16 +496,20 @@ extension View {
   func cardSurface(tint: Color? = nil) -> some View { modifier(CardSurface(tint: tint)) }
 }
 
-/// Panel 皮肤的描边：外圈 0.5 pt 发丝线 + 内圈 1 pt 顶部高光（macOS 26 用玻璃时不画）
+/// Panel 皮肤的描边：外圈 0.5 pt 发丝线 + 内圈 1 pt 顶部高光（macOS 26 用玻璃时不画：玻璃自己画边、响应增强对比度）
 struct PanelRim: View {
   @Environment(\.colorScheme) private var scheme
   @Environment(\.colorSchemeContrast) private var contrast
 
   var body: some View {
+    if #unavailable(macOS 26) { rim }
+  }
+
+  private var rim: some View {
     let shape = RoundedRectangle(cornerRadius: Style.Radius.panel, style: .continuous)
     let dark = scheme == .dark
     let high = contrast == .increased
-    ZStack {
+    return ZStack {
       shape.strokeBorder(
         LinearGradient(
           stops: [

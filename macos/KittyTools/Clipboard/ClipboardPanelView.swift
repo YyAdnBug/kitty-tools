@@ -311,9 +311,9 @@ struct ClipboardPanelView: View {
       let height = layout.height(of: selected.id)
       if model.multiSelection.isEmpty {
         shape.fill(Style.selectedFill)
-          // 降低透明度：透镜底提到 0.9 不透明（Whisker §7），不透出后面的材质
+          // 降低透明度：透镜底提到 0.9 不透明（Whisker §7），不透出后面的材质（只在 15；26 的玻璃自己变实）
           .background {
-            if reduceTransparency {
+            if Style.opaqueUnderlay(reduceTransparency: reduceTransparency) {
               shape.fill(Color(nsColor: .windowBackgroundColor).opacity(0.9))
             }
           }

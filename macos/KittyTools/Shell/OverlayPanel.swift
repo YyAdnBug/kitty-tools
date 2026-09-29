@@ -1,7 +1,8 @@
 // 不激活前台的浮层（NSPanel）：剪贴板面板、翻译浮窗、启动器共用这一个类，各建一个实例（PLAN §4）。
 // 显示只 orderFrontRegardless + makeKey，永远不调 NSApp.activate：前台 App 保持不变，
 // 粘贴时发的 ⌘V、划词时发的 ⌘C 才会落到它身上。
-// 外观是 Whisker 的 Panel 皮肤（mac-whisker §2）：无边框、16 pt 连续圆角（maskImage 裁，系统阴影跟着走）+ 描边；
+// 外观是 Whisker 的 Panel 皮肤（mac-whisker §2）：无边框、16 pt 连续圆角（maskImage 裁，系统阴影跟着走）+ 描边
+// （macOS 26 起换成液态玻璃 NSGlassEffectView，不画描边）；
 // 出现时淡入 + 内容下落 6 pt，用户关掉时系统淡出（窗口逻辑上立刻移走，键盘马上回到原 App），高度可带动画伸缩。
 // ⌘Y 放大预览用 zoom / unzoom：从检查器卡片的位置长出来、缩回去。剪贴板、启动器、翻译浮窗可选「挤压入场」（实验，设置 › 通用，squeezesIn）。
 // 翻译浮窗（frameName）：present 带 anchor 时出现在光标右下 12 pt（放不下翻到另一侧，体检 A13），不带时回到用户上次拖到的
@@ -85,19 +86,34 @@ final class OverlayPanel: NSPanel {
     hasShadow = true
     animationBehavior = .none
     if let minSize { contentMinSize = minSize }
-    // 系统毛玻璃底：state 必须 .active，本 App 从不激活，跟随窗口状态会一直是灰的非激活外观
-    let background = NSVisualEffectView()
-    background.material = .popover
-    background.blendingMode = .behindWindow
-    background.state = .active
-    background.maskImage = Self.cornerMask(radius: Style.Radius.panel)
+    // 材质（mac-whisker §2）：root 是窗口的 contentView，内容和左右拖边放进 background
+    let root: NSView
+    let background: NSView
+    if #available(macOS 26, *) {
+      // 液态玻璃：圆角交给玻璃（不用 maskImage、PanelRim 不画），内容进它的 contentView（玻璃用 Auto Layout 撑满）
+      let glass = NSGlassEffectView()
+      glass.cornerRadius = Style.Radius.panel
+      background = NSView()
+      background.autoresizingMask = [.width, .height]  // 自动缩放掩码和玻璃撑满它的约束一致、不打架
+      glass.contentView = background
+      root = glass
+    } else {
+      // 系统毛玻璃底：state 必须 .active，本 App 从不激活，跟随窗口状态会一直是灰的非激活外观
+      let effect = NSVisualEffectView()
+      effect.material = .popover
+      effect.blendingMode = .behindWindow
+      effect.state = .active
+      effect.maskImage = Self.cornerMask(radius: Style.Radius.panel)
+      background = effect
+      root = effect
+    }
     hosting.frame = background.bounds
     hosting.autoresizingMask = [.width, .height]
     background.addSubview(hosting)
     if minSize != nil {
       for edge in [ResizeEdge.Side.left, .right] { background.addSubview(ResizeEdge(side: edge)) }
     }
-    contentView = background
+    contentView = root
     // 不用 setFrameAutosaveName：它连跟随鼠标摆的位置也记，「上次位置」就成了上次弹出的地方
     if let frameName {
       if setFrameUsingName(frameName) {

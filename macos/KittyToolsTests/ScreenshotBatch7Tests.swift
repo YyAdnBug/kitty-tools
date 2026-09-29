@@ -104,9 +104,8 @@ struct ScreenshotBatch7Tests {
   @Test func scrollPanelUsesShotWording() throws {
     let folder = FileManager.default.displayName(atPath: ScreenshotOutput.saveDirectory.path)
     #expect(ScreenshotOutput.saveTitle == "存储到「\(folder)」")  // 四处共用的叫法
-    let tips = Set(
-      ScrollCaptureHUD().subviews.flatMap(\.subviews).flatMap { [$0] + $0.subviews }
-        .compactMap { ($0 as? NSButton)?.toolTip })
+    func views(in view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + views(in: $0) } }
+    let tips = Set(views(in: ScrollCaptureHUD()).compactMap { ($0 as? NSButton)?.toolTip })
     #expect(tips.isSuperset(of: ["拷贝（↩）", "存储到「\(folder)」（⌘S）", "另存为…（⇧⌘S）"]))
     let h = Harness()
     h.makeSelection()
