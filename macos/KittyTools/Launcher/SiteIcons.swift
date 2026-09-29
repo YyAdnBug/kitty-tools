@@ -1,7 +1,9 @@
 // 启动器网址 / 书签 / 历史 / 网页搜索行、设置 › 网页搜索列表的网站图标（体检 D6，mac-whisker §6 启动器）。不联网：
-// 先读 Chrome 本机的 Favicons 库（Chrome 装着、书签开关开着才读，开关关掉后缓存里的也不用；克隆到临时目录、只读打开、
-// 读完删），再用剪贴板链接预览已经取到的（LinkPreview.favicons），都没有就是原来的家族色块。按主机缓存进 NSCache；
-// 没找到的记下来，库的修改时间变了才再查。只给看得见的行查：行出现时报上主机名，同一轮布局里报上来的攒成一批查一次。
+// 先读本机 Chromium 系浏览器的 Favicons 库（装着、书签开关开着的那几家，第 12 批起不只 Chrome；开关都关掉后缓存里的
+// 也不用；克隆到临时目录、只读打开、读完删），再用剪贴板链接预览已经取到的（LinkPreview.favicons），都没有就是原来的
+// 家族色块。ponytail: Safari（Favicon Cache 目录，要完全磁盘访问权限）、Firefox（favicons.sqlite）的图标库不读，
+// 用它们的人靠剪贴板链接预览取到的和家族色块；要读再按各自格式加。按主机缓存进 NSCache；没找到的记下来，库的修改时间
+// 变了才再查。只给看得见的行查：行出现时报上主机名，同一轮布局里报上来的攒成一批查一次。
 // 样式照翻译服务的 ServiceTile：白底方块、tile 圆角、发丝线描边、图标四周留 14%。
 
 import AppKit
@@ -13,25 +15,25 @@ import SwiftUI
 
   /// 查到一批就加一：行读它，图标到了跟着重画（NSCache 本身不会通知）
   private(set) var revision = 0
-  /// Chrome 数据目录；nil = 不读 Chrome（截图自检、单测）
-  @ObservationIgnored var root: URL? = Bookmarks.root(of: Bookmarks.chrome)
-  /// 读不读 Chrome（装着、书签开关开着）；截图自检换成 true 读临时目录里的假库
-  @ObservationIgnored var readsChrome: () -> Bool = { Bookmarks.readsChrome }
+  /// 从哪几家的数据目录读（装着、书签开关开着的 Chromium 系）；截图自检换成空的，不读本机浏览器
+  @ObservationIgnored var roots: () -> [URL] = {
+    Browsers.bookmarkBrowsers().filter { $0.format == .chromium }.map { Browsers.root(of: $0) }
+  }
   @ObservationIgnored private let cache = NSCache<NSString, NSImage>()
-  /// Chrome 里查过、没有的主机：库的修改时间变了才再查
+  /// 库里查过、没有的主机：库的修改时间变了才再查
   @ObservationIgnored private var missing = Set<String>()
   @ObservationIgnored private var pending = Set<String>()
   @ObservationIgnored private var isFlushScheduled = false
   @ObservationIgnored private var signature: [Date?] = []
 
-  /// 一批最多查几个主机（剩下的下一轮接着查）
+  /// 一批最多查几个主机（只有一个库时；几个库按库数摊，剩下的下一轮接着查）
   static let batchLimit = 12
 
-  /// 这个主机的网站图标：Chrome 的（chrome = 书签开关开着；关掉后缓存里的也不用，不等重启）→ 链接预览取到的
-  /// （链接预览开关关着时不用，同剪贴板）→ nil（行上用家族色块）
-  func icon(for host: String, chrome: Bool) -> NSImage? {
+  /// 这个主机的网站图标：浏览器库里的（local = 有 Chromium 系的书签开关开着；都关掉后缓存里的也不用，不等重启）→
+  /// 链接预览取到的（链接预览开关关着时不用，同剪贴板）→ nil（行上用家族色块）
+  func icon(for host: String, local: Bool) -> NSImage? {
     _ = revision
-    if chrome, let image = cache.object(forKey: host as NSString) { return image }
+    if local, let image = cache.object(forKey: host as NSString) { return image }
     guard UserDefaults.standard.bool(forKey: Prefs.clipboardLinkPreview) else { return nil }
     return LinkPreview.shared.favicons[host]
   }
@@ -44,10 +46,12 @@ import SwiftUI
 
   /// 行出现时报上来：没缓存、没查过的攒起来，这一轮布局结束后一起查
   func request(_ host: String) {
-    guard let root, cache.object(forKey: host as NSString) == nil, readsChrome() else { return }
+    guard cache.object(forKey: host as NSString) == nil else { return }
+    let roots = roots()
+    guard !roots.isEmpty else { return }
     // 查过没有的：库变了（修改时间，只 stat）才再查
     if missing.contains(host) {
-      let signature = Self.signature(in: root)
+      let signature = Self.signature(in: roots)
       guard signature != self.signature else { return }
       missing.removeAll()
       self.signature = signature
@@ -60,10 +64,14 @@ import SwiftUI
 
   /// 在主线程查：克隆（约 1 ms）+ 按主机走 page_url 索引，每个主机最多看 4 条映射。
   /// ponytail: 本机 18 MB 的库、刚克隆的冷缓存下 8 个主机约 12 ms（不限映射条数时 linux.do 一个主机有 9 千条映射、
-  /// 8 个主机要 105 ms）；一批超过 batchLimit 的留到下一轮。真慢了再挪到 Subprocess 跑 sqlite3
+  /// 8 个主机要 105 ms）。几家 / 几个配置的库时，没找到的主机要把每个库都查一遍，所以一批的主机数按库数摊
+  /// （batchLimit / 库数，至少 2 个），每轮的耗时和只读一个库时差不多，剩下的留到下一轮；哪个库的修改时间变了，
+  /// 查过没有的全部重查。库多到这样还卡，再挪到 Subprocess 跑 sqlite3、没找到的按库分别记
   private func flush() {
     isFlushScheduled = false
-    let hosts = Array(pending.prefix(Self.batchLimit))
+    let roots = roots()
+    let files = Self.files(in: roots)
+    let hosts = Array(pending.prefix(max(2, Self.batchLimit / max(files.count, 1))))
     pending.subtract(hosts)
     defer {
       revision += 1
@@ -72,17 +80,16 @@ import SwiftUI
         Task { flush() }
       }
     }
-    guard let root, !hosts.isEmpty else { return }
-    let files = Bookmarks.profileFiles(named: ["Favicons"], in: root)
-    let signature = Self.signature(in: root)
+    guard !roots.isEmpty, !hosts.isEmpty else { return }
+    let signature = files.map(Browsers.modified)
     if signature != self.signature {
       missing.removeAll()
       self.signature = signature
     }
     var found: [String: Data] = [:]
     for file in files where found.count < hosts.count {
-      guard let copy = Bookmarks.clone(file) else { continue }
-      defer { try? FileManager.default.removeItem(at: copy) }
+      guard let copy = try? Browsers.clone(file) else { continue }
+      defer { Browsers.discard(copy) }
       guard let database = try? Database(path: copy.path, readOnly: true) else { continue }
       found.merge(Self.lookup(hosts.filter { found[$0] == nil }, in: database)) { old, _ in old }
     }
@@ -95,9 +102,14 @@ import SwiftUI
     }
   }
 
-  /// 各配置 Favicons 库的修改时间
-  private static func signature(in root: URL) -> [Date?] {
-    Bookmarks.profileFiles(named: ["Favicons"], in: root).map(Bookmarks.modified)
+  /// 这几家各配置的 Favicons 库
+  private static func files(in roots: [URL]) -> [URL] {
+    roots.flatMap { Browsers.profileFiles(named: ["Favicons"], in: $0) }
+  }
+
+  /// 各库的修改时间
+  private static func signature(in roots: [URL]) -> [Date?] {
+    files(in: roots).map(Browsers.modified)
   }
 
   /// Favicons 库里每个主机最大的一张图（纯查询，单测用假库）：先按主机本身，没有再试加 / 去掉 www.；
@@ -142,11 +154,11 @@ import SwiftUI
 struct SiteIcon: View {
   let host: String
   let fallback: KindTile
-  /// Chrome 书签开关：开关一变行就重画（设置页里网页搜索列表和开关同页）
-  @AppStorage(Prefs.launcherBookmarksChrome) private var chrome = true
+  /// 书签开关（开着的浏览器 id）：开关一变行就重画（设置页里网页搜索列表和开关同页）
+  @AppStorage(Prefs.launcherBrowserBookmarks) private var bookmarkIDs = Prefs.defaultBookmarkIDs
 
   var body: some View {
-    if let image = SiteIcons.shared.icon(for: host, chrome: chrome) {
+    if let image = SiteIcons.shared.icon(for: host, local: Browsers.readsFavicons(bookmarkIDs)) {
       SiteIconTile(image: image, size: fallback.size)
     } else {
       fallback.task(id: host) { SiteIcons.shared.request(host) }

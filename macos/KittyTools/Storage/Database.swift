@@ -37,7 +37,7 @@ nonisolated final class Database {
 
   private var handle: OpaquePointer?
 
-  /// path 传 ":memory:" 得到内存库（单测用）。readOnly：只读打开别人的库（启动器读克隆出来的 Chrome 网站图标库），
+  /// path 传 ":memory:" 得到内存库（单测用）。readOnly：只读打开别人的库（启动器读克隆出来的 Chromium 系浏览器的网站图标库），
   /// 不建文件、不改日志模式
   init(path: String, readOnly: Bool = false) throws {
     let flags = readOnly ? SQLITE_OPEN_READONLY : SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE

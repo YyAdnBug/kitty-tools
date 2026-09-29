@@ -339,9 +339,12 @@ struct LauncherTests {
     try write("Default/AccountBookmarks", ["https://github.com/"])
     try write("Profile 1/AccountBookmarks", ["https://developer.apple.com/"])
     try write("System Profile/AccountBookmarks", ["https://ignored.example/"])
-    let urls = Bookmarks.profileFiles(in: root).compactMap { try? Data(contentsOf: $0) }
+    try write("Bookmarks", ["https://opera.example/"])  // Opera：配置就是数据目录本身（第 12 批）
+    let urls = Browsers.profileFiles(named: ["Bookmarks", "AccountBookmarks"], in: root)
+      .compactMap { try? Data(contentsOf: $0) }
       .flatMap(Bookmarks.parse).map(\.url)
-    #expect(urls == ["https://github.com/", "https://developer.apple.com/"])
+    #expect(
+      urls == ["https://opera.example/", "https://github.com/", "https://developer.apple.com/"])
   }
 
   @Test func bookmarksAndClipCommand() {

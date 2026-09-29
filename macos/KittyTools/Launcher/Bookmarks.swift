@@ -1,56 +1,35 @@
-// 启动器的浏览器书签：只读 Chromium 系（Chrome / Edge / Brave）的书签 JSON，不需要完全磁盘访问
-// （Safari 书签要，所以不做）。各浏览器 Default / Profile N 目录；同一网址只留一条。
-// 每个目录读两个文件：Bookmarks（本机书签）和 AccountBookmarks（登录 Google 账号后存在账号里的书签，
-// 新版 Chrome 把书签挪到这里后 Bookmarks 可能是空的），格式相同。
+// 启动器的浏览器书签（第 12 批起各家都读，浏览器表在 Browsers）：只读装了、书签开关开着的；同一网址只留一条。
+// - Chromium 系：各配置（数据目录本身、Default、Profile N）读两个文件：Bookmarks（本机书签）和 AccountBookmarks
+//   （登录 Google 账号后存在账号里的书签，新版 Chrome 把书签挪到这里后 Bookmarks 可能是空的），格式相同的 JSON。
+// - Safari：~/Library/Safari/Bookmarks.plist（二进制 plist），要完全磁盘访问权限；没授权时读失败（不弹框），设置里写
+//   「需要完全磁盘访问权限」+「去授权…」。
+// - Firefox：书签在 places.sqlite 里，和浏览历史一起由 BrowserHistory 进程外读（库被 Firefox 锁着、改得很勤），这里取它
+//   读好的。
 // 按浏览器缓存解析结果，文件修改时间变了才重读；开关只决定列哪几家（修旧版 30 秒内不看开关，§11 #40）。
-// 设置 › 启动器每个开关下写读到了几条 / 没找到书签文件 / 没有安装（体检 B39），用的是同一份缓存。
-// Chrome 的另外两个本机库（网站图标 SiteIcons、浏览历史 BrowserHistory，体检 D6 D8）共用这里的配置目录和克隆：
-// Chrome 装着、书签开关开着才碰；先克隆到临时目录再读（Chrome 开着时库被它独占锁着），读完删。
+// 设置 › 启动器每个开关下写读到了几条 / 没找到书签文件 / 需要完全磁盘访问权限（体检 B39），用的是同一份缓存。
 
 import AppKit
 
 enum Bookmarks {
-  struct Browser {
-    let name: String
-    let prefsKey: String
-    /// ~/Library/Application Support 下的目录
-    let directory: String
-    /// 判断装没装（LaunchServices 按 bundle id 找）
-    let bundleID: String
-  }
+  typealias Bookmark = (title: String, url: String)
 
-  static let browsers = [
-    Browser(
-      name: "Chrome", prefsKey: Prefs.launcherBookmarksChrome, directory: "Google/Chrome",
-      bundleID: "com.google.Chrome"),
-    Browser(
-      name: "Edge", prefsKey: Prefs.launcherBookmarksEdge, directory: "Microsoft Edge",
-      bundleID: "com.microsoft.edgemac"),
-    Browser(
-      name: "Brave", prefsKey: Prefs.launcherBookmarksBrave,
-      directory: "BraveSoftware/Brave-Browser", bundleID: "com.brave.Browser"),
-  ]
-
-  /// 每家浏览器解析出来的书签（同一家里网址去重），按它那几个文件的签名缓存
-  private static var parsed:
-    [String: (signature: String, bookmarks: [(title: String, url: String)])] =
-      [:]
+  /// 每家浏览器解析出来的书签（同一家里网址去重），按它那几个文件的签名缓存（读失败的不缓存，下次再试）
+  private static var parsed: [String: (signature: String, bookmarks: [Bookmark])] = [:]
   private static var cache: (signature: String, items: [LauncherItem]) = ("", [])
 
-  /// 启用且装着的浏览器的全部书签（跨浏览器同一网址只留一条）。没装的不搜：卸载后书签文件通常还在，
-  /// 设置里那个开关却是灰的、显示关着，用户关不掉
-  static func items() -> [LauncherItem] {
-    let enabled = browsers.filter {
-      UserDefaults.standard.bool(forKey: $0.prefsKey) && isInstalled($0)
-    }
-    let lists = enabled.map { ($0, bookmarks($0)) }
-    let signature = enabled.map { "\($0.name):" + (parsed[$0.name]?.signature ?? "") }
-      .joined(separator: "\n\n")
+  /// 开着且装着的浏览器的全部书签（跨浏览器同一网址只留一条）。没装的不搜：卸载后书签文件通常还在。
+  /// 单测传要读的几家和假的数据目录，不碰偏好和全局的 Browsers.home
+  static func items(
+    from browsers: [Browsers.Browser] = Browsers.bookmarkBrowsers(),
+    root: (Browsers.Browser) -> URL = { Browsers.root(of: $0) }
+  ) -> [LauncherItem] {
+    let lists = browsers.map { ($0, read($0, root: root($0))) }
+    let signature = lists.map { "\($0.0.id):" + $0.1.signature }.joined(separator: "\n\n")
     if signature == cache.signature { return cache.items }
     var seen = Set<String>()
     var items: [LauncherItem] = []
-    for (browser, bookmarks) in lists {
-      for bookmark in bookmarks where seen.insert(bookmark.url).inserted {
+    for (browser, list) in lists {
+      for bookmark in list.bookmarks where seen.insert(bookmark.url).inserted {
         items.append(item(bookmark, browser: browser.name))
       }
     }
@@ -58,78 +37,53 @@ enum Bookmarks {
     return items
   }
 
-  /// 设置页那一行的状态：没装 / 没找到书签文件 / 读到了几条
-  enum Status: Equatable {
-    case notInstalled, noFile
-    case read(Int)
+  /// 设置页那一行的状态（开关开着时才调）：读到了几条 / 没找到书签文件 / 没授权 / Firefox 还在读
+  static func status(of browser: Browsers.Browser) -> Browsers.Status {
+    read(browser).status
   }
 
-  /// 关着的（enabled = false）只看装没装、不读书签文件，装着就是 nil
-  static func status(of browser: Browser, enabled: Bool) -> Status? {
-    guard isInstalled(browser) else { return .notInstalled }
-    guard enabled else { return nil }
-    return profileFiles(browser).isEmpty ? .noFile : .read(bookmarks(browser).count)
-  }
-
-  /// LaunchServices 按 bundle id 找（约 15 µs，搜索时每次都问）
-  static func isInstalled(_ browser: Browser) -> Bool {
-    NSWorkspace.shared.urlForApplication(withBundleIdentifier: browser.bundleID) != nil
-  }
-
-  /// 一家浏览器的书签：各配置的 Bookmarks / AccountBookmarks 修改时间都没变就用上次解析的
-  private static func bookmarks(_ browser: Browser) -> [(title: String, url: String)] {
-    let files = profileFiles(browser)
+  /// 一家的书签：Chromium 系、Safari 按文件修改时间缓存；Firefox 取 BrowserHistory 读好的
+  private static func read(_ browser: Browsers.Browser, root: URL? = nil)
+    -> (bookmarks: [Bookmark], status: Browsers.Status, signature: String)
+  {
+    if browser.format == .firefox {
+      let source = BrowserHistory.Source(browser: browser, kind: .firefoxBookmarks)
+      let pages = BrowserHistory.shared.pages(source)
+      return (
+        pages.map { ($0.title, $0.url) }, BrowserHistory.shared.status(source),
+        BrowserHistory.shared.signature(source)
+      )
+    }
+    let files = Browsers.files(
+      named: browser.format == .safari ? ["Bookmarks.plist"] : ["Bookmarks", "AccountBookmarks"],
+      of: browser, in: root)
     let signature = files.map { url in
       let modified =
         (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
         .contentModificationDate?.timeIntervalSinceReferenceDate ?? 0
       return "\(url.path)@\(modified)"
     }.joined(separator: "\n")
-    if let cached = parsed[browser.name], cached.signature == signature { return cached.bookmarks }
+    if let cached = parsed[browser.id], cached.signature == signature {
+      return (cached.bookmarks, .read(cached.bookmarks.count), signature)
+    }
+    guard !files.isEmpty else { return ([], .noFile, signature) }
+    var datas: [Data] = []
+    for file in files {
+      do {
+        datas.append(try Data(contentsOf: file))
+      } catch {
+        // Safari 没授权 / 没有文件：不缓存，签名留空（没授权时修改时间照样拿得到，带上它授权前后签名一样，
+        // items() 会一直用没有 Safari 的旧结果），授权后（设置窗重新变 key、再搜）就读得到
+        if let failure = Browsers.failure(error), browser.format == .safari {
+          return ([], failure, "")
+        }
+      }
+    }
     var seen = Set<String>()
-    let bookmarks = files.compactMap { try? Data(contentsOf: $0) }.flatMap(parse)
+    let bookmarks = datas.flatMap(browser.format == .safari ? parseSafari : parse)
       .filter { seen.insert($0.url).inserted }
-    parsed[browser.name] = (signature, bookmarks)
-    return bookmarks
-  }
-
-  private static func profileFiles(_ browser: Browser) -> [URL] {
-    profileFiles(in: root(of: browser))
-  }
-
-  /// ~/Library/Application Support 下这家浏览器的数据目录
-  static func root(of browser: Browser) -> URL {
-    URL.applicationSupportDirectory.appending(path: browser.directory)
-  }
-
-  static var chrome: Browser { browsers[0] }
-
-  /// Chrome 装着、书签开关开着：才读它的网站图标、浏览历史（体检 D6 D8）
-  static var readsChrome: Bool {
-    UserDefaults.standard.bool(forKey: chrome.prefsKey) && isInstalled(chrome)
-  }
-
-  /// 各配置（Default、Profile N）里叫这些名字的文件，存在的才算
-  static func profileFiles(named names: [String], in root: URL) -> [URL] {
-    let profiles = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
-    return profiles.filter { $0 == "Default" || $0.hasPrefix("Profile ") }.sorted()
-      .flatMap { profile in names.map { root.appending(path: "\(profile)/\($0)") } }
-      .filter { FileManager.default.fileExists(atPath: $0.path) }
-  }
-
-  /// 浏览器数据目录下各配置的书签文件（存在的才算）。
-  /// ponytail: Chrome 同时还写了加密版（EncryptedAccountBookmarks2 等），哪天不再写明文就读不到了；
-  /// 解密要钥匙串里的「Chrome Safe Storage」（得用户授权），真到那天再做
-  static func profileFiles(in root: URL) -> [URL] {
-    profileFiles(named: ["Bookmarks", "AccountBookmarks"], in: root)
-  }
-
-  /// 把 Chrome 的库克隆到临时目录（APFS 上是克隆，瞬时、不占空间）：Chrome 开着时库被它独占锁着，直接读会忙等。
-  /// 只克隆主文件：正写到一半的日志不带过来，读到的是上一次提交的内容。用完调用方删掉；失败是 nil
-  static func clone(_ file: URL) -> URL? {
-    let copy = FileManager.default.temporaryDirectory.appending(
-      path: "kitty-\(UUID().uuidString)-\(file.lastPathComponent)")
-    return (try? FileManager.default.copyItem(at: file, to: copy)) != nil ? copy : nil
+    parsed[browser.id] = (signature, bookmarks)
+    return (bookmarks, .read(bookmarks.count), signature)
   }
 
   /// 去掉协议和参数的网址（参与匹配）：https://a.com/b?c → a.com/b。不用 Swift Regex：本机 3000 条浏览历史
@@ -143,21 +97,20 @@ enum Bookmarks {
     return String(text)
   }
 
-  /// 文件的修改时间（只 stat）：Chrome 的库变没变
-  static func modified(_ file: URL) -> Date? {
-    (try? FileManager.default.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date
+  private static func isWeb(_ url: String) -> Bool {
+    url.hasPrefix("http://") || url.hasPrefix("https://")
   }
 
-  /// Bookmarks JSON → (标题, 网址)。只收书签栏 / 其他书签 / 移动设备书签下的 http(s) 链接。纯函数，配单测
-  static func parse(_ data: Data) -> [(title: String, url: String)] {
+  /// Chromium 系的 Bookmarks JSON → (标题, 网址)。只收书签栏 / 其他书签 / 移动设备书签下的 http(s) 链接。纯函数，配单测
+  /// ponytail: Chrome 同时还写了加密版（EncryptedAccountBookmarks2 等），哪天不再写明文就读不到了；
+  /// 解密要钥匙串里的「Chrome Safe Storage」（得用户授权），真到那天再做
+  static func parse(_ data: Data) -> [Bookmark] {
     guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
       let roots = json["roots"] as? [String: Any]
     else { return [] }
-    var result: [(String, String)] = []
+    var result: [Bookmark] = []
     func walk(_ node: [String: Any]) {
-      if node["type"] as? String == "url", let url = node["url"] as? String,
-        url.hasPrefix("http://") || url.hasPrefix("https://")
-      {
+      if node["type"] as? String == "url", let url = node["url"] as? String, isWeb(url) {
         result.append((node["name"] as? String ?? url, url))
       }
       for child in node["children"] as? [[String: Any]] ?? [] { walk(child) }
@@ -168,9 +121,27 @@ enum Bookmarks {
     return result
   }
 
-  private static func item(_ bookmark: (title: String, url: String), browser: String)
-    -> LauncherItem
-  {
+  /// Safari 的 Bookmarks.plist → (标题, 网址)：递归 Children，收 WebBookmarkTypeLeaf 的 http(s) 链接（URLString），
+  /// 标题在 URIDictionary.title。阅读列表（com.apple.ReadingList 文件夹）里也是这样的叶子，当书签一起收。纯函数，配单测
+  static func parseSafari(_ data: Data) -> [Bookmark] {
+    guard
+      let root = try? PropertyListSerialization.propertyList(from: data, format: nil)
+        as? [String: Any]
+    else { return [] }
+    var result: [Bookmark] = []
+    func walk(_ node: [String: Any]) {
+      if node["WebBookmarkType"] as? String == "WebBookmarkTypeLeaf",
+        let url = node["URLString"] as? String, isWeb(url)
+      {
+        result.append(((node["URIDictionary"] as? [String: Any])?["title"] as? String ?? url, url))
+      }
+      for child in node["Children"] as? [[String: Any]] ?? [] { walk(child) }
+    }
+    walk(root)
+    return result
+  }
+
+  private static func item(_ bookmark: Bookmark, browser: String) -> LauncherItem {
     let host = URL(string: bookmark.url)?.host() ?? bookmark.url
     let pinyin = AppCatalog.pinyin(bookmark.title)
     // 网址只拿去掉协议和参数的部分参与匹配

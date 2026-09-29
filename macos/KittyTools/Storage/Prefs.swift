@@ -13,12 +13,18 @@ enum Prefs {
   static let statusItemStyle = "statusItemStyle"
   /// 剪贴板面板点外即关；底栏图钉 / ⌘P = 把它关掉（固定）。设置页不再有这个开关（体检 A9），只存图钉状态
   static let clipboardHideOnUnfocus = "clipboardHideOnUnfocus"
-  /// 启动器搜哪些浏览器的书签
-  static let launcherBookmarksChrome = "launcherBookmarksChrome"
-  static let launcherBookmarksEdge = "launcherBookmarksEdge"
-  static let launcherBookmarksBrave = "launcherBookmarksBrave"
-  /// 启动器也搜 Chrome 的浏览历史（体检 D8，默认关；Chrome 书签开关关着时不生效）
-  static let launcherHistoryChrome = "launcherHistoryChrome"
+  /// 启动器搜哪些浏览器的书签：开着的浏览器 id（Browsers.all 里的，换行分隔；第 12 批起一个键管全部）
+  static let launcherBrowserBookmarks = "launcherBrowserBookmarks"
+  /// 书签开着的浏览器里，哪些也搜浏览历史（同上，默认都关；书签开关关着的不算，体检 D8）
+  static let launcherBrowserHistory = "launcherBrowserHistory"
+  /// 书签默认只开 Chrome（Chromium 系的书签不要额外授权，网址是启动器里用得最多的）；Safari 要完全磁盘访问权限，默认关
+  static let defaultBookmarkIDs = "chrome"
+  /// 旧键（第 12 批前每家一个开关，id、键名、当时的默认值）：migrate 里搬到上面两个列表
+  static let launcherBookmarksLegacy = [
+    ("chrome", "launcherBookmarksChrome", true), ("edge", "launcherBookmarksEdge", false),
+    ("brave", "launcherBookmarksBrave", false),
+  ]
+  static let launcherHistoryChromeLegacy = "launcherHistoryChrome"
   /// 网页搜索与快捷链接列表（JSON，见 WebSearch）
   static let launcherWebSearchEngines = "launcherWebSearchEngines"
   /// 兜底搜索在有本地结果时也附在最后（默认只在没有结果时出现）
@@ -114,11 +120,8 @@ enum Prefs {
       statusItemVisible: true,
       statusItemStyle: StatusItem.IconStyle.template.rawValue,
       clipboardHideOnUnfocus: true,
-      // Chrome 书签不需要额外授权，默认开（网址是启动器里用得最多的）
-      launcherBookmarksChrome: true,
-      launcherBookmarksEdge: false,
-      launcherBookmarksBrave: false,
-      launcherHistoryChrome: false,
+      launcherBrowserBookmarks: defaultBookmarkIDs,
+      launcherBrowserHistory: "",
       launcherFallbackAlways: false,
       launcherRomanInput: false,
       panelSqueezeEntrance: false,
@@ -155,7 +158,8 @@ enum Prefs {
   /// 旧偏好升级（启动时在 registerDefaults 之后跑，幂等）：
   /// 排除 App 从关键词换成 bundle ID 列表（只在新键没存过、旧键改过时跑一次，体检 A11）；
   /// 保留天数不在新档位里的（旧的 3 / 14 天）挪到下一档，免得弹出菜单显示空白（体检 A4）；
-  /// 翻译历史保留条数同理（旧的 100–2000 挪到 1000 / 5000，体检 A18）
+  /// 翻译历史保留条数同理（旧的 100–2000 挪到 1000 / 5000，体检 A18）；
+  /// 浏览器书签 / 历史的每家一个开关搬进两个 id 列表（第 12 批，只在新键没存过、旧键改过时，删掉旧键）
   static func migrate(
     _ defaults: UserDefaults = .standard, domainName: String? = Bundle.main.bundleIdentifier
   ) {
@@ -172,6 +176,18 @@ enum Prefs {
       defaults.set(old, forKey: panelSqueezeEntrance)
     }
     defaults.removeObject(forKey: launcherSqueezeEntranceLegacy)
+    if domain[launcherBrowserBookmarks] == nil,
+      launcherBookmarksLegacy.contains(where: { domain[$0.1] != nil })
+    {
+      let on = launcherBookmarksLegacy.filter { domain[$0.1] as? Bool ?? $0.2 }.map { $0.0 }
+      defaults.set(on.joined(separator: "\n"), forKey: launcherBrowserBookmarks)
+    }
+    if domain[launcherBrowserHistory] == nil, domain[launcherHistoryChromeLegacy] as? Bool == true {
+      defaults.set("chrome", forKey: launcherBrowserHistory)
+    }
+    for key in launcherBookmarksLegacy.map({ $0.1 }) + [launcherHistoryChromeLegacy] {
+      defaults.removeObject(forKey: key)
+    }
     let days = defaults.integer(forKey: clipboardRetentionDays)
     if !clipboardRetentionChoices.contains(days) {
       defaults.set(

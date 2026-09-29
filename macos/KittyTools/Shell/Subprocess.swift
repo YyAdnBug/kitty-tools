@@ -1,5 +1,5 @@
 // 跑系统自带的命令行工具：在进程外、不占主线程，等它结束拿退出码（和输出）。应用内更新的 ditto / codesign、
-// 启动器系统命令的 pmset / osascript、kill 列进程的 ps / lsof、读 Chrome 浏览历史的 sqlite3 都走这里
+// 启动器系统命令的 pmset / osascript、kill 列进程的 ps / lsof、读浏览器浏览历史（和 Firefox 书签）的 sqlite3 都走这里
 // （mac-native §3：进程外 + continuation）。
 
 import Foundation

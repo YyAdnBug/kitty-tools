@@ -1,7 +1,7 @@
 // 启动器状态与操作：查询 → 结果。空查询先列「收藏」（⌘D 加，按加入顺序、⌥⌘↑↓ 调），再用「常用」（全局使用分）补足到
 // 8 行（体检 A22 D13）。结果顺序：直达网址 / 路径、计算结果（含单位换算、进制，体检 D11）、关键词搜索，然后 App 目录
 // （含系统设置面板，体检 D9）+ 内置动作 + 快捷链接 / 搜索提示 + 书签 + 用过的网址 / 文件按匹配分排序（同分系统命令最后，
-// 体检 B36），再是 Chrome 浏览历史（开了才有，排在书签后、不和书签 / 用过的重复，最多 5 行，体检 D8），网页搜索兜底；
+// 体检 B36），再是浏览历史（各家开了「也搜浏览历史」才有，排在书签后、不和书签 / 用过的重复，最多 5 行，体检 D8），网页搜索兜底；
 // 「cb 关键词」只有一行，↩ 收起启动器、呼出剪贴板面板并把关键词填进它的搜索框（N9；单输 cb 时它排第一、后面照常接本地结果）；
 // 「fy 文本」只有一行，↩ 收起启动器、翻译浮窗直接翻译（体检 D10）；「open / find 词」、空格开头搜文件（FileSearch，
 // 结果异步到，先留着上一次的结果，后面仍接整句匹配到的 App）。
@@ -130,11 +130,9 @@ import UniformTypeIdentifiers
   /// kill 空格列哪些进程（ps、lsof 在进程外跑，异步到）；单测、截图自检换成固定的，不跑命令
   @ObservationIgnored var processTargets: () async -> [LauncherItem] = { await Processes.targets() }
   @ObservationIgnored private var processTask: Task<Void, Never>?
-  /// Chrome 浏览历史的行（开关关着时是空的）；单测、截图自检换成固定的
-  @ObservationIgnored var historyItems: () -> [LauncherItem] = {
-    BrowserHistory.isEnabled ? BrowserHistory.shared.items : []
-  }
-  /// 呼出时读 / 重读浏览历史（进程外，读完才返回；返回换没换上新的）；单测、截图自检里什么都不做
+  /// 浏览历史的行（开着「也搜浏览历史」的各家合起来；开关一关 refresh 就扔掉）；单测、截图自检换成固定的
+  @ObservationIgnored var historyItems: () -> [LauncherItem] = { BrowserHistory.shared.items }
+  /// 呼出时读 / 重读浏览历史和 Firefox 书签（进程外，读完才返回；返回换没换上新的）；单测、截图自检里什么都不做
   @ObservationIgnored var refreshHistory: () async -> Bool = {
     await BrowserHistory.shared.refresh()
   }
@@ -254,7 +252,7 @@ import UniformTypeIdentifiers
     loadHistory()
   }
 
-  /// 浏览历史该重读就在进程外读（开关关着时清掉）；换上了新读的、正在搜、用户还没挑过选中项，就按新的历史重搜一次
+  /// 浏览历史、Firefox 书签该重读就在进程外读（开关关着时清掉）；换上了新读的、正在搜、用户还没挑过选中项，就按新的历史重搜一次
   private func loadHistory() {
     guard historyTask == nil else { return }
     historyTask = Task {

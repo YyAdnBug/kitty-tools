@@ -341,17 +341,17 @@ struct LauncherBatch6Tests {
 
   @Test func historyParsingAndRows() throws {
     #expect(
-      BrowserHistory.Page.date(chrome: 11_644_473_600 * 1_000_000) == Date(timeIntervalSince1970: 0)
-    )
+      BrowserHistory.date(11_644_473_600 * 1_000_000, format: .chromium)
+        == Date(timeIntervalSince1970: 0))
     let json = Data(
       """
       [{"u":"https://github.com/apple/swift?tab=readme","t":"apple/swift","v":13435070583509023},
       {"u":"https://linux.do/latest","t":null,"v":13435000000000000},
       {"u":"chrome://settings/","t":"设置","v":13435000000000001}]
       """.utf8)
-    let pages = BrowserHistory.parse(json)
+    let pages = BrowserHistory.parse(json, format: .chromium)
     #expect(pages.map(\.url).count == 3 && pages[1].title == "")
-    #expect(BrowserHistory.parse(Data()).isEmpty)  // 没有行时 sqlite3 什么都不输出
+    #expect(BrowserHistory.parse(Data(), format: .chromium).isEmpty)  // 没有行时 sqlite3 什么都不输出
     let items = BrowserHistory.items(pages)
     #expect(
       items.map(\.target) == [
@@ -407,10 +407,12 @@ struct LauncherBatch6Tests {
           [url, visits, typed, hidden])
       }
     }
+    let chrome = try #require(Browsers.all.first { $0.id == "chrome" })
+    let query = BrowserHistory.query(.init(browser: chrome, kind: .history))
     let result = try await Subprocess.run(
-      "/usr/bin/sqlite3", BrowserHistory.arguments(path), captures: true)
+      "/usr/bin/sqlite3", BrowserHistory.arguments(path, query), captures: true)
     #expect(result.status == 0 && result.output.utf8.count > 65_536)
-    let pages = BrowserHistory.parse(Data(result.output.utf8))
+    let pages = BrowserHistory.parse(Data(result.output.utf8), format: .chromium)
     #expect(pages.count == BrowserHistory.limit)
     #expect(pages.first?.url == "https://typed.com/")  // 手输过的算，最近的在前
     #expect(!pages.contains { $0.url == "https://once.com/" || $0.url == "https://hidden.com/" })

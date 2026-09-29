@@ -17,9 +17,44 @@ struct SnapshotProbeTests {
   @Test(.enabled(if: directory != nil)) func renderPanels() async throws {
     let out = try #require(Self.directory)
     Prefs.registerDefaults()
-    // 不读本机 Chrome 的网站图标 / 浏览历史（体检 D6 D8）：图标用下面摆的假图，历史用注入的
-    SiteIcons.shared.root = nil
-    BrowserHistory.shared.root = nil
+    // 不读本机浏览器（体检 D6 D8、第 12 批）：网站图标用下面摆的假图，启动器的浏览历史用注入的；设置 › 启动器
+    // 「浏览器书签与历史」读临时目录里的假数据，「装了」的固定是 Safari、Chrome、Edge、Arc、Firefox
+    let savedLocate = Browsers.locate
+    let fakeHome = try Self.fakeBrowserHome()
+    defer {
+      try? FileManager.default.setAttributes(
+        [.posixPermissions: 0o755], ofItemAtPath: fakeHome.appending(path: "Library/Safari").path)
+      try? FileManager.default.removeItem(at: fakeHome)
+      Browsers.home = URL.homeDirectory
+      Browsers.locate = savedLocate
+      BrowserHistory.shared.sources = { BrowserHistory.enabledSources() }
+    }
+    Browsers.home = fakeHome
+    Browsers.locate = { browser in
+      [
+        // Safari 在 /Applications 里是个链接，LaunchServices 给的是它指向的真位置（链接的图标带角标）
+        "safari": ("/Applications/Safari.app" as NSString).resolvingSymlinksInPath,
+        "chrome": "/Applications/Google Chrome.app",
+        "edge": "/Applications/Microsoft Edge.app", "arc": "/Applications/Arc.app",
+        "firefox": "/Applications/Firefox.app",
+      ][browser.id].map { URL(filePath: $0) }
+    }
+    SiteIcons.shared.roots = { [] }
+    let (safari, chrome, firefox) = try (
+      #require(Browsers.all.first { $0.id == "safari" }),
+      #require(Browsers.all.first { $0.id == "chrome" }),
+      #require(Browsers.all.first { $0.id == "firefox" })
+    )
+    BrowserHistory.shared.sources = {
+      [
+        .init(browser: safari, kind: .history), .init(browser: chrome, kind: .history),
+        .init(browser: firefox, kind: .firefoxBookmarks),
+      ]
+    }
+    // Safari 先当没授权（数据目录读不了）：书签、历史都是「需要完全磁盘访问权限」
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0], ofItemAtPath: fakeHome.appending(path: "Library/Safari").path)
+    await BrowserHistory.shared.refresh()
     for (host, letter, color) in [
       ("linux.do", "L", NSColor.systemYellow), ("github.com", "G", .black),
       ("www.google.com", "G", .systemBlue), ("www.bing.com", "b", .systemTeal),
@@ -519,6 +554,27 @@ struct SnapshotProbeTests {
         size: NSSize(width: 590, height: 400), dark: dark,
         to: "\(out)/settings-launcher-detail\(suffix).png")
     }
+    // 设置 › 启动器「浏览器书签与历史」（第 12 批）：只列装了的五家；Safari 没授权（橙字 + 去授权… + 说明）、
+    // Chrome 书签和历史都读到、Edge 关着、Arc 没有书签文件（橙字）、Firefox 书签读到（历史关着写它搜什么）。
+    // 再给 Safari 授权（数据目录能读了）看「已读到 N 条」
+    let browserSuite = "kitty-snapshot-\(UUID().uuidString)"
+    let browserPrefs = try #require(UserDefaults(suiteName: browserSuite))
+    defer { browserPrefs.removePersistentDomain(forName: browserSuite) }
+    browserPrefs.set("safari\nchrome\narc\nfirefox", forKey: Prefs.launcherBrowserBookmarks)
+    browserPrefs.set("safari\nchrome", forKey: Prefs.launcherBrowserHistory)
+    for dark in [false, true] {
+      try snapshot(
+        LauncherTab().defaultAppStorage(browserPrefs).environment(navigation),
+        size: NSSize(width: 590, height: 900), dark: dark,
+        to: "\(out)/settings-launcher-browsers\(dark ? "-dark" : "").png")
+    }
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o755], ofItemAtPath: fakeHome.appending(path: "Library/Safari").path)
+    await BrowserHistory.shared.refresh()
+    try snapshot(
+      LauncherTab().defaultAppStorage(browserPrefs).environment(navigation),
+      size: NSSize(width: 590, height: 900), dark: false,
+      to: "\(out)/settings-launcher-browsers-granted.png")
     // 快捷键速查表（N11）：默认大小的设置窗里 sheet 的尺寸，另出一张拉长的看全部分组
     let sheetHeight = ShortcutsButton.sheetHeight(available: 600 - 52)
     for (name, height, dark) in [
@@ -870,7 +926,55 @@ struct SnapshotProbeTests {
     }
   }
 
-  /// 截图自检用的假网站图标：圆角色块里一个字母（不读本机 Chrome）
+  /// 设置 › 启动器的假浏览器数据（临时目录当主目录）：Safari 书签 plist + History.db、Chrome 书签 JSON + History、
+  /// Firefox places.sqlite；Arc 只有空的数据目录（没有书签文件）
+  static func fakeBrowserHome() throws -> URL {
+    let home = FileManager.default.temporaryDirectory.appending(
+      path: "kitty-snapshot-browsers-\(UUID().uuidString)")
+    let support = home.appending(path: "Library/Application Support")
+    let directories = [
+      "Library/Safari", "Library/Application Support/Google/Chrome/Default",
+      "Library/Application Support/Arc/User Data/Default",
+      "Library/Application Support/Firefox/Profiles/x.default-release",
+    ]
+    for directory in directories {
+      try FileManager.default.createDirectory(
+        at: home.appending(path: directory), withIntermediateDirectories: true)
+    }
+    let leaves = [
+      ("Apple", "https://www.apple.com/"), ("Swift", "https://swift.org/"),
+      ("WWDC", "https://developer.apple.com/wwdc/"),
+    ].map {
+      ["WebBookmarkType": "WebBookmarkTypeLeaf", "URLString": $1, "URIDictionary": ["title": $0]]
+    }
+    try PropertyListSerialization.data(
+      fromPropertyList: ["WebBookmarkType": "WebBookmarkTypeList", "Children": leaves],
+      format: .binary, options: 0
+    ).write(to: home.appending(path: "Library/Safari/Bookmarks.plist"))
+    try BrowsersTests.makeSafariHistory(
+      Database(path: home.appending(path: "Library/Safari/History.db").path))
+    let json = """
+      {"roots": {"bookmark_bar": {"type": "folder", "children": [
+        {"type": "url", "name": "GitHub", "url": "https://github.com/"},
+        {"type": "url", "name": "linux.do", "url": "https://linux.do/"}]}}}
+      """
+    try Data(json.utf8).write(to: support.appending(path: "Google/Chrome/Default/Bookmarks"))
+    let history = try Database(path: support.appending(path: "Google/Chrome/Default/History").path)
+    try history.execute(
+      "CREATE TABLE urls(url LONGVARCHAR, title LONGVARCHAR, visit_count INTEGER, typed_count INTEGER, last_visit_time INTEGER, hidden INTEGER)"
+    )
+    for index in 0..<3 {
+      try history.execute(
+        "INSERT INTO urls VALUES (?, 'x', 2, 0, ?, 0)",
+        ["https://example.com/\(index)", 13_435_000_000_000_000 + index])
+    }
+    try BrowsersTests.makeFirefoxPlaces(
+      Database(
+        path: support.appending(path: "Firefox/Profiles/x.default-release/places.sqlite").path))
+    return home
+  }
+
+  /// 截图自检用的假网站图标：圆角色块里一个字母（不读本机浏览器）
   private static func fakeFavicon(_ letter: String, _ color: NSColor) -> NSImage {
     NSImage(size: NSSize(width: 32, height: 32), flipped: false) { rect in
       color.setFill()

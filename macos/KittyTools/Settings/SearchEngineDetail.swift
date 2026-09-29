@@ -117,7 +117,7 @@ struct SearchEngineDetail: View {
     return engine.enabled ? "搜索 · 没有本地结果时兜底" : "搜索 · 只用关键词"
   }
 
-  /// 图标：网址的网站图标（和启动器同一份 SiteIcons：本机 Chrome 的 / 剪贴板链接预览取到的，不联网，体检 D6），
+  /// 图标：网址的网站图标（和启动器同一份 SiteIcons：本机 Chromium 系浏览器的 / 剪贴板链接预览取到的，不联网，体检 D6），
   /// 没有就是种类色块（和启动器里同一套家族色）：搜索 = 网页搜索靛蓝，网址快捷链接 = 网址青，路径 = 通用灰
   @ViewBuilder static func tile(_ engine: SearchEngine, size: CGFloat) -> some View {
     let target = engine.urlTemplate.trimmingCharacters(in: .whitespaces)

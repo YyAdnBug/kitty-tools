@@ -87,7 +87,9 @@ enum SettingsPage: String, CaseIterable, Identifiable {
       ]
     case .launcher:
       [
-        "英文", "输入法", "书签", "浏览历史", "历史", "Chrome", "Edge", "Brave", "搜索", "引擎", "快捷链接", "关键词",
+        "英文", "输入法", "书签", "浏览历史", "历史", "浏览器", "Safari", "Chrome", "Edge", "Arc", "Brave",
+        "Firefox",
+        "完全磁盘访问", "搜索", "引擎", "快捷链接", "关键词",
         "兜底", "使用记录", "常用", "最近", "收藏", "文件", "open", "find", "Spotlight",
       ]
     case .screenshot:

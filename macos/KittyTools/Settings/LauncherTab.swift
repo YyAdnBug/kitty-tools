@@ -1,5 +1,6 @@
-// 设置 › 启动器：呼出时切英文输入法、文件搜索的文件夹授权、浏览器书签与历史（每家写读到了几条 / 没找到书签文件 /
-// 没有安装，体检 B39；Chrome 下「也搜浏览历史」，默认关，体检 D8）、网页搜索与快捷链接
+// 设置 › 启动器：呼出时切英文输入法、文件搜索的文件夹授权、浏览器书签与历史（第 12 批：只列本机装了的，每家一行
+// 16 pt App 图标 + 名字 + 书签开关，写读到了几条 / 没找到书签文件 / 需要完全磁盘访问权限（体检 B39）；开着时下面缩进
+// 一行「也搜浏览历史」，默认关，体检 D8）、网页搜索与快捷链接
 // （N12：行 = 网站图标或种类色块 / 名称 / 状态 / 关键词键帽 / 兜底开关，拖动排序，「+ −」增删（自定义的先确认），
 // 单击一行推进到 SearchEngineDetail 编辑）、兜底时机、清空使用记录。页头画在自己的 NavigationStack 里，推进时一起换掉。
 // 按键说明不写在这里（N11，进快捷键速查表）；启动器没有固定，失焦就收起（N8）。
@@ -11,10 +12,9 @@ struct LauncherTab: View {
   var clearUsage: () -> Void = {}
   @AppStorage(Prefs.launcherRomanInput) private var romanInput = false
   @AppStorage(Prefs.launcherFallbackAlways) private var fallbackAlways = false
-  @AppStorage(Prefs.launcherBookmarksChrome) private var chrome = true
-  @AppStorage(Prefs.launcherBookmarksEdge) private var edge = false
-  @AppStorage(Prefs.launcherBookmarksBrave) private var brave = false
-  @AppStorage(Prefs.launcherHistoryChrome) private var chromeHistory = false
+  /// 书签 / 浏览历史开着的浏览器 id（换行分隔，Browsers.ids 拆）
+  @AppStorage(Prefs.launcherBrowserBookmarks) private var bookmarkIDs = Prefs.defaultBookmarkIDs
+  @AppStorage(Prefs.launcherBrowserHistory) private var historyIDs = ""
   /// 直接读写偏好里的 JSON，不留一份拷贝（设置窗常驻：别处改了偏好，拷贝会过期，再改一下就把别处的改动覆盖掉）
   @AppStorage(Prefs.launcherWebSearchEngines) private var enginesData: Data?
   /// 推进的详情页在 navigation.path（主菜单「返回」也要读写它）
@@ -27,6 +27,10 @@ struct LauncherTab: View {
   /// 文件搜索的文件夹授权：nil = 还没问过，否则是被拒绝的文件夹（出现、设置窗成为 key 时刷新；
   /// 不写成初始值：初始值每次重建视图都会求值，要去读受保护目录）
   @State private var deniedFolders: [String]?
+  /// 本机装了的浏览器和它的 App 位置（出现、设置窗变成 key 时重查；不写成初始值，同上）
+  @State private var browsers: [(browser: Browsers.Browser, app: URL)] = []
+  /// 设置窗变成 key 时加一：页面重画（书签条数重读）、浏览历史重读一次（去系统设置给了完全磁盘访问权限回来就能看到）
+  @State private var checks = 0
 
   var body: some View {
     NavigationStack(path: Bindable(navigation).path) {
@@ -37,10 +41,12 @@ struct LauncherTab: View {
       .navigationTitle(SettingsPage.launcher.title)
       .navigationDestination(for: String.self) { id in SearchEngineDetail(id: id) }
     }
-    .onAppear { deniedFolders = Permissions.deniedFolders() }
+    .onAppear(perform: recheck)
     .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
-      deniedFolders = Permissions.deniedFolders()
+      recheck()
     }
+    // 开关变了、设置窗重新变 key：该读的浏览历史 / Firefox 书签在进程外读，关掉的扔掉
+    .task(id: "\(bookmarkIDs)|\(historyIDs)|\(checks)") { await BrowserHistory.shared.refresh() }
     .confirmationDialog("清空启动器的使用记录？", isPresented: $confirmsClear) {
       Button("清空", role: .destructive, action: clearUsage)
     } message: {
@@ -95,11 +101,12 @@ struct LauncherTab: View {
         caption(
           "「open 文件名」搜文件并打开，「find 文件名」在访达中显示；不想被搜到的文件夹加到系统设置 › Spotlight › 搜索隐私。")
       }
-      Section("浏览器书签与历史") {
-        bookmarkToggle(Bookmarks.browsers[0], isOn: $chrome)
-        historyToggle
-        bookmarkToggle(Bookmarks.browsers[1], isOn: $edge)
-        bookmarkToggle(Bookmarks.browsers[2], isOn: $brave)
+      Section {
+        ForEach(browsers, id: \.browser.id) { browserRows($0.browser, app: $0.app) }
+      } header: {
+        Text("浏览器书签与历史")
+      } footer: {
+        caption("只列本机装了的浏览器。")
       }
       Section {
         engineList
@@ -240,49 +247,96 @@ struct LauncherTab: View {
     if let selection { remove(selection) }
   }
 
-  /// 一家浏览器的书签开关：开着时下面一行写读到了几条，没读到（没有书签文件、文件里一条都没有）时橙字（配置问题的
-  /// 语义色）；没装的置灰、显示关着（启动器也不搜它）。条数和启动器搜的是同一份缓存，文件没变不重读；关着的不读文件
-  @ViewBuilder
-  private func bookmarkToggle(_ browser: Bookmarks.Browser, isOn: Binding<Bool>) -> some View {
-    let status = Bookmarks.status(of: browser, enabled: isOn.wrappedValue)
-    Toggle(isOn: status == .notInstalled ? .constant(false) : isOn) {
-      Text(browser.name)
-      switch status {
-      case .notInstalled: Text("没有安装")
-      case .read(let count) where count > 0: Text("已读到 \(count) 条")
-      case .noFile, .read:
-        Text(status == .noFile ? "没找到书签文件" : "书签文件里一条书签都没有")
-          .foregroundStyle(Color(nsColor: .systemOrange))
-      case nil: EmptyView()
-      }
-    }
-    .disabled(status == .notInstalled)
+  private func recheck() {
+    deniedFolders = Permissions.deniedFolders()
+    browsers = Browsers.installed()
+    checks += 1
   }
 
-  /// Chrome 下的「也搜浏览历史」（体检 D8，默认关）：Chrome 没装、书签开关关着时置灰、显示关着（书签关着时说明写原因）；
-  /// 开着时下一行写读到了几条（同书签），打开时就去读（进程外，读完换上）
-  @ViewBuilder private var historyToggle: some View {
-    let installed = Bookmarks.isInstalled(Bookmarks.chrome)
-    let available = chrome && installed
-    let status = BrowserHistory.shared.status
-    Toggle(isOn: available ? $chromeHistory : .constant(false)) {
-      Text("也搜浏览历史")
-      if available && chromeHistory {
-        switch status {
-        case .read(let count) where count > 0: Text("已读到 \(count) 条")
-        case .noFile, .read:
-          Text(status == .noFile ? "没找到浏览历史文件" : "浏览历史里还没有常去的网页")
-            .foregroundStyle(Color(nsColor: .systemOrange))
-        case .unknown: Text("正在读取…")
+  /// 一家浏览器：图标 + 名字 + 书签开关，开着时下面写读到了几条，没读到（没有书签文件、文件里一条都没有、没授权）
+  /// 橙字（配置问题的语义色）；Safari 没授权时右边「去授权…」，下面一行说明怎么加。条数和启动器搜的是同一份缓存，
+  /// 文件没变不重读；关着的不读文件。书签开着时下面缩进一行「也搜浏览历史」（体检 D8，默认关）
+  @ViewBuilder
+  private func browserRows(_ browser: Browsers.Browser, app: URL) -> some View {
+    let bookmarks = binding(for: browser, in: $bookmarkIDs)
+    let status = bookmarks.wrappedValue ? Bookmarks.status(of: browser) : nil
+    Toggle(isOn: bookmarks) {
+      // 图标、「去授权…」都对着名字那一行（开关也是）；图标 16 + 间距 8 = 下面「也搜浏览历史」缩进的 24
+      HStack(alignment: .firstTextBaseline, spacing: 8) {
+        Image(nsImage: NSWorkspace.shared.icon(forFile: app.path))
+          .resizable()
+          .frame(width: 16, height: 16)
+          .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 3 }  // 图标中线落在字的中线上
+          .accessibilityHidden(true)
+        VStack(alignment: .leading, spacing: 2) {
+          Text(browser.name)
+          Group {
+            if let status {
+              statusText(
+                status, noun: "书签", empty: "书签文件里一条书签都没有", missing: "没找到书签文件")
+            }
+            if status == .needsAccess { Text("在列表里点 +，选中 Kitty Tools") }
+          }
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
         }
-      } else if installed && !chrome {
-        Text("要先打开上面的 Chrome")
-      } else {
-        Text("去过两次以上或手输过的网页，排在书签后面")
+        if status == .needsAccess {
+          Spacer(minLength: 8)
+          Button("去授权…", action: Permissions.Kind.fullDiskAccess.openSettings)
+        }
       }
     }
-    .disabled(!available)
-    .task(id: available && chromeHistory) { await BrowserHistory.shared.refresh() }
+    // 读屏在开关上也能直接去授权（按钮在开关的标签里）
+    .accessibilityActions {
+      if status == .needsAccess {
+        Button("去授权…", action: Permissions.Kind.fullDiskAccess.openSettings)
+      }
+    }
+    if bookmarks.wrappedValue {
+      let history = binding(for: browser, in: $historyIDs)
+      Toggle(isOn: history) {
+        // 每家下面都有这一行：读屏跳着找开关时要听得出是哪家的
+        Text("也搜浏览历史").accessibilityLabel("也搜 \(browser.name) 的浏览历史")
+        if history.wrappedValue {
+          statusText(
+            BrowserHistory.shared.status(.init(browser: browser, kind: .history)), noun: "历史",
+            empty: "浏览历史里还没有常去的网页", missing: "没找到浏览历史文件")
+        } else {
+          // Safari 的库没有「手输过」这一项，只按访问次数
+          Text(
+            browser.format == .safari
+              ? "去过两次以上的网页，排在书签后面" : "去过两次以上或手输过的网页，排在书签后面")
+        }
+      }
+      .padding(.leading, 24)
+    }
+  }
+
+  /// 开关 ↔ 偏好里的 id 列表
+  private func binding(for browser: Browsers.Browser, in ids: Binding<String>) -> Binding<Bool> {
+    Binding {
+      Browsers.ids(ids.wrappedValue).contains(browser.id)
+    } set: {
+      ids.wrappedValue = Browsers.setting(browser.id, on: $0, in: ids.wrappedValue)
+    }
+  }
+
+  /// 开关下的一行：「已读到 N 条书签」；没读到、没授权是橙字
+  @ViewBuilder
+  private func statusText(_ status: Browsers.Status, noun: String, empty: String, missing: String)
+    -> some View
+  {
+    switch status {
+    case .reading: Text("正在读取…")
+    case .read(let count) where count > 0: Text("已读到 \(count) 条\(noun)")
+    case .read: problem(empty)
+    case .noFile: problem(missing)
+    case .needsAccess: problem("需要完全磁盘访问权限")
+    }
+  }
+
+  private func problem(_ text: String) -> some View {
+    Text(text).foregroundStyle(Color(nsColor: .systemOrange))
   }
 
   private var folderDetail: String {

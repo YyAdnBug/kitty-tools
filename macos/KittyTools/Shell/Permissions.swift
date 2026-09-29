@@ -1,6 +1,7 @@
 // 系统授权：辅助功能（粘贴回原 App 模拟 ⌘V、划词读 AX / 模拟 ⌘C）、屏幕录制（截图翻译截屏）、
 // 文件和文件夹（启动器文件搜索：Spotlight 只给本 App 能访问的文件夹里的结果）、自动化（启动器系统命令让访达清倒
-// 废纸篓、让 loginwindow 弹退出登录 / 重新启动 / 关机框；第一次用时系统自己弹框问，这里只负责被拒后打开系统设置）。
+// 废纸篓、让 loginwindow 弹退出登录 / 重新启动 / 关机框；第一次用时系统自己弹框问，这里只负责被拒后打开系统设置）、
+// 完全磁盘访问（启动器读 Safari 的书签和历史；没有请求授权的 API，只能打开系统设置让用户自己加）。
 
 import AppKit
 import ApplicationServices
@@ -8,7 +9,7 @@ import ApplicationServices
 enum Permissions {
   /// 提示里「去系统设置授权」按钮要打开的那一项
   enum Kind {
-    case accessibility, screenRecording, filesAndFolders, automation
+    case accessibility, screenRecording, filesAndFolders, automation, fullDiskAccess
 
     var settingsTitle: String {
       switch self {
@@ -16,6 +17,7 @@ enum Permissions {
       case .screenRecording: "打开屏幕录制设置"
       case .filesAndFolders: "打开文件和文件夹设置"
       case .automation: "打开自动化设置"
+      case .fullDiskAccess: "打开完全磁盘访问权限设置"
       }
     }
 
@@ -26,6 +28,7 @@ enum Permissions {
         case .screenRecording: "Privacy_ScreenCapture"
         case .filesAndFolders: "Privacy_FilesAndFolders"
         case .automation: "Privacy_Automation"
+        case .fullDiskAccess: "Privacy_AllFiles"
         }
       NSWorkspace.shared.open(
         URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)")!)
