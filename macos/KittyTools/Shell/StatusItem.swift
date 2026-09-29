@@ -3,8 +3,10 @@
 // 减弱动态效果时都不动。刘海岛出「进行中」就呼吸、出「成功」就弹（Island.onToneChange），截图飞行卡片落地也弹。
 // 菜单每次打开前重建（快捷键、钉图状态会变），用 sectionHeader 分 剪贴板与启动器 / 翻译 / 截图 三节（N15，AppDelegate 按
 // HotKeyAction.sections 填，和快捷键页同名同序），菜单项左侧是家族色符号，没设快捷键的右边留空。
-// 不对应全局热键的项（暂停记录、复制即译、钉图、设置、关于、检查更新）是 MenuExtra，启动器的内置动作读同一份。
-// 图标是角色「探头」的剪影（资源 StatusIcon，22 × 16 pt 模板图，由 macos/brand-icons.swift 生成）。
+// 不对应全局热键的项（暂停记录、复制即译、钉图、设置、关于、检查更新、退出）是 MenuExtra，启动器的内置动作读同一份。
+// 图标默认是角色「探头」的剪影（资源 StatusIcon，22 × 16 pt 模板图，由 macos/brand-icons.swift 生成）；设置 › 通用可换成
+// 彩色（完整的 App 图标）或隐藏（第 9 批 M1 M2），偏好一变立刻跟着变。隐藏只是 isVisible = false，动效照常调、看不见而已；
+// 隐藏后回设置靠再打开一次本 App（AppDelegate.applicationShouldHandleReopen），退出在启动器里（MenuExtra.quit）。
 
 import AppKit
 import Carbon.HIToolbox
@@ -16,16 +18,129 @@ final class StatusItem: NSObject, NSMenuDelegate {
   /// 打开菜单前往里填菜单项（AppDelegate 给）
   var buildMenu: (NSMenu) -> Void = { _ in }
   private var isWorking = false
+  /// 按钮上现在是哪种图（nil = 还没设）
+  private var style: IconStyle?
 
-  override init() {
-    super.init()
+  /// 图标样式（设置 › 通用「图标样式」）：单色 = 角色剪影模板图（跟着菜单栏深浅反色）；彩色 = 完整的 App 图标
+  /// （不反色，菜单打开时的高亮上也保持原色）
+  enum IconStyle: String, CaseIterable, Identifiable {
+    case template, color
+
+    var id: String { rawValue }
+
+    /// 偏好值 → 样式；没存过、存了认不得的值都算单色
+    init(pref: String?) { self = pref.flatMap(Self.init(rawValue:)) ?? .template }
+
+    var title: String { self == .template ? "单色" : "彩色" }
+
+    /// 菜单栏上的图（设置页分段里的小预览也用它）
+    var image: NSImage? { self == .template ? StatusItem.templateIcon : StatusItem.colorIcon }
+  }
+
+  static let templateIcon: NSImage? = {
     let image = NSImage(named: "StatusIcon")
     image?.isTemplate = true
     image?.accessibilityDescription = "Kitty Tools"
-    item.button?.image = image
+    return image
+  }()
+
+  /// 只画一次（设置页每次重画都要读它）
+  static let colorIcon: NSImage = {
+    let image = menuBarImage(from: NSApp.applicationIconImage)
+    image.accessibilityDescription = "Kitty Tools"
+    return image
+  }()
+
+  override init() {
+    super.init()
     item.button?.wantsLayer = true
     menu.delegate = self
     item.menu = menu
+    applyPrefs()
+    // 设置 › 通用改了立刻生效（@AppStorage 写的就是 standard）；别的偏好变了也会来，没变的不碰
+    NotificationCenter.default.addObserver(
+      forName: UserDefaults.didChangeNotification, object: UserDefaults.standard, queue: .main
+    ) { [weak self] _ in
+      MainActor.assumeIsolated { self?.applyPrefs() }
+    }
+  }
+
+  /// 按偏好显示 / 隐藏、换样式：启动时（AppDelegate 已 registerDefaults）和偏好一变都调。
+  /// behavior 没有 .removalAllowed：按住 ⌘ 只能挪位置、拖不出菜单栏，isVisible 只有这里改，不用反过来同步回偏好
+  private func applyPrefs() {
+    let defaults = UserDefaults.standard
+    let visible = defaults.bool(forKey: Prefs.statusItemVisible)
+    if item.isVisible != visible { item.isVisible = visible }
+    let style = IconStyle(pref: defaults.string(forKey: Prefs.statusItemStyle))
+    guard style != self.style else { return }
+    self.style = style
+    item.button?.image = style.image
+  }
+
+  /// 彩色图标 = 完整的 App 图标（程序坞、访达里那张）。不交给 NSImage 按菜单栏尺寸自己挑表示：16 pt 会挑到 16 / 32 px
+  /// 那两张手调简化版（Whisker §6）。取 1024 px 的大图，裁掉画布四周各 100 的留白、只留 824 的圆角方块主体，先在原分辨率上
+  /// 按主体外形（超椭圆，同 brand-icons.swift）去掉底角那点烘焙阴影（缩小后再裁的话边缘像素会混进阴影的黑），
+  /// 再高质量插值预先画成 @1x / @2x 两张位图。16 pt 高，和单色剪影的视觉高度一样；按钮仍是 squareLength，换样式宽度不跳
+  static func menuBarImage(from icon: NSImage, points: Int = 16) -> NSImage {
+    let image = NSImage(size: NSSize(width: points, height: points))
+    var proposed = CGRect(x: 0, y: 0, width: 1024, height: 1024)
+    guard let source = icon.cgImage(forProposedRect: &proposed, context: nil, hints: nil) else {
+      return image
+    }
+    let unit = CGFloat(source.width) / 1024
+    let side = Int((824 * unit).rounded())
+    guard
+      let body = source.cropping(
+        to: CGRect(x: 100 * unit, y: 100 * unit, width: 824 * unit, height: 824 * unit)),
+      let shaped = bitmap(
+        side: side,
+        { context in
+          context.addPath(squircle(side: CGFloat(side)))
+          context.clip()
+          context.draw(body, in: CGRect(x: 0, y: 0, width: side, height: side))
+        })
+    else { return image }
+    for scale in 1...2 {
+      let pixels = points * scale
+      guard
+        let small = bitmap(
+          side: pixels,
+          { context in
+            context.interpolationQuality = .high
+            context.draw(shaped, in: CGRect(x: 0, y: 0, width: pixels, height: pixels))
+          })
+      else { continue }
+      let rep = NSBitmapImageRep(cgImage: small)
+      rep.size = image.size
+      image.addRepresentation(rep)
+    }
+    return image
+  }
+
+  /// 边长 side 像素的 sRGB 画布
+  private static func bitmap(side: Int, _ draw: (CGContext) -> Void) -> CGImage? {
+    guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+      let context = CGContext(
+        data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+    else { return nil }
+    draw(context)
+    return context.makeImage()
+  }
+
+  /// App 图标主体的外形：超椭圆 |x|⁵ + |y|⁵ = 1（macOS 图标的连续圆角，同 brand-icons.swift 的 squircle）
+  private static func squircle(side: CGFloat) -> CGPath {
+    let path = CGMutablePath()
+    let radius = side / 2
+    for step in 0..<256 {
+      let angle = CGFloat(step) / 256 * 2 * .pi
+      let point = CGPoint(
+        x: radius + radius * copysign(pow(abs(cos(angle)), 0.4), cos(angle)),
+        y: radius + radius * copysign(pow(abs(sin(angle)), 0.4), sin(angle)))
+      if step == 0 { path.move(to: point) } else { path.addLine(to: point) }
+    }
+    path.closeSubpath()
+    return path
   }
 
   func menuNeedsUpdate(_ menu: NSMenu) {
@@ -71,13 +186,14 @@ final class StatusItem: NSObject, NSMenuDelegate {
 }
 
 /// 菜单栏里不对应全局热键的项（体检 A26）：启动器的内置动作和菜单栏同一份标题、符号、家族色和位置（同名同序）。
-/// rawValue 是启动器使用记录里的 id（改了会丢记录）；「快捷键速查表」只在启动器里，「退出」只在菜单里
+/// rawValue 是启动器使用记录里的 id（改了会丢记录）；「快捷键速查表」只在启动器里。「退出」两边都有（第 9 批 M1：
+/// 菜单栏图标可以隐藏，那时只剩启动器能退出）
 enum MenuExtra: String, CaseIterable {
   case pauseClipboard = "pause-clipboard"
   case copyToTranslate
   case pinsToggle = "pins-toggle"
   case pinsClose = "pins-close"
-  case settings, shortcuts, about, updates
+  case settings, shortcuts, about, updates, quit
 
   /// 接在哪一节的末尾（那一节里有这个热键动作）；nil = 最后的设置那一节
   var section: HotKeyAction? {
@@ -85,7 +201,7 @@ enum MenuExtra: String, CaseIterable {
     case .pauseClipboard: .clipboard
     case .copyToTranslate: .selectionTranslate
     case .pinsToggle, .pinsClose: .screenshot
-    case .settings, .shortcuts, .about, .updates: nil
+    case .settings, .shortcuts, .about, .updates, .quit: nil
     }
   }
 
@@ -100,6 +216,7 @@ enum MenuExtra: String, CaseIterable {
     case .shortcuts: "快捷键速查表"
     case .about: "关于 Kitty Tools"
     case .updates: "检查更新…"
+    case .quit: "退出 Kitty Tools"
     }
   }
 
@@ -114,6 +231,7 @@ enum MenuExtra: String, CaseIterable {
     case .shortcuts: "Keyboard Shortcuts"
     case .about: "About"
     case .updates: "Check for Updates"
+    case .quit: "Quit Kitty Tools"
     }
   }
 
@@ -127,6 +245,7 @@ enum MenuExtra: String, CaseIterable {
     case .shortcuts: "keyboard"
     case .about: "info.circle"
     case .updates: "arrow.triangle.2.circlepath"
+    case .quit: "power"
     }
   }
 

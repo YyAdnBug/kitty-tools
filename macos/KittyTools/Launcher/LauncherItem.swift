@@ -60,7 +60,8 @@ struct LauncherItem: Identifiable, Hashable {
   }
 
   /// 内置动作（体检 A26）：和菜单栏同名同序——按 HotKeyAction.sections（启动器自己除外），每节末尾接上那一节的
-  /// MenuExtra（暂停记录剪贴板、复制即译、有钉图时的两项），最后设置、快捷键速查表、关于、检查更新（正式版）。
+  /// MenuExtra（暂停记录剪贴板、复制即译、有钉图时的两项），最后设置、快捷键速查表、关于、检查更新（正式版）、
+  /// 退出 Kitty Tools（菜单栏图标隐藏时只剩这里能退出，第 9 批 M1）。
   /// 老的 6 个 id 保留（使用记录按 id 累计），新加的用 HotKeyAction.rawValue / MenuExtra.rawValue。
   /// 按状态缓存：每敲一个字都要列一遍，拼音转写不便宜
   static func actions(_ state: ActionState = .init()) -> [LauncherItem] {

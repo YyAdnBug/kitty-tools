@@ -666,7 +666,8 @@ import UniformTypeIdentifiers
       }
       open(url, nil)
     case .action:
-      usage.record(item, query: query)
+      // 退出本 App 不记使用：不进「常用」，也不会越用越排到别的前缀查询前面（↩ 不确认）
+      if item.target != MenuExtra.quit.rawValue { usage.record(item, query: query) }
       close()
       runAction(item.target)
     case .system:

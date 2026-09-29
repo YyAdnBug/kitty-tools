@@ -109,9 +109,13 @@ import AppKit
         let notified = UserDefaults.standard.string(forKey: Prefs.updateNotifiedVersion)
         if toMenu || (trigger == .schedule && notified != release.version) {
           UserDefaults.standard.set(release.version, forKey: Prefs.updateNotifiedVersion)
+          // 菜单栏图标隐藏了（设置 › 通用）就指到关于页的按钮
+          let hint =
+            UserDefaults.standard.bool(forKey: Prefs.statusItemVisible)
+            ? "点菜单栏图标，选「更新到 \(release.version)」" : "到 设置 › 关于 里点「更新并重新打开」"
           island?.show(
-            "有新版本 \(release.version)", detail: "点菜单栏图标，选「更新到 \(release.version)」",
-            tone: .info, symbol: "arrow.down.circle.fill")
+            "有新版本 \(release.version)", detail: hint, tone: .info,
+            symbol: "arrow.down.circle.fill")
         }
       } else {
         state = .upToDate

@@ -56,13 +56,14 @@ nonisolated enum LauncherMatch {
     return best
   }
 
-  /// 同分时的种类先后（体检 B36）：系统命令最后。它的中文标题只有两三个字、英文名又在 names 里，只比标题长短的话
-  /// 「sl」会把没用过的 Slack 排到「睡眠」后面，↩ 下去电脑就睡了
-  static func priority(_ kind: LauncherItem.Kind) -> Int {
-    if case .system = kind { 1 } else { 0 }
+  /// 同分时的先后（体检 B36）：系统命令最后。它的中文标题只有两三个字、英文名又在 names 里，只比标题长短的话
+  /// 「sl」会把没用过的 Slack 排到「睡眠」后面，↩ 下去电脑就睡了。内置动作「退出 Kitty Tools」（MenuExtra.quit）
+  /// 同理：↩ 不确认，「退出」「qu」同分时要排在「全部退出」、QuickTime Player 后面
+  static func priority(_ item: LauncherItem) -> Int {
+    item.kind == .system || (item.kind == .action && item.target == "quit") ? 1 : 0
   }
 
-  /// 匹配、加使用加成、排序；同分先按种类（系统命令最后），再标题短的在前，再按原顺序
+  /// 匹配、加使用加成、排序；同分先按 priority（系统命令、退出本 App 最后），再标题短的在前，再按原顺序
   static func rank(
     _ items: [LauncherItem], query: String, boost: (LauncherItem) -> (global: Double, query: Double)
   ) -> [LauncherItem] {
@@ -74,7 +75,7 @@ nonisolated enum LauncherMatch {
     }
     .sorted {
       if $0.1 != $1.1 { return $0.1 > $1.1 }
-      let (a, b) = (priority($0.0.kind), priority($1.0.kind))
+      let (a, b) = (priority($0.0), priority($1.0))
       if a != b { return a < b }
       if $0.0.title.count != $1.0.title.count { return $0.0.title.count < $1.0.title.count }
       return $0.2 < $1.2

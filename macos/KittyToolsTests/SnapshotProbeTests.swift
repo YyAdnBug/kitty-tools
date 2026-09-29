@@ -420,6 +420,28 @@ struct SnapshotProbeTests {
         ScreenshotTab().defaultAppStorage(shotPrefs), size: NSSize(width: 640, height: 640),
         dark: dark, to: "\(out)/settings-screenshot-custom\(dark ? "-dark" : "").png")
     }
+    // 设置 › 通用「菜单栏」（第 9 批 M1 M2）：显示 + 彩色、隐藏（图标样式置灰），各出深色；临时偏好域，不动用户的菜单栏图标
+    let barSuite = "kitty-snapshot-\(UUID().uuidString)"
+    let barPrefs = try #require(UserDefaults(suiteName: barSuite))
+    defer { barPrefs.removePersistentDomain(forName: barSuite) }
+    barPrefs.set(StatusItem.IconStyle.color.rawValue, forKey: Prefs.statusItemStyle)
+    for (name, visible) in [("shown", true), ("hidden", false)] {
+      barPrefs.set(visible, forKey: Prefs.statusItemVisible)
+      for dark in [false, true] {
+        try snapshot(
+          GeneralTab().defaultAppStorage(barPrefs), size: NSSize(width: 640, height: 720),
+          dark: dark, to: "\(out)/settings-general-menubar-\(name)\(dark ? "-dark" : "").png")
+      }
+    }
+    // 菜单栏上的两种图标（浅色 / 深色菜单栏各一张，右边放大 5 倍）；彩色图的 @2x 位图另存原图
+    for dark in [false, true] {
+      try snapshot(
+        StatusIconProbe(), size: NSSize(width: 260, height: 124), dark: dark,
+        to: "\(out)/status-icons\(dark ? "-dark" : "").png")
+    }
+    let colorRep = try #require(StatusItem.colorIcon.representations.last as? NSBitmapImageRep)
+    try #require(colorRep.representation(using: .png, properties: [:]))
+      .write(to: URL(filePath: "\(out)/status-icon-color@2x.png"))
     // 最小窗口（contentMinSize 700 × 460）下的通用页：外观缩略图、强调色两排放得下
     navigation.page = .general
     try snapshot(
@@ -1297,6 +1319,33 @@ struct SnapshotProbeTests {
     background.cacheDisplay(in: background.bounds, to: bitmap)
     try #require(bitmap.representation(using: .png, properties: [:])).write(to: URL(filePath: path))
     window.orderOut(nil)
+  }
+}
+
+/// 截图自检：菜单栏上的两种图标。上面一条 24 pt 高的「菜单栏」里 1:1 摆着单色（模板图，跟着深浅着色）和彩色，
+/// 下面放大 5 倍看像素（不插值）
+private struct StatusIconProbe: View {
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      HStack(spacing: 0) {
+        ForEach(StatusItem.IconStyle.allCases) { style in
+          if let image = style.image { Image(nsImage: image).frame(width: 24, height: 24) }
+        }
+        Text("9月29日 周二 10:24").font(.system(size: 13)).padding(.leading, 8)
+      }
+      .padding(.horizontal, 6)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(.bar)
+      HStack(alignment: .bottom, spacing: 16) {
+        ForEach(StatusItem.IconStyle.allCases) { style in
+          if let image = style.image {
+            Image(nsImage: image).resizable().interpolation(.none)
+              .frame(width: image.size.width * 5, height: image.size.height * 5)
+          }
+        }
+      }
+      .padding(.horizontal, 12)
+    }
   }
 }
 

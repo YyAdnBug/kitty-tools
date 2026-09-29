@@ -60,7 +60,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   /// 页头下面的一句说明
   var summary: String {
     switch self {
-    case .general: "外观、登录时打开和权限"
+    case .general: "外观、菜单栏图标、登录时打开和权限"
     case .clipboard: "历史上限、面板、内容格式和隐私"
     case .launcher: "搜索 App、文件、书签与历史、网页搜索与快捷链接"
     case .screenshot: "快速保存、快门声、缩略图和识字"
@@ -77,7 +77,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
       [
         "外观", "浅色", "深色", "暗黑", "主题", "跟随系统", "强调色", "主题色", "颜色", "开机", "登录", "自启", "权限", "辅助功能",
         "屏幕录制",
-        "剪贴板访问", "隐私",
+        "剪贴板访问", "隐私", "菜单栏", "状态栏", "图标", "隐藏", "彩色", "单色",
       ]
     case .clipboard:
       [

@@ -1,11 +1,14 @@
 // 设置 › 通用：外观（跟随系统 / 浅色 / 深色三张缩略图）与强调色（跟随系统 + 系统设置那一排 8 色，都是改了立刻生效）、
-// 登录时打开、权限状态（辅助功能、屏幕录制、15.4 起的剪贴板访问，三行同一种 PermissionRow；从未授权变已授权时符号替换 + 弹一下）。
+// 菜单栏图标（显示 / 隐藏、单色 / 彩色，StatusItem 看着偏好立刻跟着变，第 9 批 M1 M2）、登录时打开、
+// 权限状态（辅助功能、屏幕录制、15.4 起的剪贴板访问，三行同一种 PermissionRow；从未授权变已授权时符号替换 + 弹一下）。
 
 import ServiceManagement
 import SwiftUI
 
 struct GeneralTab: View {
   @AppStorage(Prefs.appearance) private var appearance = AppAppearance.system
+  @AppStorage(Prefs.statusItemVisible) private var statusItemVisible = true
+  @AppStorage(Prefs.statusItemStyle) private var statusItemStyle = StatusItem.IconStyle.template
   @State private var trusted = Permissions.isAccessibilityTrusted
   @State private var screenRecording = Permissions.isScreenRecordingAllowed
   @State private var loginStatus = SMAppService.mainApp.status
@@ -23,6 +26,30 @@ struct GeneralTab: View {
           Accent.shared.choice == .system
             ? "系统强调色选「多色」时使用品牌粉。"
             : "菜单高亮和焦点环由系统绘制，仍使用系统强调色。")
+      }
+      Section("菜单栏") {
+        Toggle("在菜单栏显示图标", isOn: $statusItemVisible)
+        caption("隐藏后，再打开一次 Kitty Tools（在启动器或访达里）可以回到设置；快捷键照常能用。")
+        // 分段左边是菜单栏上现在那张图（1:1 实时预览）：分段控件只显示文字，塞不进图。
+        // LabeledContent 的标签不随 .disabled 变淡，图标隐藏时自己淡成 .tertiary（同系统禁用文字）
+        LabeledContent {
+          HStack(spacing: 10) {
+            if let image = statusItemStyle.image {
+              Image(nsImage: image)
+                .opacity(statusItemVisible ? 1 : Style.disabledOpacity)
+                .accessibilityHidden(true)
+            }
+            Picker("图标样式", selection: $statusItemStyle) {
+              ForEach(StatusItem.IconStyle.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+          }
+        } label: {
+          Text("图标样式").foregroundStyle(statusItemVisible ? .primary : .tertiary)
+        }
+        .disabled(!statusItemVisible)
       }
       Section("启动") {
         Toggle("登录时自动打开", isOn: launchAtLogin)

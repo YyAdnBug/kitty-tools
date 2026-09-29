@@ -6,6 +6,8 @@
 // 另写 Config/dmg-background.tiff（DMG 窗口背景：设计区 600 × 400 pt 在左上角，奶油底、字标 Kitty Tools、虚点弧线箭头、
 // 「仍要打开」路径；整张画布 2560 × 1600 pt，窗口拉大也不露白；@1x + @2x，Deflate；改产品名或文案也改这里）。
 // 只用 AppKit / CoreGraphics / CoreText / ImageIO，几何都在这一个文件里：改角色就改这里再跑一遍。给了预览目录时另存放大的预览图。
+// 例外：彩色菜单栏图标（Shell/StatusItem.swift 的 menuBarImage）从 1024 的 AppIcon 按同样的留白 100 / 主体 824 /
+// 超椭圆 n = 5 裁主体，改这几项要一起改那边（StatusItemTests.colorIconIsTheWholeAppIcon 会报）。
 
 import AppKit
 
@@ -74,7 +76,8 @@ func mirrored(_ points: [CGPoint], unit: CGFloat) -> [CGPoint] {
   points.map { CGPoint(x: unit - $0.x, y: $0.y) }
 }
 
-/// macOS 图标外形：超椭圆（n = 5）近似连续圆角，主体 824、四边留 100 时圆角约 185
+/// macOS 图标外形：超椭圆（n = 5）近似连续圆角，主体 824、四边留 100 时圆角约 185。
+/// 这几个数 StatusItem.menuBarImage 裁彩色菜单栏图标时也用，改了要一起改
 func squircle(center: CGFloat, radius: CGFloat) -> CGPath {
   let path = CGMutablePath()
   let n: CGFloat = 5

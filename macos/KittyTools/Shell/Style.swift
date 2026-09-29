@@ -117,6 +117,8 @@ enum Style {
   /// 复制后图标换成对勾、停这么久再换回（Whisker §4 符号动效）：翻译卡片、透镜 / ⌘Y 色值、翻译历史行尾共用。
   /// 剪贴板底栏的文字提示（showToast）不是符号动效，不走它
   static let copiedHold: Duration = .seconds(1.2)
+  /// 自绘控件禁用时的不透明度（Whisker §3 状态）；系统控件 .disabled 自己会变淡
+  static let disabledOpacity: Double = 0.35
 
   // MARK: 颜色
 
@@ -334,7 +336,7 @@ struct BrandButtonStyle: ButtonStyle {
       .frame(minHeight: large ? 30 : 22)
       .background(Style.brand, in: .capsule)
       .contentShape(.capsule)
-      .opacity(isEnabled ? 1 : 0.35)
+      .opacity(isEnabled ? 1 : Style.disabledOpacity)
       .scaleEffect(configuration.isPressed ? 0.97 : 1)
       .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
   }

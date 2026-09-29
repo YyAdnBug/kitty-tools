@@ -7,6 +7,10 @@ enum Prefs {
   static let appearance = "appearance"
   /// 强调色（AccentChoice.rawValue）：system 跟随系统（默认）/ blue / purple / pink（品牌粉）/ red / orange / yellow / green / graphite
   static let accent = "accent"
+  /// 在菜单栏显示图标（第 9 批 M1，默认开）；关掉后再打开一次本 App（访达 / 启动器）回到设置，快捷键照常
+  static let statusItemVisible = "statusItemVisible"
+  /// 菜单栏图标样式（StatusItem.IconStyle.rawValue）：template 单色剪影（默认）/ color 彩色 App 图标（第 9 批 M2）
+  static let statusItemStyle = "statusItemStyle"
   /// 剪贴板面板点外即关；底栏图钉 / ⌘P = 把它关掉（固定）。设置页不再有这个开关（体检 A9），只存图钉状态
   static let clipboardHideOnUnfocus = "clipboardHideOnUnfocus"
   /// 启动器搜哪些浏览器的书签
@@ -105,6 +109,8 @@ enum Prefs {
     UserDefaults.standard.register(defaults: [
       appearance: AppAppearance.system.rawValue,
       accent: AccentChoice.system.rawValue,
+      statusItemVisible: true,
+      statusItemStyle: StatusItem.IconStyle.template.rawValue,
       clipboardHideOnUnfocus: true,
       // Chrome 书签不需要额外授权，默认开（网址是启动器里用得最多的）
       launcherBookmarksChrome: true,

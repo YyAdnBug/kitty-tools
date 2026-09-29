@@ -391,7 +391,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
-  /// 程序坞图标被点（设置窗打开期间才有程序坞图标）
+  /// 再打开一次本 App：点程序坞图标（设置窗打开期间才有）、在访达或启动器里打开已经在运行的它。
+  /// 菜单栏图标隐藏时（设置 › 通用，第 9 批 M1）就靠这条回到设置
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
     showSettings()
     return false
@@ -446,6 +447,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       settingsNavigation.showsShortcuts = true
     case .about: showSettings(page: .about)
     case .updates: Task { await updater.check(.menu) }
+    // 不确认，同菜单栏「退出」（第 9 批 M1：菜单栏图标隐藏时只剩启动器能退出）
+    case .quit: NSApp.terminate(nil)
     }
   }
 
@@ -967,7 +970,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func addExtra(_ extra: MenuExtra) {
       let item = menu.addAction(
         extra.title(pinsHidden: state.pinsHidden == true), symbol: extra.symbol,
-        color: NSColor(extra.color), key: extra == .settings ? "," : ""
+        color: NSColor(extra.color), key: extra == .settings ? "," : extra == .quit ? "q" : ""
       ) { [unowned self] in run(extra) }
       if let on = extra.isOn(state) { item.state = on ? .on : .off }
     }
@@ -993,11 +996,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
     }
     menu.addItem(.separator())
-    // 速查表只在启动器里（菜单里在 设置 › 快捷键）
+    // 速查表只在启动器里（菜单里在 设置 › 快捷键）；退出排在最后
     for extra in extras where extra.section == nil && extra != .shortcuts { addExtra(extra) }
-    menu.addAction("退出 Kitty Tools", symbol: "power", color: .systemGray, key: "q") {
-      NSApp.terminate(nil)
-    }
   }
 
   // MARK: 启动辅助
@@ -1019,8 +1019,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   /// LaunchServices 不保证同一 bundle id 只跑一份（例如 DMG 里一份、/Applications 里又一份）：
-  /// 发现更早启动的实例就把它激活，自己退出。只让「更晚的」退出：两份同时启动时
-  /// 若都见到对方就退，会一起退光（实测过）；启动时间相同再比 pid
+  /// 发现更早启动的实例就再打开一次它的包（LaunchServices 给它发 reopen → 进设置，菜单栏图标隐藏时也回得去；
+  /// 只 activate 的话没窗口的菜单栏 App 什么也不显示），自己退出。更新后的重启是等旧进程退了才 open，走不到这里。
+  /// 只让「更晚的」退出：两份同时启动时若都见到对方就退，会一起退光（实测过）；启动时间相同再比 pid
   private func yieldToOlderInstance() -> Bool {
     guard let bundleID = Bundle.main.bundleIdentifier else { return false }
     let me = NSRunningApplication.current
@@ -1031,7 +1032,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       $0.processIdentifier != me.processIdentifier && rank($0) < rank(me)
     }
     guard let older else { return false }
-    older.activate()
+    if let url = older.bundleURL { NSWorkspace.shared.open(url) } else { older.activate() }
     NSApp.terminate(nil)
     return true
   }
