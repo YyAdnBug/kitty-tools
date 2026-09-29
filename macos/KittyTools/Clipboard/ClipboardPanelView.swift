@@ -34,7 +34,6 @@ struct ClipboardPanelView: View {
   /// 滚动位置放在不被观察的盒子里：只在选中变化时读，改它不重画面板
   @State private var viewport = Viewport()
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(\.colorSchemeContrast) private var contrast
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
   static let width: CGFloat = 720
@@ -339,10 +338,7 @@ struct ClipboardPanelView: View {
               shape.fill(Color(nsColor: .windowBackgroundColor).opacity(0.9))
             }
           }
-          .overlay {
-            // 增强对比度：中性选中加 1 pt 品牌粉 0.6 描边（Whisker §7）
-            if contrast == .increased { shape.strokeBorder(Style.brand.opacity(0.6), lineWidth: 1) }
-          }
+          .overlay { shape.contrastSelectionBorder() }
           .frame(height: height)
           .offset(y: offset)
       }
@@ -459,20 +455,11 @@ struct ClipboardPanelView: View {
         sections[sections.count - 1].rows.append(row)
       } else {
         day = start
-        sections.append((start, dayTitle(start), [row]))
+        // 标题规则和翻译历史同一个纯函数（有单测）
+        sections.append((start, HistoryView.dayTitle(start, now: .now, calendar: calendar), [row]))
       }
     }
     return sections
-  }
-
-  private static func dayTitle(_ date: Date) -> String {
-    let calendar = Calendar.current
-    if calendar.isDateInToday(date) { return "今天" }
-    if calendar.isDateInYesterday(date) { return "昨天" }
-    let chinese = Locale(identifier: "zh-Hans")
-    return calendar.isDate(date, equalTo: .now, toGranularity: .year)
-      ? date.formatted(.dateTime.month().day().locale(chinese))
-      : date.formatted(.dateTime.year().month().day().locale(chinese))
   }
 
   // MARK: 空态
@@ -562,32 +549,7 @@ struct ClipboardPanelView: View {
 
   @ViewBuilder private func barStatus(count: Int) -> some View {
     if let toast = model.toast {
-      switch toast {
-      case .message(let text):
-        Label(text, systemImage: "checkmark.circle.fill")
-          .symbolRenderingMode(.palette)
-          .foregroundStyle(Color(nsColor: .systemGreen), Color(nsColor: .systemGreen))
-          .symbolEffect(.bounce, value: text)
-      case .warning(let text):
-        // 只染三角：橙字在浅色底上对比度不够，字保持默认色
-        Label {
-          Text(text)
-        } icon: {
-          Image(systemName: "exclamationmark.triangle.fill")
-            .foregroundStyle(Color(nsColor: .systemOrange))
-        }
-      case .undo(let text):
-        HStack(spacing: 8) {
-          Text(text)
-          Button(action: model.undoDelete) {
-            HStack(spacing: 6) {
-              Text("撤销").foregroundStyle(Style.brandInk)
-              KeyCap("⌘Z")
-            }
-          }
-          .pointerStyle(.link)
-        }
-      }
+      BarNoticeView(notice: toast, undo: model.undoDelete)
     } else if !model.multiSelection.isEmpty {
       multiSelectVerbs
     } else if count > 0, shownKeys.contains(.option) {

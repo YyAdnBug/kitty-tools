@@ -309,12 +309,16 @@ struct ScreenshotTests {
     let full = CGRect(x: 0, y: 0, width: image.width, height: image.height)
     let plain = try #require(
       Annotation.render([], over: image, pixelRect: full, viewSize: viewSize))
-    #expect(await OCR.recognizeText(in: plain)?.contains("Secret") == true)
+    #expect(
+      await OCR.recognizeLines(in: plain).map { OCR.text($0, joined: false) }?.contains("Secret")
+        == true)
     let masked = try #require(
       Annotation.render(
         [Annotation(shape: .mosaic(CGRect(origin: .zero, size: viewSize)))], over: image,
         pixelRect: full, viewSize: viewSize))
-    #expect(await OCR.recognizeText(in: masked)?.contains("Secret") == false)
+    #expect(
+      await OCR.recognizeLines(in: masked).map { OCR.text($0, joined: false) }?.contains("Secret")
+        == false)
   }
 
   @Test func recognizesQRCode() async throws {
@@ -385,14 +389,14 @@ struct ScreenshotTests {
 
   @Test func recognizesMixedScripts() async throws {
     let image = try Self.render(["中文识别测试", "日本語のテキストです", "한국어 텍스트", "Привет мир", "Hello World"])
-    let text = try #require(await OCR.recognizeText(in: image))
+    let text = try #require(await OCR.recognizeLines(in: image).map { OCR.text($0, joined: false) })
     for expected in ["中文识别", "日本語のテキスト", "한국어", "Привет", "Hello"] {
       #expect(text.contains(expected), "没识别出「\(expected)」：\(text)")
     }
   }
 
   @Test func blankImageHasNoText() async throws {
-    let text = await OCR.recognizeText(in: try Self.render([]))
+    let text = await OCR.recognizeLines(in: try Self.render([])).map { OCR.text($0, joined: false) }
     #expect(text == "")
   }
 

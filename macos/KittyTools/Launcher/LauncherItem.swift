@@ -59,42 +59,38 @@ struct LauncherItem: Identifiable, Hashable {
     var checksUpdates = false
   }
 
-  /// 内置动作（体检 A26）：和菜单栏同名同序——按 HotKeyAction.sections（启动器自己除外），剪贴板节末尾「暂停记录剪贴板」、
-  /// 翻译节末尾「复制即译」开关、
-  /// 截图节末尾有钉图时的两项，最后设置、快捷键速查表、关于、检查更新（正式版）。老的 6 个 id 保留（使用记录按 id 累计），
-  /// 新加的用 HotKeyAction.rawValue。按状态缓存：每敲一个字都要列一遍，拼音转写不便宜
+  /// 内置动作（体检 A26）：和菜单栏同名同序——按 HotKeyAction.sections（启动器自己除外），每节末尾接上那一节的
+  /// MenuExtra（暂停记录剪贴板、复制即译、有钉图时的两项），最后设置、快捷键速查表、关于、检查更新（正式版）。
+  /// 老的 6 个 id 保留（使用记录按 id 累计），新加的用 HotKeyAction.rawValue / MenuExtra.rawValue。
+  /// 按状态缓存：每敲一个字都要列一遍，拼音转写不便宜
   static func actions(_ state: ActionState = .init()) -> [LauncherItem] {
     if let cached = actionCache, cached.state == state { return cached.items }
     var items: [LauncherItem] = []
+    let extras = MenuExtra.allCases.filter { $0.isAvailable(state) }
     for section in HotKeyAction.sections {
       for hotKey in section.actions where hotKey != .launcher {
         items.append(action(actionID(hotKey), hotKey.title, aliases[hotKey] ?? ""))
       }
-      if section.actions.contains(.clipboard) {
-        items.append(
-          action(
-            "pause-clipboard", "暂停记录剪贴板", "Pause Clipboard Recording",
-            subtitle: state.recordingPaused ? "已暂停" : "正在记录"))
-      }
-      if section.actions.contains(.selectionTranslate) {
-        items.append(
-          action(
-            "copyToTranslate", "复制即译", "Copy to Translate",
-            subtitle: state.copyToTranslate ? "已开启" : "已关闭"))
-      }
-      if section.actions.contains(.screenshot), let hidden = state.pinsHidden {
-        items.append(action("pins-toggle", hidden ? "显示全部钉图" : "隐藏全部钉图", "Show Hide Pins"))
-        items.append(action("pins-close", "关闭全部钉图", "Close Pins"))
+      for extra in extras where section.actions.contains(where: { $0 == extra.section }) {
+        items.append(action(extra, state))
       }
     }
-    items += [
-      action("settings", "设置", "Settings Preferences"),
-      action("shortcuts", "快捷键速查表", "Keyboard Shortcuts"),
-      action("about", "关于 Kitty Tools", "About"),
-    ]
-    if state.checksUpdates { items.append(action("updates", "检查更新", "Check for Updates")) }
+    items += extras.filter { $0.section == nil }.map { action($0, state) }
     actionCache = (state, items)
     return items
+  }
+
+  /// 菜单栏那一项的启动器版：标题去掉菜单的「…」，开关写开没开
+  private static func action(_ extra: MenuExtra, _ state: ActionState) -> LauncherItem {
+    let subtitle =
+      switch (extra, extra.isOn(state)) {
+      case (.pauseClipboard, let on?): on ? "已暂停" : "正在记录"
+      case (_, let on?): on ? "已开启" : "已关闭"
+      default: "Kitty Tools"
+      }
+    return action(
+      extra.rawValue, extra.title(pinsHidden: state.pinsHidden == true).replacing("…", with: ""),
+      extra.alias, subtitle: subtitle)
   }
 
   private static var actionCache: (state: ActionState, items: [LauncherItem])?
@@ -119,14 +115,6 @@ struct LauncherItem: Identifiable, Hashable {
     .screenshotLastRegion: "Capture Last Region", .recognizeText: "OCR Recognize Text QR",
   ]
 
-  /// 不对应全局热键的内置动作的符号（和菜单栏同一个）
-  private static let actionSymbols = [
-    "pause-clipboard": "pause.circle", "copyToTranslate": "doc.on.doc", "pins-toggle": "pin",
-    "pins-close": "pin.slash",
-    "settings": "gearshape", "shortcuts": "keyboard", "about": "info.circle",
-    "updates": "arrow.triangle.2.circlepath",
-  ]
-
   private static func action(
     _ id: String, _ title: String, _ alias: String, subtitle: String = "Kitty Tools"
   ) -> LauncherItem {
@@ -141,7 +129,7 @@ struct LauncherItem: Identifiable, Hashable {
     // 对得上全局热键的内置动作（和 cb 那一行）用 HotKeyAction 的符号：和菜单栏、快捷键页是同一个图标
     if kind == .action || kind == .clip, let action = hotKeyAction { return action.symbol }
     return switch (kind, target) {
-    case (.action, _): Self.actionSymbols[target] ?? "gearshape"
+    case (.action, _): MenuExtra(rawValue: target)?.symbol ?? "gearshape"
     case (.translate, _): "character.bubble.fill"
     case (.system, _): SystemCommand(rawValue: target)?.symbol ?? "power"
     case (.process, _): "terminal.fill"

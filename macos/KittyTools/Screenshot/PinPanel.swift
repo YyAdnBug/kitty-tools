@@ -26,9 +26,7 @@ import SwiftUI
     let panel = PinPanel(image: image, frame: frame, board: self)
     panels.append(panel)
     panel.popIn()
-    NSAccessibility.post(
-      element: NSApp as Any, notification: .announcementRequested,
-      userInfo: [.announcement: "已钉到屏幕", .priority: NSAccessibilityPriorityLevel.high.rawValue])
+    Island.announce("已钉到屏幕")
   }
 
   /// 长截图开始（体检 B40）：和选区相交的钉图让开——不接鼠标（滚轮、自动滚动的合成滚轮落到下面的窗口，不再缩放钉图）、
@@ -401,8 +399,7 @@ private final class PinView: NSView {
 
   /// 拷贝 / 识字并拷贝 / 翻译 / 存储到「桌面」/ 另存为… / 原始大小 / 关闭（体检 B41 C9 D17：截图家族同名同键）
   private var commands: [Command] {
-    let folder = FileManager.default.displayName(atPath: ScreenshotOutput.saveDirectory.path)
-    return [
+    [
       Command(
         title: "拷贝", key: "c", keyCode: kVK_ANSI_C, modifiers: .command,
         action: #selector(copyImage)),
@@ -412,7 +409,7 @@ private final class PinView: NSView {
       Command(
         title: "翻译", key: "", keyCode: nil, modifiers: [], action: #selector(translateImage)),
       Command(
-        title: "存储到「\(folder)」", key: "s", keyCode: kVK_ANSI_S, modifiers: .command,
+        title: ScreenshotOutput.saveTitle, key: "s", keyCode: kVK_ANSI_S, modifiers: .command,
         action: #selector(saveImage)),
       Command(
         title: "另存为…", key: "s", keyCode: kVK_ANSI_S, modifiers: [.command, .shift],

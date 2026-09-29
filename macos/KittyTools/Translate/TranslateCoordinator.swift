@@ -137,7 +137,8 @@ import Observation
   }
 
   /// ⌘D / 星标：收藏或取消这次翻译（第一个服务出结果后才能收藏）；返回是否做了。
-  /// 关着历史时取消收藏就把这条删掉（收藏时才记进去的，留着就成了「关了历史却有历史」）
+  /// 关着历史时取消收藏就把这条删掉（收藏时才记进去的，留着就成了「关了历史却有历史」）。
+  /// 焦点一直在原文框，星标变了读屏看不到：播报（同历史 ⌘C、启动器 ⌘D）
   @discardableResult
   func toggleFavorite() -> Bool {
     guard let request, let primary = primaryResult else { return false }
@@ -149,6 +150,7 @@ import Observation
         source: request.text, target: request.to, result: primary.text,
         service: primary.service.name, favorite)
     }
+    Island.announce(favorite ? "已收藏" : "已取消收藏")
     return true
   }
 
@@ -161,15 +163,17 @@ import Observation
     return leading + translation.trimmingCharacters(in: .whitespacesAndNewlines) + trailing
   }
 
-  /// ⌘1–9 / 卡片上的复制：复制这张卡当前的译文（流式中也可以复制已出来的部分）；返回是否复制了
+  /// ⌘1–9 / 卡片上的复制：复制这张卡当前的译文（流式中也可以复制已出来的部分）；返回是否复制了。
+  /// announces：播报「已复制译文」（焦点在原文框，对勾读屏看不到）；自动复制不播，免得打断朗读译文
   @discardableResult
-  func copyCard(_ id: String) -> Bool {
+  func copyCard(_ id: String, announces: Bool = true) -> Bool {
     guard let text = cards.first(where: { $0.id == id })?.state.text, !text.isEmpty else {
       return false
     }
     // 译文 / 单词释义是本 App 给出的新文字：同时记进剪贴板历史（mac-native §5）
     Paster.write(string: text, record: true)
     copiedCard = id
+    if announces { Island.announce("已复制译文") }
     copyTick += 1
     let tick = copyTick
     Task {
@@ -265,7 +269,7 @@ import Observation
     }
   }
 
-  /// 去首尾空白；设置里开了就把同一段里的换行接起来（PDF 复制出来的段落）：和识字同一个 OCR.joiningLines
+  /// 去首尾空白；设置里开了就把同一段里的换行接起来（PDF 复制出来的段落）：OCR.joiningLines，段内接行规则和识字同一个 OCR.joinLine
   /// （中日文直接连、其它加空格、行尾连字符接回；空行是段落分隔，保留成一个空行，体检 A32）
   private static func preprocess(_ source: String) -> String {
     let text = source.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -405,7 +409,7 @@ import Observation
       enabled: defaults.bool(forKey: Prefs.translateAutoCopy), isWord: request.isWord,
       copied: copiedSource, translated: translatedSource)
     {
-      copyCard(service.id)
+      copyCard(service.id, announces: false)
     }
   }
 
@@ -473,7 +477,8 @@ import Observation
   ]
 
   /// 历史搜索框的编辑命令（doCommandBy，输入法组字时不会来）：↑↓ 选、↩ 重新翻译这条、⇧Tab 换范围、
-  /// Esc 先清搜索词再关历史（回到浮窗）；⌘K 菜单开着时先给它（HistoryList.handleMenuCommand）。
+  /// → 在搜索词末尾时打开动作菜单（同剪贴板 / 启动器）、Esc 先清搜索词再关历史（回到浮窗）；
+  /// ⌘K 菜单开着时先给它（HistoryList.handleMenuCommand）。
   /// 返回 false 交还字段编辑器；历史已关（搜索框还在淡出）时一律交还
   func handleHistoryCommand(_ selector: Selector) -> Bool {
     guard showsHistory else { return false }
@@ -488,6 +493,9 @@ import Observation
       }
       translate(entry.source)
     case #selector(NSResponder.insertBacktab(_:)): historyList.favoritesOnly.toggle()
+    case #selector(NSResponder.moveRight(_:))
+    where historyList.selected != nil && HistoryList.caretAtEnd(of: historyList.query):
+      historyList.showsActions = true
     case #selector(NSResponder.cancelOperation(_:)):
       if historyList.query.isEmpty { showsHistory = false } else { historyList.query = "" }
     default: return false

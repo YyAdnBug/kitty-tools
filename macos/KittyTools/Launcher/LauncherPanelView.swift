@@ -19,7 +19,6 @@ struct LauncherPanelView: View {
   @Bindable var model: LauncherModel
   @AppStorage(Prefs.launcherRomanInput) private var romanInput = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(\.colorSchemeContrast) private var contrast
   /// 按住 ⌘ 超过 150 ms：类型标签换成键帽
   @State private var showsShortcuts = false
 
@@ -223,8 +222,7 @@ struct LauncherPanelView: View {
       let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
       shape
         .fill(Style.selectedFill)
-        // 增强对比度：中性高亮加 1 pt 品牌粉 0.6 描边（mac-whisker §7）
-        .overlay { if contrast == .increased { shape.strokeBorder(Style.brand.opacity(0.6)) } }
+        .overlay { shape.contrastSelectionBorder() }
         .frame(height: height)
         .offset(y: offset)
         .animation(model.selectionMotion.animation(reduced: reduceMotion), value: model.selection)
@@ -269,7 +267,7 @@ struct LauncherPanelView: View {
   private var bar: some View {
     HStack(spacing: 12) {
       if let notice = model.notice {
-        noticeView(notice)
+        BarNoticeView(notice: notice, undo: model.undoForget)
           .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
           .id(notice)
       }
@@ -312,38 +310,6 @@ struct LauncherPanelView: View {
     .padding(.horizontal, 14)
     .frame(height: Self.barHeight)
     .overlay(alignment: .top) { Hairline() }
-  }
-
-  /// 底栏左边的就地提示（同剪贴板底栏）：✓ 绿对勾 / ⚠ 只染三角 /「已从常用中移除 · 撤销 ⌘Z」（撤销是 brandInk 文字按钮）
-  @ViewBuilder private func noticeView(_ notice: LauncherModel.Notice) -> some View {
-    switch notice {
-    case .message(let text):
-      Label(text, systemImage: "checkmark.circle.fill")
-        .symbolRenderingMode(.palette)
-        .foregroundStyle(Color(nsColor: .systemGreen), Color(nsColor: .systemGreen))
-        .symbolEffect(.bounce, value: text)
-    case .warning(let text):
-      // 只染三角：橙字在浅色底上对比度不够，字保持默认色
-      Label {
-        Text(text)
-      } icon: {
-        Image(systemName: "exclamationmark.triangle.fill")
-          .foregroundStyle(Color(nsColor: .systemOrange))
-      }
-    case .undo(let text):
-      HStack(spacing: 8) {
-        Text(text).foregroundStyle(.secondary)
-        Text("·").foregroundStyle(.tertiary)
-        Button(action: model.undoForget) {
-          HStack(spacing: 6) {
-            Text("撤销").foregroundStyle(Style.brandInk)
-            KeyCap("⌘Z")
-          }
-        }
-        .pointerStyle(.link)
-        .accessibilityLabel("撤销移除")
-      }
-    }
   }
 }
 
@@ -516,19 +482,9 @@ extension LauncherItem {
   /// 功能家族色（mac-whisker §3）：行里的种类色块、底栏左边的小色块
   fileprivate var familyColor: Color {
     switch kind {
-    // 内置动作按菜单栏的家族色（体检 A26）：对得上全局热键的用它的，暂停记录算剪贴板、复制即译算翻译、钉图算截图，其余是通用
+    // 内置动作按菜单栏的家族色（体检 A26）：对得上全局热键的用它的，其余用 MenuExtra 的（跟着菜单里所在那一节）
     case .action:
-      if let action = hotKeyAction {
-        action.color
-      } else if target == "pause-clipboard" {
-        Style.Family.clipboard
-      } else if target == "copyToTranslate" {
-        Style.Family.translate
-      } else if target.hasPrefix("pins-") {
-        Style.Family.screenshot
-      } else {
-        Style.Family.general
-      }
+      hotKeyAction?.color ?? MenuExtra(rawValue: target)?.color ?? Style.Family.general
     case .translate: Style.Family.translate
     case .prompt where target == "translate-fy": Style.Family.translate
     case .system, .process: Style.Family.command

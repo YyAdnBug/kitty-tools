@@ -88,7 +88,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .launcher:
       [
         "英文", "输入法", "书签", "浏览历史", "历史", "Chrome", "Edge", "Brave", "搜索", "引擎", "快捷链接", "关键词",
-        "兜底", "使用记录", "最近", "挤压", "弹开", "动画", "实验", "文件", "open", "find", "Spotlight",
+        "兜底", "使用记录", "常用", "最近", "收藏", "挤压", "弹开", "动画", "实验", "文件", "open", "find", "Spotlight",
       ]
     case .screenshot:
       [
@@ -98,6 +98,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .translate:
       [
         "语言", "第一语言", "第二语言", "字号", "换行", "自动复制", "复制即译", "历史", "导出", "CSV", "Anki",
+        "位置", "浮窗位置", "鼠标", "清空",
         "服务", "密钥", "查词", "词典", "单词", "音标", "例句", "生词本", "收藏",
         "智谱", "OpenAI", "Anthropic", "DeepL", "Google", "百度", "有道", "微软", "火山", "腾讯", "AI", "模型",
       ]
@@ -286,7 +287,6 @@ private struct SidebarRow: View {
   let page: SettingsPage
   let isSelected: Bool
   @Environment(\.controlActiveState) private var activeState
-  @Environment(\.colorSchemeContrast) private var contrast
 
   /// 系统侧栏选中块的几何（macOS 15.7 屏外实测，和原生高亮逐像素对过）：左右各内缩 10、整行高、圆角 5
   private static let inset: CGFloat = 10
@@ -317,10 +317,7 @@ private struct SidebarRow: View {
   private func highlight(emphasized: Bool) -> some View {
     let shape = RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
     return shape.fill(emphasized ? Style.brand : Style.selectedFill)
-      .overlay {
-        // 增强对比度：中性选中加 1 pt 强调色 0.6 描边（mac-whisker §7）
-        if !emphasized, contrast == .increased { shape.strokeBorder(Style.brand.opacity(0.6)) }
-      }
+      .overlay { if !emphasized { shape.contrastSelectionBorder() } }
       .padding(.horizontal, Self.inset)
   }
 }

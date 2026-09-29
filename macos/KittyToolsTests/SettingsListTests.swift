@@ -17,6 +17,12 @@ struct SettingsListTests {
     #expect(sections.firstIndex(of: "翻译")! < sections.firstIndex(of: "截图")!)
   }
 
+  /// 侧栏搜索按改名后的叫法也找得到：启动器的「常用」「收藏」，翻译的「浮窗位置」「清空」
+  @Test func sidebarSearchFindsNewNames() {
+    #expect(SettingsPage.launcher.matches("常用") && SettingsPage.launcher.matches("收藏"))
+    #expect(SettingsPage.translate.matches("浮窗位置") && SettingsPage.translate.matches("清空"))
+  }
+
   private func engine(
     _ id: String, name: String = "Name", keyword: String = "", url: String, fallback: Bool = false
   ) -> SearchEngine {

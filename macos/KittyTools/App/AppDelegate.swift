@@ -93,12 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       panel.setContentHeight($0, animated: !model.showsActions)
     }
     model.runAction = { [unowned self] in runLauncherAction($0) }
-    model.actionState = { [unowned self] in
-      LauncherItem.ActionState(
-        recordingPaused: watcher.isUserPaused,
-        copyToTranslate: UserDefaults.standard.bool(forKey: Prefs.translateCopyToTranslate),
-        pinsHidden: pins.panels.isEmpty ? nil : pins.isHidden, checksUpdates: updater.isSupported)
-    }
+    model.actionState = { [unowned self] in menuState }
     model.openSettings = { [unowned self] in showSettings(page: .launcher) }
     model.openClipboard = { [unowned self] in searchClipboard($0) }
     // fy 那一行（体检 D10）：翻译浮窗直接翻译，位置照「浮窗位置」设置（跟随鼠标 / 上次位置）
@@ -111,10 +106,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         from: launcherRowFrame ?? launcherPanel.frame, to: launcherQuickLookFrame)
     }
     model.closeQuickLook = { [unowned self] animated in
-      guard animated else { return launcherQuickLook.hide() }
-      // 缩回动画期间它还在屏幕上：点过里面（它是 key）就先把 key 还给启动器，别让这 0.24 s 里按的键落空
-      if launcherQuickLook.isKeyWindow, launcherPanel.isVisible { launcherPanel.makeKey() }
-      launcherQuickLook.unzoom(to: launcherRowFrame)
+      Self.closeQuickLook(
+        launcherQuickLook, owner: launcherPanel, animated: animated, to: launcherRowFrame)
     }
     model.boundHotKey = { [unowned self] in hotKeys.bindings[$0] }
     model.requestFolderAccess = { [unowned self] in requestFolderAccess() }
@@ -133,10 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     panel.keyEquivalentHandler = { [unowned self] in launcherModel.handleKeyEquivalent($0) }
     panel.onHide = { [unowned self] in
       launcherModel.quickLookDidHide()
-      // 键盘关掉的（它是 key 时按 Esc）把 key 还给启动器；点别处关掉的不抢
-      if NSApp.keyWindow == nil, NSEvent.pressedMouseButtons == 0, launcherPanel.isVisible {
-        launcherPanel.makeKey()
-      }
+      Self.returnKey(to: launcherPanel)
     }
     return panel
   }()
@@ -146,21 +136,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard launcherPanel.isVisible, let row = launcherModel.rowFrame,
       row.id == launcherModel.selectedItem?.id
     else { return nil }
-    let window = launcherPanel.frame
-    return NSRect(
-      x: window.minX + row.rect.minX, y: window.maxY - row.rect.maxY, width: row.rect.width,
-      height: row.rect.height)
+    return launcherPanel.screenRect(of: row.rect)
   }
 
-  /// 预览卡的位置：以启动器为中心、900×680（同剪贴板单个文件的大卡），最大到屏幕可见区的 90%，整个挪进可见区
+  /// 预览卡的位置：以启动器为中心、900×680（同剪贴板单个文件的大卡）
   private var launcherQuickLookFrame: NSRect {
-    let visible = (launcherPanel.screen ?? NSScreen.main)?.visibleFrame ?? .zero
-    let width = min(900, visible.width * 0.9)
-    let height = min(680, visible.height * 0.9)
-    return NSRect(
-      x: min(max(launcherPanel.frame.midX - width / 2, visible.minX), visible.maxX - width),
-      y: min(max(launcherPanel.frame.midY - height / 2, visible.minY), visible.maxY - height),
-      width: width, height: height)
+    launcherPanel.centeredFrame(NSSize(width: 900, height: 680))
+  }
+
+  /// ⌘Y 大卡缩回 / 收起（剪贴板、启动器共用）：缩回动画期间它还在屏幕上，点过里面（它是 key）就先把 key 还给主面板，
+  /// 别让这 0.24 s 里按的键落空
+  private static func closeQuickLook(
+    _ card: OverlayPanel, owner: OverlayPanel, animated: Bool, to frame: NSRect?
+  ) {
+    guard animated else { return card.hide() }
+    if card.isKeyWindow, owner.isVisible { owner.makeKey() }
+    card.unzoom(to: frame)
+  }
+
+  /// ⌘Y 大卡收走后：键盘关掉的（它是 key 时按 Esc）把 key 还给主面板；点别处关掉的不抢（鼠标还按着：用户正要去别处打字）
+  private static func returnKey(to owner: OverlayPanel) {
+    if NSApp.keyWindow == nil, NSEvent.pressedMouseButtons == 0, owner.isVisible {
+      owner.makeKey()
+    }
   }
 
   private lazy var clipboardPanel: OverlayPanel = {
@@ -188,10 +186,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.pinImage = { [unowned self] in pins.pin($0, frame: $1) }
     model.island = island
     model.closeQuickLook = { [unowned self] animated in
-      guard animated else { return quickLookPanel.hide() }
-      // 缩回动画期间它还在屏幕上：点过里面的文字（它是 key）就先把 key 还给剪贴板，别让这 0.24 s 里按的键落空
-      if quickLookPanel.isKeyWindow, clipboardPanel.isVisible { clipboardPanel.makeKey() }
-      quickLookPanel.unzoom(to: cardScreenFrame)
+      Self.closeQuickLook(
+        quickLookPanel, owner: clipboardPanel, animated: animated, to: cardScreenFrame)
     }
     return panel
   }()
@@ -203,17 +199,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       size: NSSize(width: 820, height: 640), autoHide: .clickOutside, isPinned: { false },
       content: QuickLookView(model: clipboardModel) { [unowned self] size in
         // 连按方向键时直接换尺寸（先瞬时，再动画）
-        created?.move(to: quickLookFrame(size), animated: !Style.isKeyRepeat)
+        created?.move(to: clipboardPanel.centeredFrame(size), animated: !Style.isKeyRepeat)
       })
     created = panel
     panel.becomesKeyOnlyIfNeeded = true
     panel.keyEquivalentHandler = { [unowned self] in clipboardModel.handleKeyEquivalent($0) }
     panel.onHide = { [unowned self] in
       clipboardModel.quickLookDidHide()
-      // 键盘关掉的（它是 key 时按 Esc）把 key 还给剪贴板；点别处关掉的不抢（鼠标还按着：用户正要去别处打字）
-      if NSApp.keyWindow == nil, NSEvent.pressedMouseButtons == 0, clipboardPanel.isVisible {
-        clipboardPanel.makeKey()
-      }
+      Self.returnKey(to: clipboardPanel)
     }
     return panel
   }()
@@ -246,7 +239,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // ⌘,、「⋯」菜单和空状态到设置 › 翻译；错误卡带服务 id，直达那个服务的详情页（体检 C5）
     coordinator.openSettings = { [unowned self] service in
       showSettings(page: .translate)
-      if let service { settingsNavigation.path = [service] }
+      // 设置窗开着速查表 / 确认框时不换页（SettingsWindow.show）：没到翻译页就不推，别把服务 id 推进别的页的 NavigationStack
+      if let service, settingsNavigation.page == .translate { settingsNavigation.path = [service] }
     }
     coordinator.focusSource = { [unowned panel] in
       panel.makeFirstResponder(panel.initialFirstResponder)
@@ -271,7 +265,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     clipboardModel.showsQuickLookContent = true
     let size = QuickLookView.idealSize(for: item, form: clipboardModel.contentForm(of: item))
-    quickLookPanel.zoom(from: cardScreenFrame ?? clipboardPanel.frame, to: quickLookFrame(size))
+    quickLookPanel.zoom(
+      from: cardScreenFrame ?? clipboardPanel.frame, to: clipboardPanel.centeredFrame(size))
   }
 
   /// 透镜（选中行）的屏幕坐标：剪贴板面板不在、透镜滚出可见区、报上来的不是当前选中项时为 nil（放大卡退回从面板长出）
@@ -279,22 +274,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard clipboardPanel.isVisible, let card = clipboardModel.cardFrame,
       card.id == clipboardModel.selectedItem?.id
     else { return nil }
-    let window = clipboardPanel.frame
-    return NSRect(
-      x: window.minX + card.rect.minX, y: window.maxY - card.rect.maxY, width: card.rect.width,
-      height: card.rect.height)
-  }
-
-  /// 放大预览的位置：以剪贴板面板为中心，最大到屏幕可见区的 90%，再整个挪进可见区
-  private func quickLookFrame(_ size: NSSize) -> NSRect {
-    let visible = (clipboardPanel.screen ?? NSScreen.main)?.visibleFrame ?? .zero
-    let width = min(size.width, visible.width * 0.9)
-    let height = min(size.height, visible.height * 0.9)
-    let center = CGPoint(x: clipboardPanel.frame.midX, y: clipboardPanel.frame.midY)
-    return NSRect(
-      x: min(max(center.x - width / 2, visible.minX), visible.maxX - width),
-      y: min(max(center.y - height / 2, visible.minY), visible.maxY - height), width: width,
-      height: height)
+    return clipboardPanel.screenRect(of: card.rect)
   }
 
   /// 这次的欢迎引导是首次安装（「登录时自动打开」默认勾）；关于页重看时清掉，勾选框跟随当前状态
@@ -445,27 +425,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     clipboardModel.query = keyword
   }
 
-  private func hideUnpinned(_ panel: OverlayPanel, _ hideOnUnfocusKey: String) {
-    if UserDefaults.standard.bool(forKey: hideOnUnfocusKey) { panel.hide() }
-  }
-
-  /// 启动器里的内置动作（id 见 LauncherItem.actions，体检 A26）；启动器已收起。对得上全局热键的和菜单栏走同一个 run
+  /// 启动器里的内置动作（id 见 LauncherItem.actions，体检 A26）；启动器已收起。和菜单栏走同一个 run
   private func runLauncherAction(_ id: String) {
     if let action = HotKeyAction.allCases.first(where: { LauncherItem.actionID($0) == id }) {
       return run(action)
     }
-    switch id {
-    case "pause-clipboard": togglePauseRecording()
-    case "copyToTranslate": toggleCopyToTranslate()
-    case "pins-toggle": pins.toggleHidden()
-    case "pins-close": closeAllPins()
-    case "shortcuts":
+    run(MenuExtra(rawValue: id) ?? .settings)
+  }
+
+  /// 菜单栏里不对应全局热键的项：菜单栏、启动器同一个分发
+  private func run(_ extra: MenuExtra) {
+    switch extra {
+    case .pauseClipboard: togglePauseRecording()
+    case .copyToTranslate: toggleCopyToTranslate()
+    case .pinsToggle: pins.toggleHidden()
+    case .pinsClose: closeAllPins()
+    case .settings: showSettings()
+    case .shortcuts:
       showSettings()
       settingsNavigation.showsShortcuts = true
-    case "about": showSettings(page: .about)
-    case "updates": Task { await updater.check(.menu) }
-    default: showSettings()
+    case .about: showSettings(page: .about)
+    case .updates: Task { await updater.check(.menu) }
     }
+  }
+
+  /// 菜单栏和启动器内置动作此刻的状态：暂停记录了没有、复制即译开没开、钉图（nil = 没有）、能不能检查更新
+  private var menuState: LauncherItem.ActionState {
+    LauncherItem.ActionState(
+      recordingPaused: watcher.isUserPaused,
+      copyToTranslate: UserDefaults.standard.bool(forKey: Prefs.translateCopyToTranslate),
+      pinsHidden: pins.panels.isEmpty ? nil : pins.isHidden, checksUpdates: updater.isSupported)
   }
 
   /// 全局热键动作：热键、菜单栏、启动器同一个分发
@@ -568,12 +557,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       } else {
         // 没有选中文字：当输入翻译用，占位说清楚是没取到（体检 A16），VoiceOver 同一句
         coordinator.beginInput(missedSelection: true)
-        NSAccessibility.post(
-          element: NSApp as Any, notification: .announcementRequested,
-          userInfo: [
-            .announcement: "没取到选中的文字，可以直接输入或粘贴",
-            .priority: NSAccessibilityPriorityLevel.high.rawValue,
-          ])
+        Island.announce("没取到选中的文字，可以直接输入或粘贴")
       }
       presentTranslate()
     }
@@ -740,6 +724,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 另存为的存储面板弹出来之前就放回；常驻缩略图直接收走
     pins.suspend(covering: region)
     shelf.dismiss(covering: region)
+    // 固定着的剪贴板面板留在屏幕上，它的 ⌘Y 大卡也还开着：压在选区上同样会吞掉滚轮，收走
+    // （先看 isQuickLooking：大卡是懒建的，没开过就别为了判断去建它）
+    if clipboardModel.isQuickLooking, quickLookPanel.frame.intersects(region) {
+      quickLookPanel.hide()
+    }
     do {
       let finished = try await ScrollCapture.run(region: region)
       pins.resume()
@@ -779,9 +768,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 收起没固定的浮层。先收剪贴板面板再收翻译浮窗：反过来浮窗的 onHide 会把 key 还给剪贴板面板
   private func hideUnpinnedPanels() {
-    hideUnpinned(clipboardPanel, Prefs.clipboardHideOnUnfocus)
+    clipboardPanel.hideUnlessPinned()
     launcherPanel.hide()  // 启动器没有固定
-    if !UserDefaults.standard.bool(forKey: Prefs.floatingPinned) { translatePanel.hide() }
+    translatePanel.hideUnlessPinned()
   }
 
   /// 查屏幕录制授权 → 冻结各屏（本 App 开着的窗口留在画面里）→ 暂停全局热键框选 → 遮罩收起后把 key 还给截图前的
@@ -970,9 +959,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   // MARK: 菜单栏菜单
 
   /// 每次打开菜单前重建（N15）：按 HotKeyAction.sections 分节，和快捷键页同名同序，标题、符号、家族色也取自那里；
-  /// 右边是当前生效的快捷键，没设 / 注册失败的留空；复制即译接在翻译节末尾，有钉图时截图节末尾多钉图两项；
-  /// 有新版本时最上面是「更新到 x…」；最后是设置、关于、检查更新（正式版）、退出
+  /// 右边是当前生效的快捷键，没设 / 注册失败的留空；每节末尾接上那一节的 MenuExtra（暂停记录剪贴板、复制即译、
+  /// 有钉图时的两项）；有新版本时最上面是「更新到 x…」；最后是设置、关于、检查更新（正式版）、退出
   private func buildStatusMenu(_ menu: NSMenu) {
+    let state = menuState
+    let extras = MenuExtra.allCases.filter { $0.isAvailable(state) }
+    func addExtra(_ extra: MenuExtra) {
+      let item = menu.addAction(
+        extra.title(pinsHidden: state.pinsHidden == true), symbol: extra.symbol,
+        color: NSColor(extra.color), key: extra == .settings ? "," : ""
+      ) { [unowned self] in run(extra) }
+      if let on = extra.isOn(state) { item.state = on ? .on : .off }
+    }
     // 有新版本时最上面一项就是更新（强调色：现在该操作的东西）
     if let release = updater.available {
       menu.addAction(
@@ -990,43 +988,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           key: binding?.menuKeyEquivalent ?? "", modifiers: binding?.modifierFlags ?? []
         ) { [unowned self] in run(action) }
       }
-      let color = NSColor(section.actions[0].color)
-      if section.actions.contains(.clipboard) {
-        menu.addAction("暂停记录剪贴板", symbol: "pause.circle", color: color) { [unowned self] in
-          togglePauseRecording()
-        }
-        .state = watcher.isUserPaused ? .on : .off
-      }
-      if section.actions.contains(.selectionTranslate) {
-        let copyToTranslate = UserDefaults.standard.bool(forKey: Prefs.translateCopyToTranslate)
-        menu.addAction("复制即译", symbol: "doc.on.doc", color: color) { [unowned self] in
-          toggleCopyToTranslate()
-        }
-        .state = copyToTranslate ? .on : .off
-      }
-      if section.actions.contains(.screenshot), !pins.panels.isEmpty {
-        menu.addAction(pins.isHidden ? "显示全部钉图" : "隐藏全部钉图", symbol: "pin", color: color) {
-          [unowned self] in pins.toggleHidden()
-        }
-        menu.addAction("关闭全部钉图", symbol: "pin.slash", color: color) { [unowned self] in
-          closeAllPins()
-        }
+      for extra in extras where section.actions.contains(where: { $0 == extra.section }) {
+        addExtra(extra)
       }
     }
-    let gray = NSColor.systemGray
     menu.addItem(.separator())
-    menu.addAction("设置…", symbol: "gearshape", color: gray, key: ",") { [unowned self] in
-      showSettings()
-    }
-    menu.addAction("关于 Kitty Tools", symbol: "info.circle", color: gray) {
-      [unowned self] in showSettings(page: .about)
-    }
-    if updater.isSupported {
-      menu.addAction("检查更新…", symbol: "arrow.triangle.2.circlepath", color: gray) {
-        [unowned self] in Task { await updater.check(.menu) }
-      }
-    }
-    menu.addAction("退出 Kitty Tools", symbol: "power", color: gray, key: "q") {
+    // 速查表只在启动器里（菜单里在 设置 › 快捷键）
+    for extra in extras where extra.section == nil && extra != .shortcuts { addExtra(extra) }
+    menu.addAction("退出 Kitty Tools", symbol: "power", color: .systemGray, key: "q") {
       NSApp.terminate(nil)
     }
   }

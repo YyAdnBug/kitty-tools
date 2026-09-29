@@ -487,17 +487,8 @@ private struct MoreMenu: View {
         .keyboardShortcut("y")
       Button("清空历史…") { coordinator.confirmsClearHistory = true }
         .disabled(counts.total == counts.favorites)
-      Menu("导出") {
-        Section("全部历史") {
-          Button("CSV（表格）…") { export(favoritesOnly: false, anki: false) }
-          Button("TSV（Anki 卡片）…") { export(favoritesOnly: false, anki: true) }
-        }
-        Section("只导收藏（生词本）") {
-          Button("CSV（表格）…") { export(favoritesOnly: true, anki: false) }
-          Button("TSV（Anki 卡片）…") { export(favoritesOnly: true, anki: true) }
-        }
-      }
-      .disabled(counts.total == 0)
+      Menu("导出") { HistoryExportItems(history: history, island: island) }
+        .disabled(counts.total == 0)
       Text("共 \(counts.total) 条 · 收藏 \(counts.favorites)")
       Divider()
       Toggle("复制即译", isOn: $copyToTranslate)
@@ -515,11 +506,6 @@ private struct MoreMenu: View {
     .foregroundStyle(.secondary)
     .help("更多：翻译历史、导出、复制即译、设置")
     .accessibilityLabel("更多")
-  }
-
-  private func export(favoritesOnly: Bool, anki: Bool) {
-    HistoryMenu.export(
-      coordinator.history, favoritesOnly: favoritesOnly, anki: anki, island: island)
   }
 }
 
@@ -567,34 +553,6 @@ private struct TranslateCapsule: View {
     .help("翻译改过的原文（↩）")
     .accessibilityLabel("翻译")
     .accessibilityHint("原文改过了，按回车键也可以翻译")
-  }
-}
-
-/// 输入框底（Whisker §2：Style.inputFill + 发丝线（增强对比度 1 pt），圆角 card）：原文框、历史搜索框共用。
-/// 拿着焦点时换成焦点环（Whisker §1.3：1 pt 品牌粉 0.55 描边 + 粉 0.18 外发光，画法同剪贴板对话框），淡入淡出
-struct InputBox: ViewModifier {
-  var isFocused = false
-  @Environment(\.colorSchemeContrast) private var contrast
-
-  func body(content: Content) -> some View {
-    let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
-    let fade = Animation.easeOut(duration: Style.fadeIn)
-    content
-      .background(Style.inputFill, in: shape)
-      // 外发光画在描边上再模糊（不给整块加 shadow：那样连里面的字都带光晕）
-      .background {
-        shape.stroke(Style.brand.opacity(0.18), lineWidth: 4).blur(radius: 2)
-          .opacity(isFocused ? 1 : 0)
-          .animation(fade, value: isFocused)
-      }
-      .overlay {
-        shape
-          .strokeBorder(
-            isFocused ? Style.brand.opacity(0.55) : Style.hairline,
-            lineWidth: isFocused ? 1 : Style.hairlineWidth(contrast)
-          )
-          .animation(fade, value: isFocused)
-      }
   }
 }
 

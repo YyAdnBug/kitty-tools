@@ -337,7 +337,7 @@ struct HistoryListTests {
     #expect(list.query.isEmpty && list.entries.count == 3)
   }
 
-  /// 「收藏」范围里 ⌘S 取消收藏选中的一条：这行消失，选中和删除一样挪到下一条（不跳回第一条）
+  /// 「收藏」范围里 ⌘D 取消收藏选中的一条：这行消失，选中和删除一样挪到下一条（不跳回第一条）
   @Test func unfavoriteInFavoritesScopeMovesSelection() throws {
     let store = try HistoryStore(db: Database(path: ":memory:"))
     for word in ["c", "b", "a"] {
@@ -634,6 +634,37 @@ struct TranslateBatch4Tests {
     let clear = try #require(list.actions(for: selected).last)
     list.run(clear)
     #expect(confirmed && !list.showsActions)
+  }
+
+  /// 历史里 → 在搜索词末尾（单测里没有字段编辑器：搜索词为空才算）打开动作菜单，同剪贴板 / 启动器；有字时照常移光标
+  @Test func historyMoveRightOpensActions() throws {
+    let history = try HistoryStore(db: Database(path: ":memory:"))
+    history.add(source: "hello", target: .zhHans, result: "你好", service: "A", limit: 0)
+    let coordinator = TranslateCoordinator(
+      services: TranslateServiceStore(services: []), history: history)
+    let list = coordinator.historyList
+    coordinator.showsHistory = true
+    list.query = "hel"
+    #expect(!coordinator.handleHistoryCommand(#selector(NSResponder.moveRight(_:))))
+    #expect(!list.showsActions)
+    list.query = ""
+    #expect(coordinator.handleHistoryCommand(#selector(NSResponder.moveRight(_:))))
+    #expect(list.showsActions)
+  }
+
+  /// 清空历史之后 ⌘Z 不再插回清空前删掉的记录（设置页清空时历史可能还开着）；清空之后删的照常能撤
+  @Test func clearDropsHistoryUndo() throws {
+    let history = try HistoryStore(db: Database(path: ":memory:"))
+    for word in ["c", "b", "a"] {
+      history.add(source: word, target: .en, result: word.uppercased(), service: "", limit: 0)
+    }
+    let list = HistoryList(store: history)
+    list.delete(try #require(list.entries.first))
+    HistoryMenu.clear(history, island: nil)
+    #expect(!list.undoDelete() && list.entries.isEmpty)
+    history.add(source: "d", target: .en, result: "D", service: "", limit: 0)
+    list.delete(try #require(list.entries.first))
+    #expect(list.undoDelete() && list.entries.map(\.source) == ["d"])
   }
 
   /// 历史分页 + 缓存（体检 B22）：一页 500 条，取下一页（滚到底 / ↓ 走过最后一条），搜索词变了回到第一页

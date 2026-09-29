@@ -1,6 +1,6 @@
 // 图片文字识别（Vision，设备端）：剪贴板图片（让截图里的文字能被搜索到）、截图翻译、识字共用；识字还认二维码 / 条码。
 // 分段（体检 A32）：按行框的纵向间距和句末短行切段，段内的行按中日文 / 其它文字的规则接起来；截图翻译总是按段送去翻，
-// 识字按设置 › 截图的开关，翻译的「把同一段里的换行接起来」也调这里的 joiningLines（纯文本按空行分段）。
+// 识字按设置 › 截图的开关；翻译的「把同一段里的换行接起来」调这里的 joiningLines（纯文本按空行分段），段内接行和识字同一个 joinLine。
 
 import Foundation
 import Vision
@@ -13,11 +13,6 @@ nonisolated enum OCR {
   @concurrent static func recognizeText(in url: URL) async -> String? {
     guard let observations = try? await request().perform(on: url) else { return nil }
     return String(join(observations).prefix(maxCharacters))
-  }
-
-  /// 一行一行原样拼起来（识别失败 nil、没有文字 ""）
-  static func recognizeText(in image: CGImage) async -> String? {
-    await recognizeLines(in: image).map { text($0, joined: false) }
   }
 
   /// 截图翻译、识字：带行框的一行行（Vision 顺序，左右分栏时先左栏后右栏）；识别失败 nil、没有文字 []
@@ -96,7 +91,7 @@ nonisolated enum OCR {
     return paragraphs(lines).map { joinLine($0) }.joined(separator: separator)
   }
 
-  /// 纯文本的「把同一段里的换行接起来」（翻译前的预处理、设置里的示例）：空行分段（段间换成 paragraphSeparator），
+  /// 纯文本的「把同一段里的换行接起来」（翻译前的预处理）：空行分段（段间换成 paragraphSeparator），
   /// 段内的行按 joinLine 接起来。纯函数，配单测
   static func joiningLines(_ text: String, paragraphSeparator: String = "\n") -> String {
     text.split(separator: /\n[ \t\r]*\n\s*/)

@@ -316,6 +316,12 @@ struct LauncherBatch5Tests {
     #expect(model.showsQuickLookContent)
     model.quickLookDidHide()
     #expect(!model.showsQuickLookContent)
+    // 预览开着时 ⌘K：先缩回预览再开菜单（菜单画在被预览盖住的启动器里，不然看不见）
+    #expect(model.handleKeyEquivalent(try key(kVK_ANSI_Y, .command)) && model.isQuickLooking)
+    #expect(model.handleKeyEquivalent(try key(kVK_ANSI_K, .command)))
+    #expect(!model.isQuickLooking && model.showsActions)
+    model.showsActions = false
+    model.quickLookDidHide()
     // 移到废纸篓：行原地删掉，选中留在原位置
     trash.run()
     for _ in 0..<50 where model.results.count == 2 { await Task.yield() }

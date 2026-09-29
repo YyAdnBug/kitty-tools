@@ -50,8 +50,8 @@ import UniformTypeIdentifiers
   private(set) var emptyText = "没有匹配的结果"
   /// 空查询时前几行是收藏（其余是常用）
   private(set) var favoriteCount = 0
-  /// 底栏左边的就地提示（换掉种类色块和种类名）：收藏、移除常用（带撤销）
-  private(set) var notice: Notice?
+  /// 底栏左边的就地提示（换掉种类色块和种类名）：收藏、移除常用（带撤销「已从常用中移除 · 撤销 ⌘Z」）
+  private(set) var notice: BarNotice?
   /// ⌘Y 快速查看开着（体检 C7）：预览浮层跟着选中项走
   private(set) var isQuickLooking = false
   /// 预览浮层上画不画预览：打开前设上，浮层真正收走（缩回动画放完）才清掉。收走的浮层里别再画：SwiftUI 在看不见的
@@ -83,19 +83,6 @@ import UniformTypeIdentifiers
   struct Group: Equatable {
     let row: Int
     let title: String
-  }
-
-  enum Notice: Hashable {
-    case message(String)
-    case warning(String)
-    /// 「已从常用中移除 · 撤销 ⌘Z」
-    case undo(String)
-
-    var text: String {
-      switch self {
-      case .message(let text), .warning(let text), .undo(let text): text
-      }
-    }
   }
 
   @ObservationIgnored let usage: LauncherUsage
@@ -280,9 +267,6 @@ import UniformTypeIdentifiers
       }
     }
   }
-
-  /// 等浏览历史读完（单测用）
-  func historyLoad() async { await historyTask?.value }
 
   /// 呼出前要不要重扫 App 目录：没扫过，或者各应用程序目录的修改时间（放进 / 删掉 .app 都会变）和上次扫描时不一样
   static func needsRescan(scannedAt: Date?, scanned: [Date?], now: [Date?]) -> Bool {
@@ -759,7 +743,7 @@ import UniformTypeIdentifiers
       selection = index
     }
     self.armed = armed
-    Self.announce(text)
+    Island.announce(text)
     return false
   }
 
@@ -1037,26 +1021,28 @@ import UniformTypeIdentifiers
     usage.restore(forgotten.entries)
     self.forgotten = nil
     refresh(keeping: forgotten.item.id)
-    Self.announce("已撤销移除")
+    Island.announce("已撤销移除")
   }
 
-  /// 底栏就地提示：带撤销的 5 秒，其余 1.6 秒（剪贴板底栏同一种写法），同时播报
-  private func show(_ notice: Notice, spoken: String? = nil) {
+  /// 底栏就地提示（剪贴板底栏同一种，BarNotice），同时播报。⌘Y 预览开着时底栏被它盖住：另走刘海岛
+  /// （岛自己会播报，同剪贴板；底栏照样设上，缩回预览后还看得到）
+  private func show(_ notice: BarNotice, spoken: String? = nil) {
     noticeTask?.cancel()
     self.notice = notice
-    Self.announce(spoken ?? notice.text)
-    let seconds: Double = if case .undo = notice { 5 } else { 1.6 }
+    if isQuickLooking, let island {
+      switch notice {
+      case .message(let text): island.show(text)
+      case .warning(let text): island.show(text, tone: .warning)
+      case .undo(let text): island.show(text, detail: "⌘Z 撤销", tone: .info, symbol: "minus.circle")
+      }
+    } else {
+      Island.announce(spoken ?? notice.text)
+    }
     noticeTask = Task {
-      try? await Task.sleep(for: .seconds(seconds))
+      try? await Task.sleep(for: .seconds(notice.seconds))
       guard !Task.isCancelled else { return }
       self.notice = nil
     }
-  }
-
-  private static func announce(_ text: String) {
-    NSAccessibility.post(
-      element: NSApp as Any, notification: .announcementRequested,
-      userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
   }
 
   // MARK: 快速查看、打开方式、废纸篓（体检 C7）
@@ -1186,7 +1172,7 @@ import UniformTypeIdentifiers
     // →：光标在搜索词末尾、有选中项时打开动作菜单（同剪贴板），否则照常往右移光标
     case #selector(NSResponder.moveRight(_:))
     where selectedItem != nil && Self.caretAtEnd(of: query):
-      showsActions = true
+      toggleActions()
     case #selector(NSResponder.cancelOperation(_:)):
       forgotten = nil
       if isQuickLooking {
@@ -1475,9 +1461,12 @@ import UniformTypeIdentifiers
   /// 按 actionQuery 过滤（和剪贴板的两个菜单同一个 ActionMenu.filter：子串 + 中文标题的拼音前缀）
   var filteredActions: [ActionMenu.Item] { ActionMenu.filter(actions, query: actionQuery) }
 
-  /// ⌘K / 底栏「动作」：没有选中项时不打开
+  /// ⌘K / 底栏「动作」：没有选中项时不打开。⌘Y 预览开着时先缩回它：菜单画在被预览盖住的启动器里，
+  /// 不然搜索框悄悄变成过滤动作、↑↓ 改的是看不见的菜单
   func toggleActions() {
-    if showsActions || selectedItem != nil { showsActions.toggle() }
+    guard showsActions || selectedItem != nil else { return }
+    if isQuickLooking { toggleQuickLook() }
+    showsActions.toggle()
   }
 
   private func moveAction(by offset: Int) {

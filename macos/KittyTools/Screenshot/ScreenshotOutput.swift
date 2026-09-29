@@ -26,6 +26,11 @@ enum ScreenshotOutput {
     directory(saved: UserDefaults.standard.string(forKey: Prefs.screenshotSaveDirectory))
   }
 
+  /// 快速保存那一项的叫法（截图家族同一个，体检 B41）：存储到「桌面」——访达里的名字，不写 Desktop
+  static var saveTitle: String {
+    "存储到「\(FileManager.default.displayName(atPath: saveDirectory.path))」"
+  }
+
   /// saved：设置里选的文件夹（没选过 = nil）。已不存在的目录（拔掉的移动硬盘等）跳过，往下退
   static func directory(saved: String?) -> URL {
     let candidates = [

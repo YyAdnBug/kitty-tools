@@ -61,20 +61,6 @@ import Observation
     var id: String { String(describing: self) }
   }
 
-  /// 底栏左边的提示：message 带绿色对勾；warning 橙色三角（没做全，如「只复制了第 1 条」）；
-  /// undo 后面跟「撤销 ⌘Z」（已删除 N 条、已删除收藏夹、取消收藏后会被清理）
-  enum Toast: Equatable {
-    case message(String)
-    case warning(String)
-    case undo(String)
-
-    var text: String {
-      switch self {
-      case .message(let text), .warning(let text), .undo(let text): text
-      }
-    }
-  }
-
   /// 一次粘贴 / 复制写进剪贴板的东西：writes 每项是一次写入（逐条粘贴时有多项）
   struct Payload {
     /// 写进剪贴板的内容在历史里是哪条：单条 = 它自己（挪到最前）；合成一段文本 / 一组文件 = 新记一条
@@ -146,7 +132,8 @@ import Observation
   /// 放大预览的浮层上画不画卡片：打开前设上，浮层真正收走（缩回动画放完）才清掉。
   /// 收走的浮层里别再画：SwiftUI 在看不见的窗口里照样跟着选中重建卡片（Quick Look 视图、2400 px 大图）
   var showsQuickLookContent = false
-  var toast: Toast?
+  /// 底栏左边的提示（BarNotice：undo 是已删除 N 条、已删除收藏夹、取消收藏后会被清理）
+  var toast: BarNotice?
   /// 菜单栏「暂停记录剪贴板」开着（AppDelegate 跟 ClipboardWatcher.isUserPaused 一起设）：底栏条数前写「已暂停记录」
   var isRecordingPaused = false
   /// 开着的浮起菜单：搜索框这时改成过滤它的条目（actionQuery），↑↓ ↩ 选择执行
@@ -321,18 +308,9 @@ import Observation
       remove(last.kind)
     } else {
       armsLastToken = true
-      Self.announce("再按一次删除键，移除筛选：\(last.title)")
+      Island.announce("再按一次删除键，移除筛选：\(last.title)")
     }
     return true
-  }
-
-  /// VoiceOver 播报（焦点一直在搜索框，底栏提示、透镜里的色值块复制这类看不到焦点的变化要主动说）
-  static func announce(_ text: String) {
-    NSAccessibility.post(
-      element: NSApp as Any, notification: .announcementRequested,
-      userInfo: [
-        .announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue,
-      ])
   }
 
   func contentForm(of item: ClipItem) -> ContentForm? {
@@ -1012,9 +990,9 @@ import Observation
         selectionMotion = .snap
         isBrowsing = true
       }
-      Self.announce("已恢复 \(batch.count) 条")
-    case .group(let group, _, _): Self.announce("已恢复收藏夹「\(group.name)」")
-    case .unretained(let items): Self.announce("已撤销，\(items.count) 条不会被清理")
+      Island.announce("已恢复 \(batch.count) 条")
+    case .group(let group, _, _): Island.announce("已恢复收藏夹「\(group.name)」")
+    case .unretained(let items): Island.announce("已撤销，\(items.count) 条不会被清理")
     case nil: break
     }
   }
@@ -1042,7 +1020,7 @@ import Observation
   /// 能撤销的操作的提示：底栏「… · 撤销 ⌘Z」5 秒（播报「…，按 Command-Z 撤销」）；放大预览开着时底栏被它盖住，
   /// 另走刘海（岛自己会播报）
   private func showUndo(_ text: String, symbol: String) {
-    showToast(.undo(text), seconds: 5, spoken: "\(text)，按 Command-Z 撤销")
+    showToast(.undo(text), spoken: "\(text)，按 Command-Z 撤销")
     if isQuickLooking, let island {
       island.show(text, detail: "⌘Z 撤销", tone: .info, symbol: symbol)
     }
@@ -1085,13 +1063,13 @@ import Observation
 
   /// 底栏左边的就地提示：焦点一直在搜索框，读屏听不到，主动播报（spoken 比显示的字多说一点时给；体检 B16）；
   /// 放大预览开着时另走的岛自己会播报，这里不重复
-  func showToast(_ toast: Toast, seconds: Double = 1.6, spoken: String? = nil) {
+  func showToast(_ toast: BarNotice, spoken: String? = nil) {
     toastTask?.cancel()
     self.toast = toast
-    if !(isQuickLooking && island != nil) { Self.announce(spoken ?? toast.text) }
+    if !(isQuickLooking && island != nil) { Island.announce(spoken ?? toast.text) }
     // 到期只让提示淡出；删掉的在面板收起时才提交（⌘Z 一直有效）
     toastTask = Task {
-      try? await Task.sleep(for: .seconds(seconds))
+      try? await Task.sleep(for: .seconds(toast.seconds))
       guard !Task.isCancelled else { return }
       self.toast = nil
     }

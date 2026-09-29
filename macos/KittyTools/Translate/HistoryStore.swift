@@ -20,6 +20,8 @@ import Observation
 
   /// 每次改动 +1：视图读它来刷新查询结果
   private(set) var revision = 0
+  /// 清空过几次：历史列表的 ⌘Z 只插回同一次清空之后删掉的（清空像剪贴板的「立即清空」一样不能撤）
+  @ObservationIgnored private(set) var clears = 0
   @ObservationIgnored private let db: Database
 
   init(db: Database) throws {
@@ -169,6 +171,7 @@ import Observation
 
   /// 清空非收藏的历史
   func clearNonFavorites() {
+    clears += 1
     write { try db.execute("DELETE FROM translations WHERE favorite = 0") }
   }
 

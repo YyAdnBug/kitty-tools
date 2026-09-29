@@ -103,6 +103,7 @@ struct ScreenshotBatch7Tests {
   // 面板按钮叫法和截图工具栏一致：拷贝 / 存储到「访达里的名字」/ 另存为…（B41）
   @Test func scrollPanelUsesShotWording() throws {
     let folder = FileManager.default.displayName(atPath: ScreenshotOutput.saveDirectory.path)
+    #expect(ScreenshotOutput.saveTitle == "存储到「\(folder)」")  // 四处共用的叫法
     let tips = Set(
       ScrollCaptureHUD().subviews.flatMap(\.subviews).flatMap { [$0] + $0.subviews }
         .compactMap { ($0 as? NSButton)?.toolTip })

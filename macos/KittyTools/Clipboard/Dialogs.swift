@@ -251,7 +251,6 @@ private struct ManageGroupsDialog: View {
   /// 正在拖的那一行和它跟着指针走了多远
   @State private var drag: (id: UUID, dy: CGFloat)?
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(\.colorSchemeContrast) private var contrast
 
   static let rowHeight: CGFloat = 28
   /// 超过这么多行在列表里滚动（给半行，露出下面还有）
@@ -312,10 +311,7 @@ private struct ManageGroupsDialog: View {
       .padding(.horizontal, 8)
       .frame(height: Self.rowHeight)
       .background(fill, in: shape)
-      // 增强对比度：中性选中行加 1 pt 品牌粉 0.6 描边（mac-whisker §7）
-      .overlay {
-        if isSelected, contrast == .increased { shape.strokeBorder(Style.brand.opacity(0.6)) }
-      }
+      .overlay { if isSelected { shape.contrastSelectionBorder() } }
       .offset(y: offset(of: group, index: index))
       .zIndex(isDragged ? 1 : 0)
       // 拖着的那行跟手（不动画），别的行让位用 snap
@@ -546,33 +542,11 @@ private struct GroupNameField: View {
 }
 
 extension View {
-  /// 对话框里的输入框（Whisker §3）：Style.inputFill 底，焦点环 1 pt 品牌粉 0.55 + 粉 0.18 外发光。
+  /// 对话框里的输入框（Whisker §3）：InputBox（Style.inputFill 底，焦点环 1 pt 品牌粉 0.55 + 粉 0.18 外发光）加内边距。
   /// 只有一个输入框的对话框一直拿着焦点，焦点环常亮；有两个的（新建片段：名称 + 正文）传 focused，没焦点的只描发丝线
   fileprivate func dialogField(horizontalPadding: CGFloat = 6, focused: Bool = true) -> some View {
-    modifier(DialogField(horizontalPadding: horizontalPadding, focused: focused))
-  }
-}
-
-private struct DialogField: ViewModifier {
-  var horizontalPadding: CGFloat = 6
-  var focused = true
-
-  func body(content: Content) -> some View {
-    let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
-    content
-      .padding(.horizontal, horizontalPadding)
+    padding(.horizontal, horizontalPadding)
       .padding(.vertical, 6)
-      .background(Style.inputFill, in: shape)
-      // 外发光画在描边上再模糊（不给整块加 shadow：那样连里面的字都带光晕）
-      .background {
-        if focused { shape.stroke(Style.brand.opacity(0.18), lineWidth: 4).blur(radius: 2) }
-      }
-      .overlay {
-        if focused {
-          shape.strokeBorder(Style.brand.opacity(0.55), lineWidth: 1)
-        } else {
-          shape.hairlineBorder()
-        }
-      }
+      .modifier(InputBox(isFocused: focused))
   }
 }

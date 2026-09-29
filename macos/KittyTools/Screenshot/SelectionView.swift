@@ -446,9 +446,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
   /// 主动播报：本 App 不激活，VoiceOver 的焦点多半不在遮罩上，状态切换要自己说出来
   private func announce(_ text: String) {
     announcement = text
-    NSAccessibility.post(
-      element: NSApp as Any, notification: .announcementRequested,
-      userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+    Island.announce(text)
   }
 
   /// 选区（点）在冻结帧上的像素宽高：尺寸胶囊、旁白共用
@@ -1149,11 +1147,11 @@ final class SelectionView: NSView, NSTextViewDelegate {
     guard let toolbar, let body = toolbar.button(for: .output(.save)),
       let caret = toolbar.button(for: .saveMenu)
     else { return }
-    let directory = FileManager.default.displayName(atPath: ScreenshotOutput.saveDirectory.path)
     present(
       HUDMenu(
         [
-          .init(title: "存储到「\(directory)」", key: "⌘S") { [weak self] in self?.output(.save) },
+          .init(title: ScreenshotOutput.saveTitle, key: "⌘S") { [weak self] in self?.output(.save)
+          },
           .init(title: "另存为…", key: "⇧⌘S") { [weak self] in self?.output(.saveAs) },
         ], label: Self.saveMenuLabel),
       anchor: body.convert(body.bounds, to: self).union(caret.convert(caret.bounds, to: self)))

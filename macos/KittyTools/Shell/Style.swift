@@ -381,6 +381,23 @@ extension InsettableShape {
   func hairlineBorder(_ color: Color = Style.hairline) -> some View {
     HairlineBorder(shape: self, color: color)
   }
+
+  /// 中性选中高亮（Style.selectedFill）在增强对比度时加的 1 pt 强调色 0.6 描边（mac-whisker §7），平时不画。
+  /// 启动器、剪贴板、翻译历史、动作菜单、管理收藏夹、设置侧栏的选中高亮共用
+  func contrastSelectionBorder() -> some View {
+    ContrastSelectionBorder(shape: self)
+  }
+}
+
+private struct ContrastSelectionBorder<S: InsettableShape>: View {
+  let shape: S
+  @Environment(\.colorSchemeContrast) private var contrast
+
+  var body: some View {
+    if contrast == .increased {
+      shape.strokeBorder(Style.brand.opacity(0.6), lineWidth: 1).allowsHitTesting(false)
+    }
+  }
 }
 
 private struct HairlineBorder<S: InsettableShape>: View {
@@ -390,6 +407,34 @@ private struct HairlineBorder<S: InsettableShape>: View {
 
   var body: some View {
     shape.strokeBorder(color, lineWidth: Style.hairlineWidth(contrast)).allowsHitTesting(false)
+  }
+}
+
+/// 输入框底（Whisker §2：Style.inputFill + 发丝线（增强对比度 1 pt），圆角 card）：翻译原文框、历史搜索框、剪贴板对话框的
+/// 输入框、快捷键录制框共用。拿着焦点时换成焦点环（Whisker §3「输入框焦点」：1 pt 品牌粉 0.55 描边 + 粉 0.18 外发光），淡入淡出
+struct InputBox: ViewModifier {
+  var isFocused = false
+  @Environment(\.colorSchemeContrast) private var contrast
+
+  func body(content: Content) -> some View {
+    let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
+    let fade = Animation.easeOut(duration: Style.fadeIn)
+    content
+      .background(Style.inputFill, in: shape)
+      // 外发光画在描边上再模糊（不给整块加 shadow：那样连里面的字都带光晕）
+      .background {
+        shape.stroke(Style.brand.opacity(0.18), lineWidth: 4).blur(radius: 2)
+          .opacity(isFocused ? 1 : 0)
+          .animation(fade, value: isFocused)
+      }
+      .overlay {
+        shape
+          .strokeBorder(
+            isFocused ? Style.brand.opacity(0.55) : Style.hairline,
+            lineWidth: isFocused ? 1 : Style.hairlineWidth(contrast)
+          )
+          .animation(fade, value: isFocused)
+      }
   }
 }
 

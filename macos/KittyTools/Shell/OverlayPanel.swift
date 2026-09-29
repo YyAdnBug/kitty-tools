@@ -217,6 +217,11 @@ final class OverlayPanel: NSPanel {
     onHide?()
   }
 
+  /// 固定着的不动，没固定的立刻收起（截图翻译 / 识字 / 长截图前让开）。固定只看构造时给的 isPinned
+  func hideUnlessPinned() {
+    if !isPinned() { hide() }
+  }
+
   /// 用户关掉（Esc、⌘W、点外面、再按热键、失焦）：系统淡出。窗口逻辑上立刻移走，键盘马上回到原 App
   func dismiss() {
     endSqueeze()
@@ -230,6 +235,23 @@ final class OverlayPanel: NSPanel {
     alphaValue = 1
     removeMouseMonitors()
     onHide?()
+  }
+
+  /// 面板里的一块（SwiftUI 坐标，原点左上）换成屏幕坐标：⌘Y 大卡从选中行长出来、缩回去用（剪贴板透镜、启动器选中行）
+  func screenRect(of rect: CGRect) -> NSRect {
+    NSRect(
+      x: frame.minX + rect.minX, y: frame.maxY - rect.maxY, width: rect.width, height: rect.height)
+  }
+
+  /// 以这块面板为中心摆 size 大的卡片（⌘Y 大卡）：最大到所在屏可见区的 90%，再整个挪进可见区
+  func centeredFrame(_ size: NSSize) -> NSRect {
+    let visible = (screen ?? NSScreen.main)?.visibleFrame ?? .zero
+    let width = min(size.width, visible.width * 0.9)
+    let height = min(size.height, visible.height * 0.9)
+    return NSRect(
+      x: min(max(frame.midX - width / 2, visible.minX), visible.maxX - width),
+      y: min(max(frame.midY - height / 2, visible.minY), visible.maxY - height), width: width,
+      height: height)
   }
 
   /// ⌘Y 放大预览：从 source（屏幕坐标，检查器卡片）长到 target。不抢键盘、点外关闭；已经开着就直接挪到 target。

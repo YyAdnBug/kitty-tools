@@ -1,4 +1,4 @@
-// 多行输入框（包一层 NSTextView）：翻译原文、剪贴板备注 / 编辑 / 片段都用它。回车走 doCommandBy，
+// 多行输入框（包一层 NSTextView）：翻译原文、剪贴板的编辑正文 / 新建片段用它（备注是单行的 CommandTextField）。回车走 doCommandBy，
 // 输入法组字期间由输入法消费、不会误提交。主输入框挂进窗口时设为 initialFirstResponder；
 // 对话框里的输入框出现时抢焦点（给了 focusRequest 的不抢，等它变了才拿：新建片段先填名称、Tab 过来）、
 // 消失时把焦点还给主输入框（焦点已在别的输入框里就不抢）。插入点和选中文字底色是

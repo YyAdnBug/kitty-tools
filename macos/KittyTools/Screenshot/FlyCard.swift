@@ -40,15 +40,9 @@ enum FlyCard {
 
     func land(_ badge: Badge) {
       self.badge = badge
-      FlyCard.announce(badge)
+      // 卡片不接鼠标：主动给 VoiceOver 播报结果
+      Island.announce(badge.title)
     }
-  }
-
-  /// 卡片不接鼠标：主动给 VoiceOver 播报结果
-  static func announce(_ badge: Badge) {
-    NSAccessibility.post(
-      element: NSApp as Any, notification: .announcementRequested,
-      userInfo: [.announcement: badge.title, .priority: NSAccessibilityPriorityLevel.high.rawValue])
   }
 
   /// 飞行中的窗口（连截几张时各飞各的）

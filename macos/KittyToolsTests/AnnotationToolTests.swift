@@ -906,7 +906,9 @@ struct AnnotationToolTests {
     let blurData = try #require(blurred.dataProvider?.data as Data?)
     #expect(pixelData != blurData)
     // 模糊也得认不出原来的字（打码的本意）
-    #expect(await OCR.recognizeText(in: blurred)?.contains("Secret") == false)
+    #expect(
+      await OCR.recognizeLines(in: blurred).map { OCR.text($0, joined: false) }?.contains("Secret")
+        == false)
   }
 
   @Test func highlighterLooksTheSameOnScreenAndInExport() throws {

@@ -187,7 +187,6 @@ final class EditorToolbar: PopView {
   init() {
     super.init(frame: .zero)
     wantsLayer = true
-    let directory = FileManager.default.displayName(atPath: ScreenshotOutput.saveDirectory.path)
     // (item, 符号, 旁白名字, 悬停提示)
     typealias Spec = (Item, String, String, String)
     let left: [[Spec]] = [
@@ -205,7 +204,7 @@ final class EditorToolbar: PopView {
         (.output(.pin), "pin", "钉到屏幕", "钉到屏幕（T）"),
       ],
       [
-        (.output(.save), "square.and.arrow.down", "存储", "存储到「\(directory)」（⌘S）"),
+        (.output(.save), "square.and.arrow.down", "存储", ScreenshotOutput.saveTitle + "（⌘S）"),
         (.saveMenu, "chevron.down", "更多存储选项", "存储到… / 另存为…"),
       ],
       [(.cancel, "xmark", "取消", "取消（Esc）"), (.output(.copy), "checkmark", "拷贝", "拷贝（↩）")],

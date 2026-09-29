@@ -19,7 +19,6 @@ struct HotKeyRecorder: View {
   @State private var monitor: Any?
   /// 录制中按住的修饰键（例如「⌥⇧」）
   @State private var held = ""
-  @Environment(\.colorSchemeContrast) private var contrast
 
   init(action: HotKeyAction, center: HotKeyCenter, message: Binding<String?>) {
     self.action = action
@@ -31,7 +30,6 @@ struct HotKeyRecorder: View {
   private var isRecording: Bool { center.recording == action }
 
   var body: some View {
-    let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
     HStack(spacing: 2) {
       Button(action: toggle) {
         HStack {
@@ -67,20 +65,8 @@ struct HotKeyRecorder: View {
     }
     .font(.system(size: 12))
     .frame(width: 164, height: 26)
-    .background(Style.inputFill, in: shape)
-    .overlay(
-      shape.strokeBorder(
-        isRecording ? Style.brand.opacity(0.55) : Style.hairline,
-        lineWidth: isRecording ? 1 : Style.hairlineWidth(contrast))
-    )
-    // 焦点外发光：框外一圈粉 0.18、3 pt（Whisker §3 状态「输入框焦点」）
-    .background {
-      if isRecording {
-        RoundedRectangle(cornerRadius: Style.Radius.card + 3, style: .continuous)
-          .strokeBorder(Style.brand.opacity(0.18), lineWidth: 3)
-          .padding(-3)
-      }
-    }
+    // 录制中就是拿着焦点：和其它输入框同一个焦点环（Whisker §3「输入框焦点」）
+    .modifier(InputBox(isFocused: isRecording))
     .contextMenu {
       Button("恢复默认") { save(action.defaultHotKey) }
         .disabled(current == action.defaultHotKey)

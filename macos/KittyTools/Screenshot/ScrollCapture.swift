@@ -569,12 +569,11 @@ final class ScrollCaptureHUD: NSVisualEffectView {
     readingView.sizingOptions = [.intrinsicContentSize]
 
     // 截图家族同一套叫法（体检 B41）：拷贝 / 存储到「桌面」（访达里的名字，不写 Desktop）/ 另存为…
-    let folder = FileManager.default.displayName(atPath: ScreenshotOutput.saveDirectory.path)
     let items: [(Item, String, String)] = [
       (.toggleAuto, "play.fill", "自动滚动（空格）"),
       (.cancel, "xmark", "取消（Esc）"),
       (.output(.saveAs), "square.and.arrow.down.on.square", "另存为…（⇧⌘S）"),
-      (.output(.save), "square.and.arrow.down", "存储到「\(folder)」（⌘S）"),
+      (.output(.save), "square.and.arrow.down", ScreenshotOutput.saveTitle + "（⌘S）"),
       (.output(.copy), "checkmark", "拷贝（↩）"),
     ]
     var row: [NSView] = []

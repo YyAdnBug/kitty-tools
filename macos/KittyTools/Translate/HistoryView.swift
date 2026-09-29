@@ -25,8 +25,8 @@ import UniformTypeIdentifiers
   private(set) var selectionMotion = Style.Motion.instant
   /// 刚复制了译文的那条：行尾的时间换成「✓ 已复制」（Style.copiedHold）
   private(set) var copiedID: UUID?
-  /// 删掉的条目（⌘Z 从后往前插回）；开 / 关历史时清空
-  @ObservationIgnored private var deleted: [HistoryStore.Entry] = []
+  /// 删掉的条目和删的时候 store 清空过几次（⌘Z 从后往前插回，清空之前删的不再插回）；开 / 关历史时清空
+  @ObservationIgnored private var deleted: [(entry: HistoryStore.Entry, clears: Int)] = []
   @ObservationIgnored private var copyTask: Task<Void, Never>?
   /// 刘海岛（AppDelegate 给，单测里是 nil）：删除后告诉用户可以 ⌘Z
   @ObservationIgnored var island: Island?
@@ -130,7 +130,7 @@ import UniformTypeIdentifiers
   /// 删一条（不确认，⌘Z 撤销）
   func delete(_ entry: HistoryStore.Entry) {
     moveSelection(awayFrom: entry)
-    deleted.append(entry)
+    deleted.append((entry, store.clears))
     withAnimation(Style.Motion.settle.animation()) { store.delete(entry.id) }
     // 行消失看得见，能 ⌘Z 撤销却只有读屏用户知道（岛自己也会播报）
     island?.show("已删除", detail: "⌘Z 撤销", tone: .info, symbol: "trash")
@@ -139,11 +139,12 @@ import UniformTypeIdentifiers
   /// ⌘Z：插回最近删掉的一条并选中它；没有可撤销的返回 false（交还输入框自己的撤销）
   @discardableResult
   func undoDelete() -> Bool {
-    guard let entry = deleted.popLast() else { return false }
+    deleted.removeAll { $0.clears != store.clears }
+    guard let entry = deleted.popLast()?.entry else { return false }
     withAnimation(Style.Motion.settle.animation()) { store.restore(entry) }
     selectionMotion = .snap
     selectedID = entry.id
-    Self.announce("已恢复")
+    Island.announce("已恢复")
     return true
   }
 
@@ -157,7 +158,7 @@ import UniformTypeIdentifiers
       try? await Task.sleep(for: Style.copiedHold)
       if !Task.isCancelled { copiedID = nil }
     }
-    Self.announce(source ? "已复制原文" : "已复制译文")
+    Island.announce(source ? "已复制原文" : "已复制译文")
   }
 
   /// 选中的这条要从列表里消失（删除、「收藏」范围里取消收藏）：选中挪到下一条（最后一条时挪到上一条）
@@ -235,10 +236,9 @@ import UniformTypeIdentifiers
   /// 一条记录的动作（⌘K 和右键菜单同一份）：单条操作 ｜ 导出 ›（全部 / 只收藏 × CSV / Anki TSV）/ 清空历史…
   func actions(for entry: HistoryStore.Entry) -> [ActionMenu.Item] {
     typealias Item = ActionMenu.Item
-    let exports = [(false, false), (false, true), (true, false), (true, true)].map {
-      favoritesOnly, anki in
+    let exports = HistoryMenu.exports.map { favoritesOnly, anki in
       Item(
-        title: (favoritesOnly ? "只导收藏" : "全部历史") + (anki ? " · TSV（Anki 卡片）…" : " · CSV（表格）…"),
+        title: (favoritesOnly ? "只导收藏" : "全部历史") + " · " + HistoryMenu.formatTitle(anki: anki),
         symbol: favoritesOnly ? "star" : "clock"
       ) { [unowned self] in
         HistoryMenu.export(store, favoritesOnly: favoritesOnly, anki: anki, island: island)
@@ -339,20 +339,13 @@ import UniformTypeIdentifiers
     actionSelection = root.firstIndex { $0.id == id } ?? 0
   }
 
-  /// 搜索框的光标在过滤词最后（没有选中文字）：→ 这时才进子列表，否则照常往右移光标
-  private static func caretAtEnd(of text: String) -> Bool {
+  /// 搜索框的光标在文字最后（没有选中文字）：→ 这时才开动作菜单 / 进子列表，否则照常往右移光标
+  static func caretAtEnd(of text: String) -> Bool {
     guard let editor = NSApp.currentEvent?.window?.firstResponder as? NSTextView,
       editor.isFieldEditor
     else { return text.isEmpty }
     let selection = editor.selectedRange()
     return selection.length == 0 && selection.location == (editor.string as NSString).length
-  }
-
-  /// 没有底栏提示，删除 / 复制的结果主动播报给 VoiceOver
-  private static func announce(_ text: String) {
-    NSAccessibility.post(
-      element: NSApp as Any, notification: .announcementRequested,
-      userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
   }
 }
 
@@ -362,7 +355,6 @@ struct HistoryView: View {
   /// 搜索框拿着焦点：输入框底画焦点环（原文框和它只有一个亮）
   @State private var searchFocused = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(\.colorSchemeContrast) private var contrast
 
   /// 分组标题和行高：高亮按它们的前缀和定位，视图里的高度必须正好是这两个值
   static let headerHeight: CGFloat = 24
@@ -473,10 +465,7 @@ struct HistoryView: View {
       let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
       shape
         .fill(Style.selectedFill)
-        // 增强对比度：中性选中再加 1 pt 品牌粉 0.6 描边（Whisker §7）
-        .overlay {
-          if contrast == .increased { shape.strokeBorder(Style.brand.opacity(0.6), lineWidth: 1) }
-        }
+        .overlay { shape.contrastSelectionBorder() }
         .frame(height: Self.rowHeight)
         .offset(y: offset)
         .animation(list.selectionMotion.animation(reduced: reduceMotion), value: selected.id)
@@ -564,6 +553,7 @@ struct HistoryView: View {
     return sections
   }
 
+  /// 分组标题（剪贴板按天分组也用它）
   static func dayTitle(_ date: Date, now: Date, calendar: Calendar) -> String {
     if calendar.isDate(date, inSameDayAs: now) { return "今天" }
     if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
@@ -595,6 +585,17 @@ struct HistoryView: View {
 
 /// 历史的导出和清空：浮窗「⋯」菜单、历史 ⌘K / 右键、设置 › 翻译共用（体检 B28 C6）
 enum HistoryMenu {
+  /// 能导出的四种：全部 / 只收藏 × CSV / Anki TSV（三处菜单同一张表）
+  static let exports = [(false, false), (false, true), (true, false), (true, true)]
+
+  static func scopeTitle(favoritesOnly: Bool) -> String {
+    favoritesOnly ? "只导收藏（生词本）" : "全部历史"
+  }
+
+  static func formatTitle(anki: Bool) -> String {
+    anki ? "TSV（Anki 卡片）…" : "CSV（表格）…"
+  }
+
   /// 导出翻译历史 / 收藏：CSV 给表格（带 BOM，Excel 才认 UTF-8），TSV 给 Anki（正面原文、背面译文）。
   /// 结果（含没东西可导、写失败）用刘海说。从浮窗来的（本 App 不在前台）先激活本 App 才弹得出存储面板，
   /// 选完把前台还给原来的 App（同截图另存为）
@@ -633,6 +634,24 @@ enum HistoryMenu {
     history.clearNonFavorites()
     island?.show(
       "已清空翻译历史", detail: kept > 0 ? "保留了 \(kept) 条收藏" : nil, symbol: "trash")
+  }
+}
+
+/// 「导出」菜单的内容（SwiftUI 菜单：浮窗「⋯」、设置 › 翻译共用）：全部历史 / 只导收藏（生词本）两节，各 CSV / TSV
+struct HistoryExportItems: View {
+  let history: HistoryStore
+  let island: Island?
+
+  var body: some View {
+    ForEach([false, true], id: \.self) { favoritesOnly in
+      Section(HistoryMenu.scopeTitle(favoritesOnly: favoritesOnly)) {
+        ForEach([false, true], id: \.self) { anki in
+          Button(HistoryMenu.formatTitle(anki: anki)) {
+            HistoryMenu.export(history, favoritesOnly: favoritesOnly, anki: anki, island: island)
+          }
+        }
+      }
+    }
   }
 }
 

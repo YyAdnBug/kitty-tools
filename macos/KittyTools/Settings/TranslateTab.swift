@@ -147,25 +147,17 @@ struct TranslateTab: View {
           .help("复制即译弹出的翻译不会自动复制，免得覆盖你刚复制的原文")
         Toggle("记录翻译历史", isOn: $historyEnabled)
         Picker("历史最多保留", selection: $historyLimit) {
-          Text("1000 条").tag(1000)
-          Text("5000 条").tag(5000)
-          Text("不限").tag(0)
+          // 档位和 Prefs.migrate 读同一张表：旧档位迁过来，不会显示成空白
+          ForEach(Prefs.translateHistoryLimitChoices, id: \.self) {
+            Text($0 == 0 ? "不限" : "\($0) 条").tag($0)
+          }
         }
         .pickerStyle(.segmented)
         .disabled(!historyEnabled)
         LabeledContent("导出和清空") {
           HStack(spacing: 8) {
-            Menu("导出…") {
-              Section("全部历史") {
-                Button("CSV（表格）…") { export(favoritesOnly: false, anki: false) }
-                Button("TSV（Anki 卡片）…") { export(favoritesOnly: false, anki: true) }
-              }
-              Section("只导收藏（生词本）") {
-                Button("CSV（表格）…") { export(favoritesOnly: true, anki: false) }
-                Button("TSV（Anki 卡片）…") { export(favoritesOnly: true, anki: true) }
-              }
-            }
-            .fixedSize()
+            Menu("导出…") { HistoryExportItems(history: history, island: island) }
+              .fixedSize()
             // 关着「记录翻译历史」也能清（旧记录还在），和浮窗「⋯」菜单同一个确认框、同一句结果
             Button("清空翻译历史…", role: .destructive) { confirmsClear = true }
           }
@@ -203,11 +195,6 @@ struct TranslateTab: View {
   private func sameLanguage(_ a: String, _ b: String) -> Bool {
     guard let a = Lang(rawValue: a), let b = Lang(rawValue: b) else { return false }
     return a.isSameLanguage(as: b)
-  }
-
-  /// 导出翻译历史 / 收藏（和浮窗「⋯」菜单、历史 ⌘K 同一个 HistoryMenu.export）
-  private func export(favoritesOnly: Bool, anki: Bool) {
-    HistoryMenu.export(history, favoritesOnly: favoritesOnly, anki: anki, island: island)
   }
 
   /// 「+」（体检 B21 D15）：还没加的内置服务（18 pt 服务图标）｜「AI 服务」子菜单（厂商预设：名称、协议、地址填好）

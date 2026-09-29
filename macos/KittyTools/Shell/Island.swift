@@ -102,7 +102,8 @@ import SwiftUI
     }
     if tone == .error { shakes += 1 }
     onToneChange?(tone)
-    announce(next)
+    // 窗口不接鼠标，VoiceOver 读不到：主动播报
+    Self.announce([next.title, next.detail].compactMap { $0 }.joined(separator: "，"))
     let seconds: Double =
       switch tone {
       case .progress: 60
@@ -197,9 +198,9 @@ import SwiftUI
     return panel
   }
 
-  /// 窗口不接鼠标，VoiceOver 读不到：主动播报
-  private func announce(_ content: Content) {
-    let text = [content.title, content.detail].compactMap { $0 }.joined(separator: "，")
+  /// VoiceOver 主动播报（全 App 同一个入口）：焦点一直在搜索框 / 原文框，或者窗口本来就不接鼠标（岛、钉图、飞行卡片），
+  /// 看不到焦点的变化要自己说出来
+  static func announce(_ text: String) {
     NSAccessibility.post(
       element: NSApp as Any, notification: .announcementRequested,
       userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])

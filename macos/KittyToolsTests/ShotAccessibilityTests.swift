@@ -115,9 +115,10 @@ struct ShotAccessibilityTests {
     #expect(view.accessibilityLabel() == "钉图")
     #expect(view.accessibilityValue() as? String == "200 × 100 点，透明度 80%")
     let actions = try #require(view.accessibilityCustomActions())
-    let folder = FileManager.default.displayName(atPath: ScreenshotOutput.saveDirectory.path)
     #expect(
-      actions.map(\.name) == ["拷贝", "识字并拷贝", "翻译", "存储到「\(folder)」", "另存为…", "原始大小", "关闭"])
+      actions.map(\.name) == [
+        "拷贝", "识字并拷贝", "翻译", ScreenshotOutput.saveTitle, "另存为…", "原始大小", "关闭",
+      ])
     for action in actions.prefix(5) { #expect(action.handler?() == true) }
     #expect(outputs == [.copy, .recognize, .translate, .save, .saveAs])
     #expect(actions.last?.handler?() == true)

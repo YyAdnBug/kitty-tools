@@ -97,7 +97,7 @@ xcuserdata/
 | Swift 6.2，Swift 6 语言模式；`SWIFT_DEFAULT_ACTOR_ISOLATION=MainActor`、`SWIFT_APPROACHABLE_CONCURRENCY=YES`（写在 xcconfig，M0 用 `-showBuildSettings` 验证生效） | 工具链 | 严格并发检查，默认跑在主线程 |
 | SwiftUI：`App`、`MenuBarExtra(.menu)`、`Form`、`ContentUnavailableView` | 13 / 14 | 菜单栏和全部视图 |
 | Observation `@Observable` | 14 | store 和 view model |
-| AppKit：`NSPanel`、`NSHostingView`、`NSWindow` + `NSTabViewController(.toolbar)`、`NSTextField`/`NSTextView`、`NSEvent` 监听、`NSWorkspace`、`NSRunningApplication` | 10.x | 不激活前台的浮层、设置窗、兼容输入法的输入框、来源 App、单实例检查 |
+| AppKit：`NSPanel`、`NSHostingView`、`NSWindow` + `NSHostingController`（设置窗装 SwiftUI `NavigationSplitView`）、`NSStatusItem`（菜单栏图标与菜单）、`NSTextField`/`NSTextView`、`NSEvent` 监听、`NSWorkspace`、`NSRunningApplication` | 10.x | 不激活前台的浮层、设置窗、兼容输入法的输入框、来源 App、单实例检查 |
 | Carbon HIToolbox `RegisterEventHotKey`；`TISCopyCurrentKeyboardLayoutInputSource` + `UCKeyTranslate` | 10.0（26.2 SDK 中未废弃） | 全局热键；录制快捷键时显示键名 |
 | ApplicationServices：`AXIsProcessTrustedWithOptions`、`AXUIElement`、`AXUIElementSetMessagingTimeout` | 10.x | 辅助功能授权、读取选中文本 |
 | CoreGraphics `CGEvent` | 10.x | 模拟 ⌘V / ⌘C；长截图自动滚动发像素级滚轮事件（`CGWarpMouseCursorPosition` 先把光标挪进选区） |
@@ -112,8 +112,8 @@ xcuserdata/
 | Foundation `URLSession.bytes(for:)`、`AttributedString(markdown:)` | 12 | SSE 流式输出、行内 Markdown |
 | CryptoKit：`Insecure.MD5`、`SHA256` | 10.15 | 百度 / 有道签名、图片去重 hash |
 | Security `SecItem*` | — | API Key 存钥匙串 |
-| Foundation `URLSession.download`、`Process`（调系统的 `/usr/bin/ditto`、`/usr/bin/codesign`；共用 `Shell/Subprocess.swift`） | — | 应用内更新：下载更新包、解包、验签（D8） |
-| 启动器系统命令（D2，2026-09-27）：`Process` 调 `/usr/bin/pmset`（睡眠、关闭显示器）和 `/usr/bin/osascript`（访达清倒废纸篓、loginwindow 的退出登录 / 重新启动 / 关机 Apple Event、`set volume`）；`NSRunningApplication` 的 `terminate` / `forceTerminate` / `hide`；`FileManager.unmountVolume`；`dlopen` / `dlsym` 系统私有 `login.framework` 的 `SACLockScreenImmediate`（锁屏，用户拍板的唯一私有 API，找不到退回 `CGEvent` 模拟 ⌃⌘Q）；entitlement `com.apple.security.automation.apple-events` + `NSAppleEventsUsageDescription` | 10.x | 锁屏、睡眠、屏保、废纸篓、退出登录 / 重启 / 关机、退出 / 隐藏 / 强制退出 App、推出磁盘、音量 |
+| Foundation `URLSession.download`、`Process`（调系统的 `/usr/bin/ditto`、`/usr/bin/codesign`、`/bin/chmod`；启动器 kill 列进程的 `/bin/ps`、`/usr/sbin/lsof`；浏览历史的 `/usr/bin/sqlite3 -readonly -json -init /dev/null`；共用 `Shell/Subprocess.swift`，要的输出写临时文件） | — | 应用内更新：下载更新包、解包、验签（D8）；kill 列后台进程和监听端口（体检 D12）；导出 Chrome 浏览历史（体检 D8） |
+| 启动器系统命令（D2，2026-09-27）：`Process` 调 `/usr/bin/pmset`（睡眠、关闭显示器）和 `/usr/bin/osascript`（访达清倒废纸篓、loginwindow 的退出登录 / 重新启动 / 关机 Apple Event、`set volume`）；`NSRunningApplication` 的 `terminate` / `forceTerminate` / `hide`；`FileManager.unmountVolume`；`dlopen` / `dlsym` 系统私有 `login.framework` 的 `SACLockScreenImmediate`（锁屏，用户拍板的唯一私有 API，找不到退回 `CGEvent` 模拟 ⌃⌘Q）；entitlement `com.apple.security.automation.apple-events` + `NSAppleEventsUsageDescription`；`kill(2)` 给 kill 列的进程发 SIGTERM / SIGKILL（体检 D12） | 10.x | 锁屏、睡眠、屏保、废纸篓、退出登录 / 重启 / 关机、退出 / 隐藏 / 强制退出 App、推出磁盘、音量、结束进程 |
 | 系统 libsqlite3（`import SQLite3`；本机 3.43.2，带 FTS5） | — | 剪贴板历史和翻译历史 |
 | ServiceManagement `SMAppService.mainApp` | 13 | 开机自启 |
 | `os.Logger`、Swift Testing | 11 / Xcode 16 | 日志、单元测试 |
@@ -240,14 +240,14 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 
 | 目录 | 文件 |
 |---|---|
-| `App/` | `KittyToolsApp.swift`（@main 和 MenuBarExtra）、`AppDelegate.swift`（单实例检查、组装对象、生命周期、退出和锁屏清理）、`Updater.swift`（应用内更新，D8） |
-| `Shell/` | `OverlayPanel.swift`、`HotKeyCenter.swift`、`HotKeyRecorder.swift`、`Permissions.swift`（辅助功能、屏幕录制、文件和文件夹授权；自动化被拒时打开系统设置）、`Paster.swift`（自家写剪贴板的唯一出口；`write(string:record:)` 把本 App 生成的新文字同时记进剪贴板历史）、`Subprocess.swift`（进程外跑系统命令行工具：更新的 ditto / codesign、系统命令的 pmset / osascript、kill 的 ps / lsof、浏览历史的 sqlite3；要的输出写临时文件，不受 64 KB 管道缓冲限制）、`Style.swift`（Whisker 刻度：圆角、七条弹簧曲线、中性色 / 家族色、输入框底、复制对勾停留、卡片表面 `CardSurface`、发丝线 `Hairline` / `hairlineBorder`、主按钮 `BrandButtonStyle`、种类色块、键帽、面板描边）、`HoverTracker.swift`（列表行悬停：`.activeAlways` 追踪区，非激活浮层里代替 `onHover`）、`Accent.swift`（强调色：跟随系统 + 8 色、配色计算、根视图的 `.appAccent()`）、`Island.swift`（刘海岛：全局轻提示，替换原来的 Toast）、`StatusItem.swift`（菜单栏图标与菜单，NSStatusItem，Whisker D 的呼吸 / 弹一下）、`ActionMenu.swift`（剪贴板 ⌘K、剪贴板筛选面板、剪贴板多选的收藏夹列表、启动器 ⌘K 共用的动作菜单：分节、一级子列表、共用过滤 `filter`（子串 + 拼音前缀），体检 C3 C4） |
-| `Storage/` | `Database.swift`、`Keychain.swift`、`Prefs.swift`、`LegacyImport.swift` |
-| `Clipboard/` | `ClipboardWatcher.swift`、`ClipboardStore.swift`、`ClipItem.swift`、`ClipboardFilter.swift`、`ContentForm.swift`、`Search.swift`、`ImageStore.swift`、`OCR.swift`、`ClipboardPanelView.swift`、`ClipRowView.swift`、`PreviewView.swift`、`Dialogs.swift`、`LinkPreview.swift`（链接富预览：按块读网页 og 标签、isFetchable、内存缓存）、`QuickLookView.swift`（⌘Y 放大预览）、`ClipDrag.swift`（行拖到别的 App：AppKit 拖放会话 + 行首图标块和标题的预览，体检 D3） |
-| `Translate/` | `TranslateCoordinator.swift`、`LanguageResolver.swift`、`SelectionReader.swift`、`SSE.swift`、`Providers/`（`Zhipu`、`AIService`、`Baidu`、`Youdao`、`Google`、`DeepL`、`Microsoft`、`Volcengine`、`Tencent` 各一个 `.swift`）、`TranslatePanelView.swift`、`ProviderCardView.swift`（含服务身份 `ServiceTile`：官方 logo 或品牌色块，彗星边框、骨架扫光）、`RevealText.swift`（流式译文显影，TextRenderer）、`HistoryStore.swift`、`HistoryView.swift`（含历史 ⌘K 的动作和 `HistoryMenu`：导出、清空，浮窗「⋯」菜单 / 历史 ⌘K / 设置 › 翻译共用）、`Speaker.swift`（朗读：收起即停、挑高音质声线）、`WordLookup.swift`（查词：是不是一个词、系统词典查询与解析、单词模式示例，D4）、`DictionaryCardView.swift`（系统词典卡） |
+| `App/` | `KittyToolsApp.swift`（@main；唯一的 scene 是不插入菜单栏的 MenuBarExtra，菜单栏图标在 `Shell/StatusItem.swift`）、`AppDelegate.swift`（单实例检查、组装对象、生命周期、退出和锁屏清理）、`Updater.swift`（应用内更新，D8）、`Log.swift`（统一日志 os.Logger，不记密钥、URL、剪贴板正文） |
+| `Shell/` | `OverlayPanel.swift`、`HotKeyCenter.swift`、`HotKeyRecorder.swift`、`Permissions.swift`（辅助功能、屏幕录制、文件和文件夹授权；自动化被拒时打开系统设置）、`Paster.swift`（自家写剪贴板的唯一出口；`write(string:record:)` 把本 App 生成的新文字同时记进剪贴板历史）、`Subprocess.swift`（进程外跑系统命令行工具：更新的 ditto / codesign、系统命令的 pmset / osascript、kill 的 ps / lsof、浏览历史的 sqlite3；要的输出写临时文件，不受 64 KB 管道缓冲限制）、`Style.swift`（Whisker 刻度：圆角、七条弹簧曲线、中性色 / 家族色、输入框 `InputBox`、复制对勾停留、卡片表面 `CardSurface`、增强对比度的选中描边 `contrastSelectionBorder`、发丝线 `Hairline` / `hairlineBorder`、主按钮 `BrandButtonStyle`、种类色块、键帽、面板描边）、`HoverTracker.swift`（列表行悬停：`.activeAlways` 追踪区，非激活浮层里代替 `onHover`；剪贴板、翻译历史、启动器行共用）、`CommandTextField.swift`（单行输入框：方向键 / 回车 / Tab / Esc 走 doCommandBy，对话框输入框、`maxLength`）、`BarNotice.swift`（剪贴板面板、启动器底栏左边的就地提示）、`Accent.swift`（强调色：跟随系统 + 8 色、配色计算、根视图的 `.appAccent()`）、`Island.swift`（刘海岛：全局轻提示，替换原来的 Toast；`Island.announce` 是 VoiceOver 主动播报的唯一入口）、`StatusItem.swift`（菜单栏图标与菜单，NSStatusItem，Whisker D 的呼吸 / 弹一下；`MenuExtra`：菜单栏和启动器内置动作共用的非热键项）、`ActionMenu.swift`（剪贴板 ⌘K、剪贴板筛选面板、剪贴板多选的收藏夹列表、启动器 ⌘K、翻译历史 ⌘K 共用的动作菜单：分节、一级子列表、共用过滤 `filter`（子串 + 拼音前缀），体检 C3 C4） |
+| `Storage/` | `Database.swift`、`Keychain.swift`、`Prefs.swift`（~~`LegacyImport.swift`~~ 2026-09-26 随旧版导入删掉） |
+| `Clipboard/` | `ClipboardWatcher.swift`、`ClipboardStore.swift`、`ClipItem.swift`、`ClipboardFilter.swift`、`ContentForm.swift`、`Search.swift`、`ImageStore.swift`、`OCR.swift`、`ClipboardPanelModel.swift`（面板状态与操作：筛选标签、选中 / 多选、键盘命令、粘贴 / 复制 / 删除撤销栈、⌘K）、`ClipboardPanelView.swift`、`ClipRowView.swift`、`LensView.swift`（透镜：选中行原地展开的预览）、`PreviewView.swift`、`Dialogs.swift`、`Snippet.swift`（片段占位符展开）、`LinkPreview.swift`（链接富预览：按块读网页 og 标签、isFetchable、内存缓存）、`QuickLookView.swift`（⌘Y 放大预览）、`ClipDrag.swift`（行拖到别的 App：AppKit 拖放会话 + 行首图标块和标题的预览，体检 D3） |
+| `Translate/` | `TranslateCoordinator.swift`、`TranslateService.swift`（服务列表与配置：内置 8 家可删可加回、自建 AI 实例、厂商预设）、`Language.swift`（应用内语言、语种检测、源 / 目标解析）、`SelectionReader.swift`、`SourceTextView.swift`（多行输入框：翻译原文、剪贴板编辑正文 / 新建片段）、`HTTP.swift`（JSON POST、SSE 读取、中文错误信息）、`SSE.swift`、`Providers/`（`Zhipu.swift`、`AIService.swift`（OpenAI 兼容 / Azure / Anthropic，也给智谱复用流式请求）、`RESTProviders.swift`（百度、有道、Google、DeepL / DeepLX、微软）、`CloudProviders.swift`（火山、腾讯，请求签名）、`Signing.swift`（摘要工具、非流式请求包装））、`TranslatePanelView.swift`、`ProviderCardView.swift`（含服务身份 `ServiceTile`：官方 logo 或品牌色块，彗星边框、骨架扫光）、`RevealText.swift`（流式译文显影，TextRenderer）、`HistoryStore.swift`、`HistoryView.swift`（含历史 ⌘K 的动作和 `HistoryMenu`：导出、清空，浮窗「⋯」菜单 / 历史 ⌘K / 设置 › 翻译共用）、`Speaker.swift`（朗读：收起即停、挑高音质声线）、`WordLookup.swift`（查词：是不是一个词、系统词典查询与解析、单词模式示例，D4）、`DictionaryCardView.swift`（系统词典卡） |
 | `Settings/` | `GeneralTab.swift`、`HotkeysTab.swift`、`ClipboardTab.swift`、`TranslateTab.swift`、`AboutTab.swift`、`LauncherTab.swift`、`ScreenshotTab.swift`、`SettingsWindow.swift`（D 阶段从 Shell 搬来：NavigationSplitView 侧栏 + 搜索 + 页头）、`OnboardingView.swift`（首次安装的欢迎引导：欢迎 + 按一下试试）、`ShortcutsSheet.swift`（快捷键速查表 + `ShortcutsButton`）、`OrderedList.swift`（可拖动排序列表共用的「+ −」按钮条、行高、详情页页头）、`TranslateServiceDetail.swift`（翻译服务详情页）、`SearchEngineDetail.swift`（网页搜索 / 快捷链接详情页） |
-| `Launcher/` | `LauncherItem.swift`（结果项与内置动作）、`AppCatalog.swift`（App 目录 + 中文名 + 拼音）、`LauncherMatch.swift`（匹配与排序纯函数）、`LauncherUsage.swift`（使用记录表 + 收藏表 launcher_favorites，体检 D13）、`LauncherModel.swift`、`LauncherPanelView.swift`、`FileSearch.swift`（文件搜索：open / find / 空格开头，NSMetadataQuery 查询、排除、排序、最近的文件、授权提示，M13）、`SystemCommands.swift`（系统命令目录、quit / hide / forcequit / eject / kill 解析与只读列举，D2）、`SystemControl.swift`（系统命令的执行：锁屏、pmset、osascript、退出 App、推出、给进程发信号）、`Processes.swift`（kill 列的后台进程：ps / lsof 输出解析与排序，体检 D12）、`SiteIcons.swift`（网址行的网站图标：读本机 Chrome Favicons 库 + 链接预览，按主机缓存，体检 D6）、`BrowserHistory.swift`（Chrome 浏览历史：克隆后 sqlite3 导出、解析、行，体检 D8）；`AppCatalog.swift` 顺带扫系统设置面板（体检 D9），`Calculator.swift` 含单位换算表和进制（体检 D11） |
-| `Screenshot/` | `ScreenCapture.swift`（逐屏冻结帧 + 同一刻的窗口 Z 序快照）、`RegionSelector.swift`（框选会话、每屏一个遮罩、选区几何纯函数）、`SelectionView.swift`（遮罩画面与交互：图层绘制、窗口悬停、手柄、放大镜、工具栏）、`ScreenshotOutput.swift`（PNG、快速保存、另存为）、`PinPanel.swift`（钉图）、`Annotation.swift`（标注模型，显示与导出共用 draw，M10）、`EditorToolbar.swift`（HUD 主工具栏 + 样式托盘，M10，Whisker 重做）、`FlyCard.swift`（截图飞入右下角 + 快门声，Whisker S1）、`ScrollCapture.swift`（长截图会话：边框、侧边面板、抓帧循环、自动滚动）、`ScrollStitcher.swift`（长截图拼接，纯逻辑）、`ShotShelf.swift`（CleanShot 式常驻缩略图，Whisker D） |
+| `Launcher/` | `LauncherItem.swift`（结果项与内置动作）、`AppCatalog.swift`（App 目录 + 中文名 + 拼音）、`LauncherMatch.swift`（匹配与排序纯函数）、`LauncherUsage.swift`（使用记录表 + 收藏表 launcher_favorites，体检 D13）、`LauncherModel.swift`、`LauncherPanelView.swift`、`FileSearch.swift`（文件搜索：open / find / 空格开头，NSMetadataQuery 查询、排除、排序、最近的文件、授权提示，M13）、`SystemCommands.swift`（系统命令目录、quit / hide / forcequit / eject / kill 解析与只读列举，D2）、`SystemControl.swift`（系统命令的执行：锁屏、pmset、osascript、退出 App、推出、给进程发信号）、`Processes.swift`（kill 列的后台进程：ps / lsof 输出解析与排序，体检 D12）、`SiteIcons.swift`（网址行的网站图标：读本机 Chrome Favicons 库 + 链接预览，按主机缓存，体检 D6）、`BrowserHistory.swift`（Chrome 浏览历史：克隆后 sqlite3 导出、解析、行，体检 D8）、`Bookmarks.swift`（Chromium 系浏览器的书签 JSON）、`DirectItems.swift`（网址 / 路径直达，纯函数）、`WebSearch.swift`（网页搜索与快捷链接列表）；`AppCatalog.swift` 顺带扫系统设置面板（体检 D9），`Calculator.swift` 含单位换算表和进制（体检 D11） |
+| `Screenshot/` | `ScreenCapture.swift`（逐屏冻结帧 + 同一刻的窗口 Z 序快照）、`RegionSelector.swift`（框选会话、每屏一个遮罩、选区几何纯函数）、`SelectionView.swift`（遮罩画面与交互：图层绘制、窗口悬停、手柄、放大镜、工具栏）、`ScreenshotOutput.swift`（PNG、快速保存、另存为）、`PinPanel.swift`（钉图）、`Annotation.swift`（标注模型，显示与导出共用 draw，M10）、`EditorToolbar.swift`（HUD 主工具栏 + 样式托盘，M10，Whisker 重做）、`FlyCard.swift`（截图飞入右下角 + 快门声，Whisker S1）、`ScrollCapture.swift`（长截图会话：边框、侧边面板、抓帧循环、自动滚动）、`ScrollStitcher.swift`（长截图拼接，纯逻辑）、`ShotShelf.swift`（CleanShot 式常驻缩略图，Whisker D）、`SizeField.swift`（遮罩里的尺寸胶囊：就地输入宽高、比例菜单） |
 
 各 provider 函数签名统一，由 coordinator 里的一个 `switch` 分发。不建 registry 或 factory。
 
@@ -266,12 +266,12 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
 
 **窗口体系**
 - **App 入口与菜单栏**：
-  - `@main struct KittyToolsApp: App` 用 `@NSApplicationDelegateAdaptor` 挂 AppDelegate，唯一的 scene 是 `MenuBarExtra(.menu)`。
+  - `@main struct KittyToolsApp: App` 用 `@NSApplicationDelegateAdaptor` 挂 AppDelegate，~~唯一的 scene 是 `MenuBarExtra(.menu)`~~（D 阶段：菜单栏图标和菜单改成 AppKit `NSStatusItem`（`Shell/StatusItem.swift`，图标要做动效），这里只留一个不插入菜单栏的 MenuBarExtra 当 scene）。
   - `LSUIElement=YES`：不显示 Dock 图标，启动时不闪。
-  - 菜单项：剪贴板历史 / 划词翻译 / 输入翻译 / 复制即译（Toggle）/ 设置… / 退出。快捷键用 `.keyboardShortcut` 显示；热键为空时显示「未设置」。
+  - ~~菜单项：剪贴板历史 / 划词翻译 / 输入翻译 / 复制即译（Toggle）/ 设置… / 退出。快捷键用 `.keyboardShortcut` 显示；热键为空时显示「未设置」。~~ 现状（N15、体检 A26）：按 `HotKeyAction.sections` 分三节，和快捷键页同名同序，每节末尾接那一节的 `MenuExtra`（暂停记录剪贴板、复制即译、有钉图时的两项）；右边是当前生效的快捷键，没设 / 注册失败的留空；最后 设置… / 关于 / 检查更新…（正式版）/ 退出，启动器的内置动作读同一份。
   - 菜单栏图标用单色模板图。左键点击直接弹菜单（HIG 做法），去掉 Tauri 版「左键打开主界面」。
-- **`OverlayPanel: NSPanel`**，建两个实例：
-  - 剪贴板面板：680×520，固定大小。
+- **`OverlayPanel: NSPanel`**，~~建两个实例~~（现在 5 个：剪贴板面板、剪贴板 ⌘Y 大卡、启动器、启动器 ⌘Y 快速查看、翻译浮窗；细节见 mac-overlay-panel §1）：
+  - 剪贴板面板：~~680×520，固定大小~~（透镜指令条：720 宽，和启动器同位置、顶边锚定在可见区 20%，高度按条数伸缩，见 mac-whisker §6）。
   - 翻译浮窗：420×560，最小 360×400，~~用 `setFrameAutosaveName` 记住位置~~（2026-09-28 体检 A13：默认跟随鼠标出现在光标右下，只记用户拖过的位置，`present(anchor:)` + `frameName`，见 mac-overlay-panel §1）。
   - `styleMask` 在 `init` 里一次写全，包含 `.nonactivatingPanel`（初始化后再改不会生效，这正是 Tauri 版不得不 swizzle 的原因）。`canBecomeKey=true`，`canBecomeMain=false`，`isFloatingPanel`，`level=.floating`，`hidesOnDeactivate=false`，`becomesKeyOnlyIfNeeded=false`，`collectionBehavior=[.canJoinAllSpaces, .fullScreenAuxiliary]`，`isMovableByWindowBackground=true`。
   - 显示只调 `orderFrontRegardless()` + `makeKey()`，**永远不调** `NSApp.activate`。
@@ -282,9 +282,9 @@ npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-c
     - 剪贴板面板：对话框 > 多选 > 关闭（固定时也关闭）。
     - 翻译浮窗：对话框 > 历史面板 > 关闭（固定时也关闭，2026-09-28 起）。
     - 顺带修掉 Tauri 版原生 Esc 监听抢先关闭面板的问题（`src-tauri/src/plugins/mac_overlay_panel.rs:365-370`）。
-- **设置窗**：`SettingsWindow` 用 `NSWindow` + `NSTabViewController(tabStyle: .toolbar)`，每个 Tab 一个 `NSHostingController`。
+- **设置窗**：`SettingsWindow` 用 `NSWindow` + ~~`NSTabViewController(tabStyle: .toolbar)`，每个 Tab 一个 `NSHostingController`~~ 一个 `NSHostingController` 装 SwiftUI `NavigationSplitView`（侧栏 + 搜索 + 页头，D 阶段，见 mac-whisker §6 设置）。
   - 不用 SwiftUI `Settings` scene：在 LSUIElement 应用里它会被压到其它 App 后面，而且 `openSettings` 只能在 SwiftUI scene 环境里调用，浮层上的齿轮按钮调不到。
-  - `show()` 的顺序：先把两个 OverlayPanel 按正常隐藏路径收起（包括作废翻译会话，对应 `src-tauri/src/windows/mod.rs:3683-3685`），再 `setActivationPolicy(.regular)` + `NSApp.activate()` + `makeKeyAndOrderFront`；关闭时切回 `.accessory`。
+  - `show()` 的顺序：先把三块浮层（剪贴板、启动器、翻译浮窗）按正常隐藏路径收起（包括作废翻译会话，对应 `src-tauri/src/windows/mod.rs:3683-3685`），再 `setActivationPolicy(.regular)` + `NSApp.activate()` + `makeKeyAndOrderFront`；关闭时切回 `.accessory`。
   - macOS 14 起 `activate()` 是协作式的，不保证一定成功。M3 实测三个入口，到不了最前面就退回 `NSApp.activate(ignoringOtherApps: true)`（已废弃但可用），并写进 `mac-overlay-panel` 技能。
   - 首次安装打开通用页并盖欢迎引导（N14）；~~版本更新后自动打开关于页~~（2026-09-28 体检 A29：更新后不开设置窗、不抢前台，刘海岛「已更新到 x」+ 本版摘要，全文在「关于」）。
 - **依赖注入**：
@@ -705,10 +705,10 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 | 里程碑 | 内容 | 状态 |
 |---|---|---|
 | M7 启动器核心 | `OverlayPanel`（`topAnchored` + `setContentHeight`）、App 目录（文件名 / 显示名 / 中文名 / 拼音全拼与首字母）、内置动作、匹配分档（含跨词首字母 vsc）、`launcher_usage` 使用记录（τ 全局 14 天 / 查询 3 天）、最近使用、旧 JSON 导入、与剪贴板面板互斥 | 已完成 |
-| M8 启动器补全 | Chrome / Edge / Brave 书签（导入时还原被转小写的网址）、网址 / 路径直达（展开 `~`、认 localhost:端口、`Safari.app` 不算网址）、网页搜索（关键词直达 + 兜底，不记使用）、计算器（递归下降，不用 NSExpression）、`cb`（`ClipboardStore.search` 取文本前 30 条）、设置 › 启动器 | 已完成；M9 起按 Alfred / iShot Pro 对标调研重排 |
+| M8 启动器补全 | Chrome / Edge / Brave 书签（导入时还原被转小写的网址）、网址 / 路径直达（展开 `~`、认 localhost:端口、`Safari.app` 不算网址）、网页搜索（关键词直达 + 兜底，不记使用）、计算器（递归下降，不用 NSExpression）、`cb`（~~`ClipboardStore.search` 取文本前 30 条~~，2026-09-26 N9 起改为呼出剪贴板面板并填入关键词）、设置 › 启动器 | 已完成；M9 起按 Alfred / iShot Pro 对标调研重排 |
 | M9 截图框选 + 输出 | 抽出和截图翻译共用的会话（权限 → 冻结 → 框选）；`RegionSelector` 加截图模式：悬停高亮窗口 / 单击截整窗（冻结时拍按 Z 序的窗口快照，§11 #41）、确认后 8 手柄调整 + 方向键微调 + 按住空格平移 + 尺寸标签、放大镜取色（C 复制色值）、D / ⌥X 重拍上次区域；输出 ↩ 复制（同时进剪贴板历史）/ ⌘S 快速保存 / 另存为 / T 钉图；钉图（缩放、透明度、双击或 Esc 关、菜单栏「隐藏全部」） | 已完成（实现要点见下方「截图（Phase 3）」） |
 | M10 标注 + 识字 | 矩形、箭头、文字、马赛克 + 撤销（标注存整屏坐标，调整选区不丢）；工具栏识字 / 翻译按钮；独立识字热键（静默复制、二维码用 Vision `DetectBarcodesRequest`、去换行） | 已完成（实现要点见下方「截图（Phase 3）」） |
-| M11 启动器网址线 + 键盘（对标 Alfred） | 自定义网页搜索（增删排序、多预置引擎）、Quicklink（固定网址 + 别名 + {query}）、兜底列表配置、⌥↩ 访达搜索 / ⌃↩ 网页搜索（按住修饰键换副标题）、Tab 补全（计算结果写回接着算）、cb / 计算结果 ↩ 粘贴、清空 / 单条重置学习记录、呼出时切英文输入法（开关，默认关） | 已完成（实现要点见下方「启动器网址线（M11）」） |
+| M11 启动器网址线 + 键盘（对标 Alfred） | 自定义网页搜索（增删排序、多预置引擎）、Quicklink（固定网址 + 别名 + {query}）、兜底列表配置、⌥↩ 访达搜索 / ⌃↩ 网页搜索（按住修饰键换副标题）、Tab 补全（计算结果写回接着算）、~~cb /~~ 计算结果 ↩ 粘贴（cb 2026-09-26 N9 起改为呼出剪贴板面板）、清空 / 单条重置学习记录、呼出时切英文输入法（开关，默认关） | 已完成（实现要点见下方「启动器网址线（M11）」） |
 | M12 翻译补强（对标 Bob） | 窗口快捷键（⌘R 重试、⌘S 收藏（2026-09-28 体检 A31 改 ⌘D，全 App 收藏统一）、⌘W 关、⌘P 钉住、⌘+/- 字号、⌘1–9 复制第 N 张卡）、用译文替换原文（按钮 + 静默热键，默认不设键）、浮窗高度随内容、卡片折叠状态持久化、收藏筛选与导出 | 已完成（实现要点见下方「翻译补强（M12）」） |
 | 长截图（2026-09-25 插入，用户改主意） | 截图框选后 S / 工具栏进入；实时画面上边滚边拼（往下、往上都行）、侧边预览、空格自动滚动；↩ 拷贝 / ⌘S 存储 / ⇧⌘S 另存为…（2026-09-28 体检 B41 统一叫法）。原生实现，不参考旧版 | 代码已完成，待手测（实现要点见下方「长截图」） |
 | M13 动作面板 + 文件 + 进程 | → / ⌘K 动作面板（打开方式、在访达中显示、复制路径、移到废纸篓，只放零授权动作）；⌘Y Quick Look（先验证 `QLPreviewPanel`，不行嵌 `QLPreviewView`）；open / find 文件搜索（NSMetadataQuery）；kill（GUI App 用 `terminate()`，⌘↩ 才强杀）。quit / hide / forcequit 已随系统命令做了（D2，2026-09-27），kill 只剩非 GUI 进程（SIGTERM） | 文件搜索已完成（待手测，实现要点见下方「文件搜索（M13）」）；动作面板（→ / ⌘K、打开方式、快速查看 ⌘Y、复制路径、移到废纸篓，右键同一份）2026-09-28 体检 C7 C8 做完（待手测，⌘Y 嵌 `QLPreviewView`，同剪贴板大卡）；kill（后台进程 / 端口，SIGTERM / ⌘↩ SIGKILL）2026-09-28 体检 D12 代码完成，待手测（实现要点见下方「启动器新功能（体检第 6 批）」） |
@@ -733,8 +733,8 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 - 网页搜索和快捷链接是**同一张列表**（`SearchEngine`，偏好里的 JSON，字段沿用旧版）：网址里有 `{query}` 的是搜索（「关键词 空格 内容」直达、勾「兜底」的按列表顺序兜底；单输关键词时最前面出一条 `.prompt`「↩ / Tab 补全关键词」，输名字 / 拼音开头时这条提示排在本地结果后面，不抢同名 App；关键词 cb 留给剪贴板指令），没有 `{query}` 的是快捷链接（名字 / 关键词 / 拼音搜到，↩ 打开网址或 / ~ 路径，记成 .url / .path 进使用记录）。旧版设置页强制要求 `{query}`，旧数据不受影响；以前「漏写 {query} 追加到末尾」的兜底去掉。
 - 预置 13 个（Google g、Bing、百度 bd、GitHub gh、知乎 zh、哔哩哔哩 bili、维基 wiki、YouTube yt、地图 map、淘宝 tb、京东 jd、豆瓣 db、MDN），新装默认前 8 个、~~前 3 个兜底~~ 只有第 1 个（Google）兜底，Bing、百度只走关键词（2026-09-28 体检 A24：三行同类通用搜索做同一件事；没存过列表的人列表取默认，会跟着变，改过列表的不变）；已有列表不自动加，设置里「添加」菜单挑。
 - 兜底默认只在没有本地结果时出现，可改成总是附在最后（`launcherFallbackAlways`）。
-- 键盘：↩ 计算结果 / cb 粘贴回原 App（无辅助功能授权时只复制并提示）；⌘↩ App / 路径在访达中显示、计算结果 / cb 只复制；⌥↩（`insertNewlineIgnoringFieldEditor:`）`showSearchResults(forQueryString:)`；⌃↩（`insertLineBreak:`）用第一个兜底搜索；按住 ⌘ / ⌥ / ⌃ 时（`onModifierKeysChanged`）选中行副标题换成替代动作；Tab（`insertTab:`）补全：计算结果、目录「路径/」、搜索「关键词 」、App / 动作 / 网址补标题；程序改输入框文字后光标放末尾。
-- ↩ / ⌥↩ / ⌃↩ 先确认是回车键（⌃O 等别的键绑定也会发这两个选择器，吞掉）；cb ↩ 自己写剪贴板 + ⌘V + 置顶，不借剪贴板面板的 paste（会收起钉住的面板、提交可撤销的删除）；计算器认科学计数，Tab 写回的大 / 小结果能接着算；输入的网址 Tab 保留原样。设置页固定 640 高、表单自己滚。
+- 键盘：↩ 计算结果粘贴回原 App（无辅助功能授权时只复制并提示），cb ↩ 收起启动器、呼出剪贴板面板并把关键词填进它的搜索框（N9）；⌘↩ App / 路径在访达中显示、计算结果只复制，cb 没有 ⌘↩ 动作（提示音）；⌥↩（`insertNewlineIgnoringFieldEditor:`）`showSearchResults(forQueryString:)`；⌃↩（`insertLineBreak:`）用第一个兜底搜索；按住 ⌘ / ⌥ / ⌃ 时（`onModifierKeysChanged`）选中行副标题换成替代动作；Tab（`insertTab:`）补全：计算结果、目录「路径/」、搜索「关键词 」、App / 动作 / 网址补标题；程序改输入框文字后光标放末尾。
+- ↩ / ⌥↩ / ⌃↩ 先确认是回车键（⌃O 等别的键绑定也会发这两个选择器，吞掉）；~~cb ↩ 自己写剪贴板 + ⌘V + 置顶，不借剪贴板面板的 paste（会收起钉住的面板、提交可撤销的删除）~~（N9 起 cb ↩ 交给剪贴板面板搜）；计算器认科学计数，Tab 写回的大 / 小结果能接着算；输入的网址 Tab 保留原样。设置页固定 640 高、表单自己滚。
 - 学习记录：「常用」（2026-09-28 体检 A22 由「最近使用」改名：按全局使用分排，本来就是常用）里 ⌘⌫ 忘掉一项（有查询时 ⌘⌫ 照常删到行首），底栏「已从常用中移除 · 撤销 ⌘Z」，⌘Z 原样放回（体检 B38）；设置里「清空使用记录…」（收藏不动）。
 - 收藏（2026-09-28 体检 D13）：⌘D / ⌘K「加入收藏 / 取消收藏」，存 `launcher_favorites(kind, target, title, position)`（同一个库）；空查询先列收藏（按加入顺序、⌥⌘↑↓ 调，最多 8 个），再用常用补足到 8 行；还原不出来的（App 已卸载、文件已删）直接从收藏里删掉，不占名额、不夹在中间挡 ⌥⌘↑↓；只在有钉图时才有的两个钉图动作不能收藏；两个分组标题时面板高度多算 28。
 - 呼出时切英文输入法（`launcherRomanInput`，默认关）：搜索框字段编辑器的 `allowedInputSourceLocales = [NSAllRomanInputSourcesLocaleIdentifier]`，离开后系统恢复；关掉时显式设回 nil（字段编辑器整个窗口共用）。
@@ -793,7 +793,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 - 屏幕录制权限（TCC）：用 `CGPreflightScreenCaptureAccess` / `CGRequestScreenCaptureAccess` 检查和申请，同样绑定签名。授权提示由系统提供，App 不能自定义文案（没有对应的 Info.plist 键）。macOS 15 会周期性地再次询问屏幕录制授权。
 - 保留冻结底图的铁律：按下热键后先截整屏（ScreenCaptureKit `SCScreenshotManager`，macOS 14+），框选、取色、裁剪都只读这一帧；禁止改回「框选之后再截屏」。
 - 遮罩窗口：每块屏幕一个无边框窗口，层级要高于菜单栏；注意 AppKit（原点在左下）和 CG（原点在左上）的坐标换算，以及多屏拼接。全屏透明窗口的 backing store 是内存大头，不要让它常驻。
-- **截图翻译已实现**（2026-09-24，提前到 Phase 1；用户决策：只用 Vision、原文写剪贴板历史、默认热键 ⌥S）：`AppDelegate.screenshotTranslate` → 屏幕录制授权 → `ScreenCapture.freeze`（每屏一张，当时排除自家浮层和设置窗、保留菜单栏图标；2026-09-26 起按留用名单截得到，见下条）→ `RegionSelector.select`（每屏一个不激活的无边框遮罩，层级高于弹出菜单；拖动框选，Esc / 右键取消；期间暂停全局热键）→ `OCR.recognizeText(in: CGImage)`（自动识别语种、不给语言提示）→ 原文过敏感过滤后记进剪贴板历史 → `TranslateCoordinator.translate` 走现有多服务翻译。截图标注（⌘⇧A）以后做时复用 `ScreenCapture` 和 `RegionSelector`。
+- **截图翻译已实现**（2026-09-24，提前到 Phase 1；用户决策：只用 Vision、原文写剪贴板历史、默认热键 ⌥S）：`AppDelegate.screenshotTranslate` → 屏幕录制授权 → `ScreenCapture.freeze`（每屏一张，当时排除自家浮层和设置窗、保留菜单栏图标；2026-09-26 起按留用名单截得到，见下条）→ `RegionSelector.select`（每屏一个不激活的无边框遮罩，层级高于弹出菜单；拖动框选，Esc / 右键取消；期间暂停全局热键）→ ~~`OCR.recognizeText(in: CGImage)`~~ `OCR.recognizeLines(in:)` + `OCR.text` 按段接行（自动识别语种、不给语言提示；体检 A32 起截图翻译总是按段）→ 原文过敏感过滤后记进剪贴板历史 → `TranslateCoordinator.translate` 走现有多服务翻译。截图标注（⌘⇧A）以后做时复用 `ScreenCapture` 和 `RegionSelector`。
 - 热键：截图 ⌥A、截取上次区域 ⌥X（iShot 的默认键，可连按）、截图翻译 ⌥S（都是只带 ⌥ 的组合，15.0–15.1 注册不了时快捷键页会提示）。
 - **截图已实现（M9，2026-09-24）**：`AppDelegate.screenshot` 与截图翻译共用 `beginCapture`（互斥、收起没固定的浮层）+ `frozenSelection`（授权 → 冻结 → 暂停热键框选 → 恢复）。
   - 冻结：`ScreenCapture.freeze()` 按 `keptOwnWindows` 留用名单留下本 App 开着的窗口（2026-09-26 起浮层、设置窗、钉图都截得到、能悬停选中），同一时刻用 `CGWindowListCopyWindowInfo` 拍窗口快照（从前到后，只要低于程序坞的层和展开的弹出菜单，去掉全透明、太小和不在留用名单里的自家窗口），悬停与单击按 Z 序命中（§11 #41）。
@@ -854,7 +854,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 
 - 修：启动器搜不到 Chrome 书签（2026-09-25）。新版 Chrome（本机 154）登录 Google 账号后把书签存进配置目录里的 `AccountBookmarks`，本机的 `Bookmarks` 变成空的（本机 432 条全在前者）；原来只读后者。现在每个配置目录两个文件都读（格式相同），单测锁住。Chrome 同时写了加密版（`EncryptedAccountBookmarks2`），哪天不再写明文就得解密（要钥匙串「Chrome Safe Storage」授权），到时再做。
 
-**下一步（新会话从这里接着做）**：D4 查词、M13 文件搜索已完成（2026-09-26，待手测）；系统命令（D2 改为做，2026-09-27）代码完成待手测（§12「系统命令手测」）；M13 的动作面板（→ / ⌘K）+ ⌘Y 快速查看（体检第 5 批）、kill 和网站图标 / 浏览历史 / 系统设置面板 / 单位换算（体检第 6 批）都已代码完成待手测（§12 第 5、6 批手测清单；系统设置面板还要逐个核对能跳到）；体检第 7 批截图（A28 B40–B43 B45–B47 C9 D17 D18）代码完成待手测（§12 第 7 批）。M13 没有剩下的；接下来按体检后续批次做，动手前先按对标规则给用户「差距 + 推荐范围」。
+**下一步（新会话从这里接着做）**：D4 查词、M13 文件搜索已完成（2026-09-26，待手测）；系统命令（D2 改为做，2026-09-27）代码完成待手测（§12「系统命令手测」）；M13 的动作面板（→ / ⌘K）+ ⌘Y 快速查看（体检第 5 批）、kill 和网站图标 / 浏览历史 / 系统设置面板 / 单位换算（体检第 6 批）都已代码完成待手测（§12 第 5、6 批手测清单；系统设置面板还要逐个核对能跳到）；体检第 7 批截图（A28 B40–B43 B45–B47 C9 D17 D18）代码完成待手测（§12 第 7 批）；体检收尾（2026-09-29）：版本号改 0.2.0、changelog 写了 0.2.0 条目，收尾审查的问题已修（§12 体检收尾手测），手测过后经用户确认再发 0.2.0。M13 没有剩下的；接下来按体检后续批次做，动手前先按对标规则给用户「差距 + 推荐范围」。
 
 **暂不发版**（用户决定，2026-09-24）：0.1.0 只在本地用 `macos/build-dmg.sh` 打包自用（arm64、Apple Development 签名、无 get-task-allow），不打 tag、不发 GitHub / GitCode；以后要发时再按下面的「发布 0.1.0」步骤（2026-09-27 已改成发到本仓库），且须先经用户确认。
 
@@ -1130,10 +1130,20 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   9. C9 点一下钉图，⌘S：刘海岛「已保存到「桌面」」+ 文件名 + 缩略图，桌面上多一张；⇧⌘S 弹存储面板；右键菜单是「拷贝 ⌘C / 识字并拷贝 O / 翻译 / 存储到「桌面」⌘S / 另存为… ⇧⌘S ｜ 透明度 ▸ / 原始大小 ⌘0 ｜ 关闭 ⌘W」；速查表钉图组同步。
   10. D17 钉一张有文字的图，点一下按 O：岛「已复制」+ 摘录（按设置 › 截图的「接起来」分段）；右键「翻译」：翻译浮窗出来、按段翻（打过码的地方识别不到）。钉一张二维码按 O：复制它的内容。
   11. D18 设置 › 截图「截图后在屏幕角落留缩略图」关掉：↩ 拷贝后卡片飞到右下角弹 ✓，停一下就滑走，不留缩略图；⌘S 同样（角标写「桌面」）；打开减弱动态效果时只有岛。打开开关恢复原样。
+- 体检收尾手测（2026-09-29，收尾审查修复；浅色 / 深色、VoiceOver 各走一遍）：
+  1. 翻译历史（⌘Y）：选中一条、搜索框为空或光标在搜索词末尾时按 →，弹出 ⌘K 动作菜单；搜索词中间按 → 照常移光标。
+  2. 翻译历史里 ⌘⌫ 删一条 →「⋯」菜单「清空历史…」确认 → ⌘Z：不再冒出刚才删掉的那条（清空前的删除不能撤）；清空后再删一条，⌘Z 照常能撤。
+  3. 启动器 open 空格搜到文件 → ⌘Y 预览 → ⌘D：刘海岛「已加入收藏」（底栏被预览盖住）；收藏满 8 个时岛是橙色「收藏最多 8 个…」；预览开着按 ⌘K 或 →：预览缩回，动作菜单在启动器里打开。
+  4. 固定剪贴板面板 → ⌘Y 打开大卡 → ⌥A 框一块和大卡重叠的区域 → S：大卡收走，滚轮和空格自动滚动滚的是下面的窗口。
+  5. 设置窗停在启动器页、打开「查看全部快捷键…」速查表 → 翻译浮窗配置错误卡上点「打开设置」：设置窗到前面，不换页也不出空白详情页；关掉速查表再点一次，直达那个服务的详情页。
+  6. VoiceOver：翻译浮窗 ⌘1 播「已复制译文」，⌘D / 点星标播「已收藏」「已取消收藏」；自动复制不播。
+  7. 菜单栏菜单和启动器「设置」「关于」「检查更新」「暂停记录剪贴板」「复制即译」「显示 / 隐藏全部钉图」同名同序同图标同色（菜单里打开窗口的带「…」）；速查表系统命令 hide 一行写了 ⌘↩ 强制退出。
+  8. 剪贴板底栏撤销提示变成「已删除 N 条 · 撤销 ⌘Z」（中间多了「·」、正文次要色，和启动器一样）；快捷键录制框录制中的焦点环和其它输入框一样（外发光模糊、不是实线外圈）；开增强对比度看六处选中高亮都有 1 pt 强调色描边。
+  9. 设置侧栏搜「常用」「收藏」能到启动器页，搜「浮窗位置」「清空」能到翻译页；设置 › 翻译「历史最多保留」照常显示 1000 条 / 5000 条 / 不限。
 
-**发布 0.1.0**（2026-09-27 改）：`macos/build-dmg.sh` 出 arm64 DMG 和 `_arm64.zip` → 本仓库 github.com/YyAdnBug/kitty-tools 发**正式 release、标 latest**（App 内更新读 `releases/latest`；不碰 Tauri 版的仓库，不跑 `pnpm release:verify`），两个文件都附上，**发布前须经用户确认**；tag `macos-v0.1.0` 打在 `main`。发布前先把 changelog.json 的 0.1.0 条目补全（启动器、截图、应用内更新等还没写进去）。
+**发布**（2026-09-29 改；0.1.0 已于 2026-09-27 发布，tag `macos-v0.1.0`）：`macos/build-dmg.sh` 出 arm64 DMG 和 `_arm64.zip` → 本仓库 github.com/YyAdnBug/kitty-tools 发**正式 release、标 latest**（App 内更新读 `releases/latest`；不碰 Tauri 版的仓库，不跑 `pnpm release:verify`），两个文件都附上，**发布前须经用户确认**；tag `macos-v<版本>` 打在 `main`。下一版 0.2.0：`MARKETING_VERSION` 和 changelog.json 的 0.2.0 条目（系统命令 + 体检 7 批）已写好，发布前按体检手测结果核对这一条；0.1.0 条目是当时发布的内容，不改。
 
-**接手须知**：先读 `AGENTS.md`、`.cursor/rules/mac-native.mdc`，改哪块读哪块的技能（mac-overlay-panel / mac-clipboard / mac-translate）。界面改动用 SnapshotProbeTests 屏幕外渲染自检，**不要**为截图弹出浮层（会抢用户键盘）；联网冒烟 `TEST_RUNNER_KITTY_LIVE_TRANSLATE=1`；真实旧库演练 `TEST_RUNNER_KITTY_LEGACY_DRY_RUN=1`。用户要求：只兼容 macOS、不照搬 Tauri 实现、样式与交互可按 macOS 习惯重新设计、照搬行为前先核对旧逻辑有没有 bug（记入 §11）。
+**接手须知**：先读 `AGENTS.md`、`.cursor/rules/mac-native.mdc`，改哪块读哪块的技能（mac-overlay-panel / mac-clipboard / mac-translate）。界面改动用 SnapshotProbeTests 屏幕外渲染自检，**不要**为截图弹出浮层（会抢用户键盘）；按需开关（默认都不跑）：联网冒烟 `TEST_RUNNER_KITTY_LIVE_TRANSLATE=1`、链接预览 `TEST_RUNNER_KITTY_LIVE_LINK=1`、文件搜索 `TEST_RUNNER_KITTY_LIVE_FILES=1`、菜单开着时热键 `TEST_RUNNER_KITTY_LIVE_HOTKEY=1`、应用内更新整条链路 `TEST_RUNNER_KITTY_UPDATE_ZIP=<zip 路径>`、截图自检 `TEST_RUNNER_KITTY_SNAPSHOT_DIR=<目录>`（~~真实旧库演练 `TEST_RUNNER_KITTY_LEGACY_DRY_RUN=1`~~，旧版导入 2026-09-26 已删）。用户要求：只兼容 macOS、不照搬 Tauri 实现、样式与交互可按 macOS 习惯重新设计、照搬行为前先核对旧逻辑有没有 bug（记入 §11）。
 
 ## 11. 实现原则与旧逻辑问题
 
@@ -1313,5 +1323,6 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 - 2026-09-28 体检拍板（同一方案页 https://claude.ai/artifact/1KuAQRafw2E3QYAM4LULFR ，用户「全部按推荐」）第 5 批启动器·改造与缺陷：A22「最近使用」改名「常用」；D13 收藏（⌘D、空查询先列收藏再用常用补足到 8 行、⌥⌘↑↓ 调顺序、最多 8 个、新表 `launcher_favorites`）；A23 % 改百分号、取模用 mod；A24 默认只让 Google 兜底；A25 标准目录里的 App 副标题留空、别处写位置；A26 内置动作和菜单栏同一份（`HotKeyAction.sections` + 复制即译、钉图、速查表、关于、检查更新，老 id 保留，`AppDelegate.run(_:)` 共用）；A27 没执行就收起的 60 秒内保留查询；B31 呼出前按目录修改时间重扫；B32 中文输入法的算式；B33 单输 cb 不独占、不分大小写；B34 带路径 / 端口时放宽网址后缀；B35 兜底只看显式网址；B36 同分系统命令最后；B37 行的 VoiceOver 动作与悬停；B38 移除常用可撤销；B39 书签设置写读到几条；C7 文件 ⌘K 打开方式 / 快速查看 ⌘Y / 移到废纸篓、→ 开动作菜单；C8 行右键 = ⌘K；D7 网址 ⌘K「用「X」打开」（⌘↩ = 第二个浏览器）、Markdown 链接 ⇧⌘C、复制标题；D10 fy 关键词直接翻译（单个英文词副标题是词典释义）。另：剪贴板的「拷贝路径」改叫「复制路径」，和启动器同名同符号（剪贴板、启动器都叫「复制…」，只有截图家族叫「拷贝」）。
 - 2026-09-28 体检拍板（同一方案页 https://claude.ai/artifact/1KuAQRafw2E3QYAM4LULFR ，用户「全部按推荐」）第 6 批启动器·新功能：D6 网址 / 书签 / 历史 / 网页搜索行换成网站图标（不联网：本机 Chrome 的 Favicons 库 → 剪贴板链接预览取到的 → 青色地球色块；样式同 `ServiceTile`；设置 › 网页搜索列表同用；PLAN 不迁清单去掉「网站图标」）；D8 设置 › 启动器「浏览器书签」改名「浏览器书签与历史」，Chrome 下「也搜浏览历史」（默认关，最近 3000 条常去的页面，排在书签后、不重复）；D9 系统设置面板直接搜到、↩ 跳到对应页；D11 计算器单位换算（`Measurement`）、进制、千分位（⌘K 复制原始数字），汇率不做；D12 kill 进程 / 端口（↩ SIGTERM、⌘↩ SIGKILL 要上膛）。实现时的取舍：浏览历史最多列 5 行、不算本地结果（只有历史匹配上时兜底搜索照样在最后，免得常去的页面把「用 Google 搜」挤掉）；读 History 放进程外（`sqlite3`，刚克隆的库冷缓存在进程里读要 140 ms），网站图标每种开头只看 4 条映射在主线程查（8 个主机 12 ms）；系统设置面板「能跳到」先按 Info.plist 里系统自己声明的 `allowsXAppleSystemPreferencesURLScheme` 判断，逐个打开核对留到真机（§12 第 6 批第 3 条列全 45 个，评审指出推荐原文要求逐个核对，D9 状态记为「待逐个核对」）；面板身份按目录认、不按网址开头（评审修复：以前自建的 x-apple.systempreferences: 快捷链接收藏会被当成面板还原不出来而删掉）；五个只在特定情况出现的面板按名单不列；电池面板没有中文显示名，按机型叫法两个都写（「能耗 / 电池」，判断有没有电池要 IOKit，不在 C API 白名单里）；单位换算 ↩ 粘贴带单位（「6.2137 mi」，写回还能接着换算），「复制原始数字」只给数；kill 的进程列表按「监听端口 → 非系统目录 → 内存」排，系统服务不隐藏（照样能搜到、结束，↩ 不另确认：ps -U 按真实用户列，loginwindow 列不到，列得到的系统服务都由 launchd 重新拉起；评审提的「系统进程 ↩ 也上膛」没采纳，和拍板的「↩ SIGTERM 不确认」冲突），loginwindow 按路径再挡一道，本 App 起的 ps / lsof 按父进程去掉；「kill :」只按端口筛。
 - 2026-09-28 体检拍板（同一方案页 https://claude.ai/artifact/1KuAQRafw2E3QYAM4LULFR ，用户「全部按推荐」）第 7 批截图：A28「另存为」不再改 ⌘S 快速保存的目录（存储面板自己记住上次的文件夹），设置 › 截图「快速保存到」显示文件夹图标和名字、能恢复默认；B40 长截图时和选区相交的钉图不接鼠标、淡到 0.3，结束放回，常驻缩略图收走；B41 截图家族统一「拷贝 / 存储到「桌面」/ 另存为…」；B42 长截图到底 / 到顶 / 最长不再橙色抖动，只有对不上抖，缺授权 / 出错橙字不抖，状态变了播报；B43 选区太矮时提示原因；B45 钉图可被 VoiceOver 读到、有自定义动作；B46 矮缩略图的图标按钮有名字；B47 多屏冻结帧同时截；C9 钉图 ⌘S 快速保存、⇧⌘S 另存为，右键菜单「拷贝 / 存储到「桌面」/ 另存为… / 透明度 / 原始大小 / 关闭」；D17 钉图右键「识字并拷贝 O」「翻译」，钉图是 key 时按 O 也行；D18 设置 › 截图「截图后在屏幕角落留缩略图」（默认开，关掉后卡片只闪一下）。补充拍板：A28、C9、D17、D18 按审查建议；B41 文案统一「拷贝 / 存储到「X」/ 另存为…」；C9 和 B41 一起改钉图右键菜单，D17 的识字 / 翻译加进同一个菜单，速查表钉图组同步。
+- 2026-09-29 体检收尾（用户「继续第8批」，承接 2026-09-28「全部按推荐」）：版本 0.2.0，更新日志写进系统命令和 7 批里用户看得见的变化（默认值改变单独写明），0.1.0 条目是当时发布的内容、不改；收尾审查属实的问题全部修掉（历史 → 开菜单、清空后不能撤回、启动器预览时提示走岛、长截图收走剪贴板大卡、打开设置不推错页、翻译浮窗复制 / 收藏播报、菜单栏与启动器共用 MenuExtra、底栏提示 / 输入框焦点环 / 选中描边 / 播报 / 按天标题 / 存储叫法 / 导出菜单各收成一处），规则、PLAN §2 §4 §10 §12 按代码现状改。
 - 截图翻译（2026-09-24）：只用 Vision 本机识字；原文写剪贴板历史；默认热键 ⌥S。
 - 启动器 / 截图（2026-09-24）：启动器首版做 App、书签、直达、网页搜索、最近使用、内置动作、计算器、cb，文件搜索与 kill 放 M11；标注首版做矩形、箭头、文字、马赛克；附加功能只做取色（长截图、延时、美化 / 水印不做；长截图 2026-09-25 改为做，见 §10 D1）；做钉图，不做截图历史和钉图历史。

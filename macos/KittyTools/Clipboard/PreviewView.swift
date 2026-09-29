@@ -251,7 +251,7 @@ struct ColorCard: View {
         Button {
           // 面板开着时复制的色值块不记进历史（记新条目会把选中跳走，mac-native §5）；焦点在搜索框，主动播报
           Paster.write(string: value)
-          ClipboardPanelModel.announce("已复制 \(value)")
+          Island.announce("已复制 \(value)")
           copied = index
           Task {
             try? await Task.sleep(for: Style.copiedHold)

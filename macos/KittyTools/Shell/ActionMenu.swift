@@ -214,11 +214,10 @@ struct ActionMenu: View {
         isSelected ? Style.selectedFill : .clear,
         in: .rect(cornerRadius: Style.Radius.control, style: .continuous)
       )
-      // 增强对比度：中性选中行加 1 pt 品牌粉 0.6 描边（mac-whisker §7）
       .overlay {
-        if isSelected, contrast == .increased {
+        if isSelected {
           RoundedRectangle(cornerRadius: Style.Radius.control, style: .continuous)
-            .strokeBorder(Style.brand.opacity(0.6))
+            .contrastSelectionBorder()
         }
       }
       .contentShape(.rect)
