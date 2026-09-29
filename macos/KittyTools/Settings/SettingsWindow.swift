@@ -77,7 +77,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
       [
         "外观", "浅色", "深色", "暗黑", "主题", "跟随系统", "强调色", "主题色", "颜色", "开机", "登录", "自启", "权限", "辅助功能",
         "屏幕录制",
-        "剪贴板访问", "隐私", "菜单栏", "状态栏", "图标", "隐藏", "彩色", "单色",
+        "剪贴板访问", "隐私", "菜单栏", "状态栏", "图标", "隐藏", "彩色", "单色", "挤压", "弹开", "动画", "实验",
       ]
     case .clipboard:
       [
@@ -88,7 +88,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .launcher:
       [
         "英文", "输入法", "书签", "浏览历史", "历史", "Chrome", "Edge", "Brave", "搜索", "引擎", "快捷链接", "关键词",
-        "兜底", "使用记录", "常用", "最近", "收藏", "挤压", "弹开", "动画", "实验", "文件", "open", "find", "Spotlight",
+        "兜底", "使用记录", "常用", "最近", "收藏", "文件", "open", "find", "Spotlight",
       ]
     case .screenshot:
       [

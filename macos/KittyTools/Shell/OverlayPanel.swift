@@ -3,7 +3,7 @@
 // 粘贴时发的 ⌘V、划词时发的 ⌘C 才会落到它身上。
 // 外观是 Whisker 的 Panel 皮肤（mac-whisker §2）：无边框、16 pt 连续圆角（maskImage 裁，系统阴影跟着走）+ 描边；
 // 出现时淡入 + 内容下落 6 pt，用户关掉时系统淡出（窗口逻辑上立刻移走，键盘马上回到原 App），高度可带动画伸缩。
-// ⌘Y 放大预览用 zoom / unzoom：从检查器卡片的位置长出来、缩回去。启动器可选「挤压入场」（实验，squeezesIn）。
+// ⌘Y 放大预览用 zoom / unzoom：从检查器卡片的位置长出来、缩回去。剪贴板、启动器、翻译浮窗可选「挤压入场」（实验，设置 › 通用，squeezesIn）。
 // 翻译浮窗（frameName）：present 带 anchor 时出现在光标右下 12 pt（放不下翻到另一侧，体检 A13），不带时回到用户上次拖到的
 // 位置（userFrame；所在屏不是鼠标所在屏时换算到鼠标所在屏同一相对位置）；只有用户拖过、拖宽过才记下新位置。
 
@@ -46,7 +46,7 @@ final class OverlayPanel: NSPanel {
   fileprivate var isUserResizing = false
   /// 每次出现 / 收起加一：缩回动画的收尾发现期间又被打开（或已被别处收起）就什么都不做
   private var showGeneration = 0
-  /// 出现时用挤压入场（启动器的实验开关）；false 用标准的淡入 + 下落
+  /// 出现时用挤压入场（设置 › 通用的实验开关，剪贴板 / 启动器 / 翻译浮窗共用）；false 用标准的淡入 + 下落
   var squeezesIn: () -> Bool = { false }
   /// 正在挤压入场：起止帧、开始时刻、逐帧驱动的显示器刷新
   private var squeeze: (start: NSRect, end: NSRect, began: CFTimeInterval)?

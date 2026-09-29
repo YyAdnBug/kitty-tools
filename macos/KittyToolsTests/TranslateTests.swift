@@ -745,6 +745,21 @@ struct TranslateBatch4Tests {
     }
   }
 
+  /// 挤压入场从启动器页挪到通用页、三块面板共用（2026-09-29）：开过的旧开关搬到新键，旧键删掉；已有新键的不被旧键覆盖
+  @Test func squeezeEntranceMigration() throws {
+    let suite = "kitty-test-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    defaults.set(true, forKey: Prefs.launcherSqueezeEntranceLegacy)
+    Prefs.migrate(defaults, domainName: suite)
+    #expect(defaults.object(forKey: Prefs.panelSqueezeEntrance) as? Bool == true)
+    #expect(defaults.object(forKey: Prefs.launcherSqueezeEntranceLegacy) == nil)
+    defaults.set(false, forKey: Prefs.panelSqueezeEntrance)
+    defaults.set(true, forKey: Prefs.launcherSqueezeEntranceLegacy)
+    Prefs.migrate(defaults, domainName: suite)
+    #expect(defaults.object(forKey: Prefs.panelSqueezeEntrance) as? Bool == false)
+  }
+
   /// 朗读挑声线（体检 B23）：不比系统默认的差（下载过高音质的就用它）
   @Test func speechVoiceIsBestQuality() {
     for code in ["en-US", "zh-CN"] {

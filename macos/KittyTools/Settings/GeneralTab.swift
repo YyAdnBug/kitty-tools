@@ -1,4 +1,5 @@
 // 设置 › 通用：外观（跟随系统 / 浅色 / 深色三张缩略图）与强调色（跟随系统 + 系统设置那一排 8 色，都是改了立刻生效）、
+// 呼出面板时挤压弹开（实验，剪贴板 / 启动器 / 翻译浮窗共用，2026-09-29 从启动器页挪来）、
 // 菜单栏图标（显示 / 隐藏、单色 / 彩色，StatusItem 看着偏好立刻跟着变，第 9 批 M1 M2）、登录时打开、
 // 权限状态（辅助功能、屏幕录制、15.4 起的剪贴板访问，三行同一种 PermissionRow；从未授权变已授权时符号替换 + 弹一下）。
 
@@ -9,6 +10,7 @@ struct GeneralTab: View {
   @AppStorage(Prefs.appearance) private var appearance = AppAppearance.system
   @AppStorage(Prefs.statusItemVisible) private var statusItemVisible = true
   @AppStorage(Prefs.statusItemStyle) private var statusItemStyle = StatusItem.IconStyle.template
+  @AppStorage(Prefs.panelSqueezeEntrance) private var squeezeEntrance = false
   @State private var trusted = Permissions.isAccessibilityTrusted
   @State private var screenRecording = Permissions.isScreenRecordingAllowed
   @State private var loginStatus = SMAppService.mainApp.status
@@ -26,6 +28,10 @@ struct GeneralTab: View {
           Accent.shared.choice == .system
             ? "系统强调色选「多色」时使用品牌粉。"
             : "菜单高亮和焦点环由系统绘制，仍使用系统强调色。")
+        Toggle(isOn: $squeezeEntrance) {
+          Text("呼出面板时挤压弹开（实验）")
+          Text("剪贴板、启动器和翻译浮窗从窄一点、矮一点弹开到原尺寸；减弱动态效果时不弹")
+        }
       }
       Section("菜单栏") {
         Toggle("在菜单栏显示图标", isOn: $statusItemVisible)

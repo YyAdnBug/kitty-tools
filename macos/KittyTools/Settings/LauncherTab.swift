@@ -1,4 +1,4 @@
-// 设置 › 启动器：呼出时切英文输入法、挤压弹开、文件搜索的文件夹授权、浏览器书签与历史（每家写读到了几条 / 没找到书签文件 /
+// 设置 › 启动器：呼出时切英文输入法、文件搜索的文件夹授权、浏览器书签与历史（每家写读到了几条 / 没找到书签文件 /
 // 没有安装，体检 B39；Chrome 下「也搜浏览历史」，默认关，体检 D8）、网页搜索与快捷链接
 // （N12：行 = 网站图标或种类色块 / 名称 / 状态 / 关键词键帽 / 兜底开关，拖动排序，「+ −」增删（自定义的先确认），
 // 单击一行推进到 SearchEngineDetail 编辑）、兜底时机、清空使用记录。页头画在自己的 NavigationStack 里，推进时一起换掉。
@@ -10,7 +10,6 @@ struct LauncherTab: View {
   /// 清空使用记录（LauncherUsage.clearAll）
   var clearUsage: () -> Void = {}
   @AppStorage(Prefs.launcherRomanInput) private var romanInput = false
-  @AppStorage(Prefs.launcherSqueezeEntrance) private var squeezeEntrance = false
   @AppStorage(Prefs.launcherFallbackAlways) private var fallbackAlways = false
   @AppStorage(Prefs.launcherBookmarksChrome) private var chrome = true
   @AppStorage(Prefs.launcherBookmarksEdge) private var edge = false
@@ -69,10 +68,6 @@ struct LauncherTab: View {
         Toggle(isOn: $romanInput) {
           Text("呼出时切到英文输入法")
           Text("只在搜索框里生效，离开后恢复；要搜中文时先关掉")
-        }
-        Toggle(isOn: $squeezeEntrance) {
-          Text("呼出时挤压弹开（实验）")
-          Text("从窄一点、矮一点弹开到原尺寸；减弱动态效果时不弹")
         }
       } footer: {
         HStack(alignment: .firstTextBaseline) {

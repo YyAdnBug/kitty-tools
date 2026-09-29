@@ -25,8 +25,10 @@ enum Prefs {
   static let launcherFallbackAlways = "launcherFallbackAlways"
   /// 呼出启动器时搜索框只用英文输入法（Alfred 的 Force Keyboard；离开启动器后恢复）
   static let launcherRomanInput = "launcherRomanInput"
-  /// 启动器呼出时用挤压入场（实验，像 macOS 26 的 Spotlight）
-  static let launcherSqueezeEntrance = "launcherSqueezeEntrance"
+  /// 剪贴板、启动器、翻译浮窗呼出时用挤压入场（实验，默认关；2026-09-29 用户要求三块面板统一，设置从启动器页挪到通用页）
+  static let panelSqueezeEntrance = "panelSqueezeEntrance"
+  /// 旧键：只管启动器时的开关，migrate 里搬到 panelSqueezeEntrance
+  static let launcherSqueezeEntranceLegacy = "launcherSqueezeEntrance"
   /// 文件搜索已经请求过桌面 / 文稿 / 下载 / iCloud 云盘的访问授权（之后才能读目录判断授权状态，读之前会弹框）
   static let folderAccessRequested = "folderAccessRequested"
   /// 翻译浮窗固定：失焦不隐藏（Esc、⌘W 照样关，体检 A9）
@@ -119,7 +121,7 @@ enum Prefs {
       launcherHistoryChrome: false,
       launcherFallbackAlways: false,
       launcherRomanInput: false,
-      launcherSqueezeEntrance: false,
+      panelSqueezeEntrance: false,
       floatingPinned: false,
       updateAutoCheck: true,
       clipboardRetentionDays: 7,
@@ -165,6 +167,11 @@ enum Prefs {
       defaults.set(ClipboardFilter.migratedExcluded(old), forKey: clipboardExcludedBundleIDs)
       defaults.removeObject(forKey: clipboardExcludedAppsLegacy)
     }
+    if domain[panelSqueezeEntrance] == nil, let old = domain[launcherSqueezeEntranceLegacy] as? Bool
+    {
+      defaults.set(old, forKey: panelSqueezeEntrance)
+    }
+    defaults.removeObject(forKey: launcherSqueezeEntranceLegacy)
     let days = defaults.integer(forKey: clipboardRetentionDays)
     if !clipboardRetentionChoices.contains(days) {
       defaults.set(

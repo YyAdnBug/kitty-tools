@@ -86,7 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       autoHide: .clickOutside, isPinned: { false }, content: LauncherPanelView(model: model))
     panel.keyEquivalentHandler = { [unowned model] in model.handleKeyEquivalent($0) }
     panel.onHide = { [unowned model] in model.didHide() }
-    panel.squeezesIn = { UserDefaults.standard.bool(forKey: Prefs.launcherSqueezeEntrance) }
+    panel.squeezesIn = { Self.squeezesIn() }
     model.hidePanel = { [unowned panel] in panel.hide() }
     // ⌘K 菜单开着时瞬间长高：菜单锚在底栏上方，面板边长边插进来会越过搜索栏被裁，得先长好再从右下角放大
     model.resize = { [unowned panel, unowned model] in
@@ -154,6 +154,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     card.unzoom(to: frame)
   }
 
+  /// 剪贴板、启动器、翻译浮窗呼出时挤压弹开（实验，设置 › 通用；三块面板统一，2026-09-29 用户要求）
+  private static func squeezesIn() -> Bool {
+    UserDefaults.standard.bool(forKey: Prefs.panelSqueezeEntrance)
+  }
+
   /// ⌘Y 大卡收走后：键盘关掉的（它是 key 时按 Esc）把 key 还给主面板；点别处关掉的不抢（鼠标还按着：用户正要去别处打字）
   private static func returnKey(to owner: OverlayPanel) {
     if NSApp.keyWindow == nil, NSEvent.pressedMouseButtons == 0, owner.isVisible {
@@ -172,6 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       content: ClipboardPanelView(model: model))
     panel.keyEquivalentHandler = { [unowned model] in model.handleKeyEquivalent($0) }
     panel.onHide = { [unowned model] in model.reset() }
+    panel.squeezesIn = { Self.squeezesIn() }
     model.hidePanel = { [unowned panel] in panel.hide() }
     model.resize = { [unowned panel] in panel.setContentHeight($0, animated: true) }
     // 剪贴板面板保持打开（兄弟浮层），翻译浮窗出现在旁边
@@ -254,6 +260,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         previous.makeKey()
       }
     }
+    panel.squeezesIn = { Self.squeezesIn() }
     return panel
   }()
 
