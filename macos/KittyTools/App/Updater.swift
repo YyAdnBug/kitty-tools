@@ -33,6 +33,9 @@ import AppKit
   }
 
   private(set) var state: State
+  /// 此刻不能更新的原因（录屏中「录制结束后再更新」，AppDelegate 写）：关于页的「更新并重新打开」置灰、旁边写它；
+  /// 菜单里点了「更新到 x…」用刘海说
+  var blocker: String?
   /// 刘海岛（AppDelegate 给，单测里是 nil）
   @ObservationIgnored var island: Island?
   @ObservationIgnored private var schedule: Task<Void, Never>?
@@ -142,6 +145,10 @@ import AppKit
   /// 失败时回到「有新版本」，刘海岛说原因
   func install(_ trigger: Trigger = .menu) async {
     guard case .available(let release) = state, isSupported else { return }
+    if let blocker {
+      island?.show(blocker, tone: .warning)
+      return
+    }
     state = .installing(release)
     if trigger != .page { showInstalling(release) }
     do {

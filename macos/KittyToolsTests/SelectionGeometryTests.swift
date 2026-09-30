@@ -200,4 +200,22 @@ struct SelectionGeometryTests {
     #expect(
       RegionSelector.Handle.topLeft.facing(CGPoint(x: 800, y: 200), in: rect) == .bottomRight)
   }
+
+  /// 长截图、录屏在实时画面上截的那块（RegionSelector.captureRect）：夹进屏、四边对齐到像素，sourceRect 是屏内、原点左上；
+  /// 副屏（全局坐标不从 0 起）也一样
+  @Test func captureRectClampsSnapsAndFlips() {
+    let screen = CGRect(x: 0, y: 0, width: 1512, height: 982)
+    let (region, source) = RegionSelector.captureRect(
+      CGRect(x: 100.3, y: 200.2, width: 400.4, height: 300.1), in: screen, scale: 2)
+    #expect(region == CGRect(x: 100.5, y: 200, width: 400.5, height: 300))
+    #expect(source == CGRect(x: 100.5, y: 982 - 500, width: 400.5, height: 300))
+    // 伸出屏外的部分裁掉；整屏的 sourceRect 就是整屏
+    let right = CGRect(x: 1512, y: -200, width: 1920, height: 1080)
+    let clamped = RegionSelector.captureRect(
+      CGRect(x: 1400, y: 700, width: 400, height: 400), in: right, scale: 1)
+    #expect(clamped.region == CGRect(x: 1512, y: 700, width: 288, height: 180))
+    #expect(clamped.source == CGRect(x: 0, y: 0, width: 288, height: 180))
+    let full = RegionSelector.captureRect(screen, in: screen, scale: 2)
+    #expect(full.region == screen && full.source == screen)
+  }
 }

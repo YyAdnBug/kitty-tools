@@ -1,7 +1,8 @@
 // 框选会话：每块屏幕盖一个全屏遮罩（SelectionOverlay）画冻结帧，选区只在一块屏上。两种用法：
 // - 截图翻译 / 识字 select：拖动框选（⇧ 正方形、⌥ 从中心、空格平移、吸附窗口边），松手确认，Esc / 右键取消；
 // - 截图 capture：悬停高亮窗口 / 单击截整窗、确认后可调整选区和标注，↩ 复制、⌘S 保存、⇧⌘S 另存为、T 钉图、
-//   S 长截图、工具栏识字 / 翻译，C 复制放大镜中心的色值，D 选中上次的区域。
+//   S 长截图、工具栏识字 / 翻译，C 复制放大镜中心的色值，D 选中上次的区域；
+// - 录屏 record：框选同截图（悬停、单击窗口 / 整屏、调整、尺寸胶囊、D），没有标注和出图键，↩ / 双击 / 录制条的 ● 交回选区。
 // 遮罩是不激活前台的 NSPanel（和 OverlayPanel 一样不抢前台 App），会话结束立即 orderOut 释放，不常驻
 // （全屏窗口的 backing store 是内存大头）。画面与交互在 SelectionView。
 
@@ -36,6 +37,8 @@ enum RegionSelector {
     case color(String)
     /// 长截图：只带选区（点，AppKit 全局坐标），不裁图（裁出的图会拖住整屏冻结帧直到长截图结束）
     case scroll(CGRect)
+    /// 录屏：只带选区（点，AppKit 全局坐标，同 scroll）；整屏 = 那块屏的 frame
+    case record(CGRect)
   }
 
   /// 截图翻译 / 识字：在冻结帧上框选，松手返回裁好的图；取消返回 nil。hint 是屏幕上方的提示
@@ -53,6 +56,11 @@ enum RegionSelector {
     let session = SelectionSession(mode: .capture, lastRegion: lastRegion)
     session.preselectsLastRegion = preselect
     return await run(shots, session)
+  }
+
+  /// 录屏：框选同截图（lastRegion 同截图共用，D 键选中），交回 .record(选区)；C 复制色值时交回 .color，取消 nil
+  static func record(_ shots: [ScreenCapture.Shot], lastRegion: CGRect?) async -> Outcome? {
+    await run(shots, SelectionSession(mode: .record, lastRegion: lastRegion))
   }
 
   private static func run(_ shots: [ScreenCapture.Shot], _ session: SelectionSession) async
@@ -295,6 +303,24 @@ enum RegionSelector {
     return moved
   }
 
+  /// 实时画面上截 / 录一块选区（长截图、录屏共用）：选区（点，AppKit 全局坐标）夹进这块屏（frame，全局）、四边对齐到像素
+  /// （scale = 每点几像素），返回对齐后的选区（全局）和 ScreenCaptureKit 的 sourceRect（屏内、点、原点左上）
+  static func captureRect(_ region: CGRect, in screen: CGRect, scale: CGFloat) -> (
+    region: CGRect, source: CGRect
+  ) {
+    let local = region.intersection(screen).offsetBy(dx: -screen.minX, dy: -screen.minY)
+    let snapped = CGRect(
+      x: (local.minX * scale).rounded() / scale, y: (local.minY * scale).rounded() / scale,
+      width: (local.width * scale).rounded() / scale,
+      height: (local.height * scale).rounded() / scale)
+    return (
+      snapped.offsetBy(dx: screen.minX, dy: screen.minY),
+      CGRect(
+        x: snapped.minX, y: screen.height - snapped.maxY, width: snapped.width,
+        height: snapped.height)
+    )
+  }
+
   /// 上次的区域（全局坐标）放到哪块屏上：相交面积最大的那块，夹进该屏，返回屏的下标和屏内坐标。
   /// 屏幕变了（外接屏拔掉）、完全落在屏外时返回 nil
   static func placement(of region: CGRect, in screens: [CGRect]) -> (index: Int, rect: CGRect)? {
@@ -314,7 +340,7 @@ enum RegionSelector {
 /// 一次框选会话：管各屏遮罩、选区只留一块屏、D 键上次区域、锁着的比例、结束时收起遮罩并交回结果
 final class SelectionSession {
   let mode: SelectionView.Mode
-  /// 松手即确认时屏幕上方的提示，几段之间用「 · 」隔开（截图模式自己拼）
+  /// 松手即确认时屏幕上方的提示，几段之间用「 · 」隔开（截图、录屏模式自己拼）
   let hint: String
   /// 上次截图的区域（全局坐标）
   let lastRegion: CGRect?

@@ -115,7 +115,7 @@ struct HotKey: Codable, Hashable {
 /// 追加动作只能加在末尾：注册时用 allCases 的下标当热键 id
 enum HotKeyAction: String, CaseIterable {
   case clipboard, selectionTranslate, inputTranslate, screenshotTranslate, launcher, screenshot,
-    screenshotLastRegion, recognizeText, translateReplace
+    screenshotLastRegion, recognizeText, translateReplace, screenRecord
 
   var title: String {
     switch self {
@@ -128,7 +128,13 @@ enum HotKeyAction: String, CaseIterable {
     case .screenshotLastRegion: "截取上次区域"
     case .recognizeText: "识字"
     case .translateReplace: "划词翻译并替换"
+    case .screenRecord: "录屏"
     }
+  }
+
+  /// 菜单栏、启动器里的标题：录屏录着时那一项是「停止录屏」（再按一次 ⌥R 也是停止）
+  func title(recording: Bool) -> String {
+    self == .screenRecord && recording ? "停止录屏" : title
   }
 
   /// nil = 默认不设键（静默替换这类用得少、又容易误触的）
@@ -154,6 +160,8 @@ enum HotKeyAction: String, CaseIterable {
     case .recognizeText: HotKey(keyCode: kVK_ANSI_O, modifiers: optionKey)
     // 选中文字直接换成译文，不弹窗（Bob 的静默划词翻译也不设默认键）
     case .translateReplace: nil
+    // R = Record，和截图框选里将来（第 2 批）按 R 转录屏对上
+    case .screenRecord: HotKey(keyCode: kVK_ANSI_R, modifiers: optionKey)
     }
   }
 
@@ -184,7 +192,7 @@ enum HotKeyAction: String, CaseIterable {
   static let sections: [(title: String, actions: [HotKeyAction])] = [
     ("剪贴板与启动器", [.clipboard, .launcher]),
     ("翻译", [.selectionTranslate, .inputTranslate, .translateReplace, .screenshotTranslate]),
-    ("截图", [.screenshot, .screenshotLastRegion, .recognizeText]),
+    ("截图与录制", [.screenshot, .screenshotLastRegion, .recognizeText, .screenRecord]),
   ]
 
   /// 种类色块里的符号
@@ -200,6 +208,7 @@ enum HotKeyAction: String, CaseIterable {
     case .screenshot: "camera.viewfinder"
     case .screenshotLastRegion: "rectangle.dashed"
     case .recognizeText: "text.viewfinder"
+    case .screenRecord: "record.circle"
     }
   }
 
@@ -210,7 +219,7 @@ enum HotKeyAction: String, CaseIterable {
     case .launcher: Style.Family.command
     case .selectionTranslate, .inputTranslate, .translateReplace, .screenshotTranslate:
       Style.Family.translate
-    case .screenshot, .screenshotLastRegion, .recognizeText: Style.Family.screenshot
+    case .screenshot, .screenshotLastRegion, .recognizeText, .screenRecord: Style.Family.screenshot
     }
   }
 }

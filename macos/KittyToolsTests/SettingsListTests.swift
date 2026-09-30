@@ -14,7 +14,7 @@ struct SettingsListTests {
     let pages = SettingsPage.allCases
     #expect(pages == [.general, .clipboard, .launcher, .translate, .screenshot, .hotkeys, .about])
     let sections = HotKeyAction.sections.map(\.title)
-    #expect(sections.firstIndex(of: "翻译")! < sections.firstIndex(of: "截图")!)
+    #expect(sections.firstIndex(of: "翻译")! < sections.firstIndex(of: "截图与录制")!)
   }
 
   /// 侧栏搜索按改名后的叫法也找得到：启动器的「常用」「收藏」，翻译的「浮窗位置」「清空」

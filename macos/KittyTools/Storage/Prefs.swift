@@ -101,6 +101,10 @@ enum Prefs {
   /// 拷贝 / 快速保存后在屏幕右下角留常驻缩略图（ShotShelf）；关掉后飞行卡片落地停 0.9 s 就滑走（体检 D18）
   static let screenshotShelf = "screenshotShelf"
 
+  /// 正在录的屏的文件路径（ScreenRecorder.workFile，开录时写、收尾时删）：启动时还在 = 上次闪退了，
+  /// ScreenRecorder.recover 把能播的挪进快速保存目录（录屏第 1 批，C7）
+  static let screenRecordingInProgress = "screenRecordingInProgress"
+
   /// 识字后把同一段的换行合成一行（中日文直接连、其它加空格）
   static let ocrJoinLines = "ocrJoinLines"
 

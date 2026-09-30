@@ -200,6 +200,7 @@ struct SelectionInteractionTests {
     }
 
     var toolbar: EditorToolbar? { view.subviews.lazy.compactMap { $0 as? EditorToolbar }.first }
+    var recordBar: RecordBar? { view.subviews.lazy.compactMap { $0 as? RecordBar }.first }
     var menu: HUDMenu? { view.subviews.lazy.compactMap { $0 as? HUDMenu }.first }
     var sizeField: SizeField? { view.subviews.lazy.compactMap { $0 as? SizeField }.first }
 
@@ -866,5 +867,78 @@ struct SelectionInteractionTests {
     let editor = try #require(h.fieldEditor)
     let point = editor.convert(CGPoint(x: editor.bounds.midX, y: editor.bounds.midY), to: nil)
     #expect(editor.menu(for: h.event(.rightMouseDown, point)) == nil)
+  }
+
+  // MARK: 录屏（录屏第 1 批）
+
+  /// 单击窗口选中它的区域、进入调整：选区下方是录制条（截图工具栏的位置），没有截图工具栏；↩ 交回 .record(窗口矩形，全局坐标)
+  @Test func recordWindowClickThenReturn() async throws {
+    let window = CGRect(x: 100, y: 100, width: 600, height: 400)
+    let h = Harness(mode: .record, windows: [window])
+    h.click(CGPoint(x: 400, y: 300))
+    #expect(h.view.selection == window && h.view.isAdjusting)
+    #expect(h.toolbar == nil && h.styleBar == nil)
+    let bar = try #require(h.recordBar)
+    #expect(bar.isShown && abs(bar.frame.midX - window.midX) <= 0.5)
+    #expect(bar.frame.maxY == window.minY - 10)
+    let outcome = await h.outcome { h.key(kVK_Return, "\r") }
+    guard case .record(let region)? = outcome else {
+      Issue.record("↩ 没有交回录屏选区：\(String(describing: outcome))")
+      return
+    }
+    #expect(region == window.offsetBy(dx: h.window.frame.minX, dy: h.window.frame.minY))
+  }
+
+  /// 双击选区、点录制条的 ● 同样开始；单击桌面是整屏
+  @Test func recordDoubleClickAndStartButton() async throws {
+    let h = Harness(mode: .record)
+    h.makeSelection()
+    let doubled = await h.outcome { h.click(CGPoint(x: 500, y: 350), clicks: 2) }
+    guard case .record(let region)? = doubled else {
+      Issue.record("双击没有交回录屏选区：\(String(describing: doubled))")
+      return
+    }
+    #expect(region.size == Self.initial.size)
+    let full = Harness(mode: .record)
+    full.click(CGPoint(x: 600, y: 400))
+    #expect(full.view.selection == CGRect(x: 0, y: 0, width: 1200, height: 800))
+    let start = try #require(full.recordBar?.button(for: .start))
+    #expect(start.accessibilityLabel() == "开始录制")
+    let started = await full.outcome { start.performClick(nil) }
+    guard case .record(let screen)? = started else {
+      Issue.record("点 ● 没有交回录屏选区：\(String(describing: started))")
+      return
+    }
+    #expect(screen == full.window.frame)
+  }
+
+  /// 选区短边不到 64 pt：↩ 只提示（提示音 + 顶部提示 + 播报），不开始；T / S / O / 数字键 / ⌘C 都不是录屏的键
+  @Test func recordRejectsSmallSelectionAndScreenshotKeys() async throws {
+    let h = Harness(mode: .record)
+    h.drag(CGPoint(x: 300, y: 200), CGPoint(x: 700, y: 250))
+    #expect(h.view.isAdjusting && h.view.selection?.height == 50)
+    let small = await h.outcome { h.key(kVK_Return, "\r") }
+    guard case .color("没交回结果")? = small else {
+      Issue.record("小选区不该开始：\(String(describing: small))")
+      return
+    }
+    #expect(h.view.announcement == "选区太小，拉大一点再录")
+    let keys = await h.outcome {
+      h.key(kVK_ANSI_T, "t")
+      h.key(kVK_ANSI_S, "s")
+      h.key(kVK_ANSI_O, "o")
+      h.key(kVK_ANSI_1, "1")
+      #expect(!h.keyEquivalent(kVK_ANSI_C, "c", flags: .command))
+    }
+    guard case .color("没交回结果")? = keys else {
+      Issue.record("截图的键在录屏里生效了：\(String(describing: keys))")
+      return
+    }
+    #expect(h.view.tool == nil && h.view.annotations.isEmpty)
+    // 调整照常：⌘ + 方向键推边、右键回到待选
+    h.arrow(kVK_UpArrow, flags: .command)
+    #expect(h.view.selection == CGRect(x: 300, y: 200, width: 400, height: 51))
+    h.rightClick(CGPoint(x: 900, y: 600))
+    #expect(h.view.selection == nil && !h.view.isAdjusting)
   }
 }

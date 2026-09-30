@@ -3,7 +3,8 @@
 //   长截图、钉图 ｜ 存储（本体快速保存，右侧 ▾ 弹菜单）｜ 取消、拷贝（28 pt 品牌粉圆钮）。当前工具的粉色底块在工具间滑动（glide）；
 //   松手 40 ms 后从靠选区的那条边长出来（pop，bounce 0.18），拖动 / 缩放 / 平移选区时淡出让位；
 // - 样式托盘 StyleBar：高 34、圆角 10，按工具出 8 色点 ｜ 三档 ｜ 选项分段，锚在当前工具按钮下方 6 pt，换工具时位置和宽度 settle；
-// - HUDMenu：遮罩里的 HUD 弹出菜单（保存 ▾，之后尺寸胶囊的比例菜单也用它），不用 NSMenu（菜单层级低于遮罩，会被压在下面）。
+// - HUDMenu：遮罩里的 HUD 弹出菜单（保存 ▾，之后尺寸胶囊的比例菜单也用它），不用 NSMenu（菜单层级低于遮罩，会被压在下面）；
+// - 录制条 RecordBar（录屏框选的调整阶段，放在主栏的位置）：一段 HUD 胶囊 [取消][● 开始录制]，长出 / 淡出同主栏。
 // 永远深色（和系统 ⌘⇧5 一致）：模糊的是窗口里的冻结帧（withinWindow）；macOS 26 起材质是深色液态玻璃（HUDBar，
 // 主栏两段放进一个 NSGlassEffectContainerView，mac-whisker §2）。按钮都 acceptsFirstMouse（遮罩不是 key 的
 // 那块屏上也一点就响应）、不抢第一响应者（输入文字时点按钮不打断输入）。
@@ -16,6 +17,13 @@ class PopView: NSView {
   enum Edge { case top, bottom }
 
   private(set) var isShown = false
+
+  /// 截图主栏、录制条：靠选区的那条边的中点长出来（栏在选区下方从顶边 .top，在上方或选区里时从底边），两条栏同一套参数
+  func grow(_ show: Bool, from edge: Edge = .top) {
+    setShown(
+      show, anchor: CGPoint(x: bounds.midX, y: edge == .top ? bounds.height : 0),
+      rise: edge == .top ? 8 : -8, scale: 0.94, delay: 0.04, bounce: 0.18)
+  }
 
   /// 出现：delay 后从 anchor（自身坐标）处 scale → 1、竖直偏 rise → 0（curve 弹簧）+ 淡入；收起：0.10 s 淡出后隐藏。
   /// 减弱动态效果时按 §7 只改透明度：pop / settle 退成 0.2 s easeInOut 淡入，snap / glide 直接出现
@@ -317,13 +325,6 @@ final class EditorToolbar: PopView {
     return button.convert(button.bounds, to: self)
   }
 
-  /// 靠选区的那条边的中点长出来：栏在选区下方从顶边（.top），在上方或选区里时从底边
-  func setShown(_ show: Bool, growingFrom edge: Edge = .top) {
-    setShown(
-      show, anchor: CGPoint(x: bounds.midX, y: edge == .top ? bounds.height : 0),
-      rise: edge == .top ? 8 : -8, scale: 0.94, delay: 0.04, bounce: 0.18)
-  }
-
   /// 当前工具的底块滑过去、图标换成强调色上的符号色（白，黄色这类亮色上是深色）；撤销 / 重做没得做时变灰。跟着鼠标移动一直在调，状态没变就不动
   func update(tool: Annotation.Tool?, canUndo: Bool, canRedo: Bool) {
     if let state, state.tool == tool, state.canUndo == canUndo, state.canRedo == canRedo { return }
@@ -401,6 +402,49 @@ final class EditorToolbar: PopView {
   }
 
   @objc private func clicked(_ sender: NSButton) { onClick(buttons[sender.tag].item) }
+}
+
+// MARK: - 录制条
+
+/// 录屏框选调整时贴在选区旁的栏（截图主栏的位置，mac-whisker §6 截图「录屏」）：[取消][● 开始录制]，按钮同主栏
+/// （32 × 32、悬停底、按下 0.90），开始是 28 pt 强调色实心圆 + 实心圆点（画法同主栏的拷贝钮；强调色选红时靠 ● / ■ 形状
+/// 和停止分开）。第 2 批在取消前面加系统声音 / 麦克风 / 显示点按三个开关（Item 里加，按钮照 makeButtons 的写法）
+final class RecordBar: HUDBar {
+  enum Item { case cancel, start }
+
+  var onClick: (Item) -> Void = { _ in }
+  private let items: [Item] = [.cancel, .start]
+
+  init() {
+    super.init(radius: Style.Radius.panel, height: 40)
+    let cancel = barButton(
+      NSImage(systemSymbolName: "xmark", accessibilityDescription: "取消")!, tip: "取消（Esc）",
+      label: "取消", action: #selector(clicked(_:)), size: CGSize(width: 32, height: 32))
+    let start = barButton(
+      NSImage(systemSymbolName: "circle.fill", accessibilityDescription: "开始录制")!,
+      tip: "开始录制（↩）", label: "开始录制", action: #selector(clicked(_:)),
+      size: CGSize(width: 28, height: 28))
+    start.showsHover = false
+    start.layer?.backgroundColor = Style.Shot.accent.cgColor
+    start.layer?.cornerRadius = 14
+    start.contentTintColor = Style.Shot.onAccent
+    start.symbolConfiguration = .init(pointSize: 10, weight: .bold)
+    for (index, button) in [cancel, start].enumerated() { button.tag = index }
+    stack.edgeInsets.right = 6
+    install([cancel, start])
+    stack.setCustomSpacing(4, after: cancel)
+    fit()
+  }
+
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  func button(for item: Item) -> NSButton? {
+    items.firstIndex(of: item).flatMap { index in
+      stack.arrangedSubviews.compactMap { $0 as? NSButton }.first { $0.tag == index }
+    }
+  }
+
+  @objc private func clicked(_ sender: NSButton) { onClick(items[sender.tag]) }
 }
 
 // MARK: - 样式托盘

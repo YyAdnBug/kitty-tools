@@ -50,18 +50,21 @@ enum ScreenshotOutput {
     return .desktopDirectory
   }
 
-  /// 「截图 2026-09-24 22.46.10.png」；已有同名文件就追加「 2」「 3」…。纯函数（只查文件是否存在），配单测
-  static func availableURL(in directory: URL, date: Date = .now) -> URL {
+  /// 「截图 2026-09-24 22.46.10.png」；已有同名文件就追加「 2」「 3」…。录屏传「录屏」「mp4」（同一个快速保存目录）。
+  /// 纯函数（只查文件是否存在），配单测
+  static func availableURL(
+    in directory: URL, date: Date = .now, prefix: String = "截图", ext: String = "png"
+  ) -> URL {
     let stamp = date.formatted(
       Date.VerbatimFormatStyle(
         format:
           "\(year: .defaultDigits)-\(month: .twoDigits)-\(day: .twoDigits) \(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased)).\(minute: .twoDigits).\(second: .twoDigits)",
         timeZone: .current, calendar: Calendar(identifier: .gregorian)))
-    let base = "截图 \(stamp)"
-    var url = directory.appending(path: "\(base).png")
+    let base = "\(prefix) \(stamp)"
+    var url = directory.appending(path: "\(base).\(ext)")
     var index = 2
     while FileManager.default.fileExists(atPath: url.path) {
-      url = directory.appending(path: "\(base) \(index).png")
+      url = directory.appending(path: "\(base) \(index).\(ext)")
       index += 1
     }
     return url

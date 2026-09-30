@@ -7,6 +7,7 @@ import Testing
 // 截图重设计（Whisker §6 截图，2026-09-26）的屏外截图自检（按需启用，同 SnapshotProbeTests）：遮罩待选 / 框选 / 调整、
 // 工具栏上下、按工具的样式托盘、10 种标注与选中手柄、弯箭头和弯直线（选中 / 拖弯曲手柄 / 各种颜色粗细 / 弯到头）、尺寸输入、文字输入（三种样式）、比例和保存菜单、右键提示、截图翻译框选、常驻缩略图
 // （飞行卡片落地后交接的同一张卡）、长截图面板与边框，按 2x 写成 PNG（带 -crop 的是局部，看线和图标对不对齐）。
+// 录屏框选（待选提示、调整阶段的录制条）也在这里。
 // 状态用 SelectionInteractionTests 的屏外窗口 + 合成事件摆（不弹遮罩、不抢键盘）；图层要在窗口里显示过才有内容，
 // 所以把屏外 (-20000, -20000) 的无边框窗口（当不了 key）orderFront 一下再 layer.render(in:)。材质在屏外会发灰，只锁布局。
 //   TEST_RUNNER_KITTY_SNAPSHOT_DIR=/tmp/shots xcodebuild -project macos/KittyTools.xcodeproj \
@@ -198,6 +199,19 @@ struct ScreenshotSnapshotTests {
     h = quick()
     h.begin(CGPoint(x: 150, y: 560), to: CGPoint(x: 460, y: 638))
     try shoot(h.window, "quick-draw", crop: CGRect(x: 100, y: 340, width: 700, height: 460))
+
+    // 录屏（录屏第 1 批）：待选的顶部提示；调整阶段同截图（手柄、尺寸胶囊），选区下方是录制条 [取消][● 开始录制]
+    // （HUD 永远深色，不出深色版）；-bar 是录制条的局部
+    let record = { Harness(mode: .record, windows: Self.windows, image: desktop) }
+    h = record()
+    h.move(CGPoint(x: 1000, y: 700))
+    try shoot(h.window, "record-idle", crop: top)
+    h = record()
+    h.drag(CGPoint(x: 300.3, y: 260.7), CGPoint(x: 800.4, y: 560.2))
+    h.move(CGPoint(x: 801, y: 420))
+    try shoot(h.window, "record-adjust", crop: CGRect(x: 150, y: 190, width: 900, height: 420))
+    let bar = try #require(h.recordBar)
+    try shoot(h.window, "record-adjust-bar", crop: bar.frame.insetBy(dx: -24, dy: -24))
   }
 
   @Test(.enabled(if: directory != nil)) func renderPeripherals() throws {

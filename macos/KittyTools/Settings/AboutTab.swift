@@ -99,7 +99,12 @@ struct AboutTab: View {
           Text("有新版本 \(release.version)")
           Button("更新并重新打开") { Task { await updater.install(.page) } }
             .buttonStyle(BrandButtonStyle())
-          link("更新内容") { NSWorkspace.shared.open(release.page) }
+            .disabled(updater.blocker != nil)
+          if let blocker = updater.blocker {
+            Text(blocker).foregroundStyle(.secondary)
+          } else {
+            link("更新内容") { NSWorkspace.shared.open(release.page) }
+          }
         case .installing(let release):
           ProgressView().controlSize(.small)
           Text("正在更新到 \(release.version)…").foregroundStyle(.secondary)

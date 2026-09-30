@@ -206,14 +206,14 @@ struct LauncherBatch5Tests {
   }
 
   /// A26：内置动作和菜单栏同名同序（启动器自己除外），老的 6 个 id 不变；复制即译写开没开，有钉图才有钉图两项，
-  /// 正式版才有检查更新；退出排在最后（第 9 批 M1）
+  /// 正式版才有检查更新；退出排在最后（第 9 批 M1）；录屏录着时那一项叫「停止录屏」（录屏第 1 批）
   @Test func builtInActionsFollowTheMenu() {
     let plain = LauncherItem.actions()
     #expect(
       plain.map(\.target) == [
         "clipboard", "pause-clipboard", "selectionTranslate", "translate-input", "translateReplace",
         "translate-screenshot", "copyToTranslate", "screenshot", "screenshotLastRegion", "ocr",
-        "settings", "shortcuts", "about", "quit",
+        "screenRecord", "settings", "shortcuts", "about", "quit",
       ])
     for action in HotKeyAction.allCases where action != .launcher {
       let item = plain.first { $0.hotKeyAction == action }
@@ -227,7 +227,11 @@ struct LauncherBatch5Tests {
     #expect(busy.first { $0.target == "pause-clipboard" }?.subtitle == "已暂停")
     #expect(busy.map(\.title).contains("显示全部钉图") && busy.last?.target == "quit")
     #expect(
-      Array(busy.map(\.target)[9...11]) == ["ocr", "pins-toggle", "pins-close"])
+      Array(busy.map(\.target)[9...12]) == ["ocr", "screenRecord", "pins-toggle", "pins-close"])
+    let record = { (state: LauncherItem.ActionState) in
+      LauncherItem.actions(state).first { $0.target == "screenRecord" }?.title
+    }
+    #expect(record(.init()) == "录屏" && record(.init(screenRecording: true)) == "停止录屏")
     #expect(LauncherItem.actions(.init(pinsHidden: false)).contains { $0.title == "隐藏全部钉图" })
     // 英文别名、拼音都能搜到
     let replace = plain.first { $0.target == "translateReplace" }!

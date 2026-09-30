@@ -74,20 +74,12 @@ final class ScrollCapture {
 
   private init(region: CGRect, screen: NSScreen) async throws {
     scale = screen.backingScaleFactor
-    // 对齐到像素，夹进这块屏
-    let frame = screen.frame
-    let local = region.intersection(frame).offsetBy(dx: -frame.minX, dy: -frame.minY)
-    let snapped = CGRect(
-      x: (local.minX * scale).rounded() / scale, y: (local.minY * scale).rounded() / scale,
-      width: (local.width * scale).rounded() / scale,
-      height: (local.height * scale).rounded() / scale)
-    self.region = snapped.offsetBy(dx: frame.minX, dy: frame.minY)
+    // 对齐到像素，夹进这块屏；sourceRect：屏内坐标，点，原点在左上
+    let (snapped, source) = RegionSelector.captureRect(region, in: screen.frame, scale: scale)
+    self.region = snapped
     let content = try await SCShareableContent.excludingDesktopWindows(
       false, onScreenWindowsOnly: true)
-    let displayID =
-      (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?
-      .uint32Value
-    guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
+    guard let display = content.displays.first(where: { $0.displayID == screen.displayID }) else {
       throw CaptureError.noDisplay
     }
     // 滤掉本 App 的全部窗口（含之后才建的边框和面板）
@@ -96,12 +88,9 @@ final class ScrollCapture {
       excludingApplications: content.applications.filter { $0.processID == getpid() },
       exceptingWindows: [])
     configuration = SCStreamConfiguration()
-    // sourceRect：屏内坐标，点，原点在左上
-    configuration.sourceRect = CGRect(
-      x: snapped.minX, y: frame.height - snapped.maxY, width: snapped.width,
-      height: snapped.height)
-    configuration.width = Int((snapped.width * scale).rounded())
-    configuration.height = Int((snapped.height * scale).rounded())
+    configuration.sourceRect = source
+    configuration.width = Int((source.width * scale).rounded())
+    configuration.height = Int((source.height * scale).rounded())
     configuration.showsCursor = false
     let first = try await SCScreenshotManager.captureImage(
       contentFilter: filter, configuration: configuration)
@@ -335,8 +324,9 @@ final class ScrollCapture {
     continuation.resume(returning: result)
   }
 
-  /// 选区外一圈 2 点的边框（窗口外扩 ScrollBorderView.margin 给外发光）：不接鼠标（滚轮直接落到下面的窗口）
-  private static func makeBorder(around region: CGRect, view: ScrollBorderView) -> NSPanel {
+  /// 选区外一圈 2 点的边框（窗口外扩 ScrollBorderView.margin 给外发光）：不接鼠标（滚轮直接落到下面的窗口）。
+  /// 录屏的边框也用它（ScreenRecorder，另加 .canJoinAllSpaces）：状态栏层级、普通 NSPanel，截图冻结帧和录制都自动排除
+  static func makeBorder(around region: CGRect, view: ScrollBorderView) -> NSPanel {
     let margin = ScrollBorderView.margin
     let panel = NSPanel(
       contentRect: region.insetBy(dx: -margin, dy: -margin),
@@ -356,15 +346,18 @@ final class ScrollCapture {
 }
 
 /// 选区边框：2 pt 品牌粉线画在选区外 1 pt（不压内容），外发光 1.2 s 呼吸；自动滚动时换成虚线 [8, 6] 0.5 s 走一轮
-/// （呼吸停在中间值：同一表面同时只有一个循环动画）；对不上时变橙
+/// （呼吸停在中间值：同一表面同时只有一个循环动画）；对不上时变橙。录屏用静止的一份（animates: false，发光停在中间值，
+/// 同减弱动态效果）：录制表面的 ambient 留给第 2 批 HUD 的红点
 final class ScrollBorderView: NSView {
   /// 窗口比选区每边大这么多：线 2 pt + 发光
   static let margin: CGFloat = 14
   private let line = CAShapeLayer()
+  private let animates: Bool
   private var lost = false
   private var marching = false
 
-  init() {
+  init(animates: Bool = true) {
+    self.animates = animates
     super.init(frame: .zero)
     wantsLayer = true
     line.fillColor = nil
@@ -408,7 +401,7 @@ final class ScrollBorderView: NSView {
   private func applyAmbient() {
     line.removeAnimation(forKey: "breathe")
     line.removeAnimation(forKey: "march")
-    let reduced = Style.reduceMotion
+    let reduced = Style.reduceMotion || !animates
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     line.lineDashPattern = marching ? [8, 6] : nil

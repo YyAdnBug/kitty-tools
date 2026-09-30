@@ -47,6 +47,13 @@ struct ShotChromeTests {
     let fractional = SelectionView.toolbarPlacement(
       size: size, selection: CGRect(x: 300.3, y: 200.6, width: 400.5, height: 300), in: bounds)
     #expect(fractional.origin == CGPoint(x: 151, y: 151))
+    // 录屏的录制条没有样式托盘（tray 0）：选区下方只剩 20 pt 也放在下方，不白让 40 pt 挤进选区
+    let tall = CGRect(x: 300, y: 70, width: 400, height: 710)
+    let shot = SelectionView.toolbarPlacement(size: size, selection: tall, in: bounds)
+    #expect(shot.origin.y == 80 && shot.edge == .bottom)
+    let record = SelectionView.toolbarPlacement(size: size, selection: tall, in: bounds, tray: 0)
+    #expect(record.origin == CGPoint(x: 150, y: 20))
+    #expect(record.edge == .top)
   }
 
   // 纯图层画的 HUD 小控件（尺寸胶囊、提示、信息卡）也有外圈 0.5 pt black 0.5：边外 0.5、圆角大 0.5，跟着尺寸走，不重复加

@@ -94,7 +94,8 @@ struct ScreenshotTests {
       window(5, "_NSPopoverWindow"),  // 面板上开着的弹出框：也是开着的窗口
       window(10, "OverlayPanel", visible: false),  // 刚 orderOut（系统还在淡出）
       window(11, "OverlayPanel", alpha: 0),  // 淡入前 / 缩回后
-      window(12, "NSPanel", level: .statusBar),  // 刘海岛、飞行卡片、常驻缩略图、长截图边框
+      window(12, "NSPanel", level: .statusBar),  // 刘海岛、飞行卡片、常驻缩略图、长截图边框、录屏边框
+      window(6, "NSStatusBarWindow", level: .statusBar),  // 录屏时菜单栏的停止项：同菜单栏图标，留
       window(
         13, "SelectionOverlay",
         level: NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue + 1)),
@@ -103,7 +104,52 @@ struct ScreenshotTests {
       window(16, "NSToolTipPanel", level: .normal),
       window(18, "NSPanel", level: .screenSaver),
     ])
-    #expect(kept == [1, 2, 3, 4, 5])
+    #expect(kept == [1, 2, 3, 4, 5, 6])
+  }
+
+  /// 录屏时本 App 录进去的窗口（R4-a 白名单）：剪贴板 / 启动器 / 翻译 / ⌘Y（OverlayPanel）、钉图、设置窗和它的 sheet、
+  /// 选文件夹 / 另存为，挂在它们上面的确认框、弹出框（一层套一层也跟着）；收起着的、全透明的也列（开录后露出来照样录）；
+  /// 装饰窗口、状态栏层级的、没在白名单里的类（和挂在它们上面的）、菜单、工具提示一律不列
+  @Test func recordedOwnWindowsAreWhitelistedPanels() {
+    func window(
+      _ id: CGWindowID, _ className: String, level: NSWindow.Level = .floating,
+      visible: Bool = true, alpha: CGFloat = 1, parent: CGWindowID? = nil
+    ) -> ScreenCapture.OwnWindow {
+      ScreenCapture.OwnWindow(
+        id: id, className: className, level: level.rawValue, isVisible: visible, alpha: alpha,
+        parent: parent)
+    }
+    let recorded = ScreenCapture.recordedOwnWindows([
+      window(1, "OverlayPanel"),
+      window(2, "OverlayPanel", visible: false),  // 开过又收起的剪贴板面板
+      window(3, "OverlayPanel", alpha: 0),
+      window(4, "PinPanel", visible: false),  // 隐藏着的钉图
+      window(5, "NSWindow", level: .normal, visible: false),  // 关着的设置窗
+      window(6, "SheetPresentationWindow", level: .normal),  // 设置窗上的引导 / 速查表
+      window(10, "NSPanel", level: .statusBar),  // 刘海岛、飞行卡片、常驻缩略图、录屏边框
+      window(11, "NSStatusBarWindow", level: .statusBar),  // 菜单栏图标、停止项
+      window(
+        12, "SelectionOverlay",
+        level: NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue + 1)),
+      window(13, "ScrollCapturePanel"),
+      window(14, "NSMenuWindowManagerWindow", level: .popUpMenu),
+      window(15, "NSToolTipPanel", level: .normal),
+      window(16, "_NSPopoverWindow"),
+      window(17, "NSPanel"),  // 以后新加的普通面板默认不进画面
+      window(18, "OverlayPanel", level: .statusBar),
+      window(20, "_NSAlertPanel", level: .normal, parent: 5),  // 设置窗里「清空所有普通历史？」
+      window(21, "_NSAlertPanel", level: .floating, parent: 1),  // 翻译浮窗里「清空翻译历史？」
+      window(22, "_NSPopoverWindow", level: .normal, parent: 5),
+      window(23, "_NSAlertPanel", level: .normal, parent: 6),  // 引导 sheet 上再弹的确认框
+      window(24, "_NSAlertPanel", level: .normal, parent: 23),  // 再套一层
+      window(25, "NSOpenPanel", level: .modalPanel),  // 设置 › 截图「更改…」
+      window(26, "NSSavePanel", level: .modalPanel),  // 截图另存为
+      window(30, "_NSPopoverWindow", parent: 17),  // 挂在不录的面板上：不录
+      window(31, "_NSAlertPanel", level: .statusBar, parent: 5),
+      window(32, "NSToolTipPanel", level: .normal, parent: 5),
+      window(33, "NSMenuWindowManagerWindow", level: .normal, parent: 5),
+    ])
+    #expect(recorded == [1, 2, 3, 4, 5, 6, 20, 21, 22, 23, 24, 25, 26])
   }
 
   /// 截图遮罩开着时浮层不因失焦 / 点击收起；遮罩收起（orderOut）后照常。
@@ -213,6 +259,13 @@ struct ScreenshotTests {
     #expect(
       ScreenshotOutput.availableURL(in: directory, date: date).lastPathComponent
         == "截图 2026-09-04 08.05.03 2.png")
+    // 录屏存进同一个目录：前缀、扩展名换掉，重名同样追加序号
+    let video = ScreenshotOutput.availableURL(in: directory, date: date, prefix: "录屏", ext: "mp4")
+    #expect(video.lastPathComponent == "录屏 2026-09-04 08.05.03.mp4")
+    try Data().write(to: video)
+    #expect(
+      ScreenshotOutput.availableURL(in: directory, date: date, prefix: "录屏", ext: "mp4")
+        .lastPathComponent == "录屏 2026-09-04 08.05.03 2.mp4")
   }
 
   @Test func annotationHitTesting() {

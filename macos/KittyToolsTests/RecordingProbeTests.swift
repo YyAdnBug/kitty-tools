@@ -8,6 +8,7 @@
 // 另加 TEST_RUNNER_KITTY_LIVE_RECORD_MIC=1：麦克风几项（第一次会弹麦克风授权框，要人点）。
 // 闪退：先加 TEST_RUNNER_KITTY_LIVE_RECORD_KILL=1 只跑 crashRecording()（录 5 s 后 kill -9 自己，这次测试必然报崩溃），
 // 过十几秒再加 TEST_RUNNER_KITTY_LIVE_RECORD_INSPECT=1 只跑 crashInspect() 看留下的文件。报告在 <输出目录>/report.md。
+// 录屏第 1 批加了 screenRecorderTake()：用 ScreenRecorder 真录 2 s（只验产品代码，可以单独跑）。
 import AVFoundation
 import AppKit
 import ScreenCaptureKit
@@ -557,6 +558,118 @@ struct RecordingProbeTests {
     note("麦克风", lines)
   }
 
+  // MARK: - 录屏第 1 批：ScreenRecorder 真录
+
+  /// ScreenRecorder 真录 2 s（主屏可见区里 640 × 360 点的一块）：文件挪进输出目录的 recorder/、能播、时长约 2 s、
+  /// 尺寸 = 点 × 缩放、编码 avc1；「进行中」记录写在临时偏好域、收尾后删掉。录制中连本 App 一起截一张整屏
+  /// （recorder-chrome.png 和两块局部：菜单栏停止项、选区边框），看停止项和边框画得对不对。只跑这一个：
+  ///   -only-testing:KittyToolsTests/RecordingProbeTests/screenRecorderTake()
+  @Test func screenRecorderTake() async throws {
+    let env = try await Env.make()
+    let suite = "kitty-test-record-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let folder = Self.directory.appending(path: "recorder")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let visible = env.screen.visibleFrame
+    let region = CGRect(x: visible.minX + 240, y: visible.midY - 180, width: 640, height: 360)
+    // 选区里两块本 App 的窗口：左边普通 NSWindow（设置窗的类，在白名单里，要录进去）、右边 NSPanel（不在白名单，不录）
+    let listed = NSWindow(
+      contentRect: CGRect(x: region.minX + 60, y: region.midY - 60, width: 160, height: 120),
+      styleMask: [.borderless], backing: .buffered, defer: false)
+    listed.backgroundColor = NSColor(srgbRed: 0.9, green: 0.1, blue: 0.1, alpha: 1)
+    listed.level = .floating
+    listed.isReleasedWhenClosed = false
+    listed.orderFrontRegardless()
+    let unlisted = NSPanel(
+      contentRect: CGRect(x: region.maxX - 220, y: region.midY - 60, width: 160, height: 120),
+      styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    unlisted.backgroundColor = NSColor(srgbRed: 0.1, green: 0.8, blue: 0.2, alpha: 1)
+    unlisted.level = .floating
+    unlisted.isReleasedWhenClosed = false
+    unlisted.orderFrontRegardless()
+    defer {
+      listed.orderOut(nil)
+      unlisted.orderOut(nil)
+    }
+    var finished: ScreenRecorder.Result?
+    let recorder = try #require(
+      ScreenRecorder(region: region, directory: folder, defaults: defaults) { finished = $0 })
+    let existing = Set(NSApp.windows.map(ObjectIdentifier.init))
+    recorder.start()
+    #expect(defaults.string(forKey: Prefs.screenRecordingInProgress) != nil)
+    // 开始了才出停止项：新出来的那个状态栏窗口
+    var stopItem: NSWindow?
+    for _ in 0..<100 where stopItem == nil {
+      try await Task.sleep(for: .milliseconds(50))
+      stopItem = NSApp.windows.first {
+        String(describing: type(of: $0)) == "NSStatusBarWindow" && $0.isVisible
+          && !existing.contains(ObjectIdentifier($0))
+      }
+    }
+    let item = try #require(stopItem, "5 s 内没开始录")
+    let began = Date.now
+    // 头 1 s 让左边那块来回挪（画面在动才出新帧），之后停在原位
+    let origin = listed.frame.origin
+    for step in 0..<60 {
+      listed.setFrameOrigin(CGPoint(x: origin.x + CGFloat(step % 20) * 3, y: origin.y))
+      try await Task.sleep(for: .milliseconds(16))
+    }
+    listed.setFrameOrigin(origin)
+    // 连本 App 一起截：停止项、边框
+    let filter = SCContentFilter(display: env.display, excludingWindows: [])
+    let chrome = try await SCScreenshotManager.captureImage(
+      contentFilter: filter, configuration: env.configuration(filter))
+    let screen = env.screen.frame
+    let k = CGFloat(chrome.width) / screen.width
+    func crop(_ rect: CGRect) -> CGImage? {
+      chrome.cropping(
+        to: CGRect(
+          x: (rect.minX - screen.minX) * k, y: (screen.maxY - rect.maxY) * k,
+          width: rect.width * k, height: rect.height * k
+        ).integral)
+    }
+    try save(chrome, "recorder-chrome.png")
+    if let bar = crop(item.frame.insetBy(dx: -40, dy: 0)) {
+      try save(bar, "recorder-stop-item.png")
+    }
+    if let corner = crop(
+      CGRect(x: region.minX - 30, y: region.maxY - 90, width: 120, height: 120))
+    {
+      try save(corner, "recorder-border.png")
+    }
+    try await Task.sleep(for: .seconds(max(0, 2 - Date.now.timeIntervalSince(began))))
+    recorder.stop()
+    for _ in 0..<300 where finished == nil { try await Task.sleep(for: .milliseconds(50)) }
+    let result = try #require(finished, "15 s 内没收尾")
+    #expect(result.reason == .user && result.moved)
+    #expect(defaults.string(forKey: Prefs.screenRecordingInProgress) == nil)
+    #expect(!NSApp.windows.contains { $0 === item && $0.isVisible })
+    let file = try #require(result.file)
+    let media = await inspect(file)
+    let scale = env.screen.backingScaleFactor
+    #expect(file.lastPathComponent.hasPrefix("录屏 ") && file.pathExtension == "mp4")
+    #expect(media.playable && media.codec == "avc1")
+    #expect(abs(media.duration - 2) < 0.4, "时长 \(media.duration)")
+    #expect(media.size == CGSize(width: 640 * scale, height: 360 * scale))
+    // 结尾那一帧：白名单里的窗口录进去了，不在白名单的没有（和背景比只记下来，桌面颜色可能碰巧相近）
+    let last = try #require(await frame(file, at: max(0, media.duration - 0.3)))
+    let at = { (window: NSWindow) in
+      pixel(
+        last, x: Int((window.frame.midX - region.minX) * scale),
+        y: Int((region.maxY - window.frame.midY) * scale))
+    }
+    let red = try #require(at(listed))
+    #expect(red.0 > 180 && red.1 < 80 && red.2 < 80, "白名单窗口没录进去：\(red)")
+    let green = at(unlisted).map { "\($0)" } ?? "读不到"
+    note(
+      "ScreenRecorder 真录（录屏第 1 批）",
+      [
+        "结果：\(result.reason)，挪进输出目录 \(result.moved)，会话计的时长 \(result.duration)，文件 \(file.lastPathComponent)",
+        "结尾一帧：白名单里的 NSWindow（红 230,26,26）读回 \(red)；不在白名单的 NSPanel（绿 26,204,51）处读回 \(green)",
+      ] + media.summary)
+  }
+
   // MARK: - 录制
 
   struct Take {
@@ -1028,6 +1141,13 @@ private func note(_ title: String, _ lines: [String]) {
     handle.write(Data(text.utf8))
     try? handle.close()
   }
+}
+
+/// 截图存成输出目录里的 PNG（看完和视频一起删）
+private func save(_ image: CGImage, _ name: String) throws {
+  let data = try #require(
+    NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
+  try data.write(to: RecordingProbeTests.directory.appending(path: name))
 }
 
 private func ms(since date: Date) -> Int { Int(Date.now.timeIntervalSince(date) * 1000) }

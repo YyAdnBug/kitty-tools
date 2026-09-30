@@ -291,6 +291,14 @@ struct ShortcutsSheet: View {
         Entry("⇧⌘S", text: "另存为…"),
         Entry("Esc", text: "取消"),
       ]),
+    // mac-whisker §6 截图「录屏」（录屏第 1 批）；框选、拖边、方向键同「截图 · 框选」，代码在 SelectionView.keyDown
+    Group(
+      title: "录屏", symbol: "record.circle", color: Style.Family.screenshot,
+      globals: [.screenRecord],
+      entries: [
+        Entry("↩", text: "开始录制（双击选区同样）"),
+        Entry("Esc", text: "逐级退出，最后取消（录制中再按一次录屏快捷键、点菜单栏的计时就停止）"),
+      ]),
     // mac-overlay-panel §9 钉图；代码在 PinView.keyDown / performKeyEquivalent
     Group(
       title: "钉图", symbol: "pin.fill", color: Style.Family.screenshot,

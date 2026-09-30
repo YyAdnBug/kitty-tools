@@ -1,5 +1,5 @@
 // 应用生命周期：单实例检查，按依赖顺序组装各模块（PLAN §4），热键与各翻译入口，首次安装打开欢迎引导、
-// 更新后第一次启动用刘海岛说一声，退出 / 锁屏时的清理。
+// 更新后第一次启动用刘海岛说一声，退出 / 锁屏时的清理；录屏（框选、开录、结果、退出前收尾、上次闪退留下的文件）。
 
 import AppKit
 import SwiftUI
@@ -13,8 +13,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var replaceTask: Task<Void, Never>?
   /// 这次替换的标记：旧任务收尾时只清自己的引用，别把紧接着启动的新任务清掉
   private var replaceID: UUID?
-  /// 截图 / 截图翻译进行中（截屏 → 框选 → 识别或输出）：重复按热键直接忽略
+  /// 截图 / 截图翻译进行中（截屏 → 框选 → 识别或输出）：重复按热键直接忽略。录屏只占框选阶段（C9）
   private var isCapturing = false
+  /// 录屏会话（框选之后、开录到文件挪好）：在录时录屏的入口都是停止；录制中照样能截图、识字、截图翻译（C9）
+  private var recorder: ScreenRecorder?
+  /// 退出时在等录屏收尾（applicationShouldTerminate 返回了 .terminateLater）
+  private var quitsAfterRecording = false
   let hotKeys = HotKeyCenter()
 
   // MARK: 数据与服务（按依赖顺序）
@@ -387,6 +391,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         detail: "到 设置 › 快捷键 里看原因、换一个组合",
         tone: .warning, symbol: "keyboard")
     }
+    // 上次录屏没正常收尾（闪退）：能播的挪进快速保存目录，说一声（C7）
+    Task {
+      guard let found = await ScreenRecorder.recover(into: ScreenshotOutput.saveDirectory) else {
+        return
+      }
+      island.show(found.title, detail: found.detail, tone: found.tone)
+    }
+  }
+
+  /// 在录屏时先停止并收尾再退（13 条默认细节：最多等 5 s；没写完也照样退，replayd 自己会收尾，下次启动 recover 接手）
+  func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    guard let recorder else { return .terminateNow }
+    quitsAfterRecording = true
+    recorder.stop()
+    Task {
+      try? await Task.sleep(for: .seconds(5))
+      guard quitsAfterRecording else { return }
+      quitsAfterRecording = false
+      NSApp.reply(toApplicationShouldTerminate: true)
+    }
+    return .terminateLater
   }
 
   func applicationWillTerminate(_ notification: Notification) {
@@ -459,12 +484,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
-  /// 菜单栏和启动器内置动作此刻的状态：暂停记录了没有、复制即译开没开、钉图（nil = 没有）、能不能检查更新
+  /// 菜单栏和启动器内置动作此刻的状态：暂停记录了没有、复制即译开没开、钉图（nil = 没有）、能不能检查更新、在不在录屏
   private var menuState: LauncherItem.ActionState {
     LauncherItem.ActionState(
       recordingPaused: watcher.isUserPaused,
       copyToTranslate: UserDefaults.standard.bool(forKey: Prefs.translateCopyToTranslate),
-      pinsHidden: pins.panels.isEmpty ? nil : pins.isHidden, checksUpdates: updater.isSupported)
+      pinsHidden: pins.panels.isEmpty ? nil : pins.isHidden, checksUpdates: updater.isSupported,
+      screenRecording: recorder != nil)
   }
 
   /// 全局热键动作：热键、菜单栏、启动器同一个分发
@@ -479,6 +505,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     case .screenshot: screenshot()
     case .screenshotLastRegion: screenshot(repeatingLastRegion: true)
     case .recognizeText: recognizeText()
+    case .screenRecord: screenRecord()
     }
   }
 
@@ -692,10 +719,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           })
       else { return }
       switch outcome {
-      case .color(let hex):
-        Paster.write(string: hex, record: true)
-        island.show(
-          "已复制色值", detail: hex, leading: Self.color(hex).map(Island.Leading.color) ?? .tone)
+      case .color(let hex): copyColor(hex)
+      case .record: break  // 截图框选不交回录屏（第 2 批才有截图里按 R）
       case .scroll(let region):
         UserDefaults.standard.set(NSStringFromRect(region), forKey: Prefs.screenshotLastRegion)
         // 长截图在实时画面上截、滤掉本 App：没固定的浮层留着只会盖住选区，挡住滚轮和自动滚动
@@ -725,6 +750,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
       }
     }
+  }
+
+  /// 录屏：在录就停止；否则冻结各屏、框选（同截图：窗口、整屏、拖框、D 上次区域，和截图共用上次区域），交回选区后
+  /// 立刻开录。isCapturing 只占框选阶段：开录后录制状态在 recorder 里，截图、识字照常，再按一次快捷键就停（C9）
+  func screenRecord() {
+    if let recorder { return recorder.stop() }
+    // 正在装更新：装好会退出重新打开，录到一半会被截断（录制中的「不能更新」只防得住先录后更新）
+    if case .installing = updater.state {
+      return island.show("正在更新", detail: "装好会自动重新打开，之后再录屏", tone: .warning)
+    }
+    beginCapture(hidingPanels: false) { [self] in
+      let lastRegion = UserDefaults.standard.string(forKey: Prefs.screenshotLastRegion).map(
+        NSRectFromString)
+      guard
+        let outcome = await frozenSelection(
+          "录屏", { await RegionSelector.record($0, lastRegion: lastRegion) })
+      else { return }
+      switch outcome {
+      case .color(let hex): copyColor(hex)
+      case .record(let region):
+        UserDefaults.standard.set(NSStringFromRect(region), forKey: Prefs.screenshotLastRegion)
+        // 压在选区上的常驻缩略图收走（同长截图）；钉图照常录进去
+        shelf.dismiss(covering: region)
+        startRecording(region)
+      case .capture, .scroll: break
+      }
+    }
+  }
+
+  private func startRecording(_ region: CGRect) {
+    guard
+      let recorder = ScreenRecorder(
+        region: region, directory: ScreenshotOutput.saveDirectory,
+        onFinish: { [weak self] in self?.recorded($0) })
+    else {
+      return island.show("没能开始录屏", detail: "找不到选区所在的屏幕", tone: .warning)
+    }
+    self.recorder = recorder
+    updater.blocker = "录制结束后再更新"
+    recorder.start()
+  }
+
+  /// 录屏收尾：文件已挪进快速保存目录（挪不过去的留在原地、在访达里选中），刘海岛说结果（成功时岛让菜单栏图标弹一下）
+  private func recorded(_ result: ScreenRecorder.Result) {
+    recorder = nil
+    updater.blocker = nil
+    if result.reason == .denied { Permissions.Kind.screenRecording.openSettings() }
+    // 挪不进快速保存目录：在访达里选中留下的文件，马上能拖走
+    if let file = result.file, !result.moved {
+      NSWorkspace.shared.activateFileViewerSelecting([file])
+    }
+    let summary = ScreenRecorder.summary(
+      result,
+      folder: FileManager.default.displayName(atPath: ScreenshotOutput.saveDirectory.path))
+    island.show(
+      summary.title, detail: summary.detail, tone: summary.tone,
+      symbol: summary.tone == .success ? "video.circle.fill" : nil)
+    if quitsAfterRecording {
+      quitsAfterRecording = false
+      NSApp.reply(toApplicationShouldTerminate: true)
+    }
+  }
+
+  /// 框选时按 C：复制放大镜中心的色值（截图、录屏的框选）
+  private func copyColor(_ hex: String) {
+    Paster.write(string: hex, record: true)
+    island.show(
+      "已复制色值", detail: hex, leading: Self.color(hex).map(Island.Leading.color) ?? .tone)
   }
 
   /// 长截图（截图框选后按 S）：遮罩已收起，在实时画面上边滚边拼，结束后按选的方式输出。整个过程都算在这次截图里
@@ -994,7 +1087,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       for action in section.actions {
         let binding = hotKeys.bindings[action]
         menu.addAction(
-          action.title, symbol: action.symbol, color: NSColor(action.color),
+          action.title(recording: state.screenRecording), symbol: action.symbol,
+          color: NSColor(action.color),
           key: binding?.menuKeyEquivalent ?? "", modifiers: binding?.modifierFlags ?? []
         ) { [unowned self] in run(action) }
       }

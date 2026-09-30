@@ -7,4 +7,5 @@ nonisolated enum Log {
   private static let subsystem = Bundle.main.bundleIdentifier ?? "com.yy.kitty-tools.native"
   static let storage = Logger(subsystem: subsystem, category: "storage")
   static let clipboard = Logger(subsystem: subsystem, category: "clipboard")
+  static let record = Logger(subsystem: subsystem, category: "record")
 }
