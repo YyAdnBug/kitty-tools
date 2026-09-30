@@ -1108,4 +1108,21 @@ struct SelectionInteractionTests {
     #expect(typing.session.mode == .capture && typing.recordBar == nil)
     #expect(typing.window.firstResponder === field)
   }
+
+  /// 正在录音（录音第 5 批，C9-a）/ 已经在录屏 / 正在装更新：按 R、点「录屏」那一刻就拒，停在截图里（工具栏、选区都在），
+  /// 顶部提示 + 播报；那一段停了再按 R 就切
+  @Test func switchingRefusedWhileRecording() throws {
+    let h = Harness()
+    var busy = true
+    h.session.recordingBlocker = { busy ? ("正在录音", "先停止这一段再录") : nil }
+    h.makeSelection()
+    h.key(kVK_ANSI_R, "r")
+    try #require(h.toolbar?.button(for: .record)).performClick(nil)
+    #expect(h.session.mode == .capture && h.toolbar != nil && h.recordBar == nil)
+    #expect(h.view.selection == Self.initial && h.view.isAdjusting)
+    #expect(h.view.announcement == "正在录音，先停止这一段再录")
+    busy = false
+    h.key(kVK_ANSI_R, "r")
+    #expect(h.session.mode == .record && h.recordBar != nil)
+  }
 }

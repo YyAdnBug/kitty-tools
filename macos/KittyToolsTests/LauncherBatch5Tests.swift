@@ -206,14 +206,14 @@ struct LauncherBatch5Tests {
   }
 
   /// A26：内置动作和菜单栏同名同序（启动器自己除外），老的 6 个 id 不变；复制即译写开没开，有钉图才有钉图两项，
-  /// 正式版才有检查更新；退出排在最后（第 9 批 M1）；录屏录着时那一项叫「停止录屏」（录屏第 1 批）
+  /// 正式版才有检查更新；退出排在最后（第 9 批 M1）；录屏录着时那一项叫「停止录屏」（录屏第 1 批），录音同理（录音第 5 批）
   @Test func builtInActionsFollowTheMenu() {
     let plain = LauncherItem.actions()
     #expect(
       plain.map(\.target) == [
         "clipboard", "pause-clipboard", "selectionTranslate", "translate-input", "translateReplace",
         "translate-screenshot", "copyToTranslate", "screenshot", "screenshotLastRegion", "ocr",
-        "screenRecord", "settings", "shortcuts", "about", "quit",
+        "screenRecord", "audioRecord", "settings", "shortcuts", "about", "quit",
       ])
     for action in HotKeyAction.allCases where action != .launcher {
       let item = plain.first { $0.hotKeyAction == action }
@@ -227,11 +227,16 @@ struct LauncherBatch5Tests {
     #expect(busy.first { $0.target == "pause-clipboard" }?.subtitle == "已暂停")
     #expect(busy.map(\.title).contains("显示全部钉图") && busy.last?.target == "quit")
     #expect(
-      Array(busy.map(\.target)[9...12]) == ["ocr", "screenRecord", "pins-toggle", "pins-close"])
-    let record = { (state: LauncherItem.ActionState) in
-      LauncherItem.actions(state).first { $0.target == "screenRecord" }?.title
+      Array(busy.map(\.target)[9...13])
+        == ["ocr", "screenRecord", "audioRecord", "pins-toggle", "pins-close"])
+    let title = { (state: LauncherItem.ActionState, target: String) in
+      LauncherItem.actions(state).first { $0.target == target }?.title
     }
-    #expect(record(.init()) == "录屏" && record(.init(screenRecording: true)) == "停止录屏")
+    #expect(title(.init(), "screenRecord") == "录屏")
+    #expect(title(.init(recording: .screenRecord), "screenRecord") == "停止录屏")
+    #expect(title(.init(recording: .screenRecord), "audioRecord") == "录音")
+    #expect(title(.init(recording: .audioRecord), "audioRecord") == "停止录音")
+    #expect(title(.init(recording: .audioRecord), "screenRecord") == "录屏")
     #expect(LauncherItem.actions(.init(pinsHidden: false)).contains { $0.title == "隐藏全部钉图" })
     // 英文别名、拼音都能搜到
     let replace = plain.first { $0.target == "translateReplace" }!

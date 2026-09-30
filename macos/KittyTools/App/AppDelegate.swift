@@ -1,5 +1,6 @@
 // 应用生命周期：单实例检查，按依赖顺序组装各模块（PLAN §4），热键与各翻译入口，首次安装打开欢迎引导、
-// 更新后第一次启动用刘海岛说一声，退出 / 锁屏时的清理；录屏（框选、开录、结果、飞入和视频卡、退出前收尾、上次闪退留下的文件）。
+// 更新后第一次启动用刘海岛说一声，退出 / 锁屏时的清理；录屏（框选、开录、结果、飞入和视频卡、退出前收尾、上次闪退留下的文件）；
+// 录音（录音第 5 批：开录、和录屏互斥、结果、飞入和录音卡，收尾和闪退恢复同录屏）。
 
 import AppKit
 import SwiftUI
@@ -17,7 +18,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var isCapturing = false
   /// 录屏会话（框选之后、开录到文件挪好）：在录时录屏的入口都是停止；录制中照样能截图、识字、截图翻译（C9）
   private var recorder: ScreenRecorder?
-  /// 退出时在等录屏收尾（applicationShouldTerminate 返回了 .terminateLater）
+  /// 录音会话（录音第 5 批，开录到文件挪好）：在录时录音的入口都是停止；和录屏互斥（C9-a）
+  private var audioRecorder: AudioRecorder?
+  /// 退出时在等录屏 / 录音收尾（applicationShouldTerminate 返回了 .terminateLater）
   private var quitsAfterRecording = false
   let hotKeys = HotKeyCenter()
 
@@ -374,7 +377,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     shelf.island = island
     shelf.save = { [unowned self] in await savePNG($0, asking: false) }
     shelf.pin = { [unowned self] in pins.pin($0, frame: $1) }
-    // 录屏卡的「拷贝」：拷的是文件，同截图的图片自己记进剪贴板历史（C8-a：点了才进；暂停记录时不记）
+    // 录屏 / 录音卡的「拷贝」：拷的是文件，同截图的图片自己记进剪贴板历史（C8-a：点了才进；暂停记录时不记）
     shelf.copyFile = { [unowned self] url in
       Paster.write(files: [url])
       if !watcher.isUserPaused { clipboardStore.recordFiles([url]) }
@@ -396,20 +399,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         detail: "到 设置 › 快捷键 里看原因、换一个组合",
         tone: .warning, symbol: "keyboard")
     }
-    // 上次录屏没正常收尾（闪退）：能播的挪进快速保存目录，说一声（C7）
+    // 上次录屏 / 录音没正常收尾（闪退）：能播的挪进快速保存目录，说一声（C7）
     Task {
-      guard let found = await ScreenRecorder.recover(into: ScreenshotOutput.saveDirectory) else {
-        return
+      for medium in [ScreenRecorder.Medium.screen, .audio] {
+        guard
+          let found = await ScreenRecorder.recover(
+            into: ScreenshotOutput.saveDirectory, medium: medium)
+        else { continue }
+        island.show(found.title, detail: found.detail, tone: found.tone)
       }
-      island.show(found.title, detail: found.detail, tone: found.tone)
     }
   }
 
-  /// 在录屏时先停止并收尾再退（13 条默认细节：最多等 5 s；没写完也照样退，replayd 自己会收尾，下次启动 recover 接手）
+  /// 在录屏 / 录音时先停止并收尾再退（13 条默认细节：最多等 5 s；没写完也照样退，录屏由 replayd 自己收尾，下次启动 recover 接手）
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-    guard let recorder else { return .terminateNow }
+    guard recorder != nil || audioRecorder != nil else { return .terminateNow }
     quitsAfterRecording = true
-    recorder.stop()
+    recorder?.stop()
+    audioRecorder?.stop()
     Task {
       try? await Task.sleep(for: .seconds(5))
       guard quitsAfterRecording else { return }
@@ -489,13 +496,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
-  /// 菜单栏和启动器内置动作此刻的状态：暂停记录了没有、复制即译开没开、钉图（nil = 没有）、能不能检查更新、在不在录屏
+  /// 菜单栏和启动器内置动作此刻的状态：暂停记录了没有、复制即译开没开、钉图（nil = 没有）、能不能检查更新、在录屏还是录音
   private var menuState: LauncherItem.ActionState {
     LauncherItem.ActionState(
       recordingPaused: watcher.isUserPaused,
       copyToTranslate: UserDefaults.standard.bool(forKey: Prefs.translateCopyToTranslate),
       pinsHidden: pins.panels.isEmpty ? nil : pins.isHidden, checksUpdates: updater.isSupported,
-      screenRecording: recorder != nil)
+      recording: recorder != nil ? .screenRecord : audioRecorder != nil ? .audioRecord : nil)
   }
 
   /// 全局热键动作：热键、菜单栏、启动器同一个分发
@@ -511,6 +518,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     case .screenshotLastRegion: screenshot(repeatingLastRegion: true)
     case .recognizeText: recognizeText()
     case .screenRecord: screenRecord()
+    case .audioRecord: audioRecord()
     }
   }
 
@@ -720,7 +728,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           "截图",
           {
             await RegionSelector.capture(
-              $0, lastRegion: lastRegion, preselect: repeatingLastRegion)
+              $0, lastRegion: lastRegion, preselect: repeatingLastRegion,
+              recordingBlocker: { [weak self] in self?.recordingBlocker(.screen) })
           })
       else { return }
       switch outcome {
@@ -763,7 +772,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 再按一次快捷键就停（C9）
   func screenRecord() {
     if let recorder { return recorder.stop() }
-    guard !isInstallingUpdate() else { return }
+    guard !refusesRecording(.screen) else { return }
     beginCapture(hidingPanels: false) { [self] in
       let lastRegion = UserDefaults.standard.string(forKey: Prefs.screenshotLastRegion).map(
         NSRectFromString)
@@ -779,27 +788,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
-  /// 正在装更新：装好会退出重新打开，录到一半会被截断（录制中的「不能更新」只防得住先录后更新）。是的话岛说一声
-  private func isInstallingUpdate() -> Bool {
-    guard case .installing = updater.state else { return false }
-    island.show("正在更新", detail: "装好会自动重新打开，之后再录屏", tone: .warning)
+  /// 现在开不了 medium 的原因（岛的标题、说明；nil = 能录）：录屏和录音互斥（C9-a，另一种在录，含倒数、等授权）、
+  /// 同一种已经在录（录屏中截图再按 R）、正在装更新（装好会退出重新打开，录到一半会被截断；录制中的「不能更新」只防得住
+  /// 先录后更新）
+  private func recordingBlocker(_ medium: ScreenRecorder.Medium) -> (title: String, detail: String)?
+  {
+    let busy = "先停止这一段再录"
+    if recorder != nil { return (medium == .screen ? "已经在录屏" : "正在录屏", busy) }
+    if audioRecorder != nil { return (medium == .audio ? "已经在录音" : "正在录音", busy) }
+    if case .installing = updater.state {
+      return ("正在更新", "装好会自动重新打开，之后再\(medium.noun)")
+    }
+    return nil
+  }
+
+  /// 开不了就出警告岛，返回 true
+  private func refusesRecording(_ medium: ScreenRecorder.Medium) -> Bool {
+    guard let blocker = recordingBlocker(medium) else { return false }
+    island.show(blocker.title, detail: blocker.detail, tone: .warning)
     return true
+  }
+
+  /// 录音（录音第 5 批，拍板 A1-a）：一键录麦克风，按一下开始、再按停止（菜单栏 / 启动器这时叫「停止录音」）。
+  /// 和录屏互斥（C9-a）：录屏在录（含倒数、等麦克风授权）时岛说先停止那一段；正在装更新时不开录（同录屏）
+  func audioRecord() {
+    if let audioRecorder { return audioRecorder.stop() }
+    guard !refusesRecording(.audio) else { return }
+    let recorder = AudioRecorder(directory: ScreenshotOutput.saveDirectory) { [weak self] in
+      self?.recorded($0, .audio)
+    }
+    audioRecorder = recorder
+    updater.blocker = "录制结束后再更新"
+    recorder.start()
   }
 
   /// 框选交回录屏选区（⌥R 的框选、截图里按 R 切过去的）：记成上次区域（和截图共用）、收走压在选区上的常驻缩略图
   /// （同长截图；钉图照常录进去）、开录（先倒数）
   private func beginRecording(_ region: CGRect) {
-    // 截图里切过来的：这时可能已经在录（录制中照样能截图，C9），或者正在装更新
-    if recorder != nil {
-      return island.show("已经在录屏", detail: "先停止这一段再录", tone: .warning)
-    }
-    guard !isInstallingUpdate() else { return }
+    // 截图里按 R 时已经问过（SelectionSession.recordingBlocker，停在截图里）；框选期间状态还可能变（系统睡眠停了录音、
+    // 更新开始装），这里兜底
+    guard !refusesRecording(.screen) else { return }
     UserDefaults.standard.set(NSStringFromRect(region), forKey: Prefs.screenshotLastRegion)
     shelf.dismiss(covering: region)
     guard
       let recorder = ScreenRecorder(
         region: region, directory: ScreenshotOutput.saveDirectory, hotKeys: hotKeys,
-        island: island, onFinish: { [weak self] in self?.recorded($0) })
+        island: island, onFinish: { [weak self] in self?.recorded($0, .screen) })
     else {
       return island.show("没能开始录屏", detail: "找不到选区所在的屏幕", tone: .warning)
     }
@@ -808,11 +842,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     recorder.start()
   }
 
-  /// 录屏收尾：文件已挪进快速保存目录（挪不过去的留在原地、在访达里选中），刘海岛说结果（成功时岛让菜单栏图标弹一下）；
-  /// 挪进去了还要飞卡片、留视频卡（landRecording）。倒数中取消的不出岛，只播报。录制中麦克风断开的（第 4 批）summary 是警告：
-  /// 卡片照飞，岛也出来说「后半段没有麦克风声音」；开着麦克风但之前拒绝过授权的，这时打开系统设置的麦克风页
-  private func recorded(_ result: ScreenRecorder.Result) {
-    recorder = nil
+  /// 录屏 / 录音收尾：文件已挪进快速保存目录（挪不过去的留在原地、在访达里选中），刘海岛说结果（成功时岛让菜单栏图标弹一下）；
+  /// 挪进去了还要飞卡片、留视频卡 / 录音卡（landRecording）。倒数中（录音：等授权框时）取消的不出岛，只播报。录制中麦克风断开的
+  /// （第 4 批）summary 是警告：卡片照飞，岛也出来说「后半段没有麦克风声音」；开着麦克风（录音总是）但之前拒绝过授权的，这时打开
+  /// 系统设置的麦克风页（录音被拒时岛说「需要麦克风授权」，第 5 批）
+  private func recorded(_ result: ScreenRecorder.Result, _ medium: ScreenRecorder.Medium) {
+    if medium == .screen { recorder = nil } else { audioRecorder = nil }
     updater.blocker = nil
     defer {
       if quitsAfterRecording {
@@ -820,7 +855,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.reply(toApplicationShouldTerminate: true)
       }
     }
-    if result.reason == .denied { Permissions.Kind.screenRecording.openSettings() }
+    if result.reason == .denied, medium == .screen {
+      Permissions.Kind.screenRecording.openSettings()
+    }
     // 开着麦克风但之前拒绝过：开录时只出了警告岛，这时才打开（开录前打开会盖住选区、录进画面）
     if result.microphoneDenied { Permissions.Kind.microphone.openSettings() }
     // 挪不进快速保存目录：在访达里选中留下的文件，马上能拖走
@@ -828,46 +865,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       NSWorkspace.shared.activateFileViewerSelecting([file])
     }
     let folder = FileManager.default.displayName(atPath: ScreenshotOutput.saveDirectory.path)
-    guard let summary = ScreenRecorder.summary(result, folder: folder) else {
+    guard let summary = ScreenRecorder.summary(result, folder: folder, medium: medium) else {
       return Island.announce("已取消")
     }
     var leading = Island.Leading.tone
     if result.moved, let file = result.file {
       // 飞过去了：落地的角标已写目录名，正常停的不再出岛（同截图快速保存），只给 VoiceOver 说一句
-      if landRecording(file, result), summary.tone == .success {
+      if landRecording(file, result, medium), summary.tone == .success {
         return Island.announce(
-          "录屏已保存到「\(folder)」，"
+          "\(medium.noun)已保存到「\(folder)」，"
             + ScreenRecorder.spoken(Int(result.duration.components.seconds)))
       }
       if summary.tone == .success, let poster = result.poster {
         leading = Island.thumbnail(of: poster)
       }
     }
+    let symbol = medium == .screen ? "video.circle.fill" : "waveform.circle.fill"
     island.show(
       summary.title, detail: summary.detail, tone: summary.tone,
-      symbol: summary.tone == .success ? "video.circle.fill" : nil, leading: leading)
+      symbol: summary.tone == .success ? symbol : nil, leading: leading)
   }
 
   /// 录屏存进快速保存目录后（拍板 R11-a）：最后一帧从选区（整屏录制就是那块屏）按 S1 飞到右下角，没有快门声，落地弹文件夹
   /// 角标，再交给常驻缩略图的视频卡（设置里关了常驻缩略图就停 0.9 s 自己滑走）。减弱动态效果、没取到最后一帧时不飞，
-  /// 视频卡在角落淡入（关了常驻缩略图就只有岛）。返回飞了没有（飞了的正常停不再出岛）
-  private func landRecording(_ file: URL, _ result: ScreenRecorder.Result) -> Bool {
+  /// 视频卡在角落淡入（关了常驻缩略图就只有岛）。录音（第 5 批，A5-a）同一套：波形图从 HUD 的位置（result.region，和图同比例的
+  /// 小框）长到录音卡那么大（AudioRecorder.posterSize），交给录音卡。返回飞了没有（飞了的正常停不再出岛）
+  private func landRecording(
+    _ file: URL, _ result: ScreenRecorder.Result, _ medium: ScreenRecorder.Medium
+  ) -> Bool {
     let seconds = Int(result.duration.components.seconds)
+    let audio = medium == .audio
+    let size = audio ? AudioRecorder.posterSize : nil
     let keepsThumbnail = UserDefaults.standard.bool(forKey: Prefs.screenshotShelf)
     let flies = result.poster != nil && !Style.reduceMotion
     let linger: (CGRect, FlyCard.Badge) -> Void = { [weak self] rect, _ in
       self?.shelf.add(
-        video: file, seconds: seconds, poster: result.poster, source: result.region, at: rect,
-        fadesIn: !flies)
+        recording: file, seconds: seconds, audio: audio, poster: result.poster,
+        source: result.region, at: rect, fadesIn: !flies)
     }
     guard flies, let poster = result.poster else {
-      if keepsThumbnail, let rect = FlyCard.landingRect(for: result.region) {
+      if keepsThumbnail, let rect = FlyCard.landingRect(for: result.region, size: size) {
         linger(rect, .saved(file))
       }
       return false
     }
     let landing = FlyCard.fly(
-      poster, from: result.region, linger: keepsThumbnail ? linger : nil, seconds: seconds)
+      poster, from: result.region, size: size, linger: keepsThumbnail ? linger : nil,
+      seconds: seconds, audio: audio)
     landing.onShow = { [weak self] in self?.statusItem?.pop() }
     // 文件已经存好了：直接给角标（落地时弹出来）；结果由调用方说（带时长，或中断的岛）
     landing.land(.saved(file), announces: false)
@@ -1148,7 +1192,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       for action in section.actions {
         let binding = hotKeys.bindings[action]
         menu.addAction(
-          action.title(recording: state.screenRecording), symbol: action.symbol,
+          action.title(recording: state.recording == action), symbol: action.symbol,
           color: NSColor(action.color),
           key: binding?.menuKeyEquivalent ?? "", modifiers: binding?.modifierFlags ?? []
         ) { [unowned self] in run(action) }

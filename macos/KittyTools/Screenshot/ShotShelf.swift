@@ -9,6 +9,8 @@
 // 录屏（第 3 批，拍板 R11-a）的视频卡是同一种卡片的另一种内容（ShelfCard.Kind.video）：图是最后一帧（取不到就是 HUD 底色）、
 // 多了播放符号和时长；文件已经存好了，悬停只有「拷贝」（拷的是文件，进剪贴板历史）和关闭 / 在访达中显示，双击用默认 App 打开，
 // 拖出去就是那个文件，右键多「打开」「移到废纸篓」（能放回，不二次确认）。
+// 录音（第 5 批，拍板 A5-a）的录音卡同样是这种卡片（ShelfCard.Kind.audio）：图是电平包络画的波形，左上角 waveform 标记
+// （没有播放符号）+ 时长，操作和视频卡一样。
 
 import AppKit
 import SwiftUI
@@ -45,15 +47,16 @@ final class ShotShelf {
     }
   }
 
-  /// 接手一段录屏（已存进快速保存目录的文件、时长、最后一帧）。fadesIn：没飞过来（减弱动态效果、没取到最后一帧）时在角落淡入
+  /// 接手一段录屏 / 录音（已存进快速保存目录的文件、时长、最后一帧 / 波形）。fadesIn：没飞过来（减弱动态效果、没取到最后一帧）
+  /// 时在角落淡入
   func add(
-    video url: URL, seconds: Int, poster: CGImage?, source: CGRect, at rect: CGRect,
-    fadesIn: Bool
+    recording url: URL, seconds: Int, audio: Bool = false, poster: CGImage?, source: CGRect,
+    at rect: CGRect, fadesIn: Bool
   ) {
     insert(at: rect, fadesIn: fadesIn) { screen, panel in
       ShelfCard(
-        video: url, seconds: seconds, poster: poster, source: source, rect: rect, screen: screen,
-        panel: panel, shelf: self)
+        recording: url, seconds: seconds, audio: audio, poster: poster, source: source, rect: rect,
+        screen: screen, panel: panel, shelf: self)
     }
   }
 
@@ -121,12 +124,23 @@ final class ShotShelf {
 
 /// 一张常驻缩略图：窗口、界面状态、自动滑走的计时
 @Observable final class ShelfCard {
-  /// 卡片装的是什么（第 5 批录音再加一种）
+  /// 卡片装的是什么
   enum Kind: Equatable {
     /// 截图：PNG / 原图在下面的 png、image 里
     case image
     /// 录屏：快速保存目录里的文件和时长（秒）
     case video(URL, seconds: Int)
+    /// 录音（第 5 批）：同录屏，图是波形
+    case audio(URL, seconds: Int)
+
+    /// 录屏 / 录音的文件、时长和哪一种（截图 nil）：两种卡的操作一样，只有叫法和标记不同
+    var recording: (url: URL, seconds: Int, medium: ScreenRecorder.Medium)? {
+      switch self {
+      case .image: nil
+      case .video(let url, let seconds): (url, seconds, .screen)
+      case .audio(let url, let seconds): (url, seconds, .audio)
+      }
+    }
   }
 
   /// 右键菜单和 VoiceOver 自定义动作（同一份 menu）
@@ -147,7 +161,7 @@ final class ShotShelf {
   }
 
   let kind: Kind
-  /// 显示的部分（长截图只露开头一屏；缩到卡片尺寸）；录屏没取到最后一帧时 nil（HUD 底色 + 播放符号占位）
+  /// 显示的部分（长截图只露开头一屏；缩到卡片尺寸）；录屏没取到最后一帧、录音没有波形时 nil（HUD 底色 + 标记占位）
   let shown: CGImage?
   let scale: CGFloat
   /// 原图的像素尺寸（钉图按它的宽高比）
@@ -193,13 +207,14 @@ final class ShotShelf {
     if case .saved(let url) = badge { fileURL = url }
   }
 
-  /// 录屏：文件已在快速保存目录（角标是它的文件夹），poster 是最后一帧（和飞行卡片同样缩到卡片尺寸，交接时像素一样）
+  /// 录屏 / 录音（audio）：文件已在快速保存目录（角标是它的文件夹），poster 是最后一帧 / 波形（和飞行卡片同样缩到卡片尺寸，
+  /// 交接时像素一样）
   init(
-    video url: URL, seconds: Int, poster: CGImage?, source: CGRect, rect: CGRect,
-    screen: NSScreen?, panel: NSPanel, shelf: ShotShelf
+    recording url: URL, seconds: Int, audio: Bool = false, poster: CGImage?, source: CGRect,
+    rect: CGRect, screen: NSScreen?, panel: NSPanel, shelf: ShotShelf
   ) {
     let backing = screen?.backingScaleFactor ?? 2
-    kind = .video(url, seconds: seconds)
+    kind = audio ? .audio(url, seconds: seconds) : .video(url, seconds: seconds)
     scale = backing
     shown = poster.map {
       FlyCard.cardImage(of: $0, frame: source, size: rect.size, backingScale: backing)
@@ -216,22 +231,16 @@ final class ShotShelf {
 
   /// 旁白里卡片的名字
   var accessibilityName: String {
-    switch kind {
-    case .image: "截图缩略图"
-    case .video(_, let seconds): "录屏，" + ScreenRecorder.spoken(seconds)
-    }
+    guard let recording = kind.recording else { return "截图缩略图" }
+    return recording.medium.noun + "，" + ScreenRecorder.spoken(recording.seconds)
   }
 
   /// 右键菜单（一节一组，节间分隔线）：截图「拷贝 / 存储 / 钉图 /（存过的）在访达中显示 ｜ 关闭」；
-  /// 录屏「拷贝 / 打开 / 在访达中显示 ｜ 移到废纸篓 ｜ 关闭」（已经存了，没有存储；不是图，没有钉图）
+  /// 录屏 / 录音「拷贝 / 打开 / 在访达中显示 ｜ 移到废纸篓 ｜ 关闭」（已经存了，没有存储；不是图，没有钉图）
   var menu: [[Command]] {
-    switch kind {
-    case .image:
-      let saved = if case .saved = badge { true } else { false }
-      return [[.copy, .save, .pin] + (saved ? [.reveal] : []), [.close]]
-    case .video:
-      return [[.copy, .open, .reveal], [.trash], [.close]]
-    }
+    guard kind.recording == nil else { return [[.copy, .open, .reveal], [.trash], [.close]] }
+    let saved = if case .saved = badge { true } else { false }
+    return [[.copy, .save, .pin] + (saved ? [.reveal] : []), [.close]]
   }
 
   func perform(_ command: Command) {
@@ -303,11 +312,12 @@ final class ShotShelf {
 
   func copyAgain() {
     guard !isBusy, let shelf else { return }
-    // 录屏拷的是文件（C8-a：点了才进剪贴板历史）
-    if case .video(let url, _) = kind {
-      guard exists(url) else { return }
-      shelf.copyFile(url)
-      shelf.island?.show("已复制录屏", leading: shown.map(Island.thumbnail(of:)) ?? .tone)
+    // 录屏 / 录音拷的是文件（C8-a：点了才进剪贴板历史）
+    if let recording = kind.recording {
+      guard exists(recording.url) else { return }
+      shelf.copyFile(recording.url)
+      shelf.island?.show(
+        "已复制\(recording.medium.noun)", leading: shown.map(Island.thumbnail(of:)) ?? .tone)
       return
     }
     isBusy = true
@@ -376,9 +386,9 @@ final class ShotShelf {
     }
   }
 
-  /// 录屏移到废纸篓（能放回，13 条默认细节：不二次确认）：成功后卡片收起，岛说一声
+  /// 录屏 / 录音移到废纸篓（能放回，13 条默认细节：不二次确认）：成功后卡片收起，岛说一声
   func moveToTrash() {
-    guard case .video(let url, _) = kind, exists(url) else { return }
+    guard let url = kind.recording?.url, exists(url) else { return }
     Task {
       do {
         _ = try await NSWorkspace.shared.recycle([url])
@@ -575,14 +585,18 @@ struct ShelfCardView: View {
         if let shown = card.shown {
           Image(decorative: shown, scale: 1).resizable().aspectRatio(contentMode: .fill)
         } else {
-          Color(nsColor: Style.HUD.fill)  // 录屏没取到最后一帧：只剩播放符号和时长
+          Color(nsColor: Style.HUD.solidFill)  // 录屏没取到最后一帧：只剩播放符号和时长
         }
       }
-      // 录屏：播放符号和时长（和飞行卡片落地时同一个）；悬停时让给操作按钮（左下角是「在访达中显示」）
+      // 录屏：播放符号和时长（录音是左上角的 waveform 标记和时长；和飞行卡片落地时同一个）；悬停时让给操作按钮
+      // （左上角是关闭，左下角是「在访达中显示」）
       .overlay {
-        if case .video(_, let seconds) = card.kind, !card.isHovered {
-          VideoMarks(seconds: seconds, compact: VideoMarks.isCompact(card.rect.size))
-            .transition(.opacity)
+        if let recording = card.kind.recording, !card.isHovered {
+          VideoMarks(
+            seconds: recording.seconds, compact: VideoMarks.isCompact(card.rect.size),
+            audio: recording.medium == .audio
+          )
+          .transition(.opacity)
         }
       }
       .overlay {

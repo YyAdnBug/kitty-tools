@@ -51,13 +51,13 @@ struct LauncherItem: Identifiable, Hashable {
   var id: String { kind.rawValue + "\n" + target }
 
   /// 内置动作此刻的状态（AppDelegate 在每次搜索时给）：暂停记录剪贴板了没有、复制即译开没开、钉图（nil = 没有钉图，
-  /// true = 藏着）、能不能检查更新（正式版）、在不在录屏（录着时「录屏」那一项是「停止录屏」）
+  /// true = 藏着）、能不能检查更新（正式版）、正在录的是录屏还是录音（录着时那一项是「停止录屏」/「停止录音」；nil = 没在录）
   struct ActionState: Equatable {
     var recordingPaused = false
     var copyToTranslate = false
     var pinsHidden: Bool?
     var checksUpdates = false
-    var screenRecording = false
+    var recording: HotKeyAction?
   }
 
   /// 内置动作（体检 A26）：和菜单栏同名同序——按 HotKeyAction.sections（启动器自己除外），每节末尾接上那一节的
@@ -73,7 +73,8 @@ struct LauncherItem: Identifiable, Hashable {
       for hotKey in section.actions where hotKey != .launcher {
         items.append(
           action(
-            actionID(hotKey), hotKey.title(recording: state.screenRecording), aliases[hotKey] ?? "")
+            actionID(hotKey), hotKey.title(recording: state.recording == hotKey),
+            aliases[hotKey] ?? "")
         )
       }
       for extra in extras where section.actions.contains(where: { $0 == extra.section }) {
@@ -119,6 +120,7 @@ struct LauncherItem: Identifiable, Hashable {
     .screenshotTranslate: "Screenshot Translate", .screenshot: "Screenshot Capture",
     .screenshotLastRegion: "Capture Last Region", .recognizeText: "OCR Recognize Text QR",
     .screenRecord: "Screen Recording Record Video",
+    .audioRecord: "Audio Recording Record Voice Microphone",
   ]
 
   private static func action(

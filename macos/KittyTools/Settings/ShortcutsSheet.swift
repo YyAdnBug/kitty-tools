@@ -306,6 +306,15 @@ struct ShortcutsSheet: View {
             HotKeyAction.screenRecord.hotKey?.display ?? "",
             text: "录制中停止并保存（点菜单栏的 ■ 计时、录屏控制条的 ■ 同样）"),
         ]),
+      // mac-whisker §6 截图「录音」（录音第 5 批，AudioRecorder）；录音不设默认键，没设时停止那行的键帽是空的
+      Group(
+        title: "录音", symbol: "waveform", color: Style.Family.screenshot,
+        globals: [.audioRecord],
+        entries: [
+          Entry(
+            HotKeyAction.audioRecord.hotKey?.display ?? "",
+            text: "录制中停止并保存（点菜单栏的 ■ 计时、录音控制条的 ■ 同样）")
+        ]),
       // mac-overlay-panel §9 钉图；代码在 PinView.keyDown / performKeyEquivalent
       Group(
         title: "钉图", symbol: "pin.fill", color: Style.Family.screenshot,

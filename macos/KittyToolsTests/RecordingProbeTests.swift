@@ -13,6 +13,8 @@
 // 尺寸和内容（存成 recorder-poster.png，看完和视频一起删）；第 4 批起按录制条的偏好开系统声音 + 麦克风 + 显示点按（BGRA）：
 // 0.5 s 时 afplay 放一声，验文件只有一条音轨、前 0.4 s 有麦克风底噪（第 0 批的对照法：只录系统声音那段是数字静音）、
 // BGRA 的文件能播，报告里记这段时间系统日志「NOT found」的条数（录什么挂什么空输出，应为 0）。要麦克风授权（Dev 版已有）。
+// 录音第 5 批加了 audioRecorderTake()（另加 TEST_RUNNER_KITTY_LIVE_RECORD_MIC=1）：用 AudioRecorder 录 1.5 s、暂停 1 s、再录 1.5 s，
+// 验 m4a 能播、时长约 3 s、AAC 48 kHz 单声道约 128 kbps、名字「录音 …」挪进输出目录的 audio/、波形 poster；录制中截一张 HUD。
 import AVFoundation
 import AppKit
 import ScreenCaptureKit
@@ -109,6 +111,11 @@ nonisolated final class ProbeCallbacks: NSObject, SCRecordingOutputDelegate, SCS
 @Suite(.serialized, .enabled(if: probeDirectory != nil))
 struct RecordingProbeTests {
   static var directory: URL { probeDirectory! }
+
+  /// 录制 HUD 的窗口里的 HUD（内容视图是个容器，录音的四周留了边）
+  static func hud(in window: NSWindow) -> RecordingHUD? {
+    window.contentView?.subviews.first as? RecordingHUD
+  }
 
   // MARK: - 回调、开始时刻、输出
 
@@ -617,9 +624,9 @@ struct RecordingProbeTests {
     var hudWindow: NSWindow?
     for _ in 0..<20 where hudWindow == nil {
       try await Task.sleep(for: .milliseconds(25))
-      hudWindow = NSApp.windows.first { $0.contentView is RecordingHUD && $0.isVisible }
+      hudWindow = NSApp.windows.first { Self.hud(in: $0) != nil && $0.isVisible }
     }
-    let hud = try #require(hudWindow?.contentView as? RecordingHUD, "倒数时没出 HUD")
+    let hud = try #require(hudWindow.flatMap(Self.hud(in:)), "倒数时没出 HUD")
     #expect(hud.state == .countdown(1))
     #expect(
       !NSApp.windows.contains {
@@ -731,6 +738,112 @@ struct RecordingProbeTests {
         "最后一帧（第 3 批 poster）：\(poster.width)×\(poster.height)，红色窗口处读回 \(posterRed)",
         "第 4 批：系统声音 + 麦克风 + 显示点按（BGRA）全开：视频轨到 \(String(format: "%.2f", videoEnd)) s（画面 1 s 后不动），音轨 \(media.audioTracks) 条，前 0.4 s 峰值 \(decibels(head))（麦克风底噪），整段 \(decibels(whole))（0.5 s 放了 Glass）；这段时间日志「NOT found」\(logs)",
       ] + media.summary)
+  }
+
+  // MARK: - 录音第 5 批：AudioRecorder 真录
+
+  /// AudioRecorder 真录（要麦克风授权，Dev 版已有，不会弹框）：录 1.5 s、暂停 1 s、再录 1.5 s——文件挪进输出目录的 audio/
+  /// 「录音 ….m4a」、能播、时长约 3 s（暂停那 1 s 不进文件）、AAC 48 kHz 单声道、码率约 128 kbps；会话计的时长也不算暂停；
+  /// 录制中（0.3 s 放一声 Glass，电平有起伏）截一张 HUD（audio-hud.png：鼠标所在屏底部居中、[● 计时][电平] ｜ [⏸] ｜ [✕][■]），
+  /// 停下后 HUD 和菜单栏停止项立刻收掉、波形 poster 400 × 250（audio-poster.png）。「进行中」记录在临时偏好域、收尾后删掉；
+  /// 录下的音频验完就删（两张截图看完自己删）。只跑这一个：
+  ///   -only-testing:'KittyToolsTests/RecordingProbeTests/audioRecorderTake()'
+  @Test(.enabled(if: probeMicrophone)) func audioRecorderTake() async throws {
+    let env = try await Env.make()
+    try #require(
+      AVCaptureDevice.authorizationStatus(for: .audio) == .authorized, "Dev 版没有麦克风授权")
+    let suite = "kitty-test-audio-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let folder = Self.directory.appending(path: "audio")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    var finished: ScreenRecorder.Result?
+    let recorder = AudioRecorder(directory: folder, defaults: defaults) { finished = $0 }
+    let existing = Set(NSApp.windows.map(ObjectIdentifier.init))
+    let began = Date.now
+    recorder.start()
+    #expect(defaults.string(forKey: Prefs.audioRecordingInProgress) != nil)
+    var hudWindow: NSWindow?
+    for _ in 0..<100 where hudWindow == nil {
+      try await Task.sleep(for: .milliseconds(10))
+      hudWindow = NSApp.windows.first {
+        Self.hud(in: $0)?.medium == .audio && $0.isVisible
+      }
+    }
+    let hud = try #require(hudWindow.flatMap(Self.hud(in:)), "1 s 内没出录音 HUD")
+    let latency = ms(since: began)
+    let stopItem = NSApp.windows.first {
+      String(describing: type(of: $0)) == "NSStatusBarWindow" && $0.isVisible
+        && !existing.contains(ObjectIdentifier($0))
+    }
+    #expect(stopItem != nil, "没有菜单栏停止项")
+    try await Task.sleep(for: .seconds(0.3))
+    play("Glass")
+    try await Task.sleep(for: .seconds(1.2))
+    // 连本 App 一起截 HUD（在主屏上才截）
+    if env.screen.frame.contains(hud.screenFrame) {
+      let filter = SCContentFilter(display: env.display, excludingWindows: [])
+      let shot = try await SCScreenshotManager.captureImage(
+        contentFilter: filter, configuration: env.configuration(filter))
+      let screen = env.screen.frame
+      let k = CGFloat(shot.width) / screen.width
+      let rect = hud.screenFrame.insetBy(dx: -24, dy: -24)
+      if let crop = shot.cropping(
+        to: CGRect(
+          x: (rect.minX - screen.minX) * k, y: (screen.maxY - rect.maxY) * k,
+          width: rect.width * k, height: rect.height * k
+        ).integral)
+      {
+        try save(crop, "audio-hud.png")
+      }
+    }
+    recorder.togglePause()
+    #expect(recorder.isPaused && hud.isPaused)
+    try await Task.sleep(for: .seconds(1))
+    recorder.togglePause()
+    #expect(!recorder.isPaused && !hud.isPaused)
+    try await Task.sleep(for: .seconds(1.5))
+    recorder.stop()
+    for _ in 0..<100 where finished == nil { try await Task.sleep(for: .milliseconds(20)) }
+    let result = try #require(finished, "2 s 内没收尾")
+    #expect(result.reason == .user && result.moved)
+    #expect(defaults.string(forKey: Prefs.audioRecordingInProgress) == nil)
+    #expect(!NSApp.windows.contains { ($0 === hudWindow || $0 === stopItem) && $0.isVisible })
+    let file = try #require(result.file)
+    defer { try? FileManager.default.removeItem(at: file) }
+    #expect(file.lastPathComponent.hasPrefix("录音 ") && file.pathExtension == "m4a")
+    #expect(file.deletingLastPathComponent().standardizedFileURL == folder.standardizedFileURL)
+    let asset = AVURLAsset(url: file)
+    let playable = try await asset.load(.isPlayable)
+    let duration = try await asset.load(.duration).seconds
+    let track = try #require(try await asset.loadTracks(withMediaType: .audio).first)
+    let format = try #require(try await track.load(.formatDescriptions).first)
+    let stream = try #require(CMAudioFormatDescriptionGetStreamBasicDescription(format)?.pointee)
+    let rate = try await track.load(.estimatedDataRate)
+    #expect(playable)
+    #expect(abs(duration - 3) < 0.4, "时长 \(duration)")
+    let session =
+      Double(result.duration.components.seconds)
+      + Double(result.duration.components.attoseconds) * 1e-18
+    #expect(abs(session - 3) < 0.4, "会话计的时长 \(result.duration)")
+    #expect(stream.mFormatID == kAudioFormatMPEG4AAC)
+    #expect(stream.mSampleRate == 48_000 && stream.mChannelsPerFrame == 1)
+    #expect(rate > 110_000 && rate < 150_000, "码率 \(rate)")
+    let poster = try #require(result.poster, "没有波形 poster")
+    #expect(poster.width == 400 && poster.height == 250)
+    try save(poster, "audio-poster.png")
+    let region = result.region
+    #expect(
+      region.height == hud.screenFrame.height && abs(region.width / region.height - 1.6) < 0.05)
+    let head = peak(asset, track, to: 0.25)
+    note(
+      "AudioRecorder 真录（录音第 5 批）",
+      [
+        "结果：\(result.reason)，挪进输出目录 \(result.moved)，文件 \(file.lastPathComponent)，HUD 在开录后 \(latency) ms 出来",
+        "录 1.5 s、暂停 1 s、再录 1.5 s：文件时长 \(fmt(duration)) s，会话计的时长 \(result.duration)（都不算暂停）",
+        "音轨 \(fourCC(stream.mFormatID)) \(Int(stream.mSampleRate)) Hz \(stream.mChannelsPerFrame) 声道，码率约 \(Int(rate / 1000)) kbps，开头 0.25 s 峰值 \(decibels(head))",
+        "波形 poster \(poster.width)×\(poster.height)，飞入起点 \(region)",
+      ])
   }
 
   // MARK: - 录制

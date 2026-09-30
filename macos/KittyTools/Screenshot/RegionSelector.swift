@@ -50,12 +50,15 @@ enum RegionSelector {
     return capture.image
   }
 
-  /// 截图：lastRegion 是上次截图的区域（全局坐标，D 键选中）；preselect 时一开始就选中它（⌥X 截上次区域）
-  static func capture(_ shots: [ScreenCapture.Shot], lastRegion: CGRect?, preselect: Bool) async
-    -> Outcome?
-  {
+  /// 截图：lastRegion 是上次截图的区域（全局坐标，D 键选中）；preselect 时一开始就选中它（⌥X 截上次区域）；
+  /// recordingBlocker 见 SelectionSession
+  static func capture(
+    _ shots: [ScreenCapture.Shot], lastRegion: CGRect?, preselect: Bool,
+    recordingBlocker: @escaping () -> (title: String, detail: String)? = { nil }
+  ) async -> Outcome? {
     let session = SelectionSession(mode: .capture, lastRegion: lastRegion)
     session.preselectsLastRegion = preselect
+    session.recordingBlocker = recordingBlocker
     return await run(shots, session)
   }
 
@@ -348,6 +351,9 @@ final class SelectionSession {
   let lastRegion: CGRect?
   /// 一开始就选中上次的区域
   var preselectsLastRegion = false
+  /// 截图里按 R / 点「录屏」那一刻问现在能不能录屏（AppDelegate 给：正在录音、已经在录屏、正在装更新时返回岛的两段）：
+  /// 不能就停在截图里提示，不切（C9-a，不等框完按 ● 才拒、丢掉选区）
+  var recordingBlocker: () -> (title: String, detail: String)? = { nil }
   /// 尺寸胶囊里锁着的比例（宽 / 高，RegionSelector.ratios 里的一个）：之后框选、拖边都按它，选「自由」解锁。整个会话共用
   var lockedRatio: CGFloat?
   private var overlays: [SelectionOverlay] = []

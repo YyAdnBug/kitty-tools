@@ -1632,6 +1632,11 @@ final class SelectionView: NSView, NSTextViewDelegate {
       flashHint(["录屏不带标注，先撤销或 Esc 退出"])
       return announce("录屏不带标注，先撤销或 Esc 退出")
     }
+    if let blocker = session.recordingBlocker() {
+      NSSound.beep()
+      flashHint([blocker.title, blocker.detail])
+      return announce("\(blocker.title)，\(blocker.detail)")
+    }
     finishSizeEditing(commit: true)
     session.mode = .record
     for view in session.views where view !== self { view.becomeRecorder() }

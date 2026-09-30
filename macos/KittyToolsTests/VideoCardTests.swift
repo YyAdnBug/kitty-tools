@@ -1,6 +1,7 @@
 // 常驻缩略图的视频卡（录屏第 3 批，拍板 R11-a）：右键菜单 / VoiceOver 动作（没有存储、钉图，有打开、移到废纸篓；截图卡不变）、
 // 旁白名字带时长；「拷贝」拷的是文件（Paster 写文件 URL）并记一条文件条目进剪贴板历史（C8-a，注入内存库，不碰真实历史库和
-// 真实剪贴板）；文件被移走时什么都不拷。卡片窗口只建不显示。
+// 真实剪贴板）；文件被移走时什么都不拷。录音卡（录音第 5 批）是同一种卡片：菜单、拷贝同视频卡，旁白「录音，…」。
+// 卡片窗口只建不显示。
 
 import AppKit
 import Testing
@@ -13,7 +14,7 @@ struct VideoCardTests {
 
   private func card(_ url: URL, shelf: ShotShelf = ShotShelf()) -> ShelfCard {
     ShelfCard(
-      video: url, seconds: 83, poster: nil, source: Self.rect, rect: Self.rect, screen: nil,
+      recording: url, seconds: 83, poster: nil, source: Self.rect, rect: Self.rect, screen: nil,
       panel: NSPanel(), shelf: shelf)
   }
 
@@ -76,5 +77,29 @@ struct VideoCardTests {
     video.perform(.copy)
     #expect(written.isEmpty)
     #expect(store.items.count == 1)
+  }
+
+  /// 录音卡（录音第 5 批）：同一种卡片的另一种内容——菜单、拷贝（写文件、记文件条目）同视频卡，旁白名字「录音，1 分 23 秒」
+  @Test func audioCardWorksLikeVideoCard() throws {
+    let folder = FileManager.default.temporaryDirectory.appending(path: "kitty-audio-\(UUID())")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let file = folder.appending(path: "录音 2026-09-30 10.00.00.m4a")
+    try Data([0]).write(to: file)
+    let shelf = ShotShelf()
+    var copied: [URL] = []
+    shelf.copyFile = { copied.append($0) }
+    let audio = ShelfCard(
+      recording: file, seconds: 83, audio: true, poster: nil, source: Self.rect, rect: Self.rect,
+      screen: nil, panel: NSPanel(), shelf: shelf)
+    #expect(audio.kind == .audio(file, seconds: 83))
+    #expect(audio.kind.recording?.medium == .audio)
+    #expect(audio.menu == [[.copy, .open, .reveal], [.trash], [.close]])
+    #expect(audio.accessibilityName == "录音，1 分 23 秒")
+    #expect(audio.badge.folder == FileManager.default.displayName(atPath: folder.path))
+    audio.perform(.copy)
+    #expect(copied == [file])
+    // 视频卡的 kind 还是 .video
+    #expect(card(file).kind.recording?.medium == .screen)
   }
 }

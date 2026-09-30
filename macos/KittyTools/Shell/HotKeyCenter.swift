@@ -117,7 +117,7 @@ struct HotKey: Codable, Hashable {
 /// 追加动作只能加在末尾：注册时用 allCases 的下标当热键 id
 enum HotKeyAction: String, CaseIterable {
   case clipboard, selectionTranslate, inputTranslate, screenshotTranslate, launcher, screenshot,
-    screenshotLastRegion, recognizeText, translateReplace, screenRecord
+    screenshotLastRegion, recognizeText, translateReplace, screenRecord, audioRecord
 
   var title: String {
     switch self {
@@ -131,12 +131,18 @@ enum HotKeyAction: String, CaseIterable {
     case .recognizeText: "识字"
     case .translateReplace: "划词翻译并替换"
     case .screenRecord: "录屏"
+    case .audioRecord: "录音"
     }
   }
 
-  /// 菜单栏、启动器里的标题：录屏录着时那一项是「停止录屏」（再按一次 ⌥R 也是停止）
+  /// 菜单栏、启动器里的标题：recording 是这一项正在录（录屏 / 录音录着时叫「停止录屏」/「停止录音」，再按一次快捷键也是停止）
   func title(recording: Bool) -> String {
-    self == .screenRecord && recording ? "停止录屏" : title
+    guard recording else { return title }
+    return switch self {
+    case .screenRecord: "停止录屏"
+    case .audioRecord: "停止录音"
+    default: title
+    }
   }
 
   /// nil = 默认不设键（静默替换这类用得少、又容易误触的）
@@ -164,6 +170,8 @@ enum HotKeyAction: String, CaseIterable {
     case .translateReplace: nil
     // R = Record，和截图框选里将来（第 2 批）按 R 转录屏对上
     case .screenRecord: HotKey(keyCode: kVK_ANSI_R, modifiers: optionKey)
+    // 录音不设默认键（录音第 5 批：从菜单栏、启动器进，要快捷键到 设置 › 快捷键 里自己设）
+    case .audioRecord: nil
     }
   }
 
@@ -194,7 +202,7 @@ enum HotKeyAction: String, CaseIterable {
   static let sections: [(title: String, actions: [HotKeyAction])] = [
     ("剪贴板与启动器", [.clipboard, .launcher]),
     ("翻译", [.selectionTranslate, .inputTranslate, .translateReplace, .screenshotTranslate]),
-    ("截图与录制", [.screenshot, .screenshotLastRegion, .recognizeText, .screenRecord]),
+    ("截图与录制", [.screenshot, .screenshotLastRegion, .recognizeText, .screenRecord, .audioRecord]),
   ]
 
   /// 种类色块里的符号
@@ -211,6 +219,7 @@ enum HotKeyAction: String, CaseIterable {
     case .screenshotLastRegion: "rectangle.dashed"
     case .recognizeText: "text.viewfinder"
     case .screenRecord: "record.circle"
+    case .audioRecord: "waveform"
     }
   }
 
@@ -221,7 +230,8 @@ enum HotKeyAction: String, CaseIterable {
     case .launcher: Style.Family.command
     case .selectionTranslate, .inputTranslate, .translateReplace, .screenshotTranslate:
       Style.Family.translate
-    case .screenshot, .screenshotLastRegion, .recognizeText, .screenRecord: Style.Family.screenshot
+    case .screenshot, .screenshotLastRegion, .recognizeText, .screenRecord, .audioRecord:
+      Style.Family.screenshot
     }
   }
 }

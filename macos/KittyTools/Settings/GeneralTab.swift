@@ -91,7 +91,7 @@ struct GeneralTab: View {
         }
         // 没问过时请求（系统弹框，回来就刷新）；拒绝过 / 受限的系统不再弹框，打开系统设置的麦克风页
         PermissionRow(
-          title: "麦克风", detail: "录屏时录下你的声音", symbol: "mic.fill",
+          title: "麦克风", detail: "录屏、录音时录下你的声音", symbol: "mic.fill",
           color: Style.Family.screenshot, granted: microphone == .authorized
         ) {
           guard microphone == .notDetermined else {

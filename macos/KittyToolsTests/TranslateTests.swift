@@ -252,8 +252,10 @@ struct HistoryStoreTests {
 
   @Test func silentReplaceHasNoDefaultHotKey() {
     #expect(HotKeyAction.translateReplace.defaultHotKey == nil)
-    // 只能加在末尾（注册 id 是下标）：录屏（2026-09-30）接在划词翻译并替换后面
-    #expect(Array(HotKeyAction.allCases.suffix(2)) == [.translateReplace, .screenRecord])
+    // 只能加在末尾（注册 id 是下标）：录屏（2026-09-30）接在划词翻译并替换后面，录音（录音第 5 批，不设默认键）再接在后面
+    #expect(
+      Array(HotKeyAction.allCases.suffix(3)) == [.translateReplace, .screenRecord, .audioRecord])
+    #expect(HotKeyAction.audioRecord.defaultHotKey == nil)
   }
 
   /// 「翻译 ↩」胶囊（N5）：原文非空、且和上次翻译的原文（去首尾空白）不同才出现

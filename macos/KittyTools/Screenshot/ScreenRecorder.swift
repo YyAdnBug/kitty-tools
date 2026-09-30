@@ -83,6 +83,18 @@ final class ScreenRecorder: NSObject {
   /// 临时文件所在卷剩余不到这么多就停
   static let minimumFreeBytes: Int64 = 1_000_000_000
 
+  /// 录的是什么（录音第 5 批起，录屏和录音共用收尾挪文件、闪退恢复、结果岛、菜单栏停止项）：叫法、文件扩展名、
+  /// 「进行中」记在哪个偏好键
+  enum Medium {
+    case screen, audio
+
+    var noun: String { self == .screen ? "录屏" : "录音" }
+    var ext: String { self == .screen ? "mp4" : "m4a" }
+    var inProgressKey: String {
+      self == .screen ? Prefs.screenRecordingInProgress : Prefs.audioRecordingInProgress
+    }
+  }
+
   /// 为什么停（第一个为准）
   nonisolated enum Reason: Equatable, Sendable {
     /// 点停止项、再按快捷键、菜单栏 / 启动器、退出 App、控制中心「停止共享」
@@ -92,6 +104,8 @@ final class ScreenRecorder: NSObject {
     /// 录制中点了两下放弃：停流、删文件，不挪、不留闪退记录
     case discarded
     case locked, sleep, displaySleep, screenChanged, lowDisk
+    /// 录音：开录时的输入设备断开了（录音第 5 批；录屏的麦克风断开不停，见 Result.microphoneLost）
+    case microphoneLost
     /// 流被系统停了（「停止共享」以外）
     case system(code: Int, text: String)
     /// 没开起来（授权以外）、写入失败、没按时写完
@@ -108,6 +122,7 @@ final class ScreenRecorder: NSObject {
       case .displaySleep: "显示器睡眠时已自动停止"
       case .screenChanged: "屏幕有变化，已自动停止"
       case .lowDisk: "磁盘剩余不到 1 GB，已自动停止"
+      case .microphoneLost: "麦克风断开了，已自动停止"
       // 社区观测多半和磁盘空间有关（PLAN §10 C6）
       case .system(code: SCStreamError.Code.systemStoppedStream.rawValue, _):
         "系统停止了录制，看看磁盘空间"
@@ -560,25 +575,14 @@ final class ScreenRecorder: NSObject {
     case .cancel: stop(.cancelled)
     case .discard: stop(.discarded)
     case .stop: stop()
+    case .pause: break  // 录屏第一期不暂停（只有录音的 HUD 有这个钮）
     }
   }
 
   /// 开始了：边框和 HUD（倒数过就已经有了）、菜单栏停止项、每秒的计时、防睡眠（中断监听在 record 一开头就装了）
   private func showChrome() {
     if hud == nil { showFrame(counting: false) }
-    let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    if let button = item.button {
-      let image = NSImage(systemSymbolName: "stop.fill", accessibilityDescription: nil)?
-        .withSymbolConfiguration(.init(pointSize: 10, weight: .semibold))
-      image?.isTemplate = true
-      button.image = image
-      button.imagePosition = .imageLeading
-      button.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
-      button.target = self
-      button.action = #selector(stopClicked)
-      button.setAccessibilityLabel("停止录屏")
-    }
-    stopItem = item
+    stopItem = Self.makeStopItem(label: "停止录屏", target: self, action: #selector(stopClicked))
     // 菜单开着（.eventTracking）时计时也要走
     let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
       MainActor.assumeIsolated { self?.tick() }
@@ -611,22 +615,50 @@ final class ScreenRecorder: NSObject {
     updateClock()
     refreshFilterIfNeeded()
     // 每 5 s 看一次临时文件所在卷还剩多少
-    if ticks % 5 == 0,
-      let free = try? temp.deletingLastPathComponent().resourceValues(forKeys: [
-        .volumeAvailableCapacityForImportantUsageKey
-      ]).volumeAvailableCapacityForImportantUsage, free < Self.minimumFreeBytes
-    {
-      stop(.lowDisk)
-    }
+    if ticks % 5 == 0, Self.isLowOnDisk(temp) { stop(.lowDisk) }
   }
 
   /// 菜单栏停止项和 HUD 同一个时钟
   private func updateClock() {
-    guard let button = stopItem?.button, let startedAt else { return }
+    guard stopItem != nil, let startedAt else { return }
     let seconds = Int((ContinuousClock.now - startedAt).components.seconds)
     hud?.update(.recording(seconds))
-    button.title = Self.clock(seconds)
-    button.setAccessibilityValue("已录 " + Self.spoken(seconds))
+    Self.showClock(seconds, on: stopItem)
+  }
+
+  /// 菜单栏另起的停止项「■ 0:12」（录屏、录音共用）：stop.fill 模板图 + 12 pt 等宽数字，左键即停，主图标不动；
+  /// label 是读屏名字（「停止录屏」/「停止录音」）
+  static func makeStopItem(label: String, target: AnyObject, action: Selector) -> NSStatusItem {
+    let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    if let button = item.button {
+      let image = NSImage(systemSymbolName: "stop.fill", accessibilityDescription: nil)?
+        .withSymbolConfiguration(.init(pointSize: 10, weight: .semibold))
+      image?.isTemplate = true
+      button.image = image
+      button.imagePosition = .imageLeading
+      button.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+      button.target = target
+      button.action = action
+      button.setAccessibilityLabel(label)
+    }
+    return item
+  }
+
+  /// 停止项的计时「0:12」和读屏值「已录 12 秒」
+  static func showClock(_ seconds: Int, on item: NSStatusItem?) {
+    guard let button = item?.button else { return }
+    button.title = clock(seconds)
+    button.setAccessibilityValue("已录 " + spoken(seconds))
+  }
+
+  /// file 所在卷剩余不到 1 GB（录制中每 5 s 查一次，录屏、录音共用）
+  static func isLowOnDisk(_ file: URL) -> Bool {
+    guard
+      let free = try? file.deletingLastPathComponent().resourceValues(forKeys: [
+        .volumeAvailableCapacityForImportantUsageKey
+      ]).volumeAvailableCapacityForImportantUsage
+    else { return false }
+    return free < minimumFreeBytes
   }
 
   /// 锁屏、睡眠、显示器睡眠、被录的屏变了：停止并保存（不自动续录）；倒数中就是取消
@@ -717,28 +749,35 @@ final class ScreenRecorder: NSObject {
     observers = []
   }
 
-  /// 挪文件：开始过、文件在就挪进快速保存目录（「录屏 <开录时刻>」，重名追加序号）。挪不过去（如桌面的文件夹授权被拒）的
-  /// 留在原地（系统不清理），改成同样的名字，AppDelegate 在访达里选中它。放弃的（倒数刚结束时按到的取消也算）删掉。
+  /// 挪文件（settle）：开始过、文件在就挪进快速保存目录，挪不过去的留在原地；放弃的（倒数刚结束时按到的取消也算）删掉。
   /// 都删「进行中」记录：这次是正常收尾，下次启动不该说「没有正常结束」
   private func finalize(_ reason: Reason) -> Result {
     defaults.removeObject(forKey: Prefs.screenRecordingInProgress)
-    let manager = FileManager.default
     let duration = startedAt.map { (endedAt ?? .now) - $0 } ?? .zero
-    guard startedAt != nil, manager.fileExists(atPath: temp.path),
-      reason != .discarded, reason != .cancelled
-    else {
+    let (file, moved) = Self.settle(
+      temp, into: directory, medium: .screen,
+      keeps: startedAt != nil && reason != .discarded && reason != .cancelled)
+    return Result(file: file, moved: moved, duration: duration, reason: reason, region: region)
+  }
+
+  /// 收尾挪文件（录屏、录音共用）：不留的（放弃、取消、没开始录）和不在的删掉；否则挪进快速保存目录（「录屏 / 录音 <开录时刻>」，
+  /// 重名追加序号），挪不过去（如桌面的文件夹授权被拒）的留在原地（系统不清理）、改成同样的名字，AppDelegate 在访达里选中它
+  static func settle(_ temp: URL, into directory: URL, medium: Medium, keeps: Bool) -> (
+    file: URL?, moved: Bool
+  ) {
+    let manager = FileManager.default
+    guard keeps, manager.fileExists(atPath: temp.path) else {
       try? manager.removeItem(at: temp)
-      return Result(file: nil, moved: false, duration: duration, reason: reason, region: region)
+      return (nil, false)
     }
-    let target = Self.savedURL(for: temp, in: directory)
+    let target = savedURL(for: temp, in: directory, medium: medium)
     do {
       try manager.moveItem(at: temp, to: target)
-      return Result(file: target, moved: true, duration: duration, reason: reason, region: region)
+      return (target, true)
     } catch {
-      Log.record.error("录屏挪不进快速保存目录：\(error)")
-      let renamed = Self.savedURL(for: temp, in: temp.deletingLastPathComponent())
-      let file = (try? manager.moveItem(at: temp, to: renamed)) != nil ? renamed : temp
-      return Result(file: file, moved: false, duration: duration, reason: reason, region: region)
+      Log.record.error("\(medium.noun)挪不进快速保存目录：\(error)")
+      let renamed = savedURL(for: temp, in: temp.deletingLastPathComponent(), medium: medium)
+      return ((try? manager.moveItem(at: temp, to: renamed)) != nil ? renamed : temp, false)
     }
   }
 
@@ -767,9 +806,9 @@ final class ScreenRecorder: NSObject {
   /// 进行中的文件放哪（C7）：不放系统临时目录——开机 / 登录时系统会清空 TemporaryItems，断电或闪退后再开机就找不到了。
   /// 快速保存目录和 Application Support 同卷（常见：都在启动盘）时放 Application Support/<bundle id>/Recording/（系统不清理，
   /// 也不受桌面 / 下载的文件夹授权影响）；不同卷（移动硬盘、NAS）时放快速保存目录里的隐藏文件。都和保存目录同卷，
-  /// 写完 moveItem 只是改名。文件名带 UUID：打不开留在原地的旧文件不会被下一次覆盖
-  private static func workFile(for directory: URL) -> URL {
-    let name = "录屏 \(UUID().uuidString).mp4"
+  /// 写完 moveItem 只是改名。文件名带 UUID：打不开留在原地的旧文件不会被下一次覆盖。录音（第 5 批）同一个地方，名字「录音 <UUID>.m4a」
+  static func workFile(for directory: URL, medium: Medium = .screen) -> URL {
+    let name = "\(medium.noun) \(UUID().uuidString).\(medium.ext)"
     let volume = { (url: URL) in
       (try? url.resourceValues(forKeys: [.volumeIdentifierKey]))?.volumeIdentifier
     }
@@ -783,36 +822,37 @@ final class ScreenRecorder: NSObject {
     return folder.appending(path: name)
   }
 
-  /// 挪进快速保存目录用的名字：「录屏 <开录的时刻>.mp4」——取文件的创建时间（系统开录时建文件），不按挪的时刻：
-  /// 录 30 分钟的、闪退后隔几天才恢复的，名字都还是开录那一刻（C8）
-  static func savedURL(for file: URL, in directory: URL) -> URL {
+  /// 挪进快速保存目录用的名字：「录屏 <开录的时刻>.mp4」（录音「录音 ….m4a」）——取文件的创建时间（系统开录时建文件），
+  /// 不按挪的时刻：录 30 分钟的、闪退后隔几天才恢复的，名字都还是开录那一刻（C8）
+  static func savedURL(for file: URL, in directory: URL, medium: Medium = .screen) -> URL {
     let created = (try? file.resourceValues(forKeys: [.creationDateKey]))?.creationDate
     return ScreenshotOutput.availableURL(
-      in: directory, date: created ?? .now, prefix: "录屏", ext: "mp4")
+      in: directory, date: created ?? .now, prefix: medium.noun, ext: medium.ext)
   }
 
-  /// 启动时（AppDelegate，单测宿主不跑）：偏好里还记着进行中的文件 = 上次没正常收尾（闪退、断电）。文件不在了只删记录；
-  /// 能播（常见：本 App 被 kill -9 后 replayd 自己收尾）就挪进快速保存目录；打不开（系统崩溃 / 断电）留在原地、说路径和大小。
-  /// 都删记录（只提示一次）；返回要弹的岛
-  static func recover(into directory: URL, defaults: UserDefaults = .standard) async -> (
-    title: String, detail: String, tone: Island.Tone
-  )? {
-    guard let path = defaults.string(forKey: Prefs.screenRecordingInProgress) else { return nil }
-    defaults.removeObject(forKey: Prefs.screenRecordingInProgress)
+  /// 启动时（AppDelegate，单测宿主不跑；录屏、录音各查一次）：偏好里还记着进行中的文件 = 上次没正常收尾（闪退、断电）。
+  /// 文件不在了只删记录；能播（常见：本 App 被 kill -9 后 replayd 自己收尾）就挪进快速保存目录；打不开（系统崩溃 / 断电）
+  /// 留在原地、说路径和大小。都删记录（只提示一次）；返回要弹的岛
+  static func recover(
+    into directory: URL, defaults: UserDefaults = .standard, medium: Medium = .screen
+  ) async -> (title: String, detail: String, tone: Island.Tone)? {
+    let key = medium.inProgressKey
+    guard let path = defaults.string(forKey: key) else { return nil }
+    defaults.removeObject(forKey: key)
     let manager = FileManager.default
     guard manager.fileExists(atPath: path) else { return nil }
     let file = URL(filePath: path)
     let playable = (try? await AVURLAsset(url: file).load(.isPlayable)) ?? false
     if playable {
-      let target = savedURL(for: file, in: directory)
+      let target = savedURL(for: file, in: directory, medium: medium)
       if (try? manager.moveItem(at: file, to: target)) != nil {
-        return ("上次录屏没有正常结束，已保存", target.lastPathComponent, .info)
+        return ("上次\(medium.noun)没有正常结束，已保存", target.lastPathComponent, .info)
       }
     }
     let bytes =
       ((try? manager.attributesOfItem(atPath: path))?[.size] as? NSNumber)?.int64Value ?? 0
     return (
-      playable ? "上次录屏没有正常结束" : "上次录屏没有正常结束，文件打不开",
+      "上次\(medium.noun)没有正常结束" + (playable ? "" : "，文件打不开"),
       "\((path as NSString).abbreviatingWithTildeInPath) · \(bytes.formatted(.byteCount(style: .file)))",
       .warning
     )
@@ -946,30 +986,34 @@ final class ScreenRecorder: NSObject {
   /// 挪不进快速保存目录 = 警告「已在访达中显示」（AppDelegate 在访达里选中它；岛不接鼠标、2 s 就走，长路径没用）；
   /// 什么也没录下 = 错误；放弃 = 信息「已放弃录屏」。倒数中取消是用户自己点的，不出岛（nil，AppDelegate 只播报）。
   /// 麦克风中途断开（第 4 批）：详情补「后半段没有麦克风声音」，正常停也变成警告（岛照样出来，用户要知道）。
-  /// folder 是快速保存目录的访达显示名
-  static func summary(_ result: Result, folder: String) -> (
+  /// folder 是快速保存目录的访达显示名；medium 是录音时（第 5 批）同样的说法把「录屏」换成「录音」，授权问题是麦克风
+  static func summary(_ result: Result, folder: String, medium: Medium = .screen) -> (
     title: String, detail: String, tone: Island.Tone
   )? {
+    let noun = medium.noun
     switch result.reason {
     case .cancelled: return nil
-    case .discarded: return ("已放弃录屏", "没有保存", .info)
-    case .denied: return ("需要「屏幕录制」授权", "录屏要用，授权后可能要重新打开本 App", .warning)
+    case .discarded: return ("已放弃\(noun)", "没有保存", .info)
+    case .denied:
+      return medium == .screen
+        ? ("需要「屏幕录制」授权", "录屏要用，授权后可能要重新打开本 App", .warning)
+        : ("需要麦克风授权", "到 系统设置 › 麦克风 里打开", .warning)
     default: break
     }
     guard let file = result.file else {
-      return ("录屏失败", result.reason.note ?? "没有录下内容", .error)
+      return ("\(noun)失败", result.reason.note ?? "没有录下内容", .error)
     }
     let length = clock(Int(result.duration.components.seconds))
     let lost = result.microphoneLost ? ["后半段没有麦克风声音"] : []
     let detail = { (first: String) in ([first] + lost + [length]).joined(separator: " · ") }
     guard result.moved else {
-      return ("录屏没能存进「\(folder)」", detail("已在访达中显示"), .warning)
+      return ("\(noun)没能存进「\(folder)」", detail("已在访达中显示"), .warning)
     }
     guard let note = result.reason.note else {
       // 断了麦克风：卡片上就有文件，岛里省掉文件名、把这句放前面
       return result.microphoneLost
-        ? ("已保存录屏", (lost + [length]).joined(separator: " · "), .warning)
-        : ("已保存录屏", detail(file.lastPathComponent), .success)
+        ? ("已保存\(noun)", (lost + [length]).joined(separator: " · "), .warning)
+        : ("已保存\(noun)", detail(file.lastPathComponent), .success)
     }
     return ("已保存已录的部分", detail(note), .warning)
   }

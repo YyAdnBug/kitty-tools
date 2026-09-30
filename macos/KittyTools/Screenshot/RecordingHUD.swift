@@ -8,6 +8,9 @@
 //   停止是 28 pt 强调色实心圆 + ■（画法同录制条的 ●）。
 //   计时和 ✕ 之间是只读的声音状态 [系统声音][麦克风]（录屏第 4 批：录制中改不了配置；开 = 强调色、关 = 再次文字色 + 斜杠，
 //   两个都关不显示这段）；开录时的麦克风断开了，麦克风变 systemOrange + 斜杠。
+// 录音（第 5 批，拍板 A1-a）是它的另一种形态（medium = .audio，会话在 AudioRecorder）：鼠标所在屏可见区底部居中、离底 24，
+// 从底边长出来（pop bounce 0.18，同录制条的长出；窗口四周留 24 pt 透明边、用 HUDBar 自绘的阴影，长出时不被窗口边切掉），[● 0:42][电平] ｜ [⏸] ｜ [✕][■]：电平是最近 3 s 的竖条（每帧直接设值），
+// 超过 −1 dB 的那根 systemOrange；开头 5 s 没听到声音时计时旁边出橙色「没听到声音」；暂停时红点换成暂停符号、计时和电平变灰。
 // 皮肤是 HUDBar（15 毛玻璃 behindWindow，26 液态玻璃）。窗口是普通 NSPanel 实例（mac-overlay-panel §1 不子类化）：
 // 状态栏层级（截图冻结帧、录制的白名单都不收它）、不激活本 App、永不当 key（无边框窗口本来就当不了）、按钮 acceptsFirstMouse、
 // 能拖；所有桌面、全屏 App 上都显示。出现：settle 淡入（录制条随遮罩收起，HUD 在同一位置接上，不再「长出」一次）；
@@ -24,7 +27,7 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     case recording(Int)
   }
 
-  enum Item { case startNow, cancel, discard, stop }
+  enum Item { case startNow, cancel, discard, stop, pause }
 
   /// 放弃要点两下（纯状态，配单测）：第一下「上膛」，window 之内再点才算放弃；过了时间恢复，下一下重新上膛
   struct Discard {
@@ -50,11 +53,17 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   @Observable final class Reading {
     var countdown = 0
     var seconds = 0
+    /// 录音暂停着：计时变灰
+    var paused = false
   }
 
   var onClick: (Item) -> Void = { _ in }
   let panel: NSPanel
+  /// 录屏还是录音的 HUD（录音第 5 批：没有倒数，多电平和暂停）
+  let medium: ScreenRecorder.Medium
   private(set) var state: State
+  /// 录音暂停着
+  private(set) var isPaused = false
   private var discard = Discard()
   private let reading = Reading()
   private let stopTip: String
@@ -70,31 +79,48 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   private let microphoneIcon = SoundIcon()
   private lazy var sound = makeSound()
   private let dot = Dot()
+  /// 录音：电平、暂停钮、暂停时顶替红点的暂停符号、「没听到声音」
+  private lazy var meter = LevelMeter()
+  private lazy var pauseButton = barButton(
+    NSImage(systemSymbolName: "pause.fill", accessibilityDescription: "暂停录音")!, tip: "暂停录音",
+    label: "暂停录音", action: #selector(pauseClicked(_:)), size: CGSize(width: 32, height: 32))
+  private lazy var pauseSeparator = barSeparator()
+  private lazy var pauseMark = makePauseMark()
+  private lazy var silence = makeSilence()
   private lazy var separator = barSeparator()
   /// 倒数时是「取消」，录制中是「放弃」
   private lazy var closeButton = barButton(
     NSImage(systemSymbolName: "xmark", accessibilityDescription: "取消")!, tip: "取消",
     label: "取消", action: #selector(closeClicked(_:)), size: CGSize(width: 32, height: 32))
   private lazy var stopButton = makeStopButton()
+  /// 窗口比 HUD 四周大这么多（透明）。录音 24：从底边长出来时往下偏的 8 pt、弹簧过冲和 HUDBar 自绘的阴影都落在窗口里、
+  /// 不被窗口边切掉（同常驻缩略图的留边）；录屏 0：只淡入不变形，窗口就是 HUD 那么大、用系统阴影
+  private let margin: CGFloat
   /// 在哪块屏（拖过的位置按屏记）、那块屏的可见区（换状态变宽时夹回来）
   private var display: CGDirectDisplayID?
   private var visible: CGRect?
   /// 程序自己摆位置时不算拖
   private var isPlacing = false
-  /// 这次运行里各屏拖到的位置（底边中点，全局坐标）
-  private static var dragged: [CGDirectDisplayID: CGPoint] = [:]
+  /// 这次运行里各屏拖到的位置（底边中点，全局坐标）：录屏、录音的 HUD 各记各的
+  private static var dragged: [Spot: CGPoint] = [:]
+  private struct Spot: Hashable {
+    let display: CGDirectDisplayID
+    let medium: ScreenRecorder.Medium
+  }
 
-  /// stopKey：录屏快捷键（停止钮的提示里写它；没绑定 nil）；escapes：倒数的 Esc 注册上了；
-  /// systemAudio / microphone：这次录不录（录制中的声音状态）
+  /// stopKey：录屏 / 录音快捷键（停止钮的提示里写它；没绑定 nil）；escapes：倒数的 Esc 注册上了；
+  /// systemAudio / microphone：这次录不录（录屏录制中的声音状态）；medium：录屏还是录音（录音只有录制态）
   init(
     state: State, stopKey: String?, escapes: Bool = false, systemAudio: Bool = false,
-    microphone: Bool = false
+    microphone: Bool = false, medium: ScreenRecorder.Medium = .screen
   ) {
     self.state = state
+    self.medium = medium
     stopTip = stopKey.map { "停止并保存（\($0)）" } ?? "停止并保存"
     self.escapes = escapes
     self.systemAudio = systemAudio
     self.microphone = microphone
+    margin = medium == .audio ? 24 : 0
     panel = NSPanel(
       contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,
       defer: true)
@@ -106,17 +132,21 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     panel.hidesOnDeactivate = false
     panel.isOpaque = false
     panel.backgroundColor = .clear
-    panel.hasShadow = true  // 独立窗口用系统阴影（HUDBar 自绘的阴影出不了窗口）
+    // 没留边（录屏）用系统阴影（HUDBar 自绘的阴影出不了窗口）；留了边（录音）用 HUDBar 自己的，跟着长出动画一起缩放、淡入
+    panel.hasShadow = margin == 0
     panel.isReleasedWhenClosed = false
     panel.animationBehavior = .none
     panel.isMovableByWindowBackground = true
     // 本 App 从不激活：不设的话按钮的提示（快捷键）永远不出来
     panel.allowsToolTipsWhenApplicationIsInactive = true
-    panel.contentView = self
+    let container = NSView()
+    frame.origin = CGPoint(x: margin, y: margin)
+    container.addSubview(self)
+    panel.contentView = container
     panel.delegate = self
     setAccessibilityElement(true)
     setAccessibilityRole(.group)
-    setAccessibilityLabel("录屏控制")
+    setAccessibilityLabel(medium == .audio ? "录音控制" : "录屏控制")
     show(state, rebuilding: true)
   }
 
@@ -124,15 +154,18 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
 
   // MARK: 出现 / 消失
 
-  /// 摆好位置、settle 淡入（录制条随遮罩收起了，HUD 在它原来的位置接上）
+  /// 摆好位置、settle 淡入（录制条随遮罩收起了，HUD 在它原来的位置接上）；录音（整屏的摆法：底部居中）从底边长出来
   func present(region: CGRect, on screen: NSScreen, isFullScreen: Bool) {
     display = screen.displayID
     visible = screen.visibleFrame
     let origin = Self.origin(
       size: frame.size, region: region, screen: screen.frame, visible: screen.visibleFrame,
-      isFullScreen: isFullScreen, dragged: display.flatMap { Self.dragged[$0] })
+      isFullScreen: isFullScreen,
+      dragged: display.flatMap { Self.dragged[Spot(display: $0, medium: medium)] })
     place(CGRect(origin: origin, size: frame.size))
     panel.orderFrontRegardless()
+    // 录音没有录制条可接：同录制条的长出（pop bounce 0.18、rise −8、scale 0.94），减弱动态效果时只淡入
+    if medium == .audio { return grow(true, from: .bottom) }
     guard let layer,
       let fade = Style.Motion.settle.caAnimation(keyPath: "opacity") as? CABasicAnimation
     else { return }
@@ -141,13 +174,17 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     layer.add(fade, forKey: "appear")
   }
 
-  /// 立刻收（停止 / 放弃 / 取消那一刻，同边框和停止项）；红点的循环动画一起摘掉。拿掉 contentView 断开 HUD ↔ 窗口的
-  /// 互相持有（panel 是 let、窗口持有内容视图），不然每录一次漏一个窗口
+  /// 立刻收（停止 / 放弃 / 取消那一刻，同边框和停止项）；红点的循环动画一起摘掉。从窗口里摘下来断开 HUD ↔ 窗口的
+  /// 互相持有（panel 是 let、窗口经内容视图持有 HUD），不然每录一次漏一个窗口
   func close() {
     dot.stop()
     panel.orderOut(nil)
+    removeFromSuperview()
     panel.contentView = nil
   }
+
+  /// HUD 在屏幕上的位置（全局坐标）：窗口去掉四周留的边
+  var screenFrame: CGRect { panel.frame.insetBy(dx: margin, dy: margin) }
 
   // MARK: 状态
 
@@ -170,21 +207,32 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     case .recording(let seconds):
       reading.seconds = seconds
       // 计时是值，不逐秒播报
-      setAccessibilityValue("已录 " + ScreenRecorder.spoken(seconds))
+      applyValue()
     }
     guard rebuilding else { return }
     for view in stack.arrangedSubviews { view.removeFromSuperview() }
     let recording = !Self.isCountdown(next)
-    let views =
-      recording
-      ? [clock] + (systemAudio || microphone ? [sound] : []) + [separator, closeButton, stopButton]
-      : [countdownButton, separator, closeButton]
+    let views: [NSView] =
+      switch (recording, medium) {
+      case (false, _): [countdownButton, separator, closeButton]
+      case (true, .audio):
+        [clock, meter, separator, pauseButton, pauseSeparator, closeButton, stopButton]
+      case (true, .screen):
+        [clock] + (systemAudio || microphone ? [sound] : []) + [separator, closeButton, stopButton]
+      }
     views.forEach(stack.addArrangedSubview)
     stack.edgeInsets.right = recording ? 6 : 4
     if recording { stack.setCustomSpacing(4, after: closeButton) }
     discard = Discard()
     applyClose()
-    let old = panel.frame
+    refit()
+    // 红点：录制态出现时 pop，之后呼吸
+    if recording { dot.start() } else { dot.stop() }
+  }
+
+  /// 量宽度；宽度变了按原来的水平中心摆、夹回可见区（换状态、出「没听到声音」）
+  private func refit() {
+    let old = screenFrame
     fit()
     if panel.isVisible, let visible {
       place(
@@ -192,8 +240,41 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
           x: Self.x(width: frame.width, midX: old.midX, in: visible), y: old.minY,
           width: frame.width, height: frame.height))
     }
-    // 红点：录制态出现时 pop，之后呼吸
-    if recording { dot.start() } else { dot.stop() }
+  }
+
+  /// 旁白读的值：「已录 12 秒」，录音暂停着是「已暂停，已录 12 秒」
+  private func applyValue() {
+    guard case .recording(let seconds) = state else { return }
+    setAccessibilityValue((isPaused ? "已暂停，" : "") + "已录 " + ScreenRecorder.spoken(seconds))
+  }
+
+  // MARK: 录音
+
+  /// 电平（最近 3 s，旧 → 新，dB）：每帧直接换（instant），减弱动态效果时照样更新
+  func updateMeter(_ levels: [Float]) { meter.levels = levels }
+
+  /// 暂停 / 继续：红点换成暂停符号（再次文字色）、红点不呼吸，计时变灰、电平冻结变灰；暂停钮换成 ▶「继续录音」
+  func setPaused(_ paused: Bool) {
+    guard medium == .audio, paused != isPaused else { return }
+    isPaused = paused
+    reading.paused = paused
+    dot.isHidden = paused
+    pauseMark.isHidden = !paused
+    if paused { dot.stop() } else { dot.start() }
+    meter.isPaused = paused
+    let name = paused ? "继续录音" : "暂停录音"
+    pauseButton.image = NSImage(
+      systemSymbolName: paused ? "play.fill" : "pause.fill", accessibilityDescription: name)
+    pauseButton.toolTip = name
+    pauseButton.setAccessibilityLabel(name)
+    applyValue()
+  }
+
+  /// 开头 5 s 没听到声音：计时旁边出橙色「没听到声音」（播报由 AudioRecorder 发一次），有声音了收起
+  func setSilent(_ silent: Bool) {
+    guard medium == .audio, silence.isHidden == silent else { return }
+    silence.isHidden = !silent
+    refit()
   }
 
   /// 开录时的麦克风断开了（录屏不停）：麦克风图标换成斜杠、变 systemOrange（.replace 过渡），提示和旁白说后面没有麦克风声音
@@ -206,13 +287,15 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     microphoneIcon.toolTip = "麦克风断开了，后面没有麦克风声音"
   }
 
-  /// ✕ 的样子：倒数时「取消」，录制中「放弃录制」，上膛后变红「再点一次放弃」
+  /// ✕ 的样子：倒数时「取消」，录制中「放弃录制」（录音「放弃录音」），上膛后变红「再点一次放弃」
   private func applyClose() {
     let armed = discard.isArmed(at: .now)
+    let discardName = medium == .audio ? "放弃录音" : "放弃录制"
     let (label, tip): (String, String) =
       switch state {
       case .countdown: ("取消", escapes ? "取消（Esc）" : "取消")
-      case .recording: armed ? ("再点一次放弃", "再点一次放弃，不会保存") : ("放弃录制", "放弃录制（不保存）")
+      case .recording:
+        armed ? ("再点一次放弃", "再点一次放弃，不会保存") : (discardName, discardName + "（不保存）")
       }
     closeButton.setAccessibilityLabel(label)
     closeButton.toolTip = tip
@@ -226,11 +309,13 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     case .startNow: countdownButton
     case .cancel, .discard: closeButton
     case .stop: stopButton
+    case .pause: medium == .audio ? pauseButton : nil
     }
   }
 
   @objc private func startClicked(_ sender: NSButton) { onClick(.startNow) }
   @objc private func stopClicked(_ sender: NSButton) { onClick(.stop) }
+  @objc private func pauseClicked(_ sender: NSButton) { onClick(.pause) }
 
   /// 倒数时取消；录制中第一下上膛（变红、提示、播报），2 s 内再点才放弃，过时恢复
   @objc private func closeClicked(_ sender: NSButton) {
@@ -256,16 +341,18 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
   override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
 
+  /// 把 HUD 摆到 rect（全局坐标），窗口四周再留 margin
   private func place(_ rect: CGRect) {
     isPlacing = true
-    panel.setFrame(rect, display: true)
+    panel.setFrame(rect.insetBy(dx: -margin, dy: -margin), display: true)
     isPlacing = false
   }
 
-  /// 用户拖过：记下这块屏上的位置（底边中点），这次运行里下次录这块屏就放这里
+  /// 用户拖过：记下这块屏上的位置（HUD 底边中点），这次运行里下次录这块屏就放这里（录屏、录音各记各的）
   func windowDidMove(_ notification: Notification) {
     guard !isPlacing, let display else { return }
-    Self.dragged[display] = CGPoint(x: panel.frame.midX, y: panel.frame.minY)
+    Self.dragged[Spot(display: display, medium: medium)] = CGPoint(
+      x: screenFrame.midX, y: screenFrame.minY)
   }
 
   // MARK: 摆位（纯函数，配单测）
@@ -327,14 +414,38 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     return button
   }
 
-  /// 录制中的读数：红点 + 计时
+  /// 录制中的读数：红点 + 计时（录音另有暂停时顶替红点的暂停符号、计时后面的「没听到声音」，平时藏着、不占宽度）
   private func makeClock() -> NSView {
     let host = PassiveHost(rootView: ClockText(reading: reading))
     host.sizingOptions = [.intrinsicContentSize]
-    let row = NSStackView(views: [dot, host])
+    let row = NSStackView(views: medium == .audio ? [dot, pauseMark, host, silence] : [dot, host])
     row.spacing = 6
     row.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 6)
+    row.detachesHiddenViews = true
     return row
+  }
+
+  /// 暂停时顶替红点的暂停符号（HUD 再次文字色，和红点同宽）
+  private func makePauseMark() -> NSImageView {
+    let mark = NSImageView(
+      image: NSImage(systemSymbolName: "pause.fill", accessibilityDescription: nil)!)
+    mark.symbolConfiguration = .init(pointSize: 9, weight: .bold)
+    mark.imageScaling = .scaleNone
+    mark.contentTintColor = Style.HUD.secondaryText
+    mark.isHidden = true
+    mark.setAccessibilityElement(false)
+    mark.widthAnchor.constraint(equalToConstant: 8).isActive = true
+    mark.heightAnchor.constraint(equalToConstant: 12).isActive = true
+    return mark
+  }
+
+  /// 「没听到声音」：11 pt systemOrange（配置 / 授权问题的语义色）
+  private func makeSilence() -> NSTextField {
+    let label = NSTextField(labelWithString: "没听到声音")
+    label.font = .systemFont(ofSize: 11, weight: .medium)
+    label.textColor = .systemOrange
+    label.isHidden = true
+    return label
   }
 
   /// 声音状态：两个 13 pt 图标（开 = 强调色、关 = 再次文字色 + 斜杠），只读、提示「录制中不能开关声音」
@@ -444,6 +555,49 @@ private final class SoundIcon: NSImageView {
   }
 }
 
+/// 录音的电平（mac-whisker §6 录音 HUD）：最近 3 s 的竖条（AudioRecorder.Levels 的 24 根，每根 2 pt、间隔 2，宽 96 × 高 20，
+/// 竖直居中、右边最新），高度按 AudioRecorder.meterHeight（−50 dB 2 pt → 0 dB 20 pt）；最新一根 HUD 主文字色，往左渐到
+/// 再次文字色，超过 −1 dB 的那根 systemOrange（快削波了）；暂停时冻结、整排再次文字色。每帧直接重画（instant），
+/// 减弱动态效果时照样更新；不接鼠标（点在上面算拖 HUD），不进旁白
+private final class LevelMeter: NSView {
+  var levels: [Float] = [] { didSet { needsDisplay = true } }
+  var isPaused = false { didSet { needsDisplay = true } }
+
+  init() {
+    super.init(frame: CGRect(x: 0, y: 0, width: 96, height: 20))
+    widthAnchor.constraint(equalToConstant: 96).isActive = true
+    heightAnchor.constraint(equalToConstant: 20).isActive = true
+    setAccessibilityElement(false)
+  }
+
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+  override func draw(_ dirtyRect: NSRect) {
+    let count = AudioRecorder.Levels.bars
+    // 刚开始不满 3 s：左边补最矮的
+    let shown =
+      Array(repeating: Float(-120), count: max(0, count - levels.count)) + levels.suffix(count)
+    let (faint, strong) = (Style.HUD.tertiaryText.alphaComponent, Style.HUD.text.alphaComponent)
+    for (index, level) in shown.enumerated() {
+      let height = AudioRecorder.meterHeight(level, tallest: bounds.height)
+      let rect = CGRect(
+        x: bounds.maxX - 2 - CGFloat(count - 1 - index) * 4, y: (bounds.height - height) / 2,
+        width: 2, height: height)
+      let color =
+        isPaused
+        ? Style.HUD.tertiaryText
+        : level > -1
+          ? NSColor.systemOrange
+          : Style.HUD.text.withAlphaComponent(
+            faint + (strong - faint) * CGFloat(index) / CGFloat(count - 1))
+      color.setFill()
+      NSBezierPath(roundedRect: rect, xRadius: 1, yRadius: 1).fill()
+    }
+  }
+}
+
 /// 只显示、不接鼠标的 SwiftUI 宿主：点击落到外面的按钮 / HUD 上（读数上也能拖、点倒数数字是按钮）
 private final class PassiveHost<Content: View>: NSHostingView<Content> {
   override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -484,7 +638,7 @@ private struct CountdownText: View {
   }
 }
 
-/// 计时：13 pt 圆体 semibold + 等宽数字，每秒 numericText；按 h:mm:ss 留宽度（一小时起变长也不跳）
+/// 计时：13 pt 圆体 semibold + 等宽数字，每秒 numericText；按 h:mm:ss 留宽度（一小时起变长也不跳）；录音暂停时变灰
 private struct ClockText: View {
   let reading: RecordingHUD.Reading
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -497,7 +651,7 @@ private struct ClockText: View {
     }
     .font(.system(size: 13, weight: .semibold, design: .rounded))
     .monospacedDigit()
-    .foregroundStyle(Color(nsColor: Style.HUD.text))
+    .foregroundStyle(Color(nsColor: reading.paused ? Style.HUD.secondaryText : Style.HUD.text))
     .animation(Style.Motion.snap.animation(reduced: reduceMotion), value: reading.seconds)
     .accessibilityHidden(true)
   }

@@ -10,7 +10,8 @@ import Testing
 // （飞行卡片落地后交接的同一张卡）、长截图面板与边框，按 2x 写成 PNG（带 -crop 的是局部，看线和图标对不对齐）。
 // 录屏框选（待选提示、调整阶段的录制条、截图里按 R 切过去的录制条）和录制 HUD（倒数、录制中、放弃上膛）也在这里；
 // 第 3 批补了常驻缩略图的视频卡（落地、悬停、矮卡、没有最后一帧的占位）；第 4 批补了录制条的三个开关（默认 = 混合、全开、
-// 全关，全开 / 全关再按石墨、黄色强调色各一遍）和录制 HUD 的声音状态（两个都开、只开系统声音、麦克风断开变橙）。
+// 全关，全开 / 全关再按石墨、黄色强调色各一遍）和录制 HUD 的声音状态（两个都开、只开系统声音、麦克风断开变橙）；录音第 5 批补了
+// 录音 HUD（录制中带电平、暂停、没听到声音、响到橙色的一根）和录音卡（波形 + 左上 waveform 标记 + 时长：落地、悬停、矮卡）。
 // 状态用 SelectionInteractionTests 的屏外窗口 + 合成事件摆（不弹遮罩、不抢键盘）；图层要在窗口里显示过才有内容，
 // 所以把屏外 (-20000, -20000) 的无边框窗口（当不了 key）orderFront 一下再 layer.render(in:)。材质在屏外会发灰，只锁布局。
 //   TEST_RUNNER_KITTY_SNAPSHOT_DIR=/tmp/shots xcodebuild -project macos/KittyTools.xcodeproj \
@@ -300,13 +301,39 @@ struct ScreenshotSnapshotTests {
       ("shot-video-placeholder", card, false, false),
     ] {
       let video = ShelfCard(
-        video: desktopFolder.appending(path: "录屏 2026-09-30 10.00.00.mp4"), seconds: 83,
+        recording: desktopFolder.appending(path: "录屏 2026-09-30 10.00.00.mp4"), seconds: 83,
         poster: poster ? shot : nil, source: CGRect(origin: .zero, size: size),
         rect: CGRect(origin: .zero, size: size), screen: nil, panel: NSPanel(), shelf: ShotShelf())
       video.isHovered = hovered
       for dark in [false, true] {
         try snapshot(
           ShelfCardView(card: video), over: desktop,
+          size: NSSize(
+            width: size.width + ShotShelf.margin * 2, height: size.height + ShotShelf.margin * 2),
+          dark: dark, to: "\(out)/\(name)\(dark ? "-dark" : "").png")
+      }
+    }
+
+    // 录音卡（录音第 5 批）：波形 poster（HUD 底色 + 竖条）+ 左上角 waveform 标记 + 左下时长；落地、悬停（只有「拷贝」+ 关闭 /
+    // 在访达中显示）、矮卡（实际落地总是 poster 的 200 × 125，矮卡只为看标记在小卡上挤不挤）
+    let envelope = (0..<160).map { index -> Float in
+      let x = Float(index)
+      return index % 37 < 5 ? -58 : -30 + 16 * sin(x * 0.45) * sin(x * 0.07)
+    }
+    let wave = try #require(AudioRecorder.waveform(envelope))
+    for (name, size, hovered) in [
+      ("shot-audio-landed", AudioRecorder.posterSize, false),
+      ("shot-audio-hover", AudioRecorder.posterSize, true),
+      ("shot-audio-compact", CGSize(width: 112, height: 70), false),
+    ] {
+      let audio = ShelfCard(
+        recording: desktopFolder.appending(path: "录音 2026-09-30 10.00.00.m4a"), seconds: 65,
+        audio: true, poster: wave, source: CGRect(origin: .zero, size: size),
+        rect: CGRect(origin: .zero, size: size), screen: nil, panel: NSPanel(), shelf: ShotShelf())
+      audio.isHovered = hovered
+      for dark in [false, true] {
+        try snapshot(
+          ShelfCardView(card: audio), over: desktop,
           size: NSSize(
             width: size.width + ShotShelf.margin * 2, height: size.height + ShotShelf.margin * 2),
           dark: dark, to: "\(out)/\(name)\(dark ? "-dark" : "").png")
@@ -380,10 +407,34 @@ struct ScreenshotSnapshotTests {
         microphone: sound && name != "record-hud-system")
       if armed { try #require(hud.button(for: .discard)).performClick(nil) }
       if name == "record-hud-mic-lost" { hud.microphoneLost(animated: false) }
-      hud.panel.contentView = NSView()  // 从它自己的窗口里拿出来，摆到假桌面上
+      hud.removeFromSuperview()  // 从它自己的窗口里拿出来，摆到假桌面上
       hud.frame.origin = RecordingHUD.origin(
         size: hud.frame.size, region: full ? bounds : region, screen: bounds,
         visible: bounds.insetBy(dx: 0, dy: 24).offsetBy(dx: 0, dy: -12), isFullScreen: full,
+        dragged: nil)
+      root.addSubview(hud)
+      try shoot(offscreen(root), name, crop: hud.frame.insetBy(dx: -24, dy: -24))
+    }
+
+    // 录音 HUD（录音第 5 批）：整屏的摆法（可见区底部居中、离底 24），[● 0:42][电平] ｜ [⏸] ｜ [✕][■]；
+    // 录制中（说话的电平）、暂停（暂停符号、计时和电平变灰）、没听到声音（橙字）、最新一根超过 −1 dB（橙）
+    let speech = (0..<24).map { index -> Float in -38 + 16 * sin(Float(index) * 0.9) }
+    for (name, levels, paused, silent) in [
+      ("audio-hud", speech, false, false), ("audio-hud-paused", speech, true, false),
+      ("audio-hud-silent", [Float](repeating: -120, count: 24), false, true),
+      ("audio-hud-loud", speech.dropLast() + [-0.4], false, false),
+    ] {
+      let root = NSView(frame: bounds)
+      root.wantsLayer = true
+      root.layer?.contents = desktop
+      let hud = RecordingHUD(state: .recording(42), stopKey: nil, medium: .audio)
+      hud.updateMeter(levels)
+      if paused { hud.setPaused(true) }
+      if silent { hud.setSilent(true) }
+      hud.removeFromSuperview()
+      hud.frame.origin = RecordingHUD.origin(
+        size: hud.frame.size, region: bounds, screen: bounds,
+        visible: bounds.insetBy(dx: 0, dy: 24).offsetBy(dx: 0, dy: -12), isFullScreen: true,
         dragged: nil)
       root.addSubview(hud)
       try shoot(offscreen(root), name, crop: hud.frame.insetBy(dx: -24, dy: -24))

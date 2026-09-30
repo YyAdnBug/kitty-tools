@@ -6,6 +6,8 @@
 // 减弱动态效果时调用方不飞，直接让常驻缩略图在角落淡入。
 // 录屏（第 3 批，拍板 R11-a）同一套：飞的是最后一帧（poster），没有快门声、文件已存好所以直接 land 文件夹角标；
 // 落地时卡片上多出播放符号和左下角时长（VideoMarks，常驻缩略图的视频卡同一个）。
+// 录音（第 5 批，拍板 A5-a）也是这一套：飞的是电平包络画的波形图，起点是录音 HUD（从小卡长到常驻缩略图那么大，落地尺寸另给），
+// 落地时左上角出 waveform 标记（没有播放符号）+ 时长。
 
 import AppKit
 import SwiftUI
@@ -96,28 +98,31 @@ enum FlyCard {
     return image.cropping(to: CGRect(x: 0, y: 0, width: image.width, height: max(rows, 1))) ?? image
   }
 
-  /// 落地的位置：frame 所在屏幕可见区右下角内缩 16，缩进 200×140（不放大）；常驻缩略图也按它摆
-  static func landingRect(for frame: CGRect) -> CGRect? {
-    guard frame.width >= 1, frame.height >= 1,
+  /// 落地的位置：frame 所在屏幕可见区右下角内缩 16，缩进 200×140（不放大）；常驻缩略图也按它摆。
+  /// size：落地的卡片尺寸另给（录音从小小的 HUD 起飞、长到 poster 那么大；同样缩进 200×140），nil = 选区的尺寸
+  static func landingRect(for frame: CGRect, size: CGSize? = nil) -> CGRect? {
+    let size = size ?? frame.size
+    guard size.width >= 1, size.height >= 1,
       let screen = NSScreen.screens.first(where: {
         $0.frame.contains(CGPoint(x: frame.midX, y: frame.midY))
       }) ?? NSScreen.main
     else { return nil }
-    let fit = min(1, maxSize.width / frame.width, maxSize.height / frame.height)
+    let fit = min(1, maxSize.width / size.width, maxSize.height / size.height)
     let visible = screen.visibleFrame
     return CGRect(
-      x: visible.maxX - inset - frame.width * fit, y: visible.minY + inset,
-      width: frame.width * fit, height: frame.height * fit)
+      x: visible.maxX - inset - size.width * fit, y: visible.minY + inset,
+      width: size.width * fit, height: size.height * fit)
   }
 
   /// image：选区的图；frame：选区（点，AppKit 全局坐标）。linger：角标弹完后交给常驻缩略图（落地位置、角标），
-  /// 给了它卡片就不自己滑走。seconds：录屏的时长（录屏第 3 批）：落地时多出播放符号和时长
+  /// 给了它卡片就不自己滑走。seconds：录屏的时长（录屏第 3 批）：落地时多出播放符号和时长。
+  /// 录音（第 5 批）：frame 是 HUD 处和 image 同比例的小框，size 是落地尺寸（landingRect），audio 让落地的标记换成 waveform
   static func fly(
-    _ image: CGImage, from frame: CGRect, linger: ((CGRect, Badge) -> Void)? = nil,
-    seconds: Int? = nil
+    _ image: CGImage, from frame: CGRect, size: CGSize? = nil,
+    linger: ((CGRect, Badge) -> Void)? = nil, seconds: Int? = nil, audio: Bool = false
   ) -> Landing {
     let landing = Landing()
-    guard let end = landingRect(for: frame),
+    guard let end = landingRect(for: frame, size: size),
       let screen = NSScreen.screens.first(where: { $0.frame.intersects(end) })
     else { return landing }
     // 起飞到落地显示选区原图（cropping 共享像素、不另编码；复制 / 保存编码期间本来就持有它）：第一帧和刚收起的
@@ -140,7 +145,7 @@ enum FlyCard {
     let host = NSHostingView(
       rootView: FlyCardView(
         full: full, image: shown, start: local(frame), end: local(end), exit: exit,
-        seconds: seconds, landing: landing,
+        seconds: seconds, audio: audio, landing: landing,
         linger: linger.map { linger in { linger(end, $0) } }
       ) { [weak panel] in
         // weak：窗口 → 视图 → 这个闭包，强引用会成环，每飞一次漏一个窗口和整张图
@@ -202,6 +207,8 @@ private struct FlyCardView: View {
   let exit: CGFloat
   /// 录屏的时长（落地时出播放符号和时长）；截图 nil
   let seconds: Int?
+  /// 录音：落地的标记是 waveform（没有播放符号）
+  let audio: Bool
   let landing: FlyCard.Landing
   /// 角标弹完后交给常驻缩略图
   let linger: ((FlyCard.Badge) -> Void)?
@@ -232,7 +239,7 @@ private struct FlyCardView: View {
       // 第一帧要和选区一模一样：播放符号和时长落地才出来（和角标同时），常驻缩略图接手时原样接上
       .overlay {
         if landed, let seconds {
-          VideoMarks(seconds: seconds, compact: VideoMarks.isCompact(end.size))
+          VideoMarks(seconds: seconds, compact: VideoMarks.isCompact(end.size), audio: audio)
             .transition(.opacity)
         }
       }
@@ -277,32 +284,49 @@ private struct FlyCardView: View {
 
 /// 视频卡（录屏）比截图卡多的两样：中央 28 pt 的 black 0.35 圆 + play.fill，左下角时长胶囊（11 pt semibold 等宽数字、
 /// HUD 底色、高 18、离角 6）。飞行卡片落地时出现，常驻缩略图的视频卡同一个位置（交接时对得上）；矮卡（同常驻缩略图
-/// 胶囊只留图标的尺寸）播放符号缩到 22 pt，不和时长叠在一起。不进旁白：卡片的名字里已经有时长
+/// 胶囊只留图标的尺寸）播放符号缩到 22 pt，不和时长叠在一起。不进旁白：卡片的名字里已经有时长。
+/// 录音卡（第 5 批）：图本身就是波形，不放播放符号（点它不会播），换成左上角一个 18 pt 的 waveform 小标记（同时长胶囊的底色、
+/// 离角 6，悬停时让给关闭钮）；时长胶囊同视频卡
 struct VideoMarks: View {
   let seconds: Int
   var compact = false
+  var audio = false
 
   /// 矮卡：高不到 90 或宽不到 150（和常驻缩略图的胶囊只留图标同一个门槛）
   static func isCompact(_ size: CGSize) -> Bool { size.height < 90 || size.width < 150 }
 
   var body: some View {
-    let side: CGFloat = compact ? 22 : 28
-    Image(systemName: "play.fill")
-      .font(.system(size: compact ? 9 : 12, weight: .bold))
-      .frame(width: side, height: side)
-      .background(Circle().fill(.black.opacity(0.35)))
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .overlay(alignment: .bottomLeading) {
-        Text(ScreenRecorder.clock(seconds))
-          .font(.system(size: 11, weight: .semibold).monospacedDigit())
-          .lineLimit(1)
-          .padding(.horizontal, 6)
-          .frame(height: 18)
-          .background(Capsule().fill(Color(nsColor: Style.HUD.fill)))
-          .padding(6)
-      }
-      .foregroundStyle(Color(nsColor: Style.HUD.text))
-      .accessibilityHidden(true)
+    if audio {
+      Image(systemName: "waveform")
+        .font(.system(size: 9, weight: .bold))
+        .frame(width: 18, height: 18)
+        .background(Circle().fill(Color(nsColor: Style.HUD.fill)))
+        .padding(6)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .overlay(alignment: .bottomLeading) { duration }
+        .foregroundStyle(Color(nsColor: Style.HUD.text))
+        .accessibilityHidden(true)
+    } else {
+      let side: CGFloat = compact ? 22 : 28
+      Image(systemName: "play.fill")
+        .font(.system(size: compact ? 9 : 12, weight: .bold))
+        .frame(width: side, height: side)
+        .background(Circle().fill(.black.opacity(0.35)))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .bottomLeading) { duration }
+        .foregroundStyle(Color(nsColor: Style.HUD.text))
+        .accessibilityHidden(true)
+    }
+  }
+
+  private var duration: some View {
+    Text(ScreenRecorder.clock(seconds))
+      .font(.system(size: 11, weight: .semibold).monospacedDigit())
+      .lineLimit(1)
+      .padding(.horizontal, 6)
+      .frame(height: 18)
+      .background(Capsule().fill(Color(nsColor: Style.HUD.fill)))
+      .padding(6)
   }
 }
 

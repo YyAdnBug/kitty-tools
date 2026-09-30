@@ -104,6 +104,8 @@ enum Prefs {
   /// 正在录的屏的文件路径（ScreenRecorder.workFile，开录时写、收尾时删）：启动时还在 = 上次闪退了，
   /// ScreenRecorder.recover 把能播的挪进快速保存目录（录屏第 1 批，C7）
   static let screenRecordingInProgress = "screenRecordingInProgress"
+  /// 正在录的音的文件路径（录音第 5 批，AudioRecorder 开录时写、收尾时删；闪退后同样由 ScreenRecorder.recover 接手）
+  static let audioRecordingInProgress = "audioRecordingInProgress"
   /// 录屏帧率：30（默认）/ 60（设置 › 截图「录屏」，录屏第 2 批；大屏上 60 不保证满帧，PLAN §10 第 0 批实测）
   static let screenRecordFrameRate = "screenRecordFrameRate"
   /// 开录前倒数几秒：0 不倒数 / 3（默认）/ 5（拍板 R9-a；倒数不进文件）

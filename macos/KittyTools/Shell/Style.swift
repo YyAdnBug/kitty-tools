@@ -211,6 +211,9 @@ enum Style {
   enum HUD {
     /// 纯图层控件的底色
     static var fill: NSColor { NSColor(white: 0.11, alpha: reduceTransparency ? 0.97 : 0.82) }
+    /// fill 的不透明版：当「图」用的底（录音的波形 poster、录屏没取到最后一帧的占位）。它们下面没有模糊，半透明会透出
+    /// 卡片下面桌面的字（截图卡、视频卡都是不透明的图）
+    static let solidFill = NSColor(white: 0.11, alpha: 1)
     /// 内圈描边 0.5 pt white 0.14（增强对比度 1 pt white 0.35）
     static var innerStroke: NSColor { .white.withAlphaComponent(increaseContrast ? 0.35 : 0.14) }
     static var strokeWidth: CGFloat { increaseContrast ? 1 : 0.5 }
