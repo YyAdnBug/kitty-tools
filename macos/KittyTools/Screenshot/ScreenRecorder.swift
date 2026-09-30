@@ -13,6 +13,7 @@
 // （第 0 批实测：文件由系统进程 replayd 写，本 App 被 kill -9 后它自己收尾、文件能播）。
 // 委托和样本输出在后台线程回调（第 0 批实测）：RecordingEvents 是 nonisolated、无状态的类，只把 Sendable 的事件投进
 // AsyncStream，会话在主线程逐个消费（mac-native §3）。停流不等 stopCapture 回来，收尾只看事件和超时。
+// 挪进快速保存目录后取最后一帧当 poster（录屏第 3 批，拍板 R11-a）：AppDelegate 拿它从选区飞到右下角、交给常驻缩略图的视频卡。
 
 import AVFoundation
 import AppKit
@@ -118,7 +119,14 @@ final class ScreenRecorder: NSObject {
     var moved: Bool
     var duration: Duration
     var reason: Reason
+    /// 录的区域（点，全局坐标；整屏就是那块屏）：飞入的起点
+    var region: CGRect = .zero
+    /// 最后一帧（挪进快速保存目录了才取；文件太短、取不到是 nil）
+    var poster: CGImage?
   }
+
+  /// poster 长边最多这么多像素：够飞行卡片起飞时铺满选区、落地后缩成卡片，不解整张 5K
+  nonisolated static let posterMaxSide: CGFloat = 1600
 
   /// 选区（点，全局坐标，对齐到像素，夹在那块屏里）
   private let region: CGRect
@@ -201,7 +209,13 @@ final class ScreenRecorder: NSObject {
     Task {
       let reason = await record()
       tearDown()
-      onFinish(finalize(Self.outcome(reason, abandoned: abandoned)))
+      var result = finalize(Self.outcome(reason, abandoned: abandoned))
+      if result.moved, let file = result.file {
+        let size = Self.outputSize(points: region.size, scale: scale)
+        result.poster = await Self.poster(
+          of: file, pixels: CGSize(width: size.width, height: size.height))
+      }
+      onFinish(result)
     }
   }
 
@@ -590,18 +604,36 @@ final class ScreenRecorder: NSObject {
       reason != .discarded, reason != .cancelled
     else {
       try? manager.removeItem(at: temp)
-      return Result(file: nil, moved: false, duration: duration, reason: reason)
+      return Result(file: nil, moved: false, duration: duration, reason: reason, region: region)
     }
     let target = Self.savedURL(for: temp, in: directory)
     do {
       try manager.moveItem(at: temp, to: target)
-      return Result(file: target, moved: true, duration: duration, reason: reason)
+      return Result(file: target, moved: true, duration: duration, reason: reason, region: region)
     } catch {
       Log.record.error("录屏挪不进快速保存目录：\(error)")
       let renamed = Self.savedURL(for: temp, in: temp.deletingLastPathComponent())
       let file = (try? manager.moveItem(at: temp, to: renamed)) != nil ? renamed : temp
-      return Result(file: file, moved: false, duration: duration, reason: reason)
+      return Result(file: file, moved: false, duration: duration, reason: reason, region: region)
     }
+  }
+
+  /// 最后一帧（R11-a 飞入用；不用框选时的冻结帧，录了几分钟画面早变了）：取在时长前一点点（正好在时长上常取不到），
+  /// 先要那一刻的那一帧，取不到再放宽容差（可能退到更早的关键帧）；按 pixels（选区像素）限长边 1600。
+  /// 系统的 async API，主线程直接 await。文件太短、取不到返回 nil（AppDelegate 只出岛、卡片用播放符号占位）
+  static func poster(of file: URL, pixels: CGSize) async -> CGImage? {
+    let asset = AVURLAsset(url: file)
+    guard let duration = try? await asset.load(.duration), duration.seconds > 0 else { return nil }
+    let generator = AVAssetImageGenerator(asset: asset)
+    generator.maximumSize = posterLimit(pixels)
+    generator.requestedTimeToleranceAfter = .zero
+    let time = CMTime(seconds: posterTime(duration.seconds), preferredTimescale: 600)
+    for before in [CMTime.zero, .positiveInfinity] {
+      generator.requestedTimeToleranceBefore = before
+      if let image = try? await generator.image(at: time).image { return image }
+    }
+    Log.record.notice("录屏取不到最后一帧：\(file.lastPathComponent)")
+    return nil
   }
 
   /// 进行中的文件放哪（C7）：不放系统临时目录——开机 / 登录时系统会清空 TemporaryItems，断电或闪退后再开机就找不到了。
@@ -671,6 +703,17 @@ final class ScreenRecorder: NSObject {
     }
     let even = { (value: CGFloat) in max(2, Int(value.rounded()) / 2 * 2) }
     return (even(width), even(height))
+  }
+
+  /// poster 取帧的时刻（秒）：时长前 0.1 s，不到 0.1 s 的取开头
+  nonisolated static func posterTime(_ duration: Double) -> Double {
+    max(0, duration - 0.1)
+  }
+
+  /// poster 的尺寸上限（AVAssetImageGenerator.maximumSize，等比缩进去）：选区像素，长边不超过 posterMaxSide
+  nonisolated static func posterLimit(_ pixels: CGSize) -> CGSize {
+    let fit = min(1, posterMaxSide / max(pixels.width, pixels.height, 1))
+    return CGSize(width: (pixels.width * fit).rounded(), height: (pixels.height * fit).rounded())
   }
 
   /// 开录前倒数几秒：设置里只给 0 / 3 / 5，存的值在 0…5 之间照用（实录自检用 1 s），出了这个范围按默认 3

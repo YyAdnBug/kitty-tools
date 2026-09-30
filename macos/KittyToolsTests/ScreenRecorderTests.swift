@@ -1,6 +1,7 @@
 // 录屏第 1 批的纯函数（ScreenRecorder）：输出像素尺寸（宽或高超过 4096 等比缩、偶数）、菜单栏计时与旁白时长、
 // 流停止 / 开录失败的错误码怎么归类、写入失败时按哪个原因说、结果岛的文案、存盘名字按开录时刻、闪退恢复（文件不在 / 打不开）；
 // 第 2 批：倒数秒数与播报、放弃 / 取消的结果、录屏设置的默认值。HUD 在 RecordingHUDTests。
+// 第 3 批：最后一帧的取帧时刻与尺寸上限、取不到时 nil。视频卡在 VideoCardTests。
 // 真录制在按需实录自检 RecordingProbeTests.screenRecorderTake。
 
 import Foundation
@@ -173,6 +174,36 @@ struct ScreenRecorderTests {
       ScreenRecorder.outcome(.system(code: -3821, text: ""), abandoned: .cancelled) == .cancelled)
     #expect(ScreenRecorder.outcome(timedOut, abandoned: nil) == timedOut)
     #expect(ScreenRecorder.outcome(.locked, abandoned: nil) == .locked)
+  }
+
+  /// 最后一帧（第 3 批，R11-a）：时长前 0.1 s 取（正好在时长上常取不到），不到 0.1 s 的取开头；尺寸按选区像素、
+  /// 长边不超过 1600（不解整张 5K），本来就小的不放大
+  @Test func posterTimeAndLimit() {
+    #expect(abs(ScreenRecorder.posterTime(2.1) - 2.0) < 1e-9)
+    #expect(ScreenRecorder.posterTime(0.05) == 0)
+    #expect(ScreenRecorder.posterTime(0) == 0)
+    #expect(
+      ScreenRecorder.posterLimit(CGSize(width: 3420, height: 2224))
+        == CGSize(width: 1600, height: 1040))
+    #expect(
+      ScreenRecorder.posterLimit(CGSize(width: 2304, height: 4096))
+        == CGSize(width: 900, height: 1600))
+    #expect(
+      ScreenRecorder.posterLimit(CGSize(width: 1280, height: 720))
+        == CGSize(width: 1280, height: 720))
+  }
+
+  /// 文件不在 / 不是视频：没有 poster（AppDelegate 只出岛、卡片用播放符号占位），不抛不卡
+  @Test func posterMissingFileIsNil() async throws {
+    let folder = FileManager.default.temporaryDirectory.appending(path: "kitty-rec-\(UUID())")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let size = CGSize(width: 1280, height: 720)
+    #expect(
+      await ScreenRecorder.poster(of: folder.appending(path: "gone.mp4"), pixels: size) == nil)
+    let empty = folder.appending(path: "empty.mp4")
+    try Data().write(to: empty)
+    #expect(await ScreenRecorder.poster(of: empty, pixels: size) == nil)
   }
 
   /// 设置 › 截图「录屏」的默认值（拍板 C4-a）：30 fps、倒数 3 秒、显示光标。只写注册域（不落盘）

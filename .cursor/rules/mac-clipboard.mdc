@@ -25,7 +25,7 @@ alwaysApply: false
 - 菜单栏「暂停记录剪贴板」（D4）：`ClipboardWatcher.isUserPaused`，和划词用的 `pause()` / `resume()` 分开（取词还原后不能把用户的暂停也解除）；暂停时 changeCount 照走但不记、不触发复制即译，本 App 自己记的文字和截图也不记，面板里合并粘贴 / 一起粘贴 / ⌘C 合成的新条目也不记（`ClipboardPanelModel.remember`）；不存盘，重启自动恢复。
 - 启动时直接对齐当前 changeCount，不记启动前的内容。
 - App Nap 实测（空闲 11 分钟后 1 秒内连复制 3 条全部入库）：**不需要** `beginActivity`，别加。
-- **自家生成的新文字**（译文、原文、计算结果、路径 / 网址、替换原文、取色、识字、复制图中文字…）经 `Paster.write(string:record: true)` → `recordOwnText` 记进历史（过敏感文本过滤、已有同文只挪到最前、来源为空）；从历史取出的条目、划词还原、面板开着时透镜 / ⌘Y 里的色值块不记（体检 A30，细则见 mac-native §5）。
+- **自家生成的新文字**（译文、原文、计算结果、路径 / 网址、替换原文、取色、识字、复制图中文字…）经 `Paster.write(string:record: true)` → `recordOwnText` 记进历史（过敏感文本过滤、已有同文只挪到最前、来源为空）；从历史取出的条目、划词还原、面板开着时透镜 / ⌘Y 里的色值块不记（体检 A30，细则见 mac-native §5）。截图的图片是 `ClipboardStore.record`；录屏视频卡点「拷贝」写的是文件（`Paster.write(files:)`，和文件条目还原时同一份 `Paster.items(files:)`），`ClipboardStore.recordFiles` 记一条文件条目（来源为空、同样的文件只挪到最前；暂停记录时不记，录屏第 3 批）。
 - 敏感文本：`sk-` / `bearer ` 后的 token 要求词边界 + 字符集 + 长度 + 含数字（`sk-proj-…` 也拦，普通单词跟在 bearer 后不拦），卡号整段 13–19 位且过 Luhn；固定前缀 + 长度的常见密钥（GitHub `ghp_` / `github_pat_`、AWS `AKIA`、Slack `xox?-`、Google `AIza`、私钥块、JWT，前面要求 Unicode 词边界，先用前缀字符串粗筛再跑正则，体检 B5）。
 
 ## 3. 搜索

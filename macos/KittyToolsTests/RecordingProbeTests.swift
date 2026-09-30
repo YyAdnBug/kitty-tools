@@ -9,7 +9,8 @@
 // 闪退：先加 TEST_RUNNER_KITTY_LIVE_RECORD_KILL=1 只跑 crashRecording()（录 5 s 后 kill -9 自己，这次测试必然报崩溃），
 // 过十几秒再加 TEST_RUNNER_KITTY_LIVE_RECORD_INSPECT=1 只跑 crashInspect() 看留下的文件。报告在 <输出目录>/report.md。
 // 录屏第 1 批加了 screenRecorderTake()：用 ScreenRecorder 真录 2 s（只验产品代码，可以单独跑）；第 2 批起先倒数 1 s
-// （录制 HUD 从倒数换成录制态，倒数不进文件：录下来仍是 2 s），录制中连 HUD 一起截图。
+// （录制 HUD 从倒数换成录制态，倒数不进文件：录下来仍是 2 s），录制中连 HUD 一起截图；第 3 批起顺带验最后一帧（poster）的
+// 尺寸和内容（存成 recorder-poster.png，看完和视频一起删）。
 import AVFoundation
 import AppKit
 import ScreenCaptureKit
@@ -687,12 +688,25 @@ struct RecordingProbeTests {
     let red = try #require(at(listed))
     #expect(red.0 > 180 && red.1 < 80 && red.2 < 80, "白名单窗口没录进去：\(red)")
     let green = at(unlisted).map { "\($0)" } ?? "读不到"
+    // 第 3 批：挪进目录后取的最后一帧（飞入和视频卡用）：尺寸按选区像素、长边不超过 1600，红色窗口在里面
+    let poster = try #require(result.poster, "没取到最后一帧")
+    try save(poster, "recorder-poster.png")
+    #expect(
+      CGSize(width: poster.width, height: poster.height) == ScreenRecorder.posterLimit(media.size))
+    let perPoint = CGFloat(poster.width) / region.width
+    let posterRed = try #require(
+      pixel(
+        poster, x: Int((listed.frame.midX - region.minX) * perPoint),
+        y: Int((region.maxY - listed.frame.midY) * perPoint)))
+    #expect(
+      posterRed.0 > 180 && posterRed.1 < 80 && posterRed.2 < 80, "最后一帧里没有红色窗口：\(posterRed)")
     note(
       "ScreenRecorder 真录（录屏第 1 批）",
       [
         "结果：\(result.reason)，挪进输出目录 \(result.moved)，会话计的时长 \(result.duration)，文件 \(file.lastPathComponent)",
         "先倒数 1 s 再开流：文件时长 \(String(format: "%.2f", media.duration)) s（录 2 s；倒数进了文件会是 3 s 左右）",
         "结尾一帧：白名单里的 NSWindow（红 230,26,26）读回 \(red)；不在白名单的 NSPanel（绿 26,204,51）处读回 \(green)",
+        "最后一帧（第 3 批 poster）：\(poster.width)×\(poster.height)，红色窗口处读回 \(posterRed)",
       ] + media.summary)
   }
 

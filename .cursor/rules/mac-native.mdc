@@ -44,7 +44,7 @@ alwaysApply: true
 ## 5. 剪贴板写入
 - 自家写剪贴板（粘贴、复制、自动复制、划词后还原）**一律经 `Paster.write`**：它记下写后的 `changeCount` 让 watcher 跳过。只有划词后还原剪贴板加 `org.nspasteboard.TransientType`（`transient: true`，别的剪贴板工具也不记）；用户主动的复制、粘贴、自动复制不加。
 - 其它地方禁止直接 `setString` / `setData` / `writeObjects`；唯一例外是 `SelectionReader` 发 ⌘C 前的 `clearContents()`。
-- **本 App 生成的新文字写剪贴板时同时记进剪贴板历史**（体检 A30，2026-09-28；watcher 跳过自家写入，所以自己记）：一律 `Paster.write(string:record: true)`，它调 `Paster.recordText`（AppDelegate 接 `ClipboardStore.recordOwnText`：过敏感文本过滤、已有同文只挪到最前；单测里是 nil）。算新文字的：译文、原文、单词释义、计算结果、路径 / 网址、替换原文和「划词翻译并替换」写进去的译文、取色、识字、复制图中文字；截图翻译的原文不写剪贴板，只 `Paster.recordText?(text)`。**不记**：从历史取出的已有条目（剪贴板面板的粘贴 / 复制、启动器 cb）、划词还原（transient）、剪贴板面板开着时透镜 / ⌘Y 里的色值块（记新条目会把选中跳走）。截图的图片另走 `ClipboardStore.record`。
+- **本 App 生成的新文字写剪贴板时同时记进剪贴板历史**（体检 A30，2026-09-28；watcher 跳过自家写入，所以自己记）：一律 `Paster.write(string:record: true)`，它调 `Paster.recordText`（AppDelegate 接 `ClipboardStore.recordOwnText`：过敏感文本过滤、已有同文只挪到最前；单测里是 nil）。算新文字的：译文、原文、单词释义、计算结果、路径 / 网址、替换原文和「划词翻译并替换」写进去的译文、取色、识字、复制图中文字；截图翻译的原文不写剪贴板，只 `Paster.recordText?(text)`。**不记**：从历史取出的已有条目（剪贴板面板的粘贴 / 复制、启动器 cb）、划词还原（transient）、剪贴板面板开着时透镜 / ⌘Y 里的色值块（记新条目会把选中跳走）。截图的图片另走 `ClipboardStore.record`；录屏视频卡的「拷贝」写文件用 `Paster.write(files:)`，调用方自己 `ClipboardStore.recordFiles`（录屏第 3 批）。
 
 ## 6. 签名
 - Apple Development 自动签名，`DEVELOPMENT_TEAM = HTX9F4KG39`；**禁止「Sign to Run Locally」/ adhoc**（TCC 按 cdhash 记账，每次重建授权都会作废）。

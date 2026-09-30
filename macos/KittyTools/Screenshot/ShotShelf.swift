@@ -6,16 +6,20 @@
 // （挂过 NSHostingView 的窗口 close 后 AppKit 不释放，同 FlyCard）。减弱动态效果时不飞，直接在角落淡入、淡出。
 // 卡片只留缩到卡片大小的图和复制 / 保存时编码好的 PNG（不再编码一遍，也不留整张解码的图：5K 一张 59 MB、长截图上百 MB），
 // 钉图时才解码；拖出用的临时 PNG 在主线程外写。
+// 录屏（第 3 批，拍板 R11-a）的视频卡是同一种卡片的另一种内容（ShelfCard.Kind.video）：图是最后一帧（取不到就是 HUD 底色）、
+// 多了播放符号和时长；文件已经存好了，悬停只有「拷贝」（拷的是文件，进剪贴板历史）和关闭 / 在访达中显示，双击用默认 App 打开，
+// 拖出去就是那个文件，右键多「打开」「移到废纸篓」（能放回，不二次确认）。
 
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
 final class ShotShelf {
-  /// 再拷贝一次 / 快速保存（都用编码好的 PNG）/ 钉到原来的位置（AppDelegate 给）
+  /// 再拷贝一次 / 快速保存（都用编码好的 PNG）/ 钉到原来的位置 / 拷贝录屏文件（AppDelegate 给）
   var copy: (Data) async -> Bool = { _ in false }
   var save: (Data) async -> URL? = { _ in nil }
   var pin: (CGImage, CGRect) -> Void = { _, _ in }
+  var copyFile: (URL) -> Void = { _ in }
   /// 刘海岛（AppDelegate 给）：缩略图看起来没变的结果（再拷贝、存到同一个文件夹）、文件已不在时用它说
   var island: Island?
 
@@ -34,16 +38,37 @@ final class ShotShelf {
     _ image: CGImage, png: Data, scale: CGFloat, source: CGRect, at rect: CGRect,
     badge: FlyCard.Badge
   ) {
+    insert(at: rect) { screen, panel in
+      ShelfCard(
+        image: image, png: png, scale: scale, source: source, rect: rect, badge: badge,
+        screen: screen, panel: panel, shelf: self)
+    }
+  }
+
+  /// 接手一段录屏（已存进快速保存目录的文件、时长、最后一帧）。fadesIn：没飞过来（减弱动态效果、没取到最后一帧）时在角落淡入
+  func add(
+    video url: URL, seconds: Int, poster: CGImage?, source: CGRect, at rect: CGRect,
+    fadesIn: Bool
+  ) {
+    insert(at: rect, fadesIn: fadesIn) { screen, panel in
+      ShelfCard(
+        video: url, seconds: seconds, poster: poster, source: source, rect: rect, screen: screen,
+        panel: panel, shelf: self)
+    }
+  }
+
+  /// 同一块屏上已有的往上挪给新的让位；超过 3 张的最早那张滑走（截图、录屏混着叠）
+  private func insert(
+    at rect: CGRect, fadesIn: Bool = Style.reduceMotion,
+    _ make: (NSScreen?, NSPanel) -> ShelfCard
+  ) {
     let screen = NSScreen.screens.first { $0.frame.intersects(rect) }
-    // 同一块屏上已有的往上挪给新的让位；超过 3 张的最早那张滑走
     let neighbours = cards.filter { !$0.isLeaving && $0.screen == screen }
     for card in neighbours { card.shift(by: rect.height + Self.gap) }
     if neighbours.count >= Self.maxPerScreen, let oldest = neighbours.first { dismiss(oldest) }
-    let card = ShelfCard(
-      image: image, png: png, scale: scale, source: source, rect: rect, badge: badge,
-      screen: screen, panel: idle.popLast() ?? Self.makePanel(), shelf: self)
+    let card = make(screen, idle.popLast() ?? Self.makePanel())
     cards.append(card)
-    card.show()
+    card.show(fadingIn: fadesIn)
   }
 
   func dismiss(_ card: ShelfCard) {
@@ -96,8 +121,34 @@ final class ShotShelf {
 
 /// 一张常驻缩略图：窗口、界面状态、自动滑走的计时
 @Observable final class ShelfCard {
-  /// 显示的部分（长截图只露开头一屏；缩到卡片尺寸）
-  let shown: CGImage
+  /// 卡片装的是什么（第 5 批录音再加一种）
+  enum Kind: Equatable {
+    /// 截图：PNG / 原图在下面的 png、image 里
+    case image
+    /// 录屏：快速保存目录里的文件和时长（秒）
+    case video(URL, seconds: Int)
+  }
+
+  /// 右键菜单和 VoiceOver 自定义动作（同一份 menu）
+  enum Command {
+    case copy, save, pin, open, reveal, trash, close
+
+    var title: String {
+      switch self {
+      case .copy: "拷贝"
+      case .save: "存储"
+      case .pin: "钉图"
+      case .open: "打开"
+      case .reveal: "在访达中显示"
+      case .trash: "移到废纸篓"
+      case .close: "关闭"
+      }
+    }
+  }
+
+  let kind: Kind
+  /// 显示的部分（长截图只露开头一屏；缩到卡片尺寸）；录屏没取到最后一帧时 nil（HUD 底色 + 播放符号占位）
+  let shown: CGImage?
   let scale: CGFloat
   /// 原图的像素尺寸（钉图按它的宽高比）
   @ObservationIgnored private let pixels: CGSize
@@ -126,6 +177,7 @@ final class ShotShelf {
     image: CGImage, png: Data? = nil, scale: CGFloat, source: CGRect, rect: CGRect,
     badge: FlyCard.Badge, screen: NSScreen?, panel: NSPanel, shelf: ShotShelf
   ) {
+    kind = .image
     self.png = png
     self.image = png == nil ? image : nil
     pixels = CGSize(width: image.width, height: image.height)
@@ -141,7 +193,61 @@ final class ShotShelf {
     if case .saved(let url) = badge { fileURL = url }
   }
 
-  func show() {
+  /// 录屏：文件已在快速保存目录（角标是它的文件夹），poster 是最后一帧（和飞行卡片同样缩到卡片尺寸，交接时像素一样）
+  init(
+    video url: URL, seconds: Int, poster: CGImage?, source: CGRect, rect: CGRect,
+    screen: NSScreen?, panel: NSPanel, shelf: ShotShelf
+  ) {
+    let backing = screen?.backingScaleFactor ?? 2
+    kind = .video(url, seconds: seconds)
+    scale = backing
+    shown = poster.map {
+      FlyCard.cardImage(of: $0, frame: source, size: rect.size, backingScale: backing)
+    }
+    pixels = .zero
+    self.source = source
+    self.rect = rect
+    badge = .saved(url)
+    self.screen = screen
+    self.panel = panel
+    self.shelf = shelf
+    fileURL = url
+  }
+
+  /// 旁白里卡片的名字
+  var accessibilityName: String {
+    switch kind {
+    case .image: "截图缩略图"
+    case .video(_, let seconds): "录屏，" + ScreenRecorder.spoken(seconds)
+    }
+  }
+
+  /// 右键菜单（一节一组，节间分隔线）：截图「拷贝 / 存储 / 钉图 /（存过的）在访达中显示 ｜ 关闭」；
+  /// 录屏「拷贝 / 打开 / 在访达中显示 ｜ 移到废纸篓 ｜ 关闭」（已经存了，没有存储；不是图，没有钉图）
+  var menu: [[Command]] {
+    switch kind {
+    case .image:
+      let saved = if case .saved = badge { true } else { false }
+      return [[.copy, .save, .pin] + (saved ? [.reveal] : []), [.close]]
+    case .video:
+      return [[.copy, .open, .reveal], [.trash], [.close]]
+    }
+  }
+
+  func perform(_ command: Command) {
+    switch command {
+    case .copy: copyAgain()
+    case .save: save()
+    case .pin: pin()
+    case .open: open()
+    case .reveal: revealInFinder()
+    case .trash: moveToTrash()
+    case .close: close()
+    }
+  }
+
+  /// fadingIn：没有飞行卡片在同一个位置交接（减弱动态效果、录屏没取到最后一帧）时淡入
+  func show(fadingIn: Bool = Style.reduceMotion) {
     let host = ShelfHostingView(rootView: ShelfCardView(card: self))
     host.sizingOptions = []
     host.onHover = { [weak self] in self?.isHovered = $0 }
@@ -149,9 +255,9 @@ final class ShotShelf {
     panel.contentView = host
     panel.setFrame(rect.insetBy(dx: -ShotShelf.margin, dy: -ShotShelf.margin), display: false)
     // 飞行卡片刚在同一个位置关掉：直接出现就接上了；减弱动态效果时（没有飞）淡入
-    panel.alphaValue = Style.reduceMotion ? 0 : 1
+    panel.alphaValue = fadingIn ? 0 : 1
     panel.orderFrontRegardless()
-    if Style.reduceMotion {
+    if fadingIn {
       NSAnimationContext.runAnimationGroup { context in
         context.duration = 0.2
         panel.animator().alphaValue = 1
@@ -197,11 +303,18 @@ final class ShotShelf {
 
   func copyAgain() {
     guard !isBusy, let shelf else { return }
+    // 录屏拷的是文件（C8-a：点了才进剪贴板历史）
+    if case .video(let url, _) = kind {
+      guard exists(url) else { return }
+      shelf.copyFile(url)
+      shelf.island?.show("已复制录屏", leading: shown.map(Island.thumbnail(of:)) ?? .tone)
+      return
+    }
     isBusy = true
     Task {
       // 角标不换（存过的还要留着文件夹和「在访达中显示」），缩略图看不出拷没拷上：用刘海说（岛自己也播报）
       if let png = await encoded(), await shelf.copy(png) {
-        shelf.island?.show("已复制截图", leading: Island.thumbnail(of: shown))
+        shelf.island?.show("已复制截图", leading: shown.map(Island.thumbnail(of:)) ?? .tone)
       }
       isBusy = false
     }
@@ -217,7 +330,8 @@ final class ShotShelf {
           old.deletingLastPathComponent() == url.deletingLastPathComponent()
         {
           shelf.island?.show(
-            "已保存", detail: url.lastPathComponent, leading: Island.thumbnail(of: shown))
+            "已保存", detail: url.lastPathComponent,
+            leading: shown.map(Island.thumbnail(of:)) ?? .tone)
         }
         badge = .saved(url)
         fileURL = url
@@ -262,7 +376,22 @@ final class ShotShelf {
     }
   }
 
-  /// 双击用默认 App 打开：没存过先快速保存（临时目录的文件下次启动会清掉，在预览里改了也会丢）
+  /// 录屏移到废纸篓（能放回，13 条默认细节：不二次确认）：成功后卡片收起，岛说一声
+  func moveToTrash() {
+    guard case .video(let url, _) = kind, exists(url) else { return }
+    Task {
+      do {
+        _ = try await NSWorkspace.shared.recycle([url])
+      } catch {
+        shelf?.island?.show("没能移到废纸篓", detail: error.localizedDescription, tone: .error)
+        return
+      }
+      shelf?.island?.show("已移到废纸篓", detail: url.lastPathComponent, symbol: "trash")
+      close()
+    }
+  }
+
+  /// 双击用默认 App 打开（录屏：系统播放器自带修剪，R12-a）：没存过先快速保存（临时目录的文件下次启动会清掉，在预览里改了也会丢）
   func open() {
     if case .saved(let url) = badge {
       if exists(url) { NSWorkspace.shared.open(url) }
@@ -284,7 +413,8 @@ final class ShotShelf {
   func dragItem() -> NSItemProvider {
     if let fileURL, let provider = NSItemProvider(contentsOf: fileURL) { return provider }
     if let png { return NSItemProvider(item: png as NSData, typeIdentifier: UTType.png.identifier) }
-    return NSItemProvider(object: NSImage(cgImage: shown, size: .zero))
+    return shown.map { NSItemProvider(object: NSImage(cgImage: $0, size: .zero)) }
+      ?? NSItemProvider()
   }
 
   /// PNG：有就直接用；没有就在主线程外编码原图，编完放掉原图
@@ -442,7 +572,18 @@ struct ShelfCardView: View {
     // 图放在 overlay 里铺满：fill 的图不参与布局，比例和卡片不一样时也不会把卡片撑大
     Color.clear
       .overlay {
-        Image(decorative: card.shown, scale: 1).resizable().aspectRatio(contentMode: .fill)
+        if let shown = card.shown {
+          Image(decorative: shown, scale: 1).resizable().aspectRatio(contentMode: .fill)
+        } else {
+          Color(nsColor: Style.HUD.fill)  // 录屏没取到最后一帧：只剩播放符号和时长
+        }
+      }
+      // 录屏：播放符号和时长（和飞行卡片落地时同一个）；悬停时让给操作按钮（左下角是「在访达中显示」）
+      .overlay {
+        if case .video(_, let seconds) = card.kind, !card.isHovered {
+          VideoMarks(seconds: seconds, compact: VideoMarks.isCompact(card.rect.size))
+            .transition(.opacity)
+        }
       }
       .overlay {
         if card.isHovered {
@@ -467,21 +608,26 @@ struct ShelfCardView: View {
       .animation(.easeOut(duration: 0.12), value: card.isHovered)
       .onDrag { card.dragItem() }
       .onTapGesture(count: 2) { card.open() }
-      // 右键菜单：小卡片上放不下按钮时也能操作；VoiceOver 也从这里找到全部操作
+      // 右键菜单：小卡片上放不下按钮时也能操作；VoiceOver 的自定义动作是同一份
       .contextMenu {
-        Button("拷贝", action: card.copyAgain)
-        Button("存储", action: card.save)
-        Button("钉图", action: card.pin)
-        if case .saved = card.badge { Button("在访达中显示", action: card.revealInFinder) }
-        Divider()
-        Button("关闭", action: card.close)
+        ForEach(Array(card.menu.enumerated()), id: \.offset) { index, section in
+          if index > 0 { Divider() }
+          ForEach(section, id: \.self) { command in
+            Button(command.title) { card.perform(command) }
+          }
+        }
       }
       .padding(ShotShelf.margin)
       .accessibilityElement(children: .contain)
-      .accessibilityLabel("截图缩略图")
+      .accessibilityLabel(card.accessibilityName)
+      .accessibilityActions {
+        ForEach(card.menu.flatMap { $0 }, id: \.self) { command in
+          Button(command.title) { card.perform(command) }
+        }
+      }
   }
 
-  /// 中间拷贝 / 存储；三个角关闭、钉图、在访达中显示（右上角留给角标）。卡片矮的时候胶囊只留图标；
+  /// 中间拷贝 / 存储（录屏已经存了，只有拷贝）；三个角关闭、钉图（录屏没有）、在访达中显示（右上角留给角标）。卡片矮的时候胶囊只留图标；
   /// 再小就不画角上的圆钮（会和胶囊叠在一起，点拷贝变成点钉图），更小的只剩右键菜单
   @ViewBuilder private var actions: some View {
     GeometryReader { geometry in
@@ -509,15 +655,19 @@ struct ShelfCardView: View {
     ZStack {
       HStack(spacing: 6) {
         pill("拷贝", "doc.on.doc", compact: compact, action: card.copyAgain)
-        pill("存储", "square.and.arrow.down", compact: compact, action: card.save)
+        if card.kind == .image {
+          pill("存储", "square.and.arrow.down", compact: compact, action: card.save)
+        }
       }
       .opacity(card.isBusy ? 0.5 : 1)
       .overlay { if card.isBusy { ProgressView().controlSize(.small).tint(.white) } }
       if corners {
         round("xmark", "关闭", action: card.close).frame(
           maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        round("pin.fill", "钉图", action: card.pin).frame(
-          maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+        if card.kind == .image {
+          round("pin.fill", "钉图", action: card.pin).frame(
+            maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+        }
         if case .saved = card.badge {
           round("folder", "在访达中显示", action: card.revealInFinder).frame(
             maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)

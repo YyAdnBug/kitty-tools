@@ -3,6 +3,7 @@
 // 用户主动的复制不加，照常进别的剪贴板工具。
 // 本 App 生成的新文字（译文、原文、计算结果、路径 / 网址、替换原文、识字、取色…）用 write(string:record: true)
 // 写并同时记进剪贴板历史（recordText）；从历史取出的已有条目、划词还原、剪贴板面板里的色值块不记。
+// 文件（录屏卡的「拷贝」）用 write(files:)，调用方自己记进历史（同截图的图片）。
 
 import AppKit
 import Carbon.HIToolbox
@@ -30,6 +31,21 @@ enum Paster {
     let item = NSPasteboardItem()
     for (type, data) in representations { item.setData(data, forType: type) }
     write([item])
+  }
+
+  /// 文件（录屏卡的「拷贝」）：每个文件一个 item、写文件 URL，粘贴进访达、邮件、聊天窗口得到文件本身。
+  /// 本 App 新录的文件由调用方另记进历史（ClipboardStore.recordFiles；watcher 跳过自家写入）
+  static func write(files: [URL]) {
+    write(items(files: files))
+  }
+
+  /// 文件写进剪贴板的样子（剪贴板历史里的文件条目还原时也用它）
+  static func items(files: [URL]) -> [NSPasteboardItem] {
+    files.map { url in
+      let item = NSPasteboardItem()
+      item.setString(url.absoluteString, forType: .fileURL)
+      return item
+    }
   }
 
   /// 把本 App 生成的一段文字记进剪贴板历史：AppDelegate 启动时接到 `ClipboardStore.recordOwnText`（过敏感文本过滤、

@@ -4,6 +4,8 @@
 // 后向右滑出屏幕。窗口只取起终点的并集、不接鼠标，飞完就关；飞行中显示选区原图（cropping，不复制），落地后换成缩小过的图（和常驻缩略图同一张）。
 // 卡片先飞，角标等复制 / 保存真的成功了才由调用方 land（失败就没有角标）。快门声跟随系统「播放用户界面音效」和设置 › 截图的开关。
 // 减弱动态效果时调用方不飞，直接让常驻缩略图在角落淡入。
+// 录屏（第 3 批，拍板 R11-a）同一套：飞的是最后一帧（poster），没有快门声、文件已存好所以直接 land 文件夹角标；
+// 落地时卡片上多出播放符号和左下角时长（VideoMarks，常驻缩略图的视频卡同一个）。
 
 import AppKit
 import SwiftUI
@@ -38,10 +40,10 @@ enum FlyCard {
     /// 角标真的弹出来的那一刻（卡片落地且复制 / 保存成功；卡片已经滑走就不会调）：菜单栏图标跟着弹一下
     @ObservationIgnored var onShow: (() -> Void)?
 
-    func land(_ badge: Badge) {
+    /// announces：卡片不接鼠标，主动给 VoiceOver 播报结果；录屏自己说（带时长）或由岛说时传 false
+    func land(_ badge: Badge, announces: Bool = true) {
       self.badge = badge
-      // 卡片不接鼠标：主动给 VoiceOver 播报结果
-      Island.announce(badge.title)
+      if announces { Island.announce(badge.title) }
     }
   }
 
@@ -109,9 +111,10 @@ enum FlyCard {
   }
 
   /// image：选区的图；frame：选区（点，AppKit 全局坐标）。linger：角标弹完后交给常驻缩略图（落地位置、角标），
-  /// 给了它卡片就不自己滑走
+  /// 给了它卡片就不自己滑走。seconds：录屏的时长（录屏第 3 批）：落地时多出播放符号和时长
   static func fly(
-    _ image: CGImage, from frame: CGRect, linger: ((CGRect, Badge) -> Void)? = nil
+    _ image: CGImage, from frame: CGRect, linger: ((CGRect, Badge) -> Void)? = nil,
+    seconds: Int? = nil
   ) -> Landing {
     let landing = Landing()
     guard let end = landingRect(for: frame),
@@ -137,7 +140,7 @@ enum FlyCard {
     let host = NSHostingView(
       rootView: FlyCardView(
         full: full, image: shown, start: local(frame), end: local(end), exit: exit,
-        landing: landing,
+        seconds: seconds, landing: landing,
         linger: linger.map { linger in { linger(end, $0) } }
       ) { [weak panel] in
         // weak：窗口 → 视图 → 这个闭包，强引用会成环，每飞一次漏一个窗口和整张图
@@ -197,6 +200,8 @@ private struct FlyCardView: View {
   let end: CGRect
   /// 滑出的距离
   let exit: CGFloat
+  /// 录屏的时长（落地时出播放符号和时长）；截图 nil
+  let seconds: Int?
   let landing: FlyCard.Landing
   /// 角标弹完后交给常驻缩略图
   let linger: ((FlyCard.Badge) -> Void)?
@@ -224,6 +229,14 @@ private struct FlyCardView: View {
           .overlay(shape.strokeBorder(.white.opacity(flying ? 0.25 : 0), lineWidth: 0.5))
           .shadow(color: .black.opacity(flying ? 0.28 : 0), radius: 16, y: 6)
       }
+      // 第一帧要和选区一模一样：播放符号和时长落地才出来（和角标同时），常驻缩略图接手时原样接上
+      .overlay {
+        if landed, let seconds {
+          VideoMarks(seconds: seconds, compact: VideoMarks.isCompact(end.size))
+            .transition(.opacity)
+        }
+      }
+      .animation(.easeOut(duration: Style.fadeIn), value: landed && seconds != nil)
       .overlay(alignment: .topTrailing) {
         if landed, let badge = landing.badge {
           FlyCardBadge(badge: badge, drawsOn: true)
@@ -259,6 +272,37 @@ private struct FlyCardView: View {
         try? await Task.sleep(for: .seconds(0.3))
         onFinish()
       }
+  }
+}
+
+/// 视频卡（录屏）比截图卡多的两样：中央 28 pt 的 black 0.35 圆 + play.fill，左下角时长胶囊（11 pt semibold 等宽数字、
+/// HUD 底色、高 18、离角 6）。飞行卡片落地时出现，常驻缩略图的视频卡同一个位置（交接时对得上）；矮卡（同常驻缩略图
+/// 胶囊只留图标的尺寸）播放符号缩到 22 pt，不和时长叠在一起。不进旁白：卡片的名字里已经有时长
+struct VideoMarks: View {
+  let seconds: Int
+  var compact = false
+
+  /// 矮卡：高不到 90 或宽不到 150（和常驻缩略图的胶囊只留图标同一个门槛）
+  static func isCompact(_ size: CGSize) -> Bool { size.height < 90 || size.width < 150 }
+
+  var body: some View {
+    let side: CGFloat = compact ? 22 : 28
+    Image(systemName: "play.fill")
+      .font(.system(size: compact ? 9 : 12, weight: .bold))
+      .frame(width: side, height: side)
+      .background(Circle().fill(.black.opacity(0.35)))
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .overlay(alignment: .bottomLeading) {
+        Text(ScreenRecorder.clock(seconds))
+          .font(.system(size: 11, weight: .semibold).monospacedDigit())
+          .lineLimit(1)
+          .padding(.horizontal, 6)
+          .frame(height: 18)
+          .background(Capsule().fill(Color(nsColor: Style.HUD.fill)))
+          .padding(6)
+      }
+      .foregroundStyle(Color(nsColor: Style.HUD.text))
+      .accessibilityHidden(true)
   }
 }
 

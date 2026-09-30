@@ -8,7 +8,8 @@ import Testing
 // 截图重设计（Whisker §6 截图，2026-09-26）的屏外截图自检（按需启用，同 SnapshotProbeTests）：遮罩待选 / 框选 / 调整、
 // 工具栏上下、按工具的样式托盘、10 种标注与选中手柄、弯箭头和弯直线（选中 / 拖弯曲手柄 / 各种颜色粗细 / 弯到头）、尺寸输入、文字输入（三种样式）、比例和保存菜单、右键提示、截图翻译框选、常驻缩略图
 // （飞行卡片落地后交接的同一张卡）、长截图面板与边框，按 2x 写成 PNG（带 -crop 的是局部，看线和图标对不对齐）。
-// 录屏框选（待选提示、调整阶段的录制条、截图里按 R 切过去的录制条）和录制 HUD（倒数、录制中、放弃上膛）也在这里。
+// 录屏框选（待选提示、调整阶段的录制条、截图里按 R 切过去的录制条）和录制 HUD（倒数、录制中、放弃上膛）也在这里；
+// 第 3 批补了常驻缩略图的视频卡（落地、悬停、矮卡、没有最后一帧的占位）。
 // 状态用 SelectionInteractionTests 的屏外窗口 + 合成事件摆（不弹遮罩、不抢键盘）；图层要在窗口里显示过才有内容，
 // 所以把屏外 (-20000, -20000) 的无边框窗口（当不了 key）orderFront 一下再 layer.render(in:)。材质在屏外会发灰，只锁布局。
 //   TEST_RUNNER_KITTY_SNAPSHOT_DIR=/tmp/shots xcodebuild -project macos/KittyTools.xcodeproj \
@@ -264,6 +265,28 @@ struct ScreenshotSnapshotTests {
           width: compact.width + ShotShelf.margin * 2, height: compact.height + ShotShelf.margin * 2
         ),
         dark: dark, to: "\(out)/shot-shelf-compact-hover\(dark ? "-dark" : "").png")
+    }
+
+    // 录屏的视频卡（第 3 批）：飞行卡片落地后交接的同一张卡（最后一帧 + 播放符号 + 左下角时长 + 文件夹角标）、悬停（只有
+    // 「拷贝」+ 关闭 / 在访达中显示）、矮卡（播放符号缩小；悬停胶囊只剩图标、没有四角圆钮）、没取到最后一帧的占位
+    for (name, size, poster, hovered) in [
+      ("shot-video-landed", card, true, false), ("shot-video-hover", card, true, true),
+      ("shot-video-compact", compact, true, false),
+      ("shot-video-compact-hover", compact, true, true),
+      ("shot-video-placeholder", card, false, false),
+    ] {
+      let video = ShelfCard(
+        video: desktopFolder.appending(path: "录屏 2026-09-30 10.00.00.mp4"), seconds: 83,
+        poster: poster ? shot : nil, source: CGRect(origin: .zero, size: size),
+        rect: CGRect(origin: .zero, size: size), screen: nil, panel: NSPanel(), shelf: ShotShelf())
+      video.isHovered = hovered
+      for dark in [false, true] {
+        try snapshot(
+          ShelfCardView(card: video), over: desktop,
+          size: NSSize(
+            width: size.width + ShotShelf.margin * 2, height: size.height + ShotShelf.margin * 2),
+          dark: dark, to: "\(out)/\(name)\(dark ? "-dark" : "").png")
+      }
     }
 
     // 长截图：选区外的粉色边框（呼吸 / 自动滚动时的蚂蚁线）+ 贴在右边的 HUD 面板（预览、高度读数、粉色自动滚动钮和拷贝钮）

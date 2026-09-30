@@ -1,5 +1,5 @@
 // 应用生命周期：单实例检查，按依赖顺序组装各模块（PLAN §4），热键与各翻译入口，首次安装打开欢迎引导、
-// 更新后第一次启动用刘海岛说一声，退出 / 锁屏时的清理；录屏（框选、开录、结果、退出前收尾、上次闪退留下的文件）。
+// 更新后第一次启动用刘海岛说一声，退出 / 锁屏时的清理；录屏（框选、开录、结果、飞入和视频卡、退出前收尾、上次闪退留下的文件）。
 
 import AppKit
 import SwiftUI
@@ -374,6 +374,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     shelf.island = island
     shelf.save = { [unowned self] in await savePNG($0, asking: false) }
     shelf.pin = { [unowned self] in pins.pin($0, frame: $1) }
+    // 录屏卡的「拷贝」：拷的是文件，同截图的图片自己记进剪贴板历史（C8-a：点了才进；暂停记录时不记）
+    shelf.copyFile = { [unowned self] url in
+      Paster.write(files: [url])
+      if !watcher.isUserPaused { clipboardStore.recordFiles([url]) }
+    }
     let statusItem = StatusItem()
     statusItem.buildMenu = { [unowned self] in buildStatusMenu($0) }
     island.onToneChange = { [weak statusItem] in statusItem?.reflect($0) }
@@ -804,7 +809,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   /// 录屏收尾：文件已挪进快速保存目录（挪不过去的留在原地、在访达里选中），刘海岛说结果（成功时岛让菜单栏图标弹一下）；
-  /// 倒数中取消的不出岛，只播报
+  /// 挪进去了还要飞卡片、留视频卡（landRecording）。倒数中取消的不出岛，只播报
   private func recorded(_ result: ScreenRecorder.Result) {
     recorder = nil
     updater.blocker = nil
@@ -819,14 +824,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if let file = result.file, !result.moved {
       NSWorkspace.shared.activateFileViewerSelecting([file])
     }
-    guard
-      let summary = ScreenRecorder.summary(
-        result,
-        folder: FileManager.default.displayName(atPath: ScreenshotOutput.saveDirectory.path))
-    else { return Island.announce("已取消") }
+    let folder = FileManager.default.displayName(atPath: ScreenshotOutput.saveDirectory.path)
+    guard let summary = ScreenRecorder.summary(result, folder: folder) else {
+      return Island.announce("已取消")
+    }
+    var leading = Island.Leading.tone
+    if result.moved, let file = result.file {
+      // 飞过去了：落地的角标已写目录名，正常停的不再出岛（同截图快速保存），只给 VoiceOver 说一句
+      if landRecording(file, result), summary.tone == .success {
+        return Island.announce(
+          "录屏已保存到「\(folder)」，"
+            + ScreenRecorder.spoken(Int(result.duration.components.seconds)))
+      }
+      if summary.tone == .success, let poster = result.poster {
+        leading = Island.thumbnail(of: poster)
+      }
+    }
     island.show(
       summary.title, detail: summary.detail, tone: summary.tone,
-      symbol: summary.tone == .success ? "video.circle.fill" : nil)
+      symbol: summary.tone == .success ? "video.circle.fill" : nil, leading: leading)
+  }
+
+  /// 录屏存进快速保存目录后（拍板 R11-a）：最后一帧从选区（整屏录制就是那块屏）按 S1 飞到右下角，没有快门声，落地弹文件夹
+  /// 角标，再交给常驻缩略图的视频卡（设置里关了常驻缩略图就停 0.9 s 自己滑走）。减弱动态效果、没取到最后一帧时不飞，
+  /// 视频卡在角落淡入（关了常驻缩略图就只有岛）。返回飞了没有（飞了的正常停不再出岛）
+  private func landRecording(_ file: URL, _ result: ScreenRecorder.Result) -> Bool {
+    let seconds = Int(result.duration.components.seconds)
+    let keepsThumbnail = UserDefaults.standard.bool(forKey: Prefs.screenshotShelf)
+    let flies = result.poster != nil && !Style.reduceMotion
+    let linger: (CGRect, FlyCard.Badge) -> Void = { [weak self] rect, _ in
+      self?.shelf.add(
+        video: file, seconds: seconds, poster: result.poster, source: result.region, at: rect,
+        fadesIn: !flies)
+    }
+    guard flies, let poster = result.poster else {
+      if keepsThumbnail, let rect = FlyCard.landingRect(for: result.region) {
+        linger(rect, .saved(file))
+      }
+      return false
+    }
+    let landing = FlyCard.fly(
+      poster, from: result.region, linger: keepsThumbnail ? linger : nil, seconds: seconds)
+    landing.onShow = { [weak self] in self?.statusItem?.pop() }
+    // 文件已经存好了：直接给角标（落地时弹出来）；结果由调用方说（带时长，或中断的岛）
+    landing.land(.saved(file), announces: false)
+    return true
   }
 
   /// 框选时按 C：复制放大镜中心的色值（截图、录屏的框选）

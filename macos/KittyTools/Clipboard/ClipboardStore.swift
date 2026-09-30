@@ -164,6 +164,13 @@ import Observation
     }
   }
 
+  /// 本 App 自己写进剪贴板的文件（录屏卡点「拷贝」，C8-a）记进历史：没有来源；同样的文件已有就只挪到最前（record 按路径去重）
+  func recordFiles(_ urls: [URL]) {
+    var item = ClipItem(kind: .file)
+    item.filePaths = urls.map(\.path)
+    record(item)
+  }
+
   /// 粘贴过的条目挪到最前
   func bump(_ id: UUID) {
     guard let index = items.firstIndex(where: { $0.id == id }) else { return }
@@ -425,11 +432,7 @@ import Observation
       pasteboardItem.setData(png, forType: .png)
       return [pasteboardItem]
     case .file:
-      return (item.filePaths ?? []).map { path in
-        let pasteboardItem = NSPasteboardItem()
-        pasteboardItem.setString(URL(filePath: path).absoluteString, forType: .fileURL)
-        return pasteboardItem
-      }
+      return Paster.items(files: (item.filePaths ?? []).map { URL(filePath: $0) })
     }
   }
 
