@@ -720,7 +720,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       else { return }
       switch outcome {
       case .color(let hex): copyColor(hex)
-      case .record: break  // 截图框选不交回录屏（第 2 批才有截图里按 R）
+      // 截图调整时按 R / 点「录屏」切过去的（录屏第 2 批）：和 ⌥R 框完一样开录
+      case .record(let region): beginRecording(region)
       case .scroll(let region):
         UserDefaults.standard.set(NSStringFromRect(region), forKey: Prefs.screenshotLastRegion)
         // 长截图在实时画面上截、滤掉本 App：没固定的浮层留着只会盖住选区，挡住滚轮和自动滚动
@@ -752,14 +753,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
-  /// 录屏：在录就停止；否则冻结各屏、框选（同截图：窗口、整屏、拖框、D 上次区域，和截图共用上次区域），交回选区后
-  /// 立刻开录。isCapturing 只占框选阶段：开录后录制状态在 recorder 里，截图、识字照常，再按一次快捷键就停（C9）
+  /// 录屏：在录（含倒数）就停止 / 取消；否则冻结各屏、框选（同截图：窗口、整屏、拖框、D 上次区域，和截图共用上次区域），
+  /// 交回选区后开录（按设置先倒数）。isCapturing 只占框选阶段：开录后录制状态在 recorder 里，截图、识字照常，
+  /// 再按一次快捷键就停（C9）
   func screenRecord() {
     if let recorder { return recorder.stop() }
-    // 正在装更新：装好会退出重新打开，录到一半会被截断（录制中的「不能更新」只防得住先录后更新）
-    if case .installing = updater.state {
-      return island.show("正在更新", detail: "装好会自动重新打开，之后再录屏", tone: .warning)
-    }
+    guard !isInstallingUpdate() else { return }
     beginCapture(hidingPanels: false) { [self] in
       let lastRegion = UserDefaults.standard.string(forKey: Prefs.screenshotLastRegion).map(
         NSRectFromString)
@@ -769,20 +768,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       else { return }
       switch outcome {
       case .color(let hex): copyColor(hex)
-      case .record(let region):
-        UserDefaults.standard.set(NSStringFromRect(region), forKey: Prefs.screenshotLastRegion)
-        // 压在选区上的常驻缩略图收走（同长截图）；钉图照常录进去
-        shelf.dismiss(covering: region)
-        startRecording(region)
+      case .record(let region): beginRecording(region)
       case .capture, .scroll: break
       }
     }
   }
 
-  private func startRecording(_ region: CGRect) {
+  /// 正在装更新：装好会退出重新打开，录到一半会被截断（录制中的「不能更新」只防得住先录后更新）。是的话岛说一声
+  private func isInstallingUpdate() -> Bool {
+    guard case .installing = updater.state else { return false }
+    island.show("正在更新", detail: "装好会自动重新打开，之后再录屏", tone: .warning)
+    return true
+  }
+
+  /// 框选交回录屏选区（⌥R 的框选、截图里按 R 切过去的）：记成上次区域（和截图共用）、收走压在选区上的常驻缩略图
+  /// （同长截图；钉图照常录进去）、开录（先倒数）
+  private func beginRecording(_ region: CGRect) {
+    // 截图里切过来的：这时可能已经在录（录制中照样能截图，C9），或者正在装更新
+    if recorder != nil {
+      return island.show("已经在录屏", detail: "先停止这一段再录", tone: .warning)
+    }
+    guard !isInstallingUpdate() else { return }
+    UserDefaults.standard.set(NSStringFromRect(region), forKey: Prefs.screenshotLastRegion)
+    shelf.dismiss(covering: region)
     guard
       let recorder = ScreenRecorder(
-        region: region, directory: ScreenshotOutput.saveDirectory,
+        region: region, directory: ScreenshotOutput.saveDirectory, hotKeys: hotKeys,
         onFinish: { [weak self] in self?.recorded($0) })
     else {
       return island.show("没能开始录屏", detail: "找不到选区所在的屏幕", tone: .warning)
@@ -792,25 +803,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     recorder.start()
   }
 
-  /// 录屏收尾：文件已挪进快速保存目录（挪不过去的留在原地、在访达里选中），刘海岛说结果（成功时岛让菜单栏图标弹一下）
+  /// 录屏收尾：文件已挪进快速保存目录（挪不过去的留在原地、在访达里选中），刘海岛说结果（成功时岛让菜单栏图标弹一下）；
+  /// 倒数中取消的不出岛，只播报
   private func recorded(_ result: ScreenRecorder.Result) {
     recorder = nil
     updater.blocker = nil
+    defer {
+      if quitsAfterRecording {
+        quitsAfterRecording = false
+        NSApp.reply(toApplicationShouldTerminate: true)
+      }
+    }
     if result.reason == .denied { Permissions.Kind.screenRecording.openSettings() }
     // 挪不进快速保存目录：在访达里选中留下的文件，马上能拖走
     if let file = result.file, !result.moved {
       NSWorkspace.shared.activateFileViewerSelecting([file])
     }
-    let summary = ScreenRecorder.summary(
-      result,
-      folder: FileManager.default.displayName(atPath: ScreenshotOutput.saveDirectory.path))
+    guard
+      let summary = ScreenRecorder.summary(
+        result,
+        folder: FileManager.default.displayName(atPath: ScreenshotOutput.saveDirectory.path))
+    else { return Island.announce("已取消") }
     island.show(
       summary.title, detail: summary.detail, tone: summary.tone,
       symbol: summary.tone == .success ? "video.circle.fill" : nil)
-    if quitsAfterRecording {
-      quitsAfterRecording = false
-      NSApp.reply(toApplicationShouldTerminate: true)
-    }
   }
 
   /// 框选时按 C：复制放大镜中心的色值（截图、录屏的框选）

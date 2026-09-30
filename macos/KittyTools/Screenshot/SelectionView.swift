@@ -12,7 +12,8 @@
 // （⇧ 对称、拖回弦上拉直、双击拉直）、拖本体移动（⇧ 锁轴）、⌥ 拖动复制、⌘D 复制、改颜色粗细、⌫ 删除、双击文字重新编辑，
 // ⌘Z 撤销、⇧⌘Z 重做（拖着标注时这几个键不响应）。
 // 录屏（录屏第 1 批）：悬停、单击窗口 / 整屏、拖框、调整、尺寸胶囊、D、放大镜都同截图，没有标注和出图键；调整时选区下方是
-// 录制条 [取消][● 开始录制]，↩ / 双击选区 / 点 ● 交回选区（短边不到 64 pt 只提示）。
+// 录制条 [取消][● 开始录制]，↩ / 双击选区 / 点 ● 交回选区（短边不到 64 pt 只提示）。截图调整时按 R / 点工具栏「录屏」
+// 切过来（录屏第 2 批）：工具栏原地换成录制条、选区不变；有标注时不切，只提示。
 // 旁白（Whisker §7）：遮罩整块是一个分组，标签读状态（待选 / 选区像素尺寸、当前工具、锁着的比例），顶部提示是帮助；
 // 进入调整、换工具、锁比例时主动播报（取色后的「已复制色值」由刘海岛播报）。
 
@@ -167,8 +168,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private var handlesShown = false
   /// 放大镜上次在光标哪一侧（翻边时滑过去）
   private var magnifierSide: (left: Bool, above: Bool)?
-  /// 顶部提示的几段（旁白的帮助也读它）
-  private let hintParts: [String]
+  /// 顶部提示的几段（旁白的帮助也读它）；截图切成录屏时换
+  private var hintParts: [String]
   /// 顶部提示临时换了一句（右键不清空）：有选区时也显示
   private var hintFlashing = false
   /// 上一次主动播报的话（交互测试读它）
@@ -193,13 +194,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     self.image = image
     self.windows = windows
     self.session = session
-    let lastRegion = session.lastRegion == nil ? [] : ["D 上次区域"]
-    hintParts =
-      switch session.mode {
-      case .quick: session.hint.components(separatedBy: " · ")
-      case .capture: ["拖动框选", "单击选中窗口", "双击直接拷贝"] + lastRegion + ["Esc 取消"]
-      case .record: ["拖动框选要录的区域", "单击选中窗口区域", "单击桌面录整屏", "双击直接开始"] + lastRegion + ["Esc 取消"]
-      }
+    hintParts = Self.hintParts(for: session)
     super.init(frame: .zero)
     wantsLayer = true
     if annotates {
@@ -281,6 +276,16 @@ final class SelectionView: NSView, NSTextViewDelegate {
     hint.setParts(hintParts)
     if annotates { makeBars() } else if adjusts { makeRecordBar() }
     updateScale()
+  }
+
+  /// 待选时顶部提示的几段（按会话的模式）
+  private static func hintParts(for session: SelectionSession) -> [String] {
+    let lastRegion = session.lastRegion == nil ? [] : ["D 上次区域"]
+    return switch session.mode {
+    case .quick: session.hint.components(separatedBy: " · ")
+    case .capture: ["拖动框选", "单击选中窗口", "双击直接拷贝"] + lastRegion + ["Esc 取消"]
+    case .record: ["拖动框选要录的区域", "单击选中窗口区域", "单击桌面录整屏", "双击直接开始"] + lastRegion + ["Esc 取消"]
+    }
   }
 
   /// 放大镜：15 × 15 像素、每格 9 pt（135 pt，圆角 10，2 pt 白环 + 阴影），0.5 pt 像素网格，中心行列粉色十字条带，
@@ -1068,6 +1073,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
       case .redo: redo()
       case .output(let action): output(action)
       case .scroll: startScroll()
+      case .record: switchToRecording()
       case .saveMenu: toggleSaveMenu()
       case .cancel: session.finish(nil)
       }
@@ -1613,6 +1619,42 @@ final class SelectionView: NSView, NSTextViewDelegate {
     session.finish(.record(selection.offsetBy(dx: window.frame.minX, dy: window.frame.minY)))
   }
 
+  /// 截图调整时按 R / 点工具栏「录屏」（拍板 R2-a）：会话切成录屏，工具栏原地换成录制条、选区不变（尺寸胶囊、比例、手柄照旧），
+  /// 之后 ↩ / 双击 / ● 开始。录屏不带标注：画了标注（含输入中的文字，不管在哪块屏）就不切，提示音 + 顶部提示 + 播报
+  /// （同「有标注时右键不清空」）
+  private func switchToRecording() {
+    guard !hasAnnotations, !session.hasAnnotations(besides: self) else {
+      NSSound.beep()
+      flashHint(["录屏不带标注，先撤销或 Esc 退出"])
+      return announce("录屏不带标注，先撤销或 Esc 退出")
+    }
+    finishSizeEditing(commit: true)
+    session.mode = .record
+    for view in session.views where view !== self { view.becomeRecorder() }
+    becomeRecorder()
+    announce("已切到录屏，↩ 开始录制")
+  }
+
+  /// 会话切成录屏之后：收起 HUD 菜单、输入框和工具，工具栏、样式托盘换成录制条（从选区那条边长出来），顶部提示换成录屏的
+  private func becomeRecorder() {
+    hudMenu?.dismiss()
+    endEditing()
+    tool = nil
+    selectedAnnotation = nil
+    toolbar?.removeFromSuperview()
+    styleBar?.removeFromSuperview()
+    toolbar = nil
+    styleBar = nil
+    hintParts = Self.hintParts(for: session)
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    hint.setParts(hintParts)
+    CATransaction.commit()
+    makeRecordBar()
+    refresh()
+    refreshCursor()
+  }
+
   /// ↩、双击选区：截图拷贝，录屏开始录
   private func confirm() {
     if mode == .record { startRecording() } else { output(.copy) }
@@ -2041,7 +2083,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
       return push(edge, by: -step)
     }
     // 单字母键不带 ⌘ ⌃ ⌥（⌘C 之类走 performKeyEquivalent）。ponytail: 按物理键位，Dvorak 等布局下位置不同。
-    // 录屏只认 ↩ / D / C / 方向键：出图键、数字键（工具）、⌫（删标注）都是截图的
+    // 录屏只认 ↩ / D / C / 方向键：出图键、数字键（工具）、⌫（删标注）、R（切到录屏）都是截图的
     guard adjusts, flags.isEmpty else { return super.keyDown(with: event) }
     switch code {
     case kVK_Return, kVK_ANSI_KeypadEnter:
@@ -2052,6 +2094,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
       if isAdjusting { startScroll() }
     case kVK_ANSI_O where annotates:
       if isAdjusting { output(.recognize) }
+    case kVK_ANSI_R where annotates:
+      if isAdjusting { switchToRecording() }
     case kVK_ANSI_D:
       if !session.selectLastRegion() { refuseWipe("有标注时不跳到别的屏") }
     case kVK_ANSI_C:

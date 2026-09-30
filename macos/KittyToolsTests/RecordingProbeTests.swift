@@ -8,7 +8,8 @@
 // 另加 TEST_RUNNER_KITTY_LIVE_RECORD_MIC=1：麦克风几项（第一次会弹麦克风授权框，要人点）。
 // 闪退：先加 TEST_RUNNER_KITTY_LIVE_RECORD_KILL=1 只跑 crashRecording()（录 5 s 后 kill -9 自己，这次测试必然报崩溃），
 // 过十几秒再加 TEST_RUNNER_KITTY_LIVE_RECORD_INSPECT=1 只跑 crashInspect() 看留下的文件。报告在 <输出目录>/report.md。
-// 录屏第 1 批加了 screenRecorderTake()：用 ScreenRecorder 真录 2 s（只验产品代码，可以单独跑）。
+// 录屏第 1 批加了 screenRecorderTake()：用 ScreenRecorder 真录 2 s（只验产品代码，可以单独跑）；第 2 批起先倒数 1 s
+// （录制 HUD 从倒数换成录制态，倒数不进文件：录下来仍是 2 s），录制中连 HUD 一起截图。
 import AVFoundation
 import AppKit
 import ScreenCaptureKit
@@ -560,15 +561,19 @@ struct RecordingProbeTests {
 
   // MARK: - 录屏第 1 批：ScreenRecorder 真录
 
-  /// ScreenRecorder 真录 2 s（主屏可见区里 640 × 360 点的一块）：文件挪进输出目录的 recorder/、能播、时长约 2 s、
-  /// 尺寸 = 点 × 缩放、编码 avc1；「进行中」记录写在临时偏好域、收尾后删掉。录制中连本 App 一起截一张整屏
-  /// （recorder-chrome.png 和两块局部：菜单栏停止项、选区边框），看停止项和边框画得对不对。只跑这一个：
+  /// ScreenRecorder 真录 2 s（主屏可见区里 640 × 360 点的一块）：先倒数 1 s（第 2 批：录制 HUD 是倒数态、还没有停止项），
+  /// 数完才开流，所以文件仍约 2 s（倒数不进文件）；文件挪进输出目录的 recorder/、能播、尺寸 = 点 × 缩放、编码 avc1；
+  /// 「进行中」记录和录屏设置都在临时偏好域、收尾后删掉。录制中连本 App 一起截一张整屏（recorder-chrome.png 和三块局部：
+  /// 菜单栏停止项、选区边框、录制 HUD），看停止项、边框、HUD 画得对不对；停下后 HUD 和停止项都立刻收掉。只跑这一个：
   ///   -only-testing:KittyToolsTests/RecordingProbeTests/screenRecorderTake()
   @Test func screenRecorderTake() async throws {
     let env = try await Env.make()
     let suite = "kitty-test-record-\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
+    defaults.set(1, forKey: Prefs.screenRecordCountdown)
+    defaults.set(30, forKey: Prefs.screenRecordFrameRate)
+    defaults.set(true, forKey: Prefs.screenRecordShowsCursor)
     let folder = Self.directory.appending(path: "recorder")
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     let visible = env.screen.visibleFrame
@@ -598,6 +603,19 @@ struct RecordingProbeTests {
     let existing = Set(NSApp.windows.map(ObjectIdentifier.init))
     recorder.start()
     #expect(defaults.string(forKey: Prefs.screenRecordingInProgress) != nil)
+    // 倒数：HUD 先出来（倒数态），停止项还没有
+    var hudWindow: NSWindow?
+    for _ in 0..<20 where hudWindow == nil {
+      try await Task.sleep(for: .milliseconds(25))
+      hudWindow = NSApp.windows.first { $0.contentView is RecordingHUD && $0.isVisible }
+    }
+    let hud = try #require(hudWindow?.contentView as? RecordingHUD, "倒数时没出 HUD")
+    #expect(hud.state == .countdown(1))
+    #expect(
+      !NSApp.windows.contains {
+        String(describing: type(of: $0)) == "NSStatusBarWindow" && $0.isVisible
+          && !existing.contains(ObjectIdentifier($0))
+      })
     // 开始了才出停止项：新出来的那个状态栏窗口
     var stopItem: NSWindow?
     for _ in 0..<100 where stopItem == nil {
@@ -609,6 +627,10 @@ struct RecordingProbeTests {
     }
     let item = try #require(stopItem, "5 s 内没开始录")
     let began = Date.now
+    guard case .recording = hud.state else {
+      Issue.record("开录后 HUD 不是录制态：\(hud.state)")
+      return
+    }
     // 头 1 s 让左边那块来回挪（画面在动才出新帧），之后停在原位
     let origin = listed.frame.origin
     for step in 0..<60 {
@@ -638,13 +660,16 @@ struct RecordingProbeTests {
     {
       try save(corner, "recorder-border.png")
     }
+    if let hudWindow, let shot = crop(hudWindow.frame.insetBy(dx: -24, dy: -24)) {
+      try save(shot, "recorder-hud.png")
+    }
     try await Task.sleep(for: .seconds(max(0, 2 - Date.now.timeIntervalSince(began))))
     recorder.stop()
     for _ in 0..<300 where finished == nil { try await Task.sleep(for: .milliseconds(50)) }
     let result = try #require(finished, "15 s 内没收尾")
     #expect(result.reason == .user && result.moved)
     #expect(defaults.string(forKey: Prefs.screenRecordingInProgress) == nil)
-    #expect(!NSApp.windows.contains { $0 === item && $0.isVisible })
+    #expect(!NSApp.windows.contains { ($0 === item || $0 === hudWindow) && $0.isVisible })
     let file = try #require(result.file)
     let media = await inspect(file)
     let scale = env.screen.backingScaleFactor
@@ -666,6 +691,7 @@ struct RecordingProbeTests {
       "ScreenRecorder 真录（录屏第 1 批）",
       [
         "结果：\(result.reason)，挪进输出目录 \(result.moved)，会话计的时长 \(result.duration)，文件 \(file.lastPathComponent)",
+        "先倒数 1 s 再开流：文件时长 \(String(format: "%.2f", media.duration)) s（录 2 s；倒数进了文件会是 3 s 左右）",
         "结尾一帧：白名单里的 NSWindow（红 230,26,26）读回 \(red)；不在白名单的 NSPanel（绿 26,204,51）处读回 \(green)",
       ] + media.summary)
   }

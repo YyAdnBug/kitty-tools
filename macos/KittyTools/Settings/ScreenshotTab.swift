@@ -1,6 +1,7 @@
-// 设置 › 截图：⌘S 快速保存的位置（文件夹图标 + 访达里的名字，选过的能恢复默认，体检 A28）、快门声（可试听）、
-// 截图后留不留常驻缩略图（体检 D18）、识字是否把同一段里的换行接起来（开关旁边实时对照效果，体检 A32）。
-// 框选、标注、长截图的按键不写进页里（N11）：一句话 +「查看全部快捷键…」打开速查表；全局快捷键在「快捷键」页。
+// 设置 › 截图：⌘S 快速保存的位置（文件夹图标 + 访达里的名字，选过的能恢复默认，体检 A28；录屏也存这里）、快门声（可试听）、
+// 截图后留不留常驻缩略图（体检 D18）、识字是否把同一段里的换行接起来（开关旁边实时对照效果，体检 A32）、
+// 录屏（录屏第 2 批，拍板 C4-a）：帧率 30 / 60、开始前倒数、显示光标。
+// 框选、标注、长截图、录屏的按键不写进页里（N11）：一句话 +「查看全部快捷键…」打开速查表；全局快捷键在「快捷键」页。
 
 import AppKit
 import SwiftUI
@@ -11,6 +12,9 @@ struct ScreenshotTab: View {
   @AppStorage(Prefs.ocrJoinLines) private var joinLines = false
   @AppStorage(Prefs.screenshotShutterSound) private var shutterSound = true
   @AppStorage(Prefs.screenshotShelf) private var keepsThumbnail = true
+  @AppStorage(Prefs.screenRecordFrameRate) private var frameRate = 30
+  @AppStorage(Prefs.screenRecordCountdown) private var countdown = 3
+  @AppStorage(Prefs.screenRecordShowsCursor) private var showsCursor = true
 
   var body: some View {
     Form {
@@ -41,7 +45,9 @@ struct ScreenshotTab: View {
           }
         }
       } footer: {
-        caption("按 ⌘S 或工具栏的「存储」存到这里，文件名是「截图 日期 时间.png」，重名自动加序号。没选过时跟随系统截屏的存储位置。")
+        caption(
+          "按 ⌘S 或工具栏的「存储」存到这里，文件名是「截图 日期 时间.png」，重名自动加序号。没选过时跟随系统截屏的存储位置。录屏也存这里，文件名是「录屏 日期 时间.mp4」。"
+        )
       }
       Section {
         Toggle(isOn: $shutterSound) {
@@ -69,11 +75,28 @@ struct ScreenshotTab: View {
         caption("同一段里的行接起来，段和段之间保留换行：中文、日文的行直接接上，其它文字之间加空格。截图翻译总是这样接。框选里有二维码或条码时复制它的内容。")
       }
       Section {
+        Picker("帧率", selection: $frameRate) {
+          Text("30 fps").tag(30)
+          Text("60 fps").tag(60)
+        }
+        .pickerStyle(.segmented)
+        Picker("开始前倒数", selection: $countdown) {
+          Text("不倒数").tag(0)
+          Text("3 秒").tag(3)
+          Text("5 秒").tag(5)
+        }
+        Toggle("显示光标", isOn: $showsCursor)
+      } header: {
+        Text("录屏")
+      } footer: {
+        caption("60 fps 更顺，文件大约大一半；大屏上可能录不满 60。")
+      }
+      Section {
         LabeledContent {
           ShortcutsButton()
         } label: {
-          Text("框选、标注和长截图的按键")
-          Text("拖动框选，数字键 1–0 换标注工具，↩ 拷贝，S 长截图。")
+          Text("框选、标注、长截图和录屏的按键")
+          Text("拖动框选，数字键 1–0 换标注工具，↩ 拷贝，S 长截图，R 录屏。")
         }
       }
     }

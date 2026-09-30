@@ -3,9 +3,11 @@
 // 按一次两边都响应，且检测不到这种跨进程冲突（M1 实测，见 mac-overlay-panel 技能）。
 // 另外给界面用：动作的分组 / 色块（快捷键页、速查表、引导、菜单栏共用）、注册失败的原因、最近一次触发（引导「按一下试试」）。
 // 本 App 自己的菜单开着时热键事件会压在队列里、关了才派发，所以看到热键就先关菜单（watch(_:)）。
+// 录屏倒数期间临时注册一个不带修饰键的 Esc（registerEscape，录制 HUD 不当 key、收不到按键；和各动作的热键分开记）。
 
 import AppKit
 import Carbon.HIToolbox
+import OSLog
 import Observation
 import SwiftUI
 
@@ -241,7 +243,12 @@ enum HotKeyAction: String, CaseIterable {
   /// 菜单跟踪通知的接收者（selector 形式，见 MenuTracking）
   @ObservationIgnored private var menuTracking: MenuTracking?
   @ObservationIgnored private var menuWatch: CFRunLoopTimer?
+  /// 录屏倒数期间临时注册的 Esc（不带修饰键）和它的回调；suspend / reload 不碰它
+  @ObservationIgnored private var escapeRef: EventHotKeyRef?
+  @ObservationIgnored private var onEscape: (() -> Void)?
   private static let signature: OSType = 0x4B54_5459  // 'KTTY'
+  /// 临时 Esc 的热键 id：不和动作的下标（allCases）撞
+  private static let escapeID: UInt32 = 0xE5C
 
   func setHandler(for action: HotKeyAction, _ handler: @escaping () -> Void) {
     handlers[action] = handler
@@ -275,6 +282,32 @@ enum HotKeyAction: String, CaseIterable {
     failures = [:]
   }
 
+  /// 录屏倒数期间临时抢一个不带修饰键的 Esc（mac-overlay-panel §4）：录制 HUD 永不当 key，按键到不了它。只在倒数那几秒
+  /// 挂着，倒数结束 / 取消 / 开录立刻 unregisterEscape（挂着时别的 App 都收不到 Esc）。本 App 自己的面板拿着键盘时
+  /// 这一下交给它、不回调（escapePressed）。返回 false = 没注册上（记一条日志，只能用录屏快捷键或 HUD 的 ✕ 取消）
+  @discardableResult
+  func registerEscape(_ handler: @escaping () -> Void) -> Bool {
+    unregisterEscape()
+    installHandlerIfNeeded()
+    var ref: EventHotKeyRef?
+    let status = RegisterEventHotKey(
+      UInt32(kVK_Escape), 0, EventHotKeyID(signature: Self.signature, id: Self.escapeID),
+      GetApplicationEventTarget(), 0, &ref)
+    guard status == noErr, let ref else {
+      Log.record.error("倒数的 Esc 热键没注册上：\(status)")
+      return false
+    }
+    escapeRef = ref
+    onEscape = handler
+    return true
+  }
+
+  func unregisterEscape() {
+    if let escapeRef { UnregisterEventHotKey(escapeRef) }
+    escapeRef = nil
+    onEscape = nil
+  }
+
   /// 注册失败的原因（快捷键页、引导里那一行下面的橙字）；注册成功或没设键时为 nil
   func failureMessage(for action: HotKeyAction) -> String? {
     failures[action].map { Self.failureMessage($0, hotKey: action.hotKey) }
@@ -295,11 +328,30 @@ enum HotKeyAction: String, CaseIterable {
   }
 
   private func fire(_ id: UInt32) {
+    if id == Self.escapeID { return escapePressed() }
     guard Int(id) < HotKeyAction.allCases.count else { return }
     let action = HotKeyAction.allCases[Int(id)]
     lastFired = action
     fireCount += 1
     handlers[action]?()
+  }
+
+  /// 临时 Esc 按下：本 App 自己的面板拿着键盘（倒数中又开了截图框选、剪贴板、启动器、翻译浮窗，点了钉图……；录制 HUD
+  /// 永不当 key，不会是它）时，这一下 Esc 是给那个面板的——Carbon 热键把按键整个吞了，合成一个 Esc 按下经 NSApp.sendEvent
+  /// 照常派发（和真按键同一条路：本地监听、performKeyEquivalent、第一响应者），不回调；别的 App 或设置窗（NSWindow）在前台时
+  /// 才回调（取消倒数）
+  private func escapePressed() {
+    guard let panel = NSApp.keyWindow as? NSPanel,
+      let escape = NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: [],
+        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: panel.windowNumber,
+        context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}",
+        isARepeat: false, keyCode: UInt16(kVK_Escape))
+    else {
+      onEscape?()
+      return
+    }
+    NSApp.sendEvent(escape)
   }
 
   /// 本 App 的菜单（菜单栏、右键、⋯、设置里的弹出菜单）跟踪期间，热键事件压在队列里，菜单关了才派发

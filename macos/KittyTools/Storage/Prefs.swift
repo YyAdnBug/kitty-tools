@@ -104,6 +104,13 @@ enum Prefs {
   /// 正在录的屏的文件路径（ScreenRecorder.workFile，开录时写、收尾时删）：启动时还在 = 上次闪退了，
   /// ScreenRecorder.recover 把能播的挪进快速保存目录（录屏第 1 批，C7）
   static let screenRecordingInProgress = "screenRecordingInProgress"
+  /// 录屏帧率：30（默认）/ 60（设置 › 截图「录屏」，录屏第 2 批；大屏上 60 不保证满帧，PLAN §10 第 0 批实测）
+  static let screenRecordFrameRate = "screenRecordFrameRate"
+  /// 开录前倒数几秒：0 不倒数 / 3（默认）/ 5（拍板 R9-a；倒数不进文件）
+  static let screenRecordCountdown = "screenRecordCountdown"
+  nonisolated static let screenRecordCountdownChoices = [0, 3, 5]
+  /// 录屏里画光标（默认开）
+  static let screenRecordShowsCursor = "screenRecordShowsCursor"
 
   /// 识字后把同一段的换行合成一行（中日文直接连、其它加空格）
   static let ocrJoinLines = "ocrJoinLines"
@@ -156,6 +163,9 @@ enum Prefs {
       ocrJoinLines: false,
       screenshotShutterSound: true,
       screenshotShelf: true,
+      screenRecordFrameRate: 30,
+      screenRecordCountdown: 3,
+      screenRecordShowsCursor: true,
     ])
   }
 

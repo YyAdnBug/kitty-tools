@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 import Testing
 
@@ -7,7 +8,7 @@ import Testing
 // 截图重设计（Whisker §6 截图，2026-09-26）的屏外截图自检（按需启用，同 SnapshotProbeTests）：遮罩待选 / 框选 / 调整、
 // 工具栏上下、按工具的样式托盘、10 种标注与选中手柄、弯箭头和弯直线（选中 / 拖弯曲手柄 / 各种颜色粗细 / 弯到头）、尺寸输入、文字输入（三种样式）、比例和保存菜单、右键提示、截图翻译框选、常驻缩略图
 // （飞行卡片落地后交接的同一张卡）、长截图面板与边框，按 2x 写成 PNG（带 -crop 的是局部，看线和图标对不对齐）。
-// 录屏框选（待选提示、调整阶段的录制条）也在这里。
+// 录屏框选（待选提示、调整阶段的录制条、截图里按 R 切过去的录制条）和录制 HUD（倒数、录制中、放弃上膛）也在这里。
 // 状态用 SelectionInteractionTests 的屏外窗口 + 合成事件摆（不弹遮罩、不抢键盘）；图层要在窗口里显示过才有内容，
 // 所以把屏外 (-20000, -20000) 的无边框窗口（当不了 key）orderFront 一下再 layer.render(in:)。材质在屏外会发灰，只锁布局。
 //   TEST_RUNNER_KITTY_SNAPSHOT_DIR=/tmp/shots xcodebuild -project macos/KittyTools.xcodeproj \
@@ -212,6 +213,13 @@ struct ScreenshotSnapshotTests {
     try shoot(h.window, "record-adjust", crop: CGRect(x: 150, y: 190, width: 900, height: 420))
     let bar = try #require(h.recordBar)
     try shoot(h.window, "record-adjust-bar", crop: bar.frame.insetBy(dx: -24, dy: -24))
+    // 截图调整时按 R（录屏第 2 批）：工具栏原地换成录制条，选区、尺寸胶囊不变
+    h = adjust()
+    h.key(kVK_ANSI_R, "r")
+    let switched = try #require(h.recordBar)
+    let chosen = try #require(h.view.selection)
+    try shoot(
+      h.window, "record-switched", crop: switched.frame.union(chosen).insetBy(dx: -24, dy: -24))
   }
 
   @Test(.enabled(if: directory != nil)) func renderPeripherals() throws {
@@ -290,6 +298,40 @@ struct ScreenshotSnapshotTests {
           width: stitcher.width, height: stitcher.outputHeight)
         hud.updatePreview(stitcher: stitcher, scale: 2)
       }
+    }
+  }
+
+  /// 录制 HUD（录屏第 2 批）：倒数（边框走蚂蚁线、HUD「3 秒后开始」）、录制中 0:12（边框静止、红点、计时、✕、■）、
+  /// 放弃上膛（✕ 变红）、整屏（没有边框，可见区底部居中）。HUD 永远深色，不出深色版；-crop 是 HUD 的局部
+  @Test(.enabled(if: directory != nil)) func renderRecordingHUD() throws {
+    let desktop = try Self.desktop()
+    let region = CGRect(x: 160, y: 260, width: 640, height: 400)
+    let bounds = CGRect(x: 0, y: 0, width: 1200, height: 800)
+    for (name, state, counting, armed) in [
+      ("record-hud-countdown", RecordingHUD.State.countdown(3), true, false),
+      ("record-hud", .recording(12), false, false),
+      ("record-hud-armed", .recording(12), false, true),
+      ("record-hud-full", .recording(12), false, false),
+    ] {
+      let full = name.hasSuffix("full")
+      let root = NSView(frame: bounds)
+      root.wantsLayer = true
+      root.layer?.contents = desktop
+      if !full {
+        let border = ScrollBorderView(animates: counting)
+        border.frame = region.insetBy(dx: -ScrollBorderView.margin, dy: -ScrollBorderView.margin)
+        if counting { border.update(lost: false, marching: true) }
+        root.addSubview(border)
+      }
+      let hud = RecordingHUD(state: state, stopKey: "⌥R")
+      if armed { try #require(hud.button(for: .discard)).performClick(nil) }
+      hud.panel.contentView = NSView()  // 从它自己的窗口里拿出来，摆到假桌面上
+      hud.frame.origin = RecordingHUD.origin(
+        size: hud.frame.size, region: full ? bounds : region, screen: bounds,
+        visible: bounds.insetBy(dx: 0, dy: 24).offsetBy(dx: 0, dy: -12), isFullScreen: full,
+        dragged: nil)
+      root.addSubview(hud)
+      try shoot(offscreen(root), name, crop: hud.frame.insetBy(dx: -24, dy: -24))
     }
   }
 

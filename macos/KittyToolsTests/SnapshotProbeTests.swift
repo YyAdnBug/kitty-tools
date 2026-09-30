@@ -442,7 +442,8 @@ struct SnapshotProbeTests {
         size: NSSize(width: 780, height: 600), dark: dark,
         to: "\(out)/settings-about-update-\(name)\(dark ? "-dark" : "").png")
     }
-    // 设置 › 截图选过文件夹（体检 A28）：文件夹图标 + 访达里的名字 +「恢复默认」；常驻缩略图关着（D18）。
+    // 设置 › 截图选过文件夹（体检 A28）：文件夹图标 + 访达里的名字 +「恢复默认」；常驻缩略图关着（D18）；
+    // 录屏组（录屏第 2 批）60 fps、倒数 5 秒、不显示光标（画高到能看到录屏组）。
     // 临时偏好域和临时文件夹，不改用户的快速保存位置
     let shotSuite = "kitty-snapshot-\(UUID().uuidString)"
     let shotPrefs = try #require(UserDefaults(suiteName: shotSuite))
@@ -454,9 +455,12 @@ struct SnapshotProbeTests {
     }
     shotPrefs.set(inbox.path, forKey: Prefs.screenshotSaveDirectory)
     shotPrefs.set(false, forKey: Prefs.screenshotShelf)
+    shotPrefs.set(60, forKey: Prefs.screenRecordFrameRate)
+    shotPrefs.set(5, forKey: Prefs.screenRecordCountdown)
+    shotPrefs.set(false, forKey: Prefs.screenRecordShowsCursor)
     for dark in [false, true] {
       try snapshot(
-        ScreenshotTab().defaultAppStorage(shotPrefs), size: NSSize(width: 640, height: 640),
+        ScreenshotTab().defaultAppStorage(shotPrefs), size: NSSize(width: 640, height: 960),
         dark: dark, to: "\(out)/settings-screenshot-custom\(dark ? "-dark" : "").png")
     }
     // 设置 › 通用「菜单栏」（第 9 批 M1 M2）：显示 + 彩色、隐藏（图标样式置灰），各出深色；临时偏好域，不动用户的菜单栏图标

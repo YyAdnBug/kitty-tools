@@ -1,5 +1,6 @@
 // 录屏第 1 批的纯函数（ScreenRecorder）：输出像素尺寸（宽或高超过 4096 等比缩、偶数）、菜单栏计时与旁白时长、
-// 流停止 / 开录失败的错误码怎么归类、写入失败时按哪个原因说、结果岛的文案、存盘名字按开录时刻、闪退恢复（文件不在 / 打不开）。
+// 流停止 / 开录失败的错误码怎么归类、写入失败时按哪个原因说、结果岛的文案、存盘名字按开录时刻、闪退恢复（文件不在 / 打不开）；
+// 第 2 批：倒数秒数与播报、放弃 / 取消的结果、录屏设置的默认值。HUD 在 RecordingHUDTests。
 // 真录制在按需实录自检 RecordingProbeTests.screenRecorderTake。
 
 import Foundation
@@ -133,7 +134,7 @@ struct ScreenRecorderTests {
     {
       let result = ScreenRecorder.Result(
         file: file, moved: moved, duration: .seconds(seconds), reason: reason)
-      let text = ScreenRecorder.summary(result, folder: "桌面")
+      guard let text = ScreenRecorder.summary(result, folder: "桌面") else { return [] }
       return [text.title, text.detail, "\(text.tone)"]
     }
     #expect(summary(saved, .user) == ["已保存录屏", "录屏 2026-09-30 10.00.00.mp4 · 1:12", "success"])
@@ -144,5 +145,42 @@ struct ScreenRecorderTests {
     #expect(summary(nil, .failed("没能开始录制")) == ["录屏失败", "没能开始录制", "error"])
     #expect(summary(nil, .user) == ["录屏失败", "没有录下内容", "error"])
     #expect(summary(nil, .denied)[0] == "需要「屏幕录制」授权")
+    // 第 2 批：放弃 = 信息岛（文件已删）；倒数中取消 = 不出岛（AppDelegate 只播报「已取消」）
+    #expect(summary(nil, .discarded) == ["已放弃录屏", "没有保存", "info"])
+    #expect(summary(saved, .discarded) == ["已放弃录屏", "没有保存", "info"])
+    #expect(summary(nil, .cancelled) == [])
+    #expect(
+      ScreenRecorder.Reason.discarded.note == nil && ScreenRecorder.Reason.cancelled.note == nil)
+  }
+
+  /// 倒数（拍板 R9-a）：设置给 0 / 3 / 5，0…5 之间照用（实录自检用 1 s），出了范围按默认 3；播报按实际秒数
+  @Test func countdownSecondsAndAnnouncement() {
+    #expect([0, 1, 3, 5].map(ScreenRecorder.countdownSeconds) == [0, 1, 3, 5])
+    #expect([-1, 6, 100].map(ScreenRecorder.countdownSeconds) == [3, 3, 3])
+    #expect(ScreenRecorder.countdownAnnouncement(3, escapes: true) == "3 秒后开始录屏，按 Esc 取消")
+    #expect(ScreenRecorder.countdownAnnouncement(5, escapes: true) == "5 秒后开始录屏，按 Esc 取消")
+    // Esc 没注册上：不提它
+    #expect(ScreenRecorder.countdownAnnouncement(3, escapes: false) == "3 秒后开始录屏")
+  }
+
+  /// 放弃 / 取消过就按它收尾：放弃后写完超时、取消挂着时没开起来或流先停了，都不能说成失败或「已保存已录的部分」
+  /// （finalize 只在放弃 / 取消时删文件，summary 按它出信息岛 / 不出岛）；没放弃按 record 返回的
+  @Test func abandonedWinsOverLaterEnding() {
+    let timedOut = ScreenRecorder.Reason.failed("文件没有按时写完")
+    #expect(ScreenRecorder.outcome(timedOut, abandoned: .discarded) == .discarded)
+    #expect(ScreenRecorder.outcome(.failed("没能开始录制"), abandoned: .cancelled) == .cancelled)
+    #expect(
+      ScreenRecorder.outcome(.system(code: -3821, text: ""), abandoned: .cancelled) == .cancelled)
+    #expect(ScreenRecorder.outcome(timedOut, abandoned: nil) == timedOut)
+    #expect(ScreenRecorder.outcome(.locked, abandoned: nil) == .locked)
+  }
+
+  /// 设置 › 截图「录屏」的默认值（拍板 C4-a）：30 fps、倒数 3 秒、显示光标。只写注册域（不落盘）
+  @Test func recordingDefaults() {
+    Prefs.registerDefaults()
+    let registered = UserDefaults.standard.volatileDomain(forName: UserDefaults.registrationDomain)
+    #expect(registered[Prefs.screenRecordFrameRate] as? Int == 30)
+    #expect(registered[Prefs.screenRecordCountdown] as? Int == 3)
+    #expect(registered[Prefs.screenRecordShowsCursor] as? Bool == true)
   }
 }

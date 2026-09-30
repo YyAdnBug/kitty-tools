@@ -941,4 +941,70 @@ struct SelectionInteractionTests {
     h.rightClick(CGPoint(x: 900, y: 600))
     #expect(h.view.selection == nil && !h.view.isAdjusting)
   }
+
+  // MARK: 截图切录屏（录屏第 2 批，拍板 R2-a）
+
+  /// 截图调整时按 R：会话切成录屏，工具栏原地换成录制条（工具收起）、选区不变，之后 ↩ 交回 .record(选区)；
+  /// 回到待选时顶部提示是录屏的
+  @Test func screenshotPressRSwitchesToRecording() async throws {
+    let h = Harness()
+    h.makeSelection()
+    h.key(kVK_ANSI_1, "1")
+    #expect(h.view.tool == .rectangle && h.toolbar != nil)
+    h.key(kVK_ANSI_R, "r")
+    #expect(h.session.mode == .record)
+    #expect(h.toolbar == nil && h.styleBar == nil && h.view.tool == nil)
+    let bar = try #require(h.recordBar)
+    #expect(bar.isShown && h.view.selection == Self.initial && h.view.isAdjusting)
+    #expect(bar.frame.maxY == Self.initial.minY - 10)
+    #expect(h.view.announcement == "已切到录屏，↩ 开始录制")
+    // 截图的键不再生效（R 再按也没事）
+    h.key(kVK_ANSI_R, "r")
+    h.key(kVK_ANSI_1, "1")
+    #expect(h.view.tool == nil && h.recordBar === bar)
+    let outcome = await h.outcome { h.key(kVK_Return, "\r") }
+    guard case .record(let region)? = outcome else {
+      Issue.record("切到录屏后 ↩ 没有交回录屏选区：\(String(describing: outcome))")
+      return
+    }
+    #expect(region == Self.initial.offsetBy(dx: h.window.frame.minX, dy: h.window.frame.minY))
+  }
+
+  /// 点工具栏的「录屏」同 R；右键回到待选后提示是录屏的那句
+  @Test func toolbarRecordButtonSwitches() throws {
+    let h = Harness()
+    h.makeSelection()
+    let button = try #require(h.toolbar?.button(for: .record))
+    #expect(button.accessibilityLabel() == "录屏" && button.toolTip == "录屏（R）")
+    button.performClick(nil)
+    #expect(h.session.mode == .record && h.recordBar?.isShown == true)
+    h.rightClick(CGPoint(x: 900, y: 600))
+    #expect(h.view.accessibilityHelp()?.hasPrefix("拖动框选要录的区域") == true)
+  }
+
+  /// 画了标注、或正在输入文字时不切：提示音 + 顶部提示 + 播报，工具栏和标注都还在；撤销掉标注再按 R 就切
+  @Test func switchingRefusedWithAnnotations() throws {
+    let h = Harness()
+    h.makeSelection()
+    h.view.tool = .rectangle
+    h.drag(CGPoint(x: 350, y: 250), CGPoint(x: 450, y: 350))
+    #expect(h.view.annotations.count == 1)
+    h.key(kVK_ANSI_R, "r")
+    #expect(h.session.mode == .capture && h.toolbar != nil && h.recordBar == nil)
+    #expect(h.view.announcement == "录屏不带标注，先撤销或 Esc 退出")
+    #expect(h.view.annotations.count == 1)
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: .command)
+    #expect(h.view.annotations.isEmpty)
+    h.key(kVK_ANSI_R, "r")
+    #expect(h.session.mode == .record && h.recordBar != nil)
+
+    let typing = Harness()
+    typing.makeSelection()
+    typing.view.beginEditing(at: CGPoint(x: 400, y: 400))
+    let field = try #require(typing.fieldEditor)
+    field.insertText("hi", replacementRange: NSRange(location: NSNotFound, length: 0))
+    try #require(typing.toolbar?.button(for: .record)).performClick(nil)
+    #expect(typing.session.mode == .capture && typing.recordBar == nil)
+    #expect(typing.window.firstResponder === field)
+  }
 }

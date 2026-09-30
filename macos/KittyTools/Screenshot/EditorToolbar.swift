@@ -1,6 +1,6 @@
 // 截图调整选区时贴在选区旁的 HUD 控件（Whisker HUD 皮肤，mac-whisker §6 截图；AppKit，SelectionView 推状态、收回调）：
 // - 主栏 EditorToolbar：两段 HUD 胶囊并排（间距 6，高 40、圆角 16，按钮 32）：左段 10 个工具 ｜ 撤销、重做；右段识字、翻译、
-//   长截图、钉图 ｜ 存储（本体快速保存，右侧 ▾ 弹菜单）｜ 取消、拷贝（28 pt 品牌粉圆钮）。当前工具的粉色底块在工具间滑动（glide）；
+//   长截图、录屏（录屏第 2 批：原地换成录制条）、钉图 ｜ 存储（本体快速保存，右侧 ▾ 弹菜单）｜ 取消、拷贝（28 pt 品牌粉圆钮）。当前工具的粉色底块在工具间滑动（glide）；
 //   松手 40 ms 后从靠选区的那条边长出来（pop，bounce 0.18），拖动 / 缩放 / 平移选区时淡出让位；
 // - 样式托盘 StyleBar：高 34、圆角 10，按工具出 8 色点 ｜ 三档 ｜ 选项分段，锚在当前工具按钮下方 6 pt，换工具时位置和宽度 settle；
 // - HUDMenu：遮罩里的 HUD 弹出菜单（保存 ▾，之后尺寸胶囊的比例菜单也用它），不用 NSMenu（菜单层级低于遮罩，会被压在下面）；
@@ -106,7 +106,11 @@ class HUDBar: PopView {
   private let radius: CGFloat
   private let height: CGFloat
 
-  init(radius: CGFloat, height: CGFloat) {
+  /// blending：遮罩里的栏模糊窗口里的冻结帧（withinWindow）；自己一个窗口的（录制 HUD）模糊背后的桌面（behindWindow）
+  init(
+    radius: CGFloat, height: CGFloat,
+    blending: NSVisualEffectView.BlendingMode = .withinWindow
+  ) {
     self.radius = radius
     self.height = height
     if #available(macOS 26, *) {
@@ -122,7 +126,7 @@ class HUDBar: PopView {
     } else {
       let effect = NSVisualEffectView()
       effect.material = .hudWindow
-      effect.blendingMode = .withinWindow
+      effect.blendingMode = blending
       effect.state = .active
       effect.appearance = NSAppearance(named: .vibrantDark)
       effect.wantsLayer = true
@@ -208,6 +212,8 @@ final class EditorToolbar: PopView {
     /// .output(.save) 是保存本体（单击快速保存）
     case output(RegionSelector.Action)
     case scroll
+    /// 录屏：会话切到录屏、工具栏原地换成录制条（有标注时不切）
+    case record
     /// 保存右侧的 ▾：弹出「存储到 / 另存为」菜单
     case saveMenu
     case cancel
@@ -238,6 +244,7 @@ final class EditorToolbar: PopView {
         (.output(.recognize), "text.viewfinder", "识字并拷贝", "识字并拷贝（O）"),
         (.output(.translate), "translate", "翻译", "翻译"),
         (.scroll, "rectangle.expand.vertical", "长截图", "长截图（S，不带标注）"),
+        (.record, "record.circle", "录屏", "录屏（R）"),
         (.output(.pin), "pin", "钉到屏幕", "钉到屏幕（T）"),
       ],
       [
@@ -408,7 +415,7 @@ final class EditorToolbar: PopView {
 
 /// 录屏框选调整时贴在选区旁的栏（截图主栏的位置，mac-whisker §6 截图「录屏」）：[取消][● 开始录制]，按钮同主栏
 /// （32 × 32、悬停底、按下 0.90），开始是 28 pt 强调色实心圆 + 实心圆点（画法同主栏的拷贝钮；强调色选红时靠 ● / ■ 形状
-/// 和停止分开）。第 2 批在取消前面加系统声音 / 麦克风 / 显示点按三个开关（Item 里加，按钮照 makeButtons 的写法）
+/// 和停止分开）。第 4 批在取消前面加系统声音 / 麦克风 / 显示点按三个开关（Item 里加，按钮照 makeButtons 的写法）
 final class RecordBar: HUDBar {
   enum Item { case cancel, start }
 

@@ -1,10 +1,13 @@
 // 录屏会话（录屏第 1 批，PLAN §10「录屏与录音」；框选是 RegionSelector.record / SelectionView 的 .record 模式）：
-// 系统录制管线 SCRecordingOutput 直接写 mp4（H.264、30 fps、带光标、sRGB），先写到和快速保存目录同一个卷、系统不清理的地方
-// （workFile：Application Support 或保存目录里的隐藏文件），写完挪进快速保存目录（同卷只是改名）。选区按相交面积最大的屏录；
-// 整屏不设 sourceRect。
+// 系统录制管线 SCRecordingOutput 直接写 mp4（H.264、30 / 60 fps、光标可关、sRGB，设置 › 截图「录屏」），先写到和快速保存目录
+// 同一个卷、系统不清理的地方（workFile：Application Support 或保存目录里的隐藏文件），写完挪进快速保存目录（同卷只是改名）。
+// 选区按相交面积最大的屏录；整屏不设 sourceRect。
+// 开录前先倒数（录屏第 2 批，拍板 R9-a，设置里可选 0 / 3 / 5 秒）：数完才开流、倒数不进文件；倒数期间边框走蚂蚁线、
+// 录制 HUD（RecordingHUD）数秒，Esc 走临时热键（HUD 不当 key），✕ / Esc / 再按录屏快捷键取消，点数字马上开始。
 // 本 App 的窗口（R4-a）：过滤器排除整个本 App，只把几类面板（剪贴板、启动器、翻译、⌘Y、钉图、设置窗）列进例外
 // （ScreenCapture.recordedOwnWindows）；录制中每秒比一次它们的窗口号，变了（第一次呼出的面板、新钉图）就换过滤器。
-// 录制中：选区外一圈静止的强调色边框（整屏不画）+ 菜单栏另起一个「■ 0:12」停止项（左键即停）；期间不让系统闲置睡眠。
+// 录制中：选区外一圈静止的强调色边框（整屏不画）+ 录制 HUD（红点、计时、放弃、停止）+ 菜单栏另起一个「■ 0:12」停止项
+// （左键即停）；期间不让系统闲置睡眠。放弃（HUD 的 ✕ 点两下）= 停流、删文件、不挪。
 // 锁屏、睡眠、显示器睡眠、被录的屏变了、磁盘剩余不到 1 GB、系统停止流：和用户停止走同一条收尾（停流 → 等文件写完 →
 // 挪文件 → 回调），保存已录的部分，原因写进结果岛。开录时把临时文件路径记进偏好，闪退后下次启动由 recover 接手
 // （第 0 批实测：文件由系统进程 replayd 写，本 App 被 kill -9 后它自己收尾、文件能播）。
@@ -31,9 +34,11 @@ nonisolated final class RecordingEvents: NSObject, SCRecordingOutputDelegate, SC
     case failed(String)
     /// 流停了（控制中心「停止共享」、系统中止……）
     case stopped(domain: String, code: Int, text: String)
-    /// 会话自己投的：要停（点停止、中断）、开始 / 写完超时
+    /// 会话自己投的：要停（点停止、中断、放弃、倒数中取消）、开始 / 写完超时
     case stop(ScreenRecorder.Reason)
     case startTimedOut, finishTimedOut
+    /// 倒数：过了一秒、点了数字马上开始
+    case tick, startNow
   }
 
   let feed: AsyncStream<Event>.Continuation
@@ -76,6 +81,10 @@ final class ScreenRecorder: NSObject {
   nonisolated enum Reason: Equatable, Sendable {
     /// 点停止项、再按快捷键、菜单栏 / 启动器、退出 App、控制中心「停止共享」
     case user
+    /// 倒数中取消（✕、Esc、再按录屏快捷键）：没开流、没有文件，不出岛
+    case cancelled
+    /// 录制中点了两下放弃：停流、删文件，不挪、不留闪退记录
+    case discarded
     case locked, sleep, displaySleep, screenChanged, lowDisk
     /// 流被系统停了（「停止共享」以外）
     case system(code: Int, text: String)
@@ -87,7 +96,7 @@ final class ScreenRecorder: NSObject {
     /// 岛的详情里的原因（简短）；正常停止 nil
     var note: String? {
       switch self {
-      case .user: nil
+      case .user, .cancelled, .discarded: nil
       case .locked: "锁屏时已自动停止"
       case .sleep: "睡眠前已自动停止"
       case .displaySleep: "显示器睡眠时已自动停止"
@@ -120,6 +129,12 @@ final class ScreenRecorder: NSObject {
   private let displayID: CGDirectDisplayID
   private let screenFrame: CGRect
   private let scale: CGFloat
+  /// 设置 › 截图「录屏」（开录时读一次）：帧率 30 / 60、开录前倒数几秒、画不画光标
+  private let frameRate: Int
+  private let countdown: Int
+  private let showsCursor: Bool
+  /// 倒数期间临时注册 Esc 用（单测 / 实录自检里是 nil：没有 Esc，只能点 ✕）
+  private weak var hotKeys: HotKeyCenter?
   /// 快速保存目录；进行中的文件在和它同一个卷的 workFile
   private let directory: URL
   private let temp: URL
@@ -134,7 +149,10 @@ final class ScreenRecorder: NSObject {
   private var startedAt: ContinuousClock.Instant?
   private var endedAt: ContinuousClock.Instant?
   private var finishDeadline: Task<Void, Never>?
+  /// 用户放弃 / 取消了（第一个为准）：之后不管怎么收尾（写完超时、没开起来、流先停了），结果都按它——删文件、不出失败岛
+  private var abandoned: Reason?
   private var border: NSPanel?
+  private var hud: RecordingHUD?
   private var stopItem: NSStatusItem?
   private var timer: Timer?
   private var ticks = 0
@@ -144,10 +162,11 @@ final class ScreenRecorder: NSObject {
   private var exceptedWindows: Set<CGWindowID> = []
   private var isRefreshingFilter = false
 
-  /// region：选区（点，AppKit 全局坐标）；directory：快速保存目录。选区不在任何屏上时 nil
+  /// region：选区（点，AppKit 全局坐标）；directory：快速保存目录；defaults：录屏设置从这里读、「进行中」记在这里；
+  /// hotKeys：倒数时临时注册 Esc。选区不在任何屏上时 nil
   init?(
     region: CGRect, directory: URL, defaults: UserDefaults = .standard,
-    onFinish: @escaping (Result) -> Void
+    hotKeys: HotKeyCenter? = nil, onFinish: @escaping (Result) -> Void
   ) {
     let screens = NSScreen.screens
     guard let (index, _) = RegionSelector.placement(of: region, in: screens.map(\.frame)),
@@ -162,6 +181,10 @@ final class ScreenRecorder: NSObject {
     self.displayID = displayID
     screenFrame = screen.frame
     scale = screen.backingScaleFactor
+    frameRate = defaults.integer(forKey: Prefs.screenRecordFrameRate) == 60 ? 60 : 30
+    countdown = Self.countdownSeconds(defaults.integer(forKey: Prefs.screenRecordCountdown))
+    showsCursor = defaults.object(forKey: Prefs.screenRecordShowsCursor) as? Bool ?? true
+    self.hotKeys = hotKeys
     self.directory = directory
     temp = Self.workFile(for: directory)
     self.defaults = defaults
@@ -178,21 +201,29 @@ final class ScreenRecorder: NSObject {
     Task {
       let reason = await record()
       tearDown()
-      onFinish(finalize(reason))
+      onFinish(finalize(Self.outcome(reason, abandoned: abandoned)))
     }
   }
 
-  /// 停止并保存（点停止项、再按快捷键、中断）。还没开始时等开始了再停；已经在停了就不管
+  /// 停止并保存（点停止项、再按快捷键、中断）。倒数中是取消；开流了还没开始时等开始了再停；已经在停了就不管
   func stop(_ reason: Reason = .user) {
     delegate.feed.yield(.stop(reason))
   }
 
   // MARK: 录制
 
-  /// 开流 → 等开始 → 等停止 → 停流、等文件写完；返回停的原因（第一个为准）
+  /// 倒数 → 开流 → 等开始 → 等停止 → 停流、等文件写完；返回停的原因（第一个为准）
   /// ponytail: 取窗口表和 startCapture 的 await 不罩超时（5 s 开始超时从它们返回后算）：SCK 这两个调用都会返回或抛错、
   /// 没见过卡住；要罩住得把开流挪进子任务、处理超时后才开起来的流，真遇到了再做
   private func record() async -> Reason {
+    // 倒数前就听：倒数中锁屏、睡眠、屏幕变了直接取消（不在锁屏界面上开流、不带着旧的屏幕参数开录）
+    observeInterruptions()
+    if countdown > 0 {
+      guard await countDown() else { return .cancelled }
+      // 数完：蚂蚁线停成实线，HUD 换成录制态（红点 pop 后呼吸），开流
+      border?.contentView = ScrollBorderView(animates: false)
+      hud?.update(.recording(0))
+    }
     let stream: SCStream
     do {
       stream = try await makeStream()
@@ -227,6 +258,11 @@ final class ScreenRecorder: NSObject {
           halt(stream)
         }
       case .stop(let why):
+        // 放弃 / 取消（倒数刚结束才到的）：结果按它（outcome），不留闪退记录（文件写完就删，这期间闪退也不该被 recover 捡回来）
+        if why == .discarded || why == .cancelled {
+          abandoned = abandoned ?? why
+          defaults.removeObject(forKey: Prefs.screenRecordingInProgress)
+        }
         if startedAt == nil {
           pending = pending ?? why
         } else if reason == nil, !finished {
@@ -256,9 +292,43 @@ final class ScreenRecorder: NSObject {
         halt(stream, running: false, wait: .milliseconds(500))
       case .finishTimedOut:
         return .failed(finished ? "录制意外结束" : "文件没有按时写完")
+      case .tick, .startNow:
+        continue
       }
     }
     return reason ?? .user
+  }
+
+  /// 倒数（拍板 R9-a）：数完才开流（倒数不进文件）。选区边框走蚂蚁线（整屏没有）、HUD 数秒；点数字马上开始，✕ / Esc /
+  /// 再按录屏快捷键取消。Esc 是这几秒里临时注册的全局热键（HUD 不当 key，收不到按键），数完 / 取消 / 开录立刻注销；
+  /// 注册不上只能用快捷键和 ✕（HotKeyCenter 记日志，播报和 ✕ 的提示不提 Esc）。本 App 自己的面板拿着键盘时这一下 Esc
+  /// 交给它（HotKeyCenter.fire）。菜单栏停止项这时还没有。返回 false = 取消了
+  private func countDown() async -> Bool {
+    let escapes = hotKeys?.registerEscape { [weak self] in self?.stop(.cancelled) } ?? false
+    defer { hotKeys?.unregisterEscape() }
+    showFrame(counting: true, escapes: escapes)
+    Island.announce(Self.countdownAnnouncement(countdown, escapes: escapes))
+    // 菜单开着（.eventTracking）时也要数
+    let feed = delegate.feed
+    let ticker = Timer(timeInterval: 1, repeats: true) { _ in feed.yield(.tick) }
+    RunLoop.main.add(ticker, forMode: .common)
+    defer { ticker.invalidate() }
+    var left = countdown
+    for await event in events {
+      switch event {
+      case .tick:
+        left -= 1
+        guard left > 0 else { return true }
+        hud?.update(.countdown(left))
+      case .startNow:
+        return true
+      case .stop:
+        return false
+      default:
+        continue
+      }
+    }
+    return false
   }
 
   /// 过滤器、配置、录制输出、空样本输出
@@ -277,9 +347,8 @@ final class ScreenRecorder: NSObject {
     configuration.width = size.width
     configuration.height = size.height
     if !isFullScreen { configuration.sourceRect = source }
-    // ponytail: 帧率写死 30，第 2 批设置 › 截图「录屏」组加 30 / 60 偏好
-    configuration.minimumFrameInterval = CMTime(value: 1, timescale: 30)
-    configuration.showsCursor = true
+    configuration.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(frameRate))
+    configuration.showsCursor = showsCursor
     // 第 0 批实测：不设时 P3 屏色相明显偏；设 sRGB 色相对，中间调仍偏亮约 4%（itur_709 更差）
     configuration.colorSpaceName = CGColorSpace.sRGB
     // 这一批不录声音；第 4 批开声音前先写上作保险（排除本 App 时它自己的声音本来就录不进去）
@@ -347,7 +416,7 @@ final class ScreenRecorder: NSObject {
     }
   }
 
-  /// 停：边框和停止项立刻收掉、停流（流自己停了就不用），最多等 wait 文件写完（超时按失败，文件照样保留）
+  /// 停：边框、HUD 和停止项立刻收掉、停流（流自己停了就不用），最多等 wait 文件写完（超时按失败，文件照样保留）
   private func halt(_ stream: SCStream, running: Bool = true, wait: Duration = .seconds(10)) {
     endedAt = endedAt ?? .now
     hideChrome()
@@ -371,15 +440,40 @@ final class ScreenRecorder: NSObject {
 
   // MARK: 录制中
 
-  /// 开始了：边框（整屏不画）、菜单栏停止项、每秒的计时、防睡眠、中断监听
-  private func showChrome() {
+  /// 边框（整屏不画）和录制 HUD：倒数时（counting）边框走蚂蚁线、HUD 数秒；不倒数时开始录了才出，边框静止、HUD 直接是录制态。
+  /// escapes：倒数的 Esc 注册上了（✕ 的提示写不写 Esc）
+  private func showFrame(counting: Bool, escapes: Bool = false) {
     if !isFullScreen {
-      let border = ScrollCapture.makeBorder(around: region, view: ScrollBorderView(animates: false))
+      let view = ScrollBorderView(animates: counting)
+      if counting { view.update(lost: false, marching: true) }
+      let border = ScrollCapture.makeBorder(around: region, view: view)
       // 录的是整块屏的一部分：切到别的桌面、全屏 App 上也要看得到在录哪
       border.collectionBehavior.insert(.canJoinAllSpaces)
       border.orderFrontRegardless()
       self.border = border
     }
+    let hud = RecordingHUD(
+      state: counting ? .countdown(countdown) : .recording(0),
+      stopKey: HotKeyAction.screenRecord.hotKey?.display, escapes: escapes)
+    hud.onClick = { [weak self] in self?.clicked($0) }
+    if let screen = NSScreen.screens.first(where: { $0.displayID == displayID }) {
+      hud.present(region: region, on: screen, isFullScreen: isFullScreen)
+    }
+    self.hud = hud
+  }
+
+  private func clicked(_ item: RecordingHUD.Item) {
+    switch item {
+    case .startNow: delegate.feed.yield(.startNow)
+    case .cancel: stop(.cancelled)
+    case .discard: stop(.discarded)
+    case .stop: stop()
+    }
+  }
+
+  /// 开始了：边框和 HUD（倒数过就已经有了）、菜单栏停止项、每秒的计时、防睡眠（中断监听在 record 一开头就装了）
+  private func showChrome() {
+    if hud == nil { showFrame(counting: false) }
     let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     if let button = item.button {
       let image = NSImage(systemSymbolName: "stop.fill", accessibilityDescription: nil)?
@@ -403,14 +497,15 @@ final class ScreenRecorder: NSObject {
     activity = ProcessInfo.processInfo.beginActivity(
       options: [.idleSystemSleepDisabled, .idleDisplaySleepDisabled, .userInitiated],
       reason: "录屏")
-    observeInterruptions()
     Island.announce("开始录屏")
   }
 
-  /// 边框、停止项、计时立刻收掉（停的那一刻；文件还在写）
+  /// 边框、HUD、停止项、计时立刻收掉（停的那一刻；文件还在写）
   private func hideChrome() {
     border?.orderOut(nil)
     border = nil
+    hud?.close()
+    hud = nil
     if let stopItem { NSStatusBar.system.removeStatusItem(stopItem) }
     stopItem = nil
     timer?.invalidate()
@@ -433,14 +528,16 @@ final class ScreenRecorder: NSObject {
     }
   }
 
+  /// 菜单栏停止项和 HUD 同一个时钟
   private func updateClock() {
     guard let button = stopItem?.button, let startedAt else { return }
     let seconds = Int((ContinuousClock.now - startedAt).components.seconds)
+    hud?.update(.recording(seconds))
     button.title = Self.clock(seconds)
     button.setAccessibilityValue("已录 " + Self.spoken(seconds))
   }
 
-  /// 锁屏、睡眠、显示器睡眠、被录的屏变了：停止并保存（不自动续录）
+  /// 锁屏、睡眠、显示器睡眠、被录的屏变了：停止并保存（不自动续录）；倒数中就是取消
   private func observeInterruptions() {
     let workspace = NSWorkspace.shared.notificationCenter
     observe(workspace, NSWorkspace.willSleepNotification, .sleep)
@@ -483,13 +580,15 @@ final class ScreenRecorder: NSObject {
   }
 
   /// 挪文件：开始过、文件在就挪进快速保存目录（「录屏 <开录时刻>」，重名追加序号）。挪不过去（如桌面的文件夹授权被拒）的
-  /// 留在原地（系统不清理），改成同样的名字，AppDelegate 在访达里选中它。都删「进行中」记录：这次是正常收尾，
-  /// 下次启动不该说「没有正常结束」
+  /// 留在原地（系统不清理），改成同样的名字，AppDelegate 在访达里选中它。放弃的（倒数刚结束时按到的取消也算）删掉。
+  /// 都删「进行中」记录：这次是正常收尾，下次启动不该说「没有正常结束」
   private func finalize(_ reason: Reason) -> Result {
     defaults.removeObject(forKey: Prefs.screenRecordingInProgress)
     let manager = FileManager.default
     let duration = startedAt.map { (endedAt ?? .now) - $0 } ?? .zero
-    guard startedAt != nil, manager.fileExists(atPath: temp.path) else {
+    guard startedAt != nil, manager.fileExists(atPath: temp.path),
+      reason != .discarded, reason != .cancelled
+    else {
       try? manager.removeItem(at: temp)
       return Result(file: nil, moved: false, duration: duration, reason: reason)
     }
@@ -574,7 +673,23 @@ final class ScreenRecorder: NSObject {
     return (even(width), even(height))
   }
 
-  /// 计时：「0:12」，一小时起「1:02:03」
+  /// 开录前倒数几秒：设置里只给 0 / 3 / 5，存的值在 0…5 之间照用（实录自检用 1 s），出了这个范围按默认 3
+  nonisolated static func countdownSeconds(_ stored: Int) -> Int {
+    (0...(Prefs.screenRecordCountdownChoices.max() ?? 5)).contains(stored) ? stored : 3
+  }
+
+  /// 倒数开始时的播报（按实际秒数）；Esc 没注册上就不提它
+  nonisolated static func countdownAnnouncement(_ seconds: Int, escapes: Bool) -> String {
+    "\(seconds) 秒后开始录屏" + (escapes ? "，按 Esc 取消" : "")
+  }
+
+  /// 收尾按什么说：用户放弃 / 取消过就按它（放弃后写完超时、取消挂着时没开起来，都不能说成「已保存已录的部分」/「录屏失败」、
+  /// 把文件挪进保存目录），否则按 record 返回的
+  nonisolated static func outcome(_ returned: Reason, abandoned: Reason?) -> Reason {
+    abandoned ?? returned
+  }
+
+  /// 计时：「0:12」，一小时起「1:02:03」（菜单栏停止项和录制 HUD 共用）
   nonisolated static func clock(_ seconds: Int) -> String {
     let (hours, minutes, rest) = (seconds / 3600, seconds / 60 % 60, seconds % 60)
     return hours > 0
@@ -612,12 +727,16 @@ final class ScreenRecorder: NSObject {
 
   /// 结果岛：正常停 = 已保存 + 文件名 · 时长；中断 / 失败但文件在 = 警告「已保存已录的部分」+ 原因 · 时长；
   /// 挪不进快速保存目录 = 警告「已在访达中显示」（AppDelegate 在访达里选中它；岛不接鼠标、2 s 就走，长路径没用）；
-  /// 什么也没录下 = 错误。folder 是快速保存目录的访达显示名
+  /// 什么也没录下 = 错误；放弃 = 信息「已放弃录屏」。倒数中取消是用户自己点的，不出岛（nil，AppDelegate 只播报）。
+  /// folder 是快速保存目录的访达显示名
   static func summary(_ result: Result, folder: String) -> (
     title: String, detail: String, tone: Island.Tone
-  ) {
-    if result.reason == .denied {
-      return ("需要「屏幕录制」授权", "录屏要用，授权后可能要重新打开本 App", .warning)
+  )? {
+    switch result.reason {
+    case .cancelled: return nil
+    case .discarded: return ("已放弃录屏", "没有保存", .info)
+    case .denied: return ("需要「屏幕录制」授权", "录屏要用，授权后可能要重新打开本 App", .warning)
+    default: break
     }
     guard let file = result.file else {
       return ("录屏失败", result.reason.note ?? "没有录下内容", .error)
