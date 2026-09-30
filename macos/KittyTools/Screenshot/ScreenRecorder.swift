@@ -916,11 +916,13 @@ final class ScreenRecorder: NSObject {
 
   /// 挪进快速保存目录用的名字：「录屏 <开录的时刻>.mp4」（录音「录音 ….m4a」）——取文件的创建时间（系统开录时建文件），
   /// 不按挪的时刻：录 30 分钟的、闪退后隔几天才恢复的，名字都还是开录那一刻（C8）。扩展名跟着文件走：只录声音的音轨没能
-  /// 导出成 m4a 时存的是「录音 ….mp4」（录音第 6 批）
-  static func savedURL(for file: URL, in directory: URL, medium: Medium = .screen) -> URL {
+  /// 导出成 m4a 时存的是「录音 ….mp4」（录音第 6 批）。ext：另给扩展名（录屏转成的 GIF「录屏 <开录时刻>.gif」，第 7 批）
+  static func savedURL(
+    for file: URL, in directory: URL, medium: Medium = .screen, ext: String? = nil
+  ) -> URL {
     let created = (try? file.resourceValues(forKeys: [.creationDateKey]))?.creationDate
     return ScreenshotOutput.availableURL(
-      in: directory, date: created ?? .now, prefix: medium.noun, ext: file.pathExtension)
+      in: directory, date: created ?? .now, prefix: medium.noun, ext: ext ?? file.pathExtension)
   }
 
   /// 启动时（AppDelegate，单测宿主不跑；录屏、录音各查一次）：偏好里还记着进行中的文件 = 上次没正常收尾（闪退、断电）。

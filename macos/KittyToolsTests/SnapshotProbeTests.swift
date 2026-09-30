@@ -691,6 +691,13 @@ struct SnapshotProbeTests {
           title: "正在存储录音…", detail: nil, tone: .progress, symbol: "waveform.circle.fill",
           leading: .tone), notch
       ),
+      // 录屏录音第 7 批：视频卡「转成 GIF」的进度（超过 60 s 的说只转前 60 秒）
+      (
+        "island-gif-progress",
+        .init(
+          title: "正在转成 GIF…", detail: "只转前 60 秒", tone: .progress,
+          symbol: ShelfCard.gifIslandSymbol, leading: .tone), notch
+      ),
       (
         "island-color",
         .init(

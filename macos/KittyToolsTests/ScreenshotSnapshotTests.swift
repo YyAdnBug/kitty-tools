@@ -12,7 +12,8 @@ import Testing
 // 第 3 批补了常驻缩略图的视频卡（落地、悬停、矮卡、没有最后一帧的占位）；第 4 批补了录制条的三个开关（默认 = 混合、全开、
 // 全关，全开 / 全关再按石墨、黄色强调色各一遍）和录制 HUD 的声音状态（两个都开、只开系统声音、麦克风断开变橙）；录音第 5 批补了
 // 录音 HUD（录制中带电平、暂停、没听到声音、响到橙色的一根）和录音卡（波形 + 左上 waveform 标记 + 时长：落地、悬停、矮卡）；
-// 录音第 6 批补了录系统声音的录音 HUD（⏸ 原位置灰、「两者」麦克风断开的橙字）。
+// 录音第 6 批补了录系统声音的录音 HUD（⏸ 原位置灰、「两者」麦克风断开的橙字）。第 7 批：视频卡悬停多一枚「转成 GIF」胶囊，
+// 补了 GIF 卡（落地、悬停）。
 // 状态用 SelectionInteractionTests 的屏外窗口 + 合成事件摆（不弹遮罩、不抢键盘）；图层要在窗口里显示过才有内容，
 // 所以把屏外 (-20000, -20000) 的无边框窗口（当不了 key）orderFront 一下再 layer.render(in:)。材质在屏外会发灰，只锁布局。
 //   TEST_RUNNER_KITTY_SNAPSHOT_DIR=/tmp/shots xcodebuild -project macos/KittyTools.xcodeproj \
@@ -311,6 +312,23 @@ struct ScreenshotSnapshotTests {
           ShelfCardView(card: video), over: desktop,
           size: NSSize(
             width: size.width + ShotShelf.margin * 2, height: size.height + ShotShelf.margin * 2),
+          dark: dark, to: "\(out)/\(name)\(dark ? "-dark" : "").png")
+      }
+    }
+
+    // 录屏转成的 GIF 卡（第 7 批）：第一帧 + 左下「GIF」胶囊（没有播放符号）+ 文件夹角标；悬停只有「拷贝」+ 关闭 / 在访达中显示
+    // （视频卡悬停的「拷贝」「转成 GIF」两枚胶囊在上面的 shot-video-hover / -compact-hover）
+    for (name, hovered) in [("shot-gif-landed", false), ("shot-gif-hover", true)] {
+      let gif = ShelfCard(
+        file: .gif(desktopFolder.appending(path: "录屏 2026-09-30 10.00.00.gif")), poster: shot,
+        source: CGRect(origin: .zero, size: card), rect: CGRect(origin: .zero, size: card),
+        screen: nil, panel: NSPanel(), shelf: ShotShelf())
+      gif.isHovered = hovered
+      for dark in [false, true] {
+        try snapshot(
+          ShelfCardView(card: gif), over: desktop,
+          size: NSSize(
+            width: card.width + ShotShelf.margin * 2, height: card.height + ShotShelf.margin * 2),
           dark: dark, to: "\(out)/\(name)\(dark ? "-dark" : "").png")
       }
     }

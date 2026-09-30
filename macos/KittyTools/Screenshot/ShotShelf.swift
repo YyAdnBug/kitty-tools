@@ -11,6 +11,9 @@
 // 拖出去就是那个文件，右键多「打开」「移到废纸篓」（能放回，不二次确认）。
 // 录音（第 5 批，拍板 A5-a）的录音卡同样是这种卡片（ShelfCard.Kind.audio）：图是电平包络画的波形，左上角 waveform 标记
 // （没有播放符号）+ 时长，操作和视频卡一样。
+// 转成 GIF（录屏录音第 7 批，拍板 R12-a）：视频卡悬停多一个「转成 GIF」胶囊（右键 / 旁白动作同名），在主线程外转（VideoExport），
+// 转的时候刘海岛挂进度、卡片不自己滑走，卡片被关掉就取消；转好了在角落叠一张 GIF 卡（ShelfCard.Kind.gif：图是第一帧、左下「GIF」
+// 胶囊，没有播放符号），pop 出来、旧卡让位，操作同视频卡（没有「转成 GIF」）。
 
 import AppKit
 import SwiftUI
@@ -60,9 +63,18 @@ final class ShotShelf {
     }
   }
 
+  /// 录屏转成的 GIF（第 7 批）：没有飞行卡片交接，在角落 pop 出来（减弱动态效果时淡入），旧卡让位；first 是第一帧
+  func add(gif url: URL, first: CGImage, source: CGRect, at rect: CGRect) {
+    insert(at: rect, fadesIn: Style.reduceMotion, popsIn: !Style.reduceMotion) { screen, panel in
+      ShelfCard(
+        file: .gif(url), poster: first, source: source, rect: rect, screen: screen, panel: panel,
+        shelf: self)
+    }
+  }
+
   /// 同一块屏上已有的往上挪给新的让位；超过 3 张的最早那张滑走（截图、录屏混着叠）
   private func insert(
-    at rect: CGRect, fadesIn: Bool = Style.reduceMotion,
+    at rect: CGRect, fadesIn: Bool = Style.reduceMotion, popsIn: Bool = false,
     _ make: (NSScreen?, NSPanel) -> ShelfCard
   ) {
     let screen = NSScreen.screens.first { $0.frame.intersects(rect) }
@@ -70,6 +82,7 @@ final class ShotShelf {
     for card in neighbours { card.shift(by: rect.height + Self.gap) }
     if neighbours.count >= Self.maxPerScreen, let oldest = neighbours.first { dismiss(oldest) }
     let card = make(screen, idle.popLast() ?? Self.makePanel())
+    card.popsIn = popsIn
     cards.append(card)
     card.show(fadingIn: fadesIn)
   }
@@ -132,24 +145,35 @@ final class ShotShelf {
     case video(URL, seconds: Int)
     /// 录音（第 5 批）：同录屏，图是波形
     case audio(URL, seconds: Int)
+    /// 录屏转成的 GIF（第 7 批）：快速保存目录里的 .gif，图是第一帧
+    case gif(URL)
 
-    /// 录屏 / 录音的文件、时长和哪一种（截图 nil）：两种卡的操作一样，只有叫法和标记不同
+    /// 录屏 / 录音的文件、时长和哪一种（截图、GIF nil）：两种卡的操作一样，只有叫法和标记不同
     var recording: (url: URL, seconds: Int, medium: ScreenRecorder.Medium)? {
       switch self {
-      case .image: nil
+      case .image, .gif: nil
       case .video(let url, let seconds): (url, seconds, .screen)
       case .audio(let url, let seconds): (url, seconds, .audio)
+      }
+    }
+
+    /// 卡片装的文件（录屏、录音、GIF；截图 nil）：拷贝、打开、移到废纸篓、拖出都对它
+    var file: URL? {
+      switch self {
+      case .image: nil
+      case .video(let url, _), .audio(let url, _), .gif(let url): url
       }
     }
   }
 
   /// 右键菜单和 VoiceOver 自定义动作（同一份 menu）
   enum Command {
-    case copy, save, pin, open, reveal, trash, close
+    case copy, gif, save, pin, open, reveal, trash, close
 
     var title: String {
       switch self {
       case .copy: "拷贝"
+      case .gif: "转成 GIF"
       case .save: "存储"
       case .pin: "钉图"
       case .open: "打开"
@@ -159,6 +183,10 @@ final class ShotShelf {
       }
     }
   }
+
+  /// 「转成 GIF」的符号（悬停胶囊）；刘海岛里同其它结果用圆底的 photo.circle.fill（gifIslandSymbol）
+  static let gifSymbol = "photo.stack"
+  static let gifIslandSymbol = "photo.circle.fill"
 
   let kind: Kind
   /// 显示的部分（长截图只露开头一屏；缩到卡片尺寸）；录屏没取到最后一帧、录音没有波形时 nil（HUD 底色 + 标记占位）
@@ -183,6 +211,10 @@ final class ShotShelf {
   /// 拖出去用的文件：存过就是存的那个，否则是临时目录里编码好的 PNG
   @ObservationIgnored private(set) var fileURL: URL?
   @ObservationIgnored private var timer: Task<Void, Never>?
+  /// 正在转成 GIF（第 7 批）：转的时候不自己滑走，卡片被关掉就取消
+  @ObservationIgnored private var export: Task<Void, Never>?
+  /// 没有飞行卡片交接、在角落弹出来（GIF 卡，第 7 批）：出现时 pop
+  @ObservationIgnored var popsIn = false
   /// 触控板横扫时跟手的偏移，和最近一次非零位移与它的时间（松手前还在快速往右 = 甩出去；停住再松手不算）
   @ObservationIgnored private var swipe: CGFloat = 0
   @ObservationIgnored private var lastSwipe: (delta: CGFloat, time: CFTimeInterval) = (0, 0)
@@ -207,14 +239,14 @@ final class ShotShelf {
     if case .saved(let url) = badge { fileURL = url }
   }
 
-  /// 录屏 / 录音（audio）：文件已在快速保存目录（角标是它的文件夹），poster 是最后一帧 / 波形（和飞行卡片同样缩到卡片尺寸，
-  /// 交接时像素一样）
+  /// 录屏 / 录音 / GIF（kind 带着文件）：文件已在快速保存目录（角标是它的文件夹），poster 是最后一帧 / 波形 / GIF 第一帧
+  /// （和飞行卡片同样缩到卡片尺寸，交接时像素一样）
   init(
-    recording url: URL, seconds: Int, audio: Bool = false, poster: CGImage?, source: CGRect,
-    rect: CGRect, screen: NSScreen?, panel: NSPanel, shelf: ShotShelf
+    file kind: Kind, poster: CGImage?, source: CGRect, rect: CGRect, screen: NSScreen?,
+    panel: NSPanel, shelf: ShotShelf
   ) {
     let backing = screen?.backingScaleFactor ?? 2
-    kind = audio ? .audio(url, seconds: seconds) : .video(url, seconds: seconds)
+    self.kind = kind
     scale = backing
     shown = poster.map {
       FlyCard.cardImage(of: $0, frame: source, size: rect.size, backingScale: backing)
@@ -222,23 +254,38 @@ final class ShotShelf {
     pixels = .zero
     self.source = source
     self.rect = rect
-    badge = .saved(url)
+    badge = kind.file.map(FlyCard.Badge.saved) ?? .copied
     self.screen = screen
     self.panel = panel
     self.shelf = shelf
-    fileURL = url
+    fileURL = kind.file
+  }
+
+  /// 录屏 / 录音（audio）
+  convenience init(
+    recording url: URL, seconds: Int, audio: Bool = false, poster: CGImage?, source: CGRect,
+    rect: CGRect, screen: NSScreen?, panel: NSPanel, shelf: ShotShelf
+  ) {
+    self.init(
+      file: audio ? .audio(url, seconds: seconds) : .video(url, seconds: seconds), poster: poster,
+      source: source, rect: rect, screen: screen, panel: panel, shelf: shelf)
   }
 
   /// 旁白里卡片的名字
   var accessibilityName: String {
+    if case .gif = kind { return "GIF 动图" }
     guard let recording = kind.recording else { return "截图缩略图" }
     return recording.medium.noun + "，" + ScreenRecorder.spoken(recording.seconds)
   }
 
   /// 右键菜单（一节一组，节间分隔线）：截图「拷贝 / 存储 / 钉图 /（存过的）在访达中显示 ｜ 关闭」；
-  /// 录屏 / 录音「拷贝 / 打开 / 在访达中显示 ｜ 移到废纸篓 ｜ 关闭」（已经存了，没有存储；不是图，没有钉图）
+  /// 录屏「拷贝 / 转成 GIF / 打开 / 在访达中显示 ｜ 移到废纸篓 ｜ 关闭」，录音、GIF 同录屏但没有「转成 GIF」
+  /// （已经存了，没有存储；不是图，没有钉图）
   var menu: [[Command]] {
-    guard kind.recording == nil else { return [[.copy, .open, .reveal], [.trash], [.close]] }
+    guard kind.file == nil else {
+      let gif: [Command] = if case .video = kind { [.gif] } else { [] }
+      return [[.copy] + gif + [.open, .reveal], [.trash], [.close]]
+    }
     let saved = if case .saved = badge { true } else { false }
     return [[.copy, .save, .pin] + (saved ? [.reveal] : []), [.close]]
   }
@@ -246,6 +293,7 @@ final class ShotShelf {
   func perform(_ command: Command) {
     switch command {
     case .copy: copyAgain()
+    case .gif: convertToGIF()
     case .save: save()
     case .pin: pin()
     case .open: open()
@@ -290,6 +338,7 @@ final class ShotShelf {
   /// 向右滑出屏幕（0.28 s easeIn）；减弱动态效果时原地淡出
   func slideOut(completion: @escaping @MainActor @Sendable () -> Void) {
     timer?.cancel()
+    export?.cancel()  // 卡片被关掉（关闭、横扫、被挤走）：GIF 不转了
     let exit = (screen?.frame.maxX ?? rect.maxX) - rect.minX + ShotShelf.margin + 10
     NSAnimationContext.runAnimationGroup { context in
       context.duration = Style.reduceMotion ? 0.2 : 0.28
@@ -312,12 +361,13 @@ final class ShotShelf {
 
   func copyAgain() {
     guard !isBusy, let shelf else { return }
-    // 录屏 / 录音拷的是文件（C8-a：点了才进剪贴板历史）
-    if let recording = kind.recording {
-      guard exists(recording.url) else { return }
-      shelf.copyFile(recording.url)
+    // 录屏 / 录音 / GIF 拷的是文件（C8-a：点了才进剪贴板历史）
+    if let file = kind.file {
+      guard exists(file) else { return }
+      shelf.copyFile(file)
       shelf.island?.show(
-        "已复制\(recording.medium.noun)", leading: shown.map(Island.thumbnail(of:)) ?? .tone)
+        kind.recording.map { "已复制\($0.medium.noun)" } ?? "已复制 GIF",
+        leading: shown.map(Island.thumbnail(of:)) ?? .tone)
       return
     }
     isBusy = true
@@ -386,9 +436,9 @@ final class ShotShelf {
     }
   }
 
-  /// 录屏 / 录音移到废纸篓（能放回，13 条默认细节：不二次确认）：成功后卡片收起，岛说一声
+  /// 录屏 / 录音 / GIF 移到废纸篓（能放回，13 条默认细节：不二次确认）：成功后卡片收起，岛说一声
   func moveToTrash() {
-    guard let url = kind.recording?.url, exists(url) else { return }
+    guard let url = kind.file, exists(url) else { return }
     Task {
       do {
         _ = try await NSWorkspace.shared.recycle([url])
@@ -458,8 +508,48 @@ final class ShotShelf {
     guard !isLeaving else { return }
     timer = Task { [weak self] in
       try? await Task.sleep(for: .seconds(seconds))
-      guard !Task.isCancelled, let self, !self.isHovered else { return }
+      // 正在转 GIF 的不走（走了就取消了），转完再等 2.5 s
+      guard !Task.isCancelled, let self, !self.isHovered, self.export == nil else { return }
       self.close()
+    }
+  }
+
+  /// 录屏转成 GIF（第 7 批，R12-a）：存进快速保存目录「录屏 <开录时刻>.gif」，转的时候岛挂进度（菜单栏图标跟着呼吸）、
+  /// 超过 60 s 的在进度里说只转前 60 秒；转好岛「已存成 GIF」+ 大小，角落叠一张 GIF 卡；转不成岛说原因；取消（卡片被关掉）不出岛。
+  /// 正在转时再点只让岛再说一次，不重复开
+  func convertToGIF() {
+    guard case .video(let url, let seconds) = kind, exists(url) else { return }
+    let island = shelf?.island
+    let progress = "正在转成 GIF…"
+    guard export == nil else {
+      island?.show(
+        progress, detail: "这一段已经在转了", tone: .progress, symbol: Self.gifIslandSymbol)
+      return
+    }
+    let target = VideoExport.target(for: url, in: ScreenshotOutput.saveDirectory)
+    // ponytail: 进度不带百分比——实录 60 s 的约 23 s 转完，进度岛 60 s 兜底够用；更长的片子转得更久时再在详情里加百分比
+    // （要给 Island 加一个改详情、不重复播报的入口）
+    island?.show(
+      progress, detail: Double(seconds) > VideoExport.maxSeconds ? "只转前 60 秒" : nil,
+      tone: .progress, symbol: Self.gifIslandSymbol)
+    export = Task {
+      do {
+        let first = try await VideoExport.gif(from: url, to: target)
+        let bytes = (try? target.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+        island?.show(
+          "已存成 GIF", detail: Int64(bytes).formatted(.byteCount(style: .file)),
+          leading: Island.thumbnail(of: first))
+        // 叠在同一块屏的角落（最新的在最下面，这张视频卡往上让位）
+        if let shelf, let corner = FlyCard.landingRect(for: rect, size: rect.size) {
+          shelf.add(gif: target, first: first, source: source, at: corner)
+        }
+      } catch is CancellationError {
+        if island?.content?.title == progress { island?.dismiss() }
+      } catch {
+        island?.show("没能转成 GIF", detail: error.localizedDescription, tone: .error)
+      }
+      export = nil
+      if !isHovered { scheduleDismiss(after: 2.5) }
     }
   }
 
@@ -576,8 +666,11 @@ private final class ShelfHostingView: NSHostingView<ShelfCardView> {
 struct ShelfCardView: View {
   let card: ShelfCard
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  /// GIF 卡弹出来（popsIn）：出现后置真
+  @State private var popped = false
 
   var body: some View {
+    let hidden = card.popsIn && !popped
     let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
     // 图放在 overlay 里铺满：fill 的图不参与布局，比例和卡片不一样时也不会把卡片撑大
     Color.clear
@@ -597,6 +690,13 @@ struct ShelfCardView: View {
             audio: recording.medium == .audio
           )
           .transition(.opacity)
+        } else if case .gif = card.kind, !card.isHovered {
+          // GIF 卡：左下角「GIF」胶囊（同时长胶囊），没有播放符号
+          VideoMarks.capsule("GIF")
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+            .foregroundStyle(Color(nsColor: Style.HUD.text))
+            .accessibilityHidden(true)
+            .transition(.opacity)
         }
       }
       .overlay {
@@ -620,6 +720,13 @@ struct ShelfCardView: View {
       }
       .animation(Style.Motion.pop.animation(reduced: reduceMotion), value: card.badge.folder)
       .animation(.easeOut(duration: 0.12), value: card.isHovered)
+      // GIF 卡在角落弹出来（pop 0.85 → 1 + 淡入；减弱动态效果时 popsIn 为假，窗口淡入）
+      .scaleEffect(hidden ? 0.85 : 1)
+      .opacity(hidden ? 0 : 1)
+      .onAppear {
+        guard card.popsIn else { return }
+        withAnimation(Style.Motion.pop.animation(reduced: reduceMotion)) { popped = true }
+      }
       .onDrag { card.dragItem() }
       .onTapGesture(count: 2) { card.open() }
       // 右键菜单：小卡片上放不下按钮时也能操作；VoiceOver 的自定义动作是同一份
@@ -641,7 +748,8 @@ struct ShelfCardView: View {
       }
   }
 
-  /// 中间拷贝 / 存储（录屏已经存了，只有拷贝）；三个角关闭、钉图（录屏没有）、在访达中显示（右上角留给角标）。卡片矮的时候胶囊只留图标；
+  /// 中间拷贝 / 存储（录屏已经存了，拷贝旁边是「转成 GIF」；录音、GIF 只有拷贝）；三个角关闭、钉图（录屏没有）、在访达中显示
+  /// （右上角留给角标）。卡片矮的时候胶囊只留图标；
   /// 再小就不画角上的圆钮（会和胶囊叠在一起，点拷贝变成点钉图），更小的只剩右键菜单
   @ViewBuilder private var actions: some View {
     GeometryReader { geometry in
@@ -671,6 +779,10 @@ struct ShelfCardView: View {
         pill("拷贝", "doc.on.doc", compact: compact, action: card.copyAgain)
         if card.kind == .image {
           pill("存储", "square.and.arrow.down", compact: compact, action: card.save)
+        } else if case .video = card.kind {
+          pill(
+            ShelfCard.Command.gif.title, ShelfCard.gifSymbol, compact: compact,
+            action: card.convertToGIF)
         }
       }
       .opacity(card.isBusy ? 0.5 : 1)

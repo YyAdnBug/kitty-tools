@@ -17,6 +17,8 @@
 // 验 m4a 能播、时长约 3 s、AAC 48 kHz 单声道约 128 kbps、名字「录音 …」挪进输出目录的 audio/、波形 poster；录制中截一张 HUD。
 // 录音第 6 批加了 audioRecorderSystemTake(_:)（同样要 _MIC=1）：来源是系统声音 / 两者时走录屏管线只录声音，录约 2 s、0.5 s 时
 // afplay 放一声，验 m4a 能播、只有一条 AAC 音轨、没有视频轨、时长对、电平事件来过、中间的 mp4 已删、⏸ 置灰。
+// 录屏录音第 7 批加了 gifTake()：ScreenRecorder 真录 2 s 后用 VideoExport 转 GIF，验帧数约 30、宽 ≤ 960、循环、每帧约 1/15 s，
+// 视频轨比文件短时最后一帧停到结尾，转到一半取消不留文件；录下的视频和 GIF 验完就删（第一帧 gif-first.png 看完自己删）。
 import AVFoundation
 import AppKit
 import ScreenCaptureKit
@@ -965,6 +967,141 @@ struct RecordingProbeTests {
         "m4a：能播 \(playable)，时长 \(fmt(duration)) s（会话计的 \(fmt(session)) s），音轨 \(audioTracks.count) 条（\(fourCC(stream.mFormatID)) \(Int(stream.mSampleRate)) Hz \(stream.mChannelsPerFrame) 声道）、视频轨 \(videoTracks.count) 条，整段峰值 \(decibels(whole))；中间的 mp4 已删",
         "电平：包络 \(recorder.levels.envelope.count) 桶，最响 \(fmt(Double(loudest))) dB，麦克风那一路听到了 \(recorder.levels.heard)",
         "HUD 出来之前叫停：\(cancelled.reason)，没有留下文件",
+      ])
+  }
+
+  // MARK: - 录屏录音第 7 批：转成 GIF
+
+  /// ScreenRecorder 真录 2 s（1280 × 720 点，2x 屏上 2560 × 1440 像素，画面一直在动）后用 VideoExport 转 GIF：帧数约 30、
+  /// 宽 ≤ 960（这里是 960 × 540）、循环播放、每帧约 1/15 s，存盘名「录屏 <开录时刻>.gif」；再录一段带系统声音、只动头 1 s 的
+  /// （视频轨停在最后一次画面变化、比文件短），验最后一帧停到结尾、总长仍约 2 s；转到一半取消不留文件。报告里记转换耗时。
+  /// 录下的视频和 GIF 验完就删。只跑这一个：
+  ///   -only-testing:'KittyToolsTests/RecordingProbeTests/gifTake()'
+  @Test func gifTake() async throws {
+    let env = try await Env.make()
+    let suite = "kitty-test-gif-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    defaults.set(0, forKey: Prefs.screenRecordCountdown)
+    defaults.set(30, forKey: Prefs.screenRecordFrameRate)
+    defaults.set(false, forKey: Prefs.screenRecordMicrophone)
+    defaults.set(false, forKey: Prefs.screenRecordShowsClicks)
+    let folder = Self.directory.appending(path: "gif")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let visible = env.screen.visibleFrame
+    let region = CGRect(x: visible.minX + 120, y: visible.midY - 360, width: 1280, height: 720)
+    let panel = NSPanel(
+      contentRect: CGRect(x: region.minX + 80, y: region.midY - 80, width: 240, height: 160),
+      styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    panel.level = .floating
+    panel.hasShadow = false
+    panel.isReleasedWhenClosed = false
+    panel.orderFrontRegardless()
+    defer { panel.orderOut(nil) }
+
+    /// 录一段：moving 秒内画面一直动，总共录 2 s；返回挪进 folder 的文件
+    func take(systemAudio: Bool, moving: Double) async throws -> URL {
+      defaults.set(systemAudio, forKey: Prefs.screenRecordSystemAudio)
+      var finished: ScreenRecorder.Result?
+      let recorder = try #require(
+        ScreenRecorder(region: region, directory: folder, defaults: defaults) { finished = $0 })
+      let existing = Set(NSApp.windows.map(ObjectIdentifier.init))
+      recorder.start()
+      var stopItem: NSWindow?
+      for _ in 0..<100 where stopItem == nil {
+        try await Task.sleep(for: .milliseconds(50))
+        stopItem = NSApp.windows.first {
+          String(describing: type(of: $0)) == "NSStatusBarWindow" && $0.isVisible
+            && !existing.contains(ObjectIdentifier($0))
+        }
+      }
+      try #require(stopItem != nil, "5 s 内没开始录")
+      let began = Date.now
+      try await animate(panel, seconds: moving)
+      try await Task.sleep(for: .seconds(max(0, 2 - Date.now.timeIntervalSince(began))))
+      recorder.stop()
+      for _ in 0..<300 where finished == nil { try await Task.sleep(for: .milliseconds(50)) }
+      let result = try #require(finished, "15 s 内没收尾")
+      #expect(result.reason == .user && result.moved)
+      return try #require(result.file)
+    }
+
+    /// 读回 GIF：帧数、第一帧像素宽高、循环次数、每帧延时
+    func inspectGIF(_ url: URL) throws -> (
+      frames: Int, size: CGSize, loops: Int?, delays: [Double]
+    ) {
+      let source = try #require(CGImageSourceCreateWithURL(url as CFURL, nil))
+      let count = CGImageSourceGetCount(source)
+      let file = CGImageSourceCopyProperties(source, nil) as? [CFString: Any]
+      let loops =
+        (file?[kCGImagePropertyGIFDictionary] as? [CFString: Any])?[
+          kCGImagePropertyGIFLoopCount] as? Int
+      var delays: [Double] = []
+      var size = CGSize.zero
+      for index in 0..<count {
+        let frame = CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any]
+        let gif = frame?[kCGImagePropertyGIFDictionary] as? [CFString: Any]
+        delays.append(gif?[kCGImagePropertyGIFUnclampedDelayTime] as? Double ?? 0)
+        if index == 0 {
+          size = CGSize(
+            width: frame?[kCGImagePropertyPixelWidth] as? Int ?? 0,
+            height: frame?[kCGImagePropertyPixelHeight] as? Int ?? 0)
+        }
+      }
+      return (count, size, loops, delays)
+    }
+
+    // 1. 只录画面、一直在动：视频轨到停止
+    let video = try await take(systemAudio: false, moving: 2.1)
+    let target = VideoExport.target(for: video, in: folder)
+    #expect(target.lastPathComponent.hasPrefix("录屏 ") && target.pathExtension == "gif")
+    #expect(
+      target.deletingPathExtension().lastPathComponent
+        == video.deletingPathExtension().lastPathComponent)
+    let asset = AVURLAsset(url: video)
+    let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
+    let (natural, range) = try await track.load(.naturalSize, .timeRange)
+    let started = Date.now
+    let first = try await VideoExport.gif(from: video, to: target)
+    let elapsed = Date.now.timeIntervalSince(started)
+    let gif = try inspectGIF(target)
+    #expect(abs(gif.frames - 30) <= 3, "帧数 \(gif.frames)")
+    #expect(gif.size.width <= 960 && gif.size.width >= 958, "宽 \(gif.size.width)")
+    #expect(gif.loops == 0, "循环 \(String(describing: gif.loops))")
+    #expect(gif.delays.dropLast().allSatisfy { abs($0 - 1.0 / 15) < 0.011 }, "延时 \(gif.delays)")
+    #expect(first.width == Int(gif.size.width))
+    let bytes = (try? target.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+    try save(first, "gif-first.png")
+
+    // 2. 带系统声音、只动头 1 s：视频轨停在最后一次画面变化，GIF 最后一帧停到结尾
+    let still = try await take(systemAudio: true, moving: 1)
+    let stillAsset = AVURLAsset(url: still)
+    let stillEnd = try #require(
+      try await stillAsset.loadTracks(withMediaType: .video).first?.load(.timeRange).end.seconds)
+    let stillDuration = try await stillAsset.load(.duration).seconds
+    let stillTarget = VideoExport.target(for: still, in: folder)
+    _ = try await VideoExport.gif(from: still, to: stillTarget)
+    let held = try inspectGIF(stillTarget)
+    let total = held.delays.reduce(0, +)
+    #expect(abs(total - stillDuration) < 0.15, "GIF 总长 \(total) s，文件 \(stillDuration) s")
+
+    // 3. 转到一半取消：抛 CancellationError，不留文件
+    let cancelled = folder.appending(path: "cancelled.gif")
+    let task = Task { try await VideoExport.gif(from: video, to: cancelled) }
+    try await Task.sleep(for: .milliseconds(20))
+    task.cancel()
+    var threw: (any Error)?
+    do { _ = try await task.value } catch { threw = error }
+    #expect(threw is CancellationError || threw == nil, "取消后抛的是 \(String(describing: threw))")
+    #expect(threw == nil || !FileManager.default.fileExists(atPath: cancelled.path))
+
+    note(
+      "转成 GIF（录屏录音第 7 批）",
+      [
+        "只录画面、一直在动的 2 s：视频 \(Int(natural.width))×\(Int(natural.height))，视频轨 \(fmt(range.start.seconds))–\(String(format: "%.2f", range.end.seconds)) s → GIF \(gif.frames) 帧、\(Int(gif.size.width))×\(Int(gif.size.height))、循环 \(gif.loops.map(String.init) ?? "没写")、延时 \(Set(gif.delays.map { String(format: "%.3f", $0) }).sorted().joined(separator: " / ")) s、\(Int64(bytes).formatted(.byteCount(style: .file)))，转换耗时 \(String(format: "%.2f", elapsed)) s（每帧 \(String(format: "%.1f", elapsed / Double(max(gif.frames, 1)) * 1000)) ms，60 s 的 900 帧约 \(String(format: "%.0f", elapsed / Double(max(gif.frames, 1)) * 900)) s）",
+        "带系统声音、只动头 1 s：视频轨到 \(String(format: "%.2f", stillEnd)) s、文件 \(String(format: "%.2f", stillDuration)) s → GIF \(held.frames) 帧，最后一帧停 \(String(format: "%.2f", held.delays.last ?? 0)) s，总长 \(String(format: "%.2f", total)) s",
+        "转到一半取消：\(threw.map { "\(type(of: $0))" } ?? "取消前已经转完")，留下文件 \(FileManager.default.fileExists(atPath: cancelled.path))",
       ])
   }
 

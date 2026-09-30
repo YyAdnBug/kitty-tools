@@ -319,8 +319,11 @@ struct VideoMarks: View {
     }
   }
 
-  private var duration: some View {
-    Text(ScreenRecorder.clock(seconds))
+  private var duration: some View { Self.capsule(ScreenRecorder.clock(seconds)) }
+
+  /// 左下角的小胶囊（时长；GIF 卡的「GIF」同一个样式，录屏录音第 7 批）：11 pt semibold 等宽数字、HUD 底色、高 18、离角 6
+  static func capsule(_ text: String) -> some View {
+    Text(text)
       .font(.system(size: 11, weight: .semibold).monospacedDigit())
       .lineLimit(1)
       .padding(.horizontal, 6)
