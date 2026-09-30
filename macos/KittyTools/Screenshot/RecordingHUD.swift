@@ -414,7 +414,7 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     button.action = #selector(startClicked(_:))
     button.toolTip = "马上开始"
     button.setAccessibilityLabel("马上开始")
-    let host = PassiveHost(rootView: CountdownText(reading: reading))
+    let host = PassiveHost(rootView: AnyView(CountdownText(reading: reading)))
     host.sizingOptions = [.intrinsicContentSize]
     host.translatesAutoresizingMaskIntoConstraints = false
     // 按钮自己没有内容尺寸（0，抗拉伸 250）：宿主不压扁，按钮跟着它的宽度走
@@ -431,7 +431,7 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
 
   /// 录制中的读数：红点 + 计时（录音另有暂停时顶替红点的暂停符号、计时后面的「没听到声音」，平时藏着、不占宽度）
   private func makeClock() -> NSView {
-    let host = PassiveHost(rootView: ClockText(reading: reading))
+    let host = PassiveHost(rootView: AnyView(ClockText(reading: reading)))
     host.sizingOptions = [.intrinsicContentSize]
     let row = NSStackView(views: medium == .audio ? [dot, pauseMark, host, silence] : [dot, host])
     row.spacing = 6
@@ -613,8 +613,10 @@ private final class LevelMeter: NSView {
   }
 }
 
-/// 只显示、不接鼠标的 SwiftUI 宿主：点击落到外面的按钮 / HUD 上（读数上也能拖、点倒数数字是按钮）
-private final class PassiveHost<Content: View>: NSHostingView<Content> {
+/// 只显示、不接鼠标的 SwiftUI 宿主：点击落到外面的按钮 / HUD 上（读数上也能拖、点倒数数字是按钮）。
+/// 用 AnyView、不写成泛型子类：泛型的 NSHostingView 子类在 Release 优化时（EarlyPerfInliner 处理它的 deinit）让
+/// Swift 6.2.4 编译器崩溃（2026-09-30 打 0.3.0 包时实测，Debug 不优化所以没事）；非泛型子类（ShelfHostingView）没问题
+private final class PassiveHost: NSHostingView<AnyView> {
   override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
