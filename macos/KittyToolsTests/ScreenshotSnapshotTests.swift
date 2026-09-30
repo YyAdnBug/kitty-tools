@@ -9,7 +9,8 @@ import Testing
 // 工具栏上下、按工具的样式托盘、10 种标注与选中手柄、弯箭头和弯直线（选中 / 拖弯曲手柄 / 各种颜色粗细 / 弯到头）、尺寸输入、文字输入（三种样式）、比例和保存菜单、右键提示、截图翻译框选、常驻缩略图
 // （飞行卡片落地后交接的同一张卡）、长截图面板与边框，按 2x 写成 PNG（带 -crop 的是局部，看线和图标对不对齐）。
 // 录屏框选（待选提示、调整阶段的录制条、截图里按 R 切过去的录制条）和录制 HUD（倒数、录制中、放弃上膛）也在这里；
-// 第 3 批补了常驻缩略图的视频卡（落地、悬停、矮卡、没有最后一帧的占位）。
+// 第 3 批补了常驻缩略图的视频卡（落地、悬停、矮卡、没有最后一帧的占位）；第 4 批补了录制条的三个开关（默认 = 混合、全开、
+// 全关，全开 / 全关再按石墨、黄色强调色各一遍）和录制 HUD 的声音状态（两个都开、只开系统声音、麦克风断开变橙）。
 // 状态用 SelectionInteractionTests 的屏外窗口 + 合成事件摆（不弹遮罩、不抢键盘）；图层要在窗口里显示过才有内容，
 // 所以把屏外 (-20000, -20000) 的无边框窗口（当不了 key）orderFront 一下再 layer.render(in:)。材质在屏外会发灰，只锁布局。
 //   TEST_RUNNER_KITTY_SNAPSHOT_DIR=/tmp/shots xcodebuild -project macos/KittyTools.xcodeproj \
@@ -214,6 +215,29 @@ struct ScreenshotSnapshotTests {
     try shoot(h.window, "record-adjust", crop: CGRect(x: 150, y: 190, width: 900, height: 420))
     let bar = try #require(h.recordBar)
     try shoot(h.window, "record-adjust-bar", crop: bar.frame.insetBy(dx: -24, dy: -24))
+    // 录制条的三个开关（录屏第 4 批）：上面那张是默认（系统声音开、麦克风和显示点按关）；全开、全关（偏好在 Harness 的临时域）。
+    // 再换石墨（强调色比主文字色还暗）、黄色（最亮）各拍一遍：开和关要靠形状分得清。只换内存里的强调色，拍完换回
+    let savedAccent = Accent.shared.choice
+    defer { Accent.shared.select(savedAccent, persists: false) }
+    for (accent, suffix) in [
+      (AccentChoice?.none, ""), (.graphite, "-graphite"), (.yellow, "-yellow"),
+    ] {
+      if let accent { Accent.shared.select(accent, persists: false) }
+      for (name, on) in [("record-bar-on", true), ("record-bar-off", false)] {
+        h = record()
+        let prefs = h.view.styleDefaults
+        for key in [
+          Prefs.screenRecordSystemAudio, Prefs.screenRecordMicrophone,
+          Prefs.screenRecordShowsClicks,
+        ] {
+          prefs.set(on, forKey: key)
+        }
+        h.drag(CGPoint(x: 300.3, y: 260.7), CGPoint(x: 800.4, y: 560.2))
+        let toggled = try #require(h.recordBar)
+        try shoot(h.window, name + suffix, crop: toggled.frame.insetBy(dx: -24, dy: -24))
+      }
+    }
+    Accent.shared.select(savedAccent, persists: false)
     // 截图调整时按 R（录屏第 2 批）：工具栏原地换成录制条，选区、尺寸胶囊不变
     h = adjust()
     h.key(kVK_ANSI_R, "r")
@@ -330,11 +354,15 @@ struct ScreenshotSnapshotTests {
     let desktop = try Self.desktop()
     let region = CGRect(x: 160, y: 260, width: 640, height: 400)
     let bounds = CGRect(x: 0, y: 0, width: 1200, height: 800)
+    // 第 4 批：声音状态（-sound 两个都开、-system 只开系统声音、-mic-lost 麦克风断开变橙）；原来那四张不录声音，和以前一样
     for (name, state, counting, armed) in [
       ("record-hud-countdown", RecordingHUD.State.countdown(3), true, false),
       ("record-hud", .recording(12), false, false),
       ("record-hud-armed", .recording(12), false, true),
       ("record-hud-full", .recording(12), false, false),
+      ("record-hud-sound", .recording(12), false, false),
+      ("record-hud-system", .recording(12), false, false),
+      ("record-hud-mic-lost", .recording(12), false, false),
     ] {
       let full = name.hasSuffix("full")
       let root = NSView(frame: bounds)
@@ -346,8 +374,12 @@ struct ScreenshotSnapshotTests {
         if counting { border.update(lost: false, marching: true) }
         root.addSubview(border)
       }
-      let hud = RecordingHUD(state: state, stopKey: "⌥R")
+      let sound = ["record-hud-sound", "record-hud-system", "record-hud-mic-lost"].contains(name)
+      let hud = RecordingHUD(
+        state: state, stopKey: "⌥R", systemAudio: sound,
+        microphone: sound && name != "record-hud-system")
       if armed { try #require(hud.button(for: .discard)).performClick(nil) }
+      if name == "record-hud-mic-lost" { hud.microphoneLost(animated: false) }
       hud.panel.contentView = NSView()  // 从它自己的窗口里拿出来，摆到假桌面上
       hud.frame.origin = RecordingHUD.origin(
         size: hud.frame.size, region: full ? bounds : region, screen: bounds,

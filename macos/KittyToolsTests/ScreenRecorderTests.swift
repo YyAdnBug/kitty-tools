@@ -2,8 +2,12 @@
 // 流停止 / 开录失败的错误码怎么归类、写入失败时按哪个原因说、结果岛的文案、存盘名字按开录时刻、闪退恢复（文件不在 / 打不开）；
 // 第 2 批：倒数秒数与播报、放弃 / 取消的结果、录屏设置的默认值。HUD 在 RecordingHUDTests。
 // 第 3 批：最后一帧的取帧时刻与尺寸上限、取不到时 nil。视频卡在 VideoCardTests。
+// 第 4 批：录制条三个开关的默认值与读偏好、按开关配流和挂哪几路空输出、麦克风授权这一步怎么走、麦克风出错的原因、
+// 麦克风中途断开时的结果岛、等麦克风授权框时停止（当取消、开关弹回）。录制条本身在 SelectionInteractionTests，HUD 的声音状态在
+// RecordingHUDTests。
 // 真录制在按需实录自检 RecordingProbeTests.screenRecorderTake。
 
+import AVFoundation
 import Foundation
 import ScreenCaptureKit
 import Testing
@@ -66,6 +70,13 @@ struct ScreenRecorderTests {
     #expect(text == "没能开始录制：没有可录的屏幕")
     #expect(ScreenRecorder.Reason.user.note == nil)
     #expect(ScreenRecorder.Reason.locked.note == "锁屏时已自动停止")
+    // 第 4 批：-3820 麦克风出错——流停了按系统中止收尾、原因说麦克风；开录就报这个也说麦克风
+    #expect(
+      ScreenRecorder.reason(streamStopped: domain, code: -3820, text: "mic").note
+        == "麦克风出了问题，已自动停止")
+    #expect(
+      ScreenRecorder.reason(startFailed: NSError(domain: domain, code: -3820))
+        == .failed("没能开始录制：麦克风出了问题"))
   }
 
   /// 停止原因第一个为准：磁盘满时系统停流（-3821）和写入失败一起来，已经记下的中断原因不被「写入失败」盖掉；
@@ -152,6 +163,19 @@ struct ScreenRecorderTests {
     #expect(summary(nil, .cancelled) == [])
     #expect(
       ScreenRecorder.Reason.discarded.note == nil && ScreenRecorder.Reason.cancelled.note == nil)
+    // 第 4 批：录制中麦克风断开——正常停也是警告岛（用户要知道），卡片上有文件，详情省掉文件名；中断 / 挪不进目录的补在时长前
+    func lost(_ reason: ScreenRecorder.Reason, moved: Bool = true) -> [String] {
+      var result = ScreenRecorder.Result(
+        file: saved, moved: moved, duration: .seconds(72), reason: reason)
+      result.microphoneLost = true
+      guard let text = ScreenRecorder.summary(result, folder: "桌面") else { return [] }
+      return [text.title, text.detail, "\(text.tone)"]
+    }
+    #expect(lost(.user) == ["已保存录屏", "后半段没有麦克风声音 · 1:12", "warning"])
+    #expect(lost(.locked) == ["已保存已录的部分", "锁屏时已自动停止 · 后半段没有麦克风声音 · 1:12", "warning"])
+    #expect(
+      lost(.user, moved: false) == ["录屏没能存进「桌面」", "已在访达中显示 · 后半段没有麦克风声音 · 1:12", "warning"])
+    #expect(lost(.discarded) == ["已放弃录屏", "没有保存", "info"])
   }
 
   /// 倒数（拍板 R9-a）：设置给 0 / 3 / 5，0…5 之间照用（实录自检用 1 s），出了范围按默认 3；播报按实际秒数
@@ -213,5 +237,95 @@ struct ScreenRecorderTests {
     #expect(registered[Prefs.screenRecordFrameRate] as? Int == 30)
     #expect(registered[Prefs.screenRecordCountdown] as? Int == 3)
     #expect(registered[Prefs.screenRecordShowsCursor] as? Bool == true)
+    // 第 4 批：录制条的开关——系统声音开、麦克风关、显示点按关
+    #expect(registered[Prefs.screenRecordSystemAudio] as? Bool == true)
+    #expect(registered[Prefs.screenRecordMicrophone] as? Bool == false)
+    #expect(registered[Prefs.screenRecordShowsClicks] as? Bool == false)
+  }
+
+  /// 录制条三个开关从偏好读：没存过按默认（临时偏好域里没有注册域，默认写在 Options 里、和 registerDefaults 一致），存过的照读
+  @Test func optionsFromDefaults() throws {
+    let suite = "kitty-test-options-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    #expect(ScreenRecorder.Options(defaults) == ScreenRecorder.Options())
+    #expect(
+      ScreenRecorder.Options() == .init(systemAudio: true, microphone: false, showsClicks: false))
+    defaults.set(false, forKey: Prefs.screenRecordSystemAudio)
+    defaults.set(true, forKey: Prefs.screenRecordMicrophone)
+    defaults.set(true, forKey: Prefs.screenRecordShowsClicks)
+    #expect(
+      ScreenRecorder.Options(defaults)
+        == .init(systemAudio: false, microphone: true, showsClicks: true))
+  }
+
+  /// 按开关配流：录什么挂什么空输出（画面总挂）；系统声音 48 kHz 立体声；麦克风跟随系统输入；显示点按要 BGRA，
+  /// 关着时不动默认像素格式（也不开点按）
+  @Test func configureFollowsOptions() {
+    let plain = SCStreamConfiguration()
+    let defaultFormat = plain.pixelFormat
+    #expect(
+      ScreenRecorder.configure(
+        plain, .init(systemAudio: false, microphone: false, showsClicks: false))
+        == [.screen])
+    #expect(!plain.capturesAudio && !plain.captureMicrophone && !plain.showMouseClicks)
+    #expect(plain.pixelFormat == defaultFormat)
+
+    let all = SCStreamConfiguration()
+    #expect(
+      ScreenRecorder.configure(all, .init(systemAudio: true, microphone: true, showsClicks: true))
+        == [.screen, .audio, .microphone])
+    #expect(all.capturesAudio && all.sampleRate == 48_000 && all.channelCount == 2)
+    #expect(all.captureMicrophone && all.microphoneCaptureDeviceID == nil)
+    #expect(all.showMouseClicks && all.pixelFormat == kCVPixelFormatType_32BGRA)
+
+    let micOnly = SCStreamConfiguration()
+    #expect(
+      ScreenRecorder.configure(micOnly, .init(systemAudio: false, microphone: true))
+        == [.screen, .microphone])
+    #expect(!micOnly.capturesAudio && micOnly.captureMicrophone)
+  }
+
+  /// 麦克风这一步（C1-a）：开关关着不管授权；允许就录；没问过才问（遮罩收起后）；拒绝过、受限不再问（照样开录、不带麦克风）
+  @Test func microphoneAccessSteps() {
+    let access = ScreenRecorder.microphoneAccess
+    for status in [AVAuthorizationStatus.notDetermined, .denied, .restricted, .authorized] {
+      #expect(access(false, status) == .unused)
+    }
+    #expect(access(true, .authorized) == .granted)
+    #expect(access(true, .notDetermined) == .ask)
+    #expect(access(true, .denied) == .denied)
+    #expect(access(true, .restricted) == .denied)
+  }
+
+  /// 麦克风授权框开着时要停（再按快捷键、锁屏、退出……）：框返回后直接取消，不进倒数、不开流、不留文件（倒数 0 也一样）；
+  /// 点了不允许：开关弹回（下次录制条上是关的），刚点的不打开系统设置。授权状态和系统框都是注入的，不真弹框、不真开流
+  @Test func stopWhileAskingMicrophoneCancels() async throws {
+    let suite = "kitty-test-mic-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    defaults.set(0, forKey: Prefs.screenRecordCountdown)
+    defaults.set(true, forKey: Prefs.screenRecordMicrophone)
+    let folder = FileManager.default.temporaryDirectory.appending(path: "kitty-mic-\(UUID())")
+    let screen = try #require(NSScreen.screens.first).frame
+    var finished: ScreenRecorder.Result?
+    let recorder = try #require(
+      ScreenRecorder(
+        region: CGRect(x: screen.minX + 100, y: screen.minY + 100, width: 320, height: 200),
+        directory: folder, defaults: defaults
+      ) { finished = $0 })
+    var answer: CheckedContinuation<Bool, Never>?
+    recorder.microphoneStatus = { .notDetermined }
+    recorder.requestMicrophone = { await withCheckedContinuation { answer = $0 } }
+    recorder.start()
+    for _ in 0..<100 where answer == nil { try await Task.sleep(for: .milliseconds(10)) }
+    recorder.stop()  // 屏幕上还什么都没有时再按了一次 ⌥R
+    try #require(answer).resume(returning: false)
+    for _ in 0..<100 where finished == nil { try await Task.sleep(for: .milliseconds(10)) }
+    let result = try #require(finished, "没收尾")
+    #expect(result.reason == .cancelled && result.file == nil && result.duration == .zero)
+    #expect(!result.microphoneDenied)
+    #expect(!ScreenRecorder.Options(defaults).microphone)
+    #expect(ScreenRecorder.summary(result, folder: "桌面") == nil)
   }
 }

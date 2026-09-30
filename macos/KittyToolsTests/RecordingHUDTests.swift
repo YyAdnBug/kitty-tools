@@ -1,6 +1,7 @@
 // 录制 HUD（录屏第 2 批，RecordingHUD）：摆位（选区外 = 录制条的位置、整屏 = 可见区底部居中离底 24、拖过的按拖到的地方）、
 // 放弃要点两下的时序（纯状态）、窗口不进截图冻结帧和录制白名单（状态栏层级的普通 NSPanel，永不当 key）、按钮在两种状态下
-// 交回什么。HUD 的窗口只建不显示（不弹到屏幕上、不抢键盘）。
+// 交回什么；录制中的声音状态（录屏第 4 批：只读图标、两个都关不显示、麦克风断开变橙）。HUD 的窗口只建不显示（不弹到屏幕上、
+// 不抢键盘）。
 
 import AppKit
 import Testing
@@ -154,5 +155,49 @@ struct RecordingHUDTests {
 
     let unbound = RecordingHUD(state: .recording(0), stopKey: nil)
     #expect(try #require(unbound.button(for: .stop)).toolTip == "停止并保存")
+  }
+
+  /// 录制中的声音状态（第 4 批）：计时和 ✕ 之间两个只读图标（开 = 强调色、关 = 再次文字色 + 斜杠），两个都关不显示这段；
+  /// 倒数时没有；开录时的麦克风断开 → 麦克风图标变 systemOrange、旁白说后面没有麦克风声音（只对开着的麦克风）
+  @Test func soundStatusIsReadOnly() throws {
+    func icons(_ hud: RecordingHUD) -> [NSImageView] {
+      var found: [NSImageView] = []
+      var queue: [NSView] = [hud]
+      while let view = queue.popLast() {
+        if let image = view as? NSImageView, !(view.superview is NSButton) { found.append(image) }
+        queue += view.subviews
+      }
+      return found.sorted {
+        $0.convert($0.bounds, to: hud).minX < $1.convert($1.bounds, to: hud).minX
+      }
+    }
+    let silent = RecordingHUD(state: .recording(0), stopKey: nil)
+    #expect(icons(silent).isEmpty)
+    let both = RecordingHUD(state: .countdown(3), stopKey: nil, systemAudio: true, microphone: true)
+    #expect(icons(both).isEmpty)  // 倒数时不显示
+    both.update(.recording(0))
+    let shown = icons(both)
+    #expect(shown.map { $0.accessibilityLabel() } == ["系统声音：开", "麦克风：开"])
+    #expect(shown.allSatisfy { $0.contentTintColor == Style.Shot.accent })
+    #expect(shown.allSatisfy { $0.toolTip == "录制中不能开关声音" })
+    #expect(both.frame.width > silent.frame.width)
+    // 声音图标在计时和 ✕ 之间
+    let close = try #require(both.button(for: .discard))
+    #expect(
+      shown.allSatisfy {
+        $0.convert($0.bounds, to: both).maxX < close.convert(close.bounds, to: both).minX
+      })
+    both.microphoneLost()
+    let lost = icons(both)
+    #expect(lost[1].contentTintColor == .systemOrange)
+    #expect(lost[1].accessibilityLabel() == "麦克风断开了，后面没有麦克风声音")
+    #expect(lost[0].contentTintColor == Style.Shot.accent)
+
+    let systemOnly = RecordingHUD(state: .recording(0), stopKey: nil, systemAudio: true)
+    let mixed = icons(systemOnly)
+    #expect(mixed.map { $0.accessibilityLabel() } == ["系统声音：开", "麦克风：关"])
+    #expect(mixed[1].contentTintColor == Style.HUD.tertiaryText)
+    systemOnly.microphoneLost()  // 没录麦克风：不变
+    #expect(icons(systemOnly)[1].contentTintColor == Style.HUD.tertiaryText)
   }
 }

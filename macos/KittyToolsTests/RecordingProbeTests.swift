@@ -10,7 +10,9 @@
 // 过十几秒再加 TEST_RUNNER_KITTY_LIVE_RECORD_INSPECT=1 只跑 crashInspect() 看留下的文件。报告在 <输出目录>/report.md。
 // 录屏第 1 批加了 screenRecorderTake()：用 ScreenRecorder 真录 2 s（只验产品代码，可以单独跑）；第 2 批起先倒数 1 s
 // （录制 HUD 从倒数换成录制态，倒数不进文件：录下来仍是 2 s），录制中连 HUD 一起截图；第 3 批起顺带验最后一帧（poster）的
-// 尺寸和内容（存成 recorder-poster.png，看完和视频一起删）。
+// 尺寸和内容（存成 recorder-poster.png，看完和视频一起删）；第 4 批起按录制条的偏好开系统声音 + 麦克风 + 显示点按（BGRA）：
+// 0.5 s 时 afplay 放一声，验文件只有一条音轨、前 0.4 s 有麦克风底噪（第 0 批的对照法：只录系统声音那段是数字静音）、
+// BGRA 的文件能播，报告里记这段时间系统日志「NOT found」的条数（录什么挂什么空输出，应为 0）。要麦克风授权（Dev 版已有）。
 import AVFoundation
 import AppKit
 import ScreenCaptureKit
@@ -575,6 +577,13 @@ struct RecordingProbeTests {
     defaults.set(1, forKey: Prefs.screenRecordCountdown)
     defaults.set(30, forKey: Prefs.screenRecordFrameRate)
     defaults.set(true, forKey: Prefs.screenRecordShowsCursor)
+    // 第 4 批：录制条的三个开关全开（麦克风要已授权：没授权时 ScreenRecorder 会照样开录、不带麦克风，下面的底噪断言会失败）
+    defaults.set(true, forKey: Prefs.screenRecordSystemAudio)
+    defaults.set(true, forKey: Prefs.screenRecordMicrophone)
+    defaults.set(true, forKey: Prefs.screenRecordShowsClicks)
+    try #require(
+      AVCaptureDevice.authorizationStatus(for: .audio) == .authorized, "Dev 版没有麦克风授权")
+    let since = Date.now
     let folder = Self.directory.appending(path: "recorder")
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     let visible = env.screen.visibleFrame
@@ -635,6 +644,7 @@ struct RecordingProbeTests {
     // 头 1 s 让左边那块来回挪（画面在动才出新帧），之后停在原位
     let origin = listed.frame.origin
     for step in 0..<60 {
+      if step == 30 { play("Glass") }  // 约 0.5 s：别的进程出声，系统声音录得进去
       listed.setFrameOrigin(CGPoint(x: origin.x + CGFloat(step % 20) * 3, y: origin.y))
       try await Task.sleep(for: .milliseconds(16))
     }
@@ -678,8 +688,20 @@ struct RecordingProbeTests {
     #expect(media.playable && media.codec == "avc1")
     #expect(abs(media.duration - 2) < 0.4, "时长 \(media.duration)")
     #expect(media.size == CGSize(width: 640 * scale, height: 360 * scale))
-    // 结尾那一帧：白名单里的窗口录进去了，不在白名单的没有（和背景比只记下来，桌面颜色可能碰巧相近）
-    let last = try #require(await frame(file, at: max(0, media.duration - 0.3)))
+    // 第 4 批：系统声音 + 麦克风混成一条音轨；Glass 在 0.5 s 后才响，前 0.4 s 不是数字静音就是麦克风的底噪
+    #expect(media.audioTracks == 1, "音轨 \(media.audioTracks)")
+    let asset = AVURLAsset(url: file)
+    let track = try #require(try await asset.loadTracks(withMediaType: .audio).first)
+    let head = try #require(peak(asset, track, to: 0.4), "读不出前 0.4 s 的音频")
+    #expect(head > 0, "前 0.4 s 是数字静音：麦克风没录进去")
+    let whole = peak(asset, track)
+    let logs = await notFoundLogs(since: since)
+    // 结尾那一帧：白名单里的窗口录进去了，不在白名单的没有（和背景比只记下来，桌面颜色可能碰巧相近）。
+    // 按视频轨的结束取（第 4 批：录了声音、画面后来不动时视频轨比文件短，停在最后一次画面变化）
+    let videoRange = try #require(
+      try await asset.loadTracks(withMediaType: .video).first?.load(.timeRange))
+    let videoEnd = videoRange.end.seconds
+    let last = try #require(await frame(file, at: max(0, videoEnd - 0.3)))
     let at = { (window: NSWindow) in
       pixel(
         last, x: Int((window.frame.midX - region.minX) * scale),
@@ -707,6 +729,7 @@ struct RecordingProbeTests {
         "先倒数 1 s 再开流：文件时长 \(String(format: "%.2f", media.duration)) s（录 2 s；倒数进了文件会是 3 s 左右）",
         "结尾一帧：白名单里的 NSWindow（红 230,26,26）读回 \(red)；不在白名单的 NSPanel（绿 26,204,51）处读回 \(green)",
         "最后一帧（第 3 批 poster）：\(poster.width)×\(poster.height)，红色窗口处读回 \(posterRed)",
+        "第 4 批：系统声音 + 麦克风 + 显示点按（BGRA）全开：视频轨到 \(String(format: "%.2f", videoEnd)) s（画面 1 s 后不动），音轨 \(media.audioTracks) 条，前 0.4 s 峰值 \(decibels(head))（麦克风底噪），整段 \(decibels(whole))（0.5 s 放了 Glass）；这段时间日志「NOT found」\(logs)",
       ] + media.summary)
   }
 

@@ -799,7 +799,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard
       let recorder = ScreenRecorder(
         region: region, directory: ScreenshotOutput.saveDirectory, hotKeys: hotKeys,
-        onFinish: { [weak self] in self?.recorded($0) })
+        island: island, onFinish: { [weak self] in self?.recorded($0) })
     else {
       return island.show("没能开始录屏", detail: "找不到选区所在的屏幕", tone: .warning)
     }
@@ -809,7 +809,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   /// 录屏收尾：文件已挪进快速保存目录（挪不过去的留在原地、在访达里选中），刘海岛说结果（成功时岛让菜单栏图标弹一下）；
-  /// 挪进去了还要飞卡片、留视频卡（landRecording）。倒数中取消的不出岛，只播报
+  /// 挪进去了还要飞卡片、留视频卡（landRecording）。倒数中取消的不出岛，只播报。录制中麦克风断开的（第 4 批）summary 是警告：
+  /// 卡片照飞，岛也出来说「后半段没有麦克风声音」；开着麦克风但之前拒绝过授权的，这时打开系统设置的麦克风页
   private func recorded(_ result: ScreenRecorder.Result) {
     recorder = nil
     updater.blocker = nil
@@ -820,6 +821,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
     }
     if result.reason == .denied { Permissions.Kind.screenRecording.openSettings() }
+    // 开着麦克风但之前拒绝过：开录时只出了警告岛，这时才打开（开录前打开会盖住选区、录进画面）
+    if result.microphoneDenied { Permissions.Kind.microphone.openSettings() }
     // 挪不进快速保存目录：在访达里选中留下的文件，马上能拖走
     if let file = result.file, !result.moved {
       NSWorkspace.shared.activateFileViewerSelecting([file])

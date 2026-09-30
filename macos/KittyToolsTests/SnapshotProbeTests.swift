@@ -476,6 +476,15 @@ struct SnapshotProbeTests {
           dark: dark, to: "\(out)/settings-general-menubar-\(name)\(dark ? "-dark" : "").png")
       }
     }
+    // 设置 › 通用拉长看到底的「权限」组（录屏第 4 批加了麦克风一行，状态是本机真实的授权）；临时偏好域
+    let permissionSuite = "kitty-snapshot-\(UUID().uuidString)"
+    let permissionPrefs = try #require(UserDefaults(suiteName: permissionSuite))
+    defer { permissionPrefs.removePersistentDomain(forName: permissionSuite) }
+    for dark in [false, true] {
+      try snapshot(
+        GeneralTab().defaultAppStorage(permissionPrefs), size: NSSize(width: 640, height: 1040),
+        dark: dark, to: "\(out)/settings-general-permissions\(dark ? "-dark" : "").png")
+    }
     // 菜单栏上的两种图标（浅色 / 深色菜单栏各一张，右边放大 5 倍）；彩色图的 @2x 位图另存原图
     for dark in [false, true] {
       try snapshot(

@@ -6,6 +6,8 @@
 //   只在录制态挂、HUD 一收就摘；放在 CALayer 上由渲染服务跑，不占主线程）；计时和菜单栏停止项同一个时钟
 //   （ScreenRecorder.clock，numericText，按 h:mm:ss 留宽度不跳）；放弃要点两下（第一下「上膛」变红，2 s 内再点才放弃）；
 //   停止是 28 pt 强调色实心圆 + ■（画法同录制条的 ●）。
+//   计时和 ✕ 之间是只读的声音状态 [系统声音][麦克风]（录屏第 4 批：录制中改不了配置；开 = 强调色、关 = 再次文字色 + 斜杠，
+//   两个都关不显示这段）；开录时的麦克风断开了，麦克风变 systemOrange + 斜杠。
 // 皮肤是 HUDBar（15 毛玻璃 behindWindow，26 液态玻璃）。窗口是普通 NSPanel 实例（mac-overlay-panel §1 不子类化）：
 // 状态栏层级（截图冻结帧、录制的白名单都不收它）、不激活本 App、永不当 key（无边框窗口本来就当不了）、按钮 acceptsFirstMouse、
 // 能拖；所有桌面、全屏 App 上都显示。出现：settle 淡入（录制条随遮罩收起，HUD 在同一位置接上，不再「长出」一次）；
@@ -61,6 +63,12 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   /// 倒数的读数是个按钮（点了马上开始），录制中的读数（红点 + 计时）只是显示
   private lazy var countdownButton = makeCountdownButton()
   private lazy var clock = makeClock()
+  /// 录制中的声音状态（只读）：这次录不录系统声音、麦克风（麦克风是开关开着且有授权）；两个都关时不显示
+  private let systemAudio: Bool
+  private let microphone: Bool
+  private let systemIcon = SoundIcon()
+  private let microphoneIcon = SoundIcon()
+  private lazy var sound = makeSound()
   private let dot = Dot()
   private lazy var separator = barSeparator()
   /// 倒数时是「取消」，录制中是「放弃」
@@ -76,11 +84,17 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   /// 这次运行里各屏拖到的位置（底边中点，全局坐标）
   private static var dragged: [CGDirectDisplayID: CGPoint] = [:]
 
-  /// stopKey：录屏快捷键（停止钮的提示里写它；没绑定 nil）；escapes：倒数的 Esc 注册上了
-  init(state: State, stopKey: String?, escapes: Bool = false) {
+  /// stopKey：录屏快捷键（停止钮的提示里写它；没绑定 nil）；escapes：倒数的 Esc 注册上了；
+  /// systemAudio / microphone：这次录不录（录制中的声音状态）
+  init(
+    state: State, stopKey: String?, escapes: Bool = false, systemAudio: Bool = false,
+    microphone: Bool = false
+  ) {
     self.state = state
     stopTip = stopKey.map { "停止并保存（\($0)）" } ?? "停止并保存"
     self.escapes = escapes
+    self.systemAudio = systemAudio
+    self.microphone = microphone
     panel = NSPanel(
       contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,
       defer: true)
@@ -163,7 +177,8 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     let recording = !Self.isCountdown(next)
     let views =
       recording
-      ? [clock, separator, closeButton, stopButton] : [countdownButton, separator, closeButton]
+      ? [clock] + (systemAudio || microphone ? [sound] : []) + [separator, closeButton, stopButton]
+      : [countdownButton, separator, closeButton]
     views.forEach(stack.addArrangedSubview)
     stack.edgeInsets.right = recording ? 6 : 4
     if recording { stack.setCustomSpacing(4, after: closeButton) }
@@ -179,6 +194,16 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     }
     // 红点：录制态出现时 pop，之后呼吸
     if recording { dot.start() } else { dot.stop() }
+  }
+
+  /// 开录时的麦克风断开了（录屏不停）：麦克风图标换成斜杠、变 systemOrange（.replace 过渡），提示和旁白说后面没有麦克风声音
+  /// animated：截图自检传 false（不拍到过渡的半截）
+  func microphoneLost(animated: Bool = true) {
+    guard microphone else { return }
+    microphoneIcon.show(
+      "mic.slash.fill", tint: .systemOrange, label: "麦克风断开了，后面没有麦克风声音",
+      animated: animated)
+    microphoneIcon.toolTip = "麦克风断开了，后面没有麦克风声音"
   }
 
   /// ✕ 的样子：倒数时「取消」，录制中「放弃录制」，上膛后变红「再点一次放弃」
@@ -312,6 +337,24 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     return row
   }
 
+  /// 声音状态：两个 13 pt 图标（开 = 强调色、关 = 再次文字色 + 斜杠），只读、提示「录制中不能开关声音」
+  private func makeSound() -> NSView {
+    let icons: [(SoundIcon, Bool, String, String, String)] = [
+      (systemIcon, systemAudio, "speaker.wave.2.fill", "speaker.slash.fill", "系统声音"),
+      (microphoneIcon, microphone, "mic.fill", "mic.slash.fill", "麦克风"),
+    ]
+    for (icon, on, symbol, off, name) in icons {
+      icon.show(
+        on ? symbol : off, tint: on ? Style.Shot.accent : Style.HUD.tertiaryText,
+        label: "\(name)：\(on ? "开" : "关")", animated: false)
+      icon.toolTip = "录制中不能开关声音"
+    }
+    let row = NSStackView(views: [systemIcon, microphoneIcon])
+    row.spacing = 2
+    row.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 4)
+    return row
+  }
+
   /// 停止：28 pt 强调色实心圆 + ■（画法同录制条的 ●、截图工具栏的拷贝钮），不出悬停底
   private func makeStopButton() -> BarButton {
     let button = barButton(
@@ -368,6 +411,37 @@ private final class Dot: NSView {
   }
 
   func stop() { dot.removeAllAnimations() }
+}
+
+/// 录制中的一个声音状态图标（只读，不接鼠标：点在上面算拖 HUD）：13 pt 分层符号，换图走 .replace（减弱动态效果时直接换）
+private final class SoundIcon: NSImageView {
+  init() {
+    super.init(frame: CGRect(x: 0, y: 0, width: 20, height: 32))
+    symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
+      .applying(.preferringHierarchical())
+    imageScaling = .scaleNone
+    setAccessibilityElement(true)
+    setAccessibilityRole(.image)
+    widthAnchor.constraint(equalToConstant: 20).isActive = true
+    heightAnchor.constraint(equalToConstant: 32).isActive = true
+  }
+
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+  func show(_ symbol: String, tint: NSColor, label: String, animated: Bool) {
+    guard let next = NSImage(systemSymbolName: symbol, accessibilityDescription: label) else {
+      return
+    }
+    if animated, !Style.reduceMotion, image != nil {
+      setSymbolImage(next, contentTransition: .replace)
+    } else {
+      image = next
+    }
+    contentTintColor = tint
+    setAccessibilityLabel(label)
+  }
 }
 
 /// 只显示、不接鼠标的 SwiftUI 宿主：点击落到外面的按钮 / HUD 上（读数上也能拖、点倒数数字是按钮）

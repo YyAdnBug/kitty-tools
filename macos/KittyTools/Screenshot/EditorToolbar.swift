@@ -4,11 +4,13 @@
 //   松手 40 ms 后从靠选区的那条边长出来（pop，bounce 0.18），拖动 / 缩放 / 平移选区时淡出让位；
 // - 样式托盘 StyleBar：高 34、圆角 10，按工具出 8 色点 ｜ 三档 ｜ 选项分段，锚在当前工具按钮下方 6 pt，换工具时位置和宽度 settle；
 // - HUDMenu：遮罩里的 HUD 弹出菜单（保存 ▾，之后尺寸胶囊的比例菜单也用它），不用 NSMenu（菜单层级低于遮罩，会被压在下面）；
-// - 录制条 RecordBar（录屏框选的调整阶段，放在主栏的位置）：一段 HUD 胶囊 [取消][● 开始录制]，长出 / 淡出同主栏。
+// - 录制条 RecordBar（录屏框选的调整阶段，放在主栏的位置）：一段 HUD 胶囊 [系统声音][麦克风][显示点按] ｜ [取消][● 开始录制]，
+//   长出 / 淡出同主栏；三个开关记在偏好里（录屏第 4 批）。
 // 永远深色（和系统 ⌘⇧5 一致）：模糊的是窗口里的冻结帧（withinWindow）；macOS 26 起材质是深色液态玻璃（HUDBar，
 // 主栏两段放进一个 NSGlassEffectContainerView，mac-whisker §2）。按钮都 acceptsFirstMouse（遮罩不是 key 的
 // 那块屏上也一点就响应）、不抢第一响应者（输入文字时点按钮不打断输入）。
 
+import AVFoundation
 import AppKit
 
 /// 遮罩里会「长出来 / 淡出」的控件：显示只走 setShown，不要直接改 isHidden。
@@ -413,17 +415,36 @@ final class EditorToolbar: PopView {
 
 // MARK: - 录制条
 
-/// 录屏框选调整时贴在选区旁的栏（截图主栏的位置，mac-whisker §6 截图「录屏」）：[取消][● 开始录制]，按钮同主栏
-/// （32 × 32、悬停底、按下 0.90），开始是 28 pt 强调色实心圆 + 实心圆点（画法同主栏的拷贝钮；强调色选红时靠 ● / ■ 形状
-/// 和停止分开）。第 4 批在取消前面加系统声音 / 麦克风 / 显示点按三个开关（Item 里加，按钮照 makeButtons 的写法）
+/// 录屏框选调整时贴在选区旁的栏（截图主栏的位置，mac-whisker §6 截图「录屏」）：[系统声音][麦克风][显示点按] ｜
+/// [取消][● 开始录制]，按钮同主栏（32 × 32、悬停底、按下 0.90），开始是 28 pt 强调色实心圆 + 实心圆点（画法同主栏的
+/// 拷贝钮；强调色选红时靠 ● / ■ 形状和停止分开）。三个开关（录屏第 4 批）开 = 图标染强调色（同长截图自动滚动钮的开启态），
+/// 关 = 换一个形状（斜杠 / 不带点击波纹），不只靠颜色（石墨强调色比主文字色还暗）；换图走 .replace；点了就写偏好（记住上次，
+/// 设置页不重复）并播报新状态，开录时 ScreenRecorder 读；每次长出来都按偏好重画（多屏时每块屏各一根，别的屏上点过的这根要跟上）。
+/// 麦克风没问过授权时打开只记偏好：遮罩开着时系统授权框会被压在下面，按开始、遮罩收起后才问
 final class RecordBar: HUDBar {
-  enum Item { case cancel, start }
+  enum Item { case systemAudio, microphone, clicks, cancel, start }
 
   var onClick: (Item) -> Void = { _ in }
-  private let items: [Item] = [.cancel, .start]
+  /// 开关记在哪（SelectionView.styleDefaults：交互测试换成临时偏好域）；换了就按它重画开关
+  var defaults: UserDefaults {
+    didSet { applyToggles(animated: false) }
+  }
+  private let items: [Item] = [.systemAudio, .microphone, .clicks, .cancel, .start]
+  /// 系统当前的输入设备（名字、是不是蓝牙）：第一次查要几十毫秒（实测约 70 ms），不在建栏、悬停、点击时查，提示要弹出 / 读屏时
+  /// 才查，这一次框选里记住
+  private lazy var input: (name: String, bluetooth: Bool)? = AVCaptureDevice.default(for: .audio)
+    .map { ($0.localizedName, Self.isBluetooth($0.transportType)) }
 
-  init() {
+  init(defaults: UserDefaults) {
+    self.defaults = defaults
     super.init(radius: Style.Radius.panel, height: 40)
+    let toggles = [Item.systemAudio, .microphone, .clicks].map { item in
+      let button = ToggleButton()
+      button.target = self
+      button.action = #selector(clicked(_:))
+      button.describe = { [unowned self] in tip(for: item, device: true) }
+      return button as BarButton
+    }
     let cancel = barButton(
       NSImage(systemSymbolName: "xmark", accessibilityDescription: "取消")!, tip: "取消（Esc）",
       label: "取消", action: #selector(clicked(_:)), size: CGSize(width: 32, height: 32))
@@ -436,10 +457,12 @@ final class RecordBar: HUDBar {
     start.layer?.cornerRadius = 14
     start.contentTintColor = Style.Shot.onAccent
     start.symbolConfiguration = .init(pointSize: 10, weight: .bold)
-    for (index, button) in [cancel, start].enumerated() { button.tag = index }
+    let buttons = toggles + [cancel, start]
+    for (index, button) in buttons.enumerated() { button.tag = index }
     stack.edgeInsets.right = 6
-    install([cancel, start])
+    install(toggles as [NSView] + [barSeparator(), cancel, start])
     stack.setCustomSpacing(4, after: cancel)
+    applyToggles(animated: false)
     fit()
   }
 
@@ -451,7 +474,131 @@ final class RecordBar: HUDBar {
     }
   }
 
-  @objc private func clicked(_ sender: NSButton) { onClick(items[sender.tag]) }
+  /// 长出来时按偏好重画开关：多屏时每块屏的遮罩各有一根录制条，在别的屏上点过的开关这根还不知道
+  override func grow(_ show: Bool, from edge: Edge = .top) {
+    if show, !isShown { applyToggles(animated: false) }
+    super.grow(show, from: edge)
+  }
+
+  /// 开关：写偏好、换图、播报新状态（不带设备名，不在点击路径上查设备）；也交给 onClick（点栏上的钮算点在 HUD 菜单外面、
+  /// 先提交尺寸输入，同截图主栏）
+  @objc private func clicked(_ sender: NSButton) {
+    let item = items[sender.tag]
+    if let key = Self.key(for: item) {
+      defaults.set(!isOn(item), forKey: key)
+      applyToggles(animated: true, only: item)
+      Island.announce(tip(for: item, device: false))
+    }
+    onClick(item)
+  }
+
+  private func isOn(_ item: Item) -> Bool {
+    let options = ScreenRecorder.Options(defaults)
+    return switch item {
+    case .systemAudio: options.systemAudio
+    case .microphone: options.microphone
+    case .clicks: options.showsClicks
+    case .cancel, .start: false
+    }
+  }
+
+  private static func key(for item: Item) -> String? {
+    switch item {
+    case .systemAudio: Prefs.screenRecordSystemAudio
+    case .microphone: Prefs.screenRecordMicrophone
+    case .clicks: Prefs.screenRecordShowsClicks
+    case .cancel, .start: nil
+    }
+  }
+
+  /// 开关的样子：符号（开 / 关形状不同）、强调色 / 主文字色。提示和旁白名字由 ToggleButton 要显示时现算（describe）
+  private func applyToggles(animated: Bool, only: Item? = nil) {
+    for item in [Item.systemAudio, .microphone, .clicks] where only == nil || only == item {
+      guard let button = button(for: item) as? ToggleButton else { continue }
+      let on = isOn(item)
+      let symbol =
+        switch item {
+        case .systemAudio: on ? "speaker.wave.2.fill" : "speaker.slash.fill"
+        case .microphone: on ? "mic.fill" : "mic.slash.fill"
+        default: on ? "cursorarrow.click.2" : "cursorarrow"
+        }
+      button.show(symbol, on: on, animated: animated)
+    }
+  }
+
+  /// 「系统声音：开」「麦克风：开（MacBook Air 麦克风）」「显示点按：关」。device：查系统当前输入设备（写设备名、蓝牙提示）
+  private func tip(for item: Item, device: Bool) -> String {
+    let on = isOn(item)
+    switch item {
+    case .systemAudio: return "系统声音：\(on ? "开" : "关")"
+    case .microphone:
+      let input = device ? input : nil
+      return Self.microphoneTip(on: on, device: input?.name, bluetooth: input?.bluetooth ?? false)
+    default: return "显示点按：\(on ? "开" : "关")"
+    }
+  }
+
+  /// 麦克风开关的提示（纯函数，配单测）：开时带设备名；当前输入是蓝牙时（开关两态都）再加一句，免得打开了才发现音质变差
+  nonisolated static func microphoneTip(on: Bool, device: String?, bluetooth: Bool) -> String {
+    let state = on ? "开" + (device.map { "（\($0)）" } ?? "") : "关"
+    return "麦克风：\(state)" + (bluetooth ? "\n蓝牙耳机麦克风会变成通话音质" : "")
+  }
+
+  /// AVCaptureDevice.transportType 是不是蓝牙（CoreAudio 的 kAudioDeviceTransportTypeBluetooth 'blue'、
+  /// kAudioDeviceTransportTypeBluetoothLE 'blea'；不为两个常量引入 CoreAudio）
+  nonisolated static func isBluetooth(_ transportType: Int32) -> Bool {
+    [0x626C_7565, 0x626C_6561].contains(UInt32(bitPattern: transportType))
+  }
+}
+
+/// 录制条的开关钮：符号放在按钮里的图像视图上（NSButton 换图没有符号过渡），换图走 .replace（减弱动态效果时直接换）；
+/// 开 = 强调色、关 = 主文字色。提示和旁白名字每次现算（麦克风要查当前输入设备）：提示走系统的懒提示（addToolTip +
+/// NSViewToolTipOwner），真要弹出时才问 describe，悬停出底的路径上不查设备
+final class ToggleButton: BarButton, NSViewToolTipOwner {
+  var describe: () -> String = { "" }
+  private let symbol = PassiveImageView()
+
+  init() {
+    // 一开始就是最终尺寸：图像视图按自动缩放掩码跟着按钮，从 0 × 0 长到 32 × 32 会被多撑出 32（图歪到右上角）
+    super.init(frame: CGRect(x: 0, y: 0, width: 32, height: 32))
+    title = ""
+    imagePosition = .noImage
+    isBordered = false
+    refusesFirstResponder = true
+    symbol.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
+      .applying(.preferringHierarchical())
+    symbol.imageScaling = .scaleNone
+    symbol.frame = bounds
+    symbol.autoresizingMask = [.width, .height]
+    addSubview(symbol)
+    widthAnchor.constraint(equalToConstant: 32).isActive = true
+    heightAnchor.constraint(equalToConstant: 32).isActive = true
+    addToolTip(bounds, owner: self, userData: nil)  // 视图对 owner 是弱引用
+  }
+
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  func show(_ name: String, on: Bool, animated: Bool) {
+    guard let next = NSImage(systemSymbolName: name, accessibilityDescription: nil) else { return }
+    if animated, !Style.reduceMotion, symbol.image != nil {
+      symbol.setSymbolImage(next, contentTransition: .replace)
+    } else {
+      symbol.image = next
+    }
+    symbol.contentTintColor = on ? Style.Shot.accent : Style.HUD.text
+  }
+
+  func view(
+    _ view: NSView, stringForToolTip tag: NSView.ToolTipTag, point: NSPoint,
+    userData data: UnsafeMutableRawPointer?
+  ) -> String { describe() }
+
+  override func accessibilityLabel() -> String? { describe() }
+}
+
+/// 只显示、不接鼠标的图像视图：点击落到外面的按钮上
+private final class PassiveImageView: NSImageView {
+  override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 // MARK: - 样式托盘

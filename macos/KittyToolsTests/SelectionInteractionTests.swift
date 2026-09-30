@@ -942,6 +942,107 @@ struct SelectionInteractionTests {
     #expect(h.view.selection == nil && !h.view.isAdjusting)
   }
 
+  /// 开关的图标（按钮里那个图像视图）：染什么色、是不是某个符号
+  private func toggleIcon(_ button: NSButton?) -> NSImageView? {
+    button?.subviews.lazy.compactMap { $0 as? NSImageView }.first
+  }
+
+  /// 录制条的三个开关（录屏第 4 批）：在 [取消][●] 前面，默认系统声音开、麦克风和显示点按关（开 = 强调色）；点了写偏好
+  /// （Harness 的临时偏好域），下一次框选的录制条照着它（记住上次）；开关不交回结果、不关遮罩
+  @Test func recordBarTogglesRememberChoices() async throws {
+    let h = Harness(mode: .record)
+    h.makeSelection()
+    let bar = try #require(h.recordBar)
+    let toggles = try [RecordBar.Item.systemAudio, .microphone, .clicks].map {
+      try #require(bar.button(for: $0) as? ToggleButton)
+    }
+    let cancel = try #require(bar.button(for: .cancel))
+    #expect(toggles.allSatisfy { $0.frame.maxX < cancel.frame.minX })
+    #expect(toggles[0].accessibilityLabel() == "系统声音：开")
+    #expect(toggles[1].accessibilityLabel()?.hasPrefix("麦克风：关") == true)
+    #expect(toggles[2].accessibilityLabel() == "显示点按：关")
+    let outcome = await h.outcome {
+      for toggle in toggles { toggle.performClick(nil) }
+    }
+    guard case .color("没交回结果")? = outcome else {
+      Issue.record("点开关不该结束框选：\(String(describing: outcome))")
+      return
+    }
+    #expect(toggles[0].accessibilityLabel() == "系统声音：关")
+    #expect(toggles[1].accessibilityLabel()?.hasPrefix("麦克风：开") == true)
+    #expect(toggles[2].accessibilityLabel() == "显示点按：开")
+    // 提示是系统的懒提示：要弹出时才问（不在悬停出底的路径上查输入设备）
+    let tip = { (button: ToggleButton) in
+      button.view(button, stringForToolTip: 0, point: .zero, userData: nil)
+    }
+    #expect(tip(toggles[0]) == "系统声音：关" && tip(toggles[2]) == "显示点按：开")
+    #expect(toggles.allSatisfy { $0.toolTip == nil })
+    let options = ScreenRecorder.Options(h.view.styleDefaults)
+    #expect(options == .init(systemAudio: false, microphone: true, showsClicks: true))
+    // 同一个偏好域里下一次框选：录制条照上次的
+    let next = Harness(mode: .record)
+    next.view.styleDefaults = h.view.styleDefaults
+    let again = try #require(next.recordBar?.button(for: .microphone))
+    #expect(again.accessibilityLabel()?.hasPrefix("麦克风：开") == true)
+  }
+
+  /// 显示点按开关两态换形状（关 = cursorarrow、开 = cursorarrow.click.2），不只靠颜色：强调色选石墨时强调色比主文字色还暗
+  @Test func clicksToggleChangesShape() throws {
+    let h = Harness(mode: .record)
+    h.makeSelection()
+    let clicks = try #require(h.recordBar?.button(for: .clicks))
+    let off = try #require(toggleIcon(clicks)?.image)
+    #expect(toggleIcon(clicks)?.contentTintColor == Style.HUD.text)
+    clicks.performClick(nil)
+    let on = try #require(toggleIcon(clicks)?.image)
+    #expect(toggleIcon(clicks)?.contentTintColor == Style.Shot.accent)
+    #expect(off.tiffRepresentation != on.tiffRepresentation)
+  }
+
+  /// 多屏：每块屏的遮罩各有一根录制条（共用同一个偏好域）。在一块屏上点了开关，另一块屏上长出来的录制条要按偏好重画，
+  /// 不能停在建栏时的样子
+  @Test func recordBarRedrawsTogglesWhenShown() throws {
+    let a = Harness(mode: .record)
+    let b = Harness(mode: .record)
+    b.view.styleDefaults = a.view.styleDefaults
+    let audio = try #require(b.recordBar?.button(for: .systemAudio))
+    #expect(toggleIcon(audio)?.contentTintColor == Style.Shot.accent)
+    a.makeSelection()
+    try #require(a.recordBar?.button(for: .systemAudio)).performClick(nil)
+    b.makeSelection()
+    #expect(toggleIcon(audio)?.contentTintColor == Style.HUD.text)
+    #expect(audio.accessibilityLabel() == "系统声音：关")
+  }
+
+  /// 点开关同点栏上别的钮：先收起 HUD 菜单（比例菜单开着时）
+  @Test func recordToggleClosesHUDMenu() throws {
+    let h = Harness(mode: .record)
+    h.makeSelection()
+    h.clickSize(nil)
+    #expect(h.menu?.accessibilityLabel() == "比例")
+    try #require(h.recordBar?.button(for: .clicks)).performClick(nil)
+    #expect(h.menu == nil)
+    #expect(h.view.isAdjusting)
+  }
+
+  /// 麦克风开关的提示：开时带设备名，当前输入是蓝牙（transportType 'blue' / 'blea'）时开关两态都加一句通话音质
+  @Test func microphoneTipAndBluetooth() {
+    #expect(
+      RecordBar.microphoneTip(on: true, device: "MacBook Air 麦克风", bluetooth: false)
+        == "麦克风：开（MacBook Air 麦克风）")
+    #expect(RecordBar.microphoneTip(on: true, device: nil, bluetooth: false) == "麦克风：开")
+    #expect(RecordBar.microphoneTip(on: false, device: "AirPods", bluetooth: false) == "麦克风：关")
+    #expect(
+      RecordBar.microphoneTip(on: true, device: "AirPods", bluetooth: true)
+        == "麦克风：开（AirPods）\n蓝牙耳机麦克风会变成通话音质")
+    #expect(
+      RecordBar.microphoneTip(on: false, device: "AirPods", bluetooth: true)
+        == "麦克风：关\n蓝牙耳机麦克风会变成通话音质")
+    #expect(RecordBar.isBluetooth(0x626C_7565) && RecordBar.isBluetooth(0x626C_6561))
+    #expect(!RecordBar.isBluetooth(0x626C_746E))  // 'bltn' 内置
+    #expect(!RecordBar.isBluetooth(0x7573_6220))  // 'usb '
+  }
+
   // MARK: 截图切录屏（录屏第 2 批，拍板 R2-a）
 
   /// 截图调整时按 R：会话切成录屏，工具栏原地换成录制条（工具收起）、选区不变，之后 ↩ 交回 .record(选区)；

@@ -111,6 +111,11 @@ enum Prefs {
   nonisolated static let screenRecordCountdownChoices = [0, 3, 5]
   /// 录屏里画光标（默认开）
   static let screenRecordShowsCursor = "screenRecordShowsCursor"
+  /// 录制条的三个开关，记住上次（录屏第 4 批；设置页不重复，拍板 C4-a）：录系统声音（默认开）、录麦克风（默认关；
+  /// 没问过授权时打开只记偏好，按开始、遮罩收起后才问）、显示点按（默认关，点击处画圈）
+  nonisolated static let screenRecordSystemAudio = "screenRecordSystemAudio"
+  nonisolated static let screenRecordMicrophone = "screenRecordMicrophone"
+  nonisolated static let screenRecordShowsClicks = "screenRecordShowsClicks"
 
   /// 识字后把同一段的换行合成一行（中日文直接连、其它加空格）
   static let ocrJoinLines = "ocrJoinLines"
@@ -166,6 +171,9 @@ enum Prefs {
       screenRecordFrameRate: 30,
       screenRecordCountdown: 3,
       screenRecordShowsCursor: true,
+      screenRecordSystemAudio: true,
+      screenRecordMicrophone: false,
+      screenRecordShowsClicks: false,
     ])
   }
 

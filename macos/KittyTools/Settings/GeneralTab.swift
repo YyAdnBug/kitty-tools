@@ -1,8 +1,10 @@
 // 设置 › 通用：外观（跟随系统 / 浅色 / 深色三张缩略图）与强调色（跟随系统 + 系统设置那一排 8 色，都是改了立刻生效）、
 // 呼出面板时挤压弹开（实验，剪贴板 / 启动器 / 翻译浮窗共用，2026-09-29 从启动器页挪来）、
 // 菜单栏图标（显示 / 隐藏、单色 / 彩色，StatusItem 看着偏好立刻跟着变，第 9 批 M1 M2）、登录时打开、
-// 权限状态（辅助功能、屏幕录制、15.4 起的剪贴板访问，三行同一种 PermissionRow；从未授权变已授权时符号替换 + 弹一下）。
+// 权限状态（辅助功能、屏幕录制、麦克风（录屏第 4 批）、15.4 起的剪贴板访问，同一种 PermissionRow；从未授权变已授权时
+// 符号替换 + 弹一下）。
 
+import AVFoundation
 import ServiceManagement
 import SwiftUI
 
@@ -13,6 +15,7 @@ struct GeneralTab: View {
   @AppStorage(Prefs.panelSqueezeEntrance) private var squeezeEntrance = false
   @State private var trusted = Permissions.isAccessibilityTrusted
   @State private var screenRecording = Permissions.isScreenRecordingAllowed
+  @State private var microphone = Permissions.microphoneStatus
   @State private var loginStatus = SMAppService.mainApp.status
   @State private var loginError: String?
   /// NSPasteboard.AccessBehavior 的 rawValue（这个类型 macOS 15.4 才有），窗口变成 key 时刷新
@@ -86,6 +89,19 @@ struct GeneralTab: View {
           Permissions.requestScreenRecording()
           Permissions.Kind.screenRecording.openSettings()
         }
+        // 没问过时请求（系统弹框，回来就刷新）；拒绝过 / 受限的系统不再弹框，打开系统设置的麦克风页
+        PermissionRow(
+          title: "麦克风", detail: "录屏时录下你的声音", symbol: "mic.fill",
+          color: Style.Family.screenshot, granted: microphone == .authorized
+        ) {
+          guard microphone == .notDetermined else {
+            return Permissions.Kind.microphone.openSettings()
+          }
+          Task {
+            _ = await Permissions.requestMicrophone()
+            microphone = Permissions.microphoneStatus
+          }
+        }
         if #available(macOS 15.4, *) { pasteboardAccess }
       }
     }
@@ -93,6 +109,7 @@ struct GeneralTab: View {
     .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
       trusted = Permissions.isAccessibilityTrusted
       screenRecording = Permissions.isScreenRecordingAllowed
+      microphone = Permissions.microphoneStatus
       loginStatus = SMAppService.mainApp.status
       pasteboardBehavior = Self.currentPasteboardBehavior
     }
