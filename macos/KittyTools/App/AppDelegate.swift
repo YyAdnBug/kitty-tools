@@ -809,12 +809,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     return true
   }
 
-  /// 录音（录音第 5 批，拍板 A1-a）：一键录麦克风，按一下开始、再按停止（菜单栏 / 启动器这时叫「停止录音」）。
-  /// 和录屏互斥（C9-a）：录屏在录（含倒数、等麦克风授权）时岛说先停止那一段；正在装更新时不开录（同录屏）
+  /// 录音（录音第 5 批，拍板 A1-a）：一键录，按一下开始、再按停止（菜单栏 / 启动器这时叫「停止录音」）；录什么看设置 › 截图
+  /// 「录音」的来源（第 6 批）。和录屏互斥（C9-a）：录屏在录（含倒数、等麦克风授权）时岛说先停止那一段；正在装更新时不开录
+  /// （同录屏）。录系统声音走录屏管线，要「屏幕录制」授权（同截图，screenRecordingAllowed）
   func audioRecord() {
     if let audioRecorder { return audioRecorder.stop() }
     guard !refusesRecording(.audio) else { return }
-    let recorder = AudioRecorder(directory: ScreenshotOutput.saveDirectory) { [weak self] in
+    guard
+      AudioRecorder.Source(.standard) == .microphone || screenRecordingAllowed(for: "录系统声音")
+    else { return }
+    let recorder = AudioRecorder(directory: ScreenshotOutput.saveDirectory, island: island) {
+      [weak self] in
       self?.recorded($0, .audio)
     }
     audioRecorder = recorder
@@ -855,9 +860,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.reply(toApplicationShouldTerminate: true)
       }
     }
-    if result.reason == .denied, medium == .screen {
-      Permissions.Kind.screenRecording.openSettings()
-    }
+    // 开录报屏幕录制授权问题（录屏、录系统声音）
+    if result.reason == .denied { Permissions.Kind.screenRecording.openSettings() }
     // 开着麦克风但之前拒绝过：开录时只出了警告岛，这时才打开（开录前打开会盖住选区、录进画面）
     if result.microphoneDenied { Permissions.Kind.microphone.openSettings() }
     // 挪不进快速保存目录：在访达里选中留下的文件，马上能拖走
@@ -981,20 +985,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     translatePanel.hideUnlessPinned()
   }
 
+  /// 有「屏幕录制」授权（截图家族、录系统声音开始前查）；没有就同设置 › 通用、引导里的授权按钮：请求一次（系统框只弹一次，
+  /// 所以同时打开系统设置的「屏幕录制」）+ 警告岛说 feature 要用，返回 false
+  private func screenRecordingAllowed(for feature: String) -> Bool {
+    guard !Permissions.isScreenRecordingAllowed else { return true }
+    Permissions.requestScreenRecording()
+    Permissions.Kind.screenRecording.openSettings()
+    island.show(
+      "需要「屏幕录制」授权", detail: "\(feature)要用，授权后可能要重新打开本 App", tone: .warning)
+    return false
+  }
+
   /// 查屏幕录制授权 → 冻结各屏（本 App 开着的窗口留在画面里）→ 暂停全局热键框选 → 遮罩收起后把 key 还给截图前的
   /// key 窗口（还开着的话；只 makeKey，不激活本 App）。没授权 / 截屏失败时用刘海提示，返回 nil。
   /// 框选期间别的热键会弹出浮层抢走 key（遮罩就收不到 Esc）；设置里正在录快捷键时热键本来就停着，结束后不能替它恢复
   private func frozenSelection<T>(
     _ feature: String, _ select: ([ScreenCapture.Shot]) async -> T?
   ) async -> T? {
-    guard Permissions.isScreenRecordingAllowed else {
-      // 同设置 › 通用、引导里的授权按钮：系统框只弹一次，所以同时打开系统设置的「屏幕录制」
-      Permissions.requestScreenRecording()
-      Permissions.Kind.screenRecording.openSettings()
-      island.show(
-        "需要「屏幕录制」授权", detail: "\(feature)要用，授权后可能要重新打开本 App", tone: .warning)
-      return nil
-    }
+    guard screenRecordingAllowed(for: feature) else { return nil }
     let shots: [ScreenCapture.Shot]
     do {
       shots = try await ScreenCapture.freeze()

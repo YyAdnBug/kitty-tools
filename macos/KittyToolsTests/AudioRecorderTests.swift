@@ -2,7 +2,10 @@
 // 满了两两合并）、「没听到声音」的门槛（−70 dB、开头 5 s）、电平竖条高度的映射（−50 dB → 2 pt、0 dB → 20 pt）、包络按条数重新
 // 分组、飞入起点（HUD 处和 poster 同比例的小框）、波形 poster 的尺寸和画法、结果岛的录音说法、闪退恢复（录音的偏好键）、
 // 授权（拒绝过 / 刚点了不允许 / 等授权框时停止——授权状态和系统框都是注入的，不真弹框、不真录音）。
-// 真录在按需实录自检 RecordingProbeTests.audioRecorderTake；录音 HUD 在 RecordingHUDTests，录音卡在 VideoCardTests。
+// 第 6 批（来源：系统声音 / 两者走录屏管线）补：一块样本的电平（dBFS 均方根）、「两者」只看麦克风那一路、来源的偏好、
+// 屏幕录制授权和麦克风授权的两种岛、存成 mp4（没能导出 m4a）的说法、音轨导出失败留着 mp4、「两者」等麦克风授权框时停止 =
+// 取消且来源弹回系统声音（不碰录制条的开关）。
+// 真录在按需实录自检 RecordingProbeTests.audioRecorderTake / audioRecorderSystemTake；录音 HUD 在 RecordingHUDTests，录音卡在 VideoCardTests。
 
 import AVFoundation
 import AppKit
@@ -131,7 +134,13 @@ struct AudioRecorderTests {
     #expect(summary(saved, moved: false, .user) == ["录音没能存进「桌面」", "已在访达中显示 · 1:05", "warning"])
     #expect(summary(nil, .failed("没能开始录音")) == ["录音失败", "没能开始录音", "error"])
     #expect(summary(nil, .discarded) == ["已放弃录音", "没有保存", "info"])
-    #expect(summary(nil, .denied) == ["需要麦克风授权", "到 系统设置 › 麦克风 里打开", "warning"])
+    #expect(summary(nil, .noMicrophoneAccess) == ["需要麦克风授权", "到 系统设置 › 麦克风 里打开", "warning"])
+    // 第 6 批：录系统声音走录屏管线，开录报授权问题是屏幕录制
+    #expect(summary(nil, .denied) == ["需要「屏幕录制」授权", "录系统声音要用，授权后可能要重新打开本 App", "warning"])
+    // 音轨没能导出成 m4a：存的是 mp4，正常停也是警告（卡片上有文件，省掉文件名）
+    let mp4 = URL(filePath: "/tmp/录音 2026-09-30 10.00.00.mp4")
+    #expect(summary(mp4, .user) == ["已保存录音", "没能转成 m4a，存的是 mp4 · 1:05", "warning"])
+    #expect(summary(mp4, .locked) == ["已保存已录的部分", "锁屏时已自动停止 · 没能转成 m4a，存的是 mp4 · 1:05", "warning"])
     #expect(summary(nil, .cancelled) == [])
 
     let suite = "kitty-test-audio-recover-\(UUID().uuidString)"
@@ -191,14 +200,116 @@ struct AudioRecorderTests {
     }
 
     let denied = try await run(.denied)
-    #expect(denied.reason == .denied && denied.microphoneDenied)
+    #expect(denied.reason == .noMicrophoneAccess && denied.microphoneDenied)
     let restricted = try await run(.restricted)
-    #expect(restricted.reason == .denied && restricted.microphoneDenied)
+    #expect(restricted.reason == .noMicrophoneAccess && restricted.microphoneDenied)
     let refused = try await run(.notDetermined, answer: false)
-    #expect(refused.reason == .denied && !refused.microphoneDenied)
+    #expect(refused.reason == .noMicrophoneAccess && !refused.microphoneDenied)
     let cancelled = try await run(.notDetermined, answer: true, stopsWhileAsking: true)
     #expect(cancelled.reason == .cancelled)
     #expect(ScreenRecorder.summary(cancelled, folder: "桌面", medium: .audio) == nil)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty)
+  }
+
+  /// 一块样本的电平（第 6 批，录屏管线的样本没有 metering）：dBFS 均方根，同 averagePower 的口径；空的、全 0 是 −120
+  @Test func powerOfSamples() {
+    #expect(AudioRecorder.power([]) == -120)
+    #expect(AudioRecorder.power([Float](repeating: 0, count: 1024)) == -120)
+    #expect(AudioRecorder.power([1, -1, 1, -1]) == 0)
+    #expect(abs(AudioRecorder.power([Float](repeating: 0.5, count: 512)) - -6.02) < 0.01)
+    // 满幅正弦的均方根是 1/√2，约 −3 dB；0.001 的底噪 −60 dB
+    let sine = (0..<4800).map { Float(sin(Double($0) * 2 * .pi * 440 / 48_000)) }
+    #expect(abs(AudioRecorder.power(sine) - -3.01) < 0.02)
+    #expect(abs(AudioRecorder.power([Float](repeating: 0.001, count: 64)) - -60) < 0.01)
+  }
+
+  /// 「两者」：画两路里最响的，「没听到声音」只看麦克风那一路（系统声音响、麦克风数字静音也要提示）
+  @Test func silenceListensToMicrophoneOnly() {
+    var both = AudioRecorder.Levels()
+    for _ in 0..<100 { both.add(-10, listening: -120) }
+    #expect(both.recent.last == -10 && !both.heard)
+    #expect(AudioRecorder.showsSilence(heard: both.heard, recorded: .seconds(5)))
+    both.add(-10, listening: -51)  // 麦克风的安静房间底噪
+    #expect(both.heard)
+  }
+
+  /// 来源（设置 › 截图「录音」）：默认麦克风（注册域，不落盘），临时偏好域里存什么读什么，认不出的按麦克风
+  @Test func sourceFromDefaults() throws {
+    Prefs.registerDefaults()
+    let registered = UserDefaults.standard.volatileDomain(forName: UserDefaults.registrationDomain)
+    #expect(registered[Prefs.audioRecordSource] as? String == "microphone")
+    let suite = "kitty-test-source-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    #expect(AudioRecorder.Source(defaults) == .microphone)
+    for source in [AudioRecorder.Source.system, .both, .microphone] {
+      defaults.set(source.rawValue, forKey: Prefs.audioRecordSource)
+      #expect(AudioRecorder.Source(defaults) == source)
+      #expect(
+        AudioRecorder(directory: FileManager.default.temporaryDirectory, defaults: defaults) { _ in
+        }.source == source)
+    }
+    defaults.set("speaker", forKey: Prefs.audioRecordSource)
+    #expect(AudioRecorder.Source(defaults) == .microphone)
+  }
+
+  /// 音轨导出（第 6 批）：读不出音轨（坏文件）返回 nil、mp4 原样留着；闪退恢复遇到打不开的 mp4 照旧留在原地说路径。
+  /// 存盘名的扩展名跟着文件走（没能导出时是「录音 ….mp4」）
+  @Test func extractAudioKeepsBrokenMP4() async throws {
+    let folder = FileManager.default.temporaryDirectory.appending(path: "kitty-audio-\(UUID())")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let broken = folder.appending(path: "录音 \(UUID()).mp4")
+    try Data("not a movie".utf8).write(to: broken)
+    #expect(await ScreenRecorder.extractAudio(from: broken) == nil)
+    #expect(FileManager.default.fileExists(atPath: broken.path))
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: broken.deletingPathExtension().appendingPathExtension("m4a").path))
+    #expect(ScreenRecorder.savedURL(for: broken, in: folder, medium: .audio).pathExtension == "mp4")
+
+    let suite = "kitty-test-audio-mp4-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    defaults.set(broken.path, forKey: Prefs.audioRecordingInProgress)
+    let found = try #require(
+      await ScreenRecorder.recover(into: folder, defaults: defaults, medium: .audio))
+    #expect(found.title == "上次录音没有正常结束，文件打不开")
+    #expect(FileManager.default.fileExists(atPath: broken.path))
+  }
+
+  /// 「两者」（录屏管线只录声音）：麦克风授权没问过时开录前问（没有遮罩）；等框时再按一次 = 取消（不开流、不出岛、不留文件和
+  /// 「进行中」记录），点了不允许的来源弹回「系统声音」、不碰录制条的麦克风开关。授权状态和系统框都是注入的
+  @Test func bothStopWhileAskingCancels() async throws {
+    let suite = "kitty-test-audio-both-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    defaults.set(AudioRecorder.Source.both.rawValue, forKey: Prefs.audioRecordSource)
+    let folder = FileManager.default.temporaryDirectory.appending(path: "kitty-audio-\(UUID())")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    var finished: ScreenRecorder.Result?
+    let recorder = AudioRecorder(directory: folder, defaults: defaults) { finished = $0 }
+    #expect(recorder.source == .both)
+    var answer: CheckedContinuation<Bool, Never>?
+    recorder.microphoneStatus = { .notDetermined }
+    recorder.requestMicrophone = { await withCheckedContinuation { answer = $0 } }
+    recorder.start()
+    // 进行中的是录屏管线写的 mp4，记在录音的键上
+    let working = try #require(defaults.string(forKey: Prefs.audioRecordingInProgress))
+    #expect(working.hasSuffix(".mp4"))
+    for _ in 0..<100 where answer == nil { try await Task.sleep(for: .milliseconds(10)) }
+    recorder.stop()
+    try #require(answer).resume(returning: false)
+    for _ in 0..<100 where finished == nil { try await Task.sleep(for: .milliseconds(10)) }
+    let result = try #require(finished, "没收尾")
+    #expect(result.reason == .cancelled && result.file == nil && result.poster == nil)
+    #expect(ScreenRecorder.summary(result, folder: "桌面", medium: .audio) == nil)
+    #expect(defaults.string(forKey: Prefs.audioRecordingInProgress) == nil)
+    #expect(AudioRecorder.Source(defaults) == .system)
+    // 只看这个临时域自己存的（别的测试调过 Prefs.registerDefaults 的话注册域里有默认值）
+    #expect(defaults.persistentDomain(forName: suite)?[Prefs.screenRecordMicrophone] == nil)
+    #expect(!FileManager.default.fileExists(atPath: working))
     #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty)
   }
 }

@@ -1,7 +1,8 @@
 // 录制 HUD（录屏第 2 批，RecordingHUD）：摆位（选区外 = 录制条的位置、整屏 = 可见区底部居中离底 24、拖过的按拖到的地方）、
 // 放弃要点两下的时序（纯状态）、窗口不进截图冻结帧和录制白名单（状态栏层级的普通 NSPanel，永不当 key）、按钮在两种状态下
 // 交回什么；录制中的声音状态（录屏第 4 批：只读图标、两个都关不显示、麦克风断开变橙）；录音的形态（录音第 5 批：暂停钮、
-// 暂停时的样子与旁白、「没听到声音」让 HUD 变宽、名字）。HUD 的窗口只建不显示（不弹到屏幕上、不抢键盘）。
+// 暂停时的样子与旁白、「没听到声音」让 HUD 变宽、名字）；录系统声音时不能暂停（录音第 6 批：⏸ 原位置灰、提示原因）、「两者」麦克风断开的橙字。
+// HUD 的窗口只建不显示（不弹到屏幕上、不抢键盘）。
 
 import AppKit
 import Testing
@@ -254,5 +255,49 @@ struct RecordingHUDTests {
     screen.setSilent(true)
     #expect(!screen.isPaused && screen.frame.width == screenWidth)
     #expect(try #require(screen.button(for: .discard)).accessibilityLabel() == "放弃录制")
+  }
+
+  /// 录系统声音（录音第 6 批，录屏管线没有暂停）：⏸ 还在原来的位置（HUD 一样宽）、置灰、提示为什么；点它不交回点击
+  @Test func systemAudioCannotPause() throws {
+    var clicks: [RecordingHUD.Item] = []
+    let hud = RecordingHUD(state: .recording(7), stopKey: nil, medium: .audio, pausable: false)
+    hud.onClick = { clicks.append($0) }
+    let pause = try #require(hud.button(for: .pause))
+    #expect(!pause.isEnabled && pause.alphaValue == 0.35)
+    #expect(pause.toolTip == "录系统声音时不能暂停" && pause.accessibilityLabel() == "暂停录音")
+    let pausable = RecordingHUD(state: .recording(7), stopKey: nil, medium: .audio)
+    #expect(hud.frame.width == pausable.frame.width)
+    #expect(try #require(pausable.button(for: .pause)).isEnabled)
+    pause.performClick(nil)
+    #expect(clicks.isEmpty)
+    try #require(hud.button(for: .stop)).performClick(nil)
+    #expect(clicks == [.stop])
+  }
+
+  /// 「两者」录着时麦克风断开（录音第 6 批，评审 S1）：录音 HUD 没有声音图标，「没听到声音」那个位置换成橙字「麦克风断开了」、
+  /// HUD 变宽；已经在出「没听到声音」时也换成它
+  @Test func audioMicrophoneLostShowsNote() throws {
+    func note(_ hud: RecordingHUD) -> NSTextField? {
+      var views: [NSView] = [hud]
+      while let view = views.popLast() {
+        if let label = view as? NSTextField, !label.isHidden, label.textColor == .systemOrange {
+          return label
+        }
+        views += view.subviews
+      }
+      return nil
+    }
+    let hud = RecordingHUD(state: .recording(7), stopKey: nil, medium: .audio, pausable: false)
+    let width = hud.frame.width
+    #expect(note(hud) == nil)
+    hud.microphoneLost()
+    let label = try #require(note(hud))
+    #expect(label.stringValue == "麦克风断开了")
+    #expect(label.toolTip == "麦克风断开了，后面没有麦克风声音")
+    #expect(hud.frame.width > width)
+    let silent = RecordingHUD(state: .recording(7), stopKey: nil, medium: .audio, pausable: false)
+    silent.setSilent(true)
+    silent.microphoneLost()
+    #expect(try #require(note(silent)).stringValue == "麦克风断开了")
   }
 }

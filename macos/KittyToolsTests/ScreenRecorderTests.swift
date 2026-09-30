@@ -5,7 +5,8 @@
 // 第 4 批：录制条三个开关的默认值与读偏好、按开关配流和挂哪几路空输出、麦克风授权这一步怎么走、麦克风出错的原因、
 // 麦克风中途断开时的结果岛、等麦克风授权框时停止（当取消、开关弹回）。录制条本身在 SelectionInteractionTests，HUD 的声音状态在
 // RecordingHUDTests。
-// 真录制在按需实录自检 RecordingProbeTests.screenRecorderTake。
+// 录音第 6 批（只录声音模式）：录的那一小块（屏内左上角 64 × 64 点）、存盘名的扩展名跟着文件走。
+// 真录制在按需实录自检 RecordingProbeTests.screenRecorderTake / audioRecorderSystemTake。
 
 import AVFoundation
 import Foundation
@@ -327,5 +328,19 @@ struct ScreenRecorderTests {
     #expect(!result.microphoneDenied)
     #expect(!ScreenRecorder.Options(defaults).microphone)
     #expect(ScreenRecorder.summary(result, folder: "桌面") == nil)
+  }
+
+  /// 只录声音（录音第 6 批）：那块屏左上角 64 × 64 点，sourceRect 是屏内 (0, 0, 64, 64)；副屏也一样
+  @Test func audioOnlyRegionIsTopLeftCorner() {
+    for screen in [
+      CGRect(x: 0, y: 0, width: 1440, height: 900),
+      CGRect(x: 1440, y: -200, width: 1920, height: 1080),
+    ] {
+      let region = ScreenRecorder.audioOnlyRegion(screen)
+      #expect(region == CGRect(x: screen.minX, y: screen.maxY - 64, width: 64, height: 64))
+      let rect = RegionSelector.captureRect(region, in: screen, scale: 2)
+      #expect(rect.region == region && rect.source == CGRect(x: 0, y: 0, width: 64, height: 64))
+    }
+    #expect(ScreenRecorder.audioOnlyPixels == 128)
   }
 }

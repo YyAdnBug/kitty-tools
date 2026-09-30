@@ -118,6 +118,9 @@ enum Prefs {
   nonisolated static let screenRecordSystemAudio = "screenRecordSystemAudio"
   nonisolated static let screenRecordMicrophone = "screenRecordMicrophone"
   nonisolated static let screenRecordShowsClicks = "screenRecordShowsClicks"
+  /// 录音的来源（录音第 6 批，设置 › 截图「录音」）：AudioRecorder.Source 的 rawValue——麦克风（默认）/ 系统声音 / 两者；
+  /// 「两者」被拒麦克风授权时弹回「系统声音」（同录制条的麦克风开关）
+  nonisolated static let audioRecordSource = "audioRecordSource"
 
   /// 识字后把同一段的换行合成一行（中日文直接连、其它加空格）
   static let ocrJoinLines = "ocrJoinLines"
@@ -176,6 +179,7 @@ enum Prefs {
       screenRecordSystemAudio: true,
       screenRecordMicrophone: false,
       screenRecordShowsClicks: false,
+      audioRecordSource: AudioRecorder.Source.microphone.rawValue,
     ])
   }
 

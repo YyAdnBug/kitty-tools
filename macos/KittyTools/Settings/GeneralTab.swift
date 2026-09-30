@@ -83,7 +83,7 @@ struct GeneralTab: View {
           Permissions.openAccessibilitySettings()
         }
         PermissionRow(
-          title: "屏幕录制", detail: "截图、截图翻译、识字；授权后可能要重新打开本 App 才生效",
+          title: "屏幕录制", detail: "截图、截图翻译、识字、录屏、录系统声音；授权后可能要重新打开本 App 才生效",
           symbol: "record.circle", color: Style.Family.screenshot, granted: screenRecording
         ) {
           Permissions.requestScreenRecording()

@@ -12,12 +12,31 @@
 //   录制期间防系统闲置睡眠（不禁显示器睡眠）。
 // - 界面：RecordingHUD 的录音形态（鼠标所在屏可见区底部居中）+ 菜单栏「■ 0:42」停止项（同录屏）；停止后电平包络画成波形
 //   poster，AppDelegate 从 HUD 的位置按 S1 飞到右下角、交给常驻缩略图的录音卡。
+// - 来源（录音第 6 批，拍板 A2-a，设置 › 截图「录音」）：麦克风走上面的 AVAudioRecorder；系统声音 / 两者复用录屏管线
+//   （ScreenRecorder 的只录声音模式 engine：鼠标所在屏左上角 64 × 64 点、1 fps，写 mp4、录完无损导出成 m4a）。那两种
+//   不能暂停（SCRecordingOutput 没有暂停，HUD 的 ⏸ 置灰）；锁屏、系统睡眠、显示器睡眠、被录的屏变了都停止并保存（同录屏，
+//   在 engine 里），所以录制期间同录屏连显示器闲置睡眠一起防；两者的麦克风授权、麦克风中途断开（不停、播报，HUD 计时后面出橙字
+//   「麦克风断开了」，结果岛补一句）也照录屏；电平由 engine 在样本回调里算好投过来，「没听到声音」只看麦克风那一路（只录系统
+//   声音时不提示）。HUD 出来之前叫停当取消（同只录麦克风）。录音 HUD、停止项、计时、防睡眠、磁盘检查、波形 poster 仍在这里。
 
 import AVFoundation
 import AppKit
 import OSLog
 
 final class AudioRecorder: NSObject {
+  /// 录什么（设置 › 截图「录音」的来源，录音第 6 批）：麦克风能暂停、锁屏照录；系统声音 / 两者走录屏管线——菜单栏有屏幕录制
+  /// 指示、锁屏会停、不能暂停
+  nonisolated enum Source: String, Sendable {
+    case microphone, system, both
+
+    /// 从偏好读；没存过、存的认不出按麦克风（同 Prefs.registerDefaults 给的默认）
+    init(_ defaults: UserDefaults) {
+      self =
+        defaults.string(forKey: Prefs.audioRecordSource).flatMap(Self.init(rawValue:))
+        ?? .microphone
+    }
+  }
+
   /// m4a：AAC、48 kHz、单声道、128 kbps（拍板 A3-a；第 0 批实测码率生效，128–133 kbps）
   static let settings: [String: Any] = [
     AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48_000, AVNumberOfChannelsKey: 1,
@@ -41,14 +60,16 @@ final class AudioRecorder: NSObject {
     private(set) var recent: [Float] = []
     /// 整段的包络（旧 → 新），每桶取最大
     private(set) var envelope: [Float] = []
-    /// 有没有哪一次到了「没听到声音」的门槛
+    /// 有没有哪一次到了「没听到声音」的门槛（看 listening 那一路）
     private(set) var heard = false
     private var samples = 0
     private var perBucket = 1
     private var lastBucketFill = 0
 
-    mutating func add(_ power: Float) {
-      heard = heard || power >= AudioRecorder.silenceThreshold
+    /// power：这一格的电平（HUD 的竖条、波形 poster 画它）；listening：「没听到声音」看的那一路，默认就是 power
+    /// （录音第 6 批「两者」：画两路里最响的，只看麦克风有没有声音）
+    mutating func add(_ power: Float, listening: Float? = nil) {
+      heard = heard || (listening ?? power) >= AudioRecorder.silenceThreshold
       // 第 n 个样本落在第 2n/5 根（每根 2.5 个样本：3、2、3、2…），和上一个样本不在同一根就开新的一根
       if samples == 0 || samples * 2 / 5 != (samples - 1) * 2 / 5 {
         recent.append(power)
@@ -73,7 +94,10 @@ final class AudioRecorder: NSObject {
     }
   }
 
+  /// 这次录什么（开录前从偏好读一次）
+  let source: Source
   private let directory: URL
+  /// 只录麦克风时写的文件；系统声音 / 两者的文件在 engine 里（这里只拿它查磁盘剩余，同一个卷）
   private let temp: URL
   /// 「进行中」记在哪（单测 / 实录自检换成临时偏好域）
   private let defaults: UserDefaults
@@ -81,13 +105,24 @@ final class AudioRecorder: NSObject {
   /// 麦克风授权此刻的状态、没问过时怎么问（单测换掉：不读真状态、不真弹框）
   var microphoneStatus = { Permissions.microphoneStatus }
   var requestMicrophone = Permissions.requestMicrophone
+  /// 两者被拒麦克风授权时的警告岛、导出时的「正在存储录音…」（engine 用；单测 / 实录自检里是 nil）
+  private weak var island: Island?
   private var recorder: AVAudioRecorder?
+  /// 系统声音 / 两者：录屏管线的只录声音模式（麦克风授权、开流、中断、导出 m4a、挪文件、「进行中」记录都在它那里）
+  private var engine: ScreenRecorder?
+  /// engine 送来的电平（dB）：这一格（50 ms）里系统声音、麦克风各自最响的一块
+  private var pending: (system: Float, microphone: Float) = (-120, -120)
+  /// 「没听到声音」看不看：录着麦克风才看（只录系统声音时没在放东西是正常的；两者被拒了麦克风同样不看）
+  private var listens = true
+  /// 飞入的起点：收 HUD 那一刻记下（engine 的收尾要等文件写完、导出，那时 HUD 早收了）
+  private var region: CGRect = .zero
   private(set) var isPaused = false
   /// 要停了（第一个原因为准；收尾在下一轮）
   private var stopping: ScreenRecorder.Reason?
   /// 还没开始录就要停（等授权框时再按了一次快捷键、退出）：开始前当取消
   private var stoppedEarly = false
-  private var levels = Levels()
+  /// 电平历史（实录自检读它看电平来过没有）
+  private(set) var levels = Levels()
   /// 暂停之前录了多久、这一段从什么时候开始（计时不算暂停的时间）
   private var recordedBefore: Duration = .zero
   private var resumedAt: ContinuousClock.Instant?
@@ -102,13 +137,16 @@ final class AudioRecorder: NSObject {
   /// 开录时的默认输入设备（AVCaptureDevice.uniqueID）：它断开了就停
   private var microphoneID: String?
 
-  /// directory：快速保存目录（进行中的文件在和它同一个卷的 workFile）；defaults：「进行中」记在这里
+  /// directory：快速保存目录（进行中的文件在和它同一个卷的 workFile）；defaults：来源从这里读、「进行中」记在这里；
+  /// island：交给 engine（系统声音 / 两者）
   init(
-    directory: URL, defaults: UserDefaults = .standard,
+    directory: URL, defaults: UserDefaults = .standard, island: Island? = nil,
     onFinish: @escaping (ScreenRecorder.Result) -> Void
   ) {
     self.directory = directory
     temp = ScreenRecorder.workFile(for: directory, medium: .audio)
+    source = Source(defaults)
+    self.island = island
     self.defaults = defaults
     self.onFinish = onFinish
     super.init()
@@ -116,13 +154,21 @@ final class AudioRecorder: NSObject {
 
   /// 开录（异步：问过授权、开起来之后才出 HUD 和停止项），结束时回调 onFinish
   func start() {
+    if source != .microphone { return startEngine() }
     defaults.set(temp.path, forKey: ScreenRecorder.Medium.audio.inProgressKey)
     Task { await begin() }
   }
 
   /// 停止并保存（再按快捷键、HUD 的 ■、停止项、中断）；放弃是 .discarded。还没开始录（等授权框）时记下、开始前当取消。
-  /// 收尾在下一轮：可能是 HUD 自己的按钮在调（收尾会拿掉 HUD）
+  /// 收尾在下一轮：可能是 HUD 自己的按钮在调（收尾会拿掉 HUD）。系统声音 / 两者交给 engine：还没开始（HUD 没出来：等授权框、
+  /// 流还在开）同样当取消——不然 engine 等开起来再停，存下几乎 0 秒的文件、卡片从 (0, 0) 飞出来；它停流那一刻（下一轮）经
+  /// onHalted 收 HUD 和停止项
   func stop(_ reason: ScreenRecorder.Reason = .user) {
+    if let engine {
+      guard stopping == nil else { return }
+      stopping = reason
+      return engine.stop(resumedAt == nil ? .cancelled : reason)
+    }
     guard recorder != nil else {
       stoppedEarly = true
       return
@@ -132,7 +178,7 @@ final class AudioRecorder: NSObject {
     Task { finish(reason) }
   }
 
-  /// 暂停 / 继续（HUD 的 ⏸ / ▶）：续写同一个文件，计时停在暂停那一刻；旁白播报
+  /// 暂停 / 继续（HUD 的 ⏸ / ▶）：续写同一个文件，计时停在暂停那一刻；旁白播报。系统声音 / 两者不能暂停（HUD 的 ⏸ 置灰）
   func togglePause() {
     guard let recorder, stopping == nil else { return }
     if isPaused {
@@ -163,8 +209,8 @@ final class AudioRecorder: NSObject {
     case .ask:
       let allowed = await requestMicrophone()
       if stoppedEarly { return finish(.cancelled) }
-      if !allowed { return finish(.denied) }
-    case .denied: return finish(.denied, microphoneDenied: true)
+      if !allowed { return finish(.noMicrophoneAccess) }
+    case .denied: return finish(.noMicrophoneAccess, microphoneDenied: true)
     }
     if stoppedEarly { return finish(.cancelled) }
     let recorder: AVAudioRecorder
@@ -186,11 +232,69 @@ final class AudioRecorder: NSObject {
     microphoneID = AVCaptureDevice.default(for: .audio)?.uniqueID
   }
 
-  /// HUD（鼠标所在屏可见区底部居中，从底边长出来）、菜单栏停止项、20 Hz 的电平 / 计时、防系统闲置睡眠、中断监听
+  /// 系统声音 / 两者（拍板 A2-a「复用录屏管线」）：鼠标所在屏左上角那一小块只为声音，开起来了（onStarted）才出 HUD 和停止项
+  private func startEngine() {
+    let mouse = NSEvent.mouseLocation
+    guard
+      let screen = NSScreen.screens.first(where: { $0.frame.contains(mouse) }) ?? NSScreen.main,
+      let engine = ScreenRecorder(
+        region: ScreenRecorder.audioOnlyRegion(screen.frame), directory: directory,
+        defaults: defaults, island: island,
+        audioOnly: .init(systemAudio: true, microphone: source == .both),
+        onFinish: { [weak self] in self?.engineFinished($0) })
+    else { return finish(.failed("找不到要录的屏幕")) }
+    engine.microphoneStatus = microphoneStatus
+    engine.requestMicrophone = requestMicrophone
+    engine.onStarted = { [weak self] in self?.engineStarted() }
+    engine.onHalted = { [weak self] in self?.tearDown() }
+    engine.onLevel = { [weak self] in self?.metered($0, microphone: $1) }
+    engine.onMicrophoneLost = { [weak self] in self?.microphoneLost() }
+    self.engine = engine
+    engine.start()
+  }
+
+  /// engine 开始写了：计时从这时起，出 HUD（⏸ 置灰）和停止项。开起来之前就叫停了（等流开起来时又按了一次）不出
+  private func engineStarted() {
+    guard stopping == nil, let engine else { return }
+    listens = engine.capturesMicrophone
+    resumedAt = .now
+    showChrome()
+  }
+
+  /// engine 的一块声音样本的电平：记下这一格里各路最响的，20 Hz 的 tick 取走
+  private func metered(_ power: Float, microphone: Bool) {
+    if microphone {
+      pending.microphone = max(pending.microphone, power)
+    } else {
+      pending.system = max(pending.system, power)
+    }
+  }
+
+  /// 两者录制中开录时的麦克风断开（engine 不停、已播报，结果岛补一句）：HUD 计时后面换成「麦克风断开了」，之后不再看
+  /// 「没听到声音」（后面本来就没有麦克风声音）
+  private func microphoneLost() {
+    listens = false
+    silenceShown = false
+    hud?.microphoneLost()
+  }
+
+  /// engine 收尾了（文件写完、导出成 m4a、挪好）：HUD 在停的那一刻已收，补上飞入起点和波形 poster 交给 AppDelegate
+  private func engineFinished(_ finished: ScreenRecorder.Result) {
+    tearDown()
+    engine = nil
+    var result = finished
+    result.region = region
+    if result.moved { result.poster = Self.waveform(levels.envelope) }
+    onFinish(result)
+  }
+
+  /// HUD（鼠标所在屏可见区底部居中，从底边长出来）、菜单栏停止项、20 Hz 的电平 / 计时、防睡眠、中断监听
+  /// （只录麦克风时；系统声音 / 两者的中断在 engine 里，同录屏）
   private func showChrome() {
     let mouse = NSEvent.mouseLocation
     let hud = RecordingHUD(
-      state: .recording(0), stopKey: HotKeyAction.audioRecord.hotKey?.display, medium: .audio)
+      state: .recording(0), stopKey: HotKeyAction.audioRecord.hotKey?.display, medium: .audio,
+      pausable: source == .microphone)
     hud.onClick = { [weak self] in self?.clicked($0) }
     if let screen = NSScreen.screens.first(where: { $0.frame.contains(mouse) }) ?? NSScreen.main {
       hud.present(region: screen.frame, on: screen, isFullScreen: true)
@@ -205,10 +309,12 @@ final class AudioRecorder: NSObject {
     RunLoop.main.add(timer, forMode: .common)
     self.timer = timer
     updateClock()
-    // 只防系统闲置睡眠：只录声音，显示器照常熄
-    activity = ProcessInfo.processInfo.beginActivity(
-      options: [.idleSystemSleepDisabled, .userInitiated], reason: "录音")
-    observeInterruptions()
+    // 麦克风：只防系统闲置睡眠（只录声音，显示器照常熄、照录）。系统声音 / 两者同录屏连显示器闲置睡眠一起防：engine 监听
+    // 显示器睡眠就停，不防的话没人碰键鼠的长录音（听播客、网课）会在「关闭显示器」的时间被截断
+    var options: ProcessInfo.ActivityOptions = [.idleSystemSleepDisabled, .userInitiated]
+    if source != .microphone { options.insert(.idleDisplaySleepDisabled) }
+    activity = ProcessInfo.processInfo.beginActivity(options: options, reason: "录音")
+    if source == .microphone { observeInterruptions() }
     Island.announce("开始录音")
   }
 
@@ -228,18 +334,24 @@ final class AudioRecorder: NSObject {
   /// 20 Hz：每 5 s 查剩余空间；没暂停时看还在不在录、读电平（HUD 电平、「没听到声音」）、走计时
   private func tick() {
     ticks += 1
-    guard let recorder, stopping == nil else { return }
+    guard stopping == nil else { return }
     if ticks % (5 * Self.meterRate) == 0, ScreenRecorder.isLowOnDisk(temp) { return stop(.lowDisk) }
     guard !isPaused else { return }
-    // 没人叫停它却不录了（编码出错这类，AVAudioRecorder 自己停）：保住已录的部分。
-    // ponytail: 不挂委托、靠这里看 isRecording：看不到具体出错原因（只能说「录音意外停止」）、最多晚一个 tick（50 ms）
-    // 才发现、暂停中不查。真遇到了按 mac-native §3 挂 nonisolated 的 AVAudioRecorderDelegate
-    // （audioRecorderEncodeErrorDidOccur / audioRecorderDidFinishRecording），把错误文字投回主线程再收尾
-    guard recorder.isRecording else { return stop(.failed("录音意外停止")) }
-    recorder.updateMeters()
-    levels.add(recorder.averagePower(forChannel: 0))
+    if let recorder {
+      // 没人叫停它却不录了（编码出错这类，AVAudioRecorder 自己停）：保住已录的部分。
+      // ponytail: 不挂委托、靠这里看 isRecording：看不到具体出错原因（只能说「录音意外停止」）、最多晚一个 tick（50 ms）
+      // 才发现、暂停中不查。真遇到了按 mac-native §3 挂 nonisolated 的 AVAudioRecorderDelegate
+      // （audioRecorderEncodeErrorDidOccur / audioRecorderDidFinishRecording），把错误文字投回主线程再收尾
+      guard recorder.isRecording else { return stop(.failed("录音意外停止")) }
+      recorder.updateMeters()
+      levels.add(recorder.averagePower(forChannel: 0))
+    } else {
+      // engine：这一格里两路最响的画电平，「没听到声音」只看麦克风那一路
+      levels.add(max(pending.system, pending.microphone), listening: pending.microphone)
+      pending = (-120, -120)
+    }
     hud?.updateMeter(levels.recent)
-    let silent = Self.showsSilence(heard: levels.heard, recorded: recorded)
+    let silent = listens && Self.showsSilence(heard: levels.heard, recorded: recorded)
     if silent != silenceShown {
       silenceShown = silent
       hud?.setSilent(silent)
@@ -283,7 +395,6 @@ final class AudioRecorder: NSObject {
 
   /// 停录（AVAudioRecorder.stop 当场关文件）、HUD 和停止项收掉、挪文件、画波形 poster；飞入的起点是 HUD 的位置
   private func finish(_ reason: ScreenRecorder.Reason, microphoneDenied: Bool = false) {
-    let region = hud.map { Self.flightStart(hud: $0.screenFrame) } ?? .zero
     let duration = recorded
     let started = recorder != nil
     recorder?.stop()
@@ -300,7 +411,9 @@ final class AudioRecorder: NSObject {
     onFinish(result)
   }
 
+  /// HUD、停止项、计时、防睡眠、中断监听收掉（收 HUD 前记下飞入的起点）；可以重复调
   private func tearDown() {
+    if let hud { region = Self.flightStart(hud: hud.screenFrame) }
     timer?.invalidate()
     timer = nil
     hud?.close()
@@ -318,6 +431,14 @@ final class AudioRecorder: NSObject {
   /// 开头 silenceWindow 里一次都没到门槛：HUD 出「没听到声音」；听到过就收起（之后再安静也不再出）
   nonisolated static func showsSilence(heard: Bool, recorded: Duration) -> Bool {
     !heard && recorded >= silenceWindow
+  }
+
+  /// 一块声音样本的电平（dBFS，按均方根，同 AVAudioRecorder.averagePower 的口径；录音第 6 批：录屏管线给的系统声音 /
+  /// 麦克风样本没有现成的 metering，在 RecordingEvents 的样本回调里算）。没有样本、全是 0（数字静音）算 −120
+  nonisolated static func power(_ samples: [Float]) -> Float {
+    guard !samples.isEmpty else { return -120 }
+    let meanSquare = samples.reduce(0) { $0 + $1 * $1 } / Float(samples.count)
+    return max(-120, 10 * log10(meanSquare))
   }
 
   /// 电平竖条的高度（HUD 的电平、波形 poster 共用）：−50 dB 及以下 2 pt，0 dB 到 tallest，中间按 dB 线性

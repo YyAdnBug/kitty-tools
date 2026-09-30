@@ -11,7 +11,8 @@ import Testing
 // 录屏框选（待选提示、调整阶段的录制条、截图里按 R 切过去的录制条）和录制 HUD（倒数、录制中、放弃上膛）也在这里；
 // 第 3 批补了常驻缩略图的视频卡（落地、悬停、矮卡、没有最后一帧的占位）；第 4 批补了录制条的三个开关（默认 = 混合、全开、
 // 全关，全开 / 全关再按石墨、黄色强调色各一遍）和录制 HUD 的声音状态（两个都开、只开系统声音、麦克风断开变橙）；录音第 5 批补了
-// 录音 HUD（录制中带电平、暂停、没听到声音、响到橙色的一根）和录音卡（波形 + 左上 waveform 标记 + 时长：落地、悬停、矮卡）。
+// 录音 HUD（录制中带电平、暂停、没听到声音、响到橙色的一根）和录音卡（波形 + 左上 waveform 标记 + 时长：落地、悬停、矮卡）；
+// 录音第 6 批补了录系统声音的录音 HUD（⏸ 原位置灰、「两者」麦克风断开的橙字）。
 // 状态用 SelectionInteractionTests 的屏外窗口 + 合成事件摆（不弹遮罩、不抢键盘）；图层要在窗口里显示过才有内容，
 // 所以把屏外 (-20000, -20000) 的无边框窗口（当不了 key）orderFront 一下再 layer.render(in:)。材质在屏外会发灰，只锁布局。
 //   TEST_RUNNER_KITTY_SNAPSHOT_DIR=/tmp/shots xcodebuild -project macos/KittyTools.xcodeproj \
@@ -417,20 +418,25 @@ struct ScreenshotSnapshotTests {
     }
 
     // 录音 HUD（录音第 5 批）：整屏的摆法（可见区底部居中、离底 24），[● 0:42][电平] ｜ [⏸] ｜ [✕][■]；
-    // 录制中（说话的电平）、暂停（暂停符号、计时和电平变灰）、没听到声音（橙字）、最新一根超过 −1 dB（橙）
+    // 录制中（说话的电平）、暂停（暂停符号、计时和电平变灰）、没听到声音（橙字）、最新一根超过 −1 dB（橙）；
+    // 录音第 6 批：录系统声音（⏸ 原位置灰）、「两者」录着时麦克风断开（橙字「麦克风断开了」）
     let speech = (0..<24).map { index -> Float in -38 + 16 * sin(Float(index) * 0.9) }
-    for (name, levels, paused, silent) in [
-      ("audio-hud", speech, false, false), ("audio-hud-paused", speech, true, false),
-      ("audio-hud-silent", [Float](repeating: -120, count: 24), false, true),
-      ("audio-hud-loud", speech.dropLast() + [-0.4], false, false),
+    for (name, levels, paused, silent, pausable) in [
+      ("audio-hud", speech, false, false, true), ("audio-hud-paused", speech, true, false, true),
+      ("audio-hud-silent", [Float](repeating: -120, count: 24), false, true, true),
+      ("audio-hud-loud", speech.dropLast() + [-0.4], false, false, true),
+      ("audio-hud-system", speech, false, false, false),
+      ("audio-hud-mic-lost", speech, false, false, false),
     ] {
       let root = NSView(frame: bounds)
       root.wantsLayer = true
       root.layer?.contents = desktop
-      let hud = RecordingHUD(state: .recording(42), stopKey: nil, medium: .audio)
+      let hud = RecordingHUD(
+        state: .recording(42), stopKey: nil, medium: .audio, pausable: pausable)
       hud.updateMeter(levels)
       if paused { hud.setPaused(true) }
       if silent { hud.setSilent(true) }
+      if name == "audio-hud-mic-lost" { hud.microphoneLost(animated: false) }
       hud.removeFromSuperview()
       hud.frame.origin = RecordingHUD.origin(
         size: hud.frame.size, region: bounds, screen: bounds,

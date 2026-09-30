@@ -11,6 +11,8 @@
 // 录音（第 5 批，拍板 A1-a）是它的另一种形态（medium = .audio，会话在 AudioRecorder）：鼠标所在屏可见区底部居中、离底 24，
 // 从底边长出来（pop bounce 0.18，同录制条的长出；窗口四周留 24 pt 透明边、用 HUDBar 自绘的阴影，长出时不被窗口边切掉），[● 0:42][电平] ｜ [⏸] ｜ [✕][■]：电平是最近 3 s 的竖条（每帧直接设值），
 // 超过 −1 dB 的那根 systemOrange；开头 5 s 没听到声音时计时旁边出橙色「没听到声音」；暂停时红点换成暂停符号、计时和电平变灰。
+// 录系统声音（第 6 批，来源是系统声音 / 两者，走录屏管线）不能暂停：⏸ 留在原位置灰（0.35），提示「录系统声音时不能暂停」；
+// 「两者」录着时麦克风断开，「没听到声音」那个位置换成橙字「麦克风断开了」。
 // 皮肤是 HUDBar（15 毛玻璃 behindWindow，26 液态玻璃）。窗口是普通 NSPanel 实例（mac-overlay-panel §1 不子类化）：
 // 状态栏层级（截图冻结帧、录制的白名单都不收它）、不激活本 App、永不当 key（无边框窗口本来就当不了）、按钮 acceptsFirstMouse、
 // 能拖；所有桌面、全屏 App 上都显示。出现：settle 淡入（录制条随遮罩收起，HUD 在同一位置接上，不再「长出」一次）；
@@ -109,10 +111,11 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   }
 
   /// stopKey：录屏 / 录音快捷键（停止钮的提示里写它；没绑定 nil）；escapes：倒数的 Esc 注册上了；
-  /// systemAudio / microphone：这次录不录（录屏录制中的声音状态）；medium：录屏还是录音（录音只有录制态）
+  /// systemAudio / microphone：这次录不录（录屏录制中的声音状态）；medium：录屏还是录音（录音只有录制态）；
+  /// pausable：录音能不能暂停（录系统声音时不能，⏸ 置灰）
   init(
     state: State, stopKey: String?, escapes: Bool = false, systemAudio: Bool = false,
-    microphone: Bool = false, medium: ScreenRecorder.Medium = .screen
+    microphone: Bool = false, medium: ScreenRecorder.Medium = .screen, pausable: Bool = true
   ) {
     self.state = state
     self.medium = medium
@@ -148,6 +151,11 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     setAccessibilityRole(.group)
     setAccessibilityLabel(medium == .audio ? "录音控制" : "录屏控制")
     show(state, rebuilding: true)
+    // 录屏管线（SCRecordingOutput）没有暂停：位置不变、置灰，提示为什么（隐藏的话 HUD 宽度随来源变，也看不出为什么没有）
+    if medium == .audio, !pausable {
+      pauseButton.isEnabled = false
+      pauseButton.toolTip = "录系统声音时不能暂停"
+    }
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -278,8 +286,15 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   }
 
   /// 开录时的麦克风断开了（录屏不停）：麦克风图标换成斜杠、变 systemOrange（.replace 过渡），提示和旁白说后面没有麦克风声音
-  /// animated：截图自检传 false（不拍到过渡的半截）
+  /// animated：截图自检传 false（不拍到过渡的半截）。录音 HUD（录音第 6 批「两者」）没有声音图标：计时后面「没听到声音」那个
+  /// 位置换成橙字「麦克风断开了」，HUD 按原中心变宽（会话之后不再叫 setSilent）
   func microphoneLost(animated: Bool = true) {
+    if medium == .audio {
+      silence.stringValue = "麦克风断开了"
+      silence.toolTip = "麦克风断开了，后面没有麦克风声音"
+      silence.isHidden = false
+      return refit()
+    }
     guard microphone else { return }
     microphoneIcon.show(
       "mic.slash.fill", tint: .systemOrange, label: "麦克风断开了，后面没有麦克风声音",

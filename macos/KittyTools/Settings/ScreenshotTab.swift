@@ -1,6 +1,7 @@
 // 设置 › 截图：⌘S 快速保存的位置（文件夹图标 + 访达里的名字，选过的能恢复默认，体检 A28；录屏、录音也存这里）、快门声（可试听）、
 // 截图后留不留常驻缩略图（体检 D18）、识字是否把同一段里的换行接起来（开关旁边实时对照效果，体检 A32）、
-// 录屏（录屏第 2 批，拍板 C4-a）：帧率 30 / 60、开始前倒数、显示光标。
+// 录屏（录屏第 2 批，拍板 C4-a）：帧率 30 / 60、开始前倒数、显示光标；录音（录音第 6 批，拍板 A2-a）：来源 麦克风 / 系统声音 / 两者
+// （录音 HUD 上不放切换，录前在这里定）。
 // 框选、标注、长截图、录屏的按键不写进页里（N11）：一句话 +「查看全部快捷键…」打开速查表；全局快捷键在「快捷键」页。
 
 import AppKit
@@ -15,6 +16,7 @@ struct ScreenshotTab: View {
   @AppStorage(Prefs.screenRecordFrameRate) private var frameRate = 30
   @AppStorage(Prefs.screenRecordCountdown) private var countdown = 3
   @AppStorage(Prefs.screenRecordShowsCursor) private var showsCursor = true
+  @AppStorage(Prefs.audioRecordSource) private var audioSource = AudioRecorder.Source.microphone
 
   var body: some View {
     Form {
@@ -90,6 +92,18 @@ struct ScreenshotTab: View {
         Text("录屏")
       } footer: {
         caption("60 fps 更顺，文件大约大一半；大屏上可能录不满 60。")
+      }
+      Section {
+        Picker("来源", selection: $audioSource) {
+          Text("麦克风").tag(AudioRecorder.Source.microphone)
+          Text("系统声音").tag(AudioRecorder.Source.system)
+          Text("两者").tag(AudioRecorder.Source.both)
+        }
+        .pickerStyle(.segmented)
+      } header: {
+        Text("录音")
+      } footer: {
+        caption("录系统声音时菜单栏会出现屏幕录制指示；锁屏会停止；不能暂停。")
       }
       Section {
         LabeledContent {

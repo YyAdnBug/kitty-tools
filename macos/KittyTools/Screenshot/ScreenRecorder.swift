@@ -19,6 +19,11 @@
 // 压住，等框时要停就当取消），拒绝 / 受限照样开录、不带麦克风，警告岛、开关弹回，拒绝过的收尾时再打开系统设置（开录前打开
 // 会盖住选区、录进画面）。录制中改不了（updateConfiguration 会停录），HUD 上的声音状态只读；开录时的输入设备断开了录屏不停，
 // HUD 麦克风变橙、结果岛补「后半段没有麦克风声音」。
+// 只录声音（录音第 6 批，拍板 A2-a「复用录屏管线」；会话在 AudioRecorder）：录音的来源是系统声音 / 两者时，AudioRecorder 用这里的
+// 只录声音模式（audioOnly）——鼠标所在屏左上角 64 × 64 点、1 fps、输出 128 × 128 像素，过滤器排除整个本 App（没有例外）；不倒数、
+// 不画边框、不出录屏 HUD 和停止项、不防睡眠（这些归 AudioRecorder：录音 HUD，防睡眠同录屏连显示器一起防——这里显示器睡眠
+// 就停），开始 / 停下 / 每块声音样本的电平 / 两者的麦克风断开交给它（onStarted / onHalted / onLevel / onMicrophoneLost）。麦克风授权（两者）、开流、中断、写完后把音轨无损导出成 m4a（extractAudio）、挪文件、「进行中」
+// 记录都照录屏走这里，medium 是 .audio（录音的偏好键、「录音 <开录时刻>.m4a」）。
 
 import AVFoundation
 import AppKit
@@ -27,7 +32,8 @@ import ScreenCaptureKit
 
 /// 录制委托 + 空样本输出：只把发生了什么投进会话的事件流。录什么就挂什么空输出（第 0 批实测：不挂时系统日志每帧一条
 /// 「stream output NOT found. Dropping frame」，挂了 0 条）：画面一路 .screen，开了系统声音 / 麦克风再挂 .audio /
-/// .microphone（ScreenRecorder.configure 给出挂哪几路），三路的样本都直接丢
+/// .microphone（ScreenRecorder.configure 给出挂哪几路），样本都直接丢；只录声音时（meters，录音第 6 批）声音那两路的每一块
+/// 在回调线程里算个电平，只把 dB 投出去（CMSampleBuffer 不带出回调）
 nonisolated final class RecordingEvents: NSObject, SCRecordingOutputDelegate, SCStreamDelegate,
   SCStreamOutput, Sendable
 {
@@ -45,11 +51,18 @@ nonisolated final class RecordingEvents: NSObject, SCRecordingOutputDelegate, SC
     case startTimedOut, finishTimedOut
     /// 倒数：过了一秒、点了数字马上开始
     case tick, startNow
+    /// 只录声音：一块声音样本的电平（dBFS）、是不是麦克风那一路
+    case level(Float, microphone: Bool)
   }
 
   let feed: AsyncStream<Event>.Continuation
+  /// 算不算电平（只录声音时；录屏不算，样本照旧直接丢）
+  let meters: Bool
 
-  init(feed: AsyncStream<Event>.Continuation) { self.feed = feed }
+  init(feed: AsyncStream<Event>.Continuation, meters: Bool = false) {
+    self.feed = feed
+    self.meters = meters
+  }
 
   func recordingOutputDidStartRecording(_ recordingOutput: SCRecordingOutput) {
     feed.yield(.started)
@@ -68,11 +81,27 @@ nonisolated final class RecordingEvents: NSObject, SCRecordingOutputDelegate, SC
     feed.yield(.stopped(domain: error.domain, code: error.code, text: error.localizedDescription))
   }
 
-  /// 空输出：样本直接丢（录制管线自己写文件）
+  /// 空输出：样本直接丢（录制管线自己写文件）；只录声音时声音的每一块算完电平就投（录音 HUD 的电平条、「没听到声音」）
   func stream(
     _ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
     of type: SCStreamOutputType
-  ) {}
+  ) {
+    guard meters, type != .screen, let samples = Self.floatSamples(sampleBuffer) else { return }
+    feed.yield(.level(AudioRecorder.power(samples), microphone: type == .microphone))
+  }
+
+  /// 一块声音样本读成数组：只认 Float32 线性 PCM（各声道放在一起算，交错 / 不交错都行）。系统声音、麦克风实测都是 Float32
+  /// （录音第 6 批实录，RecordingProbeTests.audioRecorderSystemTake）。
+  /// ponytail: 别的格式（整数 PCM、压缩的）整块跳过、不算电平：只录系统声音时只是电平竖条不动；「两者」时麦克风那一路一直是
+  /// −120，5 s 后会误报「没听到声音」（文件里其实有人声）。真遇到了按 ASBD 的 mBitsPerChannel / kAudioFormatFlagIsSignedInteger
+  /// 把 Int16 / Int32 换算成 Float 再算 power，或者投一个「这一路测不了」让 AudioRecorder 不看「没听到声音」
+  static func floatSamples(_ buffer: CMSampleBuffer) -> [Float]? {
+    guard let format = buffer.formatDescription?.audioStreamBasicDescription,
+      format.mFormatID == kAudioFormatLinearPCM, format.mFormatFlags & kAudioFormatFlagIsFloat != 0,
+      format.mBitsPerChannel == 32, let bytes = try? buffer.dataBuffer?.dataBytes()
+    else { return nil }
+    return bytes.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
+  }
 }
 
 final class ScreenRecorder: NSObject {
@@ -110,8 +139,10 @@ final class ScreenRecorder: NSObject {
     case system(code: Int, text: String)
     /// 没开起来（授权以外）、写入失败、没按时写完
     case failed(String)
-    /// startCapture 报 -3801 / -3802：屏幕录制授权问题
+    /// startCapture 报 -3801 / -3802：屏幕录制授权问题（录屏、录系统声音）
     case denied
+    /// 录音（只录麦克风）没有麦克风授权：不录（录音第 5 批；第 6 批和屏幕录制的 denied 分开，录系统声音也走录屏管线）
+    case noMicrophoneAccess
 
     /// 岛的详情里的原因（简短）；正常停止 nil
     var note: String? {
@@ -132,6 +163,7 @@ final class ScreenRecorder: NSObject {
       case .system(let code, _): "系统停止了录制（错误 \(code)）"
       case .failed(let text): text
       case .denied: "没有屏幕录制授权"
+      case .noMicrophoneAccess: "没有麦克风授权"
       }
     }
   }
@@ -186,7 +218,12 @@ final class ScreenRecorder: NSObject {
 
   /// poster 长边最多这么多像素：够飞行卡片起飞时铺满选区、落地后缩成卡片，不解整张 5K
   nonisolated static let posterMaxSide: CGFloat = 1600
+  /// 只录声音时录的那一小块（点，屏内左上角）和输出的像素边长（A2-a，第 0 批实测：64 × 64 点、1 fps 的文件 3 s 才 19 KB）
+  nonisolated static let audioOnlySide: CGFloat = 64
+  nonisolated static let audioOnlyPixels = 128
 
+  /// 录屏还是只录声音（audioOnly，录音第 6 批）：「进行中」记在哪个键、存成什么名字
+  private let medium: Medium
   /// 选区（点，全局坐标，对齐到像素，夹在那块屏里）
   private let region: CGRect
   /// ScreenCaptureKit 的 sourceRect（屏内、点、原点左上）；整屏时不设
@@ -214,6 +251,14 @@ final class ScreenRecorder: NSObject {
   /// 麦克风授权此刻的状态、没问过时怎么问（单测换掉：不读真状态、不真弹框）
   var microphoneStatus = { Permissions.microphoneStatus }
   var requestMicrophone = Permissions.requestMicrophone
+  /// 只录声音时交给 AudioRecorder 的：开始写了（出录音 HUD、计时从这时起）、停了（HUD 那一刻就收）、一块声音样本的电平
+  /// （dB、是不是麦克风那一路）、录制中开录时的麦克风断开了（录音 HUD 出橙字）
+  var onStarted: () -> Void = {}
+  var onHalted: () -> Void = {}
+  var onLevel: (Float, Bool) -> Void = { _, _ in }
+  var onMicrophoneLost: () -> Void = {}
+  /// 这次真录不录麦克风（开关开着且有授权；开始写了之后才定）
+  var capturesMicrophone: Bool { options.microphone }
   /// 倒数期间临时注册 Esc 用（单测 / 实录自检里是 nil：没有 Esc，只能点 ✕）
   private weak var hotKeys: HotKeyCenter?
   /// 快速保存目录；进行中的文件在和它同一个卷的 workFile
@@ -244,10 +289,12 @@ final class ScreenRecorder: NSObject {
   private var isRefreshingFilter = false
 
   /// region：选区（点，AppKit 全局坐标）；directory：快速保存目录；defaults：录屏设置从这里读、「进行中」记在这里；
-  /// hotKeys：倒数时临时注册 Esc；island：没有麦克风授权时的警告岛。选区不在任何屏上时 nil
+  /// hotKeys：倒数时临时注册 Esc；island：没有麦克风授权时的警告岛（只录声音时还有「正在存储录音…」）；audioOnly：给了就是
+  /// 录音的只录声音模式（region 用 audioOnlyRegion，声音开关按它、不读录制条的偏好）。选区不在任何屏上时 nil
   init?(
     region: CGRect, directory: URL, defaults: UserDefaults = .standard,
-    hotKeys: HotKeyCenter? = nil, island: Island? = nil, onFinish: @escaping (Result) -> Void
+    hotKeys: HotKeyCenter? = nil, island: Island? = nil, audioOnly: Options? = nil,
+    onFinish: @escaping (Result) -> Void
   ) {
     let screens = NSScreen.screens
     guard let (index, _) = RegionSelector.placement(of: region, in: screens.map(\.frame)),
@@ -262,32 +309,44 @@ final class ScreenRecorder: NSObject {
     self.displayID = displayID
     screenFrame = screen.frame
     scale = screen.backingScaleFactor
-    frameRate = defaults.integer(forKey: Prefs.screenRecordFrameRate) == 60 ? 60 : 30
-    countdown = Self.countdownSeconds(defaults.integer(forKey: Prefs.screenRecordCountdown))
-    showsCursor = defaults.object(forKey: Prefs.screenRecordShowsCursor) as? Bool ?? true
-    options = Options(defaults)
+    medium = audioOnly == nil ? .screen : .audio
+    if let audioOnly {
+      // 只录声音：1 fps、不倒数、不画光标；写的仍是 mp4（录完导出成 m4a），名字「录音 <UUID>.mp4」
+      frameRate = 1
+      countdown = 0
+      showsCursor = false
+      options = audioOnly
+      temp = Self.workFile(for: directory, medium: .audio).deletingPathExtension()
+        .appendingPathExtension("mp4")
+    } else {
+      frameRate = defaults.integer(forKey: Prefs.screenRecordFrameRate) == 60 ? 60 : 30
+      countdown = Self.countdownSeconds(defaults.integer(forKey: Prefs.screenRecordCountdown))
+      showsCursor = defaults.object(forKey: Prefs.screenRecordShowsCursor) as? Bool ?? true
+      options = Options(defaults)
+      temp = Self.workFile(for: directory)
+    }
     self.hotKeys = hotKeys
     self.island = island
     self.directory = directory
-    temp = Self.workFile(for: directory)
     self.defaults = defaults
     self.onFinish = onFinish
     let (events, feed) = AsyncStream<RecordingEvents.Event>.makeStream()
     self.events = events
-    delegate = RecordingEvents(feed: feed)
+    delegate = RecordingEvents(feed: feed, meters: audioOnly != nil)
     super.init()
   }
 
   /// 开录（异步：开起来之后才出边框和停止项），结束时回调 onFinish
   func start() {
-    defaults.set(temp.path, forKey: Prefs.screenRecordingInProgress)
+    defaults.set(temp.path, forKey: medium.inProgressKey)
     Task {
       let reason = await record()
       tearDown()
-      var result = finalize(Self.outcome(reason, abandoned: abandoned))
+      var result = await finalize(Self.outcome(reason, abandoned: abandoned))
       result.microphoneLost = microphoneLost
       result.microphoneDenied = microphoneDenied
-      if result.moved, let file = result.file {
+      // 只录声音的没有画面可取：波形 poster 由 AudioRecorder 画
+      if medium == .screen, result.moved, let file = result.file {
         let size = Self.outputSize(points: region.size, scale: scale)
         result.poster = await Self.poster(
           of: file, pixels: CGSize(width: size.width, height: size.height))
@@ -362,7 +421,7 @@ final class ScreenRecorder: NSObject {
         // 放弃 / 取消（倒数刚结束才到的）：结果按它（outcome），不留闪退记录（文件写完就删，这期间闪退也不该被 recover 捡回来）
         if why == .discarded || why == .cancelled {
           abandoned = abandoned ?? why
-          defaults.removeObject(forKey: Prefs.screenRecordingInProgress)
+          defaults.removeObject(forKey: medium.inProgressKey)
         }
         if startedAt == nil {
           pending = pending ?? why
@@ -393,6 +452,8 @@ final class ScreenRecorder: NSObject {
         halt(stream, running: false, wait: .milliseconds(500))
       case .finishTimedOut:
         return .failed(finished ? "录制意外结束" : "文件没有按时写完")
+      case .level(let power, let microphone):
+        onLevel(power, microphone)
       case .tick, .startNow:
         continue
       }
@@ -442,9 +503,13 @@ final class ScreenRecorder: NSObject {
     let (filter, excepted) = makeFilter(display: display, content: content)
     exceptedWindows = excepted
     let configuration = SCStreamConfiguration()
-    let size = Self.outputSize(
-      points: isFullScreen ? filter.contentRect.size : source.size,
-      scale: CGFloat(filter.pointPixelScale))
+    // 只录声音：画面只是那一小块，按 1x / 2x 屏都出 128 × 128
+    let size =
+      medium == .audio
+      ? (width: Self.audioOnlyPixels, height: Self.audioOnlyPixels)
+      : Self.outputSize(
+        points: isFullScreen ? filter.contentRect.size : source.size,
+        scale: CGFloat(filter.pointPixelScale))
     configuration.width = size.width
     configuration.height = size.height
     if !isFullScreen { configuration.sourceRect = source }
@@ -475,11 +540,13 @@ final class ScreenRecorder: NSObject {
     var errorDescription: String? { "找不到选区所在的屏幕" }
   }
 
-  /// 排除整个本 App，白名单里的面板列进例外（不看可见不可见）。返回过滤器和真正列进例外的窗口号（这次窗口表里找到的）
+  /// 排除整个本 App，白名单里的面板列进例外（不看可见不可见；只录声音时没有例外）。返回过滤器和真正列进例外的窗口号
+  /// （这次窗口表里找到的）
   private func makeFilter(display: SCDisplay, content: SCShareableContent) -> (
     SCContentFilter, Set<CGWindowID>
   ) {
-    let ids = ScreenCapture.recordedOwnWindows(ScreenCapture.ownWindows())
+    let ids =
+      medium == .audio ? [] : ScreenCapture.recordedOwnWindows(ScreenCapture.ownWindows())
     let excepted = content.windows.filter { ids.contains($0.windowID) }
     let found = Set(excepted.map(\.windowID))
     if let me = content.applications.first(where: { $0.processID == getpid() }) {
@@ -579,8 +646,11 @@ final class ScreenRecorder: NSObject {
     }
   }
 
-  /// 开始了：边框和 HUD（倒数过就已经有了）、菜单栏停止项、每秒的计时、防睡眠（中断监听在 record 一开头就装了）
+  /// 开始了：边框和 HUD（倒数过就已经有了）、菜单栏停止项、每秒的计时、防睡眠（中断监听在 record 一开头就装了）。
+  /// 只录声音时这些都归 AudioRecorder（录音 HUD、停止项、电平与计时、只防系统闲置睡眠、磁盘检查），这里只告诉它开始了；
+  /// 也不用每秒换过滤器（没有例外窗口）
   private func showChrome() {
+    guard medium == .screen else { return onStarted() }
     if hud == nil { showFrame(counting: false) }
     stopItem = Self.makeStopItem(label: "停止录屏", target: self, action: #selector(stopClicked))
     // 菜单开着（.eventTracking）时计时也要走
@@ -596,8 +666,9 @@ final class ScreenRecorder: NSObject {
     Island.announce("开始录屏")
   }
 
-  /// 边框、HUD、停止项、计时立刻收掉（停的那一刻；文件还在写）
+  /// 边框、HUD、停止项、计时立刻收掉（停的那一刻；文件还在写）；只录声音时让 AudioRecorder 收它的录音 HUD 和停止项
   private func hideChrome() {
+    onHalted()
     border?.orderOut(nil)
     border = nil
     hud?.close()
@@ -707,10 +778,15 @@ final class ScreenRecorder: NSObject {
       if allowed { return true }
     case .denied: microphoneDenied = true
     }
-    defaults.set(false, forKey: Prefs.screenRecordMicrophone)
-    // 等框时已经取消了：没有「这段录屏」
+    // 开关弹回：录屏是录制条的麦克风开关；只录声音（录音「两者」）是录音的来源，弹回「系统声音」
+    if medium == .screen {
+      defaults.set(false, forKey: Prefs.screenRecordMicrophone)
+    } else {
+      defaults.set(AudioRecorder.Source.system.rawValue, forKey: Prefs.audioRecordSource)
+    }
+    // 等框时已经取消了：没有「这段录屏 / 录音」
     if !stoppedWhileAsking {
-      island?.show("没有麦克风授权", detail: "这段录屏不带麦克风", tone: .warning)
+      island?.show("没有麦克风授权", detail: "这段\(medium.noun)不带麦克风", tone: .warning)
     }
     return false
   }
@@ -726,13 +802,15 @@ final class ScreenRecorder: NSObject {
     observers.append((NotificationCenter.default, token))
   }
 
-  /// 录制中（开始了、还没停）断开的是开录时那个设备：HUD 的麦克风变橙、播报，结果岛补一句（只算一次）
+  /// 录制中（开始了、还没停）断开的是开录时那个设备：HUD 的麦克风变橙（只录声音时是录音 HUD 的橙字，onMicrophoneLost）、
+  /// 播报，结果岛补一句（只算一次）
   private func microphoneDisconnected(_ id: String?) {
     guard let id, id == microphoneID, startedAt != nil, endedAt == nil, !microphoneLost else {
       return
     }
     microphoneLost = true
     hud?.microphoneLost()
+    onMicrophoneLost()
     Island.announce("麦克风断开了，后面没有麦克风声音")
   }
 
@@ -750,14 +828,28 @@ final class ScreenRecorder: NSObject {
   }
 
   /// 挪文件（settle）：开始过、文件在就挪进快速保存目录，挪不过去的留在原地；放弃的（倒数刚结束时按到的取消也算）删掉。
-  /// 都删「进行中」记录：这次是正常收尾，下次启动不该说「没有正常结束」
-  private func finalize(_ reason: Reason) -> Result {
-    defaults.removeObject(forKey: Prefs.screenRecordingInProgress)
+  /// 只录声音的先把音轨导出成 m4a（extractAudio；录音 HUD 在停的那一刻已收起，导出超过 1 s 出岛「正在存储录音…」，减弱动态
+  /// 效果时照出），导出不了就存 mp4（结果岛说一声）。都删「进行中」记录：这次是正常收尾，下次启动不该说「没有正常结束」
+  private func finalize(_ reason: Reason) async -> Result {
     let duration = startedAt.map { (endedAt ?? .now) - $0 } ?? .zero
-    let (file, moved) = Self.settle(
-      temp, into: directory, medium: .screen,
-      keeps: startedAt != nil && reason != .discarded && reason != .cancelled)
-    return Result(file: file, moved: moved, duration: duration, reason: reason, region: region)
+    let keeps = startedAt != nil && reason != .discarded && reason != .cancelled
+    var file = temp
+    if medium == .audio, keeps, FileManager.default.fileExists(atPath: temp.path) {
+      let island = self.island
+      let progress = Task {
+        try? await Task.sleep(for: .seconds(1))
+        guard !Task.isCancelled else { return false }
+        island?.show("正在存储录音…", tone: .progress, symbol: "waveform.circle.fill")
+        return true
+      }
+      file = await Self.extractAudio(from: temp) ?? temp
+      progress.cancel()
+      // 结果岛（出的话）随后由 AppDelegate 弹；飞了卡片的正常停只播报，进度岛得自己收
+      if await progress.value { island?.dismiss() }
+    }
+    defaults.removeObject(forKey: medium.inProgressKey)
+    let (saved, moved) = Self.settle(file, into: directory, medium: medium, keeps: keeps)
+    return Result(file: saved, moved: moved, duration: duration, reason: reason, region: region)
   }
 
   /// 收尾挪文件（录屏、录音共用）：不留的（放弃、取消、没开始录）和不在的删掉；否则挪进快速保存目录（「录屏 / 录音 <开录时刻>」，
@@ -823,16 +915,18 @@ final class ScreenRecorder: NSObject {
   }
 
   /// 挪进快速保存目录用的名字：「录屏 <开录的时刻>.mp4」（录音「录音 ….m4a」）——取文件的创建时间（系统开录时建文件），
-  /// 不按挪的时刻：录 30 分钟的、闪退后隔几天才恢复的，名字都还是开录那一刻（C8）
+  /// 不按挪的时刻：录 30 分钟的、闪退后隔几天才恢复的，名字都还是开录那一刻（C8）。扩展名跟着文件走：只录声音的音轨没能
+  /// 导出成 m4a 时存的是「录音 ….mp4」（录音第 6 批）
   static func savedURL(for file: URL, in directory: URL, medium: Medium = .screen) -> URL {
     let created = (try? file.resourceValues(forKeys: [.creationDateKey]))?.creationDate
     return ScreenshotOutput.availableURL(
-      in: directory, date: created ?? .now, prefix: medium.noun, ext: medium.ext)
+      in: directory, date: created ?? .now, prefix: medium.noun, ext: file.pathExtension)
   }
 
   /// 启动时（AppDelegate，单测宿主不跑；录屏、录音各查一次）：偏好里还记着进行中的文件 = 上次没正常收尾（闪退、断电）。
-  /// 文件不在了只删记录；能播（常见：本 App 被 kill -9 后 replayd 自己收尾）就挪进快速保存目录；打不开（系统崩溃 / 断电）
-  /// 留在原地、说路径和大小。都删记录（只提示一次）；返回要弹的岛
+  /// 文件不在了只删记录；能播（常见：本 App 被 kill -9 后 replayd 自己收尾）就挪进快速保存目录——只录声音的（录音第 6 批，
+  /// 进行中的是 mp4）先把音轨导出成 m4a，导出不了就原样挪 mp4 并说明；打不开（系统崩溃 / 断电）留在原地、说路径和大小。
+  /// 都删记录（只提示一次）；返回要弹的岛
   static func recover(
     into directory: URL, defaults: UserDefaults = .standard, medium: Medium = .screen
   ) async -> (title: String, detail: String, tone: Island.Tone)? {
@@ -841,21 +935,68 @@ final class ScreenRecorder: NSObject {
     defaults.removeObject(forKey: key)
     let manager = FileManager.default
     guard manager.fileExists(atPath: path) else { return nil }
-    let file = URL(filePath: path)
+    var file = URL(filePath: path)
     let playable = (try? await AVURLAsset(url: file).load(.isPlayable)) ?? false
     if playable {
+      if medium == .audio, file.pathExtension == "mp4", let audio = await extractAudio(from: file) {
+        file = audio
+      }
       let target = savedURL(for: file, in: directory, medium: medium)
       if (try? manager.moveItem(at: file, to: target)) != nil {
-        return ("上次\(medium.noun)没有正常结束，已保存", target.lastPathComponent, .info)
+        let title = "上次\(medium.noun)没有正常结束，已保存"
+        return target.pathExtension == medium.ext
+          ? (title, target.lastPathComponent, .info)
+          : (title, "没能转成 \(medium.ext)，存的是 mp4 · \(target.lastPathComponent)", .warning)
       }
     }
     let bytes =
-      ((try? manager.attributesOfItem(atPath: path))?[.size] as? NSNumber)?.int64Value ?? 0
+      ((try? manager.attributesOfItem(atPath: file.path))?[.size] as? NSNumber)?.int64Value ?? 0
     return (
       "上次\(medium.noun)没有正常结束" + (playable ? "" : "，文件打不开"),
-      "\((path as NSString).abbreviatingWithTildeInPath) · \(bytes.formatted(.byteCount(style: .file)))",
+      "\((file.path as NSString).abbreviatingWithTildeInPath) · \(bytes.formatted(.byteCount(style: .file)))",
       .warning
     )
+  }
+
+  /// 只录声音的 mp4（1 fps 的小方块视频轨 + 一条 AAC 音轨，录音第 6 批）→ 旁边同名的 .m4a：只含音轨的 composition，先
+  /// Passthrough（不重新编码，第 0 批实测 3 s 的 31 ms），不行再 AppleM4A（重新编码）。成功删掉 mp4、m4a 的创建时间改成 mp4 的
+  /// （存盘名按开录时刻，savedURL）；读不出音轨、两种都失败返回 nil，mp4 原样留着。系统的 async API，主线程直接 await
+  static func extractAudio(from mp4: URL) async -> URL? {
+    let target = mp4.deletingPathExtension().appendingPathExtension(Medium.audio.ext)
+    // 留住 asset 到导出完：音轨对它是弱引用（AVAssetTrack.asset），asset 一放掉音轨就读不出来、插不进 composition
+    // （实录踩到过：写成临时的 AVURLAsset(url:).loadTracks 时两种导出都失败）
+    let asset = AVURLAsset(url: mp4)
+    defer { withExtendedLifetime(asset) {} }
+    let composition = AVMutableComposition()
+    guard let source = try? await asset.loadTracks(withMediaType: .audio).first,
+      let range = try? await source.load(.timeRange),
+      let track = composition.addMutableTrack(
+        withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid),
+      (try? track.insertTimeRange(range, of: source, at: .zero)) != nil
+    else {
+      Log.record.error("录音的音轨读不出来：\(mp4.lastPathComponent)")
+      return nil
+    }
+    let manager = FileManager.default
+    for preset in [AVAssetExportPresetPassthrough, AVAssetExportPresetAppleM4A] {
+      try? manager.removeItem(at: target)
+      guard let session = AVAssetExportSession(asset: composition, presetName: preset) else {
+        continue
+      }
+      do {
+        try await session.export(to: target, as: .m4a)
+      } catch {
+        Log.record.error("录音导出 m4a 失败（\(preset)）：\(error)")
+        continue
+      }
+      if let created = (try? mp4.resourceValues(forKeys: [.creationDateKey]))?.creationDate {
+        try? manager.setAttributes([.creationDate: created], ofItemAtPath: target.path)
+      }
+      try? manager.removeItem(at: mp4)
+      return target
+    }
+    try? manager.removeItem(at: target)
+    return nil
   }
 
   // MARK: 纯函数（配单测）
@@ -871,6 +1012,12 @@ final class ScreenRecorder: NSObject {
     }
     let even = { (value: CGFloat) in max(2, Int(value.rounded()) / 2 * 2) }
     return (even(width), even(height))
+  }
+
+  /// 只录声音时录的那一小块（点，AppKit 全局坐标）：那块屏左上角 64 × 64（sourceRect 是屏内的 (0, 0, 64, 64)）
+  nonisolated static func audioOnlyRegion(_ screen: CGRect) -> CGRect {
+    CGRect(
+      x: screen.minX, y: screen.maxY - audioOnlySide, width: audioOnlySide, height: audioOnlySide)
   }
 
   /// poster 取帧的时刻（秒）：视频轨结束前 0.1 s，不到 0.1 s 的取开头
@@ -986,7 +1133,8 @@ final class ScreenRecorder: NSObject {
   /// 挪不进快速保存目录 = 警告「已在访达中显示」（AppDelegate 在访达里选中它；岛不接鼠标、2 s 就走，长路径没用）；
   /// 什么也没录下 = 错误；放弃 = 信息「已放弃录屏」。倒数中取消是用户自己点的，不出岛（nil，AppDelegate 只播报）。
   /// 麦克风中途断开（第 4 批）：详情补「后半段没有麦克风声音」，正常停也变成警告（岛照样出来，用户要知道）。
-  /// folder 是快速保存目录的访达显示名；medium 是录音时（第 5 批）同样的说法把「录屏」换成「录音」，授权问题是麦克风
+  /// folder 是快速保存目录的访达显示名；medium 是录音时（第 5 批）同样的说法把「录屏」换成「录音」；授权问题分屏幕录制
+  /// （录屏、录系统声音）和麦克风（只录麦克风）。只录声音的音轨没能导出成 m4a（第 6 批，存的是 mp4）：详情补一句，正常停也是警告
   static func summary(_ result: Result, folder: String, medium: Medium = .screen) -> (
     title: String, detail: String, tone: Island.Tone
   )? {
@@ -995,25 +1143,28 @@ final class ScreenRecorder: NSObject {
     case .cancelled: return nil
     case .discarded: return ("已放弃\(noun)", "没有保存", .info)
     case .denied:
-      return medium == .screen
-        ? ("需要「屏幕录制」授权", "录屏要用，授权后可能要重新打开本 App", .warning)
-        : ("需要麦克风授权", "到 系统设置 › 麦克风 里打开", .warning)
+      return (
+        "需要「屏幕录制」授权", "\(medium == .screen ? "录屏" : "录系统声音")要用，授权后可能要重新打开本 App",
+        .warning
+      )
+    case .noMicrophoneAccess: return ("需要麦克风授权", "到 系统设置 › 麦克风 里打开", .warning)
     default: break
     }
     guard let file = result.file else {
       return ("\(noun)失败", result.reason.note ?? "没有录下内容", .error)
     }
     let length = clock(Int(result.duration.components.seconds))
-    let lost = result.microphoneLost ? ["后半段没有麦克风声音"] : []
-    let detail = { (first: String) in ([first] + lost + [length]).joined(separator: " · ") }
+    var notes = result.microphoneLost ? ["后半段没有麦克风声音"] : []
+    if file.pathExtension != medium.ext { notes.append("没能转成 \(medium.ext)，存的是 mp4") }
+    let detail = { (first: String) in ([first] + notes + [length]).joined(separator: " · ") }
     guard result.moved else {
       return ("\(noun)没能存进「\(folder)」", detail("已在访达中显示"), .warning)
     }
     guard let note = result.reason.note else {
-      // 断了麦克风：卡片上就有文件，岛里省掉文件名、把这句放前面
-      return result.microphoneLost
-        ? ("已保存\(noun)", (lost + [length]).joined(separator: " · "), .warning)
-        : ("已保存\(noun)", detail(file.lastPathComponent), .success)
+      // 断了麦克风、存成了 mp4：卡片上就有文件，岛里省掉文件名、把这句放前面
+      return notes.isEmpty
+        ? ("已保存\(noun)", detail(file.lastPathComponent), .success)
+        : ("已保存\(noun)", (notes + [length]).joined(separator: " · "), .warning)
     }
     return ("已保存已录的部分", detail(note), .warning)
   }
