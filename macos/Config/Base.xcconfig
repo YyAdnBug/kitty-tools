@@ -23,8 +23,8 @@ CODE_SIGN_STYLE = Automatic
 DEVELOPMENT_TEAM = HTX9F4KG39
 ENABLE_APP_SANDBOX = NO
 ENABLE_HARDENED_RUNTIME = YES
-// 只有 apple-events：启动器系统命令让访达清倒废纸篓、给 loginwindow 发退出登录 / 重新启动 / 关机（强化运行时下
-// 没有它，发给别的 App 的 Apple Event 会被静默拒绝）。签名要求不变，已有授权不丢
+// apple-events（启动器系统命令让访达清倒废纸篓、给 loginwindow 发退出登录 / 重新启动 / 关机）+ device.audio-input
+// （录屏 / 录音的麦克风，2026-09-30）：强化运行时下缺了它们，系统会静默拒绝。签名要求不变，已有授权不丢
 CODE_SIGN_ENTITLEMENTS = Config/KittyTools.entitlements
 GENERATE_INFOPLIST_FILE = YES
 INFOPLIST_FILE = Config/Info.plist

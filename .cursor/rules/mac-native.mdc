@@ -13,7 +13,7 @@ alwaysApply: true
 - 一个概念一个文件；不预建空目录、空文件。每个入口文件（`@main`、AppDelegate、面板 / 窗口 / Tab 根视图、脚本）头部写注释说明用途。
 - 禁止为「以后可能用到」建 protocol、manager、registry、factory、DI 容器；不为测试抽 protocol。翻译服务由 coordinator 里一个 `switch` 分发。
 - Tauri 快照 2026-09-27 已从本分支删除（旧代码只在 master `ee615b3` 和 git 历史里），Tauri 版**不作行为、界面、默认值、文案的参考**（用户要求，2026-09-26：原生版有自己的样式和逻辑，不兼容 Tauri 版的数据和设置）。PLAN §5 的 path:line 只是历史记录。
-- **对标成熟产品**（用户要求，2026-09-24）：启动器对标 Alfred / Raycast、翻译对标 Bob、截图对标 iShot Pro / CleanShot、剪贴板对标 Paste；新功能动手前先调研对应产品，给出「差距 + 推荐范围」让用户拍板。算法、数据结构、表结构按 macOS 原生方式自己设计。
+- **对标成熟产品**（用户要求，2026-09-24）：启动器对标 Alfred / Raycast、翻译对标 Bob、截图对标 iShot Pro / CleanShot、录屏对标 CleanShot / ⌘⇧5、录音对标 QuickTime / iShot、剪贴板对标 Paste；新功能动手前先调研对应产品，给出「差距 + 推荐范围」让用户拍板。算法、数据结构、表结构按 macOS 原生方式自己设计。
 
 ## 2. 技术栈白名单
 - 只用 PLAN §2 表里的 Apple 框架 + 系统 libsqlite3（`import SQLite3`）。**禁止任何 SPM / 第三方依赖**（Sparkle、GRDB、KeyboardShortcuts、XcodeGen、Tuist、SwiftLint、create-dmg 等都不行）。
@@ -27,6 +27,7 @@ alwaysApply: true
 - `@concurrent` 只允许 4 类：图片编码 / hash / 缩略图；Vision OCR；AX 读选中文本（先设 `AXUIElementSetMessagingTimeout(0.5)`）；系统词典查词（`DCSCopyTextDefinition`，首查要加载词典，实测最多约 0.3 s）。参数和返回值必须是 `Sendable`（值类型，或 SDK 自己标了 Sendable 的 `CGImage`）。ScreenCaptureKit 截屏是系统 async API，主线程直接 await，不算例外。
 - 翻译服务写成 `nonisolated` async 函数；取消靠持有的 `Task` 调 `cancel()`，并行用 `withTaskGroup`。
 - **系统在渲染线程回调的代码必须 `nonisolated`**：`NSColor(name:dynamicProvider:)` 的取色闭包（`Style.dynamic`）、`TextRenderer` 和它用的 `TextAttribute`、自定义 `Shape` 的 `path(in:)`、`Canvas(rendersAsynchronously: true)`。SwiftUI 在显示链接线程异步渲染动画时会调它们，默认 MainActor 隔离会在后台触发执行器断言直接闪退（2026-09-27 真机崩溃，回归测试 `StyleTests`）。这些地方只读传进来的值和线程安全的系统开关。
+- **录制的委托和样本输出也在后台线程回调**（2026-09-30 录屏第 0 批实测 `SCRecordingOutputDelegate` 的开始 / 结束回调和 `SCStreamOutput` 样本回调都不在主线程；出错回调、`SCStreamDelegate`、`AVAudioRecorderDelegate` 没实测，按同样处理）：遵守这些协议的类型写成 `nonisolated`（整个类型 nonisolated + 可变状态放 `Synchronization.Mutex`，或 MainActor 类里方法级 `nonisolated`），只把 Sendable 的值（时长、状态、错误文字）用 `Task { @MainActor in }` 投回主线程，不写 `DispatchQueue.main.async`；默认 MainActor 的类遵守这些协议编译零警告，回调一来就闪退。挂 `SCStreamOutput` 时 `sampleHandlerQueue` 传 nil，不自建队列。`SCShareableContent`、`startCapture` / `stopCapture`、授权请求、`AVAssetExportSession` 导出都在主线程直接 await；GIF 编码算 `@concurrent` 第 1 类（图片编码）。
 - 禁止 `Task.detached`、`@unchecked Sendable`、`nonisolated(unsafe)`（仅 C 全局变量例外，且必须注释原因），禁止到处写 `DispatchQueue`。主线程投递的 C 回调里用 `MainActor.assumeIsolated {}`。
 - 和 C API 交互的代码只放在 `HotKeyCenter`、`Database`、`SelectionReader`、`Permissions`（AX / 屏幕录制授权、文件搜索的文件夹授权 `opendir`）、`ScreenCapture`（`CGWindowListCopyWindowInfo` 窗口快照）、`ScrollCapture`（长截图自动滚动的 `CGWarpMouseCursorPosition`）、`WordLookup`（系统词典 `DCSCopyTextDefinition`）、`SystemControl`（启动器系统命令：锁屏的私有 `SACLockScreenImmediate` 用 `dlopen` / `dlsym`，找不到退回 `CGEvent` 模拟 ⌃⌘Q；kill 列的后台进程发 `kill(2)` 信号）里。读别的 App 的库（启动器读 Chromium 系的 Favicons / History、Safari 的 History.db、Firefox 的 places.sqlite；第 12 批起 `Launcher/Browsers.swift` 的 `clone` / `discard`）一律先克隆到临时目录再读、读完删（连 `-wal` 一起克隆，先 `-wal` 后主文件；Safari 的数据受完全磁盘访问权限保护，读失败按 `Browsers.failure` 分「没授权 / 没有文件」，不弹框）：小查询用 `Database(readOnly:)` 在主线程（限量、按修改时间缓存，实测写进 ponytail），整表导出这类大读交给 `/usr/bin/sqlite3`（`Subprocess`，进程外；带 `-init /dev/null`，不读用户的 `~/.sqliterc`，免得 `.echo` / `.output` 把输出搅乱）。
 - 并发写法以 Xcode 自带的 `Swift-Concurrency-Updates.md`（路径见文末）为准，不用社区 concurrency 技能。

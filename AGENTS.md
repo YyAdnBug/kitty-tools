@@ -7,9 +7,9 @@
 **kitty-tools 原生 macOS 版**：用 Swift 6 + SwiftUI / AppKit 重写的纯原生菜单栏工具，替代 Tauri 版的 macOS 端。基本自用：只支持 Apple 芯片（arm64），最低 macOS 15.0。
 
 - **Phase 1（当前）**：剪贴板历史 + 翻译（划词 / 输入 / 复制即译 / 截图翻译，全部翻译服务），目标版本 0.1.0。截图翻译提前做了（Vision 本机识字，`Screenshot/`）；M12 按 Bob 补了浮窗快捷键、收藏导出、替换原文。
-- **Phase 2 / 3（进行中）**：启动器（`Launcher/`，M7、M8、M11 已完成；M13 文件搜索 open / find 代码完成待手测，动作面板 / ⌘Y 快速查看 2026-09-28 体检第 5 批代码完成待手测；kill（进程 / 端口）、网站图标、浏览历史、系统设置面板（还要逐个核对 45 个能跳到，PLAN §12）、单位换算 / 进制 2026-09-28 体检第 6 批代码完成待手测；浏览器书签与历史只列装了的、加 Safari / Firefox / Arc 等（`Launcher/Browsers.swift`）2026-09-29 第 12 批代码完成待手测；系统命令对标 Alfred 2026-09-27 代码完成待手测）/ 截图工具（`Screenshot/`，复用截图翻译的冻结帧和框选；M9 框选 + 复制 / 保存 / 钉图、M10 标注 + 识字已完成；长截图 2026-09-25 插入，代码完成待手测）。里程碑 M7–M13、已拍板的 D1–D5（D1 长截图、D2 系统命令已改为做；D5 系统翻译文档验证后先不做）与不迁清单见 PLAN §10。
+- **Phase 2 / 3（进行中）**：启动器（`Launcher/`，M7、M8、M11 已完成；M13 文件搜索 open / find 代码完成待手测，动作面板 / ⌘Y 快速查看 2026-09-28 体检第 5 批代码完成待手测；kill（进程 / 端口）、网站图标、浏览历史、系统设置面板（还要逐个核对 45 个能跳到，PLAN §12）、单位换算 / 进制 2026-09-28 体检第 6 批代码完成待手测；浏览器书签与历史只列装了的、加 Safari / Firefox / Arc 等（`Launcher/Browsers.swift`）2026-09-29 第 12 批代码完成待手测；系统命令对标 Alfred 2026-09-27 代码完成待手测）/ 录屏与录音（2026-09-30 立项、全部按推荐，PLAN §10「录屏与录音」；第 0 批实测完成，接下来 1–7 批串行做）/ 截图工具（`Screenshot/`，复用截图翻译的冻结帧和框选；M9 框选 + 复制 / 保存 / 钉图、M10 标注 + 识字已完成；长截图 2026-09-25 插入，代码完成待手测）。里程碑 M7–M13、已拍板的 D1–D5（D1 长截图与录屏录音、D2 系统命令已改为做；D5 系统翻译文档验证后先不做）与不迁清单见 PLAN §10。
 - Bundle ID `com.yy.kitty-tools.native`（Debug `com.yy.kitty-tools.native.dev`），不再改（改了会丢偏好、钥匙串和授权）；产品名 / .app 名 `Kitty Tools`（Debug `Kitty Tools Dev`，2026-09-26 起，之前叫 Kitty Tools Native）。和 Tauri 旧版同名：安装前先删掉 /Applications 里旧版的 `Kitty Tools.app`。
-- **规格**：各 `mac-*` 规则（界面与动效按 `mac-whisker`）+ 对标产品（启动器 Alfred / Raycast、翻译 Bob、截图 iShot / CleanShot、剪贴板 Paste）。`macos/PLAN.md` 是迁移期的历史方案：§2 技术栈白名单、§4 架构与文件表、§8 打包、§10 / §12 里程碑与手测清单、§11 旧逻辑问题与语言规则仍有效，其余（§5 的 Tauri 映射、§6 数据迁移等）只是历史记录。
+- **规格**：各 `mac-*` 规则（界面与动效按 `mac-whisker`）+ 对标产品（启动器 Alfred / Raycast、翻译 Bob、截图 iShot / CleanShot、录屏 CleanShot / ⌘⇧5、录音 QuickTime / iShot、剪贴板 Paste）。`macos/PLAN.md` 是迁移期的历史方案：§2 技术栈白名单、§4 架构与文件表、§8 打包、§10 / §12 里程碑与手测清单、§11 旧逻辑问题与语言规则仍有效，其余（§5 的 Tauri 映射、§6 数据迁移等）只是历史记录。
 
 ## 技术栈
 
@@ -46,6 +46,12 @@ macos/                       # 本分支唯一开发区
 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools build
 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools test
 
+# 录屏 / 录音实录自检（要「屏幕录制」授权；会录下当前屏幕、闪色块窗口、铺一块滚动大面板约 30 秒、放几声提示音；
+# 目录写绝对路径，整屏原始视频留在里面，看完删；报告在 <目录>/report.md。麦克风几项另加 TEST_RUNNER_KITTY_LIVE_RECORD_MIC=1，
+# 闪退两步走 TEST_RUNNER_KITTY_LIVE_RECORD_KILL=1 / _INSPECT=1，见测试文件头注释）
+TEST_RUNNER_KITTY_LIVE_RECORD_DIR=/tmp/kitty-record xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -only-testing:KittyToolsTests/RecordingProbeTests
+
 # 核对关键构建设置（期望 6.0 / 15.0 / NO / MainActor）
 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools -configuration Release -showBuildSettings \
   | grep -E '^ *(SWIFT_VERSION|MACOSX_DEPLOYMENT_TARGET|ENABLE_APP_SANDBOX|SWIFT_DEFAULT_ACTOR_ISOLATION) ='
@@ -67,6 +73,8 @@ swift macos/brand-icons.swift
 # 签名自检；辅助功能授权卡住时重置（按 bundle id，.app 改名不影响）
 codesign -d -r- <App 路径>
 tccutil reset Accessibility com.yy.kitty-tools.native.dev
+# 要重测第一次开麦克风的授权流程时（实录自检会给 Dev 版要到麦克风授权）
+tccutil reset Microphone com.yy.kitty-tools.native.dev
 # 重置了文件夹授权（SystemPolicyDownloadsFolder 等）时，把「问过」的标记也清掉，免得启动器文件搜索按旧状态读目录弹框
 defaults delete com.yy.kitty-tools.native.dev folderAccessRequested
 ```
