@@ -288,6 +288,44 @@ struct SnapshotProbeTests {
           dark: dark, to: "\(out)/clip-\(name)\(dark ? "-dark" : "").png")
       }
     }
+    // 一行文本的透镜：行标题已经原样显示全的不画第二遍、只剩元信息行（很短的富文本；有搜索词时标题也不摘录、
+    // 照样从头显示）；标题列放不下的一行字（≤ 60 字）还是给两行高的正文（上面的 lens-short 是正文只有一行的）。
+    // 另起一个小库，不动上面那批图
+    let lineStore = try ClipboardStore(
+      db: Database(path: ":memory:"), images: ImageStore(directory: dir))
+    let lines: [(String, Double, ClipItem.RichType?)] = [
+      ("大合唱练歌", 300, .html),
+      ("macos/build/Kitty Tools_0.3.0_arm64.dmg", 200, nil),
+      (
+        "一行字但是标题列放不下：行标题会在末尾截断，所以透镜里还是要把整句话完整地再显示一遍，这样才看得到后半句，最多两行",
+        100, nil
+      ),
+    ]
+    for (text, ago, rich) in lines {
+      var item = ClipItem(
+        kind: .text, sourceName: "Google Chrome", sourceBundleID: "com.google.Chrome",
+        copiedAt: Date.now.addingTimeInterval(-ago))
+      item.text = text
+      item.richType = rich
+      lineStore.record(item)
+    }
+    let lineModel = ClipboardPanelModel(store: lineStore)
+    let lineStates: [(String, (ClipboardPanelModel) -> Void)] = [
+      ("lens-wrapped", { _ in }),
+      ("lens-whole", { m in pick(m) { $0.text == "大合唱练歌" } }),
+      ("lens-whole-search", { m in m.query = "arm64" }),
+    ]
+    for dark in [false, true] {
+      for (name, configure) in lineStates {
+        lineModel.reset()
+        configure(lineModel)
+        try snapshot(
+          ClipboardPanelView(model: lineModel),
+          size: NSSize(
+            width: ClipboardPanelView.width, height: ClipboardPanelView.height(for: lineModel)),
+          dark: dark, to: "\(out)/clip-\(name)\(dark ? "-dark" : "").png")
+      }
+    }
     // 关掉透镜 = 纯列表（设置 › 剪贴板「显示透镜」）：在临时偏好域里关掉，不碰用户自己的设置
     let lensSuite = "kitty-snapshot-\(UUID().uuidString)"
     let noLens = try #require(UserDefaults(suiteName: lensSuite))

@@ -1,6 +1,7 @@
 // 剪贴板面板交互（体检第 3 批）的纯逻辑单测：JSON 默认美化与缓存、条目消失后选中挪到下一条、多选随搜索裁剪、
 // 右键 / ⌘Y「复制」只复制被点的那条、菜单开着时过滤框的编辑键、⌘K 与右键同一份动作表（分节、子列表、按类型的动作）、
-// 共用的菜单过滤（拼音前缀）、钉到屏幕的位置、复制路径、拖出去的剪贴板条目、对话框能否保存、⌘Y 里的纯文本复制。
+// 共用的菜单过滤（拼音前缀）、钉到屏幕的位置、复制路径、拖出去的剪贴板条目、对话框能否保存、⌘Y 里的纯文本复制、
+// 判定「行标题已显示全」的条目在行里真的没被截断（把行画在屏外窗口里比像素）。
 // 用内存库 + 临时目录，不碰真实数据；不跑会真的打开网址 / 文件、弹面板的动作。
 
 import AppKit
@@ -443,5 +444,71 @@ struct ClipboardPanelTests {
     let clipboard = try #require(ShortcutsSheet.groups.first { $0.title == "剪贴板" })
     let keys = Set(clipboard.entries.flatMap(\.keys))
     #expect(keys.isSuperset(of: ["⌘T", "⌘O", "⌘R", "⌥⌘C"]))
+  }
+
+  /// ClipRowView.showsWholeText 认可的标题，行里真的没被截断（它的宽度预算照着行的布局写，行的布局改了这里先失败）：
+  /// 把标题撑到它认可的最宽，按最挤的样子把行画出来（常显的滚动条占掉 16 pt、⌘9 键帽亮着），
+  /// 标题那一段的像素和加宽 400 pt 再画一遍的完全一样（截断了末尾会变成「…」）；对照：再窄 40 pt 就不一样。
+  /// 屏外窗口，不弹面板、不抢键盘
+  @Test func wholeTitleIsNotTruncated() throws {
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let images = ImageStore(directory: directory)
+    let suite = "kitty-row-test-\(UUID().uuidString)"
+    let prefs = try #require(UserDefaults(suiteName: suite))
+    defer { prefs.removePersistentDomain(forName: suite) }
+    /// 行画成位图后标题那一段（x 从 44 起、宽 title）的像素
+    func titlePixels(_ item: ClipItem, width: CGFloat, title: CGFloat) throws -> Data {
+      let size = NSSize(width: width, height: ClipRowView.height)
+      let window = NSWindow(
+        contentRect: NSRect(origin: NSPoint(x: -20000, y: -20000), size: size),
+        styleMask: [.borderless], backing: .buffered, defer: false)
+      let host = NSHostingView(
+        rootView: ClipRowView(
+          item: item, form: nil, shortcutIndex: 8, showsShortcut: true, isChecked: nil,
+          groupName: nil, images: images
+        )
+        .frame(width: width)
+        .defaultAppStorage(prefs))
+      window.contentView = host
+      window.orderFront(nil)
+      defer { window.orderOut(nil) }
+      RunLoop.main.run(until: .now.addingTimeInterval(0.3))
+      let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+      host.cacheDisplay(in: host.bounds, to: bitmap)
+      let scale = CGFloat(bitmap.pixelsWide) / width
+      let crop = CGRect(
+        x: 44 * scale, y: 0, width: floor(title * scale), height: CGFloat(bitmap.pixelsHigh))
+      let image = try #require(bitmap.cgImage?.cropping(to: crop))
+      return try #require(
+        NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
+    }
+    let plain = ClipItem(kind: .text)
+    var favorite = ClipItem(kind: .text, sourceName: "Google Chrome")
+    favorite.favorite = true
+    var marked = favorite
+    marked.note = String(repeating: "备注", count: 20)
+    marked.richType = .rtf
+    marked.isSnippet = true
+    let rowWidth = ClipboardPanelView.width - 2 * ClipboardPanelView.inset - 16
+    for (name, base) in [("没有来源", plain), ("收藏", favorite), ("备注 + 全部标记", marked)] {
+      // 先用汉字、再用最窄的字母把标题撑到 showsWholeText 认可的最宽
+      var item = base
+      var text = ""
+      for unit in ["汉", "i"] {
+        while true {
+          item.text = text + unit
+          guard ClipRowView.showsWholeText(item) else { break }
+          text += unit
+        }
+      }
+      item.text = text
+      #expect(text.count > 15 && ClipRowView.showsWholeText(item), "\(name)")
+      let title = (text as NSString).size(
+        withAttributes: [.font: NSFont.systemFont(ofSize: 13)]
+      ).width
+      let wide = try titlePixels(item, width: rowWidth + 400, title: title)
+      #expect(try titlePixels(item, width: rowWidth, title: title) == wide, "\(name)：标题被截断了")
+      #expect(try titlePixels(item, width: rowWidth - 40, title: title) != wide, "\(name)：对照")
+    }
   }
 }

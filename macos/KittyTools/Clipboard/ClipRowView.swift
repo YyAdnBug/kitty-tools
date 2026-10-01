@@ -1,6 +1,7 @@
 // 剪贴板列表的一行（Lens Bar，mac-whisker §6 剪贴板）：40 pt，24 pt 图标块（色块 > 缩略图 > 来源 App 图标 + 代码角标
 // > 网站图标 / 种类图标），标题 13 regular 单行（代码 / JSON 用 SF Mono 12；有搜索词时从第一个命中处摘录、命中词黄底），
 // 右侧 11 pt「来源 · 多久前」（有备注时换成备注），再右是收藏夹 / 带格式 / 片段 / 收藏标记；
+// 标题已经把整条文本原样显示全的（showsWholeText），透镜不再画第二遍、有搜索词也不摘录；
 // ⌘1–9 键帽只在按住 ⌘ 时出现。选中是列表背后一块滑动的中性高亮（透镜的底），行本身不填色、文字不反白；
 // 多选时最左边多一个品牌粉勾选圆，勾中的行品牌粉 0.14 底。选中行在它下面展开透镜（LensView）。
 // 行内用到的摘要文字、图标与取色缓存、缩略图也放在这里。
@@ -25,9 +26,13 @@ struct ClipRowView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   static let height: CGFloat = 40
+  /// 行内间距、左右内边距、右侧文字最宽：布局和 showsWholeText 的宽度预算共用
+  private static let spacing: CGFloat = 10
+  private static let padding: CGFloat = 10
+  private static let trailingMax: CGFloat = 220
 
   var body: some View {
-    HStack(spacing: 10) {
+    HStack(spacing: Self.spacing) {
       if let isChecked {
         Image(systemName: isChecked ? "checkmark.circle.fill" : "circle")
           .font(.system(size: 15))
@@ -47,7 +52,7 @@ struct ClipRowView: View {
         .font(.system(size: 11))
         .lineLimit(1)
         .truncationMode(.tail)
-        .frame(maxWidth: 220, alignment: .trailing)
+        .frame(maxWidth: Self.trailingMax, alignment: .trailing)
         .layoutPriority(1)
       if let groupName {
         Text(groupName)
@@ -88,7 +93,7 @@ struct ClipRowView: View {
         ? .easeOut(duration: 0.12)
         : .easeOut(duration: 0.12).delay(Double(shortcutIndex ?? 0) * 0.015), value: showsShortcut
     )
-    .padding(.horizontal, 10)
+    .padding(.horizontal, Self.padding)
     .frame(height: Self.height)
     .background(
       isChecked == true ? Style.brand.opacity(0.14) : .clear,
@@ -104,8 +109,12 @@ struct ClipRowView: View {
     var shown = full
     switch item.kind {
     case .text:
-      let text = String((item.text ?? "").prefix(20_000))
-      shown = Search.excerpt(of: text, query: query, before: 12, after: 160) ?? full
+      // 标题本来就显示得全的不摘录：这时透镜没有正文区，摘录会把开头藏起来。
+      // 多选时行首多一个勾选圆、标题列变窄（透镜也收着），照旧摘录
+      if isChecked != nil || !Self.showsWholeText(item) {
+        let text = String((item.text ?? "").prefix(20_000))
+        shown = Search.excerpt(of: text, query: query, before: 12, after: 160) ?? full
+      }
     case .image:
       if let ocr = item.ocrText, Search.firstHit(in: ocr, query: query) != nil {
         shown =
@@ -119,6 +128,34 @@ struct ClipRowView: View {
     var attributed = AttributedString(shown.replacing(/\s+/, with: " "))
     attributed.highlight(query)
     return attributed
+  }
+
+  /// 标题已经把整条文本原样显示出来了：去掉首尾空白后和标题一字不差（一行，没有被压成一个空格的连续空白），
+  /// 而且标题列最窄时也放得下。这时透镜不再把同一句话画第二遍（Lens.bodyHeight 给 0，只剩元信息行），
+  /// 有搜索词时标题也不摘录。透镜的高度进前缀和，所以只看条目自己的数据（纯函数，不读时间、修饰键、系统设置）：
+  /// ⌘数字键帽和常显的滚动条都当它在——真的标题列只会比这里算的宽（342 – 396 pt 减去标记；
+  /// ClipboardPanelTests.wholeTitleIsNotTruncated 把行画出来对过）。
+  /// ponytail: 收藏夹筛选为「全部」时行尾多一个收藏夹胶囊，没算进来：收藏夹名超过三个字、标题又贴着上限时
+  /// 会被截掉几个字（⌘Y 看全文）；真碰到再把收藏夹名的宽度传进来
+  static func showsWholeText(_ item: ClipItem) -> Bool {
+    // 标题列再宽也放不下 400 字节（最窄的字母也有 3 pt 多）；长文本不在这里整段去空白
+    guard item.kind == .text, let text = item.text, text.utf8.count <= 400 else { return false }
+    let title = item.title
+    guard title == text.trimmingCharacters(in: .whitespacesAndNewlines) else { return false }
+    // 标题列最窄时：行宽 − 常显的滚动条 16 − 左右内边距 − 图标块 − 四处固定间距（图标后、Spacer 两边、星标前）
+    // − Spacer 最窄 8 − 右侧文字那一格（带 maxWidth 的 frame 有多少占多少，字再短也占满 220）
+    // − ⌘数字键帽（⌘9 约 27.4）连它前面的间距
+    var room =
+      ClipboardPanelView.width - 2 * ClipboardPanelView.inset - 16 - 2 * padding - IconTile.side
+      - 4 * spacing - 8 - trailingMax - (spacing + 28)
+    // 标记的宽度是 SF Symbols 实测后取整：带格式 23、片段 14、星标 15
+    if item.richType != nil { room -= spacing + 24 }
+    if item.isSnippet { room -= spacing + 16 }
+    if item.favorite { room -= 16 }
+    let width = (title as NSString).size(
+      withAttributes: [.font: NSFont.systemFont(ofSize: 13)]
+    ).width
+    return ceil(width) <= room
   }
 
   /// 右侧：有备注时是备注（secondary，所有条目都能写，体检 A3），否则「来源 · 多久前」（tertiary）

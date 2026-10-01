@@ -97,7 +97,16 @@ struct ContentFormTests {
       item.text = value
       return item
     }
-    #expect(Lens.bodyHeight(for: text("  一句短话  "), form: nil) == 36)
+    // 行标题已经原样显示全的一行字没有正文区（同一句话不画第二遍）：首尾空白、末尾的换行不算差别
+    #expect(Lens.bodyHeight(for: text("  一句短话  "), form: nil) == 0)
+    #expect(Lens.bodyHeight(for: text("git status\n"), form: nil) == 0)
+    #expect(Lens.height(for: text("一句短话"), form: nil) == 70)
+    // VoiceOver 也不把同一句话念两遍：没有正文区的只说类型
+    #expect(Lens.accessibilityValue(for: text("一句短话"), form: nil) == "文本")
+    #expect(Lens.accessibilityValue(for: text("两行\n文本"), form: nil) == "文本 · 两行\n文本")
+    // 一行但标题列放不下、或者标题把连续空白压成了一个空格（不是原样）：还是两行高的正文
+    #expect(Lens.bodyHeight(for: text(String(repeating: "长", count: 60)), form: nil) == 36)
+    #expect(Lens.bodyHeight(for: text("a\tb"), form: nil) == 36)
     #expect(Lens.bodyHeight(for: text(String(repeating: "长", count: 61)), form: nil) == 90)
     #expect(Lens.bodyHeight(for: text("两行\n文本"), form: nil) == 90)
     #expect(Lens.bodyHeight(for: text("x"), form: .code) == 128)
@@ -108,6 +117,42 @@ struct ContentFormTests {
     #expect(Lens.bodyHeight(for: ClipItem(kind: .file), form: nil) == 76)
     #expect(Lens.height(for: text("{}"), form: .json) == 198)  // 最高的透镜
     #expect(Lens.reserve == 198 - ClipRowView.height)
+  }
+
+  /// 行标题有没有把整条文本原样显示全（透镜要不要正文区）：只看条目自己的数据。标题列最窄 342 pt
+  /// （右侧文字那一格不管字多短都占满 220），带格式 / 片段 / 收藏标记再各占一点
+  @Test func rowShowsWholeText() {
+    func text(_ count: Int, _ change: (inout ClipItem) -> Void = { _ in }) -> ClipItem {
+      text(String(repeating: "字", count: count), change)  // 13 pt 下一个字约 12.9 pt 宽
+    }
+    func text(_ value: String, _ change: (inout ClipItem) -> Void = { _ in }) -> ClipItem {
+      var item = ClipItem(kind: .text, sourceName: "Safari")
+      item.text = value
+      change(&item)
+      return item
+    }
+    #expect(ClipRowView.showsWholeText(text("大合唱练歌") { $0.richType = .html }))
+    #expect(ClipRowView.showsWholeText(text(26)))
+    #expect(!ClipRowView.showsWholeText(text(27)))
+    // 备注、来源名多长都一样；三个标记一共占掉 76
+    #expect(ClipRowView.showsWholeText(text(26) { $0.note = String(repeating: "备注", count: 20) }))
+    func marked(_ count: Int) -> ClipItem {
+      text(count) {
+        $0.richType = .rtf
+        $0.isSnippet = true
+        $0.favorite = true
+      }
+    }
+    #expect(ClipRowView.showsWholeText(marked(20)))
+    #expect(!ClipRowView.showsWholeText(marked(21)))
+    // 不是一行、标题不是原样、不是文本
+    #expect(!ClipRowView.showsWholeText(text("两行\n文本")))
+    #expect(!ClipRowView.showsWholeText(text("a  b")))
+    #expect(!ClipRowView.showsWholeText(text(String(repeating: "x", count: 401))))
+    #expect(!ClipRowView.showsWholeText(ClipItem(kind: .image)))
+    var file = ClipItem(kind: .file)
+    file.filePaths = ["/tmp/a.txt"]
+    #expect(!ClipRowView.showsWholeText(file))
   }
 
   @Test func syntaxHighlight() {

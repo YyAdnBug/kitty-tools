@@ -1,7 +1,8 @@
 // 剪贴板透镜（Lens Bar，mac-whisker §6 剪贴板）：选中行在原地展开的预览。第一行就是普通行（ClipRowView，40），
 // 下面是按类型定高的正文区（左边对齐标题列 x = 44、右内边距 12）+ 22 pt 元信息行 + 底 8。
 // 正文区高度只查表（Lens.bodyHeight），不量内在尺寸、不按行数估：高亮块的前缀和、滚动、窗口的透镜预留都靠它算得准；
-// 正文放进固定高度的 frame 裁切、底部 12 pt 渐隐。文本 90（短文本 36）、代码 / JSON 128（行号 + 语法着色）、
+// 正文放进固定高度的 frame 裁切、底部 12 pt 渐隐。文本 90（短文本 36；行标题已经原样显示全的没有正文区，
+// 同一句话不画第二遍，透镜只剩元信息行）、代码 / JSON 128（行号 + 语法着色）、
 // 颜色 72（色块 + 四枚值胶囊，点一下复制）、链接 90（头图 + 标题 + 网址，LinkPreview 停留 0.25 s 才取）、
 // 图片 108（缩略图 + 尺寸；识别文字只用来搜索，不在这里显示）、文件 76（Quick Look 缩略图条）。
 // 正文不可选中（焦点一直在搜索框，⌘ 快捷键都有效），要选文字按 ⌘Y。有搜索词时从第一个命中处摘录并高亮。
@@ -27,12 +28,13 @@ enum Lens {
       case .color: 72
       case .code, .json: 128
       case .link: 90
-      case nil: isShort(item.text ?? "") ? 36 : 90
+      // 行标题已经原样显示全了：不再画第二遍（只按条目自己的数据判断，仍是常数）
+      case nil: ClipRowView.showsWholeText(item) ? 0 : isShort(item.text ?? "") ? 36 : 90
       }
     }
   }
 
-  /// 透镜总高 = 行头 + 正文 + 元信息 + 底（最高 198）
+  /// 透镜总高 = 行头 + 正文 + 元信息 + 底（最高 198，标题已显示全的文本最矮 70）
   static func height(for item: ClipItem, form: ContentForm?) -> CGFloat {
     head + bodyHeight(for: item, form: form) + meta + bottom
   }
@@ -46,8 +48,9 @@ enum Lens {
   /// 搜索词命中的底色（systemYellow 0.35，和 ⌘Y 大卡的 NSTextView 高亮同色）
   static let hitColor = Color(nsColor: .systemYellow).opacity(0.35)
 
-  /// VoiceOver 的透镜值：「类型 · 前 200 字」
+  /// VoiceOver 的透镜值：「类型 · 前 200 字」；没有正文区的（行标题已经把全文念过了）只说类型
   static func accessibilityValue(for item: ClipItem, form: ContentForm?) -> String {
+    guard bodyHeight(for: item, form: form) > 0 else { return typeTitle(item, form: form) }
     let body =
       switch item.kind {
       case .text: String((item.text ?? "").prefix(200))
@@ -101,12 +104,15 @@ struct LensView: View {
   let model: ClipboardPanelModel
 
   var body: some View {
+    let height = Lens.bodyHeight(for: item, form: form)
     VStack(alignment: .leading, spacing: 0) {
-      content
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .frame(height: Lens.bodyHeight(for: item, form: form), alignment: .topLeading)
-        .clipped()
-        .fading(when: fades)
+      if height > 0 {
+        content
+          .frame(maxWidth: .infinity, alignment: .topLeading)
+          .frame(height: height, alignment: .topLeading)
+          .clipped()
+          .fading(when: fades)
+      }
       meta.frame(height: Lens.meta)
     }
     .padding(.leading, 44)
