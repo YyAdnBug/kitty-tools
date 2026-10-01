@@ -114,7 +114,7 @@ enum Prefs {
   /// 录屏里画光标（默认开）
   static let screenRecordShowsCursor = "screenRecordShowsCursor"
   /// 录制条的三个开关，记住上次（录屏第 4 批；设置页不重复，拍板 C4-a）：录系统声音（默认开）、录麦克风（默认关；
-  /// 没问过授权时打开只记偏好，按开始、遮罩收起后才问）、显示点按（默认关，点击处画圈）
+  /// 没问过授权时打开只记偏好，按开始、遮罩收起后才问）、显示点按（默认关；点按处画圈，自己画的 InputOverlay）
   nonisolated static let screenRecordSystemAudio = "screenRecordSystemAudio"
   nonisolated static let screenRecordMicrophone = "screenRecordMicrophone"
   nonisolated static let screenRecordShowsClicks = "screenRecordShowsClicks"

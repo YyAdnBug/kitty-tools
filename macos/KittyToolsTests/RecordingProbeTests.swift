@@ -10,9 +10,11 @@
 // 过十几秒再加 TEST_RUNNER_KITTY_LIVE_RECORD_INSPECT=1 只跑 crashInspect() 看留下的文件。报告在 <输出目录>/report.md。
 // 录屏第 1 批加了 screenRecorderTake()：用 ScreenRecorder 真录 2 s（只验产品代码，可以单独跑）；第 2 批起先倒数 1 s
 // （录制 HUD 从倒数换成录制态，倒数不进文件：录下来仍是 2 s），录制中连 HUD 一起截图；第 3 批起顺带验最后一帧（poster）的
-// 尺寸和内容（存成 recorder-poster.png，看完和视频一起删）；第 4 批起按录制条的偏好开系统声音 + 麦克风 + 显示点按（BGRA）：
-// 0.5 s 时 afplay 放一声，验文件只有一条音轨、前 0.4 s 有麦克风底噪（第 0 批的对照法：只录系统声音那段是数字静音）、
-// BGRA 的文件能播，报告里记这段时间系统日志「NOT found」的条数（录什么挂什么空输出，应为 0）。要麦克风授权（Dev 版已有）。
+// 尺寸和内容（存成 recorder-poster.png，看完和视频一起删）；第 4 批起按录制条的偏好开系统声音 + 麦克风 + 显示点按：
+// 0.5 s 时 afplay 放一声，验文件只有一条音轨、前 0.4 s 有麦克风底噪（第 0 批的对照法：只录系统声音那段是数字静音），
+// 报告里记这段时间系统日志「NOT found」的条数（录什么挂什么空输出，应为 0）。要麦克风授权（Dev 版已有）。
+// 手测反馈第 1 批（2026-10-01）加了 inputOverlayTake()：显示点按改成自己画（InputOverlay），开着它真录 2 s、直接调它的按下 /
+// 拖动入口（不发合成鼠标事件、不真点任何东西），从 mp4 取帧验圈真的录进了画面、截图冻结帧里没有它、文件带色彩标记。
 // 录音第 5 批加了 audioRecorderTake()（另加 TEST_RUNNER_KITTY_LIVE_RECORD_MIC=1）：用 AudioRecorder 录 1.5 s、暂停 1 s、再录 1.5 s，
 // 验 m4a 能播、时长约 3 s、AAC 48 kHz 单声道约 128 kbps、名字「录音 …」挪进输出目录的 audio/、波形 poster；录制中截一张 HUD。
 // 录音第 6 批加了 audioRecorderSystemTake(_:)（同样要 _MIC=1）：来源是系统声音 / 两者时走录屏管线只录声音，录约 2 s、0.5 s 时
@@ -740,7 +742,146 @@ struct RecordingProbeTests {
         "先倒数 1 s 再开流：文件时长 \(String(format: "%.2f", media.duration)) s（录 2 s；倒数进了文件会是 3 s 左右）",
         "结尾一帧：白名单里的 NSWindow（红 230,26,26）读回 \(red)；不在白名单的 NSPanel（绿 26,204,51）处读回 \(green)",
         "最后一帧（第 3 批 poster）：\(poster.width)×\(poster.height)，红色窗口处读回 \(posterRed)",
-        "第 4 批：系统声音 + 麦克风 + 显示点按（BGRA）全开：视频轨到 \(String(format: "%.2f", videoEnd)) s（画面 1 s 后不动），音轨 \(media.audioTracks) 条，前 0.4 s 峰值 \(decibels(head))（麦克风底噪），整段 \(decibels(whole))（0.5 s 放了 Glass）；这段时间日志「NOT found」\(logs)",
+        "第 4 批：系统声音 + 麦克风 + 显示点按全开：视频轨到 \(String(format: "%.2f", videoEnd)) s（画面 1 s 后不动），音轨 \(media.audioTracks) 条，前 0.4 s 峰值 \(decibels(head))（麦克风底噪），整段 \(decibels(whole))（0.5 s 放了 Glass）；这段时间日志「NOT found」\(logs)",
+      ] + media.summary)
+  }
+
+  // MARK: - 手测反馈第 1 批：点按圈录进画面
+
+  /// 开着显示点按真录约 2 s（不倒数、不录声音、不画光标；主屏可见区里 640 × 360 点），选区里垫一块白色的白名单窗口。
+  /// 开录后直接调 InputOverlay 的入口（不发合成鼠标事件、不真点任何东西）：左键按在白窗口左半、右键按在右半，1.2 s 时把
+  /// 左键的圈拖到下面一点；另带动画轻点一下中键，停之前它的图层已经移除（真显示着的窗口里松开动画放得完）。从 mp4 取两帧：
+  /// - 0.5 s（每秒换过滤器的第一次检查之前）：左键处是掺了强调色的白、圈上有强调色，右键处中心还是白（空心环）、圈上有
+  ///   强调色——开流那次的过滤器就把这层状态栏以上的窗口列进了例外；
+  /// - 结尾：圆盘到了新位置，原位置回到白。
+  /// 录制中另拍一次截图冻结帧（ScreenCapture.freeze）：圈不在里面（按层级不收），白窗口在。文件带色彩标记（不再用 BGRA）。
+  /// 停下后覆盖层立刻收掉。录下的视频验完就删（两帧存成 clicks-early.png / clicks-last.png，看完自己删）。只跑这一个：
+  ///   -only-testing:'KittyToolsTests/RecordingProbeTests/inputOverlayTake()'
+  @Test func inputOverlayTake() async throws {
+    let env = try await Env.make()
+    let suite = "kitty-test-clicks-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    defaults.set(0, forKey: Prefs.screenRecordCountdown)
+    defaults.set(30, forKey: Prefs.screenRecordFrameRate)
+    defaults.set(false, forKey: Prefs.screenRecordShowsCursor)
+    defaults.set(false, forKey: Prefs.screenRecordSystemAudio)
+    defaults.set(false, forKey: Prefs.screenRecordMicrophone)
+    defaults.set(true, forKey: Prefs.screenRecordShowsClicks)
+    let folder = Self.directory.appending(path: "clicks")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let visible = env.screen.visibleFrame
+    let region = CGRect(x: visible.minX + 240, y: visible.midY - 180, width: 640, height: 360)
+    // 白底：普通 NSWindow（设置窗的类，在白名单里），圈压在它上面颜色才算得准
+    let ground = NSWindow(
+      contentRect: region.insetBy(dx: 40, dy: 40), styleMask: [.borderless], backing: .buffered,
+      defer: false)
+    ground.backgroundColor = .white
+    ground.level = .floating
+    ground.isReleasedWhenClosed = false
+    ground.orderFrontRegardless()
+    defer { ground.orderOut(nil) }
+    var finished: ScreenRecorder.Result?
+    let recorder = try #require(
+      ScreenRecorder(region: region, directory: folder, defaults: defaults) { finished = $0 })
+    let existing = Set(NSApp.windows.map(ObjectIdentifier.init))
+    recorder.start()
+    // 开始了才出停止项
+    var stopItem: NSWindow?
+    for _ in 0..<100 where stopItem == nil {
+      try await Task.sleep(for: .milliseconds(50))
+      stopItem = NSApp.windows.first {
+        String(describing: type(of: $0)) == "NSStatusBarWindow" && $0.isVisible
+          && !existing.contains(ObjectIdentifier($0))
+      }
+    }
+    try #require(stopItem != nil, "5 s 内没开始录")
+    let began = Date.now
+    let overlay = try #require(recorder.inputOverlay, "开着显示点按却没有覆盖层")
+    let panel = overlay.panel
+    let covered = panel.frame
+    #expect(panel.isVisible)
+    let left = CGPoint(x: region.minX + 200, y: region.midY + 40)
+    let right = CGPoint(x: region.maxX - 200, y: region.midY + 40)
+    let dragged = CGPoint(x: left.x + 60, y: left.y - 100)
+    overlay.press(0, at: left)
+    overlay.press(1, at: right)
+    // 再带动画轻点一下中键（按下紧跟松开）：真显示着的窗口里圈等满最短显示、淡出后图层移除（停之前看，只剩按着的两个）
+    overlay.press(2, at: CGPoint(x: region.midX, y: region.midY - 80))
+    overlay.release(2)
+    #expect(overlay.markCount == (Style.reduceMotion ? 3 : 4))
+    try await Task.sleep(for: .seconds(1.2))
+    // 截图冻结帧：圈不在里面（层级在状态栏以上，keptOwnWindows 不收），白窗口在
+    let shots = try await ScreenCapture.freeze()
+    let shot = try #require(shots.first { $0.screen == env.screen }).image
+    let perPoint = CGFloat(shot.width) / env.screen.frame.width
+    let frozen = try #require(
+      pixel(
+        shot, x: Int((left.x - env.screen.frame.minX) * perPoint),
+        y: Int((env.screen.frame.maxY - left.y) * perPoint)))
+    #expect(distance(frozen, (255, 255, 255)) < 12, "冻结帧里有点按圈：\(frozen)")
+    overlay.move(0, to: dragged)
+    try await Task.sleep(for: .seconds(max(0, 2 - Date.now.timeIntervalSince(began))))
+    #expect(overlay.markCount == 2, "轻点的圈放完没移除：还有 \(overlay.markCount) 个图层")
+    recorder.stop()
+    for _ in 0..<300 where finished == nil { try await Task.sleep(for: .milliseconds(50)) }
+    let result = try #require(finished, "15 s 内没收尾")
+    #expect(result.reason == .user && result.moved)
+    // 覆盖层盖住被录的区域（对齐到像素后的选区；窗口的 frame 被 AppKit 取成整点，最多大出 1 pt），停下后收掉
+    #expect(
+      covered.contains(result.region) && result.region.insetBy(dx: -1, dy: -1).contains(covered),
+      "覆盖层 \(covered)，被录区域 \(result.region)")
+    #expect(recorder.inputOverlay == nil && !panel.isVisible)
+    let file = try #require(result.file)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let media = await inspect(file)
+    #expect(media.playable && media.codec == "avc1")
+    #expect(!media.colors.contains("无"), "文件不带色彩标记：\(media.colors)")
+    let scale = env.screen.backingScaleFactor
+    let accent = rgb(Style.Shot.accent)
+    // 圆盘填的是掺了 30% 白的强调色、0.5 不透明：白底上 = 白 0.65 + 强调色 0.35
+    let tinted = (
+      Int(255 * 0.65 + Double(accent.0) * 0.35), Int(255 * 0.65 + Double(accent.1) * 0.35),
+      Int(255 * 0.65 + Double(accent.2) * 0.35)
+    )
+    /// 画面里 point（全局坐标）往 angle 方向 radius 点处的像素
+    func at(_ image: CGImage, _ point: CGPoint, radius: CGFloat = 0, angle: Double = 0)
+      -> (Int, Int, Int)?
+    {
+      pixel(
+        image, x: Int((point.x + radius * cos(angle) - region.minX) * scale),
+        y: Int((region.maxY - point.y - radius * sin(angle)) * scale))
+    }
+    /// 圈上（描边中线）八个方向里离强调色最近的那个像素差多少
+    func ring(_ image: CGImage, _ point: CGPoint, radius: CGFloat) -> Int {
+      (0..<8).compactMap { at(image, point, radius: radius, angle: Double($0) * .pi / 4) }
+        .map { distance($0, accent) }.min() ?? .max
+    }
+    let early = try #require(await frame(file, at: 0.5), "取不到 0.5 s 的帧")
+    try save(early, "clicks-early.png")
+    let disc = try #require(at(early, left))
+    let hollow = try #require(at(early, right))
+    #expect(distance(disc, tinted) < 60, "0.5 s 左键处不是圆盘的颜色：\(disc)，应约 \(tinted)")
+    #expect(distance(disc, (255, 255, 255)) > 40, "0.5 s 左键处还是白的：\(disc)")
+    #expect(distance(hollow, (255, 255, 255)) < 30, "右键的空心环中间不该有填充：\(hollow)")
+    let discRing = ring(early, left, radius: 21)
+    let hollowRing = ring(early, right, radius: 20.5)
+    #expect(discRing < 90 && hollowRing < 90, "圈上没有强调色：\(discRing) / \(hollowRing)")
+    let videoRange = try #require(
+      try await AVURLAsset(url: file).loadTracks(withMediaType: .video).first?.load(.timeRange))
+    let last = try #require(await frame(file, at: max(0, videoRange.end.seconds - 0.05)))
+    try save(last, "clicks-last.png")
+    let moved = try #require(at(last, dragged))
+    let vacated = try #require(at(last, left))
+    #expect(distance(moved, tinted) < 60, "拖动后新位置不是圆盘的颜色：\(moved)")
+    #expect(distance(vacated, (255, 255, 255)) < 30, "拖走后原位置还有圈：\(vacated)")
+    note(
+      "点按圈录进画面（手测反馈第 1 批，InputOverlay）",
+      [
+        "强调色 \(accent)，白底上的圆盘应约 \(tinted)；覆盖层窗口层级 \(panel.level.rawValue)",
+        "0.5 s 的帧：左键圆盘中心 \(disc)、圈上离强调色最近差 \(discRing)；右键空心环中心 \(hollow)、圈上差 \(hollowRing)",
+        "结尾的帧（视频轨到 \(String(format: "%.2f", videoRange.end.seconds)) s）：拖到的新位置 \(moved)，原位置 \(vacated)",
+        "录制中的截图冻结帧左键处 \(frozen)（白 = 圈没被截进去）",
       ] + media.summary)
   }
 

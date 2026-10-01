@@ -4,7 +4,8 @@
 // 第 3 批：最后一帧的取帧时刻与尺寸上限、取不到时 nil。视频卡在 VideoCardTests。
 // 第 4 批：录制条三个开关的默认值与读偏好、按开关配流和挂哪几路空输出、麦克风授权这一步怎么走、麦克风出错的原因、
 // 麦克风中途断开时的结果岛、等麦克风授权框时停止（当取消、开关弹回）。录制条本身在 SelectionInteractionTests，HUD 的声音状态在
-// RecordingHUDTests。
+// RecordingHUDTests。手测反馈第 1 批：显示点按改成自己画（InputOverlay，单测在 InputOverlayTests），配流不再开系统的点按圈、
+// 不换 BGRA。
 // 录音第 6 批（只录声音模式）：录的那一小块（屏内左上角 64 × 64 点）、存盘名的扩展名跟着文件走。
 // 真录制在按需实录自检 RecordingProbeTests.screenRecorderTake / audioRecorderSystemTake。
 
@@ -260,8 +261,8 @@ struct ScreenRecorderTests {
         == .init(systemAudio: false, microphone: true, showsClicks: true))
   }
 
-  /// 按开关配流：录什么挂什么空输出（画面总挂）；系统声音 48 kHz 立体声；麦克风跟随系统输入；显示点按要 BGRA，
-  /// 关着时不动默认像素格式（也不开点按）
+  /// 按开关配流：录什么挂什么空输出（画面总挂）；系统声音 48 kHz 立体声；麦克风跟随系统输入。显示点按开不开都不动
+  /// 像素格式、不开系统的点按圈（手测反馈第 1 批：圈由 InputOverlay 自己画，叠上系统的就是两层；文件照常带色彩标记）
   @Test func configureFollowsOptions() {
     let plain = SCStreamConfiguration()
     let defaultFormat = plain.pixelFormat
@@ -278,7 +279,7 @@ struct ScreenRecorderTests {
         == [.screen, .audio, .microphone])
     #expect(all.capturesAudio && all.sampleRate == 48_000 && all.channelCount == 2)
     #expect(all.captureMicrophone && all.microphoneCaptureDeviceID == nil)
-    #expect(all.showMouseClicks && all.pixelFormat == kCVPixelFormatType_32BGRA)
+    #expect(!all.showMouseClicks && all.pixelFormat == defaultFormat)
 
     let micOnly = SCStreamConfiguration()
     #expect(

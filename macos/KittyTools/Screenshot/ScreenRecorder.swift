@@ -5,7 +5,8 @@
 // 开录前先倒数（录屏第 2 批，拍板 R9-a，设置里可选 0 / 3 / 5 秒）：数完才开流、倒数不进文件；倒数期间边框走蚂蚁线、
 // 录制 HUD（RecordingHUD）数秒，Esc 走临时热键（HUD 不当 key），✕ / Esc / 再按录屏快捷键取消，点数字马上开始。
 // 本 App 的窗口（R4-a）：过滤器排除整个本 App，只把几类面板（剪贴板、启动器、翻译、⌘Y、钉图、设置窗）列进例外
-// （ScreenCapture.recordedOwnWindows）；录制中每秒比一次它们的窗口号，变了（第一次呼出的面板、新钉图）就换过滤器。
+// （ScreenCapture.recordedOwnWindows），外加点按圈的窗口（InputOverlay，见下）；录制中每秒比一次它们的窗口号，变了
+// （第一次呼出的面板、新钉图）就换过滤器。
 // 录制中：选区外一圈静止的强调色边框（整屏不画）+ 录制 HUD（红点、计时、放弃、停止）+ 菜单栏另起一个「■ 0:12」停止项
 // （左键即停）；期间不让系统闲置睡眠。放弃（HUD 的 ✕ 点两下）= 停流、删文件、不挪。
 // 锁屏、睡眠、显示器睡眠、被录的屏变了、磁盘剩余不到 1 GB、系统停止流：和用户停止走同一条收尾（停流 → 等文件写完 →
@@ -19,6 +20,9 @@
 // 压住，等框时要停就当取消），拒绝 / 受限照样开录、不带麦克风，警告岛、开关弹回，拒绝过的收尾时再打开系统设置（开录前打开
 // 会盖住选区、录进画面）。录制中改不了（updateConfiguration 会停录），HUD 上的声音状态只读；开录时的输入设备断开了录屏不停，
 // HUD 麦克风变橙、结果岛补「后半段没有麦克风声音」。
+// 显示点按（手测反馈第 1 批，2026-10-01）不用系统的 showMouseClicks（圈又小又淡，还要 BGRA、文件不带色彩标记）：开着时
+// 开流前在被录区域上盖一块 InputOverlay 自己画圈，它的窗口号并进过滤器的例外才录得进画面（exceptedOwnWindows）；
+// 停止 / 放弃 / 取消那一刻和边框、HUD 一起收。
 // 只录声音（录音第 6 批，拍板 A2-a「复用录屏管线」；会话在 AudioRecorder）：录音的来源是系统声音 / 两者时，AudioRecorder 用这里的
 // 只录声音模式（audioOnly）——鼠标所在屏左上角 64 × 64 点、1 fps、输出 128 × 128 像素，过滤器排除整个本 App（没有例外）；不倒数、
 // 不画边框、不出录屏 HUD 和停止项、不防睡眠（这些归 AudioRecorder：录音 HUD，防睡眠同录屏连显示器一起防——这里显示器睡眠
@@ -184,7 +188,7 @@ final class ScreenRecorder: NSObject {
     var microphoneDenied = false
   }
 
-  /// 录制条的三个开关（第 4 批，偏好记住上次）：录不录系统声音、麦克风，画不画点按圈
+  /// 录制条的三个开关（第 4 批，偏好记住上次）：录不录系统声音、麦克风，画不画点按圈（InputOverlay）
   nonisolated struct Options: Equatable, Sendable {
     var systemAudio = true
     var microphone = false
@@ -279,6 +283,8 @@ final class ScreenRecorder: NSObject {
   private var abandoned: Reason?
   private var border: NSPanel?
   private var hud: RecordingHUD?
+  /// 点按圈（显示点按开着的录屏才有；只录声音没有）：开流前建、停的那一刻收
+  private(set) var inputOverlay: InputOverlay?
   private var stopItem: NSStatusItem?
   private var timer: Timer?
   private var ticks = 0
@@ -383,6 +389,13 @@ final class ScreenRecorder: NSObject {
       // 数完：蚂蚁线停成实线，HUD 换成录制态（红点 pop 后呼吸），开流
       border?.contentView = ScrollBorderView(animates: false)
       hud?.update(.recording(0))
+    }
+    // 点按圈：窗口要赶在 makeStream 取窗口表之前建好、露出来，才列得进过滤器的例外。开流时才建（倒数不进文件，倒数时
+    // 不用画）；万一这次的窗口表里还没有它，每秒比一次的 refreshFilterIfNeeded 会把它补上。没开起来的由 tearDown 收
+    if medium == .screen, options.showsClicks {
+      let overlay = InputOverlay(frame: region)
+      overlay.present()
+      inputOverlay = overlay
     }
     let stream: SCStream
     do {
@@ -540,13 +553,22 @@ final class ScreenRecorder: NSObject {
     var errorDescription: String? { "找不到选区所在的屏幕" }
   }
 
-  /// 排除整个本 App，白名单里的面板列进例外（不看可见不可见；只录声音时没有例外）。返回过滤器和真正列进例外的窗口号
-  /// （这次窗口表里找到的）
+  /// 要列进过滤器例外的本 App 窗口号（makeFilter 和 refreshFilterIfNeeded 同一个取法）：白名单里的面板，外加点按圈的窗口
+  /// ——它的层级在状态栏以上，recordedOwnWindows 按规矩不列（那里层级到状态栏及以上的一律不列），所以在这里并进来。
+  /// 只录声音时没有例外
+  private func exceptedOwnWindows() -> Set<CGWindowID> {
+    guard medium == .screen else { return [] }
+    var ids = ScreenCapture.recordedOwnWindows(ScreenCapture.ownWindows())
+    if let overlay = inputOverlay?.windowID { ids.insert(overlay) }
+    return ids
+  }
+
+  /// 排除整个本 App，白名单里的面板和点按圈的窗口列进例外（不看可见不可见；只录声音时没有例外）。返回过滤器和真正列进
+  /// 例外的窗口号（这次窗口表里找到的）
   private func makeFilter(display: SCDisplay, content: SCShareableContent) -> (
     SCContentFilter, Set<CGWindowID>
   ) {
-    let ids =
-      medium == .audio ? [] : ScreenCapture.recordedOwnWindows(ScreenCapture.ownWindows())
+    let ids = exceptedOwnWindows()
     let excepted = content.windows.filter { ids.contains($0.windowID) }
     let found = Set(excepted.map(\.windowID))
     if let me = content.applications.first(where: { $0.processID == getpid() }) {
@@ -563,13 +585,14 @@ final class ScreenRecorder: NSObject {
     return (SCContentFilter(display: display, excludingWindows: excluded), found)
   }
 
-  /// 白名单里的窗口号变了（第一次呼出的面板：OverlayPanel 是 defer 建的，没显示过没有窗口号；新钉图；第一次打开的设置窗）：
+  /// 例外里的窗口号变了（第一次呼出的面板：OverlayPanel 是 defer 建的，没显示过没有窗口号；新钉图；第一次打开的设置窗；
+  /// 开流那次的窗口表里还没有的点按圈窗口）：
   /// 重取窗口表、换过滤器（第 0 批实测换过滤器不停录，新窗口马上录进去）。换成功了才记下真正列进去的窗口号：失败、或新窗口
   /// 这次还没出现在窗口表里时，下一秒接着试。失败只记日志。
   /// ponytail: 跟着每秒的计时比，新露出来的面板最多晚 1 s 进画面；要更快就让面板 present 时通知这里。白名单里的窗口
   /// 一直不在窗口表里时每秒重取一次窗口表（没见过）
   private func refreshFilterIfNeeded() {
-    let ids = ScreenCapture.recordedOwnWindows(ScreenCapture.ownWindows())
+    let ids = exceptedOwnWindows()
     guard ids != exceptedWindows, !isRefreshingFilter, let stream else { return }
     isRefreshingFilter = true
     Task {
@@ -666,13 +689,15 @@ final class ScreenRecorder: NSObject {
     Island.announce("开始录屏")
   }
 
-  /// 边框、HUD、停止项、计时立刻收掉（停的那一刻；文件还在写）；只录声音时让 AudioRecorder 收它的录音 HUD 和停止项
+  /// 边框、HUD、点按圈、停止项、计时立刻收掉（停的那一刻；文件还在写）；只录声音时让 AudioRecorder 收它的录音 HUD 和停止项
   private func hideChrome() {
     onHalted()
     border?.orderOut(nil)
     border = nil
     hud?.close()
     hud = nil
+    inputOverlay?.close()
+    inputOverlay = nil
     if let stopItem { NSStatusBar.system.removeStatusItem(stopItem) }
     stopItem = nil
     timer?.invalidate()
@@ -1034,8 +1059,9 @@ final class ScreenRecorder: NSObject {
   }
 
   /// 按录制条的开关配流（第 4 批），返回要挂的空输出（录什么挂什么，第 0 批实测不挂会每帧刷日志）：
-  /// 系统声音 48 kHz 立体声；麦克风跟随系统输入（设备 ID 不设）；显示点按要 BGRA（点按圈只在 BGRA 下画，颜色空间仍是 sRGB，
-  /// 第 0 批实测颜色一样准、只是文件不带色彩标记），关着时保持默认像素格式。options.microphone 是开关开着且有授权
+  /// 系统声音 48 kHz 立体声；麦克风跟随系统输入（设备 ID 不设）。显示点按不在这里配（手测反馈第 1 批）：圈是 InputOverlay
+  /// 自己画的窗口，系统的 showMouseClicks 不开（免得叠两层），像素格式也就不用为它换成 BGRA、文件照常带色彩标记。
+  /// options.microphone 是开关开着且有授权
   nonisolated static func configure(
     _ configuration: SCStreamConfiguration, _ options: Options
   ) -> [SCStreamOutputType] {
@@ -1050,10 +1076,6 @@ final class ScreenRecorder: NSObject {
       configuration.captureMicrophone = true
       configuration.microphoneCaptureDeviceID = nil
       outputs.append(.microphone)
-    }
-    if options.showsClicks {
-      configuration.showMouseClicks = true
-      configuration.pixelFormat = kCVPixelFormatType_32BGRA
     }
     return outputs
   }

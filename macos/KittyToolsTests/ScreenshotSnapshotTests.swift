@@ -13,7 +13,8 @@ import Testing
 // 全关，全开 / 全关再按石墨、黄色强调色各一遍）和录制 HUD 的声音状态（两个都开、只开系统声音、麦克风断开变橙）；录音第 5 批补了
 // 录音 HUD（录制中带电平、暂停、没听到声音、响到橙色的一根）和录音卡（波形 + 左上 waveform 标记 + 时长：落地、悬停、矮卡）；
 // 录音第 6 批补了录系统声音的录音 HUD（⏸ 原位置灰、「两者」麦克风断开的橙字）。第 7 批：视频卡悬停多一枚「转成 GIF」胶囊，
-// 补了 GIF 卡（落地、悬停）。
+// 补了 GIF 卡（落地、悬停）。手测反馈第 1 批：录屏的点按圈（InputOverlay：左键圆盘 / 右键空心环，各放在浅色、深色、
+// 和强调色一样的底上，再按石墨、黄色强调色各一遍；另一张压在假桌面上）。
 // 状态用 SelectionInteractionTests 的屏外窗口 + 合成事件摆（不弹遮罩、不抢键盘）；图层要在窗口里显示过才有内容，
 // 所以把屏外 (-20000, -20000) 的无边框窗口（当不了 key）orderFront 一下再 layer.render(in:)。材质在屏外会发灰，只锁布局。
 //   TEST_RUNNER_KITTY_SNAPSHOT_DIR=/tmp/shots xcodebuild -project macos/KittyTools.xcodeproj \
@@ -463,6 +464,63 @@ struct ScreenshotSnapshotTests {
       root.addSubview(hud)
       try shoot(offscreen(root), name, crop: hud.frame.insetBy(dx: -24, dy: -24))
     }
+  }
+
+  /// 录屏的点按圈（手测反馈第 1 批，InputOverlay）：上排左键按下（实心圆盘）、下排右键按下（空心环），三栏底色是白、
+  /// 近黑、强调色本身（最不利：圈的强调色融进底里，只剩白描边和阴影）；默认强调色、石墨（最暗）、黄色（最亮）各一张。
+  /// -desktop 是压在假桌面上的样子：左键点在备忘录的字上、右键点在壁纸上、再一个左键点在表格的粉色柱子上。
+  /// 都用不带动画的入口摆到按住的终态（render(in:) 画的也是模型值，拍不到过渡的半截）
+  @Test(.enabled(if: directory != nil)) func renderInputOverlay() throws {
+    /// 覆盖层的内容视图从它自己的窗口里拿出来（窗口不显示），摆到 frame 上；frame 也是它的窗口位置，全局坐标就是 root 的坐标
+    func overlay(on root: NSView, frame: CGRect) throws -> InputOverlay {
+      let overlay = InputOverlay(frame: frame)
+      let view = try #require(overlay.panel.contentView)
+      overlay.panel.contentView = nil
+      view.frame = frame
+      root.addSubview(view)
+      return overlay
+    }
+    let savedAccent = Accent.shared.choice
+    defer { Accent.shared.select(savedAccent, persists: false) }
+    for (accent, suffix) in [
+      (AccentChoice?.none, ""), (.graphite, "-graphite"), (.yellow, "-yellow"),
+    ] {
+      if let accent { Accent.shared.select(accent, persists: false) }
+      let root = NSView(frame: CGRect(x: 0, y: 0, width: 600, height: 240))
+      root.wantsLayer = true
+      let grounds = [NSColor.white, NSColor(white: 0.11, alpha: 1), Style.Shot.accent]
+      var overlays: [InputOverlay] = []
+      for (index, color) in grounds.enumerated() {
+        let column = CGRect(x: CGFloat(index) * 200, y: 0, width: 200, height: 240)
+        let ground = NSView(frame: column)
+        ground.wantsLayer = true
+        ground.layer?.backgroundColor = color.cgColor
+        root.addSubview(ground)
+        let made = try overlay(on: root, frame: column)
+        made.press(0, at: CGPoint(x: column.midX, y: 180), animated: false)
+        made.press(1, at: CGPoint(x: column.midX, y: 60), animated: false)
+        overlays.append(made)
+      }
+      try shoot(offscreen(root), "record-clicks" + suffix)
+      overlays.forEach { $0.close() }
+    }
+    Accent.shared.select(savedAccent, persists: false)
+
+    let bounds = CGRect(x: 0, y: 0, width: 1200, height: 800)
+    let root = NSView(frame: bounds)
+    root.wantsLayer = true
+    root.layer?.contents = try Self.desktop()
+    let made = try overlay(on: root, frame: bounds)
+    made.press(0, at: CGPoint(x: 300, y: 620), animated: false)
+    made.press(1, at: CGPoint(x: 700, y: 640), animated: false)
+    // 同一个键同时只有一个圈：第二个左键用另一块覆盖层摆
+    let second = try overlay(on: root, frame: bounds)
+    second.press(0, at: CGPoint(x: 905, y: 225), animated: false)
+    try shoot(
+      offscreen(root), "record-clicks-desktop", crop: CGRect(x: 140, y: 120, width: 960, height: 580)
+    )
+    made.close()
+    second.close()
   }
 
   // MARK: 摆状态
