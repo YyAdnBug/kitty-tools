@@ -18,7 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var isCapturing = false
   /// 录屏会话（框选之后、开录到文件挪好）：在录时录屏的入口都是停止；录制中照样能截图、识字、截图翻译（C9）
   private var recorder: ScreenRecorder?
-  /// 录音会话（录音第 5 批，开录到文件挪好）：在录时录音的入口都是停止；和录屏互斥（C9-a）
+  /// 录音会话（录音第 5 批，开录到文件挪好）：在录时录音的入口都是停止；和录屏互斥（C9-a）。手测反馈第 3 批起它可能还在
+  /// 待录（控制条出来了、没开始，isStarted 为 false）：这时录音的入口是开始，不算在录（菜单标题、互斥、更新、退出都不看它）
   private var audioRecorder: AudioRecorder?
   /// 退出时在等录屏 / 录音收尾（applicationShouldTerminate 返回了 .terminateLater）
   private var quitsAfterRecording = false
@@ -420,6 +421,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 在录屏 / 录音时先停止并收尾再退（13 条默认细节：最多等 5 s；没写完也照样退，录屏由 replayd 自己收尾，下次启动 recover 接手）
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    closeReadyAudio()  // 待录的录音控制条没有东西要收尾：直接收掉，不等它回调
     guard recorder != nil || audioRecorder != nil else { return .terminateNow }
     quitsAfterRecording = true
     recorder?.stop()
@@ -504,12 +506,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   /// 菜单栏和启动器内置动作此刻的状态：暂停记录了没有、复制即译开没开、钉图（nil = 没有）、能不能检查更新、在录屏还是录音
+  /// （录音待录时不算在录：那一项仍叫「录音」，点它是开始）
   private var menuState: LauncherItem.ActionState {
     LauncherItem.ActionState(
       recordingPaused: watcher.isUserPaused,
       copyToTranslate: UserDefaults.standard.bool(forKey: Prefs.translateCopyToTranslate),
       pinsHidden: pins.panels.isEmpty ? nil : pins.isHidden, checksUpdates: updater.isSupported,
-      recording: recorder != nil ? .screenRecord : audioRecorder != nil ? .audioRecord : nil)
+      recording: recorder != nil
+        ? .screenRecord : audioRecorder?.isStarted == true ? .audioRecord : nil)
   }
 
   /// 全局热键动作：热键、菜单栏、启动器同一个分发
@@ -797,12 +801,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 现在开不了 medium 的原因（岛的标题、说明；nil = 能录）：录屏和录音互斥（C9-a，另一种在录，含倒数、等授权）、
   /// 同一种已经在录（录屏中截图再按 R）、正在装更新（装好会退出重新打开，录到一半会被截断；录制中的「不能更新」只防得住
-  /// 先录后更新）
+  /// 先录后更新）。录音待录（控制条开着、没开始）不算在录：不拦录屏，真要录屏时 beginRecording 把控制条收掉
   private func recordingBlocker(_ medium: ScreenRecorder.Medium) -> (title: String, detail: String)?
   {
     let busy = "先停止这一段再录"
     if recorder != nil { return (medium == .screen ? "已经在录屏" : "正在录屏", busy) }
-    if audioRecorder != nil { return (medium == .audio ? "已经在录音" : "正在录音", busy) }
+    if audioRecorder?.isStarted == true {
+      return (medium == .audio ? "已经在录音" : "正在录音", busy)
+    }
     if case .installing = updater.state {
       return ("正在更新", "装好会自动重新打开，之后再\(medium.noun)")
     }
@@ -816,22 +822,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     return true
   }
 
-  /// 录音（录音第 5 批，拍板 A1-a）：一键录，按一下开始、再按停止（菜单栏 / 启动器这时叫「停止录音」）；录什么看设置 › 截图
-  /// 「录音」的来源（第 6 批）。和录屏互斥（C9-a）：录屏在录（含倒数、等麦克风授权）时岛说先停止那一段；正在装更新时不开录
-  /// （同录屏）。录系统声音走录屏管线，要「屏幕录制」授权（同截图，screenRecordingAllowed）
+  /// 录音（录音第 5 批，拍板 A1-a；手测反馈第 3 批改成先出控制条）：没有会话时，默认先在屏幕底部出录音控制条（待录，不录），
+  /// 设置 › 截图「按快捷键后立即开始录音」开着才直接开始；待录时再触发（快捷键 / 菜单栏 / 启动器，或点控制条的 ●）= 开始；
+  /// 录着时 = 停止（菜单栏 / 启动器这时叫「停止录音」）。录什么看来源（设置 › 截图「录音」、待录的控制条上都能改，第 6 批）。
+  /// 和录屏互斥（C9-a）：录屏在录（含倒数、等麦克风授权）时岛说先停止那一段；正在装更新时不开录（同录屏）
   func audioRecord() {
-    if let audioRecorder { return audioRecorder.stop() }
+    if let audioRecorder {
+      return audioRecorder.isStarted ? audioRecorder.stop() : audioRecorder.start()
+    }
     guard !refusesRecording(.audio) else { return }
-    guard
-      AudioRecorder.Source(.standard) == .microphone || screenRecordingAllowed(for: "录系统声音")
-    else { return }
+    let immediately = UserDefaults.standard.bool(forKey: Prefs.audioRecordStartsImmediately)
+    // 立即开始：开不了（录系统声音没有屏幕录制授权）就不建会话，同以前
+    if immediately, !allowsAudioRecording(AudioRecorder.Source(.standard)) { return }
     let recorder = AudioRecorder(directory: ScreenshotOutput.saveDirectory, island: island) {
       [weak self] in
       self?.recorded($0, .audio)
     }
     audioRecorder = recorder
+    if immediately { return recorder.start() }
+    // 先出控制条：来源可能在控制条上改，真正开始那一刻（点 ●、再触发一次）才查
+    recorder.allowsStart = { [weak self] in self?.allowsAudioRecording($0) ?? false }
+    recorder.open()
+  }
+
+  /// 真正开始录音那一刻能不能录（开不了已出警告岛）：互斥和正在装更新再看一次（待录期间状态可能变了）；录系统声音走录屏
+  /// 管线，要「屏幕录制」授权（同截图，screenRecordingAllowed）。能录就从这时起挡更新（待录时不挡）
+  private func allowsAudioRecording(_ source: AudioRecorder.Source) -> Bool {
+    guard !refusesRecording(.audio),
+      source == .microphone || screenRecordingAllowed(for: "录系统声音")
+    else { return false }
     updater.blocker = "录制结束后再更新"
-    recorder.start()
+    return true
+  }
+
+  /// 待录的录音控制条当场收掉（还没开始，没有东西要收尾、不等回调）：要录屏了、退出 App。在录的不动
+  private func closeReadyAudio() {
+    guard let audioRecorder, !audioRecorder.isStarted else { return }
+    audioRecorder.close()
+    self.audioRecorder = nil
   }
 
   /// 框选交回录屏选区（⌥R 的框选、截图里按 R 切过去的）：记成上次区域（和截图共用）、收走压在选区上的常驻缩略图
@@ -840,6 +868,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 截图里按 R 时已经问过（SelectionSession.recordingBlocker，停在截图里）；框选期间状态还可能变（系统睡眠停了录音、
     // 更新开始装），这里兜底
     guard !refusesRecording(.screen) else { return }
+    closeReadyAudio()  // 录音控制条开着、还没开始：收掉，照常录屏（录屏和录音只留一个）
     UserDefaults.standard.set(NSStringFromRect(region), forKey: Prefs.screenshotLastRegion)
     shelf.dismiss(covering: region)
     guard
@@ -855,12 +884,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   /// 录屏 / 录音收尾：文件已挪进快速保存目录（挪不过去的留在原地、在访达里选中），刘海岛说结果（成功时岛让菜单栏图标弹一下）；
-  /// 挪进去了还要飞卡片、留视频卡 / 录音卡（landRecording）。倒数中（录音：等授权框时）取消的不出岛，只播报。录制中麦克风断开的
+  /// 挪进去了还要飞卡片、留视频卡 / 录音卡（landRecording）。倒数中（录音：等授权框时、关掉待录的控制条）取消的不出岛，只播报。录制中麦克风断开的
   /// （第 4 批）summary 是警告：卡片照飞，岛也出来说「后半段没有麦克风声音」；开着麦克风（录音总是）但之前拒绝过授权的，这时打开
   /// 系统设置的麦克风页（录音被拒时岛说「需要麦克风授权」，第 5 批）；开着显示按键但没有辅助功能授权的同样这时打开辅助功能页
   private func recorded(_ result: ScreenRecorder.Result, _ medium: ScreenRecorder.Medium) {
     if medium == .screen { recorder = nil } else { audioRecorder = nil }
-    updater.blocker = nil
+    // 关掉待录的录音控制条也走到这里（按取消收尾）：另一种在录时不替它放开更新
+    if recorder == nil, audioRecorder?.isStarted != true { updater.blocker = nil }
     defer {
       if quitsAfterRecording {
         quitsAfterRecording = false

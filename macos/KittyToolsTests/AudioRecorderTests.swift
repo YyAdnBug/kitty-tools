@@ -5,6 +5,9 @@
 // 第 6 批（来源：系统声音 / 两者走录屏管线）补：一块样本的电平（dBFS 均方根）、「两者」只看麦克风那一路、来源的偏好、
 // 屏幕录制授权和麦克风授权的两种岛、存成 mp4（没能导出 m4a）的说法、音轨导出失败留着 mp4、「两者」等麦克风授权框时停止 =
 // 取消且来源弹回系统声音（不碰录制条的开关）。
+// 手测反馈第 3 批（先出控制条、待录）补：来源开关「至少留一个」、「立即开始」的默认、待录时旁白说的话、待录阶段不出窗口也测得到的
+// 部分（没开始就 stop / close、allowsStart 不允许、开始那一刻才读来源、开始后 isStarted）。open() 会真把控制条摆到屏幕上，
+// 放在按需实录 audioRecorderReadyTake(_:)。
 // 真录在按需实录自检 RecordingProbeTests.audioRecorderTake / audioRecorderSystemTake；录音 HUD 在 RecordingHUDTests，录音卡在 VideoCardTests。
 
 import AVFoundation
@@ -251,6 +254,116 @@ struct AudioRecorderTests {
     }
     defaults.set("speaker", forKey: Prefs.audioRecordSource)
     #expect(AudioRecorder.Source(defaults) == .microphone)
+  }
+
+  /// 待录控制条上的两个来源开关（手测反馈第 3 批）：至少留一个——关掉唯一开着的那个时自动把另一个打开
+  @Test func sourceTogglesKeepOneOn() {
+    typealias Source = AudioRecorder.Source
+    #expect(Source.microphone.recordsMicrophone && !Source.microphone.recordsSystem)
+    #expect(Source.system.recordsSystem && !Source.system.recordsMicrophone)
+    #expect(Source.both.recordsSystem && Source.both.recordsMicrophone)
+    // 打开另一个
+    #expect(Source.microphone.toggling(system: true) == .both)
+    #expect(Source.system.toggling(system: false) == .both)
+    // 两个都开着时关一个
+    #expect(Source.both.toggling(system: true) == .microphone)
+    #expect(Source.both.toggling(system: false) == .system)
+    // 关掉唯一开着的那个：另一个自动打开
+    #expect(Source.microphone.toggling(system: false) == .system)
+    #expect(Source.system.toggling(system: true) == .microphone)
+    for source in [Source.microphone, .system, .both] {
+      for system in [true, false] {
+        let next = source.toggling(system: system)
+        #expect(next.recordsSystem || next.recordsMicrophone)
+        #expect(next != source)
+      }
+    }
+  }
+
+  /// 「按快捷键后立即开始录音」默认关（注册域，不落盘）；待录的控制条出来时旁白说怎么开始（设了快捷键才提再按一次）
+  @Test func startsImmediatelyDefaultsOffAndReadyAnnounces() {
+    Prefs.registerDefaults()
+    let registered = UserDefaults.standard.volatileDomain(forName: UserDefaults.registrationDomain)
+    #expect(registered[Prefs.audioRecordStartsImmediately] as? Bool == false)
+    #expect(AudioRecorder.readyAnnouncement(key: "⌃⌥V") == "录音控制条已打开，再按一次 ⌃⌥V 或点「开始录音」开始")
+    #expect(AudioRecorder.readyAnnouncement(key: nil) == "录音控制条已打开，点「开始录音」开始")
+  }
+
+  /// 待录阶段（手测反馈第 3 批；不出窗口、不真录，授权是注入的）：还没开始就 stop() = 按取消收尾（下一轮回调，不写「进行中」
+  /// 记录、不留文件），之后 start() 不再开始；close() 当场收掉、不回调；真正开始那一刻才读来源、才问 allowsStart，不允许
+  /// 同样按取消收尾、不问麦克风授权；允许了才算开始（isStarted）
+  @Test func readyPhaseCancelsWithoutTraces() async throws {
+    let suite = "kitty-test-audio-ready-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let folder = FileManager.default.temporaryDirectory.appending(path: "kitty-audio-\(UUID())")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    var results: [ScreenRecorder.Result] = []
+    var asked = 0
+    func make() -> AudioRecorder {
+      let recorder = AudioRecorder(directory: folder, defaults: defaults) { results.append($0) }
+      recorder.microphoneStatus = {
+        asked += 1
+        return .denied
+      }
+      return recorder
+    }
+    func settle() async throws {
+      for _ in 0..<100 where results.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+    }
+
+    // 没开始就停：取消，回调在下一轮；之后再 start() 不开始
+    let stopped = make()
+    #expect(!stopped.isStarted)
+    stopped.stop()
+    #expect(results.isEmpty)
+    stopped.start()
+    try await settle()
+    #expect(results.map(\.reason) == [.cancelled] && results[0].file == nil && !stopped.isStarted)
+    #expect(ScreenRecorder.summary(results[0], folder: "桌面", medium: .audio) == nil)
+
+    // close()：当场收掉，不回调
+    results = []
+    let closed = make()
+    closed.close()
+    closed.start()
+    try await Task.sleep(for: .milliseconds(50))
+    #expect(results.isEmpty && !closed.isStarted)
+
+    // 开始那一刻才读来源、才问能不能开始；不允许 = 取消（不问麦克风授权）
+    var offered: [AudioRecorder.Source] = []
+    let refused = make()
+    refused.allowsStart = {
+      offered.append($0)
+      return false
+    }
+    defaults.set(AudioRecorder.Source.system.rawValue, forKey: Prefs.audioRecordSource)
+    #expect(refused.source == .microphone)  // 建会话时偏好里的值
+    refused.start()
+    #expect(offered == [.system] && refused.source == .system && !refused.isStarted)
+    try await settle()
+    #expect(results.map(\.reason) == [.cancelled])
+    #expect(asked == 0)
+    #expect(defaults.string(forKey: Prefs.audioRecordingInProgress) == nil)
+
+    // 允许：开始了（这里麦克风授权是「拒绝过」，按原来的路径收尾）；开始之后 close() 不管用、start() 不重来
+    results = []
+    defaults.set(AudioRecorder.Source.microphone.rawValue, forKey: Prefs.audioRecordSource)
+    let allowed = make()
+    allowed.allowsStart = {
+      offered.append($0)
+      return true
+    }
+    allowed.start()
+    #expect(allowed.isStarted && offered == [.system, .microphone])
+    allowed.close()
+    allowed.start()
+    try await settle()
+    #expect(results.map(\.reason) == [.noMicrophoneAccess] && results[0].microphoneDenied)
+    #expect(asked == 1 && offered.count == 2)
+    #expect(defaults.string(forKey: Prefs.audioRecordingInProgress) == nil)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty)
   }
 
   /// 音轨导出（第 6 批）：读不出音轨（坏文件）返回 nil、mp4 原样留着；闪退恢复遇到打不开的 mp4 照旧留在原地说路径。

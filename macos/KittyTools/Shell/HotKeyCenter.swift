@@ -146,7 +146,8 @@ enum HotKeyAction: String, CaseIterable {
     }
   }
 
-  /// 菜单栏、启动器里的标题：recording 是这一项正在录（录屏 / 录音录着时叫「停止录屏」/「停止录音」，再按一次快捷键也是停止）
+  /// 菜单栏、启动器里的标题：recording 是这一项正在录（录屏 / 录音录着时叫「停止录屏」/「停止录音」，再按一次快捷键也是停止；
+  /// 录音控制条待录时不算在录，仍叫「录音」，点它 / 再按一次是开始）
   func title(recording: Bool) -> String {
     guard recording else { return title }
     return switch self {

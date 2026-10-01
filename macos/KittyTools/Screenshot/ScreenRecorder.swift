@@ -708,7 +708,8 @@ final class ScreenRecorder: NSObject {
     case .cancel: stop(.cancelled)
     case .discard: stop(.discarded)
     case .stop: stop()
-    case .pause: break  // 录屏第一期不暂停（只有录音的 HUD 有这个钮）
+    // 录屏第一期不暂停；暂停钮、待录的开始钮和来源开关只有录音的 HUD 有
+    case .pause, .start, .systemAudio, .microphone: break
     }
   }
 

@@ -13,6 +13,11 @@
 // 超过 −1 dB 的那根 systemOrange；开头 5 s 没听到声音时计时旁边出橙色「没听到声音」；暂停时红点换成暂停符号、计时和电平变灰。
 // 录系统声音（第 6 批，来源是系统声音 / 两者，走录屏管线）不能暂停：⏸ 留在原位置灰（0.35），提示「录系统声音时不能暂停」；
 // 「两者」录着时麦克风断开，「没听到声音」那个位置换成橙字「麦克风断开了」。
+// 录音的待录态（手测反馈第 3 批，State.ready：按录音快捷键先出控制条、还没录）：[系统声音][麦克风] ｜ [✕ 关闭][● 开始]，
+// 两个来源开关是录制条的 ToggleButton（同样的符号、配色、.replace 过渡和提示），读写录音来源的偏好（至少留一个），和
+// 设置 › 截图「录音」的「来源」是同一个偏好；● 画法同录制条的开始钮；点了开始到真正录起来之间开关和 ● 置灰、✕ 还能点；
+// 开始后同一个 HUD 原地换成录制态（按原中心重摆、红点 pop；⏸ 正好落在刚才 ● 的位置，换完的头一小段不认 ⏸，
+// 免得双击 ● 一开始就暂停）。
 // 皮肤是 HUDBar（15 毛玻璃 behindWindow，26 液态玻璃）。窗口是普通 NSPanel 实例（mac-overlay-panel §1 不子类化）：
 // 状态栏层级（截图冻结帧、录制的白名单都不收它）、不激活本 App、永不当 key（无边框窗口本来就当不了）、按钮 acceptsFirstMouse、
 // 能拖；所有桌面、全屏 App 上都显示。出现：settle 淡入（录制条随遮罩收起，HUD 在同一位置接上，不再「长出」一次）；
@@ -25,11 +30,15 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   enum State: Equatable {
     /// 倒数：还剩几秒
     case countdown(Int)
+    /// 待录（只有录音，手测反馈第 3 批）：控制条出来了、还没开始录
+    case ready
     /// 录制中：已录几秒
     case recording(Int)
   }
 
-  enum Item { case startNow, cancel, discard, stop, pause }
+  /// start：待录时的 ●；cancel：倒数时的取消、待录时的关闭；systemAudio / microphone：待录时的来源开关（HUD 自己写偏好，
+  /// 不经 onClick，这两项只给 button(for:) 取按钮用）
+  enum Item { case startNow, cancel, discard, stop, pause, start, systemAudio, microphone }
 
   /// 放弃要点两下（纯状态，配单测）：第一下「上膛」，window 之内再点才算放弃；过了时间恢复，下一下重新上膛
   struct Discard {
@@ -69,6 +78,7 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   private var discard = Discard()
   private let reading = Reading()
   private let stopTip: String
+  private let startTip: String
   /// 倒数的 Esc 注册上了：✕ 的提示才写「（Esc）」
   private let escapes: Bool
   /// 倒数的读数是个按钮（点了马上开始），录制中的读数（红点 + 计时）只是显示
@@ -94,7 +104,29 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   private lazy var closeButton = barButton(
     NSImage(systemSymbolName: "xmark", accessibilityDescription: "取消")!, tip: "取消",
     label: "取消", action: #selector(closeClicked(_:)), size: CGSize(width: 32, height: 32))
-  private lazy var stopButton = makeStopButton()
+  private lazy var stopButton = makeRoundButton(
+    "stop.fill", tip: stopTip, label: "停止并保存", action: #selector(stopClicked(_:)))
+  /// 录音待录：来源开关（读写 defaults 里的 Prefs.audioRecordSource）和开始钮
+  private let defaults: UserDefaults
+  private lazy var systemButton = makeSourceButton { [unowned self] in
+    "系统声音：\(AudioRecorder.Source(defaults).recordsSystem ? "开" : "关")"
+  }
+  /// 输入设备（名字、是不是蓝牙）每次现查、不记：控制条没有超时、能一直开着，这期间戴上蓝牙耳机换了系统输入，提示还写旧
+  /// 设备、少了蓝牙那一句的话，开录前就不知道会录成通话音质（录制条的缓存只活一次框选）。只有进程里第一次查约 70 ms，
+  /// 而且只在提示要弹出 / 读屏时才查，不在点击路径上
+  private lazy var microphoneButton = makeSourceButton { [unowned self] in
+    let input = RecordBar.currentInput()
+    return RecordBar.microphoneTip(
+      on: AudioRecorder.Source(defaults).recordsMicrophone, device: input?.name,
+      bluetooth: input?.bluetooth ?? false)
+  }
+  private lazy var startButton = makeRoundButton(
+    "circle.fill", tip: startTip, label: "开始录音", action: #selector(startRecordingClicked(_:)))
+  /// 开关上画着的来源（别处改了偏好——设置 › 截图的「来源」——跟着重画；和偏好一样就不动，免得把点击的 .replace 过渡截断）
+  private var shownSource: AudioRecorder.Source?
+  private var sourceObserver: NSObjectProtocol?
+  /// 待录原地换成录制态的时刻：之后的一小段不认 ⏸（ignoresPause）
+  private var swappedAt: ContinuousClock.Instant?
   /// 窗口比 HUD 四周大这么多（透明）。录音 24：从底边长出来时往下偏的 8 pt、弹簧过冲和 HUDBar 自绘的阴影都落在窗口里、
   /// 不被窗口边切掉（同常驻缩略图的留边）；录屏 0：只淡入不变形，窗口就是 HUD 那么大、用系统阴影
   private let margin: CGFloat
@@ -110,16 +142,20 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     let medium: ScreenRecorder.Medium
   }
 
-  /// stopKey：录屏 / 录音快捷键（停止钮的提示里写它；没绑定 nil）；escapes：倒数的 Esc 注册上了；
-  /// systemAudio / microphone：这次录不录（录屏录制中的声音状态）；medium：录屏还是录音（录音只有录制态）；
-  /// pausable：录音能不能暂停（录系统声音时不能，⏸ 置灰）
+  /// stopKey：录屏 / 录音快捷键（停止钮、录音待录时开始钮的提示里写它；没绑定 nil）；escapes：倒数的 Esc 注册上了；
+  /// systemAudio / microphone：这次录不录（录屏录制中的声音状态）；medium：录屏还是录音（录音没有倒数，有待录）；
+  /// pausable：录音能不能暂停（录系统声音时不能，⏸ 置灰；从待录开始的到时再 setPausable）；defaults：录音待录时的来源开关
+  /// 读写哪个偏好域（单测 / 截图自检换成临时域）
   init(
     state: State, stopKey: String?, escapes: Bool = false, systemAudio: Bool = false,
-    microphone: Bool = false, medium: ScreenRecorder.Medium = .screen, pausable: Bool = true
+    microphone: Bool = false, medium: ScreenRecorder.Medium = .screen, pausable: Bool = true,
+    defaults: UserDefaults = .standard
   ) {
     self.state = state
     self.medium = medium
     stopTip = stopKey.map { "停止并保存（\($0)）" } ?? "停止并保存"
+    startTip = stopKey.map { "开始录音（\($0)）" } ?? "开始录音"
+    self.defaults = defaults
     self.escapes = escapes
     self.systemAudio = systemAudio
     self.microphone = microphone
@@ -151,10 +187,17 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     setAccessibilityRole(.group)
     setAccessibilityLabel(medium == .audio ? "录音控制" : "录屏控制")
     show(state, rebuilding: true)
-    // 录屏管线（SCRecordingOutput）没有暂停：位置不变、置灰，提示为什么（隐藏的话 HUD 宽度随来源变，也看不出为什么没有）
-    if medium == .audio, !pausable {
-      pauseButton.isEnabled = false
-      pauseButton.toolTip = "录系统声音时不能暂停"
+    if !pausable { setPausable(false) }
+    // 待录时别处改了来源（设置 › 截图）：开关跟着重画，不然画的和按开始时读到的对不上
+    if state == .ready {
+      sourceObserver = NotificationCenter.default.addObserver(
+        forName: UserDefaults.didChangeNotification, object: defaults, queue: .main
+      ) { [weak self] _ in
+        MainActor.assumeIsolated {
+          guard let self else { return }
+          self.showSource(AudioRecorder.Source(self.defaults), animated: false)
+        }
+      }
     }
   }
 
@@ -186,6 +229,8 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   /// 互相持有（panel 是 let、窗口经内容视图持有 HUD），不然每录一次漏一个窗口
   func close() {
     dot.stop()
+    if let sourceObserver { NotificationCenter.default.removeObserver(sourceObserver) }
+    sourceObserver = nil
     panel.orderOut(nil)
     removeFromSuperview()
     panel.contentView = nil
@@ -196,22 +241,28 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
 
   // MARK: 状态
 
-  /// 换状态：倒数 ↔ 录制换内容（宽度变了按原来的水平中心摆、夹回可见区），同一种只换读数
+  /// 换状态：倒数 / 待录 → 录制换内容（宽度变了按原来的水平中心摆、夹回可见区），同一种只换读数
   func update(_ next: State) {
-    show(next, rebuilding: Self.isCountdown(next) != Self.isCountdown(state))
+    show(next, rebuilding: !Self.sameForm(next, state))
   }
 
-  private static func isCountdown(_ state: State) -> Bool {
-    if case .countdown = state { return true }
-    return false
+  /// 同一种形态（倒数 / 待录 / 录制中，不看读数）：形态变了才重排内容
+  private static func sameForm(_ one: State, _ other: State) -> Bool {
+    switch (one, other) {
+    case (.countdown, .countdown), (.ready, .ready), (.recording, .recording): true
+    default: false
+    }
   }
 
   private func show(_ next: State, rebuilding: Bool) {
+    let wasReady = state == .ready
     state = next
     switch next {
     case .countdown(let seconds):
       reading.countdown = seconds
       setAccessibilityValue("\(seconds) 秒后开始")
+    case .ready:
+      setAccessibilityValue("还没开始录")
     case .recording(let seconds):
       reading.seconds = seconds
       // 计时是值，不逐秒播报
@@ -219,23 +270,31 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     }
     guard rebuilding else { return }
     for view in stack.arrangedSubviews { view.removeFromSuperview() }
-    let recording = !Self.isCountdown(next)
     let views: [NSView] =
-      switch (recording, medium) {
-      case (false, _): [countdownButton, separator, closeButton]
-      case (true, .audio):
+      switch (next, medium) {
+      case (.countdown, _): [countdownButton, separator, closeButton]
+      case (.ready, _): [systemButton, microphoneButton, separator, closeButton, startButton]
+      case (.recording, .audio):
         [clock, meter, separator, pauseButton, pauseSeparator, closeButton, stopButton]
-      case (true, .screen):
+      case (.recording, .screen):
         [clock] + (systemAudio || microphone ? [sound] : []) + [separator, closeButton, stopButton]
       }
     views.forEach(stack.addArrangedSubview)
-    stack.edgeInsets.right = recording ? 6 : 4
-    if recording { stack.setCustomSpacing(4, after: closeButton) }
+    // 右端是强调色圆钮（● / ■）时多留一点边、和 ✕ 隔开一点（同录制条）；倒数的右端是 ✕
+    let round = !Self.sameForm(next, .countdown(0))
+    stack.edgeInsets.right = round ? 6 : 4
+    if round { stack.setCustomSpacing(4, after: closeButton) }
     discard = Discard()
     applyClose()
+    if next == .ready { showSource(AudioRecorder.Source(defaults), animated: false) }
     refit()
     // 红点：录制态出现时 pop，之后呼吸
-    if recording { dot.start() } else { dot.stop() }
+    if case .recording = next {
+      dot.start()
+      if wasReady { swappedAt = .now }
+    } else {
+      dot.stop()
+    }
   }
 
   /// 量宽度；宽度变了按原来的水平中心摆、夹回可见区（换状态、出「没听到声音」）
@@ -257,6 +316,49 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   }
 
   // MARK: 录音
+
+  /// 待录时的来源开关：按来源画（符号开 / 关形状不同，开 = 强调色，同录制条的开关）。只重画状态真变了的那个（第一次
+  /// 两个都画）：ToggleButton.show 带动画时不看符号变没变，没变的那个也会缩下去再弹回来，看着像两个开关都动了；
+  /// 关掉唯一开着的那个时两个都变，两个都放过渡
+  private func showSource(_ source: AudioRecorder.Source, animated: Bool) {
+    let shown = shownSource
+    shownSource = source
+    if shown?.recordsSystem != source.recordsSystem {
+      systemButton.show(
+        source.recordsSystem ? "speaker.wave.2.fill" : "speaker.slash.fill",
+        on: source.recordsSystem, animated: animated)
+    }
+    if shown?.recordsMicrophone != source.recordsMicrophone {
+      microphoneButton.show(
+        source.recordsMicrophone ? "mic.fill" : "mic.slash.fill", on: source.recordsMicrophone,
+        animated: animated)
+    }
+  }
+
+  /// 点了来源开关：换图、写偏好（至少留一个，Source.toggling）、播报两个开关的新状态（不带设备名，不在点击路径上查设备）。
+  /// 先换图再写偏好：写偏好会触发上面的观察者，它先到的话直接换图、.replace 过渡就没了
+  @objc private func sourceClicked(_ sender: NSButton) {
+    let next = AudioRecorder.Source(defaults).toggling(system: sender === systemButton)
+    showSource(next, animated: true)
+    defaults.set(next.rawValue, forKey: Prefs.audioRecordSource)
+    Island.announce(
+      "系统声音：\(next.recordsSystem ? "开" : "关")，麦克风：\(next.recordsMicrophone ? "开" : "关")")
+  }
+
+  /// 按了开始、还没真正录起来（等授权框、流还在开）：来源开关和 ● 置灰，✕ 还能点（会话当取消）
+  func setStarting() {
+    for button in [systemButton, microphoneButton, startButton] as [NSButton] {
+      button.isEnabled = false
+    }
+  }
+
+  /// 录音能不能暂停。录屏管线（录系统声音，SCRecordingOutput）没有暂停：⏸ 位置不变、置灰，提示为什么（隐藏的话 HUD 宽度
+  /// 随来源变，也看不出为什么没有）
+  func setPausable(_ pausable: Bool) {
+    guard medium == .audio else { return }
+    pauseButton.isEnabled = pausable
+    pauseButton.toolTip = pausable ? "暂停录音" : "录系统声音时不能暂停"
+  }
 
   /// 电平（最近 3 s，旧 → 新，dB）：每帧直接换（instant），减弱动态效果时照样更新
   func updateMeter(_ levels: [Float]) { meter.levels = levels }
@@ -302,13 +404,15 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     microphoneIcon.toolTip = "麦克风断开了，后面没有麦克风声音"
   }
 
-  /// ✕ 的样子：倒数时「取消」，录制中「放弃录制」（录音「放弃录音」），上膛后变红「再点一次放弃」
+  /// ✕ 的样子：倒数时「取消」，待录时「关闭」（点一下就关，没有东西可放弃），录制中「放弃录制」（录音「放弃录音」），
+  /// 上膛后变红「再点一次放弃」
   private func applyClose() {
     let armed = discard.isArmed(at: .now)
     let discardName = medium == .audio ? "放弃录音" : "放弃录制"
     let (label, tip): (String, String) =
       switch state {
       case .countdown: ("取消", escapes ? "取消（Esc）" : "取消")
+      case .ready: ("关闭", "关闭")
       case .recording:
         armed ? ("再点一次放弃", "再点一次放弃，不会保存") : (discardName, discardName + "（不保存）")
       }
@@ -325,14 +429,28 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     case .cancel, .discard: closeButton
     case .stop: stopButton
     case .pause: medium == .audio ? pauseButton : nil
+    case .start: medium == .audio ? startButton : nil
+    case .systemAudio: medium == .audio ? systemButton : nil
+    case .microphone: medium == .audio ? microphoneButton : nil
     }
   }
 
   @objc private func startClicked(_ sender: NSButton) { onClick(.startNow) }
   @objc private func stopClicked(_ sender: NSButton) { onClick(.stop) }
-  @objc private func pauseClicked(_ sender: NSButton) { onClick(.pause) }
+  @objc private func pauseClicked(_ sender: NSButton) {
+    guard !ignoresPause(at: .now) else { return }
+    onClick(.pause)
+  }
 
-  /// 倒数时取消；录制中第一下上膛（变红、提示、播报），2 s 内再点才放弃，过时恢复
+  /// 待录 → 录制原地换内容后（HUD 按原中心变宽）⏸ 正好落在刚才 ● 的位置上：双击 ●、手快多点了一下，后一下会落在 ⏸ 上，
+  /// 录音一开始就被暂停、用户还以为在录。换内容后的这一小段不认 ⏸：系统的双击间隔（默认 0.5 s），最多 1 s——把双击调得
+  /// 很慢的人也不至于好几秒点不了暂停。直接开始的录音 HUD（没有 ● 可点）不挡
+  func ignoresPause(at now: ContinuousClock.Instant) -> Bool {
+    swappedAt.map { now - $0 < .seconds(min(NSEvent.doubleClickInterval, 1)) } ?? false
+  }
+  @objc private func startRecordingClicked(_ sender: NSButton) { onClick(.start) }
+
+  /// 倒数时取消、待录时关闭；录制中第一下上膛（变红、提示、播报），2 s 内再点才放弃，过时恢复
   @objc private func closeClicked(_ sender: NSButton) {
     guard case .recording = state else { return onClick(.cancel) }
     if discard.press(at: .now) { return onClick(.discard) }
@@ -481,11 +599,22 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     return row
   }
 
-  /// 停止：28 pt 强调色实心圆 + ■（画法同录制条的 ●、截图工具栏的拷贝钮），不出悬停底
-  private func makeStopButton() -> BarButton {
+  /// 待录时的一个来源开关（录制条的 ToggleButton：提示和旁白名字要显示时才问 describe）
+  private func makeSourceButton(_ describe: @escaping () -> String) -> ToggleButton {
+    let button = ToggleButton()
+    button.target = self
+    button.action = #selector(sourceClicked(_:))
+    button.describe = describe
+    return button
+  }
+
+  /// 停止 ■、待录时的开始 ●：28 pt 强调色实心圆 + 符号（画法同录制条的 ●、截图工具栏的拷贝钮），不出悬停底
+  private func makeRoundButton(_ symbol: String, tip: String, label: String, action: Selector)
+    -> BarButton
+  {
     let button = barButton(
-      NSImage(systemSymbolName: "stop.fill", accessibilityDescription: "停止并保存")!, tip: stopTip,
-      label: "停止并保存", action: #selector(stopClicked(_:)), size: CGSize(width: 28, height: 28))
+      NSImage(systemSymbolName: symbol, accessibilityDescription: label)!, tip: tip,
+      label: label, action: action, size: CGSize(width: 28, height: 28))
     button.showsHover = false
     button.layer?.backgroundColor = Style.Shot.accent.cgColor
     button.layer?.cornerRadius = 14

@@ -15,7 +15,8 @@ import Testing
 // 录音第 6 批补了录系统声音的录音 HUD（⏸ 原位置灰、「两者」麦克风断开的橙字）。第 7 批：视频卡悬停多一枚「转成 GIF」胶囊，
 // 补了 GIF 卡（落地、悬停）。手测反馈第 1 批：录屏的点按圈（InputOverlay：左键圆盘 / 右键空心环，各放在浅色、深色、
 // 和强调色一样的底上，再按石墨、黄色强调色各一遍；另一张压在假桌面上）。手测反馈第 2 批：录制条第四个开关「显示按键」
-// （原来带录制条的图都宽了一格）和按键胶囊（整屏：短的 ⌘C、带 ×n 的，下面是录制 HUD；选区：一长串溢出从左边丢、小选区、字缩小的窄选区）。
+// （原来带录制条的图都宽了一格）和按键胶囊（整屏：短的 ⌘C、带 ×n 的，下面是录制 HUD；选区：一长串溢出从左边丢、小选区、字缩小的窄选区）。手测反馈第 3 批：录音控制条的
+// 待录态（[系统声音][麦克风] ｜ [✕][●]：只开麦克风、两者、只开系统声音、按了开始还没录起来的置灰）。
 // 状态用 SelectionInteractionTests 的屏外窗口 + 合成事件摆（不弹遮罩、不抢键盘）；图层要在窗口里显示过才有内容，
 // 所以把屏外 (-20000, -20000) 的无边框窗口（当不了 key）orderFront 一下再 layer.render(in:)。材质在屏外会发灰，只锁布局。
 //   TEST_RUNNER_KITTY_SNAPSHOT_DIR=/tmp/shots xcodebuild -project macos/KittyTools.xcodeproj \
@@ -465,6 +466,32 @@ struct ScreenshotSnapshotTests {
         dragged: nil)
       root.addSubview(hud)
       try shoot(offscreen(root), name, crop: hud.frame.insetBy(dx: -24, dy: -24))
+    }
+
+    // 录音控制条的待录态（手测反馈第 3 批）：[系统声音][麦克风] ｜ [✕][●]，同一个位置；来源读临时偏好域——只开麦克风
+    // （默认）、两者、只开系统声音；-starting 是按了开始、还没录起来（开关和 ● 置灰，✕ 不灰）
+    let suite = "kitty-snapshot-\(UUID().uuidString)"
+    let prefs = try #require(UserDefaults(suiteName: suite))
+    defer { prefs.removePersistentDomain(forName: suite) }
+    for (name, source, starting) in [
+      ("audio-hud-ready", AudioRecorder.Source.microphone, false),
+      ("audio-hud-ready-both", .both, false), ("audio-hud-ready-system", .system, false),
+      ("audio-hud-ready-starting", .both, true),
+    ] {
+      prefs.set(source.rawValue, forKey: Prefs.audioRecordSource)
+      let root = NSView(frame: bounds)
+      root.wantsLayer = true
+      root.layer?.contents = desktop
+      let hud = RecordingHUD(state: .ready, stopKey: nil, medium: .audio, defaults: prefs)
+      if starting { hud.setStarting() }
+      hud.removeFromSuperview()
+      hud.frame.origin = RecordingHUD.origin(
+        size: hud.frame.size, region: bounds, screen: bounds,
+        visible: bounds.insetBy(dx: 0, dy: 24).offsetBy(dx: 0, dy: -12), isFullScreen: true,
+        dragged: nil)
+      root.addSubview(hud)
+      try shoot(offscreen(root), name, crop: hud.frame.insetBy(dx: -24, dy: -24))
+      hud.close()
     }
   }
 

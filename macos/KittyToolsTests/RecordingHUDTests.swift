@@ -2,6 +2,9 @@
 // 放弃要点两下的时序（纯状态）、窗口不进截图冻结帧和录制白名单（状态栏层级的普通 NSPanel，永不当 key）、按钮在两种状态下
 // 交回什么；录制中的声音状态（录屏第 4 批：只读图标、两个都关不显示、麦克风断开变橙）；录音的形态（录音第 5 批：暂停钮、
 // 暂停时的样子与旁白、「没听到声音」让 HUD 变宽、名字）；录系统声音时不能暂停（录音第 6 批：⏸ 原位置灰、提示原因）、「两者」麦克风断开的橙字。
+// 录音的待录态（手测反馈第 3 批）：[系统声音][麦克风] ｜ [✕][●]——有哪些钮、名字和提示、✕ 点一下就关、● 交回 .start、
+// 来源开关读写临时偏好域（至少留一个、只重画变了的那个、别处改了偏好跟着重画、不经 onClick）、开始中置灰、原地换成
+// 录制态（换完的头一小段不认 ⏸：它正好落在刚才 ● 的位置）。
 // HUD 的窗口只建不显示（不弹到屏幕上、不抢键盘）。
 
 import AppKit
@@ -272,6 +275,146 @@ struct RecordingHUDTests {
     #expect(clicks.isEmpty)
     try #require(hud.button(for: .stop)).performClick(nil)
     #expect(clicks == [.stop])
+  }
+
+  /// 录音的待录态（手测反馈第 3 批）：[系统声音][麦克风] ｜ [✕][●]。✕ 叫「关闭」、点一下就交回 .cancel（没有东西可放弃，
+  /// 不上膛）；● 叫「开始录音」、提示写录音快捷键（没设不写括号）、交回 .start；旁白一组「录音控制」、值「还没开始录」。
+  /// 来源开关按偏好画（开 = 强调色），点了写偏好、至少留一个、不经 onClick；别处改了偏好（设置 › 截图）跟着重画
+  @Test func readyFormTogglesSourceAndStarts() throws {
+    let suite = "kitty-test-hud-ready-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    var clicks: [RecordingHUD.Item] = []
+    let hud = RecordingHUD(state: .ready, stopKey: "⌃⌥V", medium: .audio, defaults: defaults)
+    hud.onClick = { clicks.append($0) }
+    defer { hud.close() }
+    #expect(hud.accessibilityLabel() == "录音控制" && hud.accessibilityValue() as? String == "还没开始录")
+    let system = try #require(hud.button(for: .systemAudio))
+    let microphone = try #require(hud.button(for: .microphone))
+    let close = try #require(hud.button(for: .cancel))
+    let start = try #require(hud.button(for: .start))
+    // 从左到右：系统声音、麦克风、✕、●；待录时没有暂停、停止（不在栏里）
+    let x = { (view: NSView) in view.convert(view.bounds, to: hud).minX }
+    #expect(x(system) < x(microphone) && x(microphone) < x(close) && x(close) < x(start))
+    #expect(try #require(hud.button(for: .pause)).superview == nil)
+    #expect(try #require(hud.button(for: .stop)).superview == nil)
+    #expect(close.accessibilityLabel() == "关闭" && close.toolTip == "关闭")
+    #expect(start.accessibilityLabel() == "开始录音" && start.toolTip == "开始录音（⌃⌥V）")
+    #expect(start.frame.size == CGSize(width: 28, height: 28))
+    #expect(start.layer?.backgroundColor == Style.Shot.accent.cgColor)
+    let unbound = RecordingHUD(state: .ready, stopKey: nil, medium: .audio, defaults: defaults)
+    defer { unbound.close() }
+    #expect(try #require(unbound.button(for: .start)).toolTip == "开始录音")
+    // 录屏的 HUD 没有这三个钮
+    let screen = RecordingHUD(state: .recording(0), stopKey: nil)
+    #expect(
+      screen.button(for: .start) == nil && screen.button(for: .systemAudio) == nil
+        && screen.button(for: .microphone) == nil)
+
+    /// 开关开着没有：里面的符号染强调色
+    func isOn(_ button: NSButton) -> Bool {
+      button.subviews.compactMap { $0 as? NSImageView }.first?.contentTintColor == Style.Shot.accent
+    }
+    /// 开关里画着的那张图（每次重画都是新的一张：没重画就还是同一张）
+    func image(_ button: NSButton) -> NSImage? {
+      button.subviews.compactMap { $0 as? NSImageView }.first?.image
+    }
+    // 临时偏好域里没存过：默认麦克风
+    #expect(!isOn(system) && isOn(microphone))
+    #expect(system.accessibilityLabel() == "系统声音：关")
+    // 只重画状态变了的那个：没变的开关不跟着放一遍 .replace 过渡（评审）
+    var (systemImage, microphoneImage) = (image(system), image(microphone))
+    system.performClick(nil)
+    #expect(AudioRecorder.Source(defaults) == .both && isOn(system) && isOn(microphone))
+    #expect(image(system) !== systemImage && image(microphone) === microphoneImage)
+    #expect(system.accessibilityLabel() == "系统声音：开")
+    #expect(microphone.accessibilityLabel()?.hasPrefix("麦克风：开") == true)
+    systemImage = image(system)
+    microphone.performClick(nil)
+    #expect(AudioRecorder.Source(defaults) == .system && isOn(system) && !isOn(microphone))
+    #expect(image(system) === systemImage && image(microphone) !== microphoneImage)
+    #expect(microphone.accessibilityLabel()?.hasPrefix("麦克风：关") == true)
+    // 关掉唯一开着的那个：另一个自动打开（两个都变，都重画）
+    microphoneImage = image(microphone)
+    system.performClick(nil)
+    #expect(AudioRecorder.Source(defaults) == .microphone && !isOn(system) && isOn(microphone))
+    #expect(image(system) !== systemImage && image(microphone) !== microphoneImage)
+    #expect(clicks.isEmpty)  // 开关是 HUD 自己的事，不交给会话
+    // 别处改了偏好：开关跟着重画（另一个 HUD 同一个偏好域，出现时按偏好画）
+    defaults.set(AudioRecorder.Source.both.rawValue, forKey: Prefs.audioRecordSource)
+    RunLoop.main.run(until: .now + 0.05)
+    #expect(isOn(system) && isOn(microphone))
+    #expect(isOn(try #require(unbound.button(for: .systemAudio))))
+
+    // ✕ 点一下就关（不上膛）；● 开始
+    close.performClick(nil)
+    #expect(clicks == [.cancel] && close.contentTintColor == Style.HUD.text)
+    start.performClick(nil)
+    #expect(clicks == [.cancel, .start])
+  }
+
+  /// 按了开始、还没真正录起来（等授权框、流还在开）：来源开关和 ● 置灰、点了没反应，✕ 还能点；录起来后同一个 HUD 原地
+  /// 换成录制态（开关和 ● 换成计时、电平、⏸、■，✕ 变成要点两下的「放弃录音」），录系统声音的 ⏸ 置灰
+  @Test func readyGoesBusyThenRecordsInPlace() throws {
+    let suite = "kitty-test-hud-ready-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    defaults.set(AudioRecorder.Source.system.rawValue, forKey: Prefs.audioRecordSource)
+    var clicks: [RecordingHUD.Item] = []
+    weak var released: RecordingHUD?
+    try autoreleasepool {
+      let hud = RecordingHUD(state: .ready, stopKey: nil, medium: .audio, defaults: defaults)
+      released = hud
+      hud.onClick = { clicks.append($0) }
+      let panel = hud.panel
+      let system = try #require(hud.button(for: .systemAudio))
+      let microphone = try #require(hud.button(for: .microphone))
+      let start = try #require(hud.button(for: .start))
+      let close = try #require(hud.button(for: .cancel))
+      let readyWidth = hud.frame.width
+      hud.setStarting()
+      #expect(!system.isEnabled && !microphone.isEnabled && !start.isEnabled)
+      #expect(system.alphaValue == 0.35 && start.alphaValue == 0.35)
+      #expect(close.isEnabled && hud.frame.width == readyWidth)
+      system.performClick(nil)
+      start.performClick(nil)
+      #expect(clicks.isEmpty && AudioRecorder.Source(defaults) == .system)
+      close.performClick(nil)
+      #expect(clicks == [.cancel])
+
+      clicks = []
+      hud.setPausable(false)
+      hud.update(.recording(0))
+      #expect(hud.panel === panel && hud.state == .recording(0))
+      #expect(hud.frame.width > readyWidth)
+      #expect(system.superview == nil && microphone.superview == nil && start.superview == nil)
+      #expect(hud.accessibilityValue() as? String == "已录 0 秒")
+      let pause = try #require(hud.button(for: .pause))
+      #expect(pause.superview != nil && !pause.isEnabled && pause.toolTip == "录系统声音时不能暂停")
+      let stop = try #require(hud.button(for: .stop))
+      #expect(stop.superview != nil)
+      let discard = try #require(hud.button(for: .discard))
+      #expect(discard === close && discard.accessibilityLabel() == "放弃录音")
+      discard.performClick(nil)
+      #expect(clicks.isEmpty)  // 录制中的 ✕ 要点两下
+      stop.performClick(nil)
+      #expect(clicks == [.stop])
+      // 和直接开始的录音 HUD 一样宽；能暂停的来源 ⏸ 可点
+      let direct = RecordingHUD(
+        state: .recording(0), stopKey: nil, medium: .audio, pausable: false)
+      #expect(hud.frame.width == direct.frame.width)
+      hud.setPausable(true)
+      #expect(pause.isEnabled && pause.toolTip == "暂停录音")
+      // ⏸ 正好落在刚才 ● 的位置上：换成录制态后的头一小段（系统的双击间隔，最多 1 s）点它不算，免得双击 ● 一开始就
+      // 暂停；过了照常。直接开始的录音 HUD 不挡
+      pause.performClick(nil)
+      #expect(clicks == [.stop])
+      #expect(hud.ignoresPause(at: .now) && !hud.ignoresPause(at: .now + .seconds(1)))
+      #expect(!direct.ignoresPause(at: .now))
+      hud.close()
+    }
+    // 收起后放掉（偏好的观察者摘了）
+    #expect(released == nil)
   }
 
   /// 「两者」录着时麦克风断开（录音第 6 批，评审 S1）：录音 HUD 没有声音图标，「没听到声音」那个位置换成橙字「麦克风断开了」、

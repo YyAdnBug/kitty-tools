@@ -439,8 +439,14 @@ final class RecordBar: HUDBar {
   private let items = Item.allCases
   /// 系统当前的输入设备（名字、是不是蓝牙）：第一次查要几十毫秒（实测约 70 ms），不在建栏、悬停、点击时查，提示要弹出 / 读屏时
   /// 才查，这一次框选里记住
-  private lazy var input: (name: String, bluetooth: Bool)? = AVCaptureDevice.default(for: .audio)
-    .map { ($0.localizedName, Self.isBluetooth($0.transportType)) }
+  private lazy var input = Self.currentInput()
+
+  /// 系统当前的输入设备（录制条、录音控制条待录时的麦克风开关共用；慢，见上）
+  static func currentInput() -> (name: String, bluetooth: Bool)? {
+    AVCaptureDevice.default(for: .audio).map {
+      ($0.localizedName, isBluetooth($0.transportType))
+    }
+  }
 
   init(defaults: UserDefaults) {
     self.defaults = defaults
