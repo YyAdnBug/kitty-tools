@@ -15,6 +15,8 @@
 // 报告里记这段时间系统日志「NOT found」的条数（录什么挂什么空输出，应为 0）。要麦克风授权（Dev 版已有）。
 // 手测反馈第 1 批（2026-10-01）加了 inputOverlayTake()：显示点按改成自己画（InputOverlay），开着它真录 2 s、直接调它的按下 /
 // 拖动入口（不发合成鼠标事件、不真点任何东西），从 mp4 取帧验圈真的录进了画面、截图冻结帧里没有它、文件带色彩标记。
+// 手测反馈第 2 批加了 keysOverlayTake()：开着显示按键真录约 3 s、直接调 InputOverlay.showKey（不发合成按键、不装真授权），
+// 从 mp4 取帧验按键胶囊真的录进了画面（深色底、浅色字）、停手后淡出清空。
 // 录音第 5 批加了 audioRecorderTake()（另加 TEST_RUNNER_KITTY_LIVE_RECORD_MIC=1）：用 AudioRecorder 录 1.5 s、暂停 1 s、再录 1.5 s，
 // 验 m4a 能播、时长约 3 s、AAC 48 kHz 单声道约 128 kbps、名字「录音 …」挪进输出目录的 audio/、波形 poster；录制中截一张 HUD。
 // 录音第 6 批加了 audioRecorderSystemTake(_:)（同样要 _MIC=1）：来源是系统声音 / 两者时走录屏管线只录声音，录约 2 s、0.5 s 时
@@ -882,6 +884,120 @@ struct RecordingProbeTests {
         "0.5 s 的帧：左键圆盘中心 \(disc)、圈上离强调色最近差 \(discRing)；右键空心环中心 \(hollow)、圈上差 \(hollowRing)",
         "结尾的帧（视频轨到 \(String(format: "%.2f", videoRange.end.seconds)) s）：拖到的新位置 \(moved)，原位置 \(vacated)",
         "录制中的截图冻结帧左键处 \(frozen)（白 = 圈没被截进去）",
+      ] + media.summary)
+  }
+
+  // MARK: - 手测反馈第 2 批：按键胶囊录进画面
+
+  /// 开着显示按键（显示点按关着：窗口只为按键建）真录约 3 s（不倒数、不录声音、不画光标；主屏可见区里 640 × 360 点），
+  /// 选区里垫一块白色的白名单窗口。辅助功能授权是注入的「有」（不读真的）；开录后直接调 InputOverlay.showKey（不发合成按键）：
+  /// 先 ⌘C，0.3 s 后 ⌫ 连同 3 次重复，之后停手。从 mp4 取两帧：
+  /// - 0.9 s：胶囊在选区底边上方 32 pt、水平居中——左端内边距里是 HUD 的深色底，中线上有浅色的字，胶囊左边外面还是白；
+  /// - 结尾：停手 1.6 s 后淡出，胶囊原来的位置回到白，内容清空、图层移除。
+  /// 停下后覆盖层收掉。录下的视频验完就删（两帧存成 keys-shown.png / keys-last.png，看完自己删）。只跑这一个：
+  ///   -only-testing:'KittyToolsTests/RecordingProbeTests/keysOverlayTake()'
+  @Test func keysOverlayTake() async throws {
+    let env = try await Env.make()
+    let suite = "kitty-test-keys-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    defaults.set(0, forKey: Prefs.screenRecordCountdown)
+    defaults.set(30, forKey: Prefs.screenRecordFrameRate)
+    defaults.set(false, forKey: Prefs.screenRecordShowsCursor)
+    defaults.set(false, forKey: Prefs.screenRecordSystemAudio)
+    defaults.set(false, forKey: Prefs.screenRecordMicrophone)
+    defaults.set(false, forKey: Prefs.screenRecordShowsClicks)
+    defaults.set(true, forKey: Prefs.screenRecordShowsKeys)
+    let folder = Self.directory.appending(path: "keys")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let visible = env.screen.visibleFrame
+    let region = CGRect(x: visible.minX + 240, y: visible.midY - 180, width: 640, height: 360)
+    let ground = NSWindow(
+      contentRect: region.insetBy(dx: 20, dy: 20), styleMask: [.borderless], backing: .buffered,
+      defer: false)
+    ground.backgroundColor = .white
+    ground.level = .floating
+    ground.isReleasedWhenClosed = false
+    ground.orderFrontRegardless()
+    defer { ground.orderOut(nil) }
+    var finished: ScreenRecorder.Result?
+    let recorder = try #require(
+      ScreenRecorder(region: region, directory: folder, defaults: defaults) { finished = $0 })
+    recorder.accessibilityTrusted = { true }
+    let existing = Set(NSApp.windows.map(ObjectIdentifier.init))
+    recorder.start()
+    var stopItem: NSWindow?
+    for _ in 0..<100 where stopItem == nil {
+      try await Task.sleep(for: .milliseconds(50))
+      stopItem = NSApp.windows.first {
+        String(describing: type(of: $0)) == "NSStatusBarWindow" && $0.isVisible
+          && !existing.contains(ObjectIdentifier($0))
+      }
+    }
+    try #require(stopItem != nil, "5 s 内没开始录")
+    let began = Date.now
+    let overlay = try #require(recorder.inputOverlay, "开着显示按键却没有覆盖层")
+    let panel = overlay.panel
+    #expect(panel.isVisible && overlay.markCount == 0)
+    overlay.showKey("⌘C")
+    try await Task.sleep(for: .milliseconds(300))
+    overlay.showKey("⌫")
+    for _ in 0..<3 { overlay.showKey("⌫", isRepeat: true) }
+    #expect(InputOverlay.keysText(overlay.keys.tokens).string == "⌘C ⌫×4")
+    // 胶囊的位置（全局坐标）：离选区底边 32、水平居中（录制 HUD 在选区下方外面）
+    let bar = try #require(overlay.keysBarFrame).offsetBy(
+      dx: panel.frame.minX, dy: panel.frame.minY)
+    #expect(abs(bar.minY - (region.minY + 32)) <= 1 && abs(bar.midX - region.midX) <= 1)
+    #expect(bar.height == InputOverlay.keysHeight)
+    // 停手：1.6 s 后淡出（最后一下在约 0.3 s），等到 3 s 再停
+    try await Task.sleep(for: .seconds(max(0, 3 - Date.now.timeIntervalSince(began))))
+    #expect(overlay.keysBarFrame == nil && overlay.keys.tokens.isEmpty, "停手后没清空")
+    #expect((panel.contentView?.layer?.sublayers ?? []).isEmpty, "淡出后图层没移除")
+    recorder.stop()
+    for _ in 0..<300 where finished == nil { try await Task.sleep(for: .milliseconds(50)) }
+    let result = try #require(finished, "15 s 内没收尾")
+    #expect(result.reason == .user && result.moved && !result.keysDenied)
+    #expect(recorder.inputOverlay == nil && !panel.isVisible)
+    #expect(ScreenRecorder.Options(defaults).showsKeys)
+    let file = try #require(result.file)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let media = await inspect(file)
+    #expect(media.playable && media.codec == "avc1")
+    let scale = env.screen.backingScaleFactor
+    /// 画面里 point（全局坐标）处的像素
+    func at(_ image: CGImage, _ point: CGPoint) -> (Int, Int, Int)? {
+      pixel(
+        image, x: Int((point.x - region.minX) * scale), y: Int((region.maxY - point.y) * scale))
+    }
+    let shown = try #require(await frame(file, at: 0.9), "取不到 0.9 s 的帧")
+    try save(shown, "keys-shown.png")
+    let fill = rgb(Style.HUD.solidFill)
+    let padding = try #require(at(shown, CGPoint(x: bar.minX + 9, y: bar.midY)))
+    let outside = try #require(at(shown, CGPoint(x: bar.minX - 12, y: bar.midY)))
+    #expect(distance(padding, fill) < 45, "胶囊左端不是 HUD 的深色底：\(padding)，应约 \(fill)")
+    #expect(distance(outside, (255, 255, 255)) < 30, "胶囊外面不是白底：\(outside)")
+    // 中线上（内边距以内）最亮的像素：字是 HUD 的主文字色（白 0.95）
+    let text = stride(
+      from: bar.minX + InputOverlay.keysPadding, to: bar.maxX - InputOverlay.keysPadding, by: 0.5)
+    let brightest =
+      text.compactMap { at(shown, CGPoint(x: $0, y: bar.midY)) }.map { $0.0 + $0.1 + $0.2 }.max()
+      ?? 0
+    #expect(brightest > 600, "胶囊里没有浅色的字：中线上最亮 \(brightest) / 765")
+    let videoRange = try #require(
+      try await AVURLAsset(url: file).loadTracks(withMediaType: .video).first?.load(.timeRange))
+    let last = try #require(await frame(file, at: max(0, videoRange.end.seconds - 0.05)))
+    try save(last, "keys-last.png")
+    let cleared = try #require(at(last, CGPoint(x: bar.midX, y: bar.midY)))
+    let clearedEdge = try #require(at(last, CGPoint(x: bar.minX + 9, y: bar.midY)))
+    #expect(
+      distance(cleared, (255, 255, 255)) < 40 && distance(clearedEdge, (255, 255, 255)) < 40,
+      "停手后胶囊还在画面里：\(cleared) / \(clearedEdge)")
+    note(
+      "按键胶囊录进画面（手测反馈第 2 批，InputOverlay）",
+      [
+        "胶囊 \(bar)（选区 \(region)），HUD 底色 \(fill)",
+        "0.9 s 的帧：胶囊左端内边距 \(padding)，中线上最亮 \(brightest) / 765，胶囊外 \(outside)",
+        "结尾的帧（视频轨到 \(String(format: "%.2f", videoRange.end.seconds)) s）：胶囊中心 \(cleared)、左端 \(clearedEdge)（白 = 已淡出）",
       ] + media.summary)
   }
 

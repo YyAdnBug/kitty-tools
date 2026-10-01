@@ -14,7 +14,8 @@ import Testing
 // 录音 HUD（录制中带电平、暂停、没听到声音、响到橙色的一根）和录音卡（波形 + 左上 waveform 标记 + 时长：落地、悬停、矮卡）；
 // 录音第 6 批补了录系统声音的录音 HUD（⏸ 原位置灰、「两者」麦克风断开的橙字）。第 7 批：视频卡悬停多一枚「转成 GIF」胶囊，
 // 补了 GIF 卡（落地、悬停）。手测反馈第 1 批：录屏的点按圈（InputOverlay：左键圆盘 / 右键空心环，各放在浅色、深色、
-// 和强调色一样的底上，再按石墨、黄色强调色各一遍；另一张压在假桌面上）。
+// 和强调色一样的底上，再按石墨、黄色强调色各一遍；另一张压在假桌面上）。手测反馈第 2 批：录制条第四个开关「显示按键」
+// （原来带录制条的图都宽了一格）和按键胶囊（整屏：短的 ⌘C、带 ×n 的，下面是录制 HUD；选区：一长串溢出从左边丢、小选区、字缩小的窄选区）。
 // 状态用 SelectionInteractionTests 的屏外窗口 + 合成事件摆（不弹遮罩、不抢键盘）；图层要在窗口里显示过才有内容，
 // 所以把屏外 (-20000, -20000) 的无边框窗口（当不了 key）orderFront 一下再 layer.render(in:)。材质在屏外会发灰，只锁布局。
 //   TEST_RUNNER_KITTY_SNAPSHOT_DIR=/tmp/shots xcodebuild -project macos/KittyTools.xcodeproj \
@@ -219,7 +220,8 @@ struct ScreenshotSnapshotTests {
     try shoot(h.window, "record-adjust", crop: CGRect(x: 150, y: 190, width: 900, height: 420))
     let bar = try #require(h.recordBar)
     try shoot(h.window, "record-adjust-bar", crop: bar.frame.insetBy(dx: -24, dy: -24))
-    // 录制条的三个开关（录屏第 4 批）：上面那张是默认（系统声音开、麦克风和显示点按关）；全开、全关（偏好在 Harness 的临时域）。
+    // 录制条的四个开关（录屏第 4 批；第四个显示按键是手测反馈第 2 批）：上面那张是默认（系统声音开，麦克风、显示点按、
+    // 显示按键关）；全开、全关（偏好在 Harness 的临时域）。
     // 再换石墨（强调色比主文字色还暗）、黄色（最亮）各拍一遍：开和关要靠形状分得清。只换内存里的强调色，拍完换回
     let savedAccent = Accent.shared.choice
     defer { Accent.shared.select(savedAccent, persists: false) }
@@ -232,7 +234,7 @@ struct ScreenshotSnapshotTests {
         let prefs = h.view.styleDefaults
         for key in [
           Prefs.screenRecordSystemAudio, Prefs.screenRecordMicrophone,
-          Prefs.screenRecordShowsClicks,
+          Prefs.screenRecordShowsClicks, Prefs.screenRecordShowsKeys,
         ] {
           prefs.set(on, forKey: key)
         }
@@ -521,6 +523,90 @@ struct ScreenshotSnapshotTests {
     )
     made.close()
     second.close()
+  }
+
+  /// 录屏的按键胶囊（手测反馈第 2 批，InputOverlay）：
+  /// - keys-full：整屏录制，胶囊在可见区底边上方 88 pt，下面是录制 HUD（HUD 不进画面，在屏幕上不能和胶囊叠着）；短的 ⌘C；
+  /// - keys-repeat：录备忘录那个窗口，几个记号 + 按住不放的 ×n（次要文字色、小一号）；压在字上（底不透明，不透字）；
+  /// - keys-overflow：选区录制，敲了一长串：放不下的从左边丢，胶囊不超过选区宽减两边各 16，离选区底边 32；
+  /// - keys-small：小选区（200 × 64，录屏的下限）：胶囊夹进选区里；
+  /// - keys-narrow：很窄的选区（64 宽）：一个记号就比胶囊放得下的宽，字等比缩小、留在胶囊里。
+  /// 都走不带动画的入口（终态）；-crop 是胶囊附近的局部
+  @Test(.enabled(if: directory != nil)) func renderKeys() throws {
+    let bounds = CGRect(x: 0, y: 0, width: 1200, height: 800)
+    let visible = bounds.insetBy(dx: 0, dy: 24).offsetBy(dx: 0, dy: -12)
+    let desktop = try Self.desktop()
+    /// 假桌面 + 被录区域的边框（整屏没有）+ 录制 HUD + 开着显示按键的覆盖层（内容视图拿出来摆到 region 上）
+    func stage(_ region: CGRect, full: Bool) throws -> (NSView, InputOverlay, RecordingHUD) {
+      let root = NSView(frame: bounds)
+      root.wantsLayer = true
+      root.layer?.contents = desktop
+      if !full {
+        let border = ScrollBorderView(animates: false)
+        border.frame = region.insetBy(dx: -ScrollBorderView.margin, dy: -ScrollBorderView.margin)
+        root.addSubview(border)
+      }
+      let hud = RecordingHUD(state: .recording(12), stopKey: "⌥R", systemAudio: true)
+      hud.removeFromSuperview()
+      hud.frame.origin = RecordingHUD.origin(
+        size: hud.frame.size, region: region, screen: bounds, visible: visible, isFullScreen: full,
+        dragged: nil)
+      root.addSubview(hud)
+      let overlay = InputOverlay(
+        frame: region,
+        keysBottom: InputOverlay.keysBottom(
+          region: region, screen: bounds, visible: visible, isFullScreen: full))
+      let view = try #require(overlay.panel.contentView)
+      overlay.panel.contentView = nil
+      view.frame = region
+      root.addSubview(view)
+      return (root, overlay, hud)
+    }
+    /// 胶囊（视图坐标）连同 HUD 的外框，外扩一圈
+    func around(_ overlay: InputOverlay, _ region: CGRect, _ hud: RecordingHUD) throws -> CGRect {
+      try #require(overlay.keysBarFrame).offsetBy(dx: region.minX, dy: region.minY)
+        .union(hud.frame).insetBy(dx: -60, dy: -30)
+    }
+
+    var (root, overlay, hud) = try stage(bounds, full: true)
+    overlay.showKey("⌘C", animated: false)
+    try shoot(offscreen(root), "record-keys-full", crop: try around(overlay, bounds, hud))
+    overlay.close()
+
+    // 录备忘录那个窗口：胶囊压在最下面两行字上
+    (root, overlay, hud) = try stage(Self.windows[0], full: false)
+    for name in ["⌘A", "⌘C", "⇧A", "空格", "↩"] { overlay.showKey(name, animated: false) }
+    overlay.showKey("⌫", animated: false)
+    for _ in 0..<11 { overlay.showKey("⌫", isRepeat: true, animated: false) }
+    try shoot(
+      offscreen(root), "record-keys-repeat", crop: try around(overlay, Self.windows[0], hud))
+    overlay.close()
+
+    let region = CGRect(x: 160, y: 260, width: 480, height: 400)
+    (root, overlay, hud) = try stage(region, full: false)
+    for letter in "THE QUICK BROWN FOX JUMPS OVER" {
+      overlay.showKey(letter == " " ? "空格" : String(letter), animated: false)
+    }
+    overlay.showKey("⌘S", animated: false)
+    try shoot(
+      offscreen(root), "record-keys-overflow",
+      crop: region.union(hud.frame).insetBy(dx: -30, dy: -30))
+    overlay.close()
+
+    let small = CGRect(x: 700, y: 560, width: 200, height: 64)
+    (root, overlay, hud) = try stage(small, full: false)
+    for name in ["⌃⌥⇧⌘K", "⌘V", "⌘V"] { overlay.showKey(name, animated: false) }
+    try shoot(
+      offscreen(root), "record-keys-small", crop: small.union(hud.frame).insetBy(dx: -40, dy: -30))
+    overlay.close()
+
+    let narrow = CGRect(x: 760, y: 500, width: 64, height: 160)
+    (root, overlay, hud) = try stage(narrow, full: false)
+    overlay.showKey("⇧A", animated: false)
+    try shoot(
+      offscreen(root), "record-keys-narrow",
+      crop: narrow.union(hud.frame).insetBy(dx: -40, dy: -30))
+    overlay.close()
   }
 
   // MARK: 摆状态

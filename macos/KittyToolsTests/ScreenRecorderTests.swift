@@ -5,7 +5,8 @@
 // 第 4 批：录制条三个开关的默认值与读偏好、按开关配流和挂哪几路空输出、麦克风授权这一步怎么走、麦克风出错的原因、
 // 麦克风中途断开时的结果岛、等麦克风授权框时停止（当取消、开关弹回）。录制条本身在 SelectionInteractionTests，HUD 的声音状态在
 // RecordingHUDTests。手测反馈第 1 批：显示点按改成自己画（InputOverlay，单测在 InputOverlayTests），配流不再开系统的点按圈、
-// 不换 BGRA。
+// 不换 BGRA。手测反馈第 2 批：显示按键（录制条第四个开关）的默认值与读偏好、不改配流、没有辅助功能授权时这一步怎么走
+// （这次不显示、开关弹回、收尾时才打开系统设置；麦克风也没授权时警告岛并成一条）。
 // 录音第 6 批（只录声音模式）：录的那一小块（屏内左上角 64 × 64 点）、存盘名的扩展名跟着文件走。
 // 真录制在按需实录自检 RecordingProbeTests.screenRecorderTake / audioRecorderSystemTake。
 
@@ -243,26 +244,34 @@ struct ScreenRecorderTests {
     #expect(registered[Prefs.screenRecordSystemAudio] as? Bool == true)
     #expect(registered[Prefs.screenRecordMicrophone] as? Bool == false)
     #expect(registered[Prefs.screenRecordShowsClicks] as? Bool == false)
+    // 手测反馈第 2 批：显示按键默认关
+    #expect(registered[Prefs.screenRecordShowsKeys] as? Bool == false)
   }
 
-  /// 录制条三个开关从偏好读：没存过按默认（临时偏好域里没有注册域，默认写在 Options 里、和 registerDefaults 一致），存过的照读
+  /// 录制条四个开关从偏好读：没存过按默认（临时偏好域里没有注册域，默认写在 Options 里、和 registerDefaults 一致），存过的照读
   @Test func optionsFromDefaults() throws {
     let suite = "kitty-test-options-\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
     #expect(ScreenRecorder.Options(defaults) == ScreenRecorder.Options())
     #expect(
-      ScreenRecorder.Options() == .init(systemAudio: true, microphone: false, showsClicks: false))
+      ScreenRecorder.Options()
+        == .init(systemAudio: true, microphone: false, showsClicks: false, showsKeys: false))
     defaults.set(false, forKey: Prefs.screenRecordSystemAudio)
     defaults.set(true, forKey: Prefs.screenRecordMicrophone)
     defaults.set(true, forKey: Prefs.screenRecordShowsClicks)
     #expect(
       ScreenRecorder.Options(defaults)
         == .init(systemAudio: false, microphone: true, showsClicks: true))
+    defaults.set(true, forKey: Prefs.screenRecordShowsKeys)
+    #expect(
+      ScreenRecorder.Options(defaults)
+        == .init(systemAudio: false, microphone: true, showsClicks: true, showsKeys: true))
   }
 
-  /// 按开关配流：录什么挂什么空输出（画面总挂）；系统声音 48 kHz 立体声；麦克风跟随系统输入。显示点按开不开都不动
-  /// 像素格式、不开系统的点按圈（手测反馈第 1 批：圈由 InputOverlay 自己画，叠上系统的就是两层；文件照常带色彩标记）
+  /// 按开关配流：录什么挂什么空输出（画面总挂）；系统声音 48 kHz 立体声；麦克风跟随系统输入。显示点按、显示按键开不开
+  /// 都不动像素格式、不开系统的点按圈（手测反馈第 1、2 批：圈和按键胶囊由 InputOverlay 自己画，叠上系统的圈就是两层；
+  /// 文件照常带色彩标记）
   @Test func configureFollowsOptions() {
     let plain = SCStreamConfiguration()
     let defaultFormat = plain.pixelFormat
@@ -275,7 +284,8 @@ struct ScreenRecorderTests {
 
     let all = SCStreamConfiguration()
     #expect(
-      ScreenRecorder.configure(all, .init(systemAudio: true, microphone: true, showsClicks: true))
+      ScreenRecorder.configure(
+        all, .init(systemAudio: true, microphone: true, showsClicks: true, showsKeys: true))
         == [.screen, .audio, .microphone])
     #expect(all.capturesAudio && all.sampleRate == 48_000 && all.channelCount == 2)
     #expect(all.captureMicrophone && all.microphoneCaptureDeviceID == nil)
@@ -329,6 +339,53 @@ struct ScreenRecorderTests {
     #expect(!result.microphoneDenied)
     #expect(!ScreenRecorder.Options(defaults).microphone)
     #expect(ScreenRecorder.summary(result, folder: "桌面") == nil)
+  }
+
+  /// 显示按键这一步（手测反馈第 2 批）：开关关着不管授权；有辅助功能授权就显示；没有就这次不显示
+  @Test func keysAccessSteps() {
+    let access = ScreenRecorder.keysAccess
+    #expect(access(false, true) == .unused && access(false, false) == .unused)
+    #expect(access(true, true) == .granted)
+    #expect(access(true, false) == .denied)
+  }
+
+  /// 开着显示按键却没有辅助功能授权：这次不显示、开关弹回（下次录制条上是关的）、记下收尾时要打开系统设置；有授权：
+  /// 显示、偏好不动；开关关着：不看授权、不记。授权状态是注入的，不读真的、不开流（会话只建不 start）
+  @Test func keysWithoutAccessibilityFallBack() throws {
+    let screen = try #require(NSScreen.screens.first).frame
+    func recorder(wanted: Bool, trusted: Bool) throws -> (ScreenRecorder, UserDefaults, String) {
+      let suite = "kitty-test-keys-\(UUID().uuidString)"
+      let defaults = try #require(UserDefaults(suiteName: suite))
+      defaults.set(wanted, forKey: Prefs.screenRecordShowsKeys)
+      let recorder = try #require(
+        ScreenRecorder(
+          region: CGRect(x: screen.minX + 100, y: screen.minY + 100, width: 320, height: 200),
+          directory: FileManager.default.temporaryDirectory, defaults: defaults
+        ) { _ in })
+      recorder.accessibilityTrusted = { trusted }
+      return (recorder, defaults, suite)
+    }
+    let (denied, deniedDefaults, deniedSuite) = try recorder(wanted: true, trusted: false)
+    defer { deniedDefaults.removePersistentDomain(forName: deniedSuite) }
+    #expect(!denied.keysAllowed(withoutMicrophone: false) && denied.keysDenied)
+    #expect(!ScreenRecorder.Options(deniedDefaults).showsKeys)
+
+    let (granted, grantedDefaults, grantedSuite) = try recorder(wanted: true, trusted: true)
+    defer { grantedDefaults.removePersistentDomain(forName: grantedSuite) }
+    #expect(granted.keysAllowed(withoutMicrophone: false) && !granted.keysDenied)
+    #expect(ScreenRecorder.Options(grantedDefaults).showsKeys)
+
+    let (unused, unusedDefaults, unusedSuite) = try recorder(wanted: false, trusted: false)
+    defer { unusedDefaults.removePersistentDomain(forName: unusedSuite) }
+    #expect(!unused.keysAllowed(withoutMicrophone: false) && !unused.keysDenied)
+  }
+
+  /// 没有辅助功能授权的警告岛：这次麦克风也没拿到授权时并成一条（各说各的，前一条会被后一条原地替换掉、看不到）
+  @Test func keysDeniedNoticeMergesMicrophone() {
+    let alone = ScreenRecorder.keysDeniedNotice(withoutMicrophone: false)
+    #expect(alone.title == "没有辅助功能授权" && alone.detail == "这段录屏不显示按键")
+    let both = ScreenRecorder.keysDeniedNotice(withoutMicrophone: true)
+    #expect(both.title == "没有麦克风和辅助功能授权" && both.detail == "这段录屏不带麦克风、不显示按键")
   }
 
   /// 只录声音（录音第 6 批）：那块屏左上角 64 × 64 点，sourceRect 是屏内 (0, 0, 64, 64)；副屏也一样

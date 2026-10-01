@@ -366,7 +366,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     for action in HotKeyAction.allCases {
-      hotKeys.setHandler(for: action) { [unowned self] in run(action) }
+      hotKeys.setHandler(for: action) { [unowned self] in
+        // 录屏开着「显示按键」：本 App 的全局快捷键被 Carbon 热键吃掉、InputOverlay 的键盘监听收不到，在这里补给它
+        // （没开显示按键时 showKey 不做事；停止录屏的那一下不显示，免得留在最后一帧里）
+        if action != .screenRecord, let key = hotKeys.bindings[action] {
+          recorder?.inputOverlay?.showKey(key.display)
+        }
+        run(action)
+      }
     }
     hotKeys.reload()
     try? FileManager.default.removeItem(at: ShotShelf.dragDirectory)
@@ -850,7 +857,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 录屏 / 录音收尾：文件已挪进快速保存目录（挪不过去的留在原地、在访达里选中），刘海岛说结果（成功时岛让菜单栏图标弹一下）；
   /// 挪进去了还要飞卡片、留视频卡 / 录音卡（landRecording）。倒数中（录音：等授权框时）取消的不出岛，只播报。录制中麦克风断开的
   /// （第 4 批）summary 是警告：卡片照飞，岛也出来说「后半段没有麦克风声音」；开着麦克风（录音总是）但之前拒绝过授权的，这时打开
-  /// 系统设置的麦克风页（录音被拒时岛说「需要麦克风授权」，第 5 批）
+  /// 系统设置的麦克风页（录音被拒时岛说「需要麦克风授权」，第 5 批）；开着显示按键但没有辅助功能授权的同样这时打开辅助功能页
   private func recorded(_ result: ScreenRecorder.Result, _ medium: ScreenRecorder.Medium) {
     if medium == .screen { recorder = nil } else { audioRecorder = nil }
     updater.blocker = nil
@@ -864,6 +871,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if result.reason == .denied { Permissions.Kind.screenRecording.openSettings() }
     // 开着麦克风但之前拒绝过：开录时只出了警告岛，这时才打开（开录前打开会盖住选区、录进画面）
     if result.microphoneDenied { Permissions.Kind.microphone.openSettings() }
+    // 开着显示按键但没有辅助功能授权（手测反馈第 2 批）：同样到这时才打开；先请求一次——从没问过时系统设置的列表里
+    // 还没有本 App（系统框只弹这一次，问过的不再弹）。麦克风页刚打开的就不再开辅助功能页（连开两个，前一个被盖掉，
+    // 用户只看得到后一个）：开关已经弹回，下次打开显示按键再提示；从没问过的，上面的系统框自己带「打开系统设置」
+    if result.keysDenied {
+      Permissions.requestAccessibility()
+      if !result.microphoneDenied { Permissions.openAccessibilitySettings() }
+    }
     // 挪不进快速保存目录：在访达里选中留下的文件，马上能拖走
     if let file = result.file, !result.moved {
       NSWorkspace.shared.activateFileViewerSelecting([file])

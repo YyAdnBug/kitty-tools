@@ -19,15 +19,24 @@ struct HotKey: Codable, Hashable {
 
   /// 录制时从按键事件构造；没有 ⌘ / ⌃ / ⌥ 的组合（F1–F20 除外）不能当全局热键，会吞掉正常输入
   init?(event: NSEvent) {
-    let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    let key = HotKey(keyCode: event.keyCode, flags: event.modifierFlags)
+    let isFunctionKey = Self.functionKeys.keys.contains(Int(event.keyCode))
+    guard key.modifiers & UInt32(cmdKey | optionKey | controlKey) != 0 || isFunctionKey else {
+      return nil
+    }
+    self = key
+  }
+
+  /// 按键事件的键位和修饰键原样记下（不管能不能当全局热键）：录屏的按键提示拿它的 display 当键名（InputOverlay），
+  /// 和快捷键页、菜单同一套写法，不另写一份映射
+  init(keyCode: UInt16, flags: NSEvent.ModifierFlags) {
+    let flags = flags.intersection(.deviceIndependentFlagsMask)
     var modifiers = 0
     if flags.contains(.command) { modifiers |= cmdKey }
     if flags.contains(.option) { modifiers |= optionKey }
     if flags.contains(.control) { modifiers |= controlKey }
-    let isFunctionKey = Self.functionKeys.keys.contains(Int(event.keyCode))
-    guard modifiers != 0 || isFunctionKey else { return nil }
     if flags.contains(.shift) { modifiers |= shiftKey }
-    self.init(keyCode: UInt32(event.keyCode), modifiers: UInt32(modifiers))
+    self.init(keyCode: UInt32(keyCode), modifiers: UInt32(modifiers))
   }
 
   init(keyCode: Int, modifiers: Int) {
@@ -104,6 +113,8 @@ struct HotKey: Codable, Hashable {
     kVK_Space: "空格", kVK_Return: "↩", kVK_Tab: "⇥", kVK_Delete: "⌫", kVK_ForwardDelete: "⌦",
     kVK_Escape: "⎋", kVK_LeftArrow: "←", kVK_RightArrow: "→", kVK_UpArrow: "↑", kVK_DownArrow: "↓",
     kVK_Home: "↖", kVK_End: "↘", kVK_PageUp: "⇞", kVK_PageDown: "⇟",
+    // 小键盘的 Enter / Clear 按布局取出来是控制字符（画不出来）
+    kVK_ANSI_KeypadEnter: "⌤", kVK_ANSI_KeypadClear: "⌧",
   ]
 
   private static let functionKeys: [Int: String] = [

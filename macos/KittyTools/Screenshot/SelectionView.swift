@@ -12,8 +12,8 @@
 // （⇧ 对称、拖回弦上拉直、双击拉直）、拖本体移动（⇧ 锁轴）、⌥ 拖动复制、⌘D 复制、改颜色粗细、⌫ 删除、双击文字重新编辑，
 // ⌘Z 撤销、⇧⌘Z 重做（拖着标注时这几个键不响应）。
 // 录屏（录屏第 1 批）：悬停、单击窗口 / 整屏、拖框、调整、尺寸胶囊、D、放大镜都同截图，没有标注和出图键；调整时选区下方是
-// 录制条 [系统声音][麦克风][显示点按] ｜ [取消][● 开始录制]（开关第 4 批），↩ / 双击选区 / 点 ● 交回选区（短边不到
-// 64 pt 只提示）。截图调整时按 R / 点工具栏「录屏」切过来（录屏第 2 批）：工具栏原地换成录制条、选区不变；有标注时不切，只提示。
+// 录制条 [系统声音][麦克风][显示点按][显示按键] ｜ [取消][● 开始录制]（开关第 4 批，显示按键是手测反馈第 2 批），
+// ↩ / 双击选区 / 点 ● 交回选区（短边不到 64 pt 只提示）。截图调整时按 R / 点工具栏「录屏」切过来（录屏第 2 批）：工具栏原地换成录制条、选区不变；有标注时不切，只提示。
 // 旁白（Whisker §7）：遮罩整块是一个分组，标签读状态（待选 / 选区像素尺寸、当前工具、锁着的比例），顶部提示是帮助；
 // 进入调整、换工具、锁比例时主动播报（取色后的「已复制色值」由刘海岛播报）。
 
@@ -182,7 +182,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private var bendPressed: UUID?
   /// 每次显示提示加一：旧的淡出计时作废
   private var hintGeneration = 0
-  /// 每个工具记住的样式（Prefs.screenshotToolStyles）和录制条的三个开关（录屏第 4 批）存在哪：交互测试换成临时偏好域，
+  /// 每个工具记住的样式（Prefs.screenshotToolStyles）和录制条的四个开关（录屏第 4 批、手测反馈第 2 批）存在哪：交互测试换成临时偏好域，
   /// 不写用户的真实偏好（录制条在 init 里就建了，换了域要跟着换）
   var styleDefaults = UserDefaults.standard {
     didSet { recordBar?.defaults = styleDefaults }
@@ -1105,7 +1105,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
       switch item {
       case .cancel: session.finish(nil)
       case .start: startRecording()
-      case .systemAudio, .microphone, .clicks: break  // 开关录制条自己记偏好
+      case .systemAudio, .microphone, .clicks, .keys: break  // 开关录制条自己记偏好
       }
     }
     bar.isHidden = true

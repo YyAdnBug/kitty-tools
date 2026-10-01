@@ -15,7 +15,7 @@
 // 委托和样本输出在后台线程回调（第 0 批实测）：RecordingEvents 是 nonisolated、无状态的类，只把 Sendable 的事件投进
 // AsyncStream，会话在主线程逐个消费（mac-native §3）。停流不等 stopCapture 回来，收尾只看事件和超时。
 // 挪进快速保存目录后取最后一帧当 poster（录屏第 3 批，拍板 R11-a）：AppDelegate 拿它从选区飞到右下角、交给常驻缩略图的视频卡。
-// 声音和点按（录屏第 4 批）：录制条的三个开关（系统声音、麦克风、显示点按，偏好记住上次）开录时读一次，按它配流、录什么
+// 声音和点按（录屏第 4 批）：录制条的开关（系统声音、麦克风、显示点按，偏好记住上次；第四个显示按键见下）开录时读一次，按它配流、录什么
 // 挂什么空输出；两种声音系统混成一条 AAC 音轨（第 0 批实测）。麦克风授权在遮罩收起后、倒数前问（C1-a：遮罩开着时系统框会被
 // 压住，等框时要停就当取消），拒绝 / 受限照样开录、不带麦克风，警告岛、开关弹回，拒绝过的收尾时再打开系统设置（开录前打开
 // 会盖住选区、录进画面）。录制中改不了（updateConfiguration 会停录），HUD 上的声音状态只读；开录时的输入设备断开了录屏不停，
@@ -23,6 +23,11 @@
 // 显示点按（手测反馈第 1 批，2026-10-01）不用系统的 showMouseClicks（圈又小又淡，还要 BGRA、文件不带色彩标记）：开着时
 // 开流前在被录区域上盖一块 InputOverlay 自己画圈，它的窗口号并进过滤器的例外才录得进画面（exceptedOwnWindows）；
 // 停止 / 放弃 / 取消那一刻和边框、HUD 一起收。
+// 显示按键（手测反馈第 2 批，2026-10-01；录制条的第四个开关）：按下的键显示在同一块 InputOverlay 底部的胶囊里（两个开关
+// 任一开着就建这块窗口）。全局键盘监听要辅助功能授权：遮罩开着时点开关只记偏好，开录时（倒数前）发现没授权这次不显示、
+// 警告岛、开关弹回，录屏照常；收尾时才打开系统设置的辅助功能页（Result.keysDenied，同麦克风：开录前打开会盖住选区、录进画面）。
+// 麦克风和辅助功能这次都没有授权：警告岛并成一条，收尾时系统设置只开麦克风页（AppDelegate.recorded）。
+// 本 App 自己的全局快捷键被 Carbon 热键吃掉、监听收不到，由 AppDelegate 在热键触发时补给 InputOverlay。
 // 只录声音（录音第 6 批，拍板 A2-a「复用录屏管线」；会话在 AudioRecorder）：录音的来源是系统声音 / 两者时，AudioRecorder 用这里的
 // 只录声音模式（audioOnly）——鼠标所在屏左上角 64 × 64 点、1 fps、输出 128 × 128 像素，过滤器排除整个本 App（没有例外）；不倒数、
 // 不画边框、不出录屏 HUD 和停止项、不防睡眠（这些归 AudioRecorder：录音 HUD，防睡眠同录屏连显示器一起防——这里显示器睡眠
@@ -186,25 +191,36 @@ final class ScreenRecorder: NSObject {
     var microphoneLost = false
     /// 开着麦克风、但之前就拒绝过授权（不是这次刚在系统框里点的）：AppDelegate 收尾时打开系统设置的麦克风页
     var microphoneDenied = false
+    /// 开着显示按键、但没有辅助功能授权（这段没显示按键）：AppDelegate 收尾时打开系统设置的辅助功能页
+    /// （microphoneDenied 也在时只开麦克风页）
+    var keysDenied = false
   }
 
-  /// 录制条的三个开关（第 4 批，偏好记住上次）：录不录系统声音、麦克风，画不画点按圈（InputOverlay）
+  /// 录制条的四个开关（第 4 批，偏好记住上次；显示按键是手测反馈第 2 批加的）：录不录系统声音、麦克风，画不画点按圈、
+  /// 显不显示按下的键（都在 InputOverlay）
   nonisolated struct Options: Equatable, Sendable {
     var systemAudio = true
     var microphone = false
     var showsClicks = false
+    var showsKeys = false
 
-    init(systemAudio: Bool = true, microphone: Bool = false, showsClicks: Bool = false) {
+    init(
+      systemAudio: Bool = true, microphone: Bool = false, showsClicks: Bool = false,
+      showsKeys: Bool = false
+    ) {
       self.systemAudio = systemAudio
       self.microphone = microphone
       self.showsClicks = showsClicks
+      self.showsKeys = showsKeys
     }
 
-    /// 从偏好读；没存过的按默认（系统声音开、麦克风和显示点按关，同 Prefs.registerDefaults；临时偏好域里没有注册域）
+    /// 从偏好读；没存过的按默认（系统声音开，麦克风、显示点按、显示按键关，同 Prefs.registerDefaults；临时偏好域里
+    /// 没有注册域）
     init(_ defaults: UserDefaults) {
       systemAudio = defaults.object(forKey: Prefs.screenRecordSystemAudio) as? Bool ?? true
       microphone = defaults.bool(forKey: Prefs.screenRecordMicrophone)
       showsClicks = defaults.bool(forKey: Prefs.screenRecordShowsClicks)
+      showsKeys = defaults.bool(forKey: Prefs.screenRecordShowsKeys)
     }
   }
 
@@ -217,6 +233,16 @@ final class ScreenRecorder: NSObject {
     /// 没问过：这时才问（遮罩已收起），倒数等它返回
     case ask
     /// 拒绝过 / 受限：不再问，照样开录、不带麦克风，警告岛、开关弹回，收尾时打开系统设置
+    case denied
+  }
+
+  /// 开录前显示按键这一步怎么走（纯函数，配单测）
+  nonisolated enum KeysAccess: Equatable {
+    /// 开关关着：不显示、不看授权
+    case unused
+    /// 有辅助功能授权：显示
+    case granted
+    /// 没有：照样开录、不显示按键，警告岛、开关弹回，收尾时打开系统设置
     case denied
   }
 
@@ -241,7 +267,8 @@ final class ScreenRecorder: NSObject {
   private let frameRate: Int
   private let countdown: Int
   private let showsCursor: Bool
-  /// 录制条的三个开关（开录时读一次）；microphone 在问过授权后改成这次真录不录
+  /// 录制条的四个开关（开录时读一次）；microphone 在问过授权后改成这次真录不录，showsKeys 在看过辅助功能授权后
+  /// 改成这次真显不显示
   private var options: Options
   /// 麦克风被拒时的警告岛（单测 / 实录自检里是 nil）
   private weak var island: Island?
@@ -255,6 +282,9 @@ final class ScreenRecorder: NSObject {
   /// 麦克风授权此刻的状态、没问过时怎么问（单测换掉：不读真状态、不真弹框）
   var microphoneStatus = { Permissions.microphoneStatus }
   var requestMicrophone = Permissions.requestMicrophone
+  /// 开着显示按键却没有辅助功能授权（这段不显示）；授权此刻的状态（单测换掉）
+  private(set) var keysDenied = false
+  var accessibilityTrusted = { Permissions.isAccessibilityTrusted }
   /// 只录声音时交给 AudioRecorder 的：开始写了（出录音 HUD、计时从这时起）、停了（HUD 那一刻就收）、一块声音样本的电平
   /// （dB、是不是麦克风那一路）、录制中开录时的麦克风断开了（录音 HUD 出橙字）
   var onStarted: () -> Void = {}
@@ -283,7 +313,7 @@ final class ScreenRecorder: NSObject {
   private var abandoned: Reason?
   private var border: NSPanel?
   private var hud: RecordingHUD?
-  /// 点按圈（显示点按开着的录屏才有；只录声音没有）：开流前建、停的那一刻收
+  /// 点按圈和按键提示（显示点按 / 显示按键任一开着的录屏才有；只录声音没有）：开流前建、停的那一刻收
   private(set) var inputOverlay: InputOverlay?
   private var stopItem: NSStatusItem?
   private var timer: Timer?
@@ -351,6 +381,7 @@ final class ScreenRecorder: NSObject {
       var result = await finalize(Self.outcome(reason, abandoned: abandoned))
       result.microphoneLost = microphoneLost
       result.microphoneDenied = microphoneDenied
+      result.keysDenied = keysDenied
       // 只录声音的没有画面可取：波形 poster 由 AudioRecorder 画
       if medium == .screen, result.moved, let file = result.file {
         let size = Self.outputSize(points: region.size, scale: scale)
@@ -381,19 +412,30 @@ final class ScreenRecorder: NSObject {
     observeInterruptions()
     // 麦克风授权：遮罩已经收起（系统框不会被压住），倒数之前问、等它返回；这期间要停（再按快捷键、锁屏、睡眠、退出）
     // 当取消，同倒数中取消
+    let wantsMicrophone = options.microphone
     options.microphone = await microphoneAllowed()
     if stoppedWhileAsking { return .cancelled }
     if options.microphone { watchMicrophone() }
+    // 显示按键：没有辅助功能授权就这次不显示（警告岛、开关弹回），录屏照常；麦克风刚才也没拿到的话两件事并成一条岛
+    options.showsKeys = keysAllowed(withoutMicrophone: wantsMicrophone && !options.microphone)
     if countdown > 0 {
       guard await countDown() else { return .cancelled }
       // 数完：蚂蚁线停成实线，HUD 换成录制态（红点 pop 后呼吸），开流
       border?.contentView = ScrollBorderView(animates: false)
       hud?.update(.recording(0))
     }
-    // 点按圈：窗口要赶在 makeStream 取窗口表之前建好、露出来，才列得进过滤器的例外。开流时才建（倒数不进文件，倒数时
-    // 不用画）；万一这次的窗口表里还没有它，每秒比一次的 refreshFilterIfNeeded 会把它补上。没开起来的由 tearDown 收
-    if medium == .screen, options.showsClicks {
-      let overlay = InputOverlay(frame: region)
+    // 点按圈 / 按键提示：窗口要赶在 makeStream 取窗口表之前建好、露出来，才列得进过滤器的例外。开流时才建（倒数不进
+    // 文件，倒数时不用画）；万一这次的窗口表里还没有它，每秒比一次的 refreshFilterIfNeeded 会把它补上。没开起来的由
+    // tearDown 收
+    if medium == .screen, options.showsClicks || options.showsKeys {
+      let visible =
+        NSScreen.screens.first { $0.displayID == displayID }?.visibleFrame ?? screenFrame
+      let overlay = InputOverlay(
+        frame: region, clicks: options.showsClicks,
+        keysBottom: options.showsKeys
+          ? InputOverlay.keysBottom(
+            region: region, screen: screenFrame, visible: visible, isFullScreen: isFullScreen)
+          : nil)
       overlay.present()
       inputOverlay = overlay
     }
@@ -553,7 +595,8 @@ final class ScreenRecorder: NSObject {
     var errorDescription: String? { "找不到选区所在的屏幕" }
   }
 
-  /// 要列进过滤器例外的本 App 窗口号（makeFilter 和 refreshFilterIfNeeded 同一个取法）：白名单里的面板，外加点按圈的窗口
+  /// 要列进过滤器例外的本 App 窗口号（makeFilter 和 refreshFilterIfNeeded 同一个取法）：白名单里的面板，外加点按圈 /
+  /// 按键提示的窗口
   /// ——它的层级在状态栏以上，recordedOwnWindows 按规矩不列（那里层级到状态栏及以上的一律不列），所以在这里并进来。
   /// 只录声音时没有例外
   private func exceptedOwnWindows() -> Set<CGWindowID> {
@@ -816,6 +859,23 @@ final class ScreenRecorder: NSObject {
     return false
   }
 
+  /// 这次显不显示按键：开关关着不显示；有辅助功能授权才显示（全局键盘监听要它；录制条上打开时只记偏好）。没授权照样开录、
+  /// 不显示按键：警告岛，开关弹回（下次录制条上是关的），收尾时打开系统设置的辅助功能页（keysDenied：开录前打开会盖住
+  /// 选区、抢走焦点、录进画面）。withoutMicrophone：这次开着麦克风却没拿到授权（microphoneAllowed 刚出过警告岛）。只录声音不管
+  func keysAllowed(withoutMicrophone: Bool) -> Bool {
+    guard medium == .screen else { return false }
+    switch Self.keysAccess(wanted: options.showsKeys, trusted: accessibilityTrusted()) {
+    case .unused: return false
+    case .granted: return true
+    case .denied:
+      keysDenied = true
+      defaults.set(false, forKey: Prefs.screenRecordShowsKeys)
+      let notice = Self.keysDeniedNotice(withoutMicrophone: withoutMicrophone)
+      island?.show(notice.title, detail: notice.detail, tone: .warning)
+      return false
+    }
+  }
+
   /// 开录时的输入设备断开（拔了 USB 麦克风、蓝牙耳机走远了）：录屏不停（13 条默认细节）
   private func watchMicrophone() {
     let token = NotificationCenter.default.addObserver(
@@ -1059,8 +1119,9 @@ final class ScreenRecorder: NSObject {
   }
 
   /// 按录制条的开关配流（第 4 批），返回要挂的空输出（录什么挂什么，第 0 批实测不挂会每帧刷日志）：
-  /// 系统声音 48 kHz 立体声；麦克风跟随系统输入（设备 ID 不设）。显示点按不在这里配（手测反馈第 1 批）：圈是 InputOverlay
-  /// 自己画的窗口，系统的 showMouseClicks 不开（免得叠两层），像素格式也就不用为它换成 BGRA、文件照常带色彩标记。
+  /// 系统声音 48 kHz 立体声；麦克风跟随系统输入（设备 ID 不设）。显示点按、显示按键不在这里配（手测反馈第 1、2 批）：
+  /// 圈和按键胶囊是 InputOverlay 自己画的窗口，系统的 showMouseClicks 不开（免得叠两层），像素格式也就不用为它换成
+  /// BGRA、文件照常带色彩标记。
   /// options.microphone 是开关开着且有授权
   nonisolated static func configure(
     _ configuration: SCStreamConfiguration, _ options: Options
@@ -1090,6 +1151,23 @@ final class ScreenRecorder: NSObject {
     case .notDetermined: return .ask
     default: return .denied
     }
+  }
+
+  /// 显示按键这一步（手测反馈第 2 批，同麦克风的写法）：开关关着不管授权；有辅助功能授权就显示；没有就这次不显示
+  /// （辅助功能没有「没问过就当场问」这一档：系统框只弹一次，而且要到系统设置里手动勾）
+  nonisolated static func keysAccess(wanted: Bool, trusted: Bool) -> KeysAccess {
+    guard wanted else { return .unused }
+    return trusted ? .granted : .denied
+  }
+
+  /// 没有辅助功能授权时的警告岛（纯函数，配单测）。这次麦克风也没拿到授权时两件事并成一条：岛开着时再 show 是原地
+  /// 替换内容，各说各的话前一条「没有麦克风授权」一帧都看不到，用户不知道这段录屏不带麦克风
+  nonisolated static func keysDeniedNotice(withoutMicrophone: Bool) -> (
+    title: String, detail: String
+  ) {
+    withoutMicrophone
+      ? ("没有麦克风和辅助功能授权", "这段录屏不带麦克风、不显示按键")
+      : ("没有辅助功能授权", "这段录屏不显示按键")
   }
 
   /// 开录前倒数几秒：设置里只给 0 / 3 / 5，存的值在 0…5 之间照用（实录自检用 1 s），出了这个范围按默认 3

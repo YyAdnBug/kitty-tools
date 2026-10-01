@@ -947,20 +947,23 @@ struct SelectionInteractionTests {
     button?.subviews.lazy.compactMap { $0 as? NSImageView }.first
   }
 
-  /// 录制条的三个开关（录屏第 4 批）：在 [取消][●] 前面，默认系统声音开、麦克风和显示点按关（开 = 强调色）；点了写偏好
-  /// （Harness 的临时偏好域），下一次框选的录制条照着它（记住上次）；开关不交回结果、不关遮罩
+  /// 录制条的四个开关（录屏第 4 批；显示按键是手测反馈第 2 批，排在显示点按后面）：在 [取消][●] 前面，默认系统声音开，
+  /// 麦克风、显示点按、显示按键关（开 = 强调色）；点了写偏好（Harness 的临时偏好域），下一次框选的录制条照着它（记住上次）；
+  /// 开关不交回结果、不关遮罩
   @Test func recordBarTogglesRememberChoices() async throws {
     let h = Harness(mode: .record)
     h.makeSelection()
     let bar = try #require(h.recordBar)
-    let toggles = try [RecordBar.Item.systemAudio, .microphone, .clicks].map {
+    let toggles = try [RecordBar.Item.systemAudio, .microphone, .clicks, .keys].map {
       try #require(bar.button(for: $0) as? ToggleButton)
     }
     let cancel = try #require(bar.button(for: .cancel))
     #expect(toggles.allSatisfy { $0.frame.maxX < cancel.frame.minX })
+    #expect(zip(toggles, toggles.dropFirst()).allSatisfy { $0.frame.maxX <= $1.frame.minX })
     #expect(toggles[0].accessibilityLabel() == "系统声音：开")
     #expect(toggles[1].accessibilityLabel()?.hasPrefix("麦克风：关") == true)
     #expect(toggles[2].accessibilityLabel() == "显示点按：关")
+    #expect(toggles[3].accessibilityLabel() == "显示按键：关")
     let outcome = await h.outcome {
       for toggle in toggles { toggle.performClick(nil) }
     }
@@ -971,14 +974,18 @@ struct SelectionInteractionTests {
     #expect(toggles[0].accessibilityLabel() == "系统声音：关")
     #expect(toggles[1].accessibilityLabel()?.hasPrefix("麦克风：开") == true)
     #expect(toggles[2].accessibilityLabel() == "显示点按：开")
+    // 显示按键开着时第二行提醒：按下的键都会进画面
+    #expect(toggles[3].accessibilityLabel() == "显示按键：开\n按下的键会录进画面，要输密码先关掉")
     // 提示是系统的懒提示：要弹出时才问（不在悬停出底的路径上查输入设备）
     let tip = { (button: ToggleButton) in
       button.view(button, stringForToolTip: 0, point: .zero, userData: nil)
     }
     #expect(tip(toggles[0]) == "系统声音：关" && tip(toggles[2]) == "显示点按：开")
+    #expect(tip(toggles[3]) == RecordBar.keysTip(on: true))
     #expect(toggles.allSatisfy { $0.toolTip == nil })
     let options = ScreenRecorder.Options(h.view.styleDefaults)
-    #expect(options == .init(systemAudio: false, microphone: true, showsClicks: true))
+    #expect(
+      options == .init(systemAudio: false, microphone: true, showsClicks: true, showsKeys: true))
     // 同一个偏好域里下一次框选：录制条照上次的
     let next = Harness(mode: .record)
     next.view.styleDefaults = h.view.styleDefaults
@@ -986,17 +993,25 @@ struct SelectionInteractionTests {
     #expect(again.accessibilityLabel()?.hasPrefix("麦克风：开") == true)
   }
 
-  /// 显示点按开关两态换形状（关 = cursorarrow、开 = cursorarrow.click.2），不只靠颜色：强调色选石墨时强调色比主文字色还暗
-  @Test func clicksToggleChangesShape() throws {
+  /// 显示点按、显示按键开关两态换形状（点按：关 = cursorarrow、开 = cursorarrow.click.2；按键：关 = 空心的 keyboard、
+  /// 开 = 实心的 keyboard.fill），不只靠颜色：强调色选石墨时强调色比主文字色还暗
+  @Test func clicksAndKeysTogglesChangeShape() throws {
     let h = Harness(mode: .record)
     h.makeSelection()
-    let clicks = try #require(h.recordBar?.button(for: .clicks))
-    let off = try #require(toggleIcon(clicks)?.image)
-    #expect(toggleIcon(clicks)?.contentTintColor == Style.HUD.text)
-    clicks.performClick(nil)
-    let on = try #require(toggleIcon(clicks)?.image)
-    #expect(toggleIcon(clicks)?.contentTintColor == Style.Shot.accent)
-    #expect(off.tiffRepresentation != on.tiffRepresentation)
+    for item in [RecordBar.Item.clicks, .keys] {
+      let toggle = try #require(h.recordBar?.button(for: item))
+      let off = try #require(toggleIcon(toggle)?.image)
+      #expect(toggleIcon(toggle)?.contentTintColor == Style.HUD.text)
+      toggle.performClick(nil)
+      let on = try #require(toggleIcon(toggle)?.image)
+      #expect(toggleIcon(toggle)?.contentTintColor == Style.Shot.accent)
+      #expect(off.tiffRepresentation != on.tiffRepresentation)
+    }
+    // 两个符号在这台系统上都有（没有的话开关是空的）
+    for name in ["keyboard", "keyboard.fill"] {
+      #expect(NSImage(systemSymbolName: name, accessibilityDescription: nil) != nil)
+    }
+    #expect(RecordBar.keysTip(on: false) == "显示按键：关")
   }
 
   /// 多屏：每块屏的遮罩各有一根录制条（共用同一个偏好域）。在一块屏上点了开关，另一块屏上长出来的录制条要按偏好重画，

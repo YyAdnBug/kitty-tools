@@ -113,11 +113,14 @@ enum Prefs {
   nonisolated static let screenRecordCountdownChoices = [0, 3, 5]
   /// 录屏里画光标（默认开）
   static let screenRecordShowsCursor = "screenRecordShowsCursor"
-  /// 录制条的三个开关，记住上次（录屏第 4 批；设置页不重复，拍板 C4-a）：录系统声音（默认开）、录麦克风（默认关；
-  /// 没问过授权时打开只记偏好，按开始、遮罩收起后才问）、显示点按（默认关；点按处画圈，自己画的 InputOverlay）
+  /// 录制条的四个开关，记住上次（录屏第 4 批；设置页不重复，拍板 C4-a）：录系统声音（默认开）、录麦克风（默认关；
+  /// 没问过授权时打开只记偏好，按开始、遮罩收起后才问）、显示点按（默认关；点按处画圈，自己画的 InputOverlay）、
+  /// 显示按键（手测反馈第 2 批，默认关；按下的键显示在画面底部的胶囊里，同一个 InputOverlay。全局键盘监听要辅助功能授权：
+  /// 没授权时打开只记偏好，开录时发现没授权这次不显示、写回关）
   nonisolated static let screenRecordSystemAudio = "screenRecordSystemAudio"
   nonisolated static let screenRecordMicrophone = "screenRecordMicrophone"
   nonisolated static let screenRecordShowsClicks = "screenRecordShowsClicks"
+  nonisolated static let screenRecordShowsKeys = "screenRecordShowsKeys"
   /// 录音的来源（录音第 6 批，设置 › 截图「录音」）：AudioRecorder.Source 的 rawValue——麦克风（默认）/ 系统声音 / 两者；
   /// 「两者」被拒麦克风授权时弹回「系统声音」（同录制条的麦克风开关）
   nonisolated static let audioRecordSource = "audioRecordSource"
@@ -179,6 +182,7 @@ enum Prefs {
       screenRecordSystemAudio: true,
       screenRecordMicrophone: false,
       screenRecordShowsClicks: false,
+      screenRecordShowsKeys: false,
       audioRecordSource: AudioRecorder.Source.microphone.rawValue,
     ])
   }

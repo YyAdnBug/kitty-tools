@@ -4,8 +4,8 @@
 //   松手 40 ms 后从靠选区的那条边长出来（pop，bounce 0.18），拖动 / 缩放 / 平移选区时淡出让位；
 // - 样式托盘 StyleBar：高 34、圆角 10，按工具出 8 色点 ｜ 三档 ｜ 选项分段，锚在当前工具按钮下方 6 pt，换工具时位置和宽度 settle；
 // - HUDMenu：遮罩里的 HUD 弹出菜单（保存 ▾，之后尺寸胶囊的比例菜单也用它），不用 NSMenu（菜单层级低于遮罩，会被压在下面）；
-// - 录制条 RecordBar（录屏框选的调整阶段，放在主栏的位置）：一段 HUD 胶囊 [系统声音][麦克风][显示点按] ｜ [取消][● 开始录制]，
-//   长出 / 淡出同主栏；三个开关记在偏好里（录屏第 4 批）。
+// - 录制条 RecordBar（录屏框选的调整阶段，放在主栏的位置）：一段 HUD 胶囊 [系统声音][麦克风][显示点按][显示按键] ｜
+//   [取消][● 开始录制]，长出 / 淡出同主栏；四个开关记在偏好里（录屏第 4 批；显示按键是手测反馈第 2 批加的）。
 // 永远深色（和系统 ⌘⇧5 一致）：模糊的是窗口里的冻结帧（withinWindow）；macOS 26 起材质是深色液态玻璃（HUDBar，
 // 主栏两段放进一个 NSGlassEffectContainerView，mac-whisker §2）。按钮都 acceptsFirstMouse（遮罩不是 key 的
 // 那块屏上也一点就响应）、不抢第一响应者（输入文字时点按钮不打断输入）。
@@ -415,21 +415,28 @@ final class EditorToolbar: PopView {
 
 // MARK: - 录制条
 
-/// 录屏框选调整时贴在选区旁的栏（截图主栏的位置，mac-whisker §6 截图「录屏」）：[系统声音][麦克风][显示点按] ｜
+/// 录屏框选调整时贴在选区旁的栏（截图主栏的位置，mac-whisker §6 截图「录屏」）：[系统声音][麦克风][显示点按][显示按键] ｜
 /// [取消][● 开始录制]，按钮同主栏（32 × 32、悬停底、按下 0.90），开始是 28 pt 强调色实心圆 + 实心圆点（画法同主栏的
-/// 拷贝钮；强调色选红时靠 ● / ■ 形状和停止分开）。三个开关（录屏第 4 批）开 = 图标染强调色（同长截图自动滚动钮的开启态），
-/// 关 = 换一个形状（斜杠 / 不带点击波纹），不只靠颜色（石墨强调色比主文字色还暗）；换图走 .replace；点了就写偏好（记住上次，
-/// 设置页不重复）并播报新状态，开录时 ScreenRecorder 读；每次长出来都按偏好重画（多屏时每块屏各一根，别的屏上点过的这根要跟上）。
-/// 麦克风没问过授权时打开只记偏好：遮罩开着时系统授权框会被压在下面，按开始、遮罩收起后才问
+/// 拷贝钮；强调色选红时靠 ● / ■ 形状和停止分开）。四个开关（录屏第 4 批；显示按键是手测反馈第 2 批）开 = 图标染强调色
+/// （同长截图自动滚动钮的开启态），关 = 换一个形状（斜杠 / 不带点击波纹 / 空心的键盘），不只靠颜色（石墨强调色比主文字色
+/// 还暗）；换图走 .replace；点了就写偏好（记住上次，设置页不重复）并播报新状态，开录时 ScreenRecorder 读；每次长出来都按
+/// 偏好重画（多屏时每块屏各一根，别的屏上点过的这根要跟上）。
+/// 麦克风没问过授权时打开只记偏好：遮罩开着时系统授权框会被压在下面，按开始、遮罩收起后才问；显示按键要辅助功能授权，
+/// 同样只记偏好，开录时没授权就这次不显示、开关弹回
 final class RecordBar: HUDBar {
-  enum Item { case systemAudio, microphone, clicks, cancel, start }
+  enum Item: CaseIterable {
+    case systemAudio, microphone, clicks, keys, cancel, start
+
+    /// 前面那几个开关
+    static let toggles: [Item] = [.systemAudio, .microphone, .clicks, .keys]
+  }
 
   var onClick: (Item) -> Void = { _ in }
   /// 开关记在哪（SelectionView.styleDefaults：交互测试换成临时偏好域）；换了就按它重画开关
   var defaults: UserDefaults {
     didSet { applyToggles(animated: false) }
   }
-  private let items: [Item] = [.systemAudio, .microphone, .clicks, .cancel, .start]
+  private let items = Item.allCases
   /// 系统当前的输入设备（名字、是不是蓝牙）：第一次查要几十毫秒（实测约 70 ms），不在建栏、悬停、点击时查，提示要弹出 / 读屏时
   /// 才查，这一次框选里记住
   private lazy var input: (name: String, bluetooth: Bool)? = AVCaptureDevice.default(for: .audio)
@@ -438,7 +445,7 @@ final class RecordBar: HUDBar {
   init(defaults: UserDefaults) {
     self.defaults = defaults
     super.init(radius: Style.Radius.panel, height: 40)
-    let toggles = [Item.systemAudio, .microphone, .clicks].map { item in
+    let toggles = Item.toggles.map { item in
       let button = ToggleButton()
       button.target = self
       button.action = #selector(clicked(_:))
@@ -498,6 +505,7 @@ final class RecordBar: HUDBar {
     case .systemAudio: options.systemAudio
     case .microphone: options.microphone
     case .clicks: options.showsClicks
+    case .keys: options.showsKeys
     case .cancel, .start: false
     }
   }
@@ -507,26 +515,29 @@ final class RecordBar: HUDBar {
     case .systemAudio: Prefs.screenRecordSystemAudio
     case .microphone: Prefs.screenRecordMicrophone
     case .clicks: Prefs.screenRecordShowsClicks
+    case .keys: Prefs.screenRecordShowsKeys
     case .cancel, .start: nil
     }
   }
 
   /// 开关的样子：符号（开 / 关形状不同）、强调色 / 主文字色。提示和旁白名字由 ToggleButton 要显示时现算（describe）
   private func applyToggles(animated: Bool, only: Item? = nil) {
-    for item in [Item.systemAudio, .microphone, .clicks] where only == nil || only == item {
+    for item in Item.toggles where only == nil || only == item {
       guard let button = button(for: item) as? ToggleButton else { continue }
       let on = isOn(item)
       let symbol =
         switch item {
         case .systemAudio: on ? "speaker.wave.2.fill" : "speaker.slash.fill"
         case .microphone: on ? "mic.fill" : "mic.slash.fill"
+        case .keys: on ? "keyboard.fill" : "keyboard"
         default: on ? "cursorarrow.click.2" : "cursorarrow"
         }
       button.show(symbol, on: on, animated: animated)
     }
   }
 
-  /// 「系统声音：开」「麦克风：开（MacBook Air 麦克风）」「显示点按：关」。device：查系统当前输入设备（写设备名、蓝牙提示）
+  /// 「系统声音：开」「麦克风：开（MacBook Air 麦克风）」「显示点按：关」「显示按键：开」+ 提醒。device：查系统当前输入设备
+  /// （写设备名、蓝牙提示）
   private func tip(for item: Item, device: Bool) -> String {
     let on = isOn(item)
     switch item {
@@ -534,8 +545,15 @@ final class RecordBar: HUDBar {
     case .microphone:
       let input = device ? input : nil
       return Self.microphoneTip(on: on, device: input?.name, bluetooth: input?.bluetooth ?? false)
+    case .keys: return Self.keysTip(on: on)
     default: return "显示点按：\(on ? "开" : "关")"
     }
+  }
+
+  /// 显示按键开关的提示（纯函数，配单测）：开着时提醒一句——按下的键都会进画面（不承诺密码不会显示：终端里输的密码
+  /// 这类不一定走系统的安全输入）
+  nonisolated static func keysTip(on: Bool) -> String {
+    on ? "显示按键：开\n按下的键会录进画面，要输密码先关掉" : "显示按键：关"
   }
 
   /// 麦克风开关的提示（纯函数，配单测）：开时带设备名；当前输入是蓝牙时（开关两态都）再加一句，免得打开了才发现音质变差

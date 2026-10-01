@@ -76,7 +76,7 @@ struct GeneralTab: View {
       }
       Section("权限") {
         PermissionRow(
-          title: "辅助功能", detail: "粘贴回原 App、划词翻译、长截图自动滚动", symbol: "hand.raised.fill",
+          title: "辅助功能", detail: "粘贴回原 App、划词翻译、长截图自动滚动、录屏显示按键", symbol: "hand.raised.fill",
           color: Style.Family.command, granted: trusted
         ) {
           Permissions.requestAccessibility()

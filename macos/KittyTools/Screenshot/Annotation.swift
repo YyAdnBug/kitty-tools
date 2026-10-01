@@ -523,7 +523,8 @@ struct Annotation: Identifiable, Equatable {
     rounded(size: weight.fontSize, weight: .semibold)
   }
 
-  private static func rounded(size: CGFloat, weight: NSFont.Weight) -> NSFont {
+  /// SF Pro Rounded（文字标注、录屏的按键胶囊 InputOverlay 共用）
+  static func rounded(size: CGFloat, weight: NSFont.Weight) -> NSFont {
     let font = NSFont.systemFont(ofSize: size, weight: weight)
     return font.fontDescriptor.withDesign(.rounded).flatMap { NSFont(descriptor: $0, size: size) }
       ?? font
