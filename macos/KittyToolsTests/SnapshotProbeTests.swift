@@ -412,6 +412,34 @@ struct SnapshotProbeTests {
           to: "\(out)/\(name)\(dark ? "-dark" : "").png")
       }
     }
+    // 屏幕放不下原尺寸的竖图（像手机截图）：窗口按图片的比例缩，到了最小宽度后图片比图片区窄，在里面居中
+    // （原来跟着宽×高胶囊贴在右上角）。另起一个小库，不动上面那批图
+    let tallStore = try ClipboardStore(
+      db: Database(path: ":memory:"), images: ImageStore(directory: dir))
+    let tallPicture = try ScreenshotTests.render([
+      "祝福祖国", "满天星辰缅怀版", "", "前奏 · 还有 18 秒", "都说你的花朵真红火", "都说你的果实真丰硕",
+      "都说你的土地真肥沃", "都说你的道路真宽阔", "祖国我的祖国", "", "0:03 ———— 3:18", "⏮  ⏸  ⏭",
+    ])
+    let tallPNG = try #require(
+      NSBitmapImageRep(cgImage: tallPicture).representation(using: .png, properties: [:]))
+    var tall = ClipItem(kind: .image, sourceName: "微信", sourceBundleID: "com.tencent.xinWeChat")
+    try tallPNG.write(to: tallStore.images.url(for: tall.id))
+    tall.image = .init(
+      width: tallPicture.width, height: tallPicture.height, byteCount: tallPNG.count,
+      sha256: "snapshot-tall")
+    tall.ocrText = "祝福祖国\n满天星辰缅怀版\n前奏 · 还有 18 秒"
+    tallStore.record(tall)
+    _ = await ThumbnailView.load(tall.id, images: tallStore.images, maxPixel: 2400)
+    let tallModel = ClipboardPanelModel(store: tallStore)
+    tallModel.select(tall)
+    tallModel.showsQuickLookContent = true
+    let tallSize = QuickLookView.idealSize(
+      for: tall, form: nil, within: NSSize(width: 1360, height: 700))
+    for dark in [false, true] {
+      try snapshot(
+        QuickLookView(model: tallModel) { _ in }, size: tallSize, dark: dark,
+        to: "\(out)/quicklook-image-fit\(dark ? "-dark" : "").png")
+    }
     // 拖出去时指针下的预览（体检 D3）：这一行画在窗口底色的卡上（深浅按 App 外观，这里两种都画）
     let dragged: [(String, ClipItem?)] = [
       ("drag-preview-link", store.items.first { $0.text?.hasPrefix("https://developer") == true }),

@@ -259,11 +259,17 @@ final class OverlayPanel: NSPanel {
       x: frame.minX + rect.minX, y: frame.maxY - rect.maxY, width: rect.width, height: rect.height)
   }
 
-  /// 以这块面板为中心摆 size 大的卡片（⌘Y 大卡）：最大到所在屏可见区的 90%，再整个挪进可见区
+  /// ⌘Y 大卡最大能多大：所在屏可见区的 90%
+  var cardLimit: NSSize {
+    let visible = (screen ?? NSScreen.main)?.visibleFrame ?? .zero
+    return NSSize(width: visible.width * 0.9, height: visible.height * 0.9)
+  }
+
+  /// 以这块面板为中心摆 size 大的卡片（⌘Y 大卡）：最大到 cardLimit，再整个挪进可见区
   func centeredFrame(_ size: NSSize) -> NSRect {
     let visible = (screen ?? NSScreen.main)?.visibleFrame ?? .zero
-    let width = min(size.width, visible.width * 0.9)
-    let height = min(size.height, visible.height * 0.9)
+    let width = min(size.width, cardLimit.width)
+    let height = min(size.height, cardLimit.height)
     return NSRect(
       x: min(max(frame.midX - width / 2, visible.minX), visible.maxX - width),
       y: min(max(frame.midY - height / 2, visible.minY), visible.maxY - height), width: width,

@@ -2,7 +2,7 @@
 // 内缩 6、圆角 10 的一张卡（Style.CardSurface，不加阴影）。页眉 40 pt 取来源 App 图标的颜色（对比度不够时改黑字，**只在这里**，主界面保持中性），
 // 写 App 名和「类型 · 大小 · 精确时间」（同透镜）；主体按类型出大预览（字号 ×1.2、文字可选中）：颜色 = 大色块 + HEX / RGB / HSL /
 // SwiftUI 四行点击复制；代码 / JSON = SF Mono + 语法着色；链接 = 300 pt 头图 + 标题 + 网站名（LinkPreview 联网取）；
-// 图片 = 棋盘格上的原尺寸图 + 宽×高胶囊（大小只在页眉）+ 识别文字；单个文件 Quick Look、多个文件缩略图网格
+// 图片 = 棋盘格上的原尺寸图（比图片区小时居中）+ 右上角的宽×高胶囊（大小只在页眉）+ 识别文字；单个文件 Quick Look、多个文件缩略图网格
 // （超过 120 个时末尾写「还有 N 个」）；文本高亮搜索词。
 // 页脚最多 4 个无边框胶囊按钮：粘贴、复制、按类型的第 3 个（链接「打开」、文件「在访达中显示」、图片「钉到屏幕」、
 // JSON「美化 / 原文」、其余「收藏」）、操作 ⌘K，其余操作在 ⌘K 面板。选中文字 ⌘C 只拷纯文本（CopyPlainTextView）。
@@ -122,6 +122,8 @@ struct PreviewView: View {
           ThumbnailView(id: item.id, images: model.store.images, maxPixel: 2400, contentMode: .fit)
             .clipShape(.rect(cornerRadius: Style.Radius.control, style: .continuous))
             .padding(8)
+            // 图片比这块区域窄 / 矮时居中：不撑满的话它会跟着 ZStack 的对齐（给下面的胶囊用的）贴到右上角
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
           // 大小已在页眉，这里只写宽×高
           if let image = item.image {
             Text(verbatim: "\(image.width)×\(image.height)")

@@ -331,6 +331,37 @@ struct ClipboardPanelTests {
     #expect(second.origin == CGPoint(x: small.minX + 24, y: small.minY - 24))
   }
 
+  /// ⌘Y 大卡放图片时的窗口尺寸：放得下按原尺寸（点 = 像素 ÷ 屏幕倍率，加四周 48、页眉页脚 130、识别文字 170）；
+  /// 屏幕放不下时图片等比缩小、窗口跟着图片的比例走——宽高各夹各的话图片区比图片宽出一截，图片旁边空一大块
+  /// （用户 2026-10-01 报告的两张）；再小不小于 560 × 420
+  @Test func quickLookSizeFollowsImageRatio() {
+    func image(_ width: Int, _ height: Int, ocr: String? = nil) -> ClipItem {
+      var item = ClipItem(kind: .image)
+      item.image = .init(width: width, height: height, byteCount: 0, sha256: "")
+      item.ocrText = ocr
+      return item
+    }
+    /// 1512 × 876 可见区的 90%
+    func size(_ item: ClipItem) -> NSSize {
+      QuickLookView.idealSize(
+        for: item, form: nil, within: NSSize(width: 1360, height: 788), scale: 2)
+    }
+    func near(_ size: NSSize, _ width: CGFloat, _ height: CGFloat) -> Bool {
+      abs(size.width - width) < 0.5 && abs(size.height - height) < 0.5
+    }
+    #expect(size(image(1600, 800)) == NSSize(width: 848, height: 530))
+    // 3420×1982 的整屏截图带识别文字：被高度卡住，图片 842 × 488，窗口 890 宽（原来 1360 宽，图片两边共空出 470）
+    #expect(near(size(image(3420, 1982, ocr: "字")), 890, 788))
+    // 857×1761 的手机截图：缩到 238 × 488，窗口是最小宽度 560，图片在里面居中
+    #expect(near(size(image(857, 1761, ocr: "字")), 560, 788))
+    // 被宽度卡住的长条图：高度跟着缩，不小于 420
+    #expect(near(size(image(8000, 400)), 1360, 420))
+    // 不给上限就是原尺寸
+    #expect(
+      QuickLookView.idealSize(for: image(3420, 1982), form: nil, scale: 2)
+        == NSSize(width: 1758, height: 1121))
+  }
+
   /// ⌥⌘C 复制路径（体检 D2）：多个按换行拼；面板开着时列表不动，收起面板时才记成一条新历史（同 ⌘C）
   @Test func copyPaths() throws {
     let (model, store) = try makeModel([])

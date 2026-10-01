@@ -211,9 +211,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     weak var created: OverlayPanel?
     let panel = OverlayPanel(
       size: NSSize(width: 820, height: 640), autoHide: .clickOutside, isPinned: { false },
-      content: QuickLookView(model: clipboardModel) { [unowned self] size in
+      content: QuickLookView(model: clipboardModel) { [unowned self] item in
         // 连按方向键时直接换尺寸（先瞬时，再动画）
-        created?.move(to: clipboardPanel.centeredFrame(size), animated: !Style.isKeyRepeat)
+        created?.move(to: quickLookFrame(for: item), animated: !Style.isKeyRepeat)
       })
     created = panel
     panel.becomesKeyOnlyIfNeeded = true
@@ -279,9 +279,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       clipboardPanel.contentView?.layoutSubtreeIfNeeded()
     }
     clipboardModel.showsQuickLookContent = true
-    let size = QuickLookView.idealSize(for: item, form: clipboardModel.contentForm(of: item))
     quickLookPanel.zoom(
-      from: cardScreenFrame ?? clipboardPanel.frame, to: clipboardPanel.centeredFrame(size))
+      from: cardScreenFrame ?? clipboardPanel.frame, to: quickLookFrame(for: item))
+  }
+
+  /// ⌘Y 大卡摆在哪：按条目的理想尺寸（图片放不下时等比缩进所在屏可见区的 90%），以剪贴板面板为中心
+  private func quickLookFrame(for item: ClipItem) -> NSRect {
+    clipboardPanel.centeredFrame(
+      QuickLookView.idealSize(
+        for: item, form: clipboardModel.contentForm(of: item), within: clipboardPanel.cardLimit))
   }
 
   /// 透镜（选中行）的屏幕坐标：剪贴板面板不在、透镜滚出可见区、报上来的不是当前选中项时为 nil（放大卡退回从面板长出）
