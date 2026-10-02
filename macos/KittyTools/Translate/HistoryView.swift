@@ -563,6 +563,13 @@ struct HistoryView: View {
     return date.formatted(style)
   }
 
+  /// 行右侧的时间：时、分都写两位（18:07；分钟不指定两位会显示成「18:7」）
+  static func rowTime(_ date: Date) -> String {
+    date.formatted(
+      .dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits)
+        .locale(Locale(identifier: "zh-Hans")))
+  }
+
   /// 高亮的 y：前面的分组标题和行高累加
   static func offset(of id: UUID, in sections: [DayGroup]) -> CGFloat? {
     var y: CGFloat = 0
@@ -675,11 +682,7 @@ private struct HistoryRow: View {
           if isCopied {
             Label("已复制", systemImage: "checkmark").labelStyle(.titleAndIcon)
           } else {
-            Text(
-              entry.createdAt.formatted(
-                .dateTime.hour(.twoDigits(amPM: .omitted)).minute()
-                  .locale(Locale(identifier: "zh-Hans")))
-            )
+            Text(HistoryView.rowTime(entry.createdAt))
           }
         }
         .font(.system(size: 11))

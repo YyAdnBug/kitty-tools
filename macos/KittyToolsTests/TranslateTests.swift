@@ -1,6 +1,6 @@
 // 翻译相关单测：语言解析、流式文本清洗、AI 服务地址 / 参数、局域网判断、翻译历史（存储、撤销删除、列表分组与选中）、
 // 「翻译 ↩」胶囊的出现条件、服务 logo 都在 asset catalog 里、按地址 / 名字认厂商与官网图标（第 13 批）、结果卡片正文的高度上限、
-// 等待卡的循环动效只动图层的变换（第二轮体检第 1 批）、译文显影的记账与光标位置（第 1b 批）；
+// 等待卡的循环动效只动图层的变换（第二轮体检第 1 批）、生成中光标的位置（第 1b 批）、历史行的时间补零（第 1c 批）；
 // 体检第 4 批：复制即译过滤、自动复制按来源、截断与思考的流约定、错误种类、划词没取到、输入翻译再打开、⌘D 收藏、
 // 历史 ⌘K 与分页、浮窗跟随鼠标、历史保留档位升级、朗读声线；
 // 以及按需启用的联网冒烟测试（TEST_RUNNER_KITTY_LIVE_TRANSLATE=1，用内置智谱 key 真翻一句）。
@@ -313,6 +313,17 @@ struct HistoryListTests {
     #expect(HistoryView.offset(of: UUID(), in: sections) == nil)
   }
 
+  /// 行右侧的时间：时、分都是两位（第二轮体检第 1c 批：18:07 以前显示成「18:7」）
+  @Test func rowTimePadsMinutes() throws {
+    let day = Date(timeIntervalSinceReferenceDate: 800_000_000)
+    let evening = try #require(
+      Calendar.current.date(bySettingHour: 18, minute: 7, second: 0, of: day))
+    #expect(HistoryView.rowTime(evening) == "18:07")
+    let morning = try #require(
+      Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: day))
+    #expect(HistoryView.rowTime(morning) == "09:00")
+  }
+
   @Test func moveDeleteUndo() throws {
     let store = try HistoryStore(db: Database(path: ":memory:"))
     for word in ["c", "b", "a"] {  // 新→旧：a b c
@@ -623,56 +634,11 @@ struct ResultCardLoopTests {
   }
 }
 
-/// 第二轮体检第 1b 批：译文显影的记账（时间线只在有段落正在显影时跑）和光标的位置
-struct RevealTextTests {
-  private let start = Date(timeIntervalSinceReferenceDate: 1000)
-
-  /// 来字 → 记一段、时间线跑；连着来字时顺手把显影完的段并进定型前缀；最后一段出生 0.36 s 后收尾 → 时间线停
-  @Test func chunksRevealThenSettle() {
-    var chunks = RevealText.Chunks()
-    #expect(!chunks.isRevealing)
-    chunks.absorb(count: 5, replacing: false, animated: true, now: start)
-    #expect(chunks.isRevealing && chunks.settled == 0)
-    #expect(chunks.revealing == [.init(end: 5, birth: start)])
-    // 0.1 s 后又来字：两段都还在显影
-    chunks.absorb(count: 9, replacing: false, animated: true, now: start + 0.1)
-    #expect(chunks.revealing.map(\.end) == [5, 9] && chunks.settled == 0)
-    // 字数没变（同一段文字又推了一遍）：什么都不动
-    let unchanged = chunks
-    chunks.absorb(count: 9, replacing: false, animated: true, now: start + 0.15)
-    #expect(chunks == unchanged)
-    // 0.4 s 时再来字：第一段过了 0.26 + 0.05，并进前缀；第二段（才 0.3 s）还留着
-    chunks.absorb(count: 12, replacing: false, animated: true, now: start + 0.4)
-    #expect(chunks.settled == 5 && chunks.revealing.map(\.end) == [9, 12])
-    // 收尾只并显影完的：0.6 s 时最后一段才 0.2 s，留着；它出生 0.36 s 后全部定型，时间线停
-    chunks.settle(now: start + 0.6)
-    #expect(chunks.settled == 9 && chunks.revealing.map(\.end) == [12])
-    chunks.settle(now: start + 0.4 + RevealText.duration + 0.1)
-    #expect(!chunks.isRevealing && chunks.settled == 12)
-  }
-
-  /// 重新翻译（不是接着长）、变短、减弱动态效果：整体定型，不记段落（时间线不跑）
-  @Test func chunksSettleAtOnceWithoutReveal() {
-    var chunks = RevealText.Chunks()
-    chunks.absorb(count: 8, replacing: false, animated: true, now: start)
-    chunks.absorb(count: 20, replacing: true, animated: true, now: start + 0.1)
-    #expect(!chunks.isRevealing && chunks.settled == 20)
-    // 之后接着长：照常记一段
-    chunks.absorb(count: 24, replacing: false, animated: true, now: start + 0.2)
-    #expect(chunks.revealing.map(\.end) == [24] && chunks.settled == 20)
-    // 变短（流重来了）
-    chunks.absorb(count: 3, replacing: false, animated: true, now: start + 0.3)
-    #expect(!chunks.isRevealing && chunks.settled == 3)
-    // 减弱动态效果：来多少定型多少
-    var reduced = RevealText.Chunks()
-    reduced.absorb(count: 5, replacing: false, animated: false, now: start)
-    reduced.absorb(count: 9, replacing: false, animated: false, now: start + 0.1)
-    #expect(!reduced.isRevealing && reduced.settled == 9)
-  }
-
+/// 结果卡片正文（ResultText）生成中那根光标的位置（第二轮体检第 1b 批；显影的记账第 1c 批随显影一起拿掉了）
+struct ResultTextTests {
   /// 光标贴着最后一段字右边 1.5 pt：宽 2、高 0.82 行高、上面留 0.1 行高
   @Test func cursorSitsAfterLastRun() {
-    let rect = RevealText.cursorRect(after: CGRect(x: 10, y: 20, width: 100, height: 20))
+    let rect = ResultText.cursorRect(after: CGRect(x: 10, y: 20, width: 100, height: 20))
     #expect(rect.minX == 111.5 && rect.width == 2)
     #expect(abs(rect.minY - 22) < 1e-9 && abs(rect.height - 16.4) < 1e-9)
   }

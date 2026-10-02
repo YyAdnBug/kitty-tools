@@ -1,6 +1,6 @@
 // 一个翻译服务的结果卡片（Whisker，mac-whisker §6 翻译）：标题行 = 18 pt 品牌色块 + 服务名 12 semibold + 模型 11 tertiary，
 // 右侧朗读 / 复制 / 重试 / 折叠（平时 0.45 透明度）；正文状态：等待是骨架条 + 扫光，模型在思考时骨架上面多一行
-// 「思考中」扫光（mac-whisker S3），生成中用 RevealText 显影 + 边框上一段强调色彗星光绕行（2.4 s 一圈），
+// 「思考中」扫光（mac-whisker S3），生成中新字直接出现、末尾一根光标（ResultText）+ 边框上一段强调色彗星光绕行（2.4 s 一圈），
 // 完成时整圈闪一下；截断的照常显示正文、下面一行说明（体检 B19）；失败分两种（体检 C5）：配置 / 密钥问题是淡橙卡
 // （钥匙图标，只给「打开设置」，直达这个服务的详情页），网络 / 服务错误是淡红卡（图标晃一下，给「重试」，
 // 自建 AI 服务另给「打开设置」）。重新翻译时卡片原位不动，只让正文交叉淡变 0.18 s（§4）。
@@ -89,7 +89,7 @@ struct ProviderCardView: View {
     failure.map { Color(nsColor: $0.kind == .config ? .systemOrange : .systemRed) }
   }
 
-  /// 正文区现在是哪一种（等待 / 思考、正文、截断、失败）：变了才交叉淡变；生成中到完成还是同一种（同一个显影视图）
+  /// 正文区现在是哪一种（等待 / 思考、正文、截断、失败）：变了才交叉淡变；生成中到完成还是同一种（同一个 ResultText）
   private var phase: Int {
     switch card.state {
     case .waiting: 0
@@ -274,12 +274,9 @@ struct ProviderCardView: View {
     }
   }
 
-  /// 用 RevealText 显示的正文：生成中有字、或完成且不按 Markdown 渲染。两种状态放在同一个结构位置，
-  /// 完成那一下还是同一个视图（身份一变就会整段重新显影）。
-  /// 已知问题（macOS 15.7 实测）：两种状态都套着 .textSelection(.enabled)，可选中的文字不走 TextRenderer，
-  /// 所以生成中的显影（淡入、去模糊、上浮）其实画不出来、字是直接出现的；末尾的光标是单独一层，照常显示。
-  /// 恢复显影要在生成中先不让选中，等用户定（RevealText 头注释）
-  private var revealed: (text: String, isStreaming: Bool)? {
+  /// 用 ResultText 显示的正文：生成中有字、或完成且不按 Markdown 渲染。两种状态放在同一个结构位置，
+  /// 完成那一下还是同一个视图（身份一变文字会整段重建、闪一下），只是光标收掉
+  private var plain: (text: String, isStreaming: Bool)? {
     switch card.state {
     case .running(let text) where !text.isEmpty: (text, true)
     case .done(let text) where !(card.service.isStreaming && Self.hasMarkdown(text)): (text, false)
@@ -298,9 +295,9 @@ struct ProviderCardView: View {
   }
 
   @ViewBuilder private func stateView(_ state: TranslateCoordinator.CardState) -> some View {
-    if let revealed {
+    if let plain {
       VStack(alignment: .leading, spacing: 6) {
-        RevealText(text: revealed.text, isStreaming: revealed.isStreaming, fontSize: 15 * fontScale)
+        ResultText(text: plain.text, isStreaming: plain.isStreaming, fontSize: 15 * fontScale)
           .textSelection(.enabled)
           .frame(maxWidth: .infinity, alignment: .leading)
         if case .truncated = state {
