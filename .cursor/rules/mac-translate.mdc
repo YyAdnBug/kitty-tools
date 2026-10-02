@@ -77,3 +77,4 @@ alwaysApply: false
 - 联网冒烟（真请求内置智谱）按需：`TEST_RUNNER_KITTY_LIVE_TRANSLATE=1 xcodebuild … test`。
 - 界面用 SnapshotProbeTests（见 mac-clipboard 技能 §6），翻译浮窗状态靠直接设 `coordinator.cards` 摆出来。
 - 结果卡片等待时的三处循环动效（彗星边框、骨架和「思考中」的扫光，`ProviderCardView.swift` 末尾）只动变换、不逐帧重画渐变，规矩和实测在 mac-whisker §8；`ResultCardLoopTests` 把等待卡摆进屏外窗口看图层：渐变是图层、在动的只是旋转 / 位置、减弱动态效果时不动。改这三处先跑它，再在活动监视器里看等待时的 CPU。
+- 流式译文 `RevealText`（第二轮体检第 1b 批）：时间线只在有段落正在显影时跑，光标是叠在最后一个字后面的单独一层；记账（`RevealText.Chunks`）和光标位置是纯函数，`RevealTextTests` 锁住。**结果卡片的正文套着 `.textSelection(.enabled)`，可选中的文字系统不调 `TextRenderer`，显影在真 App 里不显示**（mac-whisker §5 S3「已知问题」，怎么处理等用户定）：动 `RevealText` 或那处 `.textSelection` 之前先看那一段。

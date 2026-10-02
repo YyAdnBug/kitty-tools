@@ -275,7 +275,10 @@ struct ProviderCardView: View {
   }
 
   /// 用 RevealText 显示的正文：生成中有字、或完成且不按 Markdown 渲染。两种状态放在同一个结构位置，
-  /// 完成那一下还是同一个视图（身份一变就会整段重新显影）
+  /// 完成那一下还是同一个视图（身份一变就会整段重新显影）。
+  /// 已知问题（macOS 15.7 实测）：两种状态都套着 .textSelection(.enabled)，可选中的文字不走 TextRenderer，
+  /// 所以生成中的显影（淡入、去模糊、上浮）其实画不出来、字是直接出现的；末尾的光标是单独一层，照常显示。
+  /// 恢复显影要在生成中先不让选中，等用户定（RevealText 头注释）
   private var revealed: (text: String, isStreaming: Bool)? {
     switch card.state {
     case .running(let text) where !text.isEmpty: (text, true)
