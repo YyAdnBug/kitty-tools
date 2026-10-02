@@ -119,11 +119,14 @@ struct PreviewView: View {
       VStack(alignment: .leading, spacing: 8) {
         ZStack(alignment: .topTrailing) {
           Checkerboard()
-          ThumbnailView(id: item.id, images: model.store.images, maxPixel: 2400, contentMode: .fit)
-            .clipShape(.rect(cornerRadius: Style.Radius.control, style: .continuous))
-            .padding(8)
-            // 图片比这块区域窄 / 矮时居中：不撑满的话它会跟着 ZStack 的对齐（给下面的胶囊用的）贴到右上角
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+          ThumbnailView(
+            id: item.id, images: model.store.images, maxPixel: ThumbnailView.cardPixel,
+            contentMode: .fit
+          )
+          .clipShape(.rect(cornerRadius: Style.Radius.control, style: .continuous))
+          .padding(8)
+          // 图片比这块区域窄 / 矮时居中：不撑满的话它会跟着 ZStack 的对齐（给下面的胶囊用的）贴到右上角
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
           // 大小已在页眉，这里只写宽×高
           if let image = item.image {
             Text(verbatim: "\(image.width)×\(image.height)")

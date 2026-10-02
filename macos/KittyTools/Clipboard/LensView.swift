@@ -364,7 +364,9 @@ private struct ImageLens: View {
     ZStack {
       Checkerboard(cell: 8)
       // 比例超出 60–360 宽时图片在格子里留边，图片自己也裁圆角
-      ThumbnailView(id: item.id, images: images, maxPixel: 720, contentMode: .fit).clipShape(shape)
+      ThumbnailView(
+        id: item.id, images: images, maxPixel: ThumbnailView.lensPixel, contentMode: .fit
+      ).clipShape(shape)
     }
     .frame(width: min(max(108 * ratio, 60), 360), height: 108)
     .clipShape(shape)

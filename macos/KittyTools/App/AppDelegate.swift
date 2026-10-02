@@ -110,12 +110,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       presentTranslate()
     }
     model.openQuickLook = { [unowned self] in
-      launcherQuickLook.zoom(
+      launcherQuickLook.open().zoom(
         from: launcherRowFrame ?? launcherPanel.frame, to: launcherQuickLookFrame)
     }
     model.closeQuickLook = { [unowned self] animated in
       Self.closeQuickLook(
-        launcherQuickLook, owner: launcherPanel, animated: animated, to: launcherRowFrame)
+        launcherQuickLook.panel, owner: launcherPanel, animated: animated, to: launcherRowFrame)
     }
     model.boundHotKey = { [unowned self] in hotKeys.bindings[$0] }
     model.requestFolderAccess = { [unowned self] in requestFolderAccess() }
@@ -125,8 +125,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }()
 
   /// 启动器 ⌘Y 快速查看（体检 C7）：选中文件的 Quick Look 卡，从选中行长出来；同剪贴板 ⌘Y 大卡，不抢键盘
-  /// （点它里面才当 key），点外面就关，↑↓ 仍在启动器里换选中、预览跟着换
-  private lazy var launcherQuickLook: OverlayPanel = {
+  /// （点它里面才当 key），点外面就关，↑↓ 仍在启动器里换选中、预览跟着换。用时再建、收起后放掉（TransientPanel）
+  private lazy var launcherQuickLook = TransientPanel { [unowned self] in
     let panel = OverlayPanel(
       size: NSSize(width: 900, height: 680), autoHide: .clickOutside, isPinned: { false },
       content: LauncherQuickLookView(model: launcherModel))
@@ -137,7 +137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       Self.returnKey(to: launcherPanel)
     }
     return panel
-  }()
+  }
 
   /// 启动器选中行的屏幕坐标：滚出可见区、报上来的不是当前选中项时为 nil（预览退回从面板长出 / 原地淡出）
   private var launcherRowFrame: NSRect? {
@@ -153,10 +153,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   /// ⌘Y 大卡缩回 / 收起（剪贴板、启动器共用）：缩回动画期间它还在屏幕上，点过里面（它是 key）就先把 key 还给主面板，
-  /// 别让这 0.24 s 里按的键落空
+  /// 别让这 0.24 s 里按的键落空。card 是 nil = 没开着（没建过、或者收起后已经放掉）
   private static func closeQuickLook(
-    _ card: OverlayPanel, owner: OverlayPanel, animated: Bool, to frame: NSRect?
+    _ card: OverlayPanel?, owner: OverlayPanel, animated: Bool, to frame: NSRect?
   ) {
+    guard let card else { return }
     guard animated else { return card.hide() }
     if card.isKeyWindow, owner.isVisible { owner.makeKey() }
     card.unzoom(to: frame)
@@ -201,29 +202,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.island = island
     model.closeQuickLook = { [unowned self] animated in
       Self.closeQuickLook(
-        quickLookPanel, owner: clipboardPanel, animated: animated, to: cardScreenFrame)
+        quickLookPanel.panel, owner: clipboardPanel, animated: animated, to: cardScreenFrame)
     }
     return panel
   }()
 
-  /// ⌘Y 放大预览：剪贴板选中条目的大卡片。不抢键盘（点它里面的文字才当 key），点外面就关
-  private lazy var quickLookPanel: OverlayPanel = {
-    weak var created: OverlayPanel?
-    let panel = OverlayPanel(
-      size: NSSize(width: 820, height: 640), autoHide: .clickOutside, isPinned: { false },
-      content: QuickLookView(model: clipboardModel) { [unowned self] item in
-        // 连按方向键时直接换尺寸（先瞬时，再动画）
-        created?.move(to: quickLookFrame(for: item), animated: !Style.isKeyRepeat)
-      })
-    created = panel
-    panel.becomesKeyOnlyIfNeeded = true
-    panel.keyEquivalentHandler = { [unowned self] in clipboardModel.handleKeyEquivalent($0) }
-    panel.onHide = { [unowned self] in
-      clipboardModel.quickLookDidHide()
-      Self.returnKey(to: clipboardPanel)
-    }
-    return panel
-  }()
+  /// ⌘Y 放大预览：剪贴板选中条目的大卡片。不抢键盘（点它里面的文字才当 key），点外面就关。
+  /// 用时再建、收起后放掉（TransientPanel）；放掉时把大卡那一档的缩略图也丢掉，再让分配器把空页还给系统（体检 M1 M4）
+  private lazy var quickLookPanel = TransientPanel(
+    onRelease: {
+      ThumbnailView.dropCards()
+      Memory.relieve()
+    },
+    make: { [unowned self] in
+      weak var created: OverlayPanel?
+      let panel = OverlayPanel(
+        size: NSSize(width: 820, height: 640), autoHide: .clickOutside, isPinned: { false },
+        content: QuickLookView(model: clipboardModel) { [unowned self] item in
+          // 连按方向键时直接换尺寸（先瞬时，再动画）
+          created?.move(to: quickLookFrame(for: item), animated: !Style.isKeyRepeat)
+        })
+      created = panel
+      panel.becomesKeyOnlyIfNeeded = true
+      panel.keyEquivalentHandler = { [unowned self] in clipboardModel.handleKeyEquivalent($0) }
+      panel.onHide = { [unowned self] in
+        clipboardModel.quickLookDidHide()
+        Self.returnKey(to: clipboardPanel)
+      }
+      return panel
+    })
 
   private lazy var translatePanel: OverlayPanel = {
     // 视图在面板建好之前就可能要求改高度：用弱引用接，别在 lazy 初始化里回头访问 translatePanel
@@ -279,7 +286,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       clipboardPanel.contentView?.layoutSubtreeIfNeeded()
     }
     clipboardModel.showsQuickLookContent = true
-    quickLookPanel.zoom(
+    quickLookPanel.open().zoom(
       from: cardScreenFrame ?? clipboardPanel.frame, to: quickLookFrame(for: item))
   }
 
@@ -987,9 +994,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     pins.suspend(covering: region)
     shelf.dismiss(covering: region)
     // 固定着的剪贴板面板留在屏幕上，它的 ⌘Y 大卡也还开着：压在选区上同样会吞掉滚轮，收走
-    // （先看 isQuickLooking：大卡是懒建的，没开过就别为了判断去建它）
-    if clipboardModel.isQuickLooking, quickLookPanel.frame.intersects(region) {
-      quickLookPanel.hide()
+    if clipboardModel.isQuickLooking, let card = quickLookPanel.panel,
+      card.frame.intersects(region)
+    {
+      card.hide()
     }
     do {
       let finished = try await ScrollCapture.run(region: region)

@@ -1,7 +1,7 @@
 // 剪贴板面板交互（体检第 3 批）的纯逻辑单测：JSON 默认美化与缓存、条目消失后选中挪到下一条、多选随搜索裁剪、
 // 右键 / ⌘Y「复制」只复制被点的那条、菜单开着时过滤框的编辑键、⌘K 与右键同一份动作表（分节、子列表、按类型的动作）、
 // 共用的菜单过滤（拼音前缀）、钉到屏幕的位置、复制路径、拖出去的剪贴板条目、对话框能否保存、⌘Y 里的纯文本复制、
-// 判定「行标题已显示全」的条目在行里真的没被截断（把行画在屏外窗口里比像素）。
+// 判定「行标题已显示全」的条目在行里真的没被截断（把行画在屏外窗口里比像素）、缩略图缓存的记账和大卡档的丢弃。
 // 用内存库 + 临时目录，不碰真实数据；不跑会真的打开网址 / 文件、弹面板的动作。
 
 import AppKit
@@ -541,5 +541,50 @@ struct ClipboardPanelTests {
       #expect(try titlePixels(item, width: rowWidth, title: title) == wide, "\(name)：标题被截断了")
       #expect(try titlePixels(item, width: rowWidth - 40, title: title) != wide, "\(name)：对照")
     }
+  }
+
+  /// 缩略图缓存怎么记账（第二轮体检 M1）：cost = 宽 × 高 × 4 × 2（画过的每张在内存里留两份）；行图标档进 icons（按张数封顶），
+  /// 透镜和 ⌘Y 大卡进 previews（按 cost 封顶）；上限放得下「最大的一张大卡 + 同一张图的透镜」，正在看的这两张不会把对方挤掉
+  @Test func thumbnailCacheBudget() {
+    // 3420 × 2224 的整屏截图：大卡档 2400 × 1561，两份 28.6 MB；透镜档 720 × 468，两份 2.6 MB
+    #expect(ThumbnailView.cost(width: 2400, height: 1561) == 29_971_200)
+    #expect(ThumbnailView.cost(width: 720, height: 468) == 2_695_680)
+    #expect(ThumbnailView.cache(for: ThumbnailView.iconPixel) === ThumbnailView.icons)
+    #expect(ThumbnailView.cache(for: ThumbnailView.lensPixel) === ThumbnailView.previews)
+    #expect(ThumbnailView.cache(for: ThumbnailView.cardPixel) === ThumbnailView.previews)
+    #expect(ThumbnailView.icons.countLimit == ThumbnailView.iconCount)
+    #expect(ThumbnailView.previews.totalCostLimit == ThumbnailView.previewBytes)
+    let card = ThumbnailView.cost(width: ThumbnailView.cardPixel, height: ThumbnailView.cardPixel)
+    let lens = ThumbnailView.cost(width: ThumbnailView.lensPixel, height: ThumbnailView.lensPixel)
+    #expect(card + lens <= ThumbnailView.previewBytes)
+  }
+
+  /// ⌘Y 大卡放掉时只丢大卡那一档（dropCards）：透镜、行图标还在缓存里（再取是同一个对象），大卡档要重新生成
+  @Test func droppingCardsKeepsLensAndIcons() async throws {
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let images = ImageStore(directory: directory)
+    let id = UUID()
+    let bitmap = try #require(
+      NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: 96, pixelsHigh: 64, bitsPerSample: 8, samplesPerPixel: 4,
+        hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0,
+        bitsPerPixel: 0))
+    try #require(bitmap.representation(using: .png, properties: [:])).write(
+      to: images.url(for: id))
+    func load(_ maxPixel: Int) async throws -> NSImage {
+      try #require(await ThumbnailView.load(id, images: images, maxPixel: maxPixel))
+    }
+    let card = try await load(ThumbnailView.cardPixel)
+    let lens = try await load(ThumbnailView.lensPixel)
+    let icon = try await load(ThumbnailView.iconPixel)
+    #expect(try await load(ThumbnailView.cardPixel) === card)
+    ThumbnailView.dropCards()
+    #expect(try await load(ThumbnailView.cardPixel) !== card)
+    #expect(try await load(ThumbnailView.lensPixel) === lens)
+    #expect(try await load(ThumbnailView.iconPixel) === icon)
+    // 丢过一次之后新进来的大卡档照样记着：再丢一次还是丢得掉
+    let again = try await load(ThumbnailView.cardPixel)
+    ThumbnailView.dropCards()
+    #expect(try await load(ThumbnailView.cardPixel) !== again)
   }
 }

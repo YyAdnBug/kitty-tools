@@ -194,7 +194,7 @@ struct IconTile: View {
           .overlay(shape.strokeBorder(.white.opacity(0.25), lineWidth: 1))
       } else if item.kind == .image {
         // 先定框再裁：fill 的图比框宽（长截图 5:1），只裁自己的边界会溢出盖住标题
-        ThumbnailView(id: item.id, images: images, maxPixel: 72)
+        ThumbnailView(id: item.id, images: images, maxPixel: ThumbnailView.iconPixel)
           .frame(width: Self.side, height: Self.side)
           .clipShape(shape)
           .overlay(shape.hairlineBorder())
@@ -399,7 +399,10 @@ enum AppIcons {
   }
 }
 
-/// 图片条目的缩略图：后台按需生成，NSCache 复用。缓存里有的在建视图时就直接用（滚回来、透镜展开不闪一下占位）
+/// 图片条目的缩略图：后台按需生成，NSCache 复用。缓存里有的在建视图时就直接用（滚回来、透镜展开不闪一下占位）。
+/// 缓存有上限（第二轮体检 M1）：画过的缩略图每张在内存里留两份「宽 × 高 × 4」（CG raster data、CoreAnimation 各一份，
+/// 内存探针实测），窗口关了也不还，缓存放手才还。行图标单独一个缓存（icons），透镜和 ⌘Y 大卡共用一个（previews）；
+/// 大卡那一档在大卡放掉时整档丢掉（dropCards）。正在显示的那张不怕被淘汰：视图自己的 @State 还拿着它
 struct ThumbnailView: View {
   let id: UUID
   let images: ImageStore
@@ -407,15 +410,39 @@ struct ThumbnailView: View {
   var contentMode = ContentMode.fill
   @State private var image: NSImage?
 
-  /// 不是 private：内存探针（MemoryProbeTests）要清空它，量清掉后回落多少
-  static let cache = NSCache<NSString, NSImage>()
+  /// 三档的长边（像素）：行图标、透镜、⌘Y 大卡
+  static let iconPixel = 72
+  static let lensPixel = 720
+  static let cardPixel = 2400
+
+  /// 行图标最多留这么多张，单独一个缓存：不让大图把它们挤掉（重做一张要把原图整张解码）。一张最大 72 × 72，
+  /// 画过后实测留 25–31 KB，留满 7–10 MB；列表一屏十来行，300 张 = 连着翻过二三十屏的图片
+  static let iconCount = 300
+  /// 透镜 + 大卡最多留这么多（按 cost）：约 18 张整屏截图的透镜，或一张大卡（整屏截图约 29 MB）+ 7 张透镜。
+  /// 最大的一张大卡（2400 × 2400，44 MB）加同一张图的透镜（720 × 720，4 MB）也放得下：正在看的这两张不会把对方挤掉
+  static let previewBytes = 48 * 1_048_576
+
+  /// 不是 private：内存探针（MemoryProbeTests）要清空它们，量清掉后回落多少
+  static let icons = {
+    let cache = NSCache<NSString, NSImage>()
+    cache.countLimit = iconCount
+    return cache
+  }()
+  static let previews = {
+    let cache = NSCache<NSString, NSImage>()
+    cache.totalCostLimit = previewBytes
+    return cache
+  }()
+  /// 进过缓存的大卡档的 key：NSCache 列不出自己有什么，dropCards 照着这份丢
+  private static var cardKeys: Set<String> = []
 
   init(id: UUID, images: ImageStore, maxPixel: Int, contentMode: ContentMode = .fill) {
     self.id = id
     self.images = images
     self.maxPixel = maxPixel
     self.contentMode = contentMode
-    _image = State(initialValue: Self.cache.object(forKey: Self.key(id, maxPixel)))
+    _image = State(
+      initialValue: Self.cache(for: maxPixel).object(forKey: Self.key(id, maxPixel) as NSString))
   }
 
   var body: some View {
@@ -436,14 +463,32 @@ struct ThumbnailView: View {
   /// 缓存里有就直接给，没有就在后台生成再缓存（截图自检也先用它把缓存填好：屏外渲染时 .task 来不及跑）
   static func load(_ id: UUID, images: ImageStore, maxPixel: Int) async -> NSImage? {
     let key = key(id, maxPixel)
-    if let cached = cache.object(forKey: key) { return cached }
+    let cache = cache(for: maxPixel)
+    if let cached = cache.object(forKey: key as NSString) { return cached }
     guard let cgImage = await images.thumbnail(for: id, maxPixel: maxPixel) else { return nil }
     let loaded = NSImage(cgImage: cgImage, size: .zero)
-    cache.setObject(loaded, forKey: key)
+    // 尺寸取 CGImage 自己的：NSImage 的 rep 报的是另一个数
+    cache.setObject(
+      loaded, forKey: key as NSString, cost: cost(width: cgImage.width, height: cgImage.height))
+    if maxPixel >= cardPixel { cardKeys.insert(key) }
     return loaded
   }
 
-  private static func key(_ id: UUID, _ maxPixel: Int) -> NSString {
-    "\(id.uuidString)-\(maxPixel)" as NSString
+  /// 一张缩略图画过之后占的内存：宽 × 高 × 4 字节，两份
+  static func cost(width: Int, height: Int) -> Int { width * height * 4 * 2 }
+
+  /// 这一档进哪个缓存：行图标档进 icons，更大的（透镜、大卡）进 previews
+  static func cache(for maxPixel: Int) -> NSCache<NSString, NSImage> {
+    maxPixel <= iconPixel ? icons : previews
+  }
+
+  /// ⌘Y 大卡放掉了：大卡档的缩略图都丢掉（一张整屏截图约 29 MB，留着会把透镜档挤出去）
+  static func dropCards() {
+    for key in cardKeys { previews.removeObject(forKey: key as NSString) }
+    cardKeys = []
+  }
+
+  private static func key(_ id: UUID, _ maxPixel: Int) -> String {
+    "\(id.uuidString)-\(maxPixel)"
   }
 }

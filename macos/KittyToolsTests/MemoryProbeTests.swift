@@ -1,11 +1,15 @@
 // 内存探针（第二轮体检第 2 批，2026-10-02；按需开，平时不跑）：在测试宿主里屏外把几样占内存的东西各量一遍，
-// 结论写回 PLAN §10「第二轮体检」，第 3 批按这些数改缓存和面板。量的是：
-//   ① 剪贴板缩略图缓存（ThumbnailView.cache，三档 72 / 720 / 2400）② 启动器图标缓存（LauncherIcons）
-//   ③ 识字模型（OCR，.accurate）常驻多少 ④ 六块面板 / 窗口「建 + 显示 → 收起 → 清内容 → 放掉窗口」各涨落多少
+// 结论写回 PLAN §10「第二轮体检」。第 3 批按第一版量出的数给缩略图缓存设了上限、两张 ⌘Y 大卡改成用时再建，
+// 探针跟着改成量改后的样子（改前的数在 PLAN §10 第 2 批）。量的是：
+//   ① 剪贴板缩略图缓存（ThumbnailView.icons / previews，三档 72 / 720 / 2400）：三档画过后留多少、两个上限是不是严格的
+//   ② 启动器图标缓存（LauncherIcons）③ 识字模型（OCR，.accurate）常驻多少
+//   ④ 三块主面板和设置窗「建 + 显示 → 收起 → 清内容 → 放掉窗口」各涨落多少（App 里它们一直留着）；
+//     两张 ⌘Y 大卡照 App 的做法开关（TransientPanel：用时再建、收起后自己放掉），放掉后还留多少；
+//     剪贴板那张先照改前的做法（面板一直留着、不丢大卡档、不调回收接口）量一组对照
 //   ⑤ 截图 / 转 GIF 那样的重活之后堆脏页留多少、malloc_zone_pressure_relief 能还多少。
 // 每一步读 task_info(TASK_VM_INFO) 的 phys_footprint（活动监视器的口径），旁边列 footprint 工具的分类（它不用 root 就能看
 // 自己的进程）；每项做两遍。窗口都摆在屏幕外（-20000, -20000）、不当 key、不激活本 App、不出声；图片、库、偏好都是临时的
-// （临时目录、内存库、临时偏好域），不读写用户的数据目录和钥匙串，跑完删干净。全程约 5 分钟。输出目录写绝对路径：
+// （临时目录、内存库、临时偏好域），不读写用户的数据目录和钥匙串，跑完删干净。全程约 7 分钟。输出目录写绝对路径：
 //   TEST_RUNNER_KITTY_MEMORY_PROBE_DIR=/tmp/kitty-memory xcodebuild -project macos/KittyTools.xcodeproj \
 //     -scheme KittyTools test -only-testing:'KittyToolsTests/MemoryProbeTests/measure()'
 // 报告追加在 <目录>/report.md（每跑一次一段，段头写时间）。只跑其中几项（在干净的进程里量，排除前面几项的影响）：
@@ -22,7 +26,8 @@
 // 3. malloc_zone_statistics(nil) 的「在用」不能信：ImageIO 放缩略图的 DefaultPurgeableMallocZone 释放了也不减。只看默认 zone。
 //
 // 和真机的差别（报告里也写）：Debug 构建；窗口在屏外、不是 key（三块主面板走 present(makingKey: false, keepsPlace: true)，
-// 两张 ⌘Y 大卡走 zoom，都是真的 OverlayPanel，只是 isPinned 恒真：探针跑着时用户在别处点一下不会把它关掉）；翻译浮窗没给
+// 两张 ⌘Y 大卡走模型的 toggleQuickLook → zoom / unzoom，接线照 AppDelegate 另写了一份；都是真的 OverlayPanel，只是
+// isPinned 恒真：探针跑着时用户在别处点一下不会把它关掉）；翻译浮窗没给
 // frameName（真的那块会读写用户偏好里记的位置）；设置窗是照 SettingsWindow 的参数另建的（真的那个会激活本 App、把窗口位置
 // 记进用户偏好），不看启动器那一页（它一出现就读浏览器数据、可能弹文件夹授权框）；启动器 ⌘Y 的 Quick Look 预览在测试宿主里
 // 连不上系统的预览服务，量到的只是卡片窗口；重活里的截屏和视频帧是合成的（ScreenCaptureKit、AVAssetImageGenerator 没跑）。
@@ -118,7 +123,7 @@ private final class Probe {
     report.line("空等的漂移 \(signed(drift.footprint - idle.footprint))")
 
     let runs: (String) -> Bool = { probeOnly?.contains($0) ?? true }
-    if runs("thumbnails") { thumbnails() }
+    if runs("thumbnails") { try thumbnails() }
     if runs("icons") { icons() }
     if runs("ocr") { recognize() }
     if runs("panels") { try panels(prefs) }
@@ -127,15 +132,25 @@ private final class Probe {
 
   // MARK: - 1. 缩略图缓存
 
+  /// 缩略图缓存（第 3 批起有上限）：行图标 ThumbnailView.icons 按张数封顶，透镜 + ⌘Y 大卡 ThumbnailView.previews 按 cost 封顶。
   /// 先只取不画看一眼（懒解码：几乎不占），再用真的 ThumbnailView 在屏外窗口里画——72 档 12 张一起（像列表的行图标），
-  /// 720 / 2400 档一张一张轮着换（像透镜、⌘Y 大卡跟着 ↑↓ 换图）——关掉窗口看缓存里每张留多少，最后清掉缓存、
-  /// 再调一次回收接口看各回落多少
-  private func thumbnails() {
-    report.heading("1. 缩略图缓存（ThumbnailView.cache：NSCache，没设上限）")
-    let tiers = [72, 720, 2400]
+  /// 720 / 2400 档一张一张轮着换（像透镜、⌘Y 大卡跟着 ↑↓ 换图）——关掉窗口看缓存里留多少；接着照 App 放掉大卡时做的
+  /// 丢掉大卡档、调回收接口；再验两个上限是不是严格的（连看 30 张透镜、连出 360 个行图标，都比上限多）；最后清空
+  private func thumbnails() throws {
+    report.heading(
+      "1. 缩略图缓存（行图标 ThumbnailView.icons 最多 \(ThumbnailView.iconCount) 张；透镜 + 大卡 "
+        + "ThumbnailView.previews 按 cost 最多 \(mb(ThumbnailView.previewBytes))）")
+    let (icon, lens, card) = (
+      ThumbnailView.iconPixel, ThumbnailView.lensPixel, ThumbnailView.cardPixel
+    )
+    let tiers = [icon, lens, card]
     let count = shots.count
     let (images, shots) = (images, shots)
-    ThumbnailView.cache.removeAllObjects()
+    let ids = shots.map(\.id)
+    // 验上限用的更多的图：同一批 PNG 的硬链接，各有各的 id（缓存按 id 记）
+    let lensIDs = try ids + linked(18)
+    let iconIDs = try linked(360)
+    Self.clearThumbnails()
     spin()
     let idle = report.step("取之前（缓存是空的）")
     wait {
@@ -146,9 +161,9 @@ private final class Probe {
     spin()
     let loaded = Reading.now()
     report.row(
-      "三档 × \(count) 张都取进缓存、一张没画", loaded,
+      "三档 × \(count) 张都取过一遍、一张没画", loaded,
       note: "footprint 只变了 \(signed(loaded.footprint - idle.footprint))：缩略图到画的时候才解码")
-    ThumbnailView.cache.removeAllObjects()
+    Self.clearThumbnails()
     spin()
     report.step("清掉缓存")
 
@@ -158,103 +173,229 @@ private final class Probe {
     item.image = .init(width: first.width, height: first.height, byteCount: 0, sha256: "")
     item.ocrText = first.text
     let visible = NSScreen.main?.visibleFrame.size ?? NSSize(width: 1440, height: 900)
-    let card = QuickLookView.idealSize(
+    let big = QuickLookView.idealSize(
       for: item, form: nil, within: NSSize(width: visible.width * 0.9, height: visible.height * 0.9)
     )
     let aspect = CGFloat(first.width) / CGFloat(first.height)
     let cells: [Int: CGSize] = [
-      72: CGSize(width: 24, height: 24), 720: CGSize(width: 108 * aspect, height: 108),
-      2400: CGSize(
-        width: card.width - 48, height: card.height - 130 - QuickLookView.ocrHeight - 30),
+      icon: CGSize(width: 24, height: 24), lens: CGSize(width: 108 * aspect, height: 108),
+      card: CGSize(
+        width: big.width - 48, height: big.height - 130 - QuickLookView.ocrHeight - 30),
     ]
-    var kept: [Int: [Int]] = [:]
-    var totals: [Int] = []
-    var drops: [Int] = []
-    var relieved: [Int] = []
-    for round in 1...2 {
-      let base = report.step("第 \(round) 遍：画之前（缓存是空的）")
-      var last = base
-      for tier in tiers {
-        let cell = cells[tier] ?? .zero
-        var each: [Int] = []
-        // 窗口只活在这个池里：出去就真的释放了（文件头第 2 个坑）
-        autoreleasepool {
-          let gallery = Gallery()
-          let window = NSWindow(
-            contentRect: NSRect(
-              origin: offscreen,
-              size: NSSize(width: cell.width * CGFloat(tier == 72 ? count : 1), height: cell.height)
-            ), styleMask: [.borderless], backing: .buffered, defer: false)
-          window.isReleasedWhenClosed = false
-          window.contentView = NSHostingView(
-            rootView: GalleryView(
-              gallery: gallery, images: images, maxPixel: tier, cell: cell,
-              mode: tier == 72 ? .fill : .fit))
-          window.orderFrontRegardless()
-          if tier == 72 {
-            gallery.ids = shots.map(\.id)
-            spin(1)
-          } else {
-            for shot in shots {
-              let before = Reading.footprint()
-              gallery.ids = [shot.id]
-              spin(tier == 2400 ? 0.8 : 0.4)
-              each.append(Reading.footprint() - before)
+    /// 屏外开一个小窗口，用真的 ThumbnailView 把 ids 一批一批画出来（每批 batch 张，画完停 pause 秒）；窗口只活在这个池里，
+    /// 出去就真的释放了（文件头第 2 个坑）。preload：先把这一批取进缓存再换图（一批十几张时不用猜要等多久）。
+    /// 返回每批画完时比开始多了多少；第一批从换图到 footprint 涨出一份像素用了多久（解码完了，没涨够 = nil）、
+    /// 这段时间里主线程最长一次被占了多久（跑环转一圈本该 10 毫秒）
+    func draw(
+      _ ids: [UUID], tier: Int, batch: Int, pause: Double, preload: Bool = false, label: String
+    )
+      -> (grown: [Int], firstDraw: Double?, stall: Double)
+    {
+      let cell = cells[tier] ?? .zero
+      var grown: [Int] = []
+      var firstDraw: Double?
+      var stall = 0.0
+      autoreleasepool {
+        let gallery = Gallery()
+        let window = NSWindow(
+          contentRect: NSRect(
+            origin: offscreen,
+            size: NSSize(width: cell.width * CGFloat(batch), height: cell.height)),
+          styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(
+          rootView: GalleryView(
+            gallery: gallery, images: images, maxPixel: tier, cell: cell,
+            mode: tier == icon ? .fill : .fit))
+        window.orderFrontRegardless()
+        spin(0.2)
+        let before = Reading.footprint()
+        for start in stride(from: 0, to: ids.count, by: batch) {
+          let group = Array(ids[start..<min(start + batch, ids.count)])
+          if preload {
+            wait {
+              for id in group { _ = await ThumbnailView.load(id, images: images, maxPixel: tier) }
             }
           }
-          report.step(
-            "\(tier) 档：\(count) 张" + (tier == 72 ? "一起画出来" : "轮流画过") + "（窗口还开着）",
-            note: "格子 \(Int(cell.width)) × \(Int(cell.height)) 点"
-              + (each.isEmpty ? "" : "；逐张涨 \(kb(each.min() ?? 0))–\(kb(each.max() ?? 0))"))
-          window.orderOut(nil)
-          window.contentView = nil
+          let began = Date.now
+          gallery.ids = group
+          if start == 0 {
+            // 第一批：每 10 毫秒看一眼，footprint 比换图前多出一份像素就算解码完了；哪一圈转得久就是主线程被占着
+            let expected = first.thumbnailBytes(tier) * group.count
+            var mark = began
+            while mark.timeIntervalSince(began) < pause {
+              spin(0.01)
+              let now = Date.now
+              stall = max(stall, now.timeIntervalSince(mark))
+              mark = now
+              if firstDraw == nil, Reading.footprint() - before >= expected {
+                firstDraw = now.timeIntervalSince(began)
+              }
+            }
+          } else {
+            spin(pause)
+          }
+          grown.append(Reading.footprint() - before)
         }
-        spin()
-        let closed = Reading.now()
-        let pixels = first.thumbnailBytes(tier)
-        let share = (closed.footprint - last.footprint) / count
-        report.row(
-          "关掉窗口（只剩缓存）", closed,
-          note: pixels * count < megabyte
-            ? "\(count) 张共留 \(kb(closed.footprint - last.footprint))（按像素算一张才 \(kb(pixels))，小到量不准）"
-            : "每张留 \(kb(share))；按像素算（宽 × 高 × 4）每张 \(kb(pixels))，约 "
-              + String(format: "%.1f", Double(share) / Double(pixels)) + " 份")
-        kept[tier, default: []].append(share)
-        last = closed
+        report.step(
+          label + "（窗口还开着）", note: "格子 \(Int(cell.width)) × \(Int(cell.height)) 点")
+        window.orderOut(nil)
+        window.contentView = nil
       }
-      totals.append(last.footprint - base.footprint)
-      ThumbnailView.cache.removeAllObjects()
-      steady()
-      let cleared = Reading.now()
-      drops.append(last.footprint - cleared.footprint)
+      spin()
+      return (grown, firstDraw, stall)
+    }
+    /// 逐张（批）画完时比开始多了多少，凑成一串整数 MB
+    func series(_ grown: [Int]) -> String {
+      grown.map { String(Int((Double($0) / Double(megabyte)).rounded())) }.joined(separator: " ")
+    }
+    func milliseconds(_ seconds: Double?) -> String {
+      seconds.map { String(format: "%.0f ms", $0 * 1000) } ?? "没量到"
+    }
+
+    let lensCost = ThumbnailView.cost(width: lens, height: Int((Double(lens) / aspect).rounded()))
+    let cardCost = ThumbnailView.cost(width: card, height: Int((Double(card) / aspect).rounded()))
+    var totals: [Int] = []
+    var dropped: [Int] = []
+    var relieved: [Int] = []
+    var afterDrop: [Int] = []
+    var lensFull: [Int] = []
+    var iconFull: [Int] = []
+    var bothFull: [Int] = []
+    var perIcon: [Int] = []
+    var cleared: [Int] = []
+    var cardDraw: [String] = []
+    for round in 1...2 {
+      let base = report.step("第 \(round) 遍：画之前（缓存是空的）")
+      // 三档各 12 张：行图标一起、透镜和大卡一张一张
+      _ = draw(ids, tier: icon, batch: count, pause: 1, label: "72 档：\(count) 张一起画出来")
+      var last = Reading.now()
       report.row(
-        "清掉缓存后", cleared,
-        note:
-          "回落 \(mb(last.footprint - cleared.footprint))，比画之前多 \(signed(cleared.footprint - base.footprint))"
-      )
+        "关掉窗口（只剩缓存）", last,
+        note: "\(count) 张共留 \(kb(last.footprint - base.footprint))（按像素算一张才 "
+          + "\(kb(first.thumbnailBytes(icon)))，小到量不准）")
+      let lensDrawn = draw(ids, tier: lens, batch: 1, pause: 0.4, label: "720 档：\(count) 张轮流画过")
+      var now = Reading.now()
+      report.row(
+        "关掉窗口（只剩缓存）", now,
+        note: "每张留 \(kb((now.footprint - last.footprint) / count))（按 cost 每张 \(kb(lensCost))，"
+          + "\(count) 张 \(mb(lensCost * count))，没到上限）；第一张从换图到解码完 "
+          + "\(milliseconds(lensDrawn.firstDraw))，主线程最长被占 \(milliseconds(lensDrawn.stall))")
+      last = now
+      let cardDrawn = draw(ids, tier: card, batch: 1, pause: 0.8, label: "2400 档：\(count) 张轮流画过")
+      now = Reading.now()
+      cardDraw.append(
+        "\(milliseconds(cardDrawn.firstDraw))（主线程最长被占 \(milliseconds(cardDrawn.stall))）")
+      report.row(
+        "关掉窗口（只剩缓存）", now,
+        note: "三档都画过后比画之前多 \(mb(now.footprint - base.footprint))（一张大卡按 cost \(mb(cardCost))，"
+          + "连着进 \(count) 张，前面的透镜和大卡被挤掉）；逐张画完时比开始多（MB）：\(series(cardDrawn.grown))；"
+          + "第一张从换图到解码完 \(milliseconds(cardDrawn.firstDraw))，主线程最长被占 "
+          + milliseconds(cardDrawn.stall))
+      totals.append(now.footprint - base.footprint)
+      last = now
+      // App 在 ⌘Y 大卡放掉时做的两件事，分开量
+      ThumbnailView.dropCards()
+      steady()
+      now = Reading.now()
+      dropped.append(last.footprint - now.footprint)
+      report.row(
+        "丢掉大卡档（ThumbnailView.dropCards）", now, note: "回落 \(mb(last.footprint - now.footprint))")
+      last = now
       let took = relieve()
       steady()
-      let relief = Reading.now()
-      relieved.append(cleared.footprint - relief.footprint)
+      now = Reading.now()
+      relieved.append(last.footprint - now.footprint)
+      afterDrop.append(now.footprint - base.footprint)
       report.row(
-        "再调一次回收接口", relief,
-        note: "又回落 \(mb(cleared.footprint - relief.footprint))（调用本身 \(took)），"
-          + "比画之前多 \(signed(relief.footprint - base.footprint))")
+        "调回收接口", now,
+        note: "又回落 \(mb(last.footprint - now.footprint))（调用本身 \(took)），比画之前多 "
+          + "\(signed(now.footprint - base.footprint))")
+      // 上限是不是严格的：透镜连看 30 张（按 cost 只放得下 18 张）
+      Self.clearThumbnails()
+      steady()
+      let empty = report.step("清空两个缓存（验上限之前）")
+      let lensSeries = draw(
+        lensIDs, tier: lens, batch: 1, pause: 0.4, label: "720 档：连看 \(lensIDs.count) 张")
+      now = Reading.now()
+      lensFull.append(now.footprint - empty.footprint)
+      report.row(
+        "关掉窗口（只剩缓存）", now,
+        note:
+          "比清空后多 \(mb(now.footprint - empty.footprint))（上限 \(mb(ThumbnailView.previewBytes))，放得下 "
+          + "\(ThumbnailView.previewBytes / lensCost) 张 = \(mb(ThumbnailView.previewBytes / lensCost * lensCost))）；"
+          + "逐张画完时比开始多（MB）：\(series(lensSeries.grown))")
+      last = now
+      // 行图标连出 360 个（比上限多），一批 12 个
+      let iconSeries = draw(
+        iconIDs, tier: icon, batch: 12, pause: 0.3, preload: true,
+        label: "72 档：连出 \(iconIDs.count) 个（一批 12 个）")
+      now = Reading.now()
+      iconFull.append(now.footprint - last.footprint)
+      bothFull.append(now.footprint - empty.footprint)
+      // 到上限之前那一段的斜率：第 5 批到第 25 批（60 → 300 个）
+      let slope =
+        iconSeries.grown.count > 24 ? (iconSeries.grown[24] - iconSeries.grown[4]) / 240 : 0
+      perIcon.append(slope)
+      let marks = stride(from: 4, to: iconSeries.grown.count, by: 5).map {
+        "\(($0 + 1) * 12) 个 \(mb(iconSeries.grown[$0]))"
+      }
+      report.row(
+        "关掉窗口（只剩缓存）", now,
+        note: "行图标共留 \(mb(now.footprint - last.footprint))，60 → 300 个之间每个 \(kb(slope))；画完这些时比开始多："
+          + marks.joined(separator: "、") + "；两个缓存都装满后比清空时多 \(mb(now.footprint - empty.footprint))")
+      last = now
+      Self.clearThumbnails()
+      steady()
+      now = Reading.now()
+      report.row("清空两个缓存后", now, note: "回落 \(mb(last.footprint - now.footprint))")
+      let tookAgain = relieve()
+      steady()
+      let end = Reading.now()
+      cleared.append(end.footprint - base.footprint)
+      report.row(
+        "再调一次回收接口", end,
+        note: "又回落 \(mb(now.footprint - end.footprint))（调用本身 \(tookAgain)），比画之前多 "
+          + "\(signed(end.footprint - base.footprint))")
     }
-    let each = tiers.map { kept[$0]?.last ?? 0 }
-    let sum = each.reduce(0, +)
     report.line(
-      "算式（3420 × 2224 的图，第 2 遍的数）：画过的每张在缓存里留 \(kb(each[0]))（72 档）+ \(kb(each[1]))（720 档）+ "
-        + "\(kb(each[2]))（2400 档）= \(mb(sum))；不设上限时 N 张都出过行图标、透镜、⌘Y 大卡 ≈ N × \(mb(sum))："
-        + "\(count) 张 = \(mb(sum * count))（实测 \(list(totals))），30 张 = \(mb(sum * 30))；"
-        + "只在列表里用 ↑↓ 看过透镜、没开大卡 ≈ N × \(mb(each[0] + each[1]))，30 张 = \(mb((each[0] + each[1]) * 30))"
-    )
+      "第 2 批（没设上限）同样画过 \(count) 张三档是 389–392 MB，清缓存回落 374.5 MB；现在三档画过后 \(list(totals))，"
+        + "大卡放掉（丢大卡档 + 回收）后比画之前多 \(afterDrop.map(signed).joined(separator: " / "))。"
+        + "两个缓存都装满（\(ThumbnailView.previewBytes / lensCost) "
+        + "张透镜 + \(ThumbnailView.iconCount) 个行图标）比清空时多 \(list(bothFull))；开着大卡时最多再加解码用的一块"
+        + "（约一份大卡的像素，回收接口还得掉）。缓存里没有时一张大卡从换图到解码完 \(cardDraw.joined(separator: " / "))"
+        + "（合成图压得小、解得快，真截图会慢）")
     report.summary.append(
       (
-        "缩略图缓存（\(count) 张整屏截图，三档都画过）", list(totals),
-        "清缓存 \(list(drops))，再调回收接口 \(list(relieved))",
-        "设上限：2400 档一张就 \(mb(each[2]))（720 档 \(kb(each[1]))、72 档 \(kb(each[0]))）"
+        "缩略图缓存：\(count) 张整屏截图三档都画过（第 2 批没设上限时 389–392 MB）", list(totals),
+        "丢大卡档 \(list(dropped))，再调回收接口 \(list(relieved))；之后比画之前多 "
+          + afterDrop.map(signed).joined(separator: " / "),
+        "已设上限（第 3 批）"
       ))
+    report.summary.append(
+      (
+        "缩略图缓存封顶：连看 \(lensIDs.count) 张透镜 / 连出 \(iconIDs.count) 个行图标",
+        "透镜 \(list(lensFull))（上限 \(mb(ThumbnailView.previewBytes))）；行图标 \(list(iconFull))"
+          + "（上限 \(ThumbnailView.iconCount) 张，每个 \(perIcon.map(kb).joined(separator: " / "))）",
+        "清空 + 回收后比画之前多 \(cleared.map(signed).joined(separator: " / "))",
+        "两个上限都是严格的（见逐张的数）"
+      ))
+  }
+
+  /// 再要 count 张图：前面那批 PNG 的硬链接，各有各的 id（缓存按 id 记，内容一样不要紧）
+  private func linked(_ count: Int) throws -> [UUID] {
+    try (0..<count).map { index in
+      let id = UUID()
+      try FileManager.default.linkItem(
+        at: images.url(for: shots[index % shots.count].id), to: images.url(for: id))
+      return id
+    }
+  }
+
+  /// 清空缩略图的两个缓存
+  private static func clearThumbnails() {
+    ThumbnailView.icons.removeAllObjects()
+    ThumbnailView.previews.removeAllObjects()
   }
 
   // MARK: - 2. 图标缓存
@@ -378,15 +519,16 @@ private final class Probe {
 
     func clear() {
       switch self {
-      case .thumbnails: ThumbnailView.cache.removeAllObjects()
+      case .thumbnails: Probe.clearThumbnails()
       case .icons: LauncherIcons.cache.removeAllObjects()
       }
     }
   }
 
-  /// 六块面板 / 窗口各两轮（⌘Y 大卡四轮）：建 → 显示 → 收起 → contentView = nil → 放掉窗口，每步读数
+  /// 三块主面板和设置窗各两轮：建 → 显示 → 收起 → contentView = nil → 放掉窗口，每步读数（App 里它们一直留着）；
+  /// 两张 ⌘Y 大卡各四轮，照 App 现在的做法（card）
   private func panels(_ prefs: UserDefaults) throws {
-    report.heading("4. 面板（建 + 显示 → 收起 → 清内容 → 放掉窗口）")
+    report.heading("4. 面板（三块主面板和设置窗：建 + 显示 → 收起 → 清内容 → 放掉窗口；两张 ⌘Y 大卡：照 App 的做法开关）")
     report.line(
       "「显示后」的备注里：图层 = 窗口图层树里带内容的图层数和按尺寸估的字节（确认屏外的窗口真的画出来了）；"
         + "「放掉窗口后」的备注里写窗口对象和 SwiftUI 宿主视图真的释放了没有")
@@ -399,7 +541,7 @@ private final class Probe {
     let limit = NSSize(width: screen.width * 0.9, height: screen.height * 0.9)
 
     // 热身：进程里第一块 SwiftUI 面板带着框架自己的一次性开销（字体、符号、材质…），别算到剪贴板面板头上
-    rounds("热身（一块只有一行字的 OverlayPanel）", cacheFirst: [false]) {
+    rounds("热身（一块只有一行字的 OverlayPanel）", count: 1) {
       let panel = OverlayPanel(
         size: NSSize(width: 400, height: 300), autoHide: .clickOutside, isPinned: { true },
         content: Text("热身").frame(maxWidth: .infinity, maxHeight: .infinity))
@@ -479,49 +621,111 @@ private final class Probe {
         models: [coordinator, speaker])
     }
 
-    rounds(
-      "剪贴板 ⌘Y 大卡（一张 3420 × 2224 的图，2400 档，带识别文字；前两轮先放窗口、后两轮先清缓存）",
-      cacheFirst: [false, false, true, true], cache: .thumbnails
-    ) {
+    // 两张 ⌘Y 大卡照 App 现在的做法量（第 3 批）：TransientPanel 拿着，用时再建，收起后过一会儿自己放掉；
+    // 开关走模型的 toggleQuickLook（同按 ⌘Y），接线照 AppDelegate，只是起止位置在屏幕外、isPinned 恒真。
+    // 剪贴板那张先照改前的做法量一遍当对照：面板一直留着（lingering 给一小时 = 不放）、不丢大卡档、不调回收接口
+    let source = NSRect(x: offscreen.x, y: offscreen.y, width: 708, height: 110)
+    // 同 AppDelegate.quickLookFrame：图片放不下时等比缩进屏幕可见区的 90%
+    let clipSize = QuickLookView.idealSize(for: picture, form: nil, within: limit)
+    weak var keptTransient: TransientPanel?
+    weak var keptPanel: OverlayPanel?
+    weak var keptModel: ClipboardPanelModel?
+    func clipboardCard(releases: Bool) {
       let model = ClipboardPanelModel(store: store)
-      model.select(picture)
-      model.showsQuickLookContent = true
-      let card = OverlayPanel(
-        size: NSSize(width: 820, height: 640), autoHide: .clickOutside, isPinned: { true },
-        content: QuickLookView(model: model) { _ in }.defaultAppStorage(prefs))
-      card.becomesKeyOnlyIfNeeded = true
-      card.onHide = { [unowned model] in model.quickLookDidHide() }
-      // 同 AppDelegate.quickLookFrame：图片放不下时等比缩进屏幕可见区的 90%
-      let size = QuickLookView.idealSize(for: picture, form: nil, within: limit)
-      return Stage(
-        window: card, show: { Self.zoom(card, to: size) }, hide: { [weak card] in card?.hide() },
-        models: [model])
-    }
-
-    rounds("启动器 ⌘Y 快速查看（900 × 680，Quick Look 看一张 PNG；预览服务连不上，只有卡片窗口）") {
-      let model = LauncherModel(
-        usage: try LauncherUsage(db: Database(path: ":memory:")), apps: Array(apps.prefix(8)))
-      model.boundHotKey = { $0.defaultHotKey }
-      model.query = "open 截图"
-      let file = images.url(for: shots[1].id)
-      if let request = model.fileRequest {
-        model.showFiles(
-          [
-            FileSearch.Hit(
-              path: file.path, name: "截图.png", contentType: UTType.png.identifier, date: .now)
-          ], for: request)
+      let make = { [unowned model] in
+        let card = OverlayPanel(
+          size: NSSize(width: 820, height: 640), autoHide: .clickOutside, isPinned: { true },
+          content: QuickLookView(model: model) { _ in }.defaultAppStorage(prefs))
+        card.becomesKeyOnlyIfNeeded = true
+        card.onHide = { [unowned model] in model.quickLookDidHide() }
+        return card
       }
-      // 选中的不是文件时 toggleQuickLook 会响提示音：先确认
-      guard model.quickLookURL != nil else { throw Skip("启动器没选中文件，这一项没量") }
-      model.toggleQuickLook()
-      let card = OverlayPanel(
-        size: NSSize(width: 900, height: 680), autoHide: .clickOutside, isPinned: { true },
-        content: LauncherQuickLookView(model: model))
-      card.becomesKeyOnlyIfNeeded = true
-      card.onHide = { [unowned model] in model.quickLookDidHide() }
-      return Stage(
-        window: card, show: { Self.zoom(card, to: NSSize(width: 900, height: 680)) },
-        hide: { [weak card] in card?.hide() }, models: [model])
+      let clipCard =
+        releases
+        ? TransientPanel(
+          onRelease: {
+            ThumbnailView.dropCards()
+            Memory.relieve()
+          }, make: make)
+        : TransientPanel(lingering: .seconds(3600), make: make)
+      model.openQuickLook = { [unowned model] in
+        model.showsQuickLookContent = true
+        clipCard.open().zoom(from: source, to: NSRect(origin: offscreen, size: clipSize))
+      }
+      model.closeQuickLook = { animated in
+        guard let card = clipCard.panel else { return }
+        if animated { card.unzoom(to: source) } else { card.hide() }
+      }
+      card(
+        releases
+          ? "剪贴板 ⌘Y 大卡（一张 3420 × 2224 的图，2400 档，带识别文字；放掉时丢大卡档 + 调回收接口）"
+          : "对照：剪贴板 ⌘Y 大卡照改前的做法（同一张图；面板一直留着，不丢大卡档、不调回收接口）",
+        transient: clipCard, releases: releases, cache: .thumbnails,
+        toggle: {
+          // 没选中条目时 toggleQuickLook 会响提示音：每轮先选中（reset 会清掉选中）
+          if model.selectedItem?.id != picture.id { model.select(picture) }
+          model.toggleQuickLook()
+        }, hideWithOwner: { model.reset() })
+      if !releases { (keptTransient, keptPanel, keptModel) = (clipCard, clipCard.panel, model) }
+      // 模型的这两个闭包拿着 TransientPanel、面板的内容又拿着模型：断开，出了这个函数对照那块面板才放得掉
+      model.openQuickLook = {}
+      model.closeQuickLook = { _ in }
+    }
+    // 对照那块面板是出了函数才放手的：包一个池，放手时自动释放的东西（宿主视图）出池就清（文件头第 2 个坑）
+    autoreleasepool { clipboardCard(releases: false) }
+    // 窗口的图层存储是窗口服务器那边过一两秒才还的
+    spin(1.5)
+    steady()
+    report.step(
+      "对照用的面板也放掉之后",
+      note: "TransientPanel " + (keptTransient == nil ? "释放了" : "**还在**") + "，面板"
+        + (keptPanel == nil ? "释放了" : "**还在**") + "，模型" + (keptModel == nil ? "释放了" : "**还在**"))
+    // 对照没调过回收接口，解码用的那块还留着：先还掉，下面每一轮的「打开之前」才是干净的
+    let took = relieve()
+    steady()
+    report.step("调一次回收接口", note: "把对照留下的还掉（调用本身 \(took)）")
+    clipboardCard(releases: true)
+
+    let fileModel = LauncherModel(
+      usage: try LauncherUsage(db: Database(path: ":memory:")), apps: Array(apps.prefix(8)))
+    fileModel.boundHotKey = { $0.defaultHotKey }
+    fileModel.query = "open 截图"
+    if let request = fileModel.fileRequest {
+      fileModel.showFiles(
+        [
+          FileSearch.Hit(
+            path: images.url(for: shots[1].id).path, name: "截图.png",
+            contentType: UTType.png.identifier, date: .now)
+        ], for: request)
+    }
+    // 选中的不是文件时 toggleQuickLook 会响提示音：先确认
+    if fileModel.quickLookURL == nil {
+      report.line("没量：启动器没选中文件（启动器 ⌘Y 快速查看）")
+    } else {
+      let fileSize = NSSize(width: 900, height: 680)
+      let fileCard = TransientPanel { [unowned fileModel] in
+        let card = OverlayPanel(
+          size: fileSize, autoHide: .clickOutside, isPinned: { true },
+          content: LauncherQuickLookView(model: fileModel))
+        card.becomesKeyOnlyIfNeeded = true
+        card.onHide = { [unowned fileModel] in fileModel.quickLookDidHide() }
+        return card
+      }
+      fileModel.openQuickLook = {
+        fileCard.open().zoom(from: source, to: NSRect(origin: offscreen, size: fileSize))
+      }
+      fileModel.closeQuickLook = { animated in
+        guard let card = fileCard.panel else { return }
+        if animated { card.unzoom(to: source) } else { card.hide() }
+      }
+      card(
+        "启动器 ⌘Y 快速查看（900 × 680，Quick Look 看一张 PNG；预览服务连不上，只有卡片窗口；放掉时不调回收接口）",
+        transient: fileCard, releases: true, cache: nil, toggle: { fileModel.toggleQuickLook() },
+        hideWithOwner: {
+          // 同 LauncherModel.didHide 里那两句（didHide 本身还会动别的状态）
+          fileModel.closeQuickLook(false)
+          fileModel.quickLookDidHide()
+        })
     }
 
     let hotKeys = HotKeyCenter()
@@ -573,11 +777,10 @@ private final class Probe {
     }
   }
 
-  /// 一块面板量几轮（每轮一个新实例）。cacheFirst：每轮收起之后先清缓存（true）还是先放窗口（false）——两样各省多少
-  /// 可能和先后有关；cache：它用过、量完要清掉的缓存。每个阶段一个自动释放池（像真 App 里事件循环转了一圈，文件头第 2 个坑）
+  /// 一块面板量 count 轮（每轮一个新实例；App 里这几块是一直留着的，这里量的是「要是放掉能省多少」）。
+  /// cache：它用过、量完要清掉的缓存。每个阶段一个自动释放池（像真 App 里事件循环转了一圈，文件头第 2 个坑）
   private func rounds(
-    _ name: String, cacheFirst: [Bool] = [false, false], cache: Cache? = nil,
-    make: () throws -> Stage
+    _ name: String, count: Int = 2, cache: Cache? = nil, make: () throws -> Stage
   ) {
     report.line("**\(name)**")
     var shown: [Int] = []
@@ -585,9 +788,9 @@ private final class Probe {
     var freedContent: [Int] = []
     var freedWindow: [Int] = []
     var freedCache: [Int] = []
-    for (index, clearsFirst) in cacheFirst.enumerated() {
+    for index in 1...count {
       spin()
-      let base = report.step("第 \(index + 1) 轮：建之前")
+      let base = report.step("第 \(index) 轮：建之前")
       var last = base
       var stage: Stage?
       weak var window: NSWindow?
@@ -629,7 +832,7 @@ private final class Probe {
         }
         steady()
         host = Self.hostingView(in: window?.contentView)
-        let census = window.map(Self.layers(of:)) ?? (count: 0, bytes: 0)
+        let census = window.map(Self.layers(of:)) ?? (count: 0, bytes: 0, big: [])
         let frame = window?.frame.size ?? .zero
         let unseen = window?.occlusionState.contains(.visible) == false
         last = Reading.now()
@@ -658,7 +861,6 @@ private final class Probe {
       last = Reading.now()
       kept.append(last.footprint - base.footprint)
       report.row("收起后", last, note: "还比建之前多 \(mb(last.footprint - base.footprint))")
-      if clearsFirst { clearCache() }
       // 只清内容：窗口对象还留着
       let hidden = last
       autoreleasepool {
@@ -683,13 +885,13 @@ private final class Probe {
         note: "清内容 + 放窗口共回落 \(mb(hidden.footprint - last.footprint))；窗口对象"
           + (window == nil ? "释放了" : "**还在**") + "，SwiftUI 宿主视图"
           + (host == nil ? "释放了" : "**还在**"))
-      if !clearsFirst { clearCache() }
+      clearCache()
       autoreleasepool { stage = nil }
       steady()
       let end = Reading.now()
       report.row("放掉模型后", end, note: "比建之前多 \(signed(end.footprint - base.footprint))")
     }
-    guard cacheFirst.count > 1 else { return }
+    guard count > 1 else { return }
     report.summary.append(
       (
         name, "显示后 +\(list(shown))；收起后还留 \(list(kept))",
@@ -699,17 +901,160 @@ private final class Probe {
       ))
   }
 
+  /// 一张 ⌘Y 大卡照 App 的做法量四轮：toggle 打开（用时再建 + zoom）→ 稳下来 → 收起（单数轮 toggle 缩回去，同再按 ⌘Y；
+  /// 双数轮 hideWithOwner，同跟着主面板收起）→ 还没放掉时读一次 → 等它自己放掉（TransientPanel 的 lingering，放掉时做
+  /// onRelease）→ 再手动调一次回收接口，看 App 自己那一下漏了多少。最后一轮收起后马上又打开一次：应该接着用同一块。
+  /// 打开到收起包在一个自动释放池里、赶在放掉之前出池（文件头第 2 个坑：池里的引用不清，放了手窗口也不释放）。
+  /// releases = false：对照，transient 不会放（改前的做法），收起后隔 3 秒、再 3 秒各读一次，看留着的面板占多少
+  private func card(
+    _ name: String, transient: TransientPanel, releases: Bool, cache: Cache?, toggle: () -> Void,
+    hideWithOwner: () -> Void
+  ) {
+    report.line("**\(name)**")
+    var shown: [Int] = []
+    var peaks: [Int] = []
+    var lingering: [Int] = []
+    var kept: [Int] = []
+    var missed: [Int] = []
+    var builds: [String] = []
+    for round in 1...4 {
+      spin()
+      let base = report.step(
+        "第 \(round) 轮：打开之前"
+          + (transient.panel == nil ? "（面板没建）" : releases ? "（**面板还在**）" : "（面板留着）"))
+      weak var window: NSWindow?
+      weak var host: NSView?
+      let opened = autoreleasepool { () -> Bool in
+        let start = Date.now
+        toggle()
+        builds.append(String(format: "%.0f ms", Date.now.timeIntervalSince(start) * 1000))
+        window = transient.panel
+        guard let panel = transient.panel, Self.isParked(panel) else {
+          transient.panel?.orderOut(nil)
+          report.line("没量：面板没开出来，或者被系统挪回了屏幕上")
+          return false
+        }
+        // 打开的头一两秒带着解码大图、窗口变大的临时占用（自己会退）：每 50 毫秒读一次记下最高的，等稳了再读
+        var peak = Reading.footprint()
+        for _ in 0..<30 {
+          spin(0.05)
+          peak = max(peak, Reading.footprint())
+        }
+        steady()
+        host = Self.hostingView(in: panel.contentView)
+        let census = Self.layers(of: panel)
+        let now = Reading.now()
+        shown.append(now.footprint - base.footprint)
+        peaks.append(peak - base.footprint)
+        report.row(
+          "打开后（稳下来）", now,
+          note:
+            "比打开之前多 \(mb(now.footprint - base.footprint))（打开过程中最高 \(mb(peak - base.footprint))）；"
+            + "建面板 + zoom 那一下 \(builds.last ?? "")；\(Int(panel.frame.width)) × \(Int(panel.frame.height)) 点；"
+            + "图层 \(census.count) 个带内容、估 \(mb(census.bytes))，大块："
+            + census.big.joined(separator: "、"))
+        if round == 4 {
+          // 收起后马上又打开：还没到放掉的时候，应该是同一块面板、缓存里的图还在
+          toggle()
+          spin(0.5)
+          let again = Date.now
+          toggle()
+          let reopening = String(format: "%.0f ms", Date.now.timeIntervalSince(again) * 1000)
+          let reused = transient.panel === panel
+          var peak = Reading.footprint()
+          for _ in 0..<20 {
+            spin(0.05)
+            peak = max(peak, Reading.footprint())
+          }
+          report.step(
+            "缩回去 0.5 秒后又打开",
+            note: (reused ? "接着用同一块面板" : "**换了一块面板**")
+              + "，再打开那一下 \(reopening)"
+              + "，这一秒里最高比打开之前多 \(mb(peak - base.footprint))")
+        }
+        if round % 2 == 1 {
+          toggle()
+          spin(0.4)
+        } else {
+          hideWithOwner()
+        }
+        return true
+      }
+      guard opened else { return }
+      spin(0.3)
+      var now = Reading.now()
+      lingering.append(now.footprint - base.footprint)
+      report.row(
+        round % 2 == 1 ? "缩回去之后（还没放掉）" : "直接收起之后（还没放掉）", now,
+        note: "还比打开之前多 \(mb(now.footprint - base.footprint))；面板"
+          + (transient.panel == nil ? "**已经放掉了**" : "还留着"))
+      guard releases else {
+        spin(3)
+        report.step("3 秒后（面板一直留着）")
+        spin(3)
+        steady()
+        now = Reading.now()
+        kept.append(now.footprint - base.footprint)
+        report.row("再过 3 秒", now, note: "还比打开之前多 \(signed(now.footprint - base.footprint))")
+        continue
+      }
+      // 等它自己放掉；窗口的图层存储是窗口服务器那边过一两秒才还的：多等一会儿再等稳
+      let start = Date.now
+      while transient.panel != nil, Date.now.timeIntervalSince(start) < 10 { spin(0.1) }
+      let waited = Date.now.timeIntervalSince(start)
+      spin(1.5)
+      steady()
+      now = Reading.now()
+      kept.append(now.footprint - base.footprint)
+      report.row(
+        "自己放掉之后（App 现在的做法）", now,
+        note: "还比打开之前多 \(signed(now.footprint - base.footprint))；读完上一行又过了 "
+          + String(format: "%.1f s", waited) + " 放掉；窗口对象"
+          + (window == nil ? "释放了" : "**还在**") + "，SwiftUI 宿主视图"
+          + (host == nil ? "释放了" : "**还在**"))
+      let last = now
+      let took = relieve()
+      steady()
+      now = Reading.now()
+      missed.append(last.footprint - now.footprint)
+      report.row(
+        "再手动调一次回收接口", now,
+        note: "又回落 \(mb(last.footprint - now.footprint))（调用本身 \(took)），比打开之前多 "
+          + "\(signed(now.footprint - base.footprint))")
+    }
+    if let cache {
+      let last = Reading.now()
+      autoreleasepool {
+        cache.clear()
+        steady()
+      }
+      let now = Reading.now()
+      report.row("清掉它用过的缓存", now, note: "回落 \(mb(last.footprint - now.footprint))")
+    }
+    guard releases else {
+      report.summary.append(
+        (
+          name,
+          "打开后 +\(list(shown))（过程中最高 +\(list(peaks))）；打开那一下 \(builds.joined(separator: " / "))",
+          "收起 6 秒后还比各轮打开之前多 \(kept.map(signed).joined(separator: " / "))（后几轮的「之前」已经带着前面留下的）",
+          "改前的做法，只当对照"
+        ))
+      return
+    }
+    report.summary.append(
+      (
+        name,
+        "打开后 +\(list(shown))（过程中最高 +\(list(peaks))）；收起后还没放掉时 +\(list(lingering))；"
+          + "建面板 + zoom \(builds.joined(separator: " / "))",
+        "自己放掉后还比打开之前多 \(kept.map(signed).joined(separator: " / "))；再手动调一次回收接口 \(list(missed))",
+        (kept.max() ?? 0) < 10 * megabyte ? "已改成用时再建、收起后放掉（第 3 批）" : "**放掉后还留 10 MB 以上，查**"
+      ))
+  }
+
   /// 屏外显示一块 OverlayPanel：摆到屏幕外，不抢键盘（走真的 present，只是不重新摆位、不当 key）
   private static func present(_ panel: OverlayPanel) {
     panel.setFrameOrigin(offscreen)
     panel.present(makingKey: false, keepsPlace: true)
-  }
-
-  /// 屏外放大一张 ⌘Y 大卡：从透镜那么大的一条长到 size（走真的 zoom，起止都在屏幕外）
-  private static func zoom(_ card: OverlayPanel, to size: NSSize) {
-    card.zoom(
-      from: NSRect(x: offscreen.x, y: offscreen.y, width: 708, height: 110),
-      to: NSRect(origin: offscreen, size: size))
   }
 
   /// 窗口在所有屏幕外面
@@ -717,26 +1062,39 @@ private final class Probe {
     NSScreen.screens.allSatisfy { !$0.frame.intersects(window.frame) }
   }
 
-  /// 窗口图层树里带内容的图层：个数和按尺寸估的字节（位图按它自己的行宽，其余按 宽 × 高 × 倍率² × 4）
-  private static func layers(of window: NSWindow) -> (count: Int, bytes: Int) {
+  /// 窗口图层树里带内容的图层：个数和按尺寸估的字节（位图按它自己的行宽，其余按 宽 × 高 × 倍率² × 4），
+  /// 再列出 4 MB 以上的大块（像素尺寸、内容的类型、是谁的图层）
+  private static func layers(of window: NSWindow) -> (count: Int, bytes: Int, big: [String]) {
     var count = 0
     var bytes = 0
+    var big: [String] = []
     func visit(_ layer: CALayer) {
       if let contents = layer.contents {
         count += 1
+        let size: Int
+        let pixels: String
         if CFGetTypeID(contents as CFTypeRef) == CGImage.typeID {
           // swift-format-ignore: NeverForceUnwrap
           let image = contents as! CGImage
-          bytes += image.bytesPerRow * image.height
+          size = image.bytesPerRow * image.height
+          pixels = "\(image.width)×\(image.height) 位图"
         } else {
           let scale = layer.contentsScale
-          bytes += Int(layer.bounds.width * scale) * Int(layer.bounds.height * scale) * 4
+          let (width, height) = (Int(layer.bounds.width * scale), Int(layer.bounds.height * scale))
+          size = width * height * 4
+          let kind = CFCopyTypeIDDescription(CFGetTypeID(contents as CFTypeRef)) as String? ?? "?"
+          pixels = "\(width)×\(height) \(kind)"
+        }
+        bytes += size
+        if size >= 4 * megabyte {
+          let owner = layer.delegate.map { String(describing: type(of: $0)) }
+          big.append("\(pixels)（\(owner ?? String(describing: type(of: layer)))）")
         }
       }
       layer.sublayers?.forEach(visit)
     }
     if let root = (window.contentView?.superview ?? window.contentView)?.layer { visit(root) }
-    return (count, bytes)
+    return (count, bytes, big)
   }
 
   /// 视图树里的 SwiftUI 宿主视图（NSHostingView<…>）

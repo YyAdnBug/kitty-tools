@@ -17,6 +17,7 @@ description: 原生分支 macOS 热键浮层规范（OverlayPanel、全局热键
 - 长截图：框完收起遮罩在实时画面上截（`captureImage(contentFilter:configuration:)` + `sourceRect`，filter 滤掉本 App）；拼接只用逐行哈希投票，不换 Vision 配准；页脚宁大勿小；自动滚动先把光标挪进选区、移出即停。
 - 标注显示与导出共用 `Annotation.drawAll`；输出一律用合成图（打码后的内容识别不出来）；文字输入用 NSTextView + `doCommandBy`。
 - 剪贴板面板、启动器点外关（鼠标监听成对装卸，兄弟浮层豁免）；启动器没有固定，没执行就收起的 60 秒内再呼出保留查询（体检 A27）；两者同一位置（顶部 20%、宽 720），只开一个；翻译浮窗失焦关；固定只管点别处 / 失焦不收起，Esc、⌘W（OverlayPanel 统一处理）、再按热键一律收起（体检 A9）。
+- 两张 ⌘Y 大卡由 `TransientPanel` 拿着（rule §1）：用时再建、收起 2 秒后放掉；要显示走 `open()`，对开着的那块做事读 `.panel`（nil = 没开着，别为了问一句去建）。三块主面板和设置窗一直留着，不照这个改。
 - 浮层里的输入框只用 `CommandTextField` / `SourceTextView`（doCommandBy），不用 `.onKeyPress` 抢方向键和回车。
 - 热键非独占，跨进程冲突检测不到。
 - 粘贴：hide → `Paster.write` → `pasteToFrontmost`，不加等待，⌘V 显式 `.maskCommand`。
