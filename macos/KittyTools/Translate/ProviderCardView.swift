@@ -529,86 +529,125 @@ struct ServiceTile: View {
   }
 }
 
-/// 生成中的彗星边框：一段强调色光沿边框绕行（2.4 s 一圈，只做旋转）；减弱动态效果时静止
+// 下面三处循环动效（彗星边框、「思考中」、骨架的扫光）都只动变换（mac-whisker §8）：渐变各是一层只画一次的图层，
+// 循环的是 rotationEffect / offset 上的隐式动画（线性、无限循环，onAppear 里起），SwiftUI 在后台的显示链接线程上
+// 逐帧只改图层的旋转 / 位置，不重画内容、不占主线程。
+// 不能每帧改渐变的参数（AngularGradient 的 angle、LinearGradient 的起止点），也不用 TimelineView 驱动：
+// 系统给正式版出过 3 份「CPU 占用过高」报告（56–70%，持续 2–3 分钟），栈都是主线程逐帧用 CPU 光栅化环形渐变
+// （CA::Layer display → CGContextDrawConicGradient）。实测（两张 396 × 120 pt 的卡，@2x、60 Hz，一个核 = 100%，
+// 只算本进程）：整张「思考中」的等待卡约 30% → 约 6%；单看边框 33% → 3.5%（原来卡越高越贵，300 pt 高时 46%，
+// 现在和卡高无关）、骨架 12.5% → 4%、「思考中」9% → 3.5%；TimelineView 就算只把角度交给 rotationEffect
+// 也有 4–5%（它空转自己就 3–6%）。减弱动态效果时三处都不起动画，CPU 是 0。
+// ponytail: 剩下的约 6% 是 SwiftUI 逐帧推这几个隐式动画的开销。自绘 CALayer + CABasicAnimation 能到 0–0.6%
+// （动画整个交给渲染服务），代价是三处各包一层 NSViewRepresentable，强调色、深浅色、减弱动态效果、出场淡入淡出
+// 都得自己接，屏外截图自检里永远是没动的那一帧；等待时的 CPU 还嫌高再换。
+// ResultCardLoopTests 锁住「渐变是图层、在动的只是变换」。
+
+/// 生成中的彗星边框：一段强调色光沿边框绕行（2.4 s 一圈）；减弱动态效果时静止（出现那一刻看，开着就不转）。
+/// 环形渐变只画一次，放进边长 = 卡片对角线的正方形（怎么转都盖得住四角），整块转，边框形状当遮罩
 private struct CometBorder: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var spins = false
 
   var body: some View {
-    TimelineView(.animation(paused: reduceMotion)) { context in
-      let turn =
-        context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.4) / 2.4
-      RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
-        .strokeBorder(
-          AngularGradient(
-            stops: [
-              .init(color: .clear, location: 0), .init(color: .clear, location: 0.62),
-              .init(color: Style.brand.opacity(0.35), location: 0.78),
-              .init(color: Style.brand, location: 0.92), .init(color: .clear, location: 1),
-            ], center: .center, angle: .degrees(turn * 360)), lineWidth: 1.5)
+    GeometryReader { geometry in
+      let side = hypot(geometry.size.width, geometry.size.height)
+      AngularGradient(
+        stops: [
+          .init(color: .clear, location: 0), .init(color: .clear, location: 0.62),
+          .init(color: Style.brand.opacity(0.35), location: 0.78),
+          .init(color: Style.brand, location: 0.92), .init(color: .clear, location: 1),
+        ], center: .center
+      )
+      .frame(width: side, height: side)
+      .rotationEffect(.degrees(spins ? 360 : 0))
+      // 动画只挂在旋转上：出字时卡片长高（side 跟着变）不带动画，也不打断这一圈
+      .animation(.linear(duration: 2.4).repeatForever(autoreverses: false), value: spins)
+      .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
     }
+    .mask {
+      RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
+        .strokeBorder(lineWidth: 1.5)
+    }
+    .onAppear { spins = !reduceMotion }
     .transition(.opacity.animation(.easeOut(duration: 0.35)))
     .allowsHitTesting(false)
   }
 }
 
+/// 扫光用的高光带（骨架的两根条、「思考中」共用）：两头透明、正中是 peak 的一条渐变，和要扫的东西一样宽，
+/// 只画一次；出现时贴在左边界外，1.3 s 一趟线性循环——前 2/3 从左扫到右，后 1/3 在右边界外歇着。
+/// 位移是按宽度算的，宽度变了（拖宽浮窗）要重新起：调用处用 .id(宽度) 重建
+private struct SweepBand: View {
+  let peak: Color
+  let width: CGFloat
+  @State private var swept = false
+
+  var body: some View {
+    LinearGradient(
+      stops: [
+        .init(color: .clear, location: 0), .init(color: peak, location: 0.5),
+        .init(color: .clear, location: 1),
+      ], startPoint: .leading, endPoint: .trailing
+    )
+    .frame(width: width)
+    .offset(x: (swept ? 2 : -1) * width)
+    .animation(.linear(duration: 1.3).repeatForever(autoreverses: false), value: swept)
+    .onAppear { swept = true }
+  }
+}
+
 /// 推理模型在思考（reasoning 字段或开头的 <think> 段）时骨架上面的「思考中」：12 medium secondary，
-/// 用骨架同一趟 1.3 s 扫光做文字遮罩（mac-whisker S3）；减弱动态效果时静止
+/// 和骨架同一种 1.3 s 的扫光（mac-whisker S3）：高光带在文字后面移过去，文字做遮罩；减弱动态效果时没有高光
 private struct ThinkingLabel: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
-    TimelineView(.animation(paused: reduceMotion)) { context in
-      let phase =
-        context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.3) / 1.3
-      Text("思考中")
-        .font(.system(size: 12, weight: .medium))
-        .foregroundStyle(.secondary)
-        .overlay {
-          LinearGradient(
-            stops: [
-              .init(color: .clear, location: 0),
-              .init(color: .primary.opacity(0.55), location: 0.5),
-              .init(color: .clear, location: 1),
-            ],
-            startPoint: UnitPoint(x: reduceMotion ? -1 : phase * 3 - 2, y: 0.5),
-            endPoint: UnitPoint(x: reduceMotion ? 0 : phase * 3 - 1, y: 0.5)
-          )
+    Text("思考中")
+      .font(.system(size: 12, weight: .medium))
+      .foregroundStyle(.secondary)
+      .overlay {
+        if !reduceMotion {
+          GeometryReader { geometry in
+            SweepBand(peak: .primary.opacity(0.55), width: geometry.size.width)
+              .id(geometry.size.width)
+          }
           .mask(Text("思考中").font(.system(size: 12, weight: .medium)))
         }
-    }
-    .accessibilityLabel("思考中")
+      }
+      .accessibilityLabel("思考中")
   }
 }
 
-/// 等第一个字时的骨架：两根条（高 8，宽 94 / 58%，约一行半译文高）+ 扫光（1.3 s 一趟）
+/// 等第一个字时的骨架：两根条（高 8，宽 94 / 58%，约一行半译文高）+ 扫光（1.3 s 一趟）；减弱动态效果时没有高光带。
+/// 条的底色 primary 0.07，高光带正中 primary 0.07 / 0.93：叠在底色上正好是 0.14，和原来直接画 0.07 → 0.14 → 0.07
+/// 的渐变是同一个结果（各相位、深浅色对过，差不超过 1 / 255）
 private struct Skeleton: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
-    TimelineView(.animation(paused: reduceMotion)) { context in
-      let phase =
-        context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.3) / 1.3
-      GeometryReader { geometry in
-        VStack(alignment: .leading, spacing: 6) {
-          ForEach([0.94, 0.58], id: \.self) { width in
-            Capsule()
-              .fill(
-                LinearGradient(
-                  stops: [
-                    .init(color: .primary.opacity(0.07), location: 0),
-                    .init(color: .primary.opacity(0.14), location: 0.5),
-                    .init(color: .primary.opacity(0.07), location: 1),
-                  ],
-                  startPoint: UnitPoint(x: phase * 3 - 2, y: 0.5),
-                  endPoint: UnitPoint(x: phase * 3 - 1, y: 0.5))
-              )
-              .frame(width: geometry.size.width * width, height: 8)
-          }
+    GeometryReader { geometry in
+      VStack(alignment: .leading, spacing: 6) {
+        ForEach([0.94, 0.58], id: \.self) { width in
+          let length = geometry.size.width * width
+          Color.primary.opacity(0.07)
+            .overlay(alignment: .leading) {
+              if !reduceMotion {
+                SweepBand(peak: .primary.opacity(0.07 / 0.93), width: length).id(length)
+              }
+            }
+            // 先成组再裁，别省：直接 clipShape 的话，SwiftUI（macOS 15.7 实测）会把「裁剪区里一条带 offset 的渐变」
+            // 压成一层贴着裁剪区的渐变层、位移只记在图层的 bounds 原点上，而渐变是照 bounds 铺的——高光带就停在
+            // 条的正中不动，只是到点出现、到点消失（屏外用 CARenderer 把图层树画出来对过）。成组后带子是组里
+            // 一层自己挪位置的图层。「思考中」的遮罩是文字，不走这条路
+            .compositingGroup()
+            .clipShape(Capsule())
+            .frame(width: length, height: 8)
         }
-        .padding(.vertical, 2)
       }
-      .frame(height: 26)
+      .padding(.vertical, 2)
     }
+    .frame(height: 26)
     .accessibilityLabel("翻译中")
   }
 }

@@ -76,3 +76,4 @@ alwaysApply: false
 - 单测、截图自检里用 `TranslateServiceStore(services:)` 传一份列表：它不读也不写用户偏好（只有从偏好读出来的才写回）；**别**用 `TranslateServiceStore()` 再去改 `services`，会盖掉 Dev 版的真实服务列表。
 - 联网冒烟（真请求内置智谱）按需：`TEST_RUNNER_KITTY_LIVE_TRANSLATE=1 xcodebuild … test`。
 - 界面用 SnapshotProbeTests（见 mac-clipboard 技能 §6），翻译浮窗状态靠直接设 `coordinator.cards` 摆出来。
+- 结果卡片等待时的三处循环动效（彗星边框、骨架和「思考中」的扫光，`ProviderCardView.swift` 末尾）只动变换、不逐帧重画渐变，规矩和实测在 mac-whisker §8；`ResultCardLoopTests` 把等待卡摆进屏外窗口看图层：渐变是图层、在动的只是旋转 / 位置、减弱动态效果时不动。改这三处先跑它，再在活动监视器里看等待时的 CPU。

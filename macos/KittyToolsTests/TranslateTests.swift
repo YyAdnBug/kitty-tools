@@ -1,5 +1,6 @@
 // 翻译相关单测：语言解析、流式文本清洗、AI 服务地址 / 参数、局域网判断、翻译历史（存储、撤销删除、列表分组与选中）、
-// 「翻译 ↩」胶囊的出现条件、服务 logo 都在 asset catalog 里、按地址 / 名字认厂商与官网图标（第 13 批）、结果卡片正文的高度上限；
+// 「翻译 ↩」胶囊的出现条件、服务 logo 都在 asset catalog 里、按地址 / 名字认厂商与官网图标（第 13 批）、结果卡片正文的高度上限、
+// 等待卡的循环动效只动图层的变换（第二轮体检第 1 批）；
 // 体检第 4 批：复制即译过滤、自动复制按来源、截断与思考的流约定、错误种类、划词没取到、输入翻译再打开、⌘D 收藏、
 // 历史 ⌘K 与分页、浮窗跟随鼠标、历史保留档位升级、朗读声线；
 // 以及按需启用的联网冒烟测试（TEST_RUNNER_KITTY_LIVE_TRANSLATE=1，用内置智谱 key 真翻一句）。
@@ -8,6 +9,7 @@ import AVFoundation
 import AppKit
 import Carbon.HIToolbox
 import Foundation
+import SwiftUI
 import Testing
 
 @testable import KittyTools
@@ -549,6 +551,75 @@ struct ResultCardCapTests {
       #expect(cap > previous, "\(size)")  // 字号越大上限越高
       previous = cap
     }
+  }
+}
+
+/// 第二轮体检第 1 批：等待卡的三处循环动效（彗星边框、骨架和「思考中」的扫光）只动图层的变换，不逐帧重画渐变
+struct ResultCardLoopTests {
+  /// 一次取样：环形渐变层转到几度、每个线性渐变层的 x、有没有渐变层自己在裁剪
+  private struct Sample: Equatable {
+    var angles: [Double] = []
+    var bands: [Double] = []
+    var clips = false
+
+    mutating func collect(_ layer: CALayer) {
+      if let gradient = layer as? CAGradientLayer {
+        if gradient.type == .conic {
+          let transform = layer.affineTransform()
+          angles.append(atan2(transform.b, transform.a) * 180 / .pi)
+        } else {
+          bands.append(layer.frame.minX)
+        }
+        clips = clips || layer.masksToBounds
+      }
+      for sublayer in layer.sublayers ?? [] { collect(sublayer) }
+    }
+  }
+
+  /// 把一张「思考中」的卡摆进屏外窗口（浅色、不抢键盘），隔 0.2 s 取三次样。全量并行跑时主线程上穿插着别的测试，
+  /// 间隔会被拉长到说不准多久：取三次，免得两次正好隔了整数圈、看着像没动
+  private func samples(reduceMotion: Bool) throws -> [Sample] {
+    var service = TranslateService.newAI()
+    service.name = "GPT-4o mini"  // 有官方 logo：卡片里没有别的渐变
+    let window = NSWindow(
+      contentRect: NSRect(x: -20000, y: -20000, width: 420, height: 100), styleMask: [.borderless],
+      backing: .buffered, defer: false)
+    window.appearance = NSAppearance(named: .aqua)
+    let host = NSHostingView(
+      rootView: ProviderCardView(
+        card: .init(service: service, state: .running("")), index: 0, language: nil,
+        speaker: Speaker(), onRetry: {}
+      )
+      .environment(\._accessibilityReduceMotion, reduceMotion))
+    window.contentView = host
+    window.orderFront(nil)
+    defer { window.orderOut(nil) }
+    return try (0..<3).map { _ in
+      RunLoop.main.run(until: .now.addingTimeInterval(0.2))
+      var sample = Sample()
+      sample.collect(try #require(host.layer))
+      return sample
+    }
+  }
+
+  /// 省 CPU 靠的是：渐变各是一层不用重画的 CAGradientLayer，循环时 SwiftUI 只改图层的旋转 / 位置。所以看几次取样：
+  /// 环形渐变那一层在转，三条高光带（「思考中」+ 骨架两根条）在挪，而且没有哪层渐变自己在裁剪——
+  /// SwiftUI 把「裁剪区里带 offset 的渐变」压成一层时就是那样，带子会停在条的正中不动（Skeleton 里的 compositingGroup 防的就是它）。
+  /// 减弱动态效果时边框不转、没有高光带。
+  /// 认的是 SwiftUI 现在怎么把这几个视图变成图层（macOS 15.7）：系统升级后这条挂了，先在活动监视器里重看等待时的 CPU、
+  /// 真浮窗里看扫光还扫不扫，再改这里。显示器睡着时动画的时钟不一定走，跳过
+  @Test(.enabled(if: CGDisplayIsAsleep(CGMainDisplayID()) == 0))
+  func waitingLoopsOnlyMoveLayers() throws {
+    let moving = try samples(reduceMotion: false)
+    try #require(moving.allSatisfy { $0.angles.count == 1 && $0.bands.count == 3 && !$0.clips })
+    #expect(moving.contains { abs($0.angles[0] - moving[0].angles[0]) > 5 })
+    for band in 0..<3 {
+      #expect(moving.contains { abs($0.bands[band] - moving[0].bands[band]) > 1 }, "第 \(band) 条")
+    }
+
+    let still = try samples(reduceMotion: true)
+    #expect(still.allSatisfy { $0 == still[0] })
+    #expect(still[0].angles == [0] && still[0].bands.isEmpty)
   }
 }
 
