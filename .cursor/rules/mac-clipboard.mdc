@@ -16,6 +16,7 @@ alwaysApply: false
 - 旧库升级在 `ClipboardStore.migrate`（每次打开都跑，幂等）：`clip_groups` 补 `position`（按创建时间排好），已归组没收藏的条目置收藏。改表结构只在这里加，配迁移单测（`migratesOldDatabase`）。
 - 同内容再次复制 = 原条目挪到最前（保留 id、收藏、备注、收藏夹、OCR），格式以最近一次为准；删了还没提交的同内容条目从撤销栈里拿回来（等于自动撤销），不新建。
 - 图片存 `images/<id>.png`，按 PNG 字节 SHA256 去重；编码 / 缩略图 / OCR 都在 `@concurrent`，结果回主线程写库。
+- 缩略图缓存 `ThumbnailView.cache`（内存探针实测，PLAN §10「第二轮体检」第 2 批）：ImageIO 的缩略图是懒解码的，取进缓存不画不占内存；**画过的每张留 2 份「宽 × 高 × 4」**（CG raster data + CoreAnimation），窗口关了也不还、缓存放手才还——整屏截图 720 档（透镜）2.6 MB、2400 档（⌘Y 大卡）28.6 MB。72 档只有几十 KB，但重做一张要把原图整张解码（临时几十 MB），别跟着大的一起丢。
 - **撤销栈**（体检 A2，对齐翻译历史）：`ClipboardStore.undoStack` 一批一批压（删掉的条目、删掉的收藏夹、取消收藏 / 移出片段后已超过保留天数的条目改动前的样子），⌘Z 连着撤、不限时；只在面板收起（`reset()`）和退出 App（`applicationWillTerminate`）时 `commitDeletion` 删库删文件；`clearOrdinary`（锁屏、设置里立即清空）先提交撤销栈，清空后不能再 ⌘Z 找回。取消收藏后超期的条目在提交前不被 `enforceLimits` 清理，底栏「超过 N 天，收起面板后会被清理 · 撤销 ⌘Z」。
 
 ## 2. 采集（ClipboardWatcher）

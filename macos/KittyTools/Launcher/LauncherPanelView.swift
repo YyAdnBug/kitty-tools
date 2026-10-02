@@ -518,7 +518,8 @@ extension LauncherItem {
 
 /// App / 文件图标（按路径缓存，面板每次重绘不重复读）
 enum LauncherIcons {
-  private static let cache = NSCache<NSString, NSImage>()
+  /// 不是 private：内存探针（MemoryProbeTests）要清空它，量清掉后回落多少
+  static let cache = NSCache<NSString, NSImage>()
 
   /// 文件搜索的结果按类型取：不碰文件本身（桌面 / 文稿 / 下载里的文件读图标可能弹授权框）
   static func icon(for type: UTType) -> NSImage {

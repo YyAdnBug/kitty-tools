@@ -67,6 +67,7 @@ alwaysApply: true
 
 ## 测量与诊断
 - 测内存看 `phys_footprint`（`footprint -p <pid>` / 活动监视器），不看 RSS：两者偏差方向随内存压力变化，任何换算系数都不成立。
+- 内存探针 `MemoryProbeTests`（按需，`TEST_RUNNER_KITTY_MEMORY_PROBE_DIR`，用法在文件头；2026-10-02 的数和结论在 PLAN §10「第二轮体检」第 2 批）：动缓存上限、面板收起后清内容这类事，前后各跑一遍对数。`footprint -p <pid>` 不用 root 就能看本机自己的进程并按分类拆（CoreAnimation / CG raster data / MALLOC_* / Owned physical footprint (unmapped)）。**在测试宿主里量窗口**要同步跑在 `RunLoop.main.perform` 的块里、分阶段包 `autoreleasepool`：测试是事件循环里的一次长调用，AppKit 的自动释放池不清，显示过的窗口放了手也不释放；而在 async 测试里嵌套跑环会把主队列（SwiftUI 的 `.task`、动画组的完成回调）卡住。
 - 编译诊断以 `xcodebuild` 输出为准（sourcekit-lsp 不认 `.xcodeproj`）。
 
 ## 查资料

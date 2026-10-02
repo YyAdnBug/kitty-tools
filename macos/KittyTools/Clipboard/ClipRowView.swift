@@ -407,7 +407,8 @@ struct ThumbnailView: View {
   var contentMode = ContentMode.fill
   @State private var image: NSImage?
 
-  private static let cache = NSCache<NSString, NSImage>()
+  /// 不是 private：内存探针（MemoryProbeTests）要清空它，量清掉后回落多少
+  static let cache = NSCache<NSString, NSImage>()
 
   init(id: UUID, images: ImageStore, maxPixel: Int, contentMode: ContentMode = .fill) {
     self.id = id

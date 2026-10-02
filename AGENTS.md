@@ -75,6 +75,10 @@ xcrun swift-format format -i -r macos/KittyTools
 TEST_RUNNER_KITTY_SNAPSHOT_DIR=/tmp/kitty-shots xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:KittyToolsTests/SnapshotProbeTests
 
+# 内存探针（按需，约 5 分钟，屏外量缓存 / 识字 / 各面板 / 回收接口各占多少；报告追加在 <目录>/report.md，用法和三个坑见测试文件头）
+TEST_RUNNER_KITTY_MEMORY_PROBE_DIR=/tmp/kitty-memory xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -only-testing:'KittyToolsTests/MemoryProbeTests/measure()'
+
 # 打 Release DMG + App 内更新用的 zip（产物在 macos/build/）
 macos/build-dmg.sh
 
