@@ -17,4 +17,5 @@ description: 原生分支剪贴板历史规范（采集、存储、上限、搜�
 - 右键菜单和 ⌘K 是同一份动作表（`actions(for:targets:)`，只用缓存过的判断）；操作对象 `targets` 只算看得见的勾选项；条目从列表消失的改动包在 `changingList` 里（选中挪到下一条）；⌘T ⌘O ⌘R ⌥⌘C 按类型；打开 / 在访达中显示 / 钉到屏幕没固定先收起；拖出去走 `ClipDrag`（AppKit 会话，不算粘贴）。
 - 界面 = 透镜指令条 Lens Bar（720 顶锚、单列、选中行原地展开成透镜）：透镜按类型定高（常数，不量不估），上下键不改窗口高度；行标题已原样显示全的文本不画第二遍、透镜只剩元信息行（`ClipRowView.showsWholeText`，只看条目自己的数据）；范围和筛选只以搜索框里的标签出现；筛选面板和 ⌘K 共用 `Shell/ActionMenu.swift`。
 - 缩略图缓存有上限（rule §1）：行图标进 `ThumbnailView.icons`（按张数），透镜和 ⌘Y 大卡进 `previews`（cost 按「宽 × 高 × 4 × 2」，48 MB），大卡档在大卡放掉时整档丢；别再加不封顶的图片缓存，改上限前后跑内存探针对数。
+- 后台识字在子进程里（rule §1）：`recognizePendingImages` → `OCR.recognizeTextInHelper`（本 App 带 `--ocr`），不成退回进程内识一次；⌥O 识字、截图翻译、钉图识字照旧进程内，别挪。
 - 界面自检用 SnapshotProbeTests（屏幕外渲染）；禁止为截图在用户使用时弹出面板。

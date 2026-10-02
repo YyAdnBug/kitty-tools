@@ -2,7 +2,7 @@
 // 结论写回 PLAN §10「第二轮体检」。第 3 批按第一版量出的数给缩略图缓存设了上限、两张 ⌘Y 大卡改成用时再建，
 // 探针跟着改成量改后的样子（改前的数在 PLAN §10 第 2 批）。量的是：
 //   ① 剪贴板缩略图缓存（ThumbnailView.icons / previews，三档 72 / 720 / 2400）：三档画过后留多少、两个上限是不是严格的
-//   ② 启动器图标缓存（LauncherIcons）③ 识字模型（OCR，.accurate）常驻多少
+//   ② 启动器图标缓存（LauncherIcons）③ 识字：剪贴板后台识字走子进程（第 4 批）宿主涨多少、每张多久；进程内识（对照）常驻多少
 //   ④ 三块主面板和设置窗「建 + 显示 → 收起 → 清内容 → 放掉窗口」各涨落多少（App 里它们一直留着）；
 //     两张 ⌘Y 大卡照 App 的做法开关（TransientPanel：用时再建、收起后自己放掉），放掉后还留多少；
 //     剪贴板那张先照改前的做法（面板一直留着、不丢大卡档、不调回收接口）量一组对照
@@ -462,12 +462,31 @@ private final class Probe {
 
   // MARK: - 3. 识字
 
-  /// 识一张整屏截图前后的差、闲 10 秒后的差（两次：第一次带着加载模型）
+  /// 先走剪贴板后台识字现在的路（第 4 批：OCR.recognizeTextInHelper，子进程里识）三次：宿主的内存差、每次从起到出结果多久；
+  /// 再在进程内识两次当对照（交互式识字仍走这条）：识完、闲 10 秒后各比之前多多少。子进程那几次必须排在前面——
+  /// 进程内识过一次模型就留在宿主里了
   private func recognize() {
-    report.heading("3. 识字（OCR.recognizeText：RecognizeTextRequest .accurate，同剪贴板）")
+    report.heading("3. 识字（剪贴板后台识字在子进程里：OCR.recognizeTextInHelper；对照：进程内 OCR.recognizeText）")
     let url = images.url(for: shots[0].id)
     let base = report.step("识字之前")
-    var after = base
+    var helperSeconds: [String] = []
+    var helperText = 0
+    for round in 1...3 {
+      let start = Date.now
+      let text = wait { await OCR.recognizeTextInHelper(in: url) }
+      helperSeconds.append(String(format: "%.2f s", Date.now.timeIntervalSince(start)))
+      helperText = text?.count ?? -1
+      spin(0.3)
+      let done = Reading.now()
+      report.row(
+        "子进程里识第 \(round) 次", done,
+        note: "从起子进程到拿到结果 \(helperSeconds[round - 1])，识出 \(helperText) 个字，"
+          + "宿主比识字之前多 \(signed(done.footprint - base.footprint))")
+    }
+    steady()
+    let helped = report.step("稳下来")
+    let helperGrowth = helped.footprint - base.footprint
+    var after = helped
     for round in 1...2 {
       let start = Date.now
       let text = wait { await OCR.recognizeText(in: url) }
@@ -475,17 +494,23 @@ private final class Probe {
       spin(0.3)
       let done = Reading.now()
       report.row(
-        "第 \(round) 次识完", done,
+        "对照：进程内识第 \(round) 次", done,
         note: String(format: "用了 %.2f s，识出 %d 个字", seconds, text?.count ?? -1)
-          + "，比识字之前多 \(mb(done.footprint - base.footprint))")
+          + "，比之前多 \(mb(done.footprint - helped.footprint))")
       spin(10)
       after = Reading.now()
-      report.row("闲 10 秒后", after, note: "比识字之前多 \(mb(after.footprint - base.footprint))")
+      report.row("闲 10 秒后", after, note: "比之前多 \(mb(after.footprint - helped.footprint))")
     }
     report.summary.append(
       (
-        "识字模型（识过一次就常驻）", mb(after.footprint - base.footprint), "放进子进程后约全部",
-        "后面单独一批做（子进程）"
+        "剪贴板后台识字（第 4 批起在子进程里）", "宿主 \(signed(helperGrowth))",
+        "每张 \(helperSeconds.joined(separator: " / "))，识出 \(helperText) 个字",
+        "子进程识完就退，模型不留在 App 里"
+      ))
+    report.summary.append(
+      (
+        "对照：进程内识字（截图翻译、识字、钉图仍走这条，识过一次模型就常驻）",
+        mb(after.footprint - helped.footprint), "—", "已知取舍：当场要结果的不放子进程"
       ))
   }
 

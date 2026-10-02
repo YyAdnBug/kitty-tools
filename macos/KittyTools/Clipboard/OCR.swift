@@ -1,8 +1,11 @@
 // 图片文字识别（Vision，设备端）：剪贴板图片（让截图里的文字能被搜索到）、截图翻译、识字共用；识字还认二维码 / 条码。
+// 剪贴板图片的后台识字放在子进程里（第二轮体检 M2，文件末尾「子进程识字」）：识字模型一加载就常驻 45–52 MB，
+// 让它跟着子进程退掉；截图翻译、识字、钉图这些当场要结果的照旧在进程内识（用过一次模型就留着，已知取舍）。
 // 分段（体检 A32）：按行框的纵向间距和句末短行切段，段内的行按中日文 / 其它文字的规则接起来；截图翻译总是按段送去翻，
 // 识字按设置 › 截图的开关；翻译的「把同一段里的换行接起来」调这里的 joiningLines（纯文本按空行分段），段内接行和识字同一个 joinLine。
 
 import Foundation
+import OSLog
 import Vision
 
 nonisolated enum OCR {
@@ -135,5 +138,132 @@ nonisolated enum OCR {
     }
     .filter { !$0.isEmpty }
     .joined(separator: "\n")
+  }
+
+  // MARK: 子进程识字（剪贴板后台识字）
+
+  /// 子进程就是本 App 的可执行文件带这个参数再起一次：`<可执行文件> --ocr <图片路径>`（入口在 KittyToolsApp.swift 的 Main）
+  static let helperFlag = "--ocr"
+  /// 子进程最多跑这么久，到点杀掉、退回进程内识（整屏截图实测一两秒；长截图慢一些）
+  static let helperTimeout = Duration.seconds(60)
+
+  /// 这次启动是不是子进程识字
+  enum Launch: Equatable {
+    case recognize(URL)
+    /// 带了 --ocr 但参数不对：报错退出，别当成正常启动
+    case usage
+  }
+
+  /// 看命令行（纯函数）：第一个参数不是 --ocr = 正常启动（nil）
+  static func launch(_ arguments: [String]) -> Launch? {
+    guard arguments.dropFirst().first == helperFlag else { return nil }
+    guard arguments.count == 3, !arguments[2].isEmpty else { return .usage }
+    return .recognize(URL(filePath: arguments[2]))
+  }
+
+  /// 子进程里跑的：识字，结果写标准输出。退出码 0 = 识出来了（图里没有文字时文字为空），1 = 识别失败，
+  /// 2 = 图片不在肯识的两处（helperRoots；这时标准输出什么都不写）
+  @concurrent static func runHelper(_ image: URL) async -> Int32 {
+    guard let path = helperPath(image, roots: helperRoots) else { return 2 }
+    guard let data = readWithoutLinks(path),
+      let observations = try? await request().perform(on: data)
+    else { return 1 }
+    let text = String(join(observations).prefix(maxCharacters))
+    FileHandle.standardOutput.write(Data(encode(text).utf8))
+    return 0
+  }
+
+  /// 子进程模式的参数是信任边界：别的进程可以拿本 App 的可执行文件带 --ocr 起一个（让它自己当责任进程），借本 App 的
+  /// 「完全磁盘访问权限」、桌面 / 文稿 / 下载的文件夹授权去读它自己读不到的图，从标准输出拿图里的字。所以只肯识两处的文件：
+  /// 本 App 数据目录的 images（算法同 AppDelegate）和当前用户的临时目录（单测、探针的合成图在那里；它不受隐私保护）。
+  /// 这里给的是真实路径的前缀
+  static var helperRoots: [String] {
+    let support = URL.applicationSupportDirectory
+    let identifier = Bundle.main.bundleIdentifier ?? "com.yy.kitty-tools.native"
+    let temporary = FileManager.default.temporaryDirectory
+    return [
+      helperRoot(
+        anchor: support.deletingLastPathComponent().deletingLastPathComponent(),
+        support.pathComponents.suffix(2) + [identifier, "images"]),
+      helperRoot(anchor: temporary.deletingLastPathComponent(), [temporary.lastPathComponent]),
+    ].compactMap { $0 }
+  }
+
+  /// 一处肯识的目录的真实路径前缀：anchor（用户换不掉的那一层：家目录、临时目录的上一层）解析符号链接，后面几层按字面接上。
+  /// 后面这几层用户自己就能改：谁被换成了指向别处的符号链接，里面文件的真实路径就对不上这个前缀，不认
+  /// （所以不能把整个目录解析完再比——把 images 换成指向「文稿」的软链就绕过去了）
+  static func helperRoot(anchor: URL, _ components: [String]) -> String? {
+    guard let base = realPath(anchor) else { return nil }
+    return ([base == "/" ? "" : base] + components).joined(separator: "/")
+  }
+
+  /// 图片的真实路径（符号链接、`..` 都解析掉）落在 roots 某一处里面才给，否则 nil（不存在的文件也是 nil）
+  static func helperPath(_ image: URL, roots: [String]) -> String? {
+    guard let path = realPath(image), roots.contains(where: { path.hasPrefix($0 + "/") }) else {
+      return nil
+    }
+    return path
+  }
+
+  /// 真实路径；文件不存在是 nil。两步都要：canonicalPath 不跟最后一层的符号链接（文件本身是软链时给的是软链自己），
+  /// resolvingSymlinksInPath 会跟，但它把 /private/var 写成 /var，再过一遍 canonicalPath 才是统一的写法
+  private static func realPath(_ url: URL) -> String? {
+    try? url.resolvingSymlinksInPath().resourceValues(forKeys: [.canonicalPathKey]).canonicalPath
+  }
+
+  /// 按真实路径读文件，路径上哪一层是符号链接都打不开（O_NOFOLLOW_ANY）：检查完到打开之间被人换成软链也读不到别处去。
+  /// 读进内存再识，不让 Vision 按路径重新打开
+  private static func readWithoutLinks(_ path: String) -> Data? {
+    let descriptor = open(path, O_RDONLY | O_NOFOLLOW_ANY)
+    guard descriptor >= 0 else { return nil }
+    return try? FileHandle(fileDescriptor: descriptor, closeOnDealloc: true).readToEnd()
+  }
+
+  /// 子进程的输出：一行头「kitty-ocr <文字的 UTF-8 字节数>」，换行后是文字（已按 maxCharacters 截过）
+  static func encode(_ text: String) -> String { "kitty-ocr \(text.utf8.count)\n\(text)" }
+
+  /// 解析子进程的输出：找不到头、字节数对不上（被截断）都是 nil。头前面允许有别的行——Vision 自己会往标准输出写诊断
+  /// （实测识别失败时写一行「VTEST: error…」），所以从每一行的开头找头，后面剩下的字节数正好对得上才算
+  static func decode(_ output: String) -> String? {
+    var rest = output[...]
+    while true {
+      if rest.hasPrefix("kitty-ocr "), let newline = rest.firstIndex(of: "\n"),
+        let count = Int(rest[..<newline].dropFirst("kitty-ocr ".count))
+      {
+        let text = rest[rest.index(after: newline)...]
+        if text.utf8.count == count { return String(text) }
+      }
+      guard let next = rest.firstIndex(of: "\n") else { return nil }
+      rest = rest[rest.index(after: next)...]
+    }
+  }
+
+  /// 给子进程的环境变量：只带这几样。别把本进程的 DYLD_* 之类带过去——单测宿主的环境里有测试注入，
+  /// 子进程是同一个可执行文件，带着它会跟着去加载测试
+  static func helperEnvironment(_ environment: [String: String]) -> [String: String] {
+    let kept: Set = ["HOME", "USER", "LOGNAME", "TMPDIR", "PATH", "__CF_USER_TEXT_ENCODING"]
+    return environment.filter { kept.contains($0.key) }
+  }
+
+  /// 剪贴板后台识字：起一个子进程识、识完就退，本进程不加载识字模型。返回值同 recognizeText（失败 nil、没有文字 ""）。
+  /// 图片文件不在直接算失败，不起子进程；子进程起不来、超时、非零退出、输出对不上时退回进程内识一次（功能不能丢），记一条日志。
+  /// executable 只给单测换（默认是本 App 自己）
+  static func recognizeTextInHelper(
+    in url: URL, executable: String? = Bundle.main.executablePath
+  ) async -> String? {
+    guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+    let result: Subprocess.Result? =
+      if let executable {
+        try? await Subprocess.run(
+          executable, [helperFlag, url.path], captures: true,
+          environment: helperEnvironment(ProcessInfo.processInfo.environment),
+          timeout: helperTimeout, quality: .utility)
+      } else {
+        nil
+      }
+    if let result, result.status == 0, let text = decode(result.output) { return text }
+    // 状态：-1 = 没起来；15 = 超时被杀；1 = 子进程里识别失败；0 = 输出对不上
+    Log.clipboard.error("子进程识字没成（状态 \(result?.status ?? -1)），退回进程内识一次")
+    return await recognizeText(in: url)
   }
 }

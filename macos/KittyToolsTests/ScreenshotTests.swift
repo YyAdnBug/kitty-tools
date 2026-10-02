@@ -453,6 +453,141 @@ struct ScreenshotTests {
     #expect(text == "")
   }
 
+  /// 子进程识字（第二轮体检 M2）的命令行和输出约定：第一个参数是 --ocr 才是识字模式（参数不对报用法，不当成正常启动），
+  /// 路径带空格、中文原样；输出是一行头 + 文字，头或字节数对不上就不认；给子进程的环境变量不带测试注入那些
+  @Test func helperProtocol() {
+    #expect(OCR.launch(["/Applications/Kitty Tools.app/Contents/MacOS/Kitty Tools"]) == nil)
+    #expect(OCR.launch(["app", "-NSDocumentRevisionsDebugMode", "YES"]) == nil)
+    #expect(
+      OCR.launch(["app", "--ocr", "/tmp/a b/图 1.png"])
+        == .recognize(URL(filePath: "/tmp/a b/图 1.png")))
+    #expect(OCR.launch(["app", "--ocr"]) == .usage)
+    #expect(OCR.launch(["app", "--ocr", ""]) == .usage)
+    #expect(OCR.launch(["app", "--ocr", "/a.png", "extra"]) == .usage)
+    for text in ["", "Hello", "第一行\n第二行\n", "kitty-ocr 3\nabc"] {
+      #expect(OCR.decode(OCR.encode(text)) == text)
+    }
+    #expect(OCR.encode("中文") == "kitty-ocr 6\n中文")
+    // 头前面有别的行（Vision 自己写的诊断）照样认
+    #expect(OCR.decode("VTEST: error: x\nkitty-ocr 6\n中文") == "中文")
+    let broken = [
+      "", "中文", "kitty-ocr 6", "kitty-ocr 6\n中", "kitty-ocr x\n中文", "ocr 6\n中文",
+      "kitty-ocr 6\n中文\n", "x kitty-ocr 6\n中文",
+    ]
+    for output in broken { #expect(OCR.decode(output) == nil, "\(output)") }
+    let environment = OCR.helperEnvironment([
+      "HOME": "/Users/x", "TMPDIR": "/tmp/", "DYLD_INSERT_LIBRARIES": "x",
+      "XCTestConfigurationFilePath": "y",
+    ])
+    #expect(environment == ["HOME": "/Users/x", "TMPDIR": "/tmp/"])
+  }
+
+  /// 真的起子进程识字（单测宿主的可执行文件带 --ocr；图在临时目录，子进程只读图、写标准输出，不碰用户数据）。
+  /// 平时就跑（几秒，和别的测试并行）：入口分流、环境变量、输出约定、退出码这几样只有真起一次才验得到
+  @Test func helperRecognizesInSubprocess() async throws {
+    let directory = FileManager.default.temporaryDirectory.appending(
+      path: "kitty ocr 测试-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    func write(_ lines: [String], to name: String) throws -> URL {
+      let url = directory.appending(path: name)
+      let image = try Self.render(lines)
+      try #require(
+        NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
+      ).write(to: url)
+      return url
+    }
+    func helper(_ url: URL) async throws -> Subprocess.Result {
+      try await Subprocess.run(
+        try #require(Bundle.main.executablePath), [OCR.helperFlag, url.path], captures: true,
+        environment: OCR.helperEnvironment(ProcessInfo.processInfo.environment),
+        timeout: OCR.helperTimeout, quality: .utility)
+    }
+    // 有字的图（路径带空格和中文）：退出码 0，输出按约定解得开
+    let worded = try write(["Helper Process", "子进程识字"], to: "图 1.png")
+    let result = try await helper(worded)
+    #expect(result.status == 0, "\(result.error)")
+    let text = try #require(OCR.decode(result.output), "\(result.output)")
+    #expect(text.contains("Helper Process") && text.contains("子进程识字"), "\(text)")
+    #expect(await OCR.recognizeTextInHelper(in: worded) == text)
+    // 没有字的图：成功、文字为空——和识别失败分得开
+    let blank = try await helper(try write([], to: "空白.png"))
+    #expect(blank.status == 0 && OCR.decode(blank.output) == "")
+    // 坏图：子进程退出码 1、没有输出；整条路（子进程不成 → 退回进程内）最后也是识别失败
+    let corrupt = directory.appending(path: "坏的.png")
+    try Data("不是图片".utf8).write(to: corrupt)
+    let failed = try await helper(corrupt)
+    #expect(failed.status == 1 && OCR.decode(failed.output) == nil)
+    #expect(await OCR.recognizeTextInHelper(in: corrupt) == nil)
+    // 图片文件不在：识别失败，不起子进程
+    #expect(await OCR.recognizeTextInHelper(in: directory.appending(path: "没有.png")) == nil)
+    // 别处的图（/tmp 不是当前用户的临时目录）：子进程不识，退出码 2、标准输出什么都没有；临时目录里指向它的软链也一样。
+    // 整条路上子进程不肯识就退回进程内，功能还在
+    let outside = URL(filePath: "/private/tmp/kitty-ocr-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: outside) }
+    let foreign = outside.appending(path: "图.png")
+    try FileManager.default.copyItem(at: worded, to: foreign)
+    let link = directory.appending(path: "软链.png")
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: foreign)
+    for url in [foreign, link] {
+      let refused = try await helper(url)
+      #expect(refused.status == 2 && refused.output.isEmpty, "\(url.path)：\(refused.status)")
+    }
+    #expect(await OCR.recognizeTextInHelper(in: foreign)?.contains("Helper Process") == true)
+    // 子进程不成（换成只会失败的程序、起不来的路径）：退回进程内识，结果照样有
+    for executable in ["/usr/bin/false", "/nonexistent/kitty", nil] {
+      let fallback = await OCR.recognizeTextInHelper(in: worded, executable: executable)
+      #expect(fallback?.contains("Helper Process") == true, "\(executable ?? "nil")")
+    }
+  }
+
+  /// 子进程模式只识本 App 数据目录的 images 和临时目录里的文件（参数是信任边界：别的进程能拿本 App 的可执行文件去读它
+  /// 自己读不到的图）。按真实路径判断：别处的文件、指向别处的符号链接（文件的、目录的）、用 .. 绕出去的都不认，
+  /// 连 images 自己被换成指向别处的软链也不认。「别处」用临时目录里另一个文件夹和 /usr/bin 里的文件代替，不去碰真的文稿目录
+  @Test func helperOnlyReadsOwnDirectories() throws {
+    let base = FileManager.default.temporaryDirectory.appending(
+      path: "kitty-roots-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: base) }
+    let images = base.appending(path: "data/images")
+    let documents = base.appending(path: "Documents")
+    for directory in [images, documents] {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+    let inside = images.appending(path: "a.png")
+    let secret = documents.appending(path: "x.png")
+    for file in [inside, secret] { try Data("x".utf8).write(to: file) }
+    let roots = [try #require(OCR.helperRoot(anchor: base, ["data", "images"]))]
+    #expect(OCR.helperPath(inside, roots: roots)?.hasSuffix("/data/images/a.png") == true)
+    #expect(OCR.helperPath(secret, roots: roots) == nil)
+    #expect(OCR.helperPath(images.appending(path: "没有.png"), roots: roots) == nil)
+    #expect(OCR.helperPath(images.appending(path: "../../Documents/x.png"), roots: roots) == nil)
+    let link = images.appending(path: "link.png")
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: secret)
+    #expect(OCR.helperPath(link, roots: roots) == nil)
+    let folder = images.appending(path: "folder")
+    try FileManager.default.createSymbolicLink(at: folder, withDestinationURL: documents)
+    #expect(OCR.helperPath(folder.appending(path: "x.png"), roots: roots) == nil)
+    // images 自己被换成指向别处的软链：照着 images 的路径去读别处的文件，不认
+    try FileManager.default.removeItem(at: images)
+    try FileManager.default.createSymbolicLink(at: images, withDestinationURL: documents)
+    #expect(OCR.helperPath(images.appending(path: "x.png"), roots: roots) == nil)
+    // 真的那两处：数据目录按 bundle id 算（Debug / Release 各自的）、临时目录；临时目录里的文件认，别处的不认
+    let real = OCR.helperRoots
+    let identifier = try #require(Bundle.main.bundleIdentifier)
+    #expect(real.count == 2)
+    #expect(real.first?.hasSuffix("/Library/Application Support/\(identifier)/images") == true)
+    #expect(OCR.helperPath(secret, roots: real) != nil)
+    #expect(OCR.helperPath(URL(filePath: "/usr/bin/true"), roots: real) == nil)
+  }
+
+  /// Subprocess 的超时：到点杀掉、拿到非零状态（子进程识字卡住时靠它兜住，之后退回进程内识）。
+  /// 只验「杀得掉」，不验多快：杀它的任务在主线程上，全量单测时主线程常被别的测试占着十几二十秒，会晚到
+  @Test func subprocessTimeout() async throws {
+    let result = try await Subprocess.run("/bin/sleep", ["120"], timeout: .milliseconds(200))
+    #expect(result.status != 0)
+  }
+
   /// size×size 的 sRGB 图，fill 在原点左下的上下文里画
   static func image(size: Int, _ fill: (CGContext) -> Void) throws -> CGImage {
     let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))

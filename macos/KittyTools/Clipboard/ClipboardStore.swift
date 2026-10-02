@@ -495,7 +495,8 @@ import Observation
     else { return }
     isRecognizing = true
     Task {
-      let text = await OCR.recognizeText(in: images.url(for: next.id))
+      // 在子进程里识（识字模型不留在 App 里）；它不成会自己退回进程内识
+      let text = await OCR.recognizeTextInHelper(in: images.url(for: next.id))
       isRecognizing = false
       if let text, let index = items.firstIndex(where: { $0.id == next.id }) {
         items[index].ocrText = text
