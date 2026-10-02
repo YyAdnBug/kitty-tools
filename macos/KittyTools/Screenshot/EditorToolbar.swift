@@ -551,15 +551,19 @@ final class RecordBar: HUDBar {
     case .microphone:
       let input = device ? input : nil
       return Self.microphoneTip(on: on, device: input?.name, bluetooth: input?.bluetooth ?? false)
-    case .keys: return Self.keysTip(on: on)
+    case .keys:
+      return Self.keysTip(
+        on: on, shortcutsOnly: defaults.bool(forKey: Prefs.screenRecordKeysShortcutsOnly))
     default: return "显示点按：\(on ? "开" : "关")"
     }
   }
 
   /// 显示按键开关的提示（纯函数，配单测）：开着时提醒一句——按下的键都会进画面（不承诺密码不会显示：终端里输的密码
-  /// 这类不一定走系统的安全输入）
-  nonisolated static func keysTip(on: Bool) -> String {
-    on ? "显示按键：开\n按下的键会录进画面，要输密码先关掉" : "显示按键：关"
+  /// 这类不一定走系统的安全输入）；设置里选了只显示快捷键时打字本来就不进画面，不用提密码，说明显示的是什么
+  nonisolated static func keysTip(on: Bool, shortcutsOnly: Bool = false) -> String {
+    guard on else { return "显示按键：关" }
+    return shortcutsOnly
+      ? "显示按键：开\n只显示快捷键，打字不进画面" : "显示按键：开\n按下的键会录进画面，要输密码先关掉"
   }
 
   /// 麦克风开关的提示（纯函数，配单测）：开时带设备名；当前输入是蓝牙时（开关两态都）再加一句，免得打开了才发现音质变差

@@ -1,5 +1,6 @@
 // 录屏会话（录屏第 1 批，PLAN §10「录屏与录音」；框选是 RegionSelector.record / SelectionView 的 .record 模式）：
-// 系统录制管线 SCRecordingOutput 直接写 mp4（H.264、30 / 60 fps、光标可关、sRGB，设置 › 截图「录屏」），先写到和快速保存目录
+// 系统录制管线 SCRecordingOutput 直接写 mp4（H.264 / HEVC、原始 / 标准清晰度、30 / 60 fps、光标可关、sRGB，设置 › 截图「录屏」；
+// 它没有码率开关，文件大小只能靠编码和分辨率调：第二轮体检 R1，见 Sharpness / Codec），先写到和快速保存目录
 // 同一个卷、系统不清理的地方（workFile：Application Support 或保存目录里的隐藏文件），写完挪进快速保存目录（同卷只是改名）。
 // 选区按相交面积最大的屏录；整屏不设 sourceRect。
 // 开录前先倒数（录屏第 2 批，拍板 R9-a，设置里可选 0 / 3 / 5 秒）：数完才开流、倒数不进文件；倒数期间边框走蚂蚁线、
@@ -116,8 +117,29 @@ nonisolated final class RecordingEvents: NSObject, SCRecordingOutputDelegate, SC
 final class ScreenRecorder: NSObject {
   /// 选区短边至少这么多点（13 条默认细节：太小的录出来看不清）
   static let minimumSide: CGFloat = 64
-  /// 宽或高超过它就等比缩（第 0 批实测：H.264 硬件编码卡边长，4096 × 2880、2560 × 4096 是硬件，4224 宽就退软件编码）
-  nonisolated static let maxSide = 4096
+  /// 清晰度（第二轮体检 R1）：系统的录制输出没有码率 / 画质开关，码率跟着「编码 × 分辨率」走，文件嫌大只能从这两样下手
+  /// （调研实测，同一段内容比原始 + H.264：标准小 55%，HEVC 小 37%，标准 + HEVC 小 68%；降帧率只小 5%）
+  nonisolated enum Sharpness: String, Sendable {
+    /// 屏幕的像素（Retina 屏每点 2 像素）
+    case original
+    /// 按 1x 点尺寸录：Retina 屏上宽高各减半；1x 的屏上和原始一样
+    case standard
+  }
+
+  /// 编码。宽或高超过 maxSide 就等比缩：硬件编码卡边长（M3 实测：H.264 4096 × 2880、2560 × 4096 是硬件，4224 宽就退软件
+  /// 编码、跟不上实时；HEVC 8192 × 4320 硬件能编）。ponytail: HEVC 的上限只用 VideoToolbox 探过硬件能不能编，
+  /// 没有 5K / 6K 屏整屏实录过；真录不了就把它也降到 4096
+  nonisolated enum Codec: String, Sendable {
+    case h264, hevc
+
+    var type: AVVideoCodecType { self == .hevc ? .hevc : .h264 }
+    var maxSide: Int { self == .hevc ? 8192 : 4096 }
+
+    /// 这次真用哪个：选了 HEVC 但这台机器的录制输出不支持（和芯片有关）就退回 H.264
+    static func effective(_ wanted: Codec, available: [AVVideoCodecType]) -> Codec {
+      wanted == .hevc && !available.contains(.hevc) ? .h264 : wanted
+    }
+  }
   /// 临时文件所在卷剩余不到这么多就停
   static let minimumFreeBytes: Int64 = 1_000_000_000
 
@@ -263,10 +285,13 @@ final class ScreenRecorder: NSObject {
   private let displayID: CGDirectDisplayID
   private let screenFrame: CGRect
   private let scale: CGFloat
-  /// 设置 › 截图「录屏」（开录时读一次）：帧率 30 / 60、开录前倒数几秒、画不画光标
+  /// 设置 › 截图「录屏」（开录时读一次）：帧率 30 / 60、开录前倒数几秒、画不画光标、清晰度、编码、按键里只显示快捷键
   private let frameRate: Int
   private let countdown: Int
   private let showsCursor: Bool
+  private let sharpness: Sharpness
+  private let codec: Codec
+  private let shortcutsOnly: Bool
   /// 录制条的四个开关（开录时读一次）；microphone 在问过授权后改成这次真录不录，showsKeys 在看过辅助功能授权后
   /// 改成这次真显不显示
   private var options: Options
@@ -351,6 +376,9 @@ final class ScreenRecorder: NSObject {
       frameRate = 1
       countdown = 0
       showsCursor = false
+      sharpness = .original
+      codec = .h264
+      shortcutsOnly = false
       options = audioOnly
       temp = Self.workFile(for: directory, medium: .audio).deletingPathExtension()
         .appendingPathExtension("mp4")
@@ -358,6 +386,13 @@ final class ScreenRecorder: NSObject {
       frameRate = defaults.integer(forKey: Prefs.screenRecordFrameRate) == 60 ? 60 : 30
       countdown = Self.countdownSeconds(defaults.integer(forKey: Prefs.screenRecordCountdown))
       showsCursor = defaults.object(forKey: Prefs.screenRecordShowsCursor) as? Bool ?? true
+      sharpness =
+        defaults.string(forKey: Prefs.screenRecordSharpness).flatMap(Sharpness.init) ?? .original
+      // 选了 HEVC 但录制输出不支持（和芯片有关）：退回 H.264。这里就定下来，输出尺寸的上限跟着真用的编码走
+      codec = Codec.effective(
+        defaults.string(forKey: Prefs.screenRecordCodec).flatMap(Codec.init) ?? .h264,
+        available: SCRecordingOutputConfiguration().availableVideoCodecTypes)
+      shortcutsOnly = defaults.bool(forKey: Prefs.screenRecordKeysShortcutsOnly)
       options = Options(defaults)
       temp = Self.workFile(for: directory)
     }
@@ -384,7 +419,8 @@ final class ScreenRecorder: NSObject {
       result.keysDenied = keysDenied
       // 只录声音的没有画面可取：波形 poster 由 AudioRecorder 画
       if medium == .screen, result.moved, let file = result.file {
-        let size = Self.outputSize(points: region.size, scale: scale)
+        let size = Self.outputSize(
+          points: region.size, scale: scale, sharpness: sharpness, codec: codec)
         result.poster = await Self.poster(
           of: file, pixels: CGSize(width: size.width, height: size.height))
       }
@@ -435,7 +471,7 @@ final class ScreenRecorder: NSObject {
         keysBottom: options.showsKeys
           ? InputOverlay.keysBottom(
             region: region, screen: screenFrame, visible: visible, isFullScreen: isFullScreen)
-          : nil)
+          : nil, shortcutsOnly: shortcutsOnly)
       overlay.present()
       inputOverlay = overlay
     }
@@ -564,7 +600,7 @@ final class ScreenRecorder: NSObject {
       ? (width: Self.audioOnlyPixels, height: Self.audioOnlyPixels)
       : Self.outputSize(
         points: isFullScreen ? filter.contentRect.size : source.size,
-        scale: CGFloat(filter.pointPixelScale))
+        scale: CGFloat(filter.pointPixelScale), sharpness: sharpness, codec: codec)
     configuration.width = size.width
     configuration.height = size.height
     if !isFullScreen { configuration.sourceRect = source }
@@ -579,7 +615,7 @@ final class ScreenRecorder: NSObject {
     microphoneID = options.microphone ? AVCaptureDevice.default(for: .audio)?.uniqueID : nil
     let recording = SCRecordingOutputConfiguration()
     recording.outputURL = temp
-    recording.videoCodecType = .h264
+    recording.videoCodecType = codec.type
     recording.outputFileType = .mp4
     let output = SCRecordingOutput(configuration: recording, delegate: delegate)
     let stream = SCStream(filter: filter, configuration: configuration, delegate: delegate)
@@ -1089,14 +1125,18 @@ final class ScreenRecorder: NSObject {
 
   // MARK: 纯函数（配单测）
 
-  /// 输出像素：点 × 每点像素；宽或高超过 4096 时等比缩到都不超过；宽高取偶数（H.264）、至少 2
-  nonisolated static func outputSize(points: CGSize, scale: CGFloat) -> (width: Int, height: Int) {
+  /// 输出像素：点 × 每点像素（标准清晰度按每点 1 像素）；宽或高超过这种编码的硬编上限（H.264 4096、HEVC 8192）时等比缩到
+  /// 都不超过；宽高取偶数、至少 2
+  nonisolated static func outputSize(
+    points: CGSize, scale: CGFloat, sharpness: Sharpness = .original, codec: Codec = .h264
+  ) -> (width: Int, height: Int) {
+    let scale = sharpness == .standard ? 1 : scale
     var width = points.width * scale
     var height = points.height * scale
     let longest = max(width, height)
-    if longest > CGFloat(maxSide) {
-      width *= CGFloat(maxSide) / longest
-      height *= CGFloat(maxSide) / longest
+    if longest > CGFloat(codec.maxSide) {
+      width *= CGFloat(codec.maxSide) / longest
+      height *= CGFloat(codec.maxSide) / longest
     }
     let even = { (value: CGFloat) in max(2, Int(value.rounded()) / 2 * 2) }
     return (even(width), even(height))

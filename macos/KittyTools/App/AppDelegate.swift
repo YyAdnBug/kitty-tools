@@ -1083,14 +1083,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 本机识别文字 → 原文记进剪贴板历史 → 翻译浮窗走现有的多服务翻译（截图翻译、截图工具栏的翻译共用）。
   /// 总是按段送去翻（体检 A32：同一段的行接起来、段间空一行，不看「接起来」开关），记进历史的原文也是这一份
   private func translateImage(_ image: CGImage) async {
-    // ponytail: 识别期间不显示「识别中」：常见选区 0.04–0.13s，整屏密集文字约 0.9s；大选区嫌慢再加
     // 同识字：失败不为一句话开浮窗
-    guard let lines = await OCR.recognizeLines(in: image) else {
+    guard let lines = await recognizing({ await OCR.recognizeLines(in: image) }) else {
       return island.show("文字识别失败", detail: "请重试", tone: .error)
     }
     guard !lines.isEmpty else {
       return island.show("没有识别到文字", detail: "可以把选区框大一些再试", tone: .warning)
     }
+    // 没有结果岛（接着开浮窗）：「识别中」出过就收掉
+    if island.content?.title == Self.recognizingTitle { island.dismiss() }
     let text = OCR.text(lines, joined: true, separator: "\n\n")
     // 原文不写剪贴板、只记进历史（同一个入口：过敏感文本过滤、已有同文只挪到最前）
     Paster.recordText?(text)
@@ -1098,12 +1099,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     presentTranslate()
   }
 
+  /// 识字慢的时候先出「识别中」（第二轮体检 R3）：常见选区 0.04–0.13 s，不出；整屏密集文字约 0.9 s，过了 0.3 s 还没出结果
+  /// 刘海岛先说一声，结果出来原地换掉（识字、截图翻译、钉图上的识字 / 翻译都走这里）
+  private static let recognizingTitle = "识别中…"
+
+  private func recognizing<T>(_ work: () async -> T) async -> T {
+    await island.showIfSlow(Self.recognizingTitle, work)
+  }
+
   /// 有二维码 / 条码就复制它的内容，否则复制识别出的文字（设置里开了就把换行合成一段）；记进剪贴板历史
   private func copyRecognizedText(in image: CGImage) async {
-    let codes = await OCR.barcodes(in: image)
+    let (codes, lines) = await recognizing { () -> ([String], [OCR.Line]?) in
+      let codes = await OCR.barcodes(in: image)
+      // 有码就不用再识字
+      return (codes, codes.isEmpty ? await OCR.recognizeLines(in: image) : [])
+    }
     var text = codes.joined(separator: "\n")
     if text.isEmpty {
-      guard let lines = await OCR.recognizeLines(in: image) else {
+      guard let lines else {
         return island.show("文字识别失败", detail: "请重试", tone: .error)
       }
       // 设置 › 截图开着「接起来」：同一段的行接起来、段间换行（体检 A32）；关着一行一行原样

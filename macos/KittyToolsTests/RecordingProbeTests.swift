@@ -751,6 +751,87 @@ struct RecordingProbeTests {
       ] + media.summary)
   }
 
+  // MARK: - 第二轮体检 R1：清晰度 / 编码真录
+
+  /// 清晰度和编码真录（按需）：三种组合各录约 2 s（不倒数、不录声音、不画光标、不显示点按 / 按键；主屏可见区里 640 × 360 点，
+  /// 垫一块来回挪的白窗口让画面一直有新帧），看出来的文件：标准清晰度 = 点尺寸（640 × 360），原始 = 点 × 每点像素；
+  /// 编码 hvc1 / avc1；能播、约 2 s。顺带把它压缩一遍（VideoExport.compress）：尺寸不变、H.264。只跑这一个：
+  ///   -only-testing:'KittyToolsTests/RecordingProbeTests/formatTake(_:)'
+  @Test(arguments: ["standard-hevc", "original-hevc", "standard-h264"])
+  func formatTake(_ mode: String) async throws {
+    let env = try await Env.make()
+    let parts = mode.split(separator: "-").map(String.init)
+    let sharpness = try #require(ScreenRecorder.Sharpness(rawValue: parts[0]))
+    let codec = try #require(ScreenRecorder.Codec(rawValue: parts[1]))
+    let suite = "kitty-test-format-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    defaults.set(0, forKey: Prefs.screenRecordCountdown)
+    defaults.set(30, forKey: Prefs.screenRecordFrameRate)
+    defaults.set(false, forKey: Prefs.screenRecordShowsCursor)
+    defaults.set(false, forKey: Prefs.screenRecordSystemAudio)
+    defaults.set(false, forKey: Prefs.screenRecordMicrophone)
+    defaults.set(sharpness.rawValue, forKey: Prefs.screenRecordSharpness)
+    defaults.set(codec.rawValue, forKey: Prefs.screenRecordCodec)
+    let folder = Self.directory.appending(path: "format-\(mode)")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let visible = env.screen.visibleFrame
+    let region = CGRect(x: visible.minX + 240, y: visible.midY - 180, width: 640, height: 360)
+    let ground = NSWindow(
+      contentRect: CGRect(x: region.minX + 60, y: region.midY - 60, width: 200, height: 120),
+      styleMask: [.borderless], backing: .buffered, defer: false)
+    ground.backgroundColor = .white
+    ground.level = .floating
+    ground.isReleasedWhenClosed = false
+    ground.orderFrontRegardless()
+    defer { ground.orderOut(nil) }
+    var finished: ScreenRecorder.Result?
+    let recorder = try #require(
+      ScreenRecorder(region: region, directory: folder, defaults: defaults) { finished = $0 })
+    let existing = Set(NSApp.windows.map(ObjectIdentifier.init))
+    recorder.start()
+    var started = false
+    for _ in 0..<100 where !started {
+      try await Task.sleep(for: .milliseconds(50))
+      started = NSApp.windows.contains {
+        String(describing: type(of: $0)) == "NSStatusBarWindow" && $0.isVisible
+          && !existing.contains(ObjectIdentifier($0))
+      }
+    }
+    try #require(started, "5 s 内没开始录")
+    let origin = ground.frame.origin
+    for step in 0..<120 {
+      ground.setFrameOrigin(CGPoint(x: origin.x + CGFloat(step % 40) * 6, y: origin.y))
+      try await Task.sleep(for: .milliseconds(16))
+    }
+    recorder.stop()
+    for _ in 0..<300 where finished == nil { try await Task.sleep(for: .milliseconds(50)) }
+    let result = try #require(finished, "15 s 内没收尾")
+    #expect(result.reason == .user && result.moved)
+    let file = try #require(result.file)
+    let media = await inspect(file)
+    let scale = sharpness == .standard ? 1 : env.screen.backingScaleFactor
+    #expect(media.playable && media.codec == (codec == .hevc ? "hvc1" : "avc1"), "\(media.codec)")
+    #expect(media.size == CGSize(width: 640 * scale, height: 360 * scale), "\(media.size)")
+    #expect(abs(media.duration - 2) < 0.6, "时长 \(media.duration)")
+    #expect(result.poster != nil)
+    // 压缩：尺寸不变、H.264、文件在
+    let target = VideoExport.compressedTarget(for: file, in: folder)
+    try await VideoExport.compress(file, to: target) { _ in }
+    let small = await inspect(target)
+    #expect(small.playable && small.codec == "avc1" && small.size == media.size)
+    let megabits = { (media: ProbeMedia) in
+      String(format: "%.1f Mbps", Double(media.bytes) * 8 / max(media.duration, 0.1) / 1e6)
+    }
+    note(
+      "清晰度 / 编码真录（第二轮体检 R1）：\(mode)",
+      [
+        "录出来：\(Int(media.size.width))×\(Int(media.size.height)) \(media.codec)，\(media.bytes) 字节，"
+          + "\(String(format: "%.2f", media.duration)) s，约 \(megabits(media))",
+        "压缩后：\(Int(small.size.width))×\(Int(small.size.height)) \(small.codec)，\(small.bytes) 字节，约 \(megabits(small))",
+      ])
+  }
+
   // MARK: - 手测反馈第 1 批：点按圈录进画面
 
   /// 开着显示点按真录约 2 s（不倒数、不录声音、不画光标；主屏可见区里 640 × 360 点），选区里垫一块白色的白名单窗口。

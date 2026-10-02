@@ -27,6 +27,14 @@ struct HotKey: Codable, Hashable {
     self = key
   }
 
+  /// 算不算一次「快捷键」（录屏「只显示快捷键」，InputOverlay）：带 ⌘ / ⌃ / ⌥ 的组合，或者不带它们的 F 键、Esc——这两样
+  /// 不出字、是一步操作，观众从画面上看不出按了什么。字母数字符号、空格、⇧ 加它们是打字；↩ ⇥ ⌫ 方向键是打字时的编辑和移动
+  /// （结果在画面上看得到，按得又多），都不算
+  var isShortcut: Bool {
+    modifiers & UInt32(cmdKey | optionKey | controlKey) != 0
+      || Self.functionKeys.keys.contains(Int(keyCode)) || Int(keyCode) == kVK_Escape
+  }
+
   /// 按键事件的键位和修饰键原样记下（不管能不能当全局热键）：录屏的按键提示拿它的 display 当键名（InputOverlay），
   /// 和快捷键页、菜单同一套写法，不另写一份映射
   init(keyCode: UInt16, flags: NSEvent.ModifierFlags) {

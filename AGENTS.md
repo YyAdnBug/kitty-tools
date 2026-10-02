@@ -59,7 +59,9 @@ xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools test
 # 点按圈录进画面（开着显示点按真录 2 s、直接调 InputOverlay 的按下 / 拖动入口、从 mp4 取帧验，手测反馈第 1 批）不用 _MIC，
 # 跑 .../RecordingProbeTests/inputOverlayTake()；
 # 按键胶囊录进画面（开着显示按键真录 3 s、直接调 InputOverlay.showKey、从 mp4 取帧验胶囊在画面里、停手后淡出，手测反馈第 2 批；
-# 辅助功能授权是注入的，不发合成按键）不用 _MIC，跑 .../RecordingProbeTests/keysOverlayTake()）
+# 辅助功能授权是注入的，不发合成按键）不用 _MIC，跑 .../RecordingProbeTests/keysOverlayTake()；
+# 清晰度 / 编码真录（标准 + HEVC、原始 + HEVC、标准 + H.264 各录约 2 s，验文件的尺寸和编码，再各压缩一遍，第二轮体检第 5 批）
+# 不用 _MIC，跑 '.../RecordingProbeTests/formatTake(_:)'）
 TEST_RUNNER_KITTY_LIVE_RECORD_DIR=/tmp/kitty-record xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:KittyToolsTests/RecordingProbeTests
 

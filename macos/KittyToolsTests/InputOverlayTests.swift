@@ -187,6 +187,26 @@ struct InputOverlayTests {
     #expect(name(kVK_LeftArrow, [.function, .numericPad, .capsLock]) == "←")
   }
 
+  /// 只显示快捷键（第二轮体检 R2）：带 ⌘ / ⌃ / ⌥ 的组合显示（有没有 ⇧ 都算）；不带它们的只有 Esc 和 F 键显示——
+  /// 这两样不出字、是一步操作。字母数字、空格、⇧ 加字母是打字，↩ ⇥ ⌫ 方向键是打字时的编辑和移动，不显示
+  @Test func shortcutsOnlySkipsTyping() {
+    func shows(_ keyCode: Int, _ flags: NSEvent.ModifierFlags = []) -> Bool {
+      HotKey(keyCode: UInt16(keyCode), flags: flags).isShortcut
+    }
+    #expect(shows(kVK_ANSI_C, .command) && shows(kVK_ANSI_A, .control))
+    #expect(shows(kVK_Space, .option) && shows(kVK_ANSI_Z, [.command, .shift]))
+    #expect(shows(kVK_LeftArrow, .option) && shows(kVK_Return, .command))
+    #expect(shows(kVK_Escape) && shows(kVK_F5) && shows(kVK_F5, .shift))
+    for typing in [kVK_ANSI_A, kVK_ANSI_1, kVK_ANSI_Period, kVK_Space] {
+      #expect(!shows(typing) && !shows(typing, .shift) && !shows(typing, .capsLock))
+    }
+    for editing in [
+      kVK_Return, kVK_Tab, kVK_Delete, kVK_ForwardDelete, kVK_LeftArrow, kVK_UpArrow, kVK_Home,
+    ] {
+      #expect(!shows(editing) && !shows(editing, .shift) && !shows(editing, [.function]))
+    }
+  }
+
   /// 抽出共用的构造后，录制快捷键的规则不变：没有 ⌘ / ⌃ / ⌥ 的组合（F 键除外）不能当全局热键
   @Test func hotKeyRecordingRulesUnchanged() throws {
     func event(_ keyCode: Int, _ flags: NSEvent.ModifierFlags) throws -> NSEvent {

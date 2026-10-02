@@ -298,18 +298,22 @@ struct ScreenshotSnapshotTests {
         dark: dark, to: "\(out)/shot-shelf-compact-hover\(dark ? "-dark" : "").png")
     }
 
-    // 录屏的视频卡（第 3 批）：飞行卡片落地后交接的同一张卡（最后一帧 + 播放符号 + 左下角时长 + 文件夹角标）、悬停（只有
-    // 「拷贝」+ 关闭 / 在访达中显示）、矮卡（播放符号缩小；悬停胶囊只剩图标、没有四角圆钮）、没取到最后一帧的占位
-    for (name, size, poster, hovered) in [
-      ("shot-video-landed", card, true, false), ("shot-video-hover", card, true, true),
-      ("shot-video-compact", compact, true, false),
-      ("shot-video-compact-hover", compact, true, true),
-      ("shot-video-placeholder", card, false, false),
+    // 录屏的视频卡（第 3 批）：飞行卡片落地后交接的同一张卡（最后一帧 + 播放符号 + 左下角时长 + 文件夹角标）、悬停（「拷贝」
+    // 「转成 GIF」+ 关闭 / 在访达中显示，第二轮体检 R1 起右下角多一个「压缩」圆钮）、矮卡（播放符号缩小；悬停胶囊只剩图标、
+    // 没有四角圆钮）、没取到最后一帧的占位；压缩出来的那张悬停时右下角没有「压缩」
+    for (name, size, poster, hovered, compressed) in [
+      ("shot-video-landed", card, true, false, false),
+      ("shot-video-hover", card, true, true, false),
+      ("shot-video-compact", compact, true, false, false),
+      ("shot-video-compact-hover", compact, true, true, false),
+      ("shot-video-placeholder", card, false, false, false),
+      ("shot-video-compressed-hover", card, true, true, true),
     ] {
       let video = ShelfCard(
-        recording: desktopFolder.appending(path: "录屏 2026-09-30 10.00.00.mp4"), seconds: 83,
+        file: .video(desktopFolder.appending(path: "录屏 2026-09-30 10.00.00.mp4"), seconds: 83),
         poster: poster ? shot : nil, source: CGRect(origin: .zero, size: size),
-        rect: CGRect(origin: .zero, size: size), screen: nil, panel: NSPanel(), shelf: ShotShelf())
+        rect: CGRect(origin: .zero, size: size), screen: nil, panel: NSPanel(), shelf: ShotShelf(),
+        isCompressed: compressed)
       video.isHovered = hovered
       for dark in [false, true] {
         try snapshot(
@@ -546,7 +550,8 @@ struct ScreenshotSnapshotTests {
     let second = try overlay(on: root, frame: bounds)
     second.press(0, at: CGPoint(x: 905, y: 225), animated: false)
     try shoot(
-      offscreen(root), "record-clicks-desktop", crop: CGRect(x: 140, y: 120, width: 960, height: 580)
+      offscreen(root), "record-clicks-desktop",
+      crop: CGRect(x: 140, y: 120, width: 960, height: 580)
     )
     made.close()
     second.close()

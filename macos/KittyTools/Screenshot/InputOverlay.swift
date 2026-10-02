@@ -24,6 +24,8 @@
 // - 按住不放的重复不追加，在最后一个记号后面写 ×n；放不下时从左边丢；
 // - 停手 1.6 s 淡出并清空（Keys 是纯状态、时刻注入），再按键重新 pop 出来（减弱动态效果只淡入）；
 // - 位置：离被录区域底边 32 pt；录制 HUD 落在被录区域里时（整屏录制：可见区底部居中）放在 HUD 上方 24 pt，不和它叠着。
+// - 只显示快捷键（第二轮体检 R2，设置 › 截图「显示按键时」）：带 ⌘ / ⌃ / ⌥ 的组合、Esc、F 键才显示（HotKey.isShortcut），
+//   打字（字母数字符号、空格、⇧ 加它们）和打字时的 ↩ ⇥ ⌫ 方向键不进画面。
 // 按键来源：global 监听收别的 App 的 keyDown（要辅助功能授权，ScreenRecorder 开录前看过；系统的安全输入开着时收不到，
 // 系统行为）；local 监听收本 App 的面板 / 截图遮罩当 key 时的，本 App 自己的密码框拿着键盘时不显示；本 App 的全局快捷键
 // 被 Carbon 热键吃掉、两个监听都收不到，由 AppDelegate 在热键触发时直接调 showKey（停止录屏那一下不显示）；
@@ -110,6 +112,9 @@ final class InputOverlay {
   private let showsClicks: Bool
   /// 按键胶囊底边的 y（全局坐标，keysBottom 算的）；nil = 不显示按键
   private let keysBottom: CGFloat?
+  /// 只显示快捷键（设置 › 截图「显示按键时」）：监听收到的键里只有 HotKey.isShortcut 的进胶囊，打字不显示。
+  /// AppDelegate 补给的本 App 全局快捷键不过这一道（它们本来就是快捷键）
+  private let shortcutsOnly: Bool
   private(set) var keys = Keys()
   /// 显示着的按键胶囊（正在淡出的不算：那时再按键是新的一颗）和里面的字
   private var keysBar: CALayer?
@@ -118,10 +123,13 @@ final class InputOverlay {
   private var keysIdle: Task<Void, Never>?
 
   /// frame：被录的区域（点，AppKit 全局坐标；整屏录制就是那块屏）；clicks：画不画点按圈；keysBottom：给了就显示按键
-  /// （胶囊底边的 y，全局坐标）。只建窗口，present 才露出来、装监听
-  init(frame: CGRect, clicks: Bool = true, keysBottom: CGFloat? = nil) {
+  /// （胶囊底边的 y，全局坐标）；shortcutsOnly：按键里只显示快捷键。只建窗口，present 才露出来、装监听
+  init(
+    frame: CGRect, clicks: Bool = true, keysBottom: CGFloat? = nil, shortcutsOnly: Bool = false
+  ) {
     showsClicks = clicks
     self.keysBottom = keysBottom
+    self.shortcutsOnly = shortcutsOnly
     panel = NSPanel(
       contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,
       defer: false)
@@ -211,8 +219,9 @@ final class InputOverlay {
 
   private func keyDown(_ event: NSEvent) {
     guard !Self.isSynthesized(event) else { return }
-    showKey(
-      HotKey(keyCode: event.keyCode, flags: event.modifierFlags).display, isRepeat: event.isARepeat)
+    let key = HotKey(keyCode: event.keyCode, flags: event.modifierFlags)
+    guard !shortcutsOnly || key.isShortcut else { return }
+    showKey(key.display, isRepeat: event.isARepeat)
   }
 
   /// 立刻收（停止 / 放弃 / 取消那一刻，同边框和 HUD）：卸监听、收窗口、清掉还在的圈和按键胶囊

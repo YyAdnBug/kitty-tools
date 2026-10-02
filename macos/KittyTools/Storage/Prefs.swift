@@ -113,6 +113,12 @@ enum Prefs {
   nonisolated static let screenRecordCountdownChoices = [0, 3, 5]
   /// 录屏里画光标（默认开）
   static let screenRecordShowsCursor = "screenRecordShowsCursor"
+  /// 录屏的清晰度和编码（第二轮体检 R1，设置 › 截图「录屏」）：ScreenRecorder.Sharpness / Codec 的 rawValue——
+  /// 原始（默认，按屏幕像素）/ 标准（按 1x 点尺寸）；H.264（默认）/ HEVC
+  static let screenRecordSharpness = "screenRecordSharpness"
+  static let screenRecordCodec = "screenRecordCodec"
+  /// 显示按键时只显示快捷键（R2，默认关 = 全部按键）：带 ⌘ / ⌃ / ⌥ 的组合、Esc、F 键才进画面，打字不显示
+  nonisolated static let screenRecordKeysShortcutsOnly = "screenRecordKeysShortcutsOnly"
   /// 录制条的四个开关，记住上次（录屏第 4 批；设置页不重复，拍板 C4-a）：录系统声音（默认开）、录麦克风（默认关；
   /// 没问过授权时打开只记偏好，按开始、遮罩收起后才问）、显示点按（默认关；点按处画圈，自己画的 InputOverlay）、
   /// 显示按键（手测反馈第 2 批，默认关；按下的键显示在画面底部的胶囊里，同一个 InputOverlay。全局键盘监听要辅助功能授权：
@@ -182,6 +188,9 @@ enum Prefs {
       screenRecordFrameRate: 30,
       screenRecordCountdown: 3,
       screenRecordShowsCursor: true,
+      screenRecordSharpness: ScreenRecorder.Sharpness.original.rawValue,
+      screenRecordCodec: ScreenRecorder.Codec.h264.rawValue,
+      screenRecordKeysShortcutsOnly: false,
       screenRecordSystemAudio: true,
       screenRecordMicrophone: false,
       screenRecordShowsClicks: false,

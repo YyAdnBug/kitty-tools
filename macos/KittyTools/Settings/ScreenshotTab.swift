@@ -1,6 +1,7 @@
 // 设置 › 截图：⌘S 快速保存的位置（文件夹图标 + 访达里的名字，选过的能恢复默认，体检 A28；录屏、录音也存这里）、快门声（可试听）、
 // 截图后留不留常驻缩略图（体检 D18）、识字是否把同一段里的换行接起来（开关旁边实时对照效果，体检 A32）、
-// 录屏（录屏第 2 批，拍板 C4-a）：帧率 30 / 60、开始前倒数、显示光标；录音（录音第 6 批，拍板 A2-a）：来源 麦克风 / 系统声音 / 两者
+// 录屏（录屏第 2 批，拍板 C4-a）：帧率 30 / 60、清晰度 原始 / 标准、编码 H.264 / HEVC（第二轮体检 R1：文件嫌大时调这两样）、
+// 开始前倒数、显示光标、显示按键时 全部按键 / 只显示快捷键（R2）；录音（录音第 6 批，拍板 A2-a）：来源 麦克风 / 系统声音 / 两者
 // （手测反馈第 3 批起录音控制条待录时也能切，两边读写同一个偏好）、按快捷键后立即开始录音（手测反馈第 3 批，默认关：
 // 先出控制条，点 ● 或再按一次才开始）。
 // 框选、标注、长截图、录屏的按键不写进页里（N11）：一句话 +「查看全部快捷键…」打开速查表；全局快捷键在「快捷键」页。
@@ -17,6 +18,9 @@ struct ScreenshotTab: View {
   @AppStorage(Prefs.screenRecordFrameRate) private var frameRate = 30
   @AppStorage(Prefs.screenRecordCountdown) private var countdown = 3
   @AppStorage(Prefs.screenRecordShowsCursor) private var showsCursor = true
+  @AppStorage(Prefs.screenRecordSharpness) private var sharpness = ScreenRecorder.Sharpness.original
+  @AppStorage(Prefs.screenRecordCodec) private var codec = ScreenRecorder.Codec.h264
+  @AppStorage(Prefs.screenRecordKeysShortcutsOnly) private var shortcutsOnly = false
   @AppStorage(Prefs.audioRecordSource) private var audioSource = AudioRecorder.Source.microphone
   @AppStorage(Prefs.audioRecordStartsImmediately) private var startsImmediately = false
 
@@ -84,16 +88,33 @@ struct ScreenshotTab: View {
           Text("60 fps").tag(60)
         }
         .pickerStyle(.segmented)
+        Picker("清晰度", selection: $sharpness) {
+          Text("原始").tag(ScreenRecorder.Sharpness.original)
+          Text("标准").tag(ScreenRecorder.Sharpness.standard)
+        }
+        .pickerStyle(.segmented)
+        Picker("编码", selection: $codec) {
+          Text("H.264").tag(ScreenRecorder.Codec.h264)
+          Text("HEVC").tag(ScreenRecorder.Codec.hevc)
+        }
+        .pickerStyle(.segmented)
         Picker("开始前倒数", selection: $countdown) {
           Text("不倒数").tag(0)
           Text("3 秒").tag(3)
           Text("5 秒").tag(5)
         }
         Toggle("显示光标", isOn: $showsCursor)
+        Picker("显示按键时", selection: $shortcutsOnly) {
+          Text("全部按键").tag(false)
+          Text("只显示快捷键").tag(true)
+        }
+        .pickerStyle(.segmented)
       } header: {
         Text("录屏")
       } footer: {
-        caption("60 fps 更顺，文件大约大一半；大屏上可能录不满 60。")
+        caption(
+          "60 fps 更顺，文件大约大一半；大屏上可能录不满 60。文件嫌大：标准清晰度在高分屏上宽高各减半，文件小一半多，小字会糊一些；HEVC 同样的画面小三分之一左右，部分 App 和旧设备可能放不了。录好的也可以在角落的缩略图上点「压缩」另存一份小的。只显示快捷键：带 ⌘ ⌃ ⌥ 的组合键、Esc 和 F 键才进画面，打字不显示。"
+        )
       }
       Section {
         Picker("来源", selection: $audioSource) {

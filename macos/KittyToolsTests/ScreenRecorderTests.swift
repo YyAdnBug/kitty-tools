@@ -33,6 +33,44 @@ struct ScreenRecorderTests {
     #expect(size(0.4, 0.4, 1) == [2, 2])
   }
 
+  /// 清晰度和编码怎么落到输出像素（第二轮体检 R1）：标准按每点 1 像素（Retina 屏上宽高各减半，1x 的屏上和原始一样）；
+  /// 等比缩的上限跟着编码走——H.264 4096、HEVC 8192（硬件编码卡的边长）
+  @Test func outputSizeFollowsSharpnessAndCodec() {
+    let size = {
+      (
+        width: CGFloat, height: CGFloat, scale: CGFloat, sharpness: ScreenRecorder.Sharpness,
+        codec: ScreenRecorder.Codec
+      ) in
+      let size = ScreenRecorder.outputSize(
+        points: CGSize(width: width, height: height), scale: scale, sharpness: sharpness,
+        codec: codec)
+      return [size.width, size.height]
+    }
+    // 用户报告的那段：1653 × 946 点 @2x
+    #expect(size(1653, 946, 2, .original, .h264) == [3306, 1892])
+    #expect(size(1653, 946, 2, .standard, .h264) == [1652, 946])
+    #expect(size(1653, 946, 2, .standard, .hevc) == [1652, 946])
+    #expect(size(1653, 946, 1, .standard, .h264) == size(1653, 946, 1, .original, .h264))
+    // 6K 整屏（3008 × 1692 点 @2x）：H.264 缩到宽 4096，HEVC 按原像素，标准清晰度都不用缩
+    #expect(size(3008, 1692, 2, .original, .h264) == [4096, 2304])
+    #expect(size(3008, 1692, 2, .original, .hevc) == [6016, 3384])
+    #expect(size(3008, 1692, 2, .standard, .h264) == [3008, 1692])
+    // 超过 8192 的 HEVC 也缩
+    #expect(size(5000, 1000, 2, .original, .hevc) == [8192, 1638])
+  }
+
+  /// 选了 HEVC 但这台机器的录制输出不支持时退回 H.264（上限也跟着回到 4096）；设置里存的值认不出来按默认
+  @Test func codecFallsBackToH264WhenUnavailable() {
+    #expect(ScreenRecorder.Codec.effective(.hevc, available: [.h264, .hevc]) == .hevc)
+    #expect(ScreenRecorder.Codec.effective(.hevc, available: [.h264]) == .h264)
+    #expect(ScreenRecorder.Codec.effective(.h264, available: []) == .h264)
+    #expect(ScreenRecorder.Codec.hevc.type == .hevc && ScreenRecorder.Codec.h264.type == .h264)
+    #expect(ScreenRecorder.Codec.hevc.maxSide == 8192 && ScreenRecorder.Codec.h264.maxSide == 4096)
+    #expect(ScreenRecorder.Codec(rawValue: "hevc") == .hevc)
+    #expect(ScreenRecorder.Codec(rawValue: "av1") == nil)
+    #expect(ScreenRecorder.Sharpness(rawValue: "standard") == .standard)
+  }
+
   @Test func clockAndSpokenDuration() {
     #expect(ScreenRecorder.clock(0) == "0:00")
     #expect(ScreenRecorder.clock(12) == "0:12")

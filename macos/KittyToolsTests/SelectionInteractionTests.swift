@@ -1014,6 +1014,19 @@ struct SelectionInteractionTests {
     #expect(RecordBar.keysTip(on: false) == "显示按键：关")
   }
 
+  /// 设置里选了「只显示快捷键」（第二轮体检 R2）：录制条上显示按键开着时的提示换成说明显示什么，不再提醒输密码
+  /// （打字本来就不进画面）；关着时照旧
+  @Test func keysTipFollowsShortcutsOnly() throws {
+    #expect(RecordBar.keysTip(on: true, shortcutsOnly: true) == "显示按键：开\n只显示快捷键，打字不进画面")
+    #expect(RecordBar.keysTip(on: false, shortcutsOnly: true) == "显示按键：关")
+    let h = Harness(mode: .record)
+    h.view.styleDefaults.set(true, forKey: Prefs.screenRecordShowsKeys)
+    h.view.styleDefaults.set(true, forKey: Prefs.screenRecordKeysShortcutsOnly)
+    h.makeSelection()
+    let toggle = try #require(h.recordBar?.button(for: .keys) as? ToggleButton)
+    #expect(toggle.accessibilityLabel() == "显示按键：开\n只显示快捷键，打字不进画面")
+  }
+
   /// 多屏：每块屏的遮罩各有一根录制条（共用同一个偏好域）。在一块屏上点了开关，另一块屏上长出来的录制条要按偏好重画，
   /// 不能停在建栏时的样子
   @Test func recordBarRedrawsTogglesWhenShown() throws {

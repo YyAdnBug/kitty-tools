@@ -768,12 +768,25 @@ struct SnapshotProbeTests {
           title: "正在存储录音…", detail: nil, tone: .progress, symbol: "waveform.circle.fill",
           leading: .tone), notch
       ),
-      // 录屏录音第 7 批：视频卡「转成 GIF」的进度（超过 60 s 的说只转前 60 秒）
+      // 录屏录音第 7 批：视频卡「转成 GIF」的进度（超过 60 s 的说只转前 60 秒）；第二轮体检 R3：后面带百分比
       (
         "island-gif-progress",
         .init(
-          title: "正在转成 GIF…", detail: "只转前 60 秒", tone: .progress,
-          symbol: ShelfCard.gifIslandSymbol, leading: .tone), notch
+          title: "正在转成 GIF…", detail: ShelfCard.progressDetail(37, note: "只转前 60 秒"),
+          tone: .progress, symbol: ShelfCard.gifIslandSymbol, leading: .tone), notch
+      ),
+      // 第二轮体检 R1：视频卡「压缩」的进度；R3：识字慢的时候先出「识别中」
+      (
+        "island-compress-progress",
+        .init(
+          title: "正在压缩…", detail: ShelfCard.progressDetail(37), tone: .progress,
+          symbol: ShelfCard.compressIslandSymbol, leading: .tone), notch
+      ),
+      (
+        "island-recognizing",
+        .init(
+          title: "识别中…", detail: nil, tone: .progress, symbol: "ellipsis.circle.fill",
+          leading: .tone), notch
       ),
       (
         "island-color",

@@ -21,12 +21,20 @@ struct VideoCardTests {
 
   @Test func menuHasNoSaveOrPinButTrash() throws {
     let video = card(URL(filePath: "/tmp/录屏 a.mp4"))
-    // 第 7 批：「转成 GIF」紧跟「拷贝」
-    #expect(video.menu == [[.copy, .gif, .open, .reveal], [.trash], [.close]])
+    // 第 7 批：「转成 GIF」紧跟「拷贝」；第二轮体检 R1：后面再跟「压缩」
+    #expect(video.menu == [[.copy, .gif, .compress, .open, .reveal], [.trash], [.close]])
     #expect(
       video.menu.flatMap { $0 }.map(\.title) == [
-        "拷贝", "转成 GIF", "打开", "在访达中显示", "移到废纸篓", "关闭",
+        "拷贝", "转成 GIF", "压缩", "打开", "在访达中显示", "移到废纸篓", "关闭",
       ])
+    #expect(video.canCompress)
+    // 压缩出来的那张视频卡：能转 GIF，不能再压
+    let compressed = ShelfCard(
+      file: .video(URL(filePath: "/tmp/录屏 a 压缩版.mp4"), seconds: 83), poster: nil,
+      source: Self.rect, rect: Self.rect, screen: nil, panel: NSPanel(), shelf: ShotShelf(),
+      isCompressed: true)
+    #expect(compressed.menu == [[.copy, .gif, .open, .reveal], [.trash], [.close]])
+    #expect(!compressed.canCompress && compressed.accessibilityName == "录屏，1 分 23 秒")
     #expect(video.accessibilityName == "录屏，1 分 23 秒")
     #expect(video.badge.folder == FileManager.default.displayName(atPath: "/tmp"))
     // 截图卡的菜单不变：拷贝 / 存储 / 钉图 /（存过的）在访达中显示 ｜ 关闭，没有移到废纸篓
@@ -123,6 +131,7 @@ struct VideoCardTests {
       panel: NSPanel(), shelf: shelf)
     #expect(gif.kind.file == file && gif.kind.recording == nil)
     #expect(gif.menu == [[.copy, .open, .reveal], [.trash], [.close]])
+    #expect(!gif.canCompress)
     #expect(gif.accessibilityName == "GIF 动图")
     #expect(gif.badge.folder == FileManager.default.displayName(atPath: folder.path))
     #expect(gif.fileURL == file)

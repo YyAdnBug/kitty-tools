@@ -116,6 +116,43 @@ import SwiftUI
     }
   }
 
+  /// 进行中的岛改详情（转 GIF、压缩的百分比）：内容不重新出场、不播报（一秒几次，旁白会被刷屏），停留重新计时——
+  /// 事情还在做就一直挂着。岛上已经不是这一条（标题对不上、被别的岛换掉了）就不动
+  func progress(_ title: String, detail: String) {
+    guard isOpen, let content, content.title == title, content.tone == .progress,
+      content.detail != detail
+    else { return }
+    self.content?.detail = detail
+    dwell?.cancel()
+    dwell = Task { [weak self] in
+      try? await Task.sleep(for: .seconds(60))
+      if !Task.isCancelled { self?.dismiss() }
+    }
+  }
+
+  /// 慢活的「进行中」岛：work 超过 delay 还没做完才出（很快做完的不闪这一下）。做完之后调用方出结果岛就原地换掉它；
+  /// 没有结果岛的调用方自己收（content?.title 还是这一条就 dismiss）
+  func showIfSlow<T>(
+    _ title: String, symbol: String? = nil, after delay: Duration = .milliseconds(300),
+    _ work: () async -> T
+  ) async -> T {
+    await Self.whenSlow(
+      after: delay, notice: { [weak self] in self?.show(title, tone: .progress, symbol: symbol) },
+      work: work)
+  }
+
+  /// work 超过 delay 还没做完才调 notice（单测不建岛的窗口，直接测这个）
+  static func whenSlow<T>(
+    after delay: Duration, notice: @escaping () -> Void, work: () async -> T
+  ) async -> T {
+    let pending = Task {
+      try? await Task.sleep(for: delay)
+      if !Task.isCancelled { notice() }
+    }
+    defer { pending.cancel() }
+    return await work()
+  }
+
   /// 收起：内容先退（0.12 s），0.08 s 后形体缩回刘海，动画结束再移走窗口
   func dismiss() {
     dwell?.cancel()
@@ -295,7 +332,10 @@ struct IslandView: View {
             .foregroundStyle(.white.opacity(0.95))
           if let detail = content.detail {
             Text(detail)
-              .font(.system(size: 13))
+              // 进行中的详情是会变的百分比：数字等宽，岛不跟着一宽一窄地抖
+              .font(
+                content.tone == .progress ? .system(size: 13).monospacedDigit() : .system(size: 13)
+              )
               .foregroundStyle(.white.opacity(0.55))
               .lineLimit(1)
               .truncationMode(.middle)
@@ -304,7 +344,8 @@ struct IslandView: View {
         }
         .padding(.horizontal, 18)
         .fixedSize(horizontal: true, vertical: false)
-        .id(content.title + (content.detail ?? ""))
+        // 进行中的岛只按标题认：详情里的百分比一直在变，不能每变一次就整行重新出场
+        .id(content.tone == .progress ? content.title : content.title + (content.detail ?? ""))
         .transition(
           reduceMotion
             ? .opacity

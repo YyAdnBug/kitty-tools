@@ -76,6 +76,47 @@ struct IslandExcerptTests {
     #expect(Island.excerpt(String(repeating: "字", count: 24)) == String(repeating: "字", count: 24))
   }
 
+  /// 进行中的岛改详情（转 GIF、压缩的百分比，第二轮体检 R3）：只改详情；岛上不是这一条（标题不同、不是进行中）就不动
+  @MainActor @Test func progressUpdatesDetailInPlace() {
+    let content = { (title: String, tone: Island.Tone) in
+      Island.Content(title: title, detail: nil, tone: tone, symbol: "circle", leading: .tone)
+    }
+    let island = Island(showing: content("正在压缩…", .progress))
+    island.progress("正在压缩…", detail: "37%")
+    #expect(island.content?.detail == "37%" && island.content?.title == "正在压缩…")
+    island.progress("正在转成 GIF…", detail: "50%")
+    #expect(island.content?.detail == "37%")
+    let done = Island(showing: content("已压缩", .success))
+    done.progress("已压缩", detail: "99%")
+    #expect(done.content?.detail == nil)
+    #expect(ShelfCard.progressDetail(37) == "37%")
+    #expect(ShelfCard.progressDetail(37, note: "只转前 60 秒") == "只转前 60 秒 · 37%")
+    #expect(ShelfCard.progressDetail(140) == "100%" && ShelfCard.progressDetail(-3) == "0%")
+  }
+
+  /// 慢活才出「进行中」（识字的「识别中」）：很快做完的不出这一下；过了时限还没做完才出，而且只出一次。
+  /// 慢活不靠墙上时钟模拟：全量并行跑时主线程被别的测试占着，「睡 300 ms」和「30 ms 后提示」谁先恢复说不准
+  /// （活先恢复就把提示取消了，这在产品里是对的，测试却会判错）。所以慢活 = 等提示出过才做完
+  @MainActor @Test(.timeLimit(.minutes(1))) func slowNoticeOnlyWhenWorkIsSlow() async {
+    var notices = 0
+    let quick = await Island.whenSlow(
+      after: .milliseconds(80), notice: { notices += 1 }, work: { 7 })
+    try? await Task.sleep(for: .milliseconds(200))
+    #expect(quick == 7 && notices == 0)
+    let (shown, signal) = AsyncStream<Void>.makeStream()
+    let slow = await Island.whenSlow(
+      after: .milliseconds(30),
+      notice: {
+        notices += 1
+        signal.yield()
+      },
+      work: {
+        for await _ in shown { break }
+        return 9
+      })
+    #expect(slow == 9 && notices == 1)
+  }
+
   /// 岛的前导缩略图只留 26×18 两倍像素的小图，长截图取顶部一段（不把整张原图放进岛）
   @Test func thumbnailIsSmallTopCrop() throws {
     let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
