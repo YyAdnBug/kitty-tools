@@ -363,7 +363,8 @@ struct InputOverlayTests {
     let plain = InputOverlay(frame: Self.frame)
     plain.showKey("⌘C", animated: false)
     #expect(plain.keysBarFrame == nil && plain.keys.tokens.isEmpty)
-    #expect((plain.panel.contentView?.layer?.sublayers ?? []).isEmpty)
+    let plainLayers = plain.panel.contentView?.layer?.sublayers ?? []
+    #expect(plainLayers.isEmpty)
     plain.close()
 
     let overlay = InputOverlay(frame: Self.frame, clicks: false, keysBottom: Self.frame.minY + 32)

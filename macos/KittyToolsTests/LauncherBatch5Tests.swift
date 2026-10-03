@@ -119,12 +119,12 @@ struct LauncherBatch5Tests {
     model.prepareForShow(now: start.addingTimeInterval(61))
     #expect(model.query.isEmpty && !model.resumesQuery)
     // quit 空格的列表再呼出时重列：收起期间退出了的 App 不在、新开的在
-    var running = [apps[0], apps[1]]
-    model.commandTargets = { _ in running }
+    model.commandTargets = { _ in [apps[0], apps[1]] }
     model.query = "quit "
     #expect(model.results == [apps[0], apps[1]])
     model.didHide(now: start)
-    running = [apps[1], apps[2]]
+    // 换一份「正在运行」（闭包是 @Sendable，不捕获可变变量，直接换闭包）
+    model.commandTargets = { _ in [apps[1], apps[2]] }
     model.prepareForShow(now: start.addingTimeInterval(5))
     #expect(model.query == "quit " && model.results == [apps[1], apps[2]])
     // 执行过（打开、运行、⌘C 这类收起面板的）不留（运行内置动作：runAction 是空的，不碰剪贴板）

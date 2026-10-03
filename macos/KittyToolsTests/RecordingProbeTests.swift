@@ -1036,7 +1036,8 @@ struct RecordingProbeTests {
     // 停手：1.6 s 后淡出（最后一下在约 0.3 s），等到 3 s 再停
     try await Task.sleep(for: .seconds(max(0, 3 - Date.now.timeIntervalSince(began))))
     #expect(overlay.keysBarFrame == nil && overlay.keys.tokens.isEmpty, "停手后没清空")
-    #expect((panel.contentView?.layer?.sublayers ?? []).isEmpty, "淡出后图层没移除")
+    let layersLeft = panel.contentView?.layer?.sublayers ?? []
+    #expect(layersLeft.isEmpty, "淡出后图层没移除")
     recorder.stop()
     for _ in 0..<300 where finished == nil { try await Task.sleep(for: .milliseconds(50)) }
     let result = try #require(finished, "15 s 内没收尾")

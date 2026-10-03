@@ -16,6 +16,8 @@ struct HotKeyMenuTests {
     ProcessInfo.processInfo.environment["KITTY_LIVE_HOTKEY"] != nil
 
   private final class Times {
+    /// 定时器的闭包是 @Sendable，不能直接捕获 NSMenu：经这个主线程隔离的对象拿
+    var menu: NSMenu?
     var pressed: Date?
     var fired: Date?
     var rescued = false
@@ -43,6 +45,7 @@ struct HotKeyMenuTests {
 
     let menu = NSMenu()
     menu.addItem(withTitle: "热键自检", action: nil, keyEquivalent: "")
+    times.menu = menu
     // 菜单跟踪期间只有 common 模式的定时器会跑
     let press = Timer(timeInterval: 0.3, repeats: false) { _ in
       MainActor.assumeIsolated {
@@ -53,7 +56,7 @@ struct HotKeyMenuTests {
     let rescue = Timer(timeInterval: 2.5, repeats: false) { _ in
       MainActor.assumeIsolated {
         times.rescued = true
-        menu.cancelTracking()
+        times.menu?.cancelTracking()
       }
     }
     RunLoop.main.add(press, forMode: .common)

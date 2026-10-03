@@ -33,3 +33,6 @@ xcuserdata/
 # 常见误写文件名（不忽略正确的 AGENTS.md / CLAUDE.md）
 AGENTs.md
 CALUDE.md
+
+# 拍板页的本地副本（只在本机留看，不进仓库）
+docs/apis/
