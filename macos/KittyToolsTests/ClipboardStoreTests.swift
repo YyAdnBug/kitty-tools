@@ -469,6 +469,50 @@ struct ClipboardStoreTests {
     }
   }
 
+  /// 条目多、一下跳得远（2026-10-03 用户报：数据多了高亮错位）：从第一条按 ↑ 绕到最后一条、再跳回中间，
+  /// 透镜照样画在高亮（前缀和）的位置上。交给 LazyVStack 时这里失败：它没排过的行按已排过的平均高度估
+  /// （分组标题、透镜混在里面），绕到最后时屏上是一百多行之前的那几条，选中的行根本没画出来
+  @Test func lensStaysOnRowInLongList() throws {
+    let (store, _) = try makeStore()
+    // 600 条跨 20 天（每天 30 条），文本长短混着：透镜高度不一（短文本 70、长文本 160）
+    for index in (0..<600).reversed() {
+      let body = index % 3 == 0 ? String(repeating: "一段比较长的文字，", count: 12) : "短"
+      store.record(text("第 \(index) 条 " + body, ago: Double(index) * 2880 + 60))
+    }
+    let model = ClipboardPanelModel(store: store)
+    let (window, close) = try showPanel(model)
+    defer { close() }
+    func settle() { for _ in 0..<8 { RunLoop.main.run(until: .now.addingTimeInterval(0.1)) } }
+    settle()
+    try expectLens(model, in: window, "第一条")
+    _ = model.handleCommand(#selector(NSResponder.moveUp(_:)))
+    settle()
+    #expect(model.selectedItem?.id == model.visibleItems.last?.id)
+    try expectLens(model, in: window, "↑ 绕到最后一条")
+    _ = model.handleCommand(#selector(NSResponder.moveUp(_:)))
+    settle()
+    try expectLens(model, in: window, "再 ↑")
+    model.select(model.visibleItems[310])
+    settle()
+    try expectLens(model, in: window, "跳回中间")
+    _ = model.handleCommand(#selector(NSResponder.moveDown(_:)))
+    settle()
+    try expectLens(model, in: window, "中间 ↓")
+  }
+
+  /// 列表靠后时 ↑↓ 也快（2026-10-03 用户报卡顿）：找当前选中项时只搜一遍列表。原来在 firstIndex 的闭包里每比一条
+  /// 都重新搜索、过滤整个列表，选中第 700 条时按一下要 300 ms
+  @Test func movingDeepInLongListIsCheap() throws {
+    let (store, _) = try makeStore()
+    for index in (0..<600).reversed() { store.record(text("第 \(index) 条", ago: Double(index) + 1)) }
+    let model = ClipboardPanelModel(store: store)
+    model.select(model.visibleItems[550])
+    let start = CACurrentMediaTime()
+    for _ in 0..<5 { _ = model.handleCommand(#selector(NSResponder.moveDown(_:))) }
+    #expect(model.selectedItem?.id == model.visibleItems[555].id)
+    #expect(CACurrentMediaTime() - start < 0.15, "5 下 ↓ 用了 \(CACurrentMediaTime() - start) s")
+  }
+
   /// ⌘W：对话框开着时只关对话框（同 Esc 逐级退，没保存的字不随面板一起丢；大写锁定开着也一样），
   /// 没有对话框时交给 OverlayPanel 收起面板
   @Test func commandWClosesDialogFirst() throws {

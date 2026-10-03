@@ -191,7 +191,12 @@ import Observation
   // MARK: 列表
 
   var visibleItems: [ClipItem] {
-    store.search(query).filter { item in
+    let found = store.search(query)
+    // 范围是「全部」、没有筛选时就是搜索结果，不再逐条判断（每次按键要取好几次，800 条一次约 1 ms）
+    guard
+      scope != .all || kind != nil || form != nil || sourceBundleID != nil || groupFilter != .all
+    else { return found }
+    return found.filter { item in
       switch scope {
       case .all: break
       case .favorites: guard item.favorite else { return false }
@@ -506,7 +511,9 @@ import Observation
   private func move(by offset: Int, extending: Bool = false) {
     let items = visibleItems
     guard !items.isEmpty else { return }
-    let current = items.firstIndex { $0.id == selectedItem?.id } ?? 0
+    // 选中项先取出来：写进 firstIndex 的闭包里的话每比一条都重新搜索、过滤整个列表（选中第 700 条时按一下 300 ms）
+    let selectedID = selectedItem(in: items)?.id
+    let current = items.firstIndex { $0.id == selectedID } ?? 0
     let next =
       extending
       ? min(max(current + offset, 0), items.count - 1)
@@ -569,7 +576,8 @@ import Observation
       anchorID = item.id
     } else if modifiers.contains(.shift) {
       let items = visibleItems
-      guard let from = items.firstIndex(where: { $0.id == (anchorID ?? selectedItem?.id) }),
+      let anchor = anchorID ?? selectedItem(in: items)?.id
+      guard let from = items.firstIndex(where: { $0.id == anchor }),
         let to = items.firstIndex(where: { $0.id == item.id })
       else { return }
       multiSelection = Set(items[min(from, to)...max(from, to)].map(\.id))

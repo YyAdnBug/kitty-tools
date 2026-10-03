@@ -287,6 +287,19 @@ struct SnapshotProbeTests {
             width: ClipboardPanelView.width, height: ClipboardPanelView.height(for: model)),
           dark: dark, to: "\(out)/clip-\(name)\(dark ? "-dark" : "").png")
       }
+      // 滚到底：面板画出来以后再选中最后一条（选中变了才滚，见 RevealsSelection），等滚完再出图——顶上是吸顶的分组标题
+      // （材质底），透镜那一行就在高亮上（2026-10-03 列表改成只画可见区附近、吸顶标题自己画）
+      model.reset()
+      model.isRecordingPaused = false
+      try snapshot(
+        ClipboardPanelView(model: model),
+        size: NSSize(
+          width: ClipboardPanelView.width, height: ClipboardPanelView.height(for: model)),
+        dark: dark, to: "\(out)/clip-list-scrolled\(dark ? "-dark" : "").png"
+      ) { _ in
+        model.visibleItems.last.map(model.select)
+        RunLoop.main.run(until: .now.addingTimeInterval(0.8))
+      }
     }
     // 一行文本的透镜：行标题已经原样显示全的不画第二遍、只剩元信息行（很短的富文本；有搜索词时标题也不摘录、
     // 照样从头显示）；标题列放不下的一行字（≤ 60 字）还是给两行高的正文（上面的 lens-short 是正文只有一行的）。

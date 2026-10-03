@@ -1,7 +1,8 @@
 // 剪贴板面板根视图（透镜指令条 Lens Bar，mac-whisker §6 剪贴板）：宽 720、贴在屏幕上方 20%（和启动器同位置），
 // 高度按条数伸缩、顶边不动、≤ 520（height(for:)；透镜预留是常数，↑↓ 永远不改窗口高度）。
 // 56 pt 搜索线 = 放大镜 + 粉色筛选标签 + 输入框；单列满宽列表（始终按天分组吸顶，搜索只过滤，体检 A6），
-// 行 40，选中行原地展开成透镜（LensView），一块中性高亮在行间滑动、和透镜一起伸缩（前缀和定位）；
+// 行 40，选中行原地展开成透镜（LensView），一块中性高亮在行间滑动、和透镜一起伸缩（前缀和定位）；列表只画可见区附近的项、
+// 上下按前缀和撑开，吸顶的分组标题自己画（list，2026-10-03：交给 LazyVStack 时条目多了高亮错位、越往后越卡）；
 // 片段范围第一行固定一条虚线的「＋ 新建片段 ⌘N」；底栏 36 = （已暂停记录）条数 / 修饰键提示 / 多选动词 ｜ 粘贴 ↩ · 操作 ⌘K ｜
 // 齿轮 图钉。
 // Tab 筛选面板从搜索栏左下长出、⌘K 操作面板从底栏右下长出、多选底栏「收藏夹…」的列表从按钮上方长出（共用 Shell/ActionMenu）；
@@ -27,9 +28,10 @@ struct ClipboardPanelView: View {
   @State private var shownKeys: EventModifiers = []
   /// 多选底栏「收藏夹…」按钮的左缘（面板坐标）：收藏夹列表锚在它上方
   @State private var groupsButtonX: CGFloat = 0
-  /// 已经滚过顶部的分组数：这些分组的标题正吸顶（或已滚走），加材质底；平时没有灰条。
-  /// 只存这个整数，别存滚动位置（每帧都会让整个面板重算）
-  @State private var pinnedSections = 0
+  /// 滚动位置落在第几段（每段 bandHeight）：列表只画这一段附近的项，跨段时才重算面板。
+  /// 别存滚动位置本身（每帧都会让整个面板重算）；吸顶标题逐帧要的位置在 scroll 里，只有它读
+  @State private var scrollBand = 0
+  @State private var scroll = ListScroll()
   @State private var position = ScrollPosition()
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -46,6 +48,10 @@ struct ClipboardPanelView: View {
   static let emptyListHeight: CGFloat = 140
   /// 筛选面板 / ⌘K 开着时列表区至少这么高（8.5 行菜单 + 上下余量），短列表时面板先长到放得下
   static let paletteListHeight: CGFloat = ActionMenu.rowHeight * 8.5 + 26
+  /// 列表按段记滚动位置、只画这一段附近（list）：段高 240，往上下各多画 320——段内怎么滚、滚动动画落后一帧，
+  /// 画出来的都盖得住整个可见区（列表区最高 427.5），一段一段挪时进出的行都在可见区外面
+  static let bandHeight: CGFloat = 240
+  static let overscan: CGFloat = 320
   /// 面板根视图的坐标系（多选底栏按钮报位置用）
   nonisolated private static let space = "clipboardPanel"
 
@@ -251,26 +257,38 @@ struct ClipboardPanelView: View {
     _ items: [ClipItem], layout: ListLayout, selected: ClipItem?, lensOpen: Bool
   ) -> some View {
     if items.isEmpty && layout.leading == 0 {
-      emptyState
+      emptyState.onAppear { resetScroll() }
     } else {
       list(items, layout: layout, selected: selected, lensOpen: lensOpen)
     }
   }
 
+  /// 只画可见区附近的那些项（行、分组标题、「新建片段」），上下按前缀和算出的高度撑开（2026-10-03 用户报：条目多了高亮错位、
+  /// 滚动和 ↑↓ 卡）：画出来的位置就是 ListLayout 算的，和高亮、滚动、吸顶对得上；按键、滚动的开销只和画出来的三十来项有关。
+  /// 不用 LazyVStack：它没排过的行按已排过的平均高度估（分组标题 24、透镜最高 198 混在里面，800 条时估成约 51），
+  /// 一下跳得远（拖滚动条、在第一条按 ↑ 绕到最后）屏上是一百多行之前的那几条、选中的行根本没画；越往后每次布局也越贵
+  /// （屏外实测第 790 条按一下 ↓ 布局 56 ms）。吸顶的分组标题因此自己画（StickyHeader）
   private func list(_ items: [ClipItem], layout: ListLayout, selected: ClipItem?, lensOpen: Bool)
     -> some View
   {
-    let tops = layout.sectionTops.map { $0 + Self.inset }
+    // 可见区的顶落在哪一段，换成列表坐标（去掉上内缩）。列表一下子变短（删了一批）时滚动位置下一帧才夹回来：
+    // 先按最后一段画，别空一帧
+    let band = min(scrollBand, Int(max(layout.totalHeight - 1, 0) / Self.bandHeight))
+    let top = CGFloat(band) * Self.bandHeight - Self.inset
+    let range = layout.range(
+      from: top - Self.overscan, to: top + Self.bandHeight + Self.maxListHeight + Self.overscan)
     return ScrollView {
-      LazyVStack(alignment: .leading, spacing: 0, pinnedViews: .sectionHeaders) {
-        if layout.leading > 0 { newSnippetRow }
-        ForEach(Array(layout.sections.enumerated()), id: \.element.day) { index, section in
-          Section {
-            rows(section.rows, in: section.day, selected: selected, lensOpen: lensOpen)
-          } header: {
-            sectionHeader(section, pinned: index < pinnedSections)
+      VStack(alignment: .leading, spacing: 0) {
+        Color.clear.frame(height: layout.top(of: range.lowerBound))
+        ForEach(range.map { (id: entryID($0, in: layout), index: $0) }, id: \.id) { entry in
+          switch layout.entries[entry.index] {
+          case .newSnippet: newSnippetRow
+          case .header(let section): SectionHeader(section: layout.sections[section])
+          case .row(let section, let index):
+            clipRow(layout.sections[section].rows[index], selected: selected, lensOpen: lensOpen)
           }
         }
+        Color.clear.frame(height: layout.totalHeight - layout.top(of: range.upperBound))
       }
       .background(alignment: .topLeading) { highlight(layout: layout, selected: selected) }
       .animation(model.listMotion.animation(reduced: reduceMotion), value: items.map(\.id))
@@ -281,6 +299,7 @@ struct ClipboardPanelView: View {
       )
       .onChange(of: model.listGeneration) {
         model.settleList()
+        resetScroll()
         position.scrollTo(edge: .top)
       }
       .padding(Self.inset)
@@ -296,15 +315,50 @@ struct ClipboardPanelView: View {
         return top...top + layout.height(of: id)
       }
     )
+    // 跨段才改 scrollBand、重算面板；不在动画里改：滚进来的行不播插入过渡
     .onScrollGeometryChange(for: Int.self) { geometry in
-      let y = geometry.visibleRect.minY
-      return tops.lastIndex { y > $0 + 0.5 }.map { $0 + 1 } ?? 0
-    } action: { _, count in
-      pinnedSections = count
+      Int(max(geometry.visibleRect.minY, 0) / Self.bandHeight)
+    } action: { _, band in
+      var transaction = Transaction()
+      transaction.disablesAnimations = true
+      withTransaction(transaction) { scrollBand = band }
+    }
+    .onScrollGeometryChange(for: CGFloat.self) {
+      $0.visibleRect.minY
+    } action: { _, y in
+      scroll.top = y
+    }
+    // 新的滚动视图（空态之后列表回来）从顶上开始
+    .onAppear { resetScroll() }
+    .overlay(alignment: .top) {
+      StickyHeader(
+        sections: layout.sections, tops: layout.sectionTops.map { $0 + Self.inset }, scroll: scroll
+      )
+      .padding(.horizontal, Self.inset)
+    }
+    // 被下一组推上去的吸顶标题不画到搜索线上
+    .clipped()
+  }
+
+  private func resetScroll() {
+    scrollBand = 0
+    scroll.top = 0
+  }
+
+  /// ForEach 的身份：标题 = 那一天，行 = 所在分组 + 条目（为什么带分组见 clipRow）
+  private func entryID(_ index: Int, in layout: ListLayout) -> EntryID {
+    switch layout.entries[index] {
+    case .newSnippet: .newSnippet
+    case .header(let section): .header(layout.sections[section].day)
+    case .row(let section, let row):
+      .row(
+        RowID(
+          section: layout.sections[section].day,
+          item: layout.sections[section].rows[row].element.id))
     }
   }
 
-  /// 一块中性高亮 = 透镜的底：按前缀和定位，在行间滑动（不用 matchedGeometryEffect：LazyVStack 回收行时会跳）
+  /// 一块中性高亮 = 透镜的底：按前缀和定位，在行间滑动（不用 matchedGeometryEffect：行离开可见区附近就被拿掉，跟着它会跳）
   @ViewBuilder private func highlight(layout: ListLayout, selected: ClipItem?) -> some View {
     if let selected, let offset = layout.offset(of: selected.id) {
       let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
@@ -342,19 +396,6 @@ struct ClipboardPanelView: View {
     }
   }
 
-  private func sectionHeader(_ section: DaySection, pinned: Bool) -> some View {
-    HStack(spacing: 8) {
-      Text("\(section.title) · \(section.rows.count)")
-        .font(.system(size: 11, weight: .semibold))
-        .foregroundStyle(.tertiary)
-      Hairline()
-    }
-    .padding(.horizontal, 10)
-    // 高度必须正好是 headerHeight：高亮、滚动、吸顶都按它累加
-    .frame(height: Self.headerHeight)
-    .background(pinned ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(.clear))
-  }
-
   /// 片段范围第一行：一条虚线的「＋ 新建片段 ⌘N」（片段为空时就只有它，不另画空态）
   private var newSnippetRow: some View {
     Button {
@@ -383,26 +424,22 @@ struct ClipboardPanelView: View {
     .buttonStyle(.plain)
   }
 
-  /// 行的身份 = 所在分组（那天的零点）+ 条目，行上也别再挂 `.id(item.id)`：条目换了分组（旧条目再次复制挪进「今天」）
-  /// 就是删一行再插一行。身份只有条目 id 时 LazyVStack 会把旧行原样搬过去、之后不再跟着父视图更新：选中和透镜停在搬之前，
-  /// 按前缀和走的高亮对不上行（高亮盖住下面几行、透镜不展开、时间也不刷新）
-  private func rows(
-    _ rows: [(offset: Int, element: ClipItem)], in section: Date, selected: ClipItem?,
-    lensOpen: Bool
+  /// 一行。身份 = 所在分组（那天的零点）+ 条目（EntryID.row），行上也别再挂 `.id(item.id)`：条目换了分组（旧条目再次复制
+  /// 挪进「今天」）就是删一行再插一行。身份只有条目 id 时旧行会被原样搬过去、之后不再跟着父视图更新：选中和透镜停在
+  /// 搬之前，按前缀和走的高亮对不上行（高亮盖住下面几行、透镜不展开、时间也不刷新）
+  private func clipRow(
+    _ row: (offset: Int, element: ClipItem), selected: ClipItem?, lensOpen: Bool
   ) -> some View {
-    ForEach(rows.map { (id: RowID(section: section, item: $0.element.id), row: $0) }, id: \.id) {
-      entry in
-      let (index, item) = entry.row
-      let isSelected = item.id == selected?.id
-      ClipListRow(
-        item: item, form: model.contentForm(of: item), model: model,
-        shortcutIndex: index < 9 ? index : nil, showsShortcut: shownKeys.contains(.command),
-        isSelected: isSelected, lensOpen: lensOpen && isSelected, groupName: groupBadge(for: item)
-      )
-      // 右键菜单和 ⌘K 同一份动作（体检 B12）；包成视图：菜单打开时才算，不在每次画行时建一遍
-      .contextMenu { ActionContextMenu { model.actions(for: item, targets: [item]) } }
-      .transition(rowTransition)
-    }
+    let (index, item) = row
+    let isSelected = item.id == selected?.id
+    return ClipListRow(
+      item: item, form: model.contentForm(of: item), model: model,
+      shortcutIndex: index < 9 ? index : nil, showsShortcut: shownKeys.contains(.command),
+      isSelected: isSelected, lensOpen: lensOpen && isSelected, groupName: groupBadge(for: item)
+    )
+    // 右键菜单和 ⌘K 同一份动作（体检 B12）；包成视图：菜单打开时才算，不在每次画行时建一遍
+    .contextMenu { ActionContextMenu { model.actions(for: item, targets: [item]) } }
+    .transition(rowTransition)
   }
 
   /// 新条目从顶部挤入（图标 pop）、删除缩小淡出。换列表（搜索 / 筛选）那一帧插进来的行不带
@@ -423,17 +460,18 @@ struct ClipboardPanelView: View {
   }
 
   /// 按天分组：今天 / 昨天 / M月d日 / yyyy年M月d日（有搜索词时也是，标题后的数字就是命中条数）。
-  /// 行号是在整个列表里的序号（⌘数字用）。列表按复制时间新→旧，同一天是连续的：只在换天时格式化一次
+  /// 行号是在整个列表里的序号（⌘数字用）。列表按复制时间新→旧，同一天是连续的：只在换天时算零点、格式化一次，
+  /// 落在当前这组那天里的直接归进去（每条都算 startOfDay 的话 800 条要 3 ms，每次按键都重算一遍）
   static func daySections(_ items: [ClipItem]) -> [DaySection] {
     let calendar = Calendar.current
     var sections: [DaySection] = []
-    var day: Date?
+    var day: Range<Date>?
     for row in items.enumerated() {
-      let start = calendar.startOfDay(for: row.element.copiedAt)
-      if start == day {
+      if let day, day.contains(row.element.copiedAt) {
         sections[sections.count - 1].rows.append(row)
       } else {
-        day = start
+        let start = calendar.startOfDay(for: row.element.copiedAt)
+        day = start..<(calendar.date(byAdding: .day, value: 1, to: start) ?? .distantFuture)
         // 标题规则和翻译历史同一个纯函数（有单测）
         sections.append((start, HistoryView.dayTitle(start, now: .now, calendar: calendar), [row]))
       }
@@ -611,47 +649,99 @@ struct ClipboardPanelView: View {
   }
 }
 
-/// 列表几何（前缀和）：行 40、分组标题 24、透镜按类型的常数（Lens.height）；高亮、滚动、吸顶都从这里算，不量真实尺寸
+/// 列表几何（前缀和）：行 40、分组标题 24、透镜按类型的常数（Lens.height）；不量真实尺寸。列表就按它排（只画可见区附近的项，
+/// 上下按它撑开，见 ClipboardPanelView.list），高亮、滚动、吸顶也都从这里算，所以算出来的位置就是画出来的位置
 struct ListLayout {
+  /// 列表里的一项：「新建片段」行、分组标题（第几组）、条目行（第几组的第几行）
+  enum Entry: Equatable {
+    case newSnippet
+    case header(Int)
+    case row(Int, Int)
+  }
+
   /// 片段范围第一行「新建片段」的高度；0 = 不画这一行（别的范围，或片段范围里搜索 / 筛选没有结果，改画空态）
-  var leading: CGFloat = 0
+  let leading: CGFloat
   /// 按天分组（有没有搜索词都一样）
-  var sections: [ClipboardPanelView.DaySection]
+  let sections: [ClipboardPanelView.DaySection]
   /// 展开透镜的那一行和它的总高
-  var lens: (id: UUID, height: CGFloat)?
+  let lens: (id: UUID, height: CGFloat)?
+  /// 从上到下的每一项
+  let entries: [Entry]
+  /// 各分组标题的 y（不含四周内缩）：透镜所在分组之后的都往下挪了透镜多出的高度
+  let sectionTops: [CGFloat]
+  /// 每一项的顶（不含四周内缩），比 entries 多一个：最后一个是总高
+  private let tops: [CGFloat]
+  /// 条目 id → 它在 entries 里的下标
+  private let rowIndex: [UUID: Int]
+
+  init(
+    leading: CGFloat = 0, sections: [ClipboardPanelView.DaySection],
+    lens: (id: UUID, height: CGFloat)?
+  ) {
+    self.leading = leading
+    self.sections = sections
+    self.lens = lens
+    var entries: [Entry] = []
+    var tops: [CGFloat] = []
+    var sectionTops: [CGFloat] = []
+    var rowIndex: [UUID: Int] = [:]
+    var y: CGFloat = 0
+    if leading > 0 {
+      entries.append(.newSnippet)
+      tops.append(0)
+      y = leading
+    }
+    for (section, day) in sections.enumerated() {
+      entries.append(.header(section))
+      tops.append(y)
+      sectionTops.append(y)
+      y += ClipboardPanelView.headerHeight
+      for (row, entry) in day.rows.enumerated() {
+        rowIndex[entry.element.id] = entries.count
+        entries.append(.row(section, row))
+        tops.append(y)
+        if let lens, lens.id == entry.element.id {
+          y += lens.height
+        } else {
+          y += ClipRowView.height
+        }
+      }
+    }
+    tops.append(y)
+    self.entries = entries
+    self.sectionTops = sectionTops
+    self.tops = tops
+    self.rowIndex = rowIndex
+  }
+
+  /// 总高（不含四周内缩）
+  var totalHeight: CGFloat { tops[tops.count - 1] }
+
+  /// 第 index 项的顶（不含四周内缩）；index == entries.count 是总高
+  func top(of index: Int) -> CGFloat { tops[index] }
 
   func height(of id: UUID) -> CGFloat {
     if let lens, lens.id == id { lens.height } else { ClipRowView.height }
   }
 
-  /// 行顶在列表内容里的 y（不含四周内缩）。透镜那一行上面都是普通行，所以不用加透镜多出的高度
+  /// 行顶在列表内容里的 y（不含四周内缩）
   func offset(of id: UUID) -> CGFloat? {
-    var y = leading
-    for section in sections {
-      y += ClipboardPanelView.headerHeight
-      if let index = section.rows.firstIndex(where: { $0.element.id == id }) {
-        return y + CGFloat(index) * ClipRowView.height
+    rowIndex[id].map { tops[$0] }
+  }
+
+  /// 和 [lower, upper) 相交的项（下标区间，二分）
+  func range(from lower: CGFloat, to upper: CGFloat) -> Range<Int> {
+    /// 第一个满足的下标（predicate 对下标单调：前面都不满足、后面都满足）
+    func first(_ predicate: (Int) -> Bool) -> Int {
+      var (low, high) = (0, entries.count)
+      while low < high {
+        let middle = (low + high) / 2
+        if predicate(middle) { high = middle } else { low = middle + 1 }
       }
-      y += sectionBody(section)
+      return low
     }
-    return nil
-  }
-
-  /// 各分组标题的 y（不含四周内缩）：透镜所在分组之后的都往下挪透镜多出的高度
-  var sectionTops: [CGFloat] {
-    var y = leading
-    return sections.map { section in
-      defer { y += ClipboardPanelView.headerHeight + sectionBody(section) }
-      return y
-    }
-  }
-
-  private func sectionBody(_ section: ClipboardPanelView.DaySection) -> CGFloat {
-    let extra =
-      lens.map { lens in
-        section.rows.contains { $0.element.id == lens.id } ? lens.height - ClipRowView.height : 0
-      } ?? 0
-    return CGFloat(section.rows.count) * ClipRowView.height + extra
+    let start = first { tops[$0 + 1] > lower }
+    return start..<max(start, first { tops[$0] >= upper })
   }
 }
 
@@ -737,6 +827,57 @@ private struct ClipListRow: View {
 private struct RowID: Hashable {
   let section: Date
   let item: UUID
+}
+
+/// ForEach 的身份（list）：「新建片段」、分组标题（那一天）、行（所在分组 + 条目）
+private enum EntryID: Hashable {
+  case newSnippet
+  case header(Date)
+  case row(RowID)
+}
+
+/// 列表的滚动位置（滚动内容坐标里可见区的顶）：吸顶标题逐帧要，放在面板不读的盒子里，滚动时只重画吸顶那一条
+@Observable private final class ListScroll {
+  var top: CGFloat = 0
+}
+
+/// 分组标题「今天 · 12」+ 一条发丝线。高度必须正好是 headerHeight：高亮、滚动、吸顶都按它累加。
+/// 吸顶时加材质底，平时没有灰条
+private struct SectionHeader: View {
+  let section: ClipboardPanelView.DaySection
+  var pinned = false
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Text("\(section.title) · \(section.rows.count)")
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(.tertiary)
+      Hairline()
+    }
+    .padding(.horizontal, 10)
+    .frame(height: ClipboardPanelView.headerHeight)
+    .background(pinned ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(.clear))
+  }
+}
+
+/// 吸顶的分组标题（同系统列表）：哪一组的标题滚过了列表顶，就把它盖在顶上，下一组的标题顶上来时把它推上去。
+/// 自己读滚动位置（ListScroll），滚动时只重画这一条，不重算整个面板
+private struct StickyHeader: View {
+  let sections: [ClipboardPanelView.DaySection]
+  /// 各组标题的顶（滚动内容坐标，含上内缩）
+  let tops: [CGFloat]
+  let scroll: ListScroll
+
+  var body: some View {
+    let y = scroll.top
+    if let index = tops.lastIndex(where: { y > $0 + 0.5 }) {
+      let next = index + 1 < tops.count ? tops[index + 1] - y : .infinity
+      SectionHeader(section: sections[index], pinned: true)
+        .offset(y: min(0, next - ClipboardPanelView.headerHeight))
+        // 列表里那一条标题旁白读得到，这条是叠上去的
+        .accessibilityHidden(true)
+    }
+  }
 }
 
 /// 透镜移动的动画触发值：选中换了、或透镜开关变了（多选时收起）

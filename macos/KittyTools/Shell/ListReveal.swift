@@ -2,7 +2,9 @@
 // 要露出来的区间由调用方按分组数据的前缀和算（不量视图），经 ScrollPosition.scrollTo(y:) 滚过去；
 // 看不看得见按上一次滚动的终点判断，滚动停下来还没到目标时补滚一次（SwiftUI 会吞掉动画末尾发的 scrollTo）；
 // ScrollPosition 被用户或别处改过就放弃这个目标，列表被空状态换掉时复位（重建出来从顶上开始）。
-// 不用 ScrollViewReader.scrollTo(id)：LazyVStack 里还没实例化的行滚不准，连按 ↓ 越过可见区后列表就不再跟着走
+// 不用 ScrollViewReader.scrollTo(id)：LazyVStack 里还没实例化的行滚不准，连按 ↓ 越过可见区后列表就不再跟着走。
+// 按前缀和滚的前提是列表真按前缀和排：LazyVStack 没排过的行是估的（条目多、一下跳得远就对不上），剪贴板因此改成
+// 只画可见区附近、上下按前缀和撑开（2026-10-03）；启动器、翻译历史还是 LazyVStack
 // （2026-09-29 用户真机报告启动器，第 10 批）。
 
 import SwiftUI

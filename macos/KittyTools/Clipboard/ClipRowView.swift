@@ -246,7 +246,7 @@ extension EnvironmentValues {
 
 /// 行插入过渡里带上它：把「正在插入」写进环境，IconTile 自己按 pop 从 0.85 长到 1。
 /// 所以只在列表真的插入一行时播（新复制进来、撤销删除）：搜索 / 筛选换列表那一帧不动画、
-/// 滚动时 LazyVStack 新建的行不算插入，都不播；减弱动态效果时行只淡入，不带它
+/// 滚动时新进可见区附近的行不算插入（不在动画里改，见 ClipboardPanelView.list），都不播；减弱动态效果时行只淡入，不带它
 struct IconPop: Transition {
   func body(content: Content, phase: TransitionPhase) -> some View {
     content.environment(\.clipRowArriving, phase == .willAppear)
