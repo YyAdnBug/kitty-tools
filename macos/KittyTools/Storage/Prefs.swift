@@ -31,7 +31,8 @@ enum Prefs {
   static let launcherFallbackAlways = "launcherFallbackAlways"
   /// 呼出启动器时搜索框只用英文输入法（Alfred 的 Force Keyboard；离开启动器后恢复）
   static let launcherRomanInput = "launcherRomanInput"
-  /// 剪贴板、启动器、翻译浮窗呼出时用挤压入场（实验，默认关；2026-09-29 用户要求三块面板统一，设置从启动器页挪到通用页）
+  /// 剪贴板、启动器、翻译浮窗呼出时用挤压入场（设置 › 通用「动效」，默认关；2026-09-29 用户要求三块面板统一，设置从启动器页
+  /// 挪到通用页；2026-10-03 转正，去掉「实验」）
   static let panelSqueezeEntrance = "panelSqueezeEntrance"
   /// 旧键：只管启动器时的开关，migrate 里搬到 panelSqueezeEntrance
   static let launcherSqueezeEntranceLegacy = "launcherSqueezeEntrance"

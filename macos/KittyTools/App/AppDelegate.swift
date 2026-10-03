@@ -174,7 +174,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     card.unzoom(to: frame)
   }
 
-  /// 剪贴板、启动器、翻译浮窗呼出时挤压弹开（实验，设置 › 通用；三块面板统一，2026-09-29 用户要求）
+  /// 剪贴板、启动器、翻译浮窗呼出时挤压弹开（设置 › 通用「动效」；三块面板统一，2026-09-29 用户要求）
   private static func squeezesIn() -> Bool {
     UserDefaults.standard.bool(forKey: Prefs.panelSqueezeEntrance)
   }

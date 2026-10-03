@@ -216,6 +216,8 @@ final class PinPanel: NSPanel {
     else { return }
     popping = (target, CACurrentMediaTime())
     setFrame(Self.scaled(target, by: 1.04), display: true)
+    // 逐帧改窗口尺寸同 OverlayPanel.squeezeIn，一样最高 60 Hz（120 Hz 屏上 8.3 ms 一帧跟不上）
+    link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
     link.add(to: .main, forMode: .common)
     popLink = link
   }

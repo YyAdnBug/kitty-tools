@@ -4,7 +4,7 @@
 // 外观是 Whisker 的 Panel 皮肤（mac-whisker §2）：无边框、16 pt 连续圆角（maskImage 裁，系统阴影跟着走）+ 描边
 // （macOS 26 起换成液态玻璃 NSGlassEffectView，不画描边）；
 // 出现时淡入 + 内容下落 6 pt，用户关掉时系统淡出（窗口逻辑上立刻移走，键盘马上回到原 App），高度可带动画伸缩。
-// ⌘Y 放大预览用 zoom / unzoom：从检查器卡片的位置长出来、缩回去。剪贴板、启动器、翻译浮窗可选「挤压入场」（实验，设置 › 通用，squeezesIn）。
+// ⌘Y 放大预览用 zoom / unzoom：从检查器卡片的位置长出来、缩回去。剪贴板、启动器、翻译浮窗可选「挤压入场」（设置 › 通用「动效」，squeezesIn）。
 // 翻译浮窗（frameName）：present 带 anchor 时出现在光标右下 12 pt（放不下翻到另一侧，体检 A13），不带时回到用户上次拖到的
 // 位置（userFrame；所在屏不是鼠标所在屏时换算到鼠标所在屏同一相对位置）；只有用户拖过、拖宽过才记下新位置。
 
@@ -47,7 +47,7 @@ final class OverlayPanel: NSPanel {
   fileprivate var isUserResizing = false
   /// 每次出现 / 收起加一：缩回动画的收尾发现期间又被打开（或已被别处收起）就什么都不做
   private var showGeneration = 0
-  /// 出现时用挤压入场（设置 › 通用的实验开关，剪贴板 / 启动器 / 翻译浮窗共用）；false 用标准的淡入 + 下落
+  /// 出现时用挤压入场（设置 › 通用「动效」的开关，剪贴板 / 启动器 / 翻译浮窗共用）；false 用标准的淡入 + 下落
   var squeezesIn: () -> Bool = { false }
   /// 正在挤压入场：起止帧、开始时刻、逐帧驱动的显示器刷新
   private var squeeze: (start: NSRect, end: NSRect, began: CFTimeInterval)?
@@ -158,9 +158,12 @@ final class OverlayPanel: NSPanel {
     }
   }
 
-  /// 挤压入场（实验，像 macOS 26 的 Spotlight）：窗口从窄一成、矮四分之一（顶边不动、左右居中）弹开到原尺寸，
+  /// 挤压入场（像 macOS 26 的 Spotlight）：窗口从窄一成、矮四分之一（顶边不动、左右居中）弹开到原尺寸，
   /// 冲过头一点再回来（island 曲线 0.42 s / bounce 0.22）。动的是窗口本身（毛玻璃、阴影由窗口服务器按真实大小画）；
-  /// 窗口帧动画只支持贝塞尔，实测冲不过头（还会忽略时长），所以跟着显示器刷新逐帧按 SwiftUI 的 Spring 算帧
+  /// 窗口帧动画只支持贝塞尔，实测冲不过头（还会忽略时长），所以跟着显示器刷新逐帧按 SwiftUI 的 Spring 算帧。
+  /// 逐帧改窗口尺寸本身就贵（2026-10-03 屏外实测主线程每帧中位 4–6 ms、慢的 15–30 ms，大头是窗口服务器重分配缓冲、
+  /// 重算形状和阴影，SwiftUI 重排只占 1–2 ms），所以最高 60 Hz：120 Hz 屏上每帧只有 8.3 ms，跟不上就掉帧。
+  /// ponytail: 要更顺得把窗口定在终点、只动图层，可阴影是窗口服务器按窗口内容算的、跟不上图层动画，没有公开接口
   private func squeezeIn() {
     NSAnimationContext.runAnimationGroup { context in
       context.duration = Style.fadeIn
@@ -176,6 +179,7 @@ final class OverlayPanel: NSPanel {
     setFrame(start, display: false)
     guard let link = contentView?.displayLink(target: self, selector: #selector(stepSqueeze))
     else { return endSqueeze() }
+    link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
     link.add(to: .main, forMode: .common)
     squeezeLink = link
   }
