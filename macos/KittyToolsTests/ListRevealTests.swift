@@ -140,4 +140,41 @@ struct ListRevealTests {
     for entry in entries[..<30].reversed() { _ = try follow(entry) }
     #expect(visible.minY == 0)
   }
+
+  /// 只画可见区附近（ListWindow，2026-10-03）：按段取要画的项，上下各多 overscan；段号超出内容（列表刚变短）时
+  /// 按最后一段画；空列表什么都不画
+  @Test func windowRange() {
+    let tops = (0...1000).map { CGFloat($0) * 40 }  // 1000 行，每行 40
+    let viewport: CGFloat = 427.5
+    // 第 0 段：顶上内缩 6，画到 −6 + 240 + 427.5 + 320 = 981.5 为止
+    #expect(ListWindow.range(tops, band: 0, inset: 6, viewport: viewport) == 0..<25)
+    // 第 10 段：顶在 2394，从 2074 画到 3381.5
+    #expect(ListWindow.range(tops, band: 10, inset: 6, viewport: viewport) == 51..<85)
+    // 段号超出内容：按最后一段（39834）画，一直到最后一行
+    #expect(ListWindow.range(tops, band: 1000, inset: 6, viewport: viewport) == 987..<1000)
+    #expect(ListWindow.range([0], band: 3, inset: 6, viewport: viewport).isEmpty)
+  }
+
+  /// 翻译历史的列表几何：标题 24、行 44 一次算好；每一组第一条的区间连着标题；身份标题按标题字、行按条目
+  @Test func historyLayout() {
+    let entries = (0..<5).map { _ in
+      HistoryStore.Entry(
+        id: UUID(), source: "s", target: .zhHans, result: "r", service: "", createdAt: .now,
+        favorite: false)
+    }
+    let layout = HistoryView.Layout(sections: [
+      HistoryView.DayGroup(title: "今天", entries: Array(entries[..<3])),
+      HistoryView.DayGroup(title: "昨天", entries: Array(entries[3...])),
+    ])
+    // 先定类型再算（字面量混着算类型推断会超时）
+    let (header, row): (CGFloat, CGFloat) = (24, 44)
+    let yesterday = header + row * 3
+    #expect(layout.entries.count == 7 && layout.totalHeight == header * 2 + row * 5)
+    #expect(layout.offset(of: entries[3].id) == yesterday + header)
+    #expect(layout.span(of: entries[3].id) == yesterday...yesterday + header + row)
+    #expect(
+      layout.span(of: entries[4].id) == yesterday + header + row...yesterday + header + row * 2)
+    #expect(layout.offset(of: UUID()) == nil)
+    #expect(Set(layout.entries.indices.map(layout.id(of:))).count == 7)
+  }
 }

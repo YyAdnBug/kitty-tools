@@ -1,7 +1,8 @@
 // 翻译历史（N7，mac-whisker §6 翻译）：整块替换浮窗的结果区（原文区不动，开 / 关时结果区 settle 交叉淡变），
 // 和剪贴板同一套键盘列表——顶上搜索框（CommandTextField，↑↓ / ↩ / ⇧Tab / Esc 走 doCommandBy）+ 全部 / 收藏两枚
 // 范围胶囊（品牌粉 0.16 底 + brandInk 字）；按 今天 / 昨天 / 日期 分组（11 semibold tertiary，无灰条、无分割线）；
-// 行 44（原文、译文各一行，右侧时间与星标）；一块中性高亮按前缀和定位、在行间滑动（键盘 snap、连发 instant、点选 glide）。
+// 行 44（原文、译文各一行，右侧时间与星标）；一块中性高亮按前缀和定位、在行间滑动（键盘 snap、连发 instant、点选 glide）；
+// 列表只画可见区附近、上下按前缀和撑开（ListWindow，2026-10-03：交给 LazyVStack 时条目多了高亮错位、越往后越卡）。
 // ↩ / 双击重新翻译，⌘⌫ 删（不确认，⌘Z 撤销）、⌘C 复制译文、⇧⌘C 复制原文、⌘D 收藏（全 App 收藏都是 ⌘D，体检 A31）；
 // ⌘K 从右下角弹动作菜单（共用 ActionMenu，体检 C6：单条操作 ｜ 导出 › / 清空历史…，开着时搜索框用来过滤它），
 // 右键菜单是同一份；条数在浮窗的「⋯」菜单，没有「共 N 条 · 收藏 M」底栏。
@@ -356,6 +357,8 @@ struct HistoryView: View {
   @State private var searchFocused = false
   /// 列表的滚动位置：选中跟随滚动按前缀和算目标 y（RevealsSelection），不按行 id 滚
   @State private var position = ScrollPosition()
+  /// 滚动位置落在第几段（ListWindow）：列表只画这一段附近，跨段时才重画
+  @State private var scrollBand = 0
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   /// 分组标题和行高：高亮按它们的前缀和定位，视图里的高度必须正好是这两个值
@@ -363,6 +366,8 @@ struct HistoryView: View {
   static let rowHeight: CGFloat = 44
   /// 列表底下的内缩；选中跟随滚动时上下都留这么多（顶上没有内缩，往上滚时让出来）
   static let scrollMargin: CGFloat = 10
+  /// 列表的可见区最高多高（历史开着时结果区固定 420，减去搜索框那一行）：只画可见区附近时按它多画
+  static let maxViewport: CGFloat = 420
 
   struct DayGroup: Equatable {
     let title: String
@@ -416,30 +421,28 @@ struct HistoryView: View {
 
   // MARK: 列表
 
+  /// 只画可见区附近的标题和行，上下按前缀和撑开（ListWindow）：画的位置就是高亮、跟随滚动算的位置，开销只和这三十来项有关
   private func listView(_ entries: [HistoryStore.Entry], list: HistoryList) -> some View {
-    let sections = Self.sections(entries)
+    let layout = Layout(sections: Self.sections(entries))
     let selected = HistoryList.selected(list.selectedID, in: entries)
+    let range = ListWindow.range(
+      layout.tops, band: scrollBand, inset: 0, viewport: Self.maxViewport)
     return ScrollView {
-      LazyVStack(alignment: .leading, spacing: 0) {
-        ForEach(sections, id: \.title) { section in
-          Text(section.title)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(.tertiary)
-            .padding(.leading, 10)
-            .padding(.bottom, 3)
-            .frame(
-              maxWidth: .infinity, minHeight: Self.headerHeight, maxHeight: Self.headerHeight,
-              alignment: .bottomLeading
-            )
-            .accessibilityAddTraits(.isHeader)
-          ForEach(section.entries) { entry in
+      VStack(alignment: .leading, spacing: 0) {
+        Color.clear.frame(height: layout.tops[range.lowerBound])
+        ForEach(range.map { (id: layout.id(of: $0), index: $0) }, id: \.id) { item in
+          switch layout.entries[item.index] {
+          case .header(let section): header(layout.sections[section].title)
+          case .row(let section, let index):
+            let entry = layout.sections[section].entries[index]
             row(entry, isSelected: entry.id == selected?.id, list: list)
-              // 滚到最后一行时取下一页（体检 B22）
+              // 滚到最后一行附近时取下一页（体检 B22）
               .onAppear { if entry.id == entries.last?.id { list.loadMore() } }
           }
         }
+        Color.clear.frame(height: layout.totalHeight - layout.tops[range.upperBound])
       }
-      .background(alignment: .topLeading) { highlight(selected, sections: sections, list: list) }
+      .background(alignment: .topLeading) { highlight(selected, layout: layout, list: list) }
       .padding(.horizontal, 12)
       .padding(.bottom, Self.scrollMargin)
     }
@@ -448,15 +451,31 @@ struct HistoryView: View {
       RevealsSelection(
         position: $position, key: selected?.id, motion: list.selectionMotion,
         coveredTop: Self.scrollMargin, inset: Self.scrollMargin
-      ) { selected.flatMap { Self.span(of: $0.id, in: sections) } }
+      ) { selected.flatMap { layout.span(of: $0.id) } }
     )
+    .modifier(TracksScrollBand(band: $scrollBand))
+    // 新的滚动视图（空态之后列表回来）从顶上开始
+    .onAppear { scrollBand = 0 }
   }
 
-  /// 一块中性高亮：按分组标题和行高的前缀和定位，在行间滑动（不用 matchedGeometryEffect：LazyVStack 回收行时会跳）
+  private func header(_ title: String) -> some View {
+    Text(title)
+      .font(.system(size: 11, weight: .semibold))
+      .foregroundStyle(.tertiary)
+      .padding(.leading, 10)
+      .padding(.bottom, 3)
+      .frame(
+        maxWidth: .infinity, minHeight: Self.headerHeight, maxHeight: Self.headerHeight,
+        alignment: .bottomLeading
+      )
+      .accessibilityAddTraits(.isHeader)
+  }
+
+  /// 一块中性高亮：按分组标题和行高的前缀和定位，在行间滑动（不用 matchedGeometryEffect：行离开可见区附近就被拿掉，跟着它会跳）
   @ViewBuilder private func highlight(
-    _ selected: HistoryStore.Entry?, sections: [DayGroup], list: HistoryList
+    _ selected: HistoryStore.Entry?, layout: Layout, list: HistoryList
   ) -> some View {
-    if let selected, let offset = Self.offset(of: selected.id, in: sections) {
+    if let selected, let offset = layout.offset(of: selected.id) {
       let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
       shape
         .fill(Style.selectedFill)
@@ -531,12 +550,20 @@ struct HistoryView: View {
 
   // MARK: 纯函数（配单测）
 
-  /// 按天分组：今天 / 昨天 / M月d日 / yyyy年M月d日（条目已是新→旧）
+  /// 按天分组：今天 / 昨天 / M月d日 / yyyy年M月d日（条目已是新→旧）。同一天的条目是连着的：只在换天时算标题，
+  /// 落在当前这组那天里的直接归进去（每条都格式化一次日期的话几千条要几毫秒，每次按键都重算一遍）
   static func sections(
     _ entries: [HistoryStore.Entry], now: Date = .now, calendar: Calendar = .current
   ) -> [DayGroup] {
     var sections: [DayGroup] = []
+    var day: Range<Date>?
     for entry in entries {
+      if let day, day.contains(entry.createdAt) {
+        sections[sections.count - 1].entries.append(entry)
+        continue
+      }
+      let start = calendar.startOfDay(for: entry.createdAt)
+      day = start..<(calendar.date(byAdding: .day, value: 1, to: start) ?? .distantFuture)
       let title = dayTitle(entry.createdAt, now: now, calendar: calendar)
       if sections.last?.title == title {
         sections[sections.count - 1].entries.append(entry)
@@ -572,22 +599,80 @@ struct HistoryView: View {
 
   /// 高亮的 y：前面的分组标题和行高累加
   static func offset(of id: UUID, in sections: [DayGroup]) -> CGFloat? {
-    var y: CGFloat = 0
-    for section in sections {
-      y += headerHeight
-      if let index = section.entries.firstIndex(where: { $0.id == id }) {
-        return y + CGFloat(index) * rowHeight
-      }
-      y += CGFloat(section.entries.count) * rowHeight
-    }
-    return nil
+    Layout(sections: sections).offset(of: id)
   }
 
   /// 选中跟随滚动要露出来的区间（滚动内容坐标；列表顶上没有内缩）：这一行；它是一组的第一条时连分组标题一起
   static func span(of id: UUID, in sections: [DayGroup]) -> ClosedRange<CGFloat>? {
-    guard let top = offset(of: id, in: sections) else { return nil }
-    let header = sections.contains { $0.entries.first?.id == id } ? headerHeight : 0
-    return top - header...top + rowHeight
+    Layout(sections: sections).span(of: id)
+  }
+
+  /// 列表几何（前缀和）：分组标题 24、行 44，一次算好每一项的顶。列表就按它排（只画可见区附近，ListWindow），
+  /// 高亮、跟随滚动也从这里算，所以算出来的位置就是画出来的位置
+  struct Layout {
+    /// 列表里的一项：分组标题（第几组）、行（第几组的第几条）
+    enum Entry {
+      case header(Int)
+      case row(Int, Int)
+    }
+
+    let sections: [DayGroup]
+    let entries: [Entry]
+    /// 每一项的顶，比 entries 多一个：最后一个是总高
+    let tops: [CGFloat]
+    /// 条目 id → 它在 entries 里的下标
+    private let rowIndex: [UUID: Int]
+
+    init(sections: [DayGroup]) {
+      self.sections = sections
+      var entries: [Entry] = []
+      var tops: [CGFloat] = []
+      var rowIndex: [UUID: Int] = [:]
+      var y: CGFloat = 0
+      for (section, group) in sections.enumerated() {
+        entries.append(.header(section))
+        tops.append(y)
+        y += HistoryView.headerHeight
+        for (index, entry) in group.entries.enumerated() {
+          rowIndex[entry.id] = entries.count
+          entries.append(.row(section, index))
+          tops.append(y)
+          y += HistoryView.rowHeight
+        }
+      }
+      tops.append(y)
+      self.entries = entries
+      self.tops = tops
+      self.rowIndex = rowIndex
+    }
+
+    var totalHeight: CGFloat { tops[tops.count - 1] }
+
+    func offset(of id: UUID) -> CGFloat? {
+      rowIndex[id].map { tops[$0] }
+    }
+
+    /// 这一行；它是一组的第一条（上一项是标题）时连标题一起
+    func span(of id: UUID) -> ClosedRange<CGFloat>? {
+      guard let index = rowIndex[id] else { return nil }
+      let top = tops[index]
+      let header: CGFloat =
+        if index > 0, case .header = entries[index - 1] { HistoryView.headerHeight } else { 0 }
+      return top - header...top + HistoryView.rowHeight
+    }
+
+    /// ForEach 的身份：标题按标题字（同一天）、行按条目
+    func id(of index: Int) -> EntryID {
+      switch entries[index] {
+      case .header(let section): .header(sections[section].title)
+      case .row(let section, let row): .row(sections[section].entries[row].id)
+      }
+    }
+
+    enum EntryID: Hashable {
+      case header(String)
+      case row(UUID)
+    }
   }
 }
 

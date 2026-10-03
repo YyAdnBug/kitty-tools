@@ -2,10 +2,9 @@
 // 要露出来的区间由调用方按分组数据的前缀和算（不量视图），经 ScrollPosition.scrollTo(y:) 滚过去；
 // 看不看得见按上一次滚动的终点判断，滚动停下来还没到目标时补滚一次（SwiftUI 会吞掉动画末尾发的 scrollTo）；
 // ScrollPosition 被用户或别处改过就放弃这个目标，列表被空状态换掉时复位（重建出来从顶上开始）。
-// 不用 ScrollViewReader.scrollTo(id)：LazyVStack 里还没实例化的行滚不准，连按 ↓ 越过可见区后列表就不再跟着走。
-// 按前缀和滚的前提是列表真按前缀和排：LazyVStack 没排过的行是估的（条目多、一下跳得远就对不上），剪贴板因此改成
-// 只画可见区附近、上下按前缀和撑开（2026-10-03）；启动器、翻译历史还是 LazyVStack
+// 不用 ScrollViewReader.scrollTo(id)：LazyVStack 里还没实例化的行滚不准，连按 ↓ 越过可见区后列表就不再跟着走
 // （2026-09-29 用户真机报告启动器，第 10 批）。
+// 按前缀和滚的前提是列表真按前缀和排。剪贴板、翻译历史只画可见区附近（ListWindow，2026-10-03）；启动器结果少，还是 LazyVStack。
 
 import SwiftUI
 
@@ -26,6 +25,53 @@ enum ListReveal {
       return nil
     }
     return target < inset * 2 ? 0 : target
+  }
+}
+
+/// 只画可见区附近（剪贴板、翻译历史，2026-10-03 用户报：条目多了高亮错位、滚动和 ↑↓ 卡）：列表按前缀和排，
+/// 滚动位置按段记（TracksScrollBand，跨段才重画列表），画这一段上下各多 overscan 里的项，上下用前缀和算出的高度撑开，
+/// 画的位置就是高亮、跟随滚动按前缀和算的位置。不交给 LazyVStack：它没排过的行按已排过的平均高度估（标题、透镜混在里面），
+/// 条目多了、一下跳得远（拖滚动条、在第一条按 ↑ 绕到最后），屏上的行和前缀和差上百行、选中的行根本没画；
+/// 越往后每次布局也越贵（剪贴板 1000 条屏外实测：第 790 条附近按一下 ↓ 布局 56 ms，改后任意位置约 14 ms 连绘制）
+enum ListWindow {
+  /// 段高、往上下各多画多少：段内怎么滚、滚动动画落后一帧，画出来的都盖得住可见区；一段一段挪时进出的项都在可见区外
+  static let bandHeight: CGFloat = 240
+  static let overscan: CGFloat = 320
+
+  /// 要画的项（下标区间，二分）。tops：每一项的顶（列表坐标），比项数多一个，最后一个是总高；band：可见区的顶
+  /// （滚动内容坐标）落在第几段；inset：列表顶上的内缩（滚动内容坐标 − inset = 列表坐标）；viewport：可见区最高多高。
+  /// 列表一下子变短（删了一批）时滚动位置下一帧才夹回来：先按最后一段画，别空一帧
+  static func range(_ tops: [CGFloat], band: Int, inset: CGFloat, viewport: CGFloat) -> Range<Int> {
+    let count = max(tops.count - 1, 0)
+    let total = tops.last ?? 0
+    let top = CGFloat(min(band, Int(max(total - 1, 0) / bandHeight))) * bandHeight - inset
+    let (lower, upper) = (top - overscan, top + bandHeight + viewport + overscan)
+    /// 第一个满足的下标（predicate 对下标单调：前面都不满足、后面都满足）
+    func first(_ predicate: (Int) -> Bool) -> Int {
+      var (low, high) = (0, count)
+      while low < high {
+        let middle = (low + high) / 2
+        if predicate(middle) { high = middle } else { low = middle + 1 }
+      }
+      return low
+    }
+    let start = first { tops[$0 + 1] > lower }
+    return start..<max(start, first { tops[$0] >= upper })
+  }
+}
+
+/// 挂在列表的 ScrollView 上：可见区的顶跨段时改 band（ListWindow）。不在动画里改：滚进来的行不播插入过渡
+struct TracksScrollBand: ViewModifier {
+  @Binding var band: Int
+
+  func body(content: Content) -> some View {
+    content.onScrollGeometryChange(for: Int.self) { geometry in
+      Int(max(geometry.visibleRect.minY, 0) / ListWindow.bandHeight)
+    } action: { _, new in
+      var transaction = Transaction()
+      transaction.disablesAnimations = true
+      withTransaction(transaction) { band = new }
+    }
   }
 }
 

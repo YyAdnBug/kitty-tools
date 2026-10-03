@@ -28,7 +28,7 @@ struct ClipboardPanelView: View {
   @State private var shownKeys: EventModifiers = []
   /// 多选底栏「收藏夹…」按钮的左缘（面板坐标）：收藏夹列表锚在它上方
   @State private var groupsButtonX: CGFloat = 0
-  /// 滚动位置落在第几段（每段 bandHeight）：列表只画这一段附近的项，跨段时才重算面板。
+  /// 滚动位置落在第几段（ListWindow）：列表只画这一段附近的项，跨段时才重算面板。
   /// 别存滚动位置本身（每帧都会让整个面板重算）；吸顶标题逐帧要的位置在 scroll 里，只有它读
   @State private var scrollBand = 0
   @State private var scroll = ListScroll()
@@ -48,10 +48,6 @@ struct ClipboardPanelView: View {
   static let emptyListHeight: CGFloat = 140
   /// 筛选面板 / ⌘K 开着时列表区至少这么高（8.5 行菜单 + 上下余量），短列表时面板先长到放得下
   static let paletteListHeight: CGFloat = ActionMenu.rowHeight * 8.5 + 26
-  /// 列表按段记滚动位置、只画这一段附近（list）：段高 240，往上下各多画 320——段内怎么滚、滚动动画落后一帧，
-  /// 画出来的都盖得住整个可见区（列表区最高 427.5），一段一段挪时进出的行都在可见区外面
-  static let bandHeight: CGFloat = 240
-  static let overscan: CGFloat = 320
   /// 面板根视图的坐标系（多选底栏按钮报位置用）
   nonisolated private static let space = "clipboardPanel"
 
@@ -263,20 +259,13 @@ struct ClipboardPanelView: View {
     }
   }
 
-  /// 只画可见区附近的那些项（行、分组标题、「新建片段」），上下按前缀和算出的高度撑开（2026-10-03 用户报：条目多了高亮错位、
-  /// 滚动和 ↑↓ 卡）：画出来的位置就是 ListLayout 算的，和高亮、滚动、吸顶对得上；按键、滚动的开销只和画出来的三十来项有关。
-  /// 不用 LazyVStack：它没排过的行按已排过的平均高度估（分组标题 24、透镜最高 198 混在里面，800 条时估成约 51），
-  /// 一下跳得远（拖滚动条、在第一条按 ↑ 绕到最后）屏上是一百多行之前的那几条、选中的行根本没画；越往后每次布局也越贵
-  /// （屏外实测第 790 条按一下 ↓ 布局 56 ms）。吸顶的分组标题因此自己画（StickyHeader）
+  /// 只画可见区附近的那些项（行、分组标题、「新建片段」），上下按前缀和算出的高度撑开（ListWindow，为什么不用 LazyVStack
+  /// 见那里；2026-10-03 用户报条目多了高亮错位、滚动和 ↑↓ 卡）：画出来的位置就是 ListLayout 算的，和高亮、滚动、吸顶
+  /// 对得上；按键、滚动的开销只和画出来的三十来项有关。吸顶的分组标题因此自己画（StickyHeader）
   private func list(_ items: [ClipItem], layout: ListLayout, selected: ClipItem?, lensOpen: Bool)
     -> some View
   {
-    // 可见区的顶落在哪一段，换成列表坐标（去掉上内缩）。列表一下子变短（删了一批）时滚动位置下一帧才夹回来：
-    // 先按最后一段画，别空一帧
-    let band = min(scrollBand, Int(max(layout.totalHeight - 1, 0) / Self.bandHeight))
-    let top = CGFloat(band) * Self.bandHeight - Self.inset
-    let range = layout.range(
-      from: top - Self.overscan, to: top + Self.bandHeight + Self.maxListHeight + Self.overscan)
+    let range = layout.window(band: scrollBand)
     return ScrollView {
       VStack(alignment: .leading, spacing: 0) {
         Color.clear.frame(height: layout.top(of: range.lowerBound))
@@ -315,14 +304,7 @@ struct ClipboardPanelView: View {
         return top...top + layout.height(of: id)
       }
     )
-    // 跨段才改 scrollBand、重算面板；不在动画里改：滚进来的行不播插入过渡
-    .onScrollGeometryChange(for: Int.self) { geometry in
-      Int(max(geometry.visibleRect.minY, 0) / Self.bandHeight)
-    } action: { _, band in
-      var transaction = Transaction()
-      transaction.disablesAnimations = true
-      withTransaction(transaction) { scrollBand = band }
-    }
+    .modifier(TracksScrollBand(band: $scrollBand))
     .onScrollGeometryChange(for: CGFloat.self) {
       $0.visibleRect.minY
     } action: { _, y in
@@ -729,19 +711,10 @@ struct ListLayout {
     rowIndex[id].map { tops[$0] }
   }
 
-  /// 和 [lower, upper) 相交的项（下标区间，二分）
-  func range(from lower: CGFloat, to upper: CGFloat) -> Range<Int> {
-    /// 第一个满足的下标（predicate 对下标单调：前面都不满足、后面都满足）
-    func first(_ predicate: (Int) -> Bool) -> Int {
-      var (low, high) = (0, entries.count)
-      while low < high {
-        let middle = (low + high) / 2
-        if predicate(middle) { high = middle } else { low = middle + 1 }
-      }
-      return low
-    }
-    let start = first { tops[$0 + 1] > lower }
-    return start..<max(start, first { tops[$0] >= upper })
+  /// 滚动位置落在第 band 段时要画的项（ListWindow：上下各多画一些，可见区最高 maxListHeight）
+  func window(band: Int) -> Range<Int> {
+    ListWindow.range(
+      tops, band: band, inset: ClipboardPanelView.inset, viewport: ClipboardPanelView.maxListHeight)
   }
 }
 

@@ -474,11 +474,13 @@ struct ClipboardStoreTests {
   /// （分组标题、透镜混在里面），绕到最后时屏上是一百多行之前的那几条，选中的行根本没画出来
   @Test func lensStaysOnRowInLongList() throws {
     let (store, _) = try makeStore()
-    // 600 条跨 20 天（每天 30 条），文本长短混着：透镜高度不一（短文本 70、长文本 160）
+    // 600 条每 2 分钟一条（20 小时内：record 会按保留天数清掉过期的，最短 1 天；跨不跨午夜看跑的时候），
+    // 文本长短混着：透镜高度不一（短文本 70、长文本 160）
     for index in (0..<600).reversed() {
       let body = index % 3 == 0 ? String(repeating: "一段比较长的文字，", count: 12) : "短"
-      store.record(text("第 \(index) 条 " + body, ago: Double(index) * 2880 + 60))
+      store.record(text("第 \(index) 条 " + body, ago: Double(index) * 120 + 60))
     }
+    #expect(store.items.count == 600)
     let model = ClipboardPanelModel(store: store)
     let (window, close) = try showPanel(model)
     defer { close() }
