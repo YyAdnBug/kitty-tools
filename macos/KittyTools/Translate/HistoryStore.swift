@@ -172,8 +172,10 @@ import Observation
   /// 清空非收藏的历史
   func clearNonFavorites() {
     clears += 1
-    write { try db.execute("DELETE FROM translations WHERE favorite = 0") }
+    write { try db.execute(Self.dropNonFavorites) }
   }
+  /// 留下的只有收藏（生词本）；每日备份里也只留它们，用的是同一句（Backup.dropped）
+  nonisolated static let dropNonFavorites = "DELETE FROM translations WHERE favorite = 0"
 
   // MARK: 导出（纯函数，配单测）
 

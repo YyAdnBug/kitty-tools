@@ -1,12 +1,15 @@
 // 应用生命周期：单实例检查，按依赖顺序组装各模块（PLAN §4），热键与各翻译入口，首次安装打开欢迎引导、
-// 更新后第一次启动用刘海岛说一声，退出 / 锁屏时的清理；录屏（框选、开录、结果、飞入和视频卡、退出前收尾、上次闪退留下的文件）；
+// 更新后第一次启动用刘海岛说一声，退出 / 锁屏时的清理；数据打不开时问用户怎么办、每天备份的时机（Storage/Backup.swift）；
+// 录屏（框选、开录、结果、飞入和视频卡、退出前收尾、上次闪退留下的文件）；
 // 录音（录音第 5 批：开录、和录屏互斥、结果、飞入和录音卡，收尾和闪退恢复同录屏）。
 
 import AppKit
+import OSLog
 import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-  /// 只有真正跑起来的实例才做退出清理：让位退出的重复实例不能碰数据库
+  /// 数据打开之后才算跑起来，才做退出清理、才响应「再打开一次」：让位退出的重复实例、还停在「数据打不开」弹框上的
+  /// 都不能碰数据库（弹框开着时去读 stores 会把打开流程再跑一遍）
   private var isRunning = false
   /// 划词取词进行中：重复按热键直接忽略
   private var isReadingSelection = false
@@ -27,23 +30,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   // MARK: 数据与服务（按依赖顺序）
 
+  /// ~/Library/Application Support/<bundle id>/（Debug 与 Release 的 bundle id 不同，数据天然隔离）
   private let dataDirectory = URL.applicationSupportDirectory.appending(
     path: Bundle.main.bundleIdentifier ?? "com.yy.kitty-tools.native")
-  private lazy var database: Database = Self.openOrQuit { [dataDirectory] in
-    try FileManager.default.createDirectory(at: dataDirectory, withIntermediateDirectories: true)
-    return try Database(path: dataDirectory.appending(path: "kitty.sqlite3").path)
+  /// 库和读它的三个仓库：一起打开，哪一步（开库、建表、读表）抛错都算打不开，不留开到一半的连接
+  /// （不是 private：BackupTests 在临时目录里拿它走真的打开流程）
+  struct Stores {
+    let clipboard: ClipboardStore
+    let launcher: LauncherUsage
+    let history: HistoryStore
+
+    init(in directory: URL) throws {
+      let images = directory.appending(path: "images")
+      try FileManager.default.createDirectory(at: images, withIntermediateDirectories: true)
+      let database = try Database(path: directory.appending(path: Backup.databaseName).path)
+      clipboard = try ClipboardStore(db: database, images: ImageStore(directory: images))
+      launcher = try LauncherUsage(db: database)
+      history = try HistoryStore(db: database)
+    }
   }
-  private lazy var clipboardStore: ClipboardStore = Self.openOrQuit { [database, dataDirectory] in
-    let images = dataDirectory.appending(path: "images")
-    try FileManager.default.createDirectory(at: images, withIntermediateDirectories: true)
-    return try ClipboardStore(db: database, images: ImageStore(directory: images))
-  }
-  private lazy var launcherUsage: LauncherUsage = Self.openOrQuit { [database] in
-    try LauncherUsage(db: database)
-  }
-  private lazy var historyStore: HistoryStore = Self.openOrQuit { [database] in
-    try HistoryStore(db: database)
-  }
+  private lazy var stores = Self.openOrQuit(in: dataDirectory)
+  private var clipboardStore: ClipboardStore { stores.clipboard }
+  private var launcherUsage: LauncherUsage { stores.launcher }
+  private var historyStore: HistoryStore { stores.history }
+  /// 备份正在做（backupIfDue）：换日和锁屏的通知挨着来时不做两遍
+  private var isBackingUp = false
   private lazy var watcher = ClipboardWatcher(store: clipboardStore)
   private let serviceStore = TranslateServiceStore()
   private lazy var coordinator = TranslateCoordinator(services: serviceStore, history: historyStore)
@@ -353,10 +364,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 单测以本 App 为宿主运行：不碰真实数据、不起热键
     if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil { return }
     if yieldToOlderInstance() { return }
-    isRunning = true
     Prefs.registerDefaults()
     Prefs.migrate()
     AppAppearance.apply()  // 在任何浮层、设置窗、菜单出现之前
+    // 打开数据：打不开时就在这里问用户（用备份 / 重新开始 / 退出），这时还没有热键和菜单栏图标
+    _ = stores
+    isRunning = true
 
     // 本 App 生成的新文字写剪贴板时同时记进历史（Paster.write(string:record:)，mac-native §5）；暂停记录时不记
     Paster.recordText = { [unowned self] in
@@ -376,7 +389,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if UserDefaults.standard.bool(forKey: Prefs.clipboardClearOnLock) {
           clipboardStore.clearOrdinary()
         }
+        backupIfDue()
       }
+    }
+    // 每天一份备份：启动时一次，一直开着不退的靠系统的换日通知（午夜发；睡过了午夜的醒来时补发，不保证准点），
+    // 锁屏时再看一眼（换日那次没备成的补上）。都是现成的事件，不为它加定时器
+    backupIfDue()
+    NotificationCenter.default.addObserver(
+      forName: .NSCalendarDayChanged, object: nil, queue: .main
+    ) { [unowned self] _ in
+      MainActor.assumeIsolated { backupIfDue() }
     }
 
     for action in HotKeyAction.allCases {
@@ -460,6 +482,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 再打开一次本 App：点程序坞图标（设置窗打开期间才有）、在访达或启动器里打开已经在运行的它。
   /// 菜单栏图标隐藏时（设置 › 通用，第 9 批 M1）就靠这条回到设置
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+    // 启动时「数据打不开」的弹框还开着（没有程序坞图标，容易被别的窗口盖住再点一次）：把它带到前面，不建设置窗
+    guard isRunning else {
+      NSApp.activate()
+      return false
+    }
     showSettings()
     return false
   }
@@ -1322,16 +1349,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     return true
   }
 
-  /// 数据库打不开就没法工作：弹窗说明后退出。数据目录 ~/Library/Application Support/<bundle id>/
-  /// （Debug 与 Release 的 bundle id 不同，数据天然隔离）
-  private static func openOrQuit<T>(_ open: () throws -> T) -> T {
+  /// 今天还没备份过就备一份（Storage/Backup.swift：只备用户留下的收藏 / 片段 / 生词本等，另开只读连接在主线程外做，
+  /// 1.7 MB 的库约 10 ms）。备好了、库有问题、没备成都只记日志，不打扰用户
+  private func backupIfDue() {
+    guard !isBackingUp else { return }
+    isBackingUp = true
+    Task {
+      let outcome = await Backup.run(in: dataDirectory)
+      isBackingUp = false
+      switch outcome {
+      case .made(let url): Log.storage.notice("已备份数据库：\(url.lastPathComponent, privacy: .public)")
+      case .damaged: Log.storage.error("数据库有问题，今天没有备份；已有的备份没动")
+      case .failed(let reason): Log.storage.error("备份数据库失败：\(reason)")
+      case .notDue: break
+      }
+    }
+  }
+
+  /// 打开数据库和读它的三个仓库。打不开不直接退出（第二轮体检 S2，Storage/Backup.swift）：弹框让用户选用最近的备份、
+  /// 重新开始还是退出；前两种把出问题的文件挪开留着、再开一次，还打不开才说明后退出（不循环）
+  private static func openOrQuit(in directory: URL) -> Stores {
     do {
-      return try open()
+      return try Recovery.open(
+        in: directory, open: { try Stores(in: directory) },
+        ask: { problem in
+          let wording = Recovery.wording(for: problem, directory: directory)
+          let alert = NSAlert()
+          alert.alertStyle = .critical
+          alert.messageText = wording.title
+          alert.informativeText = wording.text
+          for title in wording.buttons { alert.addButton(withTitle: title) }
+          // Esc = 退出（什么都不动）；第一个按钮是默认（↩）
+          alert.buttons.last?.keyEquivalent = "\u{1b}"
+          NSApp.activate()
+          let index =
+            alert.runModal().rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
+          return wording.choices.indices.contains(index) ? wording.choices[index] : .quit
+        })
+    } catch Recovery.Failure.quit {
+      exit(0)
     } catch {
       let alert = NSAlert()
       alert.alertStyle = .critical
       alert.messageText = "无法打开数据库"
-      alert.informativeText = String(describing: error)
+      alert.informativeText =
+        "\(error)\n\n数据目录：\((directory.path as NSString).abbreviatingWithTildeInPath)"
       NSApp.activate()
       alert.runModal()
       exit(1)

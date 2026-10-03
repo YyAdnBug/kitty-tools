@@ -154,8 +154,10 @@ final class LauncherUsage {
   /// 设置 › 启动器「清空使用记录」：排序和「常用」从头学（收藏不动）
   func clearAll() {
     entries = [:]
-    catchingErrors { try db.execute("DELETE FROM launcher_usage") }
+    catchingErrors { try db.execute(Self.dropUsage) }
   }
+  /// 使用记录整张表（里面有输入过的查询、打开过的网址和文件）；每日备份里也不留，用的是同一句（Backup.dropped）
+  nonisolated static let dropUsage = "DELETE FROM launcher_usage"
 
   // MARK: 收藏
 

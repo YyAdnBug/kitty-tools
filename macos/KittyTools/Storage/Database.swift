@@ -1,6 +1,7 @@
-// SQLite 单连接封装（系统 libsqlite3，WAL 模式）。全部在主线程执行：每次只写一行，远小于 1ms（PLAN §4）。
+// SQLite 单连接封装（系统 libsqlite3，WAL 模式）。主连接全部在主线程执行：每次只写一行，远小于 1ms（PLAN §4）。
 // 和 sqlite3 C API 打交道的代码只在这里，调用方只见 Swift 值。
-// nonisolated：deinit 要关连接（默认 MainActor 的类，deinit 碰不到 OpaquePointer）；实际只在主线程用，不是 Sendable。
+// nonisolated：deinit 要关连接（默认 MainActor 的类，deinit 碰不到 OpaquePointer）；不是 Sendable，一个连接只在建它的地方用——
+// 主连接在主线程，唯一在主线程外的是每日备份自己另开的只读连接（Backup.run，用完就关）。
 
 import Foundation
 import SQLite3
@@ -37,9 +38,10 @@ nonisolated final class Database {
 
   private var handle: OpaquePointer?
 
-  /// path 传 ":memory:" 得到内存库（单测用）。readOnly：只读打开别人的库（启动器读克隆出来的 Chromium 系浏览器的网站图标库），
-  /// 不建文件、不改日志模式
-  init(path: String, readOnly: Bool = false) throws {
+  /// path 传 ":memory:" 得到内存库（单测用）。readOnly：只读打开（启动器读克隆出来的 Chromium 系浏览器的网站图标库；
+  /// 每日备份另开的连接和检查备份文件，Backup），不建文件、不改日志模式。wal 传 false：可写但不改成 WAL
+  /// （整理备份文件用：备份是单个文件，旁边不能留 -wal、-shm）
+  init(path: String, readOnly: Bool = false, wal: Bool = true) throws {
     let flags = readOnly ? SQLITE_OPEN_READONLY : SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE
     guard sqlite3_open_v2(path, &handle, flags, nil) == SQLITE_OK else {
       // 打开失败也可能给了连接：关掉并置空，throw 之后 deinit 照样会跑，不能再关一次
@@ -48,7 +50,7 @@ nonisolated final class Database {
       throw Failure(description: "打开数据库失败：\(path)")
     }
     sqlite3_busy_timeout(handle, 2000)
-    if !readOnly { try execute("PRAGMA journal_mode = WAL") }
+    if !readOnly, wal { try execute("PRAGMA journal_mode = WAL") }
   }
 
   deinit { sqlite3_close(handle) }
@@ -73,6 +75,19 @@ nonisolated final class Database {
       default: throw failure(sql)
       }
     }
+  }
+
+  /// 库的页结构是不是好的（PRAGMA quick_check；坏库有的返回一串问题、有的直接报错，都算不好）。
+  /// 实测 1.7 MB 的库不到 1 ms、49 MB 的约 10 ms
+  func isIntact() -> Bool {
+    (try? query("PRAGMA quick_check") { $0.text(0) }) == ["ok"]
+  }
+
+  /// 整库拷一份到 path（VACUUM INTO）：在一个读事务里重建出一个新文件，WAL 里还没合并的写入也在里面，是一致的快照
+  /// （直接拷文件拿到的可能是写到一半的）；出来的文件不带 -wal / -shm。path 已经有文件时报错，不覆盖。
+  /// 实测 1.7 MB 的库约 6 ms、49 MB 的约 83 ms（Backup.run 另开只读连接在主线程外做）
+  func copy(to path: String) throws {
+    try execute("VACUUM INTO ?", [path])
   }
 
   /// body 抛错则整体回滚

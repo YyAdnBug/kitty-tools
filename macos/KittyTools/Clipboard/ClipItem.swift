@@ -44,6 +44,9 @@ struct ClipItem: Identifiable, Hashable, Sendable {
   /// 用户显式留下的条目（收藏 / 片段；收藏夹里的都是收藏）：保留天数、图片占用、退出与锁屏清空都不动它们。
   /// 这条规则只在这里定义一次（体检 A1：分组并进收藏，备注不算留下）
   var isRetained: Bool { favorite || isSnippet }
+  /// 同一条规则在库里的写法（每日备份只留这些行，Backup.dropped）：改 isRetained 要连它一起改，BackupTests 核对两边挑出来的
+  /// 是同一批。多带一个 group_id 是兜底：不变式保证归了收藏夹的一定是收藏，万一哪一行没跟上，备份宁可多留
+  nonisolated static let retainedSQL = "favorite = 1 OR snippet = 1 OR group_id IS NOT NULL"
 
   /// 是否是同一份剪贴板内容：文本比正文，文件比路径列表，图片比 PNG 哈希
   func hasSameContent(as other: ClipItem) -> Bool {
