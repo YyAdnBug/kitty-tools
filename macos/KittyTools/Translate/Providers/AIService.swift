@@ -104,6 +104,7 @@ nonisolated enum AIService {
     delta: @escaping @Sendable ([String: Any]) -> StreamDelta
   ) -> AsyncThrowingStream<String, Error> {
     let cacheKey = "\(url.absoluteString)\n\(model)"
+    let headers = headers.merging(openCodeHeaders(url)) { $1 }
     let requests = tiers.map { tier in
       HTTP.request(url, headers: headers, json: body.merging(tier) { $1 })
     }
@@ -178,6 +179,25 @@ nonisolated enum AIService {
     default: return 4096
     }
   }
+
+  /// OpenCode（Zen / Go，opencode.ai）对客户端的两条要求（官方文档 docs/go「Where can I use it」）：每个请求带
+  /// 会话 ID `x-opencode-session`，不带就 400「Request is missing x-opencode-session and cannot be routed
+  /// efficiently」；User-Agent 写自己的名字和版本。服务端按会话 ID 把请求固定到同一个后端、复用提示词缓存，每个 ID
+  /// 记一行，所以一次运行从头到尾用同一个 ID，不是每次翻译换一个。别的地址什么都不加。
+  /// 不进 AIVendor：那张表每一行都带一张内置 logo，OpenCode 的图标取自官网
+  static func openCodeHeaders(_ url: URL) -> [String: String] {
+    guard let host = url.host()?.lowercased(),
+      host == "opencode.ai" || host.hasSuffix(".opencode.ai")
+    else { return [:] }
+    return ["x-opencode-session": openCodeSession, "User-Agent": userAgent]
+  }
+
+  /// 随机生成，不含任何用户信息
+  private static let openCodeSession = UUID().uuidString
+  private static let userAgent: String = {
+    let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+    return "KittyTools/\(version ?? "0")"
+  }()
 
   /// 关闭「思考」的参数档位（翻译不需要推理，开着会拖慢且可能占满输出额度），最后一档什么都不带
   static func tiers(_ url: URL, _ aiProtocol: TranslateService.AIProtocol, _ model: String)

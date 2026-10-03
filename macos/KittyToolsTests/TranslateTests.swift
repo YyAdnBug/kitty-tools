@@ -132,6 +132,21 @@ struct AIServiceTests {
     #expect(AIService.tiers(openAI, .openai, "gpt-5").last?.isEmpty == true)  // 最后一档兜底
   }
 
+  /// OpenCode（Zen / Go）不带会话 ID 直接 400：只给 opencode.ai 加，一次运行里 ID 不变
+  @Test func openCodeHeaders() {
+    let headers = { (url: String) in AIService.openCodeHeaders(URL(string: url)!) }
+    let go = headers("https://opencode.ai/zen/go/v1/chat/completions")
+    #expect(UUID(uuidString: go["x-opencode-session"] ?? "") != nil)
+    #expect(go["User-Agent"]?.wholeMatch(of: /KittyTools\/\d+(\.\d+)+/) != nil)
+    #expect(headers("https://OpenCode.ai/zen/v1/messages") == go)
+    for url in [
+      "https://api.deepseek.com/v1/chat/completions", "https://notopencode.ai/v1",
+      "http://127.0.0.1:8000/v1",
+    ] {
+      #expect(headers(url).isEmpty, "\(url)")
+    }
+  }
+
   @Test func localNetwork() {
     for host in [
       "http://localhost:1234", "http://127.0.0.1", "http://10.0.0.2", "http://172.20.1.1",
