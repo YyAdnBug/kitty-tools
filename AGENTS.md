@@ -6,10 +6,10 @@
 
 **kitty-tools 原生 macOS 版**：用 Swift 6 + SwiftUI / AppKit 重写的纯原生菜单栏工具，替代 Tauri 版的 macOS 端。基本自用：只支持 Apple 芯片（arm64），最低 macOS 15.0。
 
-- **Phase 1（当前）**：剪贴板历史 + 翻译（划词 / 输入 / 复制即译 / 截图翻译，全部翻译服务），目标版本 0.1.0。截图翻译提前做了（Vision 本机识字，`Screenshot/`）；M12 按 Bob 补了浮窗快捷键、收藏导出、替换原文。
-- **Phase 2 / 3（进行中）**：启动器（`Launcher/`，M7、M8、M11 已完成；M13 文件搜索 open / find 代码完成待手测，动作面板 / ⌘Y 快速查看 2026-09-28 体检第 5 批代码完成待手测；kill（进程 / 端口）、网站图标、浏览历史、系统设置面板（还要逐个核对 45 个能跳到，PLAN §12）、单位换算 / 进制 2026-09-28 体检第 6 批代码完成待手测；浏览器书签与历史只列装了的、加 Safari / Firefox / Arc 等（`Launcher/Browsers.swift`）2026-09-29 第 12 批代码完成待手测；系统命令对标 Alfred 2026-09-27 代码完成待手测）/ 录屏与录音（2026-09-30 立项、全部按推荐，PLAN §10「录屏与录音」；第 0 批实测完成；第 1 批录屏最小闭环（⌥R 框选 → 录 → 停止保存，`Screenshot/ScreenRecorder.swift`）、第 2 批录制 HUD / 倒数 / 截图里按 R 切录屏 / 设置 › 截图「录屏」组（`Screenshot/RecordingHUD.swift`）、第 3 批停止后最后一帧飞入 + 常驻缩略图视频卡（`FlyCard` / `ShotShelf`）、第 4 批录制条的系统声音 / 麦克风 / 显示点按开关 + 麦克风授权（遮罩收起后才问）+ HUD 声音状态、第 5 批独立录音（菜单栏 / 启动器「录音」，不设默认键；`Screenshot/AudioRecorder.swift` + `RecordingHUD` 的录音形态、波形飞入 + 常驻缩略图录音卡）、第 6 批录音加系统声音（设置 › 截图「录音」来源 麦克风 / 系统声音 / 两者；后两种复用录屏管线只录声音、导出 m4a）、第 7 批视频卡「转成 GIF」+ GIF 卡（`Screenshot/VideoExport.swift`）与 0.3.0 版本号 / 更新日志 2026-09-30 代码完成待手测；0–7 批全部代码完成，手测（PLAN §12「录屏 / 录音手测」1–52）后经用户确认再打包发布 0.3.0；手测反馈（2026-10-01，PLAN §10「手测反馈」）第 1 批显示点按的圈改成自己画、更明显（`Screenshot/InputOverlay.swift`）、第 2 批录屏显示按键（录制条第四个开关，按下的键显示在画面底部的胶囊里，同一个 `InputOverlay`；全局键盘监听要辅助功能授权）、第 3 批录音快捷键先出控制条（`RecordingHUD` 的待录态 [系统声音][麦克风] ｜ [✕][●]，点 ● 或再按一次才开始；设置 › 截图「按快捷键后立即开始录音」默认关）代码完成待手测（§12 同一节 53–67）；三批手测反馈全部代码完成）/ 截图工具（`Screenshot/`，复用截图翻译的冻结帧和框选；M9 框选 + 复制 / 保存 / 钉图、M10 标注 + 识字已完成；长截图 2026-09-25 插入，代码完成待手测）。里程碑 M7–M13、已拍板的 D1–D5（D1 长截图与录屏录音、D2 系统命令已改为做；D5 系统翻译文档验证后先不做）与不迁清单见 PLAN §10。
+- **功能**：剪贴板历史、翻译（划词 / 输入 / 复制即译 / 截图翻译，全部翻译服务）、启动器（`Launcher/`）、截图（`Screenshot/`：框选、标注、识字、钉图、长截图）、录屏与录音（`Screenshot/ScreenRecorder.swift`、`AudioRecorder.swift`）都已做完。
+- **版本**：已发布 0.1.0、0.2.0；0.3.0（录屏录音）和 0.3.1（第二轮体检）代码完成，待真机手测后经用户确认再发。哪些待手测、下一步做什么看 PLAN §12「现状」；手测条目和发版冒烟清单在 `macos/HANDTEST.md`；里程碑 M7–M13、已拍板的 D1–D5 与不迁清单见 PLAN §10。
 - Bundle ID `com.yy.kitty-tools.native`（Debug `com.yy.kitty-tools.native.dev`），不再改（改了会丢偏好、钥匙串和授权）；产品名 / .app 名 `Kitty Tools`（Debug `Kitty Tools Dev`，2026-09-26 起，之前叫 Kitty Tools Native）。和 Tauri 旧版同名：安装前先删掉 /Applications 里旧版的 `Kitty Tools.app`。
-- **规格**：各 `mac-*` 规则（界面与动效按 `mac-whisker`）+ 对标产品（启动器 Alfred / Raycast、翻译 Bob、截图 iShot / CleanShot、录屏 CleanShot / ⌘⇧5、录音 QuickTime / iShot、剪贴板 Paste）。`macos/PLAN.md` 是迁移期的历史方案：§2 技术栈白名单、§4 架构与文件表、§8 打包、§10 / §12 里程碑与手测清单、§11 旧逻辑问题与语言规则仍有效，其余（§5 的 Tauri 映射、§6 数据迁移等）只是历史记录。
+- **规格**：各 `mac-*` 规则（界面与动效按 `mac-whisker`）+ 对标产品（启动器 Alfred / Raycast、翻译 Bob、截图 iShot / CleanShot、录屏 CleanShot / ⌘⇧5、录音 QuickTime / iShot、剪贴板 Paste）。`macos/PLAN.md` 只留仍有效的：§2 技术栈白名单、§4 架构与文件表、§8 打包、§10 约束与已拍板决定、§11 旧逻辑问题与语言规则、§12 现状与下一步；迁移期历史（§5 的 Tauri 映射、§6 数据迁移等）和已完成批次的实现记录原样归档在 `macos/docs/archive/`（PLAN 原位置写了去处）。
 
 ## 技术栈
 
@@ -30,8 +30,10 @@ macos/                       # 本分支唯一开发区
 ├── build-dmg.sh             # 打包：archive → 自检 → DMG + App 内更新用的 zip → notes
 ├── brand-icons.swift        # 品牌图标：角色「探头」的 AppIcon 10 张 + 菜单栏剪影 StatusIcon + DMG 背景（CoreGraphics 生成）
 ├── .swift-format
-└── PLAN.md                  # 迁移期历史方案（§2、§4、§8、§10–§12 仍有效）
-.cursor/rules/               # mac-native.mdc（常驻）、ponytail.mdc（只给 Cursor）
+├── PLAN.md                  # 仍有效的方案：§2 技术栈、§4 架构与文件表、§8 打包、§10 约束与决定、§11 实现原则、§12 现状与下一步
+├── HANDTEST.md              # 发版冒烟清单 + 各批手测条目（原 PLAN §12，编号不变；新的手测加在这里）
+└── docs/archive/            # PLAN 挪出去的迁移期历史和已完成批次的实现记录（原样，只查不改）
+.cursor/rules/               # mac-native.mdc（常驻）、ponytail.mdc（只给 Cursor）、各 mac-* 规则（mac-whisker 拆成核心 + mac-whisker-<界面>.mdc）
 .claude/skills/mac-*/        # 按需技能，里程碑结束后补
 ```
 
@@ -47,21 +49,10 @@ macos/                       # 本分支唯一开发区
 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools build
 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools test
 
-# 录屏 / 录音实录自检（要「屏幕录制」授权；会录下当前屏幕、闪色块窗口、铺一块滚动大面板约 30 秒、放几声提示音；
-# 目录写绝对路径，整屏原始视频留在里面，看完删；报告在 <目录>/report.md。麦克风几项另加 TEST_RUNNER_KITTY_LIVE_RECORD_MIC=1，
-# 闪退两步走 TEST_RUNNER_KITTY_LIVE_RECORD_KILL=1 / _INSPECT=1，见测试文件头注释；只验录屏产品代码（ScreenRecorder 真录 2 s、取最后一帧；
-# 第 4 批起开着系统声音 + 麦克风 + 显示点按，要麦克风授权，Dev 版第 0 批已给）就只跑 -only-testing:'KittyToolsTests/RecordingProbeTests/screenRecorderTake()'；
-# 录音产品代码（AudioRecorder 录 1.5 s、暂停 1 s、再录 1.5 s，录音第 5 批）另加 _MIC=1 只跑 .../RecordingProbeTests/audioRecorderTake()；
-# 先出控制条再开始（open() 出待录的控制条、点 ● 原地换成录制态、录 1.5 s，再开一条点 ✕ 关掉；手测反馈第 3 批）同样 _MIC=1，
-# 跑 .../RecordingProbeTests/audioRecorderReadyTake(_:)（来源麦克风、系统声音各一遍）；
-# 录系统声音 / 两者（录屏管线只录声音 + 导出 m4a，录音第 6 批）同样 _MIC=1，跑 .../RecordingProbeTests/audioRecorderSystemTake(_:)；
-# 转成 GIF（真录 2 s 后转、验帧数 / 宽 / 循环 / 延时、取消不留文件，第 7 批）不用 _MIC，跑 .../RecordingProbeTests/gifTake()；
-# 点按圈录进画面（开着显示点按真录 2 s、直接调 InputOverlay 的按下 / 拖动入口、从 mp4 取帧验，手测反馈第 1 批）不用 _MIC，
-# 跑 .../RecordingProbeTests/inputOverlayTake()；
-# 按键胶囊录进画面（开着显示按键真录 3 s、直接调 InputOverlay.showKey、从 mp4 取帧验胶囊在画面里、停手后淡出，手测反馈第 2 批；
-# 辅助功能授权是注入的，不发合成按键）不用 _MIC，跑 .../RecordingProbeTests/keysOverlayTake()；
-# 清晰度 / 编码真录（标准 + HEVC、原始 + HEVC、标准 + H.264 各录约 2 s，验文件的尺寸和编码，再各压缩一遍，第二轮体检第 5 批）
-# 不用 _MIC，跑 '.../RecordingProbeTests/formatTake(_:)'）
+# 录屏 / 录音实录自检（要「屏幕录制」授权；会录下当前屏幕、闪色块窗口、铺一块滚动大面板约 30 秒、放几声提示音；目录写绝对路径，
+# 整屏原始视频留在里面，看完删；报告在 <目录>/report.md）。麦克风几项另加 TEST_RUNNER_KITTY_LIVE_RECORD_MIC=1，闪退两步走 _KILL=1 / _INSPECT=1。
+# 只验某块产品代码就 -only-testing 到单个函数，如 'KittyToolsTests/RecordingProbeTests/screenRecorderTake()'：各函数验什么、要不要 _MIC
+# 见 RecordingProbeTests.swift 文件头；文件头没写的 formatTake(_:)（清晰度 / 编码各录约 2 s、再各压缩一遍，第二轮体检第 5 批）不用 _MIC
 TEST_RUNNER_KITTY_LIVE_RECORD_DIR=/tmp/kitty-record xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:KittyToolsTests/RecordingProbeTests
 
@@ -105,9 +96,9 @@ defaults delete com.yy.kitty-tools.native.dev folderAccessRequested
 | `mac-overlay-panel` | 技能 | 已有（M1，M9 补截图与钉图） | `Shell/**`、`Screenshot/**`、`Translate/SelectionReader.swift`；NSPanel、热键、前台快照、粘贴回原 App、划词时序、设置窗激活、截图框选遮罩、钉图 |
 | `mac-clipboard` | 技能 | 已有（M3） | `Clipboard/**`、`Storage/Database.swift`、`Storage/Backup.swift`（每日备份、打不开时的恢复） |
 | `mac-translate` | 技能 | 已有（M4） | `Translate/**` |
-| `mac-whisker` | 技能 | 已有（2026-09-25） | 任何界面、动效、图标改动：Whisker 设计语言（三种皮肤、刻度、七条弹簧曲线、五个招牌时刻、各界面规范、无障碍、验收）；**用户要求以后都按它执行** |
+| `mac-whisker` | 技能 | 已有（2026-09-25；2026-10-03 拆成核心 + 5 个界面文件） | 任何界面、动效、图标改动：先读核心 `rule.mdc`（三种皮肤、刻度、七条弹簧曲线、五个招牌时刻、无障碍、验收），再读那个界面的文件（`launcher` / `clipboard` / `translate` / `capture` / `settings`.mdc，Cursor 按路径自动带上）；**用户要求以后都按它执行** |
 
-- 规则正文只写在 `.cursor/rules/mac-*.mdc`。技能目录 `.claude/skills/mac-<name>/` 里 `SKILL.md` 只写触发描述和红线速查，`rule.mdc` 是符号链接：`ln -s ../../../.cursor/rules/mac-<name>.mdc .claude/skills/mac-<name>/rule.mdc`。
+- 规则正文只写在 `.cursor/rules/mac-*.mdc`。技能目录 `.claude/skills/mac-<name>/` 里 `SKILL.md` 只写触发描述和红线速查，`rule.mdc` 是符号链接：`ln -s ../../../.cursor/rules/mac-<name>.mdc .claude/skills/mac-<name>/rule.mdc`。mac-whisker 另有按界面拆出的 `mac-whisker-<界面>.mdc`，技能目录里各一个链接：`ln -s ../../../.cursor/rules/mac-whisker-<界面>.mdc .claude/skills/mac-whisker/<界面>.mdc`。
 - 动手前先读对应技能的 `rule.mdc` 全文。没有对应技能的地方按 `mac-native.mdc` 和 `mac-whisker` 执行，文件归属看 PLAN §4。
 - 不另建 `mac-ui`、`mac-release`：视觉与动效在 `mac-whisker`，其余 UI 约定在 `mac-native.mdc`，发布约束在 `build-dmg.sh` 头部注释。
 
@@ -116,7 +107,7 @@ defaults delete com.yy.kitty-tools.native.dev folderAccessRequested
 - 分支：原生版在 `main`（2026-09-27 由 `macos-native` 改名）；`master` 仍是 Tauri 版，两条线互不合并。
 - Tauri 快照（`src/`、`src-tauri/` 等）2026-09-27 按用户要求从本分支删除，仓库里只剩原生工程；要翻旧代码去 master `ee615b3` 或 git 历史。本分支不 merge master，也不以合回 master 为目标。
 - **不作行为、界面、默认值、文案的参考**（用户 2026-09-26）：原生版有自己的样式和逻辑，不兼容 Tauri 版的数据和设置（它已不再运行）；以各 `mac-*` 规则、Whisker 和对标产品为准。
-- PLAN §5 / §6 的 path:line 指的是 master 上的文件，只是迁移期的历史记录，不再是规格。
+- PLAN §5 / §6（已归档到 `macos/docs/archive/PLAN-migration.md`）的 path:line 指的是 master 上的文件，只是迁移期的历史记录，不再是规格。
 
 ## 开发约定
 
@@ -124,7 +115,7 @@ defaults delete com.yy.kitty-tools.native.dev folderAccessRequested
 - 每个入口文件头部写注释说明用途。
 - 禁止新增任何第三方依赖（SPM 包、构建 / 格式化工具都算）。
 - 刻意的简化写 `ponytail:` 注释，写明上限和升级路径。
-- commit 格式 `<type>: <description>`，type 取 feat / fix / ui / refactor / docs / perf / build / chore。
+- commit 格式 `<type>: <description>`，type 取 feat / fix / ui / refactor / docs / perf / build / chore。**标题一行、70 字以内，空一行再写正文**：为什么改、改了什么、怎么验的都写进正文（会话开头会自动带上最近几条提交的标题，写长了每个会话都白读一遍）。旧提交不改。
 - **更新日志（必遵）**：改 `MARKETING_VERSION` 必须在 `macos/KittyTools/Resources/changelog.json` 追加该版本条目，`type` 只允许 feat / fix / perf / ui（refactor / build / chore 不进用户日志）；缺条目时 `build-dmg.sh` 直接中止。
 - 发布：本仓库 github.com/YyAdnBug/kitty-tools（不碰 Tauri 版的仓库），tag `macos-v*`，正式 release、标 latest，附 DMG 和 `_arm64.zip`（App 内更新用）；不公证，发布说明固定附「系统设置 › 隐私与安全性 › 仍要打开」步骤（只有第一次安装要，之后 App 内更新）。
 
