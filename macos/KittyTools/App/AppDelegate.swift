@@ -210,6 +210,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.openQuickLook = { [unowned self] in showQuickLook() }
     // 图片条目「钉到屏幕」（体检 D1）：和截图的钉图同一块板
     model.pinImage = { [unowned self] in pins.pin($0, frame: $1) }
+    model.pinnedFrames = { [unowned self] in pins.panels.map(\.frame) }
     model.island = island
     model.closeQuickLook = { [unowned self] animated in
       Self.closeQuickLook(

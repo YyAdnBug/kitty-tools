@@ -85,6 +85,8 @@ import Observation
   @ObservationIgnored var openQuickLook: () -> Void = {}
   /// 钉到屏幕（AppDelegate 接 PinBoard.pin，单测里什么都不做）：图、点尺寸的全局 frame
   @ObservationIgnored var pinImage: (CGImage, CGRect) -> Void = { _, _ in }
+  /// 屏幕上已有钉图的位置（AppDelegate 接 PinBoard 的钉图，单测里是空的）：钉的时候让开它们
+  @ObservationIgnored var pinnedFrames: () -> [CGRect] = { [] }
   /// 写剪贴板（单测换掉它，不碰真剪贴板：写一下别的剪贴板工具、正在跑的本 App 都会记一条）
   @ObservationIgnored var writeClipboard: ([NSPasteboardItem]) -> Void = { Paster.write($0) }
   /// 剪贴板的 changeCount（单测换掉它，真剪贴板随时会被别的 App 改）
@@ -805,7 +807,8 @@ import Observation
   }
 
   /// 钉到屏幕（体检 D1）：按像素 ÷ 鼠标所在屏的 backingScaleFactor 得点尺寸，超过可见区 80% 等比缩小，
-  /// 钉在可见区中央；面板没固定就先收起；多张依次错开 24 pt。整张解码在后台（缩略图接口按原尺寸取）
+  /// 钉在可见区中央；面板没固定就先收起。让开屏幕上已有的钉图（PinBoard.clipboardFrame：从中央往右下找第一个空格，
+  /// 同「钉住剪贴板里的图」）：同一张钉两次、多选的几张都依次错开，不叠在一起。整张解码在后台（缩略图接口按原尺寸取）
   func pin(_ items: [ClipItem]) {
     let images = items.filter { $0.kind == .image }
     guard !images.isEmpty else { return }
@@ -819,17 +822,18 @@ import Observation
     let (scale, visible) = (screen.backingScaleFactor, screen.visibleFrame)
     if !isPinned { hidePanel() }
     let files = store.images
-    let pinImage = pinImage
+    let (pinImage, pinnedFrames) = (pinImage, pinnedFrames)
     Task {
-      for (index, item) in images.enumerated() {
+      // 一张一张钉：前一张钉上了才算下一张的位置，多选的几张也互相让开
+      for item in images {
         guard let info = item.image,
           let image = await files.thumbnail(for: item.id, maxPixel: max(info.width, info.height))
         else { continue }
         pinImage(
           image,
-          Self.pinFrame(
+          PinBoard.clipboardFrame(
             pixels: CGSize(width: image.width, height: image.height), scale: scale,
-            visible: visible, index: index))
+            visible: visible, pinned: pinnedFrames()))
       }
     }
   }
