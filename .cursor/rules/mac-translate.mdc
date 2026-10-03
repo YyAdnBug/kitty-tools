@@ -55,7 +55,7 @@ alwaysApply: false
 - 收藏存 translations 表（「原文 + 实际目标语言」唯一），`HistoryStore.stored` 统一去空白截断，收藏和 add 必须找同一条。
 - 复制出去的译文、原文、单词释义（卡片复制、⌘1–9、自动复制、「复制原文」、历史 ⌘C / 右键）和替换原文写进去的译文都是本 App 生成的新文字，一律 `Paster.write(string:record: true)` 同时记进剪贴板历史（mac-native §5，体检 A30）；卡片对勾停 `Style.copiedHold`（1.2 s）。焦点一直在原文框：⌘1–9 / 卡片复制播报「已复制译文」、⌘D / 星标播报「已收藏 / 已取消收藏」（`Island.announce`；自动复制不播）。
 - 替换原文 / 静默替换都是「收起 → `Paster.write` → `pasteToFrontmost`」，不激活本 App、不等待；粘之前核对前台还是取词时记下的 pid（`replaceSource` / 静默替换取词前记），对不上或自家浮层是 key 就只复制；译文用 `rewrap` 补回原选区的首尾空白。静默替换用 `translateOnce`（不动浮窗会话、不合并换行，再按热键取消；取词一返回先看是否已取消，免得「没有选中文字」「翻译中…」盖掉「已取消」，后者会挂到 60 s 兜底）。
-- 浮窗高度由视图量出来、`OverlayPanel.setContentHeight` 设（夹在 220 到屏幕 85%）；lazy 建面板时用弱引用接 resize，别在初始化里回头访问 `translatePanel`。
+- 浮窗高度由视图量出来、`OverlayPanel.setContentHeight` 设（`TranslatePanelView.panelHeight`：随内容、最矮 220，平时最高到屏幕可见区的 85%；但结果卡不超过三张时全部放下、多于三张时至少放下前三张（量第三张卡的下沿，上面有词典卡时连它一起），这时最高到可见区减 24——2026-10-03 用户要求：三张写满的卡约 850 pt，85% 的上限差一点就多出外层滚动条；第四张起才在卡片区里滚）；lazy 建面板时用弱引用接 resize，别在初始化里回头访问 `translatePanel`。
 
 ## 5.2 查词（D4，对标 Bob：不单开模式）
 - 原文是「一个词」（`WordLookup.isWord`：字母文字 1–3 个词、只含字母 / 连字符 / 撇号、≤ 40 字；中日文 1–4 个字）时自动出词典信息，两个开关（设置 › 翻译 › 查词）默认都开：

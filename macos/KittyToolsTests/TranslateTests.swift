@@ -1,5 +1,5 @@
 // 翻译相关单测：语言解析、流式文本清洗、AI 服务地址 / 参数、局域网判断、翻译历史（存储、撤销删除、列表分组与选中）、
-// 「翻译 ↩」胶囊的出现条件、服务 logo 都在 asset catalog 里、按地址 / 名字认厂商与官网图标（第 13 批）、结果卡片正文的高度上限、
+// 「翻译 ↩」胶囊的出现条件、服务 logo 都在 asset catalog 里、按地址 / 名字认厂商与官网图标（第 13 批）、结果卡片正文的高度上限、浮窗放得下前三张卡（2026-10-03）、
 // 等待卡的循环动效只动图层的变换（第二轮体检第 1 批）、生成中光标的位置（第 1b 批）、历史行的时间补零（第 1c 批）；
 // 体检第 4 批：复制即译过滤、自动复制按来源、截断与思考的流约定、错误种类、划词没取到、输入翻译再打开、⌘D 收藏、
 // 历史 ⌘K 与分页、浮窗跟随鼠标、历史保留档位升级、朗读声线；
@@ -566,6 +566,59 @@ struct ResultCardCapTests {
       #expect(cap > previous, "\(size)")  // 字号越大上限越高
       previous = cap
     }
+  }
+}
+
+/// 浮窗的高（2026-10-03 用户要求：三张结果时也出外层滚动条不对，第四张起才滚）
+struct TranslatePanelHeightTests {
+  /// 随内容、最矮 220；平时最高可见区的 85%，但 mustFit 要放得下，最多到可见区减 24
+  @Test func panelHeightFitsFirstThreeCards() {
+    // 1920 × 1080 带程序坞：可见区约 992，85% 是 843.2；三张写满 8 行的卡连顶栏、原文约 851
+    #expect(TranslatePanelView.panelHeight(851, mustFit: 851, visible: 992) == 851)
+    // 四张：放到第三张为止，第四张起在卡片区里滚
+    #expect(TranslatePanelView.panelHeight(1080, mustFit: 851, visible: 992) == 851)
+    // 短卡片多：85% 以内照旧全放下，再多到 85% 为止
+    #expect(TranslatePanelView.panelHeight(600, mustFit: 400, visible: 992) == 600)
+    #expect(TranslatePanelView.panelHeight(1000, mustFit: 400, visible: 992) == 992 * 0.85)
+    // 小屏放不下三张：到可见区减 24 为止，剩下的照样滚
+    #expect(TranslatePanelView.panelHeight(900, mustFit: 900, visible: 849) == 825)
+    #expect(TranslatePanelView.panelHeight(120, mustFit: 120, visible: 992) == 220)
+  }
+
+  /// 真排一遍（屏外窗口、临时偏好域）：不超过三张时要放下的就是全部内容；四张时停在第三张的下沿，
+  /// 正好少第四张卡和它上面的间距
+  @Test @MainActor func mustFitStopsAtThirdCard() throws {
+    let suiteName = "KittyToolsTests.\(UUID().uuidString)"
+    let suite = try #require(UserDefaults(suiteName: suiteName))
+    defer { suite.removePersistentDomain(forName: suiteName) }
+    let coordinator = TranslateCoordinator(
+      services: TranslateServiceStore(services: [.zhipu]),
+      history: try HistoryStore(db: Database(path: ":memory:")))
+    coordinator.sourceText = "A long paragraph"
+    coordinator.translatedSource = coordinator.sourceText
+    var reported: (height: CGFloat, mustFit: CGFloat) = (0, 0)
+    let window = NSWindow(
+      contentRect: NSRect(x: -20000, y: -20000, width: 420, height: 2400),
+      styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = NSHostingView(
+      rootView: TranslatePanelView(
+        coordinator: coordinator, speaker: Speaker(), resize: { reported = ($0, $1) }
+      ).defaultAppStorage(suite))
+    window.orderFront(nil)
+    defer { window.orderOut(nil) }
+    // 卡片按长短交替：四张不一样高，量错了哪一张都对不上
+    let long = String(repeating: "一段很长的译文，写满八行以后在卡片里滚动。", count: 20)
+    func measure(_ texts: [String]) -> (height: CGFloat, mustFit: CGFloat) {
+      coordinator.cards = texts.map { .init(service: .newAI(), state: .done($0)) }
+      for _ in 0..<5 { RunLoop.main.run(until: .now.addingTimeInterval(0.1)) }
+      return reported
+    }
+    let three = measure([long, "短", long])
+    #expect(three.mustFit == three.height && three.height > 500)
+    let four = measure([long, "短", long, long])
+    #expect(four.height > three.height + 150)
+    #expect(abs(four.mustFit - three.height) <= 1, "\(four) \(three)")
   }
 }
 

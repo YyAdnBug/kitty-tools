@@ -5,7 +5,8 @@
 // 原文卡片（15 pt，↩ 就是翻译，⇧↩ / ⌘↩ 换行；只在出乎所选时写一行方向说明）+ 原文操作（收藏、划词来的可「替换原文」），
 // 没有常驻「翻译」按钮（N5）：原文改过还没重译时右下角才弹出品牌粉「翻译 ↩」胶囊（pop），开始翻译就收回（settle）；
 // 下方是各服务结果卡片（折叠状态记住；查单个词时最上面多一张系统词典卡）。翻译历史（N7，HistoryView）整块替换结果区，
-// 开 / 关时只有这块 settle 交叉淡变、原文区不动。高度随内容伸缩（Bob 的做法：只让人拖宽度），
+// 开 / 关时只有这块 settle 交叉淡变、原文区不动。高度随内容伸缩（Bob 的做法：只让人拖宽度），结果卡不超过三张时
+// 全放下、多于三张时至少放下前三张，第四张起才在卡片区里滚（2026-10-03 用户要求，panelHeight）；
 // 字号可调（⌘+ / ⌘- / ⌘0）。状态和操作都在 TranslateCoordinator，窗口快捷键见它的 handleKeyEquivalent。
 
 import SwiftUI
@@ -13,8 +14,8 @@ import SwiftUI
 struct TranslatePanelView: View {
   @Bindable var coordinator: TranslateCoordinator
   let speaker: Speaker
-  /// 内容要的高度（浮窗据此伸缩，顶边不动）
-  var resize: (CGFloat) -> Void = { _ in }
+  /// 内容要的高度、至少要放得下的高度（浮窗按 panelHeight 伸缩，顶边不动）
+  var resize: (_ height: CGFloat, _ mustFit: CGFloat) -> Void = { _, _ in }
   /// 把第一个服务的译文粘回原 App 的选区
   var replaceOriginal: () -> Void = {}
 
@@ -32,6 +33,8 @@ struct TranslatePanelView: View {
   @AppStorage(Prefs.translateSecond) private var second: String?
   @State private var chromeHeight: CGFloat = 0
   @State private var resultsHeight: CGFloat = 0
+  /// 第三张结果卡的下沿（结果区里的 y，上面有词典卡时连它一起算）：多于三张时浮窗至少放到这里
+  @State private var thirdCardBottom: CGFloat = 0
   /// 互换钮转了几个半圈
   @State private var swaps = 0
   /// 原文框拿着焦点：输入框底画焦点环（和历史搜索框只有一个亮）
@@ -67,7 +70,9 @@ struct TranslatePanelView: View {
     .padding(.bottom, coordinator.showsHistory ? 0 : 2)
     // 一次操作只重译一次（交换、撞同语言时两个值在同一次更新里一起改）
     .onChange(of: [source, target]) { retranslate() }
-    .onChange(of: desiredHeight, initial: true) { resize(desiredHeight) }
+    .onChange(of: [desiredHeight, mustFitHeight], initial: true) {
+      resize(desiredHeight, mustFitHeight)
+    }
     // 「⋯」菜单和历史 ⌘K 的「清空历史…」共用一个确认框
     .confirmationDialog("清空翻译历史？", isPresented: $coordinator.confirmsClearHistory) {
       Button("清空", role: .destructive) { HistoryMenu.clear(coordinator.history, island: island) }
@@ -76,13 +81,29 @@ struct TranslatePanelView: View {
     }
   }
 
+  /// 结果区画的是卡片（和 results 的分支一致）
+  private var showsCards: Bool {
+    !coordinator.showsHistory && coordinator.notice == nil
+      && !coordinator.services.enabled.isEmpty && !coordinator.cards.isEmpty
+  }
+
   /// 顶栏 + 原文区 + 结果（卡片按实际高度；历史、提示、没有服务、空态给固定的高度，和 results 的分支一致）
   private var desiredHeight: CGFloat {
-    let showsCards =
-      coordinator.notice == nil && !coordinator.services.enabled.isEmpty
-      && !coordinator.cards.isEmpty
     let body: CGFloat = coordinator.showsHistory ? 420 : showsCards ? resultsHeight : 200
     return ceil(chromeHeight + 10 + body + 2)
+  }
+
+  /// 至少要放得下的高度：结果卡不超过三张是全部内容，多于三张到第三张的下沿（加结果区底下的 10）
+  private var mustFitHeight: CGFloat {
+    guard showsCards, coordinator.cards.count > 3 else { return desiredHeight }
+    return ceil(chromeHeight + 10 + thirdCardBottom + 10 + 2)
+  }
+
+  /// 浮窗的高：随内容，最矮 220；最高平时是屏幕可见区的 85%，再多就在卡片区里滚，但 mustFit 要放得下
+  /// （三张写满 8 行的卡约 850 pt，85% 的上限会差一点、多出外层滚动条），这时最高到可见区减上下各 12。
+  /// ponytail: 可见区比 mustFit 还矮（小屏、调大了字号）时照样在卡片区里滚；要保证三张都露全得按可见区压低卡片的 8 行上限
+  static func panelHeight(_ height: CGFloat, mustFit: CGFloat, visible: CGFloat) -> CGFloat {
+    min(max(height, 220), min(max(visible * 0.85, mustFit), visible - 24))
   }
 
   // MARK: 顶栏
@@ -407,8 +428,14 @@ struct TranslatePanelView: View {
               // 直达这个服务的详情页（体检 C5）
               coordinator.openSettings(card.id)
             }
+            .onGeometryChange(for: CGFloat.self) {
+              $0.frame(in: .named(Self.resultsSpace)).maxY
+            } action: {
+              if index == 2 { thirdCardBottom = $0 }
+            }
           }
         }
+        .coordinateSpace(.named(Self.resultsSpace))
         .padding(.horizontal, 12)
         .padding(.bottom, 10)
         .animation(
@@ -422,6 +449,9 @@ struct TranslatePanelView: View {
       }
     }
   }
+
+  /// 结果区卡片堆的坐标系（量第三张卡的下沿；在滚动内容里，滚动不影响）
+  private static let resultsSpace = "translateResults"
 
   private var collapsed: Set<String> {
     Set(collapsedServices.split(separator: "\n").map(String.init))

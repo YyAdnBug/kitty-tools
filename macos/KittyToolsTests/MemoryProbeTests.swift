@@ -630,9 +630,10 @@ private final class Probe {
         autoHide: .resignKey, isPinned: { true },
         content: TranslatePanelView(
           coordinator: coordinator, speaker: speaker,
-          resize: { height in
-            // 同 AppDelegate：最矮 220，最高到屏幕可见区的 85%
-            let height = min(max(height, 220), screen.height * 0.85)
+          resize: { height, mustFit in
+            // 同 AppDelegate
+            let height = TranslatePanelView.panelHeight(
+              height, mustFit: mustFit, visible: screen.height)
             created?.setContentHeight(height, animated: false)
           }
         ).defaultAppStorage(prefs))

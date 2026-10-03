@@ -3,6 +3,7 @@
 // 画在面板里而不是 NSMenu，焦点一直留在搜索框：搜索框里的字由调用方拿来过滤 items（共用 filter：标题 / 说明子串，
 // 中文标题的全拼和首字母前缀），↑↓ 改 selection，↩ / 单击执行。这里只画，不存状态。
 // 宽 260、行高 28、中性高亮（不填强调色、不反白）；section 变了的两行之间一条 0.5 pt 发丝线（上下各 4 pt）；
+// 行多了在菜单里滚：滚动区铺满菜单宽、行的左右内缩 5 在滚动区里面，滚动条贴菜单右边（2026-10-03 用户要求「在最外层」）；
 // 带子列表的行尾是 ›（一级子列表，进去后顶上一行「‹ 标题」点一下回上一级）。出现时 snap 从 anchor 0.92→1 放大 + 淡入，消失淡出 fadeOut。
 
 import SwiftUI
@@ -79,8 +80,8 @@ struct ActionMenu: View {
       reduceMotion ? .opacity : .scale(scale: 0.92, anchor: anchor).combined(with: .opacity)
     VStack(spacing: 0) {
       if let header {
-        headerRow(header)
-        separator
+        headerRow(header).padding(.horizontal, 5)
+        separator.padding(.horizontal, 5)
       }
       ScrollViewReader { proxy in
         ScrollView {
@@ -97,6 +98,9 @@ struct ActionMenu: View {
                 .id(item.id)
             }
           }
+          // 左右内缩放在滚动区里面：滚动条贴着菜单右边，不压在行上。上下的内缩留在外面：
+          // 放进来的话 ↑↓ 选到头尾时滚动只露出那一行，内缩被滚出去、行贴着菜单边
+          .padding(.horizontal, 5)
         }
         .scrollBounceBehavior(.basedOnSize)
         .frame(
@@ -107,7 +111,7 @@ struct ActionMenu: View {
         }
       }
     }
-    .padding(5)
+    .padding(.vertical, 5)
     .frame(width: Self.width)
     .background(.regularMaterial, in: .rect(cornerRadius: Style.Radius.card, style: .continuous))
     .overlay(
