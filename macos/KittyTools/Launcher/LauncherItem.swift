@@ -121,6 +121,8 @@ struct LauncherItem: Identifiable, Hashable {
     .screenshotLastRegion: "Capture Last Region", .recognizeText: "OCR Recognize Text QR",
     .screenRecord: "Screen Recording Record Video",
     .audioRecord: "Audio Recording Record Voice Microphone",
+    // 「钉图」：标题是「钉住…的图」，不放进来搜「钉图」找不到它（菜单里的另两项都叫「…钉图」）
+    .pinClipboard: "Pin Clipboard Image 钉图",
   ]
 
   private static func action(

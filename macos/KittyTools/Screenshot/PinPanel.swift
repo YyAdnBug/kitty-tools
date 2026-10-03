@@ -6,11 +6,14 @@
 // Whisker（mac-whisker §6 钉图）：圆角 10 + 系统阴影；钉上时窗口 1.04 → 1 弹簧回弹（超过半屏的只淡入）；悬停 0.3 s 后右上角淡入透明度 / 关闭两个
 // 22 pt HUD 圆钮；缩放时中央 HUD 显示百分比、停手 0.7 s 淡出；关闭时缩到 0.92 并淡出 0.16 s。
 // 不做点击穿透（穿透要全局抢一个热键才能再点回来）、不做钉图历史；钉图会出现在之后的截图里。
+// 「钉住剪贴板里的图」（第二轮体检 F1）：从剪贴板取图（只读）、解码、找钉的位置在这里，AppDelegate.pinClipboard 串起来。
 
 import AppKit
 import Carbon.HIToolbox
+import ImageIO
 import Observation
 import SwiftUI
+import UniformTypeIdentifiers
 
 @Observable final class PinBoard {
   private(set) var panels: [PinPanel] = []
@@ -57,6 +60,83 @@ import SwiftUI
     for panel in panels {
       if isHidden { panel.orderOut(nil) } else { panel.orderFrontRegardless() }
     }
+  }
+}
+
+// MARK: 钉住剪贴板里的图（第二轮体检 F1）
+
+extension PinBoard {
+  /// 剪贴板里要钉的图在哪
+  nonisolated enum Source: Equatable, Sendable {
+    /// 剪贴板上的图片数据（PNG、TIFF、JPEG、HEIC…，排在最前的那一种）
+    case data(Data)
+    /// 从访达复制的图片文件
+    case file(URL)
+  }
+
+  /// 取出剪贴板里要钉的图（只读：不写剪贴板、不记历史；单测传临时的具名剪贴板）。有文件就只看文件，取第一个是图片的
+  /// （按扩展名：png、jpg、heic、gif…）——访达复制文件时还会放一份文件图标的 TIFF，不能钉成图标，所以非图片文件就是没有；
+  /// 没有文件才取第一种图片数据（网页「拷贝图像」常连着网址、HTML 一起放，带着文字也照样取图）。文字、色值、空 → nil
+  static func clipboardImage(in pasteboard: NSPasteboard = .general) -> Source? {
+    let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+    if let files = pasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL],
+      !files.isEmpty
+    {
+      let image = files.first {
+        UTType(filenameExtension: $0.pathExtension)?.conforms(to: .image) == true
+      }
+      return image.map(Source.file)
+    }
+    let type = pasteboard.types?.first { UTType($0.rawValue)?.conforms(to: .image) == true }
+    return type.flatMap { pasteboard.data(forType: $0) }.map(Source.data)
+  }
+
+  /// 解码（mac-native §3 @concurrent 第 1 类）：缩略图接口按原尺寸整张解码，顺带按 EXIF 方向转正；GIF 取第一帧。
+  /// 解不出来（文件没了、ImageIO 不认的格式如 SVG）是 nil
+  @concurrent nonisolated static func decode(_ source: Source) async -> CGImage? {
+    let image =
+      switch source {
+      case .data(let data): CGImageSourceCreateWithData(data as CFData, nil)
+      case .file(let url): CGImageSourceCreateWithURL(url as CFURL, nil)
+      }
+    guard let image,
+      let properties = CGImageSourceCopyPropertiesAtIndex(image, 0, nil) as? [CFString: Any],
+      let width = properties[kCGImagePropertyPixelWidth] as? Int,
+      let height = properties[kCGImagePropertyPixelHeight] as? Int, width > 0, height > 0
+    else { return nil }
+    let options: [CFString: Any] = [
+      kCGImageSourceCreateThumbnailFromImageAlways: true,
+      kCGImageSourceCreateThumbnailWithTransform: true,
+      kCGImageSourceThumbnailMaxPixelSize: decodedSide(width: width, height: height),
+    ]
+    return CGImageSourceCreateThumbnailAtIndex(image, 0, options as CFDictionary)
+  }
+
+  /// 解码出来的长边（纯函数）：超过 ImageStore.maxPixels（约 8K × 5K，剪贴板记图的上限）的等比缩到它以内——钉图本来就
+  /// 缩在屏幕 80% 以内，上亿像素的全景图整张解码要几百 MB、钉着就一直占着。
+  /// ponytail: 这样缩过的钉图拷贝 / 存储出来的也是缩过的那张，要原图就从文件拿
+  nonisolated static func decodedSide(width: Int, height: Int) -> Int {
+    let fit = min(1, (Double(ImageStore.maxPixels) / Double(width * height)).squareRoot())
+    return Int(Double(max(width, height)) * fit)
+  }
+
+  /// 钉在哪（纯函数）：同剪贴板面板「钉到屏幕」（ClipboardPanelModel.pinFrame：可见区中央、超过 80% 等比缩小），
+  /// 第几张取「从中央往右下数第一个空格」——已有钉图的中心落在那一格上（±1 点）就往下一格，连按几次依次错开 24 点。
+  /// 不按钉图总数排：截图原地钉的、别的屏上的、拖走了的不占格，不该把新的一张挤离中央（按总数排的话钉图一多就一路错到
+  /// 屏幕外）；关掉、挪走一张就让出它那一格
+  static func clipboardFrame(
+    pixels: CGSize, scale: CGFloat, visible: CGRect, pinned: [CGRect]
+  ) -> CGRect {
+    func slot(_ index: Int) -> CGRect {
+      ClipboardPanelModel.pinFrame(pixels: pixels, scale: scale, visible: visible, index: index)
+    }
+    var index = 0
+    while pinned.contains(where: {
+      abs($0.midX - slot(index).midX) <= 1 && abs($0.midY - slot(index).midY) <= 1
+    }) {
+      index += 1
+    }
+    return slot(index)
   }
 }
 

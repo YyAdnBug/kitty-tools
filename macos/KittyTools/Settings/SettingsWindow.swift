@@ -106,7 +106,9 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         "智谱", "OpenAI", "Anthropic", "DeepL", "Google", "百度", "有道", "微软", "火山", "腾讯", "AI", "模型",
       ]
     case .hotkeys:
-      ["快捷键", "热键", "冲突", "录制", "恢复默认", "速查", "按键"] + HotKeyAction.allCases.map(\.title)
+      // 「钉图」：动作名是「钉住剪贴板里的图」，搜「钉图」也要找得到这一页
+      ["快捷键", "热键", "冲突", "录制", "恢复默认", "速查", "按键", "钉图"]
+        + HotKeyAction.allCases.map(\.title)
     case .about: ["版本", "更新", "日志", "发布", "欢迎", "引导"]
     }
   }

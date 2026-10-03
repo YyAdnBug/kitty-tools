@@ -319,9 +319,11 @@ struct ShortcutsSheet: View {
             HotKeyAction.audioRecord.hotKey?.display ?? "",
             text: "录制中停止并保存（点菜单栏的 ■ 计时、录音控制条的 ■ 同样）"),
         ]),
-      // mac-overlay-panel §9 钉图；代码在 PinView.keyDown / performKeyEquivalent
+      // mac-overlay-panel §9 钉图；代码在 PinView.keyDown / performKeyEquivalent。全局的「钉住剪贴板里的图」（第二轮体检 F1）
+      // 不设默认键，没设时那一行写「未设置」
       Group(
         title: "钉图", symbol: "pin.fill", color: Style.Family.screenshot,
+        globals: [.pinClipboard],
         entries: [
           Entry("⌘C", text: "拷贝"),
           Entry("O", text: "识字并拷贝（翻译在右键菜单里）"),

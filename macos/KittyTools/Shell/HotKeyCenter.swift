@@ -136,7 +136,7 @@ struct HotKey: Codable, Hashable {
 /// 追加动作只能加在末尾：注册时用 allCases 的下标当热键 id
 enum HotKeyAction: String, CaseIterable {
   case clipboard, selectionTranslate, inputTranslate, screenshotTranslate, launcher, screenshot,
-    screenshotLastRegion, recognizeText, translateReplace, screenRecord, audioRecord
+    screenshotLastRegion, recognizeText, translateReplace, screenRecord, audioRecord, pinClipboard
 
   var title: String {
     switch self {
@@ -151,6 +151,7 @@ enum HotKeyAction: String, CaseIterable {
     case .translateReplace: "划词翻译并替换"
     case .screenRecord: "录屏"
     case .audioRecord: "录音"
+    case .pinClipboard: "钉住剪贴板里的图"
     }
   }
 
@@ -192,6 +193,8 @@ enum HotKeyAction: String, CaseIterable {
     case .screenRecord: HotKey(keyCode: kVK_ANSI_R, modifiers: optionKey)
     // 录音不设默认键（录音第 5 批：从菜单栏、启动器进，要快捷键到 设置 › 快捷键 里自己设）
     case .audioRecord: nil
+    // 同上（第二轮体检 F1）
+    case .pinClipboard: nil
     }
   }
 
@@ -222,7 +225,14 @@ enum HotKeyAction: String, CaseIterable {
   static let sections: [(title: String, actions: [HotKeyAction])] = [
     ("剪贴板与启动器", [.clipboard, .launcher]),
     ("翻译", [.selectionTranslate, .inputTranslate, .translateReplace, .screenshotTranslate]),
-    ("截图与录制", [.screenshot, .screenshotLastRegion, .recognizeText, .screenRecord, .audioRecord]),
+    // 钉住剪贴板里的图排在最后：菜单栏、启动器里有钉图时紧接着是「隐藏 / 关闭全部钉图」（MenuExtra），钉图的几项挨在一起
+    (
+      "截图与录制",
+      [
+        .screenshot, .screenshotLastRegion, .recognizeText, .screenRecord, .audioRecord,
+        .pinClipboard,
+      ]
+    ),
   ]
 
   /// 种类色块里的符号
@@ -240,6 +250,8 @@ enum HotKeyAction: String, CaseIterable {
     case .recognizeText: "text.viewfinder"
     case .screenRecord: "record.circle"
     case .audioRecord: "waveform"
+    // 同速查表的「钉图」组、常驻缩略图的钉图钮；不用 pin：菜单里紧挨着的「隐藏全部钉图」是它
+    case .pinClipboard: "pin.fill"
     }
   }
 
@@ -250,7 +262,8 @@ enum HotKeyAction: String, CaseIterable {
     case .launcher: Style.Family.command
     case .selectionTranslate, .inputTranslate, .translateReplace, .screenshotTranslate:
       Style.Family.translate
-    case .screenshot, .screenshotLastRegion, .recognizeText, .screenRecord, .audioRecord:
+    case .screenshot, .screenshotLastRegion, .recognizeText, .screenRecord, .audioRecord,
+      .pinClipboard:
       Style.Family.screenshot
     }
   }

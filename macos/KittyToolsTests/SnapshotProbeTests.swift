@@ -702,7 +702,7 @@ struct SnapshotProbeTests {
     let sheetHeight = ShortcutsButton.sheetHeight(available: 600 - 52)
     for (name, height, dark) in [
       ("shortcuts", sheetHeight, false), ("shortcuts-dark", sheetHeight, true),
-      ("shortcuts-full", 5000, false),
+      ("shortcuts-full", 5400, false),
     ] {
       try snapshot(
         ShortcutsSheet(), size: NSSize(width: 560, height: height), dark: dark,

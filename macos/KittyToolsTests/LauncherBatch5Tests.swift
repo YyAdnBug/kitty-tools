@@ -213,7 +213,7 @@ struct LauncherBatch5Tests {
       plain.map(\.target) == [
         "clipboard", "pause-clipboard", "selectionTranslate", "translate-input", "translateReplace",
         "translate-screenshot", "copyToTranslate", "screenshot", "screenshotLastRegion", "ocr",
-        "screenRecord", "audioRecord", "settings", "shortcuts", "about", "quit",
+        "screenRecord", "audioRecord", "pinClipboard", "settings", "shortcuts", "about", "quit",
       ])
     for action in HotKeyAction.allCases where action != .launcher {
       let item = plain.first { $0.hotKeyAction == action }
@@ -226,9 +226,13 @@ struct LauncherBatch5Tests {
     #expect(busy.first { $0.target == "copyToTranslate" }?.subtitle == "已开启")
     #expect(busy.first { $0.target == "pause-clipboard" }?.subtitle == "已暂停")
     #expect(busy.map(\.title).contains("显示全部钉图") && busy.last?.target == "quit")
+    // 钉住剪贴板里的图（第二轮体检 F1）在截图节末尾，有钉图时紧接着是钉图的两项
     #expect(
-      Array(busy.map(\.target)[9...13])
-        == ["ocr", "screenRecord", "audioRecord", "pins-toggle", "pins-close"])
+      Array(busy.map(\.target)[9...14])
+        == ["ocr", "screenRecord", "audioRecord", "pinClipboard", "pins-toggle", "pins-close"])
+    let pinClipboard = plain.first { $0.target == "pinClipboard" }!
+    #expect(
+      ["钉图", "pin", "dingzhu"].allSatisfy { LauncherMatch.score($0, item: pinClipboard) > 0 })
     let title = { (state: LauncherItem.ActionState, target: String) in
       LauncherItem.actions(state).first { $0.target == target }?.title
     }

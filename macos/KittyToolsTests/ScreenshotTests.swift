@@ -1,11 +1,14 @@
 // 截图 / 截图翻译单测：选区（点）→ 冻结帧像素矩形的换算（各种缩放、y 翻转、夹边）、窗口快照（Z 序、坐标翻转、过滤）、
 // 手柄调整与平移、上次区域落到哪块屏、放大镜取色（sRGB、y 方向）、快速保存不覆盖，以及 Vision 识别多语种
-// （锁住 §11 #21：写死一组语言、或给语言提示时，混排图里日文假名、韩文、俄文会丢）。
+// （锁住 §11 #21：写死一组语言、或给语言提示时，混排图里日文假名、韩文、俄文会丢）；
+// 钉住剪贴板里的图（第二轮体检 F1）：从剪贴板取图、解码、钉在哪（用临时的具名剪贴板，不碰系统剪贴板）。
 
 import AppKit
 import CoreImage.CIFilterBuiltins
 import Foundation
+import ImageIO
 import Testing
+import UniformTypeIdentifiers
 
 @testable import KittyTools
 
@@ -586,6 +589,116 @@ struct ScreenshotTests {
   @Test func subprocessTimeout() async throws {
     let result = try await Subprocess.run("/bin/sleep", ["120"], timeout: .milliseconds(200))
     #expect(result.status != 0)
+  }
+
+  /// 钉住剪贴板里的图（第二轮体检 F1）从剪贴板取图：PNG、TIFF 取数据（带着网址文字也取图）；有文件只看文件、取第一个
+  /// 图片文件（扩展名不分大小写；访达同时放的文件图标 TIFF 不算）；文字、色值、非图片文件、空都是没有。
+  /// 剪贴板是临时的具名剪贴板（不碰系统剪贴板），只有这里往它上面写
+  @Test func clipboardImageSource() throws {
+    let board = NSPasteboard.withUniqueName()
+    defer { board.releaseGlobally() }
+    let image = try Self.image(size: 4) { $0.fill(CGRect(x: 0, y: 0, width: 4, height: 4)) }
+    let (png, tiff) = try (Self.encode(image, as: .png), Self.encode(image, as: .tiff))
+    func source(_ write: () -> Void) -> PinBoard.Source? {
+      board.clearContents()
+      write()
+      return PinBoard.clipboardImage(in: board)
+    }
+    #expect(source {} == nil)
+    #expect(source { board.setData(png, forType: .png) } == .data(png))
+    #expect(source { board.setData(tiff, forType: .tiff) } == .data(tiff))
+    #expect(
+      source {
+        board.setString("https://example.com/a.png", forType: .string)
+        board.setData(png, forType: .png)
+      } == .data(png))
+    #expect(source { board.setString("你好", forType: .string) } == nil)
+    #expect(source { board.setString("#FF4D7E", forType: .string) } == nil)
+    #expect(source { board.writeObjects([NSColor.systemPink]) } == nil)
+    // 访达复制文件：一个文件一项 public.file-url，第一项另带一份文件图标的 TIFF
+    // 只看扩展名、不读文件：这几个文件不用真的建出来
+    let folder = FileManager.default.temporaryDirectory
+    let (shot, photo, notes) = (
+      folder.appending(path: "shot.png"), folder.appending(path: "photo.JPG"),
+      folder.appending(path: "notes.txt")
+    )
+    let finder = { (files: [URL]) in
+      source {
+        let items = files.map { file in
+          let item = NSPasteboardItem()
+          item.setString(file.absoluteString, forType: .fileURL)
+          return item
+        }
+        items.first?.setData(tiff, forType: .tiff)
+        board.writeObjects(items)
+      }
+    }
+    #expect(finder([shot]) == .file(shot))
+    #expect(finder([notes]) == nil)
+    #expect(finder([notes, photo, shot]) == .file(photo))
+  }
+
+  /// 解码：PNG 数据按原尺寸；JPEG 文件按 EXIF 方向转正（方向 6：存的是 40×20，转正后 20×40）；读不出、文件没了是 nil。
+  /// 超过 ImageStore.maxPixels 的等比缩到它以内（只验算式，不真解一张几千万像素的图）
+  @Test func clipboardImageDecodes() async throws {
+    let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+    let context = try #require(
+      CGContext(
+        data: nil, width: 40, height: 20, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    context.fill(CGRect(x: 0, y: 0, width: 20, height: 20))
+    let wide = try #require(context.makeImage())
+    let fromData = try #require(await PinBoard.decode(.data(Self.encode(wide, as: .png))))
+    #expect(fromData.width == 40 && fromData.height == 20)
+    let folder = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let photo = folder.appending(path: "photo.jpg")
+    try Self.encode(wide, as: .jpeg, properties: [kCGImagePropertyOrientation: 6]).write(to: photo)
+    let fromFile = try #require(await PinBoard.decode(.file(photo)))
+    #expect(fromFile.width == 20 && fromFile.height == 40)
+    #expect(await PinBoard.decode(.data(Data("你好".utf8))) == nil)
+    #expect(await PinBoard.decode(.file(folder.appending(path: "gone.png"))) == nil)
+    #expect(PinBoard.decodedSide(width: 3420, height: 2224) == 3420)
+    #expect(PinBoard.decodedSide(width: 8000, height: 5000) == 8000)  // 正好 4000 万像素
+    let side = PinBoard.decodedSide(width: 16000, height: 4000)
+    #expect(side < 16000 && side * (side / 4) <= ImageStore.maxPixels)
+  }
+
+  /// 钉在哪：同剪贴板面板「钉到屏幕」（pinFrame，可见区中央），连按几次依次往右下错开 24 点；不按钉图总数排——
+  /// 中央那张挪走了新的回到中央，截图原地钉的（不在中央）不占格；按中心认格：尺寸不同、正在弹入（按中心放大 1.04 倍）的也算
+  @Test func clipboardPinStaggers() {
+    let visible = CGRect(x: 0, y: 40, width: 1440, height: 860)
+    let pixels = CGSize(width: 800, height: 400)
+    let frame = { (pinned: [CGRect]) in
+      PinBoard.clipboardFrame(pixels: pixels, scale: 2, visible: visible, pinned: pinned)
+    }
+    let first = frame([])
+    #expect(
+      first == ClipboardPanelModel.pinFrame(pixels: pixels, scale: 2, visible: visible, index: 0))
+    let second = frame([first])
+    #expect(second.origin == CGPoint(x: first.minX + 24, y: first.minY - 24))
+    #expect(second.size == first.size)
+    let third = frame([first, second])
+    #expect(third.origin == CGPoint(x: first.minX + 48, y: first.minY - 48))
+    #expect(frame([second]) == first)
+    #expect(frame([CGRect(x: 30, y: 600, width: 300, height: 200)]) == first)
+    let square = ClipboardPanelModel.pinFrame(
+      pixels: CGSize(width: 301, height: 301), scale: 2, visible: visible, index: 0)
+    #expect(frame([square]) == second)
+    #expect(frame([first.insetBy(dx: -first.width * 0.02, dy: -first.height * 0.02)]) == second)
+  }
+
+  /// 把图编码成 type（properties：JPEG 的 EXIF 方向这类）
+  static func encode(_ image: CGImage, as type: UTType, properties: [CFString: Any] = [:]) throws
+    -> Data
+  {
+    let data = NSMutableData()
+    let destination = try #require(
+      CGImageDestinationCreateWithData(data, type.identifier as CFString, 1, nil))
+    CGImageDestinationAddImage(destination, image, properties as CFDictionary)
+    try #require(CGImageDestinationFinalize(destination))
+    return data as Data
   }
 
   /// size×size 的 sRGB 图，fill 在原点左下的上下文里画
