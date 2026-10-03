@@ -3,7 +3,8 @@
 // 粘贴时发的 ⌘V、划词时发的 ⌘C 才会落到它身上。
 // 外观是 Whisker 的 Panel 皮肤（mac-whisker §2）：无边框、16 pt 连续圆角（maskImage 裁，系统阴影跟着走）+ 描边
 // （macOS 26 起换成液态玻璃 NSGlassEffectView，不画描边）；
-// 出现时淡入 + 内容下落 6 pt，用户关掉时系统淡出（窗口逻辑上立刻移走，键盘马上回到原 App），高度可带动画伸缩。
+// 出现时淡入 + 内容下落 6 pt，用户关掉时一块替身在原位淡出（真窗口立刻收走，键盘马上回到原 App；不用系统的窗口淡出，
+// 它会泛白，见 fadeOutStandIn），高度可带动画伸缩。
 // ⌘Y 放大预览用 zoom / unzoom：从检查器卡片的位置长出来、缩回去。剪贴板、启动器、翻译浮窗可选「挤压入场」（设置 › 通用「动效」，squeezesIn）。
 // 翻译浮窗（frameName）：present 带 anchor 时出现在光标右下 12 pt（放不下翻到另一侧，体检 A13），不带时回到用户上次拖到的
 // 位置（userFrame；所在屏不是鼠标所在屏时换算到鼠标所在屏同一相对位置）；只有用户拖过、拖宽过才记下新位置。
@@ -41,7 +42,7 @@ final class OverlayPanel: NSPanel {
   private var mouseMonitors: [Any] = []
   /// SwiftUI 内容：入场时它下落，材质本身不动
   private let host: NSView
-  /// 上次系统淡出的时刻：淡出的快照窗口还在时又被呼出，就不再淡入（不然旧内容叠在新内容上）
+  /// 上次淡出的时刻：淡出的替身还在时又被呼出，就不再淡入（不然旧内容叠在新内容上）
   private var lastDismiss: CFTimeInterval = 0
   /// 用户正在拖左右边改宽度：这期间改高度不做动画（动画结束会盖掉拖动设的帧）
   fileprivate var isUserResizing = false
@@ -87,26 +88,7 @@ final class OverlayPanel: NSPanel {
     animationBehavior = .none
     if let minSize { contentMinSize = minSize }
     // 材质（mac-whisker §2）：root 是窗口的 contentView，内容和左右拖边放进 background
-    let root: NSView
-    let background: NSView
-    if #available(macOS 26, *) {
-      // 液态玻璃：圆角交给玻璃（不用 maskImage、PanelRim 不画），内容进它的 contentView（玻璃用 Auto Layout 撑满）
-      let glass = NSGlassEffectView()
-      glass.cornerRadius = Style.Radius.panel
-      background = NSView()
-      background.autoresizingMask = [.width, .height]  // 自动缩放掩码和玻璃撑满它的约束一致、不打架
-      glass.contentView = background
-      root = glass
-    } else {
-      // 系统毛玻璃底：state 必须 .active，本 App 从不激活，跟随窗口状态会一直是灰的非激活外观
-      let effect = NSVisualEffectView()
-      effect.material = .popover
-      effect.blendingMode = .behindWindow
-      effect.state = .active
-      effect.maskImage = Self.cornerMask(radius: Style.Radius.panel)
-      background = effect
-      root = effect
-    }
+    let (root, background) = Self.makeBackground()
     hosting.frame = background.bounds
     hosting.autoresizingMask = [.width, .height]
     background.addSubview(hosting)
@@ -124,6 +106,26 @@ final class OverlayPanel: NSPanel {
     }
   }
 
+  /// 材质底：返回窗口的 contentView 和放内容的那一层（面板和退场淡出的替身用同一份）
+  private static func makeBackground() -> (root: NSView, background: NSView) {
+    if #available(macOS 26, *) {
+      // 液态玻璃：圆角交给玻璃（不用 maskImage、PanelRim 不画），内容进它的 contentView（玻璃用 Auto Layout 撑满）
+      let glass = NSGlassEffectView()
+      glass.cornerRadius = Style.Radius.panel
+      let background = NSView()
+      background.autoresizingMask = [.width, .height]  // 自动缩放掩码和玻璃撑满它的约束一致、不打架
+      glass.contentView = background
+      return (glass, background)
+    }
+    // 系统毛玻璃底：state 必须 .active，本 App 从不激活，跟随窗口状态会一直是灰的非激活外观
+    let effect = NSVisualEffectView()
+    effect.material = .popover
+    effect.blendingMode = .behindWindow
+    effect.state = .active
+    effect.maskImage = Self.cornerMask(radius: Style.Radius.panel)
+    return (effect, effect)
+  }
+
   override var canBecomeKey: Bool { true }
   override var canBecomeMain: Bool { false }
 
@@ -132,7 +134,7 @@ final class OverlayPanel: NSPanel {
   /// keepsPlace：原地重新露出来（划词翻译并替换期间临时 orderOut 的固定浮窗），不重新摆
   func present(makingKey: Bool = true, anchor: NSPoint? = nil, keepsPlace: Bool = false) {
     let appearing = !isVisible
-    // 系统淡出约 0.13 s，期间快照窗口还在：直接不透明盖住它
+    // 淡出的替身 0.10 s 内还在：直接不透明盖住它
     let fades = appearing && CACurrentMediaTime() - lastDismiss > 0.15
     if appearing {
       // 直接 orderOut 收起的（划词时浮窗是 key）没经过 hide / dismiss：这里补记用户拖过的位置
@@ -242,19 +244,116 @@ final class OverlayPanel: NSPanel {
     if !isPinned() { hide() }
   }
 
-  /// 用户关掉（Esc、⌘W、点外面、再按热键、失焦）：系统淡出。窗口逻辑上立刻移走，键盘马上回到原 App
+  /// 用户关掉（Esc、⌘W、点外面、再按热键、失焦）：淡出（替身在原位淡，减弱动态效果时没有）。窗口立刻移走，
+  /// 键盘马上回到原 App
   func dismiss() {
     endSqueeze()
     guard isVisible else { return }
     saveFrameIfMoved()
     showGeneration += 1
-    animationBehavior = Style.reduceMotion ? .none : .utilityWindow
     lastDismiss = CACurrentMediaTime()
-    orderOut(nil)
+    if !Style.reduceMotion { fadeOutStandIn() }
     animationBehavior = .none
+    orderOut(nil)
     alphaValue = 1
     removeMouseMonitors()
     onHide?()
+  }
+
+  /// 退场淡出的替身：一块同样材质、同样位置的窗口，里面是这一刻内容的图，盖在面板上面按 fadeOut 淡掉；面板自己同时
+  /// 立刻收走（onHide 把内容复位、键盘还给原 App 都不等它）。
+  /// 不用系统的窗口淡出（orderOut 前临时设 animationBehavior = .utilityWindow，2026-10-03 之前的做法）：系统淡的是
+  /// 窗口自己那层画面，不带毛玻璃对背后的压暗，淡出第一帧整块面板变成浅灰——屏上逐帧实测，深色背景上面板亮度
+  /// 42 → 87，再用约 130 ms 淡掉，看着就是关闭时泛白闪一下（用户 2026-10-03 报，三块面板都是）。
+  /// 替身的毛玻璃是活的，窗口透明度动画不丢压暗（实测亮度单调降到背景）
+  private func fadeOutStandIn() {
+    let images = Self.snapshots(of: host)
+    guard !images.isEmpty else { return }
+    let standIn = PanelStandIn(
+      contentRect: frame, styleMask: [.nonactivatingPanel, .borderless], backing: .buffered,
+      defer: false)
+    standIn.isReleasedWhenClosed = false
+    standIn.level = level
+    standIn.collectionBehavior = collectionBehavior
+    standIn.appearance = appearance
+    standIn.isOpaque = false
+    standIn.backgroundColor = .clear
+    standIn.hasShadow = true
+    standIn.ignoresMouseEvents = true
+    standIn.animationBehavior = .none
+    standIn.setAccessibilityElement(false)
+    standIn.alphaValue = alphaValue  // 淡入到一半就被关掉的，从当前的透明度接着淡
+    let (root, background) = Self.makeBackground()
+    standIn.contentView = root
+    root.layoutSubtreeIfNeeded()
+    let content = NSView(frame: background.bounds)
+    content.autoresizingMask = [.width, .height]
+    content.wantsLayer = true
+    for (image, filter) in images {
+      let layer = CALayer()
+      layer.frame = content.bounds
+      layer.contents = image
+      layer.compositingFilter = filter
+      content.layer?.addSublayer(layer)
+    }
+    background.addSubview(content)
+    standIn.order(.above, relativeTo: windowNumber)
+    NSAnimationContext.runAnimationGroup { context in
+      context.duration = Style.fadeOut
+      context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+      standIn.animator().alphaValue = 0
+    } completionHandler: {
+      MainActor.assumeIsolated { standIn.orderOut(nil) }
+    }
+  }
+
+  /// 把内容画成图给替身用：普通内容一张；挂着合成滤镜的图层按滤镜各一张、带上那个滤镜。
+  /// 毛玻璃上「鲜亮」的次要文字、图标、分隔线，SwiftUI 是给图层挂合成滤镜（深色外观 plusL、浅色 plusD）实时和底下的
+  /// 材质混出来的；直接画成一张图会丢掉这层混合（深色面板在浅色背景上，副标题、键帽几乎看不见，替身一出来内容就闪一下），
+  /// 所以这些图层单独画、在替身里挂回同一个滤镜——屏上实测替身和真面板逐像素一样（深 / 浅外观 × 深 / 浅背景）。
+  /// 画的时候临时把另一半图层藏起来，画完原样放回（不提交，屏上看不出）。启动器一次约 18 ms
+  static func snapshots(of view: NSView) -> [(image: CGImage, filter: Any?)] {
+    guard let root = view.layer else { return [] }
+    var vibrant: [CALayer] = []
+    // 不带滤镜、子树里也没有带滤镜的图层：画带滤镜的那张时藏起来（它们的上级只是容器，留着才有位置和裁剪）
+    var plain: [CALayer] = []
+    @discardableResult func sort(_ layer: CALayer) -> Bool {
+      if layer.compositingFilter != nil {
+        vibrant.append(layer)
+        return true
+      }
+      let children = layer.sublayers ?? []
+      let mixed = children.map { sort($0) }
+      guard mixed.contains(true) else { return false }
+      for (child, has) in zip(children, mixed) where !has { plain.append(child) }
+      return true
+    }
+    sort(root)
+    func render(hiding layers: [CALayer]) -> CGImage? {
+      let shown = layers.filter { !$0.isHidden }
+      CATransaction.begin()
+      CATransaction.setDisableActions(true)
+      for layer in shown { layer.isHidden = true }
+      defer {
+        for layer in shown { layer.isHidden = false }
+        CATransaction.commit()
+      }
+      guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
+      view.cacheDisplay(in: view.bounds, to: bitmap)
+      return bitmap.cgImage
+    }
+    var images: [(image: CGImage, filter: Any?)] = []
+    if let image = render(hiding: vibrant) { images.append((image, nil)) }
+    var done: Set<String> = []
+    for layer in vibrant {
+      let name = String(describing: layer.compositingFilter)
+      guard done.insert(name).inserted else { continue }
+      let others = vibrant.filter { String(describing: $0.compositingFilter) != name }
+      if let image = render(hiding: plain + others) {
+        images.append((image, layer.compositingFilter))
+      }
+    }
+    return images
   }
 
   /// 面板里的一块（SwiftUI 坐标，原点左上）换成屏幕坐标：⌘Y 大卡从选中行长出来、缩回去用（剪贴板透镜、启动器选中行）
@@ -570,6 +669,10 @@ final class OverlayPanel: NSPanel {
     return image
   }
 }
+
+/// 退场淡出的替身窗口（OverlayPanel.fadeOutStandIn）。不是另一种浮层，子类化只为有个类名：截图的留用名单
+/// （ScreenCapture.keptOwnWindows）按类名把它排除，淡出中的面板不进冻结帧和悬停列表
+private final class PanelStandIn: NSPanel {}
 
 /// 浮层内容的根：描边 + 减弱动态效果时去掉全部 SF Symbol 动效（mac-whisker §7，一处管三个面板）
 private struct PanelRoot<Content: View>: View {

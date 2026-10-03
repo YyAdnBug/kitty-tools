@@ -68,6 +68,11 @@ xcrun swift-format format -i -r macos/KittyTools
 TEST_RUNNER_KITTY_SNAPSHOT_DIR=/tmp/kitty-shots xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:KittyToolsTests/SnapshotProbeTests
 
+# 面板关闭淡出的屏上实录自检（按需，要「屏幕录制」授权；屏幕右下角闪两次小面板，逐帧看关闭时亮度不冒尖——改了 OverlayPanel.dismiss、
+# 面板材质，或上 macOS 26 的玻璃分支后跑）
+TEST_RUNNER_KITTY_LIVE_PANEL_FADE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -only-testing:'KittyToolsTests/PanelFadeTests/closingNeverBrightens(appearance:)'
+
 # 内存探针（按需，约 7 分钟，屏外量缓存 / 识字 / 各面板 / 回收接口各占多少；报告追加在 <目录>/report.md，用法和三个坑见测试文件头）
 TEST_RUNNER_KITTY_MEMORY_PROBE_DIR=/tmp/kitty-memory xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/MemoryProbeTests/measure()'

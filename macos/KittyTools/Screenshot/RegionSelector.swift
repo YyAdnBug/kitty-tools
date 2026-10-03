@@ -425,7 +425,8 @@ final class SelectionSession {
   }
 
   /// 结果立刻交回、遮罩立刻收起，键盘马上回到原 App（淡出期间还当着 key 的话，接着打的字全被吞掉）。
-  /// 取消时由系统淡出（临时 .utilityWindow 再 orderOut，同 OverlayPanel.dismiss；减弱动态效果时直接消失），
+  /// 取消时由系统淡出（临时 .utilityWindow 再 orderOut；减弱动态效果时直接消失。浮层 OverlayPanel 原来也这么淡，
+  /// 毛玻璃底会泛白、2026-10-03 改成替身淡出；遮罩的底是不透明的冻结帧，没人报过这个问题，没实测），
   /// 出图时没有退场动画（S1 飞行卡片接手）
   func finish(_ outcome: RegionSelector.Outcome?) {
     guard let continuation else { return }

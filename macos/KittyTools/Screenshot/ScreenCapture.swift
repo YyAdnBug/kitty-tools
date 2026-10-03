@@ -39,7 +39,7 @@ enum ScreenCapture {
       CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
         as? [[String: Any]] ?? [],
       ownPID: getpid(), keeping: kept, primaryHeight: NSScreen.screens.first?.frame.height ?? 0)
-    // 不在 NSApp.windows 里的自家窗口（系统淡出用的快照等）也排除；只有状态栏层级的照旧留（菜单栏图标，以防它不在列表里）
+    // 不在 NSApp.windows 里的自家窗口（系统画的快照等）也排除；只有状态栏层级的照旧留（菜单栏图标，以防它不在列表里）
     let ownWindows = content.windows.filter {
       $0.owningApplication?.processID == getpid() && !kept.contains($0.windowID)
         && (known.contains($0.windowID)
@@ -104,13 +104,13 @@ enum ScreenCapture {
 
   /// 本 App 哪些窗口留在冻结帧和悬停列表里（用户 2026-09-26：截图要能截到本 App 自己）：开着的普通窗口都留——
   /// 剪贴板面板、翻译浮窗、启动器、⌘Y 放大预览、设置窗、引导、钉图，截图时能悬停、单击选中；菜单栏图标也留
-  /// （状态栏层级、类名带 StatusBar）。其余排除：刚 orderOut / 系统淡出中的（不可见或全透明）、状态栏层级及以上的
+  /// （状态栏层级、类名带 StatusBar）。其余排除：刚 orderOut 的（不可见或全透明）、面板淡出中的替身（PanelStandIn）、状态栏层级及以上的
   /// 截图装饰（刘海岛、飞行卡片、常驻缩略图、长截图 / 录屏的边框、上一次的遮罩、菜单），以及按类名认的遮罩、长截图面板、
   /// 菜单、工具提示。录屏时菜单栏的停止项（NSStatusBarWindow）同菜单栏图标一样留在冻结帧里（它本来就在菜单栏上，
   /// 不在悬停列表里：windowFrames 只要程序坞以下的层），可以接受。纯函数，配单测
   static func keptOwnWindows(_ windows: [OwnWindow]) -> Set<CGWindowID> {
     let status = NSWindow.Level.statusBar.rawValue
-    let chrome = ["SelectionOverlay", "ScrollCapturePanel", "Menu", "ToolTip"]
+    let chrome = ["SelectionOverlay", "ScrollCapturePanel", "PanelStandIn", "Menu", "ToolTip"]
     return Set(
       windows.filter { window in
         if window.level == status { return window.className.contains("StatusBar") }

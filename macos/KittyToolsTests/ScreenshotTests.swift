@@ -95,7 +95,8 @@ struct ScreenshotTests {
       window(3, "PinPanel", alpha: 0.6),  // 调过透明度的钉图
       window(4, "NSStatusBarWindow", level: .statusBar),  // 菜单栏图标
       window(5, "_NSPopoverWindow"),  // 面板上开着的弹出框：也是开着的窗口
-      window(10, "OverlayPanel", visible: false),  // 刚 orderOut（系统还在淡出）
+      window(10, "OverlayPanel", visible: false),  // 刚 orderOut
+      window(9, "PanelStandIn", alpha: 0.5),  // 面板退场淡出中的替身（OverlayPanel.fadeOutStandIn）
       window(11, "OverlayPanel", alpha: 0),  // 淡入前 / 缩回后
       window(12, "NSPanel", level: .statusBar),  // 刘海岛、飞行卡片、常驻缩略图、长截图边框、录屏边框
       window(6, "NSStatusBarWindow", level: .statusBar),  // 录屏时菜单栏的停止项：同菜单栏图标，留
