@@ -29,9 +29,8 @@ struct ClipboardPanelView: View {
   /// 多选底栏「收藏夹…」按钮的左缘（面板坐标）：收藏夹列表锚在它上方
   @State private var groupsButtonX: CGFloat = 0
   /// 滚动位置落在第几段（ListWindow）：列表只画这一段附近的项，跨段时才重算面板。
-  /// 别存滚动位置本身（每帧都会让整个面板重算）；吸顶标题逐帧要的位置在 scroll 里，只有它读
+  /// 别存滚动位置本身（每帧都会让整个面板重算）；吸顶标题逐帧的位置按几何算（StickyHeaders）
   @State private var scrollBand = 0
-  @State private var scroll = ListScroll()
   @State private var position = ScrollPosition()
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -261,7 +260,7 @@ struct ClipboardPanelView: View {
 
   /// 只画可见区附近的那些项（行、分组标题、「新建片段」），上下按前缀和算出的高度撑开（ListWindow，为什么不用 LazyVStack
   /// 见那里；2026-10-03 用户报条目多了高亮错位、滚动和 ↑↓ 卡）：画出来的位置就是 ListLayout 算的，和高亮、滚动、吸顶
-  /// 对得上；按键、滚动的开销只和画出来的三十来项有关。吸顶的分组标题因此自己画（StickyHeader）
+  /// 对得上；按键、滚动的开销只和画出来的三十来项有关。吸顶的分组标题因此自己画（StickyHeaders）
   private func list(_ items: [ClipItem], layout: ListLayout, selected: ClipItem?, lensOpen: Bool)
     -> some View
   {
@@ -280,6 +279,14 @@ struct ClipboardPanelView: View {
         Color.clear.frame(height: layout.totalHeight - layout.top(of: range.upperBound))
       }
       .background(alignment: .topLeading) { highlight(layout: layout, selected: selected) }
+      // 吸顶的分组标题在滚动内容里（滚动条照样画在它上面）：只给画出来的这一段涉及的那一两组画
+      .overlay(alignment: .top) {
+        if let shown = layout.sections(in: range) {
+          StickyHeaders(
+            sections: layout.sections, bounds: layout.sectionTops + [layout.totalHeight],
+            shown: shown)
+        }
+      }
       .animation(model.listMotion.animation(reduced: reduceMotion), value: items.map(\.id))
       // 透镜移动：高亮的 offset + height、旧行收起、新行展开同一个 transaction、同一条曲线
       .animation(
@@ -305,27 +312,11 @@ struct ClipboardPanelView: View {
       }
     )
     .modifier(TracksScrollBand(band: $scrollBand))
-    .onScrollGeometryChange(for: CGFloat.self) {
-      $0.visibleRect.minY
-    } action: { _, y in
-      scroll.top = y
-    }
     // 新的滚动视图（空态之后列表回来）从顶上开始
     .onAppear { resetScroll() }
-    .overlay(alignment: .top) {
-      StickyHeader(
-        sections: layout.sections, tops: layout.sectionTops.map { $0 + Self.inset }, scroll: scroll
-      )
-      .padding(.horizontal, Self.inset)
-    }
-    // 被下一组推上去的吸顶标题不画到搜索线上
-    .clipped()
   }
 
-  private func resetScroll() {
-    scrollBand = 0
-    scroll.top = 0
-  }
+  private func resetScroll() { scrollBand = 0 }
 
   /// ForEach 的身份：标题 = 那一天，行 = 所在分组 + 条目（为什么带分组见 clipRow）
   private func entryID(_ index: Int, in layout: ListLayout) -> EntryID {
@@ -711,6 +702,18 @@ struct ListLayout {
     rowIndex[id].map { tops[$0] }
   }
 
+  /// 这一段项涉及的分组（第一项和最后一项所在的组，「新建片段」算第一组）；没有分组时 nil
+  func sections(in range: Range<Int>) -> ClosedRange<Int>? {
+    guard !sections.isEmpty, !range.isEmpty else { return nil }
+    func section(_ index: Int) -> Int {
+      switch entries[index] {
+      case .newSnippet: 0
+      case .header(let section), .row(let section, _): section
+      }
+    }
+    return section(range.lowerBound)...section(range.upperBound - 1)
+  }
+
   /// 滚动位置落在第 band 段时要画的项（ListWindow：上下各多画一些，可见区最高 maxListHeight）
   func window(band: Int) -> Range<Int> {
     ListWindow.range(
@@ -809,11 +812,6 @@ private enum EntryID: Hashable {
   case row(RowID)
 }
 
-/// 列表的滚动位置（滚动内容坐标里可见区的顶）：吸顶标题逐帧要，放在面板不读的盒子里，滚动时只重画吸顶那一条
-@Observable private final class ListScroll {
-  var top: CGFloat = 0
-}
-
 /// 分组标题「今天 · 12」+ 一条发丝线。高度必须正好是 headerHeight：高亮、滚动、吸顶都按它累加。
 /// 吸顶时加材质底，平时没有灰条
 private struct SectionHeader: View {
@@ -833,23 +831,33 @@ private struct SectionHeader: View {
   }
 }
 
-/// 吸顶的分组标题（同系统列表）：哪一组的标题滚过了列表顶，就把它盖在顶上，下一组的标题顶上来时把它推上去。
-/// 自己读滚动位置（ListScroll），滚动时只重画这一条，不重算整个面板
-private struct StickyHeader: View {
+/// 吸顶的分组标题（同系统列表）：哪一组的标题滚过了列表顶，就把它停在顶上（材质底），下一组的标题顶上来时把它推上去。
+/// 放在滚动内容里（叠在列表外面会挡住滚动条，2026-10-03 用户指出），每一组的位置按几何每帧算（visualEffect，不重画面板）：
+/// 停在可见区的顶，夹在它自己标题的位置和下一组标题上面一格之间；没滚过自己的标题时透明（列表里那条在原处）。
+/// 只画 shown 这几组（画出来的那一段涉及的组，可见区顶上那组一定在里面）
+private struct StickyHeaders: View {
   let sections: [ClipboardPanelView.DaySection]
-  /// 各组标题的顶（滚动内容坐标，含上内缩）
-  let tops: [CGFloat]
-  let scroll: ListScroll
+  /// 各组标题的顶（列表坐标），最后多一个总高：第 k 组吸顶时夹在 bounds[k] 和 bounds[k + 1] − 标题高之间
+  let bounds: [CGFloat]
+  let shown: ClosedRange<Int>
 
   var body: some View {
-    let y = scroll.top
-    if let index = tops.lastIndex(where: { y > $0 + 0.5 }) {
-      let next = index + 1 < tops.count ? tops[index + 1] - y : .infinity
-      SectionHeader(section: sections[index], pinned: true)
-        .offset(y: min(0, next - ClipboardPanelView.headerHeight))
-        // 列表里那一条标题旁白读得到，这条是叠上去的
-        .accessibilityHidden(true)
+    let header = ClipboardPanelView.headerHeight
+    ZStack(alignment: .top) {
+      ForEach(Array(shown), id: \.self) { k in
+        let (top, bottom) = (bounds[k], bounds[k + 1] - header)
+        SectionHeader(section: sections[k], pinned: true)
+          .visualEffect { content, proxy in
+            // 这一层的顶就是列表的顶：它在滚动视图里往上出去多少，可见区的顶就在列表坐标的多少
+            let visible = -proxy.frame(in: .scrollView).minY
+            return content.offset(y: min(max(visible, top), bottom))
+              .opacity(visible > top + 0.5 ? 1 : 0)
+          }
+      }
     }
+    // 不接点击（点在吸顶标题上照常点到下面那一行）；旁白读列表里那一条
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
   }
 }
 
