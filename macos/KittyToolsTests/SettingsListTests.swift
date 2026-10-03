@@ -1,5 +1,6 @@
 // 设置里有序列表（N12）的单测：网页搜索一条的问题提示（名称、网址、保留 / 重复关键词（只算搜索之间）、用不上）、
-// 列表 JSON 读写（关键词去空白）、预置判断（删自定义的要确认）、翻译服务状态副标题（开着才标橙）；
+// 列表 JSON 读写（关键词去空白）、预置判断（删自定义的要确认）、翻译服务状态副标题（开着才标橙）、
+// 列表有几行就多高（不封顶，每一行都在外框里）；
 // 另有通用页的外观偏好 → NSAppearance 名字、设置窗侧栏不画原生选中高亮（自绘那块才是选中）、工具栏的「‹ 返回」和主菜单「显示 › 返回」。
 
 import AppKit
@@ -106,6 +107,51 @@ struct SettingsListTests {
     ai.model = "claude-haiku"
     #expect(ai.settingsStatus == ("Anthropic · claude-haiku", false))
     #expect(TranslateService.zhipu.settingsStatus == ("glm-4-flash", false))
+  }
+
+  /// 有序列表有几行就多高、不封顶（2026-10-03）：分组表单里嵌的 List 系统不让滚，封顶之后的行看不到也够不着。
+  /// 真的翻译页放 14 个自建 AI 服务（本机地址：行的状态不读钥匙串、不取官网图标），滚到底让行真的排出来：
+  /// 列表的表格和它的外框一样高、最后一行正好到底——行高和 OrderedList.rowHeight 对不上时最后几行会被外框裁掉。
+  /// 屏外无边框窗口，不抢键盘
+  @Test func orderedListShowsEveryRow() throws {
+    #expect(OrderedList.height(rows: 0) == OrderedList.rowHeight)
+    #expect(OrderedList.height(rows: 14) == 14 * OrderedList.rowHeight)
+    let navigation = SettingsNavigation(defaults: nil)
+    navigation.page = .translate
+    let suite = "kitty-test-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let services = TranslateServiceStore(
+      services: (1...14).map { index in
+        var service = TranslateService.newAI()
+        service.name = "服务 \(index)"
+        service.baseURL = "http://127.0.0.1:\(8000 + index)/v1"
+        service.model = "model-\(index)"
+        return service
+      })
+    let history = try HistoryStore(db: Database(path: ":memory:"))
+    let host = NSHostingView(
+      rootView: TranslateTab(services: services, history: history, speaker: Speaker())
+        .environment(navigation).defaultAppStorage(defaults))
+    let window = NSWindow(
+      contentRect: NSRect(x: -20000, y: -20000, width: 590, height: 548), styleMask: [.borderless],
+      backing: .buffered, defer: false)
+    window.contentView = host
+    window.orderFront(nil)
+    defer { window.orderOut(nil) }
+    let settle = { for _ in 0..<5 { RunLoop.main.run(until: .now.addingTimeInterval(0.1)) } }
+    settle()
+    func tables(in view: NSView) -> [NSTableView] {
+      ((view as? NSTableView).map { [$0] } ?? []) + view.subviews.flatMap(tables(in:))
+    }
+    let table = try #require(tables(in: host).first { $0.numberOfRows == 14 })
+    let list = try #require(table.enclosingScrollView)
+    let page = try #require(list.enclosingScrollView?.documentView)
+    page.scroll(NSPoint(x: 0, y: page.frame.height))
+    settle()
+    #expect(list.frame.height == 14 * OrderedList.rowHeight)
+    #expect(table.frame.height == list.frame.height)
+    #expect(table.rect(ofRow: 13).maxY == list.frame.height)
   }
 
   /// 没存过、存了认不得的值都跟随系统（nil = NSApp.appearance 不设）

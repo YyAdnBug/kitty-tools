@@ -161,8 +161,7 @@ struct LauncherTab: View {
     }
     .listStyle(.plain)
     .scrollContentBackground(.hidden)
-    .scrollDisabled(list.count <= OrderedList.visibleRows)
-    .frame(height: OrderedList.height(rows: list.count))
+    .orderedListFrame(rows: list.count)
     .contextMenu(forSelectionType: String.self) { ids in
       if let id = ids.first {
         Button("编辑…") { open(id) }

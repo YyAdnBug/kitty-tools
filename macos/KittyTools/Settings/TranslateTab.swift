@@ -283,8 +283,7 @@ struct TranslateTab: View {
     }
     .listStyle(.plain)
     .scrollContentBackground(.hidden)
-    .scrollDisabled(services.services.count <= OrderedList.visibleRows)
-    .frame(height: OrderedList.height(rows: services.services.count))
+    .orderedListFrame(rows: services.services.count)
     .contextMenu(forSelectionType: String.self) { ids in
       if let id = ids.first {
         Button("设置…") { open(id) }

@@ -162,7 +162,9 @@ struct TranslateServiceDetail: View {
       TextField("模型", text: Binding(service.model, default: ""), prompt: Text("如 gpt-4o-mini"))
         .textInputSuggestions {
           ForEach(Self.suggestions(models, typed: typed), id: \.self) { model in
-            Text(model).textInputCompletion(model)
+            // 下拉是系统的建议窗，宽度固定（实测 214 pt，不跟内容变宽）：长的模型名单行截断，
+            // 不然折成两行、还跟着输入框右对齐（2026-10-03 用户要求）
+            Text(model).lineLimit(1).truncationMode(.tail).textInputCompletion(model)
           }
         }
       Button {

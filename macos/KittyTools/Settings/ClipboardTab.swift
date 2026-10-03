@@ -149,8 +149,7 @@ struct ClipboardTab: View {
     }
     .listStyle(.plain)
     .scrollContentBackground(.hidden)
-    .scrollDisabled(excluded.count <= OrderedList.visibleRows)
-    .frame(height: OrderedList.height(rows: excluded.count))
+    .orderedListFrame(rows: excluded.count)
     .onDeleteCommand(perform: removeSelected)
   }
 

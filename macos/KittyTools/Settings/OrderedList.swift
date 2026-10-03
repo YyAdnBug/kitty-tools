@@ -1,5 +1,6 @@
 // 设置里的有序列表（翻译服务、网页搜索，N12；对标 Bob 服务页 / 系统设置「互联网账户」「登录项」）共用的零件：
-// 列表下面系统样式的「+ −」小按钮条、列表高度、选中绑定（单击推进、键盘选中）、详情页的页头（40 pt 图标 + 名称 + 状态）。
+// 列表下面系统样式的「+ −」小按钮条、列表高度（有几行多高，不在列表里滚）、选中绑定（单击推进、键盘选中）、
+// 详情页的页头（40 pt 图标 + 名称 + 状态）。
 // 列表本身（List + .onMove 拖动排序、右键菜单与无障碍动作里的上移 / 下移）在各自的 Tab 里。
 
 import SwiftUI
@@ -7,12 +8,13 @@ import SwiftUI
 enum OrderedList {
   /// 一行的高度（24 pt 图标、名称 13 + 状态 11 两行，上下各留 4）
   static let rowHeight: CGFloat = 36
-  /// 超过这么多行才在列表里滚动（翻译服务 8 个内置 + 1 个自建刚好不滚）
-  static let visibleRows = 10
 
-  /// 列表区的高度：按行数定高，不滚动时整块跟着表单一起滚
+  /// 列表区的高度：有几行就多高，整块跟着表单一起滚，列表自己不滚（`orderedListFrame`）。
+  /// 别再封顶让它在里面滚：嵌在分组表单里的 List 系统不让滚（macOS 15 实测：没有滚动条，滚轮、scrollRowToVisible
+  /// 都不动，写不写 scrollDisabled(false) 一样），封顶之后的行就够不着了（2026-10-03 用户报「新增了列表看不到、
+  /// 无法滚动」：原来超过 10 行想在列表里滚，第 11 行起一直看不到）
   static func height(rows: Int) -> CGFloat {
-    CGFloat(min(max(rows, 1), visibleRows)) * rowHeight
+    CGFloat(max(rows, 1)) * rowHeight
   }
 
   /// 列表的选中绑定：鼠标单击一行 = 推进详情页（N12），↑↓ 只选中（给「−」和 ⌫ 用），↩ 走 primaryAction。
@@ -44,6 +46,17 @@ enum OrderedList {
   /// 状态副标题的颜色：缺配置时橙色（Whisker §3 配置 / 密钥问题的语义色），否则 secondary
   static func statusStyle(isProblem: Bool) -> Color {
     isProblem ? Color(nsColor: .systemOrange) : Color(nsColor: .secondaryLabelColor)
+  }
+}
+
+extension View {
+  /// 有序列表的排法（三处共用）：有几行就多高、自己不滚（`OrderedList.height`）。还没画过的行系统按最小行高
+  /// （默认 24）估高度：给成真实行高，不然列表重建后（从详情页回来）还在可见区上面的行按 24 算，表格比外框矮、
+  /// 最后一行下面空出一截，往上滚时下面的行还会跟着跳
+  func orderedListFrame(rows: Int) -> some View {
+    scrollDisabled(true)
+      .environment(\.defaultMinListRowHeight, OrderedList.rowHeight)
+      .frame(height: OrderedList.height(rows: rows))
   }
 }
 
