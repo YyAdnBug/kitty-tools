@@ -763,6 +763,8 @@ private final class Probe {
         case .clipboard: AnyView(ClipboardTab(store: store))
         case .launcher: AnyView(EmptyView())
         case .screenshot: AnyView(ScreenshotTab())
+        // 录制页 2026-10-03 才拆出来，下面点的还是原来那五页（和以前的数可比）
+        case .record: AnyView(RecordTab())
         case .translate:
           AnyView(TranslateTab(services: services, history: history, speaker: speaker))
         case .hotkeys: AnyView(HotkeysTab(center: hotKeys))

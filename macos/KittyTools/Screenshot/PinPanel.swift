@@ -2,6 +2,8 @@
 // 拖动移动，滚轮 / 双指捏合以鼠标为锚点缩放，双击或 Esc 关闭（Esc、按键要先点一下钉图）。
 // 按键和截图出图一致（体检 C9 D17）：⌘C 拷贝、O 识字并拷贝、⌘S 存储到快速保存的文件夹、⇧⌘S 另存为…、⌘0 原始大小、⌘W 关闭；
 // 右键菜单：拷贝 / 识字并拷贝 / 翻译 / 存储到「桌面」/ 另存为… ｜ 透明度 / 原始大小 ｜ 关闭，VoiceOver 的自定义动作同一份（B45）。
+// 透明度是 10–100% 的滑块（2026-10-03 用户要求，原来点一下换一档；对标 CleanShot 的钉图）：悬停圆钮点开、右键「透明度 ▸」里是同一行，
+// 拖动实时生效。滑块放在菜单里：菜单是自己的窗口，钉图整个窗口按透明度变淡，滑块放进钉图里会跟着一起淡。
 // 长截图时和选区相交的钉图让开（B40：不接鼠标、淡到 0.3，滚轮和自动滚动落到下面的窗口）。菜单栏可隐藏 / 显示、关闭全部。
 // Whisker（mac-whisker §6 钉图）：圆角 10 + 系统阴影；钉上时窗口 1.04 → 1 弹簧回弹（超过半屏的只淡入）；悬停 0.3 s 后右上角淡入透明度 / 关闭两个
 // 22 pt HUD 圆钮；缩放时中央 HUD 显示百分比、停手 0.7 s 淡出；关闭时缩到 0.92 并淡出 0.16 s。
@@ -165,7 +167,7 @@ final class PinPanel: NSPanel {
   override var canBecomeKey: Bool { true }
   override var canBecomeMain: Bool { false }
 
-  /// 用户选的透明度（右键菜单 / 圆钮）：长截图让开时窗口临时淡到 0.3，结束后回到它
+  /// 用户选的透明度（0.1–1，透明度滑块）：长截图让开时窗口临时淡到 0.3，结束后回到它
   var opacity: CGFloat = 1 {
     didSet { if !isSuspended { alphaValue = opacity } }
   }
@@ -310,7 +312,7 @@ private final class PinView: NSView {
     let opacity = circle(
       barButton(
         NSImage(systemSymbolName: "circle.lefthalf.filled", accessibilityDescription: "透明度")!,
-        tip: "透明度", action: #selector(cycleOpacity), size: CGSize(width: side, height: side)))
+        tip: "透明度", action: #selector(showOpacity(_:)), size: CGSize(width: side, height: side)))
     let close = circle(
       barButton(
         NSImage(systemSymbolName: "xmark", accessibilityDescription: "关闭")!, tip: "关闭",
@@ -524,16 +526,7 @@ private final class PinView: NSView {
     items[0..<5].forEach(menu.addItem)
     menu.addItem(.separator())
     let opacity = NSMenuItem(title: "透明度", action: nil, keyEquivalent: "")
-    let levels = NSMenu()
-    for percent in [100, 80, 60, 40] {
-      let level = NSMenuItem(
-        title: "\(percent)%", action: #selector(setOpacity(_:)), keyEquivalent: "")
-      level.target = self
-      level.tag = percent
-      level.state = Int(((panel?.opacity ?? 1) * 100).rounded()) == percent ? .on : .off
-      levels.addItem(level)
-    }
-    opacity.submenu = levels
+    opacity.submenu = opacityMenu()
     menu.addItem(opacity)
     menu.addItem(items[5])
     menu.addItem(.separator())
@@ -567,15 +560,21 @@ private final class PinView: NSView {
   @objc private func saveImageAs() { board.output(.saveAs, image, scale) }
   @objc private func recognizeText() { board.output(.recognize, image, scale) }
   @objc private func translateImage() { board.output(.translate, image, scale) }
-  @objc private func setOpacity(_ sender: NSMenuItem) {
-    panel?.opacity = CGFloat(sender.tag) / 100
+
+  /// 只有一行透明度滑块的菜单：右键「透明度 ▸」的子菜单、圆钮弹出的都是它
+  private func opacityMenu() -> NSMenu {
+    let menu = NSMenu()
+    let item = NSMenuItem()
+    item.view = OpacitySlider(panel: panel)
+    menu.addItem(item)
+    return menu
   }
 
-  /// 圆钮：100 → 80 → 60 → 40 → 100%
-  @objc private func cycleOpacity() {
-    guard let panel else { return }
-    let current = Int((panel.opacity * 100).rounded())
-    panel.opacity = CGFloat(current <= 40 ? 100 : current - 20) / 100
+  /// 圆钮：在它下面弹出透明度滑块（同下拉菜单，左边对齐）；菜单开着时按钮保持按下的样子
+  @objc private func showOpacity(_ sender: NSButton) {
+    let anchor = convert(sender.bounds, from: sender)
+    opacityMenu().popUp(
+      positioning: nil, at: CGPoint(x: anchor.minX, y: anchor.minY - 4), in: self)
   }
 
   /// 回到钉上时的大小，左上角不动
@@ -593,5 +592,57 @@ private final class PinView: NSView {
 
   @objc private func close() {
     if let panel { board.close(panel) }
+  }
+}
+
+/// 菜单里的透明度一行：滑块 + 右边的百分比，拖动时钉图跟着变。最低 10%：到 0 钉图就看不见了，
+/// 却还挡着下面的鼠标、悬停圆钮也跟着看不见，只能从菜单栏「关闭全部钉图」找回来
+private final class OpacitySlider: NSView {
+  private weak var panel: PinPanel?
+  private let slider: NSSlider
+  private let label = NSTextField(labelWithString: "")
+
+  init(panel: PinPanel?) {
+    self.panel = panel
+    // 这个构造出来是横的、连续的（拖动中一直发 action，钉图跟着手变）
+    slider = NSSlider(
+      value: ((panel?.opacity ?? 1) * 100).rounded(), minValue: 10, maxValue: 100, target: nil,
+      action: nil)
+    super.init(frame: CGRect(x: 0, y: 0, width: 224, height: 30))
+    slider.target = self
+    slider.action = #selector(changed)
+    // 跟随系统时系统自己取 AccentColor（品牌粉），选了 8 色之一时 AppKit 控件不跟，填充色单独给（mac-whisker §3「颜色」）
+    slider.trackFillColor = NSColor(Style.brand)
+    slider.setAccessibilityLabel("透明度")
+    label.font = .monospacedDigitSystemFont(ofSize: 13, weight: .regular)
+    label.textColor = .secondaryLabelColor
+    label.alignment = .right
+    for view in [slider, label] {
+      view.translatesAutoresizingMaskIntoConstraints = false
+      addSubview(view)
+    }
+    // 左右各 14：和菜单项的文字对齐
+    NSLayoutConstraint.activate([
+      slider.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+      slider.centerYAnchor.constraint(equalTo: centerYAnchor),
+      label.leadingAnchor.constraint(equalTo: slider.trailingAnchor, constant: 8),
+      label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+      label.widthAnchor.constraint(equalToConstant: 36),
+      label.centerYAnchor.constraint(equalTo: centerYAnchor),
+    ])
+    showValue()
+  }
+
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  /// 按整数百分比设
+  @objc private func changed() {
+    panel?.opacity = slider.doubleValue.rounded() / 100
+    showValue()
+  }
+
+  private func showValue() {
+    label.stringValue = "\(Int(slider.doubleValue.rounded()))%"
+    slider.setAccessibilityValueDescription(label.stringValue)
   }
 }

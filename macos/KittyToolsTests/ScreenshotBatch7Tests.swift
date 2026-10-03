@@ -188,6 +188,40 @@ struct ScreenshotBatch7Tests {
     #expect(outputs == [.copy, .save, .saveAs, .save, .recognize])
   }
 
+  // 透明度（2026-10-03 用户要求，原来点一下换一档）：右键「透明度 ▸」里是一行 10–100% 的滑块，拖到哪钉图就是多少（按整数
+  // 百分比），旁边的百分比、滑块和钉图的旁白值跟着变，再打开时停在当前值；悬停圆钮弹出的是同一行（popUp 会卡住测试，不点）
+  @Test func pinOpacitySlider() throws {
+    let board = PinBoard()
+    board.pin(Self.image, frame: CGRect(x: -20000, y: -20000, width: 200, height: 100))
+    defer { board.closeAll() }
+    let panel = try #require(board.panels.first)
+    panel.finishPopIn()  // 屏外的窗口 display link 不走，回弹停不下来
+    settle()  // 淡入放完
+    let view = try #require(panel.contentView)
+    let event = try #require(
+      NSEvent.mouseEvent(
+        with: .rightMouseDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+        context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+    func row() throws -> (NSSlider, NSTextField) {
+      let menu = try #require(view.menu(for: event))
+      let row = try #require(
+        menu.items.first { $0.title == "透明度" }?.submenu?.items.first?.view)
+      return (
+        try #require(row.subviews.compactMap { $0 as? NSSlider }.first),
+        try #require(row.subviews.compactMap { $0 as? NSTextField }.first)
+      )
+    }
+    let (slider, label) = try row()
+    #expect(slider.minValue == 10 && slider.maxValue == 100 && slider.doubleValue == 100)
+    #expect(label.stringValue == "100%" && slider.accessibilityLabel() == "透明度")
+    slider.doubleValue = 34.6
+    NSApp.sendAction(try #require(slider.action), to: slider.target, from: slider)
+    #expect(abs(panel.opacity - 0.35) < 0.001 && abs(panel.alphaValue - 0.35) < 0.01)
+    #expect(label.stringValue == "35%" && slider.accessibilityValueDescription() == "35%")
+    #expect(view.accessibilityValue() as? String == "200 × 100 点，透明度 35%")
+    #expect(try row().0.doubleValue == 35)
+  }
+
   // MARK: D18 常驻缩略图开关
 
   @Test func thumbnailShelfOnByDefault() {

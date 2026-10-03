@@ -471,6 +471,7 @@ struct SnapshotProbeTests {
       case .clipboard: AnyView(ClipboardTab(store: store))
       case .launcher: AnyView(LauncherTab())
       case .screenshot: AnyView(ScreenshotTab())
+      case .record: AnyView(RecordTab())
       case .translate:
         AnyView(TranslateTab(services: services, history: history, speaker: speaker))
       case .hotkeys: AnyView(HotkeysTab(center: hotKeys))
@@ -508,10 +509,10 @@ struct SnapshotProbeTests {
         size: NSSize(width: 780, height: 600), dark: dark,
         to: "\(out)/settings-about-update-\(name)\(dark ? "-dark" : "").png")
     }
-    // 设置 › 截图选过文件夹（体检 A28）：文件夹图标 + 访达里的名字 +「恢复默认」；常驻缩略图关着（D18）；
-    // 录屏组（录屏第 2 批）60 fps、倒数 5 秒、不显示光标；录音组（录音第 6 批）来源「两者」（画高到能看到录音组）、
-    // 「按快捷键后立即开始录音」开着（手测反馈第 3 批；默认关的样子在下面 -audio 那两张）。
-    // 临时偏好域和临时文件夹，不改用户的快速保存位置
+    // 设置 › 截图选过文件夹（体检 A28）：文件夹图标 + 访达里的名字 +「恢复默认」；常驻缩略图关着（D18）。
+    // 设置 › 录制（2026-10-03 从截图页拆出来）同一份偏好：「保存到」也是那个文件夹；录屏组（录屏第 2 批）60 fps、倒数 5 秒、
+    // 不显示光标；录音组（录音第 6 批）来源「两者」、「按快捷键后立即开始录音」开着（手测反馈第 3 批；默认的样子在下面
+    // -default 那两张）。临时偏好域和临时文件夹，不改用户的快速保存位置
     let shotSuite = "kitty-snapshot-\(UUID().uuidString)"
     let shotPrefs = try #require(UserDefaults(suiteName: shotSuite))
     let inbox = FileManager.default.temporaryDirectory.appending(path: "kitty-snapshot/截图收件箱")
@@ -529,17 +530,20 @@ struct SnapshotProbeTests {
     shotPrefs.set(true, forKey: Prefs.audioRecordStartsImmediately)
     for dark in [false, true] {
       try snapshot(
-        ScreenshotTab().defaultAppStorage(shotPrefs), size: NSSize(width: 640, height: 1120),
+        ScreenshotTab().defaultAppStorage(shotPrefs), size: NSSize(width: 640, height: 720),
         dark: dark, to: "\(out)/settings-screenshot-custom\(dark ? "-dark" : "").png")
+      try snapshot(
+        RecordTab().defaultAppStorage(shotPrefs), size: NSSize(width: 640, height: 860),
+        dark: dark, to: "\(out)/settings-record-custom\(dark ? "-dark" : "").png")
     }
-    // 录音组的默认样子（手测反馈第 3 批）：来源麦克风、「按快捷键后立即开始录音」关。空的临时偏好域
-    let audioSuite = "kitty-snapshot-\(UUID().uuidString)"
-    let audioPrefs = try #require(UserDefaults(suiteName: audioSuite))
-    defer { audioPrefs.removePersistentDomain(forName: audioSuite) }
+    // 录制页的默认样子：没选过文件夹、30 fps、倒数 3 秒，录音来源麦克风、「按快捷键后立即开始录音」关。空的临时偏好域
+    let recordSuite = "kitty-snapshot-\(UUID().uuidString)"
+    let recordPrefs = try #require(UserDefaults(suiteName: recordSuite))
+    defer { recordPrefs.removePersistentDomain(forName: recordSuite) }
     for dark in [false, true] {
       try snapshot(
-        ScreenshotTab().defaultAppStorage(audioPrefs), size: NSSize(width: 640, height: 1120),
-        dark: dark, to: "\(out)/settings-screenshot-audio\(dark ? "-dark" : "").png")
+        RecordTab().defaultAppStorage(recordPrefs), size: NSSize(width: 640, height: 860),
+        dark: dark, to: "\(out)/settings-record-default\(dark ? "-dark" : "").png")
     }
     // 设置 › 通用「菜单栏」（第 9 批 M1 M2）：显示 + 彩色、隐藏（图标样式置灰），各出深色；临时偏好域，不动用户的菜单栏图标
     let barSuite = "kitty-snapshot-\(UUID().uuidString)"

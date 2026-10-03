@@ -106,14 +106,14 @@ enum Prefs {
   static let screenRecordingInProgress = "screenRecordingInProgress"
   /// 正在录的音的文件路径（录音第 5 批，AudioRecorder 开录时写、收尾时删；闪退后同样由 ScreenRecorder.recover 接手）
   static let audioRecordingInProgress = "audioRecordingInProgress"
-  /// 录屏帧率：30（默认）/ 60（设置 › 截图「录屏」，录屏第 2 批；大屏上 60 不保证满帧，PLAN §10 第 0 批实测）
+  /// 录屏帧率：30（默认）/ 60（设置 › 录制「录屏」，录屏第 2 批；大屏上 60 不保证满帧，PLAN §10 第 0 批实测）
   static let screenRecordFrameRate = "screenRecordFrameRate"
   /// 开录前倒数几秒：0 不倒数 / 3（默认）/ 5（拍板 R9-a；倒数不进文件）
   static let screenRecordCountdown = "screenRecordCountdown"
   nonisolated static let screenRecordCountdownChoices = [0, 3, 5]
   /// 录屏里画光标（默认开）
   static let screenRecordShowsCursor = "screenRecordShowsCursor"
-  /// 录屏的清晰度和编码（第二轮体检 R1，设置 › 截图「录屏」）：ScreenRecorder.Sharpness / Codec 的 rawValue——
+  /// 录屏的清晰度和编码（第二轮体检 R1，设置 › 录制「录屏」）：ScreenRecorder.Sharpness / Codec 的 rawValue——
   /// 原始（默认，按屏幕像素）/ 标准（按 1x 点尺寸）；H.264（默认）/ HEVC
   static let screenRecordSharpness = "screenRecordSharpness"
   static let screenRecordCodec = "screenRecordCodec"
@@ -127,10 +127,10 @@ enum Prefs {
   nonisolated static let screenRecordMicrophone = "screenRecordMicrophone"
   nonisolated static let screenRecordShowsClicks = "screenRecordShowsClicks"
   nonisolated static let screenRecordShowsKeys = "screenRecordShowsKeys"
-  /// 录音的来源（录音第 6 批，设置 › 截图「录音」）：AudioRecorder.Source 的 rawValue——麦克风（默认）/ 系统声音 / 两者；
+  /// 录音的来源（录音第 6 批，设置 › 录制「录音」）：AudioRecorder.Source 的 rawValue——麦克风（默认）/ 系统声音 / 两者；
   /// 「两者」被拒麦克风授权时弹回「系统声音」（同录制条的麦克风开关）
   nonisolated static let audioRecordSource = "audioRecordSource"
-  /// 按录音快捷键（或点菜单栏、启动器里的「录音」）后立即开始录（手测反馈第 3 批，设置 › 截图「录音」，默认关）：关着时先在
+  /// 按录音快捷键（或点菜单栏、启动器里的「录音」）后立即开始录（手测反馈第 3 批，设置 › 录制「录音」，默认关）：关着时先在
   /// 屏幕底部出录音控制条、不录，点 ● 或再按一次才开始
   static let audioRecordStartsImmediately = "audioRecordStartsImmediately"
 

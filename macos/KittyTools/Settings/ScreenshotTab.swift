@@ -1,60 +1,23 @@
-// 设置 › 截图：⌘S 快速保存的位置（文件夹图标 + 访达里的名字，选过的能恢复默认，体检 A28；录屏、录音也存这里）、快门声（可试听）、
-// 截图后留不留常驻缩略图（体检 D18）、识字是否把同一段里的换行接起来（开关旁边实时对照效果，体检 A32）、
-// 录屏（录屏第 2 批，拍板 C4-a）：帧率 30 / 60、清晰度 原始 / 标准、编码 H.264 / HEVC（第二轮体检 R1：文件嫌大时调这两样）、
-// 开始前倒数、显示光标、显示按键时 全部按键 / 只显示快捷键（R2）；录音（录音第 6 批，拍板 A2-a）：来源 麦克风 / 系统声音 / 两者
-// （手测反馈第 3 批起录音控制条待录时也能切，两边读写同一个偏好）、按快捷键后立即开始录音（手测反馈第 3 批，默认关：
-// 先出控制条，点 ● 或再按一次才开始）。
+// 设置 › 截图：⌘S 快速保存的位置（文件夹图标 + 访达里的名字，选过的能恢复默认，体检 A28；录屏、录音也存这里，
+// 「录制」页的「保存到」是同一行 SaveDirectoryRow）、快门声（可试听）、截图后留不留常驻缩略图（体检 D18）、
+// 识字是否把同一段里的换行接起来（开关旁边实时对照效果，体检 A32）。录屏、录音的设置在「录制」页（RecordTab，2026-10-03 拆出去）。
 // 框选、标注、长截图、录屏的按键不写进页里（N11）：一句话 +「查看全部快捷键…」打开速查表；全局快捷键在「快捷键」页。
 
 import AppKit
 import SwiftUI
 
 struct ScreenshotTab: View {
-  /// 选过的文件夹（没选过 = nil，跟随系统截屏的存储位置）；实际位置按 ScreenshotOutput.directory 算（有兜底）
-  @AppStorage(Prefs.screenshotSaveDirectory) private var savedDirectory: String?
   @AppStorage(Prefs.ocrJoinLines) private var joinLines = false
   @AppStorage(Prefs.screenshotShutterSound) private var shutterSound = true
   @AppStorage(Prefs.screenshotShelf) private var keepsThumbnail = true
-  @AppStorage(Prefs.screenRecordFrameRate) private var frameRate = 30
-  @AppStorage(Prefs.screenRecordCountdown) private var countdown = 3
-  @AppStorage(Prefs.screenRecordShowsCursor) private var showsCursor = true
-  @AppStorage(Prefs.screenRecordSharpness) private var sharpness = ScreenRecorder.Sharpness.original
-  @AppStorage(Prefs.screenRecordCodec) private var codec = ScreenRecorder.Codec.h264
-  @AppStorage(Prefs.screenRecordKeysShortcutsOnly) private var shortcutsOnly = false
-  @AppStorage(Prefs.audioRecordSource) private var audioSource = AudioRecorder.Source.microphone
-  @AppStorage(Prefs.audioRecordStartsImmediately) private var startsImmediately = false
 
   var body: some View {
     Form {
       Section {
-        LabeledContent("快速保存到") {
-          HStack(spacing: 8) {
-            let directory = ScreenshotOutput.directory(saved: savedDirectory)
-            // 同工具栏「存储到「桌面」」：访达里的名字 + 文件夹图标，完整路径在悬停提示里
-            Label {
-              Text(FileManager.default.displayName(atPath: directory.path))
-                .lineLimit(1)
-                .truncationMode(.middle)
-            } icon: {
-              Image(nsImage: NSWorkspace.shared.icon(forFile: directory.path))
-                .resizable()
-                .frame(width: 16, height: 16)
-            }
-            .foregroundStyle(.secondary)
-            .help((directory.path as NSString).abbreviatingWithTildeInPath)
-            if savedDirectory != nil {
-              Button("恢复默认") { savedDirectory = nil }
-                .buttonStyle(.plain)
-                .foregroundStyle(Style.brandInk)
-                .pointerStyle(.link)
-                .help("跟随系统截屏的存储位置")
-            }
-            Button("更改…", action: chooseDirectory)
-          }
-        }
+        SaveDirectoryRow(title: "快速保存到")
       } footer: {
         caption(
-          "按 ⌘S 或工具栏的「存储」存到这里，文件名是「截图 日期 时间.png」，重名自动加序号。没选过时跟随系统截屏的存储位置。录屏、录音也存这里，文件名是「录屏 日期 时间.mp4」「录音 日期 时间.m4a」。"
+          "按 ⌘S 或工具栏的「存储」存到这里，文件名是「截图 日期 时间.png」，重名自动加序号。没选过时跟随系统截屏的存储位置。录屏、录音也存这里。"
         )
       }
       Section {
@@ -83,55 +46,6 @@ struct ScreenshotTab: View {
         caption("同一段里的行接起来，段和段之间保留换行：中文、日文的行直接接上，其它文字之间加空格。截图翻译总是这样接。框选里有二维码或条码时复制它的内容。")
       }
       Section {
-        Picker("帧率", selection: $frameRate) {
-          Text("30 fps").tag(30)
-          Text("60 fps").tag(60)
-        }
-        .pickerStyle(.segmented)
-        Picker("清晰度", selection: $sharpness) {
-          Text("原始").tag(ScreenRecorder.Sharpness.original)
-          Text("标准").tag(ScreenRecorder.Sharpness.standard)
-        }
-        .pickerStyle(.segmented)
-        Picker("编码", selection: $codec) {
-          Text("H.264").tag(ScreenRecorder.Codec.h264)
-          Text("HEVC").tag(ScreenRecorder.Codec.hevc)
-        }
-        .pickerStyle(.segmented)
-        Picker("开始前倒数", selection: $countdown) {
-          Text("不倒数").tag(0)
-          Text("3 秒").tag(3)
-          Text("5 秒").tag(5)
-        }
-        Toggle("显示光标", isOn: $showsCursor)
-        Picker("显示按键时", selection: $shortcutsOnly) {
-          Text("全部按键").tag(false)
-          Text("只显示快捷键").tag(true)
-        }
-        .pickerStyle(.segmented)
-      } header: {
-        Text("录屏")
-      } footer: {
-        caption(
-          "60 fps 更顺，文件大约大一半；大屏上可能录不满 60。文件嫌大：标准清晰度在高分屏上宽高各减半，文件小一半多，小字会糊一些；HEVC 同样的画面小三分之一左右，部分 App 和旧设备可能放不了。录好的也可以在角落的缩略图上点「压缩」另存一份小的。只显示快捷键：带 ⌘ ⌃ ⌥ 的组合键、Esc 和 F 键才进画面，打字不显示。"
-        )
-      }
-      Section {
-        Picker("来源", selection: $audioSource) {
-          Text("麦克风").tag(AudioRecorder.Source.microphone)
-          Text("系统声音").tag(AudioRecorder.Source.system)
-          Text("两者").tag(AudioRecorder.Source.both)
-        }
-        .pickerStyle(.segmented)
-        Toggle("按快捷键后立即开始录音", isOn: $startsImmediately)
-      } header: {
-        Text("录音")
-      } footer: {
-        caption(
-          "录系统声音时菜单栏会出现屏幕录制指示；锁屏会停止；不能暂停。立即开始关着时，按快捷键（或点菜单栏、启动器里的「录音」）先在屏幕底部打开录音控制条，点 ● 或再按一次才开始录。"
-        )
-      }
-      Section {
         LabeledContent {
           ShortcutsButton()
         } label: {
@@ -141,6 +55,46 @@ struct ScreenshotTab: View {
       }
     }
     .formStyle(.grouped)
+  }
+
+  private func caption(_ text: String) -> some View {
+    Text(text).font(.caption).foregroundStyle(.secondary)
+  }
+}
+
+/// 快速保存的文件夹一行：截图页「快速保存到」和录制页「保存到」是同一个偏好、同一行。16 pt 文件夹图标 + 访达里的名字
+/// （完整路径在悬停提示里），选过的能「恢复默认」，「更改…」选别的文件夹
+struct SaveDirectoryRow: View {
+  let title: String
+  /// 选过的文件夹（没选过 = nil，跟随系统截屏的存储位置）；实际位置按 ScreenshotOutput.directory 算（有兜底）
+  @AppStorage(Prefs.screenshotSaveDirectory) private var savedDirectory: String?
+
+  var body: some View {
+    LabeledContent(title) {
+      HStack(spacing: 8) {
+        let directory = ScreenshotOutput.directory(saved: savedDirectory)
+        // 同工具栏「存储到「桌面」」：访达里的名字 + 文件夹图标，完整路径在悬停提示里
+        Label {
+          Text(FileManager.default.displayName(atPath: directory.path))
+            .lineLimit(1)
+            .truncationMode(.middle)
+        } icon: {
+          Image(nsImage: NSWorkspace.shared.icon(forFile: directory.path))
+            .resizable()
+            .frame(width: 16, height: 16)
+        }
+        .foregroundStyle(.secondary)
+        .help((directory.path as NSString).abbreviatingWithTildeInPath)
+        if savedDirectory != nil {
+          Button("恢复默认") { savedDirectory = nil }
+            .buttonStyle(.plain)
+            .foregroundStyle(Style.brandInk)
+            .pointerStyle(.link)
+            .help("跟随系统截屏的存储位置")
+        }
+        Button("更改…", action: chooseDirectory)
+      }
+    }
   }
 
   private func chooseDirectory() {
@@ -153,10 +107,6 @@ struct ScreenshotTab: View {
     panel.begin { response in
       if response == .OK, let url = panel.url { savedDirectory = url.path }
     }
-  }
-
-  private func caption(_ text: String) -> some View {
-    Text(text).font(.caption).foregroundStyle(.secondary)
   }
 }
 

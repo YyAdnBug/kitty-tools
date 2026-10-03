@@ -9,10 +9,13 @@ import Testing
 @testable import KittyTools
 
 struct SettingsListTests {
-  /// 侧栏顺序和菜单栏、快捷键页、引导同序：翻译在截图前面（体检 B51）
+  /// 侧栏顺序和菜单栏、快捷键页、引导同序：翻译在截图前面（体检 B51），录制紧跟截图（2026-10-03 拆出来）
   @Test func sidebarOrderMatchesMenu() {
     let pages = SettingsPage.allCases
-    #expect(pages == [.general, .clipboard, .launcher, .translate, .screenshot, .hotkeys, .about])
+    #expect(
+      pages == [
+        .general, .clipboard, .launcher, .translate, .screenshot, .record, .hotkeys, .about,
+      ])
     let sections = HotKeyAction.sections.map(\.title)
     #expect(sections.firstIndex(of: "翻译")! < sections.firstIndex(of: "截图与录制")!)
   }
@@ -21,6 +24,19 @@ struct SettingsListTests {
   @Test func sidebarSearchFindsNewNames() {
     #expect(SettingsPage.launcher.matches("常用") && SettingsPage.launcher.matches("收藏"))
     #expect(SettingsPage.translate.matches("浮窗位置") && SettingsPage.translate.matches("清空"))
+  }
+
+  /// 搜页名停在那一页：「录制」也是通用页（屏幕录制）、快捷键页里的说法，「快捷键」也是录制页里的（只显示快捷键）；
+  /// 录屏的设置只在录制页；当前页还在结果里不动，没有结果也不动
+  @Test func sidebarSearchPrefersPageTitle() {
+    #expect(SettingsPage.page(for: "录制", current: .clipboard) == .record)
+    #expect(SettingsPage.page(for: " 快捷键", current: .general) == .hotkeys)
+    #expect(SettingsPage.page(for: "帧率", current: .screenshot) == .record)
+    #expect(!SettingsPage.screenshot.matches("录屏") && !SettingsPage.screenshot.matches("麦克风"))
+    #expect(SettingsPage.page(for: "文件夹", current: .record) == .record)
+    #expect(SettingsPage.page(for: "文件夹", current: .about) == .screenshot)
+    #expect(SettingsPage.page(for: "没有这一项", current: .about) == .about)
+    #expect(SettingsPage.page(for: "", current: .about) == .about)
   }
 
   private func engine(

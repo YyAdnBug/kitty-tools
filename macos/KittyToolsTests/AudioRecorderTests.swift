@@ -236,7 +236,7 @@ struct AudioRecorderTests {
     #expect(both.heard)
   }
 
-  /// 来源（设置 › 截图「录音」）：默认麦克风（注册域，不落盘），临时偏好域里存什么读什么，认不出的按麦克风
+  /// 来源（设置 › 录制「录音」）：默认麦克风（注册域，不落盘），临时偏好域里存什么读什么，认不出的按麦克风
   @Test func sourceFromDefaults() throws {
     Prefs.registerDefaults()
     let registered = UserDefaults.standard.volatileDomain(forName: UserDefaults.registrationDomain)

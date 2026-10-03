@@ -339,6 +339,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               symbol: "clock.arrow.circlepath")
           })
       case .screenshot: AnyView(ScreenshotTab())
+      case .record: AnyView(RecordTab())
       case .translate:
         AnyView(
           TranslateTab(services: serviceStore, history: historyStore, speaker: speaker)
@@ -892,8 +893,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   /// 录音（录音第 5 批，拍板 A1-a；手测反馈第 3 批改成先出控制条）：没有会话时，默认先在屏幕底部出录音控制条（待录，不录），
-  /// 设置 › 截图「按快捷键后立即开始录音」开着才直接开始；待录时再触发（快捷键 / 菜单栏 / 启动器，或点控制条的 ●）= 开始；
-  /// 录着时 = 停止（菜单栏 / 启动器这时叫「停止录音」）。录什么看来源（设置 › 截图「录音」、待录的控制条上都能改，第 6 批）。
+  /// 设置 › 录制「按快捷键后立即开始录音」开着才直接开始；待录时再触发（快捷键 / 菜单栏 / 启动器，或点控制条的 ●）= 开始；
+  /// 录着时 = 停止（菜单栏 / 启动器这时叫「停止录音」）。录什么看来源（设置 › 录制「录音」、待录的控制条上都能改，第 6 批）。
   /// 和录屏互斥（C9-a）：录屏在录（含倒数、等麦克风授权）时岛说先停止那一段；正在装更新时不开录（同录屏）
   func audioRecord() {
     if let audioRecorder {

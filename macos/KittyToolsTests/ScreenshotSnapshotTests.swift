@@ -921,6 +921,47 @@ struct ScreenshotSnapshotTests {
     try write(try #require(image.cropping(to: pixels)), to: "\(stem)-crop.png")
   }
 
+  // 钉图的透明度滑块（2026-10-03）：右键「透明度 ▸」、悬停圆钮弹出的那一行（60%、最低 10%，浅 / 深色），垫在菜单材质上看对齐
+  @Test(.enabled(if: directory != nil)) func renderPinOpacity() throws {
+    let out = try #require(Self.directory)
+    let board = PinBoard()
+    let image = try #require(
+      try Self.desktop().cropping(to: CGRect(x: 0, y: 0, width: 400, height: 200)))
+    board.pin(image, frame: CGRect(x: -20000, y: -20000, width: 200, height: 100))
+    defer { board.closeAll() }
+    let panel = try #require(board.panels.first)
+    let pin = try #require(panel.contentView)
+    let event = try #require(
+      NSEvent.mouseEvent(
+        with: .rightMouseDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+        context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+    for (percent, dark) in [(60, false), (60, true), (10, false)] {
+      panel.opacity = CGFloat(percent) / 100
+      let row = try #require(
+        pin.menu(for: event)?.items.first { $0.title == "透明度" }?.submenu?.items.first?.view)
+      // 菜单上下各有约 5 pt 的内边距
+      let size = NSSize(width: row.frame.width, height: row.frame.height + 10)
+      let window = NSWindow(
+        contentRect: NSRect(origin: NSPoint(x: -20000, y: -20000), size: size),
+        styleMask: [.borderless], backing: .buffered, defer: false)
+      window.isReleasedWhenClosed = false
+      window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+      let material = NSVisualEffectView(frame: NSRect(origin: .zero, size: size))
+      material.material = .menu
+      material.state = .active
+      row.frame.origin = CGPoint(x: 0, y: 5)
+      material.addSubview(row)
+      window.contentView = material
+      window.orderFront(nil)
+      for _ in 0..<3 { RunLoop.main.run(until: Date.now.addingTimeInterval(0.1)) }
+      let bitmap = try #require(material.bitmapImageRepForCachingDisplay(in: material.bounds))
+      material.cacheDisplay(in: material.bounds, to: bitmap)
+      try #require(bitmap.representation(using: .png, properties: [:]))
+        .write(to: URL(filePath: "\(out)/shot-pin-opacity-\(percent)\(dark ? "-dark" : "").png"))
+      window.orderOut(nil)
+    }
+  }
+
   private func write(_ image: CGImage, to path: String) throws {
     let data = try #require(
       NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))

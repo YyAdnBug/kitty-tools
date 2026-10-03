@@ -279,7 +279,7 @@ struct RecordingHUDTests {
 
   /// 录音的待录态（手测反馈第 3 批）：[系统声音][麦克风] ｜ [✕][●]。✕ 叫「关闭」、点一下就交回 .cancel（没有东西可放弃，
   /// 不上膛）；● 叫「开始录音」、提示写录音快捷键（没设不写括号）、交回 .start；旁白一组「录音控制」、值「还没开始录」。
-  /// 来源开关按偏好画（开 = 强调色），点了写偏好、至少留一个、不经 onClick；别处改了偏好（设置 › 截图）跟着重画
+  /// 来源开关按偏好画（开 = 强调色），点了写偏好、至少留一个、不经 onClick；别处改了偏好（设置 › 录制）跟着重画
   @Test func readyFormTogglesSourceAndStarts() throws {
     let suite = "kitty-test-hud-ready-\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))

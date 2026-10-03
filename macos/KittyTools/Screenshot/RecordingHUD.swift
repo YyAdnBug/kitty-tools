@@ -15,7 +15,7 @@
 // 「两者」录着时麦克风断开，「没听到声音」那个位置换成橙字「麦克风断开了」。
 // 录音的待录态（手测反馈第 3 批，State.ready：按录音快捷键先出控制条、还没录）：[系统声音][麦克风] ｜ [✕ 关闭][● 开始]，
 // 两个来源开关是录制条的 ToggleButton（同样的符号、配色、.replace 过渡和提示），读写录音来源的偏好（至少留一个），和
-// 设置 › 截图「录音」的「来源」是同一个偏好；● 画法同录制条的开始钮；点了开始到真正录起来之间开关和 ● 置灰、✕ 还能点；
+// 设置 › 录制「录音」的「来源」是同一个偏好；● 画法同录制条的开始钮；点了开始到真正录起来之间开关和 ● 置灰、✕ 还能点；
 // 开始后同一个 HUD 原地换成录制态（按原中心重摆、红点 pop；⏸ 正好落在刚才 ● 的位置，换完的头一小段不认 ⏸，
 // 免得双击 ● 一开始就暂停）。
 // 皮肤是 HUDBar（15 毛玻璃 behindWindow，26 液态玻璃）。窗口是普通 NSPanel 实例（mac-overlay-panel §1 不子类化）：
@@ -122,7 +122,7 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   }
   private lazy var startButton = makeRoundButton(
     "circle.fill", tip: startTip, label: "开始录音", action: #selector(startRecordingClicked(_:)))
-  /// 开关上画着的来源（别处改了偏好——设置 › 截图的「来源」——跟着重画；和偏好一样就不动，免得把点击的 .replace 过渡截断）
+  /// 开关上画着的来源（别处改了偏好——设置 › 录制的「来源」——跟着重画；和偏好一样就不动，免得把点击的 .replace 过渡截断）
   private var shownSource: AudioRecorder.Source?
   private var sourceObserver: NSObjectProtocol?
   /// 待录原地换成录制态的时刻：之后的一小段不认 ⏸（ignoresPause）
@@ -188,7 +188,7 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     setAccessibilityLabel(medium == .audio ? "录音控制" : "录屏控制")
     show(state, rebuilding: true)
     if !pausable { setPausable(false) }
-    // 待录时别处改了来源（设置 › 截图）：开关跟着重画，不然画的和按开始时读到的对不上
+    // 待录时别处改了来源（设置 › 录制）：开关跟着重画，不然画的和按开始时读到的对不上
     if state == .ready {
       sourceObserver = NotificationCenter.default.addObserver(
         forName: UserDefaults.didChangeNotification, object: defaults, queue: .main

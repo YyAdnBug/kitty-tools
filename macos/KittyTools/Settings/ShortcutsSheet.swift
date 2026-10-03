@@ -306,7 +306,7 @@ struct ShortcutsSheet: View {
             HotKeyAction.screenRecord.hotKey?.display ?? "",
             text: "录制中停止并保存（点菜单栏的 ■ 计时、录屏控制条的 ■ 同样）"),
         ]),
-      // mac-whisker §6 截图「录音」（录音第 5 批，AudioRecorder；手测反馈第 3 批：第一下先出控制条，设置 › 截图可改成
+      // mac-whisker §6 截图「录音」（录音第 5 批，AudioRecorder；手测反馈第 3 批：第一下先出控制条，设置 › 录制可改成
       // 按下立即开始）；录音不设默认键，没设时这两行的键帽是空的
       Group(
         title: "录音", symbol: "waveform", color: Style.Family.screenshot,

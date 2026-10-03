@@ -15,8 +15,9 @@ import AppKit
 import SwiftUI
 
 enum SettingsPage: String, CaseIterable, Identifiable {
-  // 翻译在截图前面：和菜单栏、快捷键页、引导、速查表同序（记住的上次页存的是 rawValue，调顺序不受影响）
-  case general, clipboard, launcher, translate, screenshot, hotkeys, about
+  // 翻译在截图前面：和菜单栏、快捷键页、引导、速查表同序（记住的上次页存的是 rawValue，调顺序不受影响）；
+  // 录制紧跟截图（2026-10-03 从截图页拆出来；菜单栏、快捷键页里它们同在「截图与录制」一节）
+  case general, clipboard, launcher, translate, screenshot, record, hotkeys, about
 
   var id: String { rawValue }
 
@@ -26,6 +27,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .clipboard: "剪贴板"
     case .launcher: "启动器"
     case .screenshot: "截图"
+    case .record: "录制"
     case .translate: "翻译"
     case .hotkeys: "快捷键"
     case .about: "关于"
@@ -38,6 +40,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .clipboard: "doc.on.clipboard.fill"
     case .launcher: "command"
     case .screenshot: "camera.viewfinder"
+    case .record: "record.circle"
     case .translate: "character.bubble.fill"
     case .hotkeys: "keyboard.fill"
     case .about: "info.circle.fill"
@@ -50,7 +53,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .general: Style.Family.general
     case .clipboard: Style.Family.clipboard
     case .launcher: Style.Family.command
-    case .screenshot: Style.Family.screenshot
+    case .screenshot, .record: Style.Family.screenshot
     case .translate: Style.Family.translate
     case .hotkeys: Style.Family.keyboard
     case .about: Color(nsColor: AccentPalette.brandPink)  // 关于是品牌页，不随强调色变
@@ -64,6 +67,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .clipboard: "历史上限、面板、内容格式和隐私"
     case .launcher: "搜索 App、文件、书签与历史、网页搜索与快捷链接"
     case .screenshot: "快速保存、快门声、缩略图和识字"
+    case .record: "录屏的画质、倒数和按键，录音的来源"
     case .translate: "语言、翻译服务与密钥、历史"
     case .hotkeys: "所有全局快捷键"
     case .about: "版本与更新内容"
@@ -95,8 +99,12 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .screenshot:
       [
         "保存", "存储", "目录", "文件夹", "快门", "声音", "缩略图", "识字", "换行", "二维码", "标注", "长截图", "钉图",
-        "录屏", "录音", "系统声音", "麦克风", "来源", "立即开始", "控制条", "倒数", "帧率", "光标", "按键", "速查",
-        "清晰度", "分辨率", "编码", "H.264", "HEVC", "文件大小", "体积", "压缩", "只显示快捷键",
+        "按键", "速查",
+      ]
+    case .record:
+      [
+        "录屏", "录音", "视频", "保存", "文件夹", "系统声音", "麦克风", "来源", "立即开始", "控制条", "倒数", "帧率", "光标",
+        "按键", "速查", "清晰度", "分辨率", "画质", "编码", "H.264", "HEVC", "文件大小", "体积", "压缩", "只显示快捷键",
       ]
     case .translate:
       [
@@ -117,6 +125,19 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     let query = query.trimmingCharacters(in: .whitespaces)
     guard !query.isEmpty else { return true }
     return ([title] + keywords).contains { $0.localizedCaseInsensitiveContains(query) }
+  }
+
+  /// 搜索时停在哪页：页名对上的优先（「录制」也是通用页的「屏幕录制」、快捷键页的「录制」，「快捷键」也是录制页的
+  /// 「只显示快捷键」，按侧栏顺序会先停在别处）；否则当前页还在结果里就不动，不在就去第一个，一页都没有也不动
+  static func page(for query: String, current: SettingsPage) -> SettingsPage {
+    let query = query.trimmingCharacters(in: .whitespaces)
+    let matches = allCases.filter { $0.matches(query) }
+    if !query.isEmpty,
+      let named = matches.first(where: { $0.title.localizedCaseInsensitiveContains(query) })
+    {
+      return named
+    }
+    return matches.contains(current) ? current : matches.first ?? current
   }
 }
 
@@ -220,7 +241,7 @@ struct SettingsCommands: Commands {
   }
 }
 
-/// 侧栏 + 页面。搜索时侧栏只留匹配的页，当前页不在里面就跳到第一个匹配的
+/// 侧栏 + 页面。搜索时侧栏只留匹配的页，搜的是页名就跳到那页，当前页不在结果里就跳到第一个匹配的
 struct SettingsRoot: View {
   @Bindable var navigation: SettingsNavigation
   let page: (SettingsPage) -> AnyView
@@ -259,7 +280,8 @@ struct SettingsRoot: View {
     .toolbar(removing: .sidebarToggle)
     .environment(navigation)
     .onChange(of: query) {
-      if let first = matches.first, !matches.contains(navigation.page) { navigation.page = first }
+      let page = SettingsPage.page(for: query, current: navigation.page)
+      if page != navigation.page { navigation.page = page }
     }
     // 从菜单栏等处直接跳到一页，而旧搜索词把它筛掉了：清掉搜索词（侧栏不留一个没选中的残局）
     .onChange(of: navigation.page) {

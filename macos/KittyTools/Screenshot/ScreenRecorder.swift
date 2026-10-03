@@ -1,5 +1,5 @@
 // 录屏会话（录屏第 1 批，PLAN §10「录屏与录音」；框选是 RegionSelector.record / SelectionView 的 .record 模式）：
-// 系统录制管线 SCRecordingOutput 直接写 mp4（H.264 / HEVC、原始 / 标准清晰度、30 / 60 fps、光标可关、sRGB，设置 › 截图「录屏」；
+// 系统录制管线 SCRecordingOutput 直接写 mp4（H.264 / HEVC、原始 / 标准清晰度、30 / 60 fps、光标可关、sRGB，设置 › 录制「录屏」；
 // 它没有码率开关，文件大小只能靠编码和分辨率调：第二轮体检 R1，见 Sharpness / Codec），先写到和快速保存目录
 // 同一个卷、系统不清理的地方（workFile：Application Support 或保存目录里的隐藏文件），写完挪进快速保存目录（同卷只是改名）。
 // 选区按相交面积最大的屏录；整屏不设 sourceRect。
@@ -285,7 +285,7 @@ final class ScreenRecorder: NSObject {
   private let displayID: CGDirectDisplayID
   private let screenFrame: CGRect
   private let scale: CGFloat
-  /// 设置 › 截图「录屏」（开录时读一次）：帧率 30 / 60、开录前倒数几秒、画不画光标、清晰度、编码、按键里只显示快捷键
+  /// 设置 › 录制「录屏」（开录时读一次）：帧率 30 / 60、开录前倒数几秒、画不画光标、清晰度、编码、按键里只显示快捷键
   private let frameRate: Int
   private let countdown: Int
   private let showsCursor: Bool

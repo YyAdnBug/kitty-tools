@@ -271,7 +271,7 @@ struct ScreenRecorderTests {
     #expect(await ScreenRecorder.poster(of: empty, pixels: size) == nil)
   }
 
-  /// 设置 › 截图「录屏」的默认值（拍板 C4-a）：30 fps、倒数 3 秒、显示光标。只写注册域（不落盘）
+  /// 设置 › 录制「录屏」的默认值（拍板 C4-a）：30 fps、倒数 3 秒、显示光标。只写注册域（不落盘）
   @Test func recordingDefaults() {
     Prefs.registerDefaults()
     let registered = UserDefaults.standard.volatileDomain(forName: UserDefaults.registrationDomain)
