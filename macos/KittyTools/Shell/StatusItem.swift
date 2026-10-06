@@ -7,6 +7,7 @@
 // 图标默认是角色「探头」的剪影（资源 StatusIcon，22 × 16 pt 模板图，由 macos/brand-icons.swift 生成）；设置 › 通用可换成
 // 彩色（完整的 App 图标）或隐藏（第 9 批 M1 M2），偏好一变立刻跟着变。隐藏只是 isVisible = false，动效照常调、看不见而已；
 // 隐藏后回设置靠再打开一次本 App（AppDelegate.applicationShouldHandleReopen），退出在启动器里（MenuExtra.quit）。
+// 有新版本时图标右上角一个强调色小圆点（updateVersion，2026-10-06）：常驻到更新为止，点开菜单最上面就是「更新到 x…」。
 
 import AppKit
 import Carbon.HIToolbox
@@ -21,6 +22,11 @@ final class StatusItem: NSObject, NSMenuDelegate {
   private var isApplying = false
   /// 按钮上现在是哪种图（nil = 还没设）
   private var style: IconStyle?
+  private let badge = BadgeDot()
+  /// 有新版本（Updater.available 的版本号，AppDelegate 给）：图标右上角出小圆点、悬停提示写版本号；nil = 没有
+  var updateVersion: String? {
+    didSet { if updateVersion != oldValue { applyBadge() } }
+  }
 
   /// 图标样式（设置 › 通用「图标样式」）：单色 = 角色剪影模板图（跟着菜单栏深浅反色）；彩色 = 完整的 App 图标
   /// （不反色，菜单打开时的高亮上也保持原色）
@@ -78,10 +84,33 @@ final class StatusItem: NSObject, NSMenuDelegate {
     let defaults = UserDefaults.standard
     let visible = defaults.bool(forKey: Prefs.statusItemVisible)
     if item.isVisible != visible { item.isVisible = visible }
+    // 强调色在设置里换了：圆点跟着重画
+    badge.needsDisplay = true
     let style = IconStyle(pref: defaults.string(forKey: Prefs.statusItemStyle))
     guard style != self.style else { return }
     self.style = style
     item.button?.image = style.image
+    applyBadge()
+  }
+
+  /// 圆点贴在图标的右上角（两种图标大小不一样，换样式时跟着挪）。不做出场动画：后台查到新版本的那一刻没人在看
+  private func applyBadge() {
+    guard let button = item.button else { return }
+    button.toolTip = updateVersion.map { "有新版本 \($0)" }
+    guard updateVersion != nil, let icon = button.image?.size else {
+      return badge.removeFromSuperview()
+    }
+    badge.frame = Self.badgeFrame(icon: icon, in: button.bounds, flipped: button.isFlipped)
+    if badge.superview == nil { button.addSubview(badge) }
+  }
+
+  /// 圆点的位置（纯函数，单测）：直径 6，圆心压在居中的图标的右上角往里 1 pt，不出按钮
+  static func badgeFrame(icon: NSSize, in bounds: NSRect, flipped: Bool) -> NSRect {
+    let side: CGFloat = 6
+    let x = min(bounds.midX + icon.width / 2 - side / 2 - 1, bounds.maxX - side)
+    let top = max(bounds.midY - icon.height / 2 - side / 2 + 1, bounds.minY)
+    let bottom = min(bounds.midY + icon.height / 2 - side / 2 - 1, bounds.maxY - side)
+    return NSRect(x: x, y: flipped ? top : bottom, width: side, height: side)
   }
 
   /// 彩色图标 = 完整的 App 图标（程序坞、访达里那张）。不交给 NSImage 按菜单栏尺寸自己挑表示：16 pt 会挑到 16 / 32 px
@@ -190,6 +219,24 @@ final class StatusItem: NSObject, NSMenuDelegate {
     breathe.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
     layer.add(breathe, forKey: "breathe")
   }
+}
+
+/// 菜单栏图标上「有新版本」的小圆点：强调色实心（现在该操作的东西），在 draw 里取色，跟着菜单栏的深浅和设置里的强调色走
+private final class BadgeDot: NSView {
+  override init(frame: NSRect) {
+    super.init(frame: frame)
+    wantsLayer = true
+  }
+
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  override func draw(_ dirtyRect: NSRect) {
+    NSColor(Style.brand).setFill()
+    NSBezierPath(ovalIn: bounds).fill()
+  }
+
+  /// 点在圆点上照常点到图标（开菜单）
+  override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 /// 菜单栏里不对应全局热键的项（体检 A26）：启动器的内置动作和菜单栏同一份标题、符号、家族色和位置（同名同序）。

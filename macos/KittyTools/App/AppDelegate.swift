@@ -102,7 +102,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let panel = OverlayPanel(
       size: NSSize(width: 720, height: LauncherPanelView.searchHeight), topAnchored: true,
       // 启动器没有固定（N8）：点外面就收起
-      autoHide: .clickOutside, isPinned: { false }, content: LauncherPanelView(model: model))
+      autoHide: .clickOutside, isPinned: { false },
+      content: LauncherPanelView(model: model).environment(updater))
     panel.keyEquivalentHandler = { [unowned model] in model.handleKeyEquivalent($0) }
     panel.onHide = { [unowned model] in model.didHide() }
     panel.squeezesIn = { Self.squeezesIn() }
@@ -194,7 +195,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         width: ClipboardPanelView.width, height: ClipboardPanelView.height(for: model)),
       topAnchored: true, autoHide: .clickOutside,
       isPinned: { !UserDefaults.standard.bool(forKey: Prefs.clipboardHideOnUnfocus) },
-      content: ClipboardPanelView(model: model))
+      content: ClipboardPanelView(model: model).environment(updater))
     panel.keyEquivalentHandler = { [unowned model] in model.handleKeyEquivalent($0) }
     panel.onHide = { [unowned model] in model.reset() }
     panel.squeezesIn = { Self.squeezesIn() }
@@ -432,6 +433,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     island.onToneChange = { [weak statusItem] in statusItem?.reflect($0) }
     self.statusItem = statusItem
     updater.island = island
+    // 有新版本：菜单栏图标右上角出小圆点，常驻到更新为止
+    updater.onAvailableChange = { [weak statusItem] in statusItem?.updateVersion = $0?.version }
     updater.start()
     launcherModel.rescanApps()  // 约 65ms，放在启动时，第一次呼出就不用等
     showWelcomeIfNeeded()

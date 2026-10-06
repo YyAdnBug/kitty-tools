@@ -54,6 +54,23 @@ struct UpdaterTests {
     #expect(!Updater.isNewer("0.1.0", than: "0.2.0"))
   }
 
+  /// 已经发现的新版本在复查期间、没查成时留着（菜单栏角标、面板底栏的「更新到 x」不跟着闪），
+  /// 查到更新的换成新的，查到已是最新、开始安装才清
+  @Test func knownUpdateSurvivesRecheck() throws {
+    let archive = try #require(URL(string: "https://example.com/Kitty.zip"))
+    let release = Updater.Release(version: "0.9.0", archive: archive, page: Updater.releasesPage)
+    let newer = Updater.Release(version: "0.9.1", archive: archive, page: Updater.releasesPage)
+    #expect(Updater(state: .available(release)).available == release)
+    #expect(Updater().available == nil)
+    for state in [Updater.State.checking, .idle, .failed("检查更新失败")] {
+      #expect(Updater.available(release, after: state) == release)
+      #expect(Updater.available(nil, after: state) == nil)
+    }
+    #expect(Updater.available(release, after: .available(newer)) == newer)
+    #expect(Updater.available(release, after: .upToDate) == nil)
+    #expect(Updater.available(release, after: .installing(release)) == nil)
+  }
+
   /// 整条链路：好包能换上；版本号对不上、包被改过（签名失效）都拒绝、原 App 不动；
   /// 签名有效但文件所有人可写的包装上后权限收紧（权限不在签名里）
   @Test(.enabled(if: zipPath != nil)) func installsSignedArchiveAndRejectsTampered() async throws {

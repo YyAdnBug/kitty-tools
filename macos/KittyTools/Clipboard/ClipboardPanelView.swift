@@ -483,6 +483,10 @@ struct ClipboardPanelView: View {
         .id(barState(count: count))
         // 对话框开着时只有「撤销」能点（管理收藏夹里删掉的收藏夹）；多选动词里的粘贴会收起面板、丢掉没保存的字
         .disabled(model.dialog != nil && model.toast == nil)
+      // 有新版本：条数后面常驻「更新到 x」；提示、多选动词、按住修饰键的替代动作出来时让开
+      if barState(count: count) == "count" {
+        UpdateBarHint { model.hidePanel() }.disabled(model.dialog != nil)
+      }
       Spacer(minLength: 8)
       Group {
         if count > 0 {

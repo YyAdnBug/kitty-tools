@@ -8,7 +8,8 @@
 // 行上右键是和 ⌘K 同一份动作（ActionContextMenu，体检 C8），VoiceOver 另有主动作、⌘↩、复制、收藏、移除几个动作。
 // 底栏 36（N8，对标 Raycast）：左边选中项的种类（16 pt 家族色块 + 种类名；收藏、移除常用时换成就地提示，移除带
 // 「撤销 ⌘Z」），右边「主动作 ↩」（品牌粉实心键帽）·「动作 ⌘K」，都能点；⌘K 动作菜单（共用 ActionMenu）锚在右下，
-// 开着时面板至少高到放得下它。没有图钉、齿轮（⌘, 照样开设置）。面板高度随行数伸缩（带动画），顶边不动。
+// 开着时面板至少高到放得下它。没有图钉、齿轮（⌘, 照样开设置）。有新版本时左边种类后面常驻「更新到 x」（UpdateBarHint）。
+// 面板高度随行数伸缩（带动画），顶边不动。
 // 状态和操作都在 LauncherModel。⌘Y 快速查看的预览卡（LauncherQuickLookView）也在这里。
 
 import AppKit
@@ -256,6 +257,7 @@ struct LauncherPanelView: View {
   }
 
   /// 底栏（N8）：左边选中项的种类（有就地提示时换成提示），右边主动作 ↩ 和动作菜单 ⌘K，都能点。没有选中项时空着
+  /// （有新版本时只剩「更新到 x」）
   private var bar: some View {
     HStack(spacing: 12) {
       if let notice = model.notice {
@@ -263,16 +265,18 @@ struct LauncherPanelView: View {
           .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
           .id(notice)
       }
-      if let selected = model.selectedItem {
-        if model.notice == nil {
-          HStack(spacing: 8) {
-            KindTile(symbol: selected.familySymbol, color: selected.familyColor, size: 16)
-            Text(selected.kindTitle).foregroundStyle(.secondary)
-          }
-          .accessibilityElement(children: .combine)
-          .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
+      if let selected = model.selectedItem, model.notice == nil {
+        HStack(spacing: 8) {
+          KindTile(symbol: selected.familySymbol, color: selected.familyColor, size: 16)
+          Text(selected.kindTitle).foregroundStyle(.secondary)
         }
-        Spacer(minLength: 8)
+        .accessibilityElement(children: .combine)
+        .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
+      }
+      // 有新版本：种类后面常驻「更新到 x」（没有选中项时也在）；就地提示出来时让开
+      if model.notice == nil { UpdateBarHint { model.hidePanel() } }
+      Spacer(minLength: 8)
+      if let selected = model.selectedItem {
         let primary = model.primaryAction(for: selected).title
         Button {
           model.execute(selected)
@@ -291,8 +295,6 @@ struct LauncherPanelView: View {
           }
         }
         .accessibilityLabel("动作")
-      } else {
-        Spacer()
       }
     }
     .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: model.notice)

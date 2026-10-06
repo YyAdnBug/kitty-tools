@@ -300,6 +300,14 @@ struct SnapshotProbeTests {
         model.visibleItems.last.map(model.select)
         RunLoop.main.run(until: .now.addingTimeInterval(0.8))
       }
+      // 有新版本（2026-10-06）：底栏条数后面常驻「更新到 x」
+      model.reset()
+      model.isRecordingPaused = false
+      try snapshot(
+        ClipboardPanelView(model: model).environment(try Self.pendingUpdate()),
+        size: NSSize(
+          width: ClipboardPanelView.width, height: ClipboardPanelView.height(for: model)),
+        dark: dark, to: "\(out)/clip-update\(dark ? "-dark" : "").png")
     }
     // 一行文本的透镜：行标题已经原样显示全的不画第二遍、只剩元信息行（很短的富文本；有搜索词时标题也不摘录、
     // 照样从头显示）；标题列放不下的一行字（≤ 60 字）还是给两行高的正文（上面的 lens-short 是正文只有一行的）。
@@ -1249,6 +1257,11 @@ struct SnapshotProbeTests {
         size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
         to: "\(out)/launcher-notice-undo\(dark ? "-dark" : "").png")
       model.undoForget()
+      // 有新版本（2026-10-06）：底栏种类后面常驻「更新到 x」
+      try snapshot(
+        LauncherPanelView(model: model).environment(try Self.pendingUpdate()),
+        size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
+        to: "\(out)/launcher-update\(dark ? "-dark" : "").png")
     }
     let home = NSHomeDirectory()
     func hit(_ path: String, _ type: String, daysAgo: Double) -> FileSearch.Hit {
@@ -1637,6 +1650,15 @@ struct SnapshotProbeTests {
       }
     }
     view.subviews.forEach(emphasizeTableRows)
+  }
+
+  /// 摆成「发现了新版本」的 Updater（面板底栏的「更新到 x」从环境里取它）
+  private static func pendingUpdate() throws -> Updater {
+    Updater(
+      state: .available(
+        .init(
+          version: "0.4.0", archive: try #require(URL(string: "https://example.com/Kitty.zip")),
+          page: Updater.releasesPage)))
   }
 
   /// prepare：布局完、出图前对窗口内容做点手脚（比如 emphasizeTableRows）

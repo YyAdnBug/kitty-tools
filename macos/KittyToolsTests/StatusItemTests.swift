@@ -66,6 +66,20 @@ struct StatusItemTests {
   }
 
   /// 启动器内置动作最后是「退出 Kitty Tools」（菜单栏图标隐藏时只剩这里能退出），符号 power、通用家族灰
+  /// 「有新版本」的小圆点压在图标右上角、不出按钮：两种图标（22 × 16 剪影、16 × 16 彩色）、按钮翻不翻转都一样
+  @Test func updateBadgeSitsOnIconCorner() {
+    let bounds = NSRect(x: 0, y: 0, width: 24, height: 22)
+    for icon in [NSSize(width: 22, height: 16), NSSize(width: 16, height: 16)] {
+      let flipped = StatusItem.badgeFrame(icon: icon, in: bounds, flipped: true)
+      let upright = StatusItem.badgeFrame(icon: icon, in: bounds, flipped: false)
+      #expect(bounds.contains(flipped) && bounds.contains(upright))
+      #expect(flipped.size == NSSize(width: 6, height: 6) && flipped.minX == upright.minX)
+      #expect(flipped.midX > bounds.midX + icon.width / 2 - 6)
+      // 上边：翻转坐标里 y 小，不翻转时 y 大
+      #expect(flipped.midY < bounds.midY && upright.midY > bounds.midY)
+    }
+  }
+
   @Test func launcherCanQuit() throws {
     let quit = try #require(LauncherItem.actions().last)
     #expect(quit.target == "quit" && quit.title == "退出 Kitty Tools" && quit.symbol == "power")

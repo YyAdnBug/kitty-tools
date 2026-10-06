@@ -1,6 +1,8 @@
 // 应用内更新（PLAN D8，2026-09-27 改为做）：读本仓库（github.com/YyAdnBug/kitty-tools，不碰 Tauri 版的仓库）的
-// latest release（tag macos-v*）。有更新的版本：菜单栏菜单顶上出「更新到 x…」、关于页给「更新并重新打开」，
-// 刘海岛提示一次（每个版本一次）。更新 = 下载 release 里的 *_arm64.zip → ditto 解到 App 所在卷的临时目录 →
+// latest release（tag macos-v*）。有更新的版本：刘海岛提示一次（每个版本一次；只停 2 秒、不接点击，错过就没了），
+// 所以另有常驻到更新为止的入口（2026-10-06，对标 Alfred 窗口底部的小提示 / Raycast 根搜索顶上那一行 / Sparkle 给后台 App 的
+// 「温和提醒」）：菜单栏图标右上角的小圆点（StatusItem.updateVersion）+ 菜单顶上「更新到 x…」、剪贴板面板和启动器底栏的
+// 「更新到 x」（UpdateBarHint）、关于页的「更新并重新打开」。更新 = 下载 release 里的 *_arm64.zip → ditto 解到 App 所在卷的临时目录 →
 // 校验 bundle id、版本号和签名（Apple 签发、本团队 HTX9F4KG39 的证书）→ 原子地换掉正在运行的 .app →
 // 等本进程退出后重新打开。不用 Sparkle（禁止第三方依赖）；解包、验签交给系统的 ditto / codesign，在进程外跑。
 // App 自己用 URLSession 下载的文件不带隔离标记（实测），换上的新版不会再被 Gatekeeper 拦；证书不变，授权不丢。
@@ -32,7 +34,15 @@ import AppKit
     case schedule, menu, page
   }
 
-  private(set) var state: State
+  private(set) var state: State {
+    didSet { available = Self.available(available, after: state) }
+  }
+  /// 发现的新版本（菜单栏图标的角标和菜单顶上那一项、面板底栏的「更新到 x」）：复查期间、没查成时留着，见 available(_:after:)
+  private(set) var available: Release? {
+    didSet { if available != oldValue { onAvailableChange(available) } }
+  }
+  /// available 变了（AppDelegate 接菜单栏图标的角标；面板底栏是 SwiftUI，自己跟着变）
+  @ObservationIgnored var onAvailableChange: (Release?) -> Void = { _ in }
   /// 此刻不能更新的原因（录屏中「录制结束后再更新」，AppDelegate 写）：关于页的「更新并重新打开」置灰、旁边写它；
   /// 菜单里点了「更新到 x…」用刘海说
   var blocker: String?
@@ -52,15 +62,11 @@ import AppKit
 
   init(state: State = .idle) {
     self.state = state
+    available = Self.available(nil, after: state)
   }
 
   /// 正式版才更新（Debug 版 bundle id 不同）
   var isSupported: Bool { Bundle.main.bundleIdentifier == Self.bundleID }
-
-  /// 发现的新版本（菜单栏菜单顶上那一项）
-  var available: Release? {
-    if case .available(let release) = state { release } else { nil }
-  }
 
   /// 启动后 10 s 查一次，之后每天一次；没查成（多半是刚开机网络还没好）半小时后再试。设置里关了就跳过
   func start() {
@@ -105,6 +111,8 @@ import AppKit
       guard status == 200 || status == 404 else { throw UpdateError("GitHub 返回 \(status)") }
       let toMenu = trigger == .menu || menuWaiting
       menuWaiting = false
+      // 检查还在路上时点了「更新到 x」（入口在复查期间留着）：已经在装了，这次的结果不要
+      guard case .checking = state else { return true }
       if status == 200, let release = try Self.release(from: data),
         Self.isNewer(release.version, than: AboutTab.version)
       {
@@ -128,6 +136,7 @@ import AppKit
     } catch {
       let toMenu = trigger == .menu || menuWaiting
       menuWaiting = false
+      guard case .checking = state else { return false }
       // 已经发现的新版本不因为这次没查成就丢掉；定时检查没查成不在关于页报错（用户没点过）
       if case .available = previous {
         state = previous
@@ -144,7 +153,7 @@ import AppKit
   /// 下载、校验、换掉正在运行的 App，再重新打开。关于页点的：页上有转圈，不再弹岛（Whisker S2 分工）；
   /// 失败时回到「有新版本」，刘海岛说原因
   func install(_ trigger: Trigger = .menu) async {
-    guard case .available(let release) = state, isSupported else { return }
+    guard let release = available, isSupported else { return }
     if let blocker {
       island?.show(blocker, tone: .warning)
       return
@@ -169,6 +178,16 @@ import AppKit
   }
 
   // MARK: 纯逻辑（单测）
+
+  /// 状态变了之后，已经发现的新版本还算不算：复查中、没查成时留着——不然菜单栏的角标、面板底栏的「更新到 x」每天复查
+  /// 那一下都要闪（连不上 GitHub 时一闪就是到超时为止，半小时重试一次）；查到已是最新、开始安装才清
+  static func available(_ known: Release?, after state: State) -> Release? {
+    switch state {
+    case .available(let release): release
+    case .upToDate, .installing: nil
+    case .idle, .checking, .failed: known
+    }
+  }
 
   /// GitHub「latest release」的 JSON → 版本、更新包、发布页。不是 macos-v* 的 tag、没有 https 的 *_arm64.zip 时 nil
   static func release(from data: Data) throws -> Release? {
