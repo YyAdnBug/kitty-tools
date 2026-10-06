@@ -139,7 +139,7 @@ struct ShortcutsSheet: View {
         title: "剪贴板", symbol: "doc.on.clipboard.fill", color: Style.Family.clipboard,
         globals: [.clipboard],
         entries: [
-          Entry("↩", text: "粘贴选中的条目（双击同样；多选时全是文本合并、全是文件一起粘贴，其余依次粘贴）"),
+          Entry("↩", text: "粘贴选中的条目（双击同样，设置里可改成点一下就粘贴；多选时全是文本合并、全是文件一起粘贴，其余依次粘贴）"),
           Entry("⌥↩", text: "粘贴为纯文本（打开「默认粘贴为纯文本」后是保留格式粘贴）"),
           Entry("⌘↩", "⌘C", text: "只复制，不粘贴"),
           Entry("⌘1–9", text: "直接粘贴第 1–9 条"),

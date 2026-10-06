@@ -2,7 +2,7 @@
 // 粘贴 / 复制 / 删除撤销、筛选面板与 ⌘K 操作面板。视图只负责画。
 // 焦点始终在搜索框：方向键 / 回车 / Tab / ⇧Tab / ← → / ⌫ / Esc 从搜索框的 doCommandBy 进来，⌘ 组合键从面板的
 // performKeyEquivalent 进来（handleKeyEquivalent）。交互按 macOS 习惯设计：
-// 单击选中（透镜滑过去）、双击或 ↩ 粘贴、⌥↩ 纯文本（打开「默认粘贴为纯文本」后反过来）、⌘↩ 仅复制、⌘1–9 直接粘贴第 N 条、
+// 单击选中（透镜滑过去）、双击或 ↩ 粘贴（设置里打开「单击条目直接粘贴」后点一下就粘贴）、⌥↩ 纯文本（打开「默认粘贴为纯文本」后反过来）、⌘↩ 仅复制、⌘1–9 直接粘贴第 N 条、
 // 删除不确认、⌘Z 连着撤（面板收起时才真正删）；
 // 范围和筛选只以搜索框里的标签出现：Tab 开关筛选面板、⇧Tab 循环范围、⌫（搜索为空）先选中最后一个标签再删；
 // ⌘K 或 →（光标在末尾）打开操作面板，← 关掉；两个面板开着时搜索框用来过滤条目，↑↓ ↩ 选择执行，Esc 关掉；
@@ -562,29 +562,49 @@ import Observation
 
   // MARK: 鼠标
 
+  /// 鼠标点一行做什么
+  enum Click { case check, range, paste, select }
+
+  /// 纯函数（单测）：⌘ 单击切换勾选、⇧ 单击从锚点选一段，都不看开关；其余的平时双击才粘贴，打开「单击条目直接粘贴」后
+  /// 点一下就粘贴。clicks 是鼠标的连击数（Style.clickCount）：旁白激活这一行时是 0，照旧只选中（粘贴在它的动作列表里）
+  static func click(modifiers: NSEvent.ModifierFlags, clicks: Int, pastesOnClick: Bool) -> Click {
+    if modifiers.contains(.command) { return .check }
+    if modifiers.contains(.shift) { return .range }
+    return clicks >= (pastesOnClick ? 1 : 2) ? .paste : .select
+  }
+
+  /// 单击条目直接粘贴（设置 › 剪贴板「面板」，默认关）
+  var pastesOnClick: Bool { UserDefaults.standard.bool(forKey: Prefs.clipboardPasteOnClick) }
+
   /// 单击选中（透镜滑过去），双击粘贴；⌘ 单击切换勾选，⇧ 单击从锚点选到这里。
-  /// 双击以第一下选中的条目为准：第一下让透镜收放、行会位移，第二下可能落在别的行上
+  /// 双击以第一下选中的条目为准：第一下让透镜收放、行会位移，第二下可能落在别的行上。
+  /// 打开「单击条目直接粘贴」后没有第一下，粘贴的就是点中的这条
   func click(_ item: ClipItem) {
-    let event = NSApp.currentEvent
-    let modifiers = event?.modifierFlags ?? []
+    let closesMenu = palette != nil
     isBrowsing = true
     selectionMotion = .glide
     palette = nil
-    if modifiers.contains(.command) {
+    switch Self.click(
+      modifiers: NSApp.currentEvent?.modifierFlags ?? [], clicks: Style.clickCount,
+      pastesOnClick: pastesOnClick)
+    {
+    case .check:
       if multiSelection.isEmpty, let current = selectedItem { multiSelection = [current.id] }
       multiSelection.formSymmetricDifference([item.id])
       anchorID = item.id
-    } else if modifiers.contains(.shift) {
+    case .range:
       let items = visibleItems
       let anchor = anchorID ?? selectedItem(in: items)?.id
       guard let from = items.firstIndex(where: { $0.id == anchor }),
         let to = items.firstIndex(where: { $0.id == item.id })
       else { return }
       multiSelection = Set(items[min(from, to)...max(from, to)].map(\.id))
-    } else if Style.isDoubleClick {
-      paste([selectedItem ?? item])
+    case .paste:
+      // 单击直接粘贴时，筛选面板 / ⌘K 开着的那一下只关菜单（同系统菜单：点外面不顺带执行别的）
+      if pastesOnClick, closesMenu { return }
+      paste([pastesOnClick ? item : selectedItem ?? item])
       return
-    } else {
+    case .select:
       multiSelection = []
       anchorID = item.id
     }

@@ -470,6 +470,20 @@ struct ClipboardPanelTests {
     #expect(copied == ["第一行", "第\n第"])
   }
 
+  /// 鼠标点一行（mac-clipboard §4）：平时单击选中、双击粘贴，打开「单击条目直接粘贴」后点一下就粘贴；
+  /// ⌘ 单击、⇧ 单击不看开关，照常多选；不是鼠标点的（旁白激活，连击数 0）开着也只选中
+  @Test func clickPastesOnlyWhenAsked() {
+    typealias Model = ClipboardPanelModel
+    #expect(Model.click(modifiers: [], clicks: 1, pastesOnClick: false) == .select)
+    #expect(Model.click(modifiers: [], clicks: 2, pastesOnClick: false) == .paste)
+    #expect(Model.click(modifiers: [], clicks: 1, pastesOnClick: true) == .paste)
+    #expect(Model.click(modifiers: [], clicks: 0, pastesOnClick: true) == .select)
+    for on in [false, true] {
+      #expect(Model.click(modifiers: .command, clicks: 1, pastesOnClick: on) == .check)
+      #expect(Model.click(modifiers: [.shift, .capsLock], clicks: 2, pastesOnClick: on) == .range)
+    }
+  }
+
   /// 速查表跟着按键走：剪贴板组里有 ⌘T ⌘O ⌘R ⌥⌘C
   @Test func cheatSheetListsNewKeys() throws {
     let clipboard = try #require(ShortcutsSheet.groups.first { $0.title == "剪贴板" })

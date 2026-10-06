@@ -721,7 +721,7 @@ struct ListLayout {
   }
 }
 
-/// 列表的一行 + 选中时展开的透镜。整行是一个按钮（单击选中、双击粘贴），透镜里的值胶囊、「美化」是里面的小按钮
+/// 列表的一行 + 选中时展开的透镜。整行是一个按钮（单击选中、双击粘贴，或按设置点一下就粘贴：model.click），透镜里的值胶囊、「美化」是里面的小按钮
 private struct ClipListRow: View {
   let item: ClipItem
   let form: ContentForm?

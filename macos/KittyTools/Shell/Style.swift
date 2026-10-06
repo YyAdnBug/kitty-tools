@@ -44,14 +44,16 @@ enum Style {
     return event.keyCode == 36 || event.keyCode == 76
   }
 
-  /// 当前事件是不是鼠标双击（按钮动作里区分单击 / 双击）。只读鼠标事件的 clickCount：用键盘或 VoiceOver
-  /// 激活按钮时 currentEvent 是按键事件，直接读 clickCount 会抛 NSInternalInconsistencyException
-  static var isDoubleClick: Bool {
+  /// 当前事件是鼠标的第几下连击（按钮动作里区分单击 / 双击），不是鼠标点的是 0。只读鼠标事件的 clickCount：用键盘或
+  /// VoiceOver 激活按钮时 currentEvent 是按键事件，直接读 clickCount 会抛 NSInternalInconsistencyException
+  static var clickCount: Int {
     guard let event = NSApp.currentEvent,
       event.type == .leftMouseDown || event.type == .leftMouseUp
-    else { return false }
-    return event.clickCount >= 2
+    else { return 0 }
+    return event.clickCount
   }
+
+  static var isDoubleClick: Bool { clickCount >= 2 }
 
   /// 七条命名曲线（SwiftUI `Spring(duration:bounce:)` 与 `CASpringAnimation(perceptualDuration:bounce:)` 参数一致）
   enum Motion {

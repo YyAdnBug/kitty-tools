@@ -11,6 +11,7 @@ struct ClipboardTab: View {
   @AppStorage(Prefs.clipboardImageBudgetMB) private var imageBudgetMB = 512
   @AppStorage(Prefs.clipboardShowPreview) private var showPreview = true
   @AppStorage(Prefs.clipboardLinkPreview) private var linkPreview = true
+  @AppStorage(Prefs.clipboardPasteOnClick) private var pasteOnClick = false
   @AppStorage(Prefs.clipboardPastePlain) private var pastePlain = false
   @AppStorage(Prefs.clipboardImageOCR) private var imageOCR = true
   @AppStorage(Prefs.clipboardBlockSensitive) private var blockSensitive = true
@@ -51,6 +52,10 @@ struct ClipboardTab: View {
         Toggle(isOn: $linkPreview) {
           Text("链接显示网页标题和图片")
           Text("选中链接时联网读取；本机、内网和带登录令牌的网址不读")
+        }
+        Toggle(isOn: $pasteOnClick) {
+          Text("单击条目直接粘贴")
+          Text("关着时单击选中、双击粘贴；打开后点一下就粘贴，想先看内容用 ↑↓，⌘ 单击、⇧ 单击照常多选")
         }
       }
       Section("内容") {

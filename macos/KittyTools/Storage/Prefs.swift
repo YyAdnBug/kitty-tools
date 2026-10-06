@@ -60,6 +60,8 @@ enum Prefs {
   static let clipboardShowPreview = "clipboardShowPreview"
   /// 检查器的链接卡联网取网页标题、头图和图标（LinkPreview）
   static let clipboardLinkPreview = "clipboardLinkPreview"
+  /// 单击条目直接粘贴（设置 › 剪贴板「面板」，默认关 = 单击选中、双击粘贴）；⌘ 单击、⇧ 单击不看它，照常多选
+  static let clipboardPasteOnClick = "clipboardPasteOnClick"
 
   /// 源语言：没设 = 自动检测。只在翻译浮窗顶部切换，全局记住
   static let translateSource = "translateSourceLang"
@@ -171,6 +173,7 @@ enum Prefs {
       clipboardClearOnLock: false,
       clipboardShowPreview: true,
       clipboardLinkPreview: true,
+      clipboardPasteOnClick: false,
       translateFirst: Lang.zhHans.rawValue,
       translateSecond: Lang.en.rawValue,
       translateRemoveNewlines: false,
