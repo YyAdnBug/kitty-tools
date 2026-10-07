@@ -455,7 +455,8 @@ struct InputBox: ViewModifier {
 }
 
 /// Panel 里的内容卡片表面（Whisker §2，翻译卡、词典卡、剪贴板 ⌘Y 大卡共用）：圆角 card；浅色 white 0.55、深色 white 0.06 底
-/// + 发丝线描边（增强对比度 1 pt）+ 深色的顶部高光（内圈 1 pt white 0.12→clear，顶部 40%，同 PanelRim 的画法）；
+/// + 发丝线描边（增强对比度 1 pt）+ 深色的顶部高光（内圈 1 pt white 0.12→clear，顶部 40%，同 PanelRim 的画法：
+/// 纯色描边 + 渐变蒙版，不直接拿渐变描边，原因见 PanelRim）；
 /// 不加阴影（§3 层级：卡片不加阴影）。降低透明度时底换成 windowBackground 0.9（§7，只在 15；26 交给玻璃）。
 /// tint：错误卡（systemRed）= tint 0.05 底 + tint 0.18 描边、没有高光
 struct CardSurface: ViewModifier {
@@ -483,14 +484,13 @@ struct CardSurface: ViewModifier {
       .overlay {
         shape.hairlineBorder(tint?.opacity(0.18) ?? Style.hairline)
         if dark, tint == nil {
-          shape.strokeBorder(
-            LinearGradient(
-              stops: [
-                .init(color: .white.opacity(0.12), location: 0),
-                .init(color: .white.opacity(0), location: 0.4),
-              ], startPoint: .top, endPoint: .bottom), lineWidth: 1
-          )
-          .allowsHitTesting(false)
+          shape.strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+            .mask(
+              LinearGradient(
+                stops: [.init(color: .black, location: 0), .init(color: .clear, location: 0.4)],
+                startPoint: .top, endPoint: .bottom)
+            )
+            .allowsHitTesting(false)
         }
       }
   }
@@ -501,7 +501,12 @@ extension View {
   func cardSurface(tint: Color? = nil) -> some View { modifier(CardSurface(tint: tint)) }
 }
 
-/// Panel 皮肤的描边：外圈 0.5 pt 发丝线 + 内圈 1 pt 顶部高光（macOS 26 用玻璃时不画：玻璃自己画边、响应增强对比度）
+/// Panel 皮肤的描边：外圈 0.5 pt 发丝线 + 内圈 1 pt 顶部高光（macOS 26 用玻璃时不画：玻璃自己画边、响应增强对比度）。
+/// 高光是纯色描边 + 渐变蒙版（都是不带位图的图层），**不要写回 `strokeBorder(LinearGradient…)`**：拿渐变描形状，
+/// SwiftUI 会把它栅格化成形状外接矩形那么大的位图图层（PaintShapeLayer），P3 屏上每像素 8 字节——一条 1 pt 的线，
+/// 720 × 520 的面板要 11.4 MB，收起后也不还，窗口高度做动画时每帧重画一遍（3.5–4 ms，改后 0.9 ms）、还同时留两三份。
+/// 2026-10-07 正式版实测：三块面板的描边 34 MB + 翻译四张卡的高光 11 MB 常驻。两种画法屏外逐像素最多差 1/255。
+/// `StyleTests.rimAndCardHighlightAreNotRasterized` 锁住；规矩在 mac-whisker §8
 struct PanelRim: View {
   @Environment(\.colorScheme) private var scheme
   @Environment(\.colorSchemeContrast) private var contrast
@@ -515,12 +520,11 @@ struct PanelRim: View {
     let dark = scheme == .dark
     let high = contrast == .increased
     return ZStack {
-      shape.strokeBorder(
-        LinearGradient(
-          stops: [
-            .init(color: .white.opacity(dark ? 0.16 : 0.55), location: 0),
-            .init(color: .white.opacity(0), location: 0.35),
-          ], startPoint: .top, endPoint: .bottom), lineWidth: 1)
+      shape.strokeBorder(Color.white.opacity(dark ? 0.16 : 0.55), lineWidth: 1)
+        .mask(
+          LinearGradient(
+            stops: [.init(color: .black, location: 0), .init(color: .clear, location: 0.35)],
+            startPoint: .top, endPoint: .bottom))
       shape.strokeBorder(
         Color.black.opacity(high ? 0.25 : dark ? 0.28 : 0.10), lineWidth: high ? 1 : 0.5)
     }

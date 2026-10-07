@@ -24,7 +24,7 @@ alwaysApply: false
 ## 2. 三种皮肤
 | 皮肤 | macOS 15（主路径） | macOS 26 | 用在 |
 |---|---|---|---|
-| Panel | `NSVisualEffectView` `.popover` / `.behindWindow` / `state = .active`；无边框 + `maskImage` 裁 16 pt 圆角（系统阴影跟随 mask）；Rim：外圈 0.5 pt 发丝线（浅 black 0.10 / 深 black 0.28）+ 内圈 1 pt 顶部高光（浅 white 0.55→0 / 深 white 0.16→0，覆盖顶部约 35%） | `NSGlassEffectView(cornerRadius: 16)`，去掉自绘 Rim | 剪贴板、启动器、翻译 |
+| Panel | `NSVisualEffectView` `.popover` / `.behindWindow` / `state = .active`；无边框 + `maskImage` 裁 16 pt 圆角（系统阴影跟随 mask）；Rim：外圈 0.5 pt 发丝线（浅 black 0.10 / 深 black 0.28）+ 内圈 1 pt 顶部高光（浅 white 0.55→0 / 深 white 0.16→0，覆盖顶部约 35%；纯色描边 + 渐变蒙版，不直接拿渐变描边，§8） | `NSGlassEffectView(cornerRadius: 16)`，去掉自绘 Rim | 剪贴板、启动器、翻译 |
 | HUD | `.hudWindow` + `NSAppearance(.vibrantDark)` + `.active`，遮罩里的控件 `.withinWindow`，独立窗口 `.behindWindow`；描边内 0.5 pt white 0.14 + 外 0.5 pt black 0.5；文字 white 0.95 / 0.60 / 0.40 | `NSGlassEffectView` / `NSGlassEffectContainerView`（darkAqua，不画描边和自绘阴影；纯填充画的小控件见下） | 截图工具栏、录屏录制条、录制 HUD（独立窗口，behindWindow）、录屏的按键胶囊（只取颜色和描边，底不透明：要进视频，§6「按键胶囊」）、样式托盘、尺寸标签、提示、放大镜信息卡、钉图按钮、长截图 HUD、常驻缩略图的胶囊与圆钮（永远深色） |
 | Island | 纯黑 `#000`、无描边（和硬件刘海融为一体）；无刘海时 black 0.92 + 0.5 pt white 0.12 描边的胶囊；标题 white 0.95、详情 white 0.55 | 保持纯黑 | 全部轻提示、进度、错误 |
 | 系统 | `Form(.grouped)`、系统侧栏材质 | 26 SDK 编译后自动变玻璃 | 设置窗 |
@@ -101,9 +101,10 @@ Panel 里的内容表面只用填充、**不叠玻璃**，一律 `Style` 里的�
 - 5000 条列表的高亮用 offset，连发关动画。**剪贴板、翻译历史的列表只画可见区附近**（2026-10-03 用户报：条目多了高亮错位、滚动和 ↑↓ 卡；共用 `Shell/ListReveal.swift` 的 `ListWindow` 和 `TracksScrollBand`）：滚动位置按 240 pt 一段记（跨段才重算面板），画这一段上下各多 320 pt 里的项（三十来项），上下用 `ListLayout` 前缀和算的高度撑开，剪贴板吸顶的分组标题自己画（`StickyHeaders`：放在滚动内容里、滚动条照样画在它上面——叠在列表外面会把滚动条挡住，2026-10-03 用户指出；只给画出来的那一段涉及的一两组画，每组的位置用 `visualEffect` 按 `.scrollView` 坐标每帧算，不重画面板；翻译历史的标题不吸顶）。不用 LazyVStack：它没排过的行按已排过的平均高度估（分组标题、透镜混在里面，800 条时约 51 pt），一下跳得远（拖滚动条、在第一条按 ↑ 绕到最后）时屏上和前缀和差上百行、选中行根本没画，越往后每次布局也越贵（屏外实测 1000 条：改前第 790 条附近按一下 ↓ 71 ms，改后任意位置约 14 ms；`ClipboardStoreTests.lensStaysOnRowInLongList` 锁住）。启动器结果少，还是 LazyVStack。模型里别在 `firstIndex` 这类闭包里读 `selectedItem` 这种每次重算整个列表的计算属性（原来 ↓ 在第 700 条时一下 300 ms，平方级）。
 - 飞行窗口只取起终点并集大小、约 1.7 s 后关闭；岛窗口约 508×94，不开全屏透明窗；上线后用 `phys_footprint` 复测。
 - 窗口 frame 动画与 SwiftUI 重新布局要合并更新，用户拖动改尺寸期间跳过。
+- **形状别直接拿渐变描边 / 填充**（常驻内存，2026-10-07）：`shape.strokeBorder(LinearGradient…)` 这类「形状 + 渐变」，SwiftUI 会把它栅格化成一张位图图层（`PaintShapeLayer`），大小是形状的外接矩形 × 倍率²，P3 屏上每像素 **8 字节**（图层格式 AutomaticAppKit 在广色域屏上是 16 位浮点）：面板描边那条 1 pt 的顶部高光，720 × 520 的面板就是 11.4 MB，收起后也不还；窗口高度做动画时每帧重画一遍（独立小程序逐帧改高度：每帧 3.5–4.0 ms，改后 0.9 ms），动画完还同时留着两三份（23–35 MB）。正式版跑了三天的实测：三块面板的描边 34 MB、翻译浮窗四张结果卡的深色高光 11 MB，再加翻译那张描边的另一份缓冲 11 MB。**写法**：纯色描边（`CAShapeLayer`，没有位图）+ `.mask(LinearGradient(黑 → 透明))`（`CAGradientLayer` 蒙版，也没有位图）——`PanelRim`、`CardSurface` 的高光都是（`Shell/Style.swift`）；两种画法屏外逐像素最多差 1/255，真面板屏上实测（内存探针屏上模式、深色）剪贴板显示后 +19.5 → +9.7 MB、启动器 +12.5 → +2.5、翻译三张卡 +18.5 → +2.6。`LinearGradient` 自己当视图用（蒙版、矩形背景）本来就是渐变图层，不用改；几十点见方的小形状（种类色块）就算是位图也只有几十 KB，不用改。新写大块形状（面板、卡片、整行那么大）的渐变描边 / 渐变填充一律走蒙版；`StyleTests.rimAndCardHighlightAreNotRasterized` 在屏外窗口的图层树上锁住（没有 `PaintShape…`、渐变蒙版在），真实占用用内存探针的屏上模式量（mac-native「测量与诊断」）。
 
 ## 9. 验收
-- `SnapshotProbeTests` 补新状态（截图家族在 `ScreenshotSnapshotTests`）；动效类视图给一个 `elapsed` / 静态参数，能渲染动画中间帧和终态。屏幕外渲染材质会发灰、拍不到动画，只能锁布局；隐式循环动画（翻译卡片的彗星边框、扫光）在图里是出现后不久的某一帧，每次略有不同。
+- `SnapshotProbeTests` 补新状态（截图家族在 `ScreenshotSnapshotTests`）；动效类视图给一个 `elapsed` / 静态参数，能渲染动画中间帧和终态。屏幕外渲染材质会发灰、拍不到动画，只能锁布局；面板描边（`PanelRim`，`OverlayPanel` 套在内容外面的那一层）不在这些图里，改它要另外看（屏外 `cacheDisplay` 比像素，或真机）；隐式循环动画（翻译卡片的彗星边框、扫光）在图里是出现后不久的某一帧，每次略有不同。
 - 每阶段结束给用户一份真机清单：浅色 / 深色 / 降低透明度 / 减弱动态效果各看一遍；质感和手感以真机为准。红线禁止为截图弹面板抢键盘。
 
 ## 10. 新界面上线前检查清单

@@ -58,6 +58,38 @@ struct StyleTests {
     #expect(names.filter { $0 == "ResizeEdge" }.count == 2, "\(names)")
   }
 
+  /// 面板描边和卡片高光不能是整块位图（常驻内存，2026-10-07）：直接拿渐变描形状，SwiftUI 会把它栅格化成形状外接矩形
+  /// 那么大的 PaintShapeLayer，P3 屏上每像素 8 字节——720 × 520 的面板一张 11.4 MB、收起后也不还，三块面板加翻译卡片
+  /// 常驻约 55 MB。现在是纯色描边 + 渐变蒙版，两样都是不带位图的图层（mac-whisker §8）。
+  /// 认的是 SwiftUI 现在怎么把这两个视图变成图层（macOS 15.7）：系统升级后这条挂了，先用内存探针的屏上模式
+  /// （KITTY_MEMORY_PROBE_ONSCREEN）看面板显示后 CoreAnimation 涨了多少，再改这里
+  @MainActor @Test func rimAndCardHighlightAreNotRasterized() throws {
+    let panel = OverlayPanel(
+      size: NSSize(width: 320, height: 240), autoHide: .resignKey, isPinned: { true },
+      content: Color.clear.frame(width: 200, height: 120).cardSurface()
+        .environment(\.colorScheme, .dark))
+    panel.setFrameOrigin(NSPoint(x: -20000, y: -20000))
+    panel.orderFront(nil)
+    defer { panel.orderOut(nil) }
+    RunLoop.main.run(until: .now.addingTimeInterval(0.2))
+    var names: [String] = []
+    var gradients = 0
+    func collect(_ layer: CALayer) {
+      names.append(String(describing: type(of: layer)))
+      if layer is CAGradientLayer { gradients += 1 }
+      layer.sublayers?.forEach(collect)
+      if let mask = layer.mask { collect(mask) }
+    }
+    collect(try #require(panel.contentView?.layer))
+    #expect(!names.contains { $0.contains("PaintShape") }, "\(names)")
+    // 高光还在：卡片一层渐变蒙版，面板描边一层（macOS 26 的玻璃不画面板描边）
+    if #available(macOS 26, *) {
+      #expect(gradients == 1, "\(names)")
+    } else {
+      #expect(gradients == 2, "\(names)")
+    }
+  }
+
   /// 在并发线程池里解析（会调到动态色的取色闭包）
   @concurrent nonisolated private static func resolveOffMain(_ color: NSColor) async -> NSColor? {
     #expect(pthread_main_np() == 0)  // 确实不在主线程
