@@ -457,6 +457,23 @@ struct ScreenshotTests {
     #expect(text == "")
   }
 
+  /// 空闲回收放掉识字模型（常驻内存，2026-10-07）：识过之后放得掉，放掉之后再识照常出字。
+  /// 放的是 Vision 的私有接口（VNSession.globalSession.releaseCachedResources）。系统升级后这条挂了 = 接口没了或改了，
+  /// 进程内识过字之后模型又会一直留着（约 50 MB）：先跑内存探针的识字一节看放掉后回落多少，再定是换接口还是去掉这一步。
+  /// 别的测试也在进程内识字，正有人在识时不放（返回 false），所以等它们识完再试几次
+  @Test(.timeLimit(.minutes(1))) func modelReleasesWhenIdleAndReloads() async throws {
+    let image = try Self.render(["Release me 2026"])
+    #expect(await OCR.recognizeLines(in: image)?.isEmpty == false)
+    var released = false
+    for _ in 0..<100 where !released {
+      released = await OCR.releaseModel()
+      if !released { try await Task.sleep(for: .milliseconds(100)) }
+    }
+    #expect(released)
+    let again = try #require(await OCR.recognizeLines(in: image))
+    #expect(OCR.text(again, joined: false).contains("Release"))
+  }
+
   /// 子进程识字（第二轮体检 M2）的命令行和输出约定：第一个参数是 --ocr 才是识字模式（参数不对报用法，不当成正常启动），
   /// 路径带空格、中文原样；输出是一行头 + 文字，头或字节数对不上就不认；给子进程的环境变量不带测试注入那些
   @Test func helperProtocol() {

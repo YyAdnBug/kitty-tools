@@ -35,7 +35,7 @@
 | ImageIO + UniformTypeIdentifiers | 10.x / 11 | PNG 编码、读取尺寸、按需生成缩略图；录屏转 GIF（`CGImageDestination` 逐帧写 GIF，录屏录音第 7 批 `Screenshot/VideoExport.swift`） |
 | QuickLookThumbnailing `QLThumbnailGenerator` | 10.15 | 剪贴板检查器里文件的真实缩略图（PDF 首页、图片、视频帧） |
 | QuickLookUI `QLPreviewView` | 10.6 | 剪贴板 ⌘Y 放大预览里的文件（嵌在自己的浮层里；不用 `QLPreviewPanel`，见 D3） |
-| Vision `RecognizeTextRequest` | 15.0 | 剪贴板图片 OCR、截图翻译识字 |
+| Vision `RecognizeTextRequest` | 15.0 | 剪贴板图片 OCR、截图翻译识字；空闲时放掉识字模型用它的私有 `VNSession.globalSession.releaseCachedResources`（2026-10-07 用户同意，接口不在就不放，mac-clipboard §1） |
 | ScreenCaptureKit `SCShareableContent` + `SCScreenshotManager` | 14.0 | 截图翻译的冻结帧（逐屏截图）；长截图用 `SCStreamConfiguration.sourceRect`（12.3+）反复截选区 |
 | NaturalLanguage `NLLanguageRecognizer` | 10.14 | 语种检测（替代 Lingua，能识别繁体） |
 | ScreenCaptureKit `SCStream` + `SCRecordingOutput`；AVFoundation `AVAudioRecorder`、`AVCaptureDevice`（麦克风授权与设备）、`AVURLAsset` / `AVAssetImageGenerator` / `AVAssetExportSession` / `AVMutableComposition`；Synchronization `Mutex` | 15.0 | 录屏与录音（2026-09-30 立项，PLAN §10「录屏与录音」）：系统录制管线直接写文件、录音、闪退恢复读文件、最后一帧、音轨导出；录制委托的可变状态（`Mutex` 翻译服务已在用）。第 1 批起在用：`SCStream` + `SCRecordingOutput`（`Screenshot/ScreenRecorder.swift` 录屏）、`AVURLAsset`（启动时读上次闪退留下的文件 `isPlayable`）；第 3 批起 `AVAssetImageGenerator`（停止后取最后一帧，飞入和视频卡用）；第 4 批起 `AVCaptureDevice`（麦克风授权、默认输入的设备名 / 蓝牙、断开通知）；第 5 批起 `AVAudioRecorder`（`Screenshot/AudioRecorder.swift` 录音：m4a、暂停续写、`updateMeters` / `averagePower` 电平，主线程直接用、不挂委托）；第 6 批起 `AVMutableComposition` + `AVAssetExportSession`（录系统声音：录屏管线的 mp4 只取音轨无损导出成 m4a，`ScreenRecorder.extractAudio`）和 `CMSampleBuffer` 的格式描述 / 数据块（样本回调里读 Float32 声音样本算电平）；第 7 批 `AVAssetImageGenerator` 还用来逐帧取 GIF 的帧（`VideoExport`） |
@@ -367,6 +367,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 - 分批：内存探针屏上模式 + 本节（先落，后面几批拿它对数）→ 描边换画法 → 空闲回收 → 空闲时放掉识字模型。
 - 描边换画法：`PanelRim` 和 `CardSurface` 深色高光原来是 `strokeBorder(LinearGradient…)`，SwiftUI 把它栅格化成整块形状大小、每像素 8 字节的位图图层（720 × 520 的面板一张 11.4 MB，收起后不还，窗口高度做动画时每帧重画、还同时留两三份）；改成纯色描边 + 渐变蒙版（都不带位图），屏外逐像素最多差 1/255。屏上实测（深色、第二轮）：剪贴板显示后 +19.5 → +6.8–9.7 MB、启动器 +12.5 → +2.5、翻译三张卡 +18.5 → +2.6–3.5；逐帧改窗口高度每帧 3.5–4.0 → 0.9 ms。规矩在 mac-whisker §8，`StyleTests.rimAndCardHighlightAreNotRasterized` 锁住。
 - 空闲回收（`AppDelegate.idleReclaim` + `Memory.IdleTimer`）：三块主面板哪块收起都重新计时，两分钟（`Memory.idleDelay`）后还没有面板开着、也不在框选，就清透镜缓存（`ThumbnailView.dropPreviews()`，装满约 50 MB；再看到时重做，一张 14–97 ms）并调 `Memory.relieve()`（跑了三天的正式版按「整页没有活对象」估能还 20–34 MB，其中 12.3 MB 是最近释放的一大块；没法在正式版里实调）。行图标缓存不清。系统内存吃紧时这两样本来也会被收（NSCache、分配器），这一步是让闲着的时候就还。
+- 空闲时放掉识字模型（`OCR.releaseModel()`，同一个空闲回收里，进程内识完字也重新计时）：⌥O 识字、截图翻译、钉图识字仍在进程内，连着识时模型留着；闲下来用 Vision 的私有接口 `VNSession.globalSession.releaseCachedResources` 放掉（用户同意用私有接口；公开接口放掉请求和处理器不还；接口不在了就什么都不做）。内存探针（识过两张整屏截图）：进程内识字常驻 +57 MB，放掉 + 回收接口回落 56 MB，之后第一次识字 0.90 s（冷的 1.08 s、热的 0.96 s，整屏密集文字；独立小程序 1200 × 600 的选区：热 0.2 s、放掉后第一次 0.4–0.56 s）。放掉本身 18–200 ms，在主线程外做。
 - 不做：字形缓存（系统封顶，公开接口清不了）；进程内 Metal（符号动效就会带起来，单把棋盘格 Canvas 换成形状实测省不到 1 MB）；主面板用完放掉（描边改完后三块加起来只再还约 10 MB，每次呼出却要重建）；设置窗的一次性开销（系统控件的堆）；缩略图上限不改（改成空闲时清）；识字全走子进程（现成的 `--ocr` 子进程每次 0.51–0.70 s，进程内热的是 0.22 s，每次都过 0.3 s、都会闪「识别中」）。
 
 ---
@@ -379,7 +380,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 
 > 2026-10-03 瘦身：原来的完成记录和整段的「下一步」「暂不发版」「发布」「接手须知」原样挪到 `docs/archive/PLAN-12.md`；**手测清单**（原「待用户手测」那一大段）原样挪到 `HANDTEST.md`，条目和编号不变——代码注释里的「PLAN §12 第 N 条」「§12「录屏 / 录音手测」N」「§12「macOS 26 手测」第 1 条」都去那里按小节名找。新的手测条目加在 `HANDTEST.md` 里。
 
-**现状（2026-10-06）**：`MARKETING_VERSION` 是 0.3.2（0.3.1 发布后第一批：「呼出面板时挤压弹开」转正、单独成「动效」组，逐帧动画限 60 Hz；剪贴板列表条目多了高亮错位、↑↓ 和滚动卡：改成只画可见区附近、上下按前缀和撑开，去掉 `move(by:)` 里的平方级查找；翻译历史同样只画可见区附近，两边共用 `ListWindow`；AI 服务填 OpenCode 地址时补上它要求的会话 ID 请求头，不再报 400；设置里的有序列表不再封顶 10 行——表单里的 List 不能滚，第 11 行起原来看不到；模型建议下拉单行截断；三块面板关闭时泛白：系统的窗口淡出丢了毛玻璃的压暗，改成替身窗口淡出，屏上逐帧实测不再冲亮；剪贴板加开关「单击条目直接粘贴」（设置 › 剪贴板，默认关：仍是单击选中、双击粘贴）；有新版本时的提示加常驻入口：菜单栏图标右上角的小圆点、剪贴板面板和启动器底栏的「更新到 x」，已发现的新版本复查期间不清）；已发布 0.1.0、0.2.0、0.3.1（2026-10-03 用户要求，tag `macos-v0.3.1` 打在 cdb38614，latest）和 0.3.0（同日补发，tag `macos-v0.3.0` 打在 b22c7c54，用 2026-10-01 从它打的包，不是 latest；0.3.1 的发布说明连 0.3.0 的内容一起写了）。下面这些手测发布前没走完，查出的问题进下一版。
+**现状（2026-10-07）**：`MARKETING_VERSION` 是 0.3.2（0.3.1 发布后第一批：「呼出面板时挤压弹开」转正、单独成「动效」组，逐帧动画限 60 Hz；剪贴板列表条目多了高亮错位、↑↓ 和滚动卡：改成只画可见区附近、上下按前缀和撑开，去掉 `move(by:)` 里的平方级查找；翻译历史同样只画可见区附近，两边共用 `ListWindow`；AI 服务填 OpenCode 地址时补上它要求的会话 ID 请求头，不再报 400；设置里的有序列表不再封顶 10 行——表单里的 List 不能滚，第 11 行起原来看不到；模型建议下拉单行截断；三块面板关闭时泛白：系统的窗口淡出丢了毛玻璃的压暗，改成替身窗口淡出，屏上逐帧实测不再冲亮；剪贴板加开关「单击条目直接粘贴」（设置 › 剪贴板，默认关：仍是单击选中、双击粘贴）；有新版本时的提示加常驻入口：菜单栏图标右上角的小圆点、剪贴板面板和启动器底栏的「更新到 x」，已发现的新版本复查期间不清；常驻内存（§10「常驻内存」）：面板描边和卡片高光换成不带位图的画法，面板都收起两分钟后清透镜缓存、放掉识字模型、把空页还给系统，`HANDTEST.md`「0.3.2 手测」11、12、14）；已发布 0.1.0、0.2.0、0.3.1（2026-10-03 用户要求，tag `macos-v0.3.1` 打在 cdb38614，latest）和 0.3.0（同日补发，tag `macos-v0.3.0` 打在 b22c7c54，用 2026-10-01 从它打的包，不是 latest；0.3.1 的发布说明连 0.3.0 的内容一起写了）。下面这些手测发布前没走完，查出的问题进下一版。
 - 代码完成、待真机手测：录屏 / 录音 0–7 批和三批手测反馈（`HANDTEST.md`「录屏 / 录音手测」1–67）、剪贴板手测反馈（「剪贴板手测反馈」1–8），这些是 0.3.0；第二轮体检 1–7 批（「第二轮体检手测」1–34，23–28 只在 Dev 版上演练），这些进 0.3.1；第 8 批只动文档。
 - 更早代码完成、还没手测完的（长截图、M13、2026-09-28 体检各批、第 9–13 批）在 `HANDTEST.md` 各自的小节；系统设置面板还要逐个核对能跳到（「体检第 6 批」第 3 条）。
 - 等 macOS 26 测试机：液态玻璃分支（第 11 批，15 上逐像素不变）按「macOS 26 手测」实测、微调、再补更新日志；D5 系统翻译的验证（§10）。

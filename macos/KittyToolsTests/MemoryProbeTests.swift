@@ -475,7 +475,7 @@ private final class Probe {
 
   /// 先走剪贴板后台识字现在的路（第 4 批：OCR.recognizeTextInHelper，子进程里识）三次：宿主的内存差、每次从起到出结果多久；
   /// 再在进程内识两次当对照（交互式识字仍走这条）：识完、闲 10 秒后各比之前多多少。子进程那几次必须排在前面——
-  /// 进程内识过一次模型就留在宿主里了
+  /// 进程内识过一次模型就留在宿主里了。最后照空闲回收的做法放掉模型、调回收接口，看还回多少、再识一次要多久
   private func recognize() {
     report.heading("3. 识字（剪贴板后台识字在子进程里：OCR.recognizeTextInHelper；对照：进程内 OCR.recognizeText）")
     let url = images.url(for: shots[0].id)
@@ -512,6 +512,25 @@ private final class Probe {
       after = Reading.now()
       report.row("闲 10 秒后", after, note: "比之前多 \(mb(after.footprint - helped.footprint))")
     }
+    // 空闲回收会做的（2026-10-07）：放掉识字模型（私有接口，OCR.releaseModel）再调回收接口，看还回多少、之后再识多久
+    let releaseStart = Date.now
+    let released = wait { await OCR.releaseModel() }
+    let releaseSeconds = Date.now.timeIntervalSince(releaseStart)
+    Memory.relieve()
+    steady()
+    let freed = Reading.now()
+    report.row(
+      "放掉识字模型 + 回收接口", freed,
+      note: (released
+        ? String(format: "放掉用了 %.0f ms", releaseSeconds * 1000) : "**没放成（接口不在了？）**")
+        + "，回落 \(mb(after.footprint - freed.footprint))，还比识字之前多 \(mb(freed.footprint - helped.footprint))"
+    )
+    let reloadStart = Date.now
+    let reloaded = wait { await OCR.recognizeText(in: url) }
+    let reloadSeconds = Date.now.timeIntervalSince(reloadStart)
+    report.row(
+      "放掉之后再识一次", Reading.now(),
+      note: String(format: "用了 %.2f s，识出 %d 个字", reloadSeconds, reloaded?.count ?? -1))
     report.summary.append(
       (
         "剪贴板后台识字（第 4 批起在子进程里）", "宿主 \(signed(helperGrowth))",
@@ -520,8 +539,11 @@ private final class Probe {
       ))
     report.summary.append(
       (
-        "对照：进程内识字（截图翻译、识字、钉图仍走这条，识过一次模型就常驻）",
-        mb(after.footprint - helped.footprint), "—", "已知取舍：当场要结果的不放子进程"
+        "对照：进程内识字（截图翻译、识字、钉图仍走这条，识过之后模型留着）",
+        mb(after.footprint - helped.footprint),
+        "放掉模型 + 回收接口回落 \(mb(after.footprint - freed.footprint))，之后再识 "
+          + String(format: "%.2f s", reloadSeconds),
+        "当场要结果的不放子进程；闲下来由空闲回收放掉模型"
       ))
   }
 

@@ -97,18 +97,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private lazy var clipboardModel = ClipboardPanelModel(store: clipboardStore)
   private lazy var launcherModel = LauncherModel(usage: launcherUsage)
 
-  /// 空闲回收（常驻内存，2026-10-07，PLAN §10）：三块主面板哪块收起都重新计时，过了 Memory.idleDelay 还没有面板开着，
-  /// 就把闲着白占的还回去——透镜缓存（装满约 50 MB，再看到时重做）和分配器手里的空页（跑了三天的正式版估 20–34 MB）。
-  /// 到点时还有面板开着（固定着、正在用）或正在框选就再等一轮
+  /// 空闲回收（常驻内存，2026-10-07，PLAN §10）：三块主面板哪块收起、进程内识完一次字都重新计时，过了
+  /// Memory.idleDelay 还没有面板开着，就把闲着白占的还回去——透镜缓存（装满约 50 MB，再看到时重做）、识字模型
+  /// （约 50 MB，下次识字重新加载，慢 0.2–0.4 s；放它要 18–200 ms，在主线程外做）、分配器手里的空页（跑了三天的
+  /// 正式版估 20–34 MB；放在最后，前两样腾出来的页一起还）。到点时还有面板开着（固定着、正在用）或正在框选就再等一轮
   private lazy var idleReclaim = Memory.IdleTimer(
     after: Memory.idleDelay,
     isIdle: { [unowned self] in
       !isCapturing && !NSApp.windows.contains { $0 is OverlayPanel && $0.isVisible }
     },
-    work: {
-      ThumbnailView.dropPreviews()
+    work: { [unowned self] in reclaimIdleMemory() })
+
+  private func reclaimIdleMemory() {
+    ThumbnailView.dropPreviews()
+    Task {
+      await OCR.releaseModel()
       Memory.relieve()
-    })
+    }
+  }
 
   private lazy var launcherPanel: OverlayPanel = {
     let model = launcherModel
@@ -1184,7 +1190,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private static let recognizingTitle = "识别中…"
 
   private func recognizing<T>(_ work: () async -> T) async -> T {
-    await island.showIfSlow(Self.recognizingTitle, work)
+    // 进程内识过字，模型就留在内存里：这一路不一定开关面板（⌥O 识字、钉图上识字），自己记得回头放掉
+    defer { idleReclaim.schedule() }
+    return await island.showIfSlow(Self.recognizingTitle, work)
   }
 
   /// 有二维码 / 条码就复制它的内容，否则复制识别出的文字（设置里开了就把换行合成一段）；记进剪贴板历史

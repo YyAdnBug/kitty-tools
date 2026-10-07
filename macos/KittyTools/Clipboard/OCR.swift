@@ -1,11 +1,13 @@
 // 图片文字识别（Vision，设备端）：剪贴板图片（让截图里的文字能被搜索到）、截图翻译、识字共用；识字还认二维码 / 条码。
 // 剪贴板图片的后台识字放在子进程里（第二轮体检 M2，文件末尾「子进程识字」）：识字模型一加载就常驻 45–52 MB，
-// 让它跟着子进程退掉；截图翻译、识字、钉图这些当场要结果的照旧在进程内识（用过一次模型就留着，已知取舍）。
+// 让它跟着子进程退掉；截图翻译、识字、钉图这些当场要结果的照旧在进程内识——连着识的时候模型留着（热的 0.2 s，
+// 重新加载 0.4–0.6 s），闲下来由空闲回收放掉（「放掉识字模型」一节，2026-10-07）。
 // 分段（体检 A32）：按行框的纵向间距和句末短行切段，段内的行按中日文 / 其它文字的规则接起来；截图翻译总是按段送去翻，
 // 识字按设置 › 截图的开关；翻译的「把同一段里的换行接起来」调这里的 joiningLines（纯文本按空行分段），段内接行和识字同一个 joinLine。
 
 import Foundation
 import OSLog
+import Synchronization
 import Vision
 
 nonisolated enum OCR {
@@ -14,12 +16,16 @@ nonisolated enum OCR {
 
   /// 识别失败返回 nil；图里没有文字返回 ""
   @concurrent static func recognizeText(in url: URL) async -> String? {
+    enter()
+    defer { leave() }
     guard let observations = try? await request().perform(on: url) else { return nil }
     return String(join(observations).prefix(maxCharacters))
   }
 
   /// 截图翻译、识字：带行框的一行行（Vision 顺序，左右分栏时先左栏后右栏）；识别失败 nil、没有文字 []
   @concurrent static func recognizeLines(in image: CGImage) async -> [Line]? {
+    enter()
+    defer { leave() }
     guard let observations = try? await request().perform(on: image) else { return nil }
     return observations.compactMap { observation in
       guard
@@ -49,12 +55,54 @@ nonisolated enum OCR {
 
   /// 二维码 / 条码的内容（有几个返回几个，重复的去掉）。识字时有码优先用码
   @concurrent static func barcodes(in image: CGImage) async -> [String] {
+    enter()
+    defer { leave() }
     guard let observations = try? await DetectBarcodesRequest().perform(on: image) else {
       return []
     }
     var seen = Set<String>()
     return observations.compactMap(\.payloadString).filter {
       !$0.isEmpty && seen.insert($0).inserted
+    }
+  }
+
+  // MARK: 放掉识字模型
+
+  /// 进程内识别的记账（识别在后台线程上跑，所以用锁）：正在识几个、识过之后模型是不是还留着
+  private static let inProcess = Mutex((running: 0, loaded: false))
+
+  private static func enter() {
+    inProcess.withLock {
+      $0.running += 1
+      $0.loaded = true
+    }
+  }
+
+  private static func leave() {
+    inProcess.withLock { $0.running -= 1 }
+  }
+
+  /// 空闲时放掉 Vision 留着的识字模型（常驻内存，2026-10-07，PLAN §10）。进程内识过一次，文字检测和各语种识别的模型
+  /// 就一直留着，实测常驻约 50 MB；公开接口放不掉（请求、处理器都放手也不还）。这里调 Vision 的**私有接口**
+  /// `+[VNSession globalSession]` / `-releaseCachedResources`（用户 2026-10-07 同意）。macOS 15.7 实测：
+  /// `RecognizeTextRequest`、`DetectBarcodesRequest` 加载的都归它管；内存探针里（识过两张整屏截图）进程内识字常驻
+  /// +57 MB，放掉再 `Memory.relieve()` 回落 56 MB；放掉后第一次识字重新加载，慢 0.2–0.4 s（同冷启动），照常出字。
+  /// 调用本身 18–200 ms（识过的图越大越久），所以不在主线程上做。
+  /// 接口不在了（系统改了）就什么都不做、返回 false，模型照旧留着，和没有这一步时一样。没识过、正在识时也不放：
+  /// 整个过程拿着记账的锁，这期间新来的识别在门口等，不会和它撞上。
+  /// 只由空闲回收调（AppDelegate.idleReclaim）；`ScreenshotTests.modelReleasesWhenIdleAndReloads` 锁住放得掉、放完还能识
+  @concurrent @discardableResult static func releaseModel() async -> Bool {
+    inProcess.withLock { state in
+      guard state.loaded, state.running == 0,
+        let session = NSClassFromString("VNSession") as? NSObject.Type,
+        session.responds(to: Selector(("globalSession"))),
+        let global = session.perform(Selector(("globalSession")))?.takeUnretainedValue()
+          as? NSObject,
+        global.responds(to: Selector(("releaseCachedResources")))
+      else { return false }
+      global.perform(Selector(("releaseCachedResources")))
+      state.loaded = false
+      return true
     }
   }
 
