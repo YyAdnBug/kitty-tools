@@ -68,7 +68,8 @@ alwaysApply: true
 
 ## 测量与诊断
 - 测内存看 `phys_footprint`（`footprint -p <pid>` / 活动监视器），不看 RSS：两者偏差方向随内存压力变化，任何换算系数都不成立。
-- 内存探针 `MemoryProbeTests`（按需，`TEST_RUNNER_KITTY_MEMORY_PROBE_DIR`，用法在文件头；2026-10-02 的数和结论在 PLAN §10「第二轮体检」第 2、3 批）：动缓存上限、面板收起后清内容这类事，前后各跑一遍对数。`footprint -p <pid>` 不用 root 就能看本机自己的进程并按分类拆（CoreAnimation / CG raster data / MALLOC_* / Owned physical footprint (unmapped)）。**在测试宿主里量窗口**要同步跑在 `RunLoop.main.perform` 的块里、分阶段包 `autoreleasepool`：测试是事件循环里的一次长调用，AppKit 的自动释放池不清，显示过的窗口放了手也不释放；而在 async 测试里嵌套跑环会把主队列（SwiftUI 的 `.task`、动画组的完成回调）卡住。
+- 内存探针 `MemoryProbeTests`（按需，`TEST_RUNNER_KITTY_MEMORY_PROBE_DIR`，用法在文件头；2026-10-02 的数和结论在 PLAN §10「第二轮体检」第 2、3 批）：动缓存上限、面板收起后清内容这类事，前后各跑一遍对数。`footprint -p <pid>` 不用 root 就能看本机自己的进程并按分类拆（CoreAnimation / CG raster data / MALLOC_* / Owned physical footprint (unmapped)）。**在测试宿主里量窗口**要同步跑在 `RunLoop.main.perform` 的块里、分阶段包 `autoreleasepool`：测试是事件循环里的一次长调用，AppKit 的自动释放池不清，显示过的窗口放了手也不释放；而在 async 测试里嵌套跑环会把主队列（SwiftUI 的 `.task`、动画组的完成回调）卡住。**量窗口 / 图层要真上屏**（2026-10-07）：摆在屏幕外的窗口系统不画图层、位图不分配，量出来偏小（三块主面板屏外各 3–8 MB，真上屏 12–33 MB）——探针加 `TEST_RUNNER_KITTY_MEMORY_PROBE_ONSCREEN=1`（主面板摆在屏幕右上角：透明度 0.05、不接鼠标、不当 key），独立小程序同样摆在屏幕角落；`contentsFormat` 是 AutomaticAppKit 的图层在广色域屏上每像素 8 字节，不是 4。
+- 查活进程的内存谁拿着：先 `leaks <pid> -outputGraph=<文件>.memgraph` 拍一份（只停约 3 秒；正式版不可调试，内容只给只读段，引用关系都在），再离线对着它跑 `heap -s`、`heap -addresses`、`leaks -traceTree=<地址>`、`vmmap`，不反复停 App；两次对比用同一种来源（`heap -s` 对活进程和对 memgraph 的类名归类不一样）。追 CoreAnimation 区域的持有者：区域 ← `CA::Render::Shmem` ← `CABackingStore` ← 304 字节的块（+144 指过来的那个才是图层，`CABackingStore` 之间 +176 / +184 是全局链表、会把别的面板串进来）← 图层对象 ← 视图 ← 一路 `_subviews` 到 `NSHostingView<…>`。`leaks -referenceTree` 的归属是启发式的（SwiftUI 的数据区按字节扫，会把别人的块挂到自己名下），按根汇总不可信。2026-10-07 正式版 342 MB 的构成和结论在 PLAN §10「常驻内存」。
 - 编译诊断以 `xcodebuild` 输出为准（sourcekit-lsp 不认 `.xcodeproj`）。
 
 ## 查资料

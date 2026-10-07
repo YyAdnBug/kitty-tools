@@ -14,8 +14,9 @@
 //     -scheme KittyTools test -only-testing:'KittyToolsTests/MemoryProbeTests/measure()'
 // 报告追加在 <目录>/report.md（每跑一次一段，段头写时间）。只跑其中几项（在干净的进程里量，排除前面几项的影响）：
 // 另加 TEST_RUNNER_KITTY_MEMORY_PROBE_ONLY=thumbnails,icons,ocr,panels,relief 里的几个（逗号分隔）。
+// 量面板的图层另加 TEST_RUNNER_KITTY_MEMORY_PROBE_ONSCREEN=1（屏上模式，见第 4 个坑）。
 //
-// 三个坑（都是先量出对不上的数、再用临时实验查出来的，改探针前先看）：
+// 四个坑（都是先量出对不上的数、再用临时实验查出来的，改探针前先看）：
 // 1. **缩略图要画出来才算**：ImageIO 的缩略图是懒解码的，取进缓存不画几乎不占内存；画过之后一张在缓存里占 2 份
 //    （CG raster data + CoreAnimation 各一份「宽 × 高 × 4」），窗口关了也不还，缓存放手才还。所以第 1 节用真的 ThumbnailView 画。
 // 2. **整个探针同步跑在主跑环的一个块里，不是 Swift 并发的任务**：测试是宿主 App 的事件循环里的一次长调用，事件循环不转，
@@ -24,8 +25,15 @@
 //    任务占着），主队列上的东西全停：SwiftUI 的 .task、动画组的完成回调（OverlayPanel.zoom / setContentHeight 的回调捏着
 //    面板）都不来。从 RunLoop.main.perform 的块里跑就没有这个问题；要等异步操作用 wait。
 // 3. malloc_zone_statistics(nil) 的「在用」不能信：ImageIO 放缩略图的 DefaultPurgeableMallocZone 释放了也不减。只看默认 zone。
+// 4. **窗口摆在屏幕外，系统不画它的图层**（2026-10-07 查正式版常驻内存时才发现）：图层的位图不分配，面板量出来偏小——
+//    三块主面板屏外各 3–8 MB，真上屏是 12–33 MB，面板描边那张整块位图（每像素 8 字节，mac-whisker §8）就是这么漏掉的。
+//    所以有屏上模式（TEST_RUNNER_KITTY_MEMORY_PROBE_ONSCREEN=1）：热身那块和三块主面板摆在主屏右上角，透明度 0.05、
+//    不接鼠标、不当 key、不激活本 App（直接 orderFrontRegardless：present 会淡入到不透明、装点外监听），「显示后」下面
+//    多列带内容的图层（256 KB 以上：类、点尺寸、格式、是谁的）和进程里可写的 CoreAnimation 区域（vmmap 的真数，
+//    图层按尺寸估的字节只当参考）。跑的这几分钟屏幕右上角有一块几乎看不见的影子，别的都不变。两张 ⌘Y 大卡、设置窗
+//    仍在屏外：它们的大头是缩略图、解码缓冲和系统控件的堆，不是图层。
 //
-// 和真机的差别（报告里也写）：Debug 构建；窗口在屏外、不是 key（三块主面板走 present(makingKey: false, keepsPlace: true)，
+// 和真机的差别（报告里也写）：Debug 构建；窗口在屏外（屏上模式除外）、不是 key（三块主面板走 present(makingKey: false, keepsPlace: true)，
 // 两张 ⌘Y 大卡走模型的 toggleQuickLook → zoom / unzoom，接线照 AppDelegate 另写了一份；都是真的 OverlayPanel，只是
 // isPinned 恒真：探针跑着时用户在别处点一下不会把它关掉）；翻译浮窗没给
 // frameName（真的那块会读写用户偏好里记的位置）；设置窗是照 SettingsWindow 的参数另建的（真的那个会激活本 App、把窗口位置
@@ -46,6 +54,9 @@ nonisolated private let probeDirectory = ProcessInfo.processInfo.environment[
 /// 只跑这几项（TEST_RUNNER_KITTY_MEMORY_PROBE_ONLY，逗号分隔）；没设 = 全跑
 nonisolated private let probeOnly = ProcessInfo.processInfo.environment["KITTY_MEMORY_PROBE_ONLY"]
   .map { Set($0.split(separator: ",").map(String.init)) }
+/// 屏上模式（TEST_RUNNER_KITTY_MEMORY_PROBE_ONSCREEN）：主面板摆在屏幕角落、几乎透明，系统才真的画图层（文件头第 4 个坑）
+nonisolated private let onscreen =
+  ProcessInfo.processInfo.environment["KITTY_MEMORY_PROBE_ONSCREEN"] != nil
 
 /// 屏幕外的位置（同截图自检）：窗口摆在这里，用户看不到
 private let offscreen = NSPoint(x: -20000, y: -20000)
@@ -847,7 +858,7 @@ private final class Probe {
         spin()
         report.step("建好（还没显示）")
         stage?.show()
-        guard window.map(Self.isParked) == true else {
+        guard onscreen || window.map(Self.isParked) == true else {
           window?.orderOut(nil)
           report.line("没量：系统把窗口挪回了屏幕上，马上收掉了")
           return false
@@ -871,6 +882,9 @@ private final class Probe {
             "比建之前多 \(mb(last.footprint - base.footprint))（打开过程中最高 \(mb(peak - base.footprint))）；"
             + "图层 \(census.count) 个带内容、估 \(mb(census.bytes))；"
             + "\(Int(frame.width)) × \(Int(frame.height)) 点" + (unseen ? "，系统当它看不见（屏外）" : ""))
+        if onscreen, let window {
+          for line in Self.layerDetail(of: window) { report.line(line) }
+        }
         for extra in stage?.extras ?? [] {
           extra.run()
           steady()
@@ -1079,10 +1093,20 @@ private final class Probe {
       ))
   }
 
-  /// 屏外显示一块 OverlayPanel：摆到屏幕外，不抢键盘（走真的 present，只是不重新摆位、不当 key）
+  /// 显示一块 OverlayPanel，不抢键盘。平时摆到屏幕外（走真的 present，只是不重新摆位、不当 key）；屏上模式摆在主屏
+  /// 右上角、透明度 0.05、不接鼠标，直接 orderFrontRegardless（文件头第 4 个坑）
   private static func present(_ panel: OverlayPanel) {
-    panel.setFrameOrigin(offscreen)
-    panel.present(makingKey: false, keepsPlace: true)
+    guard onscreen else {
+      panel.setFrameOrigin(offscreen)
+      panel.present(makingKey: false, keepsPlace: true)
+      return
+    }
+    let visible = NSScreen.main?.visibleFrame ?? .zero
+    panel.setFrameTopLeftPoint(
+      NSPoint(x: visible.maxX - panel.frame.width - 8, y: visible.maxY - 8))
+    panel.ignoresMouseEvents = true
+    panel.alphaValue = 0.05
+    panel.orderFrontRegardless()
   }
 
   /// 窗口在所有屏幕外面
@@ -1090,8 +1114,8 @@ private final class Probe {
     NSScreen.screens.allSatisfy { !$0.frame.intersects(window.frame) }
   }
 
-  /// 窗口图层树里带内容的图层：个数和按尺寸估的字节（位图按它自己的行宽，其余按 宽 × 高 × 倍率² × 4），
-  /// 再列出 4 MB 以上的大块（像素尺寸、内容的类型、是谁的图层）
+  /// 窗口图层树里带内容的图层：个数和按尺寸估的字节（位图按它自己的行宽，其余按 宽 × 高 × 倍率² × 每像素字节数，
+  /// 见 bytesPerPixel），再列出 4 MB 以上的大块（像素尺寸、内容的类型、是谁的图层）
   private static func layers(of window: NSWindow) -> (count: Int, bytes: Int, big: [String]) {
     var count = 0
     var bytes = 0
@@ -1109,7 +1133,7 @@ private final class Probe {
         } else {
           let scale = layer.contentsScale
           let (width, height) = (Int(layer.bounds.width * scale), Int(layer.bounds.height * scale))
-          size = width * height * 4
+          size = width * height * bytesPerPixel(layer)
           let kind = CFCopyTypeIDDescription(CFGetTypeID(contents as CFTypeRef)) as String? ?? "?"
           pixels = "\(width)×\(height) \(kind)"
         }
@@ -1123,6 +1147,75 @@ private final class Probe {
     }
     if let root = (window.contentView?.superview ?? window.contentView)?.layer { visit(root) }
     return (count, bytes, big)
+  }
+
+  /// 自己画内容的图层每像素几个字节（估）：AppKit 的自动格式在广色域屏上是 16 位浮点，实测 8 字节（面板描边那张
+  /// 720 × 520 的图层 11.4 MB）；只有透明度的 1 字节；其余按 4
+  private static func bytesPerPixel(_ layer: CALayer) -> Int {
+    switch layer.contentsFormat.rawValue {
+    case "AutomaticAppKit": NSScreen.main?.canRepresent(.p3) == true ? 8 : 4
+    case "A8": 1
+    default: 4
+    }
+  }
+
+  /// 屏上模式：256 KB 以上的带内容图层各一行（类、点尺寸、在窗口里的位置、格式、是哪个视图的），最后一行是进程里
+  /// 256 KB 以上的可写 CoreAnimation 区域（vmmap 的真数；图层那几行的字节是按尺寸估的）
+  private static func layerDetail(of window: NSWindow) -> [String] {
+    guard let root = (window.contentView?.superview ?? window.contentView)?.layer else { return [] }
+    var lines: [String] = []
+    /// 这个图层是哪个视图的：往上找到第一个视图的图层，再列它往上几级父视图
+    func owner(_ layer: CALayer) -> String {
+      var current: CALayer? = layer
+      while let candidate = current {
+        if let view = candidate.delegate as? NSView {
+          let chain = sequence(first: view, next: \.superview).prefix(4)
+          return chain.map { String(String(describing: type(of: $0)).prefix(40)) }
+            .joined(separator: " < ")
+        }
+        current = candidate.superlayer
+      }
+      return "?"
+    }
+    func visit(_ layer: CALayer, masked: Bool) {
+      if let contents = layer.contents, CFGetTypeID(contents as CFTypeRef) != CGImage.typeID {
+        let scale = layer.contentsScale
+        let bytes =
+          Int(layer.bounds.width * scale) * Int(layer.bounds.height * scale) * bytesPerPixel(layer)
+        if bytes >= 256 * 1024 {
+          let frame = layer.convert(layer.bounds, to: root)
+          lines.append(
+            "图层 \(type(of: layer))\(masked ? "（蒙版）" : "") \(Int(layer.bounds.width)) × \(Int(layer.bounds.height)) 点"
+              + " @(\(Int(frame.minX)), \(Int(frame.minY)))，格式 \(layer.contentsFormat.rawValue)，估 \(mb(bytes))；"
+              + owner(layer))
+        }
+      }
+      for sublayer in layer.sublayers ?? [] { visit(sublayer, masked: masked) }
+      if let mask = layer.mask { visit(mask, masked: true) }
+    }
+    visit(root, masked: false)
+    let vmmap = Process()
+    vmmap.executableURL = URL(filePath: "/usr/bin/vmmap")
+    vmmap.arguments = ["\(ProcessInfo.processInfo.processIdentifier)"]
+    let pipe = Pipe()
+    vmmap.standardOutput = pipe
+    vmmap.standardError = FileHandle.nullDevice
+    guard (try? vmmap.run()) != nil else { return lines }
+    let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+    vmmap.waitUntilExit()
+    let regions = output.split(separator: "\n").compactMap { line -> Int? in
+      guard line.hasPrefix("CoreAnimation"), line.contains(" rw-/") else { return nil }
+      let range = line.split(separator: " ", omittingEmptySubsequences: true)[1]
+        .split(separator: "-")
+      guard range.count == 2, let low = Int(range[0], radix: 16),
+        let high = Int(range[1], radix: 16)
+      else { return nil }
+      return high - low >= 256 * 1024 ? high - low : nil
+    }
+    lines.append(
+      "进程里可写的 CoreAnimation 区域（256 KB 以上）："
+        + (regions.isEmpty ? "没有" : regions.map(mb).joined(separator: "、")))
+    return lines
   }
 
   /// 视图树里的 SwiftUI 宿主视图（NSHostingView<…>）
