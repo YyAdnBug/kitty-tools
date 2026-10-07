@@ -97,6 +97,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private lazy var clipboardModel = ClipboardPanelModel(store: clipboardStore)
   private lazy var launcherModel = LauncherModel(usage: launcherUsage)
 
+  /// 空闲回收（常驻内存，2026-10-07，PLAN §10）：三块主面板哪块收起都重新计时，过了 Memory.idleDelay 还没有面板开着，
+  /// 就把闲着白占的还回去——透镜缓存（装满约 50 MB，再看到时重做）和分配器手里的空页（跑了三天的正式版估 20–34 MB）。
+  /// 到点时还有面板开着（固定着、正在用）或正在框选就再等一轮
+  private lazy var idleReclaim = Memory.IdleTimer(
+    after: Memory.idleDelay,
+    isIdle: { [unowned self] in
+      !isCapturing && !NSApp.windows.contains { $0 is OverlayPanel && $0.isVisible }
+    },
+    work: {
+      ThumbnailView.dropPreviews()
+      Memory.relieve()
+    })
+
   private lazy var launcherPanel: OverlayPanel = {
     let model = launcherModel
     let panel = OverlayPanel(
@@ -105,7 +118,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       autoHide: .clickOutside, isPinned: { false },
       content: LauncherPanelView(model: model).environment(updater))
     panel.keyEquivalentHandler = { [unowned model] in model.handleKeyEquivalent($0) }
-    panel.onHide = { [unowned model] in model.didHide() }
+    panel.onHide = { [unowned self, unowned model] in
+      model.didHide()
+      idleReclaim.schedule()
+    }
     panel.squeezesIn = { Self.squeezesIn() }
     model.hidePanel = { [unowned panel] in panel.hide() }
     // ⌘K 菜单开着时瞬间长高：菜单锚在底栏上方，面板边长边插进来会越过搜索栏被裁，得先长好再从右下角放大
@@ -197,7 +213,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       isPinned: { !UserDefaults.standard.bool(forKey: Prefs.clipboardHideOnUnfocus) },
       content: ClipboardPanelView(model: model).environment(updater))
     panel.keyEquivalentHandler = { [unowned model] in model.handleKeyEquivalent($0) }
-    panel.onHide = { [unowned model] in model.reset() }
+    panel.onHide = { [unowned self, unowned model] in
+      model.reset()
+      idleReclaim.schedule()
+    }
     panel.squeezesIn = { Self.squeezesIn() }
     model.hidePanel = { [unowned panel] in panel.hide() }
     model.resize = { [unowned panel] in panel.setContentHeight($0, animated: true) }
@@ -287,6 +306,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       if NSApp.keyWindow == nil, let previous = panel.previousKeyPanel, previous.isVisible {
         previous.makeKey()
       }
+      idleReclaim.schedule()
     }
     panel.squeezesIn = { Self.squeezesIn() }
     return panel

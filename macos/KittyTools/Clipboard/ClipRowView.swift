@@ -402,7 +402,8 @@ enum AppIcons {
 /// 图片条目的缩略图：后台按需生成，NSCache 复用。缓存里有的在建视图时就直接用（滚回来、透镜展开不闪一下占位）。
 /// 缓存有上限（第二轮体检 M1）：画过的缩略图每张在内存里留两份「宽 × 高 × 4」（CG raster data、CoreAnimation 各一份，
 /// 内存探针实测），窗口关了也不还，缓存放手才还。行图标单独一个缓存（icons），透镜和 ⌘Y 大卡共用一个（previews）；
-/// 大卡那一档在大卡放掉时整档丢掉（dropCards）。正在显示的那张不怕被淘汰：视图自己的 @State 还拿着它
+/// 大卡那一档在大卡放掉时整档丢掉（dropCards），面板都收起两分钟后 previews 整个清掉（dropPreviews，空闲回收）。
+/// 正在显示的那张不怕被淘汰：视图自己的 @State 还拿着它
 struct ThumbnailView: View {
   let id: UUID
   let images: ImageStore
@@ -485,6 +486,14 @@ struct ThumbnailView: View {
   /// ⌘Y 大卡放掉了：大卡档的缩略图都丢掉（一张整屏截图约 29 MB，留着会把透镜档挤出去）
   static func dropCards() {
     for key in cardKeys { previews.removeObject(forKey: key as NSString) }
+    cardKeys = []
+  }
+
+  /// 空闲回收（AppDelegate.idleReclaim，面板都收起两分钟后）：透镜和大卡两档全丢。装满时两份加起来约 50 MB，
+  /// 闲着白占；再看到时重新生成（整屏截图一张 40–100 ms，这期间是占位色块）。行图标不丢：重做一张同样要把原图
+  /// 整张解码，一屏十来张一起重做太贵，留满也才 7–10 MB
+  static func dropPreviews() {
+    previews.removeAllObjects()
     cardKeys = []
   }
 
