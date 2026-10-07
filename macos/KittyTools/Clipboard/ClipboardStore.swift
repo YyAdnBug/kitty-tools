@@ -2,6 +2,7 @@
 // 同内容再次复制 = 把原条目挪到最前（保留 id、收藏、备注、收藏夹、OCR），不另起一条；删掉还没提交的也拿回来。
 // 收藏夹（体检 A1）：收藏 = 默认收藏夹，clip_groups 是命名收藏夹（按 position 排，可拖动），归进收藏夹就是收藏。
 // ⌘Z 撤销栈（体检 A2）：删除、删收藏夹、取消收藏后超期的条目一批一批压栈，面板收起或退出 App 时才提交。
+// 导入片段和文字收藏（设置 › 通用「导入」，adopt）：同样正文的不另起一条，只补标记；不能撤销。
 
 import AppKit
 import OSLog
@@ -326,6 +327,75 @@ import Observation
       // 删了还没提交的同一段被 record 拿回来了：它原来不是片段
       if let first = items.first, !first.isSnippet { update([first.id]) { $0.isSnippet = true } }
     }
+  }
+
+  /// 导入片段和文字收藏（设置的导出 / 导入，SettingsArchive）。收藏夹按名字对（去首尾空白）：已有同名的用它，没有的
+  /// 新建在最后（names 是文件里收藏夹的顺序，空的也建）。条目按正文对：已有同样正文的（普通历史里的也算）只补标记——
+  /// 收藏、片段取并集，原来没备注、没归收藏夹的才用导入的——时间和位置不动；没有的新建，时间用导入的（不晚于 now）、
+  /// 按时间插到该在的位置，没有来源。文件里正文重复的几条并成一条。先提交撤销栈：删了还没提交的同文条目不该被导入
+  /// 变成两条，导入本身也不能 ⌘Z。写库放在一个事务里（几千条也只落一次盘）。返回新建了几条、给几条已有的补了标记
+  @discardableResult
+  func adopt(_ clips: [SettingsArchive.Clip], groups names: [String], now: Date = .now) -> (
+    added: Int, updated: Int
+  ) {
+    commitDeletion()
+    // 文件里正文重复的并成一条（顺序按第一次出现的）
+    var merged: [SettingsArchive.Clip] = []
+    var position: [String: Int] = [:]
+    for clip in clips {
+      if let index = position[clip.text] {
+        merged[index].favorite = merged[index].favorite || clip.favorite
+        merged[index].snippet = merged[index].snippet || clip.snippet
+        merged[index].note = merged[index].note ?? clip.note
+        merged[index].group = merged[index].group ?? clip.group
+      } else {
+        position[clip.text] = merged.count
+        merged.append(clip)
+      }
+    }
+    var existing: [String: UUID] = [:]
+    for item in items.reversed() where item.kind == .text { existing[item.text ?? ""] = item.id }
+    let trimmed = { (name: String) in name.trimmingCharacters(in: .whitespacesAndNewlines) }
+    var (added, updated) = (0, 0)
+    write {
+      try db.transaction {
+        var groupIDs: [String: UUID] = [:]
+        for name in (names + merged.compactMap(\.group)).map(trimmed) where groupIDs[name] == nil {
+          groupIDs[name] = (groups.first { $0.name == name } ?? createGroup(named: name))?.id
+        }
+        // 从旧到新一条条来：同一时刻的几条（文件里的时间只到秒；未来的时间都算现在），文件里靠前的后插入、排在前面
+        for clip in merged.reversed() {
+          let group = clip.group.flatMap { groupIDs[trimmed($0)] }
+          guard let id = existing[clip.text], let current = items.first(where: { $0.id == id })
+          else {
+            var item = ClipItem(kind: .text, copiedAt: min(clip.copiedAt, now))
+            item.text = clip.text
+            item.note = clip.note
+            item.isSnippet = clip.snippet
+            item.groupID = group
+            // 不变式：归了收藏夹的一定是收藏
+            item.favorite = clip.favorite || group != nil
+            // 同一时刻的后插入的在前，和库里 copied_at DESC, rowid DESC 的顺序一致
+            items.insert(
+              item, at: items.firstIndex { $0.copiedAt <= item.copiedAt } ?? items.endIndex)
+            let values = Self.encode(item)
+            let placeholders = Array(repeating: "?", count: values.count).joined(separator: ", ")
+            try db.execute("INSERT INTO clips(\(Self.columns)) VALUES (\(placeholders))", values)
+            added += 1
+            continue
+          }
+          var changed = current
+          changed.isSnippet = current.isSnippet || clip.snippet
+          changed.note = (current.note ?? "").isEmpty ? clip.note : current.note
+          changed.groupID = current.groupID ?? group
+          changed.favorite = current.favorite || clip.favorite || changed.groupID != nil
+          guard changed != current else { continue }
+          update([id]) { $0 = changed }
+          updated += 1
+        }
+      }
+    }
+    return (added, updated)
   }
 
   /// 新建收藏夹（排在最后）：名称去空白，空名、超过 24 字或与已有的重名返回 nil

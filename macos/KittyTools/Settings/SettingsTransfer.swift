@@ -1,5 +1,6 @@
 // 设置 › 通用「导出与导入」（2026-10-07；文件格式、校验和合并规则在 Storage/SettingsArchive.swift）：一行两个按钮。
-// 导出… = 一张表单：勾选类别；要带翻译服务的密钥就再勾一项、设一个密码（至少 8 位，输两遍）→ 存储面板。
+// 导出… = 一张表单：勾选类别（设置、快捷键、翻译服务、网页搜索，和留下的文字：片段与收藏、生词本；没有内容的那一类
+// 不勾也勾不了）；要带翻译服务的密钥就再勾一项、设一个密码（至少 8 位，输两遍）→ 存储面板。
 // 导入… = 打开面板选文件 → 读出来查过 → 一张表单：文件里有哪几类就列哪几类、勾选要导入的；翻译服务下面列出它们会连到的
 // 自己填的地址（别人给的文件里，名字叫 OpenAI 的服务连的不一定是 OpenAI）；文件带密钥时给一个密码框（不填就不导入密钥）；
 // 会让历史保留得更少、隐私保护变弱时橙字先说 → 写偏好、合并两张列表、存密钥，再让运行中的东西跟上（applied）。
@@ -13,6 +14,10 @@ import UniformTypeIdentifiers
 /// 导出 / 导入要用到的运行中的东西（AppDelegate 给；截图自检给一份不写偏好的）
 struct SettingsTransfer {
   let services: TranslateServiceStore
+  /// 片段、收藏和收藏夹从它读、往它并
+  let clipboard: ClipboardStore
+  /// 生词本（收藏的翻译）
+  let history: HistoryStore
   /// 导入写完偏好之后让运行中的东西跟上（AppDelegate.settingsImported）；返回按新上限清掉了几条剪贴板历史
   var applied: () -> Int = { 0 }
 }
@@ -34,6 +39,9 @@ struct TransferSection: View {
     let archive: SettingsArchive
     /// 导出：这些服务在钥匙串里的密钥（账户名 → 值）
     var secrets: [String: String] = [:]
+    /// 导出：不进文件的图片、文件类收藏各有几条（表单里说一声）
+    var skippedImages = 0
+    var skippedFiles = 0
   }
 
   var body: some View {
@@ -41,13 +49,22 @@ struct TransferSection: View {
       LabeledContent {
         HStack(spacing: 8) {
           Button("导出…") {
-            let services = transfer.services.services
+            let (services, clipboard) = (transfer.services.services, transfer.clipboard)
+            let retained = clipboard.items.filter(\.isRetained)
             outgoing = Draft(
-              archive: .capture(services: services),
-              secrets: SettingsArchive.secrets(of: services))
+              archive: .capture(
+                services: services, clips: clipboard.items, groups: clipboard.groups,
+                words: transfer.history.search("", favoritesOnly: true, limit: 0)),
+              secrets: SettingsArchive.secrets(of: services),
+              skippedImages: retained.count { $0.kind == .image },
+              skippedFiles: retained.count { $0.kind == .file })
           }
           .sheet(item: $outgoing) {
-            ExportSheet(archive: $0.archive, secrets: $0.secrets, island: island).appAccent()
+            ExportSheet(
+              archive: $0.archive, secrets: $0.secrets, island: island,
+              skippedImages: $0.skippedImages, skippedFiles: $0.skippedFiles
+            )
+            .appAccent()
           }
           Button("导入…", action: chooseFile)
             .sheet(item: $incoming) {
@@ -56,13 +73,13 @@ struct TransferSection: View {
         }
         .disabled(isChoosing)
       } label: {
-        Text("全部设置")
-        Text("各页的设置、全局快捷键、翻译服务、网页搜索与快捷链接存成一个文件，换电脑或重装后导回来")
+        Text("设置与数据")
+        Text("设置、快捷键、翻译服务、网页搜索、片段和文字收藏、生词本存成一个文件，换电脑或重装后导回来")
       }
     } header: {
       Text("导出与导入")
     } footer: {
-      Text("历史记录、片段和收藏不在文件里；截图的存储文件夹、登录时打开和系统权限要在新电脑上重新设。")
+      Text("普通历史、图片和文件类的收藏不在文件里；截图的存储文件夹、登录时打开和系统权限要在新电脑上重新设。")
         .font(.caption).foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -101,7 +118,10 @@ struct ExportSheet: View {
   /// 这些服务在钥匙串里的密钥（账户名 → 值）
   let secrets: [String: String]
   let island: Island?
-  @State private var sections = Set(SettingsArchive.Section.allCases)
+  /// 不进文件的图片、文件类收藏各有几条
+  let skippedImages: Int
+  let skippedFiles: Int
+  @State private var sections: Set<SettingsArchive.Section>
   @State private var includesSecrets: Bool
   @State private var password = ""
   @State private var confirmation = ""
@@ -111,24 +131,41 @@ struct ExportSheet: View {
 
   /// includesSecrets：截图自检直接摆出勾了「包含密钥」的样子
   init(
-    archive: SettingsArchive, secrets: [String: String], island: Island?,
-    includesSecrets: Bool = false
+    archive: SettingsArchive, secrets: [String: String], island: Island?, skippedImages: Int = 0,
+    skippedFiles: Int = 0, includesSecrets: Bool = false
   ) {
     self.archive = archive
     self.secrets = secrets
     self.island = island
+    self.skippedImages = skippedImages
+    self.skippedFiles = skippedFiles
+    // 没有内容的那一类一开始就不勾（勾选框也停用）
+    _sections = State(
+      initialValue: Set(SettingsArchive.Section.allCases.filter { !Self.isEmpty($0, in: archive) }))
     _includesSecrets = State(initialValue: includesSecrets)
+  }
+
+  /// 片段与收藏、生词本可能一条都没有：没东西可导出
+  private static func isEmpty(_ section: SettingsArchive.Section, in archive: SettingsArchive)
+    -> Bool
+  {
+    switch section {
+    case .clips: (archive.clips ?? []).isEmpty && (archive.clipGroups ?? []).isEmpty
+    case .vocabulary: (archive.vocabulary ?? []).isEmpty
+    default: false
+    }
   }
 
   var body: some View {
     TransferForm(
-      symbol: "square.and.arrow.up", title: "导出设置", detail: "勾选要写进文件的内容。",
+      symbol: "square.and.arrow.up", title: "导出设置与数据", detail: "勾选要写进文件的内容。",
       action: "导出…", canAct: canExport, act: export
     ) {
       ForEach(SettingsArchive.Section.allCases) { section in
         Toggle(isOn: isSelected(section, in: $sections)) {
           TransferLabel(title: section.title, detail: detail(of: section))
         }
+        .disabled(Self.isEmpty(section, in: archive))
       }
       Divider()
       Toggle(isOn: $includesSecrets) {
@@ -184,6 +221,21 @@ struct ExportSheet: View {
       return count == 0 ? "都还是默认的组合" : "改过的 \(count) 个，其余是默认的组合"
     case .services: return "\(archive.translateServices?.count ?? 0) 个服务的名称、地址、模型和开关"
     case .engines: return "\(archive.searchEngines?.count ?? 0) 条"
+    case .clips:
+      let (count, groups) = (archive.clips?.count ?? 0, archive.clipGroups?.count ?? 0)
+      let kept =
+        count == 0 && groups == 0
+        ? "还没有片段或文字类的收藏"
+        : "\(count) 条文字" + (groups > 0 ? "、\(groups) 个收藏夹" : "") + "，原样写进文件（不加密、不带格式）"
+      let skipped = [
+        skippedImages > 0 ? "\(skippedImages) 张图片" : nil,
+        skippedFiles > 0 ? "\(skippedFiles) 个文件" : nil,
+      ].compactMap { $0 }
+      return skipped.isEmpty
+        ? kept : kept + "；另有 " + skipped.joined(separator: "、") + "类的收藏不在文件里"
+    case .vocabulary:
+      let count = archive.vocabulary?.count ?? 0
+      return count == 0 ? "还没有收藏的翻译" : "\(count) 条收藏的翻译，原样写进文件（不加密）"
     }
   }
 
@@ -204,6 +256,11 @@ struct ExportSheet: View {
       island?.show("导出失败", detail: error.localizedDescription, tone: .error)
       return
     }
+    // 导入时不肯全收的就别写出去（条数、大小超了；要有几千条收藏、上千万字才到得了）
+    if let problem = archive.exportProblem(encodedSize: data.count) {
+      island?.show("没有导出", detail: problem, tone: .error)
+      return
+    }
     let panel = NSSavePanel()
     panel.allowedContentTypes = [.json]
     panel.nameFieldStringValue = SettingsArchive.fileName()
@@ -214,7 +271,7 @@ struct ExportSheet: View {
       do {
         try data.write(to: url, options: .atomic)
         dismiss()
-        island?.show("已导出设置", detail: url.lastPathComponent, symbol: "square.and.arrow.up")
+        island?.show("已导出", detail: url.lastPathComponent, symbol: "square.and.arrow.up")
       } catch {
         island?.show("导出失败", detail: error.localizedDescription, tone: .error)
       }
@@ -242,7 +299,7 @@ struct ImportSheet: View {
 
   var body: some View {
     TransferForm(
-      symbol: "square.and.arrow.down", title: "导入设置",
+      symbol: "square.and.arrow.down", title: "导入设置与数据",
       detail: "Kitty Tools \(archive.version) 在 "
         + archive.exportedAt.formatted(date: .long, time: .shortened)
         + " 导出的文件。导入不能撤销。",
@@ -323,27 +380,49 @@ struct ImportSheet: View {
       "\(archive.translateServices?.count ?? 0) 个：已有的按文件更新，没有的加上；现在的服务不会删"
     case .engines:
       "\(archive.searchEngines?.count ?? 0) 条：已有的按文件更新，没有的加上；现在的不会删"
+    case .clips:
+      "\(archive.clips?.count ?? 0) 条文字：同样的文字不重复加，只补上收藏、片段和收藏夹；现在的不会删"
+    case .vocabulary:
+      "\(archive.vocabulary?.count ?? 0) 条：已有的不重复加；现在的不会删"
     }
   }
 
   /// 密码不对就停在表单上（这时什么都还没写）；导入完让运行中的东西跟上，刘海岛说导入了哪几类
   private func importSelected() {
-    let secrets: Int
+    let outcome: SettingsArchive.Outcome
     do {
-      secrets = try archive.install(sections, password: password, services: transfer.services)
+      outcome = try archive.install(
+        sections, password: password, services: transfer.services,
+        clipboard: transfer.clipboard, history: transfer.history)
     } catch {
       problem = (error as? SettingsArchive.Failure)?.message ?? error.localizedDescription
       return
     }
     let pruned = transfer.applied()
     dismiss()
-    var detail = archive.sections.filter(sections.contains).map(\.title).joined(separator: "、")
-    if secrets > 0 { detail += "，含密钥" }
-    // 清理每次都做（和复制时一样）；只有这次改了上限才归到导入头上说
-    if pruned > 0, sections.contains(.preferences) {
-      detail += "；按新上限清理了 \(pruned) 条剪贴板历史"
+    island?.show(
+      "已导入",
+      detail: Self.summary(
+        archive.sections.filter(sections.contains), outcome: outcome,
+        // 清理每次都做（和复制时一样）；只有这次改了上限才归到导入头上说
+        pruned: sections.contains(.preferences) ? pruned : 0),
+      symbol: "square.and.arrow.down")
+  }
+
+  /// 刘海岛的那一行（岛上的详情只有一行、280 pt，放得下约 22 个字）：导入了哪几类、带没带密钥，再说最要紧的一个数——
+  /// 按新上限清掉的历史，没有的话是新增的片段 / 收藏 / 生词。类别的名字连后面的话一共不超过 22 个字才列名字，否则说几类
+  static func summary(
+    _ sections: [SettingsArchive.Section], outcome: SettingsArchive.Outcome, pruned: Int
+  ) -> String {
+    var tail = outcome.secrets > 0 ? "，含密钥" : ""
+    let added = outcome.clipsAdded + outcome.wordsAdded
+    if pruned > 0 {
+      tail += "，清理了 \(pruned) 条历史"
+    } else if added > 0 {
+      tail += "，新增 \(added) 条"
     }
-    island?.show("已导入设置", detail: detail, symbol: "square.and.arrow.down")
+    let names = sections.map(\.title).joined(separator: "、")
+    return (names.count + tail.count <= 22 ? names : "\(sections.count) 类") + tail
   }
 }
 

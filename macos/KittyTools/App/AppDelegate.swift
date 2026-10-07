@@ -357,7 +357,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       case .general:
         AnyView(
           GeneralTab(
-            transfer: SettingsTransfer(services: serviceStore) { [unowned self] in
+            transfer: SettingsTransfer(
+              services: serviceStore, clipboard: clipboardStore, history: historyStore
+            ) { [unowned self] in
               settingsImported()
             }
           )

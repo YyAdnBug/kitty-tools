@@ -141,6 +141,33 @@ import Observation
     }
   }
 
+  /// 导入生词本（设置的导出 / 导入，SettingsArchive）：没有这条（同原文 + 同目标语言）就按原来的时间记一条收藏
+  /// （不晚于 now）；已有的只标成收藏，译文和时间不动。目标语言不认识的跳过。返回新增了几条
+  @discardableResult
+  func adoptFavorites(_ words: [SettingsArchive.Word], now: Date = .now) -> Int {
+    let before = counts.total
+    write {
+      try db.transaction {
+        for word in words {
+          let source = Self.stored(word.source)
+          guard !source.isEmpty, !word.result.isEmpty, let target = Lang(rawValue: word.target)
+          else { continue }
+          try db.execute(
+            """
+            INSERT INTO translations(id, source, target, result, service, created_at, favorite)
+            VALUES (?, ?, ?, ?, ?, ?, 1)
+            ON CONFLICT(source, target) DO UPDATE SET favorite = 1
+            """,
+            [
+              UUID().uuidString, source, target.rawValue, word.result, word.service,
+              min(word.createdAt, now).timeIntervalSinceReferenceDate,
+            ])
+        }
+      }
+    }
+    return counts.total - before
+  }
+
   /// 按「原文 + 目标语言」删一条（关着历史时取消收藏）
   func remove(source: String, target: Lang) {
     write {

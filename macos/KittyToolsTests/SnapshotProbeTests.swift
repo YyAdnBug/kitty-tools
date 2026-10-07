@@ -488,7 +488,10 @@ struct SnapshotProbeTests {
     let speaker = Speaker()
     let pages: (SettingsPage) -> AnyView = { page in
       switch page {
-      case .general: AnyView(GeneralTab(transfer: SettingsTransfer(services: services)))
+      case .general:
+        AnyView(
+          GeneralTab(
+            transfer: SettingsTransfer(services: services, clipboard: store, history: history)))
       case .clipboard: AnyView(ClipboardTab(store: store))
       case .launcher: AnyView(LauncherTab())
       case .screenshot: AnyView(ScreenshotTab())
@@ -585,8 +588,10 @@ struct SnapshotProbeTests {
     defer { permissionPrefs.removePersistentDomain(forName: permissionSuite) }
     for dark in [false, true] {
       try snapshot(
-        GeneralTab(transfer: SettingsTransfer(services: services))
-          .defaultAppStorage(permissionPrefs),
+        GeneralTab(
+          transfer: SettingsTransfer(services: services, clipboard: store, history: history)
+        )
+        .defaultAppStorage(permissionPrefs),
         size: NSSize(width: 640, height: 1200), dark: dark,
         to: "\(out)/settings-general-permissions\(dark ? "-dark" : "").png")
     }
@@ -1664,8 +1669,9 @@ struct SnapshotProbeTests {
           page: Updater.releasesPage)))
   }
 
-  /// 设置 › 通用「导出与导入」的两张表单（2026-10-07）：导出（默认、勾了「包含密钥」露出密码框）、导入（带密钥的文件，
-  /// 文件里的保留天数比本机短、新打开了退出时清空 → 橙字提醒）。设置、快捷键读临时偏好域，密钥是假的，不读钥匙串
+  /// 设置 › 通用「导出与导入」的两张表单（2026-10-07）：导出（默认、勾了「包含密钥」露出密码框、一条片段和生词都没有时
+  /// 那两类停用）、导入（带密钥的文件，文件里的保留天数比本机短、新打开了退出时清空 → 橙字提醒）。设置、快捷键读临时偏好域，
+  /// 片段、收藏、生词本在内存库里，密钥是假的，不读钥匙串
   private func renderTransfer(_ out: String) throws {
     let suite = "kitty-snapshot-\(UUID().uuidString)"
     let prefs = try #require(UserDefaults(suiteName: suite))
@@ -1687,26 +1693,59 @@ struct SnapshotProbeTests {
     ollama.name = "Ollama"
     ollama.baseURL = "http://127.0.0.1:11434/v1"
     let services = TranslateServiceStore(services: [.zhipu, deepseek, ollama, .builtin(.deepl)])
+    // 片段、收藏（一条在收藏夹里、一张图片不进文件）、生词本
+    let clipboard = try ClipboardStore(
+      db: Database(path: ":memory:"),
+      images: ImageStore(
+        directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)))
+    clipboard.saveSnippet("此致\n{date}")
+    var link = ClipItem(kind: .text)
+    link.text = "https://developer.apple.com/documentation"
+    link.favorite = true
+    clipboard.record(link)
+    clipboard.assign([link.id], to: try #require(clipboard.createGroup(named: "工作")).id)
+    var picture = ClipItem(kind: .image)
+    picture.image = .init(width: 4, height: 4, byteCount: 16, sha256: "snapshot-transfer")
+    picture.ocrText = ""
+    picture.favorite = true
+    clipboard.record(picture)
+    let history = try HistoryStore(db: Database(path: ":memory:"))
+    for (word, meaning) in [("serendipity", "意外发现美好事物的运气"), ("ephemeral", "短暂的")] {
+      history.setFavorite(source: word, target: .zhHans, result: meaning, service: "智谱", true)
+    }
+    let transfer = SettingsTransfer(services: services, clipboard: clipboard, history: history)
+    let moment = Date(timeIntervalSince1970: 1_760_000_000)
     var archive = SettingsArchive.capture(
-      from: prefs, domainName: suite, services: services.services, version: "0.3.2",
-      now: Date(timeIntervalSince1970: 1_760_000_000))
+      from: prefs, domainName: suite, services: services.services, clips: clipboard.items,
+      groups: clipboard.groups, words: history.search("", favoritesOnly: true, limit: 0),
+      version: "0.3.2", now: moment)
     let secrets = ["zhipu.apiKey": "假的", "ai:1a2b3c4d.apiKey": "假的"]
     for dark in [false, true] {
       let suffix = dark ? "-dark" : ""
       try snapshot(
-        ExportSheet(archive: archive, secrets: secrets, island: nil),
-        size: NSSize(width: 460, height: 400), dark: dark,
+        ExportSheet(archive: archive, secrets: secrets, island: nil, skippedImages: 1),
+        size: NSSize(width: 460, height: 540), dark: dark,
         to: "\(out)/settings-transfer-export\(suffix).png")
       try snapshot(
-        ExportSheet(archive: archive, secrets: secrets, island: nil, includesSecrets: true),
-        size: NSSize(width: 460, height: 500), dark: dark,
+        ExportSheet(
+          archive: archive, secrets: secrets, island: nil, skippedImages: 1,
+          includesSecrets: true),
+        size: NSSize(width: 460, height: 640), dark: dark,
         to: "\(out)/settings-transfer-export-secrets\(suffix).png")
     }
+    // 一条片段、收藏、生词都没有：那两类不勾、停用
+    try snapshot(
+      ExportSheet(
+        archive: .capture(
+          from: prefs, domainName: suite, services: services.services, version: "0.3.2",
+          now: moment), secrets: [:], island: nil),
+      size: NSSize(width: 460, height: 520), dark: false,
+      to: "\(out)/settings-transfer-export-empty.png")
     try archive.seal(secrets, password: "只在截图自检里用")
     for dark in [false, true] {
       try snapshot(
-        ImportSheet(archive: archive, transfer: SettingsTransfer(services: services), island: nil),
-        size: NSSize(width: 460, height: 640), dark: dark,
+        ImportSheet(archive: archive, transfer: transfer, island: nil),
+        size: NSSize(width: 460, height: 760), dark: dark,
         to: "\(out)/settings-transfer-import\(dark ? "-dark" : "").png")
     }
     // 自己填的地址多于 8 个：放进定高的框里滚（不省略），其中一个长得离谱的主机名掐头留尾
@@ -1721,7 +1760,7 @@ struct SnapshotProbeTests {
       return service
     }
     try snapshot(
-      ImportSheet(archive: many, transfer: SettingsTransfer(services: services), island: nil),
+      ImportSheet(archive: many, transfer: transfer, island: nil),
       size: NSSize(width: 460, height: 460), dark: false,
       to: "\(out)/settings-transfer-import-hosts.png")
   }

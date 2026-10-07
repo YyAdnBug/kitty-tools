@@ -53,7 +53,7 @@ alwaysApply: false
 
 ## 5.1 浮窗补强（M12，对标 Bob）
 - 浮窗快捷键只在 `TranslateCoordinator.handleKeyEquivalent`：只收纯 ⌘（和 ⌘⇧=），编辑键不拦；⌘D 收藏（**全 App 收藏统一 ⌘D，⌘S 在浮窗和历史里不再响应**，⌘S 只表示存储，体检 A31）、⌘Y 开 / 关历史、⌘, 打开设置（N6，和「⋯」菜单项的键位一致）；⌘W 由 `OverlayPanel` 统一处理（各浮层都认）。固定（⌘P / 图钉）只管失焦不收起，Esc、⌘W 固定着也关（体检 A9，2026-09-28；历史开着时 Esc 先关历史）；「第一个服务」的完成结果 `primaryResult` 是收藏、替换原文的唯一来源（和写历史、自动复制一致）。
-- 收藏存 translations 表（「原文 + 实际目标语言」唯一），`HistoryStore.stored` 统一去空白截断，收藏和 add 必须找同一条。
+- 收藏存 translations 表（「原文 + 实际目标语言」唯一），`HistoryStore.stored` 统一去空白截断，收藏和 add 必须找同一条。生词本可以跟着设置的导出文件走（2026-10-07，mac-native §2）：只导出收藏的；导入 `HistoryStore.adoptFavorites` 是合并——没有这条就按原来的时间记成收藏，已有的只标成收藏、译文和时间不动，目标语言不认识的跳过。
 - 复制出去的译文、原文、单词释义（卡片复制、⌘1–9、自动复制、「复制原文」、历史 ⌘C / 右键）和替换原文写进去的译文都是本 App 生成的新文字，一律 `Paster.write(string:record: true)` 同时记进剪贴板历史（mac-native §5，体检 A30）；卡片对勾停 `Style.copiedHold`（1.2 s）。焦点一直在原文框：⌘1–9 / 卡片复制播报「已复制译文」、⌘D / 星标播报「已收藏 / 已取消收藏」（`Island.announce`；自动复制不播）。
 - 替换原文 / 静默替换都是「收起 → `Paster.write` → `pasteToFrontmost`」，不激活本 App、不等待；粘之前核对前台还是取词时记下的 pid（`replaceSource` / 静默替换取词前记），对不上或自家浮层是 key 就只复制；译文用 `rewrap` 补回原选区的首尾空白。静默替换用 `translateOnce`（不动浮窗会话、不合并换行，再按热键取消；取词一返回先看是否已取消，免得「没有选中文字」「翻译中…」盖掉「已取消」，后者会挂到 60 s 兜底）。
 - 浮窗高度由视图量出来、`OverlayPanel.setContentHeight` 设（`TranslatePanelView.panelHeight`：随内容、最矮 220，平时最高到屏幕可见区的 85%；但结果卡不超过三张时全部放下、多于三张时至少放下前三张（量第三张卡的下沿，上面有词典卡时连它一起），这时最高到可见区减 24——2026-10-03 用户要求：三张写满的卡约 850 pt，85% 的上限差一点就多出外层滚动条；第四张起才在卡片区里滚）；lazy 建面板时用弱引用接 resize，别在初始化里回头访问 `translatePanel`。
