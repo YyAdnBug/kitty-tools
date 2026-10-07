@@ -20,11 +20,20 @@ struct HotKey: Codable, Hashable {
   /// 录制时从按键事件构造；没有 ⌘ / ⌃ / ⌥ 的组合（F1–F20 除外）不能当全局热键，会吞掉正常输入
   init?(event: NSEvent) {
     let key = HotKey(keyCode: event.keyCode, flags: event.modifierFlags)
-    let isFunctionKey = Self.functionKeys.keys.contains(Int(event.keyCode))
-    guard key.modifiers & UInt32(cmdKey | optionKey | controlKey) != 0 || isFunctionKey else {
-      return nil
-    }
+    guard key.hasGlobalModifier else { return nil }
     self = key
+  }
+
+  /// 带 ⌘ / ⌃ / ⌥，或者是 F1–F20：能当全局热键的最低要求（录制框、导入设置同一条）
+  var hasGlobalModifier: Bool {
+    modifiers & UInt32(cmdKey | optionKey | controlKey) != 0
+      || Self.functionKeys.keys.contains(Int(keyCode))
+  }
+
+  /// 文件里读进来的组合能不能用（导入设置，SettingsArchive）：键码、修饰键位都在范围里，录制框会拒绝的这里也拒绝
+  var isUsable: Bool {
+    keyCode < 128 && modifiers & ~UInt32(cmdKey | shiftKey | optionKey | controlKey) == 0
+      && hasGlobalModifier && !isReservedEditKey
   }
 
   /// 算不算一次「快捷键」（录屏「只显示快捷键」，InputOverlay）：带 ⌘ / ⌃ / ⌥ 的组合，或者不带它们的 F 键、Esc——这两样
@@ -201,13 +210,16 @@ enum HotKeyAction: String, CaseIterable {
   /// 没存过 → 默认组合；存了空数据 → 已清除（nil）
   var hotKey: HotKey? {
     get { resolve { UserDefaults.standard.data(forKey: $0.prefsKey) } }
-    nonmutating set {
-      let data = newValue.flatMap { try? JSONEncoder().encode($0) } ?? Data()
-      UserDefaults.standard.set(data, forKey: prefsKey)
-    }
+    nonmutating set { UserDefaults.standard.set(Self.stored(newValue), forKey: prefsKey) }
   }
 
-  private var prefsKey: String { "hotkey." + rawValue }
+  /// 偏好里的键（设置的导出 / 导入也读写它，SettingsArchive）
+  var prefsKey: String { "hotkey." + rawValue }
+
+  /// 偏好里存的数据：组合的 JSON；清除了 = 空数据
+  static func stored(_ hotKey: HotKey?) -> Data {
+    hotKey.flatMap { try? JSONEncoder().encode($0) } ?? Data()
+  }
 
   /// stored：各动作存的数据（nil = 没存过）。没存过取默认，但默认键已被别的动作自己设走时让给它、这个当没设：
   /// 改了默认键（A15 输入翻译 ⌘⇧I → ⌥T）以后，早先把 ⌥T 手动给了别的动作的人不该被新默认顶掉（抢先注册会让那个动作

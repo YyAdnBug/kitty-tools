@@ -354,7 +354,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     weak var created: SettingsWindow?
     let window = SettingsWindow(navigation: settingsNavigation) { [unowned self] page in
       switch page {
-      case .general: AnyView(GeneralTab())
+      case .general:
+        AnyView(
+          GeneralTab(
+            transfer: SettingsTransfer(services: serviceStore) { [unowned self] in
+              settingsImported()
+            }
+          )
+          .environment(island))
       case .clipboard: AnyView(ClipboardTab(store: clipboardStore).environment(island))
       case .launcher:
         AnyView(
@@ -386,6 +393,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     created = window
     return window
   }()
+
+  /// 导入设置（设置 › 通用）整批写完偏好之后，让运行中的东西跟上：各页自己改的时候有各自的 onChange，这里没人通知。
+  /// 别的设置都是用到时现读偏好，菜单栏图标自己看着偏好。返回按新上限清掉了几条剪贴板历史（导入的结果里说）
+  private func settingsImported() -> Int {
+    AppAppearance.apply()
+    Accent.shared.select(
+      AccentChoice(rawValue: UserDefaults.standard.string(forKey: Prefs.accent) ?? "") ?? .system,
+      persists: false)
+    // 正在录快捷键时热键停着，录完它自己会重新注册
+    if hotKeys.recording == nil { hotKeys.reload() }
+    clipboardStore.recognizePendingImages()
+    return clipboardStore.enforceLimits()
+  }
 
   // MARK: 生命周期
 

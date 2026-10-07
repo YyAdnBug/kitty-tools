@@ -1,4 +1,6 @@
 // 偏好键名与默认值的唯一出处（PLAN §4）。键名一经发布不改（改名会丢用户设置），新键一律 camelCase。
+// 设置的导出 / 导入（SettingsArchive）按 defaults 这张表知道有哪些设置、各是什么类型：注册了默认值的键都会跟着文件走；
+// 窗口位置、上次区域、「进行中」、授权状态这类每台机器各自的状态不要注册默认值。
 
 import Foundation
 
@@ -149,8 +151,11 @@ enum Prefs {
   /// 设置窗上次看的页（SettingsPage.rawValue）
   static let settingsPage = "settingsPage"
 
-  static func registerDefaults() {
-    UserDefaults.standard.register(defaults: [
+  static func registerDefaults() { UserDefaults.standard.register(defaults: defaults) }
+
+  /// 各项设置的默认值（registerDefaults 注册的就是它）
+  static var defaults: [String: Any] {
+    [
       appearance: AppAppearance.system.rawValue,
       accent: AccentChoice.system.rawValue,
       statusItemVisible: true,
@@ -201,7 +206,7 @@ enum Prefs {
       screenRecordShowsKeys: false,
       audioRecordSource: AudioRecorder.Source.microphone.rawValue,
       audioRecordStartsImmediately: false,
-    ])
+    ]
   }
 
   /// 旧偏好升级（启动时在 registerDefaults 之后跑，幂等）：

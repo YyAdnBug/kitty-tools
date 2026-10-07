@@ -151,13 +151,20 @@ nonisolated enum Google {
 }
 
 nonisolated enum DeepL {
+  /// 自建 DeepLX 的地址（没写协议的补 http://）；没填、不成网址是 nil。发请求和导入设置前列出主机
+  /// （SettingsArchive.customHosts）用同一个，免得列出来的和真正连的不是一个地方
+  static func deepLXURL(_ service: TranslateService) -> URL? {
+    guard let raw = service.baseURL?.trimmingCharacters(in: .whitespaces), !raw.isEmpty else {
+      return nil
+    }
+    return URL(string: raw.contains("://") ? raw : "http://" + raw)
+  }
+
   static func stream(_ request: TranslateRequest, service: TranslateService)
     -> AsyncThrowingStream<String, Error>
   {
     if service.usesDeepLX == true {
-      guard let raw = service.baseURL?.trimmingCharacters(in: .whitespaces), !raw.isEmpty,
-        let url = URL(string: raw.contains("://") ? raw : "http://" + raw)
-      else { return Signing.missing("DeepLX 地址") }
+      guard let url = deepLXURL(service) else { return Signing.missing("DeepLX 地址") }
       return Signing.oneShot {
         let json: [String: Any] = [
           "text": request.text, "source_lang": request.from.map(sourceCode) ?? "auto",

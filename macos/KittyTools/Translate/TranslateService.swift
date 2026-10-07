@@ -158,16 +158,19 @@ nonisolated struct TranslateService: Codable, Identifiable, Hashable, Sendable {
     }
   }
 
+  /// 一个字段在钥匙串里的账户名（设置的导出 / 导入也按它认，SettingsArchive）
+  func account(_ field: String) -> String { "\(id).\(field)" }
+
   /// 钥匙串里的值（去掉首尾空白，空串当没有）
   func secret(_ field: String = "apiKey") -> String? {
-    Keychain.get("\(id).\(field)").flatMap {
+    Keychain.get(account(field)).flatMap {
       let value = $0.trimmingCharacters(in: .whitespacesAndNewlines)
       return value.isEmpty ? nil : value
     }
   }
 
   func setSecret(_ value: String?, _ field: String = "apiKey") {
-    Keychain.set(value, for: "\(id).\(field)")
+    Keychain.set(value, for: account(field))
   }
 }
 

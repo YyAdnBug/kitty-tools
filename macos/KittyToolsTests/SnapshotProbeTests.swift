@@ -488,7 +488,7 @@ struct SnapshotProbeTests {
     let speaker = Speaker()
     let pages: (SettingsPage) -> AnyView = { page in
       switch page {
-      case .general: AnyView(GeneralTab())
+      case .general: AnyView(GeneralTab(transfer: SettingsTransfer(services: services)))
       case .clipboard: AnyView(ClipboardTab(store: store))
       case .launcher: AnyView(LauncherTab())
       case .screenshot: AnyView(ScreenshotTab())
@@ -579,15 +579,18 @@ struct SnapshotProbeTests {
           dark: dark, to: "\(out)/settings-general-menubar-\(name)\(dark ? "-dark" : "").png")
       }
     }
-    // 设置 › 通用拉长看到底的「权限」组（录屏第 4 批加了麦克风一行，状态是本机真实的授权）；临时偏好域
+    // 设置 › 通用拉长看到底的「权限」组（录屏第 4 批加了麦克风一行，状态是本机真实的授权）和最后的「导出与导入」；临时偏好域
     let permissionSuite = "kitty-snapshot-\(UUID().uuidString)"
     let permissionPrefs = try #require(UserDefaults(suiteName: permissionSuite))
     defer { permissionPrefs.removePersistentDomain(forName: permissionSuite) }
     for dark in [false, true] {
       try snapshot(
-        GeneralTab().defaultAppStorage(permissionPrefs), size: NSSize(width: 640, height: 1040),
-        dark: dark, to: "\(out)/settings-general-permissions\(dark ? "-dark" : "").png")
+        GeneralTab(transfer: SettingsTransfer(services: services))
+          .defaultAppStorage(permissionPrefs),
+        size: NSSize(width: 640, height: 1200), dark: dark,
+        to: "\(out)/settings-general-permissions\(dark ? "-dark" : "").png")
     }
+    try renderTransfer(out)
     // 菜单栏上的两种图标（浅色 / 深色菜单栏各一张，右边放大 5 倍）；彩色图的 @2x 位图另存原图
     for dark in [false, true] {
       try snapshot(
@@ -1659,6 +1662,68 @@ struct SnapshotProbeTests {
         .init(
           version: "0.4.0", archive: try #require(URL(string: "https://example.com/Kitty.zip")),
           page: Updater.releasesPage)))
+  }
+
+  /// 设置 › 通用「导出与导入」的两张表单（2026-10-07）：导出（默认、勾了「包含密钥」露出密码框）、导入（带密钥的文件，
+  /// 文件里的保留天数比本机短、新打开了退出时清空 → 橙字提醒）。设置、快捷键读临时偏好域，密钥是假的，不读钥匙串
+  private func renderTransfer(_ out: String) throws {
+    let suite = "kitty-snapshot-\(UUID().uuidString)"
+    let prefs = try #require(UserDefaults(suiteName: suite))
+    defer { prefs.removePersistentDomain(forName: suite) }
+    prefs.set(AppAppearance.dark.rawValue, forKey: Prefs.appearance)
+    prefs.set(1, forKey: Prefs.clipboardRetentionDays)
+    prefs.set(true, forKey: Prefs.clipboardClearOnQuit)
+    prefs.set(true, forKey: Prefs.translateCopyToTranslate)
+    prefs.set(
+      HotKeyAction.stored(HotKey(keyCode: kVK_ANSI_V, modifiers: cmdKey | shiftKey)),
+      forKey: HotKeyAction.clipboard.prefsKey)
+    prefs.set(HotKeyAction.stored(nil), forKey: HotKeyAction.recognizeText.prefsKey)
+    var deepseek = TranslateService.newAI()
+    deepseek.id = "ai:1a2b3c4d"
+    deepseek.name = "DeepSeek"
+    deepseek.baseURL = "https://api.deepseek.com/v1"
+    var ollama = TranslateService.newAI()
+    ollama.id = "ai:5e6f7a8b"
+    ollama.name = "Ollama"
+    ollama.baseURL = "http://127.0.0.1:11434/v1"
+    let services = TranslateServiceStore(services: [.zhipu, deepseek, ollama, .builtin(.deepl)])
+    var archive = SettingsArchive.capture(
+      from: prefs, domainName: suite, services: services.services, version: "0.3.2",
+      now: Date(timeIntervalSince1970: 1_760_000_000))
+    let secrets = ["zhipu.apiKey": "假的", "ai:1a2b3c4d.apiKey": "假的"]
+    for dark in [false, true] {
+      let suffix = dark ? "-dark" : ""
+      try snapshot(
+        ExportSheet(archive: archive, secrets: secrets, island: nil),
+        size: NSSize(width: 460, height: 400), dark: dark,
+        to: "\(out)/settings-transfer-export\(suffix).png")
+      try snapshot(
+        ExportSheet(archive: archive, secrets: secrets, island: nil, includesSecrets: true),
+        size: NSSize(width: 460, height: 500), dark: dark,
+        to: "\(out)/settings-transfer-export-secrets\(suffix).png")
+    }
+    try archive.seal(secrets, password: "只在截图自检里用")
+    for dark in [false, true] {
+      try snapshot(
+        ImportSheet(archive: archive, transfer: SettingsTransfer(services: services), island: nil),
+        size: NSSize(width: 460, height: 640), dark: dark,
+        to: "\(out)/settings-transfer-import\(dark ? "-dark" : "").png")
+    }
+    // 自己填的地址多于 8 个：放进定高的框里滚（不省略），其中一个长得离谱的主机名掐头留尾
+    var many = SettingsArchive(version: "0.3.2", exportedAt: archive.exportedAt)
+    many.translateServices = (0..<12).map { index in
+      var service = TranslateService.newAI()
+      service.name = "服务 \(index)"
+      service.baseURL =
+        index == 2
+        ? "https://" + String(repeating: "very-long-subdomain.", count: 6) + "example.com/v1"
+        : "https://api\(index).example.com/v1"
+      return service
+    }
+    try snapshot(
+      ImportSheet(archive: many, transfer: SettingsTransfer(services: services), island: nil),
+      size: NSSize(width: 460, height: 460), dark: false,
+      to: "\(out)/settings-transfer-import-hosts.png")
   }
 
   /// prepare：布局完、出图前对窗口内容做点手脚（比如 emphasizeTableRows）
