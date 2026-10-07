@@ -93,9 +93,14 @@ struct ActionMenu: View {
                 .frame(maxWidth: .infinity, minHeight: Self.rowHeight)
             }
             ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-              if index > 0, items[index - 1].section != item.section { separator }
-              row(item, isSelected: index == selection, checkable: checkable, hasIcons: hasIcons)
-                .id(item.id)
+              // 分节线和它下面那一行包成一个视图：分开放时 scrollTo 按这个 id 先找到的是打头的分节线，
+              // ↓ 选到一节的第一行只把线滚出来、行还在菜单外面（2026-10-07 用户报：⌘K 里选到「删除」却看不到）。
+              // 包起来后整行露出来；↑ 选到它时上面的分节线照旧一起露出来
+              VStack(spacing: 0) {
+                if index > 0, items[index - 1].section != item.section { separator }
+                row(item, isSelected: index == selection, checkable: checkable, hasIcons: hasIcons)
+              }
+              .id(item.id)
             }
           }
           // 左右内缩放在滚动区里面：滚动条贴着菜单右边，不压在行上。上下的内缩留在外面：

@@ -316,6 +316,75 @@ struct ClipboardPanelTests {
     #expect(ActionMenu.height(plain, maxRows: 8.5, header: true) + header <= row * 8.5)
   }
 
+  /// ↑↓ 选到哪一行，菜单就把那一行整行滚进来（2026-10-07 用户报：⌘K 里按 ↓ 到最后的「删除」，选中了却没滚出来）。
+  /// 照文本条目的 ⌘K 摆 4 + 2 + 5 + 1 行四节（8.5 行高放不下）：↓ 一路到底、↑ 一路到顶、再首尾各绕一次，每一步选中行
+  /// 都完整在滚动区里。出事的是每一节的第一行：它前面有一条分节线，往下选到它时以前只把分节线滚了出来。
+  /// 屏外窗口，不弹面板、不抢键盘
+  @Test func menuRevealsSelectedRow() throws {
+    let sections = [0, 0, 0, 0, 1, 1, 2, 2, 2, 2, 2, 3]
+    let items = sections.enumerated().map {
+      ActionMenu.Item(title: "动作 \($0.offset)", section: $0.element)
+    }
+    // 每一行的顶（滚动内容坐标）：行 28，分节线上下各 4 + 0.5
+    var tops: [CGFloat] = []
+    var y: CGFloat = 0
+    for (index, section) in sections.enumerated() {
+      if index > 0, sections[index - 1] != section { y += 8.5 }
+      tops.append(y)
+      y += ActionMenu.rowHeight
+    }
+    let menu = { (selection: Int) in
+      ActionMenu(items: items, selection: selection, maxRows: 8.5) { _ in }
+    }
+    let host = NSHostingView(rootView: menu(0))
+    let window = NSWindow(
+      contentRect: NSRect(x: -20000, y: -20000, width: ActionMenu.width, height: 300),
+      styleMask: [.borderless], backing: .buffered, defer: false)
+    window.contentView = host
+    window.orderFront(nil)
+    defer { window.orderOut(nil) }
+    let settle = { for _ in 0..<3 { RunLoop.main.run(until: .now.addingTimeInterval(0.1)) } }
+    settle()
+    func scrollViews(in view: NSView) -> [NSScrollView] {
+      ((view as? NSScrollView).map { [$0] } ?? []) + view.subviews.flatMap(scrollViews(in:))
+    }
+    let scroll = try #require(scrollViews(in: host).first)
+    let document = try #require(scroll.documentView)
+    #expect(scroll.documentVisibleRect.height == ActionMenu.height(items, maxRows: 8.5))
+    #expect(document.bounds.height == y)
+    /// 可见区在滚动内容里从上往下数的起止
+    func visible() -> ClosedRange<CGFloat> {
+      let rect = scroll.documentVisibleRect
+      return document.isFlipped
+        ? rect.minY...rect.maxY
+        : document.bounds.height - rect.maxY...document.bounds.height - rect.minY
+    }
+    func select(_ index: Int) {
+      host.rootView = menu(index)
+      let bottom = tops[index] + ActionMenu.rowHeight
+      var (shown, isShown) = (visible(), false)
+      // 滚动落在后面一拍：至少等两拍再看，没露全最多等到 0.3 s
+      for turn in 1...6 where !(isShown && turn > 2) {
+        RunLoop.main.run(until: .now.addingTimeInterval(0.05))
+        shown = visible()
+        isShown = shown.lowerBound <= tops[index] + 0.5 && bottom <= shown.upperBound + 0.5
+      }
+      #expect(isShown, "第 \(index) 行 \(tops[index])…\(bottom)，可见区 \(shown)")
+    }
+    for index in items.indices { select(index) }
+    for index in items.indices.reversed() { select(index) }
+    // 第一行按 ↑ 绕到最后一行、最后一行按 ↓ 绕回第一行
+    select(items.count - 1)
+    select(0)
+    // 从子列表回第一级：整张列表换回来的同一拍选中进去的那一行（第 7 行，不滚的话只露一半）
+    host.rootView = ActionMenu(
+      items: (0..<3).map { ActionMenu.Item(title: "收藏夹 \($0)") }, selection: 0,
+      header: "移到收藏夹", maxRows: 8.5
+    ) { _ in }
+    settle()
+    select(7)
+  }
+
   /// 钉到屏幕的位置（体检 D1）：像素 ÷ 屏幕倍率 = 点尺寸，放在可见区中央；超过可见区 80% 等比缩小；第 N 张往右下错开 24 pt
   @Test func pinFrame() {
     let visible = CGRect(x: 0, y: 40, width: 1440, height: 860)
