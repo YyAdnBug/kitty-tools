@@ -601,18 +601,20 @@ struct ClipboardPanelView: View {
         groupsButtonX = $0
       }
       .accessibilityAddTraits(model.palette == .groups ? .isSelected : [])
-      Button(action: { model.delete(ids) }) { hint("删除", key: "⌘⌫") }
+      Button(action: { model.delete(ids) }) { hint("删除", key: "⌘⌫", danger: true) }
       Button(action: { model.multiSelection = [] }) { hint("取消", key: "Esc") }
     }
   }
 
-  /// 「动词 键帽」；primary：↩ 是品牌粉实心键帽（主按钮）；leadingKey：键帽在前（按住修饰键时的替代动作）
-  private func hint(_ title: String, key: String, primary: Bool = false, leadingKey: Bool = false)
-    -> some View
-  {
+  /// 「动词 键帽」；primary：↩ 是品牌粉实心键帽（主按钮）；leadingKey：键帽在前（按住修饰键时的替代动作）；
+  /// danger：删除这类，动词用危险色（mac-whisker §3「危险色」）
+  private func hint(
+    _ title: String, key: String, primary: Bool = false, leadingKey: Bool = false,
+    danger: Bool = false
+  ) -> some View {
     HStack(spacing: 6) {
       if leadingKey { KeyCap(key) }
-      Text(title).foregroundStyle(.primary)
+      Text(title).foregroundStyle(danger ? AnyShapeStyle(Style.danger) : AnyShapeStyle(.primary))
       if !leadingKey {
         KeyCap(key, primary: primary)
       }

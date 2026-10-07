@@ -50,7 +50,7 @@ struct SearchEngineDetail: View {
             : "网址里有 {query}：搜索，输入「关键词 空格 内容」时内容替换进 {query}。")
       }
       Section {
-        Button(Self.isPreset(id) ? "删除" : "删除…", role: .destructive) {
+        DangerButton(Self.isPreset(id) ? "删除" : "删除…") {
           if Self.isPreset(id) { delete() } else { confirmsDelete = true }
         }
       }

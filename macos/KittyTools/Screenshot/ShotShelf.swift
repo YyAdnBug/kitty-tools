@@ -820,7 +820,9 @@ struct ShelfCardView: View {
         ForEach(Array(card.menu.enumerated()), id: \.offset) { index, section in
           if index > 0 { Divider() }
           ForEach(section, id: \.self) { command in
-            Button(command.title) { card.perform(command) }
+            Button(command.title, role: command == .trash ? .destructive : nil) {
+              card.perform(command)
+            }
           }
         }
       }

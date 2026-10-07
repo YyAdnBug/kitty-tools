@@ -906,7 +906,7 @@ struct TranslateBatch4Tests {
     #expect(items.map(\.title) == ["重新翻译", "复制译文", "复制原文", "收藏", "删除", "导出", "清空历史…"])
     #expect(items.map(\.shortcut) == ["↩", "⌘C", "⇧⌘C", "⌘D", "⌘⌫", nil, nil])
     #expect(items.map(\.section) == [0, 0, 0, 0, 0, 1, 1])
-    #expect(items[5].submenu?.count == 4 && items[4].isDestructive)
+    #expect(items[5].submenu?.count == 4 && items[4].isDestructive && items[6].isDestructive)
     #expect(coordinator.handleKeyEquivalent(try key(kVK_ANSI_K)))
     #expect(list.showsActions)
     list.actionSelection = 5

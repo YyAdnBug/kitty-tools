@@ -169,6 +169,16 @@ enum Style {
     return reduceTransparency
   }
 
+  /// 危险色（mac-whisker §3「危险色」，用户 2026-10-07：删除类按钮和删除的二次确认全 App 统一）：会删掉 / 清空用户的
+  /// 东西、放弃正在录的、不能撤销的操作（删除、清空、移到废纸篓、放弃录制、强制退出 / 结束、清倒废纸篓）和它们的二次确认
+  /// 都用它，不各写各的 systemRed / .red。就是系统的破坏性颜色（HIG：destructive 用 system red），跟着深浅色和
+  /// 「增强对比度」走。操作本身 = 文字和图标用它、底不变；等着再按一次的主按钮键帽用它填充（KeyCap 的 danger）。
+  /// 错误、录制中的红是别的语义（值一样、名字分开），不从这里取
+  static let danger = Color(nsColor: .systemRed)
+  /// 危险色填充上的符号：白；深色 + 增强对比度时系统红变浅（#FF6961，白色只剩 2.8:1），换 black 0.85
+  static let onDanger = dynamic(
+    light: .white, dark: .white, contrast: (.white, .black.withAlphaComponent(0.85)))
+
   /// 功能家族色：启动器种类色块、设置页头、菜单图标全 App 统一
   enum Family {
     static let clipboard = Color(nsColor: .systemBlue)
@@ -221,6 +231,8 @@ enum Style {
     static var strokeWidth: CGFloat { increaseContrast ? 1 : 0.5 }
     /// 外圈 0.5 pt black 0.5
     static let outerStroke = NSColor.black.withAlphaComponent(0.5)
+    /// 危险色（同 Style.danger）：放弃录制 / 录音上膛后的 ✕。HUD 永远深色，系统红按视图的外观取深色值
+    static let danger = NSColor.systemRed
     /// 文字三档：主 / 次 / 再次
     static let text = NSColor.white.withAlphaComponent(0.95)
     static let secondaryText = NSColor.white.withAlphaComponent(0.60)
@@ -313,10 +325,13 @@ struct KeyCap: View {
   let text: String
   /// 主按钮（底栏「粘贴 ↩」「打开 ↩」）：强调色实心 + 白色符号。只放符号：白字在品牌粉上约 3.2:1，只够非文本 3:1
   var isPrimary = false
+  /// 主按钮这一下是危险操作（启动器「确认清倒废纸篓 ↩」「强制退出 ↩」）：换危险色实心（mac-whisker §3「危险色」）
+  var isDanger = false
 
-  init(_ text: String, primary: Bool = false) {
+  init(_ text: String, primary: Bool = false, danger: Bool = false) {
     self.text = text
     isPrimary = primary
+    isDanger = danger
   }
 
   var body: some View {
@@ -325,10 +340,31 @@ struct KeyCap: View {
       .monospacedDigit()
       .padding(.horizontal, 5)
       .frame(minWidth: 20, minHeight: 18)
-      .foregroundStyle(isPrimary ? AnyShapeStyle(Style.onBrand) : AnyShapeStyle(.secondary))
+      .foregroundStyle(
+        isPrimary
+          ? AnyShapeStyle(isDanger ? Style.onDanger : Style.onBrand) : AnyShapeStyle(.secondary)
+      )
       .background(
-        isPrimary ? AnyShapeStyle(Style.brand) : AnyShapeStyle(Style.controlFill),
+        isPrimary
+          ? AnyShapeStyle(isDanger ? Style.danger : Style.brand) : AnyShapeStyle(Style.controlFill),
         in: .rect(cornerRadius: Style.Radius.mini, style: .continuous))
+  }
+}
+
+/// 危险操作的系统按钮（设置里的「删除…」「清空…」，mac-whisker §3「危险色」）：样子还是系统的带边框按钮，标题用
+/// 危险色。颜色要挂在标签的 Text 上：macOS 15 的带边框按钮不看 role，也不看挂在按钮外面的 foregroundStyle 和 tint
+/// （屏外实测标题都不变色）；role 照给——旁白和系统自己的样式靠它
+struct DangerButton: View {
+  let title: String
+  let action: () -> Void
+
+  init(_ title: String, action: @escaping () -> Void) {
+    self.title = title
+    self.action = action
+  }
+
+  var body: some View {
+    Button(role: .destructive, action: action) { Text(title).foregroundStyle(Style.danger) }
   }
 }
 

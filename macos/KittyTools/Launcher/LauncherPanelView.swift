@@ -278,12 +278,15 @@ struct LauncherPanelView: View {
       Spacer(minLength: 8)
       if let selected = model.selectedItem {
         let primary = model.primaryAction(for: selected).title
+        // 等着再按一次确认、强制退出：字和 ↩ 键帽换危险色（mac-whisker §3「危险色」）
+        let danger = model.isDangerous(selected, commandKey: false)
         Button {
           model.execute(selected)
         } label: {
           HStack(spacing: 6) {
             Text(primary)
-            KeyCap("↩", primary: true).accessibilityHidden(true)
+              .foregroundStyle(danger ? AnyShapeStyle(Style.danger) : AnyShapeStyle(.foreground))
+            KeyCap("↩", primary: true, danger: danger).accessibilityHidden(true)
           }
         }
         .accessibilityLabel(primary)
@@ -331,7 +334,7 @@ private struct LauncherRow: View {
   let index: Int
   let showsShortcut: Bool
   let isSelected: Bool
-  /// 不可撤销的系统命令等着再按一次：副标题（确认提示）用 systemRed，和 macOS 的破坏性按钮同色
+  /// 不可撤销的系统命令等着再按一次：副标题（确认提示）用危险色（Style.danger，和 macOS 的破坏性按钮同色）
   let isArmed: Bool
   /// 按住修饰键时的替代动作说明（只有选中行有）：换掉副标题，计算结果换掉算式
   let alternate: String?
@@ -374,7 +377,7 @@ private struct LauncherRow: View {
             .font(.system(size: 13))
             .foregroundStyle(
               isArmed
-                ? AnyShapeStyle(Color(nsColor: .systemRed))
+                ? AnyShapeStyle(Style.danger)
                 : alternate == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary)
             )
             .lineLimit(1)

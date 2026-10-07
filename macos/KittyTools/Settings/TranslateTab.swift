@@ -159,7 +159,7 @@ struct TranslateTab: View {
             Menu("导出…") { HistoryExportItems(history: history, island: island) }
               .fixedSize()
             // 关着「记录翻译历史」也能清（旧记录还在），和浮窗「⋯」菜单同一个确认框、同一句结果
-            Button("清空翻译历史…", role: .destructive) { confirmsClear = true }
+            DangerButton("清空翻译历史…") { confirmsClear = true }
           }
         }
       } header: {

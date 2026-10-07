@@ -28,7 +28,7 @@ struct ActionMenu: View {
     var section = 0
     /// 一级子列表（「移到收藏夹 ›」）：执行 = 进去，run 不用
     var submenu: [Item]?
-    /// 删除这类：右键菜单里是 .destructive 的按钮
+    /// 删除这类：图标和标题用危险色（mac-whisker §3「危险色」），右键菜单里是 .destructive 的按钮
     var isDestructive = false
     var run: () -> Void
 
@@ -177,7 +177,9 @@ struct ActionMenu: View {
   }
 
   private func row(_ item: Item, isSelected: Bool, checkable: Bool, hasIcons: Bool) -> some View {
-    Button {
+    // 危险的行只染图标和标题；说明和键位照旧（.foreground = 不改，别的行一个像素都不变）
+    let ink = item.isDestructive ? AnyShapeStyle(Style.danger) : AnyShapeStyle(.foreground)
+    return Button {
       onRun(item)
     } label: {
       HStack(spacing: 8) {
@@ -194,10 +196,11 @@ struct ActionMenu: View {
           Image(systemName: symbol)
             .font(.system(size: 12, weight: .medium))
             .frame(width: 16)
+            .foregroundStyle(ink)
         } else if hasIcons {
           Color.clear.frame(width: 16, height: 1)
         }
-        Text(item.title).lineLimit(1)
+        Text(item.title).lineLimit(1).foregroundStyle(ink)
         Spacer(minLength: 8)
         if let detail = item.detail {
           Text(detail)

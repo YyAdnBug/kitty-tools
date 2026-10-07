@@ -124,7 +124,7 @@ struct LauncherTab: View {
             + "拖动调整顺序，搜索的关键词重复时用靠前的；点一行编辑。")
       }
       Section {
-        Button("清空使用记录…", role: .destructive) { confirmsClear = true }
+        DangerButton("清空使用记录…") { confirmsClear = true }
       } header: {
         Text("使用记录")
       } footer: {

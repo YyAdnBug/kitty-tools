@@ -19,6 +19,7 @@ description: 原生分支的视觉与动效设计语言 Whisker（用户 2026-09
 - 七条曲线：instant / snap 0.16·0.15 / glide 0.26·0.10 / settle 0.24 / pop 0.32·0.25 / island 0.42·0.22 / retract 0.34，外加 ambient；bounce ≤ 0.25。
 - 先瞬时再动画：粘贴、连发、拖动、结果刷新 0 ms；粘贴路径无退场动画。
 - 强调色 = `Style.brand`（文字 `Style.brandInk`、填充上的符号 `Style.onBrand`，截图家族 `Style.Shot.accent` / `onAccent`），全 App 统一，取自 `Shell/Accent.swift`：默认跟随系统（系统「多色」= 品牌粉），设置 › 通用可换 8 色；不用 `Color.accentColor` / `controlAccentColor`、不写死品牌粉或白字；只给光标、焦点环、主按钮、当前工具、多选勾、生成中的光；列表选中用中性灰高亮、文字不反白，一块高亮滑动（不用 matchedGeometryEffect）；设置窗侧栏例外：选中自绘，窗口 key 时强调色填充 + `onBrand` 字、否则中性灰（原生高亮关掉，settings.mdc「设置」）；剪贴板的高亮就是透镜的底（按类型定高的常数）。浮起的菜单 / ⌘K 共用 `Shell/ActionMenu.swift`。
+- 危险色 = `Style.danger`（系统红，HUD 是 `Style.HUD.danger`）：删除、清空、移到废纸篓、放弃录制、强制退出 / 结束这类操作的图标和文字，和它们的二次确认（提示文字、主按钮键帽 `KeyCap(danger:)`）全 App 统一用它（用户 2026-10-07）；动作菜单给 `isDestructive`、设置里的系统按钮用 `DangerButton`，确认框和系统菜单只给 `role: .destructive`；不手写 systemRed / `.red`，报错和「录制中」的红是别的语义（rule §3「危险色」）。
 - 五个招牌时刻：截图咔嚓飞入（录屏飞最后一帧、录音从 HUD 飞波形，rule §5 S1）、刘海岛、译文生成（末尾光标 + 彗星边框；原来的「显影」在可选中的文字上显示不出来，已按用户的决定拿掉，rule §5 S3）、会呼吸的面板、窗口磁吸——改相关代码不能丢。
 - 循环动效（彗星边框、扫光这类 ambient）只动变换：渐变画一次，循环挂在 `rotationEffect` / `offset` 的隐式动画上，不逐帧改渐变参数、不用 `TimelineView` 驱动（逐帧重画渐变吃掉过 30% 以上的 CPU）；裁剪区里带 offset 的渐变先 `compositingGroup()` 再裁，不然带子不动（rule §8）。
 - 在 macOS 15 上就要完整，Liquid Glass 只在 `#available(macOS 26, *)` 里替换材质。

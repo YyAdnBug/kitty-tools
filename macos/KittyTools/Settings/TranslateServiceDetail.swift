@@ -75,7 +75,7 @@ struct TranslateServiceDetail: View {
       }
       if current.kind == .ai {
         Section {
-          Button("删除服务…", role: .destructive) { confirmsDelete = true }
+          DangerButton("删除服务…") { confirmsDelete = true }
         }
       }
     }

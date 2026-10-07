@@ -139,6 +139,10 @@ struct SystemCommandsTests {
     let target = try #require(model.selectedItem)
     #expect(model.primaryAction(for: target).title == "退出")
     #expect(model.commandReturnAction(for: target)?.title == "强制退出")
+    // 危险色：退出不算，⌘↩ 的强制退出算（⌘K 里那一行跟着标成危险）
+    #expect(!model.isDangerous(target, commandKey: false))
+    #expect(model.isDangerous(target, commandKey: true))
+    #expect(model.actions.map(\.isDestructive).prefix(2) == [false, true])
     #expect(model.copyTitle(for: target) == "复制路径")
     model.execute(target)
     #expect(performed == [.quit(notes.target)] && hides == 1)
@@ -159,13 +163,20 @@ struct SystemCommandsTests {
     model.query = "emptytrash"
     let trash = try #require(model.results.first)
     #expect(trash.target == "emptytrash")
+    // 没上膛：「运行」不是危险色；上了膛等着再按一次：↩（底栏主动作、⌘K 第一行）换危险色，⌘↩ 不相干
+    #expect(
+      !model.isDangerous(trash, commandKey: false) && model.actions.first?.isDestructive == false)
     model.execute(trash)
     #expect(performed.isEmpty && hides == 0 && model.isArmed(trash))
     #expect(model.alternateSubtitle(for: trash) == "再按 ↩ 清倒废纸篓，不能撤销")
     #expect(model.primaryAction(for: trash).title == "确认清倒废纸篓")
+    #expect(
+      model.isDangerous(trash, commandKey: false) && !model.isDangerous(trash, commandKey: true))
+    #expect(model.actions.first?.isDestructive == true)
     // Esc 先撤掉上膛，搜索词还在
     #expect(model.handleCommand(#selector(NSResponder.cancelOperation(_:))))
     #expect(model.query == "emptytrash" && !model.isArmed(trash))
+    #expect(!model.isDangerous(trash, commandKey: false))
     model.execute(trash)
     model.execute(trash)
     #expect(performed == [.command(.emptytrash)] && hides == 1)
@@ -184,6 +195,8 @@ struct SystemCommandsTests {
     #expect(performed.count == 2)
     #expect(model.alternateSubtitle(for: safari) == SystemCommands.forceQuitConfirmation(key: "↩"))
     model.query = "forcequit s"
+    // forcequit 里 ↩ 就是强制退出：没上膛也是危险色
+    #expect(model.isDangerous(try #require(model.results.first), commandKey: false))
     model.execute(try #require(model.results.first))
     #expect(performed.count == 2)
     model.execute(try #require(model.results.first))
@@ -192,7 +205,7 @@ struct SystemCommandsTests {
     model.query = "quit "
     model.selection = 0
     let force = try #require(model.actions.first { $0.shortcut == "⌘↩" })
-    #expect(force.title == "强制退出")
+    #expect(force.title == "强制退出" && force.isDestructive)
     force.run()
     #expect(performed.count == 3)
     #expect(model.actions.first { $0.shortcut == "⌘↩" }?.title == "确认强制退出")

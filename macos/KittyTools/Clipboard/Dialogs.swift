@@ -357,7 +357,7 @@ private struct ManageGroupsDialog: View {
         .buttonStyle(.plain)  // 按钮的标签里不继承外面的 .plain，会画成带底的按钮
         .labelStyle(.iconOnly)
         .font(.system(size: 11, weight: .semibold))
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Style.danger)
         .frame(width: 16, height: 16)
         .contentShape(.rect)
         .help("删除（⌘⌫）")

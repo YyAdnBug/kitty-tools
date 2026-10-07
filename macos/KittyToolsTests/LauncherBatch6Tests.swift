@@ -177,6 +177,9 @@ struct LauncherBatch6Tests {
     let node = try #require(model.selectedItem)
     #expect(model.primaryAction(for: node).title == "结束")
     #expect(model.commandReturnAction(for: node)?.title == "强制结束")
+    // 危险色：结束（SIGTERM）不算，强制结束算
+    #expect(
+      !model.isDangerous(node, commandKey: false) && model.isDangerous(node, commandKey: true))
     #expect(model.copyTitle(for: node) == nil && !model.canFavorite(node))
     model.execute(node)
     #expect(performed == [.signal(pid: 4321, name: "node", force: false)] && hides == 1)

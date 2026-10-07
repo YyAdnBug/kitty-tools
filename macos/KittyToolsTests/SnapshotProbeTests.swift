@@ -300,6 +300,20 @@ struct SnapshotProbeTests {
         model.visibleItems.last.map(model.select)
         RunLoop.main.run(until: .now.addingTimeInterval(0.8))
       }
+      // ⌘K 选到最后的「删除」（2026-10-07）：菜单画出来以后再选（选中变了才滚），整行滚进来（以前只滚出它上面的
+      // 分节线），图标和字是危险色
+      model.reset()
+      model.isRecordingPaused = false
+      model.showsActions = true
+      try snapshot(
+        ClipboardPanelView(model: model),
+        size: NSSize(
+          width: ClipboardPanelView.width, height: ClipboardPanelView.height(for: model)),
+        dark: dark, to: "\(out)/clip-actions-delete\(dark ? "-dark" : "").png"
+      ) { _ in
+        model.actionSelection = model.filteredActions.count - 1
+        RunLoop.main.run(until: .now.addingTimeInterval(0.3))
+      }
       // 有新版本（2026-10-06）：底栏条数后面常驻「更新到 x」
       model.reset()
       model.isRecordingPaused = false

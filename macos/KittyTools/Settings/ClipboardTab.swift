@@ -69,7 +69,7 @@ struct ClipboardTab: View {
         Toggle("不记录疑似密钥和银行卡号", isOn: $blockSensitive)
         Toggle("退出 App 时清空普通历史", isOn: $clearOnQuit)
         Toggle("锁屏时清空普通历史", isOn: $clearOnLock)
-        Button("立即清空普通历史…") { confirmClear = true }
+        DangerButton("立即清空普通历史…") { confirmClear = true }
       }
       Section {
         excludedList

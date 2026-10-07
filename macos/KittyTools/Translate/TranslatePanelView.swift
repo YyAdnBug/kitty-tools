@@ -515,7 +515,7 @@ private struct MoreMenu: View {
     Menu {
       Toggle("翻译历史", isOn: $coordinator.showsHistory)
         .keyboardShortcut("y")
-      Button("清空历史…") { coordinator.confirmsClearHistory = true }
+      Button("清空历史…", role: .destructive) { coordinator.confirmsClearHistory = true }
         .disabled(counts.total == counts.favorites)
       Menu("导出") { HistoryExportItems(history: history, island: island) }
         .disabled(counts.total == 0)

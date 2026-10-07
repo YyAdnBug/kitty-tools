@@ -748,6 +748,17 @@ import UniformTypeIdentifiers
 
   func isArmed(_ item: LauncherItem) -> Bool { armed?.id == item.id }
 
+  /// 这一行的 ↩（commandKey = false）/ ⌘↩（true）现在是不是危险操作（mac-whisker §3「危险色」）：等着再按一次确认的，
+  /// 和强制退出 / 强制结束本身（没存的内容会丢）。⌘K 里那一行、底栏主动作的字和 ↩ 键帽据此换危险色；
+  /// 哪个键是强制的照 primaryAction / commandReturnAction 的分法
+  func isDangerous(_ item: LauncherItem, commandKey: Bool) -> Bool {
+    if armed?.id == item.id, armed?.commandKey == commandKey { return true }
+    guard let verb = commandRequest?.verb else { return false }
+    guard commandKey else { return verb == .forcequit && item.kind == .app }
+    if verb == .kill { return item.kind == .process }
+    return item.kind == .app && verb != .forcequit && item.target != SystemCommands.finderPath
+  }
+
   /// 这次按键 / 点击是不是上一下的延续：键盘自动连发，或连击的第三下以后
   private static var isContinuation: Bool {
     if Style.isKeyRepeat { return true }
@@ -1379,12 +1390,16 @@ import UniformTypeIdentifiers
     }
     // 0 打开
     let primary = primaryAction(for: item)
-    add(primary.title, primary.symbol, "↩", section: 0) { [unowned self] in execute(item) }
+    add(
+      primary.title, primary.symbol, "↩", section: 0,
+      destructive: isDangerous(item, commandKey: false)
+    ) { [unowned self] in execute(item) }
     // 网址的 ⌘↩ 就是下面浏览器里的第一个
     if !isWebLink(item), let secondary = commandReturnAction(for: item) {
-      add(secondary.title, secondary.symbol, "⌘↩", section: 0) { [unowned self] in
-        commandReturn(item)
-      }
+      add(
+        secondary.title, secondary.symbol, "⌘↩", section: 0,
+        destructive: isDangerous(item, commandKey: true)
+      ) { [unowned self] in commandReturn(item) }
     }
     if isFile(item) {
       add("快速查看", "eye", "⌘Y", section: 0) { [unowned self] in quickLook(item) }

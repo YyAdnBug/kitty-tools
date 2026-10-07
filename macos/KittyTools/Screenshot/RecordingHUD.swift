@@ -418,7 +418,7 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
       }
     closeButton.setAccessibilityLabel(label)
     closeButton.toolTip = tip
-    closeButton.contentTintColor = armed ? .systemRed : Style.HUD.text
+    closeButton.contentTintColor = armed ? Style.HUD.danger : Style.HUD.text
   }
 
   // MARK: 点击
