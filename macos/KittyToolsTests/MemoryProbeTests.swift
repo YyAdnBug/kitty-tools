@@ -17,7 +17,8 @@
 // 量面板的图层另加 TEST_RUNNER_KITTY_MEMORY_PROBE_ONSCREEN=1（屏上模式，见第 4 个坑）。
 //
 // 四个坑（都是先量出对不上的数、再用临时实验查出来的，改探针前先看）：
-// 1. **缩略图要画出来才算**：ImageIO 的缩略图是懒解码的，取进缓存不画几乎不占内存；画过之后一张在缓存里占 2 份
+// 1. **缩略图要画出来才算**：ImageIO 的缩略图取进缓存不画，footprint 几乎不涨（像素其实已经在物理内存里，只是没计到
+//    本进程头上：2026-10-07 看全机的匿名页才发现，PLAN §10「常驻内存」链接预览那一条）；画过之后一张在缓存里占 2 份
 //    （CG raster data + CoreAnimation 各一份「宽 × 高 × 4」），窗口关了也不还，缓存放手才还。所以第 1 节用真的 ThumbnailView 画。
 // 2. **整个探针同步跑在主跑环的一个块里，不是 Swift 并发的任务**：测试是宿主 App 的事件循环里的一次长调用，事件循环不转，
 //    AppKit 的自动释放池永远不清——显示过的窗口被自动释放过很多次，放了手也永远不释放（真 App 里事件循环转一圈就清）。
@@ -144,7 +145,7 @@ private final class Probe {
   // MARK: - 1. 缩略图缓存
 
   /// 缩略图缓存（第 3 批起有上限）：行图标 ThumbnailView.icons 按张数封顶，透镜 + ⌘Y 大卡 ThumbnailView.previews 按 cost 封顶。
-  /// 先只取不画看一眼（懒解码：几乎不占），再用真的 ThumbnailView 在屏外窗口里画——72 档 12 张一起（像列表的行图标），
+  /// 先只取不画看一眼（没画过的不计入 footprint），再用真的 ThumbnailView 在屏外窗口里画——72 档 12 张一起（像列表的行图标），
   /// 720 / 2400 档一张一张轮着换（像透镜、⌘Y 大卡跟着 ↑↓ 换图）——关掉窗口看缓存里留多少；接着照 App 放掉大卡时做的
   /// 丢掉大卡档、调回收接口；再验两个上限是不是严格的（连看 30 张透镜、连出 360 个行图标，都比上限多）；最后清空
   private func thumbnails() throws {
@@ -173,7 +174,8 @@ private final class Probe {
     let loaded = Reading.now()
     report.row(
       "三档 × \(count) 张都取过一遍、一张没画", loaded,
-      note: "footprint 只变了 \(signed(loaded.footprint - idle.footprint))：缩略图到画的时候才解码")
+      note: "footprint 只变了 \(signed(loaded.footprint - idle.footprint))：没画过的不计入 footprint（像素已经在内存里）"
+    )
     Self.clearThumbnails()
     spin()
     report.step("清掉缓存")

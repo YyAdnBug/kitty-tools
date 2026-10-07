@@ -1,4 +1,5 @@
-import Foundation
+import AppKit
+import SwiftUI
 import Testing
 
 @testable import KittyTools
@@ -94,6 +95,85 @@ struct LinkPreviewTests {
     #expect(LinkPreview.host(ofLink: "sspai.com/post/1") == "sspai.com")
   }
 
+  /// 空闲回收（dropHeroes）：头图的缩略图丢掉、字节留着，标题这些不动；再显示时照字节重解（restoreHero，不联网）。
+  /// 没留字节的条目不丢（丢了回不来）
+  @Test func heroesDropWhenIdleAndComeBackFromBytes() async throws {
+    let bitmap = try #require(
+      NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: 40, pixelsHigh: 20, bitsPerSample: 8, samplesPerPixel: 4,
+        hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+      ))
+    let png = try #require(bitmap.representation(using: .png, properties: [:]))
+    let preview = LinkPreview()
+    let kept = try #require(URL(string: "https://example.com/a"))
+    let bare = try #require(URL(string: "https://example.com/b"))
+    var entry = LinkPreview.Entry()
+    entry.metadata.title = "标题"
+    entry.image = NSImage(size: NSSize(width: 1, height: 1))
+    entry.imageData = png
+    entry.isLoading = false
+    preview.store(entry, for: kept)
+    entry.imageData = nil
+    preview.store(entry, for: bare)
+    #expect(preview.entry(for: kept)?.isHeroDropped == false)
+
+    preview.dropHeroes()
+    #expect(
+      preview.entry(for: kept)?.image == nil && preview.entry(for: kept)?.isHeroDropped == true)
+    #expect(preview.entry(for: kept)?.metadata.title == "标题")
+    #expect(preview.entry(for: bare)?.image != nil)
+
+    await preview.restoreHero(for: kept)
+    let restored = try #require(preview.entry(for: kept)?.image)
+    #expect(restored.cgImage(forProposedRect: nil, context: nil, hints: nil)?.width == 40)
+    #expect(preview.entry(for: kept)?.isHeroDropped == false)
+    // 没丢的再来一次不换图
+    await preview.restoreHero(for: kept)
+    #expect(preview.entry(for: kept)?.image === restored)
+  }
+
+  /// 接线：还挂着的链接卡（收起的面板里第一条正好是链接时就是这样）被空闲回收丢了头图，自己照字节重解回来，
+  /// 不用等选中换一条。屏外窗口、临时偏好域；网址是本机的（isFetchable 不放行），卡片自己那条取预览的路不会联网
+  @Test func mountedCardRestoresItsDroppedHero() async throws {
+    let bitmap = try #require(
+      NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: 40, pixelsHigh: 20, bitsPerSample: 8, samplesPerPixel: 4,
+        hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+      ))
+    let url = try #require(URL(string: "http://localhost/hero-\(UUID().uuidString)"))
+    var entry = LinkPreview.Entry()
+    entry.image = NSImage(size: NSSize(width: 1, height: 1))
+    entry.imageData = bitmap.representation(using: .png, properties: [:])
+    entry.isLoading = false
+    LinkPreview.shared.store(entry, for: url)
+    let suite = "kitty-link-test-\(UUID().uuidString)"
+    let prefs = try #require(UserDefaults(suiteName: suite))
+    let window = NSWindow(
+      contentRect: NSRect(x: -20000, y: -20000, width: 400, height: 120),
+      styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = NSHostingView(
+      rootView: LinkCard(url: url, text: url.absoluteString, compact: true)
+        .defaultAppStorage(prefs))
+    window.orderFront(nil)
+    defer {
+      window.orderOut(nil)
+      prefs.removePersistentDomain(forName: suite)
+    }
+    // 先让卡片挂上（这时没什么要重解的），再丢
+    window.contentView?.layoutSubtreeIfNeeded()
+    try await Task.sleep(for: .milliseconds(100))
+    #expect(LinkPreview.shared.entry(for: url)?.image != nil)
+
+    LinkPreview.shared.dropHeroes()
+    #expect(LinkPreview.shared.entry(for: url)?.isHeroDropped == true)
+    // 按轮数等、不按时间：全量跑时别的测试会把主线程占上几秒，按时间算的期限会在视图有机会更新之前就到
+    for _ in 0..<200 where LinkPreview.shared.entry(for: url)?.image == nil {
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(LinkPreview.shared.entry(for: url)?.isHeroDropped == false)
+  }
+
   /// 联网冒烟（TEST_RUNNER_KITTY_LIVE_LINK=1 才跑）：真取 GitHub 仓库页的标题、头图（CDN 长哈希路径）和网站图标
   @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_LIVE_LINK"] != nil))
   func liveFetchesGitHub() async throws {
@@ -103,6 +183,8 @@ struct LinkPreviewTests {
     let entry = try #require(LinkPreview.shared.entry(for: url))
     #expect(entry.metadata.title?.localizedCaseInsensitiveContains("swift") == true)
     #expect(entry.image != nil && entry.icon != nil && !entry.isLoading, "\(elapsed)")
+    // 头图的字节留着（空闲回收之后照它重解）
+    #expect(entry.imageData?.isEmpty == false)
     print("GitHub 预览用时", elapsed)
   }
 }

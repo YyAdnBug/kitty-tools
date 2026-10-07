@@ -331,7 +331,7 @@ struct LinkCard: View {
     let entry = fetches ? LinkPreview.shared.entry(for: url) : nil
     let heroShape = RoundedRectangle(
       cornerRadius: compact ? Style.Radius.control : Style.Radius.card - 2, style: .continuous)
-    let hero = LinkHero(entry: entry)
+    let hero = LinkHero(url: url, entry: entry)
       .accessibilityHidden(true)  // 标题、网站名已经在旁边说清楚了
       .clipShape(heroShape)
       .overlay(heroShape.hairlineBorder())
@@ -400,11 +400,15 @@ struct LinkCard: View {
   }
 }
 
-/// 链接卡的头图区：头图铺满裁切；没有时渐变（网站图标的主色，没有就网址家族色）+ 44 pt 图标
+/// 链接卡的头图区：头图铺满裁切；没有时渐变（网站图标的主色，没有就网址家族色）+ 44 pt 图标。
+/// 头图被空闲回收丢了的（LinkPreview.dropHeroes）一显示就照留着的字节重解：不联网、不等停留，这一两帧是渐变 + 图标
 private struct LinkHero: View {
+  let url: URL
   let entry: LinkPreview.Entry?
 
   var body: some View {
+    // 要重解的那条的网址（没有 = 不用）：收起的面板里还挂着的卡被丢了头图、大卡跟着 ↑↓ 换了条目，都靠它变了重跑
+    let dropped = entry?.isHeroDropped == true ? url : nil
     let tint = entry?.tint.map { Color(nsColor: $0) }
     ZStack {
       LinearGradient(
@@ -430,6 +434,9 @@ private struct LinkHero: View {
       if entry?.isLoading == true {
         SweepHighlight().transition(.opacity)
       }
+    }
+    .task(id: dropped) {
+      if let dropped { await LinkPreview.shared.restoreHero(for: dropped) }
     }
   }
 }

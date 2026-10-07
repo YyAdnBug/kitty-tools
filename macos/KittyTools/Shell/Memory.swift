@@ -3,7 +3,7 @@
 // 东西之后调一次，空下来的页当场还。实测（内存探针）：⌘Y 大卡看过一张整屏截图、丢掉它的缩略图后，解码用的那 14 MB
 // 不调就一直留着，调了当场还；调用本身 0.3–4 ms。
 // 只在两种时候调：① 刚丢掉一大块、界面已经收走（剪贴板 ⌘Y 大卡放掉之后，AppDelegate.quickLookPanel）；
-// ② 空闲回收（AppDelegate.idleReclaim：面板都收起 idleDelay 之后，连透镜缓存一起清）。
+// ② 空闲回收（AppDelegate.idleReclaim：面板都收起 idleDelay 之后，连透镜缓存、链接预览的头图一起清）。
 // 截图、转 GIF 之后不调（实测它们自己还得干净，调了也还不出东西）；别在动画中间、每次收面板时调。
 
 import Foundation

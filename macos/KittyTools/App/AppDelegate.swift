@@ -98,9 +98,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private lazy var launcherModel = LauncherModel(usage: launcherUsage)
 
   /// 空闲回收（常驻内存，2026-10-07，PLAN §10）：三块主面板哪块收起、进程内识完一次字都重新计时，过了
-  /// Memory.idleDelay 还没有面板开着，就把闲着白占的还回去——透镜缓存（装满约 50 MB，再看到时重做）、识字模型
-  /// （约 50 MB，下次识字重新加载，慢 0.2–0.4 s；放它要 18–200 ms，在主线程外做）、分配器手里的空页（跑了三天的
-  /// 正式版估 20–34 MB；放在最后，前两样腾出来的页一起还）。到点时还有面板开着（固定着、正在用）或正在框选就再等一轮
+  /// Memory.idleDelay 还没有面板开着，就把闲着白占的还回去——透镜缓存（装满约 50 MB，再看到时重做）、链接预览的
+  /// 头图（12 条都看过约 70 MB；字节留着，再看到时重解，不联网）、识字模型（约 50 MB，下次识字重新加载，慢
+  /// 0.2–0.4 s；放它要 18–200 ms，在主线程外做）、分配器手里的空页（跑了三天的正式版估 20–34 MB；放在最后，
+  /// 前几样腾出来的页一起还）。到点时还有面板开着（固定着、正在用）或正在框选就再等一轮
   private lazy var idleReclaim = Memory.IdleTimer(
     after: Memory.idleDelay,
     isIdle: { [unowned self] in
@@ -110,6 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   private func reclaimIdleMemory() {
     ThumbnailView.dropPreviews()
+    LinkPreview.shared.dropHeroes()
     Task {
       await OCR.releaseModel()
       Memory.relieve()

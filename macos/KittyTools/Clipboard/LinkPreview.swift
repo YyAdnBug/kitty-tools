@@ -4,7 +4,8 @@
 // 再取头图（≤ 4 MB）和图标（≤ 512 KB）缩成缩略图（@concurrent）。选中停留 0.25 s 才开始取；开始了就取完
 // （同一条再选中时等它，不重开），网络错误不记、下次选中再试。网页请求 3 s 没动静就放弃。
 // 不取：非 http(s)、本机 / 内网 / 私有地址、带账号密码、像一次性令牌的网址（预取会把魔法登录、邮箱验证、退订链接用掉），
-// 跳转到这些地址也拦下；头图、图标这类子资源只拦前三种（CDN 的文件名常是长哈希，不是令牌）。结果缓存在内存（最多 12 条）。
+// 跳转到这些地址也拦下；头图、图标这类子资源只拦前三种（CDN 的文件名常是长哈希，不是令牌）。结果缓存在内存（最多 12 条）；
+// 头图另留着下载来的字节：面板都收起两分钟后把缩略图丢掉（dropHeroes，空闲回收），再显示时照字节重解，不再联网。
 // 翻译服务的官网图标（Translate/ServiceIcons，第 13 批）也经这里的 siteIcon 取，同一个下载器、同样的限制。
 
 import AppKit
@@ -24,6 +25,8 @@ nonisolated struct LinkMetadata: Equatable, Sendable {
   struct Entry {
     var metadata = LinkMetadata()
     var image: NSImage?
+    /// 头图下载来的字节（解得出来才留）：空闲回收丢掉 image 之后照它重解（restoreHero）
+    var imageData: Data?
     var icon: NSImage?
     /// 图标的主色（没有头图时占位渐变用）
     var tint: NSColor?
@@ -31,9 +34,14 @@ nonisolated struct LinkMetadata: Equatable, Sendable {
     var isLoading = true
     /// 跳转后还在同一个网站：只有这样网站图标才记到这个主机名下（短链接跳到别处时，角标不能冒充短链接的网站）
     var isSameSite = true
+
+    /// 头图被空闲回收丢了、字节还在：显示它的视图（LinkHero）看到就让 restoreHero 重解
+    var isHeroDropped: Bool { image == nil && imageData != nil }
   }
 
   static let shared = LinkPreview()
+  /// 头图缩略图的长边（像素）：⌘Y 大卡的头图区高 300 pt
+  private static let heroPixel = 1200
 
   private(set) var entries: [URL: Entry] = [:]
   /// 按主机名记的网站图标：列表行的链接角标用
@@ -83,14 +91,13 @@ nonisolated struct LinkMetadata: Equatable, Sendable {
     }
     store(entry, for: url)  // 标题先出来，图片接着取
     let (imageURL, iconURLs) = (entry.metadata.image, entry.metadata.icons)
-    async let image =
-      imageData != nil
-      ? Self.thumbnail(imageData!, maxPixel: 1200)
-      : fetchImage(
-        imageURL, limit: 4_000_000, maxPixel: 1200)
+    async let hero = imageData != nil ? imageData : download(imageURL, limit: 4_000_000)
     async let icon = fetchIcon(iconURLs)
-    let (loadedImage, loadedIcon) = await (image, icon)
-    entry.image = loadedImage.map { NSImage(cgImage: $0, size: .zero) }
+    let (heroData, loadedIcon) = await (hero, icon)
+    if let heroData, let image = await Self.thumbnail(heroData, maxPixel: Self.heroPixel) {
+      entry.image = NSImage(cgImage: image, size: .zero)
+      entry.imageData = heroData
+    }
     entry.icon = loadedIcon.map { NSImage(cgImage: $0, size: .zero) }
     entry.tint = entry.icon.flatMap(AppIcons.average)
     entry.isLoading = false
@@ -102,8 +109,28 @@ nonisolated struct LinkMetadata: Equatable, Sendable {
     order.removeAll { $0 == url }
   }
 
-  /// 最多留 12 条（头图缩略图长边 1200，约 3 MB 一张），多了丢最早的；同一网站的图标按主机名记下给列表行用
-  /// （截图自检也用它摆状态）
+  /// 空闲回收（AppDelegate.idleReclaim，面板都收起两分钟后）：头图的缩略图都丢掉，只留下载来的字节。缩略图一做好
+  /// 像素就在内存里（一份「宽 × 高 × 4」，长边 1200 约 3 MB；没画过时不计入本进程的 footprint，全机的匿名页实测涨了
+  /// 这么多），画过再多一份 CoreAnimation 的：12 条都看过约 70 MB，窗口收起也不还，放手才还。
+  /// 没留字节的不丢（丢了回不来；产品里有头图就有字节，只有截图自检摆的状态没有）。
+  /// ponytail: 字节一直留到条目被挤掉（常见一条几十到几百 KB，最多 12 条 × 4 MB）；嫌多就在这里按总量封顶，
+  /// 超出的整条 forget（下次选中重新取）
+  func dropHeroes() {
+    for (url, entry) in entries where entry.imageData != nil { entries[url]?.image = nil }
+  }
+
+  /// 被 dropHeroes 丢掉的头图照留着的字节重解一张（不联网；实测 JPEG 2–15 ms、要缩小的 PNG 20–44 ms，在主线程外）
+  func restoreHero(for url: URL) async {
+    guard let entry = entries[url], entry.isHeroDropped, let data = entry.imageData,
+      let image = await Self.thumbnail(data, maxPixel: Self.heroPixel),
+      // 解的这会儿条目可能被挤掉、重新取过、被另一个视图先解好了：还是丢了头图的那一条才放回去
+      entries[url]?.isHeroDropped == true
+    else { return }
+    entries[url]?.image = NSImage(cgImage: image, size: .zero)
+  }
+
+  /// 最多留 12 条（头图缩略图长边 1200，做好约 3 MB 一张、画过两份约 6 MB；空闲时丢掉，见 dropHeroes），多了丢最早的；
+  /// 同一网站的图标按主机名记下给列表行用（截图自检也用它摆状态）
   func store(_ entry: Entry, for url: URL) {
     if entries[url] == nil {
       order.append(url)
@@ -116,19 +143,23 @@ nonisolated struct LinkMetadata: Equatable, Sendable {
     }
   }
 
-  /// 头图 / 图标：只收图片、不超过 limit 字节，缩成长边 maxPixel 的缩略图
-  private func fetchImage(_ url: URL?, limit: Int, maxPixel: Int) async -> CGImage? {
+  /// 头图 / 图标的字节：只收图片、不超过 limit 字节
+  private func download(_ url: URL?, limit: Int) async -> Data? {
     guard let url, Self.isPublicHTTP(url),
       let result = try? await fetcher.get(url, as: .image(limit: limit)),
       (200..<300).contains(result.response.statusCode), !result.data.isEmpty
     else { return nil }
-    return await Self.thumbnail(result.data, maxPixel: maxPixel)
+    return result.data
   }
 
-  /// 图标候选依次试，最多两个
+  /// 图标候选依次试，最多两个；缩成长边 maxPixel 的缩略图
   private func fetchIcon(_ candidates: [URL], maxPixel: Int = 96) async -> CGImage? {
     for url in candidates.prefix(2) {
-      if let icon = await fetchImage(url, limit: 512_000, maxPixel: maxPixel) { return icon }
+      if let data = await download(url, limit: 512_000),
+        let icon = await Self.thumbnail(data, maxPixel: maxPixel)
+      {
+        return icon
+      }
     }
     return nil
   }
