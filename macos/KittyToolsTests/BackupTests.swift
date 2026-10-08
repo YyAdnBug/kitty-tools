@@ -1,5 +1,6 @@
 // 数据保险（Storage/Backup.swift，第二轮体检第 6 批）单测。
-// 备份：文件名和日期互转、每天一份留最近 3 份、同一天不重复备也不改已有的那份、库坏了（文件头写坏 / 截断 / 中间写坏）
+// 备份：文件名和日期互转、每天一份留最近 3 份（时钟调到过未来时备的不把今天这份顶掉）、同一天不重复备也不改已有的那份、
+// 库坏了（文件头写坏 / 截断 / 中间写坏）
 // 不备份也不动已有的备份、挑最近一份读得出来的；备份里只有用户留下的（收藏 / 片段 / 收藏夹里的条目、收藏夹、生词本、
 // 启动器收藏），普通历史一个字节都不在备份文件里，留哪些和 ClipItem.isRetained 是同一批；删行不成就不留半成品。
 // 打不开时：出问题的库连 -wal、-shm 挪进带时间的文件夹（不删、不覆盖）；用备份后留下的那些读得到、普通历史是空的；
@@ -205,6 +206,38 @@ struct BackupTests {
     stores.clipboard.record(later)
     #expect(await run(10, 5, 23) == .notDue)
     #expect(snapshot(of: Backup.folder(in: directory)) == before)
+  }
+
+  /// 系统时钟调到过未来时备的那几份（日期比今天还晚）不能把今天这份顶掉：只按日期留最新 3 份的话，今天这份刚备好就被删，
+  /// 之后每次都白备。刚备的不删；多出来的先删未来的（旧的先删），再删最旧的（Backup.expired）
+  @Test func copiesFromAClockAheadGoFirst() async throws {
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let stores = try AppDelegate.Stores(in: directory)
+    var kept = text("留下的")
+    kept.favorite = true
+    stores.clipboard.record(kept)
+    let names = { Backup.list(in: directory, calendar: calendar).map(\.url.lastPathComponent) }
+    // 时钟在 12 月的三天里各备了一份，再调回 10 月 5 日
+    for day in 1...3 { #expect(await run(12, day) == .made(backup(12, day))) }
+    #expect(await run(10, 5) == .made(backup(10, 5)))
+    #expect(!Backup.isDue(in: directory, now: at(10, 5, 23), calendar: calendar))
+    #expect(
+      names() == [
+        "kitty-2026-12-03.sqlite3", "kitty-2026-12-02.sqlite3", "kitty-2026-10-05.sqlite3",
+      ])
+    #expect(try clips(in: backup(10, 5)) == ["留下的"])
+    // 之后每天顶掉一份未来的，都没了才轮到正常的
+    #expect(await run(10, 6) == .made(backup(10, 6)))
+    #expect(
+      names() == [
+        "kitty-2026-12-03.sqlite3", "kitty-2026-10-06.sqlite3", "kitty-2026-10-05.sqlite3",
+      ])
+    #expect(await run(10, 7) == .made(backup(10, 7)))
+    #expect(await run(10, 8) == .made(backup(10, 8)))
+    #expect(
+      names() == [
+        "kitty-2026-10-08.sqlite3", "kitty-2026-10-07.sqlite3", "kitty-2026-10-06.sqlite3",
+      ])
   }
 
   /// 备份里只有用户留下的。普通剪贴板条目（正文、富文本、识别出的文字、备注、来源、文件路径）、没收藏的翻译、启动器的

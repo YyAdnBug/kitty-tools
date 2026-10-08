@@ -64,7 +64,8 @@ nonisolated enum Backup {
   }
 
   /// 已有的备份，新的在前（按文件名里的日期；别的文件不算）。
-  /// ponytail: 只认文件名。系统时钟调到过未来再调回来，那几份「未来的」会一直占着名额；要管就改成看文件的修改时间
+  /// ponytail: 只认文件名里的日期。系统时钟调到过未来时写下的那几份，轮换时先删（expired）；份数还没满时会留着，
+  /// 真到了那天会被当成「今天备过了」（内容是调时钟那天的）。要管就改成看文件的修改时间
   static func list(in directory: URL, calendar: Calendar = .current) -> [Copy] {
     let folder = folder(in: directory)
     let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
@@ -72,6 +73,18 @@ nonisolated enum Backup {
       day(of: name, calendar: calendar).map { Copy(url: folder.appending(path: name), day: $0) }
     }
     .sorted { $0.day > $1.day }
+  }
+
+  /// 轮换时该删哪几份（纯函数；设置与数据的每日备份 SettingsBackup 也用它）：连刚写的那份一共留 keep 份。
+  /// **刚写的那份（written）不删**——只按日期留最新的几份的话，系统时钟调到过未来时写下的那几份会一直排在最前面，
+  /// 刚写的反而当场被删掉，之后每次都白备；多出来的先删日期比现在还晚的（旧的先删），再删最旧的
+  static func expired(
+    _ copies: [(url: URL, date: Date)], keep: Int, written: URL, now: Date
+  ) -> [URL] {
+    let others = copies.filter { $0.url.path != written.path }.sorted { $0.date < $1.date }
+    let ahead = others.filter { $0.date > now }
+    let order = ahead + others.filter { $0.date <= now }
+    return order.prefix(max(others.count - max(keep - 1, 0), 0)).map(\.url)
   }
 
   /// 今天还没备过
@@ -111,8 +124,9 @@ nonisolated enum Backup {
       try database.copy(to: partial.path)
       try strip(partial)
       try manager.moveItem(at: partial, to: target)
-      for old in list(in: directory, calendar: calendar).dropFirst(keep) {
-        try? manager.removeItem(at: old.url)
+      let copies = list(in: directory, calendar: calendar).map { (url: $0.url, date: $0.day) }
+      for old in expired(copies, keep: keep, written: target, now: now) {
+        try? manager.removeItem(at: old)
       }
       return .made(target)
     } catch {
