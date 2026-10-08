@@ -162,6 +162,9 @@ nonisolated enum Recovery {
     let backup: Backup.Copy?
     /// 库文件不见了 / 是空的（没有东西可挪开留着，弹框里不说「数据还在里面」）
     var lost = false
+    /// backups/ 里有设置与数据的自动备份（SettingsBackup 每天那份 JSON）：片段、文字收藏和生词本在里面还有一份。
+    /// 选了重新开始它们跟着 backups/ 一起挪开、设置里「从备份恢复」是空的，弹框里说怎么用「导入…」导回来
+    var hasSettingsBackup = false
   }
 
   enum Failure: Error, Equatable, CustomStringConvertible {
@@ -189,7 +192,7 @@ nonisolated enum Recovery {
     in directory: URL, now: Date = .now, calendar: Calendar = .current, open: () throws -> T,
     ask: (Problem) -> Choice
   ) throws -> T {
-    let problem: Problem
+    var problem: Problem
     if let lost = lostDatabase(in: directory, calendar: calendar) {
       problem = lost
     } else {
@@ -200,6 +203,9 @@ nonisolated enum Recovery {
           reason: "\(error)", backup: Backup.latestUsable(in: directory, calendar: calendar))
       }
     }
+    problem.hasSettingsBackup = SettingsBackup.list(
+      in: Backup.folder(in: directory), calendar: calendar
+    ).contains { $0.kind == .daily }
     let choice = ask(problem)
     guard choice != .quit, choice != .restore || problem.backup != nil else { throw Failure.quit }
     do {
@@ -297,7 +303,9 @@ nonisolated enum Recovery {
   }
 
   /// 弹框的文字和按钮（纯函数，配单测）；按钮和 choices 一一对应，第一个是默认。
-  /// 备份里只有留下的东西（Backup.dropped），所以说清楚哪些回得来、哪些从空的开始
+  /// 备份里只有留下的东西（Backup.dropped），所以说清楚哪些回得来、哪些从空的开始。
+  /// 有设置与数据的自动备份时（problem.hasSettingsBackup）多一段：选了重新开始，片段、文字收藏和生词本怎么导回来
+  /// （2026-10-08 用户同意加：那些 JSON 跟着 backups/ 挪开了，设置里「从备份恢复」是空的，不说没人知道还有一份）
   static func wording(
     for problem: Problem, directory: URL, now: Date = .now, calendar: Calendar = .current
   ) -> (title: String, text: String, buttons: [String], choices: [Choice]) {
@@ -306,9 +314,15 @@ nonisolated enum Recovery {
     let fresh = "重新开始：全部从空的开始；现在的数据库文件、图片和备份一起挪开留着。"
     let kept = "挪开的文件不会删，在数据目录（\(place)）里一个「damaged-日期-时间」的文件夹里。设置和钥匙串里的密钥不受影响。"
     let reason = "原因：\(problem.reason)"
+    let note =
+      "选了重新开始，片段、文字收藏和生词本之后还能导回来：到 设置 › 通用 点「导入…」，选上面那个文件夹的 backups 里最新的「Kitty Tools 自动备份 日期.json」。"
+    // 说明文件留在哪的那一段后面接这一段（没有那种备份就没有这一段）
+    let tail = (problem.hasSettingsBackup ? [kept, note] : [kept]) + [reason]
     guard let backup = problem.backup else {
+      // 有那种备份时把话说准：没有的是数据库的备份
+      let none = problem.hasSettingsBackup ? "也没有可用的数据库备份。" : "也没有可用的备份。"
       return (
-        "数据打不开了", [head + "也没有可用的备份。", fresh, kept, reason].joined(separator: "\n\n"),
+        "数据打不开了", ([head + none, fresh] + tail).joined(separator: "\n\n"),
         ["重新开始", "退出"], [.startFresh, .quit]
       )
     }
@@ -318,7 +332,7 @@ nonisolated enum Recovery {
       + "会从空的开始。"
       + (problem.lost ? "" : "出问题的数据库和当时的图片都留在「damaged-日期-时间」文件夹里（全部数据还在里面）。")
     return (
-      "数据打不开了", [head, restore + "\n" + fresh, kept, reason].joined(separator: "\n\n"),
+      "数据打不开了", ([head, restore + "\n" + fresh] + tail).joined(separator: "\n\n"),
       ["用 \(day)的备份", "重新开始", "退出"], [.restore, .startFresh, .quit]
     )
   }

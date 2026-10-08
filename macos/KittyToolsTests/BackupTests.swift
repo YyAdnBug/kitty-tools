@@ -7,7 +7,7 @@
 // 没有备份时重新开始；重新开始把图片和旧备份一起挪开；选退出什么都不动；再开还失败只问一次、不循环；
 // 库文件不见了 / 成了空文件而备份还在也要问；好好的库和全新安装不问。
 // 用了备份之后：图片文件不在的条目不崩（缩略图 nil、粘贴内容为空），孤儿清理只删 images 里没人要的图。
-// 弹框的文字和按钮（纯函数）。
+// 弹框的文字和按钮（纯函数）；backups/ 里有设置与数据的自动备份（JSON）时弹框多一段，说重新开始之后怎么导回来。
 // 只用临时目录，不碰真实数据目录；日期都是传进去的固定值，不看墙上时钟。
 
 import AppKit
@@ -530,6 +530,7 @@ struct BackupTests {
       })
 
     #expect(asked.count == 1 && asked.first?.backup == nil)
+    #expect(asked.first?.hasSettingsBackup == false)
     #expect(stores.clipboard.items.isEmpty)
     #expect(stores.history.search("").isEmpty)
     #expect(stores.launcher.entries.isEmpty)
@@ -541,20 +542,52 @@ struct BackupTests {
         .isEmpty)
   }
 
-  /// 有备份却选了重新开始：旧备份跟着一起挪开（不会被新库的备份轮换掉），新的是空的
+  /// 有备份却选了重新开始：旧备份跟着一起挪开（不会被新库的备份轮换掉），新的是空的。backups/ 里设置与数据的自动备份
+  /// （JSON）也在挪开的那一整套里：问的时候告诉弹框有这么一份（好说重新开始之后怎么导回来），只有「导入前」那种不算
   @Test func startFreshSetsBackupsAsideToo() async throws {
     defer { try? FileManager.default.removeItem(at: directory) }
     try await seed(fill: 50)
+    let folder = Backup.folder(in: directory)
+    try SettingsBackup.store(
+      Data("{}".utf8), kind: .beforeImport, in: folder, creates: false, now: at(10, 1),
+      calendar: calendar)
     try damage(database, .header)
+    var asked: [Recovery.Problem] = []
+    let ask = { (problem: Recovery.Problem) -> Recovery.Choice in
+      asked.append(problem)
+      return .quit
+    }
+    #expect(throws: Recovery.Failure.quit) {
+      try Recovery.open(
+        in: directory, now: at(10, 2), calendar: calendar,
+        open: { try AppDelegate.Stores(in: directory) }, ask: ask)
+    }
+    #expect(asked.last?.hasSettingsBackup == false)
+    let json = try SettingsBackup.store(
+      Data("{}".utf8), kind: .daily, in: folder, creates: false, now: at(10, 1),
+      calendar: calendar)
     let before = snapshot(of: directory)
 
     let stores = try Recovery.open(
       in: directory, now: at(10, 2, 21, 30, 45), calendar: calendar,
-      open: { try AppDelegate.Stores(in: directory) }, ask: { _ in .startFresh })
+      open: { try AppDelegate.Stores(in: directory) },
+      ask: { problem in
+        asked.append(problem)
+        return .startFresh
+      })
 
+    #expect(asked.count == 2 && asked.last?.hasSettingsBackup == true)
+    #expect(asked.last?.backup != nil)
     #expect(stores.clipboard.items.isEmpty)
     #expect(Backup.list(in: directory, calendar: calendar).isEmpty)
     #expect(snapshot(of: directory.appending(path: "damaged-20261002-213045")) == before)
+    // 那份 JSON 在挪开的 backups 里（弹框说的就是去那里选），新的 backups/ 里没有
+    #expect(
+      FileManager.default.fileExists(
+        atPath: directory.appending(
+          path: "damaged-20261002-213045/backups/\(json.lastPathComponent)"
+        ).path))
+    #expect(SettingsBackup.list(in: folder, calendar: calendar).isEmpty)
     #expect(await run(10, 2) == .made(backup(10, 2)))
     #expect(Backup.list(in: directory, calendar: calendar).count == 1)
   }
@@ -770,5 +803,26 @@ struct BackupTests {
     #expect(without.text.contains("没有可用的备份"))
     #expect(!without.text.contains("用备份"))
     #expect(without.text.contains("原因：file is not a database"))
+
+    // backups/ 里有设置与数据的自动备份：多一段说重新开始之后怎么导回来，接在「挪开的文件在哪」后面、原因前面；
+    // 按钮不变。没有那种备份时一个字都不多
+    let note =
+      "选了重新开始，片段、文字收藏和生词本之后还能导回来：到 设置 › 通用 点「导入…」，选上面那个文件夹的 backups 里最新的「Kitty Tools 自动备份 日期.json」。"
+    #expect(!with.text.contains("导回来") && !lost.text.contains("导回来"))
+    #expect(!without.text.contains("导回来"))
+    let withText = Recovery.wording(
+      for: .init(reason: "database disk image is malformed", backup: copy, hasSettingsBackup: true),
+      directory: home, now: at(10, 2), calendar: calendar)
+    #expect(withText.buttons == with.buttons && withText.choices == with.choices)
+    #expect(
+      withText.text
+        == with.text.replacingOccurrences(of: "\n\n原因：", with: "\n\n\(note)\n\n原因："))
+    // 数据库没有备份、只有那种备份：别说成「没有可用的备份」
+    let onlyText = Recovery.wording(
+      for: .init(reason: "file is not a database", backup: nil, hasSettingsBackup: true),
+      directory: home, now: at(10, 2), calendar: calendar)
+    #expect(onlyText.buttons == ["重新开始", "退出"])
+    #expect(onlyText.text.contains("也没有可用的数据库备份。") && !onlyText.text.contains("也没有可用的备份。"))
+    #expect(onlyText.text.contains("不受影响。\n\n\(note)\n\n原因：file is not a database"))
   }
 }
