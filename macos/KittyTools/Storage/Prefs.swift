@@ -150,6 +150,20 @@ enum Prefs {
   static let updateNotifiedVersion = "updateNotifiedVersion"
   /// 设置窗上次看的页（SettingsPage.rawValue）
   static let settingsPage = "settingsPage"
+  /// 设置与数据的每日自动备份（Storage/SettingsBackup.swift，2026-10-08）。下面六个都是这台电脑自己的状态，**不注册默认值**：
+  /// 不跟着导出 / 导入走（别人给的文件不该能关掉备份、改备份存到哪）。
+  /// 开关：没存过 = 开——读它用 SettingsBackup.isEnabled 或 @AppStorage 的初值 true，别用 bool(forKey:)
+  nonisolated static let settingsBackupEnabled = "settingsBackupEnabled"
+  /// 每天那份另存一份到哪（用户选的文件夹的路径）；没选 = 只存在本机的数据目录里
+  nonisolated static let settingsBackupFolder = "settingsBackupFolder"
+  /// 那个文件夹在访达里的名字：选的那一刻取了存下。设置页显示它，不每次去问文件夹（它可能在卡住的网络盘上）
+  nonisolated static let settingsBackupFolderName = "settingsBackupFolderName"
+  /// 这台电脑的编号（4 位十六进制，SettingsBackup.installID 第一次要用时生成）：另存的文件夹里文件名带它
+  nonisolated static let settingsBackupID = "settingsBackupID"
+  /// 本机那份上次没备成的原因、哪一类太多没带（设置 › 通用「已有的备份」下面的橙字）；都成了就删掉这个键
+  nonisolated static let settingsBackupProblem = "settingsBackupProblem"
+  /// 另存的那份上次没存成的原因（「另存一份到」下面的橙字）；存成了、换了文件夹就删掉这个键
+  nonisolated static let settingsBackupFolderProblem = "settingsBackupFolderProblem"
 
   static func registerDefaults() { UserDefaults.standard.register(defaults: defaults) }
 

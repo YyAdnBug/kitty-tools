@@ -6,6 +6,10 @@
 // 会让历史保留得更少、隐私保护变弱时橙字先说 → 写偏好、合并两张列表、存密钥，再让运行中的东西跟上（applied）。
 // 结果用刘海岛说；读不出来的文件也用刘海岛说，不开表单。两个系统面板开着时，对应的按钮 / 表单先停用（不然面板还没关，
 // 表单上已经改了勾选，写出去的却是改之前的那份）。
+// 每天自动备份（2026-10-08，Storage/SettingsBackup.swift）：同一组里多三行——开关（默认开）、已有的备份 +「从备份恢复」
+// （菜单里列出有哪几份，选一份走同一张导入表单）、「另存一份到」（再选一个文件夹，每天那份也存过去）。导入前会先把现在的
+// 存一份（开着自动备份时）：导入改掉的设置和快捷键照它换得回去——导入加进来的服务、链接、片段、生词不会因此删掉，
+// 所以界面上只说「设置和快捷键能换回去」，不说「能撤销」。
 
 import AppKit
 import SwiftUI
@@ -20,6 +24,12 @@ struct SettingsTransfer {
   let history: HistoryStore
   /// 导入写完偏好之后让运行中的东西跟上（AppDelegate.settingsImported）；返回按新上限清掉了几条剪贴板历史
   var applied: () -> Int = { 0 }
+  /// 自动备份放在哪（数据目录的 backups/）；nil = 没接自动备份，那几行不显示（截图自检的大多数状态）
+  var backupFolder: URL?
+  /// 导入动手之前把现在的存一份（开着自动备份时才存，AppDelegate.snapshotBeforeImport）；存不成就抛原因，导入不做
+  var snapshot: () throws -> Void = {}
+  /// 现在就看一眼要不要备份：刚打开开关、刚选了另存的文件夹（AppDelegate.backupSettingsIfDue；今天已有的不重写）
+  var backupNow: () async -> Void = {}
 }
 
 /// 通用页最后一组：说明 +「导出…」「导入…」
@@ -32,11 +42,18 @@ struct TransferSection: View {
   @State private var incoming: Draft?
   /// 打开面板开着：两个按钮先停用（不出第二个面板）
   @State private var isChoosing = false
+  /// 每天自动备份（默认开）、本机那份上次没备成的原因：都不注册默认值（Prefs），初值写在这里
+  @AppStorage(Prefs.settingsBackupEnabled) private var backsUp = true
+  @AppStorage(Prefs.settingsBackupProblem) private var backupProblem: String?
+  /// 已有的备份（新的在前）：出现时、窗口回到前面时、写了新的一份（SettingsBackup.changed）重新列
+  @State private var copies: [SettingsBackup.Copy] = []
 
   /// 一张表单要的东西。用 sheet(item:)：收起的动画期间内容还在（isPresented + 可选值的写法，一收起内容就先空了）
   private struct Draft: Identifiable {
     let id = UUID()
     let archive: SettingsArchive
+    /// 导入：从哪份备份来的（「10 月 7 日（昨天）的自动备份」）；nil = 用户自己选的文件
+    var origin: String?
     /// 导出：这些服务在钥匙串里的密钥（账户名 → 值）
     var secrets: [String: String] = [:]
     /// 导出：不进文件的图片、文件类收藏各有几条（表单里说一声）
@@ -68,7 +85,10 @@ struct TransferSection: View {
           }
           Button("导入…", action: chooseFile)
             .sheet(item: $incoming) {
-              ImportSheet(archive: $0.archive, transfer: transfer, island: island).appAccent()
+              ImportSheet(
+                archive: $0.archive, transfer: transfer, island: island, origin: $0.origin
+              )
+              .appAccent()
             }
         }
         .disabled(isChoosing)
@@ -76,12 +96,68 @@ struct TransferSection: View {
         Text("设置与数据")
         Text("设置、快捷键、翻译服务、网页搜索、片段和文字收藏、生词本存成一个文件，换电脑或重装后导回来")
       }
+      if transfer.backupFolder != nil { backupRows }
     } header: {
       Text("导出与导入")
     } footer: {
       Text("普通历史、图片和文件类的收藏不在文件里；截图的存储文件夹、登录时打开和系统权限要在新电脑上重新设。")
         .font(.caption).foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .onAppear(perform: reload)
+    .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) {
+      _ in reload()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: SettingsBackup.changed)) { _ in reload() }
+  }
+
+  /// 每天自动备份的三行：开关、已有的备份 +「从备份恢复」、另存一份到（关着时不显示）
+  @ViewBuilder private var backupRows: some View {
+    Toggle(isOn: $backsUp) {
+      Text("每天自动备份")
+      Text(
+        "上面这些每天自动存一份在这台 Mac 上，留最近 \(SettingsBackup.keepDaily) 份；导入前也会先存一份，设置和快捷键导错了能换回去。不含密钥"
+      )
+    }
+    .onChange(of: backsUp) { _, isOn in if isOn { backupNow() } }
+    LabeledContent {
+      // 选一份走导入表单：设置、快捷键整类换回那天的样子，片段、收藏、生词只把没有的加回来
+      Menu("从备份恢复") {
+        ForEach(copies) { copy in
+          Button(SettingsBackup.title(of: copy)) { restore(copy) }
+        }
+      }
+      .fixedSize()
+      .disabled(copies.isEmpty || isChoosing)
+    } label: {
+      Text("已有的备份")
+      Text(SettingsBackup.summary(of: copies))
+      if backsUp, let backupProblem {
+        Text(backupProblem).foregroundStyle(Color(nsColor: .systemOrange))
+      }
+    }
+    if backsUp { BackupFolderRow(chosen: backupNow) }
+  }
+
+  private func reload() {
+    copies = transfer.backupFolder.map { SettingsBackup.list(in: $0) } ?? []
+  }
+
+  /// 现在就备份一次（今天已有的不重写）；写了新的会发 SettingsBackup.changed，上面接到了重新列
+  private func backupNow() {
+    Task { await transfer.backupNow() }
+  }
+
+  /// 从一份备份恢复 = 读出来、开导入表单；读不出来的用刘海岛说
+  private func restore(_ copy: SettingsBackup.Copy) {
+    do {
+      let archive = try SettingsArchive.read(contentsOf: copy.url)
+      incoming = Draft(archive: archive, origin: SettingsBackup.source(of: copy))
+    } catch {
+      island?.show(
+        "没有恢复",
+        detail: (error as? SettingsArchive.Failure)?.message ?? error.localizedDescription,
+        tone: .error)
     }
   }
 
@@ -288,22 +364,41 @@ struct ImportSheet: View {
   @State private var password = ""
   /// 密码不对这类：写在密码框下面，表单不收
   @State private var problem: String?
+  /// 导入前的自动备份没存成：写在最下面，表单不收（这时什么都还没写）
+  @State private var failure: String?
+  /// 开着自动备份：导入前会先把现在的存一份（Prefs 里不注册默认值，初值写在这里）
+  @AppStorage(Prefs.settingsBackupEnabled) private var backsUp = true
+  /// 从哪份备份恢复（「10 月 7 日（昨天）的自动备份」）；nil = 用户自己选的文件
+  let origin: String?
   @Environment(\.dismiss) private var dismiss
 
-  init(archive: SettingsArchive, transfer: SettingsTransfer, island: Island?) {
+  init(
+    archive: SettingsArchive, transfer: SettingsTransfer, island: Island?, origin: String? = nil
+  ) {
     self.archive = archive
     self.transfer = transfer
     self.island = island
+    self.origin = origin
     _sections = State(initialValue: Set(archive.sections))
+  }
+
+  /// 页头那句话：文件是哪来的 + 不能撤销；开着自动备份时再说动手前会存一份、它能把什么换回去
+  /// （只有设置和快捷键：两张列表和数据是合并进来的，照备份再导一遍也不会把加进来的删掉）
+  private var headline: String {
+    let source =
+      origin.map { "\($0)（Kitty Tools \(archive.version)）。" }
+      ?? ("Kitty Tools \(archive.version) 在 "
+        + archive.exportedAt.formatted(date: .long, time: .shortened) + " 导出的文件。")
+    return source
+      + (transfer.backupFolder != nil && backsUp
+        ? "\(verb)不能撤销；动手之前会先把现在的存一份，设置和快捷键可以用「从备份恢复」换回去。" : "\(verb)不能撤销。")
   }
 
   var body: some View {
     TransferForm(
-      symbol: "square.and.arrow.down", title: "导入设置与数据",
-      detail: "Kitty Tools \(archive.version) 在 "
-        + archive.exportedAt.formatted(date: .long, time: .shortened)
-        + " 导出的文件。导入不能撤销。",
-      action: "导入", canAct: !sections.isEmpty, act: importSelected
+      symbol: origin == nil ? "square.and.arrow.down" : "clock.arrow.circlepath",
+      title: origin == nil ? "导入设置与数据" : "从备份恢复", detail: headline,
+      action: origin == nil ? "导入" : "恢复", canAct: !sections.isEmpty, act: importSelected
     ) {
       ForEach(archive.sections) { section in
         Toggle(isOn: isSelected(section, in: $sections)) {
@@ -327,25 +422,36 @@ struct ImportSheet: View {
         }
       }
       if sections.contains(.preferences), archive.keepsLessHistory() {
-        Text("导入后历史会保留得比现在少（保留时间、图片上限、翻译历史条数变小，或者退出、锁屏时清空），超出的普通历史会被清理；收藏和片段不动。")
+        Text("\(verb)后历史会保留得比现在少（保留时间、图片上限、翻译历史条数变小，或者退出、锁屏时清空），超出的普通历史会被清理；收藏和片段不动。")
           .font(.caption)
           .foregroundStyle(Color(nsColor: .systemOrange))
           .fixedSize(horizontal: false, vertical: true)
       }
       if sections.contains(.preferences), !privacyLosses.isEmpty {
-        Text("导入后隐私保护会比现在弱：" + privacyLosses.joined(separator: "；") + "。")
+        Text("\(verb)后隐私保护会比现在弱：" + privacyLosses.joined(separator: "；") + "。")
           .font(.caption)
           .foregroundStyle(Color(nsColor: .systemOrange))
           .fixedSize(horizontal: false, vertical: true)
       }
-      Text("只导入自己导出的、或信得过的人给的文件：设置会照文件改；翻译服务和网页搜索的地址也照文件里的，要翻译的文字、密钥和搜索的内容会发到那里；快捷链接能打开任意网址和文件。")
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
+      // 自己的备份不用提醒「信不信得过」
+      if origin == nil {
+        Text("只导入自己导出的、或信得过的人给的文件：设置会照文件改；翻译服务和网页搜索的地址也照文件里的，要翻译的文字、密钥和搜索的内容会发到那里；快捷链接能打开任意网址和文件。")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      if let failure {
+        Text(failure)
+          .font(.caption)
+          .foregroundStyle(Color(nsColor: .systemOrange))
+          .fixedSize(horizontal: false, vertical: true)
+      }
     }
   }
 
   private var privacyLosses: [String] { archive.privacyLosses() }
+  /// 这张表单是在导入还是在从备份恢复
+  private var verb: String { origin == nil ? "导入" : "恢复" }
 
   /// 「翻译服务」下面：文件里的服务会连到的自己填的地址，一行一个（太长的掐头留尾：要看的是结尾的域名）；
   /// 多于 8 个放进定高的框里滚，不省略——省略了，藏在后面的那个就没人看得到
@@ -390,10 +496,16 @@ struct ImportSheet: View {
   /// 密码不对就停在表单上（这时什么都还没写）；导入完让运行中的东西跟上，刘海岛说导入了哪几类
   private func importSelected() {
     let outcome: SettingsArchive.Outcome
+    failure = nil
     do {
+      // 密码对了、动手之前先把现在的存一份（开着自动备份时）
       outcome = try archive.install(
         sections, password: password, services: transfer.services,
-        clipboard: transfer.clipboard, history: transfer.history)
+        clipboard: transfer.clipboard, history: transfer.history,
+        beforeWriting: transfer.snapshot)
+    } catch SettingsArchive.Failure.backupFailed(let reason) {
+      failure = SettingsArchive.Failure.backupFailed(reason).message
+      return
     } catch {
       problem = (error as? SettingsArchive.Failure)?.message ?? error.localizedDescription
       return
@@ -401,7 +513,7 @@ struct ImportSheet: View {
     let pruned = transfer.applied()
     dismiss()
     island?.show(
-      "已导入",
+      origin == nil ? "已导入" : "已恢复",
       detail: Self.summary(
         archive.sections.filter(sections.contains), outcome: outcome,
         // 清理每次都做（和复制时一样）；只有这次改了上限才归到导入头上说
@@ -423,6 +535,79 @@ struct ImportSheet: View {
     }
     let names = sections.map(\.title).joined(separator: "、")
     return (names.count + tail.count <= 22 ? names : "\(sections.count) 类") + tail
+  }
+}
+
+/// 「另存一份到」：每天那份多存一份到用户选的文件夹（云盘、移动硬盘——本机那份防不住硬盘坏和换电脑）。没选时只有「选择…」；
+/// 选了显示它在访达里的名字（悬停看完整路径）+「不再另存」（已经存过去的文件不动）+「更改…」；没存成的原因橙字写在说明下面。
+/// **这一行不去碰那个文件夹**（它可能在卡住的网络盘上，在主线程上问一句名字、要一个图标就能把设置窗卡住）：名字是选的那一刻
+/// 取了存下的，图标用符号——所以和截图页「快速保存到」那一行（文件夹在本机，现问现取）长得不完全一样
+private struct BackupFolderRow: View {
+  /// 选好之后现在就存一份过去：行不行当场看得到（没存成就是下面的橙字）
+  let chosen: () -> Void
+  @AppStorage(Prefs.settingsBackupFolder) private var path: String?
+  @AppStorage(Prefs.settingsBackupFolderName) private var name: String?
+  @AppStorage(Prefs.settingsBackupFolderProblem) private var problem: String?
+  /// 这台电脑的编号（那边的文件名末尾带它）：第一次往另选的文件夹存时才生成，之前是 nil
+  @AppStorage(Prefs.settingsBackupID) private var installID: String?
+
+  var body: some View {
+    LabeledContent {
+      HStack(spacing: 8) {
+        if let path {
+          Label(name ?? (path as NSString).lastPathComponent, systemImage: "folder")
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .foregroundStyle(.secondary)
+            .help((path as NSString).abbreviatingWithTildeInPath)
+          Button("不再另存") { pick(nil) }
+            .buttonStyle(.plain)
+            .foregroundStyle(Style.brandInk)
+            .pointerStyle(.link)
+            .help("已经存过去的文件不会删")
+        }
+        Button(path == nil ? "选择…" : "更改…", action: choose)
+      }
+    } label: {
+      Text("另存一份到")
+      Text(detail)
+      if let problem {
+        Text("今天那份没存过去：\(problem)").foregroundStyle(Color(nsColor: .systemOrange))
+      }
+    }
+  }
+
+  /// 说明：没选时说为什么要选；选了说存过去的文件长什么样。两种都说清文件不加密（多半是云盘，会同步上去）
+  private var detail: String {
+    let plain = "文件不加密，片段、收藏和生词原样写在里面"
+    guard path != nil else {
+      return "再选一个文件夹（比如 iCloud 云盘里的），每天那份也存过去，硬盘坏了、换电脑时还在。\(plain)"
+    }
+    let mark = installID.map { "文件名末尾的 \($0) 是这台 Mac 的编号，几台 Mac 可以共用一个文件夹。" } ?? ""
+    return "每天那份也存到这里。\(mark)\(plain)"
+  }
+
+  /// 换文件夹（nil = 不再另存）：名字跟着换，上次没存成的原因说的是原来那个文件夹，收掉
+  private func pick(_ url: URL?) {
+    // 刚在面板里选的，这时候问名字不会卡
+    name = url.map { FileManager.default.displayName(atPath: $0.path) }
+    problem = nil
+    path = url?.path
+  }
+
+  private func choose() {
+    let panel = NSOpenPanel()
+    panel.canChooseDirectories = true
+    panel.canChooseFiles = false
+    panel.canCreateDirectories = true
+    if let path { panel.directoryURL = URL(filePath: path, directoryHint: .isDirectory) }
+    panel.message = "选一个文件夹，每天的自动备份也会存一份到这里"
+    panel.prompt = "选取"
+    panel.begin { response in
+      guard response == .OK, let url = panel.url else { return }
+      pick(url)
+      chosen()
+    }
   }
 }
 

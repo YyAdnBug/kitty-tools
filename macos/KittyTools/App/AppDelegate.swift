@@ -55,6 +55,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var historyStore: HistoryStore { stores.history }
   /// 备份正在做（backupIfDue）：换日和锁屏的通知挨着来时不做两遍
   private var isBackingUp = false
+  /// 设置与数据的自动备份正在做（backupSettingsIfDue）：本机那份、另存到用户选的文件夹的那份各一个标记——
+  /// 另选的文件夹在卡住的网络盘上时，那一份可能很久不回来，不能拦着本机那份
+  private var isBackingUpSettings = false
+  private var isMirroringSettings = false
+  /// 上一次备份数据库时发现库有问题（Backup.run 给了 .damaged）：这时内存里读到的片段、收藏可能不全，设置与数据的
+  /// 自动备份先不做——写出去会把好的那几份顶掉（数据库的备份同样的规矩：坏了不备、已有的不动）
+  private var isDatabaseDamaged = false
   private lazy var watcher = ClipboardWatcher(store: clipboardStore)
   private let serviceStore = TranslateServiceStore()
   private lazy var coordinator = TranslateCoordinator(services: serviceStore, history: historyStore)
@@ -360,10 +367,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AnyView(
           GeneralTab(
             transfer: SettingsTransfer(
-              services: serviceStore, clipboard: clipboardStore, history: historyStore
-            ) { [unowned self] in
-              settingsImported()
-            }
+              services: serviceStore, clipboard: clipboardStore, history: historyStore,
+              applied: { [unowned self] in settingsImported() },
+              backupFolder: Backup.folder(in: dataDirectory),
+              snapshot: { [unowned self] in try snapshotBeforeImport() },
+              backupNow: { [unowned self] in await backupSettingsIfDue() })
           )
           .environment(island))
       case .clipboard: AnyView(ClipboardTab(store: clipboardStore).environment(island))
@@ -1441,13 +1449,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     isBackingUp = true
     Task {
       let outcome = await Backup.run(in: dataDirectory)
-      isBackingUp = false
       switch outcome {
       case .made(let url): Log.storage.notice("已备份数据库：\(url.lastPathComponent, privacy: .public)")
       case .damaged: Log.storage.error("数据库有问题，今天没有备份；已有的备份没动")
       case .failed(let reason): Log.storage.error("备份数据库失败：\(reason)")
       case .notDue: break
       }
+      isDatabaseDamaged = outcome == .damaged
+      isBackingUp = false
+      await backupSettingsIfDue()
+    }
+  }
+
+  /// 现在的设置与数据（导出文件的内容，不带密钥）：每天的自动备份和导入前那一份都写它
+  private func currentArchive() -> SettingsArchive {
+    .capture(
+      services: serviceStore.services, clips: clipboardStore.items, groups: clipboardStore.groups,
+      words: historyStore.search("", favoritesOnly: true, limit: 0))
+  }
+
+  /// 设置与数据的每日自动备份（Storage/SettingsBackup.swift）：开着的话，本机 backups/ 和用户另选的文件夹里今天还没有的
+  /// 各存一份。跟着数据库的备份做（backupIfDue；库有问题时不做）；设置 › 通用里刚打开开关、刚选了文件夹时也调一次
+  /// （今天已有的不重写）。该不该写、写、把结果记进偏好（设置页那两行的橙字）都在 SettingsBackup，这里只管别叠着调：
+  /// 两份各走各的，另选的文件夹可能在卡住的网络盘上、很久不回来，本机那份不等它。读设置、编成 JSON 在主线程，
+  /// 两份共用一次（ponytail: 上限是导出文件的 32 MB，实测约 0.6 s，常见的几十 KB 是毫秒级；真有人卡到了再挪出去）
+  private func backupSettingsIfDue() async {
+    let defaults = UserDefaults.standard
+    guard SettingsBackup.isEnabled(defaults), !isDatabaseDamaged else { return }
+    var cached: SettingsBackup.Payload?
+    let payload = { [unowned self] () -> SettingsBackup.Payload? in
+      cached = cached ?? SettingsBackup.payload(of: currentArchive())
+      return cached
+    }
+    if !isBackingUpSettings {
+      isBackingUpSettings = true
+      await SettingsBackup.backUpLocal(
+        in: Backup.folder(in: dataDirectory), defaults: defaults, payload: payload)
+      isBackingUpSettings = false
+    }
+    // ponytail: 上一次另存还卡着时换了文件夹，新文件夹要等下一次（启动、换日、锁屏）才有今天那份；真有人碰到再在这里补一次
+    guard !isMirroringSettings, let extra = SettingsBackup.extraFolder(defaults) else { return }
+    isMirroringSettings = true
+    await SettingsBackup.mirror(to: extra, defaults: defaults, payload: payload)
+    isMirroringSettings = false
+  }
+
+  /// 导入（和从备份恢复）动手之前先把现在的设置与数据存一份（SettingsBackup.snapshot；存不成就抛原因，导入不做）
+  private func snapshotBeforeImport() throws {
+    try SettingsBackup.snapshot(in: Backup.folder(in: dataDirectory)) { [unowned self] in
+      SettingsBackup.payload(of: currentArchive())
     }
   }
 

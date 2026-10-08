@@ -174,9 +174,12 @@ struct SettingsArchive: Codable, Equatable {
 
   nonisolated enum Failure: Error, Equatable {
     case notArchive, newer, unreadable, wrongPassword
+    /// 导入前的自动备份没存成（带原因）：这时什么都还没写
+    case backupFailed(String)
 
     var message: String {
       switch self {
+      case .backupFailed(let reason): "没能先备份现在的设置和数据（\(reason)），所以没有导入"
       case .notArchive: "这不是 Kitty Tools 导出的设置文件"
       case .newer: "这个文件来自更新版本的 Kitty Tools，先更新再导入"
       case .unreadable: "文件读不出来：可能被改动过，或者来自更新版本的 Kitty Tools"
@@ -569,20 +572,23 @@ struct SettingsArchive: Codable, Equatable {
 
   /// 导入选中的类别（self 得是 read 出来的）：先解密钥——密码不对就抛错，这时什么都还没写——再写偏好（apply）、
   /// 合并翻译服务、存密钥，片段 / 收藏和生词本并进各自的库（没给 clipboard / history 的那一类不导入）。
-  /// password 空着 = 不导入密钥；store：存一个密钥（账户名、值；默认写钥匙串，单测传假的）
+  /// password 空着 = 不导入密钥；store：存一个密钥（账户名、值；默认写钥匙串，单测传假的）；
+  /// beforeWriting：密码对了、马上要动手写之前调一次（导入前的自动备份，SettingsBackup；它抛错就什么都不写）
   @discardableResult
   func install(
     _ sections: Set<Section>, password: String = "", services: TranslateServiceStore,
     clipboard: ClipboardStore? = nil, history: HistoryStore? = nil,
     to defaults: UserDefaults = .standard,
     domainName: String? = Bundle.main.bundleIdentifier,
-    store: (String, String) -> Void = { Keychain.set($1, for: $0) }
+    store: (String, String) -> Void = { Keychain.set($1, for: $0) },
+    beforeWriting: () throws -> Void = {}
   ) throws -> Outcome {
     let importsServices = sections.contains(.services) && translateServices != nil
     var unsealed: [String: String] = [:]
     if importsServices, secrets != nil, !password.isEmpty {
       unsealed = accepted(try unseal(password: password))
     }
+    try beforeWriting()
     apply(sections, to: defaults, domainName: domainName)
     if importsServices, let translateServices {
       services.services = Self.merge(translateServices, into: services.services)

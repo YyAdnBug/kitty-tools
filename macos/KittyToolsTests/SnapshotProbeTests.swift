@@ -1777,6 +1777,62 @@ struct SnapshotProbeTests {
       ImportSheet(archive: many, transfer: transfer, island: nil),
       size: NSSize(width: 460, height: 460), dark: false,
       to: "\(out)/settings-transfer-import-hosts.png")
+
+    // 每天自动备份（2026-10-08）：通用页最后一组多出来的三行。临时目录里摆今天、昨天、三天前各一份和一份「导入前」
+    let backups = FileManager.default.temporaryDirectory.appending(
+      path: "kitty-snapshot-backups-\(UUID().uuidString)")
+    let cloud = backups.appending(path: "Kitty 备份")
+    try FileManager.default.createDirectory(at: cloud, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: backups) }
+    archive.secrets = nil
+    let payload = try archive.encoded()
+    for days in [0, 1, 3] {
+      try SettingsBackup.store(
+        payload, kind: .daily, in: backups, creates: false,
+        now: Date.now.addingTimeInterval(TimeInterval(-86_400 * days)))
+    }
+    try SettingsBackup.store(payload, kind: .beforeImport, in: backups, creates: false)
+    var backedUp = transfer
+    backedUp.backupFolder = backups
+    let backupSuite = "kitty-snapshot-\(UUID().uuidString)"
+    let backupPrefs = try #require(UserDefaults(suiteName: backupSuite))
+    defer { backupPrefs.removePersistentDomain(forName: backupSuite) }
+    let section = { (dark: Bool, name: String) in
+      try self.snapshot(
+        Form { TransferSection(transfer: backedUp) }.formStyle(.grouped)
+          .defaultAppStorage(backupPrefs),
+        size: NSSize(width: 640, height: 460), dark: dark,
+        to: "\(out)/settings-transfer-\(name)\(dark ? "-dark" : "").png")
+    }
+    // 默认：开着、没另选文件夹
+    for dark in [false, true] { try section(dark, "backup") }
+    // 另选了文件夹：名字是选的时候存下的，说明里带这台电脑的编号
+    backupPrefs.set(cloud.path, forKey: Prefs.settingsBackupFolder)
+    backupPrefs.set("Kitty 备份", forKey: Prefs.settingsBackupFolderName)
+    backupPrefs.set("3F9A", forKey: Prefs.settingsBackupID)
+    for dark in [false, true] { try section(dark, "backup-folder") }
+    // 两处橙字：本机那份有一类太多没带；另存的那份今天没存过去
+    backupPrefs.set("片段与收藏太多，自动备份里没带，可以手动导出", forKey: Prefs.settingsBackupProblem)
+    backupPrefs.set(
+      SettingsBackup.describe(SettingsBackup.Failure.missingFolder),
+      forKey: Prefs.settingsBackupFolderProblem)
+    try section(false, "backup-problem")
+    // 关着：已有的备份还能恢复，「另存一份到」不显示，橙字也不显示
+    backupPrefs.set(false, forKey: Prefs.settingsBackupEnabled)
+    try section(false, "backup-off")
+    backupPrefs.removeObject(forKey: Prefs.settingsBackupEnabled)
+    // 从备份恢复：同一张导入表单，页头和主按钮换说法，不提醒「信不信得过」
+    let copy = try #require(SettingsBackup.list(in: backups).first { $0.kind == .daily })
+    for dark in [false, true] {
+      try snapshot(
+        ImportSheet(
+          archive: try SettingsArchive.read(contentsOf: copy.url), transfer: backedUp,
+          island: nil, origin: SettingsBackup.source(of: copy)
+        )
+        .defaultAppStorage(backupPrefs),
+        size: NSSize(width: 460, height: 620), dark: dark,
+        to: "\(out)/settings-transfer-restore\(dark ? "-dark" : "").png")
+    }
   }
 
   /// prepare：布局完、出图前对窗口内容做点手脚（比如 emphasizeTableRows）
