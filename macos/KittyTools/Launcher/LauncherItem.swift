@@ -1,5 +1,5 @@
 // 启动器的一条结果：App、内置动作、网址（含系统设置面板、浏览历史）、文件路径、系统命令（这五类记使用、能收藏），
-// 以及网页搜索、关键词提示、计算结果、「cb」「fy」那一行、kill 列的进程（不记）。
+// 以及网页搜索、关键词提示、计算结果、「cb」「fy」那一行、kill / port 列的进程（不记）。
 // id = 类型 + 目标，使用记录按它累计。内置动作和菜单栏同一份（体检 A26）：副标题只写「Kitty Tools」（两个开关写开没开），
 // 英文别名只进 names 参与匹配（N10）。
 
@@ -21,7 +21,8 @@ struct LauncherItem: Identifiable, Hashable {
     case prompt
     /// 「fy 文本」那一行（目标是文本）：↩ 收起启动器、翻译浮窗直接翻译（体检 D10）
     case translate
-    /// 「kill 空格」列的后台进程（目标是 PID，体检 D12）：↩ 结束、⌘↩ 强制结束
+    /// 「kill 空格」列的后台进程（目标是 PID，体检 D12）、「port 空格」列的在监听的端口（一个端口一行，
+    /// 目标是「PID:端口」）：↩ 结束、⌘↩ 强制结束，进程本身在 process 里
     case process
 
     /// 只有这些记使用、能出现在「常用」里、能收藏
@@ -47,6 +48,8 @@ struct LauncherItem: Identifiable, Hashable {
   var contentType: UTType?
   /// 浏览历史：最后访问的时间（副标题的「3 天前」按它算）
   var visitedAt: Date?
+  /// kill / port 列的进程：结束时要的 PID 和名字；port 列的程序坞 App 另有包路径和显示名（↩ 走退出）
+  var process: Processes.Entry?
 
   var id: String { kind.rawValue + "\n" + target }
 

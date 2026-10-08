@@ -137,7 +137,7 @@ struct SearchEngineDetail: View {
   /// 这一条的问题（橙色提示；nil = 能用）。list 用来查搜索的关键词和前面的搜索重复（「关键词 空格 内容」直达只看搜索，
   /// 重复时用靠前的；快捷链接的关键词只参与名称匹配，和谁同名都不算重复）：
   /// 名称不空；搜索的网址要有协议（https:、maps: 之类，http(s) 还得有主机名，默认的「https://」不算填好）；
-  /// 快捷链接也可以是 / ~ 开头的路径；关键词不能是保留的 cb / fy / open / find / quit / hide / forcequit / eject / kill；搜索没关键词又不兜底就用不上
+  /// 快捷链接也可以是 / ~ 开头的路径；关键词不能是保留的 cb / fy / open / find / quit / hide / forcequit / eject / kill / port；搜索没关键词又不兜底就用不上
   static func problem(of engine: SearchEngine, in list: [SearchEngine]) -> String? {
     if engine.name.trimmingCharacters(in: .whitespaces).isEmpty { return "还没填名称" }
     let url = engine.urlTemplate.trimmingCharacters(in: .whitespaces)

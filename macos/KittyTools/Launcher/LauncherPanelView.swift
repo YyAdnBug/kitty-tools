@@ -368,7 +368,8 @@ private struct LauncherRow: View {
           .minimumScaleFactor(0.5)
           .animation(Style.Motion.snap.animation(reduced: reduceMotion), value: item.title)
       } else {
-        Text(item.title)
+        // port 的标题是端口号：等宽数字，后面的进程名才成一列
+        (item.isPort ? Text(item.title).monospacedDigit() : Text(item.title))
           .font(.system(size: 14, weight: .medium))
           .lineLimit(1)
           .layoutPriority(1)
@@ -413,6 +414,9 @@ private struct LauncherRow: View {
       let image = LauncherIcons.icon(for: item.target)
     {
       Image(nsImage: image).resizable().frame(width: 24, height: 24)
+    } else if let path = item.process?.app?.path, let image = LauncherIcons.icon(for: path) {
+      // port 列的程序坞 App：它自己的图标（列的时候已经从 NSRunningApplication 放进缓存，不读 App 包）
+      Image(nsImage: image).resizable().frame(width: 24, height: 24)
     } else if item.isSettingsPane,
       let image = LauncherIcons.icon(for: AppCatalog.systemSettingsPath)
     {
@@ -446,6 +450,9 @@ private struct LauncherRow: View {
 extension LauncherItem {
   /// 系统设置的一个面板（体检 D9）：kind 是 .url，右侧写「设置」、图标是系统设置的
   fileprivate var isSettingsPane: Bool { kind == .url && AppCatalog.isSettingsPane(target) }
+
+  /// port 列的端口行（目标是「PID:端口」；kill 的进程行目标只有 PID）
+  fileprivate var isPort: Bool { kind == .process && target.contains(":") }
 
   /// 行里种类色块的符号：内置动作用它自己的
   fileprivate var tileSymbol: String {

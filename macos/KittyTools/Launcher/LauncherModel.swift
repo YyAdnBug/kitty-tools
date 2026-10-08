@@ -7,7 +7,8 @@
 // 结果异步到，先留着上一次的结果，后面仍接整句匹配到的 App）。
 // 系统命令（SystemCommands，对标 Alfred）：锁定屏幕、清倒废纸篓这类固定命令一行一个，按中文名 / 拼音 / Alfred 关键词
 // 搜到；「quit / hide / forcequit / eject 空格」列正在运行的 App / 可推出的宗卷，「kill 空格」列后台进程（异步，
-// 体检 D12：↩ 结束、⌘↩ 强制结束）；清倒废纸篓、全部退出、强制退出 / 强制结束不可撤销，第一下只上膛（选中行的副标题
+// 体检 D12：↩ 结束、⌘↩ 强制结束），「port 空格」是同一份进程的端口视图（一个在监听的端口一行；程序坞里的 App 也列，
+// 它们 ↩ 走正常退出，rowVerb）；清倒废纸篓、全部退出、强制退出 / 强制结束不可撤销，第一下只上膛（选中行的副标题
 // 换成确认提示），同一个键再按一次才执行（SystemControl，面板先收起）。
 // 键盘（对标 Alfred / Raycast）：↑↓ 循环、↩ 执行（计算结果是粘贴，find 的文件是在访达中显示）、⌘↩ 在访达中显示
 // （计算结果只复制，find 的文件是打开，网址用第二个浏览器打开）、⌥↩ 在访达里搜索、⌃↩ 网页搜索（按住修饰键时选中行的
@@ -42,7 +43,7 @@ import UniformTypeIdentifiers
   var alternate = Alternate.none
   /// 文件搜索模式（open / find / 空格开头）；nil = 普通搜索
   private(set) var fileRequest: FileSearch.Request?
-  /// 系统命令的带对象模式（quit / hide / forcequit / eject / kill 空格）；nil = 不在这个模式
+  /// 系统命令的带对象模式（quit / hide / forcequit / eject / kill / port 空格）；nil = 不在这个模式
   private(set) var commandRequest: SystemCommands.Request?
   /// 上膛的那一行：不可撤销的命令第一下按下后，等同一个键再按一次（打字、移动选中、Esc、收起都撤掉）
   private(set) var armed: Armed?
@@ -127,9 +128,12 @@ import UniformTypeIdentifiers
     SystemCommands.targets(for:)
   /// 这次带对象模式列出来的：进模式时列一次，之后打字只过滤，列表不跟着重排
   @ObservationIgnored private var commandItems: (verb: SystemCommands.Verb, items: [LauncherItem])?
-  /// kill 空格列哪些进程（ps、lsof 在进程外跑，异步到）；单测、截图自检换成固定的，不跑命令
-  @ObservationIgnored var processTargets: () async -> [LauncherItem] = { await Processes.targets() }
-  @ObservationIgnored private var processTask: Task<Void, Never>?
+  /// kill / port 空格列哪些进程（ps、lsof 在进程外跑，异步到）；单测、截图自检换成固定的，不跑命令
+  @ObservationIgnored var processTargets: (SystemCommands.Verb) async -> [LauncherItem] = {
+    await $0 == .port ? Processes.portTargets() : Processes.targets()
+  }
+  /// 正在列的那一次，记着是给哪个关键词列的（kill 改成 port 时上一次的不要了）
+  @ObservationIgnored private var processTask: (verb: SystemCommands.Verb, task: Task<Void, Never>)?
   /// 浏览历史的行（开着「也搜浏览历史」的各家合起来；开关一关 refresh 就扔掉）；单测、截图自检换成固定的
   @ObservationIgnored var historyItems: () -> [LauncherItem] = { BrowserHistory.shared.items }
   /// 呼出时读 / 重读浏览历史和 Firefox 书签（进程外，读完才返回；返回换没换上新的）；单测、截图自检里什么都不做
@@ -190,7 +194,7 @@ import UniformTypeIdentifiers
       self.apps = apps
       appsScannedAt = .now
       engines = { WebSearch.defaults }
-      processTargets = { [] }
+      processTargets = { _ in [] }
       historyItems = { [] }
       refreshHistory = { false }
     }
@@ -285,7 +289,7 @@ import UniformTypeIdentifiers
       quickLookDidHide()
     }
     // 还在列的进程不要了（再呼出重列）
-    processTask?.cancel()
+    processTask?.task.cancel()
     processTask = nil
     if executed || query.isEmpty {
       keptAt = nil
@@ -293,7 +297,7 @@ import UniformTypeIdentifiers
     } else {
       keptAt = now
       files.stop()
-      // 带对象模式（quit / eject / kill 空格）的列表再呼出时重列：这期间可能退出了 App、推出了磁盘、进程结束了
+      // 带对象模式（quit / eject / kill / port 空格）的列表再呼出时重列：这期间可能退出了 App、推出了磁盘、进程结束了
       commandItems = nil
     }
     executed = false
@@ -400,53 +404,66 @@ import UniformTypeIdentifiers
       }
   }
 
-  /// quit / hide / forcequit / eject / kill 模式：进模式时列一次，之后按输入的词过滤（不加使用分，全按名字；
-  /// kill 的「:3000」「:」只按进程监听的端口筛）。kill 的进程在进程外列，到之前写「正在读取进程…」
+  /// quit / hide / forcequit / eject / kill / port 模式：进模式时列一次，之后按输入的词过滤（不加使用分，全按名字；
+  /// kill 的「:3000」「:」只按进程监听的端口筛，port 只输数字时按端口号的开头筛）。kill、port 的进程在进程外列，
+  /// 到之前写「正在读取进程…」/「正在读取端口…」
   private func showTargets(_ request: SystemCommands.Request) {
-    if commandItems?.verb != request.verb {
-      guard request.verb == .kill else {
-        commandItems = (request.verb, commandTargets(request.verb))
+    let verb = request.verb
+    if commandItems?.verb != verb {
+      guard verb.listsProcesses else {
+        commandItems = (verb, commandTargets(verb))
         return showTargets(request)
       }
       results = []
-      emptyText = "正在读取进程…"
-      if processTask == nil {
-        processTask = Task {
-          let items = await processTargets()
+      emptyText = verb == .port ? "正在读取端口…" : "正在读取进程…"
+      // 同一个关键词还在列就等它（打字不重列）；换了关键词，上一次的不要了
+      if processTask?.verb != verb {
+        processTask?.task.cancel()
+        let task = Task {
+          let items = await processTargets(verb)
           guard !Task.isCancelled else { return }
           processTask = nil
-          guard let request = commandRequest, request.verb == .kill else { return }
-          commandItems = (.kill, items)
+          guard let request = commandRequest, request.verb == verb else { return }
+          commandItems = (verb, items)
           showTargets(request)
         }
+        processTask = (verb, task)
       }
       return
     }
     let targets = commandItems?.items ?? []
     let terms = request.terms.joined(separator: " ")
+    // port 只输了数字（前面带不带冒号都行）：要找的是端口
+    let port = verb == .port ? terms.wholeMatch(of: /:?(\d*)/)?.1 : nil
     results =
       if terms.isEmpty {
         targets
-      } else if request.verb == .kill, terms.hasPrefix(":") {
+      } else if verb == .kill, terms.hasPrefix(":") {
         // 只按监听的端口筛、保持原顺序（「postgres: walwriter」这类进程名里也有冒号）
         targets.filter { Processes.listens($0, on: terms) }
+      } else if let port {
+        // 按端口号的开头筛、保持端口顺序（按匹配排的话「80」会带出 5180、18080）
+        targets.filter { $0.title.hasPrefix(":" + port) }
       } else {
         LauncherMatch.rank(targets, query: terms) { _ in (0, 0) }
       }
+    // port 写「没有找到」：别的用户、系统的进程在监听时这里看不到，不能说「没有」
     emptyText =
-      switch (request.verb, terms.isEmpty) {
+      switch (verb, terms.isEmpty) {
       case (.eject, true): "没有可推出的磁盘"
       case (.eject, false): "没有匹配的磁盘"
       case (.kill, true): "没有后台进程"
       case (.kill, false) where terms.hasPrefix(":"): "没有进程在监听这个端口"
-      case (.kill, false): "没有匹配的进程"
+      case (.port, true): "没有找到在监听端口的进程"
+      case (.port, false) where port != nil: "没有找到监听这个端口的进程"
+      case (.kill, false), (.port, false): "没有匹配的进程"
       case (_, true): "没有正在运行的 App"
       case (_, false): "没有匹配的 App"
       }
   }
 
-  /// 等 kill 的进程列完（单测、截图自检用）
-  func processLookup() async { await processTask?.value }
+  /// 等 kill / port 的进程列完（单测、截图自检用）
+  func processLookup() async { await processTask?.task.value }
 
   /// 文件搜索：查询还在跑时留着上一次的结果（约 40 ms 后换掉，免得列表先空再长）；1 个字母不查
   private func searchFiles(_ request: FileSearch.Request) {
@@ -641,7 +658,7 @@ import UniformTypeIdentifiers
 
   func execute(_ item: LauncherItem) {
     if let request = commandRequest, [.app, .path, .process].contains(item.kind) {
-      return runTarget(item, request.verb)
+      return runTarget(item, rowVerb(item, in: request))
     }
     switch item.kind {
     case .calculation:
@@ -686,7 +703,7 @@ import UniformTypeIdentifiers
         return
       }
       open(url, item)
-    case .process: break  // 只在 kill 模式里出现，上面已经处理
+    case .process: break  // 只在 kill / port 模式里出现，上面已经处理
     }
   }
 
@@ -696,31 +713,44 @@ import UniformTypeIdentifiers
     hidePanel()
   }
 
-  /// 带对象模式的行：↩ 退出 / 隐藏 / 强制退出 / 推出 / 结束进程。不记使用（退出过的 App 不该因此在普通搜索里排前面）。
-  /// 强制退出（forcequit 的 ↩、quit / hide 的 ⌘↩）、强制结束（kill 的 ⌘↩）不可撤销：先上膛
+  /// 带对象模式里这一行按哪个命令办：port 列的是进程，后台进程同 kill（↩ 结束、⌘↩ 强制结束），程序坞里的 App 同 quit
+  /// （↩ 正常退出——有没存的内容它会先问，⌘↩ 强制退出）；别的模式就是当前的命令
+  private func rowVerb(_ item: LauncherItem, in request: SystemCommands.Request)
+    -> SystemCommands.Verb
+  {
+    guard request.verb == .port else { return request.verb }
+    return item.process?.app == nil ? .kill : .quit
+  }
+
+  /// 带对象模式的行：↩ 退出 / 隐藏 / 强制退出 / 推出 / 结束进程（verb 是 rowVerb 给的）。不记使用（退出过的 App
+  /// 不该因此在普通搜索里排前面）。强制退出（forcequit 的 ↩、quit / hide 的 ⌘↩）、强制结束（kill 的 ⌘↩）不可撤销：先上膛
   private func runTarget(
     _ item: LauncherItem, _ verb: SystemCommands.Verb, commandKey: Bool = false
   ) {
     let force = verb == .forcequit || commandKey
     if force {
+      // port 的行标题是端口号：提示里写上是谁
+      let name = commandRequest?.verb == .port ? item.process?.label : nil
       let text =
         verb == .kill
-        ? SystemCommands.killConfirmation
-        : SystemCommands.forceQuitConfirmation(key: commandKey ? "⌘↩" : "↩")
+        ? SystemCommands.killConfirmation(name: name)
+        : SystemCommands.forceQuitConfirmation(key: commandKey ? "⌘↩" : "↩", name: name)
       guard confirm(item, commandKey: commandKey, text: text) else { return }
     }
+    // port 列的程序坞 App：目标是「PID:端口」，包路径在 process 里
+    let path = item.process?.app?.path ?? item.target
     let action: SystemControl.Action
     if verb == .kill {
-      guard let pid = Int32(item.target) else { return }
-      action = .signal(pid: pid, name: item.title, force: force)
+      guard let process = item.process else { return }
+      action = .signal(pid: process.pid, name: process.name, force: force)
     } else if force {
-      action = .forceQuit(item.target)
+      action = .forceQuit(path)
     } else {
       action =
         switch verb {
         case .eject: .eject(item.target)
         case .hide: .hide(item.target)
-        default: .quit(item.target)
+        default: .quit(path)
         }
     }
     close()
@@ -753,10 +783,10 @@ import UniformTypeIdentifiers
   /// 哪个键是强制的照 primaryAction / commandReturnAction 的分法
   func isDangerous(_ item: LauncherItem, commandKey: Bool) -> Bool {
     if armed?.id == item.id, armed?.commandKey == commandKey { return true }
-    guard let verb = commandRequest?.verb else { return false }
-    guard commandKey else { return verb == .forcequit && item.kind == .app }
-    if verb == .kill { return item.kind == .process }
-    return item.kind == .app && verb != .forcequit && item.target != SystemCommands.finderPath
+    guard let request = commandRequest, [.app, .process].contains(item.kind) else { return false }
+    let verb = rowVerb(item, in: request)
+    guard commandKey else { return verb == .forcequit }
+    return verb == .kill || (verb != .forcequit && item.target != SystemCommands.finderPath)
   }
 
   /// 这次按键 / 点击是不是上一下的延续：键盘自动连发，或连击的第三下以后
@@ -867,7 +897,8 @@ import UniformTypeIdentifiers
   func primaryAction(for item: LauncherItem) -> (title: String, symbol: String) {
     let confirming = armed?.id == item.id && armed?.commandKey == false
     if let request = commandRequest, [.app, .path, .process].contains(item.kind) {
-      return ((confirming ? "确认" : "") + request.verb.title, request.verb.symbol)
+      let verb = rowVerb(item, in: request)
+      return ((confirming ? "确认" : "") + verb.title, verb.symbol)
     }
     return switch item.kind {
     case .app, .path:
@@ -892,12 +923,11 @@ import UniformTypeIdentifiers
   /// ⌘↩ 做什么；没有就是 nil（网址没有第二个浏览器时也是 nil：副标题不写，按了只响提示音）
   func commandReturnAction(for item: LauncherItem) -> (title: String, symbol: String)? {
     let confirming = armed?.id == item.id && armed?.commandKey == true
-    if commandRequest?.verb == .kill, item.kind == .process {
-      return (confirming ? "确认强制结束" : "强制结束", "xmark.octagon")
-    }
-    if let request = commandRequest, item.kind == .app {
+    if let request = commandRequest, [.app, .process].contains(item.kind) {
+      let verb = rowVerb(item, in: request)
+      if verb == .kill { return (confirming ? "确认强制结束" : "强制结束", "xmark.octagon") }
       // 访达只能隐藏（hide 里列着它），不给强制退出
-      guard request.verb != .forcequit, item.target != SystemCommands.finderPath else { return nil }
+      guard verb != .forcequit, item.target != SystemCommands.finderPath else { return nil }
       return (confirming ? "确认强制退出" : "强制退出", "xmark.octagon")
     }
     if isWebLink(item) {
@@ -1290,12 +1320,10 @@ import UniformTypeIdentifiers
   /// ⌘↩：App / 文件在访达中显示（find 搜到的文件反过来是打开），计算结果只复制，网址用第二个浏览器打开
   /// （没有就提示音，体检 D7）
   func commandReturn(_ item: LauncherItem) {
-    if commandRequest?.verb == .kill, item.kind == .process {
-      return runTarget(item, .kill, commandKey: true)
-    }
-    if let request = commandRequest, item.kind == .app {
-      if request.verb != .forcequit, item.target != SystemCommands.finderPath {
-        runTarget(item, request.verb, commandKey: true)
+    if let request = commandRequest, [.app, .process].contains(item.kind) {
+      let verb = rowVerb(item, in: request)
+      if verb == .kill || (verb != .forcequit && item.target != SystemCommands.finderPath) {
+        runTarget(item, verb, commandKey: true)
       }
       return
     }

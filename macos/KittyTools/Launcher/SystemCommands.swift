@@ -1,7 +1,7 @@
 // 启动器的系统命令（对标 Alfred System；PLAN §10 D2 2026-09-27 改为做，mac-whisker §6 启动器「系统命令」）：
 // 固定命令（锁定屏幕、睡眠、清倒废纸篓…）各是一行 `.system`，中文名、拼音、Alfred 关键词、英文名都搜得到；
-// 带对象的 quit / hide / forcequit / eject / kill 是「关键词 空格」模式，列正在运行的 App / 可推出的宗卷 / 后台进程
-// （同 open / find；kill 的进程见 Processes，异步列）。
+// 带对象的 quit / hide / forcequit / eject / kill / port 是「关键词 空格」模式，列正在运行的 App / 可推出的宗卷 /
+// 后台进程 / 在监听的端口（同 open / find；kill、port 的进程见 Processes，异步列）。
 // 这里只有目录、解析和只读的列举；真正执行在 SystemControl（启动器收起之后）。
 
 import AppKit
@@ -102,21 +102,27 @@ enum SystemCommand: String, CaseIterable {
 }
 
 enum SystemCommands {
-  /// 带对象的命令：关键词 = Alfred 的（kill 是 Raycast 的 Kill Process，体检 D12）
+  /// 带对象的命令：关键词 = Alfred 的（kill 是 Raycast 的 Kill Process，体检 D12；port 是同一份进程的端口视图，
+  /// 对标 Raycast Port Manager，2026-10-08）
   enum Verb: String, CaseIterable {
-    case quit, hide, forcequit, eject, kill
+    case quit, hide, forcequit, eject, kill, port
 
-    /// ↩ 的动作名（底栏主动作、⌘K 第一行）
+    /// 列的是进程（Processes，在进程外异步列）
+    var listsProcesses: Bool { self == .kill || self == .port }
+
+    /// ↩ 的动作名（底栏主动作、⌘K 第一行）。port 的行按 kill（后台进程）或 quit（程序坞里的 App）办，
+    /// 见 LauncherModel.rowVerb
     var title: String {
       switch self {
       case .quit: "退出"
       case .hide: "隐藏"
       case .forcequit: "强制退出"
       case .eject: "推出"
-      case .kill: "结束"
+      case .kill, .port: "结束"
       }
     }
 
+    /// ↩ 的图标，也是只输关键词时补全提示的色块（port 的 ↩ 取 kill / quit 的，它自己的只给提示用）
     var symbol: String {
       switch self {
       case .quit: "xmark.circle"
@@ -124,6 +130,7 @@ enum SystemCommands {
       case .forcequit: "xmark.octagon"
       case .eject: "eject"
       case .kill: "stop.circle"
+      case .port: "network"
       }
     }
 
@@ -135,6 +142,7 @@ enum SystemCommands {
       case .forcequit: "强制退出 App…"
       case .eject: "推出磁盘…"
       case .kill: "结束进程…"
+      case .port: "查看端口占用…"
       }
     }
 
@@ -143,6 +151,7 @@ enum SystemCommands {
       switch self {
       case .eject: "磁盘名"
       case .kill: "进程名或 :端口"
+      case .port: "端口号或进程名"
       default: "App 名"
       }
     }
@@ -152,6 +161,7 @@ enum SystemCommands {
       switch self {
       case .eject: "可推出的磁盘"
       case .kill: "后台进程"
+      case .port: "在监听的端口"
       default: "正在运行的 App"
       }
     }
@@ -165,13 +175,16 @@ enum SystemCommands {
 
   static let finderPath = "/System/Library/CoreServices/Finder.app"
 
-  /// 强制退出上膛后的副标题（↩ 上膛写 ↩，quit / hide 里 ⌘↩ 上膛写 ⌘↩）
-  static func forceQuitConfirmation(key: String) -> String {
-    "再按 \(key) 强制退出，没存的内容会丢失"
+  /// 强制退出上膛后的副标题（↩ 上膛写 ↩，quit / hide 里 ⌘↩ 上膛写 ⌘↩）。name：port 的行标题是端口号，
+  /// 副标题一换成这句就看不出是哪个进程了，所以写进提示里（别的模式标题就是名字，不用写）
+  static func forceQuitConfirmation(key: String, name: String? = nil) -> String {
+    "再按 \(key) 强制退出\(name.map { "「\($0)」" } ?? "")，没存的内容会丢失"
   }
 
-  /// kill 里 ⌘↩（SIGKILL）上膛后的副标题
-  static let killConfirmation = "再按 ⌘↩ 强制结束，没存的内容会丢失"
+  /// kill / port 里 ⌘↩（SIGKILL）上膛后的副标题
+  static func killConfirmation(name: String? = nil) -> String {
+    "再按 ⌘↩ 强制结束\(name.map { "「\($0)」" } ?? "")，没存的内容会丢失"
+  }
 
   static let items: [LauncherItem] = SystemCommand.allCases.map { command in
     let chinese = [command.title] + command.synonyms
@@ -185,7 +198,7 @@ enum SystemCommands {
 
   // MARK: 纯函数（配单测）
 
-  /// 「quit 词」「hide 词」「forcequit 词」「eject 词」「kill 词」；只输关键词不算（出补全提示，不抢同名 App），同 open / find。
+  /// 「quit 词」「hide 词」「forcequit 词」「eject 词」「kill 词」「port 词」；只输关键词不算（出补全提示，不抢同名 App），同 open / find。
   /// quitall / ejectall 是固定命令，不在这里
   static func request(for query: String) -> Request? {
     let lower = query.lowercased()
@@ -197,7 +210,7 @@ enum SystemCommands {
     return nil
   }
 
-  /// 单输（或拼到一半）quit / hide / forcequit / eject / kill 时的补全提示：正好是关键词的放最前，
+  /// 单输（或拼到一半）quit / hide / forcequit / eject / kill / port 时的补全提示：正好是关键词的放最前，
   /// ≥ 2 个字的开头放本地结果后面（同文件搜索的 open / find）
   static func promptItems(for query: String) -> (exact: [LauncherItem], partial: [LauncherItem]) {
     let text = LauncherMatch.fold(query.trimmingCharacters(in: .whitespaces))
@@ -282,7 +295,7 @@ enum SystemCommands {
   /// 带对象模式的行：App 行（图标先放进 LauncherIcons 的缓存，行里不按路径读；中文名 / 拼音能搜；前台 App 排第一，
   /// 其余按名字）、宗卷行（按类型取通用宗卷图标，不碰宗卷本身）；Tab 补成「关键词 名字」
   static func targets(for verb: Verb) -> [LauncherItem] {
-    guard verb != .kill else { return [] }  // 进程在进程外异步列（Processes.targets）
+    guard !verb.listsProcesses else { return [] }  // 进程在进程外异步列（Processes）
     let items: [LauncherItem]
     if verb == .eject {
       items = volumes().map { url in

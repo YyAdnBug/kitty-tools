@@ -1,4 +1,5 @@
-// 体检第 6 批（启动器·新功能）单测：计算器的单位换算 / 进制 / 千分位（D11）、kill 进程与端口（D12）、系统设置面板（D9）、
+// 体检第 6 批（启动器·新功能）单测：计算器的单位换算 / 进制 / 千分位（D11）、kill 进程与端口（D12；port 是 2026-10-08
+// 加的端口视图，测在 kill 后面）、系统设置面板（D9）、
 // 网站图标（D6：Chrome Favicons 库的查法）、浏览历史（D8：sqlite3 导出、解析、排在书签后）。
 // 全部用内存库、临时目录里的假库、注入的进程列表 / 历史 / perform，不读写用户偏好和剪贴板、不读真 Chrome 数据、
 // 不结束任何进程。
@@ -122,9 +123,10 @@ struct LauncherBatch6Tests {
       f5
       n*:5432
       """
-    #expect(Processes.parse(lsof: lsof) == [4321: [3000, 9229], 77: [5432]])
+    #expect(Processes.parse(lsof: lsof).ports == [4321: [3000, 9229], 77: [5432]])
     // 行：监听端口的排前面，再是不在系统目录里的，再按内存；普通 App、本 App、本 App 起的 ps、loginwindow 不列
-    let items = Processes.items(entries, ports: Processes.parse(lsof: lsof), excluding: [5000])
+    let items = Processes.items(
+      entries, ports: Processes.parse(lsof: lsof).ports, excluding: [5000])
     #expect(items.map(\.target) == ["4321", "412"])
     #expect(items[0].title == "node" && items[0].kind == .process)
     #expect(
@@ -145,7 +147,7 @@ struct LauncherBatch6Tests {
     var listed = 0
     var performed: [SystemControl.Action] = []
     var hides = 0
-    model.processTargets = {
+    model.processTargets = { _ in
       listed += 1
       return Processes.items(entries, ports: [4321: [3000]], excluding: [])
     }
@@ -190,7 +192,7 @@ struct LauncherBatch6Tests {
     let python = try #require(model.selectedItem)
     model.commandReturn(python)
     #expect(performed.count == 1 && model.isArmed(python))
-    #expect(model.alternateSubtitle(for: python) == SystemCommands.killConfirmation)
+    #expect(model.alternateSubtitle(for: python) == SystemCommands.killConfirmation())
     #expect(model.commandReturnAction(for: python)?.title == "确认强制结束")
     model.commandReturn(python)
     #expect(performed.last == .signal(pid: 88, name: "python3", force: true) && hides == 2)
@@ -200,7 +202,7 @@ struct LauncherBatch6Tests {
   @Test func killListIsRedoneAfterHiding() async throws {
     let (model, _) = try model()
     var listed = 0
-    model.processTargets = {
+    model.processTargets = { _ in
       listed += 1
       return []
     }
@@ -211,6 +213,168 @@ struct LauncherBatch6Tests {
     model.prepareForShow()
     await model.processLookup()
     #expect(model.query == "kill " && listed == 2)
+  }
+
+  // MARK: port（2026-10-08）：kill 同一份进程的端口视图
+
+  @Test func portRowsAreOnePerListeningPort() {
+    let home = NSHomeDirectory()
+    // 工作目录那一次 lsof：f 行是 cwd 的才是目录；路径里有冒号加数字也不当端口
+    let lsof = """
+      p4321
+      fcwd
+      n\(home)/Codes/shop:8080/web
+      p4400
+      fcwd
+      n/
+      p900
+      fcwd
+      n\(home)/Library/Containers/com.tencent.xinWeChat/Data
+      f7
+      n127.0.0.1:14013
+      """
+    let parsed = Processes.parse(lsof: lsof)
+    #expect(parsed.ports == [900: [14013]])
+    #expect(parsed.directories[4321] == "\(home)/Codes/shop:8080/web")
+    #expect(parsed.directories[4400] == "/")
+    let entries = [
+      Processes.Entry(pid: 4321, memory: 1, path: "/opt/homebrew/bin/node", ppid: 1),
+      Processes.Entry(pid: 4400, memory: 1, path: "/opt/homebrew/bin/node", ppid: 1),
+      // nginx 的 master 和它的 worker 都在监听 8080：只列 master（结束 worker，master 会再拉一个）
+      Processes.Entry(pid: 700, memory: 1, path: "/opt/homebrew/bin/nginx", ppid: 1),
+      Processes.Entry(pid: 701, memory: 1, path: "/opt/homebrew/bin/nginx", ppid: 700),
+      Processes.Entry(
+        pid: 900, memory: 1, path: "/Applications/WeChat.app/Contents/MacOS/WeChat", ppid: 1),
+      Processes.Entry(pid: 50, memory: 1, path: "/usr/bin/idle", ppid: 1),  // 没在监听
+      Processes.Entry(
+        pid: 60, memory: 1, path: Processes.unlisted.first ?? "", ppid: 1),  // loginwindow 不列
+    ]
+    let items = Processes.portItems(
+      entries,
+      ports: [4321: [3000, 5173], 4400: [3001], 700: [8080], 701: [8080], 900: [14013], 60: [9]],
+      directories: parsed.directories,
+      apps: [900: .init(path: "/Applications/WeChat.app", name: "微信")])
+    // 一个端口一行、按端口号排；一个进程监听两个端口就是两行，id 各不相同
+    #expect(items.map(\.title) == [":3000", ":3001", ":5173", ":8080", ":14013"])
+    #expect(
+      items.map(\.target) == ["4321:3000", "4400:3001", "4321:5173", "700:8080", "900:14013"])
+    #expect(Set(items.map(\.id)).count == items.count && items.allSatisfy { $0.kind == .process })
+    // 副标题：名字 · PID · 工作目录（家目录缩成 ~；根目录不写）
+    #expect(items[0].subtitle == "node · PID 4321 · ~/Codes/shop:8080/web")
+    #expect(items[1].subtitle == "node · PID 4400")
+    #expect(items[0].completion == "port 3000" && items[0].process?.app == nil)
+    // 程序坞里的 App：显示名、不写工作目录（沙盒容器），记下包路径
+    #expect(items[4].subtitle == "微信 · PID 900")
+    #expect(items[4].process?.app?.path == "/Applications/WeChat.app")
+    for query in ["微信", "wechat", "14013"] {
+      #expect(LauncherMatch.score(query, item: items[4]) > 0, "\(query)")
+    }
+    #expect(LauncherMatch.score("shop", item: items[0]) > 0)  // 工作目录能搜
+  }
+
+  @Test func portListsListenersAndEndsThem() async throws {
+    let (model, usage) = try model()
+    let entries = [
+      Processes.Entry(pid: 4321, memory: 1, path: "/opt/homebrew/bin/node"),
+      Processes.Entry(pid: 88, memory: 1, path: "/usr/local/bin/python3"),
+      Processes.Entry(pid: 900, memory: 1, path: "/Applications/WeChat.app/Contents/MacOS/WeChat"),
+    ]
+    var listed: [SystemCommands.Verb] = []
+    var performed: [SystemControl.Action] = []
+    var hides = 0
+    model.processTargets = { verb in
+      listed.append(verb)
+      return verb == .port
+        ? Processes.portItems(
+          entries, ports: [4321: [3000, 5173], 88: [8000], 900: [14013]],
+          directories: [4321: "/srv/shop"],
+          apps: [900: .init(path: "/Applications/WeChat.app", name: "微信")])
+        : Processes.items(entries, ports: [:], excluding: [900])
+    }
+    model.perform = { performed.append($0) }
+    model.hidePanel = { hides += 1 }
+    func titles(_ query: String) -> [String] {
+      model.query = query
+      return model.results.map(\.title)
+    }
+    // 只输 port：第一行是补全提示（后面照常接兜底搜索）
+    #expect(titles("port").first == "查看端口占用…")
+    #expect(model.results.first?.target == "system-port")
+    // port 空格：先写「正在读取端口…」，列完换上；分组标题「在监听的端口」
+    model.query = "port "
+    #expect(model.results.isEmpty && model.emptyText == "正在读取端口…")
+    await model.processLookup()
+    #expect(
+      model.results.map(\.title) == [":3000", ":5173", ":8000", ":14013"]
+        && model.groupTitle == "在监听的端口")
+    // 数字按端口号的开头筛（带不带冒号都行，不带出别处含这串数字的），别的词按进程名、工作目录、App 名
+    #expect(titles("port 5") == [":5173"])
+    #expect(titles("port :80") == [":8000"])
+    #expect(titles("port 000") == [] && model.emptyText == "没有找到监听这个端口的进程")
+    #expect(titles("port :") == [":3000", ":5173", ":8000", ":14013"])
+    #expect(titles("port shop") == [":3000", ":5173"])
+    #expect(titles("port py") == [":8000"])
+    #expect(titles("port 微信") == [":14013"])
+    #expect(titles("port zzz") == [] && model.emptyText == "没有匹配的进程")
+    #expect(listed == [.port])  // 打字只过滤、不重列
+    // 后台进程：↩ 结束（同 kill，不确认），⌘↩ 强制结束才算危险
+    #expect(titles("port 3000") == [":3000"])
+    let node = try #require(model.selectedItem)
+    #expect(model.primaryAction(for: node).title == "结束")
+    #expect(model.commandReturnAction(for: node)?.title == "强制结束")
+    #expect(
+      !model.isDangerous(node, commandKey: false) && model.isDangerous(node, commandKey: true))
+    #expect(model.copyTitle(for: node) == nil && !model.canFavorite(node))
+    #expect(LauncherModel.completion(for: node) == "port 3000")
+    model.execute(node)
+    #expect(performed == [.signal(pid: 4321, name: "node", force: false)] && hides == 1)
+    #expect(usage.entries.isEmpty)  // 不记使用
+    // 同一个进程的另一个端口是另一行：上膛只上这一行
+    #expect(titles("port ") == [":3000", ":5173", ":8000", ":14013"])
+    let other = model.results[1]
+    model.commandReturn(other)
+    #expect(model.isArmed(other) && !model.isArmed(node) && performed.count == 1)
+    // 行标题是端口号：确认提示里写上要强制结束的是谁
+    #expect(model.alternateSubtitle(for: other) == "再按 ⌘↩ 强制结束「node」，没存的内容会丢失")
+    model.commandReturn(other)
+    #expect(performed.last == .signal(pid: 4321, name: "node", force: true))
+    // 程序坞里的 App：↩ 正常退出（有没存的它会先问），⌘↩ 强制退出要上膛
+    #expect(titles("port 14013") == [":14013"])
+    let wechat = try #require(model.selectedItem)
+    #expect(model.primaryAction(for: wechat).title == "退出")
+    #expect(model.commandReturnAction(for: wechat)?.title == "强制退出")
+    #expect(
+      !model.isDangerous(wechat, commandKey: false) && model.isDangerous(wechat, commandKey: true))
+    model.commandReturn(wechat)
+    #expect(performed.count == 2)
+    #expect(model.alternateSubtitle(for: wechat) == "再按 ⌘↩ 强制退出「微信」，没存的内容会丢失")
+    model.commandReturn(wechat)
+    #expect(performed.last == .forceQuit("/Applications/WeChat.app"))
+    model.execute(wechat)
+    #expect(performed.last == .quit("/Applications/WeChat.app") && performed.count == 4)
+    // 改成 kill：各列各的（kill 不列程序坞里的 App）
+    model.query = "kill "
+    await model.processLookup()
+    #expect(model.results.map(\.title) == ["node", "python3"] && listed == [.port, .kill])
+  }
+
+  /// kill 还没列完就改成 port：kill 那一份丢掉，port 自己列（以前只看「有没有在列」，会一直停在「正在读取…」）
+  @Test func switchingFromKillToPortRelists() async throws {
+    let (model, _) = try model()
+    let node = Processes.Entry(pid: 4321, memory: 1, path: "/opt/homebrew/bin/node")
+    var listed: [SystemCommands.Verb] = []
+    model.processTargets = { verb in
+      listed.append(verb)
+      return verb == .port
+        ? Processes.portItems([node], ports: [4321: [3000]], directories: [:], apps: [:])
+        : Processes.items([node], ports: [:], excluding: [])
+    }
+    model.query = "kill "
+    model.query = "port "
+    await model.processLookup()
+    #expect(model.results.map(\.title) == [":3000"] && listed.last == .port)
+    model.query = "port 3"  // 列完以后打字不重列
+    #expect(model.results.map(\.title) == [":3000"] && listed.filter { $0 == .port }.count == 1)
   }
 
   // MARK: D9 系统设置面板

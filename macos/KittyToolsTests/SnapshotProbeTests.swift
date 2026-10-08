@@ -1410,7 +1410,8 @@ struct SnapshotProbeTests {
   }
 
   /// 体检第 6 批：单位换算 / 进制 / 千分位（带 ⌘K 的复制项）、系统设置面板、浏览历史（排在用过的网址后面，网站图标是
-  /// 开头摆的假图）、kill 列后台进程（按端口、⌘↩ 上膛）。进程、历史都是注入的，不跑 ps、不读 Chrome
+  /// 开头摆的假图）、kill 列后台进程（按端口、⌘↩ 上膛）、port 列在监听的端口（补全提示、按端口号筛、⌘↩ 上膛）。
+  /// 进程、历史都是注入的，不跑 ps、不读 Chrome
   private func renderLauncherBatch6(_ out: String, usage: LauncherUsage, apps: [LauncherItem])
     async throws
   {
@@ -1432,18 +1433,47 @@ struct SnapshotProbeTests {
           title: "grid - CSS: Cascading Style Sheets | MDN", visitedAt: .now - 86_400),
       ])
     }
-    model.processTargets = {
-      Processes.items(
+    let home = NSHomeDirectory()
+    model.processTargets = { verb in
+      let node = "/opt/homebrew/bin/node"
+      guard verb == .port else {
+        return Processes.items(
+          [
+            .init(pid: 4321, memory: 312 << 20, path: node),
+            .init(pid: 5173, memory: 180 << 20, path: node),
+            .init(
+              pid: 902, memory: 96 << 20, path: "/Users/me/.pyenv/versions/3.12.4/bin/python3.12"
+            ),
+            .init(
+              pid: 1474, memory: 64 << 20,
+              path: "/Applications/Clash Verge.app/Contents/MacOS/clash-verge"),
+            .init(pid: 387, memory: 8 << 20, path: "/usr/sbin/cfprefsd"),
+          ], ports: [4321: [3000], 5173: [5173], 902: [8000, 8001]], excluding: [])
+      }
+      // 三个同名的 node 靠工作目录分开；控制中心的工作目录是根目录（不写）；微信是程序坞里的 App（装了就是它的图标）
+      return Processes.portItems(
         [
-          .init(pid: 4321, memory: 312 << 20, path: "/opt/homebrew/bin/node"),
-          .init(pid: 5173, memory: 180 << 20, path: "/opt/homebrew/bin/node"),
+          .init(pid: 4321, memory: 0, path: node), .init(pid: 5173, memory: 0, path: node),
+          .init(pid: 5190, memory: 0, path: node),
+          .init(pid: 902, memory: 0, path: "/Users/me/.pyenv/versions/3.12.4/bin/python3.12"),
           .init(
-            pid: 902, memory: 96 << 20, path: "/Users/me/.pyenv/versions/3.12.4/bin/python3.12"),
+            pid: 417, memory: 0,
+            path: "/System/Library/CoreServices/ControlCenter.app/Contents/MacOS/ControlCenter"),
           .init(
-            pid: 1474, memory: 64 << 20,
-            path: "/Applications/Clash Verge.app/Contents/MacOS/clash-verge"),
-          .init(pid: 387, memory: 8 << 20, path: "/usr/sbin/cfprefsd"),
-        ], ports: [4321: [3000], 5173: [5173], 902: [8000, 8001]], excluding: [])
+            pid: 621, memory: 0,
+            path: "/Applications/Postgres.app/Contents/Versions/18/bin/postgres"),
+          .init(pid: 1885, memory: 0, path: "/Applications/WeChat.app/Contents/MacOS/WeChat"),
+        ],
+        ports: [
+          4321: [3000], 5173: [5173], 5190: [5174], 902: [8000], 417: [5000, 7000], 621: [5432],
+          1885: [14013],
+        ],
+        directories: [
+          4321: home + "/Codes/class-reunion/apps/server",
+          5173: home + "/Codes/class-reunion/apps/web",
+          5190: home + "/Codes/class-reunion/apps/admin", 902: home + "/Codes/notes-api",
+          417: "/", 621: home + "/Library/Application Support/Postgres/var-18",
+        ], apps: [1885: .init(path: "/Applications/WeChat.app", name: "微信")])
     }
     for dark in [false, true] {
       for (name, query) in [
@@ -1452,12 +1482,16 @@ struct SnapshotProbeTests {
         ("launcher-actions-calc", "0xff+1"), ("launcher-settings", "蓝牙"),
         ("launcher-settings-privacy", "yinsi"), ("launcher-history", "git"),
         ("launcher-kill", "kill "), ("launcher-kill-port", "kill :3000"),
-        ("launcher-kill-force", "kill no"),
+        ("launcher-kill-force", "kill no"), ("launcher-port-prompt", "port"),
+        ("launcher-port", "port "), ("launcher-port-filter", "port 5"),
+        ("launcher-port-force", "port 3000"), ("launcher-port-app", "port 微信"),
       ] {
         model.query = query
         await model.processLookup()
         model.showsActions = name == "launcher-actions-calc"
-        if name == "launcher-kill-force", let first = model.results.first {
+        if ["launcher-kill-force", "launcher-port-force"].contains(name),
+          let first = model.results.first
+        {
           model.commandReturn(first)
         }
         try snapshot(

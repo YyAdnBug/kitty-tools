@@ -7,7 +7,8 @@
 //   音量：AppleScript 的 set volume（不控制别的 App，不要授权）。都用 osascript 跑在进程外：第一次控制访达 /
 //   loginwindow 时系统弹「允许控制」框，要等用户点，主线程不能跟着等。需要 apple-events entitlement。
 // - App：NSRunningApplication 的 terminate / forceTerminate / hide；推出：FileManager.unmountVolume。
-// - kill 列的后台进程（体检 D12）：kill(2) 发 SIGTERM（↩）/ SIGKILL（⌘↩，启动器里已上膛确认过）。
+// - kill / port 列的后台进程（体检 D12）：kill(2) 发 SIGTERM（↩）/ SIGKILL（⌘↩，启动器里已上膛确认过）；
+//   port 列的程序坞 App 走上一条的 terminate / forceTerminate。
 
 import AppKit
 import Carbon.HIToolbox
