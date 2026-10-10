@@ -6,7 +6,7 @@
 
 **kitty-tools 原生 macOS 版**：用 Swift 6 + SwiftUI / AppKit 重写的纯原生菜单栏工具，替代 Tauri 版的 macOS 端。基本自用：只支持 Apple 芯片（arm64），最低 macOS 15.0。
 
-- **功能**：剪贴板历史、翻译（划词 / 输入 / 复制即译 / 截图翻译，全部翻译服务）、启动器（`Launcher/`）、截图（`Screenshot/`：框选、标注、识字、钉图、长截图）、录屏与录音（`Screenshot/ScreenRecorder.swift`、`AudioRecorder.swift`）都已做完。
+- **功能**：剪贴板历史、翻译（划词 / 输入 / 复制即译 / 截图翻译，全部翻译服务）、启动器（`Launcher/`）、截图（`Screenshot/`：框选、标注、识字、钉图、长截图）、录屏与录音（`Screenshot/ScreenRecorder.swift`、`AudioRecorder.swift`）都已做完。状态屏（`StatusScreen/`：一键把所有屏幕盖上告示、拦住键盘鼠标，状态可自定义；2026-10-10 立项，0.4.0，分批进行中，PLAN §10「状态屏」）。
 - **版本**：已发布 0.1.0、0.2.0、0.3.0（录屏录音）、0.3.1（第二轮体检）、0.3.2（latest；设置的导出与导入、每天自动备份、启动器 port、长列表性能和常驻内存；2026-10-10 用户要求发布，这几版的真机手测都还没走完）。哪些待手测、下一步做什么看 PLAN §12「现状」；手测条目和发版冒烟清单在 `macos/HANDTEST.md`；里程碑 M7–M13、已拍板的 D1–D5 与不迁清单见 PLAN §10。
 - Bundle ID `com.yy.kitty-tools.native`（Debug `com.yy.kitty-tools.native.dev`），不再改（改了会丢偏好、钥匙串和授权）；产品名 / .app 名 `Kitty Tools`（Debug `Kitty Tools Dev`，2026-09-26 起，之前叫 Kitty Tools Native）。和 Tauri 旧版同名：安装前先删掉 /Applications 里旧版的 `Kitty Tools.app`。
 - **规格**：各 `mac-*` 规则（界面与动效按 `mac-whisker`）+ 对标产品（启动器 Alfred / Raycast、翻译 Bob、截图 iShot / CleanShot、录屏 CleanShot / ⌘⇧5、录音 QuickTime / iShot、剪贴板 Paste）。`macos/PLAN.md` 只留仍有效的：§2 技术栈白名单、§4 架构与文件表、§8 打包、§10 约束与已拍板决定、§11 旧逻辑问题与语言规则、§12 现状与下一步；迁移期历史（§5 的 Tauri 映射、§6 数据迁移等）和已完成批次的实现记录原样归档在 `macos/docs/archive/`（PLAN 原位置写了去处）。
@@ -24,7 +24,7 @@
 ```
 macos/                       # 本分支唯一开发区
 ├── KittyTools.xcodeproj/    # 共享 scheme：KittyTools
-├── KittyTools/              # 同步文件夹：App/ Shell/ Storage/ Clipboard/ Translate/ Launcher/ Screenshot/ Settings/ Resources/
+├── KittyTools/              # 同步文件夹：App/ Shell/ Storage/ Clipboard/ Translate/ Launcher/ Screenshot/ StatusScreen/ Settings/ Resources/
 ├── KittyToolsTests/         # 纯函数单测（Swift Testing），M2 起建
 ├── Config/                  # Base/Debug/Release.xcconfig、Info.plist（局部）、Secrets.xcconfig（不入库）
 ├── build-dmg.sh             # 打包：archive → 自检 → DMG + App 内更新用的 zip → notes
@@ -64,9 +64,15 @@ xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools -configuration
 xcrun swift-format lint --strict -r macos/KittyTools
 xcrun swift-format format -i -r macos/KittyTools
 
-# 界面截图自检：屏幕外渲染各状态（含深色）为 PNG，不弹窗、不抢键盘
+# 界面截图自检：屏幕外渲染各状态（含深色）为 PNG，不弹窗、不抢键盘（整套约 8 分钟、CPU 占用高，用户在用电脑时别反复跑；
+# 只改了状态屏就只跑它那一个函数，几秒钟：-only-testing:'KittyToolsTests/SnapshotProbeTests/statusScreen()'）
 TEST_RUNNER_KITTY_SNAPSHOT_DIR=/tmp/kitty-shots xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:KittyToolsTests/SnapshotProbeTests
+
+# 状态屏的事件拦截实机自检（按需，要「辅助功能」授权；**拦截是全吞的：建着的那约半秒里真实的键盘鼠标也会被吞**，跑之前
+# 手离开键鼠，别反复跑。状态屏本身任何自动化都不许真的进入，见 mac-overlay-panel §11）
+TEST_RUNNER_KITTY_LIVE_INPUT_BLOCK=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test '-only-testing:KittyToolsTests/StatusScreenTests/liveBlockSwallowsKeys()'
 
 # 面板关闭淡出的屏上实录自检（按需，要「屏幕录制」授权；屏幕右下角闪两次小面板，逐帧看关闭时亮度不冒尖——改了 OverlayPanel.dismiss、
 # 面板材质，或上 macOS 26 的玻璃分支后跑）
@@ -99,7 +105,7 @@ defaults delete com.yy.kitty-tools.native.dev folderAccessRequested
 |---|---|---|---|
 | `mac-native` | 常驻规则 `.cursor/rules/mac-native.mdc` | 已有 | 始终加载 |
 | `ponytail` | 常驻规则 `.cursor/rules/ponytail.mdc` | 已有 | 只给 Cursor；Claude 侧由用户级插件生效 |
-| `mac-overlay-panel` | 技能 | 已有（M1，M9 补截图与钉图） | `Shell/**`、`Screenshot/**`、`Translate/SelectionReader.swift`；NSPanel、热键、前台快照、粘贴回原 App、划词时序、设置窗激活、截图框选遮罩、钉图 |
+| `mac-overlay-panel` | 技能 | 已有（M1，M9 补截图与钉图，2026-10-10 补状态屏） | `Shell/**`、`Screenshot/**`、`StatusScreen/**`、`Translate/SelectionReader.swift`；NSPanel、热键、前台快照、粘贴回原 App、划词时序、设置窗激活、截图框选遮罩、钉图、状态屏的全屏面板和事件拦截 |
 | `mac-clipboard` | 技能 | 已有（M3） | `Clipboard/**`、`Storage/Database.swift`、`Storage/Backup.swift`（每日备份、打不开时的恢复） |
 | `mac-translate` | 技能 | 已有（M4） | `Translate/**` |
 | `mac-whisker` | 技能 | 已有（2026-09-25；2026-10-03 拆成核心 + 5 个界面文件） | 任何界面、动效、图标改动：先读核心 `rule.mdc`（三种皮肤、刻度、七条弹簧曲线、五个招牌时刻、无障碍、验收），再读那个界面的文件（`launcher` / `clipboard` / `translate` / `capture` / `settings`.mdc，Cursor 按路径自动带上）；**用户要求以后都按它执行** |

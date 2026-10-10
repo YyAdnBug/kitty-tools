@@ -1,7 +1,8 @@
 // 应用生命周期：单实例检查，按依赖顺序组装各模块（PLAN §4），热键与各翻译入口，首次安装打开欢迎引导、
 // 更新后第一次启动用刘海岛说一声，退出 / 锁屏时的清理；数据打不开时问用户怎么办、每天备份的时机（Storage/Backup.swift）；
 // 录屏（框选、开录、结果、飞入和视频卡、退出前收尾、上次闪退留下的文件）；
-// 录音（录音第 5 批：开录、和录屏互斥、结果、飞入和录音卡，收尾和闪退恢复同录屏）。
+// 录音（录音第 5 批：开录、和录屏互斥、结果、飞入和录音卡，收尾和闪退恢复同录屏）；
+// 状态屏的三个入口（快捷键进第一个状态、菜单栏子菜单、启动器每个状态一条；会话在 StatusScreen/StatusScreen.swift）。
 
 import AppKit
 import OSLog
@@ -72,6 +73,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private let updater = Updater()
   /// CleanShot 式常驻缩略图（截图飞入右下角后留在那里）
   private let shelf = ShotShelf()
+  /// 状态屏（PLAN §10）：进入时收起三块浮层、停用全局热键，退出时恢复。正在录屏 / 录音时不让进（控制条和停止项
+  /// 会被盖住、热键停着，退出前停不了）；截图框选、读选中文字这类一会儿就完的事进行中也不进
+  private lazy var statusScreen: StatusScreen = {
+    let screen = StatusScreen()
+    screen.island = island
+    screen.hotKeys = hotKeys
+    screen.hidePanels = { [unowned self] in hidePanels() }
+    screen.blocker = { [unowned self] in
+      let busy = "先停止这一段再进入状态屏"
+      if recorder != nil { return ("正在录屏", busy) }
+      if audioRecorder?.isStarted == true { return ("正在录音", busy) }
+      return nil
+    }
+    screen.isBusy = { [unowned self] in isCapturing || isReadingSelection }
+    return screen
+  }()
   /// 菜单栏图标与菜单（启动后才建：单测以本 App 为宿主时不往菜单栏加东西）
   private var statusItem: StatusItem?
   /// 钉图（菜单栏显示「隐藏 / 关闭全部钉图」）
@@ -469,6 +486,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if action != .screenRecord, let key = hotKeys.bindings[action] {
           recorder?.inputOverlay?.showKey(key.display)
         }
+        // 状态屏里热键本来停着；万一被别处重新注册了（安全输入开着时拦截也吞不掉它们）：不响应
+        guard !statusScreen.isActive else { return }
         run(action)
       }
     }
@@ -535,6 +554,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   func applicationWillTerminate(_ notification: Notification) {
     guard isRunning else { return }
+    statusScreen.exit(.quit)  // 在状态屏里被要求退出（远程、脚本）：拦截当场撤掉
     // 面板固定着删了再退出：删掉的也要落库（撤销栈平时在面板收起时提交，体检 A2），⌘C 复制过的挪到最前
     clipboardModel.reset()
     if UserDefaults.standard.bool(forKey: Prefs.clipboardClearOnQuit) {
@@ -584,6 +604,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 启动器里的内置动作（id 见 LauncherItem.actions，体检 A26）；启动器已收起。和菜单栏走同一个 run
   private func runLauncherAction(_ id: String) {
+    if id.hasPrefix(LauncherItem.statusPresetPrefix) {
+      // 状态屏的某个状态：按 id 现找（列表可能刚在设置里改过），没了就不做
+      let presets = StatusPreset.load()
+      if let preset = presets.first(where: { LauncherItem.statusPresetPrefix + $0.id == id }) {
+        statusScreen.enter(preset)
+      }
+      return
+    }
     if let action = HotKeyAction.allCases.first(where: { LauncherItem.actionID($0) == id }) {
       return run(action)
     }
@@ -609,14 +637,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   /// 菜单栏和启动器内置动作此刻的状态：暂停记录了没有、复制即译开没开、钉图（nil = 没有）、能不能检查更新、在录屏还是录音
-  /// （录音待录时不算在录：那一项仍叫「录音」，点它是开始）
+  /// （录音待录时不算在录：那一项仍叫「录音」，点它是开始）、状态屏有哪些状态。
+  /// ponytail: 状态列表每次现读偏好（启动器每敲一个字读一遍；改过列表的要解一次 JSON，最多 20 个、几十微秒），
+  /// 量出来慢了再缓存
   private var menuState: LauncherItem.ActionState {
     LauncherItem.ActionState(
       recordingPaused: watcher.isUserPaused,
       copyToTranslate: UserDefaults.standard.bool(forKey: Prefs.translateCopyToTranslate),
       pinsHidden: pins.panels.isEmpty ? nil : pins.isHidden, checksUpdates: updater.isSupported,
       recording: recorder != nil
-        ? .screenRecord : audioRecorder?.isStarted == true ? .audioRecord : nil)
+        ? .screenRecord : audioRecorder?.isStarted == true ? .audioRecord : nil,
+      statusPresets: StatusPreset.load())
   }
 
   /// 全局热键动作：热键、菜单栏、启动器同一个分发
@@ -634,6 +665,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     case .screenRecord: screenRecord()
     case .audioRecord: audioRecord()
     case .pinClipboard: pinClipboard()
+    // 快捷键进入列表里的第一个状态（Z10）；别的状态从菜单栏、启动器进
+    case .statusScreen:
+      if let first = StatusPreset.load().first { statusScreen.enter(first) }
     }
   }
 
@@ -1343,7 +1377,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// （目标自动时）和刚翻过的同一段静默跳过（体检 A12 B20）；这次的译文不自动复制（盖掉刚复制的原文，A19）
   private func copyToTranslate(_ text: String) {
     let defaults = UserDefaults.standard
-    guard defaults.bool(forKey: Prefs.translateCopyToTranslate) else { return }
+    // 状态屏里不弹：浮窗会在面板底下冒出来（透出样式看得见）
+    guard defaults.bool(forKey: Prefs.translateCopyToTranslate), !statusScreen.isActive else {
+      return
+    }
     let (first, second) = Lang.preferredPair
     guard
       TranslateCoordinator.worthTranslating(
@@ -1357,17 +1394,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 打开设置窗（page 为 nil 保持上次的页；onboarding 盖上欢迎引导）：先按正常隐藏路径收起浮层
   /// （固定的浮层会盖在设置窗上）
   func showSettings(page: SettingsPage? = nil, onboarding: Bool = false) {
+    hidePanels()
+    settingsWindow.show(page: page, onboarding: onboarding)
+  }
+
+  /// 三块浮层都收起，固定着的也收（打开设置、进入状态屏）
+  private func hidePanels() {
     clipboardPanel.hide()
     launcherPanel.hide()
     translatePanel.hide()
-    settingsWindow.show(page: page, onboarding: onboarding)
   }
 
   // MARK: 菜单栏菜单
 
   /// 每次打开菜单前重建（N15）：按 HotKeyAction.sections 分节，和快捷键页同名同序，标题、符号、家族色也取自那里；
   /// 右边是当前生效的快捷键，没设 / 注册失败的留空；每节末尾接上那一节的 MenuExtra（暂停记录剪贴板、复制即译、
-  /// 有钉图时的两项）；有新版本时最上面是「更新到 x…」；最后是设置、关于、检查更新（正式版）、退出
+  /// 有钉图时的两项）；有新版本时最上面是「更新到 x…」；最后是设置、关于、检查更新（正式版）、退出。
+  /// 状态屏那一节不画节标题，只有一项「状态屏」带子菜单：每个状态一行，第一行右边是全局快捷键（它进的就是第一个状态）
   private func buildStatusMenu(_ menu: NSMenu) {
     let state = menuState
     let extras = MenuExtra.allCases.filter { $0.isAvailable(state) }
@@ -1387,6 +1430,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     for (index, section) in HotKeyAction.sections.enumerated() {
       if index > 0 { menu.addItem(.separator()) }
+      if section.actions == [.statusScreen] {
+        let family = HotKeyAction.statusScreen
+        let color = NSColor(family.color)
+        let item = menu.addAction(family.title, symbol: family.symbol, color: color) {}
+        let submenu = NSMenu()
+        for (row, preset) in state.statusPresets.enumerated() {
+          let binding = row == 0 ? hotKeys.bindings[family] : nil
+          submenu.addAction(
+            preset.title, symbol: preset.rowSymbol,
+            color: color, key: binding?.menuKeyEquivalent ?? "",
+            modifiers: binding?.modifierFlags ?? []
+          ) { [unowned self] in statusScreen.enter(preset) }
+        }
+        item.submenu = submenu
+        continue
+      }
       menu.addItem(.sectionHeader(title: section.title))
       for action in section.actions {
         let binding = hotKeys.bindings[action]

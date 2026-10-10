@@ -270,10 +270,10 @@ struct HistoryStoreTests {
   @Test func silentReplaceHasNoDefaultHotKey() {
     #expect(HotKeyAction.translateReplace.defaultHotKey == nil)
     // 只能加在末尾（注册 id 是下标）：录屏（2026-09-30）接在划词翻译并替换后面，录音（录音第 5 批，不设默认键）再接在后面，
-    // 钉住剪贴板里的图（第二轮体检 F1，不设默认键）又接在后面
+    // 钉住剪贴板里的图（第二轮体检 F1，不设默认键）又接在后面，状态屏（2026-10-10，不设默认键）再接在后面
     #expect(
-      Array(HotKeyAction.allCases.suffix(4)) == [
-        .translateReplace, .screenRecord, .audioRecord, .pinClipboard,
+      Array(HotKeyAction.allCases.suffix(5)) == [
+        .translateReplace, .screenRecord, .audioRecord, .pinClipboard, .statusScreen,
       ])
     #expect(HotKeyAction.audioRecord.defaultHotKey == nil)
     #expect(HotKeyAction.pinClipboard.defaultHotKey == nil)

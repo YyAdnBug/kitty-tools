@@ -414,26 +414,6 @@ private struct Emerge: ViewModifier {
   }
 }
 
-/// 错误时整座岛左右抖：0, −7, 6, −4, 2, 0，共 0.4 s
-private struct Shake: ViewModifier {
-  let count: Int
-  let enabled: Bool
-
-  func body(content: Content) -> some View {
-    content.keyframeAnimator(initialValue: CGFloat(0), trigger: count) { view, x in
-      view.offset(x: enabled ? x : 0)
-    } keyframes: { _ in
-      KeyframeTrack {
-        LinearKeyframe(-7, duration: 0.07)
-        LinearKeyframe(6, duration: 0.08)
-        LinearKeyframe(-4, duration: 0.08)
-        LinearKeyframe(2, duration: 0.08)
-        LinearKeyframe(0, duration: 0.09)
-      }
-    }
-  }
-}
-
 /// 刘海岛形体：顶边两侧向外弯出的「耳朵」（凹弧接到菜单栏顶边）+ 圆角下巴。耳朵和底角半径可动画
 /// nonisolated：path(in:) 可能在 SwiftUI 的异步渲染线程上调，纯几何计算，不绑定主线程
 nonisolated struct IslandShape: Shape {

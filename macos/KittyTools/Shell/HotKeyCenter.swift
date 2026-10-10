@@ -145,7 +145,8 @@ struct HotKey: Codable, Hashable {
 /// 追加动作只能加在末尾：注册时用 allCases 的下标当热键 id
 enum HotKeyAction: String, CaseIterable {
   case clipboard, selectionTranslate, inputTranslate, screenshotTranslate, launcher, screenshot,
-    screenshotLastRegion, recognizeText, translateReplace, screenRecord, audioRecord, pinClipboard
+    screenshotLastRegion, recognizeText, translateReplace, screenRecord, audioRecord, pinClipboard,
+    statusScreen
 
   var title: String {
     switch self {
@@ -161,6 +162,7 @@ enum HotKeyAction: String, CaseIterable {
     case .screenRecord: "录屏"
     case .audioRecord: "录音"
     case .pinClipboard: "钉住剪贴板里的图"
+    case .statusScreen: "状态屏"
     }
   }
 
@@ -204,6 +206,8 @@ enum HotKeyAction: String, CaseIterable {
     case .audioRecord: nil
     // 同上（第二轮体检 F1）
     case .pinClipboard: nil
+    // 状态屏（Z10）不设默认键：按了就拦住键盘鼠标，不能让人误触；设了键是进入列表里的第一个状态
+    case .statusScreen: nil
     }
   }
 
@@ -245,6 +249,8 @@ enum HotKeyAction: String, CaseIterable {
         .pinClipboard,
       ]
     ),
+    // 菜单栏里这一节不画节标题，只有一项「状态屏」带子菜单（每个状态一行，AppDelegate.buildStatusMenu）
+    ("状态屏", [.statusScreen]),
   ]
 
   /// 种类色块里的符号
@@ -264,6 +270,7 @@ enum HotKeyAction: String, CaseIterable {
     case .audioRecord: "waveform"
     // 同速查表的「钉图」组、常驻缩略图的钉图钮；不用 pin：菜单里紧挨着的「隐藏全部钉图」是它
     case .pinClipboard: "pin.fill"
+    case .statusScreen: "hand.raised.fill"
     }
   }
 
@@ -277,6 +284,7 @@ enum HotKeyAction: String, CaseIterable {
     case .screenshot, .screenshotLastRegion, .recognizeText, .screenRecord, .audioRecord,
       .pinClipboard:
       Style.Family.screenshot
+    case .statusScreen: Style.Family.statusScreen
     }
   }
 }

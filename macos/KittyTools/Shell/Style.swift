@@ -189,6 +189,8 @@ enum Style {
     static let general = Color(nsColor: .systemGray)
     static let url = Color(nsColor: .systemTeal)
     static let search = Color(nsColor: .systemIndigo)
+    /// 状态屏（告示牌的木色；现有家族没用过，不和网址的 teal 撞）
+    static let statusScreen = Color(nsColor: .systemBrown)
   }
 
   // MARK: 无障碍开关（AppKit 侧）
@@ -237,6 +239,8 @@ enum Style {
     static let text = NSColor.white.withAlphaComponent(0.95)
     static let secondaryText = NSColor.white.withAlphaComponent(0.60)
     static let tertiaryText = NSColor.white.withAlphaComponent(0.40)
+    /// 整屏压暗（状态屏的「透出」样式：后面的窗口还看得见；增强对比度时压得更深）
+    static var scrim: NSColor { .black.withAlphaComponent(increaseContrast ? 0.82 : 0.68) }
     /// 悬停底（按钮后面 control 圆角的浅色块）white 0.10（增强对比度 0.20）
     static var hoverFill: NSColor { .white.withAlphaComponent(increaseContrast ? 0.20 : 0.10) }
     /// 分组分隔线 1 × 18 white 0.14（增强对比度 0.35）
@@ -565,5 +569,54 @@ struct PanelRim: View {
         Color.black.opacity(high ? 0.25 : dark ? 0.28 : 0.10), lineWidth: high ? 1 : 0.5)
     }
     .allowsHitTesting(false)
+  }
+}
+
+/// 左右抖一下：0, −7, 6, −4, 2, 0，共 0.4 s，count 变一次播一次。刘海岛报错时整座岛抖（Shell/Island.swift）、
+/// 状态屏挡下一次触碰时标题抖（StatusScreen/StatusScreenView.swift）共用
+struct Shake: ViewModifier {
+  let count: Int
+  let enabled: Bool
+
+  func body(content: Content) -> some View {
+    content.keyframeAnimator(initialValue: CGFloat(0), trigger: count) { view, x in
+      view.offset(x: enabled ? x : 0)
+    } keyframes: { _ in
+      KeyframeTrack {
+        LinearKeyframe(-7, duration: 0.07)
+        LinearKeyframe(6, duration: 0.08)
+        LinearKeyframe(-4, duration: 0.08)
+        LinearKeyframe(2, duration: 0.08)
+        LinearKeyframe(0, duration: 0.09)
+      }
+    }
+  }
+}
+
+extension View {
+  /// HUD 皮肤（`Style.HUD`）：底色、内描边、外 0.5 pt 描边、主文字色。降低透明度（底色 0.97）、增强对比度（内描边
+  /// 1 pt white 0.35）在取值时判断：悬停才建这些按钮，每次悬停都重新取。
+  /// macOS 26 起是深色液态玻璃（mac-whisker §2「26 分支」），不画底色和描边，两个无障碍开关交给玻璃。
+  /// 常驻缩略图的胶囊和圆钮（Screenshot/ShotShelf.swift）、状态屏的退出提示和透出样式的底板（StatusScreenView）共用。
+  /// 屏外渲染里胶囊两端各有一小段更亮的竖线（换成圆角矩形、把圆角收小 0.5 都试过，一样；原因没查清）：
+  /// 真机上看不看得出来待手测（HANDTEST「状态屏手测」）
+  @ViewBuilder func hudSkin<S: InsettableShape>(_ shape: S) -> some View {
+    if #available(macOS 26, *) {
+      foregroundStyle(Color(nsColor: Style.HUD.text))
+        .glassEffect(.regular, in: shape)
+        .environment(\.colorScheme, .dark)
+        .contentShape(shape)
+    } else {
+      foregroundStyle(Color(nsColor: Style.HUD.text))
+        .background(Color(nsColor: Style.HUD.fill), in: shape)
+        .overlay(
+          shape.strokeBorder(
+            Color(nsColor: Style.HUD.innerStroke), lineWidth: Style.HUD.strokeWidth)
+        )
+        .overlay(
+          shape.inset(by: -0.5).strokeBorder(Color(nsColor: Style.HUD.outerStroke), lineWidth: 0.5)
+        )
+        .contentShape(shape)
+    }
   }
 }

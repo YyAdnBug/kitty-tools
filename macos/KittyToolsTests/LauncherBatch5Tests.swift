@@ -215,7 +215,8 @@ struct LauncherBatch5Tests {
         "translate-screenshot", "copyToTranslate", "screenshot", "screenshotLastRegion", "ocr",
         "screenRecord", "audioRecord", "pinClipboard", "settings", "shortcuts", "about", "quit",
       ])
-    for action in HotKeyAction.allCases where action != .launcher {
+    // 状态屏不是一条：每个状态一条（StatusScreenTests.entries）
+    for action in HotKeyAction.allCases where action != .launcher && action != .statusScreen {
       let item = plain.first { $0.hotKeyAction == action }
       #expect(item?.title == action.title && item?.symbol == action.symbol, "\(action)")
     }

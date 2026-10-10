@@ -928,28 +928,3 @@ struct ShelfCardView: View {
     .accessibilityLabel(title)
   }
 }
-
-extension View {
-  /// HUD 皮肤（`Style.HUD`）：底色、内描边、外 0.5 pt 描边、主文字色。降低透明度（底色 0.97）、增强对比度（内描边
-  /// 1 pt white 0.35）在取值时判断：悬停才建这些按钮，每次悬停都重新取。
-  /// macOS 26 起是深色液态玻璃（mac-whisker §2「26 分支」），不画底色和描边，两个无障碍开关交给玻璃
-  @ViewBuilder fileprivate func hudSkin<S: InsettableShape>(_ shape: S) -> some View {
-    if #available(macOS 26, *) {
-      foregroundStyle(Color(nsColor: Style.HUD.text))
-        .glassEffect(.regular, in: shape)
-        .environment(\.colorScheme, .dark)
-        .contentShape(shape)
-    } else {
-      foregroundStyle(Color(nsColor: Style.HUD.text))
-        .background(Color(nsColor: Style.HUD.fill), in: shape)
-        .overlay(
-          shape.strokeBorder(
-            Color(nsColor: Style.HUD.innerStroke), lineWidth: Style.HUD.strokeWidth)
-        )
-        .overlay(
-          shape.inset(by: -0.5).strokeBorder(Color(nsColor: Style.HUD.outerStroke), lineWidth: 0.5)
-        )
-        .contentShape(shape)
-    }
-  }
-}

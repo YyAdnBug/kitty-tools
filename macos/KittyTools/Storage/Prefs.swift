@@ -142,6 +142,12 @@ enum Prefs {
   /// 识字后把同一段的换行合成一行（中日文直接连、其它加空格）
   static let ocrJoinLines = "ocrJoinLines"
 
+  /// 状态屏的状态列表（StatusPreset 数组的 JSON）。**不注册默认值**：没存过 / 解不出 / 为空时用自带的三个
+  /// （StatusPreset.load）；导出导入等设置页那一批再定。键名都带 statusScreen：单说 status 指的是菜单栏图标（StatusItem）
+  static let statusScreenPresets = "statusScreenPresets"
+  /// 状态屏里有人碰了键盘鼠标时浮出退出提示（默认开；关了只剩按住 esc 两秒）
+  static let statusScreenExitHint = "statusScreenExitHint"
+
   /// 上次启动的版本号：没有 = 首次安装（打开欢迎引导），和当前不同 = 刚更新（刘海岛「已更新到 x」+ 本版摘要，不开设置窗，体检 A29）
   static let lastSeenVersion = "lastSeenVersion"
   /// 自动检查更新（启动后一次、之后每天一次）
@@ -220,6 +226,7 @@ enum Prefs {
       screenRecordShowsKeys: false,
       audioRecordSource: AudioRecorder.Source.microphone.rawValue,
       audioRecordStartsImmediately: false,
+      statusScreenExitHint: true,
     ]
   }
 

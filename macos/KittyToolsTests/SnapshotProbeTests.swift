@@ -855,6 +855,44 @@ struct SnapshotProbeTests {
     }
   }
 
+  /// 状态屏（PLAN §10）：一块 1200 × 800 的屏，底下垫着假桌面（不透明的两种样式看不到它）。单独一个测试函数：
+  /// 改状态屏时只跑它（几秒钟），不用等整套 renderPanels——
+  ///   -only-testing:'KittyToolsTests/SnapshotProbeTests/statusScreen()'
+  /// 熄屏（纯黑，什么都不显示）、熄屏碰了一下（只浮出退出提示）、告示（提示浮着）、透出（HUD 底板，进度环按住到一半）、
+  /// 透出的增强对比度（次要文字提一档）、自己加的状态（不带图标、两行标题、长说明）。进入时刻固定，图里的时间不随运行变
+  @Test(.enabled(if: directory != nil)) func statusScreen() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    let desktop = try ScreenshotSnapshotTests.desktop()
+    let presets = StatusPreset.builtIn
+    let startedAt = try #require(
+      Calendar.current.date(
+        from: DateComponents(year: 2026, month: 10, day: 10, hour: 14, minute: 2)))
+    func shot(
+      _ name: String, _ preset: StatusPreset, hint: Bool = false, held: Double = 0,
+      contrast: ColorSchemeContrast = .standard
+    ) throws {
+      let screen = StatusScreen(
+        showing: preset, startedAt: startedAt, elapsed: 83 * 60, showsHint: hint, held: held)
+      try snapshot(
+        ZStack {
+          Image(decorative: desktop, scale: 2)
+          StatusScreenView(screen: screen)
+        }
+        .environment(\._colorSchemeContrast, contrast),
+        size: NSSize(width: 1200, height: 800), dark: false, to: "\(out)/\(name).png")
+    }
+    try shot("status-screen-blackout", presets[0])
+    try shot("status-screen-blackout-hint", presets[0], hint: true)
+    try shot("status-screen-sign", presets[2], hint: true)
+    try shot("status-screen-dim", presets[1], hint: true, held: 0.5)
+    try shot("status-screen-dim-contrast", presets[1], hint: true, contrast: .increased)
+    let custom = StatusPreset(
+      id: "custom", title: "正在导出年度报告的全部视频素材，请不要合上盖子", detail: "预计下午四点半结束，有事打我手机；这台电脑不要断电、不要拔硬盘",
+      symbol: "", style: .dim, power: .displayOn, autoEndMinutes: 0)
+    try shot("status-screen-dim-long", custom)
+  }
+
   /// 翻译浮窗：空态、结果（没有「翻译」按钮）、原文改过（弹出「翻译 ↩」）、复制即译状态胶囊 + 固定、
   /// 替换原文、查词、历史（分组 + 选中第三条 + 范围胶囊）、收藏范围、空历史、提示、长译文（卡内滚动 + 渐隐，
   /// 默认和 140% 字号）；「⋯」菜单是 NSMenu，屏外画不出来

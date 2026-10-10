@@ -50,22 +50,26 @@ struct LauncherItem: Identifiable, Hashable {
   var visitedAt: Date?
   /// kill / port 列的进程：结束时要的 PID 和名字；port 列的程序坞 App 另有包路径和显示名（↩ 走退出）
   var process: Processes.Entry?
+  /// 状态屏的一个状态：色块里的符号（状态自己选的图标，StatusPreset.rowSymbol）；别的结果是 nil
+  var presetSymbol: String?
 
   var id: String { kind.rawValue + "\n" + target }
 
   /// 内置动作此刻的状态（AppDelegate 在每次搜索时给）：暂停记录剪贴板了没有、复制即译开没开、钉图（nil = 没有钉图，
-  /// true = 藏着）、能不能检查更新（正式版）、正在录的是录屏还是录音（录着时那一项是「停止录屏」/「停止录音」；nil = 没在录）
+  /// true = 藏着）、能不能检查更新（正式版）、正在录的是录屏还是录音（录着时那一项是「停止录屏」/「停止录音」；nil = 没在录）、
+  /// 状态屏有哪些状态（每个一条结果）
   struct ActionState: Equatable {
     var recordingPaused = false
     var copyToTranslate = false
     var pinsHidden: Bool?
     var checksUpdates = false
     var recording: HotKeyAction?
+    var statusPresets: [StatusPreset] = []
   }
 
   /// 内置动作（体检 A26）：和菜单栏同名同序——按 HotKeyAction.sections（启动器自己除外），每节末尾接上那一节的
   /// MenuExtra（暂停记录剪贴板、复制即译、有钉图时的两项），最后设置、快捷键速查表、关于、检查更新（正式版）、
-  /// 退出 Kitty Tools（菜单栏图标隐藏时只剩这里能退出，第 9 批 M1）。
+  /// 退出 Kitty Tools（菜单栏图标隐藏时只剩这里能退出，第 9 批 M1）。状态屏那一节不是一条「状态屏」，而是每个状态一条（Z10）。
   /// 老的 6 个 id 保留（使用记录按 id 累计），新加的用 HotKeyAction.rawValue / MenuExtra.rawValue。
   /// 按状态缓存：每敲一个字都要列一遍，拼音转写不便宜
   static func actions(_ state: ActionState = .init()) -> [LauncherItem] {
@@ -74,6 +78,10 @@ struct LauncherItem: Identifiable, Hashable {
     let extras = MenuExtra.allCases.filter { $0.isAvailable(state) }
     for section in HotKeyAction.sections {
       for hotKey in section.actions where hotKey != .launcher {
+        if hotKey == .statusScreen {
+          items += state.statusPresets.map(statusPreset)
+          continue
+        }
         items.append(
           action(
             actionID(hotKey), hotKey.title(recording: state.recording == hotKey),
@@ -103,6 +111,26 @@ struct LauncherItem: Identifiable, Hashable {
   }
 
   private static var actionCache: (state: ActionState, items: [LauncherItem])?
+
+  /// 状态屏的状态在启动器里的 id 前缀（后面接 StatusPreset.id；收藏按它认）
+  /// nonisolated：排序（LauncherMatch.priority，不绑主线程）要读
+  nonisolated static let statusPresetPrefix = "statusScreen:"
+
+  nonisolated var isStatusPreset: Bool {
+    kind == .action && target.hasPrefix(Self.statusPresetPrefix)
+  }
+
+  /// 状态屏的一个状态：标题是状态的标题，副标题同别的内置动作，右侧类型写「状态屏」；输状态的标题、「状态屏」、
+  /// 拼音都搜得到。↩ 直接进入、不确认，所以同分时排在别的结果后面、也不记使用（LauncherMatch.priority、LauncherModel）
+  private static func statusPreset(_ preset: StatusPreset) -> LauncherItem {
+    let family = HotKeyAction.statusScreen
+    var item = action(statusPresetPrefix + preset.id, preset.title, "Status Screen")
+    let pinyin = AppCatalog.pinyin(family.title)
+    item.names += [family.title, pinyin?.full].compactMap { $0.map(LauncherMatch.fold) }
+    item.initials += [pinyin?.initials].compactMap { $0 }
+    item.presetSymbol = preset.rowSymbol
+    return item
+  }
 
   /// 对得上全局热键的内置动作的 id：老的 5 个沿用旧名（使用记录按 id 累计，改名会丢），新加的用 rawValue
   static func actionID(_ action: HotKeyAction) -> String {
@@ -139,6 +167,7 @@ struct LauncherItem: Identifiable, Hashable {
   }
 
   var symbol: String {
+    if let presetSymbol { return presetSymbol }
     // 对得上全局热键的内置动作（和 cb 那一行）用 HotKeyAction 的符号：和菜单栏、快捷键页是同一个图标
     if kind == .action || kind == .clip, let action = hotKeyAction { return action.symbol }
     return switch (kind, target) {

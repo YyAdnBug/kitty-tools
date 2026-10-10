@@ -475,7 +475,7 @@ extension LauncherItem {
     case .app: "square.grid.2x2.fill"
     case .path where contentType?.conforms(to: .volume) == true: "externaldrive.fill"
     case .path: contentType?.conforms(to: .folder) == true ? "folder.fill" : "doc.fill"
-    case .action: "command"
+    case .action: isStatusPreset ? HotKeyAction.statusScreen.symbol : "command"
     case .system: "power"
     case .translate: "character.bubble.fill"
     case .url where isSettingsPane: "gearshape.fill"
@@ -487,6 +487,7 @@ extension LauncherItem {
   fileprivate var familyColor: Color {
     switch kind {
     // 内置动作按菜单栏的家族色（体检 A26）：对得上全局热键的用它的，其余用 MenuExtra 的（跟着菜单里所在那一节）
+    case .action where isStatusPreset: Style.Family.statusScreen
     case .action:
       hotKeyAction?.color ?? MenuExtra(rawValue: target)?.color ?? Style.Family.general
     case .translate: Style.Family.translate
@@ -512,7 +513,7 @@ extension LauncherItem {
     case .path where contentType?.conforms(to: .volume) == true: "宗卷"
     case .path:
       contentType.map { FileSearch.kindTitle(path: target, contentType: $0.identifier) } ?? "文件"
-    case .action: "命令"
+    case .action: isStatusPreset ? HotKeyAction.statusScreen.title : "命令"
     case .system: "系统"
     case .prompt where target.hasPrefix("system-"): "系统"
     case .translate: "翻译"
