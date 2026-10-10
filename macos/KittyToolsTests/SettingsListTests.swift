@@ -10,12 +10,14 @@ import Testing
 @testable import KittyTools
 
 struct SettingsListTests {
-  /// 侧栏顺序和菜单栏、快捷键页、引导同序：翻译在截图前面（体检 B51），录制紧跟截图（2026-10-03 拆出来）
+  /// 侧栏顺序和菜单栏、快捷键页、引导同序：翻译在截图前面（体检 B51），录制紧跟截图（2026-10-03 拆出来），
+  /// 状态屏排在录制后面（Z11）
   @Test func sidebarOrderMatchesMenu() {
     let pages = SettingsPage.allCases
     #expect(
       pages == [
-        .general, .clipboard, .launcher, .translate, .screenshot, .record, .hotkeys, .about,
+        .general, .clipboard, .launcher, .translate, .screenshot, .record, .statusScreen, .hotkeys,
+        .about,
       ])
     let sections = HotKeyAction.sections.map(\.title)
     #expect(sections.firstIndex(of: "翻译")! < sections.firstIndex(of: "截图与录制")!)
@@ -36,6 +38,11 @@ struct SettingsListTests {
     #expect(!SettingsPage.screenshot.matches("录屏") && !SettingsPage.screenshot.matches("麦克风"))
     #expect(SettingsPage.page(for: "文件夹", current: .record) == .record)
     #expect(SettingsPage.page(for: "文件夹", current: .about) == .screenshot)
+    // 「状态」也是通用页「状态栏」里的字：搜它停在状态屏；状态屏页里各项的叫法搜得到
+    #expect(SettingsPage.page(for: "状态", current: .general) == .statusScreen)
+    for word in ["清洁", "请勿触碰", "告示", "退出", "屏幕常亮"] {
+      #expect(SettingsPage.statusScreen.matches(word), "\(word)")
+    }
     #expect(SettingsPage.page(for: "没有这一项", current: .about) == .about)
     #expect(SettingsPage.page(for: "", current: .about) == .about)
   }

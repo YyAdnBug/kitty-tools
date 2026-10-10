@@ -1,7 +1,7 @@
 // 设置窗（Whisker §6 设置）：普通 NSWindow 里放 SwiftUI 的 NavigationSplitView。左边侧栏 = 家族色块 + 页名，
 // 顶上的搜索框按每页的关键词筛页；右边每页一个页头（40 pt 家族色块 + 标题 + 一句说明）+ 分组表单。
 // 记住上次看的页，窗口标题跟着页走；首次安装时盖一层欢迎引导（OnboardingView）。
-// 工具栏常驻「‹ 返回」（SettingsBackButton，同系统设置）：翻译服务、网页搜索的详情页里点它或 ⌘[ 回列表，别处置灰；
+// 工具栏常驻「‹ 返回」（SettingsBackButton，同系统设置）：翻译服务、网页搜索、状态屏的状态的详情页里点它或 ⌘[ 回列表，别处置灰；
 // 主菜单「显示 › 返回 ⌘[」同效（SettingsCommands，HIG：工具栏上的操作菜单栏里也要有）。
 // 不用 SwiftUI Settings scene：LSUIElement 应用里它会被压到别的 App 后面，浮层上的齿轮也调不到 openSettings。
 // 打开：先收起浮层 → 切成 .regular（出现 Dock 图标）并激活；关闭时切回 .accessory。
@@ -16,8 +16,8 @@ import SwiftUI
 
 enum SettingsPage: String, CaseIterable, Identifiable {
   // 翻译在截图前面：和菜单栏、快捷键页、引导、速查表同序（记住的上次页存的是 rawValue，调顺序不受影响）；
-  // 录制紧跟截图（2026-10-03 从截图页拆出来；菜单栏、快捷键页里它们同在「截图与录制」一节）
-  case general, clipboard, launcher, translate, screenshot, record, hotkeys, about
+  // 录制紧跟截图（2026-10-03 从截图页拆出来；菜单栏、快捷键页里它们同在「截图与录制」一节）；状态屏排在录制后面（Z11）
+  case general, clipboard, launcher, translate, screenshot, record, statusScreen, hotkeys, about
 
   var id: String { rawValue }
 
@@ -28,6 +28,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .launcher: "启动器"
     case .screenshot: "截图"
     case .record: "录制"
+    case .statusScreen: "状态屏"
     case .translate: "翻译"
     case .hotkeys: "快捷键"
     case .about: "关于"
@@ -41,6 +42,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .launcher: "command"
     case .screenshot: "camera.viewfinder"
     case .record: "record.circle"
+    case .statusScreen: HotKeyAction.statusScreen.symbol
     case .translate: "character.bubble.fill"
     case .hotkeys: "keyboard.fill"
     case .about: "info.circle.fill"
@@ -54,6 +56,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .clipboard: Style.Family.clipboard
     case .launcher: Style.Family.command
     case .screenshot, .record: Style.Family.screenshot
+    case .statusScreen: Style.Family.statusScreen
     case .translate: Style.Family.translate
     case .hotkeys: Style.Family.keyboard
     case .about: Color(nsColor: AccentPalette.brandPink)  // 关于是品牌页，不随强调色变
@@ -68,6 +71,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .launcher: "搜索 App、文件、书签与历史、网页搜索与快捷链接"
     case .screenshot: "快速保存、快门声、缩略图和识字"
     case .record: "录屏的画质、倒数和按键，录音的来源"
+    case .statusScreen: "拦住键盘鼠标的全屏告示：有哪些状态、各是什么样子、怎么退出"
     case .translate: "语言、翻译服务与密钥、历史"
     case .hotkeys: "所有全局快捷键"
     case .about: "版本与更新内容"
@@ -106,6 +110,11 @@ enum SettingsPage: String, CaseIterable, Identifiable {
       [
         "录屏", "录音", "视频", "保存", "文件夹", "系统声音", "麦克风", "来源", "立即开始", "控制条", "倒数", "帧率", "光标",
         "按键", "速查", "清晰度", "分辨率", "画质", "编码", "H.264", "HEVC", "文件大小", "体积", "压缩", "只显示快捷键",
+      ]
+    case .statusScreen:
+      [
+        "清洁", "擦屏幕", "请勿触碰", "马上回来", "告示", "防误触", "退出", "Esc", "提示", "熄屏", "透出", "样式", "图标",
+        "电源", "不睡眠", "屏幕常亮", "自动结束", "键盘", "鼠标", "拦截",
       ]
     case .translate:
       [
@@ -152,7 +161,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   }
   /// 记住上次的页写在哪；单测 / 截图自检传 nil（从通用页开始、换页不写用户的偏好）
   private let defaults: UserDefaults?
-  /// 当前页推进的详情页（翻译服务 / 网页搜索的 id；TranslateTab、LauncherTab 的 NavigationStack 用它），换页时清空
+  /// 当前页推进的详情页（翻译服务 / 网页搜索 / 状态屏的状态的 id；TranslateTab、LauncherTab、StatusScreenTab 的
+  /// NavigationStack 用它），换页时清空
   var path: [String] = []
   var showsOnboarding = false
   /// 快捷键速查表（启动器里的「快捷键速查表」打开设置窗时盖上；页面里的「查看全部快捷键…」按钮自己管）
@@ -268,8 +278,8 @@ struct SettingsRoot: View {
       .navigationSplitViewColumnWidth(min: 170, ideal: 190, max: 240)
     } detail: {
       VStack(spacing: 0) {
-        // 关于是品牌页、没有页头；翻译、启动器把页头画在自己的 NavigationStack 里，推进详情页时一起换掉（N12）
-        if ![.about, .translate, .launcher].contains(navigation.page) {
+        // 关于是品牌页、没有页头；翻译、启动器、状态屏把页头画在自己的 NavigationStack 里，推进详情页时一起换掉（N12）
+        if ![.about, .translate, .launcher, .statusScreen].contains(navigation.page) {
           PageHeader(page: navigation.page)
         }
         page(navigation.page)
@@ -374,7 +384,7 @@ private struct NativeHighlightOff: NSViewRepresentable {
   }
 }
 
-/// 工具栏的「‹ 返回」：各页上置灰占位，推进的详情页（TranslateServiceDetail、SearchEngineDetail）自己再声明一个
+/// 工具栏的「‹ 返回」：各页上置灰占位，推进的详情页（TranslateServiceDetail、SearchEngineDetail、StatusPresetDetail）自己再声明一个
 /// 能点的（action = dismiss），⌘[ 同效。要自己放、还得两处都放（macOS 15 实测）：NavigationStack 自带的返回按钮
 /// 桥接不进 NSHostingController 的窗口工具栏；外层声明的工具栏项在内层 NavigationStack 推进后整个丢掉。常驻是因为
 /// 工具栏一出一没，标题栏高度（28 ↔ 52）和整页内容都会跳

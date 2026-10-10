@@ -35,11 +35,12 @@ enum OrderedList {
     }
   }
 
-  /// 分组下面的说明：caption secondary、靠左（分组表单的页脚默认靠右排）
+  /// 分组下面的说明：caption secondary、靠左（分组表单的页脚默认靠右排，折到第二行的字也是：两样都要写）
   static func footnote(_ text: String) -> some View {
     Text(text)
       .font(.caption)
       .foregroundStyle(.secondary)
+      .multilineTextAlignment(.leading)
       .frame(maxWidth: .infinity, alignment: .leading)
   }
 

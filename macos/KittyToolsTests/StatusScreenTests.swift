@@ -1,6 +1,6 @@
 // 状态屏（PLAN §10）的纯函数单测：自带状态和编解码、sanitized 各条、退出判断（ExitHold：按住满 2 秒、别的触碰取消、带修饰键 / 连发
 // 不算、松开取消、鼠标按在提示里外、滚动合并、「松不开」的键过期）、时长文字、退出提示和 key 面板的范围、拦截对事件的分类、
-// 启动器里每个状态一条。不进入状态屏、不建面板。
+// 启动器里每个状态一条；设置 › 状态屏改列表的几个纯函数（加、删、挪、恢复自带的、详情页改一个、摘要）。不进入状态屏、不建面板。
 //
 // 另有一个按需的实机自检 liveBlockSwallowsKeys()（默认不跑）：真的建起产品的 InputBlock，发一次合成的 ⌃⌥⇧⌘F18，
 // 看处理函数收到按下 / 松开、别的全局监听一个都没收到，作废之后再发一次、监听收得到。要「辅助功能」授权。
@@ -104,9 +104,121 @@ struct StatusScreenTests {
     #expect(loaded[1] == StatusPreset.builtIn[0])
     // 全删光了：回到自带的
     #expect(StatusPreset.decode(StatusPreset.encoded([])) == StatusPreset.builtIn)
-    // 这一批不注册默认值（没存过就是自带的）；退出提示的开关默认开
+    // 列表不注册默认值（没存过就是自带的；导出导入在 SettingsArchive.kinds 里单独登记）；退出提示的开关默认开
     #expect(Prefs.defaults[Prefs.statusScreenPresets] == nil)
     #expect(Prefs.defaults[Prefs.statusScreenExitHint] as? Bool == true)
+  }
+
+  // MARK: 设置页改列表
+
+  private func preset(_ id: String, _ title: String = "开会") -> StatusPreset {
+    StatusPreset(
+      id: id, title: title, detail: nil, symbol: "", style: .sign, power: .normal,
+      autoEndMinutes: 0)
+  }
+
+  /// 列表行的小字：样式 · 电源 · 自动结束，照常、不结束的那一段不写
+  @Test func summaries() {
+    #expect(
+      StatusPreset.builtIn.map(\.summary) == ["熄屏 · 5 分钟后结束", "透出 · 屏幕常亮", "告示 · 不睡眠"])
+    var custom = preset("a")
+    #expect(custom.summary == "告示")
+    custom.power = .displayOn
+    custom.autoEndMinutes = 60
+    #expect(custom.summary == "告示 · 屏幕常亮 · 1 小时后结束")
+    #expect(
+      StatusPreset.autoEndChoices.map(StatusPreset.autoEndTitle) == [
+        "不结束", "5 分钟", "15 分钟", "30 分钟", "1 小时",
+      ])
+    // 设置里的叫法：三种样式各一句话，电源三档
+    #expect(StatusPreset.Look.allCases.map(\.title) == ["熄屏", "告示", "透出"])
+    #expect(StatusPreset.Look.allCases.allSatisfy { !$0.explanation.isEmpty })
+    #expect(StatusPreset.Power.allCases.map(\.title) == ["照常", "不睡眠", "不睡眠且屏幕常亮"])
+  }
+
+  /// 加：新状态是「新状态」、告示、不睡眠、不自动结束、不带图标，id 各不相同，本身合规；到 20 个就不加
+  @Test func addingPresets() {
+    let fresh = StatusPreset.new()
+    #expect(fresh.title == "新状态" && fresh.detail == nil && fresh.symbol.isEmpty)
+    #expect(fresh.style == .sign && fresh.power == .awake && fresh.autoEndMinutes == 0)
+    #expect(fresh.id != StatusPreset.new().id && fresh.id.count <= StatusPreset.maxID)
+    #expect(StatusPreset.sanitized([fresh]) == [fresh])
+    let added = StatusPreset.adding(fresh, to: StatusPreset.builtIn)
+    #expect(added.map(\.id) == ["clean", "busy", "back", fresh.id])
+    let full = (0..<StatusPreset.maxCount).map { preset("p\($0)") }
+    #expect(StatusPreset.adding(fresh, to: full) == full)
+    #expect(StatusPreset.adding(fresh, to: Array(full.dropLast())).count == StatusPreset.maxCount)
+  }
+
+  /// 删：按 id；至少留一个（只剩一个时不删）；删不存在的不动
+  @Test func removingPresets() {
+    let list = StatusPreset.builtIn
+    #expect(StatusPreset.removing("busy", from: list).map(\.id) == ["clean", "back"])
+    #expect(StatusPreset.removing("nope", from: list) == list)
+    let last = [list[0]]
+    #expect(StatusPreset.removing("clean", from: last) == last)
+    // 删之前要不要确认：和自带的一模一样的不用，改过的、自己加的要
+    var edited = list[0]
+    edited.autoEndMinutes = 15
+    #expect(list.allSatisfy(\.isPristine) && !edited.isPristine && !preset("mine").isPristine)
+  }
+
+  /// 排序：上移 / 下移一格，到头了、找不到都不动（拖动排序用的是系统的 move(fromOffsets:toOffset:)）
+  @Test func movingPresets() {
+    let list = StatusPreset.builtIn
+    #expect(StatusPreset.moving("back", by: -1, in: list).map(\.id) == ["clean", "back", "busy"])
+    #expect(StatusPreset.moving("clean", by: 1, in: list).map(\.id) == ["busy", "clean", "back"])
+    #expect(StatusPreset.moving("clean", by: -1, in: list) == list)
+    #expect(StatusPreset.moving("back", by: 1, in: list) == list)
+    #expect(StatusPreset.moving("nope", by: 1, in: list) == list)
+  }
+
+  /// 恢复自带的：缺的（按 id）补到末尾，已有的（哪怕改过）不动；都在时没有可恢复的；补到 20 个为止
+  @Test func restoringBuiltIns() {
+    var busy = StatusPreset.builtIn[1]
+    busy.title = "别碰"
+    let list = [preset("mine"), busy]
+    #expect(StatusPreset.missingBuiltIns(in: list).map(\.id) == ["clean", "back"])
+    let restored = StatusPreset.restoringBuiltIns(in: list)
+    #expect(restored.map(\.id) == ["mine", "busy", "clean", "back"])
+    #expect(restored[1].title == "别碰" && restored[2] == StatusPreset.builtIn[0])
+    #expect(StatusPreset.missingBuiltIns(in: restored).isEmpty)
+    #expect(StatusPreset.restoringBuiltIns(in: restored) == restored)
+    let nearlyFull = (0..<19).map { preset("p\($0)") }
+    #expect(StatusPreset.restoringBuiltIns(in: nearlyFull).map(\.id).last == "clean")
+    #expect(StatusPreset.restoringBuiltIns(in: nearlyFull).count == StatusPreset.maxCount)
+  }
+
+  /// 详情页改一个：按 id 换掉、别的不动；标题只有空白时留着原来的标题（别的字段照改）；存进去的是收拾过的。
+  /// 草稿的问题只是提示：没标题、标题 / 说明超长
+  @Test func updatingPreset() {
+    let list = StatusPreset.builtIn
+    var draft = list[2]
+    draft.title = " 开会中 "
+    draft.detail = "三点回来"
+    draft.style = .dim
+    var updated = StatusPreset.updating(list, with: draft)
+    #expect(updated[0] == list[0] && updated[1] == list[1])
+    #expect(updated[2].title == " 开会中 " && updated[2].style == .dim)
+    // 编进偏好再读回来：首尾空白去掉了
+    #expect(StatusPreset.decode(StatusPreset.encoded(updated))[2].title == "开会中")
+    draft.title = "  "
+    draft.symbol = "moon.fill"
+    updated = StatusPreset.updating(list, with: draft)
+    #expect(updated[2].title == "马上回来" && updated[2].symbol == "moon.fill")
+    #expect(StatusPreset.decode(StatusPreset.encoded(updated)).count == 3)
+    // 列表里没有这个 id：不动
+    #expect(StatusPreset.updating(list, with: preset("nope")) == list)
+
+    #expect(list.allSatisfy { $0.problem == nil })
+    #expect(draft.problem == "还没填标题")
+    draft.title = String(repeating: "长", count: 31)
+    #expect(draft.problem == "标题最多 30 个字，后面的不会保存")
+    draft.title = String(repeating: "长", count: 30)
+    draft.detail = String(repeating: "说", count: 61)
+    #expect(draft.problem == "说明最多 60 个字，后面的不会保存")
+    draft.detail = String(repeating: "说", count: 60) + "  "
+    #expect(draft.problem == nil)
   }
 
   // MARK: 退出判断
@@ -443,9 +555,14 @@ struct StatusScreenTests {
     // 副标题同别的内置动作（右侧类型才写「状态屏」，不重复）
     #expect(statuses.allSatisfy { $0.subtitle == "Kitty Tools" && $0.kind == .action })
     // 图标是状态自己的；没选图标的用「只有字」的符号垫着
-    #expect(statuses.map(\.symbol) == ["sparkles", "hand.raised.fill", "textformat"])
-    #expect(NSImage(systemSymbolName: "textformat", accessibilityDescription: nil) != nil)
-    #expect(statuses.allSatisfy { $0.hotKeyAction == nil })
+    #expect(statuses.map(\.symbol) == ["sparkles", "hand.raised.fill", "text.alignleft"])
+    #expect(NSImage(systemSymbolName: "text.alignleft", accessibilityDescription: nil) != nil)
+    // 全局快捷键进的是排在最前面的那个：只有它选中时显示键帽（同别的带全局快捷键的内置动作）
+    #expect(statuses.map(\.hotKeyAction) == [.statusScreen, nil, nil])
+    let reordered = LauncherItem.actions(.init(statusPresets: [presets[1], presets[0]]))
+      .filter(\.isStatusPreset)
+    #expect(reordered.map(\.title) == ["请勿触碰", "清洁屏幕"])
+    #expect(reordered.map(\.hotKeyAction) == [.statusScreen, nil])
     // ↩ 直接进入、不确认：同分时排在别的结果后面（同系统命令、退出本 App）
     #expect(statuses.allSatisfy { LauncherMatch.priority($0) == 1 })
     #expect(

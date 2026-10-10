@@ -177,6 +177,9 @@ enum HotKeyAction: String, CaseIterable {
     }
   }
 
+  /// 快捷键页、速查表里这一行的名字：状态屏的键进的是列表里排在最前面的那个状态（Z10），那一行照实写；别的同 title
+  var rowTitle: String { self == .statusScreen ? "进入排在最前面的状态" : title }
+
   /// nil = 默认不设键（静默替换这类用得少、又容易误触的）
   var defaultHotKey: HotKey? {
     switch self {

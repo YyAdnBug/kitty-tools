@@ -67,9 +67,13 @@ struct ShortcutsSheet: View {
     }
   }
 
-  /// 页头（40 pt 色块 + 标题 + 说明）+ 四个家族的跳转胶囊
+  /// 页头（40 pt 色块 + 标题 + 说明）+ 各家族的跳转胶囊。胶囊一行 4 枚、折成两行：加了状态屏是 8 枚，
+  /// 一行（560 宽的表单里 520）放不下，系统会把字截成「剪…」
   private func header(_ proxy: ScrollViewProxy) -> some View {
-    VStack(alignment: .leading, spacing: 12) {
+    // 有全局快捷键的组就是一个家族的第一组
+    let chips = Self.groups.filter { !$0.globals.isEmpty }
+    let rows = stride(from: 0, to: chips.count, by: 4).map { Array(chips[$0...].prefix(4)) }
+    return VStack(alignment: .leading, spacing: 12) {
       HStack(spacing: 12) {
         KindTile(symbol: "keyboard.fill", color: Style.Family.keyboard, size: 40)
         VStack(alignment: .leading, spacing: 2) {
@@ -81,27 +85,30 @@ struct ShortcutsSheet: View {
         Spacer(minLength: 0)
       }
       .accessibilityElement(children: .combine)
-      HStack(spacing: 6) {
-        // 有全局快捷键的组就是一个家族的第一组
-        ForEach(Self.groups.filter { !$0.globals.isEmpty }) { group in
-          let name = group.title.components(separatedBy: " · ")[0]
-          Button {
-            withAnimation(Style.Motion.settle.animation(reduced: reduceMotion)) {
-              proxy.scrollTo(group.id, anchor: .top)
+      VStack(alignment: .leading, spacing: 6) {
+        ForEach(rows, id: \.first?.id) { row in
+          HStack(spacing: 6) {
+            ForEach(row) { group in
+              let name = group.title.components(separatedBy: " · ")[0]
+              Button {
+                withAnimation(Style.Motion.settle.animation(reduced: reduceMotion)) {
+                  proxy.scrollTo(group.id, anchor: .top)
+                }
+              } label: {
+                HStack(spacing: 6) {
+                  KindTile(symbol: group.symbol, color: group.color, size: 16)
+                  Text(name).font(.system(size: 12, weight: .medium))
+                }
+                .padding(.leading, 4)
+                .padding(.trailing, 10)
+                .frame(height: 24)
+                .background(Style.controlFill, in: .capsule)
+                .contentShape(.capsule)
+              }
+              .buttonStyle(.plain)
+              .accessibilityLabel("跳到\(name)")
             }
-          } label: {
-            HStack(spacing: 6) {
-              KindTile(symbol: group.symbol, color: group.color, size: 16)
-              Text(name).font(.system(size: 12, weight: .medium))
-            }
-            .padding(.leading, 4)
-            .padding(.trailing, 10)
-            .frame(height: 24)
-            .background(Style.controlFill, in: .capsule)
-            .contentShape(.capsule)
           }
-          .buttonStyle(.plain)
-          .accessibilityLabel("跳到\(name)")
         }
       }
     }
@@ -333,11 +340,20 @@ struct ShortcutsSheet: View {
           Entry("⌘0", text: "原始大小（滚轮、捏合缩放）"),
           Entry("⌘W", "Esc", text: "关闭（双击同样）"),
         ]),
+      // mac-overlay-panel §11 状态屏；退出判断在 ExitHold（只按着 esc、或左键按在退出提示上满 2 秒）。全局键不设默认，
+      // 没设时那一行写「未设置」；它进的是列表里排在最前面的状态（HotKeyAction.rowTitle）
+      Group(
+        title: "状态屏", symbol: HotKeyAction.statusScreen.symbol, color: Style.Family.statusScreen,
+        globals: [.statusScreen],
+        entries: [
+          Entry("Esc", text: "按住 2 秒：退出"),
+          Entry(text: "用鼠标按住屏幕底部的提示 2 秒：退出（动一下鼠标，提示就出现）"),
+        ]),
       // mac-whisker §6 设置；代码在 SettingsWindow 的 SettingsCommands（主菜单「显示 › 返回」）
       Group(
         title: "设置", symbol: "gearshape.fill", color: Style.Family.general,
         entries: [
-          Entry("⌘[", text: "从翻译服务、网页搜索的详情页返回列表")
+          Entry("⌘[", text: "从翻译服务、网页搜索、状态屏的状态的详情页返回列表")
         ]),
     ]
   }
@@ -360,7 +376,7 @@ private struct GroupCard: View {
         ForEach(group.globals, id: \.self) { action in
           row(divided: action != group.globals.first) {
             HStack(spacing: 6) {
-              Text(action.title)
+              Text(action.rowTitle)
               Text("全局")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.secondary)

@@ -357,10 +357,12 @@ struct KeyCap: View {
 
 /// 危险操作的系统按钮（设置里的「删除…」「清空…」，mac-whisker §3「危险色」）：样子还是系统的带边框按钮，标题用
 /// 危险色。颜色要挂在标签的 Text 上：macOS 15 的带边框按钮不看 role，也不看挂在按钮外面的 foregroundStyle 和 tint
-/// （屏外实测标题都不变色）；role 照给——旁白和系统自己的样式靠它
+/// （屏外实测标题都不变色）；role 照给——旁白和系统自己的样式靠它。自己上了色的标题置灰时系统不替它变淡
+/// （屏外实测和能点时一个样）：禁用时自己乘上 disabledOpacity（设置 › 状态屏只剩一个状态时的「删除」）
 struct DangerButton: View {
   let title: String
   let action: () -> Void
+  @Environment(\.isEnabled) private var isEnabled
 
   init(_ title: String, action: @escaping () -> Void) {
     self.title = title
@@ -368,7 +370,9 @@ struct DangerButton: View {
   }
 
   var body: some View {
-    Button(role: .destructive, action: action) { Text(title).foregroundStyle(Style.danger) }
+    Button(role: .destructive, action: action) {
+      Text(title).foregroundStyle(Style.danger.opacity(isEnabled ? 1 : Style.disabledOpacity))
+    }
   }
 }
 

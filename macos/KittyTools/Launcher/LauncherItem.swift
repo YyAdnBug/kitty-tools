@@ -52,6 +52,8 @@ struct LauncherItem: Identifiable, Hashable {
   var process: Processes.Entry?
   /// 状态屏的一个状态：色块里的符号（状态自己选的图标，StatusPreset.rowSymbol）；别的结果是 nil
   var presetSymbol: String?
+  /// 状态屏列表里排在最前面的那个状态：全局快捷键进的就是它，选中时右侧显示键帽（同别的带全局快捷键的内置动作）
+  var isFirstStatusPreset = false
 
   var id: String { kind.rawValue + "\n" + target }
 
@@ -79,7 +81,9 @@ struct LauncherItem: Identifiable, Hashable {
     for section in HotKeyAction.sections {
       for hotKey in section.actions where hotKey != .launcher {
         if hotKey == .statusScreen {
-          items += state.statusPresets.map(statusPreset)
+          var statuses = state.statusPresets.map(statusPreset)
+          if !statuses.isEmpty { statuses[0].isFirstStatusPreset = true }
+          items += statuses
           continue
         }
         items.append(
@@ -187,7 +191,9 @@ struct LauncherItem: Identifiable, Hashable {
     switch kind {
     case .clip: .clipboard
     case .translate: .inputTranslate
-    case .action: HotKeyAction.allCases.first { Self.actionID($0) == target }
+    case .action:
+      isFirstStatusPreset
+        ? .statusScreen : HotKeyAction.allCases.first { Self.actionID($0) == target }
     default: nil
     }
   }

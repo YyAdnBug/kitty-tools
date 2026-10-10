@@ -8,7 +8,8 @@
 // 路径）、文字的格式、启动器收藏。
 //
 // 文件里有什么（format 1，六类都可以不带）：
-// - preferences：Prefs.defaults 里的键 + 两个没有默认值的字符串键（kinds），只写用户改过的（持久域里有的）；
+// - preferences：Prefs.defaults 里的键 + 三个没有默认值的键（kinds：翻译浮窗顶上选的源 / 目标语言，和状态屏的状态列表——
+//   它在偏好里是一段 JSON，文件里写成一组状态），只写用户改过的（持久域里有的）；
 // - hotkeys：存过的全局快捷键（动作 → 组合，null = 清除了）；没存过的不写，跟默认；
 // - translateServices / searchEngines：两张列表现在的样子；
 // - clips + clipGroups：片段和文字类的收藏（正文、备注、所在收藏夹的名字、复制时间），收藏夹的名字按顺序；
@@ -78,13 +79,16 @@ struct SettingsArchive: Codable, Equatable {
     var wordsAdded = 0
   }
 
-  /// 偏好的值：布尔、整数、小数、字符串、字符串数组；别的（新版本多出来的类型）读成 unsupported，导入时丢掉
+  /// 偏好的值：布尔、整数、小数、字符串、字符串数组、状态屏的一组状态；别的（新版本多出来的类型）读成 unsupported，
+  /// 导入时丢掉——0.3.2 读到 statuses 就是这样丢掉的，所以加这一种不用升 currentFormat
   nonisolated enum Value: Codable, Equatable {
     case bool(Bool)
     case int(Int)
     case double(Double)
     case string(String)
     case strings([String])
+    /// 状态屏的状态列表（Prefs.statusScreenPresets）。有一个解不出（以后多了样式之类）整组读成 unsupported，不连累整个文件
+    case statuses([StatusPreset])
     case unsupported
 
     init(from decoder: Decoder) throws {
@@ -100,6 +104,8 @@ struct SettingsArchive: Codable, Equatable {
         self = .string(value)
       } else if let value = try? container.decode([String].self) {
         self = .strings(value)
+      } else if let value = try? container.decode([StatusPreset].self) {
+        self = .statuses(value)
       } else {
         self = .unsupported
       }
@@ -113,6 +119,7 @@ struct SettingsArchive: Codable, Equatable {
       case .double(let value): try container.encode(value)
       case .string(let value): try container.encode(value)
       case .strings(let value): try container.encode(value)
+      case .statuses(let value): try container.encode(value)
       case .unsupported: try container.encodeNil()
       }
     }
@@ -121,6 +128,8 @@ struct SettingsArchive: Codable, Equatable {
   /// 一个偏好键存的是哪种值（取自它的默认值）
   nonisolated enum Kind {
     case bool, int, double, string, strings
+    /// 状态屏的状态列表：偏好里是一段 JSON（Data），文件里是一组状态
+    case statuses
 
     init?(defaultValue: Any) {
       switch defaultValue {
@@ -141,11 +150,13 @@ struct SettingsArchive: Codable, Equatable {
       case .double: (stored as? Double).map(Value.double)
       case .string: (stored as? String).map(Value.string)
       case .strings: (stored as? [String]).map(Value.strings)
+      case .statuses: (stored as? Data).map { .statuses(StatusPreset.decode($0)) }
       }
     }
 
     /// 文件里的值 → 写进偏好的值；类型不对、超出范围的给 nil。整数只收 0…100 万（图片上限按 MB 乘成字节，
-    /// 太大会溢出闪退）；字符串、数组有长度上限
+    /// 太大会溢出闪退）；字符串、数组有长度上限；状态列表收拾一遍（StatusPreset.sanitized）再编回 JSON——
+    /// 不把文件里的东西原样写进偏好，收拾完一个不剩就不要这个键
     func plist(_ value: Value) -> Any? {
       switch (self, value) {
       case (.bool, .bool(let flag)): flag
@@ -156,6 +167,8 @@ struct SettingsArchive: Codable, Equatable {
       case (.strings, .strings(let list))
       where list.count <= 1000 && list.allSatisfy({ $0.count <= 512 }):
         list
+      case (.statuses, .statuses(let list)) where !StatusPreset.sanitized(list).isEmpty:
+        StatusPreset.encoded(list)
       default: nil
       }
     }
@@ -227,11 +240,13 @@ struct SettingsArchive: Codable, Equatable {
   var vocabulary: [Word]?
   var secrets: Sealed?
 
-  /// 导出哪些偏好键、各是什么类型：注册了默认值的全部（类型取默认值的）+ 没有默认值的两个字符串键（翻译浮窗顶上选的
-  /// 源 / 目标语言，没设 = 自动）。新加的设置只要进了 Prefs.defaults 就自动在这里
+  /// 导出哪些偏好键、各是什么类型：注册了默认值的全部（类型取默认值的）+ 没有默认值的三个——翻译浮窗顶上选的
+  /// 源 / 目标语言（字符串，没设 = 自动）、状态屏的状态列表（没存过 = 自带的三个，所以不注册默认值：自带的以后改了，
+  /// 没动过列表的人跟着变；它是 JSON，也不能像别的键那样按类型原样收）。新加的设置只要进了 Prefs.defaults 就自动在这里
   static let kinds: [String: Kind] = {
     var kinds = Prefs.defaults.compactMapValues { Kind(defaultValue: $0) }
     for key in [Prefs.translateSource, Prefs.translateTarget] { kinds[key] = .string }
+    kinds[Prefs.statusScreenPresets] = .statuses
     return kinds
   }()
 
@@ -442,7 +457,8 @@ struct SettingsArchive: Codable, Equatable {
   }
 
   /// 丢掉不该进偏好的：不认识的键和动作、类型或范围不对的值、过不了录制框规则的快捷键（重复的组合留给靠前的动作）、
-  /// id 不合规或重复、字段长得离谱的服务和搜索（整条不要，不截断：截了地址就不是原来那个地址）。译文字号夹进滑块的范围
+  /// id 不合规或重复、字段长得离谱的服务和搜索（整条不要，不截断：截了地址就不是原来那个地址）。译文字号夹进滑块的范围，
+  /// 状态屏的状态列表换成收拾过的（StatusPreset.sanitized）
   private func sanitized() -> SettingsArchive {
     var clean = self
     clean.version = String(version.prefix(32))
@@ -456,6 +472,9 @@ struct SettingsArchive: Codable, Equatable {
         let range = TranslateCoordinator.fontScales
         kept[Prefs.translateFontScale] = .double(
           min(max(scale, range.lowerBound), range.upperBound))
+      }
+      if case .statuses(let list)? = kept[Prefs.statusScreenPresets] {
+        kept[Prefs.statusScreenPresets] = .statuses(StatusPreset.sanitized(list))
       }
       return kept
     }
@@ -543,11 +562,21 @@ struct SettingsArchive: Codable, Equatable {
     domainName: String? = Bundle.main.bundleIdentifier
   ) {
     if sections.contains(.preferences), let preferences {
-      for (key, kind) in Self.kinds {
+      for (key, kind) in Self.kinds where kind != .statuses {
         if let value = preferences[key].flatMap(kind.plist) {
           defaults.set(value, forKey: key)
         } else {
           defaults.removeObject(forKey: key)
+        }
+      }
+      // 状态屏的状态是用户自己写的东西：不跟别的设置一样「文件里没有就回到默认」，也不整张换掉——文件里没有
+      // （0.3.2 导出的、对方没改过列表）就不动本机的；有就按 id 更新和添加、不删本机独有的（同下面两张列表）。
+      // 本机没存过（还是自带的三个）时直接用文件里的
+      if case .statuses(let incoming)? = preferences[Prefs.statusScreenPresets] {
+        let stored = defaults.data(forKey: Prefs.statusScreenPresets)
+        let list = stored.map { StatusPreset.merged(incoming, into: StatusPreset.decode($0)) }
+        if let data = Kind.statuses.plist(.statuses(list ?? incoming)) {
+          defaults.set(data, forKey: Prefs.statusScreenPresets)
         }
       }
       // 旧档位（保留天数、历史条数）挪到现在的档位，免得设置页的选择器显示成空白

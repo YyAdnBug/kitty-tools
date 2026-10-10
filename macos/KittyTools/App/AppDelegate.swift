@@ -403,6 +403,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           })
       case .screenshot: AnyView(ScreenshotTab())
       case .record: AnyView(RecordTab())
+      case .statusScreen: AnyView(StatusScreenTab())
       case .translate:
         AnyView(
           TranslateTab(services: serviceStore, history: historyStore, speaker: speaker)
@@ -1410,7 +1411,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 每次打开菜单前重建（N15）：按 HotKeyAction.sections 分节，和快捷键页同名同序，标题、符号、家族色也取自那里；
   /// 右边是当前生效的快捷键，没设 / 注册失败的留空；每节末尾接上那一节的 MenuExtra（暂停记录剪贴板、复制即译、
   /// 有钉图时的两项）；有新版本时最上面是「更新到 x…」；最后是设置、关于、检查更新（正式版）、退出。
-  /// 状态屏那一节不画节标题，只有一项「状态屏」带子菜单：每个状态一行，第一行右边是全局快捷键（它进的就是第一个状态）
+  /// 状态屏那一节不画节标题，只有一项「状态屏」带子菜单：每个状态一行，第一行右边是全局快捷键（它进的就是第一个状态），
+  /// 最下面「管理状态…」打开 设置 › 状态屏
   private func buildStatusMenu(_ menu: NSMenu) {
     let state = menuState
     let extras = MenuExtra.allCases.filter { $0.isAvailable(state) }
@@ -1443,6 +1445,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             modifiers: binding?.modifierFlags ?? []
           ) { [unowned self] in statusScreen.enter(preset) }
         }
+        submenu.addItem(.separator())
+        submenu.addAction(
+          "管理状态…", symbol: MenuExtra.settings.symbol, color: NSColor(MenuExtra.settings.color)
+        ) { [unowned self] in showSettings(page: .statusScreen) }
         item.submenu = submenu
         continue
       }

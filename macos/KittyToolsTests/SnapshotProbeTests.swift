@@ -510,6 +510,8 @@ struct SnapshotProbeTests {
       case .launcher: AnyView(LauncherTab())
       case .screenshot: AnyView(ScreenshotTab())
       case .record: AnyView(RecordTab())
+      // 自带的三个状态（固定的列表：不读用户改过的那份）
+      case .statusScreen: AnyView(StatusScreenTab(fixed: StatusPreset.builtIn))
       case .translate:
         AnyView(TranslateTab(services: services, history: history, speaker: speaker))
       case .hotkeys: AnyView(HotkeysTab(center: hotKeys))
@@ -891,6 +893,100 @@ struct SnapshotProbeTests {
       id: "custom", title: "正在导出年度报告的全部视频素材，请不要合上盖子", detail: "预计下午四点半结束，有事打我手机；这台电脑不要断电、不要拔硬盘",
       symbol: "", style: .dim, power: .displayOn, autoEndMinutes: 0)
     try shot("status-screen-dim-long", custom)
+  }
+
+  /// 设置 › 状态屏（PLAN §10 第 2 批）。单独一个测试函数：改这一页、速查表页头或快捷键页那一行时只跑它（十来秒）——
+  ///   -only-testing:'KittyToolsTests/SnapshotProbeTests/statusScreenSettings()'
+  /// 列表是固定的一份（StatusScreenTab / StatusPresetDetail 的 fixed：只画，不读不写用户的偏好，也不建临时偏好域）：
+  /// 自带三个 + 自己加的两个（不带图标的、标题顶到 30 字的）。出：整页浅色 / 深色、满 20 个（「+」置灰、列表下面说原因）、
+  /// 推进到详情的整页、「改一个状态」的详情三种样式（透出的预览垫着示意桌面；浅色 / 深色）、草稿有问题时的橙字、只剩一个时删除置灰、
+  /// 速查表的新页头（跳转胶囊两行）和拉长的全表（看「状态屏」那一组）、快捷键页（「进入排在最前面的状态」那一行）
+  @Test(.enabled(if: directory != nil)) func statusScreenSettings() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    Prefs.registerDefaults()
+    var meeting = StatusPreset.new(id: "meeting")
+    meeting.title = "开会中"
+    meeting.detail = "三点回来"
+    meeting.power = .displayOn
+    meeting.autoEndMinutes = 60
+    var export = StatusPreset.new(id: "export")
+    export.title = "正在导出年度报告的全部视频素材，请不要合上盖子也不要拔电源"
+    export.detail = "预计下午四点半结束，有事打我手机"
+    export.symbol = "arrow.down.circle.fill"
+    export.style = .dim
+    let list = StatusPreset.sanitized(StatusPreset.builtIn + [meeting, export])
+    let navigation = SettingsNavigation(defaults: nil)  // 换页不写用户的偏好
+    let hotKeys = HotKeyCenter()
+    func root(_ presets: [StatusPreset]) -> some View {
+      SettingsRoot(navigation: navigation) { page in
+        page == .hotkeys
+          ? AnyView(HotkeysTab(center: hotKeys)) : AnyView(StatusScreenTab(fixed: presets))
+      } onboarding: {
+        AnyView(EmptyView())
+      }
+    }
+    navigation.page = .statusScreen
+    for dark in [false, true] {
+      try snapshot(
+        root(list), size: NSSize(width: 780, height: 760), dark: dark,
+        to: "\(out)/settings-status-screen\(dark ? "-dark" : "").png")
+    }
+    // 最小窗口（700 × 460）：页头那句说明、列表行不被截坏
+    try snapshot(
+      root(list), size: NSSize(width: 700, height: 460), dark: false,
+      to: "\(out)/settings-status-screen-min.png")
+    let full = (1...StatusPreset.maxCount).map { index in
+      var preset = StatusPreset.new(id: "p\(index)")
+      preset.title = "状态 \(index)"
+      return preset
+    }
+    try snapshot(
+      root(full), size: NSSize(width: 780, height: 1280), dark: false,
+      to: "\(out)/settings-status-screen-full.png")
+    // 从列表推进到详情（真的 NavigationStack，和点一行一样走 navigation.path）：页头换成详情页自己的
+    navigation.path = ["busy"]
+    try snapshot(
+      root(list), size: NSSize(width: 780, height: 760), dark: false,
+      to: "\(out)/settings-status-screen-pushed.png")
+    navigation.path = []
+    // 详情：透出（预览垫示意桌面）、熄屏（预览纯黑）、告示、自己加的长标题；深色一张
+    for (name, id, dark) in [
+      ("dim", "busy", false), ("dim-dark", "busy", true), ("blackout", "clean", false),
+      ("sign", "back", false), ("long", "export", false), ("plain", "meeting", false),
+    ] {
+      try snapshot(
+        StatusPresetDetail(id: id, fixed: list), size: NSSize(width: 590, height: 940), dark: dark,
+        to: "\(out)/settings-status-detail-\(name).png")
+    }
+    // 输入框里的标题超了 30 字（没收拾过的一份，等于正在改的草稿）：页头的摘要换成橙色说明。
+    // 这张图里预览也是超长的标题——真用的时候存着的那份收拾过，预览只到 30 字
+    var overlong = export
+    overlong.title += "，谢谢配合"
+    try snapshot(
+      StatusPresetDetail(id: "export", fixed: [overlong] + StatusPreset.builtIn),
+      size: NSSize(width: 590, height: 940), dark: false,
+      to: "\(out)/settings-status-detail-problem.png")
+    // 只剩一个：删除置灰，下面说至少留一个
+    try snapshot(
+      StatusPresetDetail(id: "clean", fixed: [StatusPreset.builtIn[0]]),
+      size: NSSize(width: 590, height: 940), dark: false,
+      to: "\(out)/settings-status-detail-only.png")
+    // 速查表：默认大小的设置窗里的 sheet（页头的跳转胶囊两行），和拉长的全表
+    let sheetHeight = ShortcutsButton.sheetHeight(available: 600 - 52)
+    for (name, height, dark) in [
+      ("shortcuts-status", sheetHeight, false), ("shortcuts-status-dark", sheetHeight, true),
+      ("shortcuts-status-full", 5700, false),
+    ] {
+      try snapshot(
+        ShortcutsSheet(), size: NSSize(width: 560, height: height), dark: dark,
+        to: "\(out)/\(name).png")
+    }
+    // 快捷键页拉长看到底：最后一节「状态屏」那一行
+    navigation.page = .hotkeys
+    try snapshot(
+      root(list), size: NSSize(width: 780, height: 1000), dark: false,
+      to: "\(out)/settings-status-hotkeys.png")
   }
 
   /// 翻译浮窗：空态、结果（没有「翻译」按钮）、原文改过（弹出「翻译 ↩」）、复制即译状态胶囊 + 固定、

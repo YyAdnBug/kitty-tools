@@ -62,13 +62,15 @@ struct SettingsArchiveTests {
 
   // MARK: 导出
 
-  /// 注册了默认值的键都认得出类型（新加一个别的类型的设置时这里会挂），外加两个没有默认值的字符串键；
-  /// 状态键、截图的存储文件夹、快捷键和两张列表不按偏好导出
+  /// 注册了默认值的键都认得出类型（新加一个别的类型的设置时这里会挂），外加三个没有默认值的：两个字符串键、
+  /// 状态屏的状态列表；状态键、截图的存储文件夹、快捷键和两张列表不按偏好导出
   @Test func everyRegisteredDefaultIsExportable() {
     let kinds = SettingsArchive.kinds
     #expect(Set(kinds.keys).isSuperset(of: Prefs.defaults.keys))
-    #expect(kinds.count == Prefs.defaults.count + 2)
+    #expect(kinds.count == Prefs.defaults.count + 3)
     #expect(kinds[Prefs.translateSource] == .string)
+    #expect(kinds[Prefs.statusScreenPresets] == .statuses)
+    #expect(kinds[Prefs.statusScreenExitHint] == .bool)
     #expect(kinds[Prefs.clipboardExcludedBundleIDs] == .strings)
     #expect(kinds[Prefs.translateFontScale] == .double)
     #expect(kinds[Prefs.clipboardRetentionDays] == .int)
@@ -125,6 +127,84 @@ struct SettingsArchiveTests {
     #expect(archive.secrets == nil)
     #expect(archive.sections == SettingsArchive.Section.allCases)
     #expect(archive.version == "9.9.9")
+  }
+
+  /// 状态屏的状态列表跟着「设置」一类走（PLAN §10「状态屏」）：偏好里是一段 JSON，文件里是一组状态；读文件时收拾一遍
+  /// （StatusPreset.sanitized），写回偏好的是重新编的 JSON，不是文件里的原样；解不出、收拾完一个不剩就不要这个键
+  /// （导入后回到自带的）。只测值的转换：不建偏好域（apply 对它和对别的键走的是同一段，applyReplacesPreferencesAndHotkeys 管）
+  @Test func statusPresetsTravelWithPreferences() throws {
+    let key = Prefs.statusScreenPresets
+    let kind = try #require(SettingsArchive.kinds[key])
+    var meeting = StatusPreset.builtIn[2]
+    meeting.id = "meeting"
+    meeting.title = "开会中"
+    let list = [meeting, StatusPreset.builtIn[0]]
+    // 导出：偏好里的 JSON → 一组状态；没存过（nil）、存的不是数据：不导出
+    #expect(kind.value(of: StatusPreset.encoded(list)) == .statuses(list))
+    #expect(kind.value(of: nil) == nil && kind.value(of: "不是数据") == nil)
+    // 文件往返：写出去是一组状态（不是 JSON 套在字符串里），读回来一样
+    var archive = SettingsArchive(version: "9.9.9", exportedAt: Self.moment)
+    archive.preferences = [key: .statuses(list), Prefs.statusScreenExitHint: .bool(false)]
+    let text = try #require(String(data: try archive.encoded(), encoding: .utf8))
+    #expect(text.contains(#""title" : "开会中""#))
+    let restored = try SettingsArchive.read(try archive.encoded())
+    #expect(restored.preferences == archive.preferences)
+    // 写回偏好的：重新编的 JSON，读出来就是那张列表
+    let stored = try #require(kind.plist(.statuses(list)) as? Data)
+    #expect(StatusPreset.decode(stored) == list)
+
+    // 别人给的、手改过的文件：标题去空白、超长的截断、不认识的图标置空、不是可选值的分钟数当不结束、重复的 id 留先出现的
+    func status(_ id: String, _ title: String, symbol: String = "", minutes: Int = 0) -> String {
+      #"{"id": "\#(id)", "title": "\#(title)", "symbol": "\#(symbol)", "style": "sign", "#
+        + #""power": "awake", "autoEndMinutes": \#(minutes)}"#
+    }
+    func imported(_ statuses: String) throws -> SettingsArchive.Value? {
+      try self.archive(json: file(#""preferences": {"statusScreenPresets": \#(statuses)}"#))
+        .preferences?[key]
+    }
+    let long = String(repeating: "长", count: 40)
+    let messy = try #require(
+      try imported(
+        "["
+          + [
+            status("a", "  开会  ", symbol: "lock.fill", minutes: 7), status("b", long),
+            status("a", "重复"), status("c", "   "),
+          ].joined(separator: ",") + "]"))
+    guard case .statuses(let cleaned) = messy else {
+      Issue.record("状态列表没读出来")
+      return
+    }
+    #expect(cleaned.map(\.id) == ["a", "b"])
+    #expect(cleaned[0].title == "开会" && cleaned[0].symbol.isEmpty)
+    #expect(cleaned[0].autoEndMinutes == 0 && cleaned[1].title.count == StatusPreset.maxTitle)
+    let written = try #require(kind.plist(messy) as? Data)
+    #expect(StatusPreset.decode(written) == cleaned)
+    // 写偏好那一步自己也收拾（不靠读文件时收拾过）
+    var raw = meeting
+    raw.title = "  开会中  "
+    raw.symbol = "lock.fill"
+    let rewritten = try #require(kind.plist(.statuses([raw, raw])) as? Data)
+    let reread = StatusPreset.decode(rewritten)
+    #expect(reread.map(\.title) == ["开会中"] && reread[0].symbol.isEmpty)
+    // 超过 20 个只收前 20 个
+    let many = (0..<30).map { status("p\($0)", "状态 \($0)") }.joined(separator: ",")
+    guard case .statuses(let capped)? = try imported("[\(many)]") else {
+      Issue.record("状态列表没读出来")
+      return
+    }
+    #expect(capped.count == StatusPreset.maxCount)
+    // 丢掉这个键的几种：样式不认识（以后的版本）、收拾完一个不剩、空列表、不是列表——文件里别的设置照常读得出
+    let unknown = status("a", "模糊").replacing(#""sign""#, with: #""blur""#)
+    for bad in ["[\(unknown)]", "[\(status("c", "  "))]", "[]", #""清洁屏幕""#, "42", "{}"] {
+      let archive = try self.archive(
+        json: file(
+          #""preferences": {"statusScreenPresets": \#(bad), "statusScreenExitHint": false}"#))
+      #expect(archive.preferences == [Prefs.statusScreenExitHint: .bool(false)], "\(bad)")
+    }
+    // 类型对不上的值不写进偏好
+    #expect(kind.plist(.string("[]")) == nil && kind.plist(.strings(["clean"])) == nil)
+    #expect(kind.plist(.statuses([])) == nil)
+    #expect(SettingsArchive.Kind.string.plist(.statuses(list)) == nil)
   }
 
   /// 没存过网页搜索的列表：导出默认的那几条（设置里看到的就是导出的）
@@ -266,6 +346,34 @@ struct SettingsArchiveTests {
     let services = SettingsArchive.merge([ai, theirs], into: [.zhipu, mine])
     #expect(services.map(\.id) == ["ai:1a2b3c4d", "zhipu", "ai:0000aaaa"])
     #expect(services[1].isEnabled == false)
+
+    // 状态屏的状态列表跟「设置」一类走，但它是用户自己写的东西：文件里没有就不动本机的（别的设置是回到默认），
+    // 有就按 id 更新和添加、顺序先照文件里的、不删本机独有的
+    var own = StatusPreset.new(id: "mine")
+    own.title = "我的"
+    var busy = StatusPreset.builtIn[1]
+    busy.title = "别碰"
+    StatusPreset.save([own, StatusPreset.builtIn[0]], to: target)
+    var settings = SettingsArchive(version: "1", exportedAt: Self.moment)
+    settings.preferences = [Prefs.statusScreenExitHint: .bool(false)]
+    try SettingsArchive.read(settings.encoded()).apply([.preferences], to: target, domainName: name)
+    #expect(StatusPreset.load(target).map(\.id) == ["mine", "clean"])
+    #expect(target.object(forKey: Prefs.statusScreenExitHint) as? Bool == false)
+    settings.preferences = [Prefs.statusScreenPresets: .statuses([busy, StatusPreset.builtIn[0]])]
+    try SettingsArchive.read(settings.encoded()).apply([.preferences], to: target, domainName: name)
+    let statuses = StatusPreset.load(target)
+    #expect(statuses.map(\.id) == ["busy", "clean", "mine"])
+    #expect(statuses[0].title == "别碰" && statuses[2].title == "我的")
+    // 别的设置照旧是「文件里没有就回到默认」
+    #expect(target.persistentDomain(forName: name)?[Prefs.statusScreenExitHint] == nil)
+    // 本机没存过（还是自带的三个）：直接用文件里的，不把自带的并进去
+    target.removeObject(forKey: Prefs.statusScreenPresets)
+    try SettingsArchive.read(settings.encoded()).apply([.preferences], to: target, domainName: name)
+    #expect(StatusPreset.load(target).map(\.id) == ["busy", "clean"])
+    // 合并后超过上限：留前面的（文件里的在前）
+    let many = (0..<StatusPreset.maxCount).map { StatusPreset.new(id: "p\($0)") }
+    #expect(StatusPreset.merged(many, into: [own]).map(\.id) == many.map(\.id))
+    #expect(StatusPreset.merged([], into: [own]) == [own])
   }
 
   // MARK: 读文件时的校验

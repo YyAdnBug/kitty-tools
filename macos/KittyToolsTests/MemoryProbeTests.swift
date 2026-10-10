@@ -801,6 +801,7 @@ private final class Probe {
         case .screenshot: AnyView(ScreenshotTab())
         // 录制页 2026-10-03 才拆出来，下面点的还是原来那五页（和以前的数可比）
         case .record: AnyView(RecordTab())
+        case .statusScreen: AnyView(StatusScreenTab())
         case .translate:
           AnyView(TranslateTab(services: services, history: history, speaker: speaker))
         case .hotkeys: AnyView(HotkeysTab(center: hotKeys))

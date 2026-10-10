@@ -143,8 +143,9 @@ enum Prefs {
   static let ocrJoinLines = "ocrJoinLines"
 
   /// 状态屏的状态列表（StatusPreset 数组的 JSON）。**不注册默认值**：没存过 / 解不出 / 为空时用自带的三个
-  /// （StatusPreset.load）；导出导入等设置页那一批再定。键名都带 statusScreen：单说 status 指的是菜单栏图标（StatusItem）
-  static let statusScreenPresets = "statusScreenPresets"
+  /// （StatusPreset.load）。照样跟着设置的导出 / 导入和每日备份走——SettingsArchive.kinds 里单独登记（文件里写成一组状态，
+  /// 导入时过 StatusPreset.sanitized 再编回 JSON）。键名都带 statusScreen：单说 status 指的是菜单栏图标（StatusItem）
+  nonisolated static let statusScreenPresets = "statusScreenPresets"
   /// 状态屏里有人碰了键盘鼠标时浮出退出提示（默认开；关了只剩按住 esc 两秒）
   static let statusScreenExitHint = "statusScreenExitHint"
 
