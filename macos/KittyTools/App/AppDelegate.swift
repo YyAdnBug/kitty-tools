@@ -2,7 +2,8 @@
 // 更新后第一次启动用刘海岛说一声，退出 / 锁屏时的清理；数据打不开时问用户怎么办、每天备份的时机（Storage/Backup.swift）；
 // 录屏（框选、开录、结果、飞入和视频卡、退出前收尾、上次闪退留下的文件）；
 // 录音（录音第 5 批：开录、和录屏互斥、结果、飞入和录音卡，收尾和闪退恢复同录屏）；
-// 状态屏的三个入口（快捷键进第一个状态、菜单栏子菜单、启动器每个状态一条；会话在 StatusScreen/StatusScreen.swift）。
+// 状态屏的三个入口（快捷键先出选状态的面板——设置里可改成直接进第一个状态，菜单栏子菜单、启动器每个状态一条；
+// 会话在 StatusScreen/StatusScreen.swift，选状态的面板在 StatusScreen/StatusPicker.swift）。
 
 import AppKit
 import OSLog
@@ -89,6 +90,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     screen.isBusy = { [unowned self] in isCapturing || isReadingSelection }
     return screen
   }()
+  /// 选状态的面板（Z13a，按状态屏的全局快捷键时先出它；StatusScreen/StatusPicker.swift）：选了就立刻收起面板，
+  /// 再进入——进不去（没授权、正在录屏…）也照常收起，原因由 StatusScreen.enter 说。那张卡片在屏幕上的位置一起给过去，
+  /// 画面从它长到整屏（Z14a）
+  private lazy var statusPickerModel: StatusPickerModel = {
+    let model = StatusPickerModel()
+    model.onEnter = { [unowned self] preset, card in
+      let panel = statusPicker.panel
+      let origin = card.flatMap { panel?.screenRect(of: $0) }
+      panel?.hide()
+      statusScreen.enter(preset, from: origin)
+    }
+    return model
+  }()
+  /// 用时再建、收起后放掉（TransientPanel）：不像三块主面板那样天天呼出，里面最多 20 张缩小的状态屏，不常驻。
+  /// 没有固定，点外面就收起；出现在鼠标所在屏的中央（OverlayPanel 不带 frameName、不 topAnchored 时就是居中）
+  private lazy var statusPicker = TransientPanel { [unowned self] in
+    OverlayPanel(
+      size: statusPickerModel.layout.size, autoHide: .clickOutside, isPinned: { false },
+      content: StatusPickerView(model: statusPickerModel))
+  }
   /// 菜单栏图标与菜单（启动后才建：单测以本 App 为宿主时不往菜单栏加东西）
   private var statusItem: StatusItem?
   /// 钉图（菜单栏显示「隐藏 / 关闭全部钉图」）
@@ -578,16 +599,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   // MARK: 入口
 
   /// 启动器和剪贴板面板在同一位置，只开一个：呼出一个就收起另一个，固定着的剪贴板面板也收
-  /// （两块叠在同一处没法用，固定只管点外不关；mac-overlay-panel §2）
+  /// （两块叠在同一处没法用，固定只管点外不关；mac-overlay-panel §2）。选状态的面板和它们也互斥（pickStatus）
   func toggleClipboard() {
     // 已开着但不是 key 时 toggle 是「聚焦」而不是收起：同样要收起另一个
-    if !(clipboardPanel.isVisible && clipboardPanel.isKeyWindow) { launcherPanel.hide() }
+    if !(clipboardPanel.isVisible && clipboardPanel.isKeyWindow) {
+      launcherPanel.hide()
+      statusPicker.panel?.hide()
+    }
     if !clipboardPanel.isVisible { clipboardStore.enforceLimits() }
     clipboardPanel.toggle()
   }
 
   func toggleLauncher() {
-    if !(launcherPanel.isVisible && launcherPanel.isKeyWindow) { clipboardPanel.hide() }
+    if !(launcherPanel.isVisible && launcherPanel.isKeyWindow) {
+      clipboardPanel.hide()
+      statusPicker.panel?.hide()
+    }
     let appearing = !launcherPanel.isVisible
     if appearing { launcherModel.prepareForShow() }
     launcherPanel.toggle()
@@ -638,7 +665,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   /// 菜单栏和启动器内置动作此刻的状态：暂停记录了没有、复制即译开没开、钉图（nil = 没有）、能不能检查更新、在录屏还是录音
-  /// （录音待录时不算在录：那一项仍叫「录音」，点它是开始）、状态屏有哪些状态。
+  /// （录音待录时不算在录：那一项仍叫「录音」，点它是开始）、状态屏有哪些状态、它的全局快捷键是不是直接进第一个。
   /// ponytail: 状态列表每次现读偏好（启动器每敲一个字读一遍；改过列表的要解一次 JSON，最多 20 个、几十微秒），
   /// 量出来慢了再缓存
   private var menuState: LauncherItem.ActionState {
@@ -648,7 +675,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       pinsHidden: pins.panels.isEmpty ? nil : pins.isHidden, checksUpdates: updater.isSupported,
       recording: recorder != nil
         ? .screenRecord : audioRecorder?.isStarted == true ? .audioRecord : nil,
-      statusPresets: StatusPreset.load())
+      statusPresets: StatusPreset.load(),
+      statusEntersFirst: UserDefaults.standard.bool(forKey: Prefs.statusScreenHotKeyEntersFirst))
   }
 
   /// 全局热键动作：热键、菜单栏、启动器同一个分发
@@ -666,10 +694,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     case .screenRecord: screenRecord()
     case .audioRecord: audioRecord()
     case .pinClipboard: pinClipboard()
-    // 快捷键进入列表里的第一个状态（Z10）；别的状态从菜单栏、启动器进
-    case .statusScreen:
-      if let first = StatusPreset.load().first { statusScreen.enter(first) }
+    case .statusScreen: pickStatus()
     }
+  }
+
+  /// 状态屏的全局快捷键（快捷键、菜单栏子菜单的「选择状态…」）：先出选状态的面板，选一个再进（Z13a）；设置 › 状态屏
+  /// 打开「按快捷键直接进入排在最前面的状态」时不出面板、直接进第一个（Z10 原来的样子）。面板开着（是 key）时再按一次 =
+  /// 选中下一张；开着但键盘不在它身上（比如刚点了翻译浮窗）就把键盘拿回来、选中的不动。
+  /// 和剪贴板面板、启动器互斥：打开它时收起那两块（固定着的剪贴板面板也收，同 toggleLauncher）
+  private func pickStatus() {
+    let presets = StatusPreset.load()
+    let defaults = UserDefaults.standard
+    if defaults.bool(forKey: Prefs.statusScreenHotKeyEntersFirst) {
+      if let first = presets.first { statusScreen.enter(first) }
+      return
+    }
+    if let panel = statusPicker.panel, panel.isVisible {
+      return panel.isKeyWindow ? statusPickerModel.move(.right) : panel.present()
+    }
+    clipboardPanel.hide()
+    launcherPanel.hide()
+    let mouse = NSEvent.mouseLocation
+    let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
+    statusPickerModel.prepare(
+      presets, last: defaults.string(forKey: Prefs.statusScreenLastPreset),
+      maxHeight: (screen?.visibleFrame.height ?? 800) * 0.9)
+    let panel = statusPicker.open()
+    panel.setContentSize(statusPickerModel.layout.size)
+    panel.present()
   }
 
   /// 暂停 / 恢复记录剪贴板（菜单栏、启动器，D4）：不存盘，重启 App 自动恢复记录（免得忘了关）；
@@ -773,6 +825,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let sourceApp = NSWorkspace.shared.frontmostApplication?.processIdentifier
     if clipboardPanel.isKeyWindow { clipboardPanel.hide() }
     if launcherPanel.isKeyWindow { launcherPanel.hide() }
+    statusPicker.panel?.hide()
     if translatePanel.isKeyWindow { translatePanel.orderOut(nil) }
     Task {
       defer { isReadingSelection = false }
@@ -834,6 +887,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let restoresPanel = translatePanel.isKeyWindow && pinned
     if clipboardPanel.isKeyWindow { clipboardPanel.hide() }
     if launcherPanel.isKeyWindow { launcherPanel.hide() }
+    statusPicker.panel?.hide()
     if translatePanel.isKeyWindow {
       translatePanel.orderOut(nil)
       if !pinned { coordinator.cancel() }
@@ -1193,6 +1247,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func hideUnpinnedPanels() {
     clipboardPanel.hideUnlessPinned()
     launcherPanel.hide()  // 启动器没有固定
+    statusPicker.panel?.hide()  // 选状态的面板也没有
     translatePanel.hideUnlessPinned()
   }
 
@@ -1399,10 +1454,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     settingsWindow.show(page: page, onboarding: onboarding)
   }
 
-  /// 三块浮层都收起，固定着的也收（打开设置、进入状态屏）
+  /// 三块浮层和选状态的面板都收起，固定着的也收（打开设置、进入状态屏）
   private func hidePanels() {
     clipboardPanel.hide()
     launcherPanel.hide()
+    statusPicker.panel?.hide()
     translatePanel.hide()
   }
 
@@ -1411,8 +1467,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 每次打开菜单前重建（N15）：按 HotKeyAction.sections 分节，和快捷键页同名同序，标题、符号、家族色也取自那里；
   /// 右边是当前生效的快捷键，没设 / 注册失败的留空；每节末尾接上那一节的 MenuExtra（暂停记录剪贴板、复制即译、
   /// 有钉图时的两项）；有新版本时最上面是「更新到 x…」；最后是设置、关于、检查更新（正式版）、退出。
-  /// 状态屏那一节不画节标题，只有一项「状态屏」带子菜单：每个状态一行，第一行右边是全局快捷键（它进的就是第一个状态），
-  /// 最下面「管理状态…」打开 设置 › 状态屏
+  /// 状态屏那一节不画节标题，只有一项「状态屏」带子菜单：最上面「选择状态…」带全局快捷键（按它就是打开选状态的面板），
+  /// 分隔线下面每个状态一行、点了直接进入；设置里打开「按快捷键直接进入排在最前面的状态」时没有「选择状态…」，
+  /// 键位写在第一个状态右边（它进的就是那个）。最下面「管理状态…」打开 设置 › 状态屏
   private func buildStatusMenu(_ menu: NSMenu) {
     let state = menuState
     let extras = MenuExtra.allCases.filter { $0.isAvailable(state) }
@@ -1437,8 +1494,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let color = NSColor(family.color)
         let item = menu.addAction(family.title, symbol: family.symbol, color: color) {}
         let submenu = NSMenu()
+        let hotKey = hotKeys.bindings[family]
+        if !state.statusEntersFirst {
+          submenu.addAction(
+            "选择状态…", symbol: "square.grid.2x2.fill", color: color,
+            key: hotKey?.menuKeyEquivalent ?? "", modifiers: hotKey?.modifierFlags ?? []
+          ) { [unowned self] in run(family) }
+          submenu.addItem(.separator())
+        }
         for (row, preset) in state.statusPresets.enumerated() {
-          let binding = row == 0 ? hotKeys.bindings[family] : nil
+          let binding = state.statusEntersFirst && row == 0 ? hotKey : nil
           submenu.addAction(
             preset.title, symbol: preset.rowSymbol,
             color: color, key: binding?.menuKeyEquivalent ?? "",

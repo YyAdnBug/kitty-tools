@@ -177,8 +177,17 @@ enum HotKeyAction: String, CaseIterable {
     }
   }
 
-  /// 快捷键页、速查表里这一行的名字：状态屏的键进的是列表里排在最前面的那个状态（Z10），那一行照实写；别的同 title
-  var rowTitle: String { self == .statusScreen ? "进入排在最前面的状态" : title }
+  /// 快捷键页、速查表里这一行的名字：状态屏的键照它实际做的事写（rowTitle(statusEntersFirst:)），别的同 title
+  var rowTitle: String {
+    rowTitle(
+      statusEntersFirst: UserDefaults.standard.bool(forKey: Prefs.statusScreenHotKeyEntersFirst))
+  }
+
+  /// 状态屏的键默认是先出一排预览卡片、选一个再进（Z13a）；设置 › 状态屏打开「按快捷键直接进入排在最前面的状态」时
+  /// 进的是列表里的第一个（Z10）
+  func rowTitle(statusEntersFirst: Bool) -> String {
+    self == .statusScreen ? (statusEntersFirst ? "进入排在最前面的状态" : "选一个状态进入") : title
+  }
 
   /// nil = 默认不设键（静默替换这类用得少、又容易误触的）
   var defaultHotKey: HotKey? {
@@ -209,7 +218,7 @@ enum HotKeyAction: String, CaseIterable {
     case .audioRecord: nil
     // 同上（第二轮体检 F1）
     case .pinClipboard: nil
-    // 状态屏（Z10）不设默认键：按了就拦住键盘鼠标，不能让人误触；设了键是进入列表里的第一个状态
+    // 状态屏（Z10）不设默认键：不能让人误触。设了键是先出选状态的面板（Z13a；设置里可改成直接进入列表里的第一个状态）
     case .statusScreen: nil
     }
   }

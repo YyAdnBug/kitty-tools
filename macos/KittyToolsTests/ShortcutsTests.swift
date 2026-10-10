@@ -41,10 +41,15 @@ struct ShortcutsTests {
     let globals = ShortcutsSheet.groups.flatMap(\.globals)
     #expect(
       Set(globals) == Set(HotKeyAction.allCases) && globals.count == HotKeyAction.allCases.count)
-    // 快捷键页、速查表里那一行的名字：只有状态屏另写（它的键进的是排在最前面的状态），别的就是动作名
-    #expect(HotKeyAction.statusScreen.rowTitle == "进入排在最前面的状态")
+    // 快捷键页、速查表里那一行的名字：只有状态屏另写（它的键默认是先选一个状态，设置里改成直进时是进排在最前面的），
+    // 别的就是动作名
+    #expect(HotKeyAction.statusScreen.rowTitle(statusEntersFirst: false) == "选一个状态进入")
+    #expect(HotKeyAction.statusScreen.rowTitle(statusEntersFirst: true) == "进入排在最前面的状态")
     #expect(
-      HotKeyAction.allCases.filter { $0 != .statusScreen }.allSatisfy { $0.rowTitle == $0.title })
+      HotKeyAction.allCases.filter { $0 != .statusScreen }.allSatisfy {
+        $0.rowTitle(statusEntersFirst: false) == $0.title
+          && $0.rowTitle(statusEntersFirst: true) == $0.title
+      })
     // 快捷键页的分组同样一个不漏、不重
     let grouped = HotKeyAction.sections.flatMap(\.actions)
     #expect(

@@ -2,6 +2,8 @@
 // 退出判断（按住 esc 或按住退出提示两秒，ExitHold.swift）、挡下的触碰（计数、标题晃一下、退出提示浮出 3 秒）、
 // 锁屏时让开（面板收掉、拦截暂停、屏幕常亮降成只防睡眠）、解锁 / 到时间 / 按住满了时退出。
 // 定位是告示加防误触，不是安全措施：没有退出验证。
+// 入口：菜单栏、启动器直接 enter；全局快捷键默认先出选状态的面板（StatusPicker.swift），选了再 enter(_:from:)，
+// 那块屏的画面从选中的卡片长到整屏。
 // 两层一起用：拦截（InputBlock）吞掉键盘鼠标；面板当 key 是为了安全输入开着时（拦截看不到按键）按键落在自己的面板上——
 // 两边喂给同一个 handle(_:)。退出之后拦截留到按着的键松开才作废（最多 2 秒），不然按住的 esc 连发会落进前台 App。
 
@@ -135,6 +137,11 @@ import Observation
     screens.firstIndex { NSMouseInRect(mouse, $0, false) } ?? 0
   }
 
+  /// 从卡片长到整屏的是哪块屏的面板：卡片（它的中心）所在的那块，都不在就第一块
+  static func growingIndex(card: CGRect, screens: [CGRect]) -> Int {
+    keyIndex(mouse: CGPoint(x: card.midX, y: card.midY), screens: screens)
+  }
+
   var footer: String {
     Self.footer(
       started: startedAt.formatted(date: .omitted, time: .shortened), seconds: elapsed)
@@ -142,8 +149,10 @@ import Observation
 
   // MARK: 进入
 
-  /// 进入一个状态。没有辅助功能授权、已经在状态屏里、正在截图框选或录快捷键、正在录屏 / 录音、拦截建不起来时不进入
-  func enter(_ preset: StatusPreset) {
+  /// 进入一个状态。没有辅助功能授权、已经在状态屏里、正在截图框选或录快捷键、正在录屏 / 录音、拦截建不起来时不进入。
+  /// card：从选状态的面板进来时选中的那张卡片在屏幕上的位置（Z14a）——那块屏的画面从它长到整屏；只是画面的事，
+  /// 下面各步的顺序和不带它时一样
+  func enter(_ preset: StatusPreset, from card: CGRect? = nil) {
     guard !isActive else { return }
     guard Permissions.isAccessibilityTrusted else {
       Permissions.requestAccessibility()
@@ -182,7 +191,7 @@ import Observation
     hidePanels()
     hotKeysWereActive = hotKeys.map { !$0.bindings.isEmpty } ?? false
     hotKeys?.suspend()
-    arrangePanels()
+    arrangePanels(growingFrom: card)
     setActivity(preset.power)
     hideCursor()
     // 菜单跟踪、模态期间也要走：定时器都挂 common 模式
@@ -199,6 +208,8 @@ import Observation
     }
     watcher.start()
     Island.announce("状态屏：\(preset.title)。按住 Esc 两秒退出")
+    // 真进来了才记：选状态的面板下次默认选中它（菜单栏、启动器进的也算）
+    UserDefaults.standard.set(preset.id, forKey: Prefs.statusScreenLastPreset)
   }
 
   /// 保持唤醒换成 power 那一档（先起新的再还旧的，中间不留空档）
@@ -222,11 +233,14 @@ import Observation
     }
   }
 
-  /// 每块屏一张面板，按现在的屏幕摆（进入时、屏幕参数变了时）；没有哪张是 key 就让鼠标所在屏的那张当
-  fileprivate func arrangePanels() {
+  /// 每块屏一张面板，按现在的屏幕摆（进入时、屏幕参数变了时）；没有哪张是 key 就让鼠标所在屏的那张当。
+  /// card：进入时选中的卡片在屏幕上的位置——它所在的那块屏的面板从它长到整屏，其余的照常淡入；减弱动态效果时都不长
+  fileprivate func arrangePanels(growingFrom card: CGRect? = nil) {
     // 锁着屏时面板收着，不重排：解锁就结束了
     guard isActive, !isLocked else { return }
     let screens = NSScreen.screens.map(\.frame)
+    let growing =
+      Style.reduceMotion ? nil : card.map { Self.growingIndex(card: $0, screens: screens) }
     while panels.count > screens.count { panels.removeLast().dismiss(fading: false) }
     for (index, frame) in screens.enumerated() {
       if index < panels.count {
@@ -237,7 +251,8 @@ import Observation
         panel.onMouseMoved = { [weak self] in self?.mouseMoved() }
         panel.onResignKey = { [weak self] in self?.panelResignedKey() }
         panels.append(panel)
-        panel.present(fading: !Style.reduceMotion)
+        panel.present(
+          fading: !Style.reduceMotion, growingFrom: index == growing ? card : nil)
       }
     }
     takeKey()

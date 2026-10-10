@@ -989,6 +989,138 @@ struct SnapshotProbeTests {
       to: "\(out)/settings-status-hotkeys.png")
   }
 
+  /// 选状态的面板（PLAN §10 第 4 批，Z13a Z14a）。单独一个测试函数：改这块面板时只跑它（十来秒）——
+  ///   -only-testing:'KittyToolsTests/SnapshotProbeTests/statusPicker()'
+  /// 面板的大小取排版算出来的（和真面板一样）。出：自带的 3 个状态浅 / 深色（选中第二张）、7 个折成两行（选中第二行的、
+  /// 鼠标停在第一张上、有不带图标和标题很长的）、只有 1 个（面板不窄于两格）、20 个在矮屏上（卡片那一块滚动，默认选中
+  /// 最后一张：一出来就滚到它）、设置 › 状态屏（多了「进入」那一组）；
+  /// 放大（Z14a）的起点和半路：一块 1200 × 800 的「屏」正中摆着面板，真的状态屏画面铺满整屏、图层设上
+  /// StatusScreenPanel.zoomStart 算的变换——起点那张里它正好盖住选中的卡片（面板真用的时候这一刻已经收起，这里留着对位置）
+  @Test(.enabled(if: directory != nil)) func statusPicker() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    Prefs.registerDefaults()
+    func shot(_ name: String, _ model: StatusPickerModel, dark: Bool = false) throws {
+      try snapshot(
+        StatusPickerView(model: model), size: model.layout.size, dark: dark,
+        to: "\(out)/\(name).png")
+    }
+    let builtIn = StatusPreset.builtIn
+    for dark in [false, true] {
+      try shot(
+        "status-picker\(dark ? "-dark" : "")", StatusPickerModel(presets: builtIn, selection: 1),
+        dark: dark)
+    }
+    var meeting = StatusPreset.new(id: "meeting")
+    meeting.title = "开会中"
+    meeting.detail = "三点回来"
+    var export = StatusPreset.new(id: "export")
+    export.title = "正在导出年度报告的全部视频素材，请不要合上盖子也不要拔电源"
+    export.symbol = "arrow.down.circle.fill"
+    export.style = .dim
+    var lunch = StatusPreset.new(id: "lunch")
+    lunch.title = "吃饭去了"
+    lunch.symbol = "fork.knife"
+    var night = StatusPreset.new(id: "night")
+    night.title = "夜里跑训练"
+    night.symbol = "moon.fill"
+    night.style = .blackout
+    let seven = StatusPreset.sanitized(builtIn + [meeting, export, lunch, night])
+    try shot("status-picker-two-rows", StatusPickerModel(presets: seven, selection: 5, hovered: 0))
+    try shot("status-picker-one", StatusPickerModel(presets: [builtIn[2]]))
+    let full = (1...StatusPreset.maxCount).map { index in
+      var preset = StatusPreset.new(id: "p\(index)")
+      preset.title = "状态 \(index)"
+      preset.symbol = StatusPreset.symbols[index % StatusPreset.symbols.count]
+      preset.style = StatusPreset.Look.allCases[index % 3]
+      return preset
+    }
+    try shot(
+      "status-picker-scrolled",
+      StatusPickerModel(presets: full, selection: full.count - 1, maxHeight: 700))
+    // 设置 › 状态屏：列表下面多了「进入」一组（开关读的是注册的默认值：关）
+    let navigation = SettingsNavigation(defaults: nil)
+    navigation.page = .statusScreen
+    try snapshot(
+      SettingsRoot(navigation: navigation) { _ in
+        AnyView(StatusScreenTab(fixed: builtIn))
+      } onboarding: {
+        AnyView(EmptyView())
+      }, size: NSSize(width: 780, height: 820), dark: false,
+      to: "\(out)/settings-status-screen-enter.png")
+
+    // 放大：屏外窗口里叠三层——假桌面、面板（摆在正中）、铺满的状态屏画面（图层按 zoomStart 缩到选中的卡片上）
+    let desktop = try ScreenshotSnapshotTests.desktop()
+    let model = StatusPickerModel(presets: builtIn, selection: 1)
+    let screenSize = NSSize(width: 1200, height: 800)
+    let window = NSWindow(
+      contentRect: NSRect(origin: NSPoint(x: -20000, y: -20000), size: screenSize),
+      styleMask: [.borderless], backing: .buffered, defer: false)
+    window.appearance = NSAppearance(named: .aqua)
+    let root = NSView(frame: NSRect(origin: .zero, size: screenSize))
+    root.wantsLayer = true
+    let backdrop = NSHostingView(rootView: Image(decorative: desktop, scale: 2))
+    backdrop.frame = root.bounds
+    let pickerFrame = NSRect(
+      x: (screenSize.width - model.layout.size.width) / 2,
+      y: (screenSize.height - model.layout.size.height) / 2, width: model.layout.size.width,
+      height: model.layout.size.height)
+    let picker = NSHostingView(
+      rootView: StatusPickerView(model: model)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .clipShape(.rect(cornerRadius: Style.Radius.panel, style: .continuous)))
+    picker.frame = pickerFrame
+    let startedAt = try #require(
+      Calendar.current.date(
+        from: DateComponents(year: 2026, month: 10, day: 10, hour: 14, minute: 2)))
+    let screen = NSHostingView(
+      rootView: StatusScreenView(
+        screen: StatusScreen(showing: builtIn[1], startedAt: startedAt, elapsed: 0)))
+    screen.sizingOptions = []
+    screen.wantsLayer = true
+    screen.frame = root.bounds
+    for view in [backdrop, picker, screen] { root.addSubview(view) }
+    window.contentView = root
+    window.orderFront(nil)
+    defer { window.orderOut(nil) }
+    for _ in 0..<5 { RunLoop.main.run(until: Date.now.addingTimeInterval(0.1)) }
+    // 选中的卡片的位置：画面报上来的是 SwiftUI 的 global 坐标（窗口内容区、原点左上；真面板里内容铺满窗口，
+    // 所以就是面板里的位置，OverlayPanel.screenRect 再换成屏幕坐标）→ 这块「屏」的坐标（原点左下）
+    let reported = try #require(model.cardFrames[1])
+    let card = CGRect(
+      x: reported.minX, y: screenSize.height - reported.maxY, width: reported.width,
+      height: reported.height)
+    // 报的是放大了 4% 之后的那一圈里面的卡片；它在面板的第二格里
+    #expect(abs(reported.width - StatusPicker.card.width * StatusPicker.selectedScale) < 0.5)
+    let cellLeft =
+      pickerFrame.minX + StatusPicker.inset + StatusPicker.cell.width + StatusPicker.gap
+    #expect(abs(reported.midX - (cellLeft + StatusPicker.cell.width / 2)) < 0.5)
+    let layer = try #require(screen.layer)
+    let start = StatusScreenPanel.zoomStart(from: card, to: screen.frame, about: layer.position)
+    func grown(_ progress: CGFloat, to name: String) throws {
+      // 半路：各分量在起点和原位之间线性取（弹簧走到这个进度时的样子）
+      let lerp = { (from: CGFloat, to: CGFloat) in from + (to - from) * progress }
+      CATransaction.begin()
+      CATransaction.setDisableActions(true)
+      layer.setAffineTransform(
+        CGAffineTransform(
+          a: lerp(start.a, 1), b: 0, c: 0, d: lerp(start.d, 1), tx: lerp(start.tx, 0),
+          ty: lerp(start.ty, 0)))
+      layer.cornerRadius = lerp(Style.Radius.card / start.a, 0)
+      layer.masksToBounds = true
+      CATransaction.commit()
+      picker.isHidden = progress > 0
+      RunLoop.main.run(until: Date.now.addingTimeInterval(0.1))
+      let bitmap = try #require(root.bitmapImageRepForCachingDisplay(in: root.bounds))
+      root.cacheDisplay(in: root.bounds, to: bitmap)
+      try #require(bitmap.representation(using: .png, properties: [:]))
+        .write(to: URL(filePath: "\(out)/\(name).png"))
+    }
+    try grown(0, to: "status-picker-grow-start")
+    try grown(0.5, to: "status-picker-grow-half")
+    try grown(1, to: "status-picker-grow-end")
+  }
+
   /// 翻译浮窗：空态、结果（没有「翻译」按钮）、原文改过（弹出「翻译 ↩」）、复制即译状态胶囊 + 固定、
   /// 替换原文、查词、历史（分组 + 选中第三条 + 范围胶囊）、收藏范围、空历史、提示、长译文（卡内滚动 + 渐隐，
   /// 默认和 140% 字号）；「⋯」菜单是 NSMenu，屏外画不出来

@@ -1,5 +1,5 @@
 // 设置 › 快捷键（N13）：按 剪贴板与启动器 / 翻译 / 截图与录制 / 状态屏 分组（HotKeyAction.sections，和菜单栏分节同名同序），每行 = 20 pt 家族色块 +
-// 动作名（HotKeyAction.rowTitle：状态屏那一行写「进入排在最前面的状态」）+ 输入框式录制器（HotKeyRecorder）；
+// 动作名（HotKeyAction.rowTitle：状态屏那一行照它的键实际做的事写，默认「选一个状态进入」）+ 输入框式录制器（HotKeyRecorder）；
 // 注册失败（-9868 等）或录制时的提示用 systemOrange 小字写在那一行下面。
 // 面板里的按键不写进页里，最后一句话 +「查看全部快捷键…」打开速查表（N11）。
 

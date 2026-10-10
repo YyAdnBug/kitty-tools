@@ -71,6 +71,7 @@ struct SettingsArchiveTests {
     #expect(kinds[Prefs.translateSource] == .string)
     #expect(kinds[Prefs.statusScreenPresets] == .statuses)
     #expect(kinds[Prefs.statusScreenExitHint] == .bool)
+    #expect(kinds[Prefs.statusScreenHotKeyEntersFirst] == .bool)
     #expect(kinds[Prefs.clipboardExcludedBundleIDs] == .strings)
     #expect(kinds[Prefs.translateFontScale] == .double)
     #expect(kinds[Prefs.clipboardRetentionDays] == .int)
@@ -78,7 +79,7 @@ struct SettingsArchiveTests {
     for key in [
       Prefs.lastSeenVersion, Prefs.settingsPage, Prefs.screenshotLastRegion,
       Prefs.folderAccessRequested, Prefs.screenRecordingInProgress, Prefs.updateNotifiedVersion,
-      Prefs.screenshotSaveDirectory,
+      Prefs.screenshotSaveDirectory, Prefs.statusScreenLastPreset,
       Prefs.launcherWebSearchEngines, HotKeyAction.clipboard.prefsKey, "translateServices",
     ] {
       #expect(kinds[key] == nil)

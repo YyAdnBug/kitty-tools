@@ -1,6 +1,6 @@
 // 设置 › 状态屏 › 某个状态（详情页，从列表推进来；同 SearchEngineDetail / TranslateServiceDetail 的形式）：
 // 页头 40 pt 家族色块 + 标题 + 摘要，下面分组表单：标题、说明、图标（一格「无」+ 20 个符号）、样式（三选一，下面一块
-// 预览：真的画面按 1200 × 750 的屏排好再缩小）、电源、自动结束，最后是删除（至少留一个；自己加的、改过的先确认）。
+// 预览：StatusScreenView.swift 的 StatusPreview，真的画面缩小）、电源、自动结束，最后是删除（至少留一个；自己加的、改过的先确认）。
 // 改动即时写回偏好里的 JSON 列表（和 StatusScreenTab 读写同一个键），存之前过 StatusPreset.sanitized。
 // 输入框绑的是一份草稿：存进偏好的标题 / 说明去了首尾空白、截到上限，边打边收拾会吃掉正在打的空格；标题删光了重打时
 // 留着原来的标题（空标题存不下）。有问题（没标题、超长）时页头的摘要换成橙色说明，不拦着改。
@@ -164,58 +164,5 @@ private struct SymbolGrid: View {
     .animation(.easeOut(duration: Style.fadeIn), value: selected)
     // 名字不另起：符号的旁白名是系统给的（「时钟」「月亮」…），「无」那一格读它的字
     .accessibilityAddTraits(selected ? .isSelected : [])
-  }
-}
-
-/// 预览：真的画面（StatusScreenView）按一块 1200 × 750 的屏排好，再缩到页面宽度。透出样式底下垫一张示意的浅色桌面
-/// （画的，不截真屏幕）。进入时刻、时长是摆的。只是预览：不接点击、不进旁白
-private struct StatusPreview: View {
-  let preset: StatusPreset
-
-  private static let screen = CGSize(width: 1200, height: 750)
-
-  var body: some View {
-    let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
-    let startedAt =
-      Calendar.current.date(bySettingHour: 14, minute: 2, second: 0, of: .now) ?? .now
-    GeometryReader { proxy in
-      ZStack {
-        if preset.style == .dim { Self.desktop }
-        StatusScreenView(
-          screen: StatusScreen(showing: preset, startedAt: startedAt, elapsed: 23 * 60))
-      }
-      .frame(width: Self.screen.width, height: Self.screen.height)
-      .scaleEffect(proxy.size.width / Self.screen.width, anchor: .topLeading)
-    }
-    .aspectRatio(Self.screen.width / Self.screen.height, contentMode: .fit)
-    .clipShape(shape)
-    .overlay(shape.hairlineBorder())
-    .allowsHitTesting(false)
-    .accessibilityHidden(true)
-  }
-
-  /// 示意的桌面：浅色壁纸上两扇有几行「字」的窗。颜色是示意用的定值，不跟外观走
-  private static var desktop: some View {
-    ZStack {
-      LinearGradient(
-        colors: [
-          Color(red: 0.62, green: 0.74, blue: 0.92), Color(red: 0.84, green: 0.80, blue: 0.94),
-        ], startPoint: .top, endPoint: .bottom)
-      window(lines: 9).frame(width: 640, height: 440).offset(x: -200, y: -70)
-      window(lines: 6).frame(width: 520, height: 340).offset(x: 260, y: 140)
-    }
-  }
-
-  private static func window(lines: Int) -> some View {
-    VStack(alignment: .leading, spacing: 16) {
-      ForEach(0..<lines, id: \.self) { line in
-        Capsule()
-          .fill(.black.opacity(line == 0 ? 0.6 : 0.3))
-          .frame(width: line == 0 ? 180 : line % 3 == 0 ? 260 : 400, height: 12)
-      }
-    }
-    .padding(32)
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    .background(.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
   }
 }

@@ -148,6 +148,11 @@ enum Prefs {
   nonisolated static let statusScreenPresets = "statusScreenPresets"
   /// 状态屏里有人碰了键盘鼠标时浮出退出提示（默认开；关了只剩按住 esc 两秒）
   static let statusScreenExitHint = "statusScreenExitHint"
+  /// 按状态屏的全局快捷键时直接进入排在最前面的状态（默认关：先出一排预览卡片，选一个再进，StatusScreen/StatusPicker.swift）
+  static let statusScreenHotKeyEntersFirst = "statusScreenHotKeyEntersFirst"
+  /// 上次进入的状态的 id（StatusScreen.enter 进入成功时写；选状态的面板默认选中它）。这台电脑自己的状态，
+  /// **不注册默认值**：不跟着导出 / 导入走
+  static let statusScreenLastPreset = "statusScreenLastPreset"
 
   /// 上次启动的版本号：没有 = 首次安装（打开欢迎引导），和当前不同 = 刚更新（刘海岛「已更新到 x」+ 本版摘要，不开设置窗，体检 A29）
   static let lastSeenVersion = "lastSeenVersion"
@@ -228,6 +233,7 @@ enum Prefs {
       audioRecordSource: AudioRecorder.Source.microphone.rawValue,
       audioRecordStartsImmediately: false,
       statusScreenExitHint: true,
+      statusScreenHotKeyEntersFirst: false,
     ]
   }
 

@@ -1,8 +1,9 @@
 // 设置 › 状态屏（PLAN §10「状态屏」Z11，排在「录制」后面）：状态列表（行 = 家族色块里的图标 / 标题 / 一行摘要，
 // 拖动排序，「+ −」增删，单击一行推进到 StatusPresetDetail 编辑——和翻译服务、网页搜索同一套 OrderedList 交互）、
+// 「按快捷键直接进入排在最前面的状态」开关（默认关：按快捷键先出一排预览卡片，StatusPicker.swift）、
 // 「有人碰键盘或鼠标时显示怎么退出」开关、怎么退出和「它不是安全措施」的说明。页头画在自己的 NavigationStack 里，
 // 推进时一起换掉。列表直接读写偏好里的 JSON（Prefs.statusScreenPresets）：菜单栏、启动器每次现读，改了就跟上。
-// 这一页没有「进入」「试一下」：进入会拦住键盘鼠标，只从菜单栏、启动器、全局快捷键进。
+// 这一页没有「进入」「试一下」这类按钮：进入会拦住键盘鼠标，只从菜单栏、启动器、全局快捷键进。
 // 界面里不写「锁」字（定位是告示加防误触，mac-overlay-panel §11）。
 
 import SwiftUI
@@ -13,6 +14,7 @@ struct StatusScreenTab: View {
   /// 直接读写偏好里的 JSON，不留一份拷贝（同 LauncherTab：设置窗常驻，别处改了偏好——比如导入——拷贝会过期）
   @AppStorage(Prefs.statusScreenPresets) private var data: Data?
   @AppStorage(Prefs.statusScreenExitHint) private var exitHint = true
+  @AppStorage(Prefs.statusScreenHotKeyEntersFirst) private var entersFirst = false
   /// 推进的详情页在 navigation.path（主菜单「返回」也要读写它）
   @Environment(SettingsNavigation.self) private var navigation
   /// 列表里用键盘选中的一条（「−」和 ⌫ 删它；鼠标单击直接推进，不留选中）
@@ -61,9 +63,20 @@ struct StatusScreenTab: View {
         Text("状态")
       } footer: {
         OrderedList.footnote(
-          "拖动调整顺序，点一行编辑。排在最前面的状态就是全局快捷键进入的那个（快捷键在「快捷键」页设置）。"
+          "拖动调整顺序，点一行编辑。"
+            + (entersFirst ? "排在最前面的状态就是全局快捷键进入的那个。" : "按全局快捷键选状态时，卡片也按这个顺序排。")
             + "至少留一个；删掉的自带状态可以从「+」里恢复。"
             + (isFull ? "最多 \(StatusPreset.maxCount) 个，已经满了，删掉一个才能再加。" : ""))
+      }
+      Section {
+        Toggle(isOn: $entersFirst) {
+          Text("按快捷键直接进入排在最前面的状态")
+          Text("关着时，按快捷键先出一排预览卡片，选一个再进。")
+        }
+      } header: {
+        Text("进入")
+      } footer: {
+        OrderedList.footnote("快捷键在「快捷键」页设置，默认没有。在菜单栏、启动器里选一个状态，都是直接进入。")
       }
       Section {
         LabeledContent {

@@ -52,14 +52,15 @@ struct LauncherItem: Identifiable, Hashable {
   var process: Processes.Entry?
   /// 状态屏的一个状态：色块里的符号（状态自己选的图标，StatusPreset.rowSymbol）；别的结果是 nil
   var presetSymbol: String?
-  /// 状态屏列表里排在最前面的那个状态：全局快捷键进的就是它，选中时右侧显示键帽（同别的带全局快捷键的内置动作）
+  /// 状态屏列表里排在最前面的那个状态，而且设置里打开了「按快捷键直接进入排在最前面的状态」：全局快捷键进的就是它，
+  /// 选中时右侧显示键帽（同别的带全局快捷键的内置动作）。开关关着时（默认）快捷键是先出选状态的面板，哪一行都不带键帽
   var isFirstStatusPreset = false
 
   var id: String { kind.rawValue + "\n" + target }
 
   /// 内置动作此刻的状态（AppDelegate 在每次搜索时给）：暂停记录剪贴板了没有、复制即译开没开、钉图（nil = 没有钉图，
   /// true = 藏着）、能不能检查更新（正式版）、正在录的是录屏还是录音（录着时那一项是「停止录屏」/「停止录音」；nil = 没在录）、
-  /// 状态屏有哪些状态（每个一条结果）
+  /// 状态屏有哪些状态（每个一条结果）、它的全局快捷键是不是直接进排在最前面的那个（是的话那一条带键帽）
   struct ActionState: Equatable {
     var recordingPaused = false
     var copyToTranslate = false
@@ -67,6 +68,7 @@ struct LauncherItem: Identifiable, Hashable {
     var checksUpdates = false
     var recording: HotKeyAction?
     var statusPresets: [StatusPreset] = []
+    var statusEntersFirst = false
   }
 
   /// 内置动作（体检 A26）：和菜单栏同名同序——按 HotKeyAction.sections（启动器自己除外），每节末尾接上那一节的
@@ -82,7 +84,7 @@ struct LauncherItem: Identifiable, Hashable {
       for hotKey in section.actions where hotKey != .launcher {
         if hotKey == .statusScreen {
           var statuses = state.statusPresets.map(statusPreset)
-          if !statuses.isEmpty { statuses[0].isFirstStatusPreset = true }
+          if !statuses.isEmpty, state.statusEntersFirst { statuses[0].isFirstStatusPreset = true }
           items += statuses
           continue
         }

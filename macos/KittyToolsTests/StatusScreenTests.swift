@@ -1,6 +1,7 @@
 // 状态屏（PLAN §10）的纯函数单测：自带状态和编解码、sanitized 各条、退出判断（ExitHold：按住满 2 秒、别的触碰取消、带修饰键 / 连发
 // 不算、松开取消、鼠标按在提示里外、滚动合并、「松不开」的键过期）、时长文字、退出提示和 key 面板的范围、拦截对事件的分类、
-// 启动器里每个状态一条；设置 › 状态屏改列表的几个纯函数（加、删、挪、恢复自带的、详情页改一个、摘要）。不进入状态屏、不建面板。
+// 启动器里每个状态一条；设置 › 状态屏改列表的几个纯函数（加、删、挪、恢复自带的、详情页改一个、摘要）；选状态的面板
+// （第 4 批：选中怎么移动、按键、默认选中、排版、进入时给出去的卡片位置）和从卡片长到整屏的起始变换。不进入状态屏、不建面板。
 //
 // 另有一个按需的实机自检 liveBlockSwallowsKeys()（默认不跑）：真的建起产品的 InputBlock，发一次合成的 ⌃⌥⇧⌘F18，
 // 看处理函数收到按下 / 松开、别的全局监听一个都没收到，作废之后再发一次、监听收得到。要「辅助功能」授权。
@@ -11,6 +12,7 @@
 
 import AppKit
 import Carbon.HIToolbox
+import SwiftUI
 import Testing
 
 @testable import KittyTools
@@ -107,6 +109,9 @@ struct StatusScreenTests {
     // 列表不注册默认值（没存过就是自带的；导出导入在 SettingsArchive.kinds 里单独登记）；退出提示的开关默认开
     #expect(Prefs.defaults[Prefs.statusScreenPresets] == nil)
     #expect(Prefs.defaults[Prefs.statusScreenExitHint] as? Bool == true)
+    // 按快捷键默认先选状态（直进的开关默认关，跟着导出走）；上次进入的是这台电脑自己的状态，不注册默认值
+    #expect(Prefs.defaults[Prefs.statusScreenHotKeyEntersFirst] as? Bool == false)
+    #expect(Prefs.defaults[Prefs.statusScreenLastPreset] == nil)
   }
 
   // MARK: 设置页改列表
@@ -573,10 +578,16 @@ struct StatusScreenTests {
     // 图标是状态自己的；没选图标的用「只有字」的符号垫着
     #expect(statuses.map(\.symbol) == ["sparkles", "hand.raised.fill", "text.alignleft"])
     #expect(NSImage(systemSymbolName: "text.alignleft", accessibilityDescription: nil) != nil)
-    // 全局快捷键进的是排在最前面的那个：只有它选中时显示键帽（同别的带全局快捷键的内置动作）
-    #expect(statuses.map(\.hotKeyAction) == [.statusScreen, nil, nil])
-    let reordered = LauncherItem.actions(.init(statusPresets: [presets[1], presets[0]]))
+    // 全局快捷键默认是先出选状态的面板：哪一条都不带键帽
+    #expect(statuses.map(\.hotKeyAction) == [nil, nil, nil])
+    // 设置里打开「按快捷键直接进入排在最前面的状态」：键进的是排在最前面的那个，只有它选中时显示键帽
+    let direct = LauncherItem.actions(.init(statusPresets: presets, statusEntersFirst: true))
       .filter(\.isStatusPreset)
+    #expect(direct.map(\.hotKeyAction) == [.statusScreen, nil, nil])
+    let reordered = LauncherItem.actions(
+      .init(statusPresets: [presets[1], presets[0]], statusEntersFirst: true)
+    )
+    .filter(\.isStatusPreset)
     #expect(reordered.map(\.title) == ["请勿触碰", "清洁屏幕"])
     #expect(reordered.map(\.hotKeyAction) == [.statusScreen, nil])
     // ↩ 直接进入、不确认：同分时排在别的结果后面（同系统命令、退出本 App）
@@ -589,6 +600,372 @@ struct StatusScreenTests {
     for query in ["请勿", "qingwu", "状态屏", "zhuangtai", "ztp", "status"] {
       #expect(LauncherMatch.score(query, item: busy) > 0, "\(query)")
     }
+  }
+
+  // MARK: 选状态的面板
+
+  /// ←→ 挨个走、到头回绕；↑↓ 换行、列不变，到头不动；下一行不满、正下方没有卡片时落在最后一张
+  @Test func pickerMoves() {
+    let moved = StatusPicker.moved
+    // 7 张：第一行 0–3，第二行 4–6
+    #expect(moved(0, .right, 7) == 1 && moved(3, .right, 7) == 4)
+    #expect(moved(6, .right, 7) == 0 && moved(0, .left, 7) == 6)
+    #expect(moved(4, .left, 7) == 3)
+    #expect(moved(0, .down, 7) == 4 && moved(2, .down, 7) == 6)
+    // 正下方没有卡片：落在最后一张；已经在最后一行、第一行：不动
+    #expect(moved(3, .down, 7) == 6)
+    #expect(moved(5, .down, 7) == 5 && moved(1, .up, 7) == 1)
+    #expect(moved(4, .up, 7) == 0 && moved(6, .up, 7) == 2)
+    // 只有一行：↑↓ 不动，←→ 照样回绕；只有一张：都不动
+    for index in 0..<3 {
+      #expect(moved(index, .up, 3) == index && moved(index, .down, 3) == index)
+    }
+    #expect(moved(2, .right, 3) == 0 && moved(0, .left, 3) == 2)
+    for move in [StatusPicker.Move.left, .right, .up, .down] { #expect(moved(0, move, 1) == 0) }
+    // 正好满行（8 张）、三行（9 张：最后一行只有一张）
+    #expect(moved(7, .right, 8) == 0 && moved(3, .down, 8) == 7 && moved(7, .down, 8) == 7)
+    #expect(moved(5, .down, 9) == 8 && moved(4, .down, 9) == 8 && moved(8, .up, 9) == 4)
+    // 20 张走一圈回到原处，每张都到过
+    var (index, seen) = (0, Set<Int>())
+    for _ in 0..<20 {
+      index = moved(index, .right, 20)
+      seen.insert(index)
+    }
+    #expect(index == 0 && seen.count == 20)
+    #expect(moved(0, .right, 0) == 0)
+  }
+
+  /// 按键：方向键、Tab / ⇧Tab（同 → ←）、↩ 和小键盘 Enter、Esc、主键盘和小键盘的 1–9（按键码，不看布局）；
+  /// 带 ⌘⌃⌥ 的、别的键不认（交还给系统）
+  @Test func pickerKeys() {
+    func key(_ code: Int, _ flags: NSEvent.ModifierFlags = []) -> StatusPicker.Key? {
+      StatusPicker.key(code: code, modifiers: flags)
+    }
+    // 方向键的事件自带 numericPad、function 两个标志
+    let arrow: NSEvent.ModifierFlags = [.numericPad, .function]
+    #expect(
+      key(kVK_LeftArrow, arrow) == .move(.left) && key(kVK_RightArrow, arrow) == .move(.right))
+    #expect(key(kVK_UpArrow, arrow) == .move(.up) && key(kVK_DownArrow, arrow) == .move(.down))
+    #expect(key(kVK_Tab) == .move(.right) && key(kVK_Tab, .shift) == .move(.left))
+    #expect(key(kVK_Return) == .enter && key(kVK_ANSI_KeypadEnter, .numericPad) == .enter)
+    #expect(key(kVK_Escape) == .cancel)
+    #expect(
+      key(kVK_ANSI_1) == .pick(0) && key(kVK_ANSI_5) == .pick(4) && key(kVK_ANSI_9) == .pick(8))
+    #expect(key(kVK_ANSI_Keypad1, .numericPad) == .pick(0))
+    #expect(key(kVK_ANSI_Keypad9, .numericPad) == .pick(8))
+    // 大写锁定开着、按着 ⇧（有的布局数字要 ⇧）照认
+    #expect(key(kVK_ANSI_3, .capsLock) == .pick(2) && key(kVK_ANSI_3, .shift) == .pick(2))
+    #expect(key(kVK_ANSI_0) == nil && key(kVK_ANSI_A) == nil && key(kVK_Space) == nil)
+    for flags: NSEvent.ModifierFlags in [.command, .control, .option] {
+      #expect(key(kVK_ANSI_1, flags) == nil && key(kVK_Return, flags) == nil, "\(flags)")
+      #expect(key(kVK_RightArrow, flags.union(arrow)) == nil, "\(flags)")
+    }
+    // 底栏「直接进入」后面的键帽写到有几张为止
+    #expect(StatusPicker.digitsCap(count: 1) == "1" && StatusPicker.digitsCap(count: 3) == "1–3")
+    #expect(StatusPicker.digitsCap(count: 9) == "1–9" && StatusPicker.digitsCap(count: 20) == "1–9")
+  }
+
+  /// 默认选中上次进入的那个；没有记录、它已经被删了：第一张
+  @Test func pickerDefaultSelection() {
+    let presets = StatusPreset.builtIn
+    #expect(StatusPicker.selection(last: "back", in: presets) == 2)
+    #expect(StatusPicker.selection(last: "busy", in: presets) == 1)
+    #expect(StatusPicker.selection(last: nil, in: presets) == 0)
+    #expect(StatusPicker.selection(last: "删掉了的", in: presets) == 0)
+    #expect(StatusPicker.selection(last: "back", in: []) == 0)
+  }
+
+  /// 排版：一行最多 4 张、多了折行；面板宽至少两格；高超过屏幕给的上限就在面板里滚，一出来先滚到露出选中的那一行
+  @Test func pickerLayout() {
+    let (cell, inset, bar) = (StatusPicker.cell, StatusPicker.inset, StatusPicker.barHeight)
+    #expect(StatusPicker.card == CGSize(width: 200, height: 125))
+    #expect(cell == CGSize(width: 208, height: 157))
+    func layout(_ count: Int, _ maxHeight: CGFloat = 2000) -> StatusPicker.Layout {
+      StatusPicker.layout(count: count, maxHeight: maxHeight)
+    }
+    let oneRow = inset * 2 + cell.height + bar
+    // 1、2 张都是两格宽（底下那行按键提示放得下），3、4 张跟着变宽
+    #expect(
+      layout(1) == .init(columns: 1, rows: 1, size: CGSize(width: 456, height: 225), scrolls: false)
+    )
+    #expect(layout(2).size == CGSize(width: 456, height: oneRow) && layout(2).columns == 2)
+    #expect(layout(3).size == CGSize(width: 672, height: oneRow) && layout(3).rows == 1)
+    #expect(layout(4).size == CGSize(width: 888, height: oneRow) && layout(4).columns == 4)
+    // 5–8 张两行，再多也不超过 4 列；20 张 5 行
+    #expect(layout(5).rows == 2 && layout(5).columns == 4 && layout(5).size.width == 888)
+    let twoRows = inset * 2 + cell.height * 2 + StatusPicker.rowGap + bar
+    #expect(layout(7).size.height == twoRows)
+    #expect(layout(8).rows == 2 && layout(9).rows == 3)
+    let all = layout(StatusPreset.maxCount)
+    let fiveRows: CGFloat = 901  // 上下内缩 32 + 5 行各 157 + 4 道行间 12 + 底栏 36
+    #expect(all.rows == 5 && !all.scrolls)
+    #expect(all.size.height == fiveRows)
+    // 矮屏：高度夹到上限，卡片那一块滚；上限再小也露出一整行
+    let short = layout(20, 700)
+    #expect(short.scrolls && short.size == CGSize(width: 888, height: 700) && short.rows == 5)
+    #expect(layout(20, 100).size.height == oneRow && layout(20, 100).scrolls)
+    #expect(!layout(4, oneRow).scrolls && layout(5, oneRow).scrolls)
+    #expect(layout(0) == layout(1))
+    // 各行在滚动内容里的位置
+    #expect(StatusPicker.span(of: 0) == inset...inset + cell.height)
+    #expect(StatusPicker.span(of: 3) == StatusPicker.span(of: 0))
+    #expect(StatusPicker.span(of: 4).lowerBound == inset + cell.height + StatusPicker.rowGap)
+    // 刚呼出时：选中的在看得见的行里就不滚；在下面就滚到它底下留一格内缩；不滚的面板永远是 0
+    #expect(StatusPicker.initialScroll(selection: 0, layout: short) == 0)
+    #expect(StatusPicker.initialScroll(selection: 7, layout: short) == 0)
+    let viewport = short.size.height - bar
+    let last = StatusPicker.span(of: 19)
+    let scrolled = last.upperBound + inset - viewport
+    #expect(StatusPicker.initialScroll(selection: 19, layout: short) == scrolled)
+    #expect(StatusPicker.initialScroll(selection: 19, layout: all) == 0)
+  }
+
+  /// 面板的状态：呼出前换成现在的列表、选中上次进入的；数字键、↩、单击进入时把状态和那张卡片的位置交出去；
+  /// 没有这一张的数字键不做事
+  @Test func pickerModel() {
+    let model = StatusPickerModel()
+    var entered: [(id: String, card: CGRect?)] = []
+    model.onEnter = { entered.append(($0.id, $1)) }
+    let presets = StatusPreset.builtIn
+    model.prepare(presets, last: "busy", maxHeight: 800)
+    #expect(model.selection == 1 && model.shows == 1 && model.presets == presets)
+    #expect(model.layout == StatusPicker.layout(count: 3, maxHeight: 800))
+    // 画面报上来的卡片位置：进入时原样给出去；没报的（滚出可见区）是 nil
+    let card = CGRect(x: 240, y: 20, width: 208, height: 130)
+    model.cardFrames[1] = card
+    model.handle(.enter)
+    model.handle(.pick(0))
+    model.handle(.pick(5))  // 没有第 6 张
+    model.enter(2)  // 单击
+    #expect(entered.map(\.id) == ["busy", "clean", "back"])
+    #expect(entered.map(\.card) == [card, nil, nil])
+    // 移动（再按一次全局快捷键 = 下一张，回绕）
+    model.move(.right)
+    model.handle(.move(.right))
+    #expect(model.selection == 0)
+    model.handle(.move(.left))
+    #expect(model.selection == 2)
+    model.handle(.cancel)  // Esc 归面板管，这里不动
+    #expect(model.selection == 2 && entered.count == 3)
+    // 再呼出：列表变了（上次的被删了）回到第一张，旧的卡片位置和悬停不留
+    model.hovered = 2
+    model.prepare([presets[0]], last: "back", maxHeight: 800)
+    #expect(model.selection == 0 && model.shows == 2 && model.hovered == nil)
+    #expect(model.cardFrames.isEmpty && model.layout.columns == 1)
+  }
+
+  /// Esc 交给面板的 cancelOperation（真面板是 OverlayPanel.dismiss）：数一数来了几次
+  private final class CancelCountingWindow: NSWindow {
+    var cancels = 0
+    override func cancelOperation(_ sender: Any?) { cancels += 1 }
+  }
+
+  /// 面板的画面在屏外的普通窗口里走一遍（不建真面板、不上屏、不进入）：收按键的视图把自己设成窗口的 initialFirstResponder；
+  /// 按键经它到模型（方向键、Tab、数字、↩），Esc 交给窗口的 cancelOperation；20 个状态在矮屏上
+  /// 一出来就滚到选中的最后一张，↑ 回第一行时跟着滚回去，滚出可见区的卡片不报位置
+  @Test func pickerKeysAndScrolling() throws {
+    let presets = (1...StatusPreset.maxCount).map { index in
+      var preset = StatusPreset.new(id: "p\(index)")
+      preset.title = "状态 \(index)"
+      return preset
+    }
+    let model = StatusPickerModel(presets: presets, selection: 19, maxHeight: 700)
+    var entered: [String] = []
+    model.onEnter = { preset, _ in entered.append(preset.id) }
+    let window = CancelCountingWindow(
+      contentRect: NSRect(origin: NSPoint(x: -20000, y: -20000), size: model.layout.size),
+      styleMask: [.borderless], backing: .buffered, defer: false)
+    window.contentView = NSHostingView(rootView: StatusPickerView(model: model))
+    window.orderFront(nil)
+    defer { window.orderOut(nil) }
+    // 同 OverlayPanel.present：露出来、把布局跑完，收按键的视图这时已经建出来、拿着焦点
+    window.contentView?.layoutSubtreeIfNeeded()
+    #expect(window.initialFirstResponder != nil)
+    #expect(window.firstResponder === window.initialFirstResponder)
+    /// 等界面跟上：按轮数等，条件满足就不再等
+    func settle(until done: () -> Bool = { false }) {
+      for turn in 1...10 where !(done() && turn > 2) {
+        RunLoop.main.run(until: .now.addingTimeInterval(0.05))
+      }
+    }
+    settle { model.cardFrames[19] != nil }
+    let keys = try #require(window.initialFirstResponder)
+    #expect(window.makeFirstResponder(keys) && window.firstResponder === keys)
+    // 点面板别处不会把焦点换走：鼠标点到的都是 SwiftUI 的宿主视图，它不接第一响应者
+    #expect(window.contentView?.acceptsFirstResponder == false)
+    func press(_ code: Int, _ flags: NSEvent.ModifierFlags = []) throws {
+      keys.keyDown(
+        with: try #require(
+          NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, characters: "",
+            charactersIgnoringModifiers: "", isARepeat: false, keyCode: UInt16(code))))
+    }
+    // 一出来：最后一行看得全（卡片整张在滚动区里），第一行滚出去了
+    let viewport = model.layout.size.height - StatusPicker.barHeight
+    let last = try #require(model.cardFrames[19])
+    #expect(last.minY >= 0 && last.maxY <= viewport, "\(last)")
+    #expect(model.cardFrames[0] == nil)
+    // ↑ 四次回到第一行同一列：跟着滚回顶上
+    for _ in 0..<4 { try press(kVK_UpArrow, [.numericPad, .function]) }
+    #expect(model.selection == 3)
+    settle { (model.cardFrames[3]?.minY ?? -1) >= 0 && model.cardFrames[19] == nil }
+    let first = try #require(model.cardFrames[3])
+    #expect(first.minY >= 0 && first.maxY <= viewport, "\(first)")
+    #expect(model.cardFrames[19] == nil)
+    try press(kVK_Tab)
+    #expect(model.selection == 4)
+    try press(kVK_Tab, .shift)
+    try press(kVK_LeftArrow, [.numericPad, .function])
+    #expect(model.selection == 2)
+    // 数字键直接进入对应的那张，↩ 进入选中的；Esc 归窗口
+    try press(kVK_ANSI_2)
+    try press(kVK_Return)
+    #expect(entered == ["p2", "p3"])
+    #expect(window.cancels == 0)
+    try press(kVK_Escape)
+    #expect(window.cancels == 1 && entered.count == 2)
+  }
+
+  // MARK: 从卡片长到整屏
+
+  /// 上一级坐标里的矩形经过图层变换（绕 anchor 做）之后在哪
+  private func applied(_ transform: CGAffineTransform, to rect: CGRect, about anchor: CGPoint)
+    -> CGRect
+  {
+    rect.offsetBy(dx: -anchor.x, dy: -anchor.y).applying(transform)
+      .offsetBy(dx: anchor.x, dy: anchor.y)
+  }
+
+  private func close(_ a: CGRect, _ b: CGRect) -> Bool {
+    abs(a.minX - b.minX) < 0.01 && abs(a.minY - b.minY) < 0.01 && abs(a.width - b.width) < 0.01
+      && abs(a.height - b.height) < 0.01
+  }
+
+  /// 起始变换把整屏的图层正好摆到卡片上（横竖各缩各的），不管图层的 anchor 在角上还是正中；卡片就是整屏时是原位。
+  /// 长的是卡片所在的那块屏的面板
+  @Test func zoomStartMapsScreenOntoCard() {
+    let full = CGRect(x: 0, y: 0, width: 1512, height: 982)
+    let card = CGRect(x: 420, y: 500, width: 208, height: 130)
+    for anchor in [CGPoint.zero, CGPoint(x: full.midX, y: full.midY), CGPoint(x: 30, y: -40)] {
+      let start = StatusScreenPanel.zoomStart(from: card, to: full, about: anchor)
+      #expect(close(applied(start, to: full, about: anchor), card), "\(anchor)")
+      #expect(start.b == 0 && start.c == 0)
+      #expect(abs(start.a - 208.0 / 1512) < 1e-9 && abs(start.d - 130.0 / 982) < 1e-9)
+      // 屏里的点按比例落在卡片里：屏的正中 → 卡片的正中
+      let middle = applied(
+        start, to: CGRect(x: full.midX, y: full.midY, width: 0, height: 0), about: anchor)
+      #expect(abs(middle.minX - card.midX) < 0.01 && abs(middle.minY - card.midY) < 0.01)
+      let same = StatusScreenPanel.zoomStart(from: full, to: full, about: anchor)
+      #expect(close(applied(same, to: full, about: anchor), full) && same.a == 1 && same.d == 1)
+    }
+    // 上一级里不在原点的图层（frame 的原点不是 0）
+    let inset = CGRect(x: 100, y: 50, width: 800, height: 500)
+    let anchor = CGPoint(x: 100, y: 50)
+    let start = StatusScreenPanel.zoomStart(from: card, to: inset, about: anchor)
+    #expect(close(applied(start, to: inset, about: anchor), card))
+    #expect(StatusScreenPanel.zoomStart(from: card, to: .zero, about: .zero) == .identity)
+    // 哪块屏的面板长：卡片的中心所在的那块，都不在就第一块
+    let side = CGRect(x: 1512, y: -200, width: 2560, height: 1440)
+    #expect(StatusScreen.growingIndex(card: card, screens: [full, side]) == 0)
+    #expect(
+      StatusScreen.growingIndex(card: card.offsetBy(dx: 1600, dy: 0), screens: [full, side]) == 1)
+    #expect(
+      StatusScreen.growingIndex(card: card.offsetBy(dx: 0, dy: 9000), screens: [full, side]) == 0)
+  }
+
+  /// 同一件事在真的图层上看一遍（屏外的普通窗口，不建状态屏的面板、不上屏）：铺满窗口的 NSHostingView（翻转的视图，
+  /// 状态屏面板的内容就是它）图层设上起始变换，它在上一级里的 frame 就是卡片换到窗口里的位置——和面板里 grow 的算法一样
+  @Test func zoomStartLandsOnCardLayer() throws {
+    let frame = NSRect(x: -20000, y: -20000, width: 1200, height: 800)
+    let window = NSWindow(
+      contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    let host = NSHostingView(rootView: Color.black)
+    host.sizingOptions = []
+    host.wantsLayer = true
+    window.contentView = host
+    window.setFrame(frame, display: false)
+    let layer = try #require(host.layer)
+    let parent = try #require(host.superview)
+    // 前提：图层在上一级图层里的 frame = 视图在上一级视图里的 frame
+    #expect(layer.frame == host.frame && host.frame.size == frame.size)
+    let card = CGRect(x: frame.minX + 700, y: frame.minY + 520, width: 208, height: 130)
+    let target = parent.convert(window.convertFromScreen(card), from: nil)
+    #expect(close(target, CGRect(x: 700, y: 520, width: 208, height: 130)))
+    layer.setAffineTransform(
+      StatusScreenPanel.zoomStart(from: target, to: host.frame, about: layer.position))
+    #expect(close(layer.frame, target), "\(layer.frame)")
+  }
+
+  /// 长到整屏的那段动画真挂上了（屏外的普通窗口，同上；不建状态屏的面板）：内容图层上有变换和圆角两段动画，变换的起点
+  /// 就是 zoomStart、终点是原位，模型值没动（动画一没画面就在整屏）；期间内容视图裁切（圆角才看得见），
+  /// 动画放完（约 0.7 秒）恢复、done 调一次。没法放（视图不在窗口里）时 done 当场调。
+  /// 动画的完成回调走主队列：测试自己占着主队列时它永远不来（同 MemoryProbeTests 文件头第 2 个坑），所以整段投到
+  /// 主跑环的一个块里同步跑，对不上的记下名字、回来再断言
+  @Test func growAnimatesContentLayer() async {
+    let failures: [String] = await withCheckedContinuation { continuation in
+      RunLoop.main.perform {
+        MainActor.assumeIsolated { continuation.resume(returning: Self.growFailures()) }
+      }
+    }
+    #expect(failures.isEmpty, "\(failures)")
+  }
+
+  private static func growFailures() -> [String] {
+    var failures: [String] = []
+    func check(_ passed: Bool, _ name: String) {
+      if !passed { failures.append(name) }
+    }
+    var done = 0
+    StatusScreenPanel.grow(NSView(), from: .zero) { done += 1 }
+    StatusScreenPanel.grow(nil, from: .zero) { done += 1 }
+    check(done == 2, "放不了时 done 当场调")
+    let frame = NSRect(x: -20000, y: -20000, width: 1200, height: 800)
+    let window = NSWindow(
+      contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    // 和状态屏面板里一样：内容视图没有另外要图层，grow 自己要
+    let host = NSHostingView(rootView: Color.black)
+    host.sizingOptions = []
+    window.contentView = host
+    window.setFrame(frame, display: false)
+    window.orderFront(nil)
+    defer { window.orderOut(nil) }
+    let card = CGRect(x: frame.minX + 496, y: frame.minY + 366, width: 208, height: 130)
+    StatusScreenPanel.grow(host, from: card) { done += 1 }
+    guard let layer = host.layer else { return ["内容视图没有图层"] }
+    guard let zoom = layer.animation(forKey: "grow") as? CASpringAnimation,
+      let round = layer.animation(forKey: "round") as? CASpringAnimation,
+      let from = (zoom.fromValue as? NSValue)?.caTransform3DValue,
+      let to = (zoom.toValue as? NSValue)?.caTransform3DValue
+    else { return ["两段动画没挂上"] }
+    let expected = StatusScreenPanel.zoomStart(
+      from: CGRect(x: 496, y: 366, width: 208, height: 130), to: host.frame, about: layer.position)
+    check(
+      CATransform3DEqualToTransform(from, CATransform3DMakeAffineTransform(expected)), "变换的起点")
+    check(CATransform3DIsIdentity(to) && CATransform3DIsIdentity(layer.transform), "终点和模型值是原位")
+    // 卡片上 10 pt 的圆角按缩放倒回去；圆角那段不回弹（不会弹成负的），两段都是 island 的时长
+    let radius = round.fromValue as? CGFloat ?? 0
+    check(abs(radius - Style.Radius.card / expected.a) < 0.001, "圆角的起点 \(radius)")
+    check(round.toValue as? CGFloat == 0 && layer.cornerRadius == 0, "圆角的终点和模型值")
+    let near = { (value: Double, target: Double) in abs(value - target) < 0.001 }
+    check(
+      near(zoom.perceptualDuration, 0.42) && near(zoom.bounce, 0.22),
+      "变换走 island 曲线：\(zoom.perceptualDuration) / \(zoom.bounce)")
+    check(
+      near(round.perceptualDuration, 0.42) && near(round.bounce, 0),
+      "圆角不回弹：\(round.perceptualDuration) / \(round.bounce)")
+    check(host.clipsToBounds && done == 2, "放的时候裁切、done 还没调")
+    // 放完：恢复裁切、done 调一次（弹簧收敛约 0.7 秒；最多等 2 秒）
+    for _ in 0..<40 where done < 3 { RunLoop.main.run(until: .now.addingTimeInterval(0.05)) }
+    check(done == 3 && !host.clipsToBounds, "放完恢复：done \(done)，裁切 \(host.clipsToBounds)")
+    check(layer.animation(forKey: "grow") == nil, "动画放完就不在了")
+    // 图层是 grow 当场要来的：它的位置（变换绕着它做）之后没有再变，起点没有算在一个还没摆好的图层上
+    let settled = StatusScreenPanel.zoomStart(
+      from: CGRect(x: 496, y: 366, width: 208, height: 130), to: host.frame, about: layer.position)
+    check(
+      CATransform3DEqualToTransform(from, CATransform3DMakeAffineTransform(settled))
+        && layer.frame == host.frame, "图层摆好之后起点还对：\(layer.position) \(layer.frame)")
+    return failures
   }
 
   // MARK: 实机自检

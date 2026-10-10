@@ -340,14 +340,19 @@ struct ShortcutsSheet: View {
           Entry("⌘0", text: "原始大小（滚轮、捏合缩放）"),
           Entry("⌘W", "Esc", text: "关闭（双击同样）"),
         ]),
-      // mac-overlay-panel §11 状态屏；退出判断在 ExitHold（只按着 esc、或左键按在退出提示上满 2 秒）。全局键不设默认，
-      // 没设时那一行写「未设置」；它进的是列表里排在最前面的状态（HotKeyAction.rowTitle）
+      // mac-overlay-panel §11 状态屏。全局键不设默认，没设时那一行写「未设置」；它先出选状态的面板（设置里可改成直接
+      // 进排在最前面的状态，那一行的名字跟着变，HotKeyAction.rowTitle）。面板里的按键在 StatusPicker.key；
+      // 退出判断在 ExitHold（只按着 esc、或左键按在退出提示上满 2 秒）
       Group(
         title: "状态屏", symbol: HotKeyAction.statusScreen.symbol, color: Style.Family.statusScreen,
         globals: [.statusScreen],
         entries: [
-          Entry("Esc", text: "按住 2 秒：退出"),
-          Entry(text: "用鼠标按住屏幕底部的提示 2 秒：退出（动一下鼠标，提示就出现）"),
+          Entry("←→", "↑↓", text: "选状态时：换一张（Tab、⇧Tab，或再按一次全局快捷键也行）"),
+          Entry("1–9", text: "选状态时：直接进入第 1–9 个状态"),
+          Entry("↩", text: "选状态时：进入选中的状态（单击卡片同样）"),
+          Entry("Esc", "⌘W", text: "选状态时：不进了，关闭"),
+          Entry("Esc", text: "进入之后按住 2 秒：退出"),
+          Entry(text: "进入之后用鼠标按住屏幕底部的提示 2 秒：退出（动一下鼠标，提示就出现）"),
         ]),
       // mac-whisker §6 设置；代码在 SettingsWindow 的 SettingsCommands（主菜单「显示 › 返回」）
       Group(

@@ -5,6 +5,8 @@
 // StatusScreenPanel 是「禁止另写 NSPanel 子类」的第四个例外（前三个：截图遮罩 SelectionOverlay、钉图 PinPanel、长截图面板
 // ScrollCapturePanel，mac-overlay-panel §1）：无边框窗口默认当不了 key，而安全输入开着时按键只能靠 key 面板接。
 // 层级是 CGShieldingWindowLevel（盖住菜单栏、程序坞、通知横幅），不抢前台：**永远不调 NSApp.activate**。
+// 从选状态的面板进来时（Z14a），卡片所在屏的那张不淡入，画面从选中的卡片长到整屏（present(growingFrom:)）。
+// 文件末尾的 StatusPreview 是缩小的同一个画面：设置里改一个状态时的预览、选状态面板里的卡片共用。
 
 import AppKit
 import SwiftUI
@@ -93,18 +95,83 @@ final class StatusScreenPanel: NSPanel {
       hasModifiers: !event.modifierFlags.isDisjoint(with: [.command, .control, .option, .shift]))
   }
 
-  /// 露出来（不抢前台；谁当 key 由会话定）
-  func present(fading: Bool) {
-    alphaValue = fading ? 0 : 1
+  /// 露出来（不抢前台；谁当 key 由会话定）。card：从选状态的面板进来时那张卡片在屏幕上的位置（Z14a），
+  /// 画面从它长到整屏，不淡入
+  func present(fading: Bool, growingFrom card: CGRect? = nil) {
+    alphaValue = fading && card == nil ? 0 : 1
+    // 要从卡片长出来的：上屏之前就让窗口透明、底色交给画面自己画（StatusScreenView 最底下铺了底色）——熄屏、告示
+    // 平时是不透明黑底，不先透明的话卡片还没长大整屏就黑了；长完再恢复
+    let backdrop = (isOpaque, backgroundColor)
+    if card != nil {
+      isOpaque = false
+      backgroundColor = .clear
+    }
     orderFrontRegardless()
     // 第一响应者是窗口自己，不是画面
     makeFirstResponder(nil)
+    if let card {
+      return Self.grow(contentView, from: card) { [weak self] in
+        self?.isOpaque = backdrop.0
+        self?.backgroundColor = backdrop.1
+      }
+    }
     guard fading else { return }
     NSAnimationContext.runAnimationGroup { context in
       context.duration = Style.fadeIn
       context.timingFunction = CAMediaTimingFunction(name: .easeOut)
       animator().alphaValue = 1
     }
+  }
+
+  /// 画面（host：铺满窗口的内容视图）从 card（屏幕坐标）长到整屏：island 曲线，约 0.42 秒。窗口从头到尾都是整屏大小，
+  /// 动的只是内容图层的变换（缩放 + 平移）和圆角——不做窗口帧动画、不每帧重新布局；变换和圆角的模型值不动（一直是
+  /// 原位、直角），动画没加上、被移除时画面就在整屏。done：放完（或者根本没放成）时调，面板拿它把窗口的底色恢复回去。
+  /// 只是画面的事：拦截、谁当 key、退出判断都不等它。不碰面板自己的东西，单测在屏外的普通窗口里跑它
+  static func grow(_ host: NSView?, from card: CGRect, done: @escaping () -> Void) {
+    // 动的是它自己的图层：只在要长的这一次才要（别的入口进来的面板一点不动）
+    host?.wantsLayer = true
+    guard let host, let window = host.window, let layer = host.layer, let parent = host.superview,
+      let zoom = Style.Motion.island.caAnimation(keyPath: "transform", reduced: false)
+        as? CABasicAnimation,
+      // 圆角不回弹：弹过头是负的圆角
+      let round = Style.Motion.island.caAnimation(
+        keyPath: "cornerRadius", reduced: false, bounce: 0) as? CABasicAnimation
+    else { return done() }
+    // 视图的图层在上一级图层里的 frame 就是视图在上一级视图里的 frame：卡片也换到那个坐标系
+    let start = zoomStart(
+      from: parent.convert(window.convertFromScreen(card), from: nil), to: host.frame,
+      about: layer.position)
+    guard start.a > 0, start.d > 0 else { return done() }
+    zoom.fromValue = NSValue(caTransform3D: CATransform3DMakeAffineTransform(start))
+    zoom.toValue = NSValue(caTransform3D: CATransform3DIdentity)
+    // 卡片的圆角跟着长大、到整屏时收成直角（图层缩小了，圆角按缩放倒回去才是卡片上的那么大）；要裁才看得见圆角
+    round.fromValue = Style.Radius.card / start.a
+    round.toValue = 0
+    let clips = host.clipsToBounds
+    host.clipsToBounds = true
+    CATransaction.begin()
+    CATransaction.setCompletionBlock { [weak host] in
+      MainActor.assumeIsolated {
+        host?.clipsToBounds = clips
+        done()
+      }
+    }
+    layer.add(zoom, forKey: "grow")
+    layer.add(round, forKey: "round")
+    CATransaction.commit()
+  }
+
+  /// 放大的起点（纯函数）：让整屏的内容图层（在上一级图层里占 full）看起来正好落在 card 上的变换。图层的变换是绕着它的
+  /// position（anchor，上一级图层的坐标）做的：上一级坐标里的点 x 画在 anchor + (x − anchor) 经过变换之后的地方。
+  /// 横竖各缩各的（卡片 200 × 125 和屏幕的比例差一点），起点和卡片严丝合缝，长到整屏时变换回到原位
+  static func zoomStart(from card: CGRect, to full: CGRect, about anchor: CGPoint)
+    -> CGAffineTransform
+  {
+    guard full.width > 0, full.height > 0 else { return .identity }
+    let (sx, sy) = (card.width / full.width, card.height / full.height)
+    return CGAffineTransform(
+      a: sx, b: 0, c: 0, d: sy, tx: card.minX - anchor.x - sx * (full.minX - anchor.x),
+      ty: card.minY - anchor.y - sy * (full.minY - anchor.y))
   }
 
   /// 收掉：窗口当场移走，键盘马上回到前台 App；画面由系统淡出（临时 .utilityWindow 再 orderOut，同截图遮罩的取消，
@@ -244,5 +311,59 @@ struct StatusScreenView: View {
     .animation(
       screen.showsHint ? .easeOut(duration: Style.fadeIn) : .easeIn(duration: Style.fadeOut),
       value: screen.showsHint)
+  }
+}
+
+/// 缩小的状态屏：真的画面（StatusScreenView）按一块 1200 × 750 的屏排好，再缩到给它的宽度（宽高比 1.6）。透出样式底下垫
+/// 一张示意的浅色桌面（画的，不截真屏幕）。进入时刻、时长是摆的，不带退出提示。只是个样子：不接点击、不进旁白。
+/// 设置 › 状态屏改一个状态时的预览（StatusPresetDetail）、选状态面板里的卡片（StatusPicker）共用
+struct StatusPreview: View {
+  let preset: StatusPreset
+
+  private static let screen = CGSize(width: 1200, height: 750)
+
+  var body: some View {
+    let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
+    let startedAt =
+      Calendar.current.date(bySettingHour: 14, minute: 2, second: 0, of: .now) ?? .now
+    GeometryReader { proxy in
+      ZStack {
+        if preset.style == .dim { Self.desktop }
+        StatusScreenView(
+          screen: StatusScreen(showing: preset, startedAt: startedAt, elapsed: 23 * 60))
+      }
+      .frame(width: Self.screen.width, height: Self.screen.height)
+      .scaleEffect(proxy.size.width / Self.screen.width, anchor: .topLeading)
+    }
+    .aspectRatio(Self.screen.width / Self.screen.height, contentMode: .fit)
+    .clipShape(shape)
+    .overlay(shape.hairlineBorder())
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
+  }
+
+  /// 示意的桌面：浅色壁纸上两扇有几行「字」的窗。颜色是示意用的定值，不跟外观走
+  private static var desktop: some View {
+    ZStack {
+      LinearGradient(
+        colors: [
+          Color(red: 0.62, green: 0.74, blue: 0.92), Color(red: 0.84, green: 0.80, blue: 0.94),
+        ], startPoint: .top, endPoint: .bottom)
+      window(lines: 9).frame(width: 640, height: 440).offset(x: -200, y: -70)
+      window(lines: 6).frame(width: 520, height: 340).offset(x: 260, y: 140)
+    }
+  }
+
+  private static func window(lines: Int) -> some View {
+    VStack(alignment: .leading, spacing: 16) {
+      ForEach(0..<lines, id: \.self) { line in
+        Capsule()
+          .fill(.black.opacity(line == 0 ? 0.6 : 0.3))
+          .frame(width: line == 0 ? 180 : line % 3 == 0 ? 260 : 400, height: 12)
+      }
+    }
+    .padding(32)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .background(.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
   }
 }
