@@ -602,8 +602,11 @@ extension View {
   /// 1 pt white 0.35）在取值时判断：悬停才建这些按钮，每次悬停都重新取。
   /// macOS 26 起是深色液态玻璃（mac-whisker §2「26 分支」），不画底色和描边，两个无障碍开关交给玻璃。
   /// 常驻缩略图的胶囊和圆钮（Screenshot/ShotShelf.swift）、状态屏的退出提示和透出样式的底板（StatusScreenView）共用。
-  /// 屏外渲染里胶囊两端各有一小段更亮的竖线（换成圆角矩形、把圆角收小 0.5 都试过，一样；原因没查清）：
-  /// 真机上看不看得出来待手测（HANDTEST「状态屏手测」）
+  /// 屏外截图自检里 `Capsule()` 的两端各多一小段竖线，**真机没有**（2026-10-10 同一块视图真上屏抓图逐像素对过）：
+  /// Capsule、RoundedRectangle 默认都是 continuous 圆角，SwiftUI 把描边交给一个 CALayer（cornerCurve continuous +
+  /// borderWidth）；圆角被夹到高的一半时，截图自检走的 `CALayer.render(in:)` 在两端各多画一段直线（内、外描边各一条，
+  /// 和线宽无关，底色那层没有），窗口服务器画的没有。传 `Capsule(style: .circular)` 屏外也干净，但真机上两端的边缘像素
+  /// 会跟着变，所以没换；纯图层那边的同一件事见 SelectionView 的提示胶囊
   @ViewBuilder func hudSkin<S: InsettableShape>(_ shape: S) -> some View {
     if #available(macOS 26, *) {
       foregroundStyle(Color(nsColor: Style.HUD.text))
