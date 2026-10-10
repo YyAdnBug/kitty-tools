@@ -1,6 +1,7 @@
-// 设置 › 状态屏（PLAN §10「状态屏」Z11，排在「录制」后面）：状态列表（行 = 家族色块里的图标 / 标题 / 一行摘要，
+// 设置 › 状态屏（PLAN §10「状态屏」Z11，排在「录制」后面）：状态列表（行 = 表情的静止画面 / 标题 / 一行摘要，
 // 拖动排序，「+ −」增删，单击一行推进到 StatusPresetDetail 编辑——和翻译服务、网页搜索同一套 OrderedList 交互）、
 // 「按快捷键直接进入排在最前面的状态」开关（默认关：按快捷键先出一排预览卡片，StatusPicker.swift）、
+// 「告示上的动画」总开关（Z18a，默认开）、
 // 「有人碰键盘或鼠标时显示怎么退出」开关、怎么退出和「它不是安全措施」的说明。页头画在自己的 NavigationStack 里，
 // 推进时一起换掉。列表直接读写偏好里的 JSON（Prefs.statusScreenPresets）：菜单栏、启动器每次现读，改了就跟上。
 // 这一页没有「进入」「试一下」这类按钮：进入会拦住键盘鼠标，只从菜单栏、启动器、全局快捷键进。
@@ -15,6 +16,7 @@ struct StatusScreenTab: View {
   @AppStorage(Prefs.statusScreenPresets) private var data: Data?
   @AppStorage(Prefs.statusScreenExitHint) private var exitHint = true
   @AppStorage(Prefs.statusScreenHotKeyEntersFirst) private var entersFirst = false
+  @AppStorage(Prefs.statusScreenAnimations) private var animations = true
   /// 推进的详情页在 navigation.path（主菜单「返回」也要读写它）
   @Environment(SettingsNavigation.self) private var navigation
   /// 列表里用键盘选中的一条（「−」和 ⌫ 删它；鼠标单击直接推进，不留选中）
@@ -31,6 +33,8 @@ struct StatusScreenTab: View {
       .navigationTitle(SettingsPage.statusScreen.title)
       .navigationDestination(for: String.self) { id in StatusPresetDetail(id: id, fixed: fixed) }
     }
+    // 详情页的图标格子一次要画 16 张静止画面：趁这一页开着先在主线程外解好
+    .task { await StatusEmoji.warmStills() }
     .confirmationDialog(
       "删除「\(presets.first { $0.id == removing }?.title ?? "")」？",
       isPresented: Binding {
@@ -77,6 +81,16 @@ struct StatusScreenTab: View {
         Text("进入")
       } footer: {
         OrderedList.footnote("快捷键在「快捷键」页设置，默认没有。在菜单栏、启动器里选一个状态，都是直接进入。")
+      }
+      Section {
+        Toggle(isOn: $animations) {
+          Text("告示上的动画")
+          Text("关掉后表情不动、进入时不做出场、有人碰时不冒眼睛；标题照样晃一下。")
+        }
+      } header: {
+        Text("动画")
+      } footer: {
+        OrderedList.footnote("系统设置里打开了「减弱动态效果」时，这些动画都不做，标题也不晃。")
       }
       Section {
         LabeledContent {
@@ -187,7 +201,7 @@ struct StatusScreenTab: View {
   }
 }
 
-/// 一个状态：家族色块里的图标（没选图标的用「只有字」的符号垫着）、标题 + 摘要（样式 · 电源 · 自动结束）、
+/// 一个状态：图标（表情的静止画面；没选的是家族色块里「只有字」的符号）、标题 + 摘要（样式 · 电源 · 自动结束）、
 /// ›（只是提示能推进，点整行都推进）
 private struct PresetListRow: View {
   let preset: StatusPreset
@@ -197,7 +211,7 @@ private struct PresetListRow: View {
 
   var body: some View {
     HStack(spacing: 10) {
-      KindTile(symbol: preset.rowSymbol, color: Style.Family.statusScreen, size: 24)
+      StatusPresetIcon(symbol: preset.symbol)
       VStack(alignment: .leading, spacing: 1) {
         Text(preset.title).font(.system(size: 13))
         Text(preset.summary)

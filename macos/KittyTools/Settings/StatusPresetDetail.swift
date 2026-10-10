@@ -1,6 +1,7 @@
 // 设置 › 状态屏 › 某个状态（详情页，从列表推进来；同 SearchEngineDetail / TranslateServiceDetail 的形式）：
-// 页头 40 pt 家族色块 + 标题 + 摘要，下面分组表单：标题、说明、图标（一格「无」+ 20 个符号）、样式（三选一，下面一块
-// 预览：StatusScreenView.swift 的 StatusPreview，真的画面缩小）、电源、自动结束，最后是删除（至少留一个；自己加的、改过的先确认）。
+// 页头 40 pt 图标 + 标题 + 摘要，下面分组表单：标题、说明、图标（一格「无」+ 16 个表情）、样式（三选一，下面一块
+// 预览：StatusScreenView.swift 的 StatusPreview，真的画面缩小，表情会动）、电源、自动结束，最后是删除（至少留一个；
+// 自己加的、改过的先确认）。
 // 改动即时写回偏好里的 JSON 列表（和 StatusScreenTab 读写同一个键），存之前过 StatusPreset.sanitized。
 // 输入框绑的是一份草稿：存进偏好的标题 / 说明去了首尾空白、截到上限，边打边收拾会吃掉正在打的空格；标题删光了重打时
 // 留着原来的标题（空标题存不下）。有问题（没标题、超长）时页头的摘要换成橙色说明，不拦着改。
@@ -53,7 +54,7 @@ struct StatusPresetDetail: View {
           title: stored.title, status: editing.problem ?? stored.summary,
           isProblem: editing.problem != nil
         ) {
-          KindTile(symbol: stored.rowSymbol, color: Style.Family.statusScreen, size: 40)
+          StatusPresetIcon(symbol: stored.symbol, size: 40)
         }
       } footer: {
         OrderedList.footnote(
@@ -67,7 +68,7 @@ struct StatusPresetDetail: View {
           Text(editing.style.explanation)
         }
         .pickerStyle(.segmented)
-        StatusPreview(preset: stored)
+        StatusPreview(preset: stored, animated: true)
       }
       Section {
         Picker("电源", selection: binding.power) {
@@ -113,7 +114,8 @@ struct StatusPresetDetail: View {
   }
 }
 
-/// 图标格子：一格「无」+ StatusPreset.symbols 的 20 个，一行 7 个；选中的外面一圈强调色（同通用页的外观缩略图）
+/// 图标格子：一格「无」+ StatusEmoji.choices 的 16 个表情（静止画面），一行 7 个；选中的外面一圈强调色
+/// （同通用页的外观缩略图）
 private struct SymbolGrid: View {
   @Binding var selection: String
 
@@ -123,7 +125,7 @@ private struct SymbolGrid: View {
   var body: some View {
     let column = GridItem(.fixed(Self.cell + Self.ring * 2), spacing: 4)
     LazyVGrid(columns: Array(repeating: column, count: 7), spacing: 4) {
-      ForEach([""] + StatusPreset.symbols, id: \.self) { cell($0) }
+      ForEach([""] + StatusEmoji.ids, id: \.self) { cell($0) }
     }
     .fixedSize()
     .accessibilityElement(children: .contain)
@@ -136,12 +138,13 @@ private struct SymbolGrid: View {
       selection = symbol
     } label: {
       Group {
-        if symbol.isEmpty {
-          Text("无").font(.system(size: 12, weight: .medium))
+        if let still = StatusEmoji.still(symbol) {
+          Image(decorative: still, scale: 1)
+            .resizable()
+            .interpolation(.high)
+            .frame(width: Self.cell - 6, height: Self.cell - 6)
         } else {
-          Image(systemName: symbol)
-            .font(.system(size: 14, weight: .medium))
-            .symbolRenderingMode(.hierarchical)
+          Text("无").font(.system(size: 12, weight: .medium))
         }
       }
       .foregroundStyle(selected ? .primary : .secondary)
@@ -162,7 +165,9 @@ private struct SymbolGrid: View {
     }
     .buttonStyle(.plain)
     .animation(.easeOut(duration: Style.fadeIn), value: selected)
-    // 名字不另起：符号的旁白名是系统给的（「时钟」「月亮」…），「无」那一格读它的字
+    // 旁白读表情的中文名（「举手」「闹钟」…），「无」那一格读它的字
+    .accessibilityLabel(StatusEmoji.name(symbol) ?? "无")
+    .help(StatusEmoji.name(symbol) ?? "不要图标")
     .accessibilityAddTraits(selected ? .isSelected : [])
   }
 }

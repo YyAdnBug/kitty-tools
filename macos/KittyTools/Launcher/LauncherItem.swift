@@ -50,8 +50,8 @@ struct LauncherItem: Identifiable, Hashable {
   var visitedAt: Date?
   /// kill / port 列的进程：结束时要的 PID 和名字；port 列的程序坞 App 另有包路径和显示名（↩ 走退出）
   var process: Processes.Entry?
-  /// 状态屏的一个状态：色块里的符号（状态自己选的图标，StatusPreset.rowSymbol）；别的结果是 nil
-  var presetSymbol: String?
+  /// 状态屏的一个状态：它选的表情（StatusPreset.symbol；空 = 没选，行里用家族色块垫）；别的结果是 nil
+  var presetEmoji: String?
   /// 状态屏列表里排在最前面的那个状态，而且设置里打开了「按快捷键直接进入排在最前面的状态」：全局快捷键进的就是它，
   /// 选中时右侧显示键帽（同别的带全局快捷键的内置动作）。开关关着时（默认）快捷键是先出选状态的面板，哪一行都不带键帽
   var isFirstStatusPreset = false
@@ -134,7 +134,7 @@ struct LauncherItem: Identifiable, Hashable {
     let pinyin = AppCatalog.pinyin(family.title)
     item.names += [family.title, pinyin?.full].compactMap { $0.map(LauncherMatch.fold) }
     item.initials += [pinyin?.initials].compactMap { $0 }
-    item.presetSymbol = preset.rowSymbol
+    item.presetEmoji = preset.symbol
     return item
   }
 
@@ -173,7 +173,8 @@ struct LauncherItem: Identifiable, Hashable {
   }
 
   var symbol: String {
-    if let presetSymbol { return presetSymbol }
+    // 状态屏的状态：行里画的是表情（LauncherPanelView），没选表情时才用到这个垫的符号
+    if presetEmoji != nil { return StatusPreset.plainSymbol }
     // 对得上全局热键的内置动作（和 cb 那一行）用 HotKeyAction 的符号：和菜单栏、快捷键页是同一个图标
     if kind == .action || kind == .clip, let action = hotKeyAction { return action.symbol }
     return switch (kind, target) {

@@ -1,7 +1,10 @@
 // 状态屏（PLAN §10）的纯函数单测：自带状态和编解码、sanitized 各条、退出判断（ExitHold：按住满 2 秒、别的触碰取消、带修饰键 / 连发
 // 不算、松开取消、鼠标按在提示里外、滚动合并、「松不开」的键过期）、时长文字、退出提示和 key 面板的范围、拦截对事件的分类、
 // 启动器里每个状态一条；设置 › 状态屏改列表的几个纯函数（加、删、挪、恢复自带的、详情页改一个、摘要）；选状态的面板
-// （第 4 批：选中怎么移动、按键、默认选中、排版、进入时给出去的卡片位置）和从卡片长到整屏的起始变换。不进入状态屏、不建面板。
+// （第 4 批：选中怎么移动、按键、默认选中、排版、进入时给出去的卡片位置）和从卡片长到整屏的起始变换；告示上的动画
+// （第 5 批：表情的清单、17 个资源都在包里且解得出、旧符号名换成表情、每帧时长 → keyTimes、图层上挂的那段动画、
+// 表情视图挂进屏外窗口真的在换帧、动不动 / 冒不冒眼睛 / 要解哪些帧的判断、表情和眼睛的尺寸位置、出场的时间表）。
+// 不进入状态屏、不建面板。
 //
 // 另有一个按需的实机自检 liveBlockSwallowsKeys()（默认不跑）：真的建起产品的 InputBlock，发一次合成的 ⌃⌥⇧⌘F18，
 // 看处理函数收到按下 / 松开、别的全局监听一个都没收到，作废之后再发一次、监听收得到。要「辅助功能」授权。
@@ -17,6 +20,19 @@ import Testing
 
 @testable import KittyTools
 
+/// emojiViewPlaysThenStops 用的：给表情视图换帧的那份状态，和把它摆进窗口的壳
+@Observable private final class EmojiBox {
+  var frames: StatusEmoji.Frames?
+}
+
+private struct EmojiHost: View {
+  let box: EmojiBox
+
+  var body: some View {
+    StatusEmojiView(id: StatusEmoji.eyes, frames: box.frames).frame(width: 120, height: 120)
+  }
+}
+
 struct StatusScreenTests {
   nonisolated private static let live =
     ProcessInfo.processInfo.environment["KITTY_LIVE_INPUT_BLOCK"] != nil
@@ -30,16 +46,14 @@ struct StatusScreenTests {
     #expect(presets.map(\.style) == [.blackout, .dim, .sign])
     #expect(presets.map(\.power) == [.normal, .displayOn, .awake])
     #expect(presets.map(\.autoEndMinutes) == [5, 0, 0])
-    #expect(presets.map(\.symbol) == ["sparkles", "hand.raised.fill", "clock.fill"])
+    #expect(presets.map(\.symbol) == ["glowing-star", "raised-hand", "alarm-clock"])
     #expect(presets[1].detail == "电脑正在跑任务，别动键盘和鼠标" && presets[0].detail == nil)
     // 自带的本身就合规；编成 JSON 再读回来一样
     #expect(StatusPreset.sanitized(presets) == presets)
     #expect(StatusPreset.decode(try JSONEncoder().encode(presets)) == presets)
-    // 可选图标约 20 个、不重复，最低系统上都有
-    #expect(StatusPreset.symbols.count == 20 && Set(StatusPreset.symbols).count == 20)
-    for symbol in StatusPreset.symbols {
-      #expect(NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil, "\(symbol)")
-    }
+    // 没选图标时垫的系统符号，最低系统上有
+    let plain = NSImage(systemSymbolName: StatusPreset.plainSymbol, accessibilityDescription: nil)
+    #expect(plain != nil && StatusPreset.plainSymbol == "text.alignleft")
   }
 
   /// 没存过、解不出、空列表、收拾完一个不剩：都用自带的
@@ -74,7 +88,7 @@ struct StatusScreenTests {
         autoEndMinutes: minutes)
     }
     let clean = StatusPreset.sanitized([
-      preset("a", "  开会\n中  ", detail: "  \n ", symbol: "moon.fill", minutes: 15),
+      preset("a", "  开会\n中  ", detail: "  \n ", symbol: "rocket", minutes: 15),
       preset("b", String(repeating: "长", count: 40), detail: String(repeating: "说", count: 80)),
       preset("c", "   "),  // 标题空：丢
       preset("a", "重复的 id"),  // 丢，留先出现的
@@ -85,12 +99,48 @@ struct StatusScreenTests {
     #expect(clean.map(\.id) == ["a", "b", "d"])
     // 首尾空白去掉、换行当空格；只有空白的说明就是没有；清单里的图标和可选的分钟数留着
     #expect(clean[0].title == "开会 中" && clean[0].detail == nil)
-    #expect(clean[0].symbol == "moon.fill" && clean[0].autoEndMinutes == 15)
+    #expect(clean[0].symbol == "rocket" && clean[0].autoEndMinutes == 15)
     #expect(clean[1].title.count == 30 && clean[1].detail?.count == 60)
     #expect(clean[2].symbol.isEmpty && clean[2].autoEndMinutes == 0)
     // 最多 20 个
     let many = (0..<30).map { preset("p\($0)", "状态 \($0)") }
     #expect(StatusPreset.sanitized(many).map(\.id) == (0..<20).map { "p\($0)" })
+    // 清单里的 16 个表情都留着；「眼睛」只在被碰时用，不能选
+    let all = StatusEmoji.ids.enumerated().map { preset("e\($0.offset)", "状态", symbol: $0.element) }
+    #expect(StatusPreset.sanitized(all).map(\.symbol) == StatusEmoji.ids)
+    let peeking = StatusPreset.sanitized([preset("eyes", "状态", symbol: StatusEmoji.eyes)])
+    #expect(peeking.map(\.symbol) == [""])
+  }
+
+  /// 第 5 批之前图标存的是系统符号名（20 个）：意思对得上的 11 个换成对应的表情，其余置空；收拾一遍之后再收拾不变。
+  /// 自带的三个原来是 sparkles / hand.raised.fill / clock.fill——存着旧名的列表读出来和现在自带的一模一样
+  @Test func legacySymbolsBecomeEmoji() throws {
+    let expected = [
+      "sparkles": "glowing-star", "hand.raised.fill": "raised-hand", "clock.fill": "alarm-clock",
+      "hourglass": "hourglass", "moon.fill": "sleeping-face", "zzz": "zzz",
+      "cup.and.saucer.fill": "hot-beverage", "phone.fill": "telephone", "person.2.fill": "busts",
+      "terminal.fill": "robot", "bolt.fill": "high-voltage", "fork.knife": "", "figure.walk": "",
+      "video.fill": "", "hammer.fill": "", "arrow.down.circle.fill": "",
+      "exclamationmark.triangle.fill": "", "bell.slash.fill": "", "headphones": "",
+      "gamecontroller.fill": "",
+    ]
+    #expect(expected.count == 20)
+    for (old, emoji) in expected {
+      #expect(StatusPreset.emoji(for: old) == emoji, "\(old)")
+      #expect(emoji.isEmpty || StatusEmoji.ids.contains(emoji), "\(emoji)")
+    }
+    #expect(StatusPreset.emoji(for: "") == "" && StatusPreset.emoji(for: "lock.fill") == "")
+    #expect(StatusPreset.emoji(for: "../status-emoji-eyes") == "")
+    for id in StatusEmoji.ids { #expect(StatusPreset.emoji(for: id) == id) }
+    // 换过来的值都在清单里：对照表没有指到不存在的表情
+    #expect(StatusPreset.legacySymbols.values.allSatisfy(StatusEmoji.ids.contains))
+    var old = StatusPreset.builtIn
+    for (index, symbol) in ["sparkles", "hand.raised.fill", "clock.fill"].enumerated() {
+      old[index].symbol = symbol
+    }
+    let loaded = StatusPreset.decode(try JSONEncoder().encode(old))
+    #expect(loaded == StatusPreset.builtIn && loaded.allSatisfy(\.isPristine))
+    #expect(StatusPreset.sanitized(loaded) == loaded)
   }
 
   /// 存取走一个偏好键里的 JSON：存进去的是收拾过的，读回来一样；存了空列表读回来是自带的。
@@ -112,6 +162,8 @@ struct StatusScreenTests {
     // 按快捷键默认先选状态（直进的开关默认关，跟着导出走）；上次进入的是这台电脑自己的状态，不注册默认值
     #expect(Prefs.defaults[Prefs.statusScreenHotKeyEntersFirst] as? Bool == false)
     #expect(Prefs.defaults[Prefs.statusScreenLastPreset] == nil)
+    // 告示上的动画默认开（注册了默认值：跟着导出走）
+    #expect(Prefs.defaults[Prefs.statusScreenAnimations] as? Bool == true)
   }
 
   // MARK: 设置页改列表
@@ -208,9 +260,9 @@ struct StatusScreenTests {
     // 编进偏好再读回来：首尾空白去掉了
     #expect(StatusPreset.decode(StatusPreset.encoded(updated))[2].title == "开会中")
     draft.title = "  "
-    draft.symbol = "moon.fill"
+    draft.symbol = "rocket"
     updated = StatusPreset.updating(list, with: draft)
-    #expect(updated[2].title == "马上回来" && updated[2].symbol == "moon.fill")
+    #expect(updated[2].title == "马上回来" && updated[2].symbol == "rocket")
     #expect(StatusPreset.decode(StatusPreset.encoded(updated)).count == 3)
     // 列表里没有这个 id：不动
     #expect(StatusPreset.updating(list, with: preset("nope")) == list)
@@ -575,9 +627,10 @@ struct StatusScreenTests {
     #expect(statuses.map(\.title) == ["清洁屏幕", "请勿触碰", "马上回来"])
     // 副标题同别的内置动作（右侧类型才写「状态屏」，不重复）
     #expect(statuses.allSatisfy { $0.subtitle == "Kitty Tools" && $0.kind == .action })
-    // 图标是状态自己的；没选图标的用「只有字」的符号垫着
-    #expect(statuses.map(\.symbol) == ["sparkles", "hand.raised.fill", "text.alignleft"])
-    #expect(NSImage(systemSymbolName: "text.alignleft", accessibilityDescription: nil) != nil)
+    // 图标是状态自己的表情（行里画它的静止画面）；没选的是空，行里用「只有字」的符号垫着。别的结果没有这一项
+    #expect(statuses.map(\.presetEmoji) == ["glowing-star", "raised-hand", ""])
+    #expect(statuses.allSatisfy { $0.symbol == "text.alignleft" })
+    #expect(items.filter { !$0.isStatusPreset }.allSatisfy { $0.presetEmoji == nil })
     // 全局快捷键默认是先出选状态的面板：哪一条都不带键帽
     #expect(statuses.map(\.hotKeyAction) == [nil, nil, nil])
     // 设置里打开「按快捷键直接进入排在最前面的状态」：键进的是排在最前面的那个，只有它选中时显示键帽
@@ -599,6 +652,281 @@ struct StatusScreenTests {
     let busy = statuses[1]
     for query in ["请勿", "qingwu", "状态屏", "zhuangtai", "ztp", "status"] {
       #expect(LauncherMatch.score(query, item: busy) > 0, "\(query)")
+    }
+  }
+
+  // MARK: 告示上的动画（第 5 批）
+
+  /// 清单：可选的 16 个、id 不重复、顺序固定、各有中文名；「眼睛」另算，不在可选的里面
+  @Test func emojiCatalog() {
+    #expect(
+      StatusEmoji.ids == [
+        "raised-hand", "waving-hand", "glowing-star", "alarm-clock", "hourglass", "hot-beverage",
+        "zzz", "sleeping-face", "shushing-face", "busts", "telephone", "rocket", "robot", "fire",
+        "high-voltage", "black-cat",
+      ])
+    #expect(
+      StatusEmoji.choices.map(\.name) == [
+        "举手", "挥手", "发光的星", "闹钟", "沙漏", "热饮", "Zzz", "睡觉", "嘘", "开会", "电话", "火箭", "机器人", "火",
+        "闪电", "黑猫",
+      ])
+    #expect(Set(StatusEmoji.ids).count == 16 && Set(StatusEmoji.choices.map(\.name)).count == 16)
+    #expect(StatusEmoji.eyes == "eyes" && !StatusEmoji.ids.contains(StatusEmoji.eyes))
+    #expect(StatusEmoji.name("alarm-clock") == "闹钟" && StatusEmoji.name("eyes") == nil)
+    #expect(StatusEmoji.name("") == nil)
+    // 只认清单里的 id：空的、旧的符号名、带路径的都取不到文件，也没有静止画面
+    for id in ["", "sparkles", "../status-emoji-eyes", "eyes/../rocket", "Rocket"] {
+      #expect(StatusEmoji.url(id) == nil && StatusEmoji.still(id) == nil, "\(id)")
+    }
+  }
+
+  /// 17 个资源都在包里（测试宿主就是 App）而且解得出：每个都取得到文件，帧数大于 1、每帧 256 × 256、带透明通道
+  /// （四角是透明的）、每帧时长大于 0；静止画面就是第一帧那么大，取第二次是缓存里的同一张
+  @Test func emojiResourcesDecode() async throws {
+    for id in StatusEmoji.ids + [StatusEmoji.eyes] {
+      let url = try #require(StatusEmoji.url(id), "\(id)")
+      #expect(url.lastPathComponent == "status-emoji-\(id).heics")
+      let frames = try #require(await StatusEmoji.decode(id), "\(id)")
+      #expect(frames.images.count > 1 && frames.images.count == frames.delays.count, "\(id)")
+      #expect(frames.delays.allSatisfy { $0 > 0 } && frames.duration > 1, "\(id)")
+      for image in frames.images {
+        #expect(image.width == 256 && image.height == 256, "\(id)")
+        #expect(image.alphaInfo == .premultipliedFirst, "\(id)")
+      }
+      #expect(Self.alpha(of: frames.images[0], x: 0, y: 0) == 0, "\(id) 的左上角该是透明的")
+      #expect(Self.opaquePixels(in: frames.images[0]) > 2000, "\(id) 的第一帧该有画面")
+      #expect(frames.keyTimes.count == frames.images.count + 1, "\(id)")
+      let still = try #require(StatusEmoji.still(id), "\(id)")
+      #expect(still.width == 256 && still.height == 256 && still.alphaInfo == .premultipliedFirst)
+      #expect(StatusEmoji.still(id) === still, "\(id)")
+      #expect(Self.opaquePixels(in: still) == Self.opaquePixels(in: frames.images[0]), "\(id)")
+    }
+    #expect(StatusEmoji.menuImage("rocket")?.size == NSSize(width: 16, height: 16))
+    #expect(StatusEmoji.menuImage("") == nil)
+    #expect(await StatusEmoji.decode("sparkles") == nil)
+    // 素材的许可随包带着（MIT 要求），关于页的链接打开的就是它
+    let license = try #require(
+      Bundle.main.url(forResource: "status-emoji-LICENSE", withExtension: "txt"))
+    #expect(try String(contentsOf: license, encoding: .utf8).contains("MIT License"))
+    #expect(AboutTab.emojiCredit == "状态屏的动画表情来自 Microsoft Fluent Emoji（MIT 许可）")
+  }
+
+  /// 解好的帧是预乘透明度的 BGRA（小端）：一个像素 4 字节，透明度在最后一个
+  private static func alpha(of image: CGImage, x: Int, y: Int) -> UInt8? {
+    guard let data = image.dataProvider?.data as Data? else { return nil }
+    return data[y * image.bytesPerRow + x * 4 + 3]
+  }
+
+  private static func opaquePixels(in image: CGImage) -> Int {
+    guard let data = image.dataProvider?.data as Data? else { return 0 }
+    return (0..<image.height).reduce(0) { count, y in
+      count
+        + (0..<image.width).count { x in data[y * image.bytesPerRow + x * 4 + 3] > 200 }
+    }
+  }
+
+  /// 每帧时长 → 关键帧动画离散模式的 keyTimes：比帧数多一个，从 0 到 1，按时长分；总时长是各帧之和
+  @Test func emojiKeyTimes() {
+    #expect(StatusEmoji.keyTimes([0.1, 0.1, 0.2]) == [0, 0.25, 0.5, 1])
+    #expect(StatusEmoji.keyTimes([0.5]) == [0, 1])
+    #expect(StatusEmoji.keyTimes([]).isEmpty && StatusEmoji.keyTimes([0, 0]).isEmpty)
+    let even = StatusEmoji.keyTimes(Array(repeating: 0.041, count: 73))
+    #expect(even.count == 74 && even.first == 0 && even.last == 1)
+    #expect(zip(even, even.dropFirst()).allSatisfy { $0 < $1 })
+    #expect(abs(even[1] - 1.0 / 73) < 1e-9)
+    let frames = StatusEmoji.Frames(images: [], delays: [0.041, 0.041, 0.1])
+    #expect(abs(frames.duration - 0.182) < 1e-9 && frames.keyTimes.count == 4)
+  }
+
+  /// 图层上挂的那段动画：按帧换 contents 的离散关键帧动画，无限循环，时长是各帧之和；图层自己的 contents 不动
+  /// （动画一拿掉就什么都不显示，静止画面在它下面）；同一份帧再给一次不重新挂（不从头播），换一份才换
+  @Test func emojiPlaysAsKeyframes() async throws {
+    let frames = try #require(await StatusEmoji.decode(StatusEmoji.eyes))
+    let layer = CALayer()
+    StatusEmoji.play(frames, on: layer)
+    let animation = try #require(
+      layer.animation(forKey: StatusEmoji.animationKey) as? CAKeyframeAnimation)
+    #expect(animation.keyPath == "contents" && animation.calculationMode == .discrete)
+    #expect(animation.values?.count == frames.images.count)
+    #expect(animation.values?.first as AnyObject? === frames.images[0])
+    #expect(animation.keyTimes?.count == frames.images.count + 1)
+    #expect(animation.keyTimes?.first == 0 && animation.keyTimes?.last == 1)
+    #expect(animation.repeatCount == .infinity && animation.duration == frames.duration)
+    #expect(layer.contents == nil && layer.animationKeys() == [StatusEmoji.animationKey])
+    // 同一份：还是原来那段（图层手里是同一个动画对象）
+    StatusEmoji.play(frames, on: layer)
+    #expect(layer.animation(forKey: StatusEmoji.animationKey) === animation)
+    #expect(layer.animationKeys()?.count == 1)
+    // 换一份帧：换成新的
+    let other = StatusEmoji.Frames(
+      images: Array(frames.images.reversed()), delays: frames.delays)
+    StatusEmoji.play(other, on: layer)
+    let replaced = layer.animation(forKey: StatusEmoji.animationKey) as? CAKeyframeAnimation
+    #expect(replaced !== animation && replaced?.values?.first as AnyObject? === other.images[0])
+    #expect(layer.animationKeys()?.count == 1)
+  }
+
+  /// 表情视图真挂进窗口走一遍（屏外的普通窗口）：没有帧时只有静止画面、没有哪一层在播；帧来了，播的那一层挂着动画，
+  /// 过一会儿画面真的换到了后面的帧（都是给它的那些帧）；帧拿走，那一层连动画一起拆掉
+  @Test func emojiViewPlaysThenStops() async throws {
+    let box = EmojiBox()
+    let window = NSWindow(
+      contentRect: NSRect(x: -20000, y: -20000, width: 200, height: 200),
+      styleMask: [.borderless], backing: .buffered, defer: false)
+    window.contentView = NSHostingView(rootView: EmojiHost(box: box))
+    window.orderFront(nil)
+    defer { window.orderOut(nil) }
+    func playing(_ layer: CALayer?) -> CALayer? {
+      guard let layer else { return nil }
+      if layer.animation(forKey: StatusEmoji.animationKey) != nil { return layer }
+      return layer.sublayers?.lazy.compactMap(playing).first
+    }
+    try await Task.sleep(for: .milliseconds(200))
+    #expect(playing(window.contentView?.layer) == nil)
+    let frames = try #require(await StatusEmoji.decode(StatusEmoji.eyes))
+    let known = Set(frames.images.map { ObjectIdentifier($0) })
+    box.frames = frames
+    var shown: Set<ObjectIdentifier> = []
+    for _ in 0..<40 where shown.count < 3 {
+      try await Task.sleep(for: .milliseconds(50))
+      if let contents = playing(window.contentView?.layer)?.presentation()?.contents {
+        shown.insert(ObjectIdentifier(contents as AnyObject))
+      }
+    }
+    #expect(shown.count >= 3 && shown.isSubset(of: known), "看到 \(shown.count) 帧")
+    let layer = try #require(playing(window.contentView?.layer))
+    #expect(layer.contents == nil && layer.contentsGravity == .resizeAspect)
+    box.frames = nil
+    for _ in 0..<40 where playing(window.contentView?.layer) != nil {
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    #expect(playing(window.contentView?.layer) == nil)
+    #expect(layer.animation(forKey: StatusEmoji.animationKey) == nil)
+  }
+
+  /// 动不动：总开关开着而且系统没开「减弱动态效果」才动。冒不冒眼睛：动着才冒，熄屏样式不冒。
+  /// 进入时要解哪些帧：这个状态的表情（选了才有）和眼睛；熄屏、不动时一个都不解
+  @Test func animationDecisions() {
+    #expect(StatusScreen.animates(enabled: true, reduceMotion: false))
+    #expect(!StatusScreen.animates(enabled: false, reduceMotion: false))
+    #expect(!StatusScreen.animates(enabled: true, reduceMotion: true))
+    #expect(!StatusScreen.animates(enabled: false, reduceMotion: true))
+    #expect(StatusScreen.peeks(.sign, animates: true) && StatusScreen.peeks(.dim, animates: true))
+    #expect(!StatusScreen.peeks(.blackout, animates: true))
+    for look in StatusPreset.Look.allCases { #expect(!StatusScreen.peeks(look, animates: false)) }
+    let (clean, busy, back) = (
+      StatusPreset.builtIn[0], StatusPreset.builtIn[1], StatusPreset.builtIn[2]
+    )
+    #expect(StatusScreen.emojiToDecode(busy, animates: true) == ["raised-hand", "eyes"])
+    #expect(StatusScreen.emojiToDecode(back, animates: true) == ["alarm-clock", "eyes"])
+    #expect(StatusScreen.emojiToDecode(clean, animates: true).isEmpty)
+    #expect(StatusScreen.emojiToDecode(preset("plain"), animates: true) == ["eyes"])
+    for preset in StatusPreset.builtIn {
+      #expect(StatusScreen.emojiToDecode(preset, animates: false).isEmpty)
+    }
+    // 摆样子的会话（截图自检、预览、卡片）默认不动、出场摆在播完；真的会话的出场由画面自己播
+    let still = StatusScreen(showing: busy, startedAt: .now, elapsed: 0)
+    #expect(!still.animates && !still.showsEyes && still.frames.isEmpty)
+    #expect(still.entranceAt == .infinity && StatusScreen().entranceAt == nil)
+    let posed = StatusScreen(
+      showing: busy, startedAt: .now, elapsed: 0, showsEyes: true, animates: true, entrance: 0.3)
+    #expect(posed.animates && posed.showsEyes && posed.entranceAt == 0.3)
+  }
+
+  /// 表情的边长 = 标题字号 × 1.3；眼睛的边长 = 标题字号，在退出提示右边、露出八成（下面两成在屏幕底边外），每块屏各算各的
+  @Test func emojiAndEyesGeometry() {
+    #expect(abs(StatusScreenView.emojiSide(title: 60) - 78) < 0.001)
+    #expect(abs(StatusScreenView.emojiSide(title: 96) - 124.8) < 0.001)
+    #expect(StatusScreen.eyesSide(screenHeight: 800) == 60)
+    #expect(StatusScreen.eyesSide(screenHeight: 400) == 44)
+    #expect(StatusScreen.eyesSide(screenHeight: 2160) == 96)
+    let main = CGRect(x: 0, y: 0, width: 1512, height: 982)
+    let side = CGRect(x: 1512, y: -200, width: 2560, height: 1440)
+    for screen in [main, side] {
+      let (eyes, hint) = (StatusScreen.eyesFrame(in: screen), StatusScreen.hintFrame(in: screen))
+      let edge = StatusScreen.eyesSide(screenHeight: screen.height)
+      #expect(eyes.size == CGSize(width: edge, height: edge))
+      #expect(eyes.minX == hint.maxX + StatusScreen.eyesGap && !eyes.intersects(hint))
+      // 露出来的那一截：从屏幕底边起，高是整只的八成；左右都在这块屏里
+      let shown = eyes.intersection(screen)
+      #expect(shown.minY == screen.minY && abs(shown.height - edge * 0.8) < 0.001)
+      #expect(abs(shown.width - edge) < 0.001 && eyes.maxX < screen.maxX)
+      // 缩回去（往下挪一个边长）就整只在屏幕外
+      #expect(!eyes.offsetBy(dx: 0, dy: -edge).intersects(screen))
+    }
+  }
+
+  /// 出场的时间表：表情一上来就落下；标题第一个字 0.06 s 起、字与字错开 0.045 s、每个字走 0.28 s，先快后慢；
+  /// 说明和小字等最后一个字浮到一半才淡入；整个出场结束时所有东西都到位。标题很长时错开的间隔压小，30 个字也在 1.4 s 内出完
+  @Test func entranceTimetable() {
+    let four = StatusEntrance(glyphs: 4)
+    #expect(four.step == 0.045)
+    #expect(abs(four.restStart - (0.06 + 0.135 + 0.14)) < 1e-9)
+    #expect(abs(four.end - (four.restStart + 0.28)) < 1e-9)
+    // 一开始什么都没有
+    #expect(StatusEntrance.emoji(at: 0) == 0 && StatusEntrance.board(at: 0) == 0)
+    #expect((0..<4).allSatisfy { four.glyph($0, at: 0) == 0 } && four.rest(at: 0) == 0)
+    // 0.2 s：前面的字浮得多、后面的少，第四个字刚开始；说明还没出
+    let mid = (0..<4).map { four.glyph($0, at: 0.2) }
+    #expect(mid[0] > mid[1] && mid[1] > mid[2] && mid[2] > mid[3] && mid[3] > 0 && mid[0] < 1)
+    #expect(four.rest(at: 0.2) == 0)
+    // 先快后慢：走了一半时间，浮现过半
+    #expect(four.glyph(0, at: 0.06 + 0.14) > 0.8)
+    // 各个字到点正好浮完；说明从 restStart 起线性淡入
+    for index in 0..<4 {
+      let done = 0.06 + 0.045 * Double(index) + 0.28
+      #expect(four.glyph(index, at: done) == 1 && four.glyph(index, at: done - 0.05) < 1)
+    }
+    #expect(abs(four.rest(at: four.restStart + 0.14) - 0.5) < 1e-9)
+    // 结束时（和摆在无穷大时）都到位
+    for time in [four.end, .infinity] {
+      #expect((0..<8).allSatisfy { four.glyph($0, at: time) == 1 })
+      #expect(four.rest(at: time) == 1 && StatusEntrance.emoji(at: time) == 1)
+      #expect(StatusEntrance.board(at: time) == 1)
+    }
+    #expect(StatusEntrance.emoji(at: 0.32) == 1 && StatusEntrance.emoji(at: 0.16) > 0.8)
+    #expect(StatusEntrance.board(at: 0.1) == 0.5 && StatusEntrance.board(at: 0.2) == 1)
+    // 字形比字数多：多出来的跟最后一个字一起
+    #expect(four.glyph(9, at: 0.25) == four.glyph(3, at: 0.25))
+    // 长标题：间隔压小，整个标题 0.9 s 内都开始浮现
+    let long = StatusEntrance(glyphs: StatusPreset.maxTitle)
+    #expect(abs(long.step - 0.9 / 29) < 1e-9 && long.end < 1.4)
+    #expect(long.glyph(29, at: 0.06 + 0.9) < 0.001 && long.glyph(29, at: long.end) == 1)
+    #expect(StatusEntrance(glyphs: 22).step < 0.045)
+    #expect(abs(StatusEntrance(glyphs: 21).step - 0.045) < 1e-12)
+    // 一个字、空标题也不出错
+    for count in [0, 1] {
+      let short = StatusEntrance(glyphs: count)
+      #expect(short.step == 0 && abs(short.restStart - 0.2) < 1e-9)
+      #expect(short.glyph(0, at: 0.34) == 1 && short.glyph(0, at: 0) == 0)
+    }
+  }
+
+  /// 标题的渲染器和它用的时间表在渲染线程上也能用（mac-native §3：TextRenderer 的类型必须 nonisolated——默认的主线程隔离
+  /// 编译零警告，动画一播就闪退）：在主线程外建、读、改一遍。能编译就说明没有绑着主线程
+  @concurrent nonisolated private static func rendererOffMain() async -> Double {
+    #expect(pthread_main_np() == 0)
+    var renderer = GlyphEmerge(time: 0, entrance: StatusEntrance(glyphs: 4), rise: 10)
+    renderer.animatableData = 0.2
+    return renderer.entrance.glyph(0, at: renderer.time) * Double(GlyphEmerge.blur)
+  }
+
+  /// 出场真的播一遍（屏外的普通窗口，不建状态屏的面板、不进入）：画面出现后逐字浮现的渲染器被逐帧调，播完不闪退；
+  /// 摆在中间一刻的画面也画得出来
+  @Test func entrancePlaysWithoutCrashing() async throws {
+    #expect(await Self.rendererOffMain() == 0.875 * 8)
+    for entrance in [nil, 0.25] as [Double?] {
+      let screen = StatusScreen(
+        showing: StatusPreset.builtIn[1], startedAt: .now, elapsed: 0, showsEyes: true,
+        animates: true, entrance: entrance)
+      let window = NSWindow(
+        contentRect: NSRect(x: -20000, y: -20000, width: 900, height: 600),
+        styleMask: [.borderless], backing: .buffered, defer: false)
+      window.contentView = NSHostingView(rootView: StatusScreenView(screen: screen))
+      window.orderFront(nil)
+      try await Task.sleep(for: .seconds(entrance == nil ? 1 : 0.2))
+      #expect(window.isVisible)
+      window.orderOut(nil)
     }
   }
 
@@ -900,18 +1228,16 @@ struct StatusScreenTests {
   /// 长到整屏的那段动画真挂上了（屏外的普通窗口，同上；不建状态屏的面板）：内容图层上有变换和圆角两段动画，变换的起点
   /// 就是 zoomStart、终点是原位，模型值没动（动画一没画面就在整屏）；期间内容视图裁切（圆角才看得见），
   /// 动画放完（约 0.7 秒）恢复、done 调一次。没法放（视图不在窗口里）时 done 当场调。
-  /// 动画的完成回调走主队列：测试自己占着主队列时它永远不来（同 MemoryProbeTests 文件头第 2 个坑），所以整段投到
-  /// 主跑环的一个块里同步跑，对不上的记下名字、回来再断言
+  /// 动画的完成回调走主队列：测试自己占着主队列时它永远不来（同 MemoryProbeTests 文件头第 2 个坑），所以等它放完时
+  /// 把主线程让出来（按轮数睡，不自己转跑环）。原来是整段投到主跑环的一个块里、在块里转跑环等——别的测试正好也在转
+  /// 跑环时，这个块会落在它那一层里跑，主队列排不到、完成回调等不来（第 5 批的全量单测里偶发失败；只拿这一条和两个
+  /// 截图自检函数一起跑，两遍里失败一遍）
   @Test func growAnimatesContentLayer() async {
-    let failures: [String] = await withCheckedContinuation { continuation in
-      RunLoop.main.perform {
-        MainActor.assumeIsolated { continuation.resume(returning: Self.growFailures()) }
-      }
-    }
+    let failures = await Self.growFailures()
     #expect(failures.isEmpty, "\(failures)")
   }
 
-  private static func growFailures() -> [String] {
+  private static func growFailures() async -> [String] {
     var failures: [String] = []
     func check(_ passed: Bool, _ name: String) {
       if !passed { failures.append(name) }
@@ -955,8 +1281,8 @@ struct StatusScreenTests {
       near(round.perceptualDuration, 0.42) && near(round.bounce, 0),
       "圆角不回弹：\(round.perceptualDuration) / \(round.bounce)")
     check(host.clipsToBounds && done == 2, "放的时候裁切、done 还没调")
-    // 放完：恢复裁切、done 调一次（弹簧收敛约 0.7 秒；最多等 2 秒）
-    for _ in 0..<40 where done < 3 { RunLoop.main.run(until: .now.addingTimeInterval(0.05)) }
+    // 放完：恢复裁切、done 调一次（弹簧收敛约 0.7 秒；最多等 40 轮）
+    for _ in 0..<40 where done < 3 { try? await Task.sleep(for: .milliseconds(50)) }
     check(done == 3 && !host.clipsToBounds, "放完恢复：done \(done)，裁切 \(host.clipsToBounds)")
     check(layer.animation(forKey: "grow") == nil, "动画放完就不在了")
     // 图层是 grow 当场要来的：它的位置（变换绕着它做）之后没有再变，起点没有算在一个还没摆好的图层上

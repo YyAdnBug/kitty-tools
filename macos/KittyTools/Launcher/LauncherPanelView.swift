@@ -405,7 +405,10 @@ private struct LauncherRow: View {
   }
 
   @ViewBuilder private var icon: some View {
-    if item.contentType?.conforms(to: .volume) == true {
+    if let emoji = item.presetEmoji {
+      // 状态屏的状态：它的表情（静止画面）；没选的是家族色块
+      StatusPresetIcon(symbol: emoji)
+    } else if item.contentType?.conforms(to: .volume) == true {
       // 宗卷（eject 列出来的）：磁盘色块，不读宗卷本身取图标（按类型取是个文件夹，读宗卷可能要授权）
       KindTile(symbol: item.tileSymbol, color: item.familyColor)
     } else if let type = item.contentType {

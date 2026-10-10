@@ -1,6 +1,8 @@
 // 状态屏的一个「状态」（PLAN §10「状态屏」Z3 Z4）：标题、说明、图标、样式、电源、自动结束六项，加一个不变的 id。
 // 自带三个：清洁屏幕、请勿触碰、马上回来；用户改过的整张列表存在一个偏好键里（Prefs.statusScreenPresets，JSON），
 // 没存过 / 解不出 / 为空时用自带的。读出来和导入的都过 sanitized：文件、偏好里的值按不可信输入对待。
+// 图标是一个动画表情（Z15a，清单在 StatusEmoji.swift）：字段还叫 symbol、JSON 里的键不变，存的是表情 id；
+// 第 5 批之前存的是系统符号名，sanitized 里换过来。
 // 设置 › 状态屏改列表用的几个纯函数（加、删、挪、恢复自带的、详情页改一个）和列表行的摘要也在这里。
 // nonisolated：设置导出文件里的值（SettingsArchive.Value，不绑主线程）要编解码它。
 
@@ -55,11 +57,11 @@ nonisolated struct StatusPreset: Codable, Hashable, Identifiable {
   var id: String
   var title: String
   var detail: String?
-  /// SF Symbol 名（symbols 里的一个）；空 = 不要图标
+  /// 表情 id（StatusEmoji.ids 里的一个）；空 = 不要图标。字段名和 JSON 里的键是第 5 批之前留下的（那时是系统符号名）
   var symbol: String
-  /// 菜单栏子菜单、启动器、设置列表里这一行的图标：没选图标的用一个「只有几行字」的符号垫着（菜单项没图会和别的行对不齐）。
+  /// 没选图标的状态在菜单栏子菜单、启动器、设置列表里垫的系统符号：「只有几行字」（菜单项没图会和别的行对不齐）。
   /// 不用 textformat：它在中文系统上画成「格式」两个字（mac-whisker §3「图标」，设置页的截图自检里看到的就是）
-  var rowSymbol: String { symbol.isEmpty ? "text.alignleft" : symbol }
+  static let plainSymbol = "text.alignleft"
   var style: Look
   var power: Power
   /// 几分钟后自动结束（autoEndChoices 里的一个）；0 = 不结束
@@ -72,29 +74,35 @@ nonisolated struct StatusPreset: Codable, Hashable, Identifiable {
   /// id 的长度上限（它会进启动器的使用记录）
   static let maxID = 64
 
-  /// 可选的图标（设置页的图标格子按这个顺序）；都要在 macOS 15 的 SF Symbols 里（单测锁住）
-  static let symbols = [
-    "sparkles", "hand.raised.fill", "clock.fill", "hourglass", "moon.fill", "zzz",
-    "cup.and.saucer.fill", "fork.knife", "figure.walk", "phone.fill", "video.fill",
-    "person.2.fill", "terminal.fill", "hammer.fill", "arrow.down.circle.fill", "bolt.fill",
-    "exclamationmark.triangle.fill", "bell.slash.fill", "headphones", "gamecontroller.fill",
+  /// 第 5 批之前图标是系统符号（20 个里选），现在是动画表情：意思对得上的换成对应的表情（旧名 → 表情 id；
+  /// hourglass、zzz 两个旧名正好就是现在的 id，不用换），对不上的（刀叉、走路、摄像机、锤子、下载、警告、静音铃、耳机、
+  /// 手柄）就是没选
+  static let legacySymbols = [
+    "sparkles": "glowing-star", "hand.raised.fill": "raised-hand", "clock.fill": "alarm-clock",
+    "moon.fill": "sleeping-face", "cup.and.saucer.fill": "hot-beverage", "phone.fill": "telephone",
+    "person.2.fill": "busts", "terminal.fill": "robot", "bolt.fill": "high-voltage",
   ]
+
+  /// 存着的图标值 → 现在的表情 id（纯函数）：清单里的原样留着，旧的系统符号名换成对应的表情，其余不认识的置空
+  static func emoji(for symbol: String) -> String {
+    StatusEmoji.ids.contains(symbol) ? symbol : legacySymbols[symbol] ?? ""
+  }
 
   static let builtIn = [
     StatusPreset(
-      id: "clean", title: "清洁屏幕", detail: nil, symbol: "sparkles", style: .blackout,
+      id: "clean", title: "清洁屏幕", detail: nil, symbol: "glowing-star", style: .blackout,
       power: .normal, autoEndMinutes: 5),
     StatusPreset(
-      id: "busy", title: "请勿触碰", detail: "电脑正在跑任务，别动键盘和鼠标", symbol: "hand.raised.fill",
+      id: "busy", title: "请勿触碰", detail: "电脑正在跑任务，别动键盘和鼠标", symbol: "raised-hand",
       style: .dim, power: .displayOn, autoEndMinutes: 0),
     StatusPreset(
-      id: "back", title: "马上回来", detail: nil, symbol: "clock.fill", style: .sign, power: .awake,
+      id: "back", title: "马上回来", detail: nil, symbol: "alarm-clock", style: .sign, power: .awake,
       autoEndMinutes: 0),
   ]
 
   /// 把一张列表收拾成能用的（纯函数）：标题去首尾空白、换行当空格，空的整条丢掉、超过 30 字截断；说明同样收拾、最多 60 字、
-  /// 空了就是没有；图标不在清单里的置空；自动结束不是可选值的当「不结束」；id 为空、太长、重复的丢掉（留先出现的）；
-  /// 最多 20 个。结果可能是空的——用的地方（decode）退回自带的
+  /// 空了就是没有；图标是旧的系统符号名的换成对应的表情、不在清单里的置空（emoji(for:)）；自动结束不是可选值的当「不结束」；
+  /// id 为空、太长、重复的丢掉（留先出现的）；最多 20 个。结果可能是空的——用的地方（decode）退回自带的
   static func sanitized(_ presets: [StatusPreset]) -> [StatusPreset] {
     var seen: Set<String> = []
     var result: [StatusPreset] = []
@@ -105,7 +113,7 @@ nonisolated struct StatusPreset: Codable, Hashable, Identifiable {
       else { continue }
       let detail = String(oneLine(preset.detail ?? "").prefix(maxDetail))
       preset.detail = detail.isEmpty ? nil : detail
-      if !symbols.contains(preset.symbol) { preset.symbol = "" }
+      preset.symbol = emoji(for: preset.symbol)
       if !autoEndChoices.contains(preset.autoEndMinutes) { preset.autoEndMinutes = 0 }
       result.append(preset)
       if result.count == maxCount { break }

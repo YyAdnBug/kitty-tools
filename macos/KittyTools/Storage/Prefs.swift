@@ -150,6 +150,9 @@ enum Prefs {
   static let statusScreenExitHint = "statusScreenExitHint"
   /// 按状态屏的全局快捷键时直接进入排在最前面的状态（默认关：先出一排预览卡片，选一个再进，StatusScreen/StatusPicker.swift）
   static let statusScreenHotKeyEntersFirst = "statusScreenHotKeyEntersFirst"
+  /// 告示上的动画（Z18a，默认开）：表情动、进入时的出场、有人碰时表情甩一下和屏幕底边冒出的眼睛。关着（或系统开着
+  /// 「减弱动态效果」）时表情只显示静止画面
+  static let statusScreenAnimations = "statusScreenAnimations"
   /// 上次进入的状态的 id（StatusScreen.enter 进入成功时写；选状态的面板默认选中它）。这台电脑自己的状态，
   /// **不注册默认值**：不跟着导出 / 导入走
   static let statusScreenLastPreset = "statusScreenLastPreset"
@@ -234,6 +237,7 @@ enum Prefs {
       audioRecordStartsImmediately: false,
       statusScreenExitHint: true,
       statusScreenHotKeyEntersFirst: false,
+      statusScreenAnimations: true,
     ]
   }
 

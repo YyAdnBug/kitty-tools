@@ -2,6 +2,7 @@
 // 版本胶囊 + 应用内更新（Updater：检查更新、发现新版本时「更新并重新打开」、自动检查开关）+ 更新日志时间线
 // （随包分发的 changelog.json，最新版在前）；可以重看欢迎引导。更新后第一次启动不再自动打开这一页，只由刘海岛说
 // 「已更新到 x」+ 本版摘要（AppDelegate 比较 lastSeenVersion，体检 A29），全文在这里。
+// 页面最底下一行小字是用到的素材的出处（状态屏的动画表情，MIT 许可要求随包带着许可；mac-whisker §11）。
 
 import SwiftUI
 
@@ -74,6 +75,7 @@ struct AboutTab: View {
               release: release, isCurrent: release.version == Self.version,
               isLast: index == Self.releases.count - 1)
           }
+          credits
         }
         .padding(.horizontal, 28)
         .padding(.bottom, 24)
@@ -81,6 +83,21 @@ struct AboutTab: View {
       }
     }
   }
+
+  /// 素材出处：更新日志下面一行小字，后面跟着打开随包那份许可全文的链接
+  private var credits: some View {
+    HStack(spacing: 6) {
+      Text(Self.emojiCredit).foregroundStyle(.tertiary)
+      if let license = Bundle.main.url(forResource: "status-emoji-LICENSE", withExtension: "txt") {
+        Button("许可全文") { NSWorkspace.shared.open(license) }
+          .buttonStyle(.plain).foregroundStyle(Style.brandInk).pointerStyle(.link)
+      }
+    }
+    .font(.caption)
+    .padding(.top, 4)
+  }
+
+  static let emojiCredit = "状态屏的动画表情来自 Microsoft Fluent Emoji（MIT 许可）"
 
   /// 版本胶囊下面的更新状态。强调色只给「现在该操作的」：有新版本时的「更新并重新打开」；其余是文字链接
   private func updateRow(_ updater: Updater) -> some View {

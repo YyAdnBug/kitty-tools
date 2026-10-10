@@ -861,7 +861,11 @@ struct SnapshotProbeTests {
   /// 改状态屏时只跑它（几秒钟），不用等整套 renderPanels——
   ///   -only-testing:'KittyToolsTests/SnapshotProbeTests/statusScreen()'
   /// 熄屏（纯黑，什么都不显示）、熄屏碰了一下（只浮出退出提示）、告示（提示浮着）、透出（HUD 底板，进度环按住到一半）、
-  /// 透出的增强对比度（次要文字提一档）、自己加的状态（不带图标、两行标题、长说明）。进入时刻固定，图里的时间不随运行变
+  /// 透出的增强对比度（次要文字提一档）、自己加的状态（不带图标、两行标题、长说明）。进入时刻固定，图里的时间不随运行变。
+  /// 图标是表情的静止画面（第 5 批；这几张是动画关着 / 减弱动态效果时的样子，也是帧还没解好时的样子）。另有：
+  /// 有人碰了之后底边冒出眼睛的两张（提示开着 / 被设置关掉）、出场摆在三个时刻（透出样式：底板淡入、表情落下、标题逐字浮现、
+  /// 说明和小字还没出）和长标题折两行时的一刻、做着动画但出场已经播完的（该和不做动画的一样：status-screen-dim 一对、
+  /// 长标题的 status-screen-sign-long 一对）
   @Test(.enabled(if: directory != nil)) func statusScreen() throws {
     let out = try #require(Self.directory)
     try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
@@ -872,10 +876,12 @@ struct SnapshotProbeTests {
         from: DateComponents(year: 2026, month: 10, day: 10, hour: 14, minute: 2)))
     func shot(
       _ name: String, _ preset: StatusPreset, hint: Bool = false, held: Double = 0,
-      contrast: ColorSchemeContrast = .standard
+      contrast: ColorSchemeContrast = .standard, eyes: Bool = false, animates: Bool = false,
+      entrance: Double = .infinity
     ) throws {
       let screen = StatusScreen(
-        showing: preset, startedAt: startedAt, elapsed: 83 * 60, showsHint: hint, held: held)
+        showing: preset, startedAt: startedAt, elapsed: 83 * 60, showsHint: hint, held: held,
+        showsEyes: eyes, animates: animates, entrance: entrance)
       try snapshot(
         ZStack {
           Image(decorative: desktop, scale: 2)
@@ -893,6 +899,29 @@ struct SnapshotProbeTests {
       id: "custom", title: "正在导出年度报告的全部视频素材，请不要合上盖子", detail: "预计下午四点半结束，有事打我手机；这台电脑不要断电、不要拔硬盘",
       symbol: "", style: .dim, power: .displayOn, autoEndMinutes: 0)
     try shot("status-screen-dim-long", custom)
+    // 有人碰了键盘鼠标（Z17a）：退出提示右边、屏幕底边冒出一双眼睛（图里是静止画面，真机上会动）；
+    // 退出提示被设置关掉时眼睛照冒
+    try shot("status-screen-sign-eyes", presets[2], hint: true, eyes: true, animates: true)
+    try shot("status-screen-dim-eyes-no-hint", presets[1], eyes: true, animates: true)
+    // 出场（Z16a）摆在三个时刻
+    for (name, time) in [("start", 0.08), ("mid", 0.2), ("late", 0.42)] {
+      try shot("status-screen-entrance-\(name)", presets[1], animates: true, entrance: time)
+    }
+    // 长标题折成两行、缩小了字号：逐字浮现跟着折行走（带表情的告示样式）
+    var long = custom
+    long.symbol = "rocket"
+    long.style = .sign
+    try shot("status-screen-entrance-long", long, animates: true, entrance: 0.7)
+    // 做着动画、出场播完：标题走的是逐字的渲染器，该和不做动画的看不出差别（短标题、折两行又缩了字号的长标题各一对）
+    try shot("status-screen-dim-animated", presets[1], hint: true, held: 0.5, animates: true)
+    try shot("status-screen-sign-long", long)
+    try shot("status-screen-sign-long-animated", long, animates: true)
+    // 本身是深色的两个表情（开会的人影、黑猫）在纯黑的告示上
+    for emoji in ["busts", "black-cat"] {
+      var dark = presets[2]
+      dark.symbol = emoji
+      try shot("status-screen-sign-\(emoji)", dark)
+    }
   }
 
   /// 设置 › 状态屏（PLAN §10 第 2 批）。单独一个测试函数：改这一页、速查表页头或快捷键页那一行时只跑它（十来秒）——
@@ -900,7 +929,9 @@ struct SnapshotProbeTests {
   /// 列表是固定的一份（StatusScreenTab / StatusPresetDetail 的 fixed：只画，不读不写用户的偏好，也不建临时偏好域）：
   /// 自带三个 + 自己加的两个（不带图标的、标题顶到 30 字的）。出：整页浅色 / 深色、满 20 个（「+」置灰、列表下面说原因）、
   /// 推进到详情的整页、「改一个状态」的详情三种样式（透出的预览垫着示意桌面；浅色 / 深色）、草稿有问题时的橙字、只剩一个时删除置灰、
-  /// 速查表的新页头（跳转胶囊两行）和拉长的全表（看「状态屏」那一组）、快捷键页（「进入排在最前面的状态」那一行）
+  /// 速查表的新页头（跳转胶囊两行）和拉长的全表（看「状态屏」那一组）、快捷键页（「进入排在最前面的状态」那一行）。
+  /// 第 5 批：列表行和详情页页头是表情的静止画面（没选的是家族色块）、详情页的图标格子是「无」+ 16 个表情、
+  /// 页里多了「动画」一组（「告示上的动画」开关）、关于页最底下那行素材出处
   @Test(.enabled(if: directory != nil)) func statusScreenSettings() throws {
     let out = try #require(Self.directory)
     try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
@@ -913,7 +944,7 @@ struct SnapshotProbeTests {
     var export = StatusPreset.new(id: "export")
     export.title = "正在导出年度报告的全部视频素材，请不要合上盖子也不要拔电源"
     export.detail = "预计下午四点半结束，有事打我手机"
-    export.symbol = "arrow.down.circle.fill"
+    export.symbol = "rocket"
     export.style = .dim
     let list = StatusPreset.sanitized(StatusPreset.builtIn + [meeting, export])
     let navigation = SettingsNavigation(defaults: nil)  // 换页不写用户的偏好
@@ -929,7 +960,7 @@ struct SnapshotProbeTests {
     navigation.page = .statusScreen
     for dark in [false, true] {
       try snapshot(
-        root(list), size: NSSize(width: 780, height: 760), dark: dark,
+        root(list), size: NSSize(width: 780, height: 980), dark: dark,
         to: "\(out)/settings-status-screen\(dark ? "-dark" : "").png")
     }
     // 最小窗口（700 × 460）：页头那句说明、列表行不被截坏
@@ -942,7 +973,7 @@ struct SnapshotProbeTests {
       return preset
     }
     try snapshot(
-      root(full), size: NSSize(width: 780, height: 1280), dark: false,
+      root(full), size: NSSize(width: 780, height: 1420), dark: false,
       to: "\(out)/settings-status-screen-full.png")
     // 从列表推进到详情（真的 NavigationStack，和点一行一样走 navigation.path）：页头换成详情页自己的
     navigation.path = ["busy"]
@@ -987,13 +1018,27 @@ struct SnapshotProbeTests {
     try snapshot(
       root(list), size: NSSize(width: 780, height: 1000), dark: false,
       to: "\(out)/settings-status-hotkeys.png")
+    // 关于页最底下那行素材出处：滚到底再拍
+    for dark in [false, true] {
+      try snapshot(
+        AboutTab(), size: NSSize(width: 590, height: 420), dark: dark,
+        to: "\(out)/settings-about-credits\(dark ? "-dark" : "").png"
+      ) { root in
+        func scrollView(in view: NSView) -> NSScrollView? {
+          (view as? NSScrollView) ?? view.subviews.lazy.compactMap(scrollView).first
+        }
+        guard let scroll = scrollView(in: root), let document = scroll.documentView else { return }
+        document.scroll(NSPoint(x: 0, y: document.bounds.height - scroll.contentSize.height))
+      }
+    }
   }
 
   /// 选状态的面板（PLAN §10 第 4 批，Z13a Z14a）。单独一个测试函数：改这块面板时只跑它（十来秒）——
   ///   -only-testing:'KittyToolsTests/SnapshotProbeTests/statusPicker()'
+  /// 卡片里的图标是表情的静止画面（第 5 批：卡片不动）。
   /// 面板的大小取排版算出来的（和真面板一样）。出：自带的 3 个状态浅 / 深色（选中第二张）、7 个折成两行（选中第二行的、
   /// 鼠标停在第一张上、有不带图标和标题很长的）、只有 1 个（面板不窄于两格）、20 个在矮屏上（卡片那一块滚动，默认选中
-  /// 最后一张：一出来就滚到它）、设置 › 状态屏（多了「进入」那一组）；
+  /// 最后一张：一出来就滚到它）、设置 › 状态屏（多了「进入」那一组）、启动器里搜「状态屏」出来的那几行（表情当图标）；
   /// 放大（Z14a）的起点和半路：一块 1200 × 800 的「屏」正中摆着面板，真的状态屏画面铺满整屏、图层设上
   /// StatusScreenPanel.zoomStart 算的变换——起点那张里它正好盖住选中的卡片（面板真用的时候这一刻已经收起，这里留着对位置）
   @Test(.enabled(if: directory != nil)) func statusPicker() throws {
@@ -1016,14 +1061,14 @@ struct SnapshotProbeTests {
     meeting.detail = "三点回来"
     var export = StatusPreset.new(id: "export")
     export.title = "正在导出年度报告的全部视频素材，请不要合上盖子也不要拔电源"
-    export.symbol = "arrow.down.circle.fill"
+    export.symbol = "rocket"
     export.style = .dim
     var lunch = StatusPreset.new(id: "lunch")
     lunch.title = "吃饭去了"
-    lunch.symbol = "fork.knife"
+    lunch.symbol = "hot-beverage"
     var night = StatusPreset.new(id: "night")
     night.title = "夜里跑训练"
-    night.symbol = "moon.fill"
+    night.symbol = "sleeping-face"
     night.style = .blackout
     let seven = StatusPreset.sanitized(builtIn + [meeting, export, lunch, night])
     try shot("status-picker-two-rows", StatusPickerModel(presets: seven, selection: 5, hovered: 0))
@@ -1031,7 +1076,7 @@ struct SnapshotProbeTests {
     let full = (1...StatusPreset.maxCount).map { index in
       var preset = StatusPreset.new(id: "p\(index)")
       preset.title = "状态 \(index)"
-      preset.symbol = StatusPreset.symbols[index % StatusPreset.symbols.count]
+      preset.symbol = StatusEmoji.ids[index % StatusEmoji.ids.count]
       preset.style = StatusPreset.Look.allCases[index % 3]
       return preset
     }
@@ -1048,6 +1093,17 @@ struct SnapshotProbeTests {
         AnyView(EmptyView())
       }, size: NSSize(width: 780, height: 820), dark: false,
       to: "\(out)/settings-status-screen-enter.png")
+    // 启动器里的状态行（搜「状态屏」）：图标是各自的表情，没选的是家族色块里「只有几行字」的符号
+    let launcher = LauncherModel(
+      usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    launcher.boundHotKey = { $0.defaultHotKey }
+    launcher.engines = { [] }
+    launcher.actionState = { .init(statusPresets: Array(seven.prefix(5))) }
+    launcher.query = "状态屏"
+    try snapshot(
+      LauncherPanelView(model: launcher),
+      size: NSSize(width: 720, height: LauncherPanelView.height(for: launcher)), dark: false,
+      to: "\(out)/launcher-status-presets.png")
 
     // 放大：屏外窗口里叠三层——假桌面、面板（摆在正中）、铺满的状态屏画面（图层按 zoomStart 缩到选中的卡片上）
     let desktop = try ScreenshotSnapshotTests.desktop()

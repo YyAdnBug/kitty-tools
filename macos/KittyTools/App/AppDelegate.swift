@@ -1469,7 +1469,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 有钉图时的两项）；有新版本时最上面是「更新到 x…」；最后是设置、关于、检查更新（正式版）、退出。
   /// 状态屏那一节不画节标题，只有一项「状态屏」带子菜单：最上面「选择状态…」带全局快捷键（按它就是打开选状态的面板），
   /// 分隔线下面每个状态一行、点了直接进入；设置里打开「按快捷键直接进入排在最前面的状态」时没有「选择状态…」，
-  /// 键位写在第一个状态右边（它进的就是那个）。最下面「管理状态…」打开 设置 › 状态屏
+  /// 键位写在第一个状态右边（它进的就是那个）。各状态行的图标是它的表情（静止画面），没选的用家族色的符号垫。
+  /// 最下面「管理状态…」打开 设置 › 状态屏
   private func buildStatusMenu(_ menu: NSMenu) {
     let state = menuState
     let extras = MenuExtra.allCases.filter { $0.isAvailable(state) }
@@ -1504,11 +1505,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         for (row, preset) in state.statusPresets.enumerated() {
           let binding = state.statusEntersFirst && row == 0 ? hotKey : nil
-          submenu.addAction(
-            preset.title, symbol: preset.rowSymbol,
+          let entry = submenu.addAction(
+            preset.title, symbol: StatusPreset.plainSymbol,
             color: color, key: binding?.menuKeyEquivalent ?? "",
             modifiers: binding?.modifierFlags ?? []
           ) { [unowned self] in statusScreen.enter(preset) }
+          if let emoji = StatusEmoji.menuImage(preset.symbol) { entry.image = emoji }
         }
         submenu.addItem(.separator())
         submenu.addAction(

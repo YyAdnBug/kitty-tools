@@ -6,6 +6,8 @@
 // 那块屏的画面从选中的卡片长到整屏。
 // 两层一起用：拦截（InputBlock）吞掉键盘鼠标；面板当 key 是为了安全输入开着时（拦截看不到按键）按键落在自己的面板上——
 // 两边喂给同一个 handle(_:)。退出之后拦截留到按着的键松开才作废（最多 2 秒），不然按住的 esc 连发会落进前台 App。
+// 告示上的动画（第 5 批，Z15a–Z18a）：做不做在进入时定（设置里的总开关、系统的「减弱动态效果」）；要做的话进入后在
+// 主线程外把这个状态的表情和「眼睛」的帧解好（进入不等它，解完之前画面显示静止画面），各块屏共用一份，锁屏、退出时放掉。
 
 import AppKit
 import Observation
@@ -28,8 +30,17 @@ import Observation
   private(set) var showsHint = false
   /// 正在按住退出：进度环 2 秒走满；取消就缩回
   private(set) var isHolding = false
+  /// 屏幕底边那双眼睛露着（Z17a）：和退出提示同起同落，提示被设置关掉时照冒；熄屏样式、动画不做时不冒
+  private(set) var showsEyes = false
+  /// 这一次告示上的动画做不做（进入时定，animates(enabled:reduceMotion:)）：表情动、出场、表情甩一下、冒眼睛
+  private(set) var animates = false
+  /// 解好的表情帧，按表情 id：进入后在主线程外解，解完才有（之前画面显示静止画面）；各块屏的画面共用这一份
+  private(set) var frames: [String: StatusEmoji.Frames] = [:]
   /// 截图自检摆「按住到一半」的进度环；正常使用是 0，环由画面自己做动画
   @ObservationIgnored let heldProgress: Double
+  /// 出场（Z16a）摆在第几秒：截图自检摆中间帧，设置里的预览、选状态的卡片摆在播完（无穷大）；
+  /// nil = 真的会话，画面出现时自己从头播
+  @ObservationIgnored let entranceAt: Double?
 
   // MARK: AppDelegate 接上的
 
@@ -61,6 +72,8 @@ import Observation
   @ObservationIgnored private var lingerTimer: Timer?
   @ObservationIgnored private var keyTimer: Timer?
   @ObservationIgnored private var awayTimer: Timer?
+  /// 正在解表情的帧
+  @ObservationIgnored private var decoding: Task<Void, Never>?
   @ObservationIgnored private lazy var watcher = Watcher(screen: self)
   /// 鼠标上一次在哪、什么时候，和这一阵累计挪了多远
   @ObservationIgnored private var lastMouse: (point: CGPoint, at: ContinuousClock.Instant)?
@@ -75,19 +88,32 @@ import Observation
   /// 退出提示胶囊的大小、离屏幕底边多远（画面按它摆，鼠标按住的命中也按它算）
   static let hintSize = CGSize(width: 148, height: 40)
   static let hintBottom: CGFloat = 56
+  /// 眼睛离退出提示右边多远、画面露出屏幕底边几成。「眼睛」那张图上面空着四分之一：露八成时眼睛本身露出约八成
+  static let eyesGap: CGFloat = 20
+  static let eyesShown: CGFloat = 0.8
 
-  init() { heldProgress = 0 }
+  init() {
+    heldProgress = 0
+    entranceAt = nil
+  }
 
-  /// 截图自检直接摆出某个样子（不建窗口、不拦输入）；正常使用就是 `StatusScreen()`
+  /// 截图自检、设置里的预览、选状态的卡片直接摆出某个样子（不建窗口、不拦输入）；正常使用就是 `StatusScreen()`。
+  /// animates + entrance 摆出场的某一刻（不给 entrance 是播完的样子；给 nil 是画面出现时真的播一遍，单测用）；
+  /// frames 是预览里要动的表情的帧
   init(
     showing preset: StatusPreset, startedAt: Date, elapsed: Int, showsHint: Bool = false,
-    held: Double = 0
+    held: Double = 0, showsEyes: Bool = false, animates: Bool = false,
+    entrance: Double? = .infinity, frames: [String: StatusEmoji.Frames] = [:]
   ) {
     self.preset = preset
     self.startedAt = startedAt
     self.elapsed = elapsed
     self.showsHint = showsHint
+    self.showsEyes = showsEyes
+    self.animates = animates
+    self.frames = frames
     heldProgress = held
+    entranceAt = entrance
   }
 
   // MARK: 纯函数
@@ -130,6 +156,33 @@ import Observation
     CGRect(
       x: screen.midX - hintSize.width / 2, y: screen.minY + hintBottom, width: hintSize.width,
       height: hintSize.height)
+  }
+
+  /// 眼睛有多大：边长 = 那块屏的标题字号（比告示上的表情小一号）
+  static func eyesSide(screenHeight: CGFloat) -> CGFloat {
+    StatusScreenView.titleSize(screenHeight: screenHeight)
+  }
+
+  /// 眼睛露出来之后在一块屏上的范围（全局坐标，原点左下）：退出提示右边 eyesGap，下面两成在屏幕底边外
+  static func eyesFrame(in screen: CGRect) -> CGRect {
+    let side = eyesSide(screenHeight: screen.height)
+    return CGRect(
+      x: hintFrame(in: screen).maxX + eyesGap, y: screen.minY - side * (1 - eyesShown), width: side,
+      height: side)
+  }
+
+  /// 告示上的动画现在做不做（纯函数）：设置里的总开关开着，而且系统没开「减弱动态效果」
+  static func animates(enabled: Bool, reduceMotion: Bool) -> Bool { enabled && !reduceMotion }
+
+  /// 有人碰键盘鼠标时冒不冒眼睛（纯函数）：动画做着才冒，熄屏样式不冒（要保持纯黑）
+  static func peeks(_ style: StatusPreset.Look, animates: Bool) -> Bool {
+    animates && style != .blackout
+  }
+
+  /// 进入时要解哪些表情的帧（纯函数）：这个状态自己的（选了才有）和眼睛；熄屏样式什么都不显示、动画不做时一个都不解
+  static func emojiToDecode(_ preset: StatusPreset, animates: Bool) -> [String] {
+    guard peeks(preset.style, animates: animates) else { return [] }
+    return (preset.symbol.isEmpty ? [] : [preset.symbol]) + [StatusEmoji.eyes]
   }
 
   /// 哪块屏的面板当 key：鼠标所在的那块，都不在就第一块
@@ -183,10 +236,14 @@ import Observation
     lastMouse = nil
     travelled = 0
     showsHint = false
+    showsEyes = false
     isHolding = false
     startedAt = .now
     elapsed = 0
     drift = .zero
+    animates = Self.animates(
+      enabled: UserDefaults.standard.bool(forKey: Prefs.statusScreenAnimations),
+      reduceMotion: Style.reduceMotion)
     self.preset = preset
     hidePanels()
     hotKeysWereActive = hotKeys.map { !$0.bindings.isEmpty } ?? false
@@ -210,6 +267,30 @@ import Observation
     Island.announce("状态屏：\(preset.title)。按住 Esc 两秒退出")
     // 真进来了才记：选状态的面板下次默认选中它（菜单栏、启动器进的也算）
     UserDefaults.standard.set(preset.id, forKey: Prefs.statusScreenLastPreset)
+    decodeFrames(for: preset)
+  }
+
+  /// 在主线程外把要动的表情解好（先这个状态自己的，再眼睛；各约 0.2–0.4 s），解完一个画面上那个就动起来。
+  /// 进入不等它；期间锁屏、退出了就不要了
+  private func decodeFrames(for preset: StatusPreset) {
+    releaseFrames()
+    let ids = Self.emojiToDecode(preset, animates: animates)
+    guard !ids.isEmpty else { return }
+    decoding = Task { [weak self] in
+      for id in ids {
+        let decoded = await StatusEmoji.decode(id)
+        guard !Task.isCancelled, let self else { return }
+        self.frames[id] = decoded
+      }
+    }
+  }
+
+  /// 帧放掉（一个表情十几到几十 MB，只在告示显示着的时候占）：还在解的不要了，解好的放手——画面跟着换回静止画面、
+  /// 图层上的动画拿掉。退出时面板也收掉了；锁屏时面板只是收着，但解锁就结束，不会再露出来
+  private func releaseFrames() {
+    decoding?.cancel()
+    decoding = nil
+    frames = [:]
   }
 
   /// 保持唤醒换成 power 那一档（先起新的再还旧的，中间不留空档）
@@ -340,16 +421,21 @@ import Observation
       })
   }
 
-  /// 退出提示浮出 hintDwell 秒（设置里关了就永远不出现，只剩按住 esc）；按住期间到点不收
+  /// 退出提示浮出 hintDwell 秒（设置里关了就永远不出现，只剩按住 esc）；按住期间到点不收。
+  /// 屏幕底边的眼睛和它同起同落（Z17a）；提示被设置关掉时眼睛照冒
   private func revealHint() {
-    guard UserDefaults.standard.bool(forKey: Prefs.statusScreenExitHint) else { return }
-    showsHint = true
+    let hint = UserDefaults.standard.bool(forKey: Prefs.statusScreenExitHint)
+    let eyes = preset.map { Self.peeks($0.style, animates: animates) } ?? false
+    guard hint || eyes else { return }
+    showsHint = hint
+    showsEyes = eyes
     hintTimer?.invalidate()
     hintTimer = schedule(
       Timer(timeInterval: Self.hintDwell, repeats: false) { [weak self] _ in
         MainActor.assumeIsolated {
           guard let self, !self.isHolding else { return }
           self.showsHint = false
+          self.showsEyes = false
           self.hideCursor()
         }
       })
@@ -379,9 +465,11 @@ import Observation
     syncHold()
     hintTimer?.invalidate()
     showsHint = false
+    showsEyes = false
     lastMouse = nil
     travelled = 0
     for panel in panels { panel.orderOut(nil) }
+    releaseFrames()
     if preset?.power == .displayOn { setActivity(.awake) }
     // 解锁的通知万一没到（面板收着，没有别的路能退出）：每 2 秒看一眼会话状态。只在确实看到过「不在用户手里」之后
     // 才认「回来了」——读不到状态的系统上就只靠通知
@@ -418,6 +506,7 @@ import Observation
     setActivity(.normal)
     for panel in panels { panel.dismiss(fading: reason != .quit && !Style.reduceMotion) }
     panels = []
+    releaseFrames()
     if hotKeysWereActive { hotKeys?.reload() }
     // 按着的键（按住退出的 esc / 左键）还没松：拦截留到松开，最多 lingerLimit 秒；App 要退出、没有键按着就当场作废
     if reason == .quit || !hold.isAnythingDown(at: .now) {

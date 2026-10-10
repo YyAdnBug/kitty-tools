@@ -6,7 +6,10 @@
 // ScrollCapturePanel，mac-overlay-panel §1）：无边框窗口默认当不了 key，而安全输入开着时按键只能靠 key 面板接。
 // 层级是 CGShieldingWindowLevel（盖住菜单栏、程序坞、通知横幅），不抢前台：**永远不调 NSApp.activate**。
 // 从选状态的面板进来时（Z14a），卡片所在屏的那张不淡入，画面从选中的卡片长到整屏（present(growingFrom:)）。
-// 文件末尾的 StatusPreview 是缩小的同一个画面：设置里改一个状态时的预览、选状态面板里的卡片共用。
+// 告示上的动画（第 5 批，会话的 animates 为真时才有）：图标是动画表情（StatusEmoji.swift；帧由会话解好了给）；
+// 出场（Z16a，只播一次）——表情落下弹一下、标题逐字浮现（GlyphEmerge）、说明和小字随后淡入，时间表在 StatusEntrance；
+// 有人碰键盘鼠标时（Z17a）标题晃、表情甩一下（Flick）、屏幕底边冒出一双眼睛，和退出提示同起同落。
+// 文件末尾的 StatusPreview 是缩小的同一个画面：设置里改一个状态时的预览（表情会动）、选状态面板里的卡片（不动）共用。
 
 import AppKit
 import SwiftUI
@@ -189,16 +192,22 @@ struct StatusScreenView: View {
   @Environment(\.colorSchemeContrast) private var contrast
   /// 进度环走到哪了（0–1）
   @State private var progress: Double
+  /// 出场（Z16a）开始了没有：画面一出现就翻成 true，各部分各带各的曲线从头走到尾；不做出场的一上来就是 true
+  @State private var entered: Bool
 
   init(screen: StatusScreen) {
     self.screen = screen
     _progress = State(initialValue: screen.heldProgress)
+    _entered = State(initialValue: !screen.animates)
   }
 
   /// 标题字号跟屏幕走：屏高 × 0.075，夹在 44–96（三米外看得清）；图标、说明、小字和间距都按它的比例
   static func titleSize(screenHeight: CGFloat) -> CGFloat {
     min(max(screenHeight * 0.075, 44), 96)
   }
+
+  /// 告示上的表情有多大：边长 = 标题字号 × 1.3
+  static func emojiSide(title: CGFloat) -> CGFloat { title * 1.3 }
 
   var body: some View {
     let style = screen.preset?.style ?? .blackout
@@ -212,6 +221,7 @@ struct StatusScreenView: View {
           .position(
             x: proxy.size.width / 2,
             y: proxy.size.height - StatusScreen.hintBottom - StatusScreen.hintSize.height / 2)
+        if style != .blackout { eyes(in: proxy.size) }
       }
     }
     .ignoresSafeArea()
@@ -229,19 +239,26 @@ struct StatusScreenView: View {
         withAnimation(Style.Motion.snap.animation(reduced: reduceMotion)) { progress = 0 }
       }
     }
+    .onAppear { entered = true }
   }
 
   /// 告示：中间一列。透出样式垫一块 HUD 底板（面板圆角；降低透明度、增强对比度由 HUD 皮肤自己管），告示样式底是纯黑、不用垫
   @ViewBuilder private func sign(_ preset: StatusPreset, in size: CGSize) -> some View {
     let title = Self.titleSize(screenHeight: size.height)
+    let entrance = StatusEntrance(glyphs: preset.title.count)
+    // 出场走到第几秒：摆好的（截图自检、预览、卡片）照摆的；真的会话从 0 翻到头，各部分各带各的曲线走过去
+    let time = screen.entranceAt ?? (entered ? entrance.end : 0)
     Group {
       if preset.style == .dim {
-        column(preset, title: title)
+        column(preset, title: title, entrance: entrance, time: time)
           .padding(.horizontal, title * 0.7)
           .padding(.vertical, title * 0.55)
           .hudSkin(RoundedRectangle(cornerRadius: Style.Radius.panel, style: .continuous))
+          // 底板和里面的内容一起出现：底板淡入
+          .opacity(StatusEntrance.board(at: time))
+          .animation(.easeOut(duration: StatusEntrance.boardSpan), value: entered)
       } else {
-        column(preset, title: title)
+        column(preset, title: title, entrance: entrance, time: time)
       }
     }
     .padding(.horizontal, size.width * 0.1)
@@ -251,22 +268,28 @@ struct StatusScreenView: View {
     .animation(reduceMotion ? nil : Style.Motion.settle.animation(), value: screen.drift)
   }
 
-  private func column(_ preset: StatusPreset, title: CGFloat) -> some View {
+  private func column(
+    _ preset: StatusPreset, title: CGFloat, entrance: StatusEntrance, time: Double
+  ) -> some View {
     // 说明和小字是给路过的人隔着距离看的：用第二档文字色，增强对比度时提到第一档
     let minor = Color(nsColor: contrast == .increased ? Style.HUD.text : Style.HUD.secondaryText)
+    // 出场：说明和小字等标题的最后一个字浮到一半，整行淡入
+    let rest = entrance.rest(at: time)
+    let restIn = Animation.easeOut(duration: StatusEntrance.restSpan).delay(entrance.restStart)
     return VStack(spacing: 0) {
       if !preset.symbol.isEmpty {
-        Image(systemName: preset.symbol)
-          .font(.system(size: title * 0.8, weight: .medium))
-          .symbolRenderingMode(.hierarchical)
-          .foregroundStyle(Color(nsColor: Style.HUD.text))
+        let (side, drop) = (Self.emojiSide(title: title), StatusEntrance.emoji(at: time))
+        StatusEmojiView(id: preset.symbol, frames: screen.frames[preset.symbol])
+          .frame(width: side, height: side)
+          .modifier(Flick(count: screen.shakes, enabled: screen.animates))
+          // 出场：从上方落下、从小放大到原位，pop 曲线（落到位弹一下）
+          .scaleEffect(0.3 + 0.7 * drop)
+          .offset(y: -title * 0.9 * (1 - drop))
+          .opacity(drop)
+          .animation(Style.Motion.pop.animation(reduced: false), value: entered)
           .padding(.bottom, title * 0.3)
       }
-      Text(preset.title)
-        .font(.system(size: title, weight: .bold, design: .rounded))
-        .foregroundStyle(Color(nsColor: Style.HUD.text))
-        .lineLimit(2)
-        .minimumScaleFactor(0.5)
+      titleText(preset.title, size: title, entrance: entrance, time: time)
         .modifier(Shake(count: screen.shakes, enabled: !reduceMotion))
       if let detail = preset.detail {
         Text(detail)
@@ -274,6 +297,8 @@ struct StatusScreenView: View {
           .foregroundStyle(minor)
           .lineLimit(3)
           .padding(.top, title * 0.25)
+          .opacity(rest)
+          .animation(restIn, value: entered)
       }
       Text(screen.footer)
         .font(.system(size: max(13, title * 0.2)).monospacedDigit())
@@ -281,8 +306,49 @@ struct StatusScreenView: View {
         .lineLimit(1)
         .truncationMode(.tail)
         .padding(.top, title * 0.5)
+        .opacity(rest)
+        .animation(restIn, value: entered)
     }
     .multilineTextAlignment(.center)
+  }
+
+  /// 标题。做出场时逐字浮现：时刻线性地从 0 走到头，哪个字浮到哪了由渲染器按时刻算（GlyphEmerge）；
+  /// 不做出场的（动画关着、减弱动态效果、预览和卡片）就是普通的文字，不挂渲染器
+  @ViewBuilder private func titleText(
+    _ text: String, size: CGFloat, entrance: StatusEntrance, time: Double
+  ) -> some View {
+    let label = Text(text)
+      .font(.system(size: size, weight: .bold, design: .rounded))
+      .foregroundStyle(Color(nsColor: Style.HUD.text))
+      .lineLimit(2)
+      .minimumScaleFactor(0.5)
+    if screen.animates {
+      label
+        .textRenderer(GlyphEmerge(time: time, entrance: entrance, rise: size * 0.1))
+        .animation(.linear(duration: entrance.end), value: entered)
+    } else {
+      label
+    }
+  }
+
+  /// 屏幕底边冒出来看一眼的那双眼睛（Z17a）：「眼睛」表情，在退出提示右边，露出大半个；和退出提示同起同落——
+  /// 升上来用 island 曲线，缩回去用 retract。只在露着的时候挂着（缩回去就拆掉，图层上不留在播的动画）
+  private func eyes(in size: CGSize) -> some View {
+    let frame = StatusScreen.eyesFrame(in: CGRect(origin: .zero, size: size))
+    return ZStack {
+      if screen.showsEyes {
+        StatusEmojiView(id: StatusEmoji.eyes, frames: screen.frames[StatusEmoji.eyes])
+          .transition(
+            .asymmetric(
+              insertion: .move(edge: .bottom)
+                .animation(Style.Motion.island.animation(reduced: false)),
+              removal: .move(edge: .bottom)
+                .animation(Style.Motion.retract.animation(reduced: false))))
+      }
+    }
+    .frame(width: frame.width, height: frame.height)
+    .position(x: frame.midX, y: size.height - frame.midY)
+    .animation(.default, value: screen.showsEyes)
   }
 
   /// 退出提示：HUD 胶囊（高 40，同截图家族的 HUD 条），进度环 +「按住 Esc 退出」。按住 esc 或用鼠标按住它，环 2 秒走满。
@@ -314,23 +380,168 @@ struct StatusScreenView: View {
   }
 }
 
+/// 出场（Z16a）的时间表（纯函数；时刻 = 画面出现后过了几秒）：表情一上来就落下；标题从 titleStart 起逐字浮现，
+/// 字与字错开 step、每个字走 glyphSpan；说明和小字等最后一个字浮到一半时整行淡入；透出样式的底板一上来就淡入。
+/// 真的会话里各部分各带各的动画曲线走；这里的进度是同一张时间表的静态版本——标题的渲染器按它逐字算，截图自检按它摆中间帧。
+/// nonisolated：标题的渲染器在渲染线程上用它
+nonisolated struct StatusEntrance: Equatable {
+  /// 标题有几个字
+  let glyphs: Int
+
+  static let titleStart = 0.06
+  /// 每个字从模糊到清楚走多久（同刘海岛内容出场的 0.28 s）
+  static let glyphSpan = 0.28
+  /// 字与字错开多少；标题长的时候压到整个标题在 staggerLimit 秒内都开始浮现（30 个字约 0.031 s 一个）
+  static let stagger = 0.045
+  static let staggerLimit = 0.9
+  /// 说明和小字淡入多久
+  static let restSpan = 0.28
+  /// 表情落下多久（pop 曲线的时长）、底板淡入多久
+  static let emojiSpan = 0.32
+  static let boardSpan = 0.2
+
+  var step: Double {
+    glyphs > 1 ? min(Self.stagger, Self.staggerLimit / Double(glyphs - 1)) : 0
+  }
+
+  /// 说明和小字从什么时候开始淡入：最后一个字浮到一半
+  var restStart: Double {
+    Self.titleStart + step * Double(max(glyphs - 1, 0)) + Self.glyphSpan / 2
+  }
+
+  /// 整个出场多久
+  var end: Double { restStart + Self.restSpan }
+
+  /// 第 index 个字形浮现到哪了（0–1，先快后慢）。字形比字数多（组合字符拆开画）时，多出来的跟最后一个字一起
+  func glyph(_ index: Int, at time: Double) -> Double {
+    let start = Self.titleStart + step * Double(min(index, max(glyphs - 1, 0)))
+    return Self.eased((time - start) / Self.glyphSpan)
+  }
+
+  /// 说明和小字淡入到哪了（0–1）；到了 end 就是 1（不让浮点误差留下一个 0.9999）
+  func rest(at time: Double) -> Double {
+    time >= end ? 1 : Self.clamped((time - restStart) / Self.restSpan)
+  }
+
+  static func emoji(at time: Double) -> Double { eased(time / emojiSpan) }
+  static func board(at time: Double) -> Double { clamped(time / boardSpan) }
+
+  private static func clamped(_ value: Double) -> Double { min(max(value, 0), 1) }
+  /// 先快后慢（三次方缓出）
+  private static func eased(_ value: Double) -> Double { 1 - pow(1 - clamped(value), 3) }
+}
+
+/// 标题逐字浮现（Z16a）：每个字从模糊 8、下移少许、透明，到清楚、原位、不透明——参数向刘海岛内容出场看齐
+/// （Island 的 Emerge）。按字形一个个画，跟着折行走；播完了照常整行画。
+/// 不给 displayPadding（画到排版框外面的余量）：给了之后屏外截图里整个标题往右挪了一个 leading 那么多（实测 16 pt，
+/// 竖直方向不挪；真机上挪不挪没法在屏外确认），而不给只是刚冒头、还很淡的那一瞬模糊的边和下移的底被排版框裁掉一点
+/// nonisolated：SwiftUI 做动画时在渲染线程上调 draw（mac-native §3），只读传进来的值
+nonisolated struct GlyphEmerge: TextRenderer {
+  /// 出场走到第几秒
+  var time: Double
+  let entrance: StatusEntrance
+  /// 每个字从下面多远的地方浮上来
+  let rise: CGFloat
+
+  static let blur: CGFloat = 8
+
+  var animatableData: Double {
+    get { time }
+    set { time = newValue }
+  }
+
+  func draw(layout: Text.Layout, in context: inout GraphicsContext) {
+    guard time < entrance.end else {
+      for line in layout { context.draw(line) }
+      return
+    }
+    var index = 0
+    for line in layout {
+      for run in line {
+        for slice in run {
+          let progress = entrance.glyph(index, at: time)
+          index += 1
+          guard progress > 0 else { continue }
+          guard progress < 1 else {
+            context.draw(slice)
+            continue
+          }
+          var copy = context
+          copy.opacity = progress
+          copy.addFilter(.blur(radius: Self.blur * (1 - progress)))
+          copy.translateBy(x: 0, y: rise * (1 - progress))
+          copy.draw(slice)
+        }
+      }
+    }
+  }
+}
+
+/// 表情甩一下（Z17a）：每挡下一次触碰播一次——绕着底边左右摆两下、略放大，共 0.5 秒。count 变一次播一次
+private struct Flick: ViewModifier {
+  let count: Int
+  let enabled: Bool
+
+  struct Pose {
+    var angle = 0.0
+    var scale = 1.0
+  }
+
+  func body(content: Content) -> some View {
+    content.keyframeAnimator(initialValue: Pose(), trigger: count) { view, pose in
+      view
+        .rotationEffect(.degrees(enabled ? pose.angle : 0), anchor: .bottom)
+        .scaleEffect(enabled ? pose.scale : 1, anchor: .bottom)
+    } keyframes: { _ in
+      KeyframeTrack(\.angle) {
+        SpringKeyframe(-12, duration: 0.1)
+        SpringKeyframe(10, duration: 0.12)
+        SpringKeyframe(-6, duration: 0.1)
+        SpringKeyframe(0, duration: 0.18)
+      }
+      KeyframeTrack(\.scale) {
+        SpringKeyframe(1.12, duration: 0.14)
+        SpringKeyframe(1, duration: 0.36)
+      }
+    }
+  }
+}
+
 /// 缩小的状态屏：真的画面（StatusScreenView）按一块 1200 × 750 的屏排好，再缩到给它的宽度（宽高比 1.6）。透出样式底下垫
-/// 一张示意的浅色桌面（画的，不截真屏幕）。进入时刻、时长是摆的，不带退出提示。只是个样子：不接点击、不进旁白。
-/// 设置 › 状态屏改一个状态时的预览（StatusPresetDetail）、选状态面板里的卡片（StatusPicker）共用
+/// 一张示意的浅色桌面（画的，不截真屏幕）。进入时刻、时长是摆的，不带退出提示、不做出场。只是个样子：不接点击、不进旁白。
+/// 设置 › 状态屏改一个状态时的预览（StatusPresetDetail，表情会动）、选状态面板里的卡片（StatusPicker，不动）共用
 struct StatusPreview: View {
   let preset: StatusPreset
+  /// 表情动不动：设置里那一块预览会动；选状态面板的卡片不动（最多 20 张，全播要几百 MB）
+  var animated = false
+  @AppStorage(Prefs.statusScreenAnimations) private var animations = true
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.controlActiveState) private var activeState
+  /// 在动的那个表情和它的帧（十几到几十 MB）：所在的窗口是 key 时才解、才拿着；窗口不在前面或关了、换了表情、
+  /// 动画关了、离开这一页，都放手
+  @State private var playing: (id: String, frames: StatusEmoji.Frames)?
 
   private static let screen = CGSize(width: 1200, height: 750)
+
+  /// 现在要动的表情；空 = 不动（没选表情、熄屏样式什么都不显示、动画关着、窗口不是 key）
+  private var emoji: String {
+    animated && preset.style != .blackout && activeState == .key
+      && StatusScreen.animates(enabled: animations, reduceMotion: reduceMotion)
+      ? preset.symbol : ""
+  }
 
   var body: some View {
     let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
     let startedAt =
       Calendar.current.date(bySettingHour: 14, minute: 2, second: 0, of: .now) ?? .now
+    let target = emoji
     GeometryReader { proxy in
       ZStack {
         if preset.style == .dim { Self.desktop }
         StatusScreenView(
-          screen: StatusScreen(showing: preset, startedAt: startedAt, elapsed: 23 * 60))
+          screen: StatusScreen(
+            showing: preset, startedAt: startedAt, elapsed: 23 * 60,
+            frames: playing.map { [$0.id: $0.frames] } ?? [:]))
       }
       .frame(width: Self.screen.width, height: Self.screen.height)
       .scaleEffect(proxy.size.width / Self.screen.width, anchor: .topLeading)
@@ -340,6 +551,12 @@ struct StatusPreview: View {
     .overlay(shape.hairlineBorder())
     .allowsHitTesting(false)
     .accessibilityHidden(true)
+    .task(id: target) {
+      if playing != nil { playing = nil }
+      guard !target.isEmpty, let frames = await StatusEmoji.decode(target), !Task.isCancelled
+      else { return }
+      playing = (target, frames)
+    }
   }
 
   /// 示意的桌面：浅色壁纸上两扇有几行「字」的窗。颜色是示意用的定值，不跟外观走

@@ -121,4 +121,4 @@ Panel 里的内容表面只用填充、**不叠玻璃**，一律 `Style` 里的�
 9. 有删除、清空、放弃这类危险操作吗？按钮 / 菜单行的图标和文字、二次确认用的是 `Style.danger`（动作菜单 `isDestructive`、设置里 `DangerButton`、主按钮键帽 `KeyCap(danger:)`、HUD `Style.HUD.danger`）吗？确认框和系统菜单里给 `role: .destructive` 了吗？没有手写 systemRed / `.red` 吧（§3「危险色」）？
 
 ## 11. 许可
-boring.notch、Easydict、Ice、Loop 是 GPL，Capso 是 BSL：只看效果，一行代码都不拷。DynamicNotchKit、copyo、Pesty 是 MIT，Snapzy 是 BSD：只借数值和思路自己重写（本项目禁止任何依赖）。系统快门声在私有路径，先判断存在。Hello Kitty 是 Sanrio 的商标和版权形象：已换成原创角色「探头」（D1，2026-09-26），任何地方都不要再用它。
+boring.notch、Easydict、Ice、Loop 是 GPL，Capso 是 BSL：只看效果，一行代码都不拷。DynamicNotchKit、copyo、Pesty 是 MIT，Snapzy 是 BSD：只借数值和思路自己重写（本项目禁止任何依赖）。系统快门声在私有路径，先判断存在。Hello Kitty 是 Sanrio 的商标和版权形象：已换成原创角色「探头」（D1，2026-09-26），任何地方都不要再用它。 状态屏的动画表情是 Microsoft Fluent Emoji Animated（MIT，2026-10-10 用户要求用现成素材）：素材文件随包、许可全文在 `Resources/status-emoji-LICENSE.txt`、关于页写一行出处；不是代码依赖，播放自己写（`mac-whisker-status-screen.mdc`）。
