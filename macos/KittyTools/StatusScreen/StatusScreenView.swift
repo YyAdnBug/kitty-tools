@@ -1,6 +1,6 @@
 // 状态屏的面板和画面（PLAN §10「状态屏」Z5 Z7 Z8）：每块屏一张全屏面板，底色按样式（熄屏、告示纯黑，透出压暗），
 // 中间一列图标、标题、说明、「几点开始 · 已经多久」（透出样式垫一块 HUD 底板：后面是别人的窗口，字会叠在一起），
-// 底部一枚平时不显示的退出提示（进度环 +「按住 Esc 退出」）。
+// 底部一枚平时不显示的退出提示（进度环 +「按住 Esc 退出」）。告示那一列每分钟挪几个点，防残影。
 // 永远深色，颜色取自 HUD 皮肤（Style.HUD），进度环是截图家族的强调色（Style.Shot.accent）。
 // StatusScreenPanel 是「禁止另写 NSPanel 子类」的第四个例外（前三个：截图遮罩 SelectionOverlay、钉图 PinPanel、长截图面板
 // ScrollCapturePanel，mac-overlay-panel §1）：无边框窗口默认当不了 key，而安全输入开着时按键只能靠 key 面板接。
@@ -179,6 +179,9 @@ struct StatusScreenView: View {
     }
     .padding(.horizontal, size.width * 0.1)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
+    // 防残影：每分钟挪几个点（StatusScreen.drift）；减弱动态效果时直接换位置
+    .offset(screen.drift)
+    .animation(reduceMotion ? nil : Style.Motion.settle.animation(), value: screen.drift)
   }
 
   private func column(_ preset: StatusPreset, title: CGFloat) -> some View {

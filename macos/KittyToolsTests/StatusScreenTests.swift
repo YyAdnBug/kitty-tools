@@ -441,6 +441,22 @@ struct StatusScreenTests {
         == "到 1 小时自动结束 · 挡下 3 次触碰")
   }
 
+  /// 防残影：第 0 分钟在正中，之后每分钟挪几个点，横向 ±12、纵向 ±8 以内，不会连着三分钟停在同一个位置
+  @Test func driftStaysSmallAndMoves() {
+    #expect(StatusScreen.drift(minute: 0) == .zero)
+    var seen: Set<String> = []
+    for minute in 0..<600 {
+      let offset = StatusScreen.drift(minute: minute)
+      #expect(abs(offset.width) <= 12 && abs(offset.height) <= 8, "\(minute)")
+      #expect(offset.width == offset.width.rounded() && offset.height == offset.height.rounded())
+      let next = (StatusScreen.drift(minute: minute + 1), StatusScreen.drift(minute: minute + 2))
+      #expect(offset != next.0 || offset != next.1, "\(minute)")
+      seen.insert("\(offset.width),\(offset.height)")
+    }
+    // 不是在两三个位置之间来回
+    #expect(seen.count > 40)
+  }
+
   /// 每块屏各有一枚退出提示（底部居中，各算各的范围）；鼠标所在屏的面板当 key，都不在就第一块
   @Test func hintAndKeyScreen() {
     let main = CGRect(x: 0, y: 0, width: 1512, height: 982)

@@ -3,7 +3,7 @@
 // project 层的 Debug / Release 配置分别引用 Debug.xcconfig / Release.xcconfig，二者都 #include 本文件。
 
 // 版本号唯一数据源；build-dmg.sh 从产物的 Info.plist 读回
-MARKETING_VERSION = 0.3.2
+MARKETING_VERSION = 0.4.0
 CURRENT_PROJECT_VERSION = 1
 APP_BUNDLE_ID = com.yy.kitty-tools.native
 PRODUCT_BUNDLE_IDENTIFIER = $(APP_BUNDLE_ID)$(BUNDLE_ID_SUFFIX)

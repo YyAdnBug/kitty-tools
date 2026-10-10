@@ -18,6 +18,8 @@ import Observation
   private(set) var startedAt = Date.now
   /// 进入后过了几秒（按分钟更新）
   private(set) var elapsed = 0
+  /// 防残影：告示那一列此刻挪开了多少（每分钟换一次，drift(minute:)）
+  private(set) var drift = CGSize.zero
   /// 每挡下一次触碰 +1：标题据此晃一下
   private(set) var shakes = 0
   /// 退出提示浮着
@@ -112,6 +114,15 @@ import Observation
     return touches > 0 ? "\(lasted) · 挡下 \(touches) 次触碰" : lasted
   }
 
+  /// 防残影（纯函数）：第几分钟 → 告示那一列挪开多少。液晶屏长时间显示静止画面会留残影（Apple 的支持文档建议别让
+  /// 静止画面一直停着），「屏幕常亮」的状态一挂就是几小时：每分钟挪几个点，横向 ±12、纵向 ±8 以内，
+  /// 两个方向的周期不一样、轨迹不很快重复；第 0 分钟在正中。退出提示只出现 3 秒，不用挪
+  static func drift(minute: Int) -> CGSize {
+    CGSize(
+      width: (12 * sin(Double(minute) * 0.9)).rounded(),
+      height: (8 * sin(Double(minute) * 0.55)).rounded())
+  }
+
   /// 退出提示在一块屏上的范围（全局坐标，原点左下）：底部居中
   static func hintFrame(in screen: CGRect) -> CGRect {
     CGRect(
@@ -166,6 +177,7 @@ import Observation
     isHolding = false
     startedAt = .now
     elapsed = 0
+    drift = .zero
     self.preset = preset
     hidePanels()
     hotKeysWereActive = hotKeys.map { !$0.bindings.isEmpty } ?? false
@@ -328,9 +340,10 @@ import Observation
       })
   }
 
-  /// 每分钟：更新「已经多久」，顺手确认拦截还开着（系统停用它的通知万一没来）
+  /// 每分钟：更新「已经多久」、告示挪个位置（防残影），顺手确认拦截还开着（系统停用它的通知万一没来）
   private func tick() {
     elapsed = Int(Date.now.timeIntervalSince(startedAt))
+    drift = Self.drift(minute: elapsed / 60)
     block?.ensureEnabled()
   }
 

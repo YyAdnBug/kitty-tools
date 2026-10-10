@@ -11,6 +11,7 @@ description: 原生分支的视觉与动效设计语言 Whisker（用户 2026-09
 - `translate.mdc`：翻译浮窗、词典卡、翻译历史
 - `capture.mdc`：截图、录屏、录音、钉图、常驻缩略图、长截图
 - `settings.mdc`：动作菜单（⌘K / 筛选面板，三处共用）、设置窗、引导与关于、菜单栏与图标
+- `status-screen.mdc`：状态屏（全屏告示的三种样式、退出提示、防残影）和 设置 › 状态屏
 
 只动皮肤、刻度、曲线、强调色这类跨界面的东西时读核心就够；「mac-whisker §6「X」」这类引用在核心 §6 的索引表里查在哪个文件。可操作的方案页：https://claude.ai/artifact/1iPQSF1Vr6XswMp4mDkZyN
 
