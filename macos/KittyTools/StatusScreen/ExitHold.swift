@@ -89,6 +89,9 @@ struct ExitHold {
     isLeftDown || keysDown.values.contains { now - $0 < Self.staleAfter }
   }
 
+  /// 只取消进行中的按住，按着的键照记（密码框开着时：按键归它，但退出后拦截还要等这些键松开）
+  mutating func cancel() { holding = nil }
+
   /// 取消进行中的按住、忘掉按着的键（锁屏：之后松开的那一下收不到）
   mutating func reset() {
     holding = nil

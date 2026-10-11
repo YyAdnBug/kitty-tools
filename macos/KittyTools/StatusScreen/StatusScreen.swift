@@ -1,7 +1,8 @@
 // 状态屏的一次会话 + 给画面读的状态（PLAN §10「状态屏」）：进入（授权、拦截、每屏一张面板、保持唤醒、自动结束）、
 // 退出判断（按住 esc 或按住退出提示两秒，ExitHold.swift）、挡下的触碰（计数、标题晃一下、退出提示浮出 3 秒）、
 // 锁屏时让开（面板收掉、拦截暂停、屏幕常亮降成只防睡眠）、解锁 / 到时间 / 按住满了时退出。
-// 定位是告示加防误触，不是安全措施：没有退出验证。
+// 定位是告示加防误触，不是安全措施。默认没有退出验证；设了退出密码（Passcode.swift，2026-10-11 用户要求）时按住满了
+// 先浮出密码框，输对了才退出——到时间自动结束、解锁回来照旧直接结束（忘了密码就锁屏再解锁）。
 // 入口：菜单栏、启动器直接 enter；全局快捷键默认先出选状态的面板（StatusPicker.swift），选了再 enter(_:from:)，
 // 那块屏的画面从选中的卡片长到整屏。
 // 两层一起用：拦截（InputBlock）吞掉键盘鼠标；面板当 key 是为了安全输入开着时（拦截看不到按键）按键落在自己的面板上——
@@ -20,7 +21,7 @@ import Observation
   /// 正在显示（或刚结束、还在淡出）的状态；nil = 没进过
   private(set) var preset: StatusPreset?
   private(set) var startedAt = Date.now
-  /// 进入后过了几秒（按分钟更新）
+  /// 进入后过了几秒（每秒更新，小字精确到秒；熄屏样式什么都不显示，每分钟才更新一次）
   private(set) var elapsed = 0
   /// 防残影：告示那一列此刻挪开了多少（每分钟换一次，drift(minute:)）
   private(set) var drift = CGSize.zero
@@ -34,6 +35,10 @@ import Observation
   private(set) var showsEyes = false
   /// 这一次告示上的动画做不做（进入时定，animates(enabled:reduceMotion:)）：表情动、出场、表情甩一下、冒眼睛
   private(set) var animates = false
+  /// 退出密码和输到哪了（进入时从钥匙串读一次；nil = 没设，按住满了直接退出）
+  private(set) var passcode: Passcode?
+  /// 密码框开着（设了密码、按住满了之后）：按键归它，退出提示和眼睛不出
+  private(set) var isAsking = false
   /// 解好的表情帧，按表情 id：进入后在主线程外解，解完才有（之前画面显示静止画面）；各块屏的画面共用这一份
   private(set) var frames: [String: StatusEmoji.Frames] = [:]
   /// 截图自检摆「按住到一半」的进度环；正常使用是 0，环由画面自己做动画
@@ -65,10 +70,11 @@ import Observation
   /// 进入时全局热键是不是开着（设置里正在录快捷键时本来就停着）：退出时原来开着才恢复
   @ObservationIgnored private var hotKeysWereActive = false
   @ObservationIgnored private var activity: NSObjectProtocol?
-  @ObservationIgnored private var minuteTimer: Timer?
+  @ObservationIgnored private var tickTimer: Timer?
   @ObservationIgnored private var autoEndTimer: Timer?
   @ObservationIgnored private var holdTimer: Timer?
   @ObservationIgnored private var hintTimer: Timer?
+  @ObservationIgnored private var promptTimer: Timer?
   @ObservationIgnored private var lingerTimer: Timer?
   @ObservationIgnored private var keyTimer: Timer?
   @ObservationIgnored private var awayTimer: Timer?
@@ -99,11 +105,12 @@ import Observation
 
   /// 截图自检、设置里的预览、选状态的卡片直接摆出某个样子（不建窗口、不拦输入）；正常使用就是 `StatusScreen()`。
   /// animates + entrance 摆出场的某一刻（不给 entrance 是播完的样子；给 nil 是画面出现时真的播一遍，单测用）；
-  /// frames 是预览里要动的表情的帧
+  /// frames 是预览里要动的表情的帧；asking 摆密码框开着、输到一半的样子
   init(
     showing preset: StatusPreset, startedAt: Date, elapsed: Int, showsHint: Bool = false,
     held: Double = 0, showsEyes: Bool = false, animates: Bool = false,
-    entrance: Double? = .infinity, frames: [String: StatusEmoji.Frames] = [:]
+    entrance: Double? = .infinity, frames: [String: StatusEmoji.Frames] = [:],
+    asking passcode: Passcode? = nil
   ) {
     self.preset = preset
     self.startedAt = startedAt
@@ -112,6 +119,8 @@ import Observation
     self.showsEyes = showsEyes
     self.animates = animates
     self.frames = frames
+    self.passcode = passcode
+    isAsking = passcode != nil
     heldProgress = held
     entranceAt = entrance
   }
@@ -126,9 +135,30 @@ import Observation
     return minutes % 60 == 0 ? "\(minutes / 60) 小时" : "\(minutes / 60) 小时 \(minutes % 60) 分"
   }
 
-  /// 画面上那行小字：「14:02 开始 · 已 1 小时 23 分」（started 是格式化好的时间）
-  static func footer(started: String, seconds: Int) -> String {
-    "\(started) 开始 · " + (seconds < 60 ? "" : "已 ") + span(seconds)
+  /// 小字里的时长，精确到秒：「5 秒」「3 分 05 秒」「1 小时 23 分 05 秒」。前面有更大的单位时补成两位：
+  /// 这行字每秒在变，宽度别跟着跳（配等宽数字）
+  static func clock(_ seconds: Int) -> String {
+    let (hours, minutes, rest) = (seconds / 3600, seconds / 60 % 60, seconds % 60)
+    func padded(_ value: Int) -> String { value < 10 ? "0\(value)" : "\(value)" }
+    if hours > 0 { return "\(hours) 小时 \(padded(minutes)) 分 \(padded(rest)) 秒" }
+    return minutes > 0 ? "\(minutes) 分 \(padded(rest)) 秒" : "\(rest) 秒"
+  }
+
+  /// 小字里每秒在变的那个数：定了自动结束的是还剩几秒（倒数），没定的是已经过了几秒
+  static func reading(elapsed: Int, autoEndMinutes: Int) -> Int {
+    autoEndMinutes > 0 ? max(0, autoEndMinutes * 60 - elapsed) : elapsed
+  }
+
+  /// 画面上那行小字（started 是格式化好的时间）：「14:02 开始 · 已 1 小时 23 分 05 秒」；
+  /// 定了自动结束的倒数：「14:02 开始 · 还剩 4 分 32 秒」
+  static func footer(started: String, seconds: Int, autoEndMinutes: Int = 0) -> String {
+    "\(started) 开始 · \(autoEndMinutes > 0 ? "还剩" : "已") "
+      + clock(reading(elapsed: seconds, autoEndMinutes: autoEndMinutes))
+  }
+
+  /// 怎么退出的一句话（进入时的播报、整屏的无障碍名字）
+  static func exitWording(passcode: Bool) -> String {
+    passcode ? "按住 Esc 两秒，再输入密码退出" : "按住 Esc 两秒退出"
   }
 
   /// 结束时刘海岛的详情：「持续 1 小时 23 分 · 挡下 12 次触碰」；自动结束的写「到 5 分钟自动结束」；没有触碰就不写后半句
@@ -197,7 +227,8 @@ import Observation
 
   var footer: String {
     Self.footer(
-      started: startedAt.formatted(date: .omitted, time: .shortened), seconds: elapsed)
+      started: startedAt.formatted(date: .omitted, time: .shortened), seconds: elapsed,
+      autoEndMinutes: preset?.autoEndMinutes ?? 0)
   }
 
   // MARK: 进入
@@ -222,6 +253,9 @@ import Observation
     }
     // 上一次退出后还在等按键松开的拦截：先作废，不叠两个
     endLinger()
+    // 退出密码趁键盘鼠标还没被拦先读好（钥匙串万一要弹确认框，这时还点得了）。读不到就当没设：
+    // 宁可少一道验证，也不把人关在里面
+    let passcode = Passcode.load()
     guard let block = InputBlock(onEvent: { [weak self] in self?.handle($0) }) else {
       island?.show("没能进入状态屏", detail: "键盘鼠标的拦截没建起来", tone: .error)
       return
@@ -238,6 +272,8 @@ import Observation
     showsHint = false
     showsEyes = false
     isHolding = false
+    isAsking = false
+    self.passcode = passcode
     startedAt = .now
     elapsed = 0
     drift = .zero
@@ -251,9 +287,11 @@ import Observation
     arrangePanels(growingFrom: card)
     setActivity(preset.power)
     hideCursor()
-    // 菜单跟踪、模态期间也要走：定时器都挂 common 模式
-    minuteTimer = schedule(
-      Timer(fire: startedAt + 60, interval: 60, repeats: true) { [weak self] _ in
+    // 菜单跟踪、模态期间也要走：定时器都挂 common 模式。小字精确到秒，每秒走一下；熄屏样式什么都不显示，
+    // 每分钟一下就够（确认拦截还开着）
+    let beat: TimeInterval = preset.style == .blackout ? 60 : 1
+    tickTimer = schedule(
+      Timer(fire: startedAt + beat, interval: beat, repeats: true) { [weak self] _ in
         MainActor.assumeIsolated { self?.tick() }
       })
     if preset.autoEndMinutes > 0 {
@@ -264,7 +302,7 @@ import Observation
         })
     }
     watcher.start()
-    Island.announce("状态屏：\(preset.title)。按住 Esc 两秒退出")
+    Island.announce("状态屏：\(preset.title)。" + Self.exitWording(passcode: passcode != nil))
     // 真进来了才记：选状态的面板下次默认选中它（菜单栏、启动器进的也算）
     UserDefaults.standard.set(preset.id, forKey: Prefs.statusScreenLastPreset)
     decodeFrames(for: preset)
@@ -372,6 +410,7 @@ import Observation
     }
     // 锁着屏：拦截暂停、面板收着，不该有事件；有也不理
     guard !isLocked else { return }
+    guard !isAsking else { return typePasscode(event, at: now) }
     let hints = showsHint ? panels.map { Self.hintFrame(in: $0.frame).insetBy(dx: -8, dy: -8) } : []
     let touched = hold.handle(event, at: now, hints: hints)
     syncHold()
@@ -416,14 +455,67 @@ import Observation
       Timer(timeInterval: max(0, seconds), repeats: false) { [weak self] _ in
         MainActor.assumeIsolated {
           guard let self, self.isActive, let rest = self.hold.remaining(at: .now) else { return }
-          if rest <= .zero { self.exit(.held) } else { self.scheduleHoldEnd(after: rest) }
+          if rest <= .zero { self.holdCompleted() } else { self.scheduleHoldEnd(after: rest) }
         }
       })
   }
 
+  // MARK: 退出密码
+
+  /// 按住满了：没设密码直接退出；设了的浮出密码框，输对了才退出。按住到此为止（进度环缩回、退出提示让位），
+  /// 之后再按 esc 是「不输了」
+  private func holdCompleted() {
+    guard passcode != nil else { return exit(.held) }
+    isAsking = true
+    passcode?.begin()
+    hold.cancel()
+    syncHold()
+    hintTimer?.invalidate()
+    showsHint = false
+    showsEyes = false
+    restartPromptTimer()
+    Island.announce("输入密码退出，按 Esc 取消")
+  }
+
+  /// 密码框开着时的事件：数字、⌫、esc 归它，别的不理（不算触碰、不晃）。退出判断只跟着记哪些键还按着
+  /// （输对退出之后拦截要等它们松开），不让它开始新的一次按住
+  private func typePasscode(_ event: InputBlock.Event, at now: ContinuousClock.Instant) {
+    _ = hold.handle(event, at: now)
+    hold.cancel()
+    guard let outcome = passcode?.handle(event, at: now), outcome != .ignored else { return }
+    takeKey()
+    switch outcome {
+    case .matched: exit(.held)
+    case .cancelled, .gaveUp: closePrompt()
+    case .wrong:
+      Island.announce("密码不对")
+      restartPromptTimer()
+    case .edited, .ignored: restartPromptTimer()
+    }
+  }
+
+  /// 一阵没按键就收起密码框（每按一下重新计）
+  private func restartPromptTimer() {
+    promptTimer?.invalidate()
+    promptTimer = schedule(
+      Timer(timeInterval: Passcode.idle, repeats: false) { [weak self] _ in
+        MainActor.assumeIsolated { self?.closePrompt() }
+      })
+  }
+
+  /// 收起密码框（按了 esc、连错太多次、一阵没按键、锁屏）：回到告示，要退出得重新按住
+  private func closePrompt() {
+    promptTimer?.invalidate()
+    promptTimer = nil
+    guard isAsking else { return }
+    isAsking = false
+    hideCursor()
+  }
+
   /// 退出提示浮出 hintDwell 秒（设置里关了就永远不出现，只剩按住 esc）；按住期间到点不收。
-  /// 屏幕底边的眼睛和它同起同落（Z17a）；提示被设置关掉时眼睛照冒
+  /// 屏幕底边的眼睛和它同起同落（Z17a）；提示被设置关掉时眼睛照冒。密码框开着时都不出（它占着提示的位置）
   private func revealHint() {
+    guard !isAsking else { return }
     let hint = UserDefaults.standard.bool(forKey: Prefs.statusScreenExitHint)
     let eyes = preset.map { Self.peeks($0.style, animates: animates) } ?? false
     guard hint || eyes else { return }
@@ -441,10 +533,14 @@ import Observation
       })
   }
 
-  /// 每分钟：更新「已经多久」、告示挪个位置（防残影），顺手确认拦截还开着（系统停用它的通知万一没来）
+  /// 每秒（熄屏样式每分钟）：更新「已经多久」；跨了分钟时告示挪个位置（防残影），顺手确认拦截还开着
+  /// （系统停用它的通知万一没来）。定时器到点可能早到一丝，四舍五入到整秒
   private func tick() {
-    elapsed = Int(Date.now.timeIntervalSince(startedAt))
-    drift = Self.drift(minute: elapsed / 60)
+    let seconds = Int(Date.now.timeIntervalSince(startedAt).rounded())
+    let minuteChanged = seconds / 60 != elapsed / 60
+    elapsed = seconds
+    guard minuteChanged else { return }
+    drift = Self.drift(minute: seconds / 60)
     block?.ensureEnabled()
   }
 
@@ -466,6 +562,7 @@ import Observation
     hintTimer?.invalidate()
     showsHint = false
     showsEyes = false
+    closePrompt()
     lastMouse = nil
     travelled = 0
     for panel in panels { panel.orderOut(nil) }
@@ -497,11 +594,13 @@ import Observation
     guard isActive, let preset else { return }
     isActive = false
     let seconds = Int(Date.now.timeIntervalSince(startedAt))
-    for timer in [minuteTimer, autoEndTimer, holdTimer, hintTimer, keyTimer, awayTimer] {
+    for timer in [tickTimer, autoEndTimer, holdTimer, hintTimer, promptTimer, keyTimer, awayTimer] {
       timer?.invalidate()
     }
-    (minuteTimer, autoEndTimer, holdTimer, hintTimer, keyTimer, awayTimer) =
-      (nil, nil, nil, nil, nil, nil)
+    (tickTimer, autoEndTimer, holdTimer, hintTimer, promptTimer, keyTimer, awayTimer) =
+      (nil, nil, nil, nil, nil, nil, nil)
+    isAsking = false
+    passcode = nil
     watcher.stop()
     setActivity(.normal)
     for panel in panels { panel.dismiss(fading: reason != .quit && !Style.reduceMotion) }

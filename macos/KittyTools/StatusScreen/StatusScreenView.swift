@@ -1,6 +1,7 @@
 // 状态屏的面板和画面（PLAN §10「状态屏」Z5 Z7 Z8）：每块屏一张全屏面板，底色按样式（熄屏、告示纯黑，透出压暗），
-// 中间一列图标、标题、说明、「几点开始 · 已经多久」（透出样式垫一块 HUD 底板：后面是别人的窗口，字会叠在一起），
-// 底部一枚平时不显示的退出提示（进度环 +「按住 Esc 退出」）。告示那一列每分钟挪几个点，防残影。
+// 中间一列图标、标题、说明、「几点开始 · 已经多久」（精确到秒，数字滚着换——StatusTicker.swift；定了自动结束的是倒数。
+// 透出样式垫一块 HUD 底板：后面是别人的窗口，字会叠在一起），底部一枚平时不显示的退出提示（进度环 +「按住 Esc 退出」）；
+// 设了退出密码时按住满了，同一个位置换成密码框（一排圆点）。告示那一列每分钟挪几个点，防残影。
 // 永远深色，颜色取自 HUD 皮肤（Style.HUD），进度环是截图家族的强调色（Style.Shot.accent）。
 // StatusScreenPanel 是「禁止另写 NSPanel 子类」的第四个例外（前三个：截图遮罩 SelectionOverlay、钉图 PinPanel、长截图面板
 // ScrollCapturePanel，mac-overlay-panel §1）：无边框窗口默认当不了 key，而安全输入开着时按键只能靠 key 面板接。
@@ -217,10 +218,13 @@ struct StatusScreenView: View {
         if let preset = screen.preset, style != .blackout {
           sign(preset, in: proxy.size)
         }
-        hint
-          .position(
-            x: proxy.size.width / 2,
-            y: proxy.size.height - StatusScreen.hintBottom - StatusScreen.hintSize.height / 2)
+        ZStack {
+          hint
+          if let passcode = screen.passcode { prompt(passcode) }
+        }
+        .position(
+          x: proxy.size.width / 2,
+          y: proxy.size.height - StatusScreen.hintBottom - StatusScreen.hintSize.height / 2)
         if style != .blackout { eyes(in: proxy.size) }
       }
     }
@@ -228,8 +232,11 @@ struct StatusScreenView: View {
     .environment(\.colorScheme, .dark)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(
-      ["状态屏", screen.preset?.title, screen.preset?.detail, "按住 Esc 两秒退出"]
-        .compactMap { $0 }.joined(separator: "，")
+      [
+        "状态屏", screen.preset?.title, screen.preset?.detail,
+        StatusScreen.exitWording(passcode: screen.passcode != nil),
+      ]
+      .compactMap { $0 }.joined(separator: "，")
     )
     .onChange(of: screen.isHolding) { _, holding in
       // 按住：线性走满，和退出判断同一个时长；取消：snap 缩回（减弱动态效果时直接回去）
@@ -272,7 +279,8 @@ struct StatusScreenView: View {
     _ preset: StatusPreset, title: CGFloat, entrance: StatusEntrance, time: Double
   ) -> some View {
     // 说明和小字是给路过的人隔着距离看的：用第二档文字色，增强对比度时提到第一档
-    let minor = Color(nsColor: contrast == .increased ? Style.HUD.text : Style.HUD.secondaryText)
+    let minorColor = contrast == .increased ? Style.HUD.text : Style.HUD.secondaryText
+    let minor = Color(nsColor: minorColor)
     // 出场：说明和小字等标题的最后一个字浮到一半，整行淡入
     let rest = entrance.rest(at: time)
     let restIn = Animation.easeOut(duration: StatusEntrance.restSpan).delay(entrance.restStart)
@@ -300,11 +308,7 @@ struct StatusScreenView: View {
           .opacity(rest)
           .animation(restIn, value: entered)
       }
-      Text(screen.footer)
-        .font(.system(size: max(13, title * 0.2)).monospacedDigit())
-        .foregroundStyle(minor)
-        .lineLimit(1)
-        .truncationMode(.tail)
+      StatusFooter(screen: screen, size: max(13, title * 0.2), color: minorColor)
         .padding(.top, title * 0.5)
         .opacity(rest)
         .animation(restIn, value: entered)
@@ -377,6 +381,61 @@ struct StatusScreenView: View {
     .animation(
       screen.showsHint ? .easeOut(duration: Style.fadeIn) : .easeIn(duration: Style.fadeOut),
       value: screen.showsHint)
+  }
+
+  /// 退出密码的输入框（设了密码、按住满了之后）：和退出提示同一个位置、同样高的 HUD 胶囊，「输入密码」+ 一排圆点
+  /// （密码几位就几个，打了的实心）。打字当场显示、不做动画；打满了不对，整排晃一下、清空（Shake，同标题被碰时的
+  /// 那一组，减弱动态效果时不晃，字照样换成「密码不对」）。出现、消失同退出提示。颜色只用 HUD 的中性色：
+  /// 整屏的强调色只给进度环。没设密码的会话不挂它
+  private func prompt(_ passcode: Passcode) -> some View {
+    HStack(spacing: 10) {
+      Text(passcode.missed ? "密码不对" : "输入密码")
+      HStack(spacing: 6) {
+        ForEach(0..<passcode.digits.count, id: \.self) { index in
+          let isTyped = index < passcode.typed.count
+          Circle()
+            .strokeBorder(
+              Color(nsColor: isTyped ? Style.HUD.text : Style.HUD.secondaryText), lineWidth: 1.5
+            )
+            .background(Circle().fill(Color(nsColor: isTyped ? Style.HUD.text : .clear)))
+            .frame(width: 9, height: 9)
+        }
+      }
+      .modifier(Shake(count: passcode.misses, enabled: !reduceMotion))
+    }
+    .font(.system(size: 13, weight: .medium))
+    .lineLimit(1)
+    .padding(.horizontal, 16)
+    .frame(height: StatusScreen.hintSize.height)
+    .hudSkin(Capsule())
+    .opacity(screen.isAsking ? 1 : 0)
+    .offset(y: screen.isAsking || reduceMotion ? 0 : 8)
+    .animation(
+      screen.isAsking ? .easeOut(duration: Style.fadeIn) : .easeIn(duration: Style.fadeOut),
+      value: screen.isAsking)
+  }
+}
+
+/// 小字「14:02 开始 · 已 1 分 05 秒」（定了自动结束的是「还剩 4 分 32 秒」）：每秒变一次。做着动画的会话里变了的数字
+/// 滚过去（StatusTicker：图层动画；已经多久往上滚，倒数往下滚）；动画关着、减弱动态效果、预览和卡片里是普通的文字，直接换。
+/// 单独一个视图：会话的 elapsed 只有它读，每秒重算的就只有这一行
+private struct StatusFooter: View {
+  let screen: StatusScreen
+  let size: CGFloat
+  let color: NSColor
+
+  var body: some View {
+    if screen.animates {
+      StatusTicker(
+        text: screen.footer, font: .monospacedDigitSystemFont(ofSize: size, weight: .regular),
+        color: color, direction: (screen.preset?.autoEndMinutes ?? 0) > 0 ? -1 : 1)
+    } else {
+      Text(screen.footer)
+        .font(.system(size: size).monospacedDigit())
+        .foregroundStyle(Color(nsColor: color))
+        .lineLimit(1)
+        .truncationMode(.tail)
+    }
   }
 }
 
@@ -508,7 +567,8 @@ private struct Flick: ViewModifier {
 }
 
 /// 缩小的状态屏：真的画面（StatusScreenView）按一块 1200 × 750 的屏排好，再缩到给它的宽度（宽高比 1.6）。透出样式底下垫
-/// 一张示意的浅色桌面（画的，不截真屏幕）。进入时刻、时长是摆的，不带退出提示、不做出场。只是个样子：不接点击、不进旁白。
+/// 一张示意的浅色桌面（画的，不截真屏幕）。进入时刻、时长是摆的（过了 1 分 23 秒：定了自动结束的也还没到点），
+/// 不带退出提示、不做出场。只是个样子：不接点击、不进旁白。
 /// 设置 › 状态屏改一个状态时的预览（StatusPresetDetail，表情会动）、选状态面板里的卡片（StatusPicker，不动）共用
 struct StatusPreview: View {
   let preset: StatusPreset
@@ -540,7 +600,7 @@ struct StatusPreview: View {
         if preset.style == .dim { Self.desktop }
         StatusScreenView(
           screen: StatusScreen(
-            showing: preset, startedAt: startedAt, elapsed: 23 * 60,
+            showing: preset, startedAt: startedAt, elapsed: 83,
             frames: playing.map { [$0.id: $0.frames] } ?? [:]))
       }
       .frame(width: Self.screen.width, height: Self.screen.height)

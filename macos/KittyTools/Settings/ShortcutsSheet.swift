@@ -342,7 +342,7 @@ struct ShortcutsSheet: View {
         ]),
       // mac-overlay-panel §11 状态屏。全局键不设默认，没设时那一行写「未设置」；它先出选状态的面板（设置里可改成直接
       // 进排在最前面的状态，那一行的名字跟着变，HotKeyAction.rowTitle）。面板里的按键在 StatusPicker.key；
-      // 退出判断在 ExitHold（只按着 esc、或左键按在退出提示上满 2 秒）
+      // 退出判断在 ExitHold（只按着 esc、或左键按在退出提示上满 2 秒）；设了退出密码时按住满了还要输密码（Passcode）
       Group(
         title: "状态屏", symbol: HotKeyAction.statusScreen.symbol, color: Style.Family.statusScreen,
         globals: [.statusScreen],
@@ -353,6 +353,7 @@ struct ShortcutsSheet: View {
           Entry("Esc", "⌘W", text: "选状态时：不进了，关闭"),
           Entry("Esc", text: "进入之后按住 2 秒：退出"),
           Entry(text: "进入之后用鼠标按住屏幕底部的提示 2 秒：退出（动一下鼠标，提示就出现）"),
+          Entry("0–9", text: "设了退出密码时：按住满 2 秒后输入密码（⌫ 删一位，Esc 不输了）"),
         ]),
       // mac-whisker §6 设置；代码在 SettingsWindow 的 SettingsCommands（主菜单「显示 › 返回」）
       Group(

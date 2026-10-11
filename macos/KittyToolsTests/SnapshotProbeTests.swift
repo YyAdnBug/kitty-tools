@@ -865,7 +865,8 @@ struct SnapshotProbeTests {
   /// 图标是表情的静止画面（第 5 批；这几张是动画关着 / 减弱动态效果时的样子，也是帧还没解好时的样子）。另有：
   /// 有人碰了之后底边冒出眼睛的两张（提示开着 / 被设置关掉）、出场摆在三个时刻（透出样式：底板淡入、表情落下、标题逐字浮现、
   /// 说明和小字还没出）和长标题折两行时的一刻、做着动画但出场已经播完的（该和不做动画的一样：status-screen-dim 一对、
-  /// 长标题的 status-screen-sign-long 一对）
+  /// 长标题的 status-screen-sign-long 一对）。2026-10-11：小字精确到秒（图里是 1 小时 23 分 05 秒）、定了自动结束的
+  /// 倒数（status-screen-sign-countdown）、退出密码的输入框三张（刚打开、6 位打了 2 位、刚输错；熄屏样式上一张）
   @Test(.enabled(if: directory != nil)) func statusScreen() throws {
     let out = try #require(Self.directory)
     try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
@@ -877,11 +878,11 @@ struct SnapshotProbeTests {
     func shot(
       _ name: String, _ preset: StatusPreset, hint: Bool = false, held: Double = 0,
       contrast: ColorSchemeContrast = .standard, eyes: Bool = false, animates: Bool = false,
-      entrance: Double = .infinity
+      entrance: Double = .infinity, elapsed: Int = 83 * 60 + 5, asking: Passcode? = nil
     ) throws {
       let screen = StatusScreen(
-        showing: preset, startedAt: startedAt, elapsed: 83 * 60, showsHint: hint, held: held,
-        showsEyes: eyes, animates: animates, entrance: entrance)
+        showing: preset, startedAt: startedAt, elapsed: elapsed, showsHint: hint, held: held,
+        showsEyes: eyes, animates: animates, entrance: entrance, asking: asking)
       try snapshot(
         ZStack {
           Image(decorative: desktop, scale: 2)
@@ -916,6 +917,17 @@ struct SnapshotProbeTests {
     try shot("status-screen-dim-animated", presets[1], hint: true, held: 0.5, animates: true)
     try shot("status-screen-sign-long", long)
     try shot("status-screen-sign-long-animated", long, animates: true)
+    // 定了自动结束的状态：小字是倒数（进入 28 秒，还剩 4 分 32 秒）
+    var timed = presets[2]
+    timed.autoEndMinutes = 5
+    try shot("status-screen-sign-countdown", timed, elapsed: 28)
+    // 做着动画的会话里小字是图层版（StatusTicker）：该和上面那张、和 status-screen-dim 的小字对得上
+    try shot("status-screen-sign-countdown-animated", timed, animates: true, elapsed: 28)
+    // 退出密码的输入框（设了密码、按住满了之后，占着退出提示的位置）：4 位刚打开、6 位打了 2 位、8 位刚输错；熄屏样式上一张
+    try shot("status-screen-passcode", presets[2], asking: Passcode("1234"))
+    try shot("status-screen-passcode-typing", presets[1], asking: Passcode("123456", typed: 2))
+    try shot("status-screen-passcode-wrong", presets[1], asking: Passcode("12345678", misses: 1))
+    try shot("status-screen-blackout-passcode", presets[0], asking: Passcode("1234", typed: 3))
     // 本身是深色的两个表情（开会的人影、黑猫）在纯黑的告示上
     for emoji in ["busts", "black-cat"] {
       var dark = presets[2]
@@ -967,6 +979,11 @@ struct SnapshotProbeTests {
     try snapshot(
       root(list), size: NSSize(width: 700, height: 460), dark: false,
       to: "\(out)/settings-status-screen-min.png")
+    // 已经设了退出密码：那一行只剩「移除」（没设的样子在上面几张的最下面一组里）
+    try snapshot(
+      StatusScreenTab(fixed: list, fixedPasscode: true).environment(navigation),
+      size: NSSize(width: 590, height: 1040), dark: false,
+      to: "\(out)/settings-status-passcode-set.png")
     let full = (1...StatusPreset.maxCount).map { index in
       var preset = StatusPreset.new(id: "p\(index)")
       preset.title = "状态 \(index)"

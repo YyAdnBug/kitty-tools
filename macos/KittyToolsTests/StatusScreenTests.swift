@@ -1,5 +1,8 @@
 // 状态屏（PLAN §10）的纯函数单测：自带状态和编解码、sanitized 各条、退出判断（ExitHold：按住满 2 秒、别的触碰取消、带修饰键 / 连发
-// 不算、松开取消、鼠标按在提示里外、滚动合并、「松不开」的键过期）、时长文字、退出提示和 key 面板的范围、拦截对事件的分类、
+// 不算、松开取消、鼠标按在提示里外、滚动合并、「松不开」的键过期）、退出密码（Passcode：只认 4–8 位数字、按键位认、打满当场比、
+// 输错清空、每错满 5 次收起、⌫ 和 esc、连发和同一下按键到两次不重复算）、时长文字（小字精确到秒、定了自动结束的倒数）、
+// 小字的图层版（StatusTicker：一字一块图层，只有变了的数字换图层并挂上滑动）、
+// 退出提示和 key 面板的范围、拦截对事件的分类、
 // 启动器里每个状态一条；设置 › 状态屏改列表的几个纯函数（加、删、挪、恢复自带的、详情页改一个、摘要）；选状态的面板
 // （第 4 批：选中怎么移动、按键、默认选中、排版、进入时给出去的卡片位置）和从卡片长到整屏的起始变换；告示上的动画
 // （第 5 批：表情的清单、17 个资源都在包里且解得出、旧符号名换成表情、每帧时长 → keyTimes、图层上挂的那段动画、
@@ -475,14 +478,155 @@ struct StatusScreenTests {
     #expect(!hold.state.isAnythingDown(at: start + .seconds(31)))
   }
 
+  /// 密码框开着时退出判断只记按着的键，不开始新的一次按住
+  @Test func cancelKeepsKeysDown() {
+    var hold = ExitHold()
+    let start = ContinuousClock.now
+    _ = hold.handle(Self.down(Self.escape), at: start)
+    hold.cancel()
+    #expect(hold.holding == nil && hold.isAnythingDown(at: start))
+    _ = hold.handle(.keyUp(code: Self.escape), at: start + .seconds(1))
+    #expect(!hold.isAnythingDown(at: start + .seconds(1)))
+  }
+
+  // MARK: 退出密码
+
+  /// 一个一个按过去（每下隔 0.2 秒），返回每一下的结果
+  private static func type(
+    _ codes: [Int], into passcode: inout Passcode, from start: ContinuousClock.Instant = .now
+  ) -> [Passcode.Outcome] {
+    codes.enumerated().map { index, code in
+      passcode.handle(down(code), at: start + .milliseconds(200 * (index + 1)))
+    }
+  }
+
+  /// 只认 4–8 位数字（全角数字、字母、空格都不行）；设置里两遍要一样
+  @Test func passcodeText() throws {
+    #expect(try #require(Passcode("0429")).digits == [0, 4, 2, 9])
+    #expect(Passcode("12345678")?.digits.count == 8)
+    for bad in ["", "123", "123456789", "12a4", "12 4", "１２３４", "12.4"] {
+      #expect(Passcode(bad) == nil, "\(bad)")
+    }
+    #expect(Passcode.problem("123", confirmation: "123") == "密码是 4–8 位数字")
+    #expect(Passcode.problem("1234", confirmation: "") == "再输一次，两次要一样")
+    #expect(Passcode.problem("1234", confirmation: "1235") == "再输一次，两次要一样")
+    #expect(Passcode.problem("1234", confirmation: "1234") == nil)
+  }
+
+  /// 数字按键位认：主键盘那一排和小键盘的 0–9，别的键不是数字
+  @Test func passcodeDigitKeys() {
+    let row = [
+      kVK_ANSI_0, kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4, kVK_ANSI_5, kVK_ANSI_6,
+      kVK_ANSI_7, kVK_ANSI_8, kVK_ANSI_9,
+    ]
+    let pad = [
+      kVK_ANSI_Keypad0, kVK_ANSI_Keypad1, kVK_ANSI_Keypad2, kVK_ANSI_Keypad3, kVK_ANSI_Keypad4,
+      kVK_ANSI_Keypad5, kVK_ANSI_Keypad6, kVK_ANSI_Keypad7, kVK_ANSI_Keypad8, kVK_ANSI_Keypad9,
+    ]
+    #expect(row.compactMap(Passcode.digit) == Array(0...9))
+    #expect(pad.compactMap(Passcode.digit) == Array(0...9))
+    for other in [kVK_ANSI_A, kVK_Return, kVK_Space, kVK_ANSI_KeypadEnter, kVK_ANSI_Minus] {
+      #expect(Passcode.digit(for: other) == nil)
+    }
+  }
+
+  /// 打满位数当场比：对了就是 matched；带着 ⇧ 打的数字、小键盘的数字一样算
+  @Test func passcodeMatches() throws {
+    var passcode = try #require(Passcode("0429"))
+    let outcomes = Self.type(
+      [kVK_ANSI_0, kVK_ANSI_Keypad4, kVK_ANSI_2, kVK_ANSI_9], into: &passcode)
+    #expect(outcomes == [.edited, .edited, .edited, .matched])
+    var shifted = try #require(Passcode("1234"))
+    let start = ContinuousClock.now
+    for (index, code) in [kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3].enumerated() {
+      let outcome = shifted.handle(
+        Self.down(code, modifiers: true), at: start + .milliseconds(200 * index))
+      #expect(outcome == .edited)
+    }
+    #expect(shifted.handle(Self.down(kVK_ANSI_4), at: start + .seconds(1)) == .matched)
+  }
+
+  /// 输错：清空、记一次、提示换成「密码不对」，接着打就换回去；每错满 5 次是 gaveUp，重新打开不清零错的次数
+  @Test func passcodeMisses() throws {
+    var passcode = try #require(Passcode("1234"))
+    let wrong = [kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_5]
+    #expect(Self.type(wrong, into: &passcode).last == .wrong)
+    #expect(passcode.typed.isEmpty && passcode.misses == 1 && passcode.missed)
+    #expect(passcode.handle(Self.down(kVK_ANSI_1), at: .now + .seconds(5)) == .edited)
+    #expect(!passcode.missed && passcode.typed == [1])
+    passcode.begin()
+    #expect(passcode.typed.isEmpty && passcode.misses == 1 && !passcode.missed)
+    var start = ContinuousClock.now + .seconds(10)
+    for round in 2...5 {
+      let last = Self.type(wrong, into: &passcode, from: start).last
+      #expect(last == (round == 5 ? .gaveUp : .wrong), "第 \(round) 次")
+      start += .seconds(2)
+    }
+    #expect(passcode.misses == 5)
+    // 错过之后输对照样退出
+    #expect(
+      Self.type([kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4], into: &passcode, from: start)
+        .last == .matched)
+  }
+
+  /// ⌫ 删一位（空了不管），esc 不输了（带修饰键的不算）；别的键、松开、鼠标、滚动都不归它
+  @Test func passcodeEditingKeys() throws {
+    var passcode = try #require(Passcode("1234"))
+    let start = ContinuousClock.now
+    #expect(passcode.handle(Self.down(kVK_Delete), at: start) == .ignored)
+    _ = Self.type([kVK_ANSI_1, kVK_ANSI_9], into: &passcode, from: start)
+    #expect(passcode.handle(Self.down(kVK_Delete), at: start + .seconds(1)) == .edited)
+    #expect(passcode.typed == [1])
+    let later = start + .seconds(2)
+    for event: InputBlock.Event in [
+      Self.down(kVK_ANSI_A), Self.down(kVK_Return), .keyUp(code: kVK_ANSI_1), .leftDown(at: .zero),
+      .leftUp, .touch, .scroll, Self.down(kVK_Escape, modifiers: true),
+    ] {
+      #expect(passcode.handle(event, at: later) == .ignored, "\(event)")
+    }
+    #expect(passcode.typed == [1])
+    #expect(passcode.handle(Self.down(kVK_Escape), at: later + .seconds(1)) == .cancelled)
+  }
+
+  /// 连发不算；同一下按键两条路都到了（拦截 + key 面板，隔几毫秒）只算一次，人手连按同一个键（隔 0.1 秒）算两次
+  @Test func passcodeIgnoresRepeatsAndEchoes() throws {
+    var passcode = try #require(Passcode("1123"))
+    let start = ContinuousClock.now
+    #expect(passcode.handle(Self.down(kVK_ANSI_1), at: start) == .edited)
+    #expect(passcode.handle(Self.down(kVK_ANSI_1), at: start + .milliseconds(4)) == .ignored)
+    #expect(
+      passcode.handle(Self.down(kVK_ANSI_1, isRepeat: true), at: start + .milliseconds(600))
+        == .ignored)
+    #expect(passcode.typed == [1])
+    #expect(passcode.handle(Self.down(kVK_ANSI_1), at: start + .milliseconds(700)) == .edited)
+    #expect(passcode.handle(Self.down(kVK_ANSI_2), at: start + .milliseconds(710)) == .edited)
+    #expect(passcode.handle(Self.down(kVK_ANSI_3), at: start + .milliseconds(720)) == .matched)
+  }
+
   // MARK: 文字和范围
 
   @Test func durationText() {
     #expect(StatusScreen.span(0) == "不到 1 分钟" && StatusScreen.span(59) == "不到 1 分钟")
     #expect(StatusScreen.span(60) == "1 分钟" && StatusScreen.span(59 * 60 + 59) == "59 分钟")
     #expect(StatusScreen.span(3600) == "1 小时" && StatusScreen.span(83 * 60) == "1 小时 23 分")
-    #expect(StatusScreen.footer(started: "14:02", seconds: 83 * 60) == "14:02 开始 · 已 1 小时 23 分")
-    #expect(StatusScreen.footer(started: "14:02", seconds: 30) == "14:02 开始 · 不到 1 分钟")
+    // 小字精确到秒；前面有更大的单位时补成两位（每秒在变，宽度不跳）
+    #expect(StatusScreen.clock(0) == "0 秒" && StatusScreen.clock(59) == "59 秒")
+    #expect(StatusScreen.clock(60) == "1 分 00 秒" && StatusScreen.clock(605) == "10 分 05 秒")
+    #expect(StatusScreen.clock(3600) == "1 小时 00 分 00 秒")
+    #expect(StatusScreen.clock(83 * 60 + 5) == "1 小时 23 分 05 秒")
+    #expect(
+      StatusScreen.footer(started: "14:02", seconds: 83 * 60 + 5)
+        == "14:02 开始 · 已 1 小时 23 分 05 秒")
+    #expect(StatusScreen.footer(started: "14:02", seconds: 30) == "14:02 开始 · 已 30 秒")
+    // 定了自动结束的倒数，到点停在 0
+    #expect(
+      StatusScreen.footer(started: "14:02", seconds: 28, autoEndMinutes: 5)
+        == "14:02 开始 · 还剩 4 分 32 秒")
+    #expect(StatusScreen.reading(elapsed: 28, autoEndMinutes: 5) == 272)
+    #expect(StatusScreen.reading(elapsed: 400, autoEndMinutes: 5) == 0)
+    #expect(StatusScreen.reading(elapsed: 400, autoEndMinutes: 0) == 400)
+    #expect(StatusScreen.exitWording(passcode: false) == "按住 Esc 两秒退出")
+    #expect(StatusScreen.exitWording(passcode: true) == "按住 Esc 两秒，再输入密码退出")
     #expect(
       StatusScreen.summary(.held, seconds: 83 * 60, touches: 12, autoEndMinutes: 0)
         == "持续 1 小时 23 分 · 挡下 12 次触碰")
@@ -496,6 +640,46 @@ struct StatusScreenTests {
     #expect(
       StatusScreen.summary(.autoEnd, seconds: 3600, touches: 3, autoEndMinutes: 60)
         == "到 1 小时自动结束 · 挡下 3 次触碰")
+  }
+
+  /// 小字的图层版（做着动画的会话里用）：一字一块图层、空格不画；等宽数字各位一样宽。字数没变、只是数字换数字时
+  /// 只换那几位、挂上滑动（别的图层原样留着）；不给方向、字数变了、换了颜色都整行重排、不挂动画
+  @Test func tickerRollsOnlyChangedDigits() throws {
+    let font = NSFont.monospacedDigitSystemFont(ofSize: 19, weight: .regular)
+    let text = "14:02 开始 · 已 1 分 05 秒"
+    let measured = StatusTickerView.measure(text, font: font)
+    #expect(measured.widths.count == text.count && measured.size.height > 19)
+    #expect(abs(measured.size.width - measured.widths.reduce(0, +)) < 1)
+    #expect(Set(StatusTickerView.measure("0123456789", font: font).widths).count == 1)
+    let view = StatusTickerView()
+    view.show(text, font: font, color: .white, direction: 1)
+    let first = view.cells
+    #expect(first.count == text.count && view.characters == Array(text))
+    for (cell, character) in zip(first, text) {
+      #expect((cell.contents == nil) == (character == " "), "\(character)")
+      #expect(cell.animation(forKey: StatusTickerView.slideKey) == nil)
+    }
+    // 05 → 06：只有最后那位数字换了图层，新的那块挂着滑动
+    view.show("14:02 开始 · 已 1 分 06 秒", font: font, color: .white, direction: 1)
+    let changed = view.cells.indices.filter { view.cells[$0] !== first[$0] }
+    let index = try #require(changed.first)
+    #expect(changed.count == 1 && view.characters[index] == "6")
+    #expect(view.cells[index].animation(forKey: StatusTickerView.slideKey) != nil)
+    #expect(view.cells[index].frame == first[index].frame)
+    // 不给方向（动画不做）：整行重排，不挂动画
+    let second = view.cells
+    view.show("14:02 开始 · 已 1 分 07 秒", font: font, color: .white, direction: 0)
+    #expect(zip(view.cells, second).allSatisfy { $0 !== $1 })
+    #expect(view.cells.allSatisfy { $0.animation(forKey: StatusTickerView.slideKey) == nil })
+    // 字数变了（59 秒 → 1 分 00 秒）、换了颜色：也是整行重排
+    view.show("14:02 开始 · 已 59 秒", font: font, color: .white, direction: 1)
+    view.show("14:02 开始 · 已 1 分 00 秒", font: font, color: .white, direction: 1)
+    #expect(view.cells.count == "14:02 开始 · 已 1 分 00 秒".count)
+    #expect(view.cells.allSatisfy { $0.animation(forKey: StatusTickerView.slideKey) == nil })
+    let third = view.cells
+    view.show("14:02 开始 · 已 1 分 01 秒", font: font, color: .gray, direction: 1)
+    #expect(zip(view.cells, third).allSatisfy { $0 !== $1 })
+    #expect(view.layer?.sublayers?.count == view.cells.count)
   }
 
   /// 防残影：第 0 分钟在正中，之后每分钟挪几个点，横向 ±12、纵向 ±8 以内，不会连着三分钟停在同一个位置

@@ -2,8 +2,8 @@
 // 拖动排序，「+ −」增删，单击一行推进到 StatusPresetDetail 编辑——和翻译服务、网页搜索同一套 OrderedList 交互）、
 // 「按快捷键直接进入排在最前面的状态」开关（默认关：按快捷键先出一排预览卡片，StatusPicker.swift）、
 // 「告示上的动画」总开关（Z18a，默认开）、
-// 「有人碰键盘或鼠标时显示怎么退出」开关、怎么退出和「它不是安全措施」的说明。页头画在自己的 NavigationStack 里，
-// 推进时一起换掉。列表直接读写偏好里的 JSON（Prefs.statusScreenPresets）：菜单栏、启动器每次现读，改了就跟上。
+// 「有人碰键盘或鼠标时显示怎么退出」开关、退出密码（4–8 位数字，存钥匙串，Passcode.swift；2026-10-11 用户要求）、
+// 怎么退出和「它不是安全措施」的说明。页头画在自己的 NavigationStack 里，推进时一起换掉。列表直接读写偏好里的 JSON（Prefs.statusScreenPresets）：菜单栏、启动器每次现读，改了就跟上。
 // 这一页没有「进入」「试一下」这类按钮：进入会拦住键盘鼠标，只从菜单栏、启动器、全局快捷键进。
 // 界面里不写「锁」字（定位是告示加防误触，mac-overlay-panel §11）。
 
@@ -12,6 +12,8 @@ import SwiftUI
 struct StatusScreenTab: View {
   /// 截图自检传一份固定的列表：只画，不读不写偏好。正常使用是 nil = 偏好里那份
   var fixed: [StatusPreset]?
+  /// 截图自检摆「已经设了退出密码」的样子（只在 fixed 不为 nil 时看它：那时不读不写钥匙串）
+  var fixedPasscode = false
   /// 直接读写偏好里的 JSON，不留一份拷贝（同 LauncherTab：设置窗常驻，别处改了偏好——比如导入——拷贝会过期）
   @AppStorage(Prefs.statusScreenPresets) private var data: Data?
   @AppStorage(Prefs.statusScreenExitHint) private var exitHint = true
@@ -23,6 +25,11 @@ struct StatusScreenTab: View {
   @State private var selection: String?
   /// 等确认删除的状态（自己加的、改过的）
   @State private var removing: String?
+  /// 钥匙串里有没有退出密码（这一页出现时读一次，设置 / 移除之后以读回来的为准）
+  @State private var hasPasscode = false
+  /// 正在填的退出密码和再输的那一遍
+  @State private var passcode = ""
+  @State private var confirmation = ""
 
   var body: some View {
     NavigationStack(path: Bindable(navigation).path) {
@@ -34,7 +41,10 @@ struct StatusScreenTab: View {
       .navigationDestination(for: String.self) { id in StatusPresetDetail(id: id, fixed: fixed) }
     }
     // 详情页的图标格子一次要画 16 张静止画面：趁这一页开着先在主线程外解好
-    .task { await StatusEmoji.warmStills() }
+    .task {
+      if fixed == nil { hasPasscode = Passcode.load() != nil }
+      await StatusEmoji.warmStills()
+    }
     .confirmationDialog(
       "删除「\(presets.first { $0.id == removing }?.title ?? "")」？",
       isPresented: Binding {
@@ -103,14 +113,59 @@ struct StatusScreenTab: View {
           Text("有人碰键盘或鼠标时显示怎么退出")
           Text("关掉后屏幕上不再提示，只能按住 Esc 两秒退出；键盘上没有 Esc 键的别关。")
         }
+        passcodeRow
       } header: {
         Text("退出")
       } footer: {
         OrderedList.footnote(
-          "状态屏是告示加防误触，不是安全措施：照着提示谁都能退出。要防别人动电脑，进入之后再锁定屏幕（按一下触控 ID 键）：电脑照样不睡，回来解锁就结束。")
+          "状态屏是告示加防误触，不是安全措施：没设退出密码时照着提示谁都能退出，设了也拦不住电源键、触控 ID 键和合盖。"
+            + "要防别人动电脑，进入之后再锁定屏幕（按一下触控 ID 键）：电脑照样不睡，回来解锁就结束——忘了退出密码也这样出来。")
       }
     }
     .formStyle(.grouped)
+  }
+
+  // MARK: 退出密码
+
+  /// 没设：一个密码框，开始填了再出「再输一次」和「设置」（填的是圆点，输错一位自己看不出来，所以要两遍）；
+  /// 设了：只说已设置，给「移除」——要换就移除了重设。改它不用先输旧密码：能打开设置的人本来就在用这台电脑
+  private var passcodeRow: some View {
+    let isSet = fixed == nil ? hasPasscode : fixedPasscode
+    let problem = Passcode.problem(passcode, confirmation: confirmation)
+    return LabeledContent {
+      if isSet {
+        Button("移除") { setPasscode(nil) }
+      } else {
+        HStack(spacing: 8) {
+          SecureField("退出密码", text: $passcode, prompt: Text("4–8 位数字"))
+            .frame(width: 96)
+          if !passcode.isEmpty {
+            SecureField("再输一次", text: $confirmation, prompt: Text("再输一次"))
+              .frame(width: 96)
+              .onSubmit { if problem == nil { setPasscode(passcode) } }
+            Button("设置") { setPasscode(passcode) }
+              .disabled(problem != nil)
+          }
+        }
+        .labelsHidden()
+        .textFieldStyle(.roundedBorder)
+      }
+    } label: {
+      Text("退出密码")
+      Text(
+        isSet
+          ? "已设置。按住满两秒之后，还要输入它才能退出。"
+          : passcode.isEmpty
+            ? "设了之后，按住满两秒还要输入这个密码才能退出。" : problem ?? "两遍一样，可以设置了。")
+    }
+  }
+
+  /// 存进钥匙串（nil = 移除）。有没有设以读回来的为准：万一没写成，页面上不会假装设好了
+  private func setPasscode(_ text: String?) {
+    guard fixed == nil else { return }
+    Passcode.save(text)
+    hasPasscode = Passcode.load() != nil
+    (passcode, confirmation) = ("", "")
   }
 
   // MARK: 状态列表
