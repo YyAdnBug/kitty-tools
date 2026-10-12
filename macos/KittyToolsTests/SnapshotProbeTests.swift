@@ -863,7 +863,7 @@ struct SnapshotProbeTests {
   /// 熄屏（纯黑，什么都不显示）、熄屏碰了一下（只浮出退出提示）、告示（提示浮着）、透出（HUD 底板，进度环按住到一半）、
   /// 透出的增强对比度（次要文字提一档）、自己加的状态（不带图标、两行标题、长说明）。进入时刻固定，图里的时间不随运行变。
   /// 图标是表情的静止画面（第 5 批；这几张是动画关着 / 减弱动态效果时的样子，也是帧还没解好时的样子）。另有：
-  /// 有人碰了之后底边冒出眼睛的两张（提示开着 / 被设置关掉）、出场摆在三个时刻（透出样式：底板淡入、表情落下、标题逐字浮现、
+  /// 眼睛从底边探出来的两张（提示开着 / 被设置关掉）和从另外三条边探出来的三张（status-screen-eyes-*）、出场摆在三个时刻（透出样式：底板淡入、表情落下、标题逐字浮现、
   /// 说明和小字还没出）和长标题折两行时的一刻、做着动画但出场已经播完的（该和不做动画的一样：status-screen-dim 一对、
   /// 长标题的 status-screen-sign-long 一对）。2026-10-11：小字精确到秒（图里是 1 小时 23 分 05 秒）、定了自动结束的
   /// 倒数（status-screen-sign-countdown）、退出密码的输入框三张（刚打开、6 位打了 2 位、刚输错；熄屏样式上一张）
@@ -877,12 +877,13 @@ struct SnapshotProbeTests {
         from: DateComponents(year: 2026, month: 10, day: 10, hour: 14, minute: 2)))
     func shot(
       _ name: String, _ preset: StatusPreset, hint: Bool = false, held: Double = 0,
-      contrast: ColorSchemeContrast = .standard, eyes: Bool = false, animates: Bool = false,
+      contrast: ColorSchemeContrast = .standard, eyes: StatusScreen.Peek? = nil,
+      animates: Bool = false,
       entrance: Double = .infinity, elapsed: Int = 83 * 60 + 5, asking: Passcode? = nil
     ) throws {
       let screen = StatusScreen(
         showing: preset, startedAt: startedAt, elapsed: elapsed, showsHint: hint, held: held,
-        showsEyes: eyes, animates: animates, entrance: entrance, asking: asking)
+        peek: eyes, animates: animates, entrance: entrance, asking: asking)
       try snapshot(
         ZStack {
           Image(decorative: desktop, scale: 2)
@@ -900,10 +901,27 @@ struct SnapshotProbeTests {
       id: "custom", title: "正在导出年度报告的全部视频素材，请不要合上盖子", detail: "预计下午四点半结束，有事打我手机；这台电脑不要断电、不要拔硬盘",
       symbol: "", style: .dim, power: .displayOn, autoEndMinutes: 0)
     try shot("status-screen-dim-long", custom)
-    // 有人碰了键盘鼠标（Z17a）：退出提示右边、屏幕底边冒出一双眼睛（图里是静止画面，真机上会动）；
+    // 有人碰了键盘鼠标（Z17a）：屏幕边上探出一双眼睛（图里是静止画面，真机上会动；这两张摆在底边）；
     // 退出提示被设置关掉时眼睛照冒
-    try shot("status-screen-sign-eyes", presets[2], hint: true, eyes: true, animates: true)
-    try shot("status-screen-dim-eyes-no-hint", presets[1], eyes: true, animates: true)
+    try shot(
+      "status-screen-sign-eyes", presets[2], hint: true, eyes: .init(edge: .bottom, along: 0.72),
+      animates: true)
+    try shot(
+      "status-screen-dim-eyes-no-hint", presets[1], eyes: .init(edge: .bottom, along: 0.2),
+      animates: true)
+    // 2026-10-12：眼睛从四条边里随机的一处探出来（没人碰时也隔一阵自己冒），沿着边整条都可能——另外三条边各一张：
+    // 顶边是倒着的、左右是横着的，都露八成；再摆两个极端：贴着角（左边最上头）、底边正中时提示浮出来压在它上面
+    let spots: [(String, StatusScreen.Peek.Edge, CGFloat)] = [
+      ("top", .top, 0.3), ("left", .left, 0.6), ("right", .right, 0.35), ("corner", .left, 1),
+    ]
+    for (name, edge, along) in spots {
+      try shot(
+        "status-screen-eyes-\(name)", presets[1], eyes: .init(edge: edge, along: along),
+        animates: true)
+    }
+    try shot(
+      "status-screen-eyes-middle-hint", presets[2], hint: true,
+      eyes: .init(edge: .bottom, along: 0.5), animates: true)
     // 出场（Z16a）摆在三个时刻
     for (name, time) in [("start", 0.08), ("mid", 0.2), ("late", 0.42)] {
       try shot("status-screen-entrance-\(name)", presets[1], animates: true, entrance: time)

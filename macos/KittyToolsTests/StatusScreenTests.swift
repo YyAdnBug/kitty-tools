@@ -1071,14 +1071,17 @@ struct StatusScreenTests {
     }
     // 摆样子的会话（截图自检、预览、卡片）默认不动、出场摆在播完；真的会话的出场由画面自己播
     let still = StatusScreen(showing: busy, startedAt: .now, elapsed: 0)
-    #expect(!still.animates && !still.showsEyes && still.frames.isEmpty)
+    #expect(!still.animates && still.peek == nil && still.frames.isEmpty)
     #expect(still.entranceAt == .infinity && StatusScreen().entranceAt == nil)
     let posed = StatusScreen(
-      showing: busy, startedAt: .now, elapsed: 0, showsEyes: true, animates: true, entrance: 0.3)
-    #expect(posed.animates && posed.showsEyes && posed.entranceAt == 0.3)
+      showing: busy, startedAt: .now, elapsed: 0, peek: .init(edge: .left, along: 0.4),
+      animates: true, entrance: 0.3)
+    #expect(posed.animates && posed.peek?.edge == .left && posed.entranceAt == 0.3)
   }
 
-  /// 表情的边长 = 标题字号 × 1.3；眼睛的边长 = 标题字号，在退出提示右边、露出八成（下面两成在屏幕底边外），每块屏各算各的
+  /// 表情的边长 = 标题字号 × 1.3；眼睛的边长 = 标题字号，从四条边里的哪一条探出来都是露八成（两成在那条边外面）；
+  /// 沿着边从这个角（0）到那个角（1）、0.5 在正中，整只始终在这条边上；缩回去（往外挪一个边长）就整只在屏幕外。
+  /// 每块屏各算各的
   @Test func emojiAndEyesGeometry() {
     #expect(abs(StatusScreenView.emojiSide(title: 60) - 78) < 0.001)
     #expect(abs(StatusScreenView.emojiSide(title: 96) - 124.8) < 0.001)
@@ -1088,17 +1091,78 @@ struct StatusScreenTests {
     let main = CGRect(x: 0, y: 0, width: 1512, height: 982)
     let side = CGRect(x: 1512, y: -200, width: 2560, height: 1440)
     for screen in [main, side] {
-      let (eyes, hint) = (StatusScreen.eyesFrame(in: screen), StatusScreen.hintFrame(in: screen))
       let edge = StatusScreen.eyesSide(screenHeight: screen.height)
-      #expect(eyes.size == CGSize(width: edge, height: edge))
-      #expect(eyes.minX == hint.maxX + StatusScreen.eyesGap && !eyes.intersects(hint))
-      // 露出来的那一截：从屏幕底边起，高是整只的八成；左右都在这块屏里
-      let shown = eyes.intersection(screen)
-      #expect(shown.minY == screen.minY && abs(shown.height - edge * 0.8) < 0.001)
-      #expect(abs(shown.width - edge) < 0.001 && eyes.maxX < screen.maxX)
-      // 缩回去（往下挪一个边长）就整只在屏幕外
-      #expect(!eyes.offsetBy(dx: 0, dy: -edge).intersects(screen))
+      for peekEdge in StatusScreen.Peek.Edge.allCases {
+        for along in [0, 0.5, 1] as [CGFloat] {
+          let peek = StatusScreen.Peek(edge: peekEdge, along: along)
+          let eyes = StatusScreen.eyesFrame(in: screen, at: peek)
+          #expect(eyes.size == CGSize(width: edge, height: edge))
+          // 露出来的那一截是整只的八成，贴着那条边
+          let shown = eyes.intersection(screen)
+          #expect(abs(shown.width * shown.height - edge * edge * 0.8) < 0.01, "\(peek)")
+          // 沿着边：0 贴着这个角、1 贴着那个角、0.5 在正中
+          let isHorizontal = peekEdge == .top || peekEdge == .bottom
+          let (low, mid, high) =
+            isHorizontal
+            ? (eyes.minX - screen.minX, eyes.midX - screen.midX, screen.maxX - eyes.maxX)
+            : (eyes.minY - screen.minY, eyes.midY - screen.midY, screen.maxY - eyes.maxY)
+          #expect(abs([low, mid, high][Int(along * 2)]) < 0.001, "\(peek)")
+          #expect(low > -0.001 && high > -0.001)
+          switch peekEdge {
+          case .bottom: #expect(shown.minY == screen.minY)
+          case .top: #expect(shown.maxY == screen.maxY)
+          case .left: #expect(shown.minX == screen.minX)
+          case .right: #expect(shown.maxX == screen.maxX)
+          }
+          // 缩回去：画面坐标 y 向下，这里的全局坐标 y 向上，竖直方向反一下
+          let out = peekEdge.outward(edge)
+          #expect(!eyes.offsetBy(dx: out.width, dy: -out.height).intersects(screen), "\(peek)")
+        }
+      }
     }
+    // 图的下边朝着那条边（allCases 的顺序：上、下、左、右）
+    #expect(StatusScreen.Peek.Edge.allCases.map(\.degrees) == [180, 0, 90, -90])
+  }
+
+  /// 随机挑探头的地方：四条边都会出现、不连着两次同一条；沿着边整条都可能——正中、贴着角都挑得到。
+  /// 只有退出提示要浮出来的那一次让开底边正中、有刘海时让开顶边正中（挪到两边去，碰不到提示），别的边不受影响
+  @Test func randomPeekSpots() {
+    var generator = SystemRandomNumberGenerator()
+    let screen = CGRect(x: 0, y: 0, width: 1512, height: 982)
+    let hint = StatusScreen.hintFrame(in: screen)
+    func draw(hint clearOfHint: Bool, notch clearOfNotch: Bool) -> [StatusScreen.Peek] {
+      var last: StatusScreen.Peek.Edge?
+      return (0..<600).map { _ in
+        let peek = StatusScreen.randomPeek(
+          after: last, clearOfHint: clearOfHint, clearOfNotch: clearOfNotch, using: &generator)
+        #expect(peek.edge != last && (0...1).contains(peek.along))
+        last = peek.edge
+        return peek
+      }
+    }
+    // 没有要让开的：每条边上正中、两头都挑到过
+    let free = draw(hint: false, notch: false)
+    for edge in StatusScreen.Peek.Edge.allCases {
+      let along = free.filter { $0.edge == edge }.map(\.along)
+      #expect(along.contains { StatusScreen.peekMiddle.contains($0) }, "\(edge) 正中")
+      #expect(along.contains { $0 < 0.1 } && along.contains { $0 > 0.9 }, "\(edge) 两头")
+    }
+    // 提示要浮出来：底边不落在正中、碰不到提示；有刘海：顶边不落在正中；左右两条边照旧挑得到正中
+    let blocked = draw(hint: true, notch: true)
+    for peek in blocked where peek.edge == .bottom || peek.edge == .top {
+      #expect(!StatusScreen.peekMiddle.contains(peek.along), "\(peek)")
+      if peek.edge == .bottom {
+        let eyes = StatusScreen.eyesFrame(in: screen, at: peek)
+        #expect(!eyes.intersects(hint.insetBy(dx: -8, dy: -8)), "\(peek)")
+      }
+    }
+    #expect(
+      blocked.contains { $0.edge == .left && StatusScreen.peekMiddle.contains($0.along) })
+    // 只让开一样时另一样不受影响
+    #expect(
+      draw(hint: true, notch: false).contains {
+        $0.edge == .top && StatusScreen.peekMiddle.contains($0.along)
+      })
   }
 
   /// 出场的时间表：表情一上来就落下；标题第一个字 0.06 s 起、字与字错开 0.045 s、每个字走 0.28 s，先快后慢；
@@ -1162,7 +1226,8 @@ struct StatusScreenTests {
     #expect(await Self.rendererOffMain() == 0.875 * 8)
     for entrance in [nil, 0.25] as [Double?] {
       let screen = StatusScreen(
-        showing: StatusPreset.builtIn[1], startedAt: .now, elapsed: 0, showsEyes: true,
+        showing: StatusPreset.builtIn[1], startedAt: .now, elapsed: 0,
+        peek: .init(edge: .bottom, along: 0.8),
         animates: true, entrance: entrance)
       let window = NSWindow(
         contentRect: NSRect(x: -20000, y: -20000, width: 900, height: 600),

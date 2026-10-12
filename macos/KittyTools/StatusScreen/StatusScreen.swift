@@ -31,8 +31,9 @@ import Observation
   private(set) var showsHint = false
   /// 正在按住退出：进度环 2 秒走满；取消就缩回
   private(set) var isHolding = false
-  /// 屏幕底边那双眼睛露着（Z17a）：和退出提示同起同落，提示被设置关掉时照冒；熄屏样式、动画不做时不冒
-  private(set) var showsEyes = false
+  /// 那双眼睛正从哪儿探出来（Z17a；nil = 没露）：隔一阵自己随机挑一处冒出来看一眼，有人碰键盘鼠标时也冒
+  /// （和退出提示同起同落，提示被设置关掉时照冒）；熄屏样式、动画不做时不冒
+  private(set) var peek: Peek?
   /// 这一次告示上的动画做不做（进入时定，animates(enabled:reduceMotion:)）：表情动、出场、表情甩一下、冒眼睛
   private(set) var animates = false
   /// 退出密码和输到哪了（进入时从钥匙串读一次；nil = 没设，按住满了直接退出）
@@ -75,6 +76,10 @@ import Observation
   @ObservationIgnored private var holdTimer: Timer?
   @ObservationIgnored private var hintTimer: Timer?
   @ObservationIgnored private var promptTimer: Timer?
+  /// 下一次自己冒眼睛
+  @ObservationIgnored private var peekTimer: Timer?
+  /// 上一次眼睛是从哪条边出来的（下一次换一条）
+  @ObservationIgnored private var lastPeekEdge: Peek.Edge?
   @ObservationIgnored private var lingerTimer: Timer?
   @ObservationIgnored private var keyTimer: Timer?
   @ObservationIgnored private var awayTimer: Timer?
@@ -94,9 +99,41 @@ import Observation
   /// 退出提示胶囊的大小、离屏幕底边多远（画面按它摆，鼠标按住的命中也按它算）
   static let hintSize = CGSize(width: 148, height: 40)
   static let hintBottom: CGFloat = 56
-  /// 眼睛离退出提示右边多远、画面露出屏幕底边几成。「眼睛」那张图上面空着四分之一：露八成时眼睛本身露出约八成
-  static let eyesGap: CGFloat = 20
+  /// 眼睛那张图露出屏幕边几成。图上面空着四分之一：露八成时眼睛本身露出约八成
   static let eyesShown: CGFloat = 0.8
+  /// 没人碰时眼睛隔多久自己冒一次（秒，每次在这个范围里随机）
+  static let peekGap: ClosedRange<TimeInterval> = 15...45
+
+  /// 眼睛从哪儿探出来：屏幕的哪条边、沿着边的哪儿（0–1：上下两条边从左往右，左右两条边从下往上；
+  /// 0 和 1 是贴着角、整只还在这条边上，0.5 是正中）
+  struct Peek: Equatable {
+    enum Edge: CaseIterable {
+      case top, bottom, left, right
+
+      /// 图要转多少度：图的下边朝着那条边（从底边探出来是原样，从顶边是倒着的）
+      var degrees: Double {
+        switch self {
+        case .bottom: 0
+        case .left: 90
+        case .top: 180
+        case .right: -90
+        }
+      }
+
+      /// 往屏幕外挪 distance 是画面坐标（y 向下）里的多少：缩回去时整个挪出那条边
+      func outward(_ distance: CGFloat) -> CGSize {
+        switch self {
+        case .top: CGSize(width: 0, height: -distance)
+        case .bottom: CGSize(width: 0, height: distance)
+        case .left: CGSize(width: -distance, height: 0)
+        case .right: CGSize(width: distance, height: 0)
+        }
+      }
+    }
+
+    let edge: Edge
+    let along: CGFloat
+  }
 
   init() {
     heldProgress = 0
@@ -105,10 +142,10 @@ import Observation
 
   /// 截图自检、设置里的预览、选状态的卡片直接摆出某个样子（不建窗口、不拦输入）；正常使用就是 `StatusScreen()`。
   /// animates + entrance 摆出场的某一刻（不给 entrance 是播完的样子；给 nil 是画面出现时真的播一遍，单测用）；
-  /// frames 是预览里要动的表情的帧；asking 摆密码框开着、输到一半的样子
+  /// frames 是预览里要动的表情的帧；asking 摆密码框开着、输到一半的样子；peek 摆眼睛从某一处探出来
   init(
     showing preset: StatusPreset, startedAt: Date, elapsed: Int, showsHint: Bool = false,
-    held: Double = 0, showsEyes: Bool = false, animates: Bool = false,
+    held: Double = 0, peek: Peek? = nil, animates: Bool = false,
     entrance: Double? = .infinity, frames: [String: StatusEmoji.Frames] = [:],
     asking passcode: Passcode? = nil
   ) {
@@ -116,7 +153,7 @@ import Observation
     self.startedAt = startedAt
     self.elapsed = elapsed
     self.showsHint = showsHint
-    self.showsEyes = showsEyes
+    self.peek = peek
     self.animates = animates
     self.frames = frames
     self.passcode = passcode
@@ -193,18 +230,50 @@ import Observation
     StatusScreenView.titleSize(screenHeight: screenHeight)
   }
 
-  /// 眼睛露出来之后在一块屏上的范围（全局坐标，原点左下）：退出提示右边 eyesGap，下面两成在屏幕底边外
-  static func eyesFrame(in screen: CGRect) -> CGRect {
+  /// 眼睛探出来之后在一块屏上的范围（全局坐标，原点左下）：贴着那条边，两成在屏幕外；沿着边从这个角到那个角
+  /// （along 0–1），整只都在这条边上
+  static func eyesFrame(in screen: CGRect, at peek: Peek) -> CGRect {
     let side = eyesSide(screenHeight: screen.height)
-    return CGRect(
-      x: hintFrame(in: screen).maxX + eyesGap, y: screen.minY - side * (1 - eyesShown), width: side,
-      height: side)
+    let outside = side * (1 - eyesShown)
+    let x = screen.minX + (screen.width - side) * peek.along
+    let y = screen.minY + (screen.height - side) * peek.along
+    let origin =
+      switch peek.edge {
+      case .bottom: CGPoint(x: x, y: screen.minY - outside)
+      case .top: CGPoint(x: x, y: screen.maxY - side + outside)
+      case .left: CGPoint(x: screen.minX - outside, y: y)
+      case .right: CGPoint(x: screen.maxX - side + outside, y: y)
+      }
+    return CGRect(origin: origin, size: CGSize(width: side, height: side))
+  }
+
+  /// 上下两条边正中有东西时让开的那一段（沿边的比例）：退出提示宽 148、刘海宽两百来点，加上眼睛自己的宽度，
+  /// 一千点宽的屏上也够
+  static let peekMiddle: ClosedRange<CGFloat> = 0.35...0.65
+
+  /// 随机挑一处探头（纯函数，随机数是传进来的）：四条边里挑一条，不连着两次同一条；沿着边的位置整条边都可能——
+  /// 正中、贴着角都行（2026-10-12 用户要求）。只有两种时候让开正中那一段、挪到两边去：底边正中这会儿是退出提示
+  /// （clearOfHint：有人碰了键盘鼠标、提示正要浮出来的那一次）；顶边正中是刘海（clearOfNotch：有带刘海的屏，
+  /// 探出来也被摄像头那一块挡着）
+  static func randomPeek(
+    after last: Peek.Edge?, clearOfHint: Bool, clearOfNotch: Bool,
+    using generator: inout some RandomNumberGenerator
+  ) -> Peek {
+    let edge = Peek.Edge.allCases.filter { $0 != last }.randomElement(using: &generator) ?? .bottom
+    var along = CGFloat.random(in: 0...1, using: &generator)
+    let isBlocked = (edge == .bottom && clearOfHint) || (edge == .top && clearOfNotch)
+    if isBlocked, peekMiddle.contains(along) {
+      // 正中那一段对半挪到左右两头，仍然是均匀的
+      let width = peekMiddle.upperBound - peekMiddle.lowerBound
+      along += along < 0.5 ? -width : width
+    }
+    return Peek(edge: edge, along: along)
   }
 
   /// 告示上的动画现在做不做（纯函数）：设置里的总开关开着，而且系统没开「减弱动态效果」
   static func animates(enabled: Bool, reduceMotion: Bool) -> Bool { enabled && !reduceMotion }
 
-  /// 有人碰键盘鼠标时冒不冒眼睛（纯函数）：动画做着才冒，熄屏样式不冒（要保持纯黑）
+  /// 冒不冒眼睛（纯函数；隔一阵自己冒、有人碰键盘鼠标时冒都看它）：动画做着才冒，熄屏样式不冒（要保持纯黑）
   static func peeks(_ style: StatusPreset.Look, animates: Bool) -> Bool {
     animates && style != .blackout
   }
@@ -270,7 +339,8 @@ import Observation
     lastMouse = nil
     travelled = 0
     showsHint = false
-    showsEyes = false
+    peek = nil
+    lastPeekEdge = nil
     isHolding = false
     isAsking = false
     self.passcode = passcode
@@ -301,6 +371,7 @@ import Observation
           MainActor.assumeIsolated { self?.exit(.autoEnd) }
         })
     }
+    scheduleIdlePeek()
     watcher.start()
     Island.announce("状态屏：\(preset.title)。" + Self.exitWording(passcode: passcode != nil))
     // 真进来了才记：选状态的面板下次默认选中它（菜单栏、启动器进的也算）
@@ -472,7 +543,7 @@ import Observation
     syncHold()
     hintTimer?.invalidate()
     showsHint = false
-    showsEyes = false
+    peek = nil
     restartPromptTimer()
     Island.announce("输入密码退出，按 Esc 取消")
   }
@@ -513,22 +584,58 @@ import Observation
   }
 
   /// 退出提示浮出 hintDwell 秒（设置里关了就永远不出现，只剩按住 esc）；按住期间到点不收。
-  /// 屏幕底边的眼睛和它同起同落（Z17a）；提示被设置关掉时眼睛照冒。密码框开着时都不出（它占着提示的位置）
+  /// 眼睛也探出来、和它同起同落（Z17a）；提示被设置关掉时眼睛照冒。密码框开着时都不出
   private func revealHint() {
     guard !isAsking else { return }
     let hint = UserDefaults.standard.bool(forKey: Prefs.statusScreenExitHint)
     let eyes = preset.map { Self.peeks($0.style, animates: animates) } ?? false
     guard hint || eyes else { return }
     showsHint = hint
-    showsEyes = eyes
+    if eyes { peekOut(clearOfHint: hint) }
+    startDwell()
+  }
+
+  /// 退出提示和眼睛露 hintDwell 秒再收（每次重新计；按住期间到点不收）
+  private func startDwell() {
     hintTimer?.invalidate()
     hintTimer = schedule(
       Timer(timeInterval: Self.hintDwell, repeats: false) { [weak self] _ in
         MainActor.assumeIsolated {
           guard let self, !self.isHolding else { return }
           self.showsHint = false
-          self.showsEyes = false
+          self.peek = nil
           self.hideCursor()
+        }
+      })
+  }
+
+  /// 眼睛探出来：随机挑一处（和上一次不同边）。已经露着就不换地方——换了会从这头滑到那头。
+  /// clearOfHint：这一次退出提示也要浮出来，底边正中留给它
+  private func peekOut(clearOfHint: Bool) {
+    guard peek == nil else { return }
+    var generator = SystemRandomNumberGenerator()
+    let next = Self.randomPeek(
+      after: lastPeekEdge, clearOfHint: clearOfHint,
+      clearOfNotch: NSScreen.screens.contains { $0.safeAreaInsets.top > 0 }, using: &generator)
+    lastPeekEdge = next.edge
+    peek = next
+  }
+
+  /// 没人碰的时候眼睛隔一阵自己冒出来看一眼（2026-10-12 用户要求：不要等有人碰了才出现）：每次随机等 peekGap 秒，
+  /// 一次性的定时器、到点再排下一次。到点时正忙着（提示浮着、眼睛已经露着、密码框开着、锁着屏）就跳过这一次。
+  /// 熄屏样式、动画不做时不排
+  private func scheduleIdlePeek() {
+    peekTimer?.invalidate()
+    peekTimer = nil
+    guard isActive, let preset, Self.peeks(preset.style, animates: animates) else { return }
+    peekTimer = schedule(
+      Timer(timeInterval: .random(in: Self.peekGap), repeats: false) { [weak self] _ in
+        MainActor.assumeIsolated {
+          guard let self else { return }
+          self.scheduleIdlePeek()
+          guard !self.isLocked, !self.isAsking, !self.showsHint, self.peek == nil else { return }
+          self.peekOut(clearOfHint: false)
+          self.startDwell()
         }
       })
   }
@@ -561,7 +668,10 @@ import Observation
     syncHold()
     hintTimer?.invalidate()
     showsHint = false
-    showsEyes = false
+    peek = nil
+    // 解锁就结束了，不用再排
+    peekTimer?.invalidate()
+    peekTimer = nil
     closePrompt()
     lastMouse = nil
     travelled = 0
@@ -594,11 +704,13 @@ import Observation
     guard isActive, let preset else { return }
     isActive = false
     let seconds = Int(Date.now.timeIntervalSince(startedAt))
-    for timer in [tickTimer, autoEndTimer, holdTimer, hintTimer, promptTimer, keyTimer, awayTimer] {
+    for timer in [
+      tickTimer, autoEndTimer, holdTimer, hintTimer, promptTimer, peekTimer, keyTimer, awayTimer,
+    ] {
       timer?.invalidate()
     }
-    (tickTimer, autoEndTimer, holdTimer, hintTimer, promptTimer, keyTimer, awayTimer) =
-      (nil, nil, nil, nil, nil, nil, nil)
+    (tickTimer, autoEndTimer, holdTimer, hintTimer, promptTimer, peekTimer, keyTimer, awayTimer) =
+      (nil, nil, nil, nil, nil, nil, nil, nil)
     isAsking = false
     passcode = nil
     watcher.stop()

@@ -9,7 +9,8 @@
 // 从选状态的面板进来时（Z14a），卡片所在屏的那张不淡入，画面从选中的卡片长到整屏（present(growingFrom:)）。
 // 告示上的动画（第 5 批，会话的 animates 为真时才有）：图标是动画表情（StatusEmoji.swift；帧由会话解好了给）；
 // 出场（Z16a，只播一次）——表情落下弹一下、标题逐字浮现（GlyphEmerge）、说明和小字随后淡入，时间表在 StatusEntrance；
-// 有人碰键盘鼠标时（Z17a）标题晃、表情甩一下（Flick）、屏幕底边冒出一双眼睛，和退出提示同起同落。
+// 有人碰键盘鼠标时（Z17a）标题晃、表情甩一下（Flick）、屏幕边上探出一双眼睛，和退出提示同起同落；没人碰的时候眼睛
+// 也隔一阵自己从四条边里随机的一处探出来看一眼（2026-10-12）。
 // 文件末尾的 StatusPreview 是缩小的同一个画面：设置里改一个状态时的预览（表情会动）、选状态面板里的卡片（不动）共用。
 
 import AppKit
@@ -218,6 +219,8 @@ struct StatusScreenView: View {
         if let preset = screen.preset, style != .blackout {
           sign(preset, in: proxy.size)
         }
+        // 眼睛垫在退出提示下面：它自己冒到底边正中时有人碰了键盘鼠标，提示浮出来压在它上面
+        if style != .blackout { eyes(in: proxy.size) }
         ZStack {
           hint
           if let passcode = screen.passcode { prompt(passcode) }
@@ -225,7 +228,6 @@ struct StatusScreenView: View {
         .position(
           x: proxy.size.width / 2,
           y: proxy.size.height - StatusScreen.hintBottom - StatusScreen.hintSize.height / 2)
-        if style != .blackout { eyes(in: proxy.size) }
       }
     }
     .ignoresSafeArea()
@@ -335,24 +337,28 @@ struct StatusScreenView: View {
     }
   }
 
-  /// 屏幕底边冒出来看一眼的那双眼睛（Z17a）：「眼睛」表情，在退出提示右边，露出大半个；和退出提示同起同落——
-  /// 升上来用 island 曲线，缩回去用 retract。只在露着的时候挂着（缩回去就拆掉，图层上不留在播的动画）
+  /// 从屏幕边上探出来看一眼的那双眼睛（Z17a）：「眼睛」表情，从四条边里的某一处露出大半个（哪儿由会话随机挑，
+  /// StatusScreen.Peek），图的下边朝着那条边——从顶边出来是倒着的，从左右出来是横着的。探出来用 island 曲线，
+  /// 缩回去用 retract，都是沿着那条边的法线挪一个身位。只在露着的时候挂着（缩回去就拆掉，图层上不留在播的动画）。
+  /// 位置跟着每一次探头定死在那个视图上：换地方是拆了重挂，不会从这头滑到那头
   private func eyes(in size: CGSize) -> some View {
-    let frame = StatusScreen.eyesFrame(in: CGRect(origin: .zero, size: size))
-    return ZStack {
-      if screen.showsEyes {
+    ZStack {
+      if let peek = screen.peek {
+        let frame = StatusScreen.eyesFrame(in: CGRect(origin: .zero, size: size), at: peek)
+        let outside = peek.edge.outward(frame.width)
         StatusEmojiView(id: StatusEmoji.eyes, frames: screen.frames[StatusEmoji.eyes])
+          .rotationEffect(.degrees(peek.edge.degrees))
+          .frame(width: frame.width, height: frame.height)
+          .position(x: frame.midX, y: size.height - frame.midY)
           .transition(
             .asymmetric(
-              insertion: .move(edge: .bottom)
+              insertion: .offset(outside)
                 .animation(Style.Motion.island.animation(reduced: false)),
-              removal: .move(edge: .bottom)
+              removal: .offset(outside)
                 .animation(Style.Motion.retract.animation(reduced: false))))
       }
     }
-    .frame(width: frame.width, height: frame.height)
-    .position(x: frame.midX, y: size.height - frame.midY)
-    .animation(.default, value: screen.showsEyes)
+    .animation(.default, value: screen.peek)
   }
 
   /// 退出提示：HUD 胶囊（高 40，同截图家族的 HUD 条），进度环 +「按住 Esc 退出」。按住 esc 或用鼠标按住它，环 2 秒走满。

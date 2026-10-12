@@ -95,7 +95,7 @@ struct StatusScreenTab: View {
       Section {
         Toggle(isOn: $animations) {
           Text("告示上的动画")
-          Text("关掉后表情不动、进入时不做出场、有人碰时不冒眼睛；标题照样晃一下。")
+          Text("关掉后表情不动、进入时不做出场、屏幕边上不冒眼睛；标题照样晃一下。")
         }
       } header: {
         Text("动画")
