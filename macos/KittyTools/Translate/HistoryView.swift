@@ -134,7 +134,7 @@ import UniformTypeIdentifiers
     deleted.append((entry, store.clears))
     withAnimation(Style.Motion.settle.animation()) { store.delete(entry.id) }
     // 行消失看得见，能 ⌘Z 撤销却只有读屏用户知道（岛自己也会播报）
-    island?.show("已删除", detail: "⌘Z 撤销", tone: .info, symbol: "trash")
+    island?.show("已删除", detail: "⌘Z 撤销", tone: .info, symbol: "trash.circle.fill")
   }
 
   /// ⌘Z：插回最近删掉的一条并选中它；没有可撤销的返回 false（交还输入框自己的撤销）
@@ -364,8 +364,8 @@ struct HistoryView: View {
   /// 分组标题和行高：高亮按它们的前缀和定位，视图里的高度必须正好是这两个值
   static let headerHeight: CGFloat = 24
   static let rowHeight: CGFloat = 44
-  /// 列表底下的内缩；选中跟随滚动时上下都留这么多（顶上没有内缩，往上滚时让出来）
-  static let scrollMargin: CGFloat = 10
+  /// 列表底下的内缩（12，和结果区卡片堆底下的留白一样）；选中跟随滚动时上下都留这么多（顶上没有内缩，往上滚时让出来）
+  static let scrollMargin: CGFloat = 12
   /// 列表的可见区最高多高（历史开着时结果区固定 420，减去搜索框那一行）：只画可见区附近时按它多画
   static let maxViewport: CGFloat = 420
 
@@ -718,7 +718,8 @@ enum HistoryMenu {
       do {
         try text.write(to: url, atomically: true, encoding: .utf8)
         island?.show(
-          "已导出 \(entries.count) 条", detail: url.lastPathComponent, symbol: "square.and.arrow.up")
+          "已导出 \(entries.count) 条", detail: url.lastPathComponent,
+          symbol: "square.and.arrow.up.circle.fill")
       } catch {
         island?.show("导出失败", detail: error.localizedDescription, tone: .error)
       }
@@ -731,7 +732,7 @@ enum HistoryMenu {
     let kept = history.counts.favorites
     history.clearNonFavorites()
     island?.show(
-      "已清空翻译历史", detail: kept > 0 ? "保留了 \(kept) 条收藏" : nil, symbol: "trash")
+      "已清空翻译历史", detail: kept > 0 ? "保留了 \(kept) 条收藏" : nil, symbol: "trash.circle.fill")
   }
 }
 

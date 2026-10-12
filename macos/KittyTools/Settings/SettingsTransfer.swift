@@ -347,7 +347,8 @@ struct ExportSheet: View {
       do {
         try data.write(to: url, options: .atomic)
         dismiss()
-        island?.show("已导出", detail: url.lastPathComponent, symbol: "square.and.arrow.up")
+        island?.show(
+          "已导出", detail: url.lastPathComponent, symbol: "square.and.arrow.up.circle.fill")
       } catch {
         island?.show("导出失败", detail: error.localizedDescription, tone: .error)
       }

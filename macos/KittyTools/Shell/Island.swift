@@ -14,7 +14,7 @@ import SwiftUI
     case progress
   }
 
-  /// 前导位置：按语气出符号，或者取色的色块、截图的缩略图
+  /// 前导位置：按语气出符号（一律是语气色的圆底 + 上面的符号，见 hasPlate），或者取色的色块、截图的缩略图
   enum Leading: Equatable {
     case tone
     case color(NSColor)
@@ -243,6 +243,13 @@ import SwiftUI
       userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
   }
 
+  /// 自带实心底的符号（xxx.circle.fill，还有警告默认的三角、强制结束的八角）：「符号一种颜色、底是语气色」的两色画法
+  /// 只有它们画得对。别的（裸符号、空心圆）两色会整个画成第一种颜色、语气色不出现，宽的还会撑出前导槽——由岛垫一个
+  /// 语气色圆（IslandView.leading）。调用处：有圆底变体的传圆底变体，没有的照传，岛来垫
+  static func hasPlate(_ symbol: String) -> Bool {
+    [".circle.fill", ".triangle.fill", ".octagon.fill"].contains { symbol.hasSuffix($0) }
+  }
+
   private static func symbol(for tone: Tone) -> String {
     switch tone {
     case .success: "checkmark.circle.fill"
@@ -296,7 +303,7 @@ struct IslandView: View {
         .background(
           IslandShape(ear: sized ? 10 : 6, bottom: sized ? 22 : 10)
             .fill(.black)
-            .shadow(color: .black.opacity(open ? 0.45 : 0), radius: 14, y: 6)
+            .islandShadow(open: open)
         )
         .modifier(Shake(count: island.shakes, enabled: !reduceMotion))
         .opacity(reduceMotion && !open ? 0 : 1)
@@ -312,8 +319,8 @@ struct IslandView: View {
           if island.content != nil { heldWidth = width }
         }
         .background(capsule.fill(.black.opacity(0.92)))
-        .overlay(capsule.strokeBorder(.white.opacity(0.12), lineWidth: 0.5))
-        .shadow(color: .black.opacity(open ? 0.35 : 0), radius: 12, y: 5)
+        .overlay(capsule.hairlineBorder(.white.opacity(0.12)))
+        .islandShadow(open: open)
         .scaleEffect(open || reduceMotion ? 1 : 0.6, anchor: .top)
         .opacity(open ? 1 : 0)
         .modifier(Shake(count: island.shakes, enabled: !reduceMotion))
@@ -360,35 +367,47 @@ struct IslandView: View {
 
   @ViewBuilder private func leading(_ content: Island.Content) -> some View {
     switch content.leading {
+    // 色块和缩略图的描边同一种：发丝线（0.5 pt，增强对比度 1 pt）
     case .color(let color):
-      RoundedRectangle(cornerRadius: 6, style: .continuous)
-        .fill(Color(nsColor: color))
-        .overlay(
-          RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(
-            .white.opacity(0.25), lineWidth: 1)
-        )
+      let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+      shape.fill(Color(nsColor: color))
+        .overlay(shape.hairlineBorder(.white.opacity(0.25)))
         .frame(width: 22, height: 22)
     case .thumbnail(let image):
+      let shape = RoundedRectangle(cornerRadius: 4, style: .continuous)
       Image(nsImage: image)
         .resizable()
         .aspectRatio(contentMode: .fill)
         .frame(width: 26, height: 18)
-        .clipShape(.rect(cornerRadius: 4, style: .continuous))
-        .overlay(
-          RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(
-            .white.opacity(0.25), lineWidth: 0.5))
+        .clipShape(shape)
+        .overlay(shape.hairlineBorder(.white.opacity(0.25)))
     case .tone:
-      Image(systemName: content.symbol)
-        .font(.system(size: 18, weight: .semibold))
-        .symbolRenderingMode(.palette)
-        .foregroundStyle(
-          content.tone == .info || content.tone == .progress ? Style.onBrand : .white,
-          tint(content.tone)
-        )
-        .contentTransition(.symbolEffect(.replace.magic(fallback: .downUp.byLayer)))
-        .symbolEffect(.breathe.pulse, isActive: content.tone == .progress && !reduceMotion)
-        .symbolEffect(.bounce, value: content.tone == .success ? content.title : "")
-        .frame(width: 22, height: 22)
+      // 底上的符号：成功 / 警告 / 错误是白的；信息 / 进行中的底是强调色，黄、橙、绿这些亮强调色上要换深色
+      let ink = content.tone == .info || content.tone == .progress ? Style.onBrand : .white
+      Group {
+        if Island.hasPlate(content.symbol) {
+          Image(systemName: content.symbol)
+            .symbolRenderingMode(.palette)
+            .foregroundStyle(ink, tint(content.tone))
+        } else {
+          // 没有圆底变体的符号：垫一个语气色圆。圆是同字号的 circle.fill，和 xxx.circle.fill 的圆一样大（约 18.5 pt）；
+          // 符号放进 12 × 12（和系统圆底符号里的那个差不多大），宽的（键盘、带角标的文件夹）跟着缩，不出圆
+          Image(systemName: "circle.fill")
+            .foregroundStyle(tint(content.tone))
+            .overlay {
+              Image(systemName: content.symbol)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 12, height: 12)
+                .foregroundStyle(ink)
+            }
+        }
+      }
+      .font(.system(size: 18, weight: .semibold))
+      .contentTransition(.symbolEffect(.replace.magic(fallback: .downUp.byLayer)))
+      .symbolEffect(.breathe.pulse, isActive: content.tone == .progress && !reduceMotion)
+      .symbolEffect(.bounce, value: content.tone == .success ? content.title : "")
+      .frame(width: 22, height: 22)
     }
   }
 
@@ -399,6 +418,13 @@ struct IslandView: View {
     case .warning: Color(nsColor: .systemOrange)
     case .error: Color(nsColor: .systemRed)
     }
+  }
+}
+
+extension View {
+  /// 展开态的阴影（mac-whisker §3「层级」：black 0.45 / 模糊 14 / 向下 6）：刘海下巴和无刘海的胶囊同一组
+  fileprivate func islandShadow(open: Bool) -> some View {
+    shadow(color: .black.opacity(open ? 0.45 : 0), radius: 14, y: 6)
   }
 }
 

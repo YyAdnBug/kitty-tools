@@ -1006,7 +1006,7 @@ import Observation
     guard !ids.isEmpty else { return }
     listMotion = .settle
     changingList { store.deleteWithUndo(ids) }
-    showUndo("已删除 \(ids.count) 条", symbol: "trash")
+    showUndo("已删除 \(ids.count) 条", symbol: "trash.circle.fill")
   }
 
   /// ⌘Z / 底栏「撤销」：撤最近一批，VoiceOver 播报撤了什么；删掉的回来后选中这一批里最靠前的那条
@@ -1046,7 +1046,7 @@ import Observation
   /// 取消收藏 / 移出片段后已超过保留天数的条目：说一声收起面板后会被清理（⌘Z 改回来）
   private func warnExpiring(_ count: Int) {
     guard count > 0 else { return }
-    showUndo("超过 \(ClipboardStore.Limits.days) 天，收起面板后会被清理", symbol: "clock")
+    showUndo("超过 \(ClipboardStore.Limits.days) 天，收起面板后会被清理", symbol: "clock.circle.fill")
   }
 
   /// 能撤销的操作的提示：底栏「… · 撤销 ⌘Z」5 秒（播报「…，按 Command-Z 撤销」）；放大预览开着时底栏被它盖住，

@@ -734,7 +734,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     island.show(
       paused ? "已恢复记录剪贴板" : "已暂停记录剪贴板",
       detail: paused ? nil : "复制的内容不进历史，再点一次恢复", tone: .info,
-      symbol: paused ? "play.circle" : "pause.circle")
+      symbol: paused ? "play.circle.fill" : "pause.circle.fill")
   }
 
   /// 复制即译开关（菜单栏、启动器）：开关一关就看不出开没开，这个后台模式会影响之后的每次复制，用刘海说

@@ -471,7 +471,7 @@ final class ShotShelf {
         shelf?.island?.show("没能移到废纸篓", detail: error.localizedDescription, tone: .error)
         return
       }
-      shelf?.island?.show("已移到废纸篓", detail: url.lastPathComponent, symbol: "trash")
+      shelf?.island?.show("已移到废纸篓", detail: url.lastPathComponent, symbol: "trash.circle.fill")
       close()
     }
   }

@@ -1,5 +1,6 @@
 // 查词卡片（D4）：系统词典的释义，放在翻译结果最上面。和服务卡片同一套外观（Whisker §6 翻译：卡片圆角 10、
-// 18 pt 色块 + 12 semibold 名字、操作平时 0.45 透明度）：词头 20 semibold + 音标（查的是变形时写「ran 的原形」），
+// 内边距上 7 / 下 8 / 左右 12、标题行 18、18 pt 色块 + 12 semibold 名字、右上角的按钮是同一个 CardActions）；
+// 标题到词头 4，下面每块之间 8、一组里 4：词头 20 semibold + 音标（查的是变形时写「ran 的原形」），
 // 按词性分组的义项（词性是小胶囊、变形表次要色，例句次要色斜体）。默认最多三组、每组两条，「展开全部」看完；
 // 可以朗读词头、在「词典」App 里打开。字号跟着浮窗的 ⌘+ / ⌘-。
 
@@ -17,22 +18,25 @@ struct DictionaryCardView: View {
   private static let collapsedSenses = 2
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
+    VStack(alignment: .leading, spacing: 4) {
       header
-      headword
-      ForEach(Array(shownGroups.enumerated()), id: \.offset) { _, group in
-        groupView(group)
-      }
-      if hiddenCount > 0 || expanded {
-        Button(expanded ? "收起" : "展开全部 \(entry.senseCount) 条释义") { expanded.toggle() }
-          .buttonStyle(.plain).foregroundStyle(Style.brandInk).pointerStyle(.link)
-          .font(.system(size: 12))
+      VStack(alignment: .leading, spacing: 8) {
+        headword
+        ForEach(Array(shownGroups.enumerated()), id: \.offset) { _, group in
+          groupView(group)
+        }
+        if hiddenCount > 0 || expanded {
+          Button(expanded ? "收起" : "展开全部 \(entry.senseCount) 条释义") { expanded.toggle() }
+            .buttonStyle(.plain).foregroundStyle(Style.brandInk).pointerStyle(.link)
+            .font(.system(size: 12))
+        }
       }
     }
     .textSelection(.enabled)
-    .padding(.horizontal, 12)
-    .padding(.top, 10)
-    .padding(.bottom, 12)
+    // 和服务卡同一套内边距（ProviderCardView：上 7、下 8、左右 12、标题行 18）
+    .padding(.horizontal, ProviderCardView.sideInset)
+    .padding(.top, 7)
+    .padding(.bottom, 8)
     .frame(maxWidth: .infinity, alignment: .leading)
     .cardSurface()
     .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: expanded)
@@ -43,7 +47,7 @@ struct DictionaryCardView: View {
       KindTile(symbol: "book.closed.fill", color: Color(nsColor: .systemBrown), size: 18)
       Text("系统词典").font(.system(size: 12, weight: .semibold)).opacity(0.85)
       Spacer(minLength: 6)
-      Group {
+      CardActions {
         Button(
           "朗读",
           systemImage: speaker.speaking == entry.headword ? "speaker.wave.2.fill" : "speaker.wave.2"
@@ -54,12 +58,8 @@ struct DictionaryCardView: View {
         Button("在「词典」中打开", systemImage: "book") { openInDictionary() }
           .help("在「词典」App 里看完整释义")
       }
-      .opacity(0.45)
     }
-    .labelStyle(.iconOnly)
-    .buttonStyle(.borderless)
-    .font(.system(size: 12, weight: .medium))
-    .frame(height: 20)
+    .frame(height: 18)
   }
 
   private var headword: some View {
@@ -75,7 +75,7 @@ struct DictionaryCardView: View {
   }
 
   private func groupView(_ group: DictionaryEntry.Group) -> some View {
-    VStack(alignment: .leading, spacing: 5) {
+    VStack(alignment: .leading, spacing: 4) {
       if group.partOfSpeech != nil || group.forms != nil {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
           if let partOfSpeech = group.partOfSpeech {

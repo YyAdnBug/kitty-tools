@@ -117,6 +117,44 @@ struct IslandExcerptTests {
     #expect(Island.excerpt(String(repeating: "字", count: 24)) == String(repeating: "字", count: 24))
   }
 
+  /// 岛的前导符号（视觉对齐第 3 批）：自带实心底的才按两色画，别的由岛垫语气色圆——空心圆、裸符号不能算进前一种
+  @MainActor @Test func plateSymbols() {
+    for symbol in [
+      "checkmark.circle.fill", "trash.circle.fill", "exclamationmark.triangle.fill",
+      "xmark.octagon.fill",
+    ] {
+      #expect(Island.hasPlate(symbol), "\(symbol)")
+    }
+    for symbol in ["trash", "xmark.circle", "eject.fill", "keyboard", "clock.fill", "circle"] {
+      #expect(!Island.hasPlate(symbol), "\(symbol)")
+    }
+  }
+
+  /// 传给岛的符号在这台机器的系统上都有（最低支持 macOS 15；名字写错的话岛上那一格是空的，编译查不出来）：
+  /// 各语气的默认符号、调用处换上的圆底变体、没有圆底变体照传的裸符号。新加 island.show(… symbol:) 时把名字补进来
+  @MainActor @Test func symbolsExist() {
+    let plated = [
+      "checkmark.circle.fill", "info.circle.fill", "exclamationmark.triangle.fill",
+      "exclamationmark.circle.fill", "ellipsis.circle.fill", "trash.circle.fill",
+      "square.and.arrow.up.circle.fill", "xmark.octagon.fill", "stop.circle.fill",
+      "eject.circle.fill", "xmark.circle.fill", "speaker.slash.circle.fill", "speaker.circle.fill",
+      "speaker.wave.2.circle.fill", "minus.circle.fill", "play.circle.fill", "pause.circle.fill",
+      "clock.circle.fill", "waveform.circle.fill", "video.circle.fill", "arrow.down.circle.fill",
+      ShelfCard.gifIslandSymbol, ShelfCard.compressIslandSymbol,
+    ]
+    let bare = [
+      HotKeyAction.statusScreen.symbol, "square.and.arrow.down", "questionmark.folder",
+      "clock.arrow.circlepath", "keyboard", "character.bubble", "character.bubble.fill",
+      "pin.slash",
+      "doc.on.doc", "qrcode", "sparkles", "text.badge.star", "pin.fill", "pin",
+      "folder.badge.minus",
+    ]
+    for symbol in plated + bare {
+      #expect(NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil, "\(symbol)")
+    }
+    #expect(plated.allSatisfy(Island.hasPlate) && !bare.contains(where: Island.hasPlate))
+  }
+
   /// 进行中的岛改详情（转 GIF、压缩的百分比，第二轮体检 R3）：只改详情；岛上不是这一条（标题不同、不是进行中）就不动
   @MainActor @Test func progressUpdatesDetailInPlace() {
     let content = { (title: String, tone: Island.Tone) in

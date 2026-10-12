@@ -54,8 +54,8 @@ enum SystemControl {
       return
     }
     island?.show(
-      "已\(force ? "强制" : "")结束 \(name)（PID \(pid)）", symbol: force ? "xmark.octagon" : "stop.circle"
-    )
+      "已\(force ? "强制" : "")结束 \(name)（PID \(pid)）",
+      symbol: force ? "xmark.octagon.fill" : "stop.circle.fill")
   }
 
   private static func run(_ command: SystemCommand, island: Island?) {
@@ -83,7 +83,7 @@ enum SystemControl {
     case .ejectall:
       let volumes = SystemCommands.volumes()
       guard !volumes.isEmpty else {
-        island?.show("没有可推出的磁盘", tone: .info, symbol: "eject")
+        island?.show("没有可推出的磁盘", tone: .info, symbol: "eject.circle.fill")
         return
       }
       Task { await eject(volumes, island: island) }
@@ -138,13 +138,13 @@ enum SystemControl {
   private static func quitAll(island: Island?) {
     let apps = SystemCommands.runningApps(for: .quit)
     guard !apps.isEmpty else {
-      island?.show("没有要退出的 App", tone: .info, symbol: "xmark.circle")
+      island?.show("没有要退出的 App", tone: .info, symbol: "xmark.circle.fill")
       return
     }
     for app in apps { app.terminate() }
     island?.show(
       "正在退出 \(apps.count) 个 App", detail: "有没存的内容时它们会先问你", tone: .info,
-      symbol: "xmark.circle")
+      symbol: "xmark.circle.fill")
   }
 
   // MARK: 推出
@@ -177,9 +177,9 @@ enum SystemControl {
         "没能推出「\(failure.name)」",
         detail: failure.blocker.map { "「\($0)」正在使用它" } ?? "有 App 正在使用它", tone: .error)
     } else if ejected.count == 1 {
-      island?.show("已推出「\(ejected[0])」", symbol: "eject.fill")
+      island?.show("已推出「\(ejected[0])」", symbol: "eject.circle.fill")
     } else {
-      island?.show("已推出 \(ejected.count) 个磁盘", symbol: "eject.fill")
+      island?.show("已推出 \(ejected.count) 个磁盘", symbol: "eject.circle.fill")
     }
   }
 
@@ -232,9 +232,9 @@ enum SystemControl {
     else { return }
     let count = Int(output) ?? 0
     if count == 0 {
-      island?.show("废纸篓是空的", tone: .info, symbol: "trash")
+      island?.show("废纸篓是空的", tone: .info, symbol: "trash.circle.fill")
     } else {
-      island?.show("已清倒废纸篓", detail: "\(count) 个项目", symbol: "trash")
+      island?.show("已清倒废纸篓", detail: "\(count) 个项目", symbol: "trash.circle.fill")
     }
   }
 
@@ -277,18 +277,16 @@ enum SystemControl {
     else { return }
     let parts = output.split(separator: ",")
     guard parts.count == 2, let level = Int(parts[0]) else {
-      island?.show("这个输出设备不能调音量", tone: .warning, symbol: "speaker.slash")
+      island?.show("这个输出设备不能调音量", tone: .warning, symbol: "speaker.slash.circle.fill")
       return
     }
     if parts[1] == "true" {
-      island?.show("已静音", tone: .info, symbol: "speaker.slash.fill")
+      island?.show("已静音", tone: .info, symbol: "speaker.slash.circle.fill")
     } else {
-      let symbol =
-        level == 0
-        ? "speaker.fill"
-        : level < 34
-          ? "speaker.wave.1.fill" : level < 67 ? "speaker.wave.2.fill" : "speaker.wave.3.fill"
-      island?.show("音量 \(level)%", tone: .info, symbol: symbol)
+      // 圆底的喇叭只有不带声波和两道声波两种（一道、三道的没有圆底变体）；大小看标题里的百分比
+      island?.show(
+        "音量 \(level)%", tone: .info,
+        symbol: level == 0 ? "speaker.circle.fill" : "speaker.wave.2.circle.fill")
     }
   }
 }

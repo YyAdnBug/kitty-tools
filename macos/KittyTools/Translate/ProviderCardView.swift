@@ -1,5 +1,6 @@
-// 一个翻译服务的结果卡片（Whisker，mac-whisker §6 翻译）：标题行 = 18 pt 品牌色块 + 服务名 12 semibold + 模型 11 tertiary，
-// 右侧朗读 / 复制 / 重试 / 折叠（平时 0.45 透明度）；正文状态：等待是骨架条 + 扫光，模型在思考时骨架上面多一行
+// 一个翻译服务的结果卡片（Whisker，mac-whisker §6 翻译）：标题行 = 18 pt 品牌色块 + 服务名 12 semibold + 模型 11 tertiary
+// （两段字按基线对齐），右侧朗读 / 复制 / 重试 / 折叠（CardActions：每个 20 × 18 的格子、平时 0.45 透明度，词典卡共用）；
+// 正文状态：等待是骨架条 + 扫光，模型在思考时骨架上面多一行
 // 「思考中」扫光（mac-whisker S3），生成中新字直接出现、末尾一根光标（ResultText）+ 边框上一段强调色彗星光绕行（2.4 s 一圈），
 // 完成时整圈闪一下；截断的照常显示正文、下面一行说明（体检 B19）；失败分两种（体检 C5）：配置 / 密钥问题是淡橙卡
 // （钥匙图标，只给「打开设置」，直达这个服务的详情页），网络 / 服务错误是淡红卡（图标晃一下，给「重试」，
@@ -160,19 +161,22 @@ struct ProviderCardView: View {
   private var header: some View {
     HStack(spacing: 8) {
       ServiceTile(service: card.service)
-      Text(Self.displayName(card.service))
-        .font(.system(size: 12, weight: .semibold))
-        .opacity(0.85)
-        .lineLimit(1)
-      // 智谱存的旧值（glm-4.6v-flash 等）实际按回落后的模型请求，这里写同一个（体检 A17）
-      if let model = card.service.kind == .zhipu
-        ? TranslateService.zhipuModel(card.service.model) : card.service.model,
-        !model.isEmpty, card.service.isStreaming
-      {
-        Text(model).font(.system(size: 11)).foregroundStyle(.tertiary).lineLimit(1)
+      // 服务名 12 和模型名 11 按基线对齐（居中对齐的话两段字的基线差 0.5–1 pt）
+      HStack(alignment: .firstTextBaseline, spacing: 8) {
+        Text(Self.displayName(card.service))
+          .font(.system(size: 12, weight: .semibold))
+          .opacity(0.85)
+          .lineLimit(1)
+        // 智谱存的旧值（glm-4.6v-flash 等）实际按回落后的模型请求，这里写同一个（体检 A17）
+        if let model = card.service.kind == .zhipu
+          ? TranslateService.zhipuModel(card.service.model) : card.service.model,
+          !model.isEmpty, card.service.isStreaming
+        {
+          Text(model).font(.system(size: 11)).foregroundStyle(.tertiary).lineLimit(1)
+        }
       }
       Spacer(minLength: 6)
-      Group {
+      CardActions {
         if let text = card.state.text, !text.isEmpty {
           Button(
             "朗读", systemImage: speaker.speaking == text ? "speaker.wave.2.fill" : "speaker.wave.2"
@@ -192,11 +196,7 @@ struct ProviderCardView: View {
           .rotationEffect(.degrees(isCollapsed ? 0 : 180))
           .help(isCollapsed ? "展开（会一直记住）" : "收起（会一直记住）")
       }
-      .opacity(0.45)
     }
-    .labelStyle(.iconOnly)
-    .buttonStyle(.borderless)
-    .font(.system(size: 12, weight: .medium))
     .frame(height: 18)
   }
 
@@ -301,10 +301,15 @@ struct ProviderCardView: View {
           .textSelection(.enabled)
           .frame(maxWidth: .infinity, alignment: .leading)
         if case .truncated = state {
-          // 截断不是配置问题，用 secondary 小字说明（不用橙色）
-          Label("只翻了前一部分：超出这个服务单次输出上限", systemImage: "exclamationmark.triangle")
-            .font(.system(size: 11))
-            .foregroundStyle(.secondary)
+          // 截断不是配置问题，用 secondary 小字说明（不用橙色）。图标放进和服务色块同宽的格子，字对上服务名（同错误行）
+          HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle")
+              .frame(width: Self.iconSlot)
+              .accessibilityHidden(true)
+            Text("只翻了前一部分：超出这个服务单次输出上限")
+          }
+          .font(.system(size: 11))
+          .foregroundStyle(.secondary)
         }
       }
       .id(phase)
@@ -325,15 +330,23 @@ struct ProviderCardView: View {
     }
   }
 
+  /// 正文里带图标的一行（错误、截断说明）的图标格：和标题行的服务色块同宽，后面的字就对上服务名
+  private static let iconSlot: CGFloat = 18
+
   /// 错误行：配置类橙色钥匙 + 只给「打开设置」（直达这个服务）；网络 / 服务类红色三角（晃一下）+「重试」，
   /// 自建 AI 服务另给「打开设置」（地址可能填错）
   private func failureRow(_ error: TranslateError) -> some View {
     let isConfig = error.kind == .config
     let tint = Color(nsColor: isConfig ? .systemOrange : .systemRed)
+    // 图标格 18 × 18，中线对着第一行字（13 pt）大写字高的中线——SF 符号本来的对法，但不靠符号自己的基线：
+    // 钥匙和三角高矮不一样，各按各的基线两种错误卡会差 1 pt 高
+    let halfCap = NSFont.systemFont(ofSize: 13).capHeight / 2
     return HStack(alignment: .firstTextBaseline, spacing: 8) {
       Image(systemName: isConfig ? "key.fill" : "exclamationmark.triangle.fill")
         .foregroundStyle(tint)
         .symbolEffect(.wiggle, value: errorTicks)
+        .frame(width: Self.iconSlot, height: Self.iconSlot)
+        .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + halfCap }
       // 橙字在浅色卡底上对比度不够（同剪贴板底栏的警告）：配置类只有钥匙是橙色，字用默认色
       Text(error.message)
         .font(.system(size: 13))
@@ -372,6 +385,36 @@ struct ProviderCardView: View {
     (try? AttributedString(
       markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
       ?? AttributedString(text)
+  }
+}
+
+/// 卡片标题行右上角的一组图标按钮（服务卡：朗读、复制、重试、折叠；词典卡：朗读、词典），两种卡共用：每个按钮一个
+/// 20 × 18 的格子（整格能点）、格子之间 4——中心相隔 24，两种卡的按钮上下同列；图标 13 medium + hierarchical
+/// （同原文框的朗读、复制），平时 0.45 透明度。整组往右让 2：图标在格子里居中，最右那个（折叠箭头、书本）的右缘才落在
+/// 原文框星标那条线上（离卡片右边 12 上下）
+struct CardActions<Content: View>: View {
+  @ViewBuilder var content: Content
+
+  var body: some View {
+    HStack(spacing: 4) { content }
+      .labelStyle(SlotLabelStyle())
+      .buttonStyle(.borderless)
+      .font(.system(size: 13, weight: .medium))
+      .symbolRenderingMode(.hierarchical)
+      .opacity(0.45)
+      .padding(.trailing, -2)
+  }
+
+  /// 只画图标、放进定宽的格子。标题留给旁白：里面还是一个 iconOnly 的 Label
+  private struct SlotLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+      Label {
+        configuration.title
+      } icon: {
+        configuration.icon.frame(width: 20, height: 18).contentShape(.rect)
+      }
+      .labelStyle(.iconOnly)
+    }
   }
 }
 

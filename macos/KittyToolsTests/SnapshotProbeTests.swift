@@ -18,7 +18,8 @@ struct SnapshotProbeTests {
     ProcessInfo.processInfo.environment["KITTY_SNAPSHOT_DIR"]
   /// 只出这些前缀的图；nil = 全出
   nonisolated private static let only =
-    ProcessInfo.processInfo.environment["KITTY_SNAPSHOT_ONLY"]?.split(separator: ",").map(String.init)
+    ProcessInfo.processInfo.environment["KITTY_SNAPSHOT_ONLY"]?.split(separator: ",").map(
+      String.init)
 
   /// 这张图出不出（按文件名的前缀）
   nonisolated private static func wants(_ path: String) -> Bool {
@@ -864,12 +865,49 @@ struct SnapshotProbeTests {
           title: "翻译失败", detail: "网络超时，请重试", tone: .error,
           symbol: "exclamationmark.circle.fill", leading: .tone), .capsule(menuBar: 24)
       ),
+      // 视觉对齐第 3 批：没有圆底变体的符号由岛垫语气色圆（成功 = 绿底白符号）、警告默认的橙三角、
+      // 警告 + 宽的裸符号（键盘缩进橙圆里，不出圆）
+      (
+        "island-bare",
+        .init(
+          title: "已存为片段", detail: "git rebase -i HEAD~3", tone: .success,
+          symbol: "text.badge.star", leading: .tone), notch
+      ),
+      (
+        "island-warning",
+        .init(
+          title: "已复制到剪贴板", detail: "授权辅助功能后才能直接粘贴", tone: .warning,
+          symbol: "exclamationmark.triangle.fill", leading: .tone), notch
+      ),
+      (
+        "island-warning-bare",
+        .init(
+          title: "有 2 个快捷键没注册上", detail: "到 设置 › 快捷键 里看原因、换一个组合", tone: .warning,
+          symbol: "keyboard", leading: .tone), .capsule(menuBar: 24)
+      ),
     ]
     for (name, content, geometry) in islands {
       try snapshot(
         IslandView(island: Island(showing: content, geometry: geometry)),
         size: geometry.windowSize, dark: false, to: "\(out)/\(name).png")
     }
+    // 黄色强调色：信息 / 进行中的底是强调色，上面的符号要换深色（Style.onBrand）才看得见——岛垫的圆底、自带圆底的各一张。
+    // 只换内存里的颜色，不写偏好
+    Accent.shared.select(.yellow, persists: false)
+    let onYellow: [(String, String, String?, Island.Tone, String)] = [
+      ("island-accent-yellow", "已关闭全部钉图", "3 张", .info, "pin.slash"),
+      ("island-accent-yellow-progress", "识别中…", nil, .progress, "ellipsis.circle.fill"),
+    ]
+    for (name, title, detail, tone, symbol) in onYellow {
+      try snapshot(
+        IslandView(
+          island: Island(
+            showing: .init(
+              title: title, detail: detail, tone: tone, symbol: symbol, leading: .tone),
+            geometry: notch)),
+        size: notch.windowSize, dark: false, to: "\(out)/\(name).png")
+    }
+    Accent.shared.select(savedAccent, persists: false)
   }
 
   /// 状态屏（PLAN §10）：一块 1200 × 800 的屏，底下垫着假桌面（不透明的两种样式看不到它）。单独一个测试函数：

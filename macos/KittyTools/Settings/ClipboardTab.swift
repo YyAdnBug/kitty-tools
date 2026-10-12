@@ -109,7 +109,7 @@ struct ClipboardTab: View {
         island?.show(
           count > 0 ? "已清空普通历史" : "没有可清空的普通历史",
           detail: count > 0 ? "删了 \(count) 条，收藏和片段留着" : nil,
-          tone: count > 0 ? .success : .info, symbol: "trash")
+          tone: count > 0 ? .success : .info, symbol: "trash.circle.fill")
       }
     } message: {
       Text("收藏和片段会保留")
@@ -132,7 +132,7 @@ struct ClipboardTab: View {
   private func pruned(_ count: Int) {
     guard count > 0 else { return }
     island?.show(
-      "已按新上限清理 \(count) 条", detail: "收藏和片段不受影响", tone: .info, symbol: "trash")
+      "已按新上限清理 \(count) 条", detail: "收藏和片段不受影响", tone: .info, symbol: "trash.circle.fill")
   }
 
   /// 「普通 X · 留下的 Y」：只有普通的算进「图片最多占用」（体检 B2）

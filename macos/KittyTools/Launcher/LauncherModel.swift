@@ -1076,7 +1076,8 @@ import UniformTypeIdentifiers
       switch notice {
       case .message(let text): island.show(text)
       case .warning(let text): island.show(text, tone: .warning)
-      case .undo(let text): island.show(text, detail: "⌘Z 撤销", tone: .info, symbol: "minus.circle")
+      case .undo(let text):
+        island.show(text, detail: "⌘Z 撤销", tone: .info, symbol: "minus.circle.fill")
       }
     } else {
       Island.announce(spoken ?? notice.text)
@@ -1131,7 +1132,7 @@ import UniformTypeIdentifiers
         island?.show("没能移到废纸篓", detail: error.localizedDescription, tone: .error)
         return
       }
-      island?.show("已移到废纸篓「\(item.title)」", symbol: "trash")
+      island?.show("已移到废纸篓「\(item.title)」", symbol: "trash.circle.fill")
       let index = selection
       withAnimation(Style.Motion.settle.animation(reduced: Style.reduceMotion)) {
         if isShowingRecent {

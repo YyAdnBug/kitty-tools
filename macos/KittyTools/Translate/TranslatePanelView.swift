@@ -228,7 +228,7 @@ struct TranslatePanelView: View {
     }
     .buttonStyle(PressScale())
     .disabled(source == nil && target == nil)
-    .opacity(source == nil && target == nil ? 0.35 : 1)
+    .opacity(source == nil && target == nil ? Style.disabledOpacity : 1)
     .help("交换语言")
     .accessibilityLabel("交换语言")
   }
@@ -266,9 +266,10 @@ struct TranslatePanelView: View {
   private var sourceArea: some View {
     VStack(alignment: .leading, spacing: 6) {
       // 历史开着时焦点在原文框里按 Esc：先关历史（不然会直接关掉浮窗）
-      // 左右不加内边距（文字缩进 10 + 2 在 horizontalInset 里）：滚动条贴原文框右边
+      // 左右不加内边距，文字缩进在 horizontalInset 里（7 + NSTextView 自己的 lineFragmentPadding 5 = 12，
+      // 文字左缘和下面卡片里的字同一条线）：滚动条贴原文框右边
       SourceTextView(
-        text: $coordinator.sourceText, fontSize: 15 * fontScale, horizontalInset: 12,
+        text: $coordinator.sourceText, fontSize: 15 * fontScale, horizontalInset: 7,
         onCancel: coordinator.showsHistory ? { coordinator.showsHistory = false } : nil
       ) {
         coordinator.start()
@@ -277,19 +278,20 @@ struct TranslatePanelView: View {
       }
       .frame(height: 76)
       .overlay(alignment: .topLeading) {
-        // 划词没取到文字时换一句说明（体检 A16，同一句也播报给 VoiceOver），开始输入就换回平时的
+        // 划词没取到文字时换一句说明（体检 A16，同一句也播报给 VoiceOver），开始输入就换回平时的。
+        // 位置就是输入的第一个字的位置（左 12 = 上面的 7 + 5，上 6 = SourceTextView 的 textContainerInset）：一打字不跳
         if coordinator.sourceText.isEmpty {
           Text(coordinator.missedSelection ? "没取到选中的文字，可以直接输入或粘贴" : "输入或粘贴文字，↩ 翻译，⇧↩ 换行")
             .font(.system(size: 15 * fontScale))
             .foregroundStyle(.tertiary)
-            .padding(.leading, 15)
-            .padding(.top, 1)
+            .padding(.leading, 12)
+            .padding(.top, 6)
             .allowsHitTesting(false)
         }
       }
       if let note = directionNote {
         Text(note).font(.system(size: 11)).foregroundStyle(.secondary)
-          .padding(.horizontal, 10)
+          .padding(.horizontal, 12)
       }
       HStack(spacing: 12) {
         Group {
@@ -334,7 +336,9 @@ struct TranslatePanelView: View {
         }
         // 没有常驻「翻译」按钮（N5）：↩ 就是翻译，原文改过、还没重译时才从右下角弹出来
         if coordinator.needsTranslate {
+          // 实心胶囊按形状对角：离原文框右、下各 8（比图标那条线往外 4）
           TranslateCapsule { coordinator.start() }
+            .padding(.trailing, -4)
             .transition(
               reduceMotion
                 ? .opacity : .scale(scale: 0.6, anchor: .trailing).combined(with: .opacity))
@@ -343,13 +347,16 @@ struct TranslatePanelView: View {
       .labelStyle(.iconOnly)
       .buttonStyle(.borderless)
       .font(.system(size: 13, weight: .medium))
+      .symbolRenderingMode(.hierarchical)
       // 定高：胶囊弹出、收回时原文框不跟着变高
       .frame(height: 24)
       .animation(
         (coordinator.needsTranslate ? Style.Motion.pop : .settle).animation(reduced: reduceMotion),
         value: coordinator.needsTranslate
       )
-      .padding(.horizontal, 10)
+      // 左 10：朗读图标的字形在它的框里左边空 2，左缘正好落在 12（和原文同一条线）；右 12：星标和卡片右上角的按钮同一条线
+      .padding(.leading, 10)
+      .padding(.trailing, 12)
     }
     .padding(.top, 8)
     .padding(.bottom, 8)
@@ -372,19 +379,20 @@ struct TranslatePanelView: View {
   // MARK: 结果
 
   /// 提示 / 没有服务 / 还没翻译：共用的空状态（Shell/Style 的 EmptyState），四周留 20（标题长了折行时不贴边）。
-  /// 两处系统按钮保持系统字号（.body）：空状态给说明的 12 pt 是给文字的
+  /// 去设置的两个按钮是主按钮（BrandButtonStyle）：这时面板里该点的就是它
   @ViewBuilder private var results: some View {
     if let notice = coordinator.notice {
       EmptyState(symbol: "exclamationmark.bubble", title: notice) {
         // 只有授权类提示才给按钮（以前任何提示都挂「打开辅助功能设置」）
         if let permission = coordinator.noticePermission {
-          Button(permission.settingsTitle, action: permission.openSettings).font(.body)
+          Button(permission.settingsTitle, action: permission.openSettings)
+            .buttonStyle(BrandButtonStyle())
         }
       }
       .padding(Self.emptyStateInset)
     } else if coordinator.services.enabled.isEmpty {
       EmptyState(symbol: "character.bubble", title: "没有启用的翻译服务") {
-        Button("打开翻译设置") { coordinator.openSettings(nil) }.font(.body)
+        Button("打开翻译设置") { coordinator.openSettings(nil) }.buttonStyle(BrandButtonStyle())
       }
       .padding(Self.emptyStateInset)
     } else if coordinator.cards.isEmpty {
@@ -472,13 +480,13 @@ struct TranslatePanelView: View {
   }
 }
 
-/// 28 pt 语言胶囊：语言名 +（自动且已知实际语言时）「自动」标签 + 9 pt 下拉箭头；窄时语言名截断
+/// 28 pt 语言胶囊：语言名 +（自动且已知实际语言时）「自动」标签 + 10 pt 下拉箭头，间距 4；窄时语言名截断
 private struct LanguageCapsule: View {
   let title: String
   let showsAutoTag: Bool
 
   var body: some View {
-    HStack(spacing: 5) {
+    HStack(spacing: 4) {
       // 窄的时候只让语言名截断，「自动」标签和箭头不挤
       Text(title)
         .font(.system(size: 13, weight: .medium))
@@ -490,13 +498,13 @@ private struct LanguageCapsule: View {
         Text("自动")
           .font(.system(size: 10, weight: .semibold))
           .foregroundStyle(Style.brandInk)
-          .padding(.horizontal, 5)
+          .padding(.horizontal, 4)
           .padding(.vertical, 1)
-          .background(Style.brand.opacity(0.14), in: .capsule)
+          .background(Style.brand.opacity(0.16), in: .capsule)
           .fixedSize()
       }
       Image(systemName: "chevron.down")
-        .font(.system(size: 9, weight: .semibold))
+        .font(.system(size: 10, weight: .semibold))
         .foregroundStyle(.secondary)
         .fixedSize()
     }
@@ -534,8 +542,11 @@ private struct MoreMenu: View {
       Button("设置…") { coordinator.openSettings(nil) }
         .keyboardShortcut(",")
     } label: {
+      // 字形贴着点击框的右边：顶栏最右的东西贴外缘（离窗口 12），和左边贴着外缘的语言胶囊对称。
+      // −1.5：13 medium 的「⋯」右边有 1.5 的留白，让掉它最右那个点才正好在外缘上
       Image(systemName: "ellipsis")
-        .frame(width: 24, height: 24)
+        .padding(.trailing, -1.5)
+        .frame(width: 24, height: 24, alignment: .trailing)
         .contentShape(.rect)
     }
     .menuStyle(.button)
@@ -576,7 +587,7 @@ private struct TranslateCapsule: View {
 
   var body: some View {
     Button(action: action) {
-      HStack(spacing: 5) {
+      HStack(spacing: 4) {
         Text("翻译")
         Text("↩").opacity(0.75)
       }
