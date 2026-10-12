@@ -1,7 +1,7 @@
 // Whisker 设计刻度（mac-whisker.mdc §2–4、§7）：圆角、七条命名弹簧曲线、强调色（取自 Accent）、中性色与功能家族色、
 // 面板描边、卡片表面（CardSurface）、发丝线（Hairline / hairlineBorder，增强对比度时 1 pt）、输入框底、复制对勾停留、
-// 种类色块与键帽。界面里的圆角、曲线、强调色、选中色、发丝线一律从这里取，不硬编码；
-// 新增的值至少要被三处复用才放进来。
+// 种类色块与键帽、面板内浮层的阴影（floatingShadow）、空状态（EmptyState）。界面里的圆角、曲线、强调色、选中色、
+// 发丝线一律从这里取，不硬编码；新增的值至少要被三处复用才放进来。
 
 import AppKit
 import SwiftUI
@@ -324,7 +324,9 @@ struct KindTile: View {
   }
 }
 
-/// 键帽（⌘1–9、↩、⌘K）
+/// 键帽（⌘1–9、↩、⌘K）。10.5 pt、左右内边距 5 是刻度的例外（mac-whisker §3「间距」，2026-10-12 视觉对齐时定的不改）：
+/// 单个符号（⌘ ↩ ⇧ 宽 10–11）的键帽这样正好贴着最小宽 20（20–21），和高 18 接近方形；左右改成 6 会宽到 22–23，
+/// 一排键帽就松了
 struct KeyCap: View {
   let text: String
   /// 主按钮（底栏「粘贴 ↩」「打开 ↩」）：强调色实心 + 白色符号。只放符号：白字在品牌粉上约 3.2:1，只够非文本 3:1
@@ -379,8 +381,9 @@ struct DangerButton: View {
 /// 主按钮（Whisker §3 状态：强调色实心 + onBrand 文字，按下 0.97，禁用 0.35）：关于页「更新并重新打开」、引导「继续 /
 /// 开始使用」、速查表「完成」、剪贴板对话框的保存 / 创建 / 完成共用。不用系统的 .borderedProminent + tint：它的文字色
 /// 由系统定，黄、橙、绿、浅色石墨这些亮强调色上也是白字（AccentPalette.onFill 这时是 black 0.85，AccentTests 锁住），
-/// 而且屏外截图自检里画成灰的、看不出来。胶囊形，高度跟 controlSize（regular 22、large 30，和旁边的系统按钮一样高）；
-/// 键盘等价（.defaultAction 等）照常挂在按钮上
+/// 而且屏外截图自检里画成灰的、看不出来。胶囊形，高度跟 controlSize：regular 20，和旁边的系统按钮一样高（系统带边框
+/// 按钮常规档高 20；2026-10-12 视觉对齐时量的，原来这里是 22、比旁边的「取消」高 2，StyleTests 锁住）；large 30
+/// （只有引导的「继续 / 开始使用」，旁边没有系统按钮）。键盘等价（.defaultAction 等）照常挂在按钮上
 struct BrandButtonStyle: ButtonStyle {
   @Environment(\.controlSize) private var controlSize
   @Environment(\.isEnabled) private var isEnabled
@@ -391,7 +394,9 @@ struct BrandButtonStyle: ButtonStyle {
       .lineLimit(1)
       .foregroundStyle(Style.onBrand)
       .padding(.horizontal, large ? 16 : 11)
-      .frame(minHeight: large ? 30 : 22)
+      // 常规档的字往上让 1 pt：系统按钮的字在 20 高里偏上 1 pt（上 3.5 / 下 4.5），并排时基线才齐
+      .padding(.bottom, large ? 0 : 2)
+      .frame(minHeight: large ? 30 : 20)
       .background(Style.brand, in: .capsule)
       .contentShape(.capsule)
       .opacity(isEnabled ? 1 : Style.disabledOpacity)
@@ -401,7 +406,7 @@ struct BrandButtonStyle: ButtonStyle {
 }
 
 /// 一个组合拆成键帽（⌘ ⇧ 这类修饰键各一个，剩下的是一个）：「⇧⌘S」→ ⇧ ⌘ S。
-/// 快捷键录制框、速查表、引导、启动器选中行共用
+/// 快捷键录制框、速查表、引导、启动器选中行共用。键帽之间 3 同样是刻度的例外（见 KeyCap）：一组键读成一个组合
 struct KeyCombo: View {
   let combo: String
 
@@ -543,6 +548,34 @@ struct CardSurface: ViewModifier {
 extension View {
   /// 内容卡片表面，见 `CardSurface`
   func cardSurface(tint: Color? = nil) -> some View { modifier(CardSurface(tint: tint)) }
+
+  /// 面板内浮层的阴影（mac-whisker §3「层级」）：black 0.25 / 模糊 18 / 向下 8。面板里浮起来的东西共用——动作菜单
+  /// （Shell/ActionMenu，五处）、剪贴板对话框（Clipboard/Dialogs）；别各写各的。只挂在底上（材质那一层）或整块不含字的
+  /// 视图上：挂在带字的内容上会给每个字都加阴影
+  func floatingShadow() -> some View { shadow(color: .black.opacity(0.25), radius: 18, y: 8) }
+}
+
+/// 空状态（剪贴板面板、翻译浮窗、翻译历史共用，2026-10-12 由两处各写一份合成）：28 pt 符号 + 14 semibold 标题 +
+/// 下面的说明 / 文字按钮 / 键帽（12 pt），间距 8，在给它的地方里居中。四周留白由用的地方加（翻译浮窗 20：标题长了
+/// 折行时别贴边）。启动器的空结果是一行 13 secondary（有意的紧凑写法），不用它
+struct EmptyState<Detail: View>: View {
+  let symbol: String
+  let title: String
+  @ViewBuilder var detail: Detail
+
+  var body: some View {
+    VStack(spacing: 8) {
+      Image(systemName: symbol)
+        .font(.system(size: 28))
+        .symbolRenderingMode(.hierarchical)
+        .foregroundStyle(.tertiary)
+      Text(title)
+        .font(.system(size: 14, weight: .semibold))
+        .multilineTextAlignment(.center)
+      detail.font(.system(size: 12))
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
 }
 
 /// Panel 皮肤的描边：外圈 0.5 pt 发丝线 + 内圈 1 pt 顶部高光（macOS 26 用玻璃时不画：玻璃自己画边、响应增强对比度）。

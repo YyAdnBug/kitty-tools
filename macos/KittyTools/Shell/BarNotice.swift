@@ -1,5 +1,5 @@
 // 底栏左边的就地提示（mac-whisker §6 剪贴板 / 启动器）：剪贴板面板和启动器共用同一种提示和画法——
-// 「✓ 已复制」（systemGreen 对勾）/「⚠ 只复制了第 1 条」（只染三角，字保持默认色）/「已删除 N 条 · 撤销 ⌘Z」
+// 「✓ 已复制」（systemGreen 圆底上的白对勾）/「⚠ 只复制了第 1 条」（只染三角）/「已删除 N 条 · 撤销 ⌘Z」；提示的字都是 secondary
 // （撤销是 brandInk 文字按钮）。带撤销的停 5 秒，其余 1.6 秒；计时和播报在各自的 model 里（焦点一直在搜索框，要主动播报）。
 // 另有 UpdateBarHint：有新版本时两个面板底栏里常驻的「更新到 x」。
 
@@ -57,14 +57,22 @@ struct BarNoticeView: View {
   var body: some View {
     switch notice {
     case .message(let text):
-      Label(text, systemImage: "checkmark.circle.fill")
-        .symbolRenderingMode(.palette)
-        .foregroundStyle(Color(nsColor: .systemGreen), Color(nsColor: .systemGreen))
-        .symbolEffect(.bounce, value: text)
-    case .warning(let text):
-      // 只染三角：橙字在浅色底上对比度不够，字保持默认色
+      // 只染图标：白对勾、systemGreen 圆底（palette 的两层；以前两层都给了绿，对勾和圆底融成一个实心绿点）。
+      // 字不上色（绿字在浅色底上对比度不够，同下面的 warning），用 secondary：就地提示是状态、不是能点的动作
+      // （mac-whisker §3「面板里共用的几件」）。写明而不靠继承：剪贴板的底栏整条默认 secondary，启动器的没有这个默认，
+      // 不写的话同一条提示在两块面板上深浅不一样
       Label {
-        Text(text)
+        Text(text).foregroundStyle(.secondary)
+      } icon: {
+        Image(systemName: "checkmark.circle.fill")
+          .symbolRenderingMode(.palette)
+          .foregroundStyle(.white, Color(nsColor: .systemGreen))
+      }
+      .symbolEffect(.bounce, value: text)
+    case .warning(let text):
+      // 只染三角：橙字在浅色底上对比度不够，字不上色、同样用 secondary
+      Label {
+        Text(text).foregroundStyle(.secondary)
       } icon: {
         Image(systemName: "exclamationmark.triangle.fill")
           .foregroundStyle(Color(nsColor: .systemOrange))

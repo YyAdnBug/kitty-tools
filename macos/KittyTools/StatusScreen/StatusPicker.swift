@@ -216,9 +216,10 @@ struct StatusPickerView: View {
     .accessibilityLabel("选择状态")
   }
 
-  /// 底栏：左边三条按键提示，右边主动作「进入 ↩」（能点）。样子同启动器的底栏
+  /// 底栏：左边三条按键提示（只提示键位、不能点，字用 secondary），右边主动作「进入 ↩」（能点，primary）。
+  /// 样子同启动器的底栏（mac-whisker §3「面板里共用的几件」）：组间距 12；左右 20 = 面板内缩 16 + 选中圈 4，和卡片共用左右边线
   private var bar: some View {
-    HStack(spacing: 14) {
+    HStack(spacing: 12) {
       hint("选择", "←→")
       hint("直接进入", StatusPicker.digitsCap(count: model.presets.count))
       hint("取消", "Esc")
@@ -236,7 +237,7 @@ struct StatusPickerView: View {
     .font(.system(size: 12))
     .lineLimit(1)
     .buttonStyle(.plain)
-    .padding(.horizontal, 14)
+    .padding(.horizontal, StatusPicker.inset + StatusPicker.ring)
     .frame(height: StatusPicker.barHeight)
     .overlay(alignment: .top) { Hairline() }
   }

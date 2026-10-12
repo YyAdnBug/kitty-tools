@@ -79,7 +79,7 @@ struct LauncherTab: View {
         HStack(alignment: .firstTextBaseline) {
           caption(
             "搜 App、系统设置、文件、书签、网址、路径、算式（也能换算单位和进制）和系统命令（lock、quit、kill 这些），"
-              + "↩ 打开，⌘K 看这一项的全部动作。")
+              + "↩ 打开，⌘K 看这一项的全部操作。")
           Spacer(minLength: 8)
           ShortcutsButton()
         }

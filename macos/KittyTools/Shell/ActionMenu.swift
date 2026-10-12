@@ -1,5 +1,6 @@
 // 面板里的动作菜单（mac-whisker §6）：剪贴板 ⌘K、剪贴板 Tab 筛选面板、剪贴板多选底栏「收藏夹…」、启动器 ⌘K、
-// 翻译历史 ⌘K 共用；同一份条目当右键菜单用见 ActionContextMenu。
+// 翻译历史 ⌘K 共用；同一份条目当右键菜单用见 ActionContextMenu。界面上 ⌘K 这个菜单全 App 叫「操作」（底栏「操作 ⌘K」、
+// 占位「搜索操作」、空结果「没有匹配的操作」、速查表「操作菜单」，2026-10-12 统一）；代码和规则里仍叫动作菜单。
 // 画在面板里而不是 NSMenu，焦点一直留在搜索框：搜索框里的字由调用方拿来过滤 items（共用 filter：标题 / 说明子串，
 // 中文标题的全拼和首字母前缀），↑↓ 改 selection，↩ / 单击执行。这里只画，不存状态。
 // 宽 260、行高 28、中性高亮（不填强调色、不反白）；section 变了的两行之间一条 0.5 pt 发丝线（上下各 4 pt）；
@@ -122,7 +123,7 @@ struct ActionMenu: View {
     .overlay(
       RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous).hairlineBorder()
     )
-    .shadow(color: .black.opacity(0.25), radius: 18, y: 8)
+    .floatingShadow()
     // 转场绑在这里：调用方只要 if 显示 + 用动画改那个开关（出现 snap，减弱动态效果时只淡入）
     .transition(
       .asymmetric(

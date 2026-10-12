@@ -25,6 +25,15 @@ struct StyleTests {
     #expect(Style.hairlineWidth(.increased) == 1)
   }
 
+  /// 主按钮（BrandButtonStyle）常规档和旁边的系统带边框按钮一样高（2026-10-12 视觉对齐：原来 22，
+  /// 剪贴板对话框、导入导出表单里比旁边的「取消」高 2 pt）
+  @MainActor @Test func brandButtonIsAsTallAsSystemButton() {
+    let brand = NSHostingView(rootView: Button("保存") {}.buttonStyle(BrandButtonStyle()))
+    let system = NSHostingView(rootView: Button("取消") {})
+    #expect(brand.fittingSize.height == system.fittingSize.height)
+    #expect(brand.fittingSize.height == 20)
+  }
+
   /// 降低透明度时的 0.9 不透明底只给 15 的毛玻璃；macOS 26 的玻璃自己变实，不再垫（Whisker §7）
   @Test func opaqueUnderlayOnlyBeforeGlass() {
     #expect(!Style.opaqueUnderlay(reduceTransparency: false))

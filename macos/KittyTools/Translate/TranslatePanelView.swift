@@ -371,20 +371,24 @@ struct TranslatePanelView: View {
 
   // MARK: 结果
 
+  /// 提示 / 没有服务 / 还没翻译：共用的空状态（Shell/Style 的 EmptyState），四周留 20（标题长了折行时不贴边）。
+  /// 两处系统按钮保持系统字号（.body）：空状态给说明的 12 pt 是给文字的
   @ViewBuilder private var results: some View {
     if let notice = coordinator.notice {
-      EmptyStateView(symbol: "exclamationmark.bubble", title: notice) {
+      EmptyState(symbol: "exclamationmark.bubble", title: notice) {
         // 只有授权类提示才给按钮（以前任何提示都挂「打开辅助功能设置」）
         if let permission = coordinator.noticePermission {
-          Button(permission.settingsTitle, action: permission.openSettings)
+          Button(permission.settingsTitle, action: permission.openSettings).font(.body)
         }
       }
+      .padding(Self.emptyStateInset)
     } else if coordinator.services.enabled.isEmpty {
-      EmptyStateView(symbol: "character.bubble", title: "没有启用的翻译服务") {
-        Button("打开翻译设置") { coordinator.openSettings(nil) }
+      EmptyState(symbol: "character.bubble", title: "没有启用的翻译服务") {
+        Button("打开翻译设置") { coordinator.openSettings(nil) }.font(.body)
       }
+      .padding(Self.emptyStateInset)
     } else if coordinator.cards.isEmpty {
-      EmptyStateView(symbol: "character.bubble", title: "划词、截图或输入后开始翻译") {
+      EmptyState(symbol: "character.bubble", title: "划词、截图或输入后开始翻译") {
         VStack(spacing: 6) {
           ForEach(
             [HotKeyAction.selectionTranslate, .screenshotTranslate, .inputTranslate], id: \.self
@@ -404,6 +408,7 @@ struct TranslatePanelView: View {
           }
         }
       }
+      .padding(Self.emptyStateInset)
     } else {
       ScrollView {
         VStack(spacing: 10) {
@@ -449,6 +454,9 @@ struct TranslatePanelView: View {
       }
     }
   }
+
+  /// 空状态四周的留白（浮窗的结果区和翻译历史共用）
+  static let emptyStateInset: CGFloat = 20
 
   /// 结果区卡片堆的坐标系（量第三张卡的下沿；在滚动内容里，滚动不影响）
   private static let resultsSpace = "translateResults"
@@ -583,27 +591,5 @@ private struct TranslateCapsule: View {
     .help("翻译改过的原文（↩）")
     .accessibilityLabel("翻译")
     .accessibilityHint("原文改过了，按回车键也可以翻译")
-  }
-}
-
-/// 空状态 / 提示：28 pt 图标 + 14 semibold 标题 + 下方内容（按钮、快捷键）；翻译历史的空态也用它
-struct EmptyStateView<Actions: View>: View {
-  let symbol: String
-  let title: String
-  @ViewBuilder var actions: Actions
-
-  var body: some View {
-    VStack(spacing: 12) {
-      Image(systemName: symbol)
-        .font(.system(size: 28, weight: .regular))
-        .symbolRenderingMode(.hierarchical)
-        .foregroundStyle(.tertiary)
-      Text(title)
-        .font(.system(size: 14, weight: .semibold))
-        .multilineTextAlignment(.center)
-      actions
-    }
-    .padding(20)
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 }

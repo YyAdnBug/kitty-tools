@@ -386,7 +386,7 @@ struct HistoryView: View {
           // 对话框式输入框：出现时抢焦点，关历史时把焦点还给原文框。⌘K 菜单开着时改成过滤动作
           CommandTextField(
             text: list.showsActions ? $list.actionQuery : $list.query,
-            placeholder: list.showsActions ? "搜索动作" : "搜索原文或译文", isDialogField: true,
+            placeholder: list.showsActions ? "搜索操作" : "搜索原文或译文", isDialogField: true,
             fontSize: 13, onCommand: coordinator.handleHistoryCommand,
             onFocusChange: { searchFocused = $0 })
         }
@@ -458,12 +458,13 @@ struct HistoryView: View {
     .onAppear { scrollBand = 0 }
   }
 
+  /// 分组标题：缩进 10（行内边距）、贴底留 2，同启动器的分组标题（LauncherPanelView.groupHeader）
   private func header(_ title: String) -> some View {
     Text(title)
       .font(.system(size: 11, weight: .semibold))
       .foregroundStyle(.tertiary)
       .padding(.leading, 10)
-      .padding(.bottom, 3)
+      .padding(.bottom, 2)
       .frame(
         maxWidth: .infinity, minHeight: Self.headerHeight, maxHeight: Self.headerHeight,
         alignment: .bottomLeading
@@ -534,18 +535,22 @@ struct HistoryView: View {
     .accessibilityAction(named: "删除") { list.delete(entry) }
   }
 
-  @ViewBuilder private func emptyState(_ list: HistoryList) -> some View {
-    if !list.query.isEmpty {
-      EmptyStateView(symbol: "magnifyingglass", title: "没有匹配的记录") { EmptyView() }
-    } else if list.favoritesOnly {
-      EmptyStateView(symbol: "star", title: "还没有收藏") {
-        Text("翻译完按 ⌘D 收藏，收藏就是生词本").font(.system(size: 12)).foregroundStyle(.secondary)
-      }
-    } else {
-      EmptyStateView(symbol: "clock", title: "还没有翻译历史") {
-        Text("翻译过的原文和译文会记在这里").font(.system(size: 12)).foregroundStyle(.secondary)
+  /// 共用的空状态（Shell/Style 的 EmptyState：说明 12 pt 是它给的），四周留白同浮窗的结果区
+  private func emptyState(_ list: HistoryList) -> some View {
+    Group {
+      if !list.query.isEmpty {
+        EmptyState(symbol: "magnifyingglass", title: "没有匹配的记录") { EmptyView() }
+      } else if list.favoritesOnly {
+        EmptyState(symbol: "star", title: "还没有收藏") {
+          Text("翻译完按 ⌘D 收藏，收藏就是生词本").foregroundStyle(.secondary)
+        }
+      } else {
+        EmptyState(symbol: "clock", title: "还没有翻译历史") {
+          Text("翻译过的原文和译文会记在这里").foregroundStyle(.secondary)
+        }
       }
     }
+    .padding(TranslatePanelView.emptyStateInset)
   }
 
   // MARK: 纯函数（配单测）

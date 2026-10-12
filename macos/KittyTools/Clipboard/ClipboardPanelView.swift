@@ -86,8 +86,8 @@ struct ClipboardPanelView: View {
           emptyText: model.submenuTitle == nil ? "没有匹配的操作" : "没有匹配的收藏夹",
           header: model.submenuTitle, onBack: model.leaveSubmenu, maxRows: 8.5, onRun: model.run
         )
-        // 右缘对着底栏「操作 ⌘K」：右内边距 14 + 图钉 + 齿轮 + 竖线和间距
-        .padding(.trailing, 80)
+        // 右缘对着底栏「操作 ⌘K」的键帽：右内边距 16 + 图钉 + 齿轮 + 竖线和间距
+        .padding(.trailing, 82)
         .padding(.bottom, Self.barHeight + 4)
       }
     }
@@ -169,14 +169,8 @@ struct ClipboardPanelView: View {
 
   private var searchBar: some View {
     let tokens = model.tokens
-    return HStack(spacing: 6) {
-      Image(systemName: searchSymbol)
-        .font(.system(size: 17, weight: .medium))
-        .foregroundStyle(.tertiary)
-        .contentTransition(.symbolEffect(.replace))
-        .frame(width: 22)
-        .padding(.trailing, 4)
-        .accessibilityHidden(true)
+    // 线头（符号定宽）和左右内边距在 SearchLine 里，和启动器的搜索线是同一个
+    return SearchLine(symbol: searchSymbol) {
       ForEach(tokens) { token in
         TokenChip(
           token: token, armed: model.armsLastToken && token.id == tokens.last?.id,
@@ -203,7 +197,6 @@ struct ClipboardPanelView: View {
     .animation(
       Style.Motion.settle.animation(reduced: reduceMotion), value: tokens.map(\.id)
     )
-    .padding(.horizontal, 18)
     .frame(height: Self.searchHeight)
   }
 
@@ -454,7 +447,7 @@ struct ClipboardPanelView: View {
 
   // MARK: 空态
 
-  /// 翻译空态的规格：28 pt 符号 + 14 semibold 标题 + 说明 / 品牌粉文字按钮
+  /// 共用的空状态（Shell/Style 的 EmptyState）：28 pt 符号 + 14 semibold 标题 + 说明 / 品牌粉文字按钮
   @ViewBuilder private var emptyState: some View {
     if model.isFiltered {
       EmptyState(symbol: "magnifyingglass", title: "没有匹配的条目") {
@@ -525,9 +518,12 @@ struct ClipboardPanelView: View {
     }
     .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: barState(count: count))
     .font(.system(size: 12))
+    // 整条默认 secondary（条数、「已选 N 条」、「⌘1–9 直接粘贴」这些状态和键位提示）；能点的动词在 hint 里单独给 primary
+    // （mac-whisker §3「面板里共用的几件」）
     .foregroundStyle(.secondary)
     .buttonStyle(.plain)
-    .padding(.horizontal, 14)
+    // 左右 16 = 列表四周内缩 6 + 行内边距 10：和行图标、行右缘共用左右边线
+    .padding(.horizontal, 16)
     .frame(height: Self.barHeight)
     .overlay(alignment: .top) { Hairline() }
   }
@@ -923,24 +919,5 @@ private struct TokenCollapse: Transition {
         Rectangle().scaleEffect(x: phase.isIdentity ? 1 : 0.01, anchor: .leading)
       }
       .opacity(phase.isIdentity ? 1 : 0)
-  }
-}
-
-/// 空状态：28 pt 符号 + 14 semibold 标题 + 下方说明或按钮（同翻译浮窗的空态）
-private struct EmptyState<Detail: View>: View {
-  let symbol: String
-  let title: String
-  @ViewBuilder var detail: Detail
-
-  var body: some View {
-    VStack(spacing: 8) {
-      Image(systemName: symbol)
-        .font(.system(size: 28))
-        .symbolRenderingMode(.hierarchical)
-        .foregroundStyle(.tertiary)
-      Text(title).font(.system(size: 14, weight: .semibold))
-      detail.font(.system(size: 12))
-    }
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 }

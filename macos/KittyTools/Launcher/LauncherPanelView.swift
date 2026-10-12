@@ -7,7 +7,7 @@
 // 换成 ⌘1–9 键帽；系统命令上了膛（清倒废纸篓、全部退出、强制退出的第一下）时选中行副标题换成 systemRed 的「再按 ↩ …」。
 // 行上右键是和 ⌘K 同一份动作（ActionContextMenu，体检 C8），VoiceOver 另有主动作、⌘↩、复制、收藏、移除几个动作。
 // 底栏 36（N8，对标 Raycast）：左边选中项的种类（16 pt 家族色块 + 种类名；收藏、移除常用时换成就地提示，移除带
-// 「撤销 ⌘Z」），右边「主动作 ↩」（品牌粉实心键帽）·「动作 ⌘K」，都能点；⌘K 动作菜单（共用 ActionMenu）锚在右下，
+// 「撤销 ⌘Z」），右边「主动作 ↩」（品牌粉实心键帽）·「操作 ⌘K」，都能点；⌘K 动作菜单（共用 ActionMenu）锚在右下，
 // 开着时面板至少高到放得下它。没有图钉、齿轮（⌘, 照样开设置）。有新版本时左边种类后面常驻「更新到 x」（UpdateBarHint）。
 // 面板高度随行数伸缩（带动画），顶边不动。
 // 状态和操作都在 LauncherModel。⌘Y 快速查看的预览卡（LauncherQuickLookView）也在这里。
@@ -119,20 +119,15 @@ struct LauncherPanelView: View {
     return height
   }
 
+  /// 线头（符号定宽）和左右内边距在 SearchLine 里，和剪贴板的搜索线是同一个
   private var searchBar: some View {
-    HStack(spacing: 12) {
-      Image(systemName: model.showsActions ? "command" : "magnifyingglass")
-        .font(.system(size: 17, weight: .medium))
-        .foregroundStyle(.tertiary)
-        .contentTransition(.symbolEffect(.replace))
-        .accessibilityHidden(true)
+    SearchLine(symbol: model.showsActions ? "command" : "magnifyingglass") {
       // ⌘K 菜单开着时，搜索框改成过滤动作
       CommandTextField(
         text: model.showsActions ? $model.actionQuery : $model.query,
-        placeholder: model.showsActions ? "搜索动作" : "搜索 App、网址、命令或文件", fontSize: 20,
+        placeholder: model.showsActions ? "搜索操作" : "搜索 App、网址、命令或文件", fontSize: 20,
         romanOnly: romanInput, onCommand: model.handleCommand)
     }
-    .padding(.horizontal, 18)
   }
 
   private var list: some View {
@@ -176,12 +171,13 @@ struct LauncherPanelView: View {
     )
   }
 
-  /// 分组标题：高度必须正好是 groupHeight（高亮和面板高度都按它算）
+  /// 分组标题：高度必须正好是 groupHeight（高亮和面板高度都按它算）。缩进 10 = 行内边距（和行图标同一条左边线），
+  /// 贴底留 2；翻译历史的分组标题同样的摆法（HistoryView.header）
   private func groupHeader(_ group: LauncherModel.Group) -> some View {
     Text(group.title)
       .font(.system(size: 11, weight: .semibold))
       .foregroundStyle(.tertiary)
-      .padding(.leading, 12)
+      .padding(.leading, 10)
       .padding(.bottom, 2)
       .frame(
         maxWidth: .infinity, minHeight: Self.groupHeight, maxHeight: Self.groupHeight,
@@ -238,16 +234,17 @@ struct LauncherPanelView: View {
     }
   }
 
-  /// ⌘K 动作菜单：从右下角放大出来（转场在 ActionMenu 里），锚在底栏「动作 ⌘K」的上方。
+  /// ⌘K 动作菜单：从右下角放大出来（转场在 ActionMenu 里），锚在底栏「操作 ⌘K」的上方、右缘对着 ⌘K 键帽
+  /// （= 底栏的右内边距 16）。空结果用 ActionMenu 默认的「没有匹配的操作」。
   /// 要撑高面板时是瞬间长高（AppDelegate 的 resize 在菜单开着时不动画），菜单一出来就在最终位置
   private var actionMenu: some View {
     ZStack(alignment: .bottomTrailing) {
       if model.showsActions {
         ActionMenu(
           items: model.filteredActions, selection: model.actionSelection,
-          emptyText: "没有匹配的动作", maxRows: Self.visibleRows, onRun: model.run
+          maxRows: Self.visibleRows, onRun: model.run
         )
-        .padding(.trailing, 12)
+        .padding(.trailing, 16)
         .padding(.bottom, Self.barHeight + 4)
       }
     }
@@ -256,7 +253,8 @@ struct LauncherPanelView: View {
       value: model.showsActions)
   }
 
-  /// 底栏（N8）：左边选中项的种类（有就地提示时换成提示），右边主动作 ↩ 和动作菜单 ⌘K，都能点。没有选中项时空着
+  /// 底栏（N8）：左边选中项的种类（有就地提示时换成提示），右边主动作 ↩ 和「操作 ⌘K」，都能点（字用 primary；种类名是
+  /// 状态，secondary：mac-whisker §3「面板里共用的几件」），两个按钮之间不画竖线（同剪贴板）。没有选中项时空着
   /// （有新版本时只剩「更新到 x」）
   private var bar: some View {
     HStack(spacing: 12) {
@@ -290,21 +288,21 @@ struct LauncherPanelView: View {
           }
         }
         .accessibilityLabel(primary)
-        Hairline(vertical: true).frame(height: 16)
         Button(action: model.toggleActions) {
           HStack(spacing: 6) {
-            Text("动作")
+            Text("操作")
             KeyCap("⌘K")
           }
         }
-        .accessibilityLabel("动作")
+        .accessibilityLabel("操作")
       }
     }
     .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: model.notice)
     .font(.system(size: 12))
     .lineLimit(1)
     .buttonStyle(.plain)
-    .padding(.horizontal, 14)
+    // 左右 16 = 列表四周内缩 6 + 行内边距 10：和行图标、行右缘共用左右边线
+    .padding(.horizontal, 16)
     .frame(height: Self.barHeight)
     .overlay(alignment: .top) { Hairline() }
   }
