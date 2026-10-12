@@ -1,6 +1,7 @@
-// 设置里的有序列表（翻译服务、网页搜索，N12；对标 Bob 服务页 / 系统设置「互联网账户」「登录项」）共用的零件：
+// 设置里的有序列表（翻译服务、网页搜索、状态屏的状态，N12；对标 Bob 服务页 / 系统设置「互联网账户」「登录项」）共用的零件：
 // 列表下面系统样式的「+ −」小按钮条、列表高度（有几行多高，不在列表里滚）、选中绑定（单击推进、键盘选中）、
-// 详情页的页头（40 pt 图标 + 名称 + 状态）。
+// 详情页的页头（40 pt 图标 + 名称 + 状态，放在表单外面、和列表页的页头同一个位置）。
+// 分组页脚的说明小字是 SectionFootnote（SettingsWindow.swift，所有设置页共用）。
 // 列表本身（List + .onMove 拖动排序、右键菜单与无障碍动作里的上移 / 下移）在各自的 Tab 里。
 
 import SwiftUI
@@ -35,15 +36,6 @@ enum OrderedList {
     }
   }
 
-  /// 分组下面的说明：caption secondary、靠左（分组表单的页脚默认靠右排，折到第二行的字也是：两样都要写）
-  static func footnote(_ text: String) -> some View {
-    Text(text)
-      .font(.caption)
-      .foregroundStyle(.secondary)
-      .multilineTextAlignment(.leading)
-      .frame(maxWidth: .infinity, alignment: .leading)
-  }
-
   /// 状态副标题的颜色：缺配置时橙色（Whisker §3 配置 / 密钥问题的语义色），否则 secondary
   static func statusStyle(isProblem: Bool) -> Color {
     isProblem ? Color(nsColor: .systemOrange) : Color(nsColor: .secondaryLabelColor)
@@ -61,7 +53,8 @@ extension View {
   }
 }
 
-/// 列表下面的「+ −」小按钮条（add 是按钮或菜单，只放图标）
+/// 列表下面的「+ −」小按钮条（add 是按钮或菜单，只放图标）。整条往左让出「+」在它那一格里的留白：
+/// 「+」的左缘对上上面那一列图标的左边线（四张列表共用；原来「+」比图标靠右 6.5 pt）
 struct ListEditBar<Add: View>: View {
   let removeTitle: String
   let canRemove: Bool
@@ -69,23 +62,27 @@ struct ListEditBar<Add: View>: View {
   @ViewBuilder let add: Add
 
   var body: some View {
+    // 每格 24 × 20；13 pt medium 的「+」在格子里居中，墨迹离格子左边 6.5（截图上量的：墨迹宽 10.5–11）
+    let cell = CGSize(width: 24, height: 20)
     HStack(spacing: 0) {
       add
-        .frame(width: 24, height: 20)
+        .frame(width: cell.width, height: cell.height)
       Divider().frame(height: 14)
       Button(removeTitle, systemImage: "minus", action: remove)
         .labelStyle(.iconOnly)
-        .frame(width: 24, height: 20)
+        .frame(width: cell.width, height: cell.height)
         .disabled(!canRemove)
         .help(removeTitle)
       Spacer(minLength: 0)
     }
     .buttonStyle(.borderless)
     .font(.system(size: 13, weight: .medium))
+    .padding(.leading, -(cell.width - 11) / 2)
   }
 }
 
-/// 详情页的页头：40 pt 图标 + 名称（title2）+ 状态（callout；缺配置时橙色），和设置页头同一套排版
+/// 详情页的页头：40 pt 图标 + 名称（title2）+ 状态（callout；缺配置时橙色），和列表页的页头 PageHeader 同一套排版、
+/// 同一个位置（pageHeaderInsets）。放在表单外面：`VStack(spacing: 0) { DetailHeader; Form }`，别放回 Section 的 header 里
 struct DetailHeader<Icon: View>: View {
   let title: String
   let status: String
@@ -109,8 +106,7 @@ struct DetailHeader<Icon: View>: View {
       }
       Spacer(minLength: 0)
     }
-    .textCase(nil)
-    .padding(.bottom, 6)
+    .pageHeaderInsets()
     .accessibilityElement(children: .combine)
     .accessibilityAddTraits(.isHeader)
   }

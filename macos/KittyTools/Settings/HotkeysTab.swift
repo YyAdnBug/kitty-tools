@@ -20,11 +20,10 @@ struct HotkeysTab: View {
           ShortcutsButton()
         } label: {
           Text("面板里的按键")
-          Text("剪贴板、启动器、翻译浮窗和截图里按什么键，都在速查表里。")
+          Text("剪贴板、启动器、翻译浮窗和截图里按什么键，都在速查表里")
         }
       } footer: {
-        Text("点录制框后按下新组合；Esc 取消，⌫ 清除，右键可恢复默认。")
-          .font(.caption).foregroundStyle(.secondary)
+        SectionFootnote("点录制框后按下新组合；Esc 取消，⌫ 清除，右键可恢复默认。")
       }
     }
     .formStyle(.grouped)
@@ -45,7 +44,7 @@ private struct HotKeyRow: View {
         Text(action.rowTitle)
         if let problem = message ?? center.failureMessage(for: action) {
           Text(problem)
-            .font(.caption)
+            .font(.subheadline)
             .foregroundStyle(Color(nsColor: .systemOrange))
             .fixedSize(horizontal: false, vertical: true)
         }

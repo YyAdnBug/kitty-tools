@@ -75,13 +75,13 @@ struct LauncherTab: View {
           Text("呼出时切到英文输入法")
           Text("只在搜索框里生效，离开后恢复；要搜中文时先关掉")
         }
-      } footer: {
-        HStack(alignment: .firstTextBaseline) {
-          caption(
-            "搜 App、系统设置、文件、书签、网址、路径、算式（也能换算单位和进制）和系统命令（lock、quit、kill 这些），"
-              + "↩ 打开，⌘K 看这一项的全部操作。")
-          Spacer(minLength: 8)
+        LabeledContent {
           ShortcutsButton()
+        } label: {
+          Text("启动器里的按键")
+          Text(
+            "搜 App、系统设置、文件、书签、网址、路径、算式（也能换算单位和进制）和系统命令（lock、quit、kill 这些），"
+              + "↩ 打开，⌘K 看这一项的全部操作")
         }
       }
       Section {
@@ -98,15 +98,15 @@ struct LauncherTab: View {
       } header: {
         Text("文件搜索")
       } footer: {
-        caption(
-          "「open 文件名」搜文件并打开，「find 文件名」在访达中显示；不想被搜到的文件夹加到系统设置 › Spotlight › 搜索隐私。")
+        SectionFootnote(
+          "「open 文件名」搜文件并打开，「find 文件名」在访达中显示；不想被搜到的文件夹加到 系统设置 › Spotlight › 搜索隐私。")
       }
       Section {
         ForEach(browsers, id: \.browser.id) { browserRows($0.browser, app: $0.app) }
       } header: {
         Text("浏览器书签与历史")
       } footer: {
-        caption("只列本机装了的浏览器。")
+        SectionFootnote("只列本机装了的浏览器。")
       }
       Section {
         engineList
@@ -119,7 +119,7 @@ struct LauncherTab: View {
       } header: {
         Text("网页搜索与快捷链接")
       } footer: {
-        caption(
+        SectionFootnote(
           "网址里有 {query} 的是搜索（「关键词 空格 内容」直达，开关 = 没有本地结果时兜底），没有的是快捷链接。"
             + "拖动调整顺序，搜索的关键词重复时用靠前的；点一行编辑。")
       }
@@ -128,7 +128,7 @@ struct LauncherTab: View {
       } header: {
         Text("使用记录")
       } footer: {
-        caption(
+        SectionFootnote(
           "启动器按用过的次数和时间排序，空搜索框里先列收藏（⌘D 加入），再列「常用」。在「常用」里选中一项按 ⌘⌫ 可以单独移除，⌘Z 撤销。")
       }
     }
@@ -253,14 +253,14 @@ struct LauncherTab: View {
   }
 
   /// 一家浏览器：图标 + 名字 + 书签开关，开着时下面写读到了几条，没读到（没有书签文件、文件里一条都没有、没授权）
-  /// 橙字（配置问题的语义色）；Safari 没授权时右边「去授权…」，下面一行说明怎么加。条数和启动器搜的是同一份缓存，
+  /// 橙字（配置问题的语义色）；Safari 没授权时右边「去授权」，下面一行说明怎么加。条数和启动器搜的是同一份缓存，
   /// 文件没变不重读；关着的不读文件。书签开着时下面缩进一行「也搜浏览历史」（体检 D8，默认关）
   @ViewBuilder
   private func browserRows(_ browser: Browsers.Browser, app: URL) -> some View {
     let bookmarks = binding(for: browser, in: $bookmarkIDs)
     let status = bookmarks.wrappedValue ? Bookmarks.status(of: browser) : nil
     Toggle(isOn: bookmarks) {
-      // 图标、「去授权…」都对着名字那一行（开关也是）；图标 16 + 间距 8 = 下面「也搜浏览历史」缩进的 24
+      // 图标、「去授权」都对着名字那一行（开关也是）；图标 16 + 间距 8 = 下面「也搜浏览历史」缩进的 24
       HStack(alignment: .firstTextBaseline, spacing: 8) {
         Image(nsImage: NSWorkspace.shared.icon(forFile: app.path))
           .resizable()
@@ -281,14 +281,14 @@ struct LauncherTab: View {
         }
         if status == .needsAccess {
           Spacer(minLength: 8)
-          Button("去授权…", action: Permissions.Kind.fullDiskAccess.openSettings)
+          Button("去授权", action: Permissions.Kind.fullDiskAccess.openSettings)
         }
       }
     }
     // 读屏在开关上也能直接去授权（按钮在开关的标签里）
     .accessibilityActions {
       if status == .needsAccess {
-        Button("去授权…", action: Permissions.Kind.fullDiskAccess.openSettings)
+        Button("去授权", action: Permissions.Kind.fullDiskAccess.openSettings)
       }
     }
     if bookmarks.wrappedValue {
@@ -345,14 +345,6 @@ struct LauncherTab: View {
     case let denied?: "没有权限：" + denied.joined(separator: "、") + "（去系统设置里打开）"
     }
   }
-
-  private func caption(_ text: String) -> some View {
-    Text(text)
-      .font(.caption)
-      .foregroundStyle(.secondary)
-      .multilineTextAlignment(.leading)
-      .frame(maxWidth: .infinity, alignment: .leading)
-  }
 }
 
 /// 一条搜索 / 快捷链接：种类色块、名称 + 状态（有问题时橙色说明）、关键词键帽、兜底开关（快捷链接没有，留位对齐）、
@@ -389,7 +381,7 @@ private struct EngineListRow: View {
       Toggle("「\(title)」没有本地结果时兜底", isOn: enabled)
         .labelsHidden()
         .toggleStyle(.switch)
-        .controlSize(.small)
+        .controlSize(.mini)
         .help("没有本地结果时用它搜索")
         // 快捷链接不参与兜底：藏起来但留位置，开关和键帽上下对齐
         .opacity(engine.isQuicklink ? 0 : 1)

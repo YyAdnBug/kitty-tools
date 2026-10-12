@@ -192,7 +192,7 @@ enum Browsers {
 
   /// 读别人的文件失败的原因：没权限（完全磁盘访问被拒是 EPERM、权限位不够是 EACCES，Foundation 都报
   /// fileReadNoPermission）→ needsAccess，没有文件 → noFile，别的（读到一半）→ nil。读本身不弹系统框：
-  /// 完全磁盘访问权限没有请求授权的 API，TCC 只拒绝（Safari 那一行在设置里给「去授权…」）
+  /// 完全磁盘访问权限没有请求授权的 API，TCC 只拒绝（Safari 那一行在设置里给「去授权」）
   static func failure(_ error: any Error) -> Status? {
     let error = error as NSError
     let posix = (error.userInfo[NSUnderlyingErrorKey] as? NSError).flatMap {

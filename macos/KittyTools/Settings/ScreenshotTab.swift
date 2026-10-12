@@ -16,7 +16,7 @@ struct ScreenshotTab: View {
       Section {
         SaveDirectoryRow(title: "快速保存到")
       } footer: {
-        caption(
+        SectionFootnote(
           "按 ⌘S 或工具栏的「存储」存到这里，文件名是「截图 日期 时间.png」，重名自动加序号。没选过时跟随系统截屏的存储位置。录屏、录音也存这里。"
         )
       }
@@ -32,33 +32,29 @@ struct ScreenshotTab: View {
           }
         }
       } footer: {
-        caption("拷贝、存储、钉图时响；还要系统设置 › 声音里的「播放用户界面音效」开着。截图翻译、识字不出声。")
+        SectionFootnote("拷贝、存储、钉图时响；还要 系统设置 › 声音 里的「播放用户界面音效」开着。截图翻译、识字不出声。")
       }
       Section {
         Toggle("截图后在屏幕角落留缩略图", isOn: $keepsThumbnail)
       } footer: {
-        caption("可以拖出、钉图、存储；关掉后截图只在右下角闪一下。")
+        SectionFootnote("可以拖出、钉图、存储；关掉后截图只在右下角闪一下。")
       }
       Section {
         Toggle("识字后把同一段里的换行接起来", isOn: $joinLines)
         JoinLinesPreview(joins: joinLines)
       } footer: {
-        caption("同一段里的行接起来，段和段之间保留换行：中文、日文的行直接接上，其它文字之间加空格。截图翻译总是这样接。框选里有二维码或条码时复制它的内容。")
+        SectionFootnote("同一段里的行接起来，段和段之间保留换行：中文、日文的行直接接上，其它文字之间加空格。截图翻译总是这样接。框选里有二维码或条码时复制它的内容。")
       }
       Section {
         LabeledContent {
           ShortcutsButton()
         } label: {
           Text("框选、标注、长截图和录屏的按键")
-          Text("拖动框选，数字键 1–0 换标注工具，↩ 拷贝，S 长截图，R 录屏。")
+          Text("拖动框选，数字键 1–0 换标注工具，↩ 拷贝，S 长截图，R 录屏")
         }
       }
     }
     .formStyle(.grouped)
-  }
-
-  private func caption(_ text: String) -> some View {
-    Text(text).font(.caption).foregroundStyle(.secondary)
   }
 }
 

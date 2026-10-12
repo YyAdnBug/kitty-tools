@@ -133,7 +133,7 @@ private struct Heading: View {
   }
 }
 
-/// 白底卡片里的一列行，行间发丝线（从文字列开始）
+/// 白底卡片里的一列行，行间发丝线（从文字列开始，右端和行内容一样缩 12，同速查表的卡片）
 private struct RowCard<Item: Hashable, Row: View>: View {
   let items: [Item]
   @ViewBuilder let row: (Item) -> Row
@@ -143,7 +143,7 @@ private struct RowCard<Item: Hashable, Row: View>: View {
     VStack(spacing: 0) {
       ForEach(items, id: \.self) { item in
         VStack(spacing: 0) {
-          if item != items.first { Hairline().padding(.leading, 46) }
+          if item != items.first { Hairline().padding(.leading, 46).padding(.trailing, 12) }
           row(item).padding(.horizontal, 12).padding(.vertical, 8).frame(minHeight: 40)
         }
       }
@@ -193,7 +193,7 @@ private struct WelcomeScreen: View {
           KindTile(symbol: feature.symbol, color: feature.color, size: 24)
           VStack(alignment: .leading, spacing: 1) {
             Text(feature.title).fontWeight(.medium)
-            Text(feature.detail).font(.caption).foregroundStyle(.secondary)
+            Text(feature.detail).font(.subheadline).foregroundStyle(.secondary)
           }
           Spacer(minLength: 8)
           switch feature.permission {
@@ -265,17 +265,19 @@ private struct TryScreen: View {
     return HStack(spacing: 10) {
       KindTile(symbol: action.symbol, color: action.color, size: 24)
       VStack(alignment: .leading, spacing: 1) {
-        Text(action.title)
+        // 两屏的行标题同一个字重（第一屏的功能名也是 medium）
+        Text(action.title).fontWeight(.medium)
         if let problem = center.failureMessage(for: action) {
-          Text(problem).font(.caption).foregroundStyle(Color(nsColor: .systemOrange))
+          Text(problem).font(.subheadline).foregroundStyle(Color(nsColor: .systemOrange))
         }
       }
       Spacer(minLength: 8)
       KeyCombo(action.hotKey?.display ?? "")
       ZStack {
         if done {
+          // 16：和第一屏授权状态的 ✓ 一样大（PermissionStatus）
           Image(systemName: "checkmark.circle.fill")
-            .font(.system(size: 18, weight: .medium))
+            .font(.system(size: 16, weight: .medium))
             .foregroundStyle(Style.brand)
             .transition(reduceMotion ? .opacity : .scale(scale: 0.3).combined(with: .opacity))
         }

@@ -41,14 +41,14 @@ nonisolated struct StatusPreset: Codable, Hashable, Identifiable {
     case normal
     /// 不睡眠（显示器照常熄）
     case awake
-    /// 不睡眠且屏幕常亮
+    /// 屏幕常亮（电脑也不睡眠）
     case displayOn
 
     var title: String {
       switch self {
       case .normal: "照常"
       case .awake: "不睡眠"
-      case .displayOn: "不睡眠且屏幕常亮"
+      case .displayOn: "屏幕常亮"
       }
     }
   }
@@ -163,12 +163,7 @@ nonisolated struct StatusPreset: Codable, Hashable, Identifiable {
 
   /// 列表行的一行小字：样式 · 电源 · 自动结束，照常、不结束的那一段不写（「透出 · 屏幕常亮」「熄屏 · 5 分钟后结束」）
   var summary: String {
-    let power: String? =
-      switch power {
-      case .normal: nil
-      case .awake: "不睡眠"
-      case .displayOn: "屏幕常亮"
-      }
+    let power = power == .normal ? nil : power.title
     let end = autoEndMinutes == 0 ? nil : Self.autoEndTitle(autoEndMinutes) + "后结束"
     return [style.title, power, end].compactMap { $0 }.joined(separator: " · ")
   }

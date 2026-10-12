@@ -253,6 +253,60 @@ struct SettingsListTests {
     #expect(window.toolbar?.items.count == 1)
   }
 
+  /// 详情页的页头和列表页的页头在同一个位置（视觉对齐 E2）：推进详情页时图标和标题原地换、不跳。两种页各画一张，
+  /// 量页头色块的外接框——都是左 20、上 14、边长 40（原来详情页的页头放在 Section 的 header 里，是左 30、上 20）。
+  /// 详情页用一条路径快捷链接：没有网站图标，色块和通用页的一样是灰的。屏外无边框窗口，临时偏好域
+  @Test func detailHeaderSitsWherePageHeaderDoes() throws {
+    let suite = "kitty-test-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    defaults.set(
+      SearchEngineDetail.encode([
+        SearchEngine(
+          id: "downloads", name: "下载", keyword: "", urlTemplate: "~/Downloads", enabled: false)
+      ]), forKey: Prefs.launcherWebSearchEngines)
+    /// 左上角 64 × 56 pt 里（页头的文字从 72 起、第一组卡片从 76 起）和背景不一样的像素的外接框
+    func tile(of view: some View) throws -> CGRect {
+      let size = NSSize(width: 590, height: 400)
+      let host = NSHostingView(rootView: view.frame(width: size.width, height: size.height))
+      let window = NSWindow(
+        contentRect: NSRect(origin: NSPoint(x: -20000, y: -20000), size: size),
+        styleMask: [.borderless], backing: .buffered, defer: false)
+      window.appearance = NSAppearance(named: .aqua)
+      window.contentView = host
+      window.orderFront(nil)
+      defer { window.orderOut(nil) }
+      for _ in 0..<3 { RunLoop.main.run(until: .now.addingTimeInterval(0.1)) }
+      let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+      host.cacheDisplay(in: host.bounds, to: bitmap)
+      let scale = CGFloat(bitmap.pixelsWide) / size.width
+      let components = { (x: Int, y: Int) -> [CGFloat] in
+        let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB)
+        return color.map {
+          [$0.redComponent, $0.greenComponent, $0.blueComponent, $0.alphaComponent]
+        }
+          ?? [0, 0, 0, 0]
+      }
+      let base = components(1, 1)
+      var box = CGRect.null
+      for y in 0..<Int(56 * scale) {
+        for x in 0..<Int(64 * scale)
+        where zip(components(x, y), base).map({ abs($0 - $1) }).reduce(0, +) > 0.25 {
+          box = box.union(CGRect(x: x, y: y, width: 1, height: 1))
+        }
+      }
+      return box.applying(CGAffineTransform(scaleX: 1 / scale, y: 1 / scale))
+    }
+    let list = try tile(
+      of: VStack(spacing: 0) {
+        PageHeader(page: .general)
+        Form { Text(verbatim: "list") }.formStyle(.grouped)
+      })
+    let detail = try tile(of: SearchEngineDetail(id: "downloads").defaultAppStorage(defaults))
+    #expect(list == CGRect(x: 20, y: 14, width: 40, height: 40))
+    #expect(detail == list)
+  }
+
   /// 主菜单「显示 › 返回 ⌘[」（SettingsCommands）：菜单里有；只在设置窗是 key、推进了详情页时能退，
   /// 状态过期时再按也不崩；换页清空推进的详情页
   @Test func backMenuCommand() throws {

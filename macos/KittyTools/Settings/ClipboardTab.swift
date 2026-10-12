@@ -25,22 +25,30 @@ struct ClipboardTab: View {
 
   var body: some View {
     Form {
-      Section("历史") {
+      Section {
         Picker("保留普通历史", selection: $retentionDays) {
           ForEach(Prefs.clipboardRetentionChoices, id: \.self) {
             Text(Self.retentionTitle($0)).tag($0)
           }
         }
-        Picker("图片最多占用", selection: $imageBudgetMB) {
-          ForEach([(512, "512 MB"), (1024, "1 GB"), (2048, "2 GB"), (5120, "5 GB")], id: \.0) {
-            Text($0.1).tag($0.0)
+        // 横排单选包进 LabeledContent：贴着右边线（直接放 Picker 的话单选紧跟在标签后面、靠左）
+        LabeledContent("图片最多占用") {
+          Picker("图片最多占用", selection: $imageBudgetMB) {
+            ForEach([(512, "512 MB"), (1024, "1 GB"), (2048, "2 GB"), (5120, "5 GB")], id: \.0) {
+              Text($0.1).tag($0.0)
+            }
+            Text("不限").tag(0)
           }
-          Text("不限").tag(0)
+          .pickerStyle(.radioGroup)
+          .horizontalRadioGroupLayout()
+          .labelsHidden()
+          .fixedSize()
         }
-        .pickerStyle(.radioGroup)
-        .horizontalRadioGroupLayout()
         LabeledContent("图片当前占用", value: imageUsage)
-        Text("收藏和片段一直留着，图片占用也只算普通历史里的").font(.caption).foregroundStyle(.secondary)
+      } header: {
+        Text("历史")
+      } footer: {
+        SectionFootnote("收藏和片段一直留着，图片占用也只算普通历史里的。")
       }
       Section("面板") {
         ClipboardPanelSketch(showsLens: showPreview, showsLinkPreview: linkPreview)
@@ -93,7 +101,7 @@ struct ClipboardTab: View {
       } header: {
         Text("不记录这些 App 里的复制")
       } footer: {
-        OrderedList.footnote("密码管理器通常会自己标记「不要记录」，这里只是兜底。")
+        SectionFootnote("密码管理器通常会自己标记「不要记录」，这里只是兜底。")
       }
     }
     .formStyle(.grouped)

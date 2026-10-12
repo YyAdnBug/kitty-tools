@@ -22,7 +22,7 @@ struct RecordTab: View {
       Section {
         SaveDirectoryRow(title: "保存到")
       } footer: {
-        caption("和「截图」页的「快速保存到」是同一个文件夹，文件名是「录屏 日期 时间.mp4」「录音 日期 时间.m4a」。")
+        SectionFootnote("和 设置 › 截图 的「快速保存到」是同一个文件夹，文件名是「录屏 日期 时间.mp4」「录音 日期 时间.m4a」。")
       }
       Section {
         Picker("帧率", selection: $frameRate) {
@@ -54,7 +54,7 @@ struct RecordTab: View {
       } header: {
         Text("录屏")
       } footer: {
-        caption(
+        SectionFootnote(
           "60 fps 更顺，文件大约大一半；大屏上可能录不满 60。文件嫌大：标准清晰度在高分屏上宽高各减半，文件小一半多，小字会糊一些；HEVC 同样的画面小三分之一左右，部分 App 和旧设备可能放不了。录好的也可以在角落的缩略图上点「压缩」另存一份小的。只显示快捷键：带 ⌘ ⌃ ⌥ 的组合键、Esc 和 F 键才进画面，打字不显示。"
         )
       }
@@ -69,7 +69,7 @@ struct RecordTab: View {
       } header: {
         Text("录音")
       } footer: {
-        caption(
+        SectionFootnote(
           "录系统声音时菜单栏会出现屏幕录制指示；锁屏会停止；不能暂停。立即开始关着时，按快捷键（或点菜单栏、启动器里的「录音」）先在屏幕底部打开录音控制条，点 ● 或再按一次才开始录。"
         )
       }
@@ -78,14 +78,10 @@ struct RecordTab: View {
           ShortcutsButton()
         } label: {
           Text("录屏和录音的按键")
-          Text("框选和截图一样，↩ 或双击选区开始，Esc 取消；录着时再按一次快捷键停止并保存。")
+          Text("框选和截图一样，↩ 或双击选区开始，Esc 取消；录着时再按一次快捷键停止并保存")
         }
       }
     }
     .formStyle(.grouped)
-  }
-
-  private func caption(_ text: String) -> some View {
-    Text(text).font(.caption).foregroundStyle(.secondary)
   }
 }

@@ -29,11 +29,14 @@ struct GeneralTab: View {
       Section {
         LabeledContent("外观") { AppearancePicker(selection: $appearance) }
           .onChange(of: appearance) { AppAppearance.apply() }
-        LabeledContent("强调色") { AccentPicker() }
-        caption(
-          Accent.shared.choice == .system
-            ? "系统强调色选「多色」时使用品牌粉。"
-            : "菜单高亮和焦点环由系统绘制，仍使用系统强调色。")
+        LabeledContent {
+          AccentPicker()
+        } label: {
+          Text("强调色")
+          Text(
+            Accent.shared.choice == .system
+              ? "系统强调色选「多色」时使用品牌粉" : "菜单高亮和焦点环由系统绘制，仍使用系统强调色")
+        }
       }
       Section("动效") {
         Toggle(isOn: $squeezeEntrance) {
@@ -42,8 +45,10 @@ struct GeneralTab: View {
         }
       }
       Section("菜单栏") {
-        Toggle("在菜单栏显示图标", isOn: $statusItemVisible)
-        caption("隐藏后，再打开一次 Kitty Tools（在启动器或访达里）可以回到设置；快捷键照常能用。")
+        Toggle(isOn: $statusItemVisible) {
+          Text("在菜单栏显示图标")
+          Text("隐藏后，再打开一次 Kitty Tools（在启动器或访达里）可以回到设置；快捷键照常能用")
+        }
         // 分段左边是菜单栏上现在那张图（1:1 实时预览）：分段控件只显示文字，塞不进图。
         // LabeledContent 的标签不随 .disabled 变淡，图标隐藏时自己淡成 .tertiary（同系统禁用文字）
         LabeledContent {
@@ -65,19 +70,29 @@ struct GeneralTab: View {
         }
         .disabled(!statusItemVisible)
       }
-      Section("启动") {
-        Toggle("登录时自动打开", isOn: launchAtLogin)
-          .disabled(!LaunchAtLogin.isInstalled)
-        if !LaunchAtLogin.isInstalled {
-          caption("正在从磁盘映像或临时位置运行。请先把 App 拖进「应用程序」文件夹，再开启这一项。")
-        } else if loginStatus == .requiresApproval {
+      Section {
+        Toggle(isOn: launchAtLogin) {
+          Text("登录时自动打开")
+          if let loginError { Text(loginError).foregroundStyle(.red) }
+        }
+        .disabled(!LaunchAtLogin.isInstalled)
+        if LaunchAtLogin.isInstalled, loginStatus == .requiresApproval {
           LabeledContent {
             Button("打开登录项设置") { SMAppService.openSystemSettingsLoginItems() }
           } label: {
-            caption("需要在「系统设置 › 通用 › 登录项与扩展」里允许本 App 在后台运行。")
+            // 这一行只有说明、没有标题：照行副标题的样子（11 pt secondary）
+            Text("需要在 系统设置 › 通用 › 登录项与扩展 里允许本 App 在后台运行")
+              .font(.subheadline)
+              .foregroundStyle(.secondary)
           }
         }
-        if let loginError { caption(loginError).foregroundStyle(.red) }
+      } header: {
+        Text("启动")
+      } footer: {
+        // 开关置灰的原因放页脚：写成开关的副标题会跟着一起变淡
+        if !LaunchAtLogin.isInstalled {
+          SectionFootnote("正在从磁盘映像或临时位置运行。请先把 App 拖进「应用程序」文件夹，再开启这一项。")
+        }
       }
       Section("权限") {
         PermissionRow(
@@ -157,10 +172,6 @@ struct GeneralTab: View {
   private static var currentPasteboardBehavior: Int? {
     if #available(macOS 15.4, *) { NSPasteboard.general.accessBehavior.rawValue } else { nil }
   }
-
-  private func caption(_ text: String) -> some View {
-    Text(text).font(.caption).foregroundStyle(.secondary)
-  }
 }
 
 /// 一行权限：家族色块 + 名字 + 用途，右边是状态（未授权时带「去授权」）。从未授权变已授权时符号替换 + 弹一下
@@ -180,7 +191,8 @@ struct PermissionRow: View {
       KindTile(symbol: symbol, color: color, size: 24)
       VStack(alignment: .leading, spacing: 1) {
         Text(title)
-        Text(detail).font(.caption).foregroundStyle(.secondary)
+        // 11 pt：和系统画的行副标题同一个字号
+        Text(detail).font(.subheadline).foregroundStyle(.secondary)
       }
       Spacer(minLength: 8)
       PermissionStatus(granted: granted, button: button, grant: grant)
@@ -213,10 +225,15 @@ struct PermissionStatus: View {
 private struct AppearancePicker: View {
   @Binding var selection: AppAppearance
 
+  /// 缩略图四周给选中圈留的位置
+  private static let ring: CGFloat = 4
+
   var body: some View {
     HStack(spacing: 6) {
       ForEach(AppAppearance.allCases) { option($0) }
     }
+    // 选中圈往外露：最右一张缩略图自己的右边贴着同组控件的右边线（下面那排强调色色块、别的行的开关）
+    .padding(.trailing, -Self.ring)
     .accessibilityElement(children: .contain)
     .accessibilityLabel("外观")
   }
@@ -226,9 +243,9 @@ private struct AppearancePicker: View {
     return Button {
       selection = appearance
     } label: {
-      VStack(spacing: 3) {
+      VStack(spacing: 4) {
         AppearanceThumbnail(appearance: appearance)
-          .padding(4)
+          .padding(Self.ring)
           .overlay {
             if selected {
               RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
@@ -327,7 +344,7 @@ private struct AccentPicker: View {
     } label: {
       Circle()
         .fill(fill(of: choice))
-        .overlay(Circle().strokeBorder(.black.opacity(0.14), lineWidth: 0.5))
+        .overlay(Circle().hairlineBorder(.black.opacity(0.14)))
         .overlay {
           if selected {
             Circle().fill(.white).frame(width: 6, height: 6)

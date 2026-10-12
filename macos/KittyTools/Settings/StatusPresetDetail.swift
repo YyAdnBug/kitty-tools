@@ -1,5 +1,5 @@
 // 设置 › 状态屏 › 某个状态（详情页，从列表推进来；同 SearchEngineDetail / TranslateServiceDetail 的形式）：
-// 页头 40 pt 图标 + 标题 + 摘要，下面分组表单：标题、说明、图标（一格「无」+ 16 个表情）、样式（三选一，下面一块
+// 页头 40 pt 图标 + 标题 + 摘要（在表单外面，和列表页的页头同一个位置），下面分组表单：标题、说明、图标（一格「无」+ 16 个表情）、样式（三选一，下面一块
 // 预览：StatusScreenView.swift 的 StatusPreview，真的画面缩小，表情会动）、电源、自动结束，最后是删除（至少留一个；
 // 自己加的、改过的先确认）。
 // 改动即时写回偏好里的 JSON 列表（和 StatusScreenTab 读写同一个键），存之前过 StatusPreset.sanitized。
@@ -38,7 +38,26 @@ struct StatusPresetDetail: View {
       draft = $0
       save($0)
     }
-    return Form {
+    return VStack(spacing: 0) {
+      DetailHeader(
+        title: stored.title, status: editing.problem ?? stored.summary,
+        isProblem: editing.problem != nil
+      ) {
+        StatusPresetIcon(symbol: stored.symbol, size: 40)
+      }
+      fields(binding, editing: editing, stored: stored, isOnly: isOnly)
+    }
+    .confirmationDialog("删除「\(stored.title)」？", isPresented: $confirmsDelete) {
+      Button("删除", role: .destructive, action: delete)
+    } message: {
+      Text(Self.deleteMessage)
+    }
+  }
+
+  private func fields(
+    _ binding: Binding<StatusPreset>, editing: StatusPreset, stored: StatusPreset, isOnly: Bool
+  ) -> some View {
+    Form {
       Section {
         TextField("标题", text: binding.title, prompt: Text("如 马上回来"))
         TextField(
@@ -49,15 +68,8 @@ struct StatusPresetDetail: View {
             binding.wrappedValue.detail = $0
           }, prompt: Text("可不填"))
         LabeledContent("图标") { SymbolGrid(selection: binding.symbol) }
-      } header: {
-        DetailHeader(
-          title: stored.title, status: editing.problem ?? stored.summary,
-          isProblem: editing.problem != nil
-        ) {
-          StatusPresetIcon(symbol: stored.symbol, size: 40)
-        }
       } footer: {
-        OrderedList.footnote(
+        SectionFootnote(
           "标题最多 \(StatusPreset.maxTitle) 个字，说明最多 \(StatusPreset.maxDetail) 个字。")
       }
       Section {
@@ -75,15 +87,20 @@ struct StatusPresetDetail: View {
           ForEach(StatusPreset.Power.allCases, id: \.self) { Text($0.title).tag($0) }
         }
         .pickerStyle(.segmented)
-        Picker("自动结束", selection: binding.autoEndMinutes) {
-          ForEach(StatusPreset.autoEndChoices, id: \.self) {
-            Text(StatusPreset.autoEndTitle($0)).tag($0)
+        // 横排单选包进 LabeledContent：贴着右边线（同设置 › 剪贴板「图片最多占用」）
+        LabeledContent("自动结束") {
+          Picker("自动结束", selection: binding.autoEndMinutes) {
+            ForEach(StatusPreset.autoEndChoices, id: \.self) {
+              Text(StatusPreset.autoEndTitle($0)).tag($0)
+            }
           }
+          .pickerStyle(.radioGroup)
+          .horizontalRadioGroupLayout()
+          .labelsHidden()
+          .fixedSize()
         }
-        .pickerStyle(.radioGroup)
-        .horizontalRadioGroupLayout()
       } footer: {
-        OrderedList.footnote("电源只管闲置的时候：屏幕锁定后照常熄灭，合上盖子照样睡眠。")
+        SectionFootnote("电源只管闲置的时候：屏幕锁定后照常熄灭，合上盖子照样睡眠。屏幕常亮时电脑也不睡眠。")
       }
       Section {
         DangerButton(stored.isPristine ? "删除" : "删除…") {
@@ -91,15 +108,10 @@ struct StatusPresetDetail: View {
         }
         .disabled(isOnly)
       } footer: {
-        if isOnly { OrderedList.footnote("至少留一个状态。") }
+        if isOnly { SectionFootnote("至少留一个状态。") }
       }
     }
     .formStyle(.grouped)
-    .confirmationDialog("删除「\(stored.title)」？", isPresented: $confirmsDelete) {
-      Button("删除", role: .destructive, action: delete)
-    } message: {
-      Text(Self.deleteMessage)
-    }
   }
 
   private func delete() {
@@ -115,9 +127,10 @@ struct StatusPresetDetail: View {
 }
 
 /// 图标格子：一格「无」+ StatusEmoji.choices 的 16 个表情（静止画面），一行 7 个；选中的外面一圈强调色
-/// （同通用页的外观缩略图）
+/// （同通用页的外观缩略图）。深色外观下颜色很深的那两个表情（开会、黑猫）的格子换成浅底（StatusEmoji.plated）
 private struct SymbolGrid: View {
   @Binding var selection: String
+  @Environment(\.colorScheme) private var scheme
 
   private static let cell: CGFloat = 28
   private static let ring: CGFloat = 2
@@ -128,6 +141,8 @@ private struct SymbolGrid: View {
       ForEach([""] + StatusEmoji.ids, id: \.self) { cell($0) }
     }
     .fixedSize()
+    // 选中圈往外露：最右一列格子自己的右边贴着同组控件的右边线（同通用页的外观缩略图）
+    .padding(.trailing, -Self.ring)
     .accessibilityElement(children: .contain)
     .accessibilityLabel("图标")
   }
@@ -150,7 +165,8 @@ private struct SymbolGrid: View {
       .foregroundStyle(selected ? .primary : .secondary)
       .frame(width: Self.cell, height: Self.cell)
       .background(
-        Style.controlFill,
+        StatusEmoji.needsPlate(symbol, dark: scheme == .dark)
+          ? Color(white: StatusEmoji.plateWhite) : Style.controlFill,
         in: RoundedRectangle(cornerRadius: Style.Radius.control, style: .continuous)
       )
       .padding(Self.ring)

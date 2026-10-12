@@ -194,7 +194,7 @@ struct StatusScreenTests {
     // 设置里的叫法：三种样式各一句话，电源三档
     #expect(StatusPreset.Look.allCases.map(\.title) == ["熄屏", "告示", "透出"])
     #expect(StatusPreset.Look.allCases.allSatisfy { !$0.explanation.isEmpty })
-    #expect(StatusPreset.Power.allCases.map(\.title) == ["照常", "不睡眠", "不睡眠且屏幕常亮"])
+    #expect(StatusPreset.Power.allCases.map(\.title) == ["照常", "不睡眠", "屏幕常亮"])
   }
 
   /// 加：新状态是「新状态」、告示、不睡眠、不自动结束、不带图标，id 各不相同，本身合规；到 20 个就不加
@@ -968,6 +968,49 @@ struct StatusScreenTests {
       count
         + (0..<image.width).count { x in data[y * image.bytesPerRow + x * 4 + 3] > 200 }
     }
+  }
+
+  /// 小图标的浅底（视觉对齐 E8）：只给颜色很深的开会、黑猫，只在深色外观下。菜单用的那张图垫不垫看画它的那一刻的外观——
+  /// 同一张图先后在深色、浅色外观下各画一遍：深色整块都有底（浅灰、四角是圆的），浅色只有表情自己；别的表情两种外观一个样
+  @Test func darkEmojiGetLightPlate() throws {
+    #expect(StatusEmoji.plated == ["busts", "black-cat"])
+    #expect(StatusEmoji.dim.isSubset(of: StatusEmoji.plated))
+    for id in StatusEmoji.ids + [StatusEmoji.eyes, ""] {
+      #expect(!StatusEmoji.needsPlate(id, dark: false), "\(id)")
+      #expect(StatusEmoji.needsPlate(id, dark: true) == StatusEmoji.plated.contains(id), "\(id)")
+    }
+    func drawn(_ id: String, _ appearance: NSAppearance.Name) throws -> NSBitmapImageRep {
+      let image = try #require(StatusEmoji.menuImage(id))
+      #expect(image.size == NSSize(width: 16, height: 16))
+      let rep = try #require(
+        NSBitmapImageRep(
+          bitmapDataPlanes: nil, pixelsWide: 32, pixelsHigh: 32, bitsPerSample: 8,
+          samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+          bytesPerRow: 0, bitsPerPixel: 0))
+      rep.size = image.size
+      try #require(NSAppearance(named: appearance)).performAsCurrentDrawingAppearance {
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        image.draw(in: NSRect(origin: .zero, size: image.size))
+        NSGraphicsContext.restoreGraphicsState()
+      }
+      return rep
+    }
+    func opaque(_ rep: NSBitmapImageRep) -> Int {
+      (0..<32).reduce(0) { count, y in
+        count + (0..<32).count { (rep.colorAt(x: $0, y: y)?.alphaComponent ?? 0) > 0.8 }
+      }
+    }
+    for id in StatusEmoji.plated.sorted() {
+      // 先深后浅：同一种图换了外观要重新画，不能拿上一次的
+      let (dark, light) = (try drawn(id, .darkAqua), try drawn(id, .aqua))
+      #expect(opaque(dark) > 950, "\(id)：深色下整块都有底")
+      #expect(opaque(light) < 700, "\(id)：浅色下只有表情自己")
+      let edge = try #require(dark.colorAt(x: 1, y: 16))
+      #expect(abs(edge.redComponent - StatusEmoji.plateWhite) < 0.02 && edge.alphaComponent > 0.99)
+      #expect((dark.colorAt(x: 0, y: 0)?.alphaComponent ?? 1) < 0.2, "\(id)：底的四角是圆的")
+    }
+    #expect(opaque(try drawn("rocket", .darkAqua)) == opaque(try drawn("rocket", .aqua)))
   }
 
   /// 每帧时长 → 关键帧动画离散模式的 keyTimes：比帧数多一个，从 0 到 1，按时长分；总时长是各帧之和

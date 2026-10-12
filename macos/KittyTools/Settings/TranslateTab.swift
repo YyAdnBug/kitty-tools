@@ -74,19 +74,19 @@ struct TranslateTab: View {
 
   private var form: some View {
     Form {
-      Section("语言") {
+      Section {
         Picker("第一语言", selection: $first) {
           ForEach(Lang.allCases, id: \.self) { Text($0.title).tag($0.rawValue) }
         }
         Picker("第二语言", selection: $second) {
           ForEach(Lang.allCases, id: \.self) { Text($0.title).tag($0.rawValue) }
         }
-        Text(
+      } header: {
+        Text("语言")
+      } footer: {
+        SectionFootnote(
           "目标语言选「自动」时：原文是第一语言就译成第二语言，否则译成第一语言（简繁中文算同一种）。"
-            + "源语言和目标语言在翻译浮窗顶部切换，会一直记住。"
-        )
-        .font(.caption)
-        .foregroundStyle(.secondary)
+            + "源语言和目标语言在翻译浮窗顶部切换，会一直记住。")
       }
       // 两个选成同一种语言（简繁也算）就互换，免得「自动」变成中译中
       .onChange(of: first) { old, new in if sameLanguage(new, second) { second = old } }
@@ -117,17 +117,16 @@ struct TranslateTab: View {
       Section {
         Toggle("查单个词时显示系统词典的释义", isOn: $systemDictionary)
         Toggle("查单个词时大模型按词典回答（读音、词性、例句）", isOn: $wordMode)
+        LabeledContent {
+          Button("打开「词典」") { NSWorkspace.shared.open(URL(string: "dict://")!) }
+        } label: {
+          Text("系统词典的中文释义")
+          Text("默认给英文词英英释义；在「词典」App 的设置里勾上「牛津英汉汉英词典」并拖到最前面，就会显示中文释义")
+        }
       } header: {
         Text("查词")
       } footer: {
-        HStack(alignment: .firstTextBaseline) {
-          Text("系统词典默认给英文词英英释义：在「词典」App 的设置里勾上「牛津英汉汉英词典」并拖到最前面，就会显示中文释义。查单个词时不自动复制、不给「替换原文」。")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-          Spacer(minLength: 8)
-          Button("打开「词典」") { NSWorkspace.shared.open(URL(string: "dict://")!) }
-            .font(.caption)
-        }
+        SectionFootnote("查单个词时不自动复制、不给「替换原文」。")
       }
       Section {
         Picker(selection: $panelPosition) {
@@ -162,16 +161,16 @@ struct TranslateTab: View {
             DangerButton("清空翻译历史…") { confirmsClear = true }
           }
         }
+        LabeledContent {
+          ShortcutsButton()
+        } label: {
+          Text("翻译浮窗里的按键")
+          Text("↩ 翻译，⌘R 重新翻译，⌘1–9 复制第 1–9 个结果，⌘Y 翻译历史；划词来的翻译可以「替换原文」")
+        }
       } header: {
         Text("行为")
       } footer: {
-        HStack(alignment: .firstTextBaseline) {
-          Text("收藏的记录不算在保留条数里、永不清理。划词来的翻译可以「替换原文」，浮窗里的按键见快捷键速查表。")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-          Spacer(minLength: 8)
-          ShortcutsButton()
-        }
+        SectionFootnote("收藏的记录不算在保留条数里、永不清理。")
       }
       Section {
         serviceList
@@ -183,7 +182,7 @@ struct TranslateTab: View {
       } header: {
         Text("翻译服务")
       } footer: {
-        OrderedList.footnote(
+        SectionFootnote(
           "拖动调整顺序，结果按这个顺序显示，第一个服务的结果写入历史、用于自动复制；点一行进入设置。删掉的内置服务可以从「+」加回来，密钥还在。")
       }
     }
@@ -346,7 +345,7 @@ private struct ServiceListRow: View {
       Toggle("启用「\(service.name)」", isOn: $service.isEnabled)
         .labelsHidden()
         .toggleStyle(.switch)
-        .controlSize(.small)
+        .controlSize(.mini)
       Image(systemName: "chevron.forward")
         .foregroundStyle(.tertiary)
         .accessibilityHidden(true)

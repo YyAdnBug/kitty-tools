@@ -1,6 +1,7 @@
 // 状态屏告示上的动画表情（PLAN §10「状态屏」Z15a）：清单（id、中文名、顺序）、静止画面（第一帧，按 id 缓存）、
 // 解出全部帧和每帧时长、把帧交给一个图层循环播，和两处共用的小视图——StatusEmojiView（告示上的那一个：静止画面垫着，
-// 帧来了换成在播的图层）、StatusPresetIcon（列表里一个状态的小图标）。
+// 帧来了换成在播的图层）、StatusPresetIcon（列表里一个状态的小图标）。颜色很深的两个表情（开会、黑猫）当小图标用时，
+// 深色外观下垫一块浅底（plated；设置的列表行 / 详情页页头 / 图标格子、启动器的状态行、菜单栏子菜单）。
 // 素材是 Microsoft Fluent Emoji Animated（MIT）转成的 HEICS（HEVC 图像序列，带透明通道，256 × 256，37–73 帧，
 // 每秒 24 帧），打进包里是平铺的 status-emoji-<id>.heics；转换脚本 macos/status-emoji.swift，
 // 出处和许可全文在 Resources/status-emoji-LICENSE.txt。
@@ -25,8 +26,20 @@ enum StatusEmoji {
   /// 有人碰键盘鼠标时从屏幕底边冒出来的那双眼睛（Z17a）：不在可选的里面
   nonisolated static let eyes = "eyes"
   /// 颜色很深、在黑底和 HUD 底板上几乎看不见的表情（「开会」的两个人影是深紫色的剪影）：告示上给它垫一团柔和的亮光
-  /// （StatusEmojiView）。黑猫是亮一些的紫色，不用垫
+  /// （StatusEmojiView）。黑猫是亮一些的紫色，告示上那么大时看得清（截图自检 status-screen-sign-black-cat），不用垫
   nonisolated static let dim: Set<String> = ["busts"]
+  /// 当小图标用（16–40 pt）时在深色外观下几乎看不见的表情：开会，加上黑猫（缩到这么小，深紫色的身子和深灰的底糊在一起）。
+  /// 深色外观下给它们垫一块浅底，浅色外观不垫（needsPlate）。和 dim 是两回事：那是整屏告示上的亮光
+  nonisolated static let plated: Set<String> = ["busts", "black-cat"]
+  /// 浅底的灰度（和浅色外观下它们所在的底差不多亮）；圆角按色块公式 Style.Radius.tile，表情缩到底的 plateFill 那么大、
+  /// 四边留一点底
+  nonisolated static let plateWhite: CGFloat = 0.88
+  nonisolated static let plateFill: CGFloat = 0.84
+
+  /// 这个表情的小图标在这种外观下要不要垫浅底
+  nonisolated static func needsPlate(_ id: String, dark: Bool) -> Bool {
+    dark && plated.contains(id)
+  }
 
   nonisolated static func name(_ id: String) -> String? { choices.first { $0.id == id }?.name }
 
@@ -47,9 +60,32 @@ enum StatusEmoji {
     return image
   }
 
-  /// 菜单项用的小图（16 pt）
+  /// 菜单项用的小图（16 pt）。要垫浅底的那两个是一张现画的图：垫不垫看画的那一刻的外观（菜单跟的是系统外观，或
+  /// 设置 › 通用里选的），不在这里定死
   static func menuImage(_ id: String) -> NSImage? {
-    still(id).map { NSImage(cgImage: $0, size: NSSize(width: 16, height: 16)) }
+    guard let still = still(id) else { return nil }
+    let size = NSSize(width: 16, height: 16)
+    return plated.contains(id)
+      ? platedImage(still, size: size) : NSImage(cgImage: still, size: size)
+  }
+
+  /// 深色外观下垫着浅底的小图，浅色外观下就是表情本身。nonisolated：这个画图的闭包系统可能在任何线程上调
+  /// （NSImage.h 写明的；mac-native §3），它只读传进来的图和「正在画的外观」
+  nonisolated private static func platedImage(_ still: CGImage, size: NSSize) -> NSImage {
+    NSImage(size: size, flipped: false) { rect in
+      let dark = NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+      var frame = rect
+      if dark {
+        let radius = rect.width * 0.225  // 色块公式（Style.Radius.tile；Style 绑在主线程上，这里不调它）
+        NSColor(white: plateWhite, alpha: 1).setFill()
+        NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+        let inset = rect.width * (1 - plateFill) / 2
+        frame = rect.insetBy(dx: inset, dy: inset)
+      }
+      NSGraphicsContext.current?.imageInterpolation = .high
+      NSGraphicsContext.current?.cgContext.draw(still, in: frame)
+      return true
+    }
   }
 
   /// 把 16 张静止画面先在主线程外解好：设置里的图标格子一次要画 16 张，在主线程上现解要七八十毫秒
@@ -209,18 +245,27 @@ private struct EmojiPlayer: NSViewRepresentable {
 }
 
 /// 列表里一个状态的小图标（设置的列表行和详情页页头、启动器的状态行）：选了表情的是表情的静止画面，没选的是家族色块里
-/// 「只有几行字」的符号
+/// 「只有几行字」的符号。深色外观下颜色很深的那两个表情垫一块浅底（StatusEmoji.plated），不然看不见
 struct StatusPresetIcon: View {
   /// StatusPreset.symbol：表情 id，空 = 没选
   let symbol: String
   var size: CGFloat = 24
+  @Environment(\.colorScheme) private var scheme
 
   var body: some View {
     if let still = StatusEmoji.still(symbol) {
+      let plated = StatusEmoji.needsPlate(symbol, dark: scheme == .dark)
       Image(decorative: still, scale: 1)
         .resizable()
         .interpolation(.high)
         .frame(width: size, height: size)
+        .scaleEffect(plated ? StatusEmoji.plateFill : 1)
+        .background {
+          if plated {
+            RoundedRectangle(cornerRadius: Style.Radius.tile(size), style: .continuous)
+              .fill(Color(white: StatusEmoji.plateWhite))
+          }
+        }
     } else {
       KindTile(symbol: StatusPreset.plainSymbol, color: Style.Family.statusScreen, size: size)
     }

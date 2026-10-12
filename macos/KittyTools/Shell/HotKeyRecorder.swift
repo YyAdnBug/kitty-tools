@@ -60,7 +60,7 @@ struct HotKeyRecorder: View {
         .buttonStyle(.plain)
         .foregroundStyle(.tertiary)
         .help(isRecording ? "取消录制（Esc）" : "清除")
-        .padding(.trailing, 5)
+        .padding(.trailing, 6)
       }
     }
     .font(.system(size: 12))

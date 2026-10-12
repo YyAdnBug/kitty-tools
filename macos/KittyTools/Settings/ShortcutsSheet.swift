@@ -78,7 +78,7 @@ struct ShortcutsSheet: View {
         KindTile(symbol: "keyboard.fill", color: Style.Family.keyboard, size: 40)
         VStack(alignment: .leading, spacing: 2) {
           Text("快捷键速查").font(.title2.weight(.semibold))
-          Text("标着「全局」的在任何 App 里都能按，可到「设置 › 快捷键」里改；其余是面板和设置窗里的按键。")
+          Text("标着「全局」的在任何 App 里都能按，可到 设置 › 快捷键 里改；其余是面板和设置窗里的按键。")
             .font(.callout).foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
         }
@@ -421,7 +421,7 @@ private struct GroupCard: View {
       keys()
     }
     .padding(.horizontal, 12)
-    .padding(.vertical, 5)
+    .padding(.vertical, 6)
     .frame(minHeight: 30)
     .overlay(alignment: .top) {
       if divided { Hairline().padding(.horizontal, 12) }
@@ -435,9 +435,9 @@ private struct KeyAlternatives: View {
   let keys: [String]
 
   var body: some View {
-    HStack(spacing: 5) {
+    HStack(spacing: 6) {
       ForEach(keys, id: \.self) { key in
-        HStack(spacing: 5) {
+        HStack(spacing: 6) {
           if key != keys.first { Text("/").foregroundStyle(.tertiary) }
           KeyCombo(key)
         }

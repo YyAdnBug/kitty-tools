@@ -100,9 +100,7 @@ struct TransferSection: View {
     } header: {
       Text("导出与导入")
     } footer: {
-      Text("普通历史、图片和文件类的收藏不在文件里；截图的存储文件夹、登录时打开和系统权限要在新电脑上重新设。")
-        .font(.caption).foregroundStyle(.secondary)
-        .frame(maxWidth: .infinity, alignment: .leading)
+      SectionFootnote("普通历史、图片和文件类的收藏不在文件里；截图的存储文件夹、登录时打开和系统权限要在新电脑上重新设。")
     }
     .onAppear(perform: reload)
     .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) {
@@ -116,7 +114,7 @@ struct TransferSection: View {
     Toggle(isOn: $backsUp) {
       Text("每天自动备份")
       Text(
-        "上面这些每天自动存一份在这台 Mac 上，留最近 \(SettingsBackup.keepDaily) 份；导入前也会先存一份，设置和快捷键导错了能换回去。不含密钥"
+        "上面这些每天自动存一份在这台 Mac 上，留最近 \(SettingsBackup.keepDaily) 份；导入前也会先存一份，设置和快捷键导错了能换回去。不含密钥。"
       )
     }
     .onChange(of: backsUp) { _, isOn in if isOn { backupNow() } }
@@ -243,7 +241,7 @@ struct ExportSheet: View {
         }
         .disabled(Self.isEmpty(section, in: archive))
       }
-      Divider()
+      Hairline()
       Toggle(isOn: $includesSecrets) {
         TransferLabel(title: "包含翻译服务的密钥", detail: secretsDetail)
       }
@@ -408,7 +406,7 @@ struct ImportSheet: View {
         if section == .services, sections.contains(.services) { hostList }
       }
       if archive.secrets != nil, sections.contains(.services) {
-        Divider()
+        Hairline()
         VStack(alignment: .leading, spacing: 6) {
           Text("文件里带着加密的密钥")
           SecureField("导出时设的密码", text: $password, prompt: Text("导出时设的密码"))
@@ -580,7 +578,7 @@ private struct BackupFolderRow: View {
 
   /// 说明：没选时说为什么要选；选了说存过去的文件长什么样。两种都说清文件不加密（多半是云盘，会同步上去）
   private var detail: String {
-    let plain = "文件不加密，片段、收藏和生词原样写在里面"
+    let plain = "文件不加密，片段、收藏和生词原样写在里面。"
     guard path != nil else {
       return "再选一个文件夹（比如 iCloud 云盘里的），每天那份也存过去，硬盘坏了、换电脑时还在。\(plain)"
     }

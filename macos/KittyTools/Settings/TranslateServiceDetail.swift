@@ -1,4 +1,4 @@
-// 设置 › 翻译 › 某个服务（N12 详情页，从服务列表推进来）：页头 40 pt 服务图标 + 名称 + 状态，
+// 设置 › 翻译 › 某个服务（N12 详情页，从服务列表推进来）：页头 40 pt 服务图标 + 名称 + 状态（在表单外面，和列表页的页头同一个位置），
 // 下面分组表单：启用、各服务自己的选项（智谱两档免费模型；自建 AI 实例的名称 / 协议 / 地址 / 模型）、钥匙串里的密钥、
 // 测试连接（成功时自动打开启用）；自建 AI 实例可以删除（连同密钥）。改动即时生效（服务列表写 UserDefaults，密钥直接写钥匙串）。
 // AI 实例的模型（体检 B27）：地址（Anthropic 可空）和 Key 齐了（本机 / 局域网地址不要 Key）就在后台取一次服务端的
@@ -35,51 +35,12 @@ struct TranslateServiceDetail: View {
   private func form(_ current: TranslateService) -> some View {
     let service = binding(current)
     let status = current.settingsStatus
-    return Form {
-      Section {
-        Toggle("启用", isOn: service.isEnabled)
-        options(service)
-        if current.kind == .ai { modelRow(service) }
-      } header: {
-        DetailHeader(title: current.name, status: status.text, isProblem: status.isProblem) {
-          ServiceTile(service: current, size: 40)
-        }
+    return VStack(spacing: 0) {
+      DetailHeader(title: current.name, status: status.text, isProblem: status.isProblem) {
+        ServiceTile(service: current, size: 40)
       }
-      Section {
-        ForEach(current.secretFields, id: \.name) { field in
-          SecureField(field.label, text: secretBinding(field.name), prompt: Text(field.prompt))
-            .focused($focusedSecret, equals: field.name)
-        }
-      } header: {
-        Text("密钥")
-      } footer: {
-        OrderedList.footnote("只存在这台 Mac 的钥匙串里。")
-      }
-      Section {
-        HStack(spacing: 8) {
-          Button("测试连接", action: test).disabled(isBusy)
-          if isBusy { ProgressView().controlSize(.small) }
-          if let result {
-            Label {
-              Text(result.text).foregroundStyle(.secondary).lineLimit(2)
-            } icon: {
-              Image(systemName: result.ok ? "checkmark.circle.fill" : "xmark.octagon.fill")
-                .foregroundStyle(Color(nsColor: result.ok ? .systemGreen : .systemRed))
-            }
-            .font(.caption)
-          }
-          Spacer(minLength: 0)
-        }
-      } footer: {
-        OrderedList.footnote("用「Hello, world」做一次英译中。")
-      }
-      if current.kind == .ai {
-        Section {
-          DangerButton("删除服务…") { confirmsDelete = true }
-        }
-      }
+      fields(current, service: service)
     }
-    .formStyle(.grouped)
     .task(id: id) {
       secrets = Dictionary(
         uniqueKeysWithValues: current.secretFields.map { ($0.name, current.secret($0.name) ?? "") })
@@ -100,6 +61,51 @@ struct TranslateServiceDetail: View {
     } message: {
       Text("会同时删除它保存在钥匙串里的密钥")
     }
+  }
+
+  private func fields(_ current: TranslateService, service: Binding<TranslateService>) -> some View
+  {
+    Form {
+      Section {
+        Toggle("启用", isOn: service.isEnabled)
+        options(service)
+        if current.kind == .ai { modelRow(service) }
+      }
+      Section {
+        ForEach(current.secretFields, id: \.name) { field in
+          SecureField(field.label, text: secretBinding(field.name), prompt: Text(field.prompt))
+            .focused($focusedSecret, equals: field.name)
+        }
+      } header: {
+        Text("密钥")
+      } footer: {
+        SectionFootnote("只存在这台 Mac 的钥匙串里。")
+      }
+      Section {
+        HStack(spacing: 8) {
+          Button("测试连接", action: test).disabled(isBusy)
+          if isBusy { ProgressView().controlSize(.small) }
+          if let result {
+            Label {
+              Text(result.text).foregroundStyle(.secondary).lineLimit(2)
+            } icon: {
+              Image(systemName: result.ok ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                .foregroundStyle(Color(nsColor: result.ok ? .systemGreen : .systemRed))
+            }
+            .font(.caption)
+          }
+          Spacer(minLength: 0)
+        }
+      } footer: {
+        SectionFootnote("用「Hello, world」做一次英译中。")
+      }
+      if current.kind == .ai {
+        Section {
+          DangerButton("删除…") { confirmsDelete = true }
+        }
+      }
+    }
+    .formStyle(.grouped)
   }
 
   /// 按 id 找回这条服务的绑定（列表拖动排序后下标会变）

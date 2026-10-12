@@ -346,12 +346,17 @@ private struct SidebarRow: View {
       Text(page.title)
     } icon: {
       if page == .about {
-        Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 20, height: 20)
+        Image(nsImage: Self.aboutIcon)
       } else {
         KindTile(symbol: page.symbol, color: page.color, size: 20)
       }
     }
   }
+
+  /// 「关于」那一行的图标：App 图标裁掉四周的留白、只留主体（同菜单栏的彩色图标），画成和别的色块一样大的 20 pt。
+  /// 直接把 App 图标缩到 20 的话，主体只有 16（1024 的画布四边各留 100），比上面那一列色块小一圈
+  private static let aboutIcon = StatusItem.menuBarImage(
+    from: NSApp.applicationIconImage, points: 20)
 
   private func highlight(emphasized: Bool) -> some View {
     let shape = RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
@@ -415,9 +420,35 @@ struct PageHeader: View {
       }
       Spacer(minLength: 0)
     }
-    .padding(.horizontal, 20)
-    .padding(.top, 14)
-    .padding(.bottom, 2)
+    .pageHeaderInsets()
     .accessibilityElement(children: .combine)
+  }
+}
+
+extension View {
+  /// 页头在页里的位置：左右 20（设置窗边距）、上 14、下 2。列表页的 PageHeader 和三种详情页的 DetailHeader 共用——
+  /// 推进详情页时页头的图标和标题原地换，不跳（2026-10-12 视觉对齐前详情页的页头放在分组表单的 Section header 里，
+  /// 比列表页的右移 10、下移 6）
+  func pageHeaderInsets() -> some View {
+    padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 2)
+  }
+}
+
+/// 分组页脚：解释整组的说明小字，所有设置页和详情页共用（2026-10-12 视觉对齐前有五种写法，有的靠右、折行后参差）。
+/// caption secondary；一律靠左、折行也靠左（分组表单的页脚默认靠右排，折到第二行的字也是：两样都要写）；
+/// 左右各缩 10，和分组标题、卡片里的行文字同一条左边线（卡片的内边距是 10）。
+/// 解释某一行的不用它，写成那一行的副标题（Toggle / LabeledContent 标签里的第二个 Text，系统画成 11 pt）
+struct SectionFootnote: View {
+  let text: String
+
+  init(_ text: String) { self.text = text }
+
+  var body: some View {
+    Text(text)
+      .font(.caption)
+      .foregroundStyle(.secondary)
+      .multilineTextAlignment(.leading)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.horizontal, 10)
   }
 }

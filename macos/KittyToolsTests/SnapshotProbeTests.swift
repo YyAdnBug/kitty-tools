@@ -742,7 +742,7 @@ struct SnapshotProbeTests {
         size: NSSize(width: 590, height: 1720), dark: dark,
         to: "\(out)/settings-translate-logos\(dark ? "-dark" : "").png")
     }
-    // 设置 › 启动器「浏览器书签与历史」（第 12 批）：只列装了的五家；Safari 没授权（橙字 + 去授权… + 说明）、
+    // 设置 › 启动器「浏览器书签与历史」（第 12 批）：只列装了的五家；Safari 没授权（橙字 + 去授权 + 说明）、
     // Chrome 书签和历史都读到、Edge 关着、Arc 没有书签文件（橙字）、Firefox 书签读到（历史关着写它搜什么）。
     // 再给 Safari 授权（数据目录能读了）看「已读到 N 条」
     let browserSuite = "kitty-snapshot-\(UUID().uuidString)"
@@ -1077,6 +1077,23 @@ struct SnapshotProbeTests {
       try snapshot(
         StatusPresetDetail(id: id, fixed: list), size: NSSize(width: 590, height: 940), dark: dark,
         to: "\(out)/settings-status-detail-\(name).png")
+    }
+    // 视觉对齐 E8：颜色很深的两个表情（开会、黑猫）当小图标时深色外观下垫浅底、浅色不垫——列表行、详情页页头和
+    // 图标格子里选中的那一格
+    var talk = meeting
+    talk.id = "talk"
+    talk.symbol = "busts"
+    var cat = StatusPreset.new(id: "cat")
+    cat.title = "猫在键盘上"
+    cat.symbol = "black-cat"
+    for dark in [false, true] {
+      try snapshot(
+        StatusScreenTab(fixed: [talk, cat] + StatusPreset.builtIn).environment(navigation),
+        size: NSSize(width: 590, height: 360), dark: dark,
+        to: "\(out)/settings-status-plate\(dark ? "-dark" : "").png")
+      try snapshot(
+        StatusPresetDetail(id: "cat", fixed: [talk, cat]), size: NSSize(width: 590, height: 360),
+        dark: dark, to: "\(out)/settings-status-detail-plate\(dark ? "-dark" : "").png")
     }
     // 输入框里的标题超了 30 字（没收拾过的一份，等于正在改的草稿）：页头的摘要换成橙色说明。
     // 这张图里预览也是超长的标题——真用的时候存着的那份收拾过，预览只到 30 字

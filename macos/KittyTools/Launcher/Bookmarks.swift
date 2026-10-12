@@ -2,7 +2,7 @@
 // - Chromium 系：各配置（数据目录本身、Default、Profile N）读两个文件：Bookmarks（本机书签）和 AccountBookmarks
 //   （登录 Google 账号后存在账号里的书签，新版 Chrome 把书签挪到这里后 Bookmarks 可能是空的），格式相同的 JSON。
 // - Safari：~/Library/Safari/Bookmarks.plist（二进制 plist），要完全磁盘访问权限；没授权时读失败（不弹框），设置里写
-//   「需要完全磁盘访问权限」+「去授权…」。
+//   「需要完全磁盘访问权限」+「去授权」。
 // - Firefox：书签在 places.sqlite 里，和浏览历史一起由 BrowserHistory 进程外读（库被 Firefox 锁着、改得很勤），这里取它
 //   读好的。
 // 按浏览器缓存解析结果，文件修改时间变了才重读；开关只决定列哪几家（修旧版 30 秒内不看开关，§11 #40）。
