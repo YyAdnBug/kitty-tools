@@ -1,6 +1,6 @@
 // 设置 › 通用「导出与导入」（2026-10-07；文件格式、校验和合并规则在 Storage/SettingsArchive.swift）：一行两个按钮。
-// 导出… = 一张表单：勾选类别（设置、快捷键、翻译服务、网页搜索，和留下的文字：片段与收藏、生词本；没有内容的那一类
-// 不勾也勾不了）；要带翻译服务的密钥就再勾一项、设一个密码（至少 8 位，输两遍）→ 存储面板。
+// 导出… = 一张表单：勾选类别（设置、快捷键、翻译服务、网页搜索，和留下的文字：片段与收藏、生词本、便签；没有内容的那一类
+// 不勾也勾不了，便签这次用不了时也是）；要带翻译服务的密钥就再勾一项、设一个密码（至少 8 位，输两遍）→ 存储面板。
 // 导入… = 打开面板选文件 → 读出来查过 → 一张表单：文件里有哪几类就列哪几类、勾选要导入的；翻译服务下面列出它们会连到的
 // 自己填的地址（别人给的文件里，名字叫 OpenAI 的服务连的不一定是 OpenAI）；文件带密钥时给一个密码框（不填就不导入密钥）；
 // 会让历史保留得更少、隐私保护变弱时橙字先说 → 写偏好、合并两张列表、存密钥，再让运行中的东西跟上（applied）。
@@ -22,6 +22,9 @@ struct SettingsTransfer {
   let clipboard: ClipboardStore
   /// 生词本（收藏的翻译）
   let history: HistoryStore
+  /// 便签仓库，用的时候现取（它在启动的最后才开，设置窗可能建得更早）；nil = 便签这次用不了（NotesRecovery）：
+  /// 导出不带这一类，导入时跳过
+  var notes: () -> NoteStore? = { nil }
   /// 导入写完偏好之后让运行中的东西跟上（AppDelegate.settingsImported）；返回按新上限清掉了几条剪贴板历史
   var applied: () -> Int = { 0 }
   /// 自动备份放在哪（数据目录的 backups/）；nil = 没接自动备份，那几行不显示（截图自检的大多数状态）
@@ -71,7 +74,8 @@ struct TransferSection: View {
             outgoing = Draft(
               archive: .capture(
                 services: services, clips: clipboard.items, groups: clipboard.groups,
-                words: transfer.history.search("", favoritesOnly: true, limit: 0)),
+                words: transfer.history.search("", favoritesOnly: true, limit: 0),
+                notes: transfer.notes()?.exportable),
               secrets: SettingsArchive.secrets(of: services),
               skippedImages: retained.count { $0.kind == .image },
               skippedFiles: retained.count { $0.kind == .file })
@@ -94,7 +98,7 @@ struct TransferSection: View {
         .disabled(isChoosing)
       } label: {
         Text("设置与数据")
-        Text("设置、快捷键、翻译服务、网页搜索、片段和文字收藏、生词本存成一个文件，换电脑或重装后导回来")
+        Text("设置、快捷键、翻译服务、网页搜索、片段和文字收藏、生词本、便签存成一个文件，换电脑或重装后导回来")
       }
       if transfer.backupFolder != nil { backupRows }
     } header: {
@@ -219,13 +223,14 @@ struct ExportSheet: View {
     _includesSecrets = State(initialValue: includesSecrets)
   }
 
-  /// 片段与收藏、生词本可能一条都没有：没东西可导出
+  /// 片段与收藏、生词本、便签可能一条都没有（便签这次不可用时也算）：没东西可导出
   private static func isEmpty(_ section: SettingsArchive.Section, in archive: SettingsArchive)
     -> Bool
   {
     switch section {
     case .clips: (archive.clips ?? []).isEmpty && (archive.clipGroups ?? []).isEmpty
     case .vocabulary: (archive.vocabulary ?? []).isEmpty
+    case .notes: (archive.notes ?? []).isEmpty
     default: false
     }
   }
@@ -310,6 +315,10 @@ struct ExportSheet: View {
     case .vocabulary:
       let count = archive.vocabulary?.count ?? 0
       return count == 0 ? "还没有收藏的翻译" : "\(count) 条收藏的翻译，原样写进文件（不加密）"
+    case .notes:
+      guard let notes = archive.notes else { return "便签这次用不了，不带这一类" }
+      return notes.isEmpty
+        ? "还没有便签" : "\(notes.count) 条便签的文字，原样写进文件（不加密）；图片和「最近删除」里的不带"
     }
   }
 
@@ -489,6 +498,10 @@ struct ImportSheet: View {
       "\(archive.clips?.count ?? 0) 条文字：同样的文字不重复加，只补上收藏、片段和收藏夹；现在的不会删"
     case .vocabulary:
       "\(archive.vocabulary?.count ?? 0) 条：已有的不重复加；现在的不会删"
+    case .notes:
+      transfer.notes() == nil
+        ? "便签这次用不了，这一类会跳过"
+        : "\(archive.notes?.count ?? 0) 条：没有的加上；两边都有的留改得晚的，换下来的那一版进「最近删除」"
     }
   }
 
@@ -500,7 +513,7 @@ struct ImportSheet: View {
       // 密码对了、动手之前先把现在的存一份（开着自动备份时）
       outcome = try archive.install(
         sections, password: password, services: transfer.services,
-        clipboard: transfer.clipboard, history: transfer.history,
+        clipboard: transfer.clipboard, history: transfer.history, noteStore: transfer.notes(),
         beforeWriting: transfer.snapshot)
     } catch SettingsArchive.Failure.backupFailed(let reason) {
       failure = SettingsArchive.Failure.backupFailed(reason).message
@@ -511,23 +524,46 @@ struct ImportSheet: View {
     }
     let pruned = transfer.applied()
     dismiss()
+    let chosen = archive.sections.filter(sections.contains)
     island?.show(
-      origin == nil ? "已导入" : "已恢复",
+      Self.title(chosen, outcome: outcome, restoring: origin != nil),
       detail: Self.summary(
-        archive.sections.filter(sections.contains), outcome: outcome,
+        chosen, outcome: outcome,
         // 清理每次都做（和复制时一样）；只有这次改了上限才归到导入头上说
         pruned: sections.contains(.preferences) ? pruned : 0),
+      // 便签没导入（这次用不了）、并进来了没存上：别的照常导了，换成警告的颜色提个醒
+      tone: outcome.notesSkipped || outcome.notesUnsaved ? .warning : .success,
       symbol: "square.and.arrow.down")
   }
 
-  /// 刘海岛的那一行（岛上的详情只有一行、280 pt，放得下约 22 个字）：导入了哪几类、带没带密钥，再说最要紧的一个数——
-  /// 按新上限清掉的历史，没有的话是新增的片段 / 收藏 / 生词。类别的名字连后面的话一共不超过 22 个字才列名字，否则说几类
+  /// 刘海岛的标题：「已导入」/「已恢复」；勾的类别一类都没导进去（只勾了便签、便签这次用不了）时不能这么说，
+  /// 换成「没有导入」/「没有恢复」
+  static func title(
+    _ sections: [SettingsArchive.Section], outcome: SettingsArchive.Outcome, restoring: Bool
+  ) -> String {
+    if outcome.notesSkipped, sections.allSatisfy({ $0 == .notes }) {
+      return restoring ? "没有恢复" : "没有导入"
+    }
+    return restoring ? "已恢复" : "已导入"
+  }
+
+  /// 刘海岛的那一行（岛上的详情只有一行、280 pt，放得下约 22 个字）：导入了哪几类、带没带密钥，再说最要紧的一件事——
+  /// 便签没导入（这次用不了；这时「便签」不算进导入了的类别）、便签并进来了但没存上盘（这时不报「新增几条」），
+  /// 没有的话是按新上限清掉的历史，再没有是新增的片段 / 收藏 / 生词 / 便签。类别的名字连后面的话一共不超过 22 个字
+  /// 才列名字，否则说几类
   static func summary(
     _ sections: [SettingsArchive.Section], outcome: SettingsArchive.Outcome, pruned: Int
   ) -> String {
+    let sections = outcome.notesSkipped ? sections.filter { $0 != .notes } : sections
+    // 一类都没导进去（只勾了便签）：标题已经是「没有导入」，这里说为什么
+    guard !sections.isEmpty else { return outcome.notesSkipped ? "便签这次用不了" : "" }
     var tail = outcome.secrets > 0 ? "，含密钥" : ""
-    let added = outcome.clipsAdded + outcome.wordsAdded
-    if pruned > 0 {
+    let added = outcome.clipsAdded + outcome.wordsAdded + outcome.notesAdded
+    if outcome.notesSkipped {
+      tail += "，便签没导入"
+    } else if outcome.notesUnsaved {
+      tail += "，便签没存上"
+    } else if pruned > 0 {
       tail += "，清理了 \(pruned) 条历史"
     } else if added > 0 {
       tail += "，新增 \(added) 条"
@@ -578,7 +614,7 @@ private struct BackupFolderRow: View {
 
   /// 说明：没选时说为什么要选；选了说存过去的文件长什么样。两种都说清文件不加密（多半是云盘，会同步上去）
   private var detail: String {
-    let plain = "文件不加密，片段、收藏和生词原样写在里面。"
+    let plain = "文件不加密，片段、收藏、生词和便签原样写在里面。"
     guard path != nil else {
       return "再选一个文件夹（比如 iCloud 云盘里的），每天那份也存过去，硬盘坏了、换电脑时还在。\(plain)"
     }

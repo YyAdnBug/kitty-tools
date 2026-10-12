@@ -112,7 +112,7 @@ struct SettingsArchiveTests {
     defaults.set(try JSONEncoder().encode(engines), forKey: Prefs.launcherWebSearchEngines)
 
     let archive = SettingsArchive.capture(
-      from: defaults, domainName: name, services: [.zhipu, ai], version: "9.9.9",
+      from: defaults, domainName: name, services: [.zhipu, ai], notes: [], version: "9.9.9",
       now: Self.moment)
     #expect(
       archive.preferences == [
@@ -212,7 +212,8 @@ struct SettingsArchiveTests {
   @Test func capturesDefaultEnginesWhenNeverStored() throws {
     let (defaults, name) = try suite()
     defer { defaults.removePersistentDomain(forName: name) }
-    let archive = SettingsArchive.capture(from: defaults, domainName: name, services: [])
+    let archive = SettingsArchive.capture(
+      from: defaults, domainName: name, services: [], notes: [])
     #expect(archive.searchEngines == WebSearch.defaults)
     #expect(archive.preferences == [:])
     #expect(archive.hotkeys == [:])
@@ -229,7 +230,7 @@ struct SettingsArchiveTests {
       forKey: HotKeyAction.screenshot.prefsKey)
     defaults.set(HotKeyAction.stored(nil), forKey: HotKeyAction.recognizeText.prefsKey)
     let archive = SettingsArchive.capture(
-      from: defaults, domainName: name, services: [.zhipu, ai], version: "9.9.9",
+      from: defaults, domainName: name, services: [.zhipu, ai], notes: [], version: "9.9.9",
       now: Self.moment)
     let data = try archive.encoded()
     let text = try #require(String(data: data, encoding: .utf8))
@@ -265,7 +266,8 @@ struct SettingsArchiveTests {
     source.set(HotKeyAction.stored(combo), forKey: HotKeyAction.clipboard.prefsKey)
     source.set(HotKeyAction.stored(nil), forKey: HotKeyAction.launcher.prefsKey)
     let archive = try SettingsArchive.read(
-      SettingsArchive.capture(from: source, domainName: sourceName, services: []).encoded())
+      SettingsArchive.capture(from: source, domainName: sourceName, services: [], notes: [])
+        .encoded())
 
     let (target, targetName) = try suite()
     defer { target.removePersistentDomain(forName: targetName) }
@@ -391,10 +393,10 @@ struct SettingsArchiveTests {
     #expect(failure("不是 JSON") == .notArchive)
     #expect(failure(#"{"name": "别的 App 的配置", "format": 1}"#) == .notArchive)
     #expect(failure(#"{"app": "Kitty Tools"}"#) == .notArchive)
-    #expect(failure(#"{"app": "Kitty Tools", "format": 2, "version": "9"}"#) == .newer)
+    #expect(failure(#"{"app": "Kitty Tools", "format": 3, "version": "9"}"#) == .newer)
     // 内容本身读得出来、只是格式号不对的：更新的说「先更新」，0 和负数不认
     let valid = file(#""preferences": {}"#)
-    #expect(failure(valid.replacing(#""format": 1"#, with: #""format": 2"#)) == .newer)
+    #expect(failure(valid.replacing(#""format": 1"#, with: #""format": 3"#)) == .newer)
     #expect(failure(valid.replacing(#""format": 1"#, with: #""format": 0"#)) == .notArchive)
     #expect(failure(valid.replacing("Kitty Tools", with: "Other App")) == .notArchive)
     // 标记和版本对，里面的东西不对
@@ -774,7 +776,8 @@ struct SettingsArchiveTests {
     defer { source.removePersistentDomain(forName: sourceName) }
     source.set(true, forKey: Prefs.clipboardPastePlain)
     var archive = SettingsArchive.capture(
-      from: source, domainName: sourceName, services: [.zhipu, ai], now: Self.moment)
+      from: source, domainName: sourceName, services: [.zhipu, ai], notes: [],
+      now: Self.moment)
     try archive.seal(
       ["zhipu.apiKey": "sk-zhipu", "ai:1a2b3c4d.apiKey": "sk-deepseek", "baidu.appId": "别人的"],
       password: "correct horse 电池")
@@ -857,7 +860,7 @@ struct SettingsArchiveTests {
     defer { defaults.removePersistentDomain(forName: name) }
     let archive = SettingsArchive.capture(
       from: defaults, domainName: name, services: [], clips: store.items, groups: store.groups,
-      words: history.search("", limit: 0), version: "9.9.9", now: Self.moment)
+      words: history.search("", limit: 0), notes: [], version: "9.9.9", now: Self.moment)
     let clips = try #require(archive.clips)
     #expect(clips.map(\.text) == ["https://developer.apple.com", "你好，{clipboard}"])
     #expect(clips[0].favorite && !clips[0].snippet && clips[0].note == "文档")
@@ -1140,7 +1143,7 @@ struct SettingsArchiveTests {
     let archive = try SettingsArchive.read(
       SettingsArchive.capture(
         from: target, domainName: name, services: [], clips: source.items,
-        groups: source.groups, words: words.search("", limit: 0), now: Self.moment
+        groups: source.groups, words: words.search("", limit: 0), notes: [], now: Self.moment
       ).keeping([.clips, .vocabulary]).encoded())
     #expect(archive.sections == [.clips, .vocabulary])
     let services = TranslateServiceStore(services: [])
@@ -1173,7 +1176,7 @@ struct SettingsArchiveTests {
       ImportSheet.summary(
         SettingsArchive.Section.allCases,
         outcome: Outcome(secrets: 1, clipsAdded: 12, clipsUpdated: 3, wordsAdded: 30), pruned: 0)
-        == "6 类，含密钥，新增 42 条")
+        == "7 类，含密钥，新增 42 条")
     #expect(
       ImportSheet.summary(
         [.preferences, .clips, .vocabulary], outcome: Outcome(clipsAdded: 1), pruned: 5)
@@ -1188,7 +1191,7 @@ struct SettingsArchiveTests {
     #expect(
       ImportSheet.summary([.clips, .vocabulary], outcome: Outcome(clipsUpdated: 4), pruned: 0)
         == "片段与收藏、生词本")
-    // 六类的每一种勾法、各种数：都不超过岛上放得下的 22 个字
+    // 七类的每一种勾法、各种数（连便签没导入的那种）：都不超过岛上放得下的 22 个字
     let all = SettingsArchive.Section.allCases
     for mask in 1..<(1 << all.count) {
       let sections = all.enumerated().filter { mask & (1 << $0.offset) != 0 }.map(\.element)
@@ -1196,6 +1199,9 @@ struct SettingsArchiveTests {
         (Outcome(), 0), (Outcome(secrets: 9), 0), (Outcome(secrets: 9), 99_999),
         (Outcome(secrets: 9, clipsAdded: 5000, wordsAdded: 20_000), 0),
         (Outcome(clipsAdded: 5000, wordsAdded: 20_000), 0), (Outcome(), 99_999),
+        (Outcome(secrets: 9, clipsAdded: 5000, wordsAdded: 20_000, notesAdded: 5000), 0),
+        (Outcome(secrets: 9, notesSkipped: true), 99_999),
+        (Outcome(secrets: 9, notesAdded: 5000, notesUnsaved: true), 99_999),
       ] {
         let summary = ImportSheet.summary(sections, outcome: outcome, pruned: pruned)
         #expect(summary.count <= 22, "\(summary)")
@@ -1241,5 +1247,326 @@ struct SettingsArchiveTests {
     // 不带「设置」这一类的文件不提醒
     current(days: 0)
     #expect(try !archive(json: file(#""hotkeys": {}"#)).keepsLessHistory(than: target))
+  }
+
+  // MARK: 便签（第七类）
+
+  /// 内存库上的便签仓库
+  private func noteStore() throws -> NoteStore {
+    try NoteStore(db: Database(path: ":memory:"))
+  }
+
+  /// 文件里的一条便签（JSON）
+  private func noteJSON(
+    _ id: String, _ body: String = "正文", title: String = "", color: String = "0",
+    created: String = "1700000000000", modified: String = "1700000000123",
+    revision: String = "1", archived: String = "false", pinned: String = "false",
+    order: String = "0"
+  ) -> String {
+    #"{"id": "\#(id)", "title": "\#(title)", "body": "\#(body)", "color": \#(color), "#
+      + #""createdAt": \#(created), "modifiedAt": \#(modified), "revision": \#(revision), "#
+      + #""archived": \#(archived), "pinned": \#(pinned), "order": \#(order)}"#
+  }
+
+  private func uuid(_ digit: Character) -> String {
+    let run = { (count: Int) in String(repeating: digit, count: count) }
+    return "\(run(8))-\(run(4))-4\(run(3))-8\(run(3))-\(run(12))"
+  }
+
+  /// 便签进文件：没删的全部（含归档），每条带编号、标题、正文、颜色、建于、改于（毫秒，不丢）、修订号、归档、固定、顺序；
+  /// 「最近删除」里的不带；写成文件再读回来一模一样；没勾就不在文件里；便签不可用（传 nil）时文件里没有这一类
+  @Test func notesTravelWithTheFile() throws {
+    let (defaults, name) = try suite()
+    defer { defaults.removePersistentDomain(forName: name) }
+    let store = try noteStore()
+    let plain = store.create(body: "买菜\n牛奶")
+    let filed = store.create(body: "去年的总结", title: "总结")
+    let trashed = store.create(body: "删掉的")
+    store.setColor(5, of: filed.id)
+    store.setPinned(true, of: filed.id)
+    store.setArchived(true, of: filed.id)
+    store.delete(trashed.id)
+
+    let archive = SettingsArchive.capture(
+      from: defaults, domainName: name, services: [], notes: store.exportable,
+      now: Self.moment)
+    #expect(archive.format == 2 && archive.sections.contains(.notes))
+    let notes = try #require(archive.notes)
+    #expect(Set(notes.map(\.id)) == [plain.id, filed.id])
+    let entry = try #require(notes.first { $0.id == filed.id })
+    let current = try #require(store.note(filed.id))
+    #expect(
+      entry
+        == SettingsArchive.NoteEntry(
+          id: filed.id, title: "总结", body: "去年的总结", color: 5,
+          createdAt: Note.milliseconds(current.createdAt),
+          modifiedAt: Note.milliseconds(current.modifiedAt), revision: 3, archived: true,
+          pinned: true, order: current.order))
+
+    let data = try archive.encoded()
+    let text = try #require(String(data: data, encoding: .utf8))
+    #expect(text.contains(#""format" : 2"#) && text.contains(#""notes" : ["#))
+    #expect(text.contains("去年的总结") && !text.contains("删掉的"))
+    let read = try SettingsArchive.read(data)
+    #expect(read == archive)
+    // 导回同一个库：什么都不变（时间到毫秒都对得上）
+    let before = store.notes
+    let back = store.adopt(read.notes ?? [])
+    #expect(back.added == 0 && back.updated == 0 && store.notes == before)
+
+    // 没勾的不在文件里
+    let partial = try #require(
+      String(data: archive.keeping([.hotkeys]).encoded(), encoding: .utf8))
+    #expect(!partial.contains("notes"))
+    #expect(archive.keeping([.notes]).sections == [.notes])
+    // 便签这次不可用：文件里没有这一类（不是一份空的）
+    let without = SettingsArchive.capture(
+      from: defaults, domainName: name, services: [], notes: nil, now: Self.moment)
+    #expect(without.notes == nil && !without.sections.contains(.notes))
+    #expect(try !#require(String(data: without.encoded(), encoding: .utf8)).contains("notes"))
+    // 一条便签都没有：这一类在，是空的
+    let none = SettingsArchive.capture(
+      from: defaults, domainName: name, services: [], notes: [], now: Self.moment)
+    #expect(none.notes == [] && none.sections.contains(.notes))
+  }
+
+  /// 格式 1 的旧文件（0.3.2–0.4.0 导出的，没有便签）照常读、照常导入，便签一条不动；格式 3 说「先更新」
+  @Test func formatOneFilesStillImport() throws {
+    let old = file(
+      #""preferences": {"\#(Prefs.clipboardPastePlain)": true}, "hotkeys": {}, "#
+        + #""clips": [{"text": "老片段", "favorite": false, "snippet": true, "#
+        + #""copiedAt": "2026-10-01T00:00:00Z"}], "clipGroups": [], "#
+        + #""vocabulary": [{"source": "dog", "target": "\#(Lang.zhHans.rawValue)", "#
+        + #""result": "狗", "service": "s", "createdAt": "2026-10-01T00:00:00Z"}]"#)
+    #expect(old.contains(#""format": 1"#))
+    let archive = try archive(json: old)
+    #expect(archive.format == 1 && archive.notes == nil)
+    #expect(archive.sections == [.preferences, .hotkeys, .clips, .vocabulary])
+
+    let (target, name) = try suite()
+    defer { target.removePersistentDomain(forName: name) }
+    let (clips, _) = try clipboard()
+    let history = try HistoryStore(db: Database(path: ":memory:"))
+    let notes = try noteStore()
+    let mine = notes.create(body: "本机的便签")
+    let outcome = try archive.install(
+      Set(SettingsArchive.Section.allCases), services: TranslateServiceStore(services: []),
+      clipboard: clips, history: history, noteStore: notes, to: target, domainName: name)
+    #expect(outcome == SettingsArchive.Outcome(clipsAdded: 1, wordsAdded: 1))
+    #expect(target.bool(forKey: Prefs.clipboardPastePlain))
+    #expect(clips.items.map(\.text) == ["老片段"])
+    #expect(notes.notes == [mine])
+
+    #expect(throws: SettingsArchive.Failure.newer) {
+      try self.archive(json: old.replacing(#""format": 1"#, with: #""format": 3"#))
+    }
+    // 格式 2 的文件带不带便签都读
+    #expect(
+      try self.archive(json: old.replacing(#""format": 1"#, with: #""format": 2"#)).notes == nil)
+  }
+
+  /// 别人给的、手改过的文件里的便签：编号不是 UUID、重复的、缺字段的、类型不对的、顺序不是有限数的、正文超过单条上限的
+  /// 那一条不要，别的照收；编号统一成大写，文字里的 NUL 去掉，颜色、时间、修订号、顺序夹进范围，标题超长的截到上限
+  /// （不清空）；条数封顶
+  @Test func dropsInvalidNotes() throws {
+    func read(_ notes: [String]) throws -> [SettingsArchive.NoteEntry] {
+      try #require(
+        try archive(json: file(#""notes": [\#(notes.joined(separator: ","))]"#)).notes)
+    }
+    let good = uuid("A")
+    let long = String(repeating: "长", count: Note.maxTitleLength + 1)
+    let huge = String(repeating: "x", count: Note.maxBodyBytes + 1)
+    let kept = try read([
+      noteJSON(good, "好的", title: "标题", color: "3", pinned: "true", order: "-2.5"),
+      noteJSON("不是编号"), noteJSON(""), noteJSON(uuid("A") + "0"),
+      noteJSON("../../etc/passwd"),
+      noteJSON(good, "编号重复的"), noteJSON(good.lowercased(), "只是大小写不同的"),
+      noteJSON(uuid("b"), "小写编号"),
+      noteJSON(uuid("C"), "颜色太大", color: "99"), noteJSON(uuid("D"), "颜色是负的", color: "-1"),
+      noteJSON(
+        uuid("E"), "数都离谱", created: "-5", modified: "-1",
+        revision: "9223372036854775807", order: "1e300"),
+      noteJSON(uuid("F"), "修订号是负的", title: long, revision: "-7", order: "-1e300"),
+      // 类型不对
+      noteJSON(uuid("1"), color: #""红""#), noteJSON(uuid("2"), color: "2.5"),
+      noteJSON(uuid("3"), archived: "1"), noteJSON(uuid("4"), order: #""前面""#),
+      noteJSON(uuid("5"), modified: #""2026-10-12T00:00:00Z""#),
+      noteJSON(uuid("6"), revision: "1e30"),
+      #"{"id": "\#(uuid("7"))", "body": 5}"#,
+      // 缺字段、根本不是一条便签
+      #"{"id": "\#(uuid("8"))", "body": "只有两个字段"}"#, "42", #""一句话""#, "[]", "{}", "null",
+      // 正文超过单条上限；正好到上限的收
+      noteJSON(uuid("9"), huge),
+      noteJSON(uuid("0"), String(repeating: "y", count: Note.maxBodyBytes)),
+    ])
+    #expect(
+      kept.map(\.id) == [
+        good, uuid("B"), uuid("C"), uuid("D"), uuid("E"), uuid("F"), uuid("0"),
+      ])
+    // 文字里有 NUL：去掉，这条照收（编号统一成大写）；顺序大到不是有限数：这条不要
+    let odd = try read([
+      noteJSON("12345678-1234-4234-8234-123456789abc", #"前半\u0000后半"#, title: #"标\u0000题"#),
+      noteJSON("22345678-1234-4234-8234-123456789abc", "顺序不是有限数", order: "1e999"),
+    ])
+    #expect(odd.map(\.id) == ["12345678-1234-4234-8234-123456789ABC"])
+    #expect(odd.first?.body == "前半后半" && odd.first?.title == "标题")
+    #expect(kept[0].body == "好的" && kept[0].title == "标题" && kept[0].color == 3)
+    #expect(kept[0].pinned && kept[0].order == -2.5 && kept[0].modifiedAt == 1_700_000_000_123)
+    #expect(kept[1].body == "小写编号")
+    #expect(kept[2].color == Note.colorCount - 1 && kept[3].color == 0)
+    #expect(kept[4].createdAt == 0 && kept[4].modifiedAt == 0)
+    #expect(kept[4].revision == Note.maxRevision && kept[4].order == 1e9)
+    #expect(kept[5].title == String(repeating: "长", count: Note.maxTitleLength))
+    #expect(kept[5].revision == 0 && kept[5].order == -1e9)
+    #expect(kept[6].body.utf8.count == Note.maxBodyBytes)
+    // 收下的进得了库：修订号顶格的那条之后还能改，停在上限、不溢出
+    let store = try noteStore()
+    #expect(store.adopt(kept).added == kept.count)
+    store.setPinned(true, of: uuid("E"))
+    #expect(store.note(uuid("E"))?.revision == Note.maxRevision)
+    #expect(store.note(uuid("E"))?.isPinned == true)
+
+    // 条数封顶：只收前面的
+    let many = (0...SettingsArchive.maxNotes).map {
+      noteJSON(String(format: "%08X-0000-4000-8000-000000000000", $0), "第 \($0) 条")
+    }
+    #expect(try read(many).count == SettingsArchive.maxNotes)
+    // 整类的样子不对：文件读不出来（同别的类别）
+    #expect(throws: SettingsArchive.Failure.unreadable) {
+      try self.archive(json: self.file(#""notes": "全部""#))
+    }
+    #expect(try read([]).isEmpty)
+  }
+
+  /// 导出前拦住导入时不肯全收的便签：条数超了、有一条的正文超过单条上限；文件太大时也提便签
+  @Test func exportRefusesNotesThatImportWouldDrop() {
+    func note(_ index: Int, body: String = "正文") -> SettingsArchive.NoteEntry {
+      SettingsArchive.NoteEntry(
+        id: String(format: "%08X-0000-4000-8000-000000000000", index), title: "", body: body,
+        color: 0, createdAt: 0, modifiedAt: 0, revision: 0, archived: false, pinned: false,
+        order: 0)
+    }
+    var archive = SettingsArchive(version: "1", exportedAt: Self.moment)
+    #expect(archive.notesFit)
+    archive.notes = (0..<SettingsArchive.maxNotes).map { note($0) }
+    #expect(archive.notesFit && archive.exportProblem(encodedSize: 100) == nil)
+    #expect(
+      archive.exportProblem(encodedSize: SettingsArchive.maxFileSize + 1)?.contains("或「便签」")
+        == true)
+    archive.notes?.append(note(SettingsArchive.maxNotes))
+    #expect(!archive.notesFit)
+    #expect(
+      archive.exportProblem(encodedSize: 100)
+        == "便签超过 \(SettingsArchive.maxNotes) 条，先取消勾选「便签」")
+    archive.notes = [note(1, body: String(repeating: "x", count: Note.maxBodyBytes))]
+    #expect(archive.notesFit && archive.exportProblem(encodedSize: 100) == nil)
+    archive.notes = [
+      note(1), note(2, body: String(repeating: "字", count: Note.maxBodyBytes / 3 + 1)),
+    ]
+    #expect(!archive.notesFit)
+    #expect(archive.exportProblem(encodedSize: 100) == "有便签的正文超过 1 MB，先取消勾选「便签」")
+    // 没勾便签就不拦
+    #expect(archive.keeping([.clips]).exportProblem(encodedSize: 100) == nil)
+  }
+
+  /// 导入的整条路带上便签：勾了的并进便签库并报数；没勾的不动；便签这次不可用（没给仓库）时跳过、结果里记一笔，
+  /// 别的类别照常导
+  @Test func installMergesNotes() throws {
+    let source = try noteStore()
+    let first = source.create(body: "第一条")
+    let second = source.create(body: "第二条")
+    let words = try HistoryStore(db: Database(path: ":memory:"))
+    words.setFavorite(source: "cat", target: .zhHans, result: "猫", service: "智谱", true)
+    let (target, name) = try suite()
+    defer { target.removePersistentDomain(forName: name) }
+    let archive = try SettingsArchive.read(
+      SettingsArchive.capture(
+        from: target, domainName: name, services: [], words: words.search("", limit: 0),
+        notes: source.exportable, now: Self.moment
+      ).keeping([.vocabulary, .notes]).encoded())
+    #expect(archive.sections == [.vocabulary, .notes])
+    let services = TranslateServiceStore(services: [])
+
+    // 没勾便签：便签库不动
+    let store = try noteStore()
+    var history = try HistoryStore(db: Database(path: ":memory:"))
+    #expect(
+      try archive.install(
+        [.vocabulary], services: services, history: history, noteStore: store, to: target,
+        domainName: name) == SettingsArchive.Outcome(wordsAdded: 1))
+    #expect(store.notes.isEmpty)
+    // 勾了：加进来；本机改得更晚的那条不动，文件里更晚的换成文件的
+    #expect(
+      try archive.install(
+        [.notes], services: services, noteStore: store, to: target, domainName: name)
+        == SettingsArchive.Outcome(notesAdded: 2))
+    #expect(Set(store.notes.map(\.body)) == ["第一条", "第二条"])
+    store.setBody("本机后来改的", of: first.id)
+    store.erase(second.id)
+    #expect(
+      try archive.install(
+        [.notes], services: services, noteStore: store, to: target, domainName: name)
+        == SettingsArchive.Outcome(notesAdded: 1))
+    #expect(store.note(first.id)?.body == "本机后来改的" && store.note(second.id) != nil)
+
+    // 便签这次不可用：跳过便签、记一笔，生词本照常导
+    history = try HistoryStore(db: Database(path: ":memory:"))
+    #expect(
+      try archive.install(
+        [.vocabulary, .notes], services: services, history: history, to: target,
+        domainName: name) == SettingsArchive.Outcome(wordsAdded: 1, notesSkipped: true))
+    // 文件里一条便签都没有：没有东西被跳过
+    var empty = archive
+    empty.notes = []
+    #expect(
+      try empty.install([.notes], services: services, to: target, domainName: name)
+        == SettingsArchive.Outcome())
+    // 并进去了但没存上盘（库写不了）：结果里记一笔，不能当成导入好了
+    let db = try Database(path: ":memory:")
+    let broken = try NoteStore(db: db)
+    try db.execute("ALTER TABLE notes RENAME TO parked")
+    #expect(
+      try archive.install(
+        [.notes], services: services, noteStore: broken, to: target, domainName: name)
+        == SettingsArchive.Outcome(notesAdded: 2, notesUnsaved: true))
+    #expect(broken.notes.count == 2 && broken.saveProblem != nil)
+    // 偏好没被碰过（这两类不写偏好）
+    #expect(target.persistentDomain(forName: name)?.isEmpty != false)
+  }
+
+  /// 刘海岛上那一行带上便签：新增的条数算上便签；便签没导入时优先说它、不算进导入了的类别
+  @Test func importSummaryMentionsNotes() {
+    typealias Outcome = SettingsArchive.Outcome
+    #expect(
+      ImportSheet.summary([.notes], outcome: Outcome(notesAdded: 3, notesUpdated: 2), pruned: 0)
+        == "便签，新增 3 条")
+    #expect(
+      ImportSheet.summary(
+        [.clips, .notes], outcome: Outcome(clipsAdded: 1, notesAdded: 3), pruned: 0)
+        == "片段与收藏、便签，新增 4 条")
+    #expect(ImportSheet.summary([.notes], outcome: Outcome(notesUpdated: 2), pruned: 0) == "便签")
+    #expect(
+      ImportSheet.summary(
+        [.hotkeys, .notes], outcome: Outcome(notesSkipped: true), pruned: 0) == "快捷键，便签没导入")
+    #expect(
+      ImportSheet.summary(
+        [.preferences, .services, .notes], outcome: Outcome(secrets: 1, notesSkipped: true),
+        pruned: 9) == "设置、翻译服务，含密钥，便签没导入")
+    // 并进来了但没存上：不报「新增几条」，说没存上
+    #expect(
+      ImportSheet.summary(
+        [.clips, .notes], outcome: Outcome(clipsAdded: 1, notesAdded: 3, notesUnsaved: true),
+        pruned: 0) == "片段与收藏、便签，便签没存上")
+    // 只勾了便签、便签这次用不了：一类都没导进去，标题换成「没有导入」/「没有恢复」，这一行说为什么
+    let nothing = Outcome(notesSkipped: true)
+    #expect(ImportSheet.summary([.notes], outcome: nothing, pruned: 0) == "便签这次用不了")
+    #expect(ImportSheet.title([.notes], outcome: nothing, restoring: false) == "没有导入")
+    #expect(ImportSheet.title([.notes], outcome: nothing, restoring: true) == "没有恢复")
+    // 别的类别导进去了、只是便签没导：还是「已导入」
+    #expect(ImportSheet.title([.hotkeys, .notes], outcome: nothing, restoring: false) == "已导入")
+    #expect(ImportSheet.title([.hotkeys, .notes], outcome: nothing, restoring: true) == "已恢复")
+    #expect(ImportSheet.title([.notes], outcome: Outcome(notesAdded: 1), restoring: false) == "已导入")
+    #expect(
+      ImportSheet.title([.notes], outcome: Outcome(notesUnsaved: true), restoring: false) == "已导入")
   }
 }

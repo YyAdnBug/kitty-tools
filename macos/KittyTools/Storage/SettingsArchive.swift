@@ -1,19 +1,20 @@
 // 设置的导出与导入（设置 › 通用，2026-10-07）：把各页的设置、全局快捷键、翻译服务、网页搜索与快捷链接，加上用户自己留下的
-// 文字——片段、文字类的收藏和收藏夹、生词本——存成一个 JSON 文件，换电脑、重装或给别人一份时导回来。
+// 文字——片段、文字类的收藏和收藏夹、生词本、便签（2026-10-12，第七类）——存成一个 JSON 文件，换电脑、重装或给别人一份时导回来。
 // 对标 Raycast「Export Settings & Data」（一个文件、密钥加密、导入时按类别勾选；它也带片段）和
 // Rectangle 的 JSON 配置；Alfred 同步时故意不带每台机器各自的东西，这里同理——不进文件的：窗口位置、上次截图区域、
 // 「进行中」标记、授权状态、更新检查记录（这些状态都没有注册默认值）、截图的存储文件夹（这台电脑上的路径；别人给的文件
 // 也不该能改截图存到哪）、登录时打开（系统的登录项）；数据库里的普通剪贴板历史和没收藏的翻译历史（它们有保留天数、
 // 退出 / 锁屏清空这些隐私控制，不该靠导出留下来，和每日备份同样的取舍）、图片和文件类的收藏（图片太大、文件只是这台电脑上的
-// 路径）、文字的格式、启动器收藏。
+// 路径）、文字的格式、启动器收藏；便签里的图片、「最近删除」里的便签。
 //
-// 文件里有什么（format 1，六类都可以不带）：
+// 文件里有什么（format 2，七类都可以不带；format 1 是没有便签时的样子，照常读）：
 // - preferences：Prefs.defaults 里的键 + 三个没有默认值的键（kinds：翻译浮窗顶上选的源 / 目标语言，和状态屏的状态列表——
 //   它在偏好里是一段 JSON，文件里写成一组状态），只写用户改过的（持久域里有的）；
 // - hotkeys：存过的全局快捷键（动作 → 组合，null = 清除了）；没存过的不写，跟默认；
 // - translateServices / searchEngines：两张列表现在的样子；
 // - clips + clipGroups：片段和文字类的收藏（正文、备注、所在收藏夹的名字、复制时间），收藏夹的名字按顺序；
-// - vocabulary：生词本（收藏的翻译）；这两类是明文；
+// - vocabulary：生词本（收藏的翻译）；
+// - notes：便签（没删的，含归档；每条带编号、标题、正文、颜色、建于、改于、修订号、归档、固定、顺序）；这三类是明文；
 // - secrets：翻译服务的密钥，默认不带；要带就用密码加密（PBKDF2-HMAC-SHA256 → AES-256-GCM），文件里没有明文密钥。
 //   密钥平时只在钥匙串里（mac-native §2），这是它唯一出钥匙串的地方：用户自己勾选、自己设密码。密钥和各服务往哪发请求
 //   （routing）绑在一起校验：文件里某个服务的地址被人改过，密钥就解不开，不会带着密钥连到改过的地址。
@@ -21,7 +22,8 @@
 // 导入：文件可能是别人给的、手改过的，read 把不认识、类型不对、超出范围的项都丢掉，后面的 apply 只见查过的。
 // 「设置」「快捷键」整类换成文件里的样子（文件里没有的键删掉 = 回到默认）；两张列表按 id 更新和添加，本机独有的不删
 // （删 AI 服务会连钥匙串里的密钥一起丢）；片段、收藏、生词本合并进库（ClipboardStore.adopt、HistoryStore.adoptFavorites：
-// 同样的正文不重复加，只补标记），不删本机的。这里只管文件、偏好和加解密；让运行中的东西跟上在 AppDelegate.settingsImported。
+// 同样的正文不重复加，只补标记），不删本机的；便签按编号合并进便签库（NoteStore.adopt：没有的加上，两边都有的留改得晚的，
+// 本机的不删）。这里只管文件、偏好和加解密；让运行中的东西跟上在 AppDelegate.settingsImported。
 // 和 C API 打交道的只有 key(password:salt:rounds:) 里的 CCKeyDerivationPBKDF（CryptoKit 没有按密码算密钥的函数）。
 
 import CommonCrypto
@@ -29,9 +31,9 @@ import CryptoKit
 import Foundation
 
 struct SettingsArchive: Codable, Equatable {
-  /// 能分开勾选的六类（顺序即导出、导入表单里的顺序）
+  /// 能分开勾选的七类（顺序即导出、导入表单里的顺序）
   enum Section: String, CaseIterable, Identifiable {
-    case preferences, hotkeys, services, engines, clips, vocabulary
+    case preferences, hotkeys, services, engines, clips, vocabulary, notes
 
     var id: String { rawValue }
 
@@ -43,6 +45,7 @@ struct SettingsArchive: Codable, Equatable {
       case .engines: "网页搜索与快捷链接"
       case .clips: "片段与收藏"
       case .vocabulary: "生词本"
+      case .notes: "便签"
       }
     }
   }
@@ -68,6 +71,25 @@ struct SettingsArchive: Codable, Equatable {
     var createdAt: Date
   }
 
+  /// 一条便签（没删的；只有文字，便签里的图片不进文件）。字段和便签库的一行对得上（Notes/Note.swift）：编号是 UUID、
+  /// 导入时按它合并；时间是整数毫秒（1970 年起，和库里同一个口径——文件里别的时间是 ISO 8601、只到秒，而便签合并要拿
+  /// 「改于」和本机的比，两边精度得一样；带小数秒的 ISO 写法实测是截断的，一半的毫秒值读回来差 1）。
+  /// 解码是宽松的（文件末尾的扩展）：哪一条缺字段、类型不对，只丢那一条
+  struct NoteEntry: Codable, Equatable {
+    var id: String
+    /// 自己起的标题；空 = 用正文第一行
+    var title: String
+    var body: String
+    /// 纸色的下标（0..<Note.colorCount）
+    var color: Int
+    var createdAt: Int64
+    var modifiedAt: Int64
+    var revision: Int
+    var archived: Bool
+    var pinned: Bool
+    var order: Double
+  }
+
   /// 导入做了什么（刘海岛据此说一句）
   struct Outcome: Equatable {
     /// 存进钥匙串的密钥数
@@ -77,6 +99,13 @@ struct SettingsArchive: Codable, Equatable {
     var clipsUpdated = 0
     /// 新增的生词
     var wordsAdded = 0
+    /// 加进来的便签、换成文件里那一版的便签
+    var notesAdded = 0
+    var notesUpdated = 0
+    /// 文件里有便签、也勾了，但便签这次用不了（NotesRecovery），没导入
+    var notesSkipped = false
+    /// 便签并进来了、但没存上盘（NoteStore.Adoption.saved 是 false：内容在内存里、仓库自己会再试）——不能当成导入好了
+    var notesUnsaved = false
   }
 
   /// 偏好的值：布尔、整数、小数、字符串、字符串数组、状态屏的一组状态；别的（新版本多出来的类型）读成 unsupported，
@@ -202,8 +231,10 @@ struct SettingsArchive: Codable, Equatable {
   }
 
   static let marker = "Kitty Tools"
-  /// 1 = 第一次发布（0.3.2）时的样子，六类都在里面。发布之后再加类别、改字段含义就升它：旧版本读到更新的文件会说「先更新」
-  static let currentFormat = 1
+  /// 1 = 第一次发布（0.3.2）时的样子，六类；2 = 加了第七类「便签」（0.5.0），别的没变——格式 1 的文件照常读。
+  /// 发布之后再加类别、改字段含义就升它：旧版本读到更新的文件会说「先更新」（0.3.2–0.4.0 读格式 2 的文件就是这样，
+  /// 连 0.5.0 起写的每日自动备份也是；不带便签的文件也写 2，不为它另留一条路）
+  static let currentFormat = 2
   /// 文件再大就不读、不写（只有设置时几 KB；带上片段、收藏、生词本也很少过 1 MB，单条文字最大 5 MB）。
   /// ponytail: 读文件、解析、并进库都在主线程上，这个上限就是卡多久的上限——独立实测 32 MB 全是很短的片段（36 万条，
   /// 最坏情况）解析 0.6 s，同样大小的几条长文字 0.03 s；正常的文件是毫秒级。真有人的文件大到卡，再挪到主线程外
@@ -213,6 +244,8 @@ struct SettingsArchive: Codable, Equatable {
   static let maxClips = 5000
   static let maxGroups = 200
   static let maxWords = 20_000
+  /// 最多几条便签（一条的正文多大看 Note.maxBodyBytes，标题的上限看 Note.sanitized(title:)）
+  static let maxNotes = 5000
   /// 密码至少几位
   static let minPasswordLength = 8
   /// 按密码算密钥的轮数（OWASP 2023 对 PBKDF2-HMAC-SHA256 的建议；本机 M3 实测约 0.09 s）。
@@ -238,6 +271,8 @@ struct SettingsArchive: Codable, Equatable {
   var clipGroups: [String]?
   /// 生词本（新→旧）
   var vocabulary: [Word]?
+  /// 便签（没删的，按顺序；nil = 没带这一类——没勾，或者导出时便签用不了）
+  var notes: [NoteEntry]?
   var secrets: Sealed?
 
   /// 导出哪些偏好键、各是什么类型：注册了默认值的全部（类型取默认值的）+ 没有默认值的三个——翻译浮窗顶上选的
@@ -260,6 +295,7 @@ struct SettingsArchive: Codable, Equatable {
       case .engines: searchEngines != nil
       case .clips: clips != nil
       case .vocabulary: vocabulary != nil
+      case .notes: notes != nil
       }
     }
   }
@@ -268,11 +304,15 @@ struct SettingsArchive: Codable, Equatable {
 
   /// 现在的设置。偏好和快捷键只读用户自己存过的（持久域；registerDefaults 给的默认不在里面），所以以后默认值变了，
   /// 没改过的人导入后照样跟着新默认；services 是翻译服务列表现在的样子（TranslateServiceStore 手里那份）；
-  /// clips / groups 是剪贴板的全部条目和收藏夹（这里只挑留下的文字），words 是生词本
+  /// clips / groups 是剪贴板的全部条目和收藏夹（这里只挑留下的文字），words 是生词本；notes 是要带的便签——传
+  /// NoteStore.exportable（没删的，按顺序；文件里就是这个顺序。混进了「最近删除」里的也会被筛掉）。
+  /// **notes 传 nil = 便签这次用不了**：文件里不带这一类——不能写一份空的，把以前带着便签的备份顶掉。所以这个参数
+  /// 没有默认值（默认成 [] 正是「有这一类、0 条」），调用方都得自己说清
   static func capture(
     from defaults: UserDefaults = .standard, domainName: String? = Bundle.main.bundleIdentifier,
     services: [TranslateService], clips: [ClipItem] = [], groups: [ClipGroup] = [],
-    words: [HistoryStore.Entry] = [], version: String = AboutTab.version, now: Date = .now
+    words: [HistoryStore.Entry] = [], notes: [Note]?, version: String = AboutTab.version,
+    now: Date = .now
   ) -> SettingsArchive {
     let domain = domainName.flatMap(defaults.persistentDomain(forName:)) ?? [:]
     var preferences: [String: Value] = [:]
@@ -290,7 +330,8 @@ struct SettingsArchive: Codable, Equatable {
       version: version, exportedAt: now, preferences: preferences, hotkeys: hotkeys,
       translateServices: services, searchEngines: engines(in: domain),
       clips: clips.compactMap { Clip($0, groups: groups) }, clipGroups: groups.map(\.name),
-      vocabulary: words.filter(\.favorite).map(Word.init))
+      vocabulary: words.filter(\.favorite).map(Word.init),
+      notes: notes.map { $0.compactMap(NoteEntry.init) })
   }
 
   /// 只留勾选的类别
@@ -308,6 +349,7 @@ struct SettingsArchive: Codable, Equatable {
       kept.clipGroups = nil
     }
     if !sections.contains(.vocabulary) { kept.vocabulary = nil }
+    if !sections.contains(.notes) { kept.notes = nil }
     return kept
   }
 
@@ -331,8 +373,23 @@ struct SettingsArchive: Codable, Equatable {
     if (vocabulary?.count ?? 0) > Self.maxWords {
       return "生词本超过 \(Self.maxWords) 条，先取消勾选「生词本」"
     }
-    if encodedSize > Self.maxFileSize { return "内容太多，先取消勾选「片段与收藏」" }
+    if (notes?.count ?? 0) > Self.maxNotes {
+      return "便签超过 \(Self.maxNotes) 条，先取消勾选「便签」"
+    }
+    if !notesFit {
+      return "有便签的正文超过 \(Note.maxBodyBytes >> 20) MB，先取消勾选「便签」"
+    }
+    if encodedSize > Self.maxFileSize {
+      return "内容太多，先取消勾选「片段与收藏」" + ((notes ?? []).isEmpty ? "" : "或「便签」")
+    }
     return nil
+  }
+
+  /// 「便签」这一类导入时肯不肯全收：条数、每条正文的大小都在上限里（导出前、每日自动备份前都看它）
+  var notesFit: Bool {
+    let notes = notes ?? []
+    return notes.count <= Self.maxNotes
+      && notes.allSatisfy { $0.body.utf8.count <= Note.maxBodyBytes }
   }
 
   /// 存储面板里默认的文件名：「Kitty Tools 设置 2026-10-07.json」
@@ -545,6 +602,27 @@ struct SettingsArchive: Codable, Equatable {
           && Lang(rawValue: word.target) != nil && word.service.count <= 200
       }
     }
+    // 便签：编号得是 UUID（统一成 UUID 自己的大写写法，同一个编号不因为大小写变成两条）、不重复；文字里的 NUL 去掉
+    // （库里存不下它后面的字）；正文不超过单条上限、顺序得是有限的数，不然这条不要；标题超长的截到上限（不清空）；
+    // 颜色、时间、修订号、顺序夹进范围
+    var noteIDs: Set<String> = []
+    clean.notes = notes.map { notes in
+      notes.prefix(Self.maxNotes).compactMap { note in
+        var note = note
+        note.body = Note.sanitized(text: note.body)
+        guard let id = UUID(uuidString: note.id)?.uuidString, note.order.isFinite,
+          note.body.utf8.count <= Note.maxBodyBytes, noteIDs.insert(id).inserted
+        else { return nil }
+        note.id = id
+        note.title = Note.sanitized(title: note.title)
+        note.color = Note.clamped(color: note.color)
+        note.createdAt = max(note.createdAt, 0)
+        note.modifiedAt = max(note.modifiedAt, 0)
+        note.revision = min(max(note.revision, 0), Note.maxRevision)
+        note.order = min(max(note.order, -1e9), 1e9)
+        return note
+      }
+    }
     if translateServices == nil { clean.secrets = nil }
     return clean
   }
@@ -600,14 +678,15 @@ struct SettingsArchive: Codable, Equatable {
   }
 
   /// 导入选中的类别（self 得是 read 出来的）：先解密钥——密码不对就抛错，这时什么都还没写——再写偏好（apply）、
-  /// 合并翻译服务、存密钥，片段 / 收藏和生词本并进各自的库（没给 clipboard / history 的那一类不导入）。
+  /// 合并翻译服务、存密钥，片段 / 收藏和生词本并进各自的库（没给 clipboard / history 的那一类不导入），便签并进便签库
+  /// （noteStore 是 nil = 便签这次用不了：跳过，结果里记一笔 notesSkipped；并进去了没存上盘记 notesUnsaved）。
   /// password 空着 = 不导入密钥；store：存一个密钥（账户名、值；默认写钥匙串，单测传假的）；
   /// beforeWriting：密码对了、马上要动手写之前调一次（导入前的自动备份，SettingsBackup；它抛错就什么都不写）
   @discardableResult
   func install(
     _ sections: Set<Section>, password: String = "", services: TranslateServiceStore,
     clipboard: ClipboardStore? = nil, history: HistoryStore? = nil,
-    to defaults: UserDefaults = .standard,
+    noteStore: NoteStore? = nil, to defaults: UserDefaults = .standard,
     domainName: String? = Bundle.main.bundleIdentifier,
     store: (String, String) -> Void = { Keychain.set($1, for: $0) },
     beforeWriting: () throws -> Void = {}
@@ -629,6 +708,15 @@ struct SettingsArchive: Codable, Equatable {
     }
     if sections.contains(.vocabulary), let vocabulary, let history {
       outcome.wordsAdded = history.adoptFavorites(vocabulary)
+    }
+    if sections.contains(.notes), let notes {
+      if let noteStore {
+        let adopted = noteStore.adopt(notes)
+        (outcome.notesAdded, outcome.notesUpdated) = (adopted.added, adopted.updated)
+        outcome.notesUnsaved = !adopted.saved
+      } else {
+        outcome.notesSkipped = !notes.isEmpty
+      }
     }
     return outcome
   }
@@ -724,6 +812,42 @@ extension SettingsArchive.Clip {
     self.init(
       text: text, note: item.note, favorite: item.favorite, snippet: item.isSnippet,
       group: groups.first { $0.id == item.groupID }?.name, copiedAt: item.copiedAt)
+  }
+}
+
+extension SettingsArchive.NoteEntry {
+  /// 没删的便签 → 文件里的样子（「最近删除」里的给 nil）
+  init?(_ note: Note) {
+    guard note.deletedAt == nil else { return nil }
+    self.init(
+      id: note.id, title: note.title, body: note.body, color: note.color,
+      createdAt: Note.milliseconds(note.createdAt), modifiedAt: Note.milliseconds(note.modifiedAt),
+      revision: note.revision, archived: note.isArchived, pinned: note.isPinned, order: note.order)
+  }
+
+  /// 文件可能是别人给的、手改过的：哪一条缺了字段、类型不对（连「不是一个对象」在内），读成编号为空的一条——
+  /// SettingsArchive.sanitized 按编号筛掉它，只丢这一条，不连累整个文件。写出去用自动合成的那一套
+  init(from decoder: Decoder) throws {
+    guard let values = try? decoder.container(keyedBy: CodingKeys.self),
+      let id = try? values.decode(String.self, forKey: .id),
+      let title = try? values.decode(String.self, forKey: .title),
+      let body = try? values.decode(String.self, forKey: .body),
+      let color = try? values.decode(Int.self, forKey: .color),
+      let createdAt = try? values.decode(Int64.self, forKey: .createdAt),
+      let modifiedAt = try? values.decode(Int64.self, forKey: .modifiedAt),
+      let revision = try? values.decode(Int.self, forKey: .revision),
+      let archived = try? values.decode(Bool.self, forKey: .archived),
+      let pinned = try? values.decode(Bool.self, forKey: .pinned),
+      let order = try? values.decode(Double.self, forKey: .order)
+    else {
+      self.init(
+        id: "", title: "", body: "", color: 0, createdAt: 0, modifiedAt: 0, revision: 0,
+        archived: false, pinned: false, order: 0)
+      return
+    }
+    self.init(
+      id: id, title: title, body: body, color: color, createdAt: createdAt,
+      modifiedAt: modifiedAt, revision: revision, archived: archived, pinned: pinned, order: order)
   }
 }
 

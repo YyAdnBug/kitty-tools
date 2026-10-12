@@ -1,5 +1,7 @@
 // 应用生命周期：单实例检查，按依赖顺序组装各模块（PLAN §4），热键与各翻译入口，首次安装打开欢迎引导、
 // 更新后第一次启动用刘海岛说一声，退出 / 锁屏时的清理；数据打不开时问用户怎么办、每天备份的时机（Storage/Backup.swift）；
+// 便签的数据（Notes/：单独的库，启动的最后才开，打不开时单独问、不退出，退出 / 锁屏 / 睡眠前落盘，每天备份、
+// 清「最近删除」里到期的）；
 // 录屏（框选、开录、结果、飞入和视频卡、退出前收尾、上次闪退留下的文件）；
 // 录音（录音第 5 批：开录、和录屏互斥、结果、飞入和录音卡，收尾和闪退恢复同录屏）；
 // 状态屏的三个入口（快捷键先出选状态的面板——设置里可改成直接进第一个状态，菜单栏子菜单、启动器每个状态一条；
@@ -64,6 +66,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 上一次备份数据库时发现库有问题（Backup.run 给了 .damaged）：这时内存里读到的片段、收藏可能不全，设置与数据的
   /// 自动备份先不做——写出去会把好的那几份顶掉（数据库的备份同样的规矩：坏了不备、已有的不动）
   private var isDatabaseDamaged = false
+  /// 便签（PLAN §10「便签」，Notes/NoteStore.swift）：单独的库 notes.sqlite3，启动的最后才开（finishLaunchingNotes）。
+  /// 打不开时单独问（openNotes），不让 App 退出；这次运行里不可用时是 nil——导出和每日备份不带便签这一类，导入跳过便签
+  private var noteStore: NoteStore?
+  /// 便签开过了（开成了、用户选了先不用都算）。之前不做每日备份（backupIfDue）：便签还没开时写出去的当天那份 JSON
+  /// 里没有便签，而当天那份只写一次
+  private var hasOpenedNotes = false
+  /// 上一次备份便签库时发现库有问题（NotesBackup.run 给了 .damaged）：内存里读到的便签可能不全，设置与数据的自动备份里
+  /// 先不带便签这一类（同 isDatabaseDamaged 的道理：写出去会把带着好便签的那几份顶掉）
+  private var isNotesDamaged = false
   private lazy var watcher = ClipboardWatcher(store: clipboardStore)
   private let serviceStore = TranslateServiceStore()
   private lazy var coordinator = TranslateCoordinator(services: serviceStore, history: historyStore)
@@ -407,6 +418,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           GeneralTab(
             transfer: SettingsTransfer(
               services: serviceStore, clipboard: clipboardStore, history: historyStore,
+              notes: { [unowned self] in noteStore },
               applied: { [unowned self] in settingsImported() },
               backupFolder: Backup.folder(in: dataDirectory),
               snapshot: { [unowned self] in try snapshotBeforeImport() },
@@ -490,16 +502,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if UserDefaults.standard.bool(forKey: Prefs.clipboardClearOnLock) {
           clipboardStore.clearOrdinary()
         }
+        noteStore?.flush()
         backupIfDue()
       }
     }
-    // 每天一份备份：启动时一次，一直开着不退的靠系统的换日通知（午夜发；睡过了午夜的醒来时补发，不保证准点），
-    // 锁屏时再看一眼（换日那次没备成的补上）。都是现成的事件，不为它加定时器
-    backupIfDue()
+    // 睡眠前把便签攒着没落盘的改动落下去（锁屏、退出同）
+    NSWorkspace.shared.notificationCenter.addObserver(
+      forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
+    ) { [unowned self] _ in
+      MainActor.assumeIsolated { _ = noteStore?.flush() }
+    }
+    // 每天一份备份：启动时一次（在最后，等便签开好：finishLaunchingNotes），一直开着不退的靠系统的换日通知
+    // （午夜发；睡过了午夜的醒来时补发，不保证准点），锁屏时再看一眼（换日那次没备成的补上）。都是现成的事件，
+    // 不为它加定时器
     NotificationCenter.default.addObserver(
       forName: .NSCalendarDayChanged, object: nil, queue: .main
     ) { [unowned self] _ in
-      MainActor.assumeIsolated { backupIfDue() }
+      MainActor.assumeIsolated {
+        // 「最近删除」里放满 30 天的便签：启动时清一次，一直开着不退的换日时再清
+        noteStore?.purgeExpired()
+        backupIfDue()
+      }
     }
 
     for action in HotKeyAction.allCases {
@@ -557,6 +580,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         island.show(found.title, detail: found.detail, tone: found.tone)
       }
     }
+    finishLaunchingNotes()
+  }
+
+  /// 启动的最后一步，三样连着做：开便签库、清「最近删除」里到期的、今天的第一次备份。
+  /// 放在最后：便签库打不开时要弹框问，弹框里说「剪贴板、翻译和别的功能不受影响」——这时剪贴板监听、热键、菜单栏图标
+  /// 都已经起来了，这句话才是真的。备份跟在后面：便签还没开就备，当天那份 JSON 里就没有便签（backupIfDue 也因此等着）
+  private func finishLaunchingNotes() {
+    noteStore = openNotes()
+    hasOpenedNotes = true
+    noteStore?.purgeExpired()
+    backupIfDue()
   }
 
   /// 在录屏 / 录音时先停止并收尾再退（13 条默认细节：最多等 5 s；没写完也照样退，录屏由 replayd 自己收尾，下次启动 recover 接手）
@@ -578,6 +612,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationWillTerminate(_ notification: Notification) {
     guard isRunning else { return }
     statusScreen.exit(.quit)  // 在状态屏里被要求退出（远程、脚本）：拦截当场撤掉
+    // 便签攒着没落盘的改动。应用内更新的重启也走这里（Updater.install 调的是 NSApp.terminate）。
+    // ponytail: 这时还落不下去只留日志（丢的是最近那一小段没落盘的改动）；有了能写便签的界面之后（第 2 批），
+    // 改成在 applicationShouldTerminate 里拦一下、问用户
+    noteStore?.flush()
     // 面板固定着删了再退出：删掉的也要落库（撤销栈平时在面板收起时提交，体检 A2），⌘C 复制过的挪到最前
     clipboardModel.reset()
     if UserDefaults.standard.bool(forKey: Prefs.clipboardClearOnQuit) {
@@ -1578,7 +1616,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 今天还没备份过就备一份（Storage/Backup.swift：只备用户留下的收藏 / 片段 / 生词本等，另开只读连接在主线程外做，
   /// 1.7 MB 的库约 10 ms）。备好了、库有问题、没备成都只记日志，不打扰用户
   private func backupIfDue() {
-    guard !isBackingUp else { return }
+    // 便签还没开（启动到一半、便签的弹框还开着时来了锁屏 / 换日的通知）：先不做，开好之后启动流程会调
+    guard hasOpenedNotes, !isBackingUp else { return }
     isBackingUp = true
     Task {
       let outcome = await Backup.run(in: dataDirectory)
@@ -1589,16 +1628,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       case .notDue: break
       }
       isDatabaseDamaged = outcome == .damaged
+      await backupNotesIfDue()
       isBackingUp = false
       await backupSettingsIfDue()
     }
   }
 
-  /// 现在的设置与数据（导出文件的内容，不带密钥）：每天的自动备份和导入前那一份都写它
+  /// 便签库今天还没备份过就备一份（Notes/NotesBackup.swift：整库加图片目录，另开只读连接在主线程外做）。跟着上面数据库的
+  /// 备份做，各备各的、一个不成不影响另一个；便签这次运行里不可用时不做。先把攒着没落盘的改动落下去。结果只记日志
+  private func backupNotesIfDue() async {
+    guard let noteStore else { return }
+    noteStore.flush()
+    let outcome = await NotesBackup.run(in: dataDirectory)
+    switch outcome {
+    case .made(let url): Log.storage.notice("已备份便签：\(url.lastPathComponent, privacy: .public)")
+    case .damaged: Log.storage.error("便签库有问题，今天没有备份；已有的备份没动")
+    case .failed(let reason): Log.storage.error("备份便签失败：\(reason)")
+    case .notDue, .empty: break
+    }
+    isNotesDamaged = outcome == .damaged
+  }
+
+  /// 现在的设置与数据（导出文件的内容，不带密钥）：每天的自动备份和导入前那一份都写它。便签这次运行里不可用、
+  /// 或者便签库刚查出有问题时不带便签这一类（不写一份空的、不全的把好的顶掉）
   private func currentArchive() -> SettingsArchive {
     .capture(
       services: serviceStore.services, clips: clipboardStore.items, groups: clipboardStore.groups,
-      words: historyStore.search("", favoritesOnly: true, limit: 0))
+      words: historyStore.search("", favoritesOnly: true, limit: 0),
+      notes: isNotesDamaged ? nil : noteStore?.exportable)
   }
 
   /// 设置与数据的每日自动备份（Storage/SettingsBackup.swift）：开着的话，本机 backups/ 和用户另选的文件夹里今天还没有的
@@ -1665,6 +1722,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       NSApp.activate()
       alert.runModal()
       exit(1)
+    }
+  }
+
+  /// 打开便签库（Notes/NotesBackup.swift 的 NotesRecovery）。打不开时问用户：用最近的备份 / 重新开始 / 这次先不用便签。
+  /// **不退出 App**：问过之后还开不了就再说一声（弹框）；库是更新版本的 Kitty Tools 写的不弹框，刘海岛出一条警告。
+  /// 这两种和用户选了「这次先不用」都返回 nil：便签这次用不了，别的功能照常
+  private func openNotes() -> NoteStore? {
+    let directory = dataDirectory
+    let show = { (title: String, text: String, buttons: [String]) -> Int in
+      let alert = NSAlert()
+      alert.alertStyle = .warning
+      alert.messageText = title
+      alert.informativeText = text
+      for button in buttons { alert.addButton(withTitle: button) }
+      // Esc = 最后一个按钮（这次先不用便签：什么都不动）；第一个按钮是默认（↩）
+      if buttons.count > 1 { alert.buttons.last?.keyEquivalent = "\u{1b}" }
+      NSApp.activate()
+      return alert.runModal().rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
+    }
+    do {
+      return try NotesRecovery.open(
+        in: directory,
+        open: {
+          try NoteStore(
+            db: Database(path: directory.appending(path: NotesBackup.databaseName).path))
+        },
+        ask: { problem in
+          let wording = NotesRecovery.wording(for: problem, directory: directory)
+          let index = show(wording.title, wording.text, wording.buttons)
+          return wording.choices.indices.contains(index) ? wording.choices[index] : .skip
+        })
+    } catch {
+      Log.storage.error("便签这次用不了：\(error)")
+      guard let notice = NotesRecovery.notice(for: error, directory: directory) else { return nil }
+      if case .newer = error {
+        island.show(notice.title, detail: notice.text, tone: .warning)
+      } else {
+        _ = show(notice.title, notice.text, ["好"])
+      }
+      return nil
     }
   }
 }

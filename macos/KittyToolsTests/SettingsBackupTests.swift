@@ -277,7 +277,7 @@ struct SettingsBackupTests {
     snippet.text = "您好 {cursor}，"
     snippet.isSnippet = true
     let archive = SettingsArchive.capture(
-      from: defaults, domainName: name, services: [.zhipu, ai], clips: [snippet],
+      from: defaults, domainName: name, services: [.zhipu, ai], clips: [snippet], notes: [],
       version: "9.9.9", now: Self.moment())
     let payload = try #require(SettingsBackup.payload(of: archive))
     #expect(payload.note == nil)
@@ -293,7 +293,8 @@ struct SettingsBackupTests {
     let (defaults, name) = try suite()
     defer { defaults.removePersistentDomain(forName: name) }
     let base = SettingsArchive.capture(
-      from: defaults, domainName: name, services: [ai], version: "9.9.9", now: Self.moment())
+      from: defaults, domainName: name, services: [ai], notes: [], version: "9.9.9",
+      now: Self.moment())
     let clips = { (count: Int) in
       (0..<count).map {
         SettingsArchive.Clip(
@@ -328,7 +329,7 @@ struct SettingsBackupTests {
     payload = try #require(SettingsBackup.payload(of: archive))
     #expect(payload.note == "片段与收藏、生词本太多，自动备份里没带，可以手动导出")
     read = try SettingsArchive.read(payload.data)
-    #expect(Set(read.sections) == [.preferences, .hotkeys, .services, .engines])
+    #expect(Set(read.sections) == [.preferences, .hotkeys, .services, .engines, .notes])
   }
 
   // MARK: 开关和文件夹只属于这台电脑
@@ -368,7 +369,7 @@ struct SettingsBackupTests {
     let before = keys.map { defaults.object(forKey: $0) as? NSObject }
 
     let archive = SettingsArchive.capture(
-      from: defaults, domainName: name, services: [], now: Self.moment())
+      from: defaults, domainName: name, services: [], notes: [], now: Self.moment())
     #expect(keys.allSatisfy { archive.preferences?[$0] == nil })
     // 别人给的文件里就算写了这几个键，读的时候也被丢掉；导入「设置」之后本机的六个值原样还在
     let foreign = try SettingsArchive.read(
@@ -393,7 +394,8 @@ struct SettingsBackupTests {
     defer { source.removePersistentDomain(forName: sourceName) }
     source.set(true, forKey: Prefs.clipboardPastePlain)
     var archive = SettingsArchive.capture(
-      from: source, domainName: sourceName, services: [.zhipu, ai], now: Self.moment())
+      from: source, domainName: sourceName, services: [.zhipu, ai], notes: [],
+      now: Self.moment())
     try archive.seal(["zhipu.apiKey": "sk-zhipu"], password: "correct horse 电池")
     archive = try SettingsArchive.read(archive.encoded())
 
@@ -652,4 +654,91 @@ struct SettingsBackupTests {
     #expect(names(in: locked).isEmpty)
   }
 
+  // MARK: 便签
+
+  /// 每天那份带上便签（没删的）；便签这次不可用时不带这一类——不写一份空的把好的顶掉；便签多到导入时不肯收、
+  /// 有一条正文太长时不带便签，别的照备，各说各的原因
+  @Test func payloadCarriesNotes() throws {
+    let (defaults, name) = try suite()
+    defer { defaults.removePersistentDomain(forName: name) }
+    let store = try NoteStore(db: Database(path: ":memory:"))
+    let kept = store.create(body: "买菜")
+    store.delete(store.create(body: "删掉的").id)
+    var archive = SettingsArchive.capture(
+      from: defaults, domainName: name, services: [ai], notes: store.exportable,
+      version: "9.9.9", now: Self.moment())
+    var payload = try #require(SettingsBackup.payload(of: archive))
+    #expect(payload.note == nil)
+    var read = try SettingsArchive.read(payload.data)
+    #expect(read == archive && read.notes?.map(\.id) == [kept.id])
+    #expect(String(data: payload.data, encoding: .utf8)?.contains("删掉的") == false)
+
+    // 便签这次不可用：文件里没有这一类，也没有话要说
+    let without = SettingsArchive.capture(
+      from: defaults, domainName: name, services: [ai], notes: nil, version: "9.9.9",
+      now: Self.moment())
+    payload = try #require(SettingsBackup.payload(of: without))
+    read = try SettingsArchive.read(payload.data)
+    #expect(payload.note == nil && read.notes == nil && !read.sections.contains(.notes))
+    #expect(read.translateServices?.count == 1)
+
+    let note = { (index: Int, body: String) in
+      SettingsArchive.NoteEntry(
+        id: String(format: "%08X-0000-4000-8000-000000000000", index), title: "", body: body,
+        color: 0, createdAt: 0, modifiedAt: 0, revision: 0, archived: false, pinned: false,
+        order: 0)
+    }
+    // 条数超了
+    archive.notes = (0...SettingsArchive.maxNotes).map { note($0, "正文") }
+    payload = try #require(SettingsBackup.payload(of: archive))
+    #expect(payload.note == "便签太多，自动备份里没带，可以手动导出")
+    read = try SettingsArchive.read(payload.data)
+    #expect(read.notes == nil && read.translateServices?.count == 1 && read.clips != nil)
+    // 有一条正文太长（这种手动也导不出，说法不一样）；片段也超了时两句都说
+    archive.notes = [note(1, "短的"), note(2, String(repeating: "x", count: Note.maxBodyBytes + 1))]
+    payload = try #require(SettingsBackup.payload(of: archive))
+    #expect(payload.note == "有便签的正文超过 1 MB，自动备份里没带便签")
+    #expect(try SettingsArchive.read(payload.data).notes == nil)
+    archive.clips = (0...SettingsArchive.maxClips).map {
+      SettingsArchive.Clip(
+        text: "片段 \($0)", note: nil, favorite: false, snippet: true, group: nil,
+        copiedAt: Self.moment())
+    }
+    payload = try #require(SettingsBackup.payload(of: archive))
+    #expect(payload.note == "片段与收藏太多，自动备份里没带，可以手动导出；有便签的正文超过 1 MB，自动备份里没带便签")
+    read = try SettingsArchive.read(payload.data)
+    #expect(read.notes == nil && read.clips == nil && read.vocabulary != nil)
+
+    // 条数都没超、只是整个文件太大（每条 1 MB 的便签 40 条）：去掉编出来最大的那一类——便签；空着的片段与收藏
+    // 照带，不会被说成「太多」
+    archive.clips = []
+    archive.notes = (0..<40).map { note($0, String(repeating: "x", count: Note.maxBodyBytes)) }
+    payload = try #require(SettingsBackup.payload(of: archive))
+    #expect(payload.note == "便签太多，自动备份里没带，可以手动导出")
+    read = try SettingsArchive.read(payload.data)
+    #expect(read.notes == nil && read.clips == [] && read.translateServices?.count == 1)
+    // 最大的去掉了还是太大：再去掉次大的，两类都说；小的那一类留着
+    archive.vocabulary = [
+      SettingsArchive.Word(
+        source: "big", target: "zh-Hans",
+        result: String(repeating: "y", count: SettingsArchive.maxFileSize + 1), service: "",
+        createdAt: Self.moment())
+    ]
+    archive.clips = [
+      SettingsArchive.Clip(
+        text: "小片段", note: nil, favorite: false, snippet: true, group: nil,
+        copiedAt: Self.moment())
+    ]
+    payload = try #require(SettingsBackup.payload(of: archive))
+    #expect(payload.note == "生词本、便签太多，自动备份里没带，可以手动导出")
+    read = try SettingsArchive.read(payload.data)
+    #expect(read.notes == nil && read.vocabulary == nil && read.clips?.map(\.text) == ["小片段"])
+    // 便签这次用不了（文件里本来就没有这一类）：不拿它凑数，说明里也不提它
+    archive.notes = nil
+    payload = try #require(SettingsBackup.payload(of: archive))
+    #expect(payload.note == "生词本太多，自动备份里没带，可以手动导出")
+    #expect(
+      try SettingsArchive.read(payload.data).sections
+        == [.preferences, .hotkeys, .services, .engines, .clips])
+  }
 }

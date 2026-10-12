@@ -1,0 +1,149 @@
+// 便签的模型（便签库 notes 表的一行）和两条显示用的纯函数：标题（displayTitle）、列表里的一行摘要（preview）。
+// 便签管「留着看、接着改」的东西（PLAN §10「便签」）；库、落盘、搜索、导入导出在 NoteStore，每日备份和打不开时的恢复在
+// NotesBackup。
+// 为以后的同步先留好的三样（这一版不同步）：稳定的编号（UUID 字符串，建了就不变，导出文件里带着）、修订号（任何字段变
+// 一次 +1：判断「上次同步之后改没改过」不用看时钟）、删除记录（deletedAt 非空 = 在「最近删除」里，以后就是墓碑）。
+// 时间只精确到毫秒：库里、导出文件里存的都是整数毫秒，内存里的值也先对齐到毫秒（stamp），往返不丢、能直接比。
+// 进仓库、进文件之前要过一遍的收拾也在这里（sanitized(text:) / sanitized(title:) / clamped(color:) / nextRevision）：
+// 仓库的每个写入口和读导出文件时用同一份。
+
+import Foundation
+
+nonisolated struct Note: Identifiable, Equatable, Sendable {
+  /// 纸色有几种：color 是 0..<colorCount 的下标（调色板以后的批次定）
+  static let colorCount = 8
+  /// 拿正文第一行当标题时最多几个字、列表里的摘要最多几个字
+  static let titleLength = 60
+  static let previewLength = 120
+  /// 标题和正文都没有内容时显示的名字
+  static let untitled = "未命名便签"
+  /// 一条便签的正文最多多大（UTF-8 字节）。现在只有导入的文件按它查（SettingsArchive：正文超了的那条不要；自己导出时有超的
+  /// 就不让导出「便签」一类）。
+  /// ponytail: 正文仓库自己不拦（这一批还没有能写便签的界面）。以后的编辑器、「存成便签」这些入口要按它拦——剪贴板单条
+  /// 文字可以到 5 MB，原样存成便签就会让「便签」一类导不出去、每日自动备份里也不带
+  static let maxBodyBytes = 1 << 20
+  /// 自己起的标题的上限：不超过这么多个字，并且 UTF-8 不超过这么多字节（一个字后面挂一长串组合符号的那种，按字数拦不住）。
+  /// 超了的一律截到上限（sanitized(title:)）：仓库的写入口和读导出文件时都是
+  static let maxTitleLength = 200
+  static let maxTitleBytes = 1024
+  /// 修订号的上限（导入的文件、读库时都夹到它；到顶了不再往上加，不会溢出）
+  static let maxRevision = 1_000_000_000
+
+  /// UUID 字符串，建了就不变
+  let id: String
+  /// 自己起的标题；空 = 用正文第一行（displayTitle）
+  var title = ""
+  var body = ""
+  var color = 0
+  var createdAt: Date
+  /// 给人看的「改于」：只在标题 / 正文 / 颜色变时更新（归档、固定、挪顺序、删除不算）
+  var modifiedAt: Date
+  /// 任何字段变一次就 +1
+  var revision = 0
+  var isArchived = false
+  var isPinned = false
+  /// 排序值：小的在前；可以取两条中间的值，挪一条不用改别的
+  var order: Double = 0
+  /// 非空 = 在「最近删除」里（什么时候删的）
+  var deletedAt: Date?
+
+  // MARK: 收拾（进仓库、进文件之前）
+
+  /// 正文、标题里的 NUL（U+0000）去掉：库里的文字按 C 字符串存取，碰到它后面的就都丢了
+  static func sanitized(text raw: String) -> String {
+    guard raw.utf8.contains(0) else { return raw }
+    return String(String.UnicodeScalarView(raw.unicodeScalars.filter { $0 != "\0" }))
+  }
+
+  /// 自己起的标题：去掉 NUL，再截到上限（maxTitleLength 个字、maxTitleBytes 字节，哪个先到算哪个）
+  static func sanitized(title raw: String) -> String {
+    let clean = sanitized(text: raw)
+    var (count, bytes) = (0, 0)
+    var end = clean.startIndex
+    while end < clean.endIndex, count < maxTitleLength {
+      let next = clean.index(after: end)
+      bytes += clean[end..<next].utf8.count
+      guard bytes <= maxTitleBytes else { break }
+      (count, end) = (count + 1, next)
+    }
+    return end == clean.endIndex ? clean : String(clean[..<end])
+  }
+
+  /// 纸色的下标夹进 0..<colorCount
+  static func clamped(color raw: Int) -> Int { min(max(raw, 0), colorCount - 1) }
+
+  /// 改动之后的修订号：+1，到 maxRevision 为止（负的、超了的先夹回来）
+  static func nextRevision(after revision: Int) -> Int {
+    min(max(revision, 0), maxRevision - 1) + 1
+  }
+
+  // MARK: 时间
+
+  /// 时间 → 整数毫秒（1970 年起）；离谱到换算不了的给 0
+  static func milliseconds(_ date: Date) -> Int64 {
+    Int64(exactly: (date.timeIntervalSince1970 * 1000).rounded()) ?? 0
+  }
+
+  static func date(milliseconds: Int64) -> Date {
+    Date(timeIntervalSince1970: Double(milliseconds) / 1000)
+  }
+
+  /// 对齐到毫秒：和存进库再读回来的是同一个值
+  static func stamp(_ date: Date) -> Date { self.date(milliseconds: milliseconds(date)) }
+
+  // MARK: 显示
+
+  /// 显示用的标题：自己起的标题；没起就是正文第一个有内容的行（去掉行首的 # 和任务符号），超过 titleLength 个字截断加「…」；
+  /// 都没有就是「未命名便签」
+  var displayTitle: String {
+    let own = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !own.isEmpty { return own }
+    guard let line = Self.lines(of: body, skipping: 0, budget: 0).first else {
+      return Self.untitled
+    }
+    return Self.clipped(line, to: Self.titleLength)
+  }
+
+  /// 列表里标题下面那一行摘要：其余有内容的行（标题取自正文第一行时不重复它）拼成一行，超过 previewLength 个字截断
+  var preview: String {
+    let hasOwnTitle = !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    let rest = Self.lines(of: body, skipping: hasOwnTitle ? 0 : 1, budget: Self.previewLength)
+    return Self.clipped(rest.joined(separator: " "), to: Self.previewLength)
+  }
+
+  /// 正文里有内容的行（每行过一遍 clean），跳过前 skipping 行；用空格拼起来超过 budget 个字就不再往下读（正文可以很长）
+  private static func lines(of body: String, skipping: Int, budget: Int) -> [String] {
+    var lines: [String] = []
+    var (skipped, length) = (0, 0)
+    body.enumerateLines { raw, stop in
+      let line = clean(raw)
+      guard !line.isEmpty else { return }
+      guard skipped >= skipping else {
+        skipped += 1
+        return
+      }
+      length += line.count + (lines.isEmpty ? 0 : 1)
+      lines.append(line)
+      stop = length > budget
+    }
+    return lines
+  }
+
+  /// 一行去掉两头的空白、行首的标题标记（一到六个 # 后面跟空白；「#标签」不算）和任务符号（☐ ☑）。
+  /// 完整的任务规则（哪些写法算任务、勾选）第 5 批再做，这里只管显示时不把符号带出来
+  private static func clean(_ raw: String) -> String {
+    var line = raw.drop(while: \.isWhitespace)
+    let hashes = line.prefix { $0 == "#" }.count
+    if (1...6).contains(hashes), line.dropFirst(hashes).first?.isWhitespace ?? true {
+      line = line.dropFirst(hashes).drop(while: \.isWhitespace)
+    }
+    if let first = line.first, first == "☐" || first == "☑" {
+      line = line.dropFirst().drop(while: \.isWhitespace)
+    }
+    return line.trimmingCharacters(in: .whitespaces)
+  }
+
+  private static func clipped(_ text: String, to length: Int) -> String {
+    text.count > length ? text.prefix(length) + "…" : text
+  }
+}

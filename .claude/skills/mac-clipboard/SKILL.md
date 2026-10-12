@@ -1,6 +1,6 @@
 ---
 name: mac-clipboard
-description: 原生分支剪贴板历史规范（采集、存储、上限、搜索性能、面板交互与视觉、界面自检）。在修改 macos/KittyTools/Clipboard/**、Storage/Database.swift、Storage/Backup.swift、Settings/ClipboardTab.swift 前必须先读；或涉及 ClipboardStore / ClipboardWatcher / changeCount / 隐私标记 / 排除 App / 敏感文本 / 图片去重 / OCR / 搜索慢 / 保留天数 / 图片占用 / 收藏 / 收藏夹 / 片段 / 备注 / 片段占位符 {cursor} {clipboard:N} / 撤销栈 / 默认纯文本粘贴 / 多选粘贴 / 暂停记录 / 面板快捷键 / ⌘K 子列表 / 右键菜单 / 钉到屏幕 / 拖到别的 App / 面板视觉 / 透镜 Lens Bar / 筛选标签 / Tab 筛选 / 截图自检 / 数据库每日备份 / 数据打不开时的恢复 / damaged 文件夹等问题时。
+description: 原生分支剪贴板历史规范（采集、存储、上限、搜索性能、面板交互与视觉、界面自检）。在修改 macos/KittyTools/Clipboard/**、Storage/Database.swift、Storage/Backup.swift、Notes/NotesBackup.swift（便签库的每日备份和打不开时的恢复，和 Backup.swift 是平行的两份）、Settings/ClipboardTab.swift 前必须先读；或涉及 ClipboardStore / ClipboardWatcher / changeCount / 隐私标记 / 排除 App / 敏感文本 / 图片去重 / OCR / 搜索慢 / 保留天数 / 图片占用 / 收藏 / 收藏夹 / 片段 / 备注 / 片段占位符 {cursor} {clipboard:N} / 撤销栈 / 默认纯文本粘贴 / 多选粘贴 / 暂停记录 / 面板快捷键 / ⌘K 子列表 / 右键菜单 / 钉到屏幕 / 拖到别的 App / 面板视觉 / 透镜 Lens Bar / 筛选标签 / Tab 筛选 / 截图自检 / 数据库每日备份 / 数据打不开时的恢复 / damaged 文件夹等问题时。
 ---
 
 # mac-clipboard

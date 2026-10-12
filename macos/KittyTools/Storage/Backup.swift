@@ -188,6 +188,7 @@ nonisolated enum Recovery {
   /// - 重新开始：库、图片目录、备份目录一起挪进 damaged-…/（旧的一整套都留着，新备份不会把旧备份轮换掉），再开一次；
   /// - 退出：什么都不动，抛 Failure.quit。
   /// 只问一次：再开还失败抛 Failure.stillBroken，不循环
+  /// （便签的库有平行的一份：NotesRecovery.open，Notes/NotesBackup.swift——改这里的规矩时看那边要不要跟）
   static func open<T>(
     in directory: URL, now: Date = .now, calendar: Calendar = .current, open: () throws -> T,
     ask: (Problem) -> Choice
@@ -259,6 +260,7 @@ nonisolated enum Recovery {
   /// 先挪 -shm、-wal 再挪库：挪到一半出错时，留在原地的不能是「没有库、只剩 -wal」（sqlite 新建空库时会把旁边的 -wal 删掉）。
   /// ponytail: 拷图片靠 APFS 克隆（FileManager.copyItem 实测 300 个文件 600 MB 用 24 ms、多占 0.1 MB）；
   /// 数据目录在别的文件系统上就是真拷贝，慢、占一倍空间，真有人这么用再改成只挪普通图片
+  /// （便签的库有平行的一份：NotesRecovery.setAside，只动便签自己的三样；这里的名单里别加它们）
   @discardableResult static func setAside(
     in directory: URL, everything: Bool, now: Date = .now, calendar: Calendar = .current
   ) throws -> URL? {

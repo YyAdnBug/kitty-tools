@@ -1,6 +1,7 @@
 // 设置与数据的每日自动备份（2026-10-08，用户提议「导出功能加一个本地自动定时备份，防止数据丢失」；对标 Raycast 的定时导出：
 // 付费版功能，每天 / 每周 / 每月导出到用户选的文件夹、留最近几份）。备份的就是导出文件（Storage/SettingsArchive.swift：设置、
-// 快捷键、翻译服务、网页搜索、片段与文字收藏、生词本；**不带密钥**——密钥只在钥匙串里，带出来要用户自己设密码，自动的没法问），
+// 快捷键、翻译服务、网页搜索、片段与文字收藏、生词本、便签（2026-10-12 起；便签这次运行里不可用时不带这一类）；
+// **不带密钥**——密钥只在钥匙串里，带出来要用户自己设密码，自动的没法问），
 // 所以恢复就是导入：设置 › 通用「从备份恢复」列出有哪几份，选一份走导入表单。导入的规矩照旧——设置、快捷键整类换回那天的样子；
 // 两张列表和数据是合并：没有的加回来、同一条改回去，**不删**后来多出来的。补的是数据库每日备份（Backup.swift）管不到的：
 // 设置、快捷键、两张列表原来没有任何自动备份；数据库的备份只在库打不开时用得上，误删的片段没法从里面找回来。
@@ -231,26 +232,47 @@ nonisolated enum SettingsBackup {
 
   // MARK: 写什么
 
-  /// 要写的内容：整份导出文件。片段与收藏、生词本哪一类多到导入时不肯收（条数超了，要有几千条收藏才到得了）就不带哪一类，
-  /// 别的照备，并给一句说明（note）；条数都没超、只是整个文件太大时先不带片段与收藏（大的多半是它），还大再不带生词本；
-  /// 连设置都编不出来给 nil
+  /// 要写的内容：整份导出文件。片段与收藏、生词本、便签哪一类多到导入时不肯收（条数超了，要有几千条才到得了）就不带
+  /// 哪一类，别的照备，并给一句说明（note）；有便签的正文超过单条上限时同样不带便签（这种手动也导不出，说法不一样）；
+  /// 条数都没超、只是整个文件太大时，先不带编出来最大的那一类，还大再不带次大的（说明里只列真去掉了的，
+  /// 空着的类别不会被说成「太多」）；连设置都编不出来给 nil
   @MainActor static func payload(of archive: SettingsArchive) -> (data: Data, note: String?)? {
-    var kept = Set(SettingsArchive.Section.allCases)
+    // 文件里本来就没有的类别（便签这次用不了时没有便签）不参与：不拿它凑数，说明里也不提它
+    let present = Set(archive.sections)
+    var kept = present
     if (archive.clips?.count ?? 0) > SettingsArchive.maxClips
       || (archive.clipGroups?.count ?? 0) > SettingsArchive.maxGroups
     {
       kept.remove(.clips)
     }
     if (archive.vocabulary?.count ?? 0) > SettingsArchive.maxWords { kept.remove(.vocabulary) }
-    let droppable = [SettingsArchive.Section.clips, .vocabulary]
+    if !archive.notesFit { kept.remove(.notes) }
+    // 条数没超、是有一条的正文太长
+    let hasLongNote = !archive.notesFit && (archive.notes?.count ?? 0) <= SettingsArchive.maxNotes
+    // 说明里几类的先后照表单上的顺序
+    let droppable = [SettingsArchive.Section.clips, .vocabulary, .notes]
+    // 整个文件太大时才算：还带着的这几类，按各自编出来的大小从大到小
+    var bySize: [SettingsArchive.Section]?
     while true {
       let candidate = archive.keeping(kept)
       guard let data = try? candidate.encoded() else { return nil }
       guard candidate.exportProblem(encodedSize: data.count) != nil else {
-        let names = droppable.filter { !kept.contains($0) }.map(\.title).joined(separator: "、")
-        return (data, names.isEmpty ? nil : "\(names)太多，自动备份里没带，可以手动导出")
+        let names = droppable.filter {
+          present.contains($0) && !kept.contains($0) && !(hasLongNote && $0 == .notes)
+        }
+        .map(\.title).joined(separator: "、")
+        let notes = [
+          names.isEmpty ? nil : "\(names)太多，自动备份里没带，可以手动导出",
+          hasLongNote ? "有便签的正文超过 \(Note.maxBodyBytes >> 20) MB，自动备份里没带便签" : nil,
+        ].compactMap { $0 }
+        return (data, notes.isEmpty ? nil : notes.joined(separator: "；"))
       }
-      guard let next = droppable.first(where: kept.contains) else { return nil }
+      if bySize == nil {
+        bySize = droppable.filter(kept.contains)
+          .map { (section: $0, size: (try? archive.keeping([$0]).encoded().count) ?? 0) }
+          .sorted { $0.size > $1.size }.map(\.section)
+      }
+      guard let next = bySize?.first(where: kept.contains) else { return nil }
       kept.remove(next)
     }
   }

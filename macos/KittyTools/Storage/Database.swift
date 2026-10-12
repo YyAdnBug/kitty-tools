@@ -1,7 +1,7 @@
 // SQLite 单连接封装（系统 libsqlite3，WAL 模式）。主连接全部在主线程执行：每次只写一行，远小于 1ms（PLAN §4）。
 // 和 sqlite3 C API 打交道的代码只在这里，调用方只见 Swift 值。
 // nonisolated：deinit 要关连接（默认 MainActor 的类，deinit 碰不到 OpaquePointer）；不是 Sendable，一个连接只在建它的地方用——
-// 主连接在主线程，唯一在主线程外的是每日备份自己另开的只读连接（Backup.run，用完就关）。
+// 主连接在主线程，在主线程外的只有每日备份自己另开的只读连接（Backup.run、便签库的 NotesBackup.run，用完就关）。
 
 import Foundation
 import SQLite3
@@ -39,7 +39,7 @@ nonisolated final class Database {
   private var handle: OpaquePointer?
 
   /// path 传 ":memory:" 得到内存库（单测用）。readOnly：只读打开（启动器读克隆出来的 Chromium 系浏览器的网站图标库；
-  /// 每日备份另开的连接和检查备份文件，Backup），不建文件、不改日志模式。wal 传 false：可写但不改成 WAL
+  /// 每日备份另开的连接和检查备份文件，Backup；便签库的备份同样，NotesBackup），不建文件、不改日志模式。wal 传 false：可写但不改成 WAL
   /// （整理备份文件用：备份是单个文件，旁边不能留 -wal、-shm）
   init(path: String, readOnly: Bool = false, wal: Bool = true) throws {
     let flags = readOnly ? SQLITE_OPEN_READONLY : SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE

@@ -24,7 +24,7 @@
 ```
 macos/                       # 本分支唯一开发区
 ├── KittyTools.xcodeproj/    # 共享 scheme：KittyTools
-├── KittyTools/              # 同步文件夹：App/ Shell/ Storage/ Clipboard/ Translate/ Launcher/ Screenshot/ StatusScreen/ Settings/ Resources/
+├── KittyTools/              # 同步文件夹：App/ Shell/ Storage/ Clipboard/ Translate/ Launcher/ Screenshot/ StatusScreen/ Notes/ Settings/ Resources/
 ├── KittyToolsTests/         # 纯函数单测（Swift Testing），M2 起建
 ├── Config/                  # Base/Debug/Release.xcconfig、Info.plist（局部）、Secrets.xcconfig（不入库）
 ├── build-dmg.sh             # 打包：archive → 自检 → DMG + App 内更新用的 zip → notes
@@ -113,7 +113,7 @@ defaults delete com.yy.kitty-tools.native.dev folderAccessRequested
 | `mac-native` | 常驻规则 `.cursor/rules/mac-native.mdc` | 已有 | 始终加载 |
 | `ponytail` | 常驻规则 `.cursor/rules/ponytail.mdc` | 已有 | 只给 Cursor；Claude 侧由用户级插件生效 |
 | `mac-overlay-panel` | 技能 | 已有（M1，M9 补截图与钉图，2026-10-10 补状态屏） | `Shell/**`、`Screenshot/**`、`StatusScreen/**`、`Translate/SelectionReader.swift`；NSPanel、热键、前台快照、粘贴回原 App、划词时序、设置窗激活、截图框选遮罩、钉图、状态屏的全屏面板和事件拦截 |
-| `mac-clipboard` | 技能 | 已有（M3） | `Clipboard/**`、`Storage/Database.swift`、`Storage/Backup.swift`（每日备份、打不开时的恢复） |
+| `mac-clipboard` | 技能 | 已有（M3） | `Clipboard/**`、`Storage/Database.swift`、`Storage/Backup.swift`（每日备份、打不开时的恢复）、`Notes/NotesBackup.swift`（便签库平行的那一份，2026-10-12） |
 | `mac-translate` | 技能 | 已有（M4） | `Translate/**` |
 | `mac-whisker` | 技能 | 已有（2026-09-25；2026-10-03 拆成核心 + 5 个界面文件，2026-10-10 加状态屏一个） | 任何界面、动效、图标改动：先读核心 `rule.mdc`（三种皮肤、刻度、七条弹簧曲线、五个招牌时刻、无障碍、验收），再读那个界面的文件（`launcher` / `clipboard` / `translate` / `capture` / `settings` / `status-screen`.mdc，Cursor 按路径自动带上）；**用户要求以后都按它执行** |
 

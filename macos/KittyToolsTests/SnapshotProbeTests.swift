@@ -2188,39 +2188,61 @@ struct SnapshotProbeTests {
     for (word, meaning) in [("serendipity", "意外发现美好事物的运气"), ("ephemeral", "短暂的")] {
       history.setFavorite(source: word, target: .zhHans, result: meaning, service: "智谱", true)
     }
-    let transfer = SettingsTransfer(services: services, clipboard: clipboard, history: history)
+    // 便签：两条没删的（一条归档了）、一条在「最近删除」里（不进文件）
+    let notes = try NoteStore(db: Database(path: ":memory:"))
+    notes.create(body: "买菜\n☐ 牛奶")
+    notes.setArchived(true, of: notes.create(body: "去年的总结").id)
+    notes.delete(notes.create(body: "删掉的").id)
+    let transfer = SettingsTransfer(
+      services: services, clipboard: clipboard, history: history, notes: { notes })
     let moment = Date(timeIntervalSince1970: 1_760_000_000)
     var archive = SettingsArchive.capture(
       from: prefs, domainName: suite, services: services.services, clips: clipboard.items,
       groups: clipboard.groups, words: history.search("", favoritesOnly: true, limit: 0),
-      version: "0.3.2", now: moment)
+      notes: notes.exportable, version: "0.3.2", now: moment)
     let secrets = ["zhipu.apiKey": "假的", "ai:1a2b3c4d.apiKey": "假的"]
     for dark in [false, true] {
       let suffix = dark ? "-dark" : ""
       try snapshot(
         ExportSheet(archive: archive, secrets: secrets, island: nil, skippedImages: 1),
-        size: NSSize(width: 460, height: 540), dark: dark,
+        size: NSSize(width: 460, height: 590), dark: dark,
         to: "\(out)/settings-transfer-export\(suffix).png")
       try snapshot(
         ExportSheet(
           archive: archive, secrets: secrets, island: nil, skippedImages: 1,
           includesSecrets: true),
-        size: NSSize(width: 460, height: 640), dark: dark,
+        size: NSSize(width: 460, height: 690), dark: dark,
         to: "\(out)/settings-transfer-export-secrets\(suffix).png")
     }
-    // 一条片段、收藏、生词都没有：那两类不勾、停用
+    // 一条片段、收藏、生词、便签都没有：那三类不勾、停用
     try snapshot(
       ExportSheet(
         archive: .capture(
-          from: prefs, domainName: suite, services: services.services, version: "0.3.2",
-          now: moment), secrets: [:], island: nil),
-      size: NSSize(width: 460, height: 520), dark: false,
+          from: prefs, domainName: suite, services: services.services, notes: [],
+          version: "0.3.2", now: moment), secrets: [:], island: nil),
+      size: NSSize(width: 460, height: 570), dark: false,
       to: "\(out)/settings-transfer-export-empty.png")
+    // 便签这次运行里不可用：导出表单上那一行停用、说明原因；导入表单上说会跳过
+    try snapshot(
+      ExportSheet(
+        archive: .capture(
+          from: prefs, domainName: suite, services: services.services, clips: clipboard.items,
+          groups: clipboard.groups, notes: nil, version: "0.3.2", now: moment),
+        secrets: [:], island: nil),
+      size: NSSize(width: 460, height: 570), dark: false,
+      to: "\(out)/settings-transfer-export-no-notes.png")
+    try snapshot(
+      ImportSheet(
+        archive: archive,
+        transfer: SettingsTransfer(services: services, clipboard: clipboard, history: history),
+        island: nil),
+      size: NSSize(width: 460, height: 810), dark: false,
+      to: "\(out)/settings-transfer-import-no-notes.png")
     try archive.seal(secrets, password: "只在截图自检里用")
     for dark in [false, true] {
       try snapshot(
         ImportSheet(archive: archive, transfer: transfer, island: nil),
-        size: NSSize(width: 460, height: 760), dark: dark,
+        size: NSSize(width: 460, height: 810), dark: dark,
         to: "\(out)/settings-transfer-import\(dark ? "-dark" : "").png")
     }
     // 自己填的地址多于 8 个：放进定高的框里滚（不省略），其中一个长得离谱的主机名掐头留尾
@@ -2291,7 +2313,7 @@ struct SnapshotProbeTests {
           island: nil, origin: SettingsBackup.source(of: copy)
         )
         .defaultAppStorage(backupPrefs),
-        size: NSSize(width: 460, height: 620), dark: dark,
+        size: NSSize(width: 460, height: 670), dark: dark,
         to: "\(out)/settings-transfer-restore\(dark ? "-dark" : "").png")
     }
   }
