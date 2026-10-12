@@ -230,12 +230,7 @@ private struct FlyCardView: View {
       .animation(.spring(duration: 0.45, bounce: 0)) {
         $0.frame(width: rect.width, height: rect.height)
       }
-      .animation(.easeOut(duration: 0.18)) {
-        $0
-          .clipShape(shape)
-          .overlay(shape.strokeBorder(.white.opacity(flying ? 0.25 : 0), lineWidth: 0.5))
-          .shadow(color: .black.opacity(flying ? 0.28 : 0), radius: 16, y: 6)
-      }
+      .animation(.easeOut(duration: 0.18)) { $0.shotCard(shape, shown: flying) }
       // 第一帧要和选区一模一样：播放符号和时长落地才出来（和角标同时），常驻缩略图接手时原样接上
       .overlay {
         if landed, let seconds {
@@ -282,11 +277,12 @@ private struct FlyCardView: View {
   }
 }
 
-/// 视频卡（录屏）比截图卡多的两样：中央 28 pt 的 black 0.35 圆 + play.fill，左下角时长胶囊（11 pt semibold 等宽数字、
-/// HUD 底色、高 18、离角 6）。飞行卡片落地时出现，常驻缩略图的视频卡同一个位置（交接时对得上）；矮卡（同常驻缩略图
+/// 视频卡（录屏）比截图卡多的两样：中央 28 pt 的圆 + play.fill，左下角时长胶囊（11 pt semibold 等宽数字、高 18、
+/// 离角 6）。飞行卡片落地时出现，常驻缩略图的视频卡同一个位置（交接时对得上）；矮卡（同常驻缩略图
 /// 胶囊只留图标的尺寸）播放符号缩到 22 pt，不和时长叠在一起。不进旁白：卡片的名字里已经有时长。
-/// 录音卡（第 5 批）：图本身就是波形，不放播放符号（点它不会播），换成左上角一个 18 pt 的 waveform 小标记（同时长胶囊的底色、
-/// 离角 6，悬停时让给关闭钮）；时长胶囊同视频卡
+/// 录音卡（第 5 批）：图本身就是波形，不放播放符号（点它不会播），换成左上角一个 18 pt 的 waveform 小标记（离角 6，
+/// 悬停时让给关闭钮）；时长胶囊同视频卡。
+/// 这几样小标记同一个底（hudMark：HUD 底色 + 内描边，2026-10-12 视觉对齐；原来播放圆另用 black 0.35、都没有描边）
 struct VideoMarks: View {
   let seconds: Int
   var compact = false
@@ -300,36 +296,47 @@ struct VideoMarks: View {
       Image(systemName: "waveform")
         .font(.system(size: 9, weight: .bold))
         .frame(width: 18, height: 18)
-        .background(Circle().fill(Color(nsColor: Style.HUD.fill)))
+        .hudMark(Circle())
         .padding(6)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .overlay(alignment: .bottomLeading) { duration }
-        .foregroundStyle(Color(nsColor: Style.HUD.text))
         .accessibilityHidden(true)
     } else {
       let side: CGFloat = compact ? 22 : 28
       Image(systemName: "play.fill")
         .font(.system(size: compact ? 9 : 12, weight: .bold))
         .frame(width: side, height: side)
-        .background(Circle().fill(.black.opacity(0.35)))
+        .hudMark(Circle())
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .bottomLeading) { duration }
-        .foregroundStyle(Color(nsColor: Style.HUD.text))
         .accessibilityHidden(true)
     }
   }
 
   private var duration: some View { Self.capsule(ScreenRecorder.clock(seconds)) }
 
-  /// 左下角的小胶囊（时长；GIF 卡的「GIF」同一个样式，录屏录音第 7 批）：11 pt semibold 等宽数字、HUD 底色、高 18、离角 6
+  /// 左下角的小胶囊（时长；GIF 卡的「GIF」同一个样式，录屏录音第 7 批）：11 pt semibold 等宽数字、hudMark、高 18、离角 6
   static func capsule(_ text: String) -> some View {
     Text(text)
       .font(.system(size: 11, weight: .semibold).monospacedDigit())
       .lineLimit(1)
       .padding(.horizontal, 6)
       .frame(height: 18)
-      .background(Capsule().fill(Color(nsColor: Style.HUD.fill)))
+      .hudMark(Capsule())
       .padding(6)
+  }
+}
+
+extension View {
+  /// 压在卡片图上的 HUD 小标记（时长 / GIF 胶囊、播放圆、录音的 waveform 圆）：HUD 底色 + 内描边 + 主文字色。
+  /// 有描边才在录音的波形卡、没取到最后一帧的占位卡上看得见（它们的底是同色的 `HUD.solidFill`）。和 hudSkin 的区别：
+  /// 不是按钮（没有外圈描边、不接点击），macOS 26 上也还是填充（静态标记，不换玻璃）
+  fileprivate func hudMark<S: InsettableShape>(_ shape: S) -> some View {
+    foregroundStyle(Color(nsColor: Style.HUD.text))
+      .background(Color(nsColor: Style.HUD.fill), in: shape)
+      .overlay(
+        shape.strokeBorder(Color(nsColor: Style.HUD.innerStroke), lineWidth: Style.HUD.strokeWidth)
+      )
   }
 }
 

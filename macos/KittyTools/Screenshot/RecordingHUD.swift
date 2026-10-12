@@ -1,10 +1,12 @@
-// 录制 HUD（录屏第 2 批，mac-whisker §6 截图「录屏」；会话在 ScreenRecorder）：开录后贴在录制条原来的位置（选区外，
-// 同 SelectionView.toolbarPlacement、不给样式托盘留地方），整屏录制时在那块屏可见区底部居中、离底 24 pt；拖过的位置按屏
-// 记在内存里（这次运行有效，不存偏好）。
+// 录制 HUD（录屏第 2 批，mac-whisker §6 截图「录屏」；会话在 ScreenRecorder）：开录后接在录制条原来的位置（选区外，
+// 同 SelectionView.toolbarPlacement、不给样式托盘留地方），**右边线对着录制条的右边线**（2026-10-12 视觉对齐：倒数、录制态
+// 都比录制条窄，按中线摆的话 ✕ 和主圆钮三态来回漂；倒数没有圆钮，它的位置空着），整屏录制时在那块屏可见区底部居中、离底
+// 24 pt；拖过的位置按屏记在内存里（这次运行有效，不存偏好）。摆好之后宽度再变（换状态、计时多一位、出橙字）一律右边线不动。
 // - 倒数：[3 秒后开始] ｜ [✕ 取消]，数字 22 pt 圆体、每跳一个数 pop（0.85 → 1），点数字马上开始；
 // - 录制中：[● 0:12] ｜ [✕ 放弃][■ 停止]：红点 8 pt systemRed（语义色「录制中」）呼吸 1 ↔ 0.45（同一表面唯一的 ambient，
 //   只在录制态挂、HUD 一收就摘；放在 CALayer 上由渲染服务跑，不占主线程）；计时和菜单栏停止项同一个时钟
-//   （ScreenRecorder.clock，按 h:mm:ss 留宽度不跳），每秒变了的那几位数字滚过去——图层自己排（Shell/Ticker.swift），
+//   （ScreenRecorder.clock；按当前读数的位数留宽，到 10 分钟、1 小时各变宽一次、HUD 往左长），每秒变了的那几位数字滚过去
+//   ——图层自己排（Shell/Ticker.swift），
 //   **不用 numericText**：它每秒逐帧重画带模糊的字，独立小程序实测 13 pt 的这一行占 8–11% CPU（图层版 0.2%），
 //   录多久占多久（2026-10-11 换的）；放弃要点两下（第一下「上膛」变红，2 s 内再点才放弃）；
 //   停止是 28 pt 强调色实心圆 + ■（画法同录制条的 ●）。
@@ -18,8 +20,8 @@
 // 录音的待录态（手测反馈第 3 批，State.ready：按录音快捷键先出控制条、还没录）：[系统声音][麦克风] ｜ [✕ 关闭][● 开始]，
 // 两个来源开关是录制条的 ToggleButton（同样的符号、配色、.replace 过渡和提示），读写录音来源的偏好（至少留一个），和
 // 设置 › 录制「录音」的「来源」是同一个偏好；● 画法同录制条的开始钮；点了开始到真正录起来之间开关和 ● 置灰、✕ 还能点；
-// 开始后同一个 HUD 原地换成录制态（按原中心重摆、红点 pop；⏸ 正好落在刚才 ● 的位置，换完的头一小段不认 ⏸，
-// 免得双击 ● 一开始就暂停）。
+// 开始后同一个 HUD 原地换成录制态（右边线不动、往左长出计时和电平，红点 pop；■ 正好落在刚才 ● 的位置，换完的头一小段
+// 不认 ■，免得双击 ● 刚开始就停了）。
 // 皮肤是 HUDBar（15 毛玻璃 behindWindow，26 液态玻璃）。窗口是普通 NSPanel 实例（mac-overlay-panel §1 不子类化）：
 // 状态栏层级（截图冻结帧、录制的白名单都不收它）、不激活本 App、永不当 key（无边框窗口本来就当不了）、按钮 acceptsFirstMouse、
 // 能拖；所有桌面、全屏 App 上都显示。出现：settle 淡入（录制条随遮罩收起，HUD 在同一位置接上，不再「长出」一次）；
@@ -85,6 +87,8 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   private lazy var clock = makeClock()
   /// 计时：13 pt 圆体 semibold + 等宽数字，图层自己排（每秒只滚变了的那几位，文件头）
   private let clockText = TickerView()
+  /// 计时留的宽度：跟着当前读数的位数走（applyClock）
+  private lazy var clockWidth = clockText.widthAnchor.constraint(equalToConstant: 0)
   private static let clockFont: NSFont = {
     let font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
     return font.fontDescriptor.withDesign(.rounded).flatMap { NSFont(descriptor: $0, size: 13) }
@@ -131,8 +135,11 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   /// 开关上画着的来源（别处改了偏好——设置 › 录制的「来源」——跟着重画；和偏好一样就不动，免得把点击的 .replace 过渡截断）
   private var shownSource: AudioRecorder.Source?
   private var sourceObserver: NSObjectProtocol?
-  /// 待录原地换成录制态的时刻：之后的一小段不认 ⏸（ignoresPause）
+  /// ■ 换到刚点过的 ● 那个位置上的时刻（待录原地换成录制态；录屏不倒数时 HUD 直接以录制态接在录制条的位置）：
+  /// 之后的一小段不认 ■（ignoresStop）
   private var swappedAt: ContinuousClock.Instant?
+  /// 右端主圆钮（● / ■）占的宽：和 ✕ 隔 4 + 圆钮 28。倒数没有圆钮，这一段空着（✕ 的位置三态不变）
+  private static let roundSlot: CGFloat = 4 + 28
   /// 窗口比 HUD 四周大这么多（透明）。录音 24：从底边长出来时往下偏的 8 pt、弹簧过冲和 HUDBar 自绘的阴影都落在窗口里、
   /// 不被窗口边切掉（同常驻缩略图的留边）；录屏 0：只淡入不变形，窗口就是 HUD 那么大、用系统阴影
   private let margin: CGFloat
@@ -141,7 +148,7 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   private var visible: CGRect?
   /// 程序自己摆位置时不算拖
   private var isPlacing = false
-  /// 这次运行里各屏拖到的位置（底边中点，全局坐标）：录屏、录音的 HUD 各记各的
+  /// 这次运行里各屏拖到的位置（HUD 的右下角，全局坐标：各种宽度的形态都按右边线摆）：录屏、录音的 HUD 各记各的
   private static var dragged: [Spot: CGPoint] = [:]
   private struct Spot: Hashable {
     let display: CGDirectDisplayID
@@ -193,6 +200,9 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     setAccessibilityRole(.group)
     setAccessibilityLabel(medium == .audio ? "录音控制" : "录屏控制")
     show(state, rebuilding: true)
+    // 录屏不倒数：HUD 一建出来就是录制态、马上接在录制条的位置，■ 落在录制条上刚点过的 ● 那里（同录音的
+    // 待录 → 录制，ignoresStop）
+    if medium == .screen, case .recording = state { swappedAt = .now }
     if !pausable { setPausable(false) }
     // 待录时别处改了来源（设置 › 录制）：开关跟着重画，不然画的和按开始时读到的对不上
     if state == .ready {
@@ -213,13 +223,9 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
 
   /// 摆好位置、settle 淡入（录制条随遮罩收起了，HUD 在它原来的位置接上）；录音（整屏的摆法：底部居中）从底边长出来
   func present(region: CGRect, on screen: NSScreen, isFullScreen: Bool) {
-    display = screen.displayID
-    visible = screen.visibleFrame
-    let origin = Self.origin(
-      size: frame.size, region: region, screen: screen.frame, visible: screen.visibleFrame,
-      isFullScreen: isFullScreen,
-      dragged: display.flatMap { Self.dragged[Spot(display: $0, medium: medium)] })
-    place(CGRect(origin: origin, size: frame.size))
+    arrange(
+      region: region, screen: screen.frame, visible: screen.visibleFrame,
+      display: screen.displayID, isFullScreen: isFullScreen)
     panel.orderFrontRegardless()
     // 录音没有录制条可接：同录制条的长出（pop bounce 0.18、rise −8、scale 0.94），减弱动态效果时只淡入
     if medium == .audio { return grow(true, from: .bottom) }
@@ -229,6 +235,20 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     fade.fromValue = 0
     fade.toValue = 1
     layer.add(fade, forKey: "appear")
+  }
+
+  /// 只摆位置、不显示（present 的前半；单测直接调它：HUD 的窗口只建不显示）
+  func arrange(
+    region: CGRect, screen: CGRect, visible: CGRect, display: CGDirectDisplayID?,
+    isFullScreen: Bool
+  ) {
+    self.display = display
+    self.visible = visible
+    let origin = Self.origin(
+      size: frame.size, region: region, screen: screen, visible: visible,
+      isFullScreen: isFullScreen,
+      dragged: display.flatMap { Self.dragged[Spot(display: $0, medium: medium)] })
+    place(CGRect(origin: origin, size: frame.size))
   }
 
   /// 立刻收（停止 / 放弃 / 取消那一刻，同边框和停止项）；红点的循环动画一起摘掉。从窗口里摘下来断开 HUD ↔ 窗口的
@@ -247,7 +267,7 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
 
   // MARK: 状态
 
-  /// 换状态：倒数 / 待录 → 录制换内容（宽度变了按原来的水平中心摆、夹回可见区），同一种只换读数
+  /// 换状态：倒数 / 待录 → 录制换内容（宽度变了右边线不动、夹回可见区），同一种只换读数
   func update(_ next: State) {
     show(next, rebuilding: !Self.sameForm(next, state))
   }
@@ -263,6 +283,7 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   private func show(_ next: State, rebuilding: Bool) {
     let wasReady = state == .ready
     state = next
+    var widened = false
     switch next {
     case .countdown(let seconds):
       reading.countdown = seconds
@@ -271,9 +292,13 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
       setAccessibilityValue("还没开始录")
     case .recording:
       // 计时是值，不逐秒播报
-      applyClock()
+      widened = applyClock()
     }
-    guard rebuilding else { return }
+    guard rebuilding else {
+      // 计时多了一位（10:00、1:00:00）：HUD 变宽，右边线不动
+      if widened { refit() }
+      return
+    }
     for view in stack.arrangedSubviews { view.removeFromSuperview() }
     let views: [NSView] =
       switch (next, medium) {
@@ -285,9 +310,10 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
         [clock] + (systemAudio || microphone ? [sound] : []) + [separator, closeButton, stopButton]
       }
     views.forEach(stack.addArrangedSubview)
-    // 右端是强调色圆钮（● / ■）时多留一点边、和 ✕ 隔开一点（同录制条）；倒数的右端是 ✕
+    // 右端是强调色圆钮（● / ■）：多留一点边、和 ✕ 隔开一点（同录制条）。倒数没有圆钮，把它的位置空出来——
+    // 右边线对齐之后，✕ 就和录制条、录制态的 ✕ 在同一个位置
     let round = !Self.sameForm(next, .countdown(0))
-    stack.edgeInsets.right = round ? 6 : 4
+    stack.edgeInsets.right = round ? 6 : 6 + Self.roundSlot
     if round { stack.setCustomSpacing(4, after: closeButton) }
     discard = Discard()
     applyClose()
@@ -302,27 +328,32 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     }
   }
 
-  /// 量宽度；宽度变了按原来的水平中心摆、夹回可见区（换状态、出「没听到声音」）
+  /// 量宽度；宽度变了**右边线不动**（✕ 和主圆钮留在原地，HUD 往左长 / 缩）、夹回可见区：换状态、计时多一位、
+  /// 出「没听到声音」。还没摆过（init 里）只量
   private func refit() {
     let old = screenFrame
     fit()
-    if panel.isVisible, let visible {
-      place(
-        CGRect(
-          x: Self.x(width: frame.width, midX: old.midX, in: visible), y: old.minY,
-          width: frame.width, height: frame.height))
-    }
+    guard let visible else { return }
+    place(
+      CGRect(
+        x: Self.x(width: frame.width, maxX: old.maxX, in: visible), y: old.minY,
+        width: frame.width, height: frame.height))
   }
 
   /// 计时那一行，和旁白读的值（「已录 12 秒」，录音暂停着是「已暂停，已录 12 秒」）。数字往上滚（减弱动态效果时直接换）；
-  /// 录音暂停时变灰——换颜色是整行重排、不滚
-  private func applyClock() {
-    guard case .recording(let seconds) = state else { return }
+  /// 录音暂停时变灰——换颜色是整行重排、不滚。计时按当前读数的位数留宽（数字等宽：「0:00」「10:00」「1:00:00」各一档，
+  /// 不按最长的「1:00:00」留——那样「0:12」右边空一大块）；返回留的宽度变没变（变了调用方 refit）
+  @discardableResult private func applyClock() -> Bool {
+    guard case .recording(let seconds) = state else { return false }
+    let text = ScreenRecorder.clock(seconds)
     clockText.show(
-      ScreenRecorder.clock(seconds), font: Self.clockFont,
-      color: isPaused ? Style.HUD.secondaryText : Style.HUD.text,
+      text, font: Self.clockFont, color: isPaused ? Style.HUD.secondaryText : Style.HUD.text,
       direction: Style.reduceMotion ? 0 : 1)
     setAccessibilityValue((isPaused ? "已暂停，" : "") + "已录 " + ScreenRecorder.spoken(seconds))
+    let width = TickerView.measure(text, font: Self.clockFont).size.width
+    guard clockWidth.constant != width else { return false }
+    clockWidth.constant = width
+    return true
   }
 
   // MARK: 录音
@@ -398,7 +429,7 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
 
   /// 开录时的麦克风断开了（录屏不停）：麦克风图标换成斜杠、变 systemOrange（.replace 过渡），提示和旁白说后面没有麦克风声音
   /// animated：截图自检传 false（不拍到过渡的半截）。录音 HUD（录音第 6 批「两者」）没有声音图标：计时后面「没听到声音」那个
-  /// 位置换成橙字「麦克风断开了」，HUD 按原中心变宽（会话之后不再叫 setSilent）
+  /// 位置换成橙字「麦克风断开了」，HUD 变宽（右边线不动；会话之后不再叫 setSilent）
   func microphoneLost(animated: Bool = true) {
     if medium == .audio {
       silence.stringValue = "麦克风断开了"
@@ -408,7 +439,7 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     }
     guard microphone else { return }
     microphoneIcon.show(
-      "mic.slash.fill", tint: .systemOrange, label: "麦克风断开了，后面没有麦克风声音",
+      "mic.slash.fill", tint: .systemOrange, flat: true, label: "麦克风断开了，后面没有麦克风声音",
       animated: animated)
     microphoneIcon.toolTip = "麦克风断开了，后面没有麦克风声音"
   }
@@ -445,17 +476,26 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   }
 
   @objc private func startClicked(_ sender: NSButton) { onClick(.startNow) }
-  @objc private func stopClicked(_ sender: NSButton) { onClick(.stop) }
-  @objc private func pauseClicked(_ sender: NSButton) {
-    guard !ignoresPause(at: .now) else { return }
-    onClick(.pause)
+  @objc private func stopClicked(_ sender: NSButton) {
+    guard !ignoresStop(at: .now) else { return }
+    onClick(.stop)
+  }
+  @objc private func pauseClicked(_ sender: NSButton) { onClick(.pause) }
+
+  /// 这一下点 ■ 不算（刚换上来的那一小段）。只挡 HUD 上的 ■：再按快捷键、菜单栏停止项照常停
+  func ignoresStop(at now: ContinuousClock.Instant) -> Bool {
+    Self.ignoresStop(at: now, swappedAt: swappedAt, doubleClick: NSEvent.doubleClickInterval)
   }
 
-  /// 待录 → 录制原地换内容后（HUD 按原中心变宽）⏸ 正好落在刚才 ● 的位置上：双击 ●、手快多点了一下，后一下会落在 ⏸ 上，
-  /// 录音一开始就被暂停、用户还以为在录。换内容后的这一小段不认 ⏸：系统的双击间隔（默认 0.5 s），最多 1 s——把双击调得
-  /// 很慢的人也不至于好几秒点不了暂停。直接开始的录音 HUD（没有 ● 可点）不挡
-  func ignoresPause(at now: ContinuousClock.Instant) -> Bool {
-    swappedAt.map { now - $0 < .seconds(min(NSEvent.doubleClickInterval, 1)) } ?? false
+  /// ■ 换到了刚点过的 ● 的位置上（2026-10-12 视觉对齐起右边线不动：待录 → 录制原地换内容，● 的位置换上来的是 ■；
+  /// 录屏不倒数时 HUD 接在录制条的位置，■ 落在录制条的 ● 上）：双击 ●、手快多点了一下，后一下会落在 ■ 上，刚开始录就
+  /// 停了、存下一段零点几秒的文件。换上来后的这一小段不认 ■：系统的双击间隔（默认 0.5 s），最多 1 s——把双击调得很慢的人
+  /// 也不至于好几秒停不了。没有 ● 可点的（按快捷键直接开始的录音、倒数完的录屏：swappedAt 是 nil）不挡。纯函数，配单测。
+  /// 原来挡的是 ⏸（按中线摆时落在 ● 上的是它），现在它前面换上来的是电平，不用挡了
+  nonisolated static func ignoresStop(
+    at now: ContinuousClock.Instant, swappedAt: ContinuousClock.Instant?, doubleClick: TimeInterval
+  ) -> Bool {
+    swappedAt.map { now - $0 < .seconds(min(doubleClick, 1)) } ?? false
   }
   @objc private func startRecordingClicked(_ sender: NSButton) { onClick(.start) }
 
@@ -490,42 +530,44 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     isPlacing = false
   }
 
-  /// 用户拖过：记下这块屏上的位置（HUD 底边中点），这次运行里下次录这块屏就放这里（录屏、录音各记各的）
+  /// 用户拖过：记下这块屏上的位置（HUD 的右下角），这次运行里下次录这块屏就放这里（录屏、录音各记各的）
   func windowDidMove(_ notification: Notification) {
     guard !isPlacing, let display else { return }
     Self.dragged[Spot(display: display, medium: medium)] = CGPoint(
-      x: screenFrame.midX, y: screenFrame.minY)
+      x: screenFrame.maxX, y: screenFrame.minY)
   }
 
   // MARK: 摆位（纯函数，配单测）
 
-  /// HUD 左下角放哪（全局坐标，取整）：这块屏这次运行里拖过就按拖到的地方（记的是底边中点，夹进可见区）；整屏录制在可见区
-  /// 底部居中、离底 24；选区录制在录制条原来的位置（SelectionView.toolbarPlacement：选区下方 10，放不下放上方，再放不下放进
-  /// 选区底部；录制 HUD 没有样式托盘，tray 传 0）
+  /// HUD 左下角放哪（全局坐标，取整）：这块屏这次运行里拖过就按拖到的地方（记的是右下角，夹进可见区）；整屏录制在可见区
+  /// 底部居中、离底 24；选区录制接在录制条原来的位置——按录制条的宽 bar 走 SelectionView.toolbarPlacement（选区下方 10，
+  /// 放不下放上方，再放不下放进选区底部；没有样式托盘，tray 传 0），HUD 的右边线对着录制条的右边线：HUD 比录制条窄，
+  /// ✕ 和主圆钮就留在录制条上它们原来的位置
   static func origin(
     size: CGSize, region: CGRect, screen: CGRect, visible: CGRect, isFullScreen: Bool,
-    dragged: CGPoint?
+    dragged: CGPoint?, bar: CGFloat = RecordBar.width
   ) -> CGPoint {
     let origin: CGPoint
     if let dragged {
       origin = CGPoint(
-        x: x(width: size.width, midX: dragged.x, in: visible),
+        x: x(width: size.width, maxX: dragged.x, in: visible),
         y: min(max(dragged.y, visible.minY), visible.maxY - size.height))
     } else if isFullScreen {
       origin = CGPoint(x: visible.midX - size.width / 2, y: visible.minY + 24)
     } else {
       let placed = SelectionView.toolbarPlacement(
-        size: size, selection: region.offsetBy(dx: -screen.minX, dy: -screen.minY),
+        size: CGSize(width: bar, height: size.height),
+        selection: region.offsetBy(dx: -screen.minX, dy: -screen.minY),
         in: CGRect(origin: .zero, size: screen.size), tray: 0
       ).origin
-      origin = CGPoint(x: placed.x + screen.minX, y: placed.y + screen.minY)
+      origin = CGPoint(x: placed.x + bar - size.width + screen.minX, y: placed.y + screen.minY)
     }
     return CGPoint(x: origin.x.rounded(), y: origin.y.rounded())
   }
 
-  /// 水平居中在 midX、左右夹进可见区的左边 x（取整）：拖过的位置、倒数换录制态变宽后重摆共用
-  static func x(width: CGFloat, midX: CGFloat, in visible: CGRect) -> CGFloat {
-    min(max(midX - width / 2, visible.minX), visible.maxX - width).rounded()
+  /// 右边线在 maxX、左右夹进可见区时的左边 x（取整）：拖过的位置、宽度变了重摆共用（右边线不动）
+  static func x(width: CGFloat, maxX: CGFloat, in visible: CGRect) -> CGFloat {
+    min(max(maxX - width, visible.minX), visible.maxX - width).rounded()
   }
 
   // MARK: 零件
@@ -547,7 +589,12 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     // 按钮自己没有内容尺寸（0，抗拉伸 250）：宿主不压扁，按钮跟着它的宽度走
     host.setContentCompressionResistancePriority(.required, for: .horizontal)
     button.addSubview(host)
+    // 宿主的宽取到整点：SwiftUI 排出来的读数不是整点宽，栏宽往上取整后多出来的零点几点会落在栏的右端——✕ 离右边线
+    // 就比录制条、录制态的远一点（右边线对齐后三态的 ✕ 要在同一个位置）。
+    // ponytail: 宽度按建的时候的读数定：倒数最多 5 秒、数字等宽，位数不会变；要支持两位数的倒数就在位数变了时重量
+    let width = host.fittingSize.width.rounded(.up)
     NSLayoutConstraint.activate([
+      host.widthAnchor.constraint(equalToConstant: width),
       host.centerXAnchor.constraint(equalTo: button.centerXAnchor),
       host.centerYAnchor.constraint(equalTo: button.centerYAnchor),
       button.widthAnchor.constraint(equalTo: host.widthAnchor, constant: 16),
@@ -558,10 +605,11 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
 
   /// 录制中的读数：红点 + 计时（录音另有暂停时顶替红点的暂停符号、计时后面的「没听到声音」，平时藏着、不占宽度）
   private func makeClock() -> NSView {
-    // 按 h:mm:ss 留宽度（字靠左）：一小时起变长也不跳
-    let size = TickerView.measure(ScreenRecorder.clock(3600), font: Self.clockFont).size
-    clockText.widthAnchor.constraint(equalToConstant: size.width).isActive = true
-    clockText.heightAnchor.constraint(equalToConstant: size.height).isActive = true
+    // 宽度跟着当前读数的位数走（applyClock 设），高是一行
+    clockWidth.isActive = true
+    clockText.heightAnchor.constraint(
+      equalToConstant: TickerView.measure("0:00", font: Self.clockFont).size.height
+    ).isActive = true
     clockText.setAccessibilityElement(false)  // 读数在 HUD 的值里
     let row = NSStackView(
       views: medium == .audio ? [dot, pauseMark, clockText, silence] : [dot, clockText])
@@ -602,7 +650,7 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     ]
     for (icon, on, symbol, off, name) in icons {
       icon.show(
-        on ? symbol : off, tint: on ? Style.Shot.accent : Style.HUD.tertiaryText,
+        on ? symbol : off, tint: on ? Style.Shot.accent : Style.HUD.tertiaryText, flat: !on,
         label: "\(name)：\(on ? "开" : "关")", animated: false)
       icon.toolTip = "录制中不能开关声音"
     }
@@ -681,12 +729,14 @@ private final class Dot: NSView {
   func stop() { dot.removeAllAnimations() }
 }
 
-/// 录制中的一个声音状态图标（只读，不接鼠标：点在上面算拖 HUD）：13 pt 分层符号，换图走 .replace（减弱动态效果时直接换）
+/// 录制中的一个声音状态图标（只读，不接鼠标：点在上面算拖 HUD）：13 pt 符号，换图走 .replace（减弱动态效果时直接换）。
+/// 开着的分层画；带斜杠的（关着的、断开的）单色画（flat）——分层画时斜杠是主色、图标本身成了次级的灰，再乘上再次文字色
+/// 就快看不见了（mac-whisker §3「图标」的例外，同录制条关着的开关）
 private final class SoundIcon: NSImageView {
+  private static let base = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
+
   init() {
     super.init(frame: CGRect(x: 0, y: 0, width: 20, height: 32))
-    symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
-      .applying(.preferringHierarchical())
     imageScaling = .scaleNone
     setAccessibilityElement(true)
     setAccessibilityRole(.image)
@@ -697,11 +747,15 @@ private final class SoundIcon: NSImageView {
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
   override func hitTest(_ point: NSPoint) -> NSView? { nil }
+  /// 符号图自带的对齐内缩会让排版把它摆得偏离中线（同 BarButton）：frame 就是布局尺寸，图在里面居中
+  override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsetsZero }
 
-  func show(_ symbol: String, tint: NSColor, label: String, animated: Bool) {
+  func show(_ symbol: String, tint: NSColor, flat: Bool, label: String, animated: Bool) {
     guard let next = NSImage(systemSymbolName: symbol, accessibilityDescription: label) else {
       return
     }
+    symbolConfiguration = Self.base.applying(
+      flat ? .preferringMonochrome() : .preferringHierarchical())
     if animated, !Style.reduceMotion, image != nil {
       setSymbolImage(next, contentTransition: .replace)
     } else {

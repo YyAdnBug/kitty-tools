@@ -441,6 +441,11 @@ final class RecordBar: HUDBar {
   /// 才查，这一次框选里记住
   private lazy var input = Self.currentInput()
 
+  /// 栏宽：按钮都是定宽的——左边 4 + 四个开关 32（间距 2）+ 分隔线 9（两边各 2）+ ✕ 32 + 4 + ● 28 + 右边 6，再加材质的
+  /// 内缩。录制 HUD 接在录制条的位置、右边线对着它的右边线时用（RecordingHUD.origin：那时录制条已经随遮罩收了）；
+  /// 单测锁住它和真的栏一样宽——往栏里加减钮要跟着改
+  static var width: CGFloat { 221 + 2 * materialInset }
+
   /// 系统当前的输入设备（录制条、录音控制条待录时的麦克风开关共用；慢，见上）
   static func currentInput() -> (name: String, bluetooth: Bool)? {
     AVCaptureDevice.default(for: .audio).map {
@@ -580,11 +585,13 @@ final class RecordBar: HUDBar {
 }
 
 /// 录制条的开关钮：符号放在按钮里的图像视图上（NSButton 换图没有符号过渡），换图走 .replace（减弱动态效果时直接换）；
-/// 开 = 强调色、关 = 主文字色。提示和旁白名字每次现算（麦克风要查当前输入设备）：提示走系统的懒提示（addToolTip +
-/// NSViewToolTipOwner），真要弹出时才问 describe，悬停出底的路径上不查设备
+/// 开 = 强调色（分层画）、关 = 主文字色（**单色画**：带斜杠的符号分层画时斜杠是主色、图标本身成了次级的灰，实测只有
+/// 一半亮，和不带斜杠的光标、键盘不一样亮；mac-whisker §3「图标」的例外）。提示和旁白名字每次现算（麦克风要查当前输入
+/// 设备）：提示走系统的懒提示（addToolTip + NSViewToolTipOwner），真要弹出时才问 describe，悬停出底的路径上不查设备
 final class ToggleButton: BarButton, NSViewToolTipOwner {
   var describe: () -> String = { "" }
   private let symbol = PassiveImageView()
+  private static let base = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
 
   init() {
     // 一开始就是最终尺寸：图像视图按自动缩放掩码跟着按钮，从 0 × 0 长到 32 × 32 会被多撑出 32（图歪到右上角）
@@ -593,8 +600,6 @@ final class ToggleButton: BarButton, NSViewToolTipOwner {
     imagePosition = .noImage
     isBordered = false
     refusesFirstResponder = true
-    symbol.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
-      .applying(.preferringHierarchical())
     symbol.imageScaling = .scaleNone
     symbol.frame = bounds
     symbol.autoresizingMask = [.width, .height]
@@ -608,6 +613,8 @@ final class ToggleButton: BarButton, NSViewToolTipOwner {
 
   func show(_ name: String, on: Bool, animated: Bool) {
     guard let next = NSImage(systemSymbolName: name, accessibilityDescription: nil) else { return }
+    symbol.symbolConfiguration = Self.base.applying(
+      on ? .preferringHierarchical() : .preferringMonochrome())
     if animated, !Style.reduceMotion, symbol.image != nil {
       symbol.setSymbolImage(next, contentTransition: .replace)
     } else {
@@ -706,11 +713,11 @@ final class StyleBar: HUDBar {
       button.showsHover = false
       button.tag = index
       button.setAccessibilityLabel(title)
-      button.layer?.cornerRadius = 5
+      button.layer?.cornerRadius = Style.Radius.mini
       Self.mark(button, on: false)
       let width = ceil(button.attributedTitle.size().width) + 16
       button.widthAnchor.constraint(equalToConstant: width).isActive = true
-      button.heightAnchor.constraint(equalToConstant: 23).isActive = true
+      button.heightAnchor.constraint(equalToConstant: 22).isActive = true
       return button
     }
     if !options.isEmpty {
@@ -719,7 +726,8 @@ final class StyleBar: HUDBar {
       segment.edgeInsets = NSEdgeInsets(top: 2, left: 2, bottom: 2, right: 2)
       segment.wantsLayer = true
       segment.layer?.backgroundColor = Style.HUD.chipFill.cgColor
-      segment.layer?.cornerRadius = 7
+      // 轨道高 26（选项 22 + 上下各 2）、圆角 control 6，里面的选项内缩 2、圆角 mini 4（同心）
+      segment.layer?.cornerRadius = Style.Radius.control
       segment.layer?.cornerCurve = .continuous
       views += [barSeparator(), segment]
     }
@@ -733,7 +741,7 @@ final class StyleBar: HUDBar {
     button.attributedTitle = NSAttributedString(
       string: button.title,
       attributes: [
-        .font: NSFont.systemFont(ofSize: 11.5, weight: .medium),
+        .font: NSFont.systemFont(ofSize: 12, weight: .medium),
         .foregroundColor: on ? Style.HUD.text : Style.HUD.secondaryText,
       ])
     button.layer?.backgroundColor = on ? Style.HUD.selectedFill.cgColor : nil
@@ -945,10 +953,7 @@ private final class HUDMenuRow: NSView {
     key = entry.key.map {
       NSAttributedString(
         string: $0,
-        attributes: [
-          .font: NSFont.systemFont(ofSize: 11, weight: .medium),
-          .foregroundColor: Style.HUD.secondaryText,
-        ])
+        attributes: [.font: Style.HUD.keyFont, .foregroundColor: Style.HUD.secondaryText])
     }
     fittingWidth =
       ceil(
@@ -1016,10 +1021,11 @@ private final class HUDMenuRow: NSView {
 // MARK: - 按钮
 
 extension NSView {
-  /// 栏里的图标按钮（截图工具栏、长截图面板、钉图圆钮共用）：SF Symbols 分层 15 pt medium、HUD 主文字色
+  /// 栏里的图标按钮（截图工具栏、录制条、录制 HUD、长截图面板、钉图圆钮共用）：SF Symbols 分层 15 pt medium、
+  /// HUD 主文字色，默认 32 × 32（各条 HUD 栏同一个大小）
   func barButton(
     _ image: NSImage, tip: String, label: String? = nil, action: Selector,
-    size: CGSize = CGSize(width: 30, height: 28)
+    size: CGSize = CGSize(width: 32, height: 32)
   ) -> BarButton {
     let button = BarButton(image: image, target: self, action: action)
     button.toolTip = tip

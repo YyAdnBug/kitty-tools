@@ -359,9 +359,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     infoKey.string = NSAttributedString(
       string: "C",
       attributes: [
-        .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
-        .foregroundColor: Style.HUD.text,
-        .baselineOffset: -2,
+        .font: Style.HUD.keyFont, .foregroundColor: Style.HUD.text, .baselineOffset: -2,
       ])
     for layer in [infoSwatch, infoText, infoKey] { infoCard.addSublayer(layer) }
     magnifier.bounds = CGRect(x: 0, y: 0, width: side, height: loupeFrame.maxY)

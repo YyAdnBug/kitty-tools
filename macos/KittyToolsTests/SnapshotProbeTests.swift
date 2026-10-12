@@ -2041,8 +2041,8 @@ struct SnapshotProbeTests {
         {
           $0.isAutoScrolling = true
           $0.show(
-            "自动滚动中：按空格或移开鼠标停止", width: stitcher.width, height: stitcher.outputHeight
-          )
+            ScrollCapture.status(notice: nil, isFull: false, isLost: false, isAutoScrolling: true)
+              .text, width: stitcher.width, height: stitcher.outputHeight)
           $0.updatePreview(stitcher: stitcher, scale: 2)
         }
       ),

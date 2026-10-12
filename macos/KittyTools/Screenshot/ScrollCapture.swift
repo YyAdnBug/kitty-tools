@@ -210,7 +210,7 @@ final class ScrollCapture {
     if isFull { return Status(text: "已经最长了，按 ↩ 拷贝") }
     if isLost { return Status(text: "对不上了：往回滚一点，再慢慢滚", tone: .lost) }
     return Status(
-      text: isAutoScrolling ? "自动滚动中：按空格或把鼠标移出选区停止" : "在选区里滚动，或按空格自动滚动",
+      text: isAutoScrolling ? "自动滚动中，按空格或移出选区停止" : "在选区里滚动，或按空格自动滚动",
       announces: false)
   }
 
@@ -480,7 +480,8 @@ final class ScrollCapturePanel: NSPanel {
   override var canBecomeMain: Bool { false }
 }
 
-/// 面板内容：预览（最近拼上的那头）、状态、高度、按钮（自动滚动、取消、另存为…、存储、拷贝）。按键也在这里收。
+/// 面板内容：预览（最近拼上的那头）、高度、状态（固定两行高：换提示时上面的读数和预览不跳）、按钮（自动滚动 ｜ 另存为…、
+/// 存储 ｜ 取消、拷贝：同截图工具栏、录制条，取消紧挨主圆钮；32 × 32）。按键也在这里收。
 /// 永远深色的 HUD 皮肤（和截图工具栏一致）：普通 NSView 包一层材质。15 是 `.hudWindow` 的毛玻璃，圆角裁切、描边、
 /// 内圈 rim 都在毛玻璃自己的图层上（和它以前自己就是 NSVisualEffectView 时一样，外层只是透明的壳）；
 /// macOS 26 起是液态玻璃（mac-whisker §2「26 分支」）
@@ -581,26 +582,40 @@ final class ScrollCaptureHUD: NSView {
     status.isSelectable = false  // 可选中的话点一下就被字段编辑器抢走第一响应者，Esc / ↩ / 空格全失灵
     status.wantsLayer = true
     status.setContentCompressionResistancePriority(.required, for: .vertical)
+    // 状态区固定两行高（最长的提示——缺授权、截屏失败——要两行），一行的竖直居中：开关自动滚动、出提示时上面的高度读数
+    // 和预览不跟着上下跳（原来「自动滚动中…」折成两行，一开自动滚动读数就跳 14 pt）
+    status.stringValue = "一\n二"
+    let content = Self.width - 20
+    let twoLines =
+      status.cell?.cellSize(forBounds: CGRect(x: 0, y: 0, width: content, height: 1000)).height
+      ?? 28
+    status.stringValue = ""
+    status.translatesAutoresizingMaskIntoConstraints = false
+    let statusBox = NSView()
+    statusBox.addSubview(status)
     let readingView = NSHostingView(rootView: HeightReadingView(reading: reading))
     readingView.sizingOptions = [.intrinsicContentSize]
 
-    // 截图家族同一套叫法（体检 B41）：拷贝 / 存储到「桌面」（访达里的名字，不写 Desktop）/ 另存为…
+    // 截图家族同一套叫法（体检 B41）：拷贝 / 存储到「桌面」（访达里的名字，不写 Desktop）/ 另存为…。
+    // 顺序同截图工具栏、录制条：▶ ｜ 另存为 存储 ｜ ✕ ✓（取消紧挨主圆钮）
     let items: [(Item, String, String)] = [
       (.toggleAuto, "play.fill", "自动滚动（空格）"),
-      (.cancel, "xmark", "取消（Esc）"),
       (.output(.saveAs), "square.and.arrow.down.on.square", "另存为…（⇧⌘S）"),
       (.output(.save), "square.and.arrow.down", ScreenshotOutput.saveTitle + "（⌘S）"),
+      (.cancel, "xmark", "取消（Esc）"),
       (.output(.copy), "checkmark", "拷贝（↩）"),
     ]
     var row: [NSView] = []
     for (index, (item, symbol, tip)) in items.enumerated() {
-      if index == 1 { row.append(barSeparator()) }
-      // 拷贝是主按钮：和截图工具栏的拷贝钮一样，28 pt 品牌粉实心圆 + 白对勾
+      if index == 1 || index == 3 { row.append(barSeparator()) }
+      // 拷贝是主按钮：和截图工具栏的拷贝钮一样，28 pt 品牌粉实心圆 + 白对勾；其余同各条 HUD 栏的 32 × 32
       let primary = index == items.count - 1
-      let button = barButton(
-        primary ? Self.primaryImage() : Self.symbol(symbol), tip: tip,
-        action: #selector(clicked(_:)),
-        size: primary ? CGSize(width: 28, height: 28) : CGSize(width: 30, height: 28))
+      let button =
+        primary
+        ? barButton(
+          Self.primaryImage(), tip: tip, action: #selector(clicked(_:)),
+          size: CGSize(width: 28, height: 28))
+        : barButton(Self.symbol(symbol), tip: tip, action: #selector(clicked(_:)))
       button.tag = buttons.count
       button.contentTintColor = Style.HUD.text
       button.showsHover = !primary  // 粉圆是图，悬停底会在圆后面露出一块方角
@@ -610,17 +625,21 @@ final class ScrollCaptureHUD: NSView {
     autoButton = buttons[0].button
     let bar = NSStackView(views: row)
     bar.spacing = 2
-    for view in [status, readingView, bar] as [NSView] {
+    bar.setCustomSpacing(4, after: buttons[3].button)  // 主圆钮前隔 4（同工具栏、录制条）
+    // 按钮行就是内容那么宽。不设的话它在 centerX 对齐的竖栈里宽度不定（内容宽到面板内宽之间都满足约束，
+    // hasAmbiguousLayout）：有时被拉满，按钮靠左排、整行偏左（截图自检里每次运行出现在不同的图上）
+    bar.setHuggingPriority(.required, for: .horizontal)
+    for view in [readingView, bar] as [NSView] {
       view.setContentHuggingPriority(.required, for: .vertical)
     }
 
-    let stack = NSStackView(views: [preview, readingView, status, bar])
+    let stack = NSStackView(views: [preview, readingView, statusBox, bar])
     stack.orientation = .vertical
     stack.alignment = .centerX
     stack.distribution = .fill  // 预览（抗拉伸优先级最低）吃掉剩下的高度
     stack.spacing = 6
     stack.setCustomSpacing(2, after: readingView)
-    stack.edgeInsets = NSEdgeInsets(top: 10, left: 10, bottom: 8, right: 10)
+    stack.edgeInsets = NSEdgeInsets(top: 10, left: 10, bottom: 10, right: 10)
     stack.translatesAutoresizingMaskIntoConstraints = false
     surface.addSubview(stack)
     NSLayoutConstraint.activate([
@@ -628,8 +647,12 @@ final class ScrollCaptureHUD: NSView {
       stack.trailingAnchor.constraint(equalTo: surface.trailingAnchor),
       stack.topAnchor.constraint(equalTo: surface.topAnchor),
       stack.bottomAnchor.constraint(equalTo: surface.bottomAnchor),
-      preview.widthAnchor.constraint(equalToConstant: Self.width - 20),
-      status.widthAnchor.constraint(equalToConstant: Self.width - 20),
+      preview.widthAnchor.constraint(equalToConstant: content),
+      statusBox.widthAnchor.constraint(equalToConstant: content),
+      statusBox.heightAnchor.constraint(equalToConstant: twoLines),
+      status.leadingAnchor.constraint(equalTo: statusBox.leadingAnchor),
+      status.trailingAnchor.constraint(equalTo: statusBox.trailingAnchor),
+      status.centerYAnchor.constraint(equalTo: statusBox.centerYAnchor),
     ])
     // 盖在内容上面（只是一圈 0.5 pt，挨着边，碰不到内容）
     if #unavailable(macOS 26) { surface.layer?.addSublayer(rim) }

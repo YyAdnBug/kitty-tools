@@ -395,19 +395,26 @@ struct ScreenshotSnapshotTests {
       let window = offscreen(root)
       try shoot(window, name, crop: region.insetBy(dx: -30, dy: -30).union(hud.frame)) {
         hud.show(
-          auto ? "自动滚动中：按空格或把鼠标移出选区停止" : "在选区里滚动，或按空格自动滚动",
-          width: stitcher.width, height: stitcher.outputHeight)
+          ScrollCapture.status(notice: nil, isFull: false, isLost: false, isAutoScrolling: auto)
+            .text, width: stitcher.width, height: stitcher.outputHeight)
         hud.updatePreview(stitcher: stitcher, scale: 2)
       }
     }
   }
 
   /// 录制 HUD（录屏第 2 批）：倒数（边框走蚂蚁线、HUD「3 秒后开始」）、录制中 0:12（边框静止、红点、计时、✕、■）、
-  /// 放弃上膛（✕ 变红）、整屏（没有边框，可见区底部居中）。HUD 永远深色，不出深色版；-crop 是 HUD 的局部
+  /// 放弃上膛（✕ 变红）、整屏（没有边框，可见区底部居中）。HUD 永远深色，不出深色版；-crop 是 HUD 的局部。
+  /// 2026-10-12 视觉对齐：选区录制的 HUD 右边线对着录制条的右边线（各张 -crop 右边都留 24 pt：✕、主圆钮离右边一样远）；
+  /// record-hud-align / audio-hud-align 把各种形态按真实的摆位上下叠在一张图里，看右边线、✕、主圆钮是不是各在一条竖线上
   @Test(.enabled(if: directory != nil)) func renderRecordingHUD() throws {
     let desktop = try Self.desktop()
     let region = CGRect(x: 160, y: 260, width: 640, height: 400)
     let bounds = CGRect(x: 0, y: 0, width: 1200, height: 800)
+    let visible = bounds.insetBy(dx: 0, dy: 24).offsetBy(dx: 0, dy: -12)
+    // 录制条的开关、录音待录的来源开关读临时偏好域
+    let suite = "kitty-snapshot-\(UUID().uuidString)"
+    let prefs = try #require(UserDefaults(suiteName: suite))
+    defer { prefs.removePersistentDomain(forName: suite) }
     // 第 4 批：声音状态（-sound 两个都开、-system 只开系统声音、-mic-lost 麦克风断开变橙）；原来那四张不录声音，和以前一样
     for (name, state, counting, armed) in [
       ("record-hud-countdown", RecordingHUD.State.countdown(3), true, false),
@@ -436,11 +443,42 @@ struct ScreenshotSnapshotTests {
       if name == "record-hud-mic-lost" { hud.microphoneLost(animated: false) }
       hud.removeFromSuperview()  // 从它自己的窗口里拿出来，摆到假桌面上
       hud.frame.origin = RecordingHUD.origin(
-        size: hud.frame.size, region: full ? bounds : region, screen: bounds,
-        visible: bounds.insetBy(dx: 0, dy: 24).offsetBy(dx: 0, dy: -12), isFullScreen: full,
-        dragged: nil)
+        size: hud.frame.size, region: full ? bounds : region, screen: bounds, visible: visible,
+        isFullScreen: full, dragged: nil)
       root.addSubview(hud)
       try shoot(offscreen(root), name, crop: hud.frame.insetBy(dx: -24, dy: -24))
+    }
+
+    // 右边线对齐：从上到下是录制条（toolbarPlacement）、倒数、录制态（不带 / 带声音图标）、录了一小时多的（计时多三位），
+    // HUD 各按 origin 算 x，再往下错开摆
+    do {
+      let root = NSView(frame: bounds)
+      root.wantsLayer = true
+      root.layer?.contents = desktop
+      let bar = RecordBar(defaults: prefs)
+      bar.frame.origin =
+        SelectionView.toolbarPlacement(
+          size: bar.frame.size, selection: region, in: bounds, tray: 0
+        ).origin
+      root.addSubview(bar)
+      var frames = [bar.frame]
+      let rows: [(RecordingHUD.State, Bool)] = [
+        (.countdown(3), true), (.recording(12), false), (.recording(12), true),
+        (.recording(3725), true),
+      ]
+      for (index, (state, sound)) in rows.enumerated() {
+        let hud = RecordingHUD(state: state, stopKey: "⌥R", systemAudio: sound, microphone: sound)
+        hud.removeFromSuperview()
+        hud.frame.origin = RecordingHUD.origin(
+          size: hud.frame.size, region: region, screen: bounds, visible: visible,
+          isFullScreen: false, dragged: nil)
+        hud.frame.origin.y -= CGFloat(index + 1) * 48
+        root.addSubview(hud)
+        frames.append(hud.frame)
+      }
+      try shoot(
+        offscreen(root), "record-hud-align",
+        crop: frames.dropFirst().reduce(frames[0]) { $0.union($1) }.insetBy(dx: -24, dy: -24))
     }
 
     // 录音 HUD（录音第 5 批）：整屏的摆法（可见区底部居中、离底 24），[● 0:42][电平] ｜ [⏸] ｜ [✕][■]；
@@ -465,18 +503,14 @@ struct ScreenshotSnapshotTests {
       if name == "audio-hud-mic-lost" { hud.microphoneLost(animated: false) }
       hud.removeFromSuperview()
       hud.frame.origin = RecordingHUD.origin(
-        size: hud.frame.size, region: bounds, screen: bounds,
-        visible: bounds.insetBy(dx: 0, dy: 24).offsetBy(dx: 0, dy: -12), isFullScreen: true,
-        dragged: nil)
+        size: hud.frame.size, region: bounds, screen: bounds, visible: visible,
+        isFullScreen: true, dragged: nil)
       root.addSubview(hud)
       try shoot(offscreen(root), name, crop: hud.frame.insetBy(dx: -24, dy: -24))
     }
 
     // 录音控制条的待录态（手测反馈第 3 批）：[系统声音][麦克风] ｜ [✕][●]，同一个位置；来源读临时偏好域——只开麦克风
     // （默认）、两者、只开系统声音；-starting 是按了开始、还没录起来（开关和 ● 置灰，✕ 不灰）
-    let suite = "kitty-snapshot-\(UUID().uuidString)"
-    let prefs = try #require(UserDefaults(suiteName: suite))
-    defer { prefs.removePersistentDomain(forName: suite) }
     for (name, source, starting) in [
       ("audio-hud-ready", AudioRecorder.Source.microphone, false),
       ("audio-hud-ready-both", .both, false), ("audio-hud-ready-system", .system, false),
@@ -490,12 +524,42 @@ struct ScreenshotSnapshotTests {
       if starting { hud.setStarting() }
       hud.removeFromSuperview()
       hud.frame.origin = RecordingHUD.origin(
-        size: hud.frame.size, region: bounds, screen: bounds,
-        visible: bounds.insetBy(dx: 0, dy: 24).offsetBy(dx: 0, dy: -12), isFullScreen: true,
-        dragged: nil)
+        size: hud.frame.size, region: bounds, screen: bounds, visible: visible,
+        isFullScreen: true, dragged: nil)
       root.addSubview(hud)
       try shoot(offscreen(root), name, crop: hud.frame.insetBy(dx: -24, dy: -24))
       hud.close()
+    }
+
+    // 录音的右边线对齐：最下面是待录（可见区底部居中），往上是从它原地换成的录制态、出了「没听到声音」的、录了一小时多的
+    // ——右边线不动（RecordingHUD.x），条往左长
+    do {
+      prefs.set(AudioRecorder.Source.microphone.rawValue, forKey: Prefs.audioRecordSource)
+      let root = NSView(frame: bounds)
+      root.wantsLayer = true
+      root.layer?.contents = desktop
+      let ready = RecordingHUD(state: .ready, stopKey: nil, medium: .audio, defaults: prefs)
+      ready.removeFromSuperview()
+      ready.frame.origin = RecordingHUD.origin(
+        size: ready.frame.size, region: bounds, screen: bounds, visible: visible,
+        isFullScreen: true, dragged: nil)
+      root.addSubview(ready)
+      var frames = [ready.frame]
+      for (index, (seconds, silent)) in [(42, false), (3, true), (3725, false)].enumerated() {
+        let hud = RecordingHUD(state: .recording(seconds), stopKey: nil, medium: .audio)
+        hud.updateMeter(silent ? [Float](repeating: -120, count: 24) : speech)
+        if silent { hud.setSilent(true) }
+        hud.removeFromSuperview()
+        hud.frame.origin = CGPoint(
+          x: RecordingHUD.x(width: hud.frame.width, maxX: ready.frame.maxX, in: visible),
+          y: ready.frame.minY + CGFloat(index + 1) * 48)
+        root.addSubview(hud)
+        frames.append(hud.frame)
+      }
+      try shoot(
+        offscreen(root), "audio-hud-align",
+        crop: frames.dropFirst().reduce(frames[0]) { $0.union($1) }.insetBy(dx: -24, dy: -24))
+      ready.close()
     }
   }
 
@@ -960,6 +1024,28 @@ struct ScreenshotSnapshotTests {
         .write(to: URL(filePath: "\(out)/shot-pin-opacity-\(percent)\(dark ? "-dark" : "").png"))
       window.orderOut(nil)
     }
+
+    // 缩放时钉图中央的百分比（和尺寸胶囊同一种小标签：高 26、圆角 6、SF Mono 12 semibold、字离两边约 13）：合成一下滚轮让它
+    // 出来（钉图在屏外，跟着放大到 122%）；它 0.7 s 后自己淡出，所以只转两轮就出图
+    panel.opacity = 1
+    let scroll = try #require(
+      CGEvent(
+        scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: 20, wheel2: 0,
+        wheel3: 0
+      ).flatMap(NSEvent.init(cgEvent:)))
+    pin.scrollWheel(with: scroll)
+    pin.layoutSubtreeIfNeeded()
+    for _ in 0..<2 { RunLoop.main.run(until: Date.now.addingTimeInterval(0.1)) }
+    let size = pin.bounds.size
+    let bitmap = try #require(
+      NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: Int(size.width * 2), pixelsHigh: Int(size.height * 2),
+        bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+        colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+    let context = try #require(NSGraphicsContext(bitmapImageRep: bitmap)).cgContext
+    context.scaleBy(x: 2, y: 2)
+    try #require(pin.layer).render(in: context)
+    try write(try #require(bitmap.cgImage), to: "\(out)/shot-pin-zoom.png")
   }
 
   private func write(_ image: CGImage, to path: String) throws {

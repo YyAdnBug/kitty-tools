@@ -780,7 +780,6 @@ struct ShelfCardView: View {
           // GIF 卡：左下角「GIF」胶囊（同时长胶囊），没有播放符号
           VideoMarks.capsule("GIF")
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-            .foregroundStyle(Color(nsColor: Style.HUD.text))
             .accessibilityHidden(true)
             .transition(.opacity)
         }
@@ -788,15 +787,13 @@ struct ShelfCardView: View {
       .overlay {
         if card.isHovered {
           ZStack {
-            Color.black.opacity(0.35)
+            Style.Shot.cardScrim
             actions
           }
           .transition(.opacity)
         }
       }
-      .clipShape(shape)
-      .overlay(shape.strokeBorder(.white.opacity(0.25), lineWidth: 0.5))
-      .shadow(color: .black.opacity(0.28), radius: 16, y: 6)
+      .shotCard(shape)
       // 和飞行卡片同一个位置（FlyCardBadge.offset），交接时对齐
       .overlay(alignment: .topTrailing) {
         FlyCardBadge(badge: card.badge)
@@ -874,7 +871,11 @@ struct ShelfCardView: View {
         }
       }
       .opacity(card.isBusy ? 0.5 : 1)
-      .overlay { if card.isBusy { ProgressView().controlSize(.small).tint(.white) } }
+      .overlay {
+        if card.isBusy {
+          ProgressView().controlSize(.small).tint(Color(nsColor: Style.HUD.text))
+        }
+      }
       if corners {
         round("xmark", "关闭", action: card.close).frame(
           maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -901,14 +902,17 @@ struct ShelfCardView: View {
     _ title: String, _ symbol: String, compact: Bool, action: @escaping () -> Void
   ) -> some View {
     Button(action: action) {
-      HStack(spacing: 5) {
+      let label = HStack(spacing: 6) {
         Image(systemName: symbol)
         if !compact { Text(title) }
       }
       .font(.system(size: 12, weight: .medium))
-      .padding(.horizontal, compact ? 7 : 10)
-      .frame(height: 26)
-      .hudSkin(Capsule())
+      if compact {
+        // 矮卡只剩图标：固定 26 × 26 的圆（按图标的宽留边的话各个符号宽窄不一：27–29.5）
+        label.frame(width: 26, height: 26).hudSkin(Circle())
+      } else {
+        label.padding(.horizontal, 10).frame(height: 26).hudSkin(Capsule())
+      }
     }
     .buttonStyle(PressScale())
     .disabled(card.isBusy)

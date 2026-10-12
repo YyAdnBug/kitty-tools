@@ -220,6 +220,10 @@ enum Style {
     static var onAccent: NSColor { Accent.shared.palette.onFill.dark }
     /// 当前工具的实心底块圆角（全 App 唯一一处强调色填满的块）
     static let toolRadius: CGFloat = 12
+    /// 卡片（飞行卡片、常驻缩略图）的描边 white 0.25、阴影 black 0.28（r16 / y6，View.shotCard）、悬停时压在图上的蒙层 black 0.35
+    static let cardStroke = Color.white.opacity(0.25)
+    static let cardShadow = Color.black.opacity(0.28)
+    static let cardScrim = Color.black.opacity(0.35)
   }
 
   /// HUD 皮肤（永远深色，mac-whisker §2）：截图工具栏、样式托盘、尺寸胶囊、提示、放大镜信息卡、钉图圆钮、
@@ -259,6 +263,12 @@ enum Style {
     static var selectedFill: NSColor { .white.withAlphaComponent(increaseContrast ? 0.32 : 0.16) }
     /// 色点描边（黑色点在深色栏上也看得见）white 0.35（增强对比度 0.60）
     static var swatchStroke: NSColor { .white.withAlphaComponent(increaseContrast ? 0.60 : 0.35) }
+    /// HUD 里的键帽（HUD 菜单的键位、放大镜信息卡的「C」）：11 pt medium 圆体（mac-whisker §3「字体」的键帽）
+    static let keyFont: NSFont = {
+      let font = NSFont.systemFont(ofSize: 11, weight: .medium)
+      return font.fontDescriptor.withDesign(.rounded).flatMap { NSFont(descriptor: $0, size: 11) }
+        ?? font
+    }()
 
     /// 遮罩里的浮动控件阴影：black 0.35、模糊 18（CALayer shadowRadius 取一半）、向下 6，必须设 shadowPath
     static func applyShadow(to layer: CALayer, path: CGPath) {
@@ -639,6 +649,18 @@ struct Shake: ViewModifier {
 }
 
 extension View {
+  /// 截图家族的卡片（飞行卡片、常驻缩略图同一套，交接时对得上）：按 shape 裁、发丝线描边 white 0.25（增强对比度时
+  /// 1 pt）、阴影 black 0.28 / r16 / y6（mac-whisker §3「层级」）。shown = false 时描边和阴影都透明（飞行卡片起飞前
+  /// 是选区原样，飞的头 0.18 s 里长出来）
+  func shotCard<S: InsettableShape>(_ shape: S, shown: Bool = true) -> some View {
+    clipShape(shape)
+      .overlay(
+        shape.strokeBorder(
+          Style.Shot.cardStroke.opacity(shown ? 1 : 0), lineWidth: Style.HUD.strokeWidth)
+      )
+      .shadow(color: Style.Shot.cardShadow.opacity(shown ? 1 : 0), radius: 16, y: 6)
+  }
+
   /// HUD 皮肤（`Style.HUD`）：底色、内描边、外 0.5 pt 描边、主文字色。降低透明度（底色 0.97）、增强对比度（内描边
   /// 1 pt white 0.35）在取值时判断：悬停才建这些按钮，每次悬停都重新取。
   /// macOS 26 起是深色液态玻璃（mac-whisker §2「26 分支」），不画底色和描边，两个无障碍开关交给玻璃。

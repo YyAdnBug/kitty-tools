@@ -120,6 +120,84 @@ struct ShotChromeTests {
     }
   }
 
+  // 长截图面板的按钮行和状态区（2026-10-12 视觉对齐）：▶ ｜ 另存为 存储 ｜ ✕ ✓（同截图工具栏、录制条：取消紧挨主圆钮、
+  // 隔 4），钮 32 × 32、主圆钮 28；行在面板里水平居中、宽度是定死的（原来宽度不定——内容宽到面板内宽之间都满足约束，
+  // 有时被拉满、整行偏左 14.5 pt）；四周内缩 10；状态区固定两行高：换成两行的提示时上面的高度读数不跳
+  @Test func scrollHUDButtonRowAndStatus() throws {
+    let hud = ScrollCaptureHUD()
+    let window = NSWindow(
+      contentRect: CGRect(x: -20000, y: -20000, width: ScrollCaptureHUD.width, height: 360),
+      styleMask: [.borderless], backing: .buffered, defer: true)
+    window.isReleasedWhenClosed = false
+    window.contentView = hud
+    func all(_ view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + all($0) } }
+    func frame(_ view: NSView) -> CGRect { view.convert(view.bounds, to: hud) }
+    let short = ScrollCapture.status(
+      notice: nil, isFull: false, isLost: false, isAutoScrolling: false
+    ).text
+    hud.show(short, width: 1200, height: 480)
+    window.layoutIfNeeded()
+    let buttons = all(hud).compactMap { $0 as? BarButton }.sorted {
+      frame($0).minX < frame($1).minX
+    }
+    #expect(
+      buttons.map(\.toolTip) == [
+        "自动滚动（空格）", "另存为…（⇧⌘S）", ScreenshotOutput.saveTitle + "（⌘S）", "取消（Esc）", "拷贝（↩）",
+      ])
+    let rects = buttons.map(frame)
+    #expect(rects.dropLast().allSatisfy { $0.size == CGSize(width: 32, height: 32) })
+    #expect(rects[4].size == CGSize(width: 28, height: 28))
+    #expect(rects[4].minX - rects[3].maxX == 4 && rects[3].minX - rects[2].maxX > 4)
+    // 行居中、不歧义；上下左右内缩 10（按钮行离底 10，预览离顶 10）
+    let row = try #require(buttons[0].superview as? NSStackView)
+    #expect(!row.hasAmbiguousLayout)
+    #expect(abs(rects[0].minX - (hud.bounds.maxX - rects[4].maxX)) < 0.01)
+    #expect(rects[0].minY == 10 && frame(row).height == 32)
+    let preview = try #require(all(hud).first { $0 is NSImageView && !($0.superview is NSButton) })
+    #expect(frame(preview).maxY == hud.bounds.maxY - 10 && frame(preview).minX == 10)
+    // 状态一行 → 两行 → 一行：读数、预览、按钮都不挪；状态文字自己在两行高的区域里竖直居中
+    let status = try #require(
+      all(hud).compactMap { $0 as? NSTextField }.first { $0.maximumNumberOfLines == 2 })
+    let reading = try #require(
+      all(hud).first { String(describing: type(of: $0)).contains("NSHostingView") })
+    let (readingFrame, previewFrame, oneLine) = (frame(reading), frame(preview), frame(status))
+    hud.show("自动滚动需要「辅助功能」授权，授权后点 ▶ 开始", tone: .warning, width: 1200, height: 480)
+    window.layoutIfNeeded()
+    #expect(frame(status).height > oneLine.height * 1.5)
+    #expect(frame(reading) == readingFrame && frame(preview) == previewFrame)
+    #expect(buttons.map(frame) == rects)
+    #expect(abs(frame(status).midY - oneLine.midY) < 0.6)
+    // 平常的几句都是一行（面板内宽 196）：操作说明、自动滚动中、对不上、最长了
+    for (isFull, isLost, auto) in [
+      (false, false, true), (false, true, false), (true, false, false),
+    ] {
+      let text = ScrollCapture.status(
+        notice: nil, isFull: isFull, isLost: isLost, isAutoScrolling: auto
+      ).text
+      hud.show(text, width: 1200, height: 480)
+      window.layoutIfNeeded()
+      #expect(frame(status).height == oneLine.height, "\(text)")
+    }
+  }
+
+  // 样式托盘的选项分段（2026-10-12 视觉对齐，落到刻度上）：选项高 22、圆角 mini 4、12 pt medium；轨道高 26（上下各 2）、
+  // 圆角 control 6（和里面的选项同心）
+  @Test func styleBarSegmentsSitOnTheScale() throws {
+    let tray = StyleBar()
+    tray.update(tool: .rectangle, style: .init(color: .pink, weight: .medium, option: 1))
+    tray.frame.size = tray.preferredSize
+    tray.layoutSubtreeIfNeeded()
+    let segment = try #require(tray.stack.arrangedSubviews.last as? NSStackView)
+    #expect(segment.frame.height == 26 && segment.layer?.cornerRadius == Style.Radius.control)
+    let options = segment.arrangedSubviews.compactMap { $0 as? NSButton }
+    #expect(options.count == 2)
+    for option in options {
+      #expect(option.frame.height == 22 && option.layer?.cornerRadius == Style.Radius.mini)
+      let font = option.attributedTitle.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
+      #expect(font == NSFont.systemFont(ofSize: 12, weight: .medium))
+    }
+  }
+
   // 栏里用到的 SF Symbols（连同菜单栏 / 快捷键页的热键动作图标）在最低系统上都存在（force unwrap 不会崩）
   @Test func toolbarSymbolsExist() {
     let symbols =

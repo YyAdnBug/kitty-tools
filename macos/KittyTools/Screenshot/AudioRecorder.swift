@@ -362,7 +362,7 @@ final class AudioRecorder: NSObject {
   }
 
   /// HUD、菜单栏停止项、20 Hz 的电平 / 计时、防睡眠、中断监听（只录麦克风时；系统声音 / 两者的中断在 engine 里，同录屏）。
-  /// 待录的控制条已经在了：同一个 HUD 原地换成录制态（按原中心重摆、红点 pop），不先收再出
+  /// 待录的控制条已经在了：同一个 HUD 原地换成录制态（右边线不动、往左长，红点 pop），不先收再出
   private func showChrome() {
     if let hud {
       hud.setPausable(source == .microphone)

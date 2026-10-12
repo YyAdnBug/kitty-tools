@@ -326,9 +326,11 @@ private final class PinView: NSView {
     controls.alphaValue = 0
     controls.isHidden = true  // 看不见时也不能点到（点击不看透明度）
     addSubview(controls)
-    zoomLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
+    // 和尺寸胶囊同一种小标签：SF Mono 12 semibold，字离两边一样远（量出来约 13）。内边距写 12 而不是尺寸胶囊的 8：
+    // 那个 8 是到数字框的边，数字框里到字还有约 4.5；这里的标签框贴着字（写 8 的话字离边只有 9，比尺寸胶囊紧一截）
+    zoomLabel.font = SizeField.font
     zoomLabel.textColor = Style.HUD.text
-    zoomHUD.stack.edgeInsets = NSEdgeInsets(top: 0, left: 10, bottom: 0, right: 10)
+    zoomHUD.stack.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)
     zoomHUD.install([zoomLabel])
     zoomHUD.autoresizingMask = [.minXMargin, .maxXMargin, .minYMargin, .maxYMargin]
     zoomHUD.isHidden = true
@@ -396,7 +398,7 @@ private final class PinView: NSView {
     layer?.cornerRadius = Style.Radius.card
     layer?.cornerCurve = .continuous
     layer?.masksToBounds = true
-    layer?.borderWidth = 0.5
+    layer?.borderWidth = Style.HUD.strokeWidth
     layer?.borderColor = NSColor.separatorColor.cgColor
   }
 

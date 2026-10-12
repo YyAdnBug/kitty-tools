@@ -1,6 +1,6 @@
 // 截图遮罩里的尺寸胶囊 SizeField（mac-whisker §6 截图「尺寸胶囊」）：HUD 皮肤（圆角 control 6 + 阴影），SF Mono 12 semibold
 // 的像素宽高，中间「×」次文字色。悬停窗口、框选时只读、不接事件；调整选区时点数字就地变成两个输入框（Tab / ⇧Tab 切宽高、
-// ↩ 生效、Esc 放弃、点别处提交；焦点环 1 pt 粉 0.75 + 粉 0.22 r3 外发光），右边比例按钮「自由 ▾」（锁住时粉底）弹 HUD 菜单。
+// ↩ 生效、Esc 放弃、点别处提交；焦点环 1 pt 粉 0.75、圆角 mini 4 + 粉 0.22 r3 外发光），右边比例按钮「自由 ▾」（锁住时粉底）弹 HUD 菜单。
 // 状态和几何归 SelectionView：这里只显示、收点击、把 ↩ / Esc / Tab 交出去。输入框当第一响应者时按键归它；收下时
 // SelectionView 先把第一响应者要回去、再调 endEditing（同文字标注的 EditorField，反过来单键快捷键全失灵）。
 // 旁白：宽、高两个数字各有名字（按下 = 点数字开始输入），比例按钮是按钮（按下弹菜单），「×」不读。
@@ -36,7 +36,8 @@ final class SizeField: NSView, NSTextFieldDelegate {
   /// 上次显示的：像素宽高、比例按钮文字、是否锁住（没变就不重排，遮罩每次鼠标移动都会调 show）
   private var shown: (width: Int, height: Int, ratio: String, locked: Bool)?
 
-  private static let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .semibold)
+  /// 截图家族的小标签字（钉图的缩放百分比也用它）
+  static let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .semibold)
   private static let height: CGFloat = 26
 
   init() {
@@ -92,7 +93,7 @@ final class SizeField: NSView, NSTextFieldDelegate {
     let pink = Style.Shot.accent
     ring.borderWidth = 1
     ring.borderColor = pink.withAlphaComponent(0.75).cgColor
-    ring.cornerRadius = 3
+    ring.cornerRadius = Style.Radius.mini
     ring.shadowColor = pink.cgColor
     ring.shadowOpacity = 0.22
     ring.shadowRadius = 3
@@ -214,8 +215,8 @@ final class SizeField: NSView, NSTextFieldDelegate {
     let frame = field.frame.insetBy(dx: -1, dy: -2)
     ring.frame = frame
     ring.shadowPath = CGPath(
-      roundedRect: CGRect(origin: .zero, size: frame.size), cornerWidth: 3, cornerHeight: 3,
-      transform: nil
+      roundedRect: CGRect(origin: .zero, size: frame.size), cornerWidth: Style.Radius.mini,
+      cornerHeight: Style.Radius.mini, transform: nil
     ).copy(strokingWithWidth: 1, lineCap: .butt, lineJoin: .round, miterLimit: 1)
     ring.isHidden = false
     CATransaction.commit()
