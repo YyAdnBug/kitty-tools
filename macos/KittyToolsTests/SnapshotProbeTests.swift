@@ -921,7 +921,7 @@ struct SnapshotProbeTests {
     var timed = presets[2]
     timed.autoEndMinutes = 5
     try shot("status-screen-sign-countdown", timed, elapsed: 28)
-    // 做着动画的会话里小字是图层版（StatusTicker）：该和上面那张、和 status-screen-dim 的小字对得上
+    // 做着动画的会话里小字是图层版（Shell/Ticker.swift）：该和上面那张、和 status-screen-dim 的小字对得上
     try shot("status-screen-sign-countdown-animated", timed, animates: true, elapsed: 28)
     // 退出密码的输入框（设了密码、按住满了之后，占着退出提示的位置）：4 位刚打开、6 位打了 2 位、8 位刚输错；熄屏样式上一张
     try shot("status-screen-passcode", presets[2], asking: Passcode("1234"))

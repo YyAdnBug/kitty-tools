@@ -1,7 +1,8 @@
 // 状态屏（PLAN §10）的纯函数单测：自带状态和编解码、sanitized 各条、退出判断（ExitHold：按住满 2 秒、别的触碰取消、带修饰键 / 连发
 // 不算、松开取消、鼠标按在提示里外、滚动合并、「松不开」的键过期）、退出密码（Passcode：只认 4–8 位数字、按键位认、打满当场比、
 // 输错清空、每错满 5 次收起、⌫ 和 esc、连发和同一下按键到两次不重复算）、时长文字（小字精确到秒、定了自动结束的倒数）、
-// 小字的图层版（StatusTicker：一字一块图层，只有变了的数字换图层并挂上滑动）、
+// 小字的图层版（Shell/Ticker.swift，录制 HUD 的计时也用它：一字一块图层，只有变了的数字换图层并挂上滑动；
+// 各块拼起来和整行一次画出来一样）、
 // 退出提示和 key 面板的范围、拦截对事件的分类、
 // 启动器里每个状态一条；设置 › 状态屏改列表的几个纯函数（加、删、挪、恢复自带的、详情页改一个、摘要）；选状态的面板
 // （第 4 批：选中怎么移动、按键、默认选中、排版、进入时给出去的卡片位置）和从卡片长到整屏的起始变换；告示上的动画
@@ -647,39 +648,99 @@ struct StatusScreenTests {
   @Test func tickerRollsOnlyChangedDigits() throws {
     let font = NSFont.monospacedDigitSystemFont(ofSize: 19, weight: .regular)
     let text = "14:02 开始 · 已 1 分 05 秒"
-    let measured = StatusTickerView.measure(text, font: font)
+    let measured = TickerView.measure(text, font: font)
     #expect(measured.widths.count == text.count && measured.size.height > 19)
+    // 基线离顶是整点（同 SwiftUI 的 Text：19 pt 的字离顶 18、离底 5）
+    #expect(measured.size.height - measured.baseline == 18 && measured.baseline == 5)
     #expect(abs(measured.size.width - measured.widths.reduce(0, +)) < 1)
-    #expect(Set(StatusTickerView.measure("0123456789", font: font).widths).count == 1)
-    let view = StatusTickerView()
+    #expect(Set(TickerView.measure("0123456789", font: font).widths).count == 1)
+    let view = TickerView()
     view.show(text, font: font, color: .white, direction: 1)
     let first = view.cells
     #expect(first.count == text.count && view.characters == Array(text))
     for (cell, character) in zip(first, text) {
       #expect((cell.contents == nil) == (character == " "), "\(character)")
-      #expect(cell.animation(forKey: StatusTickerView.slideKey) == nil)
+      #expect(cell.animation(forKey: TickerView.slideKey) == nil)
     }
     // 05 → 06：只有最后那位数字换了图层，新的那块挂着滑动
     view.show("14:02 开始 · 已 1 分 06 秒", font: font, color: .white, direction: 1)
     let changed = view.cells.indices.filter { view.cells[$0] !== first[$0] }
     let index = try #require(changed.first)
     #expect(changed.count == 1 && view.characters[index] == "6")
-    #expect(view.cells[index].animation(forKey: StatusTickerView.slideKey) != nil)
+    #expect(view.cells[index].animation(forKey: TickerView.slideKey) != nil)
     #expect(view.cells[index].frame == first[index].frame)
     // 不给方向（动画不做）：整行重排，不挂动画
     let second = view.cells
     view.show("14:02 开始 · 已 1 分 07 秒", font: font, color: .white, direction: 0)
     #expect(zip(view.cells, second).allSatisfy { $0 !== $1 })
-    #expect(view.cells.allSatisfy { $0.animation(forKey: StatusTickerView.slideKey) == nil })
+    #expect(view.cells.allSatisfy { $0.animation(forKey: TickerView.slideKey) == nil })
     // 字数变了（59 秒 → 1 分 00 秒）、换了颜色：也是整行重排
     view.show("14:02 开始 · 已 59 秒", font: font, color: .white, direction: 1)
     view.show("14:02 开始 · 已 1 分 00 秒", font: font, color: .white, direction: 1)
     #expect(view.cells.count == "14:02 开始 · 已 1 分 00 秒".count)
-    #expect(view.cells.allSatisfy { $0.animation(forKey: StatusTickerView.slideKey) == nil })
+    #expect(view.cells.allSatisfy { $0.animation(forKey: TickerView.slideKey) == nil })
     let third = view.cells
     view.show("14:02 开始 · 已 1 分 01 秒", font: font, color: .gray, direction: 1)
     #expect(zip(view.cells, third).allSatisfy { $0 !== $1 })
     #expect(view.layer?.sublayers?.count == view.cells.count)
+  }
+
+  /// 图层版是整行排好再按字切开的：各块正好接上（不重叠、不留缝），拼起来和整行一次画出来一样——夹在数字中间的冒号是
+  /// 抬高的那个字形（一个字一个字单独排拿不到，会低 1 pt 多）。录制 HUD 的计时（13 pt 圆体）和状态屏的小字各验一遍
+  @Test func tickerCellsTileTheWholeLine() throws {
+    let rounded = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
+    let fonts = [
+      try #require(
+        rounded.fontDescriptor.withDesign(.rounded).flatMap { NSFont(descriptor: $0, size: 13) }),
+      NSFont.monospacedDigitSystemFont(ofSize: 19, weight: .regular),
+    ]
+    for (text, font) in zip(["1:05:42", "14:02 开始 · 已 1 分 05 秒"], fonts) {
+      let view = TickerView()
+      view.show(text, font: font, color: .white, direction: 1)
+      let scale = try #require(view.cells.first).contentsScale
+      for (cell, following) in zip(view.cells, view.cells.dropFirst()) {
+        #expect(cell.frame.maxX == following.frame.minX, "\(text)")
+        #expect(cell.frame.minX * scale == (cell.frame.minX * scale).rounded())
+      }
+      // 整行一次画出来（同样的位置：左边顶着 0、基线离底 baseline）对比各块叠起来的样子
+      let measured = TickerView.measure(text, font: font)
+      let width = Int((measured.size.width + 2) * scale)
+      let height = Int((measured.size.height + 16) * scale)
+      func render(_ draw: (CGContext) -> Void) throws -> [UInt8] {
+        let context = try #require(
+          CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.scaleBy(x: scale, y: scale)
+        context.translateBy(x: 0, y: 8)
+        draw(context)
+        return Array(
+          UnsafeBufferPointer(
+            start: try #require(context.data).assumingMemoryBound(to: UInt8.self),
+            count: width * height * 4))
+      }
+      let whole = try render { context in
+        context.textMatrix = .identity
+        context.textPosition = CGPoint(x: 0, y: measured.baseline)
+        CTLineDraw(
+          CTLineCreateWithAttributedString(
+            NSAttributedString(
+              string: text,
+              attributes: [
+                .font: font,
+                NSAttributedString.Key(kCTForegroundColorAttributeName as String): CGColor.white,
+              ])), context)
+      }
+      let tiled = try render { context in
+        for cell in view.cells {
+          guard let contents = cell.contents else { continue }
+          context.draw(contents as! CGImage, in: cell.frame)
+        }
+      }
+      #expect(whole.contains { $0 > 200 }, "\(text)")
+      #expect(zip(whole, tiled).allSatisfy { abs(Int($0) - Int($1)) <= 1 }, "\(text)")
+    }
   }
 
   /// 防残影：第 0 分钟在正中，之后每分钟挪几个点，横向 ±12、纵向 ±8 以内，不会连着三分钟停在同一个位置

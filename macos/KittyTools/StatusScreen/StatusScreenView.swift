@@ -1,5 +1,5 @@
 // 状态屏的面板和画面（PLAN §10「状态屏」Z5 Z7 Z8）：每块屏一张全屏面板，底色按样式（熄屏、告示纯黑，透出压暗），
-// 中间一列图标、标题、说明、「几点开始 · 已经多久」（精确到秒，数字滚着换——StatusTicker.swift；定了自动结束的是倒数。
+// 中间一列图标、标题、说明、「几点开始 · 已经多久」（精确到秒，数字滚着换——Shell/Ticker.swift；定了自动结束的是倒数。
 // 透出样式垫一块 HUD 底板：后面是别人的窗口，字会叠在一起），底部一枚平时不显示的退出提示（进度环 +「按住 Esc 退出」）；
 // 设了退出密码时按住满了，同一个位置换成密码框（一排圆点）。告示那一列每分钟挪几个点，防残影。
 // 永远深色，颜色取自 HUD 皮肤（Style.HUD），进度环是截图家族的强调色（Style.Shot.accent）。
@@ -417,7 +417,7 @@ struct StatusScreenView: View {
 }
 
 /// 小字「14:02 开始 · 已 1 分 05 秒」（定了自动结束的是「还剩 4 分 32 秒」）：每秒变一次。做着动画的会话里变了的数字
-/// 滚过去（StatusTicker：图层动画；已经多久往上滚，倒数往下滚）；动画关着、减弱动态效果、预览和卡片里是普通的文字，直接换。
+/// 滚过去（Ticker：图层动画；已经多久往上滚，倒数往下滚）；动画关着、减弱动态效果、预览和卡片里是普通的文字，直接换。
 /// 单独一个视图：会话的 elapsed 只有它读，每秒重算的就只有这一行
 private struct StatusFooter: View {
   let screen: StatusScreen
@@ -426,7 +426,7 @@ private struct StatusFooter: View {
 
   var body: some View {
     if screen.animates {
-      StatusTicker(
+      Ticker(
         text: screen.footer, font: .monospacedDigitSystemFont(ofSize: size, weight: .regular),
         color: color, direction: (screen.preset?.autoEndMinutes ?? 0) > 0 ? -1 : 1)
     } else {

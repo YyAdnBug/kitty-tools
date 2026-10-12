@@ -2,6 +2,7 @@
 // 放弃要点两下的时序（纯状态）、窗口不进截图冻结帧和录制白名单（状态栏层级的普通 NSPanel，永不当 key）、按钮在两种状态下
 // 交回什么；录制中的声音状态（录屏第 4 批：只读图标、两个都关不显示、麦克风断开变橙）；录音的形态（录音第 5 批：暂停钮、
 // 暂停时的样子与旁白、「没听到声音」让 HUD 变宽、名字）；录系统声音时不能暂停（录音第 6 批：⏸ 原位置灰、提示原因）、「两者」麦克风断开的橙字。
+// 计时是图层排的（Shell/Ticker.swift，2026-10-11 从 numericText 换过来）：每秒只换变了的那位、暂停时整行重排、按 h:mm:ss 留宽度。
 // 录音的待录态（手测反馈第 3 批）：[系统声音][麦克风] ｜ [✕][●]——有哪些钮、名字和提示、✕ 点一下就关、● 交回 .start、
 // 来源开关读写临时偏好域（至少留一个、只重画变了的那个、别处改了偏好跟着重画、不经 onClick）、开始中置灰、原地换成
 // 录制态（换完的头一小段不认 ⏸：它正好落在刚才 ● 的位置）。
@@ -258,6 +259,40 @@ struct RecordingHUDTests {
     screen.setSilent(true)
     #expect(!screen.isPaused && screen.frame.width == screenWidth)
     #expect(try #require(screen.button(for: .discard)).accessibilityLabel() == "放弃录制")
+  }
+
+  /// 计时是图层排的（Shell/Ticker.swift；不用 numericText：它每秒逐帧重画，录制期间一直占着 CPU）：字就是 ScreenRecorder.clock，
+  /// 每秒只换变了的那一位（减弱动态效果时整行直接换）；录音暂停 / 继续换颜色，整行重排；按 h:mm:ss 留了宽度，一小时起
+  /// 变长也放得下、HUD 不变宽；读数不进旁白（HUD 自己有值）
+  @Test func clockRollsOnlyChangedDigits() throws {
+    func ticker(_ hud: RecordingHUD) -> TickerView? {
+      var queue: [NSView] = [hud]
+      while let view = queue.popLast() {
+        if let ticker = view as? TickerView { return ticker }
+        queue += view.subviews
+      }
+      return nil
+    }
+    let hud = RecordingHUD(state: .recording(42), stopKey: nil, medium: .audio)
+    let clock = try #require(ticker(hud))
+    #expect(String(clock.characters) == "0:42" && !clock.isAccessibilityElement())
+    #expect(ticker(RecordingHUD(state: .countdown(3), stopKey: nil)) == nil)
+    var cells = clock.cells
+    hud.update(.recording(43))
+    #expect(String(clock.characters) == "0:43")
+    #expect(zip(clock.cells, cells).filter { $0 !== $1 }.count == (Style.reduceMotion ? 4 : 1))
+    cells = clock.cells
+    hud.setPaused(true)
+    #expect(String(clock.characters) == "0:43" && zip(clock.cells, cells).allSatisfy { $0 !== $1 })
+    #expect(clock.cells.allSatisfy { $0.animation(forKey: TickerView.slideKey) == nil })
+    cells = clock.cells
+    hud.setPaused(false)
+    #expect(zip(clock.cells, cells).allSatisfy { $0 !== $1 })
+    let width = hud.frame.width
+    hud.update(.recording(3600))
+    hud.layoutSubtreeIfNeeded()
+    #expect(String(clock.characters) == "1:00:00" && hud.frame.width == width)
+    #expect(try #require(clock.cells.last).frame.maxX <= clock.bounds.width + 1)
   }
 
   /// 录系统声音（录音第 6 批，录屏管线没有暂停）：⏸ 还在原来的位置（HUD 一样宽）、置灰、提示为什么；点它不交回点击

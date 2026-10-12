@@ -4,7 +4,9 @@
 // - 倒数：[3 秒后开始] ｜ [✕ 取消]，数字 22 pt 圆体、每跳一个数 pop（0.85 → 1），点数字马上开始；
 // - 录制中：[● 0:12] ｜ [✕ 放弃][■ 停止]：红点 8 pt systemRed（语义色「录制中」）呼吸 1 ↔ 0.45（同一表面唯一的 ambient，
 //   只在录制态挂、HUD 一收就摘；放在 CALayer 上由渲染服务跑，不占主线程）；计时和菜单栏停止项同一个时钟
-//   （ScreenRecorder.clock，numericText，按 h:mm:ss 留宽度不跳）；放弃要点两下（第一下「上膛」变红，2 s 内再点才放弃）；
+//   （ScreenRecorder.clock，按 h:mm:ss 留宽度不跳），每秒变了的那几位数字滚过去——图层自己排（Shell/Ticker.swift），
+//   **不用 numericText**：它每秒逐帧重画带模糊的字，独立小程序实测 13 pt 的这一行占 8–11% CPU（图层版 0.2%），
+//   录多久占多久（2026-10-11 换的）；放弃要点两下（第一下「上膛」变红，2 s 内再点才放弃）；
 //   停止是 28 pt 强调色实心圆 + ■（画法同录制条的 ●）。
 //   计时和 ✕ 之间是只读的声音状态 [系统声音][麦克风]（录屏第 4 批：录制中改不了配置；开 = 强调色、关 = 再次文字色 + 斜杠，
 //   两个都关不显示这段）；开录时的麦克风断开了，麦克风变 systemOrange + 斜杠。
@@ -60,12 +62,9 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     }
   }
 
-  /// 计时 / 倒数的读数（SwiftUI 读它：数字滚动、pop）
+  /// 倒数的读数（SwiftUI 读它：数字 pop）
   @Observable final class Reading {
     var countdown = 0
-    var seconds = 0
-    /// 录音暂停着：计时变灰
-    var paused = false
   }
 
   var onClick: (Item) -> Void = { _ in }
@@ -84,6 +83,13 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   /// 倒数的读数是个按钮（点了马上开始），录制中的读数（红点 + 计时）只是显示
   private lazy var countdownButton = makeCountdownButton()
   private lazy var clock = makeClock()
+  /// 计时：13 pt 圆体 semibold + 等宽数字，图层自己排（每秒只滚变了的那几位，文件头）
+  private let clockText = TickerView()
+  private static let clockFont: NSFont = {
+    let font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
+    return font.fontDescriptor.withDesign(.rounded).flatMap { NSFont(descriptor: $0, size: 13) }
+      ?? font
+  }()
   /// 录制中的声音状态（只读）：这次录不录系统声音、麦克风（麦克风是开关开着且有授权）；两个都关时不显示
   private let systemAudio: Bool
   private let microphone: Bool
@@ -263,10 +269,9 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
       setAccessibilityValue("\(seconds) 秒后开始")
     case .ready:
       setAccessibilityValue("还没开始录")
-    case .recording(let seconds):
-      reading.seconds = seconds
+    case .recording:
       // 计时是值，不逐秒播报
-      applyValue()
+      applyClock()
     }
     guard rebuilding else { return }
     for view in stack.arrangedSubviews { view.removeFromSuperview() }
@@ -309,9 +314,14 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     }
   }
 
-  /// 旁白读的值：「已录 12 秒」，录音暂停着是「已暂停，已录 12 秒」
-  private func applyValue() {
+  /// 计时那一行，和旁白读的值（「已录 12 秒」，录音暂停着是「已暂停，已录 12 秒」）。数字往上滚（减弱动态效果时直接换）；
+  /// 录音暂停时变灰——换颜色是整行重排、不滚
+  private func applyClock() {
     guard case .recording(let seconds) = state else { return }
+    clockText.show(
+      ScreenRecorder.clock(seconds), font: Self.clockFont,
+      color: isPaused ? Style.HUD.secondaryText : Style.HUD.text,
+      direction: Style.reduceMotion ? 0 : 1)
     setAccessibilityValue((isPaused ? "已暂停，" : "") + "已录 " + ScreenRecorder.spoken(seconds))
   }
 
@@ -367,7 +377,6 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   func setPaused(_ paused: Bool) {
     guard medium == .audio, paused != isPaused else { return }
     isPaused = paused
-    reading.paused = paused
     dot.isHidden = paused
     pauseMark.isHidden = !paused
     if paused { dot.stop() } else { dot.start() }
@@ -377,7 +386,7 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
       systemSymbolName: paused ? "play.fill" : "pause.fill", accessibilityDescription: name)
     pauseButton.toolTip = name
     pauseButton.setAccessibilityLabel(name)
-    applyValue()
+    applyClock()
   }
 
   /// 开头 5 s 没听到声音：计时旁边出橙色「没听到声音」（播报由 AudioRecorder 发一次），有声音了收起
@@ -549,9 +558,13 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
 
   /// 录制中的读数：红点 + 计时（录音另有暂停时顶替红点的暂停符号、计时后面的「没听到声音」，平时藏着、不占宽度）
   private func makeClock() -> NSView {
-    let host = PassiveHost(rootView: AnyView(ClockText(reading: reading)))
-    host.sizingOptions = [.intrinsicContentSize]
-    let row = NSStackView(views: medium == .audio ? [dot, pauseMark, host, silence] : [dot, host])
+    // 按 h:mm:ss 留宽度（字靠左）：一小时起变长也不跳
+    let size = TickerView.measure(ScreenRecorder.clock(3600), font: Self.clockFont).size
+    clockText.widthAnchor.constraint(equalToConstant: size.width).isActive = true
+    clockText.heightAnchor.constraint(equalToConstant: size.height).isActive = true
+    clockText.setAccessibilityElement(false)  // 读数在 HUD 的值里
+    let row = NSStackView(
+      views: medium == .audio ? [dot, pauseMark, clockText, silence] : [dot, clockText])
     row.spacing = 6
     row.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 6)
     row.detachesHiddenViews = true
@@ -742,7 +755,7 @@ private final class LevelMeter: NSView {
   }
 }
 
-/// 只显示、不接鼠标的 SwiftUI 宿主：点击落到外面的按钮 / HUD 上（读数上也能拖、点倒数数字是按钮）。
+/// 只显示、不接鼠标的 SwiftUI 宿主（倒数的读数）：点击落到外面的按钮上（点倒数数字是按钮）。
 /// 用 AnyView、不写成泛型子类：泛型的 NSHostingView 子类在 Release 优化时（EarlyPerfInliner 处理它的 deinit）让
 /// Swift 6.2.4 编译器崩溃（2026-09-30 打 0.3.0 包时实测，Debug 不优化所以没事）；非泛型子类（ShelfHostingView）没问题
 private final class PassiveHost: NSHostingView<AnyView> {
@@ -781,24 +794,5 @@ private struct CountdownText: View {
         .foregroundStyle(Color(nsColor: Style.HUD.secondaryText))
     }
     .accessibilityHidden(true)  // 读数在 HUD 的值里
-  }
-}
-
-/// 计时：13 pt 圆体 semibold + 等宽数字，每秒 numericText；按 h:mm:ss 留宽度（一小时起变长也不跳）；录音暂停时变灰
-private struct ClockText: View {
-  let reading: RecordingHUD.Reading
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-  var body: some View {
-    ZStack(alignment: .leading) {
-      Text(ScreenRecorder.clock(3600)).hidden()
-      Text(ScreenRecorder.clock(reading.seconds))
-        .contentTransition(.numericText(value: Double(reading.seconds)))
-    }
-    .font(.system(size: 13, weight: .semibold, design: .rounded))
-    .monospacedDigit()
-    .foregroundStyle(Color(nsColor: reading.paused ? Style.HUD.secondaryText : Style.HUD.text))
-    .animation(Style.Motion.snap.animation(reduced: reduceMotion), value: reading.seconds)
-    .accessibilityHidden(true)
   }
 }
