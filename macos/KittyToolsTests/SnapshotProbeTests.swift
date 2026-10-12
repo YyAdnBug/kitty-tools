@@ -10,12 +10,26 @@ import UniformTypeIdentifiers
 // 不会弹出面板、不抢键盘，也不需要屏幕录制权限。用法：
 //   TEST_RUNNER_KITTY_SNAPSHOT_DIR=/tmp/shots xcodebuild -project macos/KittyTools.xcodeproj \
 //     -scheme KittyTools test -only-testing:KittyToolsTests/SnapshotProbeTests
+// 只改了一族界面时不用等整套（renderPanels 一个函数要七八分钟）：再加
+//   TEST_RUNNER_KITTY_SNAPSHOT_ONLY=clip-,launcher-
+// 只出文件名以这些前缀开头的图（逗号分隔；别的图跳过渲染，各种摆设照做）。
 struct SnapshotProbeTests {
   nonisolated private static let directory =
     ProcessInfo.processInfo.environment["KITTY_SNAPSHOT_DIR"]
+  /// 只出这些前缀的图；nil = 全出
+  nonisolated private static let only =
+    ProcessInfo.processInfo.environment["KITTY_SNAPSHOT_ONLY"]?.split(separator: ",").map(String.init)
+
+  /// 这张图出不出（按文件名的前缀）
+  nonisolated private static func wants(_ path: String) -> Bool {
+    guard let only else { return true }
+    let name = URL(filePath: path).lastPathComponent
+    return only.contains { name.hasPrefix($0) }
+  }
 
   @Test(.enabled(if: directory != nil)) func renderPanels() async throws {
     let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
     Prefs.registerDefaults()
     // 不读本机浏览器（体检 D6 D8、第 12 批）：网站图标用下面摆的假图，启动器的浏览历史用注入的；设置 › 启动器
     // 「浏览器书签与历史」读临时目录里的假数据，「装了」的固定是 Safari、Chrome、Edge、Arc、Firefox
@@ -2231,6 +2245,7 @@ struct SnapshotProbeTests {
     _ view: some View, size: NSSize, dark: Bool, to path: String,
     prepare: ((NSView) -> Void)? = nil
   ) throws {
+    guard Self.wants(path) else { return }
     let window = NSWindow(
       contentRect: NSRect(origin: NSPoint(x: -20000, y: -20000), size: size),
       styleMask: [.borderless], backing: .buffered, defer: false)

@@ -66,6 +66,7 @@ xcrun swift-format lint --strict -r macos/KittyTools
 xcrun swift-format format -i -r macos/KittyTools
 
 # 界面截图自检：屏幕外渲染各状态（含深色）为 PNG，不弹窗、不抢键盘（整套约 8 分钟、CPU 占用高，用户在用电脑时别反复跑；
+# 只改了一族界面就再加 TEST_RUNNER_KITTY_SNAPSHOT_ONLY=clip-,launcher-（只出文件名以这些前缀开头的图，一两分钟）；
 # 只改了状态屏就只跑它那一个函数，几秒钟：-only-testing:'KittyToolsTests/SnapshotProbeTests/statusScreen()'；
 # 设置 › 状态屏、快捷键页和速查表页头是 statusScreenSettings()，十几秒；选状态的面板是 statusPicker()）
 TEST_RUNNER_KITTY_SNAPSHOT_DIR=/tmp/kitty-shots xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
