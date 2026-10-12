@@ -1,5 +1,5 @@
 // 剪贴板透镜（Lens Bar，mac-whisker §6 剪贴板）：选中行在原地展开的预览。第一行就是普通行（ClipRowView，40），
-// 下面是按类型定高的正文区（左边对齐标题列 x = 44、右内边距 12）+ 22 pt 元信息行 + 底 8。
+// 下面是按类型定高的正文区（左边对齐标题列 x = 44、右内边距 10 = 行的右内边距）+ 22 pt 元信息行 + 底 8。
 // 正文区高度只查表（Lens.bodyHeight），不量内在尺寸、不按行数估：高亮块的前缀和、滚动、窗口的透镜预留都靠它算得准；
 // 正文放进固定高度的 frame 裁切、底部 12 pt 渐隐。文本 90（短文本 36；行标题已经原样显示全的没有正文区，
 // 同一句话不画第二遍，透镜只剩元信息行）、代码 / JSON 128（行号 + 语法着色）、
@@ -44,6 +44,12 @@ enum Lens {
     let trimmed = text.prefix(400).trimmingCharacters(in: .whitespacesAndNewlines)
     return trimmed.count <= 60 && !trimmed.contains(where: \.isNewline)
   }
+
+  /// 透镜正文里贴着正文区左边的字（文本正文、文件名）用的具体颜色（= 行标题的颜色），不用默认的层级色：
+  /// 正文区是裁切的，层级色的字贴着裁切区的边时，SwiftUI 把字画成白的、颜色放在裁切那一层的滤镜（multiplyColor）上；
+  /// 截图自检的出图（cacheDisplay）不画图层滤镜，这些字就是白的。真机不受影响（2026-10-12 照透镜的结构写了个最小复现，
+  /// 同一棵图层树 cacheDisplay 出来是白字、CARenderer 按真实合成画出来颜色是对的），给具体颜色只是让截图和真机一个样
+  static let ink = Color(nsColor: .labelColor)
 
   /// 搜索词命中的底色（systemYellow 0.35，和 ⌘Y 大卡的 NSTextView 高亮同色）
   static let hitColor = Color(nsColor: .systemYellow).opacity(0.35)
@@ -116,7 +122,8 @@ struct LensView: View {
       meta.frame(height: Lens.meta)
     }
     .padding(.leading, 44)
-    .padding(.trailing, 12)
+    // 右边和行的右内边距一样（10）：元信息行右边的「原文 / 美化」和行右侧的字、键帽共一条右边线
+    .padding(.trailing, 10)
     .padding(.bottom, Lens.bottom)
   }
 
@@ -134,6 +141,8 @@ struct LensView: View {
           .font(.system(size: 13))
           .lineSpacing(3)
           .lineLimit(2)
+          // 给具体的颜色，同下面的长文本：层级色的字贴着裁切区的边时在截图自检里画成白的（clip-lens-wrapped），见 Lens.ink
+          .foregroundStyle(Lens.ink)
       } else {
         let text = String((item.text ?? "").prefix(20_000))
         let shown =
@@ -142,7 +151,7 @@ struct LensView: View {
         Text(highlighted(shown))
           .font(.system(size: 13))
           .lineSpacing(3)
-          .foregroundStyle(Color(nsColor: .labelColor))  // 渐隐遮罩里不能用层级色，见 fading
+          .foregroundStyle(Lens.ink)  // 渐隐遮罩里不能用层级色，见 fading
           .fixedSize(horizontal: false, vertical: true)
       }
     case .image:
@@ -163,13 +172,17 @@ struct LensView: View {
     return attributed
   }
 
-  /// 「代码 · 70 字 · 14:02 · [图标] Xcode」，JSON 右边多一个「原文 / 美化」（默认美化，按钮写「原文」，体检 A10）
+  /// 「代码 · 70 字 · 14:02 · [图标] Xcode」，JSON 右边多一个「原文 / 美化」（默认美化，按钮写「原文」，体检 A10）。
+  /// 来源前面那个「·」和前面几个是同一种写法（空格 · 空格，并在同一段字里）：单独放一个 Text 再靠 HStack 的间距隔开的话，
+  /// 它两边比前面的宽一倍
   private var meta: some View {
-    HStack(spacing: 6) {
-      Text(metaText).lineLimit(1)
-      if let icon = AppIcons.icon(for: item.sourceBundleID) {
-        Text("·")
+    let icon = AppIcons.icon(for: item.sourceBundleID)
+    let hasSource = icon != nil || item.sourceName != nil
+    return HStack(spacing: 0) {
+      Text(hasSource ? metaText + " · " : metaText).lineLimit(1)
+      if let icon {
         Image(nsImage: icon).resizable().frame(width: 16, height: 16).accessibilityHidden(true)
+          .padding(.trailing, 6)
       }
       if let name = item.sourceName {
         Text(name).lineLimit(1)
@@ -294,7 +307,7 @@ private struct ColorLens: View {
     HStack(alignment: .top, spacing: 12) {
       shape.fill(Color(color))
         .background(Checkerboard().clipShape(shape))
-        .overlay(shape.strokeBorder(.white.opacity(0.2), lineWidth: 1))
+        .overlay(shape.strokeBorder(Style.swatchRim, lineWidth: 1))
         .overlay {
           Text(values[0])
             .font(.system(size: 22, weight: .semibold, design: .rounded))
@@ -375,20 +388,22 @@ private struct ImageLens: View {
   }
 }
 
-/// 文件：一排最多 6 个 48 pt Quick Look 缩略图 + 11 pt 文件名，多的写「+N」
+/// 文件：一排最多 6 个 48 pt Quick Look 缩略图 + 11 pt 文件名，多的写「+N」。每一格 72 宽，缩略图和文件名都靠左：
+/// 第一格贴着透镜的左边线，和上面的标题、下面的元信息行共一条线（在格子里居中的话，缩略图那一格比标题右移 12）
 private struct FileStrip: View {
   let paths: [String]
 
   var body: some View {
     HStack(alignment: .top, spacing: 12) {
       ForEach(paths.prefix(6), id: \.self) { path in
-        VStack(spacing: 4) {
-          FileThumbnail(path: path, side: 48).frame(width: 48, height: 48)
+        VStack(alignment: .leading, spacing: 4) {
+          FileThumbnail(path: path, side: 48).frame(width: 48, height: 48, alignment: .leading)
           Text(URL(filePath: path).lastPathComponent)
             .font(.system(size: 11))
+            .foregroundStyle(Lens.ink)  // 靠左后贴着正文区的边，见 Lens.ink
             .lineLimit(1)
             .truncationMode(.middle)
-            .frame(width: 72)
+            .frame(width: 72, alignment: .leading)
         }
         .help(path)
       }

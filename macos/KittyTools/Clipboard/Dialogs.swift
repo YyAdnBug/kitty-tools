@@ -2,6 +2,7 @@
 // 直接画在面板里、不开 sheet 窗口：非激活浮层的 sheet 拿不稳键盘焦点。一张宽 708、圆角 card 的卡从搜索栏下沿落下
 // （settle，y −8→0 + 淡入；关掉淡出），只压暗列表区；输入框焦点环品牌粉，保存是品牌粉主按钮。
 // 输入框用 isDialogField：出现时抢焦点，关闭后焦点回到它之前的输入框（搜索框，或管理收藏夹下面的新建框）；Esc 关对话框。
+// 字号不用系统文本样式：标题 13 semibold、提示和报错 11（报错 systemRed）；键位提示和面板底栏一个写法（KeyHint：动词 + 键帽）。
 // 管理收藏夹（体检 A1）是键盘列表：行 28、中性高亮、↑↓ 选、↩ / 双击就地改名、⌘⌫ / 行尾「−」删除（不确认，⌘Z 撤销）、拖动排序。
 
 import SwiftUI
@@ -52,13 +53,13 @@ struct DialogOverlay: View {
       }
     case .edit(let id):
       if let item = item(id) {
-        // 提示只说和这条有关的（体检 C2）：片段说占位符（片段本来就按纯文本粘，带格式也不提丢格式），
+        // 说明只说和这条有关的（体检 C2）：片段说占位符（片段本来就按纯文本粘，带格式也不提丢格式），
         // 其余带格式的才说保存后丢格式
-        let hint =
+        let note: String? =
           item.isSnippet
-          ? "⌘↩ 保存 · 占位符：" + Snippet.placeholderHelp
-          : item.richType != nil ? "⌘↩ 保存 · 保存后不再保留原来的格式" : "⌘↩ 保存"
-        TextDialog(title: "编辑内容", hint: hint, initial: item.text ?? "", onCancel: close) {
+          ? "占位符：" + Snippet.placeholderHelp
+          : item.richType != nil ? "保存后不再保留原来的格式" : nil
+        TextDialog(title: "编辑内容", note: note, initial: item.text ?? "", onCancel: close) {
           text, _ in
           model.edit(id, text: text)
           close()
@@ -66,7 +67,7 @@ struct DialogOverlay: View {
       }
     case .newSnippet:
       TextDialog(
-        title: "新建片段", hint: "⌘↩ 保存 · 占位符：" + Snippet.placeholderHelp, initial: "",
+        title: "新建片段", note: "占位符：" + Snippet.placeholderHelp, initial: "",
         asksName: true, onCancel: close
       ) { text, name in
         model.saveSnippet(text, name: name)
@@ -92,10 +93,11 @@ struct DialogOverlay: View {
 }
 
 /// 多行文本对话框（编辑 / 新建片段）：⌘↩ 保存。正文去掉空白后为空、或和原文一样时「保存」置灰、⌘↩ 不生效（体检 C2）。
-/// asksName（新建片段）：顶上一行可选的名称（存成备注，搜索时能搜到），焦点先在这里，Tab 切到正文
+/// asksName（新建片段）：顶上一行可选的名称（存成备注，搜索时能搜到），焦点先在这里，Tab 切到正文。
+/// 输入框下面一行：「保存 ⌘↩」的键位提示，后面接和这条有关的说明（note，没有就只有键位）
 private struct TextDialog: View {
   let title: String
-  let hint: String
+  let note: String?
   let initial: String
   var asksName = false
   let onCancel: () -> Void
@@ -110,11 +112,11 @@ private struct TextDialog: View {
   @State private var bodyFocused = false
 
   init(
-    title: String, hint: String, initial: String, asksName: Bool = false,
+    title: String, note: String?, initial: String, asksName: Bool = false,
     onCancel: @escaping () -> Void, onSave: @escaping (String, String) -> Void
   ) {
     self.title = title
-    self.hint = hint
+    self.note = note
     self.initial = initial
     self.asksName = asksName
     self.onCancel = onCancel
@@ -125,7 +127,7 @@ private struct TextDialog: View {
   var body: some View {
     let canSave = ClipboardPanelModel.canSave(text, initial: initial)
     VStack(alignment: .leading, spacing: 10) {
-      Text(title).font(.headline)
+      Text(title).dialogTitle()
       if asksName {
         CommandTextField(
           text: $name, placeholder: "名称（可选，用于搜索）", isDialogField: true,
@@ -149,7 +151,14 @@ private struct TextDialog: View {
       )
       .frame(height: 200)
       .dialogField(horizontalPadding: 0, focused: !asksName || bodyFocused)
-      Text(hint).font(.caption).foregroundStyle(.secondary)
+      HStack(alignment: .firstTextBaseline, spacing: 12) {
+        KeyHint("保存", "⌘↩")
+        if let note {
+          Text("·").foregroundStyle(.tertiary)
+          Text(note)
+        }
+      }
+      .dialogHint()
       HStack {
         Spacer()
         Button("取消", action: onCancel)
@@ -176,7 +185,7 @@ private struct NoteDialog: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
-      Text("备注").font(.headline)
+      Text("备注").dialogTitle()
       // 搜索只过滤、不排序（体检 A6），备注命中不会排到前面：照实写「能搜到」
       CommandTextField(text: $text, placeholder: "给这条起个名字，搜索时能搜到", isDialogField: true) {
         selector in
@@ -207,7 +216,7 @@ private struct NewGroupDialog: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
-      Text("新建收藏夹").font(.headline)
+      Text("新建收藏夹").dialogTitle()
       GroupNameField(text: $name, placeholder: "收藏夹名称") { selector in
         switch selector {
         case #selector(NSResponder.insertNewline(_:)): create()
@@ -216,7 +225,7 @@ private struct NewGroupDialog: View {
         }
         return true
       }
-      if let error { Text(error).font(.caption).foregroundStyle(.red) }
+      if let error { DialogError(text: error) }
       HStack {
         Spacer()
         Button("取消", action: onCancel)
@@ -261,7 +270,7 @@ private struct ManageGroupsDialog: View {
     var counts: [UUID: Int] = [:]
     for item in model.store.items { if let id = item.groupID { counts[id, default: 0] += 1 } }
     return VStack(alignment: .leading, spacing: 10) {
-      Text("管理收藏夹").font(.headline)
+      Text("管理收藏夹").dialogTitle()
       if groups.isEmpty {
         Text("还没有收藏夹。放进收藏夹的条目都算收藏，不会被清理")
           .font(.system(size: 12))
@@ -283,11 +292,16 @@ private struct ManageGroupsDialog: View {
         }
       }
       GroupNameField(text: $newName, placeholder: "新建收藏夹", onCommand: newFieldCommand)
-      if let error { Text(error).font(.caption).foregroundStyle(.red) }
+      if let error { DialogError(text: error) }
       HStack {
-        Text("↑↓ 选择 · ↩ 改名 · ⌘⌫ 删除 · 拖动排序")
-          .font(.caption)
-          .foregroundStyle(.secondary)
+        HStack(spacing: 12) {
+          KeyHint("选择", "↑↓")
+          KeyHint("改名", "↩")
+          KeyHint("删除", "⌘⌫")
+          Text("·").foregroundStyle(.tertiary)
+          Text("拖动排序")
+        }
+        .dialogHint()
         Spacer()
         Button("完成", action: onClose).buttonStyle(BrandButtonStyle())
       }
@@ -539,7 +553,45 @@ private struct GroupNameField: View {
   }
 }
 
+/// 对话框底下的键位提示：和面板底栏一个写法（mac-whisker §3「面板里共用的几件」）——动词 + 键帽；只提示键位、不能点，
+/// 字跟外面的 dialogHint（11 pt secondary）
+private struct KeyHint: View {
+  let verb: String
+  let key: String
+
+  init(_ verb: String, _ key: String) {
+    self.verb = verb
+    self.key = key
+  }
+
+  var body: some View {
+    HStack(spacing: 6) {
+      Text(verb)
+      KeyCap(key)
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("\(verb)：\(key)")
+  }
+}
+
+/// 输入框下面的报错（名称为空 / 重名）：11 pt，报错的红（systemRed；不是危险色，mac-whisker §3）
+private struct DialogError: View {
+  let text: String
+
+  var body: some View {
+    Text(text).font(.system(size: 11)).foregroundStyle(Color(nsColor: .systemRed))
+  }
+}
+
 extension View {
+  /// 对话框标题：13 semibold
+  fileprivate func dialogTitle() -> some View { font(.system(size: 13, weight: .semibold)) }
+
+  /// 对话框里的提示（键位、说明）：11 pt secondary
+  fileprivate func dialogHint() -> some View {
+    font(.system(size: 11)).foregroundStyle(.secondary)
+  }
+
   /// 对话框里的输入框（Whisker §3）：InputBox（Style.inputFill 底，焦点环 1 pt 品牌粉 0.55 + 粉 0.18 外发光）加内边距。
   /// 只有一个输入框的对话框一直拿着焦点，焦点环常亮；有两个的（新建片段：名称 + 正文）传 focused，没焦点的只描发丝线
   fileprivate func dialogField(horizontalPadding: CGFloat = 6, focused: Bool = true) -> some View {

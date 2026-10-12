@@ -35,7 +35,8 @@ struct ClipboardPanelView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
-  static let width: CGFloat = 720
+  /// 和启动器同宽（两块面板同位置同宽，数只写在 Style 里）
+  static let width = Style.listPanelWidth
   static let searchHeight: CGFloat = 56
   static let barHeight: CGFloat = 36
   static let headerHeight: CGFloat = 24
@@ -383,7 +384,7 @@ struct ClipboardPanelView: View {
       .background {
         RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
           .strokeBorder(.tertiary, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-          .padding(.vertical, 3)
+          .padding(.vertical, 2)
       }
       .contentShape(.rect)
     }
@@ -869,7 +870,7 @@ private struct LensKey: Equatable {
   let isOpen: Bool
 }
 
-/// 搜索框里的粉色筛选标签：高 22、12 medium、品牌粉 0.12 底 + brandInk 字（⌫ 待删时 0.30 底），尾部 8 pt ×。
+/// 搜索框里的粉色筛选标签：高 22、12 medium、品牌粉 0.12 底 + brandInk 字（⌫ 待删时 0.30 底），尾部 8 pt ×（字到 × 6）。
 /// 点标签打开筛选面板，点 × 移除
 private struct TokenChip: View {
   let token: ClipboardPanelModel.Token
@@ -883,7 +884,7 @@ private struct TokenChip: View {
         Text(token.title)
           .lineLimit(1)
           .padding(.leading, 10)
-          .padding(.trailing, 5)
+          .padding(.trailing, 6)
           .frame(height: 22)
           .contentShape(.rect)
       }

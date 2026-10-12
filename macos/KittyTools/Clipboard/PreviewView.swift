@@ -1,5 +1,6 @@
 // ⌘Y 放大卡 = 剪贴板的完整检查器（Whisker，mac-whisker §6 剪贴板；主界面只有透镜 LensView，这张卡只在 QuickLookView 里）：
-// 内缩 6、圆角 10 的一张卡（Style.CardSurface，不加阴影）。页眉 40 pt 取来源 App 图标的颜色（对比度不够时改黑字，**只在这里**，主界面保持中性），
+// 内缩 6、圆角 10 的一张卡（Style.CardSurface，不加阴影）。卡里只有一条左右边线 = 12（PreviewView.edge：页眉、正文块、正文文字、页脚胶囊）。
+// 页眉 40 pt 取来源 App 图标的颜色（对比度不够时改黑字，**只在这里**，主界面保持中性），
 // 写 App 名和「类型 · 大小 · 精确时间」（同透镜）；主体按类型出大预览（字号 ×1.2、文字可选中）：颜色 = 大色块 + HEX / RGB / HSL /
 // SwiftUI 四行点击复制；代码 / JSON = SF Mono + 语法着色；链接 = 300 pt 头图 + 标题 + 网站名（LinkPreview 联网取）；
 // 图片 = 棋盘格上的原尺寸图（比图片区小时居中）+ 右上角的宽×高胶囊（大小只在页眉）+ 识别文字；单个文件 Quick Look、多个文件缩略图网格
@@ -19,6 +20,10 @@ struct PreviewView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private var form: ContentForm? { model.contentForm(of: item) }
+
+  /// 卡里的左右边线：页眉、正文块（图片区 / 色块 / 链接头图）、正文文字、页脚胶囊都从卡边往里 12
+  /// （QuickLookView.idealSize 的常数跟着它）
+  static let edge: CGFloat = 12
 
   var body: some View {
     let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
@@ -59,7 +64,7 @@ struct PreviewView: View {
         .lineLimit(1)
     }
     .foregroundStyle(ink)
-    .padding(.horizontal, 12)
+    .padding(.horizontal, Self.edge)
     .frame(height: 40)
     .background(
       LinearGradient(
@@ -132,12 +137,13 @@ struct PreviewView: View {
             Text(verbatim: "\(image.width)×\(image.height)")
               .font(.system(size: 11, weight: .medium))
               .padding(.horizontal, 8)
-              .padding(.vertical, 3)
+              .padding(.vertical, 2)
               .background(.ultraThinMaterial, in: .capsule)
               .padding(8)
           }
         }
-        .clipShape(.rect(cornerRadius: Style.Radius.card - 2, style: .continuous))
+        // 图片区离卡边 12 > 8：圆角用 card（Whisker §3 同心规则）
+        .clipShape(.rect(cornerRadius: Style.Radius.card, style: .continuous))
         .frame(maxHeight: .infinity)
         // 完整检查器：大图下面也给识别到的文字（可选中，⌘C 同正文只拷纯文本）
         if let ocr = item.ocrText, !ocr.isEmpty {
@@ -149,7 +155,7 @@ struct PreviewView: View {
           .frame(maxHeight: QuickLookView.ocrHeight)
         }
       }
-      .padding(10)
+      .padding(Self.edge)
     case .file:
       if let paths = item.filePaths, paths.count == 1 {
         QuickLookFile(url: URL(filePath: paths[0]))
@@ -171,7 +177,8 @@ struct PreviewView: View {
       Spacer(minLength: 0)
       Pill(title: "操作", symbol: "ellipsis", shortcut: "⌘K") { model.showsActions.toggle() }
     }
-    .padding(8)
+    .padding(.horizontal, Self.edge)
+    .padding(.vertical, 8)
     .overlay(alignment: .top) { Hairline() }
   }
 
@@ -196,7 +203,8 @@ struct PreviewView: View {
   }
 }
 
-/// 无边框胶囊按钮：高 26，12 medium，图标加文字，按下缩到 0.97
+/// 无边框胶囊按钮：高 26，12 medium，图标加文字，按下缩到 0.97。键位（「操作 ⌘K」）是键帽，和面板底栏一个写法；
+/// 带键帽的那一枚右内边距收到 6：键帽高 18、上下各留 4，右边照 10 留的话它在胶囊里偏左
 private struct Pill: View {
   let title: String
   let symbol: String
@@ -205,16 +213,14 @@ private struct Pill: View {
 
   var body: some View {
     Button(action: action) {
-      HStack(spacing: 5) {
+      HStack(spacing: 6) {
         Image(systemName: symbol).font(.system(size: 11, weight: .semibold))
         Text(title).lineLimit(1)
-        if let shortcut {
-          Text(shortcut).font(.system(size: 10.5, weight: .medium, design: .rounded))
-            .foregroundStyle(.secondary)
-        }
+        if let shortcut { KeyCap(shortcut) }
       }
       .font(.system(size: 12, weight: .medium))
-      .padding(.horizontal, 10)
+      .padding(.leading, 10)
+      .padding(.trailing, shortcut == nil ? 10 : 6)
       .frame(height: 26)
       .background(Style.controlFill, in: .capsule)
       .contentShape(.capsule)
@@ -239,13 +245,13 @@ struct ColorCard: View {
 
   var body: some View {
     let values = Self.values(color)
-    // 大卡内缩 10 > 8：色块圆角用 card（Whisker §3 同心规则）
+    // 色块离卡边 12 > 8：圆角用 card（Whisker §3 同心规则）
     let swatch = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
     VStack(alignment: .leading, spacing: 8) {
       swatch
         .fill(Color(color))
         .background(Checkerboard().clipShape(swatch))
-        .overlay(swatch.strokeBorder(.white.opacity(0.2), lineWidth: 1))
+        .overlay(swatch.strokeBorder(Style.swatchRim, lineWidth: 1))
         .overlay {
           Text(values[0])
             .font(.system(size: 22, weight: .semibold, design: .rounded))
@@ -271,14 +277,14 @@ struct ColorCard: View {
               .foregroundStyle(copied == index ? Color(nsColor: .systemGreen) : .secondary)
               .contentTransition(.symbolEffect(.replace))
           }
-          .padding(.horizontal, 6)
+          // 这几行没有底：字和复制图标直接贴着色块的左右边线（卡里只有一条边线）
           .frame(height: 26)
           .contentShape(.rect)
         }
         .buttonStyle(PressScale())
       }
     }
-    .padding(10)
+    .padding(PreviewView.edge)
   }
 
   /// 半透明时 HEX 带 AA、HSL 用 hsla、SwiftUI 带 opacity
@@ -330,7 +336,7 @@ struct LinkCard: View {
     // 开关关着时连取过的也不显示（设置说的是「显示」）
     let entry = fetches ? LinkPreview.shared.entry(for: url) : nil
     let heroShape = RoundedRectangle(
-      cornerRadius: compact ? Style.Radius.control : Style.Radius.card - 2, style: .continuous)
+      cornerRadius: compact ? Style.Radius.control : Style.Radius.card, style: .continuous)
     let hero = LinkHero(url: url, entry: entry)
       .accessibilityHidden(true)  // 标题、网站名已经在旁边说清楚了
       .clipShape(heroShape)
@@ -346,7 +352,7 @@ struct LinkCard: View {
           hero.frame(height: 300)
           details(entry, selectableURL: true)
         }
-        .padding(10)
+        .padding(PreviewView.edge)
       }
     }
     .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: entry?.metadata)
@@ -364,7 +370,7 @@ struct LinkCard: View {
   /// 标题 + 网站 + 网址；大卡的网址可选中、两行，透镜里一行
   private func details(_ entry: LinkPreview.Entry?, selectableURL selectable: Bool) -> some View {
     let host = url.host() ?? url.absoluteString
-    return VStack(alignment: .leading, spacing: compact ? 5 : 8) {
+    return VStack(alignment: .leading, spacing: compact ? 6 : 8) {
       Text(entry?.metadata.title ?? host)
         .font(.system(size: 15, weight: .semibold))
         .lineLimit(2)
@@ -610,7 +616,8 @@ private struct ReadOnlyTextView: NSViewRepresentable {
   let style: SyntaxHighlight.Language
   let highlights: [String]
   var fontScale: CGFloat = 1
-  var inset = NSSize(width: 10, height: 12)
+  /// 文字离边：左右就是卡的边线（行片段自带的左右 5 pt 留白清掉了，见 makeNSView）
+  var inset = NSSize(width: PreviewView.edge, height: 12)
   let onCopy: (String) -> Void
 
   func makeNSView(context: Context) -> NSScrollView {
@@ -619,6 +626,8 @@ private struct ReadOnlyTextView: NSViewRepresentable {
     textView.isSelectable = true
     textView.drawsBackground = false
     textView.textContainerInset = inset
+    // NSTextView 默认在每行两头再留 5 pt：不清掉的话字比 inset 往里 5，和页眉、「识别到的文字」的标题对不齐
+    textView.textContainer?.lineFragmentPadding = 0
     textView.isVerticallyResizable = true
     textView.autoresizingMask = [.width]
     textView.textContainer?.widthTracksTextView = true

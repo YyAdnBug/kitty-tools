@@ -1,7 +1,7 @@
 // Whisker 设计刻度（mac-whisker.mdc §2–4、§7）：圆角、七条命名弹簧曲线、强调色（取自 Accent）、中性色与功能家族色、
 // 面板描边、卡片表面（CardSurface）、发丝线（Hairline / hairlineBorder，增强对比度时 1 pt）、输入框底、复制对勾停留、
-// 种类色块与键帽、面板内浮层的阴影（floatingShadow）、空状态（EmptyState）。界面里的圆角、曲线、强调色、选中色、
-// 发丝线一律从这里取，不硬编码；新增的值至少要被三处复用才放进来。
+// 种类色块与键帽、面板内浮层的阴影（floatingShadow）、空状态（EmptyState）、列表型面板的宽、色值色块的内描边。
+// 界面里的圆角、曲线、强调色、选中色、发丝线一律从这里取，不硬编码；新增的值至少要被三处复用才放进来。
 
 import AppKit
 import SwiftUI
@@ -22,6 +22,11 @@ enum Style {
     /// 色块（App 图标比例）：18 → 4、24 → 5.5、30 → 7、40 → 9
     static func tile(_ side: CGFloat) -> CGFloat { side * 0.225 }
   }
+
+  // MARK: 尺寸
+
+  /// 列表型面板（剪贴板、启动器）的宽：两块面板同位置同宽（mac-whisker-clipboard「窗口」），只写这一处
+  static let listPanelWidth: CGFloat = 720
 
   // MARK: 动效
 
@@ -163,6 +168,9 @@ enum Style {
   static func hairlineWidth(_ contrast: ColorSchemeContrast) -> CGFloat {
     contrast == .increased ? 1 : 0.5
   }
+  /// 色值色块的内描边（线宽 1 pt）：剪贴板行图标、透镜、⌘Y 大卡三处的色块共用，颜色再浅在浅底上也有边。
+  /// 种类色块 KindTile 的 0.18 / 0.5 pt 是另一种东西（渐变色块的边），不用它
+  static let swatchRim = Color.white.opacity(0.2)
   /// 降低透明度时自绘的卡片 / 剪贴板透镜垫 0.9 不透明底（§7）：只给 15 的毛玻璃；macOS 26 的面板玻璃自己变实，不再垫
   static func opaqueUnderlay(reduceTransparency: Bool) -> Bool {
     if #available(macOS 26, *) { return false }

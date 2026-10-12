@@ -48,40 +48,50 @@ struct ClipRowView: View {
         .lineLimit(1)
         .truncationMode(.tail)
       Spacer(minLength: 8)
-      trailing
-        .font(.system(size: 11))
-        .lineLimit(1)
-        .truncationMode(.tail)
-        .frame(maxWidth: Self.trailingMax, alignment: .trailing)
-        .layoutPriority(1)
-      if let groupName {
-        Text(groupName)
-          .font(.system(size: 10, weight: .medium))
-          .lineLimit(1)
-          .padding(.horizontal, 6)
-          .frame(height: 16)
-          .background(
-            Style.controlFill, in: .rect(cornerRadius: Style.Radius.control, style: .continuous))
+      // 右侧文字、标记、星标是一组，星标自己带它前面的间距：没收藏时星标宽 0、间距也是 0（直接放在外层 HStack 里的话，
+      // 宽 0 的星标仍占一个间距，没收藏的行右侧文字比分组横线、键帽往里缩 10 pt）
+      HStack(spacing: 0) {
+        HStack(spacing: Self.spacing) {
+          trailing
+            .font(.system(size: 11))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(maxWidth: Self.trailingMax, alignment: .trailing)
+            .layoutPriority(1)
+          if let groupName {
+            Text(groupName)
+              .font(.system(size: 10, weight: .medium))
+              .lineLimit(1)
+              .padding(.horizontal, 6)
+              .frame(height: 16)
+              .background(
+                Style.controlFill, in: .rect(cornerRadius: Style.Radius.control, style: .continuous)
+              )
+          }
+          if item.richType != nil {
+            // 带格式（RTF / HTML）。textformat 在中文系统上画成「格式」两个字；B I U 不跟系统语言换字形
+            Image(systemName: "bold.italic.underline").imageScale(.small).foregroundStyle(.tertiary)
+              .help("带格式")
+          }
+          if item.isSnippet {
+            Image(systemName: "text.badge.star").imageScale(.small).foregroundStyle(.secondary)
+              .help("片段")
+          }
+        }
+        Image(systemName: "star.fill")
+          .font(.system(size: 11))
+          .foregroundStyle(Color(nsColor: .systemYellow))
+          .opacity(item.favorite ? 1 : 0)
+          .scaleEffect(item.favorite || reduceMotion ? 1 : 0.4)
+          .symbolEffect(.bounce, value: item.favorite)
+          // 宽度和前面的间距都在动画里：收藏时星星挤开旁边的标记，而不是跳
+          .frame(width: item.favorite ? nil : 0)
+          .padding(.leading, item.favorite ? Self.spacing : 0)
+          .animation(Style.Motion.pop.animation(reduced: reduceMotion), value: item.favorite)
+          .accessibilityLabel(item.favorite ? "已收藏" : "")
       }
-      if item.richType != nil {
-        // 带格式（RTF / HTML）。textformat 在中文系统上画成「格式」两个字；B I U 不跟系统语言换字形
-        Image(systemName: "bold.italic.underline").imageScale(.small).foregroundStyle(.tertiary)
-          .help("带格式")
-      }
-      if item.isSnippet {
-        Image(systemName: "text.badge.star").imageScale(.small).foregroundStyle(.secondary)
-          .help("片段")
-      }
-      Image(systemName: "star.fill")
-        .font(.system(size: 11))
-        .foregroundStyle(Color(nsColor: .systemYellow))
-        .opacity(item.favorite ? 1 : 0)
-        .scaleEffect(item.favorite || reduceMotion ? 1 : 0.4)
-        .symbolEffect(.bounce, value: item.favorite)
-        // 宽度也在动画里：收藏时星星挤开旁边的标记，而不是跳
-        .frame(width: item.favorite ? nil : 0)
-        .animation(Style.Motion.pop.animation(reduced: reduceMotion), value: item.favorite)
-        .accessibilityLabel(item.favorite ? "已收藏" : "")
+      // 和原来右侧文字那一格一样先分到宽度（里面那一格最宽 220），剩下的才是标题的
+      .layoutPriority(1)
       // 没按 ⌘ 时不在布局里（占着宽度和间距的话，前九行的标题比别的行早截断）
       if isChecked == nil, let shortcutIndex, showsShortcut {
         KeyCap("⌘\(shortcutIndex + 1)")
@@ -133,7 +143,7 @@ struct ClipRowView: View {
   /// 标题已经把整条文本原样显示出来了：去掉首尾空白后和标题一字不差（一行，没有被压成一个空格的连续空白），
   /// 而且标题列最窄时也放得下。这时透镜不再把同一句话画第二遍（Lens.bodyHeight 给 0，只剩元信息行），
   /// 有搜索词时标题也不摘录。透镜的高度进前缀和，所以只看条目自己的数据（纯函数，不读时间、修饰键、系统设置）：
-  /// ⌘数字键帽和常显的滚动条都当它在——真的标题列只会比这里算的宽（342 – 396 pt 减去标记；
+  /// ⌘数字键帽和常显的滚动条都当它在——真的标题列只会比这里算的宽（352 – 406 pt 减去标记；
   /// ClipboardPanelTests.wholeTitleIsNotTruncated 把行画出来对过）。
   /// ponytail: 收藏夹筛选为「全部」时行尾多一个收藏夹胶囊，没算进来：收藏夹名超过三个字、标题又贴着上限时
   /// 会被截掉几个字（⌘Y 看全文）；真碰到再把收藏夹名的宽度传进来
@@ -142,16 +152,16 @@ struct ClipRowView: View {
     guard item.kind == .text, let text = item.text, text.utf8.count <= 400 else { return false }
     let title = item.title
     guard title == text.trimmingCharacters(in: .whitespacesAndNewlines) else { return false }
-    // 标题列最窄时：行宽 − 常显的滚动条 16 − 左右内边距 − 图标块 − 四处固定间距（图标后、Spacer 两边、星标前）
+    // 标题列最窄时：行宽 − 常显的滚动条 16 − 左右内边距 − 图标块 − 三处固定间距（图标后、Spacer 两边）
     // − Spacer 最窄 8 − 右侧文字那一格（带 maxWidth 的 frame 有多少占多少，字再短也占满 220）
     // − ⌘数字键帽（⌘9 约 27.4）连它前面的间距
     var room =
       ClipboardPanelView.width - 2 * ClipboardPanelView.inset - 16 - 2 * padding - IconTile.side
-      - 4 * spacing - 8 - trailingMax - (spacing + 28)
-    // 标记的宽度是 SF Symbols 实测后取整：带格式 23、片段 14、星标 15
+      - 3 * spacing - 8 - trailingMax - (spacing + 28)
+    // 标记各连它前面的间距（星标没收藏时连间距都不占）；宽度是 SF Symbols 实测后取整：带格式 23、片段 14、星标 15
     if item.richType != nil { room -= spacing + 24 }
     if item.isSnippet { room -= spacing + 16 }
-    if item.favorite { room -= 16 }
+    if item.favorite { room -= spacing + 16 }
     let width = (title as NSString).size(
       withAttributes: [.font: NSFont.systemFont(ofSize: 13)]
     ).width
@@ -186,12 +196,14 @@ struct IconTile: View {
 
   var body: some View {
     let shape = RoundedRectangle(cornerRadius: Style.Radius.tile(Self.side), style: .continuous)
-    let badgeShape = RoundedRectangle(cornerRadius: Style.Radius.mini - 1, style: .continuous)
+    // 角标也按色块公式取圆角（边长 × 0.225），和它贴着的图标块一个比例
+    let badgeShape = RoundedRectangle(
+      cornerRadius: Style.Radius.tile(Self.badge), style: .continuous)
     Group {
       if form == .color, let color = ContentForm.color(in: item.text ?? "") {
         shape.fill(Color(color))
           .background(Checkerboard(cell: 4).clipShape(shape))
-          .overlay(shape.strokeBorder(.white.opacity(0.25), lineWidth: 1))
+          .overlay(shape.strokeBorder(Style.swatchRim, lineWidth: 1))
       } else if item.kind == .image {
         // 先定框再裁：fill 的图比框宽（长截图 5:1），只裁自己的边界会溢出盖住标题
         ThumbnailView(id: item.id, images: images, maxPixel: ThumbnailView.iconPixel)

@@ -1,7 +1,8 @@
 // 剪贴板面板交互（体检第 3 批）的纯逻辑单测：JSON 默认美化与缓存、条目消失后选中挪到下一条、多选随搜索裁剪、
 // 右键 / ⌘Y「复制」只复制被点的那条、菜单开着时过滤框的编辑键、⌘K 与右键同一份动作表（分节、子列表、按类型的动作）、
 // 共用的菜单过滤（拼音前缀）、钉到屏幕的位置、复制路径、拖出去的剪贴板条目、对话框能否保存、⌘Y 里的纯文本复制、
-// 判定「行标题已显示全」的条目在行里真的没被截断（把行画在屏外窗口里比像素）、缩略图缓存的记账和大卡档的丢弃。
+// 判定「行标题已显示全」的条目在行里真的没被截断（把行画在屏外窗口里比像素）、行右侧的字停在行的右边线上、
+// 缩略图缓存的记账和大卡档的丢弃。
 // 用内存库 + 临时目录，不碰真实数据；不跑会真的打开网址 / 文件、弹面板的动作。
 
 import AppKit
@@ -400,7 +401,7 @@ struct ClipboardPanelTests {
     #expect(second.origin == CGPoint(x: small.minX + 24, y: small.minY - 24))
   }
 
-  /// ⌘Y 大卡放图片时的窗口尺寸：放得下按原尺寸（点 = 像素 ÷ 屏幕倍率，加四周 48、页眉页脚 130、识别文字 170）；
+  /// ⌘Y 大卡放图片时的窗口尺寸：放得下按原尺寸（点 = 像素 ÷ 屏幕倍率，加四周 52、页眉页脚 134、识别文字 170）；
   /// 屏幕放不下时图片等比缩小、窗口跟着图片的比例走——宽高各夹各的话图片区比图片宽出一截，图片旁边空一大块
   /// （用户 2026-10-01 报告的两张）；再小不小于 560 × 420
   @Test func quickLookSizeFollowsImageRatio() {
@@ -418,17 +419,17 @@ struct ClipboardPanelTests {
     func near(_ size: NSSize, _ width: CGFloat, _ height: CGFloat) -> Bool {
       abs(size.width - width) < 0.5 && abs(size.height - height) < 0.5
     }
-    #expect(size(image(1600, 800)) == NSSize(width: 848, height: 530))
-    // 3420×1982 的整屏截图带识别文字：被高度卡住，图片 842 × 488，窗口 890 宽（原来 1360 宽，图片两边共空出 470）
-    #expect(near(size(image(3420, 1982, ocr: "字")), 890, 788))
-    // 857×1761 的手机截图：缩到 238 × 488，窗口是最小宽度 560，图片在里面居中
+    #expect(size(image(1600, 800)) == NSSize(width: 852, height: 534))
+    // 3420×1982 的整屏截图带识别文字：被高度卡住，图片 835 × 484，窗口 887 宽（原来 1360 宽，图片两边共空出 470）
+    #expect(near(size(image(3420, 1982, ocr: "字")), 887, 788))
+    // 857×1761 的手机截图：缩到 236 × 484，窗口是最小宽度 560，图片在里面居中
     #expect(near(size(image(857, 1761, ocr: "字")), 560, 788))
     // 被宽度卡住的长条图：高度跟着缩，不小于 420
     #expect(near(size(image(8000, 400)), 1360, 420))
     // 不给上限就是原尺寸
     #expect(
       QuickLookView.idealSize(for: image(3420, 1982), form: nil, scale: 2)
-        == NSSize(width: 1758, height: 1121))
+        == NSSize(width: 1762, height: 1125))
   }
 
   /// ⌥⌘C 复制路径（体检 D2）：多个按换行拼；面板开着时列表不动，收起面板时才记成一条新历史（同 ⌘C）
@@ -624,6 +625,53 @@ struct ClipboardPanelTests {
       #expect(try titlePixels(item, width: rowWidth, title: title) == wide, "\(name)：标题被截断了")
       #expect(try titlePixels(item, width: rowWidth - 40, title: title) != wide, "\(name)：对照")
     }
+  }
+
+  /// 行右侧的字和别处共用一条右边线（2026-10-12 视觉对齐）：没收藏的行，右侧文字的右缘离行右边就是行内边距 10——
+  /// 宽 0 的星标不再占一个间距（原来往里缩 10，停在 20）；收藏了的行最右边是星标，同一条线。
+  /// 把行画在屏外窗口里，量最右边有墨的那一列离右边多远。屏外窗口，不弹面板、不抢键盘
+  @Test func trailingTextSharesRowEdge() throws {
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let images = ImageStore(directory: directory)
+    let suite = "kitty-row-test-\(UUID().uuidString)"
+    let prefs = try #require(UserDefaults(suiteName: suite))
+    defer { prefs.removePersistentDomain(forName: suite) }
+    /// 最右边有墨的那一列到行右边的距离（点）
+    func rightGap(_ item: ClipItem) throws -> CGFloat {
+      let size = NSSize(width: 400, height: ClipRowView.height)
+      let window = NSWindow(
+        contentRect: NSRect(origin: NSPoint(x: -20000, y: -20000), size: size),
+        styleMask: [.borderless], backing: .buffered, defer: false)
+      let host = NSHostingView(
+        rootView: ClipRowView(
+          item: item, form: nil, shortcutIndex: nil, showsShortcut: false, isChecked: nil,
+          groupName: nil, images: images
+        )
+        .frame(width: size.width)
+        .defaultAppStorage(prefs))
+      window.contentView = host
+      window.orderFront(nil)
+      defer { window.orderOut(nil) }
+      RunLoop.main.run(until: .now.addingTimeInterval(0.3))
+      let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+      host.cacheDisplay(in: host.bounds, to: bitmap)
+      let ink = (0..<bitmap.pixelsWide).last { x in
+        (0..<bitmap.pixelsHigh).contains {
+          (bitmap.colorAt(x: x, y: $0)?.alphaComponent ?? 0) > 0.2
+        }
+      }
+      let scale = CGFloat(bitmap.pixelsWide) / size.width
+      return CGFloat(bitmap.pixelsWide - 1 - (try #require(ink))) / scale
+    }
+    var plain = ClipItem(kind: .text)
+    plain.text = "标题"
+    plain.note = "备注"
+    var favorite = plain
+    favorite.favorite = true
+    // 字形两边自带一点留白：离 10 不超过 2 pt 都算对上（星标还占着间距的话，没收藏的是 20 出头）
+    let (plainGap, favoriteGap) = (try rightGap(plain), try rightGap(favorite))
+    #expect(abs(plainGap - 10) <= 2, "没收藏：\(plainGap)")
+    #expect(abs(favoriteGap - 10) <= 2, "收藏：\(favoriteGap)")
   }
 
   /// 缩略图缓存怎么记账（第二轮体检 M1）：cost = 宽 × 高 × 4 × 2（画过的每张在内存里留两份）；行图标档进 icons（按张数封顶），

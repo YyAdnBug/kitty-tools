@@ -44,9 +44,10 @@ struct QuickLookView: View {
     case .image:
       let width = CGFloat(item.image?.width ?? 1600) / scale
       let height = CGFloat(item.image?.height ?? 1000) / scale
-      // 卡片内缩 6、图片区内边距 10 + 8；页眉 40、页脚 42；识别文字：标题 + 间距约 30 + 文字区
+      // 卡片内缩 6、图片区离卡边 12（PreviewView.edge）、图片四周再让 8；页眉 40、页脚 42；
+      // 识别文字：标题 + 间距约 30 + 文字区
       let ocr = (item.ocrText ?? "").isEmpty ? 0 : ocrHeight + 30
-      let chrome = NSSize(width: 48, height: 130 + ocr)
+      let chrome = NSSize(width: 52, height: 134 + ocr)
       // 屏幕放不下原尺寸时图片等比缩小，窗口跟着图片的比例走：宽高各夹各的话，图片区比图片宽（或高）出一大截
       let fit = max(
         0, min(1, (limit.width - chrome.width) / width, (limit.height - chrome.height) / height))

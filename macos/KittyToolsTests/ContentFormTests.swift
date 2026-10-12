@@ -119,8 +119,8 @@ struct ContentFormTests {
     #expect(Lens.reserve == 198 - ClipRowView.height)
   }
 
-  /// 行标题有没有把整条文本原样显示全（透镜要不要正文区）：只看条目自己的数据。标题列最窄 342 pt
-  /// （右侧文字那一格不管字多短都占满 220），带格式 / 片段 / 收藏标记再各占一点
+  /// 行标题有没有把整条文本原样显示全（透镜要不要正文区）：只看条目自己的数据。标题列最窄 352 pt
+  /// （右侧文字那一格不管字多短都占满 220），带格式 / 片段 / 收藏标记再各占一点（没收藏时星标连间距都不占）
   @Test func rowShowsWholeText() {
     func text(_ count: Int, _ change: (inout ClipItem) -> Void = { _ in }) -> ClipItem {
       text(String(repeating: "字", count: count), change)  // 13 pt 下一个字约 12.9 pt 宽
@@ -132,10 +132,13 @@ struct ContentFormTests {
       return item
     }
     #expect(ClipRowView.showsWholeText(text("大合唱练歌") { $0.richType = .html }))
-    #expect(ClipRowView.showsWholeText(text(26)))
-    #expect(!ClipRowView.showsWholeText(text(27)))
-    // 备注、来源名多长都一样；三个标记一共占掉 76
-    #expect(ClipRowView.showsWholeText(text(26) { $0.note = String(repeating: "备注", count: 20) }))
+    #expect(ClipRowView.showsWholeText(text(27)))
+    #expect(!ClipRowView.showsWholeText(text(28)))
+    // 收藏的少一个字：星标连它前面的间距占掉 26
+    #expect(ClipRowView.showsWholeText(text(25) { $0.favorite = true }))
+    #expect(!ClipRowView.showsWholeText(text(26) { $0.favorite = true }))
+    // 备注、来源名多长都一样；三个标记一共占掉 86
+    #expect(ClipRowView.showsWholeText(text(27) { $0.note = String(repeating: "备注", count: 20) }))
     func marked(_ count: Int) -> ClipItem {
       text(count) {
         $0.richType = .rtf

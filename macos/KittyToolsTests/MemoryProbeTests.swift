@@ -193,7 +193,7 @@ private final class Probe {
     let cells: [Int: CGSize] = [
       icon: CGSize(width: 24, height: 24), lens: CGSize(width: 108 * aspect, height: 108),
       card: CGSize(
-        width: big.width - 48, height: big.height - 130 - QuickLookView.ocrHeight - 30),
+        width: big.width - 52, height: big.height - 134 - QuickLookView.ocrHeight - 30),
     ]
     /// 屏外开一个小窗口，用真的 ThumbnailView 把 ids 一批一批画出来（每批 batch 张，画完停 pause 秒）；窗口只活在这个池里，
     /// 出去就真的释放了（文件头第 2 个坑）。preload：先把这一批取进缓存再换图（一批十几张时不用猜要等多久）。

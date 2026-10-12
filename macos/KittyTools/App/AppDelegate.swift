@@ -166,7 +166,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private lazy var launcherPanel: OverlayPanel = {
     let model = launcherModel
     let panel = OverlayPanel(
-      size: NSSize(width: 720, height: LauncherPanelView.searchHeight), topAnchored: true,
+      size: NSSize(width: Style.listPanelWidth, height: LauncherPanelView.searchHeight),
+      topAnchored: true,
       // 启动器没有固定（N8）：点外面就收起
       autoHide: .clickOutside, isPinned: { false },
       content: LauncherPanelView(model: model).environment(updater))

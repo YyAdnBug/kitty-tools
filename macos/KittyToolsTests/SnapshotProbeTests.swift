@@ -440,14 +440,15 @@ struct SnapshotProbeTests {
       }
     }
     Accent.shared.select(savedAccent, persists: false)
-    // ⌘Y 放大预览 = 完整检查器：代码（放大的字）、链接（大头图）、图片（带识别文字）、多个文件（网格）、JSON（默认美化），
-    // 按各自的理想尺寸；页脚第 3 个胶囊按类型（打开 / 钉到屏幕 / 在访达中显示 / 原文，体检 D2）
+    // ⌘Y 放大预览 = 完整检查器：代码（放大的字）、链接（大头图）、图片（带识别文字）、多个文件（网格）、JSON（默认美化）、
+    // 颜色（大色块 + 四行色值），按各自的理想尺寸；页脚第 3 个胶囊按类型（打开 / 钉到屏幕 / 在访达中显示 / 原文，体检 D2）
     let quickLooks: [(String, (ClipItem) -> Bool)] = [
       ("quicklook-code", { $0.text?.hasPrefix("import") == true }),
       ("quicklook-json", { $0.text?.hasPrefix("{\"name") == true }),
       ("quicklook-link", { $0.text?.hasPrefix("https://developer") == true }),
       ("quicklook-image", { $0.kind == .image }),
       ("quicklook-files", { $0.kind == .file }),
+      ("quicklook-color", { $0.text == "#3478F6" }),
     ]
     for (name, match) in quickLooks {
       model.reset()
