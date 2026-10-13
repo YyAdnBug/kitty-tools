@@ -86,7 +86,8 @@ struct NoteDeckTests {
     #expect(registered[Prefs.notesDeckNoteSize] as? String == "medium")
   }
 
-  /// 设置跟着导出文件走；药丸的位置、指定的是哪块屏、提示说没说过是这台电脑自己的状态，不注册默认值、不导出
+  /// 设置跟着导出文件走；药丸的位置、指定的是哪块屏、提示说没说过、示例便签放没放过是这台电脑自己的状态，
+  /// 不注册默认值、不导出
   @Test func machineStateIsNotRegistered() {
     let exported = [
       Prefs.notesDeckEnabled, Prefs.notesDeckEdge, Prefs.notesDeckDisplay, Prefs.notesDeckStyle,
@@ -99,6 +100,7 @@ struct NoteDeckTests {
     }
     for key in [
       Prefs.notesDeckPosition, Prefs.notesDeckChosenDisplay, Prefs.notesDeckHintShown,
+      Prefs.notesSampleAdded,
     ] {
       #expect(Prefs.defaults[key] == nil && SettingsArchive.kinds[key] == nil, "\(key)")
     }
@@ -1176,7 +1178,9 @@ struct NoteDeckTests {
 
   private static let offscreen = CGRect(x: -30000, y: -30000, width: 538, height: 875)
 
-  /// 一块摆在离所有屏幕很远的地方的那叠（先确认真在屏幕外）。只许扇出，不许打开便签（会当 key）
+  /// 一块摆在离所有屏幕很远的地方的那叠（先确认真在屏幕外）。**永远不当 key**（takesKeyboard: false——屏外的面板
+  /// 一当 key，用户正在用的那个 App 就丢了键盘）；要打开便签的测试先把便签固定上：便签开着时装着全局的鼠标监听，
+  /// 用户这时在别处点一下，没固定的会被当成「点别处」收掉
   private func offscreenDeck(_ bodies: [String], lingering: Duration = .seconds(2)) throws
     -> NoteDeck
   {
@@ -1193,9 +1197,19 @@ struct NoteDeckTests {
     }
     let store = try NoteStore(db: Database(path: ":memory:"))
     for body in bodies.reversed() { store.create(body: body) }
-    let deck = NoteDeck(store: store, island: nil, lingering: lingering)
+    let deck = NoteDeck(store: store, island: nil, lingering: lingering, takesKeyboard: false)
     deck.place(on: far, edge: .right, options: options)
     return deck
+  }
+
+  /// 面板的第一响应者是哪条便签的正文框（它的编号）；不是正文框就是 nil
+  private func focusedNote(_ deck: NoteDeck) -> String? {
+    (deck.panel?.firstResponder as? SourceTextView.FocusTextView)?.identifier?.rawValue
+  }
+
+  /// 等界面跟上：一轮一轮让出去，到条件成立为止（最多 3 秒；按轮数、不掐时间）
+  private func settle(until done: () -> Bool) async throws {
+    for _ in 0..<150 where !done() { try await Task.sleep(for: .milliseconds(20)) }
   }
 
   /// 面板宿主上「跟鼠标」的那块追踪区（自己加的：activeAlways + mouseMoved）
@@ -1603,6 +1617,102 @@ struct NoteDeckTests {
     // 放掉之后再扇出：新建的一块
     deck.pill?.onPress()
     #expect(deck.panel != nil && deck.panel !== first)
+  }
+
+  /// 点标签（打开、换一条）、「新建便签」、悬停打开之后，焦点自己进那条便签的正文（2026-10-13 手测反馈）。
+  /// 面板在屏幕外、**不当 key**（makeFirstResponder 不要求窗口是 key）；便签都固定着（见 offscreenDeck）
+  @Test func openingANoteFocusesItsBody() async throws {
+    let deck = try offscreenDeck(["甲", "乙", "丙"])
+    defer { deck.close() }
+    let store = deck.model.store
+    let ids = store.active.map(\.id)
+    for id in ids { store.setPinned(true, of: id) }
+    deck.pill?.onPress()
+    #expect(focusedNote(deck) == nil)
+    // 打开
+    deck.model.tapTab(ids[0])
+    try await settle { focusedNote(deck) == ids[0] }
+    #expect(focusedNote(deck) == ids[0] && deck.panel?.isKeyWindow == false)
+    // 换一条：旧的那块编辑区还在淡出，焦点要进新的那条
+    deck.model.tapTab(ids[1])
+    try await settle { focusedNote(deck) == ids[1] }
+    #expect(focusedNote(deck) == ids[1])
+    // 「新建便签」落在别的一条上（全局动作、标签列下的「+」最后都走 open(created:)）
+    deck.model.open(created: ids[2])
+    try await settle { focusedNote(deck) == ids[2] }
+    #expect(focusedNote(deck) == ids[2])
+    // 焦点被拿走之后（操作菜单开着时在面板自己身上），再要一次还回来：标题框里 ↩ / Tab、复用的空白便签
+    deck.panel?.makeFirstResponder(nil)
+    #expect(focusedNote(deck) == nil)
+    deck.model.open(created: ids[2])
+    try await settle { focusedNote(deck) == ids[2] }
+    #expect(focusedNote(deck) == ids[2])
+    // 关掉回到那一列，再靠悬停打开：不当 key，第一响应者照样落在正文上
+    deck.model.send(.close)
+    #expect(deck.model.state.phase == .fanned)
+    deck.model.openFromHover(ids[0])
+    try await settle { focusedNote(deck) == ids[0] }
+    #expect(focusedNote(deck) == ids[0] && deck.panel?.isKeyWindow == false)
+  }
+
+  /// 该哪条便签的正文拿焦点（界面读的那一份）：每次打开 / 换一条记一次，只有那一条拿得到；再要一次次数加一；
+  /// 便签没开着时要了不算
+  @Test func focusFollowsTheOpenNote() throws {
+    let (model, _, ids) = try make(["甲", "乙"])
+    var asked = 0
+    model.focusBody = { asked += 1 }
+    #expect(model.focus == nil && model.focusRequest(for: ids[0]) == nil)
+    model.requestFocus()
+    #expect(model.focus == nil && asked == 0)
+    model.send(Self.enter)
+    model.tapTab(ids[0])
+    let first = try #require(model.focusRequest(for: ids[0]))
+    #expect(model.focusRequest(for: ids[1]) == nil)
+    model.tapTab(ids[1])
+    let second = try #require(model.focusRequest(for: ids[1]))
+    #expect(second > first && model.focusRequest(for: ids[0]) == nil && asked == 0)
+    // 标题框里 ↩ / Tab、复用的空白便签：再要一次（并叫窗口那边当 key、兜底去找）
+    model.requestFocus()
+    #expect(model.focusRequest(for: ids[1]) == second + 1 && asked == 1)
+    model.open(created: ids[1])
+    #expect(model.focusRequest(for: ids[1]) == second + 2 && asked == 2)
+    // 悬停打开的也记（不当 key，第一响应者照样落在正文上）
+    model.send(.close)
+    model.openFromHover(ids[0])
+    #expect(model.focusRequest(for: ids[0]) == second + 3)
+  }
+
+  /// 视图树里有几块 HoverTracker 的追踪视图（标签、预览卡的悬停）
+  private func hoverViews(in view: NSView?) -> Int {
+    guard let view else { return 0 }
+    return (view is HoverTracker.TrackingView ? 1 : 0)
+      + view.subviews.reduce(0) { $0 + hoverViews(in: $1) }
+  }
+
+  /// 2026-10-13 真机崩溃的复现（扇出、收回约 2 秒后必崩）：放掉面板时它的视图跟着拆，标签上 HoverTracker 的视图被
+  /// 移出窗口会补报一个「移出」，一路回调到 NoteDeck 去读 panel——原来那句 `panel = nil` 正写到一半，独占访问检查
+  /// 直接终止进程。走「收起后到点放掉」和 close() 两条路都不能崩。
+  /// **这里不能把面板存进局部变量**：有别人拿着它，置空时就不释放、复现不出来（panelIsReleasedAfterLingering
+  /// 没崩就是这个原因）
+  @Test func releasingThePanelSurvivesViewCallbacks() async throws {
+    let deck = try offscreenDeck(["一", "二"], lingering: .milliseconds(40))
+    deck.pill?.onPress()
+    deck.panel?.contentView?.layoutSubtreeIfNeeded()
+    // 标签的悬停追踪视图真建出来了（没有它们就复现不了）
+    #expect(hoverViews(in: deck.panel?.contentView) >= 2)
+    deck.suspend(.keepsOpen)
+    #expect(deck.isLingering)
+    for _ in 0..<500 where deck.panel != nil { try await Task.sleep(for: .milliseconds(20)) }
+    #expect(deck.panel == nil && deck.model.state.phase == .rest && !deck.isAwaitingLeave)
+    // close() 那条路：扇着的时候这块屏不放了
+    deck.pill?.onPress()
+    deck.panel?.contentView?.layoutSubtreeIfNeeded()
+    #expect(hoverViews(in: deck.panel?.contentView) >= 2)
+    // 让出一轮：这一段里对面板的临时引用都放手了，close() 里才是真的释放
+    try await Task.sleep(for: .milliseconds(20))
+    #expect(deck.model.state.phase == .fanned)
+    deck.close()
+    #expect(deck.panel == nil && deck.pill == nil && !deck.isAwaitingLeave)
   }
 
   /// 旁白「按下」药丸扇出的：鼠标本来就不在热区里，不排「离开了就收」（只靠 4 秒没动静）；鼠标进来的那条路照常——

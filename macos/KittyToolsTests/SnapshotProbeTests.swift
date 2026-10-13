@@ -1330,6 +1330,15 @@ struct SnapshotProbeTests {
     let draft = NoteCaptureModel(store: store)
     draft.draft = "下周一上午十点牙医\n带上上次的片子"
     try capture("draft", draft)
+    // 新便签的标题：填了的、只填了标题的（「记下」亮着）
+    let titled = NoteCaptureModel(store: store)
+    titled.title = "周五的牙医"
+    titled.draft = "上午十点，带上上次的片子"
+    try capture("title", titled)
+    let titleOnly = NoteCaptureModel(store: store)
+    titleOnly.title = "只有标题的一条"
+    try capture("title-only", titleOnly)
+    try capture("title-only-dark", titleOnly, dark: true)
     for dark in [false, true] {
       let target = NoteCaptureModel(store: store)
       target.select(2)

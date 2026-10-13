@@ -3,7 +3,7 @@
 // 便利贴的样子（浅纸深字），深色那套是同一个色相的深纸浅字（深色外观下一块浅黄的纸太刺眼），墨对纸都够 4.5:1，
 // 次要的字（secondaryInk，墨的 75%）也够（NotesWindowTests 锁住）。
 // 纸色是内容的颜色（同剪贴板里复制的色值、来源 App 的图标），不是强调色：不跟设置里的强调色变，也不拿它标「该操作的东西」。
-// 颜色的名字用在菜单和旁白里。
+// 颜色的名字用在菜单和旁白里。选颜色的地方都用同一份表（colorItems）：每一项前面是它的纸色圆点，现在的那种打勾。
 
 import AppKit
 import SwiftUI
@@ -95,6 +95,21 @@ nonisolated struct NotePaper: Equatable, Sendable {
       circle.lineWidth = 1.5
       circle.stroke()
       return true
+    }
+  }
+}
+
+extension NotePaper {
+  /// 选颜色的那份表，**所有选颜色的地方共用**（全部便签窗口工具栏的下拉、行的右键菜单里的「颜色」、屏幕边缘那叠的
+  /// ⌘K 子列表和圆点点出来的菜单）：8 种纸色各一项，前面是它的纸色圆点（swatch，非模板图），现在的那种打勾；
+  /// 点了调 choose(下标)
+  @MainActor
+  static func colorItems(current: Int, choose: @escaping (Int) -> Void) -> [ActionMenu.Item] {
+    all.enumerated().map { index, paper in
+      ActionMenu.Item(
+        title: paper.name, image: paper.swatch(side: 16), isChecked: index == current,
+        id: "color-\(index)"
+      ) { choose(index) }
     }
   }
 }

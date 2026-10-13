@@ -184,12 +184,14 @@ enum Prefs {
   nonisolated static let notesDeckOpensOnHover = "notesDeckOpensOnHover"
   nonisolated static let notesDeckOverFullScreen = "notesDeckOverFullScreen"
   nonisolated static let notesDeckNoteSize = "notesDeckNoteSize"
-  /// 下面三个是这台电脑自己的状态，**不注册默认值**（不跟着导出 / 导入走）：药丸的纵向位置（0 = 可见区最上，1 = 最下；
+  /// 下面四个是这台电脑自己的状态，**不注册默认值**（不跟着导出 / 导入走）：药丸的纵向位置（0 = 可见区最上，1 = 最下；
   /// 没存过 = 0.5 正中，⌥ 拖药丸时写）、「指定某一块」指的是哪块显示器（它的名字；不在时退回主显示器）、
-  /// 「便签在屏幕右边缘」那句提示说过了没有（每台电脑只说一次）
+  /// 「便签在屏幕右边缘」那句提示说过了没有（每台电脑只说一次）、示例便签放过了没有（Notes/NoteSample.swift：
+  /// 从没有过便签的人第一次给一条，只放一次）
   nonisolated static let notesDeckPosition = "notesDeckPosition"
   nonisolated static let notesDeckChosenDisplay = "notesDeckChosenDisplay"
   nonisolated static let notesDeckHintShown = "notesDeckHintShown"
+  nonisolated static let notesSampleAdded = "notesSampleAdded"
 
   /// 上次启动的版本号：没有 = 首次安装（打开欢迎引导），和当前不同 = 刚更新（刘海岛「已更新到 x」+ 本版摘要，不开设置窗，体检 A29）
   static let lastSeenVersion = "lastSeenVersion"

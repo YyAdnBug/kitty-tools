@@ -3,7 +3,8 @@
 // 一行预览、相对时间，固定的带图钉；选中是中性高亮；「全部」里没在搜索时能拖动排序）。右：这条便签——整块是它的纸色，
 // 顶上一条色条，标题框、正文、底下一行小字（改于什么时候、多少字；这三件在 NoteFields.swift，和屏幕边缘那叠共用）；
 // 最近删除里的只读，列表下面多一行「清空最近删除…」。操作在工具栏和右键菜单里，名字取自 NotesWindowModel 的同一份；
-// 键盘挂在看不见的按钮上（shortcuts）。
+// 键盘挂在看不见的按钮上（shortcuts）。选颜色：工具栏那个按钮弹的是系统菜单（NSMenu.of：SwiftUI 的 Menu 放进工具栏
+// 不画纸色圆点），行的右键菜单也是系统菜单（ActionSystemMenu，同样的原因），里面的「颜色」是同一份表（NotePaper.colorItems）。
 
 import SwiftUI
 
@@ -121,7 +122,8 @@ struct NotesWindowView: View {
         ForEach(notes) { note in
           NoteRow(note: note, isSelected: note.id == model.selection)
             .tag(note.id)
-            .contextMenu { menu(for: note) }
+            // 系统菜单，不用 .contextMenu：SwiftUI 桥出来的右键菜单不带「颜色」每一项前面的纸色圆点
+            .overlay { ActionSystemMenu { model.rowItems(note) } }
         }
         .onMove(perform: model.canReorder ? { model.move(from: $0, to: $1) } : nil)
       }
@@ -216,8 +218,9 @@ struct NotesWindowView: View {
         }
         .disabled(note == nil)
         .help("\(Model.archiveTitle(note))（⇧⌘A）")
-        Menu(Model.colorTitle, systemImage: "paintpalette") {
-          if let note { colorPicker(note) }
+        // 系统菜单，不用 SwiftUI 的 Menu：放进工具栏的 Menu 不画每一项前面的纸色圆点（2026-10-13 真机）
+        Button(Model.colorTitle, systemImage: "paintpalette") {
+          if let note { NSMenu.of(model.colorItems(note)).popUpAtPointer() }
         }
         .disabled(note == nil)
         .help("换颜色（⌘. 换下一种）")
@@ -232,45 +235,6 @@ struct NotesWindowView: View {
       Button(Model.newTitle, systemImage: HotKeyAction.noteNew.symbol) { model.create() }
         .help("新建便签（⌘N）")
     }
-  }
-
-  /// 右键菜单：和工具栏同名的那几项（不写键位，HIG）；破坏性的给 role，颜色由系统定
-  @ViewBuilder private func menu(for note: Note) -> some View {
-    if note.deletedAt != nil {
-      Button(Model.restoreTitle) { model.restore(note.id) }
-      Divider()
-      Button(Model.eraseTitle, role: .destructive) { model.delete(note.id) }
-      Button(Model.emptyTrashTitle, role: .destructive) { model.isEmptyingTrash = true }
-    } else {
-      Button(Model.pinTitle(note)) { model.togglePinned(note.id) }
-      Button(Model.archiveTitle(note)) { model.toggleArchived(note.id) }
-      Menu(Model.colorTitle) { colorPicker(note) }
-      Divider()
-      Button(Model.deleteTitle, role: .destructive) { model.delete(note.id) }
-    }
-  }
-
-  /// 8 种纸色：圆点 + 名字，现在的那种打勾
-  private func colorPicker(_ note: Note) -> some View {
-    Picker(
-      Model.colorTitle,
-      selection: Binding {
-        note.color
-      } set: {
-        model.setColor($0, of: note.id)
-      }
-    ) {
-      ForEach(Array(NotePaper.all.enumerated()), id: \.offset) { index, paper in
-        Label {
-          Text(paper.name)
-        } icon: {
-          Image(nsImage: paper.swatch())
-        }
-        .tag(index)
-      }
-    }
-    .pickerStyle(.inline)
-    .labelsHidden()
   }
 
   /// 键盘。不挂在工具栏按钮上：窗口窄了工具栏项会收进「»」，挂在上面的键就跟着不灵。

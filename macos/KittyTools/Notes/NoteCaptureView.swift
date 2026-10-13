@@ -1,6 +1,7 @@
 // 快速记一条的面板（Panel 皮肤，mac-whisker-notes.mdc「快速记一条」；状态和规则在 NoteCapture.swift）：
-// 顶上一行「记到 新便签」+ 右边一排目的地（新便签 + 最近的 8 条，各是它的纸色圆点，选中的外面一圈强调色）；
-// 中间是多行输入框（SourceTextView：↩ 记下、⇧↩ 换行，输入法组字时不误提交），3 行起、最多 8 行；
+// 顶上一行「记到」+ 记到哪（记成新便签时是一个标题框，占位「标题（可不填）」；记到已有的某条时是那条的标题，不能改）
+// + 右边一排目的地（新便签 + 最近的 8 条，各是它的纸色圆点，选中的外面一圈强调色）；
+// 中间是多行输入框（SourceTextView：↩ 记下、⇧↩ 换行，输入法组字时不误提交；记成新便签时 Tab 去标题框），3 行起、最多 8 行；
 // 底栏左边是键位（只提示、不能点，secondary），存不了时换成原因；右边「记下 ↩」。
 
 import SwiftUI
@@ -26,14 +27,21 @@ struct NoteCaptureView: View {
   /// 线头和左右内边距用搜索线的（和启动器、剪贴板顶上那一行同一条左边线）
   private var header: some View {
     let shown = model.hovered ?? model.selectedIndex
+    // 鼠标停在别的目的地上：先写它的名字（secondary：还没选）
+    let peeks = shown != model.selectedIndex
     return SearchLine(symbol: "square.and.pencil") {
       Text("记到").foregroundStyle(.secondary)
-      // 鼠标停在别的目的地上时先写它的名字（secondary：还没选）
-      Text(model.title(of: shown))
-        .foregroundStyle(shown == model.selectedIndex ? .primary : .secondary)
-        .lineLimit(1)
-        .truncationMode(.tail)
-        .accessibilityHidden(true)
+      ZStack(alignment: .leading) {
+        // 标题框在偷看别的目的地时留在原处、只是先看不见：拆掉它，正拿着的焦点就掉了
+        if model.hasTitleField { titleField.opacity(peeks ? 0 : 1) }
+        if peeks || !model.hasTitleField {
+          Text(model.title(of: shown))
+            .foregroundStyle(peeks ? .secondary : .primary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .accessibilityHidden(true)
+        }
+      }
       Spacer(minLength: 12)
       HStack(spacing: 8) {
         ForEach(0...model.destinations.count, id: \.self) { destination($0) }
@@ -44,6 +52,28 @@ struct NoteCaptureView: View {
       .accessibilityLabel("记到哪")
     }
     .font(.system(size: 13))
+  }
+
+  /// 新便签的标题框（可不填）。不是面板呼出时聚焦的那个（焦点在正文），正文里按 Tab 才过来；这里 Tab / ↩ / ↓ 回正文
+  /// （↩ 不保存），Esc 同正文里的 Esc。字的左边线和记到已有的便签时那行标题是同一条（截图自检量过，不用再让）
+  private var titleField: some View {
+    CommandTextField(
+      text: $model.title, placeholder: "标题（可不填）", fontSize: 13,
+      maxLength: Note.maxTitleLength, focusRequest: model.titleFocus,
+      onCommand: { selector in
+        switch selector {
+        case #selector(NSResponder.insertTab(_:)), #selector(NSResponder.insertBacktab(_:)),
+          #selector(NSResponder.insertNewline(_:)), #selector(NSResponder.moveDown(_:)):
+          model.focusBody()
+        case #selector(NSResponder.cancelOperation(_:)): model.cancel()
+        default: return false
+        }
+        return true
+      }
+    )
+    .frame(height: 18)
+    .frame(maxWidth: .infinity)
+    .accessibilityLabel("新便签的标题")
   }
 
   /// 一个目的地：新便签是带加号的圆，已有的是它的纸色圆点；选中的外面隔 2 pt 一圈强调色（生效的范围）
@@ -88,12 +118,13 @@ struct NoteCaptureView: View {
   /// 滚动区铺满面板宽、文字缩进放在 horizontalInset 里（13 + NSTextView 自己的 5 = 18，和上下两行同一条左边线）：
   /// 滚动条贴面板右边
   private var editor: some View {
-    SourceTextView(
+    // 记成新便签时 Tab 去标题框；记到已有的某条时没有标题框，Tab 照常是制表符
+    let onTab: (() -> Void)? = model.hasTitleField ? { model.focusTitle() } : nil
+    return SourceTextView(
       text: $model.draft, fontSize: Layout.fontSize, horizontalInset: Layout.margin - 5,
-      onCancel: model.cancel
-    ) {
-      model.save()
-    }
+      focusRequest: model.bodyFocus, onCancel: model.cancel, onSubmit: { model.save() },
+      onTab: onTab
+    )
     .accessibilityLabel("便签内容")
     .frame(height: NoteCaptureModel.textHeight(for: model.draft) + 2 * Layout.textInset)
     .overlay(alignment: .topLeading) {
@@ -120,6 +151,7 @@ struct NoteCaptureView: View {
           .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
       } else {
         hint("换行", "⇧↩")
+        if model.hasTitleField { hint("标题", "⇥") }
         hint("新便签", "⌘1")
         if count > 0 { hint("记到已有的", count == 1 ? "⌘2" : "⌘2–\(count + 1)") }
         hint("取消", "Esc")

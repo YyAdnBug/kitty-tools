@@ -476,6 +476,7 @@ struct NotesWindowTests {
     #expect(
       keys.isSuperset(of: [
         "↩", "⇧↩", "⌘1", "⌘2–9", "Esc", "⌘N", "⌘F", "⌘⌫", "⌘Z", "⇧⌘A", "⌘P", "⌘.", "⌘K", "⌘W",
+        "Tab",
       ]))
 
     let pages = SettingsPage.allCases
@@ -609,6 +610,110 @@ struct NotesWindowTests {
     #expect(Prefs.notesFontSize(0) == 15 && Prefs.notesFontSize(999) == 15)
     #expect(SettingsArchive.kinds[Prefs.notesFontSize] != nil)
   }
+
+  // MARK: 颜色菜单（2026-10-13 手测反馈：每一项前面要有纸色圆点）
+
+  private func mouse(_ type: NSEvent.EventType, _ flags: NSEvent.ModifierFlags = []) throws
+    -> NSEvent
+  {
+    try #require(
+      NSEvent.mouseEvent(
+        with: type, location: NSPoint(x: 100, y: 20), modifierFlags: flags, timestamp: 0,
+        windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+  }
+
+  /// 系统菜单里每一项都带着自己那张非模板的图（纸色圆点；模板图会被系统染成单色）、只有现在的那种打勾
+  private func expectColorDots(_ menu: NSMenu, current: Int) {
+    #expect(menu.items.map(\.title) == NotePaper.all.map(\.name))
+    for (index, item) in menu.items.enumerated() {
+      #expect(item.image != nil && item.image?.isTemplate == false, "\(item.title)")
+      #expect(item.image?.size == NSSize(width: 16, height: 16), "\(item.title)")
+      #expect(item.state == (index == current ? .on : .off), "\(item.title)")
+      #expect(item.isEnabled && item.action != nil && item.submenu == nil, "\(item.title)")
+    }
+  }
+
+  /// 工具栏的颜色下拉：系统菜单，8 种纸色各一项、前面是纸色圆点、现在的那种打勾；点一项就换成那种
+  @Test func colorMenuHasADotForEveryPaper() throws {
+    let (model, store, ids) = try make(["一条"])
+    store.setColor(2, of: ids[0])
+    let menu = NSMenu.of(model.colorItems(try #require(store.note(ids[0]))))
+    expectColorDots(menu, current: 2)
+    menu.performActionForItem(at: 5)
+    #expect(store.note(ids[0])?.color == 5)
+    // 换完再开：勾跟着走
+    expectColorDots(NSMenu.of(model.colorItems(try #require(store.note(ids[0])))), current: 5)
+    // 屏幕边缘那叠的颜色子列表是同一份表（同样的名字、图、勾）
+    let items = NotePaper.colorItems(current: 5) { _ in }
+    #expect(items.map(\.title) == NotePaper.all.map(\.name))
+    #expect(items.map(\.isChecked) == (0..<Note.colorCount).map { $0 == 5 })
+    #expect(items.allSatisfy { $0.image != nil } && Set(items.map(\.id)).count == Note.colorCount)
+  }
+
+  /// 行的右键菜单（系统菜单）：和工具栏同名的那几项，「颜色」是带圆点的那份子菜单；最近删除里的是放回 / 永久删除 / 清空
+  @Test func rowMenuCarriesTheColorDots() throws {
+    let (model, store, ids) = try make(["一条", "另一条"])
+    store.setColor(3, of: ids[0])
+    let menu = NSMenu.of(model.rowItems(try #require(store.note(ids[0]))))
+    #expect(menu.items.map(\.title) == ["固定", "归档", "颜色", "", "删除"])
+    #expect(menu.items[3].isSeparatorItem && menu.items.allSatisfy { $0.image == nil })
+    expectColorDots(try #require(menu.items[2].submenu), current: 3)
+    // 点里面的一项：换色；固定、归档、删除照做
+    menu.items[2].submenu?.performActionForItem(at: 6)
+    #expect(store.note(ids[0])?.color == 6)
+    menu.performActionForItem(at: 0)
+    #expect(store.note(ids[0])?.isPinned == true)
+    let pinned = NSMenu.of(model.rowItems(try #require(store.note(ids[0]))))
+    #expect(pinned.items.first?.title == "取消固定")
+    pinned.performActionForItem(at: 1)
+    #expect(store.note(ids[0])?.isArchived == true)
+    let archived = NSMenu.of(model.rowItems(try #require(store.note(ids[0]))))
+    #expect(archived.items.map(\.title) == ["取消固定", "取消归档", "颜色", "", "删除"])
+    archived.performActionForItem(at: 4)
+    let trashed = NSMenu.of(model.rowItems(try #require(store.note(ids[0]))))
+    #expect(trashed.items.map(\.title) == ["放回", "", "永久删除…", "清空最近删除…"])
+    trashed.performActionForItem(at: 3)
+    #expect(model.isEmptyingTrash)
+    trashed.performActionForItem(at: 0)
+    #expect(store.note(ids[0])?.deletedAt == nil)
+  }
+
+  /// 盖在行上的那块只接会弹右键菜单的那一下（右键按下、⌃ 点按），别的点击照常落到下面的行；接到了给的是系统菜单。
+  /// 屏外、不显示：不发鼠标事件，只把造出来的事件对象直接交给它
+  @Test func rowMenuOverlayTakesOnlyMenuClicks() throws {
+    typealias Source = ActionSystemMenu.Source
+    #expect(try Source.opensMenu(mouse(.rightMouseDown)))
+    #expect(try Source.opensMenu(mouse(.leftMouseDown, .control)))
+    #expect(try !Source.opensMenu(mouse(.leftMouseDown)) && !Source.opensMenu(nil))
+    #expect(try !Source.opensMenu(mouse(.leftMouseDown, .command)))
+    #expect(try !Source.opensMenu(mouse(.rightMouseUp)) && !Source.opensMenu(mouse(.leftMouseUp)))
+
+    let (model, store, ids) = try make(["一条"])
+    let note = try #require(store.note(ids[0]))
+    let host = NSHostingView(
+      rootView: Text("一行").frame(width: 200, height: 40)
+        .overlay { ActionSystemMenu { model.rowItems(note) } })
+    let window = Offscreen(
+      contentRect: NSRect(x: -30000, y: -30000, width: 200, height: 40), styleMask: .borderless,
+      backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = host
+    host.layoutSubtreeIfNeeded()
+    func find(_ view: NSView) -> Source? {
+      (view as? Source) ?? view.subviews.lazy.compactMap(find).first
+    }
+    let source = try #require(find(host))
+    let point = NSPoint(x: 100, y: 20)
+    // 平时（现在没有哪个事件是右键）：点不到它，落到下面
+    #expect(host.hitTest(point) !== source)
+    // 是右键的那一下：SwiftUI 把点击交到它手上，它给出系统菜单
+    source.isMenuClick = { true }
+    #expect(host.hitTest(point) === source)
+    let menu = try #require(source.menu(for: mouse(.rightMouseDown)))
+    #expect(menu.items.map(\.title) == ["固定", "归档", "颜色", "", "删除"])
+    expectColorDots(try #require(menu.items[2].submenu), current: note.color)
+  }
+
 }
 
 /// 带标题栏的窗口摆在屏外（系统默认会把它挪回屏幕里）
@@ -616,4 +721,5 @@ private final class Offscreen: NSWindow {
   override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
     frameRect
   }
+
 }

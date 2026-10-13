@@ -598,13 +598,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     finishLaunchingNotes()
   }
 
-  /// 启动的最后一步，三样连着做：开便签库、清「最近删除」里到期的、今天的第一次备份。
+  /// 启动的最后一步，几样连着做：开便签库、清「最近删除」里到期的、从没有过便签的人放一条示例（NoteSample，
+  /// 在备份和屏幕边缘开始之前：当天那份备份里带着它，边缘一开始就有药丸）、今天的第一次备份。
   /// 放在最后：便签库打不开时要弹框问，弹框里说「剪贴板、翻译和别的功能不受影响」——这时剪贴板监听、热键、菜单栏图标
   /// 都已经起来了，这句话才是真的。备份跟在后面：便签还没开就备，当天那份 JSON 里就没有便签（backupIfDue 也因此等着）
   private func finishLaunchingNotes() {
     noteStore = openNotes()
     hasOpenedNotes = true
     noteStore?.purgeExpired()
+    if let noteStore {
+      NoteSample.addIfFirst(
+        to: noteStore, defaults: .standard, hotKey: HotKeyAction.noteCapture.hotKey?.display)
+    }
     backupIfDue()
     noteEdge = noteStore.map(makeNoteEdge)
     noteEdge?.start()

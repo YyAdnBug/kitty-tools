@@ -1,5 +1,6 @@
 // 快速记一条（Notes/NoteCapture.swift）的单测：保存的规则（空的不存、新建、接在已有的后面、目的地没了当新便签、
-// 超过单条上限不存）、目的地列表（最近改过的 8 条没归档的）、⌘1–⌘9、草稿在收起后留着 / Esc 清空、面板的高度；
+// 超过单条上限不存）、目的地列表（最近改过的 8 条没归档的）、⌘1–⌘9、草稿在收起后留着 / Esc 清空、面板的高度、
+// 新便签的标题（填了就用、只填标题也存、记到已有的不用它、和草稿一起留一起清、两个输入框的焦点交接）；
 // 另有多行输入框字节上限的判断（SourceTextView.overflows）。
 // 全用内存库；不给岛（岛会真的开窗口），不碰用户的偏好和数据目录。
 
@@ -180,6 +181,103 @@ struct NoteCaptureTests {
     model.cancel()
     #expect(model.draft.isEmpty && panel.dismissed == 1 && panel.hidden == 0)
     #expect(store.active.isEmpty)
+  }
+
+  /// 记成新便签时填的标题就是新便签的标题（去掉首尾空白）；不填照旧取正文第一行。存完标题和草稿一起清空
+  @Test func titleGoesToTheNewNote() throws {
+    let (model, store, panel) = try make()
+    #expect(model.hasTitleField && model.newTitle.isEmpty)
+    model.title = "  周会  "
+    model.draft = "要点一\n要点二"
+    #expect(model.canSave && model.newTitle == "周会")
+    let outcome = model.save(now: Self.t0)
+    let note = try #require(store.active.first)
+    #expect(outcome == .saved(note.id) && note.title == "周会" && note.body == "要点一\n要点二")
+    #expect(note.displayTitle == "周会" && model.title.isEmpty && model.draft.isEmpty)
+    #expect(panel.hidden == 1)
+    // 不填：标题空着，显示的取正文第一行
+    model.draft = "没起标题"
+    model.save(now: Self.at(1))
+    let plain = try #require(store.active.first)
+    #expect(plain.title.isEmpty && plain.displayTitle == "没起标题" && store.notes.count == 2)
+    // 太长的标题仓库会截到上限（输入框自己也拦：CommandTextField 的 maxLength）
+    model.title = String(repeating: "长", count: Note.maxTitleLength + 50)
+    model.draft = "正文"
+    model.save(now: Self.at(2))
+    #expect(store.active.first?.title.count == Note.maxTitleLength)
+  }
+
+  /// 只填了标题、正文空着：也算有内容，存成一条只有标题的便签；标题只有空白不算
+  @Test func titleAloneIsEnough() throws {
+    let (model, store, panel) = try make()
+    model.title = "   "
+    #expect(!model.canSave && model.save() == .empty && store.notes.isEmpty)
+    model.title = "只有标题"
+    model.draft = " \n "
+    #expect(model.canSave)
+    let outcome = model.save(now: Self.t0)
+    let note = try #require(store.active.first)
+    #expect(outcome == .saved(note.id) && note.title == "只有标题" && note.body.isEmpty)
+    #expect(panel.hidden == 1 && model.title.isEmpty && model.draft.isEmpty)
+  }
+
+  /// 记到已有的某条时没有标题框：填过的标题不用（不改那条的标题），光有标题不能存；存完一起清空
+  @Test func titleIsNotUsedForAnExistingNote() throws {
+    let (model, store, _) = try make()
+    let old = store.create(body: "旧的", title: "原来的标题", now: Self.t0)
+    model.title = "给新便签起的"
+    model.select(1)
+    #expect(!model.hasTitleField && model.newTitle.isEmpty)
+    #expect(!model.canSave && model.save() == .empty)
+    model.draft = "接上一句"
+    #expect(model.save(now: Self.at(1)) == .saved(old.id))
+    let saved = try #require(store.note(old.id))
+    #expect(saved.title == "原来的标题" && saved.body == "旧的\n接上一句" && store.notes.count == 1)
+    #expect(model.title.isEmpty && model.draft.isEmpty)
+    // 换回新便签：填过的标题还在（没存之前）
+    model.title = "留着"
+    model.select(1)
+    model.select(0)
+    #expect(model.hasTitleField && model.newTitle == "留着")
+  }
+
+  /// 标题和草稿一起留着（收起再呼出）、Esc 一起清空；改标题收掉底栏的提示
+  @Test func titleSurvivesHideButNotEscape() throws {
+    let (model, store, panel) = try make()
+    let full = store.create(
+      body: String(repeating: "满", count: Note.maxBodyBytes / 3 - 2), now: Self.t0)
+    model.title = "半个标题"
+    model.draft = "写了一半"
+    model.didHide()
+    model.prepareForShow()
+    #expect(model.title == "半个标题" && model.draft == "写了一半")
+    model.select(1)
+    #expect(model.target?.id == full.id && model.save() == .tooLong && model.notice != nil)
+    model.title = "半个标题，又改了"
+    #expect(model.notice == nil)
+    model.cancel()
+    #expect(model.title.isEmpty && model.draft.isEmpty && panel.dismissed == 1)
+    #expect(store.notes.count == 1)
+  }
+
+  /// 两个输入框的焦点交接：正文里 Tab 去标题（没有标题框时不动），标题里 Tab / ↩ 回正文；换目的地后回正文
+  @Test func focusMovesBetweenTitleAndBody() throws {
+    let (model, store, _) = try make()
+    store.create(body: "旧的", now: Self.t0)
+    #expect(model.titleFocus == 0 && model.bodyFocus == 0)
+    model.focusTitle()
+    #expect(model.titleFocus == 1 && model.bodyFocus == 0)
+    model.focusBody()
+    #expect(model.titleFocus == 1 && model.bodyFocus == 1)
+    // 换了目的地（标题框可能正拿着焦点、又跟着没了）：焦点回正文
+    model.select(1)
+    #expect(model.bodyFocus == 2)
+    model.focusTitle()
+    #expect(model.titleFocus == 1)
+    model.select(0)
+    #expect(model.bodyFocus == 3)
+    model.focusTitle()
+    #expect(model.titleFocus == 2)
   }
 
   /// 面板的高：正文 3 行起、最多 8 行；草稿变了就报新的高

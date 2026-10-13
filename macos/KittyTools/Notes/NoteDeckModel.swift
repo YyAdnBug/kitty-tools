@@ -7,6 +7,8 @@
 // - 悬停出的预览卡、悬停即打开，都先问一句「现在能不能扇出」（「一直展开」时那一列一直在，叫停靠的就是这一问）；
 //   悬停打开的不抢键盘（takesKey 是 false：停着不动的鼠标不该把键盘拿走，点进正文才当 key）。
 // - 每条便签一个撤销栈（textUndo，面板的 undoManager 就是它）：换一条换一个新的。
+// - 焦点：打开 / 换一条、「新建便签」落在已经开着的那条上、标题框里 ↩ / Tab、操作菜单关了，都记一次「该这条便签的
+//   正文拿焦点」（focus：编号 + 第几次）；正文框自己认（NoteBodyField），NoteDeck 另有晚一拍去找的兜底。
 
 import AppKit
 import Carbon.HIToolbox
@@ -21,6 +23,12 @@ import SwiftUI
     var selection = 0
     /// 从纸色圆点点开的：直接是颜色那一级，长在圆点下面（否则长在「⋯」下面）
     var fromDot = false
+  }
+
+  /// 该拿焦点的那条便签、第几次要
+  struct Focus: Equatable {
+    var id: String
+    var count: Int
   }
 
   /// 正拖着的那张标签：从第几格拖起、拖了多远（往下为正）、现在落在第几格
@@ -59,12 +67,15 @@ import SwiftUI
   private(set) var menu: Menu?
   /// 正文打到上限了、这一次输入没进（底下那行小字换成警告）
   private(set) var isOverLimit = false
+  /// 该哪条便签的正文拿焦点（见文件头）。便签关了不清：再开又是新的一次
+  private(set) var focus: Focus?
   /// 打开的便签的顶离面板顶多远：**打开那一刻定住**（它对着自己那张标签，而标签露出多长跟着最长的标题实时变——
   /// 不定住的话打第一行字时便签自己一跳一跳地上下挪）。关掉再开、面板大小变了才重算
   private(set) var openTop: CGFloat?
 
   @ObservationIgnored var island: Island?
-  /// 状态变了（NoteDeck 据此动窗口）；有动静（4 秒没动静才收回，热区也跟着重算）；把焦点放进正文；操作菜单开关了
+  /// 状态变了（NoteDeck 据此动窗口）；有动静（4 秒没动静才收回，热区也跟着重算）；面板当 key 并兜底把焦点放进正文
+  /// （界面不直接调它，调 requestFocus）；操作菜单开关了
   @ObservationIgnored var onChange: (NoteDeckState, NoteDeckState) -> Void = { _, _ in }
   @ObservationIgnored var onActivity: () -> Void = {}
   @ObservationIgnored var focusBody: () -> Void = {}
@@ -99,7 +110,11 @@ import SwiftUI
       textUndo = UndoManager()
       // 先清再算：算的时候要按「标签现在排在哪」重新来
       openTop = nil
-      if state.openID != nil { openTop = noteTop(layout) }
+      if let id = state.openID {
+        openTop = noteTop(layout)
+        // 悬停打开的也记：不当 key，但第一响应者照样落在正文上（点进面板当了 key 就能直接打字）
+        focus = Focus(id: id, count: (focus?.count ?? 0) + 1)
+      }
     }
     if state.phase != .fanned { clearHover() }
     if !state.isDragging, drag != nil { drag = nil }
@@ -213,10 +228,12 @@ import SwiftUI
   }
 
   /// 鼠标进出一张标签：停一会儿出预览卡（「悬停即打开」开着时是打开，不出预览卡），离开一会儿收。
-  /// 这时不许扇出（截图框选、录屏倒数、状态屏）就都不做
+  /// 这时不许扇出（截图框选、录屏倒数、状态屏）就都不做。不是扇着的时候什么都不做、也不算动静——面板被放掉、
+  /// 标签的视图移出窗口时 HoverTracker 还会补报一个「移出」（NoteDeck.releasePanel）
   func hover(_ id: String, _ inside: Bool) {
+    guard state.phase == .fanned else { return }
     onActivity()
-    guard state.phase == .fanned, drag == nil else { return }
+    guard drag == nil else { return }
     guard inside else {
       // 从一张挪到下一张，系统可能先报「进了下一张」再报「出了这一张」：出的不是现在停着的那张就不管，
       // 别把刚给下一张排的预览卡 / 悬停打开取消掉
@@ -314,7 +331,17 @@ import SwiftUI
   func open(created id: String) {
     let wasOpen = state.openID == id
     send(.created(id))
-    if wasOpen { focusBody() }
+    if wasOpen { requestFocus() }
+  }
+
+  /// 这条便签的正文框该不该拿焦点：是「该拿焦点的那条」就给第几次要，不是给 nil（NoteBodyField.focusRequest）
+  func focusRequest(for id: String) -> Int? { focus?.id == id ? focus?.count : nil }
+
+  /// 再要一次焦点（开着的那条的正文；标题框里 ↩ / Tab、复用的空白便签）：记一次，再叫 NoteDeck 当 key、兜底去找
+  func requestFocus() {
+    guard let id = state.openID else { return }
+    focus = Focus(id: id, count: (focus?.count ?? 0) + 1)
+    focusBody()
   }
 
   // MARK: 打开的便签
@@ -411,12 +438,7 @@ import SwiftUI
   }
 
   private func colorItems(_ note: Note) -> [ActionMenu.Item] {
-    NotePaper.all.enumerated().map { index, paper in
-      ActionMenu.Item(
-        title: paper.name, image: paper.swatch(side: 16), isChecked: index == note.color,
-        id: "color-\(index)"
-      ) { [unowned self] in setColor(index) }
-    }
+    NotePaper.colorItems(current: note.color) { [unowned self] in setColor($0) }
   }
 
   /// ⌘K、「⋯」开关菜单；fromDot：点纸色圆点，直接是颜色那一级

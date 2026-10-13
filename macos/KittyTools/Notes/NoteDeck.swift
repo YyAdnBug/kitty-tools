@@ -7,6 +7,8 @@
 // （global + local，打开便签时装、关掉时卸）、离开热区和 4 秒没动静的计时（可取消的 Task，静置时一个都没有）。
 // 几块屏的那叠谁展开、什么时候有、放哪，在 NoteEdge。
 // 永远不调 NSApp.activate；扇出时不当 key，点开便签才 makeKey（悬停打开的不当），关掉便签当场把键盘还回去。
+// 焦点进正文有两道：正文框自己在挂进窗口 / 被点名时拿（NoteDeckModel.focus → NoteBodyField），这里再晚一拍按编号去找
+// 一次当兜底，没找到（编辑区还没建出来）隔一小会儿再找两次。
 
 import AppKit
 import SwiftUI
@@ -25,7 +27,7 @@ final class NoteDeck: NSObject {
     static let hide = Effects(rawValue: 1 << 3)
     /// 把键盘还给原来的 App（面板留着）
     static let releaseKey = Effects(rawValue: 1 << 4)
-    /// 当 key、焦点进正文（悬停打开的那一次不做，见 NoteDeckModel.takesKey）
+    /// 焦点进正文，并当 key（悬停打开的那一次不当 key，见 NoteDeckModel.takesKey）
     static let focus = Effects(rawValue: 1 << 5)
     /// 开始看着：离开热区、4 秒没动静
     static let watch = Effects(rawValue: 1 << 6)
@@ -57,6 +59,8 @@ final class NoteDeck: NSObject {
   static let idleDelay: Duration = .seconds(4)
   static let leaveDelay: Duration = .milliseconds(150)
   static let hideDuration: Duration = .milliseconds(140)
+  /// 兜底去找正文框没找到时，隔多久再找（各一次）
+  static let focusRetryDelays: [TimeInterval] = [0.05, 0.15]
 
   let model: NoteDeckModel
   /// 「一直展开」时没有药丸
@@ -68,6 +72,10 @@ final class NoteDeck: NSObject {
   private var frame = CGRect.zero
   /// 面板收起后留多久再放掉（单测传几十毫秒）
   private let lingering: Duration
+  /// 打开便签时面板当不当 key。只有单测传 false：屏外的面板一当 key，用户正在用的那个 App 就丢了键盘
+  private let takesKeyboard: Bool
+  /// 兜底去找正文框已经重试了几次
+  private var focusRetries = 0
 
   /// 现在能不能扇出（没在截图框选 / 长截图 / 录屏选区和倒数 / 状态屏）：鼠标进药丸、悬停出预览卡 / 悬停打开时问
   var canFan: () -> Bool = { true }
@@ -93,9 +101,13 @@ final class NoteDeck: NSObject {
   /// 或者这一列收回之后复原
   private var skipsLeave = false
 
-  init(store: NoteStore, island: Island?, lingering: Duration = .seconds(2)) {
+  init(
+    store: NoteStore, island: Island?, lingering: Duration = .seconds(2),
+    takesKeyboard: Bool = true
+  ) {
     model = NoteDeckModel(store: store)
     self.lingering = lingering
+    self.takesKeyboard = takesKeyboard
     super.init()
     model.island = island
     // 都弱引用：这块屏不放了之后，界面那边还可能有晚到的一下（悬停的计时、追踪区的事件）
@@ -125,8 +137,7 @@ final class NoteDeck: NSObject {
     let center = frame.maxY - pillFrame.midY
     if model.pillCenter != center { model.pillCenter = center }
     if options.alwaysFanned {
-      pill?.panel.orderOut(nil)
-      pill = nil
+      releasePill()
     } else {
       let pill = self.pill ?? makePill()
       pill.update(frame: pillFrame, edge: edge, colors: colors, options: options)
@@ -208,10 +219,28 @@ final class NoteDeck: NSObject {
     releaseTask?.cancel()
     releaseTask = nil
     NSObject.cancelPreviousPerformRequests(withTarget: self)
-    panel?.orderOut(nil)
+    releasePanel()
+    releasePill()
+  }
+
+  /// 放掉面板（收起后留够了、这块屏不放了）。**不能直接写 `panel = nil`**（2026-10-13 真机崩溃，扇出再收回约 2 秒后必崩）：
+  /// 那一句会在「写 panel」的过程中把面板释放掉，面板的视图跟着拆，HoverTracker 的视图被移出窗口时补报一个「移出」
+  /// → NoteDeckModel.hover → pointerMoved → updateTracking 又来读 panel——同一个属性写到一半被读，Swift 运行时的
+  /// 独占访问检查（Simultaneous accesses…）直接终止进程。
+  /// 所以：先拿到局部变量、把属性置空（局部变量还拿着，这一下不释放），再收走、把它的视图拆掉（回调进来时属性已经是
+  /// nil、没有进行中的写入），函数结束局部变量才放手。NoteDeckTests.releasingThePanelSurvivesViewCallbacks 复现它
+  private func releasePanel() {
+    guard let old = panel else { return }
     panel = nil
-    pill?.panel.orderOut(nil)
+    old.orderOut(nil)
+    old.contentView = nil
+  }
+
+  /// 放掉药丸：同一个写法。它的视图现在拆掉时不回调，照这样写以后加了也不出事
+  private func releasePill() {
+    guard let old = pill else { return }
     pill = nil
+    old.panel.orderOut(nil)
   }
 
   /// 被叫停（NoteEdge.suspend）：先落盘；扇出的当场收起，打开的便签要不要收看是哪种。「一直展开」时那一列不收
@@ -241,7 +270,7 @@ final class NoteDeck: NSObject {
       if new.openID != nil { installMonitors() } else { removeMonitors() }
       if effects.contains(.releaseKey) { releaseKey() }
       if effects.contains(.watch) { watch() } else { stopWatching() }
-      if effects.contains(.focus), model.takesKey { focusBody() }
+      if effects.contains(.focus) { focusBody(makesKey: model.takesKey) }
     }
     updateTracking()
     applyBehavior()
@@ -299,7 +328,7 @@ final class NoteDeck: NSObject {
       try? await Task.sleep(for: lingering)
       // 留着的时候又展开了（present 作废了这一下）就不放
       guard !Task.isCancelled, let self, panel?.isVisible == false else { return }
-      panel = nil
+      releasePanel()
     }
   }
 
@@ -326,21 +355,30 @@ final class NoteDeck: NSObject {
 
   // MARK: 焦点
 
-  /// 点开便签（或「新建便签」）：面板当 key（不激活本 App），焦点进这条便签的正文。晚一拍：它的编辑区这时还没建出来。
+  /// 点开便签（或「新建便签」）：面板当 key（不激活本 App；悬停打开的不当，makesKey 是 false），焦点进这条便签的正文。
+  /// 正文框自己会拿（挂进窗口的那一刻、被点名时）；这里是兜底：晚一拍按编号去找——它的编辑区这时还没建出来。
   /// 用 perform(afterDelay:)（下一轮 run loop，SwiftUI 那时已经更新过；同 NotesWindow），不用裸 Task
-  private func focusBody() {
+  private func focusBody(makesKey: Bool = true) {
     guard let panel, model.state.openID != nil else { return }
-    if !panel.isKeyWindow { panel.makeKey() }
+    if makesKey, takesKeyboard, !panel.isKeyWindow { panel.makeKey() }
+    focusRetries = 0
     NSObject.cancelPreviousPerformRequests(
       withTarget: self, selector: #selector(focusBodyNow), object: nil)
     perform(#selector(focusBodyNow), with: nil, afterDelay: 0, inModes: [.common])
   }
 
+  /// 找到就放（已经在它身上就不动）；没找到再试 focusRetryDelays 那几次。面板放掉了、便签关了、操作菜单开着就停；
+  /// 换了一条会重新来一遍（focusBody 把前一条排着的作废）
   @objc private func focusBodyNow() {
     guard let panel, let id = model.state.openID, model.menu == nil else { return }
     panel.contentView?.layoutSubtreeIfNeeded()
-    if let editor = Self.editor(for: id, in: panel.contentView), panel.firstResponder !== editor {
-      panel.makeFirstResponder(editor)
+    if let editor = Self.editor(for: id, in: panel.contentView) {
+      if panel.firstResponder !== editor { panel.makeFirstResponder(editor) }
+    } else if focusRetries < Self.focusRetryDelays.count {
+      focusRetries += 1
+      perform(
+        #selector(focusBodyNow), with: nil, afterDelay: Self.focusRetryDelays[focusRetries - 1],
+        inModes: [.common])
     }
   }
 
@@ -414,8 +452,9 @@ final class NoteDeck: NSObject {
   /// 面板里那块跟鼠标的追踪区只挂在热区上，而且只在「扇着、等着收回」时挂：便签开着、「一直展开」时没有——
   /// 鼠标在便签那一大片上来回动不该一下下唤醒本进程
   private func updateTracking() {
+    guard let panel else { return }
     let watching = model.state.phase == .fanned && !model.options.alwaysFanned
-    panel?.track(watching ? hotZone : .zero)
+    panel.track(watching ? hotZone : .zero)
   }
 
   /// 扇出后开始看着：4 秒没动静收回；鼠标这时就不在热区里（用鼠标关掉便签回到那一列时）也照样确认一次再收。
@@ -456,8 +495,11 @@ final class NoteDeck: NSObject {
   }
 
   /// 鼠标动了（面板热区上的追踪区、药丸的进出、标签的悬停和点击都报到这里）：在热区里就算有动静；
-  /// 出了热区，过 leaveDelay 确认还在外面才收（从标签挪到预览卡、手抖一下出去又回来都不收）
+  /// 出了热区，过 leaveDelay 确认还在外面才收（从标签挪到预览卡、手抖一下出去又回来都不收）。
+  /// 面板已经没了（收着、放掉了；面板的视图被拆掉时也会回调到这里，见 releasePanel）就什么都不做——尤其不许再排出
+  /// 「离开确认」之类的任务
   private func pointerMoved() {
+    guard panel != nil else { return }
     updateTracking()
     guard model.state.phase == .fanned, !model.options.alwaysFanned else { return }
     if hotZone.contains(NSEvent.mouseLocation) {

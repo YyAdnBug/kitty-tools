@@ -348,6 +348,7 @@ struct ShortcutsSheet: View {
         entries: [
           Entry("↩", text: "快速记一条里：记下"),
           Entry("⇧↩", "⌘↩", text: "快速记一条里：换行"),
+          Entry("Tab", text: "快速记一条里：记成新便签时去填标题，再按一次（或 ↩）回到正文"),
           Entry("⌘1", text: "快速记一条里：记成新便签"),
           Entry("⌘2–9", text: "快速记一条里：接在最近改过的某一条便签后面"),
           Entry("Esc", text: "快速记一条里：清空并关闭（点面板外面、再按一次全局快捷键、⌘W 也是关闭，写了一半的留着）"),

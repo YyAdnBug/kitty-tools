@@ -46,6 +46,9 @@ struct NoteBodyField: View {
   let onOverflow: () -> Void
   /// Esc（输入法组字时 Esc 归输入法，到不了这里）；全部便签窗口里不做事
   var onCancel: () -> Void = {}
+  /// 屏幕边缘那叠用：这条便签是「该拿焦点的那条」时给第几次要（NoteDeckModel.focusRequest(for:)）——正文框挂进窗口的
+  /// 那一刻自己拿焦点，之后这个数每变一次再拿一次。nil = 不归它拿（全部便签窗口不给：选中一条时焦点留在列表上）
+  var focusRequest: Int?
 
   var body: some View {
     let paper = NotePaper.of(note)
@@ -55,6 +58,7 @@ struct NoteBodyField: View {
       } set: {
         setBody($0)
       }, submitsOnEnter: false, fontSize: fontSize, horizontalInset: margin - 5,
+      focusRequest: focusRequest, takesFocusOnAppear: focusRequest != nil,
       // 标上这条便签的编号：换一条时新旧两个正文框同时在，拿焦点的要按编号认（NoteDeck.editor(for:in:)）
       textColor: paper.inkColor, identifier: note.id, maxBytes: Note.maxBodyBytes,
       onOverflow: onOverflow, onCancel: onCancel

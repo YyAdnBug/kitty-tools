@@ -218,6 +218,35 @@ import SwiftUI
 
   static func nextColor(after color: Int) -> Int { (max(color, 0) + 1) % Note.colorCount }
 
+  /// 选颜色的那份表（工具栏的颜色下拉、右键菜单里的「颜色」；每项前面是纸色圆点，NotePaper.colorItems）
+  func colorItems(_ note: Note) -> [ActionMenu.Item] {
+    NotePaper.colorItems(current: note.color) { [weak self] in self?.setColor($0, of: note.id) }
+  }
+
+  /// 一行的右键菜单：和工具栏同名的那几项（不写键位，HIG）；最近删除里的是放回 / 永久删除 / 清空
+  func rowItems(_ note: Note) -> [ActionMenu.Item] {
+    let id = note.id
+    guard note.deletedAt == nil else {
+      return [
+        ActionMenu.Item(title: Self.restoreTitle) { [weak self] in self?.restore(id) },
+        ActionMenu.Item(title: Self.eraseTitle, section: 1, isDestructive: true) { [weak self] in
+          self?.delete(id)
+        },
+        ActionMenu.Item(title: Self.emptyTrashTitle, section: 1, isDestructive: true) {
+          [weak self] in self?.isEmptyingTrash = true
+        },
+      ]
+    }
+    return [
+      ActionMenu.Item(title: Self.pinTitle(note)) { [weak self] in self?.togglePinned(id) },
+      ActionMenu.Item(title: Self.archiveTitle(note)) { [weak self] in self?.toggleArchived(id) },
+      ActionMenu.Item(title: Self.colorTitle, submenu: colorItems(note)),
+      ActionMenu.Item(title: Self.deleteTitle, section: 1, isDestructive: true) { [weak self] in
+        self?.delete(id)
+      },
+    ]
+  }
+
   /// 从「最近删除」放回原处
   func restore(_ id: String) {
     guard store.note(id)?.deletedAt != nil else { return }

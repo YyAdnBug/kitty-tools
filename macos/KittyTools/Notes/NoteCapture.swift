@@ -1,9 +1,13 @@
 // 快速记一条（PLAN §10「便签」，全局键默认 ⌥N）的状态和规则。面板是 OverlayPanel 的一个实例（AppDelegate.noteCapture），
 // 和启动器、剪贴板面板同位置同宽、只开一个；视图在 NoteCaptureView.swift。
-// - 草稿：点面板外面、再按热键、⌘W 收起时留着（连同选的目的地），下次呼出还在；Esc 清空并收起；保存后清空。
+// - 草稿：点面板外面、再按热键、⌘W 收起时留着（连同标题、选的目的地），下次呼出还在；Esc 一起清空并收起；保存后一起清空。
+// - 标题（2026-10-13 手测反馈）：记成新便签时顶上那一行是个标题框，填了就是新便签的标题，不填照旧取正文第一行；
+//   只填了标题、正文空着也算有内容，存成一条只有标题的便签。记到已有的某条时没有这个框（填过的留着、不用它）。
+//   焦点：呼出时在正文；正文里 Tab 去标题，标题里 Tab / ↩ 回正文（↩ 不保存）；换目的地后回正文——两个框的交接用
+//   focusRequest（titleFocus / bodyFocus，mac-overlay-panel §3）。
 // - 记到哪：默认新便签；也可以接在最近改过的 8 条没归档的便签之一后面（⌘1 新便签，⌘2–⌘9 那 8 条）。选了的那条在面板
 //   开着时被删了、归档了，就当新便签。
-// - 保存（↩）：去掉首尾空白，空的不存；新便签 = 新建一条；已有的 = 接在它正文后面（原来有内容、末尾没换行就先换一行）。
+// - 保存（正文里 ↩）：去掉首尾空白，空的不存；新便签 = 新建一条；已有的 = 接在它正文后面（原来有内容、末尾没换行就先换一行）。
 //   存完的正文会超过 Note.maxBodyBytes 时不存，底栏就地说（不截断）。存好收起面板，刘海岛「已记下」+ 那条便签的标题。
 
 import AppKit
@@ -48,6 +52,13 @@ import Observation
       resize(height)
     }
   }
+  /// 新便签的标题（可不填）。和草稿一起留着、一起清空；记到已有的便签时不用它
+  var title = "" {
+    didSet { if title != oldValue { notice = nil } }
+  }
+  /// 两个输入框的焦点交接：数变一次，那个框拿一次焦点
+  private(set) var titleFocus = 0
+  private(set) var bodyFocus = 0
   /// 记到哪条已有的便签（编号）；nil = 新便签。读的时候用 target：它不在目的地里了（删了、归档了）就不算数
   private(set) var destination: String?
   /// 底栏左边的就地提示（存不了的原因）；一改草稿、一换目的地就收
@@ -92,6 +103,8 @@ import Observation
     guard index == 0 || list.indices.contains(index - 1) else { return NSSound.beep() }
     destination = index == 0 ? nil : list[index - 1].id
     notice = nil
+    // 换了目的地接着打正文（标题框可能正拿着焦点、又跟着目的地没了）
+    bodyFocus += 1
     // 焦点一直在输入框里，换了目的地旁白读不到
     Island.announce(index == 0 ? "记成新便签" : "记到「\(list[index - 1].displayTitle)」")
   }
@@ -110,16 +123,37 @@ import Observation
     kVK_ANSI_9,
   ]
 
+  // MARK: 标题
+
+  /// 记成新便签时才有标题框
+  var hasTitleField: Bool { target == nil }
+
+  /// 新便签用的标题（去掉首尾空白）；记到已有的便签时是空的——不改那条的标题
+  var newTitle: String {
+    hasTitleField ? title.trimmingCharacters(in: .whitespacesAndNewlines) : ""
+  }
+
+  /// 正文里 Tab：去标题框（没有标题框时不动）
+  func focusTitle() {
+    if hasTitleField { titleFocus += 1 }
+  }
+
+  /// 标题框里 Tab / ↩ / ↓：回正文
+  func focusBody() { bodyFocus += 1 }
+
   // MARK: 保存
 
-  /// 现在按 ↩ 有没有东西可记（底栏「记下」置不置灰）
-  var canSave: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+  /// 现在按 ↩ 有没有东西可记（底栏「记下」置不置灰）：正文有字，或者记成新便签、填了标题
+  var canSave: Bool {
+    !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !newTitle.isEmpty
+  }
 
   /// ↩：记下。存成了就清空草稿、收起面板、刘海岛说一声
   @discardableResult
   func save(now: Date = .now) -> Outcome {
     let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty else { return .empty }
+    let title = newTitle
+    guard !text.isEmpty || !title.isEmpty else { return .empty }
     let old = target
     let body = Self.body(appending: text, to: old?.body)
     guard body.utf8.count <= Note.maxBodyBytes else {
@@ -133,7 +167,7 @@ import Observation
       store.flush()
       id = old.id
     } else {
-      id = store.create(body: body, now: now).id
+      id = store.create(body: body, title: title, now: now).id
     }
     reset()
     hidePanel()
@@ -172,6 +206,7 @@ import Observation
 
   private func reset() {
     draft = ""
+    title = ""
     destination = nil
     notice = nil
   }

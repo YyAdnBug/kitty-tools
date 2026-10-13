@@ -269,7 +269,8 @@ struct ActionMenu: View {
 }
 
 /// 同一份动作条目画成右键菜单（剪贴板行、翻译历史行）：section 变了加分隔线、子列表是子菜单、删除类 destructive，
-/// 不写键位（HIG）
+/// 不写键位（HIG）。**条目自己带的图在这里画不出来**：SwiftUI 把 contextMenu 桥成系统菜单时不带 Label 的图
+/// （2026-10-13 屏外实测：桥出来的 NSMenuItem.image 是 nil）；要图的（便签颜色子菜单的纸色圆点）用下面的 ActionSystemMenu
 struct ActionContextMenu: View {
   /// 闭包：动作表在菜单内容真要画时才建
   let items: () -> [ActionMenu.Item]
@@ -285,6 +286,49 @@ struct ActionContextMenu: View {
       } else {
         Button(item.title, role: item.isDestructive ? .destructive : nil, action: item.run)
       }
+    }
+  }
+}
+
+/// 同一份动作条目画成**系统的**右键菜单（NSMenu.of：条目自己带的图原样画）。盖在要右键的那块视图上
+/// （`.overlay { ActionSystemMenu { … } }`）：只接会弹出右键菜单的那一下（右键按下、⌃ 点按），别的点击、拖动照常
+/// 落到下面——所以选中、拖动排序不受影响。用在全部便签窗口的行上（颜色子菜单要纸色圆点）
+struct ActionSystemMenu: NSViewRepresentable {
+  /// 闭包：动作表在右键的那一刻才建
+  let items: () -> [ActionMenu.Item]
+
+  func makeNSView(context: Context) -> Source { Source() }
+
+  func updateNSView(_ view: Source, context: Context) { view.items = items }
+
+  final class Source: NSView {
+    var items: () -> [ActionMenu.Item] = { [] }
+    /// 现在这一下是不是要弹右键菜单的（单测换掉它，验 SwiftUI 确实把点击交到这里）
+    var isMenuClick: () -> Bool = { Source.opensMenu(NSApp.currentEvent) }
+
+    /// 会弹出右键菜单的鼠标事件：右键按下、按着 ⌃ 的左键按下
+    static func opensMenu(_ event: NSEvent?) -> Bool {
+      guard let event else { return false }
+      return event.type == .rightMouseDown
+        || (event.type == .leftMouseDown && event.modifierFlags.contains(.control))
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+      isMenuClick() ? super.hitTest(point) : nil
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+      let items = items()
+      return items.isEmpty ? nil : NSMenu.of(items)
+    }
+
+    override func rightMouseDown(with event: NSEvent) { popUp(event) }
+
+    /// 到得了这里的左键只有 ⌃ 点按（hitTest）
+    override func mouseDown(with event: NSEvent) { popUp(event) }
+
+    private func popUp(_ event: NSEvent) {
+      if let menu = menu(for: event) { NSMenu.popUpContextMenu(menu, with: event, for: self) }
     }
   }
 }

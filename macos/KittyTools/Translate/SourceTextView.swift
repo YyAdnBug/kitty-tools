@@ -7,7 +7,8 @@
 // 便签（Notes/）也用它：快速记一条是提交模式，全部便签窗口和屏幕边缘那叠的正文是不提交模式——另给字的颜色
 // （textColor，纸上的墨；给了它插入点也用它：强调色选黄时在柠檬色的纸上看不见）、字节上限（maxBytes：会超的那一次
 // 输入拦下，提示音 + onOverflow，不截断）和一个认它用的标记（identifier：那叠里换一条便签时新旧两个正文框会同时在，
-// 按便签的编号找该拿焦点的那个）。
+// 按便签的编号找该拿焦点的那个）。那叠里「该拿焦点的那条便签」的正文框还会在挂进窗口的那一刻自己拿焦点
+// （takesFocusOnAppear；之后再要一次走 focusRequest）。
 
 import AppKit
 import Carbon.HIToolbox
@@ -22,8 +23,11 @@ struct SourceTextView: NSViewRepresentable {
   /// 外面框的左右内边距挪到这里，滚动条才贴框边
   var horizontalInset: CGFloat = 2
   var isDialogField = false
-  /// 对话框里第二个输入框：出现时不抢焦点，这个数变大一次就拿一次焦点（nil = 照常出现就抢）
+  /// 对话框里第二个输入框：出现时不抢焦点，这个数变大一次就拿一次焦点（nil = 照常出现就抢）。
+  /// 建出来时带着的那个数不算一次（只认之后的变化）
   var focusRequest: Int?
+  /// 挂进窗口的那一刻就拿焦点（不是对话框的输入框也拿；窗口不必是 key）：屏幕边缘那叠里刚打开的那条便签的正文
+  var takesFocusOnAppear = false
   /// 字的颜色；nil = 系统的文字色。给了的话插入点也用它（不给是强调色）
   var textColor: NSColor?
   /// 文本框的 identifier（按它在视图树里认这一个；nil = 不标）
@@ -35,6 +39,9 @@ struct SourceTextView: NSViewRepresentable {
   var onSubmit: () -> Void = {}
   /// 焦点进出（画焦点环用）
   var onFocusChange: ((Bool) -> Void)?
+  /// Tab / ⇧Tab：给了就交给它（快速记一条：去标题框），不给照常是输入一个制表符。
+  /// 放在最后：排在 onSubmit 前面的话，别处写在末尾的那个提交闭包会被编译器配给它
+  var onTab: (() -> Void)?
 
   func makeNSView(context: Context) -> FocusScrollView {
     let textView = FocusTextView(frame: .zero)
@@ -51,9 +58,11 @@ struct SourceTextView: NSViewRepresentable {
     textView.autoresizingMask = [.width]
     textView.textContainer?.widthTracksTextView = true
     textView.delegate = context.coordinator
+    context.coordinator.focusRequest = focusRequest ?? 0
     let scroll = FocusScrollView()
     scroll.isDialogField = isDialogField
     scroll.grabsFocusOnAppear = focusRequest == nil
+    scroll.takesFocusOnAppear = takesFocusOnAppear
     scroll.drawsBackground = false
     scroll.hasVerticalScroller = true
     scroll.documentView = textView
@@ -96,7 +105,7 @@ struct SourceTextView: NSViewRepresentable {
 
   final class Coordinator: NSObject, NSTextViewDelegate {
     var parent: SourceTextView
-    /// 上次处理过的 focusRequest（0 = 还没要过）
+    /// 上次处理过的 focusRequest（建出来时带着的那个数，没给就是 0）
     var focusRequest = 0
     /// 有字节上限时：最近一次没在组字、也没超上限的全文（输入法确认之后超了就退回它）；nil = 还没打过字，用外面那份
     var committed: String?
@@ -159,6 +168,10 @@ struct SourceTextView: NSViewRepresentable {
         else { return false }
         textView.insertNewlineIgnoringFieldEditor(nil)
         return true
+      case #selector(NSResponder.insertTab(_:)), #selector(NSResponder.insertBacktab(_:)):
+        guard let onTab = parent.onTab else { return false }
+        onTab()
+        return true
       case #selector(NSResponder.cancelOperation(_:)):
         if let onCancel = parent.onCancel {
           onCancel()
@@ -198,6 +211,7 @@ struct SourceTextView: NSViewRepresentable {
   final class FocusScrollView: NSScrollView {
     var isDialogField = false
     var grabsFocusOnAppear = true
+    var takesFocusOnAppear = false
 
     override func viewDidMoveToWindow() {
       super.viewDidMoveToWindow()
@@ -205,6 +219,7 @@ struct SourceTextView: NSViewRepresentable {
         if grabsFocusOnAppear { window?.makeFirstResponder(documentView) }
       } else {
         window?.initialFirstResponder = documentView
+        if takesFocusOnAppear { window?.makeFirstResponder(documentView) }
       }
     }
 

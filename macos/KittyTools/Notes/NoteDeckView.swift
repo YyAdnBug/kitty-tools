@@ -289,8 +289,10 @@ private struct NoteTab: View {
       }
     }
     .contentShape(.rect)
+    // 在不动的坐标系里量（.global）：这张标签自己正被外面的 .offset 挪着，按默认的本地坐标系量的话坐标系跟着视图走，
+    // 挪了多少就少算多少、下一帧又弹回来——被拖的那张一直抖（2026-10-13 手测）
     .gesture(
-      DragGesture(minimumDistance: 0)
+      DragGesture(minimumDistance: 0, coordinateSpace: .global)
         .onChanged { model.dragChanged(note.id, by: $0.translation.height) }
         .onEnded { model.dragEnded(note.id, by: $0.translation.height) }
     )
@@ -462,7 +464,7 @@ private struct NoteSheet: View {
         // 写入绑着这条便签的编号：换一条时这块编辑区还会留一小会儿（淡出），它晚到的那一下要落回它自己那条
         note: note, fontSize: fontSize, margin: Self.margin,
         setBody: { model.setBody($0, of: note.id) }, onOverflow: model.overflowed,
-        onCancel: model.cancel)
+        onCancel: model.cancel, focusRequest: model.focusRequest(for: note.id))
       NoteFootnote(
         note: note, isOverLimit: model.isOverLimit, isUnsaved: model.store.saveProblem != nil
       )
@@ -536,7 +538,7 @@ private struct NoteSheet: View {
     switch selector {
     case #selector(NSResponder.insertNewline(_:)), #selector(NSResponder.moveDown(_:)),
       #selector(NSResponder.insertTab(_:)):
-      model.focusBody()
+      model.requestFocus()
       return true
     case #selector(NSResponder.cancelOperation(_:)):
       model.cancel()

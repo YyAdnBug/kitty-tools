@@ -341,6 +341,40 @@ extension NSMenu {
     addItem(item)
     return item
   }
+
+  /// 用一份动作表（面板里的 ⌘K 菜单、右键菜单用的同一份 ActionMenu.Item）建系统菜单：分节变了加分隔线、子列表是子菜单、
+  /// 能勾选的打勾，不写键位。条目自己带的图**原样画（非模板）**——便签的纸色圆点靠的就是它：SwiftUI 的 Menu、
+  /// contextMenu 桥成系统菜单时不带 Label 的图（2026-10-13 真机：工具栏的颜色下拉里没有色点；屏外实测右键菜单也没有），
+  /// 自己建的系统菜单 image 是确定有的
+  static func of(_ items: [ActionMenu.Item]) -> NSMenu {
+    let menu = NSMenu()
+    menu.autoenablesItems = false
+    for (index, item) in items.enumerated() {
+      if index > 0, items[index - 1].section != item.section { menu.addItem(.separator()) }
+      let entry = NSMenuItem(title: item.title, action: nil, keyEquivalent: "")
+      if let image = item.image {
+        image.isTemplate = false
+        entry.image = image
+      }
+      if let checked = item.isChecked { entry.state = checked ? .on : .off }
+      if let submenu = item.submenu {
+        entry.submenu = of(submenu)
+      } else {
+        entry.action = #selector(MenuTarget.run)
+        entry.target = MenuTarget.shared
+        entry.representedObject = item.run
+      }
+      menu.addItem(entry)
+    }
+    return menu
+  }
+
+  /// 从 SwiftUI 的按钮里弹出来（它拿不到自己的 NSView，没法挂在按钮下面）：左上角落在鼠标的位置。
+  /// ponytail: 不是下拉的样子（按钮上没有箭头；旁白「按下」时也落在鼠标那儿）。要挂在按钮正下方，
+  /// 把那个按钮换成自己的 NSView（NSViewRepresentable 包一个 NSButton，`popUp(positioning:at:in:)` 给它自己）
+  func popUpAtPointer() {
+    popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+  }
 }
 
 /// 菜单项的 target：点了就跑存在 representedObject 里的闭包（不子类化 NSMenuItem：它的 init 不是主线程隔离的）

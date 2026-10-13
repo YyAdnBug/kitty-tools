@@ -5,6 +5,8 @@
 // onFocusChange：焦点进出时回调（外面的输入框底据此画 Whisker 焦点环）。
 // romanOnly：聚焦时只允许英文类输入法（系统自动切过去，离开后恢复）。
 // maxLength：字数上限，超出的那次输入整段退回（提示音，不截断；输入法组字中不打断，确认后再判断）。
+// focusRequest：面板里主输入框之外的第二个框（快速记一条的标题）——不登记成 initialFirstResponder（面板呼出时焦点不进它），
+// 这个数每变一次拿一次焦点（同 SourceTextView.focusRequest，mac-overlay-panel §3）。
 
 import AppKit
 import SwiftUI
@@ -22,6 +24,8 @@ struct CommandTextField: NSViewRepresentable {
   var romanOnly = false
   /// 字数上限（收藏夹名 24 字）；nil = 不限
   var maxLength: Int?
+  /// 给了它：出现时不抢焦点、也不登记成面板呼出时聚焦的那个框，这个数变一次才拿一次焦点（建出来时带着的那个数不算）
+  var focusRequest: Int?
   /// 返回 true 表示已处理（moveUp: / moveDown: / insertNewline: / cancelOperation: …）。
   /// 没处理的 cancelOperation: 交给窗口（浮层据此关闭）
   var onCommand: (Selector) -> Bool = { _ in false }
@@ -29,8 +33,10 @@ struct CommandTextField: NSViewRepresentable {
   var onFocusChange: ((Bool) -> Void)?
 
   func makeNSView(context: Context) -> FocusField {
+    context.coordinator.focusRequest = focusRequest ?? 0
     let field = FocusField()
     field.isDialogField = isDialogField
+    field.claimsInitialFocus = focusRequest == nil
     field.placeholderString = placeholder
     field.isBordered = false
     field.drawsBackground = false
@@ -46,6 +52,10 @@ struct CommandTextField: NSViewRepresentable {
   func updateNSView(_ field: FocusField, context: Context) {
     context.coordinator.parent = self
     field.onFocusChange = onFocusChange
+    if let request = focusRequest, request != context.coordinator.focusRequest {
+      context.coordinator.focusRequest = request
+      field.window?.makeFirstResponder(field)
+    }
     // 纸上的输入框（给了墨色）：插入点用墨色——强调色选黄时在柠檬色的纸上看不见。别的调用方不给，照旧是强调色
     field.caretColor = textColor
     // 读了 Style.brand：设置里换了强调色时这里会重跑，正在编辑的插入点和选中底色跟着换
@@ -68,6 +78,8 @@ struct CommandTextField: NSViewRepresentable {
 
   final class Coordinator: NSObject, NSTextFieldDelegate {
     var parent: CommandTextField
+    /// 上次处理过的 focusRequest（建出来时带着的那个数，没给就是 0）
+    var focusRequest = 0
     init(parent: CommandTextField) { self.parent = parent }
 
     func controlTextDidChange(_ notification: Notification) {
@@ -95,6 +107,8 @@ struct CommandTextField: NSViewRepresentable {
 
   final class FocusField: NSTextField {
     var isDialogField = false
+    /// 不是对话框的输入框：挂进窗口时把自己登记成面板呼出时聚焦的那个（给了 focusRequest 的第二个框不登记）
+    var claimsInitialFocus = true
     var romanOnly = false
     var onFocusChange: ((Bool) -> Void)?
     /// 插入点的颜色；nil = 强调色
@@ -148,7 +162,7 @@ struct CommandTextField: NSViewRepresentable {
         let current = window?.firstResponder
         previousField = ((current as? NSTextView)?.delegate as? NSView) ?? (current as? NSView)
         window?.makeFirstResponder(self)
-      } else {
+      } else if claimsInitialFocus {
         window?.initialFirstResponder = self
       }
     }
