@@ -188,6 +188,32 @@ struct SourceTextView: NSViewRepresentable {
   final class FocusTextView: NSTextView {
     var onFocusChange: ((Bool) -> Void)?
 
+    /// 鼠标底下不是这个输入框（被浮在上面的菜单、卡片盖住了）：别把光标设成 I 形。文本视图不知道自己被盖住，
+    /// 鼠标在它的范围里一动它就设 I 形——盖在便签正文上的「⋯」菜单上因此是输入框的光标（2026-10-13 用户报）
+    override func mouseMoved(with event: NSEvent) {
+      if isCovered(at: event.locationInWindow) {
+        NSCursor.arrow.set()
+      } else {
+        super.mouseMoved(with: event)
+      }
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+      if isCovered(at: event.locationInWindow) {
+        NSCursor.arrow.set()
+      } else {
+        super.cursorUpdate(with: event)
+      }
+    }
+
+    /// 窗口里这一点上最上面的视图是不是别人的（SwiftUI 画在它上面的内容点到的是宿主视图，不是它）
+    private func isCovered(at point: NSPoint) -> Bool {
+      guard let content = window?.contentView else { return false }
+      let local = content.superview?.convert(point, from: nil) ?? point
+      guard let hit = content.hitTest(local) else { return false }
+      return hit !== self && !hit.isDescendant(of: self)
+    }
+
     override func becomeFirstResponder() -> Bool {
       defer { reportFocus() }
       return super.becomeFirstResponder()

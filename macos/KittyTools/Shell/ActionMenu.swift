@@ -142,6 +142,8 @@ struct ActionMenu: View {
       RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous).hairlineBorder()
     )
     .floatingShadow()
+    // 菜单上是箭头光标：它常盖在输入框上面（便签的正文、剪贴板的透镜），不垫这一块的话露出的是下面的 I 形
+    .background { ArrowCursorArea() }
     // 转场绑在这里：调用方只要 if 显示 + 用动画改那个开关（出现 snap，减弱动态效果时只淡入）
     .transition(
       .asymmetric(
@@ -311,6 +313,27 @@ struct ActionContextMenu: View {
 /// 同一份动作条目画成**系统的**右键菜单（NSMenu.of：条目自己带的图原样画）。盖在要右键的那块视图上
 /// （`.overlay { ActionSystemMenu { … } }`）：只接会弹出右键菜单的那一下（右键按下、⌃ 点按），别的点击、拖动照常
 /// 落到下面——所以选中、拖动排序不受影响。用在全部便签窗口的行上（颜色子菜单要纸色圆点）
+/// 一块「这里是箭头光标」的区域（垫在菜单底下）：进来、在里面动都把光标设回箭头；不接点击
+private struct ArrowCursorArea: NSViewRepresentable {
+  func makeNSView(context: Context) -> Area {
+    let view = Area()
+    view.addTrackingArea(
+      NSTrackingArea(
+        rect: .zero, options: [.activeAlways, .cursorUpdate, .mouseMoved, .inVisibleRect],
+        owner: view))
+    return view
+  }
+
+  func updateNSView(_ view: Area, context: Context) {}
+
+  final class Area: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .arrow) }
+    override func cursorUpdate(with event: NSEvent) { NSCursor.arrow.set() }
+    override func mouseMoved(with event: NSEvent) { NSCursor.arrow.set() }
+  }
+}
+
 struct ActionSystemMenu: NSViewRepresentable {
   /// 闭包：动作表在右键的那一刻才建
   let items: () -> [ActionMenu.Item]
