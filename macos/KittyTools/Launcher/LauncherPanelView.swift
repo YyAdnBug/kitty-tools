@@ -242,7 +242,7 @@ struct LauncherPanelView: View {
       if model.showsActions {
         ActionMenu(
           items: model.filteredActions, selection: model.actionSelection,
-          maxRows: Self.visibleRows, onRun: model.run
+          maxRows: Self.visibleRows, onHover: { model.actionSelection = $0 }, onRun: model.run
         )
         .padding(.trailing, 16)
         .padding(.bottom, Self.barHeight + 4)

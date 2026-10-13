@@ -526,7 +526,7 @@ private struct NoteSheet: View {
         items: model.menuItems, selection: menu.selection,
         header: menu.inColors && !menu.fromDot ? NotesWindowModel.colorTitle : nil,
         onBack: model.menuBack, anchor: menu.fromDot ? .topLeading : .topTrailing,
-        maxRows: 8.5, onRun: model.run
+        maxRows: 8.5, onHover: model.menuHover, onRun: model.run
       )
       .padding(.top, Self.headerHeight - 2)
       .padding(.horizontal, 6)

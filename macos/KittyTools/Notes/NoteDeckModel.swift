@@ -466,6 +466,12 @@ import SwiftUI
     }
   }
 
+  /// 鼠标移到操作菜单的某一行上：选中跟过去（ActionMenu.onHover）
+  func menuHover(_ index: Int) {
+    guard menu != nil, menuItems.indices.contains(index) else { return }
+    menu?.selection = index
+  }
+
   /// ← / Esc / 点「‹ 颜色」：颜色那一级回上一级（从圆点点开的没有上一级，直接关）
   func menuBack() {
     if let menu, menu.inColors, !menu.fromDot {

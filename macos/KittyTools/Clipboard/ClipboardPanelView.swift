@@ -74,7 +74,8 @@ struct ClipboardPanelView: View {
       if model.palette == .filters {
         ActionMenu(
           items: model.filteredActions, selection: model.actionSelection,
-          emptyText: "没有匹配的筛选", anchor: .topLeading, maxRows: 8.5, onRun: model.run
+          emptyText: "没有匹配的筛选", anchor: .topLeading, maxRows: 8.5,
+          onHover: { model.actionSelection = $0 }, onRun: model.run
         )
         .padding(.leading, 12)
         .padding(.top, 60 + (trusted ? 0 : Self.bannerHeight))
@@ -85,7 +86,8 @@ struct ClipboardPanelView: View {
         ActionMenu(
           items: model.filteredActions, selection: model.actionSelection,
           emptyText: model.submenuTitle == nil ? "没有匹配的操作" : "没有匹配的收藏夹",
-          header: model.submenuTitle, onBack: model.leaveSubmenu, maxRows: 8.5, onRun: model.run
+          header: model.submenuTitle, onBack: model.leaveSubmenu, maxRows: 8.5,
+          onHover: { model.actionSelection = $0 }, onRun: model.run
         )
         // 右缘对着底栏「操作 ⌘K」的键帽：右内边距 16 + 图钉 + 齿轮 + 竖线和间距
         .padding(.trailing, 82)
@@ -97,7 +99,8 @@ struct ClipboardPanelView: View {
       if model.palette == .groups {
         ActionMenu(
           items: model.filteredActions, selection: model.actionSelection,
-          emptyText: "没有匹配的收藏夹", anchor: .bottomLeading, maxRows: 8.5, onRun: model.run
+          emptyText: "没有匹配的收藏夹", anchor: .bottomLeading, maxRows: 8.5,
+          onHover: { model.actionSelection = $0 }, onRun: model.run
         )
         .padding(
           .leading,

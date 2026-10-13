@@ -817,6 +817,13 @@ struct NoteDeckTests {
     #expect(model.menuItems.map(\.section) == [0, 0, 1, 1, 2])
     #expect(model.menuItems.map(\.isDestructive) == [false, false, false, true, false])
     #expect(model.menuItems[1].submenu?.count == Note.colorCount)
+    // 鼠标移到哪一行，选中跟到哪一行（越界的不理）；再把它挪回第一行，下面的 ↓ 照旧从头走
+    model.menuHover(3)
+    #expect(model.menu?.selection == 3)
+    model.menuHover(99)
+    #expect(model.menu?.selection == 3)
+    model.menuHover(0)
+    #expect(model.menu?.selection == 0)
     // ↓ 到「颜色」，→ 进去：选中的是现在的颜色
     #expect(try model.handleMenuKey(key(kVK_DownArrow)))
     #expect(try model.handleMenuKey(key(kVK_RightArrow)))

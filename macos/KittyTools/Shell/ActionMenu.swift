@@ -63,6 +63,10 @@ struct ActionMenu: View {
   var anchor: UnitPoint = .bottomTrailing
   /// 超过这么多行高就在菜单里滚动（给半行，露出下面还有），选中行自动滚进来
   var maxRows: CGFloat = .infinity
+  /// 鼠标移到某一行上：调用方把选中挪到这个下标（同系统菜单：鼠标指到哪行哪行就是选中的，↩ 执行的也是它）。
+  /// nil = 不跟鼠标。用 HoverTracker 报（非激活浮层里 SwiftUI 的 onHover 不可靠）；鼠标不动时不报，
+  /// 所以按 ⌘K 呼出、用 ↑↓ 选的人不受停在那里的鼠标影响
+  var onHover: ((Int) -> Void)?
   /// 单击一行；执行前关菜单（或进子列表）由调用方做
   let onRun: (Item) -> Void
 
@@ -73,6 +77,8 @@ struct ActionMenu: View {
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.colorSchemeContrast) private var contrast
+  /// 鼠标刚指过去的那一行：选中是鼠标挪过去的就不跟着滚（滚了行会从鼠标底下跑掉，接着又指到下一行，一路滚到底）
+  @State private var hovered: Int?
 
   var body: some View {
     let checkable = items.contains { $0.isChecked != nil }
@@ -100,6 +106,15 @@ struct ActionMenu: View {
               VStack(spacing: 0) {
                 if index > 0, items[index - 1].section != item.section { separator }
                 row(item, isSelected: index == selection, checkable: checkable, hasIcons: hasIcons)
+                  .overlay {
+                    if let onHover {
+                      HoverTracker { inside in
+                        guard inside else { return }
+                        hovered = index
+                        onHover(index)
+                      }
+                    }
+                  }
               }
               .id(item.id)
             }
@@ -113,6 +128,9 @@ struct ActionMenu: View {
           height: Self.height(items, maxRows: maxRows, header: header != nil, contrast: contrast)
         )
         .onChange(of: selection) { _, index in
+          // 键盘挪的才滚进来；鼠标指过去的那一行本来就在眼前
+          guard index != hovered else { return }
+          hovered = nil
           if items.indices.contains(index) { proxy.scrollTo(items[index].id) }
         }
       }

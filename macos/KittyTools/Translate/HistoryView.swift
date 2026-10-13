@@ -408,7 +408,8 @@ struct HistoryView: View {
       if list.showsActions {
         ActionMenu(
           items: list.filteredActions, selection: list.actionSelection,
-          header: list.submenuTitle, onBack: list.leaveSubmenu, maxRows: 8.5, onRun: list.run
+          header: list.submenuTitle, onBack: list.leaveSubmenu, maxRows: 8.5,
+          onHover: { list.actionSelection = $0 }, onRun: list.run
         )
         .padding(.trailing, 12)
         .padding(.bottom, 12)
