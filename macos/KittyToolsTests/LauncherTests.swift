@@ -16,6 +16,22 @@ struct LauncherTests {
       initials: [LauncherMatch.initials(title), pinyin?.initials].compactMap { $0 })
   }
 
+  /// 把事件变成 `NSApp.currentEvent`：投进队列再取出来。取到的不一定是刚投的那个——系统自己的事件会插队，取事件时
+  /// 顺带跑起来的别的测试转 run loop 也可能先把它取走——所以取到自己投的为止（别人的照常派发），被取走了就再投。
+  /// 取出来的是另一个 NSEvent 对象，认不认得出是自己的由调用方说
+  private func makeCurrent(_ event: NSEvent, isMine: (NSEvent) -> Bool) throws {
+    for _ in 0..<20 {
+      NSApp.postEvent(event, atStart: true)
+      while let next = NSApp.nextEvent(
+        matching: .any, until: .distantPast, inMode: .default, dequeue: true)
+      {
+        if isMine(next) { return }
+        NSApp.sendEvent(next)
+      }
+    }
+    throw CocoaError(.featureUnsupported, userInfo: [NSDebugDescriptionErrorKey: "投的事件一直没取到"])
+  }
+
   @Test func pinyinAndInitials() throws {
     let pinyin = try #require(AppCatalog.pinyin("活动监视器"))
     #expect(pinyin.full == "huodongjianshiqi" && pinyin.initials == "hdjsq")
@@ -293,9 +309,8 @@ struct LauncherTests {
     let event = try #require(
       NSEvent.otherEvent(
         with: .applicationDefined, location: .zero, modifierFlags: [], timestamp: 0,
-        windowNumber: 0, context: nil, subtype: 0, data1: 0, data2: 0))
-    NSApp.postEvent(event, atStart: true)
-    _ = NSApp.nextEvent(matching: .any, until: .distantPast, inMode: .default, dequeue: true)
+        windowNumber: 0, context: nil, subtype: 0, data1: 0x4B54, data2: 0))
+    try makeCurrent(event) { $0.type == .applicationDefined && $0.data1 == 0x4B54 }
     #expect(NSApp.currentEvent?.type == .applicationDefined)
     let model = LauncherModel(
       usage: try LauncherUsage(db: Database(path: ":memory:")),
@@ -448,8 +463,9 @@ struct LauncherTests {
           keyCode: UInt16(code)))
     }
     model.toggleActions()
-    NSApp.postEvent(try key(kVK_ANSI_O, .control), atStart: true)
-    _ = NSApp.nextEvent(matching: .any, until: .distantPast, inMode: .default, dequeue: true)
+    try makeCurrent(try key(kVK_ANSI_O, .control)) {
+      $0.type == .keyDown && Int($0.keyCode) == kVK_ANSI_O && $0.modifierFlags.contains(.control)
+    }
     #expect(model.handleCommand(#selector(NSResponder.insertNewlineIgnoringFieldEditor(_:))))
     #expect(model.showsActions)
     let commandDelete = try key(kVK_Delete, .command)
