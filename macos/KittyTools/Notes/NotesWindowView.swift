@@ -1,7 +1,7 @@
 // 全部便签窗口的界面（系统皮肤的普通窗口，mac-whisker-notes.mdc「全部便签」；窗口和状态在 NotesWindow.swift）。
 // NavigationSplitView 两栏。左：顶上分段「全部 / 归档 / 最近删除」（带条数）→ 搜索框 → 列表（行 = 纸色圆点、标题、
 // 一行预览、相对时间，固定的带图钉；选中是中性高亮；「全部」里没在搜索时能拖动排序）。右：这条便签——整块是它的纸色，
-// 顶上一条色条，标题框（CommandTextField）、正文（SourceTextView 的不提交模式）、底下一行小字（改于什么时候、多少字）；
+// 顶上一条色条，标题框、正文、底下一行小字（改于什么时候、多少字；这三件在 NoteFields.swift，和屏幕边缘那叠共用）；
 // 最近删除里的只读，列表下面多一行「清空最近删除…」。操作在工具栏和右键菜单里，名字取自 NotesWindowModel 的同一份；
 // 键盘挂在看不见的按钮上（shortcuts）。
 
@@ -368,60 +368,28 @@ private struct NoteEditor: View {
     VStack(spacing: 0) {
       paper.strip.frame(height: 3).accessibilityHidden(true)
       if note.deletedAt == nil {
+        // 标题框、正文框和屏幕边缘那叠里打开的便签是同一份（Notes/NoteFields.swift）。
         // NSTextField 自己左右各有 2 pt 的内缩：外面少留 2，字才和正文同一条左边线
-        CommandTextField(
-          text: Binding {
-            note.title
-          } set: {
-            model.setTitle($0, of: note.id)
-          }, placeholder: "", fontSize: 20, weight: .semibold, textColor: paper.inkColor,
-          maxLength: Note.maxTitleLength, onCommand: titleCommand
+        NoteTitleField(
+          note: note, setTitle: { model.setTitle($0, of: note.id) }, onCommand: titleCommand
         )
-        .frame(height: 26)
-        // 占位自己画（墨色淡一档）：系统的占位灰在有颜色的纸上太浅
-        .overlay(alignment: .leading) {
-          if note.title.isEmpty { placeholder("标题", size: 20, weight: .semibold, paper) }
-        }
         .padding(.horizontal, Self.margin - 2)
         .padding(.top, 14)
         .padding(.bottom, 4)
-        .accessibilityLabel("标题")
         // 滚动区铺满右边、文字缩进放在 horizontalInset 里（15 + NSTextView 自己的 5 = 20）：滚动条贴窗口右边
-        SourceTextView(
-          text: Binding {
-            note.body
-          } set: {
-            model.setBody($0, of: note.id)
-          }, submitsOnEnter: false, fontSize: fontSize, horizontalInset: Self.margin - 5,
-          textColor: paper.inkColor, maxBytes: Note.maxBodyBytes, onOverflow: model.overflowed,
-          onCancel: {}
-        )
-        .accessibilityLabel("正文")
-        .overlay(alignment: .topLeading) {
-          // 位置就是第一个字的位置（左 = 边线，上 6 = SourceTextView 的 textContainerInset）：一打字不跳
-          if note.body.isEmpty {
-            placeholder("写点什么…", size: fontSize, weight: .regular, paper)
-              .padding(.leading, Self.margin - 2)
-              .padding(.top, 6)
-          }
-        }
+        NoteBodyField(
+          note: note, fontSize: fontSize, margin: Self.margin,
+          setBody: { model.setBody($0, of: note.id) }, onOverflow: model.overflowed)
       } else {
         readOnly(paper)
       }
-      footer(paper)
+      NoteFootnote(
+        note: note, isOverLimit: model.isOverLimit, isUnsaved: model.store.saveProblem != nil
+      )
+      .padding(.horizontal, Self.margin)
+      .frame(height: 28)
     }
     .background(paper.paper)
-  }
-
-  private func placeholder(
-    _ text: String, size: CGFloat, weight: Font.Weight, _ paper: NotePaper
-  ) -> some View {
-    Text(text)
-      .font(.system(size: size, weight: weight))
-      .foregroundStyle(paper.ink.opacity(0.35))
-      .padding(.leading, 2)
-      .allowsHitTesting(false)
-      .accessibilityHidden(true)
   }
 
   /// 标题框里 ↩、↓、Tab 都是去正文；Esc 不做事（普通窗口，不关）
@@ -451,24 +419,5 @@ private struct NoteEditor: View {
       .padding(.horizontal, Self.margin)
       .padding(.top, 14)
     }
-  }
-
-  /// 底下一行小字；正文打到上限时换成警告（只染三角，字用墨色：橙字在纸上对比度不够）
-  private func footer(_ paper: NotePaper) -> some View {
-    HStack(spacing: 6) {
-      if model.isOverLimit {
-        Image(systemName: "exclamationmark.triangle.fill")
-          .foregroundStyle(Color(nsColor: .systemOrange))
-          .accessibilityHidden(true)
-        Text(NotesWindowModel.overLimitText).foregroundStyle(paper.ink)
-      } else {
-        Text(NotesWindowModel.footnote(note)).foregroundStyle(paper.secondaryInk)
-      }
-      Spacer(minLength: 0)
-    }
-    .font(.system(size: 11))
-    .lineLimit(1)
-    .padding(.horizontal, Self.margin)
-    .frame(height: 28)
   }
 }

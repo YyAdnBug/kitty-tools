@@ -22,6 +22,8 @@ nonisolated struct NotePaper: Equatable, Sendable {
 
   /// 次要的字（「改于…」那一行、占位）用墨的这么多：再淡的话浅色那套在纸上不到 4.5:1
   static let secondaryOpacity = 0.75
+  /// 打开的便签带着的那张标签：纸上叠这么浓的色条色（比纸深一档；墨在上面仍够 4.5:1，NoteDeckTests 锁住）
+  static let tabTint = 0.16
 
   static let all: [NotePaper] = [
     NotePaper(
@@ -62,6 +64,13 @@ nonisolated struct NotePaper: Equatable, Sendable {
   var strip: Color { Color(nsColor: stripColor) }
   var ink: Color { Color(nsColor: inkColor) }
   var secondaryInk: Color { ink.opacity(Self.secondaryOpacity) }
+  /// 纸的描边、纸上的分隔线（屏幕边缘的标签、预览卡、打开的便签）：墨的 14%，增强对比度时 45%
+  /// （线宽另由 hairlineBorder / Style.hairlineWidth 加粗）
+  func rule(_ contrast: ColorSchemeContrast) -> Color {
+    ink.opacity(contrast == .increased ? 0.45 : 0.14)
+  }
+  /// 永远深色的底上用的色条色（屏幕边缘的药丸是 HUD 皮肤，不跟外观变）：取深色那套里提亮过的色条
+  var brightStrip: NSColor { srgb(dark.strip) }
 
   /// 取色闭包由 AppKit 在解析颜色的线程上调（mac-native §3）：只读传进来的两个数
   private static func dynamic(_ light: Int, _ dark: Int) -> NSColor {

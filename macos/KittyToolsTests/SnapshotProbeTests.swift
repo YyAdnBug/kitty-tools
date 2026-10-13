@@ -1468,6 +1468,241 @@ struct SnapshotProbeTests {
     }
   }
 
+  /// 便签第 3 批「屏幕边缘那叠」（文件名都以 notes-deck- 开头；只跑这一个函数约半分钟）：药丸（1 / 6 / 20 条，左右两边）、
+  /// 扇出的一列（两种样式 × 三档大小、「+N」和它展开后、固定的、长标题和中英混排、鼠标停着的、左边、深色）、预览卡、
+  /// 打开的便签（四种大小、浅深、左边、固定、操作菜单和颜色那一级、打到上限、空白的）、设置 › 便签「屏幕边缘」一组
+  /// （总开关开和关、深色、只有一块屏），另有一张全部便签窗口（编辑区抽成共用件之后和第 2 批的图逐像素对）
+  @Test(.enabled(if: directory != nil)) func notesDeck() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    Prefs.registerDefaults()
+    let now = Date.now
+    typealias Entry = (title: String, body: String, ago: TimeInterval)
+    // 和 notes() 里那 6 条一样（全部便签窗口那张图要和第 2 批的对得上）
+    let six: [Entry] = [
+      ("", "周五前交的东西\n☐ 周报\n☐ 报销单\n☑ 订会议室\n下午三点和设计过一遍首页的改动，记得带上数据。", 180),
+      ("读书笔记", "「慢慢来，比较快」这句话放在重构上也成立：先把现有的行为用测试钉住，再一小步一小步地挪。", 3600 * 2),
+      ("", "wifi 密码 kitty-2026", 3600 * 26),
+      ("想法", "", 86_400 * 3),
+      ("", "一条很长很长的标题，长到列表里的这一行放不下，后面要用省略号收住，看它和右边的时间挤不挤在一起", 86_400 * 9),
+      ("", "Groceries: milk, eggs, bread", 86_400 * 40),
+    ]
+    func library(_ entries: [Entry]) throws -> (store: NoteStore, ids: [String]) {
+      let store = try NoteStore(db: Database(path: ":memory:"))
+      // 倒着建：新建的排最前，建完就是 entries 的顺序；颜色接着轮
+      for entry in entries.reversed() {
+        store.create(body: entry.body, title: entry.title, now: now.addingTimeInterval(-entry.ago))
+      }
+      return (store, store.active.map(\.id))
+    }
+    func many(_ count: Int) -> [Entry] {
+      (1...count).map { ("第 \($0) 条", "内容 \($0)", Double($0) * 60) }
+    }
+
+    // MARK: 药丸（图层画的：放在一块灰底上出图，贴着它那一侧）
+    for (name, count, edge, hidden) in [
+      ("1", 1, NoteDeckOptions.Edge.right, false), ("6", 6, .right, false),
+      ("20", 20, .right, false), ("6-left", 6, .left, false), ("6-large", 6, .right, false),
+      ("hidden", 6, .right, true),
+    ] where Self.wants("\(out)/notes-deck-pill-\(name).png") {
+      var options = NoteDeckOptions()
+      options.hidesPill = hidden
+      if name == "6-large" { options.size = .large }
+      let far = NoteDeckScreen(
+        name: "", frame: CGRect(x: -30000, y: -30000, width: 1440, height: 900),
+        visibleFrame: CGRect(x: -30000, y: -30000, width: 1440, height: 875))
+      let pill = NoteDeckPill()
+      let frame = NoteDeckLayout.pillFrame(on: far, edge: edge, count: count, options: options)
+      pill.update(
+        frame: frame, edge: edge, colors: (0..<count).map { $0 % Note.colorCount },
+        options: options)
+      let size = NSSize(width: 60, height: frame.height + 24)
+      let backdrop = NSView(frame: NSRect(origin: .zero, size: size))
+      backdrop.wantsLayer = true
+      backdrop.layer?.backgroundColor = NSColor(white: 0.55, alpha: 1).cgColor
+      let view = try #require(pill.panel.contentView)
+      view.frame.origin = NSPoint(x: edge == .right ? size.width - frame.width : 0, y: 12)
+      backdrop.addSubview(view)
+      try renderLayers(
+        backdrop, size: size, dark: false, configure: { _ in },
+        to: "\(out)/notes-deck-pill-\(name).png")
+    }
+
+    // MARK: 那叠（透明的面板：垫一块像桌面的底出图）
+    func deck(
+      _ name: String, _ store: NoteStore, options: NoteDeckOptions = NoteDeckOptions(),
+      edge: NoteDeckOptions.Edge = .right, dark: Bool = false, height: CGFloat = 860,
+      setup: (NoteDeckModel) -> Void = { _ in }
+    ) throws {
+      let screen = NoteDeckScreen(
+        name: "", frame: CGRect(x: 0, y: 0, width: 1440, height: height + 25),
+        visibleFrame: CGRect(x: 0, y: 0, width: 1440, height: height))
+      let frame = NoteDeckLayout.panelFrame(on: screen, edge: edge, options: options)
+      let pill = NoteDeckLayout.pillFrame(
+        on: screen, edge: edge, count: store.active.count, options: options)
+      let model = NoteDeckModel(store: store)
+      model.options = options
+      model.edge = edge
+      model.panelSize = frame.size
+      model.pillCenter = frame.maxY - pill.midY
+      model.setRevealed(true)
+      model.send(.pillEntered(optionDown: false, allowed: true))
+      setup(model)
+      try snapshot(
+        NoteDeckView(model: model).background(Color(white: dark ? 0.22 : 0.80)),
+        size: frame.size, dark: dark, to: "\(out)/notes-deck-\(name).png")
+    }
+    let (store, ids) = try library(six)
+    store.setPinned(true, of: ids[1])
+    for style in NoteDeckOptions.TabStyle.allCases {
+      for size in NoteDeckOptions.Size.allCases {
+        var options = NoteDeckOptions()
+        options.style = style
+        options.size = size
+        try deck("fan-\(style.rawValue)-\(size.rawValue)", store, options: options)
+      }
+    }
+    try deck("fan-dark", store, dark: true)
+    try deck("fan-left", store, edge: .left)
+    var quiet = NoteDeckOptions()
+    quiet.showsPreview = false
+    try deck("fan-hover", store, options: quiet) { $0.hover(ids[2], true) }
+    var chips = NoteDeckOptions()
+    chips.style = .chips
+    try deck("fan-chips-dark", store, options: chips, dark: true)
+    // 中英混排、表情、很短的标题；一条的时候
+    let mixed = try library([
+      ("买 milk 和 eggs", "", 60), ("🙂 周末", "", 120), ("TODO", "", 180), ("2026 计划 v2", "", 240),
+      ("好", "", 300),
+    ])
+    mixed.store.setPinned(true, of: mixed.ids[0])
+    mixed.store.setPinned(true, of: mixed.ids[4])
+    try deck("fan-mixed", mixed.store)
+    var large = NoteDeckOptions()
+    large.size = .large
+    try deck("fan-mixed-large", mixed.store, options: large)
+    try deck("fan-one", try library(many(1)).store)
+    // 「+N」和它展开之后（30 条放不下：在视口里滚）；矮屏幕上压短
+    let thirty = try library(many(30)).store
+    try deck("fan-more", thirty)
+    try deck("fan-all", thirty) { $0.send(.showAll) }
+    try deck("fan-all-chips", thirty, options: chips) { $0.send(.showAll) }
+    try deck("fan-short-screen", store, height: 600)
+    try deck("fan-tiny-screen", store, height: 380)
+    // 拖着第一张往下挪过两格：别的让位
+    try deck("fan-dragging", store) { model in
+      let step = model.layout.step
+      model.dragChanged(ids[0], by: step * 1.7)
+    }
+
+    // 预览卡
+    try deck("preview", store) { $0.setPreview(ids[1]) }
+    try deck("preview-dark", store, dark: true) { $0.setPreview(ids[0]) }
+    try deck("preview-blank-left", store, edge: .left) { $0.setPreview(ids[3]) }
+    try deck("preview-last", store) { $0.setPreview(ids[4]) }
+
+    // 打开的便签：四种大小、浅深、左边
+    for size in NoteDeckOptions.NoteSize.allCases {
+      var options = NoteDeckOptions()
+      options.noteSize = size
+      try deck("open-\(size.rawValue)", store, options: options) { $0.tapTab(ids[0]) }
+    }
+    try deck("open-dark", store, dark: true) { $0.tapTab(ids[1]) }
+    try deck("open-left", store, edge: .left) { $0.tapTab(ids[2]) }
+    try deck("open-left-dark", store, edge: .left, dark: true) { $0.tapTab(ids[4]) }
+    try deck("open-pinned", store) { $0.tapTab(ids[1]) }
+    try deck("open-blank", store) { $0.tapTab(ids[3]) }
+    try deck("open-last", store) { $0.tapTab(ids[4]) }
+    try deck("open-chips", store, options: chips) { $0.tapTab(ids[2]) }
+    var bigDeck = NoteDeckOptions()
+    bigDeck.size = .large
+    bigDeck.noteSize = .large
+    try deck("open-large-deck", store, options: bigDeck) { $0.tapTab(ids[1]) }
+    try deck("open-menu", store) { model in
+      model.tapTab(ids[1])
+      model.toggleMenu()
+    }
+    try deck("open-menu-dark", store, dark: true) { model in
+      model.tapTab(ids[0])
+      model.toggleMenu()
+    }
+    try deck("open-menu-colors", store) { model in
+      model.tapTab(ids[0])
+      model.toggleMenu(fromDot: true)
+    }
+    try deck("open-menu-colors-left", store, edge: .left) { model in
+      model.tapTab(ids[2])
+      model.toggleMenu()
+      model.run(model.menuItems[1])
+    }
+    try deck("open-over-limit", store) { model in
+      model.tapTab(ids[0])
+      model.overflowed()
+    }
+    try deck("open-short-screen", store, height: 360) { $0.tapTab(ids[0]) }
+    // 便签开着时点「+N」：列出全部，便签留在原处
+    try deck("open-all", thirty) { model in
+      model.tapTab(model.tabs[1].id)
+      model.send(.showAll)
+    }
+    // 没存上（把表挪走，之后的写都失败）：底下那行小字换成警告；全部便签窗口同一份
+    let broken = try Database(path: ":memory:")
+    let unsaved = try NoteStore(db: broken)
+    let stuck = unsaved.create(body: "这几个字还没落下盘", title: "没存上的便签")
+    try broken.execute("ALTER TABLE notes RENAME TO parked")
+    unsaved.setPinned(true, of: stuck.id)
+    #expect(unsaved.saveProblem != nil)
+    try deck("open-unsaved", unsaved) { $0.tapTab(stuck.id) }
+    try snapshot(
+      NotesWindowView(model: NotesWindowModel(store: unsaved)),
+      size: NSSize(width: 940, height: 580), dark: false, to: "\(out)/notes-deck-window-unsaved.png"
+    )
+    // 预览卡：只有一行字的便签（标题就是它）不另写「没有更多内容」；「+N」三四位数不折行
+    let oneLine = try library([
+      ("", "只有这一行字，稍微长一点，看它在预览卡里折到第二行第三行是什么样子，再长就截断了", 60),
+      ("自己起的标题", "", 120),
+    ])
+    try deck("preview-title-only", oneLine.store) { $0.setPreview(oneLine.ids[0]) }
+    try deck("preview-titled-blank", oneLine.store) { $0.setPreview(oneLine.ids[1]) }
+    try deck("fan-more-thousands", try library(many(1205)).store)
+
+    // MARK: 设置 › 便签「屏幕边缘」
+    let onSuite = "kitty-snapshot-notes-deck-on-\(UUID().uuidString)"
+    let offSuite = "kitty-snapshot-notes-deck-off-\(UUID().uuidString)"
+    let on = try #require(UserDefaults(suiteName: onSuite))
+    let off = try #require(UserDefaults(suiteName: offSuite))
+    defer {
+      on.removePersistentDomain(forName: onSuite)
+      off.removePersistentDomain(forName: offSuite)
+    }
+    off.set(false, forKey: Prefs.notesDeckEnabled)
+    let displays = ["内建视网膜显示器", "DELL U2720Q"]
+    let tabSize = NSSize(width: 640, height: 1260)
+    for dark in [false, true] {
+      try snapshot(
+        NotesTab(openNotes: {}, displays: displays).defaultAppStorage(on), size: tabSize,
+        dark: dark, to: "\(out)/notes-deck-settings\(dark ? "-dark" : "").png")
+    }
+    try snapshot(
+      NotesTab(openNotes: {}, displays: displays).defaultAppStorage(off), size: tabSize,
+      dark: false, to: "\(out)/notes-deck-settings-off.png")
+    on.set(true, forKey: Prefs.notesDeckAlwaysFanned)
+    on.set(true, forKey: Prefs.notesDeckOpensOnHover)
+    on.set("chosen", forKey: Prefs.notesDeckDisplay)
+    on.set(displays[1], forKey: Prefs.notesDeckChosenDisplay)
+    try snapshot(
+      NotesTab(openNotes: {}, displays: displays).defaultAppStorage(on), size: tabSize,
+      dark: false, to: "\(out)/notes-deck-settings-always.png")
+    try snapshot(
+      NotesTab(openNotes: {}, displays: ["内建视网膜显示器"]).defaultAppStorage(off),
+      size: tabSize, dark: false, to: "\(out)/notes-deck-settings-one-display.png")
+
+    // 全部便签窗口：编辑区抽成了两边共用的（Notes/NoteFields.swift），样子不该变——和第 2 批的 notes-window-list.png 对
+    try snapshot(
+      NotesWindowView(model: NotesWindowModel(store: store)), size: NSSize(width: 940, height: 580),
+      dark: false, to: "\(out)/notes-deck-window-check.png")
+  }
+
   private func renderTranslate(_ out: String) throws {
     // 历史：今天两条（一条收藏）、昨天一条、三天前两条，按天分组
     let history = try HistoryStore(db: Database(path: ":memory:"))

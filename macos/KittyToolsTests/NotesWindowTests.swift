@@ -467,13 +467,15 @@ struct NotesWindowTests {
     #expect(
       group.globals == [.noteCapture, .noteNew, .noteAll] && group.color == Style.Family.notes)
     let titles = ShortcutsSheet.groups.map(\.title)
-    #expect(titles.firstIndex(of: "便签")! + 1 == titles.firstIndex(of: "便签 · 全部便签")!)
+    // 第 3 批在中间加了「屏幕边缘」一组
+    #expect(titles.firstIndex(of: "便签")! + 1 == titles.firstIndex(of: "便签 · 屏幕边缘")!)
+    #expect(titles.firstIndex(of: "便签 · 屏幕边缘")! + 1 == titles.firstIndex(of: "便签 · 全部便签")!)
     #expect(titles.firstIndex(of: "便签 · 全部便签")! + 1 == titles.firstIndex(of: "状态屏")!)
     let keys = Set(
       ShortcutsSheet.groups.filter { $0.title.hasPrefix("便签") }.flatMap(\.entries).flatMap(\.keys))
     #expect(
       keys.isSuperset(of: [
-        "↩", "⇧↩", "⌘1", "⌘2–9", "Esc", "⌘N", "⌘F", "⌘⌫", "⌘Z", "⇧⌘A", "⌘P", "⌘.",
+        "↩", "⇧↩", "⌘1", "⌘2–9", "Esc", "⌘N", "⌘F", "⌘⌫", "⌘Z", "⇧⌘A", "⌘P", "⌘.", "⌘K", "⌘W",
       ]))
 
     let pages = SettingsPage.allCases

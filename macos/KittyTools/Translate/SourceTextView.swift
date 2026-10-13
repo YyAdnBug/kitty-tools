@@ -4,8 +4,10 @@
 // 消失时把焦点还给主输入框（焦点已在别的输入框里就不抢）。插入点和选中文字底色是
 // 品牌粉（mac-overlay-panel §3）；onFocusChange：焦点进出时回调（外面的输入框底据此画 Whisker 焦点环）。
 // 外面的输入框底不给它左右内边距、改由 horizontalInset 缩进文字：滚动区铺满框宽，滚动条贴框的右边（同翻译结果卡）。
-// 便签（Notes/）也用它：快速记一条是提交模式，全部便签窗口的正文是不提交模式——另给字的颜色（textColor，纸上的墨）
-// 和字节上限（maxBytes：会超的那一次输入拦下，提示音 + onOverflow，不截断）。
+// 便签（Notes/）也用它：快速记一条是提交模式，全部便签窗口和屏幕边缘那叠的正文是不提交模式——另给字的颜色
+// （textColor，纸上的墨；给了它插入点也用它：强调色选黄时在柠檬色的纸上看不见）、字节上限（maxBytes：会超的那一次
+// 输入拦下，提示音 + onOverflow，不截断）和一个认它用的标记（identifier：那叠里换一条便签时新旧两个正文框会同时在，
+// 按便签的编号找该拿焦点的那个）。
 
 import AppKit
 import Carbon.HIToolbox
@@ -22,8 +24,10 @@ struct SourceTextView: NSViewRepresentable {
   var isDialogField = false
   /// 对话框里第二个输入框：出现时不抢焦点，这个数变大一次就拿一次焦点（nil = 照常出现就抢）
   var focusRequest: Int?
-  /// 字的颜色；nil = 系统的文字色
+  /// 字的颜色；nil = 系统的文字色。给了的话插入点也用它（不给是强调色）
   var textColor: NSColor?
+  /// 文本框的 identifier（按它在视图树里认这一个；nil = 不标）
+  var identifier: String?
   /// 正文最多多少字节（UTF-8）；nil = 不限。会超的那一次输入不进（提示音、调 onOverflow），已有的字不动
   var maxBytes: Int?
   var onOverflow: () -> Void = {}
@@ -35,6 +39,7 @@ struct SourceTextView: NSViewRepresentable {
   func makeNSView(context: Context) -> FocusScrollView {
     let textView = FocusTextView(frame: .zero)
     textView.onFocusChange = onFocusChange
+    textView.identifier = identifier.map { NSUserInterfaceItemIdentifier($0) }
     textView.isRichText = false
     textView.allowsUndo = true
     textView.font = .systemFont(ofSize: fontSize)
@@ -69,9 +74,9 @@ struct SourceTextView: NSViewRepresentable {
     }
     if textView.font?.pointSize != fontSize { textView.font = .systemFont(ofSize: fontSize) }
     if let textColor, textView.textColor != textColor { textView.textColor = textColor }
-    // 不露系统蓝：插入点强调色，选中文字底色强调色 0.28（普通 NSTextView 不是共用的字段编辑器；
-    // 在这里设，设置里换了强调色也跟着变）
-    textView.insertionPointColor = NSColor(Style.brand)
+    // 不露系统蓝：插入点强调色（纸上的输入框给了墨色就用墨色），选中文字底色强调色 0.28（普通 NSTextView 不是共用的
+    // 字段编辑器；在这里设，设置里换了强调色也跟着变）
+    textView.insertionPointColor = textColor ?? NSColor(Style.brand)
     textView.selectedTextAttributes = [
       .backgroundColor: NSColor(Style.brand).withAlphaComponent(0.28)
     ]

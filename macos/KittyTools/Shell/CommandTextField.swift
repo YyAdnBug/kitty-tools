@@ -1,6 +1,7 @@
 // 单行输入框（包一层 NSTextField）：方向键 / 回车 / Tab / ⇧Tab / ← → / ⌫ / Esc 走 doCommandBy（全部转给 onCommand，
 // 返回 false 就交还字段编辑器照常处理）。输入法组字期间这些键由输入法消费、不会回调过来，所以不需要吞键 hack。
-// 挂进窗口时把自己设为 initialFirstResponder，浮层显示时自动聚焦；拿到焦点时插入点和选中底色设成品牌粉。
+// 挂进窗口时把自己设为 initialFirstResponder，浮层显示时自动聚焦；拿到焦点时插入点和选中底色设成品牌粉
+// （给了 textColor 的——便签纸上的标题框——插入点用那个颜色）。
 // onFocusChange：焦点进出时回调（外面的输入框底据此画 Whisker 焦点环）。
 // romanOnly：聚焦时只允许英文类输入法（系统自动切过去，离开后恢复）。
 // maxLength：字数上限，超出的那次输入整段退回（提示音，不截断；输入法组字中不打断，确认后再判断）。
@@ -45,6 +46,8 @@ struct CommandTextField: NSViewRepresentable {
   func updateNSView(_ field: FocusField, context: Context) {
     context.coordinator.parent = self
     field.onFocusChange = onFocusChange
+    // 纸上的输入框（给了墨色）：插入点用墨色——强调色选黄时在柠檬色的纸上看不见。别的调用方不给，照旧是强调色
+    field.caretColor = textColor
     // 读了 Style.brand：设置里换了强调色时这里会重跑，正在编辑的插入点和选中底色跟着换
     field.applyBrandColors(NSColor(Style.brand))
     if field.placeholderString != placeholder { field.placeholderString = placeholder }
@@ -94,6 +97,8 @@ struct CommandTextField: NSViewRepresentable {
     var isDialogField = false
     var romanOnly = false
     var onFocusChange: ((Bool) -> Void)?
+    /// 插入点的颜色；nil = 强调色
+    var caretColor: NSColor?
     /// 对话框输入框抢焦点前拿着焦点的输入框：消失时还给它（管理收藏夹里行内改名完回到下面的新建框）
     private weak var previousField: NSView?
 
@@ -126,7 +131,7 @@ struct CommandTextField: NSViewRepresentable {
     /// 所以每次拿到焦点都设一遍，不露系统蓝
     func applyBrandColors(_ brand: NSColor = NSColor(Style.brand)) {
       guard let editor = currentEditor() as? NSTextView else { return }
-      editor.insertionPointColor = brand
+      editor.insertionPointColor = caretColor ?? brand
       editor.selectedTextAttributes = [.backgroundColor: brand.withAlphaComponent(0.28)]
     }
 

@@ -160,6 +160,13 @@ import Observation
     return note
   }
 
+  /// 「新建便签」用的那一条：没归档没删的里最前面那条还是空白的（标题、正文都没有）就用它，不然新建一条——
+  /// 连点几次「新建」不会攒出一串空便签。全部便签窗口、屏幕边缘那叠（标签列下的「+」、全局动作）共用
+  func blankOrNew(now: Date = .now) -> Note {
+    if let first = active.first, first.title.isEmpty, first.body.isEmpty { return first }
+    return create(now: now)
+  }
+
   /// 改正文 / 标题：打字时每个字调一次，攒着等停手再落盘
   func setBody(_ body: String, of id: String, now: Date = .now) {
     let body = Note.sanitized(text: body)

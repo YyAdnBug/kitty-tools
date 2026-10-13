@@ -292,6 +292,8 @@ final class ScreenRecorder: NSObject {
   private let sharpness: Sharpness
   private let codec: Codec
   private let shortcutsOnly: Bool
+  /// 正在倒数（还没开录）：这几秒里便签屏幕边缘的药丸不响应鼠标（AppDelegate.canFanNotes）
+  private(set) var isCountingDown = false
   /// 录制条的四个开关（开录时读一次）；microphone 在问过授权后改成这次真录不录，showsKeys 在看过辅助功能授权后
   /// 改成这次真显不显示
   private var options: Options
@@ -557,6 +559,8 @@ final class ScreenRecorder: NSObject {
   /// 注册不上只能用快捷键和 ✕（HotKeyCenter 记日志，播报和 ✕ 的提示不提 Esc）。本 App 自己的面板拿着键盘时这一下 Esc
   /// 交给它（HotKeyCenter.fire）。菜单栏停止项这时还没有。返回 false = 取消了
   private func countDown() async -> Bool {
+    isCountingDown = true
+    defer { isCountingDown = false }
     let escapes = hotKeys?.registerEscape { [weak self] in self?.stop(.cancelled) } ?? false
     defer { hotKeys?.unregisterEscape() }
     showFrame(counting: true, escapes: escapes)

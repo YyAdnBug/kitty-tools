@@ -1,6 +1,6 @@
 ---
 name: mac-overlay-panel
-description: 原生分支 macOS 热键浮层规范（OverlayPanel、全局热键、粘贴回原 App、浮层内输入框、划词时序、截图翻译框选遮罩、长截图、录屏）。在修改 macos/KittyTools/Shell/**、macos/KittyTools/Screenshot/**、macos/KittyTools/StatusScreen/**、macos/KittyTools/Translate/SelectionReader.swift、Translate/SourceTextView.swift 前必须先读；或涉及 截图 / 截图翻译 / 长截图 / 滚动截图 / 录屏 / SCRecordingOutput / 录制边框 / 录制 HUD / 倒数 / 临时 Esc 热键 / 菜单栏停止项 / 录屏飞入 / 视频卡 / 录屏声音 / 系统声音 / 麦克风授权 / 麦克风断开 / 显示点按 / 点按圈 / 显示按键 / 按键提示 / 按键胶囊 / InputOverlay / 录音 / 录音控制条 / 待录 / 立即开始录音 / AVAudioRecorder / 录系统声音 / 录音来源 / 只录声音 / 导出 m4a / 电平 / 没听到声音 / 录音卡 / 录屏录音互斥 / 转成 GIF / GIF 卡 / 冻结帧 / 框选遮罩 / 窗口吸附 / 放大镜取色 / 钉图 / 常驻缩略图 / 快速保存目录 / 屏幕录制授权 / ScreenCaptureKit / 状态屏 / 屏幕清洁 / 请勿触碰 / 事件拦截 / CGEventTap / 拦键盘鼠标 / 按住 Esc 退出 / 安全输入 / NSPanel / nonactivatingPanel / 浮层不显示或抢前台 / 点外关闭 / Esc / 固定图钉 / RegisterEventHotKey / 热键冲突 / 模拟 ⌘V ⌘C / 粘贴失败 / 输入法在浮层里异常 / 划词取不到词 / 设置窗被压在后面等问题时。
+description: 原生分支 macOS 热键浮层规范（OverlayPanel、全局热键、粘贴回原 App、浮层内输入框、划词时序、截图翻译框选遮罩、长截图、录屏）。在修改 macos/KittyTools/Shell/**、macos/KittyTools/Screenshot/**、macos/KittyTools/StatusScreen/**、macos/KittyTools/Translate/SelectionReader.swift、Translate/SourceTextView.swift、macos/KittyTools/Notes/NoteEdge.swift、Notes/NoteDeck*.swift（便签屏幕边缘那叠）前必须先读；或涉及 截图 / 截图翻译 / 长截图 / 滚动截图 / 录屏 / SCRecordingOutput / 录制边框 / 录制 HUD / 倒数 / 临时 Esc 热键 / 菜单栏停止项 / 录屏飞入 / 视频卡 / 录屏声音 / 系统声音 / 麦克风授权 / 麦克风断开 / 显示点按 / 点按圈 / 显示按键 / 按键提示 / 按键胶囊 / InputOverlay / 录音 / 录音控制条 / 待录 / 立即开始录音 / AVAudioRecorder / 录系统声音 / 录音来源 / 只录声音 / 导出 m4a / 电平 / 没听到声音 / 录音卡 / 录屏录音互斥 / 转成 GIF / GIF 卡 / 冻结帧 / 框选遮罩 / 窗口吸附 / 放大镜取色 / 钉图 / 常驻缩略图 / 快速保存目录 / 屏幕录制授权 / ScreenCaptureKit / 便签的边缘那叠 / 屏幕边缘的药丸 / 扇出 / 标签列 / NoteDeckPanel / 透明窗口点穿 / 状态屏 / 屏幕清洁 / 请勿触碰 / 事件拦截 / CGEventTap / 拦键盘鼠标 / 按住 Esc 退出 / 安全输入 / NSPanel / nonactivatingPanel / 浮层不显示或抢前台 / 点外关闭 / Esc / 固定图钉 / RegisterEventHotKey / 热键冲突 / 模拟 ⌘V ⌘C / 粘贴失败 / 输入法在浮层里异常 / 划词取不到词 / 设置窗被压在后面等问题时。
 ---
 
 # mac-overlay-panel
@@ -8,7 +8,8 @@ description: 原生分支 macOS 热键浮层规范（OverlayPanel、全局热键
 动手前先读同目录 `rule.mdc` 全文（正文唯一数据源：`.cursor/rules/mac-overlay-panel.mdc`）。
 
 红线速查：
-- 浮层只用 `OverlayPanel`；显示只走 `present()`，永远不对浮层 `NSApp.activate`。（例外：截图框选遮罩 `SelectionOverlay` 见 rule §8、钉图 `PinPanel` 见 §9、长截图面板 `ScrollCapturePanel` 见 §10、状态屏的全屏面板 `StatusScreenPanel` 见 §11）
+- 浮层只用 `OverlayPanel`；显示只走 `present()`，永远不对浮层 `NSApp.activate`。（例外五个：截图框选遮罩 `SelectionOverlay` 见 rule §8、钉图 `PinPanel` 见 §9、长截图面板 `ScrollCapturePanel` 见 §10、状态屏的全屏面板 `StatusScreenPanel` 见 §11、便签屏幕边缘那叠的面板 `NoteDeckPanel` 见 §12）
+- 便签的边缘那叠（rule §12）：两块窗口——边上的药丸是装饰（普通 `NSPanel` 实例、状态栏层级、只用 CALayer 画，截图和录屏都不收），那叠 `NoteDeckPanel` 是内容（浮动层级、用时再建、收起 2 秒后放掉，冻结帧里留着、录屏白名单里有）；两块都**不设 `ignoresMouseEvents`**（透明处靠系统点穿）。静置时没有定时器、没有轮询；永不 `NSApp.activate`，扇出不当 key、打开便签才 `makeKey`；Esc 走 `doCommandBy` / `cancelOperation`，不装按键监听；截图框选 / 长截图 / 录屏选区和倒数 / 状态屏开始的地方**显式** `NoteEdge.suspend`，鼠标进药丸再问 `canFan`，不靠「被盖住就收不到鼠标」；状态机在 `NoteDeckState`（纯、有单测），改行为先改它和单测。写标题 / 正文按输入框所属便签的编号落（不按「现在开着哪条」）；只有新打开 / 换一条才当 key（悬停打开的不当、改设置不许当），关掉便签当场把键盘还回去（键盘关的直接回静置）；输入法组字时的点别处不收；让位只收没固定的。测试里不走「打开便签」（会抢键盘）。
 - 状态屏（rule §11）会把键盘鼠标拦住：**任何自动化都不许真的进入**（不调 `StatusScreen.enter`、不启动 App 去点），验证靠单测和单独的截图自检 `SnapshotProbeTests/statusScreen()`；事件拦截只许在 `StatusScreen/InputBlock.swift`，只有 `invalidate()` 能撤；安全输入开着时拦截看不到按键，所以面板必须当 key；不是安全措施，文案不写「锁」。可选的退出密码（`Passcode.swift`）只收数字、按键位认，钥匙串读不到就当没设，解锁即结束不许改（忘了密码的出路）。
 - 截图 / 截图翻译先截后选（冻结帧），截屏前先查屏幕录制授权；识字不给语言提示；遮罩画面走图层，不在 draw 里重画整张冻结帧；窗口吸附只读冻结时的 Z 序快照。
 - 钉图出现时不 makeKey（不抢键盘），原位置出现；按键同截图出图（⌘S 快速保存、⇧⌘S 另存为、O 识字，体检 C9 D17），按键、右键菜单和 VoiceOver 动作查同一份 `commands`；长截图时和选区相交的钉图让开（B40）。

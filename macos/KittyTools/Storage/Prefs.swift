@@ -167,6 +167,30 @@ enum Prefs {
     CGFloat(notesFontSizeChoices.contains(stored) ? stored : 15)
   }
 
+  /// 屏幕边缘那叠（设置 › 便签「屏幕边缘」，便签第 3 批）。读它们一律走 NoteDeckOptions(defaults)：不认识的值按默认算。
+  /// 总开关（默认开；关掉一个窗口都不建）、哪条边（right 默认 / left；按住 ⌥ 拖药丸也写它）、显示器（main 默认 /
+  /// all / chosen = 指定的那一块，是哪块在 notesDeckChosenDisplay）、样式（tabs 带标题的标签，默认 / chips 只有色块）、
+  /// 大小（small 0.85 / standard / large 1.25）、感应范围（点：8 / 14 默认 / 28 / 44）、一直展开、不显示药丸、
+  /// 悬停预览（默认开）、悬停即打开、盖在全屏 App 上、打开的便签多大（small / medium 默认 / large / extraLarge）
+  nonisolated static let notesDeckEnabled = "notesDeckEnabled"
+  nonisolated static let notesDeckEdge = "notesDeckEdge"
+  nonisolated static let notesDeckDisplay = "notesDeckDisplay"
+  nonisolated static let notesDeckStyle = "notesDeckStyle"
+  nonisolated static let notesDeckSize = "notesDeckSize"
+  nonisolated static let notesDeckSense = "notesDeckSense"
+  nonisolated static let notesDeckAlwaysFanned = "notesDeckAlwaysFanned"
+  nonisolated static let notesDeckHidesPill = "notesDeckHidesPill"
+  nonisolated static let notesDeckPreview = "notesDeckPreview"
+  nonisolated static let notesDeckOpensOnHover = "notesDeckOpensOnHover"
+  nonisolated static let notesDeckOverFullScreen = "notesDeckOverFullScreen"
+  nonisolated static let notesDeckNoteSize = "notesDeckNoteSize"
+  /// 下面三个是这台电脑自己的状态，**不注册默认值**（不跟着导出 / 导入走）：药丸的纵向位置（0 = 可见区最上，1 = 最下；
+  /// 没存过 = 0.5 正中，⌥ 拖药丸时写）、「指定某一块」指的是哪块显示器（它的名字；不在时退回主显示器）、
+  /// 「便签在屏幕右边缘」那句提示说过了没有（每台电脑只说一次）
+  nonisolated static let notesDeckPosition = "notesDeckPosition"
+  nonisolated static let notesDeckChosenDisplay = "notesDeckChosenDisplay"
+  nonisolated static let notesDeckHintShown = "notesDeckHintShown"
+
   /// 上次启动的版本号：没有 = 首次安装（打开欢迎引导），和当前不同 = 刚更新（刘海岛「已更新到 x」+ 本版摘要，不开设置窗，体检 A29）
   static let lastSeenVersion = "lastSeenVersion"
   /// 自动检查更新（启动后一次、之后每天一次）
@@ -249,6 +273,18 @@ enum Prefs {
       statusScreenHotKeyEntersFirst: false,
       statusScreenAnimations: true,
       notesFontSize: 15,
+      notesDeckEnabled: true,
+      notesDeckEdge: NoteDeckOptions.Edge.right.rawValue,
+      notesDeckDisplay: NoteDeckOptions.DisplayMode.main.rawValue,
+      notesDeckStyle: NoteDeckOptions.TabStyle.tabs.rawValue,
+      notesDeckSize: NoteDeckOptions.Size.standard.rawValue,
+      notesDeckSense: 14,
+      notesDeckAlwaysFanned: false,
+      notesDeckHidesPill: false,
+      notesDeckPreview: true,
+      notesDeckOpensOnHover: false,
+      notesDeckOverFullScreen: false,
+      notesDeckNoteSize: NoteDeckOptions.NoteSize.medium.rawValue,
     ]
   }
 

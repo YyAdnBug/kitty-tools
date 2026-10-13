@@ -25,6 +25,10 @@ enum ScreenCapture {
     let alpha: CGFloat
     /// 挂在哪个窗口上（sheetParent ?? parent 的窗口号）：sheet、确认框、弹出框这类子窗口
     var parent: CGWindowID? = nil
+    /// 窗口里真有东西的那一块（AppKit 全局坐标）；**nil = 整个窗口**（别的窗口都是）。便签屏幕边缘那叠的面板
+    /// （NoteDeckPanel）是一大块透明窗口，悬停列表里只算它里面的便签 / 标签列；它这时什么都没画（收着、正在收）给的是
+    /// .zero——太小的（windowFrames 按 20 pt 筛）不进悬停列表，不是「整个窗口」
+    var content: CGRect? = nil
   }
 
   /// 截下所有屏幕。调用前先确认有「屏幕录制」授权（Permissions），否则每块屏幕会各弹一个系统框。
@@ -38,7 +42,10 @@ enum ScreenCapture {
     let windows = windowFrames(
       CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
         as? [[String: Any]] ?? [],
-      ownPID: getpid(), keeping: kept, primaryHeight: NSScreen.screens.first?.frame.height ?? 0)
+      ownPID: getpid(), keeping: kept, primaryHeight: NSScreen.screens.first?.frame.height ?? 0,
+      contents: Dictionary(
+        own.compactMap { window in window.content.map { (window.id, $0) } },
+        uniquingKeysWith: { first, _ in first }))
     // 不在 NSApp.windows 里的自家窗口（系统画的快照等）也排除；只有状态栏层级的照旧留（菜单栏图标，以防它不在列表里）
     let ownWindows = content.windows.filter {
       $0.owningApplication?.processID == getpid() && !kept.contains($0.windowID)
@@ -91,7 +98,8 @@ enum ScreenCapture {
         OwnWindow(
           id: $0, className: String(describing: type(of: window)), level: window.level.rawValue,
           isVisible: window.isVisible, alpha: window.alphaValue,
-          parent: (window.sheetParent ?? window.parent).flatMap(number))
+          parent: (window.sheetParent ?? window.parent).flatMap(number),
+          content: (window as? NoteDeckPanel)?.contentFrame())
       }
     }
   }
@@ -103,7 +111,8 @@ enum ScreenCapture {
   }
 
   /// 本 App 哪些窗口留在冻结帧和悬停列表里（用户 2026-09-26：截图要能截到本 App 自己）：开着的普通窗口都留——
-  /// 剪贴板面板、翻译浮窗、启动器、⌘Y 放大预览、设置窗、引导、钉图，截图时能悬停、单击选中；菜单栏图标也留
+  /// 剪贴板面板、翻译浮窗、启动器、⌘Y 放大预览、设置窗、引导、钉图、便签屏幕边缘那叠的面板（NoteDeckPanel，浮动层级：
+  /// 打开着的便签是内容；边上的药丸在状态栏层级，按层级不留），截图时能悬停、单击选中；菜单栏图标也留
   /// （状态栏层级、类名带 StatusBar）。其余排除：刚 orderOut 的（不可见或全透明）、面板淡出中的替身（PanelStandIn）、状态栏层级及以上的
   /// 截图装饰（刘海岛、飞行卡片、常驻缩略图、长截图 / 录屏的边框、上一次的遮罩、菜单），以及按类名认的遮罩、长截图面板、
   /// 菜单、工具提示。录屏时菜单栏的停止项（NSStatusBarWindow）同菜单栏图标一样留在冻结帧里（它本来就在菜单栏上，
@@ -120,7 +129,8 @@ enum ScreenCapture {
   }
 
   /// 录屏时本 App 哪些窗口录进去（R4-a，白名单）：过滤器排除整个本 App，只把这几类面板列进例外——OverlayPanel（剪贴板、
-  /// 启动器、翻译浮窗、两个 ⌘Y）、钉图 PinPanel、设置窗（普通 NSWindow）和它的 SwiftUI sheet（引导、速查表，实测类名
+  /// 启动器、翻译浮窗、两个 ⌘Y）、钉图 PinPanel、便签屏幕边缘那叠的面板 NoteDeckPanel（扇出的标签和打开的便签是内容，
+  /// 同钉图；边上的药丸是状态栏层级的普通 NSPanel，不列）、设置窗（普通 NSWindow）和它的 SwiftUI sheet（引导、速查表，实测类名
   /// SheetPresentationWindow）、选文件夹 / 另存为（NSOpenPanel / NSSavePanel，不挂在窗口上），以及挂在这些窗口上的子窗口
   /// （确认框 _NSAlertPanel 的 sheet、弹出框 _NSPopoverWindow，一层套一层也跟着）。**不看可见不可见**：收起着的、开过又
   /// 收起的开录后露出来照样录进去（第 0 批实测）。刘海岛、飞行卡片、常驻缩略图、截图遮罩、长截图面板、录制边框和停止项、
@@ -128,8 +138,8 @@ enum ScreenCapture {
   static func recordedOwnWindows(_ windows: [OwnWindow]) -> Set<CGWindowID> {
     let status = NSWindow.Level.statusBar.rawValue
     let panels: Set = [
-      "OverlayPanel", "PinPanel", "NSWindow", "SheetPresentationWindow", "NSOpenPanel",
-      "NSSavePanel",
+      "OverlayPanel", "PinPanel", "NoteDeckPanel", "NSWindow", "SheetPresentationWindow",
+      "NSOpenPanel", "NSSavePanel",
     ]
     var ids = Set(windows.filter { panels.contains($0.className) && $0.level < status }.map(\.id))
     while true {
@@ -145,9 +155,11 @@ enum ScreenCapture {
 
   /// 窗口列表（CGWindowListCopyWindowInfo 的结果，从前到后）→ 可截的窗口矩形（AppKit 全局坐标，原点在主屏左下），
   /// 顺序不变。只要普通层到浮动面板（低于程序坞）和展开着的弹出菜单；去掉全透明、太小的和自家窗口
-  /// （keeping 里的除外：keptOwnWindows 留下的）。纯函数，配单测
+  /// （keeping 里的除外：keptOwnWindows 留下的）。contents：自家窗口里只算哪一块（OwnWindow.content，已经是 AppKit
+  /// 全局坐标；太小的同样不要）。纯函数，配单测
   static func windowFrames(
-    _ info: [[String: Any]], ownPID: pid_t, keeping: Set<CGWindowID>, primaryHeight: CGFloat
+    _ info: [[String: Any]], ownPID: pid_t, keeping: Set<CGWindowID>, primaryHeight: CGFloat,
+    contents: [CGWindowID: CGRect] = [:]
   ) -> [CGRect] {
     let popUpMenu = Int(CGWindowLevelForKey(.popUpMenuWindow))
     let dock = Int(CGWindowLevelForKey(.dockWindow))
@@ -162,6 +174,9 @@ enum ScreenCapture {
       let pid = window[kCGWindowOwnerPID as String] as? Int32
       let id = window[kCGWindowNumber as String] as? Int ?? 0
       if pid == ownPID, !keeping.contains(CGWindowID(id)) { return nil }
+      if pid == ownPID, let content = contents[CGWindowID(id)] {
+        return content.width >= 20 && content.height >= 20 ? content : nil
+      }
       // CG 全局坐标原点在主屏左上、y 向下
       return CGRect(
         x: rect.minX, y: primaryHeight - rect.maxY, width: rect.width, height: rect.height)

@@ -573,7 +573,8 @@ extension View {
   func cardSurface(tint: Color? = nil) -> some View { modifier(CardSurface(tint: tint)) }
 
   /// 面板内浮层的阴影（mac-whisker §3「层级」）：black 0.25 / 模糊 18 / 向下 8。面板里浮起来的东西共用——动作菜单
-  /// （Shell/ActionMenu，五处）、剪贴板对话框（Clipboard/Dialogs）；别各写各的。只挂在底上（材质那一层）或整块不含字的
+  /// （Shell/ActionMenu，五处）、剪贴板对话框（Clipboard/Dialogs）；便签屏幕边缘那叠里打开的便签和预览卡
+  /// （Notes/NoteDeckView：透明面板上浮着的纸）也用它；别各写各的。只挂在底上（材质那一层）或整块不含字的
   /// 视图上：挂在带字的内容上会给每个字都加阴影
   func floatingShadow() -> some View { shadow(color: .black.opacity(0.25), radius: 18, y: 8) }
 }
@@ -669,7 +670,8 @@ extension View {
   /// HUD 皮肤（`Style.HUD`）：底色、内描边、外 0.5 pt 描边、主文字色。降低透明度（底色 0.97）、增强对比度（内描边
   /// 1 pt white 0.35）在取值时判断：悬停才建这些按钮，每次悬停都重新取。
   /// macOS 26 起是深色液态玻璃（mac-whisker §2「26 分支」），不画底色和描边，两个无障碍开关交给玻璃。
-  /// 常驻缩略图的胶囊和圆钮（Screenshot/ShotShelf.swift）、状态屏的退出提示和透出样式的底板（StatusScreenView）共用。
+  /// 常驻缩略图的胶囊和圆钮（Screenshot/ShotShelf.swift）、状态屏的退出提示和透出样式的底板（StatusScreenView）、
+  /// 便签屏幕边缘标签列下的「+N」和「+」（Notes/NoteDeckView）共用。
   /// 屏外截图自检里 `Capsule()` 的两端各多一小段竖线，**真机没有**（2026-10-10 同一块视图真上屏抓图逐像素对过）：
   /// Capsule、RoundedRectangle 默认都是 continuous 圆角，SwiftUI 把描边交给一个 CALayer（cornerCurve continuous +
   /// borderWidth）；圆角被夹到高的一半时，截图自检走的 `CALayer.render(in:)` 在两端各多画一段直线（内、外描边各一条，

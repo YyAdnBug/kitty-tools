@@ -131,14 +131,21 @@ import SwiftUI
     note?.isArchived == true ? "取消归档" : "归档"
   }
 
-  /// ⌘N：新建一条（排最前）、选中、焦点进正文。最前面那条还是空白的就用它，不再多建一条
+  /// ⌘N：新建一条（排最前）、选中、焦点进正文。最前面那条还是空白的就用它，不再多建一条（NoteStore.blankOrNew）
   func create() {
-    let blank = store.active.first.flatMap { $0.title.isEmpty && $0.body.isEmpty ? $0 : nil }
-    let note = blank ?? store.create()
+    let note = store.blankOrNew()
     query = ""
     scope = .all
     selection = note.id
     focusBody()
+  }
+
+  /// 从屏幕边缘那叠「在全部便签里打开」：换到它所在的视图、清掉搜索词、选中它
+  func reveal(_ id: String) {
+    guard let note = store.note(id) else { return }
+    query = ""
+    scope = note.deletedAt != nil ? .trash : note.isArchived ? .archive : .all
+    selection = id
   }
 
   /// ⌘⌫：删除（进「最近删除」，⌘Z 放回）；已经在最近删除里的是永久删除，先确认
@@ -340,7 +347,8 @@ final class NotesWindow: NSObject, NSWindowDelegate {
     if let editor = Self.editor(in: window.contentView) { window.makeFirstResponder(editor) }
   }
 
-  private static func editor(in view: NSView?) -> SourceTextView.FocusTextView? {
+  /// 视图树里的正文框（屏幕边缘那叠打开便签时也用它找，NoteDeck.focusBodyNow）
+  static func editor(in view: NSView?) -> SourceTextView.FocusTextView? {
     guard let view else { return nil }
     return (view as? SourceTextView.FocusTextView)
       ?? view.subviews.lazy.compactMap { editor(in: $0) }.first

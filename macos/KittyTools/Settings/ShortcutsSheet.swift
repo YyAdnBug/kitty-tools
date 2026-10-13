@@ -352,6 +352,18 @@ struct ShortcutsSheet: View {
           Entry("⌘2–9", text: "快速记一条里：接在最近改过的某一条便签后面"),
           Entry("Esc", text: "快速记一条里：清空并关闭（点面板外面、再按一次全局快捷键、⌘W 也是关闭，写了一半的留着）"),
         ]),
+      // 屏幕边缘那叠里打开的便签（第 3 批）：⌘ 组合在 NoteDeckModel.handleKeyEquivalent，Esc 是面板的 cancelOperation（cancel），
+      // 操作菜单开着时的方向键在 handleMenuKey。⌘⌫ 不写：在标题、正文里它就是输入框的删到行首
+      Group(
+        title: "便签 · 屏幕边缘", symbol: "sidebar.right", color: Style.Family.notes,
+        entries: [
+          Entry("Esc", "⌘W", text: "关掉打开的便签，那一列标签也一起收回，接着打字回到原来的 App"),
+          Entry("⌘P", text: "固定 / 取消固定（固定的便签点别处不收起）"),
+          Entry("⌘K", text: "操作菜单：固定、颜色、归档、删除、在「全部便签」里打开（↑↓ 选，↩ 执行，→ ← 进出「颜色」）"),
+          Entry("⌘.", text: "换成下一种纸色"),
+          Entry("⇧⌘A", text: "归档"),
+          Entry("⌥", text: "按住它拖边上的药丸：换边、换高度"),
+        ]),
       // 全部便签窗口里的键：NotesWindowView.shortcuts（看不见的按钮上挂着），动作在 NotesWindowModel
       Group(
         title: "便签 · 全部便签", symbol: "rectangle.split.2x1", color: Style.Family.notes,

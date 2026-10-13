@@ -76,7 +76,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .launcher: "搜索 App、文件、书签与历史、网页搜索与快捷链接"
     case .screenshot: "快速保存、快门声、缩略图和识字"
     case .record: "录屏的画质、倒数和按键，录音的来源"
-    case .notes: "留着看、接着改的东西：字号，存在哪、怎么备份"
+    case .notes: "留着看、接着改的东西：屏幕边缘的那一叠、字号，存在哪、怎么备份"
     case .statusScreen: "拦住键盘鼠标的全屏告示：有哪些状态、各是什么样子、怎么退出"
     case .translate: "语言、翻译服务与密钥、历史"
     case .hotkeys: "所有全局快捷键"
@@ -120,6 +120,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .notes:
       [
         "笔记", "备忘", "便利贴", "快速记", "记一条", "字号", "字体大小", "最近删除", "归档", "备份", "导出", "导入",
+        "屏幕边缘", "边缘", "药丸", "标签", "色块", "感应范围", "一直展开", "悬停", "预览", "全屏", "显示器", "便签大小",
       ]
     case .statusScreen:
       [

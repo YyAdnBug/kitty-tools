@@ -1,7 +1,8 @@
 // 应用生命周期：单实例检查，按依赖顺序组装各模块（PLAN §4），热键与各翻译入口，首次安装打开欢迎引导、
 // 更新后第一次启动用刘海岛说一声，退出 / 锁屏时的清理；数据打不开时问用户怎么办、每天备份的时机（Storage/Backup.swift）；
 // 便签的数据（Notes/：单独的库，启动的最后才开，打不开时单独问、不退出，退出 / 锁屏 / 睡眠前落盘，每天备份、
-// 清「最近删除」里到期的）和三个入口（快速记一条的面板、新建便签、全部便签窗口；退出前落不下去先问）；
+// 清「最近删除」里到期的）和三个入口（快速记一条的面板、新建便签、全部便签窗口；退出前落不下去先问），
+// 还有屏幕边缘的便签（Notes/NoteEdge.swift：便签开好后建；截图框选、长截图、录屏选区和倒数、状态屏开始时叫停它）；
 // 录屏（框选、开录、结果、飞入和视频卡、退出前收尾、上次闪退留下的文件）；
 // 录音（录音第 5 批：开录、和录屏互斥、结果、飞入和录音卡，收尾和闪退恢复同录屏）；
 // 状态屏的三个入口（快捷键先出选状态的面板——设置里可改成直接进第一个状态，菜单栏子菜单、启动器每个状态一条；
@@ -80,6 +81,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var noteCapture: (panel: OverlayPanel, model: NoteCaptureModel)?
   /// 全部便签窗口（Notes/NotesWindow.swift，普通窗口）：同样第一次用时建
   private var notesWindow: NotesWindow?
+  /// 屏幕边缘的便签（Notes/NoteEdge.swift，第 3 批）：便签开好之后建（finishLaunchingNotes），它自己看总开关和有没有
+  /// 便签决定建不建窗口；便签这次用不了时是 nil
+  private var noteEdge: NoteEdge?
   private lazy var watcher = ClipboardWatcher(store: clipboardStore)
   private let serviceStore = TranslateServiceStore()
   private lazy var coordinator = TranslateCoordinator(services: serviceStore, history: historyStore)
@@ -98,8 +102,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     screen.hotKeys = hotKeys
     screen.hidePanels = { [unowned self] in
       hidePanels()
-      // 进去之后键盘鼠标都被拦着：便签攒着没落盘的先落下去
+      // 进去之后键盘鼠标都被拦着：便签攒着没落盘的先落下去，屏幕边缘那叠连打开着的便签一起收（suspend 里落盘）
       noteStore?.flush()
+      noteEdge?.suspend(.all)
     }
     screen.blocker = { [unowned self] in
       let busy = "先停止这一段再进入状态屏"
@@ -601,6 +606,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     hasOpenedNotes = true
     noteStore?.purgeExpired()
     backupIfDue()
+    noteEdge = noteStore.map(makeNoteEdge)
+    noteEdge?.start()
+  }
+
+  /// 屏幕边缘的便签：药丸右键菜单的三项、「在全部便签里打开」接到这里的入口；什么时候不许扇出也由这里说
+  private func makeNoteEdge(_ store: NoteStore) -> NoteEdge {
+    let edge = NoteEdge(store: store, island: island)
+    edge.canFan = { [unowned self] in canFanNotes }
+    edge.newNote = { [unowned self] in run(.noteNew) }
+    edge.showNotes = { [unowned self] in showNotes() }
+    edge.showSettings = { [unowned self] in showSettings(page: .notes) }
+    edge.showInWindow = { [unowned self] in showNotes(revealing: $0) }
+    return edge
+  }
+
+  /// 便签屏幕边缘的药丸现在响不响应鼠标：截图 / 截图翻译 / 识字 / 录屏的框选和长截图进行中（isCapturing；另看一眼遮罩在
+  /// 不在）、录屏倒数的那几秒、状态屏里都不响应。这些会话开始的地方另外显式叫停已经展开的那叠（NoteEdge.suspend）——
+  /// 不靠「被别的窗口盖住就收不到鼠标」（追踪区不看遮挡），也不为它加轮询（mac-overlay-panel §12）
+  private var canFanNotes: Bool {
+    !isCapturing && recorder?.isCountingDown != true && !statusScreen.isActive
+      && !OverlayPanel.isSelectingRegion(in: NSApp.windows)
   }
 
   /// 在录屏 / 录音时先停止并收尾再退（13 条默认细节：最多等 5 s；没写完也照样退，录屏由 replayd 自己收尾，下次启动 recover 接手）
@@ -746,15 +772,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     return (panel, model)
   }
 
-  /// 全部便签窗口（普通窗口，打开方式同设置窗：先收起浮层）。creating：「新建便签」——先建一条空的、选中、焦点进正文
-  /// （第 3 批有了边缘那叠之后改成在那边打开）
-  func showNotes(creating: Bool = false) {
+  /// 全部便签窗口（普通窗口，打开方式同设置窗：先收起浮层）。creating：先建一条空的、选中、焦点进正文（「新建便签」
+  /// 在屏幕边缘那叠开不了时走这里）；revealing：选中这一条（从那叠「在全部便签里打开」）
+  func showNotes(creating: Bool = false, revealing id: String? = nil) {
     guard let store = usableNotes() else { return }
     hidePanels()
     let window = notesWindow ?? makeNotesWindow(store)
     notesWindow = window
     window.show()
     if creating { window.model.create() }
+    if let id { window.model.reveal(id) }
+  }
+
+  /// 「新建便签」（全局动作、菜单栏、启动器、药丸的右键菜单）：屏幕边缘那叠开着（总开关开）就建一条、在鼠标所在屏的
+  /// 那叠里打开；那边开不了（总开关关着、哪块屏都放不了）照第 2 批在全部便签窗口里新建
+  private func newNote() {
+    guard usableNotes() != nil else { return }
+    if noteEdge?.openNew() != true { showNotes(creating: true) }
   }
 
   private func makeNotesWindow(_ store: NoteStore) -> NotesWindow {
@@ -835,7 +869,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     case .pinClipboard: pinClipboard()
     case .statusScreen: pickStatus()
     case .noteCapture: toggleNoteCapture()
-    case .noteNew: showNotes(creating: true)
+    case .noteNew: newNote()
     case .noteAll: showNotes()
     }
   }
@@ -1233,6 +1267,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 截图里按 R 时已经问过（SelectionSession.recordingBlocker，停在截图里）；框选期间状态还可能变（系统睡眠停了录音、
     // 更新开始装），这里兜底
     guard !refusesRecording(.screen) else { return }
+    // 倒数的那几秒便签的药丸不响应（canFanNotes），扇着的一列先收起；打开着的便签留着（它是内容，会录进去）
+    noteEdge?.suspend(.keepsOpen)
     closeReadyAudio()  // 录音控制条开着、还没开始：收掉，照常录屏（录屏和录音只留一个）
     UserDefaults.standard.set(NSStringFromRect(region), forKey: Prefs.screenshotLastRegion)
     shelf.dismiss(covering: region)
@@ -1381,6 +1417,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func beginCapture(hidingPanels: Bool, _ work: @escaping () async -> Void) {
     guard !isCapturing, !isReadingSelection else { return }
     isCapturing = true
+    // 便签屏幕边缘扇着的那一列当场收起（先落盘），冻结帧里不留半截；打开着的便签是内容，照样截进去
+    noteEdge?.suspend(.keepsOpen)
     if hidingPanels { hideUnpinnedPanels() }
     Task {
       defer { isCapturing = false }
@@ -1395,6 +1433,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     statusPicker.panel?.hide()  // 选状态的面板也没有
     noteCapture?.panel.hide()  // 快速记一条也没有（草稿留着）
     translatePanel.hideUnlessPinned()
+    noteEdge?.suspend(.unlessPinned)  // 屏幕边缘打开着的便签同理：没固定的收（先落盘）
   }
 
   /// 有「屏幕录制」授权（截图家族、录系统声音开始前查）；没有就同设置 › 通用、引导里的授权按钮：请求一次（系统框只弹一次，
