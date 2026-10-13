@@ -27,6 +27,8 @@ import SwiftUI
     var tone: Tone
     var symbol: String
     var leading: Leading
+    /// 进行中、且知道做到哪了（0…1：更新包下载、转 GIF、压缩）：标题后面多一条细进度条。nil = 不画
+    var fraction: Double?
   }
 
   /// 正在显示的内容；nil = 内容已退场（形体可能还在缩回）
@@ -84,19 +86,15 @@ import SwiftUI
 
   func show(
     _ title: String, detail: String? = nil, tone: Tone = .success, symbol: String? = nil,
-    leading: Leading = .tone
+    leading: Leading = .tone, fraction: Double? = nil
   ) {
     let next = Content(
       title: title, detail: detail, tone: tone, symbol: symbol ?? Self.symbol(for: tone),
-      leading: leading)
+      leading: leading, fraction: fraction)
     dwell?.cancel()
     if isOpen, content != nil {
       // 原地更新：内容交叉模糊替换，宽度跟着内容走（spring 0.32）
-      withAnimation(
-        Style.reduceMotion ? .easeInOut(duration: 0.2) : .spring(duration: 0.32, bounce: 0.15)
-      ) {
-        content = next
-      }
+      withAnimation(Self.resize) { content = next }
     } else {
       open(with: next)
     }
@@ -116,13 +114,22 @@ import SwiftUI
     }
   }
 
-  /// 进行中的岛改详情（转 GIF、压缩的百分比）：内容不重新出场、不播报（一秒几次，旁白会被刷屏），停留重新计时——
-  /// 事情还在做就一直挂着。岛上已经不是这一条（标题对不上、被别的岛换掉了）就不动
-  func progress(_ title: String, detail: String) {
+  /// 岛的宽度跟着内容变时用的曲线
+  private static var resize: Animation {
+    Style.reduceMotion ? .easeInOut(duration: 0.2) : .spring(duration: 0.32, bounce: 0.15)
+  }
+
+  /// 进行中的岛改详情（更新包下载、转 GIF、压缩的百分比；fraction 是同一个进度，细进度条跟着走）：内容不重新出场、不播报
+  /// （一秒几次，旁白会被刷屏），停留重新计时——事情还在做就一直挂着。岛上已经不是这一条（标题对不上、被别的岛换掉了）就不动
+  func progress(_ title: String, detail: String, fraction: Double? = nil) {
     guard isOpen, let content, content.title == title, content.tone == .progress,
-      content.detail != detail
+      content.detail != detail || content.fraction != fraction
     else { return }
-    self.content?.detail = detail
+    // 细条刚出现 / 收掉时宽度变一大截，同原地更新的弹簧；平时只是数字在变，不动画
+    withAnimation((content.fraction == nil) != (fraction == nil) ? Self.resize : nil) {
+      self.content?.detail = detail
+      self.content?.fraction = fraction
+    }
     dwell?.cancel()
     dwell = Task { [weak self] in
       try? await Task.sleep(for: .seconds(60))
@@ -337,6 +344,18 @@ struct IslandView: View {
           Text(content.title)
             .font(.system(size: 13, weight: .semibold))
             .foregroundStyle(.white.opacity(0.95))
+          if let fraction = content.fraction {
+            // 知道做到哪了（下载、转 GIF、压缩）：56 × 4 的细条，底 white 0.18、填语气色，跟着进度线性走
+            Capsule().fill(.white.opacity(0.18))
+              .overlay(alignment: .leading) {
+                Rectangle().fill(tint(content.tone))
+                  .frame(width: 56 * min(max(fraction, 0), 1))
+              }
+              .clipShape(Capsule())
+              .frame(width: 56, height: 4)
+              .animation(reduceMotion ? nil : .linear(duration: 0.2), value: fraction)
+              .accessibilityHidden(true)
+          }
           if let detail = content.detail {
             Text(detail)
               // 进行中的详情是会变的百分比：数字等宽，岛不跟着一宽一窄地抖

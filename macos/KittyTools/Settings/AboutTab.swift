@@ -123,8 +123,15 @@ struct AboutTab: View {
             link("更新内容") { NSWorkspace.shared.open(release.page) }
           }
         case .installing(let release):
-          ProgressView().controlSize(.small)
-          Text("正在更新到 \(release.version)…").foregroundStyle(.secondary)
+          // 下载有进度就是一条真的进度条（服务器没给大小、还没开始时是来回走的那种），后面一句话带百分比
+          ProgressView(value: updater.progress)
+            .progressViewStyle(.linear)
+            .tint(Style.brand)
+            .frame(width: 140)
+            .accessibilityLabel("更新进度")
+          Text(Updater.installingLine(release.version, progress: updater.progress))
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
         case .failed(let message):
           Text(message).foregroundStyle(Color(nsColor: .systemRed))
             .lineLimit(1).truncationMode(.tail)

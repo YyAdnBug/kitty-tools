@@ -545,18 +545,22 @@ struct SnapshotProbeTests {
         size: NSSize(width: 780, height: 600), dark: dark,
         to: "\(out)/settings-\(page.rawValue)\(dark ? "-dark" : "").png")
     }
-    // 关于页的应用内更新：有新版本（强调色按钮）、正在更新、已是最新、检查失败
+    // 关于页的应用内更新：有新版本（强调色按钮）、正在更新（还不知道下了多少 / 下载到 42% / 下完在装）、已是最新、检查失败
     let release = Updater.Release(
       version: "0.2.0", archive: URL(string: "https://example.com/Kitty.zip")!,
       page: Updater.releasesPage)
-    let updateStates: [(String, Updater.State, Bool)] = [
-      ("available", .available(release), false), ("available", .available(release), true),
-      ("installing", .installing(release), false), ("latest", .upToDate, false),
-      ("failed", .failed("检查更新失败：网络连接已中断。"), false),
+    let updateStates: [(String, Updater.State, Bool, Double?)] = [
+      ("available", .available(release), false, nil),
+      ("available", .available(release), true, nil),
+      ("installing", .installing(release), false, nil),
+      ("downloading", .installing(release), false, 0.42),
+      ("downloading", .installing(release), true, 0.42),
+      ("downloaded", .installing(release), false, 1), ("latest", .upToDate, false, nil),
+      ("failed", .failed("检查更新失败：网络连接已中断。"), false, nil),
     ]
     navigation.page = .about
-    for (name, state, dark) in updateStates {
-      let updater = Updater(state: state)
+    for (name, state, dark, progress) in updateStates {
+      let updater = Updater(state: state, progress: progress)
       try snapshot(
         SettingsRoot(navigation: navigation) { page in
           page == .about ? AnyView(AboutTab(updater: updater)) : pages(page)
@@ -839,14 +843,29 @@ struct SnapshotProbeTests {
         "island-gif-progress",
         .init(
           title: "正在转成 GIF…", detail: ShelfCard.progressDetail(37, note: "只转前 60 秒"),
-          tone: .progress, symbol: ShelfCard.gifIslandSymbol, leading: .tone), notch
+          tone: .progress, symbol: ShelfCard.gifIslandSymbol, leading: .tone, fraction: 0.37),
+        notch
+      ),
+      // 更新包下载（2026-10-13）：知道下了多少，标题后面多一条细进度条（上面转 GIF、压缩的两张同样）；无刘海屏的胶囊再出一张
+      (
+        "island-update-progress",
+        .init(
+          title: Updater.installingTitle("0.5.0"), detail: Updater.installingDetail(0.42),
+          tone: .progress, symbol: "arrow.down.circle.fill", leading: .tone, fraction: 0.42), notch
+      ),
+      (
+        "island-update-progress-capsule",
+        .init(
+          title: Updater.installingTitle("0.5.0"), detail: Updater.installingDetail(1),
+          tone: .progress, symbol: "arrow.down.circle.fill", leading: .tone, fraction: 1),
+        .capsule(menuBar: 24)
       ),
       // 第二轮体检 R1：视频卡「压缩」的进度；R3：识字慢的时候先出「识别中」
       (
         "island-compress-progress",
         .init(
           title: "正在压缩…", detail: ShelfCard.progressDetail(37), tone: .progress,
-          symbol: ShelfCard.compressIslandSymbol, leading: .tone), notch
+          symbol: ShelfCard.compressIslandSymbol, leading: .tone, fraction: 0.37), notch
       ),
       (
         "island-recognizing",

@@ -542,7 +542,7 @@ final class ShotShelf {
   /// 录屏转成 GIF（第 7 批，R12-a）：存进快速保存目录「录屏 <开录时刻>.gif」，转的时候岛挂进度（菜单栏图标跟着呼吸）、
   /// 超过 60 s 的在进度里说只转前 60 秒；转好岛「已存成 GIF」+ 大小，角落叠一张 GIF 卡；转不成岛说原因；取消（卡片被关掉）不出岛。
   /// 正在转（或者正在压缩）时再点只让岛再说一次，不重复开。进度岛的详情里写百分比（第二轮体检 R3；Island.progress 只改
-  /// 详情、不重新出场、不播报）
+  /// 详情、不重新出场、不播报），标题后面一条细进度条跟着走（2026-10-13，和更新包下载的岛同一种）
   func convertToGIF() {
     guard case .video(let url, let seconds) = kind, exists(url), !isExporting() else { return }
     let island = shelf?.island
@@ -554,7 +554,9 @@ final class ShotShelf {
     export = Task {
       do {
         let first = try await VideoExport.gif(from: url, to: target) { percent in
-          island?.progress(progress, detail: Self.progressDetail(percent, note: note))
+          island?.progress(
+            progress, detail: Self.progressDetail(percent, note: note),
+            fraction: Double(percent) / 100)
         }
         let bytes = (try? target.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
         island?.show(
@@ -588,7 +590,8 @@ final class ShotShelf {
     export = Task {
       do {
         try await VideoExport.compress(url, to: target) { percent in
-          island?.progress(progress, detail: Self.progressDetail(percent))
+          island?.progress(
+            progress, detail: Self.progressDetail(percent), fraction: Double(percent) / 100)
         }
         island?.show(
           "已压缩", detail: Self.sizeChange(from: url, to: target),

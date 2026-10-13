@@ -4,7 +4,8 @@
 // 「温和提醒」）：菜单栏图标右上角的小圆点（StatusItem.updateVersion）+ 菜单顶上「更新到 x…」、剪贴板面板和启动器底栏的
 // 「更新到 x」（UpdateBarHint）、关于页的「更新并重新打开」。更新 = 下载 release 里的 *_arm64.zip → ditto 解到 App 所在卷的临时目录 →
 // 校验 bundle id、版本号和签名（Apple 签发、本团队 HTX9F4KG39 的证书）→ 原子地换掉正在运行的 .app →
-// 等本进程退出后重新打开。不用 Sparkle（禁止第三方依赖）；解包、验签交给系统的 ditto / codesign，在进程外跑。
+// 等本进程退出后重新打开。下载是最久的一步，下了多少实时报出来（progress：关于页的进度条、刘海岛上的细条和百分比，
+// 2026-10-13 用户要求「不是一直 loading」）；之后解包、验签、替换只有一两秒，写「正在安装」。不用 Sparkle（禁止第三方依赖）；解包、验签交给系统的 ditto / codesign，在进程外跑。
 // App 自己用 URLSession 下载的文件不带隔离标记（实测），换上的新版不会再被 Gatekeeper 拦；证书不变，授权不丢。
 // 只有正式版（bundle id com.yy.kitty-tools.native）更新：Debug 版的 bundle id 不同，装过去会把 Dev 换成正式版。
 
@@ -43,6 +44,8 @@ import AppKit
   }
   /// available 变了（AppDelegate 接菜单栏图标的角标；面板底栏是 SwiftUI，自己跟着变）
   @ObservationIgnored var onAvailableChange: (Release?) -> Void = { _ in }
+  /// 更新包下了多少（0…1，整百分点；下完到重新打开之前一直是 1）。nil = 没在下载，或服务器没给大小（那就还是转着等）
+  private(set) var progress: Double?
   /// 此刻不能更新的原因（录屏中「录制结束后再更新」，AppDelegate 写）：关于页的「更新并重新打开」置灰、旁边写它；
   /// 菜单里点了「更新到 x…」用刘海说
   var blocker: String?
@@ -60,8 +63,10 @@ import AppKit
   static let requirement =
     "=identifier \"\(bundleID)\" and anchor apple generic and certificate leaf[subject.OU] = \"HTX9F4KG39\""
 
-  init(state: State = .idle) {
+  /// state / progress：截图自检直接摆出各种状态；正常使用就是 `Updater()`
+  init(state: State = .idle, progress: Double? = nil) {
     self.state = state
+    self.progress = progress
     available = Self.available(nil, after: state)
   }
 
@@ -159,25 +164,62 @@ import AppKit
       return
     }
     state = .installing(release)
+    progress = nil
     if trigger != .page { showInstalling(release) }
     do {
       let app = Bundle.main.bundleURL
-      try await Self.replace(app, with: release)
+      // 进度是下载的线程报的：回到主线程再动界面
+      try await Self.replace(app, with: release) { [weak self] fraction in
+        Task { @MainActor in self?.downloaded(fraction, of: release) }
+      }
       try Self.relaunch(app)
       NSApp.terminate(nil)
     } catch {
       state = .available(release)
+      progress = nil
       island?.show("更新失败", detail: error.localizedDescription, tone: .error)
     }
   }
 
   private func showInstalling(_ release: Release) {
     island?.show(
-      "正在更新到 \(release.version)…", detail: "装好会自动重新打开", tone: .progress,
-      symbol: "arrow.down.circle.fill")
+      Self.installingTitle(release.version), detail: Self.installingDetail(progress),
+      tone: .progress, symbol: "arrow.down.circle.fill", fraction: progress)
+  }
+
+  /// 下载又进了一截：整百分点才动一次界面（一次下载报几百回），只往前走（回主线程的顺序不保证）；岛上那一条跟着改
+  /// （从关于页点的没有岛，改不到就算了）
+  private func downloaded(_ fraction: Double, of release: Release) {
+    let percent = (min(max(fraction, 0), 1) * 100).rounded(.down) / 100
+    guard state == .installing(release), percent > progress ?? -1 else { return }
+    progress = percent
+    island?.progress(
+      Self.installingTitle(release.version), detail: Self.installingDetail(percent),
+      fraction: percent)
   }
 
   // MARK: 纯逻辑（单测）
+
+  /// 刘海岛上更新那一条的标题（进度按标题认这一条，两处要同一句）
+  static func installingTitle(_ version: String) -> String { "正在更新到 \(version)…" }
+
+  /// 岛上的后半句：还不知道下了多少 / 下载中的百分比 / 下完了在装
+  static func installingDetail(_ progress: Double?) -> String {
+    switch progress {
+    case nil: "装好会自动重新打开"
+    case let value? where value < 1: "已下载 \(Int((value * 100).rounded()))%"
+    default: "正在安装，装好会自动重新打开"
+    }
+  }
+
+  /// 关于页上的那句话（进度条在它前面）
+  static func installingLine(_ version: String, progress: Double?) -> String {
+    switch progress {
+    case nil: installingTitle(version)
+    case let value? where value < 1: "正在下载 \(version) · \(Int((value * 100).rounded()))%"
+    default: "正在安装 \(version)…"
+    }
+  }
 
   /// 状态变了之后，已经发现的新版本还算不算：复查中、没查成时留着——不然菜单栏的角标、面板底栏的「更新到 x」每天复查
   /// 那一下都要闪（连不上 GitHub 时一闪就是到超时为止，半小时重试一次）；查到已是最新、开始安装才清
@@ -221,8 +263,11 @@ import AppKit
   // MARK: 安装
 
   /// 下载更新包，解到 target 所在卷的临时目录，校验 bundle id、版本号和签名，再原子地换掉 target。
-  /// 从 DMG 里、或没拖进「应用程序」就打开（系统把它挪到只读的随机路径）时换不了；标准（非管理员）账户写不了「应用程序」
-  static func replace(_ target: URL, with release: Release) async throws {
+  /// 从 DMG 里、或没拖进「应用程序」就打开（系统把它挪到只读的随机路径）时换不了；标准（非管理员）账户写不了「应用程序」。
+  /// progress：下载了多少（0…1），在下载的线程上调
+  static func replace(
+    _ target: URL, with release: Release, progress: @escaping @Sendable (Double) -> Void = { _ in }
+  ) async throws {
     let folderURL = target.deletingLastPathComponent()
     let folder = folderURL.path
     let readOnly = (try? folderURL.resourceValues(forKeys: [.volumeIsReadOnlyKey]))?
@@ -233,7 +278,7 @@ import AppKit
     guard FileManager.default.isWritableFile(atPath: folder) else {
       throw UpdateError("没有权限替换「\(folder)」里的 App：请用管理员账户更新，或到发布页下载后手动替换")
     }
-    let (zip, response) = try await URLSession.shared.download(from: release.archive)
+    let (zip, response) = try await download(release.archive, progress: progress)
     defer { try? FileManager.default.removeItem(at: zip) }
     if let status = (response as? HTTPURLResponse)?.statusCode, status != 200 {
       throw UpdateError("下载失败（\(status)）")
@@ -261,6 +306,13 @@ import AppKit
     _ = try FileManager.default.replaceItemAt(target, withItemAt: app)
   }
 
+  /// 下载到临时文件（调用方删），一路报下了多少（0…1，见 DownloadWatcher）
+  static func download(_ url: URL, progress: @escaping @Sendable (Double) -> Void) async throws
+    -> (URL, URLResponse)
+  {
+    try await URLSession.shared.download(from: url, delegate: DownloadWatcher(report: progress))
+  }
+
   /// 等本进程退出后重新打开：先开的话新实例会看到还没退的旧实例，按单实例规则自己退出
   private static func relaunch(_ app: URL) throws {
     let process = Process()
@@ -276,6 +328,24 @@ import AppKit
   /// 跑系统命令（ditto / codesign）：在进程外，等它结束，非 0 退出就抛 failure
   private static func run(_ tool: String, _ arguments: [String], failure: String) async throws {
     guard try await Subprocess.run(tool, arguments).status == 0 else { throw UpdateError(failure) }
+  }
+}
+
+/// 看着一次下载下了多少。async 的 download(from:) 不报进度：这一个任务的委托收不到 didWriteData（实测 0 次），只有
+/// didCreateTask 把任务交过来，之后看它的 progress（一变就按任务上的字节数算，progress 自己的比例开头有 5% 的虚头）。
+/// 服务器没给大小就不报。回调都在会话自己的线程上
+private final class DownloadWatcher: NSObject, URLSessionTaskDelegate {
+  private let report: @Sendable (Double) -> Void
+  /// 只在 didCreateTask 里写一次，之后只是拿着（放掉就不再观察）
+  nonisolated(unsafe) private var observation: NSKeyValueObservation?
+
+  init(report: @escaping @Sendable (Double) -> Void) { self.report = report }
+
+  nonisolated func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
+    observation = task.progress.observe(\.fractionCompleted) { [report] _, _ in
+      let expected = task.countOfBytesExpectedToReceive
+      if expected > 0 { report(Double(task.countOfBytesReceived) / Double(expected)) }
+    }
   }
 }
 

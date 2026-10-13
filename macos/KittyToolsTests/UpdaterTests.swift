@@ -4,6 +4,7 @@
 //     macos/KittyTools.xcodeproj -scheme KittyTools test -only-testing:KittyToolsTests/UpdaterTests
 import Foundation
 import Testing
+import os
 
 @testable import KittyTools
 
@@ -56,6 +57,35 @@ struct UpdaterTests {
 
   /// 已经发现的新版本在复查期间、没查成时留着（菜单栏角标、面板底栏的「更新到 x」不跟着闪），
   /// 查到更新的换成新的，查到已是最新、开始安装才清
+  @Test func installingWordsFollowProgress() {
+    // 岛上的后半句和关于页那句话：不知道下了多少 → 下载中的百分比 → 下完了在装
+    #expect(Updater.installingDetail(nil) == "装好会自动重新打开")
+    #expect(Updater.installingDetail(0) == "已下载 0%")
+    #expect(Updater.installingDetail(0.42) == "已下载 42%")
+    #expect(Updater.installingDetail(1) == "正在安装，装好会自动重新打开")
+    #expect(Updater.installingLine("0.5.0", progress: nil) == "正在更新到 0.5.0…")
+    #expect(Updater.installingLine("0.5.0", progress: 0.42) == "正在下载 0.5.0 · 42%")
+    #expect(Updater.installingLine("0.5.0", progress: 1) == "正在安装 0.5.0…")
+  }
+
+  @Test func downloadReportsProgress() async throws {
+    // 系统的 async download 不回调写了多少（2026-10-13 实测），进度是从任务的字节数上读的：下一个本地文件，
+    // 报出来的都在 0…1、最后到 1，文件完整
+    let source = FileManager.default.temporaryDirectory.appending(
+      path: "kitty-update-\(UUID().uuidString).bin")
+    defer { try? FileManager.default.removeItem(at: source) }
+    try Data((0..<3_000_000).map { UInt8(truncatingIfNeeded: $0) }).write(to: source)
+    let reported = OSAllocatedUnfairLock(initialState: [Double]())
+    let (file, _) = try await Updater.download(source) { fraction in
+      reported.withLock { $0.append(fraction) }
+    }
+    defer { try? FileManager.default.removeItem(at: file) }
+    #expect(try Data(contentsOf: file).count == 3_000_000)
+    let fractions = reported.withLock { $0 }
+    #expect(fractions.last == 1)
+    #expect(fractions.allSatisfy { (0...1).contains($0) })
+  }
+
   @Test func knownUpdateSurvivesRecheck() throws {
     let archive = try #require(URL(string: "https://example.com/Kitty.zip"))
     let release = Updater.Release(version: "0.9.0", archive: archive, page: Updater.releasesPage)
