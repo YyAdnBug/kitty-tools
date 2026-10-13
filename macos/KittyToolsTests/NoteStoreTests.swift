@@ -4,6 +4,7 @@
 // 下一次改动把上一次排的作废、连着改满 2 s 当场落、「还要等多久」的两个纯函数、写不成的留着并自己再试、带 NUL 的文字
 // 存得全、软删 / 放回 / 到期清理 / 永久删除、归档、挪顺序（中间取不出值时整列重排）、搜索、表结构版本比认识的大时
 // 不读不写、库里离谱的修订号和顺序、导入合并的每一种情况（被换掉的那一版进「最近删除」、时间在未来的不覆盖、没落下去要说）。
+// 另有退出前落盘的询问（flushBeforeQuit，第 2 批）；清空最近删除在 NotesWindowTests。
 // 全用内存库；时间都是传进去的固定值，等待换成测试自己放行的，不等真实时间、不碰用户的数据目录。
 
 import Foundation
@@ -388,6 +389,38 @@ struct NoteStoreTests {
     #expect(rows == sorted(store))
     #expect(rows.map(\.id) == [kept] && rows.first?.body == "没存上的正文")
     #expect(rows.first?.isPinned == true)
+  }
+
+  /// 退出前落盘：没有要落的、落得下去的不问；落不下去就问——再试一次（库好了就成）、仍要退出（放行）、取消（不退）
+  @Test func flushBeforeQuitAsksOnlyWhenWritesFail() throws {
+    let (store, db) = try open()
+    let id = store.create(body: "旧的", now: Self.t0).id
+    var asked: [String] = []
+    let ask = { (choice: NoteStore.QuitChoice) in
+      { (problem: String) -> NoteStore.QuitChoice in
+        asked.append(problem)
+        return choice
+      }
+    }
+    #expect(store.flushBeforeQuit(ask: ask(.cancel)))
+    store.setBody("攒着的", of: id, now: Self.at(1))
+    #expect(store.flushBeforeQuit(ask: ask(.cancel)))
+    #expect(try asked.isEmpty && saved(db).first?.body == "攒着的")
+
+    try db.execute("ALTER TABLE notes RENAME TO parked")
+    store.setBody("没存上的", of: id, now: Self.at(2))
+    #expect(!store.flushBeforeQuit(ask: ask(.cancel)))
+    #expect(asked.count == 1 && asked[0].isEmpty == false)
+    #expect(store.flushBeforeQuit(ask: ask(.quitAnyway)))
+    #expect(asked.count == 2 && store.saveProblem != nil)
+    // 再试一次：问的时候把库修好，下一轮就落下去了，不再问
+    let repaired = store.flushBeforeQuit { problem in
+      asked.append(problem)
+      try? db.execute("ALTER TABLE parked RENAME TO notes")
+      return .retry
+    }
+    #expect(repaired && asked.count == 3 && store.saveProblem == nil)
+    #expect(try saved(db).first?.body == "没存上的")
   }
 
   /// 写不成之后自己再试：5 秒后一次，还不成 10 秒后再一次……库好了的那一次成了，原因收掉、不再排

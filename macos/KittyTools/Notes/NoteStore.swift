@@ -4,7 +4,8 @@
 // - 落盘：正文和标题是一个字一个字改的，先改内存、记成「没落盘」，停手 250 ms 落一次、连着改满 2 s 必落一次（saveDelay）；
 //   别的改动（新建、换色、归档、固定、挪顺序、删除、放回、导入…）当场落，攒着的一起带下去。flush() = 现在就落：便签收起、
 //   退出、锁屏、睡眠前由调用方调。写不成的不丢：留在「没落盘」的集合里，原因记在 saveProblem（界面读它），过一会儿自己
-//   再试（retryDelay：5 秒起、每次翻倍、封顶 60 秒），下一次改动、下一次 flush 也会带上。
+//   再试（retryDelay：5 秒起、每次翻倍、封顶 60 秒），下一次改动、下一次 flush 也会带上；退出前还落不下去要问用户
+//   （flushBeforeQuit）。
 // - 写进来的文字都先收拾一遍（Note.sanitized：去掉 NUL，标题截到上限）；修订号每次改动 +1（到顶为止），「改于」只在
 //   标题 / 正文 / 颜色变时更新。要用到「现在」的改动都带一个 now 参数（默认 .now，单测传固定的；同剪贴板、翻译历史的仓库）。
 // - 删除是软删（deletedAt），进「最近删除」留 trashDays 天，到期由 purgeExpired 真删。
@@ -224,6 +225,31 @@ import Observation
 
   /// 永久删除：不进「最近删除」，找不回来
   func erase(_ id: String) { erase([id]) }
+
+  /// 清空「最近删除」：里面的全部永久删除（一个事务）。返回删了几条
+  @discardableResult
+  func emptyTrash() -> Int {
+    let ids = Set(notes.filter { $0.deletedAt != nil }.map(\.id))
+    erase(ids)
+    return ids.count
+  }
+
+  /// 退出前落不下去时用户怎么选
+  nonisolated enum QuitChoice { case retry, quitAnyway, cancel }
+
+  /// 退出前把攒着的改动落下去（AppDelegate.applicationShouldTerminate）。落不下去就问（ask 拿到的是原因）：再试一次 /
+  /// 仍要退出 / 取消——不悄悄丢。返回能不能退：都落下去了、或者用户说仍要退出是 true，取消是 false。
+  /// 没有要落的就不问
+  func flushBeforeQuit(ask: (String) -> QuitChoice) -> Bool {
+    while !flush() {
+      switch ask(saveProblem ?? "原因不明") {
+      case .retry: continue
+      case .quitAnyway: return true
+      case .cancel: return false
+      }
+    }
+    return true
+  }
 
   /// 「最近删除」里放了超过 trashDays 天的真删（启动后、换日时调）。返回删了几条
   @discardableResult

@@ -213,7 +213,8 @@ struct LauncherBatch5Tests {
       plain.map(\.target) == [
         "clipboard", "pause-clipboard", "selectionTranslate", "translate-input", "translateReplace",
         "translate-screenshot", "copyToTranslate", "screenshot", "screenshotLastRegion", "ocr",
-        "screenRecord", "audioRecord", "pinClipboard", "settings", "shortcuts", "about", "quit",
+        "screenRecord", "audioRecord", "pinClipboard", "noteCapture", "noteNew", "noteAll",
+        "settings", "shortcuts", "about", "quit",
       ])
     // 状态屏不是一条：每个状态一条（StatusScreenTests.entries）
     for action in HotKeyAction.allCases where action != .launcher && action != .statusScreen {

@@ -1,7 +1,7 @@
 // 应用生命周期：单实例检查，按依赖顺序组装各模块（PLAN §4），热键与各翻译入口，首次安装打开欢迎引导、
 // 更新后第一次启动用刘海岛说一声，退出 / 锁屏时的清理；数据打不开时问用户怎么办、每天备份的时机（Storage/Backup.swift）；
 // 便签的数据（Notes/：单独的库，启动的最后才开，打不开时单独问、不退出，退出 / 锁屏 / 睡眠前落盘，每天备份、
-// 清「最近删除」里到期的）；
+// 清「最近删除」里到期的）和三个入口（快速记一条的面板、新建便签、全部便签窗口；退出前落不下去先问）；
 // 录屏（框选、开录、结果、飞入和视频卡、退出前收尾、上次闪退留下的文件）；
 // 录音（录音第 5 批：开录、和录屏互斥、结果、飞入和录音卡，收尾和闪退恢复同录屏）；
 // 状态屏的三个入口（快捷键先出选状态的面板——设置里可改成直接进第一个状态，菜单栏子菜单、启动器每个状态一条；
@@ -75,6 +75,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 上一次备份便签库时发现库有问题（NotesBackup.run 给了 .damaged）：内存里读到的便签可能不全，设置与数据的自动备份里
   /// 先不带便签这一类（同 isDatabaseDamaged 的道理：写出去会把带着好便签的那几份顶掉）
   private var isNotesDamaged = false
+  /// 快速记一条的面板和它的状态（Notes/NoteCapture.swift）：第一次用时建——便签要能用才有（noteStore 启动的最后才开，
+  /// 可能是 nil）——建了就留着，草稿在它的 model 里
+  private var noteCapture: (panel: OverlayPanel, model: NoteCaptureModel)?
+  /// 全部便签窗口（Notes/NotesWindow.swift，普通窗口）：同样第一次用时建
+  private var notesWindow: NotesWindow?
   private lazy var watcher = ClipboardWatcher(store: clipboardStore)
   private let serviceStore = TranslateServiceStore()
   private lazy var coordinator = TranslateCoordinator(services: serviceStore, history: historyStore)
@@ -91,7 +96,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let screen = StatusScreen()
     screen.island = island
     screen.hotKeys = hotKeys
-    screen.hidePanels = { [unowned self] in hidePanels() }
+    screen.hidePanels = { [unowned self] in
+      hidePanels()
+      // 进去之后键盘鼠标都被拦着：便签攒着没落盘的先落下去
+      noteStore?.flush()
+    }
     screen.blocker = { [unowned self] in
       let busy = "先停止这一段再进入状态屏"
       if recorder != nil { return ("正在录屏", busy) }
@@ -437,6 +446,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           })
       case .screenshot: AnyView(ScreenshotTab())
       case .record: AnyView(RecordTab())
+      case .notes: AnyView(NotesTab { [unowned self] in showNotes() })
       case .statusScreen: AnyView(StatusScreenTab())
       case .translate:
         AnyView(
@@ -595,6 +605,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 在录屏 / 录音时先停止并收尾再退（13 条默认细节：最多等 5 s；没写完也照样退，录屏由 replayd 自己收尾，下次启动 recover 接手）
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    // 便签攒着的改动先落下去；落不下去、用户选了取消就不退（这时录屏 / 录音什么都还没动）
+    guard flushNotesBeforeQuit() else { return .terminateCancel }
     closeReadyAudio()  // 待录的录音控制条没有东西要收尾：直接收掉，不等它回调
     guard recorder != nil || audioRecorder != nil else { return .terminateNow }
     quitsAfterRecording = true
@@ -609,12 +621,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     return .terminateLater
   }
 
+  /// 退出前把便签攒着没落盘的改动落下去（应用内更新的重启也走这里：Updater.install 调的是 NSApp.terminate）。
+  /// 落不下去不悄悄丢：弹框说原因，「再试一次」「仍要退出」「取消」。返回能不能接着退
+  private func flushNotesBeforeQuit() -> Bool {
+    guard isRunning, let noteStore else { return true }
+    return noteStore.flushBeforeQuit { problem in
+      let alert = NSAlert()
+      alert.alertStyle = .warning
+      alert.messageText = "便签没存上"
+      alert.informativeText =
+        "最近改的便签没能写进磁盘（\(problem)）。\n现在退出，这些改动就丢了；可以先把正在写的那条拷贝到别处，再试一次。"
+      alert.addButton(withTitle: "再试一次")
+      alert.addButton(withTitle: "仍要退出").hasDestructiveAction = true
+      // Esc = 取消
+      alert.addButton(withTitle: "取消").keyEquivalent = "\u{1b}"
+      NSApp.activate()
+      switch alert.runModal() {
+      case .alertFirstButtonReturn: return .retry
+      case .alertSecondButtonReturn: return .quitAnyway
+      default: return .cancel
+      }
+    }
+  }
+
   func applicationWillTerminate(_ notification: Notification) {
     guard isRunning else { return }
     statusScreen.exit(.quit)  // 在状态屏里被要求退出（远程、脚本）：拦截当场撤掉
-    // 便签攒着没落盘的改动。应用内更新的重启也走这里（Updater.install 调的是 NSApp.terminate）。
-    // ponytail: 这时还落不下去只留日志（丢的是最近那一小段没落盘的改动）；有了能写便签的界面之后（第 2 批），
-    // 改成在 applicationShouldTerminate 里拦一下、问用户
+    // 便签：applicationShouldTerminate 已经落过、落不下去也问过了；这里再落一次兜着之后才有的改动（等录屏收尾的那几秒）
     noteStore?.flush()
     // 面板固定着删了再退出：删掉的也要落库（撤销栈平时在面板收起时提交，体检 A2），⌘C 复制过的挪到最前
     clipboardModel.reset()
@@ -631,6 +664,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       NSApp.activate()
       return false
     }
+    // 全部便签窗口开着时点程序坞图标：把开着的窗口带到前面就行，不另开设置窗
+    if notesWindow?.isVisible == true {
+      NSApp.activate()
+      return true
+    }
     showSettings()
     return false
   }
@@ -644,6 +682,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if !(clipboardPanel.isVisible && clipboardPanel.isKeyWindow) {
       launcherPanel.hide()
       statusPicker.panel?.hide()
+      noteCapture?.panel.hide()
     }
     if !clipboardPanel.isVisible { clipboardStore.enforceLimits() }
     clipboardPanel.toggle()
@@ -653,6 +692,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if !(launcherPanel.isVisible && launcherPanel.isKeyWindow) {
       clipboardPanel.hide()
       statusPicker.panel?.hide()
+      noteCapture?.panel.hide()
     }
     let appearing = !launcherPanel.isVisible
     if appearing { launcherModel.prepareForShow() }
@@ -661,6 +701,66 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if appearing, launcherModel.resumesQuery {
       (launcherPanel.firstResponder as? NSTextView)?.selectAll(nil)
     }
+  }
+
+  // MARK: 便签的入口
+
+  /// 便签这次用不了（库打不开时选了「这次先不用」、库是更新版本写的，noteStore 是 nil）：三个入口都不做事，说一声
+  private func usableNotes() -> NoteStore? {
+    if noteStore == nil { island.show("便签这次用不了", tone: .warning) }
+    return noteStore
+  }
+
+  /// 快速记一条（默认 ⌥N）：和启动器、剪贴板面板同位置同宽，只开一个——呼出它时收起那两块（和选状态的面板），
+  /// 呼出那两块时收起它；再按一次 = 收起（草稿留着）
+  func toggleNoteCapture() {
+    guard let store = usableNotes() else { return }
+    let capture = noteCapture ?? makeNoteCapture(store)
+    noteCapture = capture
+    if !(capture.panel.isVisible && capture.panel.isKeyWindow) {
+      clipboardPanel.hide()
+      launcherPanel.hide()
+      statusPicker.panel?.hide()
+    }
+    if !capture.panel.isVisible {
+      capture.model.prepareForShow()
+      capture.panel.setContentHeight(capture.model.height)
+    }
+    capture.panel.toggle()
+  }
+
+  private func makeNoteCapture(_ store: NoteStore) -> (panel: OverlayPanel, model: NoteCaptureModel)
+  {
+    let model = NoteCaptureModel(store: store)
+    let panel = OverlayPanel(
+      size: NSSize(width: Style.listPanelWidth, height: model.height), topAnchored: true,
+      // 没有固定：点外面就收起（草稿留着）
+      autoHide: .clickOutside, isPinned: { false }, content: NoteCaptureView(model: model))
+    panel.keyEquivalentHandler = { [unowned model] in model.handleKeyEquivalent($0) }
+    panel.onHide = { [unowned model] in model.didHide() }
+    panel.squeezesIn = { Self.squeezesIn() }
+    model.hidePanel = { [unowned panel] in panel.hide() }
+    model.dismissPanel = { [unowned panel] in panel.dismiss() }
+    model.resize = { [unowned panel] in panel.setContentHeight($0, animated: true) }
+    model.island = island
+    return (panel, model)
+  }
+
+  /// 全部便签窗口（普通窗口，打开方式同设置窗：先收起浮层）。creating：「新建便签」——先建一条空的、选中、焦点进正文
+  /// （第 3 批有了边缘那叠之后改成在那边打开）
+  func showNotes(creating: Bool = false) {
+    guard let store = usableNotes() else { return }
+    hidePanels()
+    let window = notesWindow ?? makeNotesWindow(store)
+    notesWindow = window
+    window.show()
+    if creating { window.model.create() }
+  }
+
+  private func makeNotesWindow(_ store: NoteStore) -> NotesWindow {
+    let model = NotesWindowModel(store: store)
+    model.island = island
+    return NotesWindow(model: model)
   }
 
   /// 启动器「cb 关键词」↩（启动器已收起，N9）：呼出剪贴板面板，再把关键词填进它的搜索框
@@ -734,6 +834,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     case .audioRecord: audioRecord()
     case .pinClipboard: pinClipboard()
     case .statusScreen: pickStatus()
+    case .noteCapture: toggleNoteCapture()
+    case .noteNew: showNotes(creating: true)
+    case .noteAll: showNotes()
     }
   }
 
@@ -753,6 +856,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     clipboardPanel.hide()
     launcherPanel.hide()
+    noteCapture?.panel.hide()
     let mouse = NSEvent.mouseLocation
     let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
     statusPickerModel.prepare(
@@ -864,6 +968,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let sourceApp = NSWorkspace.shared.frontmostApplication?.processIdentifier
     if clipboardPanel.isKeyWindow { clipboardPanel.hide() }
     if launcherPanel.isKeyWindow { launcherPanel.hide() }
+    if noteCapture?.panel.isKeyWindow == true { noteCapture?.panel.hide() }
     statusPicker.panel?.hide()
     if translatePanel.isKeyWindow { translatePanel.orderOut(nil) }
     Task {
@@ -926,6 +1031,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let restoresPanel = translatePanel.isKeyWindow && pinned
     if clipboardPanel.isKeyWindow { clipboardPanel.hide() }
     if launcherPanel.isKeyWindow { launcherPanel.hide() }
+    if noteCapture?.panel.isKeyWindow == true { noteCapture?.panel.hide() }
     statusPicker.panel?.hide()
     if translatePanel.isKeyWindow {
       translatePanel.orderOut(nil)
@@ -1287,6 +1393,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     clipboardPanel.hideUnlessPinned()
     launcherPanel.hide()  // 启动器没有固定
     statusPicker.panel?.hide()  // 选状态的面板也没有
+    noteCapture?.panel.hide()  // 快速记一条也没有（草稿留着）
     translatePanel.hideUnlessPinned()
   }
 
@@ -1493,11 +1600,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     settingsWindow.show(page: page, onboarding: onboarding)
   }
 
-  /// 三块浮层和选状态的面板都收起，固定着的也收（打开设置、进入状态屏）
+  /// 三块浮层、选状态的面板、快速记一条都收起，固定着的也收（打开设置、打开全部便签、进入状态屏）
   private func hidePanels() {
     clipboardPanel.hide()
     launcherPanel.hide()
     statusPicker.panel?.hide()
+    noteCapture?.panel.hide()
     translatePanel.hide()
   }
 

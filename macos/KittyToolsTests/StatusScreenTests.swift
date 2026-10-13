@@ -851,10 +851,10 @@ struct StatusScreenTests {
 
   // MARK: 入口
 
-  /// 全局快捷键追加在末尾、不设默认键，自己一节；启动器里不是一条「状态屏」，而是每个状态一条，
-  /// 搜状态的标题、「状态屏」、拼音都找得到
+  /// 全局快捷键追加在当时的末尾（后来便签的三个又接在它后面）、不设默认键，自己一节；启动器里不是一条「状态屏」，
+  /// 而是每个状态一条，搜状态的标题、「状态屏」、拼音都找得到
   @Test func entries() throws {
-    #expect(HotKeyAction.allCases.last == .statusScreen)
+    #expect(HotKeyAction.allCases.firstIndex(of: .statusScreen) == 12)
     #expect(HotKeyAction.statusScreen.defaultHotKey == nil)
     #expect(HotKeyAction.sections.last?.title == "状态屏")
     #expect(HotKeyAction.sections.last?.actions == [.statusScreen])
@@ -864,9 +864,10 @@ struct StatusScreenTests {
     let items = LauncherItem.actions(.init(statusPresets: presets))
     let targets = items.map(\.target)
     let first = try #require(targets.firstIndex(of: "statusScreen:clean"))
+    // 前面是「便签」一节的最后一项（2026-10-12 起便签排在截图与录制之后、状态屏之前）
     #expect(
       Array(targets[(first - 1)...(first + 3)]) == [
-        "pinClipboard", "statusScreen:clean", "statusScreen:busy", "statusScreen:back", "settings",
+        "noteAll", "statusScreen:clean", "statusScreen:busy", "statusScreen:back", "settings",
       ])
     let statuses = items.filter(\.isStatusPreset)
     #expect(statuses.map(\.title) == ["清洁屏幕", "请勿触碰", "马上回来"])

@@ -179,7 +179,8 @@ extension View {
   func appAccent() -> some View { accentColor(Accent.shared.controlOverride) }
 }
 
-private func srgb(_ hex: Int) -> NSColor {
+/// 0xRRGGBB → sRGB 颜色（便签的纸色表 Notes/NotePaper.swift 也用它）
+nonisolated func srgb(_ hex: Int) -> NSColor {
   NSColor(
     srgbRed: CGFloat(hex >> 16 & 0xFF) / 255, green: CGFloat(hex >> 8 & 0xFF) / 255,
     blue: CGFloat(hex & 0xFF) / 255, alpha: 1)

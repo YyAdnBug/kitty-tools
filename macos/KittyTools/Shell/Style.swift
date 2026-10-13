@@ -199,6 +199,11 @@ enum Style {
     static let search = Color(nsColor: .systemIndigo)
     /// 状态屏（告示牌的木色；现有家族没用过，不和网址的 teal 撞）
     static let statusScreen = Color(nsColor: .systemBrown)
+    /// 便签（便利贴的黄，PLAN §10「便签」C③）。黄太亮：色块上的符号不用白（onTile）
+    static let notes = Color(nsColor: .systemYellow)
+
+    /// 种类色块上的符号色：白；便签的黄上白色只有约 1.5:1，换成 black 0.85（同强调色选黄时 onBrand 的做法）
+    static func onTile(_ color: Color) -> Color { color == notes ? .black.opacity(0.85) : .white }
   }
 
   // MARK: 无障碍开关（AppKit 侧）
@@ -330,7 +335,7 @@ struct KindTile: View {
     let shape = RoundedRectangle(cornerRadius: Style.Radius.tile(size), style: .continuous)
     Image(systemName: symbol)
       .font(.system(size: size * 0.5, weight: .semibold))
-      .foregroundStyle(.white)
+      .foregroundStyle(Style.Family.onTile(color))
       .frame(width: size, height: size)
       .background(
         shape.fill(

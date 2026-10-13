@@ -11,13 +11,13 @@ import Testing
 
 struct SettingsListTests {
   /// 侧栏顺序和菜单栏、快捷键页、引导同序：翻译在截图前面（体检 B51），录制紧跟截图（2026-10-03 拆出来），
-  /// 状态屏排在录制后面（Z11）
+  /// 便签、状态屏排在录制后面（状态屏 Z11，便签 2026-10-12；两页的先后同快捷键页的分节）
   @Test func sidebarOrderMatchesMenu() {
     let pages = SettingsPage.allCases
     #expect(
       pages == [
-        .general, .clipboard, .launcher, .translate, .screenshot, .record, .statusScreen, .hotkeys,
-        .about,
+        .general, .clipboard, .launcher, .translate, .screenshot, .record, .notes, .statusScreen,
+        .hotkeys, .about,
       ])
     let sections = HotKeyAction.sections.map(\.title)
     #expect(sections.firstIndex(of: "翻译")! < sections.firstIndex(of: "截图与录制")!)

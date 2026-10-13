@@ -14,6 +14,9 @@ struct CommandTextField: NSViewRepresentable {
   /// 面板里的对话框输入框：出现时抢焦点，消失时把焦点还给它之前的输入框（还在窗口里的话；否则是面板的主输入框）
   var isDialogField = false
   var fontSize: CGFloat = 14
+  var weight: NSFont.Weight = .regular
+  /// 字的颜色；nil = 系统的文字色（便签的标题框给纸上的墨色）
+  var textColor: NSColor?
   /// 只用英文类输入法（启动器的「呼出时切英文输入法」）
   var romanOnly = false
   /// 字数上限（收藏夹名 24 字）；nil = 不限
@@ -31,7 +34,7 @@ struct CommandTextField: NSViewRepresentable {
     field.isBordered = false
     field.drawsBackground = false
     field.focusRingType = .none
-    field.font = .systemFont(ofSize: fontSize)
+    field.font = .systemFont(ofSize: fontSize, weight: weight)
     field.cell?.usesSingleLineMode = true
     field.cell?.lineBreakMode = .byTruncatingTail
     field.delegate = context.coordinator
@@ -45,6 +48,7 @@ struct CommandTextField: NSViewRepresentable {
     // 读了 Style.brand：设置里换了强调色时这里会重跑，正在编辑的插入点和选中底色跟着换
     field.applyBrandColors(NSColor(Style.brand))
     if field.placeholderString != placeholder { field.placeholderString = placeholder }
+    if let textColor, field.textColor != textColor { field.textColor = textColor }
     if field.romanOnly != romanOnly {
       field.romanOnly = romanOnly
       field.applyInputSources()

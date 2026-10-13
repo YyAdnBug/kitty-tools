@@ -67,12 +67,12 @@ struct ShortcutsSheet: View {
     }
   }
 
-  /// 页头（40 pt 色块 + 标题 + 说明）+ 各家族的跳转胶囊。胶囊一行 4 枚、折成两行：加了状态屏是 8 枚，
+  /// 页头（40 pt 色块 + 标题 + 说明）+ 各家族的跳转胶囊。胶囊一行 5 枚、折成两行：加了状态屏、便签是 9 枚（5 + 4），
   /// 一行（560 宽的表单里 520）放不下，系统会把字截成「剪…」
   private func header(_ proxy: ScrollViewProxy) -> some View {
     // 有全局快捷键的组就是一个家族的第一组
     let chips = Self.groups.filter { !$0.globals.isEmpty }
-    let rows = stride(from: 0, to: chips.count, by: 4).map { Array(chips[$0...].prefix(4)) }
+    let rows = stride(from: 0, to: chips.count, by: 5).map { Array(chips[$0...].prefix(5)) }
     return VStack(alignment: .leading, spacing: 12) {
       HStack(spacing: 12) {
         KindTile(symbol: "keyboard.fill", color: Style.Family.keyboard, size: 40)
@@ -339,6 +339,30 @@ struct ShortcutsSheet: View {
           Entry("⇧⌘S", text: "另存为…"),
           Entry("⌘0", text: "原始大小（滚轮、捏合缩放）"),
           Entry("⌘W", "Esc", text: "关闭（双击同样）"),
+        ]),
+      // 便签（PLAN §10「便签」）：快速记一条的键在 NoteCaptureModel.handleKeyEquivalent 和 SourceTextView（提交模式）。
+      // 新建便签、全部便签不设默认键，没设时那两行写「未设置」
+      Group(
+        title: "便签", symbol: HotKeyAction.noteAll.symbol, color: Style.Family.notes,
+        globals: [.noteCapture, .noteNew, .noteAll],
+        entries: [
+          Entry("↩", text: "快速记一条里：记下"),
+          Entry("⇧↩", "⌘↩", text: "快速记一条里：换行"),
+          Entry("⌘1", text: "快速记一条里：记成新便签"),
+          Entry("⌘2–9", text: "快速记一条里：接在最近改过的某一条便签后面"),
+          Entry("Esc", text: "快速记一条里：清空并关闭（点面板外面、再按一次全局快捷键、⌘W 也是关闭，写了一半的留着）"),
+        ]),
+      // 全部便签窗口里的键：NotesWindowView.shortcuts（看不见的按钮上挂着），动作在 NotesWindowModel
+      Group(
+        title: "便签 · 全部便签", symbol: "rectangle.split.2x1", color: Style.Family.notes,
+        entries: [
+          Entry("⌘N", text: "新建便签"),
+          Entry("⌘F", text: "搜索"),
+          Entry("⌘⌫", text: "焦点在列表上时：删除选中的便签，进「最近删除」（⌫ 也行；在最近删除里是永久删除，要确认）。光标在标题、正文里时是删到行首"),
+          Entry("⌘Z", text: "放回刚删的便签（连着删了几条就一条条放回；正在打字时先撤销打的字）"),
+          Entry("⇧⌘A", text: "归档 / 取消归档"),
+          Entry("⌘P", text: "固定 / 取消固定"),
+          Entry("⌘.", text: "换成下一种纸色"),
         ]),
       // mac-overlay-panel §11 状态屏。全局键不设默认，没设时那一行写「未设置」；它先出选状态的面板（设置里可改成直接
       // 进排在最前面的状态，那一行的名字跟着变，HotKeyAction.rowTitle）。面板里的按键在 StatusPicker.key；

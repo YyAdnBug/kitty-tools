@@ -146,7 +146,7 @@ struct HotKey: Codable, Hashable {
 enum HotKeyAction: String, CaseIterable {
   case clipboard, selectionTranslate, inputTranslate, screenshotTranslate, launcher, screenshot,
     screenshotLastRegion, recognizeText, translateReplace, screenRecord, audioRecord, pinClipboard,
-    statusScreen
+    statusScreen, noteCapture, noteNew, noteAll
 
   var title: String {
     switch self {
@@ -163,6 +163,9 @@ enum HotKeyAction: String, CaseIterable {
     case .audioRecord: "录音"
     case .pinClipboard: "钉住剪贴板里的图"
     case .statusScreen: "状态屏"
+    case .noteCapture: "快速记一条"
+    case .noteNew: "新建便签"
+    case .noteAll: "全部便签"
     }
   }
 
@@ -220,6 +223,10 @@ enum HotKeyAction: String, CaseIterable {
     case .pinClipboard: nil
     // 状态屏（Z10）不设默认键：不能让人误触。设了键是先出选状态的面板（Z13a；设置里可改成直接进入列表里的第一个状态）
     case .statusScreen: nil
+    // N = Note，和别的默认键一样是单 ⌥（便签拍板 F①：只有「快速记一条」有默认键）
+    case .noteCapture: HotKey(keyCode: kVK_ANSI_N, modifiers: optionKey)
+    // 新建便签、全部便签不设默认键：从菜单栏、启动器进，要快捷键到 设置 › 快捷键 里自己设
+    case .noteNew, .noteAll: nil
     }
   }
 
@@ -261,6 +268,8 @@ enum HotKeyAction: String, CaseIterable {
         .pinClipboard,
       ]
     ),
+    // 便签（PLAN §10「便签」F②）：菜单栏、启动器、快捷键页、速查表各一节，三项同名同序
+    ("便签", [.noteCapture, .noteNew, .noteAll]),
     // 菜单栏里这一节不画节标题，只有一项「状态屏」带子菜单（每个状态一行，AppDelegate.buildStatusMenu）
     ("状态屏", [.statusScreen]),
   ]
@@ -283,6 +292,10 @@ enum HotKeyAction: String, CaseIterable {
     // 同速查表的「钉图」组、常驻缩略图的钉图钮；不用 pin：菜单里紧挨着的「隐藏全部钉图」是它
     case .pinClipboard: "pin.fill"
     case .statusScreen: "hand.raised.fill"
+    case .noteCapture: "square.and.pencil"
+    case .noteNew: "note.text.badge.plus"
+    // 便签家族的符号（设置页头、速查表那一组也是它）
+    case .noteAll: "note.text"
     }
   }
 
@@ -297,6 +310,7 @@ enum HotKeyAction: String, CaseIterable {
       .pinClipboard:
       Style.Family.screenshot
     case .statusScreen: Style.Family.statusScreen
+    case .noteCapture, .noteNew, .noteAll: Style.Family.notes
     }
   }
 }

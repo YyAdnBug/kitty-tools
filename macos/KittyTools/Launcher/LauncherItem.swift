@@ -160,6 +160,8 @@ struct LauncherItem: Identifiable, Hashable {
     .audioRecord: "Audio Recording Record Voice Microphone",
     // 「钉图」：标题是「钉住…的图」，不放进来搜「钉图」找不到它（菜单里的另两项都叫「…钉图」）
     .pinClipboard: "Pin Clipboard Image 钉图",
+    // 「便签」：标题是「快速记一条」，不放进来搜「便签」找不到它（另两项标题里就有）
+    .noteCapture: "Quick Note Capture 便签", .noteNew: "New Note", .noteAll: "All Notes",
   ]
 
   private static func action(

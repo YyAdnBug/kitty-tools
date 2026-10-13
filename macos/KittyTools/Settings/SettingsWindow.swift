@@ -16,8 +16,10 @@ import SwiftUI
 
 enum SettingsPage: String, CaseIterable, Identifiable {
   // 翻译在截图前面：和菜单栏、快捷键页、引导、速查表同序（记住的上次页存的是 rawValue，调顺序不受影响）；
-  // 录制紧跟截图（2026-10-03 从截图页拆出来；菜单栏、快捷键页里它们同在「截图与录制」一节）；状态屏排在录制后面（Z11）
-  case general, clipboard, launcher, translate, screenshot, record, statusScreen, hotkeys, about
+  // 录制紧跟截图（2026-10-03 从截图页拆出来；菜单栏、快捷键页里它们同在「截图与录制」一节）；便签、状态屏排在录制后面
+  // （和快捷键页的分节同序；状态屏 Z11，便签 2026-10-12）
+  case general, clipboard, launcher, translate, screenshot, record, notes, statusScreen, hotkeys,
+    about
 
   var id: String { rawValue }
 
@@ -28,6 +30,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .launcher: "启动器"
     case .screenshot: "截图"
     case .record: "录制"
+    case .notes: "便签"
     case .statusScreen: "状态屏"
     case .translate: "翻译"
     case .hotkeys: "快捷键"
@@ -42,6 +45,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .launcher: "command"
     case .screenshot: "camera.viewfinder"
     case .record: "record.circle"
+    case .notes: HotKeyAction.noteAll.symbol
     case .statusScreen: HotKeyAction.statusScreen.symbol
     case .translate: "character.bubble.fill"
     case .hotkeys: "keyboard.fill"
@@ -56,6 +60,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .clipboard: Style.Family.clipboard
     case .launcher: Style.Family.command
     case .screenshot, .record: Style.Family.screenshot
+    case .notes: Style.Family.notes
     case .statusScreen: Style.Family.statusScreen
     case .translate: Style.Family.translate
     case .hotkeys: Style.Family.keyboard
@@ -71,6 +76,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .launcher: "搜索 App、文件、书签与历史、网页搜索与快捷链接"
     case .screenshot: "快速保存、快门声、缩略图和识字"
     case .record: "录屏的画质、倒数和按键，录音的来源"
+    case .notes: "留着看、接着改的东西：字号，存在哪、怎么备份"
     case .statusScreen: "拦住键盘鼠标的全屏告示：有哪些状态、各是什么样子、怎么退出"
     case .translate: "语言、翻译服务与密钥、历史"
     case .hotkeys: "所有全局快捷键"
@@ -110,6 +116,10 @@ enum SettingsPage: String, CaseIterable, Identifiable {
       [
         "录屏", "录音", "视频", "保存", "文件夹", "系统声音", "麦克风", "来源", "立即开始", "控制条", "倒数", "帧率", "光标",
         "按键", "速查", "清晰度", "分辨率", "画质", "编码", "H.264", "HEVC", "文件大小", "体积", "压缩", "只显示快捷键",
+      ]
+    case .notes:
+      [
+        "笔记", "备忘", "便利贴", "快速记", "记一条", "字号", "字体大小", "最近删除", "归档", "备份", "导出", "导入",
       ]
     case .statusScreen:
       [
@@ -234,7 +244,21 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
   func windowDidResignKey(_ notification: Notification) { navigation.isKey = false }
 
   func windowWillClose(_ notification: Notification) {
-    NSApp.setActivationPolicy(.accessory)
+    NSApp.leaveDockIfNoWindows(closing: window)
+  }
+}
+
+extension NSApplication {
+  /// 普通窗口（设置窗、全部便签窗口）关掉时调：别的普通窗口都不开着了才切回 .accessory（收起程序坞图标）——
+  /// 两个窗口都开着时关掉一个，另一个还要留在程序坞和 ⌘⇥ 里
+  func leaveDockIfNoWindows(closing: NSWindow) {
+    if !Self.hasOrdinaryWindow(in: windows, besides: closing) { setActivationPolicy(.accessory) }
+  }
+
+  /// 除了正在关的那个，还有没有开着的普通窗口（纯函数）：看得见、能当主窗口的（带标题栏的）；浮层、岛、遮罩、钉图都是
+  /// 面板或无边框窗口，当不了主窗口；挂着的表单（sheet）不算
+  static func hasOrdinaryWindow(in windows: [NSWindow], besides closing: NSWindow) -> Bool {
+    windows.contains { $0 !== closing && $0.isVisible && $0.canBecomeMain && !$0.isSheet }
   }
 }
 
@@ -368,8 +392,9 @@ private struct SidebarRow: View {
 
 /// 关掉外面那个 NSTableView（SwiftUI 的侧栏 List 在 macOS 上就是它）的原生选中高亮。每行挂一个，行建出来时设一次。
 /// ponytail: 依赖 List 由 NSTableView 实现（macOS 15 实测是 NSOutlineView 子类）；哪天不是了就找不到，原生高亮
-/// 回来垫在自绘那块下面（key 时被不透明的强调色盖住、后台时灰得深一点），那时改成自己画行 + onKeyPress 导航
-private struct NativeHighlightOff: NSViewRepresentable {
+/// 回来垫在自绘那块下面（key 时被不透明的强调色盖住、后台时灰得深一点），那时改成自己画行 + onKeyPress 导航。
+/// 全部便签窗口的列表（Notes/NotesWindowView.swift）也用它：那边的选中是中性高亮
+struct NativeHighlightOff: NSViewRepresentable {
   func makeNSView(context: Context) -> Probe { Probe() }
   func updateNSView(_ view: Probe, context: Context) { view.apply() }
 

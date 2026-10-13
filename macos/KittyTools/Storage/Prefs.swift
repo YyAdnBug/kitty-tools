@@ -157,6 +157,16 @@ enum Prefs {
   /// **不注册默认值**：不跟着导出 / 导入走
   static let statusScreenLastPreset = "statusScreenLastPreset"
 
+  /// 全部便签窗口里正文的字号（设置 › 便签，pt；档位见 notesFontSizeChoices，默认 15）。读它走 Prefs.notesFontSize(_:)：
+  /// 存了不在档位里的值（导入的文件、手改的偏好）按默认算
+  static let notesFontSize = "notesFontSize"
+  nonisolated static let notesFontSizeChoices = [13, 15, 17, 20]
+
+  /// 存着的字号 → 真用的字号（纯函数）：不在档位里的回到默认 15
+  nonisolated static func notesFontSize(_ stored: Int) -> CGFloat {
+    CGFloat(notesFontSizeChoices.contains(stored) ? stored : 15)
+  }
+
   /// 上次启动的版本号：没有 = 首次安装（打开欢迎引导），和当前不同 = 刚更新（刘海岛「已更新到 x」+ 本版摘要，不开设置窗，体检 A29）
   static let lastSeenVersion = "lastSeenVersion"
   /// 自动检查更新（启动后一次、之后每天一次）
@@ -238,6 +248,7 @@ enum Prefs {
       statusScreenExitHint: true,
       statusScreenHotKeyEntersFirst: false,
       statusScreenAnimations: true,
+      notesFontSize: 15,
     ]
   }
 

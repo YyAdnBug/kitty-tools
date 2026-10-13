@@ -526,6 +526,7 @@ struct SnapshotProbeTests {
       case .launcher: AnyView(LauncherTab())
       case .screenshot: AnyView(ScreenshotTab())
       case .record: AnyView(RecordTab())
+      case .notes: AnyView(NotesTab {})
       // 自带的三个状态（固定的列表：不读用户改过的那份）
       case .statusScreen: AnyView(StatusScreenTab(fixed: StatusPreset.builtIn))
       case .translate:
@@ -1285,6 +1286,188 @@ struct SnapshotProbeTests {
   /// 翻译浮窗：空态、结果（没有「翻译」按钮）、原文改过（弹出「翻译 ↩」）、复制即译状态胶囊 + 固定、
   /// 替换原文、查词、历史（分组 + 选中第三条 + 范围胶囊）、收藏范围、空历史、提示、长译文（卡内滚动 + 渐隐，
   /// 默认和 140% 字号）；「⋯」菜单是 NSMenu，屏外画不出来
+  /// 便签（PLAN §10「便签」第 2 批）。单独一个测试函数：改便签的界面时只跑它（半分钟）——
+  ///   -only-testing:'KittyToolsTests/SnapshotProbeTests/notes()'
+  /// 便签都在内存库里（不碰用户的便签库和偏好），文件名都以 notes- 开头。出：
+  /// 快速记一条——空的、有草稿（目的地一排纸色圆点）、选了已有的便签（浅 / 深）、打了十几行（到 8 行封顶、在框里滚）、
+  /// 存不了时底栏的原因；
+  /// 全部便签窗口——有便签（浅 / 深，各选一条不同纸色的）、最小窗口、还没有便签、搜索无结果、归档是空的、最近删除
+  /// （只读）、正文到上限时底下那行警告、带标题栏和工具栏的真窗口（摆在屏外）；8 种纸色两套并排；
+  /// 设置 › 便签（浅 / 深）、快捷键页的「便签」一节、速查表（页头的跳转胶囊 5 + 4，和拉长的全表）、
+  /// 启动器里搜「便签」出来的三行
+  @Test(.enabled(if: directory != nil)) func notes() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    Prefs.registerDefaults()
+    let now = Date.now
+    func library() throws -> (store: NoteStore, ids: [String]) {
+      let store = try NoteStore(db: Database(path: ":memory:"))
+      // 倒着建：新建的排最前，建完就是下面这个顺序；颜色接着轮（6 条 6 种）
+      let entries: [(title: String, body: String, ago: TimeInterval)] = [
+        ("", "周五前交的东西\n☐ 周报\n☐ 报销单\n☑ 订会议室\n下午三点和设计过一遍首页的改动，记得带上数据。", 180),
+        ("读书笔记", "「慢慢来，比较快」这句话放在重构上也成立：先把现有的行为用测试钉住，再一小步一小步地挪。", 3600 * 2),
+        ("", "wifi 密码 kitty-2026", 3600 * 26),
+        ("想法", "", 86_400 * 3),
+        ("", "一条很长很长的标题，长到列表里的这一行放不下，后面要用省略号收住，看它和右边的时间挤不挤在一起", 86_400 * 9),
+        ("", "Groceries: milk, eggs, bread", 86_400 * 40),
+      ]
+      for entry in entries.reversed() {
+        store.create(body: entry.body, title: entry.title, now: now.addingTimeInterval(-entry.ago))
+      }
+      return (store, store.active.map(\.id))
+    }
+
+    // MARK: 快速记一条
+    func capture(_ name: String, _ model: NoteCaptureModel, dark: Bool = false) throws {
+      try snapshot(
+        NoteCaptureView(model: model),
+        size: NSSize(width: Style.listPanelWidth, height: model.height), dark: dark,
+        to: "\(out)/notes-capture-\(name).png")
+    }
+    try capture("empty", NoteCaptureModel(store: try NoteStore(db: Database(path: ":memory:"))))
+    let (store, ids) = try library()
+    store.setPinned(true, of: ids[1])
+    let draft = NoteCaptureModel(store: store)
+    draft.draft = "下周一上午十点牙医\n带上上次的片子"
+    try capture("draft", draft)
+    for dark in [false, true] {
+      let target = NoteCaptureModel(store: store)
+      target.select(2)
+      target.draft = "第 3 章：先加测试，再动代码"
+      try capture("target\(dark ? "-dark" : "")", target, dark: dark)
+    }
+    let hovering = NoteCaptureModel(store: store)
+    hovering.draft = "鼠标停在第四个圆点上"
+    hovering.hovered = 4
+    try capture("hover", hovering)
+    let long = NoteCaptureModel(store: store)
+    long.draft = (1...14).map { "第 \($0) 行：打到第九行起在框里滚" }.joined(separator: "\n")
+    try capture("long", long)
+    // 存不了：接在一条快到上限的便签后面
+    let full = try NoteStore(db: Database(path: ":memory:"))
+    full.create(body: String(repeating: "满", count: Note.maxBodyBytes / 3 - 2), title: "攒了一年的流水账")
+    let refused = NoteCaptureModel(store: full)
+    refused.select(1)
+    refused.draft = "再记一句就超过上限了"
+    #expect(refused.save() == .tooLong)
+    try capture("too-long", refused)
+
+    // MARK: 全部便签窗口
+    let windowSize = NSSize(width: 940, height: 580)
+    func window(
+      _ name: String, _ model: NotesWindowModel, size: NSSize = windowSize, dark: Bool = false
+    ) throws {
+      try snapshot(
+        NotesWindowView(model: model), size: size, dark: dark, to: "\(out)/notes-window-\(name).png"
+      )
+    }
+    let model = NotesWindowModel(store: store)
+    try window("list", model)
+    model.selection = ids[1]
+    try window("list-dark", model, dark: true)
+    model.selection = ids[4]
+    try window("min", model, size: NSSize(width: 720, height: 420))
+    model.selection = ids[3]
+    try window("blank-body", model)
+    model.selection = ids[0]
+    model.overflowed()
+    try window("over-limit", model)
+    model.query = "找不到的词"
+    try window("search-empty", model)
+    model.query = "周"
+    try window("search", model)
+    model.query = ""
+    model.scope = .archive
+    try window("archive-empty", model)
+    model.scope = .trash
+    try window("trash-empty", model)
+    store.delete(ids[2], now: now.addingTimeInterval(-86_400 * 12))
+    store.delete(ids[5], now: now.addingTimeInterval(-600))
+    store.setArchived(true, of: ids[4])
+    model.scope = .all
+    model.scope = .trash
+    for dark in [false, true] { try window("trash\(dark ? "-dark" : "")", model, dark: dark) }
+    model.scope = .archive
+    try window("archive", model)
+    try window("empty", NotesWindowModel(store: try NoteStore(db: Database(path: ":memory:"))))
+
+    // 带标题栏的真窗口：工具栏只有它有（上面那些是内容区）。摆在屏外，连标题栏一起出图
+    model.scope = .all
+    for trash in [false, true] where Self.wants("\(out)/notes-window-toolbar.png") {
+      model.scope = trash ? .trash : .all
+      let hosting = NSHostingController(rootView: NotesWindowView(model: model))
+      hosting.sceneBridgingOptions = [.title, .toolbars]
+      let titled = OffscreenTitledWindow(contentViewController: hosting)
+      titled.title = HotKeyAction.noteAll.title  // 同 NotesWindow.init（标题的桥接要等第一次变化）
+      titled.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+      titled.toolbarStyle = .unified
+      titled.appearance = NSAppearance(named: .aqua)
+      titled.setContentSize(windowSize)
+      titled.setFrameOrigin(NSPoint(x: -20000, y: -20000))
+      titled.orderFront(nil)
+      defer { titled.orderOut(nil) }
+      #expect(titled.screen == nil)  // 没被挪进屏幕里
+      for _ in 0..<8 { RunLoop.main.run(until: Date.now.addingTimeInterval(0.1)) }
+      let frame = try #require(titled.contentView?.superview)
+      let bitmap = try #require(frame.bitmapImageRepForCachingDisplay(in: frame.bounds))
+      frame.cacheDisplay(in: frame.bounds, to: bitmap)
+      try #require(bitmap.representation(using: .png, properties: [:])).write(
+        to: URL(filePath: "\(out)/notes-window-toolbar\(trash ? "-trash" : "").png"))
+      // 工具栏上的项：和右键菜单同名
+      let labels = titled.toolbar?.items.map(\.label) ?? []
+      print("notes toolbar (\(trash ? "trash" : "all")):", labels)
+    }
+
+    // 8 种纸色两套并排：纸、色条、墨、次要的字、圆点
+    for dark in [false, true] {
+      try snapshot(
+        NotePaperProbe(), size: NSSize(width: 880, height: 150), dark: dark,
+        to: "\(out)/notes-papers\(dark ? "-dark" : "").png")
+    }
+
+    // MARK: 设置、快捷键、速查表、启动器
+    let navigation = SettingsNavigation(defaults: nil)  // 换页不写用户的偏好
+    let hotKeys = HotKeyCenter()
+    let settings = SettingsRoot(navigation: navigation) { page in
+      page == .hotkeys ? AnyView(HotkeysTab(center: hotKeys)) : AnyView(NotesTab {})
+    } onboarding: {
+      AnyView(EmptyView())
+    }
+    navigation.page = .notes
+    for dark in [false, true] {
+      try snapshot(
+        settings, size: NSSize(width: 780, height: 600), dark: dark,
+        to: "\(out)/notes-settings\(dark ? "-dark" : "").png")
+    }
+    try snapshot(
+      settings, size: NSSize(width: 700, height: 460), dark: false,
+      to: "\(out)/notes-settings-min.png")
+    navigation.page = .hotkeys
+    try snapshot(
+      settings, size: NSSize(width: 780, height: 1120), dark: false,
+      to: "\(out)/notes-settings-hotkeys.png")
+    let sheetHeight = ShortcutsButton.sheetHeight(available: 600 - 52)
+    for (name, height, dark) in [
+      ("shortcuts", sheetHeight, false), ("shortcuts-dark", sheetHeight, true),
+      ("shortcuts-full", 6200, false),
+    ] {
+      try snapshot(
+        ShortcutsSheet(), size: NSSize(width: 560, height: height), dark: dark,
+        to: "\(out)/notes-\(name).png")
+    }
+    let launcher = LauncherModel(
+      usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    launcher.boundHotKey = { $0.defaultHotKey }
+    launcher.engines = { [] }
+    launcher.query = "便签"
+    for dark in [false, true] {
+      try snapshot(
+        LauncherPanelView(model: launcher),
+        size: NSSize(width: 720, height: LauncherPanelView.height(for: launcher)), dark: dark,
+        to: "\(out)/notes-launcher\(dark ? "-dark" : "").png")
+    }
+  }
+
   private func renderTranslate(_ out: String) throws {
     // 历史：今天两条（一条收藏）、昨天一条、三天前两条，按天分组
     let history = try HistoryStore(db: Database(path: ":memory:"))
@@ -2345,6 +2528,41 @@ struct SnapshotProbeTests {
     background.cacheDisplay(in: background.bounds, to: bitmap)
     try #require(bitmap.representation(using: .png, properties: [:])).write(to: URL(filePath: path))
     window.orderOut(nil)
+  }
+}
+
+/// 截图自检：有标题栏的窗口摆在屏外（系统默认会把它挪回屏幕里）
+private final class OffscreenTitledWindow: NSWindow {
+  override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+    frameRect
+  }
+}
+
+/// 截图自检：8 种纸色一排——纸上写名字（墨）、一行次要的字、顶上色条、角上圆点
+private struct NotePaperProbe: View {
+  var body: some View {
+    HStack(spacing: 10) {
+      ForEach(Array(NotePaper.all.enumerated()), id: \.offset) { _, paper in
+        VStack(alignment: .leading, spacing: 6) {
+          paper.strip.frame(height: 3)
+          VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+              NoteDot(paper: paper)
+              NoteDot(paper: paper, size: 18)
+              Image(nsImage: paper.swatch())
+            }
+            Text(paper.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(paper.ink)
+            Text("买菜 milk 123").font(.system(size: 13)).foregroundStyle(paper.ink)
+            Text("改于 今天 09:12").font(.system(size: 11)).foregroundStyle(paper.secondaryInk)
+          }
+          .padding(.horizontal, 8)
+          Spacer(minLength: 0)
+        }
+        .frame(width: 98, height: 118)
+        .background(paper.paper)
+      }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 }
 
