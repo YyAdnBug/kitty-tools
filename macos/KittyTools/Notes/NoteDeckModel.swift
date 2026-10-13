@@ -6,9 +6,11 @@
 // - 用键盘关（Esc、⌘W）= dismiss，连那一列一起收回；用鼠标关（关闭钮、它带着的标签）= close，回到那一列。
 // - 悬停出的预览卡、悬停即打开，都先问一句「现在能不能扇出」（「一直展开」时那一列一直在，叫停靠的就是这一问）；
 //   悬停打开的不抢键盘（takesKey 是 false：停着不动的鼠标不该把键盘拿走，点进正文才当 key）。
-// - 每条便签一个撤销栈（textUndo，面板的 undoManager 就是它）：换一条换一个新的。
+// - 每条便签一个撤销栈（textUndo）：正文框建出来时拿到它（NoteTextView.noteUndo），换一条换一个新的。
 // - 焦点：打开 / 换一条、「新建便签」落在已经开着的那条上、标题框里 ↩ / Tab、操作菜单关了，都记一次「该这条便签的
 //   正文拿焦点」（focus：编号 + 第几次）；正文框自己认（NoteBodyField），NoteDeck 另有晚一拍去找的兜底。
+// - 对正文编辑器做的事（⌘T 任务、⌘F 便签内查找、Esc 先关查找条）经 withEditor：这里不拿视图，NoteDeck 按编号找到
+//   开着的那条的正文框再交过来。
 
 import AppKit
 import Carbon.HIToolbox
@@ -86,10 +88,12 @@ import SwiftUI
   @ObservationIgnored var showInWindow: (String) -> Void = { _ in }
   @ObservationIgnored var showNotes: () -> Void = {}
   @ObservationIgnored var showSettings: () -> Void = {}
+  /// 拿开着的那条便签的正文编辑器做一件事（NoteDeck 按编号找到它；没开着、还没建出来就不做）
+  @ObservationIgnored var withEditor: ((NoteTextView) -> Void) -> Void = { _ in }
   /// 这一次打开要不要当 key、把焦点放进正文：点开的要，悬停打开的不要（NoteDeck 在状态变了的那一下读）
   @ObservationIgnored private(set) var takesKey = true
-  /// 打开着的这条便签的撤销栈（标题框和正文框共用，面板的 undoManager 就是它）。换一条换一个新的：上一条里打的字
-  /// 不能在这一条里被 ⌘Z 撤到（同 NotesWindowModel.textUndo）
+  /// 打开着的这条便签的正文的撤销栈（正文框建出来时拿到它，NoteTextView.noteUndo；标题框用的是它的字段编辑器
+  /// 自己的栈）。换一条换一个新的：上一条里打的字不能在这一条里被 ⌘Z 撤到（同 NotesWindowModel.textUndo）
   @ObservationIgnored private(set) var textUndo = UndoManager()
   /// 悬停的那一下（出预览卡、收预览卡、悬停即打开）：一次只等一件
   @ObservationIgnored private var hoverTask: Task<Void, Never>?
@@ -362,9 +366,37 @@ import SwiftUI
     Island.announce(NotesWindowModel.overLimitText)
   }
 
-  /// Esc：操作菜单开着先退它（颜色那一级退回上一级），再按才关——用键盘关的连那一列一起收回，键盘当场回原来的 App
+  /// Esc：操作菜单开着先退它（颜色那一级退回上一级），查找条开着先关它，再按才关——用键盘关的连那一列一起收回，
+  /// 键盘当场回原来的 App
   func cancel() {
-    if menu != nil { menuBack() } else { send(.dismiss) }
+    if menu != nil {
+      menuBack()
+    } else if !closesFindBar() {
+      send(.dismiss)
+    }
+  }
+
+  /// 正文的查找条开着就关掉，返回关没关
+  private func closesFindBar() -> Bool {
+    var closed = false
+    withEditor { closed = $0.dismissFindBar() }
+    return closed
+  }
+
+  /// ⌘T、头部的「任务」钮、操作菜单：光标所在行（有选区时是选区碰到的每一行）在普通行和任务之间切换，焦点回正文
+  /// （接着就能打这条任务的字）
+  func toggleTask() {
+    guard current != nil else { return }
+    closeMenu()
+    withEditor { $0.toggleTask() }
+    requestFocus()
+  }
+
+  /// ⌘F：便签内查找（系统的查找条，长在正文顶上）
+  func find() {
+    guard current != nil else { return }
+    closeMenu()
+    withEditor { $0.showFindBar() }
   }
 
   /// ⌘P：固定 / 取消固定（固定的点别处不收、别的屏展开时也不收）
@@ -425,6 +457,9 @@ import SwiftUI
       ) { [unowned self] in togglePinned() },
       ActionMenu.Item(
         title: Names.colorTitle, symbol: "paintpalette", submenu: colorItems(note)),
+      ActionMenu.Item(title: Names.taskTitle, symbol: Names.taskSymbol, shortcut: "⌘T") {
+        [unowned self] in toggleTask()
+      },
       ActionMenu.Item(
         title: Names.archiveTitle(note), symbol: "archivebox", shortcut: "⇧⌘A", section: 1
       ) { [unowned self] in archive() },
@@ -502,7 +537,8 @@ import SwiftUI
   }
 
   /// 面板的 ⌘ 组合键：⌘W 关（连那一列一起收回，同 Esc）；便签开着时 ⌘P 固定、⌘K 操作菜单、⌘. 换下一种纸色、
-  /// ⇧⌘A 归档。⌘⌫ 不接：光标在标题、正文里时它是输入框的「删到行首」，删整条便签走 ⌘K 和「⋯」
+  /// ⌘T 任务、⌘F 便签内查找、⇧⌘A 归档。⌘⌫ 不接：光标在标题、正文里时它是输入框的「删到行首」，删整条便签走
+  /// ⌘K 和「⋯」
   func handleKeyEquivalent(_ event: NSEvent) -> Bool {
     let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
     let key = Int(event.keyCode)
@@ -521,6 +557,8 @@ import SwiftUI
     case kVK_ANSI_P: togglePinned()
     case kVK_ANSI_K: toggleMenu()
     case kVK_ANSI_Period: cycleColor()
+    case kVK_ANSI_T: toggleTask()
+    case kVK_ANSI_F: find()
     default: return false
     }
     return true

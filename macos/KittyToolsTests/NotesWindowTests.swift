@@ -157,33 +157,60 @@ struct NotesWindowTests {
     #expect(store.trashed.map(\.id) == [ids[0]])
   }
 
-  /// ⌘Z：焦点在标题 / 正文框里、它还有可撤销的打字，归它；否则先放回刚删的，再轮到打的字
+  /// ⌘Z：焦点所在的输入框自己还有可撤销的打字，归它；否则先放回刚删的，再轮到正文里打的字。
+  /// ⇧⌘Z：重做焦点所在输入框的；焦点不在输入框里看正文的
   @Test func undoGoesToTextWhileEditing() throws {
     let (model, store, ids) = try make(["A", "B"])
     let typing = Typing()
-    func type() {
-      model.textUndo.groupsByEvent = false
-      model.textUndo.beginUndoGrouping()
-      model.textUndo.registerUndo(
-        withTarget: typing, selector: #selector(Typing.undo(_:)), object: nil)
-      model.textUndo.endUndoGrouping()
+    func type(in stack: UndoManager) {
+      stack.groupsByEvent = false
+      stack.beginUndoGrouping()
+      stack.registerUndo(withTarget: typing, selector: #selector(Typing.undo(_:)), object: nil)
+      stack.endUndoGrouping()
     }
-    // 右键删掉没选中的那条（选中的不变，打的字还在撤销栈里）
-    type()
+    // 右键删掉没选中的那条（选中的不变，打的字还在撤销栈里）。焦点在正文里：正文的栈就是 textUndo
+    type(in: model.textUndo)
     model.delete(ids[1])
-    model.isEditingText = { true }
+    // 焦点所在输入框的栈（窗口那边是 NSWindow.undoFocusedText；这里拿一个栈顶替）
+    func focus(on stack: UndoManager?) {
+      model.undoFocusedText = { redo in
+        guard let stack, redo ? stack.canRedo : stack.canUndo else { return false }
+        if redo { stack.redo() } else { stack.undo() }
+        return true
+      }
+    }
+    focus(on: model.textUndo)
     model.undo()
     #expect(typing.undone == 1 && store.trashed.count == 1)
     model.undo()
     #expect(store.trashed.isEmpty && typing.undone == 1)
+    // ⇧⌘Z：重做刚撤销的（撤销动作里没再登记，这里只看它问的是焦点所在的那个栈）
+    var asked: [Bool] = []
+    model.undoFocusedText = {
+      asked.append($0)
+      return true
+    }
+    model.redo()
+    #expect(asked == [true])
+
+    // 焦点在标题框 / 搜索框里：动的是那个输入框自己的栈（字段编辑器的），不去撤正文里打的字
+    let field = UndoManager()
+    type(in: model.textUndo)
+    type(in: field)
+    focus(on: field)
+    model.undo()
+    #expect(typing.undone == 2 && !field.canUndo && model.textUndo.canUndo)
+    // 它没有可撤销的了：没有刚删的便签，才轮到正文里打的字
+    model.undo()
+    #expect(typing.undone == 3 && !model.textUndo.canUndo)
 
     // 焦点不在输入框里：先放回刚删的，再撤销打的字
     model.selection = ids[0]
-    type()
+    type(in: model.textUndo)
     model.delete(ids[1])
-    model.isEditingText = { false }
+    focus(on: nil)
     model.undo()
-    #expect(store.trashed.isEmpty && typing.undone == 1)
+    #expect(store.trashed.isEmpty && typing.undone == 3)
     // 放回时选中了它 = 换了一条便签：上一条里打的字的撤销栈作废，不会撤到这一条上
     #expect(model.selection == ids[1] && !model.textUndo.canUndo)
   }
@@ -565,7 +592,8 @@ struct NotesWindowTests {
             keyCode: UInt16(keyCode))))
     }
     settle()
-    #expect(window.toolbar?.items.map(\.label) == ["固定", "归档", "颜色", "删除", "新建便签"])
+    #expect(
+      window.toolbar?.items.map(\.label) == ["固定", "归档", "任务", "颜色", "删除", "新建便签"])
     #expect(model.selection == ids[0])
 
     #expect(try press("p", kVK_ANSI_P) && store.note(ids[0])?.isPinned == true)
@@ -600,6 +628,113 @@ struct NotesWindowTests {
     // 没有选中的：不接
     model.selection = nil
     #expect(!model.handleDeleteKey(inTextField: false))
+  }
+
+  /// 正文编辑器的键在全部便签窗口里走到底（屏外带标题栏的窗口、不激活；事件直接交给窗口的 performKeyEquivalent）：
+  /// ⌘Z / ⇧⌘Z 撤销重做焦点所在输入框里打的字（2026-10-13 用户报「便签输入区域不支持撤销和回退」；原来没有重做，
+  /// 焦点在标题框里按 ⌘Z 撤的还是正文）、⌘T 任务、⌘F 的两种去向（焦点在正文里是便签内查找，否则去搜索框）
+  @Test func editorKeysInTheWindow() throws {
+    let (model, store, ids) = try make(["甲的正文", "乙"])
+    let suite = "kitty-test-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let hosting = NSHostingController(
+      rootView: NotesWindowView(model: model).defaultAppStorage(defaults))
+    hosting.sceneBridgingOptions = [.title, .toolbars]
+    let window = Offscreen(contentViewController: hosting)
+    window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+    window.toolbarStyle = .unified
+    window.setContentSize(NSSize(width: 940, height: 580))
+    window.setFrameOrigin(NSPoint(x: -20000, y: -20000))
+    window.orderFront(nil)
+    defer { window.orderOut(nil) }
+    #expect(window.screen == nil && !window.isKeyWindow)
+    // 同 NotesWindow.init 里的接法
+    model.undoFocusedText = { window.undoFocusedText(redo: $0) }
+    model.isEditingBody = {
+      NotesWindow.isInBody(
+        window.firstResponder, editor: NotesWindow.editor(in: window.contentView))
+    }
+    model.withEditor = { body in
+      if let editor = NotesWindow.editor(in: window.contentView) { body(editor) }
+    }
+    let settle = { for _ in 0..<5 { RunLoop.main.run(until: .now.addingTimeInterval(0.1)) } }
+    func press(
+      _ characters: String, _ keyCode: Int, _ flags: NSEvent.ModifierFlags = .command,
+      plain: String? = nil
+    ) throws -> Bool {
+      defer { settle() }
+      return window.performKeyEquivalent(
+        with: try #require(
+          NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, characters: characters,
+            charactersIgnoringModifiers: plain ?? characters, isARepeat: false,
+            keyCode: UInt16(keyCode))))
+    }
+    // ⇧⌘Z 是窗口的按键监听认的（NotesWindow.handlesKeyDown）：把同一个事件交给它
+    func redo() throws -> Bool {
+      defer { settle() }
+      return NotesWindow.handlesKeyDown(
+        try #require(
+          NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [.command, .shift], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, characters: "z",
+            charactersIgnoringModifiers: "Z", isARepeat: false, keyCode: UInt16(kVK_ANSI_Z))),
+        in: window, model: model)
+    }
+    func insert(_ text: String, into view: NSTextView) {
+      view.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
+    }
+    func field(in view: NSView?) -> CommandTextField.FocusField? {
+      guard let view else { return nil }
+      return (view as? CommandTextField.FocusField)
+        ?? view.subviews.lazy.compactMap { field(in: $0) }.first
+    }
+    settle()
+    let editor = try #require(NotesWindow.editor(in: window.contentView))
+    #expect(editor.identifier?.rawValue == ids[0] && editor.undoManager === model.textUndo)
+
+    // 正文：打字 → ⌘Z 回到打之前 → ⇧⌘Z 回来（仓库里那份跟着变）
+    #expect(window.makeFirstResponder(editor))
+    editor.setSelectedRange(NSRange(location: 4, length: 0))
+    insert("，加一句", into: editor)
+    #expect(store.note(ids[0])?.body == "甲的正文，加一句")
+    #expect(try press("z", kVK_ANSI_Z) && store.note(ids[0])?.body == "甲的正文")
+    #expect(editor.string == "甲的正文")
+    #expect(try redo() && store.note(ids[0])?.body == "甲的正文，加一句")
+    // ⌘T：光标所在行变成任务，也能撤
+    #expect(try press("t", kVK_ANSI_T) && store.note(ids[0])?.body == "☐ 甲的正文，加一句")
+    #expect(try press("z", kVK_ANSI_Z) && store.note(ids[0])?.body == "甲的正文，加一句")
+
+    // 标题框：撤的是标题里打的字，正文不动
+    let title = try #require(field(in: window.contentView))
+    #expect(window.makeFirstResponder(title))
+    let fieldEditor = try #require(title.currentEditor() as? NSTextView)
+    insert("新标题", into: fieldEditor)
+    #expect(store.note(ids[0])?.title == "新标题")
+    #expect(try press("z", kVK_ANSI_Z))
+    #expect(store.note(ids[0])?.title == "" && store.note(ids[0])?.body == "甲的正文，加一句")
+    #expect(try redo() && store.note(ids[0])?.title == "新标题")
+
+    // ⌘F：焦点在标题框里（不在正文里）→ 去搜索框
+    #expect(try press("f", kVK_ANSI_F) && model.searchFocus == 1)
+    #expect(editor.enclosingScrollView?.isFindBarVisible == false)
+    // 焦点在正文里 → 便签内查找（系统的查找条）；再按一次还是它（焦点这时在查找条里）
+    #expect(window.makeFirstResponder(editor))
+    #expect(try press("f", kVK_ANSI_F) && model.searchFocus == 1)
+    #expect(editor.enclosingScrollView?.isFindBarVisible == true)
+    #expect(try press("f", kVK_ANSI_F) && model.searchFocus == 1)
+    editor.dismissFindBar()
+
+    // 换一条便签：新的栈，上一条里打的字撤不到
+    model.selection = ids[1]
+    settle()
+    let second = try #require(NotesWindow.editor(in: window.contentView))
+    #expect(second !== editor && second.undoManager === model.textUndo)
+    #expect(window.makeFirstResponder(second))
+    #expect(try press("z", kVK_ANSI_Z))  // 这个键窗口总是接（没有可撤销的只响一声）
+    #expect(store.note(ids[0])?.body == "甲的正文，加一句" && store.note(ids[1])?.body == "乙")
   }
 
   /// 正文字号：默认 15、在档位里；存了不在档位里的值按默认算（只读注册的默认值，不写偏好）

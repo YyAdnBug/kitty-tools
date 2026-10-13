@@ -116,6 +116,12 @@ final class NoteDeck: NSObject {
     model.focusBody = { [weak self] in self?.focusBody() }
     model.onMenu = { [weak self] open in self?.menuChanged(open) }
     model.canFan = { [weak self] in self?.canFan() ?? true }
+    model.withEditor = { [weak self] body in
+      guard let self, let id = model.state.openID,
+        let editor = Self.editor(for: id, in: panel?.contentView)
+      else { return }
+      body(editor)
+    }
   }
 
   // MARK: 摆放
@@ -196,7 +202,6 @@ final class NoteDeck: NSObject {
     panel.onCancel = { [weak model] in model?.cancel() }
     // 失去 key（切到别的 App、点了别的窗口）：攒着的改动先落下去
     panel.onResignKey = { [weak model] in model?.store.flush() }
-    panel.undoProvider = { [weak model] in model?.textUndo }
     panel.contentFrame = { [weak self] in self?.contentFrame ?? .zero }
     return panel
   }
@@ -384,11 +389,9 @@ final class NoteDeck: NSObject {
 
   /// 视图树里**这条便签**的正文框（NoteBodyField 给它标了便签的编号）。换一条的那 0.1 秒里新旧两个正文框都在：
   /// 按类型找第一个会先碰到旧的那个——它淡完移走后焦点就掉到面板上、打不进字
-  static func editor(for id: String, in view: NSView?) -> SourceTextView.FocusTextView? {
+  static func editor(for id: String, in view: NSView?) -> NoteTextView? {
     guard let view else { return nil }
-    if let editor = view as? SourceTextView.FocusTextView, editor.identifier?.rawValue == id {
-      return editor
-    }
+    if let editor = view as? NoteTextView, editor.identifier?.rawValue == id { return editor }
     return view.subviews.lazy.compactMap { editor(for: id, in: $0) }.first
   }
 

@@ -218,6 +218,9 @@ struct NotesWindowView: View {
         }
         .disabled(note == nil)
         .help("\(Model.archiveTitle(note))（⇧⌘A）")
+        Button(Model.taskTitle, systemImage: Model.taskSymbol) { model.toggleTask() }
+          .disabled(note == nil)
+          .help(Model.taskHelp)
         // 系统菜单，不用 SwiftUI 的 Menu：放进工具栏的 Menu 不画每一项前面的纸色圆点（2026-10-13 真机）
         Button(Model.colorTitle, systemImage: "paintpalette") {
           if let note { NSMenu.of(model.colorItems(note)).popUpAtPointer() }
@@ -239,11 +242,14 @@ struct NotesWindowView: View {
 
   /// 键盘。不挂在工具栏按钮上：窗口窄了工具栏项会收进「»」，挂在上面的键就跟着不灵。
   /// ⌘⌫ 不在这里：SwiftUI 的 .keyboardShortcut(.delete) 认的是字符 U+0008，⌫ 键按出来是 U+007F（屏外窗口里发合成按键
-  /// 实测不触发），所以由窗口按键码认（NotesWindow.handlesKeyDown）
+  /// 实测不触发），所以由窗口按键码认（NotesWindow.handlesKeyDown；⇧⌘Z 重做也在那里）
   private var shortcuts: some View {
     Group {
       Button("新建便签") { model.create() }.keyboardShortcut("n")
-      Button("搜索") { model.focusSearch() }.keyboardShortcut("f")
+      // ⌘F：焦点在正文里是便签内查找，否则去搜索框（NotesWindowModel.find）
+      Button("查找") { model.find() }.keyboardShortcut("f")
+      Button(Model.taskTitle) { model.toggleTask() }.keyboardShortcut("t")
+      // ⇧⌘Z 重做不挂在这里：同一个字母再挂一个带 ⇧ 的，⌘Z 会被它抢走（由窗口的按键监听认，NotesWindow.handlesKeyDown）
       Button("撤销") { model.undo() }.keyboardShortcut("z")
       Button("归档") {
         if let id = model.selection { model.toggleArchived(id) }
@@ -273,6 +279,7 @@ private struct NoteRow: View {
   var body: some View {
     let paper = NotePaper.of(note)
     let preview = note.preview
+    let progress = note.taskProgress
     HStack(alignment: .top, spacing: 8) {
       // 圆点对着标题那一行的中线（标题行高 16）
       NoteDot(paper: paper).padding(.top, 2)
@@ -291,11 +298,18 @@ private struct NoteRow: View {
           }
           Text(NotesWindowModel.ago(note)).font(.system(size: 11)).foregroundStyle(.tertiary)
         }
-        Text(preview.isEmpty ? "没有更多内容" : preview)
-          .font(.system(size: 12))
-          .foregroundStyle(preview.isEmpty ? .tertiary : .secondary)
-          .lineLimit(1)
-          .truncationMode(.tail)
+        HStack(spacing: 6) {
+          Text(preview.isEmpty ? "没有更多内容" : preview)
+            .font(.system(size: 12))
+            .foregroundStyle(preview.isEmpty ? .tertiary : .secondary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+          // 有任务的：预览那一行的右边写做完几条 / 共几条
+          if let progress {
+            Spacer(minLength: 4)
+            NoteProgress(progress: progress).foregroundStyle(.secondary)
+          }
+        }
       }
     }
     .padding(.vertical, 4)
@@ -303,8 +317,11 @@ private struct NoteRow: View {
     .listRowBackground(isSelected ? highlight : nil)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(
-      [note.displayTitle, note.isPinned ? "已固定" : nil, paper.name, NotesWindowModel.ago(note)]
-        .compactMap { $0 }.joined(separator: "，")
+      [
+        note.displayTitle, note.isPinned ? "已固定" : nil, paper.name,
+        progress.map(Note.progressSpoken), NotesWindowModel.ago(note),
+      ]
+      .compactMap { $0 }.joined(separator: "，")
     )
     .accessibilityValue(preview)
   }
@@ -343,7 +360,8 @@ private struct NoteEditor: View {
         // 滚动区铺满右边、文字缩进放在 horizontalInset 里（15 + NSTextView 自己的 5 = 20）：滚动条贴窗口右边
         NoteBodyField(
           note: note, fontSize: fontSize, margin: Self.margin,
-          setBody: { model.setBody($0, of: note.id) }, onOverflow: model.overflowed)
+          setBody: { model.setBody($0, of: note.id) }, onOverflow: model.overflowed,
+          undo: model.textUndo)
       } else {
         readOnly(paper)
       }

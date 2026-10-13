@@ -44,6 +44,10 @@ nonisolated struct NoteDeckMetrics: Equatable, Sendable {
   var plusSize: CGFloat { scaled(26) }
   var plusGap: CGFloat { scaled(10) }
 
+  /// 标签倾斜时朝屏幕边多画出去的一截（在屏幕外、被窗口裁掉）：斜了之后贴边那一侧的上下角会离开屏幕边，
+  /// 不多画这一截就露出楔形的缝
+  var tiltBleed: CGFloat { scaled(14) }
+
   /// 标签上的字（最小 10 pt，mac-whisker §3）
   var fontSize: CGFloat { max(10, scaled(12)) }
   var font: NSFont { .systemFont(ofSize: fontSize, weight: .semibold) }
@@ -73,6 +77,15 @@ nonisolated struct NoteDeckLayout: Equatable, Sendable {
   static let previewHeight: CGFloat = 130
   /// 按着标签挪过这么多才算拖动排序（没到就是点了一下）
   static let dragSlop: CGFloat = 5
+  /// 「标签倾斜」开着时每张标签斜多少度
+  static let tiltDegrees: CGFloat = 3
+
+  /// 标签斜多少度（顺时针为正，SwiftUI rotationEffect 的方向；绕贴屏幕边那一侧的中点转）：右边缘时逆时针、
+  /// 左边缘时顺时针，所有标签同一个角度；没开就是 0。只是画面上的变换：布局、点击区、悬停区、拖动排序都按不斜的算
+  static func tilt(edge: NoteDeckOptions.Edge, isOn: Bool) -> CGFloat {
+    guard isOn else { return 0 }
+    return edge == .right ? -tiltDegrees : tiltDegrees
+  }
 
   let metrics: NoteDeckMetrics
   let style: NoteDeckOptions.TabStyle

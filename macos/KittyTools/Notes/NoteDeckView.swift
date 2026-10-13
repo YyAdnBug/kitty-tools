@@ -248,6 +248,11 @@ private struct NoteTab: View {
     let shape = edgeShape(
       onRight: onRight, radius: isChip ? Style.Radius.control : Style.Radius.card)
     let strip = layout.strip(at: index)
+    // 「标签倾斜」：整张斜一点，纸朝屏幕边多画出去一截（斜了之后贴边那一侧的角会离开屏幕边，不多画就露出楔形的缝；
+    // 多出去的在屏幕外、被窗口裁掉）。打开的那张立正：它要接上旁边那张正着的便签
+    let tilts = model.options.tiltsTabs
+    let bleed = tilts ? layout.metrics.tiltBleed : 0
+    let outer: Edge.Set = onRight ? .trailing : .leading
     ZStack(alignment: .top) {
       if !isChip {
         NoteTabLabel(
@@ -262,15 +267,20 @@ private struct NoteTab: View {
       shape.fill(paper.paper)
         .shadow(
           color: .black.opacity(isLifted ? 0.30 : 0.18), radius: isLifted ? 10 : 5,
-          x: onRight ? -1.5 : 1.5, y: isLifted ? 4 : 1)
+          x: onRight ? -1.5 : 1.5, y: isLifted ? 4 : 1
+        )
+        .padding(outer, -bleed)
     }
     // 色块没有标题：一圈色条色的边才认得出是哪种纸（同纸色圆点）；带标题的只描一道发丝线
     .overlay {
-      if isChip {
-        shape.strokeBorder(paper.strip, lineWidth: 1.5)
-      } else {
-        shape.hairlineBorder(paper.rule(contrast))
+      Group {
+        if isChip {
+          shape.strokeBorder(paper.strip, lineWidth: 1.5)
+        } else {
+          shape.hairlineBorder(paper.rule(contrast))
+        }
       }
+      .padding(outer, -bleed)
     }
     // 打开的那张：朝里的那条边上一道色条
     .overlay(alignment: onRight ? .leading : .trailing) {
@@ -288,6 +298,12 @@ private struct NoteTab: View {
         Circle().fill(paper.strip).frame(width: 5, height: 5).padding(5)
       }
     }
+    // 只转画面：下面的点击区、拖动、悬停都按不斜的来
+    .modifier(
+      NoteTabTilt(
+        isOn: tilts, degrees: NoteDeckLayout.tilt(edge: model.edge, isOn: tilts && !isOpen),
+        onRight: onRight, isReduced: reduceMotion)
+    )
     .contentShape(.rect)
     // 在不动的坐标系里量（.global）：这张标签自己正被外面的 .offset 挪着，按默认的本地坐标系量的话坐标系跟着视图走，
     // 挪了多少就少算多少、下一帧又弹回来——被拖的那张一直抖（2026-10-13 手测）
@@ -303,11 +319,33 @@ private struct NoteTab: View {
     .animation(Style.Motion.glide.animation(reduced: reduceMotion), value: reach)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(
-      [note.displayTitle, note.isPinned ? "已固定" : nil, paper.name].compactMap { $0 }
-        .joined(separator: "，")
+      [
+        note.displayTitle, note.isPinned ? "已固定" : nil, paper.name,
+        note.taskProgress.map(Note.progressSpoken),
+      ]
+      .compactMap { $0 }.joined(separator: "，")
     )
     .accessibilityAddTraits(isOpen ? [.isButton, .isSelected] : .isButton)
     .accessibilityAction { model.tapTab(note.id) }
+  }
+}
+
+/// 「标签倾斜」开着时把一张标签的画面转一个角度（绕贴屏幕边那一侧的中点）；没开时原样（不套变换：没开的时候
+/// 画出来的要和加这个设置之前逐像素一样）。打开 / 关掉便签时那张标签立正 / 斜回去走 glide
+private struct NoteTabTilt: ViewModifier {
+  let isOn: Bool
+  let degrees: CGFloat
+  let onRight: Bool
+  let isReduced: Bool
+
+  func body(content: Content) -> some View {
+    if isOn {
+      content
+        .rotationEffect(.degrees(degrees), anchor: onRight ? .trailing : .leading)
+        .animation(Style.Motion.glide.animation(reduced: isReduced), value: degrees)
+    } else {
+      content
+    }
   }
 }
 
@@ -375,6 +413,9 @@ struct NotePreviewCard: View {
             .truncationMode(.tail)
             .multilineTextAlignment(.leading)
           Spacer(minLength: 0)
+          if let progress = note.taskProgress {
+            NoteProgress(progress: progress).foregroundStyle(paper.secondaryInk)
+          }
           if note.isPinned { Image(systemName: "pin.fill").font(.system(size: 10)) }
         }
         .foregroundStyle(paper.ink)
@@ -464,7 +505,8 @@ private struct NoteSheet: View {
         // 写入绑着这条便签的编号：换一条时这块编辑区还会留一小会儿（淡出），它晚到的那一下要落回它自己那条
         note: note, fontSize: fontSize, margin: Self.margin,
         setBody: { model.setBody($0, of: note.id) }, onOverflow: model.overflowed,
-        onCancel: model.cancel, focusRequest: model.focusRequest(for: note.id))
+        onCancel: model.cancel, focusRequest: model.focusRequest(for: note.id),
+        undo: model.textUndo)
       NoteFootnote(
         note: note, isOverLimit: model.isOverLimit, isUnsaved: model.store.saveProblem != nil
       )
@@ -484,7 +526,7 @@ private struct NoteSheet: View {
       value: model.menu != nil)
   }
 
-  /// 头部：纸色圆点（点了换颜色）、标题、固定、「⋯」、关闭。圆点的左边和正文的字同一条线
+  /// 头部：纸色圆点（点了换颜色）、标题、任务、固定、「⋯」、关闭。圆点的左边和正文的字同一条线
   private func header(_ paper: NotePaper) -> some View {
     HStack(spacing: 2) {
       Button {
@@ -501,6 +543,12 @@ private struct NoteSheet: View {
       )
       .padding(.leading, 4)
       .padding(.trailing, 4)
+      NoteIconButton(
+        symbol: NotesWindowModel.taskSymbol, label: "\(NotesWindowModel.taskTitle)（⌘T）",
+        ink: paper.ink
+      ) {
+        model.toggleTask()
+      }
       NoteIconButton(
         symbol: note.isPinned ? "pin.fill" : "pin",
         label: "\(NotesWindowModel.pinTitle(note))（⌘P）", ink: paper.ink

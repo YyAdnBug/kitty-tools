@@ -451,6 +451,8 @@ final class OverlayPanel: NSPanel {
     if keyEquivalentHandler?(event) == true || super.performKeyEquivalent(with: event) {
       return true
     }
+    // ⌘Z / ⇧⌘Z：焦点在输入框里时撤销 / 重做它里面打的字（原来没有任何地方接重做）
+    if let done = Self.undoRedo(event, in: self) { return done }
     // 不看 Caps Lock（deviceIndependentFlagsMask 含 .capsLock，大写锁定开着 ⌘W 会失灵）
     guard event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command else {
       return false
@@ -472,6 +474,17 @@ final class OverlayPanel: NSPanel {
     "v": #selector(NSText.paste(_:)), "a": #selector(NSText.selectAll(_:)),
     "z": Selector(("undo:")),
   ]
+
+  /// ⌘Z 撤销 / ⇧⌘Z 重做**焦点所在的输入框**里打的字（NSWindow.undoFocusedText：直接动它登记撤销的那个栈，
+  /// 不发 undo: / redo: 动作）。不是这两个键、焦点不在输入框里给 nil（调用方照原来的路走）；没有可撤销 / 重做的给
+  /// false（不算处理了，系统响一声）。浮层（OverlayPanel）和便签那叠的面板（NoteDeckPanel）共用
+  static func undoRedo(_ event: NSEvent, in window: NSWindow) -> Bool? {
+    let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
+    guard flags == .command || flags == [.command, .shift],
+      event.charactersIgnoringModifiers?.lowercased() == "z", window.firstResponder is NSTextView
+    else { return nil }
+    return window.undoFocusedText(redo: flags != .command)
+  }
 
   /// 把编辑动作发给当前输入框；拷贝 / 剪切改了剪贴板就记下这次是在自家浮层里复制的（Paster.panelCopyChangeCount）。
   /// ponytail: 右键菜单里的「拷贝」不经这里，照外部复制算；真碰上再给浮层里的文本视图接 copy:
@@ -759,5 +772,30 @@ private final class ResizeEdge: NSView {
       let target = content.hitTest(superview.convert(event.locationInWindow, from: nil))
     else { return super.scrollWheel(with: event) }
     target.scrollWheel(with: event)
+  }
+}
+
+extension NSWindow {
+  /// 焦点所在的输入框自己的撤销栈：多行的文本视图问到的那个（便签正文是这条便签的，NoteTextView.noteUndo；别的顺着
+  /// 响应链问到窗口的），单行输入框是它的字段编辑器的（系统给每个输入框单独一个，结束编辑就丢）。焦点不在输入框里是 nil
+  var focusedTextUndo: UndoManager? { (firstResponder as? NSTextView)?.undoManager }
+
+  /// 撤销（redo：重做）焦点所在输入框里打的字，返回做没做（焦点不在输入框里、没有可撤销 / 重做的是 false）。
+  /// ⌘Z / ⇧⌘Z 的入口都到这里（浮层和便签那叠的面板：OverlayPanel.undoRedo；全部便签窗口：NotesWindowModel.undo / redo）。
+  /// 两件事都是 2026-10-13 实测（macOS 15.7）定的：
+  /// - **直接动那个栈，不发 undo: / redo: 动作**：动作顺着响应链到头是窗口接（文本视图自己不响应它），而 NSWindow 的
+  ///   undo: 动的是窗口内部的撤销栈——窗口子类重写了 undoManager 它也不看（重写了的窗口里 undo:「处理了」但字不变）。
+  ///   便签那叠的面板原来正是重写的，正文里的 ⌘Z 因此一直不灵（用户报「便签输入区域不支持撤销和回退」）。
+  /// - **撤完补发一次「文字变了」**：TextKit 2 的文本视图（SourceTextView、单行输入框的字段编辑器）撤销 / 重做之后
+  ///   自己不发 textDidChange，不补的话界面上的字回去了、绑定里那份（搜索词、翻译的原文、便签的标题）却没变。
+  ///   TextKit 1 的（便签正文 NoteTextView）自己会发，不重复
+  @discardableResult
+  func undoFocusedText(redo: Bool = false) -> Bool {
+    guard let view = firstResponder as? NSTextView, let stack = view.undoManager,
+      redo ? stack.canRedo : stack.canUndo
+    else { return false }
+    if redo { stack.redo() } else { stack.undo() }
+    if view.textLayoutManager != nil { view.didChangeText() }
+    return true
   }
 }

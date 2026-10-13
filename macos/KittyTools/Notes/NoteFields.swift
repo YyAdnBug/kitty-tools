@@ -1,7 +1,8 @@
 // 一条便签的编辑区里共用的三件（全部便签窗口的右栏、屏幕边缘那叠里打开的便签都用它们，不各抄一份）：
-// 标题框（CommandTextField，墨色、上限 Note.maxTitleLength）、正文框（SourceTextView 的不提交模式，墨色、
-// 上限 Note.maxBodyBytes：会超的那一次输入不进）、底下那行小字（改于什么时候、多少字；没存上、正文打到上限时
+// 标题框（CommandTextField，墨色、上限 Note.maxTitleLength）、正文框（便签专用的编辑器 NoteTextView：墨色、任务、
+// 上限 Note.maxBodyBytes——会超的那一次输入不进）、底下那行小字（改于什么时候、多少字；没存上、正文打到上限时
 // 换成警告）。占位都自己画（墨色淡一档）：系统的占位灰在有颜色的纸上太浅。外面怎么摆（边距、高度）由用的地方定。
+// 另有任务进度的小件（NoteProgress：「☑ 2 / 5」，全部便签窗口的列表行、屏幕边缘那叠的悬停预览卡共用）。
 // **写入的闭包由用的地方绑好这条便签的编号**（setTitle / setBody 只给新的字）：换一条便签时旧的输入框还会在视图树里
 // 留一小会儿（淡出），它晚到的那一下——输入法组字到一半失焦时提交的字——得落回它自己那条，不能按「现在开着哪条」写。
 // 规范在 mac-whisker-notes.mdc；输入框的规矩在 mac-overlay-panel §3。
@@ -49,23 +50,19 @@ struct NoteBodyField: View {
   /// 屏幕边缘那叠用：这条便签是「该拿焦点的那条」时给第几次要（NoteDeckModel.focusRequest(for:)）——正文框挂进窗口的
   /// 那一刻自己拿焦点，之后这个数每变一次再拿一次。nil = 不归它拿（全部便签窗口不给：选中一条时焦点留在列表上）
   var focusRequest: Int?
+  /// 这条便签的撤销栈（NoteDeckModel.textUndo / NotesWindowModel.textUndo）：正文里打的字登记在它上面，⌘Z / ⇧⌘Z
+  /// 动的也是它
+  var undo: UndoManager?
 
   var body: some View {
     let paper = NotePaper.of(note)
-    SourceTextView(
-      text: Binding {
-        note.body
-      } set: {
-        setBody($0)
-      }, submitsOnEnter: false, fontSize: fontSize, horizontalInset: margin - 5,
-      focusRequest: focusRequest, takesFocusOnAppear: focusRequest != nil,
-      // 标上这条便签的编号：换一条时新旧两个正文框同时在，拿焦点的要按编号认（NoteDeck.editor(for:in:)）
-      textColor: paper.inkColor, identifier: note.id, maxBytes: Note.maxBodyBytes,
-      onOverflow: onOverflow, onCancel: onCancel
+    NoteTextEditor(
+      note: note, fontSize: fontSize, horizontalInset: margin - 5, focusRequest: focusRequest,
+      undo: undo, onChange: setBody, onOverflow: onOverflow, onCancel: onCancel
     )
     .accessibilityLabel("正文")
     .overlay(alignment: .topLeading) {
-      // 位置就是第一个字的位置（左 = 边线，上 6 = SourceTextView 的 textContainerInset）：一打字不跳
+      // 位置就是第一个字的位置（左 = 边线，上 6 = 编辑器的 textContainerInset）：一打字不跳
       if note.body.isEmpty {
         NotePlaceholder(text: "写点什么…", size: fontSize, weight: .regular, paper: paper)
           .padding(.leading, margin - 2)
@@ -122,5 +119,24 @@ struct NotePlaceholder: View {
       .padding(.leading, 2)
       .allowsHitTesting(false)
       .accessibilityHidden(true)
+  }
+}
+
+/// 任务进度：一个小方框符号 +「2 / 5」（做完几条 / 共几条）。颜色由用的地方给（列表行是 secondary，预览卡是次要的墨）。
+/// 是给眼睛看的：旁白那句由用它的行自己读（Note.progressSpoken）
+struct NoteProgress: View {
+  let progress: (done: Int, total: Int)
+
+  var body: some View {
+    HStack(spacing: 3) {
+      Image(
+        systemName: progress.done == progress.total ? "checkmark.square.fill" : "checkmark.square"
+      )
+      .font(.system(size: 10, weight: .medium))
+      Text(verbatim: Note.progressText(progress)).font(.system(size: 11)).monospacedDigit()
+    }
+    .lineLimit(1)
+    .fixedSize()
+    .accessibilityHidden(true)
   }
 }

@@ -70,7 +70,7 @@ struct NoteDeckTests {
     #expect(options.style == .tabs && options.size == .standard && options.sense == 14)
     #expect(!options.alwaysFanned && !options.hidesPill && options.showsPreview)
     #expect(!options.opensOnHover && !options.overFullScreen && options.noteSize == .medium)
-    #expect(options.position == 0.5)
+    #expect(options.position == 0.5 && !options.tiltsTabs)
     let registered = Prefs.defaults
     #expect(registered[Prefs.notesDeckEnabled] as? Bool == true)
     #expect(registered[Prefs.notesDeckEdge] as? String == "right")
@@ -84,6 +84,7 @@ struct NoteDeckTests {
     #expect(registered[Prefs.notesDeckOpensOnHover] as? Bool == false)
     #expect(registered[Prefs.notesDeckOverFullScreen] as? Bool == false)
     #expect(registered[Prefs.notesDeckNoteSize] as? String == "medium")
+    #expect(registered[Prefs.notesDeckTilt] as? Bool == false)
   }
 
   /// 设置跟着导出文件走；药丸的位置、指定的是哪块屏、提示说没说过、示例便签放没放过是这台电脑自己的状态，
@@ -93,7 +94,7 @@ struct NoteDeckTests {
       Prefs.notesDeckEnabled, Prefs.notesDeckEdge, Prefs.notesDeckDisplay, Prefs.notesDeckStyle,
       Prefs.notesDeckSize, Prefs.notesDeckSense, Prefs.notesDeckAlwaysFanned,
       Prefs.notesDeckHidesPill, Prefs.notesDeckPreview, Prefs.notesDeckOpensOnHover,
-      Prefs.notesDeckOverFullScreen, Prefs.notesDeckNoteSize,
+      Prefs.notesDeckOverFullScreen, Prefs.notesDeckNoteSize, Prefs.notesDeckTilt,
     ]
     for key in exported {
       #expect(Prefs.defaults[key] != nil && SettingsArchive.kinds[key] != nil, "\(key)")
@@ -154,6 +155,41 @@ struct NoteDeckTests {
     #expect(NoteDeckOptions(defaults).display == .named("DELL U2720Q"))
     defaults.set("everywhere", forKey: Prefs.notesDeckDisplay)
     #expect(NoteDeckOptions(defaults).display == .main)
+  }
+
+  /// 「标签倾斜」（2026-10-13 用户要的，默认关）：偏好怎么读；角度右边缘逆时针、左边缘顺时针、没开是 0；
+  /// 朝屏幕边多画出去的一截随大小档缩放、够盖住斜出来的缝；只是画面上的变换，排法不跟着变
+  @Test func tiltOption() throws {
+    let (defaults, suite) = try prefs()
+    defer { defaults.removePersistentDomain(forName: suite) }
+    #expect(!NoteDeckOptions(defaults).tiltsTabs && !NoteDeckOptions().tiltsTabs)
+    defaults.set(true, forKey: Prefs.notesDeckTilt)
+    #expect(NoteDeckOptions(defaults).tiltsTabs)
+    defaults.set("yes", forKey: Prefs.notesDeckTilt)
+    #expect(!NoteDeckOptions(defaults).tiltsTabs)
+
+    #expect(
+      Layout.tilt(edge: .right, isOn: true) == -3 && Layout.tilt(edge: .left, isOn: true) == 3)
+    #expect(
+      Layout.tilt(edge: .right, isOn: false) == 0 && Layout.tilt(edge: .left, isOn: false) == 0)
+    #expect(NoteDeckMetrics(scale: 1).tiltBleed == 14)
+    #expect(
+      NoteDeckMetrics(scale: 0.85).tiltBleed == 12 && NoteDeckMetrics(scale: 1.25).tiltBleed == 18)
+    for size in NoteDeckOptions.Size.allCases {
+      let metrics = NoteDeckMetrics(scale: size.scale)
+      // 最高的一张（露出最长的一截 + 被压住的）绕贴边那一侧的中点转 3°：上下角离开屏幕边的距离
+      let gap = (metrics.stripMax + metrics.lap) / 2 * sin(Layout.tiltDegrees * .pi / 180)
+      #expect(metrics.tiltBleed > gap + 2, "\(size)")
+    }
+    var tilted = NoteDeckOptions()
+    tilted.tiltsTabs = true
+    #expect(
+      Layout(count: 5, hidden: 1, longestLabel: 60, height: 875, options: tilted)
+        == Layout(count: 5, hidden: 1, longestLabel: 60, height: 875, options: NoteDeckOptions()))
+    let far = Self.screen()
+    #expect(
+      Layout.panelFrame(on: far, edge: .right, options: tilted)
+        == Layout.panelFrame(on: far, edge: .right, options: NoteDeckOptions()))
   }
 
   // MARK: 尺寸和排法
@@ -801,7 +837,7 @@ struct NoteDeckTests {
     #expect(model.state.phase == .fanned)
   }
 
-  /// 操作菜单：五项，名字和全部便签窗口同一份；颜色是子列表；Esc 先退菜单再关便签
+  /// 操作菜单：六项，名字和全部便签窗口同一份；颜色是子列表；Esc 先退菜单再关便签
   @Test func actionMenu() throws {
     let (model, store, ids) = try make(["一", "二"])
     var menuEvents: [Bool] = []
@@ -813,15 +849,17 @@ struct NoteDeckTests {
     model.toggleMenu()
     #expect(model.menu == .init() && menuEvents == [true])
     #expect(
-      model.menuItems.map(\.title) == ["固定", "颜色", "归档", "删除", "在「全部便签」里打开"])
-    #expect(model.menuItems.map(\.section) == [0, 0, 1, 1, 2])
-    #expect(model.menuItems.map(\.isDestructive) == [false, false, false, true, false])
+      model.menuItems.map(\.title) == ["固定", "颜色", "任务", "归档", "删除", "在「全部便签」里打开"])
+    #expect(model.menuItems.map(\.section) == [0, 0, 0, 1, 1, 2])
+    #expect(
+      model.menuItems.map(\.isDestructive) == [false, false, false, false, true, false])
+    #expect(model.menuItems[2].shortcut == "⌘T")
     #expect(model.menuItems[1].submenu?.count == Note.colorCount)
     // 鼠标移到哪一行，选中跟到哪一行（越界的不理）；再把它挪回第一行，下面的 ↓ 照旧从头走
-    model.menuHover(3)
-    #expect(model.menu?.selection == 3)
+    model.menuHover(4)
+    #expect(model.menu?.selection == 4)
     model.menuHover(99)
-    #expect(model.menu?.selection == 3)
+    #expect(model.menu?.selection == 4)
     model.menuHover(0)
     #expect(model.menu?.selection == 0)
     // ↓ 到「颜色」，→ 进去：选中的是现在的颜色
@@ -854,7 +892,7 @@ struct NoteDeckTests {
     model.tapTab(ids[0])
     model.toggleMenu()
     #expect(try model.handleMenuKey(key(kVK_UpArrow)))
-    #expect(model.menu?.selection == 4)
+    #expect(model.menu?.selection == 5)
     #expect(try model.handleMenuKey(key(kVK_DownArrow)) && model.menu?.selection == 0)
     #expect(try model.handleMenuKey(key(kVK_Return)))
     #expect(store.note(ids[0])?.isPinned == true)
@@ -872,7 +910,8 @@ struct NoteDeckTests {
     #expect(model.menu == nil && model.current?.id == ids[1])
   }
 
-  /// 面板的 ⌘ 组合键：⌘W 关（用键盘关的：便签连那一列一起收回）；便签开着时 ⌘P ⌘K ⌘. ⇧⌘A；⌘⌫ 不接（归输入框）
+  /// 面板的 ⌘ 组合键：⌘W 关（用键盘关的：便签连那一列一起收回）；便签开着时 ⌘P ⌘K ⌘. ⌘T ⌘F ⇧⌘A；⌘⌫ 不接（归输入框）；
+  /// ⌘Z 不在这里（面板直接动焦点所在输入框的撤销栈）
   @Test func keyEquivalents() throws {
     let (model, store, ids) = try make(["一", "二"])
     func press(_ code: Int, _ flags: NSEvent.ModifierFlags = .command) throws -> Bool {
@@ -891,6 +930,14 @@ struct NoteDeckTests {
     #expect(try !press(kVK_Delete) && store.trashed.isEmpty)  // ⌘⌫ 是输入框的「删到行首」
     #expect(try !press(kVK_ANSI_A) && !press(kVK_ANSI_P, [.command, .option]))
     #expect(try !press(kVK_ANSI_P, []))
+    // ⌘T 任务、⌘F 便签内查找：交给开着的那条的正文编辑器（这里没有窗口，只看交没交过去、焦点要没要回正文）
+    var asked = 0
+    var focused = 0
+    model.withEditor = { _ in asked += 1 }
+    model.focusBody = { focused += 1 }
+    #expect(try press(kVK_ANSI_T) && asked == 1 && focused == 1)
+    #expect(try press(kVK_ANSI_F) && asked == 2 && focused == 1)
+    #expect(try !press(kVK_ANSI_T, [.command, .shift]) && !press(kVK_ANSI_Z))
     #expect(try press(kVK_ANSI_K) && press(kVK_ANSI_W))  // 菜单开着按 ⌘W：连便签、那一列一起收回
     #expect(model.menu == nil && model.state.phase == .rest)
     #expect(try !press(kVK_ANSI_W))
@@ -1175,7 +1222,7 @@ struct NoteDeckTests {
     for name in [
       "pin", "pin.fill", "pin.slash", "ellipsis", "xmark", "plus", "paintpalette", "archivebox",
       "trash", "trash.circle.fill", "note.text", "note.text.badge.plus", "gearshape",
-      "sidebar.right",
+      "sidebar.right", "checklist", "checkmark.square", "checkmark.square.fill",
     ] {
       #expect(NSImage(systemSymbolName: name, accessibilityDescription: nil) != nil, "\(name)")
     }
@@ -1211,7 +1258,7 @@ struct NoteDeckTests {
 
   /// 面板的第一响应者是哪条便签的正文框（它的编号）；不是正文框就是 nil
   private func focusedNote(_ deck: NoteDeck) -> String? {
-    (deck.panel?.firstResponder as? SourceTextView.FocusTextView)?.identifier?.rawValue
+    (deck.panel?.firstResponder as? NoteTextView)?.identifier?.rawValue
   }
 
   /// 等界面跟上：一轮一轮让出去，到条件成立为止（最多 3 秒；按轮数、不掐时间）
@@ -1317,9 +1364,9 @@ struct NoteDeckTests {
   @Test func editorIsFoundByNoteID() {
     let root = NSView()
     let (old, new) = (NSView(), NSView())
-    let first = SourceTextView.FocusTextView(frame: .zero)
+    let first = NoteTextView.make()
     first.identifier = NSUserInterfaceItemIdentifier("甲")
-    let second = SourceTextView.FocusTextView(frame: .zero)
+    let second = NoteTextView.make()
     second.identifier = NSUserInterfaceItemIdentifier("乙")
     old.addSubview(first)
     new.addSubview(second)
@@ -1328,9 +1375,12 @@ struct NoteDeckTests {
     #expect(NoteDeck.editor(for: "乙", in: root) === second)
     #expect(NoteDeck.editor(for: "甲", in: root) === first)
     #expect(NoteDeck.editor(for: "丙", in: root) == nil && NoteDeck.editor(for: "甲", in: nil) == nil)
-    // 没标编号的正文框（别处的 SourceTextView）不会被当成它
-    root.addSubview(SourceTextView.FocusTextView(frame: .zero))
-    #expect(NoteDeck.editor(for: "", in: root) == nil)
+    // 没标编号的、别处的多行输入框（SourceTextView）不会被当成它
+    root.addSubview(NoteTextView.make())
+    let foreign = SourceTextView.FocusTextView(frame: .zero)
+    foreign.identifier = NSUserInterfaceItemIdentifier("丙")
+    root.addSubview(foreign)
+    #expect(NoteDeck.editor(for: "", in: root) == nil && NoteDeck.editor(for: "丙", in: root) == nil)
   }
 
   /// 共用的正文框标着便签的编号、插入点用墨色（不是强调色：强调色选黄时在柠檬色的纸上看不见）；标题框同样
@@ -1524,7 +1574,8 @@ struct NoteDeckTests {
     #expect(store.blankOrNew().id != second.id && store.active.count == 2)
   }
 
-  /// 每条便签自己的撤销栈：换一条换一个新的（A 里打的字不能在 B 里被 ⌘Z 撤到）；面板的 undoManager 就是它
+  /// 每条便签自己的撤销栈：换一条换一个新的（A 里打的字不能在 B 里被 ⌘Z 撤到）。正文框建出来时拿到它
+  /// （undoAndRedoGoThroughThePanelKeys 里验「登记和操作是同一个」）
   @Test func eachNoteHasItsOwnUndoStack() throws {
     let (model, _, ids) = try make(["一", "二"])
     model.send(Self.enter)
@@ -1536,12 +1587,112 @@ struct NoteDeckTests {
     model.tapTab(ids[1])
     let second = model.textUndo
     #expect(second !== first)
-    let panel = NoteDeckPanel(frame: Self.offscreen, model: model, onPointer: {})
-    #expect(panel.undoManager != nil)
-    panel.undoProvider = { [unowned model] in model.textUndo }
-    #expect(panel.undoManager === second)
     model.tapTab(ids[0])
-    #expect(panel.undoManager === model.textUndo && panel.undoManager !== second)
+    #expect(model.textUndo !== second && model.textUndo !== first)
+  }
+
+  /// ⌘Z / ⇧⌘Z 的事件（按键入口用：直接交给面板的 performKeyEquivalent，不往系统里发）
+  private func undoKey(redo: Bool = false, in window: NSWindow) throws -> NSEvent {
+    try #require(
+      NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: redo ? [.command, .shift] : .command,
+        timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: "z",
+        charactersIgnoringModifiers: redo ? "Z" : "z", isARepeat: false,
+        keyCode: UInt16(kVK_ANSI_Z)))
+  }
+
+  private func titleField(in view: NSView?) -> CommandTextField.FocusField? {
+    guard let view else { return nil }
+    return (view as? CommandTextField.FocusField)
+      ?? view.subviews.lazy.compactMap { titleField(in: $0) }.first
+  }
+
+  /// 撤销 / 重做从按键入口走到底（2026-10-13 用户报「便签输入区域不支持撤销和回退」）：往正文里打字、勾任务、改标题，
+  /// 把 ⌘Z / ⇧⌘Z 的事件交给面板的 performKeyEquivalent，字真的回去、再回来，仓库里那份跟着变。
+  /// 登记撤销的栈和按键动的栈是同一个（这条便签的 textUndo）；换一条便签各有各的栈。面板在屏外、不当 key
+  @Test func undoAndRedoGoThroughThePanelKeys() async throws {
+    let deck = try offscreenDeck(["甲的正文", "☐ 乙的任务"])
+    defer { deck.close() }
+    let store = deck.model.store
+    let ids = store.active.map(\.id)
+    for id in ids { store.setPinned(true, of: id) }
+    deck.pill?.onPress()
+    deck.model.tapTab(ids[0])
+    try await settle { focusedNote(deck) == ids[0] }
+    let panel = try #require(deck.panel)
+    func press(redo: Bool = false) throws -> Bool {
+      panel.performKeyEquivalent(with: try undoKey(redo: redo, in: panel))
+    }
+    func insert(_ text: String, into view: NSTextView) {
+      view.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
+    }
+    let editor = try #require(NoteDeck.editor(for: ids[0], in: panel.contentView))
+    // 同一个栈：文本视图登记用的、按键入口动的、这条便签的
+    #expect(editor.undoManager === deck.model.textUndo)
+    #expect(panel.focusedTextUndo === deck.model.textUndo && !panel.isKeyWindow)
+    // 没有可撤销 / 重做的：不算处理了
+    #expect(try !press() && !press(redo: true))
+
+    // 正文里打两段 → ⌘Z 回到打之前 → ⇧⌘Z 回来
+    editor.setSelectedRange(NSRange(location: 4, length: 0))
+    insert("，加一句", into: editor)
+    insert("再一句", into: editor)
+    let typed = "甲的正文，加一句再一句"
+    #expect(editor.string == typed && store.note(ids[0])?.body == typed)
+    var presses = 0
+    while editor.string != "甲的正文", presses < 4, try press() { presses += 1 }
+    #expect(presses >= 1 && editor.string == "甲的正文" && store.note(ids[0])?.body == "甲的正文")
+    #expect(try !press())
+    while editor.string != typed, presses > 0, try press(redo: true) { presses -= 1 }
+    #expect(editor.string == typed && store.note(ids[0])?.body == typed)
+    #expect(try !press(redo: true))
+
+    // 标题框：它的字段编辑器有自己的栈——⌘Z 撤的是标题里打的字，正文不动
+    let title = try #require(titleField(in: panel.contentView))
+    #expect(panel.makeFirstResponder(title))
+    let fieldEditor = try #require(title.currentEditor() as? NSTextView)
+    #expect(panel.focusedTextUndo === fieldEditor.undoManager)
+    #expect(fieldEditor.undoManager !== deck.model.textUndo)
+    insert("新标题", into: fieldEditor)
+    #expect(store.note(ids[0])?.title == "新标题")
+    #expect(try press())
+    #expect(store.note(ids[0])?.title == "" && store.note(ids[0])?.body == typed)
+    #expect(try press(redo: true))
+    #expect(store.note(ids[0])?.title == "新标题" && editor.string == typed)
+
+    // 换到乙：新的栈。勾任务 → ⌘Z → ⇧⌘Z；甲里打的字不动
+    deck.model.tapTab(ids[1])
+    try await settle { focusedNote(deck) == ids[1] }
+    let second = try #require(NoteDeck.editor(for: ids[1], in: panel.contentView))
+    #expect(second.undoManager === deck.model.textUndo && second.undoManager !== editor.noteUndo)
+    #expect(try !press())
+    #expect(store.note(ids[0])?.body == typed && store.note(ids[1])?.body == "☐ 乙的任务")
+    panel.contentView?.layoutSubtreeIfNeeded()
+    let manager = try #require(second.layoutManager)
+    let container = try #require(second.textContainer)
+    manager.ensureLayout(for: container)
+    let box = manager.boundingRect(forGlyphRange: NSRange(location: 0, length: 1), in: container)
+    let origin = second.textContainerOrigin
+    let point = second.convert(NSPoint(x: box.midX + origin.x, y: box.midY + origin.y), to: nil)
+    let click = try #require(
+      NSEvent.mouseEvent(
+        with: .leftMouseDown, location: point, modifierFlags: [], timestamp: 0,
+        windowNumber: panel.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+    second.mouseDown(with: click)
+    #expect(store.note(ids[1])?.body == "☑ 乙的任务")
+    #expect(try press())
+    #expect(second.string == "☐ 乙的任务" && store.note(ids[1])?.body == "☐ 乙的任务")
+    #expect(try press(redo: true))
+    #expect(store.note(ids[1])?.body == "☑ 乙的任务" && store.note(ids[0])?.body == typed)
+    // ⌘T（面板的按键入口）也是一步能撤的
+    #expect(try panel.performKeyEquivalent(with: key(kVK_ANSI_T, .command)))
+    #expect(store.note(ids[1])?.body == "乙的任务")
+    #expect(try press() && store.note(ids[1])?.body == "☑ 乙的任务")
+    // ⌘F：这条便签自己的查找条；Esc 先关它，便签还开着
+    #expect(try panel.performKeyEquivalent(with: key(kVK_ANSI_F, .command)))
+    #expect(second.enclosingScrollView?.isFindBarVisible == true)
+    deck.model.cancel()
+    #expect(second.enclosingScrollView?.isFindBarVisible == false && deck.model.current != nil)
   }
 
   /// 面板的按键入口（不显示、不当 key，直接调）：Esc → onCancel；⌘ 组合先问 keyEquivalentHandler；

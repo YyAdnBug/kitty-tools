@@ -1,7 +1,7 @@
 // 快速记一条（Notes/NoteCapture.swift）的单测：保存的规则（空的不存、新建、接在已有的后面、目的地没了当新便签、
 // 超过单条上限不存）、目的地列表（最近改过的 8 条没归档的）、⌘1–⌘9、草稿在收起后留着 / Esc 清空、面板的高度、
 // 新便签的标题（填了就用、只填标题也存、记到已有的不用它、和草稿一起留一起清、两个输入框的焦点交接）；
-// 另有多行输入框字节上限的判断（SourceTextView.overflows）。
+// 另有便签正文字节上限的判断（NoteTextView.overflows）。
 // 全用内存库；不给岛（岛会真的开窗口），不碰用户的偏好和数据目录。
 
 import AppKit
@@ -300,10 +300,10 @@ struct NoteCaptureTests {
     #expect(panel.heights == [five])
   }
 
-  /// 多行输入框的字节上限：算的是换完之后的 UTF-8 字节，被换掉的那段要减掉
+  /// 便签正文的字节上限：算的是换完之后的 UTF-8 字节，被换掉的那段要减掉
   @Test func textViewOverflowCountsBytesAfterReplacement() {
     let overflows = { (current: String, range: NSRange, replacement: String, max: Int) in
-      SourceTextView.overflows(current, replacing: range, with: replacement, maxBytes: max)
+      NoteTextView.overflows(current, replacing: [range], with: [replacement], maxBytes: max)
     }
     #expect(!overflows("abc", NSRange(location: 3, length: 0), "de", 5))
     #expect(overflows("abc", NSRange(location: 3, length: 0), "def", 5))

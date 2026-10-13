@@ -17,10 +17,10 @@ nonisolated struct Note: Identifiable, Equatable, Sendable {
   static let previewLength = 120
   /// 标题和正文都没有内容时显示的名字
   static let untitled = "未命名便签"
-  /// 一条便签的正文最多多大（UTF-8 字节）。现在只有导入的文件按它查（SettingsArchive：正文超了的那条不要；自己导出时有超的
-  /// 就不让导出「便签」一类）。
-  /// ponytail: 正文仓库自己不拦（这一批还没有能写便签的界面）。以后的编辑器、「存成便签」这些入口要按它拦——剪贴板单条
-  /// 文字可以到 5 MB，原样存成便签就会让「便签」一类导不出去、每日自动备份里也不带
+  /// 一条便签的正文最多多大（UTF-8 字节）。导入的文件按它查（SettingsArchive：正文超了的那条不要；自己导出时有超的
+  /// 就不让导出「便签」一类）；正文编辑器（NoteTextView.maxBytes）和快速记一条按它拦——会超的那一次输入不进。
+  /// ponytail: 正文仓库自己不拦。以后的「存成便签」这些入口要按它拦——剪贴板单条文字可以到 5 MB，原样存成便签就会让
+  /// 「便签」一类导不出去、每日自动备份里也不带
   static let maxBodyBytes = 1 << 20
   /// 自己起的标题的上限：不超过这么多个字，并且 UTF-8 不超过这么多字节（一个字后面挂一长串组合符号的那种，按字数拦不住）。
   /// 超了的一律截到上限（sanitized(title:)）：仓库的写入口和读导出文件时都是
@@ -130,7 +130,7 @@ nonisolated struct Note: Identifiable, Equatable, Sendable {
   }
 
   /// 一行去掉两头的空白、行首的标题标记（一到六个 # 后面跟空白；「#标签」不算）和任务符号（☐ ☑）。
-  /// 完整的任务规则（哪些写法算任务、勾选）第 5 批再做，这里只管显示时不把符号带出来
+  /// 只管显示时不把符号带出来，所以比任务的规则（NoteTasks：方框后面要跟空格）宽：行首是方框就去掉
   private static func clean(_ raw: String) -> String {
     var line = raw.drop(while: \.isWhitespace)
     let hashes = line.prefix { $0 == "#" }.count

@@ -22,6 +22,8 @@ nonisolated struct NotePaper: Equatable, Sendable {
 
   /// 次要的字（「改于…」那一行、占位）用墨的这么多：再淡的话浅色那套在纸上不到 4.5:1
   static let secondaryOpacity = 0.75
+  /// 做完的任务的字用墨的这么多（划了线的、已经不用看的字，有意淡下去）；增强对比度时回到 secondaryOpacity
+  static let doneOpacity = 0.5
   /// 打开的便签带着的那张标签：纸上叠这么浓的色条色（比纸深一档；墨在上面仍够 4.5:1，NoteDeckTests 锁住）
   static let tabTint = 0.16
 
@@ -59,6 +61,10 @@ nonisolated struct NotePaper: Equatable, Sendable {
   var paperColor: NSColor { Self.dynamic(light.paper, dark.paper) }
   var stripColor: NSColor { Self.dynamic(light.strip, dark.strip) }
   var inkColor: NSColor { Self.dynamic(light.ink, dark.ink) }
+  /// 做完的任务的字（AppKit 侧，正文编辑器用）：墨的 doneOpacity，增强对比度时是 secondaryOpacity
+  var fadedInkColor: NSColor {
+    Self.dynamic(light.ink, dark.ink, alpha: Self.doneOpacity, contrastAlpha: Self.secondaryOpacity)
+  }
 
   var paper: Color { Color(nsColor: paperColor) }
   var strip: Color { Color(nsColor: stripColor) }
@@ -72,13 +78,23 @@ nonisolated struct NotePaper: Equatable, Sendable {
   /// 永远深色的底上用的色条色（屏幕边缘的药丸是 HUD 皮肤，不跟外观变）：取深色那套里提亮过的色条
   var brightStrip: NSColor { srgb(dark.strip) }
 
-  /// 取色闭包由 AppKit 在解析颜色的线程上调（mac-native §3）：只读传进来的两个数
-  private static func dynamic(_ light: Int, _ dark: Int) -> NSColor {
+  /// 取色闭包由 AppKit 在解析颜色的线程上调（mac-native §3）：只读传进来的几个数。
+  /// alpha：不透明度；contrastAlpha：增强对比度的外观下用的不透明度
+  private static func dynamic(
+    _ light: Int, _ dark: Int, alpha: Double = 1, contrastAlpha: Double = 1
+  ) -> NSColor {
     NSColor(name: nil) { appearance in
       let isDark =
         appearance.bestMatch(from: [.darkAqua, .vibrantDark, .accessibilityHighContrastDarkAqua])
         != nil
-      return srgb(isDark ? dark : light)
+      let isHighContrast =
+        appearance.bestMatch(from: [
+          .aqua, .darkAqua, .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua,
+        ]).map { $0 == .accessibilityHighContrastAqua || $0 == .accessibilityHighContrastDarkAqua }
+        ?? false
+      let color = srgb(isDark ? dark : light)
+      let opacity = isHighContrast ? contrastAlpha : alpha
+      return opacity < 1 ? color.withAlphaComponent(opacity) : color
     }
   }
 

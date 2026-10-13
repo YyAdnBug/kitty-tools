@@ -1419,6 +1419,32 @@ struct SnapshotProbeTests {
     try window("archive", model)
     try window("empty", NotesWindowModel(store: try NoteStore(db: Database(path: ":memory:"))))
 
+    // 第 5 批：任务——没做完 / 做完的（划线、变淡）、缩进的、做完的一长行折行、和普通行混排；列表行上的进度
+    // （没做完的、全做完的）；四档字号各一张（方框和字的大小、行距）
+    let tasks = try NoteStore(db: Database(path: ":memory:"))
+    tasks.create(body: "☑ 都做完了\n☑ 这条也是", title: "全做完的", now: now.addingTimeInterval(-7200))
+    tasks.create(body: "只有字，没有任务", now: now.addingTimeInterval(-3600))
+    let todo = tasks.create(
+      body:
+        "周五前交的东西 Abc\n☐ 周报 Report\n☑ 订会议室 Done\n  ☐ 缩进的子任务\n  ☑ 做完的子任务\n"
+        + "☑ 一条做完的很长的任务，长到一行放不下要折到第二行，看划线和变淡是不是整段都有、行距是不是还一样\n"
+        + "☐ 报销单\n- 普通的列表项\n下午三点和设计过一遍首页的改动 plain line。",
+      now: now.addingTimeInterval(-120))
+    let tasksModel = NotesWindowModel(store: tasks)
+    tasksModel.selection = todo.id
+    for dark in [false, true] {
+      try window("tasks\(dark ? "-dark" : "")", tasksModel, dark: dark)
+    }
+    for size in Prefs.notesFontSizeChoices where size != 15 {
+      let suite = "kitty-snapshot-notes-size-\(UUID().uuidString)"
+      let sized = try #require(UserDefaults(suiteName: suite))
+      defer { sized.removePersistentDomain(forName: suite) }
+      sized.set(size, forKey: Prefs.notesFontSize)
+      try snapshot(
+        NotesWindowView(model: tasksModel).defaultAppStorage(sized), size: windowSize,
+        dark: false, to: "\(out)/notes-window-tasks-\(size).png")
+    }
+
     // 带标题栏的真窗口：工具栏只有它有（上面那些是内容区）。摆在屏外，连标题栏一起出图
     model.scope = .all
     for trash in [false, true] where Self.wants("\(out)/notes-window-toolbar.png") {
@@ -1694,6 +1720,61 @@ struct SnapshotProbeTests {
     try deck("preview-titled-blank", oneLine.store) { $0.setPreview(oneLine.ids[1]) }
     try deck("fan-more-thousands", try library(many(1205)).store)
 
+    // 第 5 批：打开的便签里的任务（没做完 / 做完的、缩进、长行）、头部的「任务」钮、操作菜单里的「任务」，
+    // 预览卡上的进度
+    let todo = try library([
+      (
+        "",
+        "周五前交的东西\n☐ 周报\n☑ 订会议室\n  ☐ 缩进的子任务\n☑ 一条做完的很长的任务，长到一行放不下要折到第二行\n☐ 报销单\n普通的一行",
+        60
+      ),
+      ("全做完的", "☑ 一\n☑ 二", 120),
+    ])
+    for dark in [false, true] {
+      try deck("open-tasks\(dark ? "-dark" : "")", todo.store, dark: dark) {
+        $0.tapTab(todo.ids[0])
+      }
+    }
+    try deck("open-tasks-menu", todo.store) { model in
+      model.tapTab(todo.ids[0])
+      model.toggleMenu()
+    }
+    try deck("preview-tasks", todo.store) { $0.setPreview(todo.ids[0]) }
+    try deck("preview-tasks-done-dark", todo.store, dark: true) { $0.setPreview(todo.ids[1]) }
+
+    // 「标签倾斜」（2026-10-13）：右边 / 左边、标签 / 色块、三档大小、深色、鼠标停着、拖着、打开一条时（那张立正、
+    // 便签不斜）、「+N」和它展开后在视口里滚、一条的时候；贴屏幕边那一侧不露楔形的缝
+    var tilted = NoteDeckOptions()
+    tilted.tiltsTabs = true
+    try deck("tilt-right", store, options: tilted)
+    try deck("tilt-left", store, options: tilted, edge: .left)
+    try deck("tilt-dark", store, options: tilted, dark: true)
+    var tiltedChips = tilted
+    tiltedChips.style = .chips
+    try deck("tilt-chips", store, options: tiltedChips)
+    try deck("tilt-chips-left-dark", store, options: tiltedChips, edge: .left, dark: true)
+    for size in [NoteDeckOptions.Size.small, .large] {
+      var options = tilted
+      options.size = size
+      try deck("tilt-\(size.rawValue)", store, options: options)
+    }
+    var tiltedQuiet = tilted
+    tiltedQuiet.showsPreview = false
+    try deck("tilt-hover", store, options: tiltedQuiet) { $0.hover(ids[2], true) }
+    try deck("tilt-dragging", store, options: tilted) { model in
+      model.dragChanged(ids[0], by: model.layout.step * 1.7)
+    }
+    try deck("tilt-open", store, options: tilted) { $0.tapTab(ids[1]) }
+    try deck("tilt-open-left-dark", store, options: tilted, edge: .left, dark: true) {
+      $0.tapTab(ids[2])
+    }
+    try deck("tilt-open-chips", store, options: tiltedChips) { $0.tapTab(ids[0]) }
+    try deck("tilt-preview", store, options: tilted) { $0.setPreview(ids[1]) }
+    try deck("tilt-more", thirty, options: tilted)
+    try deck("tilt-all", thirty, options: tilted) { $0.send(.showAll) }
+    try deck("tilt-one", try library(many(1)).store, options: tilted)
+    try deck("tilt-mixed", mixed.store, options: tilted)
+
     // MARK: 设置 › 便签「屏幕边缘」
     let onSuite = "kitty-snapshot-notes-deck-on-\(UUID().uuidString)"
     let offSuite = "kitty-snapshot-notes-deck-off-\(UUID().uuidString)"
@@ -1705,7 +1786,7 @@ struct SnapshotProbeTests {
     }
     off.set(false, forKey: Prefs.notesDeckEnabled)
     let displays = ["内建视网膜显示器", "DELL U2720Q"]
-    let tabSize = NSSize(width: 640, height: 1260)
+    let tabSize = NSSize(width: 640, height: 1320)
     for dark in [false, true] {
       try snapshot(
         NotesTab(openNotes: {}, displays: displays).defaultAppStorage(on), size: tabSize,
@@ -1716,6 +1797,7 @@ struct SnapshotProbeTests {
       dark: false, to: "\(out)/notes-deck-settings-off.png")
     on.set(true, forKey: Prefs.notesDeckAlwaysFanned)
     on.set(true, forKey: Prefs.notesDeckOpensOnHover)
+    on.set(true, forKey: Prefs.notesDeckTilt)
     on.set("chosen", forKey: Prefs.notesDeckDisplay)
     on.set(displays[1], forKey: Prefs.notesDeckChosenDisplay)
     try snapshot(

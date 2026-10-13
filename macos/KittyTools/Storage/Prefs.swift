@@ -171,7 +171,8 @@ enum Prefs {
   /// 总开关（默认开；关掉一个窗口都不建）、哪条边（right 默认 / left；按住 ⌥ 拖药丸也写它）、显示器（main 默认 /
   /// all / chosen = 指定的那一块，是哪块在 notesDeckChosenDisplay）、样式（tabs 带标题的标签，默认 / chips 只有色块）、
   /// 大小（small 0.85 / standard / large 1.25）、感应范围（点：8 / 14 默认 / 28 / 44）、一直展开、不显示药丸、
-  /// 悬停预览（默认开）、悬停即打开、盖在全屏 App 上、打开的便签多大（small / medium 默认 / large / extraLarge）
+  /// 悬停预览（默认开）、悬停即打开、盖在全屏 App 上、打开的便签多大（small / medium 默认 / large / extraLarge）、
+  /// 标签倾斜（默认关：正着放；开着时那一列标签每张斜 3°，2026-10-13 用户要的）
   nonisolated static let notesDeckEnabled = "notesDeckEnabled"
   nonisolated static let notesDeckEdge = "notesDeckEdge"
   nonisolated static let notesDeckDisplay = "notesDeckDisplay"
@@ -184,6 +185,7 @@ enum Prefs {
   nonisolated static let notesDeckOpensOnHover = "notesDeckOpensOnHover"
   nonisolated static let notesDeckOverFullScreen = "notesDeckOverFullScreen"
   nonisolated static let notesDeckNoteSize = "notesDeckNoteSize"
+  nonisolated static let notesDeckTilt = "notesDeckTilt"
   /// 下面四个是这台电脑自己的状态，**不注册默认值**（不跟着导出 / 导入走）：药丸的纵向位置（0 = 可见区最上，1 = 最下；
   /// 没存过 = 0.5 正中，⌥ 拖药丸时写）、「指定某一块」指的是哪块显示器（它的名字；不在时退回主显示器）、
   /// 「便签在屏幕右边缘」那句提示说过了没有（每台电脑只说一次）、示例便签放过了没有（Notes/NoteSample.swift：
@@ -287,6 +289,7 @@ enum Prefs {
       notesDeckOpensOnHover: false,
       notesDeckOverFullScreen: false,
       notesDeckNoteSize: NoteDeckOptions.NoteSize.medium.rawValue,
+      notesDeckTilt: false,
     ]
   }
 

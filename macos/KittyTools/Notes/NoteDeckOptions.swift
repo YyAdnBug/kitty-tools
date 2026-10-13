@@ -1,5 +1,5 @@
 // 屏幕边缘那叠的设置（设置 › 便签「屏幕边缘」；PLAN §10「便签」第 3 批）：读一次偏好、之后都传值。
-// 键和注册的默认值在 Prefs（notesDeck*）：12 个是设置（跟着设置的导出走），纵向位置、指定的是哪块显示器是这台电脑
+// 键和注册的默认值在 Prefs（notesDeck*）：13 个是设置（跟着设置的导出走），纵向位置、指定的是哪块显示器是这台电脑
 // 自己的状态（不注册默认值）。没存过的、不在档位里的值都按默认算——导入的文件、手改的偏好都可能带进怪值。
 // 用它的：Prefs（默认值）、NotesTab（设置页）、NoteEdge / NoteDeck / NoteDeckLayout（摆放和排法）。
 
@@ -77,6 +77,8 @@ nonisolated struct NoteDeckOptions: Equatable, Sendable {
   var opensOnHover = false
   var overFullScreen = false
   var noteSize = NoteSize.medium
+  /// 标签倾斜：那一列标签每张斜一点（NoteDeckLayout.tilt）；默认关 = 正着放
+  var tiltsTabs = false
   /// 药丸的纵向位置：0 = 可见区最上，1 = 最下
   var position = 0.5
 
@@ -111,6 +113,7 @@ nonisolated struct NoteDeckOptions: Equatable, Sendable {
     opensOnHover = flag(Prefs.notesDeckOpensOnHover, false)
     overFullScreen = flag(Prefs.notesDeckOverFullScreen, false)
     noteSize = choice(Prefs.notesDeckNoteSize, .medium)
+    tiltsTabs = flag(Prefs.notesDeckTilt, false)
     let ratio = defaults.object(forKey: Prefs.notesDeckPosition) as? Double ?? 0.5
     position = ratio.isFinite ? min(max(ratio, 0), 1) : 0.5
   }

@@ -26,6 +26,7 @@ struct NotesTab: View {
   @AppStorage(Prefs.notesDeckOpensOnHover) private var opensOnHover = false
   @AppStorage(Prefs.notesDeckOverFullScreen) private var overFullScreen = false
   @AppStorage(Prefs.notesDeckNoteSize) private var noteSize = NoteDeckOptions.NoteSize.medium
+  @AppStorage(Prefs.notesDeckTilt) private var tiltsTabs = false
 
   private static let fontTitles = [13: "小", 15: "标准", 17: "大", 20: "特大"]
   private static let senseTitles = [8: "窄", 14: "标准", 28: "宽", 44: "很宽"]
@@ -100,6 +101,10 @@ struct NotesTab: View {
           Text("大").tag(NoteDeckOptions.Size.large)
         }
         .pickerStyle(.segmented)
+        Toggle(isOn: $tiltsTabs) {
+          Text("标签倾斜")
+          Text("标签微微斜着叠在边上；打开的便签仍是正的")
+        }
         radios("感应范围", "鼠标离屏幕边缘多近就展开", selection: $sense) {
           ForEach(NoteDeckOptions.senseChoices, id: \.self) {
             Text(Self.senseTitles[$0] ?? "\($0)").tag($0)

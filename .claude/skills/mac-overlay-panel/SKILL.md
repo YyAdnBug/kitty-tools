@@ -1,6 +1,6 @@
 ---
 name: mac-overlay-panel
-description: 原生分支 macOS 热键浮层规范（OverlayPanel、全局热键、粘贴回原 App、浮层内输入框、划词时序、截图翻译框选遮罩、长截图、录屏）。在修改 macos/KittyTools/Shell/**、macos/KittyTools/Screenshot/**、macos/KittyTools/StatusScreen/**、macos/KittyTools/Translate/SelectionReader.swift、Translate/SourceTextView.swift、macos/KittyTools/Notes/NoteEdge.swift、Notes/NoteDeck*.swift（便签屏幕边缘那叠）前必须先读；或涉及 截图 / 截图翻译 / 长截图 / 滚动截图 / 录屏 / SCRecordingOutput / 录制边框 / 录制 HUD / 倒数 / 临时 Esc 热键 / 菜单栏停止项 / 录屏飞入 / 视频卡 / 录屏声音 / 系统声音 / 麦克风授权 / 麦克风断开 / 显示点按 / 点按圈 / 显示按键 / 按键提示 / 按键胶囊 / InputOverlay / 录音 / 录音控制条 / 待录 / 立即开始录音 / AVAudioRecorder / 录系统声音 / 录音来源 / 只录声音 / 导出 m4a / 电平 / 没听到声音 / 录音卡 / 录屏录音互斥 / 转成 GIF / GIF 卡 / 冻结帧 / 框选遮罩 / 窗口吸附 / 放大镜取色 / 钉图 / 常驻缩略图 / 快速保存目录 / 屏幕录制授权 / ScreenCaptureKit / 便签的边缘那叠 / 屏幕边缘的药丸 / 扇出 / 标签列 / NoteDeckPanel / 透明窗口点穿 / 状态屏 / 屏幕清洁 / 请勿触碰 / 事件拦截 / CGEventTap / 拦键盘鼠标 / 按住 Esc 退出 / 安全输入 / NSPanel / nonactivatingPanel / 浮层不显示或抢前台 / 点外关闭 / Esc / 固定图钉 / RegisterEventHotKey / 热键冲突 / 模拟 ⌘V ⌘C / 粘贴失败 / 输入法在浮层里异常 / 划词取不到词 / 设置窗被压在后面等问题时。
+description: 原生分支 macOS 热键浮层规范（OverlayPanel、全局热键、粘贴回原 App、浮层内输入框、划词时序、截图翻译框选遮罩、长截图、录屏）。在修改 macos/KittyTools/Shell/**、macos/KittyTools/Screenshot/**、macos/KittyTools/StatusScreen/**、macos/KittyTools/Translate/SelectionReader.swift、Translate/SourceTextView.swift、macos/KittyTools/Notes/NoteEdge.swift、Notes/NoteDeck*.swift（便签屏幕边缘那叠）、Notes/NoteTextView.swift、Notes/NoteFields.swift（便签正文的编辑器）前必须先读；或涉及 截图 / 截图翻译 / 长截图 / 滚动截图 / 录屏 / SCRecordingOutput / 录制边框 / 录制 HUD / 倒数 / 临时 Esc 热键 / 菜单栏停止项 / 录屏飞入 / 视频卡 / 录屏声音 / 系统声音 / 麦克风授权 / 麦克风断开 / 显示点按 / 点按圈 / 显示按键 / 按键提示 / 按键胶囊 / InputOverlay / 录音 / 录音控制条 / 待录 / 立即开始录音 / AVAudioRecorder / 录系统声音 / 录音来源 / 只录声音 / 导出 m4a / 电平 / 没听到声音 / 录音卡 / 录屏录音互斥 / 转成 GIF / GIF 卡 / 冻结帧 / 框选遮罩 / 窗口吸附 / 放大镜取色 / 钉图 / 常驻缩略图 / 快速保存目录 / 屏幕录制授权 / ScreenCaptureKit / 便签的边缘那叠 / 屏幕边缘的药丸 / 扇出 / 标签列 / NoteDeckPanel / 透明窗口点穿 / 状态屏 / 屏幕清洁 / 请勿触碰 / 事件拦截 / CGEventTap / 拦键盘鼠标 / 按住 Esc 退出 / 安全输入 / NSPanel / nonactivatingPanel / 浮层不显示或抢前台 / 点外关闭 / Esc / 固定图钉 / RegisterEventHotKey / 热键冲突 / 模拟 ⌘V ⌘C / 粘贴失败 / 输入法在浮层里异常 / 便签正文的编辑器 / TextKit 1 / 组字期间不重排 / 输入框里的撤销重做 ⌘Z ⇧⌘Z / 撤销栈 / 划词取不到词 / 设置窗被压在后面等问题时。
 ---
 
 # mac-overlay-panel
@@ -23,6 +23,8 @@ description: 原生分支 macOS 热键浮层规范（OverlayPanel、全局热键
 - 剪贴板面板、启动器点外关（鼠标监听成对装卸，兄弟浮层豁免）；启动器没有固定，没执行就收起的 60 秒内再呼出保留查询（体检 A27）；两者同一位置（顶部 20%、宽 720），只开一个；翻译浮窗失焦关；固定只管点别处 / 失焦不收起，Esc、⌘W（OverlayPanel 统一处理）、再按热键一律收起（体检 A9）。
 - 两张 ⌘Y 大卡由 `TransientPanel` 拿着（rule §1）：用时再建、收起 2 秒后放掉；要显示走 `open()`，对开着的那块做事读 `.panel`（nil = 没开着，别为了问一句去建）。三块主面板和设置窗一直留着，不照这个改。
 - 浮层里的输入框只用 `CommandTextField` / `SourceTextView`（doCommandBy），不用 `.onKeyPress` 抢方向键和回车。
+- 便签的正文是专用的编辑器 `NoteTextView`（rule §3）：显式搭的 TextKit 1（别改回 `NSTextView(frame:)`）；样式只改属性、不进撤销栈、不动选区；输入法组字期间不重排、不往外写；「外面换了正文」认的是和上次交出去的不一样，不拿仓库里那份去盖正在打的字；光标被浮在上面的菜单盖住时设箭头。
+- 撤销 / 重做（rule §3）：⌘Z / ⇧⌘Z 直接动焦点所在输入框的撤销栈（`NSWindow.undoFocusedText`），不发 `undo:` 动作；便签正文的栈由 `NoteTextView.noteUndo` 明说；**窗口子类不许靠重写 `undoManager` 给输入框换栈**（`NSWindow` 的 `undo:` 不看重写的，⌘Z 会「处理了」但字不变）；TextKit 2 的输入框撤完要补发一次「文字变了」。
 - 热键非独占，跨进程冲突检测不到。
 - 粘贴：hide → `Paster.write` → `pasteToFrontmost`，不加等待，⌘V 显式 `.maskCommand`。
 - 划词：复制完成前禁止显示翻译浮窗。

@@ -354,25 +354,34 @@ struct ShortcutsSheet: View {
           Entry("Esc", text: "快速记一条里：清空并关闭（点面板外面、再按一次全局快捷键、⌘W 也是关闭，写了一半的留着）"),
         ]),
       // 屏幕边缘那叠里打开的便签（第 3 批）：⌘ 组合在 NoteDeckModel.handleKeyEquivalent，Esc 是面板的 cancelOperation（cancel），
-      // 操作菜单开着时的方向键在 handleMenuKey。⌘⌫ 不写：在标题、正文里它就是输入框的删到行首
+      // 操作菜单开着时的方向键在 handleMenuKey。⌘⌫ 不写：在标题、正文里它就是输入框的删到行首。
+      // 第 5 批：⌘T 任务、⌘F 便签内查找（同一处）；⌘Z / ⇧⌘Z 是面板直接动焦点所在输入框的撤销栈（OverlayPanel.undoRedo）；
+      // 回车续行、Tab 缩进在正文编辑器里（NoteTextView.doCommand）
       Group(
         title: "便签 · 屏幕边缘", symbol: "sidebar.right", color: Style.Family.notes,
         entries: [
           Entry("Esc", "⌘W", text: "关掉打开的便签，那一列标签也一起收回，接着打字回到原来的 App"),
           Entry("⌘P", text: "固定 / 取消固定（固定的便签点别处不收起）"),
-          Entry("⌘K", text: "操作菜单：固定、颜色、归档、删除、在「全部便签」里打开（↑↓ 选，↩ 执行，→ ← 进出「颜色」）"),
+          Entry("⌘K", text: "操作菜单：固定、颜色、任务、归档、删除、在「全部便签」里打开（↑↓ 选，↩ 执行，→ ← 进出「颜色」）"),
           Entry("⌘.", text: "换成下一种纸色"),
           Entry("⇧⌘A", text: "归档"),
+          Entry("⌘T", text: "任务：光标所在的行（选了几行就是那几行）变成任务，再按一次变回普通行；点行首的方框打勾"),
+          Entry("↩", "Tab", text: "正文里：任务行、列表行回车接着下一条，空的那条上回车退出列表；Tab / ⇧Tab 缩进、退回"),
+          Entry("⌘F", text: "在这条便签里查找（Esc 先关查找条，再按才关便签）"),
+          Entry("⌘Z", "⇧⌘Z", text: "撤销 / 重做打的字（勾任务、回车接出来的下一条也能撤）"),
           Entry("⌥", text: "按住它拖边上的药丸：换边、换高度"),
         ]),
-      // 全部便签窗口里的键：NotesWindowView.shortcuts（看不见的按钮上挂着），动作在 NotesWindowModel
+      // 全部便签窗口里的键：NotesWindowView.shortcuts（看不见的按钮上挂着），动作在 NotesWindowModel；
+      // ⌘⌫ 和 ⇧⌘Z 是窗口的按键监听认的（NotesWindow.handlesKeyDown）
       Group(
         title: "便签 · 全部便签", symbol: "rectangle.split.2x1", color: Style.Family.notes,
         entries: [
           Entry("⌘N", text: "新建便签"),
-          Entry("⌘F", text: "搜索"),
+          Entry("⌘F", text: "搜索便签；光标在正文里时是在这条便签里查找"),
+          Entry("⌘T", text: "任务：正文里光标所在的行变成任务，再按一次变回普通行"),
           Entry("⌘⌫", text: "焦点在列表上时：删除选中的便签，进「最近删除」（⌫ 也行；在最近删除里是永久删除，要确认）。光标在标题、正文里时是删到行首"),
-          Entry("⌘Z", text: "放回刚删的便签（连着删了几条就一条条放回；正在打字时先撤销打的字）"),
+          Entry("⌘Z", text: "放回刚删的便签（连着删了几条就一条条放回；光标在正文、标题、搜索框里时先撤销那里打的字）"),
+          Entry("⇧⌘Z", text: "重做刚撤销的打字"),
           Entry("⇧⌘A", text: "归档 / 取消归档"),
           Entry("⌘P", text: "固定 / 取消固定"),
           Entry("⌘.", text: "换成下一种纸色"),

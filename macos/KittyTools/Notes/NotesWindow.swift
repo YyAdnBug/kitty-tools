@@ -45,11 +45,17 @@ import SwiftUI
   /// ⌘F：数变一次，搜索框拿一次焦点
   private(set) var searchFocus = 0
   @ObservationIgnored var island: Island?
-  /// 把焦点放进正文框（新建之后）；焦点是不是在标题 / 正文框里（⌘Z 归谁）
+  /// 把焦点放进正文框（新建之后）；撤销（true = 重做）焦点所在的输入框——正文、标题、搜索框——里打的字，返回做没做
+  /// （NSWindow.undoFocusedText：焦点不在输入框里、没有可撤销的是 false）
   @ObservationIgnored var focusBody: () -> Void = {}
-  @ObservationIgnored var isEditingText: () -> Bool = { false }
-  /// 标题框和正文框的撤销栈（窗口的 undoManager 就是它，NotesWindow.windowWillReturnUndoManager）。换一条便签换一个新的：
-  /// 上一条里打的字不能撤到这一条上
+  @ObservationIgnored var undoFocusedText: (Bool) -> Bool = { _ in false }
+  /// 焦点是不是在正文里（或者它的查找条里）：⌘F 这时是便签内查找，否则去搜索框
+  @ObservationIgnored var isEditingBody: () -> Bool = { false }
+  /// 拿右边那条便签的正文编辑器做一件事（没有就不做：没选中、最近删除里的是只读的）
+  @ObservationIgnored var withEditor: ((NoteTextView) -> Void) -> Void = { _ in }
+  /// 正文的撤销栈（正文框建出来时拿到它，NoteTextView.noteUndo；窗口的 undoManager 也是它，
+  /// NotesWindow.windowWillReturnUndoManager）。换一条便签换一个新的：上一条里打的字不能撤到这一条上。
+  /// 标题框、搜索框用的是各自字段编辑器的栈（系统给的，结束编辑就丢）
   @ObservationIgnored private(set) var textUndo = UndoManager()
 
   init(store: NoteStore) {
@@ -126,6 +132,10 @@ import SwiftUI
   static let eraseTitle = "永久删除…"
   static let emptyTrashTitle = "清空最近删除…"
   static let colorTitle = "颜色"
+  /// 「任务」：全部便签窗口的工具栏、屏幕边缘那叠的便签头部和操作菜单、正文的右键菜单同名同符号（键位 ⌘T）
+  static let taskTitle = "任务"
+  static let taskSymbol = "checklist"
+  static let taskHelp = "任务：把这一行变成任务，或变回普通行（⌘T）"
   static func pinTitle(_ note: Note?) -> String { note?.isPinned == true ? "取消固定" : "固定" }
   static func archiveTitle(_ note: Note?) -> String {
     note?.isArchived == true ? "取消归档" : "归档"
@@ -169,11 +179,17 @@ import SwiftUI
     return true
   }
 
-  /// ⌘Z：焦点在标题 / 正文框里、它自己还有可撤销的打字，归它；否则放回刚删的；都没有再看打的字
+  /// ⌘Z：焦点所在的输入框（正文、标题、搜索框）自己还有可撤销的打字，归它；否则放回刚删的；都没有再看正文里打的字
   func undo() {
-    if isEditingText(), textUndo.canUndo { return textUndo.undo() }
-    if undoDelete() { return }
+    if undoFocusedText(false) || undoDelete() { return }
     if textUndo.canUndo { textUndo.undo() } else { NSSound.beep() }
+  }
+
+  /// ⇧⌘Z（NotesWindow 的按键监听认）：重做焦点所在的输入框里刚撤销的打字；焦点不在输入框里就看正文的
+  /// （放回删掉的便签没有重做）
+  func redo() {
+    if undoFocusedText(true) { return }
+    if textUndo.canRedo { textUndo.redo() } else { NSSound.beep() }
   }
 
   /// 放回最近删的那一条并选中它（连着删了几条就连着撤）。栈里那条已经不在「最近删除」里了（自己放回了、永久删了）就跳过。
@@ -296,6 +312,19 @@ import SwiftUI
 
   func focusSearch() { searchFocus += 1 }
 
+  /// ⌘F：焦点在正文里（或它的查找条里）是便签内查找（系统的查找条），否则去左边的搜索框
+  func find() {
+    if isEditingBody() { withEditor { $0.showFindBar() } } else { focusSearch() }
+  }
+
+  /// ⌘T、工具栏的「任务」：正文里光标所在行（有选区时是选区碰到的每一行）在普通行和任务之间切换，焦点进正文
+  func toggleTask() {
+    withEditor { editor in
+      editor.toggleTask()
+      editor.window?.makeFirstResponder(editor)
+    }
+  }
+
   /// 窗口失去 key：攒着的改动落下去
   func resignedKey() { store.flush() }
 
@@ -329,11 +358,11 @@ import SwiftUI
   }
 }
 
-/// 窗口本身：建、显示、记位置；窗口的委托（key 进出、关闭、撤销栈）；⌘⌫ 的按键监听
+/// 窗口本身：建、显示、记位置；窗口的委托（key 进出、关闭、撤销栈）；⌘⌫ 和 ⇧⌘Z 的按键监听
 final class NotesWindow: NSObject, NSWindowDelegate {
   private let window: NSWindow
   let model: NotesWindowModel
-  /// ⌘⌫ 的本地按键监听：窗口是 key 时装着，不是了就卸（成对）
+  /// ⌘⌫ 和 ⇧⌘Z 的本地按键监听：窗口是 key 时装着，不是了就卸（成对）
   private var keyMonitor: Any?
 
   var isVisible: Bool { window.isVisible }
@@ -358,7 +387,13 @@ final class NotesWindow: NSObject, NSWindowDelegate {
       // 晚一拍：新选中的那条的编辑区这时还没建出来
       perform(#selector(focusBodyNow), with: nil, afterDelay: 0)
     }
-    model.isEditingText = { [unowned self] in window.firstResponder is NSText }
+    model.undoFocusedText = { [unowned self] in window.undoFocusedText(redo: $0) }
+    model.isEditingBody = { [unowned self] in
+      Self.isInBody(window.firstResponder, editor: Self.editor(in: window.contentView))
+    }
+    model.withEditor = { [unowned self] body in
+      if let editor = Self.editor(in: window.contentView) { body(editor) }
+    }
   }
 
   /// 显示并激活（调用方先把浮层收起，同 SettingsWindow.show）
@@ -376,19 +411,34 @@ final class NotesWindow: NSObject, NSWindowDelegate {
     if let editor = Self.editor(in: window.contentView) { window.makeFirstResponder(editor) }
   }
 
-  /// 视图树里的正文框（屏幕边缘那叠打开便签时也用它找，NoteDeck.focusBodyNow）
-  static func editor(in view: NSView?) -> SourceTextView.FocusTextView? {
+  /// 视图树里的正文框（窗口里只有一个：便签专用的编辑器）
+  static func editor(in view: NSView?) -> NoteTextView? {
     guard let view else { return nil }
-    return (view as? SourceTextView.FocusTextView)
-      ?? view.subviews.lazy.compactMap { editor(in: $0) }.first
+    return (view as? NoteTextView) ?? view.subviews.lazy.compactMap { editor(in: $0) }.first
   }
 
-  /// ⌘⌫ 按键码认（别的键是 SwiftUI 的 keyboardShortcut，见 NotesWindowView.shortcuts）。挂着确认框（sheet）时按键是
-  /// 给它的，不接；焦点在输入框里（搜索框、标题框的字段编辑器，正文的文本框）交还给输入框
-  private func handlesKeyDown(_ event: NSEvent) -> Bool {
-    guard event.window === window, Int(event.keyCode) == kVK_Delete,
-      event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command
-    else { return false }
+  /// 第一响应者是不是在正文里：正文框自己，或者它的滚动区里的东西（查找条的搜索框——正在编辑的是字段编辑器，
+  /// 它也在那个搜索框的视图树里）
+  static func isInBody(_ responder: NSResponder?, editor: NoteTextView?) -> Bool {
+    guard let editor, let view = responder as? NSView else { return false }
+    return view === editor || (editor.enclosingScrollView.map(view.isDescendant(of:)) ?? false)
+  }
+
+  /// 窗口的按键监听认的两个键（别的键是 SwiftUI 的 keyboardShortcut，见 NotesWindowView.shortcuts）；返回接没接。
+  /// 挂着确认框（sheet）时按键是给它的，不接。
+  /// - ⌘⌫ 按键码认：焦点在输入框里（搜索框、标题框的字段编辑器，正文的文本框）交还给输入框；
+  /// - ⇧⌘Z 重做：不挂 SwiftUI 的隐藏按钮——同一个字母上挂 ⌘Z、⇧⌘Z 两个按钮，实测 ⌘Z 会被后挂的那个抢走
+  ///   （macOS 15.7，屏外窗口里把按键交给 performKeyEquivalent）
+  static func handlesKeyDown(_ event: NSEvent, in window: NSWindow, model: NotesWindowModel)
+    -> Bool
+  {
+    guard event.window === window else { return false }
+    let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
+    if flags == [.command, .shift], event.charactersIgnoringModifiers?.lowercased() == "z" {
+      model.redo()
+      return true
+    }
+    guard Int(event.keyCode) == kVK_Delete, flags == .command else { return false }
     return model.handleDeleteKey(inTextField: window.firstResponder is NSText)
   }
 
@@ -402,7 +452,9 @@ final class NotesWindow: NSObject, NSWindowDelegate {
   func windowDidBecomeKey(_ notification: Notification) {
     guard keyMonitor == nil else { return }
     keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-      let handled = MainActor.assumeIsolated { self?.handlesKeyDown(event) ?? false }
+      let handled = MainActor.assumeIsolated {
+        self.map { Self.handlesKeyDown(event, in: $0.window, model: $0.model) } ?? false
+      }
       return handled ? nil : event
     }
   }
