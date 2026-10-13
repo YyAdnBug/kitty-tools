@@ -2456,12 +2456,16 @@ struct SnapshotProbeTests {
     let first = try #require(page.cropping(to: CGRect(x: 0, y: 0, width: 1200, height: 480)))
     var stitcher = try #require(
       ScrollStitcher(first: first, scrollbarWidth: 32, maxHeight: 30_000))
+    let opening = stitcher  // 刚开始：预览里是第一帧
     _ = stitcher.add(
       try #require(page.cropping(to: CGRect(x: 0, y: 360, width: 1200, height: 480))))
     var states: [(String, Bool, (ScrollCaptureHUD) -> Void)] = [
       (
         "scroll-start", false,
-        { $0.show("在选区里滚动，或按空格自动滚动", width: 1200, height: 480) }
+        {
+          $0.show("在选区里滚动，或按空格自动滚动", width: 1200, height: 480)
+          $0.updatePreview(stitcher: opening, scale: 2)
+        }
       ),
       (
         "scroll-preview", false,

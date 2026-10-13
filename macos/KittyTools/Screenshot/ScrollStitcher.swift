@@ -9,6 +9,9 @@
 // - 吸顶栏 / 页脚：往下接先去掉画布末尾的页脚、再接新帧的新内容连同它的页脚，所以长图始终是「最上面那帧的
 //   吸顶栏 + 内容 + 最下面那帧的页脚」；往上接同理。页脚高度取「首尾原地不变的行」和「对上的最后一行以下」中大的：
 //   页脚里有闪烁的光标（聊天输入框）时前者会估小，估小会在长图中间留下页脚碎片；估大没关系（多去掉的内容由新帧补回）。
+// - 和上一帧对不上时再看两样（2026-10-13）：上一帧有内容的行大半原地没动 = 画面没滚，只是原地变了一块（鼠标悬停的
+//   高亮、工具提示：列表上每滚一下停住，悬停的那行就换一次），当没动；否则拿整张画布找这一帧的位置（滚太快越过去了、
+//   又滚回已经拼过的地方），画布每行的哈希一直留着。都不行才是对不上。
 // - 回弹：触控板滚到头会越界再弹回来，越界露出的是纯色底。刚接过的那头往回滚时：画布那头和新帧那头逐字节相同的行
 //   （页脚、还露着的越界底色）换成新帧的，再往里画布比新帧多出来的行只有全是纯色才去掉，有字的行一行都不丢。
 
@@ -47,6 +50,9 @@ struct ScrollStitcher {
   private var anchor = 0
   private var above: [UInt8] = []
   private var below: [UInt8]
+  /// 画布每行的哈希，和 above / below 同样的两段、同样的顺序（relocate 用）
+  private var aboveHashes: [Int] = []
+  private var belowHashes: [Int]
   /// 最近往哪头接过（回弹只修这头）
   private var lastGrown: Edge?
 
@@ -61,6 +67,14 @@ struct ScrollStitcher {
   private static let minShare = 0.25
   /// 对不上时，变了的行不到这个比例就当画面没动（光标闪烁、小动画），不报「对不上」
   private static let quietShare = 0.1
+  /// 对不上时，上一帧有内容的行里原地没动的超过这个比例也当画面没动（悬停高亮、工具提示：变的那块比 quietShare 大）。
+  /// 真滚过了的话有内容的行几乎都变了，原地不变的只剩吸顶栏和页脚
+  private static let stillShare = 0.5
+  /// 在画布里找位置比和上一帧比更容易碰巧（画布长、没有「刚滚了一点」这个前提）：票数要占到重叠部分可比行的一半，
+  /// 还要占到这一帧全部可比行的四分之一——只压着画布边上一小截的不接（长页面里隔很远的两处可能有几行一模一样，
+  /// 比如每段末尾的同一个按钮），再往回滚一点就够了
+  private static let relocateShare = 0.5
+  private static let relocateCover = 0.25
 
   /// 长图当前的高度（像素）
   var outputHeight: Int { bottom - top }
@@ -86,6 +100,7 @@ struct ScrollStitcher {
     else { return nil }
     reference = frame
     below = frame.pixels
+    belowHashes = frame.hashes
     bottom = height
   }
 
@@ -98,9 +113,20 @@ struct ScrollStitcher {
     let b = frame.hashes
     let changed = (0..<height).count { a[$0] != b[$0] }
     guard changed > 0 else { return .unchanged }
-    guard let match = Self.match(from: reference, to: frame) else {
-      return Double(changed) < Self.quietShare * Double(height) ? .unchanged : .lost
+    var found = Self.match(from: reference, to: frame)
+    if found == nil {
+      let ink = (0..<height).count { !reference.solid[$0] }
+      let still = (0..<height).count { !reference.solid[$0] && a[$0] == b[$0] }
+      if Double(changed) < Self.quietShare * Double(height)
+        || Double(still) > Self.stillShare * Double(ink)
+      {
+        return .unchanged
+      }
+      found = relocate(frame)
+      // 位置没变：原地变回了画布上更早的样子（.moved 的位移不会是 0，自动滚动拿它当除数）
+      if found?.dy == 0 { return .unchanged }
     }
+    guard let match = found else { return .lost }
     let dy = match.dy
     let position = referenceTop + dy
     guard max(bottom, position + height) - min(top, position) <= maxHeight else { return .full }
@@ -109,14 +135,14 @@ struct ScrollStitcher {
     let before = outputHeight
     if position < top {
       // 往上接：去掉画布顶上的吸顶栏，接上新帧露出来的内容连同它的吸顶栏。
-      // 往上滚时新帧顶上 -dy 行是新内容，对上的第一行再往上 -dy 行就是吸顶栏的下沿
-      let header = max(head, match.first + dy)
+      // 新帧顶上露出来的是新内容，重叠部分里对上的第一行往上都算吸顶栏
+      let header = max(head, match.first - match.overlap.lowerBound)
       let trimmed = min(header, position + height - top)
       removeTop(trimmed)
       prependTop(frame, rows: 0..<(top - position))
       lastGrown = .top
     } else if position + height > bottom {
-      let footer = max(tail, height - dy - 1 - match.last)
+      let footer = max(tail, match.overlap.upperBound - 1 - match.last)
       let trimmed = min(footer, bottom - position)
       removeBottom(trimmed)
       appendBottom(frame, rows: (bottom - position)..<height)
@@ -167,9 +193,10 @@ struct ScrollStitcher {
   // MARK: 位移
 
   /// 对上的结果：dy 是位移，b 的第 i 行 = a 的第 i + dy 行（> 0 是内容往上走，即往下滚）；
-  /// first / last 是 b 里对上的第一行、最后一行
+  /// overlap 是 b 里和对照的那边（上一帧，或 relocate 时的画布）有对应行的那段，first / last 是其中对上的第一行、最后一行
   private struct Match {
     let dy: Int
+    let overlap: Range<Int>
     let first: Int
     let last: Int
   }
@@ -196,7 +223,42 @@ struct ScrollStitcher {
       Double(votes) >= minShare * Double(overlap.count)
     else { return nil }
     let matched = overlap.filter { b.hashes[$0] == a.hashes[$0 + dy] }
-    return Match(dy: dy, first: matched.first ?? 0, last: matched.last ?? height - 1)
+    return Match(
+      dy: dy, overlap: max(0, -dy)..<min(height, height - dy), first: matched.first ?? 0,
+      last: matched.last ?? height - 1)
+  }
+
+  /// 和上一帧对不上时，在整张画布里找 b 的位置（投票的规矩同 match；原地没变的行是吸顶栏、页脚，照样不投）。
+  /// 找到的位置可以就是上一帧的位置（dy == 0）：画布上那几行是更早的帧留下的，和上一帧不一样（悬停高亮挪走了）
+  private func relocate(_ b: Frame) -> Match? {
+    let rows = bottom - top
+    let voters = (0..<height).filter { i in
+      !b.solid[i] && b.hashes[i] != reference.hashes[i] && !b.common.contains(b.hashes[i])
+    }
+    let lookup = Dictionary(grouping: voters) { b.hashes[$0] }
+    // 画布第 j 行（从 top 数）和 b 的第 i 行一样：给「b 的第 0 行在画布第 j - i 行」投一票
+    var tally = [Int](repeating: 0, count: rows + height)
+    for j in 0..<rows {
+      for i in lookup[canvasHash(top + j)] ?? [] { tally[j - i + height] += 1 }
+    }
+    guard let peak = tally.indices.max(by: { tally[$0] < tally[$1] }) else { return nil }
+    let votes = tally[peak]
+    let second = tally.indices.lazy.filter { $0 != peak }.map { tally[$0] }.max() ?? 0
+    let offset = peak - height
+    let range = max(0, -offset)..<min(height, rows - offset)
+    let overlap = voters.filter(range.contains)
+    guard votes >= Self.minVotes, votes >= Self.minLead * second,
+      Double(votes) >= Self.relocateShare * Double(overlap.count),
+      Double(votes) >= Self.relocateCover * Double(voters.count)
+    else { return nil }
+    let matched = overlap.filter { b.hashes[$0] == canvasHash(top + offset + $0) }
+    return Match(
+      dy: top + offset - referenceTop, overlap: range, first: matched.first ?? range.lowerBound,
+      last: matched.last ?? range.upperBound - 1)
+  }
+
+  private func canvasHash(_ row: Int) -> Int {
+    row >= anchor ? belowHashes[row - anchor] : aboveHashes[anchor - 1 - row]
   }
 
   // MARK: 画布
@@ -230,6 +292,7 @@ struct ScrollStitcher {
   private mutating func appendBottom(_ frame: Frame, rows: Range<Int>) {
     below.append(
       contentsOf: frame.pixels[(rows.lowerBound * rowBytes)..<(rows.upperBound * rowBytes)])
+    belowHashes.append(contentsOf: frame.hashes[rows])
     bottom += rows.count
   }
 
@@ -237,6 +300,7 @@ struct ScrollStitcher {
   private mutating func prependTop(_ frame: Frame, rows: Range<Int>) {
     for row in rows.reversed() {
       above.append(contentsOf: frame.pixels[(row * rowBytes)..<((row + 1) * rowBytes)])
+      aboveHashes.append(frame.hashes[row])
     }
     top -= rows.count
   }
@@ -244,9 +308,11 @@ struct ScrollStitcher {
   private mutating func removeBottom(_ count: Int) {
     let fromBelow = min(count, below.count / rowBytes)
     below.removeLast(fromBelow * rowBytes)
+    belowHashes.removeLast(fromBelow)
     let rest = count - fromBelow
     if rest > 0 {  // below 已经空了：接着删 above 里挨着 anchor 的行
       above.removeFirst(rest * rowBytes)
+      aboveHashes.removeFirst(rest)
       anchor -= rest
     }
     bottom -= count
@@ -255,9 +321,11 @@ struct ScrollStitcher {
   private mutating func removeTop(_ count: Int) {
     let fromAbove = min(count, above.count / rowBytes)
     above.removeLast(fromAbove * rowBytes)
+    aboveHashes.removeLast(fromAbove)
     let rest = count - fromAbove
     if rest > 0 {  // above 已经空了：接着删 below 开头的行（只在第一次往上接时发生）
       below.removeFirst(rest * rowBytes)
+      belowHashes.removeFirst(rest)
       anchor += rest
     }
     top += count

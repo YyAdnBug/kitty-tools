@@ -130,6 +130,9 @@ final class ScrollCapture {
     panel.orderFrontRegardless()
     panel.makeKey()
     updateStatus()
+    // 第一帧先摆进预览（原来要等拼上第二段才有，开头预览是空的）；预览按自己的大小出图，先布局
+    panel.layoutIfNeeded()
+    refreshPreview(force: true)
     // 任务持有会话，直到结束（finish 清掉 continuation）循环才退出
     loop = Task { await run() }
   }
@@ -163,7 +166,7 @@ final class ScrollCapture {
   private var notice: Status?
   /// 上一次主动播报的话：同一句不反复念
   private var announced: String?
-  private var previewIsStale = false
+  private var previewIsStale = true
   private var lastPreview = ContinuousClock.now - .seconds(1)
 
   private func handle(_ outcome: ScrollStitcher.Outcome) {
@@ -185,7 +188,7 @@ final class ScrollCapture {
     refreshPreview(force: false)
   }
 
-  /// 预览最多每 0.2 秒重画一次（要缩放一大块像素）；没赶上的下一帧补上
+  /// 预览最多每 0.2 秒重画一次（要缩放一大块像素）；没赶上的下一帧补上。一开始就算没画过：start 里先摆上第一帧
   private func refreshPreview(force: Bool) {
     guard previewIsStale, force || ContinuousClock.now - lastPreview > .milliseconds(200) else {
       return
@@ -725,7 +728,8 @@ final class ScrollCaptureHUD: NSView {
     preview.image = NSImage(
       cgImage: image,
       size: CGSize(width: CGFloat(image.width) / scale, height: CGFloat(image.height) / scale))
-    let grown = stitcher.outputHeight - previewedHeight
+    // 第一帧不算新拼上的一段：不滑、不闪
+    let grown = previewedHeight == 0 ? 0 : stitcher.outputHeight - previewedHeight
     previewedHeight = stitcher.outputHeight
     guard grown > 0, !Style.reduceMotion, let layer = preview.layer else { return }
     // 纸带：预览已经撑满时，新内容从长的那头推进来（旧内容先停在原位，再滑过去）

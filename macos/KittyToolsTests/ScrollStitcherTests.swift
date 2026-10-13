@@ -1,7 +1,8 @@
 // 长截图拼接单测：合成一张长「页面」（每行不同的墨点、行间空白），按滚动位置裁出帧，盖上固定的吸顶栏、
 // 带闪烁光标的页脚和随滚动移动的滚动条，喂给 ScrollStitcher，逐字节核对拼出的长图。
 // 覆盖：往下 / 往上拼、页脚光标闪烁（锁住页脚不能估小）、滚太快对不上后往回滚接着拼、画面不动与小变化、
-// 滚到底回弹（单帧、多帧）、往回滚不丢有字的行、长度上限、整页重复行时宁可不接。
+// 滚到底回弹（单帧、多帧）、往回滚不丢有字的行、长度上限、整页重复行时宁可不接、悬停高亮原地变了一块不算对不上、
+// 和上一帧没有重叠时在已拼的画布里重新找到位置。
 
 import CoreGraphics
 import Foundation
@@ -167,6 +168,65 @@ struct ScrollStitcherTests {
     // 往回滚：在已拼范围里，只挪位置
     #expect(stitcher.add(Self.image(Self.frame(at: 250))) == .moved(grown: 50))
     #expect(stitcher.add(Self.image(Self.frame(at: 280))) == .moved(grown: 0))
+  }
+
+  /// 鼠标悬停的高亮：rows 这几行的白底变成浅灰（字还在），像列表里光标下的那一行
+  private static func hovered(_ frame: [UInt8], rows: Range<Int>) -> [UInt8] {
+    var bytes = frame
+    for index in (rows.lowerBound * width * 4)..<(rows.upperBound * width * 4)
+    where bytes[index] == 255 && index % 4 != 3 {
+      bytes[index] = 236
+    }
+    return bytes
+  }
+
+  @Test func hoverHighlightIsNotLost() throws {
+    // 2026-10-13 用户反馈「经常对不上」：在列表上每滚一下停住，光标下那行的高亮就换一次——没滚、原地变了十几二十行
+    // （超过 quietShare），原来报对不上
+    let first = Self.frame(at: 300)
+    var stitcher = try Self.stitcher(first)
+    #expect(stitcher.add(Self.image(Self.hovered(first, rows: 60..<90))) == .unchanged)
+    #expect(stitcher.outputHeight == Self.height)
+    // 带着高亮接着滚，照样接得上
+    let next = Self.frame(at: 340)
+    #expect(stitcher.add(Self.image(Self.hovered(next, rows: 120..<150))) == .moved(grown: 40))
+    // 停住后高亮从一行换到另一行：两处都变了（60 行，三成）
+    #expect(stitcher.add(Self.image(Self.hovered(next, rows: 40..<70))) == .unchanged)
+    // 真滚出一整屏（原地不变的只剩吸顶栏和页脚）还是对不上
+    #expect(stitcher.add(Self.image(Self.frame(at: 900))) == .lost)
+  }
+
+  @Test func relocatesInsideTheCanvas() throws {
+    // 往下拼到 400，一下滚回 100（和上一帧没有重叠）：在已经拼好的画布里找到位置，不报对不上；
+    // 再一下滚到 450（和上一帧还是没有重叠，但压着画布的下沿）：从画布上接着往下拼
+    let first = Self.frame(at: 0)
+    var stitcher = try Self.stitcher(first)
+    for offset in [80, 160, 240, 320, 400] {
+      #expect(stitcher.add(Self.image(Self.frame(at: offset))) == .moved(grown: 80))
+    }
+    #expect(stitcher.add(Self.image(Self.frame(at: 100))) == .moved(grown: 0))
+    #expect(stitcher.add(Self.image(Self.frame(at: 150))) == .moved(grown: 0))
+    let last = Self.frame(at: 450, caret: true)
+    #expect(stitcher.add(Self.image(last)) == .moved(grown: 50))
+    Self.expect(
+      stitcher.makeImage(), top: 0, bottom: 450 + Self.height, topFrame: first, bottomFrame: last)
+    // 从 100 一下滚到只压着画布下沿一小截的地方（能比的行不到这一帧的四分之一）：不接，宁可报对不上；
+    // 往回滚一点、压得多了就接上
+    #expect(stitcher.add(Self.image(Self.frame(at: 100))) == .moved(grown: 0))
+    #expect(stitcher.add(Self.image(Self.frame(at: 570))) == .lost)
+    #expect(stitcher.add(Self.image(Self.frame(at: 520))) == .moved(grown: 70))
+    // 往上翻的那头一样：滚到画布上面一点，从画布顶上接着往上拼（这里拼的是 1500 往上）
+    let bottomFrame = Self.frame(at: 1500)
+    var upward = try Self.stitcher(bottomFrame)
+    for offset in [1420, 1340, 1260] {
+      #expect(upward.add(Self.image(Self.frame(at: offset))) == .moved(grown: 80))
+    }
+    #expect(upward.add(Self.image(Self.frame(at: 1500))) == .moved(grown: 0))
+    let topFrame = Self.frame(at: 1200)
+    #expect(upward.add(Self.image(topFrame)) == .moved(grown: 60))
+    Self.expect(
+      upward.makeImage(), top: 1200, bottom: 1500 + Self.height, topFrame: topFrame,
+      bottomFrame: bottomFrame)
   }
 
   /// 页面到 end 行结束，再往下是越界露出的纯色底
