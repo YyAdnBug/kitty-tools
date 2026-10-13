@@ -2,7 +2,8 @@
 // （mac-whisker §6「工具」）。
 // 坐标存整屏视图坐标（点，原点左下）：调整选区不丢标注（修旧版 #43）。屏幕显示（SelectionView 的标注层）和导出（render）
 // 只走同一个 drawAll，所见即所得；马赛克从冻结帧取像素，所以导出、识字拿到的都是打码后的图（修旧版把原图拿去识字，#44）。
-// 颜色是固定的 sRGB 值，不随深浅色变。除马赛克、聚光灯、荧光笔外都带 black 0.28 / blur 3 的阴影（白色标注在白底上也看得见）。
+// 颜色是固定的 sRGB 值，不随深浅色变。除马赛克、聚光灯、荧光笔外都带 black 0.28 / blur 3 的阴影（白色标注在白底上也看得见）；
+// 矩形、椭圆的阴影是垫在线下面的几圈描边（strokeHalo，样子一样，画起来不随大小变慢）。
 // 每个工具记住自己上次的样式（Style.remembered / remember，存 Prefs.screenshotToolStyles）。
 
 import AppKit
@@ -670,9 +671,10 @@ struct Annotation: Identifiable, Equatable {
   /// 线条外框（连阴影）和裁剪区重叠超过这么大（点²）就切条画。单测改大它，对比切条前后逐像素相同
   static var bandingArea: CGFloat = 250_000
 
-  /// 大的线条沿着骨架切成不重叠的细条、各自裁剪后画：CG 画阴影时按「图形外框 ∩ 裁剪区」开一整块透明层再模糊，
-  /// 2000 × 1100 的空心矩形在 5K 屏上一次十几毫秒，拖出、挪动、改大小时跟不上鼠标；细条只模糊线条附近那一圈
-  /// （阴影按裁剪区外扩模糊半径取内容，条和条之间接得上，结果逐像素相同）。小的、没有骨架的直接画
+  /// 大的箭头、直线、荧光笔沿着骨架切成不重叠的细条、各自裁剪后画：位图上下文里 CG 画阴影时按「图形外框 ∩ 裁剪区」
+  /// 开一整块透明层再模糊，细条只模糊线条附近那一圈（阴影按裁剪区外扩模糊半径取内容，条和条之间接得上，结果逐像素相同）。
+  /// 小的、没有骨架的直接画。矩形、椭圆原来也切，2026-10-13 起不切：屏幕上的标注层里每条都要模糊整个外框，
+  /// 条越多越慢（见 strokeHalo）；箭头、直线在那里切不切差不多（1400 × 900 的斜线一步几毫秒到十毫秒）
   private func banded(in context: CGContext, _ body: () -> Void) {
     let clip = context.boundingBoxOfClipPath
     let overlap = drawBounds.intersection(clip)
@@ -690,24 +692,7 @@ struct Annotation: Identifiable, Equatable {
   /// 线条的骨架（折线）和画出来的东西（连阴影）离骨架最远多少；文字、序号（小）、马赛克、聚光灯（整块都要画）、画笔没有
   private var skeleton: (lines: [[CGPoint]], reach: CGFloat)? {
     let width = style.weight.lineWidth
-    let reach = width / 2 + Self.shadowReach
     switch shape {
-    case .rectangle(let rect):
-      let corners = [
-        CGPoint(x: rect.minX, y: rect.minY), CGPoint(x: rect.maxX, y: rect.minY),
-        CGPoint(x: rect.maxX, y: rect.maxY), CGPoint(x: rect.minX, y: rect.maxY),
-      ]
-      return ([corners + [corners[0]]], reach)
-    case .ellipse(let rect):
-      // 64 边形：弦离弧最多 长半轴 × (1 − cos(π / 64))
-      let sides = 64
-      let points = (0...sides).map { index -> CGPoint in
-        let angle = CGFloat(index) / CGFloat(sides) * 2 * .pi
-        return CGPoint(
-          x: rect.midX + rect.width / 2 * cos(angle), y: rect.midY + rect.height / 2 * sin(angle))
-      }
-      let sag = max(rect.width, rect.height) / 2 * (1 - cos(.pi / CGFloat(sides)))
-      return ([points], reach + sag)
     case .arrow(let from, let to, let bend), .line(let from, let to, let bend):
       // 弯的：沿弧线的折线，再放宽折线离弧线最远的那点（直的是 0）；箭头按箭头的半宽放
       let line = Self.curvePoints(from, to, bend)
@@ -725,7 +710,8 @@ struct Annotation: Identifiable, Equatable {
       return ([[from, to]], style.weight.highlighterHeight / 2 + 1)
     // ponytail: 画笔不切条（笔迹来回拐，一大条要切几百条，每条都要挑一遍附近的线段，反而更慢）；很长的笔迹整条挪动时
     // 还是按外框模糊，要快就给线段按横条分桶再切
-    case .pen, .text, .counter, .mosaic, .spotlight: return nil
+    // 矩形、椭圆不切条：它们的阴影是垫的描边（strokeHalo），本来就只沿着线画
+    case .rectangle, .ellipse, .pen, .text, .counter, .mosaic, .spotlight: return nil
     }
   }
 
@@ -800,7 +786,7 @@ struct Annotation: Identifiable, Equatable {
     switch shape {
     case .rectangle, .ellipse:
       guard let path = boxPath else { return }
-      shadow()
+      Self.strokeHalo(path, width: width, in: context)
       context.setStrokeColor(color.cgColor)
       context.setLineWidth(width)
       context.addPath(path)
@@ -881,6 +867,25 @@ struct Annotation: Identifiable, Equatable {
       drawMosaic(rect, in: context, image: image, viewSize: viewSize)
     case .spotlight:
       break  // 合成一层画，见 drawSpotlights
+    }
+  }
+
+  /// 矩形 / 椭圆的阴影，不用 CG 的阴影画：在线下面垫几圈越来越宽、越来越淡的黑描边，每圈往外 0.5 pt，叠出来就是
+  /// black 0.28 / blur 3 的阴影在线外的衰减（位图上下文里实测的值，2x 下一个像素一档；和真阴影最多差十几级，在圆角处）。
+  /// 屏幕上的标注层画带阴影的路径时，系统要把整个图形的外框模糊一遍（和线有多长无关，只看外框多大），裁剪也不省：
+  /// 1400 × 900 的空心矩形拖一步十几毫秒，按线切成细条各画一遍反而要近 300 毫秒（每条都模糊整个外框），越大越卡。
+  /// 描边不模糊，多大都不到 1 毫秒
+  private static let haloFalloff: [CGFloat] = [0.122, 0.082, 0.055, 0.031, 0.016, 0.004]
+
+  private static func strokeHalo(_ path: CGPath, width: CGFloat, in context: CGContext) {
+    var outer: CGFloat = 0
+    for (index, target) in haloFalloff.enumerated().reversed() {
+      // 外面几圈已经叠到 outer，这一圈叠上去要到 target
+      context.setStrokeColor(gray: 0, alpha: 1 - (1 - target) / (1 - outer))
+      outer = target
+      context.setLineWidth(width + CGFloat(index + 1))
+      context.addPath(path)
+      context.strokePath()
     }
   }
 

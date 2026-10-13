@@ -1153,4 +1153,36 @@ struct SelectionInteractionTests {
     h.key(kVK_ANSI_R, "r")
     #expect(h.session.mode == .record && h.recordBar != nil)
   }
+
+  /// 拖很大的矩形 / 椭圆，标注层每重画一次都要快（2026-10-13 用户反馈「越大越卡」：原来按线切成细条各画一遍阴影，屏幕上的
+  /// 图层里每条都要把整个外框模糊一遍，1100 × 700 拖一步上百毫秒；现在阴影是垫的描边，几毫秒）。要在真的图层里量——
+  /// 位图上下文里切条反而快，量不出来；阈值留了几倍余量
+  @Test(arguments: [Annotation.Tool.rectangle, .ellipse])
+  func draggingAHugeBoxStaysCheap(_ tool: Annotation.Tool) throws {
+    let h = Harness()
+    h.window.orderFront(nil)  // 在屏外；不排进窗口列表图层不画
+    defer { h.window.orderOut(nil) }
+    h.view.selection = h.view.bounds.insetBy(dx: 10, dy: 10)
+    h.view.isAdjusting = true
+    let box = CGRect(x: 40, y: 40, width: 1100, height: 700)
+    let annotation = Annotation(shape: tool == .ellipse ? .ellipse(box) : .rectangle(box))
+    h.view.annotations = [annotation]
+    h.view.selectedAnnotation = annotation.id
+    h.window.displayIfNeeded()
+    CATransaction.flush()
+    let grab = CGPoint(x: box.minX, y: box.midY)
+    h.down(grab)
+    let steps = 8
+    let took = ContinuousClock().measure {
+      for step in 1...steps {
+        h.view.mouseDragged(
+          with: h.event(.leftMouseDragged, CGPoint(x: grab.x + CGFloat(step), y: grab.y)))
+        h.window.displayIfNeeded()
+        CATransaction.flush()
+      }
+    }
+    h.release(CGPoint(x: grab.x + CGFloat(steps), y: grab.y))
+    #expect((h.view.annotations.first?.bounds.minX ?? 0) > box.minX)  // 真的拖动了
+    #expect(took < .milliseconds(30 * steps), "\(took / steps) 一步")
+  }
 }

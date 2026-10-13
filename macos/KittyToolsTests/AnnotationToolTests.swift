@@ -781,9 +781,59 @@ struct AnnotationToolTests {
     #expect(deltas.filter { $0 > 2 }.count < 200, "\(deltas.max() ?? 0)")
   }
 
+  @Test func haloMatchesShadow() throws {
+    // 矩形、椭圆的阴影是垫在线下面的几圈描边（Annotation.strokeHalo，屏幕上不随图形大小变慢），样子要和别的工具用的
+    // black 0.28 / blur 3 阴影一样：2x 位图里和真阴影逐像素比，最多差十几级（圆角处）
+    let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+    let render = { (body: (CGContext) -> Void) -> [UInt8] in
+      let context = CGContext(
+        data: nil, width: 600, height: 440, bitsPerComponent: 8, bytesPerRow: 600 * 4,
+        space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+      context.scaleBy(x: 2, y: 2)
+      body(context)
+      return Array(
+        UnsafeBufferPointer(
+          start: context.data!.bindMemory(to: UInt8.self, capacity: 600 * 440 * 4),
+          count: 600 * 440 * 4))
+    }
+    let base = try #require(
+      CGContext(
+        data: nil, width: 8, height: 8, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)?.makeImage())
+    let box = CGRect(x: 40.3, y: 40.7, width: 200, height: 130)
+    let rounded = CGPath(roundedRect: box, cornerWidth: 3, cornerHeight: 3, transform: nil)
+    let oval = CGPath(ellipseIn: box, transform: nil)
+    let cases: [(Annotation.Shape, CGPath, Annotation.Weight)] = [
+      (.rectangle(box), rounded, .medium), (.ellipse(box), oval, .small),
+      (.ellipse(box), oval, .large),
+    ]
+    for (shape, path, weight) in cases {
+      let style = Annotation.Style(weight: weight)
+      let drawn = render { context in
+        Annotation.drawAll(
+          [Annotation(shape: shape, style: style)], in: context, image: base,
+          viewSize: CGSize(width: 300, height: 220), shadowScale: 2)
+      }
+      let shadowed = render { context in
+        context.setShadow(
+          offset: .zero, blur: 6, color: NSColor.black.withAlphaComponent(0.28).cgColor)
+        context.setStrokeColor(style.color.color.cgColor)
+        context.setLineWidth(weight.lineWidth)
+        context.addPath(path)
+        context.strokePath()
+      }
+      let worst = zip(drawn, shadowed).map { abs(Int($0) - Int($1)) }.max() ?? 0
+      #expect(worst <= 20, "\(shape) \(weight)：差 \(worst)")
+      // 阴影确实画了：线外半点处不是透明的
+      let row = 440 - 1 - Int((box.maxY + weight.lineWidth / 2 + 0.5) * 2)
+      let outside = row * 600 + Int(box.midX * 2)
+      #expect(drawn[outside * 4 + 3] > 10, "\(shape) \(weight)")
+    }
+  }
+
   @Test func bandedDrawingMatchesWholeDraw() throws {
-    // 大的线条切成不重叠的细条各画一遍（Annotation.bands），和整块画一样：矩形、椭圆逐像素；斜线 CG 按裁剪区大小栅格化本来就
-    // 差零点几像素（局部重画也一样），只比墨迹总量——切条漏了一截的话总量会少一大块
+    // 大的箭头、直线、荧光笔切成不重叠的细条各画一遍（Annotation.bands），和整块画一样：斜线 CG 按裁剪区大小栅格化本来就
+    // 差零点几像素（局部重画也一样），只比墨迹总量——切条漏了一截的话总量会少一大块。矩形、椭圆不切条（见 haloMatchesShadow）
     let size = CGSize(width: 1200, height: 800)
     let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
     let bitmap = {
@@ -793,13 +843,6 @@ struct AnnotationToolTests {
     }
     let base = try #require(bitmap()?.makeImage())
     let cases: [(Annotation, exact: Bool)] = [
-      (Annotation(shape: .rectangle(CGRect(x: 100.3, y: 100.7, width: 900, height: 550))), true),
-      (
-        Annotation(
-          shape: .rectangle(CGRect(x: 100, y: 100, width: 900, height: 550)),
-          style: .init(color: .blue, weight: .large, option: 1)), true
-      ),
-      (Annotation(shape: .ellipse(CGRect(x: 100, y: 100, width: 900, height: 550))), true),
       (
         Annotation(
           shape: .arrow(from: CGPoint(x: 100, y: 100), to: CGPoint(x: 1100, y: 700)),
