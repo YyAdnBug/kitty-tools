@@ -1,5 +1,5 @@
 // 设置 › 便签（PLAN §10「便签」F②，排在「录制」后面）。三组：
-// 「便签」——正文的字号（四档单选，全部便签窗口和屏幕边缘的便签共用）；
+// 「便签」——正文的字号（四档单选，全部便签窗口和屏幕边缘的便签共用）、Markdown 样式的开关（默认开）；
 // 「屏幕边缘」（第 3 批）——总开关（关掉一个窗口都不建）、哪条边、放在哪块显示器（只有一块屏时不显示这一行）、样式、
 // 大小、感应范围、一直展开、不显示药丸、悬停预览、悬停即打开、盖在全屏 App 上、打开的便签多大；总开关关着时下面的行停用；
 // 「数据」——打开全部便签窗口的按钮、按键速查，页脚说便签存在哪、怎么备份、删掉的留多久、导出导入在哪。
@@ -13,6 +13,7 @@ struct NotesTab: View {
   /// 接着的显示器的名字（主显示器在前；同名的第二块起加序号，和 NoteDeckScreen.attached 同一个口径）；截图自检传固定的
   var displays: [String] = NoteDeckLayout.uniqueNames(NSScreen.screens.map(\.localizedName))
   @AppStorage(Prefs.notesFontSize) private var fontSize = 15
+  @AppStorage(Prefs.notesMarkdown) private var markdown = true
   @AppStorage(Prefs.notesDeckEnabled) private var deckEnabled = true
   @AppStorage(Prefs.notesDeckEdge) private var deckEdge = NoteDeckOptions.Edge.right
   @AppStorage(Prefs.notesDeckDisplay) private var deckDisplay = NoteDeckOptions.DisplayMode.main
@@ -39,6 +40,11 @@ struct NotesTab: View {
           ForEach(Prefs.notesFontSizeChoices, id: \.self) {
             Text(Self.fontTitles[$0] ?? "\($0)").tag($0)
           }
+        }
+        Toggle(isOn: $markdown) {
+          Text("Markdown 样式")
+          // verbatim：SwiftUI 的 Text 自己会把字面量里的 ** ` [] 当 Markdown 画掉，这里要原样写给人看
+          Text(verbatim: "# 标题、**粗体**、*斜体*、`代码`、[链接](地址) 这些写法直接显示成样式，标记只在光标所在的那一行露出来")
         }
       } header: {
         Text("便签")

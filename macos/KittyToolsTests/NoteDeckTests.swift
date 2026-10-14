@@ -281,7 +281,8 @@ struct NoteDeckTests {
     #expect(height(6) == 92)  // 12 + 60 + 20
     #expect(height(14) == 12 + 140 + 52 && height(15) == 12 + 150 + 56)
     #expect(height(20) == height(15) && height(500) == height(15))
-    #expect(Layout.pillHeight(count: 6, metrics: NoteDeckMetrics(scale: 1.25)) == 119)  // 16 + 78 + 25
+    // 16 + 78 + 25
+    #expect(Layout.pillHeight(count: 6, metrics: NoteDeckMetrics(scale: 1.25)) == 119)
   }
 
   // MARK: 放哪块屏、哪条边
@@ -404,8 +405,8 @@ struct NoteDeckTests {
     #expect(frame.minX == 0 && frame.width == 538)
     options.noteSize = .extraLarge
     options.size = .large
-    #expect(
-      Layout.panelFrame(on: screen, edge: .right, options: options).width == 766)  // 680 + 8 + 38 + 40
+    // 680 + 8 + 38 + 40
+    #expect(Layout.panelFrame(on: screen, edge: .right, options: options).width == 766)
     // 屏幕比它还窄：不超出可见区
     #expect(
       Layout.panelFrame(on: Self.screen(width: 600), edge: .right, options: options).width == 600)

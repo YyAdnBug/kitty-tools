@@ -1,7 +1,8 @@
 // 一条便签的编辑区里共用的三件（全部便签窗口的右栏、屏幕边缘那叠里打开的便签都用它们，不各抄一份）：
 // 标题框（CommandTextField，墨色、上限 Note.maxTitleLength）、正文框（便签专用的编辑器 NoteTextView：墨色、任务、
-// 上限 Note.maxBodyBytes——会超的那一次输入不进）、底下那行小字（改于什么时候、多少字；没存上、正文打到上限时
-// 换成警告）。占位都自己画（墨色淡一档）：系统的占位灰在有颜色的纸上太浅。外面怎么摆（边距、高度）由用的地方定。
+// Markdown 样式（跟设置 › 便签的开关走）、上限 Note.maxBodyBytes——会超的那一次输入不进）、底下那行小字
+// （改于什么时候、多少字；没存上、正文打到上限时换成警告）。占位都自己画（墨色淡一档）：系统的占位灰在有颜色的纸上太浅。
+// 外面怎么摆（边距、高度）由用的地方定。
 // 另有任务进度的小件（NoteProgress：「☑ 2 / 5」，全部便签窗口的列表行、屏幕边缘那叠的悬停预览卡共用）。
 // **写入的闭包由用的地方绑好这条便签的编号**（setTitle / setBody 只给新的字）：换一条便签时旧的输入框还会在视图树里
 // 留一小会儿（淡出），它晚到的那一下——输入法组字到一半失焦时提交的字——得落回它自己那条，不能按「现在开着哪条」写。
@@ -53,12 +54,14 @@ struct NoteBodyField: View {
   /// 这条便签的撤销栈（NoteDeckModel.textUndo / NotesWindowModel.textUndo）：正文里打的字登记在它上面，⌘Z / ⇧⌘Z
   /// 动的也是它
   var undo: UndoManager?
+  /// 设置 › 便签「Markdown 样式」：变了正文整篇重排
+  @AppStorage(Prefs.notesMarkdown) private var markdown = true
 
   var body: some View {
     let paper = NotePaper.of(note)
     NoteTextEditor(
       note: note, fontSize: fontSize, horizontalInset: margin - 5, focusRequest: focusRequest,
-      undo: undo, onChange: setBody, onOverflow: onOverflow, onCancel: onCancel
+      undo: undo, markdown: markdown, onChange: setBody, onOverflow: onOverflow, onCancel: onCancel
     )
     .accessibilityLabel("正文")
     .overlay(alignment: .topLeading) {

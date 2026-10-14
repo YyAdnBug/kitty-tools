@@ -167,6 +167,10 @@ enum Prefs {
     CGFloat(notesFontSizeChoices.contains(stored) ? stored : 15)
   }
 
+  /// 便签正文里的 Markdown 样式（设置 › 便签，默认开；便签第 6 批）：开着时 # 标题、**粗体**、`代码`、[链接](地址)
+  /// 这些写法显示成样式，标记只在光标所在的行露出来；关掉后正文照原样显示（任务不归它管）
+  static let notesMarkdown = "notesMarkdown"
+
   /// 屏幕边缘那叠（设置 › 便签「屏幕边缘」，便签第 3 批）。读它们一律走 NoteDeckOptions(defaults)：不认识的值按默认算。
   /// 总开关（默认开；关掉一个窗口都不建）、哪条边（right 默认 / left；按住 ⌥ 拖药丸也写它）、显示器（main 默认 /
   /// all / chosen = 指定的那一块，是哪块在 notesDeckChosenDisplay）、样式（tabs 带标题的标签，默认 / chips 只有色块）、
@@ -277,6 +281,7 @@ enum Prefs {
       statusScreenHotKeyEntersFirst: false,
       statusScreenAnimations: true,
       notesFontSize: 15,
+      notesMarkdown: true,
       notesDeckEnabled: true,
       notesDeckEdge: NoteDeckOptions.Edge.right.rawValue,
       notesDeckDisplay: NoteDeckOptions.DisplayMode.main.rawValue,

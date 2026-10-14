@@ -1313,7 +1313,9 @@ struct SnapshotProbeTests {
   /// 全部便签窗口——有便签（浅 / 深，各选一条不同纸色的）、最小窗口、还没有便签、搜索无结果、归档是空的、最近删除
   /// （只读）、正文到上限时底下那行警告、带标题栏和工具栏的真窗口（摆在屏外）；8 种纸色两套并排；
   /// 设置 › 便签（浅 / 深）、快捷键页的「便签」一节、速查表（页头的跳转胶囊 5 + 4，和拉长的全表）、
-  /// 启动器里搜「便签」出来的三行
+  /// 启动器里搜「便签」出来的三行；
+  /// 第 6 批 Markdown（notes-window-markdown*、notes-markdown-paper-*）——标记都藏着的（浅 / 深）、光标所在的行
+  /// 露出标记的（正文里的一行、标题那一行、选了几行）、四档字号、开关关掉的、8 种纸色两套各一张小图
   @Test(.enabled(if: directory != nil)) func notes() throws {
     let out = try #require(Self.directory)
     try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
@@ -1383,11 +1385,12 @@ struct SnapshotProbeTests {
     // MARK: 全部便签窗口
     let windowSize = NSSize(width: 940, height: 580)
     func window(
-      _ name: String, _ model: NotesWindowModel, size: NSSize = windowSize, dark: Bool = false
+      _ name: String, _ model: NotesWindowModel, size: NSSize = windowSize, dark: Bool = false,
+      prepare: ((NSView) -> Void)? = nil
     ) throws {
       try snapshot(
-        NotesWindowView(model: model), size: size, dark: dark, to: "\(out)/notes-window-\(name).png"
-      )
+        NotesWindowView(model: model), size: size, dark: dark,
+        to: "\(out)/notes-window-\(name).png", prepare: prepare)
     }
     let model = NotesWindowModel(store: store)
     try window("list", model)
@@ -1443,6 +1446,57 @@ struct SnapshotProbeTests {
       try snapshot(
         NotesWindowView(model: tasksModel).defaultAppStorage(sized), size: windowSize,
         dark: false, to: "\(out)/notes-window-tasks-\(size).png")
+    }
+
+    // 第 6 批：Markdown——标记都藏着的（浅 / 深）、光标所在的行露出标记的（一行、选了几行）、四档字号、
+    // 开关关掉的（原样显示，任务照常）、8 种纸色两套各一张（光标在第一行：露出来的标记、引用的竖线、代码的底）
+    let markdown = try NoteStore(db: Database(path: ":memory:"))
+    let styled = markdown.create(body: Self.markdownSample, now: now.addingTimeInterval(-90))
+    let markdownModel = NotesWindowModel(store: markdown)
+    markdownModel.selection = styled.id
+    let sample = Self.markdownSample as NSString
+    for dark in [false, true] {
+      let suffix = dark ? "-dark" : ""
+      try window("markdown\(suffix)", markdownModel, dark: dark)
+      try window(
+        "markdown-caret\(suffix)", markdownModel, dark: dark,
+        prepare: Self.reveal(NSRange(location: sample.range(of: "粗体").location, length: 0)))
+    }
+    try window(
+      "markdown-selection", markdownModel,
+      prepare: Self.reveal(
+        NSRange(
+          location: sample.range(of: "项目主页").location,
+          length: sample.range(of: "第二行引用").location - sample.range(of: "项目主页").location)))
+    try window("markdown-heading-caret", markdownModel, prepare: Self.reveal(NSRange()))
+    for size in Prefs.notesFontSizeChoices where size != 15 {
+      let suite = "kitty-snapshot-notes-markdown-\(UUID().uuidString)"
+      let sized = try #require(UserDefaults(suiteName: suite))
+      defer { sized.removePersistentDomain(forName: suite) }
+      sized.set(size, forKey: Prefs.notesFontSize)
+      try snapshot(
+        NotesWindowView(model: markdownModel).defaultAppStorage(sized), size: windowSize,
+        dark: false, to: "\(out)/notes-window-markdown-\(size).png")
+    }
+    let plainSuite = "kitty-snapshot-notes-markdown-off-\(UUID().uuidString)"
+    let plain = try #require(UserDefaults(suiteName: plainSuite))
+    defer { plain.removePersistentDomain(forName: plainSuite) }
+    plain.set(false, forKey: Prefs.notesMarkdown)
+    try snapshot(
+      NotesWindowView(model: markdownModel).defaultAppStorage(plain), size: windowSize,
+      dark: false, to: "\(out)/notes-window-markdown-off.png")
+    for (index, paper) in NotePaper.all.enumerated() {
+      var note = Note(
+        id: "纸色\(index)", body: Self.markdownPaperSample, createdAt: now, modifiedAt: now)
+      note.color = index
+      for dark in [false, true] {
+        try snapshot(
+          NoteBodyField(note: note, fontSize: 15, margin: 14, setBody: { _ in }, onOverflow: {})
+            .background(paper.paper),
+          size: NSSize(width: 330, height: 236), dark: dark,
+          to: "\(out)/notes-markdown-paper-\(index)\(dark ? "-dark" : "").png",
+          prepare: Self.reveal(NSRange(location: 4, length: 0)))
+      }
     }
 
     // 带标题栏的真窗口：工具栏只有它有（上面那些是内容区）。摆在屏外，连标题栏一起出图
@@ -1522,10 +1576,12 @@ struct SnapshotProbeTests {
     }
   }
 
-  /// 便签第 3 批「屏幕边缘那叠」（文件名都以 notes-deck- 开头；只跑这一个函数约半分钟）：药丸（1 / 6 / 20 条，左右两边）、
+  /// 便签第 3 批「屏幕边缘那叠」（文件名都以 notes-deck- 开头；只跑这一个函数约一分钟）：药丸（1 / 6 / 20 条，左右两边）、
   /// 扇出的一列（两种样式 × 三档大小、「+N」和它展开后、固定的、长标题和中英混排、鼠标停着的、左边、深色）、预览卡、
   /// 打开的便签（四种大小、浅深、左边、固定、操作菜单和颜色那一级、打到上限、空白的）、设置 › 便签「屏幕边缘」一组
-  /// （总开关开和关、深色、只有一块屏），另有一张全部便签窗口（编辑区抽成共用件之后和第 2 批的图逐像素对）
+  /// （总开关开和关、深色、只有一块屏），另有一张全部便签窗口（编辑区抽成共用件之后和第 2 批的图逐像素对）；
+  /// 第 6 批 Markdown：打开的便签（open-markdown*：标记藏着的 / 光标行露着的，浅深、左边特大）、预览卡和标签上
+  /// 不带标记的标题（preview-markdown）
   @Test(.enabled(if: directory != nil)) func notesDeck() throws {
     let out = try #require(Self.directory)
     try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
@@ -1586,7 +1642,7 @@ struct SnapshotProbeTests {
     func deck(
       _ name: String, _ store: NoteStore, options: NoteDeckOptions = NoteDeckOptions(),
       edge: NoteDeckOptions.Edge = .right, dark: Bool = false, height: CGFloat = 860,
-      setup: (NoteDeckModel) -> Void = { _ in }
+      setup: (NoteDeckModel) -> Void = { _ in }, prepare: ((NSView) -> Void)? = nil
     ) throws {
       let screen = NoteDeckScreen(
         name: "", frame: CGRect(x: 0, y: 0, width: 1440, height: height + 25),
@@ -1604,7 +1660,7 @@ struct SnapshotProbeTests {
       setup(model)
       try snapshot(
         NoteDeckView(model: model).background(Color(white: dark ? 0.22 : 0.80)),
-        size: frame.size, dark: dark, to: "\(out)/notes-deck-\(name).png")
+        size: frame.size, dark: dark, to: "\(out)/notes-deck-\(name).png", prepare: prepare)
     }
     let (store, ids) = try library(six)
     store.setPinned(true, of: ids[1])
@@ -1741,6 +1797,28 @@ struct SnapshotProbeTests {
     }
     try deck("preview-tasks", todo.store) { $0.setPreview(todo.ids[0]) }
     try deck("preview-tasks-done-dark", todo.store, dark: true) { $0.setPreview(todo.ids[1]) }
+
+    // 第 6 批：打开的便签里的 Markdown——标记都藏着的（刚打开、还没当 key 的样子；浅 / 深、左边、特大）、
+    // 光标所在的行露出标记的；标签和预览卡上的标题、摘要不带标记
+    let written = try library([
+      ("", Self.markdownSample, 60), ("", "**粗体的** 第一行 `code`\n- [链接](https://a.b) 的字", 120),
+    ])
+    for dark in [false, true] {
+      let suffix = dark ? "-dark" : ""
+      try deck("open-markdown\(suffix)", written.store, dark: dark) { $0.tapTab(written.ids[0]) }
+      try deck(
+        "open-markdown-caret\(suffix)", written.store, dark: dark,
+        setup: { $0.tapTab(written.ids[0]) },
+        prepare: Self.reveal(
+          NSRange(
+            location: (Self.markdownSample as NSString).range(of: "粗体").location, length: 0)))
+    }
+    var roomy = NoteDeckOptions()
+    roomy.noteSize = .extraLarge
+    try deck("open-markdown-xl-left", written.store, options: roomy, edge: .left) {
+      $0.tapTab(written.ids[0])
+    }
+    try deck("preview-markdown", written.store) { $0.setPreview(written.ids[1]) }
 
     // 「标签倾斜」（2026-10-13）：右边 / 左边、标签 / 色块、三档大小、深色、鼠标停着、拖着、打开一条时（那张立正、
     // 便签不斜）、「+N」和它展开后在视口里滚、一条的时候；贴屏幕边那一侧不露楔形的缝
@@ -2847,6 +2925,45 @@ struct SnapshotProbeTests {
         .defaultAppStorage(backupPrefs),
         size: NSSize(width: 460, height: 670), dark: dark,
         to: "\(out)/settings-transfer-restore\(dark ? "-dark" : "").png")
+    }
+  }
+
+  /// 便签第 6 批的样例：各种 Markdown 的写法、和任务叠着的、不该变样的
+  private static let markdownSample = """
+    # 周会纪要
+    ## 要点：**重点**和 `code`
+    正文里有 **粗体**、*斜体*、~~删掉的~~、`行内代码` 和 ***又粗又斜***，snake_case_name 和 2 * 3 * 4 不变样。
+    链接：[项目主页](https://example.com/kitty) 和 [本地文件](file:///tmp/a)，图片 ![图](a.png) 原样。
+    > 引用的一段话，长一点看折行之后左边的竖线和缩进对不对，再长一点再长一点再长一点。
+    > 第二行引用里的 *斜体*
+    - 无序列表 **粗**
+    - 第二项 `code`
+    ☐ 任务里的 **粗体** 和 [链接](https://example.com)
+    ☑ 做完的 **粗体**、`代码` 和 [链接](https://example.com)
+    ### 三级标题
+    #### 四级标题 Heading
+    ##### 五级标题
+    普通的一行收尾，\\*转义的星号\\* 照常显示。
+    """
+
+  /// 每种纸色各看一眼的短样例（光标在第一行：露出来的标记有多淡；引用里带一段代码：它用墨色）
+  private static let markdownPaperSample = """
+    ## 标题 **粗** *斜*
+    正文 **粗体** *斜体* ~~删除~~ `code` [链接](https://a.b)
+    > 引用的话 `code`
+    - 列表项
+    ☑ 做完的 **粗**
+    ☐ 没做完的 `code`
+    """
+
+  /// 把图里的正文框摆成「拿着焦点、窗口是 key、选区在 selection」的样子：选区碰到的行露出 Markdown 的标记。
+  /// 屏外的窗口不真的当 key：直接告诉编辑器（NoteTextView.keyChanged）
+  private static func reveal(_ selection: NSRange) -> (NSView) -> Void {
+    { root in
+      guard let editor = NotesWindow.editor(in: root) else { return }
+      editor.window?.makeFirstResponder(editor)
+      editor.keyChanged(true)
+      editor.setSelectedRange(selection)
     }
   }
 

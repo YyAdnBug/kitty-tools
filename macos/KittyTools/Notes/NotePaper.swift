@@ -24,6 +24,13 @@ nonisolated struct NotePaper: Equatable, Sendable {
   static let secondaryOpacity = 0.75
   /// 做完的任务的字用墨的这么多（划了线的、已经不用看的字，有意淡下去）；增强对比度时回到 secondaryOpacity
   static let doneOpacity = 0.5
+  /// 正文里露出来的 Markdown 标记（光标所在行的 # ** ` 这些）用墨的这么多——和占位同一档；增强对比度时
+  /// markerContrastOpacity
+  static let markerOpacity = 0.35
+  static let markerContrastOpacity = 0.6
+  /// 行内代码的底：墨的这么多。增强对比度时**不加深**：加到 16% 的话深色那 8 套纸上墨对底都不到 7:1，代码反而更难认
+  /// （8% 时 16 套都够，NotesWindowTests 锁住）
+  static let codeFillOpacity = 0.08
   /// 打开的便签带着的那张标签：纸上叠这么浓的色条色（比纸深一档；墨在上面仍够 4.5:1，NoteDeckTests 锁住）
   static let tabTint = 0.16
 
@@ -66,6 +73,25 @@ nonisolated struct NotePaper: Equatable, Sendable {
     Self.dynamic(light.ink, dark.ink, alpha: Self.doneOpacity, contrastAlpha: Self.secondaryOpacity)
   }
 
+  /// 正文里的 Markdown（AppKit 侧，正文编辑器用）：引用的字是次要的墨（增强对比度时就是墨）、露出来的标记、
+  /// 行内代码的底、引用左边的竖线
+  var secondaryInkColor: NSColor {
+    Self.dynamic(light.ink, dark.ink, alpha: Self.secondaryOpacity)
+  }
+  var markerInkColor: NSColor {
+    Self.dynamic(
+      light.ink, dark.ink, alpha: Self.markerOpacity, contrastAlpha: Self.markerContrastOpacity)
+  }
+  var codeFillColor: NSColor {
+    Self.dynamic(
+      light.ink, dark.ink, alpha: Self.codeFillOpacity, contrastAlpha: Self.codeFillOpacity)
+  }
+  /// 引用左边的竖线：色条色；增强对比度时用墨色——那时引用的字回到了墨色，色条在浅纸上又淡（柠檬浅纸上对纸只有
+  /// 1.68:1），只剩缩进不好认
+  var quoteBarColor: NSColor {
+    Self.dynamic(light.strip, dark.strip, contrast: (light.ink, dark.ink))
+  }
+
   var paper: Color { Color(nsColor: paperColor) }
   var strip: Color { Color(nsColor: stripColor) }
   var ink: Color { Color(nsColor: inkColor) }
@@ -78,21 +104,21 @@ nonisolated struct NotePaper: Equatable, Sendable {
   /// 永远深色的底上用的色条色（屏幕边缘的药丸是 HUD 皮肤，不跟外观变）：取深色那套里提亮过的色条
   var brightStrip: NSColor { srgb(dark.strip) }
 
-  /// 取色闭包由 AppKit 在解析颜色的线程上调（mac-native §3）：只读传进来的几个数。
-  /// alpha：不透明度；contrastAlpha：增强对比度的外观下用的不透明度
+  /// 取色闭包由 AppKit 在解析颜色的线程上调（mac-native §3）：只读传进来的几个数和线程安全的系统开关。
+  /// alpha：不透明度；contrastAlpha：增强对比度的外观下用的不透明度；contrast：增强对比度的外观下换用的那一对颜色
+  /// （nil = 不换）
   private static func dynamic(
-    _ light: Int, _ dark: Int, alpha: Double = 1, contrastAlpha: Double = 1
+    _ light: Int, _ dark: Int, alpha: Double = 1, contrastAlpha: Double = 1,
+    contrast: (light: Int, dark: Int)? = nil
   ) -> NSColor {
     NSColor(name: nil) { appearance in
       let isDark =
         appearance.bestMatch(from: [.darkAqua, .vibrantDark, .accessibilityHighContrastDarkAqua])
         != nil
-      let isHighContrast =
-        appearance.bestMatch(from: [
-          .aqua, .darkAqua, .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua,
-        ]).map { $0 == .accessibilityHighContrastAqua || $0 == .accessibilityHighContrastDarkAqua }
-        ?? false
-      let color = srgb(isDark ? dark : light)
+      // 高对比外观按名字匹配不到（NSAppearance 会归到普通外观），直接读系统开关；开关一变系统会重画（同 Style.dynamic）
+      let isHighContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+      let tone: (light: Int, dark: Int) = isHighContrast ? contrast ?? (light, dark) : (light, dark)
+      let color = srgb(isDark ? tone.dark : tone.light)
       let opacity = isHighContrast ? contrastAlpha : alpha
       return opacity < 1 ? color.withAlphaComponent(opacity) : color
     }

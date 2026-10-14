@@ -356,7 +356,7 @@ struct ShortcutsSheet: View {
       // 屏幕边缘那叠里打开的便签（第 3 批）：⌘ 组合在 NoteDeckModel.handleKeyEquivalent，Esc 是面板的 cancelOperation（cancel），
       // 操作菜单开着时的方向键在 handleMenuKey。⌘⌫ 不写：在标题、正文里它就是输入框的删到行首。
       // 第 5 批：⌘T 任务、⌘F 便签内查找（同一处）；⌘Z / ⇧⌘Z 是面板直接动焦点所在输入框的撤销栈（OverlayPanel.undoRedo）；
-      // 回车续行、Tab 缩进在正文编辑器里（NoteTextView.doCommand）
+      // 回车续行、Tab 缩进在正文编辑器里（NoteTextView.doCommand）。第 6 批：⌘ 点链接（NoteTextView.linkToOpen）
       Group(
         title: "便签 · 屏幕边缘", symbol: "sidebar.right", color: Style.Family.notes,
         entries: [
@@ -369,6 +369,7 @@ struct ShortcutsSheet: View {
           Entry("↩", "Tab", text: "正文里：任务行、列表行回车接着下一条，空的那条上回车退出列表；Tab / ⇧Tab 缩进、退回"),
           Entry("⌘F", text: "在这条便签里查找（Esc 先关查找条，再按才关便签）"),
           Entry("⌘Z", "⇧⌘Z", text: "撤销 / 重做打的字（勾任务、回车接出来的下一条也能撤）"),
+          Entry("⌘", text: "按住它点正文里的链接：打开（网址和邮件地址；不按 ⌘ 是放光标）"),
           Entry("⌥", text: "按住它拖边上的药丸：换边、换高度"),
         ]),
       // 全部便签窗口里的键：NotesWindowView.shortcuts（看不见的按钮上挂着），动作在 NotesWindowModel；
@@ -382,6 +383,7 @@ struct ShortcutsSheet: View {
           Entry("⌘⌫", text: "焦点在列表上时：删除选中的便签，进「最近删除」（⌫ 也行；在最近删除里是永久删除，要确认）。光标在标题、正文里时是删到行首"),
           Entry("⌘Z", text: "放回刚删的便签（连着删了几条就一条条放回；光标在正文、标题、搜索框里时先撤销那里打的字）"),
           Entry("⇧⌘Z", text: "重做刚撤销的打字"),
+          Entry("⌘", text: "按住它点正文里的链接：打开（网址和邮件地址；不按 ⌘ 是放光标）"),
           Entry("⇧⌘A", text: "归档 / 取消归档"),
           Entry("⌘P", text: "固定 / 取消固定"),
           Entry("⌘.", text: "换成下一种纸色"),

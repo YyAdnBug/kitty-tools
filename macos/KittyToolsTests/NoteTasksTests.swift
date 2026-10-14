@@ -250,20 +250,22 @@ struct NoteTasksTests {
 
   // MARK: 样式
 
+  /// 任务的样式（Markdown 关着时一行的全部样式；开着时多出来的在 NoteMarkdownTests）
   @Test func spansOfALine() {
     typealias Span = NoteStyles.Span
+    func spans(_ line: String) -> [Span] { NoteStyles.spans(in: line, markdown: false) }
     // 没做完的：只有方框那一个字
-    #expect(NoteStyles.spans(in: "☐ 周报") == [Span(range: range(0, 1), kind: .box)])
+    #expect(spans("☐ 周报") == [Span(range: range(0, 1), kind: .box)])
     // 做完的：方框 + 内容（划线、变淡），缩进不算
     #expect(
-      NoteStyles.spans(in: "  ☑ 订会议室 🙂")
+      spans("  ☑ 订会议室 🙂")
         == [Span(range: range(2, 1), kind: .box), Span(range: range(4, 7), kind: .done)])
     // 做完的空任务没有内容
-    #expect(NoteStyles.spans(in: "☑ ") == [Span(range: range(0, 1), kind: .box)])
-    #expect(NoteStyles.spans(in: "☑") == [Span(range: range(0, 1), kind: .box)])
+    #expect(spans("☑ ") == [Span(range: range(0, 1), kind: .box)])
+    #expect(spans("☑") == [Span(range: range(0, 1), kind: .box)])
     // 不是任务的行没有样式
-    #expect(NoteStyles.spans(in: "普通的一行").isEmpty && NoteStyles.spans(in: "- 列表").isEmpty)
-    #expect(NoteStyles.spans(in: "记得 ☑ 不算").isEmpty && NoteStyles.spans(in: "").isEmpty)
+    #expect(spans("普通的一行").isEmpty && spans("- 列表").isEmpty)
+    #expect(spans("记得 ☑ 不算").isEmpty && spans("").isEmpty)
   }
 
   @Test func dirtyLinesCoverTheEdit() {

@@ -1,4 +1,5 @@
-// 便签的模型（便签库 notes 表的一行）和两条显示用的纯函数：标题（displayTitle）、列表里的一行摘要（preview）。
+// 便签的模型（便签库 notes 表的一行）和两条显示用的纯函数：标题（displayTitle）、列表里的一行摘要（preview）——
+// 两样都不带正文里的符号（标题的 #、任务的方框、Markdown 的标记）。
 // 便签管「留着看、接着改」的东西（PLAN §10「便签」）；库、落盘、搜索、导入导出在 NoteStore，每日备份和打不开时的恢复在
 // NotesBackup。
 // 为以后的同步先留好的三样（这一版不同步）：稳定的编号（UUID 字符串，建了就不变，导出文件里带着）、修订号（任何字段变
@@ -93,8 +94,8 @@ nonisolated struct Note: Identifiable, Equatable, Sendable {
 
   // MARK: 显示
 
-  /// 显示用的标题：自己起的标题；没起就是正文第一个有内容的行（去掉行首的 # 和任务符号），超过 titleLength 个字截断加「…」；
-  /// 都没有就是「未命名便签」
+  /// 显示用的标题：自己起的标题；没起就是正文第一个有内容的行（去掉行首的 #、任务符号和 Markdown 的标记），
+  /// 超过 titleLength 个字截断加「…」；都没有就是「未命名便签」
   var displayTitle: String {
     let own = title.trimmingCharacters(in: .whitespacesAndNewlines)
     if !own.isEmpty { return own }
@@ -129,19 +130,38 @@ nonisolated struct Note: Identifiable, Equatable, Sendable {
     return lines
   }
 
-  /// 一行去掉两头的空白、行首的标题标记（一到六个 # 后面跟空白；「#标签」不算）和任务符号（☐ ☑）。
-  /// 只管显示时不把符号带出来，所以比任务的规则（NoteTasks：方框后面要跟空格）宽：行首是方框就去掉
+  /// 一行去掉两头的空白、行首的标题标记（一到六个 # 后面跟空白；「#标签」不算）和任务符号（☐ ☑，还有贴进来没转成
+  /// 方框的「- [ ] 」「- [x] 」），再去掉 Markdown 的标记（NoteMarkdown.plain，和正文编辑器同一个扫描器：`**粗**` → 粗、
+  /// `[字](地址)` → 字；不是标题、不是任务的行连行首引用的 `>`、无序列表的符号一起去）。只管显示时不把符号带出来：
+  /// 不看设置里的 Markdown 开关（标签上露着 `**` 没有意义），行首那两样也比编辑器的规则宽（方框后面不用跟空格、
+  /// 只有 # 的行算空的）
   private static func clean(_ raw: String) -> String {
     var line = raw.drop(while: \.isWhitespace)
+    // 去过标题标记 / 方框的行，剩下的是内容：里面只去行内的标记
+    var isContent = false
     let hashes = line.prefix { $0 == "#" }.count
     if (1...6).contains(hashes), line.dropFirst(hashes).first?.isWhitespace ?? true {
       line = line.dropFirst(hashes).drop(while: \.isWhitespace)
+      isContent = true
     }
     if let first = line.first, first == "☐" || first == "☑" {
       line = line.dropFirst().drop(while: \.isWhitespace)
+      isContent = true
+    } else if !isContent {
+      // 贴进来没转成方框的「- [ ] 」「- [x] 」（哪些写法算，问 NoteTasks：它认的就是这 5 个字加空格或行尾）
+      let head = String(line.prefix(6))
+      if NoteTasks.body(fromMarkdown: head) != head {
+        line = line.dropFirst(5).drop(while: \.isWhitespace)
+        isContent = true
+      }
     }
-    return line.trimmingCharacters(in: .whitespaces)
+    // 标题、摘要只要开头的一百来个字：很长的一行（一整段没有换行的正文）不整行扫
+    return NoteMarkdown.plain(String(line.prefix(scanLimit)), blocks: !isContent)
+      .trimmingCharacters(in: .whitespaces)
   }
+
+  /// 去标记时一行最多看这么多个字（比标题、摘要要的多得多；够放下一个带长地址的链接）
+  private static let scanLimit = 4096
 
   private static func clipped(_ text: String, to length: Int) -> String {
     text.count > length ? text.prefix(length) + "…" : text

@@ -60,7 +60,8 @@ nonisolated enum NoteTasks {
   /// 这一行（不含行尾的换行）开头的列表标记；不是列表行给 nil
   static func prefix(of line: String) -> Prefix? { prefix(of: Array(line.utf16)) }
 
-  private static func prefix(of units: [UInt16]) -> Prefix? {
+  /// 同上，给已经拆成 UTF-16 的一行（样式那边一行只拆一次）
+  static func prefix(of units: [UInt16]) -> Prefix? {
     let indent = units.prefix { $0 == space || $0 == tab }.count
     guard indent < units.count else { return nil }
     let first = units[indent]

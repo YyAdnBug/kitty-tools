@@ -599,7 +599,7 @@ struct ScreenshotSnapshotTests {
         overlays.append(made)
       }
       try shoot(offscreen(root), "record-clicks" + suffix)
-      overlays.forEach { $0.close() }
+      for overlay in overlays { overlay.close() }
     }
     Accent.shared.select(savedAccent, persists: false)
 

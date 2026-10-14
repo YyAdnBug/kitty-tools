@@ -393,13 +393,34 @@ struct NotesWindowTests {
 
   // MARK: 纸色
 
-  /// 8 种纸色、名字不重；浅色那套是说明里给的值；两套的墨对纸、次要的字对纸都够 4.5:1；深色那套的色条还是同一个色相
+  /// 8 种纸色、名字不重；浅色那套是说明里给的值；两套的墨对纸、次要的字对纸都够 4.5:1；深色那套的色条还是同一个色相。
+  /// 正文里的 Markdown 用的几种色（第 6 批）：墨压在行内代码的底上够 7:1（16 套都是）；平时两种外观下各取的是哪一档；
+  /// 露出来的标记增强对比度那档比平时深。**增强对比度那一档取不取得到这里验不了**：系统开关关着时按名字造出来的
+  /// 高对比外观就是普通外观（实测 macOS 15.7），要真机开着开关看（HANDTEST「便签手测」）
   @Test func paperTable() {
     let papers = NotePaper.all
     #expect(papers.count == Note.colorCount && Set(papers.map(\.name)).count == papers.count)
     #expect(papers.map(\.name) == ["柠檬", "桃", "玫瑰", "丁香", "天蓝", "薄荷", "沙", "石板"])
     #expect(papers[0].light == .init(paper: 0xFCE795, strip: 0xE0AD08, ink: 0x3A3008))
     #expect(papers[7].light == .init(paper: 0xCBD6E2, strip: 0x4E6579, ink: 0x1A242E))
+    // 增强对比度那档的标记比平时深；这几个数就是下面按外观核对的那几档
+    #expect(NotePaper.markerContrastOpacity > NotePaper.markerOpacity)
+    #expect(NotePaper.markerOpacity == 0.35 && NotePaper.markerContrastOpacity == 0.6)
+    #expect(NotePaper.codeFillOpacity == 0.08 && NotePaper.secondaryOpacity == 0.75)
+    /// 动态色在这个外观下取到的：[0xRRGGBB, 不透明度的百分数]
+    func resolved(_ color: NSColor, _ appearance: NSAppearance.Name) -> [Int] {
+      var parts: [Int] = []
+      NSAppearance(named: appearance)?.performAsCurrentDrawingAppearance {
+        guard let rgb = color.usingColorSpace(.sRGB) else { return }
+        let channel = { (value: CGFloat) in Int((value * 255).rounded()) }
+        parts = [
+          channel(rgb.redComponent) << 16 | channel(rgb.greenComponent) << 8
+            | channel(rgb.blueComponent),
+          Int((rgb.alphaComponent * 100).rounded()),
+        ]
+      }
+      return parts
+    }
     let mix = { (ink: Int, paper: Int, opacity: Double) -> NSColor in
       let (a, b) = (srgb(ink), srgb(paper))
       let channel = { (x: CGFloat, y: CGFloat) in x * opacity + y * (1 - opacity) }
@@ -419,6 +440,18 @@ struct NotesWindowTests {
         #expect(
           AccentPalette.contrast(srgb(tone.strip), srgb(tone.paper)) >= 1.5,
           "\(paper.name) \(name) 色条")
+        // 行内代码：墨压在代码的底（纸上叠一层墨）上
+        let fill = mix(tone.ink, tone.paper, NotePaper.codeFillOpacity)
+        #expect(AccentPalette.contrast(srgb(tone.ink), fill) >= 7, "\(paper.name) \(name) 代码")
+      }
+      // 平时（没开增强对比度）两种外观下取到的：代码的底是墨的 8%、标记是墨的 35%、引用的竖线是色条色、
+      // 引用的字是墨的 75%
+      for (appearance, tone) in [(NSAppearance.Name.aqua, paper.light), (.darkAqua, paper.dark)] {
+        let label = "\(paper.name) \(appearance.rawValue)"
+        #expect(resolved(paper.codeFillColor, appearance) == [tone.ink, 8], "\(label) 代码的底")
+        #expect(resolved(paper.markerInkColor, appearance) == [tone.ink, 35], "\(label) 标记")
+        #expect(resolved(paper.quoteBarColor, appearance) == [tone.strip, 100], "\(label) 竖线")
+        #expect(resolved(paper.secondaryInkColor, appearance) == [tone.ink, 75], "\(label) 引用")
       }
       // 深色外观下纸是深的、字是浅的
       #expect(AccentPalette.luminance(srgb(paper.dark.paper)) < 0.08, "\(paper.name)")

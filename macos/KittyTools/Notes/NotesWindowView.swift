@@ -387,7 +387,8 @@ private struct NoteEditor: View {
   }
 
   /// 最近删除里的：标题和正文只读、能选中复制。
-  /// ponytail: 正文整段交给一个 Text（1 MB 的正文排起来慢）；删掉的便签只是看一眼、放回再改，卡了再换成只读的文本框
+  /// ponytail: 正文整段交给一个 Text（1 MB 的正文排起来慢），不带任务 / Markdown 的样式（看到的是带标记的原文）；
+  /// 删掉的便签只是看一眼、放回再改，卡了、或者要和编辑时长得一样，再换成只读的文本框（NoteTextView 认 isEditable）
   private func readOnly(_ paper: NotePaper) -> some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 10) {
