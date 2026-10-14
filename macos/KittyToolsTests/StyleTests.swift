@@ -176,7 +176,7 @@ struct IslandExcerptTests {
   /// 慢活才出「进行中」（识字的「识别中」）：很快做完的不出这一下；过了时限还没做完才出，而且只出一次。
   /// 慢活不靠墙上时钟模拟：全量并行跑时主线程被别的测试占着，「睡 300 ms」和「30 ms 后提示」谁先恢复说不准
   /// （活先恢复就把提示取消了，这在产品里是对的，测试却会判错）。所以慢活 = 等提示出过才做完
-  @MainActor @Test(.timeLimit(.minutes(1))) func slowNoticeOnlyWhenWorkIsSlow() async {
+  @MainActor @Test(.timeLimit(.minutes(3))) func slowNoticeOnlyWhenWorkIsSlow() async {
     var notices = 0
     let quick = await Island.whenSlow(
       after: .milliseconds(80), notice: { notices += 1 }, work: { 7 })

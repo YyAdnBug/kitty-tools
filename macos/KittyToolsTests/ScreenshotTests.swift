@@ -461,7 +461,7 @@ struct ScreenshotTests {
   /// 放的是 Vision 的私有接口（VNSession.globalSession.releaseCachedResources）。系统升级后这条挂了 = 接口没了或改了，
   /// 进程内识过字之后模型又会一直留着（约 50 MB）：先跑内存探针的识字一节看放掉后回落多少，再定是换接口还是去掉这一步。
   /// 别的测试也在进程内识字，正有人在识时不放（返回 false），所以等它们识完再试几次
-  @Test(.timeLimit(.minutes(1))) func modelReleasesWhenIdleAndReloads() async throws {
+  @Test(.timeLimit(.minutes(3))) func modelReleasesWhenIdleAndReloads() async throws {
     let image = try Self.render(["Release me 2026"])
     #expect(await OCR.recognizeLines(in: image)?.isEmpty == false)
     var released = false

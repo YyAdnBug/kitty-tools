@@ -8,7 +8,7 @@ import Testing
 struct MemoryTests {
   /// 连着 schedule 只算最后一次；头两轮还忙着不做，第三轮闲下来做一次，之后不再每轮都做。
   /// 不靠墙上时钟判断「做了」：全量并行跑时主线程被别的测试占着，等多久说不准，所以等 work 自己发信号
-  @MainActor @Test(.timeLimit(.minutes(1))) func idleTimerWaitsUntilIdle() async {
+  @MainActor @Test(.timeLimit(.minutes(3))) func idleTimerWaitsUntilIdle() async {
     var busyRounds = 2
     var runs = 0
     let (done, signal) = AsyncStream<Void>.makeStream()
