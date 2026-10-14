@@ -527,9 +527,10 @@ struct NotesWindowTests {
     #expect(
       group.globals == [.noteCapture, .noteNew, .noteAll] && group.color == Style.Family.notes)
     let titles = ShortcutsSheet.groups.map(\.title)
-    // 第 3 批在中间加了「屏幕边缘」一组
+    // 第 3 批在中间加了「屏幕边缘」一组，第 4 批在它后面加了「浮在屏幕上」一小组
     #expect(titles.firstIndex(of: "便签")! + 1 == titles.firstIndex(of: "便签 · 屏幕边缘")!)
-    #expect(titles.firstIndex(of: "便签 · 屏幕边缘")! + 1 == titles.firstIndex(of: "便签 · 全部便签")!)
+    #expect(titles.firstIndex(of: "便签 · 屏幕边缘")! + 1 == titles.firstIndex(of: "便签 · 浮在屏幕上")!)
+    #expect(titles.firstIndex(of: "便签 · 浮在屏幕上")! + 1 == titles.firstIndex(of: "便签 · 全部便签")!)
     #expect(titles.firstIndex(of: "便签 · 全部便签")! + 1 == titles.firstIndex(of: "状态屏")!)
     let keys = Set(
       ShortcutsSheet.groups.filter { $0.title.hasPrefix("便签") }.flatMap(\.entries).flatMap(\.keys))
@@ -626,7 +627,9 @@ struct NotesWindowTests {
     }
     settle()
     #expect(
-      window.toolbar?.items.map(\.label) == ["固定", "归档", "任务", "颜色", "删除", "新建便签"])
+      window.toolbar?.items.map(\.label) == [
+        "固定", "归档", "任务", "颜色", "浮在屏幕上", "删除", "新建便签",
+      ])
     #expect(model.selection == ids[0])
 
     #expect(try press("p", kVK_ANSI_P) && store.note(ids[0])?.isPinned == true)
@@ -823,8 +826,8 @@ struct NotesWindowTests {
     let (model, store, ids) = try make(["一条", "另一条"])
     store.setColor(3, of: ids[0])
     let menu = NSMenu.of(model.rowItems(try #require(store.note(ids[0]))))
-    #expect(menu.items.map(\.title) == ["固定", "归档", "颜色", "", "删除"])
-    #expect(menu.items[3].isSeparatorItem && menu.items.allSatisfy { $0.image == nil })
+    #expect(menu.items.map(\.title) == ["固定", "归档", "颜色", "浮在屏幕上", "", "删除"])
+    #expect(menu.items[4].isSeparatorItem && menu.items.allSatisfy { $0.image == nil })
     expectColorDots(try #require(menu.items[2].submenu), current: 3)
     // 点里面的一项：换色；固定、归档、删除照做
     menu.items[2].submenu?.performActionForItem(at: 6)
@@ -836,6 +839,7 @@ struct NotesWindowTests {
     pinned.performActionForItem(at: 1)
     #expect(store.note(ids[0])?.isArchived == true)
     let archived = NSMenu.of(model.rowItems(try #require(store.note(ids[0]))))
+    // 归档里的不能浮着：没有那一项
     #expect(archived.items.map(\.title) == ["取消固定", "取消归档", "颜色", "", "删除"])
     archived.performActionForItem(at: 4)
     let trashed = NSMenu.of(model.rowItems(try #require(store.note(ids[0]))))
@@ -878,7 +882,7 @@ struct NotesWindowTests {
     source.isMenuClick = { true }
     #expect(host.hitTest(point) === source)
     let menu = try #require(source.menu(for: mouse(.rightMouseDown)))
-    #expect(menu.items.map(\.title) == ["固定", "归档", "颜色", "", "删除"])
+    #expect(menu.items.map(\.title) == ["固定", "归档", "颜色", "浮在屏幕上", "", "删除"])
     expectColorDots(try #require(menu.items[2].submenu), current: note.color)
   }
 

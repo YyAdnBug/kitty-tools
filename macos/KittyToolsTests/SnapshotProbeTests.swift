@@ -1891,6 +1891,153 @@ struct SnapshotProbeTests {
       dark: false, to: "\(out)/notes-deck-window-check.png")
   }
 
+  /// 便签第 4 批「浮动便签」（文件名都以 notes-float- 开头；只跑这一个函数约半分钟）：浮动便签本身——和那叠里打开的
+  /// 便签是同一个视图（NoteSheet），所以这里看的是它铺满一扇窗口时的样子：浅深、固定 / 没固定、8 种纸色两套（都在
+  /// 最小尺寸上）、拉大、标签在右边（那叠在左边缘时）、标签宽一档、操作菜单和颜色那一级（平时的大小、最小尺寸时在
+  /// 菜单里滚）、屏幕边缘没有那叠时菜单里那一项的名字、带任务和 Markdown 的、空白的；那叠里浮着那条的标签上的记号、
+  /// 被拖出去的那一刻那叠的样子；设置 › 便签页脚的那句话。
+  /// 浮动便签是单独的窗口，阴影是系统画的（图里没有）：出图时四周垫一圈灰底，看得见圆角和描边
+  @Test(.enabled(if: directory != nil)) func notesFloat() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    Prefs.registerDefaults()
+    let now = Date.now
+    typealias Entry = (title: String, body: String, ago: TimeInterval)
+    func library(_ entries: [Entry]) throws -> (store: NoteStore, ids: [String]) {
+      let store = try NoteStore(db: Database(path: ":memory:"))
+      for entry in entries.reversed() {
+        store.create(body: entry.body, title: entry.title, now: now.addingTimeInterval(-entry.ago))
+      }
+      return (store, store.active.map(\.id))
+    }
+    let notes: [Entry] = [
+      ("", "周五前交的东西\n☐ 周报\n☐ 报销单\n☑ 订会议室\n下午三点和设计过一遍首页的改动，记得带上数据。", 180),
+      ("读书笔记", "「慢慢来，比较快」这句话放在重构上也成立：先把现有的行为用测试钉住，再一小步一小步地挪。", 3600 * 2),
+      ("", "wifi 密码 kitty-2026", 3600 * 26),
+      ("想法", "", 86_400 * 3),
+      ("", "一条很长很长的标题，长到列表里的这一行放不下，后面要用省略号收住，看它和右边的时间挤不挤在一起", 86_400 * 9),
+      ("", "Groceries: milk, eggs, bread", 86_400 * 40),
+      ("", Self.markdownSample, 86_400 * 41),
+      ("买 milk 和 eggs", "第八种纸色", 86_400 * 42),
+    ]
+    let (store, ids) = try library(notes)
+    store.setPinned(true, of: ids[1])
+    let medium = NoteDeckOptions.NoteSize.medium.size
+    let minimum = NoteFloatLayout.minSize
+
+    // MARK: 浮动便签（一扇窗口那么大；四周垫 24 的灰底）
+    func float(
+      _ name: String, _ id: String, size: CGSize = medium, dark: Bool = false,
+      onLeading: Bool = true, scale: CGFloat = 1, edgeShown: Bool = true,
+      setup: (NoteFloatModel) -> Void = { _ in }, prepare: ((NSView) -> Void)? = nil
+    ) throws {
+      let model = NoteFloatModel(store: store)
+      model.tabOnLeading = onLeading
+      model.metrics = NoteDeckMetrics(scale: scale)
+      model.edgeShown = edgeShown
+      model.send(.float(id))
+      setup(model)
+      let margin: CGFloat = 24
+      try snapshot(
+        NoteFloatView(model: model).frame(width: size.width, height: size.height).padding(margin)
+          .background(Color(white: dark ? 0.22 : 0.80)),
+        size: NSSize(width: size.width + 2 * margin, height: size.height + 2 * margin),
+        dark: dark, to: "\(out)/notes-float-\(name).png", prepare: prepare)
+    }
+    for dark in [false, true] {
+      let suffix = dark ? "-dark" : ""
+      try float("open\(suffix)", ids[0], dark: dark)
+      try float("pinned\(suffix)", ids[1], dark: dark)
+      // 8 种纸色，都拉到最小：头部的圆点、标题、四个钮排得下，正文和小字还在
+      for (index, id) in ids.enumerated() {
+        try float("paper-\(index)\(suffix)", id, size: minimum, dark: dark)
+      }
+      try float("menu\(suffix)", ids[1], dark: dark) { $0.toggleMenu() }
+    }
+    try float("large", ids[0], size: CGSize(width: 680, height: 560))
+    try float("tall-narrow", ids[4], size: CGSize(width: minimum.width, height: 520))
+    try float("wide-short", ids[1], size: CGSize(width: 700, height: minimum.height))
+    try float("tab-right", ids[2], onLeading: false)
+    try float("tab-right-dark", ids[1], dark: true, onLeading: false) { $0.toggleMenu() }
+    try float("tab-wide", ids[1], scale: 1.25)
+    try float("tab-narrow-min", ids[4], size: minimum, scale: 0.85)
+    try float("blank", ids[3])
+    // 操作菜单：屏幕边缘没有那叠时那一项叫「取消浮动」；颜色那一级（从「⋯」进、从圆点点开）
+    try float("menu-no-edge", ids[0], edgeShown: false) { $0.toggleMenu() }
+    try float("menu-colors", ids[0]) { model in
+      model.toggleMenu()
+      model.run(model.menuItems[1])
+    }
+    try float("menu-dot", ids[2]) { $0.toggleMenu(fromDot: true) }
+    // 最小尺寸时的菜单：放不下的在菜单里滚，不出便签；标签最宽那一档时颜色菜单也在便签里
+    try float("min-menu", ids[1], size: minimum) { $0.toggleMenu() }
+    try float("min-menu-dark", ids[0], size: minimum, dark: true) { $0.toggleMenu() }
+    try float("min-menu-dot-wide-tab", ids[2], size: minimum, scale: 1.25) {
+      $0.toggleMenu(fromDot: true)
+    }
+    try float("min-menu-tab-right", ids[2], size: minimum, onLeading: false) { $0.toggleMenu() }
+    try float("over-limit", ids[0]) { $0.overflowed() }
+    // 带 Markdown 的：标记都藏着的、光标所在的行露着的（屏外的窗口不真的当 key，直接告诉编辑器）
+    try float("markdown", ids[6], size: CGSize(width: 520, height: 460))
+    try float(
+      "markdown-caret-dark", ids[6], size: CGSize(width: 520, height: 460), dark: true,
+      prepare: Self.reveal(
+        NSRange(location: (Self.markdownSample as NSString).range(of: "粗体").location, length: 0)))
+
+    // MARK: 那叠这边：浮着那条的标签上的记号（色条色的竖条，不探出来）；被拖出去的那一刻（那一份看不见、标签缩回去）
+    func deck(
+      _ name: String, options: NoteDeckOptions = NoteDeckOptions(),
+      edge: NoteDeckOptions.Edge = .right, dark: Bool = false,
+      setup: (NoteDeckModel) -> Void
+    ) throws {
+      let screen = NoteDeckScreen(
+        name: "", frame: CGRect(x: 0, y: 0, width: 1440, height: 885),
+        visibleFrame: CGRect(x: 0, y: 0, width: 1440, height: 860))
+      let frame = NoteDeckLayout.panelFrame(on: screen, edge: edge, options: options)
+      let pill = NoteDeckLayout.pillFrame(
+        on: screen, edge: edge, count: store.active.count, options: options)
+      let model = NoteDeckModel(store: store)
+      model.options = options
+      model.edge = edge
+      model.panelSize = frame.size
+      model.pillCenter = frame.maxY - pill.midY
+      model.setRevealed(true)
+      model.send(.pillEntered(optionDown: false, allowed: true))
+      setup(model)
+      try snapshot(
+        NoteDeckView(model: model).background(Color(white: dark ? 0.22 : 0.80)),
+        size: frame.size, dark: dark, to: "\(out)/notes-float-deck-\(name).png")
+    }
+    try deck("tab") { $0.floated(ids[2]) }
+    try deck("tab-left-dark", edge: .left, dark: true) { $0.floated(ids[1]) }
+    var chips = NoteDeckOptions()
+    chips.style = .chips
+    try deck("tab-chips", options: chips) { $0.floated(ids[2]) }
+    var tilted = NoteDeckOptions()
+    tilted.tiltsTabs = true
+    try deck("tab-tilted", options: tilted) { $0.floated(ids[2]) }
+    // 浮着一条的同时在那叠里开着另一条
+    try deck("tab-with-open") { model in
+      model.floated(ids[2])
+      model.tapTab(ids[0])
+    }
+    // 被拖出去的那一刻：它在那叠里的那一份看不见了（还在视图树里），它的标签缩回去、带着「浮着」的记号
+    try deck("lifted") { model in
+      model.tapTab(ids[0])
+      model.gripChanged(at: CGPoint(x: 900, y: 500))
+      model.gripChanged(at: CGPoint(x: 800, y: 500))
+      model.floated(ids[0])
+    }
+
+    // MARK: 设置 › 便签「屏幕边缘」页脚多的那句话
+    let suite = "kitty-snapshot-notes-float-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    try snapshot(
+      NotesTab(openNotes: {}, displays: ["内建视网膜显示器"]).defaultAppStorage(defaults),
+      size: NSSize(width: 640, height: 1320), dark: false, to: "\(out)/notes-float-settings.png")
+  }
+
   private func renderTranslate(_ out: String) throws {
     // 历史：今天两条（一条收藏）、昨天一条、三天前两条，按天分组
     let history = try HistoryStore(db: Database(path: ":memory:"))

@@ -9,6 +9,10 @@
 // - **叫停**（suspend）：截图框选、长截图、录屏选区和倒数、状态屏开始的地方由 AppDelegate 显式来调——先落盘，扇出的
 //   当场收起；鼠标进药丸、悬停出预览卡时还会再问一句 canFan。不靠「被别的窗口盖住就收不到鼠标」（追踪区不看遮挡）。
 // - 「新建便签」（全局动作、菜单栏、启动器、药丸和「+」的右键菜单）：建一条并在鼠标所在屏的那叠里打开。
+// - **浮动便签**（NoteFloat，第 4 批）也由这里拿着——它不看总开关（屏幕边缘关着时照样能从全部便签窗口浮出来）：
+//   各块屏的那叠把「拖出来了 / 从菜单浮出去 / 点了浮着那条的标签」转给它，它的状态变了这里告诉各叠（哪条浮着；
+//   那条正开在某一叠里就从那叠里收掉）；设置、屏幕、便签的变化顺手转给它（不另挂一份通知）；启动时让固定着的
+//   那一张回到原处。
 
 import AppKit
 import Observation
@@ -37,6 +41,8 @@ final class NoteEdge {
   private let store: NoteStore
   private let defaults: UserDefaults
   private let island: Island?
+  /// 浮动便签（一次一张；总开关关着、一块屏都没放时也在）
+  let float: NoteFloat
   /// 现在能不能扇出（AppDelegate 给：没在截图框选 / 长截图 / 录屏选区和倒数 / 状态屏）
   var canFan: () -> Bool = { true }
   /// 药丸（和标签列下「+」）右键菜单的三项
@@ -61,10 +67,15 @@ final class NoteEdge {
     self.defaults = defaults
     self.island = island
     options = NoteDeckOptions(defaults)
+    float = NoteFloat(store: store, defaults: defaults, island: island)
+    float.homeEdge = { [unowned self] in homeEdge(near: $0) }
+    float.onChange = { [unowned self] in floatChanged() }
+    float.model.showInWindow = { [unowned self] in showInWindow($0) }
   }
 
-  /// 开始：摆一次，之后跟着设置、屏幕、便签、系统的显示辅助开关的变化重摆
+  /// 开始：摆一次，之后跟着设置、屏幕、便签、系统的显示辅助开关的变化重摆；上次固定着浮在屏幕上的那一张回到原处
   func start() {
+    defer { float.restore() }
     func observe(
       _ center: NotificationCenter, _ name: Notification.Name, object: Any? = nil,
       _ work: @escaping @MainActor (NoteEdge) -> Void
@@ -126,6 +137,7 @@ final class NoteEdge {
     for old in decks where !placed.contains(where: { $0.deck === old.deck }) { old.deck.close() }
     let appeared = decks.isEmpty && !placed.isEmpty
     decks = placed
+    float.update(options: options, edgeShown: !decks.isEmpty)
     if appeared, let edge = placements.first?.edge { hintIfFirst(edge) }
   }
 
@@ -141,7 +153,27 @@ final class NoteEdge {
     deck.model.showInWindow = { [unowned self] in showInWindow($0) }
     deck.model.showNotes = { [unowned self] in showNotes() }
     deck.model.showSettings = { [unowned self] in showSettings() }
+    // 浮动便签：拖出来（过了阈值 → 跟着走 → 松手）、从操作菜单浮出去、点了浮着那条的标签
+    deck.onDetach = { [unowned self] in float.detach($0, from: $1, at: $2) }
+    deck.model.onDetachDrag = { [unowned self] in float.drag(to: $0) }
+    deck.model.onDetachDrop = { [unowned self] in float.drop(at: $0) }
+    deck.onFloat = { [unowned self] in float.present($0, from: $1) }
+    deck.model.focusFloat = { [unowned self] in float.focus() }
+    deck.model.floated(float.model.state.noteID)
     return deck
+  }
+
+  /// 浮着的换了一条 / 没有了：告诉各叠（它的标签上有记号、点它是把浮着的叫到前面；刚浮出去的那条还开在哪一叠里
+  /// 就从那叠里收掉，NoteDeckModel.floated）
+  private func floatChanged() {
+    for entry in decks { entry.deck.model.floated(float.model.state.noteID) }
+  }
+
+  /// 屏幕边缘的那叠实际在哪条边（不从那叠里出来的浮动便签按它定标签在哪一侧、收回往哪边滑）：它所在的那块屏放了就是
+  /// 那块屏的，没放用放了的第一块的；一块都没放（总开关关着、没有便签）是 nil
+  private func homeEdge(near frame: CGRect) -> NoteDeckOptions.Edge? {
+    let home = decks.first { $0.deck.screen.frame.intersects(frame) } ?? decks.first
+    return home?.deck.model.edge
   }
 
   private func hintIfFirst(_ edge: NoteDeckOptions.Edge) {
@@ -175,12 +207,14 @@ final class NoteEdge {
 
   private func storeChanged() {
     for entry in decks { entry.deck.storeChanged() }
+    float.storeChanged()
     if store.active.map(\.color) != colors { refresh() }
   }
 
   // MARK: 叫停、新建
 
-  /// 截图框选 / 长截图 / 录屏选区和倒数 / 状态屏开始的地方调：先落盘，扇出的当场收起
+  /// 截图框选 / 长截图 / 录屏选区和倒数 / 状态屏开始的地方调：先落盘，扇出的当场收起。浮动便签不收（它是人自己放在
+  /// 屏幕上的内容，同钉图：冻结帧和录屏里有它，状态屏盖在它上面），对它来说就是开头的那一下落盘
   func suspend(_ kind: Suspension) {
     store.flush()
     for entry in decks { entry.deck.suspend(kind) }

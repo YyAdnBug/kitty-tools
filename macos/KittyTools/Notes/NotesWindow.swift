@@ -53,6 +53,10 @@ import SwiftUI
   @ObservationIgnored var isEditingBody: () -> Bool = { false }
   /// 拿右边那条便签的正文编辑器做一件事（没有就不做：没选中、最近删除里的是只读的）
   @ObservationIgnored var withEditor: ((NoteTextView) -> Void) -> Void = { _ in }
+  /// 浮动便签（第 4 批）：它的状态（浮着的是哪条、屏幕边缘有没有那叠——工具栏和右键菜单里那一项叫什么看它；
+  /// 界面读得到它的变化）、让一条便签浮出来 / 收回去。AppDelegate 接到 NoteEdge 的那一个；没接（便签用不了）时不做事
+  @ObservationIgnored var float: NoteFloatModel?
+  @ObservationIgnored var toggleFloat: (String) -> Void = { _ in }
   /// 正文的撤销栈（正文框建出来时拿到它，NoteTextView.noteUndo；窗口的 undoManager 也是它，
   /// NotesWindow.windowWillReturnUndoManager）。换一条便签换一个新的：上一条里打的字不能撤到这一条上。
   /// 标题框、搜索框用的是各自字段编辑器的栈（系统给的，结束编辑就丢）
@@ -83,7 +87,7 @@ import SwiftUI
 
   static func belongs(_ note: Note, to scope: Scope) -> Bool {
     switch scope {
-    case .all: note.deletedAt == nil && !note.isArchived
+    case .all: note.isActive
     case .archive: note.deletedAt == nil && note.isArchived
     case .trash: note.deletedAt != nil
     }
@@ -136,6 +140,20 @@ import SwiftUI
   static let taskTitle = "任务"
   static let taskSymbol = "checklist"
   static let taskHelp = "任务：把这一行变成任务，或变回普通行（⌘T）"
+  /// 「浮在屏幕上」/「收回边缘」：屏幕边缘那叠和浮动便签的操作菜单、全部便签窗口的工具栏和右键菜单同名（浮动便签的
+  /// 关闭钮、它带着的标签也叫这个名字）。浮着的那条收回时，屏幕边缘没有那叠（总开关关着）就没有「边缘」可回，
+  /// 叫「取消浮动」
+  static func floatTitle(isFloating: Bool, hasEdge: Bool = true) -> String {
+    isFloating ? (hasEdge ? "收回边缘" : "取消浮动") : "浮在屏幕上"
+  }
+  /// 符号：「收回边缘」朝那一叠实际在的那条边（edge；两块屏相接时那叠会换到另一侧）
+  static func floatSymbol(
+    isFloating: Bool, hasEdge: Bool = true, edge: NoteDeckOptions.Edge = .right
+  ) -> String {
+    guard isFloating else { return "macwindow.on.rectangle" }
+    guard hasEdge else { return "xmark.rectangle" }
+    return edge == .left ? "sidebar.left" : "sidebar.right"
+  }
   static func pinTitle(_ note: Note?) -> String { note?.isPinned == true ? "取消固定" : "固定" }
   static func archiveTitle(_ note: Note?) -> String {
     note?.isArchived == true ? "取消归档" : "归档"
@@ -234,6 +252,27 @@ import SwiftUI
 
   static func nextColor(after color: Int) -> Int { (max(color, 0) + 1) % Note.colorCount }
 
+  /// 这条便签是不是正浮在屏幕上；工具栏、右键菜单里那一项现在叫什么
+  func isFloating(_ note: Note?) -> Bool {
+    note.map { float?.state.noteID == $0.id } ?? false
+  }
+
+  func floatTitle(_ note: Note?) -> String {
+    Self.floatTitle(isFloating: isFloating(note), hasEdge: float?.edgeShown ?? true)
+  }
+
+  func floatSymbol(_ note: Note?) -> String {
+    Self.floatSymbol(
+      isFloating: isFloating(note), hasEdge: float?.edgeShown ?? true,
+      edge: float?.tuckEdge ?? .right)
+  }
+
+  /// 浮在屏幕上 / 收回边缘：只有没归档、没删的便签能浮着
+  func toggleFloating(_ id: String) {
+    guard let note = store.note(id), Self.belongs(note, to: .all) else { return }
+    toggleFloat(id)
+  }
+
   /// 选颜色的那份表（工具栏的颜色下拉、右键菜单里的「颜色」；每项前面是纸色圆点，NotePaper.colorItems）
   func colorItems(_ note: Note) -> [ActionMenu.Item] {
     NotePaper.colorItems(current: note.color) { [weak self] in self?.setColor($0, of: note.id) }
@@ -253,14 +292,21 @@ import SwiftUI
         },
       ]
     }
-    return [
+    var items = [
       ActionMenu.Item(title: Self.pinTitle(note)) { [weak self] in self?.togglePinned(id) },
       ActionMenu.Item(title: Self.archiveTitle(note)) { [weak self] in self?.toggleArchived(id) },
       ActionMenu.Item(title: Self.colorTitle, submenu: colorItems(note)),
+    ]
+    // 归档里的不能浮着
+    if !note.isArchived {
+      items.append(
+        ActionMenu.Item(title: floatTitle(note)) { [weak self] in self?.toggleFloating(id) })
+    }
+    items.append(
       ActionMenu.Item(title: Self.deleteTitle, section: 1, isDestructive: true) { [weak self] in
         self?.delete(id)
-      },
-    ]
+      })
+    return items
   }
 
   /// 从「最近删除」放回原处

@@ -1,38 +1,22 @@
 // 屏幕边缘那叠的界面读的状态（一块屏一份；PLAN §10「便签」第 3 批，规矩在 mac-overlay-panel §12）：
-// 状态机 NoteDeckState、这一列画哪些标签和怎么排、哪张标签上停着鼠标、预览卡、拖动排序、打开的便签摆在哪、
-// 操作菜单、按键、对这条便签做的事。不碰窗口：状态变了报给 NoteDeck（onChange），它去露出 / 收起面板、当 key、落盘。
-// - **写标题、正文按传进来的编号落**（setTitle / setBody 的 of:），不按「现在开着哪条」：换一条时旧的输入框还在视图树里
-//   留一小会儿，它晚到的那一下得落回它自己那条。
+// 状态机 NoteDeckState、这一列画哪些标签和怎么排、哪张标签上停着鼠标、预览卡、拖动排序、打开的便签摆在哪。
+// 不碰窗口：状态变了报给 NoteDeck（onChange），它去露出 / 收起面板、当 key、落盘。
+// 打开着的那条便签自己的那一半——操作菜单、按键、对这条便签做的事、焦点、撤销栈、写入按编号落——在基类
+// NoteSheetModel 里（浮动便签的 NoteFloatModel 是同一套）；这里只说那叠里的关法和把手：
 // - 用键盘关（Esc、⌘W）= dismiss，连那一列一起收回；用鼠标关（关闭钮、它带着的标签）= close，回到那一列。
 // - 悬停出的预览卡、悬停即打开，都先问一句「现在能不能扇出」（「一直展开」时那一列一直在，叫停靠的就是这一问）；
 //   悬停打开的不抢键盘（takesKey 是 false：停着不动的鼠标不该把键盘拿走，点进正文才当 key）。
-// - 每条便签一个撤销栈（textUndo）：正文框建出来时拿到它（NoteTextView.noteUndo），换一条换一个新的。
-// - 焦点：打开 / 换一条、「新建便签」落在已经开着的那条上、标题框里 ↩ / Tab、操作菜单关了，都记一次「该这条便签的
-//   正文拿焦点」（focus：编号 + 第几次）；正文框自己认（NoteBodyField），NoteDeck 另有晚一拍去找的兜底。
-// - 对正文编辑器做的事（⌘T 任务、⌘F 便签内查找、Esc 先关查找条）经 withEditor：这里不拿视图，NoteDeck 按编号找到
-//   开着的那条的正文框再交过来。
+// - 「新建便签」落在已经开着的那条上时照样再要一次焦点（open(created:)）。
+// - **浮动便签**（第 4 批）：按着打开的便签的把手（它带着的那张标签、头部的空白处）往外拖，过了阈值它就脱出来、
+//   变成跟着鼠标走的浮动面板（onDetach → NoteFloat）。**鼠标松开之前，它在这叠里的那一份留着不拆**（拆了正在拖的
+//   手势就断了），只是看不见（liftedID）；松手才从这叠里收掉。不靠拖的路是操作菜单的「浮在屏幕上」（toggleFloating）。
+//   已经浮着的那条（floatingID）点它的标签是把浮着的叫到前面，不在这叠里再开一份。
 
 import AppKit
-import Carbon.HIToolbox
 import Observation
 import SwiftUI
 
-@Observable final class NoteDeckModel {
-  /// 开着的操作菜单（⌘K、「⋯」、纸色圆点；画的是 Shell/ActionMenu）
-  struct Menu: Equatable {
-    /// 在「颜色」那一级
-    var inColors = false
-    var selection = 0
-    /// 从纸色圆点点开的：直接是颜色那一级，长在圆点下面（否则长在「⋯」下面）
-    var fromDot = false
-  }
-
-  /// 该拿焦点的那条便签、第几次要
-  struct Focus: Equatable {
-    var id: String
-    var count: Int
-  }
-
+@Observable final class NoteDeckModel: NoteSheetModel {
   /// 正拖着的那张标签：从第几格拖起、拖了多远（往下为正）、现在落在第几格
   struct Drag: Equatable {
     var id: String
@@ -46,7 +30,6 @@ import SwiftUI
   static let previewLinger: Duration = .milliseconds(150)
   static let hoverOpenDelay: Duration = .milliseconds(400)
 
-  let store: NoteStore
   private(set) var state = NoteDeckState()
   var options = NoteDeckOptions() {
     didSet {
@@ -66,39 +49,93 @@ import SwiftUI
   private(set) var hovered: String?
   private(set) var preview: String?
   private(set) var drag: Drag?
-  private(set) var menu: Menu?
-  /// 正文打到上限了、这一次输入没进（底下那行小字换成警告）
-  private(set) var isOverLimit = false
-  /// 该哪条便签的正文拿焦点（见文件头）。便签关了不清：再开又是新的一次
-  private(set) var focus: Focus?
   /// 打开的便签的顶离面板顶多远：**打开那一刻定住**（它对着自己那张标签，而标签露出多长跟着最长的标题实时变——
   /// 不定住的话打第一行字时便签自己一跳一跳地上下挪）。关掉再开、面板大小变了才重算
   private(set) var openTop: CGFloat?
+  /// 浮在屏幕上的那条便签（NoteEdge 跟着浮动便签的状态设，floated）：它的标签上有记号，点它是把浮着的那张叫到前面
+  private(set) var floatingID: String?
+  /// 被拖出去的那条：鼠标还按着时，它在这叠里的那一份留着不拆、只是看不见；松手后那一份淡出的 0.1 秒里也不露出来。
+  /// 下次在这叠里打开便签时清掉
+  private(set) var liftedID: String?
 
-  @ObservationIgnored var island: Island?
-  /// 状态变了（NoteDeck 据此动窗口）；有动静（4 秒没动静才收回，热区也跟着重算）；面板当 key 并兜底把焦点放进正文
-  /// （界面不直接调它，调 requestFocus）；操作菜单开关了
+  /// 状态变了（NoteDeck 据此动窗口）；有动静（4 秒没动静才收回，热区也跟着重算）
   @ObservationIgnored var onChange: (NoteDeckState, NoteDeckState) -> Void = { _, _ in }
   @ObservationIgnored var onActivity: () -> Void = {}
-  @ObservationIgnored var focusBody: () -> Void = {}
-  @ObservationIgnored var onMenu: (Bool) -> Void = { _ in }
   /// 现在能不能扇出（没在截图框选 / 长截图 / 录屏选区和倒数 / 状态屏）：悬停出预览卡、悬停即打开之前问
   @ObservationIgnored var canFan: () -> Bool = { true }
-  /// 在「全部便签」里打开这条；「+」右键菜单里的「全部便签」「设置…」
-  @ObservationIgnored var showInWindow: (String) -> Void = { _ in }
+  /// 「+」右键菜单里的「全部便签」「设置…」
   @ObservationIgnored var showNotes: () -> Void = {}
   @ObservationIgnored var showSettings: () -> Void = {}
-  /// 拿开着的那条便签的正文编辑器做一件事（NoteDeck 按编号找到它；没开着、还没建出来就不做）
-  @ObservationIgnored var withEditor: ((NoteTextView) -> Void) -> Void = { _ in }
+  /// 浮动便签那边的事（NoteDeck / NoteEdge 接到 NoteFloat）：把浮着的那张叫到前面；把开着的这条浮到屏幕上（不靠拖）；
+  /// 拖出来的三步——脱出来了（哪条、鼠标在哪）、跟着走、松手
+  @ObservationIgnored var focusFloat: () -> Void = {}
+  @ObservationIgnored var onFloat: (String) -> Void = { _ in }
+  @ObservationIgnored var onDetach: (String, CGPoint) -> Void = { _, _ in }
+  @ObservationIgnored var onDetachDrag: (CGPoint) -> Void = { _ in }
+  @ObservationIgnored var onDetachDrop: (CGPoint) -> Void = { _ in }
   /// 这一次打开要不要当 key、把焦点放进正文：点开的要，悬停打开的不要（NoteDeck 在状态变了的那一下读）
   @ObservationIgnored private(set) var takesKey = true
-  /// 打开着的这条便签的正文的撤销栈（正文框建出来时拿到它，NoteTextView.noteUndo；标题框用的是它的字段编辑器
-  /// 自己的栈）。换一条换一个新的：上一条里打的字不能在这一条里被 ⌘Z 撤到（同 NotesWindowModel.textUndo）
-  @ObservationIgnored private(set) var textUndo = UndoManager()
   /// 悬停的那一下（出预览卡、收预览卡、悬停即打开）：一次只等一件
   @ObservationIgnored private var hoverTask: Task<Void, Never>?
+  /// 正按着打开的便签的把手：按下的地方、鼠标最后在哪（都是全局坐标）、脱没脱出来
+  @ObservationIgnored private var grip: (start: CGPoint, last: CGPoint, isDetached: Bool)?
 
-  init(store: NoteStore) { self.store = store }
+  /// 正把一条便签往外拖、还没松手（它在这叠里的那一份这时不能拆）
+  var isDetaching: Bool { grip?.isDetached == true }
+
+  // MARK: 打开的便签（NoteSheetModel 问的）
+
+  override var noteID: String? { state.openID }
+  /// ⌘W 在只扇着时也管用（收回那一列）
+  override var isShown: Bool { state.phase != .rest }
+  override func close() { send(.close) }
+  override func dismiss() { send(.dismiss) }
+
+  /// 操作菜单的「浮在屏幕上」：不靠拖的那条路（键盘、旁白用户）。它在这叠里的那一份由 NoteEdge 跟着收掉
+  override func toggleFloating() {
+    guard let note = current else { return }
+    closeMenu()
+    onFloat(note.id)
+  }
+
+  /// 按着把手拖：没过阈值什么都不动；过了，这条便签脱出来（之后每一下都是让浮动面板跟着走）。脱出来之后它在这叠里
+  /// 的那一份不拆——手势是从那一份上开始的，拆了就断——只是看不见（liftedID）
+  override func gripChanged(at pointer: CGPoint) {
+    guard let id = state.openID else { return }
+    guard let held = grip else {
+      // 第一下：按下的地方
+      grip = (pointer, pointer, false)
+      return
+    }
+    grip?.last = pointer
+    if held.isDetached { return onDetachDrag(pointer) }
+    guard NoteFloatLayout.detaches(from: held.start, to: pointer) else { return }
+    grip?.isDetached = true
+    closeMenu()
+    liftedID = id
+    onDetach(id, pointer)
+  }
+
+  /// 手还按着拖出去的那条，它在这叠里的那一份却要没了（这边被关了、这块屏的那叠不放了）：拖着的手势跟着断，
+  /// 不会再有「松手」——当成在鼠标最后的位置松了手，浮动面板落在那里，不卡在「拖着」。
+  /// pointer：鼠标其实已经松开了、手势却没报（NoteDeck 的松开监听兜底）——在松开的地方落
+  func releaseGrip(at pointer: CGPoint? = nil) {
+    guard let held = grip, held.isDetached else { return }
+    grip = nil
+    onDetachDrop(pointer ?? held.last)
+  }
+
+  /// 松手：脱出来了的落在这里，这叠里它原来的位置收掉；没过阈值 = 没拖——按在标签上、没挪开的是点了一下（关便签）
+  override func gripEnded(_ part: Grip, at pointer: CGPoint) {
+    let held = grip
+    grip = nil
+    if let held, held.isDetached {
+      onDetachDrop(pointer)
+      send(.close)
+    } else if part == .tab, !NoteFloatLayout.moved(from: held?.start ?? pointer, to: pointer) {
+      close()
+    }
+  }
 
   // MARK: 状态
 
@@ -109,15 +146,16 @@ import SwiftUI
 
   private func transitioned(from old: NoteDeckState) {
     if old.openID != state.openID {
-      if menu != nil { closeMenu() }
-      if isOverLimit { isOverLimit = false }
-      textUndo = UndoManager()
+      // 正往外拖着的那条在这边被关了（Esc、被叫停）：它那一份要拆了、手势跟着断。没脱出来、只是按着的也清掉——
+      // 视图拆了 SwiftUI 不报 onEnded，留着旧的起点，下一条便签的第一下按住就被当成拖了很远
+      releaseGrip()
+      grip = nil
+      sheetChanged(to: state.openID)
       // 先清再算：算的时候要按「标签现在排在哪」重新来
       openTop = nil
-      if let id = state.openID {
+      if state.openID != nil {
         openTop = noteTop(layout)
-        // 悬停打开的也记：不当 key，但第一响应者照样落在正文上（点进面板当了 key 就能直接打字）
-        focus = Focus(id: id, count: (focus?.count ?? 0) + 1)
+        liftedID = nil
       }
     }
     if state.phase != .fanned { clearHover() }
@@ -140,6 +178,13 @@ import SwiftUI
     send(.yield(pinned: current?.isPinned ?? false))
   }
 
+  /// 浮在屏幕上的换了一条 / 没有了（NoteEdge 转过来）。刚浮出去的那条还开在这叠里就从这叠里收掉——同一条便签不留
+  /// 两个正文框；**正被拖着的不收**：它在这叠里的那一份要留到松手（拆了拖着的手势就断了），松手时自己收（gripEnded）
+  func floated(_ id: String?) {
+    if floatingID != id { floatingID = id }
+    if let id, state.openID == id, !isDetaching { send(.close) }
+  }
+
   // MARK: 这一列
 
   /// 没归档、没删的全部，按顺序
@@ -150,11 +195,6 @@ import SwiftUI
   /// 可见区附近的那些（Shell/ListReveal 的 ListWindow，剪贴板列表的做法）。拖动排序拖到视口外也不自动滚
   var tabs: [Note] {
     state.showsAll ? notes : Array(notes.prefix(NoteDeckLayout.fanLimit))
-  }
-
-  /// 打开着的那条（已经不是「没归档没删的」就不算）
-  var current: Note? {
-    state.openID.flatMap(store.note).flatMap { $0.deletedAt == nil && !$0.isArchived ? $0 : nil }
   }
 
   var previewNote: Note? { preview.flatMap { id in tabs.first { $0.id == id } } }
@@ -225,9 +265,11 @@ import SwiftUI
 
   // MARK: 标签
 
-  /// 点了一张标签：打开它（当 key、焦点进正文）；打开着的就是它 = 关（回到扇出）
+  /// 点了一张标签：打开它（当 key、焦点进正文）；打开着的就是它 = 关（回到扇出）。它正浮在屏幕上：把浮着的那张
+  /// 叫到前面、给它键盘，不在这叠里再开一份（同一条便签两个正文框）
   func tapTab(_ id: String) {
     onActivity()
+    if id == floatingID { return focusFloat() }
     send(.tab(id))
   }
 
@@ -257,9 +299,9 @@ import SwiftUI
     }
   }
 
-  /// 悬停够久了：打开，但不抢键盘（这时还得能扇出才开）
+  /// 悬停够久了：打开，但不抢键盘（这时还得能扇出才开）。浮在屏幕上的那条不开（鼠标停一下不该把它叫过来）
   func openFromHover(_ id: String) {
-    guard canFan(), state.phase == .fanned else { return }
+    guard canFan(), state.phase == .fanned, id != floatingID else { return }
     takesKey = false
     defer { takesKey = true }
     send(.tab(id))
@@ -331,236 +373,12 @@ import SwiftUI
   }
 
   /// 在这叠里打开刚建的那条（全局动作「新建便签」也走这里）。它本来就开着（复用的空白便签）时状态没变、
-  /// 面板却可能不是 key（人在别的 App 里按的快捷键）：照样把焦点放进正文
+  /// 面板却可能不是 key（人在别的 App 里按的快捷键）：照样把焦点放进正文。复用的那条空白便签正浮在屏幕上：
+  /// 叫到前面就行
   func open(created id: String) {
+    if id == floatingID { return focusFloat() }
     let wasOpen = state.openID == id
     send(.created(id))
     if wasOpen { requestFocus() }
-  }
-
-  /// 这条便签的正文框该不该拿焦点：是「该拿焦点的那条」就给第几次要，不是给 nil（NoteBodyField.focusRequest）
-  func focusRequest(for id: String) -> Int? { focus?.id == id ? focus?.count : nil }
-
-  /// 再要一次焦点（开着的那条的正文；标题框里 ↩ / Tab、复用的空白便签）：记一次，再叫 NoteDeck 当 key、兜底去找
-  func requestFocus() {
-    guard let id = state.openID else { return }
-    focus = Focus(id: id, count: (focus?.count ?? 0) + 1)
-    focusBody()
-  }
-
-  // MARK: 打开的便签
-
-  /// 标题、正文的每一次改动。**按传进来的编号写**（哪个输入框的就落哪条），那条已经不在了就不写（仓库自己不认）
-  func setTitle(_ title: String, of id: String) {
-    store.setTitle(title, of: id)
-  }
-
-  func setBody(_ body: String, of id: String) {
-    if isOverLimit, id == state.openID { isOverLimit = false }
-    store.setBody(body, of: id)
-  }
-
-  /// 正文框拦下了会超上限的一次输入
-  func overflowed() {
-    isOverLimit = true
-    Island.announce(NotesWindowModel.overLimitText)
-  }
-
-  /// Esc：操作菜单开着先退它（颜色那一级退回上一级），查找条开着先关它，再按才关——用键盘关的连那一列一起收回，
-  /// 键盘当场回原来的 App
-  func cancel() {
-    if menu != nil {
-      menuBack()
-    } else if !closesFindBar() {
-      send(.dismiss)
-    }
-  }
-
-  /// 正文的查找条开着就关掉，返回关没关
-  private func closesFindBar() -> Bool {
-    var closed = false
-    withEditor { closed = $0.dismissFindBar() }
-    return closed
-  }
-
-  /// ⌘T、头部的「任务」钮、操作菜单：光标所在行（有选区时是选区碰到的每一行）在普通行和任务之间切换，焦点回正文
-  /// （接着就能打这条任务的字）
-  func toggleTask() {
-    guard current != nil else { return }
-    closeMenu()
-    withEditor { $0.toggleTask() }
-    requestFocus()
-  }
-
-  /// ⌘F：便签内查找（系统的查找条，长在正文顶上）
-  func find() {
-    guard current != nil else { return }
-    closeMenu()
-    withEditor { $0.showFindBar() }
-  }
-
-  /// ⌘P：固定 / 取消固定（固定的点别处不收、别的屏展开时也不收）
-  func togglePinned() {
-    guard let note = current else { return }
-    store.setPinned(!note.isPinned, of: note.id)
-    Island.announce(note.isPinned ? "已取消固定" : "已固定")
-  }
-
-  /// ⌘.：换下一种纸色
-  func cycleColor() {
-    if let note = current { setColor(NotesWindowModel.nextColor(after: note.color)) }
-  }
-
-  func setColor(_ color: Int) {
-    guard let note = current else { return }
-    store.setColor(color, of: note.id)
-    Island.announce(NotePaper.all[Note.clamped(color: color)].name)
-  }
-
-  /// ⇧⌘A：归档（回到扇出；要找回到「全部便签」的「归档」里）
-  func archive() {
-    guard let note = current else { return }
-    send(.close)
-    store.setArchived(true, of: note.id)
-    Island.announce("已归档")
-  }
-
-  /// 删除：进「最近删除」。这里没有列表、也没有 ⌘Z，放回的路由岛说
-  func delete() {
-    guard let note = current else { return }
-    send(.close)
-    store.delete(note.id)
-    island?.show("已删除", detail: "到「全部便签」的「最近删除」里放回", symbol: "trash.circle.fill")
-  }
-
-  func openInWindow() {
-    guard let note = current else { return }
-    send(.close)
-    showInWindow(note.id)
-  }
-
-  // MARK: 操作菜单
-
-  static let openInWindowTitle = "在「全部便签」里打开"
-
-  /// 菜单里现在列的（名字和全部便签窗口的工具栏、右键菜单同一份）
-  var menuItems: [ActionMenu.Item] {
-    guard let note = current, let menu else { return [] }
-    return menu.inColors ? colorItems(note) : actionItems(note)
-  }
-
-  func actionItems(_ note: Note) -> [ActionMenu.Item] {
-    typealias Names = NotesWindowModel
-    return [
-      ActionMenu.Item(
-        title: Names.pinTitle(note), symbol: note.isPinned ? "pin.slash" : "pin", shortcut: "⌘P"
-      ) { [unowned self] in togglePinned() },
-      ActionMenu.Item(
-        title: Names.colorTitle, symbol: "paintpalette", submenu: colorItems(note)),
-      ActionMenu.Item(title: Names.taskTitle, symbol: Names.taskSymbol, shortcut: "⌘T") {
-        [unowned self] in toggleTask()
-      },
-      ActionMenu.Item(
-        title: Names.archiveTitle(note), symbol: "archivebox", shortcut: "⇧⌘A", section: 1
-      ) { [unowned self] in archive() },
-      ActionMenu.Item(
-        title: Names.deleteTitle, symbol: "trash", section: 1, isDestructive: true
-      ) { [unowned self] in delete() },
-      ActionMenu.Item(
-        title: Self.openInWindowTitle, symbol: HotKeyAction.noteAll.symbol, section: 2
-      ) { [unowned self] in openInWindow() },
-    ]
-  }
-
-  private func colorItems(_ note: Note) -> [ActionMenu.Item] {
-    NotePaper.colorItems(current: note.color) { [unowned self] in setColor($0) }
-  }
-
-  /// ⌘K、「⋯」开关菜单；fromDot：点纸色圆点，直接是颜色那一级
-  func toggleMenu(fromDot: Bool = false) {
-    guard menu == nil else { return closeMenu() }
-    guard let note = current else { return }
-    menu = Menu(inColors: fromDot, selection: fromDot ? note.color : 0, fromDot: fromDot)
-    onMenu(true)
-  }
-
-  func closeMenu() {
-    guard menu != nil else { return }
-    menu = nil
-    onMenu(false)
-  }
-
-  /// 执行一行：带子列表的进去（选中现在的颜色），别的先关菜单再做
-  func run(_ item: ActionMenu.Item) {
-    if item.submenu != nil {
-      menu?.inColors = true
-      menu?.selection = current?.color ?? 0
-    } else {
-      closeMenu()
-      item.run()
-    }
-  }
-
-  /// 鼠标移到操作菜单的某一行上：选中跟过去（ActionMenu.onHover）
-  func menuHover(_ index: Int) {
-    guard menu != nil, menuItems.indices.contains(index) else { return }
-    menu?.selection = index
-  }
-
-  /// ← / Esc / 点「‹ 颜色」：颜色那一级回上一级（从圆点点开的没有上一级，直接关）
-  func menuBack() {
-    if let menu, menu.inColors, !menu.fromDot {
-      self.menu = Menu(inColors: false, selection: 1)
-    } else {
-      closeMenu()
-    }
-  }
-
-  /// 操作菜单开着时的按键（这时焦点在面板自己身上，不在输入框里）：↑↓ 选、↩ / → 执行或进子列表、← 回上一级；
-  /// 别的键吞掉。菜单没开着不接。
-  /// ponytail: 不能打字过滤（别处的 ⌘K 菜单拿搜索框当过滤框，这里没有输入框；一共 5 项 + 8 种颜色，方向键够用）。
-  /// 以后项多了：菜单顶上加一行 CommandTextField，过滤走现成的 ActionMenu.filter
-  func handleMenuKey(_ event: NSEvent) -> Bool {
-    guard let menu else { return false }
-    let items = menuItems
-    guard !items.isEmpty else { return true }
-    let selected = items.indices.contains(menu.selection) ? items[menu.selection] : nil
-    switch Int(event.keyCode) {
-    case kVK_UpArrow: self.menu?.selection = (menu.selection - 1 + items.count) % items.count
-    case kVK_DownArrow: self.menu?.selection = (menu.selection + 1) % items.count
-    case kVK_Return, kVK_ANSI_KeypadEnter: if let selected { run(selected) }
-    case kVK_RightArrow: if let selected, selected.submenu != nil { run(selected) }
-    case kVK_LeftArrow: menuBack()
-    default: break
-    }
-    return true
-  }
-
-  /// 面板的 ⌘ 组合键：⌘W 关（连那一列一起收回，同 Esc）；便签开着时 ⌘P 固定、⌘K 操作菜单、⌘. 换下一种纸色、
-  /// ⌘T 任务、⌘F 便签内查找、⇧⌘A 归档。⌘⌫ 不接：光标在标题、正文里时它是输入框的「删到行首」，删整条便签走
-  /// ⌘K 和「⋯」
-  func handleKeyEquivalent(_ event: NSEvent) -> Bool {
-    let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
-    let key = Int(event.keyCode)
-    if flags == .command, key == kVK_ANSI_W, state.phase != .rest {
-      closeMenu()
-      send(.dismiss)
-      return true
-    }
-    guard current != nil else { return false }
-    if flags == [.command, .shift], key == kVK_ANSI_A {
-      archive()
-      return true
-    }
-    guard flags == .command else { return false }
-    switch key {
-    case kVK_ANSI_P: togglePinned()
-    case kVK_ANSI_K: toggleMenu()
-    case kVK_ANSI_Period: cycleColor()
-    case kVK_ANSI_T: toggleTask()
-    case kVK_ANSI_F: find()
-    default: return false
-    }
-    return true
   }
 }

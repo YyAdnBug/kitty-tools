@@ -9,6 +9,9 @@
 // 永远不调 NSApp.activate；扇出时不当 key，点开便签才 makeKey（悬停打开的不当），关掉便签当场把键盘还回去。
 // 焦点进正文有两道：正文框自己在挂进窗口 / 被点名时拿（NoteDeckModel.focus → NoteBodyField），这里再晚一拍按编号去找
 // 一次当兜底，没找到（编辑区还没建出来）隔一小会儿再找两次。
+// 浮动便签（第 4 批）：打开的便签被拖出去 / 从操作菜单浮出去时，这里把它在屏幕上的位置、这一叠实际在的边和正文里的
+// 选区交给 NoteFloat（origin；onDetach / onFloat，NoteEdge 接过去）。拖着的那一阵这块面板不动、不放：手势在它的视图上；
+// 另挂一个一次性的鼠标松开监听兜底（watchRelease：手势万一不报松手，浮动便签不卡在「拖着」）。
 
 import AppKit
 import SwiftUI
@@ -85,8 +88,17 @@ final class NoteDeck: NSObject {
   /// 按住 ⌥ 拖药丸：拖到哪了、松手在哪（全局坐标）
   var onPillDrag: (CGPoint) -> Void = { _ in }
   var onPillDrop: (CGPoint) -> Void = { _ in }
+  /// 打开的便签要浮到屏幕上了（NoteEdge 接到 NoteFloat）：从操作菜单（不靠拖）；被拖出来、过了阈值（鼠标在哪）
+  var onFloat: (String, NoteFloat.Origin) -> Void = { _, _ in }
+  var onDetach: (String, NoteFloat.Origin, CGPoint) -> Void = { _, _, _ in }
 
   private var monitors: [Any] = []
+  /// 拖出去的那一阵的鼠标松开监听（watchRelease）
+  private var releaseMonitors: [Any] = []
+  /// 监听到松开的地方（晚一拍看的时候用）
+  private var releasedAt: CGPoint?
+  /// 正等着拖出去之后的那次松开（单测看；单测里不挂真的监听，见 watchRelease）
+  private(set) var isWatchingRelease = false
   private var idleTask: Task<Void, Never>?
   private var leaveTask: Task<Void, Never>?
   private var hideTask: Task<Void, Never>?
@@ -122,6 +134,31 @@ final class NoteDeck: NSObject {
       else { return }
       body(editor)
     }
+    model.onFloat = { [weak self] id in
+      guard let self else { return }
+      onFloat(id, origin(of: id))
+    }
+    model.onDetach = { [weak self] id, pointer in
+      guard let self else { return }
+      watchRelease()
+      onDetach(id, origin(of: id), pointer)
+    }
+  }
+
+  /// 这条开着的便签要浮出去了：它现在在屏幕上的位置、这一叠实际在的边（偏好是右、那叠被换到左边时是左：浮动便签的
+  /// 标签在哪一侧、往哪边挪按它）、正文里的选区（浮动面板里的光标接着在那儿）。
+  /// 输入法组到一半的字先确认掉：浮动面板里是另一个正文框，读的是仓库里那份。光 unmarkText 输入法不知道——这块面板
+  /// 这时还是 key、正文框还是第一响应者，组字状态留在输入法里，松手后面板失去 key 时有的输入法会把组着的字再
+  /// insertText 一遍（同一段拼音进正文两次），所以还要告诉它丢掉（discardMarkedText）
+  private func origin(of id: String) -> NoteFloat.Origin {
+    let editor = Self.editor(for: id, in: panel?.contentView)
+    if let editor, editor.hasMarkedText() {
+      editor.unmarkText()
+      editor.inputContext?.discardMarkedText()
+    }
+    // 直接按模型算（便签开着时就是那张便签的位置）：contentFrame 在面板正往回收的那一小会儿给的是 .zero
+    return NoteFloat.Origin(
+      sheet: model.contentFrame(in: frame), edge: model.edge, selection: editor?.selectedRange())
   }
 
   // MARK: 摆放
@@ -214,8 +251,11 @@ final class NoteDeck: NSObject {
     return model.contentFrame(in: frame)
   }
 
-  /// 这块屏不放了（总开关关了、便签删光了、屏幕拔了）：都收掉
+  /// 这块屏不放了（总开关关了、便签删光了、屏幕拔了）：都收掉。手正按着从这叠里拖出去的那条便签的话，先让它落下
+  /// （面板一放，拖着的手势就断了）
   func close() {
+    model.releaseGrip()
+    removeReleaseMonitors()
     model.store.flush()
     removeMonitors()
     stopWatching()
@@ -262,6 +302,8 @@ final class NoteDeck: NSObject {
   // MARK: 状态变了
 
   private func stateChanged(from old: NoteDeckState, to new: NoteDeckState) {
+    // 拖出去的那条收尾了（松手后从这叠里收掉、拖着时被关了）：松开的监听用不着了
+    if !model.isDetaching { removeReleaseMonitors() }
     let effects = Self.effects(from: old, to: new)
     if effects.contains(.flush) { model.store.flush() }
     if effects.contains(.expand) { onExpand() }
@@ -425,6 +467,52 @@ final class NoteDeck: NSObject {
   private func removeMonitors() {
     monitors.forEach(NSEvent.removeMonitor)
     monitors = []
+  }
+
+  // MARK: 拖出去之后的松开（兜底）
+
+  /// 拖出去的那条，它在这叠里的那一份 .opacity(0) 了、另一扇窗口（浮动面板）盖到了鼠标底下：SwiftUI 万一不再把松手
+  /// 交回来（gripEnded 不来），浮动便签就卡在「拖着」——层级不落、关闭钮 / 点标签 / Esc / ⌘W / 收回边缘全被拒。
+  /// 脱出时挂一个一次性的鼠标松开监听（global 管松在别的 App 上、local 管自家窗口），松开后晚一拍看一眼：还在拖就当在
+  /// 鼠标现在的地方松了手（releaseGrip 那条路：浮动面板落下，它说「浮着了」，这叠里的那一份跟着收掉）；正常的松手
+  /// 先到时那一眼是空转。手势收了尾（stateChanged）、这块屏不放了（close）都摘掉
+  private func watchRelease() {
+    guard !isWatchingRelease else { return }
+    isWatchingRelease = true
+    // 单测（不拿键盘的那叠）不挂真的监听：用户正好在别处松开鼠标的话，测试的浮动面板会落到真实的鼠标位置、
+    // 在屏幕上闪一下。单测直接调 mouseReleased
+    guard takesKeyboard else { return }
+    let global = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] _ in
+      MainActor.assumeIsolated { self?.mouseReleased(at: NSEvent.mouseLocation) }
+    }
+    let local = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
+      MainActor.assumeIsolated { self?.mouseReleased(at: NSEvent.mouseLocation) }
+      return event
+    }
+    releaseMonitors = [global, local].compactMap { $0 }
+  }
+
+  private func removeReleaseMonitors() {
+    isWatchingRelease = false
+    releaseMonitors.forEach(NSEvent.removeMonitor)
+    releaseMonitors = []
+  }
+
+  /// 监听到鼠标在 pointer 松开（全局坐标；一次性：先摘掉）。local 监听在事件派发之前就到，正常的松手要等派发完、
+  /// SwiftUI 那一轮更新完才报，所以晚一拍再看（perform(afterDelay: 0)，同 focusBody）
+  func mouseReleased(at pointer: CGPoint) {
+    removeReleaseMonitors()
+    releasedAt = pointer
+    NSObject.cancelPreviousPerformRequests(
+      withTarget: self, selector: #selector(letGoIfStranded), object: nil)
+    perform(#selector(letGoIfStranded), with: nil, afterDelay: 0, inModes: [.common])
+  }
+
+  /// 鼠标已经松开、手势却没报松手：当成在松开的地方松了手
+  @objc private func letGoIfStranded() {
+    guard let pointer = releasedAt else { return }
+    releasedAt = nil
+    if model.isDetaching { model.releaseGrip(at: pointer) }
   }
 
   /// 自家窗口上的这一下算不算「点别处」：点那叠自己（面板、药丸）不算，点 Kitty 的任何一块浮层（OverlayPanel）不算，

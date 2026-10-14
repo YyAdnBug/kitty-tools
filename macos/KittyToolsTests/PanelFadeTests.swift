@@ -139,8 +139,12 @@ struct PanelFadeTests {
     panel.setFrameOrigin(NSPoint(x: -20000, y: -20000))
     var hides = 0
     panel.onHide = { hides += 1 }
+    // 只认这块面板自己的那一块：浮动便签收回时的替身也是 PanelStandIn，并行跑的别的测试可能正放着一块
     let standIns = {
-      NSApp.windows.filter { String(describing: type(of: $0)) == "PanelStandIn" && $0.isVisible }
+      NSApp.windows.filter {
+        String(describing: type(of: $0)) == "PanelStandIn" && $0.isVisible
+          && $0.frame.intersects(panel.frame)
+      }
     }
     panel.present(makingKey: false, keepsPlace: true)
     panel.hide()

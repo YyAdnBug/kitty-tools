@@ -112,7 +112,8 @@ enum ScreenCapture {
 
   /// 本 App 哪些窗口留在冻结帧和悬停列表里（用户 2026-09-26：截图要能截到本 App 自己）：开着的普通窗口都留——
   /// 剪贴板面板、翻译浮窗、启动器、⌘Y 放大预览、设置窗、引导、钉图、便签屏幕边缘那叠的面板（NoteDeckPanel，浮动层级：
-  /// 打开着的便签是内容；边上的药丸在状态栏层级，按层级不留），截图时能悬停、单击选中；菜单栏图标也留
+  /// 打开着的便签是内容；边上的药丸在状态栏层级，按层级不留）、浮动便签（NoteFloatPanel，普通或浮动层级；它收回时的
+  /// 替身是 PanelStandIn，不留），截图时能悬停、单击选中；菜单栏图标也留
   /// （状态栏层级、类名带 StatusBar）。其余排除：刚 orderOut 的（不可见或全透明）、面板淡出中的替身（PanelStandIn）、状态栏层级及以上的
   /// 截图装饰（刘海岛、飞行卡片、常驻缩略图、长截图 / 录屏的边框、上一次的遮罩、菜单），以及按类名认的遮罩、长截图面板、
   /// 菜单、工具提示。录屏时菜单栏的停止项（NSStatusBarWindow）同菜单栏图标一样留在冻结帧里（它本来就在菜单栏上，
@@ -130,7 +131,7 @@ enum ScreenCapture {
 
   /// 录屏时本 App 哪些窗口录进去（R4-a，白名单）：过滤器排除整个本 App，只把这几类面板列进例外——OverlayPanel（剪贴板、
   /// 启动器、翻译浮窗、两个 ⌘Y）、钉图 PinPanel、便签屏幕边缘那叠的面板 NoteDeckPanel（扇出的标签和打开的便签是内容，
-  /// 同钉图；边上的药丸是状态栏层级的普通 NSPanel，不列）、设置窗（普通 NSWindow）和它的 SwiftUI sheet（引导、速查表，实测类名
+  /// 同钉图；边上的药丸是状态栏层级的普通 NSPanel，不列）、浮动便签 NoteFloatPanel（同样是内容）、设置窗（普通 NSWindow）和它的 SwiftUI sheet（引导、速查表，实测类名
   /// SheetPresentationWindow）、选文件夹 / 另存为（NSOpenPanel / NSSavePanel，不挂在窗口上），以及挂在这些窗口上的子窗口
   /// （确认框 _NSAlertPanel 的 sheet、弹出框 _NSPopoverWindow，一层套一层也跟着）。**不看可见不可见**：收起着的、开过又
   /// 收起的开录后露出来照样录进去（第 0 批实测）。刘海岛、飞行卡片、常驻缩略图、截图遮罩、长截图面板、录制边框和停止项、
@@ -138,8 +139,8 @@ enum ScreenCapture {
   static func recordedOwnWindows(_ windows: [OwnWindow]) -> Set<CGWindowID> {
     let status = NSWindow.Level.statusBar.rawValue
     let panels: Set = [
-      "OverlayPanel", "PinPanel", "NoteDeckPanel", "NSWindow", "SheetPresentationWindow",
-      "NSOpenPanel", "NSSavePanel",
+      "OverlayPanel", "PinPanel", "NoteDeckPanel", "NoteFloatPanel", "NSWindow",
+      "SheetPresentationWindow", "NSOpenPanel", "NSSavePanel",
     ]
     var ids = Set(windows.filter { panels.contains($0.className) && $0.level < status }.map(\.id))
     while true {

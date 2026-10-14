@@ -270,18 +270,8 @@ final class OverlayPanel: NSPanel {
     let images = Self.snapshots(of: host)
     guard !images.isEmpty else { return }
     let standIn = PanelStandIn(
-      contentRect: frame, styleMask: [.nonactivatingPanel, .borderless], backing: .buffered,
-      defer: false)
-    standIn.isReleasedWhenClosed = false
-    standIn.level = level
-    standIn.collectionBehavior = collectionBehavior
+      frame: frame, level: level, behavior: collectionBehavior, hasShadow: true)
     standIn.appearance = appearance
-    standIn.isOpaque = false
-    standIn.backgroundColor = .clear
-    standIn.hasShadow = true
-    standIn.ignoresMouseEvents = true
-    standIn.animationBehavior = .none
-    standIn.setAccessibilityElement(false)
     standIn.alphaValue = alphaValue  // 淡入到一半就被关掉的，从当前的透明度接着淡
     let (root, background) = Self.makeBackground()
     standIn.contentView = root
@@ -683,9 +673,29 @@ final class OverlayPanel: NSPanel {
   }
 }
 
-/// 退场淡出的替身窗口（OverlayPanel.fadeOutStandIn）。不是另一种浮层，子类化只为有个类名：截图的留用名单
-/// （ScreenCapture.keptOwnWindows）按类名把它排除，淡出中的面板不进冻结帧和悬停列表
-private final class PanelStandIn: NSPanel {}
+/// 退场淡出的替身窗口（OverlayPanel.fadeOutStandIn；浮动便签收回时的替身也用它，NoteFloat.leave）。不是另一种浮层，
+/// 子类化只为有个类名：截图的留用名单（ScreenCapture.keptOwnWindows）按类名把它排除，淡出中的面板不进冻结帧和悬停列表
+final class PanelStandIn: NSPanel {
+  /// 两处替身共同的样子：无边框、不激活、透明、不接鼠标、不进旁白、没有系统的窗口动画、关了不释放；层级和在哪些桌面
+  /// 出现跟着被替下来的那块（level / behavior）。系统阴影看替的是什么：浮层要（材质底是窗口自己的），浮动便签的阴影
+  /// 画在动着的图层上（窗口的阴影跟不上它）
+  convenience init(
+    frame: NSRect, level: NSWindow.Level, behavior: NSWindow.CollectionBehavior, hasShadow: Bool
+  ) {
+    self.init(
+      contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,
+      defer: false)
+    isReleasedWhenClosed = false
+    self.level = level
+    collectionBehavior = behavior
+    isOpaque = false
+    backgroundColor = .clear
+    self.hasShadow = hasShadow
+    ignoresMouseEvents = true
+    animationBehavior = .none
+    setAccessibilityElement(false)
+  }
+}
 
 /// 浮层内容的根：描边 + 减弱动态效果时去掉全部 SF Symbol 动效（mac-whisker §7，一处管三个面板）
 private struct PanelRoot<Content: View>: View {

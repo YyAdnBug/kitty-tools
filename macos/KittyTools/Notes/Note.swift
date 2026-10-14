@@ -48,6 +48,9 @@ nonisolated struct Note: Identifiable, Equatable, Sendable {
   /// 非空 = 在「最近删除」里（什么时候删的）
   var deletedAt: Date?
 
+  /// 没归档、没删（「全部」里列的、屏幕边缘那叠里有的、能开着能浮着的）
+  var isActive: Bool { !isArchived && deletedAt == nil }
+
   // MARK: 收拾（进仓库、进文件之前）
 
   /// 正文、标题里的 NUL（U+0000）去掉：库里的文字按 C 字符串存取，碰到它后面的就都丢了

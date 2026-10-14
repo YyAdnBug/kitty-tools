@@ -227,6 +227,12 @@ struct NotesWindowView: View {
         }
         .disabled(note == nil)
         .help("换颜色（⌘. 换下一种）")
+        // 浮动便签（第 4 批）：屏幕边缘关着时，这是把一条便签留在屏幕上的入口。归档里的不能浮着
+        Button(model.floatTitle(note), systemImage: model.floatSymbol(note)) {
+          if let note { model.toggleFloating(note.id) }
+        }
+        .disabled(note == nil || note?.isArchived == true)
+        .help(model.floatTitle(note))
         Button(role: .destructive) {
           if let note { model.delete(note.id) }
         } label: {

@@ -838,7 +838,7 @@ struct NoteDeckTests {
     #expect(model.state.phase == .fanned)
   }
 
-  /// 操作菜单：六项，名字和全部便签窗口同一份；颜色是子列表；Esc 先退菜单再关便签
+  /// 操作菜单：七项，名字和全部便签窗口同一份；颜色是子列表；Esc 先退菜单再关便签
   @Test func actionMenu() throws {
     let (model, store, ids) = try make(["一", "二"])
     var menuEvents: [Bool] = []
@@ -850,10 +850,12 @@ struct NoteDeckTests {
     model.toggleMenu()
     #expect(model.menu == .init() && menuEvents == [true])
     #expect(
-      model.menuItems.map(\.title) == ["固定", "颜色", "任务", "归档", "删除", "在「全部便签」里打开"])
-    #expect(model.menuItems.map(\.section) == [0, 0, 0, 1, 1, 2])
+      model.menuItems.map(\.title) == [
+        "固定", "颜色", "任务", "归档", "删除", "浮在屏幕上", "在「全部便签」里打开",
+      ])
+    #expect(model.menuItems.map(\.section) == [0, 0, 0, 1, 1, 2, 2])
     #expect(
-      model.menuItems.map(\.isDestructive) == [false, false, false, false, true, false])
+      model.menuItems.map(\.isDestructive) == [false, false, false, false, true, false, false])
     #expect(model.menuItems[2].shortcut == "⌘T")
     #expect(model.menuItems[1].submenu?.count == Note.colorCount)
     // 鼠标移到哪一行，选中跟到哪一行（越界的不理）；再把它挪回第一行，下面的 ↓ 照旧从头走
@@ -893,7 +895,7 @@ struct NoteDeckTests {
     model.tapTab(ids[0])
     model.toggleMenu()
     #expect(try model.handleMenuKey(key(kVK_UpArrow)))
-    #expect(model.menu?.selection == 5)
+    #expect(model.menu?.selection == 6)
     #expect(try model.handleMenuKey(key(kVK_DownArrow)) && model.menu?.selection == 0)
     #expect(try model.handleMenuKey(key(kVK_Return)))
     #expect(store.note(ids[0])?.isPinned == true)
@@ -1223,7 +1225,8 @@ struct NoteDeckTests {
     for name in [
       "pin", "pin.fill", "pin.slash", "ellipsis", "xmark", "plus", "paintpalette", "archivebox",
       "trash", "trash.circle.fill", "note.text", "note.text.badge.plus", "gearshape",
-      "sidebar.right", "checklist", "checkmark.square", "checkmark.square.fill",
+      "sidebar.right", "sidebar.left", "checklist", "checkmark.square", "checkmark.square.fill",
+      "macwindow.on.rectangle", "xmark.rectangle",
     ] {
       #expect(NSImage(systemSymbolName: name, accessibilityDescription: nil) != nil, "\(name)")
     }

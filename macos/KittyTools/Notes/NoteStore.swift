@@ -111,7 +111,7 @@ import Observation
 
   /// 没归档、没删的，按顺序
   var active: [Note] {
-    notes.filter { !$0.isArchived && $0.deletedAt == nil }.sorted(by: Self.precedes)
+    notes.filter(\.isActive).sorted(by: Self.precedes)
   }
 
   /// 归档的，最近改过的在前

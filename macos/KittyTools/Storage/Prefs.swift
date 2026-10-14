@@ -198,6 +198,11 @@ enum Prefs {
   nonisolated static let notesDeckChosenDisplay = "notesDeckChosenDisplay"
   nonisolated static let notesDeckHintShown = "notesDeckHintShown"
   nonisolated static let notesSampleAdded = "notesSampleAdded"
+  /// 浮动便签（便签第 4 批，Notes/NoteFloat.swift）记着的两样，同样是这台电脑自己的状态、**不注册默认值**：
+  /// 拉过的大小（NSStringFromSize 的字符串；下次浮出来还是这么大）、固定着浮在屏幕上的那一张（字典：便签的编号 +
+  /// NSStringFromRect 的位置；只有固定着的才记，重启后回到原处——NoteFloatLayout.Place）
+  nonisolated static let notesFloatSize = "notesFloatSize"
+  nonisolated static let notesFloatPlace = "notesFloatPlace"
 
   /// 上次启动的版本号：没有 = 首次安装（打开欢迎引导），和当前不同 = 刚更新（刘海岛「已更新到 x」+ 本版摘要，不开设置窗，体检 A29）
   static let lastSeenVersion = "lastSeenVersion"

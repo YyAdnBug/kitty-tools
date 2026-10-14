@@ -2,7 +2,8 @@
 // 更新后第一次启动用刘海岛说一声，退出 / 锁屏时的清理；数据打不开时问用户怎么办、每天备份的时机（Storage/Backup.swift）；
 // 便签的数据（Notes/：单独的库，启动的最后才开，打不开时单独问、不退出，退出 / 锁屏 / 睡眠前落盘，每天备份、
 // 清「最近删除」里到期的）和三个入口（快速记一条的面板、新建便签、全部便签窗口；退出前落不下去先问），
-// 还有屏幕边缘的便签（Notes/NoteEdge.swift：便签开好后建；截图框选、长截图、录屏选区和倒数、状态屏开始时叫停它）；
+// 还有屏幕边缘的便签（Notes/NoteEdge.swift：便签开好后建；截图框选、长截图、录屏选区和倒数、状态屏开始时叫停它；
+// 浮动便签 Notes/NoteFloat.swift 也由它拿着，长截图时压在选区上的让开）；
 // 录屏（框选、开录、结果、飞入和视频卡、退出前收尾、上次闪退留下的文件）；
 // 录音（录音第 5 批：开录、和录屏互斥、结果、飞入和录音卡，收尾和闪退恢复同录屏）；
 // 状态屏的三个入口（快捷键先出选状态的面板——设置里可改成直接进第一个状态，菜单栏子菜单、启动器每个状态一条；
@@ -799,6 +800,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func makeNotesWindow(_ store: NoteStore) -> NotesWindow {
     let model = NotesWindowModel(store: store)
     model.island = island
+    // 工具栏 / 右键菜单的「浮在屏幕上」：和屏幕边缘那叠共用同一张浮动便签（一次一张）
+    model.float = noteEdge?.float.model
+    model.toggleFloat = { [unowned self] in noteEdge?.float.toggle($0) }
     return NotesWindow(model: model)
   }
 
@@ -1385,6 +1389,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 压在选区上的钉图会吞掉滚轮、把自动滚动的合成滚轮当缩放（体检 B40）：让开到长截图结束（拷贝、存储、取消、出错），
     // 另存为的存储面板弹出来之前就放回；常驻缩略图直接收走
     pins.suspend(covering: region)
+    noteEdge?.float.suspend(covering: region)  // 浮动便签同钉图：压在选区上的先收走，结束放回
     shelf.dismiss(covering: region)
     // 固定着的剪贴板面板留在屏幕上，它的 ⌘Y 大卡也还开着：压在选区上同样会吞掉滚轮，收走
     if clipboardModel.isQuickLooking, let card = quickLookPanel.panel,
@@ -1395,6 +1400,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     do {
       let finished = try await ScrollCapture.run(region: region)
       pins.resume()
+      noteEdge?.float.resume()
       guard let result = finished else { return }
       switch result.action {
       case .copy:
@@ -1411,6 +1417,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
     } catch {
       pins.resume()
+      noteEdge?.float.resume()
       island.show("长截图失败", detail: error.localizedDescription, tone: .error)
     }
   }

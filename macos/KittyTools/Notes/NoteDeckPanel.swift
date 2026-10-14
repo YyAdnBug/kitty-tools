@@ -8,27 +8,13 @@
 //   它是内容，同钉图。
 // - 永远不调 NSApp.activate。扇出时不当 key（becomesKeyOnlyIfNeeded：点标签、按钮不抢键盘），点开便签时
 //   NoteDeck 才 makeKey；点正文、标题也会当 key（输入框要键盘）。
-// - 按键照 mac-overlay-panel §3：⌘ 组合先给 keyEquivalentHandler（⌘W ⌘P ⌘K ⌘. ⇧⌘A），剩下的编辑键（⌘C ⌘V ⌘Z…）
-//   直接发给输入框（本 App 不激活，主菜单收不到）；Esc 是 cancelOperation（输入框里的经 doCommandBy 转过来——
-//   输入法组字时 Esc 归输入法，到不了这里），**不装本地按键监听去抢**；操作菜单开着时焦点在面板自己身上，
-//   方向键和回车走 keyDown → keyDownHandler。
-// - 撤销：⌘Z / ⇧⌘Z 直接动焦点所在输入框的撤销栈（OverlayPanel.undoRedo）——正文是打开着的那条便签自己的
-//   （NoteTextView.noteUndo = NoteDeckModel.textUndo，换一条换一个，A 里打的字不会在 B 里被 ⌘Z 撤到），标题框是它的
-//   字段编辑器的。**面板不重写 undoManager**：原来重写过（给 textUndo），文本视图登记在重写的那个上，而 ⌘Z 发出去的
-//   undo: 到头是 NSWindow 接、它动的是窗口内部的另一个栈——正文里的撤销因此一直不灵（2026-10-13 用户报，实测确认）。
+// - 能当 key、按键和撤销的入口在基类 NotePanel 里（和浮动便签的面板 NoteFloatPanel 同一份）。
 // 用时再建、收起后放掉（NoteDeck 拿着）。
 
 import AppKit
-import Carbon.HIToolbox
 import SwiftUI
 
-final class NoteDeckPanel: NSPanel {
-  /// ⌘ 组合键先给它，返回 true = 处理了
-  var keyEquivalentHandler: ((NSEvent) -> Bool)?
-  /// 焦点不在输入框里时的按键（操作菜单开着时的 ↑↓ ↩ ← →）
-  var keyDownHandler: ((NSEvent) -> Bool)?
-  var onCancel: () -> Void = {}
-  var onResignKey: () -> Void = {}
+final class NoteDeckPanel: NotePanel {
   /// 面板里真有东西的那一块（全局坐标）：截图时悬停、单击选中的是它，不是整块透明的面板。**没有东西是 .zero**
   /// （这扇窗口就不进悬停列表）——ScreenCapture.OwnWindow.content 的 nil 是另一个意思：「整个窗口」
   var contentFrame: () -> CGRect = { .zero }
@@ -60,37 +46,9 @@ final class NoteDeckPanel: NSPanel {
     setFrame(frame, display: false)
   }
 
-  override var canBecomeKey: Bool { true }
-  override var canBecomeMain: Bool { false }
-
   /// 跟鼠标的追踪区只挂在这一块上（全局坐标的热区；.zero = 不挂）
   func track(_ zone: CGRect) {
     host.hotRect = zone.isEmpty ? .zero : host.convert(convertFromScreen(zone), from: nil)
-  }
-
-  override func performKeyEquivalent(with event: NSEvent) -> Bool {
-    if keyEquivalentHandler?(event) == true || super.performKeyEquivalent(with: event) {
-      return true
-    }
-    // ⌘Z / ⇧⌘Z：焦点所在的输入框自己的撤销栈（正文是这条便签的那一个）
-    if let done = OverlayPanel.undoRedo(event, in: self) { return done }
-    // 不看 Caps Lock（同 OverlayPanel）
-    guard event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command,
-      let action = OverlayPanel.editActions[event.charactersIgnoringModifiers?.lowercased() ?? ""]
-    else { return false }
-    return OverlayPanel.sendEditAction(action, from: self)
-  }
-
-  override func cancelOperation(_ sender: Any?) { onCancel() }
-
-  override func keyDown(with event: NSEvent) {
-    if Int(event.keyCode) == kVK_Escape { return cancelOperation(nil) }
-    if keyDownHandler?(event) != true { super.keyDown(with: event) }
-  }
-
-  override func resignKey() {
-    super.resignKey()
-    onResignKey()
   }
 }
 
