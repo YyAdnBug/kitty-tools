@@ -1,4 +1,5 @@
-// 便签正文的样式（PLAN §10「便签」第 5 批任务、第 6 批 Markdown）：存的是纯文本，样式是显示时加的属性——
+// 便签正文的样式（PLAN §10「便签」第 5 批任务、第 6 批 Markdown、手测反馈第 4 批行距和代码块）：存的是纯文本，
+// 样式是显示时加的属性——
 // 只改属性、不改字、不进撤销栈、不动选区。分几块：
 // - spans(in:markdown:)：纯函数，一行文字 → 若干「区间 + 样式种类」。任务的两种（方框那个字、做完的任务的内容）
 //   不看 Markdown 开关；开着时再加 Markdown 的（标题、粗体、斜体、删除线、行内代码、链接、引用、无序列表的符号，
@@ -7,6 +8,11 @@
 //   粗细 / 倾斜 / 等宽 / 划线叠上去——标题里的粗体不会缩回正文字号。
 // - Pending / lines(covering:)：纯函数，编辑过的区间 → 要重排的那几行（前后各扩一个字符、扩到整行；输入法组字期间
 //   攒着，确认后一次补上）。
+// - 行距（手测反馈第 4 批）：每一行一个段落样式，行高定死 = 这一行的主字体（lineFontKey：标题的字 / 等宽的字 /
+//   正文的字）的字号 × 倍数（Spacing 三档）；标题上下、引用块和代码块整块上下留一点（段前段后）。字在行里竖直居中由
+//   布局管理器的代理定（centerLine：基线、和插入点按着画的 usedRect）。
+// - 代码块：块里的行和围栏行整行一种样式（blockSpans），整行记着角色（roleKey）；角色跟着正文里围栏的配对变，
+//   所以编辑之后除了改过的行，还要排角色变了的行（roleChanges），再各往上下带一行（neighborLines：引用块的段前段后）。
 // - apply：薄的一层，把 Look 换成属性写进文本存储（先把这几行铺回基础样式，再一段段写）。**标记字符**（# ** ` [ 这些）：
 //   光标在的那些行（shown）上淡淡显示（shownKey），别的行带 hiddenKey——布局管理器生成字形时（hideGlyphs、
 //   isHidden，NoteTextView 是它的代理）把带这个属性的字当成**零宽的控制字符**：不画、不占宽度（涂成透明的话宽度还在）。
@@ -16,12 +22,16 @@
 //   控制字符留在自己的行里，点击、↑↓、行首行尾都对。
 // 方框「☐」「☑」用同一种字体（Apple Symbols）：系统字体里只有「☑」没有「☐」，各走各的后备字体的话两个一大一小、
 // 打勾时后面的字还会左右挪。
-// ponytail: 方框就是那两个字形，没有自己画；Apple Symbols 的行高比系统字体略大，任务行因此比普通行高 1 pt 左右
-// （各字号不同，13 / 17 号字是 0）。要圆角的、做完是实心的方框，或者行高分毫不差：把方框那个字藏起来（hiddenKey）
-// 在 NoteTextView.draw 里自己画。
-// ponytail: outdated 每次把整篇的属性段过一遍（选区每变一次一遍）；10 KB 以内无感。实测（Release、M3 Air）1 MB、
+// 行高定死、字按主字体居中之后，任务行和普通行一样高（原来 Apple Symbols 的行高略大，任务行高 1 pt 左右）。
+// ponytail: 方框就是那两个字形，没有自己画。要圆角的、做完是实心的方框：把方框那个字藏起来（hiddenKey）在
+// NoteTextView.draw 里自己画。
+// ponytail: outdated 每次把整篇的属性段过一遍（选区每变一次一遍）；10 KB 以内无感。实测（Release、M3 Air）1.2 MB、
 // 11400 行、每行都有标记的正文：每挪一次光标约 31 ms、每打一个字约 51 ms；全选约 1.4 s、再点一下收回约 2.1 s
 // （另加重新排版）。真卡了改成记「露着的是哪一段」、跟着编辑挪（Pending 的路数），再加一条「选区超过若干行就不露」。
+// 手测反馈第 4 批之后（同样的正文，屏外的 -O 小程序，没进仓库；同一个程序量改之前是
+// 打一个字 37 ms、挪一次光标 25 ms、之后排版到底 864 ms）：打一个字约 42 ms（中间有 20 个代码块时约 48 ms：
+// 每次收尾整篇重认一遍代码块约 2.5 ms、有代码块时再找一遍角色变了的行），挪一次光标约 26 ms，之后排版到底约 960 ms
+// （布局管理器的代理每个行片段都要问一次）；改一个围栏让后面 20 个块全部重新配对（整篇几乎都重排）约 430 ms。
 
 import AppKit
 
@@ -47,6 +57,9 @@ nonisolated enum NoteStyles {
     case bullet
     /// Markdown 的标记字符：光标不在这一行时藏起来，在的时候淡淡显示
     case marker
+    /// 代码块里的一行（整行，按原文）；代码块的围栏行（整行，一直显示、不藏）
+    case codeBlock
+    case fence
   }
 
   /// 一段样式：区间是 UTF-16 的、相对这一行的开头。区间可以互相套着（粗体里的斜体、标题里的链接）
@@ -97,6 +110,32 @@ nonisolated enum NoteStyles {
     return spans + NoteMarkdown.inline(units, in: content..<units.count)
   }
 
+  /// 代码块里的一行：整行一种样式，里面什么 Markdown 都不认（任务的方框、列表符号也是原文）
+  static func blockSpans(in line: String, role: NoteMarkdown.Role) -> [Span] {
+    [
+      Span(
+        range: NSRange(location: 0, length: (line as NSString).length),
+        kind: role == .content ? .codeBlock : .fence)
+    ]
+  }
+
+  /// 一行在段落上是哪种（行高、段前段后、缩进按它定）
+  enum Shape: Hashable, Sendable {
+    case plain
+    case heading(Int)
+    case quote
+    case code(NoteMarkdown.Role)
+  }
+
+  /// 这一行（不含行尾的换行）在段落上是哪种；和 spans 认的一样（任务行不是标题、不是引用）。role：它在不在代码块里
+  static func shape(of units: [UInt16], markdown: Bool, role: NoteMarkdown.Role?) -> Shape {
+    if let role { return .code(role) }
+    guard markdown else { return .plain }
+    if let prefix = NoteTasks.prefix(of: units), case .task = prefix.lead { return .plain }
+    if let heading = NoteMarkdown.heading(units) { return .heading(heading.level) }
+    return NoteMarkdown.quote(units) != nil ? .quote : .plain
+  }
+
   // MARK: 叠起来
 
   /// 一小段字叠完之后长什么样
@@ -112,6 +151,8 @@ nonisolated enum NoteStyles {
     var isBullet = false
     var isBox = false
     var isMarker = false
+    var isCodeBlock = false
+    var isFence = false
     /// 在链接的字里：它的地址
     var link: String?
   }
@@ -133,6 +174,8 @@ nonisolated enum NoteStyles {
     var quote = 0
     var bullet = 0
     var marker = 0
+    var codeBlock = 0
+    var fence = 0
     var heading = 0
     var link: String?
 
@@ -148,6 +191,8 @@ nonisolated enum NoteStyles {
       case .quote: quote += step
       case .bullet: bullet += step
       case .marker: marker += step
+      case .codeBlock: codeBlock += step
+      case .fence: fence += step
       // 一行最多一个标题；链接里不套链接
       case .heading(let level): heading = step > 0 ? level : 0
       case .link(let address): link = step > 0 ? address : nil
@@ -158,7 +203,8 @@ nonisolated enum NoteStyles {
       Look(
         heading: heading, isBold: bold > 0, isItalic: italic > 0, isStruck: strike > 0,
         isCode: code > 0, isQuote: quote > 0, isDone: done > 0, isBullet: bullet > 0,
-        isBox: box > 0, isMarker: marker > 0, link: link)
+        isBox: box > 0, isMarker: marker > 0, isCodeBlock: codeBlock > 0, isFence: fence > 0,
+        link: link)
     }
   }
 
@@ -223,6 +269,58 @@ nonisolated enum NoteStyles {
     return text.lineRange(for: NSRange(location: start, length: end - start))
   }
 
+  /// 这几行（整行）再往上、往下各带一行：引用块的段前段后看的是上下两行是不是引用，一行变了，挨着的两行也要重排
+  static func neighborLines(_ lines: NSRange, in text: NSString) -> NSRange {
+    let start =
+      lines.location > 0
+      ? text.lineRange(for: NSRange(location: lines.location - 1, length: 0)).location
+      : lines.location
+    let end =
+      NSMaxRange(lines) < text.length
+      ? NSMaxRange(text.lineRange(for: NSRange(location: NSMaxRange(lines), length: 0)))
+      : NSMaxRange(lines)
+    return NSRange(location: start, length: end - start)
+  }
+
+  /// 几段区间从前到后排好，重叠的、首尾相接的并成一段
+  static func merged(_ ranges: [NSRange]) -> [NSRange] {
+    var merged: [NSRange] = []
+    for range in ranges.sorted(by: { $0.location < $1.location }) {
+      if let last = merged.last, range.location <= NSMaxRange(last) {
+        merged[merged.count - 1] = NSUnionRange(last, range)
+      } else {
+        merged.append(range)
+      }
+    }
+    return merged
+  }
+
+  /// 代码块里的角色和字上记着的（roleKey）不一样的那些行（整行，从前到后、挨着的并成一段）：开头、收尾的围栏配上了 /
+  /// 拆开了，块里的行一下子都变了。字上记着的是上一次重排时的角色（重排一行就写一次），blocks 是照现在的正文认的。
+  /// 只看两边沾着代码块的行：字上记着角色的、现在在块里的；两边都没有代码块时什么都不做
+  static func roleChanges(in storage: NSTextStorage, blocks: [NoteMarkdown.CodeBlock]) -> [NSRange]
+  {
+    let text = storage.mutableString
+    let full = NSRange(location: 0, length: storage.length)
+    var found: [NSRange] = []
+    func check(_ range: NSRange) {
+      var location = range.location
+      while location < NSMaxRange(range) {
+        let line = text.lineRange(for: NSRange(location: location, length: 0))
+        let stored = storage.attribute(roleKey, at: line.location, effectiveRange: nil) as? Int
+        if stored != NoteMarkdown.role(at: line.location, in: blocks)?.rawValue {
+          found.append(line)
+        }
+        location = max(NSMaxRange(line), location + 1)
+      }
+    }
+    storage.enumerateAttribute(roleKey, in: full) { value, range, _ in
+      if value != nil { check(range) }
+    }
+    for block in blocks { check(NSIntersectionRange(block.range, full)) }
+    return merged(found)
+  }
+
   // MARK: 数值（长相在 mac-whisker-notes.mdc「正文里的 Markdown」）
 
   /// 方框比正文的字大多少
@@ -236,6 +334,38 @@ nonisolated enum NoteStyles {
   /// 引用缩进多少、左边那条竖线多宽
   static let quoteIndent: CGFloat = 14
   static let quoteBarWidth: CGFloat = 3
+  /// 标题上方、下方各留多少（正文一行的行高的几分之几；正文第一行的段前 TextKit 本来就不给）
+  static let headingBefore: CGFloat = 0.5
+  static let headingAfter: CGFloat = 0.25
+  /// 引用块、代码块整块的上下各留多少（同上）
+  static let blockMargin: CGFloat = 0.25
+  /// 代码块里的字离那块底的左右边多远；那块底比开头、收尾两行再往上下各多出多少（伸进块外留的那点里：
+  /// 围栏行的反引号贴着行顶，不多出一点看着顶上挤）；Tab 是几个空格那么宽
+  static let codeInset: CGFloat = 8
+  static let codePadding: CGFloat = 3
+  static let codeTabWidth = 4
+
+  /// 正文的行距（设置 › 便签「行距」，Prefs.notesLineSpacing）：每一行的行高 = 这一行的字号 × 倍数（整点），字在行里
+  /// 竖直居中。标准 1.45：Typora、Notion、Obsidian 大多 1.5，便签的字小一点、略紧
+  enum Spacing: String, CaseIterable, Sendable {
+    case compact, standard, relaxed
+
+    var multiple: CGFloat {
+      switch self {
+      case .compact: 1.2
+      case .standard: 1.45
+      case .relaxed: 1.7
+      }
+    }
+
+    var title: String {
+      switch self {
+      case .compact: "紧凑"
+      case .standard: "标准"
+      case .relaxed: "宽松"
+      }
+    }
+  }
 
   /// level 级标题的字号（整点）
   static func headingSize(_ level: Int, base: CGFloat) -> CGFloat {
@@ -254,6 +384,12 @@ nonisolated enum NoteStyles {
   static let linkKey = NSAttributedString.Key("KittyNoteLink")
   /// 引用的行（连行尾的换行：连着的几行引用是一整段，左边的竖线照它画）
   static let quoteKey = NSAttributedString.Key("KittyNoteQuote")
+  /// 代码块里的行（整行连换行）记着它的角色（NoteMarkdown.Role 的 rawValue）：NoteTextView 照它画那块底，
+  /// 编辑之后照它找出角色变了的行（roleChanges）
+  static let roleKey = NSAttributedString.Key("KittyNoteCodeRole")
+  /// 这一行的主字体（整行连换行）：标题行是标题的字、代码块是等宽的字、别的是正文的字。行高按它的字号算，布局时字的
+  /// 上下沿也按它居中（centerLine：一行里混着别的字——方框、行内代码——也不挪基线）
+  static let lineFontKey = NSAttributedString.Key("KittyNoteLineFont")
 
   /// 套用时要的字体和颜色（一条便签的纸色、字号、Markdown 开关定下来的）
   struct Theme {
@@ -271,10 +407,11 @@ nonisolated enum NoteStyles {
     /// 引用左边的竖线（NoteTextView 画）
     var bar = NSColor.separatorColor
     var markdown = true
+    var spacing = Spacing.standard
 
     init() {}
 
-    init(paper: NotePaper, fontSize: CGFloat, markdown: Bool) {
+    init(paper: NotePaper, fontSize: CGFloat, markdown: Bool, spacing: Spacing) {
       font = .systemFont(ofSize: fontSize)
       ink = paper.inkColor
       faded = paper.fadedInkColor
@@ -283,27 +420,66 @@ nonisolated enum NoteStyles {
       codeFill = paper.codeFillColor
       bar = paper.quoteBarColor
       self.markdown = markdown
+      self.spacing = spacing
     }
+
+    /// size 号字那一行的行高（整点）
+    func lineHeight(_ size: CGFloat) -> CGFloat { (size * spacing.multiple).rounded() }
+
+    /// 正文的字那一行的段落样式（打进去的字带着它：空着的最后一行、组着的字按它排）
+    var baseParagraph: NSParagraphStyle { paragraph(height: lineHeight(font.pointSize)) }
+  }
+
+  /// 一行的段落样式：行高定死（最小 = 最大）、段前段后、左缩进（tail：右边也缩进）、Tab 宽（0 = 系统的）
+  static func paragraph(
+    height: CGFloat, before: CGFloat = 0, after: CGFloat = 0, indent: CGFloat = 0,
+    tail: CGFloat = 0, tab: CGFloat = 0
+  ) -> NSParagraphStyle {
+    let style = NSMutableParagraphStyle()
+    style.minimumLineHeight = height
+    style.maximumLineHeight = height
+    style.paragraphSpacingBefore = before
+    style.paragraphSpacing = after
+    style.firstLineHeadIndent = indent
+    style.headIndent = indent
+    style.tailIndent = -tail
+    if tab > 0 {
+      style.tabStops = []
+      style.defaultTabInterval = tab
+    }
+    return style
   }
 
   /// 把 range 那几行（整行）的样式重排一遍：铺回基础样式，再按 spans 加。只动属性。
-  /// shown：现在该露出标记的行（整行的区间）——行首落在里面的那些行，标记淡淡显示，别的行藏起来
+  /// shown：现在该露出标记的行（整行的区间）——行首落在里面的那些行，标记淡淡显示，别的行藏起来。
+  /// blocks：照现在的正文认出来的代码块（NoteMarkdown.codeBlocks；Markdown 关着时给空的）。
+  /// 一行排成什么样只看：这一行的字、它在不在代码块里（什么角色）、上下两行是不是引用（引用块的段前段后）、露不露标记
+  /// ——所以「每次编辑只排受影响的行」要排到：改过的行、角色变了的行（roleChanges），再各往上下带一行（neighborLines）
   @MainActor
-  static func apply(to storage: NSTextStorage, lines range: NSRange, theme: Theme, shown: [NSRange])
-  {
+  static func apply(
+    to storage: NSTextStorage, lines range: NSRange, theme: Theme, shown: [NSRange],
+    blocks: [NoteMarkdown.CodeBlock]
+  ) {
     guard range.length > 0 else { return }
     let text = storage.mutableString
     let base = theme.font
     let box = NSFont(name: "AppleSymbols", size: (base.pointSize * boxScale).rounded())
     // 方框往上抬一点：Apple Symbols 的字形坐在基线上，抬到和字的中线差不多齐
     let lift = box.map { max(0, base.descender - $0.descender) } ?? 0
-    let quoteStyle = NSMutableParagraphStyle()
-    quoteStyle.firstLineHeadIndent = quoteIndent
-    quoteStyle.headIndent = quoteIndent
+    let code = NSFont.monospacedSystemFont(ofSize: codeSize(base.pointSize), weight: .regular)
+    let height = theme.lineHeight(base.pointSize)
+    let margin = (height * blockMargin).rounded()
+    // 同一种的行（引用之外）主字体和段落样式都一样：排一次记下
+    var cache: [Shape: (NSFont, NSParagraphStyle)] = [:]
 
     func attributes(for look: Look, isShown: Bool) -> [NSAttributedString.Key: Any] {
       if look.isBox {
         return [.font: box ?? base, .baselineOffset: lift, .foregroundColor: theme.ink]
+      }
+      // 代码块：等宽、按原文、墨色；围栏行也是墨（不藏）——标记那一档（墨 35%）压在代码的底上最低 1.67:1，语言名读不出来；
+      // 次要的墨（75%）压在底上沙色浅纸也只有 4.498:1、不到 4.5（墨对底 ≥ 7，NotesWindowTests.paperTable 锁住）
+      if look.isCodeBlock || look.isFence {
+        return [.font: code, .foregroundColor: theme.ink]
       }
       // 字号跟这一行的标题级别走，粗细、等宽叠上去
       let size = look.heading > 0 ? headingSize(look.heading, base: base.pointSize) : base.pointSize
@@ -338,16 +514,55 @@ nonisolated enum NoteStyles {
         result[.underlineStyle] = NSUnderlineStyle.single.rawValue
         if let url = NoteMarkdown.url(address) { result[linkKey] = url }
       }
-      if look.isQuote {
-        result[.paragraphStyle] = quoteStyle
-        result[quoteKey] = true
-      }
+      if look.isQuote { result[quoteKey] = true }
       if look.isMarker { result[isShown ? shownKey : hiddenKey] = true }
       return result
     }
 
+    /// 一行的主字体和段落样式。引用的段前段后看上下两行是不是引用（isFirst / isLast：引用块的头一行、末一行）
+    func metrics(of shape: Shape, isFirst: Bool, isLast: Bool) -> (NSFont, NSParagraphStyle) {
+      switch shape {
+      case .plain:
+        return (base, theme.baseParagraph)
+      case .heading(let level):
+        let font = NSFont.systemFont(
+          ofSize: headingSize(level, base: base.pointSize), weight: .bold)
+        let style = NoteStyles.paragraph(
+          height: theme.lineHeight(font.pointSize), before: (height * headingBefore).rounded(),
+          after: (height * headingAfter).rounded())
+        return (font, style)
+      case .quote:
+        return (
+          base,
+          NoteStyles.paragraph(
+            height: height, before: isFirst ? margin : 0, after: isLast ? margin : 0,
+            indent: quoteIndent)
+        )
+      case .code(let role):
+        // 块外留的那点从画出来的底算起（底比围栏行多出 codePadding）
+        let space = (" " as NSString).size(withAttributes: [.font: code]).width
+        let style = NoteStyles.paragraph(
+          height: theme.lineHeight(code.pointSize),
+          before: role == .open ? margin + codePadding : 0,
+          after: role == .close ? margin + codePadding : 0, indent: codeInset, tail: codeInset,
+          tab: space * CGFloat(codeTabWidth))
+        return (code, style)
+      }
+    }
+
+    /// 第 position 个字所在的那一行是不是引用（引用块的段前段后用）
+    func isQuote(lineAt position: Int) -> Bool {
+      var (start, contentsEnd) = (0, 0)
+      text.getLineStart(
+        &start, end: nil, contentsEnd: &contentsEnd, for: NSRange(location: position, length: 0))
+      let units = Array(
+        text.substring(with: NSRange(location: start, length: contentsEnd - start)).utf16)
+      return shape(
+        of: units, markdown: theme.markdown, role: NoteMarkdown.role(at: start, in: blocks))
+        == .quote
+    }
+
     storage.beginEditing()
-    storage.setAttributes([.font: base, .foregroundColor: theme.ink], range: range)
     var location = range.location
     while location < NSMaxRange(range) {
       var (start, end, contentsEnd) = (0, 0, 0)
@@ -355,16 +570,37 @@ nonisolated enum NoteStyles {
         &start, end: &end, contentsEnd: &contentsEnd,
         for: NSRange(location: location, length: 0))
       let line = text.substring(with: NSRange(location: start, length: contentsEnd - start))
+      let role = NoteMarkdown.role(at: start, in: blocks)
+      let shape = shape(of: Array(line.utf16), markdown: theme.markdown, role: role)
+      let found: (font: NSFont, style: NSParagraphStyle)
+      if shape == .quote {
+        found = metrics(
+          of: shape, isFirst: start == 0 || !isQuote(lineAt: start - 1),
+          isLast: end >= text.length || !isQuote(lineAt: end))
+      } else if let cached = cache[shape] {
+        found = cached
+      } else {
+        found = metrics(of: shape, isFirst: false, isLast: false)
+        cache[shape] = found
+      }
+      var whole: [NSAttributedString.Key: Any] = [
+        .paragraphStyle: found.style, lineFontKey: found.font,
+      ]
+      if let role { whole[roleKey] = role.rawValue }
+      // 整行（连行尾的换行）铺回基础样式：段落、主字体、角色记在每个字上
+      storage.setAttributes(
+        whole.merging([.font: base, .foregroundColor: theme.ink]) { current, _ in current },
+        range: NSRange(location: start, length: end - start))
       let isShown = shown.contains { $0.location <= start && start < NSMaxRange($0) }
-      var isQuote = false
-      for run in runs(of: spans(in: line, markdown: theme.markdown)) {
+      let spans =
+        role.map { blockSpans(in: line, role: $0) } ?? spans(in: line, markdown: theme.markdown)
+      for run in runs(of: spans) {
         storage.setAttributes(
-          attributes(for: run.look, isShown: isShown),
+          attributes(for: run.look, isShown: isShown).merging(whole) { current, _ in current },
           range: NSRange(location: start + run.range.location, length: run.range.length))
-        isQuote = isQuote || run.look.isQuote
       }
       // 引用行行尾的换行也记上：连着的几行引用是一整段（竖线不断开）
-      if isQuote, end > contentsEnd {
+      if shape == .quote, end > contentsEnd {
         storage.addAttribute(
           quoteKey, value: true, range: NSRange(location: contentsEnd, length: end - contentsEnd))
       }
@@ -408,15 +644,7 @@ nonisolated enum NoteStyles {
       }
       if isHidden { found.append(text.lineRange(for: range)) }
     }
-    var merged: [NSRange] = []
-    for lines in found.sorted(by: { $0.location < $1.location }) {
-      if let last = merged.last, lines.location <= NSMaxRange(last) {
-        merged[merged.count - 1] = NSUnionRange(last, lines)
-      } else {
-        merged.append(lines)
-      }
-    }
-    return merged
+    return merged(found)
   }
 
   /// 布局管理器生成一批字形时问到这里（NSLayoutManagerDelegate 的 shouldGenerateGlyphs，NoteTextView 转过来）：
@@ -455,6 +683,79 @@ nonisolated enum NoteStyles {
         forGlyphRange: glyphRange)
     }
     return count
+  }
+
+  // MARK: 行高和插入点
+
+  /// 布局管理器排好一个行片段时问到这里（NSLayoutManagerDelegate 的 shouldSetLineFragmentRect，NoteTextView 转过来）：
+  /// 行高是段落样式定死的那么高（apply 给每一行的 minimumLineHeight = maximumLineHeight），这里把字按这一行的主字体
+  /// （lineFontKey）在里面竖直居中——改的是基线，和「用到的那一块」（usedRect：插入点、选区的上下沿、行内代码的底都按它
+  /// 画，所以插入点只有字那么高、不跟着撑高的行走）。段前的留白算在行片段里、不算在居中的那一条里。
+  /// 不靠字上的 baselineOffset 居中：TextKit 排基线时看这一行所有字里最深的下沿（实测 15.7：带方框的任务行因为
+  /// Apple Symbols 的下沿深，整行的字比普通行高 1 pt），这里按主字体直接定，一行里混着什么字都不挪。
+  /// 返回改没改（没有主字体、行高没定死的不管）。布局时调的代码：只动传进来的东西、只读文本存储上的属性
+  static func centerLine(
+    in layoutManager: NSLayoutManager, glyphRange: NSRange, rect: NSRect, used: inout NSRect,
+    baseline: inout CGFloat
+  ) -> Bool {
+    guard let storage = layoutManager.textStorage, storage.length > 0 else { return false }
+    let chars = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+    // 一次取全这个字上的属性（每个行片段都要问，几万行的正文排一遍版就是几万次）
+    let attributes = storage.attributes(
+      at: min(chars.location, storage.length - 1), effectiveRange: nil)
+    guard let font = attributes[lineFontKey] as? NSFont,
+      let style = attributes[.paragraphStyle] as? NSParagraphStyle, style.minimumLineHeight > 0
+    else { return false }
+    center(
+      height: style.minimumLineHeight, ascender: font.ascender, descender: font.descender,
+      before: spacingBefore(at: chars.location, style: style, in: storage.mutableString),
+      rect: rect, used: &used, baseline: &baseline)
+    return true
+  }
+
+  /// 字的上下沿（ascender / descender）在一条 height 高的行里居中：基线取整点（字形落在整像素上，最多偏 0.5），
+  /// usedRect 的上下就是字的上下沿。before：行片段（rect）顶上那段段前留白。
+  /// **不出自己的行片段**：居中的那条和收出来的高度都夹到 rect.height - before 以内。贴进来的软换行（U+2028、U+0085）
+  /// 后面那一行，TextKit 1 不当分段、按这一段的段落样式排（行片段是上一行的行高），字上记的却是这一行自己的（比如标题的
+  /// 行高和大字）——不夹的话插入点、输入法候选窗跑到上下两行上去
+  static func center(
+    height: CGFloat, ascender: CGFloat, descender: CGFloat, before: CGFloat, rect: NSRect,
+    used: inout NSRect, baseline: inout CGFloat
+  ) {
+    let room = max(rect.height - before, 0)
+    let height = min(height, room)
+    let box = ascender - descender
+    baseline = (before + (height - box) / 2 + ascender).rounded()
+    used.origin.y = rect.minY + baseline - ascender
+    used.size.height = box
+    if box > room {
+      used.origin.y = rect.minY + before
+      used.size.height = room
+    }
+  }
+
+  /// 正文的第一行里字的上沿离这一行的顶多远（行高定死、字居中让出来的那点）：正文框的占位要和第一个字对齐。
+  /// 行高取 Theme.lineHeight（和正文编辑器排的是同一份）
+  static func textTop(fontSize: CGFloat, spacing: Spacing) -> CGFloat {
+    var theme = Theme()
+    theme.font = .systemFont(ofSize: fontSize)
+    theme.spacing = spacing
+    let height = theme.lineHeight(fontSize)
+    var (used, baseline) = (NSRect.zero, CGFloat(0))
+    center(
+      height: height, ascender: theme.font.ascender, descender: theme.font.descender, before: 0,
+      rect: NSRect(x: 0, y: 0, width: 0, height: height), used: &used, baseline: &baseline)
+    return used.minY
+  }
+
+  /// 从 location 开始的那个行片段顶上有多少段前留白：段首的行片段才有（段落样式的 paragraphSpacingBefore），
+  /// 正文第一段没有（TextKit 1 不给，实测 15.7）。段的分隔同 NSString（\n \r U+2029；U+2028 只换行不分段）
+  static func spacingBefore(at location: Int, style: NSParagraphStyle, in text: NSString) -> CGFloat
+  {
+    guard location > 0, location <= text.length else { return 0 }
+    let previous = text.character(at: location - 1)
+    return previous == 0x0A || previous == 0x0D || previous == 0x2029
+      ? style.paragraphSpacingBefore : 0
   }
 
   /// 第 index 个字是不是藏着的标记（布局管理器排到一个控制字符时来问怎么处理：是的话零宽，不是的话——换行、Tab——

@@ -18,6 +18,19 @@
 //   记在字上（NoteStyles.shownKey），编辑把那一行挪到哪、拆成几行都找得回来。用鼠标点进来（拿焦点 / 把窗口点成 key）
 //   的那一刻先不排，晚一拍、等这一下点完（syncUnlessClicking、mouseDown 的末尾）：不然旧光标那一行先露出标记，
 //   字在鼠标底下挪，点不准。
+// - **行高定死、字和插入点居中**（手测反馈第 4 批：「几乎没有间距，视觉上看起来非常累」）：每一行的行高是段落样式
+//   定死的（NoteStyles.apply，设置 › 便签「行距」三档）；字在行里怎么放由布局管理器的代理定（shouldSetLineFragmentRect →
+//   NoteStyles.centerLine）：基线按这一行的主字体居中，「用到的那一块」（usedRect）收成字那么高——插入点、输入法候选窗
+//   （firstRect）、选区的头尾两行都按它，所以插入点只有字那么高、不跟着撑高的行走。没重写 drawInsertionPoint：
+//   macOS 14 起插入点是系统的 NSTextInsertionIndicator 画的，改在源头（usedRect）两条路都管——单测量的是布局管理器
+//   给插入点的矩形（零长度的 rectArray、firstRect），屏外的窗口不当 key、不画插入点，真画出来的没看过。选区：头一行从字的上沿起、
+//   末一行到字的下沿，中间几行连成一片（同系统编辑器）。空着的最后一行不经过代理，由 NoteLayoutManager 照样收。
+// - **代码块**（三个反引号围起来的几行）：等宽、按原文，底是一块圆角矩形（drawBackground，画在字和选区下面）；
+//   块里回车不续列表、Tab 是制表符、「- [ ]」加空格不转换、⌘T 和加标记的键不动、方框点了不勾。它是唯一跨行的语法：
+//   一次编辑收尾时，除了改过的行，还重排角色变了的行（restyleEdited），保证和整篇排一遍逐字一样。
+// - ⌘B ⌘I ⇧⌘X ⌘E 加粗体、斜体、删除线、行内代码（performKeyEquivalent，焦点在自己身上才接；规则在
+//   NoteMarkdown.toggle）；右键菜单里有「格式」。选中一段字粘贴一个网址 = 粘成链接（paste → NoteMarkdown.linkPaste）。
+//   改字都走 perform（shouldChangeText → 改 → didChangeText）：一步撤销、照常重排和写出去。
 // - 链接：⌘ 点才打开（只有 http / https / mailto 的地址记在字上），普通点击照常放光标；不用系统的 .link 属性。
 //   右键点在能打开的链接上，菜单最前面多一项「打开链接」——不靠 ⌘ 点的那条路（键盘、旁白用户）。
 // - 任务（NoteTasks，纯函数；这里只管调）：⌘T 切换、点方框打勾（不是 key 的面板里第一下点击就生效）、回车续行和
@@ -40,11 +53,14 @@
 // ponytail: 鼠标停在链接上不动、这时才按下 / 松开 ⌘，手指光标要等鼠标再动一下才换（没接 flagsChanged）。
 // ponytail: 焦点在查找条里时正文不算拿着焦点，标记都藏着——搜到的字正好在藏着的标记里（链接的地址）时看不见高亮。
 // 要看得见就在查找条开着时把匹配所在的行也算进 revealedLines。
-// ponytail: 贴进来的软换行（U+2028）不管：NSString 把它算新的一行、段落样式却按段算，它后面的「> 引用」缩进不对、
-// 竖线压在字上（自己按 ⌃↩ 打不出来：当普通换行了）。要对就改成「行首不是段首的不当引用」。
+// ponytail: 贴进来的软换行（U+2028）和 U+0085 不管：NSString 把它们算新的一行、TextKit 1 却不当分段，段落样式按段算
+// ——它后面那一行用的是这一段的行高和缩进：「> 引用」缩进不对、竖线压在字上；「# 标题」的大字挤在正文的行高里，
+// 插入点和输入法候选窗（usedRect）夹在自己的行片段里、不跑到别的行上（NoteStyles.center），字会伸出去一点
+// （自己按 ⌃↩ 打不出来：当普通换行了）。要对就改成「行首不是段首的不当引用、不当标题」。
 
 import AppKit
 import SwiftUI
+import Synchronization
 
 final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDelegate {
   /// 正文最多多少字节（UTF-8）；nil = 不限
@@ -68,6 +84,9 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   /// 现在的纸色，和它连同字号、Markdown 开关定下来的字体和颜色（变了才整篇重排）
   private var paper: NotePaper?
   private var theme = NoteStyles.Theme()
+  /// 照现在的正文认出来的代码块（Markdown 关着时是空的）：改了字、收尾时（settle）重认，整篇重排时也是。
+  /// 没在组字、没有没处理完的编辑时，它就是现在这篇正文的
+  private var blocks: [NoteMarkdown.CodeBlock] = []
   /// 上次交出去 / 拿进来的全文：外面再给同样的就不动；输入法确认之后超了上限退回它
   private var reported = ""
   /// 改过字、还没重排的那一段
@@ -84,7 +103,7 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   /// 建一个：TextKit 1 的栈在这里搭
   static func make() -> NoteTextView {
     let storage = NSTextStorage()
-    let layout = NSLayoutManager()
+    let layout = NoteLayoutManager()
     // 行高只按字的上下沿算，不加后备字体自带的行距（方框用的 Apple Symbols 有）；系统字体、苹方、表情的行距本来就是 0
     layout.usesFontLeading = false
     storage.addLayoutManager(layout)
@@ -114,14 +133,28 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
 
   // MARK: 外面给的
 
-  /// 纸色、字号、Markdown 样式开没开（换了才动）：基础字体和墨色、插入点，整篇重排
-  func setPaper(_ paper: NotePaper, fontSize: CGFloat, markdown: Bool) {
-    guard paper != self.paper || fontSize != theme.font.pointSize || markdown != theme.markdown
+  /// 纸色、字号、Markdown 样式开没开、行距（换了才动）：基础字体和墨色、插入点，整篇重排
+  func setPaper(
+    _ paper: NotePaper, fontSize: CGFloat, markdown: Bool, spacing: NoteStyles.Spacing
+  ) {
+    guard
+      paper != self.paper || fontSize != theme.font.pointSize || markdown != theme.markdown
+        || spacing != theme.spacing
     else { return }
     self.paper = paper
-    theme = NoteStyles.Theme(paper: paper, fontSize: fontSize, markdown: markdown)
+    theme = NoteStyles.Theme(
+      paper: paper, fontSize: fontSize, markdown: markdown, spacing: spacing)
+    // 空着的最后一行（正文末尾的换行后面）按打进去的字排：布局管理器那边读不到 typingAttributes，告诉它字的上下沿
+    (layoutManager as? NoteLayoutManager)?.extraLine.withLock {
+      $0 = (theme.font.ascender, theme.font.descender)
+    }
     // 纸上的输入框插入点用墨色：强调色选黄时在柠檬色的纸上看不见
     insertionPointColor = theme.ink
+    // 空的正文：下面的整篇重排没有字可排，空着的那一行（额外行片段，按 typingAttributes 排）不会跟着重排——换了字号、
+    // 行距它还是旧的高、插入点不挪。让布局管理器把整个容器重排一次（空的，就只有这一行）
+    if textStorage?.length == 0, let textContainer {
+      layoutManager?.textContainerChangedGeometry(textContainer)
+    }
     restyleAll()
   }
 
@@ -138,8 +171,10 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   private func replaceAll(with text: String) {
     reported = text
     let styled = NSTextStorage(string: text)
+    blocks = theme.markdown ? NoteMarkdown.codeBlocks(in: styled.mutableString) : []
     NoteStyles.apply(
-      to: styled, lines: NSRange(location: 0, length: styled.length), theme: theme, shown: [])
+      to: styled, lines: NSRange(location: 0, length: styled.length), theme: theme, shown: [],
+      blocks: blocks)
     textStorage?.setAttributedString(styled)
     _ = pending.take()
     owesFullRestyle = false
@@ -152,9 +187,27 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   // MARK: 样式
 
   /// 打进去的字永远是基础样式，不跟光标前面那个字走（它可能是方框——另一种字体，或者做完的任务——划线、变淡）；
-  /// 组字中的字也按它画。该有的样式等这次编辑收尾了由重排补
+  /// 组字中的字也按它画。该有的样式等这次编辑收尾了由重排补。**段落那几样跟着光标所在的那一行走**（段落样式、
+  /// 主字体、代码块的角色）：一行的段落样式看的是行首那个字，组字期间不重排——在代码块、引用、标题的行首组字时，
+  /// 组着的字要是带着正文的段落样式，整行的行高和缩进当场就变了、确认之后再变回来（跳两下）。空着的最后一行是正文的
   override var typingAttributes: [NSAttributedString.Key: Any] {
-    get { [.font: theme.font, .foregroundColor: theme.ink] }
+    get {
+      var attributes: [NSAttributedString.Key: Any] = [
+        .font: theme.font, .foregroundColor: theme.ink, .paragraphStyle: theme.baseParagraph,
+        NoteStyles.lineFontKey: theme.font,
+      ]
+      if let storage = textStorage, selectedRange().location < storage.length {
+        let start = storage.mutableString.lineRange(
+          for: NSRange(location: selectedRange().location, length: 0)
+        ).location
+        for key in [.paragraphStyle, NoteStyles.lineFontKey, NoteStyles.roleKey] {
+          if let value = storage.attribute(key, at: start, effectiveRange: nil) {
+            attributes[key] = value
+          }
+        }
+      }
+      return attributes
+    }
     set {}
   }
 
@@ -166,13 +219,15 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
       return
     }
     owesFullRestyle = false
+    blocks = theme.markdown ? NoteMarkdown.codeBlocks(in: storage.mutableString) : []
     restyle(NSRange(location: 0, length: storage.length))
   }
 
   /// 把这几行（整行）的样式重排一遍。**调它的地方都得先确认没在组字**
   private func restyle(_ lines: NSRange) {
     guard let storage = textStorage else { return }
-    NoteStyles.apply(to: storage, lines: lines, theme: theme, shown: revealedLines())
+    NoteStyles.apply(
+      to: storage, lines: lines, theme: theme, shown: revealedLines(), blocks: blocks)
     markWholeViewDirty()
     // 标记露出 / 收起、字体变了之后这一行的字会左右挪：插入点跟着重算
     if isFocused { updateInsertionPointStateAndRestartTimer(true) }
@@ -184,6 +239,37 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   /// Debug 约 50 ms；手测反馈第 3 批 sample 出来的）。排版留给真要画的那一刻
   private func markWholeViewDirty() {
     setNeedsDisplay(bounds, avoidAdditionalLayout: true)
+  }
+
+  /// 一次编辑收尾时重排受影响的行：改过的那几行；代码块照现在的正文重认一遍，角色变了的行（围栏配上 / 拆开，
+  /// 一整块都变——代码块是唯一跨行的语法）；再各往上下带一行（引用块的段前段后看上下两行是不是引用）。不相邻的几段
+  /// 各自重排（各自一对 beginEditing / endEditing）。这样排出来的和整篇排一遍逐个属性一样（单测
+  /// NoteTextViewTests.codeBlocksInTheEditor / quoteMarginsFollowNeighbors，随机探针 NoteEditorFuzzTests 每步逐字比）。
+  /// ponytail: 每次收尾都把整篇的围栏行重认一遍（一行一行看行首）；有代码块时还把字上记着角色的那几段过一遍。
+  /// 实测数在 PLAN §10「便签」手测反馈第 4 批；真卡了改成只在改到的行里有、或改之前有围栏时才重认
+  private func restyleEdited(_ edited: NSRange, in storage: NSTextStorage) {
+    let text = storage.mutableString
+    let previous = blocks
+    blocks = theme.markdown ? NoteMarkdown.codeBlocks(in: text) : []
+    var changed = [NoteStyles.lines(covering: edited, in: text)]
+    // 前后都没有代码块：字上也就没有记着的角色（改过的行另算），不用找
+    if !previous.isEmpty || !blocks.isEmpty {
+      changed += NoteStyles.roleChanges(in: storage, blocks: blocks)
+    }
+    for lines in NoteStyles.merged(changed.map { NoteStyles.neighborLines($0, in: text) }) {
+      restyle(lines)
+    }
+  }
+
+  /// 选区碰到的行里有没有代码块的行（围栏行也算）：这些行里加标记、续列表、切任务都不做（块里按原文）
+  private func touchesCodeBlock(_ selection: NSRange) -> Bool {
+    guard !blocks.isEmpty, let text = textStorage?.mutableString,
+      NSMaxRange(selection) <= text.length
+    else { return false }
+    let lines = text.lineRange(for: selection)
+    return blocks.contains {
+      NSLocationInRange(lines.location, $0.range) || NSLocationInRange($0.range.location, lines)
+    }
   }
 
   // MARK: Markdown 的标记：露在哪几行
@@ -282,11 +368,131 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     NoteStyles.isHidden(at: charIndex, in: layoutManager) ? .zeroAdvancement : action
   }
 
+  /// 排好一个行片段时问到这里：行高是段落样式定死的，字按这一行的主字体在里面竖直居中，「用到的那一块」（插入点、
+  /// 选区的上下沿按它）收成字那么高（NoteStyles.centerLine）。布局时调的代码，同上
+  nonisolated func layoutManager(
+    _ layoutManager: NSLayoutManager,
+    shouldSetLineFragmentRect lineFragmentRect: UnsafeMutablePointer<NSRect>,
+    lineFragmentUsedRect: UnsafeMutablePointer<NSRect>,
+    baselineOffset: UnsafeMutablePointer<CGFloat>, in textContainer: NSTextContainer,
+    forGlyphRange glyphRange: NSRange
+  ) -> Bool {
+    NoteStyles.centerLine(
+      in: layoutManager, glyphRange: glyphRange, rect: lineFragmentRect.pointee,
+      used: &lineFragmentUsedRect.pointee, baseline: &baselineOffset.pointee)
+  }
+
   /// 引用左边的竖线（色条色，圆头）：在缩进空出来的那一条里，碰不到字；画在最上面——选中这几行时选区的底色
   /// 铺满整行，画在下面会被盖掉。连着的几行引用是一整段属性，画成一条
   override func draw(_ dirtyRect: NSRect) {
     super.draw(dirtyRect)
     drawQuoteBars(in: dirtyRect)
+  }
+
+  /// 代码块的底画在字和选区的下面（文本视图先画自己的底、再让布局管理器画选区和字）
+  override func drawBackground(in rect: NSRect) {
+    super.drawBackground(in: rect)
+    drawCodeBlocks(in: rect)
+  }
+
+  /// 第 index 个字那一行占的那一条：行片段去掉段前段后（行高定死的那么高，字在里面居中）
+  private func band(ofCharacterAt index: Int) -> NSRect? {
+    guard let layoutManager, let storage = textStorage, index >= 0, index < storage.length,
+      let style = storage.attribute(.paragraphStyle, at: index, effectiveRange: nil)
+        as? NSParagraphStyle
+    else { return nil }
+    var glyphs = NSRange()
+    let line = layoutManager.lineFragmentRect(
+      forGlyphAt: layoutManager.glyphIndexForCharacter(at: index), effectiveRange: &glyphs)
+    let before = NoteStyles.spacingBefore(
+      at: layoutManager.characterIndexForGlyph(at: glyphs.location), style: style,
+      in: storage.mutableString)
+    let height = style.minimumLineHeight > 0 ? style.minimumLineHeight : line.height - before
+    return NSRect(x: line.minX, y: line.minY + before, width: line.width, height: height)
+  }
+
+  /// 代码块的底：一块一个圆角矩形（墨的 8%，同行内代码的底；圆角 control），从开头那行的那一条顶上到收尾那行的
+  /// 那一条底下、再往上下各多出 codePadding，左右是正文那一栏（块里的字再往里缩 codeInset）。块按字上记着的角色找（roleKey，跟着字走：
+  /// 组字、编辑到一半时也和字的位置对得上）。
+  /// **块的头 / 尾在这次要画的字外面时不问它的行片段**（问了，布局管理器就得把版一直排到那里）：底直接画出这次要画的
+  /// 那一块（dirtyRect）外面一点，那一头的圆角这次本来就画不到；头尾真在要画的字里才按行片段算（edgeBand）。
+  /// ponytail: 实测（屏外 -O 小程序，没进仓库，M3 Air）1.2 MB 整篇一个代码块：新建的
+  /// 正文框第一次画顶上一屏 511–545 → 3.4–3.9 ms，版排到中间时在那里打一个字再画光标那一条 254 → 1.3 ms（没有围栏
+  /// 1.8 / 0.6 ms）；整篇一个引用块的竖线同样 666–671 → 2.9 ms、332–334 → 1.3 ms。块里的字照旧要排到这一屏为止
+  /// （连续排版，见文件头）；块很长时每画一次还要按字上的角色找一遍整块（codeBlock(around:)，只看属性、不排版）
+  private func drawCodeBlocks(in dirtyRect: NSRect) {
+    guard theme.markdown, let layoutManager, let textContainer, let storage = textStorage,
+      storage.length > 0
+    else { return }
+    let origin = textContainerOrigin
+    // 多问上下各 codePadding：只重画块外那一小条时，伸出去的那点也画得上
+    let glyphs = layoutManager.glyphRange(
+      forBoundingRect: dirtyRect.offsetBy(dx: -origin.x, dy: -origin.y)
+        .insetBy(dx: 0, dy: -NoteStyles.codePadding),
+      in: textContainer)
+    let dirty = layoutManager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+    let padding = textContainer.lineFragmentPadding
+    let radius = Style.Radius.control
+    // 头尾在要画的字外面时，底伸出 dirtyRect 多远：盖过圆角和多出的 codePadding
+    let overshoot = radius + NoteStyles.codePadding + 1
+    // 上一块到哪为止：一块只画一次
+    var drawn = 0
+    theme.codeFill.setFill()
+    storage.enumerateAttribute(NoteStyles.roleKey, in: dirty) { value, range, _ in
+      guard value != nil, range.location >= drawn,
+        let block = codeBlock(around: range.location, in: storage),
+        let edges = edgeBand(of: block, dirty: dirty, rect: dirtyRect, overshoot: overshoot)
+      else { return }
+      drawn = NSMaxRange(block)
+      let rect = NSRect(
+        x: origin.x + padding, y: edges.top - NoteStyles.codePadding,
+        width: textContainer.size.width - padding * 2,
+        height: edges.bottom - edges.top + NoteStyles.codePadding * 2)
+      NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+    }
+  }
+
+  /// 一整块（代码块、一段引用：字的区间）在视图里从哪到哪（头一行那一条的顶、末一行那一条的底）：头 / 尾在这次要画的字
+  /// （dirty）里才问它的行片段，不在就是 dirtyRect 的边再往外 overshoot——不为画一块底把版排到这一屏外面去。
+  /// 问行片段问不到（不该有）给 nil
+  private func edgeBand(of block: NSRange, dirty: NSRange, rect: NSRect, overshoot: CGFloat)
+    -> (top: CGFloat, bottom: CGFloat)?
+  {
+    let origin = textContainerOrigin
+    var top = rect.minY - overshoot
+    var bottom = rect.maxY + overshoot
+    if NSLocationInRange(block.location, dirty) {
+      guard let band = band(ofCharacterAt: block.location) else { return nil }
+      top = origin.y + band.minY
+    }
+    if NSLocationInRange(NSMaxRange(block) - 1, dirty) {
+      guard let band = band(ofCharacterAt: NSMaxRange(block) - 1) else { return nil }
+      bottom = origin.y + band.maxY
+    }
+    return (top, bottom)
+  }
+
+  /// 第 index 个字所在的代码块（整块的字的区间）：照字上记着的角色往前找到开头的围栏行、往后找到收尾的围栏行
+  /// （角色 开头 1 < 块里 2 < 收尾 3：往前只认更小的、往后只认更大的，挨着的两块分得开）。不在块里给 nil
+  private func codeBlock(around index: Int, in storage: NSTextStorage) -> NSRange? {
+    let full = NSRange(location: 0, length: storage.length)
+    func run(at position: Int) -> (role: Int, range: NSRange)? {
+      guard position >= 0, position < storage.length else { return nil }
+      var range = NSRange()
+      guard
+        let role = storage.attribute(
+          NoteStyles.roleKey, at: position, longestEffectiveRange: &range, in: full) as? Int
+      else { return nil }
+      return (role, range)
+    }
+    guard var first = run(at: index) else { return nil }
+    var last = first
+    while let previous = run(at: first.range.location - 1), previous.role < first.role {
+      first = previous
+    }
+    while let next = run(at: NSMaxRange(last.range)), next.role > last.role { last = next }
+    return NSRange(
+      location: first.range.location, length: NSMaxRange(last.range) - first.range.location)
   }
 
   private func drawQuoteBars(in dirtyRect: NSRect) {
@@ -306,14 +512,13 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
       var quote = range
       _ = storage.attribute(
         NoteStyles.quoteKey, at: range.location, longestEffectiveRange: &quote, in: full)
-      let quoted = layoutManager.glyphRange(forCharacterRange: quote, actualCharacterRange: nil)
-      guard quoted.length > 0 else { return }
-      let top = layoutManager.lineFragmentRect(forGlyphAt: quoted.location, effectiveRange: nil)
-      let bottom = layoutManager.lineFragmentRect(
-        forGlyphAt: NSMaxRange(quoted) - 1, effectiveRange: nil)
+      // 头尾两行的那一条（不含引用块上下的留白）；头尾在这次要画的字外面时不问（同代码块的底，edgeBand）
+      guard quote.length > 0,
+        let edges = edgeBand(of: quote, dirty: dirty, rect: dirtyRect, overshoot: width)
+      else { return }
       let bar = NSRect(
-        x: origin.x + textContainer.lineFragmentPadding, y: origin.y + top.minY + 1, width: width,
-        height: bottom.maxY - top.minY - 2)
+        x: origin.x + textContainer.lineFragmentPadding, y: edges.top + 1, width: width,
+        height: edges.bottom - edges.top - 2)
       NSBezierPath(roundedRect: bar, xRadius: width / 2, yRadius: width / 2).fill()
     }
   }
@@ -360,7 +565,7 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
       _ = pending.take()
       restyleAll()
     } else if let edited = pending.take() {
-      restyle(NoteStyles.lines(covering: edited, in: storage.mutableString))
+      restyleEdited(edited, in: storage)
     }
     // 这次编辑可能把光标带到了别的行（撤销、粘贴了几行）：原来露着的收回去，现在这一行露出来
     syncMarkers()
@@ -500,10 +705,13 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     super.insertText(string, replacementRange: replacementRange)
   }
 
-  /// 没有选区、没在组字时，拿光标所在的行（不含行尾的换行）和光标在行里的位置去问 change 要不要改；改了返回 true
+  /// 没有选区、没在组字时，拿光标所在的行（不含行尾的换行）和光标在行里的位置去问 change 要不要改；改了返回 true。
+  /// 代码块里的行不问（块里按原文：回车就是换行、Tab 就是制表符、「- [ ]」加空格不转换）
   private func editLine(_ change: (String, Int) -> NoteTasks.Change?) -> Bool {
     let selection = selectedRange()
-    guard selection.length == 0, !hasMarkedText(), let text = textStorage?.mutableString else {
+    guard selection.length == 0, !hasMarkedText(), !touchesCodeBlock(selection),
+      let text = textStorage?.mutableString
+    else {
       return false
     }
     var (start, contentsEnd) = (0, 0)
@@ -543,10 +751,12 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
 
   // MARK: 任务
 
-  /// ⌘T、头部 / 工具栏的「任务」钮、右键菜单：光标所在行（有选区时是选区碰到的每一行）在普通行和任务之间切换
+  /// ⌘T、头部 / 工具栏的「任务」钮、右键菜单：光标所在行（有选区时是选区碰到的每一行）在普通行和任务之间切换。
+  /// 选区碰到代码块（连围栏行）时不切、响一声：块里按原文，方框也只是字
   @objc func toggleTask(_ sender: Any? = nil) {
     guard isEditable, !hasMarkedText(), let text = textStorage?.mutableString else { return }
     let selection = selectedRange()
+    guard !touchesCodeBlock(selection) else { return NSSound.beep() }
     var (start, contentsEnd) = (0, 0)
     text.getLineStart(&start, end: nil, contentsEnd: &contentsEnd, for: selection)
     let block = text.substring(with: NSRange(location: start, length: contentsEnd - start))
@@ -563,6 +773,8 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     var (start, contentsEnd) = (0, 0)
     text.getLineStart(
       &start, end: nil, contentsEnd: &contentsEnd, for: NSRange(location: index, length: 0))
+    // 代码块里的方框只是字
+    guard NoteMarkdown.role(at: start, in: blocks) == nil else { return nil }
     // 只看行首的一小段就够认方框（鼠标每动一下都要问，行可能很长）
     let head = text.substring(
       with: NSRange(location: start, length: min(contentsEnd - start, 256)))
@@ -688,7 +900,8 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
       title: NotesWindowModel.taskTitle, action: #selector(toggleTask(_:)), keyEquivalent: "")
     item.target = self
     menu?.insertItem(item, at: 0)
-    menu?.insertItem(.separator(), at: 1)
+    menu?.insertItem(formatItem(), at: 1)
+    menu?.insertItem(.separator(), at: 2)
     if let url {
       let open = NSMenuItem(
         title: Self.openLinkTitle, action: #selector(openLink(_:)), keyEquivalent: "")
@@ -716,8 +929,112 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
 
   override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
     if item.action == #selector(toggleTask(_:)) { return isEditable }
+    if item.action == #selector(formatFromMenu(_:)) {
+      return isEditable && !touchesCodeBlock(selectedRange())
+    }
     if item.action == #selector(openLink(_:)) { return true }
     return super.validateUserInterfaceItem(item)
+  }
+
+  // MARK: 加标记（⌘B ⌘I ⇧⌘X ⌘E）、粘贴网址成链接
+
+  /// 右键菜单里那一项的名字
+  static let formatTitle = "格式"
+
+  /// 这个按键是不是四个加标记的键之一（修饰键只比 ⌘⌃⌥⇧、不看大写锁定；按字认，同各浮层的 ⌘C ⌘V）
+  static func wrap(for event: NSEvent) -> NoteMarkdown.Wrap? {
+    guard event.type == .keyDown else { return nil }
+    let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
+    let key = event.charactersIgnoringModifiers?.lowercased()
+    return NoteMarkdown.Wrap.allCases.first { $0.modifiers == flags && $0.key == key }
+  }
+
+  /// ⌘B ⌘I ⇧⌘X ⌘E：窗口把 ⌘ 组合沿着视图树问一遍（在主菜单之前；那叠、浮动便签的面板先问过自己的键，
+  /// 都没接这四个），焦点在自己身上才接。输入法组字期间吞掉、不做事（键盘在输入法手里）；代码块里响一声（format）
+  override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    guard let wrap = Self.wrap(for: event), window?.firstResponder === self, isEditable else {
+      return super.performKeyEquivalent(with: event)
+    }
+    if !hasMarkedText() { format(wrap) }
+    return true
+  }
+
+  /// 加 / 去掉一种标记（规则在 NoteMarkdown.toggle：没有选区插一对、有选区每行各自包、已经包着的去掉）：一步撤销，
+  /// 改字走 perform。Markdown 关着时照样加（存的本来就是 Markdown 的原文，只是不显示成样式）；选区碰到代码块、
+  /// 没有可包的字时不改、响一声
+  func format(_ wrap: NoteMarkdown.Wrap) {
+    guard isEditable, !hasMarkedText(), let text = textStorage?.mutableString else { return }
+    let selection = selectedRange()
+    guard !touchesCodeBlock(selection) else { return NSSound.beep() }
+    var (start, contentsEnd) = (0, 0)
+    text.getLineStart(&start, end: nil, contentsEnd: &contentsEnd, for: selection)
+    let block = text.substring(with: NSRange(location: start, length: contentsEnd - start))
+    // 选到了最后一行的换行不算；光标夹在 \r\n 中间时算在行尾
+    let location = min(selection.location, contentsEnd)
+    let local = NSRange(
+      location: location - start, length: max(0, min(NSMaxRange(selection), contentsEnd) - location)
+    )
+    guard let change = NoteMarkdown.toggle(wrap, in: block, selection: local) else {
+      return NSSound.beep()
+    }
+    perform(change, at: start)
+  }
+
+  /// 右键菜单的「格式」：四项，带键位（看得见有这几个键）
+  private func formatItem() -> NSMenuItem {
+    let submenu = NSMenu(title: Self.formatTitle)
+    for wrap in NoteMarkdown.Wrap.allCases {
+      let item = NSMenuItem(
+        title: wrap.title, action: #selector(formatFromMenu(_:)), keyEquivalent: wrap.key)
+      item.keyEquivalentModifierMask = wrap.modifiers
+      item.tag = wrap.rawValue
+      item.target = self
+      submenu.addItem(item)
+    }
+    let item = NSMenuItem(title: Self.formatTitle, action: nil, keyEquivalent: "")
+    item.submenu = submenu
+    return item
+  }
+
+  @objc private func formatFromMenu(_ sender: NSMenuItem) {
+    if let wrap = NoteMarkdown.Wrap(rawValue: sender.tag) { format(wrap) }
+  }
+
+  /// 粘贴从哪个剪贴板读（单测换成自己建的，不碰系统的）
+  var pasteboard = NSPasteboard.general
+
+  /// 粘贴（⌘V，面板里经 OverlayPanel.sendEditAction 发过来）：选中了一行里的一段字（不在代码块里）、剪贴板里是一个
+  /// 能打开的网址时，选中的字换成「[字](网址)」（NoteMarkdown.linkPaste），一步撤销、改字走 perform；别的照常粘贴
+  /// （纯文本）。Markdown 关着时照常粘贴
+  override func paste(_ sender: Any?) {
+    if pasteLink(from: pasteboard) { return }
+    if pasteboard.name == .general {
+      super.paste(sender)
+    } else {
+      _ = readSelection(from: pasteboard)
+    }
+  }
+
+  /// 照上面的规矩粘成链接；粘了返回 true
+  func pasteLink(from pasteboard: NSPasteboard) -> Bool {
+    guard theme.markdown, isEditable, !hasMarkedText(), selectedRanges.count == 1,
+      let text = textStorage?.mutableString
+    else { return false }
+    let selection = selectedRange()
+    guard selection.length > 0, !touchesCodeBlock(selection),
+      let pasted = pasteboard.string(forType: .string)
+    else { return false }
+    var (start, contentsEnd) = (0, 0)
+    text.getLineStart(
+      &start, end: nil, contentsEnd: &contentsEnd,
+      for: NSRange(location: selection.location, length: 0))
+    // 跨行的不算
+    guard NSMaxRange(selection) <= contentsEnd,
+      let change = NoteMarkdown.linkPaste(
+        pasted, in: text.substring(with: NSRange(location: start, length: contentsEnd - start)),
+        selection: NSRange(location: selection.location - start, length: selection.length))
+    else { return false }
+    return perform(change, at: start)
   }
 
   // MARK: 查找
@@ -738,6 +1055,42 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     item.tag = action.rawValue
     performTextFinderAction(item)
   }
+}
+
+/// 正文编辑器的布局管理器（NoteTextView.make 建的）：只多管一件事——空着的最后一行（正文末尾的换行后面那一行、
+/// 空的正文）。别的行由布局管理器的代理定字的位置（NoteStyles.centerLine），这一行不经过代理，按打进去的字
+/// （typingAttributes）的行高排、字却贴在顶上：这里同样把「用到的那一块」收成字那么高、居中——插入点在空行上
+/// 和别的行一样高、一样位置。布局时调的代码：字的上下沿由文本视图换纸色 / 字号时存进来（Mutex，读写都是一下）
+nonisolated final class NoteLayoutManager: NSLayoutManager {
+  /// 打进去的字的上下沿（ascender、descender）；还没设过时不管
+  let extraLine = Mutex<(ascender: CGFloat, descender: CGFloat)?>(nil)
+
+  override func setExtraLineFragmentRect(
+    _ fragmentRect: NSRect, usedRect: NSRect, textContainer container: NSTextContainer
+  ) {
+    var used = usedRect
+    if fragmentRect.height > 0, let metrics = extraLine.withLock({ $0 }) {
+      var baseline: CGFloat = 0
+      NoteStyles.center(
+        height: fragmentRect.height, ascender: metrics.ascender, descender: metrics.descender,
+        before: 0, rect: fragmentRect, used: &used, baseline: &baseline)
+    }
+    super.setExtraLineFragmentRect(fragmentRect, usedRect: used, textContainer: container)
+  }
+}
+
+extension NoteMarkdown.Wrap {
+  /// 键位：⌘B 粗体、⌘I 斜体、⇧⌘X 删除线、⌘E 代码（按键认的、右键菜单上写的都是它）
+  var key: String {
+    switch self {
+    case .bold: "b"
+    case .italic: "i"
+    case .strike: "x"
+    case .code: "e"
+    }
+  }
+
+  var modifiers: NSEvent.ModifierFlags { self == .strike ? [.command, .shift] : .command }
 }
 
 /// 纸上正文的滚动条（手测反馈第 3 批）：**不画轨道**（knob slot），滑块照系统的画法、跟外观走。系统设置「显示滚动条：
@@ -766,8 +1119,9 @@ struct NoteTextEditor: NSViewRepresentable {
   var focusRequest: Int?
   /// 这条便签的撤销栈（只在建的时候取一次，见 NoteTextView.noteUndo）
   var undo: UndoManager?
-  /// 设置 › 便签「Markdown 样式」开没开
+  /// 设置 › 便签「Markdown 样式」开没开、行距
   let markdown: Bool
+  let spacing: NoteStyles.Spacing
   let onChange: (String) -> Void
   let onOverflow: () -> Void
   var onCancel: (() -> Void)?
@@ -803,7 +1157,7 @@ struct NoteTextEditor: NSViewRepresentable {
       view.focusRequest = request
       view.window?.makeFirstResponder(view)
     }
-    view.setPaper(NotePaper.of(note), fontSize: fontSize, markdown: markdown)
+    view.setPaper(NotePaper.of(note), fontSize: fontSize, markdown: markdown, spacing: spacing)
     view.setText(note.body)
     // 选中文字的底色是强调色 0.28（不露系统蓝；读了 Style.brand，设置里换了强调色这里会重跑）
     view.selectedTextAttributes = [

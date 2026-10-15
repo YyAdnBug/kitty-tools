@@ -1,5 +1,5 @@
 // 便签的模型（便签库 notes 表的一行）和两条显示用的纯函数：标题（displayTitle）、列表里的一行摘要（preview）——
-// 两样都不带正文里的符号（标题的 #、任务的方框、Markdown 的标记）。
+// 两样都不带正文里的符号（标题的 #、任务的方框、Markdown 的标记、代码块的围栏行；代码块里的字照原文）。
 // 便签管「留着看、接着改」的东西（PLAN §10「便签」）；库、落盘、搜索、导入导出在 NoteStore，每日备份和打不开时的恢复在
 // NotesBackup。
 // 为以后的同步先留好的三样（这一版不同步）：稳定的编号（UUID 字符串，建了就不变，导出文件里带着）、修订号（任何字段变
@@ -115,20 +115,37 @@ nonisolated struct Note: Identifiable, Equatable, Sendable {
     return Self.clipped(rest.joined(separator: " "), to: Self.previewLength)
   }
 
-  /// 正文里有内容的行（每行过一遍 clean），跳过前 skipping 行；用空格拼起来超过 budget 个字就不再往下读（正文可以很长）
+  /// 正文里有内容的行（每行过一遍 clean），跳过前 skipping 行；用空格拼起来超过 budget 个字就不再往下读（正文可以很长）。
+  /// 代码块（NoteMarkdown.codeBlocks，同正文编辑器）的围栏行不算、块里的行照原文（只去两头的空白）。
+  /// ponytail: 认代码块只看正文开头 blockScanLimit 个字（标题、摘要只读开头几行；整篇认一遍 1 MB 要几毫秒，列表的每一行、
+  /// 那叠的每张标签都要算）。上限：开头在这一段里、收尾在后面的块认不出来，它的围栏行和块里的字照普通的行去标记——
+  /// 碰上了再改成「从头往后边读边认」
   private static func lines(of body: String, skipping: Int, budget: Int) -> [String] {
     var lines: [String] = []
     var (skipped, length) = (0, 0)
-    body.enumerateLines { raw, stop in
-      let line = clean(raw)
-      guard !line.isEmpty else { return }
+    let text = body as NSString
+    let blocks = NoteMarkdown.codeBlocks(
+      in: text.length > blockScanLimit ? text.substring(to: blockScanLimit) as NSString : text)
+    var location = 0
+    while location < text.length, length <= budget {
+      var (start, end, contentsEnd) = (0, 0, 0)
+      text.getLineStart(
+        &start, end: &end, contentsEnd: &contentsEnd, for: NSRange(location: location, length: 0))
+      location = max(end, location + 1)
+      let raw = text.substring(with: NSRange(location: start, length: contentsEnd - start))
+      let line: String
+      switch NoteMarkdown.role(at: start, in: blocks) {
+      case nil: line = clean(raw)
+      case .content: line = String(raw.prefix(scanLimit)).trimmingCharacters(in: .whitespaces)
+      case .open, .close: continue
+      }
+      guard !line.isEmpty else { continue }
       guard skipped >= skipping else {
         skipped += 1
-        return
+        continue
       }
       length += line.count + (lines.isEmpty ? 0 : 1)
       lines.append(line)
-      stop = length > budget
     }
     return lines
   }
@@ -165,6 +182,8 @@ nonisolated struct Note: Identifiable, Equatable, Sendable {
 
   /// 去标记时一行最多看这么多个字（比标题、摘要要的多得多；够放下一个带长地址的链接）
   private static let scanLimit = 4096
+  /// 认代码块时最多看正文开头这么多个字（UTF-16，64 KB 上下）
+  static let blockScanLimit = 1 << 16
 
   private static func clipped(_ text: String, to length: Int) -> String {
     text.count > length ? text.prefix(length) + "…" : text

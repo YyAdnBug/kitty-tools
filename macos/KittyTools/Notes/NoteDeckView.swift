@@ -406,17 +406,18 @@ struct NotePreviewCard: View {
   @Environment(\.colorSchemeContrast) private var contrast
 
   /// 这条便签只有一行字、标题就是它（没自己起标题、正文第一行之后没有别的）：卡上只写标题、让它折到三行，
-  /// 不另写一句「没有更多内容」。一个字都没有的（「未命名便签」）、自己起了标题而正文空着的照旧写那一句
-  static func isTitleOnly(_ note: Note) -> Bool {
-    note.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && note.preview.isEmpty
-      && note.displayTitle != Note.untitled
+  /// 不另写一句「没有更多内容」。一个字都没有的（「未命名便签」）、自己起了标题而正文空着的照旧写那一句。
+  /// 标题、摘要用仓库缓存的那份（NoteStore.summary），不现算
+  static func isTitleOnly(_ note: Note, summary: NoteStore.Summary) -> Bool {
+    note.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && summary.preview.isEmpty
+      && summary.title != Note.untitled
   }
 
   var body: some View {
     let paper = NotePaper.of(note)
     let summary = model.store.summary(of: note)
     let preview = summary.preview
-    let titleOnly = Self.isTitleOnly(note)
+    let titleOnly = Self.isTitleOnly(note, summary: summary)
     let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
     Button {
       model.tapTab(note.id)

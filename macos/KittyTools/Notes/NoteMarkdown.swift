@@ -1,6 +1,7 @@
 // 便签正文里的 Markdown（PLAN §10「便签」第 6 批，拍板 C① 第二步「边打边变样」）：认标记的扫描器。全是纯函数、
 // **不用正则**，一遍从左到右扫完；位置都是 UTF-16 的。样式怎么叠、换成什么属性在 NoteStyles，这里只管「哪一段是什么」。
-// 所有语法都不跨行：一行一行扫和整篇扫结果一样（NoteStyles 按行重排靠这一条）。
+// 除了代码块，所有语法都不跨行：一行一行扫和整篇扫结果一样（NoteStyles 按行重排靠这一条）；代码块（codeBlocks）
+// 是唯一跨行的，整篇认一遍、每一行拿到自己的角色（开头的围栏 / 块里 / 收尾的围栏），块里的行不再按 Markdown 扫。
 // - 块（行首，前面最多 3 个空格）：标题 `#`…`######` 后面跟空白、再后面得有字（只有「# 」的不算——标记藏起来之后
 //   这一行就什么都看不见了）；引用 `>`（单层，后面的一个空格算标记，可以没有内容——那时 `>` 不藏，NoteStyles.spans）。
 //   无序列表的符号、任务的方框由 NoteTasks 认。
@@ -12,9 +13,12 @@
 //   `***又粗又斜***` 两层都认。空的强调凑不出来（`****`、`__` 是一整串标记，自己配不了自己）。
 // - 链接：方括号可以套、地址里的括号成对就行；地址里不能有空白（`[字](地址 "标题")` 不认）、字和地址都不能是空的；
 //   链接的字里不再认链接。`![…](…)` 是图片（第 7 批），这里原样显示，里面什么都不认。
+// - 代码块（便签手测反馈第 4 批）：行首（前面最多 3 个空格）三个以上的反引号或波浪号开一个块，同一种字符、不少于
+//   开头个数、后面只有空白的那一行关；开头那行后面可以跟语言名（只显示）。**只认配上了对的**（codeBlocks 那里写了为什么）。
 // - plain(_:)：把一行里的标记去掉，给标题和摘要用（Note.displayTitle / preview）。
-// 不做（PLAN §10「便签」的「不做 / 以后再说」）：代码块、表格、有序列表的样式、分隔线、裸网址自动成链接、引用嵌套、
-// ⌘B / ⌘I 这类加标记的快捷键。
+// - 加标记的快捷键（⌘B ⌘I ⇧⌘X ⌘E，toggle）和粘贴网址成链接（linkPaste）的规则：纯函数，编辑器（NoteTextView）只管调。
+// 不做（PLAN §10「便签」的「不做 / 以后再说」）：表格、斜杠菜单、自动补全成对符号、代码的语法高亮、有序列表的样式、
+// 分隔线、裸网址自动成链接、引用嵌套。
 // ponytail: 强调的定界没照 CommonMark，差在这几处——紧挨着的 `*a**b**c*` 按就近配对（它的「3 的倍数」规则没做）；
 // 标点旁边的 `*` 不另算；数字中间的 `*` 一律不算（它那里 `2*3*4` 是斜体）。照了它的一处反而是已知的取舍：`__init__`
 // 是粗体（要原样就写进反引号里）。上限：这几种写法和别的 Markdown 工具画出来的不一样；真有人在意，再把 emphasis
@@ -299,6 +303,366 @@ nonisolated enum NoteMarkdown {
       if runs[current].canOpen, runs[current].count > 0 { openers[unit]?.append(current) }
     }
     return spans
+  }
+
+  // MARK: 代码块（便签手测反馈第 4 批）
+
+  /// 围栏行：行首（前面最多 3 个空格）三个以上同一种的反引号或波浪号。count 是几个，isBare = 后面只有空白
+  /// （能当收尾的那一行；开头那行后面可以跟语言名，只显示）
+  struct Fence: Equatable, Sendable {
+    var mark: UInt16
+    var count: Int
+    var isBare: Bool
+  }
+
+  /// 代码块里一行的角色
+  enum Role: Int, Sendable {
+    /// 开头的围栏行
+    case open = 1
+    /// 块里的行
+    case content
+    /// 收尾的围栏行
+    case close
+  }
+
+  /// 一个配上了对的代码块：开头、收尾那两行（整行，连行尾的换行；位置是 UTF-16 的）
+  struct CodeBlock: Equatable, Sendable {
+    var open: NSRange
+    var close: NSRange
+
+    /// 整块：开头那行的行首到收尾那行的行尾（连换行）
+    var range: NSRange {
+      NSRange(location: open.location, length: NSMaxRange(close) - open.location)
+    }
+
+    /// 行首在 lineStart 的那一行在这一块里是什么（不在这一块里给 nil）
+    func role(at lineStart: Int) -> Role? {
+      guard NSLocationInRange(lineStart, range) else { return nil }
+      return lineStart == open.location ? .open : lineStart == close.location ? .close : .content
+    }
+  }
+
+  /// 这一行（不含行尾的换行，count 个字，按位置取：整篇扫的时候不为每一行建数组）是不是围栏行。反引号的围栏后面
+  /// 不能再有反引号（「```a```」是一行里的行内代码）
+  static func fence(count: Int, at unit: (Int) -> UInt16) -> Fence? {
+    var index = 0
+    while index < count, index < 4, unit(index) == space { index += 1 }
+    guard index <= 3, index < count else { return nil }
+    let mark = unit(index)
+    guard mark == backtick || mark == tilde else { return nil }
+    var run = 0
+    while index + run < count, unit(index + run) == mark { run += 1 }
+    guard run >= 3 else { return nil }
+    var isBare = true
+    for position in (index + run)..<count {
+      let current = unit(position)
+      if mark == backtick, current == backtick { return nil }
+      if !isBlank(current) {
+        isBare = false
+        if mark == tilde { break }
+      }
+    }
+    return Fence(mark: mark, count: run, isBare: isBare)
+  }
+
+  /// 正文里的代码块（从前到后）。**只认配上了对的**：开头的围栏往后找第一行「同一种字符、不少于开头个数、后面只有空白」
+  /// 的围栏收尾，中间夹着的都是块里的字（别的围栏也是）；找不到收尾的那一行不是开头、照普通的一行显示，接着往下找。
+  /// （CommonMark 是没关上就一直到正文末尾——边打边变样时，刚打出开头的三个反引号，后面整篇就突然都成了代码。）
+  /// ponytail: 找收尾是在同一种字符的「能收尾的围栏」里往后走、跳过个数不够的；找不到时记下「这种字符、不少于几个」
+  /// 再往后都不会有，后面同样或更多的开头直接跳过。上限：开头的个数一路递减（1000、999…个反引号的开头一行行往下排）
+  /// 时每一行都要走一遍——几十万个反引号才碰得到，真碰上再改成按个数分桶。
+  static func codeBlocks(in text: NSString) -> [CodeBlock] {
+    var fences: [(line: NSRange, fence: Fence)] = []
+    let length = text.length
+    var location = 0
+    while location < length {
+      var (start, end, contentsEnd) = (0, 0, 0)
+      text.getLineStart(
+        &start, end: &end, contentsEnd: &contentsEnd, for: NSRange(location: location, length: 0))
+      // 先看行首几个字：绝大多数行到这里就不是了，不取整行
+      if let found = fence(count: contentsEnd - start, at: { text.character(at: start + $0) }) {
+        fences.append((NSRange(location: start, length: end - start), found))
+      }
+      location = max(end, location + 1)
+    }
+    // 每种字符能当收尾的围栏（fences 里的下标，从前到后）
+    var closers: [UInt16: [Int]] = [:]
+    for (index, item) in fences.enumerated() where item.fence.isBare {
+      closers[item.fence.mark, default: []].append(index)
+    }
+    // 某种字符「不少于几个」的收尾在后面已经找不到了
+    var hopeless: [UInt16: Int] = [:]
+    var blocks: [CodeBlock] = []
+    var index = 0
+    while index < fences.count {
+      let opener = fences[index].fence
+      guard opener.count < hopeless[opener.mark] ?? .max, let candidates = closers[opener.mark]
+      else {
+        index += 1
+        continue
+      }
+      // 排在开头后面的第一个
+      var low = 0
+      var high = candidates.count
+      while low < high {
+        let middle = (low + high) / 2
+        if candidates[middle] <= index { low = middle + 1 } else { high = middle }
+      }
+      var found: Int?
+      for candidate in candidates[low...] where fences[candidate].fence.count >= opener.count {
+        found = candidate
+        break
+      }
+      guard let close = found else {
+        hopeless[opener.mark] = opener.count
+        index += 1
+        continue
+      }
+      blocks.append(CodeBlock(open: fences[index].line, close: fences[close].line))
+      index = close + 1
+    }
+    return blocks
+  }
+
+  /// 行首在 lineStart 的那一行在不在代码块里、是什么角色（blocks 从前到后排好）
+  static func role(at lineStart: Int, in blocks: [CodeBlock]) -> Role? {
+    var low = 0
+    var high = blocks.count
+    while low < high {
+      let middle = (low + high) / 2
+      if NSMaxRange(blocks[middle].range) <= lineStart { low = middle + 1 } else { high = middle }
+    }
+    return low < blocks.count ? blocks[low].role(at: lineStart) : nil
+  }
+
+  // MARK: 加标记的快捷键（⌘B ⌘I ⇧⌘X ⌘E）
+
+  /// 四种：粗体、斜体、删除线、行内代码
+  enum Wrap: Int, CaseIterable, Sendable {
+    case bold, italic, strike, code
+
+    /// 两头各加的那一串
+    var marker: String {
+      switch self {
+      case .bold: "**"
+      case .italic: "*"
+      case .strike: "~~"
+      case .code: "`"
+      }
+    }
+
+    /// 右键菜单「格式」里的名字
+    var title: String {
+      switch self {
+      case .bold: "粗体"
+      case .italic: "斜体"
+      case .strike: "删除线"
+      case .code: "代码"
+      }
+    }
+
+    /// 扫描器认出来的这种样式（「已经包着」问的是它）
+    var kind: NoteStyles.Kind {
+      switch self {
+      case .bold: .bold
+      case .italic: .italic
+      case .strike: .strike
+      case .code: .code
+      }
+    }
+  }
+
+  /// 一行开头的块标记（标题的 #、引用的 >、列表的符号和任务的方框，连后面的空白）到哪为止：加标记从这后面算起，
+  /// 不把「- 」「# 」包进去
+  static func contentStart(of units: [UInt16]) -> Int {
+    if let prefix = NoteTasks.prefix(of: units) { return prefix.contentStart }
+    if let heading = heading(units) { return NSMaxRange(heading.marker) }
+    if let quote = quote(units) { return NSMaxRange(quote) }
+    return 0
+  }
+
+  /// ⌘B 这几个键：block 是选区碰到的那几行（不含最后一行的换行），selection 相对 block 的开头。
+  /// - 没有选区：在光标处插一对标记、光标放中间；光标正夹在一对空的标记中间时（刚按过一次、还没打字）把这对删掉。
+  /// - 有选区：每一行各自包（Markdown 的样式不跨行）——包的是选区在这一行里的那一段，去掉两头的空白、跳过行首的块标记、
+  ///   去掉选进来的这种标记；这一段已经是这种样式的（扫描器认出来的，wrapping），就去掉它两头的标记；几段里有一段还没包，
+  ///   就把没包的都包上，都包着才都去掉（同 ⌘T）。改完选中的是里面的字（不含标记）。
+  /// 「已经包着」不数字符、问扫描器（inline）：数字中间的星号是乘号（`60*40*30` 选中 40 按 ⌘I 不会把两个乘号当成斜体
+  /// 删掉），挨着的两段（`**a**|**b**`）中间的标记各归各的。斜体只认单数个星号由扫描器的配对定（粗体上按 ⌘I 是又粗又斜，
+  /// 又粗又斜里按 ⌘I 去掉斜体）。都是空白、没有可包的给 nil。位置都是 UTF-16 的
+  static func toggle(_ wrap: Wrap, in block: String, selection: NSRange) -> NoteTasks.Change? {
+    let text = block as NSString
+    let units = Array(block.utf16)
+    let marker = wrap.marker
+    let size = (marker as NSString).length
+    let mark = marker.utf16.first ?? 0
+    // [from, to) 里从 position 往后 / 往前连着几个 mark
+    func run(from position: Int, to limit: Int) -> Int {
+      var count = 0
+      while position + count < limit, units[position + count] == mark { count += 1 }
+      return count
+    }
+    func run(before position: Int, to limit: Int) -> Int {
+      var count = 0
+      while position - count > limit, units[position - count - 1] == mark { count += 1 }
+      return count
+    }
+    // 第 location 个字所在的行：内容从哪开始（跳过块标记）、到哪为止
+    func line(at location: Int) -> (content: Int, end: Int) {
+      var (start, contentsEnd) = (0, 0)
+      text.getLineStart(
+        &start, end: nil, contentsEnd: &contentsEnd, for: NSRange(location: location, length: 0))
+      let head = Array(units[start..<contentsEnd])
+      return (start + contentStart(of: head), contentsEnd)
+    }
+    /// 扫描器在这一行里认出来的这种样式里，有没有一段正好是 inner：内容去掉两头紧挨着的别的标记（又粗又斜的 `***粗***`
+    /// 里斜体的内容是「**粗**」）之后就是 inner。有就给它两头的那一对标记（要去掉的就是它们），没有给 nil
+    func wrapping(_ inner: NSRange, in spans: [Span]) -> (open: NSRange, close: NSRange)? {
+      let markers = spans.filter { $0.kind == .marker }.map(\.range)
+      for span in spans where span.kind == wrap.kind {
+        var core = span.range
+        while let inside = markers.first(where: {
+          $0.location == core.location && $0.length <= core.length
+        }) {
+          core = NSRange(location: NSMaxRange(inside), length: core.length - inside.length)
+        }
+        while let inside = markers.first(where: {
+          NSMaxRange($0) == NSMaxRange(core) && $0.length <= core.length
+        }) {
+          core.length -= inside.length
+        }
+        // 这一对：紧挨着这一段的两头（强调的标记长度就是加的那一串，代码的是几个反引号）
+        let fits = { (range: NSRange) in wrap == .code || range.length == size }
+        guard core == inner,
+          let open = markers.first(where: { NSMaxRange($0) == span.range.location && fits($0) }),
+          let close = markers.first(where: { $0.location == NSMaxRange(span.range) && fits($0) })
+        else { continue }
+        return (open, close)
+      }
+      return nil
+    }
+    typealias Replacement = NoteTasks.Replacement
+
+    guard selection.length > 0 else {
+      let bounds = line(at: selection.location)
+      let caret = min(max(selection.location, bounds.content), bounds.end)
+      // 光标正夹在一对空的这种标记中间（刚按过一次、还没打字）：在光标处放一个字、用扫描器认一遍——认得出这个字正好是
+      // 这种样式、两头紧挨着的就是这一对，才是（`**a**|**b**` 中间的两对各归各的，不是）
+      let probe = Array(units[..<caret]) + [0x61] + Array(units[caret...])
+      if let pair = wrapping(
+        NSRange(location: caret, length: 1),
+        in: inline(probe, in: bounds.content..<(bounds.end + 1))),
+        pair.open == NSRange(location: caret - size, length: size),
+        pair.close == NSRange(location: caret + 1, length: size)
+      {
+        // 一对空的标记：删掉
+        return NoteTasks.Change(
+          replacements: [
+            Replacement(range: NSRange(location: caret - size, length: size), text: ""),
+            Replacement(range: NSRange(location: caret, length: size), text: ""),
+          ], selection: NSRange(location: caret - size, length: 0))
+      }
+      return NoteTasks.Change(
+        replacements: [
+          Replacement(range: NSRange(location: caret, length: 0), text: marker + marker)
+        ],
+        selection: NSRange(location: caret + size, length: 0))
+    }
+
+    // 每一行里选中的那一段（去掉两头的空白、跳过块标记）：去掉选进来的这种标记之后的字（start..<end），和它是不是已经
+    // 包着（wrapped：要去掉的那一对标记；nil = 还没包）。标记一半在选区里、一半在外面也认——选了几行包上之后选区盖着的是
+    // 「第一行的字……最后一行的字」，中间几行的标记都在里面
+    var segments: [(start: Int, end: Int, wrapped: (open: NSRange, close: NSRange)?)] = []
+    var location = selection.location
+    let selectionEnd = NSMaxRange(selection)
+    repeat {
+      let bounds = line(at: location)
+      var start = max(location, bounds.content)
+      var end = min(selectionEnd, bounds.end)
+      while start < end, isBlank(units[start]) { start += 1 }
+      while end > start, isBlank(units[end - 1]) { end -= 1 }
+      let leading = run(from: start, to: end)
+      let trailing = run(before: end, to: start + leading)
+      if end - trailing > start + leading {
+        let inner = NSRange(location: start + leading, length: end - trailing - start - leading)
+        segments.append(
+          (
+            inner.location, NSMaxRange(inner),
+            wrapping(inner, in: inline(units, in: bounds.content..<bounds.end))
+          ))
+      }
+      // 下一行（行尾的换行后面）
+      var next = 0
+      text.getLineStart(
+        nil, end: &next, contentsEnd: nil, for: NSRange(location: location, length: 0))
+      location = max(next, location + 1)
+    } while location < selectionEnd
+    guard !segments.isEmpty else { return nil }
+    let unwraps = segments.allSatisfy { $0.wrapped != nil }
+    var replacements: [Replacement] = []
+    // 前面的改动让后面的位置挪了多少；里面的字改完在哪
+    var delta = 0
+    var inner: [(start: Int, end: Int)] = []
+    for segment in segments {
+      if unwraps, let pair = segment.wrapped {
+        // 去掉这种样式的那一对（又粗又斜里去掉斜体：去的是最外面那两个星号）
+        replacements.append(Replacement(range: pair.open, text: ""))
+        delta -= pair.open.length
+        inner.append((segment.start + delta, segment.end + delta))
+        replacements.append(Replacement(range: pair.close, text: ""))
+        delta -= pair.close.length
+      } else if segment.wrapped == nil {
+        replacements.append(
+          Replacement(range: NSRange(location: segment.start, length: 0), text: marker))
+        delta += size
+        inner.append((segment.start + delta, segment.end + delta))
+        replacements.append(
+          Replacement(range: NSRange(location: segment.end, length: 0), text: marker))
+        delta += size
+      } else {
+        // 有别的段还没包：已经包着的这段不动
+        inner.append((segment.start + delta, segment.end + delta))
+      }
+    }
+    let first = inner[0].start
+    return NoteTasks.Change(
+      replacements: replacements,
+      selection: NSRange(location: first, length: (inner.last?.end ?? first) - first))
+  }
+
+  // MARK: 粘贴网址成链接
+
+  /// 选中一段字、剪贴板里是一个能打开的网址时，粘贴成链接：line 是选区所在的那一行（不含行尾的换行），selection 相对
+  /// 它的开头，pasted 是剪贴板里的字（两头的空白、换行去掉；中间有空白——几个网址、一段话——就不是）。给的是改动：
+  /// 选中的字换成「[字](网址)」、光标放在后面；不该这么粘的给 nil（照常粘贴）。拼出来之后还要用同一个扫描器认得出
+  /// 「这一段是链接、地址就是它」才算——选中的字在行内代码里、带着方括号、地址里括号不成对，拼出来就不是链接了
+  static func linkPaste(_ pasted: String, in line: String, selection: NSRange) -> NoteTasks.Change?
+  {
+    let address = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
+    let units = Array(line.utf16)
+    guard selection.length > 0, NSMaxRange(selection) <= units.count, !address.isEmpty,
+      !address.unicodeScalars.contains(where: { CharacterSet.whitespacesAndNewlines.contains($0) }),
+      url(address) != nil
+    else { return nil }
+    let selected = String(
+      decoding: units[selection.location..<NSMaxRange(selection)], as: UTF16.self)
+    guard !selected.unicodeScalars.allSatisfy({ CharacterSet.whitespaces.contains($0) }) else {
+      return nil
+    }
+    let link = "[\(selected)](\(address))"
+    let rebuilt =
+      Array(units[..<selection.location]) + Array(link.utf16)
+      + Array(units[NSMaxRange(selection)...])
+    let text = NSRange(location: selection.location + 1, length: selection.length)
+    let content = contentStart(of: rebuilt)
+    guard
+      inline(rebuilt, in: content..<rebuilt.count).contains(where: {
+        $0.range == text && $0.kind == .link(address)
+      })
+    else { return nil }
+    let replacement = NoteTasks.Replacement(range: selection, text: link)
+    return NoteTasks.Change(
+      replacements: [replacement],
+      selection: NSRange(location: selection.location + (link as NSString).length, length: 0))
   }
 
   // MARK: 链接

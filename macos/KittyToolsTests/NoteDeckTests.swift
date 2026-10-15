@@ -1596,6 +1596,42 @@ struct NoteDeckTests {
       ?? view.subviews.lazy.compactMap { titleField(in: $0) }.first
   }
 
+  /// ⌘B ⌘I ⌘E ⇧⌘X（手测反馈第 4 批）从那叠的面板的按键入口走到正文框：面板先问自己的键（NoteSheetModel.
+  /// handleKeyEquivalent：⌘W ⌘P ⌘K ⌘. ⌘T ⌘F ⇧⌘A ⌘,）——都不是这四个——再沿着视图树问到焦点所在的正文；
+  /// 仓库里那份跟着变，能撤（⌘Z 也从面板走）。面板在屏外、不当 key
+  @Test func formatKeysReachTheOpenNote() async throws {
+    let deck = try offscreenDeck(["甲的正文"])
+    defer { deck.close() }
+    let store = deck.model.store
+    let id = try #require(store.active.first?.id)
+    store.setPinned(true, of: id)
+    deck.pill?.onPress()
+    deck.model.tapTab(id)
+    try await settle { focusedNote(deck) == id }
+    let panel = try #require(deck.panel)
+    let editor = try #require(NoteDeck.editor(for: id, in: panel.contentView))
+    func press(_ key: String, _ code: Int, _ flags: NSEvent.ModifierFlags = .command) throws -> Bool
+    {
+      panel.performKeyEquivalent(
+        with: try #require(
+          NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0,
+            windowNumber: panel.windowNumber, context: nil, characters: key,
+            charactersIgnoringModifiers: flags.contains(.shift) ? key.uppercased() : key,
+            isARepeat: false, keyCode: UInt16(code))))
+    }
+    editor.setSelectedRange(NSRange(location: 0, length: 2))
+    #expect(try press("b", kVK_ANSI_B) && store.note(id)?.body == "**甲的**正文")
+    #expect(try press("i", kVK_ANSI_I) && store.note(id)?.body == "***甲的***正文")
+    #expect(try press("e", kVK_ANSI_E) && store.note(id)?.body == "***`甲的`***正文")
+    #expect(try press("x", kVK_ANSI_X, [.command, .shift]))
+    #expect(store.note(id)?.body == "***`~~甲的~~`***正文" && !panel.isKeyWindow)
+    // ⌘Z 撤回去（测试里几次按键不在各自的一轮事件循环里，系统会并成一组；一步一撤在 NoteTextViewTests）
+    var undos = 0
+    while store.note(id)?.body != "甲的正文", undos < 4, try press("z", kVK_ANSI_Z) { undos += 1 }
+    #expect(undos >= 1 && store.note(id)?.body == "甲的正文")
+  }
+
   /// 撤销 / 重做从按键入口走到底（2026-10-13 用户报「便签输入区域不支持撤销和回退」）：往正文里打字、勾任务、改标题，
   /// 把 ⌘Z / ⇧⌘Z 的事件交给面板的 performKeyEquivalent，字真的回去、再回来，仓库里那份跟着变。
   /// 登记撤销的栈和按键动的栈是同一个（这条便签的 textUndo）；换一条便签各有各的栈。面板在屏外、不当 key
@@ -1905,9 +1941,12 @@ struct NoteDeckTests {
     let twoLines = store.create(body: "第一行\n第二行")
     let titled = store.create(body: "", title: "自己起的标题")
     let blank = store.create()
-    #expect(NotePreviewCard.isTitleOnly(oneLine))
-    #expect(!NotePreviewCard.isTitleOnly(twoLines))
-    #expect(!NotePreviewCard.isTitleOnly(titled) && !NotePreviewCard.isTitleOnly(blank))
+    let titleOnly = { (note: Note) in
+      NotePreviewCard.isTitleOnly(note, summary: store.summary(of: note))
+    }
+    #expect(titleOnly(oneLine))
+    #expect(!titleOnly(twoLines))
+    #expect(!titleOnly(titled) && !titleOnly(blank))
   }
 
   // MARK: 纸色

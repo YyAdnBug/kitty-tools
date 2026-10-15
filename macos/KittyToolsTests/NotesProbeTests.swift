@@ -136,7 +136,7 @@ struct NotesProbeTests {
     let fiveKB = try #require(notes.first { $0.body.utf8.count > 5000 })
     let editor = Self.median(10) {
       let view = NoteTextView.make()
-      view.setPaper(NotePaper.of(fiveKB), fontSize: 15, markdown: true)
+      view.setPaper(NotePaper.of(fiveKB), fontSize: 15, markdown: true, spacing: .standard)
       view.setText(fiveKB.body)
       view.frame = NSRect(x: 0, y: 0, width: 600, height: 500)
       view.layoutManager?.ensureLayout(for: view.textContainer!)
@@ -153,7 +153,8 @@ struct NotesProbeTests {
         parts[1] +=
           Self.ms(
             clock.measure {
-              view.setPaper(NotePaper.of(fiveKB), fontSize: 15, markdown: markdown)
+              view.setPaper(
+                NotePaper.of(fiveKB), fontSize: 15, markdown: markdown, spacing: .standard)
             }) / 5
         parts[2] += Self.ms(clock.measure { view.setText(fiveKB.body) }) / 5
         parts[3] +=
@@ -173,7 +174,7 @@ struct NotesProbeTests {
       while Date.now < end {
         let view = NoteTextView.make()
         view.frame = NSRect(x: 0, y: 0, width: 600, height: 500)
-        view.setPaper(NotePaper.of(fiveKB), fontSize: 15, markdown: true)
+        view.setPaper(NotePaper.of(fiveKB), fontSize: 15, markdown: true, spacing: .standard)
         view.setText(fiveKB.body)
       }
       return
@@ -182,7 +183,9 @@ struct NotesProbeTests {
     let source = NSTextStorage(string: fiveKB.body)
     NoteStyles.apply(
       to: source, lines: NSRange(location: 0, length: source.length),
-      theme: NoteStyles.Theme(paper: NotePaper.of(fiveKB), fontSize: 15, markdown: true), shown: [])
+      theme: NoteStyles.Theme(
+        paper: NotePaper.of(fiveKB), fontSize: 15, markdown: true, spacing: .standard),
+      shown: [], blocks: [])
     for delegated in [false, true] {
       let plain = Self.median(5) {
         let view = NoteTextView.make()
@@ -199,8 +202,9 @@ struct NotesProbeTests {
       let storage = NSTextStorage(string: fiveKB.body)
       NoteStyles.apply(
         to: storage, lines: NSRange(location: 0, length: storage.length),
-        theme: NoteStyles.Theme(paper: NotePaper.of(fiveKB), fontSize: 15, markdown: true),
-        shown: [])
+        theme: NoteStyles.Theme(
+          paper: NotePaper.of(fiveKB), fontSize: 15, markdown: true, spacing: .standard),
+        shown: [], blocks: [])
     }
     print("notes-probe   其中 NoteStyles.apply 整篇（不排版）：\(String(format: "%.2f", styled)) ms")
 

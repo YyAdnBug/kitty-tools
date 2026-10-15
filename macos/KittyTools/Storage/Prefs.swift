@@ -173,6 +173,10 @@ enum Prefs {
   /// 这些写法显示成样式，标记只在光标所在的行露出来；关掉后正文照原样显示（任务不归它管）
   static let notesMarkdown = "notesMarkdown"
 
+  /// 便签正文的行距（设置 › 便签，NoteStyles.Spacing 的 rawValue：compact 1.2 / standard 1.45（默认）/ relaxed 1.7；
+  /// 手测反馈第 4 批）：全部便签窗口、屏幕边缘的便签、浮动便签都是它。存了不认识的值按默认算（@AppStorage 的初值）
+  static let notesLineSpacing = "notesLineSpacing"
+
   /// 屏幕边缘那叠（设置 › 便签「屏幕边缘」，便签第 3 批）。读它们一律走 NoteDeckOptions(defaults)：不认识的值按默认算。
   /// 总开关（默认开；关掉一个窗口都不建）、哪条边（right 默认 / left；按住 ⌥ 拖药丸也写它）、显示器（main 默认 /
   /// all / chosen = 指定的那一块，是哪块在 notesDeckChosenDisplay）、样式（tabs 带标题的标签，默认 / chips 只有色块）、
@@ -288,6 +292,7 @@ enum Prefs {
       statusScreenAnimations: true,
       notesFontSize: 15,
       notesMarkdown: true,
+      notesLineSpacing: NoteStyles.Spacing.standard.rawValue,
       notesDeckEnabled: true,
       notesDeckEdge: NoteDeckOptions.Edge.right.rawValue,
       notesDeckDisplay: NoteDeckOptions.DisplayMode.main.rawValue,

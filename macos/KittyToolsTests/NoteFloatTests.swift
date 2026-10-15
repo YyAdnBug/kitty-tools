@@ -1128,6 +1128,36 @@ struct NoteFloatTests {
     #expect(!stack.canUndo && panel.contentView == nil)
   }
 
+  /// ⌘B ⌘I ⌘E ⇧⌘X（手测反馈第 4 批）从浮动便签的面板走到正文框（面板的按键入口和那叠是同一份 NotePanel，
+  /// 它自己的键都不是这四个）；仓库里那份跟着变
+  @Test func formatKeysReachTheFloatingNote() async throws {
+    let (defaults, suite) = try prefs()
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let (store, ids) = try library(["甲的正文"])
+    let float = try offscreenFloat(store, defaults: defaults)
+    defer { float.model.send(.remove) }
+    float.present(ids[0], mouse: Self.farPoint)
+    let panel = try #require(float.panel)
+    try await settle { focusedNote(panel) == ids[0] }
+    let editor = try #require(NoteDeck.editor(for: ids[0], in: panel.contentView))
+    editor.setSelectedRange(NSRange(location: 2, length: 2))
+    #expect(
+      try panel.performKeyEquivalent(with: key(kVK_ANSI_B, .command, characters: "b", in: panel)))
+    #expect(store.note(ids[0])?.body == "甲的**正文**")
+    #expect(
+      try panel.performKeyEquivalent(with: key(kVK_ANSI_E, .command, characters: "e", in: panel)))
+    #expect(
+      try panel.performKeyEquivalent(with: key(kVK_ANSI_I, .command, characters: "i", in: panel)))
+    #expect(store.note(ids[0])?.body == "甲的**`*正文*`**")
+    let strike = try #require(
+      NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: [.command, .shift], timestamp: 0,
+        windowNumber: panel.windowNumber, context: nil, characters: "x",
+        charactersIgnoringModifiers: "X", isARepeat: false, keyCode: UInt16(kVK_ANSI_X)))
+    #expect(panel.performKeyEquivalent(with: strike))
+    #expect(store.note(ids[0])?.body == "甲的**`*~~正文~~*`**" && !panel.isKeyWindow)
+  }
+
   /// 拆的时候回读 NoteFloat.panel 的探针：塞进浮动面板的内容里，被移出窗口时调 onLeave（HoverTracker 的追踪视图
   /// 就是在这一下补报「移出」的，第 3 批那叠的真机崩溃是这一下回调进来读了「正写到一半的那个属性」）
   private final class TeardownProbe: NSView {

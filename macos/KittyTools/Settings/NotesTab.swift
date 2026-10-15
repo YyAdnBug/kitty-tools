@@ -1,5 +1,6 @@
 // 设置 › 便签（PLAN §10「便签」F②，排在「录制」后面）。三组：
-// 「便签」——正文的字号（四档单选，全部便签窗口和屏幕边缘的便签共用）、Markdown 样式的开关（默认开）；
+// 「便签」——正文的字号（四档单选）、行距（三档单选，手测反馈第 4 批）——全部便签窗口、屏幕边缘的便签、浮动便签共用——、
+// Markdown 样式的开关（默认开）；
 // 「屏幕边缘」（第 3 批）——总开关（关掉一个窗口都不建）、哪条边、放在哪块显示器（只有一块屏时不显示这一行）、样式、
 // 大小、感应范围、一直展开、不显示药丸、悬停预览、悬停即打开、盖在全屏 App 上、打开的便签多大；总开关关着时下面的行停用；
 // 「数据」——打开全部便签窗口的按钮、按键速查，页脚说便签存在哪、怎么备份、删掉的留多久、导出导入在哪。
@@ -14,6 +15,7 @@ struct NotesTab: View {
   var displays: [String] = NoteDeckLayout.uniqueNames(NSScreen.screens.map(\.localizedName))
   @AppStorage(Prefs.notesFontSize) private var fontSize = 15
   @AppStorage(Prefs.notesMarkdown) private var markdown = true
+  @AppStorage(Prefs.notesLineSpacing) private var lineSpacing = NoteStyles.Spacing.standard
   @AppStorage(Prefs.notesDeckEnabled) private var deckEnabled = true
   @AppStorage(Prefs.notesDeckEdge) private var deckEdge = NoteDeckOptions.Edge.right
   @AppStorage(Prefs.notesDeckDisplay) private var deckDisplay = NoteDeckOptions.DisplayMode.main
@@ -35,15 +37,21 @@ struct NotesTab: View {
     Form {
       Section {
         // 横排单选包进 LabeledContent：贴着右边线（同设置 › 剪贴板「图片最多占用」）
-        radios("正文字号", "全部便签窗口和屏幕边缘的便签里正文的大小", selection: $fontSize) {
+        radios("正文字号", "全部便签窗口、屏幕边缘和浮在屏幕上的便签里正文的大小", selection: $fontSize) {
           ForEach(Prefs.notesFontSizeChoices, id: \.self) {
             Text(Self.fontTitles[$0] ?? "\($0)").tag($0)
           }
         }
+        radios("行距", "全部便签窗口、屏幕边缘和浮在屏幕上的便签里正文一行一行之间隔多远", selection: $lineSpacing) {
+          ForEach(NoteStyles.Spacing.allCases, id: \.self) { Text($0.title).tag($0) }
+        }
         Toggle(isOn: $markdown) {
           Text("Markdown 样式")
           // verbatim：SwiftUI 的 Text 自己会把字面量里的 ** ` [] 当 Markdown 画掉，这里要原样写给人看
-          Text(verbatim: "# 标题、**粗体**、*斜体*、`代码`、[链接](地址) 这些写法直接显示成样式，标记只在光标所在的那一行露出来")
+          Text(
+            verbatim:
+              "# 标题、**粗体**、*斜体*、`代码`、[链接](地址)、三个反引号围起来的代码块，这些写法直接显示成样式，标记只在光标所在的那一行露出来"
+          )
         }
       } header: {
         Text("便签")

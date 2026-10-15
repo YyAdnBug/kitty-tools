@@ -338,6 +338,18 @@ struct SettingsArchiveTests {
     #expect(target.string(forKey: Prefs.notesDeckStyle) == "chips")
   }
 
+  /// 便签的行距（手测反馈第 4 批）注册了默认值，跟着「设置」一类走：文件里的「宽松」导进来；类型不对的丢掉
+  @Test func noteLineSpacingTravelsWithSettings() throws {
+    let (target, name) = try suite()
+    defer { target.removePersistentDomain(forName: name) }
+    let archive = try archive(json: file(#""preferences": {"notesLineSpacing": "relaxed"}"#))
+    #expect(archive.preferences?[Prefs.notesLineSpacing] == .string("relaxed"))
+    archive.apply([.preferences], to: target, domainName: name)
+    #expect(target.string(forKey: Prefs.notesLineSpacing) == "relaxed")
+    let wrong = try self.archive(json: file(#""preferences": {"notesLineSpacing": 3}"#))
+    #expect(wrong.preferences?[Prefs.notesLineSpacing] == nil)
+  }
+
   /// 两张列表按 id 合并：文件里的在前（同 id 的换成文件里的），本机独有的接在后面、不删
   @Test func applyMergesLists() throws {
     let (target, name) = try suite()

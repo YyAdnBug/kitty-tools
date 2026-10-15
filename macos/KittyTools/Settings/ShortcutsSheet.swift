@@ -356,7 +356,9 @@ struct ShortcutsSheet: View {
       // 屏幕边缘那叠里打开的便签（第 3 批）：⌘ 组合在 NoteDeckModel.handleKeyEquivalent，Esc 是面板的 cancelOperation（cancel），
       // 操作菜单开着时的方向键在 handleMenuKey。⌘⌫ 不写：在标题、正文里它就是输入框的删到行首。
       // 第 5 批：⌘T 任务、⌘F 便签内查找（同一处）；⌘Z / ⇧⌘Z 是面板直接动焦点所在输入框的撤销栈（OverlayPanel.undoRedo）；
-      // 回车续行、Tab 缩进在正文编辑器里（NoteTextView.doCommand）。第 6 批：⌘ 点链接（NoteTextView.linkToOpen）
+      // 回车续行、Tab 缩进在正文编辑器里（NoteTextView.doCommand）。第 6 批：⌘ 点链接（NoteTextView.linkToOpen）。
+      // 手测反馈第 4 批：⌘B ⌘I ⇧⌘X ⌘E 在正文编辑器里（NoteTextView.performKeyEquivalent，规则 NoteMarkdown.toggle），
+      // 选中字时粘贴网址成链接（NoteTextView.paste）
       Group(
         title: "便签 · 屏幕边缘", symbol: "sidebar.right", color: Style.Family.notes,
         entries: [
@@ -370,6 +372,9 @@ struct ShortcutsSheet: View {
           Entry("⌘F", text: "在这条便签里查找（Esc 先关查找条，再按才关便签）"),
           Entry("⌘Z", "⇧⌘Z", text: "撤销 / 重做打的字（勾任务、回车接出来的下一条也能撤）"),
           Entry("⌘", text: "按住它点正文里的链接：打开（网址和邮件地址；不按 ⌘ 是放光标）"),
+          Entry("⌘B", "⌘I", text: "正文里：粗体、斜体（选了字两头加上，再按一次去掉；没选字插一对，光标在中间）"),
+          Entry("⇧⌘X", "⌘E", text: "正文里：删除线、代码（同上；三个反引号围起来的代码块里不加）"),
+          Entry("⌘V", text: "选中一段字时粘贴一个网址：粘成链接，字不变"),
           Entry("⌘,", text: "打开 设置 › 便签（打开的便签先收起）"),
           Entry("⌥", text: "按住它拖边上的药丸：换边、换高度"),
         ]),
@@ -384,7 +389,7 @@ struct ShortcutsSheet: View {
           Entry("⌘,", text: "打开 设置 › 便签（浮着的便签留在原处）"),
         ]),
       // 全部便签窗口里的键：NotesWindowView.shortcuts（看不见的按钮上挂着），动作在 NotesWindowModel；
-      // ⌘⌫ 和 ⇧⌘Z 是窗口的按键监听认的（NotesWindow.handlesKeyDown）
+      // ⌘⌫ 和 ⇧⌘Z 是窗口的按键监听认的（NotesWindow.handlesKeyDown）；⌘B ⌘I ⇧⌘X ⌘E、粘贴成链接在正文编辑器里
       Group(
         title: "便签 · 全部便签", symbol: "rectangle.split.2x1", color: Style.Family.notes,
         entries: [
@@ -395,6 +400,9 @@ struct ShortcutsSheet: View {
           Entry("⌘Z", text: "放回刚删的便签（连着删了几条就一条条放回；光标在正文、标题、搜索框里时先撤销那里打的字）"),
           Entry("⇧⌘Z", text: "重做刚撤销的打字"),
           Entry("⌘", text: "按住它点正文里的链接：打开（网址和邮件地址；不按 ⌘ 是放光标）"),
+          Entry("⌘B", "⌘I", text: "正文里：粗体、斜体（选了字两头加上，再按一次去掉；没选字插一对，光标在中间）"),
+          Entry("⇧⌘X", "⌘E", text: "正文里：删除线、代码（同上；三个反引号围起来的代码块里不加）"),
+          Entry("⌘V", text: "选中一段字时粘贴一个网址：粘成链接，字不变"),
           Entry("⇧⌘A", text: "归档 / 取消归档"),
           Entry("⌘P", text: "固定 / 取消固定"),
           Entry("⌘.", text: "换成下一种纸色"),

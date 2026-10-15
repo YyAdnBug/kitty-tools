@@ -54,22 +54,25 @@ struct NoteBodyField: View {
   /// 这条便签的撤销栈（NoteDeckModel.textUndo / NotesWindowModel.textUndo）：正文里打的字登记在它上面，⌘Z / ⇧⌘Z
   /// 动的也是它
   var undo: UndoManager?
-  /// 设置 › 便签「Markdown 样式」：变了正文整篇重排
+  /// 设置 › 便签「Markdown 样式」「行距」：变了正文整篇重排
   @AppStorage(Prefs.notesMarkdown) private var markdown = true
+  @AppStorage(Prefs.notesLineSpacing) private var spacing = NoteStyles.Spacing.standard
 
   var body: some View {
     let paper = NotePaper.of(note)
     NoteTextEditor(
       note: note, fontSize: fontSize, horizontalInset: margin - 5, focusRequest: focusRequest,
-      undo: undo, markdown: markdown, onChange: setBody, onOverflow: onOverflow, onCancel: onCancel
+      undo: undo, markdown: markdown, spacing: spacing, onChange: setBody, onOverflow: onOverflow,
+      onCancel: onCancel
     )
     .accessibilityLabel("正文")
     .overlay(alignment: .topLeading) {
-      // 位置就是第一个字的位置（左 = 边线，上 6 = 编辑器的 textContainerInset）：一打字不跳
+      // 位置就是第一个字的位置（左 = 边线，上 = 编辑器的 textContainerInset 6 + 字在定死的行高里居中让出来的那点）：
+      // 一打字不跳
       if note.body.isEmpty {
         NotePlaceholder(text: "写点什么…", size: fontSize, weight: .regular, paper: paper)
           .padding(.leading, margin - 2)
-          .padding(.top, 6)
+          .padding(.top, 6 + NoteStyles.textTop(fontSize: fontSize, spacing: spacing))
       }
     }
   }

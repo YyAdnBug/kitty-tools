@@ -1493,10 +1493,46 @@ struct SnapshotProbeTests {
         try snapshot(
           NoteBodyField(note: note, fontSize: 15, margin: 14, setBody: { _ in }, onOverflow: {})
             .background(paper.paper),
-          size: NSSize(width: 330, height: 236), dark: dark,
+          size: NSSize(width: 330, height: 300), dark: dark,
           to: "\(out)/notes-markdown-paper-\(index)\(dark ? "-dark" : "").png",
           prepare: Self.reveal(NSRange(location: 4, length: 0)))
       }
+    }
+
+    // 手测反馈第 4 批：行距三档（标题、正文折行、任务、列表、引用、代码块混排；标准档就是 spacing-standard）、
+    // 代码块（光标不在块里 / 在块里，浅深）、空的正文的占位和第一个字对齐（placeholder：占位 + 同一个位置打了字的
+    // 另一条，两张对着看）
+    let mixed = try NoteStore(db: Database(path: ":memory:"))
+    let mix = mixed.create(body: Self.spacingSample, now: now.addingTimeInterval(-60))
+    let mixModel = NotesWindowModel(store: mixed)
+    mixModel.selection = mix.id
+    let mixText = Self.spacingSample as NSString
+    for spacing in NoteStyles.Spacing.allCases {
+      let suite = "kitty-snapshot-notes-spacing-\(UUID().uuidString)"
+      let spaced = try #require(UserDefaults(suiteName: suite))
+      defer { spaced.removePersistentDomain(forName: suite) }
+      spaced.set(spacing.rawValue, forKey: Prefs.notesLineSpacing)
+      try snapshot(
+        NotesWindowView(model: mixModel).defaultAppStorage(spaced), size: windowSize,
+        dark: false, to: "\(out)/notes-window-spacing-\(spacing.rawValue).png")
+    }
+    for dark in [false, true] {
+      let suffix = dark ? "-dark" : ""
+      try window("code\(suffix)", mixModel, dark: dark)
+      try window(
+        "code-caret\(suffix)", mixModel, dark: dark,
+        prepare: Self.reveal(NSRange(location: mixText.range(of: "let total").location, length: 0)))
+    }
+    try window(
+      "spacing-heading-caret", mixModel,
+      prepare: Self.reveal(NSRange(location: mixText.range(of: "待办").location, length: 0)))
+    let placeholder = try NoteStore(db: Database(path: ":memory:"))
+    let typed = placeholder.create(body: "写点什么…", title: "打了字的", now: now.addingTimeInterval(-30))
+    let empty = placeholder.create(body: "", title: "空的", now: now)
+    let placeholderModel = NotesWindowModel(store: placeholder)
+    for (name, id) in [("placeholder", empty.id), ("placeholder-typed", typed.id)] {
+      placeholderModel.selection = id
+      try window(name, placeholderModel)
     }
 
     // 手测反馈第 3 批：正文的滚动条。系统「根据鼠标或触控板自动」连着鼠标时是常显的老式滚动条：强制成老式的出图。
@@ -3095,7 +3131,27 @@ struct SnapshotProbeTests {
     普通的一行收尾，\\*转义的星号\\* 照常显示。
     """
 
-  /// 每种纸色各看一眼的短样例（光标在第一行：露出来的标记有多淡；引用里带一段代码：它用墨色）
+  /// 手测反馈第 4 批的样例：行距三档、代码块（标题、正文折行、任务、列表、引用、代码块混排）
+  private static let spacingSample = """
+    # 周会纪要
+    上周的事情都做完了，这周把发布前的检查过一遍。这一段长一点，折一行看看折行之后的行距舒不舒服，看着累不累。
+    ## 待办
+    ☐ 周报 **周五前**交
+    ☑ 订会议室
+    - 列表项一
+    - 列表项二 `code`
+    > 引用的一段话：先把现有的行为用测试钉住，再一小步一小步地挪。
+    > 第二行引用
+    ### 代码
+    ```swift
+    let total = items.reduce(0) { $0 + $1.price }
+    print("**不是粗体**", total)  // ☐ 不是任务
+    ```
+    收尾的一行，[链接](https://example.com) 照常。
+    """
+
+  /// 每种纸色各看一眼的短样例（光标在第一行：露出来的标记有多淡；引用里带一段代码：它用墨色；最后一个代码块：块的底、
+  /// 带语言名的围栏行在每种纸上读不读得出）
   private static let markdownPaperSample = """
     ## 标题 **粗** *斜*
     正文 **粗体** *斜体* ~~删除~~ `code` [链接](https://a.b)
@@ -3103,6 +3159,9 @@ struct SnapshotProbeTests {
     - 列表项
     ☑ 做完的 **粗**
     ☐ 没做完的 `code`
+    ```swift
+    let total = price * 3
+    ```
     """
 
   /// 把图里的正文框摆成「拿着焦点、窗口是 key、选区在 selection」的样子：选区碰到的行露出 Markdown 的标记。

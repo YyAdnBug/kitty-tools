@@ -311,6 +311,7 @@ nonisolated enum NoteTasks {
 
   /// 任务做完几条 / 共几条；一条任务都没有是 nil。口径同 prefix(of:)：行首（缩进之后）的方框，后面是空格或行尾。
   /// 列表的每一行都要算它，所以一遍扫完、不拆行不建数组
+  // ponytail: 不认围栏，代码块里行首的方框也算进进度；碰上了改成用 NoteMarkdown.codeBlocks 跳过块里的行
   static func progress(in body: String) -> (done: Int, total: Int)? {
     var (finished, total) = (0, 0)
     // 还在行首的缩进里；刚读到行首的方框（true = 做完的），等着看它后面是不是空格 / 行尾

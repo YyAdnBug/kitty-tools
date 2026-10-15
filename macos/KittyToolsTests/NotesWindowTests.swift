@@ -440,7 +440,8 @@ struct NotesWindowTests {
         #expect(
           AccentPalette.contrast(srgb(tone.strip), srgb(tone.paper)) >= 1.5,
           "\(paper.name) \(name) 色条")
-        // 行内代码：墨压在代码的底（纸上叠一层墨）上
+        // 行内代码、代码块（连围栏行）：墨压在代码的底（纸上叠一层墨）上。围栏行原来是标记那一档（墨 35%，压在底上
+        // 最低 1.67:1）；次要的墨（75%）真叠在底上沙色浅纸是 4.498:1，不到 4.5——所以围栏行也用墨（评审后那一轮查的）
         let fill = mix(tone.ink, tone.paper, NotePaper.codeFillOpacity)
         #expect(AccentPalette.contrast(srgb(tone.ink), fill) >= 7, "\(paper.name) \(name) 代码")
       }
@@ -766,6 +767,25 @@ struct NotesWindowTests {
     #expect(editor.enclosingScrollView?.isFindBarVisible == true)
     #expect(try press("f", kVK_ANSI_F) && model.searchFocus == 1)
     editor.dismissFindBar()
+
+    // ⌘B ⌘I ⌘E ⇧⌘X（手测反馈第 4 批）：窗口把 ⌘ 组合沿着视图树问到正文框（隐藏的按钮、主菜单都不接这四个）；
+    // 能撤；焦点在标题框里时不归正文
+    #expect(window.makeFirstResponder(editor))
+    editor.setSelectedRange(NSRange(location: 0, length: 4))
+    #expect(try press("b", kVK_ANSI_B) && store.note(ids[0])?.body == "**甲的正文**，加一句")
+    #expect(try press("i", kVK_ANSI_I) && store.note(ids[0])?.body == "***甲的正文***，加一句")
+    #expect(try press("e", kVK_ANSI_E) && store.note(ids[0])?.body == "***`甲的正文`***，加一句")
+    #expect(
+      try press("x", kVK_ANSI_X, [.command, .shift], plain: "X")
+        && store.note(ids[0])?.body == "***`~~甲的正文~~`***，加一句")
+    // ⌘Z 撤回去（测试是同步跑的：几次按键都在同一轮事件循环里，系统把它们并成了一组；一步一撤在 NoteTextViewTests）
+    var undos = 0
+    while store.note(ids[0])?.body != "甲的正文，加一句", undos < 4, try press("z", kVK_ANSI_Z) {
+      undos += 1
+    }
+    #expect(undos >= 1 && store.note(ids[0])?.body == "甲的正文，加一句")
+    #expect(window.makeFirstResponder(title))
+    #expect(try !press("b", kVK_ANSI_B) && store.note(ids[0])?.body == "甲的正文，加一句")
 
     // 换一条便签：新的栈，上一条里打的字撤不到
     model.selection = ids[1]

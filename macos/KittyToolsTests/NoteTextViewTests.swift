@@ -7,11 +7,15 @@
 // ⌘ 点才打开链接（打开的动作换成记账的闭包，不真的开浏览器）；开关关掉没有 Markdown、任务照常。
 // 第 6 批评审后的一轮：撤掉组字之后自己收尾、改了字却没有 didChangeText 时下一轮兜底、⌃↩ 当普通换行、
 // 已经超上限的正文删得动、右键菜单的「打开链接」。
+// 手测反馈第 4 批：行高定死、字和插入点在行里居中（任务行和普通行一样高、标题上下留白、空着的最后一行）、代码块
+// （块里按原文、编辑键不续列表、打出收尾的围栏时只重排受影响的行而和整篇排一遍一样）、⌘B ⌘I ⇧⌘X ⌘E（按键事件交给
+// 窗口的 performKeyEquivalent）、粘贴网址成链接（剪贴板是自己建的，不碰系统的）。
 // 「窗口是 key」是直接告诉编辑器的（keyChanged）——屏外的窗口不许真的当 key。
 // 窗口都摆在离所有屏幕很远的地方（先确认不和任何屏相交）、**不当 key**；不发任何合成的鼠标键盘事件——事件对象只是
 // 直接交给视图的方法。偏好只用临时域，不碰用户的和便签库。
 
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 import Testing
 
@@ -51,7 +55,7 @@ struct NoteTextViewTests {
       scroll.hasVerticalScroller = true
       scroll.documentView = editor
       window.contentView = scroll
-      editor.setPaper(NotePaper.all[0], fontSize: 15, markdown: true)
+      editor.setPaper(NotePaper.all[0], fontSize: 15, markdown: true, spacing: .standard)
       editor.setText(body)
       window.makeFirstResponder(editor)
       layout()
@@ -260,7 +264,7 @@ struct NoteTextViewTests {
     #expect(rig.editor.string.hasPrefix("☐ 周报\n") && !rig.window.notes.canUndo)
     let changes = rig.changes.count
     rig.editor.setSelectedRange(caret(3))
-    rig.editor.setPaper(NotePaper.all[3], fontSize: 17, markdown: true)
+    rig.editor.setPaper(NotePaper.all[3], fontSize: 17, markdown: true, spacing: .standard)
     #expect(rig.attribute(.toolTip, at: 12) == nil)
     #expect((rig.attribute(.font, at: 2) as? NSFont)?.pointSize == 17)
     #expect(rig.isStruck(7) && rig.fontName(at: 0) == "AppleSymbols")
@@ -268,7 +272,7 @@ struct NoteTextViewTests {
     #expect(rig.editor.selectedRange() == caret(3) && rig.changes.count == changes)
     // 同样的纸色字号再给一遍：不动
     storage.addAttribute(.toolTip, value: "记号", range: NSRange(location: 12, length: 2))
-    rig.editor.setPaper(NotePaper.all[3], fontSize: 17, markdown: true)
+    rig.editor.setPaper(NotePaper.all[3], fontSize: 17, markdown: true, spacing: .standard)
     #expect(rig.attribute(.toolTip, at: 12) as? String == "记号")
   }
 
@@ -503,18 +507,31 @@ struct NoteTextViewTests {
     #expect(rig.cancels == 2)
   }
 
-  /// 右键菜单最前面是「任务」，点了就是 ⌘T
+  /// 右键菜单最前面是「任务」，点了就是 ⌘T；接着是「格式」子菜单（粗体 ⌘B、斜体 ⌘I、删除线 ⇧⌘X、代码 ⌘E，带键位），
+  /// 点了同按键
   @Test func contextMenuHasTheTaskItem() throws {
     let rig = try Rig("周报")
     let event = try rig.mouse(.rightMouseDown, at: rig.center(of: 0))
     let menu = try #require(rig.editor.menu(for: event))
     let item = try #require(menu.items.first)
     #expect(item.title == NotesWindowModel.taskTitle && item.keyEquivalent.isEmpty)
-    #expect(menu.items.count > 2 && menu.items[1].isSeparatorItem)
+    #expect(menu.items.count > 3 && menu.items[2].isSeparatorItem)
     #expect(rig.editor.validateUserInterfaceItem(item))
     rig.editor.setSelectedRange(caret(0))
     _ = item.target?.perform(item.action, with: item)
     #expect(rig.editor.string == "☐ 周报")
+    let format = try #require(menu.items[1].submenu)
+    #expect(menu.items[1].title == NoteTextView.formatTitle)
+    #expect(format.items.map(\.title) == ["粗体", "斜体", "删除线", "代码"])
+    #expect(format.items.map(\.keyEquivalent) == ["b", "i", "x", "e"])
+    #expect(
+      format.items.map(\.keyEquivalentModifierMask)
+        == [.command, .command, [.command, .shift], .command])
+    // 选中「周报」点「粗体」：同 ⌘B
+    rig.editor.setSelectedRange(NSRange(location: 2, length: 2))
+    #expect(format.items.allSatisfy { rig.editor.validateUserInterfaceItem($0) })
+    _ = format.items[0].target?.perform(format.items[0].action, with: format.items[0])
+    #expect(rig.editor.string == "☐ **周报**")
   }
 
   /// 右键点在能打开的链接上：菜单最前面多一项「打开链接」（不靠 ⌘ 点的那条路：键盘、旁白用户），不写键位；
@@ -532,8 +549,9 @@ struct NoteTextViewTests {
       rig.editor.menu(for: rig.mouse(.rightMouseDown, at: rig.center(of: 7))))
     let item = try #require(menu.items.first)
     #expect(item.title == NoteTextView.openLinkTitle && item.keyEquivalent.isEmpty)
-    #expect(menu.items.count > 3 && menu.items[1].title == NotesWindowModel.taskTitle)
-    #expect(menu.items[2].isSeparatorItem && rig.editor.validateUserInterfaceItem(item))
+    #expect(menu.items.count > 4 && menu.items[1].title == NotesWindowModel.taskTitle)
+    #expect(menu.items[2].title == NoteTextView.formatTitle)
+    #expect(menu.items[3].isSeparatorItem && rig.editor.validateUserInterfaceItem(item))
     #expect(opened.isEmpty)
     _ = item.target?.perform(item.action, with: item)
     #expect(opened == [URL(string: "https://example.com/a")] && rig.changes.isEmpty)
@@ -836,7 +854,7 @@ struct NoteTextViewTests {
     rig.editor.keyChanged(true)
     // 换了纸色（⌘. 这种）：整篇重排先欠着
     let oldInk = rig.attribute(.foregroundColor, at: 2) as? NSColor
-    rig.editor.setPaper(NotePaper.all[2], fontSize: 15, markdown: true)
+    rig.editor.setPaper(NotePaper.all[2], fontSize: 15, markdown: true, spacing: .standard)
     #expect(untouched(shift: 4) && rig.attribute(.foregroundColor, at: 2) as? NSColor == oldInk)
     #expect(rig.changes.isEmpty)
     // 确认：欠着的整篇重排补上（新的墨色），标记照样只露光标那一行；刚确认的字看得见
@@ -1069,21 +1087,28 @@ struct NoteTextViewTests {
     #expect((rig.attribute(.font, at: 2) as? NSFont)?.pointSize == 24)
     let keys: [NSAttributedString.Key] = [
       NoteStyles.hiddenKey, NoteStyles.shownKey, NoteStyles.linkKey, NoteStyles.quoteKey,
-      .underlineStyle, .obliqueness, .backgroundColor, .paragraphStyle,
+      NoteStyles.roleKey, .underlineStyle, .obliqueness, .backgroundColor, .paragraphStyle,
     ]
+    // 段落样式每一行都有（行高定死是排版，不归 Markdown 管）：关着时只算带缩进、段前段后的（引用、标题的）
     func markdownAttributes() -> [String] {
       guard let storage = rig.editor.textStorage else { return [] }
       return keys.filter { key in
         var found = false
         storage.enumerateAttribute(key, in: NSRange(location: 0, length: storage.length)) {
           value, _, _ in
+          if let style = value as? NSParagraphStyle {
+            found =
+              found || style.headIndent > 0 || style.paragraphSpacingBefore > 0
+              || style.paragraphSpacing > 0
+            return
+          }
           found = found || value != nil
         }
         return found
       }.map(\.rawValue)
     }
     #expect(markdownAttributes().count >= 5)
-    rig.editor.setPaper(NotePaper.all[0], fontSize: 15, markdown: false)
+    rig.editor.setPaper(NotePaper.all[0], fontSize: 15, markdown: false, spacing: .standard)
     #expect(markdownAttributes().isEmpty && rig.markers == "----")
     #expect((0..<text.utf16.count).allSatisfy { !rig.isGone($0) })
     #expect((rig.attribute(.font, at: 2) as? NSFont)?.pointSize == 15)
@@ -1098,7 +1123,7 @@ struct NoteTextViewTests {
     rig.editor.setSelectedRange(caret(0))
     #expect(markdownAttributes().isEmpty && rig.changes.count == 1)
     // 再打开：整篇补回来，光标所在的行露着
-    rig.editor.setPaper(NotePaper.all[0], fontSize: 15, markdown: true)
+    rig.editor.setPaper(NotePaper.all[0], fontSize: 15, markdown: true, spacing: .standard)
     #expect(rig.markers == "SHHHH" && rig.isGone(5) && rig.isGone(33) && rig.isGone(44))
     #expect((rig.attribute(.font, at: 2) as? NSFont)?.pointSize == 24)
     #expect(rig.attribute(NoteStyles.linkKey, at: 12) as? URL == URL(string: "https://a.b"))
@@ -1178,5 +1203,447 @@ struct NoteTextViewTests {
       #expect((ours.colorAt(x: x, y: 20)?.alphaComponent ?? 0) > 0.05, "dark: \(dark)")
     }
     #expect(NoteScroller.isCompatibleWithOverlayScrollers && !NoteScroller().isOpaque)
+  }
+
+  // MARK: 手测反馈第 4 批：行距、代码块、加标记的键、粘贴成链接
+
+  /// 一个字上排版有关的属性写成一串（字体、藏露、链接、引用、划线、下划线、斜、底、段落样式、代码块的角色、主字体、
+  /// 基线偏移、按浅色外观解析出来的字色）：比「编辑器里的」和「整篇排一遍的」用（颜色是动态色，不同的对象不相等）
+  private static func signature(_ storage: NSTextStorage, _ index: Int) -> String {
+    let attributes = storage.attributes(at: index, effectiveRange: nil)
+    let font = attributes[.font] as? NSFont
+    let style = attributes[.paragraphStyle] as? NSParagraphStyle
+    var color = "-"
+    if let ink = attributes[.foregroundColor] as? NSColor, let aqua = NSAppearance(named: .aqua) {
+      aqua.performAsCurrentDrawingAppearance {
+        color = ink.usingColorSpace(.sRGB).map { "\($0.redComponent),\($0.alphaComponent)" } ?? "?"
+      }
+    }
+    let keys: [NSAttributedString.Key] = [
+      NoteStyles.hiddenKey, NoteStyles.shownKey, NoteStyles.quoteKey, .strikethroughStyle,
+      .underlineStyle, .obliqueness, .backgroundColor,
+    ]
+    return [
+      "\(font?.fontName ?? "-") \(font?.pointSize ?? 0)",
+      keys.map { attributes[$0] != nil ? "1" : "0" }.joined(),
+      (attributes[NoteStyles.linkKey] as? URL)?.absoluteString ?? "",
+      "\(style?.minimumLineHeight ?? -1) \(style?.paragraphSpacingBefore ?? -1) \(style?.paragraphSpacing ?? -1) \(style?.headIndent ?? -1)",
+      "\((attributes[NoteStyles.roleKey] as? Int) ?? 0)",
+      "\((attributes[NoteStyles.lineFontKey] as? NSFont)?.fontName ?? "-")",
+      "\((attributes[.baselineOffset] as? CGFloat) ?? 0)", color,
+    ].joined(separator: "|")
+  }
+
+  /// 编辑器里现在的属性和「整篇排一遍」逐字一样（编辑器没当 key：没有露着的行）；不一样就给第一处的说明
+  private func wholeTextMismatch(
+    _ rig: Rig, markdown: Bool = true, spacing: NoteStyles.Spacing = .standard
+  ) -> String? {
+    guard let storage = rig.editor.textStorage else { return "no storage" }
+    let expected = NSTextStorage(string: rig.editor.string)
+    NoteStyles.apply(
+      to: expected, lines: NSRange(location: 0, length: expected.length),
+      theme: NoteStyles.Theme(
+        paper: NotePaper.all[0], fontSize: 15, markdown: markdown, spacing: spacing),
+      shown: [], blocks: markdown ? NoteMarkdown.codeBlocks(in: expected.mutableString) : [])
+    for index in 0..<storage.length {
+      let (got, want) = (Self.signature(storage, index), Self.signature(expected, index))
+      if got != want { return "第 \(index) 个字：\(got) ≠ \(want)" }
+    }
+    return nil
+  }
+
+  /// 第 index 个字所在的行片段、插入点（布局管理器给的、零长度选区的矩形：画插入点、摆输入法候选窗都按它）
+  private func fragment(_ rig: Rig, _ index: Int) throws -> NSRect {
+    rig.layout()
+    let manager = try #require(rig.editor.layoutManager)
+    return manager.lineFragmentRect(
+      forGlyphAt: manager.glyphIndexForCharacter(at: index), effectiveRange: nil)
+  }
+
+  private func caretRect(_ rig: Rig, _ index: Int) throws -> NSRect {
+    rig.layout()
+    let manager = try #require(rig.editor.layoutManager)
+    let container = try #require(rig.editor.textContainer)
+    var count = 0
+    let range = NSRange(location: index, length: 0)
+    let rects = try #require(
+      manager.rectArray(
+        forCharacterRange: range, withinSelectedCharacterRange: range, in: container,
+        rectCount: &count))
+    try #require(count > 0)
+    return rects[0]
+  }
+
+  /// 行距：每一行的行片段是定死的那么高、任务行和普通行一样高（基线也一样：方框的字下沿深，不再把整行往上顶）；
+  /// 标题按它的字号、上面留半行下面留四分之一行，正文第一行是标题时上面不留；插入点只有字那么高、在那一条正中
+  /// （zero-length 的 rectArray、firstRect）；空着的最后一行同样；选区头尾两行收到字的上下沿、中间连成一片；三档都对
+  @Test func linesHaveFixedHeightsAndCenteredCarets() throws {
+    // # 0 空格 1 标题 2-3 换行 4 | 普通 5-6 换行 7 | ☐ 8 空格 9 任务 10-11 换行 12 | ## 13-14 空格 15 二级 16-17
+    // 换行 18 | 后 19 换行 20 |（空着的最后一行）
+    let rig = try Rig("# 标题\n普通\n☐ 任务\n## 二级\n后\n")
+    let manager = try #require(rig.editor.layoutManager)
+    let base = NSFont.systemFont(ofSize: 15)
+    let box = base.ascender - base.descender
+    // 一级标题在第一行：上面不留，35 高 + 下面 6
+    #expect(try fragment(rig, 0) == NSRect(x: 0, y: 0, width: fragment(rig, 0).width, height: 41))
+    #expect(try fragment(rig, 5).height == 22 && fragment(rig, 8).height == 22)
+    #expect(try fragment(rig, 19).height == 22)
+    // 二级标题（21 × 1.45 → 30）：上 11、下 6
+    #expect(try fragment(rig, 13).height == 11 + 30 + 6)
+    // 任务行和普通行：基线离行顶一样远
+    rig.layout()
+    let baseline = { (index: Int) in
+      manager.location(forGlyphAt: manager.glyphIndexForCharacter(at: index)).y
+    }
+    #expect(baseline(10) == baseline(5) && baseline(9) == baseline(5))
+    // 插入点：正文的字那么高、在 22 高的那一条正中（基线取整点，最多偏 0.5）
+    for index in [5, 10, 19] {
+      let caret = try caretRect(rig, index)
+      let line = try fragment(rig, index)
+      #expect(abs(caret.height - box) < 0.01, "\(index)")
+      #expect(abs(caret.midY - line.midY) <= 0.5, "\(index)")
+    }
+    // 标题行：标题的字那么高、在去掉段前段后的那一条正中
+    let heading = NSFont.systemFont(ofSize: 21, weight: .bold)
+    let headingCaret = try caretRect(rig, 16)
+    #expect(abs(headingCaret.height - (heading.ascender - heading.descender)) < 0.01)
+    #expect(try abs(headingCaret.midY - (fragment(rig, 13).minY + 11 + 15)) <= 0.5)
+    // 空着的最后一行：行高同正文，插入点同样只有字那么高、居中
+    let extra = manager.extraLineFragmentRect
+    let end = try caretRect(rig, rig.editor.string.utf16.count)
+    #expect(extra.height == 22 && abs(end.height - box) < 0.01 && abs(end.midY - extra.midY) <= 0.5)
+    // 输入法候选窗摆的位置（firstRect）同样
+    var actual = NSRange()
+    let first = rig.editor.firstRect(
+      forCharacterRange: NSRange(location: 5, length: 0), actualRange: &actual)
+    #expect(abs(first.height - box) < 0.01)
+    // 选区：头一行从字的上沿起、末一行到字的下沿，中间连成一片（没有缝）
+    let container = try #require(rig.editor.textContainer)
+    var count = 0
+    let selection = NSRange(location: 5, length: 7)
+    // 布局管理器给的是它自己的缓冲区，下一次问就被盖掉：先拷出来
+    let buffer = try #require(
+      manager.rectArray(
+        forCharacterRange: selection, withinSelectedCharacterRange: selection, in: container,
+        rectCount: &count))
+    let rects = Array(UnsafeBufferPointer(start: buffer, count: count))
+    try #require(count == 2)
+    #expect(abs(rects[0].minY - (try caretRect(rig, 5)).minY) < 0.01)
+    #expect(abs(rects[1].maxY - (try caretRect(rig, 10)).maxY) < 0.01)
+    #expect(abs(rects[0].maxY - rects[1].minY) < 0.01)
+    // 三档：换行距整篇重排，各行跟着变；只动属性
+    for spacing in NoteStyles.Spacing.allCases {
+      rig.editor.setPaper(NotePaper.all[0], fontSize: 15, markdown: true, spacing: spacing)
+      let body = (15 * spacing.multiple).rounded()
+      #expect(try fragment(rig, 5).height == body && fragment(rig, 8).height == body)
+      #expect(try abs(caretRect(rig, 5).height - box) < 0.01)
+      #expect(manager.extraLineFragmentRect.height == body)
+      #expect(wholeTextMismatch(rig, spacing: spacing) == nil)
+    }
+    #expect(rig.changes.isEmpty && !rig.window.notes.canUndo)
+    // 空的正文：插入点同样只有字那么高
+    rig.editor.setPaper(NotePaper.all[0], fontSize: 15, markdown: true, spacing: .standard)
+    rig.editor.setText("")
+    let empty = try caretRect(rig, 0)
+    #expect(abs(empty.height - box) < 0.01 && manager.extraLineFragmentRect.height == 22)
+  }
+
+  /// 空的正文换字号、行距：空着的那一行（额外行片段，没有字可排）跟着重排——行高、插入点都是新的（评审后那一轮：
+  /// 原来改成 20 号、宽松之后那一行还是 22 高、插入点 17.7 高，占位挪了插入点没挪）。照 NoteTextEditor.makeNSView 的
+  /// 顺序建（先搭好滚动区、再 setPaper / setText，最后挂进窗口）
+  @Test func emptyBodyFollowsFontSizeAndSpacing() throws {
+    let editor = NoteTextView.make()
+    editor.textContainerInset = NSSize(width: 9, height: 6)
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 480, height: 320))
+    scroll.hasVerticalScroller = true
+    editor.frame = NSRect(origin: .zero, size: scroll.contentSize)
+    scroll.documentView = editor
+    editor.setPaper(NotePaper.all[0], fontSize: 15, markdown: true, spacing: .standard)
+    editor.setText("")
+    let frame = CGRect(x: -30000, y: -30000, width: 480, height: 320)
+    try #require(
+      !NSScreen.screens.contains { $0.frame.insetBy(dx: -2000, dy: -2000).intersects(frame) })
+    let window = NSWindow(
+      contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: true)
+    window.isReleasedWhenClosed = false
+    window.contentView = scroll
+    let manager = try #require(editor.layoutManager)
+    let container = try #require(editor.textContainer)
+    /// 空着的那一行、插入点（零长度选区的矩形）
+    func extra() throws -> (line: NSRect, caret: NSRect) {
+      manager.ensureLayout(for: container)
+      var count = 0
+      let caret = try #require(
+        manager.rectArray(
+          forCharacterRange: NSRange(location: 0, length: 0),
+          withinSelectedCharacterRange: NSRange(location: 0, length: 0), in: container,
+          rectCount: &count))
+      try #require(count > 0)
+      return (manager.extraLineFragmentRect, caret[0])
+    }
+    #expect(try extra().line.height == 22)
+    for (size, spacing) in [(20, NoteStyles.Spacing.relaxed), (13, .compact)] {
+      editor.setPaper(NotePaper.all[0], fontSize: CGFloat(size), markdown: true, spacing: spacing)
+      let font = NSFont.systemFont(ofSize: CGFloat(size))
+      let (line, caret) = try extra()
+      #expect(line.height == (CGFloat(size) * spacing.multiple).rounded(), "\(size)")
+      #expect(abs(caret.height - (font.ascender - font.descender)) < 0.01, "\(size)")
+      #expect(abs(caret.midY - line.midY) <= 0.5, "\(size)")
+    }
+  }
+
+  /// 贴进来的软换行（U+2028）、U+0085 后面那一行：TextKit 1 不当分段、按这一段的行高排，字上记的却是标题的——插入点、
+  /// 输入法候选窗夹在自己的行片段里（评审后那一轮：原来行片段 22–44、插入点 18.8–47.1）
+  @Test func caretStaysInsideItsLineAfterSoftBreaks() throws {
+    // 正文 0-1 软换行 2 # 3 空格 4 标题 5-6
+    for separator in ["\u{2028}", "\u{85}"] {
+      let rig = try Rig("正文\(separator)# 标题")
+      let line = try fragment(rig, 5)
+      for index in [3, 5, 7] {
+        let caret = try caretRect(rig, index)
+        #expect(
+          caret.minY >= line.minY - 0.01 && caret.maxY <= line.maxY + 0.01,
+          "\(separator.unicodeScalars.first!.value) \(index)：\(caret) 出了 \(line)")
+      }
+      var actual = NSRange()
+      let first = rig.editor.firstRect(
+        forCharacterRange: NSRange(location: 5, length: 0), actualRange: &actual)
+      #expect(first.height <= line.height + 0.01)
+    }
+  }
+
+  /// 代码块在编辑器里：打出收尾的围栏那一下，中间那几行一起变成代码（只重排受影响的行，和整篇排一遍逐字一样）；
+  /// 块里回车不续列表、Tab 是制表符、「- [ ]」加空格不转换、⌘T 和加标记的键不动、块里的方框点了不勾；
+  /// 删掉收尾的围栏，那几行回到原来的样子
+  @Test func codeBlocksInTheEditor() throws {
+    // 前 0 换行 1 | ``` 2-4 换行 5 | - 6 空格 7 列表 8-9 换行 10 | ☐ 11 空格 12 任务 13-14 换行 15 | 后 16
+    let rig = try Rig("前\n```\n- 列表\n☐ 任务\n后", steps: true)
+    func font(_ index: Int) -> NSFont? { rig.attribute(.font, at: index) as? NSFont }
+    // 还没关上：照普通的行（列表符号、方框：Apple Symbols × 1.1 = 17）。字体按字号认——等宽字体里没有方框、汉字，
+    // 文本存储会换成后备字体（名字会变，字号不变）
+    #expect(font(11)?.pointSize == 17 && rig.attribute(NoteStyles.roleKey, at: 6) == nil)
+    #expect(wholeTextMismatch(rig) == nil)
+    // 在「后」那一行前面打出收尾的围栏
+    rig.editor.setSelectedRange(caret(16))
+    rig.step { rig.type("```\n") }
+    #expect(rig.editor.string == "前\n```\n- 列表\n☐ 任务\n```\n后")
+    #expect(font(11)?.pointSize == 14 && font(6)?.isFixedPitch == true && font(6)?.pointSize == 14)
+    #expect(rig.attribute(NoteStyles.roleKey, at: 2) as? Int == 1)
+    #expect(rig.attribute(NoteStyles.roleKey, at: 8) as? Int == 2)
+    #expect(rig.attribute(NoteStyles.roleKey, at: 16) as? Int == 3)
+    #expect(rig.attribute(NoteStyles.roleKey, at: 20) == nil && font(20)?.isFixedPitch == false)
+    #expect(wholeTextMismatch(rig) == nil)
+    // 块里的方框点了不勾、⌘T 不切（响一声）、加标记的键不动
+    let boxPoint = try rig.editor.convert(rig.center(of: 11), from: nil)
+    #expect(rig.editor.box(at: boxPoint) == nil)
+    rig.editor.setSelectedRange(caret(13))
+    let before = rig.editor.string
+    rig.step { rig.editor.toggleTask() }
+    rig.step { rig.editor.format(.bold) }
+    #expect(rig.editor.string == before)
+    // 回车：不续列表，就是换行（光标在「- 列表」末尾）
+    rig.editor.setSelectedRange(caret(10))
+    rig.step { rig.editor.doCommand(by: #selector(NSResponder.insertNewline(_:))) }
+    #expect(rig.editor.string == "前\n```\n- 列表\n\n☐ 任务\n```\n后")
+    // Tab：制表符；「- [ ]」加空格：不转换
+    rig.step { rig.editor.doCommand(by: #selector(NSResponder.insertTab(_:))) }
+    for character in "- [ ] " { rig.step { rig.type(String(character)) } }
+    #expect(rig.editor.string == "前\n```\n- 列表\n\t- [ ] \n☐ 任务\n```\n后")
+    #expect(wholeTextMismatch(rig) == nil)
+    // 在块里的行首组字：组着的字带着这一行的段落样式、主字体、角色（组字期间不重排，这一行的行高和缩进不跳）
+    let lineStart = (rig.editor.string as NSString).range(of: "☐ 任务").location
+    rig.editor.setSelectedRange(caret(lineStart))
+    rig.step { rig.compose("ni") }
+    let composing = try #require(rig.attribute(.paragraphStyle, at: lineStart) as? NSParagraphStyle)
+    #expect(composing.minimumLineHeight == 20 && composing.headIndent == 8)
+    #expect(rig.attribute(NoteStyles.roleKey, at: lineStart) as? Int == 2)
+    #expect((rig.attribute(NoteStyles.lineFontKey, at: lineStart) as? NSFont)?.isFixedPitch == true)
+    rig.step { rig.compose("") }
+    #expect(rig.editor.string == "前\n```\n- 列表\n\t- [ ] \n☐ 任务\n```\n后")
+    #expect(wholeTextMismatch(rig) == nil)
+    // 删掉收尾的围栏：块没了，那几行回到原来的样子
+    let close = (rig.editor.string as NSString).range(of: "```\n后")
+    rig.editor.setSelectedRange(NSRange(location: close.location, length: 3))
+    rig.step { rig.editor.deleteBackward(nil) }
+    #expect(rig.editor.string == "前\n```\n- 列表\n\t- [ ] \n☐ 任务\n\n后")
+    #expect(rig.attribute(NoteStyles.roleKey, at: 2) == nil)
+    #expect(font(rig.editor.string.utf16.count - 7)?.pointSize == 17)
+    #expect(wholeTextMismatch(rig) == nil)
+    // 撤销：块回来（也只重排受影响的行）
+    rig.window.notes.undo()
+    #expect(rig.attribute(NoteStyles.roleKey, at: 2) as? Int == 1 && wholeTextMismatch(rig) == nil)
+    // 改开头那一行（多一个反引号：收尾的三个不够了）→ 块没了；再删掉 → 回来
+    rig.editor.setSelectedRange(caret(5))
+    rig.step { rig.type("`") }
+    #expect(rig.attribute(NoteStyles.roleKey, at: 2) == nil && wholeTextMismatch(rig) == nil)
+    rig.step { rig.editor.deleteBackward(nil) }
+    #expect(rig.attribute(NoteStyles.roleKey, at: 2) as? Int == 1 && wholeTextMismatch(rig) == nil)
+    // 块外改一个字、块里改一个字：照样一样
+    rig.editor.setSelectedRange(caret(1))
+    rig.step { rig.type("**粗**") }
+    rig.editor.setSelectedRange(caret(15))
+    rig.step { rig.type("# 不是标题") }
+    #expect(wholeTextMismatch(rig) == nil)
+    // Markdown 关掉：没有代码块，方框是方框
+    rig.editor.setPaper(NotePaper.all[0], fontSize: 15, markdown: false, spacing: .standard)
+    #expect(
+      rig.attribute(NoteStyles.roleKey, at: 7) == nil
+        && wholeTextMismatch(rig, markdown: false) == nil)
+  }
+
+  /// 引用块整块上下留一点：中间插一行、把一行改成不是引用，挨着的上下两行跟着重排（和整篇排一遍一样）
+  @Test func quoteMarginsFollowNeighbors() throws {
+    let rig = try Rig("前\n> 一\n> 二\n> 三\n后", steps: true)
+    func spacing(_ fragment: String) -> (CGFloat, CGFloat)? {
+      let location = (rig.editor.string as NSString).range(of: fragment).location
+      guard let style = rig.attribute(.paragraphStyle, at: location) as? NSParagraphStyle else {
+        return nil
+      }
+      return (style.paragraphSpacingBefore, style.paragraphSpacing)
+    }
+    #expect(spacing("> 一")! == (6, 0) && spacing("> 二")! == (0, 0) && spacing("> 三")! == (0, 6))
+    // 把「> 二」开头的 > 删掉：一、三各自成块
+    let second = (rig.editor.string as NSString).range(of: "> 二")
+    rig.editor.setSelectedRange(NSRange(location: second.location, length: 2))
+    rig.step { rig.editor.deleteBackward(nil) }
+    #expect(spacing("> 一")! == (6, 6) && spacing("> 三")! == (6, 6) && wholeTextMismatch(rig) == nil)
+    rig.window.notes.undo()
+    #expect(spacing("> 二")! == (0, 0) && wholeTextMismatch(rig) == nil)
+    // 在「前」后面接一行引用：一 不再是块的头一行
+    rig.editor.setSelectedRange(caret(1))
+    rig.step { rig.type("\n> 零") }
+    #expect(spacing("> 零")! == (6, 0) && spacing("> 一")! == (0, 0) && wholeTextMismatch(rig) == nil)
+  }
+
+  /// 按键事件交给窗口的 performKeyEquivalent（窗口把 ⌘ 组合沿着视图树问的那一下，同面板）：⌘B ⌘I ⇧⌘X ⌘E
+  private func formatKey(
+    _ wrap: NoteMarkdown.Wrap, in window: NSWindow, flags: NSEvent.ModifierFlags? = nil
+  )
+    throws -> NSEvent
+  {
+    let codes: [NoteMarkdown.Wrap: Int] = [
+      .bold: kVK_ANSI_B, .italic: kVK_ANSI_I, .strike: kVK_ANSI_X, .code: kVK_ANSI_E,
+    ]
+    let shifted = (flags ?? wrap.modifiers).contains(.shift)
+    return try #require(
+      NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: flags ?? wrap.modifiers, timestamp: 0,
+        windowNumber: window.windowNumber, context: nil, characters: wrap.key,
+        charactersIgnoringModifiers: shifted ? wrap.key.uppercased() : wrap.key, isARepeat: false,
+        keyCode: UInt16(codes[wrap] ?? 0)))
+  }
+
+  /// ⌘B ⌘I ⇧⌘X ⌘E：有选区两头加上、再按一次去掉；没有选区插一对、光标在中间，再按一次（中间还空着）删掉；
+  /// 选了几行每行各自包；每次一步撤销；输入法组字期间吞掉不做事；焦点不在正文上不接；Markdown 关着照样加
+  @Test func formatKeysWrapTheSelection() throws {
+    // 周报 0-1 空格 2 report 3-8 换行 9 | 第二行 10-12
+    let rig = try Rig("周报 report\n第二行", steps: true)
+    func press(_ wrap: NoteMarkdown.Wrap, flags: NSEvent.ModifierFlags? = nil) throws -> Bool {
+      let event = try formatKey(wrap, in: rig.window, flags: flags)
+      var handled = false
+      rig.step { handled = rig.window.performKeyEquivalent(with: event) }
+      return handled
+    }
+    rig.editor.setSelectedRange(NSRange(location: 0, length: 2))
+    #expect(try press(.bold))
+    #expect(rig.editor.string == "**周报** report\n第二行")
+    #expect(rig.editor.selectedRange() == NSRange(location: 2, length: 2))
+    #expect(rig.changes.last == rig.editor.string)
+    #expect(try press(.bold))
+    #expect(rig.editor.string == "周报 report\n第二行")
+    #expect(rig.editor.selectedRange() == NSRange(location: 0, length: 2))
+    // 删除线、代码、斜体
+    rig.editor.setSelectedRange(NSRange(location: 3, length: 6))
+    #expect(try press(.strike))
+    #expect(rig.editor.string == "周报 ~~report~~\n第二行")
+    #expect(try press(.code))
+    #expect(rig.editor.string == "周报 ~~`report`~~\n第二行")
+    #expect(try press(.italic))
+    #expect(rig.editor.string == "周报 ~~`*report*`~~\n第二行")
+    // 一步一撤
+    rig.window.notes.undo()
+    #expect(rig.editor.string == "周报 ~~`report`~~\n第二行")
+    rig.window.notes.undo()
+    rig.window.notes.undo()
+    #expect(rig.editor.string == "周报 report\n第二行")
+    // 没有选区：插一对、光标在中间；再按一次删掉
+    rig.editor.setSelectedRange(caret(13))
+    #expect(try press(.bold))
+    #expect(rig.editor.string == "周报 report\n第二行****" && rig.editor.selectedRange() == caret(15))
+    #expect(try press(.bold))
+    #expect(rig.editor.string == "周报 report\n第二行" && rig.editor.selectedRange() == caret(13))
+    // 选了几行：每行各自包；再按都去掉
+    rig.editor.selectAll(nil)
+    #expect(try press(.bold))
+    #expect(rig.editor.string == "**周报 report**\n**第二行**")
+    #expect(try press(.bold))
+    #expect(rig.editor.string == "周报 report\n第二行")
+    // 输入法组字期间：吞掉、不做事
+    rig.editor.setSelectedRange(caret(2))
+    rig.step { rig.compose("pin") }
+    #expect(try press(.bold))
+    #expect(rig.editor.hasMarkedText() && rig.editor.string == "周报pin report\n第二行")
+    rig.step { rig.type("拼") }
+    // 带别的修饰键的、别的键：不接
+    #expect(try !press(.bold, flags: [.command, .option]))
+    #expect(NoteTextView.wrap(for: try formatKey(.strike, in: rig.window, flags: .command)) == nil)
+    #expect(NoteTextView.wrap(for: try formatKey(.strike, in: rig.window)) == .strike)
+    // 焦点不在正文上：不接（交给别人）
+    rig.window.makeFirstResponder(nil)
+    #expect(try !press(.bold))
+    rig.window.makeFirstResponder(rig.editor)
+    // Markdown 关着：照样加（存的就是 Markdown 的原文）
+    rig.editor.setPaper(NotePaper.all[0], fontSize: 15, markdown: false, spacing: .standard)
+    rig.editor.setSelectedRange(NSRange(location: 0, length: 2))
+    #expect(try press(.bold))
+    #expect(rig.editor.string.hasPrefix("**周报**拼"))
+    #expect(wholeTextMismatch(rig, markdown: false) == nil)
+  }
+
+  /// 粘贴网址成链接：选中一行里的一段字、剪贴板里是一个能打开的网址 → 「[字](网址)」，一步撤销；别的照常粘贴
+  /// （几个网址、一段话、打不开的地址、跨行的选区、在行内代码 / 代码块里、没有选区、Markdown 关着）。剪贴板是自己建的
+  @Test func pastingAURLOverASelectionMakesALink() throws {
+    let board = NSPasteboard(name: NSPasteboard.Name("kitty-test-\(UUID().uuidString)"))
+    defer { board.releaseGlobally() }
+    // 看这里吧 0-3 换行 4 | 有 `代码` 的 5-12 换行 13 | ``` 14-16 换行 17 | 块里 18-19 换行 20 | ``` 21-23
+    let text = "看这里吧\n有 `代码` 的\n```\n块里\n```"
+    let rig = try Rig(text, steps: true)
+    rig.editor.pasteboard = board
+    func paste(_ content: String, over selection: NSRange) {
+      board.clearContents()
+      board.setString(content, forType: .string)
+      rig.editor.setSelectedRange(selection)
+      rig.step { rig.editor.paste(nil) }
+    }
+    paste(" https://example.com/a \n", over: NSRange(location: 1, length: 2))
+    #expect(rig.editor.string.hasPrefix("看[这里](https://example.com/a)吧\n"))
+    #expect(rig.editor.selectedRange() == caret(28) && rig.changes.last == rig.editor.string)
+    #expect(
+      rig.attribute(NoteStyles.linkKey, at: 2) as? URL == URL(string: "https://example.com/a"))
+    rig.window.notes.undo()
+    #expect(rig.editor.string == text)
+    // 照常粘贴的：选中的字换成剪贴板里的字
+    for (content, selection) in [
+      ("https://a.b https://c.d", NSRange(location: 1, length: 2)),
+      ("一段话", NSRange(location: 1, length: 2)),
+      ("file:///etc/hosts", NSRange(location: 1, length: 2)),
+      ("https://a.b", NSRange(location: 2, length: 5)),
+      ("https://a.b", NSRange(location: 8, length: 2)),
+      ("https://a.b", NSRange(location: 18, length: 2)),
+    ] {
+      paste(content, over: selection)
+      let expected = (text as NSString).replacingCharacters(in: selection, with: content)
+      #expect(rig.editor.string == expected, "\(content) \(selection)")
+      rig.window.notes.undo()
+      #expect(rig.editor.string == text)
+    }
+    // 没有选区：插进去
+    paste("https://a.b", over: caret(4))
+    #expect(rig.editor.string.hasPrefix("看这里吧https://a.b\n"))
+    rig.window.notes.undo()
+    // Markdown 关着：照常粘贴
+    rig.editor.setPaper(NotePaper.all[0], fontSize: 15, markdown: false, spacing: .standard)
+    paste("https://a.b", over: NSRange(location: 1, length: 2))
+    #expect(rig.editor.string.hasPrefix("看https://a.b吧"))
   }
 }
