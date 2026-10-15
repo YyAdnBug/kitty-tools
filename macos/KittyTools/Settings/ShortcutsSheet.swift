@@ -389,14 +389,19 @@ struct ShortcutsSheet: View {
           Entry("⌘,", text: "打开 设置 › 便签（浮着的便签留在原处）"),
         ]),
       // 全部便签窗口里的键：NotesWindowView.shortcuts（看不见的按钮上挂着），动作在 NotesWindowModel；
-      // ⌘⌫ 和 ⇧⌘Z 是窗口的按键监听认的（NotesWindow.handlesKeyDown）；⌘B ⌘I ⇧⌘X ⌘E、粘贴成链接在正文编辑器里
+      // ⌘⌫ 和 ⇧⌘Z、便签墙上收编辑卡的 ⌘W 是窗口的按键监听认的（NotesWindow.handlesKeyDown）；便签墙上的方向键、
+      // ↩ / 空格、Esc 在 NotesWallView（onKeyPress / onExitCommand）；⌘B ⌘I ⇧⌘X ⌘E、粘贴成链接在正文编辑器里
       Group(
         title: "便签 · 全部便签", symbol: "rectangle.split.2x1", color: Style.Family.notes,
         entries: [
-          Entry("⌘N", text: "新建便签"),
+          Entry("⌘1", "⌘2", text: "便签墙 / 列表（同工具栏上的切换；下次打开是上次用的那种）"),
+          Entry("↑↓", "←→", text: "便签墙上：在卡片之间挑（↑↓ 同一列上下，←→ 旁边那列）"),
+          Entry("↩", "空格", text: "便签墙上：把选中的那张放大成编辑卡，接着写"),
+          Entry("Esc", "⌘W", text: "便签墙上：收回编辑卡（点旁边变暗的地方也行）；没开着编辑卡时 ⌘W 关窗口"),
+          Entry("⌘N", text: "新建便签（便签墙上直接打开它的编辑卡）"),
           Entry("⌘F", text: "搜索便签；光标在正文里时是在这条便签里查找"),
           Entry("⌘T", text: "任务：正文里光标所在的行变成任务，再按一次变回普通行"),
-          Entry("⌘⌫", text: "焦点在列表上时：删除选中的便签，进「最近删除」（⌫ 也行；在最近删除里是永久删除，要确认）。光标在标题、正文里时是删到行首"),
+          Entry("⌘⌫", text: "焦点在列表或便签墙上时：删除选中的便签，进「最近删除」（⌫ 也行；在最近删除里是永久删除，要确认）。光标在标题、正文里时是删到行首"),
           Entry("⌘Z", text: "放回刚删的便签（连着删了几条就一条条放回；光标在正文、标题、搜索框里时先撤销那里打的字）"),
           Entry("⇧⌘Z", text: "重做刚撤销的打字"),
           Entry("⌘", text: "按住它点正文里的链接：打开（网址和邮件地址；不按 ⌘ 是放光标）"),

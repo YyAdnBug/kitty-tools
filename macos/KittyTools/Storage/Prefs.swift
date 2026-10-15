@@ -208,6 +208,9 @@ enum Prefs {
   /// NSStringFromRect 的位置；只有固定着的才记，重启后回到原处——NoteFloatLayout.Place）
   nonisolated static let notesFloatSize = "notesFloatSize"
   nonisolated static let notesFloatPlace = "notesFloatPlace"
+  /// 全部便签窗口上次用的显示方式（NotesWindowModel.Layout 的 rawValue：wall 便签墙 / list 列表；没存过 = 便签墙，
+  /// 2026-10-15 手测反馈）。同窗口位置一样是这台电脑自己的状态、**不注册默认值**：不跟着导出 / 导入走
+  nonisolated static let notesWindowLayout = "notesWindowLayout"
 
   /// 上次启动的版本号：没有 = 首次安装（打开欢迎引导），和当前不同 = 刚更新（刘海岛「已更新到 x」+ 本版摘要，不开设置窗，体检 A29）
   static let lastSeenVersion = "lastSeenVersion"

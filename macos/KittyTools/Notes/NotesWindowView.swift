@@ -1,5 +1,7 @@
 // 全部便签窗口的界面（系统皮肤的普通窗口，mac-whisker-notes.mdc「全部便签」；窗口和状态在 NotesWindow.swift）。
-// NavigationSplitView 两栏。左：顶上分段「全部 / 归档 / 最近删除」（带条数）→ 搜索框 → 列表（行 = 纸色圆点、标题、
+// 两种显示方式，工具栏上切（⌘1 / ⌘2，记住上次选的）：**便签墙**（默认，NotesWallView.swift：一张张卡片，点一张放大
+// 成编辑卡；顶上一条是同一个分段和搜索框）和**列表**（下面这些）。选中的那条两边共用。
+// 列表：NavigationSplitView 两栏。左：顶上分段「全部 / 归档 / 最近删除」（带条数）→ 搜索框 → 列表（行 = 纸色圆点、标题、
 // 一行预览、相对时间，固定的带图钉；选中是中性高亮；「全部」里没在搜索时能拖动排序）。右：这条便签——整块是它的纸色，
 // 顶上一条色条，标题框、正文、底下一行小字（改于什么时候、多少字；这三件在 NoteFields.swift，和屏幕边缘那叠共用）；
 // 最近删除里的只读，列表下面多一行「清空最近删除…」。操作在工具栏和右键菜单里，名字取自 NotesWindowModel 的同一份；
@@ -18,14 +20,28 @@ struct NotesWindowView: View {
   private typealias Model = NotesWindowModel
 
   var body: some View {
-    NavigationSplitView {
-      sidebar.navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 380)
-    } detail: {
-      detail
+    Group {
+      switch model.layout {
+      case .list:
+        NavigationSplitView {
+          sidebar.navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 380)
+        } detail: {
+          detail
+            .navigationTitle(HotKeyAction.noteAll.title)
+        }
+        .toolbar(removing: .sidebarToggle)
+      case .wall:
+        NotesWall(model: model) {
+          wallHeader
+        } empty: {
+          empty.padding(20)
+        } footer: {
+          if model.scope == .trash, !model.list(.trash).isEmpty { trashBar }
+        }
         .navigationTitle(HotKeyAction.noteAll.title)
+      }
     }
     .background { NotesToolbar(model: model, state: model.toolbarState).equatable() }
-    .toolbar(removing: .sidebarToggle)
     .background { shortcuts }
     .onChange(of: model.searchFocus) { searchFocused = true }
     .confirmationDialog(
@@ -55,20 +71,39 @@ struct NotesWindowView: View {
 
   private var sidebar: some View {
     VStack(spacing: 0) {
-      Picker("视图", selection: $model.scope) {
-        ForEach(Model.Scope.allCases) { scope in
-          let count = model.list(scope).count
-          Text(count > 0 ? "\(scope.title) \(count)" : scope.title).tag(scope)
-        }
-      }
-      .pickerStyle(.segmented)
-      .labelsHidden()
-      .padding(.horizontal, 10)
-      .padding(.top, 4)
-      .padding(.bottom, 8)
+      scopePicker
+        .padding(.horizontal, 10)
+        .padding(.top, 4)
+        .padding(.bottom, 8)
       searchField.padding(.horizontal, 10)
       list
       if model.scope == .trash, !model.list(.trash).isEmpty { trashBar }
+    }
+  }
+
+  /// 系统分段「全部 N / 归档 N / 最近删除 N」（0 条不写数）：列表的左栏、便签墙顶上那一条同一个
+  private var scopePicker: some View {
+    Picker("视图", selection: $model.scope) {
+      ForEach(Model.Scope.allCases) { scope in
+        let count = model.list(scope).count
+        Text(count > 0 ? "\(scope.title) \(count)" : scope.title).tag(scope)
+      }
+    }
+    .pickerStyle(.segmented)
+    .labelsHidden()
+  }
+
+  /// 便签墙顶上那一条：左边分段、右边搜索框（宽 240），左右和墙的边线对齐（20），下面一条发丝线
+  private var wallHeader: some View {
+    VStack(spacing: 0) {
+      HStack(spacing: 12) {
+        scopePicker.fixedSize()
+        Spacer(minLength: 0)
+        searchField.frame(width: 240)
+      }
+      .padding(.horizontal, NoteWall.margin)
+      .padding(.vertical, 8)
+      Hairline()
     }
   }
 
@@ -215,6 +250,11 @@ struct NotesWindowView: View {
       }
       .keyboardShortcut(".")
       Button(Model.settingsTitle) { model.openSettings() }.keyboardShortcut(",")
+      // ⌘1 / ⌘2：便签墙 / 列表（同工具栏上的切换）
+      ForEach(Array(Model.Layout.allCases.enumerated()), id: \.element) { index, layout in
+        Button(layout.title) { model.layout = layout }
+          .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")))
+      }
     }
     .opacity(0)
     .frame(width: 0, height: 0)
@@ -236,6 +276,24 @@ private struct NotesToolbar: View, Equatable {
 
   var body: some View {
     Color.clear.toolbar {
+      // 显示方式：便签墙 / 列表（⌘1 / ⌘2），系统的分段、只放符号
+      ToolbarItem(placement: .primaryAction) {
+        Picker(
+          "显示方式",
+          selection: Binding {
+            state.layout
+          } set: {
+            model.layout = $0
+          }
+        ) {
+          ForEach(Model.Layout.allCases) { layout in
+            Label(layout.title, systemImage: layout.symbol).tag(layout)
+          }
+        }
+        .pickerStyle(.segmented)
+        .labelStyle(.iconOnly)
+        .help("便签墙（⌘1）/ 列表（⌘2）")
+      }
       ToolbarItemGroup(placement: .primaryAction) {
         if state.isTrash {
           Button(Model.restoreTitle, systemImage: "arrow.uturn.backward") {
@@ -361,11 +419,14 @@ private struct NoteRow: View {
   }
 }
 
-/// 一条便签的编辑区：整块是它的纸色，字是墨色。最近删除里的只读（放回之后才能改）
-private struct NoteEditor: View {
+/// 一条便签的编辑区：整块是它的纸色，字是墨色。最近删除里的只读（放回之后才能改）。
+/// 列表视图的右栏、便签墙的编辑卡（NotesWallView）同一份
+struct NoteEditor: View {
   let model: NotesWindowModel
   let note: Note
   let fontSize: CGFloat
+  /// 便签墙的编辑卡：标题框、正文里按 Esc 收回它；nil = 列表的右栏（普通窗口，Esc 不做事）
+  var onClose: (() -> Void)?
 
   /// 标题、正文、底下小字共用的左右边线（设置窗边距 20）
   private static let margin: CGFloat = 20
@@ -387,7 +448,7 @@ private struct NoteEditor: View {
         NoteBodyField(
           note: note, fontSize: fontSize, margin: Self.margin,
           setBody: { model.setBody($0, of: note.id) }, onOverflow: model.overflowed,
-          undo: model.textUndo)
+          onCancel: onClose ?? {}, undo: model.textUndo)
       } else {
         readOnly(paper)
       }
@@ -400,14 +461,16 @@ private struct NoteEditor: View {
     .background(paper.paper)
   }
 
-  /// 标题框里 ↩、↓、Tab 都是去正文；Esc 不做事（普通窗口，不关）
+  /// 标题框里 ↩、↓、Tab 都是去正文；Esc 在便签墙的编辑卡里是收回，列表里不做事（普通窗口，不关）
   private func titleCommand(_ selector: Selector) -> Bool {
     switch selector {
     case #selector(NSResponder.insertNewline(_:)), #selector(NSResponder.moveDown(_:)),
       #selector(NSResponder.insertTab(_:)):
       model.focusBody()
       return true
-    case #selector(NSResponder.cancelOperation(_:)): return true
+    case #selector(NSResponder.cancelOperation(_:)):
+      onClose?()
+      return true
     default: return false
     }
   }

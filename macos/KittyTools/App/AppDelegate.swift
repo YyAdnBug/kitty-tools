@@ -797,7 +797,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func makeNotesWindow(_ store: NoteStore) -> NotesWindow {
-    let model = NotesWindowModel(store: store)
+    let model = NotesWindowModel(store: store, defaults: .standard)
     model.island = island
     // 工具栏 / 右键菜单的「浮在屏幕上」：和屏幕边缘那叠共用同一张浮动便签（一次一张）
     model.float = noteEdge?.float.model

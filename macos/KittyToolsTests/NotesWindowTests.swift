@@ -629,9 +629,11 @@ struct NotesWindowTests {
             keyCode: UInt16(keyCode))))
     }
     settle()
+    // 默认是便签墙；工具栏最前面是显示方式的切换（便签墙 / 列表），两种显示方式的工具栏一样
+    #expect(model.layout == .wall)
     #expect(
       window.toolbar?.items.map(\.label) == [
-        "固定", "归档", "任务", "颜色", "浮在屏幕上", "删除", "新建便签", "便签设置",
+        "显示方式", "固定", "归档", "任务", "颜色", "浮在屏幕上", "删除", "新建便签", "便签设置",
       ])
     #expect(model.selection == ids[0])
 
@@ -654,11 +656,16 @@ struct NotesWindowTests {
     #expect(try press("f", kVK_ANSI_F) && model.searchFocus == 1)
     // ⌘,：打开设置的「便签」页（手测反馈第 3 批）
     #expect(try press(",", kVK_ANSI_Comma) && settings == 1)
+    // ⌘1 / ⌘2：便签墙 / 列表（⌘N 在便签墙上把新的那条放大成了编辑卡，换到列表时收回）
+    #expect(model.expanded == store.active.first?.id)
+    #expect(try press("2", kVK_ANSI_2) && model.layout == .list && model.expanded == nil)
+    #expect(try press("1", kVK_ANSI_1) && model.layout == .wall)
 
     // 最近删除里工具栏换成放回 / 永久删除；⌘⌫ 是永久删除，先等确认
     model.scope = .trash
     settle()
-    #expect(window.toolbar?.items.map(\.label) == ["放回", "永久删除…", "新建便签", "便签设置"])
+    #expect(
+      window.toolbar?.items.map(\.label) == ["显示方式", "放回", "永久删除…", "新建便签", "便签设置"])
     model.scope = .all
     model.selection = ids[1]
     #expect(model.handleDeleteKey(inTextField: false))
@@ -676,6 +683,8 @@ struct NotesWindowTests {
   /// 焦点在标题框里按 ⌘Z 撤的还是正文）、⌘T 任务、⌘F 的两种去向（焦点在正文里是便签内查找，否则去搜索框）
   @Test func editorKeysInTheWindow() throws {
     let (model, store, ids) = try make(["甲的正文", "乙"])
+    // 列表视图：右栏一直是选中的那条的编辑区（便签墙上要点开才有，NoteWallTests.wallInTheWindow）
+    model.layout = .list
     let suite = "kitty-test-\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }

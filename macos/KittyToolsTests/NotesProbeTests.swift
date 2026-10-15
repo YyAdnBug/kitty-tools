@@ -124,6 +124,7 @@ struct NotesProbeTests {
     let summaries = Self.median(5) { for note in notes { _ = store.summary(of: note) } }
     print("notes-probe 推导 300 条（走仓库的缓存，NoteStore.summary）：\(String(format: "%.2f", summaries)) ms")
     let model = NotesWindowModel(store: store)
+    model.layout = .list
     let listing = Self.median(20) { _ = model.notes }
     print("notes-probe NotesWindowModel.notes 一次：\(String(format: "%.3f", listing)) ms")
     model.query = "任务 text"

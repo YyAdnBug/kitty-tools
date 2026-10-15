@@ -1388,6 +1388,8 @@ struct SnapshotProbeTests {
       _ name: String, _ model: NotesWindowModel, size: NSSize = windowSize, dark: Bool = false,
       prepare: ((NSView) -> Void)? = nil
     ) throws {
+      // 这一组是列表视图（便签墙是下面的 notes-wall-*）
+      model.layout = .list
       try snapshot(
         NotesWindowView(model: model), size: size, dark: dark,
         to: "\(out)/notes-window-\(name).png", prepare: prepare)
@@ -1505,6 +1507,7 @@ struct SnapshotProbeTests {
     let mixed = try NoteStore(db: Database(path: ":memory:"))
     let mix = mixed.create(body: Self.spacingSample, now: now.addingTimeInterval(-60))
     let mixModel = NotesWindowModel(store: mixed)
+    mixModel.layout = .list
     mixModel.selection = mix.id
     let mixText = Self.spacingSample as NSString
     for spacing in NoteStyles.Spacing.allCases {
@@ -1576,8 +1579,12 @@ struct SnapshotProbeTests {
 
     // 带标题栏的真窗口：工具栏只有它有（上面那些是内容区）。摆在屏外，连标题栏一起出图
     model.scope = .all
-    for trash in [false, true] where Self.wants("\(out)/notes-window-toolbar.png") {
+    for (trash, wall) in [(false, false), (true, false), (false, true)]
+    where Self.wants("\(out)/notes-window-toolbar.png")
+      || (wall && Self.wants("\(out)/notes-wall-toolbar.png"))
+    {
       model.scope = trash ? .trash : .all
+      model.layout = wall ? .wall : .list
       let hosting = NSHostingController(rootView: NotesWindowView(model: model))
       hosting.sceneBridgingOptions = [.title, .toolbars]
       let titled = OffscreenTitledWindow(contentViewController: hosting)
@@ -1595,10 +1602,114 @@ struct SnapshotProbeTests {
       let bitmap = try #require(frame.bitmapImageRepForCachingDisplay(in: frame.bounds))
       frame.cacheDisplay(in: frame.bounds, to: bitmap)
       try #require(bitmap.representation(using: .png, properties: [:])).write(
-        to: URL(filePath: "\(out)/notes-window-toolbar\(trash ? "-trash" : "").png"))
+        to: URL(
+          filePath: wall
+            ? "\(out)/notes-wall-toolbar.png"
+            : "\(out)/notes-window-toolbar\(trash ? "-trash" : "").png"))
       // 工具栏上的项：和右键菜单同名
       let labels = titled.toolbar?.items.map(\.label) ?? []
       print("notes toolbar (\(trash ? "trash" : "all")):", labels)
+    }
+
+    // 2026-10-15 便签墙（notes-wall-*）：默认的显示方式。卡片高随内容、按宽度排几列（窄 2 / 默认 3 / 宽 5 列）、
+    // 固定的一段在前、带任务和 Markdown 的、选中的（中性的选中底、立正）、拖着 / 鼠标停着时抬起来的那一张（单独出：
+    // 悬停是追踪区报的，屏外摆不出来）、编辑卡开着（浅深、最近删除里只读的）、空状态、没搜到、8 种纸色两套
+    let wallStore = try NoteStore(db: Database(path: ":memory:"))
+    let wallEntries: [(title: String, body: String, ago: TimeInterval)] = [
+      ("", "周五前交的东西\n☐ 周报\n☐ 报销单\n☑ 订会议室\n☑ 交房租\n下午三点和设计过一遍首页的改动。", 180),
+      ("读书笔记", "「慢慢来，比较快」这句话放在重构上也成立：先把现有的行为用测试钉住，再一小步一小步地挪。", 3600 * 2),
+      ("", "wifi 密码 kitty-2026", 3600 * 26),
+      (
+        "发布清单",
+        "## 打包前\n- 改版本号，补**更新日志**\n- 跑一遍 `build-dmg.sh`\n> 不公证，说明里写上「仍要打开」\n```\nmacos/build-dmg.sh\n```\n## 之后\n- 打 tag、传两个文件",
+        3600 * 5
+      ),
+      ("想法", "", 86_400 * 3),
+      (
+        "", "Groceries: milk, eggs, bread, *two* kinds of cheese and some ~~cookies~~ fruit",
+        86_400 * 4
+      ),
+      (
+        "会议纪要 10/14",
+        "参加的人：设计、前端、我\n结论：\n1. 首页的卡片改成两列\n2. 搜索框挪到顶上\n3. 下周三之前给出第二版\n剩下的问题：空状态的插画还没定，先用符号顶着；深色模式下的阴影要再看一遍；动效的曲线按现有的几条，不新造。还有一些很长很长的备注写在这里，看它在卡片底下截断渐隐的样子。再多写几行凑一凑高度，再多写几行凑一凑高度。",
+        86_400 * 6
+      ),
+      ("", "一条很长很长的标题，长到卡片上一行放不下，要折到第二行，再长就在第二行末尾用省略号收住，看看是什么样子", 86_400 * 9),
+      ("周末", "☐ 洗车\n☐ 买花", 86_400 * 12),
+      ("", "电话 138-0000-0000（快递）", 86_400 * 20),
+    ]
+    for entry in wallEntries.reversed() {
+      wallStore.create(
+        body: entry.body, title: entry.title, now: now.addingTimeInterval(-entry.ago))
+    }
+    let wallIDs = wallStore.active.map(\.id)
+    wallStore.setPinned(true, of: wallIDs[1])
+    wallStore.setPinned(true, of: wallIDs[3])
+    func wall(
+      _ name: String, _ model: NotesWindowModel, size: NSSize = windowSize, dark: Bool = false
+    ) throws {
+      model.layout = .wall
+      try snapshot(
+        NotesWindowView(model: model), size: size, dark: dark, to: "\(out)/notes-wall-\(name).png")
+    }
+    let wallModel = NotesWindowModel(store: wallStore)
+    for dark in [false, true] { try wall(dark ? "dark" : "light", wallModel, dark: dark) }
+    try wall("narrow", wallModel, size: NSSize(width: 720, height: 420))
+    try wall("wide", wallModel, size: NSSize(width: 1280, height: 760))
+    try wall("wide-dark", wallModel, size: NSSize(width: 1280, height: 760), dark: true)
+    wallModel.selection = wallIDs[6]
+    try wall("selected", wallModel)
+    // 拖着 / 鼠标停着：立正、放大一点、往上抬、阴影加深
+    for dark in [false, true] where Self.wants("\(out)/notes-wall-lifted.png") {
+      let note = try #require(wallStore.note(wallIDs[0]))
+      let card = wallModel.card(note, markdown: true)
+      try snapshot(
+        HStack(spacing: 40) {
+          WallCard(
+            note: note, card: card, summary: wallStore.summary(of: note), tilt: -1.6,
+            isSelected: false, isDragged: false
+          )
+          .frame(width: NoteWall.cardWidth, height: card.height)
+          WallCard(
+            note: note, card: card, summary: wallStore.summary(of: note), tilt: -1.6,
+            isSelected: false, isDragged: true
+          )
+          .frame(width: NoteWall.cardWidth, height: card.height)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .windowBackgroundColor)),
+        size: NSSize(width: 600, height: card.height + 80), dark: dark,
+        to: "\(out)/notes-wall-lifted\(dark ? "-dark" : "").png")
+    }
+    // 编辑卡开着：后面一层暗、中央是列表右栏那一套编辑区
+    wallModel.open(wallIDs[3], focus: false)
+    for dark in [false, true] { try wall("open\(dark ? "-dark" : "")", wallModel, dark: dark) }
+    try wall("open-narrow", wallModel, size: NSSize(width: 720, height: 420))
+    wallModel.collapse()
+    // 最近删除：卡片只读，打开的编辑卡也是，右下角「放回」「永久删除…」
+    wallStore.delete(wallIDs[5], now: now.addingTimeInterval(-3600))
+    wallStore.delete(wallIDs[8], now: now.addingTimeInterval(-86_400 * 3))
+    wallModel.scope = .trash
+    try wall("trash", wallModel)
+    wallModel.open(wallIDs[5], focus: false)
+    try wall("trash-open", wallModel)
+    wallModel.scope = .all
+    wallModel.query = "找不到的词"
+    try wall("search-empty", wallModel)
+    wallModel.query = ""
+    try wall("empty", NotesWindowModel(store: try NoteStore(db: Database(path: ":memory:"))))
+    // 8 种纸色两套：每种一张
+    let papers = try NoteStore(db: Database(path: ":memory:"))
+    for (index, paper) in NotePaper.all.enumerated().reversed() {
+      let note = papers.create(
+        body: "\(paper.name)色的便签\n☐ 一条任务\n☑ 做完的任务\n**粗体** 和 `代码`\n> 一行引用",
+        now: now.addingTimeInterval(-Double(index) * 600))
+      papers.setColor(index, of: note.id, now: now.addingTimeInterval(-Double(index) * 600))
+    }
+    for dark in [false, true] {
+      try wall(
+        "papers\(dark ? "-dark" : "")", NotesWindowModel(store: papers),
+        size: NSSize(width: 1080, height: 640), dark: dark)
     }
 
     // 8 种纸色两套并排：纸、色条、墨、次要的字、圆点
@@ -1839,7 +1950,7 @@ struct SnapshotProbeTests {
     #expect(unsaved.saveProblem != nil)
     try deck("open-unsaved", unsaved) { $0.tapTab(stuck.id) }
     try snapshot(
-      NotesWindowView(model: NotesWindowModel(store: unsaved)),
+      NotesWindowView(model: Self.listModel(unsaved)),
       size: NSSize(width: 940, height: 580), dark: false, to: "\(out)/notes-deck-window-unsaved.png"
     )
     // 预览卡：只有一行字的便签（标题就是它）不另写「没有更多内容」；「+N」三四位数不折行
@@ -1928,7 +2039,7 @@ struct SnapshotProbeTests {
 
     // 全部便签窗口：编辑区抽成了两边共用的（Notes/NoteFields.swift），样子不该变——和第 2 批的 notes-window-list.png 对
     try snapshot(
-      NotesWindowView(model: NotesWindowModel(store: store)), size: NSSize(width: 940, height: 580),
+      NotesWindowView(model: Self.listModel(store)), size: NSSize(width: 940, height: 580),
       dark: false, to: "\(out)/notes-deck-window-check.png")
   }
 
@@ -3166,6 +3277,13 @@ struct SnapshotProbeTests {
 
   /// 把图里的正文框摆成「拿着焦点、窗口是 key、选区在 selection」的样子：选区碰到的行露出 Markdown 的标记。
   /// 屏外的窗口不真的当 key：直接告诉编辑器（NoteTextView.keyChanged）
+  /// 列表视图的全部便签窗口（便签墙是默认的；这几张图是拿来和列表视图的图对的）
+  private static func listModel(_ store: NoteStore) -> NotesWindowModel {
+    let model = NotesWindowModel(store: store)
+    model.layout = .list
+    return model
+  }
+
   private static func reveal(_ selection: NSRange) -> (NSView) -> Void {
     { root in
       guard let editor = NotesWindow.editor(in: root) else { return }
