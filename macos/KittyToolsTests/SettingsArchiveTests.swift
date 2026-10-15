@@ -322,6 +322,22 @@ struct SettingsArchiveTests {
     #expect(target.integer(forKey: Prefs.clipboardRetentionDays) == 30)
   }
 
+  /// 去掉了的设置（便签「标签倾斜」notesDeckTilt，2026-10-15 改成一律斜着、删掉开关）：旧的导出文件里带着它照样能读、
+  /// 能导入，这个键被当成不认识的丢掉；本机偏好里存过的也删掉（导入后跑的 Prefs.migrate），不残留
+  @Test func removedSettingIsDroppedOnImport() throws {
+    let (target, name) = try suite()
+    defer { target.removePersistentDomain(forName: name) }
+    target.set(true, forKey: Prefs.notesDeckTiltLegacy)
+    let archive = try archive(
+      json: file(#""preferences": {"notesDeckTilt": true, "notesDeckStyle": "chips"}"#))
+    #expect(archive.preferences?[Prefs.notesDeckTiltLegacy] == nil)
+    #expect(Prefs.defaults[Prefs.notesDeckTiltLegacy] == nil)
+    #expect(SettingsArchive.kinds[Prefs.notesDeckTiltLegacy] == nil)
+    archive.apply([.preferences], to: target, domainName: name)
+    #expect(target.object(forKey: Prefs.notesDeckTiltLegacy) == nil)
+    #expect(target.string(forKey: Prefs.notesDeckStyle) == "chips")
+  }
+
   /// 两张列表按 id 合并：文件里的在前（同 id 的换成文件里的），本机独有的接在后面、不删
   @Test func applyMergesLists() throws {
     let (target, name) = try suite()

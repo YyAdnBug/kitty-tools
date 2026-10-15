@@ -362,7 +362,7 @@ struct ShortcutsSheet: View {
         entries: [
           Entry("Esc", "⌘W", text: "关掉打开的便签，那一列标签也一起收回，接着打字回到原来的 App"),
           Entry("⌘P", text: "固定 / 取消固定（固定的便签点别处不收起；浮在屏幕上的便签固定后一直在别的窗口上面，重启后回到原处）"),
-          Entry("⌘K", text: "操作菜单：固定、颜色、任务、归档、删除、浮在屏幕上、在「全部便签」里打开（↑↓ 选，↩ 执行，→ ← 进出「颜色」）"),
+          Entry("⌘K", text: "操作菜单：固定、颜色、任务、归档、删除、浮在屏幕上、在「全部便签」里打开、便签设置（↑↓ 选，↩ 执行，→ ← 进出「颜色」）"),
           Entry("⌘.", text: "换成下一种纸色"),
           Entry("⇧⌘A", text: "归档"),
           Entry("⌘T", text: "任务：光标所在的行（选了几行就是那几行）变成任务，再按一次变回普通行；点行首的方框打勾"),
@@ -370,16 +370,18 @@ struct ShortcutsSheet: View {
           Entry("⌘F", text: "在这条便签里查找（Esc 先关查找条，再按才关便签）"),
           Entry("⌘Z", "⇧⌘Z", text: "撤销 / 重做打的字（勾任务、回车接出来的下一条也能撤）"),
           Entry("⌘", text: "按住它点正文里的链接：打开（网址和邮件地址；不按 ⌘ 是放光标）"),
+          Entry("⌘,", text: "打开 设置 › 便签（打开的便签先收起）"),
           Entry("⌥", text: "按住它拖边上的药丸：换边、换高度"),
         ]),
       // 浮动便签（第 4 批）：面板的按键入口和那叠是同一份（Notes/NotePanel.swift → NoteSheetModel.handleKeyEquivalent），
-      // 所以别的键（⌘P ⌘K ⌘. ⌘T ⌘F ⌘Z ⇧⌘A…）和上一组一样，这里只写不一样的两行
+      // 所以别的键（⌘P ⌘K ⌘. ⌘T ⌘F ⌘Z ⇧⌘A…）和上一组一样，这里只写不一样的几行
       Group(
         title: "便签 · 浮在屏幕上", symbol: NotesWindowModel.floatSymbol(isFloating: false),
         color: Style.Family.notes,
         entries: [
           Entry("Esc", "⌘W", text: "收回边缘（固定着的也收），接着打字回到原来的 App"),
           Entry("⌘K", text: "操作菜单里的「收回边缘」；别的键同屏幕边缘里打开的便签"),
+          Entry("⌘,", text: "打开 设置 › 便签（浮着的便签留在原处）"),
         ]),
       // 全部便签窗口里的键：NotesWindowView.shortcuts（看不见的按钮上挂着），动作在 NotesWindowModel；
       // ⌘⌫ 和 ⇧⌘Z 是窗口的按键监听认的（NotesWindow.handlesKeyDown）
@@ -396,6 +398,7 @@ struct ShortcutsSheet: View {
           Entry("⇧⌘A", text: "归档 / 取消归档"),
           Entry("⌘P", text: "固定 / 取消固定"),
           Entry("⌘.", text: "换成下一种纸色"),
+          Entry("⌘,", text: "打开 设置 › 便签（同工具栏的「便签设置」）"),
         ]),
       // mac-overlay-panel §11 状态屏。全局键不设默认，没设时那一行写「未设置」；它先出选状态的面板（设置里可改成直接
       // 进排在最前面的状态，那一行的名字跟着变，HotKeyAction.rowTitle）。面板里的按键在 StatusPicker.key；

@@ -293,9 +293,16 @@ struct NoteFloatTests {
     }
   }
 
-  /// 操作菜单最多露几行：平时 8.5 行；便签拉矮了按它的高度收，不出便签
-  @Test func menuFitsAShortNote() {
-    #expect(NoteSheet.menuRows(height: 380) == 8.5 && NoteSheet.menuRows(height: 320) == 8.5)
+  /// 操作菜单最多露几行：平时 9 行（八项四节正好放下）；便签拉矮了按它的高度收，不出便签
+  @Test func menuFitsAShortNote() throws {
+    #expect(NoteSheet.menuRows(height: 380) == 9 && NoteSheet.menuRows(height: 320) == 9)
+    // 八项四节（三条分节线）在 9 行里放得下、不用滚
+    let model = NoteDeckModel(store: try NoteStore(db: Database(path: ":memory:")))
+    let note = Note(id: "x", createdAt: .now, modifiedAt: .now)
+    let items = model.actionItems(note)
+    #expect(
+      items.count == 8
+        && ActionMenu.height(items, maxRows: 9) == ActionMenu.height(items, maxRows: 99))
     let short = NoteSheet.menuRows(height: Layout.minSize.height)
     #expect(short < 7 && short >= 2.5)
     #expect(36 + short * ActionMenu.rowHeight <= Layout.minSize.height)
@@ -389,7 +396,7 @@ struct NoteFloatTests {
     model.toggleMenu()
     #expect(
       model.menuItems.map(\.title) == [
-        "固定", "颜色", "任务", "归档", "删除", "收回边缘", "在「全部便签」里打开",
+        "固定", "颜色", "任务", "归档", "删除", "收回边缘", "在「全部便签」里打开", "便签设置…",
       ])
     model.edgeShown = false
     #expect(model.menuItems[5].title == "取消浮动" && model.tuckTitle == "取消浮动")
@@ -430,6 +437,14 @@ struct NoteFloatTests {
     model.toggleMenu()
     model.run(model.menuItems[6])
     #expect(shown == [ids[3]] && model.state.noteID == ids[3] && model.menu == nil)
+    // ⌘,、「便签设置…」：浮着的留在原处（同「在全部便签里打开」）
+    var settings = 0
+    model.showSettings = { settings += 1 }
+    #expect(try model.handleKeyEquivalent(key(kVK_ANSI_Comma, .command)))
+    model.toggleMenu()
+    #expect(model.menuItems.last?.title == "便签设置…")
+    model.run(try #require(model.menuItems.last))
+    #expect(settings == 2 && model.state.noteID == ids[3] && model.menu == nil)
     // 别处把它删了
     store.delete(ids[3])
     model.reconcile()

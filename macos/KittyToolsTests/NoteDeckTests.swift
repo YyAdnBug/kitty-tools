@@ -70,7 +70,7 @@ struct NoteDeckTests {
     #expect(options.style == .tabs && options.size == .standard && options.sense == 14)
     #expect(!options.alwaysFanned && !options.hidesPill && options.showsPreview)
     #expect(!options.opensOnHover && !options.overFullScreen && options.noteSize == .medium)
-    #expect(options.position == 0.5 && !options.tiltsTabs)
+    #expect(options.position == 0.5)
     let registered = Prefs.defaults
     #expect(registered[Prefs.notesDeckEnabled] as? Bool == true)
     #expect(registered[Prefs.notesDeckEdge] as? String == "right")
@@ -84,7 +84,6 @@ struct NoteDeckTests {
     #expect(registered[Prefs.notesDeckOpensOnHover] as? Bool == false)
     #expect(registered[Prefs.notesDeckOverFullScreen] as? Bool == false)
     #expect(registered[Prefs.notesDeckNoteSize] as? String == "medium")
-    #expect(registered[Prefs.notesDeckTilt] as? Bool == false)
   }
 
   /// 设置跟着导出文件走；药丸的位置、指定的是哪块屏、提示说没说过、示例便签放没放过是这台电脑自己的状态，
@@ -94,7 +93,7 @@ struct NoteDeckTests {
       Prefs.notesDeckEnabled, Prefs.notesDeckEdge, Prefs.notesDeckDisplay, Prefs.notesDeckStyle,
       Prefs.notesDeckSize, Prefs.notesDeckSense, Prefs.notesDeckAlwaysFanned,
       Prefs.notesDeckHidesPill, Prefs.notesDeckPreview, Prefs.notesDeckOpensOnHover,
-      Prefs.notesDeckOverFullScreen, Prefs.notesDeckNoteSize, Prefs.notesDeckTilt,
+      Prefs.notesDeckOverFullScreen, Prefs.notesDeckNoteSize,
     ]
     for key in exported {
       #expect(Prefs.defaults[key] != nil && SettingsArchive.kinds[key] != nil, "\(key)")
@@ -157,17 +156,10 @@ struct NoteDeckTests {
     #expect(NoteDeckOptions(defaults).display == .main)
   }
 
-  /// 「标签倾斜」（2026-10-13 用户要的，默认关）：偏好怎么读；角度右边缘逆时针、左边缘顺时针、没开是 0；
-  /// 朝屏幕边多画出去的一截随大小档缩放、够盖住斜出来的缝；只是画面上的变换，排法不跟着变
-  @Test func tiltOption() throws {
-    let (defaults, suite) = try prefs()
-    defer { defaults.removePersistentDomain(forName: suite) }
-    #expect(!NoteDeckOptions(defaults).tiltsTabs && !NoteDeckOptions().tiltsTabs)
-    defaults.set(true, forKey: Prefs.notesDeckTilt)
-    #expect(NoteDeckOptions(defaults).tiltsTabs)
-    defaults.set("yes", forKey: Prefs.notesDeckTilt)
-    #expect(!NoteDeckOptions(defaults).tiltsTabs)
-
+  /// 标签倾斜（2026-10-13 加成开关；2026-10-15 用户改成一律斜着、删掉开关）：角度右边缘逆时针、左边缘顺时针，
+  /// 列里打开的那张立正（isOn 是 false）；朝屏幕边多画出去的一截随大小档缩放、够盖住斜出来的缝。
+  /// 只是画面上的变换，排法里没有它（NoteDeckLayout 不看它）
+  @Test func tiltGeometry() throws {
     #expect(
       Layout.tilt(edge: .right, isOn: true) == -3 && Layout.tilt(edge: .left, isOn: true) == 3)
     #expect(
@@ -181,15 +173,6 @@ struct NoteDeckTests {
       let gap = (metrics.stripMax + metrics.lap) / 2 * sin(Layout.tiltDegrees * .pi / 180)
       #expect(metrics.tiltBleed > gap + 2, "\(size)")
     }
-    var tilted = NoteDeckOptions()
-    tilted.tiltsTabs = true
-    #expect(
-      Layout(count: 5, hidden: 1, longestLabel: 60, height: 875, options: tilted)
-        == Layout(count: 5, hidden: 1, longestLabel: 60, height: 875, options: NoteDeckOptions()))
-    let far = Self.screen()
-    #expect(
-      Layout.panelFrame(on: far, edge: .right, options: tilted)
-        == Layout.panelFrame(on: far, edge: .right, options: NoteDeckOptions()))
   }
 
   // MARK: 尺寸和排法
@@ -838,7 +821,7 @@ struct NoteDeckTests {
     #expect(model.state.phase == .fanned)
   }
 
-  /// 操作菜单：七项，名字和全部便签窗口同一份；颜色是子列表；Esc 先退菜单再关便签
+  /// 操作菜单：八项四节（2026-10-15 加了「便签设置…」），名字和全部便签窗口同一份；颜色是子列表；Esc 先退菜单再关便签
   @Test func actionMenu() throws {
     let (model, store, ids) = try make(["一", "二"])
     var menuEvents: [Bool] = []
@@ -851,11 +834,13 @@ struct NoteDeckTests {
     #expect(model.menu == .init() && menuEvents == [true])
     #expect(
       model.menuItems.map(\.title) == [
-        "固定", "颜色", "任务", "归档", "删除", "浮在屏幕上", "在「全部便签」里打开",
+        "固定", "颜色", "任务", "归档", "删除", "浮在屏幕上", "在「全部便签」里打开", "便签设置…",
       ])
-    #expect(model.menuItems.map(\.section) == [0, 0, 0, 1, 1, 2, 2])
+    #expect(model.menuItems.map(\.section) == [0, 0, 0, 1, 1, 2, 2, 3])
     #expect(
-      model.menuItems.map(\.isDestructive) == [false, false, false, false, true, false, false])
+      model.menuItems.map(\.isDestructive) == [
+        false, false, false, false, true, false, false, false,
+      ])
     #expect(model.menuItems[2].shortcut == "⌘T")
     #expect(model.menuItems[1].submenu?.count == Note.colorCount)
     // 鼠标移到哪一行，选中跟到哪一行（越界的不理）；再把它挪回第一行，下面的 ↓ 照旧从头走
@@ -895,7 +880,7 @@ struct NoteDeckTests {
     model.tapTab(ids[0])
     model.toggleMenu()
     #expect(try model.handleMenuKey(key(kVK_UpArrow)))
-    #expect(model.menu?.selection == 6)
+    #expect(model.menu?.selection == 7)
     #expect(try model.handleMenuKey(key(kVK_DownArrow)) && model.menu?.selection == 0)
     #expect(try model.handleMenuKey(key(kVK_Return)))
     #expect(store.note(ids[0])?.isPinned == true)
@@ -1948,5 +1933,116 @@ struct NoteDeckTests {
         #expect(contrast(tinted, channels(tone.ink)) >= 4.5, "\(paper.name)")
       }
     }
+  }
+
+  // MARK: 手测反馈第 3 批（2026-10-15）
+
+  /// 右键一张标签：这条便签的操作，不用先打开它——条目和名字（固定 / 没固定、浮着 / 没浮着；名字同全部便签窗口），
+  /// 点了各项落到右键的那一条上，不是开着的那条；开着的那条被归档 / 删除时先关掉；归档了的没有菜单
+  @Test func tabMenuActsOnItsOwnNote() throws {
+    let (model, store, ids) = try make(["甲", "乙", "丙"])
+    var toggled: [String] = []
+    var floatedOpen: [String] = []
+    model.toggleFloat = { toggled.append($0) }
+    model.onFloat = { floatedOpen.append($0) }
+    model.send(Self.enter)
+    model.tapTab(ids[0])
+    let items = model.tabItems(ids[1])
+    #expect(items.map(\.title) == ["固定", "颜色", "浮在屏幕上", "归档", "删除"])
+    #expect(items.map(\.section) == [0, 0, 0, 1, 1] && items.map(\.isDestructive).last == true)
+    // 颜色那一级：8 种，每项前面纸色圆点，现在的那种打勾（同一份表）
+    let colors = try #require(items[1].submenu)
+    #expect(colors.count == Note.colorCount && colors.allSatisfy { $0.image != nil })
+    #expect(
+      colors.map(\.isChecked) == (0..<Note.colorCount).map { $0 == store.note(ids[1])?.color })
+    items[0].run()
+    #expect(store.note(ids[1])?.isPinned == true && store.note(ids[0])?.isPinned == false)
+    #expect(model.tabItems(ids[1])[0].title == "取消固定")
+    colors[5].run()
+    #expect(store.note(ids[1])?.color == 5 && model.state.openID == ids[0])
+    // 浮在屏幕上：没打开的交给浮动便签（toggleFloat），开着的走操作菜单那条路（从它现在的位置浮出去）
+    items[2].run()
+    model.tabItems(ids[0])[2].run()
+    #expect(toggled == [ids[1]] && floatedOpen == [ids[0]])
+    model.floated(ids[1])
+    #expect(model.tabItems(ids[1])[2].title == "收回边缘")
+    model.tabItems(ids[1])[2].run()
+    #expect(toggled == [ids[1], ids[1]])
+    // 归档没打开的那条：开着的不动；归档了的不在那叠里，右键没有菜单
+    model.tabItems(ids[2])[3].run()
+    #expect(store.note(ids[2])?.isArchived == true && model.state.openID == ids[0])
+    #expect(model.tabItems(ids[2]).isEmpty)
+    // 删除开着的那条：先关掉（回到那一列）
+    model.tabItems(ids[0])[4].run()
+    #expect(store.note(ids[0])?.deletedAt != nil && model.state.openID == nil)
+    #expect(model.state.phase == .fanned)
+    // 旁白的自定义动作用的那一份只看传进来的值
+    let floating = model.tabItems(try #require(store.note(ids[1])), isFloating: true)
+    #expect(floating.map(\.title) == ["取消固定", "颜色", "收回边缘", "归档", "删除"])
+  }
+
+  /// 右键标签列的空白处、「+」、药丸：同一份三项（新建便签、全部便签、设置…），前面是图；新建的就在这一叠里打开
+  @Test func edgeMenuIsTheSameEverywhere() throws {
+    let (model, store, _) = try make(["甲"])
+    var (notes, settings) = (0, 0)
+    model.showNotes = { notes += 1 }
+    model.showSettings = { settings += 1 }
+    let items = model.edgeItems
+    #expect(items.map(\.title) == ["新建便签", "全部便签", "设置…"])
+    #expect(items.map(\.section) == [0, 0, 1] && items.allSatisfy { $0.image != nil })
+    items[1].run()
+    items[2].run()
+    #expect(notes == 1 && settings == 1)
+    items[0].run()
+    #expect(store.active.count == 2 && model.state.openID == store.active.first?.id)
+    // 系统菜单（药丸的右键也是这一份）：三项、一条分隔线，每项都有图
+    let menu = NSMenu.of(items)
+    #expect(menu.items.map(\.title) == ["新建便签", "全部便签", "", "设置…"])
+    #expect(menu.items.filter { !$0.isSeparatorItem }.allSatisfy { $0.image != nil })
+  }
+
+  /// ⌘,、操作菜单的「便签设置…」：打开设置的「便签」页；那叠里打开的便签先收起（它在浮动层级，会压在设置窗上）
+  @Test func settingsFromTheDeck() throws {
+    let (model, _, ids) = try make(["甲", "乙"])
+    var settings = 0
+    model.showSettings = { settings += 1 }
+    model.send(Self.enter)
+    model.tapTab(ids[0])
+    model.toggleMenu()
+    #expect(model.menuItems.last?.title == "便签设置…" && model.menuItems.last?.shortcut == "⌘,")
+    #expect(model.menuItems.last?.symbol == NotesWindowModel.settingsSymbol)
+    model.run(try #require(model.menuItems.last))
+    #expect(settings == 1 && model.state.phase == .rest && model.menu == nil)
+    model.send(Self.enter)
+    model.tapTab(ids[1])
+    #expect(try model.handleKeyEquivalent(key(kVK_ANSI_Comma, .command)))
+    #expect(settings == 2 && model.state.phase == .rest)
+    // 那叠收着时不接（面板不是 key，也到不了这里）
+    #expect(try !model.handleKeyEquivalent(key(kVK_ANSI_Comma, .command)))
+  }
+
+  /// 右键菜单开着时这一列不收：鼠标出了热区不算走了（菜单长在列外面）；关了照常——鼠标不在热区里就收
+  /// （这里的那叠在屏幕外，鼠标永远不在它的热区里）
+  @Test func columnStaysWhileAMenuIsOpen() async throws {
+    let deck = try offscreenDeck(["一"])
+    defer { deck.close() }
+    var activity = 0
+    let reported = deck.model.onActivity
+    deck.model.onActivity = {
+      activity += 1
+      reported()
+    }
+    deck.model.menuShown(true)
+    #expect(deck.model.isShowingMenu && activity == 0)
+    deck.pill?.onEnter(false)
+    #expect(deck.model.state.phase == .fanned && !deck.isAwaitingLeave)
+    try await Task.sleep(for: .milliseconds(400))
+    #expect(deck.model.state.phase == .fanned)
+    deck.model.menuShown(false)
+    #expect(!deck.model.isShowingMenu && activity == 1 && deck.isAwaitingLeave)
+    for _ in 0..<500 where deck.model.state.phase != .rest {
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(deck.model.state.phase == .rest)
   }
 }

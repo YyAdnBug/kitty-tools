@@ -38,6 +38,8 @@ enum Prefs {
   static let panelSqueezeEntrance = "panelSqueezeEntrance"
   /// 旧键：只管启动器时的开关，migrate 里搬到 panelSqueezeEntrance
   static let launcherSqueezeEntranceLegacy = "launcherSqueezeEntrance"
+  /// 便签屏幕边缘的「标签倾斜」开关（2026-10-13 加、2026-10-15 去掉：标签一律斜着）：0.5.0 测试包里存过的删掉
+  static let notesDeckTiltLegacy = "notesDeckTilt"
   /// 文件搜索已经请求过桌面 / 文稿 / 下载 / iCloud 云盘的访问授权（之后才能读目录判断授权状态，读之前会弹框）
   static let folderAccessRequested = "folderAccessRequested"
   /// 翻译浮窗固定：失焦不隐藏（Esc、⌘W 照样关，体检 A9）
@@ -189,7 +191,6 @@ enum Prefs {
   nonisolated static let notesDeckOpensOnHover = "notesDeckOpensOnHover"
   nonisolated static let notesDeckOverFullScreen = "notesDeckOverFullScreen"
   nonisolated static let notesDeckNoteSize = "notesDeckNoteSize"
-  nonisolated static let notesDeckTilt = "notesDeckTilt"
   /// 下面四个是这台电脑自己的状态，**不注册默认值**（不跟着导出 / 导入走）：药丸的纵向位置（0 = 可见区最上，1 = 最下；
   /// 没存过 = 0.5 正中，⌥ 拖药丸时写）、「指定某一块」指的是哪块显示器（它的名字；不在时退回主显示器）、
   /// 「便签在屏幕右边缘」那句提示说过了没有（每台电脑只说一次）、示例便签放过了没有（Notes/NoteSample.swift：
@@ -299,7 +300,6 @@ enum Prefs {
       notesDeckOpensOnHover: false,
       notesDeckOverFullScreen: false,
       notesDeckNoteSize: NoteDeckOptions.NoteSize.medium.rawValue,
-      notesDeckTilt: false,
     ]
   }
 
@@ -307,7 +307,8 @@ enum Prefs {
   /// 排除 App 从关键词换成 bundle ID 列表（只在新键没存过、旧键改过时跑一次，体检 A11）；
   /// 保留天数不在新档位里的（旧的 3 / 14 天）挪到下一档，免得弹出菜单显示空白（体检 A4）；
   /// 翻译历史保留条数同理（旧的 100–2000 挪到 1000 / 5000，体检 A18）；
-  /// 浏览器书签 / 历史的每家一个开关搬进两个 id 列表（第 12 批，只在新键没存过、旧键改过时，删掉旧键）
+  /// 浏览器书签 / 历史的每家一个开关搬进两个 id 列表（第 12 批，只在新键没存过、旧键改过时，删掉旧键）；
+  /// 去掉了的「标签倾斜」开关（notesDeckTiltLegacy）存过的值删掉
   static func migrate(
     _ defaults: UserDefaults = .standard, domainName: String? = Bundle.main.bundleIdentifier
   ) {
@@ -324,6 +325,7 @@ enum Prefs {
       defaults.set(old, forKey: panelSqueezeEntrance)
     }
     defaults.removeObject(forKey: launcherSqueezeEntranceLegacy)
+    defaults.removeObject(forKey: notesDeckTiltLegacy)
     if domain[launcherBrowserBookmarks] == nil,
       launcherBookmarksLegacy.contains(where: { domain[$0.1] != nil })
     {

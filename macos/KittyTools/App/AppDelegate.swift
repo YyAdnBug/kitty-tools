@@ -616,11 +616,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     noteEdge?.start()
   }
 
-  /// 屏幕边缘的便签：药丸右键菜单的三项、「在全部便签里打开」接到这里的入口；什么时候不许扇出也由这里说
+  /// 屏幕边缘的便签：右键菜单里的「全部便签」「设置…」、「在全部便签里打开」接到这里的入口；什么时候不许扇出也由这里说
   private func makeNoteEdge(_ store: NoteStore) -> NoteEdge {
     let edge = NoteEdge(store: store, island: island)
     edge.canFan = { [unowned self] in canFanNotes }
-    edge.newNote = { [unowned self] in run(.noteNew) }
     edge.showNotes = { [unowned self] in showNotes() }
     edge.showSettings = { [unowned self] in showSettings(page: .notes) }
     edge.showInWindow = { [unowned self] in showNotes(revealing: $0) }
@@ -803,6 +802,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 工具栏 / 右键菜单的「浮在屏幕上」：和屏幕边缘那叠共用同一张浮动便签（一次一张）
     model.float = noteEdge?.float.model
     model.toggleFloat = { [unowned self] in noteEdge?.float.toggle($0) }
+    // ⌘,、工具栏的「便签设置」：落在设置的「便签」页
+    model.showSettings = { [unowned self] in showSettings(page: .notes) }
     return NotesWindow(model: model)
   }
 

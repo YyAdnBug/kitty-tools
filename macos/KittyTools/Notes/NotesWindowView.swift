@@ -3,7 +3,8 @@
 // 一行预览、相对时间，固定的带图钉；选中是中性高亮；「全部」里没在搜索时能拖动排序）。右：这条便签——整块是它的纸色，
 // 顶上一条色条，标题框、正文、底下一行小字（改于什么时候、多少字；这三件在 NoteFields.swift，和屏幕边缘那叠共用）；
 // 最近删除里的只读，列表下面多一行「清空最近删除…」。操作在工具栏和右键菜单里，名字取自 NotesWindowModel 的同一份；
-// 键盘挂在看不见的按钮上（shortcuts）。选颜色：工具栏那个按钮弹的是系统菜单（NSMenu.of：SwiftUI 的 Menu 放进工具栏
+// 工具栏是单独的一个视图（NotesToolbar），只拿画得出来的那几样：换一条便签时它们没变，工具栏就不重建（重建一次很贵）。
+// 列表行上的标题、摘要、任务进度走仓库的缓存（NoteStore.summary）。键盘挂在看不见的按钮上（shortcuts）。选颜色：工具栏那个按钮弹的是系统菜单（NSMenu.of：SwiftUI 的 Menu 放进工具栏
 // 不画纸色圆点），行的右键菜单也是系统菜单（ActionSystemMenu，同样的原因），里面的「颜色」是同一份表（NotePaper.colorItems）。
 
 import SwiftUI
@@ -22,8 +23,8 @@ struct NotesWindowView: View {
     } detail: {
       detail
         .navigationTitle(HotKeyAction.noteAll.title)
-        .toolbar { toolbar }
     }
+    .background { NotesToolbar(model: model, state: model.toolbarState).equatable() }
     .toolbar(removing: .sidebarToggle)
     .background { shortcuts }
     .onChange(of: model.searchFocus) { searchFocused = true }
@@ -113,14 +114,17 @@ struct NotesWindowView: View {
     .modifier(InputBox(isFocused: searchFocused))
   }
 
+  /// 选中的、仓库在 ForEach 外面取一次：每一行各读一遍 model.selection 的话，每一行都要单独挂一份「盯着它变」，
+  /// 几百行时一次重画光这一项就占一成多（手测反馈第 3 批 sample 出来的）
   @ViewBuilder private var list: some View {
     let notes = model.notes
+    let (selection, store) = (model.selection, model.store)
     if notes.isEmpty {
       empty.padding(20)
     } else {
       List(selection: $model.selection) {
         ForEach(notes) { note in
-          NoteRow(note: note, isSelected: note.id == model.selection)
+          NoteRow(note: note, store: store, isSelected: note.id == selection)
             .tag(note.id)
             // 系统菜单，不用 .contextMenu：SwiftUI 桥出来的右键菜单不带「颜色」每一项前面的纸色圆点
             .overlay { ActionSystemMenu { model.rowItems(note) } }
@@ -187,65 +191,6 @@ struct NotesWindowView: View {
     }
   }
 
-  // MARK: 操作
-
-  @ToolbarContentBuilder private var toolbar: some ToolbarContent {
-    ToolbarItemGroup(placement: .primaryAction) {
-      let note = model.current
-      if model.scope == .trash {
-        Button(Model.restoreTitle, systemImage: "arrow.uturn.backward") {
-          if let note { model.restore(note.id) }
-        }
-        .disabled(note == nil)
-        .help(Model.restoreTitle)
-        Button(role: .destructive) {
-          if let note { model.delete(note.id) }
-        } label: {
-          Label(Model.eraseTitle, systemImage: "trash.slash").foregroundStyle(Style.danger)
-        }
-        .disabled(note == nil)
-        .help("永久删除（⌘⌫）")
-      } else {
-        Button(
-          Model.pinTitle(note), systemImage: note?.isPinned == true ? "pin.slash" : "pin"
-        ) {
-          if let note { model.togglePinned(note.id) }
-        }
-        .disabled(note == nil)
-        .help("\(Model.pinTitle(note))（⌘P）")
-        Button(Model.archiveTitle(note), systemImage: "archivebox") {
-          if let note { model.toggleArchived(note.id) }
-        }
-        .disabled(note == nil)
-        .help("\(Model.archiveTitle(note))（⇧⌘A）")
-        Button(Model.taskTitle, systemImage: Model.taskSymbol) { model.toggleTask() }
-          .disabled(note == nil)
-          .help(Model.taskHelp)
-        // 系统菜单，不用 SwiftUI 的 Menu：放进工具栏的 Menu 不画每一项前面的纸色圆点（2026-10-13 真机）
-        Button(Model.colorTitle, systemImage: "paintpalette") {
-          if let note { NSMenu.of(model.colorItems(note)).popUpAtPointer() }
-        }
-        .disabled(note == nil)
-        .help("换颜色（⌘. 换下一种）")
-        // 浮动便签（第 4 批）：屏幕边缘关着时，这是把一条便签留在屏幕上的入口。归档里的不能浮着
-        Button(model.floatTitle(note), systemImage: model.floatSymbol(note)) {
-          if let note { model.toggleFloating(note.id) }
-        }
-        .disabled(note == nil || note?.isArchived == true)
-        .help(model.floatTitle(note))
-        Button(role: .destructive) {
-          if let note { model.delete(note.id) }
-        } label: {
-          Label(Model.deleteTitle, systemImage: "trash").foregroundStyle(Style.danger)
-        }
-        .disabled(note == nil)
-        .help("删除（⌘⌫），进「最近删除」")
-      }
-      Button(Model.newTitle, systemImage: HotKeyAction.noteNew.symbol) { model.create() }
-        .help("新建便签（⌘N）")
-    }
-  }
-
   /// 键盘。不挂在工具栏按钮上：窗口窄了工具栏项会收进「»」，挂在上面的键就跟着不灵。
   /// ⌘⌫ 不在这里：SwiftUI 的 .keyboardShortcut(.delete) 认的是字符 U+0008，⌫ 键按出来是 U+007F（屏外窗口里发合成按键
   /// 实测不触发），所以由窗口按键码认（NotesWindow.handlesKeyDown；⇧⌘Z 重做也在那里）
@@ -269,6 +214,7 @@ struct NotesWindowView: View {
         if let id = model.selection { model.cycleColor(id) }
       }
       .keyboardShortcut(".")
+      Button(Model.settingsTitle) { model.openSettings() }.keyboardShortcut(",")
     }
     .opacity(0)
     .frame(width: 0, height: 0)
@@ -276,22 +222,96 @@ struct NotesWindowView: View {
   }
 }
 
+/// 工具栏（窗口的统一工具栏，右边一组）。单独一个视图、只拿 state（名字、符号、能不能点）：选中的换了一条而这些没变时
+/// SwiftUI 不再算它的 body（.equatable），工具栏不重建。点了才去问现在选中的是哪条（model.current）
+private struct NotesToolbar: View, Equatable {
+  let model: NotesWindowModel
+  let state: NotesWindowModel.ToolbarState
+
+  private typealias Model = NotesWindowModel
+
+  nonisolated static func == (a: Self, b: Self) -> Bool {
+    a.state == b.state && a.model === b.model
+  }
+
+  var body: some View {
+    Color.clear.toolbar {
+      ToolbarItemGroup(placement: .primaryAction) {
+        if state.isTrash {
+          Button(Model.restoreTitle, systemImage: "arrow.uturn.backward") {
+            if let note = model.current { model.restore(note.id) }
+          }
+          .disabled(!state.hasNote)
+          .help(Model.restoreTitle)
+          Button(role: .destructive) {
+            if let note = model.current { model.delete(note.id) }
+          } label: {
+            Label(Model.eraseTitle, systemImage: "trash.slash").foregroundStyle(Style.danger)
+          }
+          .disabled(!state.hasNote)
+          .help("永久删除（⌘⌫）")
+        } else {
+          Button(state.pinTitle, systemImage: state.pinSymbol) {
+            if let note = model.current { model.togglePinned(note.id) }
+          }
+          .disabled(!state.hasNote)
+          .help("\(state.pinTitle)（⌘P）")
+          Button(state.archiveTitle, systemImage: "archivebox") {
+            if let note = model.current { model.toggleArchived(note.id) }
+          }
+          .disabled(!state.hasNote)
+          .help("\(state.archiveTitle)（⇧⌘A）")
+          Button(Model.taskTitle, systemImage: Model.taskSymbol) { model.toggleTask() }
+            .disabled(!state.hasNote)
+            .help(Model.taskHelp)
+          // 系统菜单，不用 SwiftUI 的 Menu：放进工具栏的 Menu 不画每一项前面的纸色圆点（2026-10-13 真机）
+          Button(Model.colorTitle, systemImage: "paintpalette") {
+            if let note = model.current { NSMenu.of(model.colorItems(note)).popUpAtPointer() }
+          }
+          .disabled(!state.hasNote)
+          .help("换颜色（⌘. 换下一种）")
+          // 浮动便签（第 4 批）：屏幕边缘关着时，这是把一条便签留在屏幕上的入口。归档里的不能浮着
+          Button(state.floatTitle, systemImage: state.floatSymbol) {
+            if let note = model.current { model.toggleFloating(note.id) }
+          }
+          .disabled(!state.canFloat)
+          .help(state.floatTitle)
+          Button(role: .destructive) {
+            if let note = model.current { model.delete(note.id) }
+          } label: {
+            Label(Model.deleteTitle, systemImage: "trash").foregroundStyle(Style.danger)
+          }
+          .disabled(!state.hasNote)
+          .help("删除（⌘⌫），进「最近删除」")
+        }
+        Button(Model.newTitle, systemImage: HotKeyAction.noteNew.symbol) { model.create() }
+          .help("新建便签（⌘N）")
+        // 手测反馈第 3 批：去设置的快捷入口，落在「便签」那一页
+        Button(Model.settingsTitle, systemImage: Model.settingsSymbol) { model.openSettings() }
+          .help("\(Model.settingsTitle)（⌘,）")
+      }
+    }
+  }
+}
+
 /// 列表的一行：纸色圆点、标题（固定的带图钉）、相对时间；下面一行预览。选中 = 中性高亮（原生的强调色高亮关掉自己画，
-/// 同设置窗侧栏的做法；这里不反白：列表选中全 App 是中性的，mac-whisker §1）
+/// 同设置窗侧栏的做法；这里不反白：列表选中全 App 是中性的，mac-whisker §1）。标题、摘要、任务进度走仓库的缓存
 private struct NoteRow: View {
   let note: Note
+  let store: NoteStore
   let isSelected: Bool
 
   var body: some View {
     let paper = NotePaper.of(note)
-    let preview = note.preview
-    let progress = note.taskProgress
+    let summary = store.summary(of: note)
+    let preview = summary.preview
+    let progress = summary.progress
     HStack(alignment: .top, spacing: 8) {
       // 圆点对着标题那一行的中线（标题行高 16）
       NoteDot(paper: paper).padding(.top, 2)
       VStack(alignment: .leading, spacing: 2) {
         HStack(spacing: 6) {
-          Text(note.displayTitle)
+          Text(summary.title)
             .font(.system(size: 13, weight: .medium))
             .lineLimit(1)
             .truncationMode(.tail)
@@ -324,7 +344,7 @@ private struct NoteRow: View {
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(
       [
-        note.displayTitle, note.isPinned ? "已固定" : nil, paper.name,
+        summary.title, note.isPinned ? "已固定" : nil, paper.name,
         progress.map(Note.progressSpoken), NotesWindowModel.ago(note),
       ]
       .compactMap { $0 }.joined(separator: "，")

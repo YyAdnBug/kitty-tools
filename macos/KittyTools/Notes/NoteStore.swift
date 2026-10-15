@@ -12,6 +12,7 @@
 // - 导出文件的第七类「便签」（SettingsArchive）：exportable 是没删的全部，adopt 按编号合并——本机被换掉的那一版不丢，
 //   另存一条进「最近删除」。
 // 搜索在内存里做（标题 + 正文，口径同剪贴板搜索）。和 sqlite 的 C 接口打交道的只有 Database。
+// 列表行、标签、预览卡上显示的推导结果（标题、摘要、任务进度）按便签缓存在这里（summary(of:)）：标题、正文没变就不重算。
 
 import Foundation
 import OSLog
@@ -51,11 +52,19 @@ import Observation
   nonisolated static let maxDelay: TimeInterval = 2
 
   /// 全部便签，连归档的和「最近删除」里的（顺序不作数，要顺序用下面几个视图）
-  private(set) var notes: [Note] = []
+  private(set) var notes: [Note] = [] {
+    didSet { generation &+= 1 }
+  }
+  /// notes 变一次加一（不看着它变，界面看 notes）：用它算出来的东西拿它判断还能不能接着用（NotesWindowModel.notes）
+  @ObservationIgnored private(set) var generation = 0
   /// 上次落盘没成的原因；都落下去了是 nil
   private(set) var saveProblem: String?
   @ObservationIgnored private let db: Database
   @ObservationIgnored private let wait: Wait
+  /// 推导结果的缓存（summary(of:)）：编号 → 算的时候的标题、正文和结果
+  @ObservationIgnored private var summaries:
+    [String: (title: String, body: String, summary: Summary)] =
+      [:]
   /// 改了还没落盘的便签的编号：打字攒着的、上次没写成的；内存里已经没有的那些 = 要从库里删掉的
   @ObservationIgnored private var unsaved: Set<String> = []
   /// 这一串没落盘的打字改动里最早那次是什么时候（算「连着改满 maxDelay」用）
@@ -130,6 +139,26 @@ import Observation
   var exportable: [Note] { notes.filter { $0.deletedAt == nil }.sorted(by: Self.precedes) }
 
   func note(_ id: String) -> Note? { notes.first { $0.id == id } }
+
+  /// 一条便签显示用的推导结果（Note.displayTitle / preview / taskProgress：都要逐行扫正文、过 Markdown 的扫描器）
+  struct Summary {
+    let title: String
+    let preview: String
+    let progress: (done: Int, total: Int)?
+  }
+
+  /// 这条便签的推导结果，按便签缓存：列表的每一行、那叠的每张标签每次重画都要它们（300 条、正文 1–5 KB 现算一遍
+  /// 约 40 ms，Debug；手测反馈第 3 批量的），标题和正文没变就不重算。比的是标题、正文本身（不是修订号：导入能带来
+  /// 同一个修订号、不一样的字）——没变时两边是同一块存储，比较当场返回
+  func summary(of note: Note) -> Summary {
+    if let cached = summaries[note.id], cached.title == note.title, cached.body == note.body {
+      return cached.summary
+    }
+    let summary = Summary(
+      title: note.displayTitle, preview: note.preview, progress: note.taskProgress)
+    summaries[note.id] = (note.title, note.body, summary)
+    return summary
+  }
 
   /// 谁排在前面：order 小的；一样时（导入带来的）新建的在前，再一样按编号——顺序总是确定的。
   /// ponytail: 几个视图每次访问都现筛现排（几百条是微秒级）；便签上千条、列表卡了再把排好的存下来
@@ -271,6 +300,7 @@ import Observation
     let doomed = ids.filter { id in notes.contains { $0.id == id } }
     guard !doomed.isEmpty else { return }
     notes.removeAll { doomed.contains($0.id) }
+    for id in doomed { summaries[id] = nil }
     unsaved.formUnion(doomed)
     flush()
   }

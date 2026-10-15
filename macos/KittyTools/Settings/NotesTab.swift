@@ -27,7 +27,6 @@ struct NotesTab: View {
   @AppStorage(Prefs.notesDeckOpensOnHover) private var opensOnHover = false
   @AppStorage(Prefs.notesDeckOverFullScreen) private var overFullScreen = false
   @AppStorage(Prefs.notesDeckNoteSize) private var noteSize = NoteDeckOptions.NoteSize.medium
-  @AppStorage(Prefs.notesDeckTilt) private var tiltsTabs = false
 
   private static let fontTitles = [13: "小", 15: "标准", 17: "大", 20: "特大"]
   private static let senseTitles = [8: "窄", 14: "标准", 28: "宽", 44: "很宽"]
@@ -107,10 +106,6 @@ struct NotesTab: View {
           Text("大").tag(NoteDeckOptions.Size.large)
         }
         .pickerStyle(.segmented)
-        Toggle(isOn: $tiltsTabs) {
-          Text("标签倾斜")
-          Text("标签微微斜着叠在边上；打开的便签仍是正的")
-        }
         radios("感应范围", "鼠标离屏幕边缘多近就展开", selection: $sense) {
           ForEach(NoteDeckOptions.senseChoices, id: \.self) {
             Text(Self.senseTitles[$0] ?? "\($0)").tag($0)
@@ -150,7 +145,7 @@ struct NotesTab: View {
       Text("屏幕边缘")
     } footer: {
       SectionFootnote(
-        "鼠标靠到屏幕边上的药丸就展开一列标签，点一张，便签从边缘滑出来。按住 ⌥ 拖药丸可以换边、换高度；右键药丸有新建便签、全部便签和设置。两块显示器相接的那条边不放，自动换到另一侧。打开的便签点别处就收起，固定（⌘P）之后不收。按住打开的便签侧边那张标签往外拖，它就浮在屏幕上、可以拉大小；浮着的便签固定之后一直在别的窗口上面，重启后回到原处。"
+        "鼠标靠到屏幕边上的药丸就展开一列标签，点一张，便签从边缘滑出来。按住 ⌥ 拖药丸可以换边、换高度。右键一张标签可以直接固定、换颜色、浮到屏幕上、归档、删除；右键「+」或标签之间的空处有新建便签、全部便签和设置。两块显示器相接的那条边不放，自动换到另一侧。打开的便签点别处就收起，固定（⌘P）之后不收。按住打开的便签侧边那张标签往外拖，它就浮在屏幕上、可以拉大小；浮着的便签固定之后一直在别的窗口上面，重启后回到原处。"
       )
     }
   }

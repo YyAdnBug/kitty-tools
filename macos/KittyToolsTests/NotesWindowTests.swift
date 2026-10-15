@@ -595,7 +595,9 @@ struct NotesWindowTests {
   @Test func keyboardShortcutsReachTheModel() throws {
     let (model, store, ids) = try make(["A", "B"])
     var focused = 0
+    var settings = 0
     model.focusBody = { focused += 1 }
+    model.showSettings = { settings += 1 }
     let suite = "kitty-test-\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
@@ -628,7 +630,7 @@ struct NotesWindowTests {
     settle()
     #expect(
       window.toolbar?.items.map(\.label) == [
-        "固定", "归档", "任务", "颜色", "浮在屏幕上", "删除", "新建便签",
+        "固定", "归档", "任务", "颜色", "浮在屏幕上", "删除", "新建便签", "便签设置",
       ])
     #expect(model.selection == ids[0])
 
@@ -649,11 +651,13 @@ struct NotesWindowTests {
     #expect(try press("n", kVK_ANSI_N))
     #expect(store.active.count == 2 && focused == 1 && model.selection == store.active.first?.id)
     #expect(try press("f", kVK_ANSI_F) && model.searchFocus == 1)
+    // ⌘,：打开设置的「便签」页（手测反馈第 3 批）
+    #expect(try press(",", kVK_ANSI_Comma) && settings == 1)
 
     // 最近删除里工具栏换成放回 / 永久删除；⌘⌫ 是永久删除，先等确认
     model.scope = .trash
     settle()
-    #expect(window.toolbar?.items.map(\.label) == ["放回", "永久删除…", "新建便签"])
+    #expect(window.toolbar?.items.map(\.label) == ["放回", "永久删除…", "新建便签", "便签设置"])
     model.scope = .all
     model.selection = ids[1]
     #expect(model.handleDeleteKey(inTextField: false))
@@ -886,6 +890,49 @@ struct NotesWindowTests {
     expectColorDots(try #require(menu.items[2].submenu), current: note.color)
   }
 
+}
+
+extension NotesWindowTests {
+  /// 左边的列表记着上次算好的（手测反馈第 3 批）：仓库变了、换视图、换搜索词都要重算，不能拿旧的
+  @Test func listFollowsTheStore() throws {
+    let (model, store, ids) = try make(["苹果", "香蕉"])
+    model.query = "梨"
+    #expect(model.notes.isEmpty)
+    store.setBody("梨子", of: ids[1])
+    #expect(model.notes.map(\.id) == [ids[1]])
+    store.setArchived(true, of: ids[1])
+    #expect(model.notes.isEmpty)
+    model.scope = .archive
+    #expect(model.notes.map(\.id) == [ids[1]])
+    model.query = ""
+    #expect(model.notes.map(\.id) == [ids[1]])
+    model.scope = .all
+    #expect(model.notes.map(\.id) == [ids[0]])
+  }
+
+  /// 工具栏只拿画得出来的那几样（手测反馈第 3 批：换一条便签时它们没变，工具栏就不重建）：两条都没固定、没归档的
+  /// 便签之间换，这几样一模一样；固定了的、归档里的、最近删除里的各自不同
+  @Test func toolbarStateOnlyCarriesWhatIsDrawn() throws {
+    let (model, store, ids) = try make(["A", "B", "C"])
+    model.selection = ids[0]
+    let first = model.toolbarState
+    model.selection = ids[1]
+    #expect(model.toolbarState == first)
+    #expect(first.hasNote && !first.isTrash && first.canFloat && first.pinTitle == "固定")
+    #expect(first.pinSymbol == "pin" && first.archiveTitle == "归档" && first.floatTitle == "浮在屏幕上")
+    store.setPinned(true, of: ids[1])
+    #expect(model.toolbarState.pinTitle == "取消固定" && model.toolbarState.pinSymbol == "pin.slash")
+    model.selection = nil
+    #expect(!model.toolbarState.hasNote && !model.toolbarState.canFloat)
+    store.setArchived(true, of: ids[2])
+    model.scope = .archive
+    #expect(model.toolbarState.archiveTitle == "取消归档" && !model.toolbarState.canFloat)
+    model.scope = .trash
+    #expect(model.toolbarState.isTrash && !model.toolbarState.hasNote)
+    // 名字和符号：同操作菜单那一份
+    #expect(
+      NotesWindowModel.settingsTitle == "便签设置" && NotesWindowModel.settingsSymbol == "gearshape")
+  }
 }
 
 /// 带标题栏的窗口摆在屏外（系统默认会把它挪回屏幕里）

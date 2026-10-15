@@ -77,8 +77,6 @@ nonisolated struct NoteDeckOptions: Equatable, Sendable {
   var opensOnHover = false
   var overFullScreen = false
   var noteSize = NoteSize.medium
-  /// 标签倾斜：那一列标签每张斜一点（NoteDeckLayout.tilt）；默认关 = 正着放
-  var tiltsTabs = false
   /// 药丸的纵向位置：0 = 可见区最上，1 = 最下
   var position = 0.5
 
@@ -113,7 +111,6 @@ nonisolated struct NoteDeckOptions: Equatable, Sendable {
     opensOnHover = flag(Prefs.notesDeckOpensOnHover, false)
     overFullScreen = flag(Prefs.notesDeckOverFullScreen, false)
     noteSize = choice(Prefs.notesDeckNoteSize, .medium)
-    tiltsTabs = flag(Prefs.notesDeckTilt, false)
     let ratio = defaults.object(forKey: Prefs.notesDeckPosition) as? Double ?? 0.5
     position = ratio.isFinite ? min(max(ratio, 0), 1) : 0.5
   }

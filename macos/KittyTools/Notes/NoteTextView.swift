@@ -132,11 +132,20 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     replaceAll(with: text)
   }
 
+  /// 整段换成 text（新建的正文框第一次拿到字、别处改了这条、超上限退回）：先在一份不挂排版的文本存储上把样式排好，
+  /// 再一次换进来——只排一遍版。原来先放字（排一遍）再整篇重排样式（又排一遍），是换一条便签时主线程上最大的几块之一
+  /// （手测反馈第 3 批屏外量的）。标记先都藏着，换完由 syncMarkers 按焦点和选区露出该露的那几行
   private func replaceAll(with text: String) {
     reported = text
-    string = text
+    let styled = NSTextStorage(string: text)
+    NoteStyles.apply(
+      to: styled, lines: NSRange(location: 0, length: styled.length), theme: theme, shown: [])
+    textStorage?.setAttributedString(styled)
     _ = pending.take()
-    restyleAll()
+    owesFullRestyle = false
+    markWholeViewDirty()
+    syncMarkers()
+    if isFocused { updateInsertionPointStateAndRestartTimer(true) }
     undoManager?.removeAllActions()
   }
 
@@ -164,11 +173,17 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   private func restyle(_ lines: NSRange) {
     guard let storage = textStorage else { return }
     NoteStyles.apply(to: storage, lines: lines, theme: theme, shown: revealedLines())
-    // 引用的竖线画在字的外面（左边空出来的那一条）：这几行排版变了不一定会带着那一条重画，整个视图标成要重画
-    // （真画的只有看得见的那一块）
-    needsDisplay = true
+    markWholeViewDirty()
     // 标记露出 / 收起、字体变了之后这一行的字会左右挪：插入点跟着重算
     if isFocused { updateInsertionPointStateAndRestartTimer(true) }
+  }
+
+  /// 引用的竖线画在字的外面（左边空出来的那一条）：这几行排版变了不一定会带着那一条重画，整个视图标成要重画
+  /// （真画的只有看得见的那一块）。**不许顺手排版**（avoidAdditionalLayout）：文本视图的 needsDisplay = true 会为了算
+  /// 「这一块里有哪些字」当场把整个视图那么高的字全排一遍——换一条便签时它占了正文框建出来的九成多（5 KB 的正文，
+  /// Debug 约 50 ms；手测反馈第 3 批 sample 出来的）。排版留给真要画的那一刻
+  private func markWholeViewDirty() {
+    setNeedsDisplay(bounds, avoidAdditionalLayout: true)
   }
 
   // MARK: Markdown 的标记：露在哪几行
@@ -725,8 +740,24 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   }
 }
 
-/// 正文编辑器的 SwiftUI 包装：滚动区铺满给它的大小、滚动条贴右边，文字的左右内缩在 horizontalInset 里
-/// （另有 NSTextView 自己的 lineFragmentPadding 5）
+/// 纸上正文的滚动条（手测反馈第 3 批）：**不画轨道**（knob slot），滑块照系统的画法、跟外观走。系统设置「显示滚动条：
+/// 根据鼠标或触控板自动」时，连着鼠标是常显的老式滚动条（legacy），它的轨道是一条浅色的底，画在纸色上就是「白底加
+/// 滚动条」；悬浮式的鼠标停上去展开时也画这条底。正文框每换一条便签新建一次、建的那一刻取系统当时的样式，所以同一条
+/// 便签切走再切回来，样子可能就变了。不画轨道之后两种样式都不露白；内容没超出时不显示（autohidesScrollers）。
+/// 屏幕边缘那叠、浮动便签、全部便签窗口的正文都是这一个（NoteTextEditor）
+final class NoteScroller: NSScroller {
+  /// 子类默认算「和悬浮式不兼容」，滚动区会因此一直用老式的：这里只是不画轨道，悬浮式照常
+  override class var isCompatibleWithOverlayScrollers: Bool { true }
+
+  /// 轨道不画：后面透出来的就是纸
+  override func drawKnobSlot(in slotRect: NSRect, highlight flag: Bool) {}
+
+  /// 老式滚动条自认不透明（它本来铺满轨道），不画轨道就得让后面的纸画出来
+  override var isOpaque: Bool { false }
+}
+
+/// 正文编辑器的 SwiftUI 包装：滚动区铺满给它的大小、滚动条贴右边（不画轨道的 NoteScroller，内容没超出时不显示），
+/// 文字的左右内缩在 horizontalInset 里（另有 NSTextView 自己的 lineFragmentPadding 5）
 struct NoteTextEditor: NSViewRepresentable {
   let note: Note
   let fontSize: CGFloat
@@ -750,9 +781,15 @@ struct NoteTextEditor: NSViewRepresentable {
     view.textContainerInset = NSSize(width: horizontalInset, height: 6)
     view.focusRequest = focusRequest ?? 0
     view.takesFocusOnAppear = focusRequest != nil
-    let scroll = NSScrollView()
+    // 先给一个像样的大小（SwiftUI 摆的时候再改成真的；正文框跟着滚动区的宽走，autoresizingMask）：宽是 0 的文本视图
+    // 一挂进窗口就按「一个字一行」把整篇排一遍，5 KB 的正文要几十毫秒——换一条便签时最大的一块（Debug，手测反馈
+    // 第 3 批屏外量的）
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 480, height: 320))
     scroll.drawsBackground = false
+    scroll.verticalScroller = NoteScroller()
     scroll.hasVerticalScroller = true
+    scroll.autohidesScrollers = true
+    view.frame = NSRect(origin: .zero, size: scroll.contentSize)
     scroll.documentView = view
     return scroll
   }

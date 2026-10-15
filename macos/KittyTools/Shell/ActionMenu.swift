@@ -312,7 +312,8 @@ struct ActionContextMenu: View {
 
 /// 同一份动作条目画成**系统的**右键菜单（NSMenu.of：条目自己带的图原样画）。盖在要右键的那块视图上
 /// （`.overlay { ActionSystemMenu { … } }`）：只接会弹出右键菜单的那一下（右键按下、⌃ 点按），别的点击、拖动照常
-/// 落到下面——所以选中、拖动排序不受影响。用在全部便签窗口的行上（颜色子菜单要纸色圆点）
+/// 落到下面——所以选中、拖动排序不受影响。用在全部便签窗口的行上（颜色子菜单要纸色圆点）、屏幕边缘那叠的标签和
+/// 标签列上（手测反馈第 3 批；那叠要知道菜单开着，onMenu）
 /// 一块「这里是箭头光标」的区域（垫在菜单底下）：进来、在里面动都把光标设回箭头；不接点击
 private struct ArrowCursorArea: NSViewRepresentable {
   func makeNSView(context: Context) -> Area {
@@ -337,13 +338,19 @@ private struct ArrowCursorArea: NSViewRepresentable {
 struct ActionSystemMenu: NSViewRepresentable {
   /// 闭包：动作表在右键的那一刻才建
   let items: () -> [ActionMenu.Item]
+  /// 菜单开了（true）、关了（false）：弹出是同步的，菜单关掉才返回
+  var onMenu: (Bool) -> Void = { _ in }
 
   func makeNSView(context: Context) -> Source { Source() }
 
-  func updateNSView(_ view: Source, context: Context) { view.items = items }
+  func updateNSView(_ view: Source, context: Context) {
+    view.items = items
+    view.onMenu = onMenu
+  }
 
   final class Source: NSView {
     var items: () -> [ActionMenu.Item] = { [] }
+    var onMenu: (Bool) -> Void = { _ in }
     /// 现在这一下是不是要弹右键菜单的（单测换掉它，验 SwiftUI 确实把点击交到这里）
     var isMenuClick: () -> Bool = { Source.opensMenu(NSApp.currentEvent) }
 
@@ -369,7 +376,10 @@ struct ActionSystemMenu: NSViewRepresentable {
     override func mouseDown(with event: NSEvent) { popUp(event) }
 
     private func popUp(_ event: NSEvent) {
-      if let menu = menu(for: event) { NSMenu.popUpContextMenu(menu, with: event, for: self) }
+      guard let menu = menu(for: event) else { return }
+      onMenu(true)
+      NSMenu.popUpContextMenu(menu, with: event, for: self)
+      onMenu(false)
     }
   }
 }

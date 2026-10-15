@@ -1,8 +1,9 @@
 // 一条打开着的便签的状态（界面读的）。屏幕边缘那叠里打开的那条（NoteDeckModel）和浮动便签（NoteFloatModel）是
 // 同一套：两个模型都从这里继承，画的是同一个视图（Notes/NoteSheet.swift），不各写一份（PLAN §10「便签」第 4 批）。
 // 这里有：操作菜单（⌘K、「⋯」、纸色圆点；画的是 Shell/ActionMenu）、对这条便签做的事（固定、换色、任务、查找、
-// 归档、删除、在全部便签里打开、浮到屏幕上 / 收回来）、⌘ 组合键和菜单开着时的方向键、正文打到上限的标记、
-// 该哪条便签的正文拿焦点、这条便签的撤销栈。
+// 归档、删除、在全部便签里打开、浮到屏幕上 / 收回来、打开设置的「便签」页）、⌘ 组合键和菜单开着时的方向键、
+// 正文打到上限的标记、该哪条便签的正文拿焦点、这条便签的撤销栈。固定、换色、归档、删除也能指定别的便签
+// （那叠里右键一张没打开的标签，NoteDeckModel.tabItems）。
 // 子类说的几件事：开着的是哪条（noteID）、怎么个关法（close：用鼠标关的；dismiss：用键盘关的；retire：这条便签要
 // 归档 / 删除了）、浮出去还是收回来（toggleFloating）、按着把手拖是在干什么（gripChanged / gripEnded：在那叠里是把
 // 它拖出来，浮着时是挪窗口）。
@@ -52,6 +53,8 @@ import Observation
   @ObservationIgnored var onMenu: (Bool) -> Void = { _ in }
   /// 在「全部便签」里打开这条
   @ObservationIgnored var showInWindow: (String) -> Void = { _ in }
+  /// 打开设置窗、落在「便签」那一页（⌘,、操作菜单的「便签设置…」；那叠还有「+」等处右键菜单里的「设置…」）
+  @ObservationIgnored var showSettings: () -> Void = {}
   /// 拿这条便签的正文编辑器做一件事（拿着窗口的那边按编号找到它；没开着、还没建出来就不做）
   @ObservationIgnored var withEditor: ((NoteTextView) -> Void) -> Void = { _ in }
   /// 这条便签的正文的撤销栈（正文框建出来时拿到它，NoteTextView.noteUndo；标题框用的是它的字段编辑器自己的栈）。
@@ -87,8 +90,11 @@ import Observation
   // MARK: 这条便签
 
   /// 开着的那条（已经不是「没归档没删的」就不算）
-  var current: Note? {
-    noteID.flatMap(store.note).flatMap { $0.isActive ? $0 : nil }
+  var current: Note? { target(nil) }
+
+  /// 要做事的那条：给了编号就是那条（那叠里右键的那张标签），没给是开着的那条；已经不是「没归档没删的」就不算
+  func target(_ id: String?) -> Note? {
+    (id ?? noteID).flatMap(store.note).flatMap { $0.isActive ? $0 : nil }
   }
 
   /// 开着的换了一条（或者关了）：菜单关掉、上限的标记收掉、换一个新的撤销栈；新的那条记一次「该它拿焦点」
@@ -166,8 +172,8 @@ import Observation
 
   /// ⌘P：固定 / 取消固定（那叠里：固定的点别处不收、别的屏展开时也不收；浮着的：固定的一直在别的窗口上面、
   /// 重启后回到原处）
-  func togglePinned() {
-    guard let note = current else { return }
+  func togglePinned(_ id: String? = nil) {
+    guard let note = target(id) else { return }
     store.setPinned(!note.isPinned, of: note.id)
     Island.announce(note.isPinned ? "已取消固定" : "已固定")
   }
@@ -177,24 +183,24 @@ import Observation
     if let note = current { setColor(NotesWindowModel.nextColor(after: note.color)) }
   }
 
-  func setColor(_ color: Int) {
-    guard let note = current else { return }
+  func setColor(_ color: Int, of id: String? = nil) {
+    guard let note = target(id) else { return }
     store.setColor(color, of: note.id)
     Island.announce(NotePaper.all[Note.clamped(color: color)].name)
   }
 
-  /// ⇧⌘A：归档（要找回到「全部便签」的「归档」里）
-  func archive() {
-    guard let note = current else { return }
-    retire()
+  /// ⇧⌘A：归档（要找回到「全部便签」的「归档」里）。归档的是开着的那条就先从界面上拿走
+  func archive(_ id: String? = nil) {
+    guard let note = target(id) else { return }
+    if note.id == noteID { retire() }
     store.setArchived(true, of: note.id)
     Island.announce("已归档")
   }
 
   /// 删除：进「最近删除」。这里没有列表、也没有 ⌘Z，放回的路由岛说
-  func delete() {
-    guard let note = current else { return }
-    retire()
+  func delete(_ id: String? = nil) {
+    guard let note = target(id) else { return }
+    if note.id == noteID { retire() }
     store.delete(note.id)
     island?.show("已删除", detail: "到「全部便签」的「最近删除」里放回", symbol: "trash.circle.fill")
   }
@@ -203,6 +209,15 @@ import Observation
     guard let note = current else { return }
     close()
     showInWindow(note.id)
+  }
+
+  /// ⌘,、操作菜单的「便签设置…」：打开设置窗、落在「便签」那一页（手测反馈第 3 批）。那叠里打开的便签先用键盘的路子
+  /// 收起（dismiss）：它在浮动层级，留着会压在设置窗上面。浮动便签不收（NoteFloatModel 重写：人自己留在屏幕上的东西，
+  /// 同「在全部便签里打开」）
+  func openSettings() {
+    closeMenu()
+    dismiss()
+    showSettings()
   }
 
   // MARK: 操作菜单
@@ -240,6 +255,9 @@ import Observation
       ActionMenu.Item(
         title: Self.openInWindowTitle, symbol: HotKeyAction.noteAll.symbol, section: 2
       ) { [unowned self] in openInWindow() },
+      ActionMenu.Item(
+        title: "\(Names.settingsTitle)…", symbol: Names.settingsSymbol, shortcut: "⌘,", section: 3
+      ) { [unowned self] in openSettings() },
     ]
   }
 
@@ -307,15 +325,19 @@ import Observation
     return true
   }
 
-  /// 面板的 ⌘ 组合键：⌘W 关（同 Esc，用键盘关的）；便签开着时 ⌘P 固定、⌘K 操作菜单、⌘. 换下一种纸色、
-  /// ⌘T 任务、⌘F 便签内查找、⇧⌘A 归档。⌘⌫ 不接：光标在标题、正文里时它是输入框的「删到行首」，删整条便签走
-  /// ⌘K 和「⋯」
+  /// 面板的 ⌘ 组合键：⌘W 关（同 Esc，用键盘关的）、⌘, 打开设置的「便签」页；便签开着时 ⌘P 固定、⌘K 操作菜单、
+  /// ⌘. 换下一种纸色、⌘T 任务、⌘F 便签内查找、⇧⌘A 归档。⌘⌫ 不接：光标在标题、正文里时它是输入框的「删到行首」，
+  /// 删整条便签走 ⌘K 和「⋯」
   func handleKeyEquivalent(_ event: NSEvent) -> Bool {
     let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
     let key = Int(event.keyCode)
     if flags == .command, key == kVK_ANSI_W, isShown {
       closeMenu()
       dismiss()
+      return true
+    }
+    if flags == .command, key == kVK_ANSI_Comma, isShown {
+      openSettings()
       return true
     }
     guard current != nil else { return false }

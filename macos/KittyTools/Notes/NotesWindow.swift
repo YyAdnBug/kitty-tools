@@ -57,6 +57,8 @@ import SwiftUI
   /// 界面读得到它的变化）、让一条便签浮出来 / 收回去。AppDelegate 接到 NoteEdge 的那一个；没接（便签用不了）时不做事
   @ObservationIgnored var float: NoteFloatModel?
   @ObservationIgnored var toggleFloat: (String) -> Void = { _ in }
+  /// 打开设置窗、落在「便签」那一页（AppDelegate 接；⌘,、工具栏的「便签设置」）
+  @ObservationIgnored var showSettings: () -> Void = {}
   /// 正文的撤销栈（正文框建出来时拿到它，NoteTextView.noteUndo；窗口的 undoManager 也是它，
   /// NotesWindow.windowWillReturnUndoManager）。换一条便签换一个新的：上一条里打的字不能撤到这一条上。
   /// 标题框、搜索框用的是各自字段编辑器的栈（系统给的，结束编辑就丢）
@@ -77,8 +79,23 @@ import SwiftUI
     }
   }
 
-  /// 左边现在列的：当前视图里搜出来的
-  var notes: [Note] { NoteStore.search(query, in: list(scope)) }
+  /// 左边现在列的：当前视图里搜出来的。仓库、视图、搜索词都没变就用上次算好的（listed）——在搜的时候每一遍都要把
+  /// 这些便签的正文折叠一遍（300 条约 8 ms），而换一次搜索词、一次重画要问它好几遍（手测反馈第 3 批）
+  var notes: [Note] {
+    _ = store.notes  // 界面看着仓库变（generation 不被看着）
+    if let listed, listed.generation == store.generation, listed.scope == scope,
+      listed.query == query
+    {
+      return listed.notes
+    }
+    let notes = NoteStore.search(query, in: list(scope))
+    listed = (store.generation, scope, query, notes)
+    return notes
+  }
+
+  /// 上次算好的 notes 和那时的仓库代数、视图、搜索词
+  @ObservationIgnored private var listed:
+    (generation: Int, scope: Scope, query: String, notes: [Note])?
 
   /// 右边编辑的那条：选中的、而且属于当前视图（别处把它删了、归档了就不再显示）
   var current: Note? {
@@ -154,9 +171,43 @@ import SwiftUI
     guard hasEdge else { return "xmark.rectangle" }
     return edge == .left ? "sidebar.left" : "sidebar.right"
   }
+  /// 「便签设置」：全部便签窗口的工具栏（最右边一组的最后）、屏幕边缘那叠和浮动便签的操作菜单（「便签设置…」）同名
+  /// 同符号，键位 ⌘,——打开设置窗、落在「便签」那一页
+  static let settingsTitle = "便签设置"
+  static let settingsSymbol = "gearshape"
   static func pinTitle(_ note: Note?) -> String { note?.isPinned == true ? "取消固定" : "固定" }
   static func archiveTitle(_ note: Note?) -> String {
     note?.isArchived == true ? "取消归档" : "归档"
+  }
+
+  /// 工具栏上画出来的那几样：名字、符号、能不能点。工具栏是单独的一个视图、只拿它（NotesWindowView 的 NotesToolbar）——
+  /// 换一条便签时这些多半没变，工具栏就不跟着重建：重建一次是换一条时主线程上最大的一块（SwiftUI 把每一项重新桥成
+  /// 系统的工具栏项、重新找符号图、工具栏重新排一遍；手测反馈第 3 批屏外量的，约占一半）
+  nonisolated struct ToolbarState: Equatable, Sendable {
+    var isTrash = false
+    var hasNote = false
+    var pinTitle = ""
+    var pinSymbol = ""
+    var archiveTitle = ""
+    var canFloat = false
+    var floatTitle = ""
+    var floatSymbol = ""
+  }
+
+  var toolbarState: ToolbarState {
+    let note = current
+    return ToolbarState(
+      isTrash: scope == .trash, hasNote: note != nil, pinTitle: Self.pinTitle(note),
+      pinSymbol: note?.isPinned == true ? "pin.slash" : "pin",
+      archiveTitle: Self.archiveTitle(note),
+      canFloat: note.map { !$0.isArchived } ?? false, floatTitle: floatTitle(note),
+      floatSymbol: floatSymbol(note))
+  }
+
+  /// ⌘,、工具栏的「便签设置」：攒着的改动先落下去，再打开设置窗的「便签」页
+  func openSettings() {
+    store.flush()
+    showSettings()
   }
 
   /// ⌘N：新建一条（排最前）、选中、焦点进正文。最前面那条还是空白的就用它，不再多建一条（NoteStore.blankOrNew）

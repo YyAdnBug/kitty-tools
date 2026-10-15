@@ -45,8 +45,8 @@ final class NoteEdge {
   let float: NoteFloat
   /// 现在能不能扇出（AppDelegate 给：没在截图框选 / 长截图 / 录屏选区和倒数 / 状态屏）
   var canFan: () -> Bool = { true }
-  /// 药丸（和标签列下「+」）右键菜单的三项
-  var newNote: () -> Void = {}
+  /// 右键菜单（药丸、标签列的空白处、「+」，NoteDeckModel.edgeItems）里的「全部便签」「设置…」；那叠里打开的便签和
+  /// 浮动便签的「便签设置…」（⌘,）也走 showSettings——落在设置的「便签」页
   var showNotes: () -> Void = {}
   var showSettings: () -> Void = {}
   /// 打开的便签「在全部便签里打开」
@@ -71,6 +71,7 @@ final class NoteEdge {
     float.homeEdge = { [unowned self] in homeEdge(near: $0) }
     float.onChange = { [unowned self] in floatChanged() }
     float.model.showInWindow = { [unowned self] in showInWindow($0) }
+    float.model.showSettings = { [unowned self] in showSettings() }
   }
 
   /// 开始：摆一次，之后跟着设置、屏幕、便签、系统的显示辅助开关的变化重摆；上次固定着浮在屏幕上的那一张回到原处
@@ -147,12 +148,13 @@ final class NoteEdge {
     deck.onExpand = { [unowned self, unowned deck] in
       for other in decks where other.deck !== deck { other.deck.model.yield() }
     }
-    deck.pillMenu = { [unowned self] in menu() }
     deck.onPillDrag = { [unowned self, unowned deck] in dragPill(of: deck, to: $0, drops: false) }
     deck.onPillDrop = { [unowned self, unowned deck] in dragPill(of: deck, to: $0, drops: true) }
     deck.model.showInWindow = { [unowned self] in showInWindow($0) }
     deck.model.showNotes = { [unowned self] in showNotes() }
     deck.model.showSettings = { [unowned self] in showSettings() }
+    // 标签右键菜单里的「浮在屏幕上 / 收回边缘」（没打开的那条）
+    deck.model.toggleFloat = { [unowned self] in float.toggle($0) }
     // 浮动便签：拖出来（过了阈值 → 跟着走 → 松手）、从操作菜单浮出去、点了浮着那条的标签
     deck.onDetach = { [unowned self] in float.detach($0, from: $1, at: $2) }
     deck.model.onDetachDrag = { [unowned self] in float.drag(to: $0) }
@@ -237,23 +239,6 @@ final class NoteEdge {
   }
 
   // MARK: 药丸
-
-  /// 右键药丸：就三项（标签列下的「+」右键是同名的三项，NoteDeckView）
-  private func menu() -> NSMenu {
-    let menu = NSMenu()
-    let color = NSColor(Style.Family.notes)
-    menu.addAction(HotKeyAction.noteNew.title, symbol: HotKeyAction.noteNew.symbol, color: color) {
-      [unowned self] in newNote()
-    }
-    menu.addAction(HotKeyAction.noteAll.title, symbol: HotKeyAction.noteAll.symbol, color: color) {
-      [unowned self] in showNotes()
-    }
-    menu.addItem(.separator())
-    menu.addAction("设置…", symbol: "gearshape", color: NSColor(Style.Family.general)) {
-      [unowned self] in showSettings()
-    }
-    return menu
-  }
 
   /// 按住 ⌥ 拖药丸：跟着鼠标换边、换高度（「指定某一块」、而且那块真接着时还能换屏）；松手（drops）记进偏好再整个重摆。
   /// 哪条边是设置（跟着导出走），纵向位置和指定的是哪块屏是这台电脑自己的状态

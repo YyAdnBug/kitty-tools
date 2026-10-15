@@ -84,7 +84,6 @@ final class NoteDeck: NSObject {
   var canFan: () -> Bool = { true }
   /// 这块屏要展开了（别的屏的那叠该让开）
   var onExpand: () -> Void = {}
-  var pillMenu: () -> NSMenu? = { nil }
   /// 按住 ⌥ 拖药丸：拖到哪了、松手在哪（全局坐标）
   var onPillDrag: (CGPoint) -> Void = { _ in }
   var onPillDrop: (CGPoint) -> Void = { _ in }
@@ -228,7 +227,8 @@ final class NoteDeck: NSObject {
     pill.onExit = { [weak self] in self?.pointerMoved() }
     pill.onDrag = { [weak self] in self?.onPillDrag($0) }
     pill.onDrop = { [weak self] in self?.onPillDrop($0) }
-    pill.menu = { [weak self] in self?.pillMenu() }
+    // 右键药丸：和标签列的空白处、「+」同一份三项
+    pill.menu = { [weak self] in self.map { NSMenu.of($0.model.edgeItems) } }
     return pill
   }
 
@@ -531,7 +531,8 @@ final class NoteDeck: NSObject {
   }
 
   private func clickedOutside() {
-    if Self.isComposing(panel?.firstResponder) { return }
+    // 右键菜单开着时的点击是给菜单的
+    if Self.isComposing(panel?.firstResponder) || model.isShowingMenu { return }
     model.send(.clickedOutside(pinned: model.current?.isPinned ?? false))
   }
 
@@ -573,11 +574,11 @@ final class NoteDeck: NSObject {
     skipsLeave = false
   }
 
-  /// 离「没动静满 idleDelay」还差多久；到了就发 idle（正拖着标签时不算，重新数），返回 nil
+  /// 离「没动静满 idleDelay」还差多久；到了就发 idle（正拖着标签、右键菜单开着时不算，重新数），返回 nil
   private func idleWait() -> Duration? {
     let left = Self.idleDelay - (ContinuousClock.now - lastActivity)
     guard left <= .zero else { return left }
-    if model.state.isDragging {
+    if model.state.isDragging || model.isShowingMenu {
       lastActivity = .now
       return Self.idleDelay
     }
@@ -586,14 +587,15 @@ final class NoteDeck: NSObject {
   }
 
   /// 鼠标动了（面板热区上的追踪区、药丸的进出、标签的悬停和点击都报到这里）：在热区里就算有动静；
-  /// 出了热区，过 leaveDelay 确认还在外面才收（从标签挪到预览卡、手抖一下出去又回来都不收）。
+  /// 出了热区，过 leaveDelay 确认还在外面才收（从标签挪到预览卡、手抖一下出去又回来都不收）。右键菜单开着时
+  /// 不算走了（菜单长在这一列外面；关了 menuShown 再报一次，那时才按鼠标在哪算）。
   /// 面板已经没了（收着、放掉了；面板的视图被拆掉时也会回调到这里，见 releasePanel）就什么都不做——尤其不许再排出
   /// 「离开确认」之类的任务
   private func pointerMoved() {
     guard panel != nil else { return }
     updateTracking()
     guard model.state.phase == .fanned, !model.options.alwaysFanned else { return }
-    if hotZone.contains(NSEvent.mouseLocation) {
+    if model.isShowingMenu || hotZone.contains(NSEvent.mouseLocation) {
       lastActivity = .now
       skipsLeave = false
       leaveTask?.cancel()
@@ -603,7 +605,7 @@ final class NoteDeck: NSObject {
         try? await Task.sleep(for: Self.leaveDelay)
         guard !Task.isCancelled, let self else { return }
         leaveTask = nil
-        if !hotZone.contains(NSEvent.mouseLocation) { model.send(.left) }
+        if !model.isShowingMenu, !hotZone.contains(NSEvent.mouseLocation) { model.send(.left) }
       }
     }
   }

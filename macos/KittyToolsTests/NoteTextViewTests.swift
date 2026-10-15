@@ -1149,4 +1149,34 @@ struct NoteTextViewTests {
     }
     #expect(isHidden() && editor.string == note.body)
   }
+
+  /// 纸上正文的滚动条不画轨道（手测反馈第 3 批「白底加滚动条」）：老式滚动条照系统的画法是一条浅色的轨道 + 滑块，
+  /// NoteScroller 只画滑块，轨道那一截透出后面的纸。直接让两种滚动条画进位图比（不挂层、不建窗口：挂在图层树里的
+  /// 滚动条由系统的图层画，屏外出图拍不到轨道）。另外：悬浮式照常能用、自己不算不透明
+  @Test func scrollerDrawsNoTrack() throws {
+    func render(_ scroller: NSScroller, dark: Bool) throws -> NSBitmapImageRep {
+      scroller.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+      scroller.scrollerStyle = .legacy
+      scroller.frame = NSRect(
+        x: 0, y: 0,
+        width: NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy), height: 300)
+      scroller.isEnabled = true
+      scroller.knobProportion = 0.2
+      scroller.doubleValue = 0
+      let rep = try #require(scroller.bitmapImageRepForCachingDisplay(in: scroller.bounds))
+      scroller.cacheDisplay(in: scroller.bounds, to: rep)
+      return rep
+    }
+    for dark in [false, true] {
+      let stock = try render(NSScroller(), dark: dark)
+      let ours = try render(NoteScroller(), dark: dark)
+      // 滑块在最上面（值是 0），最下面那一截只有轨道
+      let (x, y) = (stock.pixelsWide / 2, stock.pixelsHigh - 12)
+      #expect((stock.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.05, "dark: \(dark)")
+      #expect((ours.colorAt(x: x, y: y)?.alphaComponent ?? 1) < 0.01, "dark: \(dark)")
+      // 滑块照画
+      #expect((ours.colorAt(x: x, y: 20)?.alphaComponent ?? 0) > 0.05, "dark: \(dark)")
+    }
+    #expect(NoteScroller.isCompatibleWithOverlayScrollers && !NoteScroller().isOpaque)
+  }
 }

@@ -11,6 +11,9 @@
 //   变成跟着鼠标走的浮动面板（onDetach → NoteFloat）。**鼠标松开之前，它在这叠里的那一份留着不拆**（拆了正在拖的
 //   手势就断了），只是看不见（liftedID）；松手才从这叠里收掉。不靠拖的路是操作菜单的「浮在屏幕上」（toggleFloating）。
 //   已经浮着的那条（floatingID）点它的标签是把浮着的叫到前面，不在这叠里再开一份。
+// - **右键菜单**（手测反馈第 3 批）：右键一张标签是这条便签的操作（tabItems：固定、颜色、浮在屏幕上、归档、删除，
+//   不用先打开它）；右键标签列的空白处、「+」、药丸是同一份三项（edgeItems：新建便签、全部便签、设置…）。都是系统菜单；
+//   菜单开着时这一列不收（isShowingMenu：不算「4 秒没动静」、鼠标出了热区也不算走了、点别处也不算），关了照常。
 
 import AppKit
 import Observation
@@ -63,9 +66,12 @@ import SwiftUI
   @ObservationIgnored var onActivity: () -> Void = {}
   /// 现在能不能扇出（没在截图框选 / 长截图 / 录屏选区和倒数 / 状态屏）：悬停出预览卡、悬停即打开之前问
   @ObservationIgnored var canFan: () -> Bool = { true }
-  /// 「+」右键菜单里的「全部便签」「设置…」
+  /// 右键菜单里的「全部便签」（「设置…」是基类的 showSettings）
   @ObservationIgnored var showNotes: () -> Void = {}
-  @ObservationIgnored var showSettings: () -> Void = {}
+  /// 标签右键菜单里的「浮在屏幕上 / 收回边缘」（没打开的那条；NoteEdge 接到 NoteFloat.toggle）
+  @ObservationIgnored var toggleFloat: (String) -> Void = { _ in }
+  /// 右键菜单（标签的、空白处的、「+」的）正开着：这时这一列不收
+  @ObservationIgnored private(set) var isShowingMenu = false
   /// 浮动便签那边的事（NoteDeck / NoteEdge 接到 NoteFloat）：把浮着的那张叫到前面；把开着的这条浮到屏幕上（不靠拖）；
   /// 拖出来的三步——脱出来了（哪条、鼠标在哪）、跟着走、松手
   @ObservationIgnored var focusFloat: () -> Void = {}
@@ -199,17 +205,29 @@ import SwiftUI
 
   var previewNote: Note? { preview.flatMap { id in tabs.first { $0.id == id } } }
 
-  /// ponytail: 每次都把这几张的标题量一遍（十来次文字测量，微秒级）；标签上百张、卡了再按「编号 + 修订号」存下来
+  /// 一列的排法。露出的一截跟着最长的标题走：标题取仓库的缓存（NoteStore.summary），量出来的最长那一截按「这一列的
+  /// 标题 + 大小档」记下来（longestMemo）——「+N」展开成几百张时，每次状态变化都要把几百个标题量好几遍
+  /// （手测反馈第 3 批屏外量的）
   var layout: NoteDeckLayout {
     let tabs = tabs
     let metrics = NoteDeckMetrics(scale: options.size.scale)
-    let longest =
-      options.style == .tabs
-      ? tabs.map { NoteDeckLabel.length($0.displayTitle, metrics: metrics) }.max() ?? 0 : 0
+    var longest: CGFloat = 0
+    if options.style == .tabs {
+      let titles = tabs.map { store.summary(of: $0).title }
+      if let memo = longestMemo, memo.scale == metrics.scale, memo.titles == titles {
+        longest = memo.longest
+      } else {
+        longest = titles.map { NoteDeckLabel.length($0, metrics: metrics) }.max() ?? 0
+        longestMemo = (titles, metrics.scale, longest)
+      }
+    }
     return NoteDeckLayout(
       count: tabs.count, hidden: notes.count - tabs.count, longestLabel: longest,
       height: panelSize.height, options: options)
   }
+
+  /// 上次量过的：那一列的标题、大小档、最长的一截
+  @ObservationIgnored private var longestMemo: (titles: [String], scale: CGFloat, longest: CGFloat)?
 
   /// 标签列的顶离面板顶多远
   func columnTop(_ layout: NoteDeckLayout) -> CGFloat {
@@ -365,6 +383,72 @@ import SwiftUI
     drag = nil
     send(.dragEnded)
     if current.target != current.from { store.move(id, to: current.target) }
+  }
+
+  // MARK: 右键菜单
+
+  /// 右键标签列的空白处、「+」、药丸（三处同一份）：新建便签（就在这一叠里打开）、全部便签、设置…（落在设置的
+  /// 「便签」页）。前面是家族色的符号（系统菜单，非模板图）
+  var edgeItems: [ActionMenu.Item] {
+    func icon(_ symbol: String, _ color: Color) -> NSImage? {
+      NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+        .withSymbolConfiguration(.init(hierarchicalColor: NSColor(color)))
+    }
+    return [
+      ActionMenu.Item(
+        title: HotKeyAction.noteNew.title,
+        image: icon(HotKeyAction.noteNew.symbol, Style.Family.notes)
+      ) { [unowned self] in create() },
+      ActionMenu.Item(
+        title: HotKeyAction.noteAll.title,
+        image: icon(HotKeyAction.noteAll.symbol, Style.Family.notes)
+      ) { [unowned self] in showNotes() },
+      ActionMenu.Item(
+        title: "设置…", image: icon("gearshape", Style.Family.general), section: 1
+      ) { [unowned self] in showSettings() },
+    ]
+  }
+
+  /// 右键一张标签：这条便签的操作，不用先打开它——固定、颜色 ›、浮在屏幕上（它正浮着时是收回边缘）｜归档、删除
+  /// （危险色）。名字取自 NotesWindowModel 的那一份（同操作菜单、全部便签窗口）；任务、查找这类要正文光标的不放。
+  /// 反馈同操作菜单（固定、换色、归档只播报，删除弹岛）。只用传进来的值（标签的界面拿它挂旁白的自定义动作，
+  /// 别让每张标签都盯着仓库）
+  func tabItems(_ note: Note, isFloating: Bool) -> [ActionMenu.Item] {
+    typealias Names = NotesWindowModel
+    let id = note.id
+    return [
+      ActionMenu.Item(title: Names.pinTitle(note)) { [unowned self] in togglePinned(id) },
+      ActionMenu.Item(
+        title: Names.colorTitle,
+        submenu: NotePaper.colorItems(current: note.color) { [unowned self] in setColor($0, of: id)
+        }),
+      ActionMenu.Item(title: Names.floatTitle(isFloating: isFloating)) { [unowned self] in
+        floatFromTab(id)
+      },
+      ActionMenu.Item(title: Names.archiveTitle(note), section: 1) { [unowned self] in archive(id)
+      },
+      ActionMenu.Item(title: Names.deleteTitle, section: 1, isDestructive: true) {
+        [unowned self] in delete(id)
+      },
+    ]
+  }
+
+  /// 右键时用的那一份：按仓库里这条现在的样子（没了、归档了、删了就没有菜单）
+  func tabItems(_ id: String) -> [ActionMenu.Item] {
+    guard let note = target(id) else { return [] }
+    return tabItems(note, isFloating: id == floatingID)
+  }
+
+  /// 标签右键菜单里的「浮在屏幕上 / 收回边缘」：开着的这条走操作菜单那条路（从它现在的位置浮出去），别的交给浮动便签
+  /// （浮着的就收回，没浮着的在鼠标所在屏的正中淡入）
+  private func floatFromTab(_ id: String) {
+    if id == state.openID { toggleFloating() } else { toggleFloat(id) }
+  }
+
+  /// 右键菜单开了 / 关了（ActionSystemMenu 弹出时同步报）：开着时这一列不收；关了算一次动静，之后照常
+  func menuShown(_ shown: Bool) {
+    isShowingMenu = shown
+    if !shown { onActivity() }
   }
 
   /// 标签列下的「+」：建一条（最前面那条还是空白的就用它）并在这叠里打开

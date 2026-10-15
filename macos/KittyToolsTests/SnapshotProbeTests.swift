@@ -1499,6 +1499,45 @@ struct SnapshotProbeTests {
       }
     }
 
+    // 手测反馈第 3 批：正文的滚动条。系统「根据鼠标或触控板自动」连着鼠标时是常显的老式滚动条：强制成老式的出图。
+    // 挂在图层树里的滚动条由系统的图层画，屏外出图拍不到轨道——前后对照另出一张 notes-scroller-legacy-compare：
+    // 不挂层的纸上并排画系统原样的老式滚动条（左，改之前：一条浅色的轨道）和 NoteScroller（右，只有滑块）
+    let tall = try NoteStore(db: Database(path: ":memory:"))
+    let longNote = tall.create(
+      body: (1...40).map { "第 \($0) 行：内容超出正文框，右边该有滚动条" }.joined(separator: "\n"),
+      title: "很长的一条", now: now.addingTimeInterval(-60))
+    let longModel = NotesWindowModel(store: tall)
+    longModel.selection = longNote.id
+    func legacy() -> (NSView) -> Void {
+      { root in
+        guard let scroll = NotesWindow.editor(in: root)?.enclosingScrollView else { return }
+        scroll.scrollerStyle = .legacy
+        scroll.tile()
+      }
+    }
+    for dark in [false, true] {
+      try window("scroller-legacy\(dark ? "-dark" : "")", longModel, dark: dark, prepare: legacy())
+    }
+    for dark in [false, true] where Self.wants("\(out)/notes-scroller-legacy-compare.png") {
+      let paper = PaperFill(color: NotePaper.all[0].paperColor)
+      paper.frame = NSRect(x: 0, y: 0, width: 100, height: 240)
+      paper.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+      for (index, scroller) in [NSScroller(), NoteScroller()].enumerated() {
+        scroller.scrollerStyle = .legacy
+        scroller.frame = NSRect(
+          x: 20 + 45 * CGFloat(index), y: 10,
+          width: NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy), height: 220)
+        scroller.isEnabled = true
+        scroller.knobProportion = 0.3
+        scroller.doubleValue = 0.2
+        paper.addSubview(scroller)
+      }
+      let bitmap = try #require(paper.bitmapImageRepForCachingDisplay(in: paper.bounds))
+      paper.cacheDisplay(in: paper.bounds, to: bitmap)
+      try #require(bitmap.representation(using: .png, properties: [:])).write(
+        to: URL(filePath: "\(out)/notes-scroller-legacy-compare\(dark ? "-dark" : "").png"))
+    }
+
     // 带标题栏的真窗口：工具栏只有它有（上面那些是内容区）。摆在屏外，连标题栏一起出图
     model.scope = .all
     for trash in [false, true] where Self.wants("\(out)/notes-window-toolbar.png") {
@@ -1820,39 +1859,6 @@ struct SnapshotProbeTests {
     }
     try deck("preview-markdown", written.store) { $0.setPreview(written.ids[1]) }
 
-    // 「标签倾斜」（2026-10-13）：右边 / 左边、标签 / 色块、三档大小、深色、鼠标停着、拖着、打开一条时（那张立正、
-    // 便签不斜）、「+N」和它展开后在视口里滚、一条的时候；贴屏幕边那一侧不露楔形的缝
-    var tilted = NoteDeckOptions()
-    tilted.tiltsTabs = true
-    try deck("tilt-right", store, options: tilted)
-    try deck("tilt-left", store, options: tilted, edge: .left)
-    try deck("tilt-dark", store, options: tilted, dark: true)
-    var tiltedChips = tilted
-    tiltedChips.style = .chips
-    try deck("tilt-chips", store, options: tiltedChips)
-    try deck("tilt-chips-left-dark", store, options: tiltedChips, edge: .left, dark: true)
-    for size in [NoteDeckOptions.Size.small, .large] {
-      var options = tilted
-      options.size = size
-      try deck("tilt-\(size.rawValue)", store, options: options)
-    }
-    var tiltedQuiet = tilted
-    tiltedQuiet.showsPreview = false
-    try deck("tilt-hover", store, options: tiltedQuiet) { $0.hover(ids[2], true) }
-    try deck("tilt-dragging", store, options: tilted) { model in
-      model.dragChanged(ids[0], by: model.layout.step * 1.7)
-    }
-    try deck("tilt-open", store, options: tilted) { $0.tapTab(ids[1]) }
-    try deck("tilt-open-left-dark", store, options: tilted, edge: .left, dark: true) {
-      $0.tapTab(ids[2])
-    }
-    try deck("tilt-open-chips", store, options: tiltedChips) { $0.tapTab(ids[0]) }
-    try deck("tilt-preview", store, options: tilted) { $0.setPreview(ids[1]) }
-    try deck("tilt-more", thirty, options: tilted)
-    try deck("tilt-all", thirty, options: tilted) { $0.send(.showAll) }
-    try deck("tilt-one", try library(many(1)).store, options: tilted)
-    try deck("tilt-mixed", mixed.store, options: tilted)
-
     // MARK: 设置 › 便签「屏幕边缘」
     let onSuite = "kitty-snapshot-notes-deck-on-\(UUID().uuidString)"
     let offSuite = "kitty-snapshot-notes-deck-off-\(UUID().uuidString)"
@@ -1875,7 +1881,6 @@ struct SnapshotProbeTests {
       dark: false, to: "\(out)/notes-deck-settings-off.png")
     on.set(true, forKey: Prefs.notesDeckAlwaysFanned)
     on.set(true, forKey: Prefs.notesDeckOpensOnHover)
-    on.set(true, forKey: Prefs.notesDeckTilt)
     on.set("chosen", forKey: Prefs.notesDeckDisplay)
     on.set(displays[1], forKey: Prefs.notesDeckChosenDisplay)
     try snapshot(
@@ -2013,9 +2018,6 @@ struct SnapshotProbeTests {
     var chips = NoteDeckOptions()
     chips.style = .chips
     try deck("tab-chips", options: chips) { $0.floated(ids[2]) }
-    var tilted = NoteDeckOptions()
-    tilted.tiltsTabs = true
-    try deck("tab-tilted", options: tilted) { $0.floated(ids[2]) }
     // 浮着一条的同时在那叠里开着另一条
     try deck("tab-with-open") { model in
       model.floated(ids[2])
@@ -3141,6 +3143,23 @@ struct SnapshotProbeTests {
     background.cacheDisplay(in: background.bounds, to: bitmap)
     try #require(bitmap.representation(using: .png, properties: [:])).write(to: URL(filePath: path))
     window.orderOut(nil)
+  }
+}
+
+/// 截图自检：一块纸色的底（不挂层，里面的滚动条照自己的 draw 画）
+private final class PaperFill: NSView {
+  let color: NSColor
+
+  init(color: NSColor) {
+    self.color = color
+    super.init(frame: .zero)
+  }
+
+  required init?(coder: NSCoder) { nil }
+
+  override func draw(_ dirtyRect: NSRect) {
+    color.setFill()
+    dirtyRect.fill()
   }
 }
 
