@@ -813,6 +813,44 @@ extension NoteWallTests {
   }
 }
 
+extension NoteWallTests {
+  /// 开 / 关编辑卡时墙不重新求值（放大、收回的动画期间也不，收回放完拆掉那块纸也不）：墙是一个只看排法和卡片的子视图，
+  /// 编辑卡那一层（暗、纸、编辑区）和「放大着的那张淡掉」都不挂在它上面——原来每开 / 关一次整面墙要重新求值四五遍，
+  /// 300 条时每遍约 10 ms，正卡在点开、收回的那一下和收回动画的末尾
+  @Test func wallStaysPutWhileTheEditorOpens() throws {
+    let (store, ids) = try library(["甲", "乙", "丙", "丁"])
+    let suite = "kitty-test-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let model = NotesWindowModel(store: store, defaults: defaults)
+    let window = wallWindow(model, defaults: defaults)
+    defer { window.orderOut(nil) }
+    #expect(window.screen == nil && !window.isKeyWindow)
+    let settle = { for _ in 0..<10 { RunLoop.main.run(until: .now.addingTimeInterval(0.1)) } }
+    settle()
+    model.selection = ids[1]
+    settle()
+    let start = model.wallEvaluations
+    #expect(start > 0)
+    // 点开选中的那张（↩、点它）、收回；再从那叠打开一张（不给正文焦点、墙拿焦点）、Esc 收回
+    model.open(ids[1])
+    settle()
+    #expect(model.isEditing && NotesWindow.editor(in: window.contentView, for: ids[1]) != nil)
+    model.collapse()
+    settle()
+    model.open(ids[1], focus: false)
+    settle()
+    model.collapse()
+    settle()
+    #expect(!model.isEditing && NotesWindow.editor(in: window.contentView, for: ids[1]) == nil)
+    #expect(model.wallEvaluations == start)
+    // 墙在意的变了（固定一张：排法变了）照样重新求值
+    model.togglePinned(ids[2])
+    settle()
+    #expect(model.wallEvaluations > start)
+  }
+}
+
 /// 带标题栏的窗口摆在屏外（系统默认会把它挪回屏幕里）
 private final class WallWindow: NSWindow {
   override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {

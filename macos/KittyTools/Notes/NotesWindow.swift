@@ -109,6 +109,10 @@ import SwiftUI
   private(set) var cardBatches = 0
   @ObservationIgnored private var cardTimer: Timer?
   @ObservationIgnored private var cardMarkdown: Bool?
+  #if DEBUG
+    /// 便签墙（WallBoard）的 body 求值了几次：单测数它——开 / 关编辑卡、放大收回的动画期间墙不该重新求值
+    @ObservationIgnored var wallEvaluations = 0
+  #endif
 
   init(store: NoteStore, defaults: UserDefaults? = nil) {
     self.store = store

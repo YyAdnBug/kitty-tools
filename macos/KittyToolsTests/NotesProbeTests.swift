@@ -21,6 +21,9 @@
 //   - wallEntry()：300 条的便签墙——第一次进墙、开关 Markdown、再建一个窗口（卡片缓存还在）各自多久、后面分批建卡片建到哪；
 //     LOOP=markdown（隔两秒开关一次 Markdown）给 sample 用。
 // 这两次改之前、改之后的数（-O）在 PLAN §10「便签」的「手测反馈第 6 批」。
+//   - wallAnimation()：300 条的便签墙上点开 / 收回编辑卡（50 KB 的长便签、1 KB 的短便签对照）——动画期间每一帧主线程
+//     多久、1 秒里一共多少；SLICES=1 打出每一轮，LOOP=wall-anim / wall-anim-short 给 sample 用。前后的数在同一节的
+//     「便签墙编辑卡动画」那一条。
 
 import AppKit
 import SwiftUI
@@ -638,6 +641,148 @@ struct NotesProbeTests {
     Self.spin(0.3)
     line("再建一个窗口（同一个仓库，卡片缓存还在）", open())
     window?.close()
+  }
+
+  // MARK: 便签墙上编辑卡放大 / 收回的动画（手测反馈第 6 批之后：动画的每一帧整面墙都重排、重画）
+
+  /// 做一件事（change），之后 seconds 秒里每 1 ms 转一下跑环：每一轮（第一轮连 change 本身）离开始多久、
+  /// 主线程用了多少 CPU、墙上多久
+  private static func slices(_ seconds: Double, _ change: () -> Void) -> [(
+    at: Double, cpu: Double, wall: Double
+  )] {
+    let clock = ContinuousClock()
+    let start = clock.now
+    var cpu0 = cpu()
+    change()
+    var result: [(at: Double, cpu: Double, wall: Double)] = []
+    var slice = start
+    repeat {
+      RunLoop.main.run(mode: .default, before: .now.addingTimeInterval(0.001))
+      let (now, cpu1) = (clock.now, cpu())
+      result.append((ms(slice - start), cpu1 - cpu0, ms(now - slice)))
+      (slice, cpu0) = (now, cpu1)
+    } while clock.now - start < .milliseconds(Int(seconds * 1000))
+    return result
+  }
+
+  /// 300 条便签的墙（顶上一张 50 KB 的长便签、第二张 1 KB 的短便签对照），屏外窗口 940 × 580：点开、收回编辑卡，
+  /// 各量之后 1 秒。「第一下」= 改 expanded 到第一轮有活的更新做完（点开时建编辑区在里面）；「之后每帧」= 之后每一轮跑环
+  /// 主线程用了超过 1 ms CPU 的（动画的一帧、正文框补样式的一段）：几帧、最长、平均；「1 秒合计」= 这 1 秒里主线程的 CPU。
+  /// 加 TEST_RUNNER_KITTY_NOTES_PROBE_SLICES=1 把每一轮超过 1 ms 的都打出来；LOOP=wall-anim（长的）/ wall-anim-short（短的）
+  /// 隔 0.6 秒开关一次、开 10 秒，wall-anim-select 隔 0.3 秒换一次选中的（不打开），给 sample 用
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_NOTES_PROBE"] != nil))
+  func wallAnimation() throws {
+    let store = try NoteStore(db: Database(path: ":memory:"))
+    let t0 = Date(timeIntervalSince1970: 1_760_000_000)
+    for index in (0..<300).reversed() {
+      store.create(body: Self.body(index), now: t0.addingTimeInterval(Double(300 - index)))
+    }
+    store.create(body: Self.longBody(50, seed: 2), now: t0.addingTimeInterval(400))
+    let ids = store.active.map(\.id)
+    let (long, short) = (ids[0], ids[1])
+    try #require((store.note(long)?.body.utf8.count ?? 0) > 50_000)
+    try #require((store.note(short)?.body.utf8.count ?? 0) < 1100)
+    let suite = "kitty-notes-probe-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let model = NotesWindowModel(store: store)
+    #expect(model.layout == .wall)
+    let hosting = NSHostingController(
+      rootView: NotesWindowView(model: model).defaultAppStorage(defaults))
+    hosting.sceneBridgingOptions = [.title, .toolbars]
+    let window = ProbeWindow(contentViewController: hosting)
+    window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+    window.toolbarStyle = .unified
+    window.setContentSize(NSSize(width: 940, height: 580))
+    window.setFrameOrigin(NSPoint(x: -20000, y: -20000))
+    window.orderFront(nil)
+    defer { window.orderOut(nil) }
+    try #require(window.screen == nil && !window.isKeyWindow)
+    // 卡片都建好（分批的建完）再量
+    let clock = ContinuousClock()
+    let start = clock.now
+    while store.active.contains(where: { store.cachedWallCard(of: $0, markdown: true) == nil }),
+      clock.now - start < .seconds(10)
+    {
+      Self.spin(0.05)
+    }
+    Self.spin(0.5)
+    if let loop = ProcessInfo.processInfo.environment["KITTY_NOTES_PROBE_LOOP"],
+      loop.hasPrefix("wall-anim")
+    {
+      let id = loop == "wall-anim-short" ? short : long
+      print("notes-probe loop pid \(ProcessInfo.processInfo.processIdentifier)")
+      let end = Date.now.addingTimeInterval(10)
+      var round = 0
+      while loop == "wall-anim-select", Date.now < end {
+        model.selection = ids[1 + round % 2]
+        round += 1
+        Self.spin(0.3)
+      }
+      while Date.now < end {
+        model.open(id, focus: false)
+        Self.spin(0.6)
+        model.collapse()
+        Self.spin(0.6)
+      }
+      return
+    }
+    typealias Sample = (first: Double, frames: [Double], walls: [Double], total: Double)
+    func measure(_ change: () -> Void) -> Sample {
+      let all = Self.slices(1, change)
+      // 第一下：到第一轮超过 2 ms 的为止（连它）
+      let cut = (all.firstIndex { $0.cpu > 2 } ?? 0) + 1
+      let rest = all.dropFirst(cut).filter { $0.cpu > 1 }
+      if ProcessInfo.processInfo.environment["KITTY_NOTES_PROBE_SLICES"] != nil {
+        print(
+          "notes-probe     每一轮超过 1 ms 的（开始于 / CPU / 墙上）："
+            + all.filter { $0.cpu > 1 }.map {
+              String(format: "%.0f/%.1f/%.1f", $0.at, $0.cpu, $0.wall)
+            }.joined(separator: "  "))
+      }
+      return (
+        all.prefix(cut).reduce(0) { $0 + $1.cpu }, rest.map(\.cpu), rest.map(\.wall),
+        all.reduce(0) { $0 + $1.cpu }
+      )
+    }
+    func report(_ name: String, _ samples: [Sample]) {
+      func median(_ values: [Double]) -> String {
+        values.isEmpty ? "-" : String(format: "%.1f", values.sorted()[values.count / 2])
+      }
+      let frames = samples.flatMap(\.frames)
+      print(
+        "notes-probe \(name)：第一下 中位 \(median(samples.map(\.first))) ms；之后每帧（CPU 超过 1 ms 的）"
+          + "共 \(frames.count) 帧 / \(samples.count) 次，最长 \(String(format: "%.1f", frames.max() ?? 0)) ms"
+          + "（墙上 \(String(format: "%.1f", samples.flatMap(\.walls).max() ?? 0))），"
+          + "平均 \(String(format: "%.1f", frames.isEmpty ? 0 : frames.reduce(0, +) / Double(frames.count))) ms，"
+          + "每次最长的一帧 中位 \(median(samples.map { $0.frames.max() ?? 0 })) ms；"
+          + "1 秒合计 中位 \(median(samples.map(\.total))) ms")
+    }
+    // 对照：什么都不做的 1 秒；只换选中的（不打开：墙重新求值一遍，选中底挪过去）
+    report("便签墙 什么都不做", (0..<3).map { _ in measure {} })
+    report(
+      "便签墙 只换选中的（不打开）", (0..<6).map { round in measure { model.selection = ids[1 + round % 2] } })
+    // 点开的是选中的那张（↩、从那叠打开）；最后一组每次点的是另一张（点一张没选中的：选中跟着换）
+    let cases = [
+      ("50 KB 的长便签", [long]), ("1 KB 的短便签", [short]), ("短便签、选中跟着换", [short, ids[2]]),
+    ]
+    for (name, targets) in cases {
+      // 先开关一次（第一次建编辑区的那些不算）
+      for id in targets {
+        model.open(id, focus: false)
+        Self.spin(0.8)
+        model.collapse()
+        Self.spin(0.8)
+      }
+      var opening: [Sample] = []
+      var closing: [Sample] = []
+      for round in 0..<6 {
+        opening.append(measure { model.open(targets[round % targets.count], focus: false) })
+        closing.append(measure { model.collapse() })
+      }
+      report("便签墙 点开 \(name)", opening)
+      report("便签墙 收回 \(name)", closing)
+    }
   }
 }
 
