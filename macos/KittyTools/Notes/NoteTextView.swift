@@ -87,15 +87,46 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   var noteUndo: UndoManager?
   /// ⌘ 点链接、右键菜单的「打开链接」拿地址去做什么：默认交给系统打开（单测换掉——不许真的开浏览器）
   var onOpenLink: (URL) -> Void = { NSWorkspace.shared.open($0) }
+  /// 插图被拒（太大 / 像素太多 / 读不出来）、存图没成时说什么：刘海岛一句话（NoteBodyField 接上；单测里数次数）
+  var onImageProblem: (String) -> Void = { _ in }
+  /// 这条便签的图片目录（NoteStore.images 给的；nil = 图都画占位框、粘进来的存不了）。建附件、存图都用它
+  var imageStore: NoteImageStore?
+  /// 粘贴 / 拖进来的图存进目录时要等的这一刻里，正文变了没有（变了就插在当前光标处，见 NoteTextView+Images）
+  var pendingImages: [NoteImages.Image] = []
+  /// 组字期间欠着的插图插在哪（nil = 当前光标）
+  var pendingImagesAt: Int?
+  /// 鼠标停在哪张图上（把手在悬停时也显示）
+  var hoveredImage: Int?
+  /// 正拖着把手改宽度的那张图（nil = 没在拖）
+  var widthDrag: WidthDrag?
+  /// 拖的时候按了 Esc（松手不写进正文，回原来的大小）
+  var isWidthDragCancelled = false
+  /// 拖把手的按键监听（Esc 取消；装了就卸）
+  var widthMonitor: Any?
+
+  /// 正拖着把手改宽度：哪一张图、它的 cell、按下时多宽、按下时指针在哪、现在多宽
+  struct WidthDrag {
+    var index: Int
+    var cell: NoteImageAttachmentCell
+    var startWidth: CGFloat
+    var startX: CGFloat
+    var current: CGFloat
+  }
 
   /// 现在的纸色，和它连同字号、Markdown 开关定下来的字体和颜色（变了才整篇重排）
   private var paper: NotePaper?
+  /// 这条便签的颜色下标（图片的占位框、缩略图的底用）
+  private var paperIndex = 0
   private var theme = NoteStyles.Theme()
   /// 照现在的正文认出来的代码块（Markdown 关着时是空的）：改了字、收尾时（settle）重认，整篇重排时也是。
   /// 没在组字、没有没处理完的编辑时，它就是现在这篇正文的
   private var blocks: [NoteMarkdown.CodeBlock] = []
-  /// 上次交出去 / 拿进来的全文：外面再给同样的就不动；输入法确认之后超了上限退回它
-  private var reported = ""
+  /// 上次交出去 / 拿进来的全文：外面再给同样的就不动；输入法确认之后超了上限退回它。
+  /// **是存的形式**（图片是令牌，不是附件字符）：和外面比、算上限都按它
+  var reported = ""
+  /// reported 有多少字节（UTF-8；一个附件按它的令牌那么长算）。打字时每次改完重算一遍，
+  /// shouldChangeText 里判断超没超直接用（不在每次按键时把整篇走一遍）
+  var reportedBytes = 0
   /// 改过字、还没重排的那一段
   private var pending = NoteStyles.Pending()
   /// 组字期间来了要整篇重排的事（换纸色、字号、Markdown 开关）：先欠着，确认之后补
@@ -145,15 +176,18 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
 
   // MARK: 外面给的
 
-  /// 纸色、字号、Markdown 样式开没开、行距（换了才动）：基础字体和墨色、插入点，整篇重排
+  /// 纸色、字号、Markdown 样式开没开、行距（换了才动）：基础字体和墨色、插入点，整篇重排。
+  /// paperIndex：这条便签的颜色下标（图片的占位框画在纸上，要按当前外观取纸色）
   func setPaper(
-    _ paper: NotePaper, fontSize: CGFloat, markdown: Bool, spacing: NoteStyles.Spacing
+    _ paper: NotePaper, fontSize: CGFloat, markdown: Bool, spacing: NoteStyles.Spacing,
+    paperIndex: Int = 0
   ) {
     guard
       paper != self.paper || fontSize != theme.font.pointSize || markdown != theme.markdown
         || spacing != theme.spacing
     else { return }
     self.paper = paper
+    self.paperIndex = paperIndex
     theme = NoteStyles.Theme(
       paper: paper, fontSize: fontSize, markdown: markdown, spacing: spacing)
     // 空着的最后一行（正文末尾的换行后面）按打进去的字排：布局管理器那边读不到 typingAttributes，告诉它字的上下沿
@@ -181,20 +215,26 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   /// 再一次换进来——只排一遍版。原来先放字（排一遍）再整篇重排样式（又排一遍），是换一条便签时主线程上最大的几块之一
   /// （手测反馈第 3 批屏外量的）。标记先都藏着，换完由 syncMarkers 按焦点和选区露出该露的那几行。
   /// **只当场排开头一屏**（eagerStyleLength 个字，扩到整行）：其余的先铺基础样式（字号、墨、行高：排版不至于差太多），
-  /// 不记主字体，下一轮起一段段补上（styleRest）
+  /// 不记主字体，下一轮起一段段补上（styleRest）。
+  /// 图片：令牌换成附件字符（一个令牌一个字），文件头读出来的宽高在这一刻读好、缓存起来（布局回调里不读盘）
   private func replaceAll(with text: String) {
     reported = text
+    reportedBytes = text.utf8.count
     // 建的时候就铺上基础样式（比建好再铺省一遍）：开头那一屏下面再排，其余的就这么等着补
+    let base: [NSAttributedString.Key: Any] = [
+      .font: theme.font, .foregroundColor: theme.ink, .paragraphStyle: theme.baseParagraph,
+    ]
     let styled = NSTextStorage(
-      string: text,
-      attributes: [
-        .font: theme.font, .foregroundColor: theme.ink, .paragraphStyle: theme.baseParagraph,
-      ])
+      attributedString: NoteImageAttachment.editorString(from: text, base: base) { image in
+        self.makeAttachment(for: image)
+      })
     blocks = theme.markdown ? NoteMarkdown.codeBlocks(in: styled.mutableString) : []
     let head = styled.mutableString.lineRange(
       for: NSRange(location: 0, length: min(eagerStyleLength, styled.length)))
     let rest = NSRange(location: NSMaxRange(head), length: styled.length - NSMaxRange(head))
-    NoteStyles.apply(to: styled, lines: head, theme: theme, shown: [], blocks: blocks)
+    NoteStyles.apply(
+      to: styled, lines: head, theme: theme, shown: [], blocks: blocks,
+      availableWidth: availableWidth)
     textStorage?.setAttributedString(styled)
     _ = pending.take()
     owesFullRestyle = false
@@ -207,6 +247,29 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     layoutManager?.backgroundLayoutEnabled = rest.length == 0
     restHint = rest.location
     if rest.length > 0 { scheduleRest(after: 0) }
+  }
+
+  /// 一张图的附件（令牌 → 附件字符时建）：文件在哪、宽高多少、占位框画在哪张纸上
+  func makeAttachment(for image: NoteImages.Image) -> NoteImageAttachment {
+    let store = imageStore
+    let url = store?.url(for: image.id, ext: image.ext) ?? URL(fileURLWithPath: "/")
+    let metrics = store?.size(of: image.id, ext: image.ext)
+    let attachment = NoteImageAttachment(
+      image: image, url: url, metrics: metrics, paper: paperIndex)
+    let cell = NoteImageAttachmentCell(
+      image: image, url: url, metrics: metrics, paper: paperIndex)
+    attachment.attachmentCell = cell
+    cell.attachment = attachment
+    cell.view = self
+    return attachment
+  }
+
+  /// 正文的可用宽（排版时算没记宽度的图显示多大）：正文框宽去掉两边的内缩和文本容器的内边距。
+  /// 还没摆好（宽是 0）时给一个像样的数（同 NoteTextEditor.makeNSView 里给的那个）
+  var availableWidth: CGFloat {
+    guard let textContainer else { return 320 }
+    let width = textContainer.size.width - textContainer.lineFragmentPadding * 2
+    return width > 60 ? width : 320
   }
 
   /// 还没排过的那些行（replaceAll 只当场排了开头一屏）一段段补上：每轮一段（restChunk 个字，扩到整行），补完一段让
@@ -302,13 +365,51 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   }
 
   /// 把这几行（整行）的样式重排一遍。**调它的地方都得先确认没在组字**
-  private func restyle(_ lines: NSRange) {
+  func restyle(_ lines: NSRange) {
     guard let storage = textStorage else { return }
     NoteStyles.apply(
-      to: storage, lines: lines, theme: theme, shown: revealedLines(), blocks: blocks)
+      to: storage, lines: lines, theme: theme, shown: revealedLines(), blocks: blocks,
+      availableWidth: availableWidth)
     markWholeViewDirty()
     // 标记露出 / 收起、字体变了之后这一行的字会左右挪：插入点跟着重算
     if isFocused { updateInsertionPointStateAndRestartTimer(true) }
+  }
+
+  /// 正文框变宽变窄了：有图片的行按新的可用宽重排（没记宽度的图跟着变，记了宽度的超出时缩到可用宽）。
+  /// 图片那一行的高写在段落样式里（NoteStyles.apply），所以宽一变要重排这几行。**重排里再改尺寸不会回头调这里**
+  /// （apply 只失效版和显示，不动 frame）：加一道闸防止万一
+  override func setFrameSize(_ newSize: NSSize) {
+    let before = textContainer?.size.width ?? 0
+    super.setFrameSize(newSize)
+    let after = textContainer?.size.width ?? 0
+    guard abs(after - before) > 0.5 else { return }
+    restyleImageLines()
+  }
+
+  /// 有图片的那几行重排一遍（整行，不相邻的各自一段）
+  private func restyleImageLines() {
+    guard !isRestylingImages, !hasMarkedText(), pending.range == nil, let storage = textStorage,
+      storage.length > 0
+    else { return }
+    let lines = imageLines(in: storage)
+    guard !lines.isEmpty else { return }
+    isRestylingImages = true
+    defer { isRestylingImages = false }
+    for line in NoteStyles.merged(lines) { restyle(line) }
+  }
+
+  private var isRestylingImages = false
+
+  /// 正文里有图片附件的那几行（整行）：宽变了要重排它们
+  private func imageLines(in storage: NSTextStorage) -> [NSRange] {
+    var lines: [NSRange] = []
+    storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length)) {
+      value, range, _ in
+      guard value is NoteImageAttachment else { return }
+      lines.append(
+        storage.mutableString.lineRange(for: NSRange(location: range.location, length: 0)))
+    }
+    return lines
   }
 
   /// 引用的竖线画在字的外面（左边空出来的那一条）：这几行排版变了不一定会带着那一条重画，整个视图标成要重画
@@ -465,6 +566,7 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   override func draw(_ dirtyRect: NSRect) {
     super.draw(dirtyRect)
     drawQuoteBars(in: dirtyRect)
+    drawImageChrome(in: dirtyRect)
   }
 
   /// 代码块的底画在字和选区的下面（文本视图先画自己的底、再让布局管理器画选区和字）
@@ -627,10 +729,11 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
 
   /// 一次编辑收尾了：没有没确认的组字时，把样式补上、把正文交出去。输入法还在组字就什么都不做——攒着的区间等确认
   /// 之后一次处理：确认会再走 didChangeText 到这里；撤掉组字不会（那一刻还算在组字），由 setMarkedText 之后那次调过来。
-  /// 没有没收尾的东西时再调一遍是空转（不重排、不往外写）
+  /// 没有没收尾的东西时再调一遍是空转（不重排、不往外写）。
+  /// 交出去的是**存的形式**（附件字符换回令牌），上限也按它算
   private func settle() {
     guard !hasMarkedText(), let storage = textStorage else { return }
-    let text = string
+    let text = NoteImageAttachment.stored(from: storage)
     // 只退让正文变长了的那一次：正文不知怎么已经超了的时候，得删得动（同 overflows）
     if let maxBytes, text.utf8.count > maxBytes, text.utf8.count > reported.utf8.count {
       // 输入法确认的那一下 shouldChangeText 拦不了（那时还在组字）：退回组字之前的样子。
@@ -647,8 +750,11 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     }
     // 这次编辑可能把光标带到了别的行（撤销、粘贴了几行）：原来露着的收回去，现在这一行露出来
     syncMarkers()
+    // 组字期间欠着的插图（粘贴 / 拖进来的图等组字结束再插）
+    if !pendingImages.isEmpty { insertPendingImages() }
     guard text != reported else { return }
     reported = text
+    reportedBytes = text.utf8.count
     onChange(text)
   }
 
@@ -667,22 +773,51 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   }
 
   /// 打字、粘贴、拖进来、撤销、程序改字都先问到这里（单段的那个入口也转到这个）：会超上限的那一次不进。
+  /// **按存的字算**（附件字符按它的令牌那么长，不是 U+FFFC 的 3 个字节：贴一张图不会因为附件字符短就放过超限）。
   /// 输入法还在组字时不判断（拦了会打断组字），确认之后由 settle 兜着
   override func shouldChangeText(inRanges affectedRanges: [NSValue], replacementStrings: [String]?)
     -> Bool
   {
-    if let maxBytes, let replacementStrings, !hasMarkedText(),
-      Self.overflows(
-        string, replacing: affectedRanges.map(\.rangeValue), with: replacementStrings,
-        maxBytes: maxBytes)
-    {
-      overflowed()
-      return false
+    if let maxBytes, let replacementStrings, !hasMarkedText() {
+      let removed = affectedRanges.reduce(0) { $0 + storedByteCount(of: $1.rangeValue) }
+      // 加进来的那几段里有附件字符时按 U+FFFC 的字节数算（只会少算，不会误拦）：插图、粘贴图片那几条路
+      // 都在调进来之前自己按存的形式查过一遍（NoteTextView.insert(images:at:) 的 canFit）
+      let added = replacementStrings.reduce(0) { $0 + $1.utf8.count }
+      if added > removed, reportedBytes - removed + added > maxBytes {
+        overflowed()
+        return false
+      }
     }
     return super.shouldChangeText(inRanges: affectedRanges, replacementStrings: replacementStrings)
   }
 
-  private func overflowed() {
+  /// range 那一段按存的字算多少字节：附件字符按它的令牌那么长，别的照 UTF-8 算
+  func storedByteCount(of range: NSRange) -> Int {
+    guard let storage = textStorage, storage.length > 0 else { return 0 }
+    let start = min(max(range.location, 0), storage.length)
+    let end = min(max(NSMaxRange(range), start), storage.length)
+    let clamped = NSRange(location: start, length: end - start)
+    guard clamped.length > 0 else { return 0 }
+    let text = storage.mutableString
+    var total = 0
+    var location = clamped.location
+    while location < NSMaxRange(clamped) {
+      var effective = NSRange()
+      let value = storage.attribute(
+        .attachment, at: location, longestEffectiveRange: &effective, in: clamped)
+      let end = min(NSMaxRange(effective), NSMaxRange(clamped))
+      if let attachment = value as? NoteImageAttachment {
+        total += NoteImages.token(attachment.picture).utf8.count * (end - location)
+      } else {
+        total +=
+          text.substring(with: NSRange(location: location, length: end - location)).utf8.count
+      }
+      location = max(end, location + 1)
+    }
+    return total
+  }
+
+  func overflowed() {
     NSSound.beep()
     onOverflow()
   }
@@ -702,6 +837,8 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
         withTarget: self, selector: #selector(settleLeftover), object: nil)
       NSObject.cancelPreviousPerformRequests(
         withTarget: self, selector: #selector(styleRest), object: nil)
+      // 正拖着把手：监听卸掉（不然一直挂在事件循环上）
+      finishWidthDrag()
     }
     if let window {
       let center = NotificationCenter.default
@@ -818,9 +955,12 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     guard shouldChangeText(inRanges: ranges.map(NSValue.init(range:)), replacementStrings: texts)
     else { return false }
     storage.beginEditing()
-    // 从后往前换：前面的位置不受影响
+    // 从后往前换：前面的位置不受影响。**带上基础属性换**（不给纯字符串）：纯字符串换进去时系统会把换掉那一段的属性
+    // 抄给新字（换成一张图的位置时连 .attachment 一起抄），紧接着的样式那一遍就会把这一行还当成图片行
+    let attributes = baseAttributes
     for (range, text) in zip(ranges, texts).reversed() {
-      storage.replaceCharacters(in: range, with: text)
+      storage.replaceCharacters(
+        in: range, with: NSAttributedString(string: text, attributes: attributes))
     }
     storage.endEditing()
     didChangeText()
@@ -908,23 +1048,30 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
 
   // MARK: 鼠标
 
-  /// 不是 key 的面板里第一下点击就勾得上方框、⌘ 点得开链接（别的地方照文本视图自己的规矩）
+  /// 不是 key 的面板里第一下点击就勾得上方框、⌘ 点得开链接、选中图片 / 拖把手（别的地方照文本视图自己的规矩）
   override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
-    if let event,
-      box(at: convert(event.locationInWindow, from: nil)) != nil || linkToOpen(by: event) != nil
-    {
-      return true
+    if let event {
+      let point = convert(event.locationInWindow, from: nil)
+      if box(at: point) != nil || linkToOpen(by: event) != nil || imageChar(at: point) != nil {
+        return true
+      }
     }
     return super.acceptsFirstMouse(for: event)
   }
 
   override func mouseDown(with event: NSEvent) {
-    if isEditable, !hasMarkedText(),
-      let index = box(at: convert(event.locationInWindow, from: nil))
-    {
+    let point = convert(event.locationInWindow, from: nil)
+    if isEditable, !hasMarkedText(), let index = box(at: point) {
       flipBox(at: index)
     } else if let url = linkToOpen(by: event) {
       onOpenLink(url)
+    } else if isEditable, !hasMarkedText(), let index = imageHandle(at: point) {
+      // 按在拖动把手上：开始改宽度。**不进系统的拖选循环**（父类的 mouseDown 会跟着鼠标走完一整次按下—拖动—松开，
+      // 单测里调它就会卡住等真实的鼠标松开）：跟踪靠 mouseDragged / mouseUp，改多少 → 新宽度是纯函数
+      beginWidthDrag(at: index, event: event)
+    } else if let index = imageChar(at: point) {
+      // 单击图片 = 选中这张图（选区就是那一个字），不进系统的拖选循环
+      setSelectedRange(NSRange(location: index, length: 1))
     } else {
       // 文本视图在这里面跟着鼠标走完一整次按下—拖动—松开才回来
       super.mouseDown(with: event)
@@ -934,20 +1081,41 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     syncMarkers()
   }
 
+  /// 拖把手改宽度：只改显示（cell 上临时的宽度 + 重排这一行），松手才写进正文
+  override func mouseDragged(with event: NSEvent) {
+    if updateWidthDrag(with: event) { return }
+    super.mouseDragged(with: event)
+  }
+
+  override func mouseUp(with event: NSEvent) {
+    if widthDrag != nil {
+      if isWidthDragCancelled { cancelWidthDrag() } else { commitWidthDrag() }
+      return
+    }
+    super.mouseUp(with: event)
+  }
+
   override func mouseMoved(with event: NSEvent) {
+    updateHoveredImage(at: convert(event.locationInWindow, from: nil))
     if !setsCursor(at: event.locationInWindow) { super.mouseMoved(with: event) }
   }
 
   override func cursorUpdate(with event: NSEvent) {
+    updateHoveredImage(at: convert(event.locationInWindow, from: nil))
     if !setsCursor(at: event.locationInWindow) { super.cursorUpdate(with: event) }
   }
 
   /// 这一点（窗口坐标）上的光标归不归自己定：被浮在上面的东西盖住了（「⋯」菜单）是箭头——文本视图不知道自己被盖住，
   /// 鼠标在它的范围里一动就设 I 形（2026-10-13 用户报，同 SourceTextView.FocusTextView）；没被盖住、在方框上是手指，
-  /// 按着 ⌘ 在能打开的链接上也是；别的返回 false，交给文本视图自己
+  /// 按着 ⌘ 在能打开的链接上也是，在图片上是箭头、在拖动把手上是斜向拉伸的光标；别的返回 false，交给文本视图自己
   private func setsCursor(at point: NSPoint) -> Bool {
     let local = convert(point, from: nil)
     if isCovered(at: point) {
+      NSCursor.arrow.set()
+    } else if imageHandle(at: local) != nil {
+      // 斜向拉伸的光标（macOS 15 起有公开接口）
+      NSCursor.frameResize(position: .bottomRight, directions: [.inward, .outward]).set()
+    } else if imageChar(at: local) != nil {
       NSCursor.arrow.set()
     } else if box(at: local) != nil
       || (NSEvent.modifierFlags.contains(.command) && link(at: local) != nil)
@@ -969,9 +1137,11 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
 
   /// 右键菜单里「打开链接」那一项的名字
   static let openLinkTitle = "打开链接"
+  /// 右键菜单里插图那一项的名字
+  static let insertImageTitle = "插入图片…"
 
   /// 右键菜单最前面加一项「任务」（同名，不写键位）；点在能打开的链接上时，它前面再多一项「打开链接」——
-  /// 不靠 ⌘ 点的那条路（键盘、旁白用户）
+  /// 不靠 ⌘ 点的那条路（键盘、旁白用户）；「任务」「格式」后面再加一项「插入图片…」（选文件面板）
   override func menu(for event: NSEvent) -> NSMenu? {
     // 先看点在哪，再让父类建菜单：它可能会选中点到的那个词，那一行露出标记、字就挪了。
     // 不是鼠标点出来的菜单（键盘的 ⌃↩、旁白）事件里没有点的位置：看光标所在的字
@@ -983,7 +1153,11 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     item.target = self
     menu?.insertItem(item, at: 0)
     menu?.insertItem(formatItem(), at: 1)
-    menu?.insertItem(.separator(), at: 2)
+    let image = NSMenuItem(
+      title: Self.insertImageTitle, action: #selector(insertImageFromPanel(_:)), keyEquivalent: "")
+    image.target = self
+    menu?.insertItem(image, at: 2)
+    menu?.insertItem(.separator(), at: 3)
     if let url {
       let open = NSMenuItem(
         title: Self.openLinkTitle, action: #selector(openLink(_:)), keyEquivalent: "")
@@ -1015,6 +1189,8 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
       return isEditable && !touchesCodeBlock(selectedRange())
     }
     if item.action == #selector(openLink(_:)) { return true }
+    if item.action == #selector(insertImageFromPanel(_:)) { return isEditable }
+    if item.action == #selector(paste(_:)) { return isEditable && canPasteImages(from: pasteboard) }
     return super.validateUserInterfaceItem(item)
   }
 
@@ -1085,16 +1261,101 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   /// 粘贴从哪个剪贴板读（单测换成自己建的，不碰系统的）
   var pasteboard = NSPasteboard.general
 
-  /// 粘贴（⌘V，面板里经 OverlayPanel.sendEditAction 发过来）：选中了一行里的一段字（不在代码块里）、剪贴板里是一个
-  /// 能打开的网址时，选中的字换成「[字](网址)」（NoteMarkdown.linkPaste），一步撤销、改字走 perform；别的照常粘贴
-  /// （纯文本）。Markdown 关着时照常粘贴
+  /// 粘贴（⌘V，面板里经 OverlayPanel.sendEditAction 发过来）。顺序（第 7 批起）：
+  /// ① 自家类型（便签正文，存的形式）→ 按令牌换成附件插进来（引用同一个文件、不复制文件）；
+  /// ② 图片文件 → 每张存进目录、各插一张；
+  /// ③ 有非空的纯文字 → 照现在走（选中一行里的一段字、不在代码块里、剪贴板是一个能打开的网址时粘成链接，别的照常粘纯文本）。
+  ///    理由：表格、文稿里复制的字常常还附带一张「渲染图」，用户要的是字；
+  /// ④ 只有图片数据（截图、浏览器里「拷贝图像」）→ 存进目录、插一张。
+  /// 纯文字里带的 U+FFFC（别的 App 里那是一张图的占位）去掉，不在正文里留一个没挂附件的占位字符
   override func paste(_ sender: Any?) {
+    if pasteImages(from: pasteboard) { return }
     if pasteLink(from: pasteboard) { return }
+    if let raw = pasteboard.string(forType: .string), raw.utf16.contains(0xFFFC) {
+      let text = raw.replacingOccurrences(of: "\u{FFFC}", with: "")
+      replaceSelection(
+        with: NSAttributedString(string: text, attributes: baseAttributes), at: selectedRange())
+      return
+    }
     if pasteboard.name == .general {
       super.paste(sender)
     } else {
       _ = readSelection(from: pasteboard)
     }
+  }
+
+  /// 正文的基础样式（拼替换用的富文本时用）
+  var baseAttributes: [NSAttributedString.Key: Any] {
+    [.font: theme.font, .foregroundColor: theme.ink, .paragraphStyle: theme.baseParagraph]
+  }
+
+  // MARK: 剪贴板和拖动
+
+  /// 自家类型：选中的那一段的**存的形式**（带令牌）。贴回便签时按它把图片一起带过去（引用同一个文件）
+  static let noteTextType = NSPasteboard.PasteboardType("com.yy.kitty-tools.note-text")
+
+  /// 可写的类型：自家的、纯文本（图片的位置写「[图片]」）、选区正好是一张图时再加上图片本身
+  override var writablePasteboardTypes: [NSPasteboard.PasteboardType] {
+    var types = super.writablePasteboardTypes
+    for type in [Self.noteTextType, .string, .tiff, .png] where !types.contains(type) {
+      types.insert(type, at: 0)
+    }
+    return types
+  }
+
+  /// 复制 / 剪切 / 往别的 App 拖 / 文本视图内部拖动都走这里：写自家的存的形式、纯文本（「[图片]」），
+  /// 选区正好是一张图时再写那张图（原字节原类型；不是 PNG 的再加一份 PNG）
+  override func writeSelection(to pboard: NSPasteboard, types: [NSPasteboard.PasteboardType])
+    -> Bool
+  {
+    writeNoteSelection(to: pboard) ?? super.writeSelection(to: pboard, types: types)
+  }
+
+  /// 可读 / 可拖进来的类型：自家的类型排在最前面（文本视图内部拖动时图片跟着走）
+  override var readablePasteboardTypes: [NSPasteboard.PasteboardType] {
+    var types = super.readablePasteboardTypes
+    for type in [Self.noteTextType, .fileURL, .tiff, .png] where !types.contains(type) {
+      types.insert(type, at: 0)
+    }
+    return types
+  }
+
+  override var acceptableDragTypes: [NSPasteboard.PasteboardType] {
+    var types = super.acceptableDragTypes
+    for type in [Self.noteTextType, .fileURL, .tiff, .png] where !types.contains(type) {
+      types.insert(type, at: 0)
+    }
+    return types
+  }
+
+  /// 拖进来（落点由系统先设成选区）：自家的类型按令牌插、图片文件 / 图片数据存进目录再插；别的交给父类
+  override func readSelection(from pboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool
+  {
+    if readImageSelection(from: pboard, type: type) { return true }
+    return super.readSelection(from: pboard, type: type)
+  }
+
+  /// 读屏读到图片时念「图片」（不念 U+FFFC 也不念令牌）。`accessibilityValue` 是在 NSAccessibility 协议里声明的
+  /// （不在 NSTextView 类上），所以这里只用 @objc 声明同一个选择器，不写 override
+  @objc func accessibilityValue() -> Any? {
+    guard let storage = textStorage, storage.string.utf16.contains(0xFFFC) else {
+      return super.accessibilityValue()
+    }
+    let text = storage.string as NSString
+    var parts: [String] = []
+    var last = 0
+    storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length)) {
+      value, range, _ in
+      guard value is NoteImageAttachment else { return }
+      for position in range.location..<NSMaxRange(range)
+      where text.character(at: position) == 0xFFFC {
+        parts.append(text.substring(with: NSRange(location: last, length: position - last)))
+        parts.append("图片")
+        last = position + 1
+      }
+    }
+    parts.append(text.substring(from: last))
+    return parts.joined()
   }
 
   /// 照上面的规矩粘成链接；粘了返回 true
@@ -1207,6 +1468,10 @@ struct NoteTextEditor: NSViewRepresentable {
   let onChange: (String) -> Void
   let onOverflow: () -> Void
   var onCancel: (() -> Void)?
+  /// 插图被拒 / 存图没成时说什么（刘海岛一句话；默认不说）
+  var onImageProblem: (String) -> Void = { _ in }
+  /// 这条便签的图片目录（NoteStore.images）
+  var images: NoteImageStore?
 
   func makeNSView(context: Context) -> NSScrollView {
     let view = NoteTextView.make()
@@ -1235,11 +1500,15 @@ struct NoteTextEditor: NSViewRepresentable {
     view.onChange = onChange
     view.onOverflow = onOverflow
     view.onCancel = onCancel
+    view.onImageProblem = onImageProblem
+    view.imageStore = images
     if let request = focusRequest, request != view.focusRequest {
       view.focusRequest = request
       view.window?.makeFirstResponder(view)
     }
-    view.setPaper(NotePaper.of(note), fontSize: fontSize, markdown: markdown, spacing: spacing)
+    view.setPaper(
+      NotePaper.of(note), fontSize: fontSize, markdown: markdown, spacing: spacing,
+      paperIndex: Note.clamped(color: note.color))
     view.setText(note.body)
     // 选中文字的底色是强调色 0.28（不露系统蓝；读了 Style.brand，设置里换了强调色这里会重跑）
     view.selectedTextAttributes = [

@@ -98,17 +98,21 @@ nonisolated struct Note: Identifiable, Equatable, Sendable {
   // MARK: 显示
 
   /// 显示用的标题：自己起的标题；没起就是正文第一个有内容的行（去掉行首的 #、任务符号和 Markdown 的标记），
-  /// 超过 titleLength 个字截断加「…」；都没有就是「未命名便签」
+  /// 超过 titleLength 个字截断加「…」；都没有就是「未命名便签」。
+  /// **只有图片的行跳过**（标题用下一行有字的；图片写成「[图片]」）：整条便签只有图片时标题就是「[图片]」
   var displayTitle: String {
     let own = title.trimmingCharacters(in: .whitespacesAndNewlines)
     if !own.isEmpty { return own }
-    guard let line = Self.lines(of: body, skipping: 0, budget: 0).first else {
-      return Self.untitled
+    guard
+      let line = Self.lines(of: body, skipping: 0, budget: 0, droppingImageLines: true).first
+    else {
+      return NoteImages.containsToken(body) ? NoteImages.placeholder : Self.untitled
     }
     return Self.clipped(line, to: Self.titleLength)
   }
 
-  /// 列表里标题下面那一行摘要：其余有内容的行（标题取自正文第一行时不重复它）拼成一行，超过 previewLength 个字截断
+  /// 列表里标题下面那一行摘要：其余有内容的行（标题取自正文第一行时不重复它）拼成一行，超过 previewLength 个字截断。
+  /// 图片写成「[图片]」（只有图片的行照留：摘要里它是这条便签的内容）
   var preview: String {
     let hasOwnTitle = !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     let rest = Self.lines(of: body, skipping: hasOwnTitle ? 0 : 1, budget: Self.previewLength)
@@ -117,10 +121,13 @@ nonisolated struct Note: Identifiable, Equatable, Sendable {
 
   /// 正文里有内容的行（每行过一遍 clean），跳过前 skipping 行；用空格拼起来超过 budget 个字就不再往下读（正文可以很长）。
   /// 代码块（NoteMarkdown.codeBlocks，同正文编辑器）的围栏行不算、块里的行照原文（只去两头的空白）。
+  /// droppingImageLines：只有图片的行不算（标题取正文第一行时跳过这种行）
   /// ponytail: 认代码块只看正文开头 blockScanLimit 个字（标题、摘要只读开头几行；整篇认一遍 1 MB 要几毫秒，列表的每一行、
   /// 那叠的每张标签都要算）。上限：开头在这一段里、收尾在后面的块认不出来，它的围栏行和块里的字照普通的行去标记——
   /// 碰上了再改成「从头往后边读边认」
-  private static func lines(of body: String, skipping: Int, budget: Int) -> [String] {
+  private static func lines(
+    of body: String, skipping: Int, budget: Int, droppingImageLines: Bool = false
+  ) -> [String] {
     var lines: [String] = []
     var (skipped, length) = (0, 0)
     let text = body as NSString
@@ -133,6 +140,7 @@ nonisolated struct Note: Identifiable, Equatable, Sendable {
         &start, end: &end, contentsEnd: &contentsEnd, for: NSRange(location: location, length: 0))
       location = max(end, location + 1)
       let raw = text.substring(with: NSRange(location: start, length: contentsEnd - start))
+      if droppingImageLines, NoteImages.isImageOnly(raw) { continue }
       let line: String
       switch NoteMarkdown.role(at: start, in: blocks) {
       case nil: line = clean(raw)

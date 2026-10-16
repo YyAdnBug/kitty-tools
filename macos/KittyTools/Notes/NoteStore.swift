@@ -60,6 +60,10 @@ import Observation
   @ObservationIgnored private(set) var generation = 0
   /// 上次落盘没成的原因；都落下去了是 nil
   private(set) var saveProblem: String?
+  /// 图片目录（第 7 批行内图片，notes-images/）：AppDelegate 开完便签后设；nil = 图都画占位框、粘进来的存不了。
+  /// 编辑器（NoteTextView.imageStore）和便签墙卡片（wallCard 的缩略图）都从这里拿——不另设一个进程里的单例
+  /// （单测各给各的临时目录，互不打扰）
+  @ObservationIgnored var images: NoteImageStore?
   @ObservationIgnored private let db: Database
   @ObservationIgnored private let wait: Wait
   /// 推导结果的缓存（summary(of:)）：编号 → 算的时候的标题、正文和结果
@@ -141,6 +145,16 @@ import Observation
   /// 导出文件里带的：没删的全部（含归档），按顺序
   var exportable: [Note] { notes.filter { $0.deletedAt == nil }.sorted(by: Self.precedes) }
 
+  /// 正文里引用到的图片编号（含归档的、「最近删除」里的：它们都算「还被引用着」）。清理孤儿时用
+  /// （NoteImageStore.purge）：一个文件没被任何便签引用满 30 天才删
+  var referencedImages: Set<UUID> {
+    var ids: Set<UUID> = []
+    for note in notes where NoteImages.containsToken(note.body) {
+      ids.formUnion(NoteImages.ids(in: note.body))
+    }
+    return ids
+  }
+
   func note(_ id: String) -> Note? { notes.first { $0.id == id } }
 
   /// 一条便签显示用的推导结果（Note.displayTitle / preview / taskProgress：都要逐行扫正文、过 Markdown 的扫描器）
@@ -179,10 +193,14 @@ import Observation
 
   /// 这条便签在便签墙上的卡片（NoteWallCard：卡片上的字和量好的高；建一张要排一遍字，Debug 约 1.5 ms——300 条全建
   /// 约 0.45 s，手测反馈第 6 批评审量的）。按便签缓存（同 summary：比的是字本身，没变时两边是同一块存储、当场返回）：
-  /// 标题、正文、颜色、固定、Markdown 开关都没变就是上次建的
+  /// 标题、正文、颜色、固定、Markdown 开关都没变就是上次建的。卡片顶上那张缩略图的高按**元数据**算（文件头，
+  /// 主线程上读、按编号缓存）：墙的排法只看量出来的高，不等解码完
   func wallCard(of note: Note, markdown: Bool) -> NoteWallCard {
     if let card = cachedWallCard(of: note, markdown: markdown) { return card }
-    let card = NoteWallCard.make(for: note, title: summary(of: note).title, markdown: markdown)
+    let card = NoteWallCard.make(
+      for: note, title: summary(of: note).title, markdown: markdown,
+      sizes: { images?.pointSize(of: $0.id, ext: $0.ext) },
+      url: { images?.url(for: $0.id, ext: $0.ext) })
     wallCards[note.id] = (WallCardKey(note, markdown: markdown), card)
     return card
   }

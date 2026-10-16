@@ -496,6 +496,36 @@ struct NoteWallTests {
       let cut = NoteWall.excerpt(of: note(body))
       #expect(NoteMarkdown.role(at: 0, in: cut.blocks) == .content)
     }
+    // 图片（第 7 批）：卡片上只有图片的行整行不要、行内的写成「[图片]」，顶上放第一张图的缩略图
+    let image = NoteImages.token(
+      NoteImages.Image(id: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!, ext: "png"))
+    // 自己起了标题：这一段从正文开头带（不然第一行会被当成标题跳掉）
+    func withImages(_ body: String) -> Note {
+      Note(id: "n", title: "我的标题", body: body, createdAt: Self.t0, modifiedAt: Self.t0)
+    }
+    func card(_ body: String, sizes: ((NoteImages.Image) -> CGSize?)? = nil) -> NoteWallCard {
+      NoteWallCard.make(
+        for: withImages(body), title: "我的标题", markdown: true,
+        sizes: sizes ?? { _ in nil }, url: { _ in URL(fileURLWithPath: "/tmp/x.png") })
+    }
+    #expect(card("买菜\n\(image)\n牛奶").body.string == "买菜\n牛奶", "只有图片的行整行不要")
+    #expect(card("\(image)\n买菜").body.string == "买菜")
+    #expect(card("\(image)").body.string == "")
+    #expect(card("前面\(image)后面").body.string == "前面[图片]后面", "行内的写成「[图片]」")
+    // 缩略图：第一张图，高按元数据算（按比例、有上限）
+    let plain = card("买菜\n牛奶")
+    let withoutSizes = card("\(image)\n买菜")
+    #expect(withoutSizes.thumbnail == nil, "没给尺寸（文件不在）：不放缩略图")
+    #expect(withoutSizes.height == plain.height)
+    let sized = card("\(image)\n买菜") { _ in CGSize(width: 800, height: 400) }
+    #expect(sized.thumbnail != nil && sized.thumbnailURL != nil)
+    #expect(
+      sized.thumbnailHeight == min(NoteImageLayout.thumbnailMaxHeight, NoteWall.textWidth / 2),
+      "高按比例、有上限")
+    #expect(sized.height > plain.height, "卡片的高把缩略图算进去")
+    // 行内的第一张图也算（摘要是从正文里找的第一张图，不是这一段里的）
+    #expect(card("前\(image)后") { _ in CGSize(width: 40, height: 40) }.thumbnail != nil)
+
     // 代码块：挪到这一段的坐标里；截在尾上的照样是块
     let fenced = NoteWall.excerpt(of: note("```swift\nlet a = 1\n```\n后面", title: "T"))
     #expect(fenced.blocks.count == 1 && fenced.blocks[0].open.location == 0)

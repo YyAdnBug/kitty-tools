@@ -28,6 +28,7 @@
 import AppKit
 import SwiftUI
 import Testing
+import UniformTypeIdentifiers
 
 @testable import KittyTools
 
@@ -111,6 +112,117 @@ struct NotesProbeTests {
       "notes-probe \(name): \(wall)主线程 CPU 中位 "
         + "\(String(format: "%.1f", cpus[cpus.count / 2])) ms（最多 \(String(format: "%.1f", cpus.last ?? 0))）"
     )
+  }
+
+  /// 第 7 批行内图片的量：1 MB / 200 张图的便签——载入（令牌 → 附件 + 上样式 + 排版）、打一个字（附件 → 令牌 + 重排）、
+  /// 和同样大小、没有图的便签对照；画一遍之后缩略图缓存占多少像素。
+  ///   TEST_RUNNER_KITTY_NOTES_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  ///     test -only-testing:'KittyToolsTests/NotesProbeTests/images()'
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_NOTES_PROBE"] != nil))
+  func images() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(
+      path: "kitty-notes-image-probe-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = NoteImageStore(directory: directory)
+    var pictures: [NoteImages.Image] = []
+    for index in 0..<40 {
+      let id = UUID()
+      let url = directory.appending(path: "\(id.uuidString).png")
+      try NoteImageFixture.data(type: .png, width: 600 + index * 4, height: 400)
+        .write(to: url)
+      let image = NoteImages.Image(id: id, ext: "png", width: nil)
+      store.remember(
+        NoteImageStore.Stored(
+          image: image, size: try #require(NoteImageStore.readSize(at: url))))
+      pictures.append(image)
+    }
+    // 1 MB 的正文、约 200 张图：每段 5 KB 字 + 一行图
+    let segment = (1...60).map { "第 \($0) 行：中英混排 mixed text with some words，慢慢来，比较快。\n" }
+      .joined()
+    var body = ""
+    var counter = 0
+    while body.utf8.count < 1 << 20 {
+      body += segment + NoteImages.token(pictures[counter % pictures.count]) + "\n"
+      counter += 1
+    }
+    let images = counter
+    // 对照：把令牌换成「[图片]」（一样的文字、没有附件）
+    let plain = body.replacingOccurrences(
+      of: #"!\[image(\|[0-9]+)?\]\(kitty-note-image://[^)]*\)"#, with: "[图片]",
+      options: .regularExpression)
+    print("notes-probe 正文 \(body.utf8.count / 1024) KB、\(images) 张图（\(pictures.count) 个文件）")
+
+    func load(_ text: String) -> NoteTextView {
+      let view = NoteTextView.make()
+      view.imageStore = store
+      view.frame = NSRect(x: 0, y: 0, width: 600, height: 900)
+      view.setPaper(
+        NotePaper.all[0], fontSize: 15, markdown: true, spacing: .standard, paperIndex: 0)
+      view.setText(text)
+      if let layout = view.layoutManager, let container = view.textContainer {
+        layout.ensureLayout(for: container)
+      }
+      return view
+    }
+    func firstScreen(_ view: NoteTextView) {
+      if let layout = view.layoutManager, let container = view.textContainer {
+        layout.ensureLayout(
+          forCharacterRange: NSRange(location: 0, length: min(4000, view.textStorage?.length ?? 0)))
+        _ = container
+      }
+    }
+    let loadedImages = Self.median(3) { _ = load(body) }
+    let loadedPlain = Self.median(3) { _ = load(plain) }
+    print(
+      "notes-probe 载入整篇（含排版到底）：有图 \(String(format: "%.1f", loadedImages)) ms，没图 \(String(format: "%.1f", loadedPlain)) ms"
+    )
+    let firstImages = Self.median(3) {
+      let view = NoteTextView.make()
+      view.imageStore = store
+      view.frame = NSRect(x: 0, y: 0, width: 600, height: 900)
+      view.setPaper(
+        NotePaper.all[0], fontSize: 15, markdown: true, spacing: .standard, paperIndex: 0)
+      view.setText(body)
+      firstScreen(view)
+    }
+    print("notes-probe 载入 + 首屏排版：\(String(format: "%.1f", firstImages)) ms")
+
+    // 打一个字：走完 shouldChangeText → 改字 → didChangeText（settle：附件 → 令牌 + 重排那几行）
+    for (name, text) in [("有图", body), ("没图", plain)] {
+      let view = load(text)
+      view.setSelectedRange(NSRange(location: (view.textStorage?.length ?? 1) - 1, length: 0))
+      var samples: [Double] = []
+      for _ in 0..<10 {
+        let start = Self.cpu()
+        view.insertText("a", replacementRange: NSRange(location: NSNotFound, length: 0))
+        samples.append(Self.cpu() - start)
+      }
+      samples.sort()
+      print(
+        "notes-probe 打一个字（主线程 CPU）：\(name) 中位 \(String(format: "%.1f", samples[samples.count / 2])) ms，最多 \(String(format: "%.1f", samples.last ?? 0)) ms"
+      )
+    }
+    // 互转本身：整篇附件 → 令牌
+    let view = load(body)
+    if let storage = view.textStorage {
+      let convert = Self.median(5) { _ = NoteImageAttachment.stored(from: storage) }
+      print("notes-probe 附件 → 令牌（整篇 \(storage.length) 个字）：\(String(format: "%.1f", convert)) ms")
+    }
+    // 缩略图缓存：画一遍看得见的那一屏（600 × 900），再看缓存占多少
+    NoteImageThumbnails.discard()
+    let draw = view
+    let rep = try #require(draw.bitmapImageRepForCachingDisplay(in: draw.bounds))
+    draw.cacheDisplay(in: draw.bounds, to: rep)
+    for _ in 0..<200 where NoteImageThumbnails.cost == 0 {
+      RunLoop.main.run(until: Date.now.addingTimeInterval(0.02))
+    }
+    draw.cacheDisplay(in: draw.bounds, to: rep)
+    print(
+      "notes-probe 缩略图缓存：\(NoteImageThumbnails.cost) 像素（约 \(NoteImageThumbnails.cost * 4 / 1024 / 1024) MB 位图）"
+    )
+    NoteImageThumbnails.discard()
+    print("notes-probe 放掉之后：\(NoteImageThumbnails.cost) 像素")
   }
 
   @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_NOTES_PROBE"] != nil))

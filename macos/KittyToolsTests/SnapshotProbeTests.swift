@@ -1501,6 +1501,95 @@ struct SnapshotProbeTests {
       }
     }
 
+    // 第 7 批：行内图片——正文里一张图（浅 / 深）、行内图和字同行、选中带把手、文件找不到的占位框。
+    // 图片是测试现画的（输出目录下的 notes-images/，不进仓库）；缩略图第一次画的时候才开始解，所以同一个名字出两次
+    // （第一次画的是纸色，第二次才是图）
+    let imageDirectory = URL(filePath: "\(out)/notes-images")
+    try FileManager.default.createDirectory(at: imageDirectory, withIntermediateDirectories: true)
+    let imageStore = NoteImageStore(directory: imageDirectory)
+    func addImage(_ width: Int, _ height: Int, _ ext: String = "png") throws -> NoteImages.Image {
+      let id = UUID()
+      let url = imageDirectory.appending(path: "\(id.uuidString).\(ext)")
+      try NoteImageFixture.data(type: ext == "png" ? .png : .jpeg, width: width, height: height)
+        .write(to: url)
+      let size = try #require(NoteImageStore.readSize(at: url))
+      let image = NoteImages.Image(id: id, ext: ext, width: nil)
+      imageStore.remember(NoteImageStore.Stored(image: image, size: size))
+      return image
+    }
+    let photo = try addImage(600, 300)
+    let small = try addImage(160, 120)
+    let missing = NoteImages.Image(id: UUID(), ext: "png", width: nil)
+    let imageNotes = try NoteStore(db: Database(path: ":memory:"))
+    imageNotes.images = imageStore
+    let alone = imageNotes.create(
+      body: "图片这一行\n\(NoteImages.token(photo))\n图片下面的一行字",
+      now: now.addingTimeInterval(-60))
+    let inLine = imageNotes.create(
+      body:
+        "前面\(NoteImages.token(NoteImages.Image(id: small.id, ext: small.ext, width: 120)))后面还有字，看图和字是不是坐在同一条基线上",
+      now: now.addingTimeInterval(-120))
+    let broken = imageNotes.create(
+      body: "文件找不到的：\n\(NoteImages.token(missing))", now: now.addingTimeInterval(-180))
+    let imageModel = NotesWindowModel(store: imageNotes)
+    func imageTokenRange(_ body: String) -> NSRange {
+      NoteImages.matches(in: body as NSString).first?.range ?? NSRange()
+    }
+    for dark in [false, true] {
+      let suffix = dark ? "-dark" : ""
+      imageModel.selection = alone.id
+      for _ in 0..<2 { try window("image\(suffix)", imageModel, dark: dark) }
+      imageModel.selection = inLine.id
+      for _ in 0..<2 { try window("image-inline\(suffix)", imageModel, dark: dark) }
+    }
+    imageModel.selection = broken.id
+    for _ in 0..<2 {
+      try window(
+        "image-missing", imageModel,
+        prepare: { root in
+          guard let editor = NotesWindow.editor(in: root),
+            let manager = editor.layoutManager, let container = editor.textContainer,
+            let storage = editor.textStorage
+          else { return }
+          manager.ensureLayout(for: container)
+          print("DIAG4 视图=\(editor.frame) 容器=\(container.size)")
+          var glyph = 0
+          while glyph < manager.numberOfGlyphs {
+            var range = NSRange()
+            let rect = manager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: &range)
+            let used = manager.lineFragmentUsedRect(forGlyphAt: glyph, effectiveRange: nil)
+            let chars = manager.characterRange(forGlyphRange: range, actualGlyphRange: nil)
+            let style =
+              storage.attribute(
+                .paragraphStyle, at: min(chars.location, max(storage.length, 1) - 1),
+                effectiveRange: nil) as? NSParagraphStyle
+            print(
+              "DIAG4 chars \(chars) frag \(rect) used \(used) minH \(style?.minimumLineHeight ?? -1)"
+            )
+            glyph = NSMaxRange(range)
+          }
+          // 附件那一块
+          storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length))
+          { value, range, _ in
+            guard
+              let cell = (value as? NoteImageAttachment)?.attachmentCell as? NoteImageAttachmentCell
+            else { return }
+            let glyphs = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            print(
+              "DIAG4 附件 \(range) 字形框 \(manager.boundingRect(forGlyphRange: glyphs, in: container)) cellSize \(cell.cellSize())"
+            )
+          }
+        })
+    }
+    // 选中：一圈描边 + 右下角的拖动把手
+    imageModel.selection = alone.id
+    for _ in 0..<2 {
+      // 编辑器里图片就是一个字：存的形式里令牌开头的位置就是那个附件字符的位置
+      try window(
+        "image-selected", imageModel,
+        prepare: Self.reveal(NSRange(location: imageTokenRange(alone.body).location, length: 1)))
+    }
+
     // 手测反馈第 4 批：行距三档（标题、正文折行、任务、列表、引用、代码块混排；标准档就是 spacing-standard）、
     // 代码块（光标不在块里 / 在块里，浅深）、空的正文的占位和第一个字对齐（placeholder：占位 + 同一个位置打了字的
     // 另一条，两张对着看）
@@ -1615,6 +1704,7 @@ struct SnapshotProbeTests {
     // 固定的一段在前、带任务和 Markdown 的、选中的（中性的选中底、立正）、拖着 / 鼠标停着时抬起来的那一张（单独出：
     // 悬停是追踪区报的，屏外摆不出来）、编辑卡开着（浅深、最近删除里只读的）、空状态、没搜到、8 种纸色两套
     let wallStore = try NoteStore(db: Database(path: ":memory:"))
+    wallStore.images = imageStore
     let wallEntries: [(title: String, body: String, ago: TimeInterval)] = [
       ("", "周五前交的东西\n☐ 周报\n☐ 报销单\n☑ 订会议室\n☑ 交房租\n下午三点和设计过一遍首页的改动。", 180),
       ("读书笔记", "「慢慢来，比较快」这句话放在重构上也成立：先把现有的行为用测试钉住，再一小步一小步地挪。", 3600 * 2),
@@ -1654,6 +1744,28 @@ struct SnapshotProbeTests {
     }
     let wallModel = NotesWindowModel(store: wallStore)
     for dark in [false, true] { try wall(dark ? "dark" : "light", wallModel, dark: dark) }
+    // 第 7 批：卡片顶上那张缩略图（单独一面墙：两张卡片都在可见区里）
+    let wallImages = try NoteStore(db: Database(path: ":memory:"))
+    wallImages.images = imageStore
+    wallImages.create(
+      body: "这张有图：\n\(NoteImages.token(photo))\n下面还有一行字", now: now)
+    wallImages.create(body: "这张没有图\n就是一行普通的字", now: now.addingTimeInterval(-60))
+    // 墙卡片那张缩略图先在后台解好：屏外出图时 .task 的那一轮状态更新来不及回来（画的是纸色）
+    let scale = NSScreen.main?.backingScaleFactor ?? 2
+    let wallPixel = Int(NoteWall.textWidth * max(scale, 1))
+    let wallKey = "wall-\(photo.id.uuidString)@\(wallPixel)"
+    _ = NoteImageThumbnails.image(
+      for: imageStore.url(for: photo.id, ext: photo.ext), key: wallKey, maxPixel: wallPixel,
+      ready: {})
+    for _ in 0..<200 where NoteImageThumbnails.peek(key: wallKey) == nil {
+      RunLoop.main.run(until: Date.now.addingTimeInterval(0.02))
+    }
+    #expect(NoteImageThumbnails.peek(key: wallKey) != nil, "缩略图该解好了")
+    let wallImageModel = NotesWindowModel(store: wallImages)
+    for dark in [false, true] {
+      // 缩略图在第一次画的时候才开始解：同一个名字出两次，第二次才是图（第一次画的是纸色）
+      for _ in 0..<2 { try wall("image\(dark ? "-dark" : "")", wallImageModel, dark: dark) }
+    }
     try wall("narrow", wallModel, size: NSSize(width: 720, height: 420))
     try wall("wide", wallModel, size: NSSize(width: 1280, height: 760))
     try wall("wide-dark", wallModel, size: NSSize(width: 1280, height: 760), dark: true)
@@ -1936,6 +2048,34 @@ struct SnapshotProbeTests {
       model.overflowed()
     }
     try deck("open-short-screen", store, height: 360) { $0.tapTab(ids[0]) }
+    // 第 7 批：行内图片——标签 / 预览卡上写「[图片]」，打开的便签里按图画（浅深各一次；缩略图第一次画时才解，
+    // 同一个名字出两次，第二次才是图）
+    let deckImageDirectory = URL(filePath: "\(out)/notes-images")
+    try FileManager.default.createDirectory(
+      at: deckImageDirectory, withIntermediateDirectories: true)
+    let deckImages = NoteImageStore(directory: deckImageDirectory)
+    let photoID = UUID()
+    let photoURL = deckImageDirectory.appending(path: "\(photoID.uuidString).png")
+    try NoteImageFixture.data(type: .png, width: 480, height: 240).write(to: photoURL)
+    let photo = NoteImages.Image(id: photoID, ext: "png", width: nil)
+    deckImages.remember(
+      NoteImageStore.Stored(
+        image: photo, size: try #require(NoteImageStore.readSize(at: photoURL))))
+    let withImage = try library([
+      ("", "这张有图：\n\(NoteImages.token(photo))\n下面还有一行字", 60),
+      ("", "没有图的一条", 120),
+    ])
+    withImage.store.images = deckImages
+    try deck("image-preview", withImage.store) { $0.setPreview(withImage.ids[0]) }
+    var imageDeck = NoteDeckOptions()
+    imageDeck.noteSize = .extraLarge
+    for dark in [false, true] {
+      for _ in 0..<2 {
+        try deck(
+          "image-open\(dark ? "-dark" : "")", withImage.store, options: imageDeck, dark: dark
+        ) { $0.tapTab(withImage.ids[0]) }
+      }
+    }
     // 便签开着时点「+N」：列出全部，便签留在原处
     try deck("open-all", thirty) { model in
       model.tapTab(model.tabs[1].id)

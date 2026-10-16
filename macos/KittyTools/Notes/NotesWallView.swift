@@ -537,6 +537,7 @@ struct WallCard: View {
   @State private var isHovered = false
   @Environment(\.colorSchemeContrast) private var contrast
   @Environment(\.colorScheme) private var scheme
+  @Environment(\.displayScale) private var displayScale
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
@@ -554,11 +555,23 @@ struct WallCard: View {
       }
       VStack(alignment: .leading, spacing: 0) {
         paper.strip.frame(height: NoteWall.stripHeight)
+        // 卡片顶上那张缩略图（正文里的第一张图；高按元数据算，墙的排法只看量出来的高）
+        if let thumbnail = card.thumbnail, card.thumbnailURL != nil, card.thumbnailHeight > 0 {
+          WallThumbnail(
+            url: card.thumbnailURL, image: thumbnail, paper: paper, displayScale: displayScale
+          )
+          .frame(width: NoteWall.textWidth, height: card.thumbnailHeight)
+          .clipShape(
+            RoundedRectangle(cornerRadius: NoteImageLayout.corner, style: .continuous)
+          )
+          .padding(.top, NoteWall.topInset)
+          .padding(.horizontal, NoteWall.padding)
+        }
         CardText(card: card, scheme: scheme, contrast: contrast)
           .equatable()
           .frame(width: NoteWall.textWidth, height: card.textHeight, alignment: .topLeading)
           .mask { fade }
-          .padding(.top, NoteWall.topInset)
+          .padding(.top, card.thumbnail == nil ? NoteWall.topInset : NoteImageLayout.thumbnailGap)
           .padding(.horizontal, NoteWall.padding)
         Spacer(minLength: 0)
         footer(paper)
@@ -628,6 +641,48 @@ struct WallCard: View {
       if let progress = summary.progress {
         NoteProgress(progress: progress).foregroundStyle(paper.secondaryInk)
       }
+    }
+  }
+}
+
+/// 卡片顶上那张缩略图（正文里的第一张图）：后台解、解好了再画，解码前占着同样大的一块纸色；
+/// 高按比例（用元数据算好的 card.thumbnailHeight），超出的裁掉、居中。**屏外出图里画得出来**（真解一张缩略图）
+private struct WallThumbnail: View {
+  let url: URL?
+  let image: NoteImages.Image
+  let paper: NotePaper
+  let displayScale: CGFloat
+  /// 缓存里已经有的话建视图时就拿上（不然第一帧画的是纸色，等那一轮状态更新才变）
+  private let key: String
+  @State private var decoded: CGImage?
+
+  init(url: URL?, image: NoteImages.Image, paper: NotePaper, displayScale: CGFloat) {
+    self.url = url
+    self.image = image
+    self.paper = paper
+    self.displayScale = displayScale
+    let maxPixel = Int(NoteWall.textWidth * max(displayScale, 1))
+    key = "wall-\(image.id.uuidString)@\(maxPixel)"
+    _decoded = State(initialValue: NoteImageThumbnails.peek(key: key))
+  }
+
+  var body: some View {
+    let cached = NoteImageThumbnails.peek(key: key)
+    return ZStack {
+      paper.paper
+      // 缓存里已经有就直接画（那一轮状态更新还没回来时也能画出来：屏外出图 / 刚解好）
+      if let image = decoded ?? cached {
+        Image(decorative: image, scale: displayScale)
+          .resizable()
+          .aspectRatio(contentMode: .fill)
+      }
+    }
+    .clipped()
+    .accessibilityHidden(true)
+    .task(id: image.id) {
+      guard let url else { return }
+      decoded = await NoteImageThumbnails.load(
+        for: url, key: key, maxPixel: Int(NoteWall.textWidth * max(displayScale, 1)))
     }
   }
 }

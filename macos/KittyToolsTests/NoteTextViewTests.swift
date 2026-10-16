@@ -508,14 +508,15 @@ struct NoteTextViewTests {
   }
 
   /// 右键菜单最前面是「任务」，点了就是 ⌘T；接着是「格式」子菜单（粗体 ⌘B、斜体 ⌘I、删除线 ⇧⌘X、代码 ⌘E，带键位），
-  /// 点了同按键
+  /// 点了同按键；「格式」后面是「插入图片…」（第 7 批，选文件面板），再一条分隔线
   @Test func contextMenuHasTheTaskItem() throws {
     let rig = try Rig("周报")
     let event = try rig.mouse(.rightMouseDown, at: rig.center(of: 0))
     let menu = try #require(rig.editor.menu(for: event))
     let item = try #require(menu.items.first)
     #expect(item.title == NotesWindowModel.taskTitle && item.keyEquivalent.isEmpty)
-    #expect(menu.items.count > 3 && menu.items[2].isSeparatorItem)
+    #expect(menu.items.count > 4 && menu.items[3].isSeparatorItem)
+    #expect(menu.items[2].title == NoteTextView.insertImageTitle)
     #expect(rig.editor.validateUserInterfaceItem(item))
     rig.editor.setSelectedRange(caret(0))
     _ = item.target?.perform(item.action, with: item)
@@ -549,9 +550,10 @@ struct NoteTextViewTests {
       rig.editor.menu(for: rig.mouse(.rightMouseDown, at: rig.center(of: 7))))
     let item = try #require(menu.items.first)
     #expect(item.title == NoteTextView.openLinkTitle && item.keyEquivalent.isEmpty)
-    #expect(menu.items.count > 4 && menu.items[1].title == NotesWindowModel.taskTitle)
+    #expect(menu.items.count > 5 && menu.items[1].title == NotesWindowModel.taskTitle)
     #expect(menu.items[2].title == NoteTextView.formatTitle)
-    #expect(menu.items[3].isSeparatorItem && rig.editor.validateUserInterfaceItem(item))
+    #expect(menu.items[3].title == NoteTextView.insertImageTitle)
+    #expect(menu.items[4].isSeparatorItem && rig.editor.validateUserInterfaceItem(item))
     #expect(opened.isEmpty)
     _ = item.target?.perform(item.action, with: item)
     #expect(opened == [URL(string: "https://example.com/a")] && rig.changes.isEmpty)

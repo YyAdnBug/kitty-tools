@@ -54,16 +54,23 @@ struct NoteBodyField: View {
   /// 这条便签的撤销栈（NoteDeckModel.textUndo / NotesWindowModel.textUndo）：正文里打的字登记在它上面，⌘Z / ⇧⌘Z
   /// 动的也是它
   var undo: UndoManager?
+  /// 便签的图片目录（NoteStore.images）：正文里的图、粘进来的图都用它
+  var images: NoteImageStore?
   /// 设置 › 便签「Markdown 样式」「行距」：变了正文整篇重排
   @AppStorage(Prefs.notesMarkdown) private var markdown = true
   @AppStorage(Prefs.notesLineSpacing) private var spacing = NoteStyles.Spacing.standard
+  /// 插图被拒（太大 / 像素太多 / 读不出来）、存图没成时用刘海岛说一句（没注入时不说）
+  @Environment(Island.self) private var island: Island?
 
   var body: some View {
     let paper = NotePaper.of(note)
     NoteTextEditor(
       note: note, fontSize: fontSize, horizontalInset: margin - 5, focusRequest: focusRequest,
       undo: undo, markdown: markdown, spacing: spacing, onChange: setBody, onOverflow: onOverflow,
-      onCancel: onCancel
+      onCancel: onCancel,
+      onImageProblem: { message in
+        island?.show(message, tone: .warning, symbol: "photo.badge.exclamationmark")
+      }, images: images
     )
     .accessibilityLabel("正文")
     .overlay(alignment: .topLeading) {

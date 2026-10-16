@@ -355,14 +355,26 @@ final class NoteWallCard {
   let bodyHeight: CGFloat
   let bodyRoom: CGFloat
   let height: CGFloat
+  /// 卡片顶上那张缩略图（正文里的第一张图；文件找不到的不放）和它的高（0 = 没有）。高用**元数据**里的宽高算，
+  /// 不等解码完——墙的排法只看量出来的高（NoteWall 是纯函数）
+  let thumbnail: NoteImages.Image?
+  /// 缩略图文件的地址（NoteStore 给的；文件不在时是 nil）
+  let thumbnailURL: URL?
+  let thumbnailHeight: CGFloat
 
   var overflows: Bool { bodyHeight > bodyRoom + 0.5 }
   /// 卡片上字的那一块多高：标题 + 露出来的正文
   var textHeight: CGFloat { titleHeight + (bodyHeight > 0 ? NoteWall.titleGap + bodyRoom : 0) }
 
-  init(title: NSAttributedString, body: NSAttributedString, isPinned: Bool) {
+  init(
+    title: NSAttributedString, body: NSAttributedString, isPinned: Bool,
+    thumbnail: NoteImages.Image? = nil, thumbnailURL: URL? = nil, thumbnailHeight: CGFloat = 0
+  ) {
     self.title = title
     self.body = body
+    self.thumbnail = thumbnailHeight > 0 ? thumbnail : nil
+    self.thumbnailURL = thumbnailHeight > 0 ? thumbnailURL : nil
+    self.thumbnailHeight = thumbnailHeight > 0 ? thumbnailHeight : 0
     let options: NSString.DrawingOptions = [.usesLineFragmentOrigin, .usesFontLeading]
     titleWidth = NoteWall.textWidth - (isPinned ? NoteWall.pinRoom : 0)
     let measured = title.boundingRect(
@@ -381,6 +393,7 @@ final class NoteWallCard {
     let chrome =
       NoteWall.stripHeight + NoteWall.topInset + titleHeight + NoteWall.footerGap
       + NoteWall.footerHeight + NoteWall.bottomInset
+      + (self.thumbnailHeight > 0 ? self.thumbnailHeight + NoteImageLayout.thumbnailGap : 0)
     let natural = chrome + (bodyHeight > 0 ? NoteWall.titleGap + bodyHeight : 0)
     height = min(max(natural, NoteWall.minHeight), NoteWall.maxHeight)
     bodyRoom = max(0, height - chrome - NoteWall.titleGap)
@@ -389,9 +402,15 @@ final class NoteWallCard {
   /// 这条便签的卡片：标题是显示用的标题（title，NoteStore.summary 给的），正文是开头几行（NoteWall.excerpt），
   /// 样式照正文编辑器（NoteStyles.apply：任务的方框和划线、标题、粗体斜体、代码、链接、引用；markdown 关着时只有任务），
   /// 藏着的标记和代码块的围栏行删掉（编辑器里标记是零宽的字形，这里直接画字串，不删就露出来），代码块里的行垫代码的底
-  /// （编辑器里那块底是文本视图自己画的）。
-  /// ponytail: 引用左边的竖线、代码块的圆角底没画（卡片上只是一眼看个大概）；要的话改成自己逐行画
-  static func make(for note: Note, title: String, markdown: Bool) -> NoteWallCard {
+  /// （编辑器里那块底是文本视图自己画的）。**图片**（第 7 批）：令牌写成「[图片]」、只有图片的行整行不要；
+  /// 顶上放正文里第一张图的缩略图（高按元数据算，sizes 给点宽高；文件找不到的不放）。
+  /// ponytail: 引用左边的竖线、代码块的圆角底没画（卡片上只是一眼看个大概）；要的话改成自己逐行画。
+  /// 缩略图的高不进缓存的比较键：文件补回来了要等这条便签改一次（或者关掉窗口再开）才长出来
+  static func make(
+    for note: Note, title: String, markdown: Bool,
+    sizes: (NoteImages.Image) -> CGSize? = { _ in nil },
+    url: (NoteImages.Image) -> URL? = { _ in nil }
+  ) -> NoteWallCard {
     let paper = NotePaper.of(note)
     let titleStyle = NSMutableParagraphStyle()
     titleStyle.minimumLineHeight = NoteWall.titleLine
@@ -422,6 +441,8 @@ final class NoteWallCard {
         }
       }
       for range in hidden.reversed() { storage.deleteCharacters(in: range) }
+      // 图片：只有图片的行整行不要、剩下的令牌写成「[图片]」（末尾删剩下的换行由下面那段收）
+      replaceImages(in: storage)
       // 末尾删剩下的换行（收尾的围栏删了，前一行的换行还在）：不然多出一行空的高
       while storage.length > 0,
         CharacterSet.newlines.contains(
@@ -438,8 +459,40 @@ final class NoteWallCard {
       }
       storage.endEditing()
     }
+    // 顶上那张缩略图：正文里的第一张图（元数据读得出来才有）
+    let first = NoteImages.first(in: note.body)
+    let thumbnailSize = first.flatMap(sizes)
+    let thumbnailHeight =
+      thumbnailSize.map {
+        min(
+          NoteImageLayout.thumbnailMaxHeight, (NoteWall.textWidth * $0.height / $0.width).rounded())
+      } ?? 0
     return NoteWallCard(
       title: titleText, body: NSAttributedString(attributedString: storage),
-      isPinned: note.isPinned)
+      isPinned: note.isPinned, thumbnail: first, thumbnailURL: first.flatMap(url),
+      thumbnailHeight: thumbnailHeight)
+  }
+
+  /// 卡片上的图片：只有图片的行整行（连换行）去掉，剩下的令牌换成「[图片]」
+  private static func replaceImages(in storage: NSTextStorage) {
+    let text = storage.mutableString
+    var blank: [NSRange] = []
+    var location = 0
+    while location < text.length {
+      var (start, end, contentsEnd) = (0, 0, 0)
+      text.getLineStart(
+        &start, end: &end, contentsEnd: &contentsEnd, for: NSRange(location: location, length: 0))
+      location = max(end, location + 1)
+      let line = text.substring(with: NSRange(location: start, length: contentsEnd - start))
+      if NoteImages.isImageOnly(line) {
+        blank.append(NSRange(location: start, length: end - start))
+      }
+    }
+    for range in blank.reversed() { storage.deleteCharacters(in: range) }
+    // 从后往前换：前面的位置不受影响
+    let remaining = storage.mutableString
+    for match in NoteImages.matches(in: remaining).reversed() {
+      storage.replaceCharacters(in: match.range, with: NoteImages.placeholder)
+    }
   }
 }

@@ -393,6 +393,9 @@ nonisolated enum NoteStyles {
   /// 这一行的主字体（整行连换行）：标题行是标题的字、代码块是等宽的字、别的是正文的字。行高按它的字号算，布局时字的
   /// 上下沿也按它居中（centerLine：一行里混着别的字——方框、行内代码——也不挪基线）
   static let lineFontKey = NSAttributedString.Key("KittyNoteLineFont")
+  /// 图片那一行（整行连换行）记着图占多高（CGFloat）：段落样式按它撑高（图片会被裁成一行高，样机量出来的），
+  /// 布局时 centerLine 按它把基线下移——图和字同行时字坐在图的底边那条基线上
+  static let imageLineKey = NSAttributedString.Key("KittyNoteImageLine")
 
   /// 套用时要的字体和颜色（一条便签的纸色、字号、Markdown 开关定下来的）
   struct Theme {
@@ -456,12 +459,16 @@ nonisolated enum NoteStyles {
   /// 把 range 那几行（整行）的样式重排一遍：铺回基础样式，再按 spans 加。只动属性。
   /// shown：现在该露出标记的行（整行的区间）——行首落在里面的那些行，标记淡淡显示，别的行藏起来。
   /// blocks：照现在的正文认出来的代码块（NoteMarkdown.codeBlocks；Markdown 关着时给空的）。
-  /// 一行排成什么样只看：这一行的字、它在不在代码块里（什么角色）、上下两行是不是引用（引用块的段前段后）、露不露标记
-  /// ——所以「每次编辑只排受影响的行」要排到：改过的行、角色变了的行（roleChanges），再各往上下带一行（neighborLines）
+  /// availableWidth：正文可用宽（算没记宽度的图显示多大；墙卡片没有附件，给默认的不限）。
+  /// 一行排成什么样只看：这一行的字、它在不在代码块里（什么角色）、上下两行是不是引用（引用块的段前段后）、露不露标记、
+  /// 有没有图片（图占多高）——所以「每次编辑只排受影响的行」要排到：改过的行、角色变了的行（roleChanges），
+  /// 再各往上下带一行（neighborLines）。
+  /// **附件字符上的 `.attachment` 要放回去**：上面两步的 setAttributes 整段铺回会把它抹掉（图就没了）；
+  /// 另外附件字符上不许有 hiddenKey（那样它变成零宽的控制字符、图也看不见）
   @MainActor
   static func apply(
     to storage: NSTextStorage, lines range: NSRange, theme: Theme, shown: [NSRange],
-    blocks: [NoteMarkdown.CodeBlock]
+    blocks: [NoteMarkdown.CodeBlock], availableWidth: CGFloat = .greatestFiniteMagnitude
   ) {
     guard range.length > 0 else { return }
     let text = storage.mutableString
@@ -565,6 +572,27 @@ nonisolated enum NoteStyles {
         == .quote
     }
 
+    /// 这一行（整行）里的图片附件（位置 + 附件 + 它显示多高）：铺回基础样式前先记下来，铺完放回去；
+    /// 高按这一行的可用宽算（没记宽度的图跟着正文框变宽变窄；拖把手时用 cell 上临时的宽度）
+    func attachments(in line: NSRange) -> [(
+      range: NSRange, attachment: NoteImageAttachment, height: CGFloat
+    )] {
+      var found: [(range: NSRange, attachment: NoteImageAttachment, height: CGFloat)] = []
+      storage.enumerateAttribute(.attachment, in: line) { value, range, _ in
+        guard let attachment = value as? NoteImageAttachment else { return }
+        let live = (attachment.attachmentCell as? NoteImageAttachmentCell)?.liveWidth
+        found.append(
+          (
+            range, attachment,
+            NoteImageLayout.size(
+              image: attachment.picture, metrics: attachment.metrics, available: availableWidth,
+              live: live
+            ).height
+          ))
+      }
+      return found
+    }
+
     storage.beginEditing()
     var location = range.location
     while location < NSMaxRange(range) {
@@ -586,9 +614,21 @@ nonisolated enum NoteStyles {
         found = metrics(of: shape, isFirst: false, isLast: false)
         cache[shape] = found
       }
+      let images = attachments(in: NSRange(location: start, length: end - start))
+      let imageHeight = images.map(\.height).max() ?? 0
+      // 图片那一行：行高按图撑（至少正文一行那么高），段落别的几样照这一行的样子
+      var style = found.style
+      if imageHeight > 0, let taller = found.style.mutableCopy() as? NSMutableParagraphStyle {
+        let height = NoteImageLayout.lineHeight(
+          for: imageHeight, base: theme.lineHeight(found.font.pointSize))
+        taller.minimumLineHeight = height
+        taller.maximumLineHeight = height
+        style = taller
+      }
       var whole: [NSAttributedString.Key: Any] = [
-        .paragraphStyle: found.style, lineFontKey: found.font,
+        .paragraphStyle: style, lineFontKey: found.font,
       ]
+      if imageHeight > 0 { whole[imageLineKey] = imageHeight }
       if let role { whole[roleKey] = role.rawValue }
       // 整行（连行尾的换行）铺回基础样式：段落、主字体、角色记在每个字上
       storage.setAttributes(
@@ -601,6 +641,11 @@ nonisolated enum NoteStyles {
         storage.setAttributes(
           attributes(for: run.look, isShown: isShown).merging(whole) { current, _ in current },
           range: NSRange(location: start + run.range.location, length: run.range.length))
+      }
+      // 附件放回去（上面两步的 setAttributes 把它抹掉了），附件字符上不许有 hiddenKey（不然图变成零宽的、看不见）
+      for image in images {
+        storage.addAttribute(.attachment, value: image.attachment, range: image.range)
+        storage.removeAttribute(hiddenKey, range: image.range)
       }
       // 引用行行尾的换行也记上：连着的几行引用是一整段（竖线不断开）
       if shape == .quote, end > contentsEnd {
@@ -694,6 +739,8 @@ nonisolated enum NoteStyles {
   /// 行高是段落样式定死的那么高（apply 给每一行的 minimumLineHeight = maximumLineHeight），这里把字按这一行的主字体
   /// （lineFontKey）在里面竖直居中——改的是基线，和「用到的那一块」（usedRect：插入点、选区的上下沿、行内代码的底都按它
   /// 画，所以插入点只有字那么高、不跟着撑高的行走）。段前的留白算在行片段里、不算在居中的那一条里。
+  /// **图片那一行**（字上记着 imageLineKey）：基线移到「段前 + 上留白 + 图那么高」，用到的那一块就是图那一块——图和字
+  /// 同行时字坐在图的底边那条基线上（cellBaselineOffset 是 0）。
   /// 不靠字上的 baselineOffset 居中：TextKit 排基线时看这一行所有字里最深的下沿（实测 15.7：带方框的任务行因为
   /// Apple Symbols 的下沿深，整行的字比普通行高 1 pt），这里按主字体直接定，一行里混着什么字都不挪。
   /// 返回改没改（没有主字体、行高没定死的不管）。布局时调的代码：只动传进来的东西、只读文本存储上的属性
@@ -706,13 +753,20 @@ nonisolated enum NoteStyles {
     // 一次取全这个字上的属性（每个行片段都要问，几万行的正文排一遍版就是几万次）
     let attributes = storage.attributes(
       at: min(chars.location, storage.length - 1), effectiveRange: nil)
-    guard let font = attributes[lineFontKey] as? NSFont,
-      let style = attributes[.paragraphStyle] as? NSParagraphStyle, style.minimumLineHeight > 0
+    guard let style = attributes[.paragraphStyle] as? NSParagraphStyle, style.minimumLineHeight > 0
     else { return false }
+    let before = spacingBefore(at: chars.location, style: style, in: storage.mutableString)
+    if let imageHeight = attributes[imageLineKey] as? CGFloat, imageHeight > 0 {
+      let padding = NoteImageLayout.padding
+      baseline = (before + padding + imageHeight).rounded()
+      used.origin.y = rect.minY + before + padding
+      used.size.height = imageHeight
+      return true
+    }
+    guard let font = attributes[lineFontKey] as? NSFont else { return false }
     center(
       height: style.minimumLineHeight, ascender: font.ascender, descender: font.descender,
-      before: spacingBefore(at: chars.location, style: style, in: storage.mutableString),
-      rect: rect, used: &used, baseline: &baseline)
+      before: before, rect: rect, used: &used, baseline: &baseline)
     return true
   }
 

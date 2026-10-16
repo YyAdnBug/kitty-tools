@@ -683,8 +683,10 @@ nonisolated enum NoteMarkdown {
 
   /// 这一行去掉 Markdown 标记之后的字（标题和摘要用）：行内的标记（`**粗**` → 粗、`[字](地址)` → 字），
   /// blocks 给 true 时连行首引用的 `>`、无序列表的符号一起去。标题的 `#` 和任务的方框由 Note.clean 去（它比这里宽），
-  /// 去过的那一行剩下的是内容，只去行内的（blocks 给 false）
+  /// 去过的那一行剩下的是内容，只去行内的（blocks 给 false）。
+  /// 图片的令牌（第 7 批）整段换成「[图片]」（它里面的 `[` `]` `(` `)` 不是标记）
   static func plain(_ line: String, blocks: Bool) -> String {
+    let line = NoteImages.display(line)
     let units = Array(line.utf16)
     var removed: [NSRange] = []
     var start = 0

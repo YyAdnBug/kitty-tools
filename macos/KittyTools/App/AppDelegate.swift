@@ -183,6 +183,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func reclaimIdleMemory() {
     ThumbnailView.dropPreviews()
     LinkPreview.shared.dropHeroes()
+    // 便签正文里解好的图片缩略图（第 7 批：按像素数算 cost，闲下来整块放掉）
+    NoteImageThumbnails.discard()
     Task {
       await OCR.releaseModel()
       Memory.relieve()
@@ -535,8 +537,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       forName: .NSCalendarDayChanged, object: nil, queue: .main
     ) { [unowned self] _ in
       MainActor.assumeIsolated {
-        // 「最近删除」里放满 30 天的便签：启动时清一次，一直开着不退的换日时再清
-        noteStore?.purgeExpired()
+        // 「最近删除」里放满 30 天的便签、图片目录里没人引用满 30 天的文件：启动时清一次，换日时再清
+        purgeNotes()
         backupIfDue()
       }
     }
@@ -606,7 +608,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func finishLaunchingNotes() {
     noteStore = openNotes()
     hasOpenedNotes = true
-    noteStore?.purgeExpired()
+    // 图片目录（第 7 批行内图片）：和库一起开；库这次不可用时不给（图都画占位框、粘进来的存不了）
+    noteStore?.images = NoteImageStore(
+      directory: dataDirectory.appending(path: NotesBackup.imagesName))
+    purgeNotes()
     if let noteStore {
       NoteSample.addIfFirst(
         to: noteStore, defaults: .standard, hotKey: HotKeyAction.noteCapture.hotKey?.display)
@@ -614,6 +619,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     backupIfDue()
     noteEdge = noteStore.map(makeNoteEdge)
     noteEdge?.start()
+  }
+
+  /// 便签的定期清理：「最近删除」里放满 30 天的真删；图片目录里没人引用满 30 天的文件删掉
+  /// （账记在目录里的 .orphans.plist，从**第一次发现**没人引用算起）。便签这次用不了时不清（noteStore 是 nil）
+  private func purgeNotes() {
+    guard let noteStore else { return }
+    noteStore.purgeExpired()
+    noteStore.images?.purge(referenced: noteStore.referencedImages)
   }
 
   /// 屏幕边缘的便签：右键菜单里的「全部便签」「设置…」、「在全部便签里打开」接到这里的入口；什么时候不许扇出也由这里说

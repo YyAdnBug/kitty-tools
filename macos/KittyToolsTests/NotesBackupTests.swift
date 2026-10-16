@@ -325,6 +325,63 @@ struct NotesBackupTests {
     #expect(NotesBackup.list(in: directory, calendar: calendar).count == 3)
   }
 
+  /// 图片目录里的记账文件（.orphans.plist，第 7 批）随目录一起备份：恢复时补回来、原地已有的不覆盖
+  @Test func ledgerRidesAlongWithImages() async throws {
+    defer { try? manager.removeItem(at: directory) }
+    let store = try openStore()
+    store.create(body: "买菜")
+    try put("notes-images/a.png", "图 A")
+    try put("notes-images/\(NoteImageStore.ledgerName)", "账")
+    #expect(await run(10, 1) == .made(backup(10, 1)))
+    #expect(
+      snapshot(of: backup(10, 1).appending(path: "images")).keys.sorted()
+        == ["\(NoteImageStore.ledgerName)", "a.png"])
+    // 本地把账删了：恢复时补回来
+    try manager.removeItem(at: images.appending(path: NoteImageStore.ledgerName))
+    try damage()
+    let (result, _) = recover(.restore)
+    _ = try result.get()
+    #expect(
+      Data("账".utf8) == (try Data(contentsOf: images.appending(path: NoteImageStore.ledgerName))))
+    #expect(snapshot(of: images).keys.sorted() == ["\(NoteImageStore.ledgerName)", "a.png"])
+  }
+
+  /// 本地有的记账文件不被备份里的覆盖（恢复只补缺的）
+  @Test func restoreDoesNotOverwriteTheLocalLedger() async throws {
+    defer { try? manager.removeItem(at: directory) }
+    let store = try openStore()
+    store.create(body: "买菜")
+    try put("notes-images/a.png", "图 A")
+    try put("notes-images/\(NoteImageStore.ledgerName)", "老的账")
+    #expect(await run(10, 1) == .made(backup(10, 1)))
+    // 备份之后本地又清了一遍：账变了
+    try put("notes-images/\(NoteImageStore.ledgerName)", "新的账")
+    try damage()
+    let (result, _) = recover(.restore)
+    _ = try result.get()
+    #expect(
+      Data("新的账".utf8) == (try Data(contentsOf: images.appending(path: NoteImageStore.ledgerName))))
+  }
+
+  /// 「重新开始」把图片目录连记账文件一起挪进 damaged-…/
+  @Test func startFreshMovesTheLedgerAside() async throws {
+    defer { try? manager.removeItem(at: directory) }
+    let store = try openStore()
+    store.create(body: "买菜")
+    try put("notes-images/a.png", "图 A")
+    try put("notes-images/\(NoteImageStore.ledgerName)", "账")
+    #expect(await run(10, 1) == .made(backup(10, 1)))
+    try damage()
+    let (result, _) = recover(.startFresh)
+    #expect(try result.get().notes.isEmpty)
+    let aside = snapshot(of: directory.appending(path: "damaged-20261003-090507"))
+    #expect(aside.keys.contains("notes.sqlite3"))
+    #expect(aside.keys.contains("notes-images/a.png"))
+    #expect(aside.keys.contains("notes-images/\(NoteImageStore.ledgerName)"), "记账文件跟着图片目录一起挪")
+    #expect(aside.keys.contains { $0.hasPrefix("notes-backups/") }, "备份目录也挪走")
+    #expect(!manager.fileExists(atPath: images.path))
+  }
+
   // MARK: 打不开时
 
   /// 好好的库、还没用过便签（没有库也没有备份）：不问，照常打开；什么都不挪

@@ -451,7 +451,7 @@ struct NoteEditor: View {
         NoteBodyField(
           note: note, fontSize: fontSize, margin: Self.margin,
           setBody: { model.setBody($0, of: note.id) }, onOverflow: model.overflowed,
-          onCancel: onClose ?? {}, undo: model.textUndo)
+          onCancel: onClose ?? {}, undo: model.textUndo, images: model.store.images)
       } else {
         readOnly(paper)
       }
