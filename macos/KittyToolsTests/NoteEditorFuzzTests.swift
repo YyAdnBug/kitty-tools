@@ -4,7 +4,9 @@
 // Tab / ⇧Tab、⌘T、四个加标记的键（按键事件交给窗口 / 直接调 format）、粘贴（网址成链接、照常粘贴）、围栏行的增删改、
 // 撤销 / 重做、输入法组字后确认 / 撤掉 / unmarkText（组字期间换纸色、换 key、按加标记的键）、换纸色 / 字号 / 行距 /
 // Markdown 开关、拿 / 丢焦点、窗口当上 / 不再是 key、外面换了正文（setText）、直接改文本存储（在选区上换字、不走
-// didChangeText，靠选区变化排的那次兜底收尾）。每一步之后：编辑器里的属性和「同一份正文整篇重排一遍」逐字比（字号 / 粗细 / 等宽、藏露、
+// didChangeText，靠选区变化排的那次兜底收尾）。单数的种子把「整段换字时当场排多少」改得很小（手测反馈第 6 批：整段换字
+// 只当场排开头一屏、其余的在后面几轮补，NoteTextView.styleRest）：外面换了正文之后一大半是没排过的行，接着打字、
+// 撤销、组字都踩在「还没补完」上；这时只比排过的行（没排过的得是整行都没排），每个种子跑完把剩下的补完再整篇比一次。每一步之后：编辑器里的属性和「同一份正文整篇重排一遍」逐字比（字号 / 粗细 / 等宽、藏露、
 // 链接、引用、划线、下划线、斜、底、段落样式的行高 / 段前段后 / 缩进 / Tab、代码块的角色、主字体、基线偏移、按浅色外观
 // 解析出来的字色），藏着的字的字形真的是零宽的控制字符，交出去的全文（onChange；外面换进来的算外面那份）和看得见的一样。
 // 用法（没设就跳过，不算进默认的全量；步数按每段 250 步分给几个固定的种子，同样的步数每次跑的一样；2 万步 Debug 约 25 s）：
@@ -123,7 +125,7 @@ struct NoteEditorFuzzTests {
     var spacing = NoteStyles.Spacing.standard
     var key = false
 
-    init(_ body: String, pasteboard: NSPasteboard) throws {
+    init(_ body: String, pasteboard: NSPasteboard, eager: Int? = nil) throws {
       let frame = CGRect(x: -30000, y: -30000, width: 420, height: 320)
       try #require(
         !NSScreen.screens.contains { $0.frame.insetBy(dx: -2000, dy: -2000).intersects(frame) })
@@ -137,6 +139,10 @@ struct NoteEditorFuzzTests {
       editor.onChange = { [unowned self] in stored = $0 }
       editor.onOpenLink = { _ in }
       editor.pasteboard = pasteboard
+      if let eager {
+        editor.eagerStyleLength = eager
+        editor.restChunk = eager + 9
+      }
       scroll.hasVerticalScroller = true
       scroll.documentView = editor
       window.contentView = scroll
@@ -192,7 +198,28 @@ struct NoteEditorFuzzTests {
         theme: NoteStyles.Theme(
           paper: NotePaper.all[paper], fontSize: fontSize, markdown: markdown, spacing: spacing),
         shown: shown, blocks: markdown ? NoteMarkdown.codeBlocks(in: expected.mutableString) : [])
-      let (got, want) = (NoteEditorFuzzTests.runs(storage), NoteEditorFuzzTests.runs(expected))
+      // 整段换字之后还没补完样式的行（没记主字体的）：只比排过的行——没排过的那几行拿整篇排出来的顶上去比；
+      // 没排过的得是整行都没排（不许排了半行）
+      let compared = NSMutableAttributedString(attributedString: storage)
+      if editor.isStylingRest {
+        var location = 0
+        while location < text.length {
+          let line = text.lineRange(for: NSRange(location: location, length: 0))
+          var styled = 0
+          storage.enumerateAttribute(NoteStyles.lineFontKey, in: line) { value, range, _ in
+            if value != nil { styled += range.length }
+          }
+          if styled == 0 {
+            expected.enumerateAttributes(in: line) { attributes, range, _ in
+              compared.setAttributes(attributes, range: range)
+            }
+          } else if styled != line.length {
+            return "第 \(line.location) 个字起的那一行只排了一半；全文 \(editor.string.debugDescription)"
+          }
+          location = NSMaxRange(line)
+        }
+      }
+      let (got, want) = (NoteEditorFuzzTests.runs(compared), NoteEditorFuzzTests.runs(expected))
       if got.map(\.signature) != want.map(\.signature) || got.map(\.length) != want.map(\.length) {
         // 第一处不一样的字
         var index = 0
@@ -274,10 +301,11 @@ struct NoteEditorFuzzTests {
     defer { board.releaseGlobally() }
     var failures: [String] = []
     var (steps, withBlocks, formatted, linked, settledLeftovers) = (0, 0, 0, 0, 0)
+    var (partial, drained) = (0, 0)
     var seed = fuzzSeed
     while steps < total {
       var random = LCG(state: UInt64(seed) &* 7919)
-      let rig = try Rig(Self.start, pasteboard: board)
+      let rig = try Rig(Self.start, pasteboard: board, eager: seed % 2 == 1 ? 24 : nil)
       for step in 0..<min(Self.stepsPerSeed, total - steps) {
         let what = try Self.act(on: rig, &random, formatted: &formatted, linked: &linked)
         var done = what
@@ -300,18 +328,31 @@ struct NoteEditorFuzzTests {
         if rig.markdown, !NoteMarkdown.codeBlocks(in: rig.storage.mutableString).isEmpty {
           withBlocks += 1
         }
+        if rig.editor.isStylingRest { partial += 1 }
         if let problem = rig.mismatch() {
           failures.append("种子 \(seed) 第 \(step) 步，\(done) 之后：\(problem)")
           // 这个种子后面的步都踩在错的状态上：换下一个种子
           break
         }
       }
+      // 没补完的样式补完（组字中的先确认掉），再整篇比一次
+      if rig.editor.hasMarkedText() { rig.editor.unmarkText() }
+      for _ in 0..<400 where rig.editor.isStylingRest {
+        RunLoop.main.run(mode: .default, before: Date.now.addingTimeInterval(0.01))
+      }
+      if rig.editor.isStylingRest {
+        failures.append("种子 \(seed)：跑完之后还有没补上的样式")
+      } else if let problem = rig.mismatch() {
+        failures.append("种子 \(seed) 补完样式之后：\(problem)")
+      }
+      drained += 1
       rig.editor.removeFromSuperview()
       seed += 1
     }
     print(
       "便签正文随机探针：\(steps) 步、\(seed - fuzzSeed) 个种子，差异 \(failures.count) 处；有代码块的步 \(withBlocks)、"
-        + "改了字的加标记 \(formatted)、粘成链接 \(linked)、直接改存储 \(settledLeftovers)")
+        + "改了字的加标记 \(formatted)、粘成链接 \(linked)、直接改存储 \(settledLeftovers)、"
+        + "还有没补完样式的步 \(partial)、补完再比的种子 \(drained)")
     #expect(failures.isEmpty, "\(failures.prefix(5).joined(separator: "\n\n"))")
   }
 

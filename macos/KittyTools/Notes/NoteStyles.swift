@@ -308,7 +308,10 @@ nonisolated enum NoteStyles {
       while location < NSMaxRange(range) {
         let line = text.lineRange(for: NSRange(location: location, length: 0))
         let stored = storage.attribute(roleKey, at: line.location, effectiveRange: nil) as? Int
-        if stored != NoteMarkdown.role(at: line.location, in: blocks)?.rawValue {
+        // 还没排过的行（整段换字时只当场排了开头一屏，NoteTextView.styleRest 在后面补）不算：轮到它时照那时的正文排
+        if stored != NoteMarkdown.role(at: line.location, in: blocks)?.rawValue,
+          storage.attribute(lineFontKey, at: line.location, effectiveRange: nil) != nil
+        {
           found.append(line)
         }
         location = max(NSMaxRange(line), location + 1)

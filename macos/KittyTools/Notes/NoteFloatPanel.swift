@@ -6,9 +6,10 @@
 //   invalidateShadow），截图的悬停列表里就是整扇窗口。
 // - **能拉大小**：styleMask 带 .resizable——无边框的窗口带上它，四边四角就是系统的拉伸区，光标也是系统给的，不另画
 //   把手、不自己算；最小 NoteFloatLayout.minSize。挪动不靠系统（没有标题栏）：按着把手拖，NoteFloat 跟着鼠标摆。
-// - 层级跟着这条便签固定没固定走（NoteFloat.applyLevel）：固定着在别的窗口上面，没固定是普通窗口。没固定时被别的
-//   App 的窗口盖住了，点它要回到前面——不激活的面板在普通层级点一下会不会自己到最前没在真机上看过，这里每次鼠标
-//   按下都明说一次（orderFrontRegardless；已经在最前就什么都不发生）。
+// - **一律浮动层级**（手测反馈第 6 批，用户报「点别的 App 之后沉到底下、出不来」）：「浮在屏幕上」就该一直在别的 App 的
+//   窗口上面，固定不固定都一样（固定只管重启后回不回到原处）。原来没固定的是普通层级：本 App 不激活，别的 App 一动它就被
+//   盖住，点它回到上面、马上又被盖住。同一层级里还有那叠的面板、别的 App 的浮动窗口：每次鼠标按下都明说一次到最前
+//   （orderFrontRegardless；已经在最前就什么都不发生）。
 // - 所有桌面、别的 App 的全屏里都在（同钉图、同那叠里打开的便签：是人自己放在屏幕上的内容；设置里「盖在全屏 App 上」
 //   管的是自己待在边上的药丸和「一直展开」的那一列，不管它）。
 // - 永远不调 NSApp.activate；点按钮、把手不抢键盘（becomesKeyOnlyIfNeeded），点正文、标题才当 key。
@@ -27,7 +28,7 @@ final class NoteFloatPanel: NotePanel {
       backing: .buffered, defer: true)
     // 没有标题栏，这个名字只给旁白读窗口时用
     title = "浮动便签"
-    level = .normal
+    level = .floating
     collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
     hidesOnDeactivate = false
     becomesKeyOnlyIfNeeded = true
@@ -49,7 +50,7 @@ final class NoteFloatPanel: NotePanel {
   }
 
   override func sendEvent(_ event: NSEvent) {
-    // 没固定时是普通层级：被别的窗口盖住一部分，点它就到前面（不激活本 App）
+    // 同一层级（浮动层级）里压在它上面的（那叠扇出的那一列、别的 App 的浮动窗口）：点它就到它们前面（不激活本 App）
     if event.type == .leftMouseDown || event.type == .rightMouseDown { orderFrontRegardless() }
     super.sendEvent(event)
   }

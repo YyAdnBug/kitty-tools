@@ -2,14 +2,19 @@
 // mac-whisker-notes.mdc「便签墙」，排法、倾斜、方向键、拖动排序的规则在 NoteWall.swift，状态在 NotesWindowModel。
 // - 墙：一张张纸色的卡片（标题、正文开头几行带样式、任务进度、固定的带图钉、底下相对时间），一样宽、高随内容，
 //   按窗口宽度排几列、竖排瀑布流；固定的一段在前。每张微微斜一点；鼠标停着的立正、稍微抬起来；选中的立正、
-//   后面垫一块中性的选中底（列表选中不用强调色）。
-// - 只画可见区附近的卡片（同剪贴板列表的 ListWindow：滚动位置按段记，跨段才重算画哪些）。位置全按 NoteWall.layout
-//   算——方向键、跟随滚动、拖动排序、放大的起点都按它，不量视图。卡片上的字是一块 Canvas（NoteWallCard 量的高和
-//   画出来的是同一套排版），不是一个个 NSView：卡片要斜着、要缩放。
+//   后面垫一块中性的选中底（列表选中不用强调色）。编辑卡开着时后面的卡片不认悬停。
+// - 只画可见区附近的卡片（同剪贴板列表的 ListWindow：滚动位置按段记，跨段才重算画哪些）。位置全按排法算
+//   （NotesWindowModel.wallLayout）——方向键、跟随滚动、拖动排序、编辑卡那块纸的起点终点都按它，不量视图。卡片的高：
+//   可见区附近的当场建，往下的先按估计的高排，剩下的在后面几轮分批建好（第一次进墙、开关 Markdown 不再一口气全建）。
+//   卡片上的字是一块 Canvas（NoteWallCard 量的高和画出来的是同一套排版），不是一个个 NSView：卡片要斜着、要缩放。
 // - 点一张（或 ↩ / 空格）= 在窗口中央放大成编辑卡：后面一层暗；一块纸色的形状从卡片的位置长到中央，里面是列表视图
-//   右栏那一套编辑区（NoteEditor）淡入——编辑区里有 NSTextView，不拿它做缩放。Esc、点暗处、⌘W（NotesWindow 认）
-//   收回，收回前落盘（NotesWindowModel.collapse）。减弱动态效果时只淡入淡出。
-// - 键盘：方向键在卡片之间走、↩ / 空格打开、⌫ 删除（⌘⌫ 由窗口认）；拖动排序只在「全部」里、没在搜索时。
+//   右栏那一套编辑区（NoteEditor）淡入——编辑区里有 NSTextView，不拿它做缩放。Esc、点暗处（双击卡片的第二下不算）、
+//   ⌘W（NotesWindow 认）收回，收回前落盘（NotesWindowModel.collapse）；那块纸缩回那张卡片**收回那一刻**在窗口里的
+//   位置（按那时的排法和滚动位置重算；卡片滚出了可见区、不在墙上就在中央淡掉）。不管从哪条路收回（删了、归档了、
+//   放回了、在别处没了），焦点都回到墙上。减弱动态效果时只淡入淡出。
+// - 键盘：方向键在卡片之间走、↩ / 空格打开、⌫ 删除（⌘⌫ 由窗口认）。
+// - 点开和拖动排序是同一个手势（同屏幕边缘那叠的标签）：按下就开始跟，挪过 4 pt 才算拖（只在「全部」里、没在搜索时），
+//   没到就是点了一下。落点只看拖动开始时那份排法（NoteWall.dropTarget）。
 // - 右键菜单和列表行同一份（model.rowItems，系统菜单，ActionSystemMenu）。
 
 import SwiftUI
@@ -33,8 +38,10 @@ struct NotesWall<Header: View, Empty: View, Footer: View>: View {
   /// 选中跟随滚动用哪条曲线：键盘 snap、连发 instant、点选 glide
   @State private var motion = Style.Motion.snap
   @State private var drag: WallDrag?
-  /// 滚到哪、墙顶上那一条多高：放大编辑卡时算起点用。放在不被看着的盒子里：滚动时不重画墙
+  /// 滚到哪、墙顶上那一条多高：编辑卡那块纸的起点终点用。放在不被看着的盒子里：滚动时不重画墙
   @State private var spot = WallSpot()
+  /// 编辑卡长出来 / 缩回去的那块纸（减弱动态效果时没有）
+  @State private var sheet: WallSheet?
 
   var body: some View {
     VStack(spacing: 0) {
@@ -52,40 +59,77 @@ struct NotesWall<Header: View, Empty: View, Footer: View>: View {
       footer
     }
     .overlay { editorLayer }
+    .onChange(of: model.expanded) { old, new in expandedChanged(from: old, to: new) }
+    // 编辑卡开着的那条在别处被删了 / 归档了 / 放回了（屏幕边缘那叠、浮动便签里）：它不再是这个视图里选中的那条，收回
+    .onChange(of: model.current?.id) {
+      if model.expanded != nil, model.current?.id != model.expanded { model.collapse() }
+    }
     .onChange(of: model.wallFocus) { focused = true }
-    .onAppear { focused = true }
+    .onAppear {
+      focused = true
+      spot.isCovered = model.expanded != nil
+      // 窗口出来时编辑卡已经开着（从那叠「在全部便签里打开」）：纸直接在中央
+      if !reduceMotion, let id = model.expanded, let note = model.store.note(id) {
+        sheet = WallSheet(id: id, color: note.color, from: nil, isGrown: true)
+      }
+    }
+  }
+
+  /// 编辑卡开了 / 收了（不管从哪条路：点开、↩、⌘N、从那叠打开；Esc、点暗处、⌘W、删除 / 归档 / 放回、换视图、在别处没了）。
+  /// 收了：焦点回到墙上（方向键、↩、⌫ 接着用）；那块纸缩回那张卡片**现在**在窗口里的位置——按这一刻的排法和滚动位置
+  /// 重算（开着的时候它可能挪了：固定了、改长了；收回的路上墙不动），它不在可见区里（滚走了、被筛掉了、删了）就在中央
+  /// 略小一圈淡掉。开了：纸从那张卡片现在的位置长到中央
+  private func expandedChanged(from old: String?, to new: String?) {
+    spot.isCovered = new != nil
+    if new == nil { focused = true }
+    guard !reduceMotion else {
+      sheet = nil
+      return
+    }
+    if let new, let note = model.store.note(new) {
+      sheet = WallSheet(id: new, color: note.color, from: source(of: new))
+      return
+    }
+    guard let old, var closing = sheet, closing.id == old, !closing.isClosing else { return }
+    closing.isClosing = true
+    closing.to = source(of: old)
+    let serial = closing.serial
+    withAnimation(Style.Motion.settle.animation()) {
+      sheet = closing
+    } completion: {
+      if sheet?.serial == serial { sheet = nil }
+    }
   }
 
   // MARK: 墙
+
+  /// 可见区附近到哪（墙的坐标）：顶在这以内的卡片当场建（要画出来），往下的先按估计的高排。比要画的那一段
+  /// （visible）的下沿还多一点：滚动位置按段记，这一段的下面一整段都算
+  private var reach: CGFloat {
+    CGFloat(band + 1) * ListWindow.bandHeight + viewportHeight + ListWindow.overscan
+  }
 
   /// 墙上现在的样子：notes 是仓库的顺序（分段排好）、base 按它排；拖着一张时 shown / layout 是让过位之后的
   private func arrangement() -> (base: NoteWall.Layout, shown: [Note], layout: NoteWall.Layout) {
     let groups = model.wallGroups
     let notes = groups.flatMap(\.notes)
-    let counts = groups.map(\.notes.count)
-    let titles = groups.map(\.title)
-    let base = arrange(notes, counts: counts, titles: titles)
+    let base = model.wallLayout(groups, width: width, reach: reach, markdown: markdown)
     guard let drag, drag.from != drag.to else { return (base, notes, base) }
     let shown = NoteWall.moved(notes, from: drag.from, to: drag.to)
-    return (base, shown, arrange(shown, counts: counts, titles: titles))
-  }
-
-  private func arrange(_ notes: [Note], counts: [Int], titles: [String?]) -> NoteWall.Layout {
-    var sections: [NoteWall.Section] = []
+    // 让过位之后各段的张数不变（只在同一段里挪）
+    var moved: [(title: String?, notes: [Note])] = []
     var start = 0
-    for (count, title) in zip(counts, titles) {
-      let slice = notes[start..<start + count]
-      sections.append(
-        NoteWall.Section(
-          title: title, ids: slice.map(\.id),
-          heights: slice.map { model.card($0, markdown: markdown).height }))
-      start += count
+    for group in groups {
+      moved.append((group.title, Array(shown[start..<start + group.notes.count])))
+      start += group.notes.count
     }
-    return NoteWall.layout(sections, width: width)
+    return (
+      base, shown, model.wallLayout(moved, width: width, reach: reach, markdown: markdown)
+    )
   }
 
   private var board: some View {
-    let (base, shown, layout) = arrangement()
+    let (_, shown, layout) = arrangement()
     // 选中的、放大着的、仓库在 ForEach 外面取一次：每张卡片各读一遍的话，每张都要单独挂一份「盯着它变」
     let (selection, expanded, canReorder) = (model.selection, model.expanded, model.canReorder)
     let items = visible(layout, keeping: [selection, drag?.id])
@@ -101,8 +145,8 @@ struct NotesWall<Header: View, Empty: View, Footer: View>: View {
         }
         ForEach(items) { item in
           card(
-            shown[item.index], at: item.index, in: layout, base: base,
-            isSelected: item.id == selection, isOpen: item.id == expanded, canReorder: canReorder)
+            shown[item.index], at: item.index, in: layout, isSelected: item.id == selection,
+            isOpen: item.id == expanded, canReorder: canReorder)
         }
       }
       .frame(maxWidth: .infinity, minHeight: layout.height, alignment: .topLeading)
@@ -118,6 +162,12 @@ struct NotesWall<Header: View, Empty: View, Footer: View>: View {
       .animation(
         (drag == nil ? Style.Motion.settle : Style.Motion.glide).animation(reduced: reduceMotion),
         value: shown.map(\.id))
+    }
+    // 从空状态回来（没有便签 → 有了）这是一个新的滚动区，从顶上开始：滚动位置按段记的那两个跟着回到顶上——留着旧值
+    // 的话按旧的段去画，顶上一片空白（同剪贴板面板、翻译历史）
+    .onAppear {
+      band = 0
+      spot.scrollY = 0
     }
     .onGeometryChange(for: CGFloat.self) {
       $0.size.height
@@ -135,11 +185,15 @@ struct NotesWall<Header: View, Empty: View, Footer: View>: View {
         position: $position, key: selection, motion: motion, coveredTop: NoteWall.margin,
         inset: NoteWall.margin, span: { span(of: model.selection, in: layout) })
     )
+    // 正拖着的时候系统把这一下手势取消了（拖着时 ⌘⌫ 删了它、别处改了顺序、换了视图、打了搜索词），SwiftUI 不报松手：
+    // 清掉，不然它一直悬在指针最后的地方
+    .onChange(of: model.notes.map(\.id)) { drag = nil }
+    .onChange(of: canReorder) { drag = nil }
     .focusable()
     .focused($focused)
     .focusEffectDisabled()
     .onKeyPress(keys: [.upArrow, .downArrow, .leftArrow, .rightArrow]) { press in
-      guard model.expanded == nil else { return .ignored }
+      guard !model.isEditing else { return .ignored }
       let direction: NoteWall.Direction =
         switch press.key {
         case .upArrow: .up
@@ -152,12 +206,12 @@ struct NotesWall<Header: View, Empty: View, Footer: View>: View {
       return .handled
     }
     .onKeyPress(keys: [.return, .space]) { _ in
-      guard model.expanded == nil, let id = model.selection else { return .ignored }
+      guard !model.isEditing, let id = model.selection else { return .ignored }
       model.open(id)
       return .handled
     }
     .onDeleteCommand {
-      if model.expanded == nil, let id = model.selection { model.delete(id) }
+      if !model.isEditing, let id = model.selection { model.delete(id) }
     }
     .onExitCommand { model.collapse() }
   }
@@ -185,18 +239,18 @@ struct NotesWall<Header: View, Empty: View, Footer: View>: View {
   }
 
   @ViewBuilder private func card(
-    _ note: Note, at index: Int, in layout: NoteWall.Layout, base: NoteWall.Layout,
-    isSelected: Bool, isOpen: Bool, canReorder: Bool
+    _ note: Note, at index: Int, in layout: NoteWall.Layout, isSelected: Bool, isOpen: Bool,
+    canReorder: Bool
   ) -> some View {
     let frame = layout.frames[index]
     let dragged = drag.flatMap { $0.id == note.id ? $0 : nil }
     let origin =
       dragged.map { CGPoint(x: $0.point.x - $0.grab.width, y: $0.point.y - $0.grab.height) }
       ?? frame.origin
-    let summary = model.store.summary(of: note)
     WallCard(
-      note: note, card: model.card(note, markdown: markdown), summary: summary,
-      tilt: layout.tilts[index], isSelected: isSelected, isDragged: dragged != nil
+      note: note, card: model.store.wallCard(of: note, markdown: markdown),
+      summary: model.store.summary(of: note), tilt: layout.tilts[index], isSelected: isSelected,
+      isDragged: dragged != nil, spot: spot
     )
     .frame(width: frame.width, height: frame.height)
     // 放大成编辑卡的那张：纸从它这里长出去，它自己淡掉；收回时淡回来
@@ -205,31 +259,37 @@ struct NotesWall<Header: View, Empty: View, Footer: View>: View {
       reduceMotion ? .easeInOut(duration: 0.2) : Style.Motion.settle.animation(), value: isOpen
     )
     .contentShape(.rect)
-    .onTapGesture {
-      motion = .glide
-      model.open(note.id)
-    }
-    .gesture(dragGesture(note.id), including: canReorder ? .all : .none)
+    // 点开和拖动排序是同一个手势（同屏幕边缘那叠的标签）：不另挂 onTapGesture——两个手势挂在一起在 macOS 上分不分得清
+    // 没验过；能不能拖动排序只在手势里面看（不能拖时照样点得开：.gesture(_, including: .none) 会连点按一起关掉）
+    .gesture(cardGesture(note.id, canReorder: canReorder))
     // 系统菜单（右键、⌃ 点按才接），同列表行
     .overlay { ActionSystemMenu { model.rowItems(note) } }
     .accessibilityAction { model.open(note.id) }
+    // 旁白的「更多动作」：右键菜单里不带子菜单的那几项（不带「颜色」那一级：每次重画都要，纸色圆点的图不白建）
     .accessibilityActions {
-      ForEach(model.rowItems(note).filter { $0.submenu == nil }) { item in
+      ForEach(model.rowItems(note, colors: false)) { item in
         Button(item.title, action: item.run)
       }
     }
     .offset(x: origin.x, y: origin.y)
+    // 被拖着的那张跟着指针走：别的卡片让位时它不跟着滑（松手那一下 drag 已经是 nil，照常落下去）
+    .transaction { if dragged != nil { $0.animation = nil } }
     .zIndex(dragged != nil ? 1 : 0)
   }
 
-  // MARK: 拖动排序
+  // MARK: 点开、拖动排序
 
-  /// 按住一张拖：它跟着指针走，指针进到同一段里另一张的里面（四边各收 dragInset）时它让到那个位置，别的卡片滑开；
-  /// 松手写回仓库的顺序（NotesWindowModel.reorder）。在不动的坐标系（墙的内容）里量：卡片自己正被 offset 挪着
-  private func dragGesture(_ id: String) -> some Gesture {
-    DragGesture(minimumDistance: 4, coordinateSpace: .named(wallSpace))
+  /// 按下就开始跟（minimumDistance 0，同屏幕边缘那叠的标签）：挪过 dragSlop 才算拖——只在能拖动排序时（「全部」里、
+  /// 没在搜索），它跟着指针走、抬起来，指针进到同一段里另一张的里面时它让到那个位置，别的卡片滑开；松手写回仓库的顺序
+  /// （NotesWindowModel.reorder）。没挪开就松手 = 点了一下 = 打开编辑卡。在不动的坐标系（墙的内容）里量：卡片自己正被
+  /// offset 挪着
+  private func cardGesture(_ id: String, canReorder: Bool) -> some Gesture {
+    DragGesture(minimumDistance: 0, coordinateSpace: .named(wallSpace))
       .onChanged { value in
-        guard let current = drag else {
+        if drag == nil {
+          guard canReorder,
+            hypot(value.translation.width, value.translation.height) >= NoteWall.dragSlop
+          else { return }
           let base = arrangement().base
           guard let from = base.index(of: id) else { return }
           let frame = base.frames[from]
@@ -238,18 +298,25 @@ struct NotesWall<Header: View, Empty: View, Footer: View>: View {
             grab: CGSize(
               width: value.startLocation.x - frame.minX, height: value.startLocation.y - frame.minY)
           )
+        }
+        guard let current = drag, current.id == id else { return }
+        drag?.point = value.location
+        // 落点只看拖动开始时那份排法（让位之前的）：只取决于指针在哪，不会在两个位置之间来回跳
+        let to = NoteWall.dropTarget(
+          from: current.from, current: current.to, at: value.location, in: arrangement().base)
+        if to != current.to { drag?.to = to }
+      }
+      .onEnded { value in
+        guard let current = drag, current.id == id else {
+          // 没挪开：点了一下。双击的第二下也到这里——编辑卡已经开着，不再开一次
+          if hypot(value.translation.width, value.translation.height) < NoteWall.dragSlop,
+            !model.isEditing
+          {
+            motion = .glide
+            model.open(id)
+          }
           return
         }
-        drag?.point = value.location
-        let layout = arrangement().layout
-        guard
-          let over = NoteWall.item(at: value.location, in: layout, inset: NoteWall.dragInset),
-          over != current.to, let to = NoteWall.landing(from: current.to, over: over, in: layout)
-        else { return }
-        drag?.to = to
-      }
-      .onEnded { _ in
-        guard let current = drag else { return }
         let base = arrangement().base
         if current.from != current.to, let section = base.section(of: current.from) {
           model.reorder(
@@ -262,8 +329,7 @@ struct NotesWall<Header: View, Empty: View, Footer: View>: View {
 
   // MARK: 编辑卡
 
-  /// 放大着的那张：暗的一层 + 长到中央的纸 + 编辑区。纸的起点是那张卡片现在在窗口里的位置（墙上的位置 − 滚过的 +
-  /// 顶上那一条）；它不在墙上（被搜索词筛掉了）就从中央略小一点长出来
+  /// 放大着的那张：暗的一层 + 长到中央的纸 + 编辑区
   private var editorLayer: some View {
     GeometryReader { proxy in
       let size = NoteWall.editorSize(in: proxy.size)
@@ -271,20 +337,29 @@ struct NotesWall<Header: View, Empty: View, Footer: View>: View {
         x: ((proxy.size.width - size.width) / 2).rounded(),
         y: ((proxy.size.height - size.height) / 2).rounded(), width: size.width, height: size.height
       )
+      let note = model.isEditing ? model.current : nil
       ZStack(alignment: .topLeading) {
-        if let note = model.current, model.expanded == note.id {
+        if note != nil {
           Color.black.opacity(reduceTransparency ? NoteWall.solidDim : NoteWall.dim)
             .contentShape(.rect)
-            .onTapGesture { model.collapse() }
+            .onTapGesture {
+              // 双击一张卡片：第一下打开了编辑卡，第二下落在这层暗上——不算收回
+              guard (NSApp.currentEvent?.clickCount ?? 1) < 2 else { return }
+              model.collapse()
+            }
             .accessibilityHidden(true)
             .transition(.opacity)
-          if !reduceMotion {
-            WallPaper(paper: NotePaper.of(note))
-              .transition(
-                .modifier(
-                  active: PaperFrame(rect: source(of: note.id) ?? target.insetBy(dx: 24, dy: 24)),
-                  identity: PaperFrame(rect: target)))
-          }
+        }
+        if let sheet {
+          // 颜色跟着这条便签走（开着的时候换了色）；它没了就用记下的
+          let color = model.store.note(sheet.id)?.color ?? sheet.color
+          WallSheetPaper(
+            paper: NotePaper.all[min(max(color, 0), NotePaper.all.count - 1)], sheet: sheet,
+            target: target
+          )
+          .id(sheet.serial)
+        }
+        if let note {
           WallEditor(
             model: model, note: note, fontSize: Prefs.notesFontSize(fontSize),
             castsShadow: reduceMotion
@@ -308,11 +383,13 @@ struct NotesWall<Header: View, Empty: View, Footer: View>: View {
     }
   }
 
-  /// 编号是 id 的那张卡片现在在这一块（墙连顶上那一条）里的位置
+  /// 编号是 id 的那张卡片现在在这一块（墙连顶上那一条；编辑卡也摆在这里）里的位置：按现在的排法和滚动位置算；
+  /// 不在墙上、滚出了可见区给 nil（NoteWall.paperRect）
   private func source(of id: String) -> CGRect? {
     let layout = arrangement().layout
-    guard let index = layout.index(of: id) else { return nil }
-    return layout.frames[index].offsetBy(dx: 0, dy: spot.top - spot.scrollY)
+    return NoteWall.paperRect(
+      card: layout.index(of: id).map { layout.frames[$0] }, top: spot.top, scrollY: spot.scrollY,
+      viewport: viewportHeight)
   }
 }
 
@@ -331,10 +408,12 @@ private struct WallDrag: Equatable {
   let grab: CGSize
 }
 
-/// 不被看着的两个数（见 NotesWall.spot）
-private final class WallSpot {
+/// 不被看着的几样（见 NotesWall.spot）：滚到哪、墙顶上那一条多高；编辑卡开着没有（卡片的悬停看它：鼠标进来那一刻才问，
+/// 编辑卡开 / 关时不用把每张卡片都重画一遍）
+final class WallSpot {
   var scrollY: CGFloat = 0
   var top: CGFloat = 0
+  var isCovered = false
 }
 
 /// 墙的内容的坐标系（拖动在它里面量）
@@ -346,6 +425,50 @@ private struct PaperFrame: ViewModifier {
 
   func body(content: Content) -> some View {
     content.frame(width: rect.width, height: rect.height).offset(x: rect.minX, y: rect.minY)
+  }
+}
+
+/// 编辑卡那块纸的状态：哪条便签（颜色是打开时记下的，它没了时用）、从哪长出来（nil = 中央略小一圈）、收回中没有、
+/// 缩到哪（nil = 中央略小一圈、淡掉）。每打开一次一个新的编号：收回的动画放完时认的是它（这时又打开了别的就不拆）
+private struct WallSheet {
+  let id: String
+  let color: Int
+  let from: CGRect?
+  /// 打开时已经在中央（窗口出来时编辑卡就开着）
+  var isGrown = false
+  var isClosing = false
+  var to: CGRect?
+  let serial = WallSheet.next()
+
+  init(id: String, color: Int, from: CGRect?, isGrown: Bool = false) {
+    (self.id, self.color, self.from, self.isGrown) = (id, color, from, isGrown)
+  }
+
+  private static var counter = 0
+  private static func next() -> Int {
+    counter &+= 1
+    return counter
+  }
+}
+
+/// 编辑卡那块纸：打开时从起点长到中央（glide，出现的那一刻开始），收回时缩到终点（终点在外面算好、带着 settle 的动画给），
+/// 没有终点就在中央略小一圈淡掉
+private struct WallSheetPaper: View {
+  let paper: NotePaper
+  let sheet: WallSheet
+  let target: CGRect
+  @State private var grown = false
+
+  var body: some View {
+    let shrunk = target.insetBy(dx: NoteWall.paperInset, dy: NoteWall.paperInset)
+    let rect =
+      sheet.isClosing ? sheet.to ?? shrunk : grown || sheet.isGrown ? target : sheet.from ?? shrunk
+    WallPaper(paper: paper)
+      .modifier(PaperFrame(rect: rect))
+      .opacity(sheet.isClosing && sheet.to == nil ? 0 : 1)
+      .onAppear {
+        withAnimation(Style.Motion.glide.animation()) { grown = true }
+      }
   }
 }
 
@@ -362,6 +485,8 @@ struct WallCard: View {
   let tilt: Double
   let isSelected: Bool
   let isDragged: Bool
+  /// 墙的那几个不被看着的数：编辑卡开着（这张在暗层后面）时鼠标从上面过不立正、不抬起。nil = 不在墙上（截图自检）
+  var spot: WallSpot?
   @State private var isHovered = false
   @Environment(\.colorSchemeContrast) private var contrast
   @Environment(\.colorScheme) private var scheme
@@ -382,7 +507,7 @@ struct WallCard: View {
       }
       VStack(alignment: .leading, spacing: 0) {
         paper.strip.frame(height: NoteWall.stripHeight)
-        CardText(card: card, scheme: scheme)
+        CardText(card: card, scheme: scheme, contrast: contrast)
           .equatable()
           .frame(width: NoteWall.textWidth, height: card.textHeight, alignment: .topLeading)
           .mask { fade }
@@ -419,7 +544,7 @@ struct WallCard: View {
     }
     .animation(Style.Motion.glide.animation(reduced: reduceMotion), value: lifted)
     .animation(Style.Motion.snap.animation(reduced: reduceMotion), value: isSelected)
-    .background { HoverTracker { isHovered = $0 } }
+    .background { HoverTracker { isHovered = $0 && spot?.isCovered != true } }
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(
       [
@@ -461,13 +586,15 @@ struct WallCard: View {
 }
 
 /// 卡片上的字：标题（一两行，排不下的末尾「…」）和正文开头几行，NoteWallCard 量高时用的同一套排版画出来。
-/// 卡片没换（同一个 NoteWallCard、同一种外观）就不重画：悬停、选中、滑动时只动外面的变换
+/// 卡片没换（同一个 NoteWallCard、同一种外观、增强对比度没开关）就不重画：悬停、选中、滑动时只动外面的变换。
+/// 增强对比度要比：纸上的墨、标记、做完的任务是跟着它变的动态色（NotePaper），开关一换得重画
 private struct CardText: View, Equatable {
   let card: NoteWallCard
   let scheme: ColorScheme
+  let contrast: ColorSchemeContrast
 
   nonisolated static func == (a: Self, b: Self) -> Bool {
-    a.card === b.card && a.scheme == b.scheme
+    a.card === b.card && a.scheme == b.scheme && a.contrast == b.contrast
   }
 
   var body: some View {

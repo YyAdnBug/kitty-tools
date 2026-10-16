@@ -653,12 +653,15 @@ struct NotesWindowTests {
     #expect(store.archived.map(\.id) == [ids[0]] && model.selection == ids[1])
     #expect(try press("n", kVK_ANSI_N))
     #expect(store.active.count == 2 && focused == 1 && model.selection == store.active.first?.id)
-    #expect(try press("f", kVK_ANSI_F) && model.searchFocus == 1)
+    // ⌘F：⌘N 在便签墙上把新的那条放大成了编辑卡——是它正文的查找条，不去被暗层盖着的搜索框（手测反馈第 6 批）
+    #expect(try press("f", kVK_ANSI_F) && model.searchFocus == 0)
     // ⌘,：打开设置的「便签」页（手测反馈第 3 批）
     #expect(try press(",", kVK_ANSI_Comma) && settings == 1)
     // ⌘1 / ⌘2：便签墙 / 列表（⌘N 在便签墙上把新的那条放大成了编辑卡，换到列表时收回）
     #expect(model.expanded == store.active.first?.id)
     #expect(try press("2", kVK_ANSI_2) && model.layout == .list && model.expanded == nil)
+    // 列表里焦点不在正文：⌘F 去搜索框
+    #expect(try press("f", kVK_ANSI_F) && model.searchFocus == 1)
     #expect(try press("1", kVK_ANSI_1) && model.layout == .wall)
 
     // 最近删除里工具栏换成放回 / 永久删除；⌘⌫ 是永久删除，先等确认

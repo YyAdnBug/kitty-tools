@@ -1,11 +1,14 @@
 // 全部便签窗口「便签墙」的单测（2026-10-15 手测反馈；Notes/NoteWall.swift、NotesWallView.swift、NotesWindowModel）：
-// - 纯函数：按宽度排几列、瀑布流的摆法（两段、小标题、空段）、倾斜的大小和方向、方向键在卡片之间怎么走、指针下是哪张、
-//   拖动排序落到哪、落成仓库的哪个下标（固定的和没固定的混着排）、编辑卡多大、卡片上带正文的哪一段、卡片上的字
-//   （标记删掉、样式跟编辑器一样）和高；
-// - 模型：显示方式的偏好（临时域）、打开 / 收回编辑卡和选中的关系、新建 / 从那叠打开、方向键、拖动排序写回仓库、
-//   卡片的缓存；
+// - 纯函数：按宽度排几列、瀑布流的摆法（两段、小标题、空段；高边排边要）、倾斜的大小和方向、方向键在卡片之间怎么走、
+//   指针下是哪张、拖动排序落到哪（只看拖动开始时的排法，同一个指针位置怎么问都一样）、落成仓库的哪个下标（固定的和
+//   没固定的混着排）、编辑卡多大、它那块纸从哪长出来 / 缩回哪（按那一刻的排法和滚动位置）、卡片上带正文的哪一段
+//   （以代码块开头、没起标题的不少一行）、卡片上的字（标记删掉、样式跟编辑器一样）和高；
+// - 模型：显示方式的偏好（临时域）、打开 / 收回编辑卡和选中的关系、「编辑卡开着」认的是哪条（在别处没了的不算）、
+//   不给正文焦点时墙拿焦点、⌘F、新建 / 从那叠打开、方向键、拖动排序写回仓库、工具栏「任务」置灰；
+// - 卡片的缓存（仓库那一层）和墙怎么排：可见区附近的当场建、往下的先按估计的高、剩下的分批建好；
 // - 窗口接线：屏外带标题栏的窗口（不当 key、不激活），默认是便签墙；点开 / 收回编辑卡（⌘W 由窗口认）、编辑卡里打字
-//   按编号落、撤销栈各归各、切到列表再切回来选中的还在、最近删除里只读、空的墙。
+//   按编号落、撤销栈各归各、删除 / 在别处删了之后编辑卡收回、焦点回到墙上，切到列表再切回来选中的还在、最近删除里
+//   只读、空的墙；按编号找正文框找不到就是没有。
 // 全用内存库；偏好只用临时域；不发真实的鼠标键盘事件。
 
 import AppKit
@@ -171,6 +174,49 @@ struct NoteWallTests {
     #expect(NoteWall.moved(["a", "b", "c"], from: 0, to: 5) == ["a", "b", "c"])
   }
 
+  /// 拖动排序的落点只看拖动开始时那份排法：指针不动，怎么反复问都是同一个落点（原来按让过位之后的墙判断，那份墙又随
+  /// 落点变，指针不动也在两个位置之间来回跳——这组随机的墙里有 14 个）。随机的墙、指针停在随便哪张里面，每个都照
+  /// 墙上一帧帧的样子连问 8 次
+  @Test func dropTargetIsStable() {
+    var seed: UInt64 = 7
+    func next(_ bound: Int) -> Int {
+      seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+      return Int(seed >> 33) % bound
+    }
+    for _ in 0..<4000 {
+      let count = 3 + next(12)
+      let ids = (0..<count).map { "n\($0)" }
+      let heights = ids.map { _ in CGFloat(NoteWall.minHeight + CGFloat(next(209))) }
+      let base = NoteWall.layout([section(ids, heights)], width: 940)
+      let from = next(count)
+      // 指针停在随便哪张卡片里面
+      let card = base.frames[next(count)]
+      let point = CGPoint(
+        x: card.minX + CGFloat(next(Int(card.width))),
+        y: card.minY + CGFloat(next(Int(card.height))))
+      var to = from
+      var seen: [Int] = []
+      for _ in 0..<8 {
+        to = NoteWall.dropTarget(from: from, current: to, at: point, in: base)
+        seen.append(to)
+      }
+      #expect(Set(seen).count == 1, "from \(from) at \(point) heights \(heights): \(seen)")
+    }
+    // 落在同一段里另一张的里面：就是那张的位置；在别的段里、在空白处：不动
+    let layout = NoteWall.layout(
+      [
+        section(["p", "q"], [100, 100], title: "已固定"), section(["x", "y", "z"], [100, 100, 100]),
+      ],
+      width: 940)
+    let y = layout.frames[3]
+    #expect(
+      NoteWall.dropTarget(from: 2, current: 2, at: CGPoint(x: y.midX, y: y.midY), in: layout) == 3)
+    let q = layout.frames[1]
+    #expect(
+      NoteWall.dropTarget(from: 2, current: 4, at: CGPoint(x: q.midX, y: q.midY), in: layout) == 4)
+    #expect(NoteWall.dropTarget(from: 2, current: 4, at: .zero, in: layout) == 4)
+  }
+
   /// 拖完写回仓库：仓库的顺序里固定的和没固定的混着排，照它在墙上同一段里紧挨着的那张放
   @Test func dragWritesBackTheStoreOrder() throws {
     let (store, ids) = try library(["A", "B", "C", "D", "E"])
@@ -239,14 +285,14 @@ struct NoteWallTests {
     model.focusBody = { focused += 1 }
     model.open(ids[1])
     #expect(model.selection == ids[1] && model.expanded == ids[1] && focused == 1)
-    // 编辑卡里打字（按编号落），收回时落盘
+    #expect(model.isEditing && model.wallFocus == 0)
+    // 编辑卡里打字（按编号落），收回时落盘（焦点回到墙上由墙自己看着 expanded 拿）
     model.setBody("B 改了", of: ids[1])
-    let focus = model.wallFocus
     model.collapse()
-    #expect(model.expanded == nil && model.wallFocus == focus + 1)
+    #expect(model.expanded == nil && !model.isEditing)
     #expect(store.note(ids[1])?.body == "B 改了")
     model.collapse()
-    #expect(model.wallFocus == focus + 1)
+    #expect(model.expanded == nil && model.wallFocus == 0)
     // 换一条：收回
     model.open(ids[0], focus: false)
     model.selection = ids[2]
@@ -286,6 +332,109 @@ struct NoteWallTests {
     model.scope = .all
     model.open(ids[2], focus: false)
     #expect(model.expanded == nil)
+  }
+
+  /// 编辑卡那块纸从哪长出来 / 缩回哪：那张卡片现在在窗口里的位置（墙上的位置 − 滚过的 + 顶上那一条）；滚出了可见区、
+  /// 不在墙上的是 nil（中央淡掉）。收回时照收回那一刻的排法和滚动位置算：挪了、滚了都跟着
+  @Test func paperFollowsTheCardNow() throws {
+    let layout = NoteWall.layout(
+      [section(["a", "b", "c", "d"], [120, 300, 160, 140])], width: 940)
+    let (top, viewport): (CGFloat, CGFloat) = (45, 500)
+    let a = layout.frames[0]
+    // 没滚：墙上的位置往下挪顶上那一条那么高
+    #expect(
+      NoteWall.paperRect(card: a, top: top, scrollY: 0, viewport: viewport)
+        == a.offsetBy(dx: 0, dy: top))
+    // 滚了 100：跟着往上 100（露着一截也算）
+    #expect(
+      NoteWall.paperRect(card: a, top: top, scrollY: 100, viewport: viewport)
+        == a.offsetBy(dx: 0, dy: top - 100))
+    // 整张滚出了可见区（上面、下面）：没有卡片可回
+    #expect(NoteWall.paperRect(card: a, top: top, scrollY: a.maxY + 1, viewport: viewport) == nil)
+    let d = layout.frames[3]
+    #expect(NoteWall.paperRect(card: d, top: top, scrollY: 0, viewport: d.minY - 1) == nil)
+    // 不在墙上（被搜索词筛掉了、删了）
+    #expect(NoteWall.paperRect(card: nil, top: top, scrollY: 0, viewport: viewport) == nil)
+    // 开着的时候它挪了（比如固定了、排到了最前）：按新的排法算出来的是新的位置
+    let moved = NoteWall.layout(
+      [section(["d", "a", "b", "c"], [140, 120, 300, 160])], width: 940)
+    let now = try #require(moved.index(of: "d"))
+    #expect(
+      NoteWall.paperRect(card: moved.frames[now], top: top, scrollY: 0, viewport: viewport)
+        == moved.frames[now].offsetBy(dx: 0, dy: top))
+    #expect(moved.frames[now] != d)
+  }
+
+  /// 「编辑卡开着」认的是放大着的那条还是这个视图里选中的那条：它在别处被删了 / 归档了的那一下 expanded 还留着，
+  /// 不算开着——方向键、↩、⌫、⌘W 不再被它挡住；墙看着 current 收回它（这里照墙的做法调 collapse）
+  @Test func editingFollowsTheCurrentNote() throws {
+    let (store, ids) = try library(["A", "B", "C"])
+    let model = NotesWindowModel(store: store)
+    model.open(ids[1], focus: false)
+    #expect(model.isEditing)
+    // 屏幕边缘那叠里把它删了：expanded 还在，但不算开着；方向键照走
+    store.delete(ids[1])
+    #expect(model.expanded == ids[1] && !model.isEditing && model.current == nil)
+    let layout = model.wallLayout(model.wallGroups, width: 940, reach: 2000, markdown: true)
+    model.moveSelection(.down, in: layout)
+    #expect(model.selection == layout.ids[0])
+    // 墙收回它之后，在那叠里 ⌘Z 放回来：编辑卡不会自己又弹出来
+    model.collapse()
+    store.restore(ids[1])
+    #expect(model.expanded == nil && !model.isEditing)
+    // 归档同理
+    model.open(ids[0], focus: false)
+    store.setArchived(true, of: ids[0])
+    #expect(model.expanded == ids[0] && !model.isEditing)
+    // 窗口的 ⌘W：不算开着时不拿去收回，照常关窗口（返回 false）
+    let window = NSWindow(
+      contentRect: CGRect(x: -20000, y: -20000, width: 100, height: 100), styleMask: [.titled],
+      backing: .buffered, defer: false)
+    let event = try #require(
+      NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0,
+        windowNumber: window.windowNumber, context: nil, characters: "w",
+        charactersIgnoringModifiers: "w", isARepeat: false, keyCode: UInt16(kVK_ANSI_W)))
+    #expect(event.window === window && !NotesWindow.handlesKeyDown(event, in: window, model: model))
+    model.collapse()
+    model.open(ids[2], focus: false)
+    #expect(NotesWindow.handlesKeyDown(event, in: window, model: model) && model.expanded == nil)
+  }
+
+  /// 不给正文焦点的打开（从那叠打开、最近删除里只读的）让墙拿焦点；⌘F 在编辑卡开着时是正文的查找条，不去搜索框；
+  /// 「任务」只在有正文框时点得了（列表右栏、开着的编辑卡）
+  @Test func focusWhenOpening() throws {
+    let (store, ids) = try library(["A", "B"])
+    let model = NotesWindowModel(store: store)
+    var (bodies, finds) = (0, 0)
+    model.focusBody = { bodies += 1 }
+    model.withEditor = { _ in finds += 1 }
+    #expect(!model.toolbarState.canTask)
+    model.open(ids[0])
+    #expect(bodies == 1 && model.wallFocus == 0 && model.toolbarState.canTask)
+    let search = model.searchFocus
+    model.find()
+    #expect(finds == 1 && model.searchFocus == search)
+    model.collapse()
+    #expect(!model.toolbarState.canTask)
+    model.find()
+    #expect(model.searchFocus == search + 1)
+    // 从那叠打开：不给正文焦点，墙拿
+    model.reveal(ids[1])
+    #expect(bodies == 1 && model.wallFocus == 1 && model.isEditing)
+    model.collapse()
+    // 最近删除里的：只读、没有正文框——点开（要焦点）也是墙拿
+    store.delete(ids[1])
+    model.scope = .trash
+    model.open(ids[1])
+    #expect(bodies == 1 && model.wallFocus == 2 && model.isEditing)
+    #expect(!model.toolbarState.canTask)
+    model.collapse()
+    // 列表视图：选中就有正文框
+    model.scope = .all
+    model.layout = .list
+    model.open(ids[0])
+    #expect(bodies == 2 && model.wallFocus == 2 && model.toolbarState.canTask)
   }
 
   /// 显示方式的偏好：没存过是便签墙；换了就记（这台电脑自己的状态，没注册默认值）；不给偏好域时不记
@@ -335,6 +484,18 @@ struct NoteWallTests {
     #expect(NoteWall.excerpt(of: note(paragraph, title: "T")).text.count == NoteWall.excerptLength)
     // 标题取自代码块里的一行：后面的收尾围栏不带
     #expect(NoteWall.excerpt(of: note("```\nlet a = 1\n```\n后面的字")).text == "后面的字")
+    // 以代码块开头、没起标题：标题是块里的第一行，这一段从块里的第二行起——块的开头被截在这一段前面，这一段的第一行
+    // 是块里的字、不是围栏（原来被当成开头的围栏行，卡片上少一行）
+    for (body, shown) in [
+      ("```\nlet a = 1\nlet b = 2\nlet c = 3\n```\nafter", "let b = 2\nlet c = 3\nafter"),
+      ("```\nA\nB\n```\nC", "B\nC"),
+    ] {
+      let card = NoteWallCard.make(for: note(body), title: note(body).displayTitle, markdown: true)
+      #expect(card.title.string == (body.hasPrefix("```\nA") ? "A" : "let a = 1"))
+      #expect(card.body.string == shown)
+      let cut = NoteWall.excerpt(of: note(body))
+      #expect(NoteMarkdown.role(at: 0, in: cut.blocks) == .content)
+    }
     // 代码块：挪到这一段的坐标里；截在尾上的照样是块
     let fenced = NoteWall.excerpt(of: note("```swift\nlet a = 1\n```\n后面", title: "T"))
     #expect(fenced.blocks.count == 1 && fenced.blocks[0].open.location == 0)
@@ -403,19 +564,90 @@ struct NoteWallTests {
     #expect(some.height > NoteWall.minHeight && some.height < NoteWall.maxHeight && !some.overflows)
   }
 
-  /// 卡片按便签缓存：标题、正文、颜色、固定、Markdown 开关都没变就是同一个；变了重建
+  /// 卡片按便签缓存在仓库那一层：标题、正文、颜色、固定、Markdown 开关都没变就是同一张；哪一样变了都重建（不建时
+  /// 问不到过时的）；窗口的模型换一个（关掉再开）还是那张；永久删除的跟着丢
   @Test func cardsAreCachedPerNote() throws {
     let (store, ids) = try library(["一", "二"])
+    func note() throws -> Note { try #require(store.note(ids[0])) }
+    #expect(store.cachedWallCard(of: try note(), markdown: true) == nil)
+    let card = store.wallCard(of: try note(), markdown: true)
+    #expect(store.wallCard(of: try note(), markdown: true) === card)
+    #expect(store.cachedWallCard(of: try note(), markdown: true) === card)
+    // Markdown 开关：换了就不是这张
+    #expect(store.cachedWallCard(of: try note(), markdown: false) == nil)
+    #expect(store.wallCard(of: try note(), markdown: false) !== card)
+    var last = store.wallCard(of: try note(), markdown: true)
+    for change in [
+      { store.setBody("一改了", of: ids[0]) }, { store.setTitle("标题", of: ids[0]) },
+      { store.setColor(3, of: ids[0]) }, { store.setPinned(true, of: ids[0]) },
+    ] {
+      change()
+      #expect(store.cachedWallCard(of: try note(), markdown: true) == nil)
+      let rebuilt = store.wallCard(of: try note(), markdown: true)
+      #expect(rebuilt !== last)
+      last = rebuilt
+    }
+    #expect(last.title.string == "标题")
+    // 归档、挪顺序不动卡片上的字：还是那张
+    store.setArchived(true, of: ids[0])
+    store.setArchived(false, of: ids[0])
+    store.move(ids[0], to: 1)
+    #expect(store.cachedWallCard(of: try note(), markdown: true) === last)
+    // 全部便签窗口的模型换了一个（关掉再开）：仓库里的还在
+    _ = NotesWindowModel(store: store)
+    #expect(store.cachedWallCard(of: try note(), markdown: true) === last)
+    // 永久删除：跟着丢（同 summary）
+    let other = try #require(store.note(ids[1]))
+    _ = store.wallCard(of: other, markdown: true)
+    store.delete(ids[1])
+    store.erase(ids[1])
+    #expect(store.cachedWallCard(of: other, markdown: true) == nil)
+  }
+
+  /// 墙怎么排（第一次进墙、开关 Markdown 不再一口气全建）：顶在 reach 以内的当场建、位置是准的，往下的先按估计的高排；
+  /// 剩下的在后面几轮分批建好（cardBatches 变），之后按真的高排、和一口气全建出来的一样
+  @Test func wallBuildsVisibleCardsFirst() async throws {
+    let bodies = (0..<40).map { index in
+      (0..<(index % 6 + 1)).map { "第 \(index) 条的第 \($0) 行" }.joined(separator: "\n")
+    }
+    let (store, ids) = try library(bodies)
     let model = NotesWindowModel(store: store)
-    let note = try #require(store.note(ids[0]))
-    let card = model.card(note, markdown: true)
-    #expect(model.card(note, markdown: true) === card)
-    #expect(model.card(note, markdown: false) !== card)
-    store.setBody("一改了", of: ids[0])
-    let changed = model.card(try #require(store.note(ids[0])), markdown: true)
-    #expect(changed !== card && changed.title.string == "一改了")
-    store.setPinned(true, of: ids[0])
-    #expect(model.card(try #require(store.note(ids[0])), markdown: true) !== changed)
+    let reach: CGFloat = 300
+    let layout = model.wallLayout(model.wallGroups, width: 940, reach: reach, markdown: true)
+    #expect(layout.ids == ids)
+    let built = ids.filter { id in
+      store.note(id).flatMap { store.cachedWallCard(of: $0, markdown: true) } != nil
+    }
+    // 建了的是开头连着的一段，正好是顶在 reach 以内的那些
+    #expect(!built.isEmpty && built.count < ids.count)
+    #expect(built == Array(ids.prefix(built.count)))
+    #expect(layout.frames.prefix(built.count).allSatisfy { $0.minY <= reach })
+    #expect(layout.frames.dropFirst(built.count).allSatisfy { $0.minY > reach })
+    #expect(
+      layout.frames.dropFirst(built.count).allSatisfy { $0.height == NoteWall.estimatedHeight })
+    // 剩下的分批建好
+    for _ in 0..<500 {
+      if ids.allSatisfy({ id in
+        store.note(id).flatMap { store.cachedWallCard(of: $0, markdown: true) } != nil
+      }) {
+        break
+      }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    #expect(model.cardBatches > 0)
+    let full = model.wallLayout(model.wallGroups, width: 940, reach: reach, markdown: true)
+    let heights = store.active.map { store.wallCard(of: $0, markdown: true).height }
+    #expect(full == NoteWall.layout([section(ids, heights)], width: 940))
+    // 开在前面的那段位置没变过（可见区里的不挪）
+    #expect(Array(full.frames.prefix(built.count)) == Array(layout.frames.prefix(built.count)))
+    // 开关 Markdown：又是先建可见区附近的、其余分批
+    let batches = model.cardBatches
+    _ = model.wallLayout(model.wallGroups, width: 940, reach: reach, markdown: false)
+    for _ in 0..<500 where model.cardBatches == batches {
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    #expect(model.cardBatches > batches)
+    model.closed()
   }
 
   // MARK: 窗口
@@ -507,6 +739,77 @@ struct NoteWallTests {
     hosting.rootView = AnyView(NotesWindowView(model: empty).defaultAppStorage(defaults))
     settle()
     #expect(empty.layout == .wall && empty.notes.isEmpty && editor() == nil)
+  }
+}
+
+extension NoteWallTests {
+  /// 屏外带标题栏的窗口（同 wallInTheWindow）
+  private func wallWindow(_ model: NotesWindowModel, defaults: UserDefaults) -> NSWindow {
+    let hosting = NSHostingController(
+      rootView: AnyView(NotesWindowView(model: model).defaultAppStorage(defaults)))
+    hosting.sceneBridgingOptions = [.title, .toolbars]
+    let window = WallWindow(contentViewController: hosting)
+    window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+    window.toolbarStyle = .unified
+    window.setContentSize(NSSize(width: 940, height: 580))
+    window.setFrameOrigin(NSPoint(x: -20000, y: -20000))
+    window.orderFront(nil)
+    return window
+  }
+
+  /// 编辑卡收回之后焦点回到墙上（不管从哪条路收回：工具栏 / 快捷键删除、归档，在别处删了）——方向键、↩、⌫ 接着用；
+  /// 从那叠打开（不给正文焦点）时焦点也在墙上，不留在被暗层盖住的搜索框里；按编号找正文框找不到就是没有
+  @Test func collapsingReturnsFocusToTheWall() throws {
+    let (store, ids) = try library(["甲", "乙", "丙", "丁"])
+    let suite = "kitty-test-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let model = NotesWindowModel(store: store, defaults: defaults)
+    let window = wallWindow(model, defaults: defaults)
+    defer { window.orderOut(nil) }
+    #expect(window.screen == nil && !window.isKeyWindow)
+    let settle = { for _ in 0..<8 { RunLoop.main.run(until: .now.addingTimeInterval(0.1)) } }
+    func editor(_ id: String) -> NoteTextView? {
+      NotesWindow.editor(in: window.contentView, for: id)
+    }
+    /// 焦点在墙上：第一响应者是 SwiftUI 的宿主那边的视图，不是输入框（正文、标题、搜索框的字段编辑器），也不是没人拿着
+    func wallHasFocus() -> Bool {
+      guard let view = window.firstResponder as? NSView, !(view is NSText) else { return false }
+      return view.isDescendant(of: try! #require(window.contentView))
+    }
+    settle()
+
+    let removals: [(name: String, run: (String) -> Void)] = [
+      ("删除", { model.delete($0) }), ("归档", { model.toggleArchived($0) }),
+      ("在别处删了", { store.delete($0) }),
+    ]
+    for (id, removal) in zip(ids, removals) {
+      model.open(id, focus: false)
+      settle()
+      let body = try #require(editor(id))
+      #expect(window.makeFirstResponder(body))
+      removal.run(id)
+      settle()
+      #expect(model.expanded == nil, "\(removal.name)")
+      #expect(editor(id) == nil, "\(removal.name)")
+      print(
+        "notes-wall first responder after \(removal.name):",
+        window.firstResponder.map { String(describing: type(of: $0)) } ?? "nil")
+      #expect(wallHasFocus(), "\(removal.name)")
+    }
+    // 找正文框：给了编号就只要那一条的
+    model.open(ids[3], focus: false)
+    settle()
+    #expect(editor(ids[3]) != nil && NotesWindow.editor(in: window.contentView, for: ids[0]) == nil)
+    #expect(NotesWindow.editor(in: window.contentView) != nil)
+    // 从那叠打开：焦点在墙上（先把焦点放进搜索框）
+    model.collapse()
+    model.focusSearch()
+    settle()
+    #expect(window.firstResponder is NSText)
+    model.reveal(ids[3])
+    settle()
+    #expect(model.isEditing && wallHasFocus())
   }
 }
 

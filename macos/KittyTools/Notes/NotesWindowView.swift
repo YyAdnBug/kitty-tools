@@ -36,7 +36,7 @@ struct NotesWindowView: View {
         } empty: {
           empty.padding(20)
         } footer: {
-          if model.scope == .trash, !model.list(.trash).isEmpty { trashBar }
+          if model.scope == .trash, !model.list(.trash).isEmpty { trashBar(inset: NoteWall.margin) }
         }
         .navigationTitle(HotKeyAction.noteAll.title)
       }
@@ -77,7 +77,7 @@ struct NotesWindowView: View {
         .padding(.bottom, 8)
       searchField.padding(.horizontal, 10)
       list
-      if model.scope == .trash, !model.list(.trash).isEmpty { trashBar }
+      if model.scope == .trash, !model.list(.trash).isEmpty { trashBar(inset: 10) }
     }
   }
 
@@ -107,8 +107,9 @@ struct NotesWindowView: View {
     }
   }
 
-  /// 最近删除的列表下面：留多久 + 清空（危险色的系统按钮，mac-whisker §3「危险色」）
-  private var trashBar: some View {
+  /// 最近删除的列表下面：留多久 + 清空（危险色的系统按钮，mac-whisker §3「危险色」）。inset：左右边距——列表左栏 10、
+  /// 便签墙 20（和墙的边线对齐）
+  private func trashBar(inset: CGFloat) -> some View {
     VStack(spacing: 0) {
       Hairline()
       HStack(spacing: 8) {
@@ -120,7 +121,7 @@ struct NotesWindowView: View {
         DangerButton(Model.emptyTrashTitle) { model.isEmptyingTrash = true }
           .controlSize(.small)
       }
-      .padding(.horizontal, 10)
+      .padding(.horizontal, inset)
       .frame(height: 36)
     }
   }
@@ -234,7 +235,9 @@ struct NotesWindowView: View {
       Button("新建便签") { model.create() }.keyboardShortcut("n")
       // ⌘F：焦点在正文里是便签内查找，否则去搜索框（NotesWindowModel.find）
       Button("查找") { model.find() }.keyboardShortcut("f")
+      // 墙上没开编辑卡时没有「光标所在的那一行」：同工具栏的「任务」置灰，⌘T 不接（系统响一声）
       Button(Model.taskTitle) { model.toggleTask() }.keyboardShortcut("t")
+        .disabled(!model.toolbarState.canTask)
       // ⇧⌘Z 重做不挂在这里：同一个字母再挂一个带 ⇧ 的，⌘Z 会被它抢走（由窗口的按键监听认，NotesWindow.handlesKeyDown）
       Button("撤销") { model.undo() }.keyboardShortcut("z")
       Button("归档") {
@@ -320,7 +323,7 @@ private struct NotesToolbar: View, Equatable {
           .disabled(!state.hasNote)
           .help("\(state.archiveTitle)（⇧⌘A）")
           Button(Model.taskTitle, systemImage: Model.taskSymbol) { model.toggleTask() }
-            .disabled(!state.hasNote)
+            .disabled(!state.canTask)
             .help(Model.taskHelp)
           // 系统菜单，不用 SwiftUI 的 Menu：放进工具栏的 Menu 不画每一项前面的纸色圆点（2026-10-13 真机）
           Button(Model.colorTitle, systemImage: "paintpalette") {

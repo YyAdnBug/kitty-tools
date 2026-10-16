@@ -2,7 +2,8 @@
 // （先收起浮层 → 切成 .regular 并激活；关掉时设置窗也没开着才切回 .accessory，NSApplication.leaveDockIfNoWindows）。
 // 这里是窗口和它的状态（NotesWindowModel）：三个视图（全部 / 归档 / 最近删除）和搜索、选中项跟着列表怎么变、
 // 各种操作、删除的撤销栈（⌘Z 一条条放回，窗口关掉时清空）、拖动排序、底下那行小字；两种显示方式（便签墙 / 列表，
-// 默认便签墙，记住上次选的）和便签墙上放大着的那张（编辑卡）、卡片上的字的缓存、方向键、拖动排序落到仓库的哪里。
+// 默认便签墙，记住上次选的）和便签墙上放大着的那张（编辑卡）、墙怎么排（卡片的高：可见区附近的当场建、其余分批在后面
+// 几轮建，卡片缓存在仓库那一层 NoteStore.wallCard）、方向键、拖动排序落到仓库的哪里。
 // 界面在 NotesWindowView.swift（列表）和 NotesWallView.swift（便签墙）。
 // 落盘：打字走仓库的 setBody / setTitle（它自己停手再落）；换一条便签、收回编辑卡、窗口失去 key、窗口关闭时 flush。
 
@@ -56,9 +57,11 @@ import SwiftUI
       if layout == .list { collapse() }
     }
   }
-  /// 便签墙上放大成编辑卡的那条（编号）；nil = 没有。开着时它就是选中的那条：换了选中的就收回
+  /// 便签墙上放大成编辑卡的那条（编号）；nil = 没有。开着时它就是选中的那条：换了选中的就收回。
+  /// 它在别处被删了 / 归档了的那一下这里还留着（墙看着 current 的变化去收回）：判断「编辑卡开着没有」用 isEditing
   private(set) var expanded: String?
-  /// 收回编辑卡之后：数变一次，便签墙拿一次焦点（方向键接着在卡片之间走）
+  /// 数变一次，便签墙拿一次焦点：打开编辑卡却不给正文焦点时（从那叠「在全部便签里打开」、最近删除里只读的）——墙的
+  /// Esc 能收回它，焦点也不会留在被暗层盖住的搜索框里（收回时墙自己拿：NotesWall 看着 expanded）
   private(set) var wallFocus = 0
   var scope = Scope.all {
     didSet { if scope != oldValue { reconcile() } }
@@ -101,12 +104,11 @@ import SwiftUI
   @ObservationIgnored private(set) var textUndo = UndoManager()
   /// 记显示方式的偏好域（nil = 不记：单测、截图自检）
   @ObservationIgnored private let defaults: UserDefaults?
-  /// 便签墙卡片上的字（NoteWallCard），按便签缓存：标题、正文、颜色、固定、Markdown 开关都没变就用上次建的
-  @ObservationIgnored private var cards:
-    [String: (
-      title: String, body: String, color: Int, pinned: Bool, markdown: Bool, card: NoteWallCard
-    )] =
-      [:]
+  /// 便签墙上还没建好的卡片在后面几轮分批建（buildCards）：都建好了数变一次，墙按真的高重排（中间不重排：
+  /// 可见区附近的排的时候当场就建了，往下的挪一挪看不见，每批都重排一次墙比建卡片还贵）
+  private(set) var cardBatches = 0
+  @ObservationIgnored private var cardTimer: Timer?
+  @ObservationIgnored private var cardMarkdown: Bool?
 
   init(store: NoteStore, defaults: UserDefaults? = nil) {
     self.store = store
@@ -239,6 +241,9 @@ import SwiftUI
     var layout = Layout.wall
     var isTrash = false
     var hasNote = false
+    /// 「任务」（⌘T）点不点得了：它动的是正文里光标所在的那一行，得有正文框——列表右栏、便签墙上开着的编辑卡；
+    /// 墙上没开编辑卡时置灰（没有「哪一行」可言）
+    var canTask = false
     var pinTitle = ""
     var pinSymbol = ""
     var archiveTitle = ""
@@ -250,7 +255,9 @@ import SwiftUI
   var toolbarState: ToolbarState {
     let note = current
     return ToolbarState(
-      layout: layout, isTrash: scope == .trash, hasNote: note != nil, pinTitle: Self.pinTitle(note),
+      layout: layout, isTrash: scope == .trash, hasNote: note != nil,
+      canTask: note.map { $0.deletedAt == nil } == true && (layout == .list || isEditing),
+      pinTitle: Self.pinTitle(note),
       pinSymbol: note?.isPinned == true ? "pin.slash" : "pin",
       archiveTitle: Self.archiveTitle(note),
       canFloat: note.map { !$0.isArchived } ?? false, floatTitle: floatTitle(note),
@@ -282,19 +289,29 @@ import SwiftUI
 
   // MARK: 便签墙
 
-  /// 选中这条；便签墙上把它放大成编辑卡、焦点进正文（focus；最近删除里的只读，没有正文框）。列表视图里就是选中
+  /// 选中这条；便签墙上把它放大成编辑卡、焦点进正文（focus）。列表视图里就是选中。
+  /// 便签墙上不给正文焦点时（focus 是 false：从那叠打开的；最近删除里的只读、没有正文框）让墙拿焦点：焦点不会留在被暗层
+  /// 盖住的搜索框里（Esc 成了清空搜索、打的字进了搜索词），墙的 Esc 能收回编辑卡
   func open(_ id: String, focus: Bool = true) {
     selection = id
     if layout == .wall, current?.id == id { expanded = id }
-    if focus { focusBody() }
+    if focus, current?.deletedAt == nil {
+      focusBody()
+    } else if layout == .wall {
+      wallFocus += 1
+    }
   }
 
-  /// 收回编辑卡（Esc、点暗处、⌘W；换到列表时）：攒着的改动先落下去，焦点回到便签墙
+  /// 编辑卡开着：放大着的那条还是这个视图里选中的那条（它在别处被删了、归档了的那一下 expanded 还留着，不算）。
+  /// 方向键、↩、空格、⌫ 在墙上让着它，⌘W 先收回它（NotesWindow.handlesKeyDown）
+  var isEditing: Bool { expanded != nil && current?.id == expanded }
+
+  /// 收回编辑卡（Esc、点暗处、⌘W；换到列表时；开着的那条在别处没了时由墙调）：攒着的改动先落下去。焦点回到便签墙
+  /// 由墙自己看着 expanded 拿（不管从哪条路收回的：删除、归档、放回也是）
   func collapse() {
     guard expanded != nil else { return }
     store.flush()
     expanded = nil
-    wallFocus += 1
   }
 
   /// 便签墙上分几段：固定的、其他，段里照列表的顺序（最近删除里不分：固定在那里没有意义）
@@ -304,23 +321,74 @@ import SwiftUI
     return [("已固定", notes.filter(\.isPinned)), ("其他", notes.filter { !$0.isPinned })]
   }
 
-  /// 一条便签在便签墙上的卡片（字和高）。按便签缓存：同 NoteStore.summary，比的是标题、正文本身——没变时是同一块
-  /// 存储、当场返回
-  func card(_ note: Note, markdown: Bool) -> NoteWallCard {
-    if let cached = cards[note.id], cached.title == note.title, cached.body == note.body,
-      cached.color == note.color, cached.pinned == note.isPinned, cached.markdown == markdown
-    {
-      return cached.card
+  /// 便签墙怎么排（groups：分段和段里的便签；width：墙多宽；reach：可见区附近到哪——墙的坐标，往下多少都算；
+  /// markdown：设置里的开关）。卡片的高：建好了的用量好的（NoteStore.wallCard，按便签缓存）；没建好的，顶落在 reach
+  /// 以内的当场建（它们要画出来，位置得准），往下的先按估计的高排、交给 buildCards 在后面几轮分批建好——第一次进墙、
+  /// 开关 Markdown 时不再一口气把几百张都建出来（评审量的：300 条约 0.45 s、1000 条约 1.5 s，卡在主线程上）。
+  /// 卡片的顶按排的顺序只增不减，所以当场建的是开头连着的一段，可见区里的位置都是准的；往下的都建好了一起挪一次（看不见）
+  func wallLayout(
+    _ groups: [(title: String?, notes: [Note])], width: CGFloat, reach: CGFloat, markdown: Bool
+  ) -> NoteWall.Layout {
+    _ = cardBatches  // 墙看着它：分批的都建好了重排一次
+    let notes = groups.flatMap(\.notes)
+    var missing = false
+    let layout = NoteWall.layout(groups.map { ($0.title, $0.notes.map(\.id)) }, width: width) {
+      index, top in
+      let note = notes[index]
+      if let card = store.cachedWallCard(of: note, markdown: markdown) { return card.height }
+      if top <= reach { return store.wallCard(of: note, markdown: markdown).height }
+      missing = true
+      return NoteWall.estimatedHeight
     }
-    let card = NoteWallCard.make(
-      for: note, title: store.summary(of: note).title, markdown: markdown)
-    cards[note.id] = (note.title, note.body, note.color, note.isPinned, markdown, card)
-    return card
+    if missing { buildCards(markdown: markdown) }
+    return layout
+  }
+
+  /// 分批建卡片时一批最多建多久：之间让主线程转一轮（画一帧、接按键、滚动）
+  static let cardSlice: Duration = .milliseconds(8)
+
+  /// 便签墙上还有没建好的卡片：在后面几轮分批建好（按墙上的顺序，一批最多 cardSlice），都建好了 cardBatches 变一次。
+  /// 已经在建同一种（Markdown 开关一样）的就不另起；开关换了，换成按新的建。
+  /// 一批一个跑环上的定时器（默认模式：拖着滚动条、拉窗口的时候不建，停手再接着建——要画的那些排的时候当场就建了）
+  func buildCards(markdown: Bool) {
+    guard cardTimer == nil || cardMarkdown != markdown else { return }
+    cardTimer?.invalidate()
+    cardMarkdown = markdown
+    scheduleCardBatch()
+  }
+
+  private func scheduleCardBatch() {
+    cardTimer = Timer.scheduledTimer(withTimeInterval: 0.001, repeats: false) { [weak self] _ in
+      MainActor.assumeIsolated { self?.cardBatchFired() }
+    }
+  }
+
+  private func cardBatchFired() {
+    guard let markdown = cardMarkdown else { return }
+    if buildCardBatch(markdown: markdown) {
+      scheduleCardBatch()
+    } else {
+      cardTimer = nil
+      cardMarkdown = nil
+      cardBatches &+= 1
+    }
+  }
+
+  /// 按墙上现在的顺序建一批还没建好的卡片（最多 cardSlice 那么久）；返回还有没有没建的
+  private func buildCardBatch(markdown: Bool) -> Bool {
+    let clock = ContinuousClock()
+    let start = clock.now
+    for note in wallGroups.flatMap(\.notes)
+    where store.cachedWallCard(of: note, markdown: markdown) == nil {
+      guard clock.now - start < Self.cardSlice else { return true }
+      _ = store.wallCard(of: note, markdown: markdown)
+    }
+    return false
   }
 
   /// 方向键：在便签墙上从选中的那张往 direction 走（NoteWall.neighbor）；没有选中的选第一张。编辑卡开着时不走
   func moveSelection(_ direction: NoteWall.Direction, in layout: NoteWall.Layout) {
-    guard expanded == nil, !layout.ids.isEmpty else { return }
+    guard !isEditing, !layout.ids.isEmpty else { return }
     guard let index = selection.flatMap(layout.index(of:)) else {
       selection = layout.ids[0]
       return
@@ -442,8 +510,9 @@ import SwiftUI
     NotePaper.colorItems(current: note.color) { [weak self] in self?.setColor($0, of: note.id) }
   }
 
-  /// 一行的右键菜单：和工具栏同名的那几项（不写键位，HIG）；最近删除里的是放回 / 永久删除 / 清空
-  func rowItems(_ note: Note) -> [ActionMenu.Item] {
+  /// 一行的右键菜单：和工具栏同名的那几项（不写键位，HIG）；最近删除里的是放回 / 永久删除 / 清空。
+  /// colors 是 false 时不带「颜色」那一级（便签墙卡片的旁白「更多动作」：每次重画都要，8 个纸色圆点的图不白建）
+  func rowItems(_ note: Note, colors: Bool = true) -> [ActionMenu.Item] {
     let id = note.id
     guard note.deletedAt == nil else {
       return [
@@ -459,8 +528,8 @@ import SwiftUI
     var items = [
       ActionMenu.Item(title: Self.pinTitle(note)) { [weak self] in self?.togglePinned(id) },
       ActionMenu.Item(title: Self.archiveTitle(note)) { [weak self] in self?.toggleArchived(id) },
-      ActionMenu.Item(title: Self.colorTitle, submenu: colorItems(note)),
     ]
+    if colors { items.append(ActionMenu.Item(title: Self.colorTitle, submenu: colorItems(note))) }
     // 归档里的不能浮着
     if !note.isArchived {
       items.append(
@@ -522,9 +591,14 @@ import SwiftUI
 
   func focusSearch() { searchFocus += 1 }
 
-  /// ⌘F：焦点在正文里（或它的查找条里）是便签内查找（系统的查找条），否则去左边的搜索框
+  /// ⌘F：焦点在正文里（或它的查找条里）是便签内查找（系统的查找条），否则去搜索框。便签墙上开着编辑卡时搜索框被
+  /// 暗层盖着：是编辑卡正文的查找条（最近删除里只读的没有正文，不做）
   func find() {
-    if isEditingBody() { withEditor { $0.showFindBar() } } else { focusSearch() }
+    guard isEditing || isEditingBody() else { return focusSearch() }
+    withEditor { editor in
+      editor.window?.makeFirstResponder(editor)
+      editor.showFindBar()
+    }
   }
 
   /// ⌘T、工具栏的「任务」：正文里光标所在行（有选区时是选区碰到的每一行）在普通行和任务之间切换，焦点进正文
@@ -538,11 +612,14 @@ import SwiftUI
   /// 窗口失去 key：攒着的改动落下去
   func resignedKey() { store.flush() }
 
-  /// 窗口关了：落盘，撤销栈清空，编辑卡收回（下次打开是墙）
+  /// 窗口关了：落盘，撤销栈清空，编辑卡收回（下次打开是墙），分批建卡片的停下（建好的留在仓库里，下次打开接着建）
   func closed() {
     store.flush()
     undoStack = []
     expanded = nil
+    cardTimer?.invalidate()
+    cardTimer = nil
+    cardMarkdown = nil
   }
 
   // MARK: 文字（纯函数）
@@ -600,12 +677,16 @@ final class NotesWindow: NSObject, NSWindowDelegate {
     }
     model.undoFocusedText = { [unowned self] in window.undoFocusedText(redo: $0) }
     model.isEditingBody = { [unowned self] in
-      Self.isInBody(
-        window.firstResponder, editor: Self.editor(in: window.contentView, for: model.selection))
+      Self.isInBody(window.firstResponder, editor: selectedEditor())
     }
     model.withEditor = { [unowned self] body in
-      if let editor = Self.editor(in: window.contentView, for: model.selection) { body(editor) }
+      if let editor = selectedEditor() { body(editor) }
     }
+  }
+
+  /// 选中的那条的正文框（没选中、它没有正文框——最近删除里只读的、墙上没开编辑卡——是 nil）
+  private func selectedEditor() -> NoteTextView? {
+    model.selection.flatMap { Self.editor(in: window.contentView, for: $0) }
   }
 
   /// 显示并激活（调用方先把浮层收起，同 SettingsWindow.show）
@@ -620,13 +701,12 @@ final class NotesWindow: NSObject, NSWindowDelegate {
   /// 选中的那条的正文框拿焦点
   @objc private func focusBodyNow() {
     window.contentView?.layoutSubtreeIfNeeded()
-    if let editor = Self.editor(in: window.contentView, for: model.selection) {
-      window.makeFirstResponder(editor)
-    }
+    if let editor = selectedEditor() { window.makeFirstResponder(editor) }
   }
 
-  /// 视图树里的正文框（便签专用的编辑器）。平时只有一个；便签墙上一张编辑卡正收回、另一张正放大时有两个，
-  /// 给了 id 就先找这条便签的（正文框的 identifier 是便签的编号），找不到再随便给一个
+  /// 视图树里的正文框（便签专用的编辑器）。平时只有一个；便签墙上一张编辑卡正收回、另一张正放大时有两个。
+  /// 给了 id 就只要这条便签的（正文框的 identifier 是便签的编号），没有就是 nil——不拿别的那条凑数（⌘T、查找、拿焦点
+  /// 落到正淡出的那张上就是改错了便签）；不给 id 是随便一个
   static func editor(in view: NSView?, for id: String? = nil) -> NoteTextView? {
     var found: [NoteTextView] = []
     func collect(_ view: NSView) {
@@ -634,7 +714,8 @@ final class NotesWindow: NSObject, NSWindowDelegate {
       view.subviews.forEach(collect)
     }
     view.map(collect)
-    return found.first { id != nil && $0.identifier?.rawValue == id } ?? found.first
+    guard let id else { return found.first }
+    return found.first { $0.identifier?.rawValue == id }
   }
 
   /// 第一响应者是不是在正文里：正文框自己，或者它的滚动区里的东西（查找条的搜索框——正在编辑的是字段编辑器，
@@ -655,9 +736,9 @@ final class NotesWindow: NSObject, NSWindowDelegate {
   {
     guard event.window === window else { return false }
     let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
-    // ⌘W：便签墙上开着编辑卡时先收回它，不关窗口
+    // ⌘W：便签墙上开着编辑卡时先收回它，不关窗口（开着的那条在别处没了的那一下不算开着：墙会收回它）
     if flags == .command, event.charactersIgnoringModifiers?.lowercased() == "w",
-      model.expanded != nil
+      model.isEditing
     {
       model.collapse()
       return true

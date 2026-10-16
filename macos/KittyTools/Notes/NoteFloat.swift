@@ -3,9 +3,10 @@
 // 它的状态一变，这里按来的是哪件事和前后两个状态算出该做哪几件（effects，纯函数、有单测）再去做。
 // - **拖出来时两块面板的交接**：手势是在那叠的面板里的视图上开始的，过了阈值，NoteDeck 把这条便签在那叠里的位置和
 //   正文里的选区交过来（detach），这里当场建一块面板、摆在同一个地方（带标签那一侧的上角不动，纸不跳）、盖在那叠
-//   上面，之后每一下跟着鼠标摆（drag）；那叠里的那一份留着不拆、只是看不见，直到松手（drop）。松手才定层级、夹进
+//   上面，之后每一下跟着鼠标摆（drag）；那叠里的那一份留着不拆、只是看不见，直到松手（drop）。松手才夹进
 //   可见区、当 key、把焦点和光标放回正文——接着就能打字。
-// - **层级跟着固定走**（applyLevel）：固定着的在别的窗口上面，没固定的是普通窗口；拖着的那一阵一律在上面。
+// - **一律浮动层级**（NoteFloatPanel，手测反馈第 6 批）：「浮在屏幕上」就一直在别的 App 的窗口上面；固定只管重启后
+//   回不回到原处。
 // - **不激活、key**：永远不调 NSApp.activate。落下、从菜单浮出来、点了那叠里它的标签才 makeKey；重启后恢复的不当 key。
 //   **收回 / 关掉要当场把键盘还给原来的 App**：面板自己立刻 orderOut，原位留一张图当替身去做退场的动画（leave；
 //   同 OverlayPanel.dismiss 的路数——真窗口自己淡的话，淡的那一会儿它还当着 key，人回去打的字被它吞掉）。
@@ -38,7 +39,7 @@ final class NoteFloat: NSObject, NSWindowDelegate {
     static let dropOld = Effects(rawValue: 1 << 2)
     /// 建面板、露出来（不当 key）
     static let show = Effects(rawValue: 1 << 3)
-    /// 落下：层级跟着固定走，当 key、焦点进正文（拖出来的还要夹进可见区）
+    /// 落下：当 key、焦点进正文（拖出来的还要夹进可见区）
     static let land = Effects(rawValue: 1 << 4)
   }
 
@@ -264,10 +265,9 @@ final class NoteFloat: NSObject, NSWindowDelegate {
     }
   }
 
-  /// 仓库里的便签变了：浮着的那条没了就关；固定变了，层级和「记不记位置」跟着变
+  /// 仓库里的便签变了：浮着的那条没了就关；固定变了，「记不记位置」跟着变
   func storeChanged() {
     model.reconcile()
-    applyLevel()
     persist()
   }
 
@@ -316,7 +316,6 @@ final class NoteFloat: NSObject, NSWindowDelegate {
     self.panel = panel
     rest = panel.frame
     isCovered = false
-    applyLevel()
     // 先排一遍：编辑区这时建出来（它挂进窗口的那一刻自己拿第一响应者），纸的形状也有了（阴影按它算）
     panel.contentView?.layoutSubtreeIfNeeded()
     if eases { panel.alphaValue = 0 }
@@ -335,10 +334,9 @@ final class NoteFloat: NSObject, NSWindowDelegate {
 
   @objc private func refreshShadow() { panel?.invalidateShadow() }
 
-  /// 落下：层级跟着固定走；拖出来的夹进松手那块屏的可见区；当 key、焦点进正文（重启后恢复的不当 key）
+  /// 落下：拖出来的夹进松手那块屏的可见区；当 key、焦点进正文（重启后恢复的不当 key）
   private func land(settles: Bool) {
     guard panel != nil else { return }
-    applyLevel()
     if settles { settle(at: dropPoint) }
     dropPoint = nil
     if Self.landsWithKey(landsWithKey, windows: NSApp.windows) { focusBody() } else { focusNow() }
@@ -461,14 +459,6 @@ final class NoteFloat: NSObject, NSWindowDelegate {
     CATransaction.commit()
   }
 
-  /// 层级跟着固定走（拖着的那一阵一律在上面）
-  private func applyLevel() {
-    guard let panel else { return }
-    let level = NoteFloatLayout.level(
-      pinned: model.current?.isPinned ?? false, isDragging: model.state.isDragging)
-    if panel.level != level { panel.level = level }
-  }
-
   /// 记 / 不记固定着的那一张在哪（NoteFloatLayout.place 定；和记着的一样就不写）
   private func persist() {
     let place = NoteFloatLayout.place(
@@ -499,7 +489,7 @@ final class NoteFloat: NSObject, NSWindowDelegate {
 
   // MARK: 跟着鼠标走
 
-  /// 按着把手开始挪：到最前面（没固定的可能被别的窗口盖着一部分），记下鼠标离左下角多远。还在跑的帧动画先停在原地
+  /// 按着把手开始挪：到最前面（同一层级里那叠扇出的那一列、别的 App 的浮动窗口可能盖着一部分），记下鼠标离左下角多远。还在跑的帧动画先停在原地
   private func beginMove(from start: CGPoint) {
     guard let panel else { return }
     setFrame(panel.frame)

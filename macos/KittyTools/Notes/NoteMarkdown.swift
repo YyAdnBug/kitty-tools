@@ -335,10 +335,12 @@ nonisolated enum NoteMarkdown {
       NSRange(location: open.location, length: NSMaxRange(close) - open.location)
     }
 
-    /// 行首在 lineStart 的那一行在这一块里是什么（不在这一块里给 nil）
+    /// 行首在 lineStart 的那一行在这一块里是什么（不在这一块里给 nil）。开头的围栏是空的（长度 0：便签墙的卡片只带
+    /// 正文的一段，块的开头被截在这一段前面，NoteWall.excerpt）时没有开头那一行，这一段的第一行是块里的字
     func role(at lineStart: Int) -> Role? {
       guard NSLocationInRange(lineStart, range) else { return nil }
-      return lineStart == open.location ? .open : lineStart == close.location ? .close : .content
+      if lineStart == open.location, open.length > 0 { return .open }
+      return lineStart == close.location ? .close : .content
     }
   }
 

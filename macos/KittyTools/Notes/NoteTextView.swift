@@ -4,6 +4,10 @@
 //   靠 NSLayoutManager 把字形藏起来，普通 NSTextView 拿到的是 TextKit 2，那一招不灵。只拿着文本视图就够：
 //   实测（macOS 15.7，独立小程序）存储跟着视图活、跟着视图放，不用另存一份，也就没有「把属性置空」那种事。
 // - 纯文本。样式（NoteStyles）是显示时加的属性：只改属性、不改字、不进撤销栈、不动选区；每次编辑只重排受影响的行。
+//   **整段换字（新建的正文框第一次拿到字、别处改了这条）只当场排开头一屏**（eagerStyleLength 个字，扩到整行），其余的在
+//   后面几轮一段段补（styleRest；手测反馈第 6 批：「切到文字多的便签时过渡还是会卡一下」，50 KB 的正文整篇排一遍样式
+//   -O 约 24 ms，是切换那一下里最大的一块）。补的那一段守着同样的红线（组字期间、有没处理完的编辑时不动），排法就是
+//   普通的重排——和整篇排一遍逐字一样。没排过的字认得出来：排过的每个字都记着这一行的主字体（lineFontKey），没排过的没有。
 //   **输入法组字期间不重排、不往外写**（settle）：那时动属性会让刚打的字看不见（Noty 踩过），组字里的拼音字母也不该
 //   进仓库；确认之后一次补上。**撤掉组字**（输入法里按 Esc、把拼音退格删光）时系统最后那次 didChangeText 还算在组字、
 //   之后不再有：要在 setMarkedText 之后自己收尾。组字期间外面那份正文是旧的，所以「外面换了正文」认的是「和上次交出去的
@@ -48,6 +52,9 @@
 // - 光标：被浮在上面的东西（「⋯」菜单）盖住时是箭头，在方框上、按着 ⌘ 在链接上是手指，别的交给文本视图自己（I 形）。
 // - 查找：系统自带的查找条（usesFindBar + 增量查找），长在滚动区顶上；Esc 先关它。
 // ponytail: 连续排版（没开 allowsNonContiguousLayout）；正文上限 1 MB，几百行没事，真有上万行的便签打字卡了再开。
+// 手测反馈第 6 批量过（50 KB 的正文，屏外，-O）：首屏排版开 / 不开 10.2 / 10.8 ms、排完整篇 31.4 / 35.9 ms——正文框从顶上
+// 开始，连续排版本来也只排到这一屏；切换卡的大头是整篇上样式，所以改的是「先排一屏」，没开它（要核对的地方多：
+// edgeBand、box(at:)、link(at:)、scrollRangeToVisible、firstRect、插入点、查找条）。
 // 一整段很长又中英混排时 TextKit 1 超线性（实测 Release、M3 Air）——64 KB 不换行的一段，打一个字约 2.3 s（关掉
 // Markdown 约 0.9 s、原生 TextKit 1 约 0.45 s）；贴一行很长的日志 / JSON 会碰到。
 // ponytail: 鼠标停在链接上不动、这时才按下 / 松开 ⌘，手指光标要等鼠标再动一下才换（没接 flagsChanged）。
@@ -99,6 +106,11 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
 
   /// 点方框的范围比那个字四周放宽多少
   static let boxSlop = CGSize(width: 4, height: 3)
+  /// 整段换字时当场排多少个字（UTF-16，扩到整行）：最高的正文框一屏五六十行，密排的中文一行四五十个字，4000 个字排得满；
+  /// 其余的在后面几轮一段段补，一段 restChunk 个字（-O 约 3 ms）。随机探针、单测把它们改小（只改自己那个编辑器的），
+  /// 好走到「还没排完」的那段路
+  var eagerStyleLength = 4000
+  var restChunk = 8000
 
   /// 建一个：TextKit 1 的栈在这里搭
   static func make() -> NoteTextView {
@@ -167,14 +179,22 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
 
   /// 整段换成 text（新建的正文框第一次拿到字、别处改了这条、超上限退回）：先在一份不挂排版的文本存储上把样式排好，
   /// 再一次换进来——只排一遍版。原来先放字（排一遍）再整篇重排样式（又排一遍），是换一条便签时主线程上最大的几块之一
-  /// （手测反馈第 3 批屏外量的）。标记先都藏着，换完由 syncMarkers 按焦点和选区露出该露的那几行
+  /// （手测反馈第 3 批屏外量的）。标记先都藏着，换完由 syncMarkers 按焦点和选区露出该露的那几行。
+  /// **只当场排开头一屏**（eagerStyleLength 个字，扩到整行）：其余的先铺基础样式（字号、墨、行高：排版不至于差太多），
+  /// 不记主字体，下一轮起一段段补上（styleRest）
   private func replaceAll(with text: String) {
     reported = text
-    let styled = NSTextStorage(string: text)
+    // 建的时候就铺上基础样式（比建好再铺省一遍）：开头那一屏下面再排，其余的就这么等着补
+    let styled = NSTextStorage(
+      string: text,
+      attributes: [
+        .font: theme.font, .foregroundColor: theme.ink, .paragraphStyle: theme.baseParagraph,
+      ])
     blocks = theme.markdown ? NoteMarkdown.codeBlocks(in: styled.mutableString) : []
-    NoteStyles.apply(
-      to: styled, lines: NSRange(location: 0, length: styled.length), theme: theme, shown: [],
-      blocks: blocks)
+    let head = styled.mutableString.lineRange(
+      for: NSRange(location: 0, length: min(eagerStyleLength, styled.length)))
+    let rest = NSRange(location: NSMaxRange(head), length: styled.length - NSMaxRange(head))
+    NoteStyles.apply(to: styled, lines: head, theme: theme, shown: [], blocks: blocks)
     textStorage?.setAttributedString(styled)
     _ = pending.take()
     owesFullRestyle = false
@@ -182,7 +202,65 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     syncMarkers()
     if isFocused { updateInsertionPointStateAndRestartTimer(true) }
     undoManager?.removeAllActions()
+    // 补样式的这几轮里不在空闲时往下排版：补一段就把那一段的版作废一次，连续排版下它后面排好的也跟着重排，边补边排
+    // 白排好几遍（屏外量的：50 KB 切过去之后 1.5 秒里主线程忙了 1.2 s）。补完再一口气往下排（styleRest 末尾）
+    layoutManager?.backgroundLayoutEnabled = rest.length == 0
+    restHint = rest.location
+    if rest.length > 0 { scheduleRest(after: 0) }
   }
+
+  /// 还没排过的那些行（replaceAll 只当场排了开头一屏）一段段补上：每轮一段（restChunk 个字，扩到整行），补完一段让
+  /// 主线程转一轮（画一帧、接按键）。守着改属性的红线：组字期间、有没处理完的编辑时不动，过一会儿再看（不在每一轮里
+  /// 空转）。排的就是普通的重排（restyle：和整篇排一遍逐字一样——代码块照现在的正文认，露不露标记照现在的焦点和选区）。
+  /// 中途有了编辑：改过的行由那次收尾排（restyleEdited），没排过的照样留给这里；整篇重排（换纸色、字号…）一次全排完
+  @objc private func styleRest() {
+    guard let storage = textStorage, let start = nextUnstyled(in: storage) else {
+      layoutManager?.backgroundLayoutEnabled = true
+      return
+    }
+    guard !hasMarkedText(), pending.range == nil else { return scheduleRest(after: 0.1) }
+    // 从第一个没排过的字起往后一段（中间夹着编辑时排过的行也一起再排一遍：结果一样）
+    let lines = storage.mutableString.lineRange(
+      for: NSRange(location: start, length: min(restChunk, storage.length - start)))
+    restyle(lines)
+    restHint = NSMaxRange(lines)
+    if nextUnstyled(in: storage) != nil {
+      scheduleRest(after: 0)
+    } else {
+      layoutManager?.backgroundLayoutEnabled = true
+    }
+  }
+
+  /// 补样式补到哪了（下一段从这往后找）：只是个起点，编辑挪了位置也不要紧——往后找不到再从头找一遍
+  private var restHint = 0
+
+  private func nextUnstyled(in storage: NSTextStorage) -> Int? {
+    Self.unstyled(in: storage, from: min(restHint, storage.length)) ?? Self.unstyled(in: storage)
+  }
+
+  private func scheduleRest(after delay: TimeInterval) {
+    NSObject.cancelPreviousPerformRequests(
+      withTarget: self, selector: #selector(styleRest), object: nil)
+    perform(#selector(styleRest), with: nil, afterDelay: delay)
+  }
+
+  /// 从 start 往后第一个还没排过的字：排过的每个字都记着这一行的主字体（NoteStyles.apply 整行铺回基础样式时写的
+  /// lineFontKey），没排过的没有。都排过了是 nil。按属性的段一段段跳（不用 enumerate 的闭包：每段一次，几万段时
+  /// Debug 下光闭包就要几毫秒）
+  static func unstyled(in storage: NSTextStorage, from start: Int = 0) -> Int? {
+    var location = start
+    while location < storage.length {
+      var range = NSRange()
+      if storage.attribute(NoteStyles.lineFontKey, at: location, effectiveRange: &range) == nil {
+        return location
+      }
+      location = max(NSMaxRange(range), location + 1)
+    }
+    return nil
+  }
+
+  /// 还有没排过的字（整段换字之后、后面几轮补完之前）
+  var isStylingRest: Bool { textStorage.map { Self.unstyled(in: $0) != nil } ?? false }
 
   // MARK: 样式
 
@@ -619,9 +697,11 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     // 这个正文框不用了：它登记的撤销动作一起清掉（栈里只有它的——标题框的字段编辑器用的是系统给它单独的栈）
     if newWindow == nil {
       noteUndo?.removeAllActions()
-      // 兜底的那次收尾还没跑的话不跑了
+      // 兜底的那次收尾、还没补完的样式还没跑的话不跑了
       NSObject.cancelPreviousPerformRequests(
         withTarget: self, selector: #selector(settleLeftover), object: nil)
+      NSObject.cancelPreviousPerformRequests(
+        withTarget: self, selector: #selector(styleRest), object: nil)
     }
     if let window {
       let center = NotificationCenter.default
@@ -650,6 +730,8 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     keyChanged(window.isKeyWindow)
     window.initialFirstResponder = self
     if takesFocusOnAppear { window.makeFirstResponder(self) }
+    // 离开窗口时把没补完的样式停了：又挂回来就接着补
+    if isStylingRest { scheduleRest(after: 0) }
   }
 
   /// 拿到焦点：选区碰到的行露出标记（用鼠标点进来的等这一下点完再排，见 syncUnlessClicking）

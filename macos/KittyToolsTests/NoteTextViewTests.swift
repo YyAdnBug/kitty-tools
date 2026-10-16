@@ -1252,6 +1252,51 @@ struct NoteTextViewTests {
     return nil
   }
 
+  /// 整段换字只当场排开头一屏，其余的在后面几轮一段段补（手测反馈第 6 批：切到文字多的便签时卡一下）：换进来那一刻
+  /// 开头几行排好了、后面的没排（没记主字体）、空闲时不往下排版；补的时候组字中不动；中途在没排过的地方打字，那一行
+  /// 当场排好；补完了和整篇排一遍逐字一样、空闲时接着往下排版。编辑器当场排多少、一段补多少改小了（只改这一个编辑器）
+  @Test func longTextIsStyledInPieces() throws {
+    let rig = try Rig("")
+    let editor = rig.editor
+    editor.eagerStyleLength = 20
+    editor.restChunk = 30
+    let lines = [
+      "# 标题", "第一行 **粗**", "> 引用一", "> 引用二", "```", "let a = 1", "# 不是标题", "```",
+      "- 列表 `码`", "☐ 任务", "普通的一行", "## 小标题", "最后一行 [链](https://a.b)",
+    ]
+    let text = (lines + lines + lines).joined(separator: "\n")
+    editor.setText(text)
+    let storage = try #require(editor.textStorage)
+    func styled(_ index: Int) -> Bool {
+      storage.attribute(NoteStyles.lineFontKey, at: index, effectiveRange: nil) != nil
+    }
+    #expect(editor.isStylingRest && styled(0) && !styled(storage.length - 1))
+    #expect(editor.layoutManager?.backgroundLayoutEnabled == false)
+    // 组字期间补的那一下不动：没排过的照旧没排
+    let tail = (text as NSString).range(of: "普通的一行", options: .backwards).location
+    editor.setSelectedRange(NSRange(location: tail, length: 0))
+    editor.setMarkedText(
+      "zi", selectedRange: NSRange(location: 2, length: 0),
+      replacementRange: NSRange(location: NSNotFound, length: 0))
+    let before = NoteTextView.unstyled(in: storage)
+    for _ in 0..<5 { RunLoop.main.run(mode: .default, before: Date.now.addingTimeInterval(0.01)) }
+    #expect(NoteTextView.unstyled(in: storage) == before)
+    // 确认组字：那一行（在没排过的地方）当场排好
+    editor.insertText("字", replacementRange: NSRange(location: NSNotFound, length: 0))
+    #expect(!editor.hasMarkedText() && styled(tail))
+    // 补完：和整篇排一遍一样，空闲时接着往下排版
+    for _ in 0..<200 where editor.isStylingRest {
+      RunLoop.main.run(mode: .default, before: Date.now.addingTimeInterval(0.01))
+    }
+    #expect(!editor.isStylingRest && editor.layoutManager?.backgroundLayoutEnabled == true)
+    #expect(wholeTextMismatch(rig) == nil)
+    #expect(rig.changes.last == editor.string)
+    // 短的正文：一次排完，不留尾巴
+    editor.setText("短的 **一条**")
+    #expect(!editor.isStylingRest && editor.layoutManager?.backgroundLayoutEnabled == true)
+    #expect(wholeTextMismatch(rig) == nil)
+  }
+
   /// 第 index 个字所在的行片段、插入点（布局管理器给的、零长度选区的矩形：画插入点、摆输入法候选窗都按它）
   private func fragment(_ rig: Rig, _ index: Int) throws -> NSRect {
     rig.layout()

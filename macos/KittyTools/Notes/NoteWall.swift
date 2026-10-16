@@ -3,9 +3,11 @@
 // - 卡片一样宽、高随内容（有上下限），按窗口宽度排几列（列宽固定、整块居中：窗口变宽只多排列，卡片的高不用重算）；
 // - 瀑布流：每张放进当时最矮的那一列；分两段（固定的 / 其他，各有一行小标题；最近删除里不分）；
 // - 每张微微斜一点：大小按便签编号定（1–2°，每次一样），方向按位置交错（同一列上下相邻、左右相邻的不同向）；
-// - 方向键在卡片之间怎么走、指针下面是哪张、拖动排序落到哪、落成仓库的哪个下标；编辑卡多大；
+// - 方向键在卡片之间怎么走、指针下面是哪张、拖动排序落到哪（只看拖动开始时那份排法：dropTarget）、落成仓库的哪个
+//   下标；编辑卡多大、它那块纸从哪长出来 / 缩回哪（paperRect：按那一刻的排法和滚动位置算）；
 // - 卡片上那段字（Card）：标题 + 正文开头几行，样式和正文编辑器同一套（NoteStyles.apply），藏着的标记删掉，
-//   量好高——卡片怎么排只看量出来的高，不量视图。按便签缓存在 NotesWindowModel.card。
+//   量好高——卡片怎么排只看量出来的高，不量视图。按便签缓存在仓库那一层（NoteStore.wallCard）；排的时候卡片的高可以
+//   边排边要（layout(_:width:height:)）：可见区附近的当场建，往下的先按估计的高排（estimatedHeight）。
 
 import AppKit
 
@@ -54,6 +56,12 @@ nonisolated enum NoteWall {
   static let solidDim = 0.5
   /// 拖动时指针得进到另一张卡片里面这么多（按边长的比例）才换位置：刚换完位置、它挪开了一点，不来回跳
   static let dragInset: CGFloat = 0.2
+  /// 按下之后挪过这么远才算拖（没到就是点了一下）
+  static let dragSlop: CGFloat = 4
+  /// 还没建好的卡片先按多高排（可见区以下的；建好了换成量出来的高）
+  static let estimatedHeight: CGFloat = 200
+  /// 编辑卡那块纸没有卡片可回（不在墙上、滚出了可见区）时，在中央比编辑卡小这么一圈长出来 / 淡掉
+  static let paperInset: CGFloat = 24
 
   static var textWidth: CGFloat { cardWidth - padding * 2 }
 
@@ -97,6 +105,17 @@ nonisolated enum NoteWall {
   /// 排一面墙。width：墙多宽（滚动区里内容的宽）。各段依次往下排：有标题的先放一行小标题，卡片按顺序一张张放进
   /// 当时最矮的那一列（一样矮的取左边的）；空的段整段跳过（连标题）
   static func layout(_ sections: [Section], width: CGFloat) -> Layout {
+    let heights = sections.flatMap(\.heights)
+    return layout(sections.map { ($0.title, $0.ids) }, width: width) { index, _ in heights[index] }
+  }
+
+  /// 同上，卡片的高边排边要：height(第几张（墙上的顺序，各段接着数），它的顶落在哪（墙的坐标）)。卡片的顶按排的顺序
+  /// 只增不减（每张都放进当时最矮的那一列），所以调用方可以只为顶在可见区附近的现建、往下的先给估计的高
+  /// （NotesWindowModel.wallLayout）——上面的那些位置都是准的
+  static func layout(
+    _ sections: [(title: String?, ids: [String])], width: CGFloat,
+    height: (_ index: Int, _ top: CGFloat) -> CGFloat
+  ) -> Layout {
     let columns = columnCount(width: width)
     let span = CGFloat(columns) * cardWidth + CGFloat(columns - 1) * gap
     let left = max(margin, ((width - span) / 2).rounded(.down))
@@ -113,8 +132,9 @@ nonisolated enum NoteWall {
       // 这一段里每一列放了几张（倾斜的方向按它交错；每段从头数，各段的第一排都是一正一反）
       var rows = [Int](repeating: 0, count: columns)
       let start = layout.ids.count
-      for (id, height) in zip(section.ids, section.heights) {
+      for id in section.ids {
         let column = bottoms.indices.min { bottoms[$0] < bottoms[$1] } ?? 0
+        let height = height(layout.ids.count, bottoms[column])
         layout.ids.append(id)
         layout.frames.append(
           CGRect(
@@ -193,13 +213,24 @@ nonisolated enum NoteWall {
     return items
   }
 
-  /// 拖着原来第 from 张的那张、停在（现在画出来的墙上）第 over 张上：它落成第几张——就是 over 那个位置；
+  /// 拖着原来第 from 张的那张、停在第 over 张上：它落成第几张——就是 over 那个位置；
   /// 两张不在同一段（固定的和没固定的各在各的区里）时不换，nil
   static func landing(from: Int, over: Int, in layout: Layout) -> Int? {
     guard let section = layout.section(of: from), layout.section(of: over) == section else {
       return nil
     }
     return over
+  }
+
+  /// 拖着原来第 from 张、现在让到第 current 张的那张，指针在 point（墙的坐标）：它该让到第几张。**只看拖动开始时那份
+  /// 排法（base：让位之前的）**——指针进到同一段里另一张的里面（四边各收 dragInset）就落到那张的位置，不在任何一张
+  /// 里面、在别的段里就不动（current）。所以落点只取决于指针在哪：同一个位置怎么问都一样。原来按「让过位之后」重排
+  /// 出来的墙判断，那份墙又随落点变，指针不动也会在两个位置之间来回跳（手测反馈第 6 批评审：随机拖 400 次约 14%）
+  static func dropTarget(from: Int, current: Int, at point: CGPoint, in base: Layout) -> Int {
+    guard let over = item(at: point, in: base, inset: dragInset),
+      let to = landing(from: from, over: over, in: base)
+    else { return current }
+    return to
   }
 
   /// 墙上拖完之后的顺序 → 仓库挪顺序（NoteStore.move）要的下标（「全部」里没归档没删的那一列，挪完之后的下标）：
@@ -224,6 +255,19 @@ nonisolated enum NoteWall {
     CGSize(
       width: min(editorMax.width, (container.width * editorShare.width).rounded()),
       height: min(editorMax.height, (container.height * editorShare.height).rounded()))
+  }
+
+  /// 编辑卡那块纸长出来的起点、缩回去的终点：那张卡片**现在**在这一块（墙连顶上那一条；编辑卡也摆在这个坐标里）的
+  /// 位置——墙上的位置 − 滚过的 + 顶上那一条多高。card：它在现在的排法里的位置（不在墙上是 nil：被搜索词筛掉了、删了、
+  /// 归档了）；viewport：墙的可见区多高。整张都在可见区外（滚走了）或者不在墙上给 nil：纸在中央略小一圈长出来 / 淡掉。
+  /// 收回时按收回那一刻算（手测反馈第 6 批，用户报「收回时往中间缩、不回到原来的位置」：原来用的是视图消失前最后一次
+  /// 求值时算的）
+  static func paperRect(card: CGRect?, top: CGFloat, scrollY: CGFloat, viewport: CGFloat)
+    -> CGRect?
+  {
+    guard let card else { return nil }
+    let rect = card.offsetBy(dx: 0, dy: top - scrollY)
+    return rect.maxY > top && rect.minY < top + viewport ? rect : nil
   }
 
   // MARK: 卡片上的字

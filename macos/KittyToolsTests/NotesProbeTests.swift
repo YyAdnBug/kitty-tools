@@ -13,6 +13,14 @@
 // 结果打在测试的输出里（grep「notes-probe」）。要看主线程忙在哪：另加 TEST_RUNNER_KITTY_NOTES_PROBE_LOOP=window / deck /
 // deck-all / editor / pin，只把那一件来回做 10 秒，输出里有「notes-probe loop pid N」，这时 `sample N 6` 拍下来。
 // 2026-10-15 改之前、改之后的数（Debug 和 -O 两种构建）在 PLAN §10「便签」的「手测反馈第 3 批」。
+// 手测反馈第 6 批（2026-10-16）另加两个，开法一样（-only-testing 换成下面的函数名）：
+//   - longNote()：长便签（20 / 50 KB，标题、折行的段落、列表、任务、代码块、引用）——正文编辑器拆开量（建栈、纸色、放字、
+//     首屏排版、排完整篇，和挂 / 不挂布局代理排完整篇的对照），全部便签窗口的列表里在短的和长的之间点着切、便签墙上点开
+//     长的：首屏多久、之后 1.5 秒里最长的一下（「卡一下」）、主线程 CPU、排版排完没有。加 TEST_RUNNER_KITTY_NOTES_PROBE_SLICES=1
+//     把超过 16 ms 的每一下都打出来；LOOP=long（列表里来回切）/ wall-long（墙上开开关关）给 sample 用。
+//   - wallEntry()：300 条的便签墙——第一次进墙、开关 Markdown、再建一个窗口（卡片缓存还在）各自多久、后面分批建卡片建到哪；
+//     LOOP=markdown（隔两秒开关一次 Markdown）给 sample 用。
+// 这两次改之前、改之后的数（-O）在 PLAN §10「便签」的「手测反馈第 6 批」。
 
 import AppKit
 import SwiftUI
@@ -326,6 +334,310 @@ struct NotesProbeTests {
     Self.spin(0.3)
     Self.report("那叠 来回切（「+N」展开成 300 张）", (0..<12).map { tap(ids[$0 % 2 == 0 ? 0 : 3]) })
     Self.report("那叠 点没看过的（300 张）", (0..<12).map { tap(ids[20 + $0 * 9]) })
+  }
+
+  // MARK: 长便签（手测反馈第 6 批 A3：「切到文字多的便签时，过渡还是会卡一下」）
+
+  /// 一条长便签的正文：约 kb KB，标题、折行的段落、列表、任务、代码块、引用轮着来
+  private static func longBody(_ kb: Int, seed: Int) -> String {
+    let blocks = [
+      "## 第 \(seed) 节的小标题",
+      "这是一段比较长的正文，中英混排 mixed with English words，**粗体** 和 *斜体*、`inline code`、"
+        + "[链接](https://example.com/\(seed))，写长一点让它在正文框里折成两三行，看看排版要多久。",
+      "- 列表里的一项，item \(seed)\n- 第二项 **粗**\n  - 缩进的一项",
+      "☐ 没做完的任务 \(seed)\n☑ 做完的任务 ~~划掉~~",
+      "```swift\nlet value = \(seed)\nfunc f(_ x: Int) -> Int { x * 2 }\n// 注释 **不粗**\n```",
+      "> 引用的一行话，长一点让它折行：慢慢来，比较快，先把现有的行为钉住再挪。\n> 第二行引用",
+      "普通的一行文字。",
+    ]
+    var body = "# 长便签 \(seed)\n"
+    var index = 0
+    while body.utf8.count < kb * 1024 {
+      body += blocks[index % blocks.count] + "\n"
+      index += 1
+    }
+    return body
+  }
+
+  /// 做一件事（change），之后 seconds 秒里每 1 ms 转一下跑环：ready() 第一次给出正文框、画完一遍的墙上时间（不强制
+  /// 排完整篇：只排要画的那一屏）、这段时间里最长的一下（一次 change / 一轮跑环占了主线程多久——「卡一下」）、
+  /// 主线程 CPU、到最后排版排到了哪（没排完的字数）
+  private static func hitches(
+    _ seconds: Double, _ change: () -> Void, ready: () -> NoteTextView?
+  ) -> (first: Double, longest: Double, cpu: Double, unlaid: Int) {
+    let clock = ContinuousClock()
+    let start = clock.now
+    let cpu0 = cpu()
+    change()
+    var longest = ms(clock.now - start)
+    var first = Double.infinity
+    var editor: NoteTextView?
+    // 超过一帧（16 ms）的那几下：什么时候开始（离 change 多久）、多长
+    var slow = longest > 16 ? [(0.0, longest)] : []
+    while clock.now - start < .milliseconds(Int(seconds * 1000)) {
+      let slice = clock.now
+      RunLoop.main.run(mode: .default, before: .now.addingTimeInterval(0.001))
+      if first == .infinity, let found = ready() {
+        found.window?.displayIfNeeded()
+        first = ms(clock.now - start)
+        editor = found
+      }
+      let took = ms(clock.now - slice)
+      if took > 16 { slow.append((ms(slice - start), took)) }
+      longest = max(longest, took)
+    }
+    if ProcessInfo.processInfo.environment["KITTY_NOTES_PROBE_SLICES"] != nil {
+      print(
+        "notes-probe     超过 16 ms 的几下（开始于 / 多长）："
+          + slow.map { String(format: "%.0f/%.0f", $0.0, $0.1) }.joined(separator: "  "))
+    }
+    let unlaid = editor.flatMap { view in
+      view.layoutManager.map { (view.textStorage?.length ?? 0) - $0.firstUnlaidCharacterIndex() }
+    }
+    return (first, longest, cpu() - cpu0, unlaid ?? -1)
+  }
+
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_NOTES_PROBE"] != nil))
+  func longNote() throws {
+    let store = try NoteStore(db: Database(path: ":memory:"))
+    let t0 = Date(timeIntervalSince1970: 1_760_000_000)
+    for index in (0..<30).reversed() {
+      store.create(body: Self.body(index), now: t0.addingTimeInterval(Double(30 - index)))
+    }
+    store.create(body: Self.longBody(50, seed: 2), now: t0.addingTimeInterval(100))
+    store.create(body: Self.longBody(20, seed: 1), now: t0.addingTimeInterval(101))
+    let ids = store.active.map(\.id)
+    let (twenty, fifty) = (try #require(store.note(ids[0])), try #require(store.note(ids[1])))
+    print(
+      "notes-probe 长便签 \(twenty.body.utf8.count / 1024) KB / \(fifty.body.utf8.count / 1024) KB，"
+        + "\((fifty.body as NSString).length) 个字（UTF-16）")
+
+    // 拆开（50 KB）：建栈、纸色、放字（认代码块 + 整篇样式 + 换进文本存储）、首屏排版、排完整篇
+    for note in [twenty, fifty] {
+      var parts = [Double](repeating: 0, count: 6)
+      let clock = ContinuousClock()
+      let rounds = 5
+      for _ in 0..<rounds {
+        var view: NoteTextView!
+        parts[0] += Self.ms(clock.measure { view = NoteTextView.make() }) / Double(rounds)
+        view.frame = NSRect(x: 0, y: 0, width: 600, height: 500)
+        parts[1] +=
+          Self.ms(
+            clock.measure {
+              view.setPaper(
+                NotePaper.of(note), fontSize: 15, markdown: true, spacing: .standard)
+            }) / Double(rounds)
+        parts[2] += Self.ms(clock.measure { view.setText(note.body) }) / Double(rounds)
+        parts[3] +=
+          Self.ms(
+            clock.measure {
+              view.layoutManager?.ensureLayout(
+                forBoundingRect: NSRect(x: 0, y: 0, width: 600, height: 500),
+                in: view.textContainer!)
+            }) / Double(rounds)
+        parts[4] +=
+          Self.ms(clock.measure { view.layoutManager?.ensureLayout(for: view.textContainer!) })
+          / Double(rounds)
+      }
+      let blocks = Self.median(5) {
+        _ = NoteMarkdown.codeBlocks(in: note.body as NSString)
+      }
+      let styled = Self.median(5) {
+        let storage = NSTextStorage(string: note.body)
+        NoteStyles.apply(
+          to: storage, lines: NSRange(location: 0, length: storage.length),
+          theme: NoteStyles.Theme(
+            paper: NotePaper.of(note), fontSize: 15, markdown: true, spacing: .standard),
+          shown: [], blocks: NoteMarkdown.codeBlocks(in: storage.mutableString))
+      }
+      print(
+        "notes-probe   \(note.body.utf8.count / 1024) KB 拆开：建栈 \(String(format: "%.2f", parts[0]))、"
+          + "纸色 \(String(format: "%.2f", parts[1]))、放字 \(String(format: "%.2f", parts[2]))"
+          + "（其中认代码块 \(String(format: "%.2f", blocks))、整篇样式 \(String(format: "%.2f", styled))）、"
+          + "首屏排版 \(String(format: "%.2f", parts[3]))、排完整篇 \(String(format: "%.2f", parts[4])) ms")
+      // 排版本身：同一份排好样式的字，挂 / 不挂布局代理（行高居中、藏标记那几问）排完整篇
+      let source = NSTextStorage(string: note.body)
+      NoteStyles.apply(
+        to: source, lines: NSRange(location: 0, length: source.length),
+        theme: NoteStyles.Theme(
+          paper: NotePaper.of(note), fontSize: 15, markdown: true, spacing: .standard),
+        shown: [], blocks: NoteMarkdown.codeBlocks(in: source.mutableString))
+      for delegated in [false, true] {
+        let full = Self.median(3) {
+          let view = NoteTextView.make()
+          if !delegated { view.layoutManager?.delegate = nil }
+          view.frame = NSRect(x: 0, y: 0, width: 600, height: 500)
+          view.textStorage?.setAttributedString(source)
+          view.layoutManager?.ensureLayout(for: view.textContainer!)
+        }
+        print(
+          "notes-probe     对照：排好样式的字放进去排完整篇（\(delegated ? "挂着" : "不挂")布局代理）："
+            + "\(String(format: "%.2f", full)) ms")
+      }
+    }
+
+    // 全部便签窗口：列表视图里点着切（短 ↔ 长），便签墙上点开长的那张
+    let suite = "kitty-notes-probe-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let model = NotesWindowModel(store: store)
+    model.layout = .list
+    let hosting = NSHostingController(
+      rootView: NotesWindowView(model: model).defaultAppStorage(defaults))
+    hosting.sceneBridgingOptions = [.title, .toolbars]
+    let window = ProbeWindow(contentViewController: hosting)
+    window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+    window.toolbarStyle = .unified
+    window.setContentSize(NSSize(width: 940, height: 580))
+    window.setFrameOrigin(NSPoint(x: -20000, y: -20000))
+    window.orderFront(nil)
+    defer { window.orderOut(nil) }
+    try #require(window.screen == nil && !window.isKeyWindow)
+    Self.spin(0.5)
+    func editor(_ id: String) -> NoteTextView? {
+      NotesWindow.editor(in: window.contentView, for: id).flatMap {
+        $0.identifier?.rawValue == id ? $0 : nil
+      }
+    }
+    func report(
+      _ name: String, _ samples: [(first: Double, longest: Double, cpu: Double, unlaid: Int)]
+    ) {
+      func median(_ values: [Double]) -> String {
+        String(format: "%.1f", values.sorted()[values.count / 2])
+      }
+      print(
+        "notes-probe \(name)：首屏 中位 \(median(samples.map(\.first))) ms，"
+          + "最长的一下 中位 \(median(samples.map(\.longest))) ms（最多 "
+          + "\(String(format: "%.1f", samples.map(\.longest).max() ?? 0))），"
+          + "1.5 秒里主线程 CPU 中位 \(median(samples.map(\.cpu))) ms，"
+          + "没排完的字 \(samples.map(\.unlaid).max() ?? -1)")
+    }
+    func select(_ id: String) -> (first: Double, longest: Double, cpu: Double, unlaid: Int) {
+      Self.hitches(1.5, { model.selection = id }, ready: { editor(id) })
+    }
+    if ProcessInfo.processInfo.environment["KITTY_NOTES_PROBE_LOOP"] == "long" {
+      print("notes-probe loop pid \(ProcessInfo.processInfo.processIdentifier)")
+      let end = Date.now.addingTimeInterval(10)
+      var round = 0
+      while Date.now < end {
+        model.selection = ids[round % 2 == 0 ? 1 : 5]
+        Self.spin(0.3)
+        round += 1
+      }
+      return
+    }
+    _ = select(ids[5])
+    var toLong: [(first: Double, longest: Double, cpu: Double, unlaid: Int)] = []
+    var toTwenty: [(first: Double, longest: Double, cpu: Double, unlaid: Int)] = []
+    for _ in 0..<5 {
+      toLong.append(select(ids[1]))
+      _ = select(ids[5])
+      toTwenty.append(select(ids[0]))
+      _ = select(ids[5])
+    }
+    report("列表 切到 50 KB 的", toLong)
+    report("列表 切到 20 KB 的", toTwenty)
+    model.layout = .wall
+    Self.spin(0.5)
+    if ProcessInfo.processInfo.environment["KITTY_NOTES_PROBE_LOOP"] == "wall-long" {
+      print("notes-probe loop pid \(ProcessInfo.processInfo.processIdentifier)")
+      let end = Date.now.addingTimeInterval(10)
+      while Date.now < end {
+        model.open(ids[1], focus: false)
+        Self.spin(0.4)
+        model.collapse()
+        Self.spin(0.4)
+      }
+      return
+    }
+    var wall: [(first: Double, longest: Double, cpu: Double, unlaid: Int)] = []
+    for _ in 0..<5 {
+      wall.append(
+        Self.hitches(1.5, { model.open(ids[1], focus: false) }, ready: { editor(ids[1]) }))
+      model.collapse()
+      Self.spin(0.6)
+    }
+    report("便签墙 点开 50 KB 的", wall)
+  }
+
+  // MARK: 第一次进便签墙（手测反馈第 6 批 B6：「第一次进墙卡在主线程」）
+
+  /// 300 条便签的墙：建窗口到画出第一屏、之后 1.5 秒里最长的一下和主线程 CPU；开关 Markdown 一次；关掉再开（同一个
+  /// 模型和仓库，缓存还在）
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_NOTES_PROBE"] != nil))
+  func wallEntry() throws {
+    let store = try NoteStore(db: Database(path: ":memory:"))
+    let t0 = Date(timeIntervalSince1970: 1_760_000_000)
+    for index in (0..<300).reversed() {
+      store.create(body: Self.body(index), now: t0.addingTimeInterval(Double(300 - index)))
+    }
+    let suite = "kitty-notes-probe-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let model = NotesWindowModel(store: store)
+    func line(_ name: String, _ sample: (first: Double, longest: Double, cpu: Double, unlaid: Int))
+    {
+      print(
+        "notes-probe \(name)："
+          + (sample.first.isFinite ? "第一屏 \(String(format: "%.1f", sample.first)) ms，" : "")
+          + "最长的一下 \(String(format: "%.1f", sample.longest)) ms（含建窗口那一下），"
+          + "1.5 秒里主线程 CPU \(String(format: "%.1f", sample.cpu)) ms")
+    }
+    var window: ProbeWindow?
+    func open() -> (first: Double, longest: Double, cpu: Double, unlaid: Int) {
+      var built = 0.0
+      let sample = Self.hitches(
+        1.5,
+        {
+          let clock = ContinuousClock()
+          let start = clock.now
+          let hosting = NSHostingController(
+            rootView: NotesWindowView(model: model).defaultAppStorage(defaults))
+          hosting.sceneBridgingOptions = [.title, .toolbars]
+          let made = ProbeWindow(contentViewController: hosting)
+          made.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+          made.toolbarStyle = .unified
+          made.setContentSize(NSSize(width: 940, height: 580))
+          made.setFrameOrigin(NSPoint(x: -20000, y: -20000))
+          made.isReleasedWhenClosed = false
+          made.orderFront(nil)
+          made.displayIfNeeded()
+          window = made
+          built = Self.ms(clock.now - start)
+        },
+        ready: { nil })
+      return (built, sample.longest, sample.cpu, sample.unlaid)
+    }
+    /// 建好了几张卡片（Markdown 开着 / 关着的）
+    func built(_ markdown: Bool) -> Int {
+      store.active.filter { store.cachedWallCard(of: $0, markdown: markdown) != nil }.count
+    }
+    line("第一次进墙（300 条）", open())
+    if ProcessInfo.processInfo.environment["KITTY_NOTES_PROBE_LOOP"] == "markdown" {
+      print("notes-probe loop pid \(ProcessInfo.processInfo.processIdentifier)")
+      for round in 0..<5 {
+        defaults.set(round % 2 == 1, forKey: Prefs.notesMarkdown)
+        Self.spin(2)
+      }
+      window?.close()
+      return
+    }
+    print("notes-probe   1.5 秒后卡片建好了 \(built(true)) 张")
+    line(
+      "开关 Markdown",
+      Self.hitches(1.5, { defaults.set(false, forKey: Prefs.notesMarkdown) }, ready: { nil }))
+    print("notes-probe   1.5 秒后卡片建好了 \(built(false)) 张")
+    let clock = ContinuousClock()
+    let start = clock.now
+    while built(false) < store.active.count, clock.now - start < .seconds(10) { Self.spin(0.05) }
+    print(
+      "notes-probe   全部建好用了 \(String(format: "%.1f", Self.ms(clock.now - start) + 1500)) ms（从开关算起）")
+    window?.close()
+    window = nil
+    model.closed()
+    Self.spin(0.3)
+    line("再建一个窗口（同一个仓库，卡片缓存还在）", open())
+    window?.close()
   }
 }
 

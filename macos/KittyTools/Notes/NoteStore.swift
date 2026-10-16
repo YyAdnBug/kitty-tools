@@ -13,6 +13,7 @@
 //   另存一条进「最近删除」。
 // 搜索在内存里做（标题 + 正文，口径同剪贴板搜索）。和 sqlite 的 C 接口打交道的只有 Database。
 // 列表行、标签、预览卡上显示的推导结果（标题、摘要、任务进度）按便签缓存在这里（summary(of:)）：标题、正文没变就不重算。
+// 便签墙上的卡片（字和量好的高，wallCard(of:markdown:)）同样缓存在这里：关掉全部便签窗口再开、换视图再换回来都不重建。
 
 import Foundation
 import OSLog
@@ -65,6 +66,8 @@ import Observation
   @ObservationIgnored private var summaries:
     [String: (title: String, body: String, summary: Summary)] =
       [:]
+  /// 便签墙卡片的缓存（wallCard(of:markdown:)）：编号 → 建的时候看的那几样和卡片
+  @ObservationIgnored private var wallCards: [String: (key: WallCardKey, card: NoteWallCard)] = [:]
   /// 改了还没落盘的便签的编号：打字攒着的、上次没写成的；内存里已经没有的那些 = 要从库里删掉的
   @ObservationIgnored private var unsaved: Set<String> = []
   /// 这一串没落盘的打字改动里最早那次是什么时候（算「连着改满 maxDelay」用）
@@ -158,6 +161,37 @@ import Observation
       title: note.displayTitle, preview: note.preview, progress: note.taskProgress)
     summaries[note.id] = (note.title, note.body, summary)
     return summary
+  }
+
+  /// 建一张卡片时看的几样（都没变就还是那张）：标题、正文、颜色、固定（标题给图钉让出一截）、Markdown 开关
+  private struct WallCardKey: Equatable {
+    let title: String
+    let body: String
+    let color: Int
+    let isPinned: Bool
+    let markdown: Bool
+
+    init(_ note: Note, markdown: Bool) {
+      (title, body, color, isPinned) = (note.title, note.body, note.color, note.isPinned)
+      self.markdown = markdown
+    }
+  }
+
+  /// 这条便签在便签墙上的卡片（NoteWallCard：卡片上的字和量好的高；建一张要排一遍字，Debug 约 1.5 ms——300 条全建
+  /// 约 0.45 s，手测反馈第 6 批评审量的）。按便签缓存（同 summary：比的是字本身，没变时两边是同一块存储、当场返回）：
+  /// 标题、正文、颜色、固定、Markdown 开关都没变就是上次建的
+  func wallCard(of note: Note, markdown: Bool) -> NoteWallCard {
+    if let card = cachedWallCard(of: note, markdown: markdown) { return card }
+    let card = NoteWallCard.make(for: note, title: summary(of: note).title, markdown: markdown)
+    wallCards[note.id] = (WallCardKey(note, markdown: markdown), card)
+    return card
+  }
+
+  /// 同上，建好了而且没过时才给，不建（便签墙排的时候：可见区以下的先按估计的高排）
+  func cachedWallCard(of note: Note, markdown: Bool) -> NoteWallCard? {
+    guard let cached = wallCards[note.id], cached.key == WallCardKey(note, markdown: markdown)
+    else { return nil }
+    return cached.card
   }
 
   /// 谁排在前面：order 小的；一样时（导入带来的）新建的在前，再一样按编号——顺序总是确定的。
@@ -300,7 +334,10 @@ import Observation
     let doomed = ids.filter { id in notes.contains { $0.id == id } }
     guard !doomed.isEmpty else { return }
     notes.removeAll { doomed.contains($0.id) }
-    for id in doomed { summaries[id] = nil }
+    for id in doomed {
+      summaries[id] = nil
+      wallCards[id] = nil
+    }
     unsaved.formUnion(doomed)
     flush()
   }

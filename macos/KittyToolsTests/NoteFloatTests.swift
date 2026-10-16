@@ -1,6 +1,6 @@
 // 便签第 4 批「浮动便签」的单测（PLAN §10「便签」，规矩在 mac-overlay-panel §12「浮动便签」）：
 // - 几何和记下的东西（NoteFloatLayout：脱出的阈值、脱出那一刻摆在哪、跟着鼠标走、算在哪块屏、夹进可见区、不靠拖时
-//   摆在哪、收回往哪边滑、层级跟着固定走、记下的大小、固定着的那一张记不记 / 重启后回不回来）；
+//   摆在哪、收回往哪边滑、一律浮动层级、记下的大小、固定着的那一张记不记 / 重启后回不回来）；
 // - 状态机（NoteFloatState：一次一张、拖着的时候不接别的）和状态变化该做的事（NoteFloat.effects）；
 // - 界面读的状态（NoteFloatModel：关法、把手、菜单里那一项叫什么；NoteDeckModel：阈值、它在那叠里的那一份留到松手、
 //   点浮着那条的标签走哪条路、浮出去就从那叠里收掉）；
@@ -187,11 +187,8 @@ struct NoteFloatTests {
     #expect(Layout.tuckOffset(toward: nil) == 0)
   }
 
-  /// 层级跟着固定走；拖着的那一阵一律在上面。只有没归档、没删的便签能浮着
-  @Test func levelFollowsThePin() {
-    #expect(Layout.level(pinned: true, isDragging: false) == .floating)
-    #expect(Layout.level(pinned: false, isDragging: false) == .normal)
-    #expect(Layout.level(pinned: false, isDragging: true) == .floating)
+  /// 只有没归档、没删的便签能浮着
+  @Test func onlyActiveNotesFloat() {
     var note = Note(id: "甲", createdAt: .now, modifiedAt: .now)
     #expect(Layout.floats(note) && !Layout.floats(nil))
     note.isArchived = true
@@ -704,7 +701,8 @@ struct NoteFloatTests {
     #expect(panel.styleMask == [.borderless, .nonactivatingPanel, .resizable])
     #expect(panel.canBecomeKey && !panel.canBecomeMain && panel.becomesKeyOnlyIfNeeded)
     #expect(panel.hasShadow && !panel.isOpaque && !panel.isMovable && !panel.isVisible)
-    #expect(panel.minSize == Layout.minSize && panel.level == .normal)
+    // 一律浮动层级（手测反馈第 6 批：没固定的原来是普通层级，点别的 App 就沉到底下）
+    #expect(panel.minSize == Layout.minSize && panel.level == .floating)
     #expect(panel.collectionBehavior.isSuperset(of: [.canJoinAllSpaces, .fullScreenAuxiliary]))
     #expect(!panel.ignoresMouseEvents && !panel.hidesOnDeactivate && !panel.isReleasedWhenClosed)
     // 位置自己管：系统不再挪一遍（屏外的也不被拉回屏幕里）
@@ -739,7 +737,7 @@ struct NoteFloatTests {
         == [CGRect(x: 100, y: 320, width: 460, height: 380)])
   }
 
-  /// 不靠拖浮出来 → 层级跟着固定走、固定着才记位置 → 收回：面板的有无，都在屏外、不当 key
+  /// 不靠拖浮出来 → 一律浮动层级（固定不固定都一样）、固定着才记位置 → 收回：面板的有无，都在屏外、不当 key
   @Test func presentingBuildsThePanelAndTuckingReleasesIt() async throws {
     let (defaults, suite) = try prefs()
     defer { defaults.removePersistentDomain(forName: suite) }
@@ -763,12 +761,12 @@ struct NoteFloatTests {
       in: [Self.far])
     #expect(float.model.state.noteID == ids[0] && !float.model.state.isDragging && changes == 1)
     #expect(float.panel?.frame == expected && float.panel?.isVisible == true)
-    #expect(float.panel?.isKeyWindow == false && float.panel?.level == .normal)
+    #expect(float.panel?.isKeyWindow == false && float.panel?.level == .floating)
     #expect(!onScreen(float.panel?.frame))
     #expect(defaults.object(forKey: Prefs.notesFloatPlace) == nil)
     try await settle { focusedNote(float.panel) == ids[0] }
     #expect(focusedNote(float.panel) == ids[0])
-    // 固定：到别的窗口上面，位置记下来；取消固定：回到普通层级，记着的删掉
+    // 固定：位置记下来；取消固定：记着的删掉。层级不跟着变——没固定的也一直在别的 App 的窗口上面
     store.setPinned(true, of: ids[0])
     float.storeChanged()
     #expect(float.panel?.level == .floating)
@@ -777,7 +775,8 @@ struct NoteFloatTests {
         == Place(id: ids[0], frame: expected))
     store.setPinned(false, of: ids[0])
     float.storeChanged()
-    #expect(float.panel?.level == .normal && defaults.object(forKey: Prefs.notesFloatPlace) == nil)
+    #expect(
+      float.panel?.level == .floating && defaults.object(forKey: Prefs.notesFloatPlace) == nil)
     // 再让同一条浮出来：就是它，不重建
     let same = float.panel
     float.present(ids[0], mouse: Self.farPoint)
@@ -831,7 +830,7 @@ struct NoteFloatTests {
   }
 
   /// 从那叠里拖出来的整条路（浮动便签这一头）：脱出来的那一刻面板就在原处（原大小、在上面），之后跟着鼠标走，
-  /// 松手落下——夹进可见区、层级跟着固定走、焦点进正文、光标还在原来的地方
+  /// 松手落下——夹进可见区、浮动层级、焦点进正文、光标还在原来的地方
   @Test func detachDragDrop() async throws {
     let (defaults, suite) = try prefs()
     defer { defaults.removePersistentDomain(forName: suite) }
@@ -845,7 +844,7 @@ struct NoteFloatTests {
       ids[0], from: .init(sheet: sheet, selection: NSRange(location: 2, length: 1)), at: pointer)
     let panel = try #require(float.panel)
     #expect(float.model.state.noteID == ids[0] && float.model.state.isDragging)
-    // 一点都不跳：原处、原大小；拖着的那一阵在上面（没固定也是）
+    // 一点都不跳：原处、原大小；在那叠（浮动层级）上面
     #expect(panel.frame == sheet && panel.isVisible && !panel.isKeyWindow)
     #expect(panel.level == .floating && !onScreen(panel.frame))
     float.drag(to: CGPoint(x: pointer.x - 300, y: pointer.y + 40))
@@ -859,7 +858,7 @@ struct NoteFloatTests {
     // 拖到那块屏的底边外面松手：夹回可见区里
     let below = CGPoint(x: pointer.x - 300, y: Self.far.frame.minY + 60)
     float.drop(at: below)
-    #expect(!float.model.state.isDragging && panel.level == .normal)
+    #expect(!float.model.state.isDragging && panel.level == .floating)
     #expect(panel.frame.minY == Self.far.visibleFrame.minY && panel.frame.size == sheet.size)
     #expect(panel.frame.minX == sheet.minX - 300 && !onScreen(panel.frame))
     #expect(float.panel === panel && !panel.isKeyWindow)

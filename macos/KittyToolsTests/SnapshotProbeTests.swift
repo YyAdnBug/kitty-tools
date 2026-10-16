@@ -1662,7 +1662,7 @@ struct SnapshotProbeTests {
     // 拖着 / 鼠标停着：立正、放大一点、往上抬、阴影加深
     for dark in [false, true] where Self.wants("\(out)/notes-wall-lifted.png") {
       let note = try #require(wallStore.note(wallIDs[0]))
-      let card = wallModel.card(note, markdown: true)
+      let card = wallStore.wallCard(of: note, markdown: true)
       try snapshot(
         HStack(spacing: 40) {
           WallCard(

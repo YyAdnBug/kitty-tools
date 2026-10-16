@@ -4,7 +4,7 @@
 //   带着标签的那一侧的上角不动，把手不跳）、之后怎么跟着鼠标走（origin）；
 // - 落下、屏幕变了：算在哪块屏（home）、整块夹进那块屏的可见区（clamped / settled）；
 // - 不靠拖浮出来时摆在哪（placed）、收回时替身朝哪边滑多远（tuckOffset）；
-// - 层级跟着固定走（level）、哪些便签能浮着（floats）；
+// - 哪些便签能浮着（floats；层级不在这里：浮动便签一律浮动层级，NoteFloatPanel）；
 // - 记下的大小（size：夹进要出现的那块屏）、固定着的那一张的位置（Place：哪条便签 + 在哪；place 定该不该记，
 //   restored 定重启后要不要让它回来、回到哪）。
 // 数值里脱出的阈值 40、便签最窄 280 起借自 Noty（MIT；只借数值和思路，mac-whisker §11），最小尺寸按我们的头部和
@@ -113,13 +113,7 @@ nonisolated enum NoteFloatLayout {
     }
   }
 
-  // MARK: 层级、哪些能浮着
-
-  /// 层级跟着固定走：固定着 = 一直在别的窗口上面；没固定 = 普通窗口，会被别的 App 的窗口盖住、点它才到前面。
-  /// 正被拖出来的那一阵一律在上面：不然会钻到那叠的面板（浮动层级）底下
-  static func level(pinned: Bool, isDragging: Bool) -> NSWindow.Level {
-    pinned || isDragging ? .floating : .normal
-  }
+  // MARK: 哪些能浮着
 
   /// 这条便签能不能浮着：还在、没归档、没进最近删除
   static func floats(_ note: Note?) -> Bool {
