@@ -88,11 +88,16 @@ enum ScreenCapture {
     }
   }
 
-  /// 本 App 此刻的窗口（NSApp.windows）。windowNumber 没显示过时是负数（defer 建的面板第一次露出来之前），先滤掉再转 CGWindowID
+  /// NSWindow.windowNumber → CGWindowID；不是窗口服务器里的窗口号时 nil。两种情况：没显示过的窗口是负数（defer 建的
+  /// 面板第一次露出来之前）；macOS 27 上菜单栏图标的窗口（NSStatusBarWindow）给 2³²（0x1_0000_0000，实测崩溃报告），
+  /// 装不进 UInt32——直接 CGWindowID(_:) 会让截图、录屏一开始就闪退（0.4.0）。窗口号一律经这里转
+  static func windowID(_ number: Int) -> CGWindowID? {
+    number > 0 ? CGWindowID(exactly: number) : nil
+  }
+
+  /// 本 App 此刻的窗口（NSApp.windows），窗口号转不成 CGWindowID 的不列（见 windowID）
   static func ownWindows() -> [OwnWindow] {
-    let number = { (window: NSWindow) in
-      window.windowNumber > 0 ? CGWindowID(window.windowNumber) : nil
-    }
+    let number = { (window: NSWindow) in windowID(window.windowNumber) }
     return NSApp.windows.compactMap { window in
       number(window).map {
         OwnWindow(

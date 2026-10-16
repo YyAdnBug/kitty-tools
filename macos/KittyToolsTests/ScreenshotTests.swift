@@ -111,6 +111,15 @@ struct ScreenshotTests {
     #expect(kept == [1, 2, 3, 4, 5, 6])
   }
 
+  /// macOS 27 上菜单栏图标窗口的 windowNumber 是 2³²：转窗口号不能崩（0.4.0 截图、录屏一开始就闪退）
+  @Test func windowIDRejectsOutOfRangeNumbers() {
+    #expect(ScreenCapture.windowID(42) == 42)
+    #expect(ScreenCapture.windowID(Int(UInt32.max)) == UInt32.max)
+    #expect(ScreenCapture.windowID(1 << 32) == nil)
+    #expect(ScreenCapture.windowID(0) == nil)
+    #expect(ScreenCapture.windowID(-1) == nil)
+  }
+
   /// 录屏时本 App 录进去的窗口（R4-a 白名单）：剪贴板 / 启动器 / 翻译 / ⌘Y（OverlayPanel）、钉图、设置窗和它的 sheet、
   /// 选文件夹 / 另存为，挂在它们上面的确认框、弹出框（一层套一层也跟着）；收起着的、全透明的也列（开录后露出来照样录）；
   /// 装饰窗口、状态栏层级的、没在白名单里的类（和挂在它们上面的）、菜单、工具提示一律不列

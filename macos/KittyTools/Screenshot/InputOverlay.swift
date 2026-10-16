@@ -153,7 +153,7 @@ final class InputOverlay {
 
   /// 窗口号（ScreenRecorder 把它列进过滤器的例外）
   var windowID: CGWindowID? {
-    panel.windowNumber > 0 ? CGWindowID(panel.windowNumber) : nil
+    ScreenCapture.windowID(panel.windowNumber)
   }
 
   /// 圈的个数（单测看图层有没有移除；按键胶囊不算）
@@ -567,7 +567,7 @@ final class InputOverlay {
   /// 常驻缩略图、截图遮罩、长截图面板、不挂在白名单窗口上的确认框）画面里那个位置没有它们，在那儿画圈只会凭空多一个圈
   /// （点 HUD 的停止时还会留在最后一帧里）
   static func showsClick(onOwnWindow number: Int) -> Bool {
-    number > 0
-      && ScreenCapture.recordedOwnWindows(ScreenCapture.ownWindows()).contains(CGWindowID(number))
+    guard let id = ScreenCapture.windowID(number) else { return false }
+    return ScreenCapture.recordedOwnWindows(ScreenCapture.ownWindows()).contains(id)
   }
 }
