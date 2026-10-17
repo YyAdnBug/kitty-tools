@@ -466,8 +466,9 @@ struct TranslatePanelView: View {
   /// 空状态四周的留白（浮窗的结果区和翻译历史共用）
   static let emptyStateInset: CGFloat = 20
 
-  /// 结果区卡片堆的坐标系（量第三张卡的下沿；在滚动内容里，滚动不影响）
-  private static let resultsSpace = "translateResults"
+  /// 结果区卡片堆的坐标系（量第三张卡的下沿；在滚动内容里，滚动不影响）。
+  /// nonisolated：onGeometryChange 的取值闭包（@Sendable，系统可能不在主线程调）里要读它
+  private nonisolated static let resultsSpace = "translateResults"
 
   private var collapsed: Set<String> {
     Set(collapsedServices.split(separator: "\n").map(String.init))
