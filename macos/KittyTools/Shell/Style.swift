@@ -404,12 +404,20 @@ struct DangerButton: View {
 /// 主按钮（Whisker §3 状态：强调色实心 + onBrand 文字，按下 0.97，禁用 0.35）：关于页「更新并重新打开」、引导「继续 /
 /// 开始使用」、速查表「完成」、剪贴板对话框的保存 / 创建 / 完成共用。不用系统的 .borderedProminent + tint：它的文字色
 /// 由系统定，黄、橙、绿、浅色石墨这些亮强调色上也是白字（AccentPalette.onFill 这时是 black 0.85，AccentTests 锁住），
-/// 而且屏外截图自检里画成灰的、看不出来。胶囊形，高度跟 controlSize：regular 20，和旁边的系统按钮一样高（系统带边框
-/// 按钮常规档高 20；2026-10-12 视觉对齐时量的，原来这里是 22、比旁边的「取消」高 2，StyleTests 锁住）；large 30
-/// （只有引导的「继续 / 开始使用」，旁边没有系统按钮）。键盘等价（.defaultAction 等）照常挂在按钮上
+/// 而且屏外截图自检里画成灰的、看不出来。胶囊形，高度跟 controlSize：regular 和旁边的系统按钮一样高——系统带边框
+/// 按钮常规档 15 上高 20（2026-10-12 视觉对齐时量的，原来这里是 22、比旁边的「取消」高 2），26 起系统控件整体加高
+/// （WWDC25「Build an AppKit app with the new design」），27 上实测 24（2026-10-17；26 没有真机，按同一次改版算），
+/// StyleTests 锁住；large 30（只有引导的「继续 / 开始使用」，旁边没有系统按钮；27 上系统的 large 是 28）。
+/// 键盘等价（.defaultAction 等）照常挂在按钮上
 struct BrandButtonStyle: ButtonStyle {
   @Environment(\.controlSize) private var controlSize
   @Environment(\.isEnabled) private var isEnabled
+
+  /// 常规档的高和字往上让多少：15 上系统按钮的字在 20 高里偏上 1 pt（上 3.5 / 下 4.5），让 2 pt 并排时基线才齐；
+  /// 27 上系统按钮的字在 24 高里居中，不用让（屏外逐像素和按基线并排都对过）
+  private static let regular: (height: CGFloat, lift: CGFloat) = {
+    if #available(macOS 26, *) { (24, 0) } else { (20, 2) }
+  }()
 
   func makeBody(configuration: Configuration) -> some View {
     let large = controlSize == .large
@@ -417,9 +425,8 @@ struct BrandButtonStyle: ButtonStyle {
       .lineLimit(1)
       .foregroundStyle(Style.onBrand)
       .padding(.horizontal, large ? 16 : 11)
-      // 常规档的字往上让 1 pt：系统按钮的字在 20 高里偏上 1 pt（上 3.5 / 下 4.5），并排时基线才齐
-      .padding(.bottom, large ? 0 : 2)
-      .frame(minHeight: large ? 30 : 20)
+      .padding(.bottom, large ? 0 : Self.regular.lift)
+      .frame(minHeight: large ? 30 : Self.regular.height)
       .background(Style.brand, in: .capsule)
       .contentShape(.capsule)
       .opacity(isEnabled ? 1 : Style.disabledOpacity)

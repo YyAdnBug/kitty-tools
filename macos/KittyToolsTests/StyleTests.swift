@@ -31,7 +31,20 @@ struct StyleTests {
     let brand = NSHostingView(rootView: Button("保存") {}.buttonStyle(BrandButtonStyle()))
     let system = NSHostingView(rootView: Button("取消") {})
     #expect(brand.fittingSize.height == system.fittingSize.height)
-    #expect(brand.fittingSize.height == 20)
+    // 26 起系统控件加高：常规档 15 上 20、27 上实测 24
+    if #available(macOS 26, *) {
+      #expect(brand.fittingSize.height == 24)
+      // 按基线并排还是一样高 = 两边的字在同一条基线上（字往上让 1 pt 这一排就高到 25，27 上实测）；15 上那 2 pt
+      // 是按像素量的，这一条没在 15 上跑过，只锁 26 起
+      let row = NSHostingView(
+        rootView: HStack(alignment: .firstTextBaseline) {
+          Button("保存") {}.buttonStyle(BrandButtonStyle())
+          Button("取消") {}
+        })
+      #expect(row.fittingSize.height == system.fittingSize.height)
+    } else {
+      #expect(brand.fittingSize.height == 20)
+    }
   }
 
   /// 降低透明度时的 0.9 不透明底只给 15 的毛玻璃；macOS 26 的玻璃自己变实，不再垫（Whisker §7）
