@@ -54,7 +54,7 @@ Kitty Tools 用 Swift 6 + SwiftUI / AppKit 写成，常驻菜单栏、不占程�
 - **文件搜索**：`open 文件名` 打开，`find 文件名` 在访达中选中，支持中文和拼音；⌘Y 快速查看，⌘K 用其他 App 打开或移到废纸篓
 - **计算器与换算**：四则运算、百分比、乘方、函数；单位换算（`10 km to mi`、`30 摄氏度 转 华氏度`）、进制转换（`255 in hex`），↩ 直接粘贴结果
 - **系统命令**：`lock`、`sleep`、`restart`、`emptytrash`、`mute` 等（中文、拼音也行）；`quit` / `hide` / `forcequit` 管理正在运行的 App，`eject` 推出磁盘，`kill` 结束进程或按端口找（`kill :3000`），`port` 看哪些端口被占着、是谁占的（`port 3000`）
-- **系统设置直达**：搜「蓝牙」「显示器」「隐私与安全性」，↩ 跳到对应的设置页
+- **系统设置直达**：搜「蓝牙」「显示器」「隐私与安全」，↩ 跳到对应的设置页
 - **网页搜索**：`g swift`、`gh swift` 这样用关键词直达，预置 Google、Bing、百度、GitHub、知乎、哔哩哔哩等 13 个引擎，可自定义搜索和快捷链接
 - **浏览器书签与历史**：Safari、Chrome、Edge、Arc、Brave、Firefox 等，只列本机装了的，带网站图标；输入网址或 `~/` 路径直接打开
 - `cb 关键词` 跳到剪贴板历史搜索，`fy 文字` 直接翻译，⌘K 或 → 打开动作菜单
@@ -118,7 +118,7 @@ Kitty Tools 用 Swift 6 + SwiftUI / AppKit 写成，常驻菜单栏、不占程�
 
 1. 从 [Releases](https://github.com/YyAdnBug/kitty-tools/releases/latest) 下载 `Kitty.Tools_x.y.z_arm64.dmg`（`_arm64.zip` 是 App 内更新用的，不用手动下载），或按下面的步骤自己打包。
 2. 把 `Kitty Tools.app` 拖进「应用程序」。
-3. App 使用 Apple Development 签名、没有公证，第一次打开会被系统拦下（提示「未打开」，不是「已损坏」）：到「系统设置 › 隐私与安全性」里点「仍要打开」。也可以在终端执行：
+3. App 使用 Apple Development 签名、没有公证，第一次打开会被系统拦下（提示「未打开」，不是「已损坏」）：到「系统设置 › 隐私与安全」里点「仍要打开」。也可以在终端执行：
    ```bash
    xattr -dr com.apple.quarantine "/Applications/Kitty Tools.app"
    ```

@@ -178,7 +178,7 @@ final class FileSearch {
     return LauncherItem(
       kind: .prompt, target: accessTarget,
       title: "没有权限搜" + denied.map { "「\($0)」" }.joined() + "里的文件",
-      subtitle: "↩ 打开系统设置 › 隐私与安全性 › 文件和文件夹")
+      subtitle: "↩ 打开系统设置 › \(Permissions.privacyPane) › 文件和文件夹")
   }
 
   /// 单输（或拼到一半）「open」「find」时的补全提示，同网页搜索的关键词提示：正好是关键词的放最前，

@@ -626,7 +626,7 @@ struct SettingsBackupTests {
   @Test func failuresAreExplained() throws {
     #expect(
       SettingsBackup.describe(SettingsBackup.Failure.missingFolder) == "找不到文件夹（没连上、被移走，或者没有访问权限）")
-    let denied = "没有权限写这个文件夹（到 系统设置 › 隐私与安全性 › 文件和文件夹 里允许 Kitty Tools，或者换一个文件夹）"
+    let denied = "没有权限写这个文件夹（到 系统设置 › \(Permissions.privacyPane) › 文件和文件夹 里允许 Kitty Tools，或者换一个文件夹）"
     #expect(SettingsBackup.describe(CocoaError(.fileWriteNoPermission)) == denied)
     for code in [EPERM, EACCES] {
       let wrapped = NSError(

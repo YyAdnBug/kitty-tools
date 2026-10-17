@@ -225,7 +225,7 @@ nonisolated enum SettingsBackup {
       && [EPERM, EACCES].contains(Int32(underlying?.code ?? 0))
     if denied || (cocoa.domain == NSCocoaErrorDomain && cocoa.code == NSFileWriteNoPermissionError)
     {
-      return "没有权限写这个文件夹（到 系统设置 › 隐私与安全性 › 文件和文件夹 里允许 Kitty Tools，或者换一个文件夹）"
+      return "没有权限写这个文件夹（到 系统设置 › \(Permissions.privacyPane) › 文件和文件夹 里允许 Kitty Tools，或者换一个文件夹）"
     }
     return error.localizedDescription
   }

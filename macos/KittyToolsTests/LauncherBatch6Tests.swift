@@ -390,7 +390,11 @@ struct LauncherBatch6Tests {
     let wifi = try #require(
       panes.first { $0.target.hasSuffix("com.apple.wifi-settings-extension") })
     #expect(LauncherMatch.score("wifi", item: wifi) > 0)
-    #expect(panes.contains { $0.title == "隐私与安全性" } && panes.contains { $0.title == "显示器" })
+    // 中文名跟系统走：15 / 26 叫「隐私与安全性」，27 改成了「隐私与安全」（扩展的 InfoPlist.loctable）
+    let privacy = try #require(
+      panes.first { $0.target.hasSuffix("com.apple.settings.PrivacySecurity.extension") })
+    #expect(["隐私与安全性", "隐私与安全"].contains(privacy.title))
+    #expect(panes.contains { $0.title == "显示器" })
     // 电池：没有中文显示名，按机型叫法不同的两个都写
     #expect(panes.contains { $0.title.contains("电池") && $0.title.contains("能耗") })
     // 只在特定情况出现的不列；每个都能用网址打开、有中文名

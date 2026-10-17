@@ -296,7 +296,7 @@ func dmgBackground(scale: Int) -> CGImage {
     "把左边的图标拖到「应用程序」文件夹，就装好了", NSFont(name: "PingFangSC-Regular", size: 13)!,
     hex(0x000000, 0.55), y: 86)
   text(
-    "首次打开被拦下时：系统设置 › 隐私与安全性 › 仍要打开", .systemFont(ofSize: 11), hex(0x000000, 0.45),
+    "首次打开被拦下时：系统设置 › 隐私与安全 › 仍要打开", .systemFont(ofSize: 11), hex(0x000000, 0.45),
     y: 366)
   // 中间的虚点弧线：零长虚线 + 圆头 = 等弧长的圆点（直径 4、间距 11.1），末端圆角三角箭头
   let arc = CGMutablePath()

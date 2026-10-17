@@ -980,7 +980,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       island.show("已允许访问", detail: "文件搜索现在能搜到桌面、文稿、下载里的文件")
     } else {
       island.show(
-        "没有权限搜" + denied.map { "「\($0)」" }.joined(), detail: "可在系统设置 › 隐私与安全性 › 文件和文件夹里打开",
+        "没有权限搜" + denied.map { "「\($0)」" }.joined(),
+        detail: "可在系统设置 › \(Permissions.privacyPane) › 文件和文件夹里打开",
         tone: .warning)
     }
   }

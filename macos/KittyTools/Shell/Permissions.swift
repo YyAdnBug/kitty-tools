@@ -39,6 +39,9 @@ enum Permissions {
     }
   }
 
+  /// 系统设置里放这些授权的那一栏，提示里写路径用：macOS 27 起改叫「隐私与安全」（扩展的 InfoPlist.loctable）
+  nonisolated static let privacyPane = if #available(macOS 27, *) { "隐私与安全" } else { "隐私与安全性" }
+
   static var isAccessibilityTrusted: Bool { AXIsProcessTrusted() }
 
   /// 未授权时弹系统授权框。系统只弹一次，之后要去系统设置里手动打开

@@ -2,7 +2,7 @@
 # 原生版打包（路径 B：Apple Development 签名、不公证，D7）：archive → 自检 → arm64 DMG + 更新用 zip → notes
 # 发布（2026-09-27 起，和 Tauri 版的仓库无关）：发到本仓库 github.com/YyAdnBug/kitty-tools，tag macos-v<版本>、
 #   正式 release（标 latest：App 内更新读 releases/latest），附两个文件：DMG（首次安装）和 <名字>_<版本>_arm64.zip
-#   （App 内更新下载它，文件名后缀 _arm64.zip 别改）。发布说明固定附「系统设置 › 隐私与安全性 › 仍要打开」步骤
+#   （App 内更新下载它，文件名后缀 _arm64.zip 别改）。发布说明固定附「系统设置 › 隐私与安全 › 仍要打开」步骤
 #   （只有第一次安装要；之后 App 内更新下载的包不带隔离标记，不用再放行）。
 # 产物名跟 PRODUCT_NAME 走（N16：Kitty Tools.app、卷名 Kitty Tools、Kitty Tools_<版本>_arm64.dmg，之前叫 Kitty Tools Native）。
 #   和 Tauri 旧版同名，发布说明还要附：安装前先删掉（或让访达替换）/Applications 里旧版的 Kitty Tools.app；

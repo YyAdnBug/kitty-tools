@@ -163,7 +163,7 @@ struct GeneralTab: View {
       symbol: "doc.on.clipboard.fill", color: Style.Family.clipboard,
       granted: behavior != .ask && behavior != .alwaysDeny, button: "打开设置"
     ) {
-      // ponytail: 打开「隐私与安全性」总页；「从其他 App 粘贴」的专用锚点真机查到再换
+      // ponytail: 打开隐私那一栏的总页；「从其他 App 粘贴」的专用锚点真机查到再换
       NSWorkspace.shared.open(
         URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy")!)
     }

@@ -209,7 +209,8 @@ enum SystemControl {
     }
     if result.error.contains("-1743") || result.error.contains("-1744") {
       island?.show(
-        "没有权限控制「\(target)」", detail: "在 系统设置 › 隐私与安全性 › 自动化 里打开", tone: .warning)
+        "没有权限控制「\(target)」",
+        detail: "在 系统设置 › \(Permissions.privacyPane) › 自动化 里打开", tone: .warning)
       Permissions.Kind.automation.openSettings()
     } else if !result.error.contains("-128") {
       island?.show(failure, detail: Island.excerpt(result.error), tone: .error)
