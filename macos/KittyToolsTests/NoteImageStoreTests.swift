@@ -6,6 +6,7 @@
 import AppKit
 import Foundation
 import ImageIO
+import Synchronization
 import Testing
 import UniformTypeIdentifiers
 
@@ -13,7 +14,7 @@ import UniformTypeIdentifiers
 
 /// 测试用的图片：现画现编（PNG / JPEG / TIFF），可以指定 DPI 和 EXIF 方向
 enum NoteImageFixture {
-  static func image(width: Int, height: Int, color: NSColor = .systemTeal) -> CGImage {
+  nonisolated static func image(width: Int, height: Int, color: NSColor = .systemTeal) -> CGImage {
     let context = CGContext(
       data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
       space: CGColorSpaceCreateDeviceRGB(),
@@ -25,7 +26,7 @@ enum NoteImageFixture {
     return context.makeImage()!
   }
 
-  static func data(
+  nonisolated static func data(
     type: UTType, width: Int, height: Int, dpi: CGFloat? = nil, orientation: Int? = nil
   ) -> Data {
     let output = NSMutableData()
@@ -112,12 +113,51 @@ struct NoteImageStoreTests {
 
   // MARK: 拒收
 
+  /// F14：太大按**原始输入的保险上限**判（存下去的那份另有 20 MB 的线，见下一条）；
+  /// 一个 20 MB 的字节流不是图片：说的是「读不出来」，不再一律说「太大」
   @Test func rejectsTooLargeFile() async throws {
-    let big = Data(count: NoteImageStore.maxFileBytes + 1)
-    let file = try write(big, name: "太大.png")
-    let result = await NoteImageStore.store(fileAt: file, in: directory)
-    #expect((try? result.get()) == nil)
-    if case .failure(let reason) = result { #expect(reason == .tooLarge) }
+    // 稀疏文件：逻辑大小超过输入上限，不占磁盘
+    try manager.createDirectory(at: directory, withIntermediateDirectories: true)
+    let huge = directory.appending(path: "太大.png")
+    manager.createFile(atPath: huge.path, contents: nil)
+    let handle = try FileHandle(forWritingTo: huge)
+    try handle.truncate(atOffset: UInt64(NoteImageStore.maxInputBytes + 1))
+    try handle.close()
+    let result = await NoteImageStore.store(fileAt: huge, in: directory)
+    if case .failure(let reason) = result {
+      #expect(reason == .tooLarge)
+    } else {
+      Issue.record("超过输入上限的文件该被拦下")
+    }
+    // 读不出属性的路径（文件不在）说「读不出来」，不说「太大」
+    let missing = await NoteImageStore.store(
+      fileAt: directory.appending(path: "没有这个.png"), in: directory)
+    if case .failure(let reason) = missing {
+      #expect(reason == .unreadable)
+    } else {
+      Issue.record("文件不在该是读不出来")
+    }
+    // 20 MB 的零字节：不是图片 → 读不出来
+    let notAnImage = try write(Data(count: NoteImageStore.maxFileBytes + 1), name: "不是图.png")
+    let unreadable = await NoteImageStore.store(fileAt: notAnImage, in: directory)
+    if case .failure(let reason) = unreadable {
+      #expect(reason == .unreadable)
+    } else {
+      Issue.record("一堆零字节不该被当成图片")
+    }
+  }
+
+  /// F14：20 MB 按**存下去的那份**算——27 MB 的 BMP（未压缩，超过 20 MB）转成 PNG 只有几十 KB，该收
+  @Test func bigInputThatShrinksOnTranscodeIsAccepted() async throws {
+    let bmp = NoteImageFixture.data(type: .bmp, width: 3000, height: 3000)
+    #expect(bmp.count > NoteImageStore.maxFileBytes, "输入本身超过 20 MB")
+    let file = try write(bmp, name: "大图.bmp")
+    let stored = try #require(try? await NoteImageStore.store(fileAt: file, in: directory).get())
+    #expect(stored.image.ext == "png")
+    let written = try Data(
+      contentsOf: directory.appending(path: "\(stored.image.id.uuidString).png"))
+    #expect(written.count <= NoteImageStore.maxFileBytes, "存下去的那份在 20 MB 以内")
+    #expect(NoteImageStore.maxInputBytes > NoteImageStore.maxFileBytes)
   }
 
   @Test func rejectsTooManyPixels() async throws {
@@ -178,6 +218,55 @@ struct NoteImageStoreTests {
     #expect(rotatedSize.pointSize == CGSize(width: 100, height: 200))
     // 文件不在 / 不是图片
     #expect(NoteImageStore.readSize(at: directory.appending(path: "没有这个.png")) == nil)
+  }
+
+  /// F9：拒收的文案拆成标题 + 说明（刘海岛上两行）
+  @Test func rejectionNoticesAreSplit() {
+    #expect(NoteImageStore.Rejection.tooLarge.noticeTitle == "图片太大了")
+    #expect(NoteImageStore.Rejection.tooLarge.noticeDetail == "单张最多 20 MB")
+    #expect(NoteImageStore.Rejection.tooManyPixels.noticeTitle == "图片太大了")
+    #expect(NoteImageStore.Rejection.tooManyPixels.noticeDetail == "像素太多")
+    #expect(NoteImageStore.Rejection.unreadable.noticeTitle == "读不出这张图片")
+  }
+
+  /// F22：JFIF 的密度单位只有 1（每英寸）才是 DPI；2（每厘米）× 2.54；**0（只表示宽高比，libjpeg 默认）
+  /// 当没有 DPI**——不然 200×150 的网图会被撑满正文宽
+  @Test func jfifDensityUnitDecidesWhetherItIsDPI() throws {
+    /// ImageIO 写的 JPEG 连着 JFIF 的头（FF D8 FF E0 00 10 "JFIF\0" 版本 2 字节 单位 1 字节 密度 4 字节）：
+    /// 直接把单位 / 密度那 5 个字节改成要测的（ImageIO 不认我们传的 JFIF 字典）
+    func jpeg(unit: UInt8, density: UInt16, name: String) throws -> NoteImageSize? {
+      let output = NSMutableData()
+      let destination = CGImageDestinationCreateWithData(
+        output, UTType.jpeg.identifier as CFString, 1, nil)!
+      CGImageDestinationAddImage(
+        destination, NoteImageFixture.image(width: 200, height: 150), nil)
+      CGImageDestinationFinalize(destination)
+      var bytes = [UInt8](output as Data)
+      try #require(
+        bytes.count > 18 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF
+          && bytes[3] == 0xE0
+          && String(bytes: bytes[6..<10], encoding: .ascii) == "JFIF")
+      bytes[13] = unit
+      bytes[14] = UInt8(density >> 8)
+      bytes[15] = UInt8(density & 0xFF)
+      bytes[16] = UInt8(density >> 8)
+      bytes[17] = UInt8(density & 0xFF)
+      let file = try write(Data(bytes), name: name)
+      return NoteImageStore.readSize(at: file)
+    }
+    // 单位 0（libjpeg 默认）：XDensity = 1 只表示宽高比，ImageIO 也不给 DPIWidth → 按 72，像素就是点。
+    // 不这么判的话 200×150 的网图会被撑满正文宽
+    let zero = try #require(try jpeg(unit: 0, density: 1, name: "jfif-unit0.jpg"))
+    #expect(zero.dpi == 72)
+    #expect(zero.pointSize == CGSize(width: 200, height: 150))
+    // 单位 1：每英寸，144 DPI → 一半的点
+    let inch = try #require(try jpeg(unit: 1, density: 144, name: "jfif-unit1.jpg"))
+    #expect(inch.dpi == 144)
+    #expect(inch.pointSize == CGSize(width: 100, height: 75))
+    // 单位 2：每厘米，× 2.54
+    let cm = try #require(try jpeg(unit: 2, density: 100, name: "jfif-unit2.jpg"))
+    #expect(abs(cm.dpi - 254) < 0.01)
+    #expect(cm.pointSize == CGSize(width: 57, height: 43))
   }
 
   @Test func thumbnailKeepsTheLongEdge() async throws {
@@ -293,5 +382,135 @@ struct NoteImageStoreTests {
       now: date.addingTimeInterval(100 * 86_400))
     #expect(plan.remove.isEmpty, "账文件坏了：当空账，不删")
     #expect(plan.ledger[id] != nil, "重新记上「现在」")
+  }
+}
+
+/// 缩略图缓存（NoteImageThumbnails，F7）：命中 / 已在解 / 失败三态、失败不重解也不重画、超上限的一张留得住、
+/// LRU、maxPixel 按长边、换宽度时先拿旧的那张缩放着画。
+/// **串行跑**：缓存和注入的解码器都是进程里一份（`NoteImageThumbnails`），并行跑会互相踩
+/// （全量第一遍里 `failedDecodesAreNotRetriedAndDoNotInvalidate` 就这么假红过一次）
+@Suite(.serialized)
+struct NoteImageThumbnailTests {
+  private let directory = FileManager.default.temporaryDirectory.appending(
+    path: "kitty-notes-thumbs-\(UUID().uuidString)")
+
+  /// maxPixel 按**长边**算（`kCGImageSourceThumbnailMaxPixelSize` 限的是长边）：竖图不会只解出一半多的分辨率；
+  /// 按 256 一档往上取整（拖把手、拉窗口时宽度每变 1 pt 不该换一个键）
+  @Test func thumbnailPixelUsesTheLongEdge() {
+    #expect(NoteImageThumbnails.pixel(for: CGSize(width: 100, height: 300), scale: 1) == 512)
+    #expect(NoteImageThumbnails.pixel(for: CGSize(width: 300, height: 100), scale: 1) == 512)
+    #expect(NoteImageThumbnails.pixel(for: CGSize(width: 100, height: 100), scale: 2) == 256)
+    #expect(NoteImageThumbnails.pixel(for: CGSize(width: 600, height: 10), scale: 1) == 768)
+    #expect(NoteImageThumbnails.pixel(for: .zero, scale: 2) == 256)
+  }
+
+  /// 解不出来的（文件坏了 / 被删了）：不调 ready（不失效重画，不然「重画 → 再解 → 再失败」一直占 CPU）、
+  /// 第二次取不再起解码（负缓存）
+  @Test func failedDecodesAreNotRetriedAndDoNotInvalidate() async throws {
+    NoteImageThumbnails.discard()
+    let decodes = Mutex(0)
+    let readies = Mutex(0)
+    NoteImageThumbnails.setDecoder { _, _ in
+      decodes.withLock { $0 += 1 }
+      return nil
+    }
+    defer {
+      NoteImageThumbnails.resetDecoder()
+      NoteImageThumbnails.discard()
+    }
+    let id = UUID()
+    let url = directory.appending(path: "\(id.uuidString).png")
+    _ = NoteImageThumbnails.image(for: url, id: id, maxPixel: 256) {
+      readies.withLock { $0 += 1 }
+    }
+    for _ in 0..<200 where decodes.withLock({ $0 }) < 1 {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(decodes.withLock { $0 } == 1)
+    #expect(readies.withLock { $0 } == 0, "解不出来不调 ready")
+    _ = NoteImageThumbnails.image(for: url, id: id, maxPixel: 256) {
+      readies.withLock { $0 += 1 }
+    }
+    try await Task.sleep(for: .milliseconds(50))
+    #expect(decodes.withLock { $0 } == 1, "第二次取不再起解码")
+    #expect(readies.withLock { $0 } == 0)
+  }
+
+  /// 单张比上限还大的缩略图放进去**不淘汰自己**（不然画一次解一次）
+  @Test func anOversizedThumbnailStaysInTheCache() {
+    NoteImageThumbnails.discard()
+    NoteImageThumbnails.setMaxCost(100)
+    defer {
+      NoteImageThumbnails.setMaxCost(nil)
+      NoteImageThumbnails.discard()
+    }
+    let id = UUID()
+    NoteImageThumbnails.store(
+      NoteImageFixture.image(width: 20, height: 20),
+      key: NoteImageThumbnails.key(id, pixel: 256))
+    #expect(NoteImageThumbnails.count == 1)
+    #expect(NoteImageThumbnails.cost == 400)
+  }
+
+  /// LRU：超过上限丢最久没用的，**读到就挪到队尾**
+  @Test func cacheEvictsTheLeastRecentlyUsed() {
+    NoteImageThumbnails.discard()
+    NoteImageThumbnails.setMaxCost(1000)
+    defer {
+      NoteImageThumbnails.setMaxCost(nil)
+      NoteImageThumbnails.discard()
+    }
+    let a = UUID()
+    let b = UUID()
+    let c = UUID()
+    let d = UUID()
+    func put(_ id: UUID) {
+      NoteImageThumbnails.store(
+        NoteImageFixture.image(width: 20, height: 20),
+        key: NoteImageThumbnails.key(id, pixel: 256))
+    }
+    func has(_ id: UUID) -> Bool {
+      NoteImageThumbnails.peek(key: NoteImageThumbnails.key(id, pixel: 256)) != nil
+    }
+    put(a)
+    put(b)
+    put(c)
+    #expect(!has(a), "三张 400 放不下：丢最久没用的 A")
+    #expect(has(b) && has(c))
+    _ = NoteImageThumbnails.peek(key: NoteImageThumbnails.key(b, pixel: 256))
+    put(d)
+    #expect(!has(c), "B 刚读过、挪到了队尾：这次丢 C")
+    #expect(has(b) && has(d))
+    #expect(NoteImageThumbnails.count == 2)
+  }
+
+  /// 换宽度（拖把手、拉窗口）：同一个编号已经有别的档的缩略图时先拿它缩放着画，同时后台解新的那一档
+  @Test func widthChangeReusesAnExistingThumbnail() async throws {
+    NoteImageThumbnails.discard()
+    let decodes = Mutex(0)
+    NoteImageThumbnails.setDecoder { _, _ in
+      decodes.withLock { $0 += 1 }
+      return NoteImageFixture.image(width: 10, height: 10)
+    }
+    defer {
+      NoteImageThumbnails.resetDecoder()
+      NoteImageThumbnails.discard()
+    }
+    let id = UUID()
+    let url = directory.appending(path: "\(id.uuidString).png")
+    NoteImageThumbnails.store(
+      NoteImageFixture.image(width: 8, height: 8), key: NoteImageThumbnails.key(id, pixel: 256))
+    let reused = NoteImageThumbnails.image(for: url, id: id, maxPixel: 1024, ready: {})
+    #expect(reused != nil, "换宽度时先拿旧的那张缩放着画，不闪纸色")
+    #expect(reused?.width == 8)
+    for _ in 0..<200 where decodes.withLock({ $0 }) < 1 {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(decodes.withLock { $0 } == 1, "同时也在解新的那一档")
+    let key = NoteImageThumbnails.key(id, pixel: 1024)
+    for _ in 0..<200 where NoteImageThumbnails.peek(key: key) == nil {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(NoteImageThumbnails.peek(key: key)?.width == 10)
   }
 }

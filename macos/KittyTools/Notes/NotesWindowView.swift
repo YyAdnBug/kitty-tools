@@ -451,7 +451,8 @@ struct NoteEditor: View {
         NoteBodyField(
           note: note, fontSize: fontSize, margin: Self.margin,
           setBody: { model.setBody($0, of: note.id) }, onOverflow: model.overflowed,
-          onCancel: onClose ?? {}, undo: model.textUndo, images: model.store.images)
+          onCancel: onClose ?? {}, undo: model.textUndo, images: model.store.images,
+          onImageProblem: model.imageProblem)
       } else {
         readOnly(paper)
       }
@@ -478,7 +479,8 @@ struct NoteEditor: View {
     }
   }
 
-  /// 最近删除里的：标题和正文只读、能选中复制。
+  /// 最近删除里的：标题和正文只读、能选中复制。**图片的令牌换成「[图片]」**（`note.readOnlyBody`，F11）：只读视图
+  /// 不带任务 / Markdown 的样式、也不把令牌换成附图，露着 `![image](kitty-note-image://…)` 没有意义。
   /// ponytail: 正文整段交给一个 Text（1 MB 的正文排起来慢），不带任务 / Markdown 的样式（看到的是带标记的原文）；
   /// 删掉的便签只是看一眼、放回再改，卡了、或者要和编辑时长得一样，再换成只读的文本框（NoteTextView 认 isEditable）
   private func readOnly(_ paper: NotePaper) -> some View {
@@ -486,7 +488,7 @@ struct NoteEditor: View {
       VStack(alignment: .leading, spacing: 10) {
         // 没起标题的不另写一行（列表里的标题取的就是正文第一行）
         if !note.title.isEmpty { Text(note.title).font(.system(size: 20, weight: .semibold)) }
-        if !note.body.isEmpty { Text(note.body).font(.system(size: fontSize)) }
+        if !note.body.isEmpty { Text(note.readOnlyBody).font(.system(size: fontSize)) }
       }
       .foregroundStyle(paper.ink)
       .textSelection(.enabled)

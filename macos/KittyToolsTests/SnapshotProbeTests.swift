@@ -1548,37 +1548,10 @@ struct SnapshotProbeTests {
         "image-missing", imageModel,
         prepare: { root in
           guard let editor = NotesWindow.editor(in: root),
-            let manager = editor.layoutManager, let container = editor.textContainer,
-            let storage = editor.textStorage
+            let manager = editor.layoutManager, let container = editor.textContainer
           else { return }
+          // 这一条便签的正文先排出来（图按行片段宽量尺寸；调试输出已经删掉）
           manager.ensureLayout(for: container)
-          print("DIAG4 视图=\(editor.frame) 容器=\(container.size)")
-          var glyph = 0
-          while glyph < manager.numberOfGlyphs {
-            var range = NSRange()
-            let rect = manager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: &range)
-            let used = manager.lineFragmentUsedRect(forGlyphAt: glyph, effectiveRange: nil)
-            let chars = manager.characterRange(forGlyphRange: range, actualGlyphRange: nil)
-            let style =
-              storage.attribute(
-                .paragraphStyle, at: min(chars.location, max(storage.length, 1) - 1),
-                effectiveRange: nil) as? NSParagraphStyle
-            print(
-              "DIAG4 chars \(chars) frag \(rect) used \(used) minH \(style?.minimumLineHeight ?? -1)"
-            )
-            glyph = NSMaxRange(range)
-          }
-          // 附件那一块
-          storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length))
-          { value, range, _ in
-            guard
-              let cell = (value as? NoteImageAttachment)?.attachmentCell as? NoteImageAttachmentCell
-            else { return }
-            let glyphs = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-            print(
-              "DIAG4 附件 \(range) 字形框 \(manager.boundingRect(forGlyphRange: glyphs, in: container)) cellSize \(cell.cellSize())"
-            )
-          }
         })
     }
     // 选中：一圈描边 + 右下角的拖动把手
@@ -1589,6 +1562,28 @@ struct SnapshotProbeTests {
         "image-selected", imageModel,
         prepare: Self.reveal(NSRange(location: imageTokenRange(alone.body).location, length: 1)))
     }
+
+    // 2026-10-16 评审后：比正文宽的图（F3：缩到可用宽、不压上一行）、图后面接着打长字折行（F16②：折出来的行
+    // 是正文行高）、深色的选中描边和占位框
+    let wide = try addImage(1440, 900)
+    let wideNote = imageNotes.create(
+      body: "宽图这一行\n\(NoteImages.token(wide))\n后面的一行字", now: now.addingTimeInterval(-240))
+    let wrapped = imageNotes.create(
+      body: "\(NoteImages.token(photo)) " + String(repeating: "图后面接着打的一长串字，", count: 12),
+      now: now.addingTimeInterval(-300))
+    imageModel.selection = wideNote.id
+    for dark in [false, true] {
+      let suffix = dark ? "-dark" : ""
+      for _ in 0..<2 { try window("image-wide\(suffix)", imageModel, dark: dark) }
+    }
+    imageModel.selection = wrapped.id
+    for _ in 0..<2 { try window("image-wrapped", imageModel) }
+    imageModel.selection = alone.id
+    try window(
+      "image-selected-dark", imageModel, dark: true,
+      prepare: Self.reveal(NSRange(location: imageTokenRange(alone.body).location, length: 1)))
+    imageModel.selection = broken.id
+    for _ in 0..<2 { try window("image-missing-dark", imageModel, dark: true) }
 
     // 手测反馈第 4 批：行距三档（标题、正文折行、任务、列表、引用、代码块混排；标准档就是 spacing-standard）、
     // 代码块（光标不在块里 / 在块里，浅深）、空的正文的占位和第一个字对齐（placeholder：占位 + 同一个位置打了字的
@@ -1752,10 +1747,12 @@ struct SnapshotProbeTests {
     wallImages.create(body: "这张没有图\n就是一行普通的字", now: now.addingTimeInterval(-60))
     // 墙卡片那张缩略图先在后台解好：屏外出图时 .task 的那一轮状态更新来不及回来（画的是纸色）
     let scale = NSScreen.main?.backingScaleFactor ?? 2
-    let wallPixel = Int(NoteWall.textWidth * max(scale, 1))
-    let wallKey = "wall-\(photo.id.uuidString)@\(wallPixel)"
+    let wallPixel = NoteImageThumbnails.pixel(
+      for: CGSize(width: NoteWall.textWidth, height: NoteImageLayout.thumbnailMaxHeight),
+      scale: scale)
+    let wallKey = NoteImageThumbnails.key(photo.id, pixel: wallPixel)
     _ = NoteImageThumbnails.image(
-      for: imageStore.url(for: photo.id, ext: photo.ext), key: wallKey, maxPixel: wallPixel,
+      for: imageStore.url(for: photo.id, ext: photo.ext), id: photo.id, maxPixel: wallPixel,
       ready: {})
     for _ in 0..<200 where NoteImageThumbnails.peek(key: wallKey) == nil {
       RunLoop.main.run(until: Date.now.addingTimeInterval(0.02))
@@ -2067,6 +2064,13 @@ struct SnapshotProbeTests {
     ])
     withImage.store.images = deckImages
     try deck("image-preview", withImage.store) { $0.setPreview(withImage.ids[0]) }
+    // 整条便签只有一张图：标签和预览卡上写「[图片]」（第一行是图时标题取不到别的字）
+    let onlyImage = try library([
+      ("", "\(NoteImages.token(photo))", 60),
+      ("", "没有图的一条", 120),
+    ])
+    onlyImage.store.images = deckImages
+    try deck("image-tab", onlyImage.store) { $0.setPreview(onlyImage.ids[0]) }
     var imageDeck = NoteDeckOptions()
     imageDeck.noteSize = .extraLarge
     for dark in [false, true] {

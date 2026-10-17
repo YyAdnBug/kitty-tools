@@ -593,6 +593,11 @@ import SwiftUI
 
   static let overLimitText = "一条便签最多 1 MB，这次输入没有记进去"
 
+  /// 正文里插图被拒 / 存图没成：用刘海岛说一句（标题 + 说明分开，F9）
+  func imageProblem(_ title: String, _ detail: String) {
+    island?.show(title, detail: detail, tone: .warning, symbol: "photo.badge.exclamationmark")
+  }
+
   func focusSearch() { searchFocus += 1 }
 
   /// ⌘F：焦点在正文里（或它的查找条里）是便签内查找（系统的查找条），否则去搜索框。便签墙上开着编辑卡时搜索框被
@@ -639,7 +644,8 @@ import SwiftUI
   /// 右边最底下那行小字：「改于 今天 09:12 · 128 字」；最近删除里是「删于 昨天 22:40 · 29 天后永久删除」
   static func footnote(_ note: Note, now: Date = .now, calendar: Calendar = .current) -> String {
     guard let deleted = note.deletedAt else {
-      let count = note.body.reduce(0) { $1.isWhitespace ? $0 : $0 + 1 }
+      // 字数**不数图片的令牌**（一张图算 0 个字）：不然一张图让底下多出六七十个字（F19）
+      let count = NoteImages.stripping(note.body).reduce(0) { $1.isWhitespace ? $0 : $0 + 1 }
       return "改于 \(SettingsBackup.when(note.modifiedAt, now: now, calendar: calendar)) · \(count) 字"
     }
     let left = deleted.addingTimeInterval(Double(NoteStore.trashDays) * 86_400)

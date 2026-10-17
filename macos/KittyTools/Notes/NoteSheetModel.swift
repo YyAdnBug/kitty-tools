@@ -138,6 +138,12 @@ import Observation
     Island.announce(NotesWindowModel.overLimitText)
   }
 
+  /// 正文里插图被拒 / 存图没成：用刘海岛说一句（标题 + 说明分开；那叠、浮动便签、全部便签窗口都用这一条，
+  /// 岛从 model 手里已有的来，不靠 SwiftUI 环境注入，F9）
+  func imageProblem(_ title: String, _ detail: String) {
+    island?.show(title, detail: detail, tone: .warning, symbol: "photo.badge.exclamationmark")
+  }
+
   /// Esc：操作菜单开着先退它（颜色那一级退回上一级），查找条开着先关它，再按才关——用键盘关的，键盘当场回原来的 App
   func cancel() {
     if menu != nil {

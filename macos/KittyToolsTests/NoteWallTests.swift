@@ -526,6 +526,16 @@ struct NoteWallTests {
     // 行内的第一张图也算（摘要是从正文里找的第一张图，不是这一段里的）
     #expect(card("前\(image)后") { _ in CGSize(width: 40, height: 40) }.thumbnail != nil)
 
+    // F11：令牌在 excerptLength 处不截成两半、只有图片的行先去掉再数行（原来先截取再换令牌）
+    let filler = String(repeating: "字", count: NoteWall.excerptLength - 10)
+    let nearCut = NoteWall.excerpt(of: withImages("\(filler)\(image)")).text
+    #expect(!nearCut.contains("kitty-note-image"), "截取处不许露出令牌原文")
+    #expect(nearCut.hasSuffix("[图片]"))
+    let imageOnlyFirst = NoteWall.excerpt(of: withImages("\(image)\n买菜\n牛奶")).text
+    #expect(imageOnlyFirst == "买菜\n牛奶", "只有图片的行先去掉，不占 16 行的名额")
+    // 只有图片的便签：这一段是空的（不是令牌原文）
+    #expect(NoteWall.excerpt(of: withImages(image)).text.isEmpty)
+
     // 代码块：挪到这一段的坐标里；截在尾上的照样是块
     let fenced = NoteWall.excerpt(of: note("```swift\nlet a = 1\n```\n后面", title: "T"))
     #expect(fenced.blocks.count == 1 && fenced.blocks[0].open.location == 0)

@@ -39,32 +39,25 @@ extension NoteTextView {
     return rect.insetBy(dx: -2, dy: -2).contains(point) ? index : nil
   }
 
-  /// 第 index 个字（是图片附件）在视图里占的那一块。**不按 boundingRect 算**（实测 15.7：附件字形的框和
-  /// 真正的图对不上——图的高度是 attachmentBounds 报的），照和布局代理同一套算：x 是字形的横位置，
-  /// y 是「行片段顶 + 段前 + 上留白」，宽高是附件报的那一块
+  /// 第 index 个字（是图片附件）在视图里占的那一块。**按真排出来的那一块算**：布局代理把含附件的那个行片段的
+  /// usedRect 收成了图那一块（NoteStyles.centerLine），`boundingRect(forGlyphRange:in:)` 给的正是它（实测和画出来的
+  /// 图逐像素对得上）。不再自己调 attachmentBounds：附件的尺寸由 cell 的 cellFrame 按行片段宽报（F3），
+  /// 描边、把手、命中都按这一块
   func imageRect(ofCharacterAt index: Int) -> NSRect? {
     guard let layoutManager, let textContainer, let storage = textStorage, index >= 0,
       index < storage.length,
-      let attachment = storage.attribute(.attachment, at: index, effectiveRange: nil)
-        as? NoteImageAttachment
+      storage.attribute(.attachment, at: index, effectiveRange: nil) is NoteImageAttachment
     else { return nil }
     // 刚改过这一行（拖把手只改显示、重排过）：这一个字先排到，问出来的才是新的尺寸
     layoutManager.ensureLayout(forCharacterRange: NSRange(location: index, length: 1))
     let glyph = layoutManager.glyphIndexForCharacter(at: index)
     guard glyph < layoutManager.numberOfGlyphs else { return nil }
-    let fragment = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
-    let location = layoutManager.location(forGlyphAt: glyph)
-    let before =
-      (storage.attribute(.paragraphStyle, at: index, effectiveRange: nil) as? NSParagraphStyle)
-      .map { NoteStyles.spacingBefore(at: index, style: $0, in: storage.mutableString) } ?? 0
-    let bounds = attachment.attachmentBounds(
-      for: textContainer, proposedLineFragment: fragment, glyphPosition: location,
-      characterIndex: index)
-    guard bounds.width > 0, bounds.height > 0 else { return nil }
+    let box = layoutManager.boundingRect(
+      forGlyphRange: NSRange(location: glyph, length: 1), in: textContainer)
+    guard box.width > 0.5, box.height > 0.5 else { return nil }
     let origin = textContainerOrigin
     return NSRect(
-      x: location.x + origin.x, y: fragment.minY + before + NoteImageLayout.padding + origin.y,
-      width: bounds.width, height: bounds.height)
+      x: box.minX + origin.x, y: box.minY + origin.y, width: box.width, height: box.height)
   }
 
   /// 第 index 张图右下角的拖动把手（12 pt 的方块，贴着图里侧 1 pt）
@@ -196,13 +189,19 @@ extension NoteTextView {
     return true
   }
 
-  /// 松手：宽度变了才写进正文（一步撤销）
+  /// 松手：宽度变了才写进正文（一步撤销）。**先清 cell 上临时的宽度**：不清的话撤销换回来的是原来那个附件和
+  /// cell（live 还挂着），存的宽度回去了、屏上还是拖出来的宽度；按住没拖就松手也一样——没记宽度的图会从此
+  /// 钉在当时的宽度、不再跟着正文框变（F8）。宽度没变的也重排那一行，把临时宽度的影响收掉
   func commitWidthDrag() {
     guard let drag = widthDrag else { return }
     let width = Int(drag.current.rounded())
     finishWidthDrag()
-    guard width != Int(drag.startWidth.rounded()) else { return }
-    replaceImageWidth(at: drag.index, width: width)
+    drag.cell.live.withLock { $0 = nil }
+    if width != Int(drag.startWidth.rounded()) {
+      replaceImageWidth(at: drag.index, width: width)
+    } else {
+      restyleImageLine(at: drag.index)
+    }
   }
 
   /// Esc / 便签关了：回到原来的大小
@@ -259,16 +258,17 @@ extension NoteTextView {
 
   // MARK: 插图
 
-  /// 往正文里插几张图（每张独占一行、一步撤销、插完光标在图后面）。location = nil 时插在当前选区。
-  /// **正在组字时欠着**（动字会打断组字）：记下来，组字确认之后由 settle 补
-  func insert(images: [NoteImages.Image], at location: Int? = nil) {
+  /// 往正文里插几张图（每张独占一行、一步撤销、插完光标落到图下面那一行的行首）。
+  /// range = nil 时插在当前选区；给了区间就换掉那一段（异步存完图回来时用的是**发起那一刻的选区**，F23）。
+  /// **正在组字时欠着**（动字会打断组字）：记下来、**追加**（连着欠两批不许把前一批顶掉），组字确认之后由 settle 补
+  func insert(images: [NoteImages.Image], at range: NSRange? = nil) {
     guard !images.isEmpty, isEditable else { return }
     guard !hasMarkedText() else {
-      pendingImages = images
-      pendingImagesAt = location
+      pendingImages.append(contentsOf: images)
+      if pendingImagesAt == nil { pendingImagesAt = range }
       return
     }
-    insertNow(images, at: location)
+    insertNow(images, at: range)
   }
 
   /// 组字确认之后补上欠着的插图
@@ -281,11 +281,9 @@ extension NoteTextView {
     insertNow(images, at: at)
   }
 
-  private func insertNow(_ images: [NoteImages.Image], at location: Int?) {
+  private func insertNow(_ images: [NoteImages.Image], at range: NSRange?) {
     guard let storage = textStorage, !images.isEmpty else { return }
-    let range =
-      location.map { NSRange(location: min(max($0, 0), storage.length), length: 0) }
-      ?? selectedRange()
+    let range = range.map { clamped($0, in: storage) } ?? selectedRange()
     let plan = NoteImages.insertion(
       in: storage.mutableString, replacing: range, count: images.count)
     let replacement = NSMutableAttributedString()
@@ -401,7 +399,9 @@ extension NoteTextView {
     replaceSelection(with: replacement, at: selectedRange())
   }
 
-  /// 拖进来（落点由系统先设成选区）：自家的类型、图片文件、图片数据；别的交给父类
+  /// 拖进来（落点由系统先设成选区）：自家的类型、**图片文件**、图片数据；别的交给父类。
+  /// 判的顺序和粘贴同一条（F5）：有非空的纯文字、又没有图片文件时交给父类按字读——表格、文稿里拖一段带
+  /// 「渲染图」的字进来，用户要的是字
   func readImageSelection(from pboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
     guard isEditable else { return false }
     if type == Self.noteTextType {
@@ -409,12 +409,13 @@ extension NoteTextView {
       pasteStored(stored)
       return true
     }
-    if type == .fileURL {
-      let urls = imageFileURLs(in: pboard)
-      guard !urls.isEmpty else { return false }
+    let urls = imageFileURLs(in: pboard)
+    if !urls.isEmpty {
       storeAndInsert(files: urls, at: selectedRange())
       return true
     }
+    if !(pboard.string(forType: .string) ?? "").isEmpty { return false }
+    if type == .fileURL { return false }
     guard UTType(type.rawValue)?.conforms(to: .image) == true,
       let data = pboard.data(forType: type), !data.isEmpty
     else { return false }
@@ -431,10 +432,20 @@ extension NoteTextView {
     return (pasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL]) ?? []
   }
 
-  /// 剪贴板里的第一份图片数据（按类型的先后）
+  /// 剪贴板里的第一份图片数据。**先取 PNG / JPEG / HEIC / GIF**（多半就是原图、体积小），没有再取 TIFF 等：
+  /// 预览、浏览器「拷贝图像」常常先给未压缩的 TIFF，一张 1200 万像素的照片约 48 MB，直接取它会说「太大了」（F14）
   private func firstImageData(in pasteboard: NSPasteboard) -> Data? {
-    for type in pasteboard.types ?? []
-    where UTType(type.rawValue)?.conforms(to: .image) == true {
+    let types = pasteboard.types ?? []
+    let preferred = [
+      "public.png", "public.jpeg", "public.heic", "public.heif", "com.compuserve.gif",
+    ]
+    for id in preferred {
+      let type = NSPasteboard.PasteboardType(id)
+      if types.contains(type), let data = pasteboard.data(forType: type), !data.isEmpty {
+        return data
+      }
+    }
+    for type in types where UTType(type.rawValue)?.conforms(to: .image) == true {
       if let data = pasteboard.data(forType: type), !data.isEmpty { return data }
     }
     return nil
@@ -492,7 +503,8 @@ extension NoteTextView {
     guard !images.isEmpty, isEditable, window != nil, identifier?.rawValue == noteID else {
       return
     }
-    let at = reported == captured ? range.location : selectedRange().location
+    // 正文没变就换掉发起时的**那一段选区**（不只是 location：选中的字要被换掉）；变了就插在当前光标处
+    let at = reported == captured ? range : selectedRange()
     // 这一步是等存图的那一下回来之后才做的：可能落在自动的「一个事件一组」之外（单测里干脆关掉了自动分组），
     // 自己开一组，插图始终是一步撤销
     let manager = undoManager
@@ -501,10 +513,10 @@ extension NoteTextView {
     manager?.endUndoGrouping()
   }
 
-  /// 拒收 / 存不成：提示音 + 说一句为什么
+  /// 拒收 / 存不成：提示音 + 说一句为什么（刘海岛的标题 + 说明分开传）
   private func rejectImage(_ rejection: NoteImageStore.Rejection) {
     NSSound.beep()
-    onImageProblem(rejection.notice)
+    onImageProblem(rejection.noticeTitle, rejection.noticeDetail)
   }
 
   // MARK: 复制 / 剪切 / 拖出
@@ -608,7 +620,9 @@ extension NoteTextView {
     panel.begin { [weak self] response in
       previous?.activate()
       guard let self else { return }
-      // 键盘还给这条便签的正文（那叠和浮动便签是不激活本 App 的面板）
+      // 键盘还给这条便签的正文：**先 makeKey 再 makeFirstResponder**（那叠和浮动便签是不激活本 App 的面板，
+      // 只 makeFirstResponder 的话前台还在原来的 App，选完直接打字会落到那边，F6）
+      self.window?.makeKey()
       self.window?.makeFirstResponder(self)
       guard response == .OK, !panel.urls.isEmpty else { return }
       self.storeAndInsert(files: panel.urls, at: range)

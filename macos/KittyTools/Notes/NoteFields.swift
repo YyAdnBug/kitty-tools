@@ -59,18 +59,16 @@ struct NoteBodyField: View {
   /// 设置 › 便签「Markdown 样式」「行距」：变了正文整篇重排
   @AppStorage(Prefs.notesMarkdown) private var markdown = true
   @AppStorage(Prefs.notesLineSpacing) private var spacing = NoteStyles.Spacing.standard
-  /// 插图被拒（太大 / 像素太多 / 读不出来）、存图没成时用刘海岛说一句（没注入时不说）
-  @Environment(Island.self) private var island: Island?
+  /// 插图被拒（太大 / 像素太多 / 读不出来）、存图没成时说什么（标题 + 说明）：宿主接上 model 手里的 island。
+  /// **不靠 `@Environment(Island.self)`**：三个宿主都没注入，那句话出不来、只剩一声提示音（F9）
+  var onImageProblem: (String, String) -> Void = { _, _ in }
 
   var body: some View {
     let paper = NotePaper.of(note)
     NoteTextEditor(
       note: note, fontSize: fontSize, horizontalInset: margin - 5, focusRequest: focusRequest,
       undo: undo, markdown: markdown, spacing: spacing, onChange: setBody, onOverflow: onOverflow,
-      onCancel: onCancel,
-      onImageProblem: { message in
-        island?.show(message, tone: .warning, symbol: "photo.badge.exclamationmark")
-      }, images: images
+      onCancel: onCancel, onImageProblem: onImageProblem, images: images
     )
     .accessibilityLabel("正文")
     .overlay(alignment: .topLeading) {

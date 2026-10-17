@@ -391,6 +391,16 @@ struct NotesWindowTests {
         .hasSuffix("即将永久删除"))
   }
 
+  /// F19：底下的「N 字」不数图片的令牌（一张图算 0 个字，不是六七十个）
+  @Test func footnoteDoesNotCountImageTokens() throws {
+    let (_, store, _) = try make()
+    let image = NoteImages.token(NoteImages.Image(id: UUID(), ext: "png"))
+    let note = store.create(body: "你好\n\(image)\n世界", now: Self.moment())
+    #expect(
+      NotesWindowModel.footnote(note, now: Self.moment(hour: 10), calendar: Self.calendar)
+        == "改于 今天 09:12 · 4 字")
+  }
+
   // MARK: 纸色
 
   /// 8 种纸色、名字不重；浅色那套是说明里给的值；两套的墨对纸、次要的字对纸都够 4.5:1；深色那套的色条还是同一个色相。

@@ -47,7 +47,9 @@ struct NoteTextViewImageTests {
       editor.textContainerInset = NSSize(width: 9, height: 6)
       editor.onChange = { [unowned self] in changes.append($0) }
       editor.onOverflow = { [unowned self] in overflows += 1 }
-      editor.onImageProblem = { [unowned self] in problems.append($0) }
+      editor.onImageProblem = { [unowned self] title, detail in
+        problems.append("\(title)|\(detail)")
+      }
       scroll.hasVerticalScroller = true
       scroll.documentView = editor
       window.contentView = scroll
@@ -120,6 +122,15 @@ struct NoteTextViewImageTests {
       for _ in 0..<200 where images.count != count {
         try? await Task.sleep(for: .milliseconds(20))
       }
+    }
+
+    /// 真的 mouseExited 事件（mouseExited(with:) 会校验事件的类型，拿别的类型会抛异常）
+    func exitEvent() throws -> NSEvent {
+      try #require(
+        NSEvent.enterExitEvent(
+          with: .mouseExited, location: .zero, modifierFlags: [], timestamp: 0,
+          windowNumber: window.windowNumber, context: nil, eventNumber: 0, trackingNumber: 0,
+          userData: nil))
     }
 
     func pasteboardNamed(_ name: String) -> NSPasteboard {
@@ -338,7 +349,9 @@ struct NoteTextViewImageTests {
     rig.step { rig.editor.insert(images: [image]) }
     #expect(rig.stored == "前半\n\(rig.token(image))\n后半")
     #expect(rig.images.count == 1)
-    #expect(rig.editor.selectedRange() == NSRange(location: 4, length: 0), "光标在图那一行的末尾（图后面）")
+    #expect(
+      rig.editor.selectedRange() == NSRange(location: 5, length: 0),
+      "光标落到图下面那一行的行首（图后面那一行是「后半」）")
     #expect(rig.changes.last == rig.stored, "交出去的是存的形式")
     rig.window.notes.undo()
     #expect(rig.stored == "前半后半", "插图是一步撤销")
@@ -352,8 +365,9 @@ struct NoteTextViewImageTests {
     // 光标在行尾（3）：前面有字，先换行
     rig.editor.setSelectedRange(NSRange(location: 2, length: 0))
     rig.step { rig.editor.insert(images: [one, two]) }
-    #expect(rig.stored == "文字\n\(rig.token(one))\n\(rig.token(two))")
+    #expect(rig.stored == "文字\n\(rig.token(one))\n\(rig.token(two))\n")
     #expect(rig.images.count == 2)
+    #expect(rig.editor.selectedRange() == NSRange(location: 7, length: 0), "光标在两张图下面那一行的行首")
     // 插到正文最前面：后面有字，图后面换行
     rig.editor.setSelectedRange(NSRange(location: 0, length: 0))
     rig.step { rig.editor.insert(images: [one]) }
@@ -396,8 +410,8 @@ struct NoteTextViewImageTests {
     let rig = try Rig()
     let image = try await rig.addImage()
     rig.load("正文")
-    // 还要算上插图时前面加的那个换行
-    rig.editor.maxBytes = NoteImages.token(image).utf8.count + "正文".utf8.count + 1
+    // 还要算上插图时前面加的那个换行和后面补的那个（F16①：光标落到下一行）
+    rig.editor.maxBytes = NoteImages.token(image).utf8.count + "正文".utf8.count + 2
     rig.editor.setSelectedRange(NSRange(location: 2, length: 0))
     rig.step { rig.editor.insert(images: [image]) }
     #expect(rig.images.count == 1, "正好放下")
@@ -628,7 +642,9 @@ struct NoteTextViewImageTests {
     board.releaseGlobally()
   }
 
-  @Test func linkPasteOverAnImageRestsylesTheLine() async throws {
+  /// F12：选中的是图（或选区带图）时粘网址**不包成链接**（包了图会被换成一个裸 U+FFFC 的链接、图丢了）：
+  /// 照常粘贴纯文字，正文里不留令牌、也不留没挂附件的占位字符
+  @Test func linkPasteOverAnImagePastesPlainText() async throws {
     let rig = try Rig()
     let image = try await rig.addImage()
     rig.load("文字\n\(rig.token(image))")
@@ -641,24 +657,44 @@ struct NoteTextViewImageTests {
     board.setString("https://example.com/a", forType: .string)
     rig.editor.pasteboard = board
     rig.step { rig.editor.paste(nil) }
-    // 选中的那张图被包成链接：这一行不再是图片行（段落样式和 imageLineKey 都要收回去）
-    #expect(rig.images.isEmpty)
+    #expect(rig.images.isEmpty, "选中的那张图被网址换掉了（不是换成一个坏掉的链接）")
+    #expect(rig.stored == "文字\nhttps://example.com/a")
+    #expect(!rig.stored.contains("kitty-note-image"), "不许留下令牌原文")
+    #expect(!rig.stored.contains("\u{FFFC}"), "不许留下没挂附件的占位字符")
+    #expect(!rig.stored.contains("]("), "不许粘成一个链接")
     #expect(
       rig.editor.textStorage?.attribute(NoteStyles.imageLineKey, at: index, effectiveRange: nil)
-        == nil)
-    let line = rig.stored.split(separator: "\n").last.map(String.init) ?? ""
-    #expect(line.hasPrefix("["))
+        == nil, "这一行不再是图片行")
     board.releaseGlobally()
+  }
+
+  /// F12 的另一半：`selectionContainsAttachment` 只看挂着我们附件的字（裸 U+FFFC 不算）
+  @Test func selectionWithAnAttachmentIsDetected() async throws {
+    let rig = try Rig()
+    let image = try await rig.addImage()
+    rig.load("前\(rig.token(image))后")
+    let index = try #require(rig.images.first?.index)
+    #expect(rig.editor.selectionContainsAttachment(NSRange(location: index, length: 1)))
+    #expect(rig.editor.selectionContainsAttachment(NSRange(location: 0, length: index + 1)))
+    #expect(!rig.editor.selectionContainsAttachment(NSRange(location: 0, length: 1)))
+    #expect(!rig.editor.selectionContainsAttachment(NSRange(location: 0, length: 0)))
   }
 
   // MARK: 读屏
 
-  @Test func accessibilityValueSaysImage() async throws {
+  /// F13：不再重写 accessibilityValue（重写把一个附件字符换成两个字，读屏的选区、按行范围全按存储的下标算，
+  /// 图后面的位置就全错一位）。系统给的就是文本存储那一份（附件是 U+FFFC，长度不变）；图片念什么由附件 cell 的
+  /// accessibilityLabel 给（R10）
+  @Test func accessibilityKeepsTheStorageLengthAndLabelsTheCell() async throws {
     let rig = try Rig()
     let image = try await rig.addImage()
     rig.load("前面\(rig.token(image))后面")
     let value = try #require(spoken(rig.editor))
-    #expect(value == "前面图片后面")
+    #expect(value == "前面\u{FFFC}后面")
+    #expect((value as NSString).length == (rig.editor.string as NSString).length, "替换后长度不变")
+    #expect(!value.contains("kitty-note-image"), "不念令牌")
+    let index = try #require(rig.images.first?.index)
+    #expect(rig.editor.imageCell(at: index)?.accessibilityLabel() == "图片")
     rig.load("没有图片")
     #expect(spoken(rig.editor) == "没有图片")
   }
@@ -675,4 +711,423 @@ struct NoteTextViewImageTests {
     #expect(titles.first == NotesWindowModel.taskTitle, "任务还是在最前面")
     #expect(titles.dropFirst().first == NoteTextView.formatTitle)
   }
+  // MARK: 第 7 批评审后的修复（F1–F25）
+
+  /// F2：剪贴板里是**纯文字**时主菜单 / 右键的「粘贴」要可用（原来直接返回 `isEditable && canPasteImages`，
+  /// 有字时 `canPasteImages` 是 false，全部便签窗口里 ⌘V 粘不了字）；只有图片数据也可用；空剪贴板照父类
+  @Test func pasteAvailabilityFollowsTheClipboard() throws {
+    let rig = try Rig()
+    rig.load("文字")
+    let item = NSMenuItem(
+      title: "粘贴", action: #selector(NSTextView.paste(_:)), keyEquivalent: "")
+    func available(_ board: NSPasteboard) -> Bool {
+      rig.editor.pasteboard = board
+      return rig.editor.validateUserInterfaceItem(item)
+    }
+    let text = rig.pasteboardNamed("kitty-notes-paste-\(UUID().uuidString)")
+    text.setString("一段字", forType: .string)
+    #expect(available(text), "纯文字：可用")
+    let image = rig.pasteboardNamed("kitty-notes-paste-\(UUID().uuidString)")
+    image.setData(NoteImageFixture.data(type: .png, width: 20, height: 20), forType: .png)
+    #expect(available(image), "只有图片数据：可用")
+    let empty = rig.pasteboardNamed("kitty-notes-paste-\(UUID().uuidString)")
+    // 空剪贴板：照父类。父类问的是**系统剪贴板**（测试不碰它，里面是什么看用户当时拷了什么）——系统剪贴板里有
+    // 图片时，我们多出来的可读类型（.png / .tiff / .fileURL）会让父类答「可用」，和干净的 NSTextView 比就不成立了；
+    // 只在不打架的时候比，别的时候只要求不崩
+    let plain = NSTextView()
+    plain.isEditable = true
+    let generalHasImage =
+      NSPasteboard.general.types?.contains { UTType($0.rawValue)?.conforms(to: .image) == true }
+      ?? false
+    if !generalHasImage {
+      #expect(available(empty) == plain.validateUserInterfaceItem(item), "空剪贴板：照父类")
+    }
+    #expect(!rig.editor.canPasteImages(from: empty), "空剪贴板没有图可粘")
+    text.releaseGlobally()
+    image.releaseGlobally()
+    empty.releaseGlobally()
+  }
+
+  /// F3：比正文可用宽还宽的图夹到可用宽、高按比例；图在自己的行片段里（不往上盖住前面的字）；
+  /// 引用里、代码块里的图跟着窄（可用宽 = 正文可用宽 − 这一行的缩进）；描边矩形和排出来的那一块一致
+  @Test func wideImagesFollowTheAvailableWidth() async throws {
+    let rig = try Rig()
+    let image = try await rig.addImage(width: 1440, height: 900)
+    func check(_ body: String, indent: CGFloat, _ label: String) throws {
+      rig.load(body)
+      let index = try #require(rig.images.first?.index)
+      let rect = try #require(rig.editor.imageRect(ofCharacterAt: index))
+      let manager = try #require(rig.editor.layoutManager)
+      let glyph = manager.glyphIndexForCharacter(at: index)
+      let size = manager.attachmentSize(forGlyphAt: glyph)
+      let expected = rig.editor.availableWidth - indent
+      #expect(abs(rect.width - expected) < 2, "\(label)：宽夹到可用宽（减这一行的缩进）")
+      #expect(abs(rect.height - rect.width * 900 / 1440) < 2, "\(label)：高按比例")
+      // attachmentSize 是布局管理器自己另算的一版（比真排出来的宽一点：它是拿行首的提议算的），
+      // 描边 / 把手 / 命中一律按 boundingRect 那一块（上面比过它和画出来的图逐像素一致）
+      #expect(size.width >= rect.width - 0.5, "\(label)：排出来的块不小于描边的块")
+      let fragment = manager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+      let origin = rig.editor.textContainerOrigin
+      #expect(rect.minY - origin.y >= fragment.minY - 0.5, "\(label)：图的上沿不高过行片段的上沿（不盖住上一行）")
+      #expect(rect.maxY - origin.y <= fragment.maxY + 0.5, "\(label)：图在行片段里")
+    }
+    try check("前面\n\(rig.token(image))\n后面", indent: 0, "普通行")
+    try check("> \(rig.token(image))", indent: NoteStyles.quoteIndent, "引用里")
+    try check("```\n\(rig.token(image))\n```", indent: NoteStyles.codeInset * 2, "代码块里")
+  }
+
+  /// F16②：图后面同一段的长字折行后，**不含图的那几个行片段是正文行高**（原来整段的行高都定死成图高）
+  @Test func wrappedLinesAfterAnImageKeepTheBodyHeight() async throws {
+    let rig = try Rig()
+    let image = try await rig.addImage(width: 200, height: 100)
+    rig.load("\(rig.token(image)) " + String(repeating: "字", count: 200))
+    rig.layout()
+    let manager = try #require(rig.editor.layoutManager)
+    let bodyHeight = NoteStyles.Theme(
+      paper: NotePaper.all[2], fontSize: 15, markdown: true, spacing: .standard
+    ).lineHeight(15)
+    var (tall, normal) = (0, 0)
+    var glyph = 0
+    while glyph < manager.numberOfGlyphs {
+      var range = NSRange()
+      let fragment = manager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: &range)
+      let chars = manager.characterRange(forGlyphRange: range, actualGlyphRange: nil)
+      var isImage = false
+      rig.editor.textStorage?.enumerateAttribute(.attachment, in: chars) { value, _, stop in
+        if value != nil {
+          isImage = true
+          stop.pointee = true
+        }
+      }
+      if isImage {
+        tall += 1
+        #expect(fragment.height >= 100 + NoteImageLayout.padding * 2 - 0.5, "图那一行要撑到图高 + 留白")
+      } else {
+        normal += 1
+        #expect(abs(fragment.height - bodyHeight) < 0.5, "折出来的别的行是正文行高")
+      }
+      glyph = NSMaxRange(range)
+    }
+    #expect(tall == 1 && normal >= 2, "一个图片行片段 + 至少两个折行片段")
+  }
+
+  /// F4：组字中欠着的插图补上之后，**交出去的最后一次**要带令牌（原来外层 settle 又把不带图的正文交了一遍）
+  @Test func pendingImageIsInTheLastReportedBody() async throws {
+    let rig = try Rig()
+    let image = try await rig.addImage()
+    rig.load("文字")
+    rig.editor.setSelectedRange(NSRange(location: 2, length: 0))
+    rig.window.notes.beginUndoGrouping()
+    rig.editor.setMarkedText(
+      "ni", selectedRange: NSRange(location: 2, length: 0),
+      replacementRange: NSRange(location: NSNotFound, length: 0))
+    rig.editor.insert(images: [image])
+    rig.editor.insertText("你", replacementRange: NSRange(location: NSNotFound, length: 0))
+    rig.window.notes.endUndoGrouping()
+    rig.editor.breakUndoCoalescing()
+    #expect(rig.images.count == 1)
+    let last = try #require(rig.changes.last)
+    #expect(last.contains(rig.token(image)), "最后一次交出去的正文带令牌（图不能丢）")
+    #expect(rig.stored.contains(rig.token(image)))
+  }
+
+  /// F23：异步插图**换掉发起那一刻的整段选区**（原来只用了 range.location，选中的字留着）；
+  /// 组字中连着欠两批插图都要插上（原来后一批把前一批顶掉）
+  @Test func asyncInsertReplacesTheCapturedSelectionAndKeepsEveryBatch() async throws {
+    let rig = try Rig()
+    rig.load("前中后")
+    let file = rig.directory.appending(path: "异步.png")
+    try NoteImageFixture.data(type: .png, width: 40, height: 30).write(to: file)
+    rig.editor.setSelectedRange(NSRange(location: 1, length: 1))
+    rig.editor.storeAndInsert(files: [file], at: rig.editor.selectedRange())
+    await rig.waitForImages(1)
+    #expect(!rig.stored.contains("中"), "选中的那段字要被换掉")
+    #expect(rig.stored.contains("前") && rig.stored.contains("后"))
+    #expect(rig.images.count == 1)
+
+    // 组字中欠两批
+    let one = try await rig.addImage()
+    let two = try await rig.addImage()
+    rig.load("文字")
+    rig.editor.setSelectedRange(NSRange(location: 2, length: 0))
+    rig.window.notes.beginUndoGrouping()
+    rig.editor.setMarkedText(
+      "ni", selectedRange: NSRange(location: 2, length: 0),
+      replacementRange: NSRange(location: NSNotFound, length: 0))
+    rig.editor.insert(images: [one])
+    rig.editor.insert(images: [two])
+    #expect(rig.images.isEmpty, "组字期间先欠着")
+    rig.editor.insertText("你", replacementRange: NSRange(location: NSNotFound, length: 0))
+    rig.window.notes.endUndoGrouping()
+    rig.editor.breakUndoCoalescing()
+    #expect(rig.images.count == 2, "连着欠的两批都要插上")
+    #expect(rig.stored.contains(rig.token(one)) && rig.stored.contains(rig.token(two)))
+  }
+
+  /// F5：剪贴板 / 拖进来同时有字和图时，进来的先是字（表格、文稿复制的「字 + 渲染图」、访达拷文件的图标 TIFF）
+  @Test func textWinsOverAnAttachedImage() async throws {
+    let rig = try Rig()
+    rig.load("前面")
+    let board = rig.pasteboardNamed("kitty-notes-paste-\(UUID().uuidString)")
+    board.setString("文稿里的字", forType: .string)
+    board.setData(NoteImageFixture.data(type: .png, width: 20, height: 20), forType: .tiff)
+    rig.editor.pasteboard = board
+    rig.editor.setSelectedRange(NSRange(location: 2, length: 0))
+    rig.step { rig.editor.paste(nil) }
+    #expect(rig.images.isEmpty, "进来的应该是字，不是图")
+    #expect(rig.stored == "前面文稿里的字")
+    #expect(rig.store.files().isEmpty, "不该往目录里多出文件")
+    // 拖进来（readSelection）照粘贴的同一个顺序：图片数据这条路交给父类按字读
+    #expect(!rig.editor.readImageSelection(from: board, type: .tiff))
+    #expect(rig.images.isEmpty)
+    rig.editor.setSelectedRange(NSRange(location: 0, length: 0))
+    var read = false
+    rig.step { read = rig.editor.readSelection(from: board, type: .string) }
+    #expect(read, "交给父类按字读")
+    #expect(rig.stored.contains("文稿里的字"))
+    // 只有图片数据：进来的是图
+    let onlyImage = rig.pasteboardNamed("kitty-notes-paste-\(UUID().uuidString)")
+    onlyImage.setData(NoteImageFixture.data(type: .png, width: 20, height: 20), forType: .tiff)
+    #expect(rig.editor.readImageSelection(from: onlyImage, type: .tiff))
+    await rig.waitForImages(1)
+    #expect(rig.images.count == 1)
+    board.releaseGlobally()
+    onlyImage.releaseGlobally()
+  }
+
+  /// F14：剪贴板里的图片数据先取 PNG（原图、体积小），没有再取 TIFF（预览、浏览器常常先给未压缩的 TIFF）
+  @Test func pngDataIsPreferredOverTIFF() async throws {
+    let rig = try Rig()
+    rig.load("文字")
+    let board = rig.pasteboardNamed("kitty-notes-paste-\(UUID().uuidString)")
+    board.setData(NoteImageFixture.data(type: .tiff, width: 20, height: 20), forType: .tiff)
+    board.setData(NoteImageFixture.data(type: .png, width: 30, height: 20), forType: .png)
+    rig.editor.pasteboard = board
+    rig.editor.setSelectedRange(NSRange(location: 2, length: 0))
+    rig.step { rig.editor.paste(nil) }
+    await rig.waitForImages(1)
+    let id = try #require(rig.images.first?.id)
+    #expect(rig.store.size(of: id, ext: "png")?.pixelWidth == 30, "取的是 PNG 那一份")
+    board.releaseGlobally()
+  }
+
+  /// F15：任务行里插图（方框后面）——图留在这一行，不被挤到下一行
+  @Test func imageAfterATaskBoxStaysOnTheLine() async throws {
+    let rig = try Rig()
+    let image = try await rig.addImage()
+    rig.load("☐ 买菜")
+    rig.editor.setSelectedRange(NSRange(location: 2, length: 0))
+    rig.step { rig.editor.insert(images: [image]) }
+    #expect(rig.stored == "☐ \(rig.token(image))\n买菜", "图在方框后面那一行")
+    #expect(rig.images.count == 1)
+  }
+
+  /// F8：拖把手松手之后清掉临时的宽度——撤销回来的是原来那个附件，屏上也回到原来的宽度；
+  /// 按住不拖就松手，没记宽度的图照旧跟着正文框变
+  @Test func releaseClearsTheTemporaryWidth() async throws {
+    let rig = try Rig()
+    let image = try await rig.addImage(width: 200, height: 100)
+    rig.load("文字\n\(rig.token(image))")
+    let index = try #require(rig.images.first?.index)
+    let rect = try #require(rig.editor.imageRect(ofCharacterAt: index))
+    let handle = try #require(rig.editor.handleRect(ofImageAt: index))
+    rig.window.notes.beginUndoGrouping()
+    rig.editor.beginWidthDrag(
+      at: index, event: try rig.mouse(.leftMouseDown, at: NSPoint(x: handle.midX, y: handle.midY)))
+    rig.editor.mouseDragged(
+      with: try rig.mouse(
+        .leftMouseDragged, at: NSPoint(x: handle.midX + 60, y: handle.midY)))
+    rig.editor.mouseUp(
+      with: try rig.mouse(.leftMouseUp, at: NSPoint(x: handle.midX + 60, y: handle.midY)))
+    rig.window.notes.endUndoGrouping()
+    #expect(rig.stored.contains("image|260]("))
+    #expect(rig.editor.imageCell(at: index)?.liveWidth == nil, "松手之后临时的宽度要清掉")
+    rig.window.notes.undo()
+    let restored = try #require(rig.editor.imageRect(ofCharacterAt: index))
+    #expect(abs(restored.width - rect.width) < 0.5, "撤销之后排出来的宽度回到原来的")
+
+    // 按住没拖就松手：没记宽度的图照着正文框变（用一张比正文框宽的图才看得出）
+    let wideImage = try await rig.addImage(width: 900, height: 450)
+    rig.load("文字\n\(rig.token(wideImage))")
+    let index2 = try #require(rig.images.first?.index)
+    let handle2 = try #require(rig.editor.handleRect(ofImageAt: index2))
+    rig.editor.beginWidthDrag(
+      at: index2,
+      event: try rig.mouse(.leftMouseDown, at: NSPoint(x: handle2.midX, y: handle2.midY)))
+    rig.editor.mouseUp(
+      with: try rig.mouse(.leftMouseUp, at: NSPoint(x: handle2.midX, y: handle2.midY)))
+    #expect(rig.editor.imageCell(at: index2)?.liveWidth == nil)
+    let wide = try #require(rig.editor.imageRect(ofCharacterAt: index2)).width
+    rig.editor.setFrameSize(NSSize(width: 300, height: 320))
+    rig.layout()
+    let narrow = try #require(rig.editor.imageRect(ofCharacterAt: index2)).width
+    #expect(narrow < wide, "没记宽度的图还是要跟着正文框变")
+  }
+
+  /// F17：图片行**行首**组字时图不往上跳（typingAttributes 也要带上 imageLineKey）
+  @Test func composingAtTheStartOfAnImageLineKeepsTheImageInPlace() async throws {
+    let rig = try Rig()
+    let image = try await rig.addImage(width: 200, height: 100)
+    rig.load(rig.token(image))
+    let index = try #require(rig.images.first?.index)
+    let before = try #require(rig.editor.imageRect(ofCharacterAt: index))
+    rig.window.notes.beginUndoGrouping()
+    rig.editor.setMarkedText(
+      "ni", selectedRange: NSRange(location: 2, length: 0),
+      replacementRange: NSRange(location: NSNotFound, length: 0))
+    rig.layout()
+    let moved = try #require(rig.images.first?.index, "组字插在图片前面：图的字往后挪了")
+    let after = try #require(rig.editor.imageRect(ofCharacterAt: moved))
+    #expect(abs(after.minY - before.minY) < 0.5, "组字期间图的上下位置不跳")
+    #expect(abs(after.height - before.height) < 0.5)
+    rig.editor.unmarkText()
+    rig.window.notes.endUndoGrouping()
+  }
+
+  /// F18：组字中改宽度**不当场重排**（组字期间不动属性），确认之后补上：图片行的高按新的宽度。
+  /// 不补的话这一行停在旧宽度（原来在 setFrameSize 里当场排，组字中那一次直接跳过、事后不补）
+  @Test func widthChangeWhileComposingAppliesAfterTheComposition() async throws {
+    let rig = try Rig()
+    let image = try await rig.addImage(width: 900, height: 450)
+    rig.load(rig.token(image))
+    let index = try #require(rig.images.first?.index)
+    func imageLineHeight(_ at: Int) -> CGFloat? {
+      rig.editor.textStorage?.attribute(NoteStyles.imageLineKey, at: at, effectiveRange: nil)
+        as? CGFloat
+    }
+    let before = try #require(imageLineHeight(index))
+    rig.window.notes.beginUndoGrouping()
+    rig.editor.setMarkedText(
+      "n", selectedRange: NSRange(location: 1, length: 0),
+      replacementRange: NSRange(location: NSNotFound, length: 0))
+    rig.editor.setFrameSize(NSSize(width: 300, height: 320))
+    rig.layout()
+    let moved = try #require(rig.images.first?.index)
+    #expect(
+      abs((imageLineHeight(moved) ?? 0) - before) < 0.5,
+      "组字期间不动属性：图片行的高还是旧的（当场重排会把这一遍的版作废）")
+    rig.editor.insertText("你", replacementRange: NSRange(location: NSNotFound, length: 0))
+    rig.window.notes.endUndoGrouping()
+    rig.editor.breakUndoCoalescing()
+    for _ in 0..<200 where abs((imageLineHeight(moved) ?? 0) - before) < 0.5 {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    let after = try #require(imageLineHeight(moved))
+    #expect(after < before, "确认之后图片行按新的宽度重排")
+    #expect(
+      abs((rig.editor.imageRect(ofCharacterAt: moved)?.width ?? 0) - rig.editor.availableWidth)
+        < 2,
+      "排出来的图就是新的可用宽（比正文框宽的图夹到可用宽）")
+    #expect(abs(after - rig.editor.availableWidth * 450 / 900) < 2, "行高按新的宽度")
+  }
+
+  /// F20：鼠标离开正文框、改过字之后，悬停的那张图要清掉（不然把手一直画着 / 指到别的字上）
+  @Test func hoveredImageIsClearedWhenLeavingOrEditing() async throws {
+    let rig = try Rig()
+    let image = try await rig.addImage()
+    rig.load("前面\(rig.token(image))后面")
+    let index = try #require(rig.images.first?.index)
+    let rect = try #require(rig.editor.imageRect(ofCharacterAt: index))
+    rig.editor.updateHoveredImage(at: NSPoint(x: rect.midX, y: rect.midY))
+    #expect(rig.editor.hoveredImage == index)
+    rig.editor.mouseExited(with: try rig.exitEvent())
+    #expect(rig.editor.hoveredImage == nil, "离开正文框：把手不画了")
+    rig.editor.updateHoveredImage(at: NSPoint(x: rect.midX, y: rect.midY))
+    #expect(rig.editor.hoveredImage == index)
+    rig.editor.setSelectedRange(NSRange(location: 0, length: 0))
+    rig.step {
+      rig.editor.insertText("x", replacementRange: NSRange(location: NSNotFound, length: 0))
+    }
+    #expect(rig.editor.hoveredImage == nil, "改过字：悬停的下标可能已经指到别的字上")
+  }
+
+  /// F21：没记宽度的图不被放小（最小 40 只管令牌里记了宽度的和拖把手）
+  @Test func smallImagesAreNotEnlarged() async throws {
+    let rig = try Rig()
+    let image = try await rig.addImage(width: 16, height: 16)
+    rig.load(rig.token(image))
+    let index = try #require(rig.images.first?.index)
+    #expect(try #require(rig.editor.imageRect(ofCharacterAt: index)).width == 16, "小图标照原样")
+    rig.load(rig.token(image, width: 40))
+    #expect(try #require(rig.editor.imageRect(ofCharacterAt: index)).width == 40)
+    // 拖把手的临时宽度：最小 40
+    let metrics = NoteImageSize(
+      pixelWidth: 16, pixelHeight: 16, dpi: 72, orientation: 1,
+      pointSize: CGSize(width: 16, height: 16))
+    #expect(
+      NoteImageLayout.size(image: image, metrics: metrics, available: 300, live: 10).width == 40)
+    #expect(NoteImageLayout.size(image: image, metrics: metrics, available: 300).width == 16)
+  }
+
+  /// F24：光标 / 选区命令把图片当成**一个字**——照一张表比对每条命令的落点。
+  /// 原来那条 `location > image && location < image + 1` 对整数永远不成立，是空检验
+  @Test func cursorCommandsLandWhereTheTableSays() async throws {
+    let rig = try Rig()
+    let image = try await rig.addImage()
+    let other = try await rig.addImage(width: 120, height: 90)
+    rig.load(sample(rig, image, other))
+    let images = rig.images
+    let first = images[0].index
+    let second = images[1].index
+    // （起点，命令，期望的 location，期望的 length）
+    let table: [(Int, Selector, Int, Int)] = [
+      (first, #selector(NSResponder.moveRight(_:)), first + 1, 0),
+      (first, #selector(NSResponder.moveLeft(_:)), first - 1, 0),
+      (first, #selector(NSResponder.moveWordRight(_:)), first + 1, 0),
+      (first, #selector(NSResponder.moveToBeginningOfLine(_:)), first, 0),
+      (first, #selector(NSResponder.moveRightAndModifySelection(_:)), first, 1),
+      (first, #selector(NSResponder.moveLeftAndModifySelection(_:)), first - 1, 1),
+      (first + 1, #selector(NSResponder.moveLeft(_:)), first, 0),
+      (first + 1, #selector(NSResponder.moveRight(_:)), first + 2, 0),
+      (first + 1, #selector(NSResponder.moveLeftAndModifySelection(_:)), first, 1),
+      (second, #selector(NSResponder.moveRight(_:)), second + 1, 0),
+      (second, #selector(NSResponder.moveLeft(_:)), second - 1, 0),
+      (second, #selector(NSResponder.moveWordLeft(_:)), second - 2, 0),
+      (second, #selector(NSResponder.moveRightAndModifySelection(_:)), second, 1),
+      (second + 1, #selector(NSResponder.moveLeft(_:)), second, 0),
+      (second + 1, #selector(NSResponder.moveLeftAndModifySelection(_:)), second, 1),
+    ]
+    for (start, selector, location, length) in table {
+      rig.editor.setSelectedRange(NSRange(location: start, length: 0))
+      rig.editor.doCommand(by: selector)
+      #expect(
+        rig.editor.selectedRange() == NSRange(location: location, length: length),
+        "从 \(start) 出发：\(NSStringFromSelector(selector)) 该落到 \(location)+\(length)")
+    }
+  }
+
+  /// F9：插图被拒时编辑器把**标题和说明分开**交给宿主（再经 model 手里的岛说出来）
+  @Test func rejectionReportsTitleAndDetail() async throws {
+    let rig = try Rig()
+    rig.load("文字")
+    let bad = rig.directory.appending(path: "假.png")
+    try Data("这不是图片".utf8).write(to: bad)
+    rig.editor.storeAndInsert(files: [bad], at: NSRange(location: 0, length: 0))
+    for _ in 0..<200 where rig.problems.isEmpty {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(rig.problems.first == "读不出这张图片|换个文件试试")
+    #expect(rig.images.isEmpty)
+  }
+
+  /// F25：走编辑器那一层的令牌往返（editorString → 编辑器 → stored(from:)）逐字一样
+  @Test func editorRoundTripKeepsTheStoredForm() async throws {
+    let rig = try Rig()
+    let image = try await rig.addImage()
+    let other = try await rig.addImage(width: 100, height: 60)
+    let bodies = [
+      rig.token(image),
+      "文字\n\(rig.token(image, width: 120))\n后面",
+      "\(rig.token(other))\(rig.token(image))",
+      "前面\u{FFFC}后面",
+      "```\n\(rig.token(image))\n```",
+      "# 标题\n\(rig.token(image, width: 400))\n> 引用",
+    ]
+    for body in bodies {
+      rig.load(body)
+      rig.layout()
+      #expect(rig.stored == body, "往返逐字一样：\(body.debugDescription)")
+    }
+  }
+
 }

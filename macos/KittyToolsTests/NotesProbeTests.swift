@@ -188,10 +188,13 @@ struct NotesProbeTests {
     }
     print("notes-probe 载入 + 首屏排版：\(String(format: "%.1f", firstImages)) ms")
 
-    // 打一个字：走完 shouldChangeText → 改字 → didChangeText（settle：附件 → 令牌 + 重排那几行）
+    // 打一个字：走完 shouldChangeText → 改字 → didChangeText（settle：附件 → 令牌 + 重排那几行）。
+    // **两边同样的正文末尾**（2026-10-16 评审 F30）：都追加同一行普通文字，光标放在那一行里——原来一个有图、一个没图，
+    // 末尾还不一样，比不了
+    let tail = "\n末尾一行普通文字，中英混排 mixed text，用来把光标放在同一处。\n"
     for (name, text) in [("有图", body), ("没图", plain)] {
-      let view = load(text)
-      view.setSelectedRange(NSRange(location: (view.textStorage?.length ?? 1) - 1, length: 0))
+      let view = load(text + tail)
+      view.setSelectedRange(NSRange(location: (view.textStorage?.length ?? 1) - 20, length: 0))
       var samples: [Double] = []
       for _ in 0..<10 {
         let start = Self.cpu()
@@ -203,6 +206,41 @@ struct NotesProbeTests {
         "notes-probe 打一个字（主线程 CPU）：\(name) 中位 \(String(format: "%.1f", samples[samples.count / 2])) ms，最多 \(String(format: "%.1f", samples.last ?? 0)) ms"
       )
     }
+    // 50 张大图便签「换到这一条」的首屏耗时（SPEC §9.6；2026-10-16 评审 F30 补量）：
+    // 每条一张 900 × 600 的图、正文 4 KB，量「setText + 首屏排版」——换一条便签时主线程上最大的一块
+    var manyBodies: [String] = []
+    for index in 0..<50 {
+      let image = pictures[index % pictures.count]
+      var note = "第 \(index) 条带大图的便签\n"
+      while note.utf8.count < 4 * 1024 { note += segment }
+      note += NoteImages.token(image) + "\n末尾一行\n"
+      manyBodies.append(note)
+    }
+    let switchToImage = Self.median(5) {
+      let view = NoteTextView.make()
+      view.imageStore = store
+      view.frame = NSRect(x: 0, y: 0, width: 600, height: 900)
+      view.setPaper(
+        NotePaper.all[0], fontSize: 15, markdown: true, spacing: .standard, paperIndex: 0)
+      view.setText(manyBodies[25])
+      firstScreen(view)
+    }
+    let switchToPlain = Self.median(5) {
+      let view = NoteTextView.make()
+      view.imageStore = store
+      view.frame = NSRect(x: 0, y: 0, width: 600, height: 900)
+      view.setPaper(
+        NotePaper.all[0], fontSize: 15, markdown: true, spacing: .standard, paperIndex: 0)
+      view.setText(
+        manyBodies[25].replacingOccurrences(
+          of: #"!\[image(\|[0-9]+)?\]\(kitty-note-image://[^)]*\)"#, with: "[图片]",
+          options: .regularExpression))
+      firstScreen(view)
+    }
+    print(
+      "notes-probe 50 张大图便签换过去的首屏（4 KB 正文 + 一张 900 × 600 的图）：有图 \(String(format: "%.1f", switchToImage)) ms，没图 \(String(format: "%.1f", switchToPlain)) ms"
+    )
+
     // 互转本身：整篇附件 → 令牌
     let view = load(body)
     if let storage = view.textStorage {
@@ -212,14 +250,17 @@ struct NotesProbeTests {
     // 缩略图缓存：画一遍看得见的那一屏（600 × 900），再看缓存占多少
     NoteImageThumbnails.discard()
     let draw = view
-    let rep = try #require(draw.bitmapImageRepForCachingDisplay(in: draw.bounds))
-    draw.cacheDisplay(in: draw.bounds, to: rep)
+    // 画头三屏（600 × 2700；正文里每 ~2.7 KB 一张图，一屏 900 pt 里往往一张都没有）：缓存里进了几张、占多少像素。
+    // 上限是 NoteImageThumbnails.maxCost（一两屏 Retina 满宽大图），写进 PLAN
+    let area = NSRect(x: 0, y: 0, width: 600, height: 2700)
+    let rep = try #require(draw.bitmapImageRepForCachingDisplay(in: area))
+    draw.cacheDisplay(in: area, to: rep)
     for _ in 0..<200 where NoteImageThumbnails.cost == 0 {
       RunLoop.main.run(until: Date.now.addingTimeInterval(0.02))
     }
-    draw.cacheDisplay(in: draw.bounds, to: rep)
+    draw.cacheDisplay(in: area, to: rep)
     print(
-      "notes-probe 缩略图缓存：\(NoteImageThumbnails.cost) 像素（约 \(NoteImageThumbnails.cost * 4 / 1024 / 1024) MB 位图）"
+      "notes-probe 缩略图缓存：画头三屏之后 \(NoteImageThumbnails.cost) 像素 / \(NoteImageThumbnails.count) 张（约 \(NoteImageThumbnails.cost * 4 / 1024 / 1024) MB 位图；上限 \(NoteImageThumbnails.maxCost) 像素）"
     )
     NoteImageThumbnails.discard()
     print("notes-probe 放掉之后：\(NoteImageThumbnails.cost) 像素")

@@ -7,6 +7,16 @@ import Testing
 
 @testable import KittyTools
 
+/// 固定种子的伪随机数（同 NoteEditorFuzzTests 的 LCG；失败了能复现，F25）
+private struct SeededRandom: RandomNumberGenerator {
+  var state: UInt64
+  init(seed: Int) { state = UInt64(bitPattern: Int64(seed)) | 1 }
+  mutating func next() -> UInt64 {
+    state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+    return state
+  }
+}
+
 struct NoteImagesTests {
   private let id = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
   private let other = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!
@@ -117,40 +127,112 @@ struct NoteImagesTests {
     #expect(!NoteImages.isImageOnly("![image](写坏的)"))
   }
 
+  /// 墙卡片那段字：只有图片的行整行去掉（连换行）、行内的令牌换成「[图片]」——**在截取之前做**（F11）
+  @Test func displayLinesDropsImageOnlyLines() {
+    let body = "买菜\n\(token(id))\n前面\(token(other))后面\n\n末行"
+    #expect(NoteImages.displayLines(body) == "买菜\n前面[图片]后面\n\n末行")
+    // 整条只有图：出来是空的（不会在 1200 个字处把令牌截成两半）
+    #expect(NoteImages.displayLines("\(token(id))\n\(token(other))") == "")
+    #expect(NoteImages.displayLines("没有图片") == "没有图片")
+    // 令牌紧贴行尾 / 行首
+    #expect(NoteImages.displayLines("\(token(id))买菜") == "[图片]买菜")
+    #expect(NoteImages.displayLines("买菜\(token(id))") == "买菜[图片]")
+    // 去掉令牌（字数、搜索用）
+    #expect(NoteImages.stripping("前面\(token(id))后面") == "前面后面")
+    #expect(NoteImages.stripping("\(token(id))") == "")
+    #expect(NoteImages.stripping("没有图片") == "没有图片")
+  }
+
+  /// 宽度写法被规范化的行为：`|0040` 认得出、拼回去是 `|40`；`|39` 越界当没写、拼回去没有那一段（F25）
+  @Test func widthNotationIsNormalised() {
+    let padded = "![image|0040](kitty-note-image://\(id.uuidString).png)"
+    let found = NoteImages.matches(in: padded as NSString)
+    #expect(found.count == 1 && found.first?.image.width == 40)
+    #expect(found.first.map { NoteImages.token($0.image) } == token(id, width: 40))
+    let tooSmall = "![image|39](kitty-note-image://\(id.uuidString).png)"
+    #expect(NoteImages.matches(in: tooSmall as NSString).first?.image.width == nil)
+    #expect(
+      NoteImages.matches(in: tooSmall as NSString).first.map { NoteImages.token($0.image) }
+        == token(id))
+  }
+
   // MARK: 插图插在哪
 
   @Test func insertionOnItsOwnLine() {
     let text = "第一行\n第二行\n第三行" as NSString
-    // 行首：前面不用换行
+    // 行首：前面不用换行；图后面**总要**有一个换行（光标落到下一行的行首，F16①）
     var plan = NoteImages.insertion(in: text, replacing: NSRange(location: 4, length: 0), count: 1)
-    #expect(plan == NoteImages.Insertion(lead: false, trail: true, caret: 1))
+    #expect(plan == NoteImages.Insertion(lead: false, trail: true, caret: 2))
     // 行中：前后都要换行
     plan = NoteImages.insertion(in: text, replacing: NSRange(location: 6, length: 0), count: 1)
-    #expect(plan == NoteImages.Insertion(lead: true, trail: true, caret: 2))
-    // 行尾（换行之前）：前面要换行、后面不用
+    #expect(plan == NoteImages.Insertion(lead: true, trail: true, caret: 3))
+    // 行尾（换行之前）：前面要换行、后面也补一个换行
     plan = NoteImages.insertion(in: text, replacing: NSRange(location: 7, length: 0), count: 1)
-    #expect(plan == NoteImages.Insertion(lead: true, trail: false, caret: 2))
-    // 连插三张：图之间两个换行
+    #expect(plan == NoteImages.Insertion(lead: true, trail: true, caret: 3))
+    // 连插三张：图之间两个换行、末尾一个
     plan = NoteImages.insertion(in: text, replacing: NSRange(location: 7, length: 0), count: 3)
-    // 1 个前导换行 + 3 个附件字符 + 2 个图之间的换行
-    #expect(plan == NoteImages.Insertion(lead: true, trail: false, caret: 6))
+    // 1 个前导换行 + 3 个附件字符 + 2 个图之间的换行 + 末尾 1 个换行
+    #expect(plan == NoteImages.Insertion(lead: true, trail: true, caret: 7))
   }
 
   @Test func insertionReplacesSelectionAndHandlesEmptyText() {
     let text = "abc" as NSString
-    // 有选区：整段换掉（选到行尾）
+    // 有选区：整段换掉（选到行尾），图后面补一个换行（光标落到下一行）
     let plan = NoteImages.insertion(in: text, replacing: NSRange(location: 0, length: 3), count: 1)
-    #expect(plan == NoteImages.Insertion(lead: false, trail: false, caret: 1))
+    #expect(plan == NoteImages.Insertion(lead: false, trail: true, caret: 2))
     // 空的正文
     let empty = "" as NSString
     #expect(
       NoteImages.insertion(in: empty, replacing: NSRange(location: 0, length: 0), count: 1)
-        == NoteImages.Insertion(lead: false, trail: false, caret: 1))
-    // 只有空白的一行：不改出多余的空行
+        == NoteImages.Insertion(lead: false, trail: true, caret: 2))
+    // 只有空白的一行：不改出多余的空行（图后面照补一个换行）
     let spaces = "   " as NSString
     #expect(
       NoteImages.insertion(in: spaces, replacing: NSRange(location: 2, length: 0), count: 1)
-        == NoteImages.Insertion(lead: false, trail: false, caret: 1))
+        == NoteImages.Insertion(lead: false, trail: true, caret: 2))
+  }
+
+  /// 光标夹在 `\r\n` 两个字中间时（getLineStart 给的 contentsEnd 在光标前面）：不许算出负的长度、
+  /// 不许抛 NSRangeException（随机编辑测试种子 2001 跑出来的，F1）
+  @Test func insertionBetweenCarriageReturnAndNewline() {
+    let text = "a\r\nb" as NSString
+    // 光标挪到 \n 之后（下一行的行首）：图独占一行、不拆开这对行尾，也不多出一个空行
+    let plan = NoteImages.insertion(in: text, replacing: NSRange(location: 2, length: 0), count: 1)
+    #expect(plan == NoteImages.Insertion(lead: false, trail: true, caret: 2))
+    // 别的几个位置也不崩
+    for at in 0...4 {
+      _ = NoteImages.insertion(in: text, replacing: NSRange(location: at, length: 0), count: 2)
+    }
+    #expect(
+      NoteImages.insertion(
+        in: "\r\n" as NSString, replacing: NSRange(location: 1, length: 0), count: 1
+      ).caret == 2)
+  }
+
+  /// 任务行里可以贴图：行首的方框 / 列表符号不算「前面有字」（R5、F15）
+  @Test func insertionAfterATaskBoxGoesOnTheSameLine() {
+    let text = "☐ 买菜" as NSString
+    // 光标在方框后面（「☐」之后、「 」之前）：前面没有正文，图就在这一行、方框后面
+    let afterBox = NoteImages.insertion(
+      in: text, replacing: NSRange(location: 1, length: 0), count: 1)
+    #expect(afterBox == NoteImages.Insertion(lead: false, trail: true, caret: 2))
+    // 光标在「☐ 」之后、字之前（位置 2）：前面还是没有正文
+    let afterSpace = NoteImages.insertion(
+      in: text, replacing: NSRange(location: 2, length: 0), count: 1)
+    #expect(afterSpace == NoteImages.Insertion(lead: false, trail: true, caret: 2))
+    // 光标在「买」后面：前面有字，图另起一行
+    let afterText = NoteImages.insertion(
+      in: text, replacing: NSRange(location: 4, length: 0), count: 1)
+    #expect(afterText == NoteImages.Insertion(lead: true, trail: true, caret: 3))
+    // 无序列表的符号也一样
+    #expect(
+      NoteImages.insertion(
+        in: "- 一" as NSString, replacing: NSRange(location: 2, length: 0), count: 1)
+        == NoteImages.Insertion(lead: false, trail: true, caret: 2))
+    #expect(!NoteImages.hasContent("☐ "))
+    #expect(NoteImages.hasContent("☐ 买"))
+    #expect(NoteImages.hasContent("买菜"))
+    #expect(!NoteImages.hasContent("  "))
   }
 
   // MARK: 标题和摘要里的图片
@@ -171,13 +253,20 @@ struct NoteImagesTests {
     // 行内的图片写成「[图片]」
     #expect(note("前面\(image)后面").displayTitle == "前面[图片]后面")
     #expect(note("标题行", title: "").displayTitle == "标题行")
-    // 摘要：图片写成「[图片]」，第一行是图片时按「跳过标题那一行」处理
-    #expect(note("\(image)\n买菜\n牛奶").preview == "买菜 牛奶")
+    // 摘要：图片写成「[图片]」；**第一行是图时先跳过只有图片的行、再跳过标题那一行**（不重复标题，F10）
+    #expect(note("\(image)\n买菜\n牛奶").preview == "[图片] 牛奶")
+    #expect(note("买菜\n\(image)\n牛奶").preview == "[图片] 牛奶", "图片行照留，标题那一行不重复")
     // 摘要是「标题那一行之后的」（原来就有的规矩：标题取自第一行时不重复它）
     #expect(note("买菜\n\(image)后面").preview == "[图片]后面")
     #expect(note("买菜\n\(image)").preview == "[图片]")
     // 写坏的令牌当普通文字（原样去标记）
     #expect(note("![image](写坏的)").displayTitle == "![image](写坏的)")
+    // F11：代码块**内容行**里的令牌也不许露原文（列表、标签、预览卡、墙卡片都走这里）
+    #expect(note("```\n\(image)\n```").displayTitle == NoteImages.placeholder)
+    #expect(note("```\n买菜\(image)\n```").displayTitle == "买菜[图片]")
+    // F11：最近删除里只读的那份正文（令牌换成「[图片]」）
+    #expect(note(image).readOnlyBody == NoteImages.placeholder)
+    #expect(note("前面\(image)后面\n第二行").readOnlyBody == "前面[图片]后面\n第二行")
     // 自己起了标题就用自己起的
     #expect(note(image, title: "我起的").displayTitle == "我起的")
   }
@@ -185,7 +274,8 @@ struct NoteImagesTests {
   // MARK: 随机往返
 
   @Test func randomTextRoundTrips() {
-    var generator = SystemRandomNumberGenerator()
+    // 固定种子：失败了能照着同一个种子复现（F25）
+    var generator = SeededRandom(seed: 20_261_016)
     let pieces = [
       "abc", "中文", "\n", " ", "![", "](", "kitty-note-image://", "**粗**", "- [ ] ",
       "2*3*4", "（《", "\u{1F600}",

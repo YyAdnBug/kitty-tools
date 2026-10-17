@@ -593,6 +593,22 @@ struct NoteStoreTests {
     #expect(NoteStore.search("牛奶", in: [weekly]).isEmpty)
   }
 
+  /// F19：搜索不看正文里的图片令牌——搜「image」「png」或者编号里的十六进制都不该命中带图的便签
+  @Test func searchIgnoresImageTokens() throws {
+    let (store, _) = try open()
+    let id = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
+    let withImage = store.create(
+      body: "买菜\n\(NoteImages.token(NoteImages.Image(id: id, ext: "png")))\n牛奶")
+    let plain = store.create(body: "另一条")
+    let all = store.active
+    #expect(NoteStore.search("牛奶", in: all).map(\.id) == [withImage.id])
+    #expect(NoteStore.search("买菜", in: all).map(\.id) == [withImage.id])
+    #expect(NoteStore.search("image", in: all).isEmpty)
+    #expect(NoteStore.search("png", in: all).isEmpty)
+    #expect(NoteStore.search("11111111", in: all).isEmpty)
+    #expect(NoteStore.search("另一条", in: all).map(\.id) == [plain.id])
+  }
+
   // MARK: 表结构的版本、库里离谱的值
 
   /// 新库建好表、版本设成 1；再开一次照常。版本比认识的大：抛说得清原因的错，库一个字都不写

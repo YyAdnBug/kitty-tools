@@ -94,7 +94,8 @@ struct NoteSheet: View {
         note: note, fontSize: fontSize, margin: Self.margin,
         setBody: { model.setBody($0, of: note.id) }, onOverflow: model.overflowed,
         onCancel: model.cancel, focusRequest: model.focusRequest(for: note.id),
-        undo: model.textUndo, images: model.store.images)
+        undo: model.textUndo, images: model.store.images,
+        onImageProblem: model.imageProblem)
       NoteFootnote(
         note: note, isOverLimit: model.isOverLimit, isUnsaved: model.store.saveProblem != nil
       )

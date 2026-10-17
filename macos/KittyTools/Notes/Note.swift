@@ -112,16 +112,23 @@ nonisolated struct Note: Identifiable, Equatable, Sendable {
   }
 
   /// 列表里标题下面那一行摘要：其余有内容的行（标题取自正文第一行时不重复它）拼成一行，超过 previewLength 个字截断。
-  /// 图片写成「[图片]」（只有图片的行照留：摘要里它是这条便签的内容）
+  /// 图片写成「[图片]」；**只有图片的行不占「标题那一行」**（和 displayTitle 同一个口径）：标题取的是跳过图片行之后
+  /// 第一个有字的行，摘要就从那一行之后开始，不重复标题（F10）。图片行自己照留（它是这条便签的内容）
   var preview: String {
     let hasOwnTitle = !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     let rest = Self.lines(of: body, skipping: hasOwnTitle ? 0 : 1, budget: Self.previewLength)
     return Self.clipped(rest.joined(separator: " "), to: Self.previewLength)
   }
 
+  /// 「最近删除」里只读的那份正文（F11）：令牌换成「[图片]」，其余照原文（不带任务 / Markdown 的样式）。
+  /// 只读视图那边不许直接 `Text(body)`（`![image](kitty-note-image://…)` 会原样露出来）
+  var readOnlyBody: String { NoteImages.display(body) }
+
   /// 正文里有内容的行（每行过一遍 clean），跳过前 skipping 行；用空格拼起来超过 budget 个字就不再往下读（正文可以很长）。
   /// 代码块（NoteMarkdown.codeBlocks，同正文编辑器）的围栏行不算、块里的行照原文（只去两头的空白）。
-  /// droppingImageLines：只有图片的行不算（标题取正文第一行时跳过这种行）
+  /// droppingImageLines：只有图片的行整行不算（标题取正文第一行时跳过这种行）
+  /// **只有图片的行也不占「跳过前 skipping 行」的名额**：标题取的是跳过图片行之后第一个有字的行，
+  /// 摘要（skipping 1）就从那一行之后开始，不重复标题（F10）
   /// ponytail: 认代码块只看正文开头 blockScanLimit 个字（标题、摘要只读开头几行；整篇认一遍 1 MB 要几毫秒，列表的每一行、
   /// 那叠的每张标签都要算）。上限：开头在这一段里、收尾在后面的块认不出来，它的围栏行和块里的字照普通的行去标记——
   /// 碰上了再改成「从头往后边读边认」
@@ -144,11 +151,15 @@ nonisolated struct Note: Identifiable, Equatable, Sendable {
       let line: String
       switch NoteMarkdown.role(at: start, in: blocks) {
       case nil: line = clean(raw)
-      case .content: line = String(raw.prefix(scanLimit)).trimmingCharacters(in: .whitespaces)
+      case .content:
+        // 代码块里的行照原文（只去两头的空白），但**图片的令牌要换成「[图片]」**：列表、标签、预览卡上不许露原文
+        line = NoteImages.display(
+          String(raw.prefix(scanLimit)).trimmingCharacters(in: .whitespaces))
       case .open, .close: continue
       }
       guard !line.isEmpty else { continue }
-      guard skipped >= skipping else {
+      // 只有图片的行不算「标题那一行」的名额（照留：它是这条便签的内容，不是标题）
+      if skipped < skipping, !NoteImages.isImageOnly(raw) {
         skipped += 1
         continue
       }

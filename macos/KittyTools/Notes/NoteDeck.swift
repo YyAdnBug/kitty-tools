@@ -516,9 +516,12 @@ final class NoteDeck: NSObject {
   }
 
   /// 自家窗口上的这一下算不算「点别处」：点那叠自己（面板、药丸）不算，点 Kitty 的任何一块浮层（OverlayPanel）不算，
-  /// 截图框选中点遮罩也不算（便签是内容，留在冻结帧里、截完还开着，同 OverlayPanel）
+  /// 截图框选中点遮罩也不算（便签是内容，留在冻结帧里、截完还开着，同 OverlayPanel）。
+  /// **「插入图片…」的选文件面板（NSSavePanel，在本进程里）也不算**：面板里点一下不该把没固定的便签收起、
+  /// 把正文框拆掉（拆了图插不进去、键盘也还错地方，F6）；本进程里别的模态窗同理
   static func isOutside(_ window: NSWindow?, own: [NSWindow?], isSelectingRegion: Bool) -> Bool {
     if isSelectingRegion || window is OverlayPanel { return false }
+    if window is NSSavePanel || (window != nil && window === NSApp.modalWindow) { return false }
     return !own.contains { $0 != nil && $0 === window }
   }
 

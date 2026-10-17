@@ -198,34 +198,88 @@ nonisolated enum NoteImages {
     return parts.joined()
   }
 
+  /// 正文里的令牌整段去掉（底下的字数、搜索用：一张图不算字，搜「image」「png」也不该命中带图的便签）
+  static func stripping(_ text: String) -> String {
+    guard containsToken(text) else { return text }
+    let string = text as NSString
+    var parts: [String] = []
+    var last = 0
+    for match in matches(in: string) {
+      parts.append(
+        string.substring(with: NSRange(location: last, length: match.range.location - last)))
+      last = NSMaxRange(match.range)
+    }
+    parts.append(string.substring(from: last))
+    return parts.joined()
+  }
+
+  /// 正文的显示形式（墙卡片上那段字用）：只有图片的行整行去掉（连行尾的换行），行内的令牌换成「[图片]」。
+  /// **要在截取之前做**：不然在 1200 个字处把令牌截成两半会露出原文，只有图片的行也白占掉行数和字数（F11）
+  static func displayLines(_ text: String) -> String {
+    guard containsToken(text) else { return text }
+    let string = text as NSString
+    var parts: [String] = []
+    var location = 0
+    while location < string.length {
+      var (start, end, contentsEnd) = (0, 0, 0)
+      string.getLineStart(
+        &start, end: &end, contentsEnd: &contentsEnd,
+        for: NSRange(location: location, length: 0))
+      location = max(end, location + 1)
+      let line = string.substring(with: NSRange(location: start, length: contentsEnd - start))
+      if isImageOnly(line) { continue }
+      parts.append(display(line))
+      if end > contentsEnd {
+        parts.append(
+          string.substring(with: NSRange(location: contentsEnd, length: end - contentsEnd)))
+      }
+    }
+    return parts.joined()
+  }
+
   // MARK: 插图插在哪（纯函数）
 
   /// 插一段图片时正文怎么改：lead = 前面先加一个换行、trail = 后面再加一个换行、caret = 插完光标落在哪
-  /// （相对替换区间的开头）。每张图独占一行：落点所在行前面有字就先换行，后面有字就在图后换行
+  /// （相对替换区间的开头）。每张图独占一行：落点所在行前面有字就先换行；图后面**总要**有一个换行，
+  /// 插完光标落到图下一行的行首（图后面那一行已经有字就是那一行的行首，没有就补一个空行——正文末尾插图也补）。
+  /// 原来光标停在图后面（同一行），接着打的字排在图右边、还会把整段的行高撑成图高，评审后改成现在这样（PLAN §10）
   struct Insertion: Equatable, Sendable {
     var lead = false
     var trail = false
-    /// 插完光标相对替换区间开头的位置（正好在最后一张图后面）
+    /// 插完光标相对替换区间开头的位置（落在图下面那一行的行首）
     var caret = 0
   }
 
   /// 在 text 的 range 那一段插 count 张图（range 是选区：有选区就是换掉选中的那一段）
   static func insertion(in text: NSString, replacing range: NSRange, count: Int) -> Insertion {
-    let start = min(max(range.location, 0), text.length)
-    let end = min(max(NSMaxRange(range), start), text.length)
+    /// 光标夹在 `\r\n` 两个字中间时挪到 `\n` 之后（下一行的行首）：不把这对行尾拆开，
+    /// 不然前面那段会多出一个空行（getLineStart 把 \r\n 当一个行尾，contentsEnd 在光标前，F1）
+    func snapped(_ value: Int) -> Int {
+      guard value > 0, value < text.length else { return value }
+      return text.character(at: value - 1) == 0x0D && text.character(at: value) == 0x0A
+        ? value + 1 : value
+    }
+    let start = snapped(min(max(range.location, 0), text.length))
     var lineStart = 0
-    var contentsEnd = 0
     text.getLineStart(
-      &lineStart, end: nil, contentsEnd: &contentsEnd, for: NSRange(location: start, length: 0))
-    var tailEnd = 0
-    text.getLineStart(
-      nil, end: nil, contentsEnd: &tailEnd, for: NSRange(location: end, length: 0))
+      &lineStart, end: nil, contentsEnd: nil, for: NSRange(location: start, length: 0))
+    lineStart = min(max(lineStart, 0), start)
     let head = text.substring(with: NSRange(location: lineStart, length: start - lineStart))
-    let tail = text.substring(with: NSRange(location: end, length: tailEnd - end))
     var plan = Insertion()
-    plan.lead = head.contains { !$0.isWhitespace }
-    plan.trail = tail.contains { !$0.isWhitespace }
-    plan.caret = (plan.lead ? 1 : 0) + count + max(0, count - 1)
+    // 「前面有没有字」不算行首的列表标记（☐ / ☑ / - / 1. …）：任务行里方框后面可以直接贴图（R5、F15）
+    plan.lead = hasContent(head)
+    // 图后面总要有换行：光标落到下一行的行首（图后面已经有字时那一行就是它，没有就补一个空行）。
+    // **以前这里还要取插入点后面到行尾的那一截**（`tailEnd`），光标夹在 \r\n 中间时那样算出来是负长度、substring 抛
+    // NSRangeException（随机编辑测试种子 2001 跑出来的，F1）；现在那一截不用了，而光标在 \r\n 中间时上面已经挪到 \n 之后
+    plan.trail = true
+    plan.caret = (plan.lead ? 1 : 0) + count + max(0, count - 1) + 1
     return plan
+  }
+
+  /// 这一段（一行里插入点前面那截）有没有正文内容：行首的列表标记（`NoteTasks.prefix` 认的缩进 + 符号 + 空格）不算
+  static func hasContent(_ head: String) -> Bool {
+    let units = Array(head.utf16)
+    let start = min(NoteTasks.prefix(of: units)?.contentStart ?? 0, units.count)
+    return String(decoding: units[start...], as: UTF16.self).contains { !$0.isWhitespace }
   }
 }

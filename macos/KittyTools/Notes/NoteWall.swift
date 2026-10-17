@@ -278,10 +278,13 @@ nonisolated enum NoteWall {
   /// 照样算块（后半截不在这一段里）
   static func excerpt(of note: Note) -> (text: String, blocks: [NoteMarkdown.CodeBlock]) {
     let body = note.body as NSString
-    let head =
+    let raw =
       body.length > excerptScan
       ? body.substring(with: body.rangeOfComposedCharacterSequences(for: NSRange(0..<excerptScan)))
-        as NSString : body
+      : body as String
+    // **先把图片处理掉**（只有图片的行整行去掉、行内的令牌换成「[图片]」）再认代码块、再截取：不然在 excerptLength
+    // 那里会把令牌截成两半露出原文，只有图片的行也白占掉行数和字数；处理完的坐标就是后面 blocks、range 的坐标（F11）
+    let head = NoteImages.displayLines(raw) as NSString
     let blocks = NoteMarkdown.codeBlocks(in: head)
     var start = 0
     var location = 0
@@ -441,8 +444,7 @@ final class NoteWallCard {
         }
       }
       for range in hidden.reversed() { storage.deleteCharacters(in: range) }
-      // 图片：只有图片的行整行不要、剩下的令牌写成「[图片]」（末尾删剩下的换行由下面那段收）
-      replaceImages(in: storage)
+      // 图片在 excerpt 里已经处理过（只有图片的行去掉、令牌写成「[图片]」）：这里不再动字
       // 末尾删剩下的换行（收尾的围栏删了，前一行的换行还在）：不然多出一行空的高
       while storage.length > 0,
         CharacterSet.newlines.contains(
@@ -471,28 +473,5 @@ final class NoteWallCard {
       title: titleText, body: NSAttributedString(attributedString: storage),
       isPinned: note.isPinned, thumbnail: first, thumbnailURL: first.flatMap(url),
       thumbnailHeight: thumbnailHeight)
-  }
-
-  /// 卡片上的图片：只有图片的行整行（连换行）去掉，剩下的令牌换成「[图片]」
-  private static func replaceImages(in storage: NSTextStorage) {
-    let text = storage.mutableString
-    var blank: [NSRange] = []
-    var location = 0
-    while location < text.length {
-      var (start, end, contentsEnd) = (0, 0, 0)
-      text.getLineStart(
-        &start, end: &end, contentsEnd: &contentsEnd, for: NSRange(location: location, length: 0))
-      location = max(end, location + 1)
-      let line = text.substring(with: NSRange(location: start, length: contentsEnd - start))
-      if NoteImages.isImageOnly(line) {
-        blank.append(NSRange(location: start, length: end - start))
-      }
-    }
-    for range in blank.reversed() { storage.deleteCharacters(in: range) }
-    // 从后往前换：前面的位置不受影响
-    let remaining = storage.mutableString
-    for match in NoteImages.matches(in: remaining).reversed() {
-      storage.replaceCharacters(in: match.range, with: NoteImages.placeholder)
-    }
   }
 }

@@ -1,7 +1,10 @@
 // 便签的图片目录（第 7 批；令牌的格式在 NoteImages.swift，编辑器里的附件在 NoteImageAttachment.swift）：
 // 数据目录下的 notes-images/（和 notes.sqlite3 放一起，**不和剪贴板共用**），文件名 `<编号>.<扩展名>`，编号是大写 UUID。
-// - 存：文件 URL 原字节原扩展名；图片数据里 PNG / JPEG / HEIC / GIF 原样、别的（TIFF 等）转 PNG。转码和写盘都在
-//   @concurrent 里做（不卡主线程）；存之前先写文件、调用方再改正文——崩在中间留下的文件就是孤儿，30 天后清掉。
+// - 存：PNG / JPEG / HEIC / GIF 原样（文件 URL 进来的连扩展名也照文件自己的）；**TIFF、WebP、BMP、RAW 等一律转 PNG**
+//   （别的格式不一定画得出来、体积也大）——SPEC §5.2 写的「原字节原扩展名」只对这几种成立，2026-10-16 评审后记为偏离（F27）。
+//   大小：原始输入按 `maxInputBytes`（160 MB，TIFF 是未压缩的，1200 万像素约 48 MB）的保险上限，**存下去的那份**按
+//   20 MB 卡（F14）。转码和写盘都在 @concurrent 里做（不卡主线程）；存之前先写文件、调用方再改正文——崩在中间留下的
+//   文件就是孤儿，30 天后清掉。
 // - 宽高只读文件头（CGImageSourceCopyPropertiesAtIndex），按编号缓存在内存里（几十字节一张）；排版要用的尺寸只来自
 //   这个缓存，布局回调里不读盘。缓存里没有时在**主线程、载入 / 插入那一刻**读好（读文件头很快）。
 // - 缩略图：@concurrent 里用 ImageIO 解（带 EXIF 方向），显示那么大的像素。
@@ -34,8 +37,11 @@ nonisolated struct NoteImageSize: Equatable, Sendable {
 final class NoteImageStore {
   /// 像素超过这个数的不收（同剪贴板 ImageStore.maxPixels）
   nonisolated static let maxPixels = 40_000_000
-  /// 单个文件超过这么大不收（20 MB）
+  /// **存下去的那份**超过这么大不收（20 MB）
   nonisolated static let maxFileBytes = 20 * 1024 * 1024
+  /// 原始输入（转码前）的保险上限：比存下去的那份宽一截——剪贴板里的 TIFF 是未压缩的，一张 1200 万像素的照片约 48 MB，
+  /// 而它的 PNG / 原图只有几 MB。只挡真正离谱的输入（F14）
+  nonisolated static let maxInputBytes = 160 * 1024 * 1024
   /// 没人引用满这么多天才删（同「最近删除」的 30 天）
   nonisolated static let orphanDays = 30
   /// 清理的记账文件（名字不像图片，绝不当图片读）
@@ -61,12 +67,19 @@ final class NoteImageStore {
     case tooManyPixels
     case unreadable
 
-    /// 刘海岛上那一句
-    var notice: String {
+    /// 刘海岛的标题和说明分开（岛上是标题一行、说明一行，同别处的写法）
+    var noticeTitle: String {
       switch self {
-      case .tooLarge: "图片太大了 · 单张最多 20 MB"
-      case .tooManyPixels: "图片太大了 · 像素太多"
+      case .tooLarge, .tooManyPixels: "图片太大了"
       case .unreadable: "读不出这张图片"
+      }
+    }
+
+    var noticeDetail: String {
+      switch self {
+      case .tooLarge: "单张最多 20 MB"
+      case .tooManyPixels: "像素太多"
+      case .unreadable: "换个文件试试"
       }
     }
   }
@@ -120,14 +133,15 @@ final class NoteImageStore {
 
   // MARK: 存（转码、写盘都在主线程外）
 
-  /// 从访达 / 别处拖进来的文件：原字节原扩展名（只读一遍、看一眼文件头），编号和写盘都在这里做
+  /// 从访达 / 别处拖进来的文件：原字节原扩展名（只读一遍、看一眼文件头），编号和写盘都在这里做。
+  /// 文件属性读不到说「读不出来」（不说太大）；太大按**原始输入**的保险上限判，20 MB 按存下去的那份算（F14）
   @concurrent static func store(fileAt url: URL, in directory: URL) async -> Result<
     Stored, Rejection
   > {
-    guard
-      let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int,
-      size <= maxFileBytes
-    else { return .failure(.tooLarge) }
+    guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) else {
+      return .failure(.unreadable)
+    }
+    if let size = attributes[.size] as? Int, size > maxInputBytes { return .failure(.tooLarge) }
     guard let bytes = try? Data(contentsOf: url) else { return .failure(.unreadable) }
     return write(bytes: bytes, preferredExtension: extensionForFile(url), in: directory)
   }
@@ -137,11 +151,12 @@ final class NoteImageStore {
     write(bytes: data, preferredExtension: nil, in: directory)
   }
 
-  /// 看一眼类型、像素数和 DPI，该转 PNG 的转好，再写进目录（都在这个 @concurrent 里做）
+  /// 看一眼类型、像素数和 DPI，该转 PNG 的转好，再写进目录（都在这个 @concurrent 里做）。
+  /// 大小：先按原始输入的保险上限（TIFF 是未压缩的，很大），转完再按**存下去的那份**卡 20 MB（F14）
   private nonisolated static func write(
     bytes: Data, preferredExtension: String?, in directory: URL
   ) -> Result<Stored, Rejection> {
-    guard bytes.count <= maxFileBytes else { return .failure(.tooLarge) }
+    guard bytes.count <= maxInputBytes else { return .failure(.tooLarge) }
     guard let source = CGImageSourceCreateWithData(bytes as CFData, nil),
       let size = size(of: source)
     else { return .failure(.unreadable) }
@@ -168,6 +183,7 @@ final class NoteImageStore {
       ext = "png"
       output = encoded as Data
     }
+    guard output.count <= maxFileBytes else { return .failure(.tooLarge) }
     let id = UUID()
     let url = directory.appending(path: "\(id.uuidString).\(ext)")
     do {
@@ -211,13 +227,21 @@ final class NoteImageStore {
     // 有的格式把 DPI / 方向放在子字典里（JPEG 的 JFIF / EXIF 都可能有）：顶层没有再看那里
     let exif = properties[kCGImagePropertyExifDictionary] as? [CFString: Any]
     let jfif = properties[kCGImagePropertyJFIFDictionary] as? [CFString: Any]
-    let dpiWidth =
-      (properties[kCGImagePropertyDPIWidth] as? NSNumber)?.doubleValue
-      ?? (jfif?[kCGImagePropertyJFIFXDensity] as? NSNumber)?.doubleValue ?? 72
+    var dpi: CGFloat = 72
+    if let raw = (properties[kCGImagePropertyDPIWidth] as? NSNumber)?.doubleValue, raw > 0 {
+      dpi = CGFloat(raw)
+    } else if let raw = (jfif?[kCGImagePropertyJFIFXDensity] as? NSNumber)?.doubleValue, raw > 0 {
+      // JFIF 的密度单位：1 = 每英寸（就是 DPI）、2 = 每厘米（× 2.54）、**0 = 只表示宽高比**（libjpeg 默认写 1，
+      // 不是 DPI）——单位 0 时 ImageIO 不给 DPIWidth，照 72 算，不然 200×150 的网图会被撑满正文宽（F22）
+      switch (jfif?[kCGImagePropertyJFIFDensityUnit] as? NSNumber)?.intValue ?? 0 {
+      case 1: dpi = CGFloat(raw)
+      case 2: dpi = CGFloat(raw * 2.54)
+      default: dpi = 72
+      }
+    }
     let orientation =
       (properties[kCGImagePropertyOrientation] as? NSNumber)?.intValue
       ?? (exif?[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1
-    let dpi = dpiWidth > 0 ? CGFloat(dpiWidth) : 72
     // EXIF 方向 5–8：转正之后宽高互换
     let rotated = (5...8).contains(orientation)
     let width = rotated ? pixelHeight : pixelWidth

@@ -661,8 +661,12 @@ private struct WallThumbnail: View {
     self.image = image
     self.paper = paper
     self.displayScale = displayScale
-    let maxPixel = Int(NoteWall.textWidth * max(displayScale, 1))
-    key = "wall-\(image.id.uuidString)@\(maxPixel)"
+    // `.fill` 的框是「卡片内宽 × 卡片上那段缩略图的高」：解的长边要按**高的那一头**算（竖图不会只解出一半多，F7⑥）
+    key = NoteImageThumbnails.key(
+      image.id,
+      pixel: NoteImageThumbnails.pixel(
+        for: CGSize(width: NoteWall.textWidth, height: NoteImageLayout.thumbnailMaxHeight),
+        scale: displayScale))
     _decoded = State(initialValue: NoteImageThumbnails.peek(key: key))
   }
 
@@ -682,7 +686,10 @@ private struct WallThumbnail: View {
     .task(id: image.id) {
       guard let url else { return }
       decoded = await NoteImageThumbnails.load(
-        for: url, key: key, maxPixel: Int(NoteWall.textWidth * max(displayScale, 1)))
+        for: url, id: image.id,
+        maxPixel: NoteImageThumbnails.pixel(
+          for: CGSize(width: NoteWall.textWidth, height: NoteImageLayout.thumbnailMaxHeight),
+          scale: displayScale))
     }
   }
 }

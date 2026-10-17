@@ -1149,6 +1149,34 @@ struct NoteDeckTests {
     #expect(NoteDeck.isOutside(nil, own: [nil, nil], isSelectingRegion: false))
   }
 
+  /// F6：「插入图片…」的选文件面板在本进程里：面板里点一下不算「点别处」
+  /// （算的话没固定的便签会被收起、正文框被拆掉，图插不进去、键盘也没还回来）
+  @Test func savePanelsAreNotClickingElsewhere() throws {
+    let (model, _, _) = try make(["一"])
+    let offscreen = CGRect(x: -30000, y: -30000, width: 200, height: 100)
+    let panel = NoteDeckPanel(frame: offscreen, model: model, onPointer: {})
+    let own: [NSWindow?] = [panel, nil]
+    #expect(!NoteDeck.isOutside(NSSavePanel(), own: own, isSelectingRegion: false))
+    #expect(!NoteDeck.isOutside(NSOpenPanel(), own: own, isSelectingRegion: false))
+    let other = NSWindow(
+      contentRect: offscreen, styleMask: [.borderless], backing: .buffered, defer: true)
+    #expect(NoteDeck.isOutside(other, own: own, isSelectingRegion: false))
+  }
+
+  /// F9：正文里插图被拒 / 存图没成时那句话经 model 手里的岛说出来（标题 + 说明两行）。
+  /// 原来 NoteBodyField 用 `@Environment(Island.self)`，三个宿主都没注入 → 只剩一声提示音
+  @Test func imageProblemsReachTheIsland() throws {
+    let (model, _, _) = try make(["一"])
+    let island = Island(
+      showing: .init(
+        title: "占位", detail: nil, tone: .info, symbol: "note.text", leading: .tone))
+    model.island = island
+    model.imageProblem("图片太大了", "单张最多 20 MB")
+    #expect(island.content?.title == "图片太大了")
+    #expect(island.content?.detail == "单张最多 20 MB")
+    #expect(island.content?.tone == .warning)
+  }
+
   /// 扇出才建面板；被叫停（截图、状态屏开始）当场收走，不等动画；这块屏不放了，两块窗口都放掉。
   /// 窗口摆在离所有屏幕很远的地方（先确认），只露出来、不当 key
   @Test func fanningBuildsThePanelAndSuspendHidesItAtOnce() throws {

@@ -300,22 +300,27 @@ struct NoteCaptureTests {
     #expect(panel.heights == [five])
   }
 
-  /// 便签正文的字节上限：算的是换完之后的 UTF-8 字节，被换掉的那段要减掉
+  /// 便签正文的字节上限：算的是换完之后的 UTF-8 字节，被换掉的那段要减掉。
+  /// **测现在真用的那条路**（canFit；原来那个纯函数 NoteTextView.overflows 已经删掉，F28）
   @Test func textViewOverflowCountsBytesAfterReplacement() {
-    let overflows = { (current: String, range: NSRange, replacement: String, max: Int) in
-      NoteTextView.overflows(current, replacing: [range], with: [replacement], maxBytes: max)
+    let view = NoteTextView.make()
+    view.setPaper(NotePaper.all[0], fontSize: 15, markdown: true, spacing: .standard)
+    func fits(_ current: String, _ range: NSRange, _ replacement: String, _ max: Int) -> Bool {
+      view.setText(current)
+      view.maxBytes = max
+      return view.canFit(replacing: range, with: NSAttributedString(string: replacement))
     }
-    #expect(!overflows("abc", NSRange(location: 3, length: 0), "de", 5))
-    #expect(overflows("abc", NSRange(location: 3, length: 0), "def", 5))
+    #expect(fits("abc", NSRange(location: 3, length: 0), "de", 5))
+    #expect(!fits("abc", NSRange(location: 3, length: 0), "def", 5))
     // 中文一个字 3 字节
-    #expect(!overflows("", NSRange(location: 0, length: 0), "你好", 6))
-    #expect(overflows("", NSRange(location: 0, length: 0), "你好", 5))
+    #expect(fits("", NSRange(location: 0, length: 0), "你好", 6))
+    #expect(!fits("", NSRange(location: 0, length: 0), "你好", 5))
     // 选中一段再粘贴：先减掉被换掉的
-    #expect(!overflows("你好吗", NSRange(location: 1, length: 2), "们", 6))
-    #expect(overflows("你好吗", NSRange(location: 3, length: 0), "们", 9))
+    #expect(fits("你好吗", NSRange(location: 1, length: 2), "们", 6))
+    #expect(!fits("你好吗", NSRange(location: 3, length: 0), "们", 9))
     // 没让正文变长的改动永远不算超（已经超了的正文得删得动）：删除、换成一样长或更短的
-    #expect(!overflows("你好吗", NSRange(location: 0, length: 1), "", 1))
-    #expect(!overflows("你好吗", NSRange(location: 0, length: 1), "abc", 1))
-    #expect(overflows("你好吗", NSRange(location: 0, length: 1), "abcd", 1))
+    #expect(fits("你好吗", NSRange(location: 0, length: 1), "", 1))
+    #expect(fits("你好吗", NSRange(location: 0, length: 1), "abc", 1))
+    #expect(!fits("你好吗", NSRange(location: 0, length: 1), "abcd", 1))
   }
 }

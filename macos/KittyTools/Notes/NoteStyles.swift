@@ -573,19 +573,24 @@ nonisolated enum NoteStyles {
     }
 
     /// 这一行（整行）里的图片附件（位置 + 附件 + 它显示多高）：铺回基础样式前先记下来，铺完放回去；
-    /// 高按这一行的可用宽算（没记宽度的图跟着正文框变宽变窄；拖把手时用 cell 上临时的宽度）
-    func attachments(in line: NSRange) -> [(
+    /// 高按**这一行的可用宽**算（正文可用宽去掉这一行的 head / tail indent：引用、代码块里的图跟着窄，
+    /// 和 cell 里 cellFrame 算的是同一个口径，F3；拖把手时用 cell 上临时的宽度）。
+    /// 顺手把这一行的 tail indent 写到 cell 上（cell 里算可用宽要用）
+    func attachments(in line: NSRange, style: NSParagraphStyle) -> [(
       range: NSRange, attachment: NoteImageAttachment, height: CGFloat
     )] {
+      let available = NoteImageLayout.availableWidth(availableWidth, style: style)
       var found: [(range: NSRange, attachment: NoteImageAttachment, height: CGFloat)] = []
       storage.enumerateAttribute(.attachment, in: line) { value, range, _ in
         guard let attachment = value as? NoteImageAttachment else { return }
-        let live = (attachment.attachmentCell as? NoteImageAttachmentCell)?.liveWidth
+        let cell = attachment.attachmentCell as? NoteImageAttachmentCell
+        cell?.tailInset = -style.tailIndent
+        let live = cell?.liveWidth
         found.append(
           (
             range, attachment,
             NoteImageLayout.size(
-              image: attachment.picture, metrics: attachment.metrics, available: availableWidth,
+              image: attachment.picture, metrics: attachment.metrics, available: available,
               live: live
             ).height
           ))
@@ -614,15 +619,15 @@ nonisolated enum NoteStyles {
         found = metrics(of: shape, isFirst: false, isLast: false)
         cache[shape] = found
       }
-      let images = attachments(in: NSRange(location: start, length: end - start))
+      let images = attachments(
+        in: NSRange(location: start, length: end - start), style: found.style)
       let imageHeight = images.map(\.height).max() ?? 0
-      // 图片那一行：行高按图撑（至少正文一行那么高），段落别的几样照这一行的样子
+      // 图片那一行：**行高不整段定死**（原来 min = max = 图高 + 留白，同一段里折出来的每一行都和图一样高）。
+      // 现在只把 max 放开：含附件的那一个行片段由布局代理撑到图高 + 上下留白（centerLine 改行片段），
+      // 同一段里折出来的别的行照正文行高（F16②）
       var style = found.style
       if imageHeight > 0, let taller = found.style.mutableCopy() as? NSMutableParagraphStyle {
-        let height = NoteImageLayout.lineHeight(
-          for: imageHeight, base: theme.lineHeight(found.font.pointSize))
-        taller.minimumLineHeight = height
-        taller.maximumLineHeight = height
+        taller.maximumLineHeight = 0
         style = taller
       }
       var whole: [NSAttributedString.Key: Any] = [
@@ -745,8 +750,8 @@ nonisolated enum NoteStyles {
   /// Apple Symbols 的下沿深，整行的字比普通行高 1 pt），这里按主字体直接定，一行里混着什么字都不挪。
   /// 返回改没改（没有主字体、行高没定死的不管）。布局时调的代码：只动传进来的东西、只读文本存储上的属性
   static func centerLine(
-    in layoutManager: NSLayoutManager, glyphRange: NSRange, rect: NSRect, used: inout NSRect,
-    baseline: inout CGFloat
+    in layoutManager: NSLayoutManager, glyphRange: NSRange, rect: UnsafeMutablePointer<NSRect>,
+    used: inout NSRect, baseline: inout CGFloat
   ) -> Bool {
     guard let storage = layoutManager.textStorage, storage.length > 0 else { return false }
     let chars = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
@@ -756,18 +761,36 @@ nonisolated enum NoteStyles {
     guard let style = attributes[.paragraphStyle] as? NSParagraphStyle, style.minimumLineHeight > 0
     else { return false }
     let before = spacingBefore(at: chars.location, style: style, in: storage.mutableString)
-    if let imageHeight = attributes[imageLineKey] as? CGFloat, imageHeight > 0 {
+    // **图片那一行**（字上记着 imageLineKey，且这**一个行片段里真的有附件字形**）：把行片段撑到
+    // 「段前 + 图高 + 上下留白」，基线落在图底、usedRect 收成图那一块——同一段里折出来的别的行片段不含附件，
+    // 照正文行高居中（F16②）。段落样式那边只放开了 maximumLineHeight，不整段定死
+    if let imageHeight = attributes[imageLineKey] as? CGFloat, imageHeight > 0,
+      containsAttachment(in: chars, of: storage)
+    {
       let padding = NoteImageLayout.padding
-      baseline = (before + padding + imageHeight).rounded()
-      used.origin.y = rect.minY + before + padding
+      rect.pointee.size.height = (before + padding * 2 + imageHeight).rounded()
+      baseline = (rect.pointee.minY + before + padding + imageHeight).rounded()
+      used.origin.y = rect.pointee.minY + before + padding
       used.size.height = imageHeight
       return true
     }
     guard let font = attributes[lineFontKey] as? NSFont else { return false }
     center(
       height: style.minimumLineHeight, ascender: font.ascender, descender: font.descender,
-      before: before, rect: rect, used: &used, baseline: &baseline)
+      before: before, rect: rect.pointee, used: &used, baseline: &baseline)
     return true
+  }
+
+  /// 这一段字里有没有挂着我们图片附件的字形（图片行的行高只按含附件的那一个行片段撑，见 centerLine）
+  private static func containsAttachment(in chars: NSRange, of storage: NSTextStorage) -> Bool {
+    var found = false
+    storage.enumerateAttribute(.attachment, in: chars) { value, _, stop in
+      if value is NoteImageAttachment {
+        found = true
+        stop.pointee = true
+      }
+    }
+    return found
   }
 
   /// 字的上下沿（ascender / descender）在一条 height 高的行里居中：基线取整点（字形落在整像素上，最多偏 0.5），

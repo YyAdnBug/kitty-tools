@@ -345,12 +345,18 @@ struct NoteTextViewTests {
     rig.editor.setText("你好吗啊")
     rig.editor.toggleTask()
     #expect(rig.editor.string == "你好吗啊" && rig.overflows == 3)
-    // 纯函数：几段一起算
-    let overflows = NoteTextView.overflows
-    let one = NSRange(location: 0, length: 0)
-    #expect(!overflows("ab", [one, NSRange(location: 2, length: 0)], ["☐", "x"], 6))
-    #expect(overflows("ab", [one, NSRange(location: 2, length: 0)], ["☐", "xy"], 6))
-    #expect(!overflows("你好吗", [NSRange(location: 0, length: 3)], ["abc"], 1))
+    // 现在真用的那条路（原来那个纯函数 overflows 已经删掉，F28）：canFit 按存的字算
+    rig.editor.setText("ab")
+    rig.editor.maxBytes = 6
+    let zero = NSRange(location: 0, length: 0)
+    #expect(rig.editor.canFit(replacing: zero, with: NSAttributedString(string: "☐")))
+    #expect(!rig.editor.canFit(replacing: zero, with: NSAttributedString(string: "☐xy")))
+    // 删得动：换成更短的永远放行
+    rig.editor.setText("你好吗")
+    rig.editor.maxBytes = 1
+    #expect(
+      rig.editor.canFit(
+        replacing: NSRange(location: 0, length: 3), with: NSAttributedString(string: "a")))
   }
 
   /// 正文不知怎么已经超了上限：删得动、照常交出去，不会整段退回去；再往里加还是拦下
