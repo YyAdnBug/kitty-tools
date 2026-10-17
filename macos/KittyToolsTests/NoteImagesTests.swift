@@ -259,6 +259,9 @@ struct NoteImagesTests {
     // 摘要是「标题那一行之后的」（原来就有的规矩：标题取自第一行时不重复它）
     #expect(note("买菜\n\(image)后面").preview == "[图片]后面")
     #expect(note("买菜\n\(image)").preview == "[图片]")
+    // 整条只有图片：标题已经是「[图片]」，摘要空着（不再重复一遍「[图片]」；复查时那叠的预览卡上看到的）
+    #expect(note(image).preview == "")
+    #expect(note("\(image)\n\(token(other))").preview == "")
     // 写坏的令牌当普通文字（原样去标记）
     #expect(note("![image](写坏的)").displayTitle == "![image](写坏的)")
     // F11：代码块**内容行**里的令牌也不许露原文（列表、标签、预览卡、墙卡片都走这里）

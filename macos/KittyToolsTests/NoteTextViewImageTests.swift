@@ -731,18 +731,13 @@ struct NoteTextViewImageTests {
     image.setData(NoteImageFixture.data(type: .png, width: 20, height: 20), forType: .png)
     #expect(available(image), "只有图片数据：可用")
     let empty = rig.pasteboardNamed("kitty-notes-paste-\(UUID().uuidString)")
-    // 空剪贴板：照父类。父类问的是**系统剪贴板**（测试不碰它，里面是什么看用户当时拷了什么）——系统剪贴板里有
-    // 图片时，我们多出来的可读类型（.png / .tiff / .fileURL）会让父类答「可用」，和干净的 NSTextView 比就不成立了；
-    // 只在不打架的时候比，别的时候只要求不崩
-    let plain = NSTextView()
-    plain.isEditable = true
-    let generalHasImage =
-      NSPasteboard.general.types?.contains { UTType($0.rawValue)?.conforms(to: .image) == true }
-      ?? false
-    if !generalHasImage {
-      #expect(available(empty) == plain.validateUserInterfaceItem(item), "空剪贴板：照父类")
-    }
+    // 空剪贴板：不可用。**判的是编辑器自己读的那个剪贴板**（不问父类：父类看的是系统剪贴板，结果会跟着用户当时
+    // 拷了什么变——原来这里纯文字那一条就因此在用户剪贴板里只有图时红过）
+    #expect(!available(empty), "空剪贴板：不可用")
     #expect(!rig.editor.canPasteImages(from: empty), "空剪贴板没有图可粘")
+    rig.editor.isEditable = false
+    #expect(!available(text), "不能编辑：不可用")
+    rig.editor.isEditable = true
     text.releaseGlobally()
     image.releaseGlobally()
     empty.releaseGlobally()
@@ -772,6 +767,10 @@ struct NoteTextViewImageTests {
       #expect(rect.maxY - origin.y <= fragment.maxY + 0.5, "\(label)：图在行片段里")
     }
     try check("前面\n\(rig.token(image))\n后面", indent: 0, "普通行")
+    // 往下好几十行的图：图的上下沿照样落在自己的行片段里（布局代理给图片行的基线要和行片段对得上，
+    // 不能只在前两行碰巧对）
+    try check(
+      String(repeating: "一行字\n", count: 40) + "\(rig.token(image))\n后面", indent: 0, "第 41 行")
     try check("> \(rig.token(image))", indent: NoteStyles.quoteIndent, "引用里")
     try check("```\n\(rig.token(image))\n```", indent: NoteStyles.codeInset * 2, "代码块里")
   }
@@ -1130,4 +1129,76 @@ struct NoteTextViewImageTests {
     }
   }
 
+  /// 复查时找到的排版死循环：图的宽取整**不许超出可用宽**——正文框的宽常是小数，往上取整多出零点几，TextKit 1
+  /// 在哪一行都放不下这个附件、一行行往下找，主线程卡死、内存涨到几个 GB（随机编辑测试起始种子 3001 卡在这里）
+  @Test func sizesNeverExceedAFractionalWidth() {
+    let image = NoteImages.Image(id: UUID(), ext: "png", width: nil)
+    let big = NoteImageSize(
+      pixelWidth: 2000, pixelHeight: 1000, dpi: 72, orientation: 1,
+      pointSize: CGSize(width: 2000, height: 1000))
+    for available in [380.6, 380.4, 40.5, 1.7] {
+      let size = NoteImageLayout.size(image: image, metrics: big, available: available)
+      #expect(size.width <= available, "没记宽度：\(available) → \(size.width)")
+    }
+    let recorded = NoteImages.Image(id: UUID(), ext: "png", width: 3000)
+    #expect(NoteImageLayout.size(image: recorded, metrics: big, available: 300.5).width <= 300.5)
+    #expect(
+      NoteImageLayout.size(image: image, metrics: big, available: 300.5, live: 999).width <= 300.5,
+      "拖把手时同样")
+    #expect(
+      NoteImageLayout.size(image: image, metrics: nil, available: 150.6).width <= 150.6, "占位框同样")
+  }
+
+  /// 同一个死循环的另一条路：刚贴进代码块的图在重排之前就排版——代码块那一行的右缩进要当场从段落样式读，
+  /// 不能等重排写进来（原来是 apply 写在 cell 上的一份，那一刻还是 0，算出来比排版器认的宽 8 pt）。
+  /// 正文框的宽是小数、图比正文宽：排得完、放得下，没有排出一串空的行片段
+  @Test func wideImagePastedIntoACodeBlockLaysOut() async throws {
+    let rig = try Rig()
+    let image = try await rig.addImage(width: 1600, height: 800)
+    rig.window.setContentSize(NSSize(width: 417.3, height: 320))
+    rig.load("```\n代码\n```")
+    rig.editor.setSelectedRange(NSRange(location: 4, length: 0))
+    let board = rig.pasteboardNamed("kitty-notes-code-\(UUID().uuidString)")
+    board.setString(rig.token(image), forType: NoteTextView.noteTextType)
+    rig.editor.pasteboard = board
+    rig.step { rig.editor.paste(nil) }
+    rig.layout()
+    let index = try #require(rig.images.first?.index)
+    let manager = try #require(rig.editor.layoutManager)
+    let glyph = manager.glyphIndexForCharacter(at: index)
+    let fragment = manager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+    let size = manager.attachmentSize(forGlyphAt: glyph)
+    #expect(
+      size.width > 100 && size.width <= fragment.width, "放得下（\(size.width) / \(fragment.width)）")
+    var fragments = 0
+    var next = 0
+    while next < manager.numberOfGlyphs {
+      var range = NSRange()
+      _ = manager.lineFragmentRect(forGlyphAt: next, effectiveRange: &range)
+      fragments += 1
+      next = NSMaxRange(range)
+    }
+    #expect(fragments < 10, "没有排出一串空的行片段（\(fragments) 个）")
+    board.releaseGlobally()
+  }
+
+  /// 插图 / 粘贴换字用的区间两头挪到整字的边上：不把表情（代理对）拆成两半（落单的低位代理项后面接一张要折行的图，
+  /// TextKit 1 排版死循环——复查时随机编辑测试卡死在这里）
+  @Test func insertionRangesSnapToWholeCharacters() throws {
+    let rig = try Rig()
+    rig.load("前🙂后")
+    let storage = try #require(rig.editor.textStorage)
+    #expect(
+      rig.editor.clamped(NSRange(location: 2, length: 0), in: storage)
+        == NSRange(location: 1, length: 0))
+    #expect(
+      rig.editor.clamped(NSRange(location: 0, length: 2), in: storage)
+        == NSRange(location: 0, length: 3))
+    #expect(
+      rig.editor.clamped(NSRange(location: 2, length: 2), in: storage)
+        == NSRange(location: 1, length: 3))
+    #expect(
+      rig.editor.clamped(NSRange(location: 9, length: 3), in: storage)
+        == NSRange(location: 4, length: 0))
+  }
 }

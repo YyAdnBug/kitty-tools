@@ -575,7 +575,6 @@ nonisolated enum NoteStyles {
     /// 这一行（整行）里的图片附件（位置 + 附件 + 它显示多高）：铺回基础样式前先记下来，铺完放回去；
     /// 高按**这一行的可用宽**算（正文可用宽去掉这一行的 head / tail indent：引用、代码块里的图跟着窄，
     /// 和 cell 里 cellFrame 算的是同一个口径，F3；拖把手时用 cell 上临时的宽度）。
-    /// 顺手把这一行的 tail indent 写到 cell 上（cell 里算可用宽要用）
     func attachments(in line: NSRange, style: NSParagraphStyle) -> [(
       range: NSRange, attachment: NoteImageAttachment, height: CGFloat
     )] {
@@ -583,9 +582,7 @@ nonisolated enum NoteStyles {
       var found: [(range: NSRange, attachment: NoteImageAttachment, height: CGFloat)] = []
       storage.enumerateAttribute(.attachment, in: line) { value, range, _ in
         guard let attachment = value as? NoteImageAttachment else { return }
-        let cell = attachment.attachmentCell as? NoteImageAttachmentCell
-        cell?.tailInset = -style.tailIndent
-        let live = cell?.liveWidth
+        let live = (attachment.attachmentCell as? NoteImageAttachmentCell)?.liveWidth
         found.append(
           (
             range, attachment,

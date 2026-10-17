@@ -116,6 +116,12 @@ nonisolated struct Note: Identifiable, Equatable, Sendable {
   /// 第一个有字的行，摘要就从那一行之后开始，不重复标题（F10）。图片行自己照留（它是这条便签的内容）
   var preview: String {
     let hasOwnTitle = !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    // 整条便签只有图片、又没起标题：标题已经是「[图片]」，摘要不再重复一遍（空着：列表、预览卡上写「没有更多内容」）
+    if !hasOwnTitle, NoteImages.containsToken(body),
+      Self.lines(of: body, skipping: 0, budget: 0, droppingImageLines: true).isEmpty
+    {
+      return ""
+    }
     let rest = Self.lines(of: body, skipping: hasOwnTitle ? 0 : 1, budget: Self.previewLength)
     return Self.clipped(rest.joined(separator: " "), to: Self.previewLength)
   }

@@ -41,7 +41,7 @@ nonisolated enum NoteImageLayout {
   ) -> CGSize {
     let limit = max(available, 1)
     guard let metrics, metrics.pointSize.width > 0, metrics.pointSize.height > 0 else {
-      return CGSize(width: min(placeholderWidth, limit).rounded(), height: placeholderHeight)
+      return CGSize(width: min(placeholderWidth, limit.rounded(.down)), height: placeholderHeight)
     }
     let natural = metrics.pointSize
     // 最小宽度只管「记了宽度的」和「拖把手」：没记宽度的照 min（原图点宽，可用宽）
@@ -58,8 +58,22 @@ nonisolated enum NoteImageLayout {
       floor = 1
     }
     let width = min(max(wanted, floor), limit)
-    let height = natural.height * width / natural.width
-    return CGSize(width: width.rounded(), height: max(height.rounded(), 1))
+    // 取整**不许超出可用宽**（夹到可用宽时往下取整）：正文框的宽常是小数（380.6），往上取成 381 的话 TextKit 1
+    // 在哪一行都放不下这个附件，一行行往下找、永远排不完——主线程卡死、内存涨到几个 GB（复查时随机编辑测试
+    // 起始种子 3001 那一批卡在这里：第 7 批评审后的一轮）
+    let shown = max(min(width.rounded(), limit.rounded(.down)), 1)
+    let height = natural.height * shown / natural.width
+    return CGSize(width: shown, height: max(height.rounded(), 1))
+  }
+
+  /// 第 index 个字所在段落右边的缩进（代码块的 tail indent；段落样式里是负数，这里给正数，没有给 0）。
+  /// 布局时调的（cellFrame / attachmentBounds）：只读传进来的文本容器背后那份文本存储上的属性（mac-native §3）
+  static func tailIndent(at index: Int, in container: NSTextContainer?) -> CGFloat {
+    guard let storage = container?.layoutManager?.textStorage, index >= 0, index < storage.length,
+      let style = storage.attribute(.paragraphStyle, at: index, effectiveRange: nil)
+        as? NSParagraphStyle
+    else { return 0 }
+    return max(-style.tailIndent, 0)
   }
 
   /// 这一行能用的宽：正文可用宽去掉这一行的左右缩进（引用、代码块里的图跟着窄——和 cell 里算的是同一个口径，F3）
@@ -97,7 +111,8 @@ nonisolated final class NoteImageAttachment: NSTextAttachment {
   ) -> CGRect {
     let padding = textContainer?.lineFragmentPadding ?? 0
     let cell = attachmentCell as? NoteImageAttachmentCell
-    let available = max(lineFrag.maxX - padding - (cell?.tailInset ?? 0) - position.x, 1)
+    let tail = NoteImageLayout.tailIndent(at: charIndex, in: textContainer)
+    let available = max(lineFrag.maxX - padding - tail - position.x, 1)
     let size = NoteImageLayout.size(
       image: picture, metrics: metrics, available: available, live: cell?.liveWidth)
     return CGRect(x: 0, y: -size.height, width: size.width, height: size.height)
@@ -166,13 +181,6 @@ final class NoteImageAttachmentCell: NSTextAttachmentCell {
   private let paper: Int
   /// 拖把手时临时的宽度（只改显示、不改字；松手才写进正文，Esc 回原样）
   let live = Mutex<CGFloat?>(nil)
-  /// 这一行右边的缩进（代码块的 tail indent，正数）：算可用宽时减掉。NoteStyles.apply 每次重排写上。
-  /// **Mutex**：布局可能在别的线程上读它（mac-native §3，`backgroundLayoutEnabled` 时），和 `live` 同一个理由
-  private let tail = Mutex<CGFloat>(0)
-  var tailInset: CGFloat {
-    get { tail.withLock { $0 } }
-    set { tail.withLock { $0 = newValue } }
-  }
   /// 解好缩略图要失效谁（弱引用，不把视图拖住）
   weak var view: NoteTextView?
 
@@ -213,8 +221,11 @@ final class NoteImageAttachmentCell: NSTextAttachmentCell {
     glyphPosition position: NSPoint, characterIndex charIndex: Int
   ) -> NSRect {
     let padding = textContainer?.lineFragmentPadding ?? 0
-    // 行片段能用的宽：右边去掉内缩和这一行的 tail indent，再去掉字形已经走过的横位置（行首时 position.x 里已经含 head indent）
-    let available = max(lineFrag.maxX - padding - tailInset - position.x, 1)
+    // 行片段能用的宽：右边去掉内缩和这一行的 tail indent，再去掉字形已经走过的横位置（行首时 position.x 里已经含 head indent）。
+    // tail indent **当场从这个字的段落样式读**（原来是 apply 写在 cell 上的一份：刚粘进来、刚插进代码块的图在 apply
+    // 之前就排版，那一份还是 0，算出来的宽比排版器认的多 8 pt，同样在哪一行都放不下、排版死循环）
+    let tail = NoteImageLayout.tailIndent(at: charIndex, in: textContainer)
+    let available = max(lineFrag.maxX - padding - tail - position.x, 1)
     let size = size(available: available)
     return NSRect(
       x: position.x, y: position.y - NoteImageLayout.padding, width: size.width,

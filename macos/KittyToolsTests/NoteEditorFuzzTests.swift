@@ -369,51 +369,65 @@ struct NoteEditorFuzzTests {
     var (steps, withBlocks, formatted, linked, settledLeftovers) = (0, 0, 0, 0, 0)
     var (partial, drained) = (0, 0)
     var seed = fuzzSeed
+    // 每一步、每个种子各包一层 autoreleasepool：测试函数是一口气同步跑完的，中间没有事件循环替它清自动释放池，
+    // 每一步整篇重排的参照（文本存储、排版）、组字和粘贴留下的对象都攒着——起始种子 3001 跑 4 万步涨到 6 GB 多、
+    // 在换页里爬（第 7 批评审后那一轮记的）。真的 App 里每个事件之后系统都会清，不是编辑器的泄漏
     while steps < total {
-      var random = LCG(state: UInt64(seed) &* 7919)
-      let rig = try Rig(Self.start, pasteboard: board, eager: seed % 2 == 1 ? 24 : nil)
-      for step in 0..<min(Self.stepsPerSeed, total - steps) {
-        let what = try Self.act(on: rig, &random, formatted: &formatted, linked: &linked)
-        var done = what
-        if random.chance(9), rig.window.notes.canUndo, !rig.editor.hasMarkedText() {
-          done += " + 撤销"
-          rig.window.notes.undo()
-        } else if random.chance(15), rig.window.notes.canRedo, !rig.editor.hasMarkedText() {
-          done += " + 重做"
-          rig.window.notes.redo()
-        }
-        if random.chance(2) { rig.spin() }
-        // 直接改了文本存储：等兜底的那次收尾（下一轮）跑完再比
-        if what.hasPrefix("直接改存储") {
-          for _ in 0..<100 where rig.stored != rig.editorStored {
-            RunLoop.main.run(mode: .default, before: Date.now.addingTimeInterval(0.01))
+      try autoreleasepool {
+        var random = LCG(state: UInt64(seed) &* 7919)
+        let began = Date.now
+        let rig = try Rig(Self.start, pasteboard: board, eager: seed % 2 == 1 ? 24 : nil)
+        for step in 0..<min(Self.stepsPerSeed, total - steps) {
+          let (done, problem) = try autoreleasepool { () throws -> (String, String?) in
+            let what = try Self.act(on: rig, &random, formatted: &formatted, linked: &linked)
+            var done = what
+            if random.chance(9), rig.window.notes.canUndo, !rig.editor.hasMarkedText() {
+              done += " + 撤销"
+              rig.window.notes.undo()
+            } else if random.chance(15), rig.window.notes.canRedo, !rig.editor.hasMarkedText() {
+              done += " + 重做"
+              rig.window.notes.redo()
+            }
+            if random.chance(2) { rig.spin() }
+            // 直接改了文本存储：等兜底的那次收尾（下一轮）跑完再比
+            if what.hasPrefix("直接改存储") {
+              for _ in 0..<100 where rig.stored != rig.editorStored {
+                RunLoop.main.run(mode: .default, before: Date.now.addingTimeInterval(0.01))
+              }
+              settledLeftovers += 1
+            }
+            steps += 1
+            if rig.markdown, !NoteMarkdown.codeBlocks(in: rig.storage.mutableString).isEmpty {
+              withBlocks += 1
+            }
+            if rig.editor.isStylingRest { partial += 1 }
+            return (done, rig.mismatch())
           }
-          settledLeftovers += 1
+          if let problem {
+            failures.append("种子 \(seed) 第 \(step) 步，\(done) 之后：\(problem)")
+            // 这个种子后面的步都踩在错的状态上：换下一个种子
+            break
+          }
         }
-        steps += 1
-        if rig.markdown, !NoteMarkdown.codeBlocks(in: rig.storage.mutableString).isEmpty {
-          withBlocks += 1
+        // 没补完的样式补完（组字中的先确认掉），再整篇比一次
+        if rig.editor.hasMarkedText() { rig.editor.unmarkText() }
+        for _ in 0..<400 where rig.editor.isStylingRest {
+          RunLoop.main.run(mode: .default, before: Date.now.addingTimeInterval(0.01))
         }
-        if rig.editor.isStylingRest { partial += 1 }
-        if let problem = rig.mismatch() {
-          failures.append("种子 \(seed) 第 \(step) 步，\(done) 之后：\(problem)")
-          // 这个种子后面的步都踩在错的状态上：换下一个种子
-          break
+        if rig.editor.isStylingRest {
+          failures.append("种子 \(seed)：跑完之后还有没补上的样式")
+        } else if let problem = rig.mismatch() {
+          failures.append("种子 \(seed) 补完样式之后：\(problem)")
         }
+        drained += 1
+        // 慢的种子说一声（哪一段、正文多长）：一段跑到几分钟多半是正文被复制粘贴翻倍翻得太长了
+        let spent = Date.now.timeIntervalSince(began)
+        if spent > 5 {
+          print("便签正文随机探针：种子 \(seed) 用了 \(Int(spent)) s，正文 \(rig.storage.length) 个字")
+        }
+        rig.editor.removeFromSuperview()
+        seed += 1
       }
-      // 没补完的样式补完（组字中的先确认掉），再整篇比一次
-      if rig.editor.hasMarkedText() { rig.editor.unmarkText() }
-      for _ in 0..<400 where rig.editor.isStylingRest {
-        RunLoop.main.run(mode: .default, before: Date.now.addingTimeInterval(0.01))
-      }
-      if rig.editor.isStylingRest {
-        failures.append("种子 \(seed)：跑完之后还有没补上的样式")
-      } else if let problem = rig.mismatch() {
-        failures.append("种子 \(seed) 补完样式之后：\(problem)")
-      }
-      drained += 1
-      rig.editor.removeFromSuperview()
-      seed += 1
     }
     print(
       "便签正文随机探针：\(steps) 步、\(seed - fuzzSeed) 个种子，差异 \(failures.count) 处；有代码块的步 \(withBlocks)、"
@@ -428,7 +442,16 @@ struct NoteEditorFuzzTests {
   ) throws -> String {
     let editor = rig.editor
     let length = rig.length
-    let position = { (random: inout LCG) in length == 0 ? 0 : random.next() % (length + 1) }
+    let text = rig.storage.mutableString
+    // 位置只落在整字的边上（同真的界面：点击、方向键都不会把光标停在一个表情的两半中间）。停在中间的话 ⌫ 会删掉
+    // 半个表情、留下落单的代理项——而 TextKit 1 排「要折到下一行的附件 + 后面落单的低位代理项」时死循环（复查时
+    // 起始种子 3001 那一批卡死在种子 3037 第 51 步，独立小程序复现：macos/build/research/notes-images-proto/
+    // lone-surrogate-loop.swift，系统自带的附件 cell 也一样）。存的正文是 Swift 的 String，读进来不会有落单的代理项
+    let position = { (random: inout LCG) -> Int in
+      guard length > 0 else { return 0 }
+      let raw = random.next() % (length + 1)
+      return raw < text.length ? text.rangeOfComposedCharacterSequence(at: raw).location : raw
+    }
     rig.window.notes.beginUndoGrouping()
     defer { rig.window.notes.endUndoGrouping() }
     switch random.next() % 37 {

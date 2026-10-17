@@ -320,10 +320,23 @@ extension NoteTextView {
   }
 
   /// range 夹进正文的长度里。**不能直接用 NSIntersectionRange**：零长度的区间（光标、行尾）和别的区间算交集会塌成 {0,0}，
-  /// 光标在正文末尾时粘进来的东西会跑到开头
+  /// 光标在正文末尾时粘进来的东西会跑到开头。两头再挪到**整字的边上**：不把一个表情（代理对）拆成两半——落单的
+  /// 代理项后面要是接着一张折到下一行的图，TextKit 1 排版死循环（复查时随机编辑测试找到的，独立小程序复现在
+  /// macos/build/research/notes-images-proto/lone-surrogate-loop.swift；界面上的选区本来就不会停在半个字上，这里兜底）
   func clamped(_ range: NSRange, in storage: NSTextStorage) -> NSRange {
-    let location = min(max(range.location, 0), storage.length)
-    let end = min(max(NSMaxRange(range), location), storage.length)
+    let text = storage.mutableString
+    var location = min(max(range.location, 0), storage.length)
+    var end = min(max(NSMaxRange(range), location), storage.length)
+    let isCaret = end == location
+    if location < text.length {
+      location = text.rangeOfComposedCharacterSequence(at: location).location
+    }
+    if isCaret { return NSRange(location: location, length: 0) }
+    if end < text.length {
+      let around = text.rangeOfComposedCharacterSequence(at: end)
+      if around.location < end { end = NSMaxRange(around) }
+    }
+    end = max(end, location)
     return NSRange(location: location, length: end - location)
   }
 

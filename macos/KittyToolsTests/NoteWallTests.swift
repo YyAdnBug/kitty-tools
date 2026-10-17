@@ -535,6 +535,12 @@ struct NoteWallTests {
     #expect(imageOnlyFirst == "买菜\n牛奶", "只有图片的行先去掉，不占 16 行的名额")
     // 只有图片的便签：这一段是空的（不是令牌原文）
     #expect(NoteWall.excerpt(of: withImages(image)).text.isEmpty)
+    // 令牌跨在 excerptScan（只看正文开头多少个字）的截断处：截到令牌后面，不把它截成两半（前面全是空行时
+    // 这一行就是卡片上的第一行）
+    let blanks = String(repeating: "\n", count: NoteWall.excerptScan - 20)
+    let straddling = NoteWall.excerpt(of: withImages("\(blanks)前\(image)后")).text
+    #expect(!straddling.contains("kitty-note-image"), "截断处不许露出半截令牌")
+    #expect(straddling.contains("[图片]"))
 
     // 代码块：挪到这一段的坐标里；截在尾上的照样是块
     let fenced = NoteWall.excerpt(of: note("```swift\nlet a = 1\n```\n后面", title: "T"))

@@ -1242,11 +1242,14 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     }
     if item.action == #selector(openLink(_:)) { return true }
     if item.action == #selector(insertImageFromPanel(_:)) { return isEditable }
-    // 粘贴：剪贴板里有我们处理得了的图片就可用；没有交给父类（纯文字、空剪贴板照父类的判断——
-    // 原来直接返回 isEditable && canPasteImages，有字时 canPasteImages 是 false，全部便签窗口里 ⌘V 粘不了字，F2）
+    // 粘贴：按**自己读的那个剪贴板**判（`pasteboard`；单测换成自己建的）——有我们处理得了的图片，或者有能读的类型
+    // （字、文件、自家的正文）就可用。不交给父类：父类看的是系统剪贴板，和 paste(_:) 真读的不是同一个
+    // （单测里结果会跟着用户当时拷了什么变）。原来直接返回 isEditable && canPasteImages，有字时是 false，
+    // 全部便签窗口里 ⌘V 粘不了字（F2）
     if item.action == #selector(paste(_:)) {
-      if isEditable, canPasteImages(from: pasteboard) { return true }
-      return super.validateUserInterfaceItem(item)
+      return isEditable
+        && (canPasteImages(from: pasteboard)
+          || pasteboard.availableType(from: readablePasteboardTypes) != nil)
     }
     return super.validateUserInterfaceItem(item)
   }

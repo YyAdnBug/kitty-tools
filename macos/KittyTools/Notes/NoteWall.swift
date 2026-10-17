@@ -272,6 +272,27 @@ nonisolated enum NoteWall {
 
   // MARK: 卡片上的字
 
+  /// 只看正文开头 excerptScan 个字时在哪截：**一段图片令牌跨在截断处就截到令牌后面**——截成两半的令牌认不出来，
+  /// 后面那半截原文会露在卡片上（令牌不长，往回看一个令牌那么长就够）
+  static func scanEnd(in body: NSString) -> Int {
+    guard body.length > excerptScan else { return body.length }
+    let reach = NoteImages.token(
+      NoteImages.Image(
+        id: UUID(), ext: String(repeating: "x", count: NoteImages.maxExtension),
+        width: NoteImages.maxWidth)
+    ).utf16.count
+    var index = max(excerptScan - reach, 0)
+    while index < excerptScan {
+      if body.character(at: index) == 0x21, let match = NoteImages.match(in: body, at: index),
+        NSMaxRange(match.range) > excerptScan
+      {
+        return NSMaxRange(match.range)
+      }
+      index += 1
+    }
+    return excerptScan
+  }
+
   /// 卡片上带的正文：标题之后的开头几行（原文，连着的一段）和这一段里的代码块（位置相对这一段）。
   /// 没自己起标题的，标题就是正文第一个有内容的行（Note.displayTitle），这一行不再重复（跳过前面的空行和代码块的
   /// 围栏行）。最多 excerptLines 行、excerptLength 个字；只认正文开头 excerptScan 个字里的代码块，一块被截在中间的
@@ -280,7 +301,8 @@ nonisolated enum NoteWall {
     let body = note.body as NSString
     let raw =
       body.length > excerptScan
-      ? body.substring(with: body.rangeOfComposedCharacterSequences(for: NSRange(0..<excerptScan)))
+      ? body.substring(
+        with: body.rangeOfComposedCharacterSequences(for: NSRange(0..<scanEnd(in: body))))
       : body as String
     // **先把图片处理掉**（只有图片的行整行去掉、行内的令牌换成「[图片]」）再认代码块、再截取：不然在 excerptLength
     // 那里会把令牌截成两半露出原文，只有图片的行也白占掉行数和字数；处理完的坐标就是后面 blocks、range 的坐标（F11）
