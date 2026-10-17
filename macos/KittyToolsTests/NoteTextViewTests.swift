@@ -1177,8 +1177,11 @@ struct NoteTextViewTests {
 
   /// 纸上正文的滚动条不画轨道（手测反馈第 3 批「白底加滚动条」）：老式滚动条照系统的画法是一条浅色的轨道 + 滑块，
   /// NoteScroller 只画滑块，轨道那一截透出后面的纸。直接让两种滚动条画进位图比（不挂层、不建窗口：挂在图层树里的
-  /// 滚动条由系统的图层画，屏外出图拍不到轨道）。另外：悬浮式照常能用、自己不算不透明
+  /// 滚动条由系统的图层画，屏外出图拍不到轨道）。另外：悬浮式照常能用、自己不算不透明。
+  /// 对照组是 NSScroller 的空子类：macOS 27 上原样的 NSScroller 走 updateLayer（wantsUpdateLayer 是 true），
+  /// draw(_:) 什么都不画，位图全透明；子类（哪怕空的）退回 draw(_:)，和 NoteScroller 走同一条路
   @Test func scrollerDrawsNoTrack() throws {
+    final class StockScroller: NSScroller {}
     func render(_ scroller: NSScroller, dark: Bool) throws -> NSBitmapImageRep {
       scroller.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
       scroller.scrollerStyle = .legacy
@@ -1193,7 +1196,7 @@ struct NoteTextViewTests {
       return rep
     }
     for dark in [false, true] {
-      let stock = try render(NSScroller(), dark: dark)
+      let stock = try render(StockScroller(), dark: dark)
       let ours = try render(NoteScroller(), dark: dark)
       // 滑块在最上面（值是 0），最下面那一截只有轨道
       let (x, y) = (stock.pixelsWide / 2, stock.pixelsHigh - 12)
