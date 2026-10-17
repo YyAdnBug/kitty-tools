@@ -67,7 +67,7 @@ nonisolated enum NoteImageLayout {
   }
 
   /// 第 index 个字所在段落右边的缩进（代码块的 tail indent；段落样式里是负数，这里给正数，没有给 0）。
-  /// 布局时调的（cellFrame / attachmentBounds）：只读传进来的文本容器背后那份文本存储上的属性（mac-native §3）
+  /// 布局时调的（cellFrame）：只读传进来的文本容器背后那份文本存储上的属性（mac-native §3）
   static func tailIndent(at index: Int, in container: NSTextContainer?) -> CGFloat {
     guard let storage = container?.layoutManager?.textStorage, index >= 0, index < storage.length,
       let style = storage.attribute(.paragraphStyle, at: index, effectiveRange: nil)
@@ -102,21 +102,6 @@ nonisolated final class NoteImageAttachment: NSTextAttachment {
   }
 
   required init?(coder: NSCoder) { fatalError("便签的图片附件不从归档里读") }
-
-  /// 图在正文里占多大：**挂了 cell 的附件走 cell 的 cellFrame**（见 NoteImageAttachmentCell），这里只留给
-  /// 没有 cell 的兜底路（实测 15.7 上不会被调到）。原点是基线上的字形位置
-  override func attachmentBounds(
-    for textContainer: NSTextContainer?, proposedLineFragment lineFrag: CGRect,
-    glyphPosition position: CGPoint, characterIndex charIndex: Int
-  ) -> CGRect {
-    let padding = textContainer?.lineFragmentPadding ?? 0
-    let cell = attachmentCell as? NoteImageAttachmentCell
-    let tail = NoteImageLayout.tailIndent(at: charIndex, in: textContainer)
-    let available = max(lineFrag.maxX - padding - tail - position.x, 1)
-    let size = NoteImageLayout.size(
-      image: picture, metrics: metrics, available: available, live: cell?.liveWidth)
-    return CGRect(x: 0, y: -size.height, width: size.width, height: size.height)
-  }
 
   /// 编辑器里的（带附件的富文本）→ 存的字：附件字符换回令牌，**没挂我们附件的 U+FFFC 原样保留**。
   /// 没有 U+FFFC 的正文（绝大多数）直接原样返回（打字的开销和现在一样）
@@ -214,8 +199,12 @@ final class NoteImageAttachmentCell: NSTextAttachmentCell {
   /// 这一张在行片段里占的那一块：宽按「行片段能用的宽」算（比正文宽的图夹到可用宽、高按比例），
   /// 高 = 图高 + 上下各 padding（图在框里居中）。**挂了 cell 的附件走这一条**（附件的 attachmentBounds 不被调到）：
   /// 默认实现只看 cellSize()（不限可用宽），比正文框宽的图会排成原图大小、盖住前面的字（F3）。
-  /// 原点取 `position.y - padding`：实测（屏外样机 + 单测）这样画出来的图正好落在布局代理设的
-  /// `lineFragmentUsedRect` 上（那一块就是图），和 `boundingRect(forGlyphRange:in:)` 一致
+  /// **返回的矩形相对这个字形在基线上的位置**（y 朝上：origin.y = -padding 就是框的底边在基线下面 padding，图的底边正好
+  /// 落在基线上），**不是**容器里的绝对坐标——原来写成 `(position.x, position.y - padding)`，position.y 是行片段的 y，
+  /// 第一行（y = 0）看不出来，往下的行图被画到上面去、盖住前面的字；当时为了让图看起来在原地，又在布局代理的基线里加了
+  /// 行片段的 y，结果图片行上的字被推到行外面看不见（2026-10-17 用户真机报「图片和文字在同一行导致文字不展示了」；
+  /// 独立小程序量清楚了 TextKit 1 的解释法：主检出 macos/build/research/notes-images-proto/cellframe-probe.swift）。
+  /// position.x 不含行首的 lineFragmentPadding（实测比 `location(forGlyphAt:)` 少 5），算可用宽时左右两边的内缩都要减
   nonisolated override func cellFrame(
     for textContainer: NSTextContainer?, proposedLineFragment lineFrag: NSRect,
     glyphPosition position: NSPoint, characterIndex charIndex: Int
@@ -225,10 +214,10 @@ final class NoteImageAttachmentCell: NSTextAttachmentCell {
     // tail indent **当场从这个字的段落样式读**（原来是 apply 写在 cell 上的一份：刚粘进来、刚插进代码块的图在 apply
     // 之前就排版，那一份还是 0，算出来的宽比排版器认的多 8 pt，同样在哪一行都放不下、排版死循环）
     let tail = NoteImageLayout.tailIndent(at: charIndex, in: textContainer)
-    let available = max(lineFrag.maxX - padding - tail - position.x, 1)
+    let available = max(lineFrag.maxX - padding * 2 - tail - position.x, 1)
     let size = size(available: available)
     return NSRect(
-      x: position.x, y: position.y - NoteImageLayout.padding, width: size.width,
+      x: 0, y: -NoteImageLayout.padding, width: size.width,
       height: size.height + NoteImageLayout.padding * 2)
   }
 

@@ -766,7 +766,9 @@ nonisolated enum NoteStyles {
     {
       let padding = NoteImageLayout.padding
       rect.pointee.size.height = (before + padding * 2 + imageHeight).rounded()
-      baseline = (rect.pointee.minY + before + padding + imageHeight).rounded()
+      // 基线**相对这个行片段的原点**（同下面 center 给正文行的那个）：原来多加了 rect.minY，第一行（y = 0）看不出来，
+      // 往下的图片行上的字被推到行外面去、看不见（2026-10-17 用户真机报「图片和文字在同一行导致文字不展示了」）
+      baseline = (before + padding + imageHeight).rounded()
       used.origin.y = rect.pointee.minY + before + padding
       used.size.height = imageHeight
       return true

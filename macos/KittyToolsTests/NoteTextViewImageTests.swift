@@ -1201,4 +1201,96 @@ struct NoteTextViewImageTests {
       rig.editor.clamped(NSRange(location: 9, length: 3), in: storage)
         == NSRange(location: 4, length: 0))
   }
+
+  /// 用户真机报的（2026-10-17，「图片和文字在同一行导致文字不展示了」）：图和字在同一行、而这一行**不是正文第一行**时，
+  /// 字画到了行外面（布局代理给图片行的基线把这一行的 y 也算进去了：第一行 y 是 0 看不出来，往下的行字被推出去）。
+  /// 图片行上的字要在自己的行片段里、坐在图的底边那条基线上；第 1 行、第 3 行、第 41 行都一样
+  @Test func textBesideAnImageStaysOnItsLine() async throws {
+    let rig = try Rig()
+    let image = try await rig.addImage(width: 232, height: 88)
+    let token = rig.token(image, width: 116)
+    for (lead, label) in [
+      ("", "第 1 行"), ("第一行\n第二行\n", "第 3 行"),
+      (String(repeating: "一行字\n", count: 40), "第 41 行"),
+    ] {
+      rig.load("\(lead)\(token)12312323123\n后面一行")
+      let manager = try #require(rig.editor.layoutManager)
+      let container = try #require(rig.editor.textContainer)
+      let index = try #require(rig.images.first?.index)
+      let digits = NSRange(location: index + 1, length: 11)
+      let glyphs = manager.glyphRange(forCharacterRange: digits, actualCharacterRange: nil)
+      let fragment = manager.lineFragmentRect(forGlyphAt: glyphs.location, effectiveRange: nil)
+      let text = manager.boundingRect(forGlyphRange: glyphs, in: container)
+      #expect(
+        text.minY >= fragment.minY - 0.5 && text.maxY <= fragment.maxY + 0.5,
+        "\(label)：字在自己的行片段里（字 \(text)、行片段 \(fragment)）")
+      let picture = try #require(rig.editor.imageRect(ofCharacterAt: index))
+      let origin = rig.editor.textContainerOrigin
+      let baseline = fragment.minY + manager.location(forGlyphAt: glyphs.location).y + origin.y
+      #expect(
+        abs(baseline - picture.maxY) <= 1, "\(label)：字坐在图的底边那条基线上（\(baseline) / \(picture.maxY)）")
+      #expect(
+        picture.minY - origin.y >= fragment.minY - 0.5
+          && picture.maxY - origin.y <= fragment.maxY + 0.5,
+        "\(label)：图在自己的行片段里")
+    }
+  }
+
+  /// 同一个真机问题的另一半：图要**画**在它自己的那一行上（上面那条量的是排版的矩形，看不出画到哪了——cell 返回的框
+  /// 原来是容器里的绝对坐标，往下的行图被画到第一行去、盖住前面的字）。把正文框画进位图，看图的青色在不在图那一块、
+  /// 第一行那里有没有被画上青色
+  @Test func imagesArePaintedOnTheirOwnLine() async throws {
+    let rig = try Rig()
+    let image = try await rig.addImage(width: 160, height: 80)
+    rig.load("第一行\n第二行\n前面\(rig.token(image))后面\n最后一行")
+    let editor = rig.editor
+    let manager = try #require(editor.layoutManager)
+    func render() throws -> NSBitmapImageRep {
+      rig.layout()
+      let rep = try #require(editor.bitmapImageRepForCachingDisplay(in: editor.bounds))
+      editor.cacheDisplay(in: editor.bounds, to: rep)
+      return rep
+    }
+    func isTeal(_ rep: NSBitmapImageRep, _ point: NSPoint) -> Bool {
+      let scale = CGFloat(rep.pixelsWide) / editor.bounds.width
+      guard
+        let color = rep.colorAt(x: Int(point.x * scale), y: Int(point.y * scale))?
+          .usingColorSpace(.sRGB)
+      else { return false }
+      return color.greenComponent > 0.45 && color.blueComponent > 0.5 && color.redComponent < 0.5
+    }
+    let index = try #require(rig.images.first?.index)
+    let picture = try #require(editor.imageRect(ofCharacterAt: index))
+    // 图的右上角那一块是青色（白角在左下）；缩略图在后台解，按轮数等它画出来
+    let probe = NSPoint(x: picture.maxX - 6, y: picture.minY + 6)
+    var rep = try render()
+    for _ in 0..<200 where !isTeal(rep, probe) {
+      try await Task.sleep(for: .milliseconds(20))
+      rep = try render()
+    }
+    #expect(isTeal(rep, probe), "图画在它自己的那一块上（\(picture)）")
+    // 第一行（图原来被错画上去的地方）、图正上方：没有青色
+    let firstLine = manager.lineFragmentRect(forGlyphAt: 0, effectiveRange: nil)
+    let origin = editor.textContainerOrigin
+    let above = NSPoint(x: picture.maxX - 6, y: firstLine.midY + origin.y)
+    #expect(!isTeal(rep, above), "第一行没有被画上图")
+    // 图片行上的字照样画出来：「后」那个字的框里画了东西（正文框不画底，位图的底是透明的；墨的颜色跟纸色和外观走，
+    // 不按深浅判）
+    let after = manager.glyphRange(
+      forCharacterRange: NSRange(location: index + 1, length: 1), actualCharacterRange: nil)
+    let box = manager.boundingRect(forGlyphRange: after, in: try #require(editor.textContainer))
+      .offsetBy(dx: origin.x, dy: origin.y)
+    let scale = CGFloat(rep.pixelsWide) / editor.bounds.width
+    var inked = 0
+    for x in stride(from: box.minX + 1, to: box.maxX - 1, by: 1) {
+      for y in stride(from: box.minY + 1, to: box.maxY - 1, by: 1) {
+        if let color = rep.colorAt(x: Int(x * scale), y: Int(y * scale))?.usingColorSpace(.sRGB),
+          color.alphaComponent > 0.3
+        {
+          inked += 1
+        }
+      }
+    }
+    #expect(inked > 10, "图片行上「后」字画出来了（画了的点 \(inked) 个）")
+  }
 }

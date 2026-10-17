@@ -1527,7 +1527,9 @@ struct SnapshotProbeTests {
       now: now.addingTimeInterval(-60))
     let inLine = imageNotes.create(
       body:
-        "前面\(NoteImages.token(NoteImages.Image(id: small.id, ext: small.ext, width: 120)))后面还有字，看图和字是不是坐在同一条基线上",
+        // 图和字同一行的**不放在第一行**（2026-10-17 用户真机报：第一行看不出来，往下的图片行上的字被推到行外面）
+        "图和字同一行\n前面\(NoteImages.token(NoteImages.Image(id: small.id, ext: small.ext, width: 120)))后面还有字，看图和字是不是坐在同一条基线上\n"
+        + "\(NoteImages.token(NoteImages.Image(id: small.id, ext: small.ext, width: 80)))12312323123\n最后一行",
       now: now.addingTimeInterval(-120))
     let broken = imageNotes.create(
       body: "文件找不到的：\n\(NoteImages.token(missing))", now: now.addingTimeInterval(-180))
