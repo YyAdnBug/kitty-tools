@@ -740,8 +740,8 @@ struct NoteTextViewTests {
     #expect(rig.markers == "HH-H")
     center.post(name: NSWindow.didBecomeKeyNotification, object: rig.window)
     #expect(rig.markers == "HH-S")
-    // 别的窗口的通知不算
-    center.post(name: NSWindow.didResignKeyNotification, object: NSObject())
+    // 别的窗口的通知不算（对象得是真窗口：macOS 27 上系统的 NSRemoteView 也听这条通知，对象不是窗口就断言、整个测试宿主崩掉）
+    center.post(name: NSWindow.didResignKeyNotification, object: NSWindow())
     #expect(rig.markers == "HH-S")
     // 只读的不露
     rig.editor.isEditable = false

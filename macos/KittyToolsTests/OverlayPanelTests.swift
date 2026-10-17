@@ -1,6 +1,7 @@
 // 浮层里的撤销 / 重做（2026-10-13：原来没有任何地方接 ⇧⌘Z）：⌘Z / ⇧⌘Z 的事件交给面板的 performKeyEquivalent，
 // 焦点所在输入框里打的字回去、再回来——多行的（SourceTextView：翻译原文框、剪贴板的编辑对话框）和单行的
 // （CommandTextField：字段编辑器自己的栈）。面板只建不显示、不当 key；事件对象直接交给面板，不往系统里发。
+// 另有 macOS 27 的「排版里改高度，contentView 和窗口差一截」（2026-10-17）。
 
 import AppKit
 import Carbon.HIToolbox
@@ -10,6 +11,20 @@ import Testing
 @testable import KittyTools
 
 struct OverlayPanelTests {
+  /// 内容要的高度：变了就让面板改高（同启动器的 model.resize）
+  @Observable fileprivate final class Resizing {
+    var height: CGFloat = 260
+    @ObservationIgnored var resize: (CGFloat) -> Void = { _ in }
+  }
+
+  private struct ResizingView: View {
+    let model: Resizing
+    var body: some View {
+      Color.clear.frame(height: model.height)
+        .onChange(of: model.height, initial: true) { model.resize(model.height) }
+    }
+  }
+
   private final class Draft {
     var text = "原文"
     var name = ""
@@ -27,6 +42,35 @@ struct OverlayPanelTests {
   private func find<T: NSView>(_ type: T.Type, in view: NSView?) -> T? {
     guard let view else { return nil }
     return (view as? T) ?? view.subviews.lazy.compactMap { find(type, in: $0) }.first
+  }
+
+  /// macOS 27：窗口自己排版的半路内容要改高度（启动器、翻译浮窗的 setContentHeight），要排完再改。没修时排完
+  /// contentView 多出 / 少了一次改动量（变高 100 → 260 得 420，变矮 260 → 150 得 40：内容上下被裁），order 时玻璃底的
+  /// 约束还会把窗口改成过时的高度（412 收起、变 172 再 order，窗口停在 250）。排版直接调 layoutIfNeeded（order 里也是它）；
+  /// order 那段放在屏外、全透明、不当 key
+  @Test func resizeDuringLayoutWaitsUntilLaidOut() {
+    let content = Resizing()
+    let panel = OverlayPanel(
+      size: NSSize(width: 320, height: 100), autoHide: .clickOutside, isPinned: { false },
+      content: ResizingView(model: content))
+    content.resize = { [unowned panel] in panel.setContentHeight($0) }
+    func fits(_ height: CGFloat) -> Bool {
+      panel.frame.height == height && panel.contentView?.frame.size == panel.frame.size
+    }
+    for height: CGFloat in [260, 150, 330] {
+      content.height = height
+      panel.layoutIfNeeded()
+      #expect(fits(height), "排版里改成 \(height)")
+    }
+    panel.setFrameOrigin(NSPoint(x: -30000, y: -30000))
+    panel.alphaValue = 0
+    for height: CGFloat in [412, 172] {
+      content.height = height
+      panel.orderFrontRegardless()
+      #expect(fits(height), "order 里改成 \(height)")
+      panel.orderOut(nil)
+    }
+    #expect(!panel.isVisible && !panel.isKeyWindow)
   }
 
   @Test func undoAndRedoKeysReachTheFocusedInput() throws {

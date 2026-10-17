@@ -53,6 +53,9 @@ final class OverlayPanel: NSPanel {
   /// 正在挤压入场：起止帧、开始时刻、逐帧驱动的显示器刷新
   private var squeeze: (start: NSRect, end: NSRect, began: CFTimeInterval)?
   private var squeezeLink: CADisplayLink?
+  /// 窗口自己的排版（layoutIfNeeded）嵌套了几层；排版中要改的帧排完再改（见 layoutIfNeeded）
+  private var layoutDepth = 0
+  private var frameChangeAfterLayout: (() -> Void)?
 
   /// - Parameters:
   ///   - minSize: 传了就允许拖左右边改宽度（无边框窗口没有系统的拖边，用两条 ResizeEdge）
@@ -128,6 +131,28 @@ final class OverlayPanel: NSPanel {
 
   override var canBecomeKey: Bool { true }
   override var canBecomeMain: Bool { false }
+
+  /// macOS 27：**窗口自己排版的半路不能改它的帧**。orderFront、displayIfNeeded 都会让窗口排版，SwiftUI 在这一趟里当场
+  /// 出内容，内容要的高度一变就会调 setContentHeight（⌘Y 大卡是 move）；这时改帧，排完系统又按排版前的尺寸把
+  /// contentView 挪一遍（contentView 比窗口多出 / 少了一次改动量：内容上下被裁），玻璃底的约束还会把窗口改成一个
+  /// 过时的高度，都要等下一次改帧才对回来（用户 2026-10-16 报启动器、翻译浮窗「高度不对」）。所以排版中的改帧记下来，
+  /// 排完当场再做（还在同一次 order / 显示里，画出来之前）。2026-10-17 本机 macOS 27.0.1 实测：正常的显示周期、拖宽度
+  /// 时的连锁改高、带标题栏的窗口、先改帧再 order 都没这个问题
+  override func layoutIfNeeded() {
+    layoutDepth += 1
+    super.layoutIfNeeded()
+    layoutDepth -= 1
+    guard layoutDepth == 0, let change = frameChangeAfterLayout else { return }
+    frameChangeAfterLayout = nil
+    change()
+  }
+
+  /// 正在排版：把这次改帧记下（只留最后一次），返回 true，调用方直接返回
+  private func deferredUntilLaidOut(_ change: @escaping () -> Void) -> Bool {
+    guard layoutDepth > 0 else { return false }
+    frameChangeAfterLayout = change
+    return true
+  }
 
   /// makingKey = false：只露出来、不抢键盘（复制即译），此时靠点外关闭。
   /// anchor：新出现时放在这一点（鼠标位置）的右下 12 pt（翻译浮窗「跟随鼠标」）；已经开着就不挪。
@@ -423,6 +448,9 @@ final class OverlayPanel: NSPanel {
   /// 换位置和大小（放大预览换了条目）；animated 走 0.24 s（settle 的近似），连按方向键时调用方传 false。
   /// 不动画也走零时长的 animator，理由同 setContentHeight
   func move(to target: NSRect, animated: Bool) {
+    if deferredUntilLaidOut({ [weak self] in self?.move(to: target, animated: animated) }) {
+      return
+    }
     guard target != frame else { return }
     NSAnimationContext.runAnimationGroup { context in
       context.duration = animated && isVisible && !Style.reduceMotion ? 0.24 : 0
@@ -511,6 +539,9 @@ final class OverlayPanel: NSPanel {
   /// animated：变高 0.18 s、变矮 0.14 s（首次显示、拖边改宽和减弱动态效果时不动画）。
   /// 不动画时也走零时长的 animator：直接 setFrame 盖不掉正在跑的帧动画，动画结束会把旧目标写回来
   func setContentHeight(_ height: CGFloat, animated: Bool = false) {
+    if deferredUntilLaidOut({ [weak self] in self?.setContentHeight(height, animated: animated) }) {
+      return
+    }
     // 挤压入场还在弹：改它的终点（顶边不动），别另起一段帧动画和它抢
     if var running = squeeze {
       running.end.origin.y = running.end.maxY - height
