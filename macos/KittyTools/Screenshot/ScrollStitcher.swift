@@ -1,9 +1,11 @@
 // 长截图拼接（纯逻辑，配单测）：每来一帧选区截图，和上一帧比出纵向位移，把新露出来的行接到长图的上边或下边。
 // - 位移：逐行哈希（不看右边滚动条那一条），新帧的每一行去上一帧里找一模一样的行，按行号差投票；最高票至少是
 //   第二名的两倍才算对上（重复的表格行、代码行会给好几个位移投票，分不出来就宁可不接）。纯色行、在帧里重复太多次的行
-//   （空白、竖线边框）和原地没变的行（吸顶栏、页脚）不投票。屏幕内容按整像素滚动，逐行完全相同，用不着模糊匹配。
+//   （空白、竖线边框）和原地没变的行（吸顶栏、页脚）不投票。AppKit 的界面按整像素滚动，逐行完全相同，先走这条。
 //   实测（合成页面，带吸顶栏 / 页脚 / 滚动条 / 动画块 / 光标）零误接；Vision 的平移配准在有吸顶栏时大半算错、
 //   置信度却总是 1，不能用。
+// - 网页内核的界面（Claude、Chrome、VS Code……）滚动停在小数像素上，文字按小数位置重画，滚过之后有字的行没有一行
+//   逐字节相同（2026-10-17）：逐字节和画布里都找不到时，再按每行的分段亮度和容差投票（fuzzyMatch，规矩同上）。
 // - 两个方向都能拼（聊天记录往上翻）：每帧在「画布」上有个位置，超出画布下边就接到下面、超出上边就接到上面，
 //   在画布里面（往回滚）只更新位置。
 // - 吸顶栏 / 页脚：往下接先去掉画布末尾的页脚、再接新帧的新内容连同它的页脚，所以长图始终是「最上面那帧的
@@ -75,6 +77,12 @@ struct ScrollStitcher {
   /// 比如每段末尾的同一个按钮），再往回滚一点就够了
   private static let relocateShare = 0.5
   private static let relocateCover = 0.25
+  /// 容差匹配（fuzzyMatch）：每行按这么宽（像素）一段求亮度和；某个位移下每像素平均差不超过 fuzzyTolerance 级亮度的行
+  /// 算一票；票数还要占重叠部分有字行的这个比例。一段里各段亮度差超过 inkLevels 级的行才算有字
+  private static let bin = 16
+  private static let fuzzyTolerance = 2
+  private static let fuzzyShare = 0.5
+  private static let inkLevels = 3
 
   /// 长图当前的高度（像素）
   var outputHeight: Int { bottom - top }
@@ -115,14 +123,14 @@ struct ScrollStitcher {
     guard changed > 0 else { return .unchanged }
     var found = Self.match(from: reference, to: frame)
     if found == nil {
-      let ink = (0..<height).count { !reference.solid[$0] }
-      let still = (0..<height).count { !reference.solid[$0] && a[$0] == b[$0] }
+      let ink = (0..<height).count { reference.ink[$0] }
+      let still = (0..<height).count { reference.ink[$0] && a[$0] == b[$0] }
       if Double(changed) < Self.quietShare * Double(height)
         || Double(still) > Self.stillShare * Double(ink)
       {
         return .unchanged
       }
-      found = relocate(frame)
+      found = relocate(frame) ?? Self.fuzzyMatch(from: reference, to: frame)
       // 位置没变：原地变回了画布上更早的样子（.moved 的位移不会是 0，自动滚动拿它当除数）
       if found?.dy == 0 { return .unchanged }
     }
@@ -257,6 +265,58 @@ struct ScrollStitcher {
       last: matched.last ?? range.upperBound - 1)
   }
 
+  /// 逐字节对不上时和上一帧比的退路：滚动停在小数像素上的界面（网页内核的 App：Claude、Chrome、VS Code……2026-10-17
+  /// 用户在 macOS 27 上报「一直对不上」，实测滚过之后有字的行没有一行逐字节相同，最佳整像素位移下每像素平均差 0.2–1 级）
+  /// 文字按小数位置重画，抗锯齿的边每帧都不一样。按每行的分段亮度和比：某个位移下每像素平均差不超过 fuzzyTolerance 级的
+  /// 有字行算一票，规矩同 match（原地没变的行不投），另要占重叠部分有字行的 fuzzyShare；第二名只算离开最高票 3 行以上的
+  /// （小数位移让相邻一两行也对得上）。真实帧上对的位移拿七成以上的票，第二名不到它的四分之一；一次约 15 ms
+  private static func fuzzyMatch(from a: Frame, to b: Frame) -> Match? {
+    let height = a.ink.count
+    let bins = a.bins
+    guard bins > 0 else { return nil }
+    // 隔一行取一行投票：票数的比例不变、快一倍；对上的首尾行最多差一行，页脚和吸顶栏只会估大（宁大勿小）
+    let voters = stride(from: 0, to: height, by: 2).filter {
+      b.ink[$0] && b.hashes[$0] != a.hashes[$0]
+    }
+    let limit = Int32(fuzzyTolerance * bin * 4 * bins)
+    // b 的第 i 行停在 a 的第 j 行和第 j + 1 行之间（滚了 dy + 一个小数）：每段亮度应落在这两行之间，只算超出的部分。
+    // 每行的上下界先算好
+    var low = a.profile
+    var high = a.profile
+    for index in 0..<((height - 1) * bins) {
+      let next = a.profile[index + bins]
+      low[index] = min(low[index], next)
+      high[index] = max(high[index], next)
+    }
+    func close(_ i: Int, _ j: Int) -> Bool {
+      var sum: Int32 = 0
+      for k in 0..<bins {
+        let value = b.profile[i * bins + k]
+        sum += max(low[j * bins + k] - value, value - high[j * bins + k], 0)
+        if sum > limit { return false }
+      }
+      return true
+    }
+    var tally = [Int](repeating: 0, count: 2 * height)
+    for dy in (1 - height)..<height where dy != 0 {
+      for i in voters where (0..<height).contains(i + dy) && close(i, i + dy) {
+        tally[dy + height] += 1
+      }
+    }
+    guard let peak = tally.indices.max(by: { tally[$0] < tally[$1] }) else { return nil }
+    let votes = tally[peak]
+    let second = tally.indices.lazy.filter { abs($0 - peak) > 2 }.map { tally[$0] }.max() ?? 0
+    let dy = peak - height
+    let overlap = voters.filter { (0..<height).contains($0 + dy) }
+    guard dy != 0, votes >= minVotes, votes >= minLead * second,
+      Double(votes) >= fuzzyShare * Double(overlap.count)
+    else { return nil }
+    let matched = overlap.filter { close($0, $0 + dy) }
+    return Match(
+      dy: dy, overlap: max(0, -dy)..<min(height, height - dy), first: matched.first ?? 0,
+      last: matched.last ?? height - 1)
+  }
+
   private func canvasHash(_ row: Int) -> Int {
     row >= anchor ? belowHashes[row - anchor] : aboveHashes[anchor - 1 - row]
   }
@@ -362,6 +422,11 @@ struct ScrollStitcher {
     let lookup: [Int: [Int]]
     /// 在本帧里出现太多次的行哈希
     let common: Set<Int>
+    /// 容差匹配用：每行 bins 段的亮度和（B + 2G + R，只看比较的列），按行连着存；ink 是这一行各段之间亮度有起伏
+    /// （有字；纯色和只差一两级的渐变底不算）
+    let bins: Int
+    let profile: [Int32]
+    let ink: [Bool]
 
     init?(_ image: CGImage, width: Int, height: Int, compared: Int, space: CGColorSpace) {
       guard image.width == width, image.height == height else { return nil }
@@ -379,13 +444,33 @@ struct ScrollStitcher {
       guard drawn else { return nil }
       var hashes = [Int](repeating: 0, count: height)
       var solid = [Bool](repeating: false, count: height)
+      let bin = ScrollStitcher.bin
+      let bins = compared / bin
+      var profile = [Int32](repeating: 0, count: bins * height)
+      var ink = [Bool](repeating: false, count: height)
+      let inkSpread = Int32(ScrollStitcher.inkLevels * bin * 4)
       pixels.withUnsafeBytes { buffer in
+        let bytes = buffer.bindMemory(to: UInt8.self)
         for y in 0..<height {
           let row = buffer.baseAddress! + y * rowBytes
           var hasher = Hasher()
           hasher.combine(bytes: UnsafeRawBufferPointer(start: row, count: compared * 4))
           hashes[y] = hasher.finalize()
           solid[y] = memcmp(row + 4, row, compared * 4 - 4) == 0
+          var low = Int32.max
+          var high = Int32.min
+          for k in 0..<bins {
+            var sum: Int32 = 0
+            var offset = y * rowBytes + k * bin * 4
+            for _ in 0..<bin {
+              sum += Int32(bytes[offset]) + 2 * Int32(bytes[offset + 1]) + Int32(bytes[offset + 2])
+              offset += 4
+            }
+            profile[y * bins + k] = sum
+            low = min(low, sum)
+            high = max(high, sum)
+          }
+          ink[y] = bins > 0 && high - low > inkSpread
         }
       }
       var rows: [Int: [Int]] = [:]
@@ -395,6 +480,9 @@ struct ScrollStitcher {
       self.solid = solid
       lookup = rows.filter { $0.value.count <= ScrollStitcher.maxRepeat }
       common = Set(rows.keys.filter { rows[$0]!.count > ScrollStitcher.maxRepeat })
+      self.bins = bins
+      self.profile = profile
+      self.ink = ink
     }
   }
 }

@@ -308,6 +308,56 @@ struct ScrollStitcherTests {
     #expect(stitcher.outputHeight == 290)
   }
 
+  /// 像文字的页面：每 20 行一行字（前 12 行），每列随机有一笔竖画（起止行、深浅随机），上下相邻的行大多一样
+  private static let strokes: [UInt8] = {
+    var rng = SeededGenerator(state: 7)
+    var bytes = [UInt8](repeating: 255, count: width * 4 * 1000)
+    for line in 0..<50 {
+      for x in 4..<(width - scrollbar - 4) where rng.next() % 3 == 0 {
+        let start = Int(rng.next() % 6)
+        let length = 3 + Int(rng.next() % 4)
+        let gray = UInt8(rng.next() % 120)
+        for y in (line * 20 + start)..<(line * 20 + start + length) {
+          bytes.replaceSubrange(
+            (y * width + x) * 4..<(y * width + x) * 4 + 3, with: [gray, gray, gray])
+        }
+      }
+    }
+    return bytes
+  }()
+
+  /// 滚到 offset（可以带半像素）的一帧：半像素时每行是相邻两行的平均，像网页内核按小数位置重画的字
+  private static func strokesFrame(at offset: Double) -> CGImage {
+    let rowBytes = width * 4
+    let base = Int(offset)
+    var bytes = Array(strokes[base * rowBytes..<(base + height) * rowBytes])
+    if offset != Double(base) {
+      for index in bytes.indices where index % 4 != 3 {
+        bytes[index] = UInt8(
+          (Int(bytes[index]) + Int(strokes[index + rowBytes + base * rowBytes])) / 2)
+      }
+    }
+    return image(bytes)
+  }
+
+  @Test func stitchesFractionalScrolling() throws {
+    // 2026-10-17 用户在 macOS 27 上对着 Claude 的对话长截图「一直对不上」：网页内核的滚动停在小数像素上，滚过之后
+    // 有字的行没有一行逐字节相同。整像素、半像素交替着滚，每一帧都要接上，长度差不出一两行
+    var stitcher = try #require(
+      ScrollStitcher(
+        first: Self.strokesFrame(at: 100), scrollbarWidth: Self.scrollbar, maxHeight: 100_000))
+    for offset in [130.5, 161, 191.5, 236, 270.5] {
+      guard case .moved(let grown) = stitcher.add(Self.strokesFrame(at: offset)) else {
+        Issue.record("滚到 \(offset) 没对上")
+        return
+      }
+      #expect(grown > 0)
+    }
+    #expect(abs(stitcher.outputHeight - (270 + Self.height - 100)) <= 2)
+    // 一下滚出一整屏照样对不上，不误接
+    #expect(stitcher.add(Self.strokesFrame(at: 600.5)) == .lost)
+  }
+
   @Test func refusesAmbiguousRepeatingContent() throws {
     // 整页都是同一小段（周期 20 行）重复：往哪个整周期位移都对得上，分不出来就不接
     let rowBytes = Self.width * 4
