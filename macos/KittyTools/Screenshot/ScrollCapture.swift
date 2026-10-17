@@ -77,16 +77,26 @@ final class ScrollCapture {
     // 对齐到像素，夹进这块屏；sourceRect：屏内坐标，点，原点在左上
     let (snapped, source) = RegionSelector.captureRect(region, in: screen.frame, scale: scale)
     self.region = snapped
+    // 边框和面板先建出来（还不显示），再取窗口表：macOS 27 上菜单栏图标不算本 App 的窗口，这时本 App 要是一扇窗口都没有
+    // （便签的药丸在长截图期间收起了），系统的 App 列表里就没有它，按 App 排除落空，呼吸的边框发光被截进选区边上、帧帧都变，
+    // 一直「对不上」（2026-10-17 本机 macOS 27.0.1 实测）。建过的窗口要 onScreenWindowsOnly: false 才列得出来
+    borderView = ScrollBorderView()
+    border = Self.makeBorder(around: snapped, view: borderView)
+    panel = ScrollCapturePanel(region: snapped, screen: screen)
     let content = try await SCShareableContent.excludingDesktopWindows(
-      false, onScreenWindowsOnly: true)
+      false, onScreenWindowsOnly: false)
     guard let display = content.displays.first(where: { $0.displayID == screen.displayID }) else {
       throw CaptureError.noDisplay
     }
-    // 滤掉本 App 的全部窗口（含之后才建的边框和面板）
-    filter = SCContentFilter(
-      display: display,
-      excludingApplications: content.applications.filter { $0.processID == getpid() },
-      exceptingWindows: [])
+    // 滤掉本 App 的全部窗口（含之后才建的轻提示）；万一列表里还是没有本 App，退回按窗口排除此刻建好的边框和面板
+    // ponytail: 退回时之后才建的轻提示会进画面；真遇到了再连它们一起换过滤器
+    if let me = content.applications.first(where: { $0.processID == getpid() }) {
+      filter = SCContentFilter(display: display, excludingApplications: [me], exceptingWindows: [])
+    } else {
+      filter = SCContentFilter(
+        display: display,
+        excludingWindows: content.windows.filter { $0.owningApplication?.processID == getpid() })
+    }
     configuration = SCStreamConfiguration()
     configuration.sourceRect = source
     configuration.width = Int((source.width * scale).rounded())
@@ -101,9 +111,6 @@ final class ScrollCapture {
     else { throw CaptureError.tooSmall }
     self.stitcher = stitcher
     step = self.region.height * 0.4
-    borderView = ScrollBorderView()
-    border = Self.makeBorder(around: self.region, view: borderView)
-    panel = ScrollCapturePanel(region: self.region, screen: screen)
   }
 
   private enum CaptureError: LocalizedError {

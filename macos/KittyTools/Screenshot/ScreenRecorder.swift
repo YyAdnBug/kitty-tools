@@ -660,8 +660,10 @@ final class ScreenRecorder: NSObject {
         found
       )
     }
-    // 找不到本 App 的 SCRunningApplication（按理不会：菜单栏图标一直在）：退回按窗口排除本 App 此刻不在白名单里的窗口。
-    // ponytail: 这时之后才建的装饰窗口（第一次弹的岛、飞行卡片）会进画面；真遇到了再连它们一起每秒比
+    // 找不到本 App 的 SCRunningApplication：退回按窗口排除本 App 此刻不在白名单里的窗口。macOS 27 上菜单栏图标不算本 App 的
+    // 窗口，本 App 一扇建出来的窗口都没有时就会走到这里（长截图因此一直对不上，ScrollCapture.init）；录屏默认倒数 3 秒，
+    // 边框和 HUD 开流前就建好了，倒数设成 0、又没有便签的药丸、开 App 后没用过面板时才会落到这里。
+    // ponytail: 这时之后才建的装饰窗口（边框、HUD、第一次弹的岛、飞行卡片）会进画面；真遇到了就照长截图先把边框建出来再开流
     let excluded = content.windows.filter {
       $0.owningApplication?.processID == getpid() && !ids.contains($0.windowID)
     }
