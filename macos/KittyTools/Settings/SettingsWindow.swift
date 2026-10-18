@@ -15,10 +15,9 @@ import AppKit
 import SwiftUI
 
 enum SettingsPage: String, CaseIterable, Identifiable {
-  // 翻译在截图前面：和菜单栏、快捷键页、引导、速查表同序（记住的上次页存的是 rawValue，调顺序不受影响）；
-  // 录制紧跟截图（2026-10-03 从截图页拆出来；菜单栏、快捷键页里它们同在「截图与录制」一节）；便签、状态屏排在录制后面
-  // （和快捷键页的分节同序；状态屏 Z11，便签 2026-10-12）
-  case general, clipboard, launcher, launchpad, translate, screenshot, record, notes, statusScreen,
+  // 和菜单栏、快捷键页、引导、速查表同序（记住的上次页存的是 rawValue，调顺序不受影响）：
+  // 启动台排在便签后面、状态屏前面（F38；以前跟在启动器后面，和菜单栏对不上）
+  case general, clipboard, launcher, translate, screenshot, record, notes, launchpad, statusScreen,
     hotkeys, about
 
   var id: String { rawValue }
@@ -77,7 +76,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .general: "外观、菜单栏图标、登录时打开、权限、设置的导出与导入"
     case .clipboard: "历史上限、面板、内容格式和隐私"
     case .launcher: "搜索 App、文件、书签与历史、网页搜索与快捷链接"
-    case .launchpad: "全屏的图标网格：像 macOS 15 的启动台，排法、翻页、搜索、捏合"
+    case .launchpad: "全屏的图标网格：排法、翻页、搜索、文件夹、捏合"
     case .screenshot: "快速保存、快门声、缩略图和识字"
     case .record: "录屏的画质、倒数和按键，录音的来源"
     case .notes: "留着看、接着改的东西：屏幕边缘的那一叠、字号和行距，存在哪、怎么备份"
@@ -114,7 +113,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .launchpad:
       [
         "启动台", "图标", "网格", "全屏", "应用", "App", "排法", "排列", "列", "行", "翻页", "页",
-        "搜索", "文件夹", "拖动", "抖动", "删除", "卸载", "App Store", "捏合", "触控板", "四指",
+        "搜索", "App 文件夹", "拖动", "抖动", "删除", "卸载", "App Store", "捏合", "触控板", "四指",
         "触发角", "导入", "系统启动台", "Launchpad", "快捷键",
       ]
     case .screenshot:

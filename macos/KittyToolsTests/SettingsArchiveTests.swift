@@ -66,8 +66,11 @@ struct SettingsArchiveTests {
   /// 状态屏的状态列表；状态键、截图的存储文件夹、快捷键和两张列表不按偏好导出
   @Test func everyRegisteredDefaultIsExportable() {
     let kinds = SettingsArchive.kinds
-    #expect(Set(kinds.keys).isSuperset(of: Prefs.defaults.keys))
-    #expect(kinds.count == Prefs.defaults.count + 3)
+    // 启动台的布局是用户的数据，单独收（F9）：不按普通字符串、不在 kinds 里，但照样能导出
+    #expect(
+      Set(kinds.keys).isSuperset(of: Prefs.defaults.keys.filter { $0 != Prefs.launchpadLayout }))
+    #expect(kinds.count == Prefs.defaults.count - 1 + 3)
+    #expect(kinds[Prefs.launchpadLayout] == nil)
     #expect(kinds[Prefs.translateSource] == .string)
     #expect(kinds[Prefs.statusScreenPresets] == .statuses)
     #expect(kinds[Prefs.statusScreenExitHint] == .bool)
@@ -1597,4 +1600,55 @@ struct SettingsArchiveTests {
     #expect(
       ImportSheet.title([.notes], outcome: Outcome(notesUnsaved: true), restoring: false) == "已导入")
   }
+  // MARK: 启动台的布局（F9：用户的数据，不当普通字符串 / 不按「文件里没有就删本机」）
+
+  private func layoutJSON() -> (layout: LaunchpadLayout, text: String) {
+    let layout = LaunchpadLayout(pages: [
+      [.app(LaunchpadAppRef(bundleID: "com.example.a", path: "/Applications/A.app"))]
+    ])
+    return (layout, layout.jsonString()!)
+  }
+
+  @Test func capturesLaunchpadLayoutSeparately() throws {
+    let (defaults, name) = try suite()
+    defer { defaults.removePersistentDomain(forName: name) }
+    let (_, text) = layoutJSON()
+    defaults.set(text, forKey: Prefs.launchpadLayout)
+    defaults.synchronize()
+    let archive = SettingsArchive.capture(
+      from: defaults, domainName: name, services: [], notes: nil)
+    #expect(archive.preferences?[Prefs.launchpadLayout] == .string(text))
+    // 坏 JSON 不进文件（下次导入不会把好布局顶掉）
+    defaults.set("{坏的", forKey: Prefs.launchpadLayout)
+    defaults.synchronize()
+    let broken = SettingsArchive.capture(
+      from: defaults, domainName: name, services: [], notes: nil)
+    #expect(broken.preferences?[Prefs.launchpadLayout] == nil)
+    #expect(SettingsArchive.layoutText(.string("{坏的")) == nil)
+    #expect(SettingsArchive.layoutText(.string(text), limit: 1) == nil)
+  }
+
+  @Test func applyingArchiveWritesLayoutOnlyWhenPresent() throws {
+    let (target, name) = try suite()
+    defer { target.removePersistentDomain(forName: name) }
+    let (_, text) = layoutJSON()
+    target.set(text, forKey: Prefs.launchpadLayout)
+    // 文件里没有布局：不动本机（导入 0.6.0 之前导出的文件时不能把排法删掉）
+    var archive = SettingsArchive(version: "1", exportedAt: Self.moment)
+    archive.preferences = [:]
+    try SettingsArchive.read(archive.encoded()).apply([.preferences], to: target, domainName: name)
+    #expect(target.string(forKey: Prefs.launchpadLayout) == text)
+    // 文件里的布局解不出来：也不动
+    archive.preferences = [Prefs.launchpadLayout: .string("{坏的")]
+    try SettingsArchive.read(archive.encoded()).apply([.preferences], to: target, domainName: name)
+    #expect(target.string(forKey: Prefs.launchpadLayout) == text)
+    // 好布局：换掉
+    let other = LaunchpadLayout(pages: [
+      [.app(LaunchpadAppRef(bundleID: "com.example.b", path: "/Applications/B.app"))]
+    ])
+    archive.preferences = [Prefs.launchpadLayout: .string(other.jsonString()!)]
+    try SettingsArchive.read(archive.encoded()).apply([.preferences], to: target, domainName: name)
+    #expect(target.string(forKey: Prefs.launchpadLayout) == other.jsonString())
+  }
+
 }

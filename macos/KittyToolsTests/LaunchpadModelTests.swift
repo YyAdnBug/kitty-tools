@@ -150,31 +150,62 @@ struct LaunchpadModelTests {
     #expect(model.drag == nil)
   }
 
-  @Test func draggingOntoAnotherAppMakesAFolder() {
+  @Test func draggingOntoAnotherAppEdgeReorders() {
     let a = ref("a")
     let b = ref("b")
     let model = model(LaunchpadLayout(pages: [[.app(a), .app(b)]]))
-    // 手动摆网格框：一格 100 × 100，起点 (0, 0)
-    model.gridFrames[0] = CGRect(x: 0, y: 0, width: 300, height: 200)
-    model.beginDrag(tile: .app(b), appID: b.id, folder: nil, at: CGPoint(x: 150, y: 50))
-    model.updateDrag(location: CGPoint(x: 10, y: 50), pageWidth: 900)
+    // 屏外真画出来的网格框：整页 900 × 600、3 × 2，网格两边各留 48（F2/F30）
+    let metrics = model.metrics
+    model.gridFrames[0] = CGRect(
+      x: metrics.side, y: 0, width: metrics.gridWidth, height: metrics.gridHeight)
+    model.beginDrag(tile: .app(b), appID: b.id, folder: nil, at: CGPoint(x: 700, y: 100))
+    // 落在 a 那一格的左边沿：按让位的空位挪，不建文件夹（F1）
+    model.updateDrag(location: CGPoint(x: metrics.side + 20, y: 100), pageWidth: 900)
     #expect(model.drag?.targetIndex == 0)
+    model.endDrag()
+    #expect(model.layout.tiles.count == 2)
+    #expect(model.layout.tiles.compactMap { $0.app?.id } == [b.id, a.id])
+  }
+
+  @Test func dwellingInIconCenterMakesAFolder() async {
+    let a = ref("a")
+    let b = ref("b")
+    let model = model(LaunchpadLayout(pages: [[.app(a), .app(b)]]))
+    let metrics = model.metrics
+    model.gridFrames[0] = CGRect(
+      x: metrics.side, y: 0, width: metrics.gridWidth, height: metrics.gridHeight)
+    // a 那一格的中心
+    let center = CGPoint(
+      x: metrics.side + metrics.cellWidth / 2, y: metrics.cellHeight / 2)
+    model.beginDrag(tile: .app(b), appID: b.id, folder: nil, at: CGPoint(x: 700, y: 100))
+    model.updateDrag(location: center, pageWidth: 900)
+    // 0.4 秒的停留：按轮数等，不赌一次 sleep（SPEC §8）
+    for _ in 0..<40 where model.drag?.combineTileID == nil {
+      try? await Task.sleep(for: .milliseconds(30))
+    }
+    #expect(model.drag?.combineTileID == LaunchpadTile.app(a).id)
     model.endDrag()
     #expect(model.layout.tiles.count == 1)
     #expect(model.layout.tiles[0].folder?.apps.map(\.id) == [a.id, b.id])
   }
 
-  @Test func droppingOnAFolderAddsToIt() {
+  @Test func droppingOnAFolderCenterAddsToIt() async {
     let a = ref("a")
     let b = ref("b")
     let c = ref("c")
     let folder = LaunchpadFolder(name: "X", pages: [[a, b]])
     let model = model(LaunchpadLayout(pages: [[.folder(folder), .app(c)]]))
-    model.folderFrames[folder.id] = CGRect(x: 0, y: 0, width: 100, height: 100)
-    model.gridFrames[0] = CGRect(x: 0, y: 0, width: 300, height: 200)
-    model.beginDrag(tile: .app(c), appID: c.id, folder: nil, at: CGPoint(x: 150, y: 50))
-    model.updateDrag(location: CGPoint(x: 50, y: 50), pageWidth: 900)
-    #expect(model.drag?.hoverFolderID == folder.id)
+    let metrics = model.metrics
+    model.gridFrames[0] = CGRect(
+      x: metrics.side, y: 0, width: metrics.gridWidth, height: metrics.gridHeight)
+    model.beginDrag(tile: .app(c), appID: c.id, folder: nil, at: CGPoint(x: 700, y: 100))
+    let center = CGPoint(
+      x: metrics.side + metrics.cellWidth / 2, y: metrics.cellHeight / 2)
+    model.updateDrag(location: center, pageWidth: 900)
+    for _ in 0..<40 where model.drag?.combineTileID == nil {
+      try? await Task.sleep(for: .milliseconds(30))
+    }
+    #expect(model.drag?.combineTileID == LaunchpadTile.folder(folder).id)
     model.endDrag()
     #expect(model.layout.tiles.count == 1)
     #expect(model.layout.tiles[0].folder?.apps.map(\.id) == [a.id, b.id, c.id])
@@ -213,15 +244,17 @@ struct LaunchpadModelTests {
   }
 
   @Test func folderRenameAndPages() {
-    let refs = (0..<11).map { ref("f\($0)") }
+    let refs = (0..<40).map { ref("f\($0)") }
     let folder = LaunchpadFolder(
       name: "X", pages: LaunchpadLayout.paginateFolder(refs))
     let model = model(LaunchpadLayout(pages: [[.folder(folder)]]))
     model.openFolder(folder.id)
+    // 一页 35 个（7 × 5），40 个分两页（F10）
     #expect(model.folderPageCount == 2)
-    #expect(model.folderApps.count == 9)
+    #expect(model.folderRows == 5)
+    #expect(model.folderApps.count == 35)
     model.goToFolderPage(1)
-    #expect(model.folderApps.count == 2)
+    #expect(model.folderApps.count == 5)
     model.renameFolder(folder.id, to: "  开发  ")
     #expect(model.openFolder?.name == "开发")
     model.renameFolder(folder.id, to: "  ")

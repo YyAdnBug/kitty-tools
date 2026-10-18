@@ -3566,6 +3566,43 @@ struct SnapshotProbeTests {
         LaunchpadView(model: drag), size: size, dark: dark,
         to: "\(out)/launchpad-drag\(suffix).png")
     }
+    // 满页：7 × 5 全部放满，看第 3–5 行和底下的页点（F30）
+    if real.count >= 35 {
+      let fullApps = real.prefix(35).map {
+        LaunchpadProjectApp(
+          id: $0.id, ref: $0.ref, item: $0.item, url: $0.url, isSystem: $0.isSystem,
+          inUtilities: $0.inUtilities, isAppStore: false, category: $0.category)
+      }
+      let fullLayout = LaunchpadLayout(
+        pages: LaunchpadLayout.paginate(fullApps.map { .app($0.ref) }, capacity: 35))
+      let fullModel = LaunchpadModel(
+        layout: fullLayout, catalog: fullApps, icons: LaunchpadIcons(), columns: 7, rows: 5,
+        screenSize: size)
+      try snapshot(
+        LaunchpadView(model: fullModel), size: size, dark: false,
+        to: "\(out)/launchpad-full.png")
+    }
+    // 跨页拖动：源在第 1 页，翻到第 2 页，让位空位画在第 2 页的落点（F18）
+    let across = board()
+    across.go(to: 1)
+    across.beginDrag(
+      tile: .app(apps[0].ref), appID: apps[0].ref.id, folder: nil,
+      at: CGPoint(x: 200, y: 300))
+    across.updateDrag(location: CGPoint(x: 700, y: 500), pageWidth: size.width)
+    try snapshot(
+      LaunchpadView(model: across), size: size, dark: true,
+      to: "\(out)/launchpad-page2-gap-dark.png")
+    // 文件夹按新的 7 × 5 一页画，内容只有两行时面板收短（F10 / F34）
+    let many = LaunchpadFolder(
+      name: "更多工具", pages: [Array(apps.prefix(10).map(\.ref))])
+    let manyLayout = LaunchpadLayout(pages: [[.folder(many)]])
+    let manyModel = LaunchpadModel(
+      layout: manyLayout, catalog: Array(apps), icons: LaunchpadIcons(), columns: 7, rows: 5,
+      screenSize: size)
+    manyModel.openFolder(many.id)
+    try snapshot(
+      LaunchpadView(model: manyModel), size: size, dark: true,
+      to: "\(out)/launchpad-folder-wide-dark.png")
     let navigation = SettingsNavigation(defaults: nil)
     navigation.page = .launchpad
     try snapshot(
@@ -3574,7 +3611,7 @@ struct SnapshotProbeTests {
       } onboarding: {
         AnyView(EmptyView())
       },
-      size: NSSize(width: 780, height: 700), dark: false, to: "\(out)/launchpad-settings.png")
+      size: NSSize(width: 780, height: 1120), dark: false, to: "\(out)/launchpad-settings.png")
   }
 
   private func snapshot(

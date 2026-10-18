@@ -42,6 +42,9 @@ import SwiftUI
   @ObservationIgnored private var dwell: Task<Void, Never>?
   /// 语气变了（nil = 收起）：菜单栏图标据此呼吸 / 弹一下（StatusItem.reflect）
   @ObservationIgnored var onToneChange: ((Tone?) -> Void)?
+  /// 岛上那一个动作（「撤销」「在访达中显示」）：有它时窗口接鼠标，点完就收起。内容变了就换 / 清掉
+  private(set) var actionTitle: String?
+  @ObservationIgnored private var action: (() -> Void)?
 
   /// 刘海屏：从刘海长出下巴；其它屏：菜单栏下方的胶囊
   enum Geometry: Equatable {
@@ -86,11 +89,15 @@ import SwiftUI
 
   func show(
     _ title: String, detail: String? = nil, tone: Tone = .success, symbol: String? = nil,
-    leading: Leading = .tone, fraction: Double? = nil
+    leading: Leading = .tone, fraction: Double? = nil,
+    action: (title: String, run: () -> Void)? = nil
   ) {
     let next = Content(
       title: title, detail: detail, tone: tone, symbol: symbol ?? Self.symbol(for: tone),
       leading: leading, fraction: fraction)
+    actionTitle = action?.title
+    self.action = action?.run
+    window?.ignoresMouseEvents = action == nil
     dwell?.cancel()
     if isOpen, content != nil {
       // 原地更新：内容交叉模糊替换，宽度跟着内容走（spring 0.32）
@@ -160,10 +167,23 @@ import SwiftUI
     return await work()
   }
 
+  /// 点岛上那个动作：先收起再跑（跑之前岛已经不在，动作里弹面板不会和岛抢）
+  func performAction() {
+    let run = action
+    action = nil
+    actionTitle = nil
+    window?.ignoresMouseEvents = true
+    dismiss()
+    run?()
+  }
+
   /// 收起：内容先退（0.12 s），0.08 s 后形体缩回刘海，动画结束再移走窗口
   func dismiss() {
     dwell?.cancel()
     guard isOpen else { return }
+    actionTitle = nil
+    action = nil
+    window?.ignoresMouseEvents = true
     onToneChange?(nil)
     withAnimation(.easeIn(duration: 0.12)) { content = nil }
     dwell = Task { [weak self] in
@@ -233,7 +253,7 @@ import SwiftUI
     panel.isOpaque = false
     panel.backgroundColor = .clear
     panel.hasShadow = false
-    panel.ignoresMouseEvents = true
+    panel.ignoresMouseEvents = action == nil
     panel.isReleasedWhenClosed = false
     panel.animationBehavior = .none
     let host = NSHostingView(rootView: IslandView(island: self))
@@ -366,6 +386,16 @@ struct IslandView: View {
               .lineLimit(1)
               .truncationMode(.middle)
               .frame(maxWidth: 280, alignment: .leading)
+          }
+          if let title = island.actionTitle {
+            Button(title) { island.performAction() }
+              .buttonStyle(.plain)
+              .font(.system(size: 12, weight: .semibold))
+              .foregroundStyle(.white)
+              .padding(.horizontal, 10)
+              .padding(.vertical, 4)
+              .background(Capsule(style: .continuous).fill(.white.opacity(0.16)))
+              .accessibilityLabel(title)
           }
         }
         .padding(.horizontal, 18)

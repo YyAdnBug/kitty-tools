@@ -1,7 +1,14 @@
 // 启动台一块屏的状态（界面读它、面板按键调它）：布局、本机 App、当前页、键盘选中的格子、搜索词、翻页的跟手偏移、
 // 拖动 / 抖动 / 文件夹展开这些编辑状态，以及「打开一个 App」「收起」这些往上抛的回调。
 // 纯展示状态和几何的常量在这里；布局的增删挪在 LaunchpadLayout，窗口和持久化在 Launchpad（总控）。
-// 键盘选中的口径照 macOS 15：一开始没有选中（鼠标指着不高亮），按方向键才出现；到页边接着翻页；搜索结果也按页排。
+// 键盘选中的口径照 macOS 15：一开始没有选中（鼠标指着不高亮），按一下方向键才出现；到页边接着翻页；搜索结果也按页排。
+// 拖动（2026-10-18 四批评审后的口径，照 macOS 15）：
+// - 落点按**拿掉被拖那格之后**的插入位置算（slot 不再减 1），页容器居中、两边有留白，算落点先减掉；
+// - 建文件夹 / 加进文件夹 = 指针停在目标图标的图标区中心附近**并停够约 0.4 秒**；其余情况一律按让位的空位挪，
+//   满页也能排序；
+// - 按下 1 秒进抖动的那一次松手不算点击（不会打开 App）；抖动中单击照 macOS 15 打开 App；
+// - Esc 取消要记到这次手势结束，不能下一次 onChanged 又把手势捡回来；
+// - 搜索时照样记下按下和松开（单击打开结果），但不激活拖动，结果不会被拖进真布局。
 
 import AppKit
 import Observation
@@ -31,7 +38,7 @@ nonisolated enum LaunchpadDirection {
   case left, right, up, down
 }
 
-/// 正在拖的那一格（R5）：起点、跟手的位移、算出来的落点、正悬在哪个文件夹上、要不要在边缘停着翻页。
+/// 正在拖的那一格（R5）：起点、跟手的位移、算出来的落点、停在哪个图标中心上、要不要在边缘停着翻页。
 nonisolated struct LaunchpadDrag: Equatable {
   var tileID: String
   /// 拖的是 App 时它的 id（拖出文件夹、删 App 要）
@@ -43,10 +50,10 @@ nonisolated struct LaunchpadDrag: Equatable {
   var translation: CGSize = .zero
   /// 挪过阈值才算拖（没到松手 = 点了一下）
   var active = false
-  /// 当前页里的落点（nil = 拖到空白处，放这一页末尾）
+  /// 当前页里的落点（拿掉这一格之后的插入位置；nil = 拖到空白处，放这一页末尾）
   var targetIndex: Int?
-  /// 正悬在哪个文件夹上（松手加进去）
-  var hoverFolderID: UUID?
+  /// 指针在某个图标的图标区中心停够了（要合成）：那一格的 id
+  var combineTileID: String?
   /// 指针已经拖出打开的文件夹面板（松手 = 拖回主网格）
   var outsideFolder = false
   /// 停在左右边缘时准备翻到哪一页
@@ -56,11 +63,68 @@ nonisolated struct LaunchpadDrag: Equatable {
   var isDragging: Bool { active }
 }
 
+/// 翻页的纯状态机（F17）：跟手 1:1、两头橡皮筋，松手按位移（页宽 1/3）或最后几帧的速度决定。
+/// `travel` 向右为正（看上一页），向左为负（看下一页）；和页面的 `pageOffset` 同一个方向。
+nonisolated struct LaunchpadPager: Equatable {
+  private(set) var offset: CGFloat = 0
+  private var travel: CGFloat = 0
+  private var lastTime: TimeInterval = 0
+  private var velocity: CGFloat = 0
+
+  /// 快甩的阈值（点 / 秒）：真机上一段很短但很快的甩动也能翻
+  static let flickVelocity: CGFloat = 650
+  /// 到头那侧的橡皮筋最多露出页宽的多少
+  static let resistance: CGFloat = 0.18
+
+  mutating func reset() {
+    offset = 0
+    travel = 0
+    lastTime = 0
+    velocity = 0
+  }
+
+  /// 喂这一帧的横向位移（点）；返回跟手的偏移
+  mutating func feed(
+    delta: CGFloat, time: TimeInterval, pageWidth: CGFloat, canBack: Bool, canForward: Bool
+  ) -> CGFloat {
+    let width = max(pageWidth, 1)
+    if lastTime == 0 { lastTime = time }
+    let dt = max(time - lastTime, 0.004)
+    lastTime = time
+    velocity = velocity * 0.55 + (delta / CGFloat(dt)) * 0.45
+    travel += delta
+    let allowed = travel < 0 ? canForward : canBack
+    if !allowed {
+      offset = (travel < 0 ? -1 : 1) * min(abs(travel) * Self.resistance, width * Self.resistance)
+    } else if abs(travel) <= width {
+      offset = travel
+    } else {
+      offset = (travel < 0 ? -1 : 1) * (width + (abs(travel) - width) * Self.resistance)
+    }
+    return offset
+  }
+
+  /// 松手：位移超过页宽 1/3、或者最后几帧够快就翻；返回 -1 上一页 / +1 下一页 / 0 回弹
+  mutating func finish(canBack: Bool, canForward: Bool, pageWidth: CGFloat) -> Int {
+    let width = max(pageWidth, 1)
+    let distance = abs(travel)
+    let fast = abs(velocity) >= Self.flickVelocity && distance > 4
+    defer { reset() }
+    guard distance > width / 3 || fast else { return 0 }
+    let direction = travel < 0 ? 1 : -1
+    if direction > 0, canForward { return 1 }
+    if direction < 0, canBack { return -1 }
+    return 0
+  }
+}
+
 @Observable
 @MainActor
 final class LaunchpadModel {
   private(set) var layout: LaunchpadLayout
-  let catalog: [LaunchpadProjectApp]
+  private(set) var catalog: [LaunchpadProjectApp]
+  /// 按 id 找 App 的字典（每格每次 body 里 `catalog.first {}` 线性找几次，拖动时每个指针事件都触发，F42）
+  @ObservationIgnored private var catalogByID: [String: LaunchpadProjectApp]
   let icons: LaunchpadIcons
   let columns: Int
   let rows: Int
@@ -69,26 +133,35 @@ final class LaunchpadModel {
   var query = "" {
     didSet {
       guard query != oldValue else { return }
+      let wasSearching = !oldValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      let nowSearching = !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      // 删光字回到搜索之前那一页（R3，F24）；搜索中换字仍回到第一页
+      if !wasSearching, nowSearching { pageBeforeSearch = page }
       selected = nil
-      page = 0
+      page = wasSearching && !nowSearching ? min(pageBeforeSearch ?? 0, pageCount - 1) : 0
       pageOffset = 0
+      pager.reset()
       scroll = 0
       searchCache = nil
     }
   }
   /// 当前页（0 起）
   private(set) var page = 0
+  /// 搜索开始时那一页（删光搜索字回到它）
+  private var pageBeforeSearch: Int?
   /// 键盘选中的格子在当前页里的下标；nil = 还没按方向键（鼠标指着不高亮）
   var selected: Int?
   /// 翻页跟手的横向偏移（点）
   private(set) var pageOffset: CGFloat = 0
+  /// 文件夹里那一页的横向偏移（F17：文件夹里也能跟手翻页）
+  private(set) var folderPageOffset: CGFloat = 0
   /// 正在收起（界面据此缩回去）
   private(set) var isClosing = false
 
   // MARK: 编辑（R4–R6）
   /// 开着的文件夹（nil = 没开）
   private(set) var openFolderID: UUID?
-  /// 文件夹里看的是第几页（3 × 3 一页）
+  /// 文件夹里看的是第几页
   private(set) var folderPage = 0
   /// 抖动模式（所有图标轻轻晃、App Store 装的出 ✕）
   private(set) var jiggling = false
@@ -118,24 +191,36 @@ final class LaunchpadModel {
 
   @ObservationIgnored private var scroll: CGFloat = 0
   @ObservationIgnored private var scrollTask: Task<Void, Never>?
+  @ObservationIgnored private var pager = LaunchpadPager()
+  @ObservationIgnored private var folderPager = LaunchpadPager()
   @ObservationIgnored private var searchCache: (query: String, apps: [LaunchpadProjectApp])?
   @ObservationIgnored private var jiggleTask: Task<Void, Never>?
+  @ObservationIgnored private var combineTask: Task<Void, Never>?
   @ObservationIgnored private var turnTask: Task<Void, Never>?
+  /// 这次按下进了抖动（松手不算点击）
+  @ObservationIgnored private var pressEnteredJiggle = false
+  /// Esc 取消了这一次手势：直到 onEnded 之前都不许再 beginDrag
+  @ObservationIgnored private var gestureCancelled = false
+  /// 指针正停在哪个图标的中心上（0.4 秒的计时按它认）
+  @ObservationIgnored private var combineCandidate: String?
   /// 界面每次布局后喂进来的网格 / 文件夹面板位置（命名坐标空间里），算落点和「拖出去了没有」
   @ObservationIgnored var gridFrames: [Int: CGRect] = [:]
-  @ObservationIgnored var folderFrames: [UUID: CGRect] = [:]
   @ObservationIgnored var folderPanelFrame: CGRect = .zero
 
   init(
     layout: LaunchpadLayout, catalog: [LaunchpadProjectApp], icons: LaunchpadIcons,
-    columns: Int, rows: Int, screenSize: CGSize
+    columns: Int, rows: Int, screenSize: CGSize, startPage: Int = 0
   ) {
     self.layout = layout
     self.catalog = catalog
+    self.catalogByID = Dictionary(
+      catalog.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     self.icons = icons
     self.columns = columns
     self.rows = rows
     self.screenSize = screenSize
+    // 重新打开回到上次那一页（F24；夹在页数里）
+    page = min(max(startPage, 0), max(layout.pageCount - 1, 0))
   }
 
   var metrics: LaunchpadMetrics {
@@ -179,28 +264,45 @@ final class LaunchpadModel {
   }
 
   /// 这一页给界面画的格子：拖动时把被拖的那一格拿掉、落点处插一个空位（别的图标让位）。
-  /// 搜索时不许拖（结果的位置不是布局的位置）。
+  /// 目标页不管是不是源页都插空位（F18）；拖到空白处时空位画在末尾。搜索时不许拖。
   func previewTiles(page pageIndex: Int) -> [LaunchpadTile?] {
     let pages = displayPages
     guard pages.indices.contains(pageIndex) else { return [] }
     var tiles: [LaunchpadTile?] = pages[pageIndex]
-    guard let drag, drag.isDragging, !isSearching else { return tiles }
+    guard let drag, drag.isDragging, !isSearching, !gestureCancelled else { return tiles }
     if let from = tiles.firstIndex(where: { $0?.id == drag.tileID }) {
       tiles.remove(at: from)
-      if let target = drag.targetIndex, drag.turnPage == nil || drag.turnPage == pageIndex {
-        tiles.insert(nil, at: min(target, tiles.count))
-      }
+    }
+    if pageIndex == page {
+      let target = drag.targetIndex ?? tiles.count
+      tiles.insert(nil, at: min(max(target, 0), tiles.count))
     }
     return tiles
   }
 
+  /// 空位画在第几格（界面里 `previewTiles` 的 nil 已经在，这里给位置校验用）
+  func gapIndex(page pageIndex: Int) -> Int? {
+    guard let drag, drag.isDragging, !isSearching, !gestureCancelled, pageIndex == page else {
+      return nil
+    }
+    let tiles = previewTiles(page: pageIndex)
+    return tiles.firstIndex { $0 == nil }
+  }
+
+  /// 目录扫完 / 删掉一个 App 之后接上（F31：面板先出，扫完再把新目录喂进来）
+  func adopt(catalog apps: [LaunchpadProjectApp]) {
+    catalog = apps
+    catalogByID = Dictionary(apps.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    searchCache = nil
+  }
+
   /// 按 id 找本机 App（布局里存的只有身份）
   func app(_ ref: LaunchpadAppRef) -> LaunchpadProjectApp? {
-    catalog.first { $0.id == ref.id }
+    catalogByID[ref.id]
   }
 
   func app(id: String) -> LaunchpadProjectApp? {
-    catalog.first { $0.id == id }
+    catalogByID[id]
   }
 
   func folder(_ id: UUID) -> LaunchpadFolder? {
@@ -220,8 +322,10 @@ final class LaunchpadModel {
     }
   }
 
-  func symbol(of tile: LaunchpadTile) -> String {
-    tile.folder == nil ? "app" : "folder"
+  /// 正在按下的那一格（R2：按下变暗；拖动开始后就不再算按下）
+  var pressedTileID: String? {
+    guard let drag, !drag.isDragging, !gestureCancelled, !isSearching else { return nil }
+    return drag.tileID
   }
 
   // MARK: 键盘
@@ -232,6 +336,7 @@ final class LaunchpadModel {
     withAnimation(Style.Motion.glide.animation()) {
       self.page = target
       pageOffset = 0
+      pager.reset()
       selected = nil
     }
   }
@@ -239,13 +344,18 @@ final class LaunchpadModel {
   func firstPage() { go(to: 0) }
   func lastPage() { go(to: pageCount - 1) }
 
-  /// 方向键：格子里挪；到页边接着翻页（↑↓ 还保持列）。文件夹开着时在文件夹的 3 × 3 里挪。
+  /// 方向键：格子里挪；到页边接着翻页（↑↓ 还保持列）。文件夹开着时在文件夹的 7 × 5 里挪。
+  /// 第一下方向键先选中第 0 格（F37：原来第一下按 ↓ 会跳到第二行）。
   func navigate(_ direction: LaunchpadDirection) {
     if openFolder != nil {
       navigateFolder(direction)
       return
     }
     guard !currentTiles.isEmpty else { return }
+    if selected == nil {
+      withAnimation(Style.Motion.snap.animation()) { selected = 0 }
+      return
+    }
     let count = currentTiles.count
     let index = selected ?? 0
     let (page, tiles) = (self.page, displayPages)
@@ -300,7 +410,8 @@ final class LaunchpadModel {
           selected = Self.columnClamped(index % columns, in: tiles[page + 1].count)
         }
       } else {
-        withAnimation(Style.Motion.snap.animation()) { selected = index + columns }
+        // 最后一行不满时别越过 count（F37：原来选中框会消失、回车没反应）
+        withAnimation(Style.Motion.snap.animation()) { selected = min(index + columns, count - 1) }
       }
     }
   }
@@ -404,12 +515,34 @@ final class LaunchpadModel {
 
   var folderPageCount: Int { max(openFolder?.pages.count ?? 1, 1) }
 
+  /// 文件夹面板画几行：按最多的一页（7 列，最多 5 行 = 35 个）；面板高度跟着它走（F34）
+  var folderRows: Int {
+    let maxCount = openFolder?.pages.map(\.count).max() ?? 0
+    return max(
+      1, min(5, Int((Double(maxCount) / Double(LaunchpadLayout.folderColumns)).rounded(.up))))
+  }
+
+  /// 文件夹那一格在屏幕上的中心（面板从它长出来，F34；找不到时 nil = 界面用屏幕中心）
+  func openFolderAnchor(metrics: LaunchpadMetrics) -> CGPoint? {
+    guard let id = openFolderID else { return nil }
+    guard let location = layout.locate("folder\n" + id.uuidString),
+      let frame = gridFrames[location.page]
+    else { return nil }
+    let insetX = max(0, (frame.width - metrics.gridWidth) / 2)
+    let column = location.index % max(columns, 1)
+    let row = location.index / max(columns, 1)
+    return CGPoint(
+      x: frame.minX + insetX + (CGFloat(column) + 0.5) * metrics.cellWidth,
+      y: frame.minY + (CGFloat(row) + 0.5) * metrics.cellHeight)
+  }
+
   func openFolder(_ id: UUID) {
     guard folder(id) != nil else { return }
     folderNameDraft = folder(id)?.name ?? ""
     withAnimation(Style.Motion.pop.animation()) {
       openFolderID = id
       folderPage = 0
+      folderPageOffset = 0
       selected = nil
     }
   }
@@ -418,6 +551,7 @@ final class LaunchpadModel {
     withAnimation(Style.Motion.settle.animation()) {
       openFolderID = nil
       folderPage = 0
+      folderPageOffset = 0
       selected = nil
       drag = nil
     }
@@ -426,13 +560,18 @@ final class LaunchpadModel {
 
   func goToFolderPage(_ page: Int) {
     folderPage = min(max(page, 0), folderPageCount - 1)
+    folderPageOffset = 0
   }
 
   private func navigateFolder(_ direction: LaunchpadDirection) {
     let count = folderApps.count
     guard count > 0 else { return }
+    if selected == nil {
+      selected = 0
+      return
+    }
     let index = selected ?? 0
-    let columns = 3
+    let columns = LaunchpadLayout.folderColumns
     switch direction {
     case .left:
       if index % columns == 0 {
@@ -459,7 +598,7 @@ final class LaunchpadModel {
     case .up:
       selected = index < columns ? index : index - columns
     case .down:
-      selected = index + columns < count ? index + columns : index
+      selected = min(index + columns, count - 1)
     }
   }
 
@@ -486,11 +625,13 @@ final class LaunchpadModel {
     deleteCandidate = nil
   }
 
-  /// 面板的 flagsChanged 喂进来：⌥ 按下进抖动、松开退出（按住图标进的那种不受影响）
+  /// 面板的 flagsChanged 喂进来：⌥ 按下进抖动、松开退出（按住图标进的那种不受影响）。
+  /// 正在搜索 / 搜索框有字时按 ⌥ 是打特殊字符，不进抖动（F45）
   func optionChanged(_ held: Bool) {
     optionHeld = held
     if held {
-      if drag == nil { enterJiggle(byOption: true) }
+      guard drag == nil, !isSearching else { return }
+      enterJiggle(byOption: true)
     } else if jiggleByOption {
       exitJiggle()
     }
@@ -510,23 +651,39 @@ final class LaunchpadModel {
   // MARK: 拖动（R5）
 
   func beginDrag(tile: LaunchpadTile, appID: String?, folder: UUID?, at point: CGPoint) {
+    guard !gestureCancelled else { return }
     drag = LaunchpadDrag(tileID: tile.id, appID: appID, sourceFolder: folder, start: point)
+    pressEnteredJiggle = false
+    combineCandidate = nil
+    combineTask?.cancel()
     jiggleTask?.cancel()
-    // 按住不动 1 秒 = 进抖动模式
+    // 搜索时不许拖（结果的位置不是布局的位置），但按下 / 松手照记：单击照样打开结果（F5）
+    guard !isSearching else { return }
+    // 按住不动 1 秒 = 进抖动模式；这一次松手不算点击（F4）
     jiggleTask = Task { [weak self] in
       try? await Task.sleep(for: .seconds(1))
-      guard !Task.isCancelled, let self, drag?.isDragging != true else { return }
-      enterJiggle()
+      guard !Task.isCancelled, let self, drag?.tileID == tile.id, drag?.isDragging != true
+      else { return }
+      self.pressEnteredJiggle = true
+      self.enterJiggle()
     }
   }
 
-  /// 指针动了：算落点、悬着的文件夹、要不要翻页（view 传的是命名坐标空间里的位置）
+  /// 指针动了：算落点、停在哪个图标中心、要不要翻页（view 传的是命名坐标空间里的位置）
   func updateDrag(location: CGPoint, pageWidth: CGFloat) {
-    guard var drag else { return }
+    guard !gestureCancelled, var drag else { return }
+    if isSearching {
+      // 记下位移但不激活拖动：搜到结果后按着挪一下再松手也只是打开（F5）
+      drag.translation = CGSize(
+        width: location.x - drag.start.x, height: location.y - drag.start.y)
+      self.drag = drag
+      return
+    }
     let moved = hypot(location.x - drag.start.x, location.y - drag.start.y)
     if !drag.active, moved >= 4 {
       drag.active = true
       jiggleTask?.cancel()
+      pressEnteredJiggle = false
     }
     drag.translation = CGSize(
       width: location.x - drag.start.x, height: location.y - drag.start.y)
@@ -540,11 +697,11 @@ final class LaunchpadModel {
       self.drag = drag
       return
     }
-    drag.hoverFolderID = hoveredFolder(at: location, excluding: drag.tileID)
     drag.targetIndex = targetIndex(at: location)
+    updateCombine(&drag, location: location)
     drag.turnPage = nil
     self.drag = drag
-    // 停在左右边缘：0.45 秒后翻页（同 macOS 15 的拖到边上翻）
+    // 停在左右边缘：0.45 秒后翻页（同 macOS 15 的拖到边上翻）；最后一页再往右 = 新开一页
     if location.x < 28 {
       scheduleTurn(to: page - 1)
     } else if location.x > pageWidth - 28 {
@@ -554,14 +711,22 @@ final class LaunchpadModel {
     }
   }
 
-  /// 松手：落在文件夹上就加进去 / 建文件夹，否则按落点挪；从文件夹拖出去就放回主网格
+  /// 松手：停在图标中心够久就建文件夹 / 加进文件夹，否则按落点挪；从文件夹拖出去就放回主网格
   func endDrag() {
-    guard let drag else { return }
+    defer { gestureCancelled = false }
+    guard let drag, !gestureCancelled else { return }
     jiggleTask?.cancel()
+    combineTask?.cancel()
+    combineCandidate = nil
     defer { cancelTurn() }
     self.drag = nil
-    guard drag.active else {
-      // 没挪动 = 点了一下：打开它（文件夹里是打开那个 App）
+    if !drag.active {
+      // 长按进抖动的那一次松手不算点击（F4）；抖动中单击照 macOS 15 打开 App
+      if pressEnteredJiggle {
+        pressEnteredJiggle = false
+        return
+      }
+      // 没挪动 = 点了一下：打开它（文件夹里是打开那个 App；搜索结果也要能打开，F5）
       if let tile = layout.tiles.first(where: { $0.id == drag.tileID }) {
         open(tile)
       } else if let appID = drag.appID, let ref = layout.appRef(appID) {
@@ -569,6 +734,7 @@ final class LaunchpadModel {
       }
       return
     }
+    pressEnteredJiggle = false
     let capacity = capacity
     if let folderID = drag.sourceFolder {
       if drag.outsideFolder {
@@ -577,66 +743,105 @@ final class LaunchpadModel {
       }
       return
     }
-    if let hovered = drag.hoverFolderID {
-      commit(
-        layout.folding(
-          drag.tileID, onto: "folder\n" + hovered.uuidString,
-          name: folderNameFor(drag.tileID), capacity: capacity))
-      return
-    }
-    // 落在另一个 App 那一格上 = 建文件夹
-    if let target = drag.targetIndex, let targetTile = currentTiles[safe: target],
-      targetTile.app != nil, targetTile.id != drag.tileID
+    // 停在图标中心够久：目标格是文件夹就加进去，是 App 就建文件夹（F1 / F3）
+    if let combine = drag.combineTileID,
+      let targetTile = layout.tiles.first(where: { $0.id == combine })
     {
-      commit(
-        layout.folding(
-          drag.tileID, onto: targetTile.id,
-          name: folderNameFor(drag.tileID), capacity: capacity))
+      if let folder = targetTile.folder, let appID = drag.appID {
+        commit(layout.adding(appID, to: folder.id, capacity: capacity))
+      } else if targetTile.app != nil {
+        commit(
+          layout.folding(
+            drag.tileID, onto: combine, name: folderNameFor(drag.tileID, target: targetTile),
+            capacity: capacity))
+      }
       return
     }
-    let slot = drag.targetIndex ?? currentTiles.count
+    let slot: Int
+    if let target = drag.targetIndex {
+      slot = target
+    } else {
+      slot = currentTiles.count - (currentTiles.contains { $0.id == drag.tileID } ? 1 : 0)
+    }
     commit(layout.moving(drag.tileID, toPage: page, slot: slot, capacity: capacity))
   }
 
   func cancelDrag() {
     jiggleTask?.cancel()
+    combineTask?.cancel()
+    combineCandidate = nil
     cancelTurn()
+    gestureCancelled = true
     withAnimation(Style.Motion.glide.animation()) { drag = nil }
   }
 
-  /// 拖到打开着的文件夹面板里（松手加进去）
-  func dropIntoOpenFolder() {
-    guard let drag, let appID = drag.appID, let folderID = openFolderID else { return }
-    jiggleTask?.cancel()
-    cancelTurn()
-    self.drag = nil
-    commit(layout.adding(appID, to: folderID, capacity: capacity))
-  }
-
-  /// 悬在哪个文件夹上（主网格里的文件夹格）
-  private func hoveredFolder(at location: CGPoint, excluding tileID: String) -> UUID? {
-    for (id, frame) in folderFrames where frame.contains(location) {
-      if "folder\n" + id.uuidString == tileID { continue }
-      return id
-    }
-    return nil
-  }
-
-  /// 落点：当前页第几格（在网格框里按格子算；不在网格里返回 nil = 拖到空白处放末尾）
+  /// 落点：当前页第几格（拿掉被拖那格之后的插入位置；不在网格里返回 nil = 拖到空白处放末尾）。
+  /// 网格在页容器里居中、两边各留 `side`，先减掉（F2）
   private func targetIndex(at location: CGPoint) -> Int? {
     guard let frame = gridFrames[page] else { return nil }
-    let metrics = metrics
-    let column = Int((location.x - frame.minX) / max(metrics.cellWidth, 1))
-    let row = Int((location.y - frame.minY) / max(metrics.cellHeight, 1))
-    guard (0..<columns).contains(column), (0..<rows).contains(row) else { return nil }
-    return row * columns + column
+    return Self.cellIndex(at: location, in: frame, metrics: metrics)
+  }
+
+  /// 页容器里的坐标 → 第几格（纯函数，单测直接喂）。页容器是全宽的，网格居中、两边各留 side
+  nonisolated static func cellIndex(
+    at location: CGPoint, in frame: CGRect, metrics: LaunchpadMetrics
+  ) -> Int? {
+    let insetX = max(0, (frame.width - metrics.gridWidth) / 2)
+    let x = location.x - frame.minX - insetX
+    let y = location.y - frame.minY
+    guard x >= 0, y >= 0, metrics.cellWidth > 0, metrics.cellHeight > 0 else { return nil }
+    let column = Int(x / metrics.cellWidth)
+    let row = Int(y / metrics.cellHeight)
+    guard (0..<metrics.columns).contains(column), (0..<metrics.rows).contains(row) else {
+      return nil
+    }
+    return row * metrics.columns + column
+  }
+
+  /// 指针是不是停在那一格的图标区中心附近（内缩 20%）。居中是「要合成」的判定之一（F1）
+  nonisolated static func isInIconCenter(
+    _ location: CGPoint, cell index: Int, in frame: CGRect, metrics: LaunchpadMetrics
+  ) -> Bool {
+    let insetX = max(0, (frame.width - metrics.gridWidth) / 2)
+    let column = index % max(metrics.columns, 1)
+    let row = index / max(metrics.columns, 1)
+    let cell = CGRect(
+      x: frame.minX + insetX + CGFloat(column) * metrics.cellWidth,
+      y: frame.minY + CGFloat(row) * metrics.cellHeight,
+      width: metrics.cellWidth, height: metrics.cellHeight)
+    return cell.insetBy(dx: cell.width * 0.2, dy: cell.height * 0.2).contains(location)
+  }
+
+  /// 指针正停在哪个图标的中心上（0.4 秒之后它变成要合成的目标）
+  private func updateCombine(_ drag: inout LaunchpadDrag, location: CGPoint) {
+    var candidate: String?
+    if let frame = gridFrames[page], let index = drag.targetIndex,
+      Self.isInIconCenter(location, cell: index, in: frame, metrics: metrics)
+    {
+      let tile = currentTiles[safe: index]
+      if let tile, tile.id != drag.tileID { candidate = tile.id }
+    }
+    guard candidate != combineCandidate else { return }
+    combineCandidate = candidate
+    combineTask?.cancel()
+    drag.combineTileID = nil
+    guard let candidate else { return }
+    combineTask = Task { [weak self] in
+      try? await Task.sleep(for: .milliseconds(400))
+      guard !Task.isCancelled, let self, self.combineCandidate == candidate,
+        self.drag?.isDragging == true
+      else { return }
+      self.drag?.combineTileID = candidate
+    }
   }
 
   private func scheduleTurn(to target: Int) {
-    guard target >= 0, target < pageCount else { return }
+    // 最后一页再往右：target == pageCount（新开一页），正常翻到前一页则要 >= 0
+    guard target >= 0, target <= pageCount else { return }
     guard drag?.turnPage != target else { return }
     drag?.turnPage = target
     turnTask?.cancel()
+    guard target < pageCount else { return }
     turnTask = Task { [weak self] in
       try? await Task.sleep(for: .milliseconds(450))
       guard !Task.isCancelled, let self, let drag, drag.turnPage == target else { return }
@@ -646,6 +851,9 @@ final class LaunchpadModel {
       }
       // 翻页后落点按新页重新算（指针没动，落点变成新页的格子）
       self.drag?.targetIndex = nil
+      self.combineCandidate = nil
+      self.combineTask?.cancel()
+      self.drag?.combineTileID = nil
     }
   }
 
@@ -655,13 +863,12 @@ final class LaunchpadModel {
     drag?.turnPage = nil
   }
 
-  /// 建文件夹时的名字：两个 App 的分类（SPEC R4）
-  private func folderNameFor(_ tileID: String) -> String {
+  /// 建文件夹时的名字：两个 App 的分类（SPEC R4；第一个没分类时用目标那个的，F32）
+  private func folderNameFor(_ tileID: String, target: LaunchpadTile?) -> String {
     let source = layout.tiles.first { $0.id == tileID }?.app.flatMap { app($0) }
-    let targetRef = drag?.targetIndex.flatMap { currentTiles[safe: $0]?.app }
-    let target = targetRef.flatMap { app($0) }
-    guard let first = source ?? target else { return LaunchpadLayout.untitledFolder }
-    return folderName(first, target ?? first)
+    let targetApp = target?.app.flatMap { app($0) }
+    guard let first = source ?? targetApp else { return LaunchpadLayout.untitledFolder }
+    return folderName(first, targetApp ?? first)
   }
 
   // MARK: 布局
@@ -686,18 +893,27 @@ final class LaunchpadModel {
 
   // MARK: 翻页手势
 
-  /// 触控板两指左右滑、鼠标滚轮上下滚（SPEC R2）：跟手时挪页面，松手按位移和速度决定翻不翻。
+  /// 触控板两指左右滑、鼠标滚轮上下滚（SPEC R2，F17）：跟手 1:1、松手按位移和速度决定。
   /// 入口是面板的 sendEvent（不装全局 / 本地事件监听），phase / momentum 直接从 NSEvent 来。
+  /// `time` 用 NSEvent.timestamp（单测自己给）；`inverted` 是系统「自然滚动」，事件的 delta 已经按它给了方向，
+  /// 这里只收着（真机两种设置各验一次，见 HANDTEST）。
   func scroll(
     deltaX: CGFloat, deltaY: CGFloat, precise: Bool, phase: NSEvent.Phase,
-    momentum: NSEvent.Phase
+    momentum: NSEvent.Phase, time: TimeInterval = ProcessInfo.processInfo.systemUptime,
+    inverted: Bool = false
   ) {
-    guard drag == nil, openFolderID == nil else { return }
-    guard !displayPages.isEmpty, pageCount > 1 else { return }
+    guard drag == nil else { return }
+    // `scrollingDeltaY` 已经按系统「自然滚动」翻好了；`inverted` 只留作事件口径，不再翻一次（F44）
     // 触控板横向为主时按横向，鼠标滚轮按纵向
     let primary = abs(deltaX) >= abs(deltaY) ? deltaX : -deltaY
+    if openFolderID != nil {
+      scrollFolder(primary: primary, precise: precise, phase: phase, momentum: momentum, time: time)
+      return
+    }
+    guard !displayPages.isEmpty, pageCount > 1 else { return }
     if phase == .began {
       scroll = 0
+      pager.reset()
       scrollTask?.cancel()
     }
     // 惯性阶段不再跟手（松手那次已经决定了），只让它自然停
@@ -707,20 +923,18 @@ final class LaunchpadModel {
       return
     }
     if !precise, phase == [] {
-      // 鼠标滚轮：一格一格翻，不跟手
-      scroll += primary
-      if abs(scroll) >= 3 {
-        turn(scroll < 0 ? 1 : -1)
-        scroll = 0
-      }
+      // 鼠标滚轮：一格一页（F44；普通滚轮一格是 ±1）
+      guard abs(primary) >= 0.5 else { return }
+      // 普通滚轮一格 = 一页（F44）：content 向上（primary > 0）看下一页
+      turn(primary > 0 ? 1 : -1)
       return
     }
     scroll += primary
-    let canForward = page < pageCount - 1
-    let canBack = page > 0
-    let wanted = scroll < 0 ? canForward : canBack
+    let offset = pager.feed(
+      delta: primary, time: time, pageWidth: metrics.size.width,
+      canBack: page > 0, canForward: page < pageCount - 1)
     withAnimation(Style.Motion.instant.animation()) {
-      pageOffset = wanted ? clampOffset(scroll * 0.55) : clampOffset(scroll * 0.12)
+      pageOffset = Style.reduceMotion ? 0 : offset
     }
     if phase == [] {
       scrollTask?.cancel()
@@ -732,14 +946,43 @@ final class LaunchpadModel {
     }
   }
 
-  private func clampOffset(_ value: CGFloat) -> CGFloat {
-    min(max(value, -140), 140)
+  private func scrollFolder(
+    primary: CGFloat, precise: Bool, phase: NSEvent.Phase, momentum: NSEvent.Phase,
+    time: TimeInterval
+  ) {
+    guard folderPageCount > 1 else { return }
+    if phase == .began { folderPager.reset() }
+    if momentum != [] { return }
+    if phase == .ended || phase == .cancelled {
+      let step = folderPager.finish(
+        canBack: folderPage > 0, canForward: folderPage < folderPageCount - 1,
+        pageWidth: metrics.cellWidth * CGFloat(LaunchpadLayout.folderColumns))
+      if step != 0 {
+        goToFolderPage(folderPage + step)
+      } else {
+        withAnimation(Style.Motion.glide.animation()) { folderPageOffset = 0 }
+      }
+      return
+    }
+    if !precise, phase == [] {
+      guard abs(primary) >= 0.5 else { return }
+      goToFolderPage(folderPage + (primary > 0 ? 1 : -1))
+      return
+    }
+    let offset = folderPager.feed(
+      delta: primary, time: time,
+      pageWidth: metrics.cellWidth * CGFloat(LaunchpadLayout.folderColumns),
+      canBack: folderPage > 0, canForward: folderPage < folderPageCount - 1)
+    withAnimation(Style.Motion.instant.animation()) {
+      folderPageOffset = Style.reduceMotion ? 0 : offset
+    }
   }
 
   private func finishScroll() {
-    let threshold: CGFloat = 56
-    if abs(scroll) >= threshold {
-      turn(scroll < 0 ? 1 : -1)
+    let step = pager.finish(
+      canBack: page > 0, canForward: page < pageCount - 1, pageWidth: metrics.size.width)
+    if step != 0 {
+      turn(step)
     } else {
       withAnimation(Style.Motion.glide.animation()) { pageOffset = 0 }
     }
@@ -755,6 +998,7 @@ final class LaunchpadModel {
     withAnimation(Style.Motion.glide.animation()) {
       page = target
       pageOffset = 0
+      pager.reset()
       selected = nil
     }
   }

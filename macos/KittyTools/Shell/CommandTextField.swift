@@ -20,6 +20,8 @@ struct CommandTextField: NSViewRepresentable {
   var weight: NSFont.Weight = .regular
   /// 字的颜色；nil = 系统的文字色（便签的标题框给纸上的墨色）
   var textColor: NSColor?
+  /// 占位文字的颜色；nil = 系统的占位色（启动台的搜索框在压暗的桌面上，用白色系）
+  var placeholderColor: NSColor?
   /// 只用英文类输入法（启动器的「呼出时切英文输入法」）
   var romanOnly = false
   /// 字数上限（收藏夹名 24 字）；nil = 不限
@@ -38,6 +40,13 @@ struct CommandTextField: NSViewRepresentable {
     field.isDialogField = isDialogField
     field.claimsInitialFocus = focusRequest == nil
     field.placeholderString = placeholder
+    if let placeholderColor {
+      field.placeholderAttributedString = NSAttributedString(
+        string: placeholder,
+        attributes: [
+          .foregroundColor: placeholderColor, .font: NSFont.systemFont(ofSize: fontSize),
+        ])
+    }
     field.isBordered = false
     field.drawsBackground = false
     field.focusRingType = .none
@@ -60,7 +69,18 @@ struct CommandTextField: NSViewRepresentable {
     field.caretColor = textColor
     // 读了 Style.brand：设置里换了强调色时这里会重跑，正在编辑的插入点和选中底色跟着换
     field.applyBrandColors(NSColor(Style.brand))
-    if field.placeholderString != placeholder { field.placeholderString = placeholder }
+    if let placeholderColor {
+      let attributed = NSAttributedString(
+        string: placeholder,
+        attributes: [
+          .foregroundColor: placeholderColor, .font: NSFont.systemFont(ofSize: fontSize),
+        ])
+      if field.placeholderAttributedString != attributed {
+        field.placeholderAttributedString = attributed
+      }
+    } else if field.placeholderString != placeholder {
+      field.placeholderString = placeholder
+    }
     if let textColor, field.textColor != textColor { field.textColor = textColor }
     if field.romanOnly != romanOnly {
       field.romanOnly = romanOnly

@@ -146,7 +146,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       noteCapture?.panel.hide()
       translatePanel.hide()
     }
-    board.showSettings = { [unowned self] in showSettings(page: .launchpad) }
     return board
   }()
 
@@ -1881,7 +1880,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.submenu = submenu
         continue
       }
-      menu.addItem(.sectionHeader(title: section.title))
+      // 启动台这一节只有它一项：节标题会和它同名重复，不画（F40；状态屏那一节同理，在上面单独处理）
+      if section.actions != [.launchpad] {
+        menu.addItem(.sectionHeader(title: section.title))
+      }
       for action in section.actions {
         let binding = hotKeys.bindings[action]
         menu.addAction(

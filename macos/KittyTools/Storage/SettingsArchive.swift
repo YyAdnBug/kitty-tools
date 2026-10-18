@@ -282,8 +282,23 @@ struct SettingsArchive: Codable, Equatable {
     var kinds = Prefs.defaults.compactMapValues { Kind(defaultValue: $0) }
     for key in [Prefs.translateSource, Prefs.translateTarget] { kinds[key] = .string }
     kinds[Prefs.statusScreenPresets] = .statuses
+    // 启动台的布局是用户的数据，不按字符串的 4096 字上限走，也不「文件里没有就删本机的」：单独收（capture / sanitized /
+    // apply 里那三处），和状态屏的状态列表一个待遇
+    kinds[Prefs.launchpadLayout] = nil
     return kinds
   }()
+
+  /// 布局 JSON 在文件里的长度上限（1 MB：本机 120 个 App 约 10 KB，留足以后几倍的余量）
+  static let layoutLimit = 1_048_576
+
+  /// 文件里的一段布局：解得出 `LaunchpadLayout` 才收
+  static func layoutText(_ value: Value?, limit: Int = layoutLimit) -> String? {
+    guard case .string(let text)? = value, text.count <= limit,
+      let data = text.data(using: .utf8),
+      (try? JSONDecoder().decode(LaunchpadLayout.self, from: data)) != nil
+    else { return nil }
+    return text
+  }
 
   /// 文件里有的类别（按 Section 的顺序）
   var sections: [Section] {
@@ -318,6 +333,10 @@ struct SettingsArchive: Codable, Equatable {
     var preferences: [String: Value] = [:]
     for (key, kind) in kinds {
       if let value = kind.value(of: domain[key]) { preferences[key] = value }
+    }
+    // 布局是用户的数据：存过就带上（不当普通字符串，见 kinds）
+    if let text = domain[Prefs.launchpadLayout] as? String, Self.layoutText(.string(text)) != nil {
+      preferences[Prefs.launchpadLayout] = .string(text)
     }
     var hotkeys: [String: HotKey?] = [:]
     for action in HotKeyAction.allCases {
@@ -525,6 +544,10 @@ struct SettingsArchive: Codable, Equatable {
         guard let kind = Self.kinds[key], kind.plist(value) != nil else { continue }
         kept[key] = value
       }
+      // 布局单独校验（上限 1 MB，能解出来才收；文件里没有这个键时这里也不放，apply 据此不动本机的）
+      if let text = Self.layoutText(values[Prefs.launchpadLayout]) {
+        kept[Prefs.launchpadLayout] = .string(text)
+      }
       if let scale = kept[Prefs.translateFontScale].flatMap(Kind.double.plist) as? Double {
         let range = TranslateCoordinator.fontScales
         kept[Prefs.translateFontScale] = .double(
@@ -646,6 +669,11 @@ struct SettingsArchive: Codable, Equatable {
         } else {
           defaults.removeObject(forKey: key)
         }
+      }
+      // 布局：文件里有（而且解得出来）才写；没有就不动本机的——导入一份 0.6.0 之前导出的文件、或者对方没带布局，
+      // 不能把本机的排法删掉
+      if let text = Self.layoutText(preferences[Prefs.launchpadLayout]) {
+        defaults.set(text, forKey: Prefs.launchpadLayout)
       }
       // 状态屏的状态是用户自己写的东西：不跟别的设置一样「文件里没有就回到默认」，也不整张换掉——文件里没有
       // （0.3.2 导出的、对方没改过列表）就不动本机的；有就按 id 更新和添加、不删本机独有的（同下面两张列表）。

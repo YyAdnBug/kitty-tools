@@ -1,8 +1,11 @@
 // 触发角（SPEC §5.7，R8）：设置里选一个屏幕角（默认关），鼠标推到那个角停约 0.3 秒就打开启动台。
 // 照便签边缘药丸（Notes/NoteDeckPill.swift）的路数：每块屏在那个角放一个几个点大的**普通 NSPanel 实例**
-// （不子类化，不是浮层）：只用图层画（其实什么都不画，透明）、层级 floating、所有桌面和全屏里都能出、
-// 不进截图录屏（装饰）、用追踪区感应进入——**不挂全局鼠标监听、不轮询**。
-// 停够时间才触发；中途离开或系统触发角先动了鼠标就取消。截图 / 录屏 / 状态屏时不响应（由 Launchpad 的 canOpen 拦）。
+// （不子类化，不是浮层）：层级 .statusBar（和菜单栏同层，顶上两个角不会被菜单栏盖住，F15）、所有桌面和全屏里都能出、
+// `sharingType = .none` 不进截图录屏、用追踪区感应进入——**不挂全局鼠标监听、不轮询**。
+// 整块几乎透明（alpha 0.01，不是 0）：完全透明的窗口可能被系统点穿，追踪区就收不到进出；这一层底色是 paint 用的。
+// 停够时间才触发；触发后要等一次真的 mouseExited 才重新武装（收起时鼠标还在角里不会马上再开）。
+// 只读 com.apple.dock 的 wvous-*-corner：用户在那个角也设了系统动作时不抢（设置页提示一句）。
+// 截图 / 录屏 / 状态屏时不响应（由 Launchpad 的 canOpen 拦）。
 
 import AppKit
 
@@ -40,12 +43,34 @@ final class LaunchpadCorner {
   var onTrigger: (() -> Void)?
   /// 停多久算（约 0.3 秒）
   static let dwell: Duration = .milliseconds(300)
+  /// 那个角上系统的触发角动作（Dock 的 wvous-*-corner，0 = 关）
+  nonisolated static let systemCornerKeys: [LaunchpadCornerOption: String] = [
+    .topLeft: "wvous-tl-corner", .topRight: "wvous-tr-corner",
+    .bottomLeft: "wvous-bl-corner", .bottomRight: "wvous-br-corner",
+  ]
+
+  /// 这个角也让系统触发角占了没有（纯函数：单测直接喂 Dock 的那份偏好；只读）
+  nonisolated static func systemCornerIsOn(
+    _ option: LaunchpadCornerOption, dock: [String: Any]?
+  ) -> Bool {
+    guard let key = systemCornerKeys[option] else { return false }
+    return (dock?[key] as? Int ?? 0) != 0
+  }
+
+  /// 本机读 Dock 的偏好
+  nonisolated static func systemCornerIsOn(
+    _ option: LaunchpadCornerOption, defaults: UserDefaults = .standard
+  ) -> Bool {
+    systemCornerIsOn(option, dock: defaults.persistentDomain(forName: "com.apple.dock"))
+  }
   /// 感应窗口多大（点）
   static let size: CGFloat = 6
 
   private var panels: [NSPanel] = []
   private var dwellTask: Task<Void, Never>?
   private var option: LaunchpadCornerOption = .off
+  /// 触发了以后要等鼠标离开角才重新武装（F15）
+  private var arm = CornerArm()
 
   /// 按设置摆好：关着就全收掉；换角 / 换屏重新摆
   func apply(option: LaunchpadCornerOption, screens: [NSScreen]) {
@@ -53,6 +78,11 @@ final class LaunchpadCorner {
     dwellTask?.cancel()
     dwellTask = nil
     guard option != .off else {
+      stop()
+      return
+    }
+    // 那个角也设了系统触发角：不抢，设置页会提示（F15）
+    guard !Self.systemCornerIsOn(option) else {
       stop()
       return
     }
@@ -73,6 +103,7 @@ final class LaunchpadCorner {
       }
     }
     for panel in panels where !panel.isVisible { panel.orderFrontRegardless() }
+    arm = CornerArm()
   }
 
   func stop() {
@@ -89,7 +120,8 @@ final class LaunchpadCorner {
     let panel = NSPanel(
       contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,
       defer: false)
-    panel.level = .floating
+    // .statusBar：和菜单栏同层，顶上两个角不会被菜单栏盖住（F15）
+    panel.level = .statusBar
     panel.collectionBehavior = [
       .canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle,
     ]
@@ -100,6 +132,9 @@ final class LaunchpadCorner {
     panel.hasShadow = false
     panel.animationBehavior = .none
     panel.ignoresMouseEvents = false
+    panel.alphaValue = 0.01
+    // 不参与截图 / 录屏（F15；和浮层面板同一套排除手法）
+    panel.sharingType = .none
     let host = CornerHost(frame: CGRect(origin: .zero, size: frame.size))
     host.onEnter = { [weak self] in self?.enter() }
     host.onExit = { [weak self] in self?.exit() }
@@ -108,11 +143,12 @@ final class LaunchpadCorner {
   }
 
   private func enter() {
-    guard dwellTask == nil else { return }
+    guard arm.armed, dwellTask == nil else { return }
     dwellTask = Task { [weak self] in
       try? await Task.sleep(for: LaunchpadCorner.dwell)
       guard !Task.isCancelled, let self else { return }
       dwellTask = nil
+      guard arm.trigger() else { return }
       onTrigger?()
     }
   }
@@ -120,7 +156,22 @@ final class LaunchpadCorner {
   private func exit() {
     dwellTask?.cancel()
     dwellTask = nil
+    arm.mouseExited()
   }
+}
+
+/// 触发后要真的离开角才重新武装（F15）：进、停够、触发一次；不离开再进不再触发。
+nonisolated struct CornerArm: Equatable {
+  private(set) var armed = true
+
+  /// 停够了：第一次返回 true 并上锁，之后到 `mouseExited` 之前都 false
+  mutating func trigger() -> Bool {
+    guard armed else { return false }
+    armed = false
+    return true
+  }
+
+  mutating func mouseExited() { armed = true }
 }
 
 /// 感应窗口的内容：一块透明的视图，进出时报一声（追踪区 activeAlways，本 App 不在前台也收得到）

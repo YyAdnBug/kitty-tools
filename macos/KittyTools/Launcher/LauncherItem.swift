@@ -6,7 +6,7 @@
 import Foundation
 import UniformTypeIdentifiers
 
-struct LauncherItem: Identifiable, Hashable {
+struct LauncherItem: Identifiable, Hashable, Sendable {
   enum Kind: String {
     case app, action, url, path
     /// 系统命令（锁定屏幕、清倒废纸篓…，目标是 Alfred 关键词，见 SystemCommands）

@@ -21,6 +21,12 @@ enum Style {
 
     /// 色块（App 图标比例）：18 → 4、24 → 5.5、30 → 7、40 → 9
     static func tile(_ side: CGFloat) -> CGFloat { side * 0.225 }
+
+    /// 启动台（第八族）：图标的选中底 / 文件夹里的格子 22、18，搜索框 9，文件夹面板 26
+    static let launchpadIcon: CGFloat = 22
+    static let launchpadFolderIcon: CGFloat = 18
+    static let launchpadSearch: CGFloat = 9
+    static let launchpadFolder: CGFloat = 26
   }
 
   // MARK: 尺寸

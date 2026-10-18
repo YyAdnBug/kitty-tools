@@ -3,7 +3,7 @@
 // 这里不碰窗口、不读文件、不读偏好：合并本机 App、默认排法、旧库导入后的整理、挪格子、建 / 加 / 拖出文件夹、按行列数
 // 重新分页、搜索排序都在这里，单测直接喂值。不变式（随机操作测试锁住）：每个本机 App 恰好出现一次；没有空页（整份为空
 // 时除外）、没有空文件夹、没有只剩一个 App 的文件夹；顺序稳定。
-// 坐标口径：页是顶层分页，一格一个 LaunchpadTile；文件夹内部的页固定 3 × 3 = 9 个 App（同 macOS 15），不跟顶层的行列数走。
+// 坐标口径：页是顶层分页，一格一个 LaunchpadTile；文件夹内部的页固定 7 × 5 = 35 个 App（同 macOS 15），不跟顶层的行列数走。
 
 import Foundation
 
@@ -22,7 +22,7 @@ nonisolated struct LaunchpadAppRef: Codable, Hashable, Sendable {
   var id: String { bundleID ?? path }
 }
 
-/// 一个文件夹：名字 + 内部的页（每页最多 9 个 App）。id 在拖动、改名、动画里认它。
+/// 一个文件夹：名字 + 内部的页（每页最多 35 个 App）。id 在拖动、改名、动画里认它。
 nonisolated struct LaunchpadFolder: Codable, Hashable, Sendable, Identifiable {
   var id: UUID
   var name: String
@@ -98,8 +98,11 @@ nonisolated enum LaunchpadTile: Codable, Hashable, Sendable, Identifiable {
 nonisolated struct LaunchpadLayout: Codable, Equatable, Sendable {
   /// 文件格式：以后改结构时加、读到不认识的按空布局算，不让一份坏 JSON 把整个启动台卡住
   static let currentFormat = 1
-  /// 文件夹内部一页几个（3 × 3）
-  static let folderCapacity = 9
+  /// 文件夹内部一页几个：7 × 5 = 35（2026-10-18 对照本机系统旧库：有一个文件夹的一页正好 35 个 App，
+  /// 和主网格默认的 7 × 5 一样；macOS 15 的文件夹展开后也是 7 列）。导入时按这个重分文件夹内页
+  static let folderCapacity = 35
+  /// 文件夹面板一页几列（macOS 15 展开后 7 列；`folderCapacity` 就是 7 × 5）
+  static let folderColumns = 7
   /// 文件夹没有共同分类、第一个 App 也没分类时的名字（SPEC R4）
   static let untitledFolder = "未命名"
 
@@ -124,8 +127,16 @@ nonisolated struct LaunchpadLayout: Codable, Equatable, Sendable {
       throw DecodingError.dataCorruptedError(
         forKey: .format, in: container, debugDescription: "更新版本的布局")
     }
-    self.init(pages: try container.decode([[LaunchpadTile]].self, forKey: .pages))
+    // 一格坏了只丢那一格，不连累整份（以后的版本降回来、手改坏一行都不至于让布局整个读不出来）
+    let raw = try container.decode([[LossyTile]].self, forKey: .pages)
+    self.init(pages: raw.map { $0.compactMap(\.tile) })
     pages = Self.sanitized(pages)
+  }
+
+  /// 解码时把解不出的格子变成 nil（`try?` 吞掉那一格的错误）
+  private struct LossyTile: Decodable {
+    var tile: LaunchpadTile?
+    init(from decoder: Decoder) throws { tile = try? LaunchpadTile(from: decoder) }
   }
 
   // MARK: 读
@@ -144,6 +155,9 @@ nonisolated struct LaunchpadLayout: Codable, Equatable, Sendable {
   }
 
   func contains(appID: String) -> Bool { apps.contains { $0.id == appID } }
+
+  /// 按 id 找布局里存的 App 身份（打开搜到的结果、拖出文件夹时用）
+  func appRef(_ appID: String) -> LaunchpadAppRef? { apps.first { $0.id == appID } }
 
   /// 顶层某一格在哪一页的第几格
   func locate(_ tileID: String) -> (page: Int, index: Int)? {
@@ -223,7 +237,9 @@ nonisolated struct LaunchpadLayout: Codable, Equatable, Sendable {
           }
           let all = inner.flatMap { $0 }
           if all.count >= 2 {
-            var cleaned = LaunchpadFolder(id: folder.id, name: folder.name, pages: inner)
+            // 文件夹内部的页按 folderCapacity 重分：导入的库里有「一页 35 个」这种，旧的 3 × 3 口径会把大半藏起来
+            var cleaned = LaunchpadFolder(
+              id: folder.id, name: folder.name, pages: paginateFolder(all))
             cleaned.name = cleaned.name.trimmingCharacters(in: .whitespacesAndNewlines)
             if cleaned.name.isEmpty { cleaned.name = untitledFolder }
             tiles.append(.folder(cleaned))
@@ -237,7 +253,7 @@ nonisolated struct LaunchpadLayout: Codable, Equatable, Sendable {
     return result
   }
 
-  /// 按一页能放几个（列 × 行）重新分页：文件夹内部的页按 9 个一页，顶层的按容量。
+  /// 按一页能放几个（列 × 行）重新分页：文件夹内部的页按 35 个一页，顶层的按容量。
   static func paginate(_ tiles: [LaunchpadTile], capacity: Int) -> [[LaunchpadTile]] {
     let capacity = max(1, capacity)
     guard !tiles.isEmpty else { return [] }
@@ -246,7 +262,7 @@ nonisolated struct LaunchpadLayout: Codable, Equatable, Sendable {
     }
   }
 
-  /// 文件夹内部的 App 按 9 个一页排好（丢掉空页）
+  /// 文件夹内部的 App 按 35 个一页排好（丢掉空页）
   static func paginateFolder(_ apps: [LaunchpadAppRef]) -> [[LaunchpadAppRef]] {
     guard !apps.isEmpty else { return [] }
     return stride(from: 0, to: apps.count, by: folderCapacity).map {
@@ -254,43 +270,82 @@ nonisolated struct LaunchpadLayout: Codable, Equatable, Sendable {
     }
   }
 
-  /// 顶层按容量重排（合并、拖动、改行列数之后）
+  /// 顶层按容量重排（改行列数、恢复默认之后用；日常编辑不许调它，页边界要保住，见 `pushed`）
   func repaginated(capacity: Int) -> LaunchpadLayout {
     LaunchpadLayout(pages: Self.paginate(Self.sanitized(pages).flatMap { $0 }, capacity: capacity))
+  }
+
+  /// 打开时用：只在一页真的超过容量（用户改过行列数）时才整份重排，否则页边界原样保留（导入的多页布局不被压紧）
+  func tidied(capacity: Int) -> LaunchpadLayout {
+    let clean = Self.sanitized(pages)
+    let capacity = max(capacity, 1)
+    guard clean.contains(where: { $0.count > capacity }) else {
+      return LaunchpadLayout(pages: clean)
+    }
+    return LaunchpadLayout(pages: Self.paginate(clean.flatMap { $0 }, capacity: capacity))
+  }
+
+  /// 编辑之后：哪一页超过容量，就把多出来的从前端推到下一页开头，逐页往后；空页去掉。
+  /// **从不往前补**（macOS 15：页可以不满，只有挤出来的那个顺到下一页开头）
+  static func pushed(_ pages: [[LaunchpadTile]], capacity: Int) -> [[LaunchpadTile]] {
+    let capacity = max(capacity, 1)
+    var result = pages
+    var index = 0
+    while index < result.count {
+      if result[index].count > capacity {
+        let overflow = Array(result[index][capacity...])
+        result[index] = Array(result[index][..<capacity])
+        if index + 1 < result.count {
+          result[index + 1].insert(contentsOf: overflow, at: 0)
+        } else {
+          result.append(overflow)
+        }
+      }
+      index += 1
+    }
+    return result.filter { !$0.isEmpty }
   }
 
   // MARK: 合并本机 App
 
   /// App 目录变了：拿掉布局里本机已经没有的、把新装的追加到最后一页末尾，然后整理（解散只剩一个的文件夹、去空页）。
-  /// 顺序稳定：原来在的保持原位，新的按传进来的顺序接在后面。没有变化时原样返回（导入的多页布局不被无谓重排）。
+  /// **页边界保住**：卸掉的只让它所在页变短，不从后面往前补；新装的接在最后一页末尾，最后一页满了才另起一页。
+  /// 没有变化时原样返回（导入的多页布局不被无谓重排）。
   func merged(apps: [LaunchpadAppRef], capacity: Int) -> LaunchpadLayout {
     let wanted = Set(apps.map(\.id))
     guard wanted != Set(self.apps.map(\.id)) else { return self }
-    var sequence: [LaunchpadTile] = []
-    for page in pages {
+    var pages: [[LaunchpadTile]] = []
+    for page in self.pages {
+      var tiles: [LaunchpadTile] = []
       for tile in page {
         switch tile {
         case .app(let app):
-          if wanted.contains(app.id) { sequence.append(.app(app)) }
+          if wanted.contains(app.id) { tiles.append(.app(app)) }
         case .folder(let folder):
           let kept = folder.pages.map { $0.filter { wanted.contains($0.id) } }
             .filter { !$0.isEmpty }
           let all = kept.flatMap { $0 }
           if all.count >= 2 {
-            sequence.append(.folder(LaunchpadFolder(id: folder.id, name: folder.name, pages: kept)))
+            tiles.append(
+              .folder(
+                LaunchpadFolder(
+                  id: folder.id, name: folder.name, pages: Self.paginateFolder(all))))
           } else if let only = all.first {
-            sequence.append(.app(only))
+            tiles.append(.app(only))
           }
         }
       }
+      if !tiles.isEmpty { pages.append(tiles) }
     }
-    var present = Set(sequence.flatMap(\.appIDs))
+    var present = Set(pages.flatMap { $0 }.flatMap(\.appIDs))
+    let capacity = max(capacity, 1)
     for app in apps where !present.contains(app.id) {
-      sequence.append(.app(app))
+      if pages.isEmpty { pages = [[]] }
+      if pages[pages.count - 1].count >= capacity { pages.append([]) }
+      pages[pages.count - 1].append(.app(app))
       present.insert(app.id)
     }
-    return LaunchpadLayout(
-      pages: Self.paginate(Self.sanitized([sequence]).flatMap { $0 }, capacity: capacity))
+    return LaunchpadLayout(pages: pages)
   }
 
   // MARK: 默认排法（SPEC §3.6）
@@ -325,25 +380,32 @@ nonisolated struct LaunchpadLayout: Codable, Equatable, Sendable {
 
   // MARK: 挪格子
 
-  /// 把顶层某一格挪到目标页的第 slot 格（slot 是拿掉这一格之后、目标页里的插入位置）。
-  /// 目标页放不下时挤出来的那一个顺到下一页开头——和按容量整体重排的结果一致。
+  /// 把顶层某一格挪到目标页的第 slot 格（slot 统一是**拿掉这一格之后**、目标页里的插入位置）。
+  /// 目标页放不下时挤出来的那一个顺到下一页开头，逐页往后；**不整份重排**，页边界不动。
+  /// `targetPage >= 页数` = 拖到最后一页右边缘再往右，新开一页。
   func moving(_ tileID: String, toPage targetPage: Int, slot: Int, capacity: Int) -> LaunchpadLayout
   {
     guard let source = locate(tileID) else { return self }
     var pages = self.pages
     let tile = pages[source.page].remove(at: source.index)
-    var page = targetPage
+    var wantedPage = targetPage
     if pages[source.page].isEmpty, pages.count > 1 {
+      // 这一页只有手里这一个，还落回同一页：就是没挪（不能把空页删掉再插到下一页去）
+      if targetPage == source.page { return self }
       pages.remove(at: source.page)
-      if targetPage > source.page { page -= 1 }
+      if targetPage > source.page { wantedPage -= 1 }
     }
     if pages.isEmpty { pages = [[]] }
-    page = min(max(page, 0), pages.count - 1)
-    var target = slot
-    if source.page == targetPage, source.index < slot { target -= 1 }
-    let index = min(max(target, 0), pages[page].count)
+    let page: Int
+    if wantedPage >= pages.count {
+      pages.append([])
+      page = pages.count - 1
+    } else {
+      page = min(max(wantedPage, 0), pages.count - 1)
+    }
+    let index = min(max(slot, 0), pages[page].count)
     pages[page].insert(tile, at: index)
-    return LaunchpadLayout(pages: pages).repaginated(capacity: capacity)
+    return LaunchpadLayout(pages: Self.pushed(pages, capacity: capacity))
   }
 
   /// 按整份展开后的下标挪（拖动时界面按格算位置更方便，测试用这个）
@@ -386,7 +448,7 @@ nonisolated struct LaunchpadLayout: Codable, Equatable, Sendable {
     let folder = LaunchpadFolder(
       name: name, pages: Self.paginateFolder([targetApp, sourceApp]))
     pages[page][index] = .folder(folder)
-    return LaunchpadLayout(pages: pages).repaginated(capacity: capacity)
+    return LaunchpadLayout(pages: Self.pushed(pages, capacity: capacity))
   }
 
   /// 把一个 App 加进已有的文件夹（拖到文件夹上）：加在最后一页末尾，满了另起一页。
@@ -397,12 +459,13 @@ nonisolated struct LaunchpadLayout: Codable, Equatable, Sendable {
     var pages = pages
     // 先把 App 从原处拿掉（可能在另一页、另一个文件夹里），再按 id 找回文件夹（位置可能挪了）
     removeAppFromPages(appID, pages: &pages)
+    pages.removeAll { $0.isEmpty }
     guard let folderLocation = tileLocation(ofFolder: folderID, in: pages),
       case .folder(var folder) = pages[folderLocation.page][folderLocation.index]
     else { return self }
     folder.pages = Self.appending(sourceRef, to: folder.pages)
     pages[folderLocation.page][folderLocation.index] = .folder(folder)
-    return LaunchpadLayout(pages: pages).repaginated(capacity: capacity)
+    return LaunchpadLayout(pages: Self.pushed(pages, capacity: capacity))
   }
 
   /// 把 App 从文件夹里拖出来：放回文件夹后面那一格；文件夹只剩一个时解散（两个都回到顶层）。
@@ -432,7 +495,7 @@ nonisolated struct LaunchpadLayout: Codable, Equatable, Sendable {
       pages[now.page][now.index] = .folder(folder)
       pages[now.page].insert(.app(ref), at: now.index + 1)
     }
-    return LaunchpadLayout(pages: pages).repaginated(capacity: capacity)
+    return LaunchpadLayout(pages: Self.pushed(pages, capacity: capacity))
   }
 
   /// 改名（去掉两头空白；空的回到「未命名」）
@@ -450,7 +513,8 @@ nonisolated struct LaunchpadLayout: Codable, Equatable, Sendable {
   func removing(_ appID: String, capacity: Int) -> LaunchpadLayout {
     var pages = pages
     removeAppFromPages(appID, pages: &pages)
-    return LaunchpadLayout(pages: pages).repaginated(capacity: capacity)
+    pages.removeAll { $0.isEmpty }
+    return LaunchpadLayout(pages: pages)
   }
 
   /// 删掉整个文件夹（App 回到顶层原处；文件夹里的 App 一个不少）
@@ -462,7 +526,7 @@ nonisolated struct LaunchpadLayout: Codable, Equatable, Sendable {
     let refs = folder.apps
     pages[location.page].remove(at: location.index)
     pages[location.page].insert(contentsOf: refs.map(LaunchpadTile.app), at: location.index)
-    return LaunchpadLayout(pages: pages).repaginated(capacity: capacity)
+    return LaunchpadLayout(pages: Self.pushed(pages, capacity: capacity))
   }
 
   // MARK: 内部
@@ -475,10 +539,6 @@ nonisolated struct LaunchpadLayout: Codable, Equatable, Sendable {
       if let index = tiles.firstIndex(where: { $0.folder?.id == id }) { return (page, index) }
     }
     return nil
-  }
-
-  func appRef(_ id: String) -> LaunchpadAppRef? {
-    apps.first { $0.id == id }
   }
 
   private func removeAppFromPages(_ appID: String, pages: inout [[LaunchpadTile]]) {
@@ -510,12 +570,60 @@ nonisolated struct LaunchpadLayout: Codable, Equatable, Sendable {
     return String(data: data, encoding: .utf8)
   }
 
-  /// 读偏好里的布局；没存过、空串、坏 JSON、更新版本的格式都返回 nil（调用方按第一次用处理）
-  static func load(from defaults: UserDefaults) -> LaunchpadLayout? {
-    guard let text = defaults.string(forKey: Prefs.launchpadLayout), !text.isEmpty,
-      let data = text.data(using: .utf8)
+  /// 偏好里存过的原样（用来判断「存过但读不出来」：不能拿默认排法把人家的布局覆盖掉）
+  static func storedText(
+    in defaults: UserDefaults = .standard,
+    domainName: String? = Bundle.main.bundleIdentifier
+  ) -> String? {
+    // 先读自己这个 defaults（单测、设置页注入的 suite 都用它）；再退到持久域（App 正常跑时 Bundle id 那个域）
+    if let text = defaults.string(forKey: Prefs.launchpadLayout), !text.isEmpty { return text }
+    guard let domainName, let domain = defaults.persistentDomain(forName: domainName),
+      let text = domain[Prefs.launchpadLayout] as? String, !text.isEmpty
     else { return nil }
-    return try? JSONDecoder().decode(LaunchpadLayout.self, from: data)
+    return text
+  }
+
+  /// 存过的布局的三种状态：没存过 / 读出来了 / 存过但读不出来（原文留着，打开时另存到一个键、不写盘）
+  enum Stored: Equatable {
+    case missing
+    case loaded(LaunchpadLayout)
+    case unreadable(String)
+  }
+
+  static func stored(
+    in defaults: UserDefaults = .standard,
+    domainName: String? = Bundle.main.bundleIdentifier
+  ) -> Stored {
+    guard let text = storedText(in: defaults, domainName: domainName) else { return .missing }
+    guard let data = text.data(using: .utf8),
+      let layout = try? JSONDecoder().decode(LaunchpadLayout.self, from: data)
+    else { return .unreadable(text) }
+    return .loaded(layout)
+  }
+
+  /// 读偏好里的布局；没存过、空串、坏 JSON、更新版本的格式都返回 nil（调用方按第一次用处理）。
+  /// 走 `stored`，和打开时同一套「读得出来 / 读不出来」的判断。
+  static func load(from defaults: UserDefaults) -> LaunchpadLayout? {
+    guard case .loaded(let layout) = stored(in: defaults, domainName: nil) else { return nil }
+    return layout
+  }
+
+  /// 打开时拿哪份布局、要不要存（F7 / F27 的纯函数，单测直接喂）：
+  /// - 没存过 → 默认排法，先不存（等旧库导入或用户第一次改动再写）
+  /// - 存过但读不出来 → 这次只在内存里用默认排法，**不写盘**（原文留着，用户第一次改动才覆盖）
+  /// - 读出来了 → 合并本机目录、只在有一页超过容量时整理；和存的一样就不重写
+  nonisolated static func openingPlan(
+    stored: Stored, apps: [LaunchpadAppRef], defaults: [DefaultApp], capacity: Int
+  ) -> (layout: LaunchpadLayout, shouldSave: Bool) {
+    switch stored {
+    case .unreadable:
+      return (defaultLayout(defaults, capacity: capacity), false)
+    case .missing:
+      return (defaultLayout(defaults, capacity: capacity), false)
+    case .loaded(let loaded):
+      let merged = loaded.merged(apps: apps, capacity: capacity).tidied(capacity: capacity)
+      return (merged, merged != loaded)
+    }
   }
 
   /// 偏好里到底存没存过（设置 › 启动台用它说「沿用现在的排列」）；单测传自己的套件名
@@ -523,10 +631,19 @@ nonisolated struct LaunchpadLayout: Codable, Equatable, Sendable {
     in defaults: UserDefaults = .standard,
     domainName: String? = Bundle.main.bundleIdentifier
   ) -> Bool {
-    guard let domainName, let domain = defaults.persistentDomain(forName: domainName) else {
-      return false
-    }
-    return (domain[Prefs.launchpadLayout] as? String)?.isEmpty == false
+    storedText(in: defaults, domainName: domainName) != nil
+  }
+
+  /// 存盘（只在真的变了时写：打开一次就重写一遍既多余，也会在「存过但读不出来」时把原文顶掉）
+  @discardableResult
+  static func save(
+    _ layout: LaunchpadLayout, to defaults: UserDefaults = .standard,
+    domainName: String? = Bundle.main.bundleIdentifier
+  ) -> Bool {
+    guard let text = layout.jsonString() else { return false }
+    guard storedText(in: defaults, domainName: domainName) != text else { return false }
+    defaults.set(text, forKey: Prefs.launchpadLayout)
+    return true
   }
 
   static func appending(_ app: LaunchpadAppRef, to pages: [[LaunchpadAppRef]])

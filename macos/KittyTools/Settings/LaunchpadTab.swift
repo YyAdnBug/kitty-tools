@@ -67,19 +67,29 @@ struct LaunchpadTab: View {
       } header: {
         Text("启动台")
       } footer: {
-        SectionFootnote("现有的「启动器」是 ⌥Space 的搜索框，和启动台是两个东西：名字、设置、快捷键都分开。")
+        SectionFootnote("现有的「启动器」是搜索框，和启动台是两个东西：名字、设置、快捷键都分开。")
       }
       Section {
         LabeledContent {
-          Stepper("\(columns)", value: $columns, in: Prefs.launchpadColumnChoices)
-            .labelsHidden()
+          HStack(spacing: 8) {
+            Text("\(columns) 列")
+              .monospacedDigit()
+              .foregroundStyle(.secondary)
+            Stepper("一页几列", value: $columns, in: Prefs.launchpadColumnChoices)
+              .labelsHidden()
+          }
         } label: {
           Text("一页几列")
           Text("改了按新容量重新分页")
         }
         LabeledContent {
-          Stepper("\(rows)", value: $rows, in: Prefs.launchpadRowChoices)
-            .labelsHidden()
+          HStack(spacing: 8) {
+            Text("\(rows) 行")
+              .monospacedDigit()
+              .foregroundStyle(.secondary)
+            Stepper("一页几行", value: $rows, in: Prefs.launchpadRowChoices)
+              .labelsHidden()
+          }
         } label: {
           Text("一页几行")
           Text("大屏可以多放几行")
@@ -96,6 +106,16 @@ struct LaunchpadTab: View {
         } label: {
           Text("屏幕角")
           Text("鼠标推到角上停一下打开")
+        }
+        if let option = LaunchpadCornerOption(rawValue: corner),
+          option != .off, LaunchpadCorner.systemCornerIsOn(option)
+        {
+          LabeledContent {
+            Text("已被系统占用").foregroundStyle(.orange)
+          } label: {
+            Text("这个角也设了系统的触发角")
+            Text("系统会先响应；要分开的话，去 系统设置 › 桌面与程序坞 › 触发角 关掉它")
+          }
         }
       } header: {
         Text("触发角")
@@ -114,7 +134,7 @@ struct LaunchpadTab: View {
           Text("系统 App 在前、其余按名字排")
         }
         LabeledContent {
-          Button("撤销上一次导入…", action: undo)
+          Button("撤销上一次导入", action: undo)
             .disabled(!canUndo())
         } label: {
           Text("撤销上一次导入")
@@ -124,12 +144,19 @@ struct LaunchpadTab: View {
         Text("排列数据")
       }
     }
-    .onAppear { systemPinch = systemPinchOn() }
-    .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+    .onAppear {
       systemPinch = systemPinchOn()
+      pinchChanged()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+      // 用户照提示去系统设置关掉再回来：这里读到状态变化就立刻重起监听（F13），不用重启 App
+      let next = systemPinchOn()
+      systemPinch = next
+      pinchChanged()
     }
     .onChange(of: columns) { reflow() }
     .onChange(of: rows) { reflow() }
+    .onChange(of: enabled) { pinchChanged() }
     .onChange(of: pinch) { pinchChanged() }
     .onChange(of: pinchSense) { pinchChanged() }
     .onChange(of: corner) { cornerChanged() }
@@ -172,8 +199,8 @@ struct LaunchpadTab: View {
             Button("打开触控板设置") { openTrackpadSettings() }
           } label: {
             Text("系统的捏合手势还开着")
-              .foregroundStyle(Style.danger)
-            Text("系统的还开着时我们认到也不打开；先到 系统设置 › 触控板 › 更多手势 关掉它")
+              .foregroundStyle(.orange)
+            Text("这时捏合会打开系统自己的应用程序视图；先在 系统设置 › 触控板 › 更多手势 关掉它，再回来打开这一项")
           }
         }
       } else {

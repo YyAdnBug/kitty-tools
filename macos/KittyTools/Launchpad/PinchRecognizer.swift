@@ -91,7 +91,8 @@ nonisolated struct PinchRecognizer: Sendable {
 
   /// 喂一帧；识别出一次手势就返回它（同一次手势不会返回第二次）
   mutating func feed(_ frame: TouchFrame) -> Gesture? {
-    let touching = frame.touches.filter { $0.state != 0 && $0.state != 7 }
+    // 只认「按在面上」的 3 / 4：悬停（1 / 2）和抬起中（5 / 6）都不算（F25）。空帧会走到 reset
+    let touching = frame.touches.filter { $0.state == 3 || $0.state == 4 }
     guard touching.count >= Self.minimumFingers else {
       reset()
       return nil
@@ -153,7 +154,7 @@ nonisolated struct PinchRecognizer: Sendable {
 
 /// 系统的四指 / 五指捏合手势开没开（只读；SPEC §5.6）。`com.apple.AppleMultitouchTrackpad` 是内置触控板，
 /// 蓝牙妙控板在 `com.apple.driver.AppleBluetoothMultitouch.trackpad`。实测（27.0.1）两个键都是 2 = 开，
-/// 0 = 关；这里按「非 0 且存在 = 开」认（没存过 = 关，和系统默认一致）。**只读，不写、不重启 Dock**。
+/// 0 = 关；这里按「两个键都没存过 = 开（系统默认）、显式 0 = 关」认（F13）。**只读，不写、不重启 Dock**。
 nonisolated enum TrackpadSystemGesture {
   static let fourFingerKey = "TrackpadFourFingerPinchGesture"
   static let fiveFingerKey = "TrackpadFiveFingerPinchGesture"
@@ -161,11 +162,13 @@ nonisolated enum TrackpadSystemGesture {
     "com.apple.AppleMultitouchTrackpad", "com.apple.driver.AppleBluetoothMultitouch.trackpad",
   ]
 
-  /// 一个域里的两个键（注入的 UserDefaults 给单测）
+  /// 一个域里的两个键（注入的 UserDefaults 给单测）。两个键都没存过 = 系统默认开（F13：新机器上
+  /// 不能再和我们的监听一起出来）；存过 0 才是用户关掉了
   static func pinchIsOn(_ defaults: UserDefaults) -> Bool {
-    let four = defaults.object(forKey: fourFingerKey) as? Int ?? 0
-    let five = defaults.object(forKey: fiveFingerKey) as? Int ?? 0
-    return four != 0 || five != 0
+    let four = defaults.object(forKey: fourFingerKey) as? Int
+    let five = defaults.object(forKey: fiveFingerKey) as? Int
+    if four == nil, five == nil { return true }
+    return (four ?? 0) != 0 || (five ?? 0) != 0
   }
 
   /// 本机（两个域任一开着）

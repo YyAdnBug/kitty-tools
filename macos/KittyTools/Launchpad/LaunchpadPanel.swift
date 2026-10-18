@@ -20,6 +20,8 @@ final class LaunchpadPanel: NSPanel {
   var onCloseRequest: (() -> Void)?
   /// ⌥ 按下 / 松开（抖动模式：按着进、松开退）
   var onFlagsChanged: ((Bool) -> Void)?
+  /// 失去 key（F23：确认框是挂在面板上的 sheet 时不收，别的 App 到前台就收）
+  var onResignKey: (() -> Void)?
 
   private let host: NSHostingView<LaunchpadView>
 
@@ -41,6 +43,8 @@ final class LaunchpadPanel: NSPanel {
     animationBehavior = .none
     acceptsMouseMovedEvents = true
     worksWhenModal = true
+    // 启动台永远是深色的画面（压暗的桌面）：不跟系统浅色，搜索框的占位、确认框的按钮都按深色画（F16）
+    appearance = NSAppearance(named: .darkAqua)
 
     let effect = NSVisualEffectView(frame: frame)
     effect.material = .fullScreenUI
@@ -109,6 +113,46 @@ final class LaunchpadPanel: NSPanel {
   override func flagsChanged(with event: NSEvent) {
     onFlagsChanged?(event.modifierFlags.contains(.option))
     super.flagsChanged(with: event)
+  }
+
+  override func resignKey() {
+    super.resignKey()
+    onResignKey?()
+  }
+}
+
+/// 收起的簿记（F20）：按窗口记，不用一个全局代号——「收 → 再开 → 旧的收起晚到」也只收走旧那块。
+/// 纯窗口簿记，单测用两块屏外 NSWindow 喂（不建面板、不 makeKey）。
+@MainActor
+final class LaunchpadWindowBook {
+  private(set) var panel: NSWindow?
+  private(set) var isOpen = false
+
+  func adopt(_ window: NSWindow) {
+    panel = window
+    isOpen = true
+  }
+
+  /// 开始收：把窗口交出去（自己不再拿着它），这样紧接着的打开能建新面板
+  func beginClose() -> NSWindow? {
+    guard isOpen || panel != nil else { return nil }
+    let closing = panel
+    panel = nil
+    isOpen = false
+    return closing
+  }
+}
+
+/// 失去 key 要不要收起（F23）：新的 key 窗口是自己的子窗口 / sheet 就不收（SwiftUI 的确认框、弹出框），
+/// 也是自己就不收，其余（别的 App 到前台、打开 App）都收。纯函数，配单测。
+@MainActor
+enum LaunchpadPanelShouldClose {
+  static func onResign(key: NSWindow?, own: NSWindow?) -> Bool {
+    guard let own else { return true }
+    guard let key else { return true }
+    if key === own { return false }
+    if key.parent === own || key.sheetParent === own { return false }
+    return true
   }
 }
 

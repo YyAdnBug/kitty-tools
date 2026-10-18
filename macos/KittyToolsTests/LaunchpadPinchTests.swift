@@ -95,7 +95,7 @@ struct LaunchpadPinchTests {
     let suite = "launchpad.pinch.test.\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
-    #expect(!TrackpadSystemGesture.pinchIsOn(defaults))  // 没存过 = 关
+    #expect(TrackpadSystemGesture.pinchIsOn(defaults))  // 两个键都没存过 = 系统默认开（F13）
     defaults.set(0, forKey: TrackpadSystemGesture.fourFingerKey)
     defaults.set(0, forKey: TrackpadSystemGesture.fiveFingerKey)
     #expect(!TrackpadSystemGesture.pinchIsOn(defaults))

@@ -228,7 +228,7 @@ enum HotKeyAction: String, CaseIterable {
     case .noteCapture: HotKey(keyCode: kVK_ANSI_N, modifiers: optionKey)
     // 新建便签、全部便签不设默认键：从菜单栏、启动器进，要快捷键到 设置 › 快捷键 里自己设
     case .noteNew, .noteAll: nil
-    // 启动台（第八族）不设默认键：系统的四指捏合已经在系统设置里关掉，快捷键到 设置 › 快捷键 里自己设（SPEC R8）
+    // 启动台（第八族）不设默认键：触控板捏合是主入口（系统那项开着时设置页会提示关），快捷键到 设置 › 快捷键 里自己设（SPEC R8）
     case .launchpad: nil
     }
   }

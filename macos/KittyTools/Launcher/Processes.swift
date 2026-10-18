@@ -13,7 +13,7 @@
 import AppKit
 
 enum Processes {
-  nonisolated struct Entry: Hashable {
+  nonisolated struct Entry: Hashable, Sendable {
     let pid: Int32
     /// 常驻内存（字节）
     let memory: Int64
@@ -25,7 +25,7 @@ enum Processes {
     var app: App?
 
     /// 包路径（按它找正在运行的 App）和显示名
-    nonisolated struct App: Hashable {
+    nonisolated struct App: Hashable, Sendable {
       let path: String
       let name: String
     }

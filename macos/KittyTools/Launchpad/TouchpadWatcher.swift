@@ -11,19 +11,35 @@ import AppKit
 import Darwin
 import Synchronization
 
-/// 框架给的触点（只声明我们读的字段，前面留出同布局的占位）
+/// 框架给的触点：框架的数组是 **96 字节一个**（公开逆向资料：frame、timestamp、identifier、state、
+/// fingerId、handId、normalized 位置 + 尺寸、angle / major / minor、normalized 速度、两个 int、zDensity，
+/// 再留到 96）。字段按偏移声明，**整个结构体 stride 必须是 96**——按 56 步进从第二根手指起就全错位了（F6）。
+/// ponytail: 布局是逆向来的；系统改了字段顺序要重新核对（HANDTEST 10）。只读 identifier / state / normalized 位置。
 nonisolated struct MTFinger {
-  var frame: Int32 = 0
-  var timestamp: Double = 0
-  var identifier: Int32 = 0
-  var state: Int32 = 0
-  var fingerID: Int32 = 0
-  var handID: Int32 = 0
-  var normalizedX: Float = 0
-  var normalizedY: Float = 0
-  var velocityX: Float = 0
-  var velocityY: Float = 0
-  var zTotal: Float = 0
+  var frame: Int32 = 0  // 0
+  var pad0: Int32 = 0  // 4（timestamp 要 8 字节对齐）
+  var timestamp: Double = 0  // 8
+  var identifier: Int32 = 0  // 16
+  var state: Int32 = 0  // 20
+  var fingerID: Int32 = 0  // 24
+  var handID: Int32 = 0  // 28
+  var normalizedX: Float = 0  // 32
+  var normalizedY: Float = 0  // 36
+  var size: Float = 0  // 40
+  var zero1: Int32 = 0  // 44
+  var angle: Float = 0  // 48
+  var majorAxis: Float = 0  // 52
+  var minorAxis: Float = 0  // 56
+  var velocityX: Float = 0  // 60
+  var velocityY: Float = 0  // 64
+  var zero2a: Int32 = 0  // 68
+  var zero2b: Int32 = 0  // 72
+  var zDensity: Float = 0  // 76
+  /// 76 之后框架还留着 20 字节（补齐到 96），我们不读，只用它把 stride 对齐
+  var reserved0: Int32 = 0  // 80
+  var reserved1: Int32 = 0  // 84
+  var reserved2: Int32 = 0  // 88
+  var reserved3: Int32 = 0  // 92
 }
 
 /// C 回调：`int (*)(MTDeviceRef, MTFinger *, int count, double timestamp, int frame)`。
@@ -39,8 +55,10 @@ private typealias MTDeviceStartFn = @convention(c) (UnsafeMutableRawPointer, Int
 private typealias MTDeviceStopFn = @convention(c) (UnsafeMutableRawPointer) -> Void
 
 /// 回调在框架线程上跑：这里只碰识别器（Mutex 里）和把结果派回主线程
-private final class TouchpadBridge: @unchecked Sendable {
+private final class TouchpadBridge: Sendable {
   private let recognizers = Mutex<[UInt: PinchRecognizer]>([:])
+  /// 按需实录探针用：真收到多少帧（只增，不参与识别）
+  let frames = Mutex<Int>(0)
   private let sensitivity: PinchRecognizer.Sensitivity
   let onGesture: @Sendable (PinchRecognizer.Gesture) -> Void
 
@@ -53,6 +71,7 @@ private final class TouchpadBridge: @unchecked Sendable {
   }
 
   func feed(device: UInt, frame: TouchFrame) {
+    frames.withLock { $0 += 1 }
     let gesture = recognizers.withLock { table -> PinchRecognizer.Gesture? in
       var recognizer = table[device] ?? PinchRecognizer(sensitivity: sensitivity)
       let result = recognizer.feed(frame)
@@ -67,21 +86,14 @@ private final class TouchpadBridge: @unchecked Sendable {
   }
 }
 
-/// 现在的桥（C 回调拿不到上下文，只能走这个全局；只在主线程注册 / 注销）
-nonisolated(unsafe) private var activeBridge: TouchpadBridge?
+/// 现在的桥（C 回调拿不到上下文，只能走这个全局）：框架线程读、主线程换，用 Mutex 护住引用，
+/// 不会出现「刚读出引用、主线程就放掉」的 use-after-free（F25）
+nonisolated private let activeBridge = Mutex<TouchpadBridge?>(nil)
 
 private let contactCallback: MTContactCallback = { device, data, count, timestamp, _ in
-  guard let device, let data, count > 0, let bridge = activeBridge else { return 0 }
-  let fingers = data.assumingMemoryBound(to: MTFinger.self)
-  var touches: [TouchPoint] = []
-  touches.reserveCapacity(Int(count))
-  for index in 0..<Int(count) {
-    let finger = fingers[index]
-    touches.append(
-      TouchPoint(
-        id: finger.identifier, x: Double(finger.normalizedX), y: Double(finger.normalizedY),
-        state: finger.state))
-  }
+  guard let device, let bridge = activeBridge.withLock({ $0 }) else { return 0 }
+  // 空帧也喂：全抬起来要让识别器重置（F25）
+  let touches = data.map { TouchpadWatcher.touches(from: $0, count: Int(count)) } ?? []
   bridge.feed(
     device: UInt(bitPattern: device), frame: TouchFrame(time: timestamp, touches: touches))
   return 0
@@ -99,9 +111,20 @@ final class TouchpadWatcher {
   var onGesture: ((PinchRecognizer.Gesture) -> Void)?
 
   private var devices: [UnsafeMutableRawPointer] = []
+  /// MTDeviceCreateList 给的数组：设备裸指针只在它活着时有效，start() 返回后也要拿着（F6）
+  private var deviceList: CFMutableArray?
   private var symbols: Symbols?
+  private var sensitivity: PinchRecognizer.Sensitivity = .standard
+  private var wakeObserver: NSObjectProtocol?
+  /// 每次 start / stop 换一代：派回主线程的旧手势看到代号变了就不回调（F25）
+  private var generation = 0
   private var bridge: TouchpadBridge?
   private var isStarted = false
+
+  /// 按需实录探针（`TEST_RUNNER_KITTY_LIVE_TOUCH=1`）用的计数；正常路径不读
+  nonisolated static var framesSeen: Int {
+    activeBridge.withLock { bridge in bridge.map { $0.frames.withLock { $0 } } ?? 0 }
+  }
 
   private struct Symbols {
     let register: MTRegisterCallbackFn
@@ -125,9 +148,13 @@ final class TouchpadWatcher {
 
   /// 开着监听（重复调用只换灵敏度）
   func start(sensitivity: PinchRecognizer.Sensitivity) {
+    self.sensitivity = sensitivity
     if isStarted {
       bridge = nil
+      activeBridge.withLock { $0 = nil }
       stopDevices()
+      deviceList = nil
+      isStarted = false
     }
     guard let loaded = loadSymbols() else {
       availability = .unavailable
@@ -135,6 +162,12 @@ final class TouchpadWatcher {
     }
     symbols = loaded.symbols
     guard let list = loaded.createList()?.takeRetainedValue() else {
+      availability = .unavailable
+      return
+    }
+    deviceList = list
+    // 结构体步长不对就别注册：读出来的触点是错位的，不如退回「这台 Mac 上用不了」（F6）
+    guard MemoryLayout<MTFinger>.stride == 96 else {
       availability = .unavailable
       return
     }
@@ -149,24 +182,50 @@ final class TouchpadWatcher {
       return
     }
     devices = found
-    bridge = TouchpadBridge(sensitivity: sensitivity) { [weak self] gesture in
+    generation += 1
+    let generation = generation
+    let bridge = TouchpadBridge(sensitivity: sensitivity) { [weak self] gesture in
       DispatchQueue.main.async {
-        MainActor.assumeIsolated { self?.onGesture?(gesture) }
+        MainActor.assumeIsolated {
+          guard let self, self.isStarted, self.generation == generation else { return }
+          self.onGesture?(gesture)
+        }
       }
     }
-    activeBridge = bridge
+    self.bridge = bridge
+    activeBridge.withLock { $0 = bridge }
     for device in devices {
       loaded.symbols.register(device, contactCallback)
       loaded.symbols.start(device, 0)
     }
     isStarted = true
     availability = .available
+    observeWake()
+  }
+
+  /// 睡眠唤醒后设备可能已经失效：重新枚举、注册（F25；真机验）
+  private func observeWake() {
+    guard wakeObserver == nil else { return }
+    wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+      forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+    ) { [weak self] _ in
+      MainActor.assumeIsolated {
+        guard let self, self.isStarted else { return }
+        self.start(sensitivity: self.sensitivity)
+      }
+    }
   }
 
   /// 关掉：注销回调、停设备、放掉桥（回调里再进来也不会认）
   func stop() {
+    generation += 1
+    if let wakeObserver {
+      NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
+      self.wakeObserver = nil
+    }
     guard isStarted else {
-      activeBridge = nil
+      activeBridge.withLock { $0 = nil }
+      deviceList = nil
       return
     }
     if let symbols {
@@ -177,9 +236,10 @@ final class TouchpadWatcher {
       }
     }
     devices = []
-    activeBridge = nil
+    activeBridge.withLock { $0 = nil }
     bridge = nil
     symbols = nil
+    deviceList = nil
     isStarted = false
   }
 
@@ -191,8 +251,21 @@ final class TouchpadWatcher {
       }
     }
     devices = []
-    activeBridge = nil
+    activeBridge.withLock { $0 = nil }
+    deviceList = nil
     isStarted = false
+  }
+
+  /// 回调里那段拷贝抽出来给单测：缓冲区按框架的 96 字节步长，只读 identifier / state / normalized 位置
+  nonisolated static func touches(from data: UnsafeMutableRawPointer, count: Int) -> [TouchPoint] {
+    let fingers = data.assumingMemoryBound(to: MTFinger.self)
+    guard count > 0 else { return [] }
+    return (0..<count).map { index in
+      let finger = fingers[index]
+      return TouchPoint(
+        id: finger.identifier, x: Double(finger.normalizedX), y: Double(finger.normalizedY),
+        state: finger.state)
+    }
   }
 
   private func loadSymbols() -> (

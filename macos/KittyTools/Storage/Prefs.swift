@@ -220,6 +220,10 @@ enum Prefs {
   nonisolated static let launchpadColumns = "launchpadColumns"
   nonisolated static let launchpadRows = "launchpadRows"
   nonisolated static let launchpadLayout = "launchpadLayout"
+  /// 存过但读不出来的布局的原文（另存一份，出问题时还能捞回来；不注册默认值、不跟着导出）
+  nonisolated static let launchpadLayoutUnreadable = "launchpadLayoutUnreadable"
+  /// 上一次导入 / 恢复默认之前的布局（设置页和岛上的「撤销」用；不注册默认值、不跟着导出）
+  nonisolated static let launchpadUndoLayout = "launchpadUndoLayout"
   nonisolated static let launchpadColumnChoices = 5...10
   nonisolated static let launchpadRowChoices = 4...8
   /// 触控板捏合（默认开；系统的捏合还开着时我们认到也不打开，见 mac-launchpad §6）和灵敏度

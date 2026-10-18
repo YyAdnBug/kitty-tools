@@ -1,8 +1,10 @@
 // 启动台的界面（SPEC R1–R6）：压暗的桌面上一页图标，顶上搜索框，底下页点。图标按屏幕大小排成列 × 行；
-// 两指滑 / 滚轮翻页（跟手偏移由面板喂给 model）；方向键在格子间挪、到页边翻页；点图标打开 App；
-// 按住稍拖就拿起（跟手、别的图标让位、拖到边上翻页、拖到另一个图标上建文件夹），按住 1 秒或按着 ⌥ 进抖动模式
-// （App Store 装的出 ✕，确认后移到废纸篓）；文件夹在原地展开成一块面板（改名、内部分页、拖出 / 拖进）。
+// 两指滑 / 滚轮翻页（跟手 1:1、松手按位移和速度翻，F17）；方向键在格子间挪、到页边翻页；点图标打开 App；
+// 按住稍拖就拿起（跟手、别的图标让位、拖到边上翻页、停在另一个图标中心 0.4 秒才建文件夹，F1 / F3），
+// 按住 1 秒或按着 ⌥ 进抖动模式（App Store 装的出 ✕，确认后移到废纸篓）；文件夹在原地展开成一块面板
+// （7 列、按内容行数定高、改名、内部分页、拖出 / 拖进，F34）。
 // 一点空白处收起；Esc 逐层退（拖动 → 抖动 → 文件夹 → 搜索 → 收起）。减弱动态效果：不缩放、不跟手、不抖，翻页直接换。
+// 抖动用图层（每个图标的相位不同，不在每帧重排上百个视图，F35）。
 
 import AppKit
 import SwiftUI
@@ -10,6 +12,7 @@ import SwiftUI
 struct LaunchpadView: View {
   @Bindable var model: LaunchpadModel
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.colorSchemeContrast) private var contrast
   @State private var appeared = false
 
   /// 拖动、落点、格子位置都按这个命名坐标空间算（面板本地坐标）
@@ -36,14 +39,20 @@ struct LaunchpadView: View {
         dragGhost(metrics: metrics)
       }
       .coordinateSpace(name: Self.space)
-      .opacity(appeared ? 1 : 0)
-      .scaleEffect(appeared ? 1 : 1.06)
+      .opacity(appeared ? (model.isClosing ? 0 : 1) : 0)
+      .scaleEffect(scale)
+      .animation(openAnimation, value: appeared)
+      .animation(closingAnimation, value: model.isClosing)
       .onAppear {
-        withAnimation(
-          reduceMotion ? .easeOut(duration: Style.fadeIn) : Style.Motion.pop.animation()
-        ) {
-          appeared = true
-        }
+        withAnimation(openAnimation) { appeared = true }
+      }
+      .onChange(of: model.openFolderID) { _, id in
+        // 打开文件夹后焦点从背后的搜索框拿走：接着打字不该进搜索（F34）
+        if id != nil { NSApp.keyWindow?.makeFirstResponder(nil) }
+      }
+      .onChange(of: model.jiggling) { _, jiggling in
+        guard jiggling else { return }
+        NSApp.keyWindow?.makeFirstResponder(nil)
       }
     }
     .confirmationDialog(
@@ -54,12 +63,26 @@ struct LaunchpadView: View {
         if !$0 { model.deleteCandidate = nil }
       }
     ) {
-      Button("移到废纸篓", role: .destructive) { model.confirmDelete() }
+      Button("删除", role: .destructive) { model.confirmDelete() }
       Button("取消", role: .cancel) { model.deleteCandidate = nil }
     } message: {
-      Text("这个 App 会被移到废纸篓，以后要再装得去 App Store 里找。")
+      Text("这个 App 会被移到废纸篓。")
     }
   }
+
+  private var scale: CGFloat {
+    if reduceMotion { return 1 }
+    if model.isClosing { return 0.97 }
+    return appeared ? 1 : 1.1
+  }
+
+  private var openAnimation: Animation {
+    reduceMotion
+      ? .easeOut(duration: Style.fadeIn)
+      : (Style.Motion.pop.animation() ?? .easeOut(duration: 0.32))
+  }
+
+  private var closingAnimation: Animation { .easeOut(duration: Style.fadeIn) }
 
   private var background: some View {
     Color.black.opacity(0.30)
@@ -81,6 +104,7 @@ struct LaunchpadView: View {
         .accessibilityHidden(true)
       CommandTextField(
         text: $model.query, placeholder: "搜索", fontSize: 15,
+        textColor: .white, placeholderColor: .white.withAlphaComponent(0.45),
         onCommand: { selector in
           switch selector {
           case #selector(NSResponder.moveLeft(_:)):
@@ -111,14 +135,15 @@ struct LaunchpadView: View {
     .padding(.horizontal, 12)
     .frame(width: 280, height: 32)
     .background(
-      RoundedRectangle(cornerRadius: 9, style: .continuous)
+      RoundedRectangle(cornerRadius: Style.Radius.launchpadSearch, style: .continuous)
         .fill(.black.opacity(0.28))
     )
     .overlay {
-      RoundedRectangle(cornerRadius: 9, style: .continuous)
-        .stroke(.white.opacity(0.16), lineWidth: 0.5)
+      RoundedRectangle(cornerRadius: Style.Radius.launchpadSearch, style: .continuous)
+        .stroke(.white.opacity(0.16), lineWidth: Style.hairlineWidth(contrast))
     }
     .accessibilityElement(children: .contain)
+    .accessibilityLabel("搜索")
   }
 
   // MARK: 网格
@@ -141,13 +166,13 @@ struct LaunchpadView: View {
     .frame(width: size.width, alignment: .leading)
     .clipped()
     .animation(reduceMotion ? nil : Style.Motion.glide.animation(), value: model.page)
-    .animation(reduceMotion ? nil : Style.Motion.instant.animation(), value: model.pageOffset)
     .accessibilityElement(children: .contain)
     .accessibilityLabel(model.isSearching ? "搜索结果" : "第 \(model.page + 1) 页")
   }
 
   private func pageGrid(_ pageIndex: Int, metrics: LaunchpadMetrics) -> some View {
     let slots = model.previewTiles(page: pageIndex)
+    let gap = model.gapIndex(page: pageIndex)
     return VStack(spacing: 0) {
       ForEach(0..<model.rows, id: \.self) { row in
         HStack(spacing: 0) {
@@ -156,7 +181,7 @@ struct LaunchpadView: View {
             ZStack {
               if let tile = slots[safe: index] ?? nil {
                 tileCell(tile, index: index, metrics: metrics, iconSize: metrics.icon)
-              } else if model.drag?.targetIndex == index, model.page == pageIndex {
+              } else if gap == index {
                 placeholder(metrics: metrics)
               } else {
                 Color.clear
@@ -168,11 +193,11 @@ struct LaunchpadView: View {
       }
     }
     .frame(width: metrics.gridWidth, height: metrics.gridHeight)
-    .animation(reduceMotion ? nil : Style.Motion.settle.animation(), value: model.drag?.targetIndex)
+    .animation(reduceMotion ? nil : Style.Motion.settle.animation(), value: gap)
   }
 
   private func placeholder(metrics: LaunchpadMetrics) -> some View {
-    RoundedRectangle(cornerRadius: 22, style: .continuous)
+    RoundedRectangle(cornerRadius: Style.Radius.launchpadIcon, style: .continuous)
       .fill(.white.opacity(0.10))
       .frame(width: metrics.icon * 1.22, height: metrics.icon * 1.22)
       .accessibilityHidden(true)
@@ -183,12 +208,14 @@ struct LaunchpadView: View {
   ) -> some View {
     let selected = model.selected == index
     let isDragged = model.drag?.tileID == tile.id && model.drag?.isDragging == true
+    let pressed = model.pressedTileID == tile.id
+    let combined = model.drag?.combineTileID == tile.id
     return VStack(spacing: 7) {
       ZStack {
-        RoundedRectangle(cornerRadius: 22, style: .continuous)
-          .fill(.white.opacity(selected ? 0.16 : 0.001))
+        RoundedRectangle(cornerRadius: Style.Radius.launchpadIcon, style: .continuous)
+          .fill(.white.opacity(selected ? (contrast == .increased ? 0.22 : 0.16) : 0.001))
           .frame(width: iconSize * 1.22, height: iconSize * 1.22)
-        icon(for: tile, size: iconSize)
+        icon(for: tile, size: iconSize, phase: Double(index % 7) / 7)
       }
       .overlay(alignment: .topLeading) {
         if model.jiggling, let app = tile.app.flatMap({ model.app($0) }),
@@ -205,19 +232,18 @@ struct LaunchpadView: View {
         .frame(width: metrics.labelWidth)
         .shadow(color: .black.opacity(0.35), radius: 1.5, y: 0.5)
     }
-    .frame(width: metrics.cellWidth, height: metrics.cellHeight)
     .contentShape(Rectangle())
-    .opacity(isDragged ? 0.25 : 1)
-    .rotationEffect(.degrees(wobble(index: index)))
-    .animation(
-      model.jiggling && !reduceMotion
-        ? .easeInOut(duration: 0.13).repeatForever(autoreverses: true) : nil,
-      value: model.jiggling
+    .frame(width: metrics.cellWidth, height: metrics.cellHeight)
+    .opacity(isDragged ? 0.25 : (pressed ? 0.82 : 1))
+    .scaleEffect(
+      reduceMotion ? 1 : (pressed ? 0.94 : (combined ? 1.06 : 1))
     )
+    .animation(Style.Motion.snap.animation(), value: pressed)
+    .animation(Style.Motion.snap.animation(), value: combined)
     .gesture(
       DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.space))
         .onChanged { value in
-          guard !model.isSearching else { return }
+          // 搜索时也记下按下：单击打开结果，但不许拖（F5）
           if model.drag == nil {
             model.beginDrag(
               tile: tile, appID: tile.app?.id, folder: nil, at: value.startLocation)
@@ -227,14 +253,11 @@ struct LaunchpadView: View {
         .onEnded { _ in model.endDrag() }
     )
     .help(model.title(of: tile))
+    .accessibilityElement(children: .contain)
     .accessibilityLabel(model.title(of: tile))
     .accessibilityHint(tile.folder == nil ? "打开" : "打开文件夹")
-  }
-
-  /// 抖动的相位：相邻的图标反着晃
-  private func wobble(index: Int) -> Double {
-    guard model.jiggling, !reduceMotion else { return 0 }
-    return index.isMultiple(of: 2) ? 1.5 : -1.5
+    .accessibilityAddTraits(.isButton)
+    .accessibilityAction { model.open(tile) }
   }
 
   private func deleteBadge(_ app: LaunchpadProjectApp, size: CGFloat) -> some View {
@@ -253,20 +276,22 @@ struct LaunchpadView: View {
   }
 
   @ViewBuilder
-  private func icon(for tile: LaunchpadTile, size: CGFloat) -> some View {
+  private func icon(for tile: LaunchpadTile, size: CGFloat, phase: Double = 0) -> some View {
     switch tile {
     case .app(let ref):
       if let app = model.app(ref) {
-        Image(nsImage: model.icons.icon(for: app, size: size))
-          .resizable()
-          .interpolation(.high)
-          .frame(width: size, height: size)
-          .accessibilityHidden(true)
+        JigglingIcon(
+          image: model.icons.icon(for: app, size: size), size: size,
+          active: model.jiggling, phase: phase, reduceMotion: reduceMotion
+        )
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
       } else {
         placeholderIcon(size: size)
       }
     case .folder(let folder):
-      FolderGlyph(folder: folder, model: model, size: size)
+      // 文件夹方块比 App 图标小一圈：App 图标那张图自己带留白（F34）
+      FolderGlyph(folder: folder, model: model, size: size * 0.8, phase: phase)
     }
   }
 
@@ -306,8 +331,6 @@ struct LaunchpadView: View {
       .onTapGesture(perform: action)
   }
 
-  // MARK: 文件夹（R4）
-
   // MARK: 拖动时跟着鼠标的那一份
 
   @ViewBuilder
@@ -339,17 +362,71 @@ struct LaunchpadView: View {
   }
 }
 
-/// 文件夹图标（batch 2 打开文件夹、batch 3 导入都会用到）：一块半透明圆角底，里面按 3 × 3 画前 9 个 App 的小图标。
-/// 文件夹里一个都没有时画一个系统的文件夹符号（导入的脏数据兜底）。
+/// App 图标：抖动时用图层转 ±1.5°（每个图标相位不同）。不走 SwiftUI 的 rotationEffect + repeatForever，
+/// 那会让上百个视图每帧重排（F35 / R11）。
+private struct JigglingIcon: NSViewRepresentable {
+  let image: NSImage
+  let size: CGFloat
+  let active: Bool
+  let phase: Double
+  let reduceMotion: Bool
+
+  func makeNSView(context: Context) -> NSImageView {
+    let view = NSImageView()
+    view.imageScaling = .scaleProportionallyUpOrDown
+    view.wantsLayer = true
+    return view
+  }
+
+  func updateNSView(_ view: NSImageView, context: Context) {
+    view.image = image
+    view.frame = CGRect(origin: .zero, size: CGSize(width: size, height: size))
+    guard let layer = view.layer else { return }
+    layer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+    layer.bounds = CGRect(origin: .zero, size: CGSize(width: size, height: size))
+    if active, !reduceMotion {
+      if layer.animation(forKey: "launchpad-jiggle") == nil {
+        let animation = CABasicAnimation(keyPath: "transform.rotation.z")
+        animation.fromValue = -1.5 * Double.pi / 180
+        animation.toValue = 1.5 * Double.pi / 180
+        animation.duration = 0.13
+        animation.autoreverses = true
+        animation.repeatCount = .infinity
+        animation.timeOffset = phase * 0.26
+        animation.isRemovedOnCompletion = false
+        layer.add(animation, forKey: "launchpad-jiggle")
+      }
+    } else {
+      layer.removeAnimation(forKey: "launchpad-jiggle")
+    }
+  }
+}
+
+/// 文件夹图标：一块半透明圆角底，里面按 3 × 3 画前 9 个 App 的小图标。文件夹里一个都没有时画系统的文件夹符号。
+/// 抖动用 TimelineView（只有文件夹这一种视图，数量少；App 图标走图层）。
 private struct FolderGlyph: View {
   let folder: LaunchpadFolder
   let model: LaunchpadModel
   let size: CGFloat
+  let phase: Double
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
+    TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !(model.jiggling && !reduceMotion)))
+    {
+      context in
+      let angle =
+        model.jiggling && !reduceMotion
+        ? sin((context.date.timeIntervalSinceReferenceDate + phase) * 2 * .pi / 0.26) * 1.5 : 0
+      glyph.rotationEffect(.degrees(angle))
+    }
+    .accessibilityHidden(true)
+  }
+
+  private var glyph: some View {
     let mini = size * 0.255
     let apps = folder.apps.prefix(9).compactMap { model.app($0) }
-    RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)
+    return RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)
       .fill(.white.opacity(0.14))
       .overlay {
         if apps.isEmpty {
@@ -377,51 +454,66 @@ private struct FolderGlyph: View {
         }
       }
       .frame(width: size, height: size)
-      .accessibilityHidden(true)
   }
 }
 
-/// 打开的文件夹：背景再压暗，中间一块面板，标题能改名（回车确认），里面 3 × 3 一页、能分页，
-/// 把图标拖出面板就回主网格。
+/// 打开的文件夹：背景再压暗，一块面板从文件夹那一格的位置展开，7 列、按内容行数定高；
+/// 标题能改名（回车 / 失焦确认），里面能分页（两指滑 / 圆点），把图标拖出面板就回主网格（F34）。
 private struct FolderOverlay: View {
   @Bindable var model: LaunchpadModel
   let metrics: LaunchpadMetrics
   let space: String
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.colorSchemeContrast) private var contrast
+  @FocusState private var editingName: Bool
 
   var body: some View {
-    let iconSize = min(metrics.icon * 0.8, 84)
-    let cell = iconSize * 1.55
-    let width = cell * 3 + 52
-    let height = cell * 3 + 108
+    let cell = min(metrics.icon * 0.72, 76)
+    let columns = LaunchpadLayout.folderColumns
+    let rows = model.folderRows
+    let gridWidth = cell * CGFloat(columns)
+    let gridHeight = cell * CGFloat(rows)
+    let width = gridWidth + 52
+    let height = gridHeight + 116
     ZStack {
       Color.black.opacity(0.34)
         .ignoresSafeArea()
         .contentShape(Rectangle())
-        .onTapGesture { model.closeFolder() }
-      VStack(spacing: 12) {
+        .onTapGesture {
+          // 点空白：先提交改名（点别处 = 失焦提交，F34），再收起
+          commitName()
+          model.closeFolder()
+        }
+      VStack(spacing: 10) {
         TextField("文件夹名字", text: $model.folderNameDraft)
           .textFieldStyle(.plain)
           .font(.system(size: 17, weight: .semibold))
           .foregroundStyle(.white.opacity(0.96))
           .multilineTextAlignment(.center)
-          .frame(width: cell * 3)
-          .onSubmit {
-            if let id = model.openFolderID { model.renameFolder(id, to: model.folderNameDraft) }
+          .focused($editingName)
+          .frame(width: gridWidth)
+          .onSubmit { commitName() }
+          .onChange(of: editingName) { _, focused in
+            if !focused { commitName() }
           }
-        grid(iconSize: iconSize, cell: cell)
+          .onExitCommand {
+            commitName()
+            model.closeFolder()
+          }
+        grid(cell: cell, columns: columns, rows: rows)
         folderDots
       }
       .padding(26)
       .frame(width: width, height: height)
       .background(
-        RoundedRectangle(cornerRadius: 26, style: .continuous)
+        RoundedRectangle(cornerRadius: Style.Radius.launchpadFolder, style: .continuous)
           .fill(.black.opacity(0.32))
       )
       .overlay {
-        RoundedRectangle(cornerRadius: 26, style: .continuous)
-          .stroke(.white.opacity(0.14), lineWidth: 0.5)
+        RoundedRectangle(cornerRadius: Style.Radius.launchpadFolder, style: .continuous)
+          .stroke(.white.opacity(0.14), lineWidth: Style.hairlineWidth(contrast))
       }
+      .position(clampedAnchor(width: width, height: height))
       .onGeometryChange(for: CGRect.self) { proxy in
         proxy.frame(in: .named(space))
       } action: { frame in
@@ -432,15 +524,43 @@ private struct FolderOverlay: View {
     .accessibilityLabel(model.openFolder?.name ?? "文件夹")
   }
 
-  private func grid(iconSize: CGFloat, cell: CGFloat) -> some View {
-    let apps = model.folderApps
+  /// 面板从文件夹那一格长出来；靠边时把面板收进屏里（别有一半在屏幕外，F34）
+  private func clampedAnchor(width: CGFloat, height: CGFloat) -> CGPoint {
+    let raw =
+      model.openFolderAnchor(metrics: metrics)
+      ?? CGPoint(x: metrics.size.width / 2, y: metrics.size.height / 2)
+    let inset: CGFloat = 12
+    let x = min(max(raw.x, width / 2 + inset), metrics.size.width - width / 2 - inset)
+    let y = min(max(raw.y, height / 2 + inset), metrics.size.height - height / 2 - inset)
+    return CGPoint(x: x, y: y)
+  }
+
+  private func grid(cell: CGFloat, columns: Int, rows: Int) -> some View {
+    let pages = model.openFolder?.pages ?? []
+    let gridWidth = cell * CGFloat(columns)
+    let gridHeight = cell * CGFloat(rows)
+    return HStack(spacing: 0) {
+      ForEach(pages.indices, id: \.self) { page in
+        folderPage(page, cell: cell, columns: columns, rows: rows)
+          .frame(width: gridWidth, height: gridHeight, alignment: .top)
+      }
+    }
+    .frame(width: gridWidth, height: gridHeight, alignment: .leading)
+    .offset(x: -CGFloat(model.folderPage) * gridWidth + model.folderPageOffset)
+    .frame(width: gridWidth, height: gridHeight, alignment: .leading)
+    .clipped()
+    .animation(reduceMotion ? nil : Style.Motion.glide.animation(), value: model.folderPage)
+  }
+
+  private func folderPage(_ page: Int, cell: CGFloat, columns: Int, rows: Int) -> some View {
+    let apps = model.openFolder?.pages[safe: page] ?? []
     return VStack(spacing: 0) {
-      ForEach(0..<3, id: \.self) { row in
+      ForEach(0..<rows, id: \.self) { row in
         HStack(spacing: 0) {
-          ForEach(0..<3, id: \.self) { column in
-            let index = row * 3 + column
+          ForEach(0..<columns, id: \.self) { column in
+            let index = row * columns + column
             if let ref = apps[safe: index], let app = model.app(ref) {
-              folderCell(app, ref: ref, index: index, iconSize: iconSize)
+              folderCell(app, ref: ref, index: index, iconSize: cell * 0.76)
                 .frame(width: cell, height: cell)
             } else {
               Color.clear.frame(width: cell, height: cell)
@@ -449,34 +569,42 @@ private struct FolderOverlay: View {
         }
       }
     }
-    .frame(width: cell * 3, height: cell * 3)
+    .frame(width: cell * CGFloat(columns), height: cell * CGFloat(rows))
   }
 
   private func folderCell(
     _ app: LaunchpadProjectApp, ref: LaunchpadAppRef, index: Int, iconSize: CGFloat
   ) -> some View {
     let selected = model.selected == index
-    return VStack(spacing: 6) {
+    let pressed =
+      model.pressedTileID == LaunchpadTile.app(ref).id
+    return VStack(spacing: 5) {
       ZStack {
-        RoundedRectangle(cornerRadius: 18, style: .continuous)
-          .fill(.white.opacity(selected ? 0.16 : 0.001))
+        RoundedRectangle(cornerRadius: Style.Radius.launchpadFolderIcon, style: .continuous)
+          .fill(.white.opacity(selected ? (contrast == .increased ? 0.22 : 0.16) : 0.001))
           .frame(width: iconSize * 1.2, height: iconSize * 1.2)
-        Image(nsImage: model.icons.icon(for: app, size: iconSize))
-          .resizable()
-          .interpolation(.high)
-          .frame(width: iconSize, height: iconSize)
+        JigglingIcon(
+          image: model.icons.icon(for: app, size: iconSize), size: iconSize,
+          active: model.jiggling, phase: Double(index % 7) / 7, reduceMotion: reduceMotion
+        )
+        .frame(width: iconSize, height: iconSize)
+      }
+      .overlay(alignment: .topLeading) {
+        if model.jiggling, LaunchpadCatalog.canDelete(app) {
+          deleteBadge(app, size: iconSize)
+        }
       }
       Text(app.name)
         .font(.system(size: 11))
         .foregroundStyle(.white.opacity(0.96))
         .lineLimit(1)
         .truncationMode(.middle)
-        .frame(width: iconSize + 28)
+        .frame(width: iconSize + 24)
     }
     .contentShape(Rectangle())
-    .rotationEffect(
-      .degrees(model.jiggling && !reduceMotion ? (index.isMultiple(of: 2) ? 1.5 : -1.5) : 0)
-    )
+    .opacity(pressed ? 0.82 : 1)
+    .scaleEffect(reduceMotion ? 1 : (pressed ? 0.94 : 1))
+    .animation(Style.Motion.snap.animation(), value: pressed)
     .gesture(
       DragGesture(minimumDistance: 0, coordinateSpace: .named(space))
         .onChanged { value in
@@ -488,8 +616,32 @@ private struct FolderOverlay: View {
         }
         .onEnded { _ in model.endDrag() }
     )
+    .accessibilityElement(children: .contain)
     .accessibilityLabel(app.name)
     .accessibilityHint("打开")
+    .accessibilityAddTraits(.isButton)
+    .accessibilityAction { model.open(app: ref) }
+  }
+
+  private func deleteBadge(_ app: LaunchpadProjectApp, size: CGFloat) -> some View {
+    Button {
+      model.requestDelete(app)
+    } label: {
+      Image(systemName: "xmark.circle.fill")
+        .font(.system(size: max(16, size * 0.3)))
+        .symbolRenderingMode(.palette)
+        .foregroundStyle(.white, .black.opacity(0.72))
+        .background(Circle().fill(.white.opacity(0.9)).padding(1))
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel("删除「\(app.name)」")
+  }
+
+  private func commitName() {
+    guard let id = model.openFolderID else { return }
+    if model.folderNameDraft != model.openFolder?.name {
+      model.renameFolder(id, to: model.folderNameDraft)
+    }
   }
 
   private var folderDots: some View {

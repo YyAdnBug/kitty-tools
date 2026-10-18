@@ -139,4 +139,33 @@ struct LaunchpadImportTests {
     #expect(path.hasPrefix("/"))
     #expect(path.hasSuffix("com.apple.dock.launchpad/db/db"))
   }
+  /// 两个根（ROOTPAGE 的 rowid 反而更大）、重复 App、只剩一个 App 的文件夹：用 ROOTPAGE 那棵、整理干净（F28）
+  @Test func picksRootPageAndSanitizesImportedRows() {
+    let local = [
+      LaunchpadImport.LocalApp(ref: ref("a", bundle: "com.example.a"), name: "Alpha"),
+      LaunchpadImport.LocalApp(ref: ref("b", bundle: "com.example.b"), name: "Beta"),
+    ]
+    let items: [LaunchpadImport.Item] = [
+      .init(id: 10, type: 1, parent: 0, ordering: 0, uuid: "ROOTPAGE"),
+      .init(id: 1, type: 1, parent: 0, ordering: 0, uuid: "ROOTPAGE_VERS"),
+      .init(id: 20, type: 3, parent: 10, ordering: 1),
+      .init(id: 2, type: 3, parent: 1, ordering: 1),
+      // ROOTPAGE 第 1 页：Alpha 两次（同一 bundle id）、一个只有 Alpha 的文件夹
+      .init(id: 21, type: 4, parent: 20, ordering: 1, bundleID: "com.example.a", title: "Alpha"),
+      .init(
+        id: 22, type: 4, parent: 20, ordering: 2, bundleID: "com.example.a", title: "Alpha again"),
+      .init(id: 23, type: 2, parent: 20, ordering: 3, groupTitle: "只有一个"),
+      .init(id: 24, type: 3, parent: 23, ordering: 1),
+      .init(id: 25, type: 4, parent: 24, ordering: 1, bundleID: "com.example.a", title: "Alpha"),
+      // ROOTPAGE_VERS：不能取到这棵树
+      .init(id: 3, type: 4, parent: 2, ordering: 1, bundleID: "com.example.b", title: "Beta"),
+    ]
+    let result = LaunchpadImport.layout(items: items, local: local, capacity: 35)
+    #expect(result.layout.pages.count == 1)
+    #expect(result.layout.pages[0].count == 1)
+    #expect(result.layout.pages[0][0].app?.id == local[0].ref.id)
+    #expect(!result.layout.apps.contains { $0.id == local[1].ref.id })
+    #expect(result.layout.tiles.allSatisfy { $0.folder == nil })
+  }
+
 }

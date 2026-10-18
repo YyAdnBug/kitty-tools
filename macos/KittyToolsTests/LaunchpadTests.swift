@@ -55,7 +55,8 @@ struct LaunchpadTests {
     let pages = LaunchpadLayout.paginate(tiles, capacity: 4)
     #expect(pages.map(\.count) == [4, 4, 2])
     let folder = LaunchpadLayout.paginateFolder(refs)
-    #expect(folder.map(\.count) == [9, 1])
+    // macOS 15 的文件夹一页是 7 × 5 = 35 个（F10：本机旧库里有一个 35 个的文件夹页）
+    #expect(folder.map(\.count) == [10])
     #expect(LaunchpadLayout.paginate([], capacity: 4).isEmpty)
     #expect(
       LaunchpadLayout.paginate(tiles, capacity: 0).map(\.count) == [1, 1, 1, 1, 1, 1, 1, 1, 1, 1])
@@ -119,16 +120,24 @@ struct LaunchpadTests {
   @Test func movingWithinPageAndAcrossPages() {
     let refs = (0..<5).map { ref("A\($0)") }
     let layout = LaunchpadLayout(pages: [[.app(refs[0]), .app(refs[1])], [.app(refs[2])]])
-    // 把第 0 页第 2 格挪到第 0 页最前
+    // 把第 0 页第 2 格挪到第 0 页最前（slot 是拿掉这一格之后的下标，F2）
     let moved = layout.moving(LaunchpadTile.app(refs[1]).id, toPage: 0, slot: 0, capacity: 2)
     #expect(moved.tiles.map { $0.app?.id } == [refs[1].id, refs[0].id, refs[2].id])
-    // 挪到第 1 页末尾：容量 2 放不下，挤出来的顺到下一页开头
+    // 挪到第 1 页末尾：容量 2 放得下，页边界不往前补
     let pushed = layout.moving(LaunchpadTile.app(refs[0]).id, toPage: 1, slot: 1, capacity: 2)
-    #expect(pushed.pages.map(\.count) == [2, 1])
+    #expect(pushed.pages.map(\.count) == [1, 2])
     #expect(pushed.tiles.map { $0.app?.id } == [refs[1].id, refs[2].id, refs[0].id])
     // 按整份下标挪
     let flat = layout.moving(LaunchpadTile.app(refs[2]).id, toFlatIndex: 0, capacity: 4)
     #expect(flat.tiles.map { $0.app?.id } == [refs[2].id, refs[0].id, refs[1].id])
+    // 满的一页往里插：多出来的那个推到下一页开头，只往后不往前
+    let full = LaunchpadLayout(pages: [
+      [.app(refs[0]), .app(refs[1])], [.app(refs[2]), .app(refs[3])],
+    ])
+    let overflow = full.moving(LaunchpadTile.app(refs[2]).id, toPage: 0, slot: 0, capacity: 2)
+    #expect(overflow.pages.map(\.count) == [2, 2])
+    #expect(overflow.pages[0].map { $0.app?.id } == [refs[2].id, refs[0].id])
+    #expect(overflow.pages[1].map { $0.app?.id } == [refs[1].id, refs[3].id])
   }
 
   // MARK: 文件夹

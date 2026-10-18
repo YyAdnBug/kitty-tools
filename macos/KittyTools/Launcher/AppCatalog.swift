@@ -12,17 +12,18 @@
 // 图标是系统设置 App 的，↩ 跳到那一页，记使用照网址的来。
 
 import AppKit
+import Synchronization
 
 enum AppCatalog {
-  static let directories = [
+  nonisolated static let directories = [
     "/Applications", "/Applications/Utilities", "/System/Applications",
     "/System/Applications/Utilities", "/System/Cryptexes/App/System/Applications",
     NSHomeDirectory() + "/Applications",
   ]
 
-  static let extraApps = ["/System/Library/CoreServices/Finder.app"]
+  nonisolated static let extraApps = ["/System/Library/CoreServices/Finder.app"]
 
-  static func scan() -> [LauncherItem] {
+  nonisolated static func scan() -> [LauncherItem] {
     var seen = Set<String>()
     var items: [LauncherItem] = []
     let fileManager = FileManager.default
@@ -52,7 +53,7 @@ enum AppCatalog {
     return items + panes()
   }
 
-  static func item(path: String) -> LauncherItem {
+  nonisolated static func item(path: String) -> LauncherItem {
     let fileName = ((path as NSString).lastPathComponent as NSString).deletingPathExtension
     // 访达开着「显示所有扩展名」时 displayName 带 .app
     var display = FileManager.default.displayName(atPath: path)
@@ -74,7 +75,7 @@ enum AppCatalog {
   }
 
   /// App 不在标准目录（应用程序目录及其一层子文件夹、访达所在处）时的位置（~ 缩写的父目录）；在标准目录里是空的
-  static func location(of path: String) -> String {
+  nonisolated static func location(of path: String) -> String {
     let parent = (path as NSString).deletingLastPathComponent
     let standard = directories + extraApps.map { ($0 as NSString).deletingLastPathComponent }
     guard !standard.contains(parent),
@@ -85,7 +86,7 @@ enum AppCatalog {
 
   /// 各应用程序目录的修改时间（只 stat，微秒级）：往目录里放进、删掉 .app 都会改它。
   /// 子文件夹里升级、改名不改顶层的，由 LauncherModel 的 5 分钟兜底重扫接住
-  static func signature(of directories: [String] = directories) -> [Date?] {
+  nonisolated static func signature(of directories: [String] = directories) -> [Date?] {
     directories.map {
       (try? FileManager.default.attributesOfItem(atPath: $0))?[.modificationDate] as? Date
     }
@@ -93,7 +94,7 @@ enum AppCatalog {
 
   /// 简体中文显示名：系统 App 在 InfoPlist.loctable（表里混着非字符串的项，要逐个取），
   /// 第三方 App 在 zh_CN / zh-Hans.lproj/InfoPlist.strings
-  static func chineseName(_ bundle: URL) -> String? {
+  nonisolated static func chineseName(_ bundle: URL) -> String? {
     let resources = bundle.appending(path: "Contents/Resources")
     let keys = ["zh_CN", "zh-Hans", "zh_Hans", "zh-CN"]
     if let data = try? Data(contentsOf: resources.appending(path: "InfoPlist.loctable")),
@@ -121,13 +122,13 @@ enum AppCatalog {
 
   // MARK: 系统设置面板（体检 D9）
 
-  static let settingsDirectory = "/System/Library/ExtensionKit/Extensions"
-  static let settingsScheme = "x-apple.systempreferences:"
-  static let systemSettingsPath = "/System/Applications/System Settings.app"
+  nonisolated static let settingsDirectory = "/System/Library/ExtensionKit/Extensions"
+  nonisolated static let settingsScheme = "x-apple.systempreferences:"
+  nonisolated static let systemSettingsPath = "/System/Applications/System Settings.app"
 
   /// 只在特定情况下才出现的面板（跟进事项、连着耳机时、课程进度、接了游戏控制器、有光驱）：平时打开是空的，不列。
   /// ponytail: 按名单排除，系统加了新的这类面板顶多多一行；要准就得照 Info.plist 的 representations 谓词判断
-  static let conditionalPanes: Set<String> = [
+  nonisolated static let conditionalPanes: Set<String> = [
     "com.apple.FollowUpSettings.FollowUpSettingsExtension", "com.apple.HeadphoneSettings",
     "com.apple.ClassKit-Settings.extension", "com.apple.Game-Controller-Settings.extension",
     "com.apple.CD-DVD-Settings.extension",
@@ -135,31 +136,42 @@ enum AppCatalog {
 
   /// 是扫出来的面板（按目录认，不按网址开头：用户自己建的 x-apple.systempreferences: 快捷链接、直接输入打开过的
   /// 这类网址仍是普通网址，能复制、收藏还原得出来）
-  static func isSettingsPane(_ target: String) -> Bool {
-    paneCache?.targets.contains(target) == true
+  nonisolated static func isSettingsPane(_ target: String) -> Bool {
+    paneCache.withLock { $0?.targets.contains(target) == true }
   }
 
   /// 面板只在系统更新时变：按目录的修改时间缓存，App 目录重扫时不跟着重读（50 个 .appex 的字符串表，
   /// Debug 构建实测约 57 ms）
-  private static var paneCache: (modified: Date?, items: [LauncherItem], targets: Set<String>)?
+  nonisolated private struct PaneCache: Sendable {
+    let modified: Date?
+    let items: [LauncherItem]
+    let targets: Set<String>
+  }
+
+  /// 后台扫目录和启动器的重扫可能同时走到这里：用锁护住缓存（F31）
+  nonisolated private static let paneCache = Mutex<PaneCache?>(nil)
 
   /// 系统设置面板（缓存的）；单测、截图自检也走这里，isSettingsPane 才认得它们
-  static func panes() -> [LauncherItem] {
+  nonisolated static func panes() -> [LauncherItem] {
     let modified = signature(of: [settingsDirectory]).first ?? nil
-    if let paneCache, paneCache.modified == modified { return paneCache.items }
+    if let cached = paneCache.withLock({ $0 }), cached.modified == modified {
+      return cached.items
+    }
     let items = settingsPanes()
-    paneCache = (modified, items, Set(items.map(\.target)))
+    let cache = PaneCache(modified: modified, items: items, targets: Set(items.map(\.target)))
+    paneCache.withLock { $0 = cache }
     return items
   }
 
-  static func settingsPanes(in directory: String = settingsDirectory) -> [LauncherItem] {
+  nonisolated static func settingsPanes(in directory: String = settingsDirectory) -> [LauncherItem]
+  {
     let names = (try? FileManager.default.contentsOfDirectory(atPath: directory)) ?? []
     return names.filter { $0.hasSuffix(".appex") }.sorted()
       .compactMap { settingsPane(URL(filePath: directory + "/" + $0)) }
   }
 
   /// 一个 .appex：是系统设置面板、能用网址打开、有中文名才算
-  static func settingsPane(_ bundle: URL) -> LauncherItem? {
+  nonisolated static func settingsPane(_ bundle: URL) -> LauncherItem? {
     let contents = bundle.appending(path: "Contents")
     guard let data = try? Data(contentsOf: contents.appending(path: "Info.plist")),
       let info = try? PropertyListSerialization.propertyList(from: data, format: nil)
@@ -199,7 +211,7 @@ enum AppCatalog {
   }
 
   /// .loctable：各语言的字符串表合在一个 plist 里（语言 → 键 → 字符串），读一次查多个键
-  private static func loctable(_ url: URL) -> [String: [String: Any]] {
+  private nonisolated static func loctable(_ url: URL) -> [String: [String: Any]] {
     guard let data = try? Data(contentsOf: url),
       let table = try? PropertyListSerialization.propertyList(from: data, format: nil)
         as? [String: Any]
@@ -209,7 +221,7 @@ enum AppCatalog {
 
   /// 含汉字才转：「活动监视器」→ (huodongjianshiqi, hdjsq)；夹着的英文词原样保留。
   /// ponytail: 多音字取系统默认读音，偶尔会错（如「行」），真碰到再加别名
-  static func pinyin(_ text: String) -> (full: String, initials: String)? {
+  nonisolated static func pinyin(_ text: String) -> (full: String, initials: String)? {
     guard text.contains(/\p{Han}/),
       let latin = text.applyingTransform(.mandarinToLatin, reverse: false)?
         .applyingTransform(.stripDiacritics, reverse: false)
