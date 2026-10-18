@@ -31,7 +31,8 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
   文件夹面板的位置按算式（`folderPanelRect`），不量（长出来的那一下量到的是缩着的框）。
 - 网格和文件夹里的图标**按格子的 id** 建（`PlacedTile`，`.position` 摆到第几格），不按位置建：落点一变让位的图标才会滑过去。
   按住的手势挂在每个图标上（只管按下），被拿起、被拆掉都没关系，挪和松手看下一条。主网格的图标一直是 `JigglingIcon`（NSImageView、
-  图层抖动），文件夹面板里一直是 SwiftUI 的 `AppIconView`（面板能压成一张图）；**哪边都不许在两种视图之间换**（换的那一下淡出淡入，进出编辑会闪）。
+  图层抖动），文件夹面板里平时是 SwiftUI 的 Image、抖动时换成 `JigglingIcon`（`AppIconView`）：**两种视图之间换必须不带动画**
+  （带着进抖动的动画换会淡出淡入，进出编辑闪一下；改了这里跑屏上实录自检）。
   量图标位置的单测：主网格量 NSImageView，文件夹里按像素看。屏外的 `cacheDisplay` 画不出动画中途的变换和离场视图的层次，
   要看真动画只能屏上录（ScreenCaptureKit 只录那一个窗口；屏外窗口录不到，报 -3811），先问用户：按需的 `LaunchpadAnimationLiveTests`
   （`TEST_RUNNER_KITTY_LIVE_LAUNCHPAD_ANIM=<目录>`，命令在 AGENTS.md）录开关文件夹、进出抖动、让位，查开关有中间帧、进出抖动不闪。

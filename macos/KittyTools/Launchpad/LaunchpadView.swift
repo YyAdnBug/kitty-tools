@@ -611,9 +611,10 @@ private struct JigglingIcon: NSViewRepresentable {
   }
 }
 
-/// 文件夹面板里的 App 图标：一直是 SwiftUI 的 Image（建得快；面板能整块压成一张图缩放），抖动也在它身上做（`Jiggle`）。
-/// 主网格那边一直是 `JigglingIcon`。两边都不在两种视图之间换：原来抖动时 Image 换成 AppKit 的图层视图，进出编辑那一下每个图标
-/// 都淡出淡入一次，看着闪（2026-10-18 真机反馈）。SwiftUI 的抖动 35 个约占 17% 主线程（图层的几乎为 0），所以只用在文件夹里
+/// 文件夹面板里的 App 图标：平时是 SwiftUI 的 Image（建得快：35 个的文件夹展开第一帧约 30 ms，全用 NSImageView 约 50 ms），
+/// 抖动时换成图层抖动的 `JigglingIcon`（35 个主线程约 7%；SwiftUI 自己的 repeatForever 要 18–24%）。**换的时候不带动画**
+/// （`.transition(.identity)` + 事务里去掉动画）：原来这一换跟着进抖动的动画淡出淡入，每个图标发白一下，看着闪（2026-10-18 真机反馈）；
+/// 不带动画就不闪，屏上实录自检量过（LaunchpadAnimationLiveTests：和静止时最多差约 0.02，带动画的那版约 0.07）。主网格一直是 `JigglingIcon`
 private struct AppIconView: View {
   let image: NSImage
   let size: CGFloat
@@ -622,10 +623,17 @@ private struct AppIconView: View {
   let reduceMotion: Bool
 
   var body: some View {
-    Image(nsImage: image)
-      .resizable()
-      .interpolation(.high)
-      .modifier(Jiggle(active: jiggling && !reduceMotion, phase: phase))
+    Group {
+      if jiggling, !reduceMotion {
+        JigglingIcon(image: image, size: size, active: true, phase: phase, reduceMotion: false)
+      } else {
+        Image(nsImage: image)
+          .resizable()
+          .interpolation(.high)
+      }
+    }
+    .transition(.identity)
+    .transaction { $0.animation = nil }
   }
 }
 
@@ -769,9 +777,6 @@ private struct FolderOverlay: View {
         folderDots
       }
       .padding(LaunchpadMetrics.folderPadding)
-      // 里面压成一张图：淡入淡出只动这一张，不是三十几个带阴影的名字一帧帧重画（2026-10-18 真机反馈「图标多的文件夹展开卡」）。
-      // 里面全是 SwiftUI 画的（抖动也是），压得进去
-      .drawingGroup()
     }
     .position(x: metrics.size.width / 2, y: metrics.size.height / 2)
     .accessibilityElement(children: .contain)

@@ -2,7 +2,7 @@
 // 640 × 400 的窗口约 5 秒**——放在所有窗口后面、不当 key、不动鼠标键盘，跑之前先跟用户说一声）。
 // 为什么要它：屏外的 cacheDisplay 画不出动画中途的变换和离场视图的层次，屏外窗口 ScreenCaptureKit 也录不到（-3811）——
 // 2026-10-18「关文件夹没有动画」「进出编辑一闪」两个问题屏外单测都看不出，是这样屏上逐帧录出来的。
-// 录：打开文件夹、点空白关上、进抖动、退抖动、拖着让位，每一段一串 PNG 写进目录，report.md 记每帧的变化量。
+// 录：打开文件夹、点空白关上、进抖动、退抖动、拖着让位、文件夹开着时进出抖动，每一段一串 PNG 写进目录，report.md 记每帧的变化量。
 // 查两件：文件夹开 / 关都有中间帧（不是一下子出现 / 没了）；进出抖动时网格那块的平均亮度不跳（原来换视图那一下图标发白）。
 //   TEST_RUNNER_KITTY_LIVE_LAUNCHPAD_ANIM=/tmp/kitty-launchpad-anim xcodebuild … test \
 //     -only-testing:'KittyToolsTests/LaunchpadAnimationLiveTests/recordAnimations()'
@@ -208,6 +208,22 @@ struct LaunchpadAnimationLiveTests {
     model.updateDrag(location: CGPoint(x: edge.minX + 4, y: edge.midY), pageWidth: size.width)
     _ = await burst("7-reflow", ms: 500)
     model.cancelDrag()
+    // 文件夹开着时进出抖动：文件夹里的图标平时是 SwiftUI 画的，抖动时换成图层视图——换的那一下不许闪
+    model.exitJiggle()
+    model.openFolder(folder.id)
+    try? await Task.sleep(for: .milliseconds(600))
+    let folderStill = await burst("8-folder-still", ms: 1)
+    model.enterJiggle()
+    let folderEntering = await burst("9-folder-enter-jiggle", ms: 400)
+    try? await Task.sleep(for: .milliseconds(300))
+    model.exitJiggle()
+    let folderLeaving = await burst("10-folder-exit-jiggle", ms: 400)
+    let folderSquares = (0..<6).map { index in
+      let center = model.folderCellCenter(index)
+      return CGRect(
+        x: center.x - inner / 2, y: center.y - LaunchpadMetrics.iconLift - inner / 2, width: inner,
+        height: inner)
+    }
 
     let first = try #require(closed.first)
     let openFrame = try #require(open.first)
@@ -216,14 +232,22 @@ struct LaunchpadAnimationLiveTests {
     let shut = middleFrames(closing, before: openFrame, after: backFrame)
     let jumps = (entering + leaving).map { $0.difference(backFrame, in: squares, scale: 2) }
     let worstJump = jumps.max() ?? 0
+    let folderBase = try #require(folderStill.first)
+    let folderJumps = (folderEntering + folderLeaving).map {
+      $0.difference(folderBase, in: folderSquares, scale: 2)
+    }
+    let worstFolderJump = folderJumps.max() ?? 0
     report += [
       "", "- 打开的中间帧：\(opened)", "- 关上的中间帧：\(shut)",
       "- 进出抖动时图标里面和静止时最多差 \(String(format: "%.4f", worstJump))",
+      "- 文件夹开着时进出抖动，文件夹里的图标和静止时最多差 \(String(format: "%.4f", worstFolderJump))",
     ]
     try report.joined(separator: "\n").write(
       toFile: "\(out)/report.md", atomically: true, encoding: .utf8)
     #expect(opened >= 1, "打开文件夹没有中间帧")
     #expect(shut >= 1, "关文件夹没有中间帧（面板一下子没了，或画到了网格后面）")
     #expect(worstJump < Self.flashLimit, "进出抖动时图标闪了一下（和静止时差 \(worstJump)）")
+    #expect(
+      worstFolderJump < Self.flashLimit, "文件夹里进出抖动时图标闪了一下（和静止时差 \(worstFolderJump)）")
   }
 }
