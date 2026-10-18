@@ -90,6 +90,8 @@ final class NoteDeck: NSObject {
   /// 打开的便签要浮到屏幕上了（NoteEdge 接到 NoteFloat）：从操作菜单（不靠拖）；被拖出来、过了阈值（鼠标在哪）
   var onFloat: (String, NoteFloat.Origin) -> Void = { _, _ in }
   var onDetach: (String, NoteFloat.Origin, CGPoint) -> Void = { _, _, _ in }
+  /// 收起了（面板收走；过 lingering 再放掉）：NoteEdge 转给 AppDelegate 排空闲回收
+  var onHide: () -> Void = {}
 
   private var monitors: [Any] = []
   /// 拖出去的那一阵的鼠标松开监听（watchRelease）
@@ -370,6 +372,7 @@ final class NoteDeck: NSObject {
     hideTask?.cancel()
     hideTask = nil
     panel?.orderOut(nil)
+    onHide()
     releaseTask?.cancel()
     releaseTask = Task { [weak self, lingering] in
       try? await Task.sleep(for: lingering)

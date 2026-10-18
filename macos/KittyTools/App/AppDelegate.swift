@@ -80,8 +80,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 快速记一条的面板和它的状态（Notes/NoteCapture.swift）：第一次用时建——便签要能用才有（noteStore 启动的最后才开，
   /// 可能是 nil）——建了就留着，草稿在它的 model 里
   private var noteCapture: (panel: OverlayPanel, model: NoteCaptureModel)?
-  /// 全部便签窗口（Notes/NotesWindow.swift，普通窗口）：同样第一次用时建
+  /// 全部便签窗口（Notes/NotesWindow.swift，普通窗口）：同样第一次用时建；关着的在空闲回收时整个放掉（下次打开重建）
   private var notesWindow: NotesWindow?
+  /// 全部便签窗口的模型：窗口放掉了它还留着——下次打开选中的那条、看的是哪个视图、搜索词都还在
+  private var notesModel: NotesWindowModel?
   /// 屏幕边缘的便签（Notes/NoteEdge.swift，第 3 批）：便签开好之后建（finishLaunchingNotes），它自己看总开关和有没有
   /// 便签决定建不建窗口；便签这次用不了时是 nil
   private var noteEdge: NoteEdge?
@@ -168,27 +170,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private lazy var clipboardModel = ClipboardPanelModel(store: clipboardStore)
   private lazy var launcherModel = LauncherModel(usage: launcherUsage)
 
-  /// 空闲回收（常驻内存，2026-10-07，PLAN §10）：三块主面板哪块收起、进程内识完一次字都重新计时，过了
-  /// Memory.idleDelay 还没有面板开着，就把闲着白占的还回去——透镜缓存（装满约 50 MB，再看到时重做）、链接预览的
-  /// 头图（12 条都看过约 70 MB；字节留着，再看到时重解，不联网）、识字模型（约 50 MB，下次识字重新加载，慢
-  /// 0.2–0.4 s；放它要 18–200 ms，在主线程外做）、分配器手里的空页（跑了三天的正式版估 20–34 MB；放在最后，
-  /// 前几样腾出来的页一起还）。到点时还有面板开着（固定着、正在用）或正在框选就再等一轮
+  /// 空闲回收（常驻内存，2026-10-07，PLAN §10）：三块主面板哪块收起、进程内识完一次字、全部便签窗口关掉、屏幕边缘
+  /// 那叠收起、浮动便签收回（2026-10-18）都重新计时，过了 Memory.idleDelay 还闲着（isIdle），就把闲着白占的还回去——
+  /// 透镜缓存（装满约 50 MB，再看到时重做）、链接预览的头图（12 条都看过约 70 MB；字节留着，再看到时重解，不联网）、
+  /// 关着的全部便签窗口（约 12 MB）、便签图片的缩略图（便签墙上看过 50 张图约 65 MB）、识字模型（约 50 MB，下次识字
+  /// 重新加载，慢 0.2–0.4 s；放它要 18–200 ms，在主线程外做）、分配器手里的空页（跑了三天的正式版估 20–34 MB；放在
+  /// 最后，前几样腾出来的页一起还）。到点时还忙着（面板固定着、正在用）就再等一轮
   private lazy var idleReclaim = Memory.IdleTimer(
     after: Memory.idleDelay,
-    isIdle: { [unowned self] in
-      !isCapturing && !NSApp.windows.contains { $0 is OverlayPanel && $0.isVisible }
-    },
+    isIdle: { [unowned self] in Self.isIdle(windows: NSApp.windows, isCapturing: isCapturing) },
     work: { [unowned self] in reclaimIdleMemory() })
+
+  /// 现在算不算闲（纯函数）：没在框选，看得见的窗口里没有浮层（三块主面板等）、没有全部便签窗口、没有展开着的那叠
+  /// （扇着、打开着便签；一直展开时静置的那一列常驻屏幕上，不算）。**浮动便签不拦**：它可以一直浮在屏幕上，拦了就
+  /// 永远不回收（清缓存时留下它的图，见 reclaimIdleMemory）。设置窗也不拦：回收的东西它都不用
+  static func isIdle(windows: [NSWindow], isCapturing: Bool) -> Bool {
+    !isCapturing
+      && !windows.contains { window in
+        guard window.isVisible else { return false }
+        if let deck = window as? NoteDeckPanel { return deck.isExpanded }
+        return window is OverlayPanel || window.identifier == NotesWindow.identifier
+      }
+  }
 
   private func reclaimIdleMemory() {
     ThumbnailView.dropPreviews()
     LinkPreview.shared.dropHeroes()
-    // 便签正文里解好的图片缩略图（第 7 批：按像素数算 cost，闲下来整块放掉）
-    NoteImageThumbnails.discard()
+    releaseClosedNotesWindow()
+    // 便签正文里解好的图片缩略图（第 7 批：按像素数算 cost，闲下来整块放掉）；浮在屏幕上的那张便签里的图留着
+    // （清了它下一次重画先闪一块纸色）
+    let floating = noteEdge?.float.model.state.noteID.flatMap { noteStore?.note($0) }
+    NoteImageThumbnails.discard(keeping: floating.map { NoteImages.ids(in: $0.body) } ?? [])
     Task {
       await OCR.releaseModel()
       Memory.relieve()
     }
+  }
+
+  /// 关着的全部便签窗口整个放掉（2026-10-18 量：300 条、50 张图的便签墙关掉、清了缩略图缓存之后，放掉窗口还能再回落
+  /// 约 12 MB——窗口的图层、SwiftUI 视图树、墙上卡片自己拿着的缩略图；重开到第一屏约 0.2 s，卡片缓存在仓库里不用重建）。
+  /// 模型留着（notesModel）。最小化着的不放（它在程序坞里，放了就点不回来）。
+  /// 照 NoteDeck.releasePanel 的写法：先拿到局部变量、属性置空，再拆视图树（拆的时候有回调进来，属性已经是 nil）
+  private func releaseClosedNotesWindow() {
+    guard let old = notesWindow, !old.isVisible, !old.window.isMiniaturized else { return }
+    notesWindow = nil
+    old.window.contentViewController = nil
   }
 
   private lazy var launcherPanel: OverlayPanel = {
@@ -651,6 +677,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     edge.showNotes = { [unowned self] in showNotes() }
     edge.showSettings = { [unowned self] in showSettings(page: .notes) }
     edge.showInWindow = { [unowned self] in showNotes(revealing: $0) }
+    // 那叠收起、浮动便签收回：也排空闲回收（只用便签的人，看过的图也要还回去）
+    edge.onHide = { [unowned self] in idleReclaim.schedule() }
     return edge
   }
 
@@ -825,6 +853,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func makeNotesWindow(_ store: NoteStore) -> NotesWindow {
+    let window = NotesWindow(model: notesModel ?? makeNotesModel(store))
+    window.onClose = { [unowned self] in idleReclaim.schedule() }
+    return window
+  }
+
+  private func makeNotesModel(_ store: NoteStore) -> NotesWindowModel {
     let model = NotesWindowModel(store: store, defaults: .standard)
     model.island = island
     // 工具栏 / 右键菜单的「浮在屏幕上」：和屏幕边缘那叠共用同一张浮动便签（一次一张）
@@ -832,7 +866,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.toggleFloat = { [unowned self] in noteEdge?.float.toggle($0) }
     // ⌘,、工具栏的「便签设置」：落在设置的「便签」页
     model.showSettings = { [unowned self] in showSettings(page: .notes) }
-    return NotesWindow(model: model)
+    notesModel = model
+    return model
   }
 
   /// 启动器「cb 关键词」↩（启动器已收起，N9）：呼出剪贴板面板，再把关键词填进它的搜索框

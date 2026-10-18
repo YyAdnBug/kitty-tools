@@ -479,12 +479,18 @@ nonisolated enum NoteImageThumbnails {
     state.order.append(key)
   }
 
-  /// 闲下来放掉（AppDelegate.idleReclaim）
-  static func discard() {
+  /// 闲下来放掉（AppDelegate.idleReclaim）。keeping：这几张图（编号）的缩略图留着——浮在屏幕上的那张便签里的：
+  /// 清掉的话它下一次重画（点进去、滚动、拉大小）先画一块纸色、等重新解完才出图，看着是闪一下
+  static func discard(keeping ids: Set<UUID> = []) {
+    let kept = Set(ids.map(\.uuidString))
     store.withLock { state in
-      state.images.removeAll()
-      state.order.removeAll()
-      state.cost = 0
+      state.order.removeAll { key in
+        guard !kept.contains(String(key.prefix { $0 != "#" })) else { return false }
+        if let dropped = state.images.removeValue(forKey: key) {
+          state.cost -= dropped.width * dropped.height
+        }
+        return true
+      }
       state.pending.removeAll()
       state.failed.removeAll()
     }

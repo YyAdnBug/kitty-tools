@@ -93,6 +93,8 @@ final class NoteFloat: NSObject, NSWindowDelegate {
   var homeEdge: (CGRect) -> NoteDeckOptions.Edge? = { _ in nil }
   /// 浮着的换了一条 / 没有了 / 落下了（NoteEdge 据此告诉各块屏的那叠）
   var onChange: () -> Void = {}
+  /// 面板放掉了（收回、关掉、换成另一张）：NoteEdge 转给 AppDelegate 排空闲回收
+  var onHide: () -> Void = {}
 
   private let defaults: UserDefaults
   /// 落下时面板当不当 key。只有单测传 false：屏外的面板一当 key，用户正在用的那个 App 就丢了键盘
@@ -383,6 +385,7 @@ final class NoteFloat: NSObject, NSWindowDelegate {
     old.delegate = nil
     old.orderOut(nil)
     old.contentView = nil
+    onHide()
   }
 
   /// 退场的替身（同 OverlayPanel.dismiss 的路数，mac-overlay-panel §1）：原位留一张这一刻的图，盖在面板上面——

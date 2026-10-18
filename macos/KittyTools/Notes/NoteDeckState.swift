@@ -65,6 +65,9 @@ nonisolated struct NoteDeckState: Equatable, Sendable {
   /// 「收回」之后的样子
   private var home: Phase { alwaysFanned ? .fanned : .rest }
 
+  /// 展开着：比「收回」之后的样子多出来了（一直展开时静置的那一列不算，打开着便签才算）。空闲回收看它
+  var isExpanded: Bool { phase != home }
+
   /// 开关「一直展开」：打开时静置的直接成了扇出；关掉时还扇着的不动，等鼠标离开 / 没动静时照常收
   mutating func setAlwaysFanned(_ always: Bool) {
     alwaysFanned = always

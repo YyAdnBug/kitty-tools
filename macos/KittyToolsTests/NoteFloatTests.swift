@@ -748,6 +748,9 @@ struct NoteFloatTests {
     defer { float.model.send(.remove) }
     var changes = 0
     float.onChange = { changes += 1 }
+    // 面板放掉时报一声（AppDelegate 排空闲回收，调优 T2）
+    var hidden = 0
+    float.onHide = { hidden += 1 }
     #expect(float.panel == nil)
     // 不能浮着的不浮：没有这条、归档了的
     float.present("没有这条", mouse: Self.farPoint)
@@ -787,8 +790,10 @@ struct NoteFloatTests {
     store.setPinned(true, of: ids[0])
     float.storeChanged()
     #expect(defaults.object(forKey: Prefs.notesFloatPlace) != nil)
+    #expect(hidden == 0)
     float.model.close()
     #expect(float.panel == nil && float.model.state.noteID == nil && same?.isVisible == false)
+    #expect(hidden == 1)
     #expect(defaults.object(forKey: Prefs.notesFloatPlace) == nil)
     #expect(same?.contentView == nil)
     // 全部便签窗口的那个入口：浮出来 / 收回

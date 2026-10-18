@@ -673,12 +673,16 @@ import SwiftUI
 final class NotesWindow: NSObject, NSWindowDelegate {
   /// 最小的内容尺寸（SwiftUI 自己算的最小：墙 532 × 97–188、列表 300–346 × 179–260，2026-10-18 量）
   static let minSize = NSSize(width: 720, height: 420)
+  /// 窗口的标识：空闲回收认它（开着时不算闲，AppDelegate.isIdle）
+  static let identifier = NSUserInterfaceItemIdentifier("notes")
 
   /// 只读：单测看窗口的内容和最小尺寸
   let window: NSWindow
   let model: NotesWindowModel
   /// ⌘⌫ 和 ⇧⌘Z 的本地按键监听：窗口是 key 时装着，不是了就卸（成对）
   private var keyMonitor: Any?
+  /// 关掉了（AppDelegate 排空闲回收）
+  var onClose: () -> Void = {}
 
   var isVisible: Bool { window.isVisible }
 
@@ -688,6 +692,7 @@ final class NotesWindow: NSObject, NSWindowDelegate {
     // 内容包在普通容器里：宿主视图当窗口的 contentView 会闪退（见 windowContent）
     window = NSWindow(contentViewController: .windowContent(NotesWindowView(model: model)))
     window.title = HotKeyAction.noteAll.title
+    window.identifier = Self.identifier
     window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
     window.toolbarStyle = .unified
     window.isReleasedWhenClosed = false
@@ -700,16 +705,19 @@ final class NotesWindow: NSObject, NSWindowDelegate {
       if !window.setFrameUsingName(frameName) { window.center() }
       window.setFrameAutosaveName(frameName)
     }
-    model.focusBody = { [unowned self] in
+    // 都弱引用：模型比窗口活得久（关着的窗口空闲时整个放掉，模型留着，下次打开接着用，AppDelegate.notesModel）
+    model.focusBody = { [weak self] in
       // 晚一拍：新选中的那条的编辑区这时还没建出来
+      guard let self else { return }
       perform(#selector(focusBodyNow), with: nil, afterDelay: 0)
     }
-    model.undoFocusedText = { [unowned self] in window.undoFocusedText(redo: $0) }
-    model.isEditingBody = { [unowned self] in
-      Self.isInBody(window.firstResponder, editor: selectedEditor())
+    model.undoFocusedText = { [weak self] in self?.window.undoFocusedText(redo: $0) ?? false }
+    model.isEditingBody = { [weak self] in
+      guard let self else { return false }
+      return Self.isInBody(window.firstResponder, editor: selectedEditor())
     }
-    model.withEditor = { [unowned self] body in
-      if let editor = selectedEditor() { body(editor) }
+    model.withEditor = { [weak self] body in
+      if let editor = self?.selectedEditor() { body(editor) }
     }
   }
 
@@ -806,5 +814,6 @@ final class NotesWindow: NSObject, NSWindowDelegate {
     removeKeyMonitor()
     model.closed()
     NSApp.leaveDockIfNoWindows(closing: window)
+    onClose()
   }
 }

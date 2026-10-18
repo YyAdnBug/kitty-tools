@@ -6,14 +6,16 @@
 //   ④ 三块主面板和设置窗「建 + 显示 → 收起 → 清内容 → 放掉窗口」各涨落多少（App 里它们一直留着）；
 //     两张 ⌘Y 大卡照 App 的做法开关（TransientPanel：用时再建、收起后自己放掉），放掉后还留多少；
 //     剪贴板那张先照改前的做法（面板一直留着、不丢大卡档、不调回收接口）量一组对照
-//   ⑤ 截图 / 转 GIF 那样的重活之后堆脏页留多少、malloc_zone_pressure_relief 能还多少。
+//   ⑤ 截图 / 转 GIF 那样的重活之后堆脏页留多少、malloc_zone_pressure_relief 能还多少
+//   ⑥ 便签（调优 T2，2026-10-18）：300 条便签、50 张图的便签墙打开 → 滚到底再滚回来 → 关窗口 → 清图片缩略图缓存 →
+//     放掉窗口 → 重开要多久；屏幕边缘那叠打开一条带 5 张图的便签 → 收起 → 清缓存。
 // 每一步读 task_info(TASK_VM_INFO) 的 phys_footprint（活动监视器的口径），旁边列 footprint 工具的分类（它不用 root 就能看
 // 自己的进程）；每项做两遍。窗口都摆在屏幕外（-20000, -20000）、不当 key、不激活本 App、不出声；图片、库、偏好都是临时的
 // （临时目录、内存库、临时偏好域），不读写用户的数据目录和钥匙串，跑完删干净。全程约 7 分钟。输出目录写绝对路径：
 //   TEST_RUNNER_KITTY_MEMORY_PROBE_DIR=/tmp/kitty-memory xcodebuild -project macos/KittyTools.xcodeproj \
 //     -scheme KittyTools test -only-testing:'KittyToolsTests/MemoryProbeTests/measure()'
 // 报告追加在 <目录>/report.md（每跑一次一段，段头写时间）。只跑其中几项（在干净的进程里量，排除前面几项的影响）：
-// 另加 TEST_RUNNER_KITTY_MEMORY_PROBE_ONLY=thumbnails,icons,ocr,panels,relief 里的几个（逗号分隔）。
+// 另加 TEST_RUNNER_KITTY_MEMORY_PROBE_ONLY=thumbnails,icons,ocr,panels,relief,notes 里的几个（逗号分隔）。
 // 量面板的图层另加 TEST_RUNNER_KITTY_MEMORY_PROBE_ONSCREEN=1（屏上模式，见第 4 个坑）。
 //
 // 四个坑（都是先量出对不上的数、再用临时实验查出来的，改探针前先看）：
@@ -140,6 +142,7 @@ private final class Probe {
     if runs("ocr") { recognize() }
     if runs("panels") { try panels(prefs) }
     if runs("relief") { relief() }
+    if runs("notes") { try notes(prefs) }
   }
 
   // MARK: - 1. 缩略图缓存
@@ -1304,6 +1307,284 @@ private final class Probe {
     "SwiftUI 用声明式的方式描述界面：你只需要写出界面在某个状态下应该是什么样子，状态一变，框架就会自动更新对应的视图。"
     + "视图是轻量的值类型，组合起来很便宜，所以可以放心地把大界面拆成许多小视图。"
     + "布局由父视图提议尺寸、子视图自己决定大小，再由父视图摆放位置，三步走完。"
+
+  // MARK: - 6. 便签
+
+  /// 便签（调优 T2，2026-10-18）：300 条便签、其中 50 条各带一张 2400 × 1600 的图。全部便签窗口（便签墙）打开、等卡片
+  /// 全部建好、一屏一屏滚到底再滚回来 → 关窗口（窗口对象留着，同 App）→ 照空闲回收清便签图片的缩略图缓存、调回收接口
+  /// → 再把窗口整个放掉 → 重开到第一屏、到卡片全部建好各多久；屏幕边缘那叠打开一条带 5 张图的便签 → 收起（等它自己
+  /// 放掉面板）→ 清缓存。屏上模式时窗口摆在主屏右上角、那叠在主屏右边，都几乎透明、不接鼠标、不当 key
+  private func notes(_ prefs: UserDefaults) throws {
+    report.heading(
+      "6. 便签（全部便签窗口的便签墙、屏幕边缘那叠；图片缩略图缓存 NoteImageThumbnails 上限 "
+        + "\(NoteImageThumbnails.defaultMaxCost / 1_000_000) 百万像素，每像素 4 字节）")
+    let directory = scratch.appending(path: "notes-images")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let source = try autoreleasepool {
+      try Shot.make(index: 99, width: 2400, height: 1600, in: images)
+    }
+    let sourceURL = images.url(for: source.id)
+    /// 一张图：同一张 PNG 拷一份、换个编号（缩略图缓存按编号记）
+    func picture() throws -> NoteImages.Image {
+      let image = NoteImages.Image(id: UUID(), ext: "png", width: nil)
+      try FileManager.default.copyItem(
+        at: sourceURL, to: directory.appending(path: "\(image.id.uuidString).png"))
+      return image
+    }
+    let store = try NoteStore(db: Database(path: ":memory:"))
+    store.images = NoteImageStore(directory: directory)
+    let t0 = Date.now.addingTimeInterval(-3600)
+    for index in (0..<300).reversed() {
+      var body = "第 \(index) 条便签\n" + Self.chinese
+      if index % 6 == 0 { body += "\n" + NoteImages.token(try picture()) + "\n图下面的一行字。" }
+      store.create(body: body, now: t0.addingTimeInterval(Double(300 - index)))
+    }
+    let decked = try (0..<5).map { _ in try picture() }
+    let deckNote = store.create(
+      body: "带 5 张图的便签\n" + decked.map(NoteImages.token).joined(separator: "\n一行字\n"))
+    store.setPinned(true, of: deckNote.id)  // 打开着时点别处不收（屏上模式里用户在别处点一下）
+    report.line(
+      "301 条便签（50 条各带一张 2400 × 1600 的图 + 那叠里打开的一条带 5 张），PNG 每张 \(kb(source.bytes))；"
+        + (onscreen ? "屏上模式" : "屏外（没画过的缩略图不计入 footprint，文件头第 1 个坑：以屏上模式为准）"))
+    func cache() -> String {
+      "缩略图缓存 \(NoteImageThumbnails.count) 张、\(mb(NoteImageThumbnails.cost * 4))"
+    }
+    Self.clearThumbnails()
+    NoteImageThumbnails.discard()
+    steady()
+    let base = report.step("基线（便签和图片都备好、窗口还没建）")
+
+    // 全部便签窗口（便签墙）
+    let model = NotesWindowModel(store: store)
+    model.layout = .wall
+    let markdown = prefs.object(forKey: Prefs.notesMarkdown) as? Bool ?? true
+    func built() -> Int {
+      store.active.filter { store.cachedWallCard(of: $0, markdown: markdown) != nil }.count
+    }
+    weak var released: NSWindow?
+    weak var host: NSView?
+    var window: NSWindow?
+    /// 建窗口并显示（同 NotesWindow.init 的参数），返回到第一屏画完的毫秒数
+    func open() -> Double {
+      let start = Date.now
+      let made = ParkedWindow(
+        contentViewController: .windowContent(
+          NotesWindowView(model: model).defaultAppStorage(prefs)))
+      made.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+      made.toolbarStyle = .unified
+      made.isReleasedWhenClosed = false
+      made.setContentSize(NSSize(width: 940, height: 580))
+      if onscreen {
+        let visible = NSScreen.main?.visibleFrame ?? .zero
+        made.setFrameTopLeftPoint(
+          NSPoint(x: visible.maxX - made.frame.width - 8, y: visible.maxY - 8))
+        made.ignoresMouseEvents = true
+        made.alphaValue = 0.05
+      } else {
+        made.setFrameOrigin(offscreen)
+      }
+      made.orderFrontRegardless()
+      made.displayIfNeeded()
+      window = made
+      return Date.now.timeIntervalSince(start) * 1000
+    }
+    /// 卡片全部建好要多久（毫秒，最多等 15 秒）
+    func waitBuilt() -> Double {
+      let start = Date.now
+      while built() < store.active.count, Date.now.timeIntervalSince(start) < 15 { spin(0.05) }
+      return Date.now.timeIntervalSince(start) * 1000
+    }
+    var firstScreen = 0.0
+    var allBuilt = 0.0
+    autoreleasepool {
+      firstScreen = open()
+      allBuilt = waitBuilt()
+      released = window
+      host = Self.hostingView(in: window?.contentView)
+      steady()
+    }
+    let shown = Reading.now()
+    report.row(
+      "打开便签墙、卡片全部建好", shown,
+      note: "比基线多 \(mb(shown.footprint - base.footprint))；第一屏 \(Int(firstScreen)) ms、"
+        + "卡片全部建好 \(Int(allBuilt)) ms（\(built()) / \(store.active.count) 张）；\(cache())")
+    // 一屏一屏滚到底再滚回来（墙只给可见区附近的卡片建视图：滚过的卡片才解它们的缩略图）
+    autoreleasepool {
+      guard
+        let scroll = Self.scrollViews(in: window?.contentView).max(by: {
+          ($0.documentView?.frame.height ?? 0) < ($1.documentView?.frame.height ?? 0)
+        }), let document = scroll.documentView
+      else { return report.line("没找到便签墙的滚动区，没滚") }
+      let clip = scroll.contentView
+      let page = clip.bounds.height * 0.8
+      let bottom = max(document.frame.height - clip.bounds.height, 0)
+      @MainActor func move(to offset: CGFloat) {
+        // 文档视图不翻转时 y = 0 在底下
+        let y = document.isFlipped ? offset : bottom - offset
+        clip.scroll(to: NSPoint(x: 0, y: y))
+        scroll.reflectScrolledClipView(clip)
+        spin(0.12)
+      }
+      for offset in stride(from: 0, through: bottom, by: page) { move(to: offset) }
+      move(to: bottom)
+      for offset in stride(from: bottom, through: 0, by: -page) { move(to: offset) }
+      move(to: 0)
+      steady()
+    }
+    var last = Reading.now()
+    report.row(
+      "一屏一屏滚到底再滚回来", last,
+      note: "比基线多 \(mb(last.footprint - base.footprint))；\(cache())")
+    let scrolled = last
+    // 关窗口：同 NotesWindow.windowWillClose（窗口对象留着，App 里 notesWindow 一直拿着）
+    autoreleasepool {
+      window?.orderOut(nil)
+      model.closed()
+      spin()
+      steady()
+    }
+    last = Reading.now()
+    report.row(
+      "关窗口（窗口对象留着）", last,
+      note:
+        "回落 \(mb(scrolled.footprint - last.footprint))，还比基线多 \(mb(last.footprint - base.footprint))；\(cache())"
+    )
+    // 照空闲回收：清便签图片的缩略图缓存 + 回收接口
+    let closed = last
+    autoreleasepool {
+      NoteImageThumbnails.discard()
+      _ = relieve()
+      steady()
+    }
+    last = Reading.now()
+    let afterDiscard = last
+    report.row(
+      "清缩略图缓存 + 回收接口（空闲回收做的）", last,
+      note:
+        "回落 \(mb(closed.footprint - last.footprint))，**还比基线多 \(mb(last.footprint - base.footprint))**"
+    )
+    // 再把窗口整个放掉
+    autoreleasepool {
+      window?.contentViewController = nil
+      window = nil
+      spin(1.5)
+      _ = relieve()
+      steady()
+    }
+    last = Reading.now()
+    let windowGap = afterDiscard.footprint - last.footprint
+    report.row(
+      "再放掉窗口 + 回收接口", last,
+      note: "又回落 \(mb(afterDiscard.footprint - last.footprint))，比基线多 "
+        + "\(signed(last.footprint - base.footprint))；窗口对象" + (released == nil ? "释放了" : "**还在**")
+        + "，SwiftUI 宿主视图" + (host == nil ? "释放了" : "**还在**"))
+    // 重开（卡片缓存在仓库那一层，还在）
+    autoreleasepool {
+      firstScreen = open()
+      allBuilt = waitBuilt()
+      steady()
+    }
+    last = Reading.now()
+    report.row(
+      "放掉之后重开", last,
+      note: "第一屏 \(Int(firstScreen)) ms、卡片全部建好 \(Int(allBuilt)) ms（仓库里的卡片缓存还在）；\(cache())")
+    autoreleasepool {
+      window?.orderOut(nil)
+      model.closed()
+      window?.contentViewController = nil
+      window = nil
+      NoteImageThumbnails.discard()
+      spin(1.5)
+      _ = relieve()
+      steady()
+    }
+    report.summary.append(
+      (
+        "便签墙（300 条、50 张图）关掉之后", "关掉 + 清缓存后还比基线多 \(mb(afterDiscard.footprint - base.footprint))",
+        "再放掉窗口 \(mb(windowGap))",
+        windowGap >= 10 * megabyte ? "空闲时放掉关着的窗口" : "不放窗口（省不到 10 MB）"
+      ))
+
+    // 屏幕边缘那叠：打开带 5 张图的那条
+    let deckBase = report.step("那叠：打开之前")
+    let screen: NoteDeckScreen
+    if onscreen, let main = NSScreen.main {
+      screen = NoteDeckScreen(name: "主屏", frame: main.frame, visibleFrame: main.visibleFrame)
+    } else {
+      screen = NoteDeckScreen(
+        name: "屏外", frame: CGRect(x: -40000, y: -40000, width: 1440, height: 900),
+        visibleFrame: CGRect(x: -40000, y: -40000, width: 1440, height: 875))
+    }
+    let deck = NoteDeck(store: store, island: nil, takesKeyboard: false)
+    defer { deck.close() }
+    /// 屏上模式：药丸和面板几乎透明、不接鼠标
+    func fade() {
+      guard onscreen else { return }
+      for panel in [deck.pill?.panel, deck.panel].compactMap({ $0 }) {
+        panel.alphaValue = 0.05
+        panel.ignoresMouseEvents = true
+      }
+    }
+    autoreleasepool {
+      deck.place(on: screen, edge: .right, options: NoteDeckOptions())
+      fade()
+      // 扇出后马上点开：鼠标不在热区，扇着的一列过一会儿会自己收回去（固定的便签打开着不收）
+      deck.model.send(.pillEntered(optionDown: false, allowed: true))
+      deck.model.tapTab(deckNote.id)
+      fade()
+      spin(1)
+      // 屏外的窗口不画：把面板的内容画一遍，正文里的图才去解（屏上模式不用）
+      if !onscreen, let view = deck.panel?.contentView,
+        let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds)
+      {
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        spin(1)
+      }
+      steady()
+    }
+    last = Reading.now()
+    let editor = NoteDeck.editor(for: deckNote.id, in: deck.panel?.contentView)
+    report.row(
+      "打开带 5 张图的便签", last,
+      note: "比打开之前多 \(mb(last.footprint - deckBase.footprint))；\(cache())；"
+        + "开着的是它：\(deck.model.state.openID == deckNote.id ? "是" : "否")，正文框"
+        + (editor.map { "在（\(Int($0.bounds.width)) × \(Int($0.bounds.height)) 点）" } ?? "**不在**"))
+    let deckOpen = last
+    autoreleasepool {
+      deck.suspend(.all)
+      // 收起后面板留 2 秒再放（NoteDeck 的 lingering）
+      spin(3)
+      steady()
+    }
+    last = Reading.now()
+    report.row(
+      "收起（面板已经自己放掉：\(deck.panel == nil ? "是" : "否")）", last,
+      note: "回落 \(mb(deckOpen.footprint - last.footprint))，还比打开之前多 "
+        + "\(mb(last.footprint - deckBase.footprint))；\(cache())")
+    let deckClosed = last
+    autoreleasepool {
+      NoteImageThumbnails.discard()
+      _ = relieve()
+      steady()
+    }
+    last = Reading.now()
+    report.row(
+      "清缩略图缓存 + 回收接口", last,
+      note: "回落 \(mb(deckClosed.footprint - last.footprint))，比打开之前多 "
+        + "\(signed(last.footprint - deckBase.footprint))")
+    report.summary.append(
+      (
+        "那叠（打开一条带 5 张图的便签）收起之后", "收起后还多 \(mb(deckClosed.footprint - deckBase.footprint))",
+        "清缓存 \(mb(deckClosed.footprint - last.footprint))（面板收起 2 秒后自己放掉）",
+        deckClosed.footprint - last.footprint >= 10 * megabyte ? "收起也排空闲回收" : "省不到 10 MB"
+      ))
+  }
+
+  /// 视图树里的滚动区
+  private static func scrollViews(in view: NSView?) -> [NSScrollView] {
+    guard let view else { return [] }
+    return ((view as? NSScrollView).map { [$0] } ?? []) + view.subviews.flatMap(scrollViews)
+  }
 
   // MARK: - 5. 回收接口
 

@@ -436,6 +436,28 @@ struct NoteImageThumbnailTests {
     #expect(readies.withLock { $0 } == 0)
   }
 
+  /// 空闲回收清缓存时留下浮在屏幕上的那张便签里的图（各档都留，像素数跟着减）；不给就全清（调优 T2）
+  @Test func discardKeepsTheFloatingNotesImages() {
+    NoteImageThumbnails.discard()
+    defer { NoteImageThumbnails.discard() }
+    let (kept, dropped) = (UUID(), UUID())
+    for id in [kept, dropped] {
+      for pixel in [256, 512] {
+        NoteImageThumbnails.store(
+          NoteImageFixture.image(width: 10, height: 10),
+          key: NoteImageThumbnails.key(id, pixel: pixel))
+      }
+    }
+    #expect(NoteImageThumbnails.count == 4 && NoteImageThumbnails.cost == 400)
+    NoteImageThumbnails.discard(keeping: [kept])
+    #expect(NoteImageThumbnails.count == 2 && NoteImageThumbnails.cost == 200)
+    #expect(NoteImageThumbnails.peek(key: NoteImageThumbnails.key(kept, pixel: 256)) != nil)
+    #expect(NoteImageThumbnails.peek(key: NoteImageThumbnails.key(kept, pixel: 512)) != nil)
+    #expect(NoteImageThumbnails.peek(key: NoteImageThumbnails.key(dropped, pixel: 256)) == nil)
+    NoteImageThumbnails.discard()
+    #expect(NoteImageThumbnails.count == 0 && NoteImageThumbnails.cost == 0)
+  }
+
   /// 单张比上限还大的缩略图放进去**不淘汰自己**（不然画一次解一次）
   @Test func anOversizedThumbnailStaysInTheCache() {
     NoteImageThumbnails.discard()

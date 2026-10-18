@@ -1028,6 +1028,26 @@ extension NotesWindowTests {
     #expect(notes.window.title == HotKeyAction.noteAll.title && settings.window.title == "关于")
   }
 
+  /// 关着的全部便签窗口空闲时整个放掉、模型留着（AppDelegate.releaseClosedNotesWindow，调优 T2）：窗口真的释放，
+  /// 模型上窗口给的那几根回调之后再调也不出事（弱引用），重建的窗口接着用同一个模型
+  @Test func notesWindowCanBeReleasedWhileTheModelStays() throws {
+    let (model, _, ids) = try make(["A", "B"])
+    model.selection = ids[1]
+    weak var released: NSWindow?
+    autoreleasepool {
+      var notes: NotesWindow? = NotesWindow(model: model, frameName: nil)
+      released = notes?.window
+      notes?.window.contentViewController = nil
+      notes = nil
+    }
+    #expect(released == nil)
+    model.focusBody()
+    #expect(!model.isEditingBody() && !model.undoFocusedText(false))
+    model.withEditor { _ in Issue.record("没有窗口就没有正文框") }
+    let again = NotesWindow(model: model, frameName: nil)
+    #expect(again.model === model && model.selection == ids[1])
+  }
+
   /// 正式版那次闪退（2026-10-18）的屏外复现：带动画换视图 / 换页、开合编辑卡、搜索的同时程序改窗口大小。宿主视图当窗口的
   /// contentView 时（以前的写法），SwiftUI 在布局里跟着改窗口大小、改最小尺寸，约束更新一轮轮停不下来，AppKit 抛异常、
   /// 测试宿主直接退出（不加 sizingOptions = [] 也一样，当时实测几秒内必崩）。现在的写法跑完整串不崩，标题和工具栏照常。

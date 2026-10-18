@@ -20,10 +20,15 @@ final class NoteDeckPanel: NotePanel {
   var contentFrame: () -> CGRect = { .zero }
 
   private let host: NoteDeckHost
+  private let model: NoteDeckModel
+
+  /// 展开着（扇着、打开着便签；一直展开时静置的那一列不算）：这时不做空闲回收（AppDelegate.isIdle）
+  var isExpanded: Bool { model.state.isExpanded }
 
   /// onPointer：鼠标在热区里动了、进出了热区（NoteDeck 拿它判断离没离开）
   init(frame: NSRect, model: NoteDeckModel, onPointer: @escaping () -> Void) {
     host = NoteDeckHost(rootView: NoteDeckView(model: model))
+    self.model = model
     // styleMask 必须在 init 里一次写全：.nonactivatingPanel 初始化后再加不生效
     super.init(
       contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,

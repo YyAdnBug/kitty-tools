@@ -1916,12 +1916,16 @@ struct NoteDeckTests {
   /// 没崩就是这个原因）
   @Test func releasingThePanelSurvivesViewCallbacks() async throws {
     let deck = try offscreenDeck(["一", "二"], lingering: .milliseconds(40))
+    // 收起时报一声（AppDelegate 排空闲回收，调优 T2）
+    var hidden = 0
+    deck.onHide = { hidden += 1 }
     deck.pill?.onPress()
     deck.panel?.contentView?.layoutSubtreeIfNeeded()
     // 标签的悬停追踪视图真建出来了（没有它们就复现不了）
     #expect(hoverViews(in: deck.panel?.contentView) >= 2)
+    #expect(hidden == 0)
     deck.suspend(.keepsOpen)
-    #expect(deck.isLingering)
+    #expect(deck.isLingering && hidden == 1)
     for _ in 0..<500 where deck.panel != nil { try await Task.sleep(for: .milliseconds(20)) }
     #expect(deck.panel == nil && deck.model.state.phase == .rest && !deck.isAwaitingLeave)
     // close() 那条路：扇着的时候这块屏不放了

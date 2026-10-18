@@ -51,6 +51,8 @@ final class NoteEdge {
   var showSettings: () -> Void = {}
   /// 打开的便签「在全部便签里打开」
   var showInWindow: (String) -> Void = { _ in }
+  /// 哪一叠收起了、浮动便签收回 / 关掉了（AppDelegate 排空闲回收）
+  var onHide: () -> Void = {}
 
   /// 放着的那几叠（按显示器认）
   private var decks: [(display: CGDirectDisplayID, deck: NoteDeck)] = []
@@ -70,6 +72,7 @@ final class NoteEdge {
     float = NoteFloat(store: store, defaults: defaults, island: island)
     float.homeEdge = { [unowned self] in homeEdge(near: $0) }
     float.onChange = { [unowned self] in floatChanged() }
+    float.onHide = { [unowned self] in onHide() }
     float.model.showInWindow = { [unowned self] in showInWindow($0) }
     float.model.showSettings = { [unowned self] in showSettings() }
   }
@@ -160,6 +163,7 @@ final class NoteEdge {
     deck.model.onDetachDrag = { [unowned self] in float.drag(to: $0) }
     deck.model.onDetachDrop = { [unowned self] in float.drop(at: $0) }
     deck.onFloat = { [unowned self] in float.present($0, from: $1) }
+    deck.onHide = { [unowned self] in onHide() }
     deck.model.focusFloat = { [unowned self] in float.focus() }
     deck.model.floated(float.model.state.noteID)
     return deck
