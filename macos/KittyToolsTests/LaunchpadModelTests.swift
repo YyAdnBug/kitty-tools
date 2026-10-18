@@ -27,7 +27,7 @@ struct LaunchpadModelTests {
     let catalog = layout.apps.map(projectApp)
     return LaunchpadModel(
       layout: layout, catalog: catalog, icons: LaunchpadIcons(), columns: columns, rows: rows,
-      screenSize: CGSize(width: 900, height: 600))
+      screenSize: CGSize(width: 900, height: 600), dragTiming: .immediate)
   }
 
   @Test func keyboardNavigationTurnsPagesAtEdges() {
@@ -211,20 +211,22 @@ struct LaunchpadModelTests {
     #expect(model.layout.tiles[0].folder?.apps.map(\.id) == [a.id, b.id, c.id])
   }
 
+  /// 拖出文件夹面板 14 pt：文件夹马上关上、手里的接着在主网格里拖（2026-10-18 交互对齐；原来要松手才回主网格）
   @Test func draggingOutOfAFolderReturnsToTheGrid() {
     let a = ref("a")
     let b = ref("b")
     let folder = LaunchpadFolder(name: "X", pages: [[a, b]])
     let model = model(LaunchpadLayout(pages: [[.folder(folder)]]))
-    model.folderPanelFrame = CGRect(x: 100, y: 100, width: 200, height: 200)
     model.openFolder(folder.id)
-    model.beginDrag(tile: .app(b), appID: b.id, folder: folder.id, at: CGPoint(x: 150, y: 150))
-    model.updateDrag(location: CGPoint(x: 400, y: 400), pageWidth: 900)
-    #expect(model.drag?.outsideFolder == true)
+    let start = model.folderCellCenter(1)
+    model.beginDrag(tile: .app(b), appID: b.id, folder: folder.id, at: start, origin: start)
+    let panel = model.folderPanelRect
+    model.updateDrag(location: CGPoint(x: panel.midX, y: panel.maxY + 30), pageWidth: 900)
+    #expect(model.openFolderID == nil)
+    #expect(model.drag?.isDragging == true)
     model.endDrag()
     // 文件夹只剩一个 → 解散，两个都回到主网格
     #expect(model.layout.tiles.compactMap { $0.app?.id } == [a.id, b.id])
-    #expect(model.openFolderID == nil)
   }
 
   @Test func previewShowsPlaceholderWhileDragging() {

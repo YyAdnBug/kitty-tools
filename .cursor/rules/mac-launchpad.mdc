@@ -23,7 +23,15 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
   扫完再接（G2：当成「全卸了」会把用户的布局清空并存盘）。恢复默认排列在目录为空时不做。
 - 拖动的落点（G3，纯函数 `LaunchpadModel.dropTarget`）：拿起时空位留在原处；指针在某个**画出来的**图标的左 / 右半 = 插到它前 / 后，
   在它的中心区（内缩 20%）= 合成候选、空位不动，在空位上什么都不变。合成候选永远是指针下面画着的那个，不按原布局的下标取；
-  只有拖 App 才合成（拖文件夹照常挪，G11）。最后一页的右边缘停够 0.45 s = 松手新开一页（G10）。
+  只有拖 App 才合成（拖文件夹照常挪，G11）。最后一页的右边缘停够 = 松手新开一页（G10）。
+- 2026-10-18 交互对齐（方案 `build/research/launchpad/INTERACT.md`、调研 `github-survey.md`；时长都在 `LaunchpadDragTiming`，单测用 `.immediate`
+  让位不等）：落点要变时等 0.15 s 才换（`scheduleReflow`），**松手执行屏上正显示的**落点 / 合成，不按松手那一刻的指针重算；
+  停在文件夹上（合成底板出来后再 0.6 s）它自己打开，能放进任意一格、文件夹里也能挪（`LaunchpadLayout.placing`，满了顺到下一页）；
+  进过面板再拖出 14 pt 就关文件夹、接着在主网格里拖（松手时先 `draggingOut` 再挪）；边上 60 pt 停 0.4 s 翻页、一直停着每 0.6 s 再翻；
+  文件夹面板的位置按算式（`folderPanelRect`），不量（长出来的那一下量到的是缩着的框）。
+- **拖动的「挪 / 松手」在 LaunchpadView 最外层另收一份**（`simultaneousGesture`）：格子只负责按下。拖出文件夹时文件夹那块界面收完会被拆掉，
+  挂在格子上的手势跟着被取消、松手收不到（同 G30）；最外层一直在。两份都喂进去没关系（同一个指针位置；松手第二次进来时已经没有拖动）。
+  单测 `LaunchpadInteractTests.realDragOutOfAFolderStillDrops` 拆掉最外层那份就红。
 
 ## 2. App 目录
 - 复用 `AppCatalog.scan()`（同一份目录、去重、中文名、拼音、首字母），**只留 `.app`**，目录扫描在后台（`@concurrent` 的 `LaunchpadCatalog.loadInBackground`，回来接上；打开路径不扫）：不要系统设置的面板（kind `.url`），

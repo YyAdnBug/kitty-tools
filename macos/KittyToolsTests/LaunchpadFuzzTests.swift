@@ -74,7 +74,7 @@ struct LaunchpadFuzzTests {
     for step in 1...max(steps, 1) {
       do {
         autoreleasepool {
-          let operation = random.next(10)
+          let operation = random.next(11)
           let tileIDs = layout.tiles.map(\.id)
           let appIDs = layout.apps.map(\.id)
           switch operation {
@@ -146,6 +146,18 @@ struct LaunchpadFuzzTests {
             if let folder = folders[safe: random.next(folders.count)] {
               layout = layout.dissolving(folder.id, capacity: capacity)
             }
+          case 9:
+            // 放进文件夹的任意一格（顶层、别的文件夹、同一个文件夹里挪，2026-10-18 交互对齐）
+            let folders = layout.tiles.compactMap(\.folder)
+            if let folder = folders[safe: random.next(folders.count)],
+              let appID = appIDs[safe: random.next(appIDs.count)]
+            {
+              let before = layout.apps.count
+              layout = layout.placing(
+                appID, inFolder: folder.id, page: random.next(folder.pages.count + 1),
+                index: random.next(LaunchpadLayout.folderCapacity + 2), capacity: capacity)
+              #expect(layout.apps.count == before, "种子 \(seed) 第 \(step) 步：放进文件夹丢了 App")
+            }
           default:
             layout = layout.tidied(capacity: capacity)
           }
@@ -177,7 +189,8 @@ struct LaunchpadFuzzTests {
             kind: .app, target: app.path, title: app.bundleID ?? "App", subtitle: "应用程序"),
           url: URL(filePath: app.path), isSystem: false, inUtilities: false, isAppStore: false,
           category: nil)
-      }, icons: LaunchpadIcons(), columns: 3, rows: 2, screenSize: CGSize(width: 900, height: 600))
+      }, icons: LaunchpadIcons(), columns: 3, rows: 2, screenSize: CGSize(width: 900, height: 600),
+      dragTiming: .immediate)
     let frame = CGRect(
       x: model.metrics.side, y: 0, width: model.metrics.gridWidth, height: model.metrics.gridHeight)
     for page in 0..<model.pageCount { model.gridFrames[page] = frame }
@@ -191,7 +204,7 @@ struct LaunchpadFuzzTests {
     for step in 1...max(steps, 1) {
       // 每步包一层（SPEC §8；一步里会建界面用的动画事务、几个 Task）
       autoreleasepool {
-        let operation = random.next(9)
+        let operation = random.next(11)
         switch operation {
         case 0:
           model.go(to: random.next(model.pageCount + 2))
@@ -235,6 +248,29 @@ struct LaunchpadFuzzTests {
           model.scroll(
             deltaX: 0, deltaY: CGFloat(random.next(5) - 2), precise: false, phase: [],
             momentum: [], time: Double(step), inverted: false)
+        case 8:
+          // 文件夹开着时从里面拖：落在面板里（文件夹里挪）或拖出去（关上、回主网格），2026-10-18 交互对齐
+          let apps = model.folderApps
+          let index = random.next(max(apps.count, 1))
+          if model.openFolderID != nil, let ref = apps[safe: index] {
+            model.beginDrag(
+              tile: .app(ref), appID: ref.id, folder: model.openFolderID,
+              at: model.folderCellCenter(index), origin: model.folderCellCenter(index))
+            for _ in 0..<3 {
+              model.updateDrag(
+                location: CGPoint(x: random.next(900), y: random.next(600)), pageWidth: 900)
+            }
+            if random.next(2) == 0 { model.armCombineForTesting() }
+            model.endDrag()
+          }
+        case 9:
+          // 空白处按住拖着翻页（或没挪够 = 点了空白）
+          let travel = CGFloat(random.next(700) - 350)
+          model.backgroundDragChanged(
+            translation: CGSize(width: travel / 2, height: 0), time: Double(step))
+          model.backgroundDragChanged(
+            translation: CGSize(width: travel, height: 0), time: Double(step) + 0.05)
+          model.backgroundDragEnded(time: Double(step) + 0.06)
         default:
           if model.jiggling { model.exitJiggle() }
           model.query = ""

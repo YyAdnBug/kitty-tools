@@ -3535,7 +3535,7 @@ struct SnapshotProbeTests {
     func board() -> LaunchpadModel {
       let model = LaunchpadModel(
         layout: layout, catalog: Array(apps), icons: LaunchpadIcons(), columns: 7, rows: 5,
-        screenSize: size)
+        screenSize: size, dragTiming: .immediate)
       model.wallpaper = wallpaper
       return model
     }
@@ -3573,6 +3573,19 @@ struct SnapshotProbeTests {
         LaunchpadView(model: drag), size: size, dark: dark,
         to: "\(out)/launchpad-drag\(suffix).png")
     }
+    // 停在另一个图标中心够久：目标后面长出合成底板，拿着的那份放大、不抖（2026-10-18 交互对齐）
+    let combine = board()
+    combine.gridFrames[0] = CGRect(
+      x: 0, y: combine.metrics.gridTop, width: size.width, height: combine.metrics.gridHeight)
+    let target = try #require(combine.cellCenter(page: 0, index: 0))
+    let source = try #require(combine.cellCenter(page: 0, index: 1))
+    combine.beginDrag(
+      tile: .app(apps[1].ref), appID: apps[1].ref.id, folder: nil, at: source, origin: source)
+    combine.updateDrag(location: CGPoint(x: target.x + 6, y: target.y + 4), pageWidth: size.width)
+    combine.armCombineForTesting()
+    try snapshot(
+      LaunchpadView(model: combine), size: size, dark: true,
+      to: "\(out)/launchpad-combine-dark.png")
     // 拿不到壁纸（视频 / 航拍壁纸）：退回系统毛玻璃
     let plain = board()
     plain.wallpaper = nil

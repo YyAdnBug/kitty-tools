@@ -35,7 +35,8 @@ struct LaunchpadRecheckTests {
   ) -> LaunchpadModel {
     LaunchpadModel(
       layout: layout, catalog: catalog ?? layout.apps.map { app($0) }, icons: LaunchpadIcons(),
-      columns: columns, rows: rows, screenSize: CGSize(width: 900, height: 600))
+      columns: columns, rows: rows, screenSize: CGSize(width: 900, height: 600),
+      dragTiming: .immediate)
   }
 
   /// 照真界面喂网格框：全宽的页容器（网格在里面居中、两边各留 side）
@@ -486,10 +487,10 @@ struct LaunchpadRecheckTests {
     defer { live.close() }
     _ = await live.gridFrame()
     model.openFolder(folder.id)
-    for _ in 0..<20 where model.folderPanelFrame.isEmpty { await live.settle() }
+    // 等文件夹从图标那儿长出来（0.24 s）
+    try? await Task.sleep(for: .milliseconds(500))
     await live.settle()
-    let panel = model.folderPanelFrame
-    #expect(!panel.isEmpty)
+    let panel = model.folderPanelRect
     // 名字那一行：面板上方 18 + 半行（28 pt 字约 34 高）
     let rowY = panel.minY - 18 - 18
     await live.click(CGPoint(x: panel.midX, y: rowY))

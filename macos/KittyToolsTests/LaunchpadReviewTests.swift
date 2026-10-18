@@ -31,7 +31,7 @@ struct LaunchpadReviewTests {
     LaunchpadModel(
       layout: layout, catalog: layout.apps.map { app($0) }, icons: LaunchpadIcons(),
       columns: columns, rows: rows, screenSize: CGSize(width: 900, height: 600),
-      startPage: startPage)
+      startPage: startPage, dragTiming: .immediate)
   }
 
   private func grid(_ model: LaunchpadModel, page: Int) -> CGRect {
@@ -413,7 +413,7 @@ struct LaunchpadReviewTests {
 
   @Test func pagerFlipsByDistanceAndFlick() {
     var pager = LaunchpadPager()
-    // 慢慢拖过三分之一页宽（900 的三分之一是 300；原来拖 240 也过，是靠第一帧的速度虚高，G13）
+    // 慢慢拖过翻页门槛（2026-10-18 起是页宽的 20%，900 的 20% 是 180；G13：别靠第一帧的速度虚高）
     _ = pager.feed(delta: -180, time: 1, pageWidth: 900, canBack: true, canForward: true)
     _ = pager.feed(delta: -180, time: 2, pageWidth: 900, canBack: true, canForward: true)
     #expect(pager.finish(canBack: true, canForward: true, pageWidth: 900) == 1)
@@ -624,7 +624,7 @@ struct LaunchpadReviewTests {
     let model = LaunchpadModel(
       layout: LaunchpadLayout(pages: [[.app(a), .app(b)]]),
       catalog: [app(a, category: nil), app(b, category: "效率")], icons: LaunchpadIcons(),
-      columns: 3, rows: 2, screenSize: CGSize(width: 900, height: 600))
+      columns: 3, rows: 2, screenSize: CGSize(width: 900, height: 600), dragTiming: .immediate)
     // 用和 Launchpad.open() 接的同一个取名函数（G12：原来这里注入了自己写的闭包，真代码没改也绿）
     model.folderName = { first, second in
       LaunchpadCatalog.folderName(first: first, second: second)

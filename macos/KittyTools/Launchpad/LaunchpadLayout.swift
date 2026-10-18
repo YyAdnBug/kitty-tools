@@ -470,6 +470,51 @@ nonisolated struct LaunchpadLayout: Codable, Equatable, Sendable {
     return LaunchpadLayout(pages: Self.pushed(pages, capacity: capacity))
   }
 
+  /// 把一个 App 放进文件夹第 `page` 页的第 `index` 格（2026-10-18 交互对齐：拖着停在文件夹上它会打开，放进里面任意位置；
+  /// 在文件夹里挪也走这里）。App 可以在顶层、别的文件夹或就在这个文件夹里；这一页满了，挤出来的顺到下一页开头。
+  func placing(_ appID: String, inFolder folderID: UUID, page: Int, index: Int, capacity: Int)
+    -> LaunchpadLayout
+  {
+    guard let source = locateAnyApp(appID), let ref = appRef(appID),
+      tileLocation(ofFolder: folderID) != nil
+    else { return self }
+    var pages = pages
+    if source.folder == folderID {
+      // 同一个文件夹里挪：只动它自己的页（不能走 removeAppFromPages——只剩一个时它会当场解散）
+      guard case .folder(var folder) = pages[source.page][source.tile] else { return self }
+      var inner = folder.pages
+      inner[source.innerPage].remove(at: source.innerIndex)
+      folder.pages = Self.inserting(ref, into: inner, page: page, index: index)
+      pages[source.page][source.tile] = .folder(folder)
+      return LaunchpadLayout(pages: Self.pushed(pages, capacity: capacity))
+    }
+    removeAppFromPages(appID, pages: &pages)
+    pages.removeAll { $0.isEmpty }
+    guard let at = tileLocation(ofFolder: folderID, in: pages),
+      case .folder(var folder) = pages[at.page][at.index]
+    else { return self }
+    folder.pages = Self.inserting(ref, into: folder.pages, page: page, index: index)
+    pages[at.page][at.index] = .folder(folder)
+    return LaunchpadLayout(pages: Self.pushed(pages, capacity: capacity))
+  }
+
+  /// 插进文件夹的第 `page` 页第 `index` 格（都夹到范围里）；这一页超过 folderCapacity 就把最后一个顺到下一页开头，一路往后挤
+  static func inserting(
+    _ app: LaunchpadAppRef, into pages: [[LaunchpadAppRef]], page: Int, index: Int
+  ) -> [[LaunchpadAppRef]] {
+    var pages = pages.filter { !$0.isEmpty }
+    if pages.isEmpty { pages = [[]] }
+    var current = min(max(page, 0), pages.count - 1)
+    pages[current].insert(app, at: min(max(index, 0), pages[current].count))
+    while pages[current].count > folderCapacity {
+      let overflow = pages[current].removeLast()
+      if current + 1 == pages.count { pages.append([]) }
+      pages[current + 1].insert(overflow, at: 0)
+      current += 1
+    }
+    return pages
+  }
+
   /// 把 App 从文件夹里拖出来：放回文件夹后面那一格；文件夹只剩一个时解散（两个都回到顶层）。
   /// 直接在这里从文件夹里拿掉：不能先走 removeAppFromPages——它会在文件夹只剩一个时当场解散，后面就找不到这个文件夹了。
   func draggingOut(_ appID: String, from folderID: UUID, capacity: Int) -> LaunchpadLayout {

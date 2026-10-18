@@ -27,7 +27,7 @@ struct LaunchpadBitmapTests {
     let size = NSSize(width: 900, height: 620)
     let model = LaunchpadModel(
       layout: layout, catalog: apps, icons: LaunchpadIcons(), columns: 3, rows: 3,
-      screenSize: size)
+      screenSize: size, dragTiming: .immediate)
     model.go(to: 1)
     let host = NSHostingView(
       rootView: LaunchpadView(model: model).frame(width: size.width, height: size.height))

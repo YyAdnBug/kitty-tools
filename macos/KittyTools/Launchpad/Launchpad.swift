@@ -341,7 +341,8 @@ final class Launchpad {
   // MARK: 打开 App / 删除
 
   private func open(_ app: LaunchpadProjectApp) {
-    close(animated: false)
+    // 照 macOS 15：启动台淡出、App 出来（2026-10-18 交互对齐；原来一下子消失）
+    close(animated: true)
     let configuration = NSWorkspace.OpenConfiguration()
     configuration.activates = true
     let name = app.name
