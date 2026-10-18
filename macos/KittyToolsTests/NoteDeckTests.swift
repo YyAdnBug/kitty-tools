@@ -1159,6 +1159,12 @@ struct NoteDeckTests {
     let panel = NoteDeckPanel(frame: offscreen, model: model, onPointer: {})
     let own: [NSWindow?] = [panel, nil]
     #expect(!NoteDeck.isOutside(NSSavePanel(), own: own, isSelectingRegion: false))
+    // 文件面板里的内容是另一个进程画的，点它只有 global 监听收得到（2026-10-18 真机：没固定的便签被收起）：
+    // 点在本进程开着的文件面板框里不算点别处，框外照算
+    let panelFrame = CGRect(x: 400, y: 200, width: 600, height: 400)
+    #expect(NoteDeck.isInsideFilePanel(CGPoint(x: 500, y: 300), frames: [panelFrame]))
+    #expect(!NoteDeck.isInsideFilePanel(CGPoint(x: 100, y: 300), frames: [panelFrame]))
+    #expect(!NoteDeck.isInsideFilePanel(CGPoint(x: 500, y: 300), frames: []))
     #expect(!NoteDeck.isOutside(NSOpenPanel(), own: own, isSelectingRegion: false))
     let other = NSWindow(
       contentRect: offscreen, styleMask: [.borderless], backing: .buffered, defer: true)

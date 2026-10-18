@@ -1939,16 +1939,21 @@ nonisolated final class NoteLayoutManager: NSLayoutManager {
       let rect = viewRect.offsetBy(dx: -origin.x, dy: -origin.y)
       var covered = false
       enumerateLineFragments(forGlyphRange: glyphRange(forBoundingRect: rect, in: container)) {
-        fragment, _, _, glyphs, _ in
+        fragment, used, _, glyphs, _ in
         var slice = rect.intersection(fragment)
         guard !slice.isNull, slice.height > 0 else { return }
         covered = true
-        if let band = self.textBand(of: fragment, glyphs: glyphs, in: storage) {
-          let top = max(slice.minY, band.minY)
-          let bottom = min(slice.maxY, band.maxY)
-          guard bottom > top else { return }
-          slice.origin.y = top
-          slice.size.height = bottom - top
+        // 普通的行怎么铺，图片行就怎么铺：选区的头尾两行系统按 usedRect（字那么高）铺，中间整行选中的按整个行片段
+        // （行高）铺——这一块盖满了整个行片段就是「中间整行」
+        let full = slice.height >= fragment.height - 0.5
+        if let band = self.textBand(
+          of: fragment, used: used, glyphs: glyphs, in: storage, full: full)
+        {
+          // 字的那一条，**不按行片段裁**：图片行的行片段在基线下面只留了一点（NoteImageLayout.padding），裁了的话底色的
+          // 下沿贴着字、比普通的行矮一截（2026-10-18 用户再报「和普通行的选中保持一致」）。多出来的那一两 pt 伸进下一行的
+          // 行片段顶上，下一行的字在它自己的行里居中、碰不到
+          slice.origin.y = band.minY
+          slice.size.height = band.height
         }
         rects.append(slice.offsetBy(dx: origin.x, dy: origin.y))
       }
@@ -1976,10 +1981,12 @@ nonisolated final class NoteLayoutManager: NSLayoutManager {
     return found
   }
 
-  /// 图片那一行（这个行片段里真的有图）里字的那一条：竖向 = 这一行正文的行高（段落样式的 minimumLineHeight），
-  /// 和字（主字体的上下沿，基线在图底）居中。不是图片行给 nil
-  private func textBand(of fragment: NSRect, glyphs: NSRange, in storage: NSTextStorage) -> NSRect?
-  {
+  /// 图片那一行（这个行片段里真的有图）里字的那一条：full（中间整行选中）时竖向 = 这一行正文的行高（段落样式的
+  /// minimumLineHeight）、和字居中；不然 = 字那么高（主字体的上下沿，基线在图底），同普通行头尾两行的 usedRect。
+  /// 不是图片行给 nil
+  private func textBand(
+    of fragment: NSRect, used: NSRect, glyphs: NSRange, in storage: NSTextStorage, full: Bool
+  ) -> NSRect? {
     let chars = characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
     guard chars.length > 0, chars.location < storage.length else { return nil }
     let attributes = storage.attributes(at: chars.location, effectiveRange: nil)
@@ -1988,9 +1995,11 @@ nonisolated final class NoteLayoutManager: NSLayoutManager {
       let font = attributes[NoteStyles.lineFontKey] as? NSFont,
       let style = attributes[.paragraphStyle] as? NSParagraphStyle
     else { return nil }
-    let baseline = fragment.minY + location(forGlyphAt: glyphs.location).y
+    // 基线在图底：图片行的 usedRect 就是图那一块（NoteStyles.centerLine），它的下沿就是基线。不用
+    // location(forGlyphAt:)——行片段的头一个字形是附件，问它拿到的不是字的基线（屏外量的，偏下约 2 pt）
+    let baseline = used.maxY
     let box = font.ascender - font.descender
-    let height = max(style.minimumLineHeight, box)
+    let height = full ? max(style.minimumLineHeight, box) : box
     let top = baseline - font.ascender - (height - box) / 2
     return NSRect(x: fragment.minX, y: top, width: fragment.width, height: height)
   }

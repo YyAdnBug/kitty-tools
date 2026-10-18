@@ -449,7 +449,14 @@ final class NoteDeck: NSObject {
     guard monitors.isEmpty else { return }
     let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
     let global = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] _ in
-      MainActor.assumeIsolated { self?.clickedOutside() }
+      MainActor.assumeIsolated {
+        // 系统的存储 / 打开面板（「插入图片…」「导出为 Markdown…」）窗口是本进程的，里面的内容却是另一个进程画的：
+        // 在面板里点，事件到的是那个进程，本进程只有 global 监听收得到——看着就是「点了别的 App」，没固定的便签被收起
+        // （2026-10-18 用户真机报）。点在本进程开着的文件面板范围里不算点别处
+        let frames = NSApp.windows.filter { $0 is NSSavePanel && $0.isVisible }.map(\.frame)
+        if Self.isInsideFilePanel(NSEvent.mouseLocation, frames: frames) { return }
+        self?.clickedOutside()
+      }
     }
     let local = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
       MainActor.assumeIsolated {
@@ -523,6 +530,12 @@ final class NoteDeck: NSObject {
     if isSelectingRegion || window is OverlayPanel { return false }
     if window is NSSavePanel || (window != nil && window === NSApp.modalWindow) { return false }
     return !own.contains { $0 != nil && $0 === window }
+  }
+
+  /// global 监听收到的这一下是不是点在本进程开着的文件面板（NSSavePanel / NSOpenPanel）里：frames 是这些面板的窗口框
+  /// （全局坐标），点在任何一个里面就是
+  static func isInsideFilePanel(_ point: CGPoint, frames: [CGRect]) -> Bool {
+    frames.contains { $0.contains(point) }
   }
 
   /// 输入法正组着字（正文框、标题框的字段编辑器里有没上屏的拼音）：这时的「点别处」多半是用鼠标点候选词——
