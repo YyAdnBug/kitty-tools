@@ -1,6 +1,7 @@
 // 启动台一块屏的状态（界面读它、面板按键调它）：布局、本机 App、当前页、键盘选中的格子、搜索词、翻页的跟手偏移、
 // 拖动 / 抖动 / 文件夹展开这些编辑状态，以及「打开一个 App」「收起」这些往上抛的回调。
-// 纯展示状态和几何的常量在这里；布局的增删挪在 LaunchpadLayout，窗口和持久化在 Launchpad（总控）。
+// 网格尺寸在 LaunchpadMetrics，翻页状态机在 LaunchpadPager，拖动的值类型和纯函数在 LaunchpadDrag；
+// 布局的增删挪在 LaunchpadLayout，窗口和持久化在 Launchpad（总控）。
 // 键盘选中的口径照 macOS 15：一开始没有选中（鼠标指着不高亮），按一下方向键才出现；到页边接着翻页；搜索结果也按页排。
 // 拖动（2026-10-18 四批评审后的口径，照 macOS 15；复查后 G3 再改）：
 // - 落点按**拿掉被拖那格之后**的插入位置算（slot 不再减 1），页容器居中、两边有留白，算落点先减掉；
@@ -21,197 +22,8 @@ import AppKit
 import Observation
 import SwiftUI
 
-/// 一块屏上的网格尺寸（按屏幕大小算；SPEC R2）。比例照 macOS 15 的官方截图量（2026-10-18 真机反馈「和 macOS 15 差很多」）：
-/// 7 × 5 时网格占屏宽 80%、屏高 79%，从 8% 屏高处开始（第一行图标中心约在 15%）；图标约屏宽的 5.4%；
-/// 搜索框中心在 6.7% 屏高、宽约 1/6 屏宽；页点在 90.5%。行列数改了网格总面积不变，格子跟着缩放。
-nonisolated struct LaunchpadMetrics {
-  let size: CGSize
-  let columns: Int
-  let rows: Int
-
-  var gridWidth: CGFloat { size.width * 0.80 }
-  var gridHeight: CGFloat { size.height * 0.79 }
-  /// 网格左右各留多少（网格在页容器里居中）
-  var side: CGFloat { (size.width - gridWidth) / 2 }
-  var cellWidth: CGFloat { gridWidth / CGFloat(max(columns, 1)) }
-  var cellHeight: CGFloat { gridHeight / CGFloat(max(rows, 1)) }
-  /// 图标边长：约屏宽的 5.4%，受格子限制（放得下图标 + 一行名字），最小 40、最大 140
-  var icon: CGFloat {
-    max(40, min(140, size.width * 0.054, cellWidth * 0.62, (cellHeight - 30) * 0.86))
-  }
-  var labelWidth: CGFloat { cellWidth - 14 }
-  /// 名字的字号（macOS 15 是白色小字）
-  static let labelSize: CGFloat = 11
-
-  static let searchHeight: CGFloat = 28
-  var searchWidth: CGFloat { max(200, size.width / 6) }
-  /// 搜索框上沿
-  var searchTop: CGFloat { max(12, size.height * 0.067 - Self.searchHeight / 2) }
-  /// 网格上沿（矮屏上让开搜索框）
-  var gridTop: CGFloat { max(size.height * 0.08, searchTop + Self.searchHeight + 8) }
-  /// 页点的中心
-  var dotsY: CGFloat { max(size.height * 0.905, gridTop + gridHeight + 8) }
-
-  // 文件夹面板（照 macOS 15：在屏幕中间展开，图标和主网格一样大，G4 起格子宽高分开算）
-  var folderIcon: CGFloat { icon }
-  /// 名字那一行的高（11 pt 字）
-  static let folderLabelHeight: CGFloat = 15
-  /// 图标和名字之间
-  static let folderLabelSpacing: CGFloat = 5
-  /// 面板四边的留白
-  static let folderPadding: CGFloat = 28
-  /// 文件夹名那一行的高、和面板隔多少
-  static let folderTitleHeight: CGFloat = 38
-  static let folderTitleSpacing: CGFloat = 18
-  /// 格子里那一组（选中底 1.22 倍 + 间距 + 一行字）竖着居中：图标中心比格子中心高多少（主网格和文件夹里都是 (6 + 14) / 2）
-  static let iconLift: CGFloat = 10
-  /// 格子宽：和主网格一样，屏太窄时收到面板放得下
-  var folderCellWidth: CGFloat {
-    min(
-      cellWidth, (size.width - 48 - Self.folderPadding * 2) / CGFloat(LaunchpadLayout.folderColumns)
-    )
-  }
-  var folderCellHeight: CGFloat {
-    folderIcon * 1.22 + Self.folderLabelSpacing + Self.folderLabelHeight + 12
-  }
-  /// 名字最宽多少（比格子窄一点，两格的名字中间留缝）
-  var folderLabelWidth: CGFloat { folderCellWidth - 14 }
-  var folderGridWidth: CGFloat { folderCellWidth * CGFloat(LaunchpadLayout.folderColumns) }
-}
-
-/// 拖动的几个时长（照同类里最像 macOS 15 的那个取的数，2026-10-18；真值拿不到，真机手感不对就改这里）
-nonisolated struct LaunchpadDragTiming: Sendable {
-  /// 指针停多久别的图标才让位
-  var reflow: Duration = .milliseconds(150)
-  /// 停在图标中心多久算要合成（出底板）
-  var combine: Duration = .milliseconds(400)
-  /// 合成底板出来以后，停在文件夹上再过多久打开它（合起来约 1 s）
-  var folderOpen: Duration = .milliseconds(600)
-  /// 停在屏幕边上多久翻页
-  var edgeDwell: Duration = .milliseconds(400)
-  /// 一直停在边上，之后每隔多久再翻一页
-  var edgeRepeat: Duration = .milliseconds(600)
-
-  static let macOS15 = LaunchpadDragTiming()
-  /// 单测：让位不等（指针一到落点就换上去），别的照旧
-  static let immediate = LaunchpadDragTiming(reflow: .zero)
-}
-
-/// 松手 / 取消之后那份跟手的滑进落点（滑回原位）：界面按它画，到了就清掉
-nonisolated struct LaunchpadLanding: Equatable {
-  var tile: LaunchpadTile
-  var position: CGPoint
-  var scale: CGFloat
-  var opacity: Double
-}
-
 nonisolated enum LaunchpadDirection {
   case left, right, up, down
-}
-
-/// 正在拖的那一格（R5）：起点、跟手的位移、算出来的落点、停在哪个图标中心上、要不要在边缘停着翻页。
-nonisolated struct LaunchpadDrag: Equatable {
-  var tileID: String
-  /// 拖的是 App 时它的 id（拖出文件夹、删 App 要）
-  var appID: String?
-  /// 从打开的文件夹里拖出来时是那个文件夹
-  var sourceFolder: UUID?
-  /// 按下时指针在面板里的位置
-  var start: CGPoint
-  var translation: CGSize = .zero
-  /// 挪过阈值才算拖（没到松手 = 点了一下）
-  var active = false
-  /// 当前页里的落点（拿掉这一格之后的插入位置；nil = 拖到空白处，放这一页末尾）
-  var targetIndex: Int?
-  /// 指针在某个图标的图标区中心停够了（要合成）：那一格的 id
-  var combineTileID: String?
-  /// 文件夹开着时（从里面拖出来的、或停在文件夹上打开的）落点：这一页里的第几格（nil = 末尾）
-  var folderTarget: Int?
-  /// 指针进过开着的文件夹面板没有（停在文件夹上打开时指针可能还在面板外：进去过再出来才算拖出去）
-  var enteredFolder = false
-  /// 跟手那一份的中心比指针偏多少（按下时指针在图标哪儿就一直在哪儿，不跳到中心）
-  var grabOffset: CGSize = .zero
-  /// 按下时在第几页（取消时只有还在这一页才滑回原位）
-  var startPage = 0
-  /// 停在左右边缘时准备翻到哪一页（== 页数 = 最后一页再往右）
-  var turnPage: Int?
-  /// 在最后一页的右边缘停够了：松手新开一页放它（G10）
-  var appendsPage = false
-
-  var offset: CGSize { translation }
-  var isDragging: Bool { active }
-}
-
-/// 翻页的纯状态机（F17）：跟手 1:1、两头橡皮筋，松手按位移（页宽 1/3）或最后几帧的速度决定。
-/// `travel` 向右为正（看上一页），向左为负（看下一页）；和页面的 `pageOffset` 同一个方向。
-nonisolated struct LaunchpadPager: Equatable {
-  private(set) var offset: CGFloat = 0
-  private var travel: CGFloat = 0
-  private var lastTime: TimeInterval = 0
-  private var velocity: CGFloat = 0
-
-  /// 快甩的阈值（点 / 秒）：真机上一段很短但很快的甩动也能翻
-  static let flickVelocity: CGFloat = 650
-  /// 到头那侧的橡皮筋最多露出页宽的多少
-  static let resistance: CGFloat = 0.18
-
-  mutating func reset() {
-    offset = 0
-    travel = 0
-    lastTime = 0
-    velocity = 0
-  }
-
-  /// 喂这一帧的横向位移（点）；返回跟手的偏移
-  mutating func feed(
-    delta: CGFloat, time: TimeInterval, pageWidth: CGFloat, canBack: Bool, canForward: Bool
-  ) -> CGFloat {
-    let width = max(pageWidth, 1)
-    if lastTime == 0 {
-      // 第一帧只记时间、不算速度：dt 夹成 4 ms 时一帧 6 pt 就是快甩，轻碰一下就翻页（G13）
-      lastTime = time
-    } else {
-      let dt = max(time - lastTime, 0.004)
-      lastTime = time
-      velocity = velocity * 0.55 + (delta / CGFloat(dt)) * 0.45
-    }
-    travel += delta
-    let allowed = travel < 0 ? canForward : canBack
-    if !allowed {
-      offset = (travel < 0 ? -1 : 1) * min(abs(travel) * Self.resistance, width * Self.resistance)
-    } else if abs(travel) <= width {
-      offset = travel
-    } else {
-      offset = (travel < 0 ? -1 : 1) * (width + (abs(travel) - width) * Self.resistance)
-    }
-    return offset
-  }
-
-  /// 手指停住多久以后，松手时不再算快甩（停住再抬 = 慢慢放，G13）
-  static let flickWindow: TimeInterval = 0.08
-
-  /// 位移过页宽的多少算翻（2026-10-18 交互对齐：轻轻一滑就翻；原来是 1/3）
-  static let flipFraction: CGFloat = 0.2
-
-  /// 松手：位移超过页宽 `flipFraction`、或者最后几帧够快就翻；返回 -1 上一页 / +1 下一页 / 0 回弹。
-  /// 快甩按**速度**的方向：和位移方向相反（拖过去又往回甩）就回弹，不翻过去（G13）。`time` 是松手那一刻（nil = 最后一帧）
-  mutating func finish(
-    canBack: Bool, canForward: Bool, pageWidth: CGFloat, time: TimeInterval? = nil
-  ) -> Int {
-    let width = max(pageWidth, 1)
-    let distance = abs(travel)
-    let idle = time.map { $0 - lastTime } ?? 0
-    let speed = idle > Self.flickWindow ? 0 : velocity
-    let fast = abs(speed) >= Self.flickVelocity && distance > 4
-    defer { reset() }
-    guard distance > width * Self.flipFraction || fast else { return 0 }
-    let byTravel = travel < 0 ? 1 : -1
-    if fast, (speed < 0 ? 1 : -1) != byTravel { return 0 }
-    let direction = byTravel
-    if direction > 0, canForward { return 1 }
-    if direction < 0, canBack { return -1 }
-    return 0
-  }
 }
 
 @Observable
@@ -1117,53 +929,6 @@ final class LaunchpadModel {
     return (result.target, result.combine.flatMap { removed[safe: $0]?.id })
   }
 
-  /// 指针在一格里的哪一块：中心区（内缩 20%，合成用）/ 左半 / 右半
-  nonisolated enum DropZone: Equatable {
-    case before, center, after
-  }
-
-  nonisolated static func zone(
-    of location: CGPoint, cell: Int, in frame: CGRect, metrics: LaunchpadMetrics, center: Bool
-  ) -> DropZone {
-    let rect = cellRect(cell, in: frame, metrics: metrics)
-    if center, rect.insetBy(dx: rect.width * 0.2, dy: rect.height * 0.2).contains(location) {
-      return .center
-    }
-    return location.x < rect.midX ? .before : .after
-  }
-
-  /// 指针在第 `cell` 格（画出来的位置）的 `zone` 里时，落点和合成候选怎么变（G3，纯函数）。
-  /// 画出来的格子 = 拿掉被拖那格后的列表在 `gap` 处插了一个空位：空位前面第 c 格是列表的第 c 个，空位后面是第 c − 1 个。
-  /// - 指针在空位上：都不变；
-  /// - 在某个图标的左 / 右边上：插到它前 / 后（它自己不挪，指针下面的还是它，不会追着跑）；
-  /// - 在它的中心区：它是合成候选，空位不动；
-  /// - 在最后一个后面的空格子里：放到末尾。
-  nonisolated static func dropTarget(cell: Int, zone: DropZone, gap: Int, count: Int) -> (
-    target: Int?, combine: Int?
-  ) {
-    if cell == gap { return (nil, nil) }
-    let index = cell < gap ? cell : cell - 1
-    guard index < count else { return (count, nil) }
-    switch zone {
-    case .center: return (nil, index)
-    case .before: return (index, nil)
-    case .after: return (index + 1, nil)
-    }
-  }
-
-  /// 第几格在页容器里的矩形（网格居中、两边各留 side）
-  nonisolated static func cellRect(_ index: Int, in frame: CGRect, metrics: LaunchpadMetrics)
-    -> CGRect
-  {
-    let insetX = max(0, (frame.width - metrics.gridWidth) / 2)
-    let column = index % max(metrics.columns, 1)
-    let row = index / max(metrics.columns, 1)
-    return CGRect(
-      x: frame.minX + insetX + CGFloat(column) * metrics.cellWidth,
-      y: frame.minY + CGFloat(row) * metrics.cellHeight,
-      width: metrics.cellWidth, height: metrics.cellHeight)
-  }
-
   /// 松手：执行**屏上正显示的**排法（落点、合成底板都是停够了才换上去的，不按松手那一刻的指针重算，LaunchNext 的做法）。
   /// 文件夹开着、指针在面板里 = 放进文件夹那一格；停在图标中心够久 = 建文件夹 / 加进文件夹；其余按落点挪。
   /// 从文件夹里拖出来的先拿出来再挪。跟手的那一份随后滑进落点（`landing`）
@@ -1320,29 +1085,6 @@ final class LaunchpadModel {
       guard self.landingID == id else { return }
       self.landing = nil
     }
-  }
-
-  /// 页容器里的坐标 → 第几格（纯函数，单测直接喂）。页容器是全宽的，网格居中、两边各留 side（F2）
-  nonisolated static func cellIndex(
-    at location: CGPoint, in frame: CGRect, metrics: LaunchpadMetrics
-  ) -> Int? {
-    let insetX = max(0, (frame.width - metrics.gridWidth) / 2)
-    let x = location.x - frame.minX - insetX
-    let y = location.y - frame.minY
-    guard x >= 0, y >= 0, metrics.cellWidth > 0, metrics.cellHeight > 0 else { return nil }
-    let column = Int(x / metrics.cellWidth)
-    let row = Int(y / metrics.cellHeight)
-    guard (0..<metrics.columns).contains(column), (0..<metrics.rows).contains(row) else {
-      return nil
-    }
-    return row * metrics.columns + column
-  }
-
-  /// 指针是不是停在那一格的图标区中心附近（内缩 20%）。居中是「要合成」的判定之一（F1）
-  nonisolated static func isInIconCenter(
-    _ location: CGPoint, cell index: Int, in frame: CGRect, metrics: LaunchpadMetrics
-  ) -> Bool {
-    zone(of: location, cell: index, in: frame, metrics: metrics, center: true) == .center
   }
 
   /// 指针正停在哪个图标的中心上（`candidate` 是画在指针下面的那一格，G3）：停够 `dragTiming.combine` 出合成底板；
