@@ -11,7 +11,7 @@
 import Foundation
 
 nonisolated struct Note: Identifiable, Equatable, Sendable {
-  /// 纸色有几种：color 是 0..<colorCount 的下标（调色板以后的批次定）
+  /// 纸色有几种：color 是 0..<colorCount 的下标（8 种纸色和它们的字色在 NotePaper）
   static let colorCount = 8
   /// 拿正文第一行当标题时最多几个字、列表里的摘要最多几个字
   static let titleLength = 60
@@ -20,8 +20,8 @@ nonisolated struct Note: Identifiable, Equatable, Sendable {
   static let untitled = "未命名便签"
   /// 一条便签的正文最多多大（UTF-8 字节）。导入的文件按它查（SettingsArchive：正文超了的那条不要；自己导出时有超的
   /// 就不让导出「便签」一类）；正文编辑器（NoteTextView.maxBytes）和快速记一条按它拦——会超的那一次输入不进。
-  /// ponytail: 正文仓库自己不拦。以后的「存成便签」这些入口要按它拦——剪贴板单条文字可以到 5 MB，原样存成便签就会让
-  /// 「便签」一类导不出去、每日自动备份里也不带
+  /// ponytail: 正文仓库自己不拦；现在能写正文的入口（编辑器、快速记一条、导入）各自先按它拦，以后新加的入口也要拦——
+  /// 剪贴板单条文字可以到 5 MB，原样存成便签就会让「便签」一类导不出去、每日自动备份里也不带
   static let maxBodyBytes = 1 << 20
   /// 自己起的标题的上限：不超过这么多个字，并且 UTF-8 不超过这么多字节（一个字后面挂一长串组合符号的那种，按字数拦不住）。
   /// 超了的一律截到上限（sanitized(title:)）：仓库的写入口和读导出文件时都是

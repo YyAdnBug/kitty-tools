@@ -310,7 +310,7 @@ final class NoteImageAttachmentCell: NSTextAttachmentCell {
 /// 解好的缩略图（按像素数算 cost，LRU：读到就挪到队尾；闲下来整块放掉）。**线程安全**：布局时也可能从别的线程问
 /// （mac-native §3 的布局回调），所以不用 MainActor 的缓存。
 /// 不用 `NSCache`：它按 cost 淘汰的时机不可控（刚放进去的一张马上被自己挤掉就没法知道该不该重画）、
-/// 缓存键的命中 / 已在解 / 失败三态和负缓存都没有，这里要自己数、自己测（F7；PLAN §10「第 7 批」写了理由）
+/// 缓存键的命中 / 已在解 / 失败三态和负缓存都没有，这里要自己数、自己测（F7；理由在 docs/archive/PLAN-notes.md「第 7 批」）
 nonisolated enum NoteImageThumbnails {
   /// 缓存上限（像素数）：一两屏 Retina 满宽的大图（2560 × 1600 ≈ 410 万像素，一张约 16 MB 位图），三四张一起看也放得下。
   /// 单张超过这个数的缩略图**放进去也不会把自己挤掉**（不然画一次解一次，一直占 CPU）

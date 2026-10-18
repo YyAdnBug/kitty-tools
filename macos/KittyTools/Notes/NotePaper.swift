@@ -202,7 +202,6 @@ nonisolated enum NoteColor: Int, CaseIterable, Sendable {
     NotePaper.dynamic(
       light, dark, alpha: NotePaper.doneOpacity, contrastAlpha: NotePaper.secondaryOpacity)
   }
-  var swiftUIColor: Color { Color(nsColor: color) }
 
   /// 名字 → 颜色：只认全小写的这 6 个（`Red`、`RED` 都不认）
   static func named(_ name: String) -> NoteColor? { allCases.first { $0.name == name } }

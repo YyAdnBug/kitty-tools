@@ -78,10 +78,6 @@ nonisolated enum NoteTasks {
     }
   }
 
-  /// 兼容用的两个名字（旧代码、旧测试里说的「没做完的方框」「做完的方框」）
-  static let open: Character = State.todo.character
-  static let done: Character = State.done.character
-
   private static let space: UInt16 = 0x20
   private static let tab: UInt16 = 0x09
 

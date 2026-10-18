@@ -235,7 +235,7 @@ nonisolated enum NoteMarkdownFiles {
   }
 
   /// 正文里的图片令牌换成 `![image|宽](attachments/<编号>.<扩展名>)`；代码块里的行不换
-  static func imagesToMarkdown(_ body: String) -> String {
+  private static func imagesToMarkdown(_ body: String) -> String {
     markdownImages(body).text
   }
 

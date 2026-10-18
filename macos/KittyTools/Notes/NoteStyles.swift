@@ -159,7 +159,6 @@ nonisolated enum NoteStyles {
     var isBullet = false
     /// 任务方框的状态（nil = 不是方框）
     var boxState: NoteTasks.State?
-    var isBox: Bool { boxState != nil }
     var isMarker = false
     var isCodeBlock = false
     var isFence = false

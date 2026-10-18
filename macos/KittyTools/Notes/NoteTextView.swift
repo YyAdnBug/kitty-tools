@@ -458,7 +458,7 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   /// 各自重排（各自一对 beginEditing / endEditing）。这样排出来的和整篇排一遍逐个属性一样（单测
   /// NoteTextViewTests.codeBlocksInTheEditor / quoteMarginsFollowNeighbors，随机探针 NoteEditorFuzzTests 每步逐字比）。
   /// ponytail: 每次收尾都把整篇的围栏行重认一遍（一行一行看行首）；有代码块时还把字上记着角色的那几段过一遍。
-  /// 实测数在 PLAN §10「便签」手测反馈第 4 批；真卡了改成只在改到的行里有、或改之前有围栏时才重认
+  /// 实测数在 docs/archive/PLAN-notes.md「手测反馈第 4 批」；真卡了改成只在改到的行里有、或改之前有围栏时才重认
   private func restyleEdited(_ edited: NSRange, in storage: NSTextStorage) {
     let text = storage.mutableString
     let previous = blocks
