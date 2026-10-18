@@ -1344,7 +1344,7 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
       title: NotesWindowModel.taskTitle, action: #selector(toggleTask(_:)), keyEquivalent: "")
     item.target = self
     let states = stateItem(in: selection)
-    let format = formatItem()
+    let format = formatItem(in: selection)
     let colors = colorItem(in: selection)
     let image = NSMenuItem(
       title: Self.insertImageTitle, action: #selector(insertImageFromPanel(_:)), keyEquivalent: "")
@@ -1502,6 +1502,21 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     if item.action == #selector(formatFromMenu(_:)) {
       return isEditable && !touchesCodeBlock(selectedRange())
     }
+    if item.action == #selector(blockFromMenu(_:)) {
+      return isEditable && !touchesCodeBlock(selectedRange())
+    }
+    if item.action == #selector(toggleCodeBlock(_:)) {
+      guard let text = textStorage?.mutableString else { return false }
+      return isEditable
+        && NoteMarkdown.codeSpot(in: text, selection: selectedRange()) != .straddles
+    }
+    if item.action == #selector(insertLinkFromMenu(_:)) {
+      return isEditable && !touchesCodeBlock(selectedRange())
+    }
+    if item.action == #selector(clearFormatFromMenu(_:)) {
+      return isEditable && selectedRange().length > 0
+        && !touchesCodeBlock(selectedRange())
+    }
     if item.action == #selector(openLink(_:)) { return true }
     if item.action == #selector(insertImageFromPanel(_:)) { return isEditable }
     // 粘贴：按**自己读的那个剪贴板**判（`pasteboard`；单测换成自己建的）——有我们处理得了的图片，或者有能读的类型
@@ -1539,45 +1554,182 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     return true
   }
 
-  /// 加 / 去掉一种标记（规则在 NoteMarkdown.toggle：没有选区插一对、有选区每行各自包、已经包着的去掉）：一步撤销，
-  /// 改字走 perform。Markdown 关着时照样加（存的本来就是 Markdown 的原文，只是不显示成样式）；选区碰到代码块、
-  /// 没有可包的字时不改、响一声
+  /// 加 / 去掉一种标记（规则在 NoteMarkdown.toggle：没有选区插一对；有选区时粗体 / 斜体 / 删除线整段一种、
+  /// 行内代码每行各自包；已经包着的去掉）：一步撤销，改字走 perform。Markdown 关着时照样加（存的本来就是 Markdown
+  /// 的原文，只是不显示成样式）；选区碰到代码块、没有可包的字时不改、响一声
   func format(_ wrap: NoteMarkdown.Wrap) {
     guard isEditable, !hasMarkedText(), let text = textStorage?.mutableString else { return }
     let selection = selectedRange()
     guard !touchesCodeBlock(selection) else { return NSSound.beep() }
-    var (start, contentsEnd) = (0, 0)
-    text.getLineStart(&start, end: nil, contentsEnd: &contentsEnd, for: selection)
-    let block = text.substring(with: NSRange(location: start, length: contentsEnd - start))
-    // 选到了最后一行的换行不算；光标夹在 \r\n 中间时算在行尾
-    let location = min(selection.location, contentsEnd)
-    let local = NSRange(
-      location: location - start, length: max(0, min(NSMaxRange(selection), contentsEnd) - location)
-    )
-    guard let change = NoteMarkdown.toggle(wrap, in: block, selection: local) else {
+    let block = localBlock(selection, in: text)
+    guard let change = NoteMarkdown.toggle(wrap, in: block.text, selection: block.local) else {
       return NSSound.beep()
     }
-    perform(change, at: start)
+    perform(change, at: block.start)
   }
 
-  /// 右键菜单的「格式」：四项，带键位（看得见有这几个键）
-  private func formatItem() -> NSMenuItem {
+  /// 选区碰到的那几行，和夹在里面的选区（去掉最后一行换行、不超出这几行）：NoteMarkdown 里那些函数要的
+  private func localBlock(
+    _ selection: NSRange, in text: NSString
+  ) -> (start: Int, text: String, local: NSRange) {
+    let block = lineBlock(for: selection, in: text)
+    let length = (block.text as NSString).length
+    let start = min(block.local.location, length)
+    let local = NSRange(
+      location: start,
+      length: max(0, min(NSMaxRange(block.local), length) - start))
+    return (block.start, block.text, local)
+  }
+
+  /// 右键菜单的「格式」：粗体 / 斜体 / 删除线 / 代码（带键位），一条分节线，标题 1–3、引用、无序列表、有序列表、
+  /// 代码块，一条分节线，链接、清除格式。打勾：粗体 / 斜体 / 删除线看选区里能加的字是不是全都已经是；块格式看选区
+  /// 碰到的非空行是不是全都是；代码块看选中的行是不是都在块里；代码、链接、清除格式不自动打勾。停用：代码块里除了
+  /// 「代码块」都停用；链接跨行时停用；清除格式没选字时停用。**带子菜单这一项要自己说了算**（autoenablesItems = false）
+  private func formatItem(in selection: NSRange) -> NSMenuItem {
     let submenu = NSMenu(title: Self.formatTitle)
-    for wrap in NoteMarkdown.Wrap.allCases {
-      let item = NSMenuItem(
-        title: wrap.title, action: #selector(formatFromMenu(_:)), keyEquivalent: wrap.key)
-      item.keyEquivalentModifierMask = wrap.modifiers
-      item.tag = wrap.rawValue
+    submenu.autoenablesItems = false
+    let text = textStorage?.mutableString
+    let block = text.map { localBlock(selection, in: $0) }
+    let spot = text.map { NoteMarkdown.codeSpot(in: $0, selection: selection) } ?? .outside
+    let inCode = spot != .outside
+    let crossing =
+      block.map { NoteMarkdown.crossesLines($0.text, selection: $0.local) } ?? true
+    func add(
+      _ title: String, _ action: Selector, key: String = "",
+      mask: NSEvent.ModifierFlags = .command, tag: Int, enabled: Bool, checked: Bool = false
+    ) {
+      let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+      if !key.isEmpty { item.keyEquivalentModifierMask = mask }
+      item.tag = tag
       item.target = self
+      item.isEnabled = enabled
+      item.state = checked ? .on : .off
       submenu.addItem(item)
     }
+    for wrap in [NoteMarkdown.Wrap.bold, .italic, .strike, .code] {
+      let checked: Bool
+      if wrap == .code || block == nil {
+        checked = false
+      } else {
+        checked = NoteMarkdown.isFormatted(wrap, in: block!.text, selection: block!.local) == true
+      }
+      add(
+        wrap.title, #selector(formatFromMenu(_:)), key: wrap.key, mask: wrap.modifiers,
+        tag: wrap.rawValue, enabled: isEditable && !inCode, checked: checked)
+    }
+    // 链接和加标记的几个放一组（R5 的顺序），块格式在分节线后面
+    add(
+      "链接", #selector(insertLinkFromMenu(_:)), tag: FormatTag.link.rawValue,
+      enabled: isEditable && !inCode && !crossing)
+    submenu.addItem(.separator())
+    let blockFormats: [(NoteMarkdown.BlockFormat, FormatTag)] = [
+      (.heading(1), .heading1), (.heading(2), .heading2), (.heading(3), .heading3),
+      (.quote, .quote), (.bullet, .bullet), (.ordered, .ordered),
+    ]
+    for (format, tag) in blockFormats {
+      let checked: Bool
+      if let block {
+        checked = NoteMarkdown.blockIsOn(format, in: block.text, selection: block.local) == true
+      } else {
+        checked = false
+      }
+      add(
+        format.title, #selector(blockFromMenu(_:)), tag: tag.rawValue,
+        enabled: isEditable && !inCode, checked: checked)
+    }
+    add(
+      "代码块", #selector(toggleCodeBlock(_:)), tag: FormatTag.codeBlock.rawValue,
+      enabled: isEditable && spot != .straddles, checked: spot == .inside)
+    submenu.addItem(.separator())
+    add(
+      "清除格式", #selector(clearFormatFromMenu(_:)), tag: FormatTag.clear.rawValue,
+      enabled: isEditable && !inCode && selection.length > 0)
     let item = NSMenuItem(title: Self.formatTitle, action: nil, keyEquivalent: "")
     item.submenu = submenu
     return item
   }
 
+  /// 「格式」子菜单里各项的 tag（粗体那四个用 Wrap.rawValue）
+  private enum FormatTag: Int {
+    case heading1 = 10
+    case heading2
+    case heading3
+    case quote
+    case bullet
+    case ordered
+    case codeBlock
+    case link
+    case clear
+  }
+
   @objc private func formatFromMenu(_ sender: NSMenuItem) {
     if let wrap = NoteMarkdown.Wrap(rawValue: sender.tag) { format(wrap) }
+  }
+
+  @objc private func blockFromMenu(_ sender: NSMenuItem) {
+    let format: NoteMarkdown.BlockFormat
+    switch FormatTag(rawValue: sender.tag) {
+    case .heading1: format = .heading(1)
+    case .heading2: format = .heading(2)
+    case .heading3: format = .heading(3)
+    case .quote: format = .quote
+    case .bullet: format = .bullet
+    case .ordered: format = .ordered
+    default: return
+    }
+    setBlock(format)
+  }
+
+  @objc private func toggleCodeBlock(_ sender: NSMenuItem) { setCodeBlock() }
+
+  @objc private func insertLinkFromMenu(_ sender: NSMenuItem) { makeLink() }
+
+  @objc private func clearFormatFromMenu(_ sender: NSMenuItem) { clearFormat() }
+
+  /// 换成一种块格式 / 去掉（NoteMarkdown.block：标题、引用、无序列表、有序列表；代码块里响一声）
+  func setBlock(_ format: NoteMarkdown.BlockFormat) {
+    guard isEditable, !hasMarkedText(), let text = textStorage?.mutableString else { return }
+    let selection = selectedRange()
+    guard !touchesCodeBlock(selection) else { return NSSound.beep() }
+    let block = localBlock(selection, in: text)
+    guard let change = NoteMarkdown.block(format, in: block.text, selection: block.local) else {
+      return NSSound.beep()
+    }
+    perform(change, at: block.start)
+  }
+
+  /// 「代码块」那一项：选中块里的行去掉围栏、光标在空行插三行、别的给碰到的行上下加围栏（一半在块里响一声）
+  func setCodeBlock() {
+    guard isEditable, !hasMarkedText(), let text = textStorage?.mutableString else { return }
+    guard let change = NoteMarkdown.codeBlock(in: text, selection: selectedRange()) else {
+      return NSSound.beep()
+    }
+    perform(change, at: 0)
+  }
+
+  /// 「链接」那一项：没选字插 `[]()`、光标在方括号里；选了字换成 `[选中的字]()`、光标在小括号里
+  func makeLink() {
+    guard isEditable, !hasMarkedText(), let text = textStorage?.mutableString else { return }
+    let selection = selectedRange()
+    guard !touchesCodeBlock(selection) else { return NSSound.beep() }
+    let block = localBlock(selection, in: text)
+    guard let change = NoteMarkdown.link(in: block.text, selection: block.local) else {
+      return NSSound.beep()
+    }
+    perform(change, at: block.start)
+  }
+
+  /// 「清除格式」：选区里的粗体、斜体、删除线、颜色去掉，碰到的行内代码和链接去掉标记；块格式不动
+  func clearFormat() {
+    guard isEditable, !hasMarkedText(), let text = textStorage?.mutableString else { return }
+    let selection = selectedRange()
+    guard selection.length > 0 else { return NSSound.beep() }
+    guard !touchesCodeBlock(selection) else { return NSSound.beep() }
+    let block = localBlock(selection, in: text)
+    guard let change = NoteMarkdown.clear(in: block.text, selection: block.local) else {
+      return NSSound.beep()
+    }
+    perform(change, at: block.start)
   }
 
   /// 粘贴从哪个剪贴板读（单测换成自己建的，不碰系统的）

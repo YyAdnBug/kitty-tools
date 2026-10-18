@@ -13,7 +13,9 @@
 // ponytail: 导出时文件名截到 80 个字 / 200 字节，不是按文件系统的实际上限（255 字节）算的：够用，长名字截短比
 //   截到 255 里再被系统拒了好。导入只读文件夹的第一层，不进子文件夹（SPEC §7 不做）。
 
+import AppKit
 import Foundation
+import UniformTypeIdentifiers
 
 nonisolated enum NoteMarkdownFiles {
   /// 导出文件夹的名字前缀
@@ -422,8 +424,7 @@ nonisolated enum NoteMarkdownFiles {
     guard let imageDirectory else {
       // 没有图片目录：令牌照样换、文件都不拷
       for (note, name) in zip(notes, names) {
-        let body = markdownImages(NoteTasks.markdown(from: note.body)).text
-        let text = header(for: note) + "\n\n" + NoteMarkdown.html(from: body)
+        let (text, images) = fileText(for: note)
         do {
           try write(text, name: name, in: folder)
           result.count += 1
@@ -431,17 +432,13 @@ nonisolated enum NoteMarkdownFiles {
           result.failure = "「\(name).md」写不进去：\(error.localizedDescription)"
           return result
         }
-      }
-      result.missingImages = notes.reduce(0) {
-        $0 + markdownImages(NoteTasks.markdown(from: $1.body)).images.count
+        result.missingImages += images.count
       }
       return result
     }
     let attachments = folder.appending(path: attachmentsName, directoryHint: .isDirectory)
     for (note, name) in zip(notes, names) {
-      let tasks = NoteTasks.markdown(from: note.body)
-      let (body, images) = markdownImages(tasks)
-      let text = header(for: note) + "\n\n" + NoteMarkdown.html(from: body)
+      let (text, images) = fileText(for: note)
       do {
         try write(text, name: name, in: folder)
         result.count += 1
@@ -453,25 +450,146 @@ nonisolated enum NoteMarkdownFiles {
         let key = "\(image.id.uuidString).\(image.ext)"
         guard !copied.contains(key) else { continue }
         copied.insert(key)
-        let source = imageDirectory.appending(path: key)
-        guard isRegularFile(source) else {
-          result.missingImages += 1
-          continue
-        }
-        if !FileManager.default.fileExists(atPath: attachments.path) {
-          try? FileManager.default.createDirectory(
-            at: attachments, withIntermediateDirectories: true)
-        }
-        let destination = attachments.appending(path: key)
-        if FileManager.default.fileExists(atPath: destination.path) { continue }
-        do {
-          try FileManager.default.copyItem(at: source, to: destination)
-        } catch {
+        if copy(image, from: imageDirectory, to: attachments) == .missing {
           result.missingImages += 1
         }
       }
     }
     return result
+  }
+
+  /// 一条便签在导出文件里的全文（文件头 + 空行 + 正文）和用到的图片。整个文件夹导出和单条导出共用这一份，
+  /// 两边的文件必须一字不差（R12）
+  static func fileText(for note: Note) -> (text: String, images: [NoteImages.Image]) {
+    let tasks = NoteTasks.markdown(from: note.body)
+    let (body, images) = markdownImages(tasks)
+    return (header(for: note) + "\n\n" + NoteMarkdown.html(from: body), images)
+  }
+
+  /// 拷一张图的结果：拷好了、旁边已经有了（跳过、**不覆盖**）、源文件不在或拷不进去
+  private enum CopyResult {
+    case copied
+    case alreadyThere
+    case missing
+  }
+
+  /// 把一张图从 imageDirectory 拷进 attachments/（同一张已经有了就跳过，绝不覆盖已有的文件）。
+  /// 有图要拷时才建 attachments/。整个文件夹导出和单条导出共用
+  private static func copy(
+    _ image: NoteImages.Image, from imageDirectory: URL, to attachments: URL
+  ) -> CopyResult {
+    let key = "\(image.id.uuidString).\(image.ext)"
+    let source = imageDirectory.appending(path: key)
+    guard isRegularFile(source) else { return .missing }
+    let destination = attachments.appending(path: key)
+    if FileManager.default.fileExists(atPath: destination.path) { return .alreadyThere }
+    if !FileManager.default.fileExists(atPath: attachments.path) {
+      try? FileManager.default.createDirectory(
+        at: attachments, withIntermediateDirectories: true)
+    }
+    do {
+      try FileManager.default.copyItem(at: source, to: destination)
+      return .copied
+    } catch {
+      return .missing
+    }
+  }
+
+  // MARK: 单条导出（R8–R12）
+
+  /// 单条导出写完了：给刘海岛说的话要用
+  struct SingleResult: Sendable {
+    /// 存成的文件名（带 .md）
+    var fileName = ""
+    /// 导出到旁边的图片张数（不包含不在的）
+    var images = 0
+    /// 不在、没导出的图片张数
+    var missingImages = 0
+    /// 写不进去时是什么原因
+    var failure: String?
+  }
+
+  /// 把一条便签写成一个 .md（全文和整个文件夹导出时一样），图片从 imageDirectory 拷进同一个文件夹的
+  /// attachments/（已经有了跳过、不覆盖；不在的算进 missingImages，不耽误文件本身）。
+  /// 写文件、拷图片都在 @concurrent 里做（R10）
+  @concurrent static func export(
+    note: Note, imageDirectory: URL?, to url: URL
+  ) async -> SingleResult {
+    var result = SingleResult()
+    result.fileName = url.lastPathComponent
+    let (text, images) = fileText(for: note)
+    do {
+      try Data(text.utf8).write(to: url, options: .atomic)
+    } catch {
+      result.failure = "「\(url.lastPathComponent)」写不进去：\(error.localizedDescription)"
+      return result
+    }
+    guard let imageDirectory else {
+      result.missingImages = images.count
+      return result
+    }
+    let attachments = url.deletingLastPathComponent()
+      .appending(path: attachmentsName, directoryHint: .isDirectory)
+    var seen = Set<String>()
+    for image in images {
+      // 同一张图引用了几次也只算一张、只拷一份（和导出全部一样按编号去重）
+      let key = "\(image.id.uuidString).\(image.ext)"
+      guard seen.insert(key).inserted else { continue }
+      switch copy(image, from: imageDirectory, to: attachments) {
+      case .copied, .alreadyThere: result.images += 1
+      case .missing: result.missingImages += 1
+      }
+    }
+    return result
+  }
+
+  /// 三处入口菜单里那一项的名字（全部便签窗口的右键、那叠 / 浮动便签的操作菜单，R8）
+  static let singleExportTitle = "导出为 Markdown…"
+
+  /// 「导出为 Markdown…」的存储面板：选好之后在后台写文件，写完用刘海岛说一句（R9、R11）。
+  /// 那叠、浮动便签的面板不激活 App，所以面板关掉之后要：先把 App 叫到前台、再 begin、关掉后把前台还给原来的 App
+  /// （同 NoteTextView.insertImageFromPanel），然后 restore 把键盘还给便签（调用方给）。
+  /// 便签窗口（普通 NSWindow）也走这一条，行为三处一样（R10 允许 beginSheetModal / begin）
+  @MainActor static func exportPanel(
+    _ note: Note, imageDirectory: URL?, island: Island?,
+    restore: @escaping @MainActor () -> Void = {}
+  ) {
+    let panel = NSSavePanel()
+    panel.nameFieldStringValue = fileName(for: note) + ".md"
+    panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
+    panel.canCreateDirectories = true
+    panel.prompt = "导出"
+    panel.message = "导出成一个 Markdown 文件；图片放在旁边的 attachments 文件夹里"
+    panel.isExtensionHidden = false
+    let previous = NSApp.isActive ? nil : NSWorkspace.shared.frontmostApplication
+    if previous != nil {
+      NSApp.activate()
+      if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
+    }
+    panel.begin { response in
+      previous?.activate()
+      restore()
+      guard response == .OK, let url = panel.url else { return }
+      Task {
+        let result = await export(note: note, imageDirectory: imageDirectory, to: url)
+        guard let island else { return }
+        if let failure = result.failure {
+          island.show(
+            "导出没成", detail: failure, tone: .error,
+            symbol: "exclamationmark.triangle.fill")
+          return
+        }
+        if result.missingImages > 0 {
+          var detail = "\(result.missingImages) 张图片不在，没导出"
+          if result.images > 0 { detail = "\(result.images) 张图片在旁边的 attachments 文件夹 · " + detail }
+          island.show("已导出「\(result.fileName)」", detail: detail)
+          return
+        }
+        island.show(
+          "已导出「\(result.fileName)」",
+          detail: result.images > 0 ? "\(result.images) 张图片在旁边的 attachments 文件夹" : nil)
+      }
+    }
   }
 
   private static func write(_ text: String, name: String, in folder: URL) throws {

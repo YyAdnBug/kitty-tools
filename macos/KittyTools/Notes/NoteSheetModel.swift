@@ -262,9 +262,29 @@ import Observation
         title: Self.openInWindowTitle, symbol: HotKeyAction.noteAll.symbol, section: 2
       ) { [unowned self] in openInWindow() },
       ActionMenu.Item(
+        title: NoteMarkdownFiles.singleExportTitle, symbol: "square.and.arrow.up", section: 2
+      ) { [unowned self] in exportMarkdown() },
+      ActionMenu.Item(
         title: "\(Names.settingsTitle)…", symbol: Names.settingsSymbol, shortcut: "⌘,", section: 3
       ) { [unowned self] in openSettings() },
     ]
+  }
+
+  /// 「导出为 Markdown…」：先落盘再开保存面板；面板关掉之后把键盘还给便签（那叠、浮动便签的面板不激活 App，
+  /// 面板开完要自己 makeKey / makeFirstResponder，同插图那一条）
+  func exportMarkdown() {
+    guard let note = current else { return }
+    closeMenu()
+    store.flush()
+    NoteMarkdownFiles.exportPanel(
+      note, imageDirectory: store.images?.directory, island: island
+    ) { [weak self] in
+      guard let self else { return }
+      self.withEditor { editor in
+        editor.window?.makeKey()
+        editor.window?.makeFirstResponder(editor)
+      }
+    }
   }
 
   private func colorItems(_ note: Note) -> [ActionMenu.Item] {

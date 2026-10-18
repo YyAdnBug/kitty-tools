@@ -797,9 +797,9 @@ struct NotesWindowTests {
     #expect(try press("b", kVK_ANSI_B) && store.note(ids[0])?.body == "**甲的正文**，加一句")
     #expect(try press("i", kVK_ANSI_I) && store.note(ids[0])?.body == "***甲的正文***，加一句")
     #expect(try press("e", kVK_ANSI_E) && store.note(ids[0])?.body == "***`甲的正文`***，加一句")
-    #expect(
-      try press("x", kVK_ANSI_X, [.command, .shift], plain: "X")
-        && store.note(ids[0])?.body == "***`~~甲的正文~~`***，加一句")
+    // 行内代码里不能再加删除线：响一声、不改
+    #expect(try press("x", kVK_ANSI_X, [.command, .shift], plain: "X"))
+    #expect(store.note(ids[0])?.body == "***`甲的正文`***，加一句")
     // ⌘Z 撤回去（测试是同步跑的：几次按键都在同一轮事件循环里，系统把它们并成了一组；一步一撤在 NoteTextViewTests）
     var undos = 0
     while store.note(ids[0])?.body != "甲的正文，加一句", undos < 4, try press("z", kVK_ANSI_Z) {
@@ -872,11 +872,13 @@ struct NotesWindowTests {
     let (model, store, ids) = try make(["一条", "另一条"])
     store.setColor(3, of: ids[0])
     let menu = NSMenu.of(model.rowItems(try #require(store.note(ids[0]))))
-    #expect(menu.items.map(\.title) == ["固定", "归档", "颜色", "浮在屏幕上", "", "删除"])
-    #expect(menu.items[4].isSeparatorItem && menu.items.allSatisfy { $0.image == nil })
-    expectColorDots(try #require(menu.items[2].submenu), current: 3)
+    #expect(
+      menu.items.map(\.title)
+        == ["固定", "归档", "导出为 Markdown…", "颜色", "浮在屏幕上", "", "删除"])
+    #expect(menu.items[5].isSeparatorItem && menu.items.allSatisfy { $0.image == nil })
+    expectColorDots(try #require(menu.items[3].submenu), current: 3)
     // 点里面的一项：换色；固定、归档、删除照做
-    menu.items[2].submenu?.performActionForItem(at: 6)
+    menu.items[3].submenu?.performActionForItem(at: 6)
     #expect(store.note(ids[0])?.color == 6)
     menu.performActionForItem(at: 0)
     #expect(store.note(ids[0])?.isPinned == true)
@@ -886,8 +888,10 @@ struct NotesWindowTests {
     #expect(store.note(ids[0])?.isArchived == true)
     let archived = NSMenu.of(model.rowItems(try #require(store.note(ids[0]))))
     // 归档里的不能浮着：没有那一项
-    #expect(archived.items.map(\.title) == ["取消固定", "取消归档", "颜色", "", "删除"])
-    archived.performActionForItem(at: 4)
+    #expect(
+      archived.items.map(\.title)
+        == ["取消固定", "取消归档", "导出为 Markdown…", "颜色", "", "删除"])
+    archived.performActionForItem(at: 5)
     let trashed = NSMenu.of(model.rowItems(try #require(store.note(ids[0]))))
     #expect(trashed.items.map(\.title) == ["放回", "", "永久删除…", "清空最近删除…"])
     trashed.performActionForItem(at: 3)
@@ -928,8 +932,10 @@ struct NotesWindowTests {
     source.isMenuClick = { true }
     #expect(host.hitTest(point) === source)
     let menu = try #require(source.menu(for: mouse(.rightMouseDown)))
-    #expect(menu.items.map(\.title) == ["固定", "归档", "颜色", "浮在屏幕上", "", "删除"])
-    expectColorDots(try #require(menu.items[2].submenu), current: note.color)
+    #expect(
+      menu.items.map(\.title)
+        == ["固定", "归档", "导出为 Markdown…", "颜色", "浮在屏幕上", "", "删除"])
+    expectColorDots(try #require(menu.items[3].submenu), current: note.color)
   }
 
 }

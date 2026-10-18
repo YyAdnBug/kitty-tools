@@ -292,14 +292,15 @@ struct NoteFloatTests {
 
   /// 操作菜单最多露几行：平时 9 行（八项四节正好放下）；便签拉矮了按它的高度收，不出便签
   @Test func menuFitsAShortNote() throws {
-    #expect(NoteSheet.menuRows(height: 380) == 9 && NoteSheet.menuRows(height: 320) == 9)
-    // 八项四节（三条分节线）在 9 行里放得下、不用滚
+    #expect(NoteSheet.menuRows(height: 380) == 10.5)
+    #expect(abs(NoteSheet.menuRows(height: 320) - 270.0 / 28) < 0.000_1)
+    // 九项四节（三条分节线）在 380 高的便签里放得下、不用滚
     let model = NoteDeckModel(store: try NoteStore(db: Database(path: ":memory:")))
     let note = Note(id: "x", createdAt: .now, modifiedAt: .now)
     let items = model.actionItems(note)
     #expect(
-      items.count == 8
-        && ActionMenu.height(items, maxRows: 9) == ActionMenu.height(items, maxRows: 99))
+      items.count == 9
+        && ActionMenu.height(items, maxRows: 10.5) == ActionMenu.height(items, maxRows: 99))
     let short = NoteSheet.menuRows(height: Layout.minSize.height)
     #expect(short < 7 && short >= 2.5)
     #expect(36 + short * ActionMenu.rowHeight <= Layout.minSize.height)
@@ -393,7 +394,8 @@ struct NoteFloatTests {
     model.toggleMenu()
     #expect(
       model.menuItems.map(\.title) == [
-        "固定", "颜色", "任务", "归档", "删除", "收回边缘", "在「全部便签」里打开", "便签设置…",
+        "固定", "颜色", "任务", "归档", "删除", "收回边缘", "在「全部便签」里打开",
+        "导出为 Markdown…", "便签设置…",
       ])
     model.edgeShown = false
     #expect(model.menuItems[5].title == "取消浮动" && model.tuckTitle == "取消浮动")
@@ -1145,16 +1147,17 @@ struct NoteFloatTests {
     #expect(store.note(ids[0])?.body == "甲的**正文**")
     #expect(
       try panel.performKeyEquivalent(with: key(kVK_ANSI_E, .command, characters: "e", in: panel)))
+    // 行内代码里不能再加斜体 / 删除线：响一声、不改（第 8 批之后的一轮 R1）
     #expect(
       try panel.performKeyEquivalent(with: key(kVK_ANSI_I, .command, characters: "i", in: panel)))
-    #expect(store.note(ids[0])?.body == "甲的**`*正文*`**")
+    #expect(store.note(ids[0])?.body == "甲的**`正文`**")
     let strike = try #require(
       NSEvent.keyEvent(
         with: .keyDown, location: .zero, modifierFlags: [.command, .shift], timestamp: 0,
         windowNumber: panel.windowNumber, context: nil, characters: "x",
         charactersIgnoringModifiers: "X", isARepeat: false, keyCode: UInt16(kVK_ANSI_X)))
     #expect(panel.performKeyEquivalent(with: strike))
-    #expect(store.note(ids[0])?.body == "甲的**`*~~正文~~*`**" && !panel.isKeyWindow)
+    #expect(store.note(ids[0])?.body == "甲的**`正文`**" && !panel.isKeyWindow)
   }
 
   /// 拆的时候回读 NoteFloat.panel 的探针：塞进浮动面板的内容里，被移出窗口时调 onLeave（HoverTracker 的追踪视图

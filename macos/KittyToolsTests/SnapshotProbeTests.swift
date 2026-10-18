@@ -1501,6 +1501,18 @@ struct SnapshotProbeTests {
       }
     }
 
+    // 第 8 批之后的一轮：块格式（标题 1–3、引用、有序 / 无序列表、代码块）和合并成一段的颜色。
+    // 「格式」子菜单展开的样子系统菜单在屏外画不出来，改成看正文
+    for dark in [false, true] {
+      let note = Note(
+        id: "合并格式", body: Self.mergedFormatSample, createdAt: now, modifiedAt: now)
+      try snapshot(
+        NoteBodyField(note: note, fontSize: 15, margin: 14, setBody: { _ in }, onOverflow: {})
+          .background(NotePaper.all[0].paper),
+        size: NSSize(width: 360, height: 420), dark: dark,
+        to: "\(out)/notes-markdown-merged\(dark ? "-dark" : "").png")
+    }
+
     // 第 7 批：行内图片——正文里一张图（浅 / 深）、行内图和字同行、选中带把手、文件找不到的占位框。
     // 图片是测试现画的（输出目录下的 notes-images/，不进仓库）；缩略图第一次画的时候才开始解，所以同一个名字出两次
     // （第一次画的是纸色，第二次才是图）
@@ -3451,6 +3463,21 @@ struct SnapshotProbeTests {
     #### 四级标题 Heading
     ##### 五级标题
     普通的一行收尾，\\*转义的星号\\* 照常显示。
+    """
+
+  /// 第 8 批之后的一轮：块格式和合并成一段的颜色（截图 notes-markdown-merged*）
+  private static let mergedFormatSample = """
+    # 一级标题
+    ## 二级标题
+    ### 三级标题
+    > 引用的一段，**粗体** 和 *斜体* 留着。
+    - 无序列表 **粗**
+    1. 有序列表这一轮没有样式
+    正文里颜色合成一段：[12312323123]{red}，后面是普通字。
+    ```swift
+    let merged = true
+    ```
+    收尾一行。
     """
 
   /// 手测反馈第 4 批的样例：行距三档、代码块（标题、正文折行、任务、列表、引用、代码块混排）

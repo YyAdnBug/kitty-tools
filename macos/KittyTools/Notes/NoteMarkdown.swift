@@ -556,6 +556,24 @@ nonisolated enum NoteMarkdown {
       case .code: .code
       }
     }
+
+    /// 两头的标记用几个字（斜体、代码是 1，粗体、删除线是 2）：找「这种样式自己的标记」按它认
+    var markerLength: Int {
+      switch self {
+      case .bold, .strike: 2
+      case .italic, .code: 1
+      }
+    }
+
+    /// shapes 里这种样式占的那一位（重建之后照它比对）
+    var flag: UInt16 {
+      switch self {
+      case .bold: 0x0080
+      case .italic: 0x0100
+      case .strike: 0x0200
+      case .code: 0x0400
+      }
+    }
   }
 
   /// 一行开头的块标记（标题的 #、引用的 >、列表的符号和任务的方框，连后面的空白）到哪为止：加标记从这后面算起，
@@ -567,15 +585,29 @@ nonisolated enum NoteMarkdown {
     return 0
   }
 
-  /// ⌘B 这几个键：block 是选区碰到的那几行（不含最后一行的换行），selection 相对 block 的开头。
+  /// ⌘B 这几个键：block 是选区碰到的那几行（不含最后一行的换行），selection 相对 block 的开头，位置都是 UTF-16 的。
   /// - 没有选区：在光标处插一对标记、光标放中间；光标正夹在一对空的标记中间时（刚按过一次、还没打字）把这对删掉。
-  /// - 有选区：每一行各自包（Markdown 的样式不跨行）——包的是选区在这一行里的那一段，去掉两头的空白、跳过行首的块标记、
-  ///   去掉选进来的这种标记；这一段已经是这种样式的（扫描器认出来的，wrapping），就去掉它两头的标记；几段里有一段还没包，
-  ///   就把没包的都包上，都包着才都去掉（同 ⌘T）。改完选中的是里面的字（不含标记）。
-  /// 「已经包着」不数字符、问扫描器（inline）：数字中间的星号是乘号（`60*40*30` 选中 40 按 ⌘I 不会把两个乘号当成斜体
-  /// 删掉），挨着的两段（`**a**|**b**`）中间的标记各归各的。斜体只认单数个星号由扫描器的配对定（粗体上按 ⌘I 是又粗又斜，
-  /// 又粗又斜里按 ⌘I 去掉斜体）。都是空白、没有可包的给 nil。位置都是 UTF-16 的
+  /// - 有选区、**粗体 / 斜体 / 删除线整段一种**（第 8 批之后的一轮 R1）：先问扫描器「选区里能加这种格式的字（看得见、
+  ///   去掉空白、不在代码 / 图片里）是不是全都是这种格式」——不是就都把上（原来有的那几段并进来、中间的标记不留、
+  ///   跨在选区边上的也并进来），都是就去掉（选区外的照旧，会拆开）；每一行各自重建（行内语法不跨行）。
+  /// - 有选区、行内代码 ⌘E：照旧每一行各自包 / 去掉（代码里不能有别的格式，这一轮不动）。
+  /// 「已经包着」不数字符、问扫描器：数字中间的星号是乘号（`2*3*4`），重建斜体时两头紧挨着数字会认不出来，
+  /// 扫描器复验就挡住（响一声、不改）。都是空白、没有可包的给 nil
   static func toggle(_ wrap: Wrap, in block: String, selection: NSRange) -> NoteTasks.Change? {
+    guard wrap != .code, selection.length > 0 else {
+      return toggleSingle(wrap, in: block, selection: selection)
+    }
+    return toggleFormat(wrap, in: block, selection: selection)
+  }
+
+  /// 老的四样加标记：没有选区时插一对、删掉空的一对；有选区时每一行各自包（Markdown 的样式不跨行）——包的是选区在这一行里的
+  /// 那一段，去掉两头的空白、跳过行首的块标记、去掉选进来的这种标记；这一段已经是这种样式的（扫描器认出来的，wrapping），
+  /// 就去掉它两头的标记；几段里有一段还没包，就把没包的都包上，都包着才都去掉（同 ⌘T）。改完选中的是里面的字（不含标记）。
+  /// 挨着的两段（`**a**|**b**`）中间的标记各归各的。斜体只认单数个星号由扫描器的配对定（粗体上按 ⌘I 是又粗又斜，
+  /// 又粗又斜里按 ⌘I 去掉斜体）
+  private static func toggleSingle(
+    _ wrap: Wrap, in block: String, selection: NSRange
+  ) -> NoteTasks.Change? {
     let text = block as NSString
     let units = Array(block.utf16)
     let marker = wrap.marker
@@ -801,6 +833,924 @@ nonisolated enum NoteMarkdown {
       selection: NSRange(location: mappedStart, length: mappedEnd - mappedStart))
   }
 
+  // MARK: 格式合并（粗体、斜体、删除线整段一种；第 8 批之后的一轮 R1–R3）
+
+  /// 一行扫一遍的结果（重建强调、上色、清除格式共用）
+  private struct Line {
+    var units: [UInt16]
+    var spans: [Span]
+    /// 每个字除颜色以外的样子（见 shapes）
+    var flags: [UInt16]
+    /// 每个字的链接地址
+    var links: [String?]
+    /// 看得见的字在这一行里的位置
+    var visible: [Int]
+    /// 看得见的字本身（和 visible 一一对应）
+    var shown: [UInt16]
+    /// 标记字符（看不见的字）
+    var hidden: [Bool]
+    /// 不能加格式的字：别的标记、行内代码、图片（附件字符和令牌）
+    var blocked: [Bool]
+    /// 旧的颜色标记（上色时它们不算断开）
+    var colorMarkers: [Bool]
+  }
+
+  /// 扫这一行。transparent：这些标记区间不算「不能加格式」（它们反正要删掉，一串可以跨过去）。
+  /// extraHidden：扫描器没配上、但看着像这种格式标记的那几串（见 looseMarkers），也当看不见的标记
+  private static func line(
+    _ units: [UInt16], transparent: Set<NSRange> = [], extraHidden: [NSRange] = []
+  ) -> Line {
+    let content = contentStart(of: units)
+    let spans = inline(units, in: content..<units.count)
+    let shapes = shapes(of: units, spans: spans)
+    let shown = visible(units, spans: spans, hiding: extraHidden)
+    var hidden = [Bool](repeating: false, count: units.count)
+    var blocked = [Bool](repeating: false, count: units.count)
+    var colorMarkers = [Bool](repeating: false, count: units.count)
+    for range in extraHidden {
+      for index in range.location..<NSMaxRange(range) where index < units.count {
+        hidden[index] = true
+      }
+    }
+    func fill(_ range: NSRange) {
+      for index in range.location..<NSMaxRange(range) where index < units.count {
+        blocked[index] = true
+      }
+    }
+    for span in spans {
+      switch span.kind {
+      case .marker:
+        for index in span.range.location..<NSMaxRange(span.range) where index < units.count {
+          hidden[index] = true
+        }
+        guard !transparent.contains(span.range) else { continue }
+        fill(span.range)
+      case .code:
+        fill(span.range)
+      default: break
+      }
+    }
+    for run in colorRuns(in: spans) {
+      for range in [run.open, run.close] {
+        for index in range.location..<NSMaxRange(range) where index < units.count {
+          colorMarkers[index] = true
+        }
+      }
+    }
+    for index in units.indices where units[index] == 0xFFFC { blocked[index] = true }
+    let text = String(decoding: units, as: UTF16.self)
+    for match in NoteImages.matches(in: text as NSString) { fill(match.range) }
+    return Line(
+      units: units, spans: spans, flags: shapes.flags, links: shapes.links,
+      visible: shown.indices, shown: shown.units, hidden: hidden, blocked: blocked,
+      colorMarkers: colorMarkers)
+  }
+
+  /// 这一行的文字拆成一行行的（和 NoteTasks 里那份一样的拆法：最后一行没有换行时也有一行）
+  private static func lines(of block: String) -> [(start: Int, units: [UInt16])] {
+    let text = block as NSString
+    var rows: [(start: Int, units: [UInt16])] = []
+    var location = 0
+    repeat {
+      var (start, end, contentsEnd) = (0, 0, 0)
+      text.getLineStart(
+        &start, end: &end, contentsEnd: &contentsEnd,
+        for: NSRange(location: location, length: 0))
+      let line = text.substring(with: NSRange(location: start, length: contentsEnd - start))
+      rows.append((start, Array(line.utf16)))
+      if end == text.length, contentsEnd < end { rows.append((end, [])) }
+      location = end
+    } while location < text.length
+    return rows
+  }
+
+  /// 一行里这种样式两头的标记（`***粗***` 里粗体那一对是里面两个星号）
+  private static func markers(of wrap: Wrap, in spans: [Span]) -> [NSRange] {
+    guard wrap != .code else { return [] }
+    let all = spans.filter { $0.kind == .marker }.map(\.range)
+    var found: [NSRange] = []
+    for span in spans where span.kind == wrap.kind {
+      guard
+        let open = all.first(where: {
+          NSMaxRange($0) == span.range.location && $0.length == wrap.markerLength
+        }),
+        let close = all.first(where: {
+          $0.location == NSMaxRange(span.range) && $0.length == wrap.markerLength
+        })
+      else { continue }
+      found.append(open)
+      found.append(close)
+    }
+    return found.sorted { $0.location < $1.location }
+  }
+
+  /// 扫描器没配上、看着却像这种格式标记的那几串：正好 markerLength 个、和选区有交集、不在代码 / 链接 / 图片里、
+  /// 也不和任何认出来的标记重叠。R1 的例子 `12**312**3` 全选 ⌘B：两边的数字让扫描器把 `**` 当成了乘号，
+  /// 但用户按 ⌘B 的意思是它们本来就该是粗体标记——重建时一并去掉，结果 `**123123**`
+  private static func looseMarkers(
+    of wrap: Wrap, units: [UInt16], spans: [Span], section: Range<Int>
+  ) -> [NSRange] {
+    guard wrap != .code else { return [] }
+    let unit: UInt16
+    switch wrap {
+    case .bold, .italic: unit = 0x2A
+    case .strike: unit = 0x7E
+    case .code: return []
+    }
+    // 按位置铺开：候选串里有一个字落在认出来的标记 / 代码 / 链接 / 图片里就不要。整行 O(字数 + 区间数)
+    var known = [Bool](repeating: false, count: units.count)
+    for range in spans.map(\.range) {
+      for index in range.location..<min(NSMaxRange(range), units.count) { known[index] = true }
+    }
+    var awayFrom = known
+    for span in spans {
+      switch span.kind {
+      case .code, .link:
+        for index in span.range.location..<min(NSMaxRange(span.range), units.count) {
+          awayFrom[index] = true
+        }
+      default: break
+      }
+    }
+    let text = String(decoding: units, as: UTF16.self)
+    for match in NoteImages.matches(in: text as NSString) {
+      for index in match.range.location..<min(NSMaxRange(match.range), units.count) {
+        awayFrom[index] = true
+      }
+    }
+    func intersects(_ mask: [Bool], _ range: NSRange) -> Bool {
+      let end = min(NSMaxRange(range), mask.count)
+      guard range.location < end else { return false }
+      for index in range.location..<end where mask[index] { return true }
+      return false
+    }
+    let selection = NSRange(location: section.lowerBound, length: section.count)
+    var found: [NSRange] = []
+    var index = contentStart(of: units)
+    while index < units.count {
+      guard units[index] == unit else {
+        index += 1
+        continue
+      }
+      var end = index + 1
+      while end < units.count, units[end] == unit { end += 1 }
+      let range = NSRange(location: index, length: end - index)
+      index = end
+      guard range.length == wrap.markerLength,
+        NSIntersectionRange(range, selection).length > 0,
+        !intersects(known, range), !intersects(awayFrom, range)
+      else { continue }
+      found.append(range)
+    }
+    return found
+  }
+
+  /// 选区里能加这种格式的字（看得见、不是空白、不在代码 / 图片里）是不是全都是这种格式；没有这种字给 nil。
+  /// 菜单打勾和 ⌘B 的「全都是」都用它（不数字符，问扫描器）
+  static func isFormatted(_ wrap: Wrap, in block: String, selection: NSRange) -> Bool? {
+    guard selection.length > 0 else { return nil }
+    var found = false
+    for row in lines(of: block) {
+      let lineEnd = row.start + row.units.count
+      let lower = max(selection.location, row.start)
+      let upper = min(NSMaxRange(selection), lineEnd)
+      guard upper > lower else { continue }
+      let analyzed = line(row.units)
+      for index in (lower - row.start)..<(upper - row.start)
+      where !analyzed.hidden[index] && !analyzed.blocked[index]
+        && !isBlank(row.units[index])
+      {
+        found = true
+        if analyzed.flags[index] & wrap.flag == 0 { return false }
+      }
+    }
+    return found ? true : nil
+  }
+
+  /// 一行里选中的那一段重建这种格式（R3）：算出每个看得见的字要不要 → 去掉这一行这种格式的全部标记 →
+  /// 按连着的、要这种格式的字一串串重新加（两头不能是空白，别的标记 / 代码 / 图片断开，这种格式自己的旧标记跨过去）→
+  /// 用扫描器认一遍。返回这一行的替换、改完选区盖着的那一段（相对这一行）；认不对给 nil。
+  private static func formatLine(
+    _ wrap: Wrap, units: [UInt16], section: Range<Int>, want: Bool
+  ) -> LineOutcome? {
+    let content = contentStart(of: units)
+    var start = max(section.lowerBound, content)
+    var end = min(section.upperBound, units.count)
+    while start < end, isBlank(units[start]) { start += 1 }
+    while end > start, isBlank(units[end - 1]) { end -= 1 }
+    guard start < end else { return LineOutcome() }
+    let spans = inline(units, in: content..<units.count)
+    let own = markers(of: wrap, in: spans)
+    // 扫描器没配上的、看着像这种格式标记的几串（数字中间的 `**` 被当成乘号那种）：选中了就一起当成标记去掉
+    let loose = looseMarkers(of: wrap, units: units, spans: spans, section: start..<end)
+    let deletions = (own + loose).sorted { $0.location < $1.location }
+    let analyzed = line(units, transparent: Set(deletions), extraHidden: loose)
+    var oldMarker = [Bool](repeating: false, count: units.count)
+    for range in deletions {
+      for index in range.location..<NSMaxRange(range) where index < units.count {
+        oldMarker[index] = true
+      }
+    }
+    // 选区里能加的字（改完选区盖着它们）
+    var first = Int.max
+    var last = 0
+    for index in start..<end
+    where !analyzed.hidden[index] && !analyzed.blocked[index] && !isBlank(units[index]) {
+      first = min(first, index)
+      last = max(last, index + 1)
+    }
+    guard first != .max else { return LineOutcome() }
+    var desired = analyzed.flags.map { $0 & wrap.flag != 0 }
+    for index in start..<end where !analyzed.hidden[index] && !analyzed.blocked[index] {
+      desired[index] = want
+    }
+    // 连着的、要这种格式的字一串串
+    var runs: [Range<Int>] = []
+    var index = 0
+    while index < units.count {
+      if oldMarker[index] {
+        index += 1
+        continue
+      }
+      guard !analyzed.hidden[index], !analyzed.blocked[index], desired[index] else {
+        index += 1
+        continue
+      }
+      var tail = index + 1
+      var lastDesired = index
+      while tail < units.count {
+        if oldMarker[tail] {
+          tail += 1
+          continue
+        }
+        guard !analyzed.hidden[tail], !analyzed.blocked[tail], desired[tail] else { break }
+        lastDesired = tail
+        tail += 1
+      }
+      var lower = index
+      while lower <= lastDesired, isBlank(units[lower]) { lower += 1 }
+      var upper = lastDesired
+      while upper >= lower, isBlank(units[upper]) { upper -= 1 }
+      if lower <= upper { runs.append(lower..<(upper + 1)) }
+      index = lastDesired + 1
+    }
+    var insertions: [(location: Int, text: String)] = []
+    for run in runs {
+      insertions.append((run.lowerBound, wrap.marker))
+      insertions.append((run.upperBound, wrap.marker))
+    }
+    // 空白：在一串里面就跟着这一串，不在串里（两头的、被代码 / 标记断开的）就不要这种格式
+    var inside = [Bool](repeating: false, count: units.count)
+    for run in runs {
+      for position in run { inside[position] = true }
+    }
+    for index in units.indices where isBlank(units[index]) && !inside[index] {
+      desired[index] = false
+    }
+    let (lineChange, newUnits) = edits(
+      units: units, deletions: deletions,
+      insertions: insertions.sorted { $0.location < $1.location })
+    // 这一行本来就是这样：不动它，但选区还是要盖住它里面的字
+    guard newUnits != units, !lineChange.replacements.isEmpty else {
+      return LineOutcome(first: first, last: last)
+    }
+    guard formatMatches(old: analyzed, new: newUnits, desired: desired, wrap: wrap) else {
+      return nil
+    }
+    return LineOutcome(change: lineChange, first: first, last: last)
+  }
+
+  /// 一行重建的结果：改了什么（本来就是这样时没有）、选区在这一行里盖着哪一段（没有能加的字时都没有）；
+  /// nil 表示认不对（整次不改、响一声）
+  private struct LineOutcome {
+    var change: NoteTasks.Change?
+    var first: Int?
+    var last: Int?
+  }
+
+  /// 重建之后认一遍：看得见的字一样、别的格式一样、链接一样、这种格式每个能加的字都对
+  private static func formatMatches(
+    old: Line, new units: [UInt16], desired: [Bool], wrap: Wrap
+  ) -> Bool {
+    let spans = inline(units, in: contentStart(of: units)..<units.count)
+    let shown = visible(units, spans: spans)
+    guard old.shown == shown.units else { return false }
+    let shapes = shapes(of: units, spans: spans)
+    let mask = wrap.flag
+    for (offset, oldIndex) in old.visible.enumerated() {
+      let newIndex = shown.indices[offset]
+      guard (old.flags[oldIndex] & ~mask) == (shapes.flags[newIndex] & ~mask),
+        old.links[oldIndex] == shapes.links[newIndex]
+      else { return false }
+      guard !old.hidden[oldIndex], !old.blocked[oldIndex] else { continue }
+      guard ((shapes.flags[newIndex] & mask) != 0) == desired[oldIndex] else { return false }
+    }
+    return true
+  }
+
+  /// ⌘B / ⌘I / ⇧⌘X 有选区时的整段一种（R1）：先看整个选区是不是全都已经是，再每行各自重建
+  private static func toggleFormat(
+    _ wrap: Wrap, in block: String, selection: NSRange
+  ) -> NoteTasks.Change? {
+    let rows = lines(of: block)
+    let end = NSMaxRange(selection)
+    var sections: [(start: Int, units: [UInt16], range: Range<Int>)] = []
+    for row in rows {
+      let lineEnd = row.start + row.units.count
+      let lower = max(selection.location, row.start)
+      let upper = min(end, lineEnd)
+      guard upper > lower else { continue }
+      sections.append((row.start, row.units, (lower - row.start)..<(upper - row.start)))
+    }
+    // 「全都是」看整个选区
+    var found = false
+    var all = true
+    outer: for section in sections {
+      let analyzed = line(section.units)
+      for index in section.range
+      where !analyzed.hidden[index] && !analyzed.blocked[index]
+        && !isBlank(section.units[index])
+      {
+        found = true
+        if analyzed.flags[index] & wrap.flag == 0 {
+          all = false
+          break outer
+        }
+      }
+    }
+    guard found else { return nil }
+    let want = !all
+    var replacements: [NoteTasks.Replacement] = []
+    var (first, last) = (Int.max, 0)
+    for section in sections {
+      guard
+        let result = formatLine(
+          wrap, units: section.units, section: section.range, want: want)
+      else { return nil }
+      guard let lineFirst = result.first, let lineLast = result.last else { continue }
+      first = min(first, section.start + lineFirst)
+      last = max(last, section.start + lineLast)
+      for replacement in result.change?.replacements ?? [] {
+        replacements.append(
+          NoteTasks.Replacement(
+            range: NSRange(
+              location: replacement.range.location + section.start,
+              length: replacement.range.length), text: replacement.text))
+      }
+    }
+    guard first != .max, last >= first, !replacements.isEmpty else { return nil }
+    let mappedStart = NoteTasks.mappedPosition(
+      first, through: replacements, staysBeforeInsertion: false)
+    let mappedEnd = NoteTasks.mappedPosition(
+      last, through: replacements, staysBeforeInsertion: true)
+    return NoteTasks.Change(
+      replacements: replacements,
+      selection: NSRange(location: mappedStart, length: mappedEnd - mappedStart))
+  }
+
+  // MARK: 块格式、链接、清除格式（右键「格式」的新几项，R6）
+
+  /// 右键「格式」里的块格式（标题 1–3、引用、无序列表、有序列表）
+  enum BlockFormat: Equatable, Sendable {
+    case heading(Int)
+    case quote
+    case bullet
+    case ordered
+
+    /// 菜单里的名字
+    var title: String {
+      switch self {
+      case .heading(1): "标题 1"
+      case .heading(2): "标题 2"
+      case .heading(3): "标题 3"
+      case .quote: "引用"
+      case .bullet: "无序列表"
+      case .ordered: "有序列表"
+      case .heading: "标题"
+      }
+    }
+  }
+
+  /// 一行开头原有的块标记（缩进之后）：引用、标题、任务 / 列表可以一层层套（`> # 标题`、`- ☐ 任务`），
+  /// 转换时整串换掉；标题后面不再往下认（`# - 字` 里的横杠是标题里的字）
+  private static func blockMarker(of units: [UInt16]) -> (indent: Int, end: Int)? {
+    let indent = units.prefix { $0 == space || $0 == tab }.count
+    var position = indent
+    var found = false
+    while position < units.count {
+      if let next = quoteEnd(at: position, in: units) {
+        position = next
+        found = true
+        continue
+      }
+      if let next = headingEnd(at: position, in: units) {
+        position = next
+        found = true
+        break
+      }
+      let rest = Array(units[position...])
+      if let prefix = NoteTasks.prefix(of: rest) {
+        position += prefix.contentStart
+        found = true
+        continue
+      }
+      break
+    }
+    return found ? (indent, position) : nil
+  }
+
+  /// 从 position 起的一个 `>`（连后面那个空格）到哪结束
+  private static func quoteEnd(at position: Int, in units: [UInt16]) -> Int? {
+    guard position < units.count, units[position] == 0x3E else { return nil }
+    return position + (position + 1 < units.count && isBlank(units[position + 1]) ? 2 : 1)
+  }
+
+  /// 从 position 起的一个 `#` 标题标记（连后面那些空白）到哪结束
+  private static func headingEnd(at position: Int, in units: [UInt16]) -> Int? {
+    var end = position
+    while end < units.count, units[end] == hash { end += 1 }
+    let hashes = end - position
+    guard (1...6).contains(hashes) else { return nil }
+    var blanks = 0
+    while end + blanks < units.count, isBlank(units[end + blanks]) { blanks += 1 }
+    guard blanks > 0, end + blanks < units.count else { return nil }
+    return end + blanks
+  }
+
+  /// 去掉的时候只去这一种格式自己的标记（标题去掉 `#`，引用去掉 `> `，列表只去掉符号），别的留着
+  private static func ownMarker(
+    of format: BlockFormat, units: [UInt16]
+  ) -> (indent: Int, end: Int)? {
+    let indent = units.prefix { $0 == space || $0 == tab }.count
+    switch format {
+    case .heading:
+      guard let head = heading(units) else { return nil }
+      return (units.prefix { $0 == space }.count, NSMaxRange(head.marker))
+    case .quote:
+      guard let quote = quote(units) else { return nil }
+      return (units.prefix { $0 == space || $0 == tab }.count, NSMaxRange(quote))
+    case .bullet, .ordered:
+      guard let prefix = NoteTasks.prefix(of: units) else { return nil }
+      let matches: Bool
+      switch (format, prefix.lead) {
+      case (.bullet, .bullet), (.ordered, .ordered): matches = true
+      default: matches = false
+      }
+      guard matches else { return nil }
+      return (prefix.indent, prefix.contentStart)
+    }
+  }
+
+  /// 这一行是不是这种块格式
+  private static func isOn(_ format: BlockFormat, units: [UInt16]) -> Bool {
+    switch format {
+    case .heading(let level): heading(units)?.level == level
+    case .quote: quote(units) != nil
+    case .bullet:
+      if case .bullet = NoteTasks.prefix(of: units)?.lead { true } else { false }
+    case .ordered:
+      if case .ordered = NoteTasks.prefix(of: units)?.lead { true } else { false }
+    }
+  }
+
+  /// 选区碰到的这一行：没有选区时光标在行里（或行尾），有选区时和这一行有交集
+  private static func touched(_ row: (start: Int, units: [UInt16]), by selection: NSRange) -> Bool {
+    let range = NSRange(location: row.start, length: row.units.count)
+    if selection.length == 0 {
+      return selection.location >= range.location && selection.location <= NSMaxRange(range)
+    }
+    return NSIntersectionRange(range, selection).length > 0
+  }
+
+  /// 只有空白的一行
+  private static func isBlankRow(_ units: [UInt16]) -> Bool {
+    units.allSatisfy { isBlank($0) }
+  }
+
+  /// 选区碰到的非空行是不是全都已经是这种块格式（菜单打勾用）；没有非空行给 nil
+  static func blockIsOn(
+    _ format: BlockFormat, in block: String, selection: NSRange
+  ) -> Bool? {
+    var found = false
+    for row in lines(of: block) where touched(row, by: selection) {
+      guard !isBlankRow(row.units) else { continue }
+      found = true
+      if !isOn(format, units: row.units) { return false }
+    }
+    return found ? true : nil
+  }
+
+  /// 换成这种块格式 / 去掉（R6）：选了好几行时空行不动，只有一行时空行也变。
+  /// 标题保留原来的缩进、在缩进后加 `# `；引用给不是引用的行加 `> `（别的标记留着）；无序列表和有序列表把原来的
+  /// 块标记（别级的 #、引用的 >、列表符号、任务方框）换成 `- ` / `1. ` `2. `…；有序列表**同一缩进算一组、每组从 1
+  /// 开始**。没有可改的给 nil
+  static func block(
+    _ format: BlockFormat, in block: String, selection: NSRange
+  ) -> NoteTasks.Change? {
+    var candidates = lines(of: block).filter { touched($0, by: selection) }
+    if candidates.count > 1 { candidates = candidates.filter { !isBlankRow($0.units) } }
+    guard !candidates.isEmpty else { return nil }
+    let all = candidates.allSatisfy { isOn(format, units: $0.units) }
+    var replacements: [NoteTasks.Replacement] = []
+    var counters: [Int: Int] = [:]
+    for row in candidates {
+      let units = row.units
+      let indent = units.prefix { $0 == space || $0 == tab }.count
+      if all {
+        guard let old = ownMarker(of: format, units: units) else { continue }
+        replacements.append(
+          NoteTasks.Replacement(
+            range: NSRange(location: row.start + old.indent, length: old.end - old.indent),
+            text: ""))
+        continue
+      }
+      let marker: String
+      switch format {
+      case .quote:
+        // 别的标记留着（在缩进后面插「> 」，不换掉标题 / 列表的标记）；已经是引用的不动
+        guard quote(units) == nil else { continue }
+        replacements.append(
+          NoteTasks.Replacement(
+            range: NSRange(location: row.start + indent, length: 0), text: "> "))
+        continue
+      case .bullet:
+        marker = "- "
+      case .ordered:
+        let number = (counters[indent] ?? 0) + 1
+        counters[indent] = number
+        marker = "\(number). "
+      case .heading(let level):
+        marker = String(repeating: "#", count: level) + " "
+      }
+      let old = blockMarker(of: units)
+      let end = old?.end ?? indent
+      replacements.append(
+        NoteTasks.Replacement(
+          range: NSRange(location: row.start + indent, length: end - indent), text: marker))
+    }
+    guard !replacements.isEmpty else { return nil }
+    return NoteTasks.Change(
+      replacements: replacements,
+      selection: NoteTasks.mapped(selection, through: replacements))
+  }
+
+  /// 选区是不是跨了好几行（链接那一项要停用）
+  static func crossesLines(_ block: String, selection: NSRange) -> Bool {
+    let units = Array(block.utf16)
+    guard NSMaxRange(selection) <= units.count else { return false }
+    return units[selection.location..<NSMaxRange(selection)].contains {
+      $0 == 0x0A || $0 == 0x0D || $0 == 0x2028 || $0 == 0x2029
+    }
+  }
+
+  /// 「链接」那一项（R6）：没选字插 `[]()`、光标在方括号里；选了字换成 `[选中的字]()`、光标在小括号里。
+  /// 跨行给 nil
+  static func link(in block: String, selection: NSRange) -> NoteTasks.Change? {
+    let units = Array(block.utf16)
+    let content = contentStart(of: units)
+    let start = max(selection.location, content)
+    let end = min(NSMaxRange(selection), units.count)
+    guard start <= end, !crossesLines(block, selection: selection) else { return nil }
+    if start == end {
+      return NoteTasks.Change(
+        replacements: [
+          NoteTasks.Replacement(range: NSRange(location: start, length: 0), text: "[]()")
+        ],
+        selection: NSRange(location: start + 1, length: 0))
+    }
+    let text = String(decoding: units[start..<end], as: UTF16.self)
+    return NoteTasks.Change(
+      replacements: [
+        NoteTasks.Replacement(
+          range: NSRange(location: start, length: end - start), text: "[\(text)]()")
+      ],
+      selection: NSRange(location: start + 1 + (text as NSString).length + 2, length: 0))
+  }
+
+  /// 清除格式（R6）：选区里的粗体、斜体、删除线、颜色去掉（走 R3 的重建，选区外的照旧、会拆开），
+  /// 碰到的行内代码、链接整段去掉标记（代码去掉反引号、链接留下字、去掉 `[` 和 `](地址)`）；块格式不动
+  static func clear(in block: String, selection: NSRange) -> NoteTasks.Change? {
+    guard selection.length > 0 else { return nil }
+    let rows = lines(of: block)
+    let end = NSMaxRange(selection)
+    var sections: [(start: Int, units: [UInt16], range: Range<Int>)] = []
+    for row in rows {
+      let lineEnd = row.start + row.units.count
+      let lower = max(selection.location, row.start)
+      let upper = min(end, lineEnd)
+      guard upper > lower else { continue }
+      sections.append((row.start, row.units, (lower - row.start)..<(upper - row.start)))
+    }
+    var replacements: [NoteTasks.Replacement] = []
+    var (first, last) = (Int.max, 0)
+    for section in sections {
+      guard let result = clearLine(units: section.units, section: section.range) else { continue }
+      for replacement in result.change.replacements {
+        replacements.append(
+          NoteTasks.Replacement(
+            range: NSRange(
+              location: replacement.range.location + section.start,
+              length: replacement.range.length), text: replacement.text))
+      }
+      first = min(first, section.start + result.first)
+      last = max(last, section.start + result.last)
+    }
+    guard first != .max, last >= first, !replacements.isEmpty else { return nil }
+    let mappedStart = NoteTasks.mappedPosition(
+      first, through: replacements, staysBeforeInsertion: false)
+    let mappedEnd = NoteTasks.mappedPosition(
+      last, through: replacements, staysBeforeInsertion: true)
+    return NoteTasks.Change(
+      replacements: replacements,
+      selection: NSRange(location: mappedStart, length: mappedEnd - mappedStart))
+  }
+
+  /// 一行里清除格式（R6/R3）：删掉这一行三种强调和颜色的全部标记、碰到（和选区有交集）的行内代码 / 链接的标记，
+  /// 按「选区里的字去掉、选区外照旧」一串串重新加；拼完认一遍
+  private static func clearLine(
+    units: [UInt16], section: Range<Int>
+  ) -> (change: NoteTasks.Change, first: Int, last: Int)? {
+    let content = contentStart(of: units)
+    var start = max(section.lowerBound, content)
+    var end = min(section.upperBound, units.count)
+    while start < end, isBlank(units[start]) { start += 1 }
+    while end > start, isBlank(units[end - 1]) { end -= 1 }
+    guard start < end else { return nil }
+    let spans = inline(units, in: content..<units.count)
+    let markerRanges = spans.filter { $0.kind == .marker }.map(\.range)
+    let sectionRange = NSRange(location: start, length: end - start)
+    let emphasis =
+      (markers(of: .bold, in: spans) + markers(of: .italic, in: spans)
+      + markers(of: .strike, in: spans))
+      .sorted { $0.location < $1.location }
+    let colorSegments = colorRuns(in: spans)
+    let colorMarkers = colorSegments.flatMap { [$0.open, $0.close] }.sorted {
+      $0.location < $1.location
+    }
+    // 碰到的行内代码、链接：整段去掉标记
+    func pair(_ span: Span) -> (open: NSRange, close: NSRange)? {
+      guard
+        let open = markerRanges.first(where: { NSMaxRange($0) == span.range.location }),
+        let close = markerRanges.first(where: { $0.location == NSMaxRange(span.range) })
+      else { return nil }
+      return (open, close)
+    }
+    var codeRanges: [NSRange] = []
+    var linkRanges: [NSRange] = []
+    var syntax: [NSRange] = []
+    for span in spans {
+      let touchedHere = NSIntersectionRange(span.range, sectionRange).length > 0
+      guard touchedHere else { continue }
+      switch span.kind {
+      case .code:
+        codeRanges.append(span.range)
+        if let found = pair(span) { syntax += [found.open, found.close] }
+      case .link:
+        linkRanges.append(span.range)
+        if let found = pair(span) { syntax += [found.open, found.close] }
+      default: break
+      }
+    }
+    let deletions = (emphasis + colorMarkers + syntax).sorted { $0.location < $1.location }
+    let transparent = Set(deletions)
+    let analyzed = line(units, transparent: transparent)
+    var blocked = analyzed.blocked
+    var codeFlag = [Bool](repeating: false, count: units.count)
+    for range in codeRanges {
+      for index in range.location..<NSMaxRange(range) where index < units.count {
+        blocked[index] = false
+        codeFlag[index] = true
+      }
+    }
+    // 要哪种格式：选区里去掉、选区外照旧
+    var bold = analyzed.flags.map { $0 & Wrap.bold.flag != 0 }
+    var italic = analyzed.flags.map { $0 & Wrap.italic.flag != 0 }
+    var strike = analyzed.flags.map { $0 & Wrap.strike.flag != 0 }
+    var desiredColors = [NoteColor?](repeating: nil, count: units.count)
+    for run in colorSegments {
+      for index in run.range.location..<NSMaxRange(run.range) where index < units.count {
+        desiredColors[index] = run.color
+      }
+    }
+    var first = Int.max
+    var last = 0
+    for index in start..<end
+    where !analyzed.hidden[index] && !blocked[index] && !isBlank(units[index]) {
+      first = min(first, index)
+      last = max(last, index + 1)
+    }
+    guard first != .max else { return nil }
+    for index in start..<end where !analyzed.hidden[index] && !blocked[index] {
+      bold[index] = false
+      italic[index] = false
+      strike[index] = false
+      desiredColors[index] = nil
+    }
+    var insertions: [(location: Int, text: String)] = []
+    for (wrap, desired) in [
+      (Wrap.bold, bold), (.italic, italic), (.strike, strike),
+    ] {
+      for run in flaggedRuns(desired, units: units, blocked: blocked, hidden: analyzed.hidden) {
+        insertions.append((run.lowerBound, wrap.marker))
+        insertions.append((run.upperBound, wrap.marker))
+      }
+    }
+    for run in tintedRuns(
+      desiredColors, units: units, blocked: blocked, hidden: analyzed.hidden)
+    {
+      insertions.append((run.range.lowerBound, "["))
+      insertions.append((run.range.upperBound, "]{\(run.color.name)}"))
+    }
+    let ordered = insertions.enumerated().sorted {
+      $0.element.location != $1.element.location
+        ? $0.element.location < $1.element.location : $0.offset < $1.offset
+    }.map { $0.element }
+    let (lineChange, newUnits) = edits(
+      units: units, deletions: deletions, insertions: ordered)
+    guard newUnits != units, !lineChange.replacements.isEmpty else { return nil }
+    // 认一遍：看得见的字一样、别的格式一样、链接该没的没了、这种格式每个能加的字都对、颜色也对
+    let newSpans = inline(newUnits, in: contentStart(of: newUnits)..<newUnits.count)
+    let shown = visible(newUnits, spans: newSpans)
+    guard analyzed.shown == shown.units else { return nil }
+    let shapes = shapes(of: newUnits, spans: newSpans)
+    let newColors = colors(at: newUnits, spans: newSpans)
+    let formatMask = Wrap.bold.flag | Wrap.italic.flag | Wrap.strike.flag
+    for (offset, oldIndex) in analyzed.visible.enumerated() {
+      let newIndex = shown.indices[offset]
+      var expected = analyzed.flags[oldIndex] & ~formatMask
+      if codeFlag[oldIndex] { expected &= ~Wrap.code.flag }
+      guard expected == (shapes.flags[newIndex] & ~formatMask) else { return nil }
+      let gone = linkRanges.contains { NSLocationInRange(oldIndex, $0) }
+      guard (gone ? nil : analyzed.links[oldIndex]) == shapes.links[newIndex] else {
+        return nil
+      }
+      guard !analyzed.hidden[oldIndex], !blocked[oldIndex] else { continue }
+      guard (shapes.flags[newIndex] & Wrap.bold.flag != 0) == bold[oldIndex],
+        (shapes.flags[newIndex] & Wrap.italic.flag != 0) == italic[oldIndex],
+        (shapes.flags[newIndex] & Wrap.strike.flag != 0) == strike[oldIndex],
+        newColors[newIndex] == desiredColors[oldIndex]
+      else { return nil }
+    }
+    for index in newUnits.indices where newUnits[index] == 0xFFFC {
+      guard newColors[index] == nil else { return nil }
+    }
+    return (lineChange, first, last)
+  }
+
+  /// 一种格式（或者颜色去了）要加的地方：连着的、要它的字一串串，两头不能是空白；别的标记 / 代码 / 图片断开，
+  /// 透明的旧标记（hidden 但没 blocked）跨过去
+  private static func flaggedRuns(
+    _ desired: [Bool], units: [UInt16], blocked: [Bool], hidden: [Bool]
+  ) -> [Range<Int>] {
+    var runs: [Range<Int>] = []
+    var index = 0
+    while index < units.count {
+      if hidden[index], !blocked[index] {
+        index += 1
+        continue
+      }
+      guard !hidden[index], !blocked[index], desired[index] else {
+        index += 1
+        continue
+      }
+      var tail = index + 1
+      var lastDesired = index
+      while tail < units.count {
+        if hidden[tail], !blocked[tail] {
+          tail += 1
+          continue
+        }
+        guard !hidden[tail], !blocked[tail], desired[tail] else { break }
+        lastDesired = tail
+        tail += 1
+      }
+      var lower = index
+      while lower <= lastDesired, isBlank(units[lower]) { lower += 1 }
+      var upper = lastDesired
+      while upper >= lower, isBlank(units[upper]) { upper -= 1 }
+      if lower <= upper { runs.append(lower..<(upper + 1)) }
+      index = lastDesired + 1
+    }
+    return runs
+  }
+
+  /// 颜色要加的地方（同 flaggedRuns，一串同一种颜色）
+  private static func tintedRuns(
+    _ desired: [NoteColor?], units: [UInt16], blocked: [Bool], hidden: [Bool]
+  ) -> [(range: Range<Int>, color: NoteColor)] {
+    var runs: [(range: Range<Int>, color: NoteColor)] = []
+    var index = 0
+    while index < units.count {
+      if hidden[index], !blocked[index] {
+        index += 1
+        continue
+      }
+      guard !hidden[index], !blocked[index], let ink = desired[index] else {
+        index += 1
+        continue
+      }
+      var tail = index + 1
+      var lastDesired = index
+      while tail < units.count {
+        if hidden[tail], !blocked[tail] {
+          tail += 1
+          continue
+        }
+        guard !hidden[tail], !blocked[tail], desired[tail] == ink else { break }
+        lastDesired = tail
+        tail += 1
+      }
+      var lower = index
+      while lower <= lastDesired, isBlank(units[lower]) { lower += 1 }
+      var upper = lastDesired
+      while upper >= lower, isBlank(units[upper]) { upper -= 1 }
+      if lower <= upper { runs.append((lower..<(upper + 1), ink)) }
+      index = lastDesired + 1
+    }
+    return runs
+  }
+
+  // MARK: 代码块（右键「格式」的「代码块」那一项，R6）
+
+  /// 选区和代码块的关系
+  enum CodeSpot: Equatable, Sendable {
+    /// 不在任何代码块里
+    case outside
+    /// 选区碰到的行全都在同一个块里（连围栏）
+    case inside
+    /// 一半在块里、一半在外（或者跨了两个块）
+    case straddles
+  }
+
+  /// 光标 / 选区落在代码块的哪：选区碰到的行都在同一个块里算「块里」，碰到的行既有块里的又有块外的算「一半一半」
+  static func codeSpot(in text: NSString, selection: NSRange) -> CodeSpot {
+    let blocks = codeBlocks(in: text)
+    guard !blocks.isEmpty else { return .outside }
+    let rows = text.lineRange(for: selection)
+    let touched = blocks.filter { NSIntersectionRange(rows, $0.range).length > 0 }
+    guard !touched.isEmpty else { return .outside }
+    if touched.count == 1, NSLocationInRange(rows.location, touched[0].range),
+      NSMaxRange(rows) <= NSMaxRange(touched[0].range)
+    {
+      return .inside
+    }
+    return .straddles
+  }
+
+  /// 「代码块」那一项：块里的行（连围栏）→ 去掉两行围栏；光标在空行上 → 插三行、光标在中间；别的 → 给选区碰到的
+  /// 行上下各加一行围栏。一半在块里一半在外给 nil。围栏一律三个反引号（选中的字里正好有 ``` 时不再加长，见 ponytail）
+  static func codeBlock(in text: NSString, selection: NSRange) -> NoteTasks.Change? {
+    switch codeSpot(in: text, selection: selection) {
+    case .straddles: return nil
+    case .inside:
+      guard
+        let block = codeBlocks(in: text).first(where: {
+          NSLocationInRange(text.lineRange(for: selection).location, $0.range)
+        })
+      else { return nil }
+      let open = text.lineRange(for: NSRange(location: block.range.location, length: 0))
+      let close = text.lineRange(for: NSRange(location: block.close.location, length: 0))
+      guard NSMaxRange(open) <= close.location else { return nil }
+      let replacements = [
+        NoteTasks.Replacement(range: open, text: ""),
+        NoteTasks.Replacement(range: close, text: ""),
+      ]
+      return NoteTasks.Change(
+        replacements: replacements,
+        selection: NoteTasks.mapped(selection, through: replacements))
+    case .outside:
+      let rows = text.lineRange(for: selection)
+      var (start, end, contentsEnd) = (0, 0, 0)
+      text.getLineStart(
+        &start, end: &end, contentsEnd: &contentsEnd,
+        for: selection)
+      let isEmptyLine = contentsEnd == start
+      let atEnd = end >= text.length
+      if isEmptyLine, selection.length == 0 {
+        // 光标在空行上：插三行，光标在中间
+        let body = atEnd && contentsEnd == end ? "```\n\n```" : "```\n\n```\n"
+        let replacement = NoteTasks.Replacement(range: rows, text: body)
+        return NoteTasks.Change(
+          replacements: [replacement],
+          selection: NSRange(location: rows.location + 4, length: 0))
+      }
+      // 给选区碰到的行上下各加一行围栏
+      var closeText = "```\n"
+      if text.length == 0 || NSMaxRange(rows) >= text.length {
+        let last = text.length > 0 ? text.character(at: text.length - 1) : 0
+        closeText = last == 0x0A || last == 0x0D ? "```\n" : "\n```"
+      }
+      let replacements = [
+        NoteTasks.Replacement(range: NSRange(location: rows.location, length: 0), text: "```\n"),
+        NoteTasks.Replacement(
+          range: NSRange(location: NSMaxRange(rows), length: 0), text: closeText),
+      ]
+      return NoteTasks.Change(
+        replacements: replacements,
+        selection: NSRange(location: selection.location + 4, length: selection.length))
+    }
+  }
+
   /// 一行里选中的那一段重新上色。section 是这一行里的选区（UTF-16）；给这一行的替换（相对这一行）和改完选区盖着的
   /// 那一段（相对这一行）。没有字要改、或者拼出来认不对给 nil
   private static func recolor(
@@ -814,11 +1764,27 @@ nonisolated enum NoteMarkdown {
     while end > start, isBlank(units[end - 1]) { end -= 1 }
     guard start < end else { return nil }
     let spans = inline(units, in: content..<units.count)
-    // 不能上色的字：标记、行内代码、图片（编辑器里是一张图的附件字符；存的形式里是令牌）
+    // 不能上色的字：标记、行内代码、图片（编辑器里是一张图的附件字符；存的形式里是令牌）。**旧的颜色标记例外**
+    // （第 8 批之后的一轮 R2）：它们反正要删掉，上色时不算断开——连着的同一种颜色合成一段
+    // （`[12]{red}3123[2312]{red}3` 全选上红 → 一整段）
+    let oldRuns = colorRuns(in: spans)
+    var colorMarkers = [Bool](repeating: false, count: units.count)
+    for run in oldRuns {
+      for range in [run.open, run.close] {
+        for index in range.location..<NSMaxRange(range) where index < units.count {
+          colorMarkers[index] = true
+        }
+      }
+    }
     var blocked = [Bool](repeating: false, count: units.count)
     for span in spans {
       switch span.kind {
-      case .marker, .code:
+      case .marker:
+        guard !colorMarkers[span.range.location] else { continue }
+        for index in span.range.location..<NSMaxRange(span.range) where index < units.count {
+          blocked[index] = true
+        }
+      case .code:
         for index in span.range.location..<NSMaxRange(span.range) where index < units.count {
           blocked[index] = true
         }
@@ -833,41 +1799,50 @@ nonisolated enum NoteMarkdown {
       }
     }
     var current = [NoteColor?](repeating: nil, count: units.count)
-    let oldRuns = colorRuns(in: spans)
     for run in oldRuns {
       for index in run.range.location..<NSMaxRange(run.range) where index < units.count {
         current[index] = run.color
       }
     }
     var desired = current
-    var changed = false
-    for index in start..<end where !blocked[index] {
-      if desired[index] != color { changed = true }
-      desired[index] = color
-    }
-    guard changed else { return nil }
-    // 连着的、能上色的、同一种颜色的一串串
+    for index in start..<end where !blocked[index] { desired[index] = color }
+    // 连着的、能上色的、同一种颜色的一串串（旧的颜色标记跨过去：它们不算断开）
     var runs: [(range: Range<Int>, color: NoteColor)] = []
     var index = 0
     while index < units.count {
+      if colorMarkers[index] {
+        index += 1
+        continue
+      }
       guard let ink = desired[index], !blocked[index] else {
         index += 1
         continue
       }
-      var end = index + 1
-      while end < units.count, !blocked[end], desired[end] == ink { end += 1 }
-      runs.append((index..<end, ink))
-      index = end
+      var tail = index + 1
+      var last = index
+      while tail < units.count {
+        if colorMarkers[tail] {
+          tail += 1
+          continue
+        }
+        guard !blocked[tail], desired[tail] == ink else { break }
+        last = tail
+        tail += 1
+      }
+      runs.append((index..<(last + 1), ink))
+      index = last + 1
     }
     let deletions = oldRuns.flatMap { [$0.open, $0.close] }
+      .sorted { $0.location < $1.location }
     var insertions: [(Int, String)] = []
     for run in runs {
       insertions.append((run.range.lowerBound, "["))
       insertions.append((run.range.upperBound, "]{\(run.color.name)}"))
     }
-    // 拼出改完的这一行，再照它认一遍
+    // 拼出改完的这一行，再照它认一遍。**和原来不一样就改**（R2：颜色没变、只是标记碎了也要整理，
+    // 不是「有字的颜色变了才改」）；一模一样就不动（响一声）
     let (lineChange, newUnits) = edits(units: units, deletions: deletions, insertions: insertions)
-    guard !lineChange.replacements.isEmpty else { return nil }
+    guard newUnits != units, !lineChange.replacements.isEmpty else { return nil }
     guard
       recolorMatches(
         old: units, oldSpans: spans, blocked: blocked, new: newUnits, section: start..<end,
@@ -955,10 +1930,15 @@ nonisolated enum NoteMarkdown {
   }
 
   /// 看得见的字（去掉所有标记）和它们在这一行里的位置
-  private static func visible(_ units: [UInt16], spans: [Span]) -> (
-    indices: [Int], units: [UInt16]
-  ) {
+  private static func visible(
+    _ units: [UInt16], spans: [Span], hiding extra: [NSRange] = []
+  ) -> (indices: [Int], units: [UInt16]) {
     var hidden = [Bool](repeating: false, count: units.count)
+    for range in extra {
+      for index in range.location..<NSMaxRange(range) where index < units.count {
+        hidden[index] = true
+      }
+    }
     for span in spans where span.kind == .marker {
       let end = min(NSMaxRange(span.range), units.count)
       guard span.range.location < end else { continue }

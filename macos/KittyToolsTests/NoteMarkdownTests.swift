@@ -846,10 +846,10 @@ struct NoteMarkdownTests {
     #expect(run(.bold, "**一行**\n**二行**", range(2, 9)) == Edit("一行\n二行", range(0, 5)))
     // 都是空白、选中的只有块标记：没有可包的
     #expect(run(.bold, "   ", range(0, 3)) == nil && run(.bold, "- ", range(0, 2)) == nil)
-    // 「已经包着」问扫描器、不数字符（评审的反例）：数字中间的星号是乘号，不当成斜体删掉——包上（两个乘号旁边的
-    // 星号扫描器也不认，只是不丢字）
-    #expect(run(.italic, "箱子 60*40*30", range(6, 2)) == Edit("箱子 60**40**30", range(7, 2)))
-    #expect(run(.italic, "2*3*4", range(2, 1)) == Edit("2**3**4", range(3, 1)))
+    // 「已经包着」问扫描器、不数字符（评审的反例）：数字中间的星号是乘号，不当成斜体删掉。第 8 批之后的一轮
+    // 改成整段重建：两头加上的星号紧挨着数字，扫描器认不出来，复验挡住——不改、响一声（R3）
+    #expect(run(.italic, "箱子 60*40*30", range(6, 2)) == nil)
+    #expect(run(.italic, "2*3*4", range(2, 1)) == nil)
     // 光标夹在挨着的两段中间：中间那两对标记各归各的，不当成一对空的删掉（两段不并成一段），照常插一对
     #expect(run(.bold, "**a****b**", range(5)) == Edit("**a********b**", range(7)))
     #expect(run(.code, "`x``y`", range(3)) == Edit("`x````y`", range(4)))

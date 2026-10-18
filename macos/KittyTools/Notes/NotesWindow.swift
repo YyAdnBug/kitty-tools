@@ -532,6 +532,9 @@ import SwiftUI
     var items = [
       ActionMenu.Item(title: Self.pinTitle(note)) { [weak self] in self?.togglePinned(id) },
       ActionMenu.Item(title: Self.archiveTitle(note)) { [weak self] in self?.toggleArchived(id) },
+      ActionMenu.Item(
+        title: NoteMarkdownFiles.singleExportTitle, symbol: "square.and.arrow.up"
+      ) { [weak self] in self?.exportMarkdown(id) },
     ]
     if colors { items.append(ActionMenu.Item(title: Self.colorTitle, submenu: colorItems(note))) }
     // 归档里的不能浮着
@@ -544,6 +547,14 @@ import SwiftUI
         self?.delete(id)
       })
     return items
+  }
+
+  /// 「导出为 Markdown…」：先让仓库落盘（导出的是现在的样子），再开存储面板；写完用刘海岛说一句
+  func exportMarkdown(_ id: String) {
+    guard let note = store.note(id) else { return }
+    store.flush()
+    NoteMarkdownFiles.exportPanel(
+      note, imageDirectory: store.images?.directory, island: island)
   }
 
   /// 从「最近删除」放回原处

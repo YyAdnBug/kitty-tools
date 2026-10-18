@@ -473,7 +473,7 @@ struct NoteEditorFuzzTests {
     }
     rig.window.notes.beginUndoGrouping()
     defer { rig.window.notes.endUndoGrouping() }
-    switch random.next() % 41 {
+    switch random.next() % 46 {
     case 0, 1, 2:
       let at = position(&random)
       editor.setSelectedRange(NSRange(location: at, length: 0))
@@ -806,6 +806,42 @@ struct NoteEditorFuzzTests {
       }
       rig.type(random.pick(["", "[a]{red}"]))
       return "没有颜色可动"
+    case 41:
+      // R6 的块格式：随机选区（有时全选）点标题 / 引用 / 列表
+      if random.chance(3) { editor.selectAll(nil) }
+      let formats: [NoteMarkdown.BlockFormat] = [
+        .heading(1), .heading(2), .heading(3), .quote, .bullet, .ordered,
+      ]
+      let format = random.pick(formats)
+      editor.setBlock(format)
+      return "块格式 \(format)"
+    case 42:
+      // 代码块：空行插三行、块里去掉、选几行包起来这三种
+      if random.chance(3) { editor.selectAll(nil) }
+      editor.setCodeBlock()
+      return "代码块"
+    case 43:
+      if random.chance(3) { editor.selectAll(nil) }
+      editor.makeLink()
+      return "链接"
+    case 44:
+      if random.chance(3) { editor.selectAll(nil) }
+      editor.clearFormat()
+      return "清除格式"
+    case 45:
+      // 颜色「同色再上一次」：先上一次，再上一次同一种（标记碎了的要合成一段）
+      if random.chance(3) { editor.selectAll(nil) }
+      if random.chance(4) {
+        editor.setTextColor(nil)
+        return "去掉颜色"
+      }
+      let color = random.pick(NoteColor.allCases)
+      editor.setTextColor(color)
+      if random.chance(2) {
+        editor.setTextColor(color)
+        return "同色再上一次 \(color)"
+      }
+      return "上色 \(color)"
     default:
       return "什么都不做"
     }

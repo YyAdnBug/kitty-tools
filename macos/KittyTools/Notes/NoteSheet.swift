@@ -29,10 +29,11 @@ struct NoteSheet: View {
   private static let margin: CGFloat = 14
   private static let headerHeight: CGFloat = 36
 
-  /// 操作菜单最多露几行（再多在菜单里滚）：平时 9 行——八项四节（手测反馈第 3 批加了「便签设置…」）连三条分节线
-  /// 正好放下（别处的菜单是 8.5 行：露半行提示还有）；便签矮（浮动便签拉小了）时按它的高度收，菜单不出便签
+  /// 操作菜单最多露几行（再多在菜单里滚）：平时 10.5 行——九项四节（手测反馈第 3 批加了「便签设置…」、这一轮加了
+  /// 「导出为 Markdown…」）连三条分节线正好放下（别处的菜单是 8.5 行：露半行提示还有）；便签矮（浮动便签拉小了）时
+  /// 按它的高度收，菜单不出便签
   static func menuRows(height: CGFloat) -> CGFloat {
-    min(9, max(2.5, (height - headerHeight - 14) / ActionMenu.rowHeight))
+    min(10.5, max(2.5, (height - headerHeight - 14) / ActionMenu.rowHeight))
   }
 
   var body: some View {

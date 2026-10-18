@@ -531,16 +531,117 @@ struct NoteTextViewTests {
     #expect(rig.editor.string == "☐ 周报")
     let format = try #require(menu.items[2].submenu)
     #expect(menu.items[2].title == NoteTextView.formatTitle)
-    #expect(format.items.map(\.title) == ["粗体", "斜体", "删除线", "代码"])
-    #expect(format.items.map(\.keyEquivalent) == ["b", "i", "x", "e"])
+    // 粗体那四个带键位、链接，一条分节线，块格式（标题 1–3、引用、无序列表、有序列表、代码块），又一条分节线，清除格式
+    #expect(format.items.prefix(4).map(\.title) == ["粗体", "斜体", "删除线", "代码"])
+    #expect(format.items[4].title == "链接")
+    #expect(format.items.prefix(4).map(\.keyEquivalent) == ["b", "i", "x", "e"])
     #expect(
-      format.items.map(\.keyEquivalentModifierMask)
+      format.items.prefix(4).map(\.keyEquivalentModifierMask)
         == [.command, .command, [.command, .shift], .command])
+    #expect(format.items[5].isSeparatorItem)
+    #expect(
+      format.items[6..<13].map(\.title)
+        == ["标题 1", "标题 2", "标题 3", "引用", "无序列表", "有序列表", "代码块"])
+    #expect(format.items[13].isSeparatorItem)
+    #expect(format.items.last?.title == "清除格式")
+    #expect(format.items.dropFirst(4).allSatisfy { $0.keyEquivalent.isEmpty })
     // 选中「周报」点「粗体」：同 ⌘B
     rig.editor.setSelectedRange(NSRange(location: 2, length: 2))
     #expect(format.items.allSatisfy { rig.editor.validateUserInterfaceItem($0) })
     _ = format.items[0].target?.perform(format.items[0].action, with: format.items[0])
     #expect(rig.editor.string == "☐ **周报**")
+  }
+
+  /// 第 8 批之后的一轮 R4 / R5：格式菜单里的勾、什么时候停用（代码块里只剩「代码块」、一半在块里也停用、
+  /// 链接跨行停用、清除格式没选字停用、代码不自动打勾）
+  @Test func formatMenuChecksAndDisables() throws {
+    let rig = try Rig("**粗** 普通\n- 列表\n```\n代码\n```\n后", steps: true)
+    let text = rig.editor.string as NSString
+    func menu(_ selection: NSRange) throws -> NSMenu {
+      rig.editor.setSelectedRange(selection)
+      let event = try rig.mouse(.rightMouseDown, at: rig.center(of: selection.location))
+      let top = try #require(rig.editor.menu(for: event))
+      return try #require(top.items.first { $0.title == NoteTextView.formatTitle }?.submenu)
+    }
+    func item(_ menu: NSMenu, _ title: String) throws -> NSMenuItem {
+      try #require(menu.items.first { $0.title == title })
+    }
+    // 勾：粗体只看选区里能加的字是不是全都是
+    var submenu = try menu(text.range(of: "粗"))
+    #expect(try item(submenu, "粗体").state == .on)
+    #expect(try item(submenu, "斜体").state == .off)
+    #expect(try item(submenu, "代码").state == .off)
+    // 块格式：列表行打勾；有序列表不打
+    submenu = try menu(text.range(of: "列表"))
+    #expect(try item(submenu, "无序列表").state == .on)
+    #expect(try item(submenu, "有序列表").state == .off)
+    // 代码块里：除了「代码块」都停用，代码块打勾
+    submenu = try menu(text.range(of: "代码"))
+    for title in ["粗体", "斜体", "删除线", "代码", "链接", "清除格式"] {
+      #expect(try !item(submenu, title).isEnabled, "\(title)")
+    }
+    #expect(try item(submenu, "代码块").isEnabled && item(submenu, "代码块").state == .on)
+    // 一半在块里一半在外：代码块也停用
+    let start = text.range(of: "普通").location
+    let end = NSMaxRange(text.range(of: "代码"))
+    submenu = try menu(NSRange(location: start, length: end - start))
+    #expect(try !item(submenu, "代码块").isEnabled)
+    // 链接跨行停用；没选字时清除格式停用
+    let list = text.range(of: "列表")
+    submenu = try menu(
+      NSRange(
+        location: text.range(of: "普通").location,
+        length: NSMaxRange(list) - text.range(of: "普通").location))
+    #expect(try !item(submenu, "链接").isEnabled)
+    submenu = try menu(caret(text.range(of: "普通").location))
+    #expect(try !item(submenu, "清除格式").isEnabled && item(submenu, "链接").isEnabled)
+  }
+
+  /// 第 8 批之后的一轮 R6：块格式、链接、清除格式、代码块这几项点下去的结果（一步撤销在别的单测里）
+  @Test func formatMenuActions() throws {
+    // 标题 / 引用 / 列表：标题保留缩进，引用加在别的标记前面，列表换掉原来的块标记
+    let heading = try Rig("  标题", steps: true)
+    heading.step { heading.editor.setBlock(.heading(1)) }
+    #expect(heading.editor.string == "  # 标题")
+    heading.step { heading.editor.setBlock(.heading(1)) }
+    #expect(heading.editor.string == "  标题")
+    heading.step { heading.editor.setBlock(.quote) }
+    #expect(heading.editor.string == "  > 标题")
+    heading.step { heading.editor.setBlock(.bullet) }
+    #expect(heading.editor.string == "  - 标题")
+    heading.step { heading.editor.setBlock(.ordered) }
+    #expect(heading.editor.string == "  1. 标题")
+    // 链接：没选字插 []()、光标在方括号里；选了字包起来、光标在圆括号里；跨行不改
+    let link = try Rig("看这里", steps: true)
+    link.editor.setSelectedRange(caret(1))
+    link.step { link.editor.makeLink() }
+    #expect(link.editor.string == "看[]()这里" && link.editor.selectedRange() == caret(2))
+    let selected = try Rig("看这里", steps: true)
+    selected.editor.setSelectedRange(NSRange(location: 1, length: 2))
+    selected.step { selected.editor.makeLink() }
+    #expect(selected.editor.string == "看[这里]()" && selected.editor.selectedRange() == caret(6))
+    let cross = try Rig("两\n行", steps: true)
+    cross.editor.selectAll(nil)
+    cross.step { cross.editor.makeLink() }
+    #expect(cross.editor.string == "两\n行")
+    // 清除格式：强调、颜色、碰到的行内代码和链接；块格式不动
+    let clear = try Rig("# **粗** [链接](https://e.com) `代码`", steps: true)
+    clear.editor.selectAll(nil)
+    clear.step { clear.editor.clearFormat() }
+    #expect(clear.editor.string == "# 粗 链接 代码")
+    // 代码块：光标在空行插三行；块里再去掉；选了几行上下加围栏
+    let block = try Rig("a\n\nb", steps: true)
+    block.editor.setSelectedRange(caret(2))
+    block.step { block.editor.setCodeBlock() }
+    #expect(block.editor.string == "a\n```\n\n```\nb" && block.editor.selectedRange() == caret(6))
+    block.step { block.editor.setCodeBlock() }
+    #expect(block.editor.string == "a\n\nb")
+    let wrap = try Rig("a\nb", steps: true)
+    wrap.editor.selectAll(nil)
+    wrap.step { wrap.editor.setCodeBlock() }
+    #expect(
+      wrap.editor.string == "```\na\nb\n```"
+        && wrap.editor.selectedRange() == NSRange(location: 4, length: 3))
   }
 
   /// 右键点在能打开的链接上：菜单最前面多一项「打开链接」（不靠 ⌘ 点的那条路：键盘、旁白用户），不写键位；
@@ -1618,12 +1719,12 @@ struct NoteTextViewTests {
     #expect(rig.editor.string == "周报 ~~report~~\n第二行")
     #expect(try press(.code))
     #expect(rig.editor.string == "周报 ~~`report`~~\n第二行")
-    #expect(try press(.italic))
-    #expect(rig.editor.string == "周报 ~~`*report*`~~\n第二行")
+    // 行内代码里不能加格式：响一声、不改（R1：一串碰上代码就断）。不套 step：空的那一步撤销组会占掉一次 ⌘Z
+    #expect(rig.window.performKeyEquivalent(with: try formatKey(.italic, in: rig.window)))
+    #expect(rig.editor.string == "周报 ~~`report`~~\n第二行")
     // 一步一撤
     rig.window.notes.undo()
-    #expect(rig.editor.string == "周报 ~~`report`~~\n第二行")
-    rig.window.notes.undo()
+    #expect(rig.editor.string == "周报 ~~report~~\n第二行")
     rig.window.notes.undo()
     #expect(rig.editor.string == "周报 report\n第二行")
     // 没有选区：插一对、光标在中间；再按一次删掉

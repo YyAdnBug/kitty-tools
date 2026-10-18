@@ -821,7 +821,8 @@ struct NoteDeckTests {
     #expect(model.state.phase == .fanned)
   }
 
-  /// 操作菜单：八项四节（2026-10-15 加了「便签设置…」），名字和全部便签窗口同一份；颜色是子列表；Esc 先退菜单再关便签
+  /// 操作菜单：九项四节（2026-10-15 加了「便签设置…」、第 8 批之后加了「导出为 Markdown…」），名字和全部便签窗口同一份；
+  /// 颜色是子列表；Esc 先退菜单再关便签
   @Test func actionMenu() throws {
     let (model, store, ids) = try make(["一", "二"])
     var menuEvents: [Bool] = []
@@ -834,12 +835,13 @@ struct NoteDeckTests {
     #expect(model.menu == .init() && menuEvents == [true])
     #expect(
       model.menuItems.map(\.title) == [
-        "固定", "颜色", "任务", "归档", "删除", "浮在屏幕上", "在「全部便签」里打开", "便签设置…",
+        "固定", "颜色", "任务", "归档", "删除", "浮在屏幕上", "在「全部便签」里打开",
+        "导出为 Markdown…", "便签设置…",
       ])
-    #expect(model.menuItems.map(\.section) == [0, 0, 0, 1, 1, 2, 2, 3])
+    #expect(model.menuItems.map(\.section) == [0, 0, 0, 1, 1, 2, 2, 2, 3])
     #expect(
       model.menuItems.map(\.isDestructive) == [
-        false, false, false, false, true, false, false, false,
+        false, false, false, false, true, false, false, false, false,
       ])
     #expect(model.menuItems[2].shortcut == "⌘T")
     #expect(model.menuItems[1].submenu?.count == Note.colorCount)
@@ -880,7 +882,7 @@ struct NoteDeckTests {
     model.tapTab(ids[0])
     model.toggleMenu()
     #expect(try model.handleMenuKey(key(kVK_UpArrow)))
-    #expect(model.menu?.selection == 7)
+    #expect(model.menu?.selection == 8)
     #expect(try model.handleMenuKey(key(kVK_DownArrow)) && model.menu?.selection == 0)
     #expect(try model.handleMenuKey(key(kVK_Return)))
     #expect(store.note(ids[0])?.isPinned == true)
@@ -1653,7 +1655,8 @@ struct NoteDeckTests {
     #expect(try press("i", kVK_ANSI_I) && store.note(id)?.body == "***甲的***正文")
     #expect(try press("e", kVK_ANSI_E) && store.note(id)?.body == "***`甲的`***正文")
     #expect(try press("x", kVK_ANSI_X, [.command, .shift]))
-    #expect(store.note(id)?.body == "***`~~甲的~~`***正文" && !panel.isKeyWindow)
+    // 行内代码里不能再加删除线：响一声、不改
+    #expect(store.note(id)?.body == "***`甲的`***正文" && !panel.isKeyWindow)
     // ⌘Z 撤回去（测试里几次按键不在各自的一轮事件循环里，系统会并成一组；一步一撤在 NoteTextViewTests）
     var undos = 0
     while store.note(id)?.body != "甲的正文", undos < 4, try press("z", kVK_ANSI_Z) { undos += 1 }
