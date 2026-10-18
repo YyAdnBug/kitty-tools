@@ -703,7 +703,8 @@ final class LaunchpadModel {
 
   func closeFolder() {
     let wasOpen = openFolderID != nil
-    withAnimation(Style.Motion.settle.animation()) {
+    // 缩回文件夹图标比长出来慢一点（`retract` 0.34 s，不弹）：原来同一条 0.24 s 的，真机上看着像一下子没了（2026-10-18 反馈）
+    withAnimation(Style.Motion.retract.animation()) {
       openFolderID = nil
       folderPage = 0
       folderPageOffset = 0

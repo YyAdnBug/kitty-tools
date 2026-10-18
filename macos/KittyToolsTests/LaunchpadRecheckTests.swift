@@ -449,7 +449,8 @@ struct LaunchpadRecheckTests {
   // MARK: 2026-10-18 真机反馈：点到的范围
 
   /// 只有点到图标才打开：图标旁边的空处、名字上都不算（点空处 = 点背景，收起；收起后界面淡掉、不再收点击，
-  /// 所以每种点法各用一块新的界面）。图标的位置按界面里真的 NSImageView 量，不按算式猜
+  /// 所以每种点法各用一块新的界面）。图标的位置按 `cellCenter` 和 `iconLift` 算（这套算式和真画出来的对得上，
+  /// 见 LaunchpadInteractTests.computedGeometryMatchesTheDrawnIcons），要等启动台打开的那一下缩放走完
   @Test func onlyTheIconOpensTheApp() async throws {
     let refs = ["a", "b", "c"].map(ref)
     func attempt(_ point: (CGRect) -> CGPoint) async throws -> (opened: [String], closed: Int) {
@@ -461,9 +462,13 @@ struct LaunchpadRecheckTests {
       let live = LiveLaunchpad(model)
       defer { live.close() }
       _ = try #require(await live.gridFrame())
-      let icons = live.iconRects()
-      #expect(icons.count == 3)
-      let icon = try #require(icons[safe: 1])
+      try? await Task.sleep(for: .milliseconds(600))
+      await live.settle()
+      let center = try #require(model.cellCenter(page: 0, index: 1))
+      let size = model.metrics.icon
+      let icon = CGRect(
+        x: center.x - size / 2, y: center.y - LaunchpadMetrics.iconLift - size / 2, width: size,
+        height: size)
       await live.click(point(icon))
       return (opened, closed)
     }
@@ -555,20 +560,6 @@ private struct LiveLaunchpad {
       window.sendEvent(event)
     }
     await settle()
-  }
-
-  /// 界面里每个 App 图标（NSImageView）在窗口里的位置（左上角为原点），按先行后列排
-  func iconRects() -> [CGRect] {
-    func images(in view: NSView) -> [NSImageView] {
-      view.subviews.flatMap { ($0 as? NSImageView).map { [$0] } ?? images(in: $0) }
-    }
-    return images(in: host).map { image in
-      let rect = image.convert(image.bounds, to: nil)
-      return CGRect(
-        x: rect.minX, y: size.height - rect.maxY, width: rect.width, height: rect.height)
-    }
-    .filter { $0.width > 1 }
-    .sorted { ($0.minY, $0.minX) < ($1.minY, $1.minX) }
   }
 
   func click(_ point: CGPoint) async {

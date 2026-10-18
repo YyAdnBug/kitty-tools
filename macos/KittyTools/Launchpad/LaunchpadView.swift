@@ -226,43 +226,38 @@ struct LaunchpadView: View {
     .accessibilityLabel(model.isSearching ? "搜索结果" : "第 \(model.page + 1) 页")
   }
 
+  /// 一页：每个图标按**自己的 id** 摆在它那一格的位置上，不是「第几格画谁」——落点一变，让位的图标真的从原来那格滑到新的那格，
+  /// 换行的那个斜着滑过去（照 macOS 15；原来格子按位置建、只是换了格子里画的图标，看不到滑动，2026-10-18 真机反馈）。空位就是空着。
+  /// 按住挂在每个图标上（只管按下）；挪和松手由最外层那份收——拖动一激活手里那个就从这一页拿掉了，它身上的手势会被取消（G30）
   private func pageGrid(_ pageIndex: Int, metrics: LaunchpadMetrics) -> some View {
     let slots = model.previewTiles(page: pageIndex)
     let gap = model.gapIndex(page: pageIndex)
-    return VStack(spacing: 0) {
-      ForEach(0..<model.rows, id: \.self) { row in
-        HStack(spacing: 0) {
-          ForEach(0..<model.columns, id: \.self) { column in
-            let index = row * model.columns + column
-            // 空位就是空着（照 macOS 15，不画灰方块）
-            ZStack {
-              if let tile = slots[safe: index] ?? nil {
-                tileCell(tile, index: index, metrics: metrics, iconSize: metrics.icon)
-              } else {
-                Color.clear
-              }
-            }
-            .frame(width: metrics.cellWidth, height: metrics.cellHeight)
-            .gesture(cellGesture(page: pageIndex, index: index, metrics: metrics))
-          }
-        }
+    let columns = max(model.columns, 1)
+    let placed = slots.enumerated().compactMap { index, tile in
+      tile.flatMap { index < model.capacity ? PlacedTile(index: index, tile: $0) : nil }
+    }
+    return ZStack(alignment: .topLeading) {
+      ForEach(placed) { item in
+        tileCell(item.tile, index: item.index, metrics: metrics, iconSize: metrics.icon)
+          .gesture(
+            cellGesture(page: pageIndex, tile: item.tile, index: item.index, metrics: metrics)
+          )
+          .position(
+            x: (CGFloat(item.index % columns) + 0.5) * metrics.cellWidth,
+            y: (CGFloat(item.index / columns) + 0.5) * metrics.cellHeight)
       }
     }
-    .frame(width: metrics.gridWidth, height: metrics.gridHeight)
+    .frame(width: metrics.gridWidth, height: metrics.gridHeight, alignment: .topLeading)
     .animation(reduceMotion ? nil : Self.reflow, value: gap)
   }
 
-  /// 按住 / 拖 / 松手挂在格子的**位置**上（这一格的 ZStack），不挂在图标上：拖动一激活，这一格就画成空位、图标的视图被拆掉，
-  /// 挂在图标上的手势会被 SwiftUI 取消，onEnded 不来、拖动卡死（复查 G30；单测在事件之间强制重画才看得出来）。
-  /// 按下时按位置找这一格现在画的是谁；点到格子里的空处不算（图标和名字以外交给背景，点空白收起）。
-  /// 搜索时也记下按下：单击打开结果，但不许拖（F5）
-  private func cellGesture(page pageIndex: Int, index: Int, metrics: LaunchpadMetrics)
-    -> some Gesture
-  {
+  /// 按下：记下按的是哪一格（挪 / 松手两边都喂：这一份、最外层那份，模型按同一个指针位置算）。搜索时也记下按下：单击打开结果，但不许拖（F5）
+  private func cellGesture(
+    page pageIndex: Int, tile: LaunchpadTile, index: Int, metrics: LaunchpadMetrics
+  ) -> some Gesture {
     DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.space))
       .onChanged { value in
         if model.drag == nil {
-          guard let tile = model.previewTiles(page: pageIndex)[safe: index] ?? nil else { return }
           model.beginDrag(
             tile: tile, appID: tile.app?.id, folder: nil, at: value.startLocation,
             origin: model.cellCenter(page: pageIndex, index: index))
@@ -360,9 +355,9 @@ struct LaunchpadView: View {
     switch tile {
     case .app(let ref):
       if let app = model.app(ref) {
-        JigglingIcon(
+        AppIconView(
           image: model.icons.icon(for: app, size: size), size: size,
-          active: model.jiggling && jiggles, phase: phase, reduceMotion: reduceMotion
+          jiggling: model.jiggling && jiggles, phase: phase, reduceMotion: reduceMotion
         )
         .frame(width: size, height: size)
         .accessibilityHidden(true)
@@ -479,6 +474,41 @@ nonisolated enum LaunchpadJiggle {
     return CGAffineTransform(translationX: pivot.x, y: pivot.y)
       .rotated(by: degrees * .pi / 180)
       .translatedBy(x: -pivot.x, y: -pivot.y)
+  }
+}
+
+/// App 图标：平时是 SwiftUI 的 Image（建得快——35 个的文件夹展开第一帧原来要 127 ms；缩放、平移只动 GPU，让位滑动不用每帧挪 NSView），
+/// 抖动时才换成图层动画的 `JigglingIcon`（F35：上百个视图走 SwiftUI 的 repeatForever 会每帧重排）
+private struct AppIconView: View {
+  let image: NSImage
+  let size: CGFloat
+  let jiggling: Bool
+  let phase: Double
+  let reduceMotion: Bool
+
+  var body: some View {
+    if jiggling, !reduceMotion {
+      JigglingIcon(image: image, size: size, active: true, phase: phase, reduceMotion: reduceMotion)
+    } else {
+      Image(nsImage: image)
+        .resizable()
+        .interpolation(.high)
+    }
+  }
+}
+
+/// 一页里的一个图标和它摆在第几格（按图标的 id 认：落点变了，它从原来那格滑过去）
+private struct PlacedTile: Identifiable {
+  let index: Int
+  let tile: LaunchpadTile
+  var id: String { tile.id }
+}
+
+extension View {
+  /// `on` 时压成一张图（drawingGroup）：缩放 / 淡入淡出只动这一张。里面有 AppKit 视图（抖动的图标）时不能压
+  @ViewBuilder
+  fileprivate func flattened(_ on: Bool) -> some View {
+    if on { drawingGroup() } else { self }
   }
 }
 
@@ -630,6 +660,8 @@ private struct FolderOverlay: View {
   @Environment(\.colorSchemeContrast) private var contrast
   @FocusState private var editingName: Bool
   @State private var titleShown = false
+  /// 名字正在改：平时是一行字，点一下才换成输入框（照 macOS 15 单击名字改名；输入框建起来要 20 ms，展开那一下不建它）
+  @State private var editing = false
 
   var body: some View {
     // 格子宽高分开算（G4，口径在 LaunchpadMetrics.folder*）：宽和主网格一样，高放得下图标 + 名字
@@ -647,6 +679,9 @@ private struct FolderOverlay: View {
       // 面板是一层浅白：底下已经是糊掉的壁纸，透出来就是一块浅色毛玻璃（不再叠一层材质，省一次全面板模糊）
       .background(panel.fill(.white.opacity(contrast == .increased ? 0.22 : 0.14)))
       .overlay { panel.stroke(.white.opacity(0.2), lineWidth: Style.hairlineWidth(contrast)) }
+      // 不抖的时候整块面板压成一张图：长出来 / 缩回去那一下只缩放这一张，不是三十几个带阴影的名字一帧帧重画
+      // （2026-10-18 真机反馈「图标多的文件夹展开卡」）。抖动时里面是 AppKit 的图层动画，压不进去，照常画
+      .flattened(!model.jiggling)
     }
     .position(x: metrics.size.width / 2, y: metrics.size.height / 2)
     .onAppear {
@@ -667,24 +702,47 @@ private struct FolderOverlay: View {
       ceil(NSAttributedString(string: text, attributes: [.font: Self.titleFont]).size().width) + 24,
       metrics.folderGridWidth)
     let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
-    return TextField("文件夹名字", text: $model.folderNameDraft)
-      .textFieldStyle(.plain)
-      .font(Font(Self.titleFont))
-      .foregroundStyle(.white.opacity(0.96))
-      .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
-      .multilineTextAlignment(.center)
-      .focused($editingName)
-      .frame(width: width, height: LaunchpadMetrics.folderTitleHeight)
-      .background(shape.fill(.white.opacity(editingName ? 0.14 : 0)))
-      .animation(.easeOut(duration: Style.fadeIn), value: editingName)
-      .onSubmit { commitName() }
-      .onChange(of: editingName) { _, focused in
-        if !focused { commitName() }
+    return Group {
+      if editing {
+        TextField("文件夹名字", text: $model.folderNameDraft)
+          .textFieldStyle(.plain)
+          .font(Font(Self.titleFont))
+          .foregroundStyle(.white.opacity(0.96))
+          .multilineTextAlignment(.center)
+          .focused($editingName)
+          .onAppear {
+            // 换成输入框的这一下就拿焦点（下一轮：这一轮它还没挂进窗口）
+            DispatchQueue.main.async { editingName = true }
+          }
+          .onSubmit { finishEditing() }
+          .onChange(of: editingName) { _, focused in
+            if !focused { finishEditing() }
+          }
+          .onExitCommand {
+            finishEditing()
+            model.closeFolder()
+          }
+      } else {
+        Text(text)
+          .font(Font(Self.titleFont))
+          .foregroundStyle(.white.opacity(0.96))
+          .lineLimit(1)
+          .truncationMode(.tail)
+          .contentShape(Rectangle())
+          .onTapGesture { editing = true }
+          .accessibilityAddTraits(.isButton)
+          .accessibilityHint("改名")
       }
-      .onExitCommand {
-        commitName()
-        model.closeFolder()
-      }
+    }
+    .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
+    .frame(width: width, height: LaunchpadMetrics.folderTitleHeight)
+    .background(shape.fill(.white.opacity(editing ? 0.14 : 0)))
+    .animation(.easeOut(duration: Style.fadeIn), value: editing)
+  }
+
+  private func finishEditing() {
+    commitName()
+    editing = false
   }
 
   private static let titleFont = NSFont.systemFont(ofSize: 28, weight: .medium)
@@ -707,26 +765,29 @@ private struct FolderOverlay: View {
   }
 
   /// 一页文件夹：拖着的时候手里那个拿掉、落点处空着（别的让位，同主网格）
+  /// 一页文件夹：同主网格，每个图标按自己的 id 摆在它那一格（拖着的时候手里那个拿掉、落点处空着，别的真的滑过去让位）
   private func folderPage(_ page: Int, columns: Int, rows: Int) -> some View {
     let apps = model.folderPreview(page: page)
     let cellWidth = metrics.folderCellWidth
     let cellHeight = metrics.folderCellHeight
-    return VStack(spacing: 0) {
-      ForEach(0..<rows, id: \.self) { row in
-        HStack(spacing: 0) {
-          ForEach(0..<columns, id: \.self) { column in
-            let index = row * columns + column
-            if let ref = apps[safe: index] ?? nil, let app = model.app(ref) {
-              folderCell(app, ref: ref, index: index, iconSize: metrics.folderIcon)
-                .frame(width: cellWidth, height: cellHeight)
-            } else {
-              Color.clear.frame(width: cellWidth, height: cellHeight)
-            }
-          }
-        }
+    let placed = apps.enumerated().compactMap { index, ref in
+      ref.flatMap { ref in
+        model.app(ref).map { (index: index, ref: ref, app: $0) }
       }
     }
-    .frame(width: cellWidth * CGFloat(columns), height: cellHeight * CGFloat(rows))
+    return ZStack(alignment: .topLeading) {
+      ForEach(placed, id: \.ref.id) { item in
+        folderCell(item.app, ref: item.ref, index: item.index, iconSize: metrics.folderIcon)
+          .frame(width: cellWidth, height: cellHeight)
+          .position(
+            x: (CGFloat(item.index % columns) + 0.5) * cellWidth,
+            y: (CGFloat(item.index / columns) + 0.5) * cellHeight)
+      }
+    }
+    .frame(
+      width: cellWidth * CGFloat(columns), height: cellHeight * CGFloat(rows),
+      alignment: .topLeading
+    )
     .animation(reduceMotion ? nil : LaunchpadView.reflow, value: model.drag?.folderTarget)
   }
 
@@ -743,9 +804,9 @@ private struct FolderOverlay: View {
           .fill(.white.opacity(selected ? (contrast == .increased ? 0.22 : 0.16) : 0))
           .frame(width: iconSize * 1.22, height: iconSize * 1.22)
           .allowsHitTesting(false)
-        JigglingIcon(
+        AppIconView(
           image: model.icons.icon(for: app, size: iconSize), size: iconSize,
-          active: model.jiggling, phase: Double(index % 7) / 7, reduceMotion: reduceMotion
+          jiggling: model.jiggling, phase: Double(index % 7) / 7, reduceMotion: reduceMotion
         )
         .frame(width: iconSize, height: iconSize)
       }

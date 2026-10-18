@@ -262,13 +262,29 @@ struct LaunchpadInteractTests {
 
   // MARK: 真界面（屏外窗口、进程内送事件）
 
-  /// 拖动判定用的面板位置是按算式给的：和真画出来的文件夹图标对得上（不差 1 pt）
-  @Test func folderPanelRectMatchesTheDrawnIcons() async throws {
+  /// 拖动判定用的位置是按算式给的（主网格 `cellCenter` − `iconLift`、文件夹 `folderPanelRect` / `folderCellCenter`）：
+  /// 和真画出来的图标对得上（不差 1 pt）。抖动时图标是 NSImageView，好量
+  @Test func computedGeometryMatchesTheDrawnIcons() async throws {
+    let grid = model(LaunchpadLayout(pages: [apps(["a", "b", "c", "d"])]))
+    let gridLive = InteractLive(grid)
+    await gridLive.waitForGrid()
+    grid.enterJiggle()
+    try? await Task.sleep(for: .milliseconds(600))
+    await gridLive.settle()
+    let drawn = gridLive.iconCenters()
+    #expect(drawn.count == 4)
+    for (index, icon) in drawn.enumerated() {
+      let expected = grid.cellCenter(page: 0, index: index)!
+      #expect(abs(icon.x - expected.x) < 1, "\(index): \(icon) vs \(expected)")
+      #expect(abs(icon.y - (expected.y - LaunchpadMetrics.iconLift)) < 1, "\(index)")
+    }
+    gridLive.close()
     let folder = LaunchpadFolder(name: "X", pages: [[ref("x"), ref("y"), ref("z")]])
     let model = model(LaunchpadLayout(pages: [[.folder(folder)]]))
     let live = InteractLive(model)
     defer { live.close() }
     await live.waitForGrid()
+    model.enterJiggle()
     model.openFolder(folder.id)
     // 等文件夹长出来、启动台打开的那一下缩放都走完
     try? await Task.sleep(for: .milliseconds(600))
@@ -280,6 +296,61 @@ struct LaunchpadInteractTests {
       #expect(abs(icon.x - expected.x) < 1, "\(index): \(icon) vs \(expected)")
       #expect(abs(icon.y - (expected.y - LaunchpadMetrics.iconLift)) < 1, "\(index)")
     }
+  }
+
+  /// 让位时图标是**滑**过去的：中途有图标停在两格之间（原来格子按位置建，只是换了格子里画的图标，一步就到）
+  @Test func reflowSlidesIconsBetweenCells() async throws {
+    let model = model(
+      LaunchpadLayout(pages: [apps(["a", "b", "c", "d", "e", "f"])]), timing: .immediate)
+    let live = InteractLive(model)
+    defer { live.close() }
+    await live.waitForGrid()
+    try? await Task.sleep(for: .milliseconds(600))
+    let start = center(0, of: model)
+    model.beginDrag(tile: .app(ref("a")), appID: ref("a").id, folder: nil, at: start, origin: start)
+    // 拖起来进抖动：图标换成 NSImageView，好量位置
+    model.updateDrag(location: before(4, of: model), pageWidth: 900)
+    let cells = (0..<6).map { model.cellCenter(page: 0, index: $0)! }
+    var between = false
+    for _ in 0..<20 where !between {
+      try? await Task.sleep(for: .milliseconds(15))
+      live.host.layoutSubtreeIfNeeded()
+      live.host.displayIfNeeded()
+      // 跟手的那一份不算（它本来就在指针那儿）
+      let ghost = model.drag.map { model.ghostCenter($0) } ?? .zero
+      between = live.iconCenters().contains { icon in
+        let isGhost =
+          abs(icon.x - ghost.x) < 12 && abs(icon.y - (ghost.y - LaunchpadMetrics.iconLift)) < 12
+        let atCell = cells.contains {
+          abs($0.x - icon.x) < 2 && abs($0.y - LaunchpadMetrics.iconLift - icon.y) < 2
+        }
+        return !isGhost && !atCell
+      }
+    }
+    #expect(between)
+    model.cancelDrag()
+  }
+
+  /// 关文件夹有动画：缩回去的半路上面板里的图标还在、比原来小（原来真机上看着像一下子没了）
+  @Test func closingAFolderShrinksBack() async throws {
+    let folder = LaunchpadFolder(name: "X", pages: [[ref("x"), ref("y"), ref("z")]])
+    let model = model(LaunchpadLayout(pages: [[.folder(folder)]]))
+    let live = InteractLive(model)
+    defer { live.close() }
+    await live.waitForGrid()
+    // 抖动时图标是 NSImageView，好量大小
+    model.enterJiggle()
+    model.openFolder(folder.id)
+    try? await Task.sleep(for: .milliseconds(600))
+    await live.settle()
+    let full = model.metrics.icon
+    model.closeFolder()
+    try? await Task.sleep(for: .milliseconds(70))
+    live.host.layoutSubtreeIfNeeded()
+    live.host.displayIfNeeded()
+    let sizes = live.iconSizes()
+    #expect(sizes.count == 3)
+    #expect(sizes.allSatisfy { $0 > 2 && $0 < full - 2 }, "\(sizes) vs \(full)")
   }
 
   /// 真鼠标：从文件夹里按住一个图标拖出面板 → 文件夹关上（挂在它上面的手势跟着被拆掉）→ 接着拖到主网格、松手照样收得到
@@ -364,6 +435,14 @@ private struct InteractLive {
       return CGPoint(x: rect.midX, y: size.height - rect.midY)
     }
     .sorted { ($0.y, $0.x) < ($1.y, $1.x) }
+  }
+
+  /// 每个 NSImageView 画出来的宽（缩放过程中跟着变）
+  func iconSizes() -> [CGFloat] {
+    func images(in view: NSView) -> [NSImageView] {
+      view.subviews.flatMap { ($0 as? NSImageView).map { [$0] } ?? images(in: $0) }
+    }
+    return images(in: host).map { $0.convert($0.bounds, to: nil).width }
   }
 
   func send(_ type: NSEvent.EventType, _ point: CGPoint) async {

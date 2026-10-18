@@ -29,6 +29,9 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
   停在文件夹上（合成底板出来后再 0.6 s）它自己打开，能放进任意一格、文件夹里也能挪（`LaunchpadLayout.placing`，满了顺到下一页）；
   进过面板再拖出 14 pt 就关文件夹、接着在主网格里拖（松手时先 `draggingOut` 再挪）；边上 60 pt 停 0.4 s 翻页、一直停着每 0.6 s 再翻；
   文件夹面板的位置按算式（`folderPanelRect`），不量（长出来的那一下量到的是缩着的框）。
+- 网格和文件夹里的图标**按格子的 id** 建（`PlacedTile`，`.position` 摆到第几格），不按位置建：落点一变让位的图标才会滑过去。
+  按住的手势挂在每个图标上（只管按下），被拿起、被拆掉都没关系，挪和松手看下一条。图标平时是 SwiftUI 的 `Image`（`AppIconView`：
+  建得快、缩放平移只动 GPU），抖动时才换成图层动画的 `JigglingIcon`；量图标位置的单测要先进抖动（那时才是 NSImageView）。
 - **拖动的「挪 / 松手」在 LaunchpadView 最外层另收一份**（`simultaneousGesture`）：格子只负责按下。拖出文件夹时文件夹那块界面收完会被拆掉，
   挂在格子上的手势跟着被取消、松手收不到（同 G30）；最外层一直在。两份都喂进去没关系（同一个指针位置；松手第二次进来时已经没有拖动）。
   单测 `LaunchpadInteractTests.realDragOutOfAFolderStillDrops` 拆掉最外层那份就红。
