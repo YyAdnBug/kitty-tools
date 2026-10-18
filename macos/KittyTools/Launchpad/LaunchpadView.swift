@@ -20,18 +20,28 @@ struct LaunchpadView: View {
 
   /// 拖动、落点、格子位置都按这个命名坐标空间算（面板本地坐标）
   nonisolated static let space = "launchpad"
+  /// 量格子位置用：文件夹开着时网格缩了，这层在缩之前，量到的还是没缩的位置
+  nonisolated static let gridSpace = "launchpad-grid"
 
   var body: some View {
     GeometryReader { proxy in
       let metrics = model.metrics
       ZStack(alignment: .top) {
         background
-        searchField(metrics)
-          .padding(.top, metrics.searchTop)
-        pager(proxy.size, metrics: metrics)
-          .padding(.top, metrics.gridTop)
-        pageDots
-          .position(x: proxy.size.width / 2, y: metrics.dotsY)
+        // 文件夹开着时后面这一整块缩到 0.97（照 macOS 15）。格子位置在缩之前那层坐标里量（gridSpace，和 space 原点重合）：
+        // 落点、纸的起止都按没缩的位置算，不跟着动画变；缩着的时候主网格被文件夹的底挡着，不接拖动
+        let shrink = model.openFolderID != nil && !reduceMotion
+        ZStack(alignment: .top) {
+          searchField(metrics)
+            .padding(.top, metrics.searchTop)
+          pager(proxy.size, metrics: metrics)
+            .padding(.top, metrics.gridTop)
+          pageDots
+            .position(x: proxy.size.width / 2, y: metrics.dotsY)
+        }
+        .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
+        .coordinateSpace(name: Self.gridSpace)
+        .visualEffect { content, _ in content.scaleEffect(shrink ? 0.97 : 1) }
         // 层次写死（zIndex）：ZStack 里正在离场的视图，SwiftUI 会把它挪到兄弟视图下面画——关文件夹时面板就缩到网格和不透明的壁纸
         // 后面去了，只看得见后面那层淡掉，像「没有动画」（2026-10-18 真机反馈两次；进场的总在上面，所以打开一直是好的）
         if model.openFolderID != nil {
@@ -259,7 +269,7 @@ struct LaunchpadView: View {
         pageGrid(index, metrics: metrics)
           .frame(width: size.width, height: metrics.gridHeight, alignment: .top)
           .onGeometryChange(for: CGRect.self) { proxy in
-            proxy.frame(in: .named(Self.space))
+            proxy.frame(in: .named(Self.gridSpace))
           } action: { frame in
             model.gridFrames[index] = frame
           }

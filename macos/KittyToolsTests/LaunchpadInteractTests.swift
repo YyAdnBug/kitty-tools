@@ -375,6 +375,24 @@ struct LaunchpadInteractTests {
     model.cancelDrag()
   }
 
+  /// 文件夹开着时后面那块缩到 0.97 只是画的时候缩：量到的网格框不变（拖动、落点、纸的起止都按它算）
+  @Test func shrinkingTheGridBehindAFolderKeepsItsGeometry() async throws {
+    let folder = LaunchpadFolder(name: "X", pages: [[ref("x"), ref("y")]])
+    let model = model(LaunchpadLayout(pages: [[.folder(folder), .app(ref("b"))]]))
+    let live = InteractLive(model)
+    defer { live.close() }
+    await live.waitForGrid()
+    try? await Task.sleep(for: .milliseconds(600))
+    await live.settle()
+    let before = try #require(model.gridFrames[0])
+    model.openFolder(folder.id)
+    try? await Task.sleep(for: .milliseconds(600))
+    await live.settle()
+    let after = try #require(model.gridFrames[0])
+    #expect(abs(after.minX - before.minX) < 0.5 && abs(after.minY - before.minY) < 0.5)
+    #expect(abs(after.width - before.width) < 0.5 && abs(after.height - before.height) < 0.5)
+  }
+
   /// 真鼠标：从文件夹里按住一个图标拖出面板 → 文件夹关上（挂在它上面的手势跟着被拆掉）→ 接着拖到主网格、松手照样收得到
   @Test func realDragOutOfAFolderStillDrops() async throws {
     let folder = LaunchpadFolder(name: "X", pages: [[ref("x"), ref("y"), ref("z")]])
