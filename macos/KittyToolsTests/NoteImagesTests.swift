@@ -7,8 +7,8 @@ import Testing
 
 @testable import KittyTools
 
-/// 固定种子的伪随机数（同 NoteEditorFuzzTests 的 LCG；失败了能复现，F25）
-private struct SeededRandom: RandomNumberGenerator {
+/// 固定种子的伪随机数（同 NoteEditorFuzzTests 的 LCG；失败了能复现，F25；NotesWindowTests 也用）
+struct SeededRandom: RandomNumberGenerator {
   var state: UInt64
   init(seed: Int) { state = UInt64(bitPattern: Int64(seed)) | 1 }
   mutating func next() -> UInt64 {

@@ -377,10 +377,9 @@ struct NotesProbeTests {
     let suite = "kitty-notes-probe-\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
-    let hosting = NSHostingController(
-      rootView: NotesWindowView(model: model).defaultAppStorage(defaults))
-    hosting.sceneBridgingOptions = [.title, .toolbars]
-    let window = ProbeWindow(contentViewController: hosting)
+    let window = ProbeWindow(
+      contentViewController: .windowContent(
+        NotesWindowView(model: model).defaultAppStorage(defaults)))
     window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
     window.toolbarStyle = .unified
     window.setContentSize(NSSize(width: 940, height: 580))
@@ -638,10 +637,9 @@ struct NotesProbeTests {
     defer { defaults.removePersistentDomain(forName: suite) }
     let model = NotesWindowModel(store: store)
     model.layout = .list
-    let hosting = NSHostingController(
-      rootView: NotesWindowView(model: model).defaultAppStorage(defaults))
-    hosting.sceneBridgingOptions = [.title, .toolbars]
-    let window = ProbeWindow(contentViewController: hosting)
+    let window = ProbeWindow(
+      contentViewController: .windowContent(
+        NotesWindowView(model: model).defaultAppStorage(defaults)))
     window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
     window.toolbarStyle = .unified
     window.setContentSize(NSSize(width: 940, height: 580))
@@ -747,10 +745,9 @@ struct NotesProbeTests {
         {
           let clock = ContinuousClock()
           let start = clock.now
-          let hosting = NSHostingController(
-            rootView: NotesWindowView(model: model).defaultAppStorage(defaults))
-          hosting.sceneBridgingOptions = [.title, .toolbars]
-          let made = ProbeWindow(contentViewController: hosting)
+          let made = ProbeWindow(
+            contentViewController: .windowContent(
+              NotesWindowView(model: model).defaultAppStorage(defaults)))
           made.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
           made.toolbarStyle = .unified
           made.setContentSize(NSSize(width: 940, height: 580))
@@ -840,10 +837,9 @@ struct NotesProbeTests {
     defer { defaults.removePersistentDomain(forName: suite) }
     let model = NotesWindowModel(store: store)
     #expect(model.layout == .wall)
-    let hosting = NSHostingController(
-      rootView: NotesWindowView(model: model).defaultAppStorage(defaults))
-    hosting.sceneBridgingOptions = [.title, .toolbars]
-    let window = ProbeWindow(contentViewController: hosting)
+    let window = ProbeWindow(
+      contentViewController: .windowContent(
+        NotesWindowView(model: model).defaultAppStorage(defaults)))
     window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
     window.toolbarStyle = .unified
     window.setContentSize(NSSize(width: 940, height: 580))

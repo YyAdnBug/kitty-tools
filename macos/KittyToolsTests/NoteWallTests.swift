@@ -791,10 +791,9 @@ struct NoteWallTests {
 extension NoteWallTests {
   /// 屏外带标题栏的窗口（同 wallInTheWindow）
   private func wallWindow(_ model: NotesWindowModel, defaults: UserDefaults) -> NSWindow {
-    let hosting = NSHostingController(
-      rootView: AnyView(NotesWindowView(model: model).defaultAppStorage(defaults)))
-    hosting.sceneBridgingOptions = [.title, .toolbars]
-    let window = WallWindow(contentViewController: hosting)
+    let window = WallWindow(
+      contentViewController: .windowContent(
+        AnyView(NotesWindowView(model: model).defaultAppStorage(defaults))))
     window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
     window.toolbarStyle = .unified
     window.setContentSize(NSSize(width: 940, height: 580))

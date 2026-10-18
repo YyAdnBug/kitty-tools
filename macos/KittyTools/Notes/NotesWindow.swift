@@ -671,29 +671,35 @@ import SwiftUI
 
 /// 窗口本身：建、显示、记位置；窗口的委托（key 进出、关闭、撤销栈）；⌘⌫ 和 ⇧⌘Z 的按键监听
 final class NotesWindow: NSObject, NSWindowDelegate {
-  private let window: NSWindow
+  /// 最小的内容尺寸（SwiftUI 自己算的最小：墙 532 × 97–188、列表 300–346 × 179–260，2026-10-18 量）
+  static let minSize = NSSize(width: 720, height: 420)
+
+  /// 只读：单测看窗口的内容和最小尺寸
+  let window: NSWindow
   let model: NotesWindowModel
   /// ⌘⌫ 和 ⇧⌘Z 的本地按键监听：窗口是 key 时装着，不是了就卸（成对）
   private var keyMonitor: Any?
 
   var isVisible: Bool { window.isVisible }
 
-  init(model: NotesWindowModel) {
+  /// frameName：记住窗口位置和大小用的名字（单测传 nil：不写偏好）
+  init(model: NotesWindowModel, frameName: String? = "Notes") {
     self.model = model
-    let hosting = NSHostingController(rootView: NotesWindowView(model: model))
-    hosting.sceneBridgingOptions = [.title, .toolbars]
-    window = NSWindow(contentViewController: hosting)
+    // 内容包在普通容器里：宿主视图当窗口的 contentView 会闪退（见 windowContent）
+    window = NSWindow(contentViewController: .windowContent(NotesWindowView(model: model)))
     window.title = HotKeyAction.noteAll.title
     window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
     window.toolbarStyle = .unified
     window.isReleasedWhenClosed = false
     window.collectionBehavior = [.fullScreenAuxiliary]
     window.setContentSize(NSSize(width: 940, height: 580))
-    window.contentMinSize = NSSize(width: 720, height: 420)
+    window.contentMinSize = Self.minSize
     super.init()
     window.delegate = self
-    if !window.setFrameUsingName("Notes") { window.center() }
-    window.setFrameAutosaveName("Notes")
+    if let frameName {
+      if !window.setFrameUsingName(frameName) { window.center() }
+      window.setFrameAutosaveName(frameName)
+    }
     model.focusBody = { [unowned self] in
       // 晚一拍：新选中的那条的编辑区这时还没建出来
       perform(#selector(focusBodyNow), with: nil, afterDelay: 0)

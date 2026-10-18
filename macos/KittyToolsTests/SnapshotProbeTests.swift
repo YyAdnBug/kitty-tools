@@ -1683,9 +1683,8 @@ struct SnapshotProbeTests {
     {
       model.scope = trash ? .trash : .all
       model.layout = wall ? .wall : .list
-      let hosting = NSHostingController(rootView: NotesWindowView(model: model))
-      hosting.sceneBridgingOptions = [.title, .toolbars]
-      let titled = OffscreenTitledWindow(contentViewController: hosting)
+      let titled = OffscreenTitledWindow(
+        contentViewController: .windowContent(NotesWindowView(model: model)))
       titled.title = HotKeyAction.noteAll.title  // 同 NotesWindow.init（标题的桥接要等第一次变化）
       titled.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
       titled.toolbarStyle = .unified

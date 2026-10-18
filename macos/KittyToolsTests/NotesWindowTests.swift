@@ -4,8 +4,9 @@
 //   行上的相对时间和底下那行小字、正文到上限的标记；
 // - 纸色表（Notes/NotePaper.swift）：8 色两套都有、墨对纸够 4.5:1、深色那套还是同一个色相；
 // - 三个入口：热键动作追加在末尾、默认键、分节、启动器 / 速查表 / 设置页 / 导入的快捷键里都有；
-// - 普通窗口关掉时程序坞图标留不留、字号偏好。
-// 全用内存库和固定的时间；不建真的全部便签窗口（有标题栏的窗口摆不到屏外），不写用户的偏好。
+// - 普通窗口关掉时程序坞图标留不留、字号偏好；
+// - 两扇普通窗口（全部便签、设置）的大小归窗口管：最小尺寸不被 SwiftUI 改、正式版那次约束死循环闪退的屏外复现（调优 T1）。
+// 全用内存库和固定的时间；真的窗口只建不上屏（有标题栏的窗口摆不到屏外，要上屏的用屏外的 Offscreen），不写用户的偏好。
 
 import AppKit
 import Carbon.HIToolbox
@@ -612,10 +613,9 @@ struct NotesWindowTests {
     let suite = "kitty-test-\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
-    let hosting = NSHostingController(
-      rootView: NotesWindowView(model: model).defaultAppStorage(defaults))
-    hosting.sceneBridgingOptions = [.title, .toolbars]
-    let window = Offscreen(contentViewController: hosting)
+    let window = Offscreen(
+      contentViewController: .windowContent(
+        NotesWindowView(model: model).defaultAppStorage(defaults)))
     window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
     window.toolbarStyle = .unified
     window.setContentSize(NSSize(width: 940, height: 580))
@@ -701,10 +701,9 @@ struct NotesWindowTests {
     let suite = "kitty-test-\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
-    let hosting = NSHostingController(
-      rootView: NotesWindowView(model: model).defaultAppStorage(defaults))
-    hosting.sceneBridgingOptions = [.title, .toolbars]
-    let window = Offscreen(contentViewController: hosting)
+    let window = Offscreen(
+      contentViewController: .windowContent(
+        NotesWindowView(model: model).defaultAppStorage(defaults)))
     window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
     window.toolbarStyle = .unified
     window.setContentSize(NSSize(width: 940, height: 580))
@@ -980,6 +979,124 @@ extension NotesWindowTests {
     // 名字和符号：同操作菜单那一份
     #expect(
       NotesWindowModel.settingsTitle == "便签设置" && NotesWindowModel.settingsSymbol == "gearshape")
+  }
+}
+
+// MARK: 窗口的大小归窗口管（调优 T1，2026-10-18）
+
+extension NotesWindowTests {
+  /// 排一轮约束和布局，再让事件循环转几下
+  private func settle(_ window: NSWindow) {
+    for _ in 0..<4 {
+      window.updateConstraintsIfNeeded()
+      window.layoutIfNeeded()
+      RunLoop.main.run(until: .now.addingTimeInterval(0.05))
+    }
+  }
+
+  /// 两扇普通窗口的内容不让 SwiftUI 碰窗口大小：宿主视图不是窗口的 contentView、不按内容定大小；排过版、换过视图 / 页
+  /// 以后最小尺寸还是手写的（以前 SwiftUI 会把它换成各视图自己算的：墙 532 × 97、设置的通用页 332 × 160……）。
+  /// 真的窗口、不上屏（frameName 传 nil：不记位置、不写偏好）
+  @Test func ordinaryWindowsKeepTheirOwnSize() throws {
+    let (model, _, _) = try make(["A", "B"])
+    let notes = NotesWindow(model: model, frameName: nil)
+    let navigation = SettingsNavigation(defaults: nil)
+    let settings = SettingsWindow(
+      navigation: navigation, page: { AnyView(Text($0.title)) },
+      onboarding: { AnyView(EmptyView()) }, frameName: nil)
+    let hosts: [(NSWindow, NSViewController?)] = [
+      (notes.window, notes.window.contentViewController?.children.first),
+      (settings.window, settings.window.contentViewController?.children.first),
+    ]
+    for (window, host) in hosts {
+      let hosting = try #require(host)
+      #expect(hosting.view !== window.contentView)
+      #expect(
+        (hosting as? NSHostingController<NotesWindowView>)?.sizingOptions == []
+          || (hosting as? NSHostingController<SettingsRoot>)?.sizingOptions == [])
+    }
+    for layout in [NotesWindowModel.Layout.list, .wall] {
+      model.layout = layout
+      settle(notes.window)
+      #expect(notes.window.contentMinSize == NotesWindow.minSize, "\(layout)")
+    }
+    for page in SettingsPage.allCases {
+      navigation.page = page
+      settle(settings.window)
+      #expect(settings.window.contentMinSize == SettingsWindow.minSize, "\(page)")
+    }
+    #expect(notes.window.title == HotKeyAction.noteAll.title && settings.window.title == "关于")
+  }
+
+  /// 正式版那次闪退（2026-10-18）的屏外复现：带动画换视图 / 换页、开合编辑卡、搜索的同时程序改窗口大小。宿主视图当窗口的
+  /// contentView 时（以前的写法），SwiftUI 在布局里跟着改窗口大小、改最小尺寸，约束更新一轮轮停不下来，AppKit 抛异常、
+  /// 测试宿主直接退出（不加 sizingOptions = [] 也一样，当时实测几秒内必崩）。现在的写法跑完整串不崩，标题和工具栏照常。
+  /// 每步之间让出主线程（不同步转事件循环十几秒：全量并行时会挤住别的测试），显示周期照常由主事件循环跑
+  @Test func animatedSwitchingWhileResizingDoesNotCrash() async throws {
+    let (model, store, _) = try make((0..<30).map { "便签 \($0)\n第二行 第二行\n☐ 任务" })
+    store.delete(store.active[0].id)
+    let suite = "kitty-test-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    var random = SeededRandom(seed: 20_261_018)
+    let tick = { try await Task.sleep(for: .milliseconds(16)) }
+    func resize(_ window: NSWindow) {
+      window.setContentSize(
+        NSSize(
+          width: .random(in: 100...1400, using: &random),
+          height: .random(in: 80...900, using: &random)))
+    }
+    func offscreen(_ content: NSViewController) -> NSWindow {
+      let window = Offscreen(contentViewController: content)
+      window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+      window.toolbarStyle = .unified
+      window.setContentSize(NSSize(width: 940, height: 580))
+      window.setFrameOrigin(NSPoint(x: -20000, y: -20000))
+      window.orderFront(nil)
+      return window
+    }
+
+    let notes = offscreen(.windowContent(NotesWindowView(model: model).defaultAppStorage(defaults)))
+    defer { notes.orderOut(nil) }
+    #expect(notes.screen == nil)  // 没被挪进屏幕里（跑测试时不闪窗口）
+    for _ in 0..<300 {
+      switch Int.random(in: 0..<6, using: &random) {
+      case 0: withAnimation(.spring) { model.layout = model.layout == .wall ? .list : .wall }
+      case 1:
+        withAnimation(.spring) {
+          model.scope = NotesWindowModel.Scope.allCases.randomElement(using: &random)!
+        }
+      case 2: model.notes.randomElement(using: &random).map { model.open($0.id, focus: false) }
+      case 3: model.collapse()
+      case 4: resize(notes)
+      default: model.query = Bool.random(using: &random) ? "" : "便签 1"
+      }
+      try await tick()
+    }
+    let labels = notes.toolbar?.items.map(\.label) ?? []
+    #expect(labels.contains("显示方式") && labels.contains("新建便签"), "\(labels)")
+
+    let navigation = SettingsNavigation(defaults: nil)
+    let settings = offscreen(
+      .windowContent(
+        SettingsRoot(navigation: navigation) { page in
+          AnyView(Form { Text(page.title).frame(minWidth: 200 + Double(page.title.count) * 60) })
+        } onboarding: {
+          AnyView(EmptyView())
+        }))
+    defer { settings.orderOut(nil) }
+    for _ in 0..<200 {
+      if Bool.random(using: &random) {
+        withAnimation(.spring) {
+          navigation.page = SettingsPage.allCases.randomElement(using: &random)!
+        }
+      } else {
+        resize(settings)
+      }
+      try await tick()
+    }
+    #expect(settings.title == navigation.page.title)
+    #expect(settings.toolbar?.items.count == 1)  // 常驻的「‹ 返回」
   }
 }
 

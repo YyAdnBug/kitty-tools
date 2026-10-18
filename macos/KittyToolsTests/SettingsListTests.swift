@@ -213,14 +213,13 @@ struct SettingsListTests {
     let ai = TranslateService.newAI()
     let services = TranslateServiceStore(services: [ai])
     let (id, title) = page == .translate ? (ai.id, ai.name) : ("google", "Google")
-    let hosting = NSHostingController(
-      rootView: SettingsRoot(navigation: navigation) { page in
-        AnyView(DetailStack(page: page, services: services).defaultAppStorage(defaults))
-      } onboarding: {
-        AnyView(EmptyView())
-      })
-    hosting.sceneBridgingOptions = [.title, .toolbars]
-    let window = OffscreenWindow(contentViewController: hosting)
+    let window = OffscreenWindow(
+      contentViewController: .windowContent(
+        SettingsRoot(navigation: navigation) { page in
+          AnyView(DetailStack(page: page, services: services).defaultAppStorage(defaults))
+        } onboarding: {
+          AnyView(EmptyView())
+        }))
     window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
     window.toolbarStyle = .unified
     window.setContentSize(NSSize(width: 780, height: 600))

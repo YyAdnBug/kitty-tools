@@ -199,22 +199,27 @@ enum SettingsPage: String, CaseIterable, Identifiable {
 }
 
 final class SettingsWindow: NSObject, NSWindowDelegate {
-  private let window: NSWindow
+  /// 最小的内容尺寸（各页 SwiftUI 自己算的最小只有 294–490 × 150–160，2026-10-18 量）
+  static let minSize = NSSize(width: 700, height: 460)
+
+  /// 只读：单测看窗口的内容和最小尺寸
+  let window: NSWindow
   let navigation: SettingsNavigation
 
   /// - Parameters:
   ///   - navigation: 导航状态（AppDelegate 持有，主菜单的「返回」也读它；窗口是懒建的）
   ///   - page: 每页的表单
   ///   - onboarding: 欢迎引导（sheet 里，关掉用 dismiss）
+  ///   - frameName: 记住窗口位置和大小用的名字（单测传 nil：不写偏好）
   init(
     navigation: SettingsNavigation, page: @escaping (SettingsPage) -> AnyView,
-    onboarding: @escaping () -> AnyView
+    onboarding: @escaping () -> AnyView, frameName: String? = "Settings"
   ) {
     self.navigation = navigation
-    let hosting = NSHostingController(
-      rootView: SettingsRoot(navigation: navigation, page: page, onboarding: onboarding))
-    hosting.sceneBridgingOptions = [.title, .toolbars]
-    window = NSWindow(contentViewController: hosting)
+    // 内容包在普通容器里：宿主视图当窗口的 contentView 会闪退（见 windowContent）
+    window = NSWindow(
+      contentViewController: .windowContent(
+        SettingsRoot(navigation: navigation, page: page, onboarding: onboarding)))
     // 标题桥接要等 SwiftUI 那边第一次变化才写进窗口，刚建出来是「未命名」（实测，换一次页才对）：先按当前页填上
     window.title = navigation.page.title
     window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
@@ -222,11 +227,12 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     window.isReleasedWhenClosed = false
     window.collectionBehavior = [.fullScreenAuxiliary]
     window.setContentSize(NSSize(width: 780, height: 600))
-    window.contentMinSize = NSSize(width: 700, height: 460)
+    window.contentMinSize = Self.minSize
     super.init()
     window.delegate = self
-    if !window.setFrameUsingName("Settings") { window.center() }
-    window.setFrameAutosaveName("Settings")
+    guard let frameName else { return }
+    if !window.setFrameUsingName(frameName) { window.center() }
+    window.setFrameAutosaveName(frameName)
   }
 
   /// page：要切到的页；nil 保持上次的页。onboarding：盖上欢迎引导（首次安装、关于页里重看）
@@ -247,6 +253,27 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
 
   func windowWillClose(_ notification: Notification) {
     NSApp.leaveDockIfNoWindows(closing: window)
+  }
+}
+
+extension NSViewController {
+  /// 普通窗口（设置窗、全部便签窗口）的内容：SwiftUI 的宿主控制器包在一个普通容器里，宿主视图不当窗口的 contentView、
+  /// 也不按内容定大小（sizingOptions = []，同 OverlayPanel），窗口的大小和最小尺寸只由窗口这边定。
+  /// 宿主视图当了 contentView 时，SwiftUI 会按内容改窗口的最小 / 最大尺寸（手写的被它覆盖成每个视图自己算的，小得多）、
+  /// 在动画里跟着改窗口大小，和约束更新互相触发，轮数超了 AppKit 抛异常直接闪退（2026-10-18 0.5.0 正式版的一次闪退；
+  /// 只设 sizingOptions = [] 不够——它照样在动画里改窗口大小、还把最小尺寸清成 0；屏外复现和回归见 NotesWindowTests）。
+  /// 标题和工具栏照常桥接
+  static func windowContent(_ rootView: some View) -> NSViewController {
+    let hosting = NSHostingController(rootView: rootView)
+    hosting.sizingOptions = []
+    hosting.sceneBridgingOptions = [.title, .toolbars]
+    let container = NSViewController()
+    container.view = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+    container.addChild(hosting)
+    hosting.view.frame = container.view.bounds
+    hosting.view.autoresizingMask = [.width, .height]
+    container.view.addSubview(hosting.view)
+    return container
   }
 }
 

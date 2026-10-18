@@ -812,9 +812,8 @@ private final class Probe {
         AnyView(EmptyView())
       }
       // 照 SettingsWindow.init 的参数建（不用它本身：show() 会激活本 App，窗口位置会记进用户偏好）
-      let hosting = NSHostingController(rootView: root.defaultAppStorage(prefs))
-      hosting.sceneBridgingOptions = [.title, .toolbars]
-      let window = ParkedWindow(contentViewController: hosting)
+      let window = ParkedWindow(
+        contentViewController: .windowContent(root.defaultAppStorage(prefs)))
       window.title = navigation.page.title
       window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
       window.toolbarStyle = .unified
