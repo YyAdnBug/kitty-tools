@@ -855,23 +855,15 @@ nonisolated enum NoteMarkdown {
     var colorMarkers: [Bool]
   }
 
-  /// 扫这一行。transparent：这些标记区间不算「不能加格式」（它们反正要删掉，一串可以跨过去）。
-  /// extraHidden：扫描器没配上、但看着像这种格式标记的那几串（见 looseMarkers），也当看不见的标记
-  private static func line(
-    _ units: [UInt16], transparent: Set<NSRange> = [], extraHidden: [NSRange] = []
-  ) -> Line {
+  /// 扫这一行。transparent：这些标记区间不算「不能加格式」（它们反正要删掉，一串可以跨过去）
+  private static func line(_ units: [UInt16], transparent: Set<NSRange> = []) -> Line {
     let content = contentStart(of: units)
     let spans = inline(units, in: content..<units.count)
     let shapes = shapes(of: units, spans: spans)
-    let shown = visible(units, spans: spans, hiding: extraHidden)
+    let shown = visible(units, spans: spans)
     var hidden = [Bool](repeating: false, count: units.count)
     var blocked = [Bool](repeating: false, count: units.count)
     var colorMarkers = [Bool](repeating: false, count: units.count)
-    for range in extraHidden {
-      for index in range.location..<NSMaxRange(range) where index < units.count {
-        hidden[index] = true
-      }
-    }
     func fill(_ range: NSRange) {
       for index in range.location..<NSMaxRange(range) where index < units.count {
         blocked[index] = true
@@ -944,67 +936,6 @@ nonisolated enum NoteMarkdown {
     return found.sorted { $0.location < $1.location }
   }
 
-  /// 扫描器没配上、看着却像这种格式标记的那几串：正好 markerLength 个、和选区有交集、不在代码 / 链接 / 图片里、
-  /// 也不和任何认出来的标记重叠。R1 的例子 `12**312**3` 全选 ⌘B：两边的数字让扫描器把 `**` 当成了乘号，
-  /// 但用户按 ⌘B 的意思是它们本来就该是粗体标记——重建时一并去掉，结果 `**123123**`
-  private static func looseMarkers(
-    of wrap: Wrap, units: [UInt16], spans: [Span], section: Range<Int>
-  ) -> [NSRange] {
-    guard wrap != .code else { return [] }
-    let unit: UInt16
-    switch wrap {
-    case .bold, .italic: unit = 0x2A
-    case .strike: unit = 0x7E
-    case .code: return []
-    }
-    // 按位置铺开：候选串里有一个字落在认出来的标记 / 代码 / 链接 / 图片里就不要。整行 O(字数 + 区间数)
-    var known = [Bool](repeating: false, count: units.count)
-    for range in spans.map(\.range) {
-      for index in range.location..<min(NSMaxRange(range), units.count) { known[index] = true }
-    }
-    var awayFrom = known
-    for span in spans {
-      switch span.kind {
-      case .code, .link:
-        for index in span.range.location..<min(NSMaxRange(span.range), units.count) {
-          awayFrom[index] = true
-        }
-      default: break
-      }
-    }
-    let text = String(decoding: units, as: UTF16.self)
-    for match in NoteImages.matches(in: text as NSString) {
-      for index in match.range.location..<min(NSMaxRange(match.range), units.count) {
-        awayFrom[index] = true
-      }
-    }
-    func intersects(_ mask: [Bool], _ range: NSRange) -> Bool {
-      let end = min(NSMaxRange(range), mask.count)
-      guard range.location < end else { return false }
-      for index in range.location..<end where mask[index] { return true }
-      return false
-    }
-    let selection = NSRange(location: section.lowerBound, length: section.count)
-    var found: [NSRange] = []
-    var index = contentStart(of: units)
-    while index < units.count {
-      guard units[index] == unit else {
-        index += 1
-        continue
-      }
-      var end = index + 1
-      while end < units.count, units[end] == unit { end += 1 }
-      let range = NSRange(location: index, length: end - index)
-      index = end
-      guard range.length == wrap.markerLength,
-        NSIntersectionRange(range, selection).length > 0,
-        !intersects(known, range), !intersects(awayFrom, range)
-      else { continue }
-      found.append(range)
-    }
-    return found
-  }
-
   /// 选区里能加这种格式的字（看得见、不是空白、不在代码 / 图片里）是不是全都是这种格式；没有这种字给 nil。
   /// 菜单打勾和 ⌘B 的「全都是」都用它（不数字符，问扫描器）
   static func isFormatted(_ wrap: Wrap, in block: String, selection: NSRange) -> Bool? {
@@ -1040,11 +971,10 @@ nonisolated enum NoteMarkdown {
     while end > start, isBlank(units[end - 1]) { end -= 1 }
     guard start < end else { return LineOutcome() }
     let spans = inline(units, in: content..<units.count)
-    let own = markers(of: wrap, in: spans)
-    // 扫描器没配上的、看着像这种格式标记的几串（数字中间的 `**` 被当成乘号那种）：选中了就一起当成标记去掉
-    let loose = looseMarkers(of: wrap, units: units, spans: spans, section: start..<end)
-    let deletions = (own + loose).sorted { $0.location < $1.location }
-    let analyzed = line(units, transparent: Set(deletions), extraHidden: loose)
+    // 只去掉扫描器认出来的这种格式的标记。没配上的 `*` `**` `~~`（数字中间的乘号 `60*40*30`、路径里的 `src/**/a`、
+    // 单独打的 `~~`）是用户打的字，原样留着、跟着一起加格式——当成标记删掉就把用户的字删了
+    let deletions = markers(of: wrap, in: spans)
+    let analyzed = line(units, transparent: Set(deletions))
     var oldMarker = [Bool](repeating: false, count: units.count)
     for range in deletions {
       for index in range.location..<NSMaxRange(range) where index < units.count {
@@ -1930,15 +1860,10 @@ nonisolated enum NoteMarkdown {
   }
 
   /// 看得见的字（去掉所有标记）和它们在这一行里的位置
-  private static func visible(
-    _ units: [UInt16], spans: [Span], hiding extra: [NSRange] = []
-  ) -> (indices: [Int], units: [UInt16]) {
+  private static func visible(_ units: [UInt16], spans: [Span]) -> (
+    indices: [Int], units: [UInt16]
+  ) {
     var hidden = [Bool](repeating: false, count: units.count)
-    for range in extra {
-      for index in range.location..<NSMaxRange(range) where index < units.count {
-        hidden[index] = true
-      }
-    }
     for span in spans where span.kind == .marker {
       let end = min(NSMaxRange(span.range), units.count)
       guard span.range.location < end else { continue }

@@ -53,18 +53,40 @@ struct NoteBatch8bTests {
   // MARK: R1 粗体 / 斜体 / 删除线整段一种
 
   @Test func emphasisMergesIntoWholeRuns() {
-    // 12**312**3 全选按 ⌘B：原来那一段并进来，中间的标记不留
-    // 12**312**3 全选按 ⌘B：两边的数字让扫描器把 ** 当成乘号，重建时也当标记去掉
+    // ab**cd**ef 全选按 ⌘B：原来那一段并进来，中间的标记不留（斜体、删除线同理）
     #expect(
-      toggle(.bold, "12**312**3", NSRange(location: 0, length: 10))
-        == Edit("**123123**", selection: NSRange(location: 2, length: 6)))
-    // 12*312*3 全选按 ⌘I、12~~312~~3 全选按 ⇧⌘X 同理
+      toggle(.bold, "ab**cd**ef", NSRange(location: 0, length: 10))
+        == Edit("**abcdef**", selection: NSRange(location: 2, length: 6)))
     #expect(
-      toggle(.italic, "12*312*3", NSRange(location: 0, length: 8))
-        == Edit("*123123*", selection: NSRange(location: 1, length: 6)))
+      toggle(.italic, "ab*cd*ef", NSRange(location: 0, length: 8))
+        == Edit("*abcdef*", selection: NSRange(location: 1, length: 6)))
     #expect(
       toggle(.strike, "12~~312~~3", NSRange(location: 0, length: 10))
         == Edit("~~123123~~", selection: NSRange(location: 2, length: 6)))
+    // 数字中间的 ** / * 是乘号、不是标记（扫描器本来就当字显示）：全选加格式时**原样留着**、跟着一起变粗 / 斜，
+    // 不当成标记删掉（复查抓到的：原来会把 60*40*30 改成 604030）
+    #expect(
+      toggle(.bold, "12**312**3", NSRange(location: 0, length: 10))
+        == Edit("**12**312**3**", selection: NSRange(location: 2, length: 10)))
+    #expect(
+      toggle(.italic, "12*312*3", NSRange(location: 0, length: 8))
+        == Edit("*12*312*3*", selection: NSRange(location: 1, length: 8)))
+    // 用户打的、没配上的 * ** ~~（乘号、路径里的通配、单独的 ~~）：一个字都不许少
+    for (wrap, line, expected) in [
+      (NoteMarkdown.Wrap.italic, "60*40*30 立方", "*60*40*30 立方*"),
+      (.bold, "2**3 等于 8", "**2**3 等于 8**"),
+      (.bold, "src/**/a.swift 和 docs", "**src/**/a.swift 和 docs**"),
+      (.strike, "价格 ~~ 不定", "~~价格 ~~ 不定~~"),
+    ] {
+      let all = NSRange(location: 0, length: (line as NSString).length)
+      let result = toggle(wrap, line, all)
+      #expect(result == nil || result?.text == expected, "\(line) → \(result?.text ?? "nil")")
+      // 认不出来时响一声、不改也可以；改了的话用户打的字一个都不能少
+      if let text = result?.text {
+        #expect(text.filter { $0 != "*" && $0 != "~" } == line.filter { $0 != "*" && $0 != "~" })
+        #expect(text.count == line.count + 2 * wrap.markerLength, "\(line) → \(text)")
+      }
+    }
     // **ab**cd 里选中 bc（连中间的两颗星）：跨在选区边上的 a 并进来，选区外的 d 不动
     #expect(
       toggle(.bold, "**ab**cd", NSRange(location: 3, length: 4))
