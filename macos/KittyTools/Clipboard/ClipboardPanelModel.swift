@@ -89,6 +89,9 @@ import Observation
   @ObservationIgnored var pinnedFrames: () -> [CGRect] = { [] }
   /// 写剪贴板（单测换掉它，不碰真剪贴板：写一下别的剪贴板工具、正在跑的本 App 都会记一条）
   @ObservationIgnored var writeClipboard: ([NSPasteboardItem]) -> Void = { Paster.write($0) }
+  /// 第 8 批：呼出面板前焦点在自家哪个能编辑的文本视图里（便签正文、标题框的字段编辑器）。有就直接粘进去，
+  /// 不发合成按键、不要辅助功能授权；nil = 照旧 Paster.pasteToFrontmost
+  @ObservationIgnored var pasteTargetView: () -> NSTextView? = { nil }
   /// 剪贴板的 changeCount（单测换掉它，真剪贴板随时会被别的 App 改）
   @ObservationIgnored var clipboardChangeCount: () -> Int = { NSPasteboard.general.changeCount }
   /// 刘海岛（AppDelegate 给，单测里是 nil）：面板收起、底栏被放大预览挡住、出错时的提示走它
@@ -678,6 +681,21 @@ import Observation
     }
     let payload = payload(for: items, plainText: plainText ?? pastesPlainByDefault)
     pendingCopy = nil  // 粘贴的那条才是剪贴板里的
+    // 第 8 批：呼出面板前焦点在自家便签里（正文 / 标题框）→ 收起面板、把 key 还给它、直接调它的 paste(_:)。
+    // 这条路不发合成按键、不要辅助功能授权（放在授权检查前面）
+    if let target = pasteTargetView() {
+      hidePanel()
+      let writeClipboard = writeClipboard
+      let moves = payload.caretMoves
+      Task {
+        for (index, write) in payload.writes.enumerated() {
+          if index > 0 { try? await Task.sleep(for: .milliseconds(250)) }
+          Paster.paste(into: target, write: { writeClipboard(write) }, movingLeft: moves)
+        }
+      }
+      remember(payload.entry)
+      return
+    }
     guard Permissions.isAccessibilityTrusted else {
       writeClipboard(payload.writes[0])
       // 是警告不是成功；系统授权框一点，没固定的面板就收了，底栏提示会跟着丢

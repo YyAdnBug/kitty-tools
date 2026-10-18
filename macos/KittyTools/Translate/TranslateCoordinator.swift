@@ -67,9 +67,16 @@ import Observation
   /// 选的固定目标正好是原文语言、这次改按「自动」译了：记下原来选的目标，标签写「原文已是 X」
   var abandonedTarget: Lang?
   var cards: [Card] = []
-  /// 这次原文来自划词：取词时的前台 App 和原选区。浮窗里显示「替换原文」（只粘回这个 App，
-  /// 并照原选区补回首尾的空白和换行）
-  var replaceSource: (pid: pid_t, text: String)?
+  /// 这次原文来自划词：原文、取词时的前台 App（便签里划的词没有 pid），或者便签里那一段的替换闭包。
+  /// 浮窗里显示「替换原文」；替换时照原选区补回首尾的空白和换行
+  struct ReplaceSource {
+    var text: String
+    /// 前台 App（划词来的）；便签里划的词是 nil
+    var pid: pid_t?
+    /// 便签：直接换回那个文本视图。返回 false = 便签关了、或那段字已经改了（只复制）
+    var note: ((String) -> Bool)?
+  }
+  var replaceSource: ReplaceSource?
   /// 刚被复制的卡片（⌘1–9 或卡片上的复制按钮），卡片上短暂显示对勾
   private(set) var copiedCard: String?
   /// 每复制一次加一：同一张卡对勾还在（Style.copiedHold）时再复制也要再闪一次，对勾计时也从头算
@@ -223,7 +230,7 @@ import Observation
   /// selectedIn：原文是从这个 App 划词取来的（浮窗里给「替换原文」）；fromCopy：复制即译带来的（不自动复制）
   func translate(_ text: String, selectedIn app: pid_t? = nil, fromCopy: Bool = false) {
     sourceText = text
-    replaceSource = app.map { ($0, text) }
+    replaceSource = app.map { ReplaceSource(text: text, pid: $0) }
     copiedSource = fromCopy ? text.trimmingCharacters(in: .whitespacesAndNewlines) : nil
     start()
   }

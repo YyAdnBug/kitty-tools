@@ -375,17 +375,17 @@ struct NoteTextViewTests {
     #expect(rig.changes == ["abcdefghijklmnopqrs"] && !rig.editor.hasMarkedText())
   }
 
-  /// ⌃↩（insertLineBreak:）当普通换行：不插软换行 U+2028（NSString 把它算新的一行、段落样式却按段算，后面的引用
-  /// 缩进不对）；任务行里照样续行
-  @Test func softLineBreakIsAPlainNewline() throws {
+  /// 第 8 批起 ⌃↩（insertLineBreak:）弹正文的右键菜单（键盘用户选任务状态 / 文字颜色），不再插软换行。
+  /// 普通回车照常；任务行照样续行
+  @Test func softLineBreakOpensTheContextMenu() throws {
     let rig = try Rig("> 引用", steps: true)
     let lineBreak = #selector(NSResponder.insertLineBreak(_:))
     rig.editor.setSelectedRange(caret(4))
     rig.step { rig.editor.doCommand(by: lineBreak) }
-    #expect(rig.editor.string == "> 引用\n" && rig.changes == ["> 引用\n"])
+    #expect(rig.editor.string == "> 引用" && rig.changes.isEmpty)
     rig.editor.setText("☐ 周报")
     rig.editor.setSelectedRange(caret(4))
-    rig.step { rig.editor.doCommand(by: lineBreak) }
+    rig.step { rig.editor.doCommand(by: #selector(NSResponder.insertNewline(_:))) }
     #expect(rig.editor.string == "☐ 周报\n☐ " && rig.editor.selectedRange() == caret(7))
   }
 
@@ -521,14 +521,16 @@ struct NoteTextViewTests {
     let menu = try #require(rig.editor.menu(for: event))
     let item = try #require(menu.items.first)
     #expect(item.title == NotesWindowModel.taskTitle && item.keyEquivalent.isEmpty)
-    #expect(menu.items.count > 4 && menu.items[3].isSeparatorItem)
-    #expect(menu.items[2].title == NoteTextView.insertImageTitle)
+    #expect(menu.items.count > 5 && menu.items[5].isSeparatorItem)
+    #expect(menu.items[4].title == NoteTextView.insertImageTitle)
+    #expect(menu.items[1].title == NoteTextView.taskStateTitle)
+    #expect(menu.items[3].title == NoteTextView.colorTitle)
     #expect(rig.editor.validateUserInterfaceItem(item))
     rig.editor.setSelectedRange(caret(0))
     _ = item.target?.perform(item.action, with: item)
     #expect(rig.editor.string == "☐ 周报")
-    let format = try #require(menu.items[1].submenu)
-    #expect(menu.items[1].title == NoteTextView.formatTitle)
+    let format = try #require(menu.items[2].submenu)
+    #expect(menu.items[2].title == NoteTextView.formatTitle)
     #expect(format.items.map(\.title) == ["粗体", "斜体", "删除线", "代码"])
     #expect(format.items.map(\.keyEquivalent) == ["b", "i", "x", "e"])
     #expect(
@@ -556,10 +558,12 @@ struct NoteTextViewTests {
       rig.editor.menu(for: rig.mouse(.rightMouseDown, at: rig.center(of: 7))))
     let item = try #require(menu.items.first)
     #expect(item.title == NoteTextView.openLinkTitle && item.keyEquivalent.isEmpty)
-    #expect(menu.items.count > 5 && menu.items[1].title == NotesWindowModel.taskTitle)
-    #expect(menu.items[2].title == NoteTextView.formatTitle)
-    #expect(menu.items[3].title == NoteTextView.insertImageTitle)
-    #expect(menu.items[4].isSeparatorItem && rig.editor.validateUserInterfaceItem(item))
+    #expect(menu.items.count > 6 && menu.items[1].title == NotesWindowModel.taskTitle)
+    #expect(menu.items[2].title == NoteTextView.taskStateTitle)
+    #expect(menu.items[3].title == NoteTextView.formatTitle)
+    #expect(menu.items[4].title == NoteTextView.colorTitle)
+    #expect(menu.items[5].title == NoteTextView.insertImageTitle)
+    #expect(menu.items[6].isSeparatorItem && rig.editor.validateUserInterfaceItem(item))
     #expect(opened.isEmpty)
     _ = item.target?.perform(item.action, with: item)
     #expect(opened == [URL(string: "https://example.com/a")] && rig.changes.isEmpty)
@@ -1702,4 +1706,120 @@ struct NoteTextViewTests {
     paste("https://a.b", over: NSRange(location: 1, length: 2))
     #expect(rig.editor.string.hasPrefix("看https://a.b吧"))
   }
+  /// 第 8 批：右键菜单有「任务状态」和「文字颜色」两个子菜单，停用规则和打勾对；右键点在方框上只弹五种状态
+  @Test func contextMenuHasTaskStatesAndColors() throws {
+    let rig = try Rig("☐ 周报")
+    rig.activate()
+    let key = try #require(
+      NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: .control, timestamp: 0, windowNumber: 0,
+        context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false,
+        keyCode: 36))
+    // 右键点在方框上：只有五种状态
+    let boxMenu = try #require(
+      rig.editor.menu(for: rig.mouse(.rightMouseDown, at: rig.center(of: 0))))
+    #expect(boxMenu.items.map(\.title) == ["待办", "进行中", "紧急", "完成", "取消"])
+    #expect(boxMenu.items[0].state == .on)
+    _ = boxMenu.items[2].target?.perform(boxMenu.items[2].action, with: boxMenu.items[2])
+    #expect(rig.editor.string == "▣ 周报")
+    // 普通菜单：选中「周报」时两个子菜单都能用；颜色有六项 + 分隔线 + 默认颜色
+    rig.editor.setSelectedRange(NSRange(location: 2, length: 2))
+    let menu = try #require(rig.editor.menu(for: key))
+    let states = try #require(menu.item(withTitle: NoteTextView.taskStateTitle)?.submenu)
+    #expect(states.items.map(\.title) == ["待办", "进行中", "紧急", "完成", "取消"])
+    #expect(states.items[2].state == .on)
+    let colors = try #require(menu.item(withTitle: NoteTextView.colorTitle)?.submenu)
+    #expect(
+      colors.items.map(\.title) == ["红", "橙", "绿", "蓝", "紫", "灰", "", "默认颜色"])
+    #expect(colors.items[6].isSeparatorItem)
+    #expect(colors.items[0].image != nil && colors.items[7].image == nil)
+    #expect(colors.items[7].state == .on)
+    // 选了红色：文字变成 [周报]{red}；再看菜单那一项打勾；撤销一步回去
+    _ = colors.items[0].target?.perform(colors.items[0].action, with: colors.items[0])
+    #expect(rig.editor.string == "▣ [周报]{red}")
+    let after = try #require(rig.editor.menu(for: key))
+    let red = try #require(after.item(withTitle: NoteTextView.colorTitle)?.submenu)
+    #expect(red.items[0].state == .on)
+    rig.window.notes.undo()
+    #expect(rig.editor.string == "☐ 周报")
+    // 没选字：文字颜色那一项停用；选中代码块里的字也停用
+    rig.editor.setSelectedRange(NSRange(location: 2, length: 0))
+    let noSelection = try #require(rig.editor.menu(for: key))
+    #expect(noSelection.item(withTitle: NoteTextView.colorTitle)?.isEnabled == false)
+    let code = try Rig("```\n码\n```")
+    code.activate()
+    code.editor.setSelectedRange(NSRange(location: 4, length: 1))
+    let inCode = try #require(code.editor.menu(for: key))
+    #expect(inCode.item(withTitle: NoteTextView.colorTitle)?.isEnabled == false)
+    #expect(inCode.item(withTitle: NoteTextView.taskStateTitle)?.isEnabled == false)
+  }
+
+  /// 第 8 批：上色和改状态都走 perform（一步撤销、重做），选完盖着原来的字
+  @Test func colorAndStateAreOneUndoStep() throws {
+    let rig = try Rig("周报", steps: true)
+    rig.step {
+      rig.editor.setSelectedRange(NSRange(location: 0, length: 2))
+      rig.editor.setTextColor(.red)
+    }
+    #expect(rig.editor.string == "[周报]{red}")
+    #expect(rig.editor.selectedRange() == NSRange(location: 1, length: 2))
+    rig.window.notes.undo()
+    #expect(rig.editor.string == "周报")
+    rig.window.notes.redo()
+    #expect(rig.editor.string == "[周报]{red}")
+    // 改状态：待办 → 紧急 → 完成，一步一撤
+    let state = try Rig("☐ 周报", steps: true)
+    state.step { state.editor.setTaskState(.urgent) }
+    #expect(state.editor.string == "▣ 周报")
+    state.step { state.editor.setTaskState(.done) }
+    #expect(state.editor.string == "☑ 周报")
+    state.window.notes.undo()
+    #expect(state.editor.string == "▣ 周报")
+    state.window.notes.undo()
+    #expect(state.editor.string == "☐ 周报")
+  }
+
+  /// 第 8 批：复制的纯文本去掉颜色标记（别的 Markdown 标记照旧），自家类型照存的形式
+  @Test func copyingPlainTextDropsColorMarkers() throws {
+    let rig = try Rig("[红]{red} **粗**")
+    rig.editor.setSelectedRange(
+      NSRange(location: 0, length: (rig.editor.string as NSString).length))
+    let pboard = NSPasteboard(name: NSPasteboard.Name("kitty-notes-batch8-\(UUID().uuidString)"))
+    defer { pboard.releaseGlobally() }
+    #expect(rig.editor.writeNoteSelection(to: pboard) == true)
+    #expect(pboard.string(forType: .string) == "红 **粗**")
+    #expect(pboard.string(forType: NoteTextView.noteTextType) == "[红]{red} **粗**")
+  }
+
+  /// 第 8 批 R13：划词翻译读便签选区时逐行过 plain；代码块里的行照原文
+  @Test func plainSelectionForTranslation() throws {
+    let rig = try Rig("**粗** [链](https://a.b) [红]{red}\n```\n**块里**\n```")
+    rig.editor.setSelectedRange(
+      NSRange(location: 0, length: (rig.editor.string as NSString).length))
+    #expect(rig.editor.plainText(in: rig.editor.selectedRange()) == "粗 链 红\n```\n**块里**\n```")
+    #expect(rig.editor.plainText(in: NSRange(location: 0, length: 0)) == nil)
+    #expect(rig.editor.plainText(in: NSRange(location: 2, length: 1)) == "粗")
+  }
+
+  /// 第 8 批 R13：便签里划词替换只在「那一段字还是当时的样子」时动手
+  @Test func replaceOnlyWhenTheTextIsUnchanged() throws {
+    let rig = try Rig("划词翻译的一段字", steps: true)
+    rig.step {
+      #expect(
+        rig.editor.replaceIfUnchanged(
+          NSRange(location: 0, length: 2), original: "划词", with: "译文"))
+    }
+    #expect(rig.editor.string == "译文翻译的一段字")
+    // 那一段已经被换掉了、范围越界：给 false，不动正文
+    #expect(
+      !rig.editor.replaceIfUnchanged(
+        NSRange(location: 0, length: 2), original: "划词", with: "译文"))
+    #expect(
+      !rig.editor.replaceIfUnchanged(
+        NSRange(location: 99, length: 2), original: "x", with: "译文"))
+    #expect(
+      !rig.editor.replaceIfUnchanged(
+        NSRange(location: 1, length: 2), original: "划词", with: "译文"))
+  }
+
 }

@@ -107,7 +107,7 @@ nonisolated struct NotePaper: Equatable, Sendable {
   /// 取色闭包由 AppKit 在解析颜色的线程上调（mac-native §3）：只读传进来的几个数和线程安全的系统开关。
   /// alpha：不透明度；contrastAlpha：增强对比度的外观下用的不透明度；contrast：增强对比度的外观下换用的那一对颜色
   /// （nil = 不换）
-  private static func dynamic(
+  static func dynamic(
     _ light: Int, _ dark: Int, alpha: Double = 1, contrastAlpha: Double = 1,
     contrast: (light: Int, dark: Int)? = nil
   ) -> NSColor {
@@ -138,6 +138,110 @@ nonisolated struct NotePaper: Equatable, Sendable {
       circle.stroke()
       return true
     }
+  }
+}
+
+/// 正文里的六种文字颜色（PLAN §10「便签」第 8 批）：一种颜色浅色、深色外观各一个值，每个值对 8 张纸（同一外观）的
+/// 对比度都 ≥ 4.5:1（NotesWindowTests.paperTable 锁住）；浅色那套是深色字（写在浅纸上），深色那套是浅色字。
+/// 存的形式是正文里的 `[字]{名字}`，名字就是这里的 name（全小写）。文字颜色不是强调色、也不是纸色：不跟设置里的强调色变。
+nonisolated enum NoteColor: Int, CaseIterable, Sendable {
+  case red, orange, green, blue, purple, gray
+
+  /// 正文里 `]{名字}` 的那个名字（全小写；只有这几个算）
+  var name: String {
+    switch self {
+    case .red: "red"
+    case .orange: "orange"
+    case .green: "green"
+    case .blue: "blue"
+    case .purple: "purple"
+    case .gray: "gray"
+    }
+  }
+
+  /// 菜单里叫的名字
+  var title: String {
+    switch self {
+    case .red: "红"
+    case .orange: "橙"
+    case .green: "绿"
+    case .blue: "蓝"
+    case .purple: "紫"
+    case .gray: "灰"
+    }
+  }
+
+  /// 浅色外观下的值（0xRRGGBB，sRGB）
+  var light: Int {
+    switch self {
+    case .red: 0xA11A14
+    case .orange: 0x8A4100
+    case .green: 0x18602A
+    case .blue: 0x1D4FB8
+    case .purple: 0x6E2FB0
+    case .gray: 0x50555C
+    }
+  }
+
+  /// 深色外观下的值
+  var dark: Int {
+    switch self {
+    case .red: 0xFF9C94
+    case .orange: 0xFFB86B
+    case .green: 0x7EDC8F
+    case .blue: 0x8CB8FF
+    case .purple: 0xD0A8FF
+    case .gray: 0xB4BAC2
+    }
+  }
+
+  /// 跟着外观走的颜色（AppKit 侧：正文编辑器的 foregroundColor）
+  var color: NSColor { NotePaper.dynamic(light, dark) }
+  /// 完成 / 取消的任务里：同墨的 doneOpacity（增强对比度时 secondaryOpacity）
+  var fadedColor: NSColor {
+    NotePaper.dynamic(
+      light, dark, alpha: NotePaper.doneOpacity, contrastAlpha: NotePaper.secondaryOpacity)
+  }
+  var swiftUIColor: Color { Color(nsColor: color) }
+
+  /// 名字 → 颜色：只认全小写的这 6 个（`Red`、`RED` 都不认）
+  static func named(_ name: String) -> NoteColor? { allCases.first { $0.name == name } }
+
+  /// 色值（0xRRGGBB）→ 颜色：导出文件里只认这 6 个（大小写不分）
+  static func value(_ hex: Int) -> NoteColor? {
+    allCases.first { $0.light == hex || $0.dark == hex }
+  }
+
+  /// 菜单项里的小圆点（系统菜单只认图片）：画的那一刻按菜单的外观取色。闭包系统可能在任何线程上调，
+  /// 只读这张表里的数（同 NotePaper.swatch）
+  func swatch(side: CGFloat = 12) -> NSImage {
+    NSImage(size: NSSize(width: side, height: side), flipped: false) { [light, dark] rect in
+      let isDark = NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+      let circle = NSBezierPath(ovalIn: rect.insetBy(dx: 0.75, dy: 0.75))
+      srgb(isDark ? dark : light).setFill()
+      circle.fill()
+      return true
+    }
+  }
+}
+
+extension NoteColor {
+  /// 右键菜单「文字颜色」那一份：六种颜色各一项（前面是这个颜色的小圆点），现在那种打勾；另加「默认颜色」（去色）。
+  /// 编辑器、便签墙、预览卡用的是同一个 NoteTextView 的菜单，这里只给编辑器用（AppKit 菜单）。
+  @MainActor
+  static func menuItems(current: NoteColor?, choose: @escaping (NoteColor?) -> Void) -> [ActionMenu
+    .Item]
+  {
+    allCases.map { color in
+      ActionMenu.Item(
+        title: color.title, image: color.swatch(side: 16), isChecked: current == color,
+        id: "ink-\(color.name)"
+      ) { choose(color) }
+    } + [
+      ActionMenu.Item(
+        title: "默认颜色", isChecked: current == nil, id: "ink-default", section: 1
+      ) { choose(nil) }
+    ]
   }
 }
 

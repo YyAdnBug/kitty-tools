@@ -34,14 +34,17 @@
 // （布局管理器的代理每个行片段都要问一次）；改一个围栏让后面 20 个块全部重新配对（整篇几乎都重排）约 430 ms。
 
 import AppKit
+import CoreText
 
 nonisolated enum NoteStyles {
   /// 样式的种类
   enum Kind: Equatable, Sendable {
-    /// 任务的方框（☐ / ☑ 那一个字）
-    case box
-    /// 做完的任务的内容：划线、墨色变淡
+    /// 任务的方框（五种状态的那一个字）
+    case box(NoteTasks.State)
+    /// 做完 / 取消的任务的内容：划线、墨色变淡
     case done
+    /// 上了色的字（`[字]{red}` 中间那一段）
+    case color(NoteColor)
     /// 标题（1–6 级）：整行，连标记
     case heading(Int)
     case bold
@@ -73,20 +76,25 @@ nonisolated enum NoteStyles {
     let units = Array(line.utf16)
     let whole = NSRange(location: 0, length: units.count)
     let prefix = NoteTasks.prefix(of: units)
-    if let prefix, case .task(let isDone) = prefix.lead {
-      var spans = [Span(range: NSRange(location: prefix.indent, length: 1), kind: .box)]
-      if isDone, units.count > prefix.contentStart {
+    if let prefix, case .task(let state) = prefix.lead {
+      var spans = [
+        Span(range: NSRange(location: prefix.indent, length: 1), kind: .box(state))
+      ]
+      if state.isClosed, units.count > prefix.contentStart {
         spans.append(
           Span(
             range: NSRange(
               location: prefix.contentStart, length: units.count - prefix.contentStart),
             kind: .done))
       }
-      // 任务行的内容里只认行内样式
-      return markdown
-        ? spans + NoteMarkdown.inline(units, in: prefix.contentStart..<units.count) : spans
+      // 任务行的内容里只认行内样式；Markdown 关着时颜色照样认（颜色不看那个开关）
+      return spans
+        + (markdown
+          ? NoteMarkdown.inline(units, in: prefix.contentStart..<units.count)
+          : NoteMarkdown.colorOnlySpans(in: line))
     }
-    guard markdown else { return [] }
+    // 颜色不看「Markdown 样式」开关：关着时只留颜色那几种区间，别的 Markdown 照原样显示
+    guard markdown else { return NoteMarkdown.colorOnlySpans(in: line) }
     var spans: [Span] = []
     var content = 0
     if let heading = NoteMarkdown.heading(units) {
@@ -149,10 +157,14 @@ nonisolated enum NoteStyles {
     var isQuote = false
     var isDone = false
     var isBullet = false
-    var isBox = false
+    /// 任务方框的状态（nil = 不是方框）
+    var boxState: NoteTasks.State?
+    var isBox: Bool { boxState != nil }
     var isMarker = false
     var isCodeBlock = false
     var isFence = false
+    /// 文字颜色（nil = 默认的墨）
+    var color: NoteColor?
     /// 在链接的字里：它的地址
     var link: String?
   }
@@ -166,6 +178,8 @@ nonisolated enum NoteStyles {
   /// 扫到某个位置时在几层什么里面（同一种可以套几层：粗体里的粗体）
   private struct Depth {
     var box = 0
+    var boxState: NoteTasks.State?
+    var color: NoteColor?
     var done = 0
     var bold = 0
     var italic = 0
@@ -182,7 +196,11 @@ nonisolated enum NoteStyles {
     /// 进了（step 是 1）/ 出了（-1）一段 kind
     mutating func move(_ kind: Kind, by step: Int) {
       switch kind {
-      case .box: box += step
+      case .box(let state):
+        box += step
+        boxState = step > 0 ? state : nil
+      case .color(let ink):
+        color = step > 0 ? ink : nil
       case .done: done += step
       case .bold: bold += step
       case .italic: italic += step
@@ -203,8 +221,8 @@ nonisolated enum NoteStyles {
       Look(
         heading: heading, isBold: bold > 0, isItalic: italic > 0, isStruck: strike > 0,
         isCode: code > 0, isQuote: quote > 0, isDone: done > 0, isBullet: bullet > 0,
-        isBox: box > 0, isMarker: marker > 0, isCodeBlock: codeBlock > 0, isFence: fence > 0,
-        link: link)
+        boxState: boxState, isMarker: marker > 0, isCodeBlock: codeBlock > 0, isFence: fence > 0,
+        color: color, link: link)
     }
   }
 
@@ -378,6 +396,60 @@ nonisolated enum NoteStyles {
   /// 旁边的字是 size 号时行内代码的字号（整点）
   static func codeSize(_ size: CGFloat) -> CGFloat { (size * codeScale).rounded() }
 
+  // MARK: 五种方框（第 8 批）
+
+  /// 一个方框字的字体、字距和基线偏移：**按 ☐ 量**（CTFont 的 bounding rect 和 advance），◧ ▣ 这两个字和 ☐ ☑ ☒
+  /// 不是一套（Apple Symbols 里 ☐ ☑ ☒ 的字形宽 9.3 pt、前进宽 14.11 pt，◧ ▣ 是 10.6 pt、14.46 / 14.85 pt），
+  /// 字号乘「☐ 的字形宽 ÷ 它的字形宽」、用 `.kern` 把前进宽补成 ☐ 的、`baselineOffset` 让字形的竖直中点和 ☐ 对齐——
+  /// 换状态时后面的字一个像素都不挪。按字号缓存（一行里的字就那几个字号）
+  struct BoxMetrics {
+    var font: NSFont
+    var kern: CGFloat
+    var baseline: CGFloat
+  }
+
+  private struct BoxKey: Hashable {
+    var size: Int
+    var state: Int
+  }
+
+  @MainActor private static var boxMetricsCache: [BoxKey: BoxMetrics] = [:]
+
+  @MainActor static func boxMetrics(size: CGFloat, state: NoteTasks.State) -> BoxMetrics {
+    let key = BoxKey(size: Int((size * 100).rounded()), state: state.rawValue)
+    if let cached = boxMetricsCache[key] { return cached }
+    let targetSize = (size * boxScale).rounded()
+    let targetFont = CTFontCreateWithName("AppleSymbols" as CFString, targetSize, nil)
+    let target = glyphMetrics(of: targetFont, character: NoteTasks.State.todo.character)
+    let own = glyphMetrics(of: targetFont, character: state.character)
+    let scale = own.width > 0 ? target.width / own.width : 1
+    let scaledSize = (targetSize * scale * 100).rounded() / 100
+    let font =
+      NSFont(name: "AppleSymbols", size: scaledSize) ?? .systemFont(ofSize: scaledSize)
+    let scaled = glyphMetrics(
+      of: CTFontCreateWithName("AppleSymbols" as CFString, scaledSize, nil),
+      character: state.character)
+    let metrics = BoxMetrics(
+      font: font, kern: target.advance - scaled.advance, baseline: target.center - scaled.center)
+    boxMetricsCache[key] = metrics
+    return metrics
+  }
+
+  /// 一个字的字形宽、前进宽、竖直中点（相对基线）
+  private static func glyphMetrics(of ctFont: CTFont, character: Character) -> (
+    width: CGFloat, advance: CGFloat, center: CGFloat
+  ) {
+    var units = Array(String(character).utf16)
+    var glyphs = [CGGlyph](repeating: 0, count: units.count)
+    guard CTFontGetGlyphsForCharacters(ctFont, &units, &glyphs, units.count) else {
+      return (CTFontGetSize(ctFont) * 0.6, CTFontGetSize(ctFont) * 0.7, 0)
+    }
+    var rect = CGRect.zero
+    _ = CTFontGetBoundingRectsForGlyphs(ctFont, .horizontal, &glyphs, &rect, 1)
+    let advance = CTFontGetAdvancesForGlyphs(ctFont, .horizontal, &glyphs, nil, 1)
+    return (rect.width, advance, rect.midY)
+  }
+
   // MARK: 属性
 
   /// 标记字符藏着（零宽、不画）/ 露着（淡淡显示）
@@ -385,6 +457,8 @@ nonisolated enum NoteStyles {
   static let shownKey = NSAttributedString.Key("KittyNoteShown")
   /// 链接的字上记着的地址（URL；只有能打开的才记）。不用系统的 .link：它带蓝色的样式和自己的点击行为
   static let linkKey = NSAttributedString.Key("KittyNoteLink")
+  /// 上了色的字（NoteColor 的 rawValue；行内代码里的不记——那里照旧用墨）：右键菜单判断「选中的字全是同一种颜色」
+  static let colorKey = NSAttributedString.Key("KittyNoteColor")
   /// 引用的行（连行尾的换行：连着的几行引用是一整段，左边的竖线照它画）
   static let quoteKey = NSAttributedString.Key("KittyNoteQuote")
   /// 代码块里的行（整行连换行）记着它的角色（NoteMarkdown.Role 的 rawValue）：NoteTextView 照它画那块底，
@@ -473,9 +547,11 @@ nonisolated enum NoteStyles {
     guard range.length > 0 else { return }
     let text = storage.mutableString
     let base = theme.font
-    let box = NSFont(name: "AppleSymbols", size: (base.pointSize * boxScale).rounded())
-    // 方框往上抬一点：Apple Symbols 的字形坐在基线上，抬到和字的中线差不多齐
-    let lift = box.map { max(0, base.descender - $0.descender) } ?? 0
+    // 先把五种方框量出来（缓存）：CTFont 第一次量会让系统的后备字体解析一遍，放在设属性之前，整篇排和一行一行排
+    // 才不会因为「谁先碰到中文」拿到不同的 NSFont 对象（单测 lineByLineEqualsWholeText 抓到的）
+    for state in NoteTasks.State.allCases {
+      _ = boxMetrics(size: base.pointSize, state: state)
+    }
     let code = NSFont.monospacedSystemFont(ofSize: codeSize(base.pointSize), weight: .regular)
     let height = theme.lineHeight(base.pointSize)
     let margin = (height * blockMargin).rounded()
@@ -483,8 +559,12 @@ nonisolated enum NoteStyles {
     var cache: [Shape: (NSFont, NSParagraphStyle)] = [:]
 
     func attributes(for look: Look, isShown: Bool) -> [NSAttributedString.Key: Any] {
-      if look.isBox {
-        return [.font: box ?? base, .baselineOffset: lift, .foregroundColor: theme.ink]
+      if let state = look.boxState {
+        let metrics = boxMetrics(size: base.pointSize, state: state)
+        return [
+          .font: metrics.font, .kern: metrics.kern, .baselineOffset: metrics.baseline,
+          .foregroundColor: state == .urgent ? NoteColor.red.color : theme.ink,
+        ]
       }
       // 代码块：等宽、按原文、墨色；围栏行也是墨（不藏）——标记那一档（墨 35%）压在代码的底上最低 1.67:1，语言名读不出来；
       // 次要的墨（75%）压在底上沙色浅纸也只有 4.498:1、不到 4.5（墨对底 ≥ 7，NotesWindowTests.paperTable 锁住）
@@ -505,15 +585,19 @@ nonisolated enum NoteStyles {
         result[.font] = NSFont.systemFont(ofSize: size, weight: weight)
       }
       if look.isMarker {
+        // 露出来的标记照旧是标记那一档（颜色里的标记也一样）
         result[.foregroundColor] = theme.marker
+      } else if look.isCode {
+        // 行内代码里的字照旧用墨（底是墨的 8%）；做完的任务里的代码照旧跟着变淡
+        result[.foregroundColor] = look.isDone ? theme.faded : theme.ink
       } else if look.isDone || look.isBullet {
-        result[.foregroundColor] = theme.faded
-      } else if look.isQuote, !look.isCode {
-        // 引用里的行内代码不走这里、用墨色：次要的墨压在代码的底上不够 4.5:1（沙色浅纸）。做完的任务里的代码
-        // 照旧跟着变淡（上一条）
-        result[.foregroundColor] = theme.secondary
+        // 完成 / 取消：上了色的字跟着变淡（颜色的 doneOpacity，增强对比度时 secondaryOpacity，同墨）
+        result[.foregroundColor] = look.color?.fadedColor ?? theme.faded
+      } else if look.isQuote {
+        // 引用里上了色的字用这个颜色，不用次要的墨
+        result[.foregroundColor] = look.color?.color ?? theme.secondary
       } else {
-        result[.foregroundColor] = theme.ink
+        result[.foregroundColor] = look.color?.color ?? theme.ink
       }
       if look.isItalic, !look.isMarker { result[.obliqueness] = obliqueness }
       // 做完的任务整段划线（连露出来的标记）；删除线自己的两个 ~~ 不划
@@ -523,6 +607,9 @@ nonisolated enum NoteStyles {
       if let address = look.link {
         result[.underlineStyle] = NSUnderlineStyle.single.rawValue
         if let url = NoteMarkdown.url(address) { result[linkKey] = url }
+      }
+      if let color = look.color, !look.isMarker, !look.isCode {
+        result[colorKey] = color.rawValue
       }
       if look.isQuote { result[quoteKey] = true }
       if look.isMarker { result[isShown ? shownKey : hiddenKey] = true }

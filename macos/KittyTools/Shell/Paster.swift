@@ -62,6 +62,30 @@ enum Paster {
   /// 片段 {cursor} 最多往回挪这么多个字，再多就不挪（逐个发 ← 太久，用户也看得到光标在跑）
   static let maxCaretMoves = 500
 
+  /// 呼出面板前 / 面板开着时记着的那个自家窗口里，现在能不能直接粘：窗口还在屏上、第一响应者是能编辑的 NSTextView
+  /// （便签正文、标题框的字段编辑器都是）。给 nil = 不能，照旧走 Paster.pasteToFrontmost
+  static func pasteTarget(in window: NSWindow?) -> NSTextView? {
+    guard let window else { return nil }
+    return pasteTarget(
+      isOnScreen: window.isVisible && window.screen != nil, firstResponder: window.firstResponder)
+  }
+
+  /// 判断「粘到哪」的纯函数（单测用）：窗口在不在屏上 + 第一响应者是什么
+  static func pasteTarget(isOnScreen: Bool, firstResponder: Any?) -> NSTextView? {
+    guard isOnScreen, let view = firstResponder as? NSTextView, view.isEditable else { return nil }
+    return view
+  }
+
+  /// 不激活本 App、不发合成按键：把 key 还给那个窗口，写剪贴板，直接调那个文本视图的 paste(_:)。
+  /// movingLeft：片段的 {cursor}，粘完按这么多次 ←（同 ← 的语义）
+  static func paste(into view: NSTextView, write: () -> Void, movingLeft moves: Int = 0) {
+    view.window?.makeKey()
+    write()
+    view.paste(nil)
+    guard (1...maxCaretMoves).contains(moves) else { return }
+    for _ in 0..<moves { view.moveLeft(nil) }
+  }
+
   /// 向前台 App 发 ⌘V。浮层不激活本 App，前台一直是原 App，所以不用等待、不用切前台。
   /// movingLeft：片段 {cursor}，⌘V 之后紧接着按这么多次 ←，把光标挪回占位符处（超过 maxCaretMoves 不挪）。
   /// 未授权返回 false，内容仍留在剪贴板里

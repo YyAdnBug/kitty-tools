@@ -57,13 +57,14 @@ struct NoteEditorFuzzTests {
     "- ", "☐ ", "☑ ", " ", " ", "\n", "\n", "~~", "\\", "!", "\u{2028}", "\r\n", "1. ", "🙂", "(",
     ")", "x_y", "\t", "```", "```", "```js", "~~~", "````", "\n```\n", "\n```", "```\n", "``", "~",
     "\n> ", "2*3*4", "\n```\n块里 **不粗**\n```\n", "\n~~~py\n# 注释\n☐ 不是任务\n~~~\n", "\n```\n```\n",
+    "[x]{red}", "[字]{blue}", "]{orange}", "[", "[a]{purple}", "◧ ", "▣ ", "☒ ",
   ]
   private static let pastes = [
     "https://example.com/a", " https://a.b \n", "https://a.b https://c.d", "mailto:x@y.z", "纯文字",
     "file:///etc", "https://a.b/(x)", "https://a.b/)", "多行\n粘贴",
   ]
   private static let start =
-    "# 标题 **粗**\n普通 *斜* `码`\n{图}\n> 引用 [链](https://a.b)\n> 第二行\n- 列表 ~~删~~\n```swift\nlet a = **1**\n# 不是标题\n```\n☐ 任务 **粗**\n☑ 做完 _斜_\n~~~\n☐ 块里\n"
+    "# 标题 **粗**\n普通 *斜* `码`\n{图}\n> 引用 [链](https://a.b)\n> 第二行\n- 列表 ~~删~~\n```swift\nlet a = **1**\n# 不是标题\n```\n☐ 任务 **粗**\n◧ 进行中\n▣ 紧急\n☑ 做完 _斜_\n☒ 取消\n[红]{red} 普通\n~~~\n☐ 块里\n"
     + "前面{图}后面\n末行"
 
   /// 一段字的属性写成一串（颜色是动态色、不同的对象不相等：按浅色外观解析出来比）
@@ -96,7 +97,9 @@ struct NoteEditorFuzzTests {
       "p\(style?.minimumLineHeight ?? -1)/\(style?.maximumLineHeight ?? -1)/\(style?.paragraphSpacingBefore ?? -1)/\(style?.paragraphSpacing ?? -1)/\(style?.headIndent ?? -1)/\(style?.firstLineHeadIndent ?? -1)/\(style?.tailIndent ?? -1)/\(style?.defaultTabInterval ?? -1)",
       "r\((attributes[NoteStyles.roleKey] as? Int) ?? 0)",
       "L\(line?.pointSize ?? 0)\(lineTraits.contains(.bold) ? "b" : "")\(lineTraits.contains(.monoSpace) ? "m" : "")",
-      "o\((attributes[.baselineOffset] as? CGFloat) ?? 0)", "c" + color,
+      "o\((attributes[.baselineOffset] as? CGFloat) ?? 0)",
+      "k\((attributes[.kern] as? CGFloat) ?? 0)",
+      "i\((attributes[NoteStyles.colorKey] as? Int) ?? -1)", "c" + color,
       "a"
         + ((attributes[.attachment] as? NoteImageAttachment).map {
           "\($0.picture.id.uuidString.prefix(4)).\($0.picture.width.map(String.init) ?? "-")"
@@ -234,13 +237,29 @@ struct NoteEditorFuzzTests {
     /// 转一轮事件循环（晚一拍的排标记、兜底的那次收尾在这时跑）
     func spin() { RunLoop.main.run(mode: .default, before: Date()) }
 
+    /// 第 index 个字的正中（窗口坐标）
+    func center(of index: Int) throws -> NSPoint {
+      scroll.layoutSubtreeIfNeeded()
+      if let container = editor.textContainer {
+        editor.layoutManager?.ensureLayout(for: container)
+      }
+      let manager = try #require(editor.layoutManager)
+      let container = try #require(editor.textContainer)
+      let glyphs = manager.glyphRange(
+        forCharacterRange: NSRange(location: index, length: 1), actualCharacterRange: nil)
+      let rect = manager.boundingRect(forGlyphRange: glyphs, in: container)
+      let origin = editor.textContainerOrigin
+      return editor.convert(NSPoint(x: rect.midX + origin.x, y: rect.midY + origin.y), to: nil)
+    }
+
     /// 编辑器现在和「同一份正文整篇重排一遍」差在哪（逐字比属性、比字形藏没藏、比交出去的全文）；一样给 nil
     func mismatch() -> String? {
       guard !editor.hasMarkedText() else { return nil }
       let text = storage.mutableString
       let focused = window.firstResponder === editor
+      // 颜色不看 Markdown 开关（第 8 批）：关着时这一行的颜色标记也要露出来，参照那边同样
       let shown =
-        markdown && focused && key && editor.isEditable
+        focused && key && editor.isEditable
         ? editor.selectedRanges.map { text.lineRange(for: $0.rangeValue) } : []
       // 「同一份正文整篇重排一遍」的参照：**照编辑器里现在这一份**（同样的字、同样的附件）copy 一份，再整篇 apply。
       // 不按存的形式重新认一遍令牌：编辑器里可能本来就有**字面上的令牌**（粘贴的纯文字、或者编辑把一段令牌
@@ -454,7 +473,7 @@ struct NoteEditorFuzzTests {
     }
     rig.window.notes.beginUndoGrouping()
     defer { rig.window.notes.endUndoGrouping() }
-    switch random.next() % 37 {
+    switch random.next() % 41 {
     case 0, 1, 2:
       let at = position(&random)
       editor.setSelectedRange(NSRange(location: at, length: 0))
@@ -731,6 +750,62 @@ struct NoteEditorFuzzTests {
       }
       rig.applyPaper()
       return "图片行重排 纸 \(rig.paper) 字号 \(rig.fontSize) 行距 \(rig.spacing) markdown \(rig.markdown)"
+    case 37:
+      // 随机选区上随机颜色（含默认颜色去色）：一步撤销，结果过扫描器（单测 NoteBatch8Tests 锁着）
+      let (a, b) = (position(&random), position(&random))
+      editor.setSelectedRange(NSRange(location: min(a, b), length: abs(a - b)))
+      let color = random.chance(3) ? nil : random.pick(NoteColor.allCases)
+      editor.setTextColor(color)
+      return "上色 \(color?.name ?? "默认") \(min(a, b))..<\(max(a, b))"
+    case 38:
+      // 随机行改随机状态（选区碰到的每一行）
+      let (a, b) = (position(&random), position(&random))
+      editor.setSelectedRange(NSRange(location: min(a, b), length: abs(a - b)))
+      let state = random.pick(NoteTasks.State.allCases)
+      editor.setTaskState(state)
+      return "任务状态 \(state) \(min(a, b))..<\(max(a, b))"
+    case 39:
+      // 点方框（直接调改字那一支；不走 mouseDown：探针自己造出来的坏正文 + 图片令牌会让 TextKit 1 排版死循环，
+      // 单测 NoteTextViewTests / NoteBatch8Tests 里已经真的点过方框和右键）
+      let text = rig.storage.mutableString
+      var boxes: [Int] = []
+      var location = 0
+      while location < text.length {
+        var (start, end, contentsEnd) = (0, 0, 0)
+        text.getLineStart(
+          &start, end: &end, contentsEnd: &contentsEnd,
+          for: NSRange(location: location, length: 0))
+        let line = text.substring(with: NSRange(location: start, length: contentsEnd - start))
+        // 断掉 / 半个的图片令牌旁边点方框会把 TextKit 1 排进死循环（探针自己造出来的怪正文）：只点干净的行
+        if !line.contains("\u{FFFC}"), !line.contains("kitty-note-image://"),
+          let offset = NoteTasks.box(in: line)
+        {
+          boxes.append(start + offset)
+        }
+        location = max(end, location + 1)
+      }
+      guard let index = boxes.isEmpty ? nil : random.pick(boxes) else {
+        return "没有方框可点"
+      }
+      rig.editor.flipBox(at: index)
+      return "点方框 \(index)"
+    case 40:
+      // 在颜色标记中间打字 / 删（标记露出来的时候）
+      let units = Array((text as String).utf16)
+      let colorRanges = NoteMarkdown.colorRuns(
+        in: NoteMarkdown.inline(units, in: 0..<units.count))
+      if let run = colorRanges.isEmpty ? nil : random.pick(colorRanges) {
+        let at = run.open.location + random.next() % max(run.close.location - run.open.location, 1)
+        editor.setSelectedRange(NSRange(location: at, length: random.chance(2) ? 1 : 0))
+        if random.chance(2) {
+          rig.type(random.pick(["[", "]", "{", "}", "x", "字", "]*{red}", " "]))
+          return "颜色标记中间打字 \(at)"
+        }
+        editor.deleteBackward(nil)
+        return "颜色标记中间删 \(at)"
+      }
+      rig.type(random.pick(["", "[a]{red}"]))
+      return "没有颜色可动"
     default:
       return "什么都不做"
     }

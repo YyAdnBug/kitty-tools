@@ -644,8 +644,10 @@ import SwiftUI
   /// 右边最底下那行小字：「改于 今天 09:12 · 128 字」；最近删除里是「删于 昨天 22:40 · 29 天后永久删除」
   static func footnote(_ note: Note, now: Date = .now, calendar: Calendar = .current) -> String {
     guard let deleted = note.deletedAt else {
-      // 字数**不数图片的令牌**（一张图算 0 个字）：不然一张图让底下多出六七十个字（F19）
-      let count = NoteImages.stripping(note.body).reduce(0) { $1.isWhitespace ? $0 : $0 + 1 }
+      // 字数**不数图片的令牌**（一张图算 0 个字）：不然一张图让底下多出六七十个字（F19）；**也不数颜色的标记**
+      // （第 8 批：`[` 和 `]{red}` 是显示时才露出来的标记，不算用户写的字）
+      let count = NoteMarkdown.strippingColors(from: NoteImages.stripping(note.body))
+        .reduce(0) { $1.isWhitespace ? $0 : $0 + 1 }
       return "改于 \(SettingsBackup.when(note.modifiedAt, now: now, calendar: calendar)) · \(count) 字"
     }
     let left = deleted.addingTimeInterval(Double(NoteStore.trashDays) * 86_400)

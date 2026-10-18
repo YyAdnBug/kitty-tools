@@ -33,6 +33,8 @@ struct NoteMarkdownTests {
         switch span.kind {
         case .heading(let level): name = "h\(level)"
         case .link(let address): name = "link(\(address))"
+        case .box(let state): name = "box(\(state))"
+        case .color(let color): name = "color(\(color.name))"
         default: name = "\(span.kind)"
         }
         return (
@@ -262,21 +264,21 @@ struct NoteMarkdownTests {
 
   /// 和任务叠着：任务行的内容里只认行内样式；开关关掉只剩任务的两种
   @Test func tasksAndTheSwitch() {
-    #expect(marks("☐ **粗** 字") == ["box@0:☐", "marker@2:**", "bold@4:粗", "marker@5:**"])
+    #expect(marks("☐ **粗** 字") == ["box(todo)@0:☐", "marker@2:**", "bold@4:粗", "marker@5:**"])
     #expect(
       marks("  ☑ 做完的 `码`")
-        == ["box@2:☑", "done@4:做完的 `码`", "marker@8:`", "code@9:码", "marker@10:`"])
+        == ["box(done)@2:☑", "done@4:做完的 `码`", "marker@8:`", "code@9:码", "marker@10:`"])
     // 任务行里不认标题、引用、列表
-    #expect(marks("☐ # 不是标题") == ["box@0:☐"] && marks("☐ > 不是引用") == ["box@0:☐"])
-    #expect(marks("☑ - 不是列表") == ["box@0:☑", "done@2:- 不是列表"])
+    #expect(marks("☐ # 不是标题") == ["box(todo)@0:☐"] && marks("☐ > 不是引用") == ["box(todo)@0:☐"])
+    #expect(marks("☑ - 不是列表") == ["box(done)@0:☑", "done@2:- 不是列表"])
     // 标题里的方框只是一个字
     #expect(marks("# ☐ 不是任务") == ["h1@0:# ☐ 不是任务", "marker@0:# "])
     // 开关关掉：没有 Markdown 的种类，任务照常
     for line in ["# 标题", "**粗** *斜* ~~删~~ `码`", "[字](https://a.b)", "> 引用", "- 列表"] {
       #expect(marks(line, markdown: false).isEmpty, "\(line)")
     }
-    #expect(marks("☑ **粗**", markdown: false) == ["box@0:☑", "done@2:**粗**"])
-    #expect(marks("☐ [字](u)", markdown: false) == ["box@0:☐"])
+    #expect(marks("☑ **粗**", markdown: false) == ["box(done)@0:☑", "done@2:**粗**"])
+    #expect(marks("☐ [字](u)", markdown: false) == ["box(todo)@0:☐"])
   }
 
   /// 不会越界、不会卡：各种怪输入扫一遍；位置都在这一行里
@@ -325,7 +327,7 @@ struct NoteMarkdownTests {
     #expect(heading["**"] == NoteStyles.Look(heading: 2, isMarker: true))
     #expect(heading["码"] == NoteStyles.Look(heading: 2, isCode: true))
     let done = looks("☑ 做完 **粗** ~~删~~")
-    #expect(done["☑"] == NoteStyles.Look(isBox: true))
+    #expect(done["☑"] == NoteStyles.Look(boxState: .done))
     #expect(done["做完 "] == NoteStyles.Look(isDone: true))
     #expect(done["粗"] == NoteStyles.Look(isBold: true, isDone: true))
     #expect(done["删"] == NoteStyles.Look(isStruck: true, isDone: true))
@@ -358,6 +360,27 @@ struct NoteMarkdownTests {
     普通的一行 plain
 
     """
+
+  /// 两份富文本看起来是不是一样：字体比名字和字号（AppKit 给中文按字符做后备字体替换时，同样名字、同样字号的
+  /// NSFont 会是不同的对象、`isEqual(to:)` 说不一样，但画出来一模一样；随机编辑测试也是比字体名和字号），别的属性照 `isEqual`
+  private func sameLook(_ a: NSAttributedString, _ b: NSAttributedString) -> Bool {
+    guard a.string == b.string, a.length == b.length else { return false }
+    for index in 0..<a.length {
+      let left = a.attributes(at: index, effectiveRange: nil)
+      let right = b.attributes(at: index, effectiveRange: nil)
+      guard Set(left.keys) == Set(right.keys) else { return false }
+      for key in left.keys {
+        if key == .font || key == NoteStyles.lineFontKey {
+          let fa = left[key] as? NSFont
+          let fb = right[key] as? NSFont
+          guard fa?.fontName == fb?.fontName, fa?.pointSize == fb?.pointSize else { return false }
+        } else if !(left[key] as AnyObject).isEqual(right[key]) {
+          return false
+        }
+      }
+    }
+    return true
+  }
 
   private func styled(_ text: String, shown: [NSRange] = [], theme: NoteStyles.Theme? = nil)
     -> NSTextStorage
@@ -512,10 +535,10 @@ struct NoteMarkdownTests {
     for line in lines.reversed() {
       NoteStyles.apply(to: piecewise, lines: line, theme: theme, shown: [], blocks: [])
     }
-    #expect(piecewise.isEqual(to: whole))
+    #expect(sameLook(piecewise, whole))
     NoteStyles.apply(
       to: piecewise, lines: range(0, piecewise.length), theme: theme, shown: [], blocks: [])
-    #expect(piecewise.isEqual(to: whole))
+    #expect(sameLook(piecewise, whole))
     // 关着开关排出来的，和「只有任务」的一样：没有任何 Markdown 的属性
     let off = styled(
       sample,

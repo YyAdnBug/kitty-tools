@@ -1,6 +1,6 @@
 ---
 name: mac-translate
-description: 原生分支翻译规范（语言规则、服务分发与钥匙串密钥、智谱 max_tokens 1024 与关思考、大模型地址补全与分档、SSE 流式与取消、划词取词、复制即译）。在修改 macos/KittyTools/Translate/**、Settings/TranslateTab.swift、Storage/Keychain.swift 前必须先读；或涉及 翻译服务 / 智谱 / OpenAI / Anthropic / Azure / 厂商预设 / 流式译文 / 译文为空 / 思考参数 / 思考中 / 截断 / 错误卡 / 划词取不到词 / 复制即译 / 自动复制 / 浮窗位置 / 输入翻译 / 翻译历史 / 历史 ⌘K / 导出 / 朗读 / 段落接行 等问题时。
+description: 原生分支翻译规范（语言规则、服务分发与钥匙串密钥、智谱 max_tokens 1024 与关思考、大模型地址补全与分档、SSE 流式与取消、划词取词（含便签自己的选区）、复制即译）。在修改 macos/KittyTools/Translate/**、Settings/TranslateTab.swift、Storage/Keychain.swift 前必须先读；或涉及 翻译服务 / 智谱 / OpenAI / Anthropic / Azure / 厂商预设 / 流式译文 / 译文为空 / 思考参数 / 思考中 / 截断 / 错误卡 / 划词取不到词 / 便签里划词 / 替换回便签 / 复制即译 / 自动复制 / 浮窗位置 / 输入翻译 / 翻译历史 / 历史 ⌘K / 导出 / 朗读 / 段落接行 等问题时。
 ---
 
 # mac-translate

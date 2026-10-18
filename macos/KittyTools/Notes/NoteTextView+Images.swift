@@ -546,7 +546,8 @@ extension NoteTextView {
       let slice = NoteImageAttachment.stored(
         from: storage.attributedSubstring(from: range))
       stored.append(slice)
-      plain.append(NoteImages.display(slice))
+      // 纯文本去掉颜色的标记（只去颜色的；** 这些照旧原样——那是用户自己打的）；自家类型照存的形式
+      plain.append(NoteMarkdown.strippingColors(from: NoteImages.display(slice)))
     }
     guard !stored.isEmpty else { return nil }
     let image = selectedImageChar().flatMap { imageWrite(forCharacterAt: $0) }

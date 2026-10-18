@@ -332,7 +332,7 @@ struct TranslatePanelView: View {
           Button("替换原文", systemImage: "arrow.uturn.backward", action: replaceOriginal)
             .labelStyle(.titleAndIcon)
             .disabled(coordinator.primaryResult == nil)
-            .help("用第一个服务的译文替换原 App 里选中的文字")
+            .help("用第一个服务的译文替换原文（便签里选中的那一段，或原 App 里选中的文字）")
         }
         // 没有常驻「翻译」按钮（N5）：↩ 就是翻译，原文改过、还没重译时才从右下角弹出来
         if coordinator.needsTranslate {

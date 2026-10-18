@@ -33,12 +33,12 @@ struct NoteTasksTests {
 
   @Test func prefixesOfTasks() {
     let open = NoteTasks.prefix(of: "☐ 周报")
-    #expect(open?.lead == .task(isDone: false) && open?.indent == 0 && open?.contentStart == 2)
+    #expect(open?.lead == .task(.todo) && open?.indent == 0 && open?.contentStart == 2)
     let done = NoteTasks.prefix(of: "  \t☑ 订会议室")
-    #expect(done?.lead == .task(isDone: true) && done?.indent == 3 && done?.contentStart == 5)
+    #expect(done?.lead == .task(.done) && done?.indent == 3 && done?.contentStart == 5)
     // 方框在行尾（后面的空格没了）也算；后面直接跟字的不算（别处贴来的符号）
     let bare = NoteTasks.prefix(of: "☐")
-    #expect(bare?.lead == .task(isDone: false) && bare?.hasSpace == false)
+    #expect(bare?.lead == .task(.todo) && bare?.hasSpace == false)
     #expect(bare?.contentStart == 1)
     #expect(NoteTasks.prefix(of: "☐周报") == nil && NoteTasks.prefix(of: "☑\t周报") == nil)
     // 行中间的方框不算
@@ -237,9 +237,9 @@ struct NoteTasksTests {
     // 和认标记的口径是同一个：逐行数出来一样
     var (done, total) = (0, 0)
     tricky.enumerateLines { line, _ in
-      if case .task(let isDone) = NoteTasks.prefix(of: line)?.lead {
+      if case .task(let state) = NoteTasks.prefix(of: line)?.lead {
         total += 1
-        if isDone { done += 1 }
+        if state == .done { done += 1 }
       }
     }
     #expect(progress?.done == done && progress?.total == total)
@@ -255,14 +255,14 @@ struct NoteTasksTests {
     typealias Span = NoteStyles.Span
     func spans(_ line: String) -> [Span] { NoteStyles.spans(in: line, markdown: false) }
     // 没做完的：只有方框那一个字
-    #expect(spans("☐ 周报") == [Span(range: range(0, 1), kind: .box)])
+    #expect(spans("☐ 周报") == [Span(range: range(0, 1), kind: .box(.todo))])
     // 做完的：方框 + 内容（划线、变淡），缩进不算
     #expect(
       spans("  ☑ 订会议室 🙂")
-        == [Span(range: range(2, 1), kind: .box), Span(range: range(4, 7), kind: .done)])
+        == [Span(range: range(2, 1), kind: .box(.done)), Span(range: range(4, 7), kind: .done)])
     // 做完的空任务没有内容
-    #expect(spans("☑ ") == [Span(range: range(0, 1), kind: .box)])
-    #expect(spans("☑") == [Span(range: range(0, 1), kind: .box)])
+    #expect(spans("☑ ") == [Span(range: range(0, 1), kind: .box(.done))])
+    #expect(spans("☑") == [Span(range: range(0, 1), kind: .box(.done))])
     // 不是任务的行没有样式
     #expect(spans("普通的一行").isEmpty && spans("- 列表").isEmpty)
     #expect(spans("记得 ☑ 不算").isEmpty && spans("").isEmpty)

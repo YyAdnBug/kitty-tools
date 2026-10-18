@@ -6,11 +6,19 @@
 // 「数据」——打开全部便签窗口的按钮、按键速查，页脚说便签存在哪、怎么备份、删掉的留多久、导出导入在哪。
 // 页头由 SettingsRoot 画（家族色黄）。偏好的键和默认值在 Prefs，读它们的是 NoteDeckOptions。
 
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct NotesTab: View {
   /// 打开全部便签窗口（AppDelegate.showNotes；便签这次用不了时它自己说）
   let openNotes: () -> Void
+  /// 便签仓库（导出导入要 flush、adopt）；便签这次用不了时给 nil，两个按钮停用
+  var notes: () -> NoteStore? = { nil }
+  /// 图片目录（导出时从这拷、导入时存到这里）
+  var images: () -> NoteImageStore? = { nil }
+  /// 刘海岛（导出导入的结果）
+  var island: Island?
   /// 接着的显示器的名字（主显示器在前；同名的第二块起加序号，和 NoteDeckScreen.attached 同一个口径）；截图自检传固定的
   var displays: [String] = NoteDeckLayout.uniqueNames(NSScreen.screens.map(\.localizedName))
   @AppStorage(Prefs.notesFontSize) private var fontSize = 15
@@ -70,15 +78,147 @@ struct NotesTab: View {
           Text("便签的按键")
           Text("快速记一条、屏幕边缘的便签和全部便签窗口里按什么键")
         }
+        LabeledContent {
+          Button("导出…") { exportMarkdown() }
+            .disabled(notes() == nil || isTransferring)
+        } label: {
+          Text("导出为 Markdown")
+          Text("每条便签一个 .md 文件，正文里的图片放在旁边的 attachments 文件夹")
+        }
+        LabeledContent {
+          Button("导入…") { importMarkdown() }
+            .disabled(notes() == nil || isTransferring)
+        } label: {
+          Text("从 Markdown 导入")
+          Text("导回导出过的文件夹不会重复；别处的 .md 文件每个变成一条新便签")
+        }
       } header: {
         Text("数据")
       } footer: {
         SectionFootnote(
-          "便签存在这台 Mac 上，和剪贴板历史分开：清空历史、保留天数都碰不到它。每天自动备份一份，留最近 7 份（正文里的图片跟着一起备）。删掉的便签在「最近删除」里留 \(NoteStore.trashDays) 天。导出与导入在 设置 › 通用 里，图片不在导出文件里。"
+          "便签存在这台 Mac 上，和剪贴板历史分开：清空历史、保留天数都碰不到它。每天自动备份一份，留最近 7 份（正文里的图片跟着一起备）。删掉的便签在「最近删除」里留 \(NoteStore.trashDays) 天。设置 › 通用 里的导出与导入带便签的文字、不带图片；要连图片一起带走、或者拿别的工具看，用上面的 Markdown 导出。"
         )
       }
     }
     .formStyle(.grouped)
+  }
+
+  /// 导出 / 导入的选文件面板开着、或者后台正在读写：两个按钮先停用
+  @State private var isTransferring = false
+
+  // MARK: Markdown 导出 / 导入
+
+  /// 「导出…」：选文件夹 → 在里头**新建**一个「Kitty Tools 便签 日期」→ 后台写（界面不卡）
+  private func exportMarkdown() {
+    guard let store = notes(), !isTransferring else { return }
+    let panel = NSOpenPanel()
+    panel.canChooseDirectories = true
+    panel.canChooseFiles = false
+    panel.canCreateDirectories = true
+    panel.prompt = "导出到这里"
+    panel.message = "选一个文件夹，里面会新建「\(NoteMarkdownFiles.folderName())」"
+    isTransferring = true
+    panel.begin { response in
+      guard response == .OK, let parent = panel.url else {
+        isTransferring = false
+        return
+      }
+      // 先让仓库把攒着的改动落盘再取（导出的是现在的样子）
+      store.flush()
+      let list = store.exportable
+      let imageDirectory = store.images?.directory
+      Task {
+        let result = await NoteMarkdownFiles.export(
+          notes: list, imageDirectory: imageDirectory, to: parent)
+        isTransferring = false
+        if let failure = result.failure {
+          island?.show(
+            "导出到一半", detail: failure, tone: .error, symbol: "exclamationmark.triangle.fill")
+          return
+        }
+        var detail = "「\(result.folderName)」"
+        if result.missingImages > 0 { detail += " · \(result.missingImages) 张图片不在，没导出" }
+        island?.show(
+          "已导出 \(result.count) 条便签", detail: detail,
+          symbol: "square.and.arrow.up.circle.fill")
+      }
+    }
+  }
+
+  /// 「导入…」：可以选文件夹（读第一层的 .md / .markdown）也可以多选文件；读文件、存图片在后台，合并回主线程
+  private func importMarkdown() {
+    guard let store = notes(), !isTransferring else { return }
+    let panel = NSOpenPanel()
+    panel.canChooseDirectories = true
+    panel.canChooseFiles = true
+    panel.allowsMultipleSelection = true
+    panel.prompt = "导入"
+    panel.message = "选一个文件夹，或者多选 .md / .markdown / .txt 文件"
+    panel.allowedContentTypes =
+      [.plainText]
+      + ["md", "markdown"].compactMap {
+        UTType(filenameExtension: $0)
+      }
+    isTransferring = true
+    panel.begin { response in
+      guard response == .OK else {
+        isTransferring = false
+        return
+      }
+      let roots = panel.urls.map { url -> URL in
+        var isDirectory: ObjCBool = false
+        FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+        return isDirectory.boolValue ? url : url.deletingLastPathComponent()
+      }
+      var sources: [NoteMarkdownFiles.Source] = []
+      for (index, url) in panel.urls.enumerated() {
+        var isDirectory: ObjCBool = false
+        FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+        if isDirectory.boolValue {
+          for file in NoteMarkdownFiles.markdownFiles(in: url) {
+            sources.append(NoteMarkdownFiles.Source(url: file, root: url))
+          }
+        } else if ["md", "markdown", "txt"].contains(url.pathExtension.lowercased()) {
+          sources.append(NoteMarkdownFiles.Source(url: url, root: roots[index]))
+        }
+      }
+      sources.sort {
+        $0.url.lastPathComponent.localizedStandardCompare($1.url.lastPathComponent)
+          == .orderedAscending
+      }
+      let imageDirectory = store.images?.directory
+      Task {
+        let result = await NoteMarkdownFiles.importNotes(
+          sources: sources, imageDirectory: imageDirectory)
+        isTransferring = false
+        if let failure = result.failure {
+          island?.show("没有导入", detail: failure, tone: .error)
+          return
+        }
+        guard !result.notes.isEmpty else {
+          island?.show("没有导入", detail: "选的地方没有 .md 文件", tone: .warning)
+          return
+        }
+        let entries = result.notes.map { note in
+          SettingsArchive.NoteEntry(
+            id: note.id, title: note.title, body: note.body, color: note.color,
+            createdAt: Note.milliseconds(note.createdAt),
+            modifiedAt: Note.milliseconds(note.modifiedAt), revision: note.revision,
+            archived: note.isArchived, pinned: note.isPinned, order: note.order)
+        }
+        let adoption = store.adopt(entries)
+        var detail = "新增 \(adoption.added) · 更新 \(adoption.updated) · 跳过 \(result.skipped)"
+        if result.missingImages > 0 { detail += " · \(result.missingImages) 张图片没导进来" }
+        if result.limitHit { detail += " · 只导了前 \(NoteMarkdownFiles.maxFiles) 个" }
+        if !adoption.saved {
+          island?.show("便签没存上", detail: "导入的内容在内存里，稍后会自动再试", tone: .warning)
+        } else {
+          island?.show(
+            "已导入 \(result.notes.count) 条便签", detail: detail,
+            symbol: "square.and.arrow.down.circle.fill")
+        }
+      }
+    }
   }
 
   // MARK: 屏幕边缘

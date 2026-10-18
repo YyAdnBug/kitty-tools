@@ -98,6 +98,9 @@ import UniformTypeIdentifiers
   @ObservationIgnored private var shownFileRequest: FileSearch.Request?
   // 以下由 AppDelegate 接上
   @ObservationIgnored var hidePanel: () -> Void = {}
+  /// 第 8 批：呼出启动器前焦点在自家哪个能编辑的文本视图里（便签正文、标题框的字段编辑器）。有就直接粘进去，
+  /// 不发合成按键、不要辅助功能授权；nil = 照旧 Paster.pasteToFrontmost
+  @ObservationIgnored var pasteTargetView: () -> NSTextView? = { nil }
   @ObservationIgnored var runAction: (String) -> Void = { _ in }
   /// 内置动作此刻的状态（复制即译开没开、有没有钉图、能不能检查更新）
   @ObservationIgnored var actionState: () -> LauncherItem.ActionState = { .init() }
@@ -836,6 +839,12 @@ import UniformTypeIdentifiers
   /// 没有辅助功能授权时只复制，刘海岛警告去授权（授权框一点启动器就收了，面板里的提示会丢）
   private func paste(_ copy: () -> Void) {
     executed = true
+    // 第 8 批：焦点原本在自家便签里 → 收起启动器、把 key 还给它、直接调它的 paste(_:)（不发合成按键、不要授权）
+    if let target = pasteTargetView() {
+      hidePanel()
+      Paster.paste(into: target, write: copy)
+      return
+    }
     guard Permissions.isAccessibilityTrusted else {
       copy()
       // 系统授权框一点，启动器就收了，面板里的提示会跟着丢

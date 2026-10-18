@@ -709,7 +709,8 @@ struct NoteTextViewImageTests {
     let titles = menu.items.map(\.title)
     #expect(titles.contains(NoteTextView.insertImageTitle))
     #expect(titles.first == NotesWindowModel.taskTitle, "任务还是在最前面")
-    #expect(titles.dropFirst().first == NoteTextView.formatTitle)
+    #expect(titles.dropFirst().first == NoteTextView.taskStateTitle)
+    #expect(titles.dropFirst(2).first == NoteTextView.formatTitle)
   }
   // MARK: 第 7 批评审后的修复（F1–F25）
 

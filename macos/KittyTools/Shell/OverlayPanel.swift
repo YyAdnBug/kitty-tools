@@ -25,6 +25,10 @@ final class OverlayPanel: NSPanel {
   var onHide: (() -> Void)?
   /// 这次显示前处于 key 的自家浮层：收起时把 key 还给它（翻译浮窗用）
   private(set) weak var previousKeyPanel: OverlayPanel?
+  /// 第 8 批：面板被叫出来当 key 时，之前 key 的自家哪个窗口（便签那叠 / 浮动便签 / 全部便签窗口 / 设置窗）。
+  /// 面板开着时用户点回了自家别的窗口就改记它；别的 App 被激活了就清掉。粘贴时直接落进它里面（R12）
+  private(set) weak var pasteTargetWindow: NSWindow?
+  private var isWatchingPasteTarget = false
   /// ⌘ 组合键先给它处理，返回 true 表示已处理
   var keyEquivalentHandler: ((NSEvent) -> Bool)?
   private let autoHide: AutoHide
@@ -154,6 +158,46 @@ final class OverlayPanel: NSPanel {
     return true
   }
 
+  /// 面板开着期间盯着「自家哪个窗口是 key」「别的 App 被激活」：前者改记，后者清掉（点进文本编辑再回来粘贴要粘进
+  /// 文本编辑，不是在别处刚点过的便签）
+  private func watchPasteTargetWindow() {
+    guard !isWatchingPasteTarget else { return }
+    isWatchingPasteTarget = true
+    NotificationCenter.default.addObserver(
+      self, selector: #selector(ownWindowBecameKey(_:)), name: NSWindow.didBecomeKeyNotification,
+      object: nil)
+    NSWorkspace.shared.notificationCenter.addObserver(
+      self, selector: #selector(anotherAppActivated(_:)),
+      name: NSWorkspace.didActivateApplicationNotification, object: nil)
+  }
+
+  /// 面板开着时自家别的窗口当上了 key（用户点回了便签）：改记它
+  @objc private func ownWindowBecameKey(_ note: Notification) {
+    guard isVisible, let window = note.object as? NSWindow, window !== self else { return }
+    pasteTargetWindow = window
+  }
+
+  /// 别的 App 被激活（用户点了别的 App）：清掉——固定着的剪贴板面板开着、点进文本编辑再回来粘贴，要粘进文本编辑
+  @objc private func anotherAppActivated(_ note: Notification) {
+    let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+    if app?.bundleIdentifier != Bundle.main.bundleIdentifier { pasteTargetWindow = nil }
+  }
+
+  /// 面板收起：不再盯，记着的窗口也作废（下次呼出重新记）
+  private func stopWatchingPasteTarget() {
+    guard isWatchingPasteTarget else { return }
+    isWatchingPasteTarget = false
+    NotificationCenter.default.removeObserver(
+      self, name: NSWindow.didBecomeKeyNotification, object: nil)
+    NSWorkspace.shared.notificationCenter.removeObserver(
+      self, name: NSWorkspace.didActivateApplicationNotification, object: nil)
+    pasteTargetWindow = nil
+  }
+
+  /// 现在粘得进哪个文本视图（记着的窗口在屏上、第一响应者是能编辑的 NSTextView）；nil = 照旧发给前台 App
+  func pasteTarget() -> NSTextView? { Paster.pasteTarget(in: pasteTargetWindow) }
+
+  /// makingKey = false：只露出来、不抢键盘（复制即译），此时靠点外关闭。
   /// makingKey = false：只露出来、不抢键盘（复制即译），此时靠点外关闭。
   /// anchor：新出现时放在这一点（鼠标位置）的右下 12 pt（翻译浮窗「跟随鼠标」）；已经开着就不挪。
   /// keepsPlace：原地重新露出来（划词翻译并替换期间临时 orderOut 的固定浮窗），不重新摆
@@ -174,6 +218,9 @@ final class OverlayPanel: NSPanel {
       // 每次都重新记：key 不是别的自家浮层时清掉旧值，免得收起时把 key 还给早就不相干的面板
       let current = NSApp.keyWindow as? OverlayPanel
       if current !== self { previousKeyPanel = current }
+      // 呼出前焦点在自家哪个窗口里（便签正文、标题框…）：粘贴时落回它，不发给前台那个 App
+      if let key = NSApp.keyWindow, key !== self { pasteTargetWindow = key }
+      watchPasteTargetWindow()
       makeKey()
       // 首次显示时 SwiftUI 还没建出输入框，先把布局跑完再聚焦
       contentView?.layoutSubtreeIfNeeded()
@@ -261,6 +308,7 @@ final class OverlayPanel: NSPanel {
     orderOut(nil)
     alphaValue = 1
     removeMouseMonitors()
+    stopWatchingPasteTarget()
     onHide?()
   }
 
@@ -282,6 +330,7 @@ final class OverlayPanel: NSPanel {
     orderOut(nil)
     alphaValue = 1
     removeMouseMonitors()
+    stopWatchingPasteTarget()
     onHide?()
   }
 

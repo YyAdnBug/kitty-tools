@@ -1,5 +1,5 @@
 // 便签的模型（便签库 notes 表的一行）和两条显示用的纯函数：标题（displayTitle）、列表里的一行摘要（preview）——
-// 两样都不带正文里的符号（标题的 #、任务的方框、Markdown 的标记、代码块的围栏行；代码块里的字照原文）。
+// 两样都不带正文里的符号（标题的 #、任务的五种方框、Markdown 的标记和颜色、代码块的围栏行；代码块里的字照原文）。
 // 便签管「留着看、接着改」的东西（PLAN §10「便签」）；库、落盘、搜索、导入导出在 NoteStore，每日备份和打不开时的恢复在
 // NotesBackup。
 // 为以后的同步先留好的三样（这一版不同步）：稳定的编号（UUID 字符串，建了就不变，导出文件里带着）、修订号（任何字段变
@@ -189,7 +189,7 @@ nonisolated struct Note: Identifiable, Equatable, Sendable {
       line = line.dropFirst(hashes).drop(while: \.isWhitespace)
       isContent = true
     }
-    if let first = line.first, first == "☐" || first == "☑" {
+    if let first = line.first, NoteTasks.State(character: first) != nil {
       line = line.dropFirst().drop(while: \.isWhitespace)
       isContent = true
     } else if !isContent {

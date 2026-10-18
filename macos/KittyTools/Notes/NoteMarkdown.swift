@@ -5,7 +5,8 @@
 // - 块（行首，前面最多 3 个空格）：标题 `#`…`######` 后面跟空白、再后面得有字（只有「# 」的不算——标记藏起来之后
 //   这一行就什么都看不见了）；引用 `>`（单层，后面的一个空格算标记，可以没有内容——那时 `>` 不藏，NoteStyles.spans）。
 //   无序列表的符号、任务的方框由 NoteTasks 认。
-// - 行内：行内代码（反引号，几个开就几个关）、粗体 `**` `__`、斜体 `*` `_`、删除线 `~~`、链接 `[字](地址)`。
+// - 行内：行内代码（反引号，几个开就几个关）、粗体 `**` `__`、斜体 `*` `_`、删除线 `~~`、链接 `[字](地址)`、
+//   颜色 `[字]{名字}`（第 8 批：red / orange / green / blue / purple / gray，全小写）。
 //   代码先认，代码里的 `*` `_` `~` `[` 都不是标记；前面有反斜杠的标点不算标记（反斜杠照常显示）；没配对的原样显示。
 //   `*` 可以在词中间，开头的标记后面、结尾的标记前面不能是空白；`_` `__` 两边还得不是字（字母、数字、汉字）——
 //   `snake_case_name` 里的下划线不是斜体。**紧挨着的前一个字和后一个字都是 ASCII 数字的一串 `*` 不是标记**（既不开
@@ -13,6 +14,10 @@
 //   `***又粗又斜***` 两层都认。空的强调凑不出来（`****`、`__` 是一整串标记，自己配不了自己）。
 // - 链接：方括号可以套、地址里的括号成对就行；地址里不能有空白（`[字](地址 "标题")` 不认）、字和地址都不能是空的；
 //   链接的字里不再认链接。`![…](…)` 是图片（第 7 批），这里原样显示，里面什么都不认。
+// - 颜色（第 8 批）：`]` 后面紧跟 `{名字}`，中间不许有空白；方括号里的字不能全是空白、不跨行；`![…]{red}` 不是颜色。
+//   颜色里可以有粗体、斜体、删除线、行内代码、链接（`[[字]{red}](地址)`）；**颜色里不套颜色**（里面已经认出颜色的，
+//   外面这一对不算，原样显示）。「链接里不套链接」的 voided 不管颜色。两头的 `[` 和 `]{名字}` 是标记（.marker），
+//   中间是 `.color(颜色)`。
 // - 代码块（便签手测反馈第 4 批）：行首（前面最多 3 个空格）三个以上的反引号或波浪号开一个块，同一种字符、不少于
 //   开头个数、后面只有空白的那一行关；开头那行后面可以跟语言名（只显示）。**只认配上了对的**（codeBlocks 那里写了为什么）。
 // - plain(_:)：把一行里的标记去掉，给标题和摘要用（Note.displayTitle / preview）。
@@ -192,6 +197,26 @@ nonisolated enum NoteMarkdown {
         let isVoid = !bracket.isImage && brackets.count < voided
         voided = min(voided, brackets.count)
         let text = (bracket.position + 1)..<index
+        // 颜色：`]` 后面紧跟着 `{名字}`。图片的方括号不是颜色；方括号里的字不能全是空白；颜色里不套颜色
+        // （里面已经认出颜色的，外面这一对不算、原样显示）。配成颜色不看 voided（那是「链接里不套链接」）
+        if !bracket.isImage, let found = color(after: index, units: units, end: end),
+          units[text].contains(where: { !isBlank($0) }),
+          !spans[bracket.spanCount...].contains(where: {
+            if case .color = $0.kind { true } else { false }
+          })
+        {
+          // 颜色里的强调自己配，不和外面的配；颜色套在它们外面
+          spans += emphasis(Array(delimiters[bracket.delimiterCount...]))
+          delimiters.removeSubrange(bracket.delimiterCount...)
+          spans.append(marker(bracket.position, 1))
+          spans.append(
+            Span(
+              range: NSRange(location: text.lowerBound, length: text.count),
+              kind: .color(found.color)))
+          spans.append(marker(index, found.length))
+          index = found.end
+          break
+        }
         guard !isVoid, let address = address(units, after: index, end: end),
           units[text].contains(where: { !isBlank($0) })
         else {
@@ -269,6 +294,62 @@ nonisolated enum NoteMarkdown {
       index += 1
     }
     return nil
+  }
+
+  /// `]` 后面紧跟着 `{名字}`：给颜色、`{名字}` 到哪结束（end 是 `}` 后面的位置）、标记多长（`]{名字}`）。
+  /// 名字只认全小写的 6 个，中间不许有空白
+  static func color(after close: Int, units: [UInt16], end: Int) -> (
+    color: NoteColor, end: Int, length: Int
+  )? {
+    guard close + 2 < end, units[close + 1] == 0x7B else { return nil }
+    var index = close + 2
+    while index < end, units[index] != 0x7D {
+      // 名字里只可能是 a–z，碰到别的就不认（也不往后找第二个 }）
+      guard units[index] >= 0x61, units[index] <= 0x7A else { return nil }
+      index += 1
+    }
+    guard index < end, index > close + 2 else { return nil }
+    let name = String(decoding: units[(close + 2)..<index], as: UTF16.self)
+    guard let color = NoteColor.named(name) else { return nil }
+    return (color, index + 1, index + 1 - close)
+  }
+
+  /// 一行里认出颜色的那几段（按 `inline` 的结果）：每段连它两头的标记（`[`、`]{名字}`）是哪几个区间。
+  /// 颜色不套颜色，所以每段的两头紧挨着的那些标记就是它自己的
+  static func colorRuns(in spans: [NoteStyles.Span]) -> [(
+    color: NoteColor, range: NSRange, open: NSRange, close: NSRange
+  )] {
+    let markers = spans.filter { $0.kind == .marker }.map(\.range)
+    var found: [(color: NoteColor, range: NSRange, open: NSRange, close: NSRange)] = []
+    for span in spans {
+      guard case .color(let color) = span.kind else { continue }
+      guard
+        let open = markers.first(where: {
+          NSMaxRange($0) == span.range.location && $0.length == 1
+        }),
+        let close = markers.first(where: {
+          $0.location == NSMaxRange(span.range) && $0.length == 3 + color.name.count
+        })
+      else { continue }
+      found.append((color, span.range, open, close))
+    }
+    return found
+  }
+
+  /// 一行里只有颜色和它的标记（设置里 Markdown 关着时用：颜色不看这个开关，别的 Markdown 照旧原样显示）。
+  /// 没有 `]{` 的行不用扫
+  static func colorOnlySpans(in line: String) -> [NoteStyles.Span] {
+    guard line.contains("]{") else { return [] }
+    let units = Array(line.utf16)
+    let spans = inline(units, in: 0..<units.count)
+    let markers = Set(colorRuns(in: spans).flatMap { [$0.open, $0.close] })
+    return spans.filter { span in
+      switch span.kind {
+      case .color: true
+      case .marker: markers.contains(span.range)
+      default: false
+      }
+    }
   }
 
   /// 把一串串强调标记配成对（从左到右，结尾的标记找离它最近的、同一种字符的开头）：两边都还有两个以上就是粗体
@@ -665,6 +746,433 @@ nonisolated enum NoteMarkdown {
     return NoteTasks.Change(
       replacements: [replacement],
       selection: NSRange(location: selection.location + (link as NSString).length, length: 0))
+  }
+
+  // MARK: 上色（第 8 批）
+
+  /// 右键「文字颜色」：给 block 里选区碰到的那几行上色（nil = 默认颜色、去掉颜色）。
+  /// 每一行各自处理：选中的那一段去掉两头的空白、跳过行首的块标记；把「能上色的字」（不是标记、不在行内代码里、
+  /// 不是图片）设成新颜色；再把这**一行**所有的颜色标记去掉，按「连着的、能上色的、同一种颜色」的一串串重新加
+  /// `[` `]{名字}`（一串碰到不能上色的字就断开，所以颜色永远在最里层）。
+  /// 拼好之后用同一个扫描器认一遍：每个字除了颜色以外的样子都和原来一样、颜色都是想要的，才算；不然给 nil（响一声）。
+  /// 替换只动这一行里变了的那几段；改完选区盖着原来选中的那些字（不含标记）。位置都是 UTF-16 的、相对 block 的开头
+  static func color(_ color: NoteColor?, in block: String, selection: NSRange) -> NoteTasks.Change?
+  {
+    guard selection.length > 0 else { return nil }
+    let text = block as NSString
+    var replacements: [NoteTasks.Replacement] = []
+    var (first, last) = (Int.max, 0)
+    var location = 0
+    while location < text.length {
+      var (start, end, contentsEnd) = (0, 0, 0)
+      text.getLineStart(
+        &start, end: &end, contentsEnd: &contentsEnd,
+        for: NSRange(location: location, length: 0))
+      let line = text.substring(with: NSRange(location: start, length: contentsEnd - start))
+      let units = Array(line.utf16)
+      let selStart = max(selection.location, start)
+      let selEnd = min(NSMaxRange(selection), start + units.count)
+      if selEnd > selStart,
+        let lineChange = recolor(
+          units: units, section: selStart - start..<selEnd - start, color: color)
+      {
+        for replacement in lineChange.replacements {
+          replacements.append(
+            NoteTasks.Replacement(
+              range: NSRange(
+                location: replacement.range.location + start, length: replacement.range.length),
+              text: replacement.text))
+        }
+        first = min(first, start + lineChange.selection.location)
+        last = max(last, start + NSMaxRange(lineChange.selection))
+      }
+      location = max(end, location + 1)
+    }
+    guard first != .max, last >= first else { return nil }
+    let mappedStart = NoteTasks.mappedPosition(
+      first, through: replacements, staysBeforeInsertion: false)
+    let mappedEnd = NoteTasks.mappedPosition(
+      last, through: replacements, staysBeforeInsertion: true)
+    return NoteTasks.Change(
+      replacements: replacements,
+      selection: NSRange(location: mappedStart, length: mappedEnd - mappedStart))
+  }
+
+  /// 一行里选中的那一段重新上色。section 是这一行里的选区（UTF-16）；给这一行的替换（相对这一行）和改完选区盖着的
+  /// 那一段（相对这一行）。没有字要改、或者拼出来认不对给 nil
+  private static func recolor(
+    units: [UInt16], section: Range<Int>, color: NoteColor?
+  ) -> NoteTasks.Change? {
+    let content = contentStart(of: units)
+    var start = max(section.lowerBound, content)
+    var end = min(section.upperBound, units.count)
+    guard start < end else { return nil }
+    while start < end, isBlank(units[start]) { start += 1 }
+    while end > start, isBlank(units[end - 1]) { end -= 1 }
+    guard start < end else { return nil }
+    let spans = inline(units, in: content..<units.count)
+    // 不能上色的字：标记、行内代码、图片（编辑器里是一张图的附件字符；存的形式里是令牌）
+    var blocked = [Bool](repeating: false, count: units.count)
+    for span in spans {
+      switch span.kind {
+      case .marker, .code:
+        for index in span.range.location..<NSMaxRange(span.range) where index < units.count {
+          blocked[index] = true
+        }
+      default: break
+      }
+    }
+    for index in units.indices where units[index] == 0xFFFC { blocked[index] = true }
+    let line = String(decoding: units, as: UTF16.self)
+    for match in NoteImages.matches(in: line as NSString) {
+      for index in match.range.location..<NSMaxRange(match.range) where index < units.count {
+        blocked[index] = true
+      }
+    }
+    var current = [NoteColor?](repeating: nil, count: units.count)
+    let oldRuns = colorRuns(in: spans)
+    for run in oldRuns {
+      for index in run.range.location..<NSMaxRange(run.range) where index < units.count {
+        current[index] = run.color
+      }
+    }
+    var desired = current
+    var changed = false
+    for index in start..<end where !blocked[index] {
+      if desired[index] != color { changed = true }
+      desired[index] = color
+    }
+    guard changed else { return nil }
+    // 连着的、能上色的、同一种颜色的一串串
+    var runs: [(range: Range<Int>, color: NoteColor)] = []
+    var index = 0
+    while index < units.count {
+      guard let ink = desired[index], !blocked[index] else {
+        index += 1
+        continue
+      }
+      var end = index + 1
+      while end < units.count, !blocked[end], desired[end] == ink { end += 1 }
+      runs.append((index..<end, ink))
+      index = end
+    }
+    let deletions = oldRuns.flatMap { [$0.open, $0.close] }
+    var insertions: [(Int, String)] = []
+    for run in runs {
+      insertions.append((run.range.lowerBound, "["))
+      insertions.append((run.range.upperBound, "]{\(run.color.name)}"))
+    }
+    // 拼出改完的这一行，再照它认一遍
+    let (lineChange, newUnits) = edits(units: units, deletions: deletions, insertions: insertions)
+    guard !lineChange.replacements.isEmpty else { return nil }
+    guard
+      recolorMatches(
+        old: units, oldSpans: spans, new: newUnits, section: start..<end, color: color)
+    else { return nil }
+    return NoteTasks.Change(
+      replacements: lineChange.replacements,
+      selection: NSRange(location: start, length: end - start))
+  }
+
+  /// 把一行的删除和插入拼成替换（位置都是改之前的），再拼出改完的那一行。同一处的插入按给的顺序接起来；
+  /// 插在被删掉的那一段开头 / 里面 / 末尾的并进那一段
+  private static func edits(
+    units: [UInt16], deletions: [NSRange], insertions: [(Int, String)]
+  ) -> (change: NoteTasks.Change, newUnits: [UInt16]) {
+    var edits = deletions.map { (range: $0, text: "") }
+    var used = [Bool](repeating: false, count: insertions.count)
+    var extras: [(location: Int, text: String)] = []
+    for (position, range) in deletions.enumerated() {
+      var text = ""
+      for (offset, insertion) in insertions.enumerated() where !used[offset] {
+        guard insertion.0 >= range.location, insertion.0 <= NSMaxRange(range) else { continue }
+        text += insertion.1
+        used[offset] = true
+      }
+      edits[position].text = text
+    }
+    for (offset, insertion) in insertions.enumerated() where !used[offset] {
+      extras.append((insertion.0, insertion.1))
+    }
+    for extra in extras {
+      if let index = edits.firstIndex(where: { $0.range.location == extra.location }) {
+        edits[index].text += extra.text
+      } else {
+        edits.append((NSRange(location: extra.location, length: 0), extra.text))
+      }
+    }
+    edits.sort { $0.range.location < $1.range.location }
+    let text = NSMutableString(string: String(decoding: units, as: UTF16.self))
+    for edit in edits.reversed() {
+      text.replaceCharacters(in: edit.range, with: edit.text)
+    }
+    let replacements = edits.map { NoteTasks.Replacement(range: $0.range, text: $0.text) }
+    return (
+      NoteTasks.Change(replacements: replacements, selection: NSRange(location: 0, length: 0)),
+      Array((text as String).utf16)
+    )
+  }
+
+  /// 上色之后照同一个扫描器认一遍：看得见的字一样；每个字除颜色以外的样式和原来一样；颜色都是想要的
+  private static func recolorMatches(
+    old: [UInt16], oldSpans: [Span], new: [UInt16], section: Range<Int>, color: NoteColor?
+  ) -> Bool {
+    let oldVisible = visible(old, spans: oldSpans)
+    let newSpans = inline(new, in: contentStart(of: new)..<new.count)
+    let newVisible = visible(new, spans: newSpans)
+    guard oldVisible.map(\.unit) == newVisible.map(\.unit) else { return false }
+    // 旧的每个可见字原来什么颜色（看它自己的位置）
+    let oldColors = colors(at: old, spans: oldSpans)
+    let newColors = colors(at: new, spans: newSpans)
+    for (offset, oldIndex) in oldVisible.map(\.index).enumerated() {
+      let newIndex = newVisible[offset].index
+      guard shape(old, spans: oldSpans, at: oldIndex) == shape(new, spans: newSpans, at: newIndex)
+      else { return false }
+      let wanted =
+        section.contains(oldIndex) && colorable(oldIndex, in: old, spans: oldSpans)
+        ? color : oldColors[oldIndex]
+      guard newColors[newIndex] == wanted else { return false }
+    }
+    // 附件字符不许被包进颜色里
+    for index in new.indices where new[index] == 0xFFFC {
+      guard newColors[index] == nil else { return false }
+    }
+    return true
+  }
+
+  /// 这个字能不能上色：不是标记、不在行内代码里、不是图片（附件字符或令牌）
+  private static func colorable(_ index: Int, in units: [UInt16], spans: [Span]) -> Bool {
+    guard index < units.count, units[index] != 0xFFFC else { return false }
+    for span in spans where NSLocationInRange(index, span.range) {
+      switch span.kind {
+      case .marker, .code: return false
+      default: continue
+      }
+    }
+    let line = String(decoding: units, as: UTF16.self)
+    if NoteImages.matches(in: line as NSString).contains(where: {
+      NSLocationInRange(index, $0.range)
+    }) {
+      return false
+    }
+    return true
+  }
+
+  /// 看得见的字（去掉所有标记）和它们在这一行里的位置
+  private static func visible(_ units: [UInt16], spans: [Span]) -> [(index: Int, unit: UInt16)] {
+    var hidden = Set<Int>()
+    for span in spans where span.kind == .marker {
+      for index in span.range.location..<NSMaxRange(span.range) where index < units.count {
+        hidden.insert(index)
+      }
+    }
+    return units.indices.filter { !hidden.contains($0) }.map { ($0, units[$0]) }
+  }
+
+  /// 每个字是什么颜色（同 `colorRuns`）
+  private static func colors(at units: [UInt16], spans: [Span]) -> [NoteColor?] {
+    var found = [NoteColor?](repeating: nil, count: units.count)
+    for run in colorRuns(in: spans) {
+      for index in run.range.location..<NSMaxRange(run.range) where index < units.count {
+        found[index] = run.color
+      }
+    }
+    return found
+  }
+
+  /// 第 index 个字的样式（除颜色和标记以外），拿来比「样子没变」
+  private static func shape(_ units: [UInt16], spans: [Span], at index: Int) -> String {
+    var parts: [String] = []
+    for span in spans where NSLocationInRange(index, span.range) {
+      switch span.kind {
+      case .color, .marker: continue
+      case .box(let state): parts.append("b\(state.rawValue)")
+      case .done: parts.append("d")
+      case .heading(let level): parts.append("h\(level)")
+      case .bold: parts.append("B")
+      case .italic: parts.append("I")
+      case .strike: parts.append("S")
+      case .code: parts.append("c")
+      case .link(let address): parts.append("l\(address)")
+      case .quote: parts.append("q")
+      case .bullet: parts.append("u")
+      case .codeBlock: parts.append("C")
+      case .fence: parts.append("F")
+      }
+    }
+    return parts.sorted().joined(separator: ",")
+  }
+
+  /// 正文去掉颜色的标记（`[`、`]{red}`）之后的字（字数、搜索用）：别的 Markdown 标记照旧留着（那是用户自己打的）。
+  /// 代码块里的行不动
+  static func strippingColors(from body: String) -> String {
+    guard body.contains("]{") else { return body }
+    let text = body as NSString
+    let blocks = codeBlocks(in: text)
+    let result = NSMutableString(capacity: text.length)
+    var location = 0
+    while location < text.length {
+      var (start, end, contentsEnd) = (0, 0, 0)
+      text.getLineStart(
+        &start, end: &end, contentsEnd: &contentsEnd,
+        for: NSRange(location: location, length: 0))
+      let line = text.substring(with: NSRange(location: start, length: contentsEnd - start))
+      if NoteMarkdown.role(at: start, in: blocks) == nil, line.contains("]{") {
+        let units = Array(line.utf16)
+        let runs = colorRuns(in: inline(units, in: 0..<units.count))
+        let resultLine = NSMutableString(string: line)
+        for range in runs.flatMap({ [$0.open, $0.close] }).sorted(by: { $0.location > $1.location })
+        {
+          resultLine.deleteCharacters(in: range)
+        }
+        result.append(resultLine as String)
+      } else {
+        result.append(line)
+      }
+      result.append(
+        text.substring(with: NSRange(location: contentsEnd, length: end - contentsEnd)))
+      location = max(end, location + 1)
+    }
+    return result as String
+  }
+
+  // MARK: 颜色 ⇄ <span>（导出 / 导入 Markdown 文件时换，正文里不存这些）
+
+  /// 正文档 → 导出用的 Markdown：代码块里的行不动；别的行把扫描器认得出的颜色换成
+  /// `<span style="color: #A11A14">字</span>`（浅色那套的色值，大小写和空格按我们自己写出去的来）
+  static func html(from body: String) -> String {
+    guard body.contains("]{") else { return body }
+    let text = body as NSString
+    let blocks = codeBlocks(in: text)
+    let result = NSMutableString(capacity: text.length)
+    var location = 0
+    while location < text.length {
+      var (start, end, contentsEnd) = (0, 0, 0)
+      text.getLineStart(
+        &start, end: &end, contentsEnd: &contentsEnd,
+        for: NSRange(location: location, length: 0))
+      let line = text.substring(with: NSRange(location: start, length: contentsEnd - start))
+      if NoteMarkdown.role(at: start, in: blocks) == nil, line.contains("]{") {
+        result.append(htmlLine(line))
+      } else {
+        result.append(line)
+      }
+      result.append(
+        text.substring(with: NSRange(location: contentsEnd, length: end - contentsEnd)))
+      location = max(end, location + 1)
+    }
+    return result as String
+  }
+
+  private static func htmlLine(_ line: String) -> String {
+    let units = Array(line.utf16)
+    let runs = colorRuns(in: inline(units, in: 0..<units.count))
+    guard !runs.isEmpty else { return line }
+    var deletions: [NSRange] = []
+    var insertions: [(Int, String)] = []
+    for run in runs {
+      deletions.append(run.open)
+      deletions.append(run.close)
+      insertions.append(
+        (run.open.location, "<span style=\"color: #\(String(format: "%06X", run.color.light))\">"))
+      insertions.append((NSMaxRange(run.range), "</span>"))
+    }
+    return String(
+      decoding: edits(units: units, deletions: deletions, insertions: insertions).newUnits,
+      as: UTF16.self)
+  }
+
+  /// 导入 Markdown 时把**我们自己写出去的那种**颜色换回 `[字]{名字}`：同一行里
+  /// `<span style="color: #RRGGBB">`（冒号后空格可有可无、末尾分号可有可无、十六进制不分大小写），色值是这 6 个之一，
+  /// 到第一个 `</span>` 为止、中间不含 `<span`、不在行内代码和代码块里。别的 HTML 原样留着（显示成字）
+  static func body(fromHTML body: String) -> String {
+    guard body.contains("<span") else { return body }
+    let text = body as NSString
+    let blocks = codeBlocks(in: text)
+    let result = NSMutableString(capacity: text.length)
+    var location = 0
+    while location < text.length {
+      var (start, end, contentsEnd) = (0, 0, 0)
+      text.getLineStart(
+        &start, end: &end, contentsEnd: &contentsEnd,
+        for: NSRange(location: location, length: 0))
+      let line = text.substring(with: NSRange(location: start, length: contentsEnd - start))
+      if NoteMarkdown.role(at: start, in: blocks) == nil, line.contains("<span") {
+        result.append(decodeColors(in: line))
+      } else {
+        result.append(line)
+      }
+      result.append(
+        text.substring(with: NSRange(location: contentsEnd, length: end - contentsEnd)))
+      location = max(end, location + 1)
+    }
+    return result as String
+  }
+
+  private static func decodeColors(in line: String) -> String {
+    let text = line as NSString
+    let units = Array(line.utf16)
+    let code = inline(units, in: 0..<units.count).filter { $0.kind == .code }.map(\.range)
+    var edits: [(range: NSRange, text: String)] = []
+    var search = 0
+    while search < text.length {
+      let opening = text.range(
+        of: "<span style=\"color:", options: [],
+        range: NSRange(location: search, length: text.length - search))
+      guard opening.location != NSNotFound else { break }
+      if code.contains(where: { NSLocationInRange(opening.location, $0) }) {
+        search = NSMaxRange(opening)
+        continue
+      }
+      guard let found = parseColorSpan(text, opening: opening) else {
+        search = NSMaxRange(opening)
+        continue
+      }
+      edits.append(
+        (
+          NSRange(location: opening.location, length: found.end - opening.location),
+          "[\(found.content)]{\(found.color.name)}"
+        ))
+      search = found.end
+    }
+    guard !edits.isEmpty else { return line }
+    let result = NSMutableString(string: line)
+    for edit in edits.reversed() { result.replaceCharacters(in: edit.range, with: edit.text) }
+    return result as String
+  }
+
+  /// 从 `<span style="color:` 往后认；认得出给颜色、内容、整段到哪结束（`</span>` 后面）
+  private static func parseColorSpan(
+    _ text: NSString, opening: NSRange
+  ) -> (color: NoteColor, content: String, end: Int)? {
+    var index = NSMaxRange(opening)
+    if index < text.length, text.character(at: index) == 0x20 { index += 1 }
+    guard index + 8 <= text.length, text.character(at: index) == 0x23 else { return nil }
+    index += 1
+    var hex = 0
+    for _ in 0..<6 {
+      guard index < text.length, let scalar = UnicodeScalar(text.character(at: index)),
+        let digit = Character(scalar).hexDigitValue
+      else { return nil }
+      hex = hex * 16 + digit
+      index += 1
+    }
+    if index < text.length, text.character(at: index) == 0x3B { index += 1 }
+    // 我们写的是 style="color: #RRGGBB"：十六进制后面是收尾的引号，再是 >
+    if index < text.length, text.character(at: index) == 0x22 { index += 1 }
+    guard index < text.length, text.character(at: index) == 0x3E else { return nil }
+    let contentStart = index + 1
+    let closing = text.range(
+      of: "</span>", options: [],
+      range: NSRange(location: contentStart, length: text.length - contentStart))
+    guard closing.location != NSNotFound else { return nil }
+    let content = text.substring(
+      with: NSRange(location: contentStart, length: closing.location - contentStart))
+    guard !content.isEmpty,
+      !content.lowercased().contains("<span"),
+      let color = NoteColor.value(hex)
+    else { return nil }
+    return (color, content, NSMaxRange(closing))
   }
 
   // MARK: 链接

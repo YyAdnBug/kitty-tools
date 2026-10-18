@@ -1823,6 +1823,44 @@ struct SnapshotProbeTests {
         size: NSSize(width: 1080, height: 640), dark: dark)
     }
 
+    // 第 8 批：任务的五种状态、六种文字颜色（浅 / 深、叠在粗体 / 链接 / 引用 / 标题里、光标那一行露出标记）、
+    // 便签墙卡片上的颜色和状态
+    let states = try NoteStore(db: Database(path: ":memory:"))
+    let five = states.create(
+      body:
+        "周五前交的东西\n☐ 待办\n◧ 进行中\n▣ 紧急\n☑ 完成（划掉、变淡）\n☒ 取消（划掉、变淡）\n"
+        + "☐ 一个很长很长的任务，长到一行放不下要折到第二行，看方框和后面的字是不是还对得齐",
+      title: "五种状态", now: now.addingTimeInterval(-120))
+    let stateModel = NotesWindowModel(store: states)
+    stateModel.selection = five.id
+    for dark in [false, true] {
+      try window("states\(dark ? "-dark" : "")", stateModel, dark: dark)
+    }
+    let colorful = states.create(
+      body:
+        "[红]{red} [橙]{orange} [绿]{green} [蓝]{blue} [紫]{purple} [灰]{gray}\n"
+        + "[**粗体也红**]{red} [[链接也蓝](https://a.b)]{blue} [引用里的绿]{green}\n"
+        + "# [标题里的紫]{purple}\n> [引用里的橙]{orange} 和普通字\n"
+        + "默认颜色的字",
+      title: "文字颜色", now: now.addingTimeInterval(-60))
+    let colorModel = NotesWindowModel(store: states)
+    colorModel.selection = colorful.id
+    for dark in [false, true] {
+      try window("colors\(dark ? "-dark" : "")", colorModel, dark: dark)
+    }
+    // 光标在上了色的那一行：`[` 和 `]{red}` 露出来（屏外的窗口不当 key，直接告诉编辑器）
+    try window(
+      "colors-caret", colorModel,
+      prepare: Self.reveal(
+        NSRange(
+          location: (colorful.body as NSString).range(of: "红").location, length: 0)))
+    var stateWallModel = NotesWindowModel(store: states)
+    stateWallModel.layout = .wall
+    stateWallModel.selection = five.id
+    try snapshot(
+      NotesWindowView(model: stateWallModel), size: NSSize(width: 940, height: 640), dark: false,
+      to: "\(out)/notes-wall-colors-states.png")
+
     // 8 种纸色两套并排：纸、色条、墨、次要的字、圆点
     for dark in [false, true] {
       try snapshot(
@@ -1834,7 +1872,9 @@ struct SnapshotProbeTests {
     let navigation = SettingsNavigation(defaults: nil)  // 换页不写用户的偏好
     let hotKeys = HotKeyCenter()
     let settings = SettingsRoot(navigation: navigation) { page in
-      page == .hotkeys ? AnyView(HotkeysTab(center: hotKeys)) : AnyView(NotesTab {})
+      page == .hotkeys
+        ? AnyView(HotkeysTab(center: hotKeys))
+        : AnyView(NotesTab(openNotes: {}, notes: { states }))
     } onboarding: {
       AnyView(EmptyView())
     }
@@ -1847,6 +1887,17 @@ struct SnapshotProbeTests {
     try snapshot(
       settings, size: NSSize(width: 700, height: 460), dark: false,
       to: "\(out)/notes-settings-min.png")
+    // 第 8 批：「数据」那组的两行导出 / 导入（便签能用时按钮才亮；窗口拉高看全）
+    try snapshot(
+      SettingsRoot(navigation: navigation) { page in
+        page == .hotkeys
+          ? AnyView(HotkeysTab(center: hotKeys))
+          : AnyView(NotesTab(openNotes: {}, notes: { states }))
+      } onboarding: {
+        AnyView(EmptyView())
+      },
+      size: NSSize(width: 640, height: 1320), dark: false,
+      to: "\(out)/notes-settings-data.png")
     navigation.page = .hotkeys
     try snapshot(
       settings, size: NSSize(width: 780, height: 1120), dark: false,
@@ -2129,6 +2180,20 @@ struct SnapshotProbeTests {
     }
     try deck("preview-tasks", todo.store) { $0.setPreview(todo.ids[0]) }
     try deck("preview-tasks-done-dark", todo.store, dark: true) { $0.setPreview(todo.ids[1]) }
+
+    // 第 8 批：那叠里打开的便签里有五种状态和六种颜色
+    let colorsDeck = try library([
+      (
+        "",
+        "☐ 待办\n◧ 进行中\n▣ 紧急\n☑ 完成\n☒ 取消\n[红]{red} [蓝]{blue} 普通",
+        60
+      )
+    ])
+    for dark in [false, true] {
+      try deck("open-colors\(dark ? "-dark" : "")", colorsDeck.store, dark: dark) {
+        $0.tapTab(colorsDeck.ids[0])
+      }
+    }
 
     // 第 6 批：打开的便签里的 Markdown——标记都藏着的（刚打开、还没当 key 的样子；浅 / 深、左边、特大）、
     // 光标所在的行露出标记的；标签和预览卡上的标题、摘要不带标记
@@ -2421,7 +2486,7 @@ struct SnapshotProbeTests {
           c.detected = .en
           c.target = .zhHans
           c.translatedSource = c.sourceText
-          c.replaceSource = (1, "Ship it")
+          c.replaceSource = TranslateCoordinator.ReplaceSource(text: "Ship it", pid: 1)
           c.cards = [
             .init(service: zhipu, state: .done("发布吧")), .init(service: gpt, state: .done("上线")),
           ]

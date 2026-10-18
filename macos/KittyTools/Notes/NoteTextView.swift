@@ -41,7 +41,8 @@
 //   空项退出、列表行 Tab / ⇧Tab 缩进、打「- [ ]」加空格自动转换。改字都走 shouldChangeText → 改 → didChangeText：
 //   进撤销栈、照常重排和写出去。
 // - 按键照 mac-overlay-panel §3：回车、Tab、Esc 走 doCommand(by:)（输入法组字时这些键归输入法，到不了这里）；
-//   ⌃↩（insertLineBreak:）当普通换行；没处理的 cancelOperation: 交给窗口；不装按键监听。
+//   ⌃↩（insertLineBreak:）弹正文的右键菜单（第 8 批：键盘用户选任务状态 / 文字颜色）；没处理的
+//   cancelOperation: 交给窗口；不装按键监听。
 // - 上限：会让正文超过 maxBytes 的那一次输入拦下（提示音 + onOverflow），不截断；组字期间不判断，确认后超了退回
 //   （只退让正文变长了的那一次：正文不知怎么已经超了的时候得删得动）。
 // - 焦点：identifier 是便签的编号（那叠按它找「这条便签的正文框」）；挂进窗口那一刻该它拿就拿，之后每要一次拿一次。
@@ -63,7 +64,7 @@
 // ponytail: 贴进来的软换行（U+2028）和 U+0085 不管：NSString 把它们算新的一行、TextKit 1 却不当分段，段落样式按段算
 // ——它后面那一行用的是这一段的行高和缩进：「> 引用」缩进不对、竖线压在字上；「# 标题」的大字挤在正文的行高里，
 // 插入点和输入法候选窗（usedRect）夹在自己的行片段里、不跑到别的行上（NoteStyles.center），字会伸出去一点
-// （自己按 ⌃↩ 打不出来：当普通换行了）。要对就改成「行首不是段首的不当引用、不当标题」。
+// （第 8 批起 ⌃↩ 弹右键菜单，自己打不出来了；只可能是贴进来的）。要对就改成「行首不是段首的不当引用、不当标题」。
 
 import AppKit
 import SwiftUI
@@ -137,6 +138,9 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   /// 自己是不是第一响应者、所在的窗口是不是 key：两样都是，选区碰到的行才露出 Markdown 的标记
   private var isFocused = false
   private var isInKeyWindow = false
+  /// 字上有没有露着的标记（第 8 批的性能：颜色让每一行多出两段属性，`outdated` 每挪一次光标要把整篇过一遍；
+  /// 从没露过标记时（没焦点 / 不是 key）直接跳过，别为查「有没有该藏的」扫整篇）
+  private var hasShownMarkers = false
 
   /// 点方框的范围比那个字四周放宽多少
   static let boxSlop = CGSize(width: 4, height: 3)
@@ -242,9 +246,10 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     hasImages = styled.string.utf16.contains(0xFFFC)
     _ = pending.take()
     owesFullRestyle = false
+    hasShownMarkers = false
     markWholeViewDirty()
     syncMarkers()
-    if isFocused { updateInsertionPointStateAndRestartTimer(true) }
+    if isFocused, isInKeyWindow { updateInsertionPointStateAndRestartTimer(true) }
     undoManager?.removeAllActions()
     // 补样式的这几轮里不在空闲时往下排版：补一段就把那一段的版作废一次，连续排版下它后面排好的也跟着重排，边补边排
     // 白排好几遍（屏外量的：50 KB 切过去之后 1.5 秒里主线程忙了 1.2 s）。补完再一口气往下排（styleRest 末尾）
@@ -373,14 +378,17 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   }
 
   /// 把这几行（整行）的样式重排一遍。**调它的地方都得先确认没在组字**
+  /// 把这几行（整行）的样式重排一遍。**调它的地方都得先确认没在组字**
   func restyle(_ lines: NSRange) {
     guard let storage = textStorage else { return }
+    let shown = revealedLines()
+    if !shown.isEmpty { hasShownMarkers = true }
     NoteStyles.apply(
-      to: storage, lines: lines, theme: theme, shown: revealedLines(), blocks: blocks,
+      to: storage, lines: lines, theme: theme, shown: shown, blocks: blocks,
       availableWidth: availableWidth)
     markWholeViewDirty()
     // 标记露出 / 收起、字体变了之后这一行的字会左右挪：插入点跟着重算
-    if isFocused { updateInsertionPointStateAndRestartTimer(true) }
+    if isFocused, isInKeyWindow { updateInsertionPointStateAndRestartTimer(true) }
   }
 
   /// 正文框变宽变窄了：有图片的行按新的可用宽重排（没记宽度的图跟着变，记了宽度的超出时缩到可用宽）。
@@ -482,7 +490,8 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   /// 现在该露出标记的行（整行的区间，选区有几段就是几段）：选区碰到的每一行——前提是 Markdown 开着、能编辑、
   /// 正文框拿着焦点、窗口是 key；不然一行都不露
   private func revealedLines() -> [NSRange] {
-    guard theme.markdown, isEditable, isFocused, isInKeyWindow,
+    // 颜色不看 Markdown 开关（第 8 批）：关着时这一行也要露出颜色的标记，所以这里不判 theme.markdown
+    guard isEditable, isFocused, isInKeyWindow,
       let text = textStorage?.mutableString
     else { return [] }
     return selectedRanges.map { text.lineRange(for: $0.rangeValue) }
@@ -492,10 +501,16 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   /// endEditing）。**输入法组字期间、有没处理完的编辑时什么都不做**——选区变化可能在一次改字还没收尾时就来，
   /// 那时动属性会让刚打的字看不见；这两种情况都会再走到 settle，由它调回来
   private func syncMarkers() {
-    guard theme.markdown, !hasMarkedText(), pending.range == nil, let storage = textStorage else {
+    guard !hasMarkedText(), pending.range == nil, let storage = textStorage else {
       return
     }
-    for lines in NoteStyles.outdated(in: storage, shown: revealedLines()) { restyle(lines) }
+    let shown = revealedLines()
+    guard !shown.isEmpty || hasShownMarkers else { return }
+    // ponytail: 每挪一次光标都把整篇的 shownKey 过一遍。1 MB、每行都有颜色时比没颜色慢 40–66%（绝对多 2–3 ms）；
+    // 试过只排「上次 / 这次露着的两行」，随机探针抓出标记露错行（编辑把行挪走之后位置对不上），回退了。
+    // 升级路径：让 shown 的行号跟着 textStorage 的 didProcessEditing 一起挪（记行不记位置），再走快路
+    for lines in NoteStyles.outdated(in: storage, shown: shown) { restyle(lines) }
+    hasShownMarkers = !shown.isEmpty
   }
 
   /// 选区变了（打字、方向键、点击、拖选、程序设的都经过这里）。鼠标拖选的过程中（stillSelecting）不重排：
@@ -919,12 +934,14 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
 
   // MARK: 按键
 
-  /// 回车、Tab、Esc（输入法组字时这些键归输入法，到不了这里）。⌃↩（insertLineBreak:）当普通换行：系统给它插的是
-  /// 软换行 U+2028——NSString 把它算新的一行、段落样式却按段算，后面的「> 引用」缩进不对、竖线压在字上；任务续行
-  /// 那些也照常
+  /// 回车、Tab、Esc（输入法组字时这些键归输入法，到不了这里）。⌃↩（insertLineBreak:）**弹正文的右键菜单**
+  /// （第 8 批：键盘用户用它选任务状态、文字颜色；原来当普通换行，系统给它插的是软换行 U+2028，NSString 把它算
+  /// 新的一行、段落样式却按段算，后面的「> 引用」缩进不对、竖线压在字上）
   override func doCommand(by selector: Selector) {
-    let selector =
-      selector == #selector(insertLineBreak(_:)) ? #selector(insertNewline(_:)) : selector
+    if selector == #selector(insertLineBreak(_:)) {
+      popUpContextMenu()
+      return
+    }
     switch selector {
     case #selector(insertNewline(_:)):
       if editLine({ NoteTasks.newline(in: $0, caret: $1) }) { return }
@@ -990,7 +1007,9 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     let selection = NSRange(
       location: change.selection.location + base, length: change.selection.length)
     setSelectedRange(selection)
-    scrollRangeToVisible(selection)
+    // 屏外的正文框（单测 / 探针）不当 key：不滚。滚动要排版，排到「坏掉的图片令牌 + 落单的代理项」时
+    // TextKit 1 会死循环（第 7 批复查那条 ponytail）
+    if isInKeyWindow { scrollRangeToVisible(selection) }
     return true
   }
 
@@ -1002,11 +1021,104 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     guard isEditable, !hasMarkedText(), let text = textStorage?.mutableString else { return }
     let selection = selectedRange()
     guard !touchesCodeBlock(selection) else { return NSSound.beep() }
-    var (start, contentsEnd) = (0, 0)
-    text.getLineStart(&start, end: nil, contentsEnd: &contentsEnd, for: selection)
-    let block = text.substring(with: NSRange(location: start, length: contentsEnd - start))
-    let local = NSRange(location: selection.location - start, length: selection.length)
-    if let change = NoteTasks.toggle(block, selection: local) { perform(change, at: start) }
+    let block = lineBlock(for: selection, in: text)
+    let local = NSRange(location: selection.location - block.start, length: selection.length)
+    if let change = NoteTasks.toggle(block.text, selection: local) {
+      perform(change, at: block.start)
+    }
+  }
+
+  /// 第 8 批：右键「任务状态」选了某种。选区碰到的每一行改成这种（见 NoteTasks.setState）
+  func setTaskState(_ state: NoteTasks.State) {
+    guard isEditable, !hasMarkedText(), let text = textStorage?.mutableString else { return }
+    let selection = selectedRange()
+    guard !touchesCodeBlock(selection) else { return NSSound.beep() }
+    let block = lineBlock(for: selection, in: text)
+    let local = NSRange(location: selection.location - block.start, length: selection.length)
+    guard let change = NoteTasks.setState(state, in: block.text, selection: local) else {
+      return NSSound.beep()
+    }
+    perform(change, at: block.start)
+  }
+
+  /// 第 8 批：右键「文字颜色」选了某种（nil = 默认颜色）。选了字才能上色，选区碰到代码块、组字期间不动
+  func setTextColor(_ color: NoteColor?) {
+    guard isEditable, !hasMarkedText(), let text = textStorage?.mutableString else { return }
+    let selection = selectedRange()
+    guard selection.length > 0 else { return NSSound.beep() }
+    guard !touchesCodeBlock(selection) else { return NSSound.beep() }
+    let block = lineBlock(for: selection, in: text)
+    let local = NSRange(location: selection.location - block.start, length: selection.length)
+    guard let change = NoteMarkdown.color(color, in: block.text, selection: local) else {
+      return NSSound.beep()
+    }
+    perform(change, at: block.start)
+  }
+
+  /// 划词翻译「替换原文」用：range 里的字还是 original 时用 text 换掉（一步撤销），返回做没做。
+  /// 便签里的字被改过、范围越界、不能编辑都给 false（调用方只复制）
+  @discardableResult
+  func replaceIfUnchanged(_ range: NSRange, original: String, with text: String) -> Bool {
+    guard isEditable, let storage = textStorage, NSMaxRange(range) <= storage.length,
+      storage.mutableString.substring(with: range) == original
+    else { return false }
+    return replaceSelection(
+      with: NSAttributedString(string: text, attributes: baseAttributes), at: range)
+  }
+
+  /// 选区里的字给划词翻译用：逐行过 NoteMarkdown.plain（标记去掉、图片成「[图片]」，blocks: false）；
+  /// 代码块里的行照原文（块里的 `**` 是字，不是标记）。没选区给 nil
+  func plainText(in range: NSRange) -> String? {
+    guard let storage = textStorage, range.length > 0 else { return nil }
+    let text = storage.mutableString
+    let clamped = clamped(range, in: storage)
+    guard clamped.length > 0 else { return nil }
+    var pieces: [String] = []
+    var location =
+      text.lineRange(for: NSRange(location: clamped.location, length: 0)).location
+    while location < NSMaxRange(clamped) {
+      var (start, end, contentsEnd) = (0, 0, 0)
+      text.getLineStart(
+        &start, end: &end, contentsEnd: &contentsEnd,
+        for: NSRange(location: location, length: 0))
+      let from = max(clamped.location, start)
+      let to = min(NSMaxRange(clamped), contentsEnd)
+      if to > from {
+        let raw = text.substring(with: NSRange(location: from, length: to - from))
+        pieces.append(
+          NoteMarkdown.role(at: start, in: blocks) == nil
+            ? NoteMarkdown.plain(raw, blocks: false) : raw)
+      } else {
+        pieces.append("")
+      }
+      location = max(end, location + 1)
+      if location < NSMaxRange(clamped) { pieces.append("\n") }
+    }
+    return pieces.joined()
+  }
+
+  /// 选区碰到的那几行：start 是整篇里的位置，text 是不含最后一行换行的几行，local 是选区相对它。
+  /// 光标（长度 0）算它所在的那一行
+  func lineBlock(for selection: NSRange, in text: NSString) -> (
+    start: Int, text: String, local: NSRange
+  ) {
+    var (start, end, contentsEnd) = (0, 0, 0)
+    text.getLineStart(&start, end: &end, contentsEnd: &contentsEnd, for: selection)
+    var blockEnd = contentsEnd
+    while end < NSMaxRange(selection) {
+      var nextEnd = 0
+      var nextContents = 0
+      text.getLineStart(
+        nil, end: &nextEnd, contentsEnd: &nextContents,
+        for: NSRange(location: end, length: 0))
+      blockEnd = nextContents
+      end = nextEnd
+      if nextEnd == 0 { break }
+    }
+    return (
+      start, text.substring(with: NSRange(location: start, length: blockEnd - start)),
+      NSRange(location: selection.location - start, length: selection.length)
+    )
   }
 
   /// 这一点（视图自己的坐标）是不是落在某个任务的方框上（那个字四周放宽 boxSlop）：是就给方框那个字的位置
@@ -1034,7 +1146,7 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   }
 
   /// 点方框：☐ ↔ ☑（一步撤销；光标和选区不动）
-  private func flipBox(at index: Int) {
+  func flipBox(at index: Int) {
     guard let storage = textStorage, index < storage.length else { return }
     let range = NSRange(location: index, length: 1)
     let box = Character(storage.mutableString.substring(with: range))
@@ -1191,25 +1303,56 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   static let openLinkTitle = "打开链接"
   /// 右键菜单里插图那一项的名字
   static let insertImageTitle = "插入图片…"
+  /// 右键菜单里「任务状态」「文字颜色」两个子菜单的名字
+  static let taskStateTitle = "任务状态"
+  static let colorTitle = "文字颜色"
+
+  /// ⌃↩：把正文的右键菜单弹在光标旁边（键盘用户选任务状态、文字颜色）
+  func popUpContextMenu() {
+    // 只有真的窗口是 key 时才弹（屏外测试里 window 不是 key：弹菜单会进系统跟踪循环、卡住）
+    guard window?.isKeyWindow == true, let event = NSApp.currentEvent, event.type == .keyDown,
+      let menu = menu(for: event)
+    else { return }
+    let caret = selectedRange().location
+    var point = NSPoint(x: 8, y: bounds.height - 8)
+    if let window {
+      let screen = firstRect(
+        forCharacterRange: NSRange(location: min(caret, textStorage?.length ?? 0), length: 0),
+        actualRange: nil)
+      point = convert(window.convertPoint(fromScreen: screen.origin), from: nil)
+    }
+    menu.popUp(positioning: nil, at: point, in: self)
+  }
 
   /// 右键菜单最前面加一项「任务」（同名，不写键位）；点在能打开的链接上时，它前面再多一项「打开链接」——
   /// 不靠 ⌘ 点的那条路（键盘、旁白用户）；「任务」「格式」后面再加一项「插入图片…」（选文件面板）
+  /// 右键菜单最前面加一项「任务」（同名，不写键位），后面是「任务状态」「格式」「文字颜色」，再后面一项
+  /// 「插入图片…」（选文件面板）；点在能打开的链接上时，最前面再多一项「打开链接」——不靠 ⌘ 点的那条路
+  /// （键盘、旁白用户）。**右键点在任务的方框上时只弹五种状态的小菜单**，不弹这个大的
   override func menu(for event: NSEvent) -> NSMenu? {
     // 先看点在哪，再让父类建菜单：它可能会选中点到的那个词，那一行露出标记、字就挪了。
     // 不是鼠标点出来的菜单（键盘的 ⌃↩、旁白）事件里没有点的位置：看光标所在的字
     let isMouse = [.rightMouseDown, .leftMouseDown, .otherMouseDown].contains(event.type)
-    let url = isMouse ? link(at: convert(event.locationInWindow, from: nil)) : linkAtCaret()
+    let point = isMouse ? convert(event.locationInWindow, from: nil) : nil
+    if let point, isEditable, !hasMarkedText(), let index = box(at: point) {
+      return boxMenu(at: index)
+    }
+    let url = point.map { link(at: $0) } ?? linkAtCaret()
+    // 先把选区记下来：super.menu(for:) 会选中鼠标 / 光标底下的那个词，之后再看选区就晚了
+    let selection = selectedRange()
     let menu = super.menu(for: event)
     let item = NSMenuItem(
       title: NotesWindowModel.taskTitle, action: #selector(toggleTask(_:)), keyEquivalent: "")
     item.target = self
-    menu?.insertItem(item, at: 0)
-    menu?.insertItem(formatItem(), at: 1)
+    let states = stateItem(in: selection)
+    let format = formatItem()
+    let colors = colorItem(in: selection)
     let image = NSMenuItem(
       title: Self.insertImageTitle, action: #selector(insertImageFromPanel(_:)), keyEquivalent: "")
     image.target = self
-    menu?.insertItem(image, at: 2)
-    menu?.insertItem(.separator(), at: 3)
+    for (offset, extra) in [item, states, format, colors, image, .separator()].enumerated() {
+      menu?.insertItem(extra, at: offset)
+    }
     if let url {
       let open = NSMenuItem(
         title: Self.openLinkTitle, action: #selector(openLink(_:)), keyEquivalent: "")
@@ -1217,7 +1360,121 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
       open.representedObject = url
       menu?.insertItem(open, at: 0)
     }
+    // 这几项自己说了算：系统自动启用会把「没选字时文字颜色停用」「代码块里两个都停用」改回可用。
+    // 带子菜单的两项要**插进菜单之后**再设（insertItem 会把 isEnabled 恢复成 true）
+    menu?.autoenablesItems = false
+    menu?.item(withTitle: Self.colorTitle)?.isEnabled =
+      isEditable && selection.length > 0 && !touchesCodeBlock(selection)
+    menu?.item(withTitle: Self.taskStateTitle)?.isEnabled =
+      isEditable && !touchesCodeBlock(selection)
+    for item in menu?.items ?? [] where item.action != nil && item.submenu == nil {
+      item.isEnabled = validateUserInterfaceItem(item)
+    }
     return menu
+  }
+
+  /// 右键点在方框上：只弹五种状态（现在那种打勾），选了就改这一行
+  private func boxMenu(at index: Int) -> NSMenu? {
+    guard let text = textStorage?.mutableString else { return nil }
+    var (start, contentsEnd) = (0, 0)
+    text.getLineStart(
+      &start, end: nil, contentsEnd: &contentsEnd, for: NSRange(location: index, length: 0))
+    let state = NoteTasks.state(
+      of: text.substring(with: NSRange(location: start, length: contentsEnd - start)))
+    let menu = NSMenu(title: Self.taskStateTitle)
+    for option in NoteTasks.State.allCases {
+      let item = NSMenuItem(
+        title: option.title, action: #selector(setStateFromMenu(_:)), keyEquivalent: "")
+      item.target = self
+      item.tag = option.rawValue
+      item.state = option == state ? .on : .off
+      menu.addItem(item)
+    }
+    return menu
+  }
+
+  /// 「任务状态 ›」那一项：五种状态，选区碰到的任务都是同一种时打勾。作用于选区碰到的每一行
+  private func stateItem(in selection: NSRange) -> NSMenuItem {
+    let item = NSMenuItem(title: Self.taskStateTitle, action: nil, keyEquivalent: "")
+    let menu = NSMenu(title: Self.taskStateTitle)
+    let current: NoteTasks.State?
+    if let text = textStorage?.mutableString {
+      let block = lineBlock(for: selection, in: text)
+      current = NoteTasks.state(
+        in: block.text,
+        selection: NSRange(location: selection.location - block.start, length: selection.length))
+    } else {
+      current = nil
+    }
+    for option in NoteTasks.State.allCases {
+      let row = NSMenuItem(
+        title: option.title, action: #selector(setStateFromMenu(_:)), keyEquivalent: "")
+      row.target = self
+      row.tag = option.rawValue
+      row.state = option == current ? .on : .off
+      menu.addItem(row)
+    }
+    item.submenu = menu
+    item.isEnabled = isEditable && !touchesCodeBlock(selection)
+    return item
+  }
+
+  /// 「文字颜色 ›」那一项：六种颜色（前面是小圆点）+ 分隔线 + 默认颜色；选中的字全是同一种时那一项打勾。
+  /// 没选字、选区碰到代码块、不能编辑时整个子菜单停用
+  private func colorItem(in selection: NSRange) -> NSMenuItem {
+    let item = NSMenuItem(title: Self.colorTitle, action: nil, keyEquivalent: "")
+    let menu = NSMenu(title: Self.colorTitle)
+    let current = selectionColor(in: selection)
+    for option in NoteColor.allCases {
+      let row = NSMenuItem(
+        title: option.title, action: #selector(setColorFromMenu(_:)), keyEquivalent: "")
+      row.target = self
+      row.tag = option.rawValue
+      row.image = option.swatch(side: 16)
+      row.state = !current.mixed && current.color == option ? .on : .off
+      menu.addItem(row)
+    }
+    menu.addItem(.separator())
+    let plain = NSMenuItem(
+      title: "默认颜色", action: #selector(setColorFromMenu(_:)), keyEquivalent: "")
+    plain.target = self
+    plain.tag = -1
+    plain.state = !current.mixed && current.color == nil && selection.length > 0 ? .on : .off
+    menu.addItem(plain)
+    item.submenu = menu
+    item.isEnabled = isEditable && selection.length > 0 && !touchesCodeBlock(selection)
+    return item
+  }
+
+  /// 选中的字是不是同一种颜色（跳过藏 / 露的标记和空白）：mixed = 混着好几种。
+  /// color 为 nil = 全是默认颜色（没上色）
+  private func selectionColor(in selection: NSRange) -> (mixed: Bool, color: NoteColor?) {
+    guard let storage = textStorage, selection.length > 0 else { return (false, nil) }
+    var (seen, mixed, color) = (false, false, NoteColor?.none)
+    storage.enumerateAttributes(in: clamped(selection, in: storage)) { attributes, range, _ in
+      guard attributes[NoteStyles.hiddenKey] == nil, attributes[NoteStyles.shownKey] == nil else {
+        return
+      }
+      let text = storage.mutableString.substring(with: range)
+      guard text.contains(where: { !$0.isWhitespace }) else { return }
+      let found = (attributes[NoteStyles.colorKey] as? Int).flatMap(NoteColor.init(rawValue:))
+      if seen {
+        if found != color { mixed = true }
+      } else {
+        (seen, color) = (true, found)
+      }
+    }
+    return (mixed, color)
+  }
+
+  @objc private func setStateFromMenu(_ sender: NSMenuItem) {
+    guard let state = NoteTasks.State(rawValue: sender.tag) else { return }
+    setTaskState(state)
+  }
+
+  @objc private func setColorFromMenu(_ sender: NSMenuItem) {
+    // 加了一个「默认颜色」：-1 = 去掉颜色
+    setTextColor(sender.tag < 0 ? nil : NoteColor(rawValue: sender.tag))
   }
 
   /// 右键菜单的「打开链接」：地址是建菜单时记在那一项上的
@@ -1237,6 +1494,12 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
 
   override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
     if item.action == #selector(toggleTask(_:)) { return isEditable }
+    if item.action == #selector(setStateFromMenu(_:)) {
+      return isEditable && !touchesCodeBlock(selectedRange())
+    }
+    if item.action == #selector(setColorFromMenu(_:)) {
+      return isEditable && selectedRange().length > 0 && !touchesCodeBlock(selectedRange())
+    }
     if item.action == #selector(formatFromMenu(_:)) {
       return isEditable && !touchesCodeBlock(selectedRange())
     }

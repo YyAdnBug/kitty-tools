@@ -460,12 +460,14 @@ import Observation
   /// 变音符号（分词和折叠用剪贴板搜索现成的，Search）；顺序不变，空查询原样返回。
   /// ponytail: 每次把这些便签的正文现折叠一遍（几百条、每条几 KB 是毫秒级）；上千条、边打字边搜卡了，再在仓库里按
   /// 「编号 + 修订号」把折叠结果存下来（同 ClipboardStore.searchKeys，那时改回实例方法）
-  /// 正文里的图片令牌先整段去掉：搜「image」「png」或者编号里的十六进制不该命中带图的便签（F19）
+  /// 正文里的图片令牌先整段去掉：搜「image」「png」或者编号里的十六进制不该命中带图的便签（F19）；
+  /// 颜色的标记也去掉（第 8 批）：搜「red」「blue」不该命中只是上了色的便签
   static func search(_ query: String, in notes: [Note]) -> [Note] {
     let tokens = Search.tokens(query).map(Search.fold)
     guard !tokens.isEmpty else { return notes }
     return notes.filter { note in
-      let bytes = Search.fold(note.title + "\n" + NoteImages.stripping(note.body))
+      let bytes = Search.fold(
+        note.title + "\n" + NoteMarkdown.strippingColors(from: NoteImages.stripping(note.body)))
       return tokens.allSatisfy { Search.contains(bytes, $0) }
     }
   }

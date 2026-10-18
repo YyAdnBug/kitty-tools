@@ -43,7 +43,8 @@ alwaysApply: false
 - 新会话 `cancel()` 旧会话全部 Task；浮窗收起也 cancel（省额度）；单卡重试只替换自己的 Task。
 
 ## 5. 入口
-- **划词**（`AppDelegate.selectionTranslate`）：忙时忽略重复热键 → 自家浮层是 key 先收起 → `SelectionReader.read`（AX 读选区，0.5s 超时；读不到再备份剪贴板 → ⌘C（显式 `.maskCommand`）→ 轮询 changeCount ≤ 约 500ms → 还原，期间暂停 watcher）→ **取词完成后**才显示浮窗。没授权显示提示；没选区当输入翻译，但占位换成「没取到选中的文字，可以直接输入或粘贴」并播报（`beginInput(missedSelection:)`，开始输入 / 翻译就复位，体检 A16）。
+- **划词**（`AppDelegate.selectionTranslate`）：忙时忽略重复热键 → 自家浮层是 key 先收起 → **key 窗口的第一响应者是便签正文 `NoteTextView` 时直接读它自己的选区**（第 8 批 R13：有选区就逐行过 `NoteMarkdown.plain(_, blocks: false)` 拿字、不 AX、不发 ⌘C；没选字 → 和「没取到选中的文字」一样开输入翻译，**不去读后面那个 App**）→ 否则 `SelectionReader.read`（AX 读选区，0.5s 超时；读不到再备份剪贴板 → ⌘C（显式 `.maskCommand`）→ 轮询 changeCount ≤ 约 500ms → 还原，期间暂停 watcher）→ **取词完成后**才显示浮窗。没授权显示提示；没选区当输入翻译，但占位换成「没取到选中的文字，可以直接输入或粘贴」并播报（`beginInput(missedSelection:)`，开始输入 / 翻译就复位，体检 A16）。
+- **便签里划的词替换回去**（R13）：「替换原文」的来源是便签时浮窗里照样有；`TranslateCoordinator.ReplaceSource` 带一个替换闭包（`note`），记下那个文本视图、范围和当时的原文，点了先关浮窗，文本视图还在、范围里的字还是当时的样子才用译文替换（`rewrap` 照旧、一步撤销、走 `replaceSelection`）；便签关了 / 那段字改了只复制并在岛上说「便签里的原文已经改了，没有替换」。「划词翻译并替换」（静默）同样：来源是便签就读便签、替换回便签，不要辅助功能授权、不看前台是哪个 App。
 - **输入翻译**（体检 A14）：热键是开关——浮窗开着且是 key 就 `dismiss()`；否则 `resumeInput()` + 打开：保留上次的原文和结果、原文全选（打字即替换），上次收起时中断（`.failed(.interrupted)`）的卡片重跑。只有划词、截图翻译、复制即译、剪贴板「翻译」、历史重译才换原文。菜单栏、启动器同一条路。
 - **浮窗位置**（体检 A13，设置 › 翻译「浮窗位置」，`Prefs.translatePanelPosition`）：跟随鼠标（默认）时划词、截图翻译、复制即译、剪贴板「翻译」带 `anchor` 出现在光标右下 12 pt（mac-overlay-panel §1）；上次位置时都用上次拖到的位置；输入翻译总是上次位置。
 - **复制即译**：watcher 文本回调 → `TranslateCoordinator.worthTranslating` 过滤（体检 A12 B20：网址、`/` `~/` 开头的单行路径、纯数字 / 符号（`Lang.detect` 为 nil）、超过 32 KB、目标自动时本来就是第一语言、和最近一次翻译的原文相同，都静默跳过、不弹浮窗）→ `translate(_:fromCopy: true)` → `present(makingKey: false)`（只露出来不抢键盘，靠点外关闭）。在自家浮层里 ⌘C（翻译原文 / 译文、剪贴板备注等）不触发，来源记本 App（复制那一刻记 `Paster.panelCopyChangeCount`，见 mac-clipboard §1）。
