@@ -1903,7 +1903,8 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   }
 }
 
-/// 正文编辑器的布局管理器（NoteTextView.make 建的）：只多管一件事——空着的最后一行（正文末尾的换行后面那一行、
+/// 正文编辑器的布局管理器（NoteTextView.make 建的；便签墙卡片的正文也用它画，NoteWallCard.layout）。多管三件事：
+/// 任务方框画成圆角方框（drawGlyphs）、图片行的选区（fillBackgroundRectArray），和空着的最后一行（正文末尾的换行后面那一行、
 /// 空的正文）。别的行由布局管理器的代理定字的位置（NoteStyles.centerLine），这一行不经过代理，按打进去的字
 /// （typingAttributes）的行高排、字却贴在顶上：这里同样把「用到的那一块」收成字那么高、居中——插入点在空行上
 /// 和别的行一样高、一样位置。布局时调的代码：字的上下沿由文本视图换纸色 / 字号时存进来（Mutex，读写都是一下）
@@ -1917,6 +1918,59 @@ nonisolated final class NoteLayoutManager: NSLayoutManager {
   override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
     backgroundOrigin.withLock { $0 = origin }
     super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
+  }
+
+  /// 字形。任务方框那个字（字上记着 taskBoxKey）不交给系统画，改画圆角方框（NoteTaskBox）；别的字一段段照常交给父类。
+  /// 方框字是 BMP 里的单个字、一个字形，按它切开不会把代理对 / 附件拆成两半
+  override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+    guard glyphsToShow.length > 0, let storage = textStorage, let container = textContainers.first
+    else { return super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin) }
+    let chars = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+    var boxes: [(glyph: Int, char: Int, state: NoteTasks.State)] = []
+    storage.enumerateAttribute(NoteStyles.taskBoxKey, in: chars) { value, range, _ in
+      guard let raw = value as? Int, let state = NoteTasks.State(rawValue: raw) else { return }
+      for char in range.location..<NSMaxRange(range) {
+        let glyph = glyphIndexForCharacter(at: char)
+        if NSLocationInRange(glyph, glyphsToShow) { boxes.append((glyph, char, state)) }
+      }
+    }
+    guard !boxes.isEmpty else { return super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin) }
+    let scale =
+      NSGraphicsContext.current.map { abs($0.cgContext.userSpaceToDeviceSpaceTransform.a) } ?? 2
+    var start = glyphsToShow.location
+    for box in boxes.sorted(by: { $0.glyph < $1.glyph }) where box.glyph >= start {
+      if box.glyph > start {
+        super.drawGlyphs(forGlyphRange: NSRange(start..<box.glyph), at: origin)
+      }
+      start = box.glyph + 1
+      let attributes = storage.attributes(at: box.char, effectiveRange: nil)
+      guard let color = attributes[.foregroundColor] as? NSColor,
+        let geometry = taskBox(atGlyph: box.glyph, in: container, origin: origin, scale: scale)
+      else { continue }
+      NoteTaskBox.draw(
+        box.state, in: geometry, color: color, mark: attributes[NoteStyles.taskMarkKey] as? NSColor)
+    }
+    if start < NSMaxRange(glyphsToShow) {
+      super.drawGlyphs(forGlyphRange: NSRange(start..<NSMaxRange(glyphsToShow)), at: origin)
+    }
+  }
+
+  /// 第 glyph 个字形（任务方框那个字）上的圆角方框画在哪：横向在这个字占的那一格里居中，竖向对着这一行正文的字
+  /// （lineFontKey）的中线。origin：文本容器的原点（drawGlyphs 传进来的）；scale：屏幕像素 / 点
+  func taskBox(atGlyph glyph: Int, in container: NSTextContainer, origin: NSPoint, scale: CGFloat)
+    -> NoteTaskBox.Geometry?
+  {
+    guard let storage = textStorage else { return nil }
+    let char = characterIndexForGlyph(at: glyph)
+    guard char < storage.length,
+      let font = storage.attribute(NoteStyles.lineFontKey, at: char, effectiveRange: nil) as? NSFont
+    else { return nil }
+    let cell = boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container)
+    let line = lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+    return NoteTaskBox.geometry(
+      size: font.pointSize, advance: (cell.minX + origin.x, cell.width),
+      baseline: line.minY + location(forGlyphAt: glyph).y + origin.y, capHeight: font.capHeight,
+      scale: scale)
   }
 
   /// 选区的底色。**图片那一行**的行片段被撑到图那么高（NoteStyles.centerLine），系统按整个行片段（头尾两行按 usedRect，

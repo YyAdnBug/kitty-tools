@@ -719,12 +719,14 @@ private struct CardText: View, Equatable {
             with: CGRect(x: 0, y: 0, width: card.titleWidth, height: card.titleHeight),
             options: [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine],
             context: nil)
+          // 正文用和量高同一套排版画（任务方框是布局管理器画的圆角方框）
           if card.body.length > 0 {
-            card.body.draw(
-              with: CGRect(
-                x: 0, y: card.titleHeight + NoteWall.titleGap, width: NoteWall.textWidth,
-                height: card.bodyHeight),
-              options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
+            NoteWallCard.layout(card.body) { manager, container in
+              let glyphs = manager.glyphRange(for: container)
+              let origin = CGPoint(x: 0, y: card.titleHeight + NoteWall.titleGap)
+              manager.drawBackground(forGlyphRange: glyphs, at: origin)
+              manager.drawGlyphs(forGlyphRange: glyphs, at: origin)
+            }
           }
         }
         if let appearance { appearance.performAsCurrentDrawingAppearance(draw) } else { draw() }

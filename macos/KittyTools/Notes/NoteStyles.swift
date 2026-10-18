@@ -20,11 +20,10 @@
 //   **不用空字形（.null）**（Noty 的做法；2026-10-13 独立小程序实测 macOS 15.7）：行首的空字形会被排进**上一行**的
 //   行尾——从长的一行按 ↓ 到短的一行，光标落到再下一行的行首；按那个字去问「在哪一行」得到的也是上一行。零宽的
 //   控制字符留在自己的行里，点击、↑↓、行首行尾都对。
-// 方框「☐」「☑」用同一种字体（Apple Symbols）：系统字体里只有「☑」没有「☐」，各走各的后备字体的话两个一大一小、
-// 打勾时后面的字还会左右挪。
-// 行高定死、字按主字体居中之后，任务行和普通行一样高（原来 Apple Symbols 的行高略大，任务行高 1 pt 左右）。
-// ponytail: 方框就是那两个字形，没有自己画。要圆角的、做完是实心的方框：把方框那个字藏起来（hiddenKey）在
-// NoteTextView.draw 里自己画。
+// 任务的方框（2026-10-18 改成自己画的圆角方框）：五个字照常排版、占 ☐ 那么宽（boxMetrics：同一种字体 + kern 补齐，
+// 换状态后面的字不挪），字上记着状态和颜色（taskBoxKey / taskMarkKey），**字形不画**——NoteLayoutManager.drawGlyphs
+// 画到它时改画 NoteTaskBox 的圆角方框。代码块里的「☐」不加这几样，照旧是字。
+// 行高定死、字按主字体居中之后，任务行和普通行一样高。
 // ponytail: outdated 每次把整篇的属性段过一遍（选区每变一次一遍）；10 KB 以内无感。实测（Release、M3 Air）1.2 MB、
 // 11400 行、每行都有标记的正文：每挪一次光标约 31 ms、每打一个字约 51 ms；全选约 1.4 s、再点一下收回约 2.1 s
 // （另加重新排版）。真卡了改成记「露着的是哪一段」、跟着编辑挪（Pending 的路数），再加一条「选区超过若干行就不露」。
@@ -343,7 +342,7 @@ nonisolated enum NoteStyles {
 
   // MARK: 数值（长相在 mac-whisker-notes.mdc「正文里的 Markdown」）
 
-  /// 方框比正文的字大多少
+  /// 方框那个字（只用来占宽度，方框是 NoteTaskBox 画的）比正文的字大多少
   static let boxScale: CGFloat = 1.1
   /// 标题比正文的字大多少（一到六级；五、六级和正文一样大，只加粗）
   static let headingScales: [CGFloat] = [1.6, 1.4, 1.25, 1.12, 1, 1]
@@ -397,14 +396,11 @@ nonisolated enum NoteStyles {
 
   // MARK: 五种方框（第 8 批）
 
-  /// 一个方框字的字体、字距和基线偏移：**按 ☐ 量**（CTFont 的 bounding rect 和 advance），◧ ▣ 这两个字和 ☐ ☑ ☒
-  /// 不是一套（Apple Symbols 里 ☐ ☑ ☒ 的字形宽 9.3 pt、前进宽 14.11 pt，◧ ▣ 是 10.6 pt、14.46 / 14.85 pt），
-  /// 字号乘「☐ 的字形宽 ÷ 它的字形宽」、用 `.kern` 把前进宽补成 ☐ 的、`baselineOffset` 让字形的竖直中点和 ☐ 对齐——
-  /// 换状态时后面的字一个像素都不挪。按字号缓存（一行里的字就那几个字号）
+  /// 一个方框字的字体和字距：五个字都用 Apple Symbols 的同一个字号（正文 × boxScale），`.kern` 把前进宽补成 ☐ 的——
+  /// 字形不画（NoteTaskBox 画方框），只要五个字一样宽、换状态时后面的字一个像素都不挪。按字号缓存（一行里的字就那几个字号）
   struct BoxMetrics {
     var font: NSFont
     var kern: CGFloat
-    var baseline: CGFloat
   }
 
   private struct BoxKey: Hashable {
@@ -417,36 +413,25 @@ nonisolated enum NoteStyles {
   @MainActor static func boxMetrics(size: CGFloat, state: NoteTasks.State) -> BoxMetrics {
     let key = BoxKey(size: Int((size * 100).rounded()), state: state.rawValue)
     if let cached = boxMetricsCache[key] { return cached }
-    let targetSize = (size * boxScale).rounded()
-    let targetFont = CTFontCreateWithName("AppleSymbols" as CFString, targetSize, nil)
-    let target = glyphMetrics(of: targetFont, character: NoteTasks.State.todo.character)
-    let own = glyphMetrics(of: targetFont, character: state.character)
-    let scale = own.width > 0 ? target.width / own.width : 1
-    let scaledSize = (targetSize * scale * 100).rounded() / 100
-    let font =
-      NSFont(name: "AppleSymbols", size: scaledSize) ?? .systemFont(ofSize: scaledSize)
-    let scaled = glyphMetrics(
-      of: CTFontCreateWithName("AppleSymbols" as CFString, scaledSize, nil),
-      character: state.character)
+    let boxSize = (size * boxScale).rounded()
+    let ctFont = CTFontCreateWithName("AppleSymbols" as CFString, boxSize, nil)
+    let font = NSFont(name: "AppleSymbols", size: boxSize) ?? .systemFont(ofSize: boxSize)
     let metrics = BoxMetrics(
-      font: font, kern: target.advance - scaled.advance, baseline: target.center - scaled.center)
+      font: font,
+      kern: advance(of: ctFont, character: NoteTasks.State.todo.character)
+        - advance(of: ctFont, character: state.character))
     boxMetricsCache[key] = metrics
     return metrics
   }
 
-  /// 一个字的字形宽、前进宽、竖直中点（相对基线）
-  private static func glyphMetrics(of ctFont: CTFont, character: Character) -> (
-    width: CGFloat, advance: CGFloat, center: CGFloat
-  ) {
+  /// 一个字的前进宽
+  private static func advance(of ctFont: CTFont, character: Character) -> CGFloat {
     var units = Array(String(character).utf16)
     var glyphs = [CGGlyph](repeating: 0, count: units.count)
     guard CTFontGetGlyphsForCharacters(ctFont, &units, &glyphs, units.count) else {
-      return (CTFontGetSize(ctFont) * 0.6, CTFontGetSize(ctFont) * 0.7, 0)
+      return CTFontGetSize(ctFont) * 0.7
     }
-    var rect = CGRect.zero
-    _ = CTFontGetBoundingRectsForGlyphs(ctFont, .horizontal, &glyphs, &rect, 1)
-    let advance = CTFontGetAdvancesForGlyphs(ctFont, .horizontal, &glyphs, nil, 1)
-    return (rect.width, advance, rect.midY)
+    return CTFontGetAdvancesForGlyphs(ctFont, .horizontal, &glyphs, nil, 1)
   }
 
   // MARK: 属性
@@ -469,6 +454,10 @@ nonisolated enum NoteStyles {
   /// 图片那一行（整行连换行）记着图占多高（CGFloat）：段落样式按它撑高（图片会被裁成一行高，样机量出来的），
   /// 布局时 centerLine 按它把基线下移——图和字同行时字坐在图的底边那条基线上
   static let imageLineKey = NSAttributedString.Key("KittyNoteImageLine")
+  /// 任务方框那个字记着它的状态（NoteTasks.State 的 rawValue）：NoteLayoutManager 画到它时不画字形、改画圆角方框，
+  /// 颜色是这个字的 foregroundColor（描边 / 底）；紧急、完成上记号的颜色记在 taskMarkKey
+  static let taskBoxKey = NSAttributedString.Key("KittyNoteTaskBox")
+  static let taskMarkKey = NSAttributedString.Key("KittyNoteTaskMark")
 
   /// 套用时要的字体和颜色（一条便签的纸色、字号、Markdown 开关定下来的）
   struct Theme {
@@ -485,6 +474,12 @@ nonisolated enum NoteStyles {
     var codeFill = NSColor.quaternaryLabelColor
     /// 引用左边的竖线（NoteTextView 画）
     var bar = NSColor.separatorColor
+    /// 任务方框（NoteTaskBox 画）：待办 / 进行中的描边、完成的底和对勾、紧急的底和感叹号（取消用 faded）
+    var taskStroke = NSColor.secondaryLabelColor
+    var taskDone = NSColor.controlAccentColor
+    var taskDoneMark = NSColor.white
+    var taskUrgent = NoteColor.red.color
+    var taskUrgentMark = NSColor.white
     var markdown = true
     var spacing = Spacing.standard
 
@@ -498,6 +493,10 @@ nonisolated enum NoteStyles {
       marker = paper.markerInkColor
       codeFill = paper.codeFillColor
       bar = paper.quoteBarColor
+      taskStroke = paper.taskStrokeColor
+      taskDone = paper.taskDoneColor
+      taskDoneMark = paper.taskDoneMarkColor
+      taskUrgentMark = paper.taskUrgentMarkColor
       self.markdown = markdown
       self.spacing = spacing
     }
@@ -560,10 +559,20 @@ nonisolated enum NoteStyles {
     func attributes(for look: Look, isShown: Bool) -> [NSAttributedString.Key: Any] {
       if let state = look.boxState {
         let metrics = boxMetrics(size: base.pointSize, state: state)
-        return [
-          .font: metrics.font, .kern: metrics.kern, .baselineOffset: metrics.baseline,
-          .foregroundColor: state == .urgent ? NoteColor.red.color : theme.ink,
+        var result: [NSAttributedString.Key: Any] = [
+          .font: metrics.font, .kern: metrics.kern, taskBoxKey: state.rawValue,
         ]
+        switch state {
+        case .todo, .doing: result[.foregroundColor] = theme.taskStroke
+        case .urgent:
+          result[.foregroundColor] = theme.taskUrgent
+          result[taskMarkKey] = theme.taskUrgentMark
+        case .done:
+          result[.foregroundColor] = theme.taskDone
+          result[taskMarkKey] = theme.taskDoneMark
+        case .cancelled: result[.foregroundColor] = theme.faded
+        }
+        return result
       }
       // 代码块：等宽、按原文、墨色；围栏行也是墨（不藏）——标记那一档（墨 35%）压在代码的底上最低 1.67:1，语言名读不出来；
       // 次要的墨（75%）压在底上沙色浅纸也只有 4.498:1、不到 4.5（墨对底 ≥ 7，NotesWindowTests.paperTable 锁住）

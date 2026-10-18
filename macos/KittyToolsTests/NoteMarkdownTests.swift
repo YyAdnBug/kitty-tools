@@ -465,7 +465,9 @@ struct NoteMarkdownTests {
     #expect(font("heavy") == NSFont.systemFont(ofSize: 15, weight: .bold))
     #expect(color("heavy") == theme.faded && has(.strikethroughStyle, "heavy"))
     #expect(has(.underlineStyle, "link]") && has(.strikethroughStyle, "link]"))
-    #expect(color("done") == theme.faded && color("☑") == theme.ink)
+    // 完成的方框：颜色是方框的底（色条色）、对勾的颜色另记（方框是 NoteTaskBox 画的，见 NoteTaskBoxTests）
+    #expect(color("done") == theme.faded && color("☑") == theme.taskDone)
+    #expect(has(NoteStyles.taskMarkKey, "☑") && has(NoteStyles.taskBoxKey, "☑"))
     #expect(font("☑")?.fontName == "AppleSymbols" && !has(.strikethroughStyle, "☑"))
     // 引用里的行内代码用墨色（次要的墨压在代码的底上对比度不够），反引号是标记；做完的任务里的代码照旧跟着变淡
     let coded = styled("> 引用 `code` 后面\n☑ 做完 `mono`\n> **粗 `both`**", shown: [range(0, 1)])

@@ -410,11 +410,7 @@ final class NoteWallCard {
     bodyHeight =
       body.length == 0
       ? 0
-      : ceil(
-        body.boundingRect(
-          with: NSSize(width: NoteWall.textWidth, height: .greatestFiniteMagnitude),
-          options: options
-        ).height)
+      : ceil(Self.layout(body) { manager, container in manager.usedRect(for: container).height })
     let chrome =
       NoteWall.stripHeight + NoteWall.topInset + titleHeight + NoteWall.footerGap
       + NoteWall.footerHeight + NoteWall.bottomInset
@@ -422,6 +418,24 @@ final class NoteWallCard {
     let natural = chrome + (bodyHeight > 0 ? NoteWall.titleGap + bodyHeight : 0)
     height = min(max(natural, NoteWall.minHeight), NoteWall.maxHeight)
     bodyRoom = max(0, height - chrome - NoteWall.titleGap)
+  }
+
+  /// 正文用的排版（量高、画都用它）：和正文编辑器同一个布局管理器——任务的方框要它画成圆角方框（NSAttributedString.draw
+  /// 走系统的排版，方框会画成字形）。容器宽 = 卡片字的宽、不留行片段的内边距，和原来 draw(with:) 的口径一样（单测比过高度）。
+  /// 不缓存：卡片只在换了内容 / 外观时重画，量高和画各排一次（正文只有开头几行；300 张量一遍约 41 ms，系统画字串那条路
+  /// 约 20 ms，一套排版反复用也还是 41，差别不在建排版上）。排版只在 work 里用（布局管理器不拿着文本存储，出了这里就没了）
+  static func layout<T>(
+    _ body: NSAttributedString, _ work: (NoteLayoutManager, NSTextContainer) -> T
+  ) -> T {
+    let storage = NSTextStorage(attributedString: body)
+    let manager = NoteLayoutManager()
+    let container = NSTextContainer(
+      size: NSSize(width: NoteWall.textWidth, height: .greatestFiniteMagnitude))
+    container.lineFragmentPadding = 0
+    manager.addTextContainer(container)
+    storage.addLayoutManager(manager)
+    manager.ensureLayout(for: container)
+    return withExtendedLifetime(storage) { work(manager, container) }
   }
 
   /// 这条便签的卡片：标题是显示用的标题（title，NoteStore.summary 给的），正文是开头几行（NoteWall.excerpt），

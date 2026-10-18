@@ -281,39 +281,39 @@ struct NoteBatch8Tests {
   // MARK: 五种方框
 
   @Test func boxGlyphsLineUpAndUrgentIsRed() {
-    let size: CGFloat = 15
-    var advances: [CGFloat] = []
-    var heights: [CGFloat] = []
-    for state in NoteTasks.State.allCases {
-      let metrics = NoteStyles.boxMetrics(size: size, state: state)
-      let string = NSAttributedString(
-        string: String(state.character),
-        attributes: [.font: metrics.font, .kern: metrics.kern, .baselineOffset: metrics.baseline])
-      advances.append(string.size().width)
-      let ctFont = CTFontCreateWithName(
-        metrics.font.fontName as CFString, metrics.font.pointSize, nil)
-      var units = Array(String(state.character).utf16)
-      var glyph = CGGlyph(0)
-      _ = CTFontGetGlyphsForCharacters(ctFont, &units, &glyph, 1)
-      var rect = CGRect.zero
-      _ = CTFontGetBoundingRectsForGlyphs(ctFont, .horizontal, &glyph, &rect, 1)
-      heights.append(rect.height)
+    // 五个字一样宽（字形不画、方框是自己画的，只要占的宽一样：换状态后面的字不挪）
+    for size in [13, 15, 17, 20] as [CGFloat] {
+      let advances = NoteTasks.State.allCases.map { state in
+        let metrics = NoteStyles.boxMetrics(size: size, state: state)
+        return NSAttributedString(
+          string: String(state.character), attributes: [.font: metrics.font, .kern: metrics.kern]
+        ).size().width
+      }
+      #expect(advances.max()! - advances.min()! < 0.01, "\(size) 前进宽 \(advances)")
     }
-    #expect(advances.max()! - advances.min()! < 0.01, "前进宽 \(advances)")
-    #expect(heights.max()! - heights.min()! < 0.5, "字形高 \(heights)")
-    // 紧急那个字是红的；别的方框是墨
-    let storage = NSTextStorage(string: "▣ ☐")
+    // 字上记着状态；紧急的颜色（方框的底）是红的，别的方框不是
+    let storage = NSTextStorage(string: "▣ 急\n☐ 办")
     let theme = NoteStyles.Theme(
       paper: NotePaper.all[0], fontSize: 15, markdown: true, spacing: .standard)
-    NoteStyles.apply(to: storage, lines: range(0, 3), theme: theme, shown: [], blocks: [])
-    let urgent = storage.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
-    var red = 0
-    NSAppearance(named: .aqua)?.performAsCurrentDrawingAppearance {
-      if let rgb = urgent?.usingColorSpace(.sRGB) {
-        red = Int((rgb.redComponent * 255).rounded())
+    NoteStyles.apply(
+      to: storage, lines: range(0, storage.length), theme: theme, shown: [], blocks: [])
+    #expect(storage.attribute(NoteStyles.taskBoxKey, at: 0, effectiveRange: nil) as? Int == 2)
+    #expect(storage.attribute(NoteStyles.taskBoxKey, at: 4, effectiveRange: nil) as? Int == 0)
+    #expect(storage.attribute(NoteStyles.taskBoxKey, at: 2, effectiveRange: nil) == nil)
+    #expect(storage.attribute(NoteStyles.taskMarkKey, at: 0, effectiveRange: nil) != nil)
+    #expect(storage.attribute(NoteStyles.taskMarkKey, at: 4, effectiveRange: nil) == nil)
+    func red(at index: Int) -> Int {
+      let color = storage.attribute(.foregroundColor, at: index, effectiveRange: nil) as? NSColor
+      var red = 0
+      NSAppearance(named: .aqua)?.performAsCurrentDrawingAppearance {
+        if let rgb = color?.usingColorSpace(.sRGB) {
+          red = Int((rgb.redComponent * 255).rounded())
+        }
       }
+      return red
     }
-    #expect(red == 0xA1)
+    #expect(red(at: 0) == 0xA1)
+    #expect(red(at: 4) != 0xA1)
   }
 
   // MARK: R12 / R13 的小函数
