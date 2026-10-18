@@ -528,7 +528,9 @@ struct NoteTextViewImageTests {
     rig.editor.setSelectedRange(NSRange(location: index, length: 1))
     #expect(rig.editor.writeSelection(to: board, types: rig.editor.writablePasteboardTypes))
     #expect(board.string(forType: NoteTextView.noteTextType) == rig.token(image, width: 150))
-    #expect(board.string(forType: .string) == "[图片]")
+    // 只选了一张图：**不写纯文本**——同时有字和图时别的 App 大多先拿字，贴出来就是「[图片]」（2026-10-18 真机报）
+    #expect(board.string(forType: .string) == nil)
+    #expect(board.data(forType: .rtfd) == nil)
     let written = try #require(board.data(forType: .png))
     let source = try #require(CGImageSourceCreateWithData(written as CFData, nil))
     #expect(CGImageSourceGetType(source) as String? == UTType.png.identifier, "原文件的字节和类型")
@@ -545,6 +547,21 @@ struct NoteTextViewImageTests {
     #expect(rig.editor.writeSelection(to: board, types: rig.editor.writablePasteboardTypes))
     #expect(board.string(forType: .string) == "第一行\n[图片]")
     #expect(board.string(forType: NoteTextView.noteTextType) == body)
+    // 字里夹着图：另有一份 RTFD（字 + 真的图片附件），给认富文本的 App
+    let rtfd = try #require(board.data(forType: .rtfd))
+    let rich = try #require(NSAttributedString(rtfd: rtfd, documentAttributes: nil))
+    var attachments = 0
+    rich.enumerateAttribute(.attachment, in: NSRange(location: 0, length: rich.length)) {
+      value, _, _ in
+      if let attachment = value as? NSTextAttachment,
+        attachment.fileWrapper?.regularFileContents?.isEmpty == false
+      {
+        attachments += 1
+      }
+    }
+    #expect(attachments == 1)
+    #expect(rich.string.hasPrefix("第一行\n"))
+    #expect(!rich.string.contains("[图片]") && !rich.string.contains("kitty-note-image"))
     board.releaseGlobally()
   }
 

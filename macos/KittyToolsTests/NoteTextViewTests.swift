@@ -644,6 +644,31 @@ struct NoteTextViewTests {
         && wrap.editor.selectedRange() == NSRange(location: 4, length: 3))
   }
 
+  /// 右键点在行尾后面的空白处：父类会把那一行的换行当成「点到的词」选上、底色铺到行尾（2026-10-18 真机报）；
+  /// 改成光标放在点的地方。点在字上照旧（父类选中那个词）
+  @Test func rightClickPastLineEndLeavesACaret() throws {
+    let rig = try Rig("第一行\n**234234**\n最后一行")
+    let text = rig.editor.string as NSString
+    let second = text.range(of: "**234234**")
+    let manager = try #require(rig.editor.layoutManager)
+    rig.layout()
+    let line = manager.lineFragmentRect(
+      forGlyphAt: manager.glyphIndexForCharacter(at: second.location), effectiveRange: nil)
+    let origin = rig.editor.textContainerOrigin
+    let blank = rig.editor.convert(
+      NSPoint(x: rig.editor.bounds.width - 20, y: line.midY + origin.y), to: nil)
+    rig.editor.setSelectedRange(caret(0))
+    _ = rig.editor.menu(for: try rig.mouse(.rightMouseDown, at: blank))
+    let selection = rig.editor.selectedRange()
+    #expect(selection.length == 0, "\(selection)")
+    #expect(selection.location == NSMaxRange(second))
+    // 点在字上：选区照父类的（这里不管它选成什么，只要不是被收成了光标）
+    rig.editor.setSelectedRange(caret(0))
+    _ = rig.editor.menu(
+      for: try rig.mouse(.rightMouseDown, at: rig.center(of: second.location + 4)))
+    #expect(rig.editor.selectedRange().length > 0)
+  }
+
   /// 右键点在能打开的链接上：菜单最前面多一项「打开链接」（不靠 ⌘ 点的那条路：键盘、旁白用户），不写键位；
   /// 普通的字、打不开的地址上没有。点的那一行标记藏着、光标在别的行时照样认得出点的是链接
   @Test func contextMenuOpensLinks() throws {

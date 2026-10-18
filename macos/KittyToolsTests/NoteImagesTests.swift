@@ -250,8 +250,9 @@ struct NoteImagesTests {
     // 只有图片的行跳过，标题用下一行有字的
     #expect(note("\(image)\n买菜").displayTitle == "买菜")
     #expect(note("第一行\n\(image)\n第三行").displayTitle == "第一行")
-    // 行内的图片写成「[图片]」
-    #expect(note("前面\(image)后面").displayTitle == "前面[图片]后面")
+    // 和字同一行的图：标题里整个去掉，不写「[图片]」（2026-10-18 真机报：标签上是「测试图片[图片]123」），留下的连串空白收成一个
+    #expect(note("前面\(image)后面").displayTitle == "前面后面")
+    #expect(note("测试图片 \(image) [123]{orange}").displayTitle == "测试图片 123")
     #expect(note("标题行", title: "").displayTitle == "标题行")
     // 摘要：图片写成「[图片]」；**第一行是图时先跳过只有图片的行、再跳过标题那一行**（不重复标题，F10）
     #expect(note("\(image)\n买菜\n牛奶").preview == "[图片] 牛奶")
@@ -266,7 +267,7 @@ struct NoteImagesTests {
     #expect(note("![image](写坏的)").displayTitle == "![image](写坏的)")
     // F11：代码块**内容行**里的令牌也不许露原文（列表、标签、预览卡、墙卡片都走这里）
     #expect(note("```\n\(image)\n```").displayTitle == NoteImages.placeholder)
-    #expect(note("```\n买菜\(image)\n```").displayTitle == "买菜[图片]")
+    #expect(note("```\n买菜\(image)\n```").displayTitle == "买菜")
     // F11：最近删除里只读的那份正文（令牌换成「[图片]」）
     #expect(note(image).readOnlyBody == NoteImages.placeholder)
     #expect(note("前面\(image)后面\n第二行").readOnlyBody == "前面[图片]后面\n第二行")

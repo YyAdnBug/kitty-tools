@@ -549,7 +549,7 @@ nonisolated enum NoteMarkdownFiles {
   static let singleExportTitle = "导出为 Markdown…"
 
   /// 「导出为 Markdown…」的存储面板：选好之后在后台写文件，写完用刘海岛说一句（R9、R11）。
-  /// 那叠、浮动便签的面板不激活 App，所以面板关掉之后要：先把 App 叫到前台、再 begin、关掉后把前台还给原来的 App
+  /// 那叠、浮动便签的面板不激活 App：激活、把面板提到最前、关掉后把前台还给原来的 App 都在 FilePanel 里
   /// （同 NoteTextView.insertImageFromPanel），然后 restore 把键盘还给便签（调用方给）。
   /// 便签窗口（普通 NSWindow）也走这一条，行为三处一样（R10 允许 beginSheetModal / begin）
   @MainActor static func exportPanel(
@@ -563,13 +563,7 @@ nonisolated enum NoteMarkdownFiles {
     panel.prompt = "导出"
     panel.message = "导出成一个 Markdown 文件；图片放在旁边的 attachments 文件夹里"
     panel.isExtensionHidden = false
-    let previous = NSApp.isActive ? nil : NSWorkspace.shared.frontmostApplication
-    if previous != nil {
-      NSApp.activate()
-      if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
-    }
-    panel.begin { response in
-      previous?.activate()
+    FilePanel.begin(panel) { response in
       restore()
       guard response == .OK, let url = panel.url else { return }
       Task {

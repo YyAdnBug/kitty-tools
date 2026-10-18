@@ -99,16 +99,21 @@ nonisolated struct Note: Identifiable, Equatable, Sendable {
 
   /// 显示用的标题：自己起的标题；没起就是正文第一个有内容的行（去掉行首的 #、任务符号和 Markdown 的标记），
   /// 超过 titleLength 个字截断加「…」；都没有就是「未命名便签」。
-  /// **只有图片的行跳过**（标题用下一行有字的；图片写成「[图片]」）：整条便签只有图片时标题就是「[图片]」
+  /// **只有图片的行跳过**（标题用下一行有字的；和字同一行的图去掉、不写「[图片]」）：整条便签只有图片时标题就是「[图片]」
   var displayTitle: String {
     let own = title.trimmingCharacters(in: .whitespacesAndNewlines)
     if !own.isEmpty { return own }
+    // **标题里不带图片**：和字同一行的图整个去掉（原来换成「[图片]」夹在字中间，标签上是「测试图片[图片]123」，
+    // 2026-10-18 用户真机报），去掉后留下的连串空白收成一个。只有图片的行照旧整行不算；整条便签只有图片时标题才是「[图片]」
     guard
-      let line = Self.lines(of: body, skipping: 0, budget: 0, droppingImageLines: true).first
+      let line = Self.lines(
+        of: NoteImages.stripping(body), skipping: 0, budget: 0, droppingImageLines: true
+      ).first
     else {
       return NoteImages.containsToken(body) ? NoteImages.placeholder : Self.untitled
     }
-    return Self.clipped(line, to: Self.titleLength)
+    let collapsed = line.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    return Self.clipped(collapsed, to: Self.titleLength)
   }
 
   /// 列表里标题下面那一行摘要：其余有内容的行（标题取自正文第一行时不重复它）拼成一行，超过 previewLength 个字截断。

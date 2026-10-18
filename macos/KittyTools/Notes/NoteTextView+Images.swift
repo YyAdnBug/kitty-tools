@@ -534,7 +534,12 @@ extension NoteTextView {
 
   // MARK: 复制 / 剪切 / 拖出
 
-  /// 写剪贴板：自家的存的形式（带令牌）+ 纯文本（图片写「[图片]」）+ 选区正好是一张图时再写那张图本身。
+  /// 写剪贴板：自家的存的形式（带令牌，贴回便签图一起过去）+ 给别的 App 的——
+  /// - **选区正好是一张图**：只写那张图本身（原字节原类型，不是 PNG 的再加一份 PNG），**不写纯文本**：同时有字和图时
+  ///   大多数 App 先拿字，贴出来就是「[图片]」两个字（2026-10-18 用户真机报）；
+  /// - 字里夹着图：纯文本（图片写「[图片]」，给只认字的地方）+ 一份 RTFD（字 + 真的图片附件，给备忘录、邮件、文稿、
+  ///   聊天工具这类认富文本的 App）；
+  /// - 只有字：纯文本。
   /// 没有选区（或者选的是空）给 nil，交给父类
   func writeNoteSelection(to pboard: NSPasteboard) -> Bool? {
     guard let storage = textStorage else { return nil }
@@ -551,19 +556,63 @@ extension NoteTextView {
     }
     guard !stored.isEmpty else { return nil }
     let image = selectedImageChar().flatMap { imageWrite(forCharacterAt: $0) }
-    var types: [NSPasteboard.PasteboardType] = [Self.noteTextType, .string]
+    let rich = image == nil ? richText(from: stored) : nil
+    var types: [NSPasteboard.PasteboardType] = [Self.noteTextType]
     if let image {
       types.append(image.type)
       if image.png != nil, image.type != .png { types.append(.png) }
+    } else {
+      if rich != nil { types.append(.rtfd) }
+      types.append(.string)
     }
     pboard.declareTypes(types, owner: nil)
     pboard.setString(stored.joined(separator: "\n"), forType: Self.noteTextType)
-    pboard.setString(plain.joined(separator: "\n"), forType: .string)
     if let image {
       pboard.setData(image.data, forType: image.type)
       if let png = image.png, image.type != .png { pboard.setData(png, forType: .png) }
+    } else {
+      if let rich { pboard.setData(rich, forType: .rtfd) }
+      pboard.setString(plain.joined(separator: "\n"), forType: .string)
     }
     return true
+  }
+
+  /// 字里夹着图的选区给认富文本的 App 的那一份（RTFD）：字同纯文本那份（颜色的标记去掉，别的 Markdown 标记照原样），
+  /// 图换成真的图片附件（原文件的字节）；文件不在的图写「[图片]」。没有图给 nil（只写纯文本就够了）。
+  /// 只带字体、不带颜色：便签的墨是跟着外观变的动态色，写进去会按当时的外观定死（深色外观下复制出来是浅色的字）
+  /// ponytail: 图在 RTFD 里是原图大小，不带便签里拖过的显示宽度；要的话给附件设 bounds（各 App 认不认不一定）
+  private func richText(from stored: [String]) -> Data? {
+    guard stored.contains(where: NoteImages.containsToken) else { return nil }
+    let font = baseAttributes[.font] as? NSFont ?? .systemFont(ofSize: NSFont.systemFontSize)
+    let attributes: [NSAttributedString.Key: Any] = [.font: font]
+    let result = NSMutableAttributedString()
+    func appendText(_ text: String) {
+      guard !text.isEmpty else { return }
+      result.append(
+        NSAttributedString(string: NoteMarkdown.strippingColors(from: text), attributes: attributes)
+      )
+    }
+    for (offset, piece) in stored.enumerated() {
+      if offset > 0 { appendText("\n") }
+      let text = piece as NSString
+      var last = 0
+      for match in NoteImages.matches(in: text) {
+        appendText(
+          text.substring(with: NSRange(location: last, length: match.range.location - last)))
+        last = NSMaxRange(match.range)
+        guard let url = imageStore?.url(for: match.image.id, ext: match.image.ext),
+          let data = try? Data(contentsOf: url)
+        else {
+          appendText(NoteImages.placeholder)
+          continue
+        }
+        let wrapper = FileWrapper(regularFileWithContents: data)
+        wrapper.preferredFilename = "\(match.image.id.uuidString).\(match.image.ext)"
+        result.append(NSAttributedString(attachment: NSTextAttachment(fileWrapper: wrapper)))
+      }
+      appendText(text.substring(from: last))
+    }
+    return result.rtfd(from: NSRange(location: 0, length: result.length), documentAttributes: [:])
   }
 
   /// 选区正好是一张图时要写的图片本身：原文件的字节和类型；不是 PNG 的再加一份 PNG。
@@ -614,8 +663,8 @@ extension NoteTextView {
 
   // MARK: 插入图片…（选文件面板）
 
-  /// 右键菜单的「插入图片…」：不模态的选文件面板（只能选图片、可多选）。本 App 不在前台时先激活
-  /// （面板才拿得到键盘），选完把前台还给原来的 App、键盘还给这条便签的正文
+  /// 右键菜单的「插入图片…」：不模态的选文件面板（只能选图片、可多选）。本 App 不在前台时激活、面板提到最前
+  /// （FilePanel），选完把前台还给原来的 App、键盘还给这条便签的正文
   @objc func insertImageFromPanel(_ sender: Any? = nil) {
     guard isEditable, imageStore != nil else { return NSSound.beep() }
     let panel = NSOpenPanel()
@@ -625,14 +674,9 @@ extension NoteTextView {
     panel.allowedContentTypes = [.image]
     panel.prompt = "插入"
     panel.message = "选要插进便签的图片"
-    let previous = NSApp.isActive ? nil : NSWorkspace.shared.frontmostApplication
-    if previous != nil {
-      NSApp.activate()
-      if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
-    }
     let range = selectedRange()
-    panel.begin { [weak self] response in
-      previous?.activate()
+    // 激活、提到最前（不然开在前台 App 后面，看着像没反应）、关掉后还回去都在 FilePanel 里
+    FilePanel.begin(panel) { [weak self] response in
       guard let self else { return }
       // 键盘还给这条便签的正文：**先 makeKey 再 makeFirstResponder**（那叠和浮动便签是不激活本 App 的面板，
       // 只 makeFirstResponder 的话前台还在原来的 App，选完直接打字会落到那边，F6）

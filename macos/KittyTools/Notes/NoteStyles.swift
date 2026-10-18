@@ -867,7 +867,7 @@ nonisolated enum NoteStyles {
   }
 
   /// 这一段字里有没有挂着我们图片附件的字形（图片行的行高只按含附件的那一个行片段撑，见 centerLine）
-  private static func containsAttachment(in chars: NSRange, of storage: NSTextStorage) -> Bool {
+  static func containsAttachment(in chars: NSRange, of storage: NSTextStorage) -> Bool {
     var found = false
     storage.enumerateAttribute(.attachment, in: chars) { value, _, stop in
       if value is NoteImageAttachment {

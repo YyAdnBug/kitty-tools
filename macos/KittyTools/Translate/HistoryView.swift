@@ -699,8 +699,8 @@ enum HistoryMenu {
   }
 
   /// 导出翻译历史 / 收藏：CSV 给表格（带 BOM，Excel 才认 UTF-8），TSV 给 Anki（正面原文、背面译文）。
-  /// 结果（含没东西可导、写失败）用刘海说。从浮窗来的（本 App 不在前台）先激活本 App 才弹得出存储面板，
-  /// 选完把前台还给原来的 App（同截图另存为）
+  /// 结果（含没东西可导、写失败）用刘海说。从浮窗来的（本 App 不在前台）：激活、面板提到最前、选完把前台还回去
+  /// 都在 FilePanel 里（同截图另存为）
   static func export(_ history: HistoryStore, favoritesOnly: Bool, anki: Bool, island: Island?) {
     let entries = history.search("", favoritesOnly: favoritesOnly, limit: 0)
     guard !entries.isEmpty else {
@@ -710,13 +710,7 @@ enum HistoryMenu {
     let panel = NSSavePanel()
     panel.allowedContentTypes = [anki ? .tabSeparatedText : .commaSeparatedText]
     panel.nameFieldStringValue = (favoritesOnly ? "翻译收藏" : "翻译历史") + (anki ? ".tsv" : ".csv")
-    let previous = NSApp.isActive ? nil : NSWorkspace.shared.frontmostApplication
-    if previous != nil {
-      NSApp.activate()
-      if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
-    }
-    panel.begin { response in
-      previous?.activate()
+    FilePanel.begin(panel) { response in
       guard response == .OK, let url = panel.url else { return }
       let text = anki ? HistoryStore.tsv(entries) : "\u{FEFF}" + HistoryStore.csv(entries)
       do {

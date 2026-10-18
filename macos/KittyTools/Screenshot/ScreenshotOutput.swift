@@ -78,7 +78,7 @@ enum ScreenshotOutput {
     return url
   }
 
-  /// 另存为：遮罩已收起。先激活本 App（面板才拿得到键盘），存完把前台还给原来的 App。不设 directoryURL：
+  /// 另存为：遮罩已收起。激活本 App、面板提到最前、存完把前台还给原来的 App 都在 FilePanel 里。不设 directoryURL：
   /// 存储面板按 App 记住上次访问的文件夹（系统行为）；选的文件夹也不记成快速保存的目录（体检 A28，同 ⌘⇧5）。
   /// 用不模态的 begin 而不是 runModal：runModal 在主 actor 的任务里会卡住其它主线程任务（流式译文、截图热键）。
   /// 返回存到的文件（取消时为 nil）
@@ -88,14 +88,8 @@ enum ScreenshotOutput {
     panel.allowedContentTypes = [.png]
     panel.canCreateDirectories = true
     panel.nameFieldStringValue = availableURL(in: saveDirectory).lastPathComponent
-    let previous = NSWorkspace.shared.frontmostApplication
-    NSApp.activate()
-    // macOS 14 起 activate() 是协作式的，前台 App 不让出时退回旧 API（同设置窗）
-    if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
-    defer { previous?.activate() }
-    let response = await withCheckedContinuation { continuation in
-      panel.begin { continuation.resume(returning: $0) }
-    }
+    // 本 App 不在前台（截图遮罩、钉图都不激活）：激活、提到最前、关掉后还回去都在 FilePanel 里
+    let response = await FilePanel.begin(panel)
     guard response == .OK, let url = panel.url else { return nil }
     try png.write(to: url, options: .atomic)
     return url

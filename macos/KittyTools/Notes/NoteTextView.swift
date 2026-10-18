@@ -1340,6 +1340,11 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     // 先把选区记下来：super.menu(for:) 会选中鼠标 / 光标底下的那个词，之后再看选区就晚了
     let selection = selectedRange()
     let menu = super.menu(for: event)
+    // 右键点在行尾后面的空白处：父类把那一行的换行（或一串空白）当成「点到的词」选上，选区的底色一直铺到行尾
+    // （2026-10-18 用户真机报）。点的不是字、选上的又只是空白时，改成把光标放在点的地方
+    if let point, !isOverGlyph(point), selectionIsBlank() {
+      setSelectedRange(NSRange(location: characterIndexForInsertion(at: point), length: 0))
+    }
     let item = NSMenuItem(
       title: NotesWindowModel.taskTitle, action: #selector(toggleTask(_:)), keyEquivalent: "")
     item.target = self
@@ -1370,6 +1375,32 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
       item.isEnabled = validateUserInterfaceItem(item)
     }
     return menu
+  }
+
+  /// 这一点（视图自己的坐标）落没落在一个字的字形上（行尾后面、正文下面的空白都不算）
+  private func isOverGlyph(_ point: NSPoint) -> Bool {
+    guard let layoutManager, let textContainer, let storage = textStorage, storage.length > 0
+    else { return false }
+    let origin = textContainerOrigin
+    let local = NSPoint(x: point.x - origin.x, y: point.y - origin.y)
+    let glyph = layoutManager.glyphIndex(for: local, in: textContainer)
+    // 离点最近的是换行 / 空白（行尾后面点的就是它）也不算：换行的字形框可能一直伸到行尾
+    let index = layoutManager.characterIndexForGlyph(at: glyph)
+    guard index < storage.length,
+      let scalar = UnicodeScalar(storage.mutableString.character(at: index)),
+      !CharacterSet.whitespacesAndNewlines.contains(scalar)
+    else { return false }
+    let rect = layoutManager.boundingRect(
+      forGlyphRange: NSRange(location: glyph, length: 1), in: textContainer)
+    return rect.contains(local)
+  }
+
+  /// 选区不是空的、选上的全是空白（空格、Tab、换行）
+  private func selectionIsBlank() -> Bool {
+    guard let text = textStorage?.mutableString else { return false }
+    let range = selectedRange()
+    guard range.length > 0, NSMaxRange(range) <= text.length else { return false }
+    return text.substring(with: range).allSatisfy(\.isWhitespace)
   }
 
   /// 右键点在方框上：只弹五种状态（现在那种打勾），选了就改这一行
@@ -1780,8 +1811,8 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     return types
   }
 
-  /// 复制 / 剪切 / 往别的 App 拖 / 文本视图内部拖动都走这里：写自家的存的形式、纯文本（「[图片]」），
-  /// 选区正好是一张图时再写那张图（原字节原类型；不是 PNG 的再加一份 PNG）
+  /// 复制 / 剪切 / 往别的 App 拖 / 文本视图内部拖动都走这里：写自家的存的形式；选区正好是一张图时只写那张图
+  /// （原字节原类型；不是 PNG 的再加一份 PNG），字里夹着图时写纯文本（「[图片]」）+ RTFD（真的图片），见 writeNoteSelection
   override func writeSelection(to pboard: NSPasteboard, types: [NSPasteboard.PasteboardType])
     -> Bool
   {
@@ -1879,6 +1910,90 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
 nonisolated final class NoteLayoutManager: NSLayoutManager {
   /// 打进去的字的上下沿（ascender、descender）；还没设过时不管
   let extraLine = Mutex<(ascender: CGFloat, descender: CGFloat)?>(nil)
+  /// 正在画底色的那一次的原点（drawBackground 传进来的 origin）：fillBackgroundRectArray 拿到的矩形在视图坐标里，
+  /// 换回文本容器的坐标才能找行片段
+  private let backgroundOrigin = Mutex<NSPoint>(.zero)
+
+  override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+    backgroundOrigin.withLock { $0 = origin }
+    super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
+  }
+
+  /// 选区的底色。**图片那一行**的行片段被撑到图那么高（NoteStyles.centerLine），系统按整个行片段（头尾两行按 usedRect，
+  /// 就是图那一块）铺底色——同一行里的字只在图的底边那一条，选中时字后面是一大块图那么高的底（2026-10-18 用户真机报）。
+  /// 这里把落在图片行里的那几块收成「字那一条」：竖向是这一行正文的行高、和字居中（同普通的行）；图自己有选中的描边，
+  /// 底色只剩它底边那一条、被图盖住。别的行原样。正文里没有图片行时直接交给父类
+  override func fillBackgroundRectArray(
+    _ rectArray: UnsafePointer<NSRect>, count rectCount: Int,
+    forCharacterRange charRange: NSRange, color: NSColor
+  ) {
+    guard rectCount > 0, let storage = textStorage, let container = textContainers.first,
+      NSMaxRange(charRange) <= storage.length, Self.touchesImageLine(charRange, in: storage)
+    else {
+      return super.fillBackgroundRectArray(
+        rectArray, count: rectCount, forCharacterRange: charRange, color: color)
+    }
+    let origin = backgroundOrigin.withLock { $0 }
+    var rects: [NSRect] = []
+    for viewRect in UnsafeBufferPointer(start: rectArray, count: rectCount) {
+      let rect = viewRect.offsetBy(dx: -origin.x, dy: -origin.y)
+      var covered = false
+      enumerateLineFragments(forGlyphRange: glyphRange(forBoundingRect: rect, in: container)) {
+        fragment, _, _, glyphs, _ in
+        var slice = rect.intersection(fragment)
+        guard !slice.isNull, slice.height > 0 else { return }
+        covered = true
+        if let band = self.textBand(of: fragment, glyphs: glyphs, in: storage) {
+          let top = max(slice.minY, band.minY)
+          let bottom = min(slice.maxY, band.maxY)
+          guard bottom > top else { return }
+          slice.origin.y = top
+          slice.size.height = bottom - top
+        }
+        rects.append(slice.offsetBy(dx: origin.x, dy: origin.y))
+      }
+      // 不在任何行片段里的那一块（空着的最后一行之类）原样
+      if !covered { rects.append(viewRect) }
+    }
+    guard !rects.isEmpty else { return }
+    rects.withUnsafeBufferPointer { buffer in
+      guard let base = buffer.baseAddress else { return }
+      super.fillBackgroundRectArray(
+        base, count: buffer.count, forCharacterRange: charRange, color: color)
+    }
+  }
+
+  /// 这段字碰没碰到图片行（字上记着 imageLineKey）
+  private static func touchesImageLine(_ chars: NSRange, in storage: NSTextStorage) -> Bool {
+    let range = storage.mutableString.lineRange(for: chars)
+    var found = false
+    storage.enumerateAttribute(NoteStyles.imageLineKey, in: range) { value, _, stop in
+      if value != nil {
+        found = true
+        stop.pointee = true
+      }
+    }
+    return found
+  }
+
+  /// 图片那一行（这个行片段里真的有图）里字的那一条：竖向 = 这一行正文的行高（段落样式的 minimumLineHeight），
+  /// 和字（主字体的上下沿，基线在图底）居中。不是图片行给 nil
+  private func textBand(of fragment: NSRect, glyphs: NSRange, in storage: NSTextStorage) -> NSRect?
+  {
+    let chars = characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+    guard chars.length > 0, chars.location < storage.length else { return nil }
+    let attributes = storage.attributes(at: chars.location, effectiveRange: nil)
+    guard attributes[NoteStyles.imageLineKey] != nil,
+      NoteStyles.containsAttachment(in: chars, of: storage),
+      let font = attributes[NoteStyles.lineFontKey] as? NSFont,
+      let style = attributes[.paragraphStyle] as? NSParagraphStyle
+    else { return nil }
+    let baseline = fragment.minY + location(forGlyphAt: glyphs.location).y
+    let box = font.ascender - font.descender
+    let height = max(style.minimumLineHeight, box)
+    let top = baseline - font.ascender - (height - box) / 2
+    return NSRect(x: fragment.minX, y: top, width: fragment.width, height: height)
+  }
 
   override func setExtraLineFragmentRect(
     _ fragmentRect: NSRect, usedRect: NSRect, textContainer container: NSTextContainer
