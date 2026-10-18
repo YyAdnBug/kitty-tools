@@ -30,14 +30,19 @@ struct LaunchpadView: View {
           .padding(.top, metrics.gridTop)
         pageDots
           .position(x: proxy.size.width / 2, y: metrics.dotsY)
+        // 层次写死（zIndex）：ZStack 里正在离场的视图，SwiftUI 会把它挪到兄弟视图下面画——关文件夹时面板就缩到网格和不透明的壁纸
+        // 后面去了，只看得见后面那层淡掉，像「没有动画」（2026-10-18 真机反馈两次；进场的总在上面，所以打开一直是好的）
         if model.openFolderID != nil {
           FolderBackdrop(model: model)
             .transition(.opacity)
+            .zIndex(1)
           // 照 macOS 15 从文件夹图标那儿长到屏幕中间、关的时候缩回去（减弱动态效果时只淡入淡出）
           FolderOverlay(model: model, metrics: metrics, space: Self.space)
             .transition(folderTransition(metrics))
+            .zIndex(2)
         }
         dragGhost(metrics: metrics)
+          .zIndex(3)
       }
       // 拖动的「挪 / 松手」另在最外层收一份：格子只负责按下。拖出文件夹时文件夹那块界面会被拆掉，挂在格子上的手势跟着被取消、
       // 松手收不到（同 G30）；最外层这份一直在。两份都喂进去没关系：模型按同一个指针位置算，松手第二次进来时已经没有拖动了
@@ -238,13 +243,16 @@ struct LaunchpadView: View {
     }
     return ZStack(alignment: .topLeading) {
       ForEach(placed) { item in
-        tileCell(item.tile, index: item.index, metrics: metrics, iconSize: metrics.icon)
-          .gesture(
-            cellGesture(page: pageIndex, tile: item.tile, index: item.index, metrics: metrics)
-          )
-          .position(
-            x: (CGFloat(item.index % columns) + 0.5) * metrics.cellWidth,
-            y: (CGFloat(item.index / columns) + 0.5) * metrics.cellHeight)
+        tileCell(
+          item.tile, index: item.index, metrics: metrics, iconSize: metrics.icon,
+          live: pageIndex == model.page
+        )
+        .gesture(
+          cellGesture(page: pageIndex, tile: item.tile, index: item.index, metrics: metrics)
+        )
+        .position(
+          x: (CGFloat(item.index % columns) + 0.5) * metrics.cellWidth,
+          y: (CGFloat(item.index / columns) + 0.5) * metrics.cellHeight)
       }
     }
     .frame(width: metrics.gridWidth, height: metrics.gridHeight, alignment: .topLeading)
@@ -267,8 +275,10 @@ struct LaunchpadView: View {
       .onEnded { _ in model.endDrag() }
   }
 
+  /// `live`：这一页正看着（只有它的图标在抖）；搜索结果、跟手的那份不传
   private func tileCell(
-    _ tile: LaunchpadTile, index: Int, metrics: LaunchpadMetrics, iconSize: CGFloat
+    _ tile: LaunchpadTile, index: Int, metrics: LaunchpadMetrics, iconSize: CGFloat,
+    live: Bool = true
   ) -> some View {
     let selected = model.selected == index
     let isDragged = model.drag?.tileID == tile.id && model.drag?.isDragging == true
@@ -286,7 +296,7 @@ struct LaunchpadView: View {
           combinePlate(size: iconSize)
             .transition(.scale(scale: 0.15).combined(with: .opacity))
         }
-        icon(for: tile, size: iconSize, phase: Double(index % 7) / 7)
+        icon(for: tile, size: iconSize, phase: Double(index % 7) / 7, jiggles: live)
       }
       // 只有图标那一块算点到（照 macOS 15；2026-10-18 真机反馈：点名字、图标旁边的空处也打开了）。
       // 外面那圈是选中底的留白（1.22 倍），文件夹方块本身只有图标的 0.8
@@ -355,9 +365,10 @@ struct LaunchpadView: View {
     switch tile {
     case .app(let ref):
       if let app = model.app(ref) {
-        AppIconView(
+        // 主网格一直是 AppKit 的图层视图（抖动只加一个图层动画，几乎不占主线程；不在两种视图之间换，进出编辑不闪）
+        JigglingIcon(
           image: model.icons.icon(for: app, size: size), size: size,
-          jiggling: model.jiggling && jiggles, phase: phase, reduceMotion: reduceMotion
+          active: model.jiggling && jiggles, phase: phase, reduceMotion: reduceMotion
         )
         .frame(width: size, height: size)
         .accessibilityHidden(true)
@@ -366,7 +377,7 @@ struct LaunchpadView: View {
       }
     case .folder(let folder):
       // 文件夹方块比 App 图标小一圈：App 图标那张图自己带留白（F34）
-      FolderGlyph(folder: folder, model: model, size: size * 0.8, phase: phase)
+      FolderGlyph(folder: folder, model: model, size: size * 0.8, phase: phase, jiggles: jiggles)
     }
   }
 
@@ -477,41 +488,6 @@ nonisolated enum LaunchpadJiggle {
   }
 }
 
-/// App 图标：平时是 SwiftUI 的 Image（建得快——35 个的文件夹展开第一帧原来要 127 ms；缩放、平移只动 GPU，让位滑动不用每帧挪 NSView），
-/// 抖动时才换成图层动画的 `JigglingIcon`（F35：上百个视图走 SwiftUI 的 repeatForever 会每帧重排）
-private struct AppIconView: View {
-  let image: NSImage
-  let size: CGFloat
-  let jiggling: Bool
-  let phase: Double
-  let reduceMotion: Bool
-
-  var body: some View {
-    if jiggling, !reduceMotion {
-      JigglingIcon(image: image, size: size, active: true, phase: phase, reduceMotion: reduceMotion)
-    } else {
-      Image(nsImage: image)
-        .resizable()
-        .interpolation(.high)
-    }
-  }
-}
-
-/// 一页里的一个图标和它摆在第几格（按图标的 id 认：落点变了，它从原来那格滑过去）
-private struct PlacedTile: Identifiable {
-  let index: Int
-  let tile: LaunchpadTile
-  var id: String { tile.id }
-}
-
-extension View {
-  /// `on` 时压成一张图（drawingGroup）：缩放 / 淡入淡出只动这一张。里面有 AppKit 视图（抖动的图标）时不能压
-  @ViewBuilder
-  fileprivate func flattened(_ on: Bool) -> some View {
-    if on { drawingGroup() } else { self }
-  }
-}
-
 /// 没有固有尺寸的 NSImageView：大小只听 SwiftUI 给的 frame。普通的 NSImageView 拿图的尺寸当固有尺寸，抗压缩优先级又高，
 /// SwiftUI 缩不到比图小——位图按最大那块屏画，换到图标小一些的屏上图标（和点得到的范围）就比格子要的大（2026-10-18 单测量出来的）
 final class IconImageView: NSImageView {
@@ -562,25 +538,71 @@ private struct JigglingIcon: NSViewRepresentable {
   }
 }
 
+/// 文件夹面板里的 App 图标：一直是 SwiftUI 的 Image（建得快；面板能整块压成一张图缩放），抖动也在它身上做（`Jiggle`）。
+/// 主网格那边一直是 `JigglingIcon`。两边都不在两种视图之间换：原来抖动时 Image 换成 AppKit 的图层视图，进出编辑那一下每个图标
+/// 都淡出淡入一次，看着闪（2026-10-18 真机反馈）。SwiftUI 的抖动 35 个约占 17% 主线程（图层的几乎为 0），所以只用在文件夹里
+private struct AppIconView: View {
+  let image: NSImage
+  let size: CGFloat
+  let jiggling: Bool
+  let phase: Double
+  let reduceMotion: Bool
+
+  var body: some View {
+    Image(nsImage: image)
+      .resizable()
+      .interpolation(.high)
+      .modifier(Jiggle(active: jiggling && !reduceMotion, phase: phase))
+  }
+}
+
+/// SwiftUI 的抖动（文件夹面板里的图标、主网格的文件夹方块）：绕中心 ±1.5° 来回（0.13 s 一程），按格序晚一点开始、彼此错开。
+/// 只转、不改布局；只有看得见的那一页在抖（R11）
+private struct Jiggle: ViewModifier {
+  let active: Bool
+  let phase: Double
+  @State private var tilted = false
+
+  func body(content: Content) -> some View {
+    content
+      .rotationEffect(.degrees(active ? (tilted ? 1.5 : -1.5) : 0))
+      .onChange(of: active, initial: true) { _, on in
+        if on {
+          // 下一轮再开始：和进抖动同一轮的布局变化别被这条一直重复的动画带上
+          DispatchQueue.main.async {
+            withAnimation(
+              .easeInOut(duration: 0.13).repeatForever(autoreverses: true).delay(phase * 0.13)
+            ) { tilted = true }
+          }
+        } else {
+          withAnimation(.easeOut(duration: 0.1)) { tilted = false }
+        }
+      }
+  }
+}
+
+/// 一页里的一个图标和它摆在第几格（按图标的 id 认：落点变了，它从原来那格滑过去）
+private struct PlacedTile: Identifiable {
+  let index: Int
+  let tile: LaunchpadTile
+  var id: String { tile.id }
+}
+
 /// 文件夹图标：一块浅色半透明圆角底（照 macOS 15），里面按 3 × 3 画前 9 个 App 的小图标。文件夹里一个都没有时画系统的文件夹符号。
-/// 抖动用 TimelineView（只有文件夹这一种视图，数量少；App 图标走图层）。
+/// 抖动和 App 图标同一个 `Jiggle`。
 private struct FolderGlyph: View {
   let folder: LaunchpadFolder
   let model: LaunchpadModel
   let size: CGFloat
   let phase: Double
+  /// 这一页正看着（只有它抖）
+  var jiggles = true
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
-    TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !(model.jiggling && !reduceMotion)))
-    {
-      context in
-      let angle =
-        model.jiggling && !reduceMotion
-        ? sin((context.date.timeIntervalSinceReferenceDate + phase) * 2 * .pi / 0.26) * 1.5 : 0
-      glyph.rotationEffect(.degrees(angle))
-    }
-    .accessibilityHidden(true)
+    glyph
+      .modifier(Jiggle(active: model.jiggling && jiggles && !reduceMotion, phase: phase))
+      .accessibilityHidden(true)
   }
 
   private var glyph: some View {
@@ -679,9 +701,9 @@ private struct FolderOverlay: View {
       // 面板是一层浅白：底下已经是糊掉的壁纸，透出来就是一块浅色毛玻璃（不再叠一层材质，省一次全面板模糊）
       .background(panel.fill(.white.opacity(contrast == .increased ? 0.22 : 0.14)))
       .overlay { panel.stroke(.white.opacity(0.2), lineWidth: Style.hairlineWidth(contrast)) }
-      // 不抖的时候整块面板压成一张图：长出来 / 缩回去那一下只缩放这一张，不是三十几个带阴影的名字一帧帧重画
-      // （2026-10-18 真机反馈「图标多的文件夹展开卡」）。抖动时里面是 AppKit 的图层动画，压不进去，照常画
-      .flattened(!model.jiggling)
+      // 整块面板压成一张图：长出来 / 缩回去那一下只缩放这一张，不是三十几个带阴影的名字一帧帧重画
+      // （2026-10-18 真机反馈「图标多的文件夹展开卡」）。里面全是 SwiftUI 画的（抖动也是），压得进去
+      .drawingGroup()
     }
     .position(x: metrics.size.width / 2, y: metrics.size.height / 2)
     .onAppear {
@@ -777,11 +799,14 @@ private struct FolderOverlay: View {
     }
     return ZStack(alignment: .topLeading) {
       ForEach(placed, id: \.ref.id) { item in
-        folderCell(item.app, ref: item.ref, index: item.index, iconSize: metrics.folderIcon)
-          .frame(width: cellWidth, height: cellHeight)
-          .position(
-            x: (CGFloat(item.index % columns) + 0.5) * cellWidth,
-            y: (CGFloat(item.index / columns) + 0.5) * cellHeight)
+        folderCell(
+          item.app, ref: item.ref, index: item.index, iconSize: metrics.folderIcon,
+          live: page == model.folderPage
+        )
+        .frame(width: cellWidth, height: cellHeight)
+        .position(
+          x: (CGFloat(item.index % columns) + 0.5) * cellWidth,
+          y: (CGFloat(item.index / columns) + 0.5) * cellHeight)
       }
     }
     .frame(
@@ -792,7 +817,8 @@ private struct FolderOverlay: View {
   }
 
   private func folderCell(
-    _ app: LaunchpadProjectApp, ref: LaunchpadAppRef, index: Int, iconSize: CGFloat
+    _ app: LaunchpadProjectApp, ref: LaunchpadAppRef, index: Int, iconSize: CGFloat,
+    live: Bool
   ) -> some View {
     let selected = model.selected == index
     let pressed =
@@ -806,7 +832,7 @@ private struct FolderOverlay: View {
           .allowsHitTesting(false)
         AppIconView(
           image: model.icons.icon(for: app, size: iconSize), size: iconSize,
-          jiggling: model.jiggling, phase: Double(index % 7) / 7, reduceMotion: reduceMotion
+          jiggling: model.jiggling && live, phase: Double(index % 7) / 7, reduceMotion: reduceMotion
         )
         .frame(width: iconSize, height: iconSize)
       }

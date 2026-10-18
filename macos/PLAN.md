@@ -595,6 +595,11 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   换的是格子里画的图标）——改成按格子的 id 建、`.position` 摆位置，图标真的滑过去；35 个的文件夹展开第一帧主线程约 54 ms → 41 ms
   （名字平时是 Text、图标平时是 SwiftUI Image），不抖时面板压成一张图缩放（GPU 那头屏外量不到）；关上本来有动画，改成更慢的 `retract` 让它看得出。
   对照参考：用户装了 BuhoLaunchpad（付费、自称最接近原版），录一段它的拖动 / 文件夹再逐帧对（HANDTEST 49–51）。
+- **第四轮真机反馈（2026-10-18 夜）**：进出编辑一闪、关文件夹还是没动画。用户同意后在屏幕左下角放了个测试窗口（在所有窗口后面、不当 key）、
+  ScreenCaptureKit 只录它，改前改后各录一遍对过：① 关文件夹——ZStack 里离场的视图被 SwiftUI 挪到兄弟视图下面画，面板缩到网格和不透明的壁纸后面去了
+  （改前第一帧就没了），给后面那层 / 面板 / 跟手那份写死 `zIndex`；② 闪——上一轮把图标改成「平时 Image、抖动换 NSImageView」，换的那一下淡出淡入。
+  改成不换：主网格一直 NSImageView（图层抖动，主线程约 2%），文件夹里一直 SwiftUI（`Jiggle`，35 个约 17%，只抖看得见的一页）。屏外截图帮不上：
+  `cacheDisplay` 画不出动画中途的变换和离场视图的层次，屏外窗口 ScreenCaptureKit 也录不到。录到的帧在 `build/research/launchpad/onscreen-*.png`。
 - **R11 量出来的数**（2026-10-18，Debug，屏外，`LaunchpadProbeTests`；本机 113 个 App）：扫 App 目录 130–164 ms（**本轮已挪到 `@concurrent` 后台**，打开路径不等它；面板先出，扫完 / 导入完再把目录和布局接上）、屏外建界面到量到网格框（第一帧）55–80 ms、翻一页后主线程布局一次中位 1.9–2.3 ms / 最长 2.5–3.0 ms（R11 目标 ≤ 8 ms）、建出来 +16 MB、收起放掉后本进程 footprint 没降回去（窗口 / 图层资源，屏外量不准；真机上由图标缓存空闲回收 + `Memory.relieve()` 管，HANDTEST 16）。拖动 / 跟手的每帧时间、真机第一帧、静置 CPU **都还没量**（单测里不注册触控板回调，HANDTEST 10 / 16）；Release 单测构建在这个仓库里本来就编不过（和这一族无关），量的是 Debug / `-O` 覆盖。
 
 ---
