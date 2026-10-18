@@ -322,8 +322,6 @@ final class LaunchpadModel {
   @ObservationIgnored private var lastPageWidth: CGFloat = 0
   /// 空白处按住拖着翻页：上一次的横向位移（nil = 还没挪够 5 pt，松手算点了空白）
   @ObservationIgnored private var backgroundTravel: CGFloat?
-  /// 打开的文件夹从哪儿长出来：文件夹那一格图标的中心（不在这一页时 nil，界面就从中间淡入）
-  private(set) var folderAnchor: CGPoint?
 
   init(
     layout: LaunchpadLayout, catalog: [LaunchpadProjectApp], icons: LaunchpadIcons,
@@ -689,9 +687,8 @@ final class LaunchpadModel {
   func openFolder(_ id: UUID) {
     guard folder(id) != nil else { return }
     folderNameDraft = folder(id)?.name ?? ""
-    folderAnchor = folderTileCenter(id)
-    // 照 macOS 15 从文件夹图标那儿长到屏幕中间：0.24 s、不弹（关的时候同一条缩回去）
-    withAnimation(Style.Motion.settle.animation()) {
+    // 面板从文件夹方块那儿长到屏幕中间、关的时候缩回去：动的是界面里那块「纸」（LaunchpadView 的 FolderPaper，同便签墙的编辑卡）
+    withAnimation(Style.Motion.glide.animation()) {
       openFolderID = id
       folderPage = 0
       folderPageOffset = 0
@@ -703,8 +700,8 @@ final class LaunchpadModel {
 
   func closeFolder() {
     let wasOpen = openFolderID != nil
-    // 缩回文件夹图标比长出来慢一点（`retract` 0.34 s，不弹）：原来同一条 0.24 s 的，真机上看着像一下子没了（2026-10-18 反馈）
-    withAnimation(Style.Motion.retract.animation()) {
+    // 后面那层淡掉、里面的图标先淡掉；面板那块纸缩回文件夹方块由界面做（settle，同便签墙编辑卡收回）
+    withAnimation(Style.Motion.settle.animation()) {
       openFolderID = nil
       folderPage = 0
       folderPageOffset = 0
@@ -769,6 +766,13 @@ final class LaunchpadModel {
       let center = cellCenter(page: page, index: index)
     else { return nil }
     return CGPoint(x: center.x, y: center.y - LaunchpadMetrics.iconLift)
+  }
+
+  /// 当前页上某个文件夹那一格的方块在屏上的框（方块是图标的 0.8 倍）：面板从这儿长出来、缩回这儿；不在这一页时 nil
+  func folderGlyphRect(_ id: UUID) -> CGRect? {
+    guard let center = folderTileCenter(id) else { return nil }
+    let side = metrics.icon * 0.8
+    return CGRect(x: center.x - side / 2, y: center.y - side / 2, width: side, height: side)
   }
 
   func goToFolderPage(_ page: Int) {
@@ -1048,7 +1052,6 @@ final class LaunchpadModel {
     combineCandidate = nil
     drag.combineTileID = nil
     drag.enteredFolder = false
-    folderAnchor = folderTileCenter(id)
     folderNameDraft = folder(id)?.name ?? ""
     self.drag = drag
     withAnimation(Style.Motion.settle.animation()) {

@@ -105,6 +105,9 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
   系统的还开着时我们认到捏合也不打开，设置页给提示和「打开触控板设置」。
 
 ## 7. 触发角（第 3 批）
+- 触发后要等真的离开才重新武装（`CornerArm`）；启动台开着时全屏面板盖住了角，那时的离开收不到也不算——**收起时鼠标已经不在角里就当离开过**
+  （`LaunchpadCorner.launchpadDidClose`，总控在 `close` 里调；2026-10-18 真机反馈「第一次打开后第二次马上推进角里不开、第三次才开」），
+  还在角里（按 Esc 收起、鼠标没动）就照旧等真离开（G7）。
 - 选中的角每屏放一个 4 × 4 pt 的 `NSPanel` 实例（照便签边缘药丸，不子类化；`LaunchpadCorner.makeSensorPanel`）：层级 `.statusBar`
   （顶上两角不被菜单栏盖住）、**真画一层 1% 的底色**（`backgroundColor = NSColor(white: 0, alpha: 0.01)`，窗口 alpha 留 1——整块透明的
   窗口会被系统点穿，追踪区收不到进出，G6）、`ignoresMouseEvents = false`、`sharingType = .none`（截图 / 录屏里不收）、

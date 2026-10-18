@@ -15,6 +15,8 @@ struct LaunchpadView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.colorSchemeContrast) private var contrast
   @State private var appeared = false
+  /// 文件夹面板那块纸（开着、正在缩回去的时候都在；缩完了拆掉）
+  @State private var folderSheet: FolderSheet?
 
   /// 拖动、落点、格子位置都按这个命名坐标空间算（面板本地坐标）
   nonisolated static let space = "launchpad"
@@ -36,13 +38,24 @@ struct LaunchpadView: View {
           FolderBackdrop(model: model)
             .transition(.opacity)
             .zIndex(1)
-          // 照 macOS 15 从文件夹图标那儿长到屏幕中间、关的时候缩回去（减弱动态效果时只淡入淡出）
+        }
+        // 面板那块纸（同便签墙的编辑卡）：打开时从文件夹方块那儿长到屏幕中间，关的时候从中间一路缩回文件夹方块
+        // （圆角、底色也变回方块的样子），纸一直不透明；里面的图标和名字晚一点淡进来、关的时候先淡掉
+        if let sheet = folderSheet {
+          FolderPaper(
+            sheet: sheet,
+            panel: model.openFolderID == sheet.id ? model.folderPanelRect : sheet.panel
+          )
+          .id(sheet.serial)
+          .zIndex(2)
+        }
+        if model.openFolderID != nil {
           FolderOverlay(model: model, metrics: metrics, space: Self.space)
-            .transition(folderTransition(metrics))
-            .zIndex(2)
+            .transition(folderContentTransition)
+            .zIndex(3)
         }
         dragGhost(metrics: metrics)
-          .zIndex(3)
+          .zIndex(4)
       }
       // 拖动的「挪 / 松手」另在最外层收一份：格子只负责按下。拖出文件夹时文件夹那块界面会被拆掉，挂在格子上的手势跟着被取消、
       // 松手收不到（同 G30）；最外层这份一直在。两份都喂进去没关系：模型按同一个指针位置算，松手第二次进来时已经没有拖动了
@@ -58,6 +71,10 @@ struct LaunchpadView: View {
           }
       )
       .coordinateSpace(name: Self.space)
+      // initial：界面出来时文件夹就开着（截图自检这么摆）——纸直接在面板的位置，不长
+      .onChange(of: model.openFolderID, initial: true) { old, new in
+        folderChanged(from: old, to: new)
+      }
       .opacity(appeared ? (model.isClosing ? 0 : 1) : 0)
       .scaleEffect(scale)
       .animation(openAnimation, value: appeared)
@@ -98,14 +115,40 @@ struct LaunchpadView: View {
   /// 让位的动画：0.45 s、不弹，从当前位置接着动（照同类里最像 macOS 15 的那个：强 ease-out，弹簧写法同 Whisker 的签名时刻）
   static let reflow = Animation.spring(duration: 0.45, bounce: 0)
 
-  private func folderTransition(_ metrics: LaunchpadMetrics) -> AnyTransition {
-    guard !reduceMotion, let from = model.folderAnchor else { return .opacity }
-    let panel = model.folderPanelRect
-    let center = CGPoint(x: metrics.size.width / 2, y: metrics.size.height / 2)
-    let start = min(1, metrics.icon * 0.8 / max(panel.width, 1))
-    return .modifier(
-      active: FolderZoom(progress: 0, from: from, center: center, start: start),
-      identity: FolderZoom(progress: 1, from: from, center: center, start: start))
+  /// 文件夹里的内容（名字、图标、页点）：晚一点淡进来（纸先长出去），关的时候先淡掉（纸再缩回去），同便签墙的编辑区
+  private var folderContentTransition: AnyTransition {
+    reduceMotion
+      ? .opacity
+      : .asymmetric(
+        insertion: .opacity.animation(.easeOut(duration: Style.fadeIn).delay(0.08)),
+        // 关的时候比便签墙的编辑区淡得更快、一开始就掉：纸马上往文件夹那儿走，慢慢淡的话图标像被留在了中间（屏上逐帧录过）
+        removal: .opacity.animation(.easeOut(duration: 0.07)))
+  }
+
+  /// 文件夹开了 / 关了（点开、停在上面打开；点空白、Esc、拖出去、解散）：开了，纸从那个文件夹方块**现在**的位置长到中间；
+  /// 关了，纸缩回方块**现在**的位置（它不在这一页了——被解散、翻走了——就在中间缩一点淡掉）。减弱动态效果时只淡入淡出
+  private func folderChanged(from old: UUID?, to new: UUID?) {
+    if let new {
+      // 第一次（initial）进来时 old == new：本来就开着，纸直接在面板那儿
+      let already = old == new
+      folderSheet = FolderSheet(
+        id: new, from: reduceMotion || already ? nil : model.folderGlyphRect(new),
+        panel: model.folderPanelRect, grown: reduceMotion || already)
+      return
+    }
+    guard let old, var closing = folderSheet, closing.id == old, !closing.isClosing else { return }
+    guard !reduceMotion else {
+      folderSheet = nil
+      return
+    }
+    closing.isClosing = true
+    closing.to = model.folderGlyphRect(old)
+    let serial = closing.serial
+    withAnimation(Style.Motion.settle.animation()) {
+      folderSheet = closing
+    } completion: {
+      if folderSheet?.serial == serial { folderSheet = nil }
+    }
   }
 
   /// 壁纸模糊后的样子再轻轻压暗（照 macOS 15）；拿不到壁纸时是面板底下的系统毛玻璃，压暗一点
@@ -454,24 +497,54 @@ struct LaunchpadView: View {
   }
 }
 
-/// 打开文件夹的那一下：从文件夹图标那儿（`from`，缩成文件夹方块那么大）长到屏幕中间。
-/// 作为 transition 用（progress 0 → 1），关的时候反过来缩回去；只动变换，不改布局
-private struct FolderZoom: ViewModifier, Animatable {
-  var progress: CGFloat
-  let from: CGPoint
-  let center: CGPoint
-  let start: CGFloat
+/// 文件夹面板那块纸的状态（同便签墙的 WallSheet）：哪个文件夹、从哪长出来（文件夹方块的框；nil = 在中间略小一圈）、
+/// 开着时面板在哪（关的时候它已经不在 model 里了）、正在缩回没有、缩回哪。每打开一次一个新编号：缩完时认它
+private struct FolderSheet {
+  let id: UUID
+  let from: CGRect?
+  let panel: CGRect
+  /// 一出来就在中间（减弱动态效果）
+  var grown = false
+  var isClosing = false
+  var to: CGRect?
+  let serial = FolderSheet.next()
 
-  var animatableData: CGFloat {
-    get { progress }
-    set { progress = newValue }
+  private static var counter = 0
+  private static func next() -> Int {
+    counter &+= 1
+    return counter
   }
+}
 
-  func body(content: Content) -> some View {
-    content
-      .scaleEffect(start + (1 - start) * progress)
-      .offset(x: (from.x - center.x) * (1 - progress), y: (from.y - center.y) * (1 - progress))
-      .opacity(min(1, 0.2 + progress * 1.6))
+/// 面板那块纸：打开时从文件夹方块长到面板的位置（glide，出现的那一刻开始），关的时候缩回方块（settle，动画在外面给）；
+/// 圆角和底色也跟着在面板（26 pt、white 0.14）和文件夹方块（边长的 22%、white 0.32）之间变，落下去就是那个方块的样子。
+/// 没有方块可回（不在这一页了）就在中间缩一点淡掉
+private struct FolderPaper: View {
+  let sheet: FolderSheet
+  let panel: CGRect
+  @Environment(\.colorSchemeContrast) private var contrast
+  @State private var grown = false
+
+  var body: some View {
+    let glyph = sheet.isClosing ? sheet.to : sheet.from
+    let atPanel = !sheet.isClosing && (grown || sheet.grown || sheet.from == nil)
+    let shrunk = panel.insetBy(dx: panel.width * 0.04, dy: panel.height * 0.04)
+    let rect = atPanel ? panel : glyph ?? shrunk
+    let corner = atPanel || glyph == nil ? Style.Radius.launchpadFolder : rect.width * 0.22
+    let fill = atPanel || glyph == nil ? (contrast == .increased ? 0.22 : 0.14) : 0.32
+    let shape = RoundedRectangle(cornerRadius: corner, style: .continuous)
+    shape
+      .fill(.white.opacity(fill))
+      .overlay { shape.stroke(.white.opacity(0.2), lineWidth: Style.hairlineWidth(contrast)) }
+      .frame(width: rect.width, height: rect.height)
+      .offset(x: rect.minX, y: rect.minY)
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+      .opacity(sheet.isClosing && sheet.to == nil ? 0 : 1)
+      .allowsHitTesting(!sheet.isClosing)
+      .onAppear {
+        withAnimation(Style.Motion.glide.animation()) { grown = true }
+      }
+      .accessibilityHidden(true)
   }
 }
 
@@ -681,7 +754,6 @@ private struct FolderOverlay: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.colorSchemeContrast) private var contrast
   @FocusState private var editingName: Bool
-  @State private var titleShown = false
   /// 名字正在改：平时是一行字，点一下才换成输入框（照 macOS 15 单击名字改名；输入框建起来要 20 ms，展开那一下不建它）
   @State private var editing = false
 
@@ -689,29 +761,19 @@ private struct FolderOverlay: View {
     // 格子宽高分开算（G4，口径在 LaunchpadMetrics.folder*）：宽和主网格一样，高放得下图标 + 名字
     let columns = LaunchpadLayout.folderColumns
     let rows = model.folderRows
-    let panel = RoundedRectangle(cornerRadius: Style.Radius.launchpadFolder, style: .continuous)
+    // 面板的底（浅白的那一层）是 LaunchpadView 的 FolderPaper：这里只有名字、图标和页点，淡进淡出
     VStack(spacing: LaunchpadMetrics.folderTitleSpacing) {
       title
-        .opacity(titleShown ? 1 : 0)
       VStack(spacing: 10) {
         grid(columns: columns, rows: rows)
         folderDots
       }
       .padding(LaunchpadMetrics.folderPadding)
-      // 面板是一层浅白：底下已经是糊掉的壁纸，透出来就是一块浅色毛玻璃（不再叠一层材质，省一次全面板模糊）
-      .background(panel.fill(.white.opacity(contrast == .increased ? 0.22 : 0.14)))
-      .overlay { panel.stroke(.white.opacity(0.2), lineWidth: Style.hairlineWidth(contrast)) }
-      // 整块面板压成一张图：长出来 / 缩回去那一下只缩放这一张，不是三十几个带阴影的名字一帧帧重画
-      // （2026-10-18 真机反馈「图标多的文件夹展开卡」）。里面全是 SwiftUI 画的（抖动也是），压得进去
+      // 里面压成一张图：淡入淡出只动这一张，不是三十几个带阴影的名字一帧帧重画（2026-10-18 真机反馈「图标多的文件夹展开卡」）。
+      // 里面全是 SwiftUI 画的（抖动也是），压得进去
       .drawingGroup()
     }
     .position(x: metrics.size.width / 2, y: metrics.size.height / 2)
-    .onAppear {
-      // 名字在面板长到七成时才淡进来
-      withAnimation(.easeOut(duration: Style.fadeIn).delay(reduceMotion ? 0 : 0.17)) {
-        titleShown = true
-      }
-    }
     .accessibilityElement(children: .contain)
     .accessibilityLabel(model.openFolder?.name ?? "文件夹")
   }

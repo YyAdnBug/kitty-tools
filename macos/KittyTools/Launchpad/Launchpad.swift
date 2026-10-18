@@ -173,6 +173,8 @@ final class Launchpad {
     lastPage = model?.page ?? lastPage
     model?.beginClosing()
     isOpen = false
+    // 触发角：开着的时候离开角收不到事件，收起时鼠标不在角里就重新武装（不然要再离开一次才推得开）
+    corner.launchpadDidClose()
     if animated, !Style.reduceMotion {
       NSAnimationContext.runAnimationGroup { context in
         context.duration = 0.16

@@ -131,7 +131,7 @@ struct LaunchpadInteractTests {
   // MARK: 文件夹
 
   /// 停在文件夹上：先出合成底板，再停一会儿文件夹打开；放进里面第一格前面
-  @Test func hoveringAFolderOpensItAndDropsInside() async {
+  @Test func hoveringAFolderOpensItAndDropsInside() async throws {
     var timing = LaunchpadDragTiming.immediate
     timing.combine = .milliseconds(20)
     timing.folderOpen = .milliseconds(30)
@@ -143,7 +143,11 @@ struct LaunchpadInteractTests {
     await waitUntil { model.openFolderID == folder.id }
     #expect(model.openFolderID == folder.id)
     #expect(model.drag?.isDragging == true)
-    #expect(model.folderAnchor != nil)
+    // 面板从这个文件夹方块长出来：方块在当前页上、和图标同一个中心、是图标的 0.8 倍
+    let glyph = try #require(model.folderGlyphRect(folder.id))
+    let tile = try #require(model.folderTileCenter(folder.id))
+    #expect(abs(glyph.midX - tile.x) < 0.5 && abs(glyph.midY - tile.y) < 0.5)
+    #expect(abs(glyph.width - model.metrics.icon * 0.8) < 0.5)
     // 进面板、到 x 的左半边
     let x = model.folderCellCenter(0)
     model.updateDrag(location: CGPoint(x: x.x - 10, y: x.y), pageWidth: 900)

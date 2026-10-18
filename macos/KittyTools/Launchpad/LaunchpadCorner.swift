@@ -3,7 +3,8 @@
 // （不子类化，不是浮层）：层级 .statusBar（和菜单栏同层，顶上两个角不会被菜单栏盖住，F15）、所有桌面和全屏里都能出、
 // `sharingType = .none` 不进截图录屏、用追踪区感应进入——**不挂全局鼠标监听、不轮询**。
 // 整块几乎透明（alpha 0.01，不是 0）：完全透明的窗口可能被系统点穿，追踪区就收不到进出；这一层底色是 paint 用的。
-// 停够时间才触发；触发后要等一次真的 mouseExited 才重新武装（收起时鼠标还在角里不会马上再开）。
+// 停够时间才触发；触发后要等一次真的 mouseExited 才重新武装（收起时鼠标还在角里不会马上再开）；启动台收起时鼠标已经不在角里
+// 也算离开了（开着时全屏面板盖住了角，那时离开角收不到事件，2026-10-18 真机反馈「第二次马上再推不开、第三次才开」）。
 // 只读 com.apple.dock 的 wvous-*-corner：用户在那个角也设了系统动作时不抢（设置页提示一句）。
 // 截图 / 录屏 / 状态屏时不响应（由 Launchpad 的 canOpen 拦）。
 
@@ -167,6 +168,12 @@ final class LaunchpadCorner {
     dwellTask = nil
     arm.mouseExited(launchpadOpen: isLaunchpadOpen())
   }
+
+  /// 启动台收起了（总控调）：鼠标这时不在任何一个角里，就当已经离开过、重新武装
+  func launchpadDidClose(mouse: CGPoint = NSEvent.mouseLocation) {
+    let inside = panels.contains { $0.frame.insetBy(dx: -1, dy: -1).contains(mouse) }
+    arm.launchpadClosed(mouseInCorner: inside)
+  }
 }
 
 /// 触发后要真的离开角才重新武装（F15）：进、停够、触发一次；不离开再进不再触发。
@@ -183,6 +190,12 @@ nonisolated struct CornerArm: Equatable {
   /// 鼠标离开了角：启动台开着时（全屏面板盖住了角，离开 / 进来都是面板引起的）不算，收起后真离开才重新武装（G7）
   mutating func mouseExited(launchpadOpen: Bool = false) {
     if !launchpadOpen { armed = true }
+  }
+
+  /// 启动台收起了：鼠标不在角里 = 开着的时候已经离开过（那时面板盖着角、收不到「离开」），重新武装；
+  /// 还在角里（按 Esc 收起、鼠标没动）就照旧等它真离开（G7）
+  mutating func launchpadClosed(mouseInCorner: Bool) {
+    if !mouseInCorner { armed = true }
   }
 }
 

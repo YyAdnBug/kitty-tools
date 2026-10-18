@@ -212,6 +212,25 @@ struct LaunchpadRecheckTests {
     #expect(!panel.isVisible)
   }
 
+  /// 2026-10-18 真机反馈：用触发角打开、开着时把鼠标挪走、收起，马上再推进角里要能打开（原来要再离开一次）；
+  /// 用 Esc 收起、鼠标还在角里的，照旧等真离开（G7）
+  @Test func cornerRearmsWhenLaunchpadClosesAwayFromIt() {
+    // #expect 里不能调 mutating 的 trigger()：先接住
+    var away = CornerArm()
+    let opened = away.trigger()
+    away.mouseExited(launchpadOpen: true)
+    away.launchpadClosed(mouseInCorner: false)
+    let reopened = away.trigger()
+    #expect(opened && reopened)
+    var stayed = CornerArm()
+    let first = stayed.trigger()
+    stayed.launchpadClosed(mouseInCorner: true)
+    let tooSoon = stayed.trigger()
+    stayed.mouseExited()
+    let afterLeaving = stayed.trigger()
+    #expect(first && !tooSoon && afterLeaving)
+  }
+
   @Test func cornerDoesNotRearmWhileLaunchpadIsOpen() {
     var arm = CornerArm()
     let first = arm.trigger()
