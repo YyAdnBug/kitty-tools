@@ -523,31 +523,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     watcher.start()
     DistributedNotificationCenter.default().addObserver(
       forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main
-    ) { [unowned self] _ in
+    ) { [weak self] _ in
+      // weak + 里面再 guard（同 Launchpad 的换屏通知）：Swift 6.4（Xcode 27.1）起 unowned self 在 assumeIsolated 里用会报
+      // 「sending 'self' risks causing data races」。AppDelegate 和 App 同寿命，行为不变
       MainActor.assumeIsolated {
+        guard let self else { return }
         if UserDefaults.standard.bool(forKey: Prefs.clipboardClearOnLock) {
-          clipboardStore.clearOrdinary()
+          self.clipboardStore.clearOrdinary()
         }
-        noteStore?.flush()
-        backupIfDue()
+        self.noteStore?.flush()
+        self.backupIfDue()
       }
     }
     // 睡眠前把便签攒着没落盘的改动落下去（锁屏、退出同）
     NSWorkspace.shared.notificationCenter.addObserver(
       forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
-    ) { [unowned self] _ in
-      MainActor.assumeIsolated { _ = noteStore?.flush() }
+    ) { [weak self] _ in
+      MainActor.assumeIsolated { _ = self?.noteStore?.flush() }
     }
     // 每天一份备份：启动时一次（在最后，等便签开好：finishLaunchingNotes），一直开着不退的靠系统的换日通知
     // （午夜发；睡过了午夜的醒来时补发，不保证准点），锁屏时再看一眼（换日那次没备成的补上）。都是现成的事件，
     // 不为它加定时器
     NotificationCenter.default.addObserver(
       forName: .NSCalendarDayChanged, object: nil, queue: .main
-    ) { [unowned self] _ in
+    ) { [weak self] _ in
       MainActor.assumeIsolated {
+        guard let self else { return }
         // 「最近删除」里放满 30 天的便签、图片目录里没人引用满 30 天的文件：启动时清一次，换日时再清
-        purgeNotes()
-        backupIfDue()
+        self.purgeNotes()
+        self.backupIfDue()
       }
     }
 
