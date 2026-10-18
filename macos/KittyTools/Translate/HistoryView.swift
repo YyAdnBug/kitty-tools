@@ -520,13 +520,7 @@ struct HistoryView: View {
     .buttonStyle(.plain)
     // 和 ⌘K 同一份动作（分隔线、子菜单，不写键位）
     .contextMenu { ActionContextMenu { list.actions(for: entry) } }
-    .transition(
-      reduceMotion
-        ? .opacity
-        : .asymmetric(
-          insertion: .move(edge: .top).combined(with: .opacity),
-          removal: .opacity.combined(with: .scale(scale: 0.96, anchor: .leading)))
-    )
+    .transition(rowTransition)
     .accessibilityLabel("\(entry.source)，译文：\(entry.result)")
     .accessibilityValue(entry.favorite ? "已收藏" : "")
     .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -534,6 +528,15 @@ struct HistoryView: View {
     .accessibilityAction(named: "复制译文") { list.copy(entry) }
     .accessibilityAction(named: entry.favorite ? "取消收藏" : "收藏") { list.toggleFavorite(entry) }
     .accessibilityAction(named: "删除") { list.delete(entry) }
+  }
+
+  /// 行进出的过渡（单独拿出来：Swift 6.4 / Xcode 27.1 起，写在上面那一长串修饰里类型检查超时）
+  private var rowTransition: AnyTransition {
+    reduceMotion
+      ? .opacity
+      : .asymmetric(
+        insertion: .move(edge: .top).combined(with: .opacity),
+        removal: .opacity.combined(with: .scale(scale: 0.96, anchor: .leading)))
   }
 
   /// 共用的空状态（Shell/Style 的 EmptyState：说明 12 pt 是它给的），四周留白同浮窗的结果区
