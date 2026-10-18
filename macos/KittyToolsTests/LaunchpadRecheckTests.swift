@@ -1,6 +1,6 @@
 // 复查后第二轮（FIXES-2，2026-10-18）的锁定测试：每条对应清单里的一项（测试名后的 G 编号）。
 // 屏外建 model / 面板 / 窗口，不 makeKey；G1 不注册真的触控板回调，只在后台线程上直接调那个 C 回调、装假的桥；
-// G29 的真拖动是进程内 `window.sendEvent`（不发系统事件、不动用户的鼠标）。
+// G29 的真拖动、2026-10-18 真机反馈后的「点到的范围」是进程内 `window.sendEvent`（不发系统事件、不动用户的鼠标）。
 
 import AppKit
 import SwiftUI
@@ -9,6 +9,9 @@ import Testing
 
 @testable import KittyTools
 
+/// 串行跑：后面几条在屏外窗口里送真的鼠标事件，几条一起跑会在 await 处交错——整个 App 只有一个指针，
+/// 一个窗口拖到一半另一个窗口按下去，SwiftUI 的手势会被搅乱（真机上不会有两个指针）
+@Suite(.serialized)
 @MainActor
 struct LaunchpadRecheckTests {
   private func ref(_ name: String) -> LaunchpadAppRef {
@@ -416,58 +419,160 @@ struct LaunchpadRecheckTests {
     let model = model(LaunchpadLayout(pages: [refs.map { LaunchpadTile.app($0) }]))
     var opened: String?
     model.onOpenApp = { opened = $0.id }
-    let size = NSSize(width: 900, height: 600)
-    let host = FirstMouseHost(
-      rootView: AnyView(
-        LaunchpadView(model: model).frame(width: size.width, height: size.height)))
-    host.frame = NSRect(origin: .zero, size: size)
-    let window = NSWindow(
-      contentRect: NSRect(origin: NSPoint(x: -20000, y: -20000), size: size),
-      styleMask: [.borderless], backing: .buffered, defer: false)
-    window.contentView = host
-    window.orderFront(nil)
-    defer { window.orderOut(nil) }
-    for _ in 0..<20 where model.gridFrames[0] == nil {
-      try await Task.sleep(for: .milliseconds(50))
-    }
-    let frame = try #require(model.gridFrames[0])
-    func send(_ type: NSEvent.EventType, _ point: CGPoint) async {
-      if let event = NSEvent.mouseEvent(
-        with: type, location: NSPoint(x: point.x, y: size.height - point.y), modifierFlags: [],
-        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
-        context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1)
-      {
-        window.sendEvent(event)
-      }
-      // 每个事件之后让界面真的更新、重排一遍（真机上两次鼠标事件之间界面都会重画；不这么做的话，拖动一激活就把
-      // 挂着手势的那一格换掉、手势被取消这类问题在单测里看不出来）
-      try? await Task.sleep(for: .milliseconds(30))
-      host.layoutSubtreeIfNeeded()
-      host.displayIfNeeded()
-      try? await Task.sleep(for: .milliseconds(10))
-    }
+    let live = LiveLaunchpad(model)
+    defer { live.close() }
+    let frame = try #require(await live.gridFrame())
     // 单击 b：打开 b
-    await send(.leftMouseDown, center(1, in: frame, of: model))
-    await send(.leftMouseUp, center(1, in: frame, of: model))
+    await live.click(center(1, in: frame, of: model))
     #expect(opened == refs[1].id)
     #expect(model.drag == nil)
     // 把 a 拖到 e 那一格的左边沿松手：挪到 e 前面，不建文件夹，手势收得到松手
     let start = center(0, in: frame, of: model)
     let edge = LaunchpadModel.cellRect(4, in: frame, metrics: model.metrics)
     let target = CGPoint(x: edge.minX + 6, y: edge.midY)
-    await send(.leftMouseDown, start)
+    await live.send(.leftMouseDown, start)
     for step in 1...10 {
       let t = CGFloat(step) / 10
-      await send(
+      await live.send(
         .leftMouseDragged,
         CGPoint(x: start.x + (target.x - start.x) * t, y: start.y + (target.y - start.y) * t))
     }
-    await send(.leftMouseUp, target)
+    await live.send(.leftMouseUp, target)
     #expect(model.drag == nil)
     #expect(model.layout.tiles.allSatisfy { $0.folder == nil })
     #expect(
       model.layout.tiles.map(\.id)
         == ["b", "c", "d", "a", "e", "f"].map { LaunchpadTile.app(ref($0)).id })
+  }
+
+  // MARK: 2026-10-18 真机反馈：点到的范围
+
+  /// 只有点到图标才打开：图标旁边的空处、名字上都不算（点空处 = 点背景，收起；收起后界面淡掉、不再收点击，
+  /// 所以每种点法各用一块新的界面）。图标的位置按界面里真的 NSImageView 量，不按算式猜
+  @Test func onlyTheIconOpensTheApp() async throws {
+    let refs = ["a", "b", "c"].map(ref)
+    func attempt(_ point: (CGRect) -> CGPoint) async throws -> (opened: [String], closed: Int) {
+      let model = model(LaunchpadLayout(pages: [refs.map { LaunchpadTile.app($0) }]))
+      var opened: [String] = []
+      var closed = 0
+      model.onOpenApp = { opened.append($0.id) }
+      model.onClose = { closed += 1 }
+      let live = LiveLaunchpad(model)
+      defer { live.close() }
+      _ = try #require(await live.gridFrame())
+      let icons = live.iconRects()
+      #expect(icons.count == 3)
+      let icon = try #require(icons[safe: 1])
+      await live.click(point(icon))
+      return (opened, closed)
+    }
+    // 图标里面、靠近角上：打开
+    let inside = try await attempt { CGPoint(x: $0.maxX - 4, y: $0.minY + 4) }
+    #expect(inside.opened == [refs[1].id] && inside.closed == 0)
+    // 图标右边、名字那么宽的范围里（原来整块都算点到）
+    let beside = try await attempt { CGPoint(x: $0.maxX + 20, y: $0.midY) }
+    #expect(beside.opened.isEmpty && beside.closed == 1)
+    // 名字上：图标下面隔着选中底的留白（0.11 个图标）和 6 pt，再往下半行字
+    let label = try await attempt { CGPoint(x: $0.midX, y: $0.maxY + $0.height * 0.11 + 6 + 6) }
+    #expect(label.opened.isEmpty && label.closed == 1)
+  }
+
+  /// 文件夹名只有字那一块能点进编辑：同一行字外面的空处 = 点背景（收起文件夹），点字上不收
+  @Test func onlyTheFolderTitleTextStartsEditing() async throws {
+    let refs = ["a", "b", "c"].map(ref)
+    let folder = LaunchpadFolder(name: "工具", pages: [refs])
+    let model = model(LaunchpadLayout(pages: [[.folder(folder)]]))
+    let live = LiveLaunchpad(model)
+    defer { live.close() }
+    _ = await live.gridFrame()
+    model.openFolder(folder.id)
+    for _ in 0..<20 where model.folderPanelFrame.isEmpty { await live.settle() }
+    await live.settle()
+    let panel = model.folderPanelFrame
+    #expect(!panel.isEmpty)
+    // 名字那一行：面板上方 18 + 半行（28 pt 字约 34 高）
+    let rowY = panel.minY - 18 - 18
+    await live.click(CGPoint(x: panel.midX, y: rowY))
+    for _ in 0..<10 where !(live.window.firstResponder is NSText) { await live.settle() }
+    #expect(model.openFolderID == folder.id)
+    #expect(live.window.firstResponder is NSText)
+    // 同一行、离字远的地方（原来整行宽都是输入框）
+    await live.click(CGPoint(x: panel.minX + 60, y: rowY))
+    #expect(model.openFolderID == nil)
+  }
+}
+
+/// 屏外窗口里的真启动台界面，进程内 `window.sendEvent` 送鼠标事件（不发系统事件、不动用户的鼠标，不当 key）
+@MainActor
+private struct LiveLaunchpad {
+  let window: NSWindow
+  let host: FirstMouseHost
+  let model: LaunchpadModel
+  let size: NSSize
+
+  init(_ model: LaunchpadModel, size: NSSize = NSSize(width: 900, height: 600)) {
+    self.model = model
+    self.size = size
+    host = FirstMouseHost(
+      rootView: AnyView(
+        LaunchpadView(model: model).frame(width: size.width, height: size.height)))
+    host.frame = NSRect(origin: .zero, size: size)
+    window = NSWindow(
+      contentRect: NSRect(origin: NSPoint(x: -20000, y: -20000), size: size),
+      styleMask: [.borderless], backing: .buffered, defer: false)
+    window.contentView = host
+    window.orderFront(nil)
+  }
+
+  func close() { window.orderOut(nil) }
+
+  /// 等第一页画出来、量到网格框
+  func gridFrame() async -> CGRect? {
+    for _ in 0..<20 where model.gridFrames[0] == nil {
+      try? await Task.sleep(for: .milliseconds(50))
+    }
+    return model.gridFrames[0]
+  }
+
+  /// 让界面真的更新、重排一遍（真机上两次鼠标事件之间界面都会重画；不这么做的话，拖动一激活就把
+  /// 挂着手势的那一格换掉、手势被取消这类问题在单测里看不出来）
+  func settle() async {
+    // 按轮数等（不按墙钟猜）：几轮「让出主线程 → 重排 → 重画」，第一次起测试宿主时也够
+    for _ in 0..<3 {
+      try? await Task.sleep(for: .milliseconds(15))
+      host.layoutSubtreeIfNeeded()
+      host.displayIfNeeded()
+    }
+  }
+
+  func send(_ type: NSEvent.EventType, _ point: CGPoint) async {
+    if let event = NSEvent.mouseEvent(
+      with: type, location: NSPoint(x: point.x, y: size.height - point.y), modifierFlags: [],
+      timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+      context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1)
+    {
+      window.sendEvent(event)
+    }
+    await settle()
+  }
+
+  /// 界面里每个 App 图标（NSImageView）在窗口里的位置（左上角为原点），按先行后列排
+  func iconRects() -> [CGRect] {
+    func images(in view: NSView) -> [NSImageView] {
+      view.subviews.flatMap { ($0 as? NSImageView).map { [$0] } ?? images(in: $0) }
+    }
+    return images(in: host).map { image in
+      let rect = image.convert(image.bounds, to: nil)
+      return CGRect(
+        x: rect.minX, y: size.height - rect.maxY, width: rect.width, height: rect.height)
+    }
+    .filter { $0.width > 1 }
+    .sorted { ($0.minY, $0.minX) < ($1.minY, $1.minX) }
+  }
+
+  func click(_ point: CGPoint) async {
+    await send(.leftMouseDown, point)
+    await send(.leftMouseUp, point)
   }
 }
 

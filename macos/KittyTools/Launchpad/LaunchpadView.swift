@@ -249,10 +249,14 @@ struct LaunchpadView: View {
     return VStack(spacing: 6) {
       ZStack {
         RoundedRectangle(cornerRadius: Style.Radius.launchpadIcon, style: .continuous)
-          .fill(.white.opacity(selected ? (contrast == .increased ? 0.22 : 0.16) : 0.001))
+          .fill(.white.opacity(selected ? (contrast == .increased ? 0.22 : 0.16) : 0))
           .frame(width: iconSize * 1.22, height: iconSize * 1.22)
+          .allowsHitTesting(false)
         icon(for: tile, size: iconSize, phase: Double(index % 7) / 7)
       }
+      // 只有图标那一块算点到（照 macOS 15；2026-10-18 真机反馈：点名字、图标旁边的空处也打开了）。
+      // 外面那圈是选中底的留白（1.22 倍），文件夹方块本身只有图标的 0.8
+      .contentShape(Rectangle().inset(by: iconSize * (tile.folder == nil ? 0.11 : 0.21)))
       .overlay(alignment: .topLeading) {
         if model.jiggling, let app = tile.app.flatMap({ model.app($0) }),
           LaunchpadCatalog.canDelete(app)
@@ -267,8 +271,8 @@ struct LaunchpadView: View {
         .truncationMode(.middle)
         .frame(width: metrics.labelWidth)
         .shadow(color: .black.opacity(0.4), radius: 1.5, y: 0.5)
+        .allowsHitTesting(false)
     }
-    .contentShape(Rectangle())
     .frame(width: metrics.cellWidth, height: metrics.cellHeight)
     .opacity(isDragged ? 0.25 : (pressed ? 0.82 : 1))
     .scaleEffect(
@@ -405,6 +409,14 @@ nonisolated enum LaunchpadJiggle {
   }
 }
 
+/// 没有固有尺寸的 NSImageView：大小只听 SwiftUI 给的 frame。普通的 NSImageView 拿图的尺寸当固有尺寸，抗压缩优先级又高，
+/// SwiftUI 缩不到比图小——位图按最大那块屏画，换到图标小一些的屏上图标（和点得到的范围）就比格子要的大（2026-10-18 单测量出来的）
+final class IconImageView: NSImageView {
+  override var intrinsicContentSize: NSSize {
+    NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric)
+  }
+}
+
 private struct JigglingIcon: NSViewRepresentable {
   let image: NSImage
   let size: CGFloat
@@ -412,14 +424,14 @@ private struct JigglingIcon: NSViewRepresentable {
   let phase: Double
   let reduceMotion: Bool
 
-  func makeNSView(context: Context) -> NSImageView {
-    let view = NSImageView()
+  func makeNSView(context: Context) -> IconImageView {
+    let view = IconImageView()
     view.imageScaling = .scaleProportionallyUpOrDown
     view.wantsLayer = true
     return view
   }
 
-  func updateNSView(_ view: NSImageView, context: Context) {
+  func updateNSView(_ view: IconImageView, context: Context) {
     view.image = image
     // 不碰 frame / anchorPoint / bounds：layer-backed 视图的几何归 AppKit / SwiftUI 管，改了会被布局复位、
     // 图标偏半个边长或绕着角转（G15）。转轴按图层**现在的** anchorPoint 算到图标中心上
@@ -542,22 +554,7 @@ private struct FolderOverlay: View {
         model.closeFolder()
       }
       VStack(spacing: 18) {
-        TextField("文件夹名字", text: $model.folderNameDraft)
-          .textFieldStyle(.plain)
-          .font(.system(size: 28, weight: .medium))
-          .foregroundStyle(.white.opacity(0.96))
-          .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
-          .multilineTextAlignment(.center)
-          .focused($editingName)
-          .frame(width: metrics.folderGridWidth)
-          .onSubmit { commitName() }
-          .onChange(of: editingName) { _, focused in
-            if !focused { commitName() }
-          }
-          .onExitCommand {
-            commitName()
-            model.closeFolder()
-          }
+        title
         VStack(spacing: 10) {
           grid(columns: columns, rows: rows)
           folderDots
@@ -577,6 +574,36 @@ private struct FolderOverlay: View {
     .accessibilityElement(children: .contain)
     .accessibilityLabel(model.openFolder?.name ?? "文件夹")
   }
+
+  /// 文件夹名：只有字那一块能点进编辑（照 macOS 15；2026-10-18 真机反馈：整行都能点）。框按字量出来的宽度，
+  /// 跟着打的字变宽，最宽到面板那么宽；旁边的空处点了和点背景一样（提交改名、收起文件夹）。编辑时垫一块浅底
+  private var title: some View {
+    let text = model.folderNameDraft.isEmpty ? "文件夹名字" : model.folderNameDraft
+    let width = min(
+      ceil(NSAttributedString(string: text, attributes: [.font: Self.titleFont]).size().width) + 24,
+      metrics.folderGridWidth)
+    let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+    return TextField("文件夹名字", text: $model.folderNameDraft)
+      .textFieldStyle(.plain)
+      .font(Font(Self.titleFont))
+      .foregroundStyle(.white.opacity(0.96))
+      .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
+      .multilineTextAlignment(.center)
+      .focused($editingName)
+      .frame(width: width, height: 38)
+      .background(shape.fill(.white.opacity(editingName ? 0.14 : 0)))
+      .animation(.easeOut(duration: Style.fadeIn), value: editingName)
+      .onSubmit { commitName() }
+      .onChange(of: editingName) { _, focused in
+        if !focused { commitName() }
+      }
+      .onExitCommand {
+        commitName()
+        model.closeFolder()
+      }
+  }
+
+  private static let titleFont = NSFont.systemFont(ofSize: 28, weight: .medium)
 
   private func grid(columns: Int, rows: Int) -> some View {
     let pages = model.openFolder?.pages ?? []
@@ -626,14 +653,17 @@ private struct FolderOverlay: View {
     return VStack(spacing: LaunchpadMetrics.folderLabelSpacing) {
       ZStack {
         RoundedRectangle(cornerRadius: Style.Radius.launchpadFolderIcon, style: .continuous)
-          .fill(.white.opacity(selected ? (contrast == .increased ? 0.22 : 0.16) : 0.001))
+          .fill(.white.opacity(selected ? (contrast == .increased ? 0.22 : 0.16) : 0))
           .frame(width: iconSize * 1.22, height: iconSize * 1.22)
+          .allowsHitTesting(false)
         JigglingIcon(
           image: model.icons.icon(for: app, size: iconSize), size: iconSize,
           active: model.jiggling, phase: Double(index % 7) / 7, reduceMotion: reduceMotion
         )
         .frame(width: iconSize, height: iconSize)
       }
+      // 和主网格一样只有图标算点到
+      .contentShape(Rectangle().inset(by: iconSize * 0.11))
       .overlay(alignment: .topLeading) {
         if model.jiggling, LaunchpadCatalog.canDelete(app) {
           deleteBadge(app, size: iconSize)
@@ -646,8 +676,8 @@ private struct FolderOverlay: View {
         .lineLimit(1)
         .truncationMode(.middle)
         .frame(width: metrics.folderLabelWidth, height: LaunchpadMetrics.folderLabelHeight)
+        .allowsHitTesting(false)
     }
-    .contentShape(Rectangle())
     .opacity(pressed ? 0.82 : 1)
     .scaleEffect(reduceMotion ? 1 : (pressed ? 0.94 : 1))
     .animation(Style.Motion.snap.animation(), value: pressed)
