@@ -1149,8 +1149,12 @@ struct SnapshotProbeTests {
         AboutTab(), size: NSSize(width: 590, height: 420), dark: dark,
         to: "\(out)/settings-about-credits\(dark ? "-dark" : "").png"
       ) { root in
-        func scrollView(in view: NSView) -> NSScrollView? {
-          (view as? NSScrollView) ?? view.subviews.lazy.compactMap(scrollView).first
+        @MainActor func scrollView(in view: NSView) -> NSScrollView? {
+          if let scroll = view as? NSScrollView { return scroll }
+          for subview in view.subviews {
+            if let found = scrollView(in: subview) { return found }
+          }
+          return nil
         }
         guard let scroll = scrollView(in: root), let document = scroll.documentView else { return }
         document.scroll(NSPoint(x: 0, y: document.bounds.height - scroll.contentSize.height))
@@ -1865,7 +1869,7 @@ struct SnapshotProbeTests {
       prepare: Self.reveal(
         NSRange(
           location: (colorful.body as NSString).range(of: "红").location, length: 0)))
-    var stateWallModel = NotesWindowModel(store: states)
+    let stateWallModel = NotesWindowModel(store: states)
     stateWallModel.layout = .wall
     stateWallModel.selection = five.id
     try snapshot(

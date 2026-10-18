@@ -1211,7 +1211,6 @@ nonisolated enum NoteMarkdown {
   private static func ownMarker(
     of format: BlockFormat, units: [UInt16]
   ) -> (indent: Int, end: Int)? {
-    let indent = units.prefix { $0 == space || $0 == tab }.count
     switch format {
     case .heading:
       guard let head = heading(units) else { return nil }

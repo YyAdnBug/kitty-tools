@@ -198,7 +198,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       topAnchored: true,
       // 启动器没有固定（N8）：点外面就收起
       autoHide: .clickOutside, isPinned: { false },
-      content: LauncherPanelView(model: model).environment(updater))
+      // 包 AnyView：带了 environment 的是不透明类型，Swift 6.4 认为它的 View 遵循可能是隔离的、不让直接传进这个泛型 init
+      // （编译警告）；根视图的类型不变，包一层没有重建的开销。剪贴板、翻译浮窗同
+      content: AnyView(LauncherPanelView(model: model).environment(updater)))
     panel.keyEquivalentHandler = { [unowned model] in model.handleKeyEquivalent($0) }
     panel.onHide = { [unowned self, unowned model] in
       model.didHide()
@@ -294,7 +296,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         width: ClipboardPanelView.width, height: ClipboardPanelView.height(for: model)),
       topAnchored: true, autoHide: .clickOutside,
       isPinned: { !UserDefaults.standard.bool(forKey: Prefs.clipboardHideOnUnfocus) },
-      content: ClipboardPanelView(model: model).environment(updater))
+      content: AnyView(ClipboardPanelView(model: model).environment(updater)))
     panel.keyEquivalentHandler = { [unowned model] in model.handleKeyEquivalent($0) }
     panel.onHide = { [unowned self, unowned model] in
       model.reset()
@@ -355,21 +357,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       size: NSSize(width: 420, height: 560), minSize: NSSize(width: 360, height: 200),
       frameName: "TranslatePanel", autoHide: .resignKey,
       isPinned: { UserDefaults.standard.bool(forKey: Prefs.floatingPinned) },
-      content: TranslatePanelView(
-        coordinator: coordinator, speaker: speaker,
-        resize: { height, mustFit in
-          // 高度随内容（Bob 的做法），前三张结果卡总放得下（TranslatePanelView.panelHeight）。
-          // 最小 / 最大高度都钉在这个值上：用户只能拖宽度，拖高度会和自动高度打架
-          guard let panel = created else { return }
-          let visible = (panel.screen ?? NSScreen.main)?.visibleFrame.height ?? 800
-          let height = TranslatePanelView.panelHeight(height, mustFit: mustFit, visible: visible)
-          panel.minSize = NSSize(width: 360, height: height)
-          panel.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: height)
-          // 变化 8 pt 以上才带动画：流式输出时每来几个字都会长一点，小变化直接设
-          panel.setContentHeight(height, animated: abs(panel.frame.height - height) >= 8)
-        },
-        replaceOriginal: { [unowned self] in replaceOriginal() }
-      ).environment(island))
+      content: AnyView(
+        TranslatePanelView(
+          coordinator: coordinator, speaker: speaker,
+          resize: { height, mustFit in
+            // 高度随内容（Bob 的做法），前三张结果卡总放得下（TranslatePanelView.panelHeight）。
+            // 最小 / 最大高度都钉在这个值上：用户只能拖宽度，拖高度会和自动高度打架
+            guard let panel = created else { return }
+            let visible = (panel.screen ?? NSScreen.main)?.visibleFrame.height ?? 800
+            let height = TranslatePanelView.panelHeight(height, mustFit: mustFit, visible: visible)
+            panel.minSize = NSSize(width: 360, height: height)
+            panel.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: height)
+            // 变化 8 pt 以上才带动画：流式输出时每来几个字都会长一点，小变化直接设
+            panel.setContentHeight(height, animated: abs(panel.frame.height - height) >= 8)
+          },
+          replaceOriginal: { [unowned self] in replaceOriginal() }
+        ).environment(island)))
     created = panel
     coordinator.historyList.island = island
     panel.keyEquivalentHandler = { [unowned self] in coordinator.handleKeyEquivalent($0) }

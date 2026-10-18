@@ -236,13 +236,13 @@ struct SettingsBackupTests {
 
     // 另一台电脑（或 Dev 版）也选了这个文件夹：它今天还没存；存了也不盖我的
     #expect(await state("B00C", today) == .due)
-    try await SettingsBackup.write(
+    _ = try await SettingsBackup.write(
       Data("另一台的".utf8), to: cloud, owner: "B00C", creates: false, now: today,
       calendar: calendar)
     #expect(try Data(contentsOf: mine) == payload)
     // 它连着存 8 天，只轮换它自己的；我那一份、用户自己的文件都还在
     for day in 9...16 {
-      try await SettingsBackup.write(
+      _ = try await SettingsBackup.write(
         payload, to: cloud, owner: "B00C", creates: false, now: Self.moment(day: day),
         calendar: calendar)
     }
