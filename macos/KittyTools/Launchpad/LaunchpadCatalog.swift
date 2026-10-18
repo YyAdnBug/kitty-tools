@@ -23,7 +23,10 @@ nonisolated struct LaunchpadProjectApp: Identifiable {
 }
 
 enum LaunchpadCatalog {
-  /// 扫本机的 .app。排序按显示名的本地化顺序，新装的 App 追加到布局末尾时顺序稳定
+  /// 扫本机的 .app。排序按显示名的本地化顺序，新装的 App 追加到布局末尾时顺序稳定。
+  /// ponytail: 在主线程扫（本机 113 个 App 约 130ms，Debug；R11 说的 20ms 上限是 Release 的口径，这里量不准）。
+  /// 已经用「启动时预热 + 目录修改时间」把打开路径上的这一下拿掉了；真要挪后台，得先让 LauncherItem /
+  /// AppCatalog 变成 Sendable（现在它们带着非 Sendable 的成员，Task.detached 拿不回来）
   static func load() -> [LaunchpadProjectApp] {
     AppCatalog.scan()
       .filter { $0.kind == .app && !$0.target.hasSuffix("/Finder.app") }

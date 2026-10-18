@@ -3506,6 +3506,77 @@ struct SnapshotProbeTests {
   }
 
   /// prepare：布局完、出图前对窗口内容做点手脚（比如 emphasizeTableRows）
+  /// 启动台（第八族，2026-10-18，SPEC §10.5）：第一页、第二页、搜索中、文件夹打开、抖动模式（带 ✕）、拖动中、
+  /// 设置页；浅色 / 深色各一份，图以 launchpad- 开头，出到 TEST_RUNNER_KITTY_SNAPSHOT_DIR。
+  /// 用本机真实的 App 目录（图标是真的），只把其中一个摆成「App Store 装的」好让抖动模式出 ✕。
+  @Test(.enabled(if: directory != nil)) func launchpad() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    let real = LaunchpadCatalog.load()
+    guard real.count >= 10 else { return }
+    let apps = real.prefix(14).enumerated().map { index, app in
+      LaunchpadProjectApp(
+        id: app.id, ref: app.ref, item: app.item, url: app.url, isSystem: app.isSystem,
+        inUtilities: app.inUtilities, isAppStore: index == 2, category: app.category)
+    }
+    let folder = LaunchpadFolder(
+      name: "工具", pages: [[apps[3].ref, apps[4].ref, apps[5].ref]])
+    var tiles = apps.prefix(3).map { LaunchpadTile.app($0.ref) }
+    tiles.append(.folder(folder))
+    tiles += apps.dropFirst(6).map { LaunchpadTile.app($0.ref) }
+    // 一页 9 个（好让第二页真的有东西：真机上默认一页 35 个）
+    let layout = LaunchpadLayout(pages: LaunchpadLayout.paginate(tiles, capacity: 9))
+    let size = NSSize(width: 1280, height: 800)
+    func board() -> LaunchpadModel {
+      LaunchpadModel(
+        layout: layout, catalog: Array(apps), icons: LaunchpadIcons(), columns: 7, rows: 5,
+        screenSize: size)
+    }
+    for dark in [false, true] {
+      let suffix = dark ? "-dark" : ""
+      try snapshot(
+        LaunchpadView(model: board()), size: size, dark: dark,
+        to: "\(out)/launchpad-page1\(suffix).png")
+      let second = board()
+      second.go(to: 1)
+      try snapshot(
+        LaunchpadView(model: second), size: size, dark: dark,
+        to: "\(out)/launchpad-page2\(suffix).png")
+      let search = board()
+      search.query = apps[0].name
+      try snapshot(
+        LaunchpadView(model: search), size: size, dark: dark,
+        to: "\(out)/launchpad-search\(suffix).png")
+      let open = board()
+      open.openFolder(folder.id)
+      try snapshot(
+        LaunchpadView(model: open), size: size, dark: dark,
+        to: "\(out)/launchpad-folder\(suffix).png")
+      let jiggle = board()
+      jiggle.enterJiggle()
+      try snapshot(
+        LaunchpadView(model: jiggle), size: size, dark: dark,
+        to: "\(out)/launchpad-jiggle\(suffix).png")
+      let drag = board()
+      drag.beginDrag(
+        tile: .app(apps[1].ref), appID: apps[1].ref.id, folder: nil,
+        at: CGPoint(x: 300, y: 400))
+      drag.updateDrag(location: CGPoint(x: 520, y: 430), pageWidth: size.width)
+      try snapshot(
+        LaunchpadView(model: drag), size: size, dark: dark,
+        to: "\(out)/launchpad-drag\(suffix).png")
+    }
+    let navigation = SettingsNavigation(defaults: nil)
+    navigation.page = .launchpad
+    try snapshot(
+      SettingsRoot(navigation: navigation) { page in
+        page == .launchpad ? AnyView(LaunchpadTab()) : AnyView(EmptyView())
+      } onboarding: {
+        AnyView(EmptyView())
+      },
+      size: NSSize(width: 780, height: 700), dark: false, to: "\(out)/launchpad-settings.png")
+  }
+
   private func snapshot(
     _ view: some View, size: NSSize, dark: Bool, to path: String,
     prepare: ((NSView) -> Void)? = nil

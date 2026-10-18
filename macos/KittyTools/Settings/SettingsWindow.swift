@@ -315,8 +315,8 @@ struct SettingsRoot: View {
       .navigationSplitViewColumnWidth(min: 170, ideal: 190, max: 240)
     } detail: {
       VStack(spacing: 0) {
-        // 关于是品牌页、没有页头；翻译、启动器、状态屏把页头画在自己的 NavigationStack 里，推进详情页时一起换掉（N12）
-        if ![.about, .translate, .launcher, .statusScreen].contains(navigation.page) {
+        // 关于是品牌页、没有页头；翻译、启动器、启动台、状态屏把页头画在自己的 NavigationStack 里，推进详情页时一起换掉（N12）
+        if ![.about, .translate, .launcher, .launchpad, .statusScreen].contains(navigation.page) {
           PageHeader(page: navigation.page)
         }
         page(navigation.page)

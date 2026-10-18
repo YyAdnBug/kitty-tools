@@ -42,17 +42,27 @@ struct LaunchpadTab: View {
   @State private var confirmsImport = false
 
   var body: some View {
+    NavigationStack {
+      VStack(spacing: 0) {
+        PageHeader(page: .launchpad)
+        form
+      }
+      .navigationTitle(SettingsPage.launchpad.title)
+    }
+  }
+
+  private var form: some View {
     Form {
       Section {
         Toggle(isOn: $enabled) {
           Text("打开启动台")
-          Text("全屏的图标网格。关掉之后快捷键、菜单栏、触发角、触控板捏合都不打开它")
+          Text("全屏的图标网格；关掉后入口都不响应")
         }
         LabeledContent {
           ShortcutsButton()
         } label: {
           Text("启动台的按键")
-          Text("打开 / 收起、翻页、搜索、选中和打开、抖动模式、文件夹里按什么键")
+          Text("打开 / 收起、翻页、搜索、文件夹里按什么键")
         }
       } header: {
         Text("启动台")
@@ -65,7 +75,7 @@ struct LaunchpadTab: View {
             .labelsHidden()
         } label: {
           Text("一页几列")
-          Text("改了之后按新的容量重新分页")
+          Text("改了按新容量重新分页")
         }
         LabeledContent {
           Stepper("\(rows)", value: $rows, in: Prefs.launchpadRowChoices)
@@ -85,7 +95,7 @@ struct LaunchpadTab: View {
           ForEach(LaunchpadCornerOption.allCases) { Text($0.title).tag($0.rawValue) }
         } label: {
           Text("屏幕角")
-          Text("鼠标推到那个角停一下打开启动台；和系统设置里的触发角撞了的话，两个都会响应")
+          Text("鼠标推到角上停一下打开")
         }
       } header: {
         Text("触发角")
@@ -95,20 +105,20 @@ struct LaunchpadTab: View {
           Button("从系统启动台重新导入…") { confirmsImport = true }
         } label: {
           Text("从系统启动台导入")
-          Text("页、文件夹、顺序都照旧；库里已经卸掉的 App 跳过，本机多出来的排到最后")
+          Text("页、文件夹、顺序照旧；卸掉的跳过")
         }
         LabeledContent {
           Button("恢复默认排列…") { confirmsReset = true }
         } label: {
           Text("恢复默认排列")
-          Text("系统 App 在前、「其他」文件夹装工具、其余按名字排。不影响 App 本身")
+          Text("系统 App 在前、其余按名字排")
         }
         LabeledContent {
           Button("撤销上一次导入…", action: undo)
             .disabled(!canUndo())
         } label: {
           Text("撤销上一次导入")
-          Text("把布局换回导入 / 恢复默认之前的样子，只能用一次")
+          Text("换回导入前的样子，只能用一次")
         }
       } header: {
         Text("排列数据")
@@ -133,6 +143,9 @@ struct LaunchpadTab: View {
     } message: {
       Text("现在的排法会被换掉；之后可以在「撤销上一次导入」里换回来一次。库里已经卸掉的 App 跳过。")
     }
+    // macOS 上 Form 在有的容器里会取 columns 样式（标签右对齐一列、说明和标题挤成一行），
+    // 和别的设置页（grouped：标题 + 说明堆叠、控件靠右）不一致——显式定成 grouped
+    .formStyle(.grouped)
   }
 
   @ViewBuilder
@@ -141,7 +154,7 @@ struct LaunchpadTab: View {
       if pinchAvailable() {
         Toggle(isOn: $pinch) {
           Text("用触控板捏合打开")
-          Text("拇指和三指（或四指）捏合打开启动台，张开收起。多个触控板都认")
+          Text("捏合打开，张开收起；多个触控板都认")
         }
         .disabled(!enabled)
         Picker(selection: $pinchSense) {
@@ -150,7 +163,7 @@ struct LaunchpadTab: View {
           }
         } label: {
           Text("灵敏度")
-          Text("越松越容易捏出来，也越容易被别的多指手势带出来")
+          Text("越松越容易捏出来")
         }
         .pickerStyle(.segmented)
         .disabled(!enabled || !pinch)
@@ -160,7 +173,7 @@ struct LaunchpadTab: View {
           } label: {
             Text("系统的捏合手势还开着")
               .foregroundStyle(Style.danger)
-            Text("系统的还开着时，捏合会打开系统自己的应用程序视图；我们认到捏合不会打开。要在这里用，先到 系统设置 › 触控板 › 更多手势 里把它关掉")
+            Text("系统的还开着时我们认到也不打开；先到 系统设置 › 触控板 › 更多手势 关掉它")
           }
         }
       } else {

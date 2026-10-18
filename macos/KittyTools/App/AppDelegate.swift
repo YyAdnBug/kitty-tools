@@ -621,6 +621,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     updater.onAvailableChange = { [weak statusItem] in statusItem?.updateVersion = $0?.version }
     updater.start()
     launcherModel.rescanApps()  // 约 65ms，放在启动时，第一次呼出就不用等
+    // 启动台的本机 App 目录也在这里扫一遍（约 130ms Debug，见 PLAN §10「启动台」的量）：扫在启动时、
+    // 不在打开时，打开到第一帧才稳在 100ms 以内（R11）；目录没变时打开只 stat 几个目录
+    launchpad.prepare()
     launchpad.applySettings()  // 触控板捏合、触发角按偏好起停（系统的捏合还开着时不注册回调）
     showWelcomeIfNeeded()
     // 有快捷键没注册上（15.0 / 15.1 上只带 ⌥ 的组合）：按了没反应又不知道为什么，启动时说一次

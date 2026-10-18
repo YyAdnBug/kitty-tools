@@ -109,6 +109,10 @@ TEST_RUNNER_KITTY_NOTES_COLOR_PROBE=1 xcodebuild -project macos/KittyTools.xcode
 TEST_RUNNER_KITTY_NOTES_FUZZ=20000 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/NoteEditorFuzzTests/randomEditsMatchWholeText()'
 
+# 启动台的性能 / 内存探针（按需，屏外，几秒；grep「launchpad-probe」：扫目录、第一帧、翻页布局、footprint）
+TEST_RUNNER_KITTY_LAUNCHPAD_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -only-testing:'KittyToolsTests/LaunchpadProbeTests/measure()'
+
 # 启动台布局的随机操作测试：随机挪 / 建文件夹 / 拖出 / 删 / 装新 App / 卸 App / 改行列数，每步查不变式；
 # 步数随手给（默认 1500，2 万步几秒钟），换种子加 TEST_RUNNER_KITTY_LAUNCHPAD_FUZZ_SEED=<种子>
 TEST_RUNNER_KITTY_LAUNCHPAD_FUZZ=20000 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
