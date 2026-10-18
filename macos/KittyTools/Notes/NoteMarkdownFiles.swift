@@ -260,7 +260,9 @@ nonisolated enum NoteMarkdownFiles {
       if NoteMarkdown.role(at: start, in: blocks) == nil, line.contains("kitty-note-image://") {
         let matches = NoteImages.matches(in: line as NSString)
         let lineResult = NSMutableString(string: line)
-        for match in matches {
+        // **从后往前换**：换上去的比原来短（`kitty-note-image://` → `attachments/`），从前往后换的话后面几张的位置就错了——
+        // 一行两张图时越界闪退（0.5.0 测试包真机崩过），后面还有字时写坏文件
+        for match in matches.reversed() {
           let image = match.image
           let key = "\(image.id.uuidString).\(image.ext)"
           if seen[key] == nil { seen[key] = image }

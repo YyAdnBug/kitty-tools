@@ -125,6 +125,27 @@ struct NoteMarkdownFilesTests {
     #expect(back == body)
   }
 
+  /// 一行里有好几张图（真机 0.5.0 测试包崩过：导出全部时第二张的位置按换之前的算，`kitty-note-image://` 换成
+  /// `attachments/` 短了 7 个字，第二张越界抛 NSRangeException、后台线程上直接闪退；后面还有字时不崩、但写坏文件）
+  @Test func severalImagesOnOneLine() {
+    let (a, b, c) = (UUID(), UUID(), UUID())
+    func token(_ id: UUID, _ width: String = "") -> String {
+      "![image\(width)](kitty-note-image://\(id.uuidString).png)"
+    }
+    func exported(_ id: UUID, _ width: String = "") -> String {
+      "![image\(width)](attachments/\(id.uuidString).png)"
+    }
+    // 两张挨着、在行尾（崩的那种）；三张中间夹字、后面还有字（写坏的那种）；同一张引用两次
+    let body =
+      "\(token(a))\(token(b, "|120"))\n前 \(token(a)) 中 \(token(c)) 后 \(token(b)) 尾\n\(token(c))\(token(c))"
+    let (text, images) = NoteMarkdownFiles.markdownImages(body)
+    #expect(
+      text
+        == "\(exported(a))\(exported(b, "|120"))\n前 \(exported(a)) 中 \(exported(c)) 后 \(exported(b)) 尾\n\(exported(c))\(exported(c))"
+    )
+    #expect(Set(images.map(\.id)) == [a, b, c])
+  }
+
   @Test func markdownImagesParseWidthAndPaths() {
     let line = "前 ![说明|240](attachments/a.png) 中 ![图](b%20c.jpg) 后"
     let images = NoteMarkdownFiles.markdownImages(in: line)
