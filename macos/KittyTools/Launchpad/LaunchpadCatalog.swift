@@ -2,7 +2,7 @@
 // 只留 .app——不要系统设置的面板，也不要访达（macOS 15 的启动台里没有访达）。扫的时候顺带取 bundle id、是不是从
 // App Store 装的（Contents/_MASReceipt/receipt，而且不在 /System 下）、LSApplicationCategoryType（文件夹名字用），
 // 都只读 Info.plist / 看文件在不在，便宜。显示名、搜索用的名字直接沿用 LauncherItem，和现有启动器一致。
-// 图标按 bundle id / 路径缓存在 LaunchpadIcons，面板收起后闲下来放掉（R11）。
+// 图标在后台画成位图、常驻在 LaunchpadIcons（2026-10-18 真机反馈后；原来是面板收起后闲下来放掉）。
 
 import AppKit
 
@@ -117,22 +117,100 @@ enum LaunchpadCatalog {
   ]
 }
 
-/// 图标缓存（按 bundle id / 路径）：一次打开里几十个 App 的图标只取一遍；面板收起后闲下来放掉（R11）。
-/// 图标按显示大小取；同一份 NSImage 交给 SwiftUI 缩放，不按每个尺寸各存一份。
+/// 图标位图缓存（2026-10-18 真机反馈「第一次打开卡一阵」）：每个 App 的图标在**后台**按显示尺寸画成一张位图，
+/// **常驻**（本机 111 个、185 px 见方约 15 MB；用户定的，不再闲两分钟就放掉），打开时只贴位图。
+/// 原来交给界面的是系统的多尺寸 NSImage，每画一次都按尺寸重新渲染：本机 111 个第一次画 1.8 s、之后每遍 0.25 s，全在主线程。
+/// 还没画好的先给一块透明占位，画好一批 `generation` 加一、界面自己刷新（@Observable）。`synchronous`（单测、截图自检）：缺了当场画。
+/// `NSWorkspace.icon(forFile:)` 文档写明任何线程都能调；画位图用这一个线程自己的 NSGraphicsContext。
+@Observable
 @MainActor
 final class LaunchpadIcons {
-  private var cache: [String: NSImage] = [:]
+  /// 位图本身不进观察（同步模式在界面求值时就地写，写观察中的属性会让 SwiftUI 报「更新中改状态」）
+  @ObservationIgnored private var bitmaps: [String: NSImage] = [:]
+  /// 后台画好一批就加一：界面读它，画好了自己刷新
+  private var generation = 0
+  @ObservationIgnored private var rendering: Set<String> = []
+  /// 位图的边长（像素）：按最大那块屏上的图标 × 缩放倍数取，屏变大了重画
+  @ObservationIgnored private(set) var pixelSize: Int
+  @ObservationIgnored let synchronous: Bool
 
-  func icon(for app: LaunchpadProjectApp, size: CGFloat) -> NSImage {
-    if let image = cache[app.id] { return image }
-    let image = NSWorkspace.shared.icon(forFile: app.path)
-    image.size = NSSize(width: size, height: size)
-    cache[app.id] = image
-    return image
+  init(synchronous: Bool = true, pixelSize: Int = 164) {
+    self.synchronous = synchronous
+    self.pixelSize = pixelSize
   }
 
-  /// 面板收起后闲下来放掉（R11；由 Launchpad 的空闲回收调）
-  func clear() { cache.removeAll() }
+  func icon(for app: LaunchpadProjectApp, size: CGFloat) -> NSImage {
+    _ = generation
+    if let image = bitmaps[app.id] { return image }
+    if synchronous {
+      let image =
+        Self.render(path: app.path, pixelSize: pixelSize).map(Self.image) ?? Self.placeholder
+      bitmaps[app.id] = image
+      return image
+    }
+    prewarm([app])
+    return Self.placeholder
+  }
 
-  var count: Int { cache.count }
+  /// 后台把还没画的画好（App 启动、目录扫完时调；界面要了一个没画的也会走到这里）；`pixelSize` 变大了全部重画
+  func prewarm(_ apps: [LaunchpadProjectApp], pixelSize wanted: Int? = nil) {
+    if let wanted, wanted > pixelSize {
+      pixelSize = wanted
+      // 旧的先留着显示，新的一张张换上（尺寸不对的晚到结果在 start 里丢掉）
+      rendering.removeAll()
+      start(apps.map { (id: $0.id, path: $0.path) })
+      return
+    }
+    start(
+      apps.filter { bitmaps[$0.id] == nil && !rendering.contains($0.id) }
+        .map { (id: $0.id, path: $0.path) })
+  }
+
+  private func start(_ items: [(id: String, path: String)]) {
+    guard !items.isEmpty else { return }
+    for item in items { rendering.insert(item.id) }
+    let size = pixelSize
+    Task { [weak self] in
+      let results = await Self.renderAll(items, pixelSize: size)
+      guard let self, size == self.pixelSize else { return }
+      for item in items { rendering.remove(item.id) }
+      for (id, bitmap) in results { bitmaps[id] = Self.image(bitmap) }
+      generation += 1
+    }
+  }
+
+  /// 已经画好的有几个（单测用）
+  var count: Int { bitmaps.count }
+
+  @concurrent
+  nonisolated private static func renderAll(
+    _ items: [(id: String, path: String)], pixelSize: Int
+  ) async -> [(String, CGImage)] {
+    items.compactMap { item in render(path: item.path, pixelSize: pixelSize).map { (item.id, $0) } }
+  }
+
+  /// 一个 App 的图标画成 `pixelSize` 见方的位图（任何线程都能调）
+  nonisolated static func render(path: String, pixelSize: Int) -> CGImage? {
+    let side = max(pixelSize, 1)
+    guard
+      let context = CGContext(
+        data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+    else { return nil }
+    let icon = NSWorkspace.shared.icon(forFile: path)
+    let previous = NSGraphicsContext.current
+    NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+    icon.draw(in: NSRect(x: 0, y: 0, width: side, height: side))
+    NSGraphicsContext.current = previous
+    return context.makeImage()
+  }
+
+  /// 位图包成只有这一张的 NSImage（尺寸按 @2x 记，交给 NSImageView / SwiftUI 缩放，不再重渲染）
+  private static func image(_ bitmap: CGImage) -> NSImage {
+    NSImage(cgImage: bitmap, size: NSSize(width: bitmap.width / 2, height: bitmap.height / 2))
+  }
+
+  /// 还没画好时的占位：透明（不画灰方块，免得一开一闪）
+  static let placeholder = NSImage(size: NSSize(width: 1, height: 1))
 }

@@ -1,8 +1,9 @@
-// 启动台的界面（SPEC R1–R6）：压暗的桌面上一页图标，顶上搜索框，底下页点。图标按屏幕大小排成列 × 行；
+// 启动台的界面（SPEC R1–R6）：模糊的壁纸上一页图标，顶上搜索框，底下页点。图标按屏幕大小排成列 × 行，
+// 位置和大小照 macOS 15 的比例（LaunchpadMetrics，2026-10-18 真机反馈后）；
 // 两指滑 / 滚轮翻页（跟手 1:1、松手按位移和速度翻，F17）；方向键在格子间挪、到页边翻页；点图标打开 App；
 // 按住稍拖就拿起（跟手、别的图标让位、拖到边上翻页、停在另一个图标中心 0.4 秒才建文件夹，F1 / F3），
-// 按住 1 秒或按着 ⌥ 进抖动模式（App Store 装的出 ✕，确认后移到废纸篓）；文件夹在原地展开成一块面板
-// （7 列、按内容行数定高、改名、内部分页、拖出 / 拖进，F34）。
+// 按住 1 秒或按着 ⌥ 进抖动模式（App Store 装的出 ✕，确认后移到废纸篓）；文件夹照 macOS 15 在屏幕中间展开：
+// 后面的网格模糊压暗，一块浅色毛玻璃面板（7 列、按内容行数定高、内部分页、拖出 / 拖进，F34），名字在面板上方、点一下能改。
 // 一点空白处收起；Esc 逐层退（拖动 → 抖动 → 文件夹 → 搜索 → 收起）。减弱动态效果：不缩放、不跟手、不抖，翻页直接换。
 // 抖动用图层（每个图标的相位不同，不在每帧重排上百个视图，F35）。
 
@@ -23,15 +24,12 @@ struct LaunchpadView: View {
       let metrics = model.metrics
       ZStack(alignment: .top) {
         background
-        VStack(spacing: 0) {
-          searchField
-            .padding(.top, metrics.searchTop)
-          Spacer(minLength: 12)
-          pager(proxy.size, metrics: metrics)
-          Spacer(minLength: 12)
-          pageDots
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        searchField(metrics)
+          .padding(.top, metrics.searchTop)
+        pager(proxy.size, metrics: metrics)
+          .padding(.top, metrics.gridTop)
+        pageDots
+          .position(x: proxy.size.width / 2, y: metrics.dotsY)
         if model.openFolderID != nil {
           FolderOverlay(model: model, metrics: metrics, space: Self.space)
             .transition(.opacity)
@@ -76,27 +74,41 @@ struct LaunchpadView: View {
 
   private var closingAnimation: Animation { .easeOut(duration: Style.fadeIn) }
 
+  /// 壁纸模糊后的样子再轻轻压暗（照 macOS 15）；拿不到壁纸时是面板底下的系统毛玻璃，压暗一点
   private var background: some View {
-    Color.black.opacity(0.30)
-      .ignoresSafeArea()
-      .contentShape(Rectangle())
-      .onTapGesture { model.backgroundClicked() }
-      .accessibilityLabel("启动台")
-      .accessibilityAddTraits(.isButton)
-      .accessibilityAction { model.backgroundClicked() }
+    ZStack {
+      if let wallpaper = model.wallpaper {
+        Image(decorative: wallpaper, scale: 1)
+          .resizable()
+          .transition(.opacity)
+        Color.black.opacity(0.14)
+      } else {
+        Color.black.opacity(0.12)
+      }
+    }
+    .animation(.easeOut(duration: Style.fadeIn), value: model.wallpaper != nil)
+    .ignoresSafeArea()
+    .contentShape(Rectangle())
+    .onTapGesture { model.backgroundClicked() }
+    .accessibilityLabel("启动台")
+    .accessibilityAddTraits(.isButton)
+    .accessibilityAction { model.backgroundClicked() }
   }
 
   // MARK: 顶上搜索
 
-  private var searchField: some View {
-    HStack(spacing: 7) {
+  /// 顶上居中、约 1/6 屏宽的浅色半透明圆角框；没打字时「放大镜 + 搜索」整组居中、插入点藏起来，打了字移到左边（照 macOS 15）
+  private func searchField(_ metrics: LaunchpadMetrics) -> some View {
+    let empty = model.query.isEmpty
+    return HStack(spacing: 6) {
       Image(systemName: "magnifyingglass")
-        .font(.system(size: 13, weight: .medium))
-        .foregroundStyle(.white.opacity(0.55))
+        .font(.system(size: 12, weight: .medium))
+        .foregroundStyle(.white.opacity(0.7))
+        .opacity(empty ? 0 : 1)
         .accessibilityHidden(true)
       CommandTextField(
-        text: $model.query, placeholder: "搜索", fontSize: 15,
-        textColor: .white, placeholderColor: .white.withAlphaComponent(0.45),
+        text: $model.query, placeholder: "", fontSize: 14, textColor: .white,
+        caretColor: empty ? .clear : .white,
         onCommand: { selector in
           switch selector {
           case #selector(NSResponder.moveLeft(_:)):
@@ -124,15 +136,28 @@ struct LaunchpadView: View {
       )
       .frame(height: 20)
     }
-    .padding(.horizontal, 12)
-    .frame(width: 280, height: 32)
+    .padding(.horizontal, 10)
+    .frame(width: metrics.searchWidth, height: LaunchpadMetrics.searchHeight)
+    .overlay {
+      if empty {
+        HStack(spacing: 5) {
+          Image(systemName: "magnifyingglass")
+            .font(.system(size: 12, weight: .medium))
+          Text("搜索")
+            .font(.system(size: 14))
+        }
+        .foregroundStyle(.white.opacity(0.62))
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+      }
+    }
     .background(
       RoundedRectangle(cornerRadius: Style.Radius.launchpadSearch, style: .continuous)
-        .fill(.black.opacity(0.28))
+        .fill(.white.opacity(contrast == .increased ? 0.24 : 0.16))
     )
     .overlay {
       RoundedRectangle(cornerRadius: Style.Radius.launchpadSearch, style: .continuous)
-        .stroke(.white.opacity(0.16), lineWidth: Style.hairlineWidth(contrast))
+        .stroke(.white.opacity(0.18), lineWidth: Style.hairlineWidth(contrast))
     }
     .accessibilityElement(children: .contain)
     .accessibilityLabel("搜索")
@@ -221,7 +246,7 @@ struct LaunchpadView: View {
     let isDragged = model.drag?.tileID == tile.id && model.drag?.isDragging == true
     let pressed = model.pressedTileID == tile.id
     let combined = model.drag?.combineTileID == tile.id
-    return VStack(spacing: 7) {
+    return VStack(spacing: 6) {
       ZStack {
         RoundedRectangle(cornerRadius: Style.Radius.launchpadIcon, style: .continuous)
           .fill(.white.opacity(selected ? (contrast == .increased ? 0.22 : 0.16) : 0.001))
@@ -236,12 +261,12 @@ struct LaunchpadView: View {
         }
       }
       Text(model.title(of: tile))
-        .font(.system(size: 12, weight: .regular))
+        .font(.system(size: LaunchpadMetrics.labelSize, weight: .regular))
         .foregroundStyle(.white.opacity(0.96))
         .lineLimit(1)
         .truncationMode(.middle)
         .frame(width: metrics.labelWidth)
-        .shadow(color: .black.opacity(0.35), radius: 1.5, y: 0.5)
+        .shadow(color: .black.opacity(0.4), radius: 1.5, y: 0.5)
     }
     .contentShape(Rectangle())
     .frame(width: metrics.cellWidth, height: metrics.cellHeight)
@@ -341,11 +366,11 @@ struct LaunchpadView: View {
   @ViewBuilder
   private func dragGhost(metrics: LaunchpadMetrics) -> some View {
     if let drag = model.drag, drag.isDragging, let tile = ghostTile(drag) {
-      let size = drag.sourceFolder == nil ? metrics.icon : metrics.icon * 0.8
+      let size = metrics.icon
       VStack(spacing: 6) {
         icon(for: tile, size: size)
         Text(model.title(of: tile))
-          .font(.system(size: 12))
+          .font(.system(size: LaunchpadMetrics.labelSize))
           .foregroundStyle(.white.opacity(0.96))
           .lineLimit(1)
       }
@@ -422,7 +447,7 @@ private struct JigglingIcon: NSViewRepresentable {
   }
 }
 
-/// 文件夹图标：一块半透明圆角底，里面按 3 × 3 画前 9 个 App 的小图标。文件夹里一个都没有时画系统的文件夹符号。
+/// 文件夹图标：一块浅色半透明圆角底（照 macOS 15），里面按 3 × 3 画前 9 个 App 的小图标。文件夹里一个都没有时画系统的文件夹符号。
 /// 抖动用 TimelineView（只有文件夹这一种视图，数量少；App 图标走图层）。
 private struct FolderGlyph: View {
   let folder: LaunchpadFolder
@@ -446,8 +471,11 @@ private struct FolderGlyph: View {
   private var glyph: some View {
     let mini = size * 0.255
     let apps = folder.apps.prefix(9).compactMap { model.app($0) }
-    return RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)
-      .fill(.white.opacity(0.14))
+    let shape = RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)
+    return
+      shape
+      .fill(.white.opacity(0.32))
+      .overlay { shape.stroke(.white.opacity(0.22), lineWidth: 0.5) }
       .overlay {
         if apps.isEmpty {
           Image(systemName: "folder.fill")
@@ -477,8 +505,8 @@ private struct FolderGlyph: View {
   }
 }
 
-/// 打开的文件夹：背景再压暗，一块面板从文件夹那一格的位置展开，7 列、按内容行数定高；
-/// 标题能改名（回车 / 失焦确认），里面能分页（两指滑 / 圆点），把图标拖出面板就回主网格（F34）。
+/// 打开的文件夹（照 macOS 15）：后面的网格模糊再压暗，屏幕中间一块浅色毛玻璃面板，7 列、按内容行数定高；
+/// 名字在面板上方（大号白字，回车 / 失焦确认改名），里面能分页（两指滑 / 圆点），把图标拖出面板就回主网格（F34）。
 private struct FolderOverlay: View {
   @Bindable var model: LaunchpadModel
   let metrics: LaunchpadMetrics
@@ -488,30 +516,40 @@ private struct FolderOverlay: View {
   @FocusState private var editingName: Bool
 
   var body: some View {
-    // 格子宽高分开算（G4，口径在 LaunchpadMetrics.folder*）：宽放得下一行名字，高放得下图标 + 名字
+    // 格子宽高分开算（G4，口径在 LaunchpadMetrics.folder*）：宽和主网格一样，高放得下图标 + 名字
     let columns = LaunchpadLayout.folderColumns
     let rows = model.folderRows
-    let gridWidth = metrics.folderGridWidth
-    let gridHeight = metrics.folderCellHeight * CGFloat(rows)
-    let width = gridWidth + 52
-    let height = gridHeight + 116
+    let panel = RoundedRectangle(cornerRadius: Style.Radius.launchpadFolder, style: .continuous)
     ZStack {
-      Color.black.opacity(0.34)
-        .ignoresSafeArea()
-        .contentShape(Rectangle())
-        .onTapGesture {
-          // 点空白：先提交改名（点别处 = 失焦提交，F34），再收起
-          commitName()
-          model.closeFolder()
+      // 后面的网格糊掉（材质在窗口里取后面的内容，图标的 NSImageView 也一起糊），上面再铺八成的壁纸、压暗一层：
+      // 只剩一点糊掉的网格影子，面板里外的字不会混在一起（材质一律按深色：面板窗口本来就是深色）
+      ZStack {
+        Rectangle()
+          .fill(.ultraThinMaterial)
+          .environment(\.colorScheme, .dark)
+        if let wallpaper = model.wallpaper {
+          Image(decorative: wallpaper, scale: 1)
+            .resizable()
+            .opacity(0.8)
         }
-      VStack(spacing: 10) {
+        Color.black.opacity(0.16)
+      }
+      .ignoresSafeArea()
+      .contentShape(Rectangle())
+      .onTapGesture {
+        // 点空白：先提交改名（点别处 = 失焦提交，F34），再收起
+        commitName()
+        model.closeFolder()
+      }
+      VStack(spacing: 18) {
         TextField("文件夹名字", text: $model.folderNameDraft)
           .textFieldStyle(.plain)
-          .font(.system(size: 17, weight: .semibold))
+          .font(.system(size: 28, weight: .medium))
           .foregroundStyle(.white.opacity(0.96))
+          .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
           .multilineTextAlignment(.center)
           .focused($editingName)
-          .frame(width: gridWidth)
+          .frame(width: metrics.folderGridWidth)
           .onSubmit { commitName() }
           .onChange(of: editingName) { _, focused in
             if !focused { commitName() }
@@ -520,39 +558,24 @@ private struct FolderOverlay: View {
             commitName()
             model.closeFolder()
           }
-        grid(columns: columns, rows: rows)
-        folderDots
+        VStack(spacing: 10) {
+          grid(columns: columns, rows: rows)
+          folderDots
+        }
+        .padding(LaunchpadMetrics.folderPadding)
+        // 面板是一层浅白：底下已经是糊掉的壁纸，透出来就是一块浅色毛玻璃（不再叠一层材质，省一次全面板模糊）
+        .background(panel.fill(.white.opacity(contrast == .increased ? 0.22 : 0.14)))
+        .overlay { panel.stroke(.white.opacity(0.2), lineWidth: Style.hairlineWidth(contrast)) }
+        .onGeometryChange(for: CGRect.self) { proxy in
+          proxy.frame(in: .named(space))
+        } action: { frame in
+          model.folderPanelFrame = frame
+        }
       }
-      .padding(26)
-      .frame(width: width, height: height)
-      .background(
-        RoundedRectangle(cornerRadius: Style.Radius.launchpadFolder, style: .continuous)
-          .fill(.black.opacity(0.32))
-      )
-      .overlay {
-        RoundedRectangle(cornerRadius: Style.Radius.launchpadFolder, style: .continuous)
-          .stroke(.white.opacity(0.14), lineWidth: Style.hairlineWidth(contrast))
-      }
-      .position(clampedAnchor(width: width, height: height))
-      .onGeometryChange(for: CGRect.self) { proxy in
-        proxy.frame(in: .named(space))
-      } action: { frame in
-        model.folderPanelFrame = frame
-      }
+      .position(x: metrics.size.width / 2, y: metrics.size.height / 2)
     }
     .accessibilityElement(children: .contain)
     .accessibilityLabel(model.openFolder?.name ?? "文件夹")
-  }
-
-  /// 面板从文件夹那一格长出来；靠边时把面板收进屏里（别有一半在屏幕外，F34）
-  private func clampedAnchor(width: CGFloat, height: CGFloat) -> CGPoint {
-    let raw =
-      model.openFolderAnchor(metrics: metrics)
-      ?? CGPoint(x: metrics.size.width / 2, y: metrics.size.height / 2)
-    let inset: CGFloat = 12
-    let x = min(max(raw.x, width / 2 + inset), metrics.size.width - width / 2 - inset)
-    let y = min(max(raw.y, height / 2 + inset), metrics.size.height - height / 2 - inset)
-    return CGPoint(x: x, y: y)
   }
 
   private func grid(columns: Int, rows: Int) -> some View {
@@ -604,7 +627,7 @@ private struct FolderOverlay: View {
       ZStack {
         RoundedRectangle(cornerRadius: Style.Radius.launchpadFolderIcon, style: .continuous)
           .fill(.white.opacity(selected ? (contrast == .increased ? 0.22 : 0.16) : 0.001))
-          .frame(width: iconSize * 1.2, height: iconSize * 1.2)
+          .frame(width: iconSize * 1.22, height: iconSize * 1.22)
         JigglingIcon(
           image: model.icons.icon(for: app, size: iconSize), size: iconSize,
           active: model.jiggling, phase: Double(index % 7) / 7, reduceMotion: reduceMotion
@@ -617,8 +640,9 @@ private struct FolderOverlay: View {
         }
       }
       Text(app.name)
-        .font(.system(size: 11))
+        .font(.system(size: LaunchpadMetrics.labelSize))
         .foregroundStyle(.white.opacity(0.96))
+        .shadow(color: .black.opacity(0.4), radius: 1.5, y: 0.5)
         .lineLimit(1)
         .truncationMode(.middle)
         .frame(width: metrics.folderLabelWidth, height: LaunchpadMetrics.folderLabelHeight)

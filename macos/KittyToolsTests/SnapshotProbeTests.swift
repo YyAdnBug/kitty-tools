@@ -3527,10 +3527,17 @@ struct SnapshotProbeTests {
     // 一页 9 个（好让第二页真的有东西：真机上默认一页 35 个）
     let layout = LaunchpadLayout(pages: LaunchpadLayout.paginate(tiles, capacity: 9))
     let size = NSSize(width: 1280, height: 800)
+    // 背景用本机主屏现在的壁纸（只读文件，同 LaunchpadWallpaper；拿不到就是没壁纸的那种样子）
+    let wallpaper = NSScreen.main
+      .flatMap { NSWorkspace.shared.desktopImageURL(for: $0) }
+      .flatMap { LaunchpadWallpaper.load(url: $0, maxPixel: 1280) }
+      .flatMap { LaunchpadWallpaper.render(source: $0, width: 640, height: 400) }
     func board() -> LaunchpadModel {
-      LaunchpadModel(
+      let model = LaunchpadModel(
         layout: layout, catalog: Array(apps), icons: LaunchpadIcons(), columns: 7, rows: 5,
         screenSize: size)
+      model.wallpaper = wallpaper
+      return model
     }
     for dark in [false, true] {
       let suffix = dark ? "-dark" : ""
@@ -3566,6 +3573,12 @@ struct SnapshotProbeTests {
         LaunchpadView(model: drag), size: size, dark: dark,
         to: "\(out)/launchpad-drag\(suffix).png")
     }
+    // 拿不到壁纸（视频 / 航拍壁纸）：退回系统毛玻璃
+    let plain = board()
+    plain.wallpaper = nil
+    try snapshot(
+      LaunchpadView(model: plain), size: size, dark: true,
+      to: "\(out)/launchpad-nowallpaper-dark.png")
     // 满页：7 × 5 全部放满，看第 3–5 行和底下的页点（F30）
     if real.count >= 35 {
       let fullApps = real.prefix(35).map {
@@ -3578,6 +3591,7 @@ struct SnapshotProbeTests {
       let fullModel = LaunchpadModel(
         layout: fullLayout, catalog: fullApps, icons: LaunchpadIcons(), columns: 7, rows: 5,
         screenSize: size)
+      fullModel.wallpaper = wallpaper
       try snapshot(
         LaunchpadView(model: fullModel), size: size, dark: false,
         to: "\(out)/launchpad-full.png")
@@ -3599,6 +3613,7 @@ struct SnapshotProbeTests {
     let manyModel = LaunchpadModel(
       layout: manyLayout, catalog: Array(apps), icons: LaunchpadIcons(), columns: 7, rows: 5,
       screenSize: size)
+    manyModel.wallpaper = wallpaper
     manyModel.openFolder(many.id)
     try snapshot(
       LaunchpadView(model: manyModel), size: size, dark: true,

@@ -16,39 +16,56 @@ import AppKit
 import Observation
 import SwiftUI
 
-/// 一块屏上的网格尺寸（按屏幕大小算，大屏大一点；SPEC R2）
+/// 一块屏上的网格尺寸（按屏幕大小算；SPEC R2）。比例照 macOS 15 的官方截图量（2026-10-18 真机反馈「和 macOS 15 差很多」）：
+/// 7 × 5 时网格占屏宽 80%、屏高 79%，从 8% 屏高处开始（第一行图标中心约在 15%）；图标约屏宽的 5.4%；
+/// 搜索框中心在 6.7% 屏高、宽约 1/6 屏宽；页点在 90.5%。行列数改了网格总面积不变，格子跟着缩放。
 nonisolated struct LaunchpadMetrics {
   let size: CGSize
   let columns: Int
   let rows: Int
 
-  /// 左右留白（按屏宽的比例，最少 48）
-  var side: CGFloat { max(48, size.width * 0.045) }
-  var cellWidth: CGFloat { (size.width - side * 2) / CGFloat(max(columns, 1)) }
-  /// 顶上搜索框、底下圆点之外留给网格的高度
-  var cellHeight: CGFloat { (size.height - 190) / CGFloat(max(rows, 1)) }
-  /// 图标边长：受格子宽高限制，最小 40、最大 104
-  var icon: CGFloat { max(40, min(104, min(cellWidth * 0.56, cellHeight * 0.58))) }
-  var labelWidth: CGFloat { icon + 36 }
-  var gridWidth: CGFloat { cellWidth * CGFloat(columns) }
-  var gridHeight: CGFloat { cellHeight * CGFloat(rows) }
-  /// 搜索框上沿
-  var searchTop: CGFloat { max(16, size.height * 0.03) }
+  var gridWidth: CGFloat { size.width * 0.80 }
+  var gridHeight: CGFloat { size.height * 0.79 }
+  /// 网格左右各留多少（网格在页容器里居中）
+  var side: CGFloat { (size.width - gridWidth) / 2 }
+  var cellWidth: CGFloat { gridWidth / CGFloat(max(columns, 1)) }
+  var cellHeight: CGFloat { gridHeight / CGFloat(max(rows, 1)) }
+  /// 图标边长：约屏宽的 5.4%，受格子限制（放得下图标 + 一行名字），最小 40、最大 140
+  var icon: CGFloat {
+    max(40, min(140, size.width * 0.054, cellWidth * 0.62, (cellHeight - 30) * 0.86))
+  }
+  var labelWidth: CGFloat { cellWidth - 14 }
+  /// 名字的字号（macOS 15 是白色小字）
+  static let labelSize: CGFloat = 11
 
-  // 文件夹面板（G4）：格子宽高分开算——宽放得下一行名字，高 = 图标 + 间距 + 一行字 + 上下留白。
-  // 原来是边长约 50 pt 的正方形，名字互相叠、第二行的图标压在第一行的名字上
-  /// 文件夹里的图标边长（主网格的 0.8，最大 72）
-  var folderIcon: CGFloat { min(icon * 0.8, 72) }
+  static let searchHeight: CGFloat = 28
+  var searchWidth: CGFloat { max(200, size.width / 6) }
+  /// 搜索框上沿
+  var searchTop: CGFloat { max(12, size.height * 0.067 - Self.searchHeight / 2) }
+  /// 网格上沿（矮屏上让开搜索框）
+  var gridTop: CGFloat { max(size.height * 0.08, searchTop + Self.searchHeight + 8) }
+  /// 页点的中心
+  var dotsY: CGFloat { max(size.height * 0.905, gridTop + gridHeight + 8) }
+
+  // 文件夹面板（照 macOS 15：在屏幕中间展开，图标和主网格一样大，G4 起格子宽高分开算）
+  var folderIcon: CGFloat { icon }
   /// 名字那一行的高（11 pt 字）
   static let folderLabelHeight: CGFloat = 15
   /// 图标和名字之间
   static let folderLabelSpacing: CGFloat = 5
-  var folderCellWidth: CGFloat { folderIcon + 44 }
+  /// 面板四边的留白
+  static let folderPadding: CGFloat = 28
+  /// 格子宽：和主网格一样，屏太窄时收到面板放得下
+  var folderCellWidth: CGFloat {
+    min(
+      cellWidth, (size.width - 48 - Self.folderPadding * 2) / CGFloat(LaunchpadLayout.folderColumns)
+    )
+  }
   var folderCellHeight: CGFloat {
-    folderIcon + Self.folderLabelSpacing + Self.folderLabelHeight + 16
+    folderIcon * 1.22 + Self.folderLabelSpacing + Self.folderLabelHeight + 12
   }
   /// 名字最宽多少（比格子窄一点，两格的名字中间留缝）
-  var folderLabelWidth: CGFloat { folderCellWidth - 8 }
+  var folderLabelWidth: CGFloat { folderCellWidth - 14 }
   var folderGridWidth: CGFloat { folderCellWidth * CGFloat(LaunchpadLayout.folderColumns) }
 }
 
@@ -193,6 +210,8 @@ final class LaunchpadModel {
   private(set) var folderPageOffset: CGFloat = 0
   /// 正在收起（界面据此缩回去）
   private(set) var isClosing = false
+  /// 背景：那块屏的壁纸模糊后的样子（总控在后台做好喂进来；nil = 系统毛玻璃）
+  var wallpaper: CGImage?
 
   // MARK: 编辑（R4–R6）
   /// 开着的文件夹（nil = 没开）
@@ -560,20 +579,6 @@ final class LaunchpadModel {
     let maxCount = openFolder?.pages.map(\.count).max() ?? 0
     return max(
       1, min(5, Int((Double(maxCount) / Double(LaunchpadLayout.folderColumns)).rounded(.up))))
-  }
-
-  /// 文件夹那一格在屏幕上的中心（面板从它长出来，F34；找不到时 nil = 界面用屏幕中心）
-  func openFolderAnchor(metrics: LaunchpadMetrics) -> CGPoint? {
-    guard let id = openFolderID else { return nil }
-    guard let location = layout.locate("folder\n" + id.uuidString),
-      let frame = gridFrames[location.page]
-    else { return nil }
-    let insetX = max(0, (frame.width - metrics.gridWidth) / 2)
-    let column = location.index % max(columns, 1)
-    let row = location.index / max(columns, 1)
-    return CGPoint(
-      x: frame.minX + insetX + (CGFloat(column) + 0.5) * metrics.cellWidth,
-      y: frame.minY + (CGFloat(row) + 0.5) * metrics.cellHeight)
   }
 
   func openFolder(_ id: UUID) {

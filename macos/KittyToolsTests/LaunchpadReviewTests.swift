@@ -639,19 +639,15 @@ struct LaunchpadReviewTests {
 
   // MARK: F34 文件夹面板
 
-  @Test func folderRowsAndAnchorFollowContentAndCell() {
+  /// 面板高度跟着内容行数走；2026-10-18 起照 macOS 15 在屏幕中间展开（不再从文件夹那一格长出来，位置归界面）
+  @Test func folderRowsFollowContent() {
     let a = ref("a")
     let b = ref("b")
     let refs = (0..<3).map { ref("g\($0)") }
     let folder = LaunchpadFolder(name: "X", pages: [refs])
     let model = model(LaunchpadLayout(pages: [[.app(a), .folder(folder)], [.app(b)]]))
-    let frame = grid(model, page: 0)
     model.openFolder(folder.id)
     #expect(model.folderRows == 1)
-    let anchor = model.openFolderAnchor(metrics: model.metrics)
-    #expect(anchor != nil)
-    #expect(anchor!.x > frame.minX + model.metrics.cellWidth)
-    #expect(anchor!.y < frame.minY + model.metrics.cellHeight)
   }
 
   // MARK: F37 键盘

@@ -1,7 +1,8 @@
 // 启动台的总控（SPEC §5）：热键 / 菜单栏 / 现有启动器 / 触发角都调 toggle()。管本机 App 目录的刷新、
 // 布局的读写（Prefs.launchpadLayout，JSON 字符串）、第一次用的默认排法、面板的建立与释放、打开 App。
 // 不激活本 App（mac-overlay-panel 的规矩）；和别的浮层互斥由 AppDelegate 的 willOpen / hidePanels 接线。
-// 面板收起后放掉窗口和界面（R11）；图标缓存留着，闲下来（两分钟）没再打开就清掉。
+// 面板收起后放掉窗口和界面（R11）。图标在后台画成位图、常驻（2026-10-18 真机反馈「第一次打开卡一阵」，用户定的常驻）；
+// 背景是那块屏的壁纸模糊后的样子（LaunchpadWallpaper），第一次自动导入旧布局时岛上先挂「正在排列…」。
 // 触控板捏合（TouchpadWatcher）和触发角（LaunchpadCorner）也由它拿着：applySettings() 按偏好和系统手势开关起停。
 // 2026-10-18 四批评审之后：面板先出、刘海岛的提示后出（F14）；收起的簿记按窗口记，旧的收晚到也只会收走自己（F20）；
 // 内容晚一拍再拆（F21）；删 App 走 NSWorkspace.recycle、失败带「在访达里看」（F22）；失去 key 时看新 key 是不是自己的（F23）；
@@ -27,16 +28,10 @@ final class Launchpad {
   private var catalog: [LaunchpadProjectApp] = []
   private var signature: [Date?] = []
   private var screen: NSScreen?
-  private let icons = LaunchpadIcons()
+  private let icons = LaunchpadIcons(synchronous: false)
+  private let wallpaper = LaunchpadWallpaper()
   /// 上一次打开看的是第几页（F24：关掉再开回到那一页）
   private var lastPage = 0
-  /// 图标缓存空闲回收（R11；和别的浮层用同一个 IdleTimer，F42）
-  private lazy var iconIdle = Memory.IdleTimer(
-    after: Memory.idleDelay, isIdle: { [weak self] in self?.isOpen == false },
-    work: { [weak self] in
-      self?.icons.clear()
-      Memory.relieve()
-    })
   private var prepareTask: Task<Void, Never>?
   private var importTask: Task<Void, Never>?
   /// 本次打开是「还没存过布局」：等目录扫完（或马上）自动按系统旧库导入一次
@@ -98,6 +93,8 @@ final class Launchpad {
     }
     willOpen()
     prepare()
+    // 已经画好的不再画；启动时启动台还关着、刚打开的话这里补上
+    icons.prewarm(catalog, pixelSize: Self.iconPixelSize)
     guard
       let screen = NSScreen.screens.first(where: {
         NSMouseInRect(NSEvent.mouseLocation, $0.frame, false)
@@ -133,6 +130,10 @@ final class Launchpad {
     model.onDeleteApp = { [weak self] app in self?.delete(app) }
     model.folderName = { first, second in
       LaunchpadCatalog.folderName(first: first, second: second)
+    }
+    // 壁纸：做过的直接用；没做过（第一次、换了壁纸）后台做好再换上，这次先是系统毛玻璃
+    model.wallpaper = wallpaper.image(for: screen) { [weak model] image in
+      model?.wallpaper = image
     }
     self.model = model
     let panel = LaunchpadPanel(frame: screen.frame, model: model)
@@ -197,8 +198,6 @@ final class Launchpad {
       guard let self, let closingModel, self.model === closingModel, !self.isOpen else { return }
       self.model = nil
     }
-    // 图标缓存：两分钟没再打开就放掉（R11；不占常驻内存；复用 Memory.IdleTimer，F42）
-    iconIdle.schedule()
   }
 
   private func present(_ panel: LaunchpadPanel) {
@@ -249,6 +248,11 @@ final class Launchpad {
       guard !Task.isCancelled, let self else { return }
       let changed = self.catalog.map(\.id) != apps.map(\.id)
       self.catalog = apps
+      // 图标在后台画好、常驻：打开时只贴位图（新装的 App 只补画它自己）。启动台关着时不画（约 15 MB），开了以后第一次打开再补
+      if UserDefaults.standard.bool(forKey: Prefs.launchpadEnabled) {
+        self.icons.prewarm(apps, pixelSize: Self.iconPixelSize)
+        if let screen = NSScreen.main { _ = self.wallpaper.image(for: screen) { _ in } }
+      }
       if let model = self.model {
         model.adopt(catalog: apps)
         if changed, self.isOpen, !self.pendingAutoImport { self.mergeCatalogIntoOpenModel() }
@@ -300,13 +304,18 @@ final class Launchpad {
     pendingAutoImport = false
     let local = Self.localApps(catalog)
     let capacity = Self.capacity
+    // 读旧库要一会儿：岛上先挂着「进行中」，排好换成结果（2026-10-18 真机反馈「卡一阵、没有提示」）
+    island?.show("正在按原来的启动台排列…", tone: .progress, symbol: "square.grid.3x3")
     importTask?.cancel()
     importTask = Task { [weak self] in
       let result = await LaunchpadImport.readSystemLayoutInBackground(
         local: local, capacity: capacity)
       guard !Task.isCancelled, let self else { return }
-      // 这期间用户可能已经动过布局（那就不要再覆盖）
-      guard !LaunchpadLayout.isStored(in: .standard) else { return }
+      // 这期间用户可能已经动过布局（那就不要再覆盖）；进行中的提示照样换掉
+      guard !LaunchpadLayout.isStored(in: .standard) else {
+        self.island?.show("已保留你刚才的排列", symbol: "square.grid.3x3")
+        return
+      }
       let layout: LaunchpadLayout
       let detail: String?
       if let result, !result.layout.tiles.isEmpty {
@@ -432,6 +441,7 @@ final class Launchpad {
     }
     let local = Self.localApps(catalog)
     let capacity = Self.capacity
+    island?.show("正在按原来的启动台排列…", tone: .progress, symbol: "square.grid.3x3")
     importTask?.cancel()
     importTask = Task { [weak self] in
       let result = await LaunchpadImport.readSystemLayoutInBackground(
@@ -509,6 +519,15 @@ final class Launchpad {
   // MARK: 偏好
 
   static var capacity: Int { columns * rows }
+
+  /// 图标位图的边长（像素）：所有屏里最大的那个图标 × 缩放倍数（换了更大的屏，下次扫完目录重画）
+  static var iconPixelSize: Int {
+    let sizes = NSScreen.screens.map {
+      LaunchpadMetrics(size: $0.frame.size, columns: columns, rows: rows).icon
+        * $0.backingScaleFactor
+    }
+    return Int((sizes.max() ?? 164).rounded(.up))
+  }
 
   static var columns: Int {
     let value = UserDefaults.standard.integer(forKey: Prefs.launchpadColumns)

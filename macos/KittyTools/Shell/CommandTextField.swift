@@ -20,8 +20,8 @@ struct CommandTextField: NSViewRepresentable {
   var weight: NSFont.Weight = .regular
   /// 字的颜色；nil = 系统的文字色（便签的标题框给纸上的墨色）
   var textColor: NSColor?
-  /// 占位文字的颜色；nil = 系统的占位色（启动台的搜索框在压暗的桌面上，用白色系）
-  var placeholderColor: NSColor?
+  /// 插入点的颜色；nil = 跟着 textColor（再没有就是强调色）。启动台的搜索框没打字时给 .clear（占位居中，插入点藏起来）
+  var caretColor: NSColor?
   /// 只用英文类输入法（启动器的「呼出时切英文输入法」）
   var romanOnly = false
   /// 字数上限（收藏夹名 24 字）；nil = 不限
@@ -40,13 +40,6 @@ struct CommandTextField: NSViewRepresentable {
     field.isDialogField = isDialogField
     field.claimsInitialFocus = focusRequest == nil
     field.placeholderString = placeholder
-    if let placeholderColor {
-      field.placeholderAttributedString = NSAttributedString(
-        string: placeholder,
-        attributes: [
-          .foregroundColor: placeholderColor, .font: NSFont.systemFont(ofSize: fontSize),
-        ])
-    }
     field.isBordered = false
     field.drawsBackground = false
     field.focusRingType = .none
@@ -66,21 +59,10 @@ struct CommandTextField: NSViewRepresentable {
       field.window?.makeFirstResponder(field)
     }
     // 纸上的输入框（给了墨色）：插入点用墨色——强调色选黄时在柠檬色的纸上看不见。别的调用方不给，照旧是强调色
-    field.caretColor = textColor
+    field.caretColor = caretColor ?? textColor
     // 读了 Style.brand：设置里换了强调色时这里会重跑，正在编辑的插入点和选中底色跟着换
     field.applyBrandColors(NSColor(Style.brand))
-    if let placeholderColor {
-      let attributed = NSAttributedString(
-        string: placeholder,
-        attributes: [
-          .foregroundColor: placeholderColor, .font: NSFont.systemFont(ofSize: fontSize),
-        ])
-      if field.placeholderAttributedString != attributed {
-        field.placeholderAttributedString = attributed
-      }
-    } else if field.placeholderString != placeholder {
-      field.placeholderString = placeholder
-    }
+    if field.placeholderString != placeholder { field.placeholderString = placeholder }
     if let textColor, field.textColor != textColor { field.textColor = textColor }
     if field.romanOnly != romanOnly {
       field.romanOnly = romanOnly

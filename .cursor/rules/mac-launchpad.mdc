@@ -29,8 +29,12 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
 - 复用 `AppCatalog.scan()`（同一份目录、去重、中文名、拼音、首字母），**只留 `.app`**，目录扫描在后台（`@concurrent` 的 `LaunchpadCatalog.loadInBackground`，回来接上；打开路径不扫）：不要系统设置的面板（kind `.url`），
   不要访达。`LaunchpadCatalog.load()` 顺带读 bundle id、`LSApplicationCategoryType`（本地化名给文件夹起名）、
   `Contents/_MASReceipt/receipt`（只有 App Store 装的才给删）。目录修改时间（`AppCatalog.signature`）变了才重扫。
-- 图标 `NSWorkspace.shared.icon(forFile:)`，按 id 缓存在 `LaunchpadIcons`；**面板收起后闲下来（120 秒没再打开）放掉**，
-  顺手 `Memory.relieve()`。打开到第一帧、翻页每帧的时间要量（R11），写进 PLAN。
+- 图标 `NSWorkspace.shared.icon(forFile:)`（文档写明任何线程能调），**在后台画成一张位图、常驻**在 `LaunchpadIcons`
+  （2026-10-18 真机反馈「第一次打开卡一阵」后改的，用户定常驻：本机 111 个、185 px 见方约 15 MB）。系统图标是多尺寸的，交给界面
+  每画一次都重渲染（111 个第一次 1.8 s、之后每遍 0.25 s，全在主线程），所以界面只拿位图。目录扫完就预热；边长 = 所有屏里最大的图标 × 缩放倍数，
+  屏变大了重画（旧图先留着）；还没画好的给透明占位、画好一批界面自己刷新。单测和截图自检用 `synchronous: true`（缺了当场画）。
+- 背景的壁纸（`LaunchpadWallpaper`）只读 `NSWorkspace.desktopImageURL` 那个文件，后台缩着读、裁、模糊，缓存一张；不截屏、不要权限。
+- 第一次自动导入、设置里重新导入时，岛上先挂「正在按原来的启动台排列…」（`.progress`），排好换成结果；导入期间用户动过布局就不覆盖、换成「已保留你刚才的排列」。打开到第一帧、翻页每帧的时间要量（R11），写进 PLAN。
 
 ## 3. 窗口
 - `LaunchpadPanel` 固定 `darkAqua`（浅色系统下搜索框也是白字，F16）；先摆面板再出岛（F14）。它是「浮层只有 OverlayPanel 一种」的新例外（mac-overlay-panel §1）：无边框、`.nonactivatingPanel`、

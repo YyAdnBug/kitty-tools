@@ -2,8 +2,9 @@
 // 不激活本 App——和浮层的 OverlayPanel 没有交集（不居中、不点外关闭、没有 16 pt 圆角材质），所以单独子类化。
 // - 层级 statusBar（高过菜单栏 mainMenu / 程序坞；低于截图的遮罩 popUpMenu+1），所有桌面和别的 App 的全屏里都能出。
 // - 不调 NSApp.activate：makeKey 只把键盘拿过来，前台 App 不变（同 NoteDeckPanel 的做法）。
-// - 背景 NSVisualEffectView `.fullScreenUI` 把整块桌面模糊掉，上面再压一层黑（SwiftUI 里画）；macOS 26 上同一块材质
-//   仍可用，不另起玻璃分支（它不是 Panel / HUD / Island 三种皮肤里的一种，见 mac-whisker-launchpad）。
+// - 背景照 macOS 15 是壁纸模糊后的样子（SwiftUI 里画 LaunchpadWallpaper 做好的那张图，再轻轻压暗）；壁纸拿不到时
+//   露出底下这块 NSVisualEffectView `.fullScreenUI`（把整块桌面模糊掉）。macOS 26 上同一块材质仍可用，不另起玻璃分支
+//   （它不是 Panel / HUD / Island 三种皮肤里的一种，见 mac-whisker-launchpad）。
 // - 滚轮 / 两指滑动从 sendEvent 进（不装事件监听）；⌘←/⌘→ 第一页 / 最后一页；其余方向键、↩、Esc 由搜索框的
 //   doCommandBy 或这里的 keyDown 两支收（焦点在搜索框时是前一支）。
 
@@ -43,7 +44,7 @@ final class LaunchpadPanel: NSPanel {
     animationBehavior = .none
     acceptsMouseMovedEvents = true
     worksWhenModal = true
-    // 启动台永远是深色的画面（压暗的桌面）：不跟系统浅色，搜索框的占位、确认框的按钮都按深色画（F16）
+    // 启动台永远是深色的画面（糊开的壁纸上压一层暗）：不跟系统浅色，搜索框的占位、确认框的按钮都按深色画（F16）
     appearance = NSAppearance(named: .darkAqua)
 
     let effect = NSVisualEffectView(frame: frame)
