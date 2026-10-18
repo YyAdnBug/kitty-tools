@@ -175,6 +175,33 @@ struct LaunchpadInteractTests {
     #expect(model.folderRows == 1)
   }
 
+  /// 文件夹里拖到面板右边上停一下：翻到文件夹的下一页，松手放在那一页（同一个文件夹，跨页挪）
+  @Test func draggingToTheFolderEdgeTurnsItsPage() async {
+    var timing = LaunchpadDragTiming.immediate
+    timing.edgeDwell = .milliseconds(20)
+    timing.edgeRepeat = .milliseconds(40)
+    let inside = (0...LaunchpadLayout.folderCapacity).map { ref("f\($0)") }
+    let folder = LaunchpadFolder(name: "X", pages: LaunchpadLayout.paginateFolder(inside))
+    let model = model(LaunchpadLayout(pages: [[.folder(folder)]]), timing: timing)
+    model.openFolder(folder.id)
+    #expect(model.folderPageCount == 2)
+    let start = model.folderCellCenter(0)
+    model.beginDrag(
+      tile: .app(inside[0]), appID: inside[0].id, folder: folder.id, at: start, origin: start)
+    let panel = model.folderPanelRect
+    model.updateDrag(location: CGPoint(x: panel.maxX - 10, y: panel.midY), pageWidth: 900)
+    await waitUntil { model.folderPage == 1 }
+    #expect(model.folderPage == 1)
+    // 最后一页了：一直停着也不会再往后翻
+    try? await Task.sleep(for: .milliseconds(120))
+    #expect(model.folderPage == 1)
+    model.endDrag()
+    let pages = model.layout.tiles[0].folder?.pages ?? []
+    #expect(pages.count == 2)
+    #expect(pages.last?.contains { $0.id == inside[0].id } == true)
+    #expect(!(pages.first?.contains { $0.id == inside[0].id } ?? true))
+  }
+
   /// 文件夹里挪：拖到别的图标右半边就插到它后面（同一个文件夹，不解散）
   @Test func reorderInsideAFolder() {
     let folder = LaunchpadFolder(name: "X", pages: [[ref("x"), ref("y"), ref("z")]])

@@ -950,6 +950,7 @@ final class LaunchpadModel {
         handOffToGrid(location)
       } else {
         scheduleReflow(folderHit(at: location, drag: drag), folder: true)
+        updateFolderEdge(location, delay: dragTiming.edgeDwell)
       }
       return
     }
@@ -962,6 +963,8 @@ final class LaunchpadModel {
 
   /// 拖出文件夹面板多少就算拖出去
   static let folderHandoff: CGFloat = 14
+  /// 文件夹面板里左右边上多宽算「停在边上」（翻文件夹的页；在面板里面，和拖出去的那 14 pt 不撞）
+  static let folderEdgeZone: CGFloat = 40
   /// 屏幕左右边上多宽算「停在边上」（要翻页）
   static let edgeZone: CGFloat = 60
 
@@ -974,6 +977,40 @@ final class LaunchpadModel {
     guard edge != drag?.turnPage else { return }
     cancelTurn()
     if let edge { scheduleTurn(to: edge, after: delay) }
+  }
+
+  /// 文件夹开着、拖到面板左右边上：停够就翻文件夹的页，一直停着接着翻（同主网格；只翻到已有的页，2026-10-18）
+  private func updateFolderEdge(_ location: CGPoint, delay: Duration) {
+    guard drag?.isDragging == true, openFolderID != nil else { return }
+    let rect = folderPanelRect
+    var edge: Int?
+    if location.y >= rect.minY, location.y <= rect.maxY {
+      if location.x < rect.minX + Self.folderEdgeZone {
+        edge = folderPage - 1
+      } else if location.x > rect.maxX - Self.folderEdgeZone {
+        edge = folderPage + 1
+      }
+    }
+    if let target = edge, !(0..<folderPageCount).contains(target) { edge = nil }
+    guard edge != drag?.turnPage else { return }
+    cancelTurn()
+    guard let target = edge else { return }
+    drag?.turnPage = target
+    let repeatDelay = dragTiming.edgeRepeat
+    turnTask = Task { [weak self] in
+      try? await Task.sleep(for: delay)
+      guard !Task.isCancelled, let self, self.drag?.turnPage == target, self.openFolderID != nil
+      else { return }
+      withAnimation(Style.Motion.glide.animation()) {
+        self.folderPage = target
+        self.folderPageOffset = 0
+      }
+      // 翻过去以后落点按新的一页重新算（指针没动）
+      self.cancelReflow()
+      self.drag?.folderTarget = nil
+      self.drag?.turnPage = nil
+      self.updateFolderEdge(self.lastDragLocation, delay: repeatDelay)
+    }
   }
 
   /// 让位：落点要变时先等 `dragTiming.reflow`，指针在这期间又挪到别处就重新等；挪回空位上 / 停到中心区就不变了

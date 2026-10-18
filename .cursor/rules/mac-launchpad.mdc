@@ -28,6 +28,7 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
   让位不等）：落点要变时等 0.15 s 才换（`scheduleReflow`），**松手执行屏上正显示的**落点 / 合成，不按松手那一刻的指针重算；
   停在文件夹上（合成底板出来后再 0.6 s）它自己打开，能放进任意一格、文件夹里也能挪（`LaunchpadLayout.placing`，满了顺到下一页）；
   进过面板再拖出 14 pt 就关文件夹、接着在主网格里拖（松手时先 `draggingOut` 再挪）；边上 60 pt 停 0.4 s 翻页、一直停着每 0.6 s 再翻；
+  文件夹开着时拖到面板里左右 40 pt（`folderEdgeZone`，在面板里面、不和拖出去的 14 pt 撞）同样翻文件夹的页，只翻到已有的页；
   文件夹面板的位置按算式（`folderPanelRect`），不量（长出来的那一下量到的是缩着的框）。
 - 网格和文件夹里的图标**按格子的 id** 建（`PlacedTile`，`.position` 摆到第几格），不按位置建：落点一变让位的图标才会滑过去。
   按住的手势挂在每个图标上（只管按下），被拿起、被拆掉都没关系，挪和松手看下一条。主网格的图标一直是 `JigglingIcon`（NSImageView、
