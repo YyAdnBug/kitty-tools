@@ -420,6 +420,21 @@ struct ShortcutsSheet: View {
           Entry("⌘.", text: "换成下一种纸色"),
           Entry("⌘,", text: "打开 设置 › 便签（同工具栏的「便签设置」）"),
         ]),
+      // 启动台（第八族，2026-10-18；mac-launchpad）。全局键默认不设，没设时那一行写「未设置」；
+      // 面板里的按键入口在 LaunchpadPanel（⌘← / ⌘→ / ⌘W）和 LaunchpadView 的搜索框（doCommandBy）
+      Group(
+        title: "启动台", symbol: HotKeyAction.launchpad.symbol,
+        color: Style.Family.launchpad, globals: [.launchpad],
+        entries: [
+          Entry("←→", "↑↓", text: "在图标之间挪选中（鼠标指着不高亮），到页边接着翻页"),
+          Entry("↩", text: "打开选中的 App（鼠标单击同样；打开后启动台自己收起）"),
+          Entry("⌘←", "⌘→", text: "到第一页 / 最后一页"),
+          Entry("两指左右滑", text: "翻页，跟手；鼠标滚轮上下滚也行，点底下的圆点跳页"),
+          Entry(text: "一打开就直接打字：搜 App 的中文名、拼音、首字母或英文名，文件夹里的也算"),
+          Entry("↩", text: "搜索时：打开第一个（或方向键选中的）"),
+          Entry("Esc", text: "先清空搜索，再按一次收起；点空白处也收起"),
+          Entry("⌘W", text: "收起"),
+        ]),
       // mac-overlay-panel §11 状态屏。全局键不设默认，没设时那一行写「未设置」；它先出选状态的面板（设置里可改成直接
       // 进排在最前面的状态，那一行的名字跟着变，HotKeyAction.rowTitle）。面板里的按键在 StatusPicker.key；
       // 退出判断在 ExitHold（只按着 esc、或左键按在退出提示上满 2 秒）；设了退出密码时按住满了还要输密码（Passcode）

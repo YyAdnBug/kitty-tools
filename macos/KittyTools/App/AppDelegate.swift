@@ -129,6 +129,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     return model
   }()
+  /// 启动台（第八族，2026-10-18，SPEC）：全屏图标网格，和现有的「启动器」（⌥Space 搜索框）是两个东西。
+  /// 打开时先收起别的浮层；截图、录屏、状态屏、正在录快捷键时不能打开。设置 › 启动台。
+  private lazy var launchpad: Launchpad = {
+    let board = Launchpad()
+    board.island = island
+    board.canOpen = { [unowned self] in
+      !isCapturing && !isReadingSelection && recorder == nil && audioRecorder == nil
+        && !statusScreen.isActive && !OverlayPanel.isSelectingRegion(in: NSApp.windows)
+        && hotKeys.recording == nil
+    }
+    board.willOpen = { [unowned self] in
+      clipboardPanel.hide()
+      launcherPanel.hide()
+      statusPicker.panel?.hide()
+      noteCapture?.panel.hide()
+      translatePanel.hide()
+    }
+    board.showSettings = { [unowned self] in showSettings(page: .launchpad) }
+    return board
+  }()
+
   /// 用时再建、收起后放掉（TransientPanel）：不像三块主面板那样天天呼出，里面最多 20 张缩小的状态屏，不常驻。
   /// 没有固定，点外面就收起；出现在鼠标所在屏的中央（OverlayPanel 不带 frameName、不 topAnchored 时就是居中）
   private lazy var statusPicker = TransientPanel { [unowned self] in
@@ -454,6 +475,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               "已清空启动器使用记录", detail: "「常用」和排序会从头开始学，收藏不动",
               symbol: "clock.arrow.circlepath")
           })
+      case .launchpad:
+        AnyView(
+          LaunchpadTab(
+            resetDefault: { [unowned self] in launchpad.resetToDefault() },
+            undo: { [unowned self] in launchpad.undoLastLayoutChange() },
+            canUndo: { [unowned self] in launchpad.canUndoLayout },
+            reflow: { [unowned self] in launchpad.reflow() }))
       case .screenshot: AnyView(ScreenshotTab())
       case .record: AnyView(RecordTab())
       case .notes:
@@ -885,6 +913,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 全局热键动作：热键、菜单栏、启动器同一个分发
   func run(_ action: HotKeyAction) {
+    // 启动台是全屏面板：按别的功能键时先收掉（它自己的键走 toggle）
+    if action != .launchpad, launchpad.isOpen { launchpad.close(animated: false) }
     switch action {
     case .clipboard: toggleClipboard()
     case .launcher: toggleLauncher()
@@ -902,6 +932,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     case .noteCapture: toggleNoteCapture()
     case .noteNew: newNote()
     case .noteAll: showNotes()
+    case .launchpad: launchpad.toggle()
     }
   }
 
@@ -1077,6 +1108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let sourceApp = NSWorkspace.shared.frontmostApplication?.processIdentifier
     if clipboardPanel.isKeyWindow { clipboardPanel.hide() }
     if launcherPanel.isKeyWindow { launcherPanel.hide() }
+    launchpad.close(animated: false)
     if noteCapture?.panel.isKeyWindow == true { noteCapture?.panel.hide() }
     statusPicker.panel?.hide()
     if translatePanel.isKeyWindow { translatePanel.orderOut(nil) }
@@ -1539,6 +1571,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func beginCapture(hidingPanels: Bool, _ work: @escaping () async -> Void) {
     guard !isCapturing, !isReadingSelection else { return }
     isCapturing = true
+    // 启动台是全屏面板，截图 / 录屏的冻结帧里不能有它：先收掉（不留动画，别让它出现在冻结帧里）
+    launchpad.close(animated: false)
     // 便签屏幕边缘扇着的那一列当场收起（先落盘），冻结帧里不留半截；打开着的便签是内容，照样截进去
     noteEdge?.suspend(.keepsOpen)
     if hidingPanels { hideUnpinnedPanels() }
@@ -1763,6 +1797,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 三块浮层、选状态的面板、快速记一条都收起，固定着的也收（打开设置、打开全部便签、进入状态屏）
   private func hidePanels() {
+    launchpad.close(animated: false)
     clipboardPanel.hide()
     launcherPanel.hide()
     statusPicker.panel?.hide()

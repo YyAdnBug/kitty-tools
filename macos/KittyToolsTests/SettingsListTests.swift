@@ -11,13 +11,14 @@ import Testing
 
 struct SettingsListTests {
   /// 侧栏顺序和菜单栏、快捷键页、引导同序：翻译在截图前面（体检 B51），录制紧跟截图（2026-10-03 拆出来），
-  /// 便签、状态屏排在录制后面（状态屏 Z11，便签 2026-10-12；两页的先后同快捷键页的分节）
+  /// 便签、状态屏排在录制后面（状态屏 Z11，便签 2026-10-12；两页的先后同快捷键页的分节）；
+  /// 启动台（第八族，2026-10-18）紧跟现有的「启动器」（两页都搜「文件夹」时按侧栏顺序停在启动台）
   @Test func sidebarOrderMatchesMenu() {
     let pages = SettingsPage.allCases
     #expect(
       pages == [
-        .general, .clipboard, .launcher, .translate, .screenshot, .record, .notes, .statusScreen,
-        .hotkeys, .about,
+        .general, .clipboard, .launcher, .launchpad, .translate, .screenshot, .record, .notes,
+        .statusScreen, .hotkeys, .about,
       ])
     let sections = HotKeyAction.sections.map(\.title)
     #expect(sections.firstIndex(of: "翻译")! < sections.firstIndex(of: "截图与录制")!)
@@ -37,7 +38,8 @@ struct SettingsListTests {
     #expect(SettingsPage.page(for: "帧率", current: .screenshot) == .record)
     #expect(!SettingsPage.screenshot.matches("录屏") && !SettingsPage.screenshot.matches("麦克风"))
     #expect(SettingsPage.page(for: "文件夹", current: .record) == .record)
-    #expect(SettingsPage.page(for: "文件夹", current: .about) == .screenshot)
+    // 「文件夹」两页都有（截图页是保存文件夹，启动台页是 App 文件夹）：按侧栏顺序停在启动台
+    #expect(SettingsPage.page(for: "文件夹", current: .about) == .launchpad)
     // 「状态」也是通用页「状态栏」里的字：搜它停在状态屏；状态屏页里各项的叫法搜得到
     #expect(SettingsPage.page(for: "状态", current: .general) == .statusScreen)
     for word in ["清洁", "请勿触碰", "告示", "退出", "屏幕常亮"] {

@@ -524,6 +524,7 @@ struct SnapshotProbeTests {
             transfer: SettingsTransfer(services: services, clipboard: store, history: history)))
       case .clipboard: AnyView(ClipboardTab(store: store))
       case .launcher: AnyView(LauncherTab())
+      case .launchpad: AnyView(LaunchpadTab())
       case .screenshot: AnyView(ScreenshotTab())
       case .record: AnyView(RecordTab())
       case .notes: AnyView(NotesTab {})

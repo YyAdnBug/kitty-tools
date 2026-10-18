@@ -212,6 +212,17 @@ enum Prefs {
   /// 2026-10-15 手测反馈）。同窗口位置一样是这台电脑自己的状态、**不注册默认值**：不跟着导出 / 导入走
   nonisolated static let notesWindowLayout = "notesWindowLayout"
 
+  /// 启动台（第八族，2026-10-18，SPEC §3）：总开关（默认开；关掉后快捷键、菜单栏、触发角、捏合都不打开，设置页还在）；
+  /// 一页几列几行（默认 7 × 5，范围见 choices；改了之后按新容量重新分页，SPEC R10）；布局本身（JSON 字符串，
+  /// LaunchpadLayout；**注册空串默认值**，这样 SettingsArchive 的「设置」一类知道它是字符串、用户存过才跟着导出走；
+  /// 空串 = 还没存过，第一次打开按系统旧启动台导入或默认排法）。捏合、触发角三个键在第 3 批加在这里
+  nonisolated static let launchpadEnabled = "launchpadEnabled"
+  nonisolated static let launchpadColumns = "launchpadColumns"
+  nonisolated static let launchpadRows = "launchpadRows"
+  nonisolated static let launchpadLayout = "launchpadLayout"
+  nonisolated static let launchpadColumnChoices = 5...10
+  nonisolated static let launchpadRowChoices = 4...8
+
   /// 上次启动的版本号：没有 = 首次安装（打开欢迎引导），和当前不同 = 刚更新（刘海岛「已更新到 x」+ 本版摘要，不开设置窗，体检 A29）
   static let lastSeenVersion = "lastSeenVersion"
   /// 自动检查更新（启动后一次、之后每天一次）
@@ -249,6 +260,10 @@ enum Prefs {
       launcherBrowserHistory: "",
       launcherFallbackAlways: false,
       launcherRomanInput: false,
+      launchpadEnabled: true,
+      launchpadColumns: 7,
+      launchpadRows: 5,
+      launchpadLayout: "",
       panelSqueezeEntrance: false,
       floatingPinned: false,
       updateAutoCheck: true,
