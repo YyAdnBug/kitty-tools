@@ -18,6 +18,8 @@ final class LaunchpadPanel: NSPanel {
   var onFirstPage: (() -> Void)?
   var onLastPage: (() -> Void)?
   var onCloseRequest: (() -> Void)?
+  /// ⌥ 按下 / 松开（抖动模式：按着进、松开退）
+  var onFlagsChanged: ((Bool) -> Void)?
 
   private let host: NSHostingView<LaunchpadView>
 
@@ -103,6 +105,11 @@ final class LaunchpadPanel: NSPanel {
   }
 
   override func cancelOperation(_ sender: Any?) { onCancel?() }
+
+  override func flagsChanged(with event: NSEvent) {
+    onFlagsChanged?(event.modifierFlags.contains(.option))
+    super.flagsChanged(with: event)
+  }
 }
 
 /// 第一下点击就给内容（本 App 不在前台时也一样）

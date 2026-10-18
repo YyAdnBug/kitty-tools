@@ -97,6 +97,7 @@ final class Launchpad {
     panel.onFirstPage = { [weak model] in model?.firstPage() }
     panel.onLastPage = { [weak model] in model?.lastPage() }
     panel.onCloseRequest = { [weak model] in model?.requestClose() }
+    panel.onFlagsChanged = { [weak model] held in model?.optionChanged(held) }
     self.panel = panel
     isOpen = true
     present(panel)
@@ -197,12 +198,10 @@ final class Launchpad {
     }
   }
 
-  /// 抖动模式里的 ✕（R6）：确认后移到废纸篓（同现有启动器的 ⌘K「移到废纸篓」），布局里拿掉。
+  /// 抖动模式里的 ✕（R6）：界面里已经确认过，这里移到废纸篓（同现有启动器的「移到废纸篓」）再把布局拿掉。
   /// 只在 App Store 装的 App 上出现（SPEC R6），系统 App 不给删。
   private func delete(_ app: LaunchpadProjectApp) {
-    guard LaunchpadCatalog.canDelete(app),
-      LaunchpadRecycle.confirm(app, over: panel)
-    else { return }
+    guard LaunchpadCatalog.canDelete(app) else { return }
     guard LaunchpadRecycle.moveToTrash(app, island: island) else { return }
     guard let layout = model?.layout else { return }
     let updated = layout.removing(app.id, capacity: Self.capacity)

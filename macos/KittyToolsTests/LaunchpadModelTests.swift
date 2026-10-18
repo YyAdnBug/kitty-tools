@@ -1,0 +1,230 @@
+// 启动台界面状态机的单测（第八族，2026-10-18，SPEC R2–R6）：键盘导航到页边翻页、搜索分页、Esc / 点空白的逐层退出、
+// 抖动模式进出、拖动落点（让位、建文件夹、拖出文件夹）、拖动没挪动 = 点一下打开。屏外建 model，不建窗口、不 makeKey。
+
+import AppKit
+import Testing
+
+@testable import KittyTools
+
+@MainActor
+struct LaunchpadModelTests {
+  private func ref(_ name: String) -> LaunchpadAppRef {
+    LaunchpadAppRef(bundleID: "com.example.\(name)", path: "/Applications/\(name).app")
+  }
+
+  private func projectApp(_ ref: LaunchpadAppRef) -> LaunchpadProjectApp {
+    let name = ref.bundleID ?? URL(filePath: ref.path).deletingPathExtension().lastPathComponent
+    return LaunchpadProjectApp(
+      id: ref.id, ref: ref,
+      item: LauncherItem(
+        kind: .app, target: ref.path, title: name, subtitle: "应用程序",
+        names: [LauncherMatch.fold(name)], initials: [LauncherMatch.initials(name)]),
+      url: URL(filePath: ref.path), isSystem: false, inUtilities: false, isAppStore: false,
+      category: nil)
+  }
+
+  private func model(_ layout: LaunchpadLayout, columns: Int = 3, rows: Int = 2) -> LaunchpadModel {
+    let catalog = layout.apps.map(projectApp)
+    return LaunchpadModel(
+      layout: layout, catalog: catalog, icons: LaunchpadIcons(), columns: columns, rows: rows,
+      screenSize: CGSize(width: 900, height: 600))
+  }
+
+  @Test func keyboardNavigationTurnsPagesAtEdges() {
+    let refs = (0..<8).map { ref("a\($0)") }
+    let layout = LaunchpadLayout(
+      pages: [
+        (0..<6).map { LaunchpadTile.app(refs[$0]) },
+        [.app(refs[6]), .app(refs[7])],
+      ])
+    let board = model(layout)
+    board.selected = 0
+    // 第一格往左 / 往上：到头，不动
+    board.navigate(.left)
+    #expect(board.page == 0 && board.selected == 0)
+    board.navigate(.up)
+    #expect(board.page == 0 && board.selected == 0)
+    // 同一行往右
+    board.navigate(.right)
+    #expect(board.selected == 1 && board.page == 0)
+    // 第一行最后一个再往右：翻到第 2 页第一格
+    board.selected = 2
+    board.navigate(.right)
+    #expect(board.page == 1 && board.selected == 0)
+    // 第 2 页往上：翻回上一页同一列（第 0 格）
+    board.navigate(.up)
+    #expect(board.page == 0 && board.selected == 0)
+    // 第二行第一个往上：同一列第一行
+    board.selected = 3
+    board.navigate(.up)
+    #expect(board.page == 0 && board.selected == 0)
+    // 第二行最后一个往下：翻到第 2 页，列夹到最后一个
+    board.selected = 5
+    board.navigate(.down)
+    #expect(board.page == 1 && board.selected == 1)
+    // 最后一页再往右 / 往下：到头
+    board.navigate(.right)
+    #expect(board.page == 1 && board.selected == 1)
+    board.navigate(.down)
+    #expect(board.page == 1 && board.selected == 1)
+    // ⌘← / ⌘→
+    board.firstPage()
+    #expect(board.page == 0)
+    board.lastPage()
+    #expect(board.page == 1)
+  }
+
+  @Test func searchPaginatesAndClearsFirst() {
+    let refs = (0..<6).map { ref("word\($0)") }
+    let layout = LaunchpadLayout(pages: [refs.map(LaunchpadTile.app)])
+    let board = model(layout)
+    board.query = "word"
+    #expect(board.isSearching)
+    #expect(board.pageCount == 1)  // 6 个结果、一页 6 格（3 × 2）
+    // 改成 4 格一页看分页（columns 2）
+    let narrow = model(layout, columns: 2, rows: 2)
+    narrow.query = "word"
+    #expect(narrow.searchResults.count == 6)
+    #expect(narrow.pageCount == 2)
+    #expect(narrow.displayPages[0].count == 4)
+    // Esc 先清搜索
+    narrow.cancel()
+    #expect(narrow.query.isEmpty && !narrow.isClosing)
+    // 再按一次才收起
+    var closed = false
+    narrow.onClose = { closed = true }
+    narrow.cancel()
+    #expect(closed)
+  }
+
+  @Test func escapeAndBlankClickGoThroughTheLayers() {
+    let a = ref("a")
+    let b = ref("b")
+    let layout = LaunchpadLayout(pages: [[.app(a), .app(b)]])
+    let model = model(layout)
+    var closed = false
+    model.onClose = { closed = true }
+    // 抖动 → Esc 退抖动
+    model.enterJiggle()
+    #expect(model.jiggling)
+    model.cancel()
+    #expect(!model.jiggling && !closed)
+    // 文件夹 → Esc 收文件夹
+    let folder = LaunchpadFolder(name: "X", pages: [[a, b]])
+    model.replace(layout: LaunchpadLayout(pages: [[.folder(folder)]]))
+    model.openFolder(folder.id)
+    #expect(model.openFolderID == folder.id)
+    model.cancel()
+    #expect(model.openFolderID == nil && !closed)
+    // 点空白：先退抖动，再关文件夹，最后收起
+    model.enterJiggle()
+    model.backgroundClicked()
+    #expect(!model.jiggling && !closed)
+    model.openFolder(folder.id)
+    model.backgroundClicked()
+    #expect(model.openFolderID == nil && !closed)
+    model.backgroundClicked()
+    #expect(closed)
+  }
+
+  @Test func optionEntersAndExitsJiggle() {
+    let model = model(LaunchpadLayout(pages: [[.app(ref("a"))]]))
+    model.optionChanged(true)
+    #expect(model.jiggling)
+    model.optionChanged(false)
+    #expect(!model.jiggling)
+    // 按住图标进的那种不受松开 ⌥ 影响
+    model.enterJiggle()
+    model.optionChanged(false)
+    #expect(model.jiggling)
+  }
+
+  @Test func dragWithoutMovingOpensTheApp() {
+    let a = ref("a")
+    let model = model(LaunchpadLayout(pages: [[.app(a)]]))
+    var opened: String?
+    model.onOpenApp = { opened = $0.id }
+    model.beginDrag(tile: .app(a), appID: a.id, folder: nil, at: CGPoint(x: 100, y: 100))
+    model.endDrag()
+    #expect(opened == a.id)
+    #expect(model.drag == nil)
+  }
+
+  @Test func draggingOntoAnotherAppMakesAFolder() {
+    let a = ref("a")
+    let b = ref("b")
+    let model = model(LaunchpadLayout(pages: [[.app(a), .app(b)]]))
+    // 手动摆网格框：一格 100 × 100，起点 (0, 0)
+    model.gridFrames[0] = CGRect(x: 0, y: 0, width: 300, height: 200)
+    model.beginDrag(tile: .app(b), appID: b.id, folder: nil, at: CGPoint(x: 150, y: 50))
+    model.updateDrag(location: CGPoint(x: 10, y: 50), pageWidth: 900)
+    #expect(model.drag?.targetIndex == 0)
+    model.endDrag()
+    #expect(model.layout.tiles.count == 1)
+    #expect(model.layout.tiles[0].folder?.apps.map(\.id) == [a.id, b.id])
+  }
+
+  @Test func droppingOnAFolderAddsToIt() {
+    let a = ref("a")
+    let b = ref("b")
+    let c = ref("c")
+    let folder = LaunchpadFolder(name: "X", pages: [[a, b]])
+    let model = model(LaunchpadLayout(pages: [[.folder(folder), .app(c)]]))
+    model.folderFrames[folder.id] = CGRect(x: 0, y: 0, width: 100, height: 100)
+    model.gridFrames[0] = CGRect(x: 0, y: 0, width: 300, height: 200)
+    model.beginDrag(tile: .app(c), appID: c.id, folder: nil, at: CGPoint(x: 150, y: 50))
+    model.updateDrag(location: CGPoint(x: 50, y: 50), pageWidth: 900)
+    #expect(model.drag?.hoverFolderID == folder.id)
+    model.endDrag()
+    #expect(model.layout.tiles.count == 1)
+    #expect(model.layout.tiles[0].folder?.apps.map(\.id) == [a.id, b.id, c.id])
+  }
+
+  @Test func draggingOutOfAFolderReturnsToTheGrid() {
+    let a = ref("a")
+    let b = ref("b")
+    let folder = LaunchpadFolder(name: "X", pages: [[a, b]])
+    let model = model(LaunchpadLayout(pages: [[.folder(folder)]]))
+    model.folderPanelFrame = CGRect(x: 100, y: 100, width: 200, height: 200)
+    model.openFolder(folder.id)
+    model.beginDrag(tile: .app(b), appID: b.id, folder: folder.id, at: CGPoint(x: 150, y: 150))
+    model.updateDrag(location: CGPoint(x: 400, y: 400), pageWidth: 900)
+    #expect(model.drag?.outsideFolder == true)
+    model.endDrag()
+    // 文件夹只剩一个 → 解散，两个都回到主网格
+    #expect(model.layout.tiles.compactMap { $0.app?.id } == [a.id, b.id])
+    #expect(model.openFolderID == nil)
+  }
+
+  @Test func previewShowsPlaceholderWhileDragging() {
+    let a = ref("a")
+    let b = ref("b")
+    let model = model(LaunchpadLayout(pages: [[.app(a), .app(b)]]))
+    model.gridFrames[0] = CGRect(x: 0, y: 0, width: 300, height: 200)
+    model.beginDrag(tile: .app(b), appID: b.id, folder: nil, at: CGPoint(x: 150, y: 50))
+    model.updateDrag(location: CGPoint(x: 700, y: 50), pageWidth: 900)
+    let slots = model.previewTiles(page: 0)
+    // b 被拿掉、落点（第 3 格）插了空位：a、nil
+    #expect(slots.count == 2)
+    #expect(slots[0]?.app?.id == a.id)
+    #expect(slots[1] == nil)
+    model.cancelDrag()
+    #expect(model.drag == nil)
+  }
+
+  @Test func folderRenameAndPages() {
+    let refs = (0..<11).map { ref("f\($0)") }
+    let folder = LaunchpadFolder(
+      name: "X", pages: LaunchpadLayout.paginateFolder(refs))
+    let model = model(LaunchpadLayout(pages: [[.folder(folder)]]))
+    model.openFolder(folder.id)
+    #expect(model.folderPageCount == 2)
+    #expect(model.folderApps.count == 9)
+    model.goToFolderPage(1)
+    #expect(model.folderApps.count == 2)
+    model.renameFolder(folder.id, to: "  开发  ")
+    #expect(model.openFolder?.name == "开发")
+    model.renameFolder(folder.id, to: "  ")
+    #expect(model.openFolder?.name == "未命名")
+  }
+}
