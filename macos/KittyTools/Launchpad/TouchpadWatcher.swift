@@ -11,10 +11,11 @@ import AppKit
 import Darwin
 import Synchronization
 
-/// 框架给的触点：框架的数组是 **96 字节一个**（公开逆向资料：frame、timestamp、identifier、state、
-/// fingerId、handId、normalized 位置 + 尺寸、angle / major / minor、normalized 速度、两个 int、zDensity，
-/// 再留到 96）。字段按偏移声明，**整个结构体 stride 必须是 96**——按 56 步进从第二根手指起就全错位了（F6）。
-/// ponytail: 布局是逆向来的；系统改了字段顺序要重新核对（HANDTEST 10）。只读 identifier / state / normalized 位置。
+/// 框架给的触点：框架的数组是 **96 字节一个**。字段顺序照公开的逆向资料：frame、timestamp、identifier、state、
+/// fingerId、handId、normalized 位置 + 速度、zTotal、一个 int、angle、majorAxis、minorAxis、absolute 位置 + 速度、
+/// 两个 int、zDensity。**整个结构体 stride 必须是 96**——按 56 步进从第二根手指起就全错位了（F6）。
+/// ponytail: 布局是逆向来的；系统改了字段顺序要重新核对（HANDTEST 10）。只读 identifier / state / normalized 位置
+/// （偏移 16 / 20 / 32 / 36），后面的字段只为把步长占满。
 nonisolated struct MTFinger {
   var frame: Int32 = 0  // 0
   var pad0: Int32 = 0  // 4（timestamp 要 8 字节对齐）
@@ -25,26 +26,25 @@ nonisolated struct MTFinger {
   var handID: Int32 = 0  // 28
   var normalizedX: Float = 0  // 32
   var normalizedY: Float = 0  // 36
-  var size: Float = 0  // 40
-  var zero1: Int32 = 0  // 44
-  var angle: Float = 0  // 48
-  var majorAxis: Float = 0  // 52
-  var minorAxis: Float = 0  // 56
-  var velocityX: Float = 0  // 60
-  var velocityY: Float = 0  // 64
-  var zero2a: Int32 = 0  // 68
-  var zero2b: Int32 = 0  // 72
-  var zDensity: Float = 0  // 76
-  /// 76 之后框架还留着 20 字节（补齐到 96），我们不读，只用它把 stride 对齐
-  var reserved0: Int32 = 0  // 80
-  var reserved1: Int32 = 0  // 84
-  var reserved2: Int32 = 0  // 88
-  var reserved3: Int32 = 0  // 92
+  var normalizedVelocityX: Float = 0  // 40
+  var normalizedVelocityY: Float = 0  // 44
+  var zTotal: Float = 0  // 48
+  var field9: Int32 = 0  // 52
+  var angle: Float = 0  // 56
+  var majorAxis: Float = 0  // 60
+  var minorAxis: Float = 0  // 64
+  var absoluteX: Float = 0  // 68
+  var absoluteY: Float = 0  // 72
+  var absoluteVelocityX: Float = 0  // 76
+  var absoluteVelocityY: Float = 0  // 80
+  var field14: Int32 = 0  // 84
+  var field15: Int32 = 0  // 88
+  var zDensity: Float = 0  // 92
 }
 
 /// C 回调：`int (*)(MTDeviceRef, MTFinger *, int count, double timestamp, int frame)`。
 /// 触点数组在 C 侧只当裸指针收下，进回调再 `assumingMemoryBound` 成 MTFinger（Swift 的 struct 不能直接进 @convention(c) 签名）
-private typealias MTContactCallback =
+typealias MTContactCallback =
   @convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?, Int32, Double, Int32) -> Int32
 private typealias MTDeviceCreateListFn = @convention(c) () -> Unmanaged<CFMutableArray>?
 private typealias MTRegisterCallbackFn =
@@ -54,8 +54,10 @@ private typealias MTUnregisterCallbackFn =
 private typealias MTDeviceStartFn = @convention(c) (UnsafeMutableRawPointer, Int32) -> Void
 private typealias MTDeviceStopFn = @convention(c) (UnsafeMutableRawPointer) -> Void
 
-/// 回调在框架线程上跑：这里只碰识别器（Mutex 里）和把结果派回主线程
-private final class TouchpadBridge: Sendable {
+/// 回调在框架线程上跑：这里只碰识别器（Mutex 里）和把结果派回主线程。
+/// **必须 `nonisolated`**：工程默认 MainActor 隔离，不写的话这个类和它的方法会被推成 @MainActor，框架线程一调进来
+/// 就被 Swift 6 的隔离检查当场 trap（G1：第 3 批起就有，系统手势一关、一碰触控板就崩）。
+nonisolated final class TouchpadBridge: Sendable {
   private let recognizers = Mutex<[UInt: PinchRecognizer]>([:])
   /// 按需实录探针用：真收到多少帧（只增，不参与识别）
   let frames = Mutex<Int>(0)
@@ -90,13 +92,22 @@ private final class TouchpadBridge: Sendable {
 /// 不会出现「刚读出引用、主线程就放掉」的 use-after-free（F25）
 nonisolated private let activeBridge = Mutex<TouchpadBridge?>(nil)
 
-private let contactCallback: MTContactCallback = { device, data, count, timestamp, _ in
+/// 回调的本体是一个普通的 nonisolated 函数：C 函数指针的字面量里**不写任何闭包**（字面量在默认 MainActor 隔离下会被
+/// 推成 MainActor，里面的闭包到了框架线程上一执行就 trap，G1）
+nonisolated private func handleContactFrame(
+  _ device: UnsafeMutableRawPointer?, _ data: UnsafeMutableRawPointer?, _ count: Int32,
+  _ timestamp: Double
+) -> Int32 {
   guard let device, let bridge = activeBridge.withLock({ $0 }) else { return 0 }
   // 空帧也喂：全抬起来要让识别器重置（F25）
   let touches = data.map { TouchpadWatcher.touches(from: $0, count: Int(count)) } ?? []
   bridge.feed(
     device: UInt(bitPattern: device), frame: TouchFrame(time: timestamp, touches: touches))
   return 0
+}
+
+nonisolated private let contactCallback: MTContactCallback = { device, data, count, timestamp, _ in
+  handleContactFrame(device, data, count, timestamp)
 }
 
 /// 触控板捏合的监听（Launchpad 拿着；只在功能开着、系统的捏合关着时 start）
@@ -120,11 +131,22 @@ final class TouchpadWatcher {
   private var generation = 0
   private var bridge: TouchpadBridge?
   private var isStarted = false
+  /// 调用方要它开着（start 过、还没 stop）：唤醒后重新注册时按它判断，不按「上次起成功没有」——
+  /// 唤醒那一下设备还没就绪、start 失败了，下一次唤醒照样再试（G24）
+  private var wantsRunning = false
 
-  /// 按需实录探针（`TEST_RUNNER_KITTY_LIVE_TOUCH=1`）用的计数；正常路径不读
+  /// 按需实录探针（命令行 `TEST_RUNNER_KITTY_LIVE_TOUCH=1`，测试进程里读到的是 `KITTY_LIVE_TOUCH`）用的计数；正常路径不读
   nonisolated static var framesSeen: Int {
     activeBridge.withLock { bridge in bridge.map { $0.frames.withLock { $0 } } ?? 0 }
   }
+
+  /// 单测用：装一个桥（nil = 拆掉）。不注册回调、不碰框架（G1 的单测在后台线程上直接调回调）
+  nonisolated static func installBridgeForTesting(_ bridge: TouchpadBridge?) {
+    activeBridge.withLock { $0 = bridge }
+  }
+
+  /// 单测用：交给框架的那个 C 回调本身
+  nonisolated static var contactCallbackForTesting: MTContactCallback { contactCallback }
 
   private struct Symbols {
     let register: MTRegisterCallbackFn
@@ -146,8 +168,12 @@ final class TouchpadWatcher {
       && dlsym(handle, "MTDeviceStart") != nil
   }()
 
-  /// 开着监听（重复调用只换灵敏度）
-  func start(sensitivity: PinchRecognizer.Sensitivity) {
+  /// 开着监听。已经开着、灵敏度也没变时什么都不做（G8：别的窗口变 key、导入设置都会走到这里，
+  /// 每次整套注销重注册会把正在捏的那一下的识别器清掉）；`force` 只给唤醒后的重新注册用
+  func start(sensitivity: PinchRecognizer.Sensitivity, force: Bool = false) {
+    wantsRunning = true
+    observeWake()
+    if isStarted, !force, sensitivity == self.sensitivity { return }
     self.sensitivity = sensitivity
     if isStarted {
       bridge = nil
@@ -183,15 +209,8 @@ final class TouchpadWatcher {
     }
     devices = found
     generation += 1
-    let generation = generation
-    let bridge = TouchpadBridge(sensitivity: sensitivity) { [weak self] gesture in
-      DispatchQueue.main.async {
-        MainActor.assumeIsolated {
-          guard let self, self.isStarted, self.generation == generation else { return }
-          self.onGesture?(gesture)
-        }
-      }
-    }
+    let bridge = TouchpadBridge(
+      sensitivity: sensitivity, onGesture: Self.forwarder(to: self, generation: generation))
     self.bridge = bridge
     activeBridge.withLock { $0 = bridge }
     for device in devices {
@@ -200,24 +219,39 @@ final class TouchpadWatcher {
     }
     isStarted = true
     availability = .available
-    observeWake()
   }
 
-  /// 睡眠唤醒后设备可能已经失效：重新枚举、注册（F25；真机验）
+  /// 识别结果派回主线程的那一下：在 nonisolated 的上下文里建，闭包不会被推成 MainActor
+  /// （它是在框架线程上被调的，G1）
+  nonisolated private static func forwarder(
+    to watcher: TouchpadWatcher, generation: Int
+  ) -> @Sendable (PinchRecognizer.Gesture) -> Void {
+    { [weak watcher] gesture in
+      DispatchQueue.main.async {
+        MainActor.assumeIsolated {
+          guard let watcher, watcher.isStarted, watcher.generation == generation else { return }
+          watcher.onGesture?(gesture)
+        }
+      }
+    }
+  }
+
+  /// 睡眠唤醒后设备可能已经失效：重新枚举、注册（F25；真机验）。按「调用方要它开着」判断（G24）
   private func observeWake() {
     guard wakeObserver == nil else { return }
     wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
       forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
     ) { [weak self] _ in
       MainActor.assumeIsolated {
-        guard let self, self.isStarted else { return }
-        self.start(sensitivity: self.sensitivity)
+        guard let self, self.wantsRunning else { return }
+        self.start(sensitivity: self.sensitivity, force: true)
       }
     }
   }
 
   /// 关掉：注销回调、停设备、放掉桥（回调里再进来也不会认）
   func stop() {
+    wantsRunning = false
     generation += 1
     if let wakeObserver {
       NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)

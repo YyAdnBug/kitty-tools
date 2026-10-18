@@ -291,13 +291,16 @@ struct SettingsArchive: Codable, Equatable {
   /// 布局 JSON 在文件里的长度上限（1 MB：本机 120 个 App 约 10 KB，留足以后几倍的余量）
   static let layoutLimit = 1_048_576
 
-  /// 文件里的一段布局：解得出 `LaunchpadLayout` 才收
+  /// 文件里的一段布局：解得出 `LaunchpadLayout`、而且收拾完至少还有一个 App 才收；收的是**收拾后重编**的那份，
+  /// 不是原文（G22：每一格都坏的文件能解成空布局，原样写进去下次打开就全部按目录顺序重排；超长的名字、
+  /// 重复的格子也不该原样进偏好）
   static func layoutText(_ value: Value?, limit: Int = layoutLimit) -> String? {
     guard case .string(let text)? = value, text.count <= limit,
       let data = text.data(using: .utf8),
-      (try? JSONDecoder().decode(LaunchpadLayout.self, from: data)) != nil
+      let layout = try? JSONDecoder().decode(LaunchpadLayout.self, from: data),
+      !layout.apps.isEmpty
     else { return nil }
-    return text
+    return layout.jsonString()
   }
 
   /// 文件里有的类别（按 Section 的顺序）

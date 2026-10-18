@@ -109,11 +109,12 @@ import SwiftUI
     onToneChange?(tone)
     // 窗口不接鼠标，VoiceOver 读不到：主动播报
     Self.announce([next.title, next.detail].compactMap { $0 }.joined(separator: "，"))
+    // 带动作（「撤销」「在访达中显示」）的岛多留一会儿：1.4–2 秒来不及挪鼠标去点（G23）
     let seconds: Double =
       switch tone {
       case .progress: 60
-      case .error: 3
-      default: detail == nil ? 1.4 : 2
+      case .error: action == nil ? 3 : 6
+      default: action == nil ? (detail == nil ? 1.4 : 2) : 6
       }
     dwell = Task { [weak self] in
       try? await Task.sleep(for: .seconds(seconds))
@@ -256,7 +257,7 @@ import SwiftUI
     panel.ignoresMouseEvents = action == nil
     panel.isReleasedWhenClosed = false
     panel.animationBehavior = .none
-    let host = NSHostingView(rootView: IslandView(island: self))
+    let host = IslandHost(rootView: IslandView(island: self))
     host.sizingOptions = []
     panel.contentView = host
     return panel
@@ -524,4 +525,9 @@ nonisolated struct IslandShape: Shape {
     path.closeSubpath()
     return path
   }
+}
+
+/// 岛的宿主：带动作时第一下点击就给按钮（本 App 不在前台时也一样，G23）；不带动作时窗口整个不接鼠标，这一条不起作用
+private final class IslandHost: NSHostingView<IslandView> {
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }

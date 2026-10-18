@@ -176,8 +176,10 @@ nonisolated struct LaunchpadImport {
     defer { try? fileManager.removeItem(at: directory) }
     let copy = directory.appending(path: "db")
     do {
-      // 先拷 -wal / -shm 再拷主文件：先拷主文件的话，两次拷贝之间 checkpoint 一次会把新帧并进主文件、
-      // 再读到的 -wal 就旧了（和启动器克隆浏览历史同一个顺序）
+      // 先拷 -wal / -shm 再拷主文件（和启动器克隆浏览历史同一个顺序）。两种顺序都有竞态：拷的间隙里程序坞
+      // checkpoint 一次（WAL 再重新开始写的话更明显），拷贝就可能拼成新旧混合的快照（G21）。
+      // ponytail: 不加锁、不重试——系统旧启动台在 26 之后基本不再写这个库，只在导入那一下读一次；
+      // 要更稳就拷两遍比较大小 / 修改时间，不一致再拷
       for suffix in ["-wal", "-shm"] {
         let side = path + suffix
         if fileManager.fileExists(atPath: side) {

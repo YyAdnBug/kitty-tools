@@ -72,12 +72,13 @@ enum LaunchpadCatalog {
       category: categoryKey.flatMap(categoryName))
   }
 
-  /// 建文件夹时的名字：两个 App 分类相同时用它，不同就用第一个的，没有分类叫「未命名」（SPEC R4）
+  /// 建文件夹时的名字：两个 App 分类相同时用它，不同就用第一个的；第一个没分类就用第二个的（G12），
+  /// 都没有叫「未命名」（SPEC R4）
   nonisolated static func folderName(first: LaunchpadProjectApp?, second: LaunchpadProjectApp?)
     -> String
   {
     let shared = first?.category == second?.category ? first?.category : nil
-    return shared ?? first?.category ?? LaunchpadLayout.untitledFolder
+    return shared ?? first?.category ?? second?.category ?? LaunchpadLayout.untitledFolder
   }
 
   /// 这些 App 里有没有 App Store 装的（抖动模式只有它们显示 ✕）

@@ -154,7 +154,8 @@ nonisolated struct PinchRecognizer: Sendable {
 
 /// 系统的四指 / 五指捏合手势开没开（只读；SPEC §5.6）。`com.apple.AppleMultitouchTrackpad` 是内置触控板，
 /// 蓝牙妙控板在 `com.apple.driver.AppleBluetoothMultitouch.trackpad`。实测（27.0.1）两个键都是 2 = 开，
-/// 0 = 关；这里按「两个键都没存过 = 开（系统默认）、显式 0 = 关」认（F13）。**只读，不写、不重启 Dock**。
+/// 0 = 关；这里按「两个键都没存过 = 这个域没信息、显式 0 = 关」认，几个域合起来见 `combined`（F13 / G5）。
+/// **只读，不写、不重启 Dock**。
 nonisolated enum TrackpadSystemGesture {
   static let fourFingerKey = "TrackpadFourFingerPinchGesture"
   static let fiveFingerKey = "TrackpadFiveFingerPinchGesture"
@@ -162,19 +163,27 @@ nonisolated enum TrackpadSystemGesture {
     "com.apple.AppleMultitouchTrackpad", "com.apple.driver.AppleBluetoothMultitouch.trackpad",
   ]
 
-  /// 一个域里的两个键（注入的 UserDefaults 给单测）。两个键都没存过 = 系统默认开（F13：新机器上
-  /// 不能再和我们的监听一起出来）；存过 0 才是用户关掉了
-  static func pinchIsOn(_ defaults: UserDefaults) -> Bool {
+  /// 一个域里的两个键（注入的 UserDefaults 给单测）：nil = 这个域里没有信息（两个键都没存过）
+  static func pinchSetting(_ defaults: UserDefaults) -> Bool? {
     let four = defaults.object(forKey: fourFingerKey) as? Int
     let five = defaults.object(forKey: fiveFingerKey) as? Int
-    if four == nil, five == nil { return true }
+    if four == nil, five == nil { return nil }
     return (four ?? 0) != 0 || (five ?? 0) != 0
   }
 
-  /// 本机（两个域任一开着）
+  /// 单个域的读法：没信息按系统默认开（F13）
+  static func pinchIsOn(_ defaults: UserDefaults) -> Bool { pinchSetting(defaults) ?? true }
+
+  /// 几个域合起来（纯函数，G5）：任一域显式开着 = 开；有域显式关了、没有显式开的 = 关；所有域都没信息才按系统默认开。
+  /// 原来是对每个域「没信息就算开」再取或：没配过蓝牙触控板的 Mac 上那个域是空的，用户关了系统手势也永远算开着
+  static func combined(_ settings: [Bool?]) -> Bool {
+    if settings.contains(true) { return true }
+    if settings.contains(false) { return false }
+    return true
+  }
+
+  /// 本机的两个域
   static func systemPinchIsOn() -> Bool {
-    domains.contains { domain in
-      UserDefaults(suiteName: domain).map(pinchIsOn) ?? false
-    }
+    combined(domains.map { domain in UserDefaults(suiteName: domain).flatMap(pinchSetting) })
   }
 }

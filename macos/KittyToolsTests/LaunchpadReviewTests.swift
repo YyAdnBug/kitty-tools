@@ -131,7 +131,9 @@ struct LaunchpadReviewTests {
     #expect(model.gridFrames[0] != nil)
     let frame = try! #require(model.gridFrames[0])
     model.beginDrag(tile: .app(c), appID: c.id, folder: nil, at: CGPoint(x: 800, y: 100))
-    model.updateDrag(location: center(0, in: frame, metrics: model.metrics), pageWidth: 900)
+    // 真界面量出来的是全宽的页容器：格子中心要按 cellRect 算（含两边的 side，G19）
+    let cell = LaunchpadModel.cellRect(0, in: frame, metrics: model.metrics)
+    model.updateDrag(location: CGPoint(x: cell.midX, y: cell.midY), pageWidth: 900)
     await waitForCombine(model)
     #expect(model.drag?.combineTileID == LaunchpadTile.folder(folder).id)
     model.endDrag()
@@ -254,7 +256,12 @@ struct LaunchpadReviewTests {
   /// 一页只有一个图标，拖起再落回本页 = 没挪（F7：不能因为源页被删掉就顺到下一页）
   @Test func movingTheOnlyTileOnAPageBackKeepsIt() {
     let layout = LaunchpadLayout(pages: [[.app(ref("a"))], [.app(ref("b"))]])
-    #expect(layout.moving("b", toPage: 1, slot: 0, capacity: 35) == layout)
+    // 用真的格子 id（G18：原来写的是 "b"，locate 找不到、原样返回，怎么都过）
+    let moved = layout.moving(LaunchpadTile.app(ref("b")).id, toPage: 1, slot: 0, capacity: 35)
+    #expect(moved == layout)
+    // 对照：挪到第 1 页确实会变（证明上面那条不是因为找不到）
+    #expect(
+      layout.moving(LaunchpadTile.app(ref("b")).id, toPage: 0, slot: 1, capacity: 35) != layout)
   }
 
   // MARK: F8 WAL
@@ -307,6 +314,8 @@ struct LaunchpadReviewTests {
     try writer.execute(
       "INSERT INTO apps (item_id, title, bundleid) VALUES (3, 'Alpha', 'com.example.a'), (4, 'Beta', 'com.example.b')"
     )
+    // 先把 Beta 合并进主文件，再只在 WAL 里删掉它：这样才是在测「WAL 里的删除生效」，不只是「读了 WAL」（G21）
+    try writer.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     try writer.execute("DELETE FROM apps WHERE item_id = 4")
     try writer.execute("DELETE FROM items WHERE rowid = 4")
     let local = [
@@ -404,15 +413,16 @@ struct LaunchpadReviewTests {
 
   @Test func pagerFlipsByDistanceAndFlick() {
     var pager = LaunchpadPager()
-    // 慢慢拖过三分之一页宽
-    _ = pager.feed(delta: -120, time: 1, pageWidth: 900, canBack: true, canForward: true)
-    _ = pager.feed(delta: -120, time: 2, pageWidth: 900, canBack: true, canForward: true)
+    // 慢慢拖过三分之一页宽（900 的三分之一是 300；原来拖 240 也过，是靠第一帧的速度虚高，G13）
+    _ = pager.feed(delta: -180, time: 1, pageWidth: 900, canBack: true, canForward: true)
+    _ = pager.feed(delta: -180, time: 2, pageWidth: 900, canBack: true, canForward: true)
     #expect(pager.finish(canBack: true, canForward: true, pageWidth: 900) == 1)
-    // 快甩一小段
+    // 快甩一小段（几帧、每帧 10 ms；原来这里只喂两帧、靠第一帧的速度虚高才算快甩，那正是 G13 的错）
     var flick = LaunchpadPager()
     _ = flick.feed(delta: -30, time: 10, pageWidth: 900, canBack: true, canForward: true)
-    _ = flick.feed(delta: -30, time: 10.03, pageWidth: 900, canBack: true, canForward: true)
-    #expect(flick.finish(canBack: true, canForward: true, pageWidth: 900) == 1)
+    _ = flick.feed(delta: -30, time: 10.01, pageWidth: 900, canBack: true, canForward: true)
+    _ = flick.feed(delta: -30, time: 10.02, pageWidth: 900, canBack: true, canForward: true)
+    #expect(flick.finish(canBack: true, canForward: true, pageWidth: 900, time: 10.025) == 1)
     // 拖回来、到头不翻
     var back = LaunchpadPager()
     _ = back.feed(delta: -100, time: 1, pageWidth: 900, canBack: true, canForward: true)
@@ -433,7 +443,10 @@ struct LaunchpadReviewTests {
     let frame = grid(model, page: 1)
     model.beginDrag(tile: .app(a), appID: a.id, folder: nil, at: CGPoint(x: 100, y: 100))
     model.go(to: 1)
-    model.updateDrag(location: center(1, in: frame, metrics: model.metrics), pageWidth: 900)
+    // 停在 c 那一格的左边沿 = 插到 c 前面（停在 c 的中心是合成候选、空位不动，G3）
+    let edge = CGPoint(
+      x: frame.minX + model.metrics.cellWidth + 6, y: frame.minY + model.metrics.cellHeight / 2)
+    model.updateDrag(location: edge, pageWidth: 900)
     let slots = model.previewTiles(page: 1)
     #expect(slots.count == 3)
     #expect(slots[1] == nil)
@@ -612,7 +625,10 @@ struct LaunchpadReviewTests {
       layout: LaunchpadLayout(pages: [[.app(a), .app(b)]]),
       catalog: [app(a, category: nil), app(b, category: "效率")], icons: LaunchpadIcons(),
       columns: 3, rows: 2, screenSize: CGSize(width: 900, height: 600))
-    model.folderName = { first, second in second.category ?? first.category ?? "未命名" }
+    // 用和 Launchpad.open() 接的同一个取名函数（G12：原来这里注入了自己写的闭包，真代码没改也绿）
+    model.folderName = { first, second in
+      LaunchpadCatalog.folderName(first: first, second: second)
+    }
     let frame = grid(model, page: 0)
     model.beginDrag(tile: .app(a), appID: a.id, folder: nil, at: CGPoint(x: 700, y: 100))
     model.updateDrag(location: center(1, in: frame, metrics: model.metrics), pageWidth: 900)

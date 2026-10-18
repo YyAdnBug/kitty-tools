@@ -38,6 +38,9 @@ struct LaunchpadTab: View {
     .standard.rawValue
   @AppStorage(Prefs.launchpadCorner) private var corner = LaunchpadCornerOption.off.rawValue
   @State private var systemPinch = false
+
+  /// 系统手势的开关读出来变了没有（变了才重起监听，G8；纯函数）
+  nonisolated static func shouldReapply(old: Bool, new: Bool) -> Bool { old != new }
   @State private var confirmsReset = false
   @State private var confirmsImport = false
 
@@ -114,7 +117,7 @@ struct LaunchpadTab: View {
             Text("已被系统占用").foregroundStyle(.orange)
           } label: {
             Text("这个角也设了系统的触发角")
-            Text("系统会先响应；要分开的话，去 系统设置 › 桌面与程序坞 › 触发角 关掉它")
+            Text("启动台不在这个角响应（免得两个一起出来）；要用，去 系统设置 › 桌面与程序坞 › 触发角 把那个角关掉")
           }
         }
       } header: {
@@ -149,8 +152,10 @@ struct LaunchpadTab: View {
       pinchChanged()
     }
     .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
-      // 用户照提示去系统设置关掉再回来：这里读到状态变化就立刻重起监听（F13），不用重启 App
+      // 用户照提示去系统设置关掉再回来：读到状态**变了**才重起监听（F13）。任何窗口变 key 都会走到这里
+      // （设置窗关了也不放，打开启动台、呼出剪贴板都算），没变就别动——重起会把正在捏的那一下清掉（G8）
       let next = systemPinchOn()
+      guard Self.shouldReapply(old: systemPinch, new: next) else { return }
       systemPinch = next
       pinchChanged()
     }

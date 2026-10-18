@@ -119,6 +119,17 @@ final class LaunchpadPanel: NSPanel {
     super.resignKey()
     onResignKey?()
   }
+
+  /// 搜索框拿 / 放焦点（G9：开文件夹、进抖动时放掉，关掉 / 退出时还回去，「一打字就进搜索」照常）。
+  /// 按窗口自己的 firstResponder 做（不看 NSApp.keyWindow：单测里的屏外面板不当 key 也能验）
+  func setSearchFocus(_ focused: Bool) {
+    if focused {
+      guard !(firstResponder is NSText), let field = initialFirstResponder else { return }
+      makeFirstResponder(field)
+    } else {
+      makeFirstResponder(nil)
+    }
+  }
 }
 
 /// 收起的簿记（F20）：按窗口记，不用一个全局代号——「收 → 再开 → 旧的收起晚到」也只收走旧那块。

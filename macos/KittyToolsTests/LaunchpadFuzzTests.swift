@@ -79,9 +79,20 @@ struct LaunchpadFuzzTests {
           let appIDs = layout.apps.map(\.id)
           switch operation {
           case 0 where tileIDs.count > 1:
+            let tileID = tileIDs[random.next(tileIDs.count)]
+            let target = random.next(layout.pageCount + 1)
+            let before = layout
+            let source = before.locate(tileID)?.page ?? 0
             layout = layout.moving(
-              tileIDs[random.next(tileIDs.count)], toPage: random.next(layout.pageCount + 1),
-              slot: random.next(capacity + 2), capacity: capacity)
+              tileID, toPage: target, slot: random.next(capacity + 2), capacity: capacity)
+            // 页边界（F7 / G19）：源页和目标页之间的那几页一格都不动——整份重排会让它们都往前串一格
+            if before.pages[source].count > 1, target > source + 1, target < before.pages.count {
+              for page in (source + 1)..<target {
+                #expect(
+                  layout.pages[safe: page] == before.pages[page],
+                  "种子 \(seed) 第 \(step) 步：挪动改了中间第 \(page) 页")
+              }
+            }
           case 1 where appIDs.count > 1:
             let appID = appIDs[random.next(appIDs.count)]
             let source = layout.tiles.first { $0.app?.id == appID }?.id
@@ -178,51 +189,61 @@ struct LaunchpadFuzzTests {
     }
 
     for step in 1...max(steps, 1) {
-      let operation = random.next(9)
-      switch operation {
-      case 0:
-        model.go(to: random.next(model.pageCount + 2))
-      case 1:
-        model.go(to: 0)
-        model.query = model.query.isEmpty ? "App" : ""
-      case 2:
-        model.optionChanged(random.next(2) == 0)
-      case 3:
-        if model.jiggling { model.exitJiggle() } else { model.enterJiggle() }
-      case 4:
-        let tiles = model.currentTiles
-        if let tile = tiles[safe: random.next(tiles.count)] {
-          model.beginDrag(
-            tile: tile, appID: tile.app?.id, folder: nil as UUID?, at: point())
-          model.updateDrag(location: point(), pageWidth: 900)
-          model.endDrag()
+      // 每步包一层（SPEC §8；一步里会建界面用的动画事务、几个 Task）
+      autoreleasepool {
+        let operation = random.next(9)
+        switch operation {
+        case 0:
+          model.go(to: random.next(model.pageCount + 2))
+        case 1:
+          model.go(to: 0)
+          model.query = model.query.isEmpty ? "App" : ""
+        case 2:
+          model.optionChanged(random.next(2) == 0)
+        case 3:
+          if model.jiggling { model.exitJiggle() } else { model.enterJiggle() }
+        case 4:
+          let tiles = model.currentTiles
+          if let tile = tiles[safe: random.next(tiles.count)] {
+            model.beginDrag(
+              tile: tile, appID: tile.app?.id, folder: nil as UUID?, at: point())
+            model.updateDrag(location: point(), pageWidth: 900)
+            model.updateDrag(location: point(), pageWidth: 900)
+            // 一半的时候当成在图标中心停够了：走合成那一支（计时器 0.4 秒，这里不等，G19）
+            if random.next(2) == 0 { model.armCombineForTesting() }
+            model.endDrag()
+          }
+        case 5:
+          let tiles = model.currentTiles
+          if let tile = tiles[safe: random.next(tiles.count)] {
+            model.beginDrag(
+              tile: tile, appID: tile.app?.id, folder: nil as UUID?, at: point())
+            model.updateDrag(location: point(), pageWidth: 900)
+            model.cancel()
+            model.updateDrag(location: point(), pageWidth: 900)
+            model.endDrag()
+          }
+        case 6:
+          if let folder = model.layout.tiles.compactMap({ $0.folder })[safe: 0] {
+            if model.openFolderID == nil {
+              model.openFolder(folder.id)
+            } else {
+              model.closeFolder()
+            }
+          }
+        case 7:
+          model.scroll(
+            deltaX: 0, deltaY: CGFloat(random.next(5) - 2), precise: false, phase: [],
+            momentum: [], time: Double(step), inverted: false)
+        default:
+          if model.jiggling { model.exitJiggle() }
+          model.query = ""
+          model.closeFolder()
         }
-      case 5:
-        let tiles = model.currentTiles
-        if let tile = tiles[safe: random.next(tiles.count)] {
-          model.beginDrag(
-            tile: tile, appID: tile.app?.id, folder: nil as UUID?, at: point())
-          model.updateDrag(location: point(), pageWidth: 900)
-          model.cancel()
-          model.updateDrag(location: point(), pageWidth: 900)
-          model.endDrag()
-        }
-      case 6:
-        if let folder = model.layout.tiles.compactMap({ $0.folder })[safe: 0] {
-          if model.openFolderID == nil { model.openFolder(folder.id) } else { model.closeFolder() }
-        }
-      case 7:
-        model.scroll(
-          deltaX: 0, deltaY: CGFloat(random.next(5) - 2), precise: false, phase: [],
-          momentum: [], time: Double(step), inverted: false)
-      default:
-        if model.jiggling { model.exitJiggle() }
-        model.query = ""
-        model.closeFolder()
+        check(
+          model.layout, pool: idSet, capacity: 6, step: step, seed: seed)
+        #expect(model.page >= 0 && model.page < max(model.displayPages.count, 1))
       }
-      check(
-        model.layout, pool: idSet, capacity: 6, step: step, seed: seed)
-      #expect(model.page >= 0 && model.page < max(model.displayPages.count, 1))
     }
     model.exitJiggle()
     model.cancel()

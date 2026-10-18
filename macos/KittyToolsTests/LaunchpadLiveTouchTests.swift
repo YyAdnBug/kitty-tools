@@ -9,7 +9,8 @@ import Testing
 
 @MainActor
 struct LaunchpadLiveTouchTests {
-  @Test(.enabled(if: ProcessInfo.processInfo.environment["TEST_RUNNER_KITTY_LIVE_TOUCH"] == "1"))
+  // 命令行写 TEST_RUNNER_KITTY_LIVE_TOUCH=1；xcodebuild 去掉前缀，测试进程里读到的是 KITTY_LIVE_TOUCH（G16）
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_LIVE_TOUCH"] == "1"))
   func liveTouchFramesArrive() async throws {
     let before = TouchpadWatcher.framesSeen
     let watcher = TouchpadWatcher()

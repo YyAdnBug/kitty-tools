@@ -41,6 +41,10 @@ final class Launchpad {
   private var importTask: Task<Void, Never>?
   /// 本次打开是「还没存过布局」：等目录扫完（或马上）自动按系统旧库导入一次
   private var pendingAutoImport = false
+  /// 正在拖时来的布局（导入、恢复默认）：松手再换（G26）
+  private var pendingLayout: LaunchpadLayout?
+  /// 正在拖 / 正在搜时扫完的目录还没并进布局（G14）
+  private var mergePending = false
   /// 上一次导入 / 恢复默认之前的布局：设置页和岛上的「撤销」用它（只留一份；存在偏好里，重启后还在，F41）
   private var undoLayout: LaunchpadLayout?
   /// 换屏 / 拔掉屏的通知：总控和 App 同寿命，不注销（deinit 是 nonisolated，碰不了它）
@@ -66,6 +70,7 @@ final class Launchpad {
       guard let self, canOpen(), !isOpen else { return }
       open()
     }
+    corner.isLaunchpadOpen = { [weak self] in self?.isOpen ?? false }
     screenObserver = NotificationCenter.default.addObserver(
       forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
     ) { [weak self] _ in
@@ -116,6 +121,9 @@ final class Launchpad {
       pendingAutoImport = true
     }
     if plan.shouldSave { save(layout) }
+    // 上一次打开时压着没换的（那次收起前没松手）已经存进偏好、这次读到的就是：别留到这一次再拿旧的盖上来
+    pendingLayout = nil
+    mergePending = false
     let model = LaunchpadModel(
       layout: layout, catalog: catalog, icons: icons, columns: Self.columns, rows: Self.rows,
       screenSize: screen.frame.size, startPage: lastPage)
@@ -143,6 +151,8 @@ final class Launchpad {
     panel.onCloseRequest = { [weak model] in model?.requestClose() }
     panel.onFlagsChanged = { [weak model] held in model?.optionChanged(held) }
     panel.onResignKey = { [weak self] in self?.panelResignedKey() }
+    model.onSearchFocus = { [weak panel] focused in panel?.setSearchFocus(focused) }
+    model.onSettled = { [weak self] in self?.applyPending() }
     book.adopt(panel)
     isOpen = true
     // 岛在面板之后出：面板一 orderFrontRegardless 就盖满屏，先出岛会被盖住（F14）
@@ -179,13 +189,13 @@ final class Launchpad {
   /// 内容和模型晚一拍再拆——收起可能是在这个面板的手势 / 按键回调里进来的（F21）
   private func finishClose(_ panel: LaunchpadPanel) {
     panel.orderOut(nil)
-    DispatchQueue.main.async { [weak self, weak panel] in
-      guard let panel else { return }
+    // 这块面板的模型：晚一拍拆的时候只放它自己的（中间又开了一块新的，新模型不能被放掉，G20）
+    let closingModel = model
+    DispatchQueue.main.async { [weak self] in
+      // 面板在这里强持一拍：非动画收起时它在那一轮自动释放池倒掉时就没了，原来的 weak 拿不到、模型一直放不掉
       panel.contentView = nil
-      if let self, !self.isOpen, self.book.panel == nil, self.model?.onClose != nil {
-        // 旧界面的回调已经不用了：模型一并放掉（新的那次打开有自己的）
-        self.model = nil
-      }
+      guard let self, let closingModel, self.model === closingModel, !self.isOpen else { return }
+      self.model = nil
     }
     // 图标缓存：两分钟没再打开就放掉（R11；不占常驻内存；复用 Memory.IdleTimer，F42）
     iconIdle.schedule()
@@ -247,13 +257,37 @@ final class Launchpad {
     }
   }
 
-  /// 扫完 / 导入完把目录喂进去（模型里按 id 找 App）
+  /// 扫完 / 导入完把目录喂进去（模型里按 id 找 App）。正在拖 / 正在搜时先压着，松手 / 清空搜索时接上（G14）
   private func mergeCatalogIntoOpenModel() {
-    guard let model, model.drag == nil, !model.isSearching else { return }
+    guard let model else { return }
+    guard model.drag == nil, !model.isSearching else {
+      mergePending = true
+      return
+    }
+    mergePending = false
     let updated = model.layout.merged(apps: catalog.map(\.ref), capacity: Self.capacity)
     guard updated != model.layout else { return }
     model.replace(layout: updated)
     save(updated)
+  }
+
+  /// 换一份布局进开着的模型：正在拖的话等松手再换（G26：中途 replace 会把手里那一格换成别的 App）
+  private func replaceOpenLayout(_ layout: LaunchpadLayout) {
+    guard let model else { return }
+    if model.drag != nil {
+      pendingLayout = layout
+    } else {
+      model.replace(layout: layout)
+    }
+  }
+
+  /// 松手 / 清空搜索之后：压着的布局、目录接上
+  private func applyPending() {
+    if let layout = pendingLayout, let model, model.drag == nil {
+      pendingLayout = nil
+      model.replace(layout: layout)
+    }
+    if mergePending { mergeCatalogIntoOpenModel() }
   }
 
   /// 第一次打开时自动导入旧库（F31）：目录还没扫出来就等扫完；导入在后台做，面板已经显示默认排法
@@ -283,7 +317,7 @@ final class Launchpad {
         detail = nil
       }
       self.save(layout)
-      self.model?.replace(layout: layout)
+      self.replaceOpenLayout(layout)
       self.island?.show(
         result == nil ? "已按默认排法排好" : "已按原来的启动台排好", detail: detail,
         symbol: "square.grid.3x3")
@@ -413,12 +447,12 @@ final class Launchpad {
       self.setUndoLayout(old)
       let merged = result.layout.merged(apps: self.catalog.map(\.ref), capacity: capacity)
       self.save(merged)
-      self.model?.replace(layout: merged)
+      self.replaceOpenLayout(merged)
+      // 之前没存过布局就没东西可撤：岛上不带「撤销」（G25）
       self.island?.show(
         "已按原来的启动台排好",
         detail: result.skipped > 0 ? "跳过 \(result.skipped) 个已经卸掉的 App" : nil,
-        symbol: "square.grid.3x3",
-        action: (title: "撤销", run: { [weak self] in self?.undoLastLayoutChange() }))
+        symbol: "square.grid.3x3", action: self.undoAction(after: old))
     }
   }
 
@@ -427,20 +461,26 @@ final class Launchpad {
     guard let layout = LaunchpadLayout.load(from: .standard) else { return }
     let updated = layout.repaginated(capacity: Self.capacity)
     save(updated)
-    model?.replace(layout: updated)
+    replaceOpenLayout(updated)
   }
 
   /// 设置 › 启动台「恢复默认排列」（二次确认在设置页里）
   func resetToDefault() {
     prepare()
+    // 目录还没扫出来时别存一个空的默认排法（G2）
+    guard !catalog.isEmpty else {
+      island?.show(
+        "本机 App 目录还没扫出来", detail: "等几秒再试一次", tone: .warning, symbol: "square.grid.3x3")
+      return
+    }
     let old = LaunchpadLayout.load(from: .standard)
     let layout = LaunchpadLayout.defaultLayout(Self.defaultApps(catalog), capacity: Self.capacity)
     setUndoLayout(old)
     save(layout)
-    model?.replace(layout: layout)
+    replaceOpenLayout(layout)
     island?.show(
-      "已恢复默认排列", detail: "需要的话点「撤销」换回原来的", symbol: "arrow.uturn.backward",
-      action: (title: "撤销", run: { [weak self] in self?.undoLastLayoutChange() }))
+      "已恢复默认排列", detail: old == nil ? nil : "需要的话点「撤销」换回原来的",
+      symbol: "arrow.uturn.backward", action: undoAction(after: old))
   }
 
   /// 撤销上一次导入 / 恢复默认（只留一份；存在偏好里，重启后还能用一次，F41）
@@ -448,11 +488,18 @@ final class Launchpad {
     guard let undoLayout else { return }
     setUndoLayout(nil)
     save(undoLayout)
-    model?.replace(layout: undoLayout)
+    replaceOpenLayout(undoLayout)
     island?.show("已还原上一次的排列", symbol: "arrow.uturn.backward")
   }
 
   var canUndoLayout: Bool { undoLayout != nil }
+
+  /// 岛上的「撤销」：之前没存过布局就没东西可撤，不带按钮（G25）。单独写成函数——直接在 Task 里写三目 + 捕获列表的闭包，
+  /// Swift 6.2.4 的类型检查会崩
+  private func undoAction(after old: LaunchpadLayout?) -> (title: String, run: () -> Void)? {
+    guard old != nil else { return nil }
+    return (title: "撤销", run: { [weak self] in self?.undoLastLayoutChange() })
+  }
 
   private func setUndoLayout(_ layout: LaunchpadLayout?) {
     undoLayout = layout

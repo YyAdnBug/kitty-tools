@@ -46,14 +46,6 @@ struct LaunchpadView: View {
       .onAppear {
         withAnimation(openAnimation) { appeared = true }
       }
-      .onChange(of: model.openFolderID) { _, id in
-        // 打开文件夹后焦点从背后的搜索框拿走：接着打字不该进搜索（F34）
-        if id != nil { NSApp.keyWindow?.makeFirstResponder(nil) }
-      }
-      .onChange(of: model.jiggling) { _, jiggling in
-        guard jiggling else { return }
-        NSApp.keyWindow?.makeFirstResponder(nil)
-      }
     }
     .confirmationDialog(
       "删除「\(model.deleteCandidate?.name ?? "")」？",
@@ -188,12 +180,31 @@ struct LaunchpadView: View {
               }
             }
             .frame(width: metrics.cellWidth, height: metrics.cellHeight)
+            .gesture(cellGesture(page: pageIndex, index: index, metrics: metrics))
           }
         }
       }
     }
     .frame(width: metrics.gridWidth, height: metrics.gridHeight)
     .animation(reduceMotion ? nil : Style.Motion.settle.animation(), value: gap)
+  }
+
+  /// 按住 / 拖 / 松手挂在格子的**位置**上（这一格的 ZStack），不挂在图标上：拖动一激活，这一格就画成空位、图标的视图被拆掉，
+  /// 挂在图标上的手势会被 SwiftUI 取消，onEnded 不来、拖动卡死（复查 G30；单测在事件之间强制重画才看得出来）。
+  /// 按下时按位置找这一格现在画的是谁；点到格子里的空处不算（图标和名字以外交给背景，点空白收起）。
+  /// 搜索时也记下按下：单击打开结果，但不许拖（F5）
+  private func cellGesture(page pageIndex: Int, index: Int, metrics: LaunchpadMetrics)
+    -> some Gesture
+  {
+    DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.space))
+      .onChanged { value in
+        if model.drag == nil {
+          guard let tile = model.previewTiles(page: pageIndex)[safe: index] ?? nil else { return }
+          model.beginDrag(tile: tile, appID: tile.app?.id, folder: nil, at: value.startLocation)
+        }
+        model.updateDrag(location: value.location, pageWidth: metrics.size.width)
+      }
+      .onEnded { _ in model.endDrag() }
   }
 
   private func placeholder(metrics: LaunchpadMetrics) -> some View {
@@ -240,18 +251,6 @@ struct LaunchpadView: View {
     )
     .animation(Style.Motion.snap.animation(), value: pressed)
     .animation(Style.Motion.snap.animation(), value: combined)
-    .gesture(
-      DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.space))
-        .onChanged { value in
-          // 搜索时也记下按下：单击打开结果，但不许拖（F5）
-          if model.drag == nil {
-            model.beginDrag(
-              tile: tile, appID: tile.app?.id, folder: nil, at: value.startLocation)
-          }
-          model.updateDrag(location: value.location, pageWidth: metrics.size.width)
-        }
-        .onEnded { _ in model.endDrag() }
-    )
     .help(model.title(of: tile))
     .accessibilityElement(children: .contain)
     .accessibilityLabel(model.title(of: tile))
@@ -310,15 +309,21 @@ struct LaunchpadView: View {
   // MARK: 页点
 
   private var pageDots: some View {
-    HStack(spacing: 9) {
+    // 拖到最后一页的右边缘停够了：多画一个亮着的页点，表示松手会新开一页（G10）
+    let appending = model.drag?.appendsPage == true
+    return HStack(spacing: 9) {
       ForEach(0..<model.pageCount, id: \.self) { index in
-        dot(active: index == model.page) { model.go(to: index) }
+        dot(active: index == model.page && !appending) { model.go(to: index) }
           .accessibilityLabel("第 \(index + 1) 页")
           .accessibilityAddTraits(index == model.page ? [.isSelected, .isButton] : .isButton)
           .accessibilityAction { model.go(to: index) }
       }
+      if appending {
+        dot(active: true) {}
+          .accessibilityLabel("新的一页")
+      }
     }
-    .opacity(model.pageCount > 1 ? 1 : 0)
+    .opacity(model.pageCount > 1 || appending ? 1 : 0)
     .padding(.bottom, 16)
     .accessibilityElement(children: .contain)
   }
@@ -364,6 +369,17 @@ struct LaunchpadView: View {
 
 /// App 图标：抖动时用图层转 ±1.5°（每个图标相位不同）。不走 SwiftUI 的 rotationEffect + repeatForever，
 /// 那会让上百个视图每帧重排（F35 / R11）。
+/// 抖动的那一下转动（纯函数，单测直接喂）：绕图标的中心转。layer-backed 视图的 anchorPoint 不一定是中心
+/// （AppKit 默认左下角），把转轴从 anchor 挪到中心：先平移 −p、转、再平移 +p，p = 中心相对 anchor 的偏移（G15）
+nonisolated enum LaunchpadJiggle {
+  static func transform(degrees: Double, size: CGSize, anchor: CGPoint) -> CGAffineTransform {
+    let pivot = CGPoint(x: (0.5 - anchor.x) * size.width, y: (0.5 - anchor.y) * size.height)
+    return CGAffineTransform(translationX: pivot.x, y: pivot.y)
+      .rotated(by: degrees * .pi / 180)
+      .translatedBy(x: -pivot.x, y: -pivot.y)
+  }
+}
+
 private struct JigglingIcon: NSViewRepresentable {
   let image: NSImage
   let size: CGFloat
@@ -380,15 +396,19 @@ private struct JigglingIcon: NSViewRepresentable {
 
   func updateNSView(_ view: NSImageView, context: Context) {
     view.image = image
-    view.frame = CGRect(origin: .zero, size: CGSize(width: size, height: size))
+    // 不碰 frame / anchorPoint / bounds：layer-backed 视图的几何归 AppKit / SwiftUI 管，改了会被布局复位、
+    // 图标偏半个边长或绕着角转（G15）。转轴按图层**现在的** anchorPoint 算到图标中心上
     guard let layer = view.layer else { return }
-    layer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
-    layer.bounds = CGRect(origin: .zero, size: CGSize(width: size, height: size))
     if active, !reduceMotion {
       if layer.animation(forKey: "launchpad-jiggle") == nil {
-        let animation = CABasicAnimation(keyPath: "transform.rotation.z")
-        animation.fromValue = -1.5 * Double.pi / 180
-        animation.toValue = 1.5 * Double.pi / 180
+        let side = CGSize(width: size, height: size)
+        let animation = CABasicAnimation(keyPath: "transform")
+        animation.fromValue = NSValue(
+          caTransform3D: CATransform3DMakeAffineTransform(
+            LaunchpadJiggle.transform(degrees: -1.5, size: side, anchor: layer.anchorPoint)))
+        animation.toValue = NSValue(
+          caTransform3D: CATransform3DMakeAffineTransform(
+            LaunchpadJiggle.transform(degrees: 1.5, size: side, anchor: layer.anchorPoint)))
         animation.duration = 0.13
         animation.autoreverses = true
         animation.repeatCount = .infinity
@@ -468,11 +488,11 @@ private struct FolderOverlay: View {
   @FocusState private var editingName: Bool
 
   var body: some View {
-    let cell = min(metrics.icon * 0.72, 76)
+    // 格子宽高分开算（G4，口径在 LaunchpadMetrics.folder*）：宽放得下一行名字，高放得下图标 + 名字
     let columns = LaunchpadLayout.folderColumns
     let rows = model.folderRows
-    let gridWidth = cell * CGFloat(columns)
-    let gridHeight = cell * CGFloat(rows)
+    let gridWidth = metrics.folderGridWidth
+    let gridHeight = metrics.folderCellHeight * CGFloat(rows)
     let width = gridWidth + 52
     let height = gridHeight + 116
     ZStack {
@@ -500,7 +520,7 @@ private struct FolderOverlay: View {
             commitName()
             model.closeFolder()
           }
-        grid(cell: cell, columns: columns, rows: rows)
+        grid(columns: columns, rows: rows)
         folderDots
       }
       .padding(26)
@@ -535,13 +555,13 @@ private struct FolderOverlay: View {
     return CGPoint(x: x, y: y)
   }
 
-  private func grid(cell: CGFloat, columns: Int, rows: Int) -> some View {
+  private func grid(columns: Int, rows: Int) -> some View {
     let pages = model.openFolder?.pages ?? []
-    let gridWidth = cell * CGFloat(columns)
-    let gridHeight = cell * CGFloat(rows)
+    let gridWidth = metrics.folderGridWidth
+    let gridHeight = metrics.folderCellHeight * CGFloat(rows)
     return HStack(spacing: 0) {
       ForEach(pages.indices, id: \.self) { page in
-        folderPage(page, cell: cell, columns: columns, rows: rows)
+        folderPage(page, columns: columns, rows: rows)
           .frame(width: gridWidth, height: gridHeight, alignment: .top)
       }
     }
@@ -552,24 +572,26 @@ private struct FolderOverlay: View {
     .animation(reduceMotion ? nil : Style.Motion.glide.animation(), value: model.folderPage)
   }
 
-  private func folderPage(_ page: Int, cell: CGFloat, columns: Int, rows: Int) -> some View {
+  private func folderPage(_ page: Int, columns: Int, rows: Int) -> some View {
     let apps = model.openFolder?.pages[safe: page] ?? []
+    let cellWidth = metrics.folderCellWidth
+    let cellHeight = metrics.folderCellHeight
     return VStack(spacing: 0) {
       ForEach(0..<rows, id: \.self) { row in
         HStack(spacing: 0) {
           ForEach(0..<columns, id: \.self) { column in
             let index = row * columns + column
             if let ref = apps[safe: index], let app = model.app(ref) {
-              folderCell(app, ref: ref, index: index, iconSize: cell * 0.76)
-                .frame(width: cell, height: cell)
+              folderCell(app, ref: ref, index: index, iconSize: metrics.folderIcon)
+                .frame(width: cellWidth, height: cellHeight)
             } else {
-              Color.clear.frame(width: cell, height: cell)
+              Color.clear.frame(width: cellWidth, height: cellHeight)
             }
           }
         }
       }
     }
-    .frame(width: cell * CGFloat(columns), height: cell * CGFloat(rows))
+    .frame(width: cellWidth * CGFloat(columns), height: cellHeight * CGFloat(rows))
   }
 
   private func folderCell(
@@ -578,7 +600,7 @@ private struct FolderOverlay: View {
     let selected = model.selected == index
     let pressed =
       model.pressedTileID == LaunchpadTile.app(ref).id
-    return VStack(spacing: 5) {
+    return VStack(spacing: LaunchpadMetrics.folderLabelSpacing) {
       ZStack {
         RoundedRectangle(cornerRadius: Style.Radius.launchpadFolderIcon, style: .continuous)
           .fill(.white.opacity(selected ? (contrast == .increased ? 0.22 : 0.16) : 0.001))
@@ -599,7 +621,7 @@ private struct FolderOverlay: View {
         .foregroundStyle(.white.opacity(0.96))
         .lineLimit(1)
         .truncationMode(.middle)
-        .frame(width: iconSize + 24)
+        .frame(width: metrics.folderLabelWidth, height: LaunchpadMetrics.folderLabelHeight)
     }
     .contentShape(Rectangle())
     .opacity(pressed ? 0.82 : 1)

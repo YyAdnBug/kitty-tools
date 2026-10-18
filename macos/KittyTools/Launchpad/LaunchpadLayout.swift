@@ -311,7 +311,9 @@ nonisolated struct LaunchpadLayout: Codable, Equatable, Sendable {
   /// App 目录变了：拿掉布局里本机已经没有的、把新装的追加到最后一页末尾，然后整理（解散只剩一个的文件夹、去空页）。
   /// **页边界保住**：卸掉的只让它所在页变短，不从后面往前补；新装的接在最后一页末尾，最后一页满了才另起一页。
   /// 没有变化时原样返回（导入的多页布局不被无谓重排）。
+  /// **空列表 = 还不知道**（App 刚启动、后台扫目录还没回来），原样返回——当成「全卸了」会把用户的布局清空并存盘（G2）。
   func merged(apps: [LaunchpadAppRef], capacity: Int) -> LaunchpadLayout {
+    guard !apps.isEmpty else { return self }
     let wanted = Set(apps.map(\.id))
     guard wanted != Set(self.apps.map(\.id)) else { return self }
     var pages: [[LaunchpadTile]] = []

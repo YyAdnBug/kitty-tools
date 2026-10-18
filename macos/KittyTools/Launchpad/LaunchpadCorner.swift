@@ -43,7 +43,7 @@ final class LaunchpadCorner {
   var onTrigger: (() -> Void)?
   /// 停多久算（约 0.3 秒）
   static let dwell: Duration = .milliseconds(300)
-  /// 那个角上系统的触发角动作（Dock 的 wvous-*-corner，0 = 关）
+  /// 那个角上系统的触发角动作（Dock 的 wvous-*-corner；0 和 1 都是没设——在系统设置里选「—」写的是 1，G7）
   nonisolated static let systemCornerKeys: [LaunchpadCornerOption: String] = [
     .topLeft: "wvous-tl-corner", .topRight: "wvous-tr-corner",
     .bottomLeft: "wvous-bl-corner", .bottomRight: "wvous-br-corner",
@@ -54,7 +54,7 @@ final class LaunchpadCorner {
     _ option: LaunchpadCornerOption, dock: [String: Any]?
   ) -> Bool {
     guard let key = systemCornerKeys[option] else { return false }
-    return (dock?[key] as? Int ?? 0) != 0
+    return (dock?[key] as? Int ?? 0) > 1
   }
 
   /// 本机读 Dock 的偏好
@@ -63,8 +63,11 @@ final class LaunchpadCorner {
   ) -> Bool {
     systemCornerIsOn(option, dock: defaults.persistentDomain(forName: "com.apple.dock"))
   }
-  /// 感应窗口多大（点）
-  static let size: CGFloat = 6
+  /// 感应窗口多大（点）。鼠标推到角上时就停在角上那一个像素，几个点就够；
+  /// 越大越会吞掉角上的点击（左上角那块是苹果菜单，G6）
+  static let size: CGFloat = 4
+  /// 启动台现在开着没有：开着时全屏面板盖住了角，那时的「离开」不算真离开（G7）
+  var isLaunchpadOpen: () -> Bool = { false }
 
   private var panels: [NSPanel] = []
   private var dwellTask: Task<Void, Never>?
@@ -103,7 +106,7 @@ final class LaunchpadCorner {
       }
     }
     for panel in panels where !panel.isVisible { panel.orderFrontRegardless() }
-    arm = CornerArm()
+    // 不复位武装：设置页、换屏一调就复位的话，刚触发过、鼠标还在角里时又会再开一次（G7）
   }
 
   func stop() {
@@ -117,6 +120,17 @@ final class LaunchpadCorner {
   }
 
   private func makePanel(frame: CGRect) -> NSPanel {
+    let panel = Self.makeSensorPanel(frame: frame)
+    let host = CornerHost(frame: CGRect(origin: .zero, size: frame.size))
+    host.onEnter = { [weak self] in self?.enter() }
+    host.onExit = { [weak self] in self?.exit() }
+    panel.contentView = host
+    return panel
+  }
+
+  /// 感应窗口本身（单测直接建，不摆上屏）：真画一层 1% 的底色——整块透明的窗口会被系统点穿，追踪区收不到进出（G6）。
+  /// 窗口自己的 alpha 留 1：原来设 `alphaValue = 0.01`、底色却是 clear，里面一个像素都没有，等于没画
+  static func makeSensorPanel(frame: CGRect) -> NSPanel {
     let panel = NSPanel(
       contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,
       defer: false)
@@ -128,17 +142,12 @@ final class LaunchpadCorner {
     panel.hidesOnDeactivate = false
     panel.isReleasedWhenClosed = false
     panel.isOpaque = false
-    panel.backgroundColor = .clear
+    panel.backgroundColor = NSColor(white: 0, alpha: 0.01)
     panel.hasShadow = false
     panel.animationBehavior = .none
     panel.ignoresMouseEvents = false
-    panel.alphaValue = 0.01
     // 不参与截图 / 录屏（F15；和浮层面板同一套排除手法）
     panel.sharingType = .none
-    let host = CornerHost(frame: CGRect(origin: .zero, size: frame.size))
-    host.onEnter = { [weak self] in self?.enter() }
-    host.onExit = { [weak self] in self?.exit() }
-    panel.contentView = host
     return panel
   }
 
@@ -156,7 +165,7 @@ final class LaunchpadCorner {
   private func exit() {
     dwellTask?.cancel()
     dwellTask = nil
-    arm.mouseExited()
+    arm.mouseExited(launchpadOpen: isLaunchpadOpen())
   }
 }
 
@@ -171,7 +180,10 @@ nonisolated struct CornerArm: Equatable {
     return true
   }
 
-  mutating func mouseExited() { armed = true }
+  /// 鼠标离开了角：启动台开着时（全屏面板盖住了角，离开 / 进来都是面板引起的）不算，收起后真离开才重新武装（G7）
+  mutating func mouseExited(launchpadOpen: Bool = false) {
+    if !launchpadOpen { armed = true }
+  }
 }
 
 /// 感应窗口的内容：一块透明的视图，进出时报一声（追踪区 activeAlways，本 App 不在前台也收得到）
