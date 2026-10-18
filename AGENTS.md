@@ -88,6 +88,12 @@ TEST_RUNNER_KITTY_LIVE_PANEL_FADE=1 xcodebuild -project macos/KittyTools.xcodepr
 
 # 启动台（第八族）：屏外渲染各状态，图以 launchpad- 开头（第一页、第二页、搜索、文件夹打开、抖动、拖动、设置页），
 # 不到一分钟：-only-testing:'KittyToolsTests/SnapshotProbeTests/launchpad()'
+# 启动台动画的屏上实录自检（按需，要「屏幕录制」授权；**屏幕左下角会出现一块 640 × 400 的窗口约 5 秒**，放在所有窗口后面、不当 key，
+# 跑之前先跟用户说一声）：录文件夹开 / 关、进出抖动、让位的每一帧（PNG + report.md），查开关有中间帧、进出抖动不闪。
+# 屏外截图画不出动画中途和离场视图的层次，改了启动台的动画后跑它
+TEST_RUNNER_KITTY_LIVE_LAUNCHPAD_ANIM=/tmp/kitty-launchpad-anim xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -only-testing:'KittyToolsTests/LaunchpadAnimationLiveTests/recordAnimations()'
+
 # 内存探针（按需，约 7 分钟，屏外量缓存 / 识字 / 各面板 / 回收接口各占多少；报告追加在 <目录>/report.md，用法和四个坑见测试文件头；
 # 量面板的图层要再加 TEST_RUNNER_KITTY_MEMORY_PROBE_ONSCREEN=1：屏外的窗口系统不画图层，开了之后屏幕右上角有一块几乎透明的面板）
 TEST_RUNNER_KITTY_MEMORY_PROBE_DIR=/tmp/kitty-memory xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \

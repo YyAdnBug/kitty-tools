@@ -33,7 +33,8 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
   按住的手势挂在每个图标上（只管按下），被拿起、被拆掉都没关系，挪和松手看下一条。主网格的图标一直是 `JigglingIcon`（NSImageView、
   图层抖动），文件夹面板里一直是 SwiftUI 的 `AppIconView`（面板能压成一张图）；**哪边都不许在两种视图之间换**（换的那一下淡出淡入，进出编辑会闪）。
   量图标位置的单测：主网格量 NSImageView，文件夹里按像素看。屏外的 `cacheDisplay` 画不出动画中途的变换和离场视图的层次，
-  要看真动画只能屏上录（ScreenCaptureKit 只录那一个窗口；屏外窗口录不到，报 -3811），先问用户。
+  要看真动画只能屏上录（ScreenCaptureKit 只录那一个窗口；屏外窗口录不到，报 -3811），先问用户：按需的 `LaunchpadAnimationLiveTests`
+  （`TEST_RUNNER_KITTY_LIVE_LAUNCHPAD_ANIM=<目录>`，命令在 AGENTS.md）录开关文件夹、进出抖动、让位，查开关有中间帧、进出抖动不闪。
 - **拖动的「挪 / 松手」在 LaunchpadView 最外层另收一份**（`simultaneousGesture`）：格子只负责按下。拖出文件夹时文件夹那块界面收完会被拆掉，
   挂在格子上的手势跟着被取消、松手收不到（同 G30）；最外层一直在。两份都喂进去没关系（同一个指针位置；松手第二次进来时已经没有拖动）。
   单测 `LaunchpadInteractTests.realDragOutOfAFolderStillDrops` 拆掉最外层那份就红。
