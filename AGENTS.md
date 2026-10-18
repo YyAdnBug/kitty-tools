@@ -96,6 +96,11 @@ TEST_RUNNER_KITTY_MEMORY_PROBE_DIR=/tmp/kitty-memory xcodebuild -project macos/K
 TEST_RUNNER_KITTY_NOTES_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/NotesProbeTests/switching()'
 
+# 便签第 8 批的量测（按需；1 MB 每行带颜色的正文 vs 没颜色，打一个字 / 挪光标；300 条便签 50 张图导出再导回；
+# 结果 grep「notes-probe batch8」；和上面那个探针分开开关）
+TEST_RUNNER_KITTY_NOTES_COLOR_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -only-testing:'KittyToolsTests/NoteBatch8ProbeTests/measure()'
+
 # 便签正文编辑器的随机探针（按需；改了正文的排法——NoteStyles.apply、NoteTextView.restyleEdited / syncMarkers、roleChanges、
 # 加跨行的语法——先跑：屏外一个真的 NoteTextView 随机打字、加标记、改围栏、撤销重做、组字、换设置、外面换正文，每步和整篇排一遍
 # 逐字比；步数随便给，2 万步 Debug 约半分钟，差异写在失败信息里；另可加 TEST_RUNNER_KITTY_NOTES_FUZZ_SEED=<起始种子> 换一批）

@@ -185,6 +185,25 @@ struct NoteBatch8Tests {
     #expect(change == nil || applied(change, to: body) != nil)
   }
 
+  /// 一行两万字全选上色：结果对，而且时间是线性的。修之前每个看得见的字都把整行重新扫一遍（25 秒级），
+  /// 这里 0.5 秒的上限是在防平方回来，不是卡性能
+  @Test func coloringAVeryLongLineStaysLinear() {
+    let unit = "abc **粗体** def `x`"
+    let coloredUnit = "[abc ]{red}**[粗体]{red}**[ def ]{red}`x`"
+    let repeats = 1112
+    let line = String(repeating: unit, count: repeats)
+    #expect((line as NSString).length == 20016)
+    let selection = NSRange(location: 0, length: (line as NSString).length)
+    let clock = ContinuousClock()
+    var change: NoteTasks.Change?
+    let elapsed = clock.measure {
+      change = NoteMarkdown.color(.red, in: line, selection: selection)
+    }
+    #expect(change != nil)
+    #expect(applied(change, to: line) == String(repeating: coloredUnit, count: repeats))
+    #expect(elapsed < .milliseconds(500), "一行两万字全选上色用了 \(elapsed)")
+  }
+
   @Test func plainAndStrippingRemoveColorMarkers() {
     #expect(NoteMarkdown.plain("[字]{red} 和 **粗**", blocks: false) == "字 和 粗")
     #expect(NoteMarkdown.strippingColors(from: "[字]{red} **粗**") == "字 **粗**")

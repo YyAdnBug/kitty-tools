@@ -232,21 +232,22 @@ nonisolated enum NoteMarkdownFiles {
     return imagesToMarkdown(colors)
   }
 
-  /// 正文里的图片令牌换成 `![image|宽](attachments/<编号>.<扩展名>)`；返回用到的图片（编号 + 扩展名，去重）和
-  /// 文件不在的数量（按令牌算）。代码块里的行不换
+  /// 正文里的图片令牌换成 `![image|宽](attachments/<编号>.<扩展名>)`；代码块里的行不换
   static func imagesToMarkdown(_ body: String) -> String {
     markdownImages(body).text
   }
 
   /// 同上，另外给用到的图片
+  /// ponytail: 代码块里的行不换令牌（第 7 批定的是块里的令牌也显示成图），导出时这些图不带文件。
+  /// 上限：代码块里的图带到另一台 Mac 上会没有；升级路径是导出时一律换、导入时代码块里只认自己写出去的
+  /// `attachments/<编号>.<扩展名>`。
   static func markdownImages(_ body: String) -> (
-    text: String, images: [NoteImages.Image], missing: Int
+    text: String, images: [NoteImages.Image]
   ) {
     let text = body as NSString
     let blocks = NoteMarkdown.codeBlocks(in: text)
     let result = NSMutableString(capacity: text.length)
     var seen: [String: NoteImages.Image] = [:]
-    var missing = 0
     var location = 0
     while location < text.length {
       var (start, end, contentsEnd) = (0, 0, 0)
@@ -255,7 +256,6 @@ nonisolated enum NoteMarkdownFiles {
         for: NSRange(location: location, length: 0))
       let line = text.substring(with: NSRange(location: start, length: contentsEnd - start))
       if NoteMarkdown.role(at: start, in: blocks) == nil, line.contains("kitty-note-image://") {
-        let units = Array(line.utf16)
         let matches = NoteImages.matches(in: line as NSString)
         let lineResult = NSMutableString(string: line)
         for match in matches {
@@ -268,8 +268,6 @@ nonisolated enum NoteMarkdownFiles {
             with: "![image\(width)](\(attachmentsName)/\(image.id.uuidString).\(image.ext))")
         }
         result.append(lineResult as String)
-        // 文件在不在：只在导出时数（纯函数这边拿不到目录，交给 export）
-        _ = units
       } else {
         result.append(line)
       }
@@ -277,7 +275,7 @@ nonisolated enum NoteMarkdownFiles {
         text.substring(with: NSRange(location: contentsEnd, length: end - contentsEnd)))
       location = max(end, location + 1)
     }
-    return (result as String, Array(seen.values), missing)
+    return (result as String, Array(seen.values))
   }
 
   /// 导入时把正文换回来：任务、颜色、图片（图片要读文件、存进 notes-images，所以在 @concurrent 的那一层做）
@@ -352,16 +350,13 @@ nonisolated enum NoteMarkdownFiles {
       let alt = String(decoding: units[(index + 2)..<close], as: UTF16.self)
       let path = String(decoding: units[(close + 2)..<end], as: UTF16.self)
       var width: Int?
-      var description = alt
       if let bar = alt.lastIndex(of: "|"), let raw = Int(alt[alt.index(after: bar)...]) {
         width = NoteImages.width(raw)
-        description = String(alt[..<bar])
       }
       found.append(
         MarkdownImage(
           range: NSRange(location: index, length: end + 1 - index), width: width, path: path))
       index = end + 1
-      _ = description
     }
     return found
   }
@@ -379,6 +374,11 @@ nonisolated enum NoteMarkdownFiles {
     let prefix = base.path.hasSuffix("/") ? base.path : base.path + "/"
     guard url.path.hasPrefix(prefix) else { return nil }
     return url
+  }
+
+  /// 文件大小（读不到属性给 nil）
+  private static func fileSize(_ url: URL) -> Int? {
+    (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int
   }
 
   /// 文件是不是读得出来的普通文件、不是文件夹
@@ -422,8 +422,7 @@ nonisolated enum NoteMarkdownFiles {
     guard let imageDirectory else {
       // 没有图片目录：令牌照样换、文件都不拷
       for (note, name) in zip(notes, names) {
-        let (body, images, _) = markdownImages(NoteTasks.markdown(from: note.body))
-        let _ = images
+        let body = markdownImages(NoteTasks.markdown(from: note.body)).text
         let text = header(for: note) + "\n\n" + NoteMarkdown.html(from: body)
         do {
           try write(text, name: name, in: folder)
@@ -441,7 +440,7 @@ nonisolated enum NoteMarkdownFiles {
     let attachments = folder.appending(path: attachmentsName, directoryHint: .isDirectory)
     for (note, name) in zip(notes, names) {
       let tasks = NoteTasks.markdown(from: note.body)
-      let (body, images, _) = markdownImages(tasks)
+      let (body, images) = markdownImages(tasks)
       let text = header(for: note) + "\n\n" + NoteMarkdown.html(from: body)
       do {
         try write(text, name: name, in: folder)
@@ -495,7 +494,6 @@ nonisolated enum NoteMarkdownFiles {
     var missingImages = 0
     /// 只导了前 2000 个
     var limitHit = false
-    var failure: String?
   }
 
   /// 读 sources（已经按文件名排好、截到 maxFiles）、换成 Note。自己家的头按编号、别处的每个一条新便签。
@@ -624,15 +622,18 @@ nonisolated enum NoteMarkdownFiles {
     return (result as String, failures)
   }
 
-  /// 一张图 → 令牌（认得出是仓库里已有的那张、字节也一样就沿用编号；否则存一份新的）
+  /// 一张图 → 令牌（认得出是仓库里已有的那张、字节也一样就沿用编号；否则存一份新的）。
+  /// 先比文件大小，一样才各读一次比字节（单张最大 160 MB，不先比大小的话两边都要整份读进来）
   private static func storedImage(
     _ url: URL, width: Int?, in directory: URL
   ) async -> String? {
     if let id = NoteImageStore.identifier(ofFileNamed: url.lastPathComponent) {
       let ext = url.pathExtension.lowercased()
       let existing = directory.appending(path: "\(id.uuidString).\(ext)")
-      if (try? Data(contentsOf: url)) == (try? Data(contentsOf: existing)),
-        (try? Data(contentsOf: existing)) != nil
+      if let size = fileSize(url), size == fileSize(existing),
+        let incoming = try? Data(contentsOf: url),
+        let current = try? Data(contentsOf: existing),
+        incoming == current
       {
         return NoteImages.token(NoteImages.Image(id: id, ext: ext, width: width))
       }

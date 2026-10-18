@@ -191,10 +191,6 @@ struct NotesTab: View {
         let result = await NoteMarkdownFiles.importNotes(
           sources: sources, imageDirectory: imageDirectory)
         isTransferring = false
-        if let failure = result.failure {
-          island?.show("没有导入", detail: failure, tone: .error)
-          return
-        }
         guard !result.notes.isEmpty else {
           island?.show("没有导入", detail: "选的地方没有 .md 文件", tone: .warning)
           return

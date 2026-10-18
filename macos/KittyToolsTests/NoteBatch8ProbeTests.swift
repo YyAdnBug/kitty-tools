@@ -1,6 +1,6 @@
 // 便签第 8 批 R14 的屏外量测（按需开，平时不跑）：1 MB、每行都有颜色的正文 vs 没颜色的同一篇，打一个字、挪一次光标；
 // 300 条便签（50 张图）导出成 Markdown、再导回来的耗时。
-//   TEST_RUNNER_KITTY_NOTES_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+//   TEST_RUNNER_KITTY_NOTES_COLOR_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
 //     test -only-testing:'KittyToolsTests/NoteBatch8ProbeTests/measure()'
 // 量的是 Debug；要 -O 的数就在同一条命令后面加 SWIFT_OPTIMIZATION_LEVEL=-O（会另建一份）。结果 grep「notes-probe batch8」。
 
@@ -60,7 +60,7 @@ struct NoteBatch8ProbeTests {
     }
   }
 
-  @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_NOTES_PROBE"] != nil))
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_NOTES_COLOR_PROBE"] != nil))
   func measure() async throws {
     let lines = 9000
     let colored = Self.body(colored: true, lines: lines)

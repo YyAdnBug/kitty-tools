@@ -315,21 +315,24 @@ nonisolated enum NoteMarkdown {
   }
 
   /// 一行里认出颜色的那几段（按 `inline` 的结果）：每段连它两头的标记（`[`、`]{名字}`）是哪几个区间。
-  /// 颜色不套颜色，所以每段的两头紧挨着的那些标记就是它自己的
+  /// 颜色不套颜色，所以每段的两头紧挨着的那些标记就是它自己的。标记按位置查字典（一行上几千段颜色时，
+  /// 原来每段都把全部标记过一遍，是平方的）
   static func colorRuns(in spans: [NoteStyles.Span]) -> [(
     color: NoteColor, range: NSRange, open: NSRange, close: NSRange
   )] {
-    let markers = spans.filter { $0.kind == .marker }.map(\.range)
+    var byStart: [Int: NSRange] = [:]
+    var byEnd: [Int: NSRange] = [:]
+    for span in spans where span.kind == .marker {
+      byStart[span.range.location] = span.range
+      byEnd[NSMaxRange(span.range)] = span.range
+    }
     var found: [(color: NoteColor, range: NSRange, open: NSRange, close: NSRange)] = []
     for span in spans {
       guard case .color(let color) = span.kind else { continue }
       guard
-        let open = markers.first(where: {
-          NSMaxRange($0) == span.range.location && $0.length == 1
-        }),
-        let close = markers.first(where: {
-          $0.location == NSMaxRange(span.range) && $0.length == 3 + color.name.count
-        })
+        let open = byEnd[span.range.location], open.length == 1,
+        let close = byStart[NSMaxRange(span.range)],
+        close.length == 3 + color.name.count
       else { continue }
       found.append((color, span.range, open, close))
     }
@@ -867,7 +870,8 @@ nonisolated enum NoteMarkdown {
     guard !lineChange.replacements.isEmpty else { return nil }
     guard
       recolorMatches(
-        old: units, oldSpans: spans, new: newUnits, section: start..<end, color: color)
+        old: units, oldSpans: spans, blocked: blocked, new: newUnits, section: start..<end,
+        color: color)
     else { return nil }
     return NoteTasks.Change(
       replacements: lineChange.replacements,
@@ -875,31 +879,37 @@ nonisolated enum NoteMarkdown {
   }
 
   /// 把一行的删除和插入拼成替换（位置都是改之前的），再拼出改完的那一行。同一处的插入按给的顺序接起来；
-  /// 插在被删掉的那一段开头 / 里面 / 末尾的并进那一段
+  /// 插在被删掉的那一段开头 / 里面 / 末尾的并进那一段。插入和删除都按位置从前往后一起扫（一行上几千段颜色时，
+  /// 原来每个删除都把全部插入过一遍，是平方的）
   private static func edits(
     units: [UInt16], deletions: [NSRange], insertions: [(Int, String)]
   ) -> (change: NoteTasks.Change, newUnits: [UInt16]) {
-    var edits = deletions.map { (range: $0, text: "") }
-    var used = [Bool](repeating: false, count: insertions.count)
+    // 两个数组都按位置从前往后排好了（oldRuns 和 runs 都是这个顺序），不另排：排一次就多 m log m
+    var edits: [(range: NSRange, text: String)] = []
     var extras: [(location: Int, text: String)] = []
-    for (position, range) in deletions.enumerated() {
+    var index = 0
+    for range in deletions {
       var text = ""
-      for (offset, insertion) in insertions.enumerated() where !used[offset] {
-        guard insertion.0 >= range.location, insertion.0 <= NSMaxRange(range) else { continue }
-        text += insertion.1
-        used[offset] = true
+      while index < insertions.count, insertions[index].0 < range.location {
+        extras.append(insertions[index])
+        index += 1
       }
-      edits[position].text = text
+      while index < insertions.count, insertions[index].0 <= NSMaxRange(range) {
+        text += insertions[index].1
+        index += 1
+      }
+      edits.append((range, text))
     }
-    for (offset, insertion) in insertions.enumerated() where !used[offset] {
+    for insertion in insertions[index...] {
       extras.append((insertion.0, insertion.1))
     }
-    for extra in extras {
-      if let index = edits.firstIndex(where: { $0.range.location == extra.location }) {
-        edits[index].text += extra.text
-      } else {
-        edits.append((NSRange(location: extra.location, length: 0), extra.text))
-      }
+    var extraText: [Int: String] = [:]
+    for extra in extras { extraText[extra.location, default: ""] += extra.text }
+    edits = edits.map { edit in
+      (edit.range, edit.text + (extraText.removeValue(forKey: edit.range.location) ?? ""))
+    }
+    for (location, text) in extraText.sorted(by: { $0.key < $1.key }) {
+      edits.append((NSRange(location: location, length: 0), text))
     }
     edits.sort { $0.range.location < $1.range.location }
     let text = NSMutableString(string: String(decoding: units, as: UTF16.self))
@@ -913,24 +923,28 @@ nonisolated enum NoteMarkdown {
     )
   }
 
-  /// 上色之后照同一个扫描器认一遍：看得见的字一样；每个字除颜色以外的样式和原来一样；颜色都是想要的
+  /// 上色之后照同一个扫描器认一遍：看得见的字一样；每个字除颜色以外的样式和原来一样；颜色都是想要的。
+  /// 新旧两行各只扫一遍（`blocked` 是 `recolor` 已经算好的「能不能上色」）——原来每个看得见的字都把整行重新
+  /// 扫一遍，长段落全选上色是平方的
   private static func recolorMatches(
-    old: [UInt16], oldSpans: [Span], new: [UInt16], section: Range<Int>, color: NoteColor?
+    old: [UInt16], oldSpans: [Span], blocked: [Bool], new: [UInt16], section: Range<Int>,
+    color: NoteColor?
   ) -> Bool {
     let oldVisible = visible(old, spans: oldSpans)
     let newSpans = inline(new, in: contentStart(of: new)..<new.count)
     let newVisible = visible(new, spans: newSpans)
-    guard oldVisible.map(\.unit) == newVisible.map(\.unit) else { return false }
+    guard oldVisible.units == newVisible.units else { return false }
     // 旧的每个可见字原来什么颜色（看它自己的位置）
     let oldColors = colors(at: old, spans: oldSpans)
     let newColors = colors(at: new, spans: newSpans)
-    for (offset, oldIndex) in oldVisible.map(\.index).enumerated() {
-      let newIndex = newVisible[offset].index
-      guard shape(old, spans: oldSpans, at: oldIndex) == shape(new, spans: newSpans, at: newIndex)
+    let oldShapes = shapes(of: old, spans: oldSpans)
+    let newShapes = shapes(of: new, spans: newSpans)
+    for (offset, oldIndex) in oldVisible.indices.enumerated() {
+      let newIndex = newVisible.indices[offset]
+      guard oldShapes.flags[oldIndex] == newShapes.flags[newIndex],
+        oldShapes.links[oldIndex] == newShapes.links[newIndex]
       else { return false }
-      let wanted =
-        section.contains(oldIndex) && colorable(oldIndex, in: old, spans: oldSpans)
-        ? color : oldColors[oldIndex]
+      let wanted = section.contains(oldIndex) && !blocked[oldIndex] ? color : oldColors[oldIndex]
       guard newColors[newIndex] == wanted else { return false }
     }
     // 附件字符不许被包进颜色里
@@ -940,33 +954,25 @@ nonisolated enum NoteMarkdown {
     return true
   }
 
-  /// 这个字能不能上色：不是标记、不在行内代码里、不是图片（附件字符或令牌）
-  private static func colorable(_ index: Int, in units: [UInt16], spans: [Span]) -> Bool {
-    guard index < units.count, units[index] != 0xFFFC else { return false }
-    for span in spans where NSLocationInRange(index, span.range) {
-      switch span.kind {
-      case .marker, .code: return false
-      default: continue
-      }
-    }
-    let line = String(decoding: units, as: UTF16.self)
-    if NoteImages.matches(in: line as NSString).contains(where: {
-      NSLocationInRange(index, $0.range)
-    }) {
-      return false
-    }
-    return true
-  }
-
   /// 看得见的字（去掉所有标记）和它们在这一行里的位置
-  private static func visible(_ units: [UInt16], spans: [Span]) -> [(index: Int, unit: UInt16)] {
-    var hidden = Set<Int>()
+  private static func visible(_ units: [UInt16], spans: [Span]) -> (
+    indices: [Int], units: [UInt16]
+  ) {
+    var hidden = [Bool](repeating: false, count: units.count)
     for span in spans where span.kind == .marker {
-      for index in span.range.location..<NSMaxRange(span.range) where index < units.count {
-        hidden.insert(index)
-      }
+      let end = min(NSMaxRange(span.range), units.count)
+      guard span.range.location < end else { continue }
+      for index in span.range.location..<end { hidden[index] = true }
     }
-    return units.indices.filter { !hidden.contains($0) }.map { ($0, units[$0]) }
+    var indices: [Int] = []
+    var shown: [UInt16] = []
+    indices.reserveCapacity(units.count)
+    shown.reserveCapacity(units.count)
+    for index in units.indices where !hidden[index] {
+      indices.append(index)
+      shown.append(units[index])
+    }
+    return (indices, shown)
   }
 
   /// 每个字是什么颜色（同 `colorRuns`）
@@ -980,27 +986,43 @@ nonisolated enum NoteMarkdown {
     return found
   }
 
-  /// 第 index 个字的样式（除颜色和标记以外），拿来比「样子没变」
-  private static func shape(_ units: [UInt16], spans: [Span], at index: Int) -> String {
-    var parts: [String] = []
-    for span in spans where NSLocationInRange(index, span.range) {
-      switch span.kind {
-      case .color, .marker: continue
-      case .box(let state): parts.append("b\(state.rawValue)")
-      case .done: parts.append("d")
-      case .heading(let level): parts.append("h\(level)")
-      case .bold: parts.append("B")
-      case .italic: parts.append("I")
-      case .strike: parts.append("S")
-      case .code: parts.append("c")
-      case .link(let address): parts.append("l\(address)")
-      case .quote: parts.append("q")
-      case .bullet: parts.append("u")
-      case .codeBlock: parts.append("C")
-      case .fence: parts.append("F")
+  /// 每个字除颜色和标记以外的样子：样式按位存（任务状态三位、标题级别三位、其余每种一位），链接的地址另外
+  /// 一字一份。扫一遍区间往数组里填，不再每个字都把全部区间过一遍
+  private struct Shapes {
+    var flags: [UInt16]
+    var links: [String?]
+  }
+
+  private static func shapes(of units: [UInt16], spans: [Span]) -> Shapes {
+    var flags = [UInt16](repeating: 0, count: units.count)
+    var links = [String?](repeating: nil, count: units.count)
+    for span in spans {
+      let end = min(NSMaxRange(span.range), units.count)
+      guard span.range.location < end else { continue }
+      let range = span.range.location..<end
+      if case .link(let address) = span.kind {
+        for index in range { links[index] = address }
+        continue
       }
+      let flag: UInt16
+      switch span.kind {
+      case .color, .marker, .link: continue
+      // 任务状态 0 是「不是任务」，五种状态用 1–5（低三位）
+      case .box(let state): flag = UInt16(state.rawValue + 1)
+      case .done: flag = 0x0008
+      case .heading(let level): flag = UInt16(level) << 4
+      case .bold: flag = 0x0080
+      case .italic: flag = 0x0100
+      case .strike: flag = 0x0200
+      case .code: flag = 0x0400
+      case .quote: flag = 0x0800
+      case .bullet: flag = 0x1000
+      case .codeBlock: flag = 0x2000
+      case .fence: flag = 0x4000
+      }
+      for index in range { flags[index] |= flag }
     }
-    return parts.sorted().joined(separator: ",")
+    return Shapes(flags: flags, links: links)
   }
 
   /// 正文去掉颜色的标记（`[`、`]{red}`）之后的字（字数、搜索用）：别的 Markdown 标记照旧留着（那是用户自己打的）。

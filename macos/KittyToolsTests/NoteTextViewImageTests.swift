@@ -548,6 +548,21 @@ struct NoteTextViewImageTests {
     board.releaseGlobally()
   }
 
+  /// R13 / F3：划词翻译读便签选区时，图片附件要写成「[图片]」（编辑器里是 U+FFFC，存的形式里才是令牌）；
+  /// 代码块里的行也把令牌换成「[图片]」
+  @Test func plainTextShowsImagesAsPlaceholder() async throws {
+    let rig = try Rig()
+    let image = try await rig.addImage()
+    let inline = "看 \(rig.token(image)) 这里"
+    rig.load(inline)
+    let full = NSRange(location: 0, length: (rig.editor.string as NSString).length)
+    #expect(rig.editor.plainText(in: full) == "看 [图片] 这里")
+    let block = "前\n```\n\(rig.token(image))\n```"
+    rig.load(block)
+    let blockRange = NSRange(location: 0, length: (rig.editor.string as NSString).length)
+    #expect(rig.editor.plainText(in: blockRange) == "前\n```\n[图片]\n```")
+  }
+
   @Test func pastingOurTypeKeepsTheSameFile() async throws {
     let rig = try Rig()
     let image = try await rig.addImage()

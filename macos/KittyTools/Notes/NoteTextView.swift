@@ -378,7 +378,6 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   }
 
   /// 把这几行（整行）的样式重排一遍。**调它的地方都得先确认没在组字**
-  /// 把这几行（整行）的样式重排一遍。**调它的地方都得先确认没在组字**
   func restyle(_ lines: NSRange) {
     guard let storage = textStorage else { return }
     let shown = revealedLines()
@@ -1066,8 +1065,9 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
       with: NSAttributedString(string: text, attributes: baseAttributes), at: range)
   }
 
-  /// 选区里的字给划词翻译用：逐行过 NoteMarkdown.plain（标记去掉、图片成「[图片]」，blocks: false）；
-  /// 代码块里的行照原文（块里的 `**` 是字，不是标记）。没选区给 nil
+  /// 选区里的字给划词翻译用：先转回存的形式（图片附件是 U+FFFC，NoteMarkdown.plain 只认令牌），
+  /// 再逐行过 NoteMarkdown.plain（标记去掉、图片成「[图片]」，blocks: false）；代码块里的行按原文、令牌也成「[图片]」。
+  /// 没选区给 nil
   func plainText(in range: NSRange) -> String? {
     guard let storage = textStorage, range.length > 0 else { return nil }
     let text = storage.mutableString
@@ -1084,10 +1084,11 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
       let from = max(clamped.location, start)
       let to = min(NSMaxRange(clamped), contentsEnd)
       if to > from {
-        let raw = text.substring(with: NSRange(location: from, length: to - from))
+        let raw = NoteImageAttachment.stored(
+          from: storage.attributedSubstring(from: NSRange(location: from, length: to - from)))
         pieces.append(
           NoteMarkdown.role(at: start, in: blocks) == nil
-            ? NoteMarkdown.plain(raw, blocks: false) : raw)
+            ? NoteMarkdown.plain(raw, blocks: false) : NoteImages.display(raw))
       } else {
         pieces.append("")
       }
@@ -1324,8 +1325,6 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     menu.popUp(positioning: nil, at: point, in: self)
   }
 
-  /// 右键菜单最前面加一项「任务」（同名，不写键位）；点在能打开的链接上时，它前面再多一项「打开链接」——
-  /// 不靠 ⌘ 点的那条路（键盘、旁白用户）；「任务」「格式」后面再加一项「插入图片…」（选文件面板）
   /// 右键菜单最前面加一项「任务」（同名，不写键位），后面是「任务状态」「格式」「文字颜色」，再后面一项
   /// 「插入图片…」（选文件面板）；点在能打开的链接上时，最前面再多一项「打开链接」——不靠 ⌘ 点的那条路
   /// （键盘、旁白用户）。**右键点在任务的方框上时只弹五种状态的小菜单**，不弹这个大的
@@ -1823,6 +1822,8 @@ struct NoteTextEditor: NSViewRepresentable {
     view.onCancel = onCancel
     view.onImageProblem = onImageProblem
     view.imageStore = images
+    // 换一条便签时正文框可能被复用（setText 换正文）：编号跟着换，替换原文才认得出「已经不是那条便签了」
+    view.identifier = NSUserInterfaceItemIdentifier(note.id)
     if let request = focusRequest, request != view.focusRequest {
       view.focusRequest = request
       view.window?.makeFirstResponder(view)

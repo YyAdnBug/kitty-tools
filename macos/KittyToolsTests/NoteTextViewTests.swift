@@ -1822,4 +1822,26 @@ struct NoteTextViewTests {
         NSRange(location: 1, length: 2), original: "划词", with: "译文"))
   }
 
+  /// 第 8 批评审 F4：读选区时记下是哪条便签（正文框的 identifier）；同一个正文框换到另一条同样字的便签，
+  /// 替换要当「原文已经改了」返回 false、正文不动
+  @Test func replacementStaysInTheNoteItWasReadFrom() throws {
+    let rig = try Rig("☐ 待办\n别动", steps: true)
+    rig.editor.setSelectedRange(NSRange(location: 2, length: 2))
+    let selection = try #require(AppDelegate.noteSelection(in: rig.editor))
+    // 换了另一条便签：同一个正文框、同样的字，编号变了
+    rig.editor.setText("☐ 待办\n别动")
+    rig.editor.identifier = NSUserInterfaceItemIdentifier("便签乙")
+    rig.editor.setSelectedRange(NSRange(location: 2, length: 2))
+    rig.step {
+      #expect(!selection.replace(with: "任务"))
+    }
+    #expect(rig.editor.string == "☐ 待办\n别动")
+    // 还是原来那条便签时照常替换
+    rig.editor.identifier = NSUserInterfaceItemIdentifier("便签甲")
+    rig.step {
+      #expect(selection.replace(with: "任务"))
+    }
+    #expect(rig.editor.string == "☐ 任务\n别动")
+  }
+
 }

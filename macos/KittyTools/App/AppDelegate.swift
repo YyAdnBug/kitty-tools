@@ -1025,34 +1025,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   /// 便签正文里选中的一段（第 8 批 R13）：划词翻译直接读它、替换回它，不走 AX、不发 ⌘C
-  private struct NoteSelection {
+  struct NoteSelection {
     weak var view: NoteTextView?
+    /// 读选区时这个正文框是哪条便签（`NoteTextView.identifier`）：全部便签窗口和便签墙的编辑卡换一条便签时用的是
+    /// 同一个正文框，只比范围里的字会把译文写进另一条同样开头的便签
+    var identifier: NSUserInterfaceItemIdentifier?
     var range: NSRange
     /// 选中的**存的形式**（带任务方框、Markdown 标记、图片令牌）：替换前比它有没有变
     var raw: String
     /// 给翻译看的（标记去掉、图片成「[图片]」）
     var plain: String
 
-    /// 用译文换回便签里那一段（一步撤销）。便签关了、或者那一段的字已经改了给 false（只复制）
+    /// 用译文换回便签里那一段（一步撤销）。便签关了、换了另一条便签、或者那一段的字已经改了给 false（只复制）
     func replace(with translated: String) -> Bool {
-      guard let view, view.window != nil else { return false }
+      guard let view, view.window != nil, view.identifier == identifier else { return false }
       let text = TranslateCoordinator.rewrap(translated, like: plain)
       return view.replaceIfUnchanged(range, original: raw, with: text)
     }
   }
 
-  /// key 窗口的第一响应者是便签正文、且有选中的字时，把它读出来（不动剪贴板、不碰前台 App）
-  private func noteSelection() -> NoteSelection? {
-    guard let view = NSApp.keyWindow?.firstResponder as? NoteTextView, view.window != nil,
-      let storage = view.textStorage
-    else { return nil }
+  /// 某个便签正文框里选中的一段（`noteSelection()` 拿 key 窗口那个；单测直接给视图）。
+  /// 没选字、选的是空白给 nil
+  static func noteSelection(in view: NoteTextView) -> NoteSelection? {
+    guard view.window != nil, let storage = view.textStorage else { return nil }
     let range = view.selectedRange()
     guard range.length > 0, NSMaxRange(range) <= storage.length else { return nil }
     let raw = storage.mutableString.substring(with: range)
     guard let plain = view.plainText(in: range),
       !plain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     else { return nil }
-    return NoteSelection(view: view, range: range, raw: raw, plain: plain)
+    return NoteSelection(
+      view: view, identifier: view.identifier, range: range, raw: raw, plain: plain)
+  }
+
+  /// key 窗口的第一响应者是便签正文、且有选中的字时，把它读出来（不动剪贴板、不碰前台 App）
+  private func noteSelection() -> NoteSelection? {
+    guard let view = NSApp.keyWindow?.firstResponder as? NoteTextView else { return nil }
+    return Self.noteSelection(in: view)
   }
 
   /// 划词翻译：取词完成前绝不显示浮窗（先显示会取消原 App 的选区）。自家浮层是 key 时先收起，

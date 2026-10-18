@@ -198,7 +198,6 @@ final class OverlayPanel: NSPanel {
   func pasteTarget() -> NSTextView? { Paster.pasteTarget(in: pasteTargetWindow) }
 
   /// makingKey = false：只露出来、不抢键盘（复制即译），此时靠点外关闭。
-  /// makingKey = false：只露出来、不抢键盘（复制即译），此时靠点外关闭。
   /// anchor：新出现时放在这一点（鼠标位置）的右下 12 pt（翻译浮窗「跟随鼠标」）；已经开着就不挪。
   /// keepsPlace：原地重新露出来（划词翻译并替换期间临时 orderOut 的固定浮窗），不重新摆
   func present(makingKey: Bool = true, anchor: NSPoint? = nil, keepsPlace: Bool = false) {
