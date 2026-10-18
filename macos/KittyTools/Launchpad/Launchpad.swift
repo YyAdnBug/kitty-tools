@@ -2,6 +2,7 @@
 // 布局的读写（Prefs.launchpadLayout，JSON 字符串）、第一次用的默认排法、面板的建立与释放、打开 App。
 // 不激活本 App（mac-overlay-panel 的规矩）；和别的浮层互斥由 AppDelegate 的 willOpen / hidePanels 接线。
 // 面板收起后放掉窗口和界面（R11）；图标缓存留着，闲下来（两分钟）没再打开就清掉。
+// 触控板捏合（TouchpadWatcher）和触发角（LaunchpadCorner）也由它拿着：applySettings() 按偏好和系统手势开关起停。
 
 import AppKit
 import SwiftUI
@@ -30,15 +31,31 @@ final class Launchpad {
   private(set) var undoLayout: LaunchpadLayout?
   /// 换屏 / 拔掉屏的通知：总控和 App 同寿命，不注销（deinit 是 nonisolated，碰不了它）
   private var screenObserver: NSObjectProtocol?
+  /// 触控板捏合（SPEC §5.6，R7）：只在功能开着、系统的捏合关着时注册回调
+  private let touchpad = TouchpadWatcher()
+  /// 触发角（SPEC §5.7，R8）
+  private let corner = LaunchpadCorner()
 
   init() {
+    touchpad.onGesture = { [weak self] gesture in
+      guard let self, canOpen() else { return }
+      switch gesture {
+      case .pinch: if !isOpen { open() }
+      case .spread: if isOpen { close(animated: true) }
+      }
+    }
+    corner.onTrigger = { [weak self] in
+      guard let self, canOpen(), !isOpen else { return }
+      open()
+    }
     screenObserver = NotificationCenter.default.addObserver(
       forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
     ) { [weak self] _ in
       MainActor.assumeIsolated {
-        // 换屏 / 拔掉屏：全屏面板跟着收起（下次按鼠标所在的屏重新开，SPEC R9）
-        guard let self, self.isOpen else { return }
-        self.close(animated: false)
+        guard let self else { return }
+        // 换屏 / 拔掉屏：全屏面板跟着收起（下次按鼠标所在的屏重新开，SPEC R9），触发角重新摆
+        if self.isOpen { self.close(animated: false) }
+        self.applyCorner()
       }
     }
   }
@@ -67,7 +84,20 @@ final class Launchpad {
     let capacity = Self.capacity
     var layout = LaunchpadLayout.load(from: .standard)
     if layout == nil || layout?.tiles.isEmpty == true {
-      layout = LaunchpadLayout.defaultLayout(Self.defaultApps(catalog), capacity: capacity)
+      // 第一次打开（还没存过布局）：有系统旧启动台库就自动按它导入，读不到用默认排法（SPEC §3.6 / R9）
+      if !LaunchpadLayout.isStored(in: .standard),
+        let imported = LaunchpadImport.readSystemLayout(
+          local: Self.localApps(catalog), capacity: capacity),
+        !imported.layout.tiles.isEmpty
+      {
+        layout = imported.layout
+        island?.show(
+          "已按原来的启动台排好",
+          detail: imported.skipped > 0 ? "跳过 \(imported.skipped) 个已经卸掉的 App" : nil,
+          symbol: "square.grid.3x3")
+      } else {
+        layout = LaunchpadLayout.defaultLayout(Self.defaultApps(catalog), capacity: capacity)
+      }
     }
     var merged =
       layout?.merged(apps: catalog.map(\.ref), capacity: capacity) ?? LaunchpadLayout(pages: [])
@@ -217,6 +247,62 @@ final class Launchpad {
     UserDefaults.standard.set(text, forKey: Prefs.launchpadLayout)
   }
 
+  // MARK: 捏合和触发角（R7 / R8）
+
+  /// 私有框架在这台 Mac 上能不能用（设置页那一行据此显示 / 灰掉）
+  var pinchAvailable: Bool { TouchpadWatcher.libraryAvailable }
+
+  /// 系统的捏合手势还开着没有（设置页每次出现读一次，不轮询）
+  var systemPinchIsOn: Bool { TrackpadSystemGesture.systemPinchIsOn() }
+
+  /// 按偏好起停触控板监听和触发角（启动时、设置改了、导入设置之后调）
+  func applySettings() {
+    let defaults = UserDefaults.standard
+    let enabled = defaults.bool(forKey: Prefs.launchpadEnabled)
+    let pinch = defaults.bool(forKey: Prefs.launchpadPinch)
+    let sensitivity =
+      PinchRecognizer.Sensitivity(
+        rawValue: defaults.string(forKey: Prefs.launchpadPinchSense) ?? "") ?? .standard
+    // 系统的捏合还开着时我们认到也不打开（不然两个一起出来，SPEC R7）：干脆不注册回调
+    if enabled, pinch, pinchAvailable, !systemPinchIsOn {
+      touchpad.start(sensitivity: sensitivity)
+    } else {
+      touchpad.stop()
+    }
+    applyCorner()
+  }
+
+  private func applyCorner() {
+    let enabled = UserDefaults.standard.bool(forKey: Prefs.launchpadEnabled)
+    let option =
+      LaunchpadCornerOption(
+        rawValue: UserDefaults.standard.string(forKey: Prefs.launchpadCorner) ?? "") ?? .off
+    corner.apply(option: enabled ? option : .off, screens: NSScreen.screens)
+  }
+
+  /// 设置 › 启动台「从系统启动台重新导入…」（二次确认在设置页里）：导入前留一份，可在设置里撤销一次
+  func importFromSystem() {
+    prepare()
+    guard
+      let result = LaunchpadImport.readSystemLayout(
+        local: Self.localApps(catalog), capacity: Self.capacity),
+      !result.layout.tiles.isEmpty
+    else {
+      island?.show(
+        "没找到系统启动台的数据", detail: "可能系统里已经没有了，或者读不了", tone: .warning,
+        symbol: "square.grid.3x3")
+      return
+    }
+    undoLayout = LaunchpadLayout.load(from: .standard)
+    let merged = result.layout.merged(apps: catalog.map(\.ref), capacity: Self.capacity)
+    save(merged)
+    model?.replace(layout: merged)
+    island?.show(
+      "已按原来的启动台排好",
+      detail: result.skipped > 0 ? "跳过 \(result.skipped) 个已经卸掉的 App" : nil,
+      symbol: "square.grid.3x3")
+  }
+
   /// 设置里改了一页几列几行：按新容量重新分页并存盘（启动台没开着也生效，下次打开就是新的页）
   func reflow() {
     guard let layout = LaunchpadLayout.load(from: .standard) else { return }
@@ -261,6 +347,11 @@ final class Launchpad {
     let value = UserDefaults.standard.integer(forKey: Prefs.launchpadRows)
     return min(
       max(value, Prefs.launchpadRowChoices.lowerBound), Prefs.launchpadRowChoices.upperBound)
+  }
+
+  /// 导入旧库时把库里的 bundle id / 标题对到本机路径
+  private static func localApps(_ catalog: [LaunchpadProjectApp]) -> [LaunchpadImport.LocalApp] {
+    catalog.map { LaunchpadImport.LocalApp(ref: $0.ref, name: $0.name) }
   }
 
   private static func defaultApps(_ catalog: [LaunchpadProjectApp]) -> [LaunchpadLayout.DefaultApp]

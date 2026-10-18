@@ -481,7 +481,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             resetDefault: { [unowned self] in launchpad.resetToDefault() },
             undo: { [unowned self] in launchpad.undoLastLayoutChange() },
             canUndo: { [unowned self] in launchpad.canUndoLayout },
-            reflow: { [unowned self] in launchpad.reflow() }))
+            reflow: { [unowned self] in launchpad.reflow() },
+            importSystem: { [unowned self] in launchpad.importFromSystem() },
+            pinchChanged: { [unowned self] in launchpad.applySettings() },
+            cornerChanged: { [unowned self] in launchpad.applySettings() },
+            pinchAvailable: { [unowned self] in launchpad.pinchAvailable },
+            systemPinchOn: { [unowned self] in launchpad.systemPinchIsOn },
+            openTrackpadSettings: { [unowned self] in openTrackpadSettings() }))
       case .screenshot: AnyView(ScreenshotTab())
       case .record: AnyView(RecordTab())
       case .notes:
@@ -521,6 +527,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       persists: false)
     // 正在录快捷键时热键停着，录完它自己会重新注册
     if hotKeys.recording == nil { hotKeys.reload() }
+    launchpad.applySettings()
     clipboardStore.recognizePendingImages()
     return clipboardStore.enforceLimits()
   }
@@ -614,6 +621,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     updater.onAvailableChange = { [weak statusItem] in statusItem?.updateVersion = $0?.version }
     updater.start()
     launcherModel.rescanApps()  // 约 65ms，放在启动时，第一次呼出就不用等
+    launchpad.applySettings()  // 触控板捏合、触发角按偏好起停（系统的捏合还开着时不注册回调）
     showWelcomeIfNeeded()
     // 有快捷键没注册上（15.0 / 15.1 上只带 ⌥ 的组合）：按了没反应又不知道为什么，启动时说一次
     // （放在「已更新」之后：同一座岛原地换内容，警告不能被盖掉）
@@ -1786,6 +1794,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     else { return }
     coordinator.translate(text, fromCopy: true)
     presentTranslate(makingKey: false)
+  }
+
+  /// 打开系统设置 › 触控板 › 更多手势（设置 › 启动台里系统捏合还开着时的那一行；只读、不改系统设置）
+  private func openTrackpadSettings() {
+    guard
+      let url = URL(string: "x-apple.systempreferences:com.apple.Trackpad-Settings.extension")
+    else { return }
+    NSWorkspace.shared.open(url)
   }
 
   /// 打开设置窗（page 为 nil 保持上次的页；onboarding 盖上欢迎引导）：先按正常隐藏路径收起浮层

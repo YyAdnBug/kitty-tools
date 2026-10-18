@@ -222,6 +222,12 @@ enum Prefs {
   nonisolated static let launchpadLayout = "launchpadLayout"
   nonisolated static let launchpadColumnChoices = 5...10
   nonisolated static let launchpadRowChoices = 4...8
+  /// 触控板捏合（默认开；系统的捏合还开着时我们认到也不打开，见 mac-launchpad §6）和灵敏度
+  /// （PinchRecognizer.Sensitivity 的 rawValue：tight / standard / loose）
+  nonisolated static let launchpadPinch = "launchpadPinch"
+  nonisolated static let launchpadPinchSense = "launchpadPinchSense"
+  /// 触发角（LaunchpadCornerOption 的 rawValue：off / topLeft / topRight / bottomLeft / bottomRight，默认关）
+  nonisolated static let launchpadCorner = "launchpadCorner"
 
   /// 上次启动的版本号：没有 = 首次安装（打开欢迎引导），和当前不同 = 刚更新（刘海岛「已更新到 x」+ 本版摘要，不开设置窗，体检 A29）
   static let lastSeenVersion = "lastSeenVersion"
@@ -264,6 +270,9 @@ enum Prefs {
       launchpadColumns: 7,
       launchpadRows: 5,
       launchpadLayout: "",
+      launchpadPinch: true,
+      launchpadPinchSense: PinchRecognizer.Sensitivity.standard.rawValue,
+      launchpadCorner: LaunchpadCornerOption.off.rawValue,
       panelSqueezeEntrance: false,
       floatingPinned: false,
       updateAutoCheck: true,

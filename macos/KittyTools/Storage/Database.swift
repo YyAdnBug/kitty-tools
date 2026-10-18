@@ -40,9 +40,12 @@ nonisolated final class Database {
 
   /// path 传 ":memory:" 得到内存库（单测用）。readOnly：只读打开（启动器读克隆出来的 Chromium 系浏览器的网站图标库；
   /// 每日备份另开的连接和检查备份文件，Backup；便签库的备份同样，NotesBackup），不建文件、不改日志模式。wal 传 false：可写但不改成 WAL
-  /// （整理备份文件用：备份是单个文件，旁边不能留 -wal、-shm）
-  init(path: String, readOnly: Bool = false, wal: Bool = true) throws {
-    let flags = readOnly ? SQLITE_OPEN_READONLY : SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE
+  /// （整理备份文件用：备份是单个文件，旁边不能留 -wal、-shm）。uri：path 按 SQLite 的 URI 认（启动台导入系统旧库的拷贝：
+  /// `file:…?immutable=1` 只读打开，不改动拷贝、也不建 -wal / -shm）
+  init(path: String, readOnly: Bool = false, wal: Bool = true, uri: Bool = false) throws {
+    let flags =
+      (readOnly ? SQLITE_OPEN_READONLY : SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE)
+      | (uri ? SQLITE_OPEN_URI : 0)
     guard sqlite3_open_v2(path, &handle, flags, nil) == SQLITE_OK else {
       // 打开失败也可能给了连接：关掉并置空，throw 之后 deinit 照样会跑，不能再关一次
       sqlite3_close(handle)
