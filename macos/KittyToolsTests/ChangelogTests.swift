@@ -5,8 +5,6 @@
 import Foundation
 import Testing
 
-@testable import KittyTools
-
 struct ChangelogTests {
   @Test func everyChangeEntryStaysOnOneLine() throws {
     let root = URL(fileURLWithPath: #filePath)
@@ -21,10 +19,7 @@ struct ChangelogTests {
       #expect(line.hasPrefix("      { \"type\": \""), "每条 change 是一行：\(line)")
       #expect(line.hasSuffix(" }") || line.hasSuffix(" },"), "每条 change 是一行：\(line)")
     }
-    let versions = try #require(
-      JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [[String: Any]])
-    #expect(versions.first?["version"] as? String == "0.5.0")
-    // 这一批的四件事拆成四条，不是一条大杂烩
-    #expect((versions.first?["changes"] as? [[String: Any]])?.count ?? 0 >= 21)
+    // 不锁哪个版本在最前、有几条：下一版加条目时这条单测不该跟着红
+    #expect(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) is [[String: Any]])
   }
 }
