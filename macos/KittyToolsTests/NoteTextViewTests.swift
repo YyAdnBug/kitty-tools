@@ -180,6 +180,27 @@ struct NoteTextViewTests {
 
   private func caret(_ location: Int) -> NSRange { NSRange(location: location, length: 0) }
 
+  /// 贴进来的软换行（U+2028）、U+0085 进了正文就是普通换行（便签未来计划 A）：后面那一行按自己这一段排（引用的缩进、
+  /// 标题的行高和字），和整篇排一遍一样；交出去的也是 \n；一个字换一个字，撤销照常。外面换进来的正文里带着的也换
+  @Test func softLineBreaksBecomeNewlines() throws {
+    let rig = try Rig("前", steps: true)
+    rig.editor.setSelectedRange(caret(1))
+    rig.step { rig.type("\u{2028}> 引用\u{85}# 标题") }
+    let expected = "前\n> 引用\n# 标题"
+    #expect(rig.editor.string == expected && rig.changes.last == expected)
+    let reference = try Rig(expected)
+    for index in 0..<(expected as NSString).length {
+      #expect(
+        rig.attribute(.paragraphStyle, at: index) as? NSParagraphStyle
+          == reference.attribute(.paragraphStyle, at: index) as? NSParagraphStyle, "第 \(index) 个字")
+      #expect(rig.fontName(at: index) == reference.fontName(at: index), "第 \(index) 个字")
+    }
+    rig.editor.undoManager?.undo()
+    #expect(rig.editor.string == "前")
+    rig.editor.setText("甲\u{2028}> 乙\u{85}丙")
+    #expect(rig.editor.string == "甲\n> 乙\n丙")
+  }
+
   /// 显式搭的 TextKit 1：有 NSLayoutManager、没有 NSTextLayoutManager（下一批藏 Markdown 标记要它）；纯文本、
   /// 系统的查找条；只拿着视图，存储跟着活
   @Test func stackIsTextKitOne() throws {

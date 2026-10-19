@@ -61,10 +61,11 @@
 // ponytail: 鼠标停在链接上不动、这时才按下 / 松开 ⌘，手指光标要等鼠标再动一下才换（没接 flagsChanged）。
 // ponytail: 焦点在查找条里时正文不算拿着焦点，标记都藏着——搜到的字正好在藏着的标记里（链接的地址）时看不见高亮。
 // 要看得见就在查找条开着时把匹配所在的行也算进 revealedLines。
-// ponytail: 贴进来的软换行（U+2028）和 U+0085 不管：NSString 把它们算新的一行、TextKit 1 却不当分段，段落样式按段算
-// ——它后面那一行用的是这一段的行高和缩进：「> 引用」缩进不对、竖线压在字上；「# 标题」的大字挤在正文的行高里，
-// 插入点和输入法候选窗（usedRect）夹在自己的行片段里、不跑到别的行上（NoteStyles.center），字会伸出去一点
-// （第 8 批起 ⌃↩ 弹右键菜单，自己打不出来了；只可能是贴进来的）。要对就改成「行首不是段首的不当引用、不当标题」。
+// - 软换行（U+2028）和 U+0085 进了文本存储就换成普通换行（unifyLineBreaks，便签未来计划 A）：NSString 把它们算新的
+//   一行、TextKit 1 却不当分段，段落样式按段算——后面那一行用的是上一段的行高和缩进（「> 引用」缩进不对、竖线压在字上，
+//   「# 标题」的大字挤在正文的行高里）。从网页、文档里贴进来的字常带它们（第 8 批起 ⌃↩ 弹右键菜单，自己打不出来）。
+// ponytail: 只在编辑器里换。仓库里已经存着软换行的正文（快速记一条里贴进来的、导入的）打开就换掉、下次改动时存回去，
+//   在那之前便签墙卡片照旧按段排（NoteStyles.center 把字夹在自己的行片段里）；要全对就在 Note.sanitized(text:) 里也换。
 
 import AppKit
 import SwiftUI
@@ -740,6 +741,33 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
         x: origin.x + textContainer.lineFragmentPadding, y: edges.top + 1, width: width,
         height: edges.bottom - edges.top - 2)
       NSBezierPath(roundedRect: bar, xRadius: width / 2, yRadius: width / 2).fill()
+    }
+  }
+
+  /// 文本存储每次改字、处理之前（打字、粘贴、拖进来、撤销、输入法组字、外面换进来的正文都经过这里）：改到的那一段里的
+  /// 软换行换成普通换行（unifyLineBreaks）。系统允许在这一步改字（NSTextStorageDelegate 的文档）
+  nonisolated func textStorage(
+    _ textStorage: NSTextStorage, willProcessEditing editedMask: NSTextStorageEditActions,
+    range editedRange: NSRange, changeInLength delta: Int
+  ) {
+    guard editedMask.contains(.editedCharacters) else { return }
+    Self.unifyLineBreaks(in: textStorage, range: editedRange)
+  }
+
+  /// range 里的 U+2028（软换行）、U+0085 换成 \n：一个字换一个字，长度不变——撤销（按区间记的）、选区、攒着的编辑区间
+  /// 都不受影响，字上的属性跟着原来那个字。没有的时候只是两次查找。系统在改字的那个调用里同步调过来，只动传进来的
+  /// 文本存储（同布局代理那几个，mac-native §3）
+  nonisolated static func unifyLineBreaks(in storage: NSTextStorage, range: NSRange) {
+    let text = storage.mutableString
+    for separator in ["\u{2028}", "\u{85}"] {
+      var search = NSIntersectionRange(range, NSRange(location: 0, length: text.length))
+      while search.length > 0 {
+        let found = text.range(of: separator, options: .literal, range: search)
+        guard found.location != NSNotFound else { break }
+        storage.replaceCharacters(in: found, with: "\n")
+        let next = NSMaxRange(found)
+        search = NSRange(location: next, length: NSMaxRange(search) - next)
+      }
     }
   }
 
