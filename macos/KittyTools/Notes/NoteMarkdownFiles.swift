@@ -227,27 +227,24 @@ nonisolated enum NoteMarkdownFiles {
 
   // MARK: 正文 ⇄ Markdown
 
-  /// 一份正文档 → 导出时写进 .md 的正文（任务、颜色、图片都换好，代码块里的行不换任务和颜色）
+  /// 一份正文档 → 导出时写进 .md 的正文（任务、颜色、图片都换好，代码块里的行不换任务和颜色、照换图片）
   static func markdownBody(_ body: String) -> String {
     let tasks = NoteTasks.markdown(from: body)
     let colors = NoteMarkdown.html(from: tasks)
     return imagesToMarkdown(colors)
   }
 
-  /// 正文里的图片令牌换成 `![image|宽](attachments/<编号>.<扩展名>)`；代码块里的行不换
+  /// 正文里的图片令牌换成 `![image|宽](attachments/<编号>.<扩展名>)`
   private static func imagesToMarkdown(_ body: String) -> String {
     markdownImages(body).text
   }
 
-  /// 同上，另外给用到的图片
-  /// ponytail: 代码块里的行不换令牌（第 7 批定的是块里的令牌也显示成图），导出时这些图不带文件。
-  /// 上限：代码块里的图带到另一台 Mac 上会没有；升级路径是导出时一律换、导入时代码块里只认自己写出去的
-  /// `attachments/<编号>.<扩展名>`。
+  /// 同上，另外给用到的图片。**代码块里的行也换**（第 7 批定的是块里的令牌也显示成图，导出时图片文件也得跟着走）；
+  /// 导回来时代码块里只认自己写出去的这种 `attachments/<编号>.<扩展名>`（convertImages），换回同一个令牌
   static func markdownImages(_ body: String) -> (
     text: String, images: [NoteImages.Image]
   ) {
     let text = body as NSString
-    let blocks = NoteMarkdown.codeBlocks(in: text)
     let result = NSMutableString(capacity: text.length)
     var seen: [String: NoteImages.Image] = [:]
     var location = 0
@@ -257,7 +254,7 @@ nonisolated enum NoteMarkdownFiles {
         &start, end: &end, contentsEnd: &contentsEnd,
         for: NSRange(location: location, length: 0))
       let line = text.substring(with: NSRange(location: start, length: contentsEnd - start))
-      if NoteMarkdown.role(at: start, in: blocks) == nil, line.contains("kitty-note-image://") {
+      if line.contains("kitty-note-image://") {
         let matches = NoteImages.matches(in: line as NSString)
         let lineResult = NSMutableString(string: line)
         // **从后往前换**：换上去的比原来短（`kitty-note-image://` → `attachments/`），从前往后换的话后面几张的位置就错了——
@@ -690,7 +687,9 @@ nonisolated enum NoteMarkdownFiles {
       .replacingOccurrences(of: "\r", with: "\n")
   }
 
-  /// 正文里的 Markdown 图片：路径合法、在文件夹里、是图片、存得进去的换成令牌；别的原样留着。返回（正文, 失败张数）
+  /// 正文里的 Markdown 图片：路径合法、在文件夹里、是图片、存得进去的换成令牌；别的原样留着。返回（正文, 失败张数）。
+  /// 代码块里的行只换导出时自己写出去的 `attachments/<编号>.<扩展名>`（markdownImages 换的就是这种）：别处的代码块里
+  /// 写着的图片语法是代码，原样留着
   static func convertImages(
     in body: String, root: URL, imageDirectory: URL?
   ) async -> (body: String, failures: Int) {
@@ -705,11 +704,10 @@ nonisolated enum NoteMarkdownFiles {
         &start, end: &end, contentsEnd: &contentsEnd,
         for: NSRange(location: location, length: 0))
       let line = text.substring(with: NSRange(location: start, length: contentsEnd - start))
-      if NoteMarkdown.role(at: start, in: blocks) == nil, line.contains("!["),
-        let directory = imageDirectory
-      {
+      if line.contains("!["), let directory = imageDirectory {
         var lineResult = line
-        let images = markdownImages(in: line)
+        let inCode = NoteMarkdown.role(at: start, in: blocks) != nil
+        let images = markdownImages(in: line).filter { !inCode || isExported($0.path) }
         if !images.isEmpty {
           let mutable = NSMutableString(string: line)
           for image in images.reversed() {
@@ -734,6 +732,13 @@ nonisolated enum NoteMarkdownFiles {
       location = max(end, location + 1)
     }
     return (result as String, failures)
+  }
+
+  /// 导出时写出去的图片路径：`attachments/<大写 UUID>.<小写扩展名>`（纯函数）
+  static func isExported(_ path: String) -> Bool {
+    let prefix = attachmentsName + "/"
+    return path.hasPrefix(prefix)
+      && NoteImageStore.identifier(ofFileNamed: String(path.dropFirst(prefix.count))) != nil
   }
 
   /// 一张图 → 令牌（认得出是仓库里已有的那张、字节也一样就沿用编号；否则存一份新的）。

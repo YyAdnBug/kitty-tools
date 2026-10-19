@@ -219,6 +219,45 @@ struct NoteMarkdownFilesTests {
     #expect(store.adopt([entry]).added == 0 && store.note(back.id)?.body == original.body)
   }
 
+  /// 代码块里的图（未来计划 D）：导出时也换成 attachments/ 的写法、带上图片文件，导回来换回同一个令牌。
+  /// 代码块里只认导出时写出去的那种路径：别的图片语法是代码，原样留着、不读文件、不算没导进来
+  @Test func imagesInCodeBlocksTravelToo() async throws {
+    let imageID = UUID()
+    let imageDirectory = root.appending(path: "code-images", directoryHint: .isDirectory)
+    try manager.createDirectory(at: imageDirectory, withIntermediateDirectories: true)
+    try NoteImageFixture.data(type: .png, width: 40, height: 30)
+      .write(to: imageDirectory.appending(path: "\(imageID.uuidString).png"))
+    let body =
+      "前\n```\n![image|90](kitty-note-image://\(imageID.uuidString).png)\n☑ 块里\n```\n后"
+    let (text, images) = NoteMarkdownFiles.markdownImages(body)
+    #expect(text == "前\n```\n![image|90](attachments/\(imageID.uuidString).png)\n☑ 块里\n```\n后")
+    #expect(images.map(\.id) == [imageID])
+    let parent = root.appending(path: "代码块导出", directoryHint: .isDirectory)
+    try manager.createDirectory(at: parent, withIntermediateDirectories: true)
+    let result = await NoteMarkdownFiles.export(
+      notes: [note(title: "代码", body: body)], imageDirectory: imageDirectory, to: parent)
+    #expect(result.failure == nil && result.count == 1 && result.missingImages == 0)
+    let folder = try #require(result.folder)
+    #expect(
+      manager.fileExists(
+        atPath: folder.appending(path: "attachments/\(imageID.uuidString).png").path))
+    let file = folder.appending(path: "代码.md")
+    let imported = await NoteMarkdownFiles.importNotes(
+      sources: [NoteMarkdownFiles.Source(url: file, root: folder)], imageDirectory: imageDirectory)
+    #expect(imported.missingImages == 0 && imported.notes.first?.body == body)
+    // 别处的 .md：代码块里别的图片语法原样留着
+    let foreign = folder.appending(path: "别处.md")
+    let code = "```\n![图](a.png) ![x](attachments/b.png)\n```"
+    try code.write(to: foreign, atomically: true, encoding: .utf8)
+    let other = await NoteMarkdownFiles.importNotes(
+      sources: [NoteMarkdownFiles.Source(url: foreign, root: folder)],
+      imageDirectory: imageDirectory)
+    #expect(other.missingImages == 0 && other.notes.first?.body == code)
+    #expect(NoteMarkdownFiles.isExported("attachments/\(imageID.uuidString).png"))
+    #expect(!NoteMarkdownFiles.isExported("attachments/b.png"))
+    #expect(!NoteMarkdownFiles.isExported("x/\(imageID.uuidString).png"))
+  }
+
   @Test func foreignFilesBecomeNewNotes() async throws {
     let folder = root.appending(path: "foreign", directoryHint: .isDirectory)
     try manager.createDirectory(at: folder, withIntermediateDirectories: true)
