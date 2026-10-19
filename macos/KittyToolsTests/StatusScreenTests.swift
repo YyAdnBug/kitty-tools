@@ -864,10 +864,10 @@ struct StatusScreenTests {
     let items = LauncherItem.actions(.init(statusPresets: presets))
     let targets = items.map(\.target)
     let first = try #require(targets.firstIndex(of: "statusScreen:clean"))
-    // 前面是「便签」一节的最后一项（2026-10-12 起便签排在截图与录制之后、状态屏之前）
+    // 前面是「启动台」一节的那一项（2026-10-18 起启动台排在便签之后、状态屏之前）
     #expect(
       Array(targets[(first - 1)...(first + 3)]) == [
-        "noteAll", "statusScreen:clean", "statusScreen:busy", "statusScreen:back", "settings",
+        "launchpad", "statusScreen:clean", "statusScreen:busy", "statusScreen:back", "settings",
       ])
     let statuses = items.filter(\.isStatusPreset)
     #expect(statuses.map(\.title) == ["清洁屏幕", "请勿触碰", "马上回来"])

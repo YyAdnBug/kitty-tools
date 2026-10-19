@@ -1,0 +1,143 @@
+---
+description: 启动台（第八族，2026-10-18）的规矩：模型和不变式、App 目录、布局存哪、全屏面板、入口和互斥、触控板捏合、触发角、旧库导入、删 App、测试口径
+globs: macos/KittyTools/Launchpad/**,macos/KittyTools/Settings/LaunchpadTab.swift
+alwaysApply: false
+---
+
+# mac-launchpad：启动台红线
+
+Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPEC.md`，0.6.0）：复刻 macOS 15 的全屏图标网格。
+**和现有的「启动器」（`Launcher/`，⌥Space 的搜索框）是两个东西**：名字、设置、快捷键都分开，不共用面板和入口。
+代码在 `KittyTools/Launchpad/`，设置页 `Settings/LaunchpadTab.swift`；长相和动效见 `mac-whisker-launchpad.mdc`。
+
+## 1. 模型（纯函数，全部单测）
+- `LaunchpadLayout`：页数组 → 格子数组 → App（`bundleID` 优先，没有就按解开链接后的路径）或文件夹（名字 + 内部的页）。
+  文件夹内部固定 7 × 5 = 35 个一页（`folderColumns = 7`，`folderCapacity = 35`），不跟顶层行列数走。`Codable`，整份 JSON 存进 `Prefs.launchpadLayout`（注册空串默认值：
+  SettingsArchive 的「设置」一类据此知道它是字符串，用户存过才跟着导出；空串 = 还没存过）。
+- **不变式**（`LaunchpadFuzzTests` 随机操作锁住）：每个本机 App 恰好出现一次；没有空页（整份为空除外）、空文件夹、
+  只剩一个 App 的文件夹；顺序稳定。加新 App 追加到最后一页末尾；卸掉的拿掉；文件夹剩一个当场解散、空了消失。
+- 挪格子、建 / 加 / 拖出 / 解散文件夹、改名、按行列数重新分页、默认排法、合并本机 App 全在 `LaunchpadLayout` 的纯函数里，
+  界面和总控不许自己拼页数组。拖动传的是**格子的 id**（`LaunchpadTile.id`，`app\n<id>` / `folder\n<uuid>`）。
+- 行列数改了（设置里）按新容量重新分页（`Launchpad.reflow`），启动台没开着也生效。
+- **合并本机 App 时空列表 = 还不知道**（App 刚启动、后台扫目录还没回来）：`merged(apps: [])` 原样返回，打开时不合并、不存盘，
+  扫完再接（G2：当成「全卸了」会把用户的布局清空并存盘）。恢复默认排列在目录为空时不做。
+- 拖动的落点（G3，纯函数 `LaunchpadModel.dropTarget`）：拿起时空位留在原处；指针在某个**画出来的**图标的左 / 右半 = 插到它前 / 后，
+  在它的中心区（内缩 20%）= 合成候选、空位不动，在空位上什么都不变。合成候选永远是指针下面画着的那个，不按原布局的下标取；
+  只有拖 App 才合成（拖文件夹照常挪，G11）。最后一页的右边缘停够 = 松手新开一页（G10）。
+- 2026-10-18 交互对齐（方案 `build/research/launchpad/INTERACT.md`、调研 `github-survey.md`；时长都在 `LaunchpadDragTiming`，单测用 `.immediate`
+  让位不等）：落点要变时等 0.15 s 才换（`scheduleReflow`），**松手执行屏上正显示的**落点 / 合成，不按松手那一刻的指针重算；
+  停在文件夹上（合成底板出来后再 0.6 s）它自己打开，能放进任意一格、文件夹里也能挪（`LaunchpadLayout.placing`，满了顺到下一页）；
+  进过面板再拖出 14 pt 就关文件夹、接着在主网格里拖（松手时先 `draggingOut` 再挪）；边上 60 pt 停 0.4 s 翻页、一直停着每 0.6 s 再翻；
+  文件夹开着时拖到面板里左右 40 pt（`folderEdgeZone`，在面板里面、不和拖出去的 14 pt 撞）同样翻文件夹的页，只翻到已有的页；
+  文件夹面板的位置按算式（`folderPanelRect`），不量（长出来的那一下量到的是缩着的框）。
+- 网格和文件夹里的图标**按格子的 id** 建（`PlacedTile`，`.position` 摆到第几格），不按位置建：落点一变让位的图标才会滑过去。
+  按住的手势挂在每个图标上（只管按下），被拿起、被拆掉都没关系，挪和松手看下一条。主网格的图标一直是 `JigglingIcon`（NSImageView、
+  图层抖动），文件夹面板里平时是 SwiftUI 的 Image、抖动时换成 `JigglingIcon`（`AppIconView`）：**两种视图之间换必须不带动画**
+  （带着进抖动的动画换会淡出淡入，进出编辑闪一下；改了这里跑屏上实录自检）。
+  量图标位置的单测：主网格量 NSImageView，文件夹里按像素看。屏外的 `cacheDisplay` 画不出动画中途的变换和离场视图的层次，
+  要看真动画只能屏上录（ScreenCaptureKit 只录那一个窗口；屏外窗口录不到，报 -3811），先问用户：按需的 `LaunchpadAnimationLiveTests`
+  （`TEST_RUNNER_KITTY_LIVE_LAUNCHPAD_ANIM=<目录>`，命令在 AGENTS.md）录开关文件夹、进出抖动、让位，查开关有中间帧、进出抖动不闪。
+- **拖动的「挪 / 松手」在 LaunchpadView 最外层另收一份**（`simultaneousGesture`）：格子只负责按下。拖出文件夹时文件夹那块界面收完会被拆掉，
+  挂在格子上的手势跟着被取消、松手收不到（同 G30）；最外层一直在。两份都喂进去没关系（同一个指针位置；松手第二次进来时已经没有拖动）。
+  单测 `LaunchpadInteractTests.realDragOutOfAFolderStillDrops` 拆掉最外层那份就红。
+
+## 2. App 目录
+- 复用 `AppCatalog.scan()`（同一份目录、去重、中文名、拼音、首字母），**只留 `.app`**，目录扫描在后台（`@concurrent` 的 `LaunchpadCatalog.loadInBackground`，回来接上；打开路径不扫）：不要系统设置的面板（kind `.url`），
+  不要访达。`LaunchpadCatalog.load()` 顺带读 bundle id、`LSApplicationCategoryType`（本地化名给文件夹起名）、
+  `Contents/_MASReceipt/receipt`（只有 App Store 装的才给删）。目录修改时间（`AppCatalog.signature`）变了才重扫。
+- 图标 `NSWorkspace.shared.icon(forFile:)`（文档写明任何线程能调），**在后台画成一张位图、常驻**在 `LaunchpadIcons`
+  （2026-10-18 真机反馈「第一次打开卡一阵」后改的，用户定常驻：本机 111 个、185 px 见方约 15 MB）。系统图标是多尺寸的，交给界面
+  每画一次都重渲染（111 个第一次 1.8 s、之后每遍 0.25 s，全在主线程），所以界面只拿位图。目录扫完就预热；边长 = 所有屏里最大的图标 × 缩放倍数，
+  屏变大了重画（旧图先留着）；还没画好的给透明占位、画好一批界面自己刷新。单测和截图自检用 `synchronous: true`（缺了当场画）。
+- 背景的壁纸（`LaunchpadWallpaper`）只读 `NSWorkspace.desktopImageURL` 那个文件，后台缩着读、裁、模糊，缓存一张；不截屏、不要权限。
+- 第一次自动导入、设置里重新导入时，岛上先挂「正在按原来的启动台排列…」（`.progress`），排好换成结果；导入期间用户动过布局就不覆盖、换成「已保留你刚才的排列」。打开到第一帧、翻页每帧的时间要量（R11），写进 PLAN。
+
+## 3. 窗口
+- `LaunchpadPanel` 固定 `darkAqua`（浅色系统下搜索框也是白字，F16）；先摆面板再出岛（F14）。它是「浮层只有 OverlayPanel 一种」的新例外（mac-overlay-panel §1）：无边框、`.nonactivatingPanel`、
+  `canBecomeKey`、`canBecomeMain = false`、`hidesOnDeactivate = false`、`animationBehavior = .none`、`isReleasedWhenClosed = false`。
+  层级 `.statusBar`（高过菜单栏和程序坞，低于截图遮罩 `popUpMenu + 1`），`[.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]`，
+  `constrainFrameRect` 原样返回（别被挪到菜单栏下面）。
+- 每屏一块：**每次打开在鼠标所在的那块屏新建、收起后放掉**（`Launchpad` 自己拿着，不是 `TransientPanel`——它认的是
+  `OverlayPanel`）。换屏 / 拔屏通知到了就收起，下次按新的鼠标所在屏重开。
+- **永远不调 `NSApp.activate`**：`orderFrontRegardless()` + `makeKey()` 只把键盘拿过来。打开 App 时那个 App 自己激活，
+  面板先收起（不留动画）。
+- 键盘：搜索框（`CommandTextField`）挂进窗口时登记成 `initialFirstResponder`，一打开就能打字；方向键 / ↩ / Esc 走
+  `doCommandBy`（组字期间归输入法，不抢）；⌘← / ⌘→ / ⌘W 走面板的 `performKeyEquivalent`；焦点不在搜索框时走面板 `keyDown`。
+  **不装全局按键监听**。两指滑 / 滚轮从面板的 `sendEvent` 进（`.scrollWheel`），别处不许装事件监听。
+- 点空白处收起：由界面的背景层收（面板盖满整块屏）；文件夹开着时点空白只收文件夹。
+- 搜索框的焦点按面板自己的 `firstResponder` 拿放（`LaunchpadPanel.setSearchFocus`，model 的 `onSearchFocus` 接）：开文件夹、进抖动时放掉，
+  关掉 / 退出时还回去（G9：原来只放不还，之后打字只会响一声）。不用 `NSApp.keyWindow`。
+- 收起后晚一拍拆界面：面板在 async 里强持一拍，只放**这块面板自己的**模型（中间又开了新的，新模型不能被放掉，G20）。
+- 拖动 / 搜索中来的布局（导入、恢复默认）和扫完的目录先压着，松手 / 清空搜索时（model 的 `onSettled`）再换（G14 / G26）；
+  点一下打开 App 按**目录**找，不按布局（搜索结果里刚装、布局里还没有的也开得了）。
+- 收起后放掉窗口和界面；还在跑的动画、计时、追踪区先停再放（别在回调里碰已经放掉的面板）。
+
+## 4. 入口和互斥
+- 入口：菜单栏（`HotKeyAction.sections` 里「启动台」一节）、现有启动器里的「启动台」一条、全局快捷键（**默认不设**，
+  设置 › 快捷键 里录）、触控板捏合（§6，主入口）、触发角（§7，默认关）。
+- 和别的浮层互斥：打开启动台前先收剪贴板面板、启动器、选状态面板、快速记一条、翻译浮窗（`Launchpad.willOpen`）；
+  按别的功能键、开设置窗 / 全部便签、进状态屏、开始截图 / 录屏时先收起启动台（`hidePanels` / `beginCapture` / `run`）。
+- 截图框选、长截图、录屏选区 / 倒数、状态屏、正在录快捷键、读选中文字时**不响应**（`Launchpad.canOpen`，同便签边缘的 `canFan` 路数）。
+- 总开关关掉（`Prefs.launchpadEnabled`）：入口都不响应、不建窗口、不读触控板。
+
+## 5. 删 App
+- 抖动模式里只有 **App Store 装的**（有 `_MASReceipt/receipt`、路径不在 `/System` 下）显示 ✕；点了先确认（破坏性按钮，
+  说清会进废纸篓），确认后 `NSWorkspace.shared.recycle`（异步回调；成了才改布局和目录，失败岛带「在访达中显示」，
+  `LaunchpadRecycle` 的回收器可注入，单测不真删）；系统 App 和别的 App 不给删。
+
+## 6. 触控板捏合（第 3 批）
+- 私有 `MultitouchSupport.framework` 只许**运行时 `dlopen` / `dlsym`**，不链接、不写进工程设置；找不到符号 / 设备就退回，
+  设置里那一行写明「这台 Mac 上用不了，用快捷键或触发角」，别的入口照常。
+- 回调在框架自己的线程上：回调里只把这一帧拷成值类型交给 `Mutex` 里的 `PinchRecognizer`，识别出结果再 `DispatchQueue.main.async`。
+  **不在回调里碰主线程状态**。
+- **默认 MainActor 隔离下，框架线程碰到的东西一律显式 `nonisolated`**（G1）：桥 `TouchpadBridge`、全局 `activeBridge` /
+  `contactCallback`、回调本体 `handleContactFrame`、派回主线程的 `forwarder`。C 函数指针的字面量里**不写任何闭包**，只调一个
+  nonisolated 函数——不写的话它们会被推成 @MainActor，框架线程一调进来就被 Swift 6 的隔离检查 trap（一碰触控板就崩）。
+  单测在后台线程上直接调那个 C 回调（`contactCallbackForTesting`）锁住。
+- 已经开着、灵敏度没变时 `start` 什么都不做（G8）；唤醒后按「调用方要它开着」重新注册，失败了下次唤醒再试（G24）。
+- 只在功能开着、系统的捏合关着、框架能用时注册回调；**识别到之后先问 `canOpen()`**（状态屏 / 截图 / 录屏 / 录快捷键时不打开），再问系统手势；
+  关掉时注销 + `MTDeviceStop`。
+- 识别器是纯状态机（同时 ≥ 4 指、到质心的平均距离在时间里缩到比例以下 = 捏合，张开反过来；手指数变了重来；一次手势只触发一次；
+  四指横扫 / 竖扫不误判），单测喂造好的帧序列。**单测里不注册回调、不读真触点**；「真的读得到」是按需探针
+  `TEST_RUNNER_KITTY_LIVE_TOUCH=1`（真的注册回调、读这台机器的触控板；跑的时候放四根手指捏一下；测试进程里读到的键是
+  `KITTY_LIVE_TOUCH`——xcodebuild 去掉 `TEST_RUNNER_` 前缀，G16）。
+- 系统手势开没开：只读 `com.apple.AppleMultitouchTrackpad`（蓝牙触控板是 `com.apple.driver.AppleBluetoothMultitouch.trackpad`）的
+  `TrackpadFourFingerPinchGesture` / `TrackpadFiveFingerPinchGesture`；设置页每次出现、要被捏合打开时读一次，**不轮询、不写系统设置**。
+  几个域合起来（`TrackpadSystemGesture.combined`，G5）：任一域显式开 = 开；有域显式关、没有显式开 = 关；所有域都没信息才按系统默认开。
+  设置页只在读到的值**变了**时重起监听（G8）。
+  系统的还开着时我们认到捏合也不打开，设置页给提示和「打开触控板设置」。
+
+## 7. 触发角（第 3 批）
+- 触发后要等真的离开才重新武装（`CornerArm`）；启动台开着时全屏面板盖住了角，那时的离开收不到也不算——**收起时鼠标已经不在角里就当离开过**
+  （`LaunchpadCorner.launchpadDidClose`，总控在 `close` 里调；2026-10-18 真机反馈「第一次打开后第二次马上推进角里不开、第三次才开」），
+  还在角里（按 Esc 收起、鼠标没动）就照旧等真离开（G7）。
+- 选中的角每屏放一个 4 × 4 pt 的 `NSPanel` 实例（照便签边缘药丸，不子类化；`LaunchpadCorner.makeSensorPanel`）：层级 `.statusBar`
+  （顶上两角不被菜单栏盖住）、**真画一层 1% 的底色**（`backgroundColor = NSColor(white: 0, alpha: 0.01)`，窗口 alpha 留 1——整块透明的
+  窗口会被系统点穿，追踪区收不到进出，G6）、`ignoresMouseEvents = false`、`sharingType = .none`（截图 / 录屏里不收）、
+  `[.canJoinAllSpaces, .fullScreenAuxiliary]`；用追踪区感应进入，停够约 0.3 s 打开；**不挂全局鼠标监听、不轮询**。
+  代价：那 4 × 4 pt 里的点击被它吃掉（左上角是苹果菜单的最边上），所以只做这么小。
+- 触发一次后，要等鼠标**真的离开**角（启动台没开着时的离开；开着时全屏面板盖住了角，离开 / 进来都不算）才重新武装；`apply` 不复位
+  武装状态（G7）。
+- 和系统的触发角撞了（`com.apple.dock` 的 `wvous-*-corner` 大于 1；0 和 1 都是没设，选「—」写的是 1）：这个角上启动台不装感应窗口、
+  设置页提示一句（免得两个一起出来）。
+
+## 8. 旧库导入（第 3 批）
+- 路径 `/private$(getconf DARWIN_USER_DIR)com.apple.dock.launchpad/db/db`（`confstr(_CS_DARWIN_USER_DIR, …)` 取）。
+  **先把 `db` / `db-shm` / `db-wal`（有的话）拷进临时目录，用 `file:<拷贝>?mode=ro` 只读打开拷贝**（直接只读打开原件会失败；
+  **不能加 `immutable=1`**：SQLite 会跳过 -wal，读到的是旧排法，F8），
+  读完删拷贝；用 `Storage/Database.swift` 现成的封装，**不直接碰 sqlite3 C API**。
+- 自动导入只在「还没存过布局」时做一次（存过布局的判定见 §1：持久域里那个键非空）；设置里的「从系统启动台重新导入…」随时可做。
+  导入前把现在的布局留一份，可在设置里撤销一次。库里有的本机没装 → 跳过；本机有的库里没有 → 按 §1 追加到最后。
+- 单测自己按 `items` / `apps` / `groups` 三张表造小库，**不拿用户的库进测试**。
+
+## 9. 测试口径
+- 布局纯函数、默认排法、旧库导入、识别器、搜索（中文 / 拼音 / 首字母）、键盘导航（到页边翻页）、删 App 的判断、
+  系统手势开关的读法（注入的 UserDefaults）、面板在屏外建出来不当 key、点空白收起的判定，全部单测。
+- 随机操作测试：`TEST_RUNNER_KITTY_LAUNCHPAD_FUZZ=<步数>`（种子 `TEST_RUNNER_KITTY_LAUNCHPAD_FUZZ_SEED`；测试进程里读 `KITTY_…`），
+  每步查 §1 的不变式，挪动还查「源页和目标页之间的那几页不变」（页边界）；过 model 的那一层走合成那一支（`armCombineForTesting`）。
+- 真的 SwiftUI 手势：屏外 `NSWindow` + `NSHostingView`（宿主 `acceptsFirstMouse`），**进程内** `window.sendEvent(NSEvent.mouseEvent(…))`
+  ——不发系统事件、不 makeKey、不动用户的鼠标（`LaunchpadRecheckTests.realGestureClickOpensAndDragReorders`，G29）。
+- 单测不许替真代码喂答案：取名、合成这些用生产的那个函数（G12：注入了自己写的闭包，真代码没改也绿）；格子 id 用 `LaunchpadTile.id`
+  （G18：拿 `"b"` 当 id，`locate` 找不到、原样返回，怎么都过）。
+- **排版 / 布局的矩形对 ≠ 画出来对**：画进位图看颜色的单测（`cacheDisplay`，屏外）要覆盖「不在第一页 / 不在第一行 / 不在左上角」。
+- 单测里不 `makeKey`、不启动 App、不合成鼠标键盘；截图自检只跑 `SnapshotProbeTests.launchpad()`。

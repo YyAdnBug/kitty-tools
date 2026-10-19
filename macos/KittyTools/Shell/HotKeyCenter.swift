@@ -146,7 +146,7 @@ struct HotKey: Codable, Hashable {
 enum HotKeyAction: String, CaseIterable {
   case clipboard, selectionTranslate, inputTranslate, screenshotTranslate, launcher, screenshot,
     screenshotLastRegion, recognizeText, translateReplace, screenRecord, audioRecord, pinClipboard,
-    statusScreen, noteCapture, noteNew, noteAll
+    statusScreen, noteCapture, noteNew, noteAll, launchpad
 
   var title: String {
     switch self {
@@ -166,6 +166,7 @@ enum HotKeyAction: String, CaseIterable {
     case .noteCapture: "快速记一条"
     case .noteNew: "新建便签"
     case .noteAll: "全部便签"
+    case .launchpad: "启动台"
     }
   }
 
@@ -227,6 +228,8 @@ enum HotKeyAction: String, CaseIterable {
     case .noteCapture: HotKey(keyCode: kVK_ANSI_N, modifiers: optionKey)
     // 新建便签、全部便签不设默认键：从菜单栏、启动器进，要快捷键到 设置 › 快捷键 里自己设
     case .noteNew, .noteAll: nil
+    // 启动台（第八族）不设默认键：触控板捏合是主入口（系统那项开着时设置页会提示关），快捷键到 设置 › 快捷键 里自己设（SPEC R8）
+    case .launchpad: nil
     }
   }
 
@@ -270,6 +273,8 @@ enum HotKeyAction: String, CaseIterable {
     ),
     // 便签（PLAN §10「便签」F②）：菜单栏、启动器、快捷键页、速查表各一节，三项同名同序
     ("便签", [.noteCapture, .noteNew, .noteAll]),
+    // 启动台（第八族，2026-10-18）：和便签分开一节，菜单栏、启动器、快捷键页、速查表里的名字和设置页同名
+    ("启动台", [.launchpad]),
     // 菜单栏里这一节不画节标题，只有一项「状态屏」带子菜单（每个状态一行，AppDelegate.buildStatusMenu）
     ("状态屏", [.statusScreen]),
   ]
@@ -296,6 +301,7 @@ enum HotKeyAction: String, CaseIterable {
     case .noteNew: "note.text.badge.plus"
     // 便签家族的符号（设置页头、速查表那一组也是它）
     case .noteAll: "note.text"
+    case .launchpad: "square.grid.3x3.fill"
     }
   }
 
@@ -311,6 +317,7 @@ enum HotKeyAction: String, CaseIterable {
       Style.Family.screenshot
     case .statusScreen: Style.Family.statusScreen
     case .noteCapture, .noteNew, .noteAll: Style.Family.notes
+    case .launchpad: Style.Family.launchpad
     }
   }
 }

@@ -15,11 +15,10 @@ import AppKit
 import SwiftUI
 
 enum SettingsPage: String, CaseIterable, Identifiable {
-  // 翻译在截图前面：和菜单栏、快捷键页、引导、速查表同序（记住的上次页存的是 rawValue，调顺序不受影响）；
-  // 录制紧跟截图（2026-10-03 从截图页拆出来；菜单栏、快捷键页里它们同在「截图与录制」一节）；便签、状态屏排在录制后面
-  // （和快捷键页的分节同序；状态屏 Z11，便签 2026-10-12）
-  case general, clipboard, launcher, translate, screenshot, record, notes, statusScreen, hotkeys,
-    about
+  // 和菜单栏、快捷键页、引导、速查表同序（记住的上次页存的是 rawValue，调顺序不受影响）：
+  // 启动台排在便签后面、状态屏前面（F38；以前跟在启动器后面，和菜单栏对不上）
+  case general, clipboard, launcher, translate, screenshot, record, notes, launchpad, statusScreen,
+    hotkeys, about
 
   var id: String { rawValue }
 
@@ -28,6 +27,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .general: "通用"
     case .clipboard: "剪贴板"
     case .launcher: "启动器"
+    case .launchpad: "启动台"
     case .screenshot: "截图"
     case .record: "录制"
     case .notes: "便签"
@@ -43,6 +43,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .general: "gearshape.fill"
     case .clipboard: "doc.on.clipboard.fill"
     case .launcher: "command"
+    case .launchpad: "square.grid.3x3.fill"
     case .screenshot: "camera.viewfinder"
     case .record: "record.circle"
     case .notes: HotKeyAction.noteAll.symbol
@@ -59,6 +60,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .general: Style.Family.general
     case .clipboard: Style.Family.clipboard
     case .launcher: Style.Family.command
+    case .launchpad: Style.Family.launchpad
     case .screenshot, .record: Style.Family.screenshot
     case .notes: Style.Family.notes
     case .statusScreen: Style.Family.statusScreen
@@ -74,6 +76,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .general: "外观、菜单栏图标、登录时打开、权限、设置的导出与导入"
     case .clipboard: "历史上限、面板、内容格式和隐私"
     case .launcher: "搜索 App、文件、书签与历史、网页搜索与快捷链接"
+    case .launchpad: "全屏的图标网格：排法、翻页、搜索、文件夹、捏合"
     case .screenshot: "快速保存、快门声、缩略图和识字"
     case .record: "录屏的画质、倒数和按键，录音的来源"
     case .notes: "留着看、接着改的东西：屏幕边缘的那一叠、字号和行距，存在哪、怎么备份"
@@ -106,6 +109,12 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         "Firefox",
         "完全磁盘访问", "搜索", "引擎", "快捷链接", "关键词",
         "兜底", "使用记录", "常用", "最近", "收藏", "文件", "open", "find", "Spotlight",
+      ]
+    case .launchpad:
+      [
+        "启动台", "图标", "网格", "全屏", "应用", "App", "排法", "排列", "列", "行", "翻页", "页",
+        "搜索", "App 文件夹", "拖动", "抖动", "删除", "卸载", "App Store", "捏合", "触控板", "四指",
+        "触发角", "导入", "系统启动台", "Launchpad", "快捷键",
       ]
     case .screenshot:
       [
@@ -332,8 +341,8 @@ struct SettingsRoot: View {
       .navigationSplitViewColumnWidth(min: 170, ideal: 190, max: 240)
     } detail: {
       VStack(spacing: 0) {
-        // 关于是品牌页、没有页头；翻译、启动器、状态屏把页头画在自己的 NavigationStack 里，推进详情页时一起换掉（N12）
-        if ![.about, .translate, .launcher, .statusScreen].contains(navigation.page) {
+        // 关于是品牌页、没有页头；翻译、启动器、启动台、状态屏把页头画在自己的 NavigationStack 里，推进详情页时一起换掉（N12）
+        if ![.about, .translate, .launcher, .launchpad, .statusScreen].contains(navigation.page) {
           PageHeader(page: navigation.page)
         }
         page(navigation.page)

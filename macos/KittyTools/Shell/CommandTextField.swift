@@ -20,6 +20,8 @@ struct CommandTextField: NSViewRepresentable {
   var weight: NSFont.Weight = .regular
   /// 字的颜色；nil = 系统的文字色（便签的标题框给纸上的墨色）
   var textColor: NSColor?
+  /// 插入点的颜色；nil = 跟着 textColor（再没有就是强调色）。启动台的搜索框没打字时给 .clear（占位居中，插入点藏起来）
+  var caretColor: NSColor?
   /// 只用英文类输入法（启动器的「呼出时切英文输入法」）
   var romanOnly = false
   /// 字数上限（收藏夹名 24 字）；nil = 不限
@@ -57,7 +59,7 @@ struct CommandTextField: NSViewRepresentable {
       field.window?.makeFirstResponder(field)
     }
     // 纸上的输入框（给了墨色）：插入点用墨色——强调色选黄时在柠檬色的纸上看不见。别的调用方不给，照旧是强调色
-    field.caretColor = textColor
+    field.caretColor = caretColor ?? textColor
     // 读了 Style.brand：设置里换了强调色时这里会重跑，正在编辑的插入点和选中底色跟着换
     field.applyBrandColors(NSColor(Style.brand))
     if field.placeholderString != placeholder { field.placeholderString = placeholder }

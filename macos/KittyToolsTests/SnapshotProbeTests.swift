@@ -524,6 +524,7 @@ struct SnapshotProbeTests {
             transfer: SettingsTransfer(services: services, clipboard: store, history: history)))
       case .clipboard: AnyView(ClipboardTab(store: store))
       case .launcher: AnyView(LauncherTab())
+      case .launchpad: AnyView(LaunchpadTab())
       case .screenshot: AnyView(ScreenshotTab())
       case .record: AnyView(RecordTab())
       case .notes: AnyView(NotesTab {})
@@ -3541,6 +3542,142 @@ struct SnapshotProbeTests {
   }
 
   /// prepare：布局完、出图前对窗口内容做点手脚（比如 emphasizeTableRows）
+  /// 启动台（第八族，2026-10-18，SPEC §10.5）：第一页、第二页、搜索中、文件夹打开、抖动模式（带 ✕）、拖动中、
+  /// 设置页；浅色 / 深色各一份，图以 launchpad- 开头，出到 TEST_RUNNER_KITTY_SNAPSHOT_DIR。
+  /// 用本机真实的 App 目录（图标是真的），只把其中一个摆成「App Store 装的」好让抖动模式出 ✕。
+  @Test(.enabled(if: directory != nil)) func launchpad() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    let real = LaunchpadCatalog.load()
+    guard real.count >= 10 else { return }
+    let apps = real.prefix(14).enumerated().map { index, app in
+      LaunchpadProjectApp(
+        id: app.id, ref: app.ref, item: app.item, url: app.url, isSystem: app.isSystem,
+        inUtilities: app.inUtilities, isAppStore: index == 2, category: app.category)
+    }
+    let folder = LaunchpadFolder(
+      name: "工具", pages: [[apps[3].ref, apps[4].ref, apps[5].ref]])
+    var tiles = apps.prefix(3).map { LaunchpadTile.app($0.ref) }
+    tiles.append(.folder(folder))
+    tiles += apps.dropFirst(6).map { LaunchpadTile.app($0.ref) }
+    // 一页 9 个（好让第二页真的有东西：真机上默认一页 35 个）
+    let layout = LaunchpadLayout(pages: LaunchpadLayout.paginate(tiles, capacity: 9))
+    let size = NSSize(width: 1280, height: 800)
+    // 背景用本机主屏现在的壁纸（只读文件，同 LaunchpadWallpaper；拿不到就是没壁纸的那种样子）
+    let wallpaper = NSScreen.main
+      .flatMap { NSWorkspace.shared.desktopImageURL(for: $0) }
+      .flatMap { LaunchpadWallpaper.load(url: $0, maxPixel: 1280) }
+      .flatMap { LaunchpadWallpaper.render(source: $0, width: 640, height: 400) }
+    func board() -> LaunchpadModel {
+      let model = LaunchpadModel(
+        layout: layout, catalog: Array(apps), icons: LaunchpadIcons(), columns: 7, rows: 5,
+        screenSize: size, dragTiming: .immediate)
+      model.wallpaper = wallpaper
+      return model
+    }
+    for dark in [false, true] {
+      let suffix = dark ? "-dark" : ""
+      try snapshot(
+        LaunchpadView(model: board()), size: size, dark: dark,
+        to: "\(out)/launchpad-page1\(suffix).png")
+      let second = board()
+      second.go(to: 1)
+      try snapshot(
+        LaunchpadView(model: second), size: size, dark: dark,
+        to: "\(out)/launchpad-page2\(suffix).png")
+      let search = board()
+      search.query = apps[0].name
+      try snapshot(
+        LaunchpadView(model: search), size: size, dark: dark,
+        to: "\(out)/launchpad-search\(suffix).png")
+      let open = board()
+      open.openFolder(folder.id)
+      try snapshot(
+        LaunchpadView(model: open), size: size, dark: dark,
+        to: "\(out)/launchpad-folder\(suffix).png")
+      let jiggle = board()
+      jiggle.enterJiggle()
+      try snapshot(
+        LaunchpadView(model: jiggle), size: size, dark: dark,
+        to: "\(out)/launchpad-jiggle\(suffix).png")
+      let drag = board()
+      drag.beginDrag(
+        tile: .app(apps[1].ref), appID: apps[1].ref.id, folder: nil,
+        at: CGPoint(x: 300, y: 400))
+      drag.updateDrag(location: CGPoint(x: 520, y: 430), pageWidth: size.width)
+      try snapshot(
+        LaunchpadView(model: drag), size: size, dark: dark,
+        to: "\(out)/launchpad-drag\(suffix).png")
+    }
+    // 停在另一个图标中心够久：目标后面长出合成底板，拿着的那份放大、不抖（2026-10-18 交互对齐）
+    let combine = board()
+    combine.gridFrames[0] = CGRect(
+      x: 0, y: combine.metrics.gridTop, width: size.width, height: combine.metrics.gridHeight)
+    let target = try #require(combine.cellCenter(page: 0, index: 0))
+    let source = try #require(combine.cellCenter(page: 0, index: 1))
+    combine.beginDrag(
+      tile: .app(apps[1].ref), appID: apps[1].ref.id, folder: nil, at: source, origin: source)
+    combine.updateDrag(location: CGPoint(x: target.x + 6, y: target.y + 4), pageWidth: size.width)
+    combine.armCombineForTesting()
+    try snapshot(
+      LaunchpadView(model: combine), size: size, dark: true,
+      to: "\(out)/launchpad-combine-dark.png")
+    // 拿不到壁纸（视频 / 航拍壁纸）：退回系统毛玻璃
+    let plain = board()
+    plain.wallpaper = nil
+    try snapshot(
+      LaunchpadView(model: plain), size: size, dark: true,
+      to: "\(out)/launchpad-nowallpaper-dark.png")
+    // 满页：7 × 5 全部放满，看第 3–5 行和底下的页点（F30）
+    if real.count >= 35 {
+      let fullApps = real.prefix(35).map {
+        LaunchpadProjectApp(
+          id: $0.id, ref: $0.ref, item: $0.item, url: $0.url, isSystem: $0.isSystem,
+          inUtilities: $0.inUtilities, isAppStore: false, category: $0.category)
+      }
+      let fullLayout = LaunchpadLayout(
+        pages: LaunchpadLayout.paginate(fullApps.map { .app($0.ref) }, capacity: 35))
+      let fullModel = LaunchpadModel(
+        layout: fullLayout, catalog: fullApps, icons: LaunchpadIcons(), columns: 7, rows: 5,
+        screenSize: size)
+      fullModel.wallpaper = wallpaper
+      try snapshot(
+        LaunchpadView(model: fullModel), size: size, dark: false,
+        to: "\(out)/launchpad-full.png")
+    }
+    // 跨页拖动：源在第 1 页，翻到第 2 页，让位空位画在第 2 页的落点（F18）
+    let across = board()
+    across.go(to: 1)
+    across.beginDrag(
+      tile: .app(apps[0].ref), appID: apps[0].ref.id, folder: nil,
+      at: CGPoint(x: 200, y: 300))
+    across.updateDrag(location: CGPoint(x: 700, y: 500), pageWidth: size.width)
+    try snapshot(
+      LaunchpadView(model: across), size: size, dark: true,
+      to: "\(out)/launchpad-page2-gap-dark.png")
+    // 文件夹按新的 7 × 5 一页画，内容只有两行时面板收短（F10 / F34）
+    let many = LaunchpadFolder(
+      name: "更多工具", pages: [Array(apps.prefix(10).map(\.ref))])
+    let manyLayout = LaunchpadLayout(pages: [[.folder(many)]])
+    let manyModel = LaunchpadModel(
+      layout: manyLayout, catalog: Array(apps), icons: LaunchpadIcons(), columns: 7, rows: 5,
+      screenSize: size)
+    manyModel.wallpaper = wallpaper
+    manyModel.openFolder(many.id)
+    try snapshot(
+      LaunchpadView(model: manyModel), size: size, dark: true,
+      to: "\(out)/launchpad-folder-wide-dark.png")
+    let navigation = SettingsNavigation(defaults: nil)
+    navigation.page = .launchpad
+    try snapshot(
+      SettingsRoot(navigation: navigation) { page in
+        page == .launchpad ? AnyView(LaunchpadTab()) : AnyView(EmptyView())
+      } onboarding: {
+        AnyView(EmptyView())
+      },
+      size: NSSize(width: 780, height: 1120), dark: false, to: "\(out)/launchpad-settings.png")
+  }
+
   private func snapshot(
     _ view: some View, size: NSSize, dark: Bool, to path: String,
     prepare: ((NSView) -> Void)? = nil

@@ -6,7 +6,7 @@
 import Foundation
 import UniformTypeIdentifiers
 
-struct LauncherItem: Identifiable, Hashable {
+struct LauncherItem: Identifiable, Hashable, Sendable {
   enum Kind: String {
     case app, action, url, path
     /// 系统命令（锁定屏幕、清倒废纸篓…，目标是 Alfred 关键词，见 SystemCommands）
@@ -162,6 +162,8 @@ struct LauncherItem: Identifiable, Hashable {
     .pinClipboard: "Pin Clipboard Image 钉图",
     // 「便签」：标题是「快速记一条」，不放进来搜「便签」找不到它（另两项标题里就有）
     .noteCapture: "Quick Note Capture 便签", .noteNew: "New Note", .noteAll: "All Notes",
+    // 第八族：搜「启动台」「launchpad」「应用」都找得到它（和现有的「启动器」是两个东西，名字分开）
+    .launchpad: "Launchpad 启动台 应用",
   ]
 
   private static func action(
