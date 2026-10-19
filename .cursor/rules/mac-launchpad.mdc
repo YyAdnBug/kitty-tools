@@ -74,6 +74,11 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
 - 拖动 / 搜索中来的布局（导入、恢复默认）和扫完的目录先压着，松手 / 清空搜索时（model 的 `onSettled`）再换（G14 / G26）；
   点一下打开 App 按**目录**找，不按布局（搜索结果里刚装、布局里还没有的也开得了）。
 - 收起后放掉窗口和界面；还在跑的动画、计时、追踪区先停再放（别在回调里碰已经放掉的面板）。
+- **开 / 收只有一个数**（2026-10-19）：每块面板一个 `LaunchpadZoom`（0 = 收着、1 = 摆好），窗口透明度和上面那层的缩放都只听它（`apply`），
+  跟手时屏幕刷新回调（`NSView.displayLink`）每帧取识别器的进度，松手和所有按键入口都走它的临界阻尼弹簧（打开 0.4、收起 0.3，
+  接着手指的速度、不冲过头）。**别再给窗口透明度单独上 `NSAnimationContext`、给缩放单独上 SwiftUI 动画**：两套交接不上。
+  收起时这一份从总控手里交给那块面板自己走完（只有刷新回调拿着它；作废刷新回调晚一拍，别在它自己的回调里把自己放掉），
+  新开的面板用新的一份（同 F20）；收起那一段面板 `ignoresMouseEvents`，点击落到后面。刷新回调不来时到点兜底落定。
 
 ## 4. 入口和互斥
 - 入口：菜单栏（`HotKeyAction.sections` 里「启动台」一节）、现有启动器里的「启动台」一条、全局快捷键（**默认不设**，
@@ -95,8 +100,9 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
 ## 6. 触控板捏合（第 3 批）
 - 私有 `MultitouchSupport.framework` 只许**运行时 `dlopen` / `dlsym`**，不链接、不写进工程设置；找不到符号 / 设备就退回，
   设置里那一行写明「这台 Mac 上用不了，用快捷键或触发角」，别的入口照常。
-- 回调在框架自己的线程上：回调里只把这一帧拷成值类型交给 `Mutex` 里的 `PinchRecognizer`，识别出结果再 `DispatchQueue.main.async`。
-  **不在回调里碰主线程状态**。
+- 回调在框架自己的线程上：回调里只把这一帧拷成值类型交给 `Mutex` 里的 `PinchRecognizer`；跟着的那一下的进度每帧写进桥的
+  `progress`（`Mutex`），**只有开始 / 松手 / 取消三件事** `DispatchQueue.main.async`（每帧都派的话触控板约 8 ms 一帧、屏幕 60 / 120 Hz，
+  节奏对不上会抖）。**不在回调里碰主线程状态**。
 - **默认 MainActor 隔离下，框架线程碰到的东西一律显式 `nonisolated`**（G1）：桥 `TouchpadBridge`、全局 `activeBridge` /
   `contactCallback`、回调本体 `handleContactFrame`、派回主线程的 `forwarder`。C 函数指针的字面量里**不写任何闭包**，只调一个
   nonisolated 函数——不写的话它们会被推成 @MainActor，框架线程一调进来就被 Swift 6 的隔离检查 trap（一碰触控板就崩）。
@@ -107,8 +113,21 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
   设置页那一组的页脚写清怎么认：系统的「应用程序」手势开着时让给系统，关掉后自己读触控板，唤醒后自己接上（不用像同类那样给「唤醒后重启」的开关）。
 - 只在功能开着、系统的捏合关着、框架能用时注册回调；**识别到之后先问 `canOpen()`**（状态屏 / 截图 / 录屏 / 录快捷键时不打开），再问系统手势；
   关掉时注销 + `MTDeviceStop`。
-- 识别器是纯状态机（手指数按上面那一档、到质心的平均距离在时间里缩到比例以下 = 捏合，张开反过来；手指数变了重来；一次手势只触发一次；
-  四指横扫 / 竖扫不误判），单测喂造好的帧序列。**单测里不注册回调、不读真触点**；「真的读得到」是按需探针
+- 识别器是纯状态机，单测喂造好的帧序列。**跟手**（2026-10-19，拍板页 `build/research/launchpad/GESTURE.md` A，数都在 `PinchRecognizer`）：
+  比例 = 到质心的平均距离 ÷ 落指时的；缩 / 涨 4%、质心挪动 ≤ 0.05 且距离的变化不小于质心的挪动（横扫是平移）、落指后 ≥ 40 ms = 开始；
+  进度 = 走了多少 ÷ 满格（满格就是灵敏度那两个比例），夹 0…1；跟着时质心挪过 0.22 = 横扫，取消、这把手指不再认；手指数变少 = 松手
+  （带松手前那一帧的进度和速度，抬手那一帧的位置会跳，不用），变多 = 取消；落指后放了 1.4 s 还没开始就以现在为新起点。
+  松手：进度 ≥ 0.5，或朝前 ≥ 1.5 满格 / 秒 → 走完；朝回 ≤ −1 → 退回（`completes`）。
+- 跟手的画面（`Launchpad.pinch` / `finishPinch`）：关着时开始捏 → `open(interactive: true)` 建面板（透明、`ignoresMouseEvents`、**不 makeKey**），
+  `LaunchpadZoom` 每帧取进度；松手走完才 `activate`（收鼠标、makeKey、焦点进搜索框），退回就按 `close` 收掉（倒着走打开那一段，`forward: false`）。
+  开着时开始张开 → 同一个 `LaunchpadZoom` 跟 1 − 进度，松手走完 = `close`、退回 = 弹回 1。开着时捏合、关着时张开都不理。
+  监听停掉 / 重新注册时 `TouchpadWatcher` 两种各报一次取消（`abandonGesture`）；跟手期间每 0.5 s 看一眼桥的帧数（手指放着不动也一直有帧），
+  没涨 = 设备断了，当取消（`watchPinch`）——别让捏到一半的面板一直半透明地挂着。捏合建的面板**松手走完之前不算打开**（`awaitingCommit`）：
+  第一次自动导入、「排列读不出来」的提示都等松手定了再做，退回去的不导入。
+- **面板和模型的回调只认现在这块**（2026-10-19 评审）：收起要走约 0.35 s、这期间旧面板还是 key，新的那块可能已经被捏出来（还没当过 key）。
+  `onResignKey` 比 `panel === self.panel`、`onOpenApp` 比 `model === self.model`，不然旧面板 orderOut 失去 key、或在旧面板上按 ↩，
+  会把新开的那块当成「别的 App 到前台」收掉。拆模型按收起那一刻取的那个（`finishClose(_:model:)`，G20）。
+  `Launchpad.release` 是松手之后走到哪的纯函数（四种：走完 / 退回 × 捏合 / 张开），单测锁住。**单测里不注册回调、不读真触点**；「真的读得到」是按需探针
   `TEST_RUNNER_KITTY_LIVE_TOUCH=1`（真的注册回调、读这台机器的触控板；跑的时候放四根手指捏一下；测试进程里读到的键是
   `KITTY_LIVE_TOUCH`——xcodebuild 去掉 `TEST_RUNNER_` 前缀，G16）。
 - 系统手势开没开：只读 `com.apple.AppleMultitouchTrackpad`（蓝牙触控板是 `com.apple.driver.AppleBluetoothMultitouch.trackpad`）的

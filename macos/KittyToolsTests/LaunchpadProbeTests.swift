@@ -4,6 +4,7 @@
 //   - 屏外把界面建出来、量到网格框（第一帧）多久；
 //   - 翻一页之后主线程做一次布局要多久（中位 / 最长）；
 //   - 两指滑跟手时每一帧（喂一次 scroll 再布局一次）主线程要多久（中位 / 最长）；
+//   - 捏合跟手时每一帧（改一次 model.zoom 再布局一次：上面那层的缩放，GESTURE.md A）主线程要多久（中位 / 最长）；
 //   - 建出来、收起放掉前后 phys_footprint 各多少（活动监视器的口径）。
 // 触控板监听静置时的 CPU 量不了：R11 要求只在真机上量（单测里不注册回调、不读真触点，SPEC §2），
 // 数字在 HANDTEST「启动台手测」10 里看。
@@ -50,6 +51,8 @@ struct LaunchpadProbeTests {
     var firstFrame = 0.0
     var trackMedian = 0.0
     var trackWorst = 0.0
+    var zoomMedian = 0.0
+    var zoomWorst = 0.0
     do {
       let model = LaunchpadModel(
         layout: layout, catalog: catalog, icons: LaunchpadIcons(), columns: 7, rows: 5,
@@ -98,6 +101,17 @@ struct LaunchpadProbeTests {
       trackTimes.sort()
       trackMedian = trackTimes[trackTimes.count / 2] * 1000
       trackWorst = (trackTimes.last ?? 0) * 1000
+      // 捏合跟手：zoom 从 0 走到 1（60 帧），每帧量一次布局
+      var zoomTimes: [Double] = []
+      for frame in 0...60 {
+        model.zoom = Double(frame) / 60
+        let start = Date()
+        host.layoutSubtreeIfNeeded()
+        zoomTimes.append(Date().timeIntervalSince(start))
+      }
+      zoomTimes.sort()
+      zoomMedian = zoomTimes[zoomTimes.count / 2] * 1000
+      zoomWorst = (zoomTimes.last ?? 0) * 1000
       window.orderOut(nil)
       window.contentView = nil
     }
@@ -109,8 +123,9 @@ struct LaunchpadProbeTests {
     print(
       String(
         format:
-          "launchpad-probe apps=%d scan=%.1fms firstFrame=%.1fms pageLayout median=%.2fms worst=%.2fms track median=%.2fms worst=%.2fms footprint open=+%.1fMB released=%+.1fMB",
+          "launchpad-probe apps=%d scan=%.1fms firstFrame=%.1fms pageLayout median=%.2fms worst=%.2fms track median=%.2fms worst=%.2fms zoom median=%.2fms worst=%.2fms footprint open=+%.1fMB released=%+.1fMB",
         count, scan * 1000, firstFrame * 1000, median, worst, trackMedian, trackWorst,
+        zoomMedian, zoomWorst,
         Double(opened - before) / Double(megabyte), Double(released - before) / Double(megabyte)))
   }
 }

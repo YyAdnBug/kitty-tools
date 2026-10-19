@@ -29,7 +29,8 @@ struct LaunchpadView: View {
       ZStack(alignment: .top) {
         background
         // 背景只跟着窗口淡入淡出，不缩放；上面这一层（搜索、网格、页点、文件夹、跟手的那份）打开时从 1.1 倍缩回原大、
-        // 收起时往前放大到 1.08（照 macOS 15：图标像从眼前落进屏幕、收起时又冲出来）
+        // 收起时往前放大到 1.08（照 macOS 15：图标像从眼前落进屏幕、收起时又冲出来）。走到哪由 model.zoom 定（捏合时跟手），
+        // 缩放挂在单独的修饰器里：每帧只有它重算，不是整个界面
         ZStack(alignment: .top) {
           // 文件夹开着时后面这一整块缩到 0.97（照 macOS 15）。格子位置在缩之前那层坐标里量（gridSpace，和 space 原点重合）：
           // 落点、纸的起止都按没缩的位置算，不跟着动画变；缩着的时候主网格被文件夹的底挡着，不接拖动
@@ -70,7 +71,7 @@ struct LaunchpadView: View {
           dragGhost(metrics: metrics)
             .zIndex(4)
         }
-        .scaleEffect(contentScale)
+        .modifier(LaunchpadZoomScale(model: model, reduceMotion: reduceMotion))
       }
       // 拖动的「挪 / 松手」另在最外层收一份：格子只负责按下。拖出文件夹时文件夹那块界面会被拆掉，挂在格子上的手势跟着被取消、
       // 松手收不到（同 G30）；最外层这份一直在。两份都喂进去没关系：模型按同一个指针位置算，松手第二次进来时已经没有拖动了
@@ -90,7 +91,6 @@ struct LaunchpadView: View {
       .onChange(of: model.openFolderID, initial: true) { old, new in
         folderChanged(from: old, to: new)
       }
-      .animation(Self.closeZoom, value: model.isClosing)
     }
     .confirmationDialog(
       "删除「\(model.deleteCandidate?.name ?? "")」？",
@@ -107,18 +107,6 @@ struct LaunchpadView: View {
     }
   }
 
-  /// 上面那一层的缩放（减弱动态效果时不缩，只有窗口淡入淡出）
-  private var contentScale: CGFloat {
-    if reduceMotion { return 1 }
-    if model.isClosing { return 1.08 }
-    return model.presented ? 1 : 1.1
-  }
-
-  /// 打开：1.1 倍缩回原大，不回弹、减速落定（照 macOS 15；窗口同时 0.25 s 淡入，`Launchpad.present`）。
-  /// 原来用 pop（bounce 0.25）：会先缩过头再弹回来，连背景一起缩，缩到 1 以下时四边露出底下的毛玻璃
-  static let openZoom = Animation.spring(duration: 0.4, bounce: 0)
-  /// 收起：往前放大到 1.08，窗口同时 0.2 s 淡掉（`Launchpad.close`）
-  static let closeZoom = Animation.spring(duration: 0.3, bounce: 0)
   /// 文件夹展开：纸从文件夹方块长到屏幕中间、后面一起缩到 0.97，不回弹
   static let folderGrow = Animation.spring(duration: 0.3, bounce: 0)
 
@@ -517,4 +505,23 @@ private struct PlacedTile: Identifiable {
   let index: Int
   let tile: LaunchpadTile
   var id: String { tile.id }
+}
+
+/// 上面那一层的缩放（`model.zoom` 0…1，捏合时每帧变）。单独成一个修饰器：每帧只重算它，不重算整个界面。
+/// 减弱动态效果时不缩，只有窗口淡入淡出。
+/// ponytail: 每帧主线程约 3.3 ms（Debug、屏外、113 个 App，`LaunchpadProbeTests` 的 zoom 一项；翻页跟手约 1 ms），在 8 ms 以内；
+/// 不够快就把背景挪到面板的 AppKit 层、缩放改成宿主视图图层的 transform（同 `LaunchpadJiggle` 按中心算），主线程几乎不花
+struct LaunchpadZoomScale: ViewModifier {
+  let model: LaunchpadModel
+  let reduceMotion: Bool
+
+  func body(content: Content) -> some View {
+    content.scaleEffect(
+      reduceMotion ? 1 : LaunchpadZoomScale.scale(zoom: model.zoom, forward: model.zoomForward))
+  }
+
+  /// 打开的走法 1.1 → 1；收起的走法 1 → 1.08（zoom 从 1 往 0 走）
+  nonisolated static func scale(zoom: Double, forward: Bool) -> CGFloat {
+    forward ? 1 + 0.08 * (1 - zoom) : 1.1 - 0.1 * zoom
+  }
 }

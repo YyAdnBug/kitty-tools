@@ -70,11 +70,14 @@ final class LaunchpadModel {
   private(set) var pageOffset: CGFloat = 0
   /// 文件夹里那一页的横向偏移（F17：文件夹里也能跟手翻页）
   private(set) var folderPageOffset: CGFloat = 0
-  /// 正在收起（界面据此把图标往前放大、跟着窗口淡掉）
+  /// 收起已经定了（再点空白 / Esc 不会收第二次）
   private(set) var isClosing = false
-  /// 摆好了（图标从 1.1 倍缩回原大）：总控打开时先置 false，面板第一帧画完再带动画置 true（`Launchpad.present`）——
-  /// 建界面那一下最重，动画要是从那之前就开始算，开头几帧被吃掉、看着是跳出来的。单测和截图自检不经过总控，直接是摆好的样子
-  var presented = true
+  /// 打开 / 收起走到哪了（0 = 收着、1 = 摆好）：总控那块面板的 `LaunchpadZoom` 每帧设，**不带动画**（跟手时由手指决定，
+  /// 松手后、按键开关时由它的弹簧走）。单测和截图自检不经过总控，直接是摆好的样子
+  var zoom: Double = 1
+  /// 上面那层按收起的走法缩放（1 → 1.08，往前冲出去：张开手指、按键 / 点空白收起），还是按打开的走法倒着走
+  /// （1 → 1.1，退回去：捏到一半松手缩回）
+  var zoomForward = false
   /// 背景：那块屏的壁纸模糊后的样子（总控在后台做好喂进来；nil = 系统毛玻璃）
   var wallpaper: CGImage?
 
@@ -476,8 +479,11 @@ final class LaunchpadModel {
     finishScroll(time: time)
   }
 
-  /// 面板开始收（总控在淡出前调；界面据此缩回去）
-  func beginClosing() { isClosing = true }
+  /// 面板开始收（总控在淡出前调）：`forward` = 往前冲出去（收起），false = 倒着走打开那一段（捏到一半松手）
+  func beginClosing(forward: Bool = true) {
+    isClosing = true
+    zoomForward = forward
+  }
 
   func requestClose() {
     guard !isClosing else { return }

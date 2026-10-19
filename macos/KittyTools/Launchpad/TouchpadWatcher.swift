@@ -1,7 +1,9 @@
 // 触控板捏合的私有框架桥（SPEC §5.6，R7）。**只运行时 dlopen / dlsym，不链接、不写进工程设置**；找不到符号或设备
 // 就退回（设置里那一行写明「这台 Mac 上用不了」，别的入口照常）。
-// 框架在自己的线程调 C 回调：回调里只把这一帧拷成值类型交给 Mutex 里的识别器（每个设备一个），识别出结果再
-// DispatchQueue.main.async 回主线程——**回调里不碰主线程状态**（mac-native §3）。
+// 框架在自己的线程调 C 回调：回调里只把这一帧拷成值类型交给 Mutex 里的识别器（每个设备一个）；跟着的那一下的进度
+// 每帧写进桥的 `progress`（Mutex，主线程的屏幕刷新回调每帧来取），开始 / 松手 / 取消三件事才 DispatchQueue.main.async
+// 回主线程（2026-10-19 起跟手，GESTURE.md A7：每帧都派一次的话，触控板约 8 ms 一帧、屏幕 60 / 120 Hz，节奏对不上会抖）——
+// **回调里不碰主线程状态**（mac-native §3）。
 // 只在功能开着、系统的捏合关着时注册回调；停的时候注销 + MTDeviceStop + 放掉设备。
 // 触点结构体照公开的逆向资料（OpenMultitouchSupport / LaunchNext 的思路，**一行代码都不拷**）：64 位下
 // frame / timestamp / identifier / state / fingerId / handId / normalized(pos + vel) / zTotal / …；
@@ -54,36 +56,40 @@ private typealias MTUnregisterCallbackFn =
 private typealias MTDeviceStartFn = @convention(c) (UnsafeMutableRawPointer, Int32) -> Void
 private typealias MTDeviceStopFn = @convention(c) (UnsafeMutableRawPointer) -> Void
 
-/// 回调在框架线程上跑：这里只碰识别器（Mutex 里）和把结果派回主线程。
+/// 回调在框架线程上跑：这里只碰识别器（Mutex 里）、写最新进度、把三件事派回主线程。
 /// **必须 `nonisolated`**：工程默认 MainActor 隔离，不写的话这个类和它的方法会被推成 @MainActor，框架线程一调进来
 /// 就被 Swift 6 的隔离检查当场 trap（G1：第 3 批起就有，系统手势一关、一碰触控板就崩）。
 nonisolated final class TouchpadBridge: Sendable {
   private let recognizers = Mutex<[UInt: PinchRecognizer]>([:])
   /// 按需实录探针用：真收到多少帧（只增，不参与识别）
   let frames = Mutex<Int>(0)
+  /// 正在跟的那一下最新的进度（0…1）：框架线程每帧写、主线程的屏幕刷新回调每帧读。只在跟着的时候写，
+  /// 开始那一帧先写进度再派「开始」，主线程收到「开始」时这里已经是这一下的了
+  let progress = Mutex<Double>(0)
   private let sensitivity: PinchRecognizer.Sensitivity
   private let fingers: PinchFingers
-  let onGesture: @Sendable (PinchRecognizer.Gesture) -> Void
+  let onEvent: @Sendable (PinchRecognizer.Event) -> Void
 
   init(
     sensitivity: PinchRecognizer.Sensitivity, fingers: PinchFingers = .four,
-    onGesture: @escaping @Sendable (PinchRecognizer.Gesture) -> Void
+    onEvent: @escaping @Sendable (PinchRecognizer.Event) -> Void
   ) {
     self.sensitivity = sensitivity
     self.fingers = fingers
-    self.onGesture = onGesture
+    self.onEvent = onEvent
   }
 
   func feed(device: UInt, frame: TouchFrame) {
     frames.withLock { $0 += 1 }
-    let gesture = recognizers.withLock { table -> PinchRecognizer.Gesture? in
+    let (event, current) = recognizers.withLock { table -> (PinchRecognizer.Event?, Double?) in
       var recognizer =
         table[device] ?? PinchRecognizer(sensitivity: sensitivity, fingers: fingers)
       let result = recognizer.feed(frame)
       table[device] = recognizer
-      return result
+      return (result, recognizer.progress)
     }
-    if let gesture { onGesture(gesture) }
+    if let current { progress.withLock { $0 = current } }
+    if let event { onEvent(event) }
   }
 
   func forget(device: UInt) {
@@ -121,8 +127,8 @@ final class TouchpadWatcher {
   }
 
   private(set) var availability: Availability = .unknown
-  /// 识别出捏合 / 张开（已经在主线程）
-  var onGesture: ((PinchRecognizer.Gesture) -> Void)?
+  /// 开始 / 松手 / 取消（已经在主线程）；每帧的进度看 `pinchProgress`
+  var onPinch: ((PinchRecognizer.Event) -> Void)?
 
   private var devices: [UnsafeMutableRawPointer] = []
   /// MTDeviceCreateList 给的数组：设备裸指针只在它活着时有效，start() 返回后也要拿着（F6）
@@ -138,6 +144,9 @@ final class TouchpadWatcher {
   /// 调用方要它开着（start 过、还没 stop）：唤醒后重新注册时按它判断，不按「上次起成功没有」——
   /// 唤醒那一下设备还没就绪、start 失败了，下一次唤醒照样再试（G24）
   private var wantsRunning = false
+
+  /// 正在跟的那一下最新的进度（屏幕刷新回调每帧读；没起监听时 0）
+  var pinchProgress: Double { bridge?.progress.withLock { $0 } ?? 0 }
 
   /// 按需实录探针（命令行 `TEST_RUNNER_KITTY_LIVE_TOUCH=1`，测试进程里读到的是 `KITTY_LIVE_TOUCH`）用的计数；正常路径不读
   nonisolated static var framesSeen: Int {
@@ -183,6 +192,7 @@ final class TouchpadWatcher {
     self.sensitivity = sensitivity
     self.fingers = fingers
     if isStarted {
+      abandonGesture()
       bridge = nil
       activeBridge.withLock { $0 = nil }
       stopDevices()
@@ -218,7 +228,7 @@ final class TouchpadWatcher {
     generation += 1
     let bridge = TouchpadBridge(
       sensitivity: sensitivity, fingers: fingers,
-      onGesture: Self.forwarder(to: self, generation: generation))
+      onEvent: Self.forwarder(to: self, generation: generation))
     self.bridge = bridge
     activeBridge.withLock { $0 = bridge }
     for device in devices {
@@ -233,12 +243,12 @@ final class TouchpadWatcher {
   /// （它是在框架线程上被调的，G1）
   nonisolated private static func forwarder(
     to watcher: TouchpadWatcher, generation: Int
-  ) -> @Sendable (PinchRecognizer.Gesture) -> Void {
-    { [weak watcher] gesture in
+  ) -> @Sendable (PinchRecognizer.Event) -> Void {
+    { [weak watcher] event in
       DispatchQueue.main.async {
         MainActor.assumeIsolated {
           guard let watcher, watcher.isStarted, watcher.generation == generation else { return }
-          watcher.onGesture?(gesture)
+          watcher.onPinch?(event)
         }
       }
     }
@@ -260,6 +270,7 @@ final class TouchpadWatcher {
   /// 关掉：注销回调、停设备、放掉桥（回调里再进来也不会认）
   func stop() {
     wantsRunning = false
+    abandonGesture()
     generation += 1
     if let wakeObserver {
       NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
@@ -283,6 +294,13 @@ final class TouchpadWatcher {
     symbols = nil
     deviceList = nil
     isStarted = false
+  }
+
+  /// 正在跟的那一下等不到松手了（停监听、重新注册之后旧的事件都不认）：两种各报一次取消，总控只认它正在跟的那种——
+  /// 不然捏到一半的面板一直半透明地挂着、不收鼠标也不拿键盘
+  private func abandonGesture() {
+    onPinch?(.cancelled(.pinch))
+    onPinch?(.cancelled(.spread))
   }
 
   private func stopDevices() {

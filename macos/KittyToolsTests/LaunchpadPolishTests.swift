@@ -39,7 +39,20 @@ struct LaunchpadPolishTests {
     #expect(recognizer.feed(frame(0.3, [])) == nil)
     // 五指捏：认
     #expect(recognizer.feed(frame(0.4, five(0.2))) == nil)
-    #expect(recognizer.feed(frame(0.6, five(0.12))) == .pinch)
+    #expect(recognizer.feed(frame(0.6, five(0.12))) == .began(.pinch))
+  }
+
+  /// 五指档：五指捏着抬起一根（5 → 4）= 松手，不是重来
+  @Test func fiveFingerModeEndsWhenOneFingerLifts() {
+    var recognizer = PinchRecognizer(sensitivity: .standard, fingers: .five)
+    #expect(recognizer.feed(frame(0, five(0.2))) == nil)
+    #expect(recognizer.feed(frame(0.1, five(0.15))) == .began(.pinch))
+    let lifted = recognizer.feed(frame(0.2, Array(five(0.15).prefix(4))))
+    guard case .ended(.pinch, let progress, _) = lifted else {
+      Issue.record("没认出松手：\(String(describing: lifted))")
+      return
+    }
+    #expect(abs(progress - 0.25 / 0.28) < 1e-9)
   }
 
   @Test func fourFingerModeIgnoresFiveFingers() {
@@ -48,7 +61,7 @@ struct LaunchpadPolishTests {
     #expect(recognizer.feed(frame(0.2, five(0.12))) == nil)
     #expect(recognizer.feed(frame(0.3, [])) == nil)
     #expect(recognizer.feed(frame(0.4, four(0.2))) == nil)
-    #expect(recognizer.feed(frame(0.6, four(0.12))) == .pinch)
+    #expect(recognizer.feed(frame(0.6, four(0.12))) == .began(.pinch))
   }
 
   @Test func fingerChoicesAcceptTheRightCounts() {

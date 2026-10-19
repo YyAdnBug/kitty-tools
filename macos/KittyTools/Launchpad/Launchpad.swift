@@ -4,6 +4,8 @@
 // 面板收起后放掉窗口和界面（R11）。图标在后台画成位图、常驻（2026-10-18 真机反馈「第一次打开卡一阵」，用户定的常驻）；
 // 背景是那块屏的壁纸模糊后的样子（LaunchpadWallpaper），第一次自动导入旧布局时岛上先挂「正在排列…」。
 // 触控板捏合（TouchpadWatcher）和触发角（LaunchpadCorner）也由它拿着：applySettings() 按偏好和系统手势开关起停。
+// 2026-10-19 起捏合跟手（GESTURE.md A）：认到开始捏就建面板（透明、不收鼠标、不拿键盘），画面跟着手指走，松手按进度和速度
+// 打开（这时才 makeKey）或缩回；开着时张开手指同样跟手收起。所有入口的开关都由那块面板的 `LaunchpadZoom` 走同一条弹簧。
 // 2026-10-18 四批评审之后：面板先出、刘海岛的提示后出（F14）；收起的簿记按窗口记，旧的收晚到也只会收走自己（F20）；
 // 内容晚一拍再拆（F21）；删 App 走 NSWorkspace.recycle、失败带「在访达里看」（F22）；失去 key 时看新 key 是不是自己的（F23）；
 // 布局「存过但读不出来」时原文另存、这次只在内存里用默认排法（F27）；撤销存在偏好里，重启后还能用一次（F41）；
@@ -61,19 +63,20 @@ final class Launchpad {
   private let touchpad = TouchpadWatcher()
   /// 触发角（SPEC §5.7，R8）
   private let corner = LaunchpadCorner()
+  /// 现在这块面板的开 / 收进度（窗口透明度 + 上面那层的缩放）；收起时交给那块面板自己走完
+  private var zoom: LaunchpadZoom?
+  /// 正在跟手的那一下：捏合 = 正在打开，张开 = 正在收起；nil = 没在跟
+  private var pinchTracking: PinchRecognizer.Gesture?
+  /// 捏合建的面板还没定开不开（松手走完才算打开）：这期间不自动导入、不出提示
+  private var awaitingCommit = false
+  /// 捏合打开时先压着的提示（排列读不出来）：松手定了打开才出，捏一下又退回去的不出
+  private var deferredNotice: (() -> Void)?
+  /// 跟手时看触控板还有没有在报帧：设备中途断开（妙控板没电）就收不到松手了
+  private var pinchWatchdog: Task<Void, Never>?
 
   init() {
     undoLayout = LaunchpadUndo.load(from: .standard)
-    touchpad.onGesture = { [weak self] gesture in
-      guard let self, canOpen() else { return }
-      switch gesture {
-      case .pinch:
-        // 系统手势可能在监听起来之后才被打开：认到的那一刻再读一次（F13）
-        guard !systemPinchIsOn, !isOpen else { return }
-        open()
-      case .spread: if isOpen { close(animated: true) }
-      }
-    }
+    touchpad.onPinch = { [weak self] event in self?.pinch(event) }
     corner.onTrigger = { [weak self] in
       guard let self, canOpen(), !isOpen else { return }
       open()
@@ -97,12 +100,14 @@ final class Launchpad {
     if isOpen { close(animated: true) } else { open() }
   }
 
-  func open() {
-    guard !isOpen else { return }
-    guard Self.isOn else { return }
+  /// 打开；`interactive` = 捏合开始时建的（跟着手指走，松手才定开不开）。返回真的建了面板没有
+  @discardableResult
+  func open(interactive: Bool = false) -> Bool {
+    guard !isOpen else { return false }
+    guard Self.isOn else { return false }
     guard canOpen() else {
       NSSound.beep()
-      return
+      return false
     }
     willOpen()
     prepare()
@@ -112,7 +117,7 @@ final class Launchpad {
       let screen = NSScreen.screens.first(where: {
         NSMouseInRect(NSEvent.mouseLocation, $0.frame, false)
       }) ?? NSScreen.main
-    else { return }
+    else { return false }
     self.screen = screen
     let capacity = Self.capacity
     let stored = LaunchpadLayout.stored(in: .standard)
@@ -138,7 +143,11 @@ final class Launchpad {
       layout: layout, catalog: catalog, icons: icons, columns: Self.columns, rows: Self.rows,
       screenSize: screen.frame.size, startPage: lastPage)
     model.onClose = { [weak self] in self?.close(animated: true) }
-    model.onOpenApp = { [weak self] app in self?.open(app) }
+    // 只认现在这块的：收起途中的旧面板还是 key，按 ↩ 打开 App 时别把新开的（正在捏的那块）收掉
+    model.onOpenApp = { [weak self, weak model] app in
+      guard let self, let model, model === self.model else { return }
+      self.open(app)
+    }
     model.onLayoutChange = { [weak self] layout in self?.save(layout) }
     model.onDeleteApp = { [weak self] app in self?.delete(app) }
     model.folderName = { first, second in
@@ -148,10 +157,16 @@ final class Launchpad {
     model.wallpaper = wallpaper.image(for: screen) { [weak model] image in
       model?.wallpaper = image
     }
-    // 图标先停在 1.1 倍：面板第一帧画完再缩回原大（present）
-    model.presented = false
+    // 先停在「收着」：面板第一帧画完再走（present）
+    model.zoom = 0
     self.model = model
     let panel = LaunchpadPanel(frame: screen.frame, model: model)
+    let zoom = LaunchpadZoom(host: panel.contentView)
+    zoom.apply = { [weak panel, weak model] value in
+      panel?.alphaValue = value
+      model?.zoom = value
+    }
+    self.zoom = zoom
     panel.onScroll = { [weak model] event in
       model?.scroll(
         deltaX: event.scrollingDeltaX, deltaY: event.scrollingDeltaY,
@@ -166,51 +181,74 @@ final class Launchpad {
     panel.onLastPage = { [weak model] in model?.lastPage() }
     panel.onCloseRequest = { [weak model] in model?.requestClose() }
     panel.onFlagsChanged = { [weak model] held in model?.optionChanged(held) }
-    panel.onResignKey = { [weak self] in self?.panelResignedKey() }
+    // 只认现在这块：收起途中的旧面板走完 orderOut 时也会失去 key，那时新开的那块（捏合建的，还没当过 key）不能被当成「别的 App 到前台」收掉
+    panel.onResignKey = { [weak self, weak panel] in
+      guard let self, let panel, panel === self.panel else { return }
+      self.panelResignedKey()
+    }
     panel.onSearchClick = { [weak model] in model?.searchClicked() }
     model.onSearchFocus = { [weak panel] focused in panel?.setSearchFocus(focused) }
     model.onSettled = { [weak self] in self?.applyPending() }
     book.adopt(panel)
     isOpen = true
     // 岛在面板之后出：面板一 orderFrontRegardless 就盖满屏，先出岛会被盖住（F14）
+    let showNotice: (() -> Void)? = notice.map { notice in
+      { [weak self] in
+        self?.island?.show(notice.title, detail: notice.detail, symbol: notice.symbol)
+      }
+    }
+    // 捏合建的：提示和第一次自动导入等松手定了打开再做（捏一下又退回去的不该导入布局、挂提示）
+    awaitingCommit = interactive
+    deferredNotice = interactive ? showNotice : nil
     LaunchpadOpenSequence.run(
-      present: { present(panel, model: model) },
-      notice: notice.map { notice in
-        { [weak self] in
-          self?.island?.show(notice.title, detail: notice.detail, symbol: notice.symbol)
-        }
-      })
-    autoImportIfNeeded()
+      present: { present(panel, zoom: zoom, interactive: interactive) },
+      notice: interactive ? nil : showNotice)
+    if !interactive { autoImportIfNeeded() }
+    return true
   }
 
   /// 收起；animated = false 用于打开别的窗口 / 截图 / 状态屏之前（不能留一块全屏面板盖着）
   func close(animated: Bool) {
+    close(animated: animated, velocity: 0, forward: true)
+  }
+
+  /// `velocity`：开 / 收进度每秒变多少（张开松手时接着手指的速度）；`forward` = false 是捏到一半松手、倒着走打开那一段
+  private func close(animated: Bool, velocity: Double, forward: Bool) {
     guard let panel = book.beginClose() as? LaunchpadPanel else { return }
+    // 这块面板的模型在这里就取：走完的时候 self.model 可能已经是后来又开的那块的（G20）
+    let closingModel = model
     lastPage = model?.page ?? lastPage
-    model?.beginClosing()
+    model?.beginClosing(forward: forward)
     isOpen = false
+    if awaitingCommit {
+      // 捏一下又退回去：没真的打开过，第一次自动导入留到下次真打开（那时还没存过布局，会再排上）
+      pendingAutoImport = false
+      awaitingCommit = false
+    }
+    pinchTracking = nil
+    pinchWatchdog?.cancel()
+    deferredNotice = nil
     // 触发角：开着的时候离开角收不到事件，收起时鼠标不在角里就重新武装（不然要再离开一次才推得开）
     corner.launchpadDidClose()
-    // 照 macOS 15：图标往前放大（界面按 isClosing 做）、整块淡掉；减弱动态效果时只淡掉
-    if animated {
-      NSAnimationContext.runAnimationGroup { context in
-        context.duration = Self.closeFade
-        context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-        panel.animator().alphaValue = 0
-      } completionHandler: { [weak self] in
-        MainActor.assumeIsolated { self?.finishClose(panel) }
-      }
+    // 走的这一段里点击落到后面去（面板已经在淡掉了）
+    panel.ignoresMouseEvents = true
+    let zoom = self.zoom
+    self.zoom = nil
+    // 照 macOS 15：图标往前放大、整块淡掉（减弱动态效果时只淡掉，界面不缩）。这一份跟着这块面板走完，新开的面板用新的一份
+    if animated, let zoom {
+      zoom.onSettled = { [weak self] _ in self?.finishClose(panel, model: closingModel) }
+      zoom.settle(to: 0, velocity: velocity, duration: LaunchpadZoom.closeDuration)
     } else {
-      finishClose(panel)
+      zoom?.stop()
+      finishClose(panel, model: closingModel)
     }
   }
 
   /// 收尾按**窗口**做（F20）：哪怕收起动画还没完又打开了一块新的，晚到的 completion 也只收走自己；
   /// 内容和模型晚一拍再拆——收起可能是在这个面板的手势 / 按键回调里进来的（F21）
-  private func finishClose(_ panel: LaunchpadPanel) {
+  private func finishClose(_ panel: LaunchpadPanel, model closingModel: LaunchpadModel?) {
     panel.orderOut(nil)
-    // 这块面板的模型：晚一拍拆的时候只放它自己的（中间又开了一块新的，新模型不能被放掉，G20）
-    let closingModel = model
+    // 这块面板的模型（收起那一刻取的）：晚一拍拆的时候只放它自己的（中间又开了一块新的，新模型不能被放掉，G20）
     DispatchQueue.main.async { [weak self] in
       // 面板在这里强持一拍：非动画收起时它在那一轮自动释放池倒掉时就没了，原来的 weak 拿不到、模型一直放不掉
       panel.contentView = nil
@@ -219,30 +257,113 @@ final class Launchpad {
     }
   }
 
-  /// 打开：整块（壁纸和上面的图标）跟着窗口淡入，图标同时从 1.1 倍缩回原大（照 macOS 15）。
-  /// 淡入只在窗口上做一次：原来界面里再淡一遍，两层透明度相乘，开头那段几乎看不见、像是晚了一拍才出来
-  private func present(_ panel: LaunchpadPanel, model: LaunchpadModel) {
+  /// 打开：整块（壁纸和上面的图标）跟着窗口淡入，图标同时从 1.1 倍缩回原大（照 macOS 15），都由 `zoom` 一个数管。
+  /// 淡入只在窗口上做一次：原来界面里再淡一遍，两层透明度相乘，开头那段几乎看不见、像是晚了一拍才出来。
+  /// 捏合开始建的（`interactive`）：不收鼠标、不拿键盘，跟着手指走，松手定了打开才 `activate`
+  private func present(_ panel: LaunchpadPanel, zoom: LaunchpadZoom, interactive: Bool) {
     panel.alphaValue = 0
+    panel.ignoresMouseEvents = interactive
     panel.orderFrontRegardless()
     panel.layoutIfNeeded()
+    if !interactive { activate(panel) }
+    // 先把第一帧画好（建界面、上百个图标的图层，这一下最重），动画从画好之后才开始算：不然开头几帧被这一下吃掉，看着是跳出来的
+    panel.displayIfNeeded()
+    if interactive {
+      zoom.track { [weak self] in self?.touchpad.pinchProgress ?? 0 }
+    } else {
+      zoom.settle(to: 1, duration: LaunchpadZoom.openDuration)
+    }
+  }
+
+  /// 拿键盘：收鼠标、当 key、焦点进搜索框（initialFirstResponder，CommandTextField 挂进窗口时登记的；一打开就能打字，R3）
+  private func activate(_ panel: LaunchpadPanel) {
+    panel.ignoresMouseEvents = false
     panel.makeKey()
-    // 搜索框是 initialFirstResponder（CommandTextField 挂进窗口时登记的）：一打开就能打字（R3）
     if !(panel.firstResponder is NSText), let first = panel.initialFirstResponder {
       panel.makeFirstResponder(first)
     }
-    // 先把第一帧画好（建界面、上百个图标的图层，这一下最重），动画从画好之后才开始算：不然开头几帧被这一下吃掉，看着是跳出来的
-    panel.displayIfNeeded()
-    NSAnimationContext.runAnimationGroup { context in
-      context.duration = Self.openFade
-      context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-      panel.animator().alphaValue = 1
-    }
-    withAnimation(LaunchpadView.openZoom) { model.presented = true }
   }
 
-  /// 窗口淡入 / 淡出的时长（图标的缩放见 LaunchpadView.openZoom / closeZoom）
-  static let openFade: TimeInterval = 0.25
-  static let closeFade: TimeInterval = 0.2
+  // MARK: 捏合跟手
+
+  /// 识别器的三件事（已经在主线程）：开始捏（关着时）→ 建面板跟手；开始张开（开着时）→ 跟手收；松手 / 取消 → 走完或退回去
+  private func pinch(_ event: PinchRecognizer.Event) {
+    switch event {
+    case .began(.pinch):
+      // 系统手势可能在监听起来之后才被打开：认到的那一刻再读一次（F13）
+      guard pinchTracking == nil, !isOpen, canOpen(), !systemPinchIsOn else { return }
+      guard open(interactive: true) else { return }
+      pinchTracking = .pinch
+      watchPinch()
+    case .began(.spread):
+      guard pinchTracking == nil, isOpen, let model, !model.isClosing, let zoom else { return }
+      pinchTracking = .spread
+      model.zoomForward = true
+      zoom.track { [weak self] in 1 - (self?.touchpad.pinchProgress ?? 0) }
+      watchPinch()
+    case .ended(let gesture, let progress, let velocity):
+      guard pinchTracking == gesture else { return }
+      pinchTracking = nil
+      finishPinch(
+        gesture, completes: PinchRecognizer.completes(progress: progress, velocity: velocity),
+        velocity: velocity)
+    case .cancelled(let gesture):
+      guard pinchTracking == gesture else { return }
+      pinchTracking = nil
+      finishPinch(gesture, completes: false, velocity: 0)
+    }
+  }
+
+  /// 松手之后走到哪（纯函数，单测）：`velocity` 是捏合 / 张开的进度每秒变多少。打开那一段 zoom 就是进度；
+  /// 收起那一段 zoom = 1 − 进度，速度反号。`forward` 只对走到 0 有意义：张开收起往前冲出去，捏一半退回是倒着走打开那一段
+  nonisolated static func release(
+    _ gesture: PinchRecognizer.Gesture, completes: Bool, velocity: Double
+  ) -> (target: Double, velocity: Double, forward: Bool) {
+    switch (gesture, completes) {
+    case (.pinch, true): (1, velocity, false)
+    case (.pinch, false): (0, velocity, false)
+    case (.spread, true): (0, -velocity, true)
+    case (.spread, false): (1, -velocity, true)
+    }
+  }
+
+  private func finishPinch(_ gesture: PinchRecognizer.Gesture, completes: Bool, velocity: Double) {
+    pinchWatchdog?.cancel()
+    guard let panel, let zoom else { return }
+    let end = Self.release(gesture, completes: completes, velocity: velocity)
+    if end.target == 0 {
+      close(animated: true, velocity: end.velocity, forward: end.forward)
+      return
+    }
+    zoom.settle(to: 1, velocity: end.velocity, duration: LaunchpadZoom.openDuration)
+    guard gesture == .pinch else { return }
+    // 定了打开：拿键盘，压着的提示和第一次自动导入这时才做
+    awaitingCommit = false
+    activate(panel)
+    deferredNotice?()
+    deferredNotice = nil
+    autoImportIfNeeded()
+  }
+
+  /// 跟手期间每 0.5 s 看一眼触控板还在不在报帧（手指放着不动也一直有帧）：没涨 = 设备断了 / 监听没了，等不到松手，当取消。
+  /// 不然面板半透明地挂着、不收鼠标也不拿键盘，Esc 都到不了它
+  private func watchPinch() {
+    pinchWatchdog?.cancel()
+    pinchWatchdog = Task { [weak self] in
+      var last = TouchpadWatcher.framesSeen
+      while !Task.isCancelled {
+        try? await Task.sleep(for: .milliseconds(500))
+        guard !Task.isCancelled, let self, let gesture = self.pinchTracking else { return }
+        let now = TouchpadWatcher.framesSeen
+        if now == last {
+          self.pinchTracking = nil
+          self.finishPinch(gesture, completes: false, velocity: 0)
+          return
+        }
+        last = now
+      }
+    }
+  }
 
   /// 面板失去 key（F23）：新的 key 窗口不是自己的（确认框的 sheet、文件夹上弹出的东西）才收起。
   /// 打开 App 时那个 App 自己会变 key，这时也要收——它不挂在面板上，判断照样成立。
@@ -324,7 +445,8 @@ final class Launchpad {
 
   /// 第一次打开时自动导入旧库（F31）：目录还没扫出来就等扫完；导入在后台做，面板已经显示默认排法
   private func autoImportIfNeeded() {
-    guard pendingAutoImport, !catalog.isEmpty else { return }
+    // 捏合建的面板还没定开不开：等松手（`finishPinch`）
+    guard pendingAutoImport, !catalog.isEmpty, !awaitingCommit else { return }
     guard !LaunchpadLayout.isStored(in: .standard) else {
       pendingAutoImport = false
       return

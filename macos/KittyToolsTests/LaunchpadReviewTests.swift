@@ -540,10 +540,13 @@ struct LaunchpadReviewTests {
         })
     }
     #expect(recognizer.feed(frame(0, 0.2)) == nil)
-    #expect(recognizer.feed(frame(0.1, 0.1)) == .pinch)
-    #expect(recognizer.feed(TouchFrame(time: 0.2, touches: [])) == nil)
+    #expect(recognizer.feed(frame(0.1, 0.1)) == .began(.pinch))
+    // 空帧 = 全抬起来了：松手（开始那一帧就捏过了满格，之后没再动，速度 0）
+    #expect(
+      recognizer.feed(TouchFrame(time: 0.2, touches: []))
+        == .ended(.pinch, progress: 1, velocity: 0))
     #expect(recognizer.feed(frame(0.3, 0.2)) == nil)
-    #expect(recognizer.feed(frame(0.4, 0.1)) == .pinch)
+    #expect(recognizer.feed(frame(0.4, 0.1)) == .began(.pinch))
     // 悬停（state 1）不算在面上
     var hover = PinchRecognizer()
     let hovering = TouchFrame(
