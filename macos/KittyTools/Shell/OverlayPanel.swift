@@ -317,10 +317,13 @@ final class OverlayPanel: NSPanel {
   }
 
   /// 用户关掉（Esc、⌘W、点外面、再按热键、失焦）：淡出（替身在原位淡，减弱动态效果时没有）。窗口立刻移走，
-  /// 键盘马上回到原 App
-  func dismiss() {
+  /// 键盘马上回到原 App——呼出前焦点在自家便签里（同粘贴落到哪，pasteTarget）、又是用键盘关的，就回到那条便签：
+  /// 那叠里打开的、浮动的便签是不激活本 App 的面板，系统不一定把 key 还给它们，原来要再点一下才能接着打字。
+  /// byKeyboard = false：点别处、失焦关掉的（用户正要去别处，不抢）
+  func dismiss(byKeyboard: Bool = true) {
     endSqueeze()
     guard isVisible else { return }
+    let returnTo = byKeyboard ? pasteTarget()?.window : nil
     saveFrameIfMoved()
     showGeneration += 1
     lastDismiss = CACurrentMediaTime()
@@ -331,6 +334,8 @@ final class OverlayPanel: NSPanel {
     removeMouseMonitors()
     stopWatchingPasteTarget()
     onHide?()
+    // onHide 可能已经把 key 还给了别的浮层（翻译浮窗 → 剪贴板面板：记着的就是它），系统也可能已经还了，不重复
+    if let returnTo, NSApp.keyWindow !== returnTo { returnTo.makeKey() }
   }
 
   /// 退场淡出的替身：一块同样材质、同样位置的窗口，里面是这一刻内容的图，盖在面板上面按 fadeOut 淡掉；面板自己同时
@@ -573,7 +578,7 @@ final class OverlayPanel: NSPanel {
     if autoHide == .resignKey, isVisible, attachedSheet == nil, !isPinned(),
       !Self.isSelectingRegion(in: NSApp.windows)
     {
-      dismiss()
+      dismiss(byKeyboard: false)
     }
   }
 
@@ -727,7 +732,7 @@ final class OverlayPanel: NSPanel {
   }
 
   private func clickedOutside() {
-    if !isPinned() { dismiss() }
+    if !isPinned() { dismiss(byKeyboard: false) }
   }
 
   /// 可拉伸的圆角蒙版：连续曲线的过渡比圆角半径长，拉伸区留 1.6 倍
