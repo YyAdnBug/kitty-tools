@@ -45,6 +45,7 @@ final class LaunchpadModel {
       let nowSearching = !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       // 删光字回到搜索之前那一页（R3，F24）；搜索中换字仍回到第一页
       if !wasSearching, nowSearching { pageBeforeSearch = page }
+      if !query.isEmpty { searchEngaged = true }
       selected = nil
       page = wasSearching && !nowSearching ? min(pageBeforeSearch ?? 0, pageCount - 1) : 0
       pageOffset = 0
@@ -55,6 +56,10 @@ final class LaunchpadModel {
       if wasSearching, !nowSearching { onSettled() }
     }
   }
+  /// 用户点过搜索框（或打过字）：「放大镜 + 搜索」从正中滑到左边、插入点亮起来（照系统的搜索框获得焦点）。
+  /// 一打开焦点就在搜索框里、但插入点藏着、占位居中（照 macOS 15）；点一下要有反应，不然看着像没点中（2026-10-19 真机反馈）。
+  /// 搜索框交出焦点（开文件夹、进抖动）时复位
+  private(set) var searchEngaged = false
   /// 当前页（0 起）
   private(set) var page = 0
   /// 搜索开始时那一页（删光搜索字回到它）
@@ -65,8 +70,11 @@ final class LaunchpadModel {
   private(set) var pageOffset: CGFloat = 0
   /// 文件夹里那一页的横向偏移（F17：文件夹里也能跟手翻页）
   private(set) var folderPageOffset: CGFloat = 0
-  /// 正在收起（界面据此缩回去）
+  /// 正在收起（界面据此把图标往前放大、跟着窗口淡掉）
   private(set) var isClosing = false
+  /// 摆好了（图标从 1.1 倍缩回原大）：总控打开时先置 false，面板第一帧画完再带动画置 true（`Launchpad.present`）——
+  /// 建界面那一下最重，动画要是从那之前就开始算，开头几帧被吃掉、看着是跳出来的。单测和截图自检不经过总控，直接是摆好的样子
+  var presented = true
   /// 背景：那块屏的壁纸模糊后的样子（总控在后台做好喂进来；nil = 系统毛玻璃）
   var wallpaper: CGImage?
 
@@ -273,12 +281,25 @@ final class LaunchpadModel {
   func go(to page: Int) {
     let target = min(max(page, 0), pageCount - 1)
     guard target != self.page else { return }
-    withAnimation(Style.Motion.glide.animation()) {
+    withAnimation(pageMotion) {
       self.page = target
       pageOffset = 0
       pager.reset()
       selected = nil
     }
+  }
+
+  /// 翻页的动画（键盘、点页点、拖到边上、文件夹里翻页；松手那一下另按手指的速度给，见 `finishScroll`）。
+  /// 界面上不挂按页号的隐式动画：那会盖掉这里给的动画（松手的速度就丢了）
+  private var pageMotion: Animation? {
+    Style.reduceMotion ? nil : LaunchpadPager.animation()
+  }
+
+  /// 布局变了（拖完、删 App、换布局）页数变少：当前页夹回去，滑过去
+  private func clampPage() {
+    let clamped = min(page, max(layout.pageCount - 1, 0))
+    guard clamped != page else { return }
+    withAnimation(pageMotion) { page = clamped }
   }
 
   func firstPage() { go(to: 0) }
@@ -306,8 +327,8 @@ final class LaunchpadModel {
           NSSound.beep()
           return
         }
+        withAnimation(pageMotion) { self.page = page - 1 }
         withAnimation(Style.Motion.snap.animation()) {
-          self.page = page - 1
           selected = max((tiles[page - 1].count) - 1, 0)
         }
       } else {
@@ -319,10 +340,8 @@ final class LaunchpadModel {
           NSSound.beep()
           return
         }
-        withAnimation(Style.Motion.snap.animation()) {
-          self.page = page + 1
-          selected = 0
-        }
+        withAnimation(pageMotion) { self.page = page + 1 }
+        withAnimation(Style.Motion.snap.animation()) { selected = 0 }
       } else {
         withAnimation(Style.Motion.snap.animation()) { selected = index + 1 }
       }
@@ -332,8 +351,8 @@ final class LaunchpadModel {
           NSSound.beep()
           return
         }
+        withAnimation(pageMotion) { self.page = page - 1 }
         withAnimation(Style.Motion.snap.animation()) {
-          self.page = page - 1
           selected = Self.columnClamped(index % columns, in: tiles[page - 1].count)
         }
       } else {
@@ -345,8 +364,8 @@ final class LaunchpadModel {
           NSSound.beep()
           return
         }
+        withAnimation(pageMotion) { self.page = page + 1 }
         withAnimation(Style.Motion.snap.animation()) {
-          self.page = page + 1
           selected = Self.columnClamped(index % columns, in: tiles[page + 1].count)
         }
       } else {
@@ -360,6 +379,22 @@ final class LaunchpadModel {
   nonisolated static func columnClamped(_ column: Int, in count: Int) -> Int {
     guard count > 0 else { return 0 }
     return min(column, count - 1)
+  }
+
+  // MARK: 搜索框
+
+  /// 面板收到点在搜索框上的按下（`LaunchpadPanel.sendEvent`）：占位滑到左边、插入点亮起来
+  func searchClicked() {
+    guard !searchEngaged else { return }
+    withAnimation(Style.Motion.glide.animation()) { searchEngaged = true }
+  }
+
+  /// 搜索框拿 / 放焦点都走这里：放掉时一起复位「点过搜索框」（占位回到正中、插入点藏起来）
+  private func setSearchFocus(_ focused: Bool) {
+    if !focused, searchEngaged, query.isEmpty {
+      withAnimation(Style.Motion.glide.animation()) { searchEngaged = false }
+    }
+    onSearchFocus(focused)
   }
 
   // MARK: 回车 / Esc / 点空白
@@ -500,14 +535,14 @@ final class LaunchpadModel {
     guard folder(id) != nil else { return }
     folderNameDraft = folder(id)?.name ?? ""
     // 面板从文件夹方块那儿长到屏幕中间、关的时候缩回去：动的是界面里那块「纸」（LaunchpadView 的 FolderPaper，同便签墙的编辑卡）
-    withAnimation(Style.Motion.glide.animation()) {
+    withAnimation(LaunchpadView.folderGrow) {
       openFolderID = id
       folderPage = 0
       folderPageOffset = 0
       selected = nil
     }
     // 打开文件夹后接着打字不进背后的搜索框（F34）
-    onSearchFocus(false)
+    setSearchFocus(false)
   }
 
   func closeFolder() {
@@ -522,7 +557,7 @@ final class LaunchpadModel {
     }
     cancelTurn()
     // 焦点还给搜索框：关掉文件夹后「一打字就进搜索」照常（G9）
-    if wasOpen, !jiggling { onSearchFocus(true) }
+    if wasOpen, !jiggling { setSearchFocus(true) }
   }
 
   /// 打开的文件夹面板在屏上的位置（和界面同一个算式：名字一行、隔 18、面板四边 28、里面网格 + 10 + 页点 7，整组在屏幕正中）。
@@ -587,9 +622,16 @@ final class LaunchpadModel {
     return CGRect(x: center.x - side / 2, y: center.y - side / 2, width: side, height: side)
   }
 
-  func goToFolderPage(_ page: Int) {
-    folderPage = min(max(page, 0), folderPageCount - 1)
-    folderPageOffset = 0
+  func goToFolderPage(_ page: Int, velocity: CGFloat = 0) {
+    let target = min(max(page, 0), folderPageCount - 1)
+    let width = metrics.folderGridWidth
+    let distance = -CGFloat(target - folderPage) * width - folderPageOffset
+    withAnimation(
+      Style.reduceMotion ? nil : LaunchpadPager.animation(velocity: velocity, distance: distance)
+    ) {
+      folderPage = target
+      folderPageOffset = 0
+    }
   }
 
   private func navigateFolder(_ direction: LaunchpadDirection) {
@@ -645,7 +687,7 @@ final class LaunchpadModel {
     guard !jiggling else { return }
     withAnimation(Style.Motion.pop.animation()) { jiggling = true }
     jiggleByOption = byOption
-    onSearchFocus(false)
+    setSearchFocus(false)
   }
 
   func exitJiggle() {
@@ -654,7 +696,7 @@ final class LaunchpadModel {
     jiggleByOption = false
     deleteCandidate = nil
     // 退出抖动后焦点还给搜索框（G9）
-    if openFolderID == nil { onSearchFocus(true) }
+    if openFolderID == nil { setSearchFocus(true) }
   }
 
   /// 面板的 flagsChanged 喂进来：⌥ 按下进抖动、松开退出（按住图标进的那种不受影响）。
@@ -813,7 +855,7 @@ final class LaunchpadModel {
       try? await Task.sleep(for: delay)
       guard !Task.isCancelled, let self, self.drag?.turnPage == target, self.openFolderID != nil
       else { return }
-      withAnimation(Style.Motion.glide.animation()) {
+      withAnimation(self.pageMotion) {
         self.folderPage = target
         self.folderPageOffset = 0
       }
@@ -910,7 +952,7 @@ final class LaunchpadModel {
       selected = nil
     }
     self.drag?.folderTarget = folderApps.filter { $0.id != drag.appID }.count
-    onSearchFocus(false)
+    setSearchFocus(false)
   }
 
   /// 指针落在网格的哪儿（G3 的判定，纯逻辑在 `dropTarget`）：返回新的落点（nil = 不变）和合成候选（格子的 id）
@@ -1127,7 +1169,7 @@ final class LaunchpadModel {
         self.drag?.appendsPage = true
         return
       }
-      withAnimation(Style.Motion.glide.animation()) {
+      withAnimation(self.pageMotion) {
         page = target
         pageOffset = 0
       }
@@ -1170,7 +1212,7 @@ final class LaunchpadModel {
   /// 换一份布局（设置里恢复默认、撤销导入、删 App 之后）：当前页收回第一页，选中清掉
   func replace(layout: LaunchpadLayout) {
     self.layout = layout
-    page = min(page, max(layout.pageCount - 1, 0))
+    clampPage()
     selected = nil
     openFolderID = nil
     drag = nil
@@ -1180,7 +1222,7 @@ final class LaunchpadModel {
   /// 布局变了（拖格子、建文件夹）：马上交给总控存盘（R5）
   func commit(_ layout: LaunchpadLayout) {
     self.layout = layout
-    page = min(page, max(layout.pageCount - 1, 0))
+    clampPage()
     selected = nil
     onLayoutChange(layout)
   }
@@ -1248,15 +1290,12 @@ final class LaunchpadModel {
     if phase == .began { folderPager.reset() }
     if momentum != [] { return }
     if phase == .ended || phase == .cancelled {
-      // 页宽用文件夹网格自己的宽（G28：原来用主网格的格宽 × 7，要拖满一整块屏才翻）
+      // 页宽用文件夹网格自己的宽（G28：原来用主网格的格宽 × 7，要拖满一整块屏才翻）。松手接着手指的速度滑到位
+      let velocity = folderPager.screenVelocity(time: time)
       let step = folderPager.finish(
         canBack: folderPage > 0, canForward: folderPage < folderPageCount - 1,
         pageWidth: metrics.folderGridWidth, time: time)
-      if step != 0 {
-        goToFolderPage(folderPage + step)
-      } else {
-        withAnimation(Style.Motion.glide.animation()) { folderPageOffset = 0 }
-      }
+      goToFolderPage(folderPage + step, velocity: velocity)
       return
     }
     if !precise, phase == [] {
@@ -1273,29 +1312,29 @@ final class LaunchpadModel {
     }
   }
 
+  /// 松手：翻过去或弹回来，都接着手指的速度滑到位（不是停一下再从静止起步）
   private func finishScroll(time: TimeInterval) {
+    let velocity = pager.screenVelocity(time: time)
     let step = pager.finish(
       canBack: page > 0, canForward: page < pageCount - 1, pageWidth: metrics.size.width,
       time: time)
-    if step != 0 {
-      turn(step)
-    } else {
-      withAnimation(Style.Motion.glide.animation()) { pageOffset = 0 }
-    }
+    turn(step, velocity: velocity)
     scroll = 0
   }
 
-  private func turn(_ direction: Int) {
+  /// 翻 `direction` 页（0 = 弹回这一页）；`velocity` 是松手时手指的速度（点 / 秒，和 pageOffset 同向），滚轮、键盘给 0
+  private func turn(_ direction: Int, velocity: CGFloat = 0) {
     let target = min(max(page + direction, 0), pageCount - 1)
-    guard target != page else {
-      withAnimation(Style.Motion.glide.animation()) { pageOffset = 0 }
-      return
-    }
-    withAnimation(Style.Motion.glide.animation()) {
+    // 屏上这一刻的位置是 -page × 页宽 + pageOffset，要滑到 -target × 页宽
+    let distance = -CGFloat(target - page) * metrics.size.width - pageOffset
+    let changed = target != page
+    withAnimation(
+      Style.reduceMotion ? nil : LaunchpadPager.animation(velocity: velocity, distance: distance)
+    ) {
       page = target
       pageOffset = 0
       pager.reset()
-      selected = nil
+      if changed { selected = nil }
     }
   }
 }

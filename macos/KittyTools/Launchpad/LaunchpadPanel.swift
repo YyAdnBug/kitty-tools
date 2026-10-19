@@ -23,6 +23,8 @@ final class LaunchpadPanel: NSPanel {
   var onFlagsChanged: ((Bool) -> Void)?
   /// 失去 key（F23：确认框是挂在面板上的 sheet 时不收，别的 App 到前台就收）
   var onResignKey: (() -> Void)?
+  /// 在搜索框上按下（焦点本来就在框里，点了没变化；界面据此把占位挪到左边、亮出插入点）
+  var onSearchClick: (() -> Void)?
 
   private let host: NSHostingView<LaunchpadView>
 
@@ -68,13 +70,24 @@ final class LaunchpadPanel: NSPanel {
     frameRect
   }
 
-  /// 两指滑动 / 滚轮只给翻页；别的事件照常派发（搜索框、按钮）
+  /// 两指滑动 / 滚轮只给翻页；在搜索框上按下另报一声（不拦，照常派发）；别的事件照常派发（搜索框、按钮）
   override func sendEvent(_ event: NSEvent) {
     if event.type == .scrollWheel {
       onScroll?(event)
       return
     }
+    if event.type == .leftMouseDown, hitsSearchField(event.locationInWindow) { onSearchClick?() }
     super.sendEvent(event)
+  }
+
+  /// 这一点落在搜索框（或正编辑它的字段编辑器）上没有。搜索框是 initialFirstResponder（CommandTextField 挂进窗口时登记的）；
+  /// 界面刚挂上、搜索框还没建出来时那里是整个界面视图（屏外单测量到的），所以只认输入框
+  func hitsSearchField(_ point: NSPoint) -> Bool {
+    // hitTest 要的是父视图坐标系里的点
+    guard let field = initialFirstResponder as? NSTextField, let content = contentView,
+      let hit = content.hitTest(content.superview?.convert(point, from: nil) ?? point)
+    else { return false }
+    return hit.isDescendant(of: field)
   }
 
   /// ⌘← / ⌘→ 第一页 / 最后一页（焦点在搜索框里也先到这里）；⌘W 收起

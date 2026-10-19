@@ -226,9 +226,9 @@ enum Prefs {
   nonisolated static let launchpadUndoLayout = "launchpadUndoLayout"
   nonisolated static let launchpadColumnChoices = 5...10
   nonisolated static let launchpadRowChoices = 4...8
-  /// 触控板捏合（默认开；系统的捏合还开着时我们认到也不打开，见 mac-launchpad §6）和灵敏度
-  /// （PinchRecognizer.Sensitivity 的 rawValue：tight / standard / loose）
-  nonisolated static let launchpadPinch = "launchpadPinch"
+  /// 触控板手势（PinchFingers 的 rawValue：off / four / five，默认四指；系统的捏合还开着时我们认到也不打开，
+  /// 见 mac-launchpad §6）和灵敏度（PinchRecognizer.Sensitivity 的 rawValue：tight / standard / loose）
+  nonisolated static let launchpadPinchGesture = "launchpadPinchGesture"
   nonisolated static let launchpadPinchSense = "launchpadPinchSense"
   /// 触发角（LaunchpadCornerOption 的 rawValue：off / topLeft / topRight / bottomLeft / bottomRight，默认关）
   nonisolated static let launchpadCorner = "launchpadCorner"
@@ -274,7 +274,7 @@ enum Prefs {
       launchpadColumns: 7,
       launchpadRows: 5,
       launchpadLayout: "",
-      launchpadPinch: true,
+      launchpadPinchGesture: PinchFingers.four.rawValue,
       launchpadPinchSense: PinchRecognizer.Sensitivity.standard.rawValue,
       launchpadCorner: LaunchpadCornerOption.off.rawValue,
       panelSqueezeEntrance: false,

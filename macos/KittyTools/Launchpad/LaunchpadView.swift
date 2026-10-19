@@ -15,7 +15,6 @@ struct LaunchpadView: View {
   @Bindable var model: LaunchpadModel
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.colorSchemeContrast) private var contrast
-  @State private var appeared = false
   /// 文件夹面板那块纸（开着、正在缩回去的时候都在；缩完了拆掉）
   @State private var folderSheet: FolderSheet?
 
@@ -29,44 +28,49 @@ struct LaunchpadView: View {
       let metrics = model.metrics
       ZStack(alignment: .top) {
         background
-        // 文件夹开着时后面这一整块缩到 0.97（照 macOS 15）。格子位置在缩之前那层坐标里量（gridSpace，和 space 原点重合）：
-        // 落点、纸的起止都按没缩的位置算，不跟着动画变；缩着的时候主网格被文件夹的底挡着，不接拖动
-        let shrink = model.openFolderID != nil && !reduceMotion
+        // 背景只跟着窗口淡入淡出，不缩放；上面这一层（搜索、网格、页点、文件夹、跟手的那份）打开时从 1.1 倍缩回原大、
+        // 收起时往前放大到 1.08（照 macOS 15：图标像从眼前落进屏幕、收起时又冲出来）
         ZStack(alignment: .top) {
-          searchField(metrics)
-            .padding(.top, metrics.searchTop)
-          pager(proxy.size, metrics: metrics)
-            .padding(.top, metrics.gridTop)
-          pageDots
-            .position(x: proxy.size.width / 2, y: metrics.dotsY)
+          // 文件夹开着时后面这一整块缩到 0.97（照 macOS 15）。格子位置在缩之前那层坐标里量（gridSpace，和 space 原点重合）：
+          // 落点、纸的起止都按没缩的位置算，不跟着动画变；缩着的时候主网格被文件夹的底挡着，不接拖动
+          let shrink = model.openFolderID != nil && !reduceMotion
+          ZStack(alignment: .top) {
+            searchField(metrics)
+              .padding(.top, metrics.searchTop)
+            pager(proxy.size, metrics: metrics)
+              .padding(.top, metrics.gridTop)
+            pageDots
+              .position(x: proxy.size.width / 2, y: metrics.dotsY)
+          }
+          .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
+          .coordinateSpace(name: Self.gridSpace)
+          .visualEffect { content, _ in content.scaleEffect(shrink ? 0.97 : 1) }
+          // 层次写死（zIndex）：ZStack 里正在离场的视图，SwiftUI 会把它挪到兄弟视图下面画——关文件夹时面板就缩到网格和不透明的壁纸
+          // 后面去了，只看得见后面那层淡掉，像「没有动画」（2026-10-18 真机反馈两次；进场的总在上面，所以打开一直是好的）
+          if model.openFolderID != nil {
+            FolderBackdrop(model: model)
+              .transition(.opacity)
+              .zIndex(1)
+          }
+          // 面板那块纸（同便签墙的编辑卡）：打开时从文件夹方块那儿长到屏幕中间，关的时候从中间一路缩回文件夹方块
+          // （圆角、底色也变回方块的样子），纸一直不透明；里面的图标和名字晚一点淡进来、关的时候先淡掉
+          if let sheet = folderSheet {
+            FolderPaper(
+              sheet: sheet,
+              panel: model.openFolderID == sheet.id ? model.folderPanelRect : sheet.panel
+            )
+            .id(sheet.serial)
+            .zIndex(2)
+          }
+          if model.openFolderID != nil {
+            FolderOverlay(model: model, metrics: metrics, space: Self.space)
+              .transition(folderContentTransition)
+              .zIndex(3)
+          }
+          dragGhost(metrics: metrics)
+            .zIndex(4)
         }
-        .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
-        .coordinateSpace(name: Self.gridSpace)
-        .visualEffect { content, _ in content.scaleEffect(shrink ? 0.97 : 1) }
-        // 层次写死（zIndex）：ZStack 里正在离场的视图，SwiftUI 会把它挪到兄弟视图下面画——关文件夹时面板就缩到网格和不透明的壁纸
-        // 后面去了，只看得见后面那层淡掉，像「没有动画」（2026-10-18 真机反馈两次；进场的总在上面，所以打开一直是好的）
-        if model.openFolderID != nil {
-          FolderBackdrop(model: model)
-            .transition(.opacity)
-            .zIndex(1)
-        }
-        // 面板那块纸（同便签墙的编辑卡）：打开时从文件夹方块那儿长到屏幕中间，关的时候从中间一路缩回文件夹方块
-        // （圆角、底色也变回方块的样子），纸一直不透明；里面的图标和名字晚一点淡进来、关的时候先淡掉
-        if let sheet = folderSheet {
-          FolderPaper(
-            sheet: sheet,
-            panel: model.openFolderID == sheet.id ? model.folderPanelRect : sheet.panel
-          )
-          .id(sheet.serial)
-          .zIndex(2)
-        }
-        if model.openFolderID != nil {
-          FolderOverlay(model: model, metrics: metrics, space: Self.space)
-            .transition(folderContentTransition)
-            .zIndex(3)
-        }
-        dragGhost(metrics: metrics)
-          .zIndex(4)
+        .scaleEffect(contentScale)
       }
       // 拖动的「挪 / 松手」另在最外层收一份：格子只负责按下。拖出文件夹时文件夹那块界面会被拆掉，挂在格子上的手势跟着被取消、
       // 松手收不到（同 G30）；最外层这份一直在。两份都喂进去没关系：模型按同一个指针位置算，松手第二次进来时已经没有拖动了
@@ -86,13 +90,7 @@ struct LaunchpadView: View {
       .onChange(of: model.openFolderID, initial: true) { old, new in
         folderChanged(from: old, to: new)
       }
-      .opacity(appeared ? (model.isClosing ? 0 : 1) : 0)
-      .scaleEffect(scale)
-      .animation(openAnimation, value: appeared)
-      .animation(closingAnimation, value: model.isClosing)
-      .onAppear {
-        withAnimation(openAnimation) { appeared = true }
-      }
+      .animation(Self.closeZoom, value: model.isClosing)
     }
     .confirmationDialog(
       "删除「\(model.deleteCandidate?.name ?? "")」？",
@@ -109,19 +107,20 @@ struct LaunchpadView: View {
     }
   }
 
-  private var scale: CGFloat {
+  /// 上面那一层的缩放（减弱动态效果时不缩，只有窗口淡入淡出）
+  private var contentScale: CGFloat {
     if reduceMotion { return 1 }
-    if model.isClosing { return 0.97 }
-    return appeared ? 1 : 1.1
+    if model.isClosing { return 1.08 }
+    return model.presented ? 1 : 1.1
   }
 
-  private var openAnimation: Animation {
-    reduceMotion
-      ? .easeOut(duration: Style.fadeIn)
-      : (Style.Motion.pop.animation() ?? .easeOut(duration: 0.32))
-  }
-
-  private var closingAnimation: Animation { .easeOut(duration: Style.fadeIn) }
+  /// 打开：1.1 倍缩回原大，不回弹、减速落定（照 macOS 15；窗口同时 0.25 s 淡入，`Launchpad.present`）。
+  /// 原来用 pop（bounce 0.25）：会先缩过头再弹回来，连背景一起缩，缩到 1 以下时四边露出底下的毛玻璃
+  static let openZoom = Animation.spring(duration: 0.4, bounce: 0)
+  /// 收起：往前放大到 1.08，窗口同时 0.2 s 淡掉（`Launchpad.close`）
+  static let closeZoom = Animation.spring(duration: 0.3, bounce: 0)
+  /// 文件夹展开：纸从文件夹方块长到屏幕中间、后面一起缩到 0.97，不回弹
+  static let folderGrow = Animation.spring(duration: 0.3, bounce: 0)
 
   /// 让位的动画：0.45 s、不弹，从当前位置接着动（照同类里最像 macOS 15 的那个：强 ease-out，弹簧写法同 Whisker 的签名时刻）
   static let reflow = Animation.spring(duration: 0.45, bounce: 0)
@@ -195,18 +194,17 @@ struct LaunchpadView: View {
 
   // MARK: 顶上搜索
 
-  /// 顶上居中、约 1/6 屏宽的浅色半透明圆角框；没打字时「放大镜 + 搜索」整组居中、插入点藏起来，打了字移到左边（照 macOS 15）
+  /// 顶上居中、约 1/6 屏宽的浅色半透明圆角框（照 macOS 15）：一打开焦点就在框里，但「放大镜 + 搜索」整组居中、插入点藏起来；
+  /// 点一下（`searchEngaged`）或打了字，整组滑到左边、插入点亮起来，「搜索」两个字等打了字才让出来（同系统搜索框获得焦点）。
+  /// 放大镜和「搜索」是一层不接点按的字：左边那格它停下来的位置和输入框前面空出来的位置一样，打字时不跳
   private func searchField(_ metrics: LaunchpadMetrics) -> some View {
     let empty = model.query.isEmpty
+    let centered = empty && !model.searchEngaged
     return HStack(spacing: 6) {
-      Image(systemName: "magnifyingglass")
-        .font(.system(size: 12, weight: .medium))
-        .foregroundStyle(.white.opacity(0.7))
-        .opacity(empty ? 0 : 1)
-        .accessibilityHidden(true)
+      searchGlass.hidden()
       CommandTextField(
         text: $model.query, placeholder: "", fontSize: 14, textColor: .white,
-        caretColor: empty ? .clear : .white,
+        caretColor: centered ? .clear : .white,
         onCommand: { selector in
           switch selector {
           case #selector(NSResponder.moveLeft(_:)):
@@ -234,21 +232,22 @@ struct LaunchpadView: View {
       )
       .frame(height: 20)
     }
+    .overlay {
+      HStack(spacing: 6) {
+        searchGlass
+        Text("搜索")
+          .font(.system(size: 14))
+          // 输入框里的字离框边还有约 2 pt：占位字对上插入点
+          .padding(.leading, 2)
+          .opacity(empty ? 1 : 0)
+      }
+      .foregroundStyle(.white.opacity(empty ? 0.62 : 0.7))
+      .frame(maxWidth: .infinity, alignment: centered ? .center : .leading)
+      .allowsHitTesting(false)
+      .accessibilityHidden(true)
+    }
     .padding(.horizontal, 10)
     .frame(width: metrics.searchWidth, height: LaunchpadMetrics.searchHeight)
-    .overlay {
-      if empty {
-        HStack(spacing: 5) {
-          Image(systemName: "magnifyingglass")
-            .font(.system(size: 12, weight: .medium))
-          Text("搜索")
-            .font(.system(size: 14))
-        }
-        .foregroundStyle(.white.opacity(0.62))
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-      }
-    }
     .background(
       RoundedRectangle(cornerRadius: Style.Radius.launchpadSearch, style: .continuous)
         .fill(.white.opacity(contrast == .increased ? 0.24 : 0.16))
@@ -259,6 +258,11 @@ struct LaunchpadView: View {
     }
     .accessibilityElement(children: .contain)
     .accessibilityLabel("搜索")
+  }
+
+  private var searchGlass: some View {
+    Image(systemName: "magnifyingglass")
+      .font(.system(size: 12, weight: .medium))
   }
 
   // MARK: 网格
@@ -280,7 +284,7 @@ struct LaunchpadView: View {
     .offset(x: -CGFloat(model.page) * size.width + model.pageOffset)
     .frame(width: size.width, alignment: .leading)
     .clipped()
-    .animation(reduceMotion ? nil : Style.Motion.glide.animation(), value: model.page)
+    // 不挂按页号的隐式动画：翻页的动画由模型给（松手时带着手指的速度，`LaunchpadPager.animation`），隐式的会把它盖掉
     .accessibilityElement(children: .contain)
     .accessibilityLabel(model.isSearching ? "搜索结果" : "第 \(model.page + 1) 页")
   }

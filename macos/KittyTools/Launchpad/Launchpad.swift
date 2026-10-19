@@ -148,6 +148,8 @@ final class Launchpad {
     model.wallpaper = wallpaper.image(for: screen) { [weak model] image in
       model?.wallpaper = image
     }
+    // 图标先停在 1.1 倍：面板第一帧画完再缩回原大（present）
+    model.presented = false
     self.model = model
     let panel = LaunchpadPanel(frame: screen.frame, model: model)
     panel.onScroll = { [weak model] event in
@@ -165,13 +167,14 @@ final class Launchpad {
     panel.onCloseRequest = { [weak model] in model?.requestClose() }
     panel.onFlagsChanged = { [weak model] held in model?.optionChanged(held) }
     panel.onResignKey = { [weak self] in self?.panelResignedKey() }
+    panel.onSearchClick = { [weak model] in model?.searchClicked() }
     model.onSearchFocus = { [weak panel] focused in panel?.setSearchFocus(focused) }
     model.onSettled = { [weak self] in self?.applyPending() }
     book.adopt(panel)
     isOpen = true
     // 岛在面板之后出：面板一 orderFrontRegardless 就盖满屏，先出岛会被盖住（F14）
     LaunchpadOpenSequence.run(
-      present: { present(panel) },
+      present: { present(panel, model: model) },
       notice: notice.map { notice in
         { [weak self] in
           self?.island?.show(notice.title, detail: notice.detail, symbol: notice.symbol)
@@ -188,9 +191,10 @@ final class Launchpad {
     isOpen = false
     // 触发角：开着的时候离开角收不到事件，收起时鼠标不在角里就重新武装（不然要再离开一次才推得开）
     corner.launchpadDidClose()
-    if animated, !Style.reduceMotion {
+    // 照 macOS 15：图标往前放大（界面按 isClosing 做）、整块淡掉；减弱动态效果时只淡掉
+    if animated {
       NSAnimationContext.runAnimationGroup { context in
-        context.duration = 0.16
+        context.duration = Self.closeFade
         context.timingFunction = CAMediaTimingFunction(name: .easeIn)
         panel.animator().alphaValue = 0
       } completionHandler: { [weak self] in
@@ -215,8 +219,10 @@ final class Launchpad {
     }
   }
 
-  private func present(_ panel: LaunchpadPanel) {
-    panel.alphaValue = Style.reduceMotion ? 1 : 0
+  /// 打开：整块（壁纸和上面的图标）跟着窗口淡入，图标同时从 1.1 倍缩回原大（照 macOS 15）。
+  /// 淡入只在窗口上做一次：原来界面里再淡一遍，两层透明度相乘，开头那段几乎看不见、像是晚了一拍才出来
+  private func present(_ panel: LaunchpadPanel, model: LaunchpadModel) {
+    panel.alphaValue = 0
     panel.orderFrontRegardless()
     panel.layoutIfNeeded()
     panel.makeKey()
@@ -224,13 +230,19 @@ final class Launchpad {
     if !(panel.firstResponder is NSText), let first = panel.initialFirstResponder {
       panel.makeFirstResponder(first)
     }
-    guard !Style.reduceMotion else { return }
+    // 先把第一帧画好（建界面、上百个图标的图层，这一下最重），动画从画好之后才开始算：不然开头几帧被这一下吃掉，看着是跳出来的
+    panel.displayIfNeeded()
     NSAnimationContext.runAnimationGroup { context in
-      context.duration = 0.16
+      context.duration = Self.openFade
       context.timingFunction = CAMediaTimingFunction(name: .easeOut)
       panel.animator().alphaValue = 1
     }
+    withAnimation(LaunchpadView.openZoom) { model.presented = true }
   }
+
+  /// 窗口淡入 / 淡出的时长（图标的缩放见 LaunchpadView.openZoom / closeZoom）
+  static let openFade: TimeInterval = 0.25
+  static let closeFade: TimeInterval = 0.2
 
   /// 面板失去 key（F23）：新的 key 窗口不是自己的（确认框的 sheet、文件夹上弹出的东西）才收起。
   /// 打开 App 时那个 App 自己会变 key，这时也要收——它不挂在面板上，判断照样成立。
@@ -427,15 +439,17 @@ final class Launchpad {
     guard Self.isAvailable else { return }
     let defaults = UserDefaults.standard
     let enabled = Self.isOn
-    let pinch = defaults.bool(forKey: Prefs.launchpadPinch)
+    let fingers =
+      PinchFingers(rawValue: defaults.string(forKey: Prefs.launchpadPinchGesture) ?? "") ?? .four
     let sensitivity =
       PinchRecognizer.Sensitivity(
         rawValue: defaults.string(forKey: Prefs.launchpadPinchSense) ?? "") ?? .standard
     // 系统的捏合还开着时我们认到也不打开（不然两个一起出来，SPEC R7）：干脆不注册回调
     if Self.pinchShouldRun(
-      enabled: enabled, usePinch: pinch, available: pinchAvailable, systemOn: systemPinchIsOn)
+      enabled: enabled, usePinch: fingers != .off, available: pinchAvailable,
+      systemOn: systemPinchIsOn)
     {
-      touchpad.start(sensitivity: sensitivity)
+      touchpad.start(sensitivity: sensitivity, fingers: fingers)
     } else {
       touchpad.stop()
     }

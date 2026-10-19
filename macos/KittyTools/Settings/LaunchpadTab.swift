@@ -1,8 +1,8 @@
 // 设置 › 启动台（第八族，SPEC R10；2026-10-18）。五组：
 // 「启动台」——总开关（关掉后快捷键、菜单栏、触发角、捏合都不打开）、按键速查；
 // 「排列」——一页几列几行（改了按新容量重新分页）；
-// 「触控板」——用捏合打开、灵敏度三档；系统的捏合手势还开着时给一行提示和「打开触控板设置」（只读系统设置，不改）；
-//   私有框架加载不了时这一行灰掉写明；
+// 「触控板」——手势 关闭 / 四指捏合 / 五指捏合、灵敏度三档，页脚说清怎么认（系统的开着时让给系统、唤醒后自己接上）；
+//   系统的捏合手势还开着时给一行提示和「打开触控板设置」（只读系统设置，不改）；私有框架加载不了时这一行灰掉写明；
 // 「触发角」——选一个屏幕角，鼠标推到那里停一下打开（默认关）；
 // 「排列数据」——从系统旧启动台导入（确认，导入前留一份可撤销）、恢复默认排列、撤销上一次导入。
 // 页头由 SettingsRoot 画（家族色薄荷绿）。布局本身不在这里改，拖动、文件夹、抖动删 App 全在面板里（R4–R6）。
@@ -33,7 +33,7 @@ struct LaunchpadTab: View {
   @AppStorage(Prefs.launchpadEnabled) private var enabled = true
   @AppStorage(Prefs.launchpadColumns) private var columns = 7
   @AppStorage(Prefs.launchpadRows) private var rows = 5
-  @AppStorage(Prefs.launchpadPinch) private var pinch = true
+  @AppStorage(Prefs.launchpadPinchGesture) private var gesture = PinchFingers.four.rawValue
   @AppStorage(Prefs.launchpadPinchSense) private var pinchSense = PinchRecognizer.Sensitivity
     .standard.rawValue
   @AppStorage(Prefs.launchpadCorner) private var corner = LaunchpadCornerOption.off.rawValue
@@ -162,7 +162,7 @@ struct LaunchpadTab: View {
     .onChange(of: columns) { reflow() }
     .onChange(of: rows) { reflow() }
     .onChange(of: enabled) { pinchChanged() }
-    .onChange(of: pinch) { pinchChanged() }
+    .onChange(of: gesture) { pinchChanged() }
     .onChange(of: pinchSense) { pinchChanged() }
     .onChange(of: corner) { cornerChanged() }
     .confirmationDialog("恢复默认排列？", isPresented: $confirmsReset) {
@@ -182,12 +182,18 @@ struct LaunchpadTab: View {
 
   @ViewBuilder
   private var pinchSection: some View {
+    let off = gesture == PinchFingers.off.rawValue
     Section {
       if pinchAvailable() {
-        Toggle(isOn: $pinch) {
-          Text("用触控板捏合打开")
+        Picker(selection: $gesture) {
+          ForEach(PinchFingers.allCases, id: \.rawValue) { fingers in
+            Text(fingers.title).tag(fingers.rawValue)
+          }
+        } label: {
+          Text("触控板手势")
           Text("捏合打开，张开收起；多个触控板都认")
         }
+        .pickerStyle(.segmented)
         .disabled(!enabled)
         Picker(selection: $pinchSense) {
           ForEach(PinchRecognizer.Sensitivity.allCases, id: \.rawValue) { level in
@@ -198,26 +204,32 @@ struct LaunchpadTab: View {
           Text("越松越容易捏出来")
         }
         .pickerStyle(.segmented)
-        .disabled(!enabled || !pinch)
-        if systemPinch {
+        .disabled(!enabled || off)
+        if systemPinch, !off {
           LabeledContent {
             Button("打开触控板设置") { openTrackpadSettings() }
           } label: {
             Text("系统的捏合手势还开着")
               .foregroundStyle(.orange)
-            Text("这时捏合会打开系统自己的应用程序视图。先在 系统设置 › 触控板 › 更多手势 里关掉「应用程序」那一行（用拇指和其他三指捏合），再回来打开这一项")
+            Text("这时捏合会打开系统自己的应用程序视图。先在 系统设置 › 触控板 › 更多手势 里关掉「应用程序」那一行，再回来")
           }
         }
       } else {
         LabeledContent {
           Text("用不了").foregroundStyle(.secondary)
         } label: {
-          Text("用触控板捏合打开")
+          Text("触控板手势")
           Text("这台 Mac 上用不了（系统改了触控板的接口）：用快捷键或触发角打开")
         }
       }
     } header: {
       Text("触控板")
+    } footer: {
+      if pinchAvailable() {
+        SectionFootnote(
+          "系统设置 › 触控板 › 更多手势 里的「应用程序」开着时，捏合交给系统，启动台不响应；关掉之后由 Kitty 自己读触控板来认。四指只认正好四根手指；五指和四指的横扫（切换桌面、调度中心）完全错开，不容易误开。Mac 从睡眠中唤醒后会自动重新接上触控板，不用重启。"
+        )
+      }
     }
   }
 }

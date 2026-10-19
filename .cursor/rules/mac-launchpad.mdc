@@ -65,8 +65,11 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
   `doCommandBy`（组字期间归输入法，不抢）；⌘← / ⌘→ / ⌘W 走面板的 `performKeyEquivalent`；焦点不在搜索框时走面板 `keyDown`。
   **不装全局按键监听**。两指滑 / 滚轮从面板的 `sendEvent` 进（`.scrollWheel`），别处不许装事件监听。
 - 点空白处收起：由界面的背景层收（面板盖满整块屏）；文件夹开着时点空白只收文件夹。
-- 搜索框的焦点按面板自己的 `firstResponder` 拿放（`LaunchpadPanel.setSearchFocus`，model 的 `onSearchFocus` 接）：开文件夹、进抖动时放掉，
-  关掉 / 退出时还回去（G9：原来只放不还，之后打字只会响一声）。不用 `NSApp.keyWindow`。
+- 搜索框的焦点按面板自己的 `firstResponder` 拿放（`LaunchpadPanel.setSearchFocus`，model 的 `onSearchFocus` 接，模型里一律走 `setSearchFocus`）：
+  开文件夹、进抖动时放掉，关掉 / 退出时还回去（G9：原来只放不还，之后打字只会响一声）。不用 `NSApp.keyWindow`。
+- 点在搜索框上：面板 `sendEvent` 收到 `.leftMouseDown` 时按点 hitTest，落在搜索框（`initialFirstResponder`，**只认 NSTextField**：界面刚挂上时那里先是
+  整个界面视图）或它的字段编辑器里就报 `onSearchClick`（不拦，照常派发）→ `model.searchClicked()`，界面把占位挪到左边、亮出插入点
+  （焦点本来就在框里，点了没变化，用户以为没点中；2026-10-19）。屏外单测等 `initialFirstResponder is NSTextField` 再取，别拿整个界面视图当搜索框。
 - 收起后晚一拍拆界面：面板在 async 里强持一拍，只放**这块面板自己的**模型（中间又开了新的，新模型不能被放掉，G20）。
 - 拖动 / 搜索中来的布局（导入、恢复默认）和扫完的目录先压着，松手 / 清空搜索时（model 的 `onSettled`）再换（G14 / G26）；
   点一下打开 App 按**目录**找，不按布局（搜索结果里刚装、布局里还没有的也开得了）。
@@ -99,9 +102,12 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
   nonisolated 函数——不写的话它们会被推成 @MainActor，框架线程一调进来就被 Swift 6 的隔离检查 trap（一碰触控板就崩）。
   单测在后台线程上直接调那个 C 回调（`contactCallbackForTesting`）锁住。
 - 已经开着、灵敏度没变时 `start` 什么都不做（G8）；唤醒后按「调用方要它开着」重新注册，失败了下次唤醒再试（G24）。
+- 手势选哪种（`Prefs.launchpadPinchGesture` = `PinchFingers` 的 off / four / five，默认 four，2026-10-19 照用户给的同类设置加的）：
+  四指认**正好** 4 指，五指认 5 指及以上（和四指的横扫 / 上推完全错开）；关闭 = 不注册回调。手指数和灵敏度一样进 `start` 的「没变就不动」判断（G8）。
+  设置页那一组的页脚写清怎么认：系统的「应用程序」手势开着时让给系统，关掉后自己读触控板，唤醒后自己接上（不用像同类那样给「唤醒后重启」的开关）。
 - 只在功能开着、系统的捏合关着、框架能用时注册回调；**识别到之后先问 `canOpen()`**（状态屏 / 截图 / 录屏 / 录快捷键时不打开），再问系统手势；
   关掉时注销 + `MTDeviceStop`。
-- 识别器是纯状态机（同时 ≥ 4 指、到质心的平均距离在时间里缩到比例以下 = 捏合，张开反过来；手指数变了重来；一次手势只触发一次；
+- 识别器是纯状态机（手指数按上面那一档、到质心的平均距离在时间里缩到比例以下 = 捏合，张开反过来；手指数变了重来；一次手势只触发一次；
   四指横扫 / 竖扫不误判），单测喂造好的帧序列。**单测里不注册回调、不读真触点**；「真的读得到」是按需探针
   `TEST_RUNNER_KITTY_LIVE_TOUCH=1`（真的注册回调、读这台机器的触控板；跑的时候放四根手指捏一下；测试进程里读到的键是
   `KITTY_LIVE_TOUCH`——xcodebuild 去掉 `TEST_RUNNER_` 前缀，G16）。

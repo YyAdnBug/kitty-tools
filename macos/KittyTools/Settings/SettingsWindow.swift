@@ -121,7 +121,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .launchpad:
       [
         "启动台", "图标", "网格", "全屏", "应用", "App", "排法", "排列", "列", "行", "翻页", "页",
-        "搜索", "App 文件夹", "拖动", "抖动", "删除", "卸载", "App Store", "捏合", "触控板", "四指",
+        "搜索", "App 文件夹", "拖动", "抖动", "删除", "卸载", "App Store", "捏合", "触控板", "四指", "五指",
         "触发角", "导入", "系统启动台", "Launchpad", "快捷键",
       ]
     case .screenshot:

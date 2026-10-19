@@ -266,10 +266,11 @@ struct LaunchpadRecheckTests {
     model.onSearchFocus = { [weak panel] focused in panel?.setSearchFocus(focused) }
     panel.orderFront(nil)
     defer { panel.orderOut(nil) }
-    for _ in 0..<20 where panel.initialFirstResponder == nil {
+    // 界面刚挂上时 initialFirstResponder 先是整个界面视图（拿它当搜索框验不到东西），等搜索框建出来登记上
+    for _ in 0..<40 where !(panel.initialFirstResponder is NSTextField) {
       try await Task.sleep(for: .milliseconds(50))
     }
-    let field = try #require(panel.initialFirstResponder)
+    let field = try #require(panel.initialFirstResponder as? NSTextField)
     func searchFocused() -> Bool {
       guard let responder = panel.firstResponder else { return false }
       if responder === field { return true }

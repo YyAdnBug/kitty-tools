@@ -24,7 +24,7 @@ struct FolderSheet {
   }
 }
 
-/// 面板那块纸：打开时从文件夹方块长到面板的位置（glide，出现的那一刻开始），关的时候缩回方块（settle，动画在外面给）；
+/// 面板那块纸：打开时从文件夹方块长到面板的位置（`LaunchpadView.folderGrow`，出现的下一轮开始），关的时候缩回方块（settle，动画在外面给）；
 /// 圆角和底色也跟着在面板（26 pt、white 0.14）和文件夹方块（边长的 22%、white 0.32）之间变，落下去就是那个方块的样子。
 /// 没有方块可回（不在这一页了）就在中间缩一点淡掉
 struct FolderPaper: View {
@@ -50,7 +50,10 @@ struct FolderPaper: View {
       .opacity(sheet.isClosing && sheet.to == nil ? 0 : 1)
       .allowsHitTesting(!sheet.isClosing)
       .onAppear {
-        withAnimation(Style.Motion.glide.animation()) { grown = true }
+        // 下一轮再长：出现的这一帧要建文件夹里几十个图标（约 40 ms），动画从这之前算的话开头几帧被吃掉、看着是跳出来的
+        DispatchQueue.main.async {
+          withAnimation(LaunchpadView.folderGrow) { grown = true }
+        }
       }
       .accessibilityHidden(true)
   }
@@ -183,7 +186,7 @@ struct FolderOverlay: View {
     .offset(x: -CGFloat(model.folderPage) * gridWidth + model.folderPageOffset)
     .frame(width: gridWidth, height: gridHeight, alignment: .leading)
     .clipped()
-    .animation(reduceMotion ? nil : Style.Motion.glide.animation(), value: model.folderPage)
+    // 翻页的动画由模型给（同主网格，松手时带着手指的速度）
   }
 
   /// 一页文件夹：拖着的时候手里那个拿掉、落点处空着（别的让位，同主网格）

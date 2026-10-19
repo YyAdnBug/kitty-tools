@@ -3,6 +3,7 @@
 //   - 扫一遍本机 App 目录（LaunchpadCatalog.load）多久；
 //   - 屏外把界面建出来、量到网格框（第一帧）多久；
 //   - 翻一页之后主线程做一次布局要多久（中位 / 最长）；
+//   - 两指滑跟手时每一帧（喂一次 scroll 再布局一次）主线程要多久（中位 / 最长）；
 //   - 建出来、收起放掉前后 phys_footprint 各多少（活动监视器的口径）。
 // 触控板监听静置时的 CPU 量不了：R11 要求只在真机上量（单测里不注册回调、不读真触点，SPEC §2），
 // 数字在 HANDTEST「启动台手测」10 里看。
@@ -47,6 +48,8 @@ struct LaunchpadProbeTests {
     var median = 0.0
     var worst = 0.0
     var firstFrame = 0.0
+    var trackMedian = 0.0
+    var trackWorst = 0.0
     do {
       let model = LaunchpadModel(
         layout: layout, catalog: catalog, icons: LaunchpadIcons(), columns: 7, rows: 5,
@@ -77,6 +80,24 @@ struct LaunchpadProbeTests {
       layoutTimes.sort()
       median = layoutTimes[layoutTimes.count / 2] * 1000
       worst = (layoutTimes.last ?? 0) * 1000
+      // 跟手：回到第一页、等动画走完，再一帧帧往左滑（每帧 8 pt、16 ms），每帧量一次布局
+      model.go(to: 0)
+      RunLoop.main.run(until: Date.now.addingTimeInterval(0.6))
+      host.layoutSubtreeIfNeeded()
+      var trackTimes: [Double] = []
+      let t0 = ProcessInfo.processInfo.systemUptime
+      model.scroll(deltaX: 0, deltaY: 0, precise: true, phase: .began, momentum: [], time: t0)
+      for frame in 1...60 {
+        model.scroll(
+          deltaX: -8, deltaY: 0, precise: true, phase: .changed, momentum: [],
+          time: t0 + Double(frame) * 0.016)
+        let start = Date()
+        host.layoutSubtreeIfNeeded()
+        trackTimes.append(Date().timeIntervalSince(start))
+      }
+      trackTimes.sort()
+      trackMedian = trackTimes[trackTimes.count / 2] * 1000
+      trackWorst = (trackTimes.last ?? 0) * 1000
       window.orderOut(nil)
       window.contentView = nil
     }
@@ -88,8 +109,8 @@ struct LaunchpadProbeTests {
     print(
       String(
         format:
-          "launchpad-probe apps=%d scan=%.1fms firstFrame=%.1fms pageLayout median=%.2fms worst=%.2fms footprint open=+%.1fMB released=%+.1fMB",
-        count, scan * 1000, firstFrame * 1000, median, worst,
+          "launchpad-probe apps=%d scan=%.1fms firstFrame=%.1fms pageLayout median=%.2fms worst=%.2fms track median=%.2fms worst=%.2fms footprint open=+%.1fMB released=%+.1fMB",
+        count, scan * 1000, firstFrame * 1000, median, worst, trackMedian, trackWorst,
         Double(opened - before) / Double(megabyte), Double(released - before) / Double(megabyte)))
   }
 }

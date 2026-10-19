@@ -1,7 +1,8 @@
 // 触控板捏合的识别器（SPEC §5.6、R7）：纯状态机，输入一帧帧触点（时间 + 各指在触控板上的归一化位置），
 // 输出「捏合了」/「张开了」。不碰框架、不碰窗口，单测直接喂造好的帧序列。
 // 规则（数值写在这里、也写进 mac-launchpad.mdc）：
-// - 同时至少 4 指在面上（手指数变了就重来：中途抬一指不算一次完整手势）；
+// - 四指捏合认正好 4 指、五指捏合认 5 指及以上（设置 › 启动台「触控板手势」选哪种，`PinchFingers`；
+//   手指数变了就重来：中途抬一指不算一次完整手势）；
 // - 所有指到质心的平均距离，从手势开始时的距离缩到 pinchRatio 以下 = 捏合，涨到 spreadRatio 以上 = 张开；
 // - 质心挪动超过 maxTravel 的当成四指横扫 / 竖扫（切桌面、调度中心），不认；
 // - 一次手势只触发一次，直到手指全抬起来（或手指数变了）才重置；
@@ -24,6 +25,28 @@ nonisolated struct TouchPoint: Equatable, Sendable {
 nonisolated struct TouchFrame: Equatable, Sendable {
   var time: Double
   var touches: [TouchPoint]
+}
+
+/// 用几根手指捏（设置 › 启动台「触控板手势」，`Prefs.launchpadPinchGesture` 存 rawValue；默认四指，同系统的拇指和三指）。
+/// 四指只认正好 4 根：五指的手势留给别的；五指认 5 根及以上：和四指的横扫（切换桌面、调度中心）完全错开
+nonisolated enum PinchFingers: String, CaseIterable, Sendable {
+  case off, four, five
+
+  var title: String {
+    switch self {
+    case .off: "关闭"
+    case .four: "四指捏合"
+    case .five: "五指捏合"
+    }
+  }
+
+  func accepts(_ count: Int) -> Bool {
+    switch self {
+    case .off: false
+    case .four: count == 4
+    case .five: count >= 5
+    }
+  }
 }
 
 nonisolated struct PinchRecognizer: Sendable {
@@ -61,8 +84,6 @@ nonisolated struct PinchRecognizer: Sendable {
     }
   }
 
-  /// 至少这么多指
-  static let minimumFingers = 4
   /// 质心挪动超过这么多（归一化单位）当横扫 / 竖扫
   static let maxTravel = 0.22
   /// 太快（噪声）和太慢（不是捏合）都不要
@@ -70,9 +91,11 @@ nonisolated struct PinchRecognizer: Sendable {
   static let maximumDuration = 1.4
 
   var sensitivity: Sensitivity
+  var fingers: PinchFingers
 
-  init(sensitivity: Sensitivity = .standard) {
+  init(sensitivity: Sensitivity = .standard, fingers: PinchFingers = .four) {
     self.sensitivity = sensitivity
+    self.fingers = fingers
   }
 
   private var startDistance: Double?
@@ -93,7 +116,7 @@ nonisolated struct PinchRecognizer: Sendable {
   mutating func feed(_ frame: TouchFrame) -> Gesture? {
     // 只认「按在面上」的 3 / 4：悬停（1 / 2）和抬起中（5 / 6）都不算（F25）。空帧会走到 reset
     let touching = frame.touches.filter { $0.state == 3 || $0.state == 4 }
-    guard touching.count >= Self.minimumFingers else {
+    guard fingers.accepts(touching.count) else {
       reset()
       return nil
     }

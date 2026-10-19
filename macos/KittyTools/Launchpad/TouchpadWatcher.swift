@@ -62,20 +62,23 @@ nonisolated final class TouchpadBridge: Sendable {
   /// 按需实录探针用：真收到多少帧（只增，不参与识别）
   let frames = Mutex<Int>(0)
   private let sensitivity: PinchRecognizer.Sensitivity
+  private let fingers: PinchFingers
   let onGesture: @Sendable (PinchRecognizer.Gesture) -> Void
 
   init(
-    sensitivity: PinchRecognizer.Sensitivity,
+    sensitivity: PinchRecognizer.Sensitivity, fingers: PinchFingers = .four,
     onGesture: @escaping @Sendable (PinchRecognizer.Gesture) -> Void
   ) {
     self.sensitivity = sensitivity
+    self.fingers = fingers
     self.onGesture = onGesture
   }
 
   func feed(device: UInt, frame: TouchFrame) {
     frames.withLock { $0 += 1 }
     let gesture = recognizers.withLock { table -> PinchRecognizer.Gesture? in
-      var recognizer = table[device] ?? PinchRecognizer(sensitivity: sensitivity)
+      var recognizer =
+        table[device] ?? PinchRecognizer(sensitivity: sensitivity, fingers: fingers)
       let result = recognizer.feed(frame)
       table[device] = recognizer
       return result
@@ -126,6 +129,7 @@ final class TouchpadWatcher {
   private var deviceList: CFMutableArray?
   private var symbols: Symbols?
   private var sensitivity: PinchRecognizer.Sensitivity = .standard
+  private var fingers: PinchFingers = .four
   private var wakeObserver: NSObjectProtocol?
   /// 每次 start / stop 换一代：派回主线程的旧手势看到代号变了就不回调（F25）
   private var generation = 0
@@ -168,13 +172,16 @@ final class TouchpadWatcher {
       && dlsym(handle, "MTDeviceStart") != nil
   }()
 
-  /// 开着监听。已经开着、灵敏度也没变时什么都不做（G8：别的窗口变 key、导入设置都会走到这里，
+  /// 开着监听。已经开着、灵敏度和手指数也没变时什么都不做（G8：别的窗口变 key、导入设置都会走到这里，
   /// 每次整套注销重注册会把正在捏的那一下的识别器清掉）；`force` 只给唤醒后的重新注册用
-  func start(sensitivity: PinchRecognizer.Sensitivity, force: Bool = false) {
+  func start(
+    sensitivity: PinchRecognizer.Sensitivity, fingers: PinchFingers = .four, force: Bool = false
+  ) {
     wantsRunning = true
     observeWake()
-    if isStarted, !force, sensitivity == self.sensitivity { return }
+    if isStarted, !force, sensitivity == self.sensitivity, fingers == self.fingers { return }
     self.sensitivity = sensitivity
+    self.fingers = fingers
     if isStarted {
       bridge = nil
       activeBridge.withLock { $0 = nil }
@@ -210,7 +217,8 @@ final class TouchpadWatcher {
     devices = found
     generation += 1
     let bridge = TouchpadBridge(
-      sensitivity: sensitivity, onGesture: Self.forwarder(to: self, generation: generation))
+      sensitivity: sensitivity, fingers: fingers,
+      onGesture: Self.forwarder(to: self, generation: generation))
     self.bridge = bridge
     activeBridge.withLock { $0 = bridge }
     for device in devices {
@@ -244,7 +252,7 @@ final class TouchpadWatcher {
     ) { [weak self] _ in
       MainActor.assumeIsolated {
         guard let self, self.wantsRunning else { return }
-        self.start(sensitivity: self.sensitivity, force: true)
+        self.start(sensitivity: self.sensitivity, fingers: self.fingers, force: true)
       }
     }
   }

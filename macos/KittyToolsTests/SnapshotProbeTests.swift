@@ -3590,6 +3590,12 @@ struct SnapshotProbeTests {
       try snapshot(
         LaunchpadView(model: search), size: size, dark: dark,
         to: "\(out)/launchpad-search\(suffix).png")
+      // 点过搜索框、还没打字：放大镜 + 「搜索」挪到左边（插入点屏外画不出来），「搜索」两个字要和上一张打的字对齐
+      let engaged = board()
+      engaged.searchClicked()
+      try snapshot(
+        LaunchpadView(model: engaged), size: size, dark: dark,
+        to: "\(out)/launchpad-search-engaged\(suffix).png")
       let open = board()
       open.openFolder(folder.id)
       try snapshot(
