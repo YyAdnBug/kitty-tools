@@ -110,6 +110,8 @@ final class Launchpad {
       return false
     }
     willOpen()
+    // 调度中心开着：先让它退（它给窗口画的 ✕ 会盖在启动台上面、还点得到）；启动台照常马上出来，和它退场一起走
+    if LaunchpadMissionControl.isActive() { LaunchpadMissionControl.dismiss() }
     prepare()
     // 已经画好的不再画；启动时启动台还关着、刚打开的话这里补上
     icons.prewarm(catalog, pixelSize: Self.iconPixelSize)

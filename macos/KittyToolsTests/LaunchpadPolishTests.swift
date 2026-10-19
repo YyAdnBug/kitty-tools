@@ -74,6 +74,41 @@ struct LaunchpadPolishTests {
     #expect(PinchFingers.allCases.map(\.title) == ["关闭", "四指捏合", "五指捏合"])
   }
 
+  // MARK: 调度中心
+
+  /// 只认 macOS 27 的 WindowManager 整屏 19 层；小的（窗口标题、缩略图）、程序坞的、别的层、26 上都不算
+  @Test func missionControlIsRecognizedByWindowManagerOverlay() {
+    let screen = CGSize(width: 1710, height: 1112)
+    let overlay = LaunchpadMissionControl.Window(owner: "WindowManager", layer: 19, size: screen)
+    let desktop: [LaunchpadMissionControl.Window] = [
+      .init(owner: "Dock", layer: 20, size: screen),
+      .init(owner: "WindowManager", layer: -2_147_483_624, size: screen),
+    ]
+    #expect(
+      LaunchpadMissionControl.isActive(
+        windows: desktop + [overlay], displays: [screen], majorVersion: 27))
+    #expect(
+      !LaunchpadMissionControl.isActive(windows: desktop, displays: [screen], majorVersion: 27))
+    // 调度中心里窗口标题那种小窗口、只有空间栏（14 层）
+    #expect(
+      !LaunchpadMissionControl.isActive(
+        windows: desktop + [
+          .init(owner: "WindowManager", layer: 19, size: CGSize(width: 352, height: 90)),
+          .init(owner: "WindowManager", layer: 14, size: CGSize(width: 1710, height: 134)),
+        ], displays: [screen], majorVersion: 27))
+    // 26 上不认（总览归程序坞，那一层显示桌面时也有）
+    #expect(
+      !LaunchpadMissionControl.isActive(
+        windows: desktop + [overlay, .init(owner: "Dock", layer: 18, size: screen)],
+        displays: [screen], majorVersion: 26))
+    // 外接屏上的那块也算
+    let external = CGSize(width: 2560, height: 1440)
+    #expect(
+      LaunchpadMissionControl.isActive(
+        windows: [.init(owner: "WindowManager", layer: 19, size: external)],
+        displays: [screen, external], majorVersion: 27))
+  }
+
   // MARK: 翻页松手的速度
 
   /// 手指的速度按这次要走的距离归一（正 = 朝目标走），限在 ±ω 以内（临界阻尼超过 ω 会冲过头）
