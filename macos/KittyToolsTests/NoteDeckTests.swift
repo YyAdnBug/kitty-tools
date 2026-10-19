@@ -1385,6 +1385,22 @@ struct NoteDeckTests {
     #expect(!NoteDeck.isComposing(text))
   }
 
+  /// 点在输入法的窗口上（系统的「表情与符号」、候选窗、第三方输入法）不算点别处：按点中的窗口归哪个 App、
+  /// 那个 App 装在不在「Input Methods」目录里认（未来计划 B）
+  @Test func inputMethodWindowsAreNotOutside() {
+    let palette = URL(fileURLWithPath: "/System/Library/Input Methods/CharacterPalette.app")
+    #expect(OverlayPanel.isInputMethod(palette))
+    #expect(OverlayPanel.isInputMethod(URL(fileURLWithPath: "/Library/Input Methods/Foo.app")))
+    #expect(
+      OverlayPanel.isInputMethod(
+        URL(fileURLWithPath: NSHomeDirectory() + "/Library/Input Methods/Foo.app")))
+    #expect(!OverlayPanel.isInputMethod(URL(fileURLWithPath: "/Applications/TextEdit.app")))
+    #expect(!OverlayPanel.isInputMethod(URL(fileURLWithPath: "/Applications/Input Methods.app")))
+    #expect(!OverlayPanel.isInputMethod(nil))
+    // 点在所有屏幕外面：没点中窗口
+    #expect(ScreenCapture.ownerPID(at: CGPoint(x: -1_000_000, y: -1_000_000)) == nil)
+  }
+
   /// 换一条便签时新旧两个正文框都在视图树里：拿焦点的按便签的编号认，不是先碰到哪个算哪个
   @Test func editorIsFoundByNoteID() {
     let root = NSView()

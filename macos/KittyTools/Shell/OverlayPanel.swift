@@ -588,6 +588,19 @@ final class OverlayPanel: NSPanel {
     windows.contains { $0 is SelectionOverlay && $0.isVisible }
   }
 
+  /// global 监听收到的这一下点在输入法的窗口上：系统的「表情与符号」、候选窗、长按出来的重音字母都是别的进程的窗口，
+  /// 点它们是在给输入框挑字，不算点别处（便签那叠、各浮层的点外共用）
+  static func isInputMethodClick() -> Bool {
+    let owner = ScreenCapture.ownerPID(at: NSEvent.mouseLocation)
+    return isInputMethod(owner.flatMap { NSRunningApplication(processIdentifier: $0)?.bundleURL })
+  }
+
+  /// 这个 App 是不是输入法（纯函数，单测）：系统的（「表情与符号」是 /System/Library/Input Methods/CharacterPalette.app）
+  /// 和第三方的（/Library/Input Methods、~/Library/Input Methods）都装在叫「Input Methods」的目录里
+  static func isInputMethod(_ bundle: URL?) -> Bool {
+    bundle?.deletingLastPathComponent().lastPathComponent == "Input Methods"
+  }
+
   /// 改高度时顶边不动，只往下伸缩（启动器随结果条数、翻译浮窗随内容变化）；往下出了屏幕可见区就整体往上挪。
   /// animated：变高 0.18 s、变矮 0.14 s（首次显示、拖边改宽和减弱动态效果时不动画）。
   /// 不动画时也走零时长的 animator：直接 setFrame 盖不掉正在跑的帧动画，动画结束会把旧目标写回来
@@ -713,7 +726,9 @@ final class OverlayPanel: NSPanel {
   private func installMouseMonitors() {
     let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
     let global = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] _ in
-      MainActor.assumeIsolated { self?.clickedOutside() }
+      MainActor.assumeIsolated {
+        if !Self.isInputMethodClick() { self?.clickedOutside() }
+      }
     }
     let local = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
       MainActor.assumeIsolated {

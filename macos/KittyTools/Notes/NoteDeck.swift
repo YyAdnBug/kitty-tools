@@ -458,6 +458,8 @@ final class NoteDeck: NSObject {
         // （2026-10-18 用户真机报）。点在本进程开着的文件面板范围里不算点别处
         let frames = NSApp.windows.filter { $0 is NSSavePanel && $0.isVisible }.map(\.frame)
         if Self.isInsideFilePanel(NSEvent.mouseLocation, frames: frames) { return }
+        // 系统的「表情与符号」、输入法的候选窗：在给这条便签挑字，不收（OverlayPanel.isInputMethodClick）
+        if OverlayPanel.isInputMethodClick() { return }
         self?.clickedOutside()
       }
     }
@@ -542,9 +544,8 @@ final class NoteDeck: NSObject {
   }
 
   /// 输入法正组着字（正文框、标题框的字段编辑器里有没上屏的拼音）：这时的「点别处」多半是用鼠标点候选词——
-  /// 候选窗是别的进程的窗口，global 监听分不出来——不收，不然便签一收候选词就落空了。
-  /// ponytail: 只认组字中。表情与符号面板（没有组字）点了照样会把没固定的便签收掉；要放过它得按窗口的归属认
-  /// （CGWindowList 查点中的是谁的窗口），真碰上再做
+  /// 不收，不然便签一收候选词就落空了。点中的窗口归输入法（「表情与符号」、候选窗）的另由 global 监听按窗口的归属
+  /// 放过（OverlayPanel.isInputMethodClick）；这一条留着兜底认不出归属的候选窗
   static func isComposing(_ responder: NSResponder?) -> Bool {
     (responder as? NSTextView)?.hasMarkedText() ?? false
   }

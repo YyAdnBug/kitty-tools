@@ -95,6 +95,16 @@ enum ScreenCapture {
     number > 0 ? CGWindowID(exactly: number) : nil
   }
 
+  /// 鼠标在 point（AppKit 全局坐标）按下会点中的窗口归哪个进程（别的 App 的也认）；没点中窗口时 nil。
+  /// 浮层和便签那叠的「点别处」用它认出点的是输入法的窗口（OverlayPanel.isInputMethodClick）
+  static func ownerPID(at point: CGPoint) -> pid_t? {
+    guard let id = windowID(NSWindow.windowNumber(at: point, belowWindowWithWindowNumber: 0)),
+      let info = (CGWindowListCopyWindowInfo([.optionIncludingWindow], id) as? [[String: Any]])?
+        .first
+    else { return nil }
+    return info[kCGWindowOwnerPID as String] as? pid_t
+  }
+
   /// 本 App 此刻的窗口（NSApp.windows），窗口号转不成 CGWindowID 的不列（见 windowID）
   static func ownWindows() -> [OwnWindow] {
     let number = { (window: NSWindow) in windowID(window.windowNumber) }
