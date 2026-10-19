@@ -119,6 +119,13 @@ final class OverlayPanel: NSPanel {
       // 液态玻璃：圆角交给玻璃（不用 maskImage、PanelRim 不画），内容进它的 contentView（玻璃用 Auto Layout 撑满）
       let glass = NSGlassEffectView()
       glass.cornerRadius = Style.Radius.panel
+      // 图层再按同一个圆角裁一遍：macOS 27 上面板当 key 时，玻璃会在圆角外面（到窗口的方角）画一层很淡的黑，
+      // 系统阴影按它算成方的，四个角露出方形的黑边（2026-10-19 真机，剪贴板、启动器、翻译浮窗都有；不当 key 时没有）。
+      // 独立小程序比过：裁了之后圆角外面全透明、阴影跟着圆角走（build/research/launchpad/probe/border/）
+      glass.wantsLayer = true
+      glass.layer?.cornerRadius = Style.Radius.panel
+      glass.layer?.cornerCurve = .continuous
+      glass.layer?.masksToBounds = true
       let background = NSView()
       background.autoresizingMask = [.width, .height]  // 自动缩放掩码和玻璃撑满它的约束一致、不打架
       glass.contentView = background
