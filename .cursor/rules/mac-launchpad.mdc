@@ -88,7 +88,9 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
 - 截图框选、长截图、录屏选区 / 倒数、状态屏、正在录快捷键、读选中文字时**不响应**（`Launchpad.canOpen`，同便签边缘的 `canFan` 路数）。
 - **调度中心开着时打开 = 先让调度中心退掉**（2026-10-19 真机反馈：调度中心给窗口画的 ✕ 盖在启动台上、还点得到；它不是普通窗口，调高层级也盖不住）。
   `LaunchpadMissionControl`：认法只认 macOS 27 起 WindowManager 那块整屏大小的 19 层窗口（纯函数单测）；退法是打开系统的「调度中心」App
-  （开着时再打开 = 退出，`activates = false`）。启动台照常马上出来，不等它退完（实测 0.35–0.5 s 退干净，这期间面板一直是 key）。
+  （开着时再打开 = 退出，`activates = false`）。**等它退干净（那块 19 层窗口没了）再过 0.3 s 才打开**（`openAfterMissionControl`，最多等 1.5 s；
+  捏合的这时不跟手，直接开）：退场中途就把面板盖上来、makeKey，WindowManager 的窗口排序会乱——之后某个应用的窗口一直压在最上面、
+  切到别的应用也盖不过它，要 `killall WindowManager` 才好（2026-10-19 真机两次；独立小程序分开试过：光让它退、等退干净再盖面板都不会）。
   26 上不认（总览归程序坞的整屏 18 层，「显示桌面」时也有，认错会反过来打开调度中心）；App Exposé 也是 19 层、退不退得掉没验。
 - 总开关关掉（`Prefs.launchpadEnabled`）：入口都不响应、不建窗口、不读触控板。
 - **只在 macOS 26 起有**（`Launchpad.isAvailable`，2026-10-19 用户定：15 有系统自带的启动台，26 起删了）：15 上整个藏起来——

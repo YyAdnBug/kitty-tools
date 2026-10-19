@@ -73,6 +73,8 @@ final class Launchpad {
   private var deferredNotice: (() -> Void)?
   /// 跟手时看触控板还有没有在报帧：设备中途断开（妙控板没电）就收不到松手了
   private var pinchWatchdog: Task<Void, Never>?
+  /// 调度中心开着时要打开：等它退干净再开（`openAfterMissionControl`）
+  private var missionControlWait: Task<Void, Never>?
 
   init() {
     undoLayout = LaunchpadUndo.load(from: .standard)
@@ -109,9 +111,12 @@ final class Launchpad {
       NSSound.beep()
       return false
     }
+    // 调度中心开着：先让它退，退干净了再开（捏合的也不跟手，直接开）
+    if missionControlWait != nil || LaunchpadMissionControl.isActive() {
+      openAfterMissionControl()
+      return false
+    }
     willOpen()
-    // 调度中心开着：先让它退（它给窗口画的 ✕ 会盖在启动台上面、还点得到）；启动台照常马上出来，和它退场一起走
-    if LaunchpadMissionControl.isActive() { LaunchpadMissionControl.dismiss() }
     prepare()
     // 已经画好的不再画；启动时启动台还关着、刚打开的话这里补上
     icons.prewarm(catalog, pixelSize: Self.iconPixelSize)
@@ -207,6 +212,25 @@ final class Launchpad {
       notice: interactive ? nil : showNotice)
     if !interactive { autoImportIfNeeded() }
     return true
+  }
+
+  /// 调度中心开着时打开：它给窗口画的 ✕ 会盖在启动台上面、还点得到（调度中心不是普通窗口，层级调高也盖不住），所以先让它退；
+  /// **等它退干净（WindowManager 那块 19 层窗口没了）再过 0.3 s 才打开**——退场还没走完就把面板盖上来、makeKey，
+  /// WindowManager 的窗口排序会被打乱：之后某个应用的窗口一直压在最上面，切到别的应用也盖不过它，要重启 WindowManager 才好
+  /// （2026-10-19 真机两次；独立小程序分开试过：光让它退不会，等退干净再盖面板也不会）。最多等 1.5 s，退不掉也照开
+  private func openAfterMissionControl() {
+    guard missionControlWait == nil else { return }
+    LaunchpadMissionControl.dismiss()
+    missionControlWait = Task { [weak self] in
+      for _ in 0..<30 {
+        try? await Task.sleep(for: .milliseconds(50))
+        if !LaunchpadMissionControl.isActive() { break }
+      }
+      try? await Task.sleep(for: .milliseconds(300))
+      guard let self else { return }
+      self.missionControlWait = nil
+      self.open()
+    }
   }
 
   /// 收起；animated = false 用于打开别的窗口 / 截图 / 状态屏之前（不能留一块全屏面板盖着）
