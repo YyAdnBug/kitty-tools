@@ -55,11 +55,12 @@ struct LaunchpadPolishTests {
     #expect(abs(progress - 0.25 / 0.28) < 1e-9)
   }
 
-  @Test func fourFingerModeIgnoresFiveFingers() {
+  /// 四指档也认五根（同系统的「应用程序」：捏的时候常常多碰到一根，2026-10-19 真机日志）
+  @Test func fourFingerModeAlsoTakesFiveFingers() {
     var recognizer = PinchRecognizer(sensitivity: .standard, fingers: .four)
     #expect(recognizer.feed(frame(0, five(0.2))) == nil)
-    #expect(recognizer.feed(frame(0.2, five(0.12))) == nil)
-    #expect(recognizer.feed(frame(0.3, [])) == nil)
+    #expect(recognizer.feed(frame(0.2, five(0.12))) == .began(.pinch))
+    #expect(recognizer.feed(frame(0.3, [])) == .ended(.pinch, progress: 1, velocity: 0))
     #expect(recognizer.feed(frame(0.4, four(0.2))) == nil)
     #expect(recognizer.feed(frame(0.6, four(0.12))) == .began(.pinch))
   }
@@ -67,7 +68,7 @@ struct LaunchpadPolishTests {
   @Test func fingerChoicesAcceptTheRightCounts() {
     #expect(!PinchFingers.off.accepts(4) && !PinchFingers.off.accepts(5))
     #expect(PinchFingers.four.accepts(4) && !PinchFingers.four.accepts(3))
-    #expect(!PinchFingers.four.accepts(5))
+    #expect(PinchFingers.four.accepts(5))
     #expect(PinchFingers.five.accepts(5) && PinchFingers.five.accepts(6))
     #expect(!PinchFingers.five.accepts(4))
     // 设置页的三档按这个顺序排

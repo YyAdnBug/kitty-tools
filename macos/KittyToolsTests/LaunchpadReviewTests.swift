@@ -339,17 +339,12 @@ struct LaunchpadReviewTests {
 
   // MARK: F12 / F13 捏合开关
 
+  /// 不看系统手势开没开（2026-10-19：系统设置改了收不到，Kitty 启动时开着、之后关掉就一直接不上；开始捏的那一刻再读）
   @Test func pinchShouldRunCombinations() {
-    #expect(
-      Launchpad.pinchShouldRun(enabled: true, usePinch: true, available: true, systemOn: false))
-    #expect(
-      !Launchpad.pinchShouldRun(enabled: false, usePinch: true, available: true, systemOn: false))
-    #expect(
-      !Launchpad.pinchShouldRun(enabled: true, usePinch: false, available: true, systemOn: false))
-    #expect(
-      !Launchpad.pinchShouldRun(enabled: true, usePinch: true, available: false, systemOn: false))
-    #expect(
-      !Launchpad.pinchShouldRun(enabled: true, usePinch: true, available: true, systemOn: true))
+    #expect(Launchpad.pinchShouldRun(enabled: true, usePinch: true, available: true))
+    #expect(!Launchpad.pinchShouldRun(enabled: false, usePinch: true, available: true))
+    #expect(!Launchpad.pinchShouldRun(enabled: true, usePinch: false, available: true))
+    #expect(!Launchpad.pinchShouldRun(enabled: true, usePinch: true, available: false))
   }
 
   // MARK: F14 先面板后岛

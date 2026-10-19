@@ -91,12 +91,43 @@ struct LaunchpadPinchTests {
     #expect(recognizer.feed(frame(0.7, ring(0.17))) == .began(.pinch))
   }
 
-  /// 跟着的时候多放上一根（四指档变成五指）：取消，不是松手
-  @Test func extraFingerCancels() {
+  /// 跟着的时候多碰到一根、又离开（4 → 5 → 4，2026-10-19 真机日志里常见）：接着跟、进度不跳；少到不认了才是松手
+  @Test func fingerCountFlappingKeepsTracking() throws {
     var recognizer = PinchRecognizer(sensitivity: .standard)
     #expect(recognizer.feed(frame(0, ring(0.2))) == nil)
     #expect(recognizer.feed(frame(0.1, ring(0.17))) == .began(.pinch))
-    #expect(recognizer.feed(frame(0.2, ring(0.16) + [(0.5, 0.5)])) == .cancelled(.pinch))
+    let before = try #require(recognizer.progress)
+    // 第五根落在正中：平均距离一下小了一截，进度照旧
+    #expect(recognizer.feed(frame(0.12, ring(0.17) + [(0.5, 0.5)])) == nil)
+    #expect(abs((recognizer.progress ?? 0) - before) < 1e-9)
+    // 五根一起往里收：进度接着涨
+    #expect(recognizer.feed(frame(0.15, ring(0.15) + [(0.5, 0.5)])) == nil)
+    let five = try #require(recognizer.progress)
+    #expect(five > before)
+    // 那一根离开（5 → 4）：还在认的范围里，进度照旧
+    #expect(recognizer.feed(frame(0.17, ring(0.15))) == nil)
+    #expect(abs((recognizer.progress ?? 0) - five) < 1e-9)
+    // 抬到三根：松手，带着刚才的进度
+    let lifted = recognizer.feed(frame(0.2, Array(ring(0.15).prefix(3))))
+    guard case .ended(.pinch, let progress, _) = lifted else {
+      Issue.record("没认出松手：\(String(describing: lifted))")
+      return
+    }
+    #expect(abs(progress - five) < 1e-9)
+  }
+
+  /// 进度和比例互为反函数（换起点靠它）
+  @Test func ratioInvertsProgress() {
+    for gesture in [PinchRecognizer.Gesture.pinch, .spread] {
+      for sensitivity in PinchRecognizer.Sensitivity.allCases {
+        for progress in [0.0, 0.3, 0.7, 1.0] {
+          let ratio = PinchRecognizer.ratio(
+            of: gesture, progress: progress, sensitivity: sensitivity)
+          let back = PinchRecognizer.progress(of: gesture, ratio: ratio, sensitivity: sensitivity)
+          #expect(abs(back - progress) < 1e-9)
+        }
+      }
+    }
   }
 
   /// 三指不算；四指放上去没捏、抬掉一根也不报事

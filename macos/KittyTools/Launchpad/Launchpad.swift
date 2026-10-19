@@ -59,7 +59,7 @@ final class Launchpad {
   private var undoLayout: LaunchpadLayout?
   /// 换屏 / 拔掉屏的通知：总控和 App 同寿命，不注销（deinit 是 nonisolated，碰不了它）
   private var screenObserver: NSObjectProtocol?
-  /// 触控板捏合（SPEC §5.6，R7）：只在功能开着、系统的捏合关着时注册回调
+  /// 触控板捏合（SPEC §5.6，R7）：功能开着就注册回调；系统的捏合开着时认到也不打开（开始捏的那一刻读系统设置）
   private let touchpad = TouchpadWatcher()
   /// 触发角（SPEC §5.7，R8）
   private let corner = LaunchpadCorner()
@@ -550,11 +550,11 @@ final class Launchpad {
   /// 系统的捏合手势还开着没有（设置页每次出现读一次，不轮询）
   var systemPinchIsOn: Bool { TrackpadSystemGesture.systemPinchIsOn() }
 
-  /// 要不要注册触控板回调（纯函数，单测直接喂）：功能开着、这一项开着、框架能用、系统手势关着
-  nonisolated static func pinchShouldRun(
-    enabled: Bool, usePinch: Bool, available: Bool, systemOn: Bool
-  ) -> Bool {
-    enabled && usePinch && available && !systemOn
+  /// 要不要注册触控板回调（纯函数，单测直接喂）：功能开着、这一项开着、框架能用。
+  /// **不看系统手势开没开**（2026-10-19 真机）：原来系统的开着就不注册，可系统设置改了我们收不到——Kitty 启动时系统的开着，
+  /// 之后用户照提示关掉，捏合一直没反应，要开一次设置页才接上。现在一直注册，开始捏的那一刻再读系统的（`pinch`）
+  nonisolated static func pinchShouldRun(enabled: Bool, usePinch: Bool, available: Bool) -> Bool {
+    enabled && usePinch && available
   }
 
   /// 按偏好起停触控板监听和触发角（启动时、设置改了、导入设置之后调）
@@ -568,11 +568,8 @@ final class Launchpad {
     let sensitivity =
       PinchRecognizer.Sensitivity(
         rawValue: defaults.string(forKey: Prefs.launchpadPinchSense) ?? "") ?? .standard
-    // 系统的捏合还开着时我们认到也不打开（不然两个一起出来，SPEC R7）：干脆不注册回调
-    if Self.pinchShouldRun(
-      enabled: enabled, usePinch: fingers != .off, available: pinchAvailable,
-      systemOn: systemPinchIsOn)
-    {
+    // 系统的捏合还开着时我们认到也不打开（不然两个一起出来，SPEC R7）：在开始捏的那一刻读，不在这里挡
+    if Self.pinchShouldRun(enabled: enabled, usePinch: fingers != .off, available: pinchAvailable) {
       touchpad.start(sensitivity: sensitivity, fingers: fingers)
     } else {
       touchpad.stop()

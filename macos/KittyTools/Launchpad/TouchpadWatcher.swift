@@ -4,7 +4,7 @@
 // 每帧写进桥的 `progress`（Mutex，主线程的屏幕刷新回调每帧来取），开始 / 松手 / 取消三件事才 DispatchQueue.main.async
 // 回主线程（2026-10-19 起跟手，GESTURE.md A7：每帧都派一次的话，触控板约 8 ms 一帧、屏幕 60 / 120 Hz，节奏对不上会抖）——
 // **回调里不碰主线程状态**（mac-native §3）。
-// 只在功能开着、系统的捏合关着时注册回调；停的时候注销 + MTDeviceStop + 放掉设备。
+// 功能开着就注册回调（系统的捏合开着时总控在开始捏的那一刻自己不打开）；停的时候注销 + MTDeviceStop + 放掉设备。
 // 触点结构体照公开的逆向资料（OpenMultitouchSupport / LaunchNext 的思路，**一行代码都不拷**）：64 位下
 // frame / timestamp / identifier / state / fingerId / handId / normalized(pos + vel) / zTotal / …；
 // 我们只读 identifier、state 和 normalized.pos。ponytail: 布局是逆向来的，系统改了字段顺序要重新核对（HANDTEST 10）。
@@ -119,7 +119,7 @@ nonisolated private let contactCallback: MTContactCallback = { device, data, cou
   handleContactFrame(device, data, count, timestamp)
 }
 
-/// 触控板捏合的监听（Launchpad 拿着；只在功能开着、系统的捏合关着时 start）
+/// 触控板捏合的监听（Launchpad 拿着；功能开着就 start）
 @MainActor
 final class TouchpadWatcher {
   enum Availability: Equatable {
