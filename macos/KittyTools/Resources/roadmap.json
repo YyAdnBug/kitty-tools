@@ -1,5 +1,4 @@
 [
-  { "kind": "improve", "scope": "便签", "text": "特别长、每一行都上了文字颜色的便签里，挪光标更跟手" },
   { "kind": "feature", "scope": "便签", "text": "iCloud 同步：几台 Mac 上的便签保持一样" },
   { "kind": "feature", "scope": "便签", "text": "自定义纸色：8 种之外自己挑颜色，最近用过的记下来" },
   { "kind": "feature", "scope": "便签", "text": "同时把几张便签浮在屏幕上（现在一次一张）" },

@@ -506,9 +506,9 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     }
     let shown = revealedLines()
     guard !shown.isEmpty || hasShownMarkers else { return }
-    // ponytail: 每挪一次光标都把整篇的 shownKey 过一遍。1 MB、每行都有颜色时比没颜色慢 40–66%（绝对多 2–3 ms）；
-    // 试过只排「上次 / 这次露着的两行」，随机探针抓出标记露错行（编辑把行挪走之后位置对不上），回退了。
-    // 升级路径：让 shown 的行号跟着 textStorage 的 didProcessEditing 一起挪（记行不记位置），再走快路
+    // ponytail: 每挪一次光标都把整篇的 shownKey 过一遍（让系统把同值的段并起来，NoteStyles.outdated；1 MB 每行有颜色
+    // -O 3.5 ms、没颜色 1.4 ms）。试过只排「上次 / 这次露着的两行」，随机探针抓出标记露错行（编辑把行挪走之后位置对不上），
+    // 回退了。再要快：让 shown 的行号跟着 textStorage 的 didProcessEditing 一起挪（记行不记位置），再走快路
     for lines in NoteStyles.outdated(in: storage, shown: shown) { restyle(lines) }
     hasShownMarkers = !shown.isEmpty
   }

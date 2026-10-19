@@ -762,20 +762,26 @@ nonisolated enum NoteStyles {
   }
 
   /// 标记露 / 藏得不对的那些行（整行；从前到后、互不相邻——挨着的并成一段）：露着但不在 shown 里的，和在 shown 里
-  /// 但还藏着的。shown 的意思同 apply。拿到之后一段段各自 apply
+  /// 但还藏着的。shown 的意思同 apply。拿到之后一段段各自 apply。
+  /// 找露着的字**让系统把同值的段并起来**（不带 longestEffectiveRangeNotRequired）：每行都上了颜色时一行碎成好几段，
+  /// 一段调一次闭包的话挪一下光标就把整篇几万段过一遍（1 MB 每行有颜色的正文 -O 8.4 ms → 3.5 ms，便签未来计划 E）；
+  /// 并起来的一段可能跨好几行（选区碰到的几行都露着），逐行看
   @MainActor
   static func outdated(in storage: NSTextStorage, shown: [NSRange]) -> [NSRange] {
     let text = storage.mutableString
     let full = NSRange(location: 0, length: storage.length)
     var found: [NSRange] = []
-    storage.enumerateAttribute(shownKey, in: full, options: .longestEffectiveRangeNotRequired) {
-      value, range, _ in
+    storage.enumerateAttribute(shownKey, in: full) { value, range, _ in
       guard value != nil else { return }
-      let line = text.lineRange(for: NSRange(location: range.location, length: 0))
-      if !shown.contains(where: { $0.location <= line.location && line.location < NSMaxRange($0) })
-      {
-        found.append(line)
-      }
+      var location = range.location
+      repeat {
+        let line = text.lineRange(for: NSRange(location: location, length: 0))
+        let start = line.location
+        if !shown.contains(where: { $0.location <= start && start < NSMaxRange($0) }) {
+          found.append(line)
+        }
+        location = NSMaxRange(line)
+      } while location < NSMaxRange(range)
     }
     for target in shown {
       let range = NSIntersectionRange(target, full)

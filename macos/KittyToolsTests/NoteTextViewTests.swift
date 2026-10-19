@@ -777,6 +777,21 @@ struct NoteTextViewTests {
   // MARK: Markdown（第 6 批）
 
   /// 藏着的标记：字形是空的、不占宽度，这一行排出来变窄；露出来就占回去。只动属性：不进撤销栈、不往外报
+  /// 选区碰到的几行一起露着，选区缩回一行时别的几行都收回去（便签未来计划 E：找露着的行时让系统把同值的段并起来，
+  /// 并起来的一段跨好几行，要逐行看——只看段头那一行的话，后面几行一直露着）
+  @Test func shrinkingASelectionHidesEveryOtherLine() throws {
+    let rig = try Rig("**甲**\n**乙**\n**丙**\n普通")
+    rig.activate()
+    rig.editor.setSelectedRange(NSRange(location: 1, length: 13))
+    #expect(rig.markers == "SSS-")
+    rig.editor.setSelectedRange(caret(1))
+    #expect(rig.markers == "SHH-")
+    rig.editor.setSelectedRange(NSRange(location: 8, length: 7))
+    #expect(rig.markers == "HSS-")
+    rig.editor.setSelectedRange(caret(16))
+    #expect(rig.markers == "HHS-")
+  }
+
   @Test func hiddenMarkersTakeNoSpace() throws {
     // ** 0-1 粗 2 体 3 ** 4-5 空格 6 后 7 面 8 换行 9 | * 10 第 11 二 12 行 13 * 14 空格 15 的 16 字 17
     let rig = try Rig("**粗体** 后面\n*第二行* 的字")
