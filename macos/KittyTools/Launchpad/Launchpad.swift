@@ -8,12 +8,25 @@
 // 内容晚一拍再拆（F21）；删 App 走 NSWorkspace.recycle、失败带「在访达里看」（F22）；失去 key 时看新 key 是不是自己的（F23）；
 // 布局「存过但读不出来」时原文另存、这次只在内存里用默认排法（F27）；撤销存在偏好里，重启后还能用一次（F41）；
 // App 目录在后台扫、扫完接上，导入也在后台（F31）。
+// 只在 macOS 26 起有（`isAvailable`，2026-10-19 用户定）：15 上系统自带启动台，我们的整个藏起来、什么都不起。
 
 import AppKit
 import SwiftUI
 
 @MainActor
 final class Launchpad {
+  /// 只在 macOS 26 起有：系统自带的启动台 15 是最后一版（26 删了），15 上用系统的、我们的整个藏起来——菜单栏、启动器、
+  /// 快捷键页、速查表、设置侧栏都没有它，快捷键不注册，不扫目录、不起捏合和触发角。排法和快捷键照旧存着、导出导入照旧带上（升到 26 就出来）
+  nonisolated static let isAvailable: Bool = {
+    if #available(macOS 26, *) { return true }
+    return false
+  }()
+
+  /// 这台系统有、总开关也开着
+  static var isOn: Bool {
+    isAvailable && UserDefaults.standard.bool(forKey: Prefs.launchpadEnabled)
+  }
+
   /// 刘海岛（打不开 App、导入 / 恢复默认的结果）
   var island: Island?
   /// 现在能不能打开（截图框选、录屏、状态屏、正在录快捷键…时不能）
@@ -86,7 +99,7 @@ final class Launchpad {
 
   func open() {
     guard !isOpen else { return }
-    guard UserDefaults.standard.bool(forKey: Prefs.launchpadEnabled) else { return }
+    guard Self.isOn else { return }
     guard canOpen() else {
       NSSound.beep()
       return
@@ -238,6 +251,7 @@ final class Launchpad {
   /// 扫目录（启动时预热一次，打开时按目录修改时间决定要不要重扫）。真正的扫描在后台（F31），
   /// 扫完接上：已经开着的话把新目录喂给模型、新装的接在最后。
   func prepare() {
+    guard Self.isAvailable else { return }
     let signature = AppCatalog.signature()
     if !catalog.isEmpty, signature == self.signature {
       autoImportIfNeeded()
@@ -251,7 +265,7 @@ final class Launchpad {
       let changed = self.catalog.map(\.id) != apps.map(\.id)
       self.catalog = apps
       // 图标在后台画好、常驻：打开时只贴位图（新装的 App 只补画它自己）。启动台关着时不画（约 15 MB），开了以后第一次打开再补
-      if UserDefaults.standard.bool(forKey: Prefs.launchpadEnabled) {
+      if Self.isOn {
         self.icons.prewarm(apps, pixelSize: Self.iconPixelSize)
         if let screen = NSScreen.main { _ = self.wallpaper.image(for: screen) { _ in } }
       }
@@ -409,8 +423,10 @@ final class Launchpad {
 
   /// 按偏好起停触控板监听和触发角（启动时、设置改了、导入设置之后调）
   func applySettings() {
+    // macOS 15：什么都没起过，也就不用停；连私有框架都不去找
+    guard Self.isAvailable else { return }
     let defaults = UserDefaults.standard
-    let enabled = defaults.bool(forKey: Prefs.launchpadEnabled)
+    let enabled = Self.isOn
     let pinch = defaults.bool(forKey: Prefs.launchpadPinch)
     let sensitivity =
       PinchRecognizer.Sensitivity(
@@ -427,7 +443,7 @@ final class Launchpad {
   }
 
   private func applyCorner() {
-    let enabled = UserDefaults.standard.bool(forKey: Prefs.launchpadEnabled)
+    let enabled = Self.isOn
     let option =
       LaunchpadCornerOption(
         rawValue: UserDefaults.standard.string(forKey: Prefs.launchpadCorner) ?? "") ?? .off

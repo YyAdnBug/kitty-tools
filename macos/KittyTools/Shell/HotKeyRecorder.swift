@@ -155,7 +155,9 @@ struct HotKeyRecorder: View {
       return
     }
     if let hotKey,
-      let other = HotKeyAction.allCases.first(where: { $0 != action && $0.hotKey == hotKey })
+      let other = HotKeyAction.allCases.first(where: {
+        $0 != action && $0.isAvailable && $0.hotKey == hotKey
+      })
     {
       message = "和「\(other.title)」重复"
       return

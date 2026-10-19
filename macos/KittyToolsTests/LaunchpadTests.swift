@@ -238,3 +238,31 @@ struct LaunchpadTests {
     #expect(layout.tiles.isEmpty)
   }
 }
+
+/// macOS 15 上整个藏起来（2026-10-19 用户定：15 有系统自带的启动台）。开发机是 27，真 15 只能手测；
+/// 这里把「这台系统有没有」喂成 false，看各入口列的东西里都没有它
+@MainActor
+struct LaunchpadAvailabilityTests {
+  @Test func hiddenOnMacOS15() {
+    #expect(
+      Launchpad.isAvailable == (ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 26))
+    #expect(HotKeyAction.launchpad.isAvailable == Launchpad.isAvailable)
+    #expect(HotKeyAction.clipboard.isAvailable)
+
+    // 快捷键页、菜单栏、启动器共用的分节
+    let hidden = HotKeyAction.visibleSections(launchpad: false).flatMap(\.actions)
+    let shown = HotKeyAction.visibleSections(launchpad: true).flatMap(\.actions)
+    #expect(!hidden.contains(.launchpad))
+    #expect(shown.contains(.launchpad))
+    #expect(shown.filter { $0 != .launchpad } == hidden)
+    // 设置侧栏
+    #expect(!SettingsPage.visible(launchpad: false).contains(.launchpad))
+    #expect(SettingsPage.visible(launchpad: true) == SettingsPage.allCases)
+    // 速查表
+    #expect(!ShortcutsSheet.groups(launchpad: false).contains { $0.globals.contains(.launchpad) })
+    #expect(ShortcutsSheet.groups(launchpad: true).contains { $0.globals.contains(.launchpad) })
+    #expect(
+      ShortcutsSheet.groups(launchpad: false).count + 1
+        == ShortcutsSheet.groups(launchpad: true).count)
+  }
+}

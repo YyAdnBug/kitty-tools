@@ -79,6 +79,10 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
   按别的功能键、开设置窗 / 全部便签、进状态屏、开始截图 / 录屏时先收起启动台（`hidePanels` / `beginCapture` / `run`）。
 - 截图框选、长截图、录屏选区 / 倒数、状态屏、正在录快捷键、读选中文字时**不响应**（`Launchpad.canOpen`，同便签边缘的 `canFan` 路数）。
 - 总开关关掉（`Prefs.launchpadEnabled`）：入口都不响应、不建窗口、不读触控板。
+- **只在 macOS 26 起有**（`Launchpad.isAvailable`，2026-10-19 用户定：15 有系统自带的启动台，26 起删了）：15 上整个藏起来——
+  `HotKeyAction.sections`（菜单栏、快捷键页、启动器）、`SettingsPage.visible`（设置侧栏和搜索）、`ShortcutsSheet.groups`（速查表）里都没有它，
+  快捷键不注册、不参与查重，`prepare()` / `applySettings()` 直接返回（不扫目录、不找私有框架、不起捏合和触发角），开不开看 `Launchpad.isOn`。
+  排法和快捷键照旧存着、导出导入照旧带上（升到 26 就出来）。**新加入口一律走上面这几处或看 `isOn`**，别再直接读 `Prefs.launchpadEnabled`。
 
 ## 5. 删 App
 - 抖动模式里只有 **App Store 装的**（有 `_MASReceipt/receipt`、路径不在 `/System` 下）显示 ✕；点了先确认（破坏性按钮，

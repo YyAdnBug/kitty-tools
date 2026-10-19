@@ -500,7 +500,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 ### 启动台（第八族，0.6.0，2026-10-18 立项）
 
 需求、做法和验收标准在 `macos/build/research/launchpad/SPEC.md`（用户交给 agent 的规格；R1–R11 是验收标准）。这里只记仍有效的约束和已定的事。
-- **是什么**：复刻 macOS 15 的全屏图标网格（macOS 26 起系统那个换成了「应用程序」视图）。**和现有的「启动器」（`Launcher/`，⌥Space 的搜索框）是两个东西**：名字、设置、快捷键都分开。家族色薄荷绿 `Style.Family.launchpad`。
+- **是什么**：复刻 macOS 15 的全屏图标网格（macOS 26 起系统那个换成了「应用程序」视图）。**只在 macOS 26 起出现**（2026-10-19 用户定）：15 上系统自带启动台，我们的整个藏起来（`Launchpad.isAvailable`，各入口怎么藏见 mac-launchpad §4）。**和现有的「启动器」（`Launcher/`，⌥Space 的搜索框）是两个东西**：名字、设置、快捷键都分开。家族色薄荷绿 `Style.Family.launchpad`。
 - **在哪**：`KittyTools/Launchpad/`（§4 文件表），设置页 `Settings/LaunchpadTab.swift`；规矩 `mac-launchpad.mdc` + `mac-whisker-launchpad.mdc`；手测 `HANDTEST.md`「启动台手测」。
 - **窗口**：自建窗口的新例外 `LaunchpadPanel`（mac-overlay-panel §1）：盖满鼠标所在那块屏、`.statusBar`、`.nonactivatingPanel` + `canBecomeKey`、不激活本 App、每次打开新建、收起放掉。盖住整块屏（菜单栏和程序坞都在下面）——普通窗口做不到「盖住菜单栏又让程序坞露在上面」，这是唯一做不到和 macOS 15 一样的地方（SPEC §3.2）。
 - **布局**：一份 JSON 存 `Prefs.launchpadLayout`（注册空串默认值，SettingsArchive 的「设置」一类跟着导出 / 导入和每日备份走；不另开库）。App 按 bundle id 认（没有的按解开链接后的路径）。第一次打开、还没存过布局时：有系统旧启动台库就自动导入（SPEC §5.4），读不到用默认排法（系统 App 在前、`Utilities` 进「其他」文件夹、其余按显示名）。

@@ -22,6 +22,14 @@ enum SettingsPage: String, CaseIterable, Identifiable {
 
   var id: String { rawValue }
 
+  /// 侧栏和搜索里列的页：macOS 15 上没有启动台（`Launchpad.isAvailable`）
+  static let visible = visible(launchpad: Launchpad.isAvailable)
+
+  /// 单测喂 false 看 macOS 15 上的样子
+  static func visible(launchpad: Bool) -> [SettingsPage] {
+    allCases.filter { launchpad || $0 != .launchpad }
+  }
+
   var title: String {
     switch self {
     case .general: "通用"
@@ -148,7 +156,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .hotkeys:
       // 「钉图」：动作名是「钉住剪贴板里的图」，搜「钉图」也要找得到这一页
       ["快捷键", "热键", "冲突", "录制", "恢复默认", "速查", "按键", "钉图"]
-        + HotKeyAction.allCases.map(\.title)
+        + HotKeyAction.allCases.filter(\.isAvailable).map(\.title)
     case .about: ["版本", "更新", "日志", "发布", "欢迎", "引导"]
     }
   }
@@ -163,7 +171,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   /// 「只显示快捷键」，按侧栏顺序会先停在别处）；否则当前页还在结果里就不动，不在就去第一个，一页都没有也不动
   static func page(for query: String, current: SettingsPage) -> SettingsPage {
     let query = query.trimmingCharacters(in: .whitespaces)
-    let matches = allCases.filter { $0.matches(query) }
+    let matches = visible.filter { $0.matches(query) }
     if !query.isEmpty,
       let named = matches.first(where: { $0.title.localizedCaseInsensitiveContains(query) })
     {
@@ -203,7 +211,9 @@ enum SettingsPage: String, CaseIterable, Identifiable {
 
   init(defaults: UserDefaults? = .standard) {
     self.defaults = defaults
-    page = defaults?.string(forKey: Prefs.settingsPage).flatMap(SettingsPage.init) ?? .general
+    // 记住的是这台系统上没有的页（导入了 26 上的设置）就回通用页
+    let saved = defaults?.string(forKey: Prefs.settingsPage).flatMap(SettingsPage.init)
+    page = saved.flatMap { SettingsPage.visible.contains($0) ? $0 : nil } ?? .general
   }
 }
 
@@ -323,7 +333,7 @@ struct SettingsRoot: View {
   @State private var query = ""
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-  private var matches: [SettingsPage] { SettingsPage.allCases.filter { $0.matches(query) } }
+  private var matches: [SettingsPage] { SettingsPage.visible.filter { $0.matches(query) } }
 
   var body: some View {
     NavigationSplitView {

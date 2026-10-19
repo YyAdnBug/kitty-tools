@@ -138,8 +138,16 @@ struct ShortcutsSheet: View {
     var id: String { title }
   }
 
+  /// macOS 15 上没有启动台那一组（`Launchpad.isAvailable`）
+  static var groups: [Group] { groups(launchpad: Launchpad.isAvailable) }
+
+  /// 单测喂 false 看 macOS 15 上的样子
+  static func groups(launchpad: Bool) -> [Group] {
+    launchpad ? allGroups : allGroups.filter { !$0.globals.contains(.launchpad) }
+  }
+
   /// 每次打开现算：录屏组里「停止」那行写当前设的录屏快捷键
-  static var groups: [Group] {
+  private static var allGroups: [Group] {
     [
       // mac-clipboard §4 面板交互表（Lens Bar，N1–N4）；代码在 ClipboardPanelModel
       Group(

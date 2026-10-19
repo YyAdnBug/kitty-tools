@@ -259,8 +259,18 @@ enum HotKeyAction: String, CaseIterable {
     return fallback
   }
 
-  /// 快捷键页和菜单栏的分组（N13 / N15：同名同序）
-  static let sections: [(title: String, actions: [HotKeyAction])] = [
+  /// 快捷键页、菜单栏、启动器的分组（N13 / N15：同名同序）；macOS 15 上没有启动台那一节（`Launchpad.isAvailable`）
+  static let sections = visibleSections(launchpad: Launchpad.isAvailable)
+
+  /// 单测喂 false 看 macOS 15 上的样子
+  static func visibleSections(launchpad: Bool) -> [(title: String, actions: [HotKeyAction])] {
+    launchpad ? allSections : allSections.filter { !$0.actions.contains(.launchpad) }
+  }
+
+  /// 这台系统上有没有这一项（启动台只在 macOS 26 起有）：没有的不注册、不参与查重
+  var isAvailable: Bool { self != .launchpad || Launchpad.isAvailable }
+
+  private static let allSections: [(title: String, actions: [HotKeyAction])] = [
     ("剪贴板与启动器", [.clipboard, .launcher]),
     ("翻译", [.selectionTranslate, .inputTranslate, .translateReplace, .screenshotTranslate]),
     // 钉住剪贴板里的图排在最后：菜单栏、启动器里有钉图时紧接着是「隐藏 / 关闭全部钉图」（MenuExtra），钉图的几项挨在一起
@@ -355,7 +365,7 @@ enum HotKeyAction: String, CaseIterable {
     suspend()
     installHandlerIfNeeded()
     for (index, action) in HotKeyAction.allCases.enumerated() {
-      guard let hotKey = action.hotKey else { continue }
+      guard action.isAvailable, let hotKey = action.hotKey else { continue }
       var ref: EventHotKeyRef?
       let status = RegisterEventHotKey(
         hotKey.keyCode, hotKey.modifiers,
