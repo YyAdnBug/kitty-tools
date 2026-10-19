@@ -73,7 +73,7 @@ final class Launchpad {
   private var deferredNotice: (() -> Void)?
   /// 跟手时看触控板还有没有在报帧：设备中途断开（妙控板没电）就收不到松手了
   private var pinchWatchdog: Task<Void, Never>?
-  /// 调度中心开着时要打开：等它退干净再开（`openAfterMissionControl`）
+  /// 调度中心开着时打开的：在等它退干净（这期间面板不收鼠标、不拿键盘，`waitForMissionControl`）
   private var missionControlWait: Task<Void, Never>?
 
   init() {
@@ -111,11 +111,9 @@ final class Launchpad {
       NSSound.beep()
       return false
     }
-    // 调度中心开着：先让它退，退干净了再开（捏合的也不跟手，直接开）
-    if missionControlWait != nil || LaunchpadMissionControl.isActive() {
-      openAfterMissionControl()
-      return false
-    }
+    // 调度中心开着：先让它退。启动台照常马上出来，退干净之前不收鼠标、不拿键盘（`waitForMissionControl`）
+    let missionControl = LaunchpadMissionControl.isActive()
+    if missionControl { LaunchpadMissionControl.dismiss() }
     willOpen()
     prepare()
     // 已经画好的不再画；启动时启动台还关着、刚打开的话这里补上
@@ -208,28 +206,40 @@ final class Launchpad {
     awaitingCommit = interactive
     deferredNotice = interactive ? showNotice : nil
     LaunchpadOpenSequence.run(
-      present: { present(panel, zoom: zoom, interactive: interactive) },
+      present: {
+        present(panel, zoom: zoom, interactive: interactive, holdKey: missionControl)
+      },
       notice: interactive ? nil : showNotice)
+    if missionControl { waitForMissionControl(panel) }
     if !interactive { autoImportIfNeeded() }
     return true
   }
 
-  /// 调度中心开着时打开：它给窗口画的 ✕ 会盖在启动台上面、还点得到（调度中心不是普通窗口，层级调高也盖不住），所以先让它退；
-  /// **等它退干净（WindowManager 那块 19 层窗口没了）再过 0.3 s 才打开**——退场还没走完就把面板盖上来、makeKey，
-  /// WindowManager 的窗口排序会被打乱：之后某个应用的窗口一直压在最上面，切到别的应用也盖不过它，要重启 WindowManager 才好
-  /// （2026-10-19 真机两次；独立小程序分开试过：光让它退不会，等退干净再盖面板也不会）。最多等 1.5 s，退不掉也照开
-  private func openAfterMissionControl() {
-    guard missionControlWait == nil else { return }
-    LaunchpadMissionControl.dismiss()
-    missionControlWait = Task { [weak self] in
+  /// 调度中心开着时打开的：它给窗口画的 ✕ 会盖在启动台上面、还点得到（调度中心不是普通窗口，层级调高也盖不住），所以先让它退；
+  /// 面板照常马上出来（和它的退场一起淡入），但**等它退干净（WindowManager 那块 19 层窗口没了）才收鼠标、拿键盘**——
+  /// 退场还没走完面板就 makeKey，WindowManager 的窗口排序会被打乱：之后某个应用的窗口一直压在最上面、切到别的应用也盖不过它，
+  /// 要重启 WindowManager 才好（2026-10-19 真机两次）。独立小程序分开试过：光让它退、等退干净再盖面板、马上盖但退干净再 makeKey 都不乱。
+  /// 1.5 s 还没退掉（真机见过一次第一下没退掉）就把启动台收起来：别拿着键盘压在调度中心上面
+  private func waitForMissionControl(_ panel: LaunchpadPanel) {
+    missionControlWait?.cancel()
+    missionControlWait = Task { [weak self, weak panel] in
+      var gone = false
       for _ in 0..<30 {
         try? await Task.sleep(for: .milliseconds(50))
-        if !LaunchpadMissionControl.isActive() { break }
+        if Task.isCancelled { return }
+        if !LaunchpadMissionControl.isActive() {
+          gone = true
+          break
+        }
       }
-      try? await Task.sleep(for: .milliseconds(300))
-      guard let self else { return }
+      guard let self, let panel, panel === self.panel else { return }
       self.missionControlWait = nil
-      self.open()
+      guard gone else {
+        self.close(animated: true)
+        return
+      }
+      // 捏合建的还没松手：松手走完时再拿（`finishPinch`）
+      if !self.awaitingCommit { self.activate(panel) }
     }
   }
 
@@ -253,6 +263,8 @@ final class Launchpad {
     }
     pinchTracking = nil
     pinchWatchdog?.cancel()
+    missionControlWait?.cancel()
+    missionControlWait = nil
     deferredNotice = nil
     // 触发角：开着的时候离开角收不到事件，收起时鼠标不在角里就重新武装（不然要再离开一次才推得开）
     corner.launchpadDidClose()
@@ -285,13 +297,16 @@ final class Launchpad {
 
   /// 打开：整块（壁纸和上面的图标）跟着窗口淡入，图标同时从 1.1 倍缩回原大（照 macOS 15），都由 `zoom` 一个数管。
   /// 淡入只在窗口上做一次：原来界面里再淡一遍，两层透明度相乘，开头那段几乎看不见、像是晚了一拍才出来。
-  /// 捏合开始建的（`interactive`）：不收鼠标、不拿键盘，跟着手指走，松手定了打开才 `activate`
-  private func present(_ panel: LaunchpadPanel, zoom: LaunchpadZoom, interactive: Bool) {
+  /// 捏合开始建的（`interactive`）：不收鼠标、不拿键盘，跟着手指走，松手定了打开才 `activate`；
+  /// `holdKey`：调度中心还在退，退干净了再 `activate`（`waitForMissionControl`）
+  private func present(
+    _ panel: LaunchpadPanel, zoom: LaunchpadZoom, interactive: Bool, holdKey: Bool
+  ) {
     panel.alphaValue = 0
-    panel.ignoresMouseEvents = interactive
+    panel.ignoresMouseEvents = interactive || holdKey
     panel.orderFrontRegardless()
     panel.layoutIfNeeded()
-    if !interactive { activate(panel) }
+    if !interactive, !holdKey { activate(panel) }
     // 先把第一帧画好（建界面、上百个图标的图层，这一下最重），动画从画好之后才开始算：不然开头几帧被这一下吃掉，看着是跳出来的
     panel.displayIfNeeded()
     if interactive {
@@ -363,9 +378,9 @@ final class Launchpad {
     }
     zoom.settle(to: 1, velocity: end.velocity, duration: LaunchpadZoom.openDuration)
     guard gesture == .pinch else { return }
-    // 定了打开：拿键盘，压着的提示和第一次自动导入这时才做
+    // 定了打开：拿键盘（调度中心还在退的话等它退干净再拿），压着的提示和第一次自动导入这时才做
     awaitingCommit = false
-    activate(panel)
+    if missionControlWait == nil { activate(panel) }
     deferredNotice?()
     deferredNotice = nil
     autoImportIfNeeded()
