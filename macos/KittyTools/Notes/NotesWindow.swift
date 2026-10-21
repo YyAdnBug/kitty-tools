@@ -138,8 +138,9 @@ import SwiftUI
     }
   }
 
-  /// 左边现在列的：当前视图里搜出来的。仓库、视图、搜索词都没变就用上次算好的（listed）——在搜的时候每一遍都要把
-  /// 这些便签的正文折叠一遍（300 条约 8 ms），而换一次搜索词、一次重画要问它好几遍（手测反馈第 3 批）
+  /// 左边现在列的：当前视图里搜出来的。仓库、视图、搜索词都没变就用上次算好的（listed）——换一次搜索词、一次重画
+  /// 要问它好几遍（手测反馈第 3 批）；正文折叠另有一层按「编号 + 修订号」的缓存（NoteStore.folded），
+  /// 所以搜着的时候在正文里打字只折改过的那条：-O 5000 搜着时打一个字 1087 → 35 ms（2026-10-21）
   var notes: [Note] {
     _ = store.notes  // 界面看着仓库变（generation 不被看着）
     if let listed, listed.generation == store.generation, listed.scope == scope,
@@ -147,7 +148,7 @@ import SwiftUI
     {
       return listed.notes
     }
-    let notes = NoteStore.search(query, in: list(scope))
+    let notes = store.search(query, in: list(scope))
     listed = (store.generation, scope, query, notes)
     return notes
   }

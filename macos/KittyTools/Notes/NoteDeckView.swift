@@ -103,6 +103,8 @@ private struct NoteFan: View {
   let model: NoteDeckModel
   let layout: NoteDeckLayout
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  /// 滚动位置的段（ListWindow）：可见区的顶落在第几段，跨段才换要画的那几张
+  @State private var band = 0
 
   private var onRight: Bool { model.edge == .right }
   private var metrics: NoteDeckMetrics { layout.metrics }
@@ -114,11 +116,13 @@ private struct NoteFan: View {
     VStack(alignment: onRight ? .trailing : .leading, spacing: 0) {
       if let viewport = layout.viewport {
         // 「+N」展开后放不下：在视口里滚。滚动区比标签宽一截：标签探出来的那一截和阴影不被它裁掉。
-        // ponytail: 一次画全部标签（见 NoteDeckModel.tabs）；拖动排序拖到视口外不自动滚
+        // 只画可见区附近（stack 的 window）；拖动排序拖到视口外不自动滚
         ScrollView(.vertical) {
           stack(tabs).frame(maxWidth: .infinity, alignment: onRight ? .trailing : .leading)
         }
         .scrollIndicators(.hidden)
+        .modifier(TracksScrollBand(band: $band))
+        .onAppear { band = 0 }
         .frame(width: layout.tabWidth + Self.scrollBleed, height: viewport)
       } else {
         stack(tabs)
@@ -143,11 +147,21 @@ private struct NoteFan: View {
 
   /// 一张压一张靠的是负的间距（真的布局，点哪张就是哪张）；后画的在上面，正好是下一张压住上一张
   /// 那叠的状态在 ForEach 外面读一次：每张标签各读一遍的话，每一张都要单独挂一份「盯着它变」，几百张时光这一项就不少
+  /// 「+N」展开成上千张时只画可见区附近（window(_:)，ListWindow，同剪贴板列表、便签墙）：上下用撑高的空档占位，
+  /// 滚动位置、拖动排序、悬停、↑↓、「+N」收回都不变。实测 5000 条 -O 展开到第一屏 4735 → 57 ms、滚一屏 63 → 12 ms，
+  /// notesDeck() 的 76 张图逐像素和改前一样（2026-10-21）
   private func stack(_ tabs: [Note]) -> some View {
     let (openID, liftedID, floatingIDs) = (model.state.openID, model.liftedID, model.floatingIDs)
     let (hovered, drag, isRevealed) = (model.hovered, model.drag, model.isRevealed)
+    let rows = window(tabs)
     return VStack(alignment: onRight ? .trailing : .leading, spacing: layout.spacing) {
-      ForEach(Array(tabs.enumerated()), id: \.element.id) { index, note in
+      if rows.start > 0 {
+        // 上面没画的那几张撑起来：VStack 的间距是负的，开头这一块要把它补回去
+        Color.clear.frame(height: CGFloat(rows.start) * layout.step - layout.spacing)
+      }
+      ForEach(rows.items, id: \.id) { item in
+        let index = item.index
+        let note = tabs[index]
         let isDragged = drag?.id == note.id
         NoteTab(
           model: model, note: note, summary: model.store.summary(of: note), index: index,
@@ -166,9 +180,36 @@ private struct NoteFan: View {
         .zIndex(isDragged ? 1 : 0)
         .modifier(reveal(index, isRevealed: isRevealed))
       }
+      if rows.end < tabs.count {
+        Color.clear.frame(height: layout.stackHeight - CGFloat(rows.end) * layout.step)
+      }
     }
+    // 窗口化之后最宽的那张可能没画（打开的那张探出 8 pt）：按整列算，列的宽和贴边的位置不跟着变
+    .frame(width: layout.tabWidth + widestReach(tabs), alignment: onRight ? .trailing : .leading)
     // 增删、换了顺序：剩下的滑到新位置
     .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: tabs.map(\.id))
+  }
+
+  /// 这一列要画的下标：视口放得下就全画；放不下（「+N」展开）只画可见区附近（上下各多 overscan，ListWindow 算）
+  private func window(_ tabs: [Note]) -> (start: Int, end: Int, items: [(index: Int, id: String)]) {
+    guard let viewport = layout.viewport else {
+      return (0, tabs.count, tabs.enumerated().map { (index: $0.offset, id: $0.element.id) })
+    }
+    var tops = (0...tabs.count).map { CGFloat($0) * layout.step }
+    tops[tabs.count] = layout.stackHeight
+    let range = ListWindow.range(tops, band: band, inset: 0, viewport: viewport)
+    return (range.lowerBound, range.upperBound, range.map { (index: $0, id: tabs[$0].id) })
+  }
+
+  /// 这一列里最宽的那张往屏幕里探出多少（打开 8、悬停 / 拖着 4；同 NoteTab 里的 reach）：没画的那几张也算
+  private func widestReach(_ tabs: [Note]) -> CGFloat {
+    let (open, lifted, hovered) = (model.state.openID, model.liftedID, model.hovered)
+    var reach: CGFloat = 0
+    for note in tabs {
+      if note.id == open, note.id != lifted { return 8 }
+      if note.id == lifted || note.id == hovered { reach = 4 }
+    }
+    return reach
   }
 
   /// 拖动排序时每张挪多少：被拖的跟着手；它和目标格之间的那几张往反方向让一格

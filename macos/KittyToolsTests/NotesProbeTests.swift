@@ -24,6 +24,10 @@
 //   - wallAnimation()：300 条的便签墙上点开 / 收回编辑卡（50 KB 的长便签、1 KB 的短便签对照）——动画期间每一帧主线程
 //     多久、1 秒里一共多少；SLICES=1 打出每一轮，LOOP=wall-anim / wall-anim-short 给 sample 用。前后的数在同一节的
 //     「便签墙编辑卡动画」那一条。
+// 第二批调优（2026-10-21）：scale() 量 1000 / 3000 / 5000 条便签时仓库三个视图、全部便签窗口（打开到第一屏、点另一条、
+// 搜 1 / 3 个字、搜着时在正文打一个字、新建、删除）、便签墙（进墙到第一屏、卡片都建好、墙上新建）、屏幕边缘那叠（平时
+// 5 张、「+N」展开到第一屏、滚一屏）、快速记一条；Debug 和 -O 各一遍，判定按 -O、5000 条（键盘 16 ms、点击 100 ms、
+// 打开 / 第一屏 300 ms）。用法和实测数见 scale() 上面那段和 PLAN §10「便签」的「便签条数多时」。
 
 import AppKit
 import SwiftUI
@@ -932,6 +936,334 @@ struct NotesProbeTests {
       report("便签墙 点开 \(name)", opening)
       report("便签墙 收回 \(name)", closing)
     }
+  }
+
+  // MARK: 便签多了（2026-10-21 第二批调优）
+
+  /// 1000 / 3000 / 5000 条便签，Debug 和 -O 各量一遍：仓库三个视图、全部便签窗口（打开到第一屏、点另一条、搜索词里
+  /// 打 1 / 3 个字、搜着的时候在正文里打一个字、新建、删除）、便签墙（进墙到第一屏、卡片都建好、墙上新建）、
+  /// 屏幕边缘那叠（平时 5 张、「+N」展开到第一屏、展开着滚一屏）、快速记一条。
+  /// 判定按 -O、5000 条的数：键盘路径 16 ms、点击路径 100 ms、打开 / 第一屏 300 ms（SPEC 2026-10-21 §3 P1）。
+  ///   TEST_RUNNER_KITTY_NOTES_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  ///     test -only-testing:'KittyToolsTests/NotesProbeTests/scale()'
+  /// -O 用 SWIFT_OPTIMIZATION_LEVEL=-O（见 SPEC §3 的命令），另外给名字 `TEST_RUNNER_KITTY_NOTES_PROBE_BUILD=-O`
+  /// （构建设置在代码里分不出来，标签用它）；两种构建的结果都打在测试输出里（grep「notes-probe scale」）
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_NOTES_PROBE"] != nil))
+  func scale() throws {
+    let build = ProcessInfo.processInfo.environment["KITTY_NOTES_PROBE_BUILD"] ?? "Debug"
+    // 只想量一个条数（拿 sample 拍主线程时少等两段）：KITTY_NOTES_PROBE_SCALE=5000
+    let only = ProcessInfo.processInfo.environment["KITTY_NOTES_PROBE_SCALE"].flatMap(Int.init)
+    for count in only.map { [$0] } ?? [1000, 3000, 5000] { try measureScale(count, build: build) }
+  }
+
+  private func measureScale(_ count: Int, build: String) throws {
+    let label = "scale[\(count)][\(build)]"
+    let clock = ContinuousClock()
+
+    // 库：和 switching() 一样的 1–5 KB 正文，每 20 条带一张 240 × 160 的图（首屏排版、卡片缩略图都走真的那条路）
+    let directory = FileManager.default.temporaryDirectory.appending(
+      path: "kitty-notes-scale-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let images = NoteImageStore(directory: directory)
+    let pictureID = UUID()
+    let pictureURL = directory.appending(path: "\(pictureID.uuidString).png")
+    try NoteImageFixture.data(type: .png, width: 240, height: 160).write(to: pictureURL)
+    let picture = NoteImages.Image(id: pictureID, ext: "png", width: nil)
+    images.remember(
+      NoteImageStore.Stored(
+        image: picture, size: try #require(NoteImageStore.readSize(at: pictureURL))))
+    let store = try NoteStore(db: Database(path: ":memory:"))
+    store.images = images
+    let t0 = Date(timeIntervalSince1970: 1_760_000_000)
+    let made = clock.now
+    for index in (0..<count).reversed() {
+      var body = Self.body(index)
+      if index % 20 == 0 { body += "\n" + NoteImages.token(picture) + "\n" }
+      store.create(body: body, now: t0.addingTimeInterval(Double(count - index)))
+    }
+    let notes = store.active
+    let ids = notes.map(\.id)
+    print(
+      "notes-probe \(label) 建 \(count) 条 \(String(format: "%.0f", Self.ms(clock.now - made))) ms，正文共 "
+        + "\(notes.reduce(0) { $0 + $1.body.utf8.count } / 1024) KB")
+
+    // 仓库三个视图：冷（改一条、代数变了，窗口一次更新里各取一遍）和热（同一次更新里再取一遍）
+    var pin = false
+    let coldViews = Self.median(5) {
+      pin.toggle()
+      store.setPinned(pin, of: ids[0])
+      _ = (store.active, store.archived, store.trashed)
+    }
+    let warmViews = Self.median(20) { _ = (store.active, store.archived, store.trashed) }
+    let storeSearch = Self.median(3) { _ = NoteStore.search("任务", in: notes) }
+    print(
+      "notes-probe \(label) 三个视图：冷 \(String(format: "%.2f", coldViews)) ms、热 "
+        + "\(String(format: "%.2f", warmViews)) ms；换一次搜索词现算一遍 "
+        + "\(String(format: "%.1f", storeSearch)) ms")
+
+    // 全部便签窗口（列表）
+    let suite = "kitty-notes-scale-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let model = NotesWindowModel(store: store)
+    model.layout = .list
+    model.selection = ids[0]
+    var window: ProbeWindow?
+    func makeWindow() {
+      let panel = ProbeWindow(
+        contentViewController: .windowContent(
+          NotesWindowView(model: model).defaultAppStorage(defaults)))
+      panel.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+      panel.toolbarStyle = .unified
+      panel.setContentSize(NSSize(width: 940, height: 580))
+      panel.setFrameOrigin(NSPoint(x: -20000, y: -20000))
+      panel.isReleasedWhenClosed = false
+      window = panel
+    }
+    func editor(_ id: String?) -> NoteTextView? {
+      guard let id, let view = window?.contentView else { return nil }
+      return NotesWindow.editor(in: view).flatMap { $0.identifier?.rawValue == id ? $0 : nil }
+    }
+    let open = Self.until(
+      3,
+      {
+        makeWindow()
+        window?.orderFront(nil)
+        window?.displayIfNeeded()
+      }, done: { editor(ids[0]) != nil })
+    defer { window?.orderOut(nil) }
+    print(
+      "notes-probe \(label) 全部便签窗口 打开到第一屏：墙上 "
+        + Self.wall(open.wall) + " ms，最长的一下 \(String(format: "%.1f", open.longest)) ms，CPU "
+        + "\(String(format: "%.1f", open.cpu)) ms")
+    // 拿 sample 看打开窗口时主线程忙在哪：TEST_RUNNER_KITTY_NOTES_PROBE_LOOP=window 时只在这里开开关关 25 秒
+    if ProcessInfo.processInfo.environment["KITTY_NOTES_PROBE_LOOP"] == "window" {
+      print("notes-probe loop pid \(ProcessInfo.processInfo.processIdentifier)")
+      let end = clock.now + .seconds(25)
+      while clock.now < end {
+        window?.close()
+        window = nil
+        makeWindow()
+        window?.orderFront(nil)
+        window?.displayIfNeeded()
+        Self.spin(0.2)
+      }
+      return
+    }
+    Self.spin(0.3)
+
+    // 点另一条：从顶上点到底下（列表要滚过去、正文框重建）
+    let clickIndex = count * 4 / 5
+    let clicked = ids[clickIndex]
+    let click = Self.until(3, { model.selection = clicked }, done: { editor(clicked) != nil })
+    print(
+      "notes-probe \(label) 点另一条（第 \(clickIndex) 条）：墙上 " + Self.wall(click.wall)
+        + " ms，最长的一下 \(String(format: "%.1f", click.longest)) ms，CPU "
+        + "\(String(format: "%.1f", click.cpu)) ms")
+    Self.spin(0.3)
+
+    // 搜索词里打 1 个字、打到 3 个字；搜着的时候在正文里打一个字
+    let one = Self.cost(0.5) { model.query = "任" }
+    let three = Self.cost(0.5) { model.query = "任务文" }
+    print(
+      "notes-probe \(label) 搜索打 1 个字：同步 \(String(format: "%.1f", one.sync)) ms、最长的一下 "
+        + "\(String(format: "%.1f", one.longest)) ms、CPU \(String(format: "%.1f", one.cpu)) ms；"
+        + "第 3 个字：同步 \(String(format: "%.1f", three.sync)) ms、最长的一下 "
+        + "\(String(format: "%.1f", three.longest)) ms、CPU \(String(format: "%.1f", three.cpu)) ms")
+    #if DEBUG
+      store.viewReads = 0
+      let readsBefore = store.viewReads
+      model.query = "任务"
+      Self.spin(0.3)
+      print(
+        "notes-probe \(label) 改一次搜索词的窗口更新里：仓库三个视图被访问 \(store.viewReads - readsBefore) 次")
+    #endif
+    let visible = try #require(model.selection)
+    let searching = try #require(editor(visible))
+    let typing = Self.cost(0.5) {
+      searching.insertText("字", replacementRange: NSRange(location: NSNotFound, length: 0))
+    }
+    print(
+      "notes-probe \(label) 搜着的时候在正文里打一个字：同步 \(String(format: "%.1f", typing.sync)) ms、"
+        + "最长的一下 \(String(format: "%.1f", typing.longest)) ms、CPU "
+        + "\(String(format: "%.1f", typing.cpu)) ms")
+    model.query = ""
+    Self.spin(0.3)
+
+    // 新建一条（⌘N）、删除一条（进最近删除）
+    let create = Self.cost(0.5) { model.create() }
+    let fresh = try #require(model.selection)
+    let delete = Self.cost(0.5) { model.delete(fresh) }
+    print(
+      "notes-probe \(label) 新建一条：同步 \(String(format: "%.1f", create.sync)) ms、最长的一下 "
+        + "\(String(format: "%.1f", create.longest)) ms、CPU \(String(format: "%.1f", create.cpu)) ms；"
+        + "删除一条：同步 \(String(format: "%.1f", delete.sync)) ms、最长的一下 "
+        + "\(String(format: "%.1f", delete.longest)) ms、CPU \(String(format: "%.1f", delete.cpu)) ms"
+    )
+
+    // 便签墙：进墙到第一屏、卡片都建好、墙上新建一条（列表窗口关掉：它在后面也会跟着仓库变，别算进来）
+    window?.close()
+    window = nil
+    defaults.set(true, forKey: Prefs.notesMarkdown)
+    model.layout = .wall
+    model.selection = ids[0]
+    Self.spin(0.3)
+    var wallWindow: ProbeWindow?
+    func builtCards() -> Int {
+      let markdown = defaults.object(forKey: Prefs.notesMarkdown) as? Bool ?? true
+      return store.active.filter { store.cachedWallCard(of: $0, markdown: markdown) != nil }.count
+    }
+    let wallOpen = Self.until(
+      5,
+      {
+        let panel = ProbeWindow(
+          contentViewController: .windowContent(
+            NotesWindowView(model: model).defaultAppStorage(defaults)))
+        panel.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+        panel.toolbarStyle = .unified
+        panel.setContentSize(NSSize(width: 940, height: 580))
+        panel.setFrameOrigin(NSPoint(x: -20000, y: -20000))
+        panel.isReleasedWhenClosed = false
+        panel.orderFront(nil)
+        panel.displayIfNeeded()
+        wallWindow = panel
+      }, done: { builtCards() >= 8 })
+    defer { wallWindow?.orderOut(nil) }
+    print(
+      "notes-probe \(label) 便签墙 进墙到第一屏（8 张卡片）：墙上 " + Self.wall(wallOpen.wall)
+        + " ms，最长的一下 \(String(format: "%.1f", wallOpen.longest)) ms，CPU "
+        + "\(String(format: "%.1f", wallOpen.cpu)) ms")
+    let batchStart = clock.now
+    while builtCards() < store.active.count,
+      clock.now - batchStart < .seconds(min(Double(count) / 200, 60))
+    {
+      Self.spin(0.05)
+    }
+    print(
+      "notes-probe \(label) 便签墙 卡片都建好（\(builtCards()) 张）：从进墙再花 "
+        + "\(String(format: "%.0f", Self.ms(clock.now - batchStart))) ms")
+    let wallCreate = Self.cost(0.5) { model.create() }
+    print(
+      "notes-probe \(label) 便签墙上新建一条：同步 \(String(format: "%.1f", wallCreate.sync)) ms、"
+        + "最长的一下 \(String(format: "%.1f", wallCreate.longest)) ms、CPU "
+        + "\(String(format: "%.1f", wallCreate.cpu)) ms")
+    wallWindow?.close()
+    wallWindow = nil
+
+    // 屏幕边缘那叠：平时 5 张、「+N」展开到第一屏、展开着滚一屏
+    let far = NoteDeckScreen(
+      name: "测试", frame: CGRect(x: -40000, y: -40000, width: 1440, height: 900),
+      visibleFrame: CGRect(x: -40000, y: -40000, width: 1440, height: 875))
+    for frame in [NoteDeckLayout.panelFrame(on: far, edge: .right, options: NoteDeckOptions())] {
+      try #require(
+        !NSScreen.screens.contains { $0.frame.insetBy(dx: -2000, dy: -2000).intersects(frame) })
+    }
+    let deck = NoteDeck(store: store, island: nil, takesKeyboard: false)
+    defer { deck.close() }
+    deck.place(on: far, edge: .right, options: NoteDeckOptions())
+    let fan = Self.until(
+      3, { deck.pill?.onPress() }, done: { deck.contentFrame != .zero })
+    print(
+      "notes-probe \(label) 那叠 平时 5 张：墙上 " + Self.wall(fan.wall) + " ms，最长的一下 "
+        + "\(String(format: "%.1f", fan.longest)) ms，CPU \(String(format: "%.1f", fan.cpu)) ms")
+    func deckScroll() -> NSScrollView? {
+      func find(_ view: NSView?) -> NSScrollView? {
+        guard let view else { return nil }
+        if let scroll = view as? NSScrollView, scroll.documentView != nil { return scroll }
+        for child in view.subviews { if let found = find(child) { return found } }
+        return nil
+      }
+      return find(deck.panel?.contentView)
+    }
+    let expanded = Self.until(
+      5, { deck.model.send(.showAll) },
+      done: {
+        guard let scroll = deckScroll(), let document = scroll.documentView else { return false }
+        return document.frame.height > scroll.contentView.bounds.height + 1
+      })
+    print(
+      "notes-probe \(label) 那叠「+N」展开到第一屏：墙上 " + Self.wall(expanded.wall) + " ms，最长的一下 "
+        + "\(String(format: "%.1f", expanded.longest)) ms，CPU "
+        + "\(String(format: "%.1f", expanded.cpu)) ms")
+    if let scroll = deckScroll() {
+      let viewport = scroll.contentView.bounds.height
+      let before = scroll.contentView.bounds.minY
+      let scrolled = Self.cost(0.5) {
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: before + viewport))
+        scroll.reflectScrolledClipView(scroll.contentView)
+      }
+      Self.spin(0.3)
+      print(
+        "notes-probe \(label) 那叠 展开着滚一屏（\(String(format: "%.0f", viewport)) pt）：同步 "
+          + "\(String(format: "%.1f", scrolled.sync)) ms、最长的一下 "
+          + "\(String(format: "%.1f", scrolled.longest)) ms、CPU "
+          + "\(String(format: "%.1f", scrolled.cpu)) ms，滚到了 "
+          + "\(String(format: "%.0f", scroll.contentView.bounds.minY))")
+    }
+
+    // 快速记一条（⌥N）存一条（那叠先收掉：它在旁边也会跟着仓库变，别算进存一条里）
+    deck.close()
+    let capture = NoteCaptureModel(store: store)
+    let destinations = Self.median(5) { _ = capture.destinations }
+    let save = Self.cost(0.5) {
+      capture.draft = "快速记一条：\(count) 条便签的时候，这一下要多久。"
+      _ = capture.save()
+    }
+    print(
+      "notes-probe \(label) 快速记一条：目的地 \(String(format: "%.2f", destinations)) ms；存一条 同步 "
+        + "\(String(format: "%.1f", save.sync)) ms、最长的一下 \(String(format: "%.1f", save.longest)) ms、CPU "
+        + "\(String(format: "%.1f", save.cpu)) ms")
+    model.layout = .list
+    deck.close()
+    window?.orderOut(nil)
+  }
+
+  /// 做一件事（change），之后 seconds 秒里每 1 ms 转一下跑环：done() 第一次为真的墙上时间（超时是 .infinity）、
+  /// 最长的一下、这段时间主线程 CPU
+  private static func until(
+    _ seconds: Double, _ change: () -> Void = {}, done: () -> Bool
+  ) -> (wall: Double, longest: Double, cpu: Double) {
+    let clock = ContinuousClock()
+    let start = clock.now
+    let cpu0 = cpu()
+    change()
+    var longest = ms(clock.now - start)
+    var wall = done() ? longest : Double.infinity
+    while clock.now - start < .milliseconds(Int(seconds * 1000)) {
+      let slice = clock.now
+      RunLoop.main.run(mode: .default, before: .now.addingTimeInterval(0.001))
+      if wall == .infinity, done() {
+        wall = ms(clock.now - start)
+        // 到了就停：等在后面的那几秒（墙还在分批建卡片）不算进「到第一屏」的 CPU
+        break
+      }
+      longest = max(longest, ms(clock.now - slice))
+    }
+    return (wall, longest, cpu() - cpu0)
+  }
+
+  /// 做一件事（change）：同步那一下的墙上时间、之后 seconds 秒里最长的一下、这段时间主线程 CPU
+  private static func cost(_ seconds: Double, _ change: () -> Void) -> (
+    sync: Double, longest: Double, cpu: Double
+  ) {
+    let clock = ContinuousClock()
+    let start = clock.now
+    let cpu0 = cpu()
+    change()
+    let sync = ms(clock.now - start)
+    var longest = sync
+    while clock.now - start < .milliseconds(Int(seconds * 1000)) {
+      let slice = clock.now
+      RunLoop.main.run(mode: .default, before: .now.addingTimeInterval(0.001))
+      longest = max(longest, ms(clock.now - slice))
+    }
+    return (sync, longest, cpu() - cpu0)
+  }
+
+  /// 墙上时间打出来：超时写「超时」
+  private static func wall(_ value: Double) -> String {
+    value.isFinite ? String(format: "%.1f", value) : "超时"
   }
 }
 

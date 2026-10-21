@@ -807,4 +807,85 @@ struct NoteStoreTests {
     #expect(store.flush())
     #expect(try saved(db).map(\.id) == [id])
   }
+  // MARK: 缓存（2026-10-21 第二批调优）
+
+  /// 三个视图按代数缓存：每一条改动路都要马上失效——缓存给的和现算（`NoteStore.active(in:)` 等）一样。
+  /// 漏一条界面就显示旧的（正文、标题、归档、删除、恢复、导入合并、清 30 天、挪顺序）
+  @Test func cachedViewsMatchFreshComputationAfterEveryPath() throws {
+    let (store, db) = try open()
+    let a = store.create(body: "甲", now: Self.t0)
+    let b = store.create(body: "乙", now: Self.at(1))
+    let c = store.create(body: "丙", now: Self.at(2))
+    func check(_ what: String) {
+      #expect(
+        store.active.map(\.id) == NoteStore.active(in: store.notes).map(\.id), "\(what)：全部")
+      #expect(
+        store.archived.map(\.id) == NoteStore.archived(in: store.notes).map(\.id), "\(what)：归档")
+      #expect(
+        store.trashed.map(\.id) == NoteStore.trashed(in: store.notes).map(\.id), "\(what)：最近删除")
+    }
+    check("建好")
+    store.setBody("甲二", of: a.id, now: Self.at(3))
+    check("改正文")
+    store.setTitle("乙的标题", of: b.id, now: Self.at(4))
+    check("改标题")
+    store.setColor(3, of: c.id, now: Self.at(5))
+    check("改颜色")
+    store.setPinned(true, of: c.id)
+    check("固定")
+    store.move(c.id, to: 0)
+    check("挪顺序")
+    store.setArchived(true, of: b.id)
+    check("归档")
+    store.delete(a.id, now: Self.at(6))
+    check("删除")
+    store.restore(a.id)
+    check("放回")
+    store.setArchived(false, of: b.id)
+    check("取消归档")
+    store.erase(c.id)
+    check("永久删除")
+    store.adopt(
+      [entry("DDDDDDDD-DDDD-4DDD-8DDD-DDDDDDDDDDDD", "导入的", modified: 1_700_000_000_000)],
+      now: Self.at(7))
+    check("导入合并")
+    store.delete(b.id, now: Self.at(8) - 40 * 86_400)
+    check("删除（还没清）")
+    #expect(store.purgeExpired(now: Self.at(8)) == 1)
+    check("清 30 天")
+    // 盘上的和仓库里的一致（缓存没把哪条留在外面）
+    #expect(try saved(db).count == store.notes.count)
+  }
+
+  /// 搜索折叠出来的正文按「编号 + 修订号」缓存：改正文 / 标题马上作废，换搜索词、重画不重折；
+  /// 永久删掉的跟着清（不留下已删便签的正文）
+  @Test func cachedSearchMatchesFreshFoldingAndDropsErasedNotes() throws {
+    let (store, _) = try open()
+    let weekly = store.create(body: "周报 review 了这周的改动", now: Self.t0)
+    let shopping = store.create(body: "购物清单 apple 和牛奶", now: Self.at(1))
+    func check(_ query: String, _ what: String) {
+      #expect(
+        store.search(query, in: store.active).map(\.id)
+          == NoteStore.search(query, in: store.active).map(\.id), "\(what)：\(query)")
+    }
+    check("周报", "建好")
+    check("apple", "建好")
+    #expect(store.foldedEntries == 2)
+    check("周报", "第二次（命中缓存）")
+    store.setBody("周报第二版：发货单", of: weekly.id, now: Self.at(2))
+    check("发货", "改正文")
+    check("review", "改正文（旧词不该再命中）")
+    #expect(store.search("review", in: store.active).isEmpty)
+    store.setTitle("购物", of: shopping.id, now: Self.at(3))
+    check("购物", "改标题")
+    store.setArchived(true, of: shopping.id)
+    check("购物", "归档")
+    store.setArchived(false, of: shopping.id)
+    check("购物", "取消归档")
+    store.erase(shopping.id)
+    #expect(store.foldedEntries == 1)
+    check("购物", "永久删除")
+    store.erase(weekly.id)
+    #expect(store.foldedEntries == 0)
+  }
 }

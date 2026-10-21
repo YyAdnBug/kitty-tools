@@ -197,37 +197,47 @@ import SwiftUI
   var notes: [Note] { store.active }
 
   /// 画出来的标签：平时最多 fanLimit 张，点了「+N」是全部。
-  /// ponytail: 展开后一次画全部（每张一个悬停追踪区），在视口里滚；便签上限 5000 条，几百条以内没事，卡了换成只画
-  /// 可见区附近的那些（Shell/ListReveal 的 ListWindow，剪贴板列表的做法）。拖动排序拖到视口外也不自动滚
+  /// 展开后这串还是全部（拖动排序、键盘 ↑↓、预览都按它算），画只画可见区附近（NoteDeckView.stack 的 window，
+  /// 用 Shell/ListReveal 的 ListWindow）：实测 5000 条 -O 展开到第一屏 4735 → 57 ms、滚一屏 63 → 12 ms（2026-10-21）。
+  /// ponytail: 拖动排序拖到视口外不自动滚
   var tabs: [Note] {
     state.showsAll ? notes : Array(notes.prefix(NoteDeckLayout.fanLimit))
   }
 
   var previewNote: Note? { preview.flatMap { id in tabs.first { $0.id == id } } }
 
-  /// 一列的排法。露出的一截跟着最长的标题走：标题取仓库的缓存（NoteStore.summary），量出来的最长那一截按「这一列的
-  /// 标题 + 大小档」记下来（longestMemo）——「+N」展开成几百张时，每次状态变化都要把几百个标题量好几遍
-  /// （手测反馈第 3 批屏外量的）
+  /// 一列的排法。露出的一截跟着最长的标题走：标题取仓库的缓存（NoteStore.summary），量出来的最长那一截按「仓库代数 +
+  /// 是不是展开 + 大小档」记下来（longestMemo）。「+N」展开成上千张时露出一截反正要压到最短（NoteDeckLayout.needsLongest），
+  /// 不去量那几千个标题——量一遍要几百毫秒（2026-10-21 第二批调优：5000 条 -O 展开到第一屏）
   var layout: NoteDeckLayout {
     let tabs = tabs
     let metrics = NoteDeckMetrics(scale: options.size.scale)
+    let count = tabs.count
+    let hidden = notes.count - count
     var longest: CGFloat = 0
-    if options.style == .tabs {
-      let titles = tabs.map { store.summary(of: $0).title }
-      if let memo = longestMemo, memo.scale == metrics.scale, memo.titles == titles {
+    if options.style == .tabs,
+      !NoteDeckLayout.needsLongest(
+        count: count, hidden: hidden, height: panelSize.height, options: options)
+    {
+      if let memo = longestMemo, memo.generation == store.generation,
+        memo.showsAll == state.showsAll, memo.scale == metrics.scale
+      {
         longest = memo.longest
       } else {
-        longest = titles.map { NoteDeckLabel.length($0, metrics: metrics) }.max() ?? 0
-        longestMemo = (titles, metrics.scale, longest)
+        longest =
+          tabs.map { NoteDeckLabel.length(store.summary(of: $0).title, metrics: metrics) }.max()
+          ?? 0
+        longestMemo = (store.generation, state.showsAll, metrics.scale, longest)
       }
     }
     return NoteDeckLayout(
-      count: tabs.count, hidden: notes.count - tabs.count, longestLabel: longest,
+      count: count, hidden: hidden, longestLabel: longest,
       height: panelSize.height, options: options)
   }
 
-  /// 上次量过的：那一列的标题、大小档、最长的一截
-  @ObservationIgnored private var longestMemo: (titles: [String], scale: CGFloat, longest: CGFloat)?
+  /// 上次量过的：仓库代数、是不是「+N」展开、大小档、最长的一截
+  @ObservationIgnored private var longestMemo:
+    (generation: Int, showsAll: Bool, scale: CGFloat, longest: CGFloat)?
 
   /// 标签列的顶离面板顶多远
   func columnTop(_ layout: NoteDeckLayout) -> CGFloat {

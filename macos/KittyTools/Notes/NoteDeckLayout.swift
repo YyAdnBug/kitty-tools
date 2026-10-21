@@ -100,6 +100,25 @@ nonisolated struct NoteDeckLayout: Equatable, Sendable {
   let stackHeight: CGFloat
   let viewport: CGFloat?
 
+  /// 标签那一段的高度预算：屏高的 0.68，扣掉「+N」和「+」占的
+  static func budget(hidden: Int, height: CGFloat, options: NoteDeckOptions) -> CGFloat {
+    let metrics = NoteDeckMetrics(scale: options.size.scale)
+    let reserved =
+      (hidden > 0 ? metrics.moreGap + metrics.moreHeight : 0) + metrics.plusGap + metrics.plusSize
+    return max((height * heightBudget).rounded(.down) - reserved, 0)
+  }
+
+  /// 露出一截压到最短也放不下（「+N」展开成上千张时）：init 里这一压的结果跟最长标题无关，
+  /// 调用方可以省掉几千次标题排版（2026-10-21 第二批调优：5000 条量标题要几百毫秒）
+  static func needsLongest(
+    count: Int, hidden: Int, height: CGFloat, options: NoteDeckOptions
+  ) -> Bool {
+    guard options.style == .tabs else { return false }
+    let metrics = NoteDeckMetrics(scale: options.size.scale)
+    return CGFloat(max(count, 0)) * metrics.stripFloor + metrics.lap
+      > budget(hidden: hidden, height: height, options: options)
+  }
+
   /// - Parameters:
   ///   - longestLabel: 这一列里最长的标题竖着排多长（NoteDeckLabel.length；只有色块时不用）
   ///   - height: 面板（那块屏的可见区）多高
@@ -109,10 +128,8 @@ nonisolated struct NoteDeckLayout: Equatable, Sendable {
     let metrics = NoteDeckMetrics(scale: options.size.scale)
     let count = max(count, 0)
     let hidden = max(hidden, 0)
-    let reserved =
-      (hidden > 0 ? metrics.moreGap + metrics.moreHeight : 0) + metrics.plusGap + metrics.plusSize
     // 预算取整到整点（600 × 0.68 在浮点里不是整 408）
-    let budget = max((height * Self.heightBudget).rounded(.down) - reserved, 0)
+    let budget = Self.budget(hidden: hidden, height: height, options: options)
     switch options.style {
     case .chips:
       itemHeight = metrics.chipHeight

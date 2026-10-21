@@ -68,6 +68,13 @@ import Observation
   @ObservationIgnored private(set) var generation = 0
   /// 上次落盘没成的原因；都落下去了是 nil
   private(set) var saveProblem: String?
+  #if DEBUG
+    /// 量测用（TEST_RUNNER_KITTY_NOTES_PROBE=1 的 scale()）：三个视图一共被访问了几次——一次窗口更新要问好几遍
+    /// （视图切换的计数、列表本身、快速记一条的候选）。不看着它变，只数；Release 里没有这一项
+    @ObservationIgnored var viewReads = 0
+    /// 单测用：折叠缓存里现在有几条（永久删掉的便签不许留在里面）
+    var foldedEntries: Int { folded.count }
+  #endif
   /// 图片目录（第 7 批行内图片，notes-images/）：AppDelegate 开完便签后设；nil = 图都画占位框、粘进来的存不了。
   /// 编辑器（NoteTextView.imageStore）和便签墙卡片（wallCard 的缩略图）都从这里拿——不另设一个进程里的单例
   /// （单测各给各的临时目录，互不打扰）
@@ -80,6 +87,18 @@ import Observation
       [:]
   /// 便签墙卡片的缓存（wallCard(of:markdown:)）：编号 → 建的时候看的那几样和卡片
   @ObservationIgnored private var wallCards: [String: (key: WallCardKey, card: NoteWallCard)] = [:]
+  /// 正文折叠结果的缓存（搜索用）：编号 → 折叠时那条的修订号和结果。改过的修订号就变，不用逐处作废；
+  /// 永久删掉的在 erase 里清（不留下已删便签的正文）
+  @ObservationIgnored private var folded: [String: (revision: Int, key: Search.Key)] = [:]
+  /// 三个视图的缓存（都只跟 notes 有关）：按代数整批作废。便签多了以后一次窗口更新要问好几遍（视图切换的计数、
+  /// 列表本身、快速记一条的候选），每一遍都 filter + sort；5000 条一遍两三毫秒，几遍就吃掉一帧（2026-10-21 量出来的）
+  @ObservationIgnored private var views = Views()
+  private struct Views {
+    var generation = -1
+    var active: [Note]?
+    var archived: [Note]?
+    var trashed: [Note]?
+  }
   /// 改了还没落盘的便签的编号：打字攒着的、上次没写成的；内存里已经没有的那些 = 要从库里删掉的
   @ObservationIgnored private var unsaved: Set<String> = []
   /// 这一串没落盘的打字改动里最早那次是什么时候（算「连着改满 maxDelay」用）
@@ -260,19 +279,51 @@ import Observation
 
   // MARK: 视图
 
-  /// 没归档、没删的，按顺序
+  /// 没归档、没删的，按顺序（按代数缓存，见 views）
   var active: [Note] {
-    notes.filter(\.isActive).sorted(by: Self.precedes)
+    #if DEBUG
+      viewReads += 1
+    #endif
+    if views.generation != generation { views = Views(generation: generation) }
+    if let cached = views.active { return cached }
+    let value = Self.active(in: notes)
+    views.active = value
+    return value
   }
 
   /// 归档的，最近改过的在前
   var archived: [Note] {
-    notes.filter { $0.isArchived && $0.deletedAt == nil }
-      .sorted { ($0.modifiedAt, $0.id) > ($1.modifiedAt, $1.id) }
+    #if DEBUG
+      viewReads += 1
+    #endif
+    if views.generation != generation { views = Views(generation: generation) }
+    if let cached = views.archived { return cached }
+    let value = Self.archived(in: notes)
+    views.archived = value
+    return value
   }
 
   /// 「最近删除」里的，刚删的在前
   var trashed: [Note] {
+    #if DEBUG
+      viewReads += 1
+    #endif
+    if views.generation != generation { views = Views(generation: generation) }
+    if let cached = views.trashed { return cached }
+    let value = Self.trashed(in: notes)
+    views.trashed = value
+    return value
+  }
+
+  /// 现算的三个视图（不走缓存）：缓存里存的就是它们算出来的，单测拿它当对照（「存下来和现算一样」）
+  static func active(in notes: [Note]) -> [Note] {
+    notes.filter(\.isActive).sorted(by: precedes)
+  }
+  static func archived(in notes: [Note]) -> [Note] {
+    notes.filter { $0.isArchived && $0.deletedAt == nil }
+      .sorted { ($0.modifiedAt, $0.id) > ($1.modifiedAt, $1.id) }
+  }
+  static func trashed(in notes: [Note]) -> [Note] {
     notes.filter { $0.deletedAt != nil }
       .sorted { ($0.deletedAt ?? .distantPast, $0.id) > ($1.deletedAt ?? .distantPast, $1.id) }
   }
@@ -348,7 +399,8 @@ import Observation
   }
 
   /// 谁排在前面：order 小的；一样时（导入带来的）新建的在前，再一样按编号——顺序总是确定的。
-  /// ponytail: 几个视图每次访问都现筛现排（几百条是微秒级）；便签上千条、列表卡了再把排好的存下来
+  /// 三个视图按代数缓存（上面 views）：实测 5000 条 -O、一次窗口更新问 5 遍，现筛现排一遍 2.4 ms、几遍就 10 ms 上下，
+  /// 缓存之后只第一遍算（2026-10-21 第二批调优）
   private static func precedes(_ a: Note, _ b: Note) -> Bool {
     if a.order != b.order { return a.order < b.order }
     if a.createdAt != b.createdAt { return a.createdAt > b.createdAt }
@@ -505,6 +557,7 @@ import Observation
     for note in doomed {
       summaries[note.id] = nil
       wallCards[note.id] = nil
+      folded[note.id] = nil
       var tombstone = NoteSync.Tombstone(clock: note.clock, state: note.stateTime)
       for other in [tombstones[note.id], erased[note.id]].compactMap({ $0 }) {
         tombstone = tombstone.merged(with: other)
@@ -640,16 +693,40 @@ import Observation
 
   /// 在给的这些里搜（一般是 active / archived / trashed）：标题和正文，空白分词、每个词都要命中，不分大小写、全半角、
   /// 变音符号（分词和折叠用剪贴板搜索现成的，Search）；顺序不变，空查询原样返回。
-  /// ponytail: 每次把这些便签的正文现折叠一遍（几百条、每条几 KB 是毫秒级）；上千条、边打字边搜卡了，再在仓库里按
-  /// 「编号 + 修订号」把折叠结果存下来（同 ClipboardStore.searchKeys，那时改回实例方法）
+  /// 正文折叠一遍不便宜（5000 条 -O 一遍约 1 秒），按「编号 + 修订号」把结果存下来（folded，同 ClipboardStore.searchKeys）：
+  /// 换搜索词、同一次更新里重画、搜着的时候在正文里打字（只有那一条的修订号变）都只折变过的。
   /// 正文里的图片令牌先整段去掉：搜「image」「png」或者编号里的十六进制不该命中带图的便签（F19）；
   /// 颜色的标记也去掉（第 8 批）：搜「red」「blue」不该命中只是上了色的便签
+  func search(_ query: String, in notes: [Note]) -> [Note] {
+    Self.matching(query, in: notes) { foldedKey(of: $0) }
+  }
+
+  /// 纯函数版（不走缓存的现折；单测和量测的对照）
   static func search(_ query: String, in notes: [Note]) -> [Note] {
+    matching(query, in: notes) { note in
+      Search.Key(
+        bytes: Search.fold(
+          note.title + "\n" + NoteMarkdown.strippingColors(from: NoteImages.stripping(note.body))))
+    }
+  }
+
+  /// 这条便签折叠后的标题 + 正文（去图、去色），按「编号 + 修订号」缓存
+  private func foldedKey(of note: Note) -> Search.Key {
+    if let cached = folded[note.id], cached.revision == note.revision { return cached.key }
+    let key = Search.Key(
+      bytes: Search.fold(
+        note.title + "\n" + NoteMarkdown.strippingColors(from: NoteImages.stripping(note.body))))
+    folded[note.id] = (revision: note.revision, key: key)
+    return key
+  }
+
+  private static func matching(
+    _ query: String, in notes: [Note], key: (Note) -> Search.Key
+  ) -> [Note] {
     let tokens = Search.tokens(query).map(Search.fold)
     guard !tokens.isEmpty else { return notes }
     return notes.filter { note in
-      let bytes = Search.fold(
-        note.title + "\n" + NoteMarkdown.strippingColors(from: NoteImages.stripping(note.body)))
+      let bytes = key(note).bytes
       return tokens.allSatisfy { Search.contains(bytes, $0) }
     }
   }
