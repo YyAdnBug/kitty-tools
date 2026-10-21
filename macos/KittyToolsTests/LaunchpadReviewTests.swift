@@ -367,7 +367,7 @@ struct LaunchpadReviewTests {
       frame: NSRect(x: -20000, y: -20000, width: 900, height: 600), model: model)
     #expect(panel.appearance?.name == .darkAqua)
     #expect(!panel.isKeyWindow)
-    weak var weakPanel = panel
+    let weakPanel = panel
     panel.orderOut(nil)
     panel.contentView = nil
     #expect(weakPanel != nil)

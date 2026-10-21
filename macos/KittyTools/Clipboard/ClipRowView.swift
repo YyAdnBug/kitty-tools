@@ -446,8 +446,9 @@ struct ThumbnailView: View {
     cache.totalCostLimit = previewBytes
     return cache
   }()
-  /// 进过缓存的大卡档的 key：NSCache 列不出自己有什么，dropCards 照着这份丢
-  private static var cardKeys: Set<String> = []
+  /// 进过缓存的大卡档的 key：NSCache 列不出自己有什么，dropCards 照着这份丢。不是 private：单测要查
+  /// 「丢的是不是只有大卡这一档」（系统的 NSCache 随时可能自己清掉，不能拿「还在缓存里」当断言）
+  private(set) static var cardKeys: Set<String> = []
 
   init(id: UUID, images: ImageStore, maxPixel: Int, contentMode: ContentMode = .fill) {
     self.id = id
@@ -509,7 +510,7 @@ struct ThumbnailView: View {
     cardKeys = []
   }
 
-  private static func key(_ id: UUID, _ maxPixel: Int) -> String {
+  static func key(_ id: UUID, _ maxPixel: Int) -> String {
     "\(id.uuidString)-\(maxPixel)"
   }
 }

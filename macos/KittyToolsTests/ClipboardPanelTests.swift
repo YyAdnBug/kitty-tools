@@ -705,17 +705,30 @@ struct ClipboardPanelTests {
     func load(_ maxPixel: Int) async throws -> NSImage {
       try #require(await ThumbnailView.load(id, images: images, maxPixel: maxPixel))
     }
+    func pixels(_ image: NSImage) -> NSSize {
+      image.representations.first.map { NSSize(width: $0.pixelsWide, height: $0.pixelsHigh) }
+        ?? .zero
+    }
     let card = try await load(ThumbnailView.cardPixel)
     let lens = try await load(ThumbnailView.lensPixel)
     let icon = try await load(ThumbnailView.iconPixel)
-    #expect(try await load(ThumbnailView.cardPixel) === card)
+    // 三档都做出来了（每一个都是那张图的缩略图）
+    #expect(pixels(card) != .zero && pixels(lens) != .zero && pixels(icon) != .zero)
+    let sizes = (card: pixels(card), lens: pixels(lens), icon: pixels(icon))
+    // 大卡那一档按「编号 + 档」记在 cardKeys 里（dropCards 照着这份丢）；透镜、图标两档不归它管。
+    // 原来断言「再要一次还是缓存里那一个」——全量并行时系统内存压力会把 NSCache 清掉，这一条就偶发失败。
+    // 现在测的是缓存本该保证的事：该丢的丢了、丢了也能按编号补回来、结果和原来一样
+    let cardKey = ThumbnailView.key(id, ThumbnailView.cardPixel)
+    #expect(ThumbnailView.cardKeys.contains(cardKey))
     ThumbnailView.dropCards()
-    #expect(try await load(ThumbnailView.cardPixel) !== card)
-    #expect(try await load(ThumbnailView.lensPixel) === lens)
-    #expect(try await load(ThumbnailView.iconPixel) === icon)
+    #expect(!ThumbnailView.cardKeys.contains(cardKey))
+    #expect(pixels(try await load(ThumbnailView.cardPixel)) == sizes.card)
+    #expect(pixels(try await load(ThumbnailView.lensPixel)) == sizes.lens)
+    #expect(pixels(try await load(ThumbnailView.iconPixel)) == sizes.icon)
     // 丢过一次之后新进来的大卡档照样记着：再丢一次还是丢得掉
-    let again = try await load(ThumbnailView.cardPixel)
+    _ = try await load(ThumbnailView.cardPixel)
+    #expect(ThumbnailView.cardKeys.contains(cardKey))
     ThumbnailView.dropCards()
-    #expect(try await load(ThumbnailView.cardPixel) !== again)
+    #expect(!ThumbnailView.cardKeys.contains(cardKey))
   }
 }

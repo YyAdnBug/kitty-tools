@@ -526,8 +526,10 @@ import Observation
   /// 历史搜索框的编辑命令（doCommandBy，输入法组字时不会来）：↑↓ 选、↩ 重新翻译这条、⇧Tab 换范围、
   /// → 在搜索词末尾时打开动作菜单（同剪贴板 / 启动器）、Esc 先清搜索词再关历史（回到浮窗）；
   /// ⌘K 菜单开着时先给它（HistoryList.handleMenuCommand）。
-  /// 返回 false 交还字段编辑器；历史已关（搜索框还在淡出）时一律交还
-  func handleHistoryCommand(_ selector: Selector) -> Bool {
+  /// 返回 false 交还字段编辑器；历史已关（搜索框还在淡出）时一律交还。
+  /// event：判断「光标在搜索词末尾」时要看的那一下按键事件，默认就是正在派发的这一下；单测传 nil，
+  /// 不去读 NSApp.currentEvent（并行时别的测试留下的事件会让判断落到它们身上）
+  func handleHistoryCommand(_ selector: Selector, event: NSEvent? = NSApp.currentEvent) -> Bool {
     guard showsHistory else { return false }
     if historyList.showsActions { return historyList.handleMenuCommand(selector) }
     switch selector {
@@ -541,7 +543,8 @@ import Observation
       translate(entry.source)
     case #selector(NSResponder.insertBacktab(_:)): historyList.favoritesOnly.toggle()
     case #selector(NSResponder.moveRight(_:))
-    where historyList.selected != nil && HistoryList.caretAtEnd(of: historyList.query):
+    where historyList.selected != nil
+      && HistoryList.caretAtEnd(of: historyList.query, event: event):
       historyList.showsActions = true
     case #selector(NSResponder.cancelOperation(_:)):
       if historyList.query.isEmpty { showsHistory = false } else { historyList.query = "" }

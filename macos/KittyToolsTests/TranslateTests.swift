@@ -1045,7 +1045,9 @@ struct TranslateBatch4Tests {
     #expect(confirmed && !list.showsActions)
   }
 
-  /// 历史里 → 在搜索词末尾（单测里没有字段编辑器：搜索词为空才算）打开动作菜单，同剪贴板 / 启动器；有字时照常移光标
+  /// 历史里 → 在搜索词末尾（单测里没有字段编辑器：搜索词为空才算）打开动作菜单，同剪贴板 / 启动器；有字时照常移光标。
+  /// 事件自己传 nil，不读 NSApp.currentEvent：并行时那个可能是别的测试留在队列里的事件，它窗口里的字段编辑器
+  /// 会把这条判断带偏（全量里偶发失败过）
   @Test func historyMoveRightOpensActions() throws {
     let history = try HistoryStore(db: Database(path: ":memory:"))
     history.add(source: "hello", target: .zhHans, result: "你好", service: "A", limit: 0)
@@ -1054,10 +1056,10 @@ struct TranslateBatch4Tests {
     let list = coordinator.historyList
     coordinator.showsHistory = true
     list.query = "hel"
-    #expect(!coordinator.handleHistoryCommand(#selector(NSResponder.moveRight(_:))))
+    #expect(!coordinator.handleHistoryCommand(#selector(NSResponder.moveRight(_:)), event: nil))
     #expect(!list.showsActions)
     list.query = ""
-    #expect(coordinator.handleHistoryCommand(#selector(NSResponder.moveRight(_:))))
+    #expect(coordinator.handleHistoryCommand(#selector(NSResponder.moveRight(_:)), event: nil))
     #expect(list.showsActions)
   }
 

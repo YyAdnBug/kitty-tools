@@ -342,9 +342,10 @@ import UniformTypeIdentifiers
     actionSelection = root.firstIndex { $0.id == id } ?? 0
   }
 
-  /// 搜索框的光标在文字最后（没有选中文字）：→ 这时才开动作菜单 / 进子列表，否则照常往右移光标
-  static func caretAtEnd(of text: String) -> Bool {
-    guard let editor = NSApp.currentEvent?.window?.firstResponder as? NSTextView,
+  /// 搜索框的光标在文字最后（没有选中文字）：→ 这时才开动作菜单 / 进子列表，否则照常往右移光标。
+  /// event：那一按键派发时的事件（默认 NSApp.currentEvent）；单测传 nil，不读别的测试留下的全局状态
+  static func caretAtEnd(of text: String, event: NSEvent? = NSApp.currentEvent) -> Bool {
+    guard let editor = event?.window?.firstResponder as? NSTextView,
       editor.isFieldEditor
     else { return text.isEmpty }
     let selection = editor.selectedRange()
@@ -389,7 +390,7 @@ struct HistoryView: View {
           CommandTextField(
             text: list.showsActions ? $list.actionQuery : $list.query,
             placeholder: list.showsActions ? "搜索操作" : "搜索原文或译文", isDialogField: true,
-            fontSize: 13, onCommand: coordinator.handleHistoryCommand,
+            fontSize: 13, onCommand: { coordinator.handleHistoryCommand($0) },
             onFocusChange: { searchFocused = $0 })
         }
         .padding(.horizontal, 8)
