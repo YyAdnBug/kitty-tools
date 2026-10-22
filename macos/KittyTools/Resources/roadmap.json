@@ -2,5 +2,5 @@
   { "kind": "feature", "scope": "便签", "text": "iCloud 同步：几台 Mac 上的便签保持一样" },
   { "kind": "feature", "scope": "便签", "text": "自定义纸色：8 种之外自己挑颜色，最近用过的记下来" },
   { "kind": "feature", "scope": "便签", "text": "同时把几张便签浮在屏幕上（现在一次一张）" },
-  { "kind": "feature", "scope": "便签", "text": "便签里的图片能裁切，宽度有几档一下选好" }
+  { "kind": "feature", "scope": "便签", "text": "便签里的图片能裁切" }
 ]

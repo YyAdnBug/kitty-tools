@@ -59,6 +59,40 @@ nonisolated enum NoteImages {
     return raw
   }
 
+  /// 宽度的五档（右键图片的小菜单，便签未来计划 D3）。**只能存成点数**：令牌里写百分比 0.5.0 认不出来。
+  /// 铺满 = 存上限 4000（显示时缩到这一行的可用宽、小图也拉满——0.5.0 读到也这样显示）；
+  /// 原始大小 = 不记宽度（显示 min（原图点宽，可用宽），同新插的图）
+  enum WidthPreset: CaseIterable, Sendable {
+    case small, medium, large, fill, original
+
+    var title: String {
+      switch self {
+      case .small: "小"
+      case .medium: "中"
+      case .large: "大"
+      case .fill: "铺满"
+      case .original: "原始大小"
+      }
+    }
+
+    /// 存进令牌的宽度（原始大小不记）
+    var width: Int? {
+      switch self {
+      case .small: 120
+      case .medium: 240
+      case .large: 360
+      case .fill: NoteImages.maxWidth
+      case .original: nil
+      }
+    }
+
+    /// 令牌里记着的宽度是哪一档；拖把手拖出来的、不在这几个数上的不是任何一档（菜单里不打勾）
+    init?(width: Int?) {
+      guard let found = Self.allCases.first(where: { $0.width == width }) else { return nil }
+      self = found
+    }
+  }
+
   // MARK: 认
 
   /// 从 index 开始是不是一段令牌：是就给它的区间和内容（区间是 UTF-16 的）

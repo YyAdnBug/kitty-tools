@@ -96,6 +96,13 @@ extension NoteTextView {
     return attachment.attachmentCell as? NoteImageAttachmentCell
   }
 
+  /// 第 index 个字是哪张图（令牌里记的编号、扩展名、宽度）
+  func picture(at index: Int) -> NoteImages.Image? {
+    guard let storage = textStorage, index >= 0, index < storage.length else { return nil }
+    return (storage.attribute(.attachment, at: index, effectiveRange: nil) as? NoteImageAttachment)?
+      .picture
+  }
+
   // MARK: 画（选中描边、拖动把手）
 
   /// 鼠标停到哪张图上了：换了一张就把旧的那块和新那块标成要重画（把手在悬停时也显示）
@@ -228,9 +235,9 @@ extension NoteTextView {
   }
 
   /// 把第 index 张图的宽度写进正文（换成一条记了新宽度的令牌；一步撤销）。
-  /// 上限按存的字算（令牌长了几位）；宽度写坏（不在 40…4000）时当没写宽度。可以直接调（单测用）
+  /// 上限按存的字算（令牌长了几位）；宽度写坏（不在 40…4000）或 nil 时当没写宽度。可以直接调（单测用）
   @discardableResult
-  func replaceImageWidth(at index: Int, width: Int) -> Bool {
+  func replaceImageWidth(at index: Int, width: Int?) -> Bool {
     guard isEditable, let storage = textStorage, index >= 0, index < storage.length,
       let attachment = storage.attribute(.attachment, at: index, effectiveRange: nil)
         as? NoteImageAttachment
@@ -254,6 +261,74 @@ extension NoteTextView {
     didChangeText()
     setSelectedRange(range)
     return true
+  }
+
+  // MARK: 右键图片的小菜单（宽度档位、拷贝；便签未来计划 D3 / D4）
+
+  /// 右键菜单「宽度」那一节的名字
+  static let imageWidthTitle = "宽度"
+
+  /// 选区里的每张图（字的位置，从前到后）
+  func selectedImageChars() -> [Int] {
+    guard let storage = textStorage else { return [] }
+    var found: [Int] = []
+    for value in selectedRanges {
+      let range = clamped(value.rangeValue, in: storage)
+      guard range.length > 0 else { continue }
+      storage.enumerateAttribute(.attachment, in: range) { value, run, _ in
+        guard value is NoteImageAttachment else { return }
+        found.append(contentsOf: run.location..<NSMaxRange(run))
+      }
+    }
+    return found
+  }
+
+  /// 右键点在第 index 张图上：它在选区里就作用于选区里的每一张（几张一起改），不在就把选区换成它
+  /// （菜单作用在哪张看得见：选中的描边）。菜单是「宽度」一节五档（现在是哪档打勾；几张不是同一档时都不勾）+ 拷贝
+  func imageMenu(clicked index: Int?) -> NSMenu {
+    if let index, !selectedRanges.contains(where: { NSLocationInRange(index, $0.rangeValue) }) {
+      setSelectedRange(NSRange(location: index, length: 1))
+    }
+    let widths = Set(selectedImageChars().map { picture(at: $0)?.width })
+    let current = widths.count == 1 ? NoteImages.WidthPreset(width: widths.first ?? nil) : nil
+    let menu = NSMenu(title: Self.imageWidthTitle)
+    menu.addItem(.sectionHeader(title: Self.imageWidthTitle))
+    for (offset, preset) in NoteImages.WidthPreset.allCases.enumerated() {
+      let item = NSMenuItem(
+        title: preset.title, action: #selector(setImageWidthFromMenu(_:)), keyEquivalent: "")
+      item.target = self
+      item.tag = offset
+      item.state = preset == current ? .on : .off
+      menu.addItem(item)
+    }
+    menu.addItem(.separator())
+    let copy = NSMenuItem(title: "拷贝", action: #selector(copy(_:)), keyEquivalent: "")
+    copy.target = self
+    menu.addItem(copy)
+    return menu
+  }
+
+  @objc func setImageWidthFromMenu(_ sender: NSMenuItem) {
+    let presets = NoteImages.WidthPreset.allCases
+    guard presets.indices.contains(sender.tag) else { return }
+    setImageWidth(presets[sender.tag].width, at: selectedImageChars())
+  }
+
+  /// 这几张图都换成同一个宽度（nil = 原始大小）：一步撤销，选区不变（换的是一个字换一个字，位置不挪）
+  @discardableResult
+  func setImageWidth(_ width: Int?, at indexes: [Int]) -> Bool {
+    let changing = indexes.filter {
+      picture(at: $0).map { $0.width != NoteImages.width(width) } ?? false
+    }
+    guard isEditable, !changing.isEmpty else { return false }
+    let selection = selectedRanges
+    let manager = undoManager
+    manager?.beginUndoGrouping()
+    var changed = false
+    for index in changing where replaceImageWidth(at: index, width: width) { changed = true }
+    manager?.endUndoGrouping()
+    selectedRanges = selection
+    return changed
   }
 
   // MARK: 插图

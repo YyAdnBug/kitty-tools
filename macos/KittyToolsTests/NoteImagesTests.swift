@@ -56,6 +56,21 @@ struct NoteImagesTests {
     #expect(NoteImages.width(nil) == nil)
   }
 
+  /// 宽度五档（便签未来计划 D3）：存的是点数，铺满 = 上限 4000、原始大小 = 不记；拖出来的宽度不是任何一档
+  @Test func widthPresets() {
+    typealias Preset = NoteImages.WidthPreset
+    #expect(Preset.allCases.map(\.title) == ["小", "中", "大", "铺满", "原始大小"])
+    #expect(Preset.allCases.map(\.width) == [120, 240, 360, 4000, nil])
+    for preset in Preset.allCases {
+      #expect(Preset(width: preset.width) == preset)
+      // 每一档的宽度都认得出、拼回去不变（0.5.0 的认法同一份）
+      let text = token(id, width: preset.width)
+      #expect(NoteImages.matches(in: text as NSString).first?.image.width == preset.width)
+    }
+    #expect(Preset(width: 200) == nil)
+    #expect(Preset(width: 3999) == nil)
+  }
+
   @Test func malformedTokensArePlainText() {
     let bad = [
       "![image](kitty-note-image://11111111-2222-3333-4444-555555555555)",  // 没有扩展名

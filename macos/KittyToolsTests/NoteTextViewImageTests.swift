@@ -472,6 +472,121 @@ struct NoteTextViewImageTests {
     #expect(rig.editor.imageRect(ofCharacterAt: index)?.width == rect.width, "回到原来的大小")
   }
 
+  // MARK: 右键图片的小菜单（便签未来计划 D3 / D4）
+
+  /// 点在图片上：只弹图片自己的菜单（宽度一节五档 + 拷贝），点的那张被选中；现在那档打勾；选一档写进令牌、一步撤销
+  @Test func rightClickOnAnImageShowsItsOwnMenu() async throws {
+    let rig = try Rig()
+    let image = try await rig.addImage()
+    rig.load("文字\n\(rig.token(image))")
+    let index = try #require(rig.images.first?.index)
+    rig.editor.setSelectedRange(NSRange(location: 1, length: 0))
+    let rect = try #require(rig.editor.imageRect(ofCharacterAt: index))
+    let menu = try #require(
+      rig.editor.menu(for: rig.mouse(.rightMouseDown, at: NSPoint(x: rect.midX, y: rect.midY))))
+    #expect(menu.items.map(\.title) == ["宽度", "小", "中", "大", "铺满", "原始大小", "", "拷贝"])
+    #expect(menu.items[0].isSectionHeader && menu.items[6].isSeparatorItem)
+    #expect(
+      menu.items.map(\.state) == [.off, .off, .off, .off, .off, .on, .off, .off], "没记宽度 = 原始大小")
+    #expect(rig.editor.selectedRange() == NSRange(location: index, length: 1), "点的那张被选中")
+    menu.update()
+    let actions = menu.items.filter { !$0.isSeparatorItem && !$0.isSectionHeader }
+    #expect(actions.count == 6 && actions.allSatisfy(\.isEnabled))
+    let medium = menu.items[2]
+    _ = medium.target?.perform(medium.action, with: medium)
+    #expect(rig.stored == "文字\n\(rig.token(image, width: 240))")
+    #expect(rig.changes.last == rig.stored)
+    #expect(rig.editor.selectedRange() == NSRange(location: index, length: 1), "选区不变")
+    let again = try #require(
+      rig.editor.menu(for: rig.mouse(.rightMouseDown, at: NSPoint(x: rect.midX, y: rect.midY))))
+    #expect(again.items[2].state == .on && again.items[5].state == .off)
+    rig.window.notes.undo()
+    #expect(rig.stored == "文字\n\(rig.token(image))", "一步撤销")
+    // 铺满：存 4000，小图也拉到这一行的可用宽
+    let fill = menu.items[4]
+    _ = fill.target?.perform(fill.action, with: fill)
+    #expect(rig.stored == "文字\n\(rig.token(image, width: 4000))")
+    rig.layout()
+    let wide = try #require(rig.editor.imageRect(ofCharacterAt: index))
+    #expect(abs(wide.width - rig.editor.availableWidth) < 2)
+    // 拷贝：就是编辑器的「复制」（选中的那张，写什么见 copyWritesOurTypeTextAndTheImageItself；
+    // 不真的点它——它写的是系统剪贴板）
+    let copy = menu.items[7]
+    #expect(copy.action == #selector(NSText.copy(_:)) && copy.target === rig.editor)
+  }
+
+  /// 点的那张在选区里：选区里的每张图一起改、一步撤销，选区不变；几张不是同一档时哪档都不勾。
+  /// 点的那张不在选区里：只改它
+  @Test func severalSelectedImagesChangeTogether() async throws {
+    let rig = try Rig()
+    let first = try await rig.addImage()
+    let second = try await rig.addImage(width: 300, height: 150)
+    let body = "\(rig.token(first, width: 120))\n文字\n\(rig.token(second))"
+    rig.load(body)
+    let indexes = rig.images.map(\.index)
+    try #require(indexes.count == 2)
+    let all = NSRange(location: 0, length: rig.editor.textStorage?.length ?? 0)
+    rig.editor.setSelectedRange(all)
+    let rect = try #require(rig.editor.imageRect(ofCharacterAt: indexes[1]))
+    let menu = try #require(
+      rig.editor.menu(for: rig.mouse(.rightMouseDown, at: NSPoint(x: rect.midX, y: rect.midY))))
+    #expect(menu.items.allSatisfy { $0.state == .off }, "一张小、一张原始大小：都不勾")
+    #expect(rig.editor.selectedRange() == all, "点的那张在选区里：选区不动")
+    let large = menu.items[3]
+    _ = large.target?.perform(large.action, with: large)
+    #expect(
+      rig.stored == "\(rig.token(first, width: 360))\n文字\n\(rig.token(second, width: 360))")
+    #expect(rig.editor.selectedRange() == all)
+    rig.window.notes.undo()
+    #expect(rig.stored == body, "几张一起改是一步撤销")
+    // 选区只盖着「文字」：点第二张只改它，选区换成它
+    rig.editor.setSelectedRange(NSRange(location: indexes[0] + 2, length: 2))
+    let only = try #require(
+      rig.editor.menu(for: rig.mouse(.rightMouseDown, at: NSPoint(x: rect.midX, y: rect.midY))))
+    #expect(rig.editor.selectedRange() == NSRange(location: indexes[1], length: 1))
+    let small = only.items[1]
+    _ = small.target?.perform(small.action, with: small)
+    #expect(rig.stored == "\(rig.token(first, width: 120))\n文字\n\(rig.token(second, width: 120))")
+    // 已经是这一档：不改字、不进撤销栈
+    let unchanged = rig.changes.count
+    #expect(!rig.editor.setImageWidth(120, at: [indexes[1]]))
+    #expect(rig.changes.count == unchanged)
+  }
+
+  /// ⌃↩（键盘出的菜单）：选区正好是一张图时是图片的菜单，别的时候是正文的大菜单；只读、组字中都不弹图片的菜单
+  @Test func imageMenuByKeyboardAndWhenNotEditable() async throws {
+    let rig = try Rig()
+    let image = try await rig.addImage()
+    rig.load("文字\n\(rig.token(image))")
+    let index = try #require(rig.images.first?.index)
+    let key = try #require(
+      NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: .control, timestamp: 0, windowNumber: 0,
+        context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false,
+        keyCode: 36))
+    rig.editor.setSelectedRange(NSRange(location: index, length: 1))
+    #expect(
+      try #require(rig.editor.menu(for: key)).items.first?.title == NoteTextView.imageWidthTitle)
+    rig.editor.setSelectedRange(NSRange(location: 0, length: 2))
+    #expect(
+      try #require(rig.editor.menu(for: key)).items.first?.title == NotesWindowModel.taskTitle)
+    let rect = try #require(rig.editor.imageRect(ofCharacterAt: index))
+    let click = try rig.mouse(.rightMouseDown, at: NSPoint(x: rect.midX, y: rect.midY))
+    rig.editor.isEditable = false
+    #expect(rig.editor.menu(for: click)?.items.first?.title != NoteTextView.imageWidthTitle)
+    rig.editor.isEditable = true
+    rig.editor.setSelectedRange(NSRange(location: 2, length: 0))
+    try rig.step {
+      rig.editor.setMarkedText(
+        "pin", selectedRange: NSRange(location: 3, length: 0),
+        replacementRange: NSRange(location: NSNotFound, length: 0))
+      #expect(
+        try rig.editor.menu(for: click)?.items.first?.title != NoteTextView.imageWidthTitle,
+        "组字中不弹")
+      rig.editor.unmarkText()
+    }
+  }
+
   @Test func draggedWidthIsClamped() {
     #expect(NoteTextView.draggedWidth(from: 200, by: 100, limit: 300) == 300)
     #expect(NoteTextView.draggedWidth(from: 200, by: -180, limit: 600) == 40)

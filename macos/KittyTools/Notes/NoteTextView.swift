@@ -1355,7 +1355,8 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
 
   /// 右键菜单最前面加一项「任务」（同名，不写键位），后面是「任务状态」「格式」「文字颜色」，再后面一项
   /// 「插入图片…」（选文件面板）；点在能打开的链接上时，最前面再多一项「打开链接」——不靠 ⌘ 点的那条路
-  /// （键盘、旁白用户）。**右键点在任务的方框上时只弹五种状态的小菜单**，不弹这个大的
+  /// （键盘、旁白用户）。**右键点在任务的方框上时只弹五种状态的小菜单**，不弹这个大的；**点在图片上（或选区正好是
+  /// 一张图时按 ⌃↩）只弹图片自己的小菜单**（宽度五档、拷贝，`imageMenu`）
   override func menu(for event: NSEvent) -> NSMenu? {
     // 先看点在哪，再让父类建菜单：它可能会选中点到的那个词，那一行露出标记、字就挪了。
     // 不是鼠标点出来的菜单（键盘的 ⌃↩、旁白）事件里没有点的位置：看光标所在的字
@@ -1363,6 +1364,10 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     let point = isMouse ? convert(event.locationInWindow, from: nil) : nil
     if let point, isEditable, !hasMarkedText(), let index = box(at: point) {
       return boxMenu(at: index)
+    }
+    if isEditable, !hasMarkedText() {
+      if let point, let index = imageChar(at: point) { return imageMenu(clicked: index) }
+      if point == nil, selectedImageChar() != nil { return imageMenu(clicked: nil) }
     }
     let url = point.map { link(at: $0) } ?? linkAtCaret()
     // 先把选区记下来：super.menu(for:) 会选中鼠标 / 光标底下的那个词，之后再看选区就晚了
@@ -1552,6 +1557,9 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
 
   override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
     if item.action == #selector(toggleTask(_:)) { return isEditable }
+    if item.action == #selector(setImageWidthFromMenu(_:)) {
+      return isEditable && !selectedImageChars().isEmpty
+    }
     if item.action == #selector(setStateFromMenu(_:)) {
       return isEditable && !touchesCodeBlock(selectedRange())
     }
