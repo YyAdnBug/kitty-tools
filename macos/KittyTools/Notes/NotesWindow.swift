@@ -721,7 +721,15 @@ final class NotesWindow: NSObject, NSWindowDelegate {
       guard let self else { return }
       perform(#selector(focusBodyNow), with: nil, afterDelay: 0)
     }
-    model.undoFocusedText = { [weak self] in self?.window.undoFocusedText(redo: $0) ?? false }
+    model.undoFocusedText = { [weak self] redo in
+      guard let window = self?.window else { return false }
+      // 裁图的那一层拿着键盘：⌘Z / ⇧⌘Z 什么都不动（不改藏着的正文、不放回删掉的便签）
+      if NoteImageCropView.holdsKeyboard(in: window) {
+        NSSound.beep()
+        return true
+      }
+      return window.undoFocusedText(redo: redo)
+    }
     model.isEditingBody = { [weak self] in
       guard let self else { return false }
       return Self.isInBody(window.firstResponder, editor: selectedEditor())
@@ -799,7 +807,9 @@ final class NotesWindow: NSObject, NSWindowDelegate {
       return true
     }
     guard Int(event.keyCode) == kVK_Delete, flags == .command else { return false }
-    return model.handleDeleteKey(inTextField: window.firstResponder is NSText)
+    // 正在裁图（裁切层或它的控件拿着键盘）也不删这条便签
+    return model.handleDeleteKey(
+      inTextField: window.firstResponder is NSText || NoteImageCropView.holdsKeyboard(in: window))
   }
 
   private func removeKeyMonitor() {

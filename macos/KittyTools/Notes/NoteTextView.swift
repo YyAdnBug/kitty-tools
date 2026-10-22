@@ -108,6 +108,12 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   var isWidthDragCancelled = false
   /// 拖把手的按键监听（Esc 取消；装了就卸）
   var widthMonitor: Any?
+  /// 盖在滚动区上的裁切层（nil = 没在裁；NoteTextView+Images）
+  var imageCrop: NoteImageCropView?
+  /// 后台正在裁的那一次（裁完换进正文才清；单测 await 它）
+  var imageCropTask: Task<Void, Never>?
+  /// 裁好回来时正在组字：欠着的换图，组字确认之后下一轮做
+  var pendingCrop: (() -> Void)?
 
   /// 正拖着把手改宽度：哪一张图、它的 cell、按下时多宽、按下时指针在哪、现在多宽
   struct WidthDrag {
@@ -226,6 +232,8 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   /// 不记主字体，下一轮起一段段补上（styleRest）。
   /// 图片：令牌换成附件字符（一个令牌一个字），文件头读出来的宽高在这一刻读好、缓存起来（布局回调里不读盘）
   private func replaceAll(with text: String) {
+    // 正在裁的那张图可能已经不在了（别处改了这条、换了一条）：收起裁切层
+    endImageCrop(nil)
     reported = text
     reportedBytes = text.utf8.count
     // 建的时候就铺上基础样式（比建好再铺省一遍）：开头那一屏下面再排，其余的就这么等着补
@@ -809,6 +817,10 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     // 内层 settle 交出带图的正文之后外层又把 reported 改回旧的、onChange 一次不带图的，图就从正文里丢了（F4）。
     // 插的动作会再走一次 settle（那一次把带图的正文交出去），外层这次取到的就是带图的
     if !pendingImages.isEmpty { insertPendingImages() }
+    // 欠着的裁切换图：下一轮再换（不和刚确认的组字落进同一组撤销）
+    if pendingCrop != nil {
+      perform(#selector(replacePendingCrop), with: nil, afterDelay: 0)
+    }
     let text = NoteImageAttachment.stored(from: storage)
     hasImages = storage.string.utf16.contains(0xFFFC)
     // 只退让正文变长了的那一次：正文不知怎么已经超了的时候，得删得动（同 overflows）
@@ -906,8 +918,12 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
         withTarget: self, selector: #selector(styleRest), object: nil)
       NSObject.cancelPreviousPerformRequests(
         withTarget: self, selector: #selector(widthRestyle), object: nil)
-      // 正拖着把手：监听卸掉（不然一直挂在事件循环上）
+      NSObject.cancelPreviousPerformRequests(
+        withTarget: self, selector: #selector(replacePendingCrop), object: nil)
+      pendingCrop = nil
+      // 正拖着把手：监听卸掉（不然一直挂在事件循环上）；正在裁：收起
       finishWidthDrag()
+      endImageCrop(nil)
     }
     if let window {
       let center = NotificationCenter.default
@@ -1568,6 +1584,7 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     if item.action == #selector(setImageWidthFromMenu(_:)) {
       return isEditable && !selectedImageChars().isEmpty
     }
+    if item.action == #selector(cropImageFromMenu(_:)) { return canCropSelectedImage }
     if item.action == #selector(setStateFromMenu(_:)) {
       return isEditable && !touchesCodeBlock(selectedRange())
     }

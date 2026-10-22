@@ -238,12 +238,19 @@ extension NoteTextView {
   /// 上限按存的字算（令牌长了几位）；宽度写坏（不在 40…4000）或 nil 时当没写宽度。可以直接调（单测用）
   @discardableResult
   func replaceImageWidth(at index: Int, width: Int?) -> Bool {
+    guard var image = picture(at: index) else { return false }
+    image.width = NoteImages.width(width)
+    return replaceImage(at: index, with: image)
+  }
+
+  /// 第 index 个字（图片附件）换成另一张（新令牌；一步撤销，换完选中它）。同一张就不动。
+  /// 上限按存的字算（令牌长了几位）
+  @discardableResult
+  func replaceImage(at index: Int, with image: NoteImages.Image) -> Bool {
     guard isEditable, let storage = textStorage, index >= 0, index < storage.length,
       let attachment = storage.attribute(.attachment, at: index, effectiveRange: nil)
         as? NoteImageAttachment
     else { return false }
-    var image = attachment.picture
-    image.width = NoteImages.width(width)
     guard image != attachment.picture else { return true }
     if let maxBytes {
       let before = NoteImages.token(attachment.picture).utf8.count
@@ -302,6 +309,10 @@ extension NoteTextView {
       menu.addItem(item)
     }
     menu.addItem(.separator())
+    let crop = NSMenuItem(
+      title: Self.cropTitle, action: #selector(cropImageFromMenu(_:)), keyEquivalent: "")
+    crop.target = self
+    menu.addItem(crop)
     let copy = NSMenuItem(title: "拷贝", action: #selector(copy(_:)), keyEquivalent: "")
     copy.target = self
     menu.addItem(copy)
@@ -329,6 +340,137 @@ extension NoteTextView {
     manager?.endUndoGrouping()
     selectedRanges = selection
     return changed
+  }
+
+  // MARK: 裁切（便签未来计划 D1 / D2；裁切层在 NoteImageCrop.swift）
+
+  /// 右键图片小菜单里那一项
+  static let cropTitle = "裁切…"
+
+  /// 「裁切…」可不可用：选区正好一张图、文件在、没在组字、没在裁（上一次还在后台裁、还欠着没换进来也不行：
+  /// 那一张换掉之后这一次就对不上了）
+  var canCropSelectedImage: Bool {
+    let chars = selectedImageChars()
+    guard chars.count == 1, let picture = picture(at: chars[0]) else { return false }
+    return canCrop(picture)
+  }
+
+  private func canCrop(_ picture: NoteImages.Image) -> Bool {
+    isEditable && imageCrop == nil && imageCropTask == nil && pendingCrop == nil
+      && !hasMarkedText() && enclosingScrollView != nil
+      && imageStore?.size(of: picture.id, ext: picture.ext) != nil
+  }
+
+  @objc func cropImageFromMenu(_ sender: Any?) {
+    let chars = selectedImageChars()
+    if chars.count == 1 { beginImageCrop(at: chars[0]) }
+  }
+
+  /// 在正文的滚动区上盖裁切层（同一扇窗口，不另开、不碰激活），它当第一响应者（↩ / Esc 归它）
+  @discardableResult
+  func beginImageCrop(at index: Int) -> Bool {
+    guard let picture = picture(at: index), canCrop(picture), let scroll = enclosingScrollView,
+      let store = imageStore, let size = store.size(of: picture.id, ext: picture.ext)
+    else { return false }
+    let rotated = (5...8).contains(size.orientation)
+    let pixels = CGSize(
+      width: rotated ? size.pixelHeight : size.pixelWidth,
+      height: rotated ? size.pixelWidth : size.pixelHeight)
+    let view = NoteImageCropView(
+      picture: picture, index: index, pixelSize: pixels,
+      url: store.url(for: picture.id, ext: picture.ext))
+    view.reportedAtStart = reported
+    // 只收这一层自己的结果（收起之后晚到的、换了一层之后旧的那层的都不算）
+    view.onDone = { [weak self, weak view] rect in
+      if let self, imageCrop === view { endImageCrop(rect) }
+    }
+    view.onCancel = { [weak self, weak view] in
+      if let self, imageCrop === view { endImageCrop(nil) }
+    }
+    scroll.addSubview(view, positioned: .above, relativeTo: nil)
+    imageCrop = view
+    // **先 makeKey 再 makeFirstResponder**（同「插入图片…」F6）：那叠里悬停打开的便签不是 key，只 makeFirstResponder
+    // 的话 ↩ / Esc 落到前台的 App 里
+    window?.makeKey()
+    window?.makeFirstResponder(view)
+    // 正文框藏起来：它自己的追踪区还会收鼠标移动、把光标设回箭头 / I 形，盖掉裁切层的缩放箭头和手（藏起来的视图
+    // 不收追踪区的事件、没有光标矩形）；悬停的把手也一起清掉
+    clearHoveredImage()
+    isHidden = true
+    return true
+  }
+
+  /// 收起裁切层，键盘还给正文；rect（左上角原点的像素框）不是 nil 就去裁
+  func endImageCrop(_ rect: CGRect?) {
+    guard let view = imageCrop else { return }
+    imageCrop = nil
+    let hadFocus = window?.firstResponder === view
+    view.removeFromSuperview()
+    isHidden = false
+    if hadFocus { window?.makeFirstResponder(self) }
+    guard let rect else { return }
+    cropImage(
+      view.picture, at: view.index, to: rect, fullWidth: Int(view.pixelSize.width),
+      captured: view.reportedAtStart)
+  }
+
+  /// 在主线程外裁好、另存一张新图（NoteImageStore.crop），回来换进正文：令牌换成新编号，记了宽度的按比例换算
+  /// （NoteImages.croppedWidth），一步撤销，选区照原样（一个字换一个字，位置不挪；开始裁的时候选中的就是这张图，
+  /// 没动过就还是它）。**回来时认目标**：还是这条便签、这个正文框还在窗口里、那张图还在（cropTarget，captured 是
+  /// 开始裁时的正文）才换；不然新文件变孤儿、由 30 天的清理收。回来时正在组字：欠着（pendingCrop），组字确认后
+  /// 下一轮换。存不成：提示音 + 刘海岛说为什么
+  func cropImage(
+    _ picture: NoteImages.Image, at index: Int, to rect: CGRect, fullWidth: Int, captured: String
+  ) {
+    guard let store = imageStore else { return rejectImage(.unreadable) }
+    let url = store.url(for: picture.id, ext: picture.ext)
+    let directory = store.directory
+    let noteID = identifier?.rawValue
+    imageCropTask = Task { @MainActor in
+      defer { imageCropTask = nil }
+      switch await NoteImageStore.crop(fileAt: url, to: rect, in: directory) {
+      case .success(var stored):
+        store.remember(stored)
+        stored.image.width = NoteImages.croppedWidth(
+          picture.width, from: fullWidth, to: Int(rect.width))
+        let image = stored.image
+        let replace = { [weak self] in
+          guard let self, isEditable, window != nil, identifier?.rawValue == noteID,
+            let target = cropTarget(picture, at: index, captured: captured)
+          else { return }
+          // 等存图回来才做的：落在自动的「一个事件一组」之外，自己开一组
+          let selection = selectedRanges
+          let manager = undoManager
+          manager?.beginUndoGrouping()
+          replaceImage(at: target, with: image)
+          manager?.endUndoGrouping()
+          selectedRanges = selection
+        }
+        if hasMarkedText() { pendingCrop = replace } else { replace() }
+      case .failure(let reason):
+        rejectImage(reason)
+      }
+    }
+  }
+
+  /// 组字确认之后补上欠着的裁切换图（settle 排到下一轮的）
+  @objc func replacePendingCrop() {
+    guard !hasMarkedText(), let replace = pendingCrop else { return }
+    pendingCrop = nil
+    replace()
+  }
+
+  /// 裁完回来换哪个字：正文没变就是原来那个；变了，同一张图（编号、宽度都一样）在正文里只剩一处就换它，
+  /// 几处（分不清是哪个）、没了都不换
+  func cropTarget(_ picture: NoteImages.Image, at index: Int, captured: String) -> Int? {
+    if reported == captured { return self.picture(at: index) == picture ? index : nil }
+    guard let storage = textStorage else { return nil }
+    var found: [Int] = []
+    storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length)) {
+      value, range, _ in
+      if (value as? NoteImageAttachment)?.picture == picture { found.append(range.location) }
+    }
+    return found.count == 1 ? found[0] : nil
   }
 
   // MARK: 插图

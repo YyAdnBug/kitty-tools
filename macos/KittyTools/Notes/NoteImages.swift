@@ -93,6 +93,15 @@ nonisolated enum NoteImages {
     }
   }
 
+  /// 裁完之后令牌里的宽度（便签未来计划 D1）：记了宽度 W 的，按裁下来的占原图多宽换算——round(W × 裁下的宽 / 原宽)，
+  /// 夹进 40–4000（裁完屏上的比例尺不变、不跳）；没记宽度的照旧不记（跟着原图点宽走），「铺满」照旧铺满
+  static func croppedWidth(_ width: Int?, from fullWidth: Int, to croppedWidth: Int) -> Int? {
+    guard let width, fullWidth > 0 else { return nil }
+    if width == maxWidth { return width }
+    let scaled = (Double(width) * Double(croppedWidth) / Double(fullWidth)).rounded()
+    return min(max(Int(scaled), minWidth), maxWidth)
+  }
+
   // MARK: 认
 
   /// 从 index 开始是不是一段令牌：是就给它的区间和内容（区间是 UTF-16 的）

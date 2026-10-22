@@ -66,12 +66,15 @@ final class NoteImageStore {
     case tooLarge
     case tooManyPixels
     case unreadable
+    /// 裁好的图写不下去（编码 / 写盘失败）
+    case unsaved
 
     /// 刘海岛的标题和说明分开（岛上是标题一行、说明一行，同别处的写法）
     var noticeTitle: String {
       switch self {
       case .tooLarge, .tooManyPixels: "图片太大了"
       case .unreadable: "读不出这张图片"
+      case .unsaved: "裁好的图存不下"
       }
     }
 
@@ -80,6 +83,7 @@ final class NoteImageStore {
       case .tooLarge: "单张最多 20 MB"
       case .tooManyPixels: "像素太多"
       case .unreadable: "换个文件试试"
+      case .unsaved: "看看磁盘还有没有地方"
       }
     }
   }
@@ -194,6 +198,77 @@ final class NoteImageStore {
     }
     return .success(
       Stored(image: NoteImages.Image(id: id, ext: ext, width: nil), size: size))
+  }
+
+  // MARK: 裁切（便签未来计划 D1，2026-10-22）
+
+  /// 裁一张图，**另存一张新图**（新编号；原文件不动，没人引用了按老规矩 30 天后清——令牌写法一个字不改，已发布的
+  /// 0.5.0、导出、复制、备份都不用变）。rect 是**转正之后**的像素坐标（左上角为原点，y 朝下；EXIF 方向 5–8 宽高互换，
+  /// 同排版的口径），夹进整张图、至少 1 像素。新文件：方向写 1（已经转正了）、**DPI 照原图**（不然点宽变了，Retina 截图
+  /// 会突然两倍大）；PNG / JPEG / HEIC 照原格式（JPEG / HEIC 质量 0.93，重新压一次有一点点损失），GIF（只显示第一帧）
+  /// 和别的存 PNG（编不出来也退到 PNG）。转码写盘在这个 @concurrent 里做。
+  /// ponytail: 整张图解出来再裁（4000 万像素约 160 MB 的一下峰值，和 TIFF 转 PNG 同一个量级）；要省就换成
+  /// CIImage 按裁切框渲染（只解那一块）
+  @concurrent static func crop(fileAt url: URL, to rect: CGRect, in directory: URL) async -> Result<
+    Stored, Rejection
+  > {
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil), let size = size(of: source)
+    else { return .failure(.unreadable) }
+    // 原尺寸、带方向转正（缩略图的口子：最长边给原图那么长，就是整张原图）
+    let options: [CFString: Any] = [
+      kCGImageSourceCreateThumbnailFromImageAlways: true,
+      kCGImageSourceCreateThumbnailWithTransform: true,
+      kCGImageSourceThumbnailMaxPixelSize: max(size.pixelWidth, size.pixelHeight),
+    ]
+    guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+    else { return .failure(.unreadable) }
+    let bounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+    let wanted = CGRect(
+      x: rect.minX.rounded(), y: rect.minY.rounded(), width: rect.width.rounded(),
+      height: rect.height.rounded()
+    ).intersection(bounds)
+    guard !wanted.isNull, wanted.width >= 1, wanted.height >= 1,
+      let cropped = image.cropping(to: wanted)
+    else { return .failure(.unreadable) }
+    // 照原格式；HEIC / JPEG 编不出来（没有编码器）退到 PNG
+    let types: [(ext: String, type: UTType)] =
+      switch (CGImageSourceGetType(source) as String?).flatMap({ keptTypes[$0] }) {
+      case "jpg": [("jpg", .jpeg), ("png", .png)]
+      case "heic": [("heic", .heic), ("png", .png)]
+      default: [("png", .png)]
+      }
+    guard
+      let (ext, encoded) = types.lazy.compactMap({ item in
+        encode(cropped, as: item.type, dpi: size.dpi).map { (item.ext, $0) }
+      }).first
+    else { return .failure(.unsaved) }
+    guard encoded.count <= maxFileBytes else { return .failure(.tooLarge) }
+    let id = UUID()
+    let target = directory.appending(path: "\(id.uuidString).\(ext)")
+    do {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      try encoded.write(to: target, options: .atomic)
+    } catch {
+      return .failure(.unsaved)
+    }
+    guard let stored = readSize(at: target) else { return .failure(.unsaved) }
+    return .success(Stored(image: NoteImages.Image(id: id, ext: ext, width: nil), size: stored))
+  }
+
+  /// 编成一种格式：方向 1、DPI 照给的，有损的质量 0.93；编不出来给 nil
+  private nonisolated static func encode(_ image: CGImage, as type: UTType, dpi: CGFloat) -> Data? {
+    var properties: [CFString: Any] = [
+      kCGImagePropertyDPIWidth: dpi, kCGImagePropertyDPIHeight: dpi,
+      kCGImagePropertyOrientation: 1,
+    ]
+    if type != .png { properties[kCGImageDestinationLossyCompressionQuality] = 0.93 }
+    let encoded = NSMutableData()
+    guard
+      let destination = CGImageDestinationCreateWithData(
+        encoded, type.identifier as CFString, 1, nil)
+    else { return nil }
+    CGImageDestinationAddImage(destination, image, properties as CFDictionary)
+    return CGImageDestinationFinalize(destination) ? encoded as Data : nil
   }
 
   /// 文件自己的扩展名（小写字母数字 1–10 位）；不像样时按 ImageIO 认出来的类型补一个

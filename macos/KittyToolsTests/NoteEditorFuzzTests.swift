@@ -6,7 +6,7 @@
 // Markdown 开关、拿 / 丢焦点、窗口当上 / 不再是 key、外面换了正文（setText）、直接改文本存储（在选区上换字、不走
 // didChangeText，靠选区变化排的那次兜底收尾）。
 // 第 7 批行内图片：插图（自己的插入入口）、贴一段带令牌的字（自家类型）、复制一段再贴回来、选中图 / 图前面 / 图后面
-// 打字、⌫ / ⌦、改宽度、图片前后组字、外面换进来的正文里带令牌。图片是测试现画的（临时目录里一个真文件），
+// 打字、⌫ / ⌦、改宽度、换成另一张图（裁切回来那一下）、图片前后组字、外面换进来的正文里带令牌。图片是测试现画的（临时目录里一个真文件），
 // 比对时除了属性和字形，还比附件的编号和宽度、图片行的高（imageLineKey），附件字符上不许有 hiddenKey。单数的种子把「整段换字时当场排多少」改得很小（手测反馈第 6 批：整段换字
 // 只当场排开头一屏、其余的在后面几轮补，NoteTextView.styleRest）：外面换了正文之后一大半是没排过的行，接着打字、
 // 撤销、组字都踩在「还没补完」上；这时只比排过的行（没排过的得是整行都没排），每个种子跑完把剩下的补完再整篇比一次。每一步之后：编辑器里的属性和「同一份正文整篇重排一遍」逐字比（字号 / 粗细 / 等宽、藏露、
@@ -743,6 +743,14 @@ struct NoteEditorFuzzTests {
         return "没有图可改宽度"
       }
       let width = random.pick([40, 120, 240, 4000, 0, 9999, random.next() % 5000])
+      if random.chance(2) {
+        // 这张图换成另一张（裁切回来的那一下：新编号、换算过的宽度，一个字换一个字，便签未来计划 D1）
+        let other = random.pick(rig.images)
+        _ = editor.replaceImage(
+          at: index,
+          with: NoteImages.Image(id: other.id, ext: other.ext, width: NoteImages.width(width)))
+        return "换成另一张图 \(other.id.uuidString.prefix(4)) 宽 \(width)（第 \(index) 个字）"
+      }
       _ = editor.replaceImageWidth(at: index, width: width)
       return "改宽度 \(width)（第 \(index) 个字）"
     case 36:

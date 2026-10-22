@@ -227,6 +227,8 @@ struct NoteImageStoreTests {
     #expect(NoteImageStore.Rejection.tooManyPixels.noticeTitle == "图片太大了")
     #expect(NoteImageStore.Rejection.tooManyPixels.noticeDetail == "像素太多")
     #expect(NoteImageStore.Rejection.unreadable.noticeTitle == "读不出这张图片")
+    #expect(NoteImageStore.Rejection.unsaved.noticeTitle == "裁好的图存不下")
+    #expect(NoteImageStore.Rejection.unsaved.noticeDetail == "看看磁盘还有没有地方")
   }
 
   /// F22：JFIF 的密度单位只有 1（每英寸）才是 DPI；2（每厘米）× 2.54；**0（只表示宽高比，libjpeg 默认）

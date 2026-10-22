@@ -484,14 +484,16 @@ struct NoteTextViewImageTests {
     let rect = try #require(rig.editor.imageRect(ofCharacterAt: index))
     let menu = try #require(
       rig.editor.menu(for: rig.mouse(.rightMouseDown, at: NSPoint(x: rect.midX, y: rect.midY))))
-    #expect(menu.items.map(\.title) == ["宽度", "小", "中", "大", "铺满", "原始大小", "", "拷贝"])
+    #expect(
+      menu.items.map(\.title) == ["宽度", "小", "中", "大", "铺满", "原始大小", "", "裁切…", "拷贝"])
     #expect(menu.items[0].isSectionHeader && menu.items[6].isSeparatorItem)
     #expect(
-      menu.items.map(\.state) == [.off, .off, .off, .off, .off, .on, .off, .off], "没记宽度 = 原始大小")
+      menu.items.map(\.state) == [.off, .off, .off, .off, .off, .on, .off, .off, .off],
+      "没记宽度 = 原始大小")
     #expect(rig.editor.selectedRange() == NSRange(location: index, length: 1), "点的那张被选中")
     menu.update()
     let actions = menu.items.filter { !$0.isSeparatorItem && !$0.isSectionHeader }
-    #expect(actions.count == 6 && actions.allSatisfy(\.isEnabled))
+    #expect(actions.count == 7 && actions.allSatisfy(\.isEnabled))
     let medium = menu.items[2]
     _ = medium.target?.perform(medium.action, with: medium)
     #expect(rig.stored == "文字\n\(rig.token(image, width: 240))")
@@ -511,7 +513,7 @@ struct NoteTextViewImageTests {
     #expect(abs(wide.width - rig.editor.availableWidth) < 2)
     // 拷贝：就是编辑器的「复制」（选中的那张，写什么见 copyWritesOurTypeTextAndTheImageItself；
     // 不真的点它——它写的是系统剪贴板）
-    let copy = menu.items[7]
+    let copy = menu.items[8]
     #expect(copy.action == #selector(NSText.copy(_:)) && copy.target === rig.editor)
   }
 
@@ -1043,6 +1045,156 @@ struct NoteTextViewImageTests {
   }
 
   /// F14：剪贴板里的图片数据先取 PNG（原图、体积小），没有再取 TIFF（预览、浏览器常常先给未压缩的 TIFF）
+  // MARK: 裁切（便签未来计划 D1 / D2；几何、存新图、裁切层的按键鼠标在 NoteImageCropTests）
+
+  /// 「裁切…」：选区正好一张图、文件在、没在裁才可用；盖上裁切层（滚动区上、拿键盘），Esc 收起、键盘还给正文、不改字
+  @Test func cropMenuOpensAndCancelsTheOverlay() async throws {
+    let rig = try Rig()
+    let image = try await rig.addImage(width: 400, height: 200)
+    let other = try await rig.addImage()
+    let body = "\(rig.token(image))\n文字\n\(rig.token(other))"
+    rig.load(body)
+    let indexes = rig.images.map(\.index)
+    rig.editor.setSelectedRange(NSRange(location: 0, length: rig.editor.textStorage?.length ?? 0))
+    #expect(!rig.editor.canCropSelectedImage, "选了两张")
+    rig.editor.setSelectedRange(NSRange(location: indexes[0], length: 1))
+    #expect(rig.editor.canCropSelectedImage)
+    rig.editor.cropImageFromMenu(nil)
+    let overlay = try #require(rig.editor.imageCrop)
+    #expect(overlay.superview === rig.scroll && rig.window.firstResponder === overlay)
+    #expect(overlay.pixelSize == CGSize(width: 400, height: 200) && overlay.index == indexes[0])
+    #expect(!rig.editor.canCropSelectedImage, "已经在裁")
+    overlay.cancelOperation(nil)
+    #expect(rig.editor.imageCrop == nil && overlay.superview == nil)
+    #expect(rig.window.firstResponder === rig.editor)
+    #expect(rig.stored == body)
+    // 文件找不到（占位框）的不能裁
+    rig.load(rig.token(NoteImages.Image(id: UUID(), ext: "png", width: nil)))
+    rig.editor.setSelectedRange(NSRange(location: 0, length: 1))
+    #expect(!rig.editor.canCropSelectedImage)
+    #expect(!rig.editor.beginImageCrop(at: 0))
+  }
+
+  /// 完成：后台另存一张新图，令牌换成新编号、记着的宽度按比例换算（240 × 100 / 400 = 60），选区照原样（开始时
+  /// 选中的就是这张图）；一步撤销回到原图，原文件不动
+  @Test func cropReplacesTheImageInOneUndoStep() async throws {
+    let rig = try Rig()
+    let image = try await rig.addImage(width: 400, height: 200)
+    let body = "文字\n\(rig.token(image, width: 240))"
+    rig.load(body)
+    let index = try #require(rig.images.first?.index)
+    rig.editor.setSelectedRange(NSRange(location: index, length: 1))
+    #expect(rig.editor.beginImageCrop(at: index))
+    #expect(rig.editor.isHidden, "裁的时候正文框藏起来（不收鼠标移动、不设光标）")
+    let overlay = try #require(rig.editor.imageCrop)
+    overlay.setCrop(CGRect(x: 0, y: 0, width: 100, height: 200))
+    overlay.done(nil)
+    #expect(rig.editor.imageCrop == nil && !rig.editor.isHidden)
+    #expect(!rig.editor.canCropSelectedImage, "后台还在裁：不能再开")
+    await rig.editor.imageCropTask?.value
+    let cropped = try #require(rig.images.first)
+    #expect(cropped.id != image.id && cropped.width == 60)
+    #expect(rig.changes.last == rig.stored)
+    #expect(rig.editor.selectedRange() == NSRange(location: index, length: 1))
+    #expect(rig.editor.canCropSelectedImage)
+    let size = try #require(rig.store.size(of: cropped.id, ext: "png"))
+    #expect(size.pixelWidth == 100 && size.pixelHeight == 200)
+    rig.window.notes.undo()
+    #expect(rig.stored == body, "一步撤销回到原图")
+    #expect(FileManager.default.fileExists(atPath: rig.store.url(for: image.id, ext: "png").path))
+  }
+
+  /// 回来时认目标：正文没变看原来那个字；变了，同一张图只剩一处就换它，几处 / 没了都不换。
+  /// 等的这一下换了一条便签：不换（新文件留给清理）
+  @Test func cropTargetIsRecheckedOnReturn() async throws {
+    let rig = try Rig()
+    let image = try await rig.addImage()
+    let token = rig.token(image)
+    rig.load("文字\n\(token)")
+    let index = try #require(rig.images.first?.index)
+    #expect(rig.editor.cropTarget(image, at: index, captured: rig.editor.reported) == index)
+    #expect(rig.editor.cropTarget(image, at: 0, captured: rig.editor.reported) == nil)
+    var wider = image
+    wider.width = 120
+    #expect(
+      rig.editor.cropTarget(wider, at: index, captured: rig.editor.reported) == nil, "宽度也要一样")
+    rig.load("前面加了一行\n文字\n\(token)")
+    let moved = try #require(rig.images.first?.index)
+    #expect(rig.editor.cropTarget(image, at: index, captured: "旧的") == moved)
+    rig.load("\(token)\n\(token)")
+    #expect(rig.editor.cropTarget(image, at: index, captured: "旧的") == nil, "两处分不清")
+    rig.load("图删了")
+    #expect(rig.editor.cropTarget(image, at: index, captured: "旧的") == nil)
+    // 端到端：完成之后马上换了一条便签
+    let body = "文字\n\(token)"
+    rig.load(body)
+    let files = rig.store.files().count
+    #expect(rig.editor.beginImageCrop(at: index))
+    rig.editor.imageCrop?.setCrop(CGRect(x: 0, y: 0, width: 50, height: 50))
+    rig.editor.imageCrop?.done(nil)
+    rig.editor.identifier = NSUserInterfaceItemIdentifier("便签乙")
+    await rig.editor.imageCropTask?.value
+    #expect(rig.store.files().count == files + 1, "新图存下了")
+    #expect(rig.stored == body, "不是那条便签了：不换")
+  }
+
+  /// 裁好回来时正在组字：先不换（不动组字），组字确认之后下一轮换，和组字各是一步撤销
+  @Test func cropReturningWhileComposingWaits() async throws {
+    let rig = try Rig()
+    let image = try await rig.addImage(width: 400, height: 200)
+    let body = "文字\n\(rig.token(image))"
+    rig.load(body)
+    let index = try #require(rig.images.first?.index)
+    #expect(rig.editor.beginImageCrop(at: index))
+    rig.editor.imageCrop?.setCrop(CGRect(x: 0, y: 0, width: 100, height: 100))
+    rig.editor.imageCrop?.done(nil)
+    rig.editor.setSelectedRange(NSRange(location: 2, length: 0))
+    rig.window.notes.beginUndoGrouping()
+    rig.editor.setMarkedText(
+      "ni", selectedRange: NSRange(location: 2, length: 0),
+      replacementRange: NSRange(location: NSNotFound, length: 0))
+    await rig.editor.imageCropTask?.value
+    #expect(rig.images.first?.id == image.id && rig.editor.pendingCrop != nil, "组字期间先不换")
+    rig.editor.insertText("你", replacementRange: NSRange(location: NSNotFound, length: 0))
+    rig.window.notes.endUndoGrouping()
+    for _ in 0..<50 where rig.images.first?.id == image.id {
+      try? await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(rig.images.first?.id != image.id, "组字确认之后换上")
+    #expect(rig.stored.hasPrefix("文字你\n"))
+    rig.window.notes.undo()
+    #expect(rig.stored == "文字你\n\(rig.token(image))", "换图自己一步撤销")
+  }
+
+  /// 外面换了正文、正文框离开窗口、键盘去了别处：裁切层收起、正文框露出来；滚动区变大小时裁切层跟着铺满
+  @Test func cropOverlayClosesWhenTheTextOrWindowGoes() async throws {
+    let rig = try Rig()
+    let image = try await rig.addImage()
+    rig.load("文字\n\(rig.token(image))")
+    #expect(rig.editor.beginImageCrop(at: try #require(rig.images.first?.index)))
+    rig.load("别处改了")
+    #expect(rig.editor.imageCrop == nil && !rig.editor.isHidden)
+    rig.load("文字\n\(rig.token(image))")
+    let index = try #require(rig.images.first?.index)
+    #expect(rig.editor.beginImageCrop(at: index))
+    var overlay = try #require(rig.editor.imageCrop)
+    #expect(overlay.frame == rig.scroll.bounds)
+    rig.scroll.setFrameSize(NSSize(width: 360, height: 260))
+    #expect(overlay.frame == rig.scroll.bounds, "跟着滚动区变大小")
+    #expect(NoteImageCropView.holdsKeyboard(in: rig.window))
+    // 键盘去了别处（点了标题框、⌘T 把焦点交回正文）：下一轮收起
+    rig.window.makeFirstResponder(nil)
+    for _ in 0..<50 where rig.editor.imageCrop != nil {
+      try? await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(rig.editor.imageCrop == nil && overlay.superview == nil && !rig.editor.isHidden)
+    #expect(!NoteImageCropView.holdsKeyboard(in: rig.window))
+    #expect(rig.editor.beginImageCrop(at: index))
+    overlay = try #require(rig.editor.imageCrop)
+    rig.window.contentView = nil
+    #expect(rig.editor.imageCrop == nil && overlay.superview == nil)
+  }
+
   @Test func pngDataIsPreferredOverTIFF() async throws {
     let rig = try Rig()
     rig.load("文字")

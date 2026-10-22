@@ -1612,6 +1612,23 @@ struct SnapshotProbeTests {
       prepare: Self.reveal(NSRange(location: imageTokenRange(alone.body).location, length: 1)))
     imageModel.selection = broken.id
     for _ in 0..<2 { try window("image-missing-dark", imageModel, dark: true) }
+    // 便签未来计划 D2：裁切层（锁 4:3：左右两边压暗）浅深各一、窗口最小时一张
+    func crop(_ root: NSView) {
+      guard let editor = NotesWindow.editor(in: root), let container = editor.textContainer
+      else { return }
+      editor.layoutManager?.ensureLayout(for: container)
+      editor.beginImageCrop(at: imageTokenRange(alone.body).location)
+      editor.imageCrop?.choose(ratioAt: 3)
+    }
+    imageModel.selection = alone.id
+    for dark in [false, true] {
+      for _ in 0..<2 {
+        try window("image-crop\(dark ? "-dark" : "")", imageModel, dark: dark, prepare: crop)
+      }
+    }
+    for _ in 0..<2 {
+      try window("image-crop-min", imageModel, size: NotesWindow.minSize, prepare: crop)
+    }
 
     // 手测反馈第 4 批：行距三档（标题、正文折行、任务、列表、引用、代码块混排；标准档就是 spacing-standard）、
     // 代码块（光标不在块里 / 在块里，浅深）、空的正文的占位和第一个字对齐（placeholder：占位 + 同一个位置打了字的
@@ -2378,6 +2395,31 @@ struct SnapshotProbeTests {
     }
     // 截完删掉：后面那叠的几张图用的是同一个库，别让它多出一张标签
     store.erase(custom.id)
+    // 裁切层（便签未来计划 D2）在最小的浮动便签里：底下那一排（比例、取消、完成）排得下，图按剩下的地方放。
+    // 图是现画的（输出目录下的 notes-images/）；缩略图第一次画的时候才开始解，所以出两次。截完同样删掉
+    let cropDirectory = URL(filePath: "\(out)/notes-images")
+    try FileManager.default.createDirectory(at: cropDirectory, withIntermediateDirectories: true)
+    let cropImages = NoteImageStore(directory: cropDirectory)
+    store.images = cropImages
+    let cropPhoto = NoteImages.Image(id: UUID(), ext: "png", width: nil)
+    let cropURL = cropImages.url(for: cropPhoto.id, ext: "png")
+    try NoteImageFixture.data(type: .png, width: 480, height: 240).write(to: cropURL)
+    cropImages.remember(
+      .init(image: cropPhoto, size: try #require(NoteImageStore.readSize(at: cropURL))))
+    let cropNote = store.create(body: "\(NoteImages.token(cropPhoto))\n裁切", now: now)
+    for _ in 0..<2 {
+      try float(
+        "crop-min", cropNote.id, size: minimum,
+        prepare: { root in
+          guard let editor = NotesWindow.editor(in: root), let container = editor.textContainer
+          else { return }
+          editor.layoutManager?.ensureLayout(for: container)
+          editor.beginImageCrop(at: 0)
+          editor.imageCrop?.choose(ratioAt: 2)
+        })
+    }
+    store.erase(cropNote.id)
+    store.images = nil
     // 带 Markdown 的：标记都藏着的、光标所在的行露着的（屏外的窗口不真的当 key，直接告诉编辑器）
     try float("markdown", ids[6], size: CGSize(width: 520, height: 460))
     try float(
