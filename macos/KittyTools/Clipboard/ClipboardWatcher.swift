@@ -4,6 +4,8 @@
 // 复制那一刻记下 Paster.panelCopyChangeCount）来源记成本 App（没有来源）、不触发复制即译（体检 B20）。
 // 启动时直接对齐当前 changeCount，不把启动前就在剪贴板里的内容记一遍。
 // 两种暂停互不相干：pause() / resume() 给划词取词用；isUserPaused 是菜单栏「暂停记录剪贴板」（不存盘，重启自动恢复）。
+// 剪贴板这个功能关着（Feature）时 records 是 false：还在跑只为复制即译——过滤照旧（隐私标记、排除的 App、疑似密钥），
+// 只把新文字交给 onText、不入库；复制即译也用不上时 AppDelegate 直接 stop()。
 
 import AppKit
 
@@ -33,6 +35,8 @@ final class ClipboardWatcher {
   var onText: ((String) -> Void)?
   /// 用户在菜单栏暂停了记录：changeCount 照走，但不记、也不触发复制即译
   var isUserPaused = false
+  /// 记不记进历史（剪贴板这个功能开着没有）
+  var records = true
   private let store: ClipboardStore
   private var timer: Timer?
   private var lastChangeCount = NSPasteboard.general.changeCount
@@ -42,12 +46,23 @@ final class ClipboardWatcher {
     self.store = store
   }
 
+  /// 开始轮询（已在跑就不动）：先对齐当前 changeCount，停着那段时间里复制的不补记
   func start() {
+    guard timer == nil else { return }
+    lastChangeCount = NSPasteboard.general.changeCount
     timer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
       MainActor.assumeIsolated { self?.poll() }
     }
     timer?.tolerance = 0.1
   }
+
+  /// 剪贴板和复制即译都用不上时停掉轮询（AppDelegate.applyFeatures）
+  func stop() {
+    timer?.invalidate()
+    timer = nil
+  }
+
+  var isRunning: Bool { timer != nil }
 
   /// 划词取词期间暂停：那次 ⌘C 和还原都不是用户的复制
   func pause() { isPaused = true }
@@ -104,7 +119,7 @@ final class ClipboardWatcher {
     {
       item.kind = .file
       item.filePaths = urls.map(\.path)
-      store.record(item)
+      if records { store.record(item) }
       return
     }
 
@@ -125,12 +140,13 @@ final class ClipboardWatcher {
           break
         }
       }
-      store.record(item, rich: rich)
+      if records { store.record(item, rich: rich) }
       // 自家窗口里复制的不触发复制即译（来源标记 / 通用剪贴板过来的照常）
       if !(ownWindow && source.name == nil && source.bundleID == nil) { onText?(text) }
       return
     }
 
+    guard records else { return }
     for (type, isPNG) in [(NSPasteboard.PasteboardType.png, true), (.tiff, false)] {
       guard let data = pasteboard.data(forType: type) else { continue }
       item.kind = .image

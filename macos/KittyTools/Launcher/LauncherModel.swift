@@ -230,6 +230,8 @@ import UniformTypeIdentifiers
 
   /// 内置动作（按此刻的状态）
   private var builtIns: [LauncherItem] { LauncherItem.actions(actionState()) }
+  /// 开着的功能（Feature）：cb 那一行要剪贴板开着、fy 那一行要翻译开着
+  private var features: Set<Feature> { actionState().features }
 
   /// 启动时、呼出前应用程序目录变了时扫 App 目录
   func rescanApps() {
@@ -331,13 +333,14 @@ import UniformTypeIdentifiers
       return
     }
     emptyText = "没有匹配的结果"
-    if let text = Self.translateQuery(query) {
+    let features = features
+    if features.contains(.translate), let text = Self.translateQuery(query) {
       results = [Self.translateItem(text)]
       lookUpDefinition(text)
       return
     }
     // 「cb 词」（带空格）只有这一行（N9）；单输 cb 时它排第一，后面照常接本地结果（体检 B33）
-    if let keyword = Self.clipQuery(query), query.count > 2 {
+    if features.contains(.clipboard), let keyword = Self.clipQuery(query), query.count > 2 {
       results = [Self.clipItem(keyword)]
       return
     }
@@ -352,9 +355,11 @@ import UniformTypeIdentifiers
     let prompts = WebSearch.promptItems(for: query, engines: engines)
     let filePrompts = FileSearch.promptItems(for: query)
     let systemPrompts = SystemCommands.promptItems(for: query)
-    let clip = Self.clipQuery(query) != nil ? [Self.clipItem("")] : []
+    let clip =
+      features.contains(.clipboard) && Self.clipQuery(query) != nil ? [Self.clipItem("")] : []
+    let fy = features.contains(.translate) ? Self.translatePrompts(for: query) : []
     let top =
-      clip + Self.translatePrompts(for: query) + direct
+      clip + fy + direct
       + [Calculator.item(for: query), keyword].compactMap { $0 } + prompts.exact
       + filePrompts.exact + systemPrompts.exact
     // 书签、浏览历史至少 2 个字才搜（1 个字母命中太多）
@@ -604,12 +609,23 @@ import UniformTypeIdentifiers
   /// 还原得出来的收藏；还原不出来的（App 已卸载、文件已删）顺手删掉：看不见的收藏会占着 8 个名额（⌘D 说满了却
   /// 找不到可取消的）、夹在中间让 ⌥⌘↑↓ 换了位置却看不出变化。有时有、有时没有的内置动作（钉图）不让收藏（canFavorite）。
   /// ponytail: 外接磁盘上的 App / 文件拔掉磁盘时也会被删，真碰到再按宗卷是否挂着区分
+  /// 归关着的功能（Feature）的内置动作：不显示，收藏也**不删**（打开功能就回来）——按全部功能都开着时的列表认
   private func favorites(_ actions: [LauncherItem]) -> [LauncherItem] {
     var items: [LauncherItem] = []
     var missing: [LauncherUsage.Favorite] = []
+    var everything: Set<String>?
     for favorite in usage.favorites {
       if let item = restore(favorite.kind, favorite.target, favorite.title, actions) {
         items.append(item)
+      } else if favorite.kind == .action {
+        // 全开时的那份只在真遇到时算一次、不进缓存
+        if everything == nil {
+          var all = actionState()
+          all.features = Set(Feature.allCases)
+          everything = Set(LauncherItem.actions(all, caching: false).map(\.target))
+        }
+        // ponytail: 藏着的收藏照样占 8 个名额（满了时 ⌘D 说满、看得见的不到 8 个），真碰到再分开数
+        if everything?.contains(favorite.target) != true { missing.append(favorite) }
       } else {
         missing.append(favorite)
       }
@@ -829,9 +845,11 @@ import UniformTypeIdentifiers
 
   /// ⌥↩ / ⌃↩ 搜的文字：文件搜索时去掉关键词、fy 时是要翻译的那段；cb、系统命令是指令，没有可搜的
   private var searchText: String {
-    if let text = Self.translateQuery(query) { return text }
+    let features = features
+    if features.contains(.translate), let text = Self.translateQuery(query) { return text }
     let query = query.trimmingCharacters(in: .whitespaces)
-    guard Self.clipQuery(query) == nil, commandRequest == nil else { return "" }
+    guard !features.contains(.clipboard) || Self.clipQuery(query) == nil, commandRequest == nil
+    else { return "" }
     return fileRequest.map { $0.terms.joined(separator: " ") } ?? query
   }
 

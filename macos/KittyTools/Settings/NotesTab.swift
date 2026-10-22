@@ -42,42 +42,50 @@ struct NotesTab: View {
   private static let senseTitles = [8: "窄", 14: "标准", 28: "宽", 44: "很宽"]
 
   var body: some View {
+    // 关着时（Feature）变灰；Markdown 导出、导入管的是已有的便签，照常能用
     Form {
+      Section { FeatureToggle(feature: .notes, inPage: true) }
+      Group {
+        Section {
+          // 横排单选包进 LabeledContent：贴着右边线（同设置 › 剪贴板「图片最多占用」）
+          radios("正文字号", "全部便签窗口、屏幕边缘和浮在屏幕上的便签里正文的大小", selection: $fontSize) {
+            ForEach(Prefs.notesFontSizeChoices, id: \.self) {
+              Text(Self.fontTitles[$0] ?? "\($0)").tag($0)
+            }
+          }
+          radios("行距", "全部便签窗口、屏幕边缘和浮在屏幕上的便签里正文一行一行之间隔多远", selection: $lineSpacing) {
+            ForEach(NoteStyles.Spacing.allCases, id: \.self) { Text($0.title).tag($0) }
+          }
+          Toggle(isOn: $markdown) {
+            Text("Markdown 样式")
+            // verbatim：SwiftUI 的 Text 自己会把字面量里的 ** ` [] 当 Markdown 画掉，这里要原样写给人看
+            Text(
+              verbatim:
+                "# 标题、**粗体**、*斜体*、`代码`、[链接](地址)、三个反引号围起来的代码块，这些写法直接显示成样式，标记只在光标所在的那一行露出来"
+            )
+          }
+        } header: {
+          Text("便签")
+        }
+        deck
+      }
+      .gated(by: .notes)
       Section {
-        // 横排单选包进 LabeledContent：贴着右边线（同设置 › 剪贴板「图片最多占用」）
-        radios("正文字号", "全部便签窗口、屏幕边缘和浮在屏幕上的便签里正文的大小", selection: $fontSize) {
-          ForEach(Prefs.notesFontSizeChoices, id: \.self) {
-            Text(Self.fontTitles[$0] ?? "\($0)").tag($0)
+        Group {
+          LabeledContent {
+            Button("打开全部便签…", action: openNotes)
+          } label: {
+            Text(HotKeyAction.noteAll.title)
+            Text("看、改、搜索、归档便签，找回删掉的")
+          }
+          LabeledContent {
+            ShortcutsButton()
+          } label: {
+            Text("便签的按键")
+            Text("快速记一条、屏幕边缘的便签和全部便签窗口里按什么键")
           }
         }
-        radios("行距", "全部便签窗口、屏幕边缘和浮在屏幕上的便签里正文一行一行之间隔多远", selection: $lineSpacing) {
-          ForEach(NoteStyles.Spacing.allCases, id: \.self) { Text($0.title).tag($0) }
-        }
-        Toggle(isOn: $markdown) {
-          Text("Markdown 样式")
-          // verbatim：SwiftUI 的 Text 自己会把字面量里的 ** ` [] 当 Markdown 画掉，这里要原样写给人看
-          Text(
-            verbatim:
-              "# 标题、**粗体**、*斜体*、`代码`、[链接](地址)、三个反引号围起来的代码块，这些写法直接显示成样式，标记只在光标所在的那一行露出来"
-          )
-        }
-      } header: {
-        Text("便签")
-      }
-      deck
-      Section {
-        LabeledContent {
-          Button("打开全部便签…", action: openNotes)
-        } label: {
-          Text(HotKeyAction.noteAll.title)
-          Text("看、改、搜索、归档便签，找回删掉的")
-        }
-        LabeledContent {
-          ShortcutsButton()
-        } label: {
-          Text("便签的按键")
-          Text("快速记一条、屏幕边缘的便签和全部便签窗口里按什么键")
-        }
+        .gated(by: .notes)
         LabeledContent {
           Button("导出…") { exportMarkdown() }
             .disabled(notes() == nil || isTransferring)

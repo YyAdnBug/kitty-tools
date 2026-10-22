@@ -69,60 +69,65 @@ struct LauncherTab: View {
   }
 
   private var form: some View {
+    // 关着时（Feature）变灰，只有「清空使用记录」照常能点
     Form {
-      Section {
-        Toggle(isOn: $romanInput) {
-          Text("呼出时切到英文输入法")
-          Text("只在搜索框里生效，离开后恢复；要搜中文时先关掉")
-        }
-        LabeledContent {
-          ShortcutsButton()
-        } label: {
-          Text("启动器里的按键")
-          Text(
-            "搜 App、系统设置、文件、书签、网址、路径、算式（也能换算单位和进制）和系统命令（lock、quit、kill 这些），"
-              + "↩ 打开，⌘K 看这一项的全部操作")
-        }
-      }
-      Section {
-        PermissionRow(
-          title: "桌面、文稿、下载、iCloud 云盘", detail: folderDetail, symbol: "folder.fill",
-          color: Style.Family.general, granted: deniedFolders == []
-        ) {
-          if deniedFolders == nil {
-            deniedFolders = Permissions.requestFolderAccess()
-          } else {
-            Permissions.Kind.filesAndFolders.openSettings()
+      Section { FeatureToggle(feature: .launcher, inPage: true) }
+      Group {
+        Section {
+          Toggle(isOn: $romanInput) {
+            Text("呼出时切到英文输入法")
+            Text("只在搜索框里生效，离开后恢复；要搜中文时先关掉")
+          }
+          LabeledContent {
+            ShortcutsButton()
+          } label: {
+            Text("启动器里的按键")
+            Text(
+              "搜 App、系统设置、文件、书签、网址、路径、算式（也能换算单位和进制）和系统命令（lock、quit、kill 这些），"
+                + "↩ 打开，⌘K 看这一项的全部操作")
           }
         }
-      } header: {
-        Text("文件搜索")
-      } footer: {
-        SectionFootnote(
-          "「open 文件名」搜文件并打开，「find 文件名」在访达中显示；不想被搜到的文件夹加到 系统设置 › Spotlight › 搜索隐私。")
-      }
-      Section {
-        ForEach(browsers, id: \.browser.id) { browserRows($0.browser, app: $0.app) }
-      } header: {
-        Text("浏览器书签与历史")
-      } footer: {
-        SectionFootnote("只列本机装了的浏览器。")
-      }
-      Section {
-        engineList
-        ListEditBar(
-          removeTitle: "删除所选的一条", canRemove: selection != nil, remove: removeSelected
-        ) {
-          addMenu
+        Section {
+          PermissionRow(
+            title: "桌面、文稿、下载、iCloud 云盘", detail: folderDetail, symbol: "folder.fill",
+            color: Style.Family.general, granted: deniedFolders == []
+          ) {
+            if deniedFolders == nil {
+              deniedFolders = Permissions.requestFolderAccess()
+            } else {
+              Permissions.Kind.filesAndFolders.openSettings()
+            }
+          }
+        } header: {
+          Text("文件搜索")
+        } footer: {
+          SectionFootnote(
+            "「open 文件名」搜文件并打开，「find 文件名」在访达中显示；不想被搜到的文件夹加到 系统设置 › Spotlight › 搜索隐私。")
         }
-        Toggle("有本地结果时也显示兜底搜索", isOn: $fallbackAlways)
-      } header: {
-        Text("网页搜索与快捷链接")
-      } footer: {
-        SectionFootnote(
-          "网址里有 {query} 的是搜索（「关键词 空格 内容」直达，开关 = 没有本地结果时兜底），没有的是快捷链接。"
-            + "拖动调整顺序，搜索的关键词重复时用靠前的；点一行编辑。")
+        Section {
+          ForEach(browsers, id: \.browser.id) { browserRows($0.browser, app: $0.app) }
+        } header: {
+          Text("浏览器书签与历史")
+        } footer: {
+          SectionFootnote("只列本机装了的浏览器。")
+        }
+        Section {
+          engineList
+          ListEditBar(
+            removeTitle: "删除所选的一条", canRemove: selection != nil, remove: removeSelected
+          ) {
+            addMenu
+          }
+          Toggle("有本地结果时也显示兜底搜索", isOn: $fallbackAlways)
+        } header: {
+          Text("网页搜索与快捷链接")
+        } footer: {
+          SectionFootnote(
+            "网址里有 {query} 的是搜索（「关键词 空格 内容」直达，开关 = 没有本地结果时兜底），没有的是快捷链接。"
+              + "拖动调整顺序，搜索的关键词重复时用靠前的；点一行编辑。")
+        }
       }
+      .gated(by: .launcher)
       Section {
         DangerButton("清空使用记录…") { confirmsClear = true }
       } header: {

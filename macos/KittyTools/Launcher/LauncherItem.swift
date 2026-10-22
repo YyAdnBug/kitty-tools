@@ -60,7 +60,8 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
 
   /// 内置动作此刻的状态（AppDelegate 在每次搜索时给）：暂停记录剪贴板了没有、复制即译开没开、钉图（nil = 没有钉图，
   /// true = 藏着）、能不能检查更新（正式版）、正在录的是录屏还是录音（录着时那一项是「停止录屏」/「停止录音」；nil = 没在录）、
-  /// 状态屏有哪些状态（每个一条结果）、它的全局快捷键是不是直接进排在最前面的那个（是的话那一条带键帽）
+  /// 状态屏有哪些状态（每个一条结果）、它的全局快捷键是不是直接进排在最前面的那个（是的话那一条带键帽）、
+  /// 开着哪些功能（Feature：关着的功能的动作和它那一节的菜单栏项都不列；放在这里，缓存才会跟着开关变）
   struct ActionState: Equatable {
     var recordingPaused = false
     var copyToTranslate = false
@@ -69,18 +70,20 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     var recording: HotKeyAction?
     var statusPresets: [StatusPreset] = []
     var statusEntersFirst = false
+    var features = Set(Feature.allCases.filter(\.isAvailable))
   }
 
-  /// 内置动作（体检 A26）：和菜单栏同名同序——按 HotKeyAction.sections（启动器自己除外），每节末尾接上那一节的
+  /// 内置动作（体检 A26）：和菜单栏同名同序——按 HotKeyAction.sections（只列开着的功能，启动器自己除外），每节末尾接上那一节的
   /// MenuExtra（暂停记录剪贴板、复制即译、有钉图时的两项），最后设置、快捷键速查表、关于、检查更新（正式版）、
   /// 退出 Kitty Tools（菜单栏图标隐藏时只剩这里能退出，第 9 批 M1）。状态屏那一节不是一条「状态屏」，而是每个状态一条（Z10）。
   /// 老的 6 个 id 保留（使用记录按 id 累计），新加的用 HotKeyAction.rawValue / MenuExtra.rawValue。
   /// 按状态缓存：每敲一个字都要列一遍，拼音转写不便宜
-  static func actions(_ state: ActionState = .init()) -> [LauncherItem] {
-    if let cached = actionCache, cached.state == state { return cached.items }
+  /// caching：false = 不读也不写缓存（只缓存一份，偶尔要一次别的状态时别把常用的那份顶掉）
+  static func actions(_ state: ActionState = .init(), caching: Bool = true) -> [LauncherItem] {
+    if caching, let cached = actionCache, cached.state == state { return cached.items }
     var items: [LauncherItem] = []
     let extras = MenuExtra.allCases.filter { $0.isAvailable(state) }
-    for section in HotKeyAction.sections {
+    for section in HotKeyAction.visibleSections(enabled: state.features) {
       for hotKey in section.actions where hotKey != .launcher {
         if hotKey == .statusScreen {
           var statuses = state.statusPresets.map(statusPreset)
@@ -99,7 +102,7 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
       }
     }
     items += extras.filter { $0.section == nil }.map { action($0, state) }
-    actionCache = (state, items)
+    if caching { actionCache = (state, items) }
     return items
   }
 

@@ -1,4 +1,5 @@
-// 设置 › 通用：外观（跟随系统 / 浅色 / 深色三张缩略图）与强调色（跟随系统 + 系统设置那一排 8 色，都是改了立刻生效）、
+// 设置 › 通用：功能（八个功能各一个开关，最上面一组，2026-10-21；关掉的功能入口全藏、后台不干活，Shell/Feature.swift）、
+// 外观（跟随系统 / 浅色 / 深色三张缩略图）与强调色（跟随系统 + 系统设置那一排 8 色，都是改了立刻生效）、
 // 动效：呼出面板时挤压弹开（剪贴板 / 启动器 / 翻译浮窗共用，2026-09-29 从启动器页挪来；2026-10-03 用户定转正：去掉「实验」、
 // 单独成组，默认仍关）、
 // 菜单栏图标（显示 / 隐藏、单色 / 彩色，StatusItem 看着偏好立刻跟着变，第 9 批 M1 M2）、登录时打开、
@@ -26,6 +27,13 @@ struct GeneralTab: View {
 
   var body: some View {
     Form {
+      Section {
+        ForEach(Feature.allCases.filter(\.isAvailable), id: \.self) { FeatureToggle(feature: $0) }
+      } header: {
+        Text("功能")
+      } footer: {
+        SectionFootnote("关掉的功能不出现在快捷键、菜单栏和启动器里，也不在后台运行；它的数据和设置都留着，打开就回来。")
+      }
       Section {
         LabeledContent("外观") { AppearancePicker(selection: $appearance) }
           .onChange(of: appearance) { AppAppearance.apply() }
@@ -405,6 +413,56 @@ enum AppAppearance: String, CaseIterable, Identifiable {
   static func apply() {
     NSApp.appearance = name(for: UserDefaults.standard.string(forKey: Prefs.appearance))
       .flatMap(NSAppearance.init(named:))
+  }
+}
+
+/// 一个功能的开关（Feature）：通用 › 功能一节里的一行（家族色块 + 名字 + 说明），和每个功能页第一节的「启用剪贴板」
+/// （`inPage`，不带色块：页头已经有）。两处绑同一个偏好、互相跟着变；运行中的东西由 AppDelegate 看着偏好跟上
+struct FeatureToggle: View {
+  let feature: Feature
+  var inPage = false
+  @AppStorage private var isOn: Bool
+
+  init(feature: Feature, inPage: Bool = false) {
+    self.feature = feature
+    self.inPage = inPage
+    _isOn = AppStorage(wrappedValue: true, feature.prefsKey)
+  }
+
+  var body: some View {
+    Toggle(isOn: $isOn) {
+      if inPage {
+        Text("启用\(feature.title)")
+        Text(feature.blurb)
+      } else {
+        // 自己排的行：说明同快捷键页的行，11 pt secondary（mac-whisker-settings「设置页的说明文字」）
+        HStack(spacing: 10) {
+          KindTile(symbol: feature.page.symbol, color: feature.page.color, size: 20)
+            .accessibilityHidden(true)
+          VStack(alignment: .leading, spacing: 2) {
+            Text(feature.title)
+            Text(feature.blurb).font(.subheadline).foregroundStyle(.secondary)
+          }
+        }
+      }
+    }
+  }
+}
+
+extension View {
+  /// 功能关着时这块设置变灰（还看得见）。清空、导出、导入、恢复这类管数据的操作不套它：关掉剪贴板的人可能正想清空它
+  func gated(by feature: Feature) -> some View { modifier(FeatureGate(feature: feature)) }
+}
+
+private struct FeatureGate: ViewModifier {
+  @AppStorage private var isOn: Bool
+
+  init(feature: Feature) { _isOn = AppStorage(wrappedValue: true, feature.prefsKey) }
+
+  /// 分组表单里系统的 .disabled 只让控件变淡、标签和说明不变（屏外实测；同通用页「图标样式」那行的注释），
+  /// 一眼看不出这块用不了：整块再乘上禁用的不透明度
+  func body(content: Content) -> some View {
+    content.disabled(!isOn).opacity(isOn ? 1 : Style.disabledOpacity)
   }
 }
 

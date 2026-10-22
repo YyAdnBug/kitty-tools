@@ -73,78 +73,86 @@ struct TranslateTab: View {
   }
 
   private var form: some View {
+    // 关着时（Feature）变灰，翻译历史保留多少条、导出和清空照常能用
     Form {
-      Section {
-        Picker("第一语言", selection: $first) {
-          ForEach(Lang.allCases, id: \.self) { Text($0.title).tag($0.rawValue) }
-        }
-        Picker("第二语言", selection: $second) {
-          ForEach(Lang.allCases, id: \.self) { Text($0.title).tag($0.rawValue) }
-        }
-      } header: {
-        Text("语言")
-      } footer: {
-        SectionFootnote(
-          "目标语言选「自动」时：原文是第一语言就译成第二语言，否则译成第一语言（简繁中文算同一种）。"
-            + "源语言和目标语言在翻译浮窗顶部切换，会一直记住。")
-      }
-      // 两个选成同一种语言（简繁也算）就互换，免得「自动」变成中译中
-      .onChange(of: first) { old, new in if sameLanguage(new, second) { second = old } }
-      .onChange(of: second) { old, new in if sameLanguage(new, first) { first = old } }
-      Section("译文字号") {
-        LabeledContent {
-          HStack(spacing: 10) {
-            Slider(value: $fontScale, in: TranslateCoordinator.fontScales, step: 0.1)
-              .tint(Style.brand)  // 根视图的 .accentColor 管不到滑块（实测），单独给
-            Text(fontScale.formatted(.percent.precision(.fractionLength(0))))
-              .font(.system(size: 12, weight: .medium)).monospacedDigit()
-              .contentTransition(.numericText(value: fontScale))
-              .frame(width: 40, alignment: .trailing)
+      Section { FeatureToggle(feature: .translate, inPage: true) }
+      Group {
+        Section {
+          Picker("第一语言", selection: $first) {
+            ForEach(Lang.allCases, id: \.self) { Text($0.title).tag($0.rawValue) }
           }
-        } label: {
-          Text("大小")
+          Picker("第二语言", selection: $second) {
+            ForEach(Lang.allCases, id: \.self) { Text($0.title).tag($0.rawValue) }
+          }
+        } header: {
+          Text("语言")
+        } footer: {
+          SectionFootnote(
+            "目标语言选「自动」时：原文是第一语言就译成第二语言，否则译成第一语言（简繁中文算同一种）。"
+              + "源语言和目标语言在翻译浮窗顶部切换，会一直记住。")
         }
-        // 实时预览：浮窗里的同一张卡（第一个服务），字号跟着滑块变
-        ProviderCardView(
-          card: .init(service: services.services.first ?? .zhipu, state: .done(Self.sample)),
-          index: 0, language: .zhHans, speaker: speaker, fontScale: fontScale, onRetry: {}
-        )
-        // 只是预览：上面的按钮（复制、重试、收起）不接点击
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-        .animation(reduceMotion ? nil : .smooth(duration: 0.18), value: fontScale)
+        // 两个选成同一种语言（简繁也算）就互换，免得「自动」变成中译中
+        .onChange(of: first) { old, new in if sameLanguage(new, second) { second = old } }
+        .onChange(of: second) { old, new in if sameLanguage(new, first) { first = old } }
+        Section("译文字号") {
+          LabeledContent {
+            HStack(spacing: 10) {
+              Slider(value: $fontScale, in: TranslateCoordinator.fontScales, step: 0.1)
+                .tint(Style.brand)  // 根视图的 .accentColor 管不到滑块（实测），单独给
+              Text(fontScale.formatted(.percent.precision(.fractionLength(0))))
+                .font(.system(size: 12, weight: .medium)).monospacedDigit()
+                .contentTransition(.numericText(value: fontScale))
+                .frame(width: 40, alignment: .trailing)
+            }
+          } label: {
+            Text("大小")
+          }
+          // 实时预览：浮窗里的同一张卡（第一个服务），字号跟着滑块变
+          ProviderCardView(
+            card: .init(service: services.services.first ?? .zhipu, state: .done(Self.sample)),
+            index: 0, language: .zhHans, speaker: speaker, fontScale: fontScale, onRetry: {}
+          )
+          // 只是预览：上面的按钮（复制、重试、收起）不接点击
+          .allowsHitTesting(false)
+          .accessibilityHidden(true)
+          .animation(reduceMotion ? nil : .smooth(duration: 0.18), value: fontScale)
+        }
+        Section {
+          Toggle("查单个词时显示系统词典的释义", isOn: $systemDictionary)
+          Toggle("查单个词时大模型按词典回答（读音、词性、例句）", isOn: $wordMode)
+          LabeledContent {
+            Button("打开「词典」") { NSWorkspace.shared.open(URL(string: "dict://")!) }
+          } label: {
+            Text("系统词典的中文释义")
+            Text("默认给英文词英英释义；在「词典」App 的设置里勾上「牛津英汉汉英词典」并拖到最前面，就会显示中文释义")
+          }
+        } header: {
+          Text("查词")
+        } footer: {
+          SectionFootnote("查单个词时不自动复制、不给「替换原文」。")
+        }
       }
+      .gated(by: .translate)
       Section {
-        Toggle("查单个词时显示系统词典的释义", isOn: $systemDictionary)
-        Toggle("查单个词时大模型按词典回答（读音、词性、例句）", isOn: $wordMode)
-        LabeledContent {
-          Button("打开「词典」") { NSWorkspace.shared.open(URL(string: "dict://")!) }
-        } label: {
-          Text("系统词典的中文释义")
-          Text("默认给英文词英英释义；在「词典」App 的设置里勾上「牛津英汉汉英词典」并拖到最前面，就会显示中文释义")
+        Group {
+          Picker(selection: $panelPosition) {
+            Text("跟随鼠标").tag("mouse")
+            Text("上次位置").tag("last")
+          } label: {
+            Text("浮窗位置")
+            Text("跟随鼠标：划词、截图翻译、复制即译时出现在光标旁边；输入翻译总在上次拖到的位置")
+          }
+          .pickerStyle(.segmented)
+          Toggle("翻译前把同一段里的换行接起来（适合 PDF 复制的文字）", isOn: $removeNewlines)
+          Toggle(isOn: $copyToTranslate) {
+            Text("复制即译")
+            Text("在别的 App 里复制外语文字，浮窗自动弹出翻译（网址、路径、数字和第一语言的文字不翻）")
+          }
+          Toggle("自动复制第一个服务的译文", isOn: $autoCopy)
+            .help("复制即译弹出的翻译不会自动复制，免得覆盖你刚复制的原文")
+          Toggle("记录翻译历史", isOn: $historyEnabled)
         }
-      } header: {
-        Text("查词")
-      } footer: {
-        SectionFootnote("查单个词时不自动复制、不给「替换原文」。")
-      }
-      Section {
-        Picker(selection: $panelPosition) {
-          Text("跟随鼠标").tag("mouse")
-          Text("上次位置").tag("last")
-        } label: {
-          Text("浮窗位置")
-          Text("跟随鼠标：划词、截图翻译、复制即译时出现在光标旁边；输入翻译总在上次拖到的位置")
-        }
-        .pickerStyle(.segmented)
-        Toggle("翻译前把同一段里的换行接起来（适合 PDF 复制的文字）", isOn: $removeNewlines)
-        Toggle(isOn: $copyToTranslate) {
-          Text("复制即译")
-          Text("在别的 App 里复制外语文字，浮窗自动弹出翻译（网址、路径、数字和第一语言的文字不翻）")
-        }
-        Toggle("自动复制第一个服务的译文", isOn: $autoCopy)
-          .help("复制即译弹出的翻译不会自动复制，免得覆盖你刚复制的原文")
-        Toggle("记录翻译历史", isOn: $historyEnabled)
+        .gated(by: .translate)
         Picker("历史最多保留", selection: $historyLimit) {
           // 档位和 Prefs.migrate 读同一张表：旧档位迁过来，不会显示成空白
           ForEach(Prefs.translateHistoryLimitChoices, id: \.self) {
@@ -185,6 +193,7 @@ struct TranslateTab: View {
         SectionFootnote(
           "拖动调整顺序，结果按这个顺序显示，第一个服务的结果写入历史、用于自动复制；点一行进入设置。删掉的内置服务可以从「+」加回来，密钥还在。")
       }
+      .gated(by: .translate)
     }
     .formStyle(.grouped)
   }

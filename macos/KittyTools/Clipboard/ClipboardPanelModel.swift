@@ -1101,10 +1101,13 @@ import Observation
     changingList { store.assign(ids, to: group) }
   }
 
-  /// 能翻译：文本，或识别出文字的图片
+  /// 能翻译：文本，或识别出文字的图片；翻译这个功能关着（Feature）时没有这一项、⌘T 只响一声
   func canTranslate(_ item: ClipItem) -> Bool {
-    !(item.text ?? item.ocrText ?? "").isEmpty
+    Feature.translate.isOn && !(item.text ?? item.ocrText ?? "").isEmpty
   }
+
+  /// 能钉到屏幕：钉图归截图这个功能（Feature），它关着时图片没有「钉到屏幕」
+  var canPin: Bool { Feature.screenshot.isOn }
 
   func translate(_ item: ClipItem) {
     guard let text = item.text ?? item.ocrText, !text.isEmpty else { return }
@@ -1187,7 +1190,7 @@ import Observation
       } else if let link = firstLink(of: single) {
         add("打开链接", "safari", "⌘O", section: 1) { [unowned self] in openLink(link) }
       }
-      if single.kind == .image {
+      if single.kind == .image, canPin {
         add("钉到屏幕", "pin", section: 1) { [unowned self] in pin([single]) }
       }
       if canTranslate(single) {
@@ -1202,7 +1205,7 @@ import Observation
         select(single)
         toggleQuickLook()
       }
-    } else if targets.contains(where: { $0.kind == .image }) {
+    } else if canPin, targets.contains(where: { $0.kind == .image }) {
       add("钉到屏幕", "pin", section: 1) { [unowned self] in pin(targets) }
     }
     // 2 收藏、收藏夹、片段、备注、编辑

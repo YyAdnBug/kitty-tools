@@ -313,7 +313,9 @@ final class ShotShelf {
       return [[.copy] + convert + [.open, .reveal], [.trash], [.close]]
     }
     let saved = if case .saved = badge { true } else { false }
-    return [[.copy, .save, .pin] + (saved ? [.reveal] : []), [.close]]
+    // 截图这个功能关掉之后还留在角落的：没有钉图（Feature）
+    let pin: [Command] = Feature.screenshot.isOn ? [.pin] : []
+    return [[.copy, .save] + pin + (saved ? [.reveal] : []), [.close]]
   }
 
   func perform(_ command: Command) {
@@ -884,7 +886,7 @@ struct ShelfCardView: View {
       if corners {
         round("xmark", "关闭", action: card.close).frame(
           maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        if card.kind == .image {
+        if card.kind == .image, Feature.screenshot.isOn {
           round("pin.fill", "钉图", action: card.pin).frame(
             maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         } else if card.canCompress {

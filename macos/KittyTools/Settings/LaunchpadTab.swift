@@ -30,7 +30,8 @@ struct LaunchpadTab: View {
   /// 打开系统设置 › 触控板 › 更多手势
   var openTrackpadSettings: () -> Void = {}
 
-  @AppStorage(Prefs.launchpadEnabled) private var enabled = true
+  /// 功能开关（Feature，和 设置 › 通用 › 功能 那一行同一个偏好）
+  @AppStorage(Feature.launchpad.prefsKey) private var enabled = true
   @AppStorage(Prefs.launchpadColumns) private var columns = 7
   @AppStorage(Prefs.launchpadRows) private var rows = 5
   @AppStorage(Prefs.launchpadPinchGesture) private var gesture = PinchFingers.four.rawValue
@@ -55,12 +56,10 @@ struct LaunchpadTab: View {
   }
 
   private var form: some View {
+    // 关着时（Feature）变灰；「排列数据」里的导入、恢复、撤销管的是存着的排法，照常能用
     Form {
       Section {
-        Toggle(isOn: $enabled) {
-          Text("打开启动台")
-          Text("全屏的图标网格；关掉后入口都不响应")
-        }
+        FeatureToggle(feature: .launchpad, inPage: true)
         LabeledContent {
           ShortcutsButton()
         } label: {
@@ -72,57 +71,60 @@ struct LaunchpadTab: View {
       } footer: {
         SectionFootnote("现有的「启动器」是搜索框，和启动台是两个东西：名字、设置、快捷键都分开。")
       }
-      Section {
-        LabeledContent {
-          HStack(spacing: 8) {
-            Text("\(columns) 列")
-              .monospacedDigit()
-              .foregroundStyle(.secondary)
-            Stepper("一页几列", value: $columns, in: Prefs.launchpadColumnChoices)
-              .labelsHidden()
-          }
-        } label: {
-          Text("一页几列")
-          Text("改了按新容量重新分页")
-        }
-        LabeledContent {
-          HStack(spacing: 8) {
-            Text("\(rows) 行")
-              .monospacedDigit()
-              .foregroundStyle(.secondary)
-            Stepper("一页几行", value: $rows, in: Prefs.launchpadRowChoices)
-              .labelsHidden()
-          }
-        } label: {
-          Text("一页几行")
-          Text("大屏可以多放几行")
-        }
-      } header: {
-        Text("排列")
-      } footer: {
-        SectionFootnote("新装的 App 自动追加到最后一页末尾；卸掉的从布局里拿掉。拖动排序、建文件夹、删 App 都在启动台里做。")
-      }
-      pinchSection
-      Section {
-        Picker(selection: $corner) {
-          ForEach(LaunchpadCornerOption.allCases) { Text($0.title).tag($0.rawValue) }
-        } label: {
-          Text("屏幕角")
-          Text("鼠标推到角上停一下打开")
-        }
-        if let option = LaunchpadCornerOption(rawValue: corner),
-          option != .off, LaunchpadCorner.systemCornerIsOn(option)
-        {
+      Group {
+        Section {
           LabeledContent {
-            Text("已被系统占用").foregroundStyle(.orange)
+            HStack(spacing: 8) {
+              Text("\(columns) 列")
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+              Stepper("一页几列", value: $columns, in: Prefs.launchpadColumnChoices)
+                .labelsHidden()
+            }
           } label: {
-            Text("这个角也设了系统的触发角")
-            Text("启动台不在这个角响应（免得两个一起出来）；要用，去 系统设置 › 桌面与程序坞 › 触发角 把那个角关掉")
+            Text("一页几列")
+            Text("改了按新容量重新分页")
           }
+          LabeledContent {
+            HStack(spacing: 8) {
+              Text("\(rows) 行")
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+              Stepper("一页几行", value: $rows, in: Prefs.launchpadRowChoices)
+                .labelsHidden()
+            }
+          } label: {
+            Text("一页几行")
+            Text("大屏可以多放几行")
+          }
+        } header: {
+          Text("排列")
+        } footer: {
+          SectionFootnote("新装的 App 自动追加到最后一页末尾；卸掉的从布局里拿掉。拖动排序、建文件夹、删 App 都在启动台里做。")
         }
-      } header: {
-        Text("触发角")
+        pinchSection
+        Section {
+          Picker(selection: $corner) {
+            ForEach(LaunchpadCornerOption.allCases) { Text($0.title).tag($0.rawValue) }
+          } label: {
+            Text("屏幕角")
+            Text("鼠标推到角上停一下打开")
+          }
+          if let option = LaunchpadCornerOption(rawValue: corner),
+            option != .off, LaunchpadCorner.systemCornerIsOn(option)
+          {
+            LabeledContent {
+              Text("已被系统占用").foregroundStyle(.orange)
+            } label: {
+              Text("这个角也设了系统的触发角")
+              Text("启动台不在这个角响应（免得两个一起出来）；要用，去 系统设置 › 桌面与程序坞 › 触发角 把那个角关掉")
+            }
+          }
+        } header: {
+          Text("触发角")
+        }
       }
+      .gated(by: .launchpad)
       Section {
         LabeledContent {
           Button("从系统启动台重新导入…") { confirmsImport = true }

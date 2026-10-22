@@ -7,7 +7,8 @@
 // 录屏（框选、开录、结果、飞入和视频卡、退出前收尾、上次闪退留下的文件）；
 // 录音（录音第 5 批：开录、和录屏互斥、结果、飞入和录音卡，收尾和闪退恢复同录屏）；
 // 状态屏的三个入口（快捷键先出选状态的面板——设置里可改成直接进第一个状态，菜单栏子菜单、启动器每个状态一条；
-// 会话在 StatusScreen/StatusScreen.swift，选状态的面板在 StatusScreen/StatusPicker.swift）。
+// 会话在 StatusScreen/StatusScreen.swift，选状态的面板在 StatusScreen/StatusPicker.swift）；
+// 功能开关（Shell/Feature.swift，2026-10-21）：启动时只起开着的功能，偏好一变就按开关起停（applyFeatures）。
 
 import AppKit
 import OSLog
@@ -32,6 +33,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var audioRecorder: AudioRecorder?
   /// 退出时在等录屏 / 录音收尾（applicationShouldTerminate 返回了 .terminateLater）
   private var quitsAfterRecording = false
+  /// 上次按功能开关（Feature）起停过的样子和那时复制即译开没开（剪贴板的轮询看它）：applyFeatures 只对变了的做事；
+  /// nil = 还没起过（启动时）
+  private var appliedFeatures: Set<Feature>?
+  private var appliedCopyToTranslate = false
+  /// 屏幕边缘的便签起过没有：便签开着才起（start 会把固定着的浮动便签放回屏幕上），启动时关着的打开时再起
+  private var startedNoteEdge = false
   let hotKeys = HotKeyCenter()
 
   // MARK: 数据与服务（按依赖顺序）
@@ -142,11 +149,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         && hotKeys.recording == nil
     }
     board.willOpen = { [unowned self] in
-      clipboardPanel.hide()
-      launcherPanel.hide()
+      builtClipboardPanel?.hide()
+      builtLauncherPanel?.hide()
       statusPicker.panel?.hide()
       noteCapture?.panel.hide()
-      translatePanel.hide()
+      builtTranslatePanel?.hide()
     }
     return board
   }()
@@ -237,6 +244,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     old.window.contentViewController = nil
   }
 
+  /// 三块主面板建过没有（lazy：一碰就建）。只是要收起时看它们：没建过就不用收，别为了收起把关着的功能（Feature）的面板
+  /// 建出来、一直留在内存里（打开设置窗、呼出别的面板、划词时都会收一遍）
+  private weak var builtLauncherPanel: OverlayPanel?
+  private weak var builtClipboardPanel: OverlayPanel?
+  private weak var builtTranslatePanel: OverlayPanel?
+
   private lazy var launcherPanel: OverlayPanel = {
     let model = launcherModel
     let panel = OverlayPanel(
@@ -262,9 +275,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.runAction = { [unowned self] in runLauncherAction($0) }
     model.actionState = { [unowned self] in menuState }
     model.openSettings = { [unowned self] in showSettings(page: .launcher) }
-    model.openClipboard = { [unowned self] in searchClipboard($0) }
+    // cb、fy 两行只在剪贴板 / 翻译开着（Feature）时列出来，这里再挡一道
+    model.openClipboard = { [unowned self] in
+      if Feature.clipboard.isOn { searchClipboard($0) }
+    }
     // fy 那一行（体检 D10）：翻译浮窗直接翻译，位置照「浮窗位置」设置（跟随鼠标 / 上次位置）
     model.translate = { [unowned self] text in
+      guard Feature.translate.isOn else { return }
       coordinator.translate(text)
       presentTranslate()
     }
@@ -280,6 +297,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.requestFolderAccess = { [unowned self] in requestFolderAccess() }
     model.perform = { [unowned self] in SystemControl.perform($0, island: island) }
     model.island = island
+    builtLauncherPanel = panel
     return panel
   }()
 
@@ -352,8 +370,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.hidePanel = { [unowned panel] in panel.hide() }
     model.pasteTargetView = { [unowned panel] in panel.pasteTarget() }
     model.resize = { [unowned panel] in panel.setContentHeight($0, animated: true) }
-    // 剪贴板面板保持打开（兄弟浮层），翻译浮窗出现在旁边
+    // 剪贴板面板保持打开（兄弟浮层），翻译浮窗出现在旁边。翻译关着（Feature）时面板里没有这一项，这里再挡一道
     model.openTranslate = { [unowned self] text in
+      guard Feature.translate.isOn else { return }
       coordinator.translate(text)
       presentTranslate()
     }
@@ -368,6 +387,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       Self.closeQuickLook(
         quickLookPanel.panel, owner: clipboardPanel, animated: animated, to: cardScreenFrame)
     }
+    builtClipboardPanel = panel
     return panel
   }()
 
@@ -442,6 +462,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       idleReclaim.schedule()
     }
     panel.squeezesIn = { Self.squeezesIn() }
+    builtTranslatePanel = panel
     return panel
   }()
 
@@ -556,7 +577,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 正在录快捷键时热键停着，录完它自己会重新注册
     if hotKeys.recording == nil { hotKeys.reload() }
     launchpad.applySettings()
-    clipboardStore.recognizePendingImages()
+    if Feature.clipboard.isOn { clipboardStore.recognizePendingImages() }
+    // 功能开关变了的，偏好的变化通知到了 applyFeatures 自己跟上
     return clipboardStore.enforceLimits()
   }
 
@@ -573,17 +595,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     _ = stores
     isRunning = true
 
-    // 本 App 生成的新文字写剪贴板时同时记进历史（Paster.write(string:record:)，mac-native §5）；暂停记录时不记
+    // 本 App 生成的新文字写剪贴板时同时记进历史（Paster.write(string:record:)，mac-native §5）；暂停记录、剪贴板关着时不记
     Paster.recordText = { [unowned self] in
-      if !watcher.isUserPaused { clipboardStore.recordOwnText($0) }
+      if recordsClipboard { clipboardStore.recordOwnText($0) }
     }
+    // 剪贴板关着（Feature）也照做：保留天数到期照删、孤儿图片照清（数据层不跟着开关走）。轮询和识字在 applyFeatures 里按开关起
     let launchedAt = Date.now
     clipboardStore.enforceLimits()
     clipboardStore.images.removeOrphans(
       keeping: Set(clipboardStore.items.map(\.id)), createdBefore: launchedAt)
-    clipboardStore.recognizePendingImages()
     watcher.onText = { [unowned self] text in copyToTranslate(text) }
-    watcher.start()
     DistributedNotificationCenter.default().addObserver(
       forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main
     ) { [weak self] _ in
@@ -639,10 +660,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     shelf.island = island
     shelf.save = { [unowned self] in await savePNG($0, asking: false) }
     shelf.pin = { [unowned self] in pins.pin($0, frame: $1) }
-    // 录屏 / 录音卡的「拷贝」：拷的是文件，同截图的图片自己记进剪贴板历史（C8-a：点了才进；暂停记录时不记）
+    // 录屏 / 录音卡的「拷贝」：拷的是文件，同截图的图片自己记进剪贴板历史（C8-a：点了才进；暂停记录、剪贴板关着时不记）
     shelf.copyFile = { [unowned self] url in
       Paster.write(files: [url])
-      if !watcher.isUserPaused { clipboardStore.recordFiles([url]) }
+      if recordsClipboard { clipboardStore.recordFiles([url]) }
     }
     let statusItem = StatusItem()
     statusItem.buildMenu = { [unowned self] in buildStatusMenu($0) }
@@ -652,11 +673,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 有新版本：菜单栏图标右上角出小圆点，常驻到更新为止
     updater.onAvailableChange = { [weak statusItem] in statusItem?.updateVersion = $0?.version }
     updater.start()
-    launcherModel.rescanApps()  // 约 65ms，放在启动时，第一次呼出就不用等
-    // 启动台的本机 App 目录也在这里扫一遍（约 130ms Debug，见 PLAN §10「启动台」的量）：扫在启动时、
-    // 不在打开时，打开到第一帧才稳在 100ms 以内（R11）；目录没变时打开只 stat 几个目录
-    launchpad.prepare()
-    launchpad.applySettings()  // 触控板捏合、触发角按偏好起停（系统的捏合还开着时不注册回调）
     showWelcomeIfNeeded()
     // 有快捷键没注册上（15.0 / 15.1 上只带 ⌥ 的组合）：按了没反应又不知道为什么，启动时说一次
     // （放在「已更新」之后：同一座岛原地换内容，警告不能被盖掉）
@@ -678,6 +694,105 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
     }
     finishLaunchingNotes()
+    // 按功能开关起各功能的后台活（剪贴板轮询、启动器 / 启动台扫目录、捏合和触发角、便签屏幕边缘），之后偏好一变就跟上：
+    // 通用 › 功能、各页的「启用」、导入设置三条路都走这里，不另外接线
+    applyFeatures()
+    NotificationCenter.default.addObserver(
+      forName: UserDefaults.didChangeNotification, object: UserDefaults.standard, queue: .main
+    ) { [weak self] _ in
+      MainActor.assumeIsolated { self?.applyFeatures() }
+    }
+  }
+
+  /// 剪贴板历史现在记不记（剪贴板这个功能开着、没在菜单栏暂停）：本 App 自己写剪贴板的几处（Paster.recordText、截图、
+  /// 录屏卡的拷贝）都看它，不各写各的
+  private var recordsClipboard: Bool { Feature.clipboard.isOn && !watcher.isUserPaused }
+
+  /// 按功能开关（Feature，设置 › 通用 › 功能）起停各功能：后台活起 / 停、关掉的那些开着的界面收起、热键重新注册。
+  /// 启动时调一次（只起开着的，不碰关着的功能），之后偏好一变就调，只对变了的功能做事；数据层（库、备份、到期清理）不动
+  private func applyFeatures() {
+    let now = Feature.enabled
+    let copyToTranslate = UserDefaults.standard.bool(forKey: Prefs.translateCopyToTranslate)
+    let before = appliedFeatures
+    guard now != before || copyToTranslate != appliedCopyToTranslate else { return }
+    appliedFeatures = now
+    appliedCopyToTranslate = copyToTranslate
+    let turnedOn = now.subtracting(before ?? [])
+    let turnedOff = (before ?? []).subtracting(now)
+    let launching = before == nil
+
+    // 剪贴板的轮询：记历史要它，复制即译也要它（剪贴板关着时只为复制即译跑、不入库）
+    watcher.records = now.contains(.clipboard)
+    if now.contains(.clipboard) || (now.contains(.translate) && copyToTranslate) {
+      watcher.start()
+    } else {
+      watcher.stop()
+    }
+    if turnedOn.contains(.clipboard) { clipboardStore.recognizePendingImages() }
+    // 启动器：约 65ms，放在启动时，第一次呼出就不用等；运行中打开的，第一次呼出时 prepareForShow 自己扫
+    if launching, turnedOn.contains(.launcher) { launcherModel.rescanApps() }
+    // 启动台的本机 App 目录也在启动时扫一遍（约 130ms Debug，见 PLAN §10「启动台」的量）：扫在启动时、不在打开时，
+    // 打开到第一帧才稳在 100ms 以内（R11）；捏合、触发角按偏好起停（系统的捏合还开着时不注册回调）
+    if turnedOn.contains(.launchpad) {
+      launchpad.prepare()
+      launchpad.applySettings()
+    }
+    if turnedOn.contains(.notes) {
+      if !launching, let noteStore {
+        NoteSample.addIfFirst(
+          to: noteStore, defaults: .standard, hotKey: HotKeyAction.noteCapture.hotKey?.display)
+      }
+      if let noteEdge, !startedNoteEdge {
+        startedNoteEdge = true
+        noteEdge.start()
+      } else {
+        noteEdge?.floats.resume()  // 关掉时藏起来的浮动便签放回来（那叠看着偏好自己摆回来）
+      }
+    }
+
+    guard !launching else { return }
+    // 正在录快捷键时热键停着，录完它自己会重新注册；只是复制即译开关变了不用重新注册
+    if now != before, hotKeys.recording == nil { hotKeys.reload() }
+    guard !turnedOff.isEmpty else { return }
+    if turnedOff.contains(.clipboard) {
+      builtClipboardPanel?.hide()
+      quickLookPanel.panel?.hide()
+      // 菜单栏的「暂停记录」跟着剪贴板藏起来了：恢复，免得复制即译也一直被它挡着
+      watcher.isUserPaused = false
+      clipboardModel.isRecordingPaused = false
+    }
+    if turnedOff.contains(.launcher) {
+      builtLauncherPanel?.hide()
+      launcherQuickLook.panel?.hide()
+    }
+    if turnedOff.contains(.translate) {
+      builtTranslatePanel?.hide()
+      // 浮窗没开着时 onHide 不会来：进行中的请求、朗读直接停
+      coordinator.cancel()
+      speaker.stop()
+      replaceTask?.cancel()
+      replaceTask = nil
+    }
+    if turnedOff.contains(.screenshot), !pins.panels.isEmpty { pins.closeAll() }
+    if turnedOff.contains(.record) {
+      // 正在录：照常停止并收尾（文件存好、飞出卡片，同退出时）；待录的控制条直接收掉
+      closeReadyAudio()
+      recorder?.stop()
+      audioRecorder?.stop()
+    }
+    if turnedOff.contains(.notes) {
+      noteStore?.flush()
+      noteCapture?.panel.hide()
+      // 最小化在程序坞里的也关（不然点回来照样能用）
+      if let window = notesWindow?.window, window.isVisible || window.isMiniaturized {
+        window.close()
+      }
+      // 浮动便签先藏起来（固定着的位置记录不清，打开后放回原处）；那叠看着偏好自己收起
+      noteEdge?.floats.suspend(covering: .infinite)
+    }
+    if turnedOff.contains(.launchpad) { launchpad.turnOff() }
+    if turnedOff.contains(.statusScreen) { statusPicker.panel?.hide() }
+    idleReclaim.schedule()  // 关掉的功能占着的缓存跟着还
   }
 
   /// 启动的最后一步，几样连着做：开便签库、清「最近删除」里到期的、从没有过便签的人放一条示例（NoteSample，
@@ -691,13 +806,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     noteStore?.images = NoteImageStore(
       directory: dataDirectory.appending(path: NotesBackup.imagesName))
     purgeNotes()
-    if let noteStore {
+    // 便签关着（Feature）时库照开、到期照清、照常备份；示例便签和屏幕边缘等打开时再说（applyFeatures）
+    if let noteStore, Feature.notes.isOn {
       NoteSample.addIfFirst(
         to: noteStore, defaults: .standard, hotKey: HotKeyAction.noteCapture.hotKey?.display)
     }
     backupIfDue()
     noteEdge = noteStore.map(makeNoteEdge)
-    noteEdge?.start()
   }
 
   /// 便签的定期清理：「最近删除」里放满 30 天的真删；图片目录里没人引用满 30 天的文件删掉
@@ -805,7 +920,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   func toggleClipboard() {
     // 已开着但不是 key 时 toggle 是「聚焦」而不是收起：同样要收起另一个
     if !(clipboardPanel.isVisible && clipboardPanel.isKeyWindow) {
-      launcherPanel.hide()
+      builtLauncherPanel?.hide()
       statusPicker.panel?.hide()
       noteCapture?.panel.hide()
     }
@@ -815,7 +930,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   func toggleLauncher() {
     if !(launcherPanel.isVisible && launcherPanel.isKeyWindow) {
-      clipboardPanel.hide()
+      builtClipboardPanel?.hide()
       statusPicker.panel?.hide()
       noteCapture?.panel.hide()
     }
@@ -843,8 +958,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let capture = noteCapture ?? makeNoteCapture(store)
     noteCapture = capture
     if !(capture.panel.isVisible && capture.panel.isKeyWindow) {
-      clipboardPanel.hide()
-      launcherPanel.hide()
+      builtClipboardPanel?.hide()
+      builtLauncherPanel?.hide()
       statusPicker.panel?.hide()
     }
     if !capture.panel.isVisible {
@@ -919,7 +1034,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if id.hasPrefix(LauncherItem.statusPresetPrefix) {
       // 状态屏的某个状态：按 id 现找（列表可能刚在设置里改过），没了就不做
       let presets = StatusPreset.load()
-      if let preset = presets.first(where: { LauncherItem.statusPresetPrefix + $0.id == id }) {
+      if Feature.statusScreen.isOn,
+        let preset = presets.first(where: { LauncherItem.statusPresetPrefix + $0.id == id })
+      {
         statusScreen.enter(preset)
       }
       return
@@ -932,6 +1049,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 菜单栏里不对应全局热键的项：菜单栏、启动器同一个分发
   private func run(_ extra: MenuExtra) {
+    // 归关着的功能的那几项（暂停记录、复制即译、钉图）：同 run(action) 的兜底
+    if let feature = extra.section?.feature, !feature.isOn { return }
     switch extra {
     case .pauseClipboard: togglePauseRecording()
     case .copyToTranslate: toggleCopyToTranslate()
@@ -960,11 +1079,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       recording: recorder != nil
         ? .screenRecord : audioRecorder?.isStarted == true ? .audioRecord : nil,
       statusPresets: StatusPreset.load(),
-      statusEntersFirst: UserDefaults.standard.bool(forKey: Prefs.statusScreenHotKeyEntersFirst))
+      statusEntersFirst: UserDefaults.standard.bool(forKey: Prefs.statusScreenHotKeyEntersFirst),
+      features: Feature.enabled)
   }
 
   /// 全局热键动作：热键、菜单栏、启动器同一个分发
   func run(_ action: HotKeyAction) {
+    // 关着的功能（Feature）：入口都藏了，这里兜底一道（漏网的路——别处直接调过来的——也挡住）
+    guard action.isActive else { return }
     // 启动台是全屏面板：按别的功能键时先收掉（它自己的键走 toggle）
     if action != .launchpad, launchpad.isOpen { launchpad.close(animated: false) }
     switch action {
@@ -1002,8 +1124,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if let panel = statusPicker.panel, panel.isVisible {
       return panel.isKeyWindow ? statusPickerModel.move(.right) : panel.present()
     }
-    clipboardPanel.hide()
-    launcherPanel.hide()
+    builtClipboardPanel?.hide()
+    builtLauncherPanel?.hide()
     noteCapture?.panel.hide()
     let mouse = NSEvent.mouseLocation
     let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
@@ -1158,8 +1280,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     isReadingSelection = true
     // 本 App 从不激活：此刻的前台就是取词的 App（「替换原文」只粘回它）
     let sourceApp = NSWorkspace.shared.frontmostApplication?.processIdentifier
-    if clipboardPanel.isKeyWindow { clipboardPanel.hide() }
-    if launcherPanel.isKeyWindow { launcherPanel.hide() }
+    if builtClipboardPanel?.isKeyWindow == true { builtClipboardPanel?.hide() }
+    if builtLauncherPanel?.isKeyWindow == true { builtLauncherPanel?.hide() }
     launchpad.close(animated: false)
     if noteCapture?.panel.isKeyWindow == true { noteCapture?.panel.hide() }
     statusPicker.panel?.hide()
@@ -1196,7 +1318,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let text = TranslateCoordinator.rewrap(result, like: source.text)
     // 便签里划的词：换回那个文本视图（一步撤销），不碰剪贴板、不看前台是哪个 App
     if let note = source.note {
-      translatePanel.hide()
+      builtTranslatePanel?.hide()
       guard note(text) else {
         Paster.write(string: text, record: true)
         return island.show(
@@ -1219,7 +1341,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       island.show("已复制译文", detail: "授权辅助功能后才能直接替换", tone: .warning)
       return Permissions.requestAccessibility()
     }
-    translatePanel.hide()
+    builtTranslatePanel?.hide()
     Paster.write(string: text, record: true)
     _ = Paster.pasteToFrontmost()
   }
@@ -1250,8 +1372,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // （hide 的 onHide 会把 key 还给别的浮层）：没固定就顺手作废它的请求，固定着的替换完再露出来
     let pinned = UserDefaults.standard.bool(forKey: Prefs.floatingPinned)
     let restoresPanel = translatePanel.isKeyWindow && pinned
-    if clipboardPanel.isKeyWindow { clipboardPanel.hide() }
-    if launcherPanel.isKeyWindow { launcherPanel.hide() }
+    if builtClipboardPanel?.isKeyWindow == true { builtClipboardPanel?.hide() }
+    if builtLauncherPanel?.isKeyWindow == true { builtLauncherPanel?.hide() }
     if noteCapture?.panel.isKeyWindow == true { noteCapture?.panel.hide() }
     statusPicker.panel?.hide()
     if translatePanel.isKeyWindow {
@@ -1594,7 +1716,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     do {
       let finished = try await ScrollCapture.run(region: region)
       pins.resume()
-      noteEdge?.floats.resume()
+      if Feature.notes.isOn { noteEdge?.floats.resume() }  // 便签关着时它们是藏着的，别放出来
       guard let result = finished else { return }
       switch result.action {
       case .copy:
@@ -1611,7 +1733,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
     } catch {
       pins.resume()
-      noteEdge?.floats.resume()
+      if Feature.notes.isOn { noteEdge?.floats.resume() }  // 便签关着时它们是藏着的，别放出来
       island.show("长截图失败", detail: error.localizedDescription, tone: .error)
     }
   }
@@ -1636,11 +1758,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 收起没固定的浮层。先收剪贴板面板再收翻译浮窗：反过来浮窗的 onHide 会把 key 还给剪贴板面板
   private func hideUnpinnedPanels() {
-    clipboardPanel.hideUnlessPinned()
-    launcherPanel.hide()  // 启动器没有固定
+    builtClipboardPanel?.hideUnlessPinned()
+    builtLauncherPanel?.hide()  // 启动器没有固定
     statusPicker.panel?.hide()  // 选状态的面板也没有
     noteCapture?.panel.hide()  // 快速记一条也没有（草稿留着）
-    translatePanel.hideUnlessPinned()
+    builtTranslatePanel?.hideUnlessPinned()
     noteEdge?.suspend(.unlessPinned)  // 屏幕边缘打开着的便签同理：没固定的收（先落盘）
   }
 
@@ -1748,7 +1870,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   private func copyPNG(_ png: Data) async {
     Paster.write([.png: png])
-    guard !watcher.isUserPaused else { return }  // 菜单栏暂停了记录
+    guard recordsClipboard else { return }  // 菜单栏暂停了记录、剪贴板关着
     var item = ClipItem(kind: .image)
     guard let info = await clipboardStore.images.save(png, isPNG: true, id: item.id) else { return }
     item.image = info
@@ -1827,9 +1949,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func copyToTranslate(_ text: String) {
     let defaults = UserDefaults.standard
     // 状态屏里不弹：浮窗会在面板底下冒出来（透出样式看得见）
-    guard defaults.bool(forKey: Prefs.translateCopyToTranslate), !statusScreen.isActive else {
-      return
-    }
+    guard Feature.translate.isOn, defaults.bool(forKey: Prefs.translateCopyToTranslate),
+      !statusScreen.isActive
+    else { return }
     let (first, second) = Lang.preferredPair
     guard
       TranslateCoordinator.worthTranslating(
@@ -1858,11 +1980,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 三块浮层、选状态的面板、快速记一条都收起，固定着的也收（打开设置、打开全部便签、进入状态屏）
   private func hidePanels() {
     launchpad.close(animated: false)
-    clipboardPanel.hide()
-    launcherPanel.hide()
+    builtClipboardPanel?.hide()
+    builtLauncherPanel?.hide()
     statusPicker.panel?.hide()
     noteCapture?.panel.hide()
-    translatePanel.hide()
+    builtTranslatePanel?.hide()
   }
 
   // MARK: 菜单栏菜单
@@ -1922,8 +2044,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.submenu = submenu
         continue
       }
-      // 启动台这一节只有它一项：节标题会和它同名重复，不画（F40；状态屏那一节同理，在上面单独处理）
-      if section.actions != [.launchpad] {
+      // 只有一项、节标题和它同名的不画节标题（F40：启动台那一节；关掉剪贴板后只剩「启动器」的那一节同理；
+      // 状态屏那一节在上面单独处理）
+      if !(section.actions.count == 1 && section.title == section.actions[0].title) {
         menu.addItem(.sectionHeader(title: section.title))
       }
       for action in section.actions {
@@ -1938,7 +2061,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         addExtra(extra)
       }
     }
-    menu.addItem(.separator())
+    // 功能全关了时上面没有节：别让菜单以一条分隔线开头
+    if menu.items.last?.isSeparatorItem == false { menu.addItem(.separator()) }
     // 速查表只在启动器里（菜单里在 设置 › 快捷键）；退出排在最后
     for extra in extras where extra.section == nil && extra != .shortcuts { addExtra(extra) }
   }

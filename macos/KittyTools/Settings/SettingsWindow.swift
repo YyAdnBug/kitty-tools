@@ -104,6 +104,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         "屏幕录制", "麦克风",
         "剪贴板访问", "隐私", "菜单栏", "状态栏", "图标", "隐藏", "彩色", "单色", "挤压", "弹开", "动画", "动效",
         "导出", "导入", "备份", "恢复", "迁移", "换电脑", "配置",
+        "功能", "模块", "关闭", "停用", "启用", "不用",
       ]
     case .clipboard:
       [
@@ -156,7 +157,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .hotkeys:
       // 「钉图」：动作名是「钉住剪贴板里的图」，搜「钉图」也要找得到这一页
       ["快捷键", "热键", "冲突", "录制", "恢复默认", "速查", "按键", "钉图"]
-        + HotKeyAction.allCases.filter(\.isAvailable).map(\.title)
+        + HotKeyAction.allCases.filter(\.isActive).map(\.title)
     case .about: ["版本", "更新", "日志", "发布", "欢迎", "引导"]
     }
   }

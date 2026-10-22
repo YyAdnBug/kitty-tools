@@ -218,11 +218,16 @@ enum Prefs {
   /// 2026-10-15 手测反馈）。同窗口位置一样是这台电脑自己的状态、**不注册默认值**：不跟着导出 / 导入走
   nonisolated static let notesWindowLayout = "notesWindowLayout"
 
-  /// 启动台（第八族，2026-10-18，SPEC §3）：总开关（默认开；关掉后快捷键、菜单栏、触发角、捏合都不打开，设置页还在）；
+  /// 功能开关（2026-10-21，Shell/Feature.swift）：八个功能各一个键「feature.<Feature.rawValue>」（Feature.prefsKey 拼），
+  /// 默认开、注册默认值（跟着导出 / 导入的「设置」一类走）。读用 Feature.isOn
+  nonisolated static let featurePrefix = "feature."
+  /// 启动台原来的总开关（启动台没发布过；2026-10-21 并进功能开关 feature.launchpad，migrate 挪一次）
+  static let launchpadEnabledLegacy = "launchpadEnabled"
+
+  /// 启动台（第八族，2026-10-18，SPEC §3）：开没开是功能开关 feature.launchpad（Feature）；
   /// 一页几列几行（默认 7 × 5，范围见 choices；改了之后按新容量重新分页，SPEC R10）；布局本身（JSON 字符串，
   /// LaunchpadLayout；**注册空串默认值**，这样 SettingsArchive 的「设置」一类知道它是字符串、用户存过才跟着导出走；
   /// 空串 = 还没存过，第一次打开按系统旧启动台导入或默认排法）。捏合、触发角三个键在第 3 批加在这里
-  nonisolated static let launchpadEnabled = "launchpadEnabled"
   nonisolated static let launchpadColumns = "launchpadColumns"
   nonisolated static let launchpadRows = "launchpadRows"
   nonisolated static let launchpadLayout = "launchpadLayout"
@@ -276,7 +281,6 @@ enum Prefs {
       launcherBrowserHistory: "",
       launcherFallbackAlways: false,
       launcherRomanInput: false,
-      launchpadEnabled: true,
       launchpadColumns: 7,
       launchpadRows: 5,
       launchpadLayout: "",
@@ -342,7 +346,7 @@ enum Prefs {
       notesDeckOpensOnHover: false,
       notesDeckOverFullScreen: false,
       notesDeckNoteSize: NoteDeckOptions.NoteSize.medium.rawValue,
-    ]
+    ].merging(Feature.allCases.map { ($0.prefsKey, true as Any) }) { current, _ in current }
   }
 
   /// 旧偏好升级（启动时在 registerDefaults 之后跑，幂等）：
@@ -350,7 +354,8 @@ enum Prefs {
   /// 保留天数不在新档位里的（旧的 3 / 14 天）挪到下一档，免得弹出菜单显示空白（体检 A4）；
   /// 翻译历史保留条数同理（旧的 100–2000 挪到 1000 / 5000，体检 A18）；
   /// 浏览器书签 / 历史的每家一个开关搬进两个 id 列表（第 12 批，只在新键没存过、旧键改过时，删掉旧键）；
-  /// 去掉了的「标签倾斜」开关（notesDeckTiltLegacy）存过的值删掉
+  /// 去掉了的「标签倾斜」开关（notesDeckTiltLegacy）存过的值删掉；
+  /// 启动台原来的总开关 launchpadEnabled 挪进功能开关 feature.launchpad（只在新键没存过时，删掉旧键）
   static func migrate(
     _ defaults: UserDefaults = .standard, domainName: String? = Bundle.main.bundleIdentifier
   ) {
@@ -368,6 +373,11 @@ enum Prefs {
     }
     defaults.removeObject(forKey: launcherSqueezeEntranceLegacy)
     defaults.removeObject(forKey: notesDeckTiltLegacy)
+    let launchpad = Feature.launchpad.prefsKey
+    if domain[launchpad] == nil, let old = domain[launchpadEnabledLegacy] as? Bool {
+      defaults.set(old, forKey: launchpad)
+    }
+    defaults.removeObject(forKey: launchpadEnabledLegacy)
     if domain[launcherBrowserBookmarks] == nil,
       launcherBookmarksLegacy.contains(where: { domain[$0.1] != nil })
     {

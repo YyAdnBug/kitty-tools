@@ -34,11 +34,14 @@ struct ShortcutsTests {
 
   /// 速查表每组至少一行、组名不重复（ForEach 按组名当 id）
   @Test func cheatSheetGroups() {
-    let titles = ShortcutsSheet.groups.map(\.title)
+    // 功能全开着时的样子（不读宿主 App 的偏好：用户在 Dev 版里关过哪个功能也不影响）
+    let all = Set(Feature.allCases)
+    let groups = ShortcutsSheet.groups(enabled: all)
+    let titles = groups.map(\.title)
     #expect(Set(titles).count == titles.count)
-    #expect(ShortcutsSheet.groups.allSatisfy { !$0.entries.isEmpty })
+    #expect(groups.allSatisfy { !$0.entries.isEmpty })
     // 每个全局快捷键都出现在速查表里，且只出现一次
-    let globals = ShortcutsSheet.groups.flatMap(\.globals)
+    let globals = groups.flatMap(\.globals)
     #expect(
       Set(globals) == Set(HotKeyAction.allCases) && globals.count == HotKeyAction.allCases.count)
     // 快捷键页、速查表里那一行的名字：只有状态屏另写（它的键默认是先选一个状态，设置里改成直进时是进排在最前面的），
@@ -51,7 +54,7 @@ struct ShortcutsTests {
           && $0.rowTitle(statusEntersFirst: true) == $0.title
       })
     // 快捷键页的分组同样一个不漏、不重
-    let grouped = HotKeyAction.sections.flatMap(\.actions)
+    let grouped = HotKeyAction.visibleSections(enabled: all).flatMap(\.actions)
     #expect(
       Set(grouped) == Set(HotKeyAction.allCases) && grouped.count == HotKeyAction.allCases.count)
   }

@@ -822,9 +822,19 @@ struct SettingsArchive: Codable, Equatable {
     let excluded = Set(incoming(Prefs.clipboardExcludedBundleIDs) as? [String] ?? [])
     let current = Set(defaults.stringArray(forKey: Prefs.clipboardExcludedBundleIDs) ?? [])
     if !current.isSubset(of: excluded) { losses.append("剪贴板「不记录」的 App 会变少") }
-    if incoming(Prefs.translateCopyToTranslate) as? Bool == true,
-      !defaults.bool(forKey: Prefs.translateCopyToTranslate)
-    {
+    // 功能开关（Feature）：没存过 = 开。剪贴板从关变开 = 又开始记复制的东西
+    let local = { (key: String) in defaults.object(forKey: key) as? Bool ?? true }
+    let clipboard = Feature.clipboard.prefsKey
+    if incoming(clipboard) as? Bool != false, !local(clipboard) {
+      losses.append("会开始记录剪贴板")
+    }
+    // 复制即译实际跑不跑看两样：翻译这个功能开着、复制即译开着（只比其中一样会漏掉「翻译从关变开」）
+    let translate = Feature.translate.prefsKey
+    let copiesNow = local(translate) && defaults.bool(forKey: Prefs.translateCopyToTranslate)
+    let copiesAfter =
+      incoming(translate) as? Bool != false
+      && incoming(Prefs.translateCopyToTranslate) as? Bool == true
+    if copiesAfter, !copiesNow {
       losses.append("会打开复制即译（复制的外语文字自动发给翻译服务）")
     }
     return losses

@@ -64,63 +64,68 @@ struct StatusScreenTab: View {
   private var form: some View {
     let list = presets
     let isFull = list.count >= StatusPreset.maxCount
+    // 关着时（Feature）变灰
     return Form {
-      Section {
-        presetList(list)
-        ListEditBar(
-          removeTitle: "删除所选的状态", canRemove: selection != nil && list.count > 1,
-          remove: removeSelected
-        ) {
-          addMenu(list, isFull: isFull)
+      Section { FeatureToggle(feature: .statusScreen, inPage: true) }
+      Group {
+        Section {
+          presetList(list)
+          ListEditBar(
+            removeTitle: "删除所选的状态", canRemove: selection != nil && list.count > 1,
+            remove: removeSelected
+          ) {
+            addMenu(list, isFull: isFull)
+          }
+        } header: {
+          Text("状态")
+        } footer: {
+          SectionFootnote(
+            "拖动调整顺序，点一行编辑。"
+              + (entersFirst ? "排在最前面的状态就是全局快捷键进入的那个。" : "按全局快捷键选状态时，卡片也按这个顺序排。")
+              + "至少留一个；删掉的自带状态可以从「+」里恢复。"
+              + (isFull ? "最多 \(StatusPreset.maxCount) 个，已经满了，删掉一个才能再加。" : ""))
         }
-      } header: {
-        Text("状态")
-      } footer: {
-        SectionFootnote(
-          "拖动调整顺序，点一行编辑。"
-            + (entersFirst ? "排在最前面的状态就是全局快捷键进入的那个。" : "按全局快捷键选状态时，卡片也按这个顺序排。")
-            + "至少留一个；删掉的自带状态可以从「+」里恢复。"
-            + (isFull ? "最多 \(StatusPreset.maxCount) 个，已经满了，删掉一个才能再加。" : ""))
+        Section {
+          Toggle(isOn: $entersFirst) {
+            Text("按快捷键直接进入排在最前面的状态")
+            Text("关着时，按快捷键先出一排预览卡片，选一个再进")
+          }
+        } header: {
+          Text("进入")
+        } footer: {
+          SectionFootnote("快捷键在 设置 › 快捷键 里设置，默认没有。在菜单栏、启动器里选一个状态，都是直接进入。")
+        }
+        Section {
+          Toggle(isOn: $animations) {
+            Text("告示上的动画")
+            Text("关掉后表情不动、进入时不做出场、屏幕边上不冒眼睛；标题照样晃一下")
+          }
+        } header: {
+          Text("动画")
+        } footer: {
+          SectionFootnote("系统设置里打开了「减弱动态效果」时，这些动画都不做，标题也不晃。")
+        }
+        Section {
+          LabeledContent {
+            ShortcutsButton()
+          } label: {
+            Text("怎么退出")
+            Text("按住 Esc 两秒；或者动一下鼠标，再用鼠标按住屏幕底部出现的提示两秒。到了自动结束的时间、解锁电脑回来时，也会结束。")
+          }
+          Toggle(isOn: $exitHint) {
+            Text("有人碰键盘或鼠标时显示怎么退出")
+            Text("关掉后屏幕上不再提示，只能按住 Esc 两秒退出；键盘上没有 Esc 键的别关")
+          }
+          passcodeRow
+        } header: {
+          Text("退出")
+        } footer: {
+          SectionFootnote(
+            "状态屏是告示加防误触，不是安全措施：没设退出密码时照着提示谁都能退出，设了也拦不住电源键、触控 ID 键和合盖。"
+              + "要防别人动电脑，进入之后再锁定屏幕（按一下触控 ID 键）：电脑照样不睡，回来解锁就结束——忘了退出密码也这样出来。")
+        }
       }
-      Section {
-        Toggle(isOn: $entersFirst) {
-          Text("按快捷键直接进入排在最前面的状态")
-          Text("关着时，按快捷键先出一排预览卡片，选一个再进")
-        }
-      } header: {
-        Text("进入")
-      } footer: {
-        SectionFootnote("快捷键在 设置 › 快捷键 里设置，默认没有。在菜单栏、启动器里选一个状态，都是直接进入。")
-      }
-      Section {
-        Toggle(isOn: $animations) {
-          Text("告示上的动画")
-          Text("关掉后表情不动、进入时不做出场、屏幕边上不冒眼睛；标题照样晃一下")
-        }
-      } header: {
-        Text("动画")
-      } footer: {
-        SectionFootnote("系统设置里打开了「减弱动态效果」时，这些动画都不做，标题也不晃。")
-      }
-      Section {
-        LabeledContent {
-          ShortcutsButton()
-        } label: {
-          Text("怎么退出")
-          Text("按住 Esc 两秒；或者动一下鼠标，再用鼠标按住屏幕底部出现的提示两秒。到了自动结束的时间、解锁电脑回来时，也会结束。")
-        }
-        Toggle(isOn: $exitHint) {
-          Text("有人碰键盘或鼠标时显示怎么退出")
-          Text("关掉后屏幕上不再提示，只能按住 Esc 两秒退出；键盘上没有 Esc 键的别关")
-        }
-        passcodeRow
-      } header: {
-        Text("退出")
-      } footer: {
-        SectionFootnote(
-          "状态屏是告示加防误触，不是安全措施：没设退出密码时照着提示谁都能退出，设了也拦不住电源键、触控 ID 键和合盖。"
-            + "要防别人动电脑，进入之后再锁定屏幕（按一下触控 ID 键）：电脑照样不睡，回来解锁就结束——忘了退出密码也这样出来。")
-      }
+      .gated(by: .statusScreen)
     }
     .formStyle(.grouped)
   }

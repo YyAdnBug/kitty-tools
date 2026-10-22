@@ -188,7 +188,7 @@ struct PreviewView: View {
       Pill(title: "打开", symbol: "safari") { model.openLink(url) }
     } else if item.kind == .file {
       Pill(title: "在访达中显示", symbol: "folder") { model.revealInFinder(item) }
-    } else if item.kind == .image {
+    } else if item.kind == .image, model.canPin {
       Pill(title: "钉到屏幕", symbol: "pin") { model.pin([item]) }
     } else if form == .json {
       Pill(title: model.prettyJSON ? "原文" : "美化", symbol: "curlybraces") {

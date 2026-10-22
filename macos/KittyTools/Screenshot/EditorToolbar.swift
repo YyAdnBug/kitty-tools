@@ -242,13 +242,17 @@ final class EditorToolbar: PopView {
       ],
     ]
     let right: [[Spec]] = [
-      [
+      ([
         (.output(.recognize), "text.viewfinder", "识字并拷贝", "识字并拷贝（O）"),
         (.output(.translate), "translate", "翻译", "翻译"),
         (.scroll, "rectangle.expand.vertical", "长截图", "长截图（S，不带标注）"),
         (.record, "record.circle", "录屏", "录屏（R）"),
         (.output(.pin), "pin", "钉到屏幕", "钉到屏幕（T）"),
-      ],
+      ] as [Spec]).filter { spec in
+        // 翻译、录制这两个功能关着（Feature）时没有它们的钮
+        (spec.0 != .output(.translate) || Feature.translate.isOn)
+          && (spec.0 != .record || Feature.record.isOn)
+      },
       [
         (.output(.save), "square.and.arrow.down", "存储", ScreenshotOutput.saveTitle + "（⌘S）"),
         (.saveMenu, "chevron.down", "更多存储选项", "存储到… / 另存为…"),

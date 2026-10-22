@@ -684,6 +684,36 @@ struct SettingsArchiveTests {
     #expect(try archive(json: file(#""hotkeys": {}"#)).privacyLosses(comparedTo: target) == [])
   }
 
+  /// 功能开关（Feature）：导入会让剪贴板从关变开（又开始记）、让复制即译实际跑起来（翻译从关变开、复制即译开着）时提醒；
+  /// 文件里没有这个键 = 默认开
+  @Test func listsFeatureSwitchLosses() throws {
+    let (target, name) = try suite()
+    defer { target.removePersistentDomain(forName: name) }
+    func losses(_ preferences: String) throws -> [String] {
+      try archive(json: file(#""preferences": {\#(preferences)}"#))
+        .privacyLosses(comparedTo: target)
+    }
+    target.set(true, forKey: Prefs.clipboardBlockSensitive)
+    target.set(ClipboardFilter.defaultExcluded, forKey: Prefs.clipboardExcludedBundleIDs)
+    // 本机剪贴板关着：文件里开着、或者没写（默认开）都要提醒；文件里也关着不提醒
+    target.set(false, forKey: Feature.clipboard.prefsKey)
+    #expect(try losses("") == ["会开始记录剪贴板"])
+    #expect(try losses(#""feature.clipboard": true"#) == ["会开始记录剪贴板"])
+    #expect(try losses(#""feature.clipboard": false"#) == [])
+    target.removeObject(forKey: Feature.clipboard.prefsKey)
+    #expect(try losses(#""feature.clipboard": false"#) == [])
+    // 本机复制即译开着、翻译关着（没在跑）：文件让翻译回到开 = 跑起来了
+    target.set(true, forKey: Prefs.translateCopyToTranslate)
+    target.set(false, forKey: Feature.translate.prefsKey)
+    #expect(
+      try losses(#""translateClipboardMonitor": true"#).contains { $0.hasPrefix("会打开复制即译") })
+    #expect(
+      try losses(#""translateClipboardMonitor": true, "feature.translate": false"#) == [])
+    // 本机已经在跑：不提醒
+    target.removeObject(forKey: Feature.translate.prefsKey)
+    #expect(try losses(#""translateClipboardMonitor": true"#) == [])
+  }
+
   // MARK: 密钥
 
   /// 按密码算密钥：RFC 7914 §11 的 PBKDF2-HMAC-SHA256 测试向量（P = "passwd"、S = "salt"、c = 1 的前 32 字节）

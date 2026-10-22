@@ -154,12 +154,15 @@ struct HotKeyRecorder: View {
       message = "这是各 App 通用的快捷键，设成全局会让它在所有 App 里失效"
       return
     }
+    // 关着的功能的键也算（isAvailable，不是 isActive）：不然它重新打开时两个动作抢同一个组合，后注册的那个失败
     if let hotKey,
       let other = HotKeyAction.allCases.first(where: {
         $0 != action && $0.isAvailable && $0.hotKey == hotKey
       })
     {
-      message = "和「\(other.title)」重复"
+      message =
+        other.isActive
+        ? "和「\(other.title)」重复" : "和「\(other.title)」重复（\(other.feature.title)已关闭）"
       return
     }
     action.hotKey = hotKey

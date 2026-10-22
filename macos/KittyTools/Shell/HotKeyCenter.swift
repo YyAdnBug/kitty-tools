@@ -259,16 +259,44 @@ enum HotKeyAction: String, CaseIterable {
     return fallback
   }
 
-  /// 快捷键页、菜单栏、启动器的分组（N13 / N15：同名同序）；macOS 15 上没有启动台那一节（`Launchpad.isAvailable`）
-  static let sections = visibleSections(launchpad: Launchpad.isAvailable)
+  /// 快捷键页、菜单栏、启动器、引导的分组（N13 / N15：同名同序），只列开着的功能（Feature；macOS 15 上没有启动台）。
+  /// 每次现算：功能随时能在设置里开关
+  static var sections: [(title: String, actions: [HotKeyAction])] {
+    visibleSections(enabled: Feature.enabled)
+  }
 
-  /// 单测喂 false 看 macOS 15 上的样子
-  static func visibleSections(launchpad: Bool) -> [(title: String, actions: [HotKeyAction])] {
-    launchpad ? allSections : allSections.filter { !$0.actions.contains(.launchpad) }
+  /// 单测喂集合：关着的功能的动作去掉、空了的节去掉；两个功能合一节的（剪贴板与启动器、截图与录制）只剩一个功能时，
+  /// 节标题换成它的名字
+  static func visibleSections(enabled: Set<Feature>) -> [(title: String, actions: [HotKeyAction])] {
+    allSections.compactMap { section in
+      let actions = section.actions.filter { enabled.contains($0.feature) }
+      guard let first = actions.first else { return nil }
+      let shared = Set(section.actions.map(\.feature)).count > 1
+      let alone = Set(actions.map(\.feature)).count == 1
+      return (shared && alone ? first.feature.title : section.title, actions)
+    }
+  }
+
+  /// 归哪个功能（Feature）：就是它所在的那一节——截图翻译归翻译（截图关了它照样能用）、钉住剪贴板里的图归截图
+  var feature: Feature {
+    switch self {
+    case .clipboard: .clipboard
+    case .launcher: .launcher
+    case .selectionTranslate, .inputTranslate, .translateReplace, .screenshotTranslate: .translate
+    case .screenshot, .screenshotLastRegion, .recognizeText, .pinClipboard: .screenshot
+    case .screenRecord, .audioRecord: .record
+    case .noteCapture, .noteNew, .noteAll: .notes
+    case .launchpad: .launchpad
+    case .statusScreen: .statusScreen
+    }
   }
 
   /// 这台系统上有没有这一项（启动台只在 macOS 26 起有）：没有的不注册、不参与查重
-  var isAvailable: Bool { self != .launchpad || Launchpad.isAvailable }
+  var isAvailable: Bool { feature.isAvailable }
+
+  /// 现在用得上：系统有、功能也开着。关着的功能不注册热键（交还给系统和别的 App）、不出现在任何入口；
+  /// 查重仍然算它（HotKeyRecorder：重新打开时不和别的动作抢同一个组合）
+  var isActive: Bool { feature.isOn }
 
   private static let allSections: [(title: String, actions: [HotKeyAction])] = [
     ("剪贴板与启动器", [.clipboard, .launcher]),
@@ -365,7 +393,7 @@ enum HotKeyAction: String, CaseIterable {
     suspend()
     installHandlerIfNeeded()
     for (index, action) in HotKeyAction.allCases.enumerated() {
-      guard action.isAvailable, let hotKey = action.hotKey else { continue }
+      guard action.isActive, let hotKey = action.hotKey else { continue }
       var ref: EventHotKeyRef?
       let status = RegisterEventHotKey(
         hotKey.keyCode, hotKey.modifiers,

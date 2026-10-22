@@ -502,10 +502,10 @@ struct NotesWindowTests {
     #expect(
       HotKeyAction.noteCapture.defaultHotKey == HotKey(keyCode: kVK_ANSI_N, modifiers: optionKey))
     #expect(HotKeyAction.noteNew.defaultHotKey == nil && HotKeyAction.noteAll.defaultHotKey == nil)
-    let titles = HotKeyAction.sections.map(\.title)
+    let titles = HotKeyAction.visibleSections(enabled: Set(Feature.allCases)).map(\.title)
     let index = try #require(titles.firstIndex(of: "便签"))
     #expect(titles[index - 1] == "截图与录制" && titles[index + 1] == "启动台")
-    let actions = HotKeyAction.sections[index].actions
+    let actions = HotKeyAction.visibleSections(enabled: Set(Feature.allCases))[index].actions
     #expect(actions == [.noteCapture, .noteNew, .noteAll])
     #expect(actions.map(\.title) == ["快速记一条", "新建便签", "全部便签"])
     #expect(actions.allSatisfy { $0.color == Style.Family.notes })
@@ -538,10 +538,11 @@ struct NotesWindowTests {
     }
     #expect(LauncherMatch.score("ksj", item: launcher[start]) > 0)
 
-    let group = try #require(ShortcutsSheet.groups.first { $0.title == "便签" })
+    let group = try #require(
+      ShortcutsSheet.groups(enabled: Set(Feature.allCases)).first { $0.title == "便签" })
     #expect(
       group.globals == [.noteCapture, .noteNew, .noteAll] && group.color == Style.Family.notes)
-    let titles = ShortcutsSheet.groups.map(\.title)
+    let titles = ShortcutsSheet.groups(enabled: Set(Feature.allCases)).map(\.title)
     // 第 3 批在中间加了「屏幕边缘」一组，第 4 批在它后面加了「浮在屏幕上」一小组
     #expect(titles.firstIndex(of: "便签")! + 1 == titles.firstIndex(of: "便签 · 屏幕边缘")!)
     #expect(titles.firstIndex(of: "便签 · 屏幕边缘")! + 1 == titles.firstIndex(of: "便签 · 浮在屏幕上")!)
@@ -550,7 +551,8 @@ struct NotesWindowTests {
     #expect(titles.firstIndex(of: "便签 · 全部便签")! + 1 == titles.firstIndex(of: "启动台")!)
     #expect(titles.firstIndex(of: "启动台")! + 1 == titles.firstIndex(of: "状态屏")!)
     let keys = Set(
-      ShortcutsSheet.groups.filter { $0.title.hasPrefix("便签") }.flatMap(\.entries).flatMap(\.keys))
+      ShortcutsSheet.groups(enabled: Set(Feature.allCases)).filter { $0.title.hasPrefix("便签") }
+        .flatMap(\.entries).flatMap(\.keys))
     #expect(
       keys.isSuperset(of: [
         "↩", "⇧↩", "⌘1", "⌘2–9", "Esc", "⌘N", "⌘F", "⌘⌫", "⌘Z", "⇧⌘A", "⌘P", "⌘.", "⌘K", "⌘W",

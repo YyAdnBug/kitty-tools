@@ -236,7 +236,8 @@ private struct TryScreen: View {
   ]
 
   var body: some View {
-    let actions = Self.shown.filter { $0.hotKey != nil }
+    // 关着的功能（关于页里重看引导时可能有）的键不注册，按了也不会打勾：不列
+    let actions = Self.shown.filter { $0.isActive && $0.hotKey != nil }
     VStack(spacing: 0) {
       Heading(title: "按一下试试", subtitle: "在任何 App 里按下这些键，对应的功能就会出来。\n现在按一下，按过的会打勾。")
       RowCard(items: actions) { row($0) }

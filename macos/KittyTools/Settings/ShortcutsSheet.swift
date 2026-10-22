@@ -121,10 +121,13 @@ struct ShortcutsSheet: View {
   struct Entry: Hashable {
     let keys: [String]
     let text: String
+    /// 指向别的功能的那一行（剪贴板的 ⌘T 翻译、启动器的 cb / fy、截图里按 R 录屏）：那个功能关着时不列
+    let needs: Feature?
 
-    init(_ keys: String..., text: String) {
+    init(_ keys: String..., text: String, needs: Feature? = nil) {
       self.keys = keys
       self.text = text
+      self.needs = needs
     }
   }
 
@@ -132,18 +135,27 @@ struct ShortcutsSheet: View {
     let title: String
     let symbol: String
     let color: Color
+    /// 归哪些功能（Feature，有一个开着就列）；空 = 按全局快捷键各自的功能，再空就总是列（设置那一组）
+    var features: [Feature] = []
     /// 这一组的全局快捷键（排在最前，带「全局」标记）
     var globals: [HotKeyAction] = []
-    let entries: [Entry]
+    var entries: [Entry]
     var id: String { title }
   }
 
-  /// macOS 15 上没有启动台那一组（`Launchpad.isAvailable`）
-  static var groups: [Group] { groups(launchpad: Launchpad.isAvailable) }
+  /// 只列开着的功能（Feature；macOS 15 上没有启动台那一组）
+  static var groups: [Group] { groups(enabled: Feature.enabled) }
 
-  /// 单测喂 false 看 macOS 15 上的样子
-  static func groups(launchpad: Bool) -> [Group] {
-    launchpad ? allGroups : allGroups.filter { !$0.globals.contains(.launchpad) }
+  /// 单测喂集合：关着的功能的组不列；列出来的组里关着的功能的全局键、指向关着的功能的行也去掉
+  static func groups(enabled: Set<Feature>) -> [Group] {
+    allGroups.compactMap { group in
+      let owners = group.features.isEmpty ? group.globals.map(\.feature) : group.features
+      guard owners.isEmpty || owners.contains(where: enabled.contains) else { return nil }
+      var group = group
+      group.globals = group.globals.filter { enabled.contains($0.feature) }
+      group.entries = group.entries.filter { $0.needs.map(enabled.contains) ?? true }
+      return group
+    }
   }
 
   /// 每次打开现算：录屏组里「停止」那行写当前设的录屏快捷键
@@ -166,7 +178,7 @@ struct ShortcutsSheet: View {
           Entry("←", text: "操作菜单开着、过滤词为空时回上一级 / 关掉它"),
           Entry("⌫", text: "搜索框为空时：选中最后一个筛选标签，再按一次删掉"),
           Entry("⌘Y", text: "放大预览"),
-          Entry("⌘T", text: "翻译（文本，或识别出文字的图片）"),
+          Entry("⌘T", text: "翻译（文本，或识别出文字的图片）", needs: .translate),
           Entry("⌘O", text: "打开链接，或用默认 App 打开文件"),
           Entry("⌘R", text: "在访达中显示（文件）"),
           Entry("⌥⌘C", text: "复制文件路径（多个按换行分开）"),
@@ -206,12 +218,13 @@ struct ShortcutsSheet: View {
           Entry("⌘W", text: "关闭"),
           Entry("open", text: "搜文件并打开（空格开头同样）"),
           Entry("find", text: "搜文件并在访达中显示"),
-          Entry("cb", text: "在剪贴板历史里搜索"),
-          Entry("fy", text: "翻译输入的文字（单个英文词另有词典释义）"),
+          Entry("cb", text: "在剪贴板历史里搜索", needs: .clipboard),
+          Entry("fy", text: "翻译输入的文字（单个英文词另有词典释义）", needs: .translate),
         ]),
       // mac-whisker §6 启动器「系统命令」；代码在 SystemCommands / SystemControl。在启动器里输入关键词（中文名、拼音也行）
       Group(
         title: "系统命令", symbol: "power", color: Style.Family.command,
+        features: [.launcher],
         entries: SystemCommand.allCases.map { command in
           let note =
             command.confirmation != nil
@@ -244,6 +257,7 @@ struct ShortcutsSheet: View {
       // mac-translate「翻译历史」（N7，体检 C6）；代码在 TranslateCoordinator.handleHistoryCommand、HistoryList.handleKeyEquivalent
       Group(
         title: "翻译 · 历史", symbol: "clock.arrow.circlepath", color: Style.Family.translate,
+        features: [.translate],
         entries: [
           Entry("↑↓", text: "移动选中"),
           Entry("↩", text: "重新翻译这条（双击同样）"),
@@ -261,6 +275,7 @@ struct ShortcutsSheet: View {
       // mac-whisker §6 截图「待选」「框选 / 拖边」「键盘调整」；代码在 SelectionView.keyDown
       Group(
         title: "截图 · 框选", symbol: "camera.viewfinder", color: Style.Family.screenshot,
+        features: [.screenshot, .translate, .record],
         globals: [.screenshot, .screenshotLastRegion, .recognizeText],
         entries: [
           Entry("⇧", text: "锁定比例（新框是正方形）"),
@@ -278,6 +293,7 @@ struct ShortcutsSheet: View {
       // mac-whisker §6 截图「工具」「标注编辑」
       Group(
         title: "截图 · 标注", symbol: "pencil.tip.crop.circle", color: Style.Family.screenshot,
+        features: [.screenshot],
         entries: [
           Entry(
             "1–0",
@@ -291,18 +307,20 @@ struct ShortcutsSheet: View {
       // mac-whisker §6 截图「出图」
       Group(
         title: "截图 · 出图", symbol: "square.and.arrow.down.fill", color: Style.Family.screenshot,
+        features: [.screenshot],
         entries: [
           Entry("↩", "⌘C", text: "拷贝（双击选区同样）"),
           Entry("⌘S", text: "快速保存"),
           Entry("⇧⌘S", text: "另存为…"),
           Entry("T", text: "钉在屏幕上"),
           Entry("S", text: "长截图"),
-          Entry("R", text: "录屏（选区不变；有标注时不切）"),
+          Entry("R", text: "录屏（选区不变；有标注时不切）", needs: .record),
           Entry("O", text: "识字并拷贝"),
         ]),
       // mac-overlay-panel §10 长截图；代码在 ScrollCapturePanel.keyDown
       Group(
         title: "长截图", symbol: "arrow.up.and.down.text.horizontal", color: Style.Family.screenshot,
+        features: [.screenshot],
         entries: [
           Entry("空格", text: "自动滚动 / 停下（要辅助功能授权）"),
           Entry("↩", "⌘C", text: "拷贝"),
@@ -369,6 +387,7 @@ struct ShortcutsSheet: View {
       // 选中字时粘贴网址成链接（NoteTextView.paste）
       Group(
         title: "便签 · 屏幕边缘", symbol: "sidebar.right", color: Style.Family.notes,
+        features: [.notes],
         entries: [
           Entry("Esc", "⌘W", text: "关掉打开的便签，那一列标签也一起收回，接着打字回到原来的 App"),
           Entry("⌘P", text: "固定 / 取消固定（固定的便签点别处不收起；浮在屏幕上的便签固定后一直在别的窗口上面，重启后回到原处）"),
@@ -399,7 +418,7 @@ struct ShortcutsSheet: View {
       // 所以别的键（⌘P ⌘K ⌘. ⌘T ⌘F ⌘Z ⇧⌘A…）和上一组一样，这里只写不一样的几行
       Group(
         title: "便签 · 浮在屏幕上", symbol: NotesWindowModel.floatSymbol(isFloating: false),
-        color: Style.Family.notes,
+        color: Style.Family.notes, features: [.notes],
         entries: [
           Entry("Esc", "⌘W", text: "收回边缘（固定着的也收），接着打字回到原来的 App"),
           Entry("⌘K", text: "操作菜单里的「收回边缘」；别的键同屏幕边缘里打开的便签"),
@@ -410,6 +429,7 @@ struct ShortcutsSheet: View {
       // ↩ / 空格、Esc 在 NotesWallView（onKeyPress / onExitCommand）；⌘B ⌘I ⇧⌘X ⌘E、粘贴成链接在正文编辑器里
       Group(
         title: "便签 · 全部便签", symbol: "rectangle.split.2x1", color: Style.Family.notes,
+        features: [.notes],
         entries: [
           Entry("⌘1", "⌘2", text: "便签墙 / 列表（同工具栏上的切换；下次打开是上次用的那种）"),
           Entry("↑↓", "←→", text: "便签墙上：在卡片之间挑（↑↓ 同一列上下，←→ 旁边那列）"),

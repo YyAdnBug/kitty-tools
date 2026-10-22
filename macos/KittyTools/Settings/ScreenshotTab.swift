@@ -12,7 +12,9 @@ struct ScreenshotTab: View {
   @AppStorage(Prefs.screenshotShelf) private var keepsThumbnail = true
 
   var body: some View {
+    // 关着时（Feature）变灰；存到哪个文件夹录制也在用，照常能改
     Form {
+      Section { FeatureToggle(feature: .screenshot, inPage: true) }
       Section {
         SaveDirectoryRow(title: "快速保存到")
       } footer: {
@@ -20,39 +22,42 @@ struct ScreenshotTab: View {
           "按 ⌘S 或工具栏的「存储」存到这里，文件名是「截图 日期 时间.png」，重名自动加序号。没选过时跟随系统截屏的存储位置。录屏、录音也存这里。"
         )
       }
-      Section {
-        Toggle(isOn: $shutterSound) {
-          HStack(spacing: 6) {
-            Text("截图时播放快门声")
-            Button("试听", systemImage: "speaker.wave.2.fill") { FlyCard.playShutter() }
-              .labelStyle(.iconOnly)
-              .buttonStyle(.borderless)
-              .disabled(!shutterSound)
-              .help("试听快门声")
+      Group {
+        Section {
+          Toggle(isOn: $shutterSound) {
+            HStack(spacing: 6) {
+              Text("截图时播放快门声")
+              Button("试听", systemImage: "speaker.wave.2.fill") { FlyCard.playShutter() }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .disabled(!shutterSound)
+                .help("试听快门声")
+            }
+          }
+        } footer: {
+          SectionFootnote("拷贝、存储、钉图时响；还要 系统设置 › 声音 里的「播放用户界面音效」开着。截图翻译、识字不出声。")
+        }
+        Section {
+          Toggle("截图后在屏幕角落留缩略图", isOn: $keepsThumbnail)
+        } footer: {
+          SectionFootnote("可以拖出、钉图、存储；关掉后截图只在右下角闪一下。")
+        }
+        Section {
+          Toggle("识字后把同一段里的换行接起来", isOn: $joinLines)
+          JoinLinesPreview(joins: joinLines)
+        } footer: {
+          SectionFootnote("同一段里的行接起来，段和段之间保留换行：中文、日文的行直接接上，其它文字之间加空格。截图翻译总是这样接。框选里有二维码或条码时复制它的内容。")
+        }
+        Section {
+          LabeledContent {
+            ShortcutsButton()
+          } label: {
+            Text("框选、标注、长截图和录屏的按键")
+            Text("拖动框选，数字键 1–0 换标注工具，↩ 拷贝，S 长截图，R 录屏")
           }
         }
-      } footer: {
-        SectionFootnote("拷贝、存储、钉图时响；还要 系统设置 › 声音 里的「播放用户界面音效」开着。截图翻译、识字不出声。")
       }
-      Section {
-        Toggle("截图后在屏幕角落留缩略图", isOn: $keepsThumbnail)
-      } footer: {
-        SectionFootnote("可以拖出、钉图、存储；关掉后截图只在右下角闪一下。")
-      }
-      Section {
-        Toggle("识字后把同一段里的换行接起来", isOn: $joinLines)
-        JoinLinesPreview(joins: joinLines)
-      } footer: {
-        SectionFootnote("同一段里的行接起来，段和段之间保留换行：中文、日文的行直接接上，其它文字之间加空格。截图翻译总是这样接。框选里有二维码或条码时复制它的内容。")
-      }
-      Section {
-        LabeledContent {
-          ShortcutsButton()
-        } label: {
-          Text("框选、标注、长截图和录屏的按键")
-          Text("拖动框选，数字键 1–0 换标注工具，↩ 拷贝，S 长截图，R 录屏")
-        }
-      }
+      .gated(by: .screenshot)
     }
     .formStyle(.grouped)
   }

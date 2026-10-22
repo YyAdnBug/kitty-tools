@@ -247,11 +247,14 @@ struct LaunchpadAvailabilityTests {
     #expect(
       Launchpad.isAvailable == (ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 26))
     #expect(HotKeyAction.launchpad.isAvailable == Launchpad.isAvailable)
+    #expect(Feature.launchpad.isAvailable == Launchpad.isAvailable)
     #expect(HotKeyAction.clipboard.isAvailable)
 
-    // 快捷键页、菜单栏、启动器共用的分节
-    let hidden = HotKeyAction.visibleSections(launchpad: false).flatMap(\.actions)
-    let shown = HotKeyAction.visibleSections(launchpad: true).flatMap(\.actions)
+    // 快捷键页、菜单栏、启动器共用的分节（macOS 15 上 Feature.enabled 里没有启动台）
+    let all = Set(Feature.allCases)
+    let without = all.subtracting([.launchpad])
+    let hidden = HotKeyAction.visibleSections(enabled: without).flatMap(\.actions)
+    let shown = HotKeyAction.visibleSections(enabled: all).flatMap(\.actions)
     #expect(!hidden.contains(.launchpad))
     #expect(shown.contains(.launchpad))
     #expect(shown.filter { $0 != .launchpad } == hidden)
@@ -259,10 +262,10 @@ struct LaunchpadAvailabilityTests {
     #expect(!SettingsPage.visible(launchpad: false).contains(.launchpad))
     #expect(SettingsPage.visible(launchpad: true) == SettingsPage.allCases)
     // 速查表
-    #expect(!ShortcutsSheet.groups(launchpad: false).contains { $0.globals.contains(.launchpad) })
-    #expect(ShortcutsSheet.groups(launchpad: true).contains { $0.globals.contains(.launchpad) })
+    #expect(!ShortcutsSheet.groups(enabled: without).contains { $0.globals.contains(.launchpad) })
+    #expect(ShortcutsSheet.groups(enabled: all).contains { $0.globals.contains(.launchpad) })
     #expect(
-      ShortcutsSheet.groups(launchpad: false).count + 1
-        == ShortcutsSheet.groups(launchpad: true).count)
+      ShortcutsSheet.groups(enabled: without).count + 1 == ShortcutsSheet.groups(enabled: all).count
+    )
   }
 }

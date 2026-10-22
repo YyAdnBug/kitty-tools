@@ -856,8 +856,9 @@ struct StatusScreenTests {
   @Test func entries() throws {
     #expect(HotKeyAction.allCases.firstIndex(of: .statusScreen) == 12)
     #expect(HotKeyAction.statusScreen.defaultHotKey == nil)
-    #expect(HotKeyAction.sections.last?.title == "状态屏")
-    #expect(HotKeyAction.sections.last?.actions == [.statusScreen])
+    #expect(HotKeyAction.visibleSections(enabled: Set(Feature.allCases)).last?.title == "状态屏")
+    #expect(
+      HotKeyAction.visibleSections(enabled: Set(Feature.allCases)).last?.actions == [.statusScreen])
     #expect(LauncherItem.actions().allSatisfy { !$0.isStatusPreset })
     var presets = StatusPreset.builtIn
     presets[2].symbol = ""

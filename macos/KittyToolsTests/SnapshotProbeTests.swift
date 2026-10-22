@@ -3744,6 +3744,56 @@ struct SnapshotProbeTests {
       size: NSSize(width: 780, height: 1120), dark: false, to: "\(out)/launchpad-settings.png")
   }
 
+  /// 功能开关（Shell/Feature.swift，2026-10-21）：设置 › 通用最上面的「功能」一组（全开、关了剪贴板和翻译；浅 / 深），
+  /// 关着的剪贴板页（第一组「启用剪贴板」，下面变灰，保留天数、清空那几项不灰）、关着的启动台页。十几秒，图以 features- 开头。
+  /// 开关读的是临时偏好域（defaultAppStorage），不写用户的偏好
+  @Test(.enabled(if: directory != nil)) func features() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    Prefs.registerDefaults()
+    let name = "kitty-snapshot-features-\(UUID().uuidString)"
+    let prefs = try #require(UserDefaults(suiteName: name))
+    defer { prefs.removePersistentDomain(forName: name) }
+    let images = FileManager.default.temporaryDirectory.appending(path: name)
+    defer { try? FileManager.default.removeItem(at: images) }
+    let store = try ClipboardStore(
+      db: Database(path: ":memory:"), images: ImageStore(directory: images))
+    let navigation = SettingsNavigation(defaults: nil)  // 换页不写用户的偏好
+    func root() -> some View {
+      SettingsRoot(navigation: navigation) { page in
+        switch page {
+        case .clipboard: AnyView(ClipboardTab(store: store).defaultAppStorage(prefs))
+        case .launchpad: AnyView(LaunchpadTab().defaultAppStorage(prefs))
+        default: AnyView(GeneralTab().defaultAppStorage(prefs))
+        }
+      } onboarding: {
+        AnyView(EmptyView())
+      }
+    }
+    navigation.page = .general
+    for dark in [false, true] {
+      try snapshot(
+        root(), size: NSSize(width: 780, height: 760), dark: dark,
+        to: "\(out)/features-general\(dark ? "-dark" : "").png")
+    }
+    prefs.set(false, forKey: Feature.clipboard.prefsKey)
+    prefs.set(false, forKey: Feature.translate.prefsKey)
+    prefs.set(false, forKey: Feature.launchpad.prefsKey)
+    try snapshot(
+      root(), size: NSSize(width: 780, height: 760), dark: false,
+      to: "\(out)/features-general-off.png")
+    navigation.page = .clipboard
+    for dark in [false, true] {
+      try snapshot(
+        root(), size: NSSize(width: 780, height: 1100), dark: dark,
+        to: "\(out)/features-clipboard-off\(dark ? "-dark" : "").png")
+    }
+    navigation.page = .launchpad
+    try snapshot(
+      root(), size: NSSize(width: 780, height: 1120), dark: false,
+      to: "\(out)/features-launchpad-off.png")
+  }
+
   private func snapshot(
     _ view: some View, size: NSSize, dark: Bool, to path: String,
     prepare: ((NSView) -> Void)? = nil

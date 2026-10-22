@@ -130,6 +130,8 @@ final class LaunchpadIcons {
   /// 后台画好一批就加一：界面读它，画好了自己刷新
   private var generation = 0
   @ObservationIgnored private var rendering: Set<String> = []
+  /// discardAll 一次加一：放掉之前就在后台画的那批晚到了不收
+  @ObservationIgnored private var epoch = 0
   /// 位图的边长（像素）：按最大那块屏上的图标 × 缩放倍数取，屏变大了重画
   @ObservationIgnored private(set) var pixelSize: Int
   @ObservationIgnored let synchronous: Bool
@@ -169,14 +171,21 @@ final class LaunchpadIcons {
   private func start(_ items: [(id: String, path: String)]) {
     guard !items.isEmpty else { return }
     for item in items { rendering.insert(item.id) }
-    let size = pixelSize
+    let (size, epoch) = (pixelSize, epoch)
     Task { [weak self] in
       let results = await Self.renderAll(items, pixelSize: size)
-      guard let self, size == self.pixelSize else { return }
+      guard let self, size == self.pixelSize, epoch == self.epoch else { return }
       for item in items { rendering.remove(item.id) }
       for (id, bitmap) in results { bitmaps[id] = Self.image(bitmap) }
       generation += 1
     }
+  }
+
+  /// 全部放掉（功能开关关掉启动台时，约 15 MB）；再要时照常后台重画
+  func discardAll() {
+    bitmaps.removeAll()
+    rendering.removeAll()
+    epoch += 1
   }
 
   /// 已经画好的有几个（单测用）

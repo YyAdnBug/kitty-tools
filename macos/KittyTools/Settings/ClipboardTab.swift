@@ -24,7 +24,9 @@ struct ClipboardTab: View {
   @Environment(Island.self) private var island: Island?
 
   var body: some View {
+    // 关着时（Feature）变灰的是「怎么记、面板怎么样」；保留多久、退出 / 锁屏清空、立即清空这些管已有数据的照常能改
     Form {
+      Section { FeatureToggle(feature: .clipboard, inPage: true) }
       Section {
         Picker("保留普通历史", selection: $retentionDays) {
           ForEach(Prefs.clipboardRetentionChoices, id: \.self) {
@@ -66,6 +68,7 @@ struct ClipboardTab: View {
           Text("关着时单击选中、双击粘贴；打开后点一下就粘贴，想先看内容用 ↑↓，⌘ 单击、⇧ 单击照常多选")
         }
       }
+      .gated(by: .clipboard)
       Section("内容") {
         Toggle(isOn: $pastePlain) {
           Text("默认粘贴为纯文本")
@@ -73,8 +76,10 @@ struct ClipboardTab: View {
         }
         Toggle("识别图片中的文字，用于搜索", isOn: $imageOCR)
       }
+      .gated(by: .clipboard)
       Section("隐私") {
         Toggle("不记录疑似密钥和银行卡号", isOn: $blockSensitive)
+          .gated(by: .clipboard)
         Toggle("退出 App 时清空普通历史", isOn: $clearOnQuit)
         Toggle("锁屏时清空普通历史", isOn: $clearOnLock)
         DangerButton("立即清空普通历史…") { confirmClear = true }
@@ -103,6 +108,7 @@ struct ClipboardTab: View {
       } footer: {
         SectionFootnote("密码管理器通常会自己标记「不要记录」，这里只是兜底。")
       }
+      .gated(by: .clipboard)
     }
     .formStyle(.grouped)
     .onChange(of: retentionDays) { pruned(store.enforceLimits()) }

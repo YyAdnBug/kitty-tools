@@ -24,10 +24,8 @@ final class Launchpad {
     return false
   }()
 
-  /// 这台系统有、总开关也开着
-  static var isOn: Bool {
-    isAvailable && UserDefaults.standard.bool(forKey: Prefs.launchpadEnabled)
-  }
+  /// 这台系统有、功能开关也开着（设置 › 通用 › 功能，Feature）
+  static var isOn: Bool { Feature.launchpad.isOn }
 
   /// 刘海岛（打不开 App、导入 / 恢复默认的结果）
   var island: Island?
@@ -428,6 +426,8 @@ final class Launchpad {
     guard Self.isAvailable else { return }
     let signature = AppCatalog.signature()
     if !catalog.isEmpty, signature == self.signature {
+      // 功能开关刚打开（关着时放掉了图标）：缺的在后台补画，第一次打开不用等
+      if Self.isOn { icons.prewarm(catalog, pixelSize: Self.iconPixelSize) }
       autoImportIfNeeded()
       return
     }
@@ -594,6 +594,14 @@ final class Launchpad {
   /// 之后用户照提示关掉，捏合一直没反应，要开一次设置页才接上。现在一直注册，开始捏的那一刻再读系统的（`pinch`）
   nonisolated static func pinchShouldRun(enabled: Bool, usePinch: Bool, available: Bool) -> Bool {
     enabled && usePinch && available
+  }
+
+  /// 功能开关关掉启动台（AppDelegate.applyFeatures）：开着就收起，停捏合和触发角，放掉常驻的图标位图；
+  /// 目录、排法、撤销都留着，再打开时 prepare() 补画
+  func turnOff() {
+    if isOpen { close(animated: false) }
+    applySettings()
+    icons.discardAll()
   }
 
   /// 按偏好起停触控板监听和触发角（启动时、设置改了、导入设置之后调）

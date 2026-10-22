@@ -27,6 +27,8 @@ import UniformTypeIdentifiers
 
   /// frame：截图时选区的位置（点，全局坐标）。钉图不抢键盘、VoiceOver 的焦点不在它上面：主动播报
   func pin(_ image: CGImage, frame: CGRect) {
+    // 钉图归截图这个功能（Feature）：关着时哪条路过来（剪贴板、角落的缩略图…）都不钉，入口那边也藏了
+    guard Feature.screenshot.isOn else { return }
     if isHidden { toggleHidden() }
     let panel = PinPanel(image: image, frame: frame, board: self)
     panels.append(panel)
@@ -525,6 +527,8 @@ private final class PinView: NSView {
         title: command.title, action: command.action, keyEquivalent: command.key)
       item.keyEquivalentModifierMask = command.modifiers
       item.target = self
+      // 翻译这个功能关着（Feature）：藏起来（不从列表里拿掉——下面按位置分组）
+      item.isHidden = command.action == #selector(translateImage) && !Feature.translate.isOn
       return item
     }
     items[0..<5].forEach(menu.addItem)
@@ -551,7 +555,8 @@ private final class PinView: NSView {
   }
 
   override func accessibilityCustomActions() -> [NSAccessibilityCustomAction]? {
-    commands.map { command in
+    commands.filter { $0.action != #selector(translateImage) || Feature.translate.isOn }.map {
+      command in
       let action = command.action
       return NSAccessibilityCustomAction(name: command.title) { [weak self] in
         MainActor.assumeIsolated { NSApp.sendAction(action, to: self, from: nil) }

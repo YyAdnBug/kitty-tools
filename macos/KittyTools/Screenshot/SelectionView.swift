@@ -2101,7 +2101,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
       if isAdjusting { startScroll() }
     case kVK_ANSI_O where annotates:
       if isAdjusting { output(.recognize) }
-    case kVK_ANSI_R where annotates:
+    case kVK_ANSI_R where annotates && Feature.record.isOn:
       if isAdjusting { switchToRecording() }
     case kVK_ANSI_D:
       if !session.selectLastRegion() { refuseWipe("有标注时不跳到别的屏") }

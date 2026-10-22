@@ -91,7 +91,8 @@ nonisolated struct NoteDeckOptions: Equatable, Sendable {
     where T.RawValue == String {
       defaults.string(forKey: key).flatMap(T.init(rawValue:)) ?? fallback
     }
-    isEnabled = flag(Prefs.notesDeckEnabled, true)
+    // 便签这个功能关着（Feature）时那叠也不出现：NoteEdge 看着偏好变化，自己收起 / 摆回来
+    isEnabled = flag(Prefs.notesDeckEnabled, true) && flag(Feature.notes.prefsKey, true)
     edge = choice(Prefs.notesDeckEdge, .right)
     let mode: DisplayMode = choice(Prefs.notesDeckDisplay, .main)
     switch mode {
