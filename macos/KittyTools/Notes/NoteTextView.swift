@@ -1332,6 +1332,10 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     return hit !== self && !hit.isDescendant(of: self)
   }
 
+  /// 系统取色面板（便签纸色的「其他颜色…」）改颜色时会把 changeColor: 发给第一响应者：父类会把整篇字（纯文本）染成
+  /// 挑的颜色、还进撤销栈。正文的颜色只走文字颜色的标记，这里一律不接
+  override func changeColor(_ sender: Any?) {}
+
   /// 右键菜单里「打开链接」那一项的名字
   static let openLinkTitle = "打开链接"
   /// 右键菜单里插图那一项的名字

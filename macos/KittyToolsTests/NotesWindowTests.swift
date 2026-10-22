@@ -845,8 +845,11 @@ struct NotesWindowTests {
 
   /// 系统菜单里每一项都带着自己那张非模板的图（纸色圆点；模板图会被系统染成单色）、只有现在的那种打勾
   private func expectColorDots(_ menu: NSMenu, current: Int) {
-    #expect(menu.items.map(\.title) == NotePaper.all.map(\.name))
-    for (index, item) in menu.items.enumerated() {
+    // 8 种预设，分隔线，「其他颜色…」（没有自定义的颜色时中间那一节是空的）
+    #expect(
+      menu.items.map(\.title) == NotePaper.all.map(\.name) + ["", NotePaper.otherColorTitle])
+    #expect(menu.items.last?.state == .off && menu.items.last?.action != nil)
+    for (index, item) in menu.items.prefix(Note.colorCount).enumerated() {
       #expect(item.image != nil && item.image?.isTemplate == false, "\(item.title)")
       #expect(item.image?.size == NSSize(width: 16, height: 16), "\(item.title)")
       #expect(item.state == (index == current ? .on : .off), "\(item.title)")
@@ -866,7 +869,7 @@ struct NotesWindowTests {
     expectColorDots(NSMenu.of(model.colorItems(try #require(store.note(ids[0])))), current: 5)
     // 屏幕边缘那叠的颜色子列表是同一份表（同样的名字、图、勾）
     let items = NotePaper.colorItems(current: 5) { _ in }
-    #expect(items.map(\.title) == NotePaper.all.map(\.name))
+    #expect(items.map(\.title) == NotePaper.all.map(\.name), "没给 other 就没有「其他颜色…」")
     #expect(items.map(\.isChecked) == (0..<Note.colorCount).map { $0 == 5 })
     #expect(items.allSatisfy { $0.image != nil } && Set(items.map(\.id)).count == Note.colorCount)
   }

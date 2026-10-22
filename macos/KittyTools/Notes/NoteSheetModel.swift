@@ -57,6 +57,10 @@ import Observation
   @ObservationIgnored var showSettings: () -> Void = {}
   /// 拿这条便签的正文编辑器做一件事（拿着窗口的那边按编号找到它；没开着、还没建出来就不做）
   @ObservationIgnored var withEditor: ((NoteTextView) -> Void) -> Void = { _ in }
+  /// 颜色菜单的「其他颜色…」：打开系统取色面板改这一条（NoteEdge 给：要从那叠 / 浮动便签的面板打开，关掉后键盘还给它）
+  @ObservationIgnored var pickColor: (String) -> Void = { _ in }
+  /// 这台电脑最近用过的自定义纸色（NoteEdge 按它的偏好域读；单测里是空的）
+  @ObservationIgnored var recentColors: () -> [Int] = { [] }
   /// 这条便签的正文的撤销栈（正文框建出来时拿到它，NoteTextView.noteUndo；标题框用的是它的字段编辑器自己的栈）。
   /// 换一条换一个新的：上一条里打的字不能在这一条里被 ⌘Z 撤到（同 NotesWindowModel.textUndo）
   @ObservationIgnored private(set) var textUndo = UndoManager()
@@ -101,6 +105,8 @@ import Observation
   /// （悬停打开的、重启后恢复的也记：不当 key，但第一响应者照样落在正文上，点进去当了 key 就能直接打字）
   func sheetChanged(to id: String?) {
     if menu != nil { closeMenu() }
+    // 从这里打开的取色面板改的是上一条：换了一条 / 收起了就关掉，不然拖的是一条看不见的便签（打开的正是它在改的那条不关）
+    NoteColorPicker.shared.close(owner: self, keeping: id)
     if isOverLimit { isOverLimit = false }
     textUndo = UndoManager()
     if let id { focus = Focus(id: id, count: (focus?.count ?? 0) + 1) }
@@ -288,17 +294,22 @@ import Observation
   }
 
   private func colorItems(_ note: Note) -> [ActionMenu.Item] {
-    NotePaper.colorItems(current: note.color) { [unowned self] in setColor($0) }
+    let id = note.id
+    return NotePaper.colorItems(
+      current: note.color, recent: recentColors(), choose: { [unowned self] in setColor($0) },
+      other: { [unowned self] in pickColor(id) })
+  }
+
+  /// 颜色那一级停在哪一行：现在的那种（打勾的那一项，自定义的在后面那一节）
+  private func colorSelection(_ note: Note) -> Int {
+    colorItems(note).firstIndex { $0.isChecked == true } ?? 0
   }
 
   /// ⌘K、「⋯」开关菜单；fromDot：点纸色圆点，直接是颜色那一级
   func toggleMenu(fromDot: Bool = false) {
     guard menu == nil else { return closeMenu() }
     guard let note = current else { return }
-    // 颜色那一级的第几行：自定义的纸色先停在最接近的那种预设上（界面那一批再加「最近用过」那几行）
-    menu = Menu(
-      inColors: fromDot, selection: fromDot ? Note.storedPreset(of: note.color) : 0,
-      fromDot: fromDot)
+    menu = Menu(inColors: fromDot, selection: fromDot ? colorSelection(note) : 0, fromDot: fromDot)
     onMenu(true)
   }
 
@@ -312,7 +323,7 @@ import Observation
   func run(_ item: ActionMenu.Item) {
     if item.submenu != nil {
       menu?.inColors = true
-      menu?.selection = current.map { Note.storedPreset(of: $0.color) } ?? 0
+      menu?.selection = current.map(colorSelection) ?? 0
     } else {
       closeMenu()
       item.run()

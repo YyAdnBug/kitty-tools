@@ -116,6 +116,12 @@ nonisolated struct Note: Identifiable, Equatable, Sendable {
     return custom(rgb: tint & 0xFFFFFF)
   }
 
+  /// 从取色面板挑了一个颜色：正好是哪种预设的浅纸就是那种预设（吸管吸了一张预设便签的纸色——存成自定义的话色条和墨
+  /// 用推出来的，和那种预设差得明显），不然是自定义的
+  static func picked(rgb: Int) -> Int {
+    NotePaper.all.firstIndex { $0.light.paper == rgb & 0xFFFFFF } ?? custom(rgb: rgb)
+  }
+
   /// ⌘. 和新建便签的轮换：只在 8 种预设里轮，自定义的从最接近的那种的下一种接着轮
   static func nextPreset(after color: Int) -> Int { (storedPreset(of: color) + 1) % colorCount }
 

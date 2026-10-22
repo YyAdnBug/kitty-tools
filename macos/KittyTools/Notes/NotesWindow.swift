@@ -98,6 +98,8 @@ import SwiftUI
   @ObservationIgnored var toggleFloat: (String) -> Void = { _ in }
   /// 打开设置窗、落在「便签」那一页（AppDelegate 接；⌘,、工具栏的「便签设置」）
   @ObservationIgnored var showSettings: () -> Void = {}
+  /// 颜色菜单的「其他颜色…」：打开系统取色面板改这一条（NotesWindow 给：从这扇窗口打开，关掉后键盘还给它）
+  @ObservationIgnored var pickColor: (String) -> Void = { _ in }
   /// 正文的撤销栈（正文框建出来时拿到它，NoteTextView.noteUndo；窗口的 undoManager 也是它，
   /// NotesWindow.windowWillReturnUndoManager）。换一条便签换一个新的：上一条里打的字不能撤到这一条上。
   /// 标题框、搜索框用的是各自字段编辑器的栈（系统给的，结束编辑就丢）
@@ -197,6 +199,8 @@ import SwiftUI
 
   private func selectionChanged() {
     store.flush()
+    // 从这扇窗口打开的取色面板改的是上一条：换了一条就关掉（选中的正是它在改的那条不关）
+    NoteColorPicker.shared.close(owner: self, keeping: selection)
     isOverLimit = false
     textUndo = UndoManager()
     // 编辑卡开着的那条不再是选中的（删了、归档了、放回了、换了视图、换了一条）：收回
@@ -509,9 +513,14 @@ import SwiftUI
     toggleFloat(id)
   }
 
-  /// 选颜色的那份表（工具栏的颜色下拉、右键菜单里的「颜色」；每项前面是纸色圆点，NotePaper.colorItems）
+  /// 选颜色的那份表（工具栏的颜色下拉、右键菜单里的「颜色」；每项前面是纸色圆点，NotePaper.colorItems）：预设、
+  /// 自定义的那一节（最近用过按这扇窗口的偏好域读，没有偏好域的单测、截图自检是空的）、「其他颜色…」
   func colorItems(_ note: Note) -> [ActionMenu.Item] {
-    NotePaper.colorItems(current: note.color) { [weak self] in self?.setColor($0, of: note.id) }
+    let id = note.id
+    return NotePaper.colorItems(
+      current: note.color, recent: defaults.map { NoteColorPicker.recentColors(in: $0) } ?? [],
+      choose: { [weak self] in self?.setColor($0, of: id) },
+      other: { [weak self] in self?.pickColor(id) })
   }
 
   /// 一行的右键菜单：和工具栏同名的那几项（不写键位，HIG）；最近删除里的是放回 / 永久删除 / 清空。
@@ -719,6 +728,10 @@ final class NotesWindow: NSObject, NSWindowDelegate {
     model.withEditor = { [weak self] body in
       if let editor = self?.selectedEditor() { body(editor) }
     }
+    model.pickColor = { [weak self] id in
+      guard let self else { return }
+      NoteColorPicker.shared.open(id, in: model.store, owner: model, from: window)
+    }
   }
 
   /// 选中的那条的正文框（没选中、它没有正文框——最近删除里只读的、墙上没开编辑卡——是 nil）
@@ -811,6 +824,7 @@ final class NotesWindow: NSObject, NSWindowDelegate {
   }
 
   func windowWillClose(_ notification: Notification) {
+    NoteColorPicker.shared.close(owner: model)
     removeKeyMonitor()
     model.closed()
     NSApp.leaveDockIfNoWindows(closing: window)

@@ -413,15 +413,19 @@ import SwiftUI
   /// （危险色）。名字取自 NotesWindowModel 的那一份（同操作菜单、全部便签窗口）；任务、查找这类要正文光标的不放。
   /// 反馈同操作菜单（固定、换色、归档只播报，删除弹岛）。只用传进来的值（标签的界面拿它挂旁白的自定义动作，
   /// 别让每张标签都盯着仓库）
-  func tabItems(_ note: Note, isFloating: Bool) -> [ActionMenu.Item] {
+  /// colors 是 false 时不带「颜色」那一级（标签的旁白「更多动作」：每次重画都要，色点的图和最近用过不白建）
+  func tabItems(_ note: Note, isFloating: Bool, colors: Bool = true) -> [ActionMenu.Item] {
     typealias Names = NotesWindowModel
     let id = note.id
+    let palette =
+      colors
+      ? NotePaper.colorItems(
+        current: note.color, recent: recentColors(),
+        choose: { [unowned self] in setColor($0, of: id) },
+        other: { [unowned self] in pickColor(id) }) : []
     return [
       ActionMenu.Item(title: Names.pinTitle(note)) { [unowned self] in togglePinned(id) },
-      ActionMenu.Item(
-        title: Names.colorTitle,
-        submenu: NotePaper.colorItems(current: note.color) { [unowned self] in setColor($0, of: id)
-        }),
+      ActionMenu.Item(title: Names.colorTitle, submenu: palette),
       ActionMenu.Item(title: Names.floatTitle(isFloating: isFloating)) { [unowned self] in
         floatFromTab(id)
       },

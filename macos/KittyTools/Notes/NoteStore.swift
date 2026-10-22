@@ -268,8 +268,10 @@ import Observation
     if mutate(id, now: now, { $0.title = title }) { scheduleSave(at: now) }
   }
 
-  func setColor(_ color: Int, of id: String, now: Date = .now) {
-    if mutate(id, now: now, { $0.color = Note.clamped(color: color) }) { flush() }
+  /// 换纸色：当场落盘。live：取色面板边拖边变的那一串，同打字攒着等停手再落（拖一下落一次盘太多）
+  func setColor(_ color: Int, of id: String, now: Date = .now, live: Bool = false) {
+    guard mutate(id, now: now, { $0.color = Note.clamped(color: color) }) else { return }
+    if live { scheduleSave(at: now) } else { flush() }
   }
 
   /// 归档 / 取消归档；取消归档的排回最前

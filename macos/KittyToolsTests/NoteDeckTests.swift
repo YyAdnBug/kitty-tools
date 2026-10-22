@@ -844,7 +844,7 @@ struct NoteDeckTests {
         false, false, false, false, true, false, false, false, false,
       ])
     #expect(model.menuItems[2].shortcut == "⌘T")
-    #expect(model.menuItems[1].submenu?.count == Note.colorCount)
+    #expect(model.menuItems[1].submenu?.count == Note.colorCount + 1, "8 种 +「其他颜色…」")
     // 鼠标移到哪一行，选中跟到哪一行（越界的不理）；再把它挪回第一行，下面的 ↓ 照旧从头走
     model.menuHover(4)
     #expect(model.menu?.selection == 4)
@@ -857,7 +857,8 @@ struct NoteDeckTests {
     #expect(try model.handleMenuKey(key(kVK_RightArrow)))
     let color = try #require(store.note(ids[0])?.color)
     #expect(model.menu?.inColors == true && model.menu?.selection == color)
-    #expect(model.menuItems.map(\.title) == NotePaper.all.map(\.name))
+    #expect(
+      model.menuItems.map(\.title) == NotePaper.all.map(\.name) + [NotePaper.otherColorTitle])
     #expect(model.menuItems[color].isChecked == true)
     // ↓ ↩：换成下一种，菜单关掉
     #expect(try model.handleMenuKey(key(kVK_DownArrow)))
@@ -2048,9 +2049,13 @@ struct NoteDeckTests {
     #expect(items.map(\.section) == [0, 0, 0, 1, 1] && items.map(\.isDestructive).last == true)
     // 颜色那一级：8 种，每项前面纸色圆点，现在的那种打勾（同一份表）
     let colors = try #require(items[1].submenu)
-    #expect(colors.count == Note.colorCount && colors.allSatisfy { $0.image != nil })
     #expect(
-      colors.map(\.isChecked) == (0..<Note.colorCount).map { $0 == store.note(ids[1])?.color })
+      colors.count == Note.colorCount + 1
+        && colors.prefix(Note.colorCount).allSatisfy { $0.image != nil })
+    #expect(
+      colors.prefix(Note.colorCount).map(\.isChecked)
+        == (0..<Note.colorCount).map { $0 == store.note(ids[1])?.color })
+    #expect(colors.last?.title == NotePaper.otherColorTitle && colors.last?.section == 2)
     items[0].run()
     #expect(store.note(ids[1])?.isPinned == true && store.note(ids[0])?.isPinned == false)
     #expect(model.tabItems(ids[1])[0].title == "取消固定")

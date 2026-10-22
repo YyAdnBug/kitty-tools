@@ -460,6 +460,12 @@ final class NoteDeck: NSObject {
         if Self.isInsideFilePanel(NSEvent.mouseLocation, frames: frames) { return }
         // 系统的「表情与符号」、输入法的候选窗：在给这条便签挑字，不收（OverlayPanel.isInputMethodClick）
         if OverlayPanel.isInputMethodClick() { return }
+        // 取色面板（「其他颜色…」）正给这一叠的便签挑颜色：吸管在屏幕上取色那一下也到这里（不在本进程里点的）。
+        // 晚一拍再看：别的 App 到了前台才算点了别处
+        if let self, NoteColorPicker.shared.isOpen(owner: self.model) {
+          self.perform(#selector(self.clickedOutsideIfSwitched), with: nil, afterDelay: 0.2)
+          return
+        }
         self?.clickedOutside()
       }
     }
@@ -534,6 +540,8 @@ final class NoteDeck: NSObject {
   static func isOutside(_ window: NSWindow?, own: [NSWindow?], isSelectingRegion: Bool) -> Bool {
     if isSelectingRegion || window is OverlayPanel { return false }
     if window is NSSavePanel || (window != nil && window === NSApp.modalWindow) { return false }
+    // 系统取色面板（颜色菜单的「其他颜色…」，NoteColorPicker）：在给这条便签挑颜色
+    if window is NSColorPanel { return false }
     return !own.contains { $0 != nil && $0 === window }
   }
 
@@ -548,6 +556,15 @@ final class NoteDeck: NSObject {
   /// 放过（OverlayPanel.isInputMethodClick）；这一条留着兜底认不出归属的候选窗
   static func isComposing(_ responder: NSResponder?) -> Bool {
     (responder as? NSTextView)?.hasMarkedText() ?? false
+  }
+
+  /// 取色面板开着时那一下点击：本 App 已经不在前台（点的是别的 App）才算点别处；还在前台是吸管取色
+  @objc private func clickedOutsideIfSwitched() {
+    guard
+      NSWorkspace.shared.frontmostApplication?.processIdentifier
+        != NSRunningApplication.current.processIdentifier
+    else { return }
+    clickedOutside()
   }
 
   private func clickedOutside() {

@@ -356,7 +356,10 @@ private struct NoteTab: View {
     .accessibilityAction { model.tapTab(note.id) }
     // 旁白的「更多动作」：右键菜单里不带子菜单的那几项（颜色那一级靠 ⌘. 或打开后的操作菜单）
     .accessibilityActions {
-      ForEach(model.tabItems(note, isFloating: isFloating).filter { $0.submenu == nil }) { item in
+      ForEach(
+        model.tabItems(note, isFloating: isFloating, colors: false).filter { $0.submenu == nil }
+      ) {
+        item in
         Button(item.title, action: item.run)
       }
     }

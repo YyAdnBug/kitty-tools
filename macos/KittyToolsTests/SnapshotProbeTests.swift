@@ -1498,16 +1498,19 @@ struct SnapshotProbeTests {
     try snapshot(
       NotesWindowView(model: markdownModel).defaultAppStorage(plain), size: windowSize,
       dark: false, to: "\(out)/notes-window-markdown-off.png")
-    for (index, paper) in NotePaper.all.enumerated() {
+    // 8 种预设之后是 4 种自定义的（便签未来计划 B2：浅蓝原样当纸、深蓝提亮、纯红、灰），文件名 custom-0…3
+    let customs = [0xC2DFF8, 0x203040, 0xFF0000, 0x808080].map(Note.custom(rgb:))
+    for (index, color) in (Array(0..<Note.colorCount) + customs).enumerated() {
       var note = Note(
         id: "纸色\(index)", body: Self.markdownPaperSample, createdAt: now, modifiedAt: now)
-      note.color = index
+      note.color = color
+      let name = index < Note.colorCount ? "\(index)" : "custom-\(index - Note.colorCount)"
       for dark in [false, true] {
         try snapshot(
           NoteBodyField(note: note, fontSize: 15, margin: 14, setBody: { _ in }, onOverflow: {})
-            .background(paper.paper),
+            .background(NotePaper.of(color: color).paper),
           size: NSSize(width: 330, height: 300), dark: dark,
-          to: "\(out)/notes-markdown-paper-\(index)\(dark ? "-dark" : "").png",
+          to: "\(out)/notes-markdown-paper-\(name)\(dark ? "-dark" : "").png",
           prepare: Self.reveal(NSRange(location: 4, length: 0)))
       }
     }
@@ -2362,6 +2365,17 @@ struct SnapshotProbeTests {
     }
     try float("min-menu-tab-right", ids[2], size: minimum, onLeading: false) { $0.toggleMenu() }
     try float("over-limit", ids[0]) { $0.overflowed() }
+    // 自定义纸色（便签未来计划 B2 / B4）：推出来的纸、色条、墨，深浅各一；颜色那一级多一节自定义的和「其他颜色…」
+    let custom = store.create(body: "挑的浅色就是纸本身\n☐ 待办\n☑ 做完\n> 引用", now: now)
+    for (index, rgb) in [0xC2DFF8, 0x203040, 0xFF0000, 0x808080].enumerated() {
+      store.setColor(Note.custom(rgb: rgb), of: custom.id)
+      try float("custom-\(index)", custom.id)
+      try float("custom-\(index)-dark", custom.id, dark: true)
+    }
+    try float("menu-custom-colors", custom.id) { model in
+      model.recentColors = { [0xFFE0F0, 0xB4E8D0] }
+      model.toggleMenu(fromDot: true)
+    }
     // 带 Markdown 的：标记都藏着的、光标所在的行露着的（屏外的窗口不真的当 key，直接告诉编辑器）
     try float("markdown", ids[6], size: CGSize(width: 520, height: 460))
     try float(

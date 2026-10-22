@@ -208,6 +208,9 @@ enum Prefs {
   /// NSStringFromRect 的位置；只有固定着的才记，重启后回到原处——NoteFloatLayout.Place）
   nonisolated static let notesFloatSize = "notesFloatSize"
   nonisolated static let notesFloatPlace = "notesFloatPlace"
+  /// 便签纸色「最近用过」的自定义颜色（便签未来计划 B4，2026-10-22；一组 "#RRGGBB"，最近的在前、最多 8 个，
+  /// NoteColorPicker）：这台电脑自己的状态、**不注册默认值**——别人给的导出文件不该换掉你的最近用过
+  nonisolated static let notesRecentColors = "notesRecentColors"
   /// 全部便签窗口上次用的显示方式（NotesWindowModel.Layout 的 rawValue：wall 便签墙 / list 列表；没存过 = 便签墙，
   /// 2026-10-15 手测反馈）。同窗口位置一样是这台电脑自己的状态、**不注册默认值**：不跟着导出 / 导入走
   nonisolated static let notesWindowLayout = "notesWindowLayout"

@@ -4,6 +4,9 @@
 // - 写法：内存里一个整数、落盘拆成「最接近的预设 + 色值」；库加了可空的 tint 列、版本不升；**模拟已发布的 0.5.0**
 //   （只认原来那几列、夹 0–7、写明列名的 upsert）读写同一个库：看到最接近的那种，改正文不丢色值，换了颜色就按它换的；
 //   导出文件和 Markdown 文件头的往返、旧文件、写坏的色值。
+// - 界面（第 3 批）：颜色菜单的三节（预设、自定义的、「其他颜色…」）、最近用过（临时偏好域）、挑的正好是预设浅纸、
+//   取色面板边拖边变的慢落盘、点取色面板不算点别处、那叠和全部便签窗口的「其他颜色…」交给取色面板（换成记账的闭包，
+//   **不真的打开系统取色面板**——它会出现在屏幕上）。
 // 全用内存库和临时值，不碰用户的数据目录和偏好。
 
 import AppKit
@@ -358,5 +361,195 @@ struct NoteCustomPaperTests {
     let store = try NoteStore(db: Database(path: ":memory:"))
     store.adopt(entries, now: Self.t0.addingTimeInterval(5))
     #expect(store.note(note.id)?.color == note.color)
+  }
+
+  // MARK: 界面（第 3 批）
+
+  /// 临时偏好域（用完删掉）
+  private func scratchDefaults() throws -> (UserDefaults, String) {
+    let suite = "kitty-notes-recent-\(UUID().uuidString)"
+    return (try #require(UserDefaults(suiteName: suite)), suite)
+  }
+
+  /// 最近用过：挑一次挪到最前、去重、最多 8 个，写坏的跳过；是这台电脑自己的状态（不注册默认值、不跟导出走）
+  @Test func recentColorsKeepTheLatestEight() throws {
+    let (defaults, suite) = try scratchDefaults()
+    defer { defaults.removePersistentDomain(forName: suite) }
+    #expect(NoteColorPicker.recentColors(in: defaults).isEmpty)
+    for rgb in 0..<10 { NoteColorPicker.remember(0x100000 + rgb, in: defaults) }
+    #expect(NoteColorPicker.recentColors(in: defaults) == (2..<10).reversed().map { 0x100000 + $0 })
+    NoteColorPicker.remember(0x100004, in: defaults)
+    let list = NoteColorPicker.recentColors(in: defaults)
+    #expect(list.first == 0x100004 && list.count == 8 && Set(list).count == 8)
+    defaults.set(["#zz", "#ABCDEF", 3], forKey: Prefs.notesRecentColors)
+    #expect(NoteColorPicker.recentColors(in: defaults).isEmpty, "不是一组字的整个不认")
+    defaults.set(["#zz", "#ABCDEF"], forKey: Prefs.notesRecentColors)
+    #expect(NoteColorPicker.recentColors(in: defaults) == [0xABCDEF])
+    let key = Prefs.notesRecentColors
+    #expect(Prefs.defaults[key] == nil && SettingsArchive.kinds[key] == nil)
+  }
+
+  /// 取色面板给的颜色 → sRGB 的色值（P3、灰度的也换得过来）；挑的正好是哪种预设的浅纸就是那种预设
+  @Test func pickedColorsBecomePaperValues() throws {
+    #expect(NoteColorPicker.rgb(of: NSColor(srgbRed: 1, green: 0.5, blue: 0, alpha: 1)) == 0xFF8000)
+    #expect(NoteColorPicker.rgb(of: NSColor(white: 1, alpha: 1)) == 0xFFFFFF)
+    let p3 = try #require(
+      NoteColorPicker.rgb(of: NSColor(displayP3Red: 1, green: 0, blue: 0, alpha: 1)))
+    #expect(p3 >> 16 == 0xFF, "P3 的纯红夹到 sRGB 的红")
+    for (index, preset) in NotePaper.all.enumerated() {
+      #expect(Note.picked(rgb: preset.light.paper) == index, "\(preset.name)")
+    }
+    #expect(Note.picked(rgb: 0xC2DFF8) == Note.custom(rgb: 0xC2DFF8))
+  }
+
+  /// 颜色菜单（五处共用一份）：8 种预设｜自定义的（这条现在用的排第一个，再是最近用过的，去重、最多 8 个）｜
+  /// 其他颜色…；现在的那种打勾，点了换成它
+  @Test func colorMenuHasCustomColorsAndOtherColors() {
+    let sky = Note.custom(rgb: 0xC2DFF8)
+    var chosen: [Int] = []
+    var others = 0
+    let recent = [0xFFE0F0, 0xC2DFF8] + (0..<10).map { 0x200000 + $0 }
+    let items = NotePaper.colorItems(
+      current: sky, recent: recent, choose: { chosen.append($0) }, other: { others += 1 })
+    #expect(items.count == Note.colorCount + NoteColorPicker.recentLimit + 1)
+    let custom = items.filter { $0.section == 1 }
+    #expect(custom.count == NoteColorPicker.recentLimit)
+    #expect(custom.first?.title == "自定义 · 蓝" && custom.first?.isChecked == true)
+    #expect(custom[1].title == "自定义 · 粉" && custom.dropFirst().allSatisfy { $0.isChecked == false })
+    #expect(items.prefix(Note.colorCount).allSatisfy { $0.isChecked == false })
+    #expect(Set(items.map(\.id)).count == items.count && custom.allSatisfy { $0.image != nil })
+    custom[1].run()
+    #expect(chosen == [Note.custom(rgb: 0xFFE0F0)])
+    #expect(items.last?.title == NotePaper.otherColorTitle && items.last?.section == 2)
+    items.last?.run()
+    #expect(others == 1)
+    // 预设的、没有最近用过的：中间那一节是空的
+    let plain = NotePaper.colorItems(current: 3, recent: [], choose: { _ in }, other: {})
+    #expect(plain.map(\.section) == Array(repeating: 0, count: Note.colorCount) + [2])
+  }
+
+  /// 取色面板边拖边变：慢落盘（同打字），不是每拖一下落一次；落一次之后库里是新的
+  @Test func liveColorChangesWaitForTheQuietSave() throws {
+    let db = try Database(path: ":memory:")
+    let store = try NoteStore(db: db) { _ in try await Task.sleep(for: .seconds(3600)) }
+    let note = store.create(body: "拖着色轮", now: Self.t0)
+    store.setColor(Note.custom(rgb: 0x123456), of: note.id, now: Self.t0, live: true)
+    #expect(store.note(note.id)?.color == Note.custom(rgb: 0x123456))
+    #expect(try NoteStore(db: db).note(note.id)?.color == 0, "还没落盘")
+    store.flush()
+    #expect(try NoteStore(db: db).note(note.id)?.color == Note.custom(rgb: 0x123456))
+  }
+
+  /// 那叠的操作菜单：颜色那一级带着最近用过（按 NoteEdge 给的读）、自定义的那条停在它自己那一行；
+  /// 「其他颜色…」交给取色面板（这里换成记账的闭包）、菜单先关掉
+  @Test func deckMenuPicksOtherColors() throws {
+    let store = try NoteStore(db: Database(path: ":memory:"))
+    let note = store.create(body: "一条", now: Self.t0)
+    store.setColor(Note.custom(rgb: 0xFFE0F0), of: note.id, now: Self.t0)
+    let model = NoteDeckModel(store: store)
+    model.panelSize = CGSize(width: 538, height: 875)
+    model.pillCenter = 437
+    model.recentColors = { [0xC2DFF8] }
+    var picked: [String] = []
+    model.pickColor = { picked.append($0) }
+    model.send(.pillEntered(optionDown: false, allowed: true))
+    model.tapTab(note.id)
+    model.toggleMenu(fromDot: true)
+    let items = model.menuItems
+    #expect(items.map(\.title).suffix(3) == ["自定义 · 粉", "自定义 · 蓝", NotePaper.otherColorTitle])
+    #expect(model.menu?.selection == Note.colorCount, "停在自己那一行（自定义的第一个）")
+    model.run(items[items.count - 1])
+    #expect(picked == [note.id] && model.menu == nil)
+    // 标签的右键菜单里也是这一份
+    let tab = try #require(model.tabItems(note.id)[1].submenu)
+    tab.last?.run()
+    #expect(picked == [note.id, note.id])
+  }
+
+  /// 全部便签窗口：「其他颜色…」交给取色面板（窗口给的闭包）；最近用过按窗口的偏好域读，没有偏好域的是空的
+  @Test func windowMenuPicksOtherColors() throws {
+    let (defaults, suite) = try scratchDefaults()
+    defer { defaults.removePersistentDomain(forName: suite) }
+    NoteColorPicker.remember(0xC2DFF8, in: defaults)
+    let store = try NoteStore(db: Database(path: ":memory:"))
+    let note = store.create(body: "一条", now: Self.t0)
+    let model = NotesWindowModel(store: store, defaults: defaults)
+    var picked: [String] = []
+    model.pickColor = { picked.append($0) }
+    let items = model.colorItems(note)
+    #expect(items.map(\.title).suffix(2) == ["自定义 · 蓝", NotePaper.otherColorTitle])
+    items.last?.run()
+    #expect(picked == [note.id])
+    #expect(NotesWindowModel(store: store).colorItems(note).filter { $0.section == 1 }.isEmpty)
+  }
+
+  /// 取色面板的状态那一半（不碰系统的取色面板）：边拖边变慢落盘；不是自己打开的那一处、打开的正是它在改的那条都不收；
+  /// 收的时候落盘、只把自定义的记进最近用过；改的那条被删了就收；重开另一条先收掉上一条
+  @Test func colorPickerStateFollowsItsOwner() throws {
+    let (defaults, suite) = try scratchDefaults()
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let db = try Database(path: ":memory:")
+    let store = try NoteStore(db: db) { _ in try await Task.sleep(for: .seconds(3600)) }
+    let first = store.create(body: "甲", now: Self.t0)
+    let second = store.create(body: "乙", now: Self.t0)
+    let picker = NoteColorPicker()
+    picker.defaults = defaults
+    let owner = NSObject()
+    let stranger = NSObject()
+    #expect(picker.begin(first.id, in: store, owner: owner, from: nil))
+    #expect(picker.isOpen(owner: owner) && !picker.isOpen(owner: stranger))
+    picker.apply(NSColor(srgbRed: 0, green: 0.5, blue: 1, alpha: 1))
+    let blue = Note.custom(rgb: 0x0080FF)
+    #expect(store.note(first.id)?.color == blue)
+    #expect(try NoteStore(db: db).note(first.id)?.color == 0, "边拖边变：还没落盘")
+    picker.close(owner: stranger)
+    picker.close(owner: owner, keeping: first.id)
+    #expect(picker.noteID == first.id, "别人收不掉、打开的正是这条也不收")
+    picker.close(owner: owner, keeping: second.id)
+    #expect(picker.noteID == nil)
+    #expect(try NoteStore(db: db).note(first.id)?.color == blue, "收的时候落盘")
+    #expect(NoteColorPicker.recentColors(in: defaults) == [0x0080FF])
+    // 挑的是预设的浅纸：存成预设、不进最近用过
+    picker.begin(second.id, in: store, owner: owner, from: nil)
+    picker.apply(srgb(NotePaper.all[3].light.paper))
+    #expect(store.note(second.id)?.color == 3)
+    // 重开另一条：上一条先收掉
+    picker.begin(first.id, in: store, owner: stranger, from: nil)
+    #expect(picker.isOpen(owner: stranger) && !picker.isOpen(owner: owner))
+    #expect(NoteColorPicker.recentColors(in: defaults) == [0x0080FF])
+    // 改的那条进了最近删除：再挑就收
+    store.delete(first.id)
+    picker.apply(NSColor.red)
+    #expect(picker.noteID == nil && store.note(first.id)?.color == blue)
+  }
+
+  /// 那叠 / 浮动便签换了一条：从那里打开的取色面板收掉；打开的正是它在改的那条不收
+  @Test func sheetChangeClosesThePicker() throws {
+    let store = try NoteStore(db: Database(path: ":memory:"))
+    let first = store.create(body: "甲", now: Self.t0)
+    let second = store.create(body: "乙", now: Self.t0)
+    let model = NoteDeckModel(store: store)
+    let picker = NoteColorPicker.shared
+    defer { picker.close(owner: model) }
+    picker.begin(first.id, in: store, owner: model, from: nil)
+    model.sheetChanged(to: first.id)
+    #expect(picker.isOpen(owner: model))
+    model.sheetChanged(to: second.id)
+    #expect(!picker.isOpen(owner: model))
+  }
+
+  /// 正文框不接取色面板的 changeColor:（父类会把整篇纯文本染成挑的颜色）
+  @Test func bodyIgnoresColorPanelChanges() throws {
+    let editor = NoteTextView.make()
+    editor.setPaper(NotePaper.all[0], fontSize: 15, markdown: true, spacing: .standard)
+    editor.setText("正文")
+    let before =
+      editor.textStorage?.attribute(.foregroundColor, at: 0, effectiveRange: nil)
+      as? NSColor
+    editor.changeColor(nil)
+    let after =
+      editor.textStorage?.attribute(.foregroundColor, at: 0, effectiveRange: nil)
+      as? NSColor
+    #expect(before != nil && after === before)
   }
 }

@@ -75,6 +75,10 @@ final class NoteEdge {
     float.onHide = { [unowned self] in onHide() }
     float.model.showInWindow = { [unowned self] in showInWindow($0) }
     float.model.showSettings = { [unowned self] in showSettings() }
+    float.model.recentColors = { [unowned self] in NoteColorPicker.recentColors(in: defaults) }
+    float.model.pickColor = { [unowned self] id in
+      NoteColorPicker.shared.open(id, in: store, owner: float.model, from: float.panel)
+    }
   }
 
   /// 开始：摆一次，之后跟着设置、屏幕、便签、系统的显示辅助开关的变化重摆；上次固定着浮在屏幕上的那一张回到原处
@@ -165,6 +169,10 @@ final class NoteEdge {
     deck.onFloat = { [unowned self] in float.present($0, from: $1) }
     deck.onHide = { [unowned self] in onHide() }
     deck.model.focusFloat = { [unowned self] in float.focus() }
+    deck.model.recentColors = { [unowned self] in NoteColorPicker.recentColors(in: defaults) }
+    deck.model.pickColor = { [unowned self, unowned deck] id in
+      NoteColorPicker.shared.open(id, in: store, owner: deck.model, from: deck.panel)
+    }
     deck.model.floated(float.model.state.noteID)
     return deck
   }

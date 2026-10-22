@@ -408,17 +408,46 @@ extension NoteColor {
 }
 
 extension NotePaper {
-  /// 选颜色的那份表，**所有选颜色的地方共用**（全部便签窗口工具栏的下拉、行的右键菜单里的「颜色」、屏幕边缘那叠的
-  /// ⌘K 子列表和圆点点出来的菜单）：8 种纸色各一项，前面是它的纸色圆点（swatch，非模板图），现在的那种打勾；
-  /// 点了调 choose(下标)
+  /// 颜色菜单末尾那一项的名字（打开系统取色面板，NoteColorPicker）
+  static let otherColorTitle = "其他颜色…"
+
+  /// 选颜色的那份表，**所有选颜色的地方共用**（全部便签窗口工具栏的下拉、行 / 卡片的右键菜单里的「颜色」、屏幕边缘那叠
+  /// 的 ⌘K 子列表和圆点点出来的菜单、那叠标签的右键）：8 种纸色各一项，前面是它的纸色圆点（swatch，非模板图），
+  /// 现在的那种打勾；后面一节是自定义的颜色（便签未来计划 B4）——这条便签现在用的自定义色（不在最近用过里也列上）
+  /// 和这台电脑最近用过的，一共最多 NoteColorPicker.recentLimit 个，名字「自定义 · 蓝」；最后一节「其他颜色…」
+  /// （other 是 nil 时不放）。点了调 choose(Note.color 的值)
   @MainActor
-  static func colorItems(current: Int, choose: @escaping (Int) -> Void) -> [ActionMenu.Item] {
-    all.enumerated().map { index, paper in
+  static func colorItems(
+    current: Int, recent: [Int] = [], choose: @escaping (Int) -> Void,
+    other: (() -> Void)? = nil
+  ) -> [ActionMenu.Item] {
+    var items = all.enumerated().map { index, paper in
       ActionMenu.Item(
         title: paper.name, image: paper.swatch(side: 16), isChecked: index == current,
         id: "color-\(index)"
       ) { choose(index) }
     }
+    let mine = Note.customRGB(of: current).map { [$0] } ?? []
+    var seen = Set<Int>()
+    for rgb in (mine + recent).filter({ seen.insert($0).inserted }).prefix(
+      NoteColorPicker.recentLimit)
+    {
+      let color = Note.custom(rgb: rgb)
+      let paper = of(color: color)
+      items.append(
+        ActionMenu.Item(
+          title: paper.name, image: paper.swatch(side: 16), isChecked: color == current,
+          id: "color-\(Note.hex(rgb: rgb))", section: 1
+        ) { choose(color) })
+    }
+    if let other {
+      items.append(
+        ActionMenu.Item(title: otherColorTitle, symbol: "eyedropper", id: "color-other", section: 2)
+        {
+          other()
+        })
+    }
+    return items
   }
 }
 
