@@ -12,6 +12,14 @@
 // - 导出文件的第七类「便签」（SettingsArchive）：exportable 是没删的全部，adopt 按编号合并——本机被换掉的那一版不丢，
 //   另存一条进「最近删除」。
 // 搜索在内存里做（标题 + 正文，口径同剪贴板搜索）。和 sqlite 的 C 接口打交道的只有 Database。
+// - 同步要的账（便签未来计划 A，2026-10-22；合并规则在 NoteSync）：本机改内容时版本钟自己那一格 +1、改状态 / 顺序时记
+//   stateChangedAt / orderChangedAt（只往前走）；永久删除留墓碑（note_erased：被删那一版的钟和状态时刻，**不过期**——
+//   一台不用了留下的旧文件夹里还有它，过期了就会回来；一条几十个字节）；这台电脑的编号（note_meta，跟着库走，硬件编号
+//   对不上 = 迁移助理 / 时间机器搬到了新 Mac，换一个新的；从备份恢复也换，NotesBackup）；写进同步文件夹时是哪个修订号
+//   （note_published）。**旧版本动过的行**：每次写库同时记 written_revision = 修订号，0.5.0 的 upsert 只推 revision、不碰它，
+//   读库时对不上（或者是 0.6.0 之前的行，没有它）= 旧版本改过：钟补一格、状态 / 顺序时刻往前走一毫秒（同步时当本机改过，
+//   和别的电脑同时改的走另存那条路，不被悄悄盖掉）。
+//   这几样**都不升 user_version**：新加的是可空的列和新表，0.5.0 的读写写明列名、碰不到它们（同 tint 那一列的规矩）。
 // 列表行、标签、预览卡上显示的推导结果（标题、摘要、任务进度）按便签缓存在这里（summary(of:)）：标题、正文没变就不重算。
 // 便签墙上的卡片（字和量好的高，wallCard(of:markdown:)）同样缓存在这里：关掉全部便签窗口再开、换视图再换回来都不重建。
 
@@ -81,35 +89,73 @@ import Observation
   @ObservationIgnored private var retryTask: Task<Void, Never>?
   /// 连着失败了几次（定下一次重试隔多久）
   @ObservationIgnored private var failures = 0
+  /// 这台电脑的编号（同步时内容版本钟的格子、同步文件夹里自己那个子文件夹的名字）
+  @ObservationIgnored let deviceID: String
+  /// 永久删除的墓碑：编号 → 被删那一版的钟和状态时刻（不过期）。
+  /// ponytail: 一直留着（一条几十个字节，删上万条也就几百 KB）；真多了再按「文件夹里已经没人有这条」清
+  @ObservationIgnored private(set) var erased: [String: NoteSync.Tombstone] = [:]
+  /// 墓碑改了还没落盘的编号（落盘时有墓碑就写、没有就删那一行）
+  @ObservationIgnored private var unsavedTombstones: Set<String> = []
+  /// 写进同步文件夹时的修订号：编号 → 修订号（不一样了 = 要重写那个文件）
+  @ObservationIgnored private(set) var published: [String: Int] = [:]
 
   private static let columns = """
     id, title, body, color, created_at, modified_at, revision, archived, pinned, sort_order,
-    deleted_at, tint
+    deleted_at, tint, state_changed_at, clock, order_changed_at, written_revision
     """
   /// 有就更新、没有就插入（不用 INSERT OR REPLACE：那是删了再插，rowid 会变）
   private static let upsert = """
-    INSERT INTO notes(\(columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO notes(\(columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET title = excluded.title, body = excluded.body,
       color = excluded.color, created_at = excluded.created_at,
       modified_at = excluded.modified_at, revision = excluded.revision,
       archived = excluded.archived, pinned = excluded.pinned, sort_order = excluded.sort_order,
-      deleted_at = excluded.deleted_at, tint = excluded.tint
+      deleted_at = excluded.deleted_at, tint = excluded.tint,
+      state_changed_at = excluded.state_changed_at, clock = excluded.clock,
+      order_changed_at = excluded.order_changed_at, written_revision = excluded.written_revision
     """
 
-  /// 建表、认版本、读表哪一步抛错都算打不开（NotesRecovery.open 接手）
+  /// 建表、认版本、读表哪一步抛错都算打不开（NotesRecovery.open 接手）。host：这台电脑的硬件编号（单测传固定的）
   init(
-    db: Database, wait: @escaping Wait = { try await Task.sleep(for: .seconds($0)) }
+    db: Database, wait: @escaping Wait = { try await Task.sleep(for: .seconds($0)) },
+    host: String? = NoteStore.hostID()
   ) throws {
     self.db = db
     self.wait = wait
     try Self.prepare(db)
+    deviceID = try Self.device(in: db, host: host)
+    let tombstones = try db.query("SELECT id, clock, state_changed_at FROM note_erased") {
+      ($0.text(0), $0.text(1), $0.int(2))
+    }
+    for case (let id?, let clock?, let state?) in tombstones {
+      erased[id] = NoteSync.Tombstone(
+        clock: NoteSync.clock(text: clock), state: Note.date(milliseconds: state))
+    }
+    let revisions = try db.query("SELECT id, revision FROM note_published") {
+      ($0.text(0), $0.int(1))
+    }
+    for case (let id?, let revision?) in revisions { published[id] = Int(clamping: revision) }
     let rows = try db.query("SELECT \(Self.columns) FROM notes ORDER BY rowid") { row in
-      Self.decode(row).map { ($0, row.int(11) != nil) }
+      Self.decode(row).map { ($0, row.int(11) != nil, row.int(15)) }
     }.compactMap { $0 }
-    notes = rows.map(\.0)
+    let device = deviceID
+    notes = rows.map { note, _, written in
+      // 旧版本动过的行（0.6.0 之前的、0.5.0 改过的：written_revision 没有或者对不上）：算本机的一次改动
+      guard written.map({ Int(clamping: $0) }) != note.revision else { return note }
+      var touched = note
+      touched.clock[device, default: 0] += 1
+      touched.stateChangedAt = Note.stamp(note.stateTime.addingTimeInterval(0.001))
+      touched.orderChangedAt = Note.stamp(note.orderTime.addingTimeInterval(0.001))
+      touched.revision = Note.nextRevision(after: note.revision)
+      return touched
+    }
     // 旧版本（0.5.0）换过颜色的：tint 列里还留着当时的色值。记成没落盘，下一次落盘把它清掉——不然那边再换回原来那种，
-    // 自定义的颜色又「活」过来
-    unsaved = Set(rows.filter { $0.1 && Note.customRGB(of: $0.0.color) == nil }.map(\.0.id))
+    // 自定义的颜色又「活」过来。旧版本动过的行同样记成没落盘（补的钟、时刻落下去）
+    unsaved = Set(
+      rows.filter { note, tinted, written in
+        (tinted && Note.customRGB(of: note.color) == nil)
+          || written.map({ Int(clamping: $0) }) != note.revision
+      }.map(\.0.id))
   }
 
   /// 认版本、建表。读到的版本比认识的大就抛 Failure.newer，什么都不写；时间存整数毫秒（1970 年起）
@@ -129,7 +175,63 @@ import Observation
     // 所以**不升 user_version**（升了 0.5.0 就整个打不开）。规矩：只加可空的列、旧版本读写都不碰它时不升；改含义才升
     let names = try db.query("PRAGMA table_info(notes)") { $0.text(1) }
     if !names.contains("tint") { try db.execute("ALTER TABLE notes ADD COLUMN tint INTEGER") }
+    // 同步（便签未来计划 A）：状态改动的时刻、内容的版本钟两列；墓碑、写进同步文件夹的修订号、这台电脑的编号三张表。
+    // 同上，都不升 user_version
+    if !names.contains("state_changed_at") {
+      try db.execute("ALTER TABLE notes ADD COLUMN state_changed_at INTEGER")
+    }
+    if !names.contains("clock") { try db.execute("ALTER TABLE notes ADD COLUMN clock TEXT") }
+    if !names.contains("order_changed_at") {
+      try db.execute("ALTER TABLE notes ADD COLUMN order_changed_at INTEGER")
+    }
+    if !names.contains("written_revision") {
+      try db.execute("ALTER TABLE notes ADD COLUMN written_revision INTEGER")
+    }
+    try db.execute(
+      """
+      CREATE TABLE IF NOT EXISTS note_erased(
+        id TEXT PRIMARY KEY, clock TEXT NOT NULL, state_changed_at INTEGER NOT NULL)
+      """)
+    try db.execute(
+      "CREATE TABLE IF NOT EXISTS note_published(id TEXT PRIMARY KEY, revision INTEGER NOT NULL)")
+    try db.execute(
+      "CREATE TABLE IF NOT EXISTS note_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     if found < schemaVersion { try db.execute("PRAGMA user_version = \(schemaVersion)") }
+  }
+
+  /// 这台电脑的编号：库里记着、硬件编号也对得上就用它；没记过、或者硬件编号变了（迁移助理 / 时间机器 / 备份把库搬到了
+  /// 另一台 Mac：两台用同一个编号会把各自的改动当成同一台的）就换一个新的、记下来。读不到硬件编号时不换
+  static func device(in db: Database, host: String?) throws -> String {
+    func stored(_ key: String) throws -> String? {
+      try db.query("SELECT value FROM note_meta WHERE key = ?", [key]) { $0.text(0) }.first ?? nil
+    }
+    if let id = try stored("device"), try host == nil || stored("host") == host { return id }
+    let id = UUID().uuidString
+    try db.transaction {
+      try db.execute("INSERT OR REPLACE INTO note_meta(key, value) VALUES ('device', ?)", [id])
+      if let host {
+        try db.execute("INSERT OR REPLACE INTO note_meta(key, value) VALUES ('host', ?)", [host])
+      }
+    }
+    return id
+  }
+
+  /// 这台 Mac 的硬件编号（同「系统信息」里的硬件 UUID）；拿不到给 nil
+  nonisolated static func hostID() -> String? {
+    var uuid: uuid_t = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+    // 0 秒 = 一直等（man gethostuuid）：最多等 1 秒
+    var wait = timespec(tv_sec: 1, tv_nsec: 0)
+    guard gethostuuid(&uuid, &wait) == 0 else { return nil }
+    return UUID(uuid: uuid).uuidString
+  }
+
+  /// 从备份恢复（NotesBackup）：备份里的库是旧的、版本钟的计数退回去了——还用原来的电脑编号，恢复之后打的字会被恢复前
+  /// 已经同步出去的那几版盖掉。在换上来之前把电脑编号和「写进同步文件夹的账」从那份库里清掉（打开时换一个新编号、全部
+  /// 重写一遍）。备份是单个文件：可写打开、不改成 WAL（旁边不留 -wal、-shm）；更早的备份没有这两张表，删不成不算错
+  nonisolated static func forgetDevice(inDatabaseAt url: URL) {
+    guard let db = try? Database(path: url.path, wal: false) else { return }
+    try? db.execute("DELETE FROM note_meta WHERE key = 'device'")
+    try? db.execute("DELETE FROM note_published")
   }
 
   // MARK: 视图
@@ -243,7 +345,8 @@ import Observation
       id: UUID().uuidString, title: Note.sanitized(title: title),
       body: Note.sanitized(text: body),
       color: latest.map { Note.nextPreset(after: $0.color) } ?? 0, createdAt: now,
-      modifiedAt: now, order: top)
+      modifiedAt: now, order: top, stateChangedAt: now, orderChangedAt: now,
+      clock: [deviceID: 1])
     notes.append(note)
     unsaved.insert(note.id)
     flush()
@@ -275,20 +378,22 @@ import Observation
   }
 
   /// 归档 / 取消归档；取消归档的排回最前
-  func setArchived(_ archived: Bool, of id: String) {
+  func setArchived(_ archived: Bool, of id: String, now: Date = .now) {
     let front = top
-    update(id) { note in
+    update(id, now: now) { note in
       guard note.isArchived != archived else { return }
       note.isArchived = archived
       if !archived { note.order = front }
     }
   }
 
-  func setPinned(_ pinned: Bool, of id: String) { update(id) { $0.isPinned = pinned } }
+  func setPinned(_ pinned: Bool, of id: String, now: Date = .now) {
+    update(id, now: now) { $0.isPinned = pinned }
+  }
 
   /// 挪顺序：把一条没归档、没删的挪成 active 里的第 index 个（挪完之后的下标，越界就放两头）。只改它自己的 order
   /// （取两边中间的值）；两边挨得太近、中间取不出值时（同一处连着插五十来次，或者导入带来了一样的 order）整列重排成 0、1、2…
-  func move(_ id: String, to index: Int) {
+  func move(_ id: String, to index: Int, now: Date = .now) {
     var list = active
     guard let from = list.firstIndex(where: { $0.id == id }) else { return }
     let note = list.remove(at: from)
@@ -305,31 +410,33 @@ import Observation
     }
     if let before, let after, !(before < order && order < after) {
       list.insert(note, at: target)
-      for (position, item) in list.enumerated() { mutate(item.id) { $0.order = Double(position) } }
+      for (position, item) in list.enumerated() {
+        mutate(item.id, now: now) { $0.order = Double(position) }
+      }
       flush()
     } else {
-      update(id) { $0.order = order }
+      update(id, now: now) { $0.order = order }
     }
   }
 
   /// 删除：进「最近删除」（留 trashDays 天，restore 放回），不真删
   func delete(_ id: String, now: Date = .now) {
-    update(id) { note in
+    update(id, now: now) { note in
       if note.deletedAt == nil { note.deletedAt = Note.stamp(now) }
     }
   }
 
   /// 从「最近删除」放回原处
-  func restore(_ id: String) { update(id) { $0.deletedAt = nil } }
+  func restore(_ id: String, now: Date = .now) { update(id, now: now) { $0.deletedAt = nil } }
 
-  /// 永久删除：不进「最近删除」，找不回来
-  func erase(_ id: String) { erase([id]) }
+  /// 永久删除：不进「最近删除」，找不回来（留一块墓碑，同步时告诉别的电脑）
+  func erase(_ id: String, now: Date = .now) { erase([id], now: now) }
 
   /// 清空「最近删除」：里面的全部永久删除（一个事务）。返回删了几条
   @discardableResult
-  func emptyTrash() -> Int {
+  func emptyTrash(now: Date = .now) -> Int {
     let ids = Set(notes.filter { $0.deletedAt != nil }.map(\.id))
-    erase(ids)
+    erase(ids, now: now)
     return ids.count
   }
 
@@ -355,36 +462,66 @@ import Observation
   func purgeExpired(now: Date = .now) -> Int {
     let cutoff = now.addingTimeInterval(-Double(Self.trashDays) * 86_400)
     let expired = notes.filter { note in note.deletedAt.map { $0 < cutoff } ?? false }
-    erase(Set(expired.map(\.id)))
+    erase(Set(expired.map(\.id)), now: now)
     return expired.count
   }
 
-  private func erase(_ ids: Set<String>) {
-    let doomed = ids.filter { id in notes.contains { $0.id == id } }
+  private func erase(_ ids: Set<String>, now: Date) {
+    let doomed = notes.filter { ids.contains($0.id) }
     guard !doomed.isEmpty else { return }
-    notes.removeAll { doomed.contains($0.id) }
-    for id in doomed {
-      summaries[id] = nil
-      wallCards[id] = nil
-    }
-    unsaved.formUnion(doomed)
+    remove(doomed, tombstones: [:])
     flush()
+  }
+
+  /// 从内存里拿掉这几条（落盘时从库里删），各留一块墓碑：被删那一版的钟和状态时刻（同步时压住它和它的前身，NoteSync），
+  /// 再并上传进来的（同步时压住它的那块）和本机原来就有的
+  private func remove(_ doomed: [Note], tombstones: [String: NoteSync.Tombstone]) {
+    let ids = Set(doomed.map(\.id))
+    notes.removeAll { ids.contains($0.id) }
+    for note in doomed {
+      summaries[note.id] = nil
+      wallCards[note.id] = nil
+      var tombstone = NoteSync.Tombstone(clock: note.clock, state: note.stateTime)
+      for other in [tombstones[note.id], erased[note.id]].compactMap({ $0 }) {
+        tombstone = tombstone.merged(with: other)
+      }
+      erased[note.id] = tombstone
+      unsavedTombstones.insert(note.id)
+    }
+    unsaved.formUnion(ids)
+  }
+
+  /// 这条又有了（导入、同步加回来的）：墓碑拿掉
+  private func revive(_ id: String) {
+    guard erased[id] != nil else { return }
+    erased[id] = nil
+    unsavedTombstones.insert(id)
   }
 
   /// 排到最前用的 order：比现有的都小 1
   private var top: Double { (notes.map(\.order).min() ?? 0) - 1 }
 
-  /// 改一条，只改内存、记成没落盘：真的变了才算——修订号 +1，标题 / 正文 / 颜色变了就把「改于」记成 now
-  /// （不动这三样的改动不用给 now）。返回变没变
+  /// 改一条，只改内存、记成没落盘：真的变了才算——修订号 +1；标题 / 正文 / 颜色变了就把「改于」记成 now、版本钟
+  /// 自己那一格 +1；归档 / 固定 / 删除变了就记 stateChangedAt、顺序变了记 orderChangedAt（都只往前走：至少比这条上一次
+  /// 晚 1 毫秒——看过别的电脑同步来的再改，一定比它晚，NoteSync）。返回变没变
   @discardableResult
-  private func mutate(_ id: String, now: Date? = nil, _ change: (inout Note) -> Void) -> Bool {
+  private func mutate(_ id: String, now: Date = .now, _ change: (inout Note) -> Void) -> Bool {
     guard let index = notes.firstIndex(where: { $0.id == id }) else { return false }
     let old = notes[index]
     var note = old
     change(&note)
     guard note != old else { return false }
-    if let now, (note.title, note.body, note.color) != (old.title, old.body, old.color) {
+    if (note.title, note.body, note.color) != (old.title, old.body, old.color) {
       note.modifiedAt = Note.stamp(now)
+      note.clock[deviceID, default: 0] += 1
+    }
+    if (note.isArchived, note.isPinned, note.deletedAt)
+      != (old.isArchived, old.isPinned, old.deletedAt)
+    {
+      note.stateChangedAt = Note.stamp(max(now, old.stateTime.addingTimeInterval(0.001)))
+    }
+    if note.order != old.order {
+      note.orderChangedAt = Note.stamp(max(now, old.orderTime.addingTimeInterval(0.001)))
     }
     note.revision = Note.nextRevision(after: note.revision)
     notes[index] = note
@@ -393,8 +530,8 @@ import Observation
   }
 
   /// 改一条（不动标题、正文、颜色的那些改动）并当场落盘
-  private func update(_ id: String, _ change: (inout Note) -> Void) {
-    if mutate(id, change) { flush() }
+  private func update(_ id: String, now: Date = .now, _ change: (inout Note) -> Void) {
+    if mutate(id, now: now, change) { flush() }
   }
 
   // MARK: 落盘
@@ -408,7 +545,7 @@ import Observation
     retryTask?.cancel()
     retryTask = nil
     unsavedSince = nil
-    guard !unsaved.isEmpty else { return true }
+    guard !unsaved.isEmpty || !unsavedTombstones.isEmpty else { return true }
     do {
       try db.transaction {
         // 内存里还有的写上，已经没有的（永久删除、到期清理的）从库里删
@@ -418,8 +555,18 @@ import Observation
           gone.remove(note.id)
         }
         for id in gone { try db.execute("DELETE FROM notes WHERE id = ?", [id]) }
+        for id in unsavedTombstones {
+          if let tombstone = erased[id] {
+            try db.execute(
+              "INSERT OR REPLACE INTO note_erased(id, clock, state_changed_at) VALUES (?, ?, ?)",
+              [id, NoteSync.text(of: tombstone.clock), Note.milliseconds(tombstone.state)])
+          } else {
+            try db.execute("DELETE FROM note_erased WHERE id = ?", [id])
+          }
+        }
       }
       unsaved = []
+      unsavedTombstones = []
       failures = 0
       if saveProblem != nil { saveProblem = nil }
       return true
@@ -509,12 +656,15 @@ import Observation
       let order = entry.order.isFinite ? entry.order : 0
       guard let offset = offsets[entry.id] else {
         offsets[entry.id] = notes.count
+        // 导进来的算本机的一次改动（版本钟自己那一格）：和别的电脑同步来的同一条不一样时走冲突那条路，不被悄悄盖掉
         notes.append(
           Note(
             id: entry.id, title: title, body: body, color: color,
             createdAt: min(Note.date(milliseconds: entry.createdAt), now), modifiedAt: modified,
             revision: min(max(entry.revision, 0), Note.maxRevision), isArchived: entry.archived,
-            isPinned: entry.pinned, order: order))
+            isPinned: entry.pinned, order: order, stateChangedAt: now, orderChangedAt: now,
+            clock: [deviceID: 1]))
+        revive(entry.id)
         unsaved.insert(entry.id)
         result.added += 1
         continue
@@ -530,6 +680,15 @@ import Observation
       note.isArchived = entry.archived
       note.isPinned = entry.pinned
       note.order = order
+      if (title, body, color) != (old.title, old.body, old.color) {
+        note.clock[deviceID, default: 0] += 1
+      }
+      if (note.isArchived, note.isPinned) != (old.isArchived, old.isPinned) {
+        note.stateChangedAt = Note.stamp(max(now, old.stateTime.addingTimeInterval(0.001)))
+      }
+      if note.order != old.order {
+        note.orderChangedAt = Note.stamp(max(now, old.orderTime.addingTimeInterval(0.001)))
+      }
       notes[offset] = note
       unsaved.insert(entry.id)
       result.updated += 1
@@ -538,13 +697,81 @@ import Observation
         let copy = Note(
           id: UUID().uuidString, title: old.title, body: old.body, color: old.color,
           createdAt: old.createdAt, modifiedAt: old.modifiedAt, isArchived: old.isArchived,
-          isPinned: old.isPinned, order: old.order, deletedAt: now)
+          isPinned: old.isPinned, order: old.order, deletedAt: now, stateChangedAt: now,
+          orderChangedAt: now, clock: [deviceID: 1])
         notes.append(copy)
         unsaved.insert(copy.id)
       }
     }
     result.saved = flush()
     return result
+  }
+
+  // MARK: 同步（便签未来计划 A；合并规则在 NoteSync，执行层在同步文件夹那几批）
+
+  /// 把一轮合并的结果落下去（一个事务）。merges：编号 → NoteSync.merge 合出来的（这一轮没变的可以不传）；tombstones：这一轮
+  /// 读到的墓碑（并好的，本机因此真删时记进本机的墓碑）。**合的时候本机那条是哪个修订号（Merge.base）对不上就跳过**：
+  /// 合完到落下去之间本机又改了（打了字、删了、永久删了），不拿旧的盖它，下一轮再合。
+  /// - 合出来是 nil、本机有：真删（留墓碑）；
+  /// - 和本机那条不一样：换上（「改于」、钟、时刻、修订号都照合出来的——这不是本机的改动，不另 +1）；本机没有：加上，
+  ///   墓碑拿掉；
+  /// - 冲突里输了的那几版（copies）：本机还没有、本机和这一轮都没有它的墓碑（永久删过）的才加。
+  /// 返回落没落下去（没落下去的留在内存里、照常重试）
+  @discardableResult
+  func applySync(
+    _ merges: [String: NoteSync.Merge], tombstones: [String: NoteSync.Tombstone]
+  ) -> Bool {
+    var offsets: [String: Int] = [:]
+    for (offset, note) in notes.enumerated() { offsets[note.id] = offset }
+    var doomed: [Note] = []
+    var copies: [Note] = []
+    for (id, merge) in merges.sorted(by: { $0.key < $1.key }) {
+      guard offsets[id].map({ notes[$0].revision }) == merge.base else { continue }
+      copies += merge.copies
+      guard let note = merge.note else {
+        if let offset = offsets[id] { doomed.append(notes[offset]) }
+        continue
+      }
+      if let offset = offsets[id] {
+        guard notes[offset] != note else { continue }
+        notes[offset] = note
+      } else {
+        offsets[id] = notes.count
+        notes.append(note)
+        revive(id)
+      }
+      unsaved.insert(id)
+    }
+    for copy in copies
+    where offsets[copy.id] == nil && erased[copy.id] == nil && tombstones[copy.id] == nil {
+      offsets[copy.id] = notes.count
+      notes.append(copy)
+      unsaved.insert(copy.id)
+    }
+    if !doomed.isEmpty { remove(doomed, tombstones: tombstones) }
+    return flush()
+  }
+
+  /// 写进同步文件夹之后记下那时的修订号（nil = 拿掉：那个文件删了），当场写进库。写不成抛错（下一轮再写一遍文件就是）
+  func recordPublished(_ revisions: [String: Int?]) throws {
+    guard !revisions.isEmpty else { return }
+    try db.transaction {
+      for (id, revision) in revisions {
+        if let revision {
+          try db.execute(
+            "INSERT OR REPLACE INTO note_published(id, revision) VALUES (?, ?)", [id, revision])
+        } else {
+          try db.execute("DELETE FROM note_published WHERE id = ?", [id])
+        }
+      }
+    }
+    for (id, revision) in revisions { published[id] = revision }
+  }
+
+  /// 关掉同步、换了文件夹：写过哪些的账清掉（再打开当第一次：全部重写一遍）
+  func clearPublished() throws {
+    try db.execute("DELETE FROM note_published")
+    published = [:]
   }
 
   // MARK: 库里的一行
@@ -554,7 +781,9 @@ import Observation
       note.id, note.title, note.body, Note.storedPreset(of: note.color),
       Note.milliseconds(note.createdAt), Note.milliseconds(note.modifiedAt), note.revision,
       note.isArchived, note.isPinned, note.order, note.deletedAt.map(Note.milliseconds),
-      Note.storedTint(of: note.color),
+      Note.storedTint(of: note.color), note.stateChangedAt.map(Note.milliseconds),
+      note.clock.isEmpty ? nil : NoteSync.text(of: note.clock),
+      note.orderChangedAt.map(Note.milliseconds), note.revision,
     ]
   }
 
@@ -572,6 +801,9 @@ import Observation
       createdAt: Note.date(milliseconds: created), modifiedAt: Note.date(milliseconds: modified),
       revision: min(max(Int(clamping: row.int(6) ?? 0), 0), Note.maxRevision),
       isArchived: row.int(7) == 1, isPinned: row.int(8) == 1, order: order.isFinite ? order : 0,
-      deletedAt: row.int(10).map(Note.date(milliseconds:)))
+      deletedAt: row.int(10).map(Note.date(milliseconds:)),
+      stateChangedAt: row.int(12).map(Note.date(milliseconds:)),
+      orderChangedAt: row.int(14).map(Note.date(milliseconds:)),
+      clock: row.text(13).map(NoteSync.clock(text:)) ?? [:])
   }
 }

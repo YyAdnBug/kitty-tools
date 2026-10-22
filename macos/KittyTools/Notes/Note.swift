@@ -2,8 +2,10 @@
 // 两样都不带正文里的符号（标题的 #、任务的五种方框、Markdown 的标记和颜色、代码块的围栏行；代码块里的字照原文）。
 // 便签管「留着看、接着改」的东西（PLAN §10「便签」）；库、落盘、搜索、导入导出在 NoteStore，每日备份和打不开时的恢复在
 // NotesBackup。
-// 为以后的同步先留好的三样（这一版不同步）：稳定的编号（UUID 字符串，建了就不变，导出文件里带着）、修订号（任何字段变
-// 一次 +1：判断「上次同步之后改没改过」不用看时钟）、删除记录（deletedAt 非空 = 在「最近删除」里，以后就是墓碑）。
+// 同步要的几样（便签未来计划 A，同步文件夹；合并规则在 NoteSync）：稳定的编号（UUID 字符串，建了就不变，导出文件里带着）、
+// 内容的版本钟（clock：每台电脑改过几次内容，分得清「对面是在我这一版之上改的」还是「两边各改各的」）、状态和顺序改动的
+// 时刻（stateChangedAt / orderChangedAt：归档 / 固定 / 删除一组、顺序一组，各自后改的赢）、删除记录（deletedAt 非空 = 在「最近删除」里；永久删除
+// 的墓碑在 NoteStore）。修订号（任何字段变一次 +1）只是本机的账：落盘、要不要重新写进同步文件夹。
 // 时间只精确到毫秒：库里、导出文件里存的都是整数毫秒，内存里的值也先对齐到毫秒（stamp），往返不丢、能直接比。
 // 进仓库、进文件之前要过一遍的收拾也在这里（sanitized(text:) / sanitized(title:) / clamped(color:) / nextRevision）：
 // 仓库的每个写入口和读导出文件时用同一份。
@@ -51,9 +53,23 @@ nonisolated struct Note: Identifiable, Equatable, Sendable {
   var order: Double = 0
   /// 非空 = 在「最近删除」里（什么时候删的）
   var deletedAt: Date?
+  /// 归档 / 固定 / 删除最后一次变的时刻（同步时这一组按它「后改的赢」）；nil = 不知道（导出文件来的），按「改于」算
+  /// （stateTime）。0.6.0 之前的库打开时补上（NoteStore）
+  var stateChangedAt: Date?
+  /// 顺序最后一次变的时刻（同步时顺序单独按它「后改的赢」：整列重排不翻掉别的电脑同时做的删除、归档）；nil 按 stateTime
+  var orderChangedAt: Date?
+  /// 内容（标题、正文、颜色）的版本钟：电脑编号 → 这台电脑改过几次。本机改一次内容自己那一格 +1；同步时一边的钟每格都
+  /// 不小于另一边 = 它是在另一边之上改的（快进），谁都盖不住谁 = 两边各改了（冲突）。空 = 没记过（0.6.0 之前的）
+  var clock: [String: Int] = [:]
 
   /// 没归档、没删（「全部」里列的、屏幕边缘那叠里有的、能开着能浮着的）
   var isActive: Bool { !isArchived && deletedAt == nil }
+
+  /// 状态那一组最后一次变的时刻：没记过按「改于」
+  var stateTime: Date { stateChangedAt ?? modifiedAt }
+
+  /// 顺序最后一次变的时刻：没记过按状态的
+  var orderTime: Date { orderChangedAt ?? stateTime }
 
   // MARK: 收拾（进仓库、进文件之前）
 

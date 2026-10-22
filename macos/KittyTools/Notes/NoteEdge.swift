@@ -77,8 +77,8 @@ final class NoteEdge {
     floats.configure = { [unowned self] float in
       float.model.showInWindow = { [unowned self] in showInWindow($0) }
       float.model.showSettings = { [unowned self] in showSettings() }
-      float.model.recentColors = { [unowned self] in NoteColorPicker.recentColors(in: defaults) }
-      float.model.pickColor = { [unowned self, weak float] id in
+      float.model.recentColors = { NoteColorPicker.recentColors(in: defaults) }
+      float.model.pickColor = { [weak float] id in
         guard let float else { return }
         NoteColorPicker.shared.open(id, in: store, owner: float.model, from: float.panel)
       }

@@ -240,6 +240,8 @@ nonisolated enum NotesRecovery {
       try? manager.removeItem(at: staged)
       if choice == .restore, let backup = problem.backup {
         try manager.copyItem(at: backup.database, to: staged)
+        // 备份里的库是旧的：换一个电脑编号再用（版本钟的计数退回去了，NoteStore.forgetDevice）
+        NoteStore.forgetDevice(inDatabaseAt: staged)
       }
       try setAside(in: directory, everything: choice == .startFresh, now: now, calendar: calendar)
       if choice == .restore, let backup = problem.backup {

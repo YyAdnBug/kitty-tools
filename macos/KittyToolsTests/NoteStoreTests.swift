@@ -653,7 +653,8 @@ struct NoteStoreTests {
     #expect(reopened.flush())
     #expect(try saved(db) == sorted(reopened))
     try db.execute("UPDATE notes SET revision = ? WHERE id = ?", [Int64.min, id])
-    #expect(try NoteStore(db: db).note(id)?.revision == 0)
+    // 夹回 0；库里的行被别的东西改过（和写的时候记的修订号对不上）算本机改了一次，再 +1
+    #expect(try NoteStore(db: db).note(id)?.revision == 1)
   }
 
   // MARK: 导入合并
@@ -694,7 +695,8 @@ struct NoteStoreTests {
           id: fresh, title: "新来的", body: "文件里才有的", color: 5,
           createdAt: Note.date(milliseconds: now - 9_000),
           modifiedAt: Note.date(milliseconds: now - 5_000), revision: 12, isArchived: true,
-          isPinned: true, order: 7.5))
+          isPinned: true, order: 7.5, stateChangedAt: Note.stamp(importedAt),
+          orderChangedAt: Note.stamp(importedAt), clock: [store.deviceID: 1]))
     let replaced = try #require(store.note(older.id))
     #expect(replaced.body == "文件里更新的一版" && replaced.title == "换了标题" && replaced.color == 2)
     #expect(replaced.modifiedAt == Note.date(milliseconds: now + 1))
