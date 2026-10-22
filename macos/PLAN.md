@@ -86,7 +86,7 @@
 | 目录 | 文件 |
 |---|---|
 | `App/` | `KittyToolsApp.swift`（入口 `@main enum Main`：带 `--ocr` 起的是剪贴板后台识字的子进程，只识字不启动 App；否则启动 `KittyToolsApp`，唯一的 scene 是不插入菜单栏的 MenuBarExtra，菜单栏图标在 `Shell/StatusItem.swift`）、`AppDelegate.swift`（单实例检查、组装对象、生命周期、退出和锁屏清理）、`Updater.swift`（应用内更新，D8）、`Log.swift`（统一日志 os.Logger，不记密钥、URL、剪贴板正文） |
-| `Shell/` | `OverlayPanel.swift`、`FilePanel.swift`（从不激活本 App 的地方开系统的存储 / 打开面板：请求激活 + 面板提到 `.modalPanel` 拿到最前，关掉后还前台；2026-10-18 macOS 27 上激活被驳回、面板开在后面「点了没反应」后加）、`TransientPanel.swift`（用时再建、收起后放掉的浮层：两张 ⌘Y 大卡由它拿着，第二轮体检 M3）、`Memory.swift`（让分配器把空页还给系统，M4；空闲回收的计时 `Memory.IdleTimer`，2026-10-07）、`HotKeyCenter.swift`、`HotKeyRecorder.swift`、`Permissions.swift`（辅助功能、屏幕录制、文件和文件夹授权、麦克风（录屏第 4 批）；自动化被拒时打开系统设置）、`Paster.swift`（自家写剪贴板的唯一出口；`write(string:record:)` 把本 App 生成的新文字同时记进剪贴板历史）、`Subprocess.swift`（进程外跑系统命令行工具：更新的 ditto / codesign、系统命令的 pmset / osascript、kill 的 ps / lsof、浏览历史的 sqlite3，还有剪贴板后台识字的子进程（本 App 带 `--ocr`）；要的输出写临时文件，不受 64 KB 管道缓冲限制；可给环境变量、超时、优先级）、`Style.swift`（Whisker 刻度：圆角、七条弹簧曲线、中性色 / 家族色、输入框 `InputBox`、复制对勾停留、卡片表面 `CardSurface`、增强对比度的选中描边 `contrastSelectionBorder`、发丝线 `Hairline` / `hairlineBorder`、主按钮 `BrandButtonStyle`、种类色块、键帽、面板描边、面板内浮层的阴影 `floatingShadow`、空状态 `EmptyState`（剪贴板、翻译浮窗、翻译历史共用，2026-10-12 视觉对齐））、`HoverTracker.swift`（列表行悬停：`.activeAlways` 追踪区，非激活浮层里代替 `onHover`；剪贴板、翻译历史、启动器行共用）、`ListReveal.swift`（列表选中跟随滚动：`ListReveal.target` 纯函数按前缀和给目标 y，`RevealsSelection` 接管 `.scrollPosition`、按上次滚动的终点判断、停下没到补滚一次；剪贴板、启动器、翻译历史共用，第 10 批）、`CommandTextField.swift`（单行输入框：方向键 / 回车 / Tab / Esc 走 doCommandBy，对话框输入框、`maxLength`）、`BarNotice.swift`（剪贴板面板、启动器底栏左边的就地提示）、`SearchLine.swift`（剪贴板面板、启动器顶上的搜索线：线头符号定宽、左右内边距，两块面板同一个，2026-10-12 视觉对齐）、`Accent.swift`（强调色：跟随系统 + 8 色、配色计算、根视图的 `.appAccent()`）、`Island.swift`（刘海岛：全局轻提示，替换原来的 Toast；`Island.announce` 是 VoiceOver 主动播报的唯一入口）、`StatusItem.swift`（菜单栏图标与菜单，NSStatusItem，Whisker D 的呼吸 / 弹一下；`MenuExtra`：菜单栏和启动器内置动作共用的非热键项）、`ActionMenu.swift`（剪贴板 ⌘K、剪贴板筛选面板、剪贴板多选的收藏夹列表、启动器 ⌘K、翻译历史 ⌘K 共用的动作菜单：分节、一级子列表、共用过滤 `filter`（子串 + 拼音前缀），体检 C3 C4）、`Ticker.swift`（每秒在变的一行读数的图层画法，代替 numericText：整行排一次、按字切成一块块图层，每秒只滚变了的数字；状态屏告示上的小字和录制 HUD 的计时共用，2026-10-11 从 `StatusScreen/StatusTicker.swift` 挪过来） |
+| `Shell/` | `OverlayPanel.swift`、`Feature.swift`（功能开关：八个功能各自能整个关掉，和设置侧栏的页同名；2026-10-21，§10「功能开关」）、`FilePanel.swift`（从不激活本 App 的地方开系统的存储 / 打开面板：请求激活 + 面板提到 `.modalPanel` 拿到最前，关掉后还前台；2026-10-18 macOS 27 上激活被驳回、面板开在后面「点了没反应」后加）、`TransientPanel.swift`（用时再建、收起后放掉的浮层：两张 ⌘Y 大卡由它拿着，第二轮体检 M3）、`Memory.swift`（让分配器把空页还给系统，M4；空闲回收的计时 `Memory.IdleTimer`，2026-10-07）、`HotKeyCenter.swift`、`HotKeyRecorder.swift`、`Permissions.swift`（辅助功能、屏幕录制、文件和文件夹授权、麦克风（录屏第 4 批）；自动化被拒时打开系统设置）、`Paster.swift`（自家写剪贴板的唯一出口；`write(string:record:)` 把本 App 生成的新文字同时记进剪贴板历史）、`Subprocess.swift`（进程外跑系统命令行工具：更新的 ditto / codesign、系统命令的 pmset / osascript、kill 的 ps / lsof、浏览历史的 sqlite3，还有剪贴板后台识字的子进程（本 App 带 `--ocr`）；要的输出写临时文件，不受 64 KB 管道缓冲限制；可给环境变量、超时、优先级）、`Style.swift`（Whisker 刻度：圆角、七条弹簧曲线、中性色 / 家族色、输入框 `InputBox`、复制对勾停留、卡片表面 `CardSurface`、增强对比度的选中描边 `contrastSelectionBorder`、发丝线 `Hairline` / `hairlineBorder`、主按钮 `BrandButtonStyle`、种类色块、键帽、面板描边、面板内浮层的阴影 `floatingShadow`、空状态 `EmptyState`（剪贴板、翻译浮窗、翻译历史共用，2026-10-12 视觉对齐））、`HoverTracker.swift`（列表行悬停：`.activeAlways` 追踪区，非激活浮层里代替 `onHover`；剪贴板、翻译历史、启动器行共用）、`ListReveal.swift`（列表选中跟随滚动：`ListReveal.target` 纯函数按前缀和给目标 y，`RevealsSelection` 接管 `.scrollPosition`、按上次滚动的终点判断、停下没到补滚一次；剪贴板、启动器、翻译历史共用，第 10 批）、`CommandTextField.swift`（单行输入框：方向键 / 回车 / Tab / Esc 走 doCommandBy，对话框输入框、`maxLength`）、`BarNotice.swift`（剪贴板面板、启动器底栏左边的就地提示）、`SearchLine.swift`（剪贴板面板、启动器顶上的搜索线：线头符号定宽、左右内边距，两块面板同一个，2026-10-12 视觉对齐）、`Accent.swift`（强调色：跟随系统 + 8 色、配色计算、根视图的 `.appAccent()`）、`Island.swift`（刘海岛：全局轻提示，替换原来的 Toast；`Island.announce` 是 VoiceOver 主动播报的唯一入口）、`StatusItem.swift`（菜单栏图标与菜单，NSStatusItem，Whisker D 的呼吸 / 弹一下；`MenuExtra`：菜单栏和启动器内置动作共用的非热键项）、`ActionMenu.swift`（剪贴板 ⌘K、剪贴板筛选面板、剪贴板多选的收藏夹列表、启动器 ⌘K、翻译历史 ⌘K 共用的动作菜单：分节、一级子列表、共用过滤 `filter`（子串 + 拼音前缀），体检 C3 C4）、`Ticker.swift`（每秒在变的一行读数的图层画法，代替 numericText：整行排一次、按字切成一块块图层，每秒只滚变了的数字；状态屏告示上的小字和录制 HUD 的计时共用，2026-10-11 从 `StatusScreen/StatusTicker.swift` 挪过来） |
 | `Storage/` | `Database.swift`、`Backup.swift`（数据库的每日备份 `Backup` + 打不开时的恢复 `Recovery`，第二轮体检 S2）、`Keychain.swift`、`Prefs.swift`、`SettingsArchive.swift`（设置与数据的导出与导入：文件格式、读文件时的校验、整类替换 / 按 id 合并、密钥的加解密，片段 / 文字收藏 / 生词本的导出，2026-10-07；2026-10-12 加第七类「便签」`NoteEntry`、格式 2：逐条宽松解码、按编号并进便签库）、`SettingsBackup.swift`（设置与数据的每日自动备份：导出文件每天存一份、导入前存一份，起名、列出、写、轮换，2026-10-08）（~~`LegacyImport.swift`~~ 2026-09-26 随旧版导入删掉） |
 | `Clipboard/` | `ClipboardWatcher.swift`、`ClipboardStore.swift`、`ClipItem.swift`、`ClipboardFilter.swift`、`ContentForm.swift`、`Search.swift`、`ImageStore.swift`、`OCR.swift`、`ClipboardPanelModel.swift`（面板状态与操作：筛选标签、选中 / 多选、键盘命令、粘贴 / 复制 / 删除撤销栈、⌘K）、`ClipboardPanelView.swift`、`ClipRowView.swift`、`LensView.swift`（透镜：选中行原地展开的预览）、`PreviewView.swift`、`Dialogs.swift`、`Snippet.swift`（片段占位符展开）、`LinkPreview.swift`（链接富预览：按块读网页 og 标签、isFetchable、内存缓存；头图的缩略图空闲时丢掉、照留着的字节重解）、`QuickLookView.swift`（⌘Y 放大预览）、`ClipDrag.swift`（行拖到别的 App：AppKit 拖放会话 + 行首图标块和标题的预览，体检 D3） |
 | `Translate/` | `TranslateCoordinator.swift`、`TranslateService.swift`（服务列表与配置：内置 8 家可删可加回、自建 AI 实例、厂商预设）、`Language.swift`（应用内语言、语种检测、源 / 目标解析）、`SelectionReader.swift`、`SourceTextView.swift`（多行输入框：翻译原文、剪贴板编辑正文 / 新建片段、便签的快速记一条；便签的正文不用它，用 `Notes/NoteTextView.swift`）、`HTTP.swift`（JSON POST、SSE 读取、中文错误信息）、`SSE.swift`、`Providers/`（`Zhipu.swift`、`AIService.swift`（OpenAI 兼容 / Azure / Anthropic，也给智谱复用流式请求；按地址认厂商的表 `AIVendor`，第 13 批）、`RESTProviders.swift`（百度、有道、Google、DeepL / DeepLX、微软）、`CloudProviders.swift`（火山、腾讯，请求签名）、`Signing.swift`（摘要工具、非流式请求包装））、`TranslatePanelView.swift`、`ProviderCardView.swift`（含服务身份 `ServiceTile`：官方 logo、官网图标或品牌色块，彗星边框、骨架扫光）、`ServiceIcons.swift`（自建 AI 服务的官网图标：推官网、经 `LinkPreview.siteIcon` 取、磁盘缓存，第 13 批）、`ResultText.swift`（结果卡片的正文：普通 Text + 生成中的光标；原 RevealText 的显影第二轮体检第 1c 批拿掉）、`HistoryStore.swift`、`HistoryView.swift`（含历史 ⌘K 的动作和 `HistoryMenu`：导出、清空，浮窗「⋯」菜单 / 历史 ⌘K / 设置 › 翻译共用）、`Speaker.swift`（朗读：收起即停、挑高音质声线）、`WordLookup.swift`（查词：是不是一个词、系统词典查询与解析、单词模式示例，D4）、`DictionaryCardView.swift`（系统词典卡） |
@@ -520,7 +520,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 - **在哪**：`KittyTools/Launchpad/`（§4 文件表），设置页 `Settings/LaunchpadTab.swift`；规矩 `mac-launchpad.mdc` + `mac-whisker-launchpad.mdc`；手测 `HANDTEST.md`「启动台手测」。
 - **窗口**：自建窗口的新例外 `LaunchpadPanel`（mac-overlay-panel §1）：盖满鼠标所在那块屏、`.statusBar`、`.nonactivatingPanel` + `canBecomeKey`、不激活本 App、每次打开新建、收起放掉。盖住整块屏（菜单栏和程序坞都在下面）——普通窗口做不到「盖住菜单栏又让程序坞露在上面」，这是唯一做不到和 macOS 15 一样的地方（SPEC §3.2）。
 - **布局**：一份 JSON 存 `Prefs.launchpadLayout`（注册空串默认值，SettingsArchive 的「设置」一类跟着导出 / 导入和每日备份走；不另开库）。App 按 bundle id 认（没有的按解开链接后的路径）。第一次打开、还没存过布局时：有系统旧启动台库就自动导入（SPEC §5.4），读不到用默认排法（系统 App 在前、`Utilities` 进「其他」文件夹、其余按显示名）。
-- **入口**：菜单栏一项、现有启动器里一条「启动台」、全局快捷键（默认不设）、触控板捏合（第 3 批，主入口）、触发角（第 3 批，默认关）。总开关 `Prefs.launchpadEnabled`。截图 / 录屏 / 状态屏 / 正在录快捷键时不响应；打开别的功能先收起。
+- **入口**：菜单栏一项、现有启动器里一条「启动台」、全局快捷键（默认不设）、触控板捏合（第 3 批，主入口）、触发角（第 3 批，默认关）。总开关 `Prefs.launchpadEnabled`（2026-10-21 并进功能开关 `Feature.launchpad`，见下面「功能开关」）。截图 / 录屏 / 状态屏 / 正在录快捷键时不响应；打开别的功能先收起。
 - **不做**（这一版）：下载中的 App 进度图标、往程序坞拖、iCloud 同步布局、小组件、按分类自动整理、多块屏同时显示、「启动台」作为独立 App 出现在程序坞里、自定义图标、隐藏某个 App、给文件夹换颜色、「最近使用」排序。
 - **进度**：第 1 批（2026-10-18）模型和纯函数、App 目录、默认排法、全屏面板、网格 / 分页 / 两指滑 / 圆点 / 搜索 / 键盘导航 / 打开 App、开收动画、入口、总开关、设置页骨架、`MARKETING_VERSION` 0.6.0 + 更新日志、规则和本节的初稿。第 2 批（2026-10-18）拖动排序和跨页（跟手、让位、边缘停着翻页、Esc 取消）、文件夹（原地展开、改名、内部分页、拖进 / 拖出、只剩一个解散）、抖动模式和删 App（按住 1 秒 / 按住 ⌥、只有 App Store 装的出 ✕、确认后 `NSWorkspace.recycle`）、每次挪动马上存、改行列数重新分页。第 3 批（2026-10-18）触控板捏合（`PinchRecognizer` 纯状态机 + `TouchpadWatcher` 运行时 `dlopen` 私有框架 + 系统手势只读检测 + 设置里那一组）、触发角（`LaunchpadCorner` 每屏一个几点的透明 NSPanel 实例 + 追踪区）、旧库导入（`LaunchpadImport`：拷贝 → `file:…?mode=ro` 只读打开拷贝（**不读 `immutable=1`，会跳过 -wal**）→ 三张表 → 纯函数拼布局；第一次打开自动一次 + 设置里两个按钮）。第 4 批（2026-10-18）设置页补全（触控板那一组、触发角、导入 / 恢复 / 撤销；`Form` 显式 `.formStyle(.grouped)`，和别的设置页一致）、菜单栏 / 启动器 / 快捷键页 / 速查表各一项同名同序、`SnapshotProbeTests/launchpad()`（17 张图，浅深各一份 + 设置页；F30 补了整页 / 第 2 页空位 / 宽文件夹 / 浅色搜索）、`LaunchpadBitmapTests`（画进位图：第 2 页第 3 行第 1 格有图标、第 2 / 3 格是空的）、`LaunchpadProbeTests`（按需 `TEST_RUNNER_KITTY_LAUNCHPAD_PROBE=1`）。
 - **四批评审后的一轮（2026-10-18，FIXES F1–F46）**：拖到有图标的格子上不再一律建文件夹（停中心 0.4 s 才合成，边沿 / 快松 = 排序）；文件夹 7 × 5 = 35 个一页、原地展开；页边界不再被整份重排（只有超容量才推下去），新装接最后；导入读 WAL、取 `ROOTPAGE`、整理重复 / 单 App 文件夹；布局读不出来时不覆盖、设置导入 / 备份不再丢布局；删 App 走 `NSWorkspace.recycle`、失败带「在访达中显示」；面板先出岛后出、收起按窗口簿记、内容晚一拍拆、失去 key 收起；捏合默认按系统开着算、设置页回来就生效；触发角 `.statusBar`、重新武装、系统冲突提示；抖动改图层、文件夹按内容行数、读屏和格内点击区；随机测试开关改对（`KITTY_LAUNCHPAD_FUZZ`）并加纯函数 + model 两层、改容量 / 新装 / 删除 / 加进文件夹。
@@ -555,6 +555,35 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 
 ---
 
+### 功能开关（2026-10-21 立项，0.6.0）
+
+- 用户 2026-10-21：「不用的功能模块可以有一个关闭的按钮，或者就不加载这个模块」。方案 `build/research/features-2026-10-21/SPEC.md`（D1–D8 都按推荐；
+  原想交用户的 agent 做，2026-10-22 用户改成主会话直接做，在单独的检出 `kitty-tools-macos-features`、分支 `features-wip`）。
+- 对标（官方文档 / 源码核实过）：PowerToys（仪表盘每个工具一个开关 + 工具页顶部「启用」卡片，关掉的页变灰、快捷键透传、进程结束）、Stats（模块
+  enable / disable 起停 reader 和定时器、移除菜单栏小组件）、iStat Menus（每页顶部大开关）、Raycast（关掉的命令不进根搜索）。
+- 原理：代码不拆插件（`Bundle.unload` 要保证没人引用、`dlclose` 不卸含 Objective-C 类的库）；没执行过的代码页本来不进常驻内存，
+  省的是运行时的东西——全局快捷键（交还系统）、剪贴板 0.3 s 轮询和复制图片后的识字、启动器 / 启动台启动时扫目录、启动台常驻图标（约 15 MB）、
+  触控板回调、触发角、便签屏幕边缘的药丸。
+- 拍板：八个功能（= 设置侧栏的八页，`Feature` 与 `SettingsPage` 同名）各一个开关；两处同一个偏好（通用页最上面「功能」一组 + 各页第一行「启用…」，
+  关着的页其余设置变淡点不了、管数据的不变）；立即生效；关掉 = 入口全藏 + 快捷键不注册 + 后台停，**数据层照常**（库照开、每日备份、保留天数和
+  「最近删除」到期照删）；默认全开、引导不加；启动台原来的总开关并进来；开关跟着导出的「设置」走，导入会让剪贴板从关变开、让复制即译实际跑起来时
+  橙字提醒；不做一键全关。
+- 实现：`Shell/Feature.swift`；偏好 `feature.<名字>`（`Prefs.featurePrefix`，注册默认值 true；读用 `Feature.isOn`，没存过 = 开）；
+  `HotKeyAction.feature` / `isActive`（注册、分节用它；查重仍用 `isAvailable`，关着的功能的键也算）；`HotKeyAction.sections` 改成现算
+  （`visibleSections(enabled:)`：两个功能合一节的只剩一个时节标题换成它的名字）；启动器内置动作的缓存键 `ActionState.features`；
+  `ShortcutsSheet.groups(enabled:)`（组和行可标 `features` / `needs`）；`AppDelegate.applyFeatures`（启动时只起开着的，之后看
+  `UserDefaults.didChangeNotification`、只对变了的功能做事）；剪贴板关着时轮询只为复制即译跑（`ClipboardWatcher.records`，过滤照旧）、
+  两样都用不上时 `stop()`；自家写剪贴板记不记历史统一看 `recordsClipboard`；便签关着时那叠靠 `NoteDeckOptions.isEnabled` 自己收、浮动便签
+  `suspend(covering: .infinite)` 藏起来（固定位置不清）、启动时关着就不 `start()`；启动器里归关着的功能的收藏只藏不删；
+  `Launchpad.turnOff()` 放掉图标位图；跨功能的入口（剪贴板 ⌘T / 「钉到屏幕」、启动器 cb / fy、截图工具栏的翻译和录屏、钉图的翻译）关着时不出现，
+  `run(_:)` 等几处再兜一道。设置页的变灰是 `.gated(by:)`（`.disabled` + 乘禁用不透明度：分组表单里光 `.disabled` 标签不变淡，屏外实测）。
+- 评审后一轮（一个只读评审 agent，没查出崩溃 / 丢数据）：三块主面板加「建过没有」的弱引用（`builtClipboardPanel` 等），收起时只收建过的——
+  原来打开设置窗、呼出别的面板都会为了收起把三块面板建出来，关着的功能也一样；钉图在 `PinBoard.pin` 一处挡（角落缩略图、剪贴板都走它，
+  缩略图上的钉图钮和菜单项跟着藏）；菜单栏「只有一项、节标题和它同名」的节不画节标题（关掉剪贴板后只剩「启动器」那一节）；
+  关翻译时浮窗没开着也直接停请求和朗读；启动器「全开时的列表」只算一次、不进缓存（`actions(_:caching:)`）。
+- 验证：单测 `FeatureTests`（分节、启动器内置动作和收藏只藏不删、速查表、迁移、注册默认值）、`SettingsArchiveTests.listsFeatureSwitchLosses`；几条原来读活偏好的
+  分节 / 速查表单测改成喂全集（用户在 Dev 版里关了功能也不挂）；截图自检 `SnapshotProbeTests/features()`。手测 `HANDTEST.md`「功能开关手测」1–14。
+
 ## 11½. Whisker 设计语言改造（2026-09-25 起）
 
 已归档到 `docs/archive/PLAN-12.md` §11½（A–E 各阶段的内容、状态和 2026-09-26 的交接）。现状：A 基础与招牌时刻、B 界面重做、C 品牌、E 截图重设计都已完成（待手测）；D 深度只剩「macOS 26 玻璃 + `.icon`」——玻璃分支第 11 批已写好，等 26 测试机按 `HANDTEST.md`「macOS 26 手测」实测，`.icon` 也等 26。规范正文在 `.cursor/rules/mac-whisker.mdc`（核心）和各 `mac-whisker-<界面>.mdc`。
@@ -563,6 +592,9 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 ## 12. 进度与交接（2026-09-24，新会话从这里接着做）
 
 > 2026-10-03 瘦身：原来的完成记录和整段的「下一步」「暂不发版」「发布」「接手须知」原样挪到 `docs/archive/PLAN-12.md`；**手测清单**（原「待用户手测」那一大段）原样挪到 `HANDTEST.md`，条目和编号不变——代码注释里的「PLAN §12 第 N 条」「§12「录屏 / 录音手测」N」「§12「macOS 26 手测」第 1 条」都去那里按小节名找。新的手测条目加在 `HANDTEST.md` 里。
+
+**2026-10-22：功能开关**（§10「功能开关」）：八个功能都能在 设置 › 通用 › 功能 里整个关掉；在 `features-wip` 上做完并提交，没并进 main、没打包，
+待手测 `HANDTEST.md`「功能开关手测」1–14。
 
 **2026-10-19：0.5.0 已发布**（tag `macos-v0.5.0`，latest；用户要求发布，从 `6a6b692a` 的干净检出打的包，更新日志日期改成当天；发布说明照 0.4.0 的格式，「从旧版升级」写了示例便签、⌥N、便签单独存、包变成 10.8 MB。发版冒烟清单「便签」38–52、便签手测、调优手测都没走完，`HANDTEST.md` 照旧待做）。启动台（0.6.0）还在 `launchpad-wip`，没并进 main。
 
