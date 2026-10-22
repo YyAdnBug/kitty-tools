@@ -6,7 +6,7 @@
 
 **kitty-tools 原生 macOS 版**：用 Swift 6 + SwiftUI / AppKit 重写的纯原生菜单栏工具，替代 Tauri 版的 macOS 端。基本自用：只支持 Apple 芯片（arm64），最低 macOS 15.0。
 
-- **功能**：剪贴板历史、翻译（划词 / 输入 / 复制即译 / 截图翻译，全部翻译服务）、启动器（`Launcher/`，⌥Space 的搜索框）、启动台（`Launchpad/`，第八族，0.6.0，复刻 macOS 15 的全屏图标网格，只在 macOS 26 起出现：分页、搜索、拖动排序、文件夹、抖动删 App、触控板捏合、触发角、导入系统旧布局）、截图（`Screenshot/`：框选、标注、识字、钉图、长截图）、录屏与录音（`Screenshot/ScreenRecorder.swift`、`AudioRecorder.swift`）都已做完。状态屏（`StatusScreen/`：一键把所有屏幕盖上告示、拦住键盘鼠标，状态可自定义；2026-10-10 立项，0.4.0，代码已做完、待真机手测，PLAN §10「状态屏」；告示上的图标是 Microsoft Fluent Emoji 的动画表情，MIT，素材随包）。每个功能都能在 设置 › 通用 › 功能 里整个关掉（2026-10-22，`Shell/Feature.swift`，PLAN §10「功能开关」）。
+- **功能**：剪贴板历史、翻译（划词 / 输入 / 复制即译 / 截图翻译，全部翻译服务）、启动器（`Launcher/`，⌥Space 的搜索框）、启动台（`Launchpad/`，第八族，0.6.0，复刻 macOS 15 的全屏图标网格，只在 macOS 26 起出现：分页、搜索、拖动排序、文件夹、抖动删 App、触控板捏合、触发角、导入系统旧布局）、截图（`Screenshot/`：框选、标注、识字、钉图、长截图）、录屏与录音（`Screenshot/ScreenRecorder.swift`、`AudioRecorder.swift`）都已做完。程序坞预览（`DockPreview/`，第九族，0.7.0，2026-10-22 立项：鼠标停在程序坞的 App 图标上弹出它所有窗口的缩略图，点一张切过去；拍板页 `macos/build/research/dock-preview-2026-10-22/decisions.html` 全部按推荐，主会话在 `kitty-tools-macos-dock`（分支 `dock-wip`）分批做，PLAN §10「程序坞预览」）。状态屏（`StatusScreen/`：一键把所有屏幕盖上告示、拦住键盘鼠标，状态可自定义；2026-10-10 立项，0.4.0，代码已做完、待真机手测，PLAN §10「状态屏」；告示上的图标是 Microsoft Fluent Emoji 的动画表情，MIT，素材随包）。每个功能都能在 设置 › 通用 › 功能 里整个关掉（2026-10-22，`Shell/Feature.swift`，PLAN §10「功能开关」）。
 - **版本**：已发布 0.1.0、0.2.0、0.3.0（录屏录音）、0.3.1（第二轮体检）、0.3.2（设置的导出与导入、每天自动备份、启动器 port、长列表性能和常驻内存）、0.4.0（状态屏和全 App 的视觉对齐）、0.5.0（latest，2026-10-19；便签。这几版都是用户要求发布的，真机手测都还没走完，`macos/HANDTEST.md`「状态屏手测」「视觉对齐手测」「便签手测」照旧待做）。**便签**（屏幕边缘的便签，第七族，0.5.0）2026-10-12 立项、2026-10-18 八批全部做完，2026-10-19 随 0.5.0 发布：⌥N 快速记一条、全部便签窗口（便签墙 / 列表）、屏幕边缘那叠、浮动便签；正文是纯文本 + Markdown 显示样式、任务五种状态、文字颜色、行内图片、查找和撤销，能整个或单条导出成 Markdown 再导回，和剪贴板 / 启动器 / 划词翻译打通；便签有单独的库和每日备份、删除留 30 天。代码在 `Notes/`（39 个文件，§4 文件表），拍板和每批摘要看 PLAN §10「便签」（详细记录在 `docs/archive/PLAN-notes.md`），规矩在 mac-overlay-panel §3 §5 §12、mac-whisker-notes、mac-translate §5、mac-clipboard §1；手测 `HANDTEST.md`「便签手测」1–264，发版前先走冒烟清单「便签」15 步（用户试过几轮、报的问题都修了，清单还没逐条打勾）。**启动台**（第八族，0.6.0）2026-10-18 立项，四批、两轮审查和六轮真机反馈都做完，2026-10-19（0.5.0 发布后）并进 main、没发布：拍板和做法在 PLAN §10「启动台」，代码在 `Launchpad/`，规矩在 `mac-launchpad.mdc` + `mac-whisker-launchpad.mdc`，手测在 `macos/HANDTEST.md`「启动台手测」1–66（真机都还没走）。哪些待手测、下一步做什么看 PLAN §12「现状」；手测条目和发版冒烟清单在 `macos/HANDTEST.md`；里程碑 M7–M13、已拍板的 D1–D5 与不迁清单见 PLAN §10。
 - Bundle ID `com.yy.kitty-tools.native`（Debug `com.yy.kitty-tools.native.dev`），不再改（改了会丢偏好、钥匙串和授权）；产品名 / .app 名 `Kitty Tools`（Debug `Kitty Tools Dev`，2026-09-26 起，之前叫 Kitty Tools Native）。和 Tauri 旧版同名：安装前先删掉 /Applications 里旧版的 `Kitty Tools.app`。
 - **规格**：各 `mac-*` 规则（界面与动效按 `mac-whisker`）+ 对标产品（启动器 Alfred / Raycast、翻译 Bob、截图 iShot / CleanShot、录屏 CleanShot / ⌘⇧5、录音 QuickTime / iShot、剪贴板 Paste）。`macos/PLAN.md` 只留仍有效的：§2 技术栈白名单、§4 架构与文件表、§8 打包、§10 约束与已拍板决定、§11 旧逻辑问题与语言规则、§12 现状与下一步；迁移期历史（§5 的 Tauri 映射、§6 数据迁移等）和已完成批次的实现记录原样归档在 `macos/docs/archive/`（PLAN 原位置写了去处）。
@@ -24,7 +24,7 @@
 ```
 macos/                       # 本分支唯一开发区
 ├── KittyTools.xcodeproj/    # 共享 scheme：KittyTools
-├── KittyTools/              # 同步文件夹：App/ Shell/ Storage/ Clipboard/ Translate/ Launcher/ Launchpad/ Screenshot/ StatusScreen/ Notes/ Settings/ Resources/
+├── KittyTools/              # 同步文件夹：App/ Shell/ Storage/ Clipboard/ Translate/ Launcher/ Launchpad/ Screenshot/ StatusScreen/ Notes/ DockPreview/ Settings/ Resources/
 ├── KittyToolsTests/         # 纯函数单测（Swift Testing），M2 起建
 ├── Config/                  # Base/Debug/Release.xcconfig、Info.plist（局部）、Secrets.xcconfig（不入库）
 ├── build-dmg.sh             # 打包：archive → 自检 → DMG + App 内更新用的 zip → notes
@@ -114,6 +114,11 @@ TEST_RUNNER_KITTY_NOTES_COLOR_PROBE=1 xcodebuild -project macos/KittyTools.xcode
 # 逐字比；步数随便给，2 万步 Debug 约半分钟，差异写在失败信息里；另可加 TEST_RUNNER_KITTY_NOTES_FUZZ_SEED=<起始种子> 换一批）
 TEST_RUNNER_KITTY_NOTES_FUZZ=20000 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/NoteEditorFuzzTests/randomEditsMatchWholeText()'
+
+# 程序坞预览的本机探针（按需，几秒；只读：不动屏幕、不切 / 关窗口，会把开着的窗口截进内存、不存盘；测试宿主 = Dev 版，
+# 有辅助功能 / 屏幕录制授权才量得全；grep「dock-probe」：私有接口在不在、程序坞结构、列窗口 / 截缩略图耗时、全透明的几扇）
+TEST_RUNNER_KITTY_DOCK_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -only-testing:'KittyToolsTests/DockPreviewProbeTests/measure()'
 
 # 启动台的性能 / 内存探针（按需，屏外，几秒；grep「launchpad-probe」：扫目录、第一帧、翻页布局、footprint）
 TEST_RUNNER_KITTY_LAUNCHPAD_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
