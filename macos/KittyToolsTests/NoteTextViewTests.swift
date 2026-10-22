@@ -199,6 +199,17 @@ struct NoteTextViewTests {
     #expect(rig.editor.string == "前")
     rig.editor.setText("甲\u{2028}> 乙\u{85}丙")
     #expect(rig.editor.string == "甲\n> 乙\n丙")
+    // 外面换进来的：先换再排（带着软换行排的话系统把两行当一段，围栏行的段前留白落到块里第一行上——随机编辑测试种子 1122）
+    let fenced = "前\n```\u{2028}`\n代码\n```"
+    rig.editor.setText(fenced)
+    let unified = "前\n```\n`\n代码\n```"
+    #expect(rig.editor.string == unified)
+    let block = try Rig(unified)
+    for index in 0..<(unified as NSString).length {
+      #expect(
+        rig.attribute(.paragraphStyle, at: index) as? NSParagraphStyle
+          == block.attribute(.paragraphStyle, at: index) as? NSParagraphStyle, "块 第 \(index) 个字")
+    }
   }
 
   /// 显式搭的 TextKit 1：有 NSLayoutManager、没有 NSTextLayoutManager（下一批藏 Markdown 标记要它）；纯文本、

@@ -7,6 +7,7 @@
 
 import AppKit
 import SwiftUI
+import Synchronization
 
 nonisolated struct NotePaper: Equatable, Sendable {
   /// 一套颜色（0xRRGGBB，sRGB）
@@ -62,7 +63,23 @@ nonisolated struct NotePaper: Equatable, Sendable {
   ]
 
   /// 一条便签的纸色（下标越界的夹回来：库和导入的文件都夹过，这里只是不崩）
-  static func of(_ note: Note) -> NotePaper { all[min(max(note.color, 0), all.count - 1)] }
+  static func of(_ note: Note) -> NotePaper { of(color: note.color) }
+
+  /// 纸色（`Note.color` 的值）→ 这张纸：预设的查表（越界的夹回来），自定义的从色值推（`derived(rgb:)`，按色值缓存）。
+  /// **取纸色一律走这里**，别拿 `Note.color` 直接当 `all` 的下标（自定义的值不是下标）
+  static func of(color: Int) -> NotePaper {
+    guard let rgb = Note.customRGB(of: color) else {
+      return all[min(max(color, 0), all.count - 1)]
+    }
+    if let cached = derivedCache.withLock({ $0[rgb] }) { return cached }
+    let paper = derived(rgb: rgb)
+    derivedCache.withLock {
+      // ponytail: 满了整个清掉，不按最近用过淘汰；一台电脑上用到的自定义色不会多到哪去
+      if $0.count >= 256 { $0.removeAll() }
+      $0[rgb] = paper
+    }
+    return paper
+  }
 
   /// 跟着外观走的三样（AppKit 侧；SwiftUI 用下面的 Color）
   var paperColor: NSColor { Self.dynamic(light.paper, dark.paper) }
@@ -138,6 +155,152 @@ nonisolated struct NotePaper: Equatable, Sendable {
       circle.stroke()
       return true
     }
+  }
+}
+
+// MARK: 自定义纸色（便签未来计划 B1 / B2，2026-10-22）
+
+nonisolated extension NotePaper {
+  /// 推出来的纸按色值缓存：便签墙几百张卡片、那叠的标签每次重画都来取。取色、画图的闭包不读它（只读推好的数）
+  private static let derivedCache = Mutex<[Int: NotePaper]>([:])
+
+  /// 从一个颜色推出整张纸（拍板 B2；原型 `macos/build/research/notes-roadmap-2026-10-19/three-features-proto/derive2.py`）：
+  /// **挑的颜色就是浅色外观的纸**（所见即所得：色相、彩度照它，彩度上限 0.12；挑的是浅色时一个色值都不改）；
+  /// 太深的才往浅里提，提到浅纸的亮度 ≥ 0.62（六种文字颜色要 ≥ 0.594）。色条、墨和深色那套按感知均匀的 OKLCH 推
+  /// （现有 8 套就是这么整齐：浅纸 L 0.86–0.93、浅墨 0.26–0.31、深纸 0.32–0.37、深墨 0.91–0.95，三样同一个色相）：
+  /// 色条 = 纸的 L − 0.25（上限 0.70）、彩度两倍；深纸 L 0.34（亮度超过 0.06 再往暗里压）。每样都在 sRGB 里**取整之后**
+  /// 再量（存的、画的都是取整的那个）。门槛对任意颜色都成立，单测按色相 × 彩度 × 亮度的网格扫一遍（同原型）。
+  /// 增强对比度那一档全是「墨更浓 / 换成墨」，从这三样跟着来，不另算
+  static func derived(rgb: Int) -> NotePaper {
+    let picked = PaperMath.oklch(rgb)
+    var chroma = min(picked.c, 0.12)
+    if chroma < 0.012 { chroma = 0 }
+    let stripChroma = chroma > 0 ? min(chroma * 2, 0.19) : 0
+    let hue = picked.h
+    var lightness = max(picked.l, 0.84)
+    var paper = PaperMath.gamut(lightness, chroma, hue)
+    // 挑的本来就是一张合格的浅纸：原样用（推回来的可能差 1/255）
+    if chroma == picked.c, lightness == picked.l, PaperMath.luminance(rgb) >= 0.62 {
+      paper = rgb & 0xFFFFFF
+    }
+    while PaperMath.luminance(paper) < 0.62, lightness < 0.985 {
+      lightness += 0.005
+      paper = PaperMath.gamut(lightness, chroma, hue)
+    }
+    let strip = PaperMath.gamut(min(lightness - 0.25, 0.70), stripChroma, hue)
+    let ink = PaperMath.gamut(0.28, min(stripChroma * 0.35, 0.07), hue)
+    let darkChroma = min(stripChroma * 0.4, 0.08)
+    var darkLightness = 0.34
+    var darkPaper = PaperMath.gamut(darkLightness, darkChroma, hue)
+    while PaperMath.luminance(darkPaper) > 0.06, darkLightness > 0.2 {
+      darkLightness -= 0.005
+      darkPaper = PaperMath.gamut(darkLightness, darkChroma, hue)
+    }
+    return NotePaper(
+      name: customName(rgb: paper),
+      light: Tone(paper: paper, strip: strip, ink: ink),
+      dark: Tone(
+        paper: darkPaper, strip: PaperMath.gamut(0.73, stripChroma, hue),
+        ink: PaperMath.gamut(0.92, min(stripChroma * 0.3, 0.05), hue)))
+  }
+
+  /// 和哪种预设最近：推出来的浅纸和 8 张预设浅纸在 OKLab 里的距离。落盘时 `color` 写它（已发布的 0.5.0 读到的就是它），
+  /// 读回来时也拿它对一遍（`Note.color(preset:tint:)`），两处必须是同一个函数
+  static func nearestPreset(rgb: Int) -> Int {
+    let paper = PaperMath.oklab(of(color: Note.custom(rgb: rgb)).light.paper)
+    let distances = all.map { preset in
+      let other = PaperMath.oklab(preset.light.paper)
+      return pow(paper.l - other.l, 2) + pow(paper.a - other.a, 2) + pow(paper.b - other.b, 2)
+    }
+    return distances.indices.min { distances[$0] < distances[$1] } ?? 0
+  }
+
+  /// 自定义纸色的名字（菜单、旁白：纸色靠名字读）：「自定义 · 蓝」——按 OKLCH 的色相分 12 个词，彩度很低的叫「灰」。
+  /// 不拿十六进制当名字（旁白念不好）
+  static func customName(rgb: Int) -> String {
+    let color = PaperMath.oklch(rgb)
+    guard color.c >= 0.02 else { return "自定义 · 灰" }
+    // 每个词管到的色相上界（度）；红之前、品红之后的都是粉
+    let words: [(upTo: Double, word: String)] = [
+      (15, "粉"), (45, "红"), (80, "橙"), (118, "黄"), (138, "黄绿"), (158, "绿"), (183, "青绿"),
+      (215, "青"), (272, "蓝"), (290, "靛"), (320, "紫"), (340, "品红"), (360, "粉"),
+    ]
+    return "自定义 · " + (words.first { color.h < $0.upTo }?.word ?? "粉")
+  }
+}
+
+/// 纸色推导用的颜色换算（sRGB ↔ 线性 ↔ OKLab / OKLCH，Björn Ottosson 公布的矩阵；同原型 paper.py）。只算数，不碰 AppKit；
+/// 单测拿它造网格上的颜色
+nonisolated enum PaperMath {
+  static func channels(_ hex: Int) -> (r: Double, g: Double, b: Double) {
+    (Double((hex >> 16) & 0xFF) / 255, Double((hex >> 8) & 0xFF) / 255, Double(hex & 0xFF) / 255)
+  }
+
+  static func linear(_ value: Double) -> Double {
+    value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+  }
+
+  static func encoded(_ value: Double) -> Double {
+    value <= 0.0031308 ? 12.92 * value : 1.055 * pow(value, 1 / 2.4) - 0.055
+  }
+
+  /// WCAG 的相对亮度（同 AccentPalette.luminance）
+  static func luminance(_ hex: Int) -> Double {
+    let (r, g, b) = channels(hex)
+    return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+  }
+
+  static func oklab(_ hex: Int) -> (l: Double, a: Double, b: Double) {
+    let (r, g, b) = channels(hex)
+    let (lr, lg, lb) = (linear(r), linear(g), linear(b))
+    let l = cbrt(0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb)
+    let m = cbrt(0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb)
+    let s = cbrt(0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb)
+    return (
+      0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+      1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+      0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s
+    )
+  }
+
+  /// 亮度 0–1、彩度、色相（度，0..<360）
+  static func oklch(_ hex: Int) -> (l: Double, c: Double, h: Double) {
+    let (l, a, b) = oklab(hex)
+    let hue = atan2(b, a) * 180 / .pi
+    return (l, hypot(a, b), hue < 0 ? hue + 360 : hue)
+  }
+
+  /// OKLCH → 线性的 sRGB（可能出界）
+  static func linearRGB(_ l: Double, _ c: Double, _ h: Double) -> (Double, Double, Double) {
+    let a = c * cos(h * .pi / 180)
+    let b = c * sin(h * .pi / 180)
+    let l3 = pow(l + 0.3963377774 * a + 0.2158037573 * b, 3)
+    let m3 = pow(l - 0.1055613458 * a - 0.0638541728 * b, 3)
+    let s3 = pow(l - 0.0894841775 * a - 1.2914855480 * b, 3)
+    return (
+      4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3,
+      -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3,
+      -0.0041960863 * l3 - 0.7034186147 * m3 + 1.7076147010 * s3
+    )
+  }
+
+  /// 这个亮度、色相上 sRGB 放得下的颜色：彩度放不下就往小里收（二分 30 次），给取整好的 0xRRGGBB
+  static func gamut(_ l: Double, _ c: Double, _ h: Double) -> Int {
+    func fits(_ rgb: (Double, Double, Double)) -> Bool {
+      [rgb.0, rgb.1, rgb.2].allSatisfy { $0 >= -1e-6 && $0 <= 1 + 1e-6 }
+    }
+    var chroma = c
+    if !fits(linearRGB(l, c, h)) {
+      var (low, high) = (0.0, c)
+      for _ in 0..<30 {
+        let middle = (low + high) / 2
+        if fits(linearRGB(l, middle, h)) { low = middle } else { high = middle }
+      }
+      chroma = low
+    }
+    let (r, g, b) = linearRGB(l, chroma, h)
+    let channel = { (value: Double) in Int((encoded(min(max(value, 0), 1)) * 255).rounded()) }
+    return channel(r) << 16 | channel(g) << 8 | channel(b)
   }
 }
 

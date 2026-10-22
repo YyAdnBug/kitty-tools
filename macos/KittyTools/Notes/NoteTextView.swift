@@ -120,7 +120,7 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
 
   /// 现在的纸色，和它连同字号、Markdown 开关定下来的字体和颜色（变了才整篇重排）
   private var paper: NotePaper?
-  /// 这条便签的颜色下标（图片的占位框、缩略图的底用）
+  /// 这条便签的纸色（Note.color 的值，可能是自定义的；图片的占位框、缩略图的底用）
   private var paperIndex = 0
   private var theme = NoteStyles.Theme()
   /// 照现在的正文认出来的代码块（Markdown 关着时是空的）：改了字、收尾时（settle）重认，整篇重排时也是。
@@ -185,7 +185,7 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   // MARK: 外面给的
 
   /// 纸色、字号、Markdown 样式开没开、行距（换了才动）：基础字体和墨色、插入点，整篇重排。
-  /// paperIndex：这条便签的颜色下标（图片的占位框画在纸上，要按当前外观取纸色）
+  /// paperIndex：这条便签的纸色（Note.color 的值；图片的占位框画在纸上，要按当前外观取纸色）
   func setPaper(
     _ paper: NotePaper, fontSize: CGFloat, markdown: Bool, spacing: NoteStyles.Spacing,
     paperIndex: Int = 0
@@ -236,6 +236,10 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
       attributedString: NoteImageAttachment.editorString(from: text, base: base) { image in
         self.makeAttachment(for: image)
       })
+    // 软换行先换成普通换行再排（同 unifyLineBreaks，换进文本存储时它本来也会换）：U+2028 不算分段，带着它排的话系统把
+    // 前后两行当一段、段落样式统一成前一行的（围栏行的段前留白落到块里第一行上），换成 `\n` 之后这一行就一直错着
+    // （随机编辑测试种子 1122：外面换进来的正文里有软换行）
+    Self.unifyLineBreaks(in: styled, range: NSRange(location: 0, length: styled.length))
     blocks = theme.markdown ? NoteMarkdown.codeBlocks(in: styled.mutableString) : []
     let head = styled.mutableString.lineRange(
       for: NSRange(location: 0, length: min(eagerStyleLength, styled.length)))

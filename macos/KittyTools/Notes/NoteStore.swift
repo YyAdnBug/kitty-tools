@@ -84,16 +84,16 @@ import Observation
 
   private static let columns = """
     id, title, body, color, created_at, modified_at, revision, archived, pinned, sort_order,
-    deleted_at
+    deleted_at, tint
     """
   /// 有就更新、没有就插入（不用 INSERT OR REPLACE：那是删了再插，rowid 会变）
   private static let upsert = """
-    INSERT INTO notes(\(columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO notes(\(columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET title = excluded.title, body = excluded.body,
       color = excluded.color, created_at = excluded.created_at,
       modified_at = excluded.modified_at, revision = excluded.revision,
       archived = excluded.archived, pinned = excluded.pinned, sort_order = excluded.sort_order,
-      deleted_at = excluded.deleted_at
+      deleted_at = excluded.deleted_at, tint = excluded.tint
     """
 
   /// 建表、认版本、读表哪一步抛错都算打不开（NotesRecovery.open 接手）
@@ -103,8 +103,13 @@ import Observation
     self.db = db
     self.wait = wait
     try Self.prepare(db)
-    notes = try db.query("SELECT \(Self.columns) FROM notes ORDER BY rowid") { Self.decode($0) }
-      .compactMap { $0 }
+    let rows = try db.query("SELECT \(Self.columns) FROM notes ORDER BY rowid") { row in
+      Self.decode(row).map { ($0, row.int(11) != nil) }
+    }.compactMap { $0 }
+    notes = rows.map(\.0)
+    // 旧版本（0.5.0）换过颜色的：tint 列里还留着当时的色值。记成没落盘，下一次落盘把它清掉——不然那边再换回原来那种，
+    // 自定义的颜色又「活」过来
+    unsaved = Set(rows.filter { $0.1 && Note.customRGB(of: $0.0.color) == nil }.map(\.0.id))
   }
 
   /// 认版本、建表。读到的版本比认识的大就抛 Failure.newer，什么都不写；时间存整数毫秒（1970 年起）
@@ -120,6 +125,10 @@ import Observation
         archived INTEGER NOT NULL DEFAULT 0, pinned INTEGER NOT NULL DEFAULT 0,
         sort_order REAL NOT NULL DEFAULT 0, deleted_at INTEGER)
       """)
+    // 自定义纸色的色值（便签未来计划 B1，2026-10-22）：可空的一列。旧版本（0.5.0）的读写都写明列名、碰不到它，
+    // 所以**不升 user_version**（升了 0.5.0 就整个打不开）。规矩：只加可空的列、旧版本读写都不碰它时不升；改含义才升
+    let names = try db.query("PRAGMA table_info(notes)") { $0.text(1) }
+    if !names.contains("tint") { try db.execute("ALTER TABLE notes ADD COLUMN tint INTEGER") }
     if found < schemaVersion { try db.execute("PRAGMA user_version = \(schemaVersion)") }
   }
 
@@ -233,7 +242,7 @@ import Observation
     let note = Note(
       id: UUID().uuidString, title: Note.sanitized(title: title),
       body: Note.sanitized(text: body),
-      color: latest.map { ($0.color + 1) % Note.colorCount } ?? 0, createdAt: now,
+      color: latest.map { Note.nextPreset(after: $0.color) } ?? 0, createdAt: now,
       modifiedAt: now, order: top)
     notes.append(note)
     unsaved.insert(note.id)
@@ -494,7 +503,7 @@ import Observation
       let modified = min(Note.date(milliseconds: entry.modifiedAt), now)
       let title = Note.sanitized(title: entry.title)
       let body = Note.sanitized(text: entry.body)
-      let color = Note.clamped(color: entry.color)
+      let color = entry.noteColor
       let order = entry.order.isFinite ? entry.order : 0
       guard let offset = offsets[entry.id] else {
         offsets[entry.id] = notes.count
@@ -540,13 +549,15 @@ import Observation
 
   private static func encode(_ note: Note) -> [Any?] {
     [
-      note.id, note.title, note.body, note.color, Note.milliseconds(note.createdAt),
-      Note.milliseconds(note.modifiedAt), note.revision, note.isArchived, note.isPinned,
-      note.order, note.deletedAt.map(Note.milliseconds),
+      note.id, note.title, note.body, Note.storedPreset(of: note.color),
+      Note.milliseconds(note.createdAt), Note.milliseconds(note.modifiedAt), note.revision,
+      note.isArchived, note.isPinned, note.order, note.deletedAt.map(Note.milliseconds),
+      Note.storedTint(of: note.color),
     ]
   }
 
-  /// 库文件也可能被别的东西改过：颜色、修订号夹进范围，不是有限数的顺序当 0
+  /// 库文件也可能被别的东西改过：颜色、修订号夹进范围，不是有限数的顺序当 0。纸色 = color 列（预设）+ tint 列（自定义的
+  /// 色值连同写入时的预设，Note.color(stored:tint:) 合起来）
   private static func decode(_ row: Database.Row) -> Note? {
     guard let id = row.text(0), let created = row.int(4), let modified = row.int(5) else {
       return nil
@@ -554,7 +565,8 @@ import Observation
     let order = row.double(9) ?? 0
     return Note(
       id: id, title: row.text(1) ?? "", body: row.text(2) ?? "",
-      color: Note.clamped(color: Int(clamping: row.int(3) ?? 0)),
+      color: Note.color(
+        stored: Int(clamping: row.int(3) ?? 0), tint: row.int(11).map { Int(clamping: $0) }),
       createdAt: Note.date(milliseconds: created), modifiedAt: Note.date(milliseconds: modified),
       revision: min(max(Int(clamping: row.int(6) ?? 0), 0), Note.maxRevision),
       isArchived: row.int(7) == 1, isPinned: row.int(8) == 1, order: order.isFinite ? order : 0,

@@ -192,7 +192,7 @@ struct NoteEditorFuzzTests {
 
     func applyPaper() {
       editor.setPaper(
-        NotePaper.all[paper], fontSize: fontSize, markdown: markdown, spacing: spacing,
+        NotePaper.of(color: paper), fontSize: fontSize, markdown: markdown, spacing: spacing,
         paperIndex: paper)
     }
 
@@ -268,7 +268,8 @@ struct NoteEditorFuzzTests {
       NoteStyles.apply(
         to: expected, lines: NSRange(location: 0, length: expected.length),
         theme: NoteStyles.Theme(
-          paper: NotePaper.all[paper], fontSize: fontSize, markdown: markdown, spacing: spacing),
+          paper: NotePaper.of(color: paper), fontSize: fontSize, markdown: markdown,
+          spacing: spacing),
         shown: shown, blocks: markdown ? NoteMarkdown.codeBlocks(in: expected.mutableString) : [],
         availableWidth: editor.availableWidth)
       // 整段换字之后还没补完样式的行（没记主字体的）：只比排过的行——没排过的那几行拿整篇排出来的顶上去比；
@@ -600,7 +601,11 @@ struct NoteEditorFuzzTests {
     case 25:
       // 换纸色 / 字号 / 行距 / Markdown 开关（整篇重排）
       switch random.next() % 4 {
-      case 0: rig.paper = random.next() % NotePaper.all.count
+      case 0:
+        // 一半预设、一半自定义的纸色（便签未来计划 B2：自定义的从色值推出整张纸）
+        rig.paper =
+          random.next() % 2 == 0
+          ? random.next() % NotePaper.all.count : Note.custom(rgb: random.next() % 0x100_0000)
       case 1: rig.fontSize = random.pick([13, 15, 17, 20])
       case 2: rig.spacing = random.pick(NoteStyles.Spacing.allCases)
       default: rig.markdown.toggle()
@@ -743,7 +748,11 @@ struct NoteEditorFuzzTests {
     case 36:
       // 图片行上的样式那一遍：换纸色 / 字号 / 行距 / Markdown 开关（附件不许被抹掉、行高要重算）
       switch random.next() % 4 {
-      case 0: rig.paper = random.next() % NotePaper.all.count
+      case 0:
+        // 一半预设、一半自定义的纸色（便签未来计划 B2：自定义的从色值推出整张纸）
+        rig.paper =
+          random.next() % 2 == 0
+          ? random.next() % NotePaper.all.count : Note.custom(rgb: random.next() % 0x100_0000)
       case 1: rig.fontSize = random.pick([13, 15, 17, 20])
       case 2: rig.spacing = random.pick(NoteStyles.Spacing.allCases)
       default: rig.markdown.toggle()

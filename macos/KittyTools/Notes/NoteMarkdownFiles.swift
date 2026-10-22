@@ -118,7 +118,12 @@ nonisolated enum NoteMarkdownFiles {
     var lines = ["---", "kitty-note: \(note.id)"]
     let own = note.title.trimmingCharacters(in: .whitespacesAndNewlines)
     if !own.isEmpty { lines.append("title: \(jsonString(note.title))") }
-    lines.append("color: \(Note.clamped(color: note.color))")
+    // 纸色同导出文件：color 写预设（自定义的写最接近的那种），自定义的色值另写一行 tint。
+    // 要带引号：YAML 里 `#` 起注释（值按 JSON 字符串写，读的时候照样按 JSON 解）
+    lines.append("color: \(Note.storedPreset(of: note.color))")
+    if let rgb = Note.customRGB(of: note.color) {
+      lines.append("tint: \(jsonString(Note.hex(rgb: rgb)))")
+    }
     lines.append("created: \(iso(note.createdAt))")
     lines.append("modified: \(iso(note.modifiedAt))")
     lines.append("revision: \(min(max(note.revision, 0), Note.maxRevision))")
@@ -138,12 +143,14 @@ nonisolated enum NoteMarkdownFiles {
   }
 
   /// 自家文件的头（第一行正好是 `---`、前 40 行里有收尾的 `---`、头里有合法的 `kitty-note`）。
-  /// 只认导出的那几个键；每个值都验：颜色夹到 0–7、时间认不出用 fallback、revision 夹到 0…max、archived / pinned 只认
+  /// 只认导出的那几个键；每个值都验：颜色夹到 0–7（tint 是自定义纸色的色值，认不出当没有）、时间认不出用 fallback、revision 夹到 0…max、archived / pinned 只认
   /// true / false、order 有限的数否则 0、title 按 JSON 字符串解（解不出当空）。body 是收尾的 `---` 后面紧跟的一个换行之后
   struct Header: Equatable {
     var id: String
     var title = ""
     var color = 0
+    /// 自定义纸色的色值（0xRRGGBB）；内存里的纸色 = Note.color(preset: color, tint: tint)
+    var tint: Int?
     var created: Date?
     var modified: Date?
     var revision = 0
@@ -172,7 +179,10 @@ nonisolated enum NoteMarkdownFiles {
     guard let rawID = values["kitty-note"], let uuid = UUID(uuidString: rawID) else { return nil }
     var header = Header(id: uuid.uuidString)
     header.title = values["title"].flatMap(jsonDecode) ?? ""
-    if let raw = values["color"], let color = Int(raw) { header.color = Note.clamped(color: color) }
+    if let raw = values["color"], let color = Int(raw) {
+      header.color = Note.storedPreset(of: color)
+    }
+    header.tint = values["tint"].flatMap(jsonDecode).flatMap(Note.rgb(hex:))
     header.created = values["created"].flatMap(parseDate)
     header.modified = values["modified"].flatMap(parseDate) ?? modifiedFallback
     if let raw = values["revision"], let revision = Int(raw) {
@@ -646,7 +656,8 @@ nonisolated enum NoteMarkdownFiles {
         var note = Note(
           id: header.id, title: Note.sanitized(title: header.title),
           body: Note.sanitized(text: body),
-          color: header.color, createdAt: Note.stamp(header.created ?? modified),
+          color: Note.color(preset: header.color, tint: header.tint),
+          createdAt: Note.stamp(header.created ?? modified),
           modifiedAt: Note.stamp(header.modified ?? modified), revision: header.revision,
           isArchived: header.archived, isPinned: header.pinned, order: header.order)
         note.title = Note.sanitized(title: header.title)

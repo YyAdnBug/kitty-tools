@@ -486,7 +486,7 @@ import SwiftUI
     setColor(Self.nextColor(after: note.color), of: id)
   }
 
-  static func nextColor(after color: Int) -> Int { (max(color, 0) + 1) % Note.colorCount }
+  static func nextColor(after color: Int) -> Int { Note.nextPreset(after: color) }
 
   /// 这条便签是不是正浮在屏幕上；工具栏、右键菜单里那一项现在叫什么
   func isFloating(_ note: Note?) -> Bool {

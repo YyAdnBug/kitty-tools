@@ -195,13 +195,8 @@ struct NotesTab: View {
           island?.show("没有导入", detail: "选的地方没有 .md 文件", tone: .warning)
           return
         }
-        let entries = result.notes.map { note in
-          SettingsArchive.NoteEntry(
-            id: note.id, title: note.title, body: note.body, color: note.color,
-            createdAt: Note.milliseconds(note.createdAt),
-            modifiedAt: Note.milliseconds(note.modifiedAt), revision: note.revision,
-            archived: note.isArchived, pinned: note.isPinned, order: note.order)
-        }
+        // 读出来的都是没删的：和导出文件同一个换法（自定义纸色拆成预设 + 色值）
+        let entries = result.notes.compactMap(SettingsArchive.NoteEntry.init)
         let adoption = store.adopt(entries)
         var detail = "新增 \(adoption.added) · 更新 \(adoption.updated) · 跳过 \(result.skipped)"
         if result.missingImages > 0 { detail += " · \(result.missingImages) 张图片没导进来" }

@@ -90,7 +90,7 @@ nonisolated final class NoteImageAttachment: NSTextAttachment {
   let url: URL
   /// 文件头里读出来的尺寸；nil = 文件不在 / 读不出来（画占位框）
   let metrics: NoteImageSize?
-  /// 这条便签的纸色（NotePaper.all 的下标）：占位框画在纸上，画的时候按当前外观取色
+  /// 这条便签的纸色（Note.color 的值，NotePaper.of(color:) 取纸）：占位框画在纸上，画的时候按当前外观取色
   let paper: Int
 
   init(image: NoteImages.Image, url: URL, metrics: NoteImageSize?, paper: Int) {
@@ -260,7 +260,7 @@ final class NoteImageAttachmentCell: NSTextAttachmentCell {
       NSGraphicsContext.restoreGraphicsState()
     } else {
       // 还没解好：先画一块纸色（不是空白一闪）
-      NotePaper.all[min(max(paper, 0), NotePaper.all.count - 1)].paperColor.setFill()
+      NotePaper.of(color: paper).paperColor.setFill()
       NSBezierPath(
         roundedRect: box, xRadius: NoteImageLayout.corner, yRadius: NoteImageLayout.corner
       ).fill()
@@ -269,7 +269,7 @@ final class NoteImageAttachmentCell: NSTextAttachmentCell {
 
   /// 文件找不到：纸上的虚线圆角框 + 一个系统图标 +「图片找不到了」（令牌原样留着，存盘不丢）
   private func drawPlaceholder(in frame: NSRect) {
-    let ink = NotePaper.all[min(max(paper, 0), NotePaper.all.count - 1)].inkColor
+    let ink = NotePaper.of(color: paper).inkColor
     let path = NSBezierPath(
       roundedRect: frame.insetBy(dx: 0.5, dy: 0.5), xRadius: NoteImageLayout.corner,
       yRadius: NoteImageLayout.corner)

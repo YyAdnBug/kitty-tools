@@ -11,8 +11,12 @@
 import Foundation
 
 nonisolated struct Note: Identifiable, Equatable, Sendable {
-  /// 纸色有几种：color 是 0..<colorCount 的下标（8 种纸色和它们的字色在 NotePaper）
+  /// 预设的纸色有几种：color 是 0..<colorCount 的下标（8 种纸色和它们的字色在 NotePaper），或者自定义的（customColor）
   static let colorCount = 8
+  /// 自定义纸色在 color 里的写法（便签未来计划 B1）：`customColor | 0xRRGGBB`。**只在内存里这么写**：落盘拆成两样——
+  /// `color` 写最接近的那种预设（storedPreset），色值另记（库的 tint 列、导出文件和 Markdown 文件头的 tint）。
+  /// 已发布的 0.5.0 读到超范围的 color 会夹回石板、改一个字就写回库，所以这个整数不能原样存进去
+  static let customColor = 1 << 24
   /// 拿正文第一行当标题时最多几个字、列表里的摘要最多几个字
   static let titleLength = 60
   static let previewLength = 120
@@ -73,8 +77,59 @@ nonisolated struct Note: Identifiable, Equatable, Sendable {
     return end == clean.endIndex ? clean : String(clean[..<end])
   }
 
-  /// 纸色的下标夹进 0..<colorCount
-  static func clamped(color raw: Int) -> Int { min(max(raw, 0), colorCount - 1) }
+  /// 纸色夹进合法的值：预设的下标夹进 0..<colorCount，自定义的原样
+  static func clamped(color raw: Int) -> Int {
+    customRGB(of: raw) != nil ? raw : min(max(raw, 0), colorCount - 1)
+  }
+
+  /// 自定义的纸色（色值 0xRRGGBB）
+  static func custom(rgb: Int) -> Int { customColor | (rgb & 0xFFFFFF) }
+
+  /// 自定义纸色的色值；预设的给 nil
+  static func customRGB(of color: Int) -> Int? { color >> 24 == 1 ? color & 0xFFFFFF : nil }
+
+  /// 落盘的那个下标：预设的照旧（夹进范围），自定义的是最接近的那种预设（0.5.0 看到的就是它）
+  static func storedPreset(of color: Int) -> Int {
+    customRGB(of: color).map(NotePaper.nearestPreset(rgb:)) ?? clamped(color: color)
+  }
+
+  /// 文件里读回来（导出文件、Markdown 文件头）：预设下标 + 色值 → 内存里的纸色。色值合法就是自定义的（文件里的 tint
+  /// 只有新版本写、旧版本读进去再导出时整个丢掉，不会和 color 对不上），没有或写坏了用预设
+  static func color(preset: Int, tint: Int?) -> Int {
+    guard let tint, (0...0xFFFFFF).contains(tint) else {
+      return min(max(preset, 0), colorCount - 1)
+    }
+    return custom(rgb: tint)
+  }
+
+  /// 库的 tint 列里存的：写入那一刻的预设下标 << 24 | 色值。读回来**只比这两个数**，不重算「最接近的预设」——
+  /// 以后调了推导，已经存着的自定义色也不会因为对不上被当成旧版本换过颜色、悄悄丢掉
+  static func storedTint(of color: Int) -> Int? {
+    customRGB(of: color).map { storedPreset(of: color) << 24 | $0 }
+  }
+
+  /// 库里读回来：color 列 + tint 列 → 内存里的纸色。tint 里记的预设和 color 列对得上才算自定义；对不上说明旧版本
+  /// （0.5.0 不认识 tint、只改 color）换过颜色，按它换的那种
+  static func color(stored preset: Int, tint: Int?) -> Int {
+    let preset = min(max(preset, 0), colorCount - 1)
+    guard let tint, tint >= 0, tint >> 24 == preset else { return preset }
+    return custom(rgb: tint & 0xFFFFFF)
+  }
+
+  /// ⌘. 和新建便签的轮换：只在 8 种预设里轮，自定义的从最接近的那种的下一种接着轮
+  static func nextPreset(after color: Int) -> Int { (storedPreset(of: color) + 1) % colorCount }
+
+  /// 色值在文件里的写法 `#RRGGBB`（导出文件、Markdown 文件头的 tint）
+  static func hex(rgb: Int) -> String { String(format: "#%06X", rgb & 0xFFFFFF) }
+
+  /// `#RRGGBB`（大小写不分）→ 色值；别的写法给 nil
+  static func rgb(hex raw: String) -> Int? {
+    let digits = raw.utf8.dropFirst()
+    guard raw.utf8.first == UInt8(ascii: "#"), digits.count == 6,
+      digits.allSatisfy({ ($0 >= 0x30 && $0 <= 0x39) || ($0 | 0x20 >= 0x61 && $0 | 0x20 <= 0x66) })
+    else { return nil }
+    return Int(String(decoding: digits, as: UTF8.self), radix: 16)
+  }
 
   /// 改动之后的修订号：+1，到 maxRevision 为止（负的、超了的先夹回来）
   static func nextRevision(after revision: Int) -> Int {

@@ -80,7 +80,7 @@ struct SettingsArchive: Codable, Equatable {
     /// 自己起的标题；空 = 用正文第一行
     var title: String
     var body: String
-    /// 纸色的下标（0..<Note.colorCount）
+    /// 纸色：预设的下标（0..<Note.colorCount）；自定义的纸色写最接近的那种预设——旧版本（0.5.0）读到的就是它
     var color: Int
     var createdAt: Int64
     var modifiedAt: Int64
@@ -88,6 +88,12 @@ struct SettingsArchive: Codable, Equatable {
     var archived: Bool
     var pinned: Bool
     var order: Double
+    /// 自定义纸色的色值 `#RRGGBB`（便签未来计划 B1）；预设的没有这个字段。旧版本读文件时不认识的字段都忽略，
+    /// 所以加它**不升 currentFormat**（加类别、改字段含义才升）
+    var tint: String? = nil
+
+    /// 内存里的纸色：color + tint 合起来（Note.color(preset:tint:)）
+    var noteColor: Int { Note.color(preset: color, tint: tint.flatMap(Note.rgb(hex:))) }
   }
 
   /// 导入做了什么（刘海岛据此说一句）
@@ -641,7 +647,8 @@ struct SettingsArchive: Codable, Equatable {
         else { return nil }
         note.id = id
         note.title = Note.sanitized(title: note.title)
-        note.color = Note.clamped(color: note.color)
+        note.color = Note.storedPreset(of: note.color)
+        note.tint = note.tint.flatMap(Note.rgb(hex:)).map(Note.hex(rgb:))
         note.createdAt = max(note.createdAt, 0)
         note.modifiedAt = max(note.modifiedAt, 0)
         note.revision = min(max(note.revision, 0), Note.maxRevision)
@@ -851,9 +858,10 @@ extension SettingsArchive.NoteEntry {
   init?(_ note: Note) {
     guard note.deletedAt == nil else { return nil }
     self.init(
-      id: note.id, title: note.title, body: note.body, color: note.color,
+      id: note.id, title: note.title, body: note.body, color: Note.storedPreset(of: note.color),
       createdAt: Note.milliseconds(note.createdAt), modifiedAt: Note.milliseconds(note.modifiedAt),
-      revision: note.revision, archived: note.isArchived, pinned: note.isPinned, order: note.order)
+      revision: note.revision, archived: note.isArchived, pinned: note.isPinned, order: note.order,
+      tint: Note.customRGB(of: note.color).map(Note.hex(rgb:)))
   }
 
   /// 文件可能是别人给的、手改过的：哪一条缺了字段、类型不对（连「不是一个对象」在内），读成编号为空的一条——
@@ -876,9 +884,11 @@ extension SettingsArchive.NoteEntry {
         archived: false, pinned: false, order: 0)
       return
     }
+    // 自定义纸色的色值是可选的：没有、类型不对都当没有（这一条照样要）
     self.init(
       id: id, title: title, body: body, color: color, createdAt: createdAt,
-      modifiedAt: modifiedAt, revision: revision, archived: archived, pinned: pinned, order: order)
+      modifiedAt: modifiedAt, revision: revision, archived: archived, pinned: pinned, order: order,
+      tint: try? values.decode(String.self, forKey: .tint))
   }
 }
 

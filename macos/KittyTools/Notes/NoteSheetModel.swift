@@ -192,7 +192,7 @@ import Observation
   func setColor(_ color: Int, of id: String? = nil) {
     guard let note = target(id) else { return }
     store.setColor(color, of: note.id)
-    Island.announce(NotePaper.all[Note.clamped(color: color)].name)
+    Island.announce(NotePaper.of(color: color).name)
   }
 
   /// ⇧⌘A：归档（要找回到「全部便签」的「归档」里）。归档的是开着的那条就先从界面上拿走
@@ -295,7 +295,10 @@ import Observation
   func toggleMenu(fromDot: Bool = false) {
     guard menu == nil else { return closeMenu() }
     guard let note = current else { return }
-    menu = Menu(inColors: fromDot, selection: fromDot ? note.color : 0, fromDot: fromDot)
+    // 颜色那一级的第几行：自定义的纸色先停在最接近的那种预设上（界面那一批再加「最近用过」那几行）
+    menu = Menu(
+      inColors: fromDot, selection: fromDot ? Note.storedPreset(of: note.color) : 0,
+      fromDot: fromDot)
     onMenu(true)
   }
 
@@ -309,7 +312,7 @@ import Observation
   func run(_ item: ActionMenu.Item) {
     if item.submenu != nil {
       menu?.inColors = true
-      menu?.selection = current?.color ?? 0
+      menu?.selection = current.map { Note.storedPreset(of: $0.color) } ?? 0
     } else {
       closeMenu()
       item.run()

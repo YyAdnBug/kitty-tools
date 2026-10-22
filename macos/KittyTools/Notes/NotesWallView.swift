@@ -125,7 +125,7 @@ struct NotesWall<Header: View, Empty: View, Footer: View>: View {
           // 颜色跟着这条便签走（开着的时候换了色）；它没了就用记下的
           let color = model.store.note(sheet.id)?.color ?? sheet.color
           WallSheetPaper(
-            paper: NotePaper.all[min(max(color, 0), NotePaper.all.count - 1)], sheet: sheet,
+            paper: NotePaper.of(color: color), sheet: sheet,
             target: target
           )
           .id(sheet.serial)

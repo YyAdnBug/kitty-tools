@@ -129,7 +129,7 @@ private final class PillView: NSView {
     }
     Style.HUD.applySkin(to: body, radius: width / 2)
     var dashes = colors.prefix(NoteDeckLayout.maxDashes).map {
-      NotePaper.all[Note.clamped(color: $0)].brightStrip
+      NotePaper.of(color: $0).brightStrip
     }
     if colors.count > NoteDeckLayout.maxDashes { dashes.append(Style.HUD.tertiaryText) }
     let pitch = metrics.dashHeight + metrics.dashGap
