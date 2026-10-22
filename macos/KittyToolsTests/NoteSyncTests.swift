@@ -5,7 +5,7 @@
 //   （次数有上限）、另存那条的编号。
 // - 仓库：改内容时钟走一格、改状态 / 顺序时记时刻且只往前走、墓碑（被删那一版的钟和状态时刻）落盘且不过期、这台电脑的
 //   编号跟着硬件、从备份恢复换新编号、0.5.0 的库打开时加列不升版本、旧版本动过的行算本机改动、把一轮合并结果落下去
-//   （本机之后又改了的跳过）、写进同步文件夹的账。
+//   （本机之后又改了的跳过）、认出库被退回去了时换编号、永久删过又导进来的接着墓碑的钟数。
 // 都在内存库里，不碰真实数据目录和偏好。随机的多台电脑模拟在 NoteSyncFuzzTests。
 
 import Foundation
@@ -62,7 +62,7 @@ struct NoteSyncTests {
     #expect(onA.copies.count == 1 && onB.copies.map(\.id) == [copy.id])
     #expect(copy.body == "A 改的" && copy.deletedAt == Self.at(100) && copy.id != mine.id)
     #expect(copy.id == NoteSync.copyID(of: "N", content: NoteSync.contentHash(mine)))
-    #expect(copy.clock == mine.clock, "另存的那条带着输的那版的钟：两台存的一样")
+    #expect(copy.clock.isEmpty, "另存的那条是新的一条，钟从空的起：两台存的一样")
     // 合完的钟盖过两边：B 下一轮看到 A 合出来的是快进，不再算冲突
     let again = NoteSync.merge(
       local: onB.note, remotes: [try #require(onA.note)], tombstone: nil, now: Self.at(300))
@@ -166,6 +166,12 @@ struct NoteSyncTests {
     #expect(merge(nil, [restored]).note?.body == "对面放回了")
     // 本机压住了、但对面还有一份压不住的：照常合，不删
     #expect(merge(trashed, [restored]).note?.deletedAt == nil)
+    // 救回来的那条钟里并上墓碑的：本机那一格不退回去（本机删的时候是 A:5，对面那份只到 A:3）
+    let deeper = NoteSync.Tombstone(clock: ["A": 5], state: Self.at(30))
+    let concurrent = version("对面删前改过的", at: 25, clock: ["A": 3, "B": 1], state: 25)
+    let revived = NoteSync.merge(
+      local: nil, remotes: [concurrent], tombstone: deeper, now: Self.at(100))
+    #expect(revived.note?.body == "对面删前改过的" && revived.note?.clock == ["A": 5, "B": 1])
     // 几台的墓碑并起来：钟每格取最大、时刻取最晚
     let other = NoteSync.Tombstone(clock: ["A": 0, "B": 2], state: Self.at(10))
     #expect(
@@ -335,8 +341,7 @@ struct NoteSyncTests {
         "state_changed_at", "clock", "order_changed_at", "written_revision",
       ]))
     let tables = try db.query("SELECT name FROM sqlite_master WHERE type = 'table'") { $0.text(0) }
-    #expect(
-      Set(tables.compactMap { $0 }).isSuperset(of: ["note_erased", "note_published", "note_meta"]))
+    #expect(Set(tables.compactMap { $0 }).isSuperset(of: ["note_erased", "note_meta"]))
     #expect(try db.query("PRAGMA user_version") { $0.int(0) } == [1])
     store.flush()
     // 0.6.0 自己写过的再开：不变（不会每次打开都补一格）
@@ -351,24 +356,19 @@ struct NoteSyncTests {
     #expect(back.stateChangedAt == Note.stamp(Self.at(11.001)))
   }
 
-  /// 从备份恢复：换上来的那份库忘掉电脑编号和写进同步文件夹的账（版本钟的计数退回去了，再用原来的编号会和恢复前发出去的
-  /// 撞上）；再开得到一个新编号、账是空的
+  /// 从备份恢复：换上来的那份库忘掉电脑编号（版本钟的计数退回去了，再用原来的编号会和恢复前发出去的撞上）；再开得到一个
+  /// 新编号
   @Test func restoredLibraryGetsANewDevice() throws {
     let folder = FileManager.default.temporaryDirectory.appending(
       path: "kitty-notes-sync-restore-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: folder) }
     let url = folder.appending(path: "notes.sqlite3")
-    let before: String
-    do {
-      let store = try NoteStore(db: Database(path: url.path, wal: false), host: "mac")
-      before = store.deviceID
-      try store.recordPublished(["a": 1])
-    }
+    let before = try NoteStore(db: Database(path: url.path, wal: false), host: "mac").deviceID
     NoteStore.forgetDevice(inDatabaseAt: url)
     let after = try NoteStore(db: Database(path: url.path, wal: false), host: "mac")
-    #expect(after.deviceID != before && after.published.isEmpty)
-    // 更早的备份没有这两张表：删不成不算错
+    #expect(after.deviceID != before)
+    // 更早的备份没有这张表：删不成不算错
     let bare = folder.appending(path: "bare.sqlite3")
     do { _ = try Database(path: bare.path, wal: false) }
     NoteStore.forgetDevice(inDatabaseAt: bare)
@@ -437,16 +437,39 @@ struct NoteSyncTests {
     #expect(reopened.note(gone.id) == back && reopened.erased[gone.id] == nil)
   }
 
-  /// 写进同步文件夹的账：记下、拿掉、清空都落盘
-  @Test func publishedLedgerIsPersisted() throws {
+  /// 认出库被退回去了：换一个新编号（记进库），给那几条各记一笔新编号的改动（钟 +1、修订号 +1、落盘）；别的不动
+  @Test func switchDeviceBumpsTheNamedNotes() throws {
     let db = try Database(path: ":memory:")
     let store = try NoteStore(db: db, host: "mac")
-    try store.recordPublished(["a": 3, "b": 5])
-    try store.recordPublished(["b": nil, "c": 1])
-    #expect(store.published == ["a": 3, "c": 1])
-    #expect(try NoteStore(db: db, host: "mac").published == ["a": 3, "c": 1])
-    try store.clearPublished()
-    #expect(store.published.isEmpty)
-    #expect(try NoteStore(db: db, host: "mac").published.isEmpty)
+    let old = store.deviceID
+    let first = store.create(body: "一", now: Self.at(0))
+    let second = store.create(body: "二", now: Self.at(0))
+    #expect(try store.switchDevice(bumping: [first.id]))
+    let new = store.deviceID
+    #expect(new != old && UUID(uuidString: new) != nil)
+    #expect(store.note(first.id)?.clock == [old: 1, new: 1] && store.note(first.id)?.revision == 1)
+    #expect(store.note(second.id) == second)
+    let reopened = try NoteStore(db: db, host: "mac")
+    #expect(reopened.deviceID == new && reopened.note(first.id) == store.note(first.id))
   }
+
+  /// 永久删过、又导进来同一条：钟接着墓碑里的往上数（从 1 重新数会被别处留着的那版当成被盖过）
+  @Test func adoptingAnErasedNoteContinuesItsClock() throws {
+    let store = try NoteStore(db: Database(path: ":memory:"), host: "mac")
+    let me = store.deviceID
+    let note = store.create(body: "一", now: Self.at(0))
+    store.setBody("一二三", of: note.id, now: Self.at(1))
+    store.setBody("一二三四", of: note.id, now: Self.at(2))
+    store.erase(note.id, now: Self.at(3))
+    let entry = SettingsArchive.NoteEntry(
+      id: note.id, title: "", body: "导回来", color: 0, createdAt: 0,
+      modifiedAt: Note.milliseconds(Self.at(4)), revision: 1, archived: false, pinned: false,
+      order: 0)
+    store.adopt([entry], now: Self.at(5))
+    let adopted = try #require(store.note(note.id)?.clock)
+    #expect(adopted == [me: 4])
+    // 别处还留着删之前的那版（{本机: 3}）：导进来的这版盖过它，不被当成旧的扔掉
+    #expect(NoteSync.precedes([me: 3], adopted))
+  }
+
 }

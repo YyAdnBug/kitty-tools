@@ -15,8 +15,8 @@
 // - 同步要的账（便签未来计划 A，2026-10-22；合并规则在 NoteSync）：本机改内容时版本钟自己那一格 +1、改状态 / 顺序时记
 //   stateChangedAt / orderChangedAt（只往前走）；永久删除留墓碑（note_erased：被删那一版的钟和状态时刻，**不过期**——
 //   一台不用了留下的旧文件夹里还有它，过期了就会回来；一条几十个字节）；这台电脑的编号（note_meta，跟着库走，硬件编号
-//   对不上 = 迁移助理 / 时间机器搬到了新 Mac，换一个新的；从备份恢复也换，NotesBackup）；写进同步文件夹时是哪个修订号
-//   （note_published）。**旧版本动过的行**：每次写库同时记 written_revision = 修订号，0.5.0 的 upsert 只推 revision、不碰它，
+//   对不上 = 迁移助理 / 时间机器搬到了新 Mac，换一个新的；从备份恢复也换，NotesBackup；同步时认出库被退回去了也换，
+//   switchDevice）。**旧版本动过的行**：每次写库同时记 written_revision = 修订号，0.5.0 的 upsert 只推 revision、不碰它，
 //   读库时对不上（或者是 0.6.0 之前的行，没有它）= 旧版本改过：钟补一格、状态 / 顺序时刻往前走一毫秒（同步时当本机改过，
 //   和别的电脑同时改的走另存那条路，不被悄悄盖掉）。
 //   这几样**都不升 user_version**：新加的是可空的列和新表，0.5.0 的读写写明列名、碰不到它们（同 tint 那一列的规矩）。
@@ -90,14 +90,12 @@ import Observation
   /// 连着失败了几次（定下一次重试隔多久）
   @ObservationIgnored private var failures = 0
   /// 这台电脑的编号（同步时内容版本钟的格子、同步文件夹里自己那个子文件夹的名字）
-  @ObservationIgnored let deviceID: String
+  @ObservationIgnored private(set) var deviceID: String
   /// 永久删除的墓碑：编号 → 被删那一版的钟和状态时刻（不过期）。
   /// ponytail: 一直留着（一条几十个字节，删上万条也就几百 KB）；真多了再按「文件夹里已经没人有这条」清
   @ObservationIgnored private(set) var erased: [String: NoteSync.Tombstone] = [:]
   /// 墓碑改了还没落盘的编号（落盘时有墓碑就写、没有就删那一行）
   @ObservationIgnored private var unsavedTombstones: Set<String> = []
-  /// 写进同步文件夹时的修订号：编号 → 修订号（不一样了 = 要重写那个文件）
-  @ObservationIgnored private(set) var published: [String: Int] = [:]
 
   private static let columns = """
     id, title, body, color, created_at, modified_at, revision, archived, pinned, sort_order,
@@ -131,10 +129,6 @@ import Observation
       erased[id] = NoteSync.Tombstone(
         clock: NoteSync.clock(text: clock), state: Note.date(milliseconds: state))
     }
-    let revisions = try db.query("SELECT id, revision FROM note_published") {
-      ($0.text(0), $0.int(1))
-    }
-    for case (let id?, let revision?) in revisions { published[id] = Int(clamping: revision) }
     let rows = try db.query("SELECT \(Self.columns) FROM notes ORDER BY rowid") { row in
       Self.decode(row).map { ($0, row.int(11) != nil, row.int(15)) }
     }.compactMap { $0 }
@@ -193,8 +187,6 @@ import Observation
         id TEXT PRIMARY KEY, clock TEXT NOT NULL, state_changed_at INTEGER NOT NULL)
       """)
     try db.execute(
-      "CREATE TABLE IF NOT EXISTS note_published(id TEXT PRIMARY KEY, revision INTEGER NOT NULL)")
-    try db.execute(
       "CREATE TABLE IF NOT EXISTS note_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     if found < schemaVersion { try db.execute("PRAGMA user_version = \(schemaVersion)") }
   }
@@ -226,12 +218,28 @@ import Observation
   }
 
   /// 从备份恢复（NotesBackup）：备份里的库是旧的、版本钟的计数退回去了——还用原来的电脑编号，恢复之后打的字会被恢复前
-  /// 已经同步出去的那几版盖掉。在换上来之前把电脑编号和「写进同步文件夹的账」从那份库里清掉（打开时换一个新编号、全部
-  /// 重写一遍）。备份是单个文件：可写打开、不改成 WAL（旁边不留 -wal、-shm）；更早的备份没有这两张表，删不成不算错
+  /// 已经同步出去的那几版盖掉。在换上来之前把电脑编号从那份库里清掉（打开时换一个新编号）。备份是单个文件：可写打开、
+  /// 不改成 WAL（旁边不留 -wal、-shm）；更早的备份没有这张表，删不成不算错
   nonisolated static func forgetDevice(inDatabaseAt url: URL) {
     guard let db = try? Database(path: url.path, wal: false) else { return }
     try? db.execute("DELETE FROM note_meta WHERE key = 'device'")
-    try? db.execute("DELETE FROM note_published")
+  }
+
+  /// 同步时认出库被退回去了（NoteSyncFolder.regressed：时间机器整个恢复了数据目录，本机那一格的计数比已经发出去的小）：
+  /// 换一个新的电脑编号，给 bumping 里的每一条记一笔新编号的改动（钟新编号那一格 +1、修订号 +1）——它们就和发出去的那几版
+  /// 「各改各的」，恢复后打的字走另存那条路，不被当成被盖过。当场落盘：新编号写不进库抛错（什么都没动），便签没落下去
+  /// 返回 false（留在内存里照常重试；这一轮先不合）
+  @discardableResult
+  func switchDevice(bumping ids: Set<String>) throws -> Bool {
+    let id = UUID().uuidString
+    try db.execute("INSERT OR REPLACE INTO note_meta(key, value) VALUES ('device', ?)", [id])
+    deviceID = id
+    for index in notes.indices where ids.contains(notes[index].id) {
+      notes[index].clock[id, default: 0] += 1
+      notes[index].revision = Note.nextRevision(after: notes[index].revision)
+      unsaved.insert(notes[index].id)
+    }
+    return flush()
   }
 
   // MARK: 视图
@@ -656,14 +664,17 @@ import Observation
       let order = entry.order.isFinite ? entry.order : 0
       guard let offset = offsets[entry.id] else {
         offsets[entry.id] = notes.count
-        // 导进来的算本机的一次改动（版本钟自己那一格）：和别的电脑同步来的同一条不一样时走冲突那条路，不被悄悄盖掉
+        // 导进来的算本机的一次改动（版本钟自己那一格）：和别的电脑同步来的同一条不一样时走冲突那条路，不被悄悄盖掉。
+        // 永久删过的（有墓碑）接着墓碑里的钟往上数：从 1 重新数会被别处还留着的那版当成「被盖过」、计数也重复用了
+        var clock = erased[entry.id]?.clock ?? [:]
+        clock[deviceID, default: 0] += 1
         notes.append(
           Note(
             id: entry.id, title: title, body: body, color: color,
             createdAt: min(Note.date(milliseconds: entry.createdAt), now), modifiedAt: modified,
             revision: min(max(entry.revision, 0), Note.maxRevision), isArchived: entry.archived,
             isPinned: entry.pinned, order: order, stateChangedAt: now, orderChangedAt: now,
-            clock: [deviceID: 1]))
+            clock: clock))
         revive(entry.id)
         unsaved.insert(entry.id)
         result.added += 1
@@ -750,28 +761,6 @@ import Observation
     }
     if !doomed.isEmpty { remove(doomed, tombstones: tombstones) }
     return flush()
-  }
-
-  /// 写进同步文件夹之后记下那时的修订号（nil = 拿掉：那个文件删了），当场写进库。写不成抛错（下一轮再写一遍文件就是）
-  func recordPublished(_ revisions: [String: Int?]) throws {
-    guard !revisions.isEmpty else { return }
-    try db.transaction {
-      for (id, revision) in revisions {
-        if let revision {
-          try db.execute(
-            "INSERT OR REPLACE INTO note_published(id, revision) VALUES (?, ?)", [id, revision])
-        } else {
-          try db.execute("DELETE FROM note_published WHERE id = ?", [id])
-        }
-      }
-    }
-    for (id, revision) in revisions { published[id] = revision }
-  }
-
-  /// 关掉同步、换了文件夹：写过哪些的账清掉（再打开当第一次：全部重写一遍）
-  func clearPublished() throws {
-    try db.execute("DELETE FROM note_published")
-    published = [:]
   }
 
   // MARK: 库里的一行

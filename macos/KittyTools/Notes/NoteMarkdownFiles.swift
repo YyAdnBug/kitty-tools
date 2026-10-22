@@ -15,6 +15,7 @@
 
 import AppKit
 import Foundation
+import Synchronization
 import UniformTypeIdentifiers
 
 nonisolated enum NoteMarkdownFiles {
@@ -199,17 +200,25 @@ nonisolated enum NoteMarkdownFiles {
     return header
   }
 
-  private static func jsonDecode(_ raw: String) -> String? {
+  static func jsonDecode(_ raw: String) -> String? {
     guard let data = raw.data(using: .utf8) else { return nil }
     return try? JSONDecoder().decode(String.self, from: data)
   }
 
-  private static func iso(_ date: Date) -> String {
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    formatter.timeZone = .current
-    return formatter.string(from: date)
+  static func iso(_ date: Date) -> String {
+    isoFormatter.withLock { formatter in
+      formatter.timeZone = .current
+      return formatter.string(from: date)
+    }
   }
+
+  /// ISO8601DateFormatter 不是 Sendable：一个，锁着用（同步时每条便签要写两次，每次新建一个太费）
+  private static let isoFormatter = Mutex(
+    {
+      let formatter = ISO8601DateFormatter()
+      formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+      return formatter
+    }())
 
   private static func parseDate(_ raw: String) -> Date? {
     let choices: [ISO8601DateFormatter.Options] = [
@@ -644,6 +653,11 @@ nonisolated enum NoteMarkdownFiles {
       let modified =
         (try? source.url.resourceValues(forKeys: [.contentModificationDateKey]))?
         .contentModificationDate ?? now
+      // 同步文件夹里的文件（NoteSyncFolder）：这里读不全它的删除时刻、正文也不是 Markdown，跳过
+      if NoteSyncFolder.isSyncFile(raw) {
+        result.skipped += 1
+        continue
+      }
       if var header = parseHeader(raw, modifiedFallback: modified) {
         let (body, failures) = await convertImages(
           in: bodyFromMarkdown(header.text).body, root: source.root, imageDirectory: imageDirectory)

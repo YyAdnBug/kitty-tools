@@ -5,7 +5,9 @@
 //   = 另一版是在它之上改的，它被盖过了：丢掉、不留旧版（对面改了、本机没改 → 直接换，「最近删除」里不多东西）。剩下谁都
 //   盖不住谁的（两边各改各的）才是冲突（A3）：「改于」后的赢（一样时按内容的哈希，几台挑出来的一样），输的那几版文字
 //   **各另存一条进「最近删除」**——编号由便签编号 + 输的那版内容的哈希推出来（copyID），别的字段也都由那一版定（只有
-//   放进最近删除的时刻是各台的现在）：几台电脑各自发现同一个冲突、各存一条，同步之后还是一条。合完的钟取所有版本每格的
+//   放进最近删除的时刻是各台的现在）：几台电脑各自发现同一个冲突、各存一条，同步之后还是一条。**另存那条的钟是空的**：它是
+//   新的一条，原来那条的钟在它身上没意义——几台从钟不同、字一样的几版另存出同一条时，带着各自的钟接着改就撞号（同一台的
+//   同一个次数是两回不同的改动），真改过的字会被当成「被盖过」悄悄扔掉（随机测试抓到的）。合完的钟取所有版本每格的
 //   最大值（盖过所有人：输的那台下一轮看到的是快进）。只看钟、不看时钟谁快谁慢：慢了的钟改的字照样是「在之上改的」。
 //   **钟能用的前提**（NoteStore 守着）：每次内容变化自己那一格 +1（0.6.0 之前、0.5.0 改过的行，打开库时补一格）、计数不回退
 //   （从备份恢复换一个电脑编号）、电脑编号不撞。
@@ -15,7 +17,7 @@
 // - **永久删除**（墓碑 Tombstone：被删的那一版的钟和状态时刻，几台的并起来）：钟每格都不超过它、状态也不晚于它的版本——
 //   被删那一版本身和它的前身——都当没有，在不在「最近删除」里都一样（不然一台合上盖子一个月、一台不用了留下的旧文件夹，
 //   会把清空了的再救回来，还是没删的样子）。删了之后又改过（钟超过）、放回过（状态晚于）的压不住，照常合：宁可多一条。
-//   本机那条被压住、又没剩下别的版本 → 本机真删。
+//   本机那条被压住、又没剩下别的版本 → 本机真删。压不住、留下来的那条，钟里并上墓碑的钟（计数不退回去）。
 // - 时间按原值比，不管它是不是比现在还晚（钟快的那台在别人的钟追上之前赢那几个同时的改动；夹成现在的话结果跟各台的现在
 //   有关，几台挑出不同的赢家）。
 // 合出来和本机那条一样（修订号不算）就原样给回本机那条：执行层据此判断「这一轮这条没变」。
@@ -140,7 +142,7 @@ nonisolated enum NoteSync {
         id: copyID(of: loser.id, content: hash), title: loser.title, body: loser.body,
         color: loser.color, createdAt: loser.createdAt, modifiedAt: loser.modifiedAt,
         order: loser.order, deletedAt: stamp, stateChangedAt: loser.modifiedAt,
-        orderChangedAt: loser.modifiedAt, clock: loser.clock)
+        orderChangedAt: loser.modifiedAt)
     }
 
     // 状态、顺序：各自后改的赢，同一刻按值本身
@@ -155,7 +157,9 @@ nonisolated enum NoteSync {
     else { return Merge(note: local, base: base) }
 
     var note = versions[winner]
-    note.clock = joined(versions.map(\.clock))
+    // 墓碑的钟也并进来：本机永久删过、又被别处改过的那版救回来时，本机那一格不退回去（退回去的话本机接着改会重复用计数，
+    // 也会被当成「库被退回去了」——走文件夹的随机测试抓到的）；被删那一版的前身从此也都被它盖过
+    note.clock = joined(versions.map(\.clock) + (tombstone.map { [$0.clock] } ?? []))
     note.createdAt = versions.map(\.createdAt).min() ?? note.createdAt
     note.isArchived = state.isArchived
     note.isPinned = state.isPinned

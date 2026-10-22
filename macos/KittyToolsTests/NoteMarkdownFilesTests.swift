@@ -279,6 +279,24 @@ struct NoteMarkdownFilesTests {
     #expect(Set(result.notes.map(\.id)).count == 3)
   }
 
+  /// 同步文件夹里的文件（NoteSyncFolder，带 sync-clock）不导：这里读不全它的删除时刻，在最近删除里的会被当没删的导回来
+  @Test func importSkipsSyncFiles() async throws {
+    let folder = root.appending(path: "sync", directoryHint: .isDirectory)
+    try manager.createDirectory(at: folder, withIntermediateDirectories: true)
+    let trashed = Note(
+      id: UUID().uuidString, body: "在最近删除里", createdAt: .now, modifiedAt: .now,
+      deletedAt: .now, clock: ["A": 1])
+    try NoteSyncFolder.text(of: trashed).write(
+      to: folder.appending(path: NoteSyncFolder.fileName(of: trashed.id)), atomically: true,
+      encoding: .utf8)
+    try "普通的".write(to: folder.appending(path: "普通.md"), atomically: true, encoding: .utf8)
+    let sources = NoteMarkdownFiles.markdownFiles(in: folder).map {
+      NoteMarkdownFiles.Source(url: $0, root: folder)
+    }
+    let result = await NoteMarkdownFiles.importNotes(sources: sources, imageDirectory: nil)
+    #expect(result.notes.map(\.body) == ["普通的"] && result.skipped == 1)
+  }
+
   @Test func importHandlesBOMCRLFAndBadFiles() async throws {
     let folder = root.appending(path: "formats", directoryHint: .isDirectory)
     try manager.createDirectory(at: folder, withIntermediateDirectories: true)
