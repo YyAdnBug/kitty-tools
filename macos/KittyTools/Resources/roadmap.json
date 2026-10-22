@@ -1,5 +1,4 @@
 [
   { "kind": "feature", "scope": "便签", "text": "iCloud 同步：几台 Mac 上的便签保持一样" },
-  { "kind": "feature", "scope": "便签", "text": "同时把几张便签浮在屏幕上（现在一次一张）" },
   { "kind": "feature", "scope": "便签", "text": "便签里的图片能裁切" }
 ]

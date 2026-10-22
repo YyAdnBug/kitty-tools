@@ -182,9 +182,11 @@ final class NoteFloat: NSObject, NSWindowDelegate {
   }
 
   /// 不靠拖浮出来（操作菜单的「浮在屏幕上」、全部便签窗口）：origin 是它在那叠里的位置（从那叠里出来的才有）。
-  /// 已经浮着的就是它：叫到前面（几张一起由 NoteFloats 管：别的编号不会交给浮着的这一张）
+  /// 已经浮着的就是它：叫到前面（几张一起由 NoteFloats 管：别的编号不会交给浮着的这一张）。
+  /// avoiding：已经浮着的那几张在哪——和它们错开（NoteFloatLayout.cascaded）
   func present(
-    _ id: String, from origin: Origin? = nil, mouse: CGPoint = NSEvent.mouseLocation
+    _ id: String, from origin: Origin? = nil, mouse: CGPoint = NSEvent.mouseLocation,
+    avoiding others: [CGRect] = []
   ) {
     guard NoteFloatLayout.floats(store.note(id)), !model.state.isDragging else { return }
     guard model.state.noteID != id else { return focus() }
@@ -193,9 +195,13 @@ final class NoteFloat: NSObject, NSWindowDelegate {
     let size = size(
       fallback: origin?.sheet.size ?? options.noteSize.size, near: origin?.sheet ?? .zero,
       pointer: origin == nil ? mouse : nil)
-    let frame = NoteFloatLayout.placed(
+    let attached = screens()
+    var frame = NoteFloatLayout.placed(
       size: size, sheet: origin?.sheet, edge: origin?.edge ?? options.edge, mouse: mouse,
-      in: screens())
+      in: attached)
+    if !others.isEmpty, let home = NoteFloatLayout.home(of: frame, in: attached) {
+      frame = NoteFloatLayout.cascaded(frame, avoiding: others, in: attached[home].visibleFrame)
+    }
     arrival = Arrival(
       frame: frame, edge: origin?.edge ?? edge(near: frame),
       slidesFrom: origin.map {
@@ -463,6 +469,9 @@ final class NoteFloat: NSObject, NSWindowDelegate {
     }
     CATransaction.commit()
   }
+
+  /// 它该在的位置（帧动画没放完时 panel.frame 是中间值）；没有面板是 nil（NoteFloats 错开新的一张时看）
+  var restingFrame: CGRect? { panel == nil ? nil : rest }
 
   /// 这一张现在该记在哪（固定着、浮着、落下了才有；NoteFloatLayout.place 定）：NoteFloats 几张一起写进偏好
   var place: NoteFloatLayout.Place? {

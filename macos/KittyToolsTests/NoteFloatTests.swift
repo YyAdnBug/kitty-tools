@@ -1093,6 +1093,44 @@ struct NoteFloatTests {
     #expect(Set(floats.floatingIDs) == Set(ids.prefix(NoteFloats.limit)))
   }
 
+  /// 错开（拍板 C2，纯函数）：左上角和哪张相距不到 8 点就往右下挪 24；挪出可见区回到起点那一列、往下一行；
+  /// 都挤着 / 一格都放不下用起点
+  @Test func cascadingAvoidsTheOthers() {
+    let visible = CGRect(x: 0, y: 0, width: 1000, height: 800)
+    let start = CGRect(x: 300, y: 300, width: 400, height: 300)
+    #expect(Layout.cascaded(start, avoiding: [], in: visible) == start)
+    let near = start.offsetBy(dx: 5, dy: -5)
+    #expect(
+      Layout.cascaded(start, avoiding: [near], in: visible) == start.offsetBy(dx: 24, dy: -24))
+    // 第一、第二格都占了：第三格
+    let two = [start, start.offsetBy(dx: 24, dy: -24)]
+    #expect(Layout.cascaded(start, avoiding: two, in: visible) == start.offsetBy(dx: 48, dy: -48))
+    // 右边放不下：回到起点那一列、往下一行
+    let right = CGRect(x: 580, y: 300, width: 400, height: 300)
+    let blocked = [right]
+    #expect(
+      Layout.cascaded(right, avoiding: blocked, in: visible) == right.offsetBy(dx: 0, dy: -24))
+    // 往下也放不下：用起点（叠着也不乱跑）
+    let bottom = CGRect(x: 580, y: 0, width: 400, height: 300)
+    #expect(Layout.cascaded(bottom, avoiding: [bottom], in: visible) == bottom)
+  }
+
+  /// 按菜单浮出来的几张错开摆（同一块屏的正中起，往右下 24），拖出来的不错开
+  @Test func floatsFromMenusAreCascaded() throws {
+    let (defaults, suite) = try prefs()
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let (store, ids) = try library(["甲", "乙", "丙"])
+    let floats = try offscreenFloats(store, defaults: defaults)
+    defer { tuckAll(floats) }
+    autoreleasepool {
+      for id in ids { floats.present(id, mouse: Self.farPoint) }
+    }
+    let frames = ids.compactMap { floats.float(of: $0)?.panel?.frame }
+    #expect(frames.count == 3)
+    #expect(frames[1] == frames[0].offsetBy(dx: 24, dy: -24))
+    #expect(frames[2] == frames[0].offsetBy(dx: 48, dy: -48))
+  }
+
   /// 同时浮几张（NoteFloats，拍板 C1）：每条各一张、各一块面板；浮着的再浮一次是叫到前面、不重建；多过上限
   /// 收回最久没碰的那张（碰 = 当 key、被叫到前面、按把手挪）；没了的从集合里拿掉；拖出来的那张单独跟着鼠标
   @Test func severalFloatsUpToTheLimit() throws {

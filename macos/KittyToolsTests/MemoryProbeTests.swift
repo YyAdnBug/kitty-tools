@@ -1579,6 +1579,58 @@ private final class Probe {
         "清缓存 \(mb(deckClosed.footprint - last.footprint))（面板收起 2 秒后自己放掉）",
         deckClosed.footprint - last.footprint >= 10 * megabyte ? "收起也排空闲回收" : "省不到 10 MB"
       ))
+
+    // 同时浮几张（便签未来计划 C，2026-10-22）：没图的普通便签一张一张浮出来（设置里的中等大小，错开摆），每多一张量
+    // 一次；再全部收回、调回收接口。屏外模式下窗口系统不画图层（偏小），屏上模式摆在主屏、几乎透明、不接鼠标
+    let floatBase = report.step("浮动便签：浮之前")
+    let floats = NoteFloats(
+      store: store, defaults: prefs, island: nil, takesKeyboard: false, animates: false)
+    floats.screens = { [screen] }
+    let plain = Array(
+      store.active.filter { !NoteImages.containsToken($0.body) }.prefix(NoteFloats.limit))
+    let center = CGPoint(x: screen.visibleFrame.midX, y: screen.visibleFrame.midY)
+    var previous = floatBase
+    for (index, note) in plain.enumerated() {
+      autoreleasepool {
+        floats.present(note.id, mouse: center)
+        if let panel = floats.float(of: note.id)?.panel {
+          if onscreen {
+            panel.alphaValue = 0.05
+            panel.ignoresMouseEvents = true
+          } else if let view = panel.contentView,
+            let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds)
+          {
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+          }
+        }
+        spin(1)
+        steady()
+      }
+      last = Reading.now()
+      report.row(
+        "浮出第 \(index + 1) 张", last,
+        note: "比上一步多 \(signed(last.footprint - previous.footprint))，比浮之前多 "
+          + "\(mb(last.footprint - floatBase.footprint))")
+      previous = last
+    }
+    let floatsOpen = last
+    autoreleasepool {
+      for float in floats.floats { float.model.send(.remove) }
+      spin(1)
+      _ = relieve()
+      steady()
+    }
+    last = Reading.now()
+    report.row(
+      "全部收回 + 回收接口", last,
+      note: "回落 \(mb(floatsOpen.footprint - last.footprint))，比浮之前多 "
+        + "\(signed(last.footprint - floatBase.footprint))")
+    report.summary.append(
+      (
+        "同时浮 \(plain.count) 张浮动便签（没图）",
+        "每张约 \(mb((floatsOpen.footprint - floatBase.footprint) / max(plain.count, 1)))",
+        "全部收回后回落 \(mb(floatsOpen.footprint - last.footprint))", "上限 5 张"
+      ))
   }
 
   /// 视图树里的滚动区

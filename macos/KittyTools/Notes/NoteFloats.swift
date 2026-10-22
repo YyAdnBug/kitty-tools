@@ -81,7 +81,8 @@ import Observation
     guard dragging == nil else { return }
     if let existing = float(of: id) { return existing.focus() }
     let float = make()
-    float.present(id, from: origin, mouse: mouse)
+    // 按菜单浮出来的和已经浮着的错开（拍板 C2）；拖出来的不错开（detach）
+    float.present(id, from: origin, mouse: mouse, avoiding: floats.compactMap(\.restingFrame))
     admit(float, id)
   }
 

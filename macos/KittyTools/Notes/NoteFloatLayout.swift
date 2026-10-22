@@ -104,6 +104,36 @@ nonisolated enum NoteFloatLayout {
     return clamped(centered(screens[index].visibleFrame), in: screens[index].visibleFrame)
   }
 
+  /// 同时浮几张时按菜单浮出来的新一张和已经浮着的错开（便签未来计划 C2）：左上角和哪一张相距不到 near 点，就往右下挪
+  /// step 点再看；挪出了可见区，回到起点那一列、往下一行（起点往下 step × 第几行）再接着往右下挪。挪满 limit 次都挤着、
+  /// 连起点那一列都放不下了，就用起点（宁可叠着也不乱跑）。拖出来的不走这里（人自己放的）；重启后恢复的按记着的位置
+  static func cascaded(
+    _ frame: CGRect, avoiding others: [CGRect], in visible: CGRect, step: CGFloat = 24,
+    near: CGFloat = 8, limit: Int = 60
+  ) -> CGRect {
+    func crowded(_ candidate: CGRect) -> Bool {
+      others.contains {
+        abs($0.minX - candidate.minX) < near && abs($0.maxY - candidate.maxY) < near
+      }
+    }
+    func fits(_ candidate: CGRect) -> Bool {
+      candidate.maxX <= visible.maxX + 0.5 && candidate.minY >= visible.minY - 0.5
+    }
+    var (row, column) = (0, 0)
+    for _ in 0..<limit {
+      let candidate = frame.offsetBy(
+        dx: step * CGFloat(column), dy: -step * CGFloat(column + row))
+      if !fits(candidate) {
+        if column == 0 { break }
+        (row, column) = (row + 1, 0)
+        continue
+      }
+      if !crowded(candidate) { return candidate }
+      column += 1
+    }
+    return frame
+  }
+
   /// 收回时替身朝哪边滑多远（x 方向）：朝那叠所在的那条边；屏幕边缘没有那叠（nil）就不滑、只淡
   static func tuckOffset(toward edge: NoteDeckOptions.Edge?) -> CGFloat {
     switch edge {

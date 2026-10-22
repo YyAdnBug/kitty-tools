@@ -2410,6 +2410,8 @@ struct SnapshotProbeTests {
         size: frame.size, dark: dark, to: "\(out)/notes-float-deck-\(name).png")
     }
     try deck("tab") { $0.floated([ids[2]]) }
+    // 同时浮几张（便签未来计划 C）：两条标签都带竖条
+    try deck("tab-two") { $0.floated([ids[1], ids[2]]) }
     try deck("tab-left-dark", edge: .left, dark: true) { $0.floated([ids[1]]) }
     var chips = NoteDeckOptions()
     chips.style = .chips
