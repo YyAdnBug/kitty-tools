@@ -792,6 +792,9 @@ final class PanelStandIn: NSPanel {
       contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,
       defer: false)
     isReleasedWhenClosed = false
+    // 本 App 失活时不收：退场的动画放到一半被收走就没了（NSPanel 默认收；收回浮动便签后 NoteFloats.returnKeyboard
+    // 会 deactivate 一次）
+    hidesOnDeactivate = false
     self.level = level
     collectionBehavior = behavior
     isOpaque = false

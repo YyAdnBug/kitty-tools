@@ -67,6 +67,23 @@ struct NoteFloatTests {
     return float
   }
 
+  /// 屏外的一组浮动便签（同 offscreenFloat：不当 key、不做动画、屏幕只有很远的那一块）
+  private func offscreenFloats(_ store: NoteStore, defaults: UserDefaults) throws -> NoteFloats {
+    try #require(
+      !NSScreen.screens.contains {
+        $0.frame.insetBy(dx: -2000, dy: -2000).intersects(Self.far.frame)
+      })
+    let floats = NoteFloats(
+      store: store, defaults: defaults, island: nil, takesKeyboard: false, animates: false)
+    floats.screens = { [Self.far] }
+    return floats
+  }
+
+  /// 收掉一组里浮着的全部（测试收尾）
+  private func tuckAll(_ floats: NoteFloats) {
+    for float in floats.floats { float.model.send(.remove) }
+  }
+
   /// 面板的第一响应者是哪条便签的正文框（它的编号）；不是正文框就是 nil
   private func focusedNote(_ panel: NSPanel?) -> String? {
     (panel?.firstResponder as? NoteTextView)?.identifier?.rawValue
@@ -285,7 +302,7 @@ struct NoteFloatTests {
 
   /// 记着的大小、固定着的那一张在哪是这台电脑自己的状态：不注册默认值、不跟着导出走
   @Test func floatStateIsMachineState() {
-    for key in [Prefs.notesFloatSize, Prefs.notesFloatPlace] {
+    for key in [Prefs.notesFloatSize, Prefs.notesFloatPlace, Prefs.notesFloatPlaces] {
       #expect(Prefs.defaults[key] == nil && SettingsArchive.kinds[key] == nil, "\(key)")
     }
   }
@@ -584,13 +601,13 @@ struct NoteFloatTests {
     model.gripChanged(at: CGPoint(x: 500, y: 380))
     #expect(detached.count == 1 && drags == [CGPoint(x: 600, y: 400), CGPoint(x: 500, y: 380)])
     // 这时浮动便签那边说「它浮着了」：这叠里的那一份不收（手势还连着）
-    model.floated(ids[0])
-    #expect(model.state.openID == ids[0] && model.floatingID == ids[0])
+    model.floated([ids[0]])
+    #expect(model.state.openID == ids[0] && model.floatingIDs == [ids[0]])
     model.gripEnded(.tab, at: CGPoint(x: 498, y: 380))
     #expect(drops == [CGPoint(x: 498, y: 380)] && !model.isDetaching)
     #expect(model.state.phase == .fanned && model.liftedID == ids[0])
     // 下次在这叠里打开便签：看不见的标记清掉
-    model.floated(nil)
+    model.floated([])
     model.tapTab(ids[0])
     #expect(model.state.openID == ids[0] && model.liftedID == nil)
   }
@@ -656,11 +673,11 @@ struct NoteFloatTests {
     let (model, _, ids) = try deckModel(["甲", "乙"])
     var focused = 0
     var floated: [String] = []
-    model.focusFloat = { focused += 1 }
+    model.focusFloat = { _ in focused += 1 }
     model.onFloat = { floated.append($0) }
     model.send(Self.enter)
-    model.floated(ids[0])
-    #expect(model.floatingID == ids[0])
+    model.floated([ids[0]])
+    #expect(model.floatingIDs == [ids[0]])
     model.tapTab(ids[0])
     #expect(model.state.phase == .fanned && focused == 1)
     model.openFromHover(ids[0])
@@ -678,10 +695,10 @@ struct NoteFloatTests {
     #expect(model.menuItems[5].title == "浮在屏幕上")
     model.run(model.menuItems[5])
     #expect(floated == [ids[1]] && model.menu == nil && model.state.openID == ids[1])
-    model.floated(ids[1])
-    #expect(model.state.phase == .fanned && model.floatingID == ids[1])
+    model.floated([ids[1]])
+    #expect(model.state.phase == .fanned && model.floatingIDs == [ids[1]])
     // 收回之后又能在这叠里打开
-    model.floated(nil)
+    model.floated([])
     model.tapTab(ids[1])
     #expect(model.state.openID == ids[1])
     // 没开着便签时菜单那条路不做事
@@ -768,7 +785,7 @@ struct NoteFloatTests {
     #expect(float.panel?.frame == expected && float.panel?.isVisible == true)
     #expect(float.panel?.isKeyWindow == false && float.panel?.level == .floating)
     #expect(!onScreen(float.panel?.frame))
-    #expect(defaults.object(forKey: Prefs.notesFloatPlace) == nil)
+    #expect(float.place == nil)
     try await settle { focusedNote(float.panel) == ids[0] }
     #expect(focusedNote(float.panel) == ids[0])
     // 固定：位置记下来；取消固定：记着的删掉。层级不跟着变——没固定的也一直在别的 App 的窗口上面
@@ -776,12 +793,12 @@ struct NoteFloatTests {
     float.storeChanged()
     #expect(float.panel?.level == .floating)
     #expect(
-      Place(stored: defaults.object(forKey: Prefs.notesFloatPlace))
+      float.place
         == Place(id: ids[0], frame: expected))
     store.setPinned(false, of: ids[0])
     float.storeChanged()
     #expect(
-      float.panel?.level == .floating && defaults.object(forKey: Prefs.notesFloatPlace) == nil)
+      float.panel?.level == .floating && float.place == nil)
     // 再让同一条浮出来：就是它，不重建
     let same = float.panel
     float.present(ids[0], mouse: Self.farPoint)
@@ -789,12 +806,12 @@ struct NoteFloatTests {
     // 收回（固定着的也收），记着的位置跟着删掉
     store.setPinned(true, of: ids[0])
     float.storeChanged()
-    #expect(defaults.object(forKey: Prefs.notesFloatPlace) != nil)
+    #expect(float.place != nil)
     #expect(hidden == 0)
     float.model.close()
     #expect(float.panel == nil && float.model.state.noteID == nil && same?.isVisible == false)
     #expect(hidden == 1)
-    #expect(defaults.object(forKey: Prefs.notesFloatPlace) == nil)
+    #expect(float.place == nil)
     #expect(same?.contentView == nil)
     // 全部便签窗口的那个入口：浮出来 / 收回
     float.toggle(ids[1])
@@ -861,7 +878,7 @@ struct NoteFloatTests {
     float.model.close()
     float.detach(ids[1], from: .init(sheet: sheet), at: pointer)
     #expect(float.model.state.noteID == ids[0] && float.model.state.isDragging)
-    #expect(defaults.object(forKey: Prefs.notesFloatPlace) == nil)
+    #expect(float.place == nil)
     // 拖到那块屏的底边外面松手：夹回可见区里
     let below = CGPoint(x: pointer.x - 300, y: Self.far.frame.minY + 60)
     float.drop(at: below)
@@ -885,11 +902,11 @@ struct NoteFloatTests {
     float.model.close()
     store.setPinned(true, of: ids[1])
     float.detach(ids[1], from: .init(sheet: sheet), at: pointer)
-    #expect(defaults.object(forKey: Prefs.notesFloatPlace) == nil)
+    #expect(float.place == nil)
     float.drop(at: pointer)
     #expect(float.panel?.level == .floating)
     #expect(
-      Place(stored: defaults.object(forKey: Prefs.notesFloatPlace))
+      float.place
         == Place(id: ids[1], frame: sheet))
   }
 
@@ -915,7 +932,7 @@ struct NoteFloatTests {
     float.model.gripEnded(.tab, at: CGPoint(x: start.x + 120, y: start.y - 60))
     #expect(float.panel === panel && panel.frame == frame.offsetBy(dx: 120, dy: -60))
     #expect(
-      Place(stored: defaults.object(forKey: Prefs.notesFloatPlace))
+      float.place
         == Place(id: ids[0], frame: frame.offsetBy(dx: 120, dy: -60)))
     // 挪出那块屏的右边：松手夹回来
     float.model.gripChanged(at: start)
@@ -923,7 +940,7 @@ struct NoteFloatTests {
     #expect(panel.frame.minX > Self.far.frame.maxX && !onScreen(panel.frame))
     float.model.gripEnded(.header, at: CGPoint(x: start.x + 5000, y: start.y))
     #expect(panel.frame.maxX == Self.far.visibleFrame.maxX)
-    #expect(Place(stored: defaults.object(forKey: Prefs.notesFloatPlace))?.frame == panel.frame)
+    #expect(float.place?.frame == panel.frame)
   }
 
   /// 拉过的大小记下来，下次浮出来还是这么大；拉过了屏幕边的夹回来
@@ -964,66 +981,164 @@ struct NoteFloatTests {
         == Self.far.visibleFrame.size)
   }
 
-  /// 重启后：固定着浮在屏幕上的那一张回到原处、不当 key；记着的那条不固定了 / 没了就不回来，记着的也删掉
-  @Test func restoringThePinnedFloat() async throws {
+  /// 重启后（NoteFloats）：固定着浮在屏幕上的**每一张**都回到原处、都不当 key；0.6.0 之前只记一张的旧键读成一条、
+  /// 删掉；原来那块屏不在了夹进现在的屏；不固定了、归档了、删了、没有这条、存坏了的不回来（记着的一并清掉）；
+  /// 一块屏都没有时什么都不动；最多回来 limit 张
+  @Test func restoringThePinnedFloats() async throws {
     let (defaults, suite) = try prefs()
     defer { defaults.removePersistentDomain(forName: suite) }
-    let (store, ids) = try library(["甲", "乙"])
-    store.setPinned(true, of: ids[0])
-    let frame = CGRect(x: -39700, y: -39600, width: 520, height: 440)
-    // 上一次运行：浮着、固定着，位置记下来了（之后这一份控制器就不在了；偏好里留着的换成一个好认的位置）
-    let before = try offscreenFloat(store, defaults: defaults)
+    let (store, ids) = try library(["甲", "乙", "丙"])
+    for id in ids { store.setPinned(true, of: id) }
+    let frames = [
+      CGRect(x: -39700, y: -39600, width: 520, height: 440),
+      CGRect(x: -39300, y: -39500, width: 400, height: 360),
+    ]
+    // 上一次运行：两张固定着浮着，位置都记下来了
+    let before = try offscreenFloats(store, defaults: defaults)
     before.present(ids[0], mouse: Self.farPoint)
-    #expect(Place(stored: defaults.object(forKey: Prefs.notesFloatPlace))?.id == ids[0])
-    before.model.send(.remove)
-    #expect(defaults.object(forKey: Prefs.notesFloatPlace) == nil)
-    defaults.set(Place(id: ids[0], frame: frame).stored, forKey: Prefs.notesFloatPlace)
-    // 这一次运行
-    let float = try offscreenFloat(store, defaults: defaults)
-    defer { float.model.send(.remove) }
-    #expect(float.panel == nil)
-    float.restore()
-    #expect(float.model.state.noteID == ids[0] && float.panel?.frame == frame)
-    #expect(float.panel?.level == .floating && float.panel?.isKeyWindow == false)
-    #expect(!onScreen(float.panel?.frame))
-    #expect(Place(stored: defaults.object(forKey: Prefs.notesFloatPlace))?.frame == frame)
-    try await settle { focusedNote(float.panel) == ids[0] }
-    // 已经有浮着的：再恢复一次什么都不做
-    let kept = float.panel
-    float.restore()
-    #expect(float.panel === kept)
-    float.model.send(.remove)
-    // 原来那块屏不在了（记着的位置哪块屏都不沾）：到现在的屏里
+    before.present(ids[1], mouse: Self.farPoint)
+    let stored = {
+      (defaults.array(forKey: Prefs.notesFloatPlaces) ?? []).compactMap(Place.init(stored:))
+    }
+    #expect(stored().map(\.id) == [ids[0], ids[1]])
+    tuckAll(before)
+    #expect(defaults.object(forKey: Prefs.notesFloatPlaces) == nil, "收回了就不记")
     defaults.set(
-      Place(id: ids[0], frame: frame.offsetBy(dx: 9000, dy: 9000)).stored,
-      forKey: Prefs.notesFloatPlace)
-    float.restore()
-    #expect(float.panel.map { Self.far.visibleFrame.contains($0.frame) } == true)
-    #expect(float.panel?.frame.size == frame.size)
-    float.model.send(.remove)
-    // 不固定了、归档了、删了、没有这条、存的不是那个样子：不回来，记着的删掉
+      [Place(id: ids[0], frame: frames[0]).stored], forKey: Prefs.notesFloatPlaces)
+    // 旧版本只记一张的键：读成一条
+    defaults.set(Place(id: ids[1], frame: frames[1]).stored, forKey: Prefs.notesFloatPlace)
+    // 这一次运行
+    let floats = try offscreenFloats(store, defaults: defaults)
+    defer { tuckAll(floats) }
+    floats.restore()
+    #expect(floats.floatingIDs == [ids[0], ids[1]])
+    #expect(floats.float(of: ids[0])?.panel?.frame == frames[0])
+    #expect(floats.float(of: ids[1])?.panel?.frame == frames[1])
+    #expect(
+      floats.floats.allSatisfy { $0.panel?.isKeyWindow == false && !onScreen($0.panel?.frame) })
+    #expect(defaults.object(forKey: Prefs.notesFloatPlace) == nil, "旧键读过就删")
+    #expect(Set(stored().map(\.id)) == [ids[0], ids[1]])
+    // 已经浮着的：再恢复一次不多出来
+    floats.restore()
+    #expect(floats.floats.count == 2)
+    tuckAll(floats)
+    // 原来那块屏不在了（记着的位置哪块屏都不沾）：到现在的屏里，大小不变
+    defaults.set(
+      [Place(id: ids[0], frame: frames[0].offsetBy(dx: 9000, dy: 9000)).stored],
+      forKey: Prefs.notesFloatPlaces)
+    floats.restore()
+    let moved = try #require(floats.float(of: ids[0])?.panel?.frame)
+    #expect(Self.far.visibleFrame.contains(moved) && moved.size == frames[0].size)
+    tuckAll(floats)
+    // 不固定了、归档了、删了、没有这条、存的不是那个样子：不回来，记着的清掉
     for spoil in 0..<5 {
-      defaults.set(Place(id: ids[0], frame: frame).stored, forKey: Prefs.notesFloatPlace)
+      defaults.set([Place(id: ids[0], frame: frames[0]).stored], forKey: Prefs.notesFloatPlaces)
       switch spoil {
       case 0: store.setPinned(false, of: ids[0])
       case 1: store.setArchived(true, of: ids[0])
       case 2: store.delete(ids[0])
       case 3:
-        defaults.set(Place(id: "没有这条", frame: frame).stored, forKey: Prefs.notesFloatPlace)
-      default: defaults.set("不是那个样子", forKey: Prefs.notesFloatPlace)
+        defaults.set([Place(id: "没有这条", frame: frames[0]).stored], forKey: Prefs.notesFloatPlaces)
+      default: defaults.set(["不是那个样子"], forKey: Prefs.notesFloatPlaces)
       }
-      float.restore()
-      #expect(float.panel == nil && float.model.state.noteID == nil, "\(spoil)")
-      #expect(defaults.object(forKey: Prefs.notesFloatPlace) == nil, "\(spoil)")
+      floats.restore()
+      #expect(floats.floats.isEmpty, "\(spoil)")
+      #expect(defaults.object(forKey: Prefs.notesFloatPlaces) == nil, "\(spoil)")
       store.restore(ids[0])
       store.setArchived(false, of: ids[0])
       store.setPinned(true, of: ids[0])
     }
-    // 一块屏都没有（还没接上显示器）：不恢复，但记着的留着
-    defaults.set(Place(id: ids[0], frame: frame).stored, forKey: Prefs.notesFloatPlace)
-    float.screens = { [] }
-    float.restore()
-    #expect(float.panel == nil && defaults.object(forKey: Prefs.notesFloatPlace) != nil)
+    // 一块屏都没有（还没接上显示器）：不恢复，记着的留着
+    defaults.set([Place(id: ids[0], frame: frames[0]).stored], forKey: Prefs.notesFloatPlaces)
+    floats.screens = { [] }
+    floats.restore()
+    #expect(floats.floats.isEmpty && defaults.object(forKey: Prefs.notesFloatPlaces) != nil)
+  }
+
+  /// 几张都固定着：多过上限收回的那张不再记、新的那张记上；收走的 NoteFloat 真的放掉了（集合是唯一拿着它的）；
+  /// 记着的多过上限、编号重复时，重启只回来上限那么多、同一条只回来一张
+  @Test func pinnedFloatsAreRememberedAndReleased() throws {
+    let (defaults, suite) = try prefs()
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let (store, ids) = try library((1...7).map { "第 \($0) 条" })
+    for id in ids { store.setPinned(true, of: id) }
+    let floats = try offscreenFloats(store, defaults: defaults)
+    defer { tuckAll(floats) }
+    let stored = {
+      (defaults.array(forKey: Prefs.notesFloatPlaces) ?? []).compactMap(Place.init(stored:)).map(
+        \.id)
+    }
+    // 浮出来、拿弱引用、收它都包在自动释放池里：同步跑的测试里池子不清，建面板时被自动释放的引用会一直挂着
+    autoreleasepool {
+      for id in ids.prefix(NoteFloats.limit) { floats.present(id, mouse: Self.farPoint) }
+    }
+    #expect(Set(stored()) == Set(ids.prefix(NoteFloats.limit)))
+    weak var evicted: NoteFloat?
+    autoreleasepool { evicted = floats.float(of: ids[0]) }
+    autoreleasepool { floats.present(ids[5], mouse: Self.farPoint) }
+    #expect(!stored().contains(ids[0]) && stored().contains(ids[5]))
+    #expect(evicted == nil, "收回的那张放掉了")
+    // 收回一张：同样放掉、不再记
+    weak var tucked: NoteFloat?
+    autoreleasepool { tucked = floats.float(of: ids[1]) }
+    autoreleasepool { floats.toggle(ids[1]) }
+    #expect(tucked == nil && !stored().contains(ids[1]))
+    tuckAll(floats)
+    // 记着 7 条（有一条重复）：只回来 limit 张、同一条只一张
+    let frame = CGRect(x: -39700, y: -39600, width: 400, height: 300)
+    defaults.set(
+      (ids + [ids[0]]).map { Place(id: $0, frame: frame).stored }, forKey: Prefs.notesFloatPlaces)
+    floats.restore()
+    #expect(floats.floats.count == NoteFloats.limit)
+    #expect(Set(floats.floatingIDs) == Set(ids.prefix(NoteFloats.limit)))
+  }
+
+  /// 同时浮几张（NoteFloats，拍板 C1）：每条各一张、各一块面板；浮着的再浮一次是叫到前面、不重建；多过上限
+  /// 收回最久没碰的那张（碰 = 当 key、被叫到前面、按把手挪）；没了的从集合里拿掉；拖出来的那张单独跟着鼠标
+  @Test func severalFloatsUpToTheLimit() throws {
+    let (defaults, suite) = try prefs()
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let bodies = (1...7).map { "第 \($0) 条" }
+    let (store, ids) = try library(bodies)
+    let floats = try offscreenFloats(store, defaults: defaults)
+    defer { tuckAll(floats) }
+    var changes = 0
+    floats.onChange = { changes += 1 }
+    for id in ids.prefix(NoteFloats.limit) { floats.present(id, mouse: Self.farPoint) }
+    #expect(floats.floats.count == NoteFloats.limit && changes >= NoteFloats.limit)
+    let panels = floats.floats.compactMap(\.panel)
+    #expect(Set(panels.map(ObjectIdentifier.init)).count == NoteFloats.limit, "各一块面板")
+    // 浮着的再浮一次：叫到前面（算碰了一下），不重建
+    let first = try #require(floats.float(of: ids[0]))
+    floats.present(ids[0], mouse: Self.farPoint)
+    #expect(floats.float(of: ids[0]) === first && floats.floats.last === first)
+    // 第 6 张：最久没碰的（第 2 条，第 1 条刚被叫到前面过）收回去
+    let second = try #require(floats.float(of: ids[1]))
+    floats.present(ids[5], mouse: Self.farPoint)
+    #expect(floats.floats.count == NoteFloats.limit)
+    #expect(floats.float(of: ids[1]) == nil && second.panel == nil)
+    #expect(floats.floatingIDs == Set([ids[0], ids[2], ids[3], ids[4], ids[5]]))
+    // 叫到前面也算碰（那叠里点它的标签）
+    floats.focus(ids[2])
+    #expect(floats.floats.last === floats.float(of: ids[2]))
+    // 便签没了：那一张关掉、从集合里拿掉
+    store.delete(ids[3])
+    floats.storeChanged()
+    #expect(floats.float(of: ids[3]) == nil && floats.floats.count == NoteFloats.limit - 1)
+    // 拖出来：新的一张跟着鼠标走，松手落下；拖着的时候别的不接
+    floats.detach(
+      ids[6], from: NoteFloat.Origin(sheet: Self.farSheet, edge: .right),
+      at: CGPoint(x: Self.farSheet.midX, y: Self.farSheet.maxY - 10))
+    let dragged = try #require(floats.float(of: ids[6]))
+    #expect(dragged.model.state.isDragging && floats.floats.count == NoteFloats.limit)
+    floats.present(ids[1], mouse: Self.farPoint)
+    #expect(floats.float(of: ids[1]) == nil, "拖着的时候不浮别的")
+    floats.drag(to: CGPoint(x: Self.farSheet.midX - 300, y: Self.farSheet.maxY - 200))
+    floats.drop(at: CGPoint(x: Self.farSheet.midX - 300, y: Self.farSheet.maxY - 200))
+    #expect(!dragged.model.state.isDragging && dragged.panel != nil)
+    // 全部便签窗口的「收回边缘」
+    floats.toggle(ids[6])
+    #expect(floats.float(of: ids[6]) == nil && dragged.panel == nil)
   }
 
   /// 屏幕变了（设置、显示器的变化由 NoteEdge 转过来）：夹回现在的可见区；它带着的标签跟那叠的大小档和在哪条边走
@@ -1055,7 +1170,7 @@ struct NoteFloatTests {
     float.screens = { [smaller] }
     float.update(options: options, edgeShown: false)
     #expect(smaller.visibleFrame.contains(panel.frame) && panel.frame.size == frame.size)
-    #expect(Place(stored: defaults.object(forKey: Prefs.notesFloatPlace))?.frame == panel.frame)
+    #expect(float.place?.frame == panel.frame)
   }
 
   /// 长截图：压在选区上的先收走，结束放回来；不相交的不动。点它在那叠里的标签时也放回来
@@ -1260,37 +1375,40 @@ struct NoteFloatTests {
     let (defaults, suite) = try prefs()
     defer { defaults.removePersistentDomain(forName: suite) }
     let (store, ids) = try library(["甲", "乙"])
-    let float = try offscreenFloat(store, defaults: defaults)
-    defer { float.model.send(.remove) }
     let model = NotesWindowModel(store: store)
     func note(_ index: Int) -> Note? { store.note(ids[index]) }
     // 还没接上浮动便签（便签用不了时）：不做事，名字照常
     model.toggleFloating(ids[0])
     #expect(!model.isFloating(note(0)) && model.floatTitle(note(0)) == "浮在屏幕上")
-    model.float = float.model
-    model.toggleFloat = { [weak float] in float?.toggle($0) }
+    let floats = try offscreenFloats(store, defaults: defaults)
+    defer { tuckAll(floats) }
+    model.floats = floats
+    model.toggleFloat = { [weak floats] in floats?.toggle($0) }
     model.toggleFloating(ids[0])
-    #expect(float.model.state.noteID == ids[0] && !onScreen(float.panel?.frame))
+    let float = try #require(floats.float(of: ids[0]))
+    #expect(!onScreen(float.panel?.frame))
     #expect(model.isFloating(note(0)) && !model.isFloating(note(1)) && !model.isFloating(nil))
     #expect(model.floatTitle(note(0)) == "收回边缘" && model.floatTitle(note(1)) == "浮在屏幕上")
     #expect(model.rowItems(try #require(note(0))).map(\.title).contains("收回边缘"))
     // 屏幕边缘没有那叠（总开关关着）：没有「边缘」可回
-    float.update(options: NoteDeckOptions(), edgeShown: false)
+    floats.update(options: NoteDeckOptions(), edgeShown: false)
     #expect(model.floatTitle(note(0)) == "取消浮动")
     #expect(model.floatSymbol(note(0)) != model.floatSymbol(note(1)))
-    // 换一条浮出来：一次一张
+    // 再浮一条：两条都浮着（同时可以浮几张）
     model.toggleFloating(ids[1])
-    #expect(float.model.state.noteID == ids[1] && !model.isFloating(note(0)))
+    #expect(model.isFloating(note(0)) && model.isFloating(note(1)) && floats.floats.count == 2)
     model.toggleFloating(ids[1])
-    #expect(float.model.state.noteID == nil && float.panel == nil)
+    #expect(!model.isFloating(note(1)) && floats.float(of: ids[1]) == nil)
     // 归档的、删掉的不能浮（右键菜单里归档的也没有那一项）
     store.setArchived(true, of: ids[1])
     model.toggleFloating(ids[1])
-    #expect(float.model.state.noteID == nil)
+    #expect(floats.float(of: ids[1]) == nil)
     #expect(!model.rowItems(try #require(note(1))).map(\.title).contains("浮在屏幕上"))
     store.delete(ids[0])
+    floats.storeChanged()
+    #expect(floats.floats.isEmpty && float.panel == nil)
     model.toggleFloating(ids[0])
-    #expect(float.model.state.noteID == nil && float.panel == nil)
+    #expect(floats.floats.isEmpty)
   }
 
   // MARK: 和那叠接起来
@@ -1317,8 +1435,10 @@ struct NoteFloatTests {
     deck.model.onDetachDrag = { [weak float] in float?.drag(to: $0) }
     deck.model.onDetachDrop = { [weak float] in float?.drop(at: $0) }
     deck.onFloat = { [weak float] in float?.present($0, from: $1, mouse: Self.farPoint) }
-    deck.model.focusFloat = { [weak float] in float?.focus() }
-    float.onChange = { [weak deck, weak float] in deck?.model.floated(float?.model.state.noteID) }
+    deck.model.focusFloat = { [weak float] _ in float?.focus() }
+    float.onChange = { [weak deck, weak float] in
+      deck?.model.floated(Set([float?.model.state.noteID].compactMap { $0 }))
+    }
     return (deck, float, ids)
   }
 
@@ -1353,7 +1473,7 @@ struct NoteFloatTests {
     let panel = try #require(float.panel)
     #expect(panel.frame == sheet && panel.level == .floating && float.model.state.isDragging)
     #expect(deck.model.state.openID == ids[0] && deck.model.liftedID == ids[0])
-    #expect(deck.model.floatingID == ids[0] && deck.panel?.isVisible == true)
+    #expect(deck.model.floatingIDs == [ids[0]] && deck.panel?.isVisible == true)
     #expect(NoteDeck.editor(for: ids[0], in: deck.panel?.contentView) === deckEditor)
     deck.model.gripChanged(at: CGPoint(x: past.x - 200, y: past.y - 30))
     #expect(panel.frame == sheet.offsetBy(dx: -200, dy: -30) && !onScreen(panel.frame))
@@ -1375,7 +1495,7 @@ struct NoteFloatTests {
     #expect(!float.model.state.isDragging && float.panel === panel)
     // 这条便签固定着：落下后在别的窗口上面，位置记下来
     #expect(panel.level == .floating && !panel.isKeyWindow)
-    #expect(Place(stored: defaults.object(forKey: Prefs.notesFloatPlace))?.id == ids[0])
+    #expect(float.place?.id == ids[0])
     try await settle {
       focusedNote(panel) == ids[0]
         && NoteDeck.editor(for: ids[0], in: deck.panel?.contentView) == nil
@@ -1397,7 +1517,7 @@ struct NoteFloatTests {
     let second = deck.contentFrame
     deck.model.toggleFloating()
     #expect(float.model.state.noteID == ids[1] && deck.model.state.phase == .fanned)
-    #expect(deck.model.floatingID == ids[1] && float.panel !== panel && !panel.isVisible)
+    #expect(deck.model.floatingIDs == [ids[1]] && float.panel !== panel && !panel.isVisible)
     #expect(
       float.panel?.frame
         == Layout.placed(
@@ -1405,7 +1525,7 @@ struct NoteFloatTests {
     #expect(!onScreen(float.panel?.frame))
     // 收回：那叠知道没有浮着的了，又能在那叠里打开
     float.model.close()
-    #expect(deck.model.floatingID == nil && float.panel == nil)
+    #expect(deck.model.floatingIDs.isEmpty && float.panel == nil)
     deck.pill?.onPress()
     deck.model.tapTab(ids[1])
     #expect(deck.model.state.openID == ids[1] && deck.model.liftedID == nil)
@@ -1598,7 +1718,7 @@ struct NoteFloatTests {
     #expect(!float.model.state.isDragging && float.model.state.noteID == ids[0])
     #expect(float.panel?.frame == sheet.offsetBy(dx: -300 + 60, dy: -40))
     #expect(!deck.model.isDetaching && deck.model.state.phase == .fanned)
-    #expect(deck.model.floatingID == ids[0] && !onScreen(float.panel?.frame))
+    #expect(deck.model.floatingIDs == [ids[0]] && !onScreen(float.panel?.frame))
     // 之后能关：Esc 收回
     float.panel?.cancelOperation(nil)
     #expect(float.panel == nil && float.model.state.noteID == nil)

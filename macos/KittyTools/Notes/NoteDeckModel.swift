@@ -10,7 +10,7 @@
 // - **浮动便签**（第 4 批）：按着打开的便签的把手（它带着的那张标签、头部的空白处）往外拖，过了阈值它就脱出来、
 //   变成跟着鼠标走的浮动面板（onDetach → NoteFloat）。**鼠标松开之前，它在这叠里的那一份留着不拆**（拆了正在拖的
 //   手势就断了），只是看不见（liftedID）；松手才从这叠里收掉。不靠拖的路是操作菜单的「浮在屏幕上」（toggleFloating）。
-//   已经浮着的那条（floatingID）点它的标签是把浮着的叫到前面，不在这叠里再开一份。
+//   已经浮着的（floatingIDs，同时可以浮几张）点它的标签是把浮着的那张叫到前面，不在这叠里再开一份。
 // - **右键菜单**（手测反馈第 3 批）：右键一张标签是这条便签的操作（tabItems：固定、颜色、浮在屏幕上、归档、删除，
 //   不用先打开它）；右键标签列的空白处、「+」、药丸是同一份三项（edgeItems：新建便签、全部便签、设置…）。都是系统菜单；
 //   菜单开着时这一列不收（isShowingMenu：不算「4 秒没动静」、鼠标出了热区也不算走了、点别处也不算），关了照常。
@@ -55,8 +55,8 @@ import SwiftUI
   /// 打开的便签的顶离面板顶多远：**打开那一刻定住**（它对着自己那张标签，而标签露出多长跟着最长的标题实时变——
   /// 不定住的话打第一行字时便签自己一跳一跳地上下挪）。关掉再开、面板大小变了才重算
   private(set) var openTop: CGFloat?
-  /// 浮在屏幕上的那条便签（NoteEdge 跟着浮动便签的状态设，floated）：它的标签上有记号，点它是把浮着的那张叫到前面
-  private(set) var floatingID: String?
+  /// 浮在屏幕上的那几条便签（NoteEdge 跟着 NoteFloats 设，floated）：它们的标签上有记号，点它是把浮着的那张叫到前面
+  private(set) var floatingIDs: Set<String> = []
   /// 被拖出去的那条：鼠标还按着时，它在这叠里的那一份留着不拆、只是看不见；松手后那一份淡出的 0.1 秒里也不露出来。
   /// 下次在这叠里打开便签时清掉
   private(set) var liftedID: String?
@@ -74,7 +74,7 @@ import SwiftUI
   @ObservationIgnored private(set) var isShowingMenu = false
   /// 浮动便签那边的事（NoteDeck / NoteEdge 接到 NoteFloat）：把浮着的那张叫到前面；把开着的这条浮到屏幕上（不靠拖）；
   /// 拖出来的三步——脱出来了（哪条、鼠标在哪）、跟着走、松手
-  @ObservationIgnored var focusFloat: () -> Void = {}
+  @ObservationIgnored var focusFloat: (String) -> Void = { _ in }
   @ObservationIgnored var onFloat: (String) -> Void = { _ in }
   @ObservationIgnored var onDetach: (String, CGPoint) -> Void = { _, _ in }
   @ObservationIgnored var onDetachDrag: (CGPoint) -> Void = { _ in }
@@ -186,9 +186,9 @@ import SwiftUI
 
   /// 浮在屏幕上的换了一条 / 没有了（NoteEdge 转过来）。刚浮出去的那条还开在这叠里就从这叠里收掉——同一条便签不留
   /// 两个正文框；**正被拖着的不收**：它在这叠里的那一份要留到松手（拆了拖着的手势就断了），松手时自己收（gripEnded）
-  func floated(_ id: String?) {
-    if floatingID != id { floatingID = id }
-    if let id, state.openID == id, !isDetaching { send(.close) }
+  func floated(_ ids: Set<String>) {
+    if floatingIDs != ids { floatingIDs = ids }
+    if let open = state.openID, ids.contains(open), !isDetaching { send(.close) }
   }
 
   // MARK: 这一列
@@ -287,7 +287,7 @@ import SwiftUI
   /// 叫到前面、给它键盘，不在这叠里再开一份（同一条便签两个正文框）
   func tapTab(_ id: String) {
     onActivity()
-    if id == floatingID { return focusFloat() }
+    if floatingIDs.contains(id) { return focusFloat(id) }
     send(.tab(id))
   }
 
@@ -319,7 +319,7 @@ import SwiftUI
 
   /// 悬停够久了：打开，但不抢键盘（这时还得能扇出才开）。浮在屏幕上的那条不开（鼠标停一下不该把它叫过来）
   func openFromHover(_ id: String) {
-    guard canFan(), state.phase == .fanned, id != floatingID else { return }
+    guard canFan(), state.phase == .fanned, !floatingIDs.contains(id) else { return }
     takesKey = false
     defer { takesKey = true }
     send(.tab(id))
@@ -440,7 +440,7 @@ import SwiftUI
   /// 右键时用的那一份：按仓库里这条现在的样子（没了、归档了、删了就没有菜单）
   func tabItems(_ id: String) -> [ActionMenu.Item] {
     guard let note = target(id) else { return [] }
-    return tabItems(note, isFloating: id == floatingID)
+    return tabItems(note, isFloating: floatingIDs.contains(id))
   }
 
   /// 标签右键菜单里的「浮在屏幕上 / 收回边缘」：开着的这条走操作菜单那条路（从它现在的位置浮出去），别的交给浮动便签
@@ -464,7 +464,7 @@ import SwiftUI
   /// 面板却可能不是 key（人在别的 App 里按的快捷键）：照样把焦点放进正文。复用的那条空白便签正浮在屏幕上：
   /// 叫到前面就行
   func open(created id: String) {
-    if id == floatingID { return focusFloat() }
+    if floatingIDs.contains(id) { return focusFloat(id) }
     let wasOpen = state.openID == id
     send(.created(id))
     if wasOpen { requestFocus() }

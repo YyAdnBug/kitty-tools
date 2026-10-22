@@ -136,6 +136,8 @@ final class ShotShelf {
     let panel = NSPanel(
       contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,
       defer: true)
+    // 本 App 失活时不收（NSPanel 默认收；收回浮动便签后 NoteFloats.returnKeyboard 会 deactivate 一次）
+    panel.hidesOnDeactivate = false
     panel.isOpaque = false
     panel.backgroundColor = .clear
     panel.hasShadow = false

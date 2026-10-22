@@ -1,5 +1,6 @@
 // 浮动便签（PLAN §10「便签」拍板 B⑤ C②，第 4 批；规矩在 mac-overlay-panel §12「浮动便签」）：从屏幕边缘那叠里拖出来、
-// 或者从操作菜单「浮在屏幕上」，留在屏幕上的一张便签。**一次一张**。这里管窗口；界面读的状态在 NoteFloatModel，
+// 或者从操作菜单「浮在屏幕上」，留在屏幕上的一张便签。**一个实例管一张**：同时浮几张（2026-10-22 便签未来计划 C）是
+// NoteFloats 建几个它、管上限和「最久没碰」、记位置；这里管这一张的窗口；界面读的状态在 NoteFloatModel，
 // 它的状态一变，这里按来的是哪件事和前后两个状态算出该做哪几件（effects，纯函数、有单测）再去做。
 // - **拖出来时两块面板的交接**：手势是在那叠的面板里的视图上开始的，过了阈值，NoteDeck 把这条便签在那叠里的位置和
 //   正文里的选区交过来（detach），这里当场建一块面板、摆在同一个地方（带标签那一侧的上角不动，纸不跳）、盖在那叠
@@ -18,8 +19,8 @@
 // - 记下的大小拿出来时夹进它要出现的那块屏的可见区（大外接屏上拉大的回到笔记本上不伸出屏幕）。
 // - 落下时截图框选正开着（拖到一半按了截图）：不抢遮罩的 key，只放第一响应者。
 // - 落盘：浮出来之前、换一张、收回、便签不在了、失去 key、长截图让开，都先 NoteStore.flush()。
-// - **记着的两样**（都是这台电脑自己的状态，不注册默认值）：拉过的大小（下次浮出来还是这么大）；固定着的那一张
-//   在哪——只有它跨重启（restore：便签还在、没归档没删、还固定着才回来，位置夹进现在看得见的屏幕）。
+// - **记着的两样**（都是这台电脑自己的状态，不注册默认值）：拉过的大小（下次浮出来还是这么大，这里记）；固定着的
+//   在哪——这里只报（place、onPersist），几张一起由 NoteFloats 记、重启后让它们回来（restore(_:frame:)）。
 // - 截图 / 录屏里它是内容，同钉图：冻结帧里有、能悬停选中（整扇窗口），录屏白名单里有（ScreenCapture）；长截图时
 //   压在选区上的先收走、结束放回（suspend(covering:) / resume，同钉图：它会吞掉滚轮）。没有「点别处就收」这回事。
 // 几块屏、设置、仓库的变化由 NoteEdge 转过来（update / storeChanged）：不另挂一份通知。
@@ -95,6 +96,12 @@ final class NoteFloat: NSObject, NSWindowDelegate {
   var onChange: () -> Void = {}
   /// 面板放掉了（收回、关掉、换成另一张）：NoteEdge 转给 AppDelegate 排空闲回收
   var onHide: () -> Void = {}
+  /// 碰了它一下（当上 key、被叫到前面、按着把手挪）：NoteFloats 据此认「最久没碰」的是哪张
+  var onTouch: () -> Void = {}
+  /// 固定着的位置该重记了（NoteFloats 把几张一起写进偏好）
+  var onPersist: () -> Void = {}
+  /// 收回 / 关掉时面板拿着键盘（NoteFloats 看 AppKit 是不是把 key 交给了另一张浮动便签）
+  var onKeyReleased: () -> Void = {}
 
   private let defaults: UserDefaults
   /// 落下时面板当不当 key。只有单测传 false：屏外的面板一当 key，用户正在用的那个 App 就丢了键盘
@@ -147,8 +154,7 @@ final class NoteFloat: NSObject, NSWindowDelegate {
 
   // MARK: 浮出来、收回去
 
-  /// 从那叠里拖出来，过了阈值（鼠标还按着）：在它原来的地方建一块面板，之后跟着鼠标走（drag），松手落下（drop）。
-  /// 已经浮着另一张的话，那一张收回去
+  /// 从那叠里拖出来，过了阈值（鼠标还按着）：在它原来的地方建一块面板，之后跟着鼠标走（drag），松手落下（drop）
   func detach(_ id: String, from origin: Origin, at pointer: CGPoint) {
     guard NoteFloatLayout.floats(store.note(id)), !model.state.isDragging else { return }
     store.flush()
@@ -176,7 +182,7 @@ final class NoteFloat: NSObject, NSWindowDelegate {
   }
 
   /// 不靠拖浮出来（操作菜单的「浮在屏幕上」、全部便签窗口）：origin 是它在那叠里的位置（从那叠里出来的才有）。
-  /// 已经浮着的就是它：叫到前面。已经浮着另一张：那一张收回去
+  /// 已经浮着的就是它：叫到前面（几张一起由 NoteFloats 管：别的编号不会交给浮着的这一张）
   func present(
     _ id: String, from origin: Origin? = nil, mouse: CGPoint = NSEvent.mouseLocation
   ) {
@@ -210,20 +216,14 @@ final class NoteFloat: NSObject, NSWindowDelegate {
     resume()
     panel.orderFrontRegardless()
     model.requestFocus()
+    onTouch()
   }
 
-  /// 重启后：固定着浮在屏幕上的那一张回到原处（不当 key）。记着的那条不在了、不固定了就不回来，记着的也删掉
-  func restore() {
-    let screens = screens()
-    guard model.state.noteID == nil, !screens.isEmpty,
-      let stored = defaults.object(forKey: Prefs.notesFloatPlace)
-    else { return }
-    let place = NoteFloatLayout.Place(stored: stored)
-    guard let place,
-      let frame = NoteFloatLayout.restored(place, note: store.note(place.id), in: screens)
-    else { return defaults.removeObject(forKey: Prefs.notesFloatPlace) }
+  /// 重启后：固定着浮在屏幕上的这一张回到 frame（不当 key；NoteFloats 认过这条还在、还固定着，位置夹进了现在的屏幕）
+  func restore(_ id: String, frame: CGRect) {
+    guard model.state.noteID == nil else { return }
     arrival = Arrival(frame: frame, edge: edge(near: frame), takesKey: false)
-    model.send(.float(place.id))
+    model.send(.float(id))
   }
 
   /// 记下的大小（拉过才有；没拉过用 fallback），不大过它要出现的那块屏的可见区（哪块屏：frame / pointer 按
@@ -263,14 +263,14 @@ final class NoteFloat: NSObject, NSWindowDelegate {
     let settled = NoteFloatLayout.settled(rest, in: screens())
     if settled != rest {
       setFrame(settled)
-      persist()
+      onPersist()
     }
   }
 
   /// 仓库里的便签变了：浮着的那条没了就关；固定变了，「记不记位置」跟着变
   func storeChanged() {
     model.reconcile()
-    persist()
+    onPersist()
   }
 
   /// 长截图开始：压在选区上的先收走——它会吞掉滚轮和自动滚动的合成滚轮（同钉图，体检 B40）；长截图滤掉了本 App，
@@ -300,7 +300,7 @@ final class NoteFloat: NSObject, NSWindowDelegate {
     if effects.contains(.show) { show() }
     if effects.contains(.land) { land(settles: old.isDragging) }
     if event == .tuck { Island.announce(model.edgeShown ? "已收回边缘" : "已取消浮动") }
-    persist()
+    onPersist()
     onChange()
   }
 
@@ -378,6 +378,7 @@ final class NoteFloat: NSObject, NSWindowDelegate {
     caret = nil
     grab = .zero
     NSObject.cancelPreviousPerformRequests(withTarget: self)
+    let hadKey = old.isKeyWindow
     // 朝它来的那条边滑（同它的标签在哪一侧）；屏幕边缘没有那叠时没有边可回
     if isAnimated, old.isVisible, old.alphaValue > 0 {
       leave(old, toward: slides && model.edgeShown ? model.tuckEdge : nil)
@@ -386,6 +387,7 @@ final class NoteFloat: NSObject, NSWindowDelegate {
     old.orderOut(nil)
     old.contentView = nil
     onHide()
+    if hadKey { onKeyReleased() }
   }
 
   /// 退场的替身（同 OverlayPanel.dismiss 的路数，mac-overlay-panel §1）：原位留一张这一刻的图，盖在面板上面——
@@ -462,18 +464,11 @@ final class NoteFloat: NSObject, NSWindowDelegate {
     CATransaction.commit()
   }
 
-  /// 记 / 不记固定着的那一张在哪（NoteFloatLayout.place 定；和记着的一样就不写）
-  private func persist() {
-    let place = NoteFloatLayout.place(
+  /// 这一张现在该记在哪（固定着、浮着、落下了才有；NoteFloatLayout.place 定）：NoteFloats 几张一起写进偏好
+  var place: NoteFloatLayout.Place? {
+    NoteFloatLayout.place(
       id: panel == nil ? nil : model.state.noteID, isDragging: model.state.isDragging,
       note: model.current, frame: rest)
-    let stored = defaults.object(forKey: Prefs.notesFloatPlace)
-    guard place != NoteFloatLayout.Place(stored: stored) else { return }
-    if let place {
-      defaults.set(place.stored, forKey: Prefs.notesFloatPlace)
-    } else {
-      defaults.removeObject(forKey: Prefs.notesFloatPlace)
-    }
   }
 
   /// 把面板摆到 frame，并记成它该在的位置。不做动画（duration 0）也走零时长的 animator：直接 setFrame 盖不掉正在跑的
@@ -495,6 +490,7 @@ final class NoteFloat: NSObject, NSWindowDelegate {
   /// 按着把手开始挪：到最前面（同一层级里那叠扇出的那一列、别的 App 的浮动窗口可能盖着一部分），记下鼠标离左下角多远。还在跑的帧动画先停在原地
   private func beginMove(from start: CGPoint) {
     guard let panel else { return }
+    onTouch()
     setFrame(panel.frame)
     panel.orderFrontRegardless()
     grab = CGSize(width: start.x - rest.minX, height: start.y - rest.minY)
@@ -511,7 +507,7 @@ final class NoteFloat: NSObject, NSWindowDelegate {
   private func endMove(at pointer: CGPoint) {
     follow(pointer)
     settle(at: pointer)
-    persist()
+    onPersist()
   }
 
   // MARK: 焦点
@@ -547,7 +543,15 @@ final class NoteFloat: NSObject, NSWindowDelegate {
     if open { panel?.makeFirstResponder(nil) } else { focusNow() }
   }
 
-  // MARK: 拉大小（窗口的委托）
+  // MARK: 窗口的委托
+
+  /// 点了它当上 key：算碰了一下。AppKit 自己把 key 交过来的（收回另一张之后）不算；落下、被叫到前面、按把手挪各自
+  /// 明说 onTouch
+  func windowDidBecomeKey(_ notification: Notification) {
+    if let event = NSApp.currentEvent, [.leftMouseDown, .rightMouseDown].contains(event.type) {
+      onTouch()
+    }
+  }
 
   func windowDidResize(_ notification: Notification) {
     guard let panel else { return }
@@ -561,6 +565,6 @@ final class NoteFloat: NSObject, NSWindowDelegate {
     guard let panel else { return }
     setFrame(NoteFloatLayout.settled(panel.frame, in: screens()))
     defaults.set(NSStringFromSize(rest.size), forKey: Prefs.notesFloatSize)
-    persist()
+    onPersist()
   }
 }

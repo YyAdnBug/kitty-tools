@@ -2376,6 +2376,8 @@ struct SnapshotProbeTests {
       model.recentColors = { [0xFFE0F0, 0xB4E8D0] }
       model.toggleMenu(fromDot: true)
     }
+    // 截完删掉：后面那叠的几张图用的是同一个库，别让它多出一张标签
+    store.erase(custom.id)
     // 带 Markdown 的：标记都藏着的、光标所在的行露着的（屏外的窗口不真的当 key，直接告诉编辑器）
     try float("markdown", ids[6], size: CGSize(width: 520, height: 460))
     try float(
@@ -2407,14 +2409,14 @@ struct SnapshotProbeTests {
         NoteDeckView(model: model).background(Color(white: dark ? 0.22 : 0.80)),
         size: frame.size, dark: dark, to: "\(out)/notes-float-deck-\(name).png")
     }
-    try deck("tab") { $0.floated(ids[2]) }
-    try deck("tab-left-dark", edge: .left, dark: true) { $0.floated(ids[1]) }
+    try deck("tab") { $0.floated([ids[2]]) }
+    try deck("tab-left-dark", edge: .left, dark: true) { $0.floated([ids[1]]) }
     var chips = NoteDeckOptions()
     chips.style = .chips
-    try deck("tab-chips", options: chips) { $0.floated(ids[2]) }
+    try deck("tab-chips", options: chips) { $0.floated([ids[2]]) }
     // 浮着一条的同时在那叠里开着另一条
     try deck("tab-with-open") { model in
-      model.floated(ids[2])
+      model.floated([ids[2]])
       model.tapTab(ids[0])
     }
     // 被拖出去的那一刻：它在那叠里的那一份看不见了（还在视图树里），它的标签缩回去、带着「浮着」的记号
@@ -2422,7 +2424,7 @@ struct SnapshotProbeTests {
       model.tapTab(ids[0])
       model.gripChanged(at: CGPoint(x: 900, y: 500))
       model.gripChanged(at: CGPoint(x: 800, y: 500))
-      model.floated(ids[0])
+      model.floated([ids[0]])
     }
 
     // MARK: 设置 › 便签「屏幕边缘」页脚多的那句话

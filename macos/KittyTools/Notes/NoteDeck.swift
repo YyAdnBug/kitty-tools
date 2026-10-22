@@ -389,6 +389,8 @@ final class NoteDeck: NSObject {
     guard let panel, panel.isKeyWindow else { return }
     panel.orderOut(nil)
     panel.orderFrontRegardless()
+    // 收走的那一下 AppKit 可能把 key 交给之前当过 key 的浮动便签（同时浮几张时更常见）
+    NoteFloats.returnKeyboard()
   }
 
   /// 别的 App 全屏时能不能出：呼出来的都能；只有「一直展开」又没开「盖在全屏 App 上」时那一列不进全屏（打开便签的

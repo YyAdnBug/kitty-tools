@@ -41,8 +41,8 @@ final class NoteEdge {
   private let store: NoteStore
   private let defaults: UserDefaults
   private let island: Island?
-  /// 浮动便签（一次一张；总开关关着、一块屏都没放时也在）
-  let float: NoteFloat
+  /// 浮动便签（同时最多几张，NoteFloats；总开关关着、一块屏都没放时也在）
+  let floats: NoteFloats
   /// 现在能不能扇出（AppDelegate 给：没在截图框选 / 长截图 / 录屏选区和倒数 / 状态屏）
   var canFan: () -> Bool = { true }
   /// 右键菜单（药丸、标签列的空白处、「+」，NoteDeckModel.edgeItems）里的「全部便签」「设置…」；那叠里打开的便签和
@@ -69,21 +69,25 @@ final class NoteEdge {
     self.defaults = defaults
     self.island = island
     options = NoteDeckOptions(defaults)
-    float = NoteFloat(store: store, defaults: defaults, island: island)
-    float.homeEdge = { [unowned self] in homeEdge(near: $0) }
-    float.onChange = { [unowned self] in floatChanged() }
-    float.onHide = { [unowned self] in onHide() }
-    float.model.showInWindow = { [unowned self] in showInWindow($0) }
-    float.model.showSettings = { [unowned self] in showSettings() }
-    float.model.recentColors = { [unowned self] in NoteColorPicker.recentColors(in: defaults) }
-    float.model.pickColor = { [unowned self] id in
-      NoteColorPicker.shared.open(id, in: store, owner: float.model, from: float.panel)
+    floats = NoteFloats(store: store, defaults: defaults, island: island)
+    floats.homeEdge = { [unowned self] in homeEdge(near: $0) }
+    floats.onChange = { [unowned self] in floatChanged() }
+    floats.onHide = { [unowned self] in onHide() }
+    // 每一张浮动便签建出来时接线（同那叠里打开的便签：在全部便签里打开、设置、颜色菜单的那两样）
+    floats.configure = { [unowned self] float in
+      float.model.showInWindow = { [unowned self] in showInWindow($0) }
+      float.model.showSettings = { [unowned self] in showSettings() }
+      float.model.recentColors = { [unowned self] in NoteColorPicker.recentColors(in: defaults) }
+      float.model.pickColor = { [unowned self, weak float] id in
+        guard let float else { return }
+        NoteColorPicker.shared.open(id, in: store, owner: float.model, from: float.panel)
+      }
     }
   }
 
   /// 开始：摆一次，之后跟着设置、屏幕、便签、系统的显示辅助开关的变化重摆；上次固定着浮在屏幕上的那一张回到原处
   func start() {
-    defer { float.restore() }
+    defer { floats.restore() }
     func observe(
       _ center: NotificationCenter, _ name: Notification.Name, object: Any? = nil,
       _ work: @escaping @MainActor (NoteEdge) -> Void
@@ -145,7 +149,7 @@ final class NoteEdge {
     for old in decks where !placed.contains(where: { $0.deck === old.deck }) { old.deck.close() }
     let appeared = decks.isEmpty && !placed.isEmpty
     decks = placed
-    float.update(options: options, edgeShown: !decks.isEmpty)
+    floats.update(options: options, edgeShown: !decks.isEmpty)
     if appeared, let edge = placements.first?.edge { hintIfFirst(edge) }
   }
 
@@ -161,26 +165,26 @@ final class NoteEdge {
     deck.model.showNotes = { [unowned self] in showNotes() }
     deck.model.showSettings = { [unowned self] in showSettings() }
     // 标签右键菜单里的「浮在屏幕上 / 收回边缘」（没打开的那条）
-    deck.model.toggleFloat = { [unowned self] in float.toggle($0) }
+    deck.model.toggleFloat = { [unowned self] in floats.toggle($0) }
     // 浮动便签：拖出来（过了阈值 → 跟着走 → 松手）、从操作菜单浮出去、点了浮着那条的标签
-    deck.onDetach = { [unowned self] in float.detach($0, from: $1, at: $2) }
-    deck.model.onDetachDrag = { [unowned self] in float.drag(to: $0) }
-    deck.model.onDetachDrop = { [unowned self] in float.drop(at: $0) }
-    deck.onFloat = { [unowned self] in float.present($0, from: $1) }
+    deck.onDetach = { [unowned self] in floats.detach($0, from: $1, at: $2) }
+    deck.model.onDetachDrag = { [unowned self] in floats.drag(to: $0) }
+    deck.model.onDetachDrop = { [unowned self] in floats.drop(at: $0) }
+    deck.onFloat = { [unowned self] in floats.present($0, from: $1) }
     deck.onHide = { [unowned self] in onHide() }
-    deck.model.focusFloat = { [unowned self] in float.focus() }
+    deck.model.focusFloat = { [unowned self] in floats.focus($0) }
     deck.model.recentColors = { [unowned self] in NoteColorPicker.recentColors(in: defaults) }
     deck.model.pickColor = { [unowned self, unowned deck] id in
       NoteColorPicker.shared.open(id, in: store, owner: deck.model, from: deck.panel)
     }
-    deck.model.floated(float.model.state.noteID)
+    deck.model.floated(floats.floatingIDs)
     return deck
   }
 
   /// 浮着的换了一条 / 没有了：告诉各叠（它的标签上有记号、点它是把浮着的叫到前面；刚浮出去的那条还开在哪一叠里
   /// 就从那叠里收掉，NoteDeckModel.floated）
   private func floatChanged() {
-    for entry in decks { entry.deck.model.floated(float.model.state.noteID) }
+    for entry in decks { entry.deck.model.floated(floats.floatingIDs) }
   }
 
   /// 屏幕边缘的那叠实际在哪条边（不从那叠里出来的浮动便签按它定标签在哪一侧、收回往哪边滑）：它所在的那块屏放了就是
@@ -221,7 +225,7 @@ final class NoteEdge {
 
   private func storeChanged() {
     for entry in decks { entry.deck.storeChanged() }
-    float.storeChanged()
+    floats.storeChanged()
     if store.active.map(\.color) != colors { refresh() }
   }
 

@@ -2065,7 +2065,7 @@ struct NoteDeckTests {
     items[2].run()
     model.tabItems(ids[0])[2].run()
     #expect(toggled == [ids[1]] && floatedOpen == [ids[0]])
-    model.floated(ids[1])
+    model.floated([ids[1]])
     #expect(model.tabItems(ids[1])[2].title == "收回边缘")
     model.tabItems(ids[1])[2].run()
     #expect(toggled == [ids[1], ids[1]])

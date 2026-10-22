@@ -92,9 +92,10 @@ import SwiftUI
   @ObservationIgnored var isEditingBody: () -> Bool = { false }
   /// 拿右边那条便签的正文编辑器做一件事（没有就不做：没选中、最近删除里的是只读的）
   @ObservationIgnored var withEditor: ((NoteTextView) -> Void) -> Void = { _ in }
-  /// 浮动便签（第 4 批）：它的状态（浮着的是哪条、屏幕边缘有没有那叠——工具栏和右键菜单里那一项叫什么看它；
-  /// 界面读得到它的变化）、让一条便签浮出来 / 收回去。AppDelegate 接到 NoteEdge 的那一个；没接（便签用不了）时不做事
-  @ObservationIgnored var float: NoteFloatModel?
+  /// 浮动便签（第 4 批；2026-10-22 起同时可以浮几张）：浮着的是哪几条、屏幕边缘有没有那叠——工具栏和右键菜单里那一项
+  /// 叫什么看它，界面读得到它的变化；让一条便签浮出来 / 收回去。AppDelegate 接到 NoteEdge 的那一份；没接（便签用不了）
+  /// 时不做事
+  @ObservationIgnored var floats: NoteFloats?
   @ObservationIgnored var toggleFloat: (String) -> Void = { _ in }
   /// 打开设置窗、落在「便签」那一页（AppDelegate 接；⌘,、工具栏的「便签设置」）
   @ObservationIgnored var showSettings: () -> Void = {}
@@ -494,17 +495,17 @@ import SwiftUI
 
   /// 这条便签是不是正浮在屏幕上；工具栏、右键菜单里那一项现在叫什么
   func isFloating(_ note: Note?) -> Bool {
-    note.map { float?.state.noteID == $0.id } ?? false
+    note.map { floats?.floatingIDs.contains($0.id) ?? false } ?? false
   }
 
   func floatTitle(_ note: Note?) -> String {
-    Self.floatTitle(isFloating: isFloating(note), hasEdge: float?.edgeShown ?? true)
+    Self.floatTitle(isFloating: isFloating(note), hasEdge: floats?.edgeShown ?? true)
   }
 
   func floatSymbol(_ note: Note?) -> String {
     Self.floatSymbol(
-      isFloating: isFloating(note), hasEdge: float?.edgeShown ?? true,
-      edge: float?.tuckEdge ?? .right)
+      isFloating: isFloating(note), hasEdge: floats?.edgeShown ?? true,
+      edge: note.flatMap { floats?.float(of: $0.id)?.model.tuckEdge } ?? .right)
   }
 
   /// 浮在屏幕上 / 收回边缘：只有没归档、没删的便签能浮着

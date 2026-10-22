@@ -219,8 +219,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     releaseClosedNotesWindow()
     // 便签正文里解好的图片缩略图（第 7 批：按像素数算 cost，闲下来整块放掉）；浮在屏幕上的那张便签里的图留着
     // （清了它下一次重画先闪一块纸色）
-    let floating = noteEdge?.float.model.state.noteID.flatMap { noteStore?.note($0) }
-    NoteImageThumbnails.discard(keeping: floating.map { NoteImages.ids(in: $0.body) } ?? [])
+    let floating = (noteEdge?.floats.floatingIDs ?? []).compactMap { noteStore?.note($0) }
+    NoteImageThumbnails.discard(keeping: Set(floating.flatMap { NoteImages.ids(in: $0.body) }))
     Task {
       await OCR.releaseModel()
       Memory.relieve()
@@ -899,9 +899,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func makeNotesModel(_ store: NoteStore) -> NotesWindowModel {
     let model = NotesWindowModel(store: store, defaults: .standard)
     model.island = island
-    // 工具栏 / 右键菜单的「浮在屏幕上」：和屏幕边缘那叠共用同一张浮动便签（一次一张）
-    model.float = noteEdge?.float.model
-    model.toggleFloat = { [unowned self] in noteEdge?.float.toggle($0) }
+    // 工具栏 / 右键菜单的「浮在屏幕上」：和屏幕边缘那叠共用同一份浮动便签（同时最多浮几张，NoteFloats）
+    model.floats = noteEdge?.floats
+    model.toggleFloat = { [unowned self] in noteEdge?.floats.toggle($0) }
     // ⌘,、工具栏的「便签设置」：落在设置的「便签」页
     model.showSettings = { [unowned self] in showSettings(page: .notes) }
     notesModel = model
@@ -1583,7 +1583,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 压在选区上的钉图会吞掉滚轮、把自动滚动的合成滚轮当缩放（体检 B40）：让开到长截图结束（拷贝、存储、取消、出错），
     // 另存为的存储面板弹出来之前就放回；常驻缩略图直接收走
     pins.suspend(covering: region)
-    noteEdge?.float.suspend(covering: region)  // 浮动便签同钉图：压在选区上的先收走，结束放回
+    noteEdge?.floats.suspend(covering: region)  // 浮动便签同钉图：压在选区上的先收走，结束放回
     shelf.dismiss(covering: region)
     // 固定着的剪贴板面板留在屏幕上，它的 ⌘Y 大卡也还开着：压在选区上同样会吞掉滚轮，收走
     if clipboardModel.isQuickLooking, let card = quickLookPanel.panel,
@@ -1594,7 +1594,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     do {
       let finished = try await ScrollCapture.run(region: region)
       pins.resume()
-      noteEdge?.float.resume()
+      noteEdge?.floats.resume()
       guard let result = finished else { return }
       switch result.action {
       case .copy:
@@ -1611,7 +1611,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
     } catch {
       pins.resume()
-      noteEdge?.float.resume()
+      noteEdge?.floats.resume()
       island.show("长截图失败", detail: error.localizedDescription, tone: .error)
     }
   }

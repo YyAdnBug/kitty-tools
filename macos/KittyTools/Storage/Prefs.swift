@@ -207,7 +207,10 @@ enum Prefs {
   /// 拉过的大小（NSStringFromSize 的字符串；下次浮出来还是这么大）、固定着浮在屏幕上的那一张（字典：便签的编号 +
   /// NSStringFromRect 的位置；只有固定着的才记，重启后回到原处——NoteFloatLayout.Place）
   nonisolated static let notesFloatSize = "notesFloatSize"
+  /// 0.6.0 之前只记一张的那个键：NoteFloats.restore 读成一条、删掉（同时浮几张之后记在 notesFloatPlaces）
   nonisolated static let notesFloatPlace = "notesFloatPlace"
+  /// 固定着浮在屏幕上的**每一张**在哪（便签未来计划 C4，2026-10-22；一组同上的字典，NoteFloats），同样不注册默认值
+  nonisolated static let notesFloatPlaces = "notesFloatPlaces"
   /// 便签纸色「最近用过」的自定义颜色（便签未来计划 B4，2026-10-22；一组 "#RRGGBB"，最近的在前、最多 8 个，
   /// NoteColorPicker）：这台电脑自己的状态、**不注册默认值**——别人给的导出文件不该换掉你的最近用过
   nonisolated static let notesRecentColors = "notesRecentColors"

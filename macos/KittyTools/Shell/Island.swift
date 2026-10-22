@@ -247,6 +247,8 @@ import SwiftUI
     let panel = NSPanel(
       contentRect: CGRect(origin: .zero, size: geometry.windowSize),
       styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    // 本 App 失活时不收（NSPanel 默认收；收回浮动便签后 NoteFloats.returnKeyboard 会 deactivate 一次）
+    panel.hidesOnDeactivate = false
     panel.level = .statusBar
     panel.collectionBehavior = [
       .canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle,

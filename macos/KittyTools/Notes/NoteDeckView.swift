@@ -144,7 +144,7 @@ private struct NoteFan: View {
   /// 一张压一张靠的是负的间距（真的布局，点哪张就是哪张）；后画的在上面，正好是下一张压住上一张
   /// 那叠的状态在 ForEach 外面读一次：每张标签各读一遍的话，每一张都要单独挂一份「盯着它变」，几百张时光这一项就不少
   private func stack(_ tabs: [Note]) -> some View {
-    let (openID, liftedID, floatingID) = (model.state.openID, model.liftedID, model.floatingID)
+    let (openID, liftedID, floatingIDs) = (model.state.openID, model.liftedID, model.floatingIDs)
     let (hovered, drag, isRevealed) = (model.hovered, model.drag, model.isRevealed)
     return VStack(alignment: onRight ? .trailing : .leading, spacing: layout.spacing) {
       ForEach(Array(tabs.enumerated()), id: \.element.id) { index, note in
@@ -153,7 +153,8 @@ private struct NoteFan: View {
           model: model, note: note, summary: model.store.summary(of: note), index: index,
           layout: layout, onRight: onRight,
           // 被拖出去的那条（它在这叠里的那一份还留着、只是看不见）不算开着：标签当场缩回去
-          isOpen: openID == note.id && liftedID != note.id, isFloating: floatingID == note.id,
+          isOpen: openID == note.id && liftedID != note.id,
+          isFloating: floatingIDs.contains(note.id),
           isLifted: isDragged, isHovered: hovered == note.id
         )
         .offset(y: shift(index, of: note, drag: drag))
