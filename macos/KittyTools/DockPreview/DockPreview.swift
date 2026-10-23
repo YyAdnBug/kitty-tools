@@ -9,8 +9,8 @@
 // 面板是普通 NSPanel 实例（不子类化，mac-overlay-panel §1）：无边框、不激活本 App、永不当 key（键盘一直在前台 App 里）、
 // 状态栏层级（盖住程序坞的名字提示）、所有桌面和全屏 App 上都在；内容第一下点击就给（宿主 acceptsFirstMouse）。
 // 永不当 key，收起直接淡掉窗口自己的透明度（OverlayPanel 要替身是因为淡出时它还当着 key）。
-// 第一次弹时才建、之后一直留着（挂过宿主视图的窗口关掉 AppKit 也不放，同 ShotShelf；占多少第 3 批量）；
-// 收起时清掉内容，缩略图缓存空闲回收、关掉功能时清。开关是功能开关 Feature.dockPreview（默认关，拍板 A3），
+// 第一次弹时才建，收起时清掉内容、面板留着（弹过一次 14 扇的约 +10 MB，收起后照样占着，屏上量的，PLAN §10）；空闲回收
+// 时收着的面板整块放掉（回落约 6 MB）、连同缩略图缓存，下次弹时再建；关掉功能时清缓存。开关是功能开关 Feature.dockPreview（默认关，拍板 A3），
 // 起停在 AppDelegate.applyFeatures。
 // ponytail: 换一次图标就在主线程同步列一次窗口（中位约 20 ms、最长约 50 ms，PLAN §10）；缩略图一扇扇串行截（一扇约
 // 15 ms，二十扇约 0.3 s，先显示上次的图）。顺着程序坞划过一排图标觉得卡了，再给列窗口加防抖、截图开两三路并发。
@@ -27,7 +27,8 @@ import SwiftUI
   private let watcher = DockWatcher()
   private let lister = DockWindows()
   private let shots = WindowShots()
-  private let model = DockPreviewModel()
+  /// 探针在屏上量面板时直接填它（DockPreviewProbeTests/memory()）
+  let model = DockPreviewModel()
   private var panel: NSPanel?
   private var host: PreviewHost?
   /// 正在预览的：哪个 App、哪个图标（位置是弹出那一刻重读过的）、哪块屏（nil = 收着）
@@ -66,8 +67,17 @@ import SwiftUI
     shots.clear()
   }
 
-  /// 空闲回收：丢掉缩略图缓存
-  func reclaim() { shots.clear() }
+  /// 空闲回收：丢掉缩略图缓存；收着时整块面板也放掉（下次弹时再建）。照 NoteDeck.releasePanel 的写法：
+  /// 先拿到局部变量、属性置空，再拆
+  func reclaim() {
+    shots.clear()
+    guard shown == nil, let old = panel else { return }
+    panel = nil
+    host = nil
+    old.orderOut(nil)
+    old.contentView = nil
+    old.close()
+  }
 
   // MARK: 什么时候弹
 
@@ -341,7 +351,8 @@ import SwiftUI
 
   // MARK: 窗口
 
-  private func makePanel() -> NSPanel {
+  /// 探针也用（屏上量面板占多少）
+  func makePanel() -> NSPanel {
     let panel = NSPanel(
       contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,
       defer: true)

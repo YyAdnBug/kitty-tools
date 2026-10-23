@@ -624,7 +624,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   辅助功能就弹系统的授权框，有了再要屏幕录制（`AppDelegate.applyFeatures`；启动时不问）。导入会不会打开它不进
   `SettingsArchive.privacyLosses`：缩略图只在内存里、不往外发。
 - **面板**（第 2 批）：普通 `NSPanel` 实例（不子类化，mac-overlay-panel §1）+ 宿主 `PreviewHost`（`acceptsFirstMouse`）；材质和
-  OverlayPanel 共用 `OverlayPanel.makeBackground`（改成 internal）；第一次弹时建、之后一直留着（占多少第 3 批量）。
+  OverlayPanel 共用 `OverlayPanel.makeBackground`（改成 internal）；第一次弹时建；空闲回收时收着的面板整块放掉（`DockPreview.reclaim`）。
   **收不收按鼠标位置**：弹着时每 0.1 秒看一次鼠标在不在面板、图标和两者之间那道缝里（`keepsOpen`），离开满 0.3 秒收
   （`Linger`）；同一个定时器里别的功能（启动台、状态屏、截图框选）一来就收。不用追踪区的进出（面板改尺寸会重建追踪区、
   淡出时进来的事件会丢，评审 H1），也不全信程序坞的选中。点了面板以外（全局 + 本地监听）立刻收，点的是那个图标就记下，
@@ -636,7 +636,11 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 - **进度**：第 1 批（2026-10-22）底层四个文件 + 纯函数单测 `DockPreviewTests` + 按需探针 `DockPreviewProbeTests`
   （`TEST_RUNNER_KITTY_DOCK_PROBE=1`，只读、不动屏幕）。第 2 批（2026-10-23）面板、控制器、排法，功能开关（默认关）、
   设置 › 程序坞预览、空闲回收，截图自检 `SnapshotProbeTests/dockPreview()`（`dock-preview-*`、`settings-dock-preview*`）；
-  两名评审（正确性 / 规范）提的都改了。还欠：第 3 批量内存 / CPU、写规则 `mac-dock-preview` + `mac-whisker-dock-preview`。
+  两名评审（正确性 / 规范）提的都改了。第 3 批（2026-10-23）屏上量内存（`DockPreviewMemoryProbeTests/memory()`，Debug：14 扇、976 × 417 点的面板弹出 +10.6 MB，
+  收起只清内容照样 +10.5，整块放掉后 +4.5，两遍不累积）→ 空闲回收时放掉收着的面板；CPU 只在弹着时有一个 0.1 s 的定时器
+  （读一次鼠标位置、比几个矩形），收着时 0；新规则 `mac-dock-preview` + `mac-whisker-dock-preview`（技能目录各有链接）。
+  **没做**：MARKETING_VERSION 0.7.0 和更新日志——并回 main 时（0.6.0 发布之后）再升，免得 dock-wip 先占了版本号；
+  更新日志那句写「默认关，在 设置 › 程序坞预览 里打开」（拍板 A3）。
 
 ## 11½. Whisker 设计语言改造（2026-09-25 起）
 

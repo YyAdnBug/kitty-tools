@@ -115,3 +115,98 @@ struct DockPreviewProbeTests {
     )
   }
 }
+
+/// 面板占多少内存（第 3 批；同一个开关 TEST_RUNNER_KITTY_DOCK_PROBE=1）：屏上量——屏外的窗口系统不画图层，量出来偏小
+/// （MemoryProbeTests 文件头第 4 个坑）。面板摆在主屏右上角、透明度 0.02、不接鼠标、不当 key，约两秒；填 14 扇窗口
+/// （换成两排）的合成缩略图，量「弹出 → 收起（清内容）→ 放掉整块面板」各阶段的 phys_footprint，做两遍。
+/// 同步跑、每阶段包 autoreleasepool、嵌套跑环等画完（同 MemoryProbeTests 的第 2 个坑）
+@MainActor
+struct DockPreviewMemoryProbeTests {
+  nonisolated private static var isEnabled: Bool {
+    ProcessInfo.processInfo.environment["KITTY_DOCK_PROBE"] == "1"
+  }
+
+  private func footprint() -> Double {
+    var info = task_vm_info_data_t()
+    var count = mach_msg_type_number_t(
+      MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+    let status = withUnsafeMutablePointer(to: &info) {
+      $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+        task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+      }
+    }
+    return status == KERN_SUCCESS ? Double(info.phys_footprint) / 1_048_576 : 0
+  }
+
+  private func spin(_ seconds: TimeInterval) {
+    let end = Date().addingTimeInterval(seconds)
+    while Date() < end { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+  }
+
+  private func image(_ size: CGSize) -> CGImage? {
+    let context = CGContext(
+      data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8,
+      bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+      bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+        | CGBitmapInfo.byteOrder32Little.rawValue)
+    context?.setFillColor(NSColor.systemTeal.cgColor)
+    context?.fill(CGRect(origin: .zero, size: size))
+    return context?.makeImage()
+  }
+
+  @Test(.enabled(if: DockPreviewMemoryProbeTests.isEnabled)) func memory() throws {
+    let screen = try #require(NSScreen.screens.first)
+    let windows = (1...14).map {
+      DockWindow(
+        id: CGWindowID(900 + $0), title: "文稿 \($0)", state: .shown,
+        size: CGSize(width: 1600, height: 1000))
+    }
+    let base = footprint()
+    print(String(format: "dock-probe memory 开始 %.1f MB", base))
+    let preview = DockPreview()
+    for round in 1...2 {
+      var shown = 0.0
+      autoreleasepool {
+        let panel = preview.makePanel()
+        let model = preview.model
+        model.appName = "探针"
+        model.plan = DockPreviewLayout.plan(
+          windows.map(\.size), edge: .bottom, along: 1100, across: 860)
+        model.windows = Array(windows.prefix(model.plan.thumbs.count))
+        for (window, thumb) in zip(model.windows, model.plan.thumbs) {
+          model.images[window.id] = image(
+            CGSize(
+              width: thumb.width * screen.backingScaleFactor,
+              height: thumb.height * screen.backingScaleFactor))
+        }
+        let size = model.plan.panel
+        panel.setFrame(
+          NSRect(
+            x: screen.frame.maxX - size.width, y: screen.frame.maxY - size.height,
+            width: size.width,
+            height: size.height), display: false)
+        panel.alphaValue = 0.02
+        panel.ignoresMouseEvents = true
+        panel.orderFrontRegardless()
+        spin(1)
+        shown = footprint()
+      }
+      autoreleasepool {
+        preview.hide(animated: false)  // 收起：orderOut + 清内容（面板留着）
+        spin(0.5)
+      }
+      let hidden = footprint()
+      autoreleasepool {
+        preview.reclaim()  // 空闲回收：缓存 + 收着的面板整块放掉
+        spin(0.5)
+      }
+      let released = footprint()
+      print(
+        String(
+          format:
+            "dock-probe memory 第 %d 遍：弹出（%.0f × %.0f 点，%d 张）+%.1f MB → 收起后 +%.1f → 放掉面板后 +%.1f",
+          round, preview.model.plan.panel.width, preview.model.plan.panel.height, windows.count,
+          shown - base, hidden - base, released - base))
+    }
+  }
+}
