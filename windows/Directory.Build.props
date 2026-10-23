@@ -1,0 +1,15 @@
+<Project>
+  <!--
+    Windows 原生版公共构建设置。第 0 批只有 KittyTools 一个工程（验证样机）；
+    第 1 批加 KittyTools.Core / KittyTools.Tests 时在这里统一版本号和警告策略。
+  -->
+  <PropertyGroup>
+    <Version>0.1.0</Version>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+</Project>
