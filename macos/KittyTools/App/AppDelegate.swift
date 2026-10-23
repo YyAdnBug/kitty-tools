@@ -547,7 +547,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             openNotes: { [unowned self] in showNotes() },
             notes: { [unowned self] in noteStore },
             images: { [unowned self] in noteStore?.images },
-            island: island))
+            island: island,
+            sync: { [unowned self] in noteSyncer }))
       case .statusScreen: AnyView(StatusScreenTab())
       case .translate:
         AnyView(
@@ -1013,6 +1014,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let window = notesWindow ?? makeNotesWindow(store)
     notesWindow = window
     window.show()
+    // 打开全部便签窗口时合一轮：看到的是别的 Mac 的最新样子
+    noteSyncer?.syncNow()
     if creating { window.model.create() }
     if let id { window.model.reveal(id) }
   }

@@ -28,12 +28,12 @@ struct ChangelogTests {
   }
 
   /// 未来计划：一条一行；种类只有 improve（改进，已知的小毛病）/ feature（新功能），改进在前；范围和那句话不空；
-  /// 写给用户看——没有 Markdown 记号、没有代码里的名字（反引号、ponytail、驼峰的类型名）；包里那份读得出来、条数一样
+  /// 写给用户看——没有 Markdown 记号、没有代码里的名字（反引号、ponytail、驼峰的类型名）；包里那份读得出来、条数一样。
+  /// 都做完了可以是空的（`[]`，关于页不显示那一节）
   @Test func roadmapEntriesAreOneLineAndForUsers() throws {
     let url = root.appending(path: "KittyTools/Resources/roadmap.json")
     let lines = try String(contentsOf: url, encoding: .utf8).components(separatedBy: "\n")
       .filter { $0.contains("\"kind\":") }
-    #expect(!lines.isEmpty)
     for line in lines {
       #expect(line.hasPrefix("  { \"kind\": \""), "每条是一行：\(line)")
       #expect(line.hasSuffix(" }") || line.hasSuffix(" },"), "每条是一行：\(line)")

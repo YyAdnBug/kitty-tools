@@ -200,7 +200,8 @@ struct NoteSyncerTests {
     #expect(await a.syncer.enable(folder: shared) == "这个文件夹不在了")
   }
 
-  /// 开同步时不盖掉别人的库：标记还没下载完（旧式占位文件）、没标记却有别的电脑的子文件夹，都不开；标记不覆盖着写
+  /// 开同步时不盖掉别人的库：标记还没下载完（旧式占位文件）、没标记却有别的电脑的子文件夹，都不开；没同步过的文件夹放着
+  /// 别的东西也不开（点开头的不算）；标记不覆盖着写
   @Test func enablingNeverReplacesAMarker() async throws {
     try makeShared()
     defer { cleanUp() }
@@ -213,9 +214,15 @@ struct NoteSyncerTests {
     try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
     #expect(await a.syncer.enable(folder: shared) != nil && !a.syncer.isEnabled)
     try FileManager.default.removeItem(at: shared.appending(path: "devices"))
-    #expect(await NoteSyncDisk.createMarker(in: shared, library: "第一个") == nil)
-    #expect(await NoteSyncDisk.createMarker(in: shared, library: "第二个") != nil)
-    #expect(await a.syncer.enable(folder: shared) == nil && a.syncer.library == "第一个")
+    try Data().write(to: shared.appending(path: "别的.txt"))
+    #expect(await a.syncer.enable(folder: shared) != nil && !a.syncer.isEnabled)
+    try FileManager.default.removeItem(at: shared.appending(path: "别的.txt"))
+    try Data().write(to: shared.appending(path: ".DS_Store"))
+    #expect(await a.syncer.enable(folder: shared) == nil, "只有点开头的算空")
+    let library = try #require(a.syncer.library)
+    #expect(await NoteSyncDisk.createMarker(in: shared, library: "第二个") != nil, "不覆盖")
+    a.syncer.disable()
+    #expect(await a.syncer.enable(folder: shared) == nil && a.syncer.library == library)
   }
 
   /// 关掉同步：偏好清掉、状态关着；文件夹里的东西留着

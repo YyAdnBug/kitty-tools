@@ -405,24 +405,35 @@ nonisolated enum NoteSyncDisk {
     var marker: NoteSyncFolder.Marker?
     /// 标记有、但读不出来（还在下载、写坏了）：不能当成新文件夹
     var markerUnreadable = false
+    /// 别的电脑几台、它们一共多少条便签（按编号去重：每台的子文件夹里都是全套，含最近删除里的）
     var devices = 0
     var notes = 0
+    /// 除了点开头的（.DS_Store 这些）什么都没有：旧式的 iCloud 占位（`.名字.icloud`）是还没下载的文件，不算空
+    var empty = true
   }
 
   @concurrent static func inspect(folder root: URL, device: String) async -> Inspection {
     var result = Inspection(exists: isDirectory(root))
     guard result.exists else { return result }
+    result.empty = listing(root).allSatisfy { $0.hasPrefix(".") && !$0.hasSuffix(".icloud") }
     switch small(root.appending(path: NoteSyncFolder.markerName), as: NoteSyncFolder.Marker.self) {
     case .absent: break
     case .unreadable: result.markerUnreadable = true
     case .read(let marker): result.marker = marker
     }
     let devices = root.appending(path: NoteSyncFolder.devicesName)
+    var ids: Set<String> = []
     for name in listing(devices) where isDeviceName(name) && name != device {
-      let notes = listing(devices.appending(path: name).appending(path: NoteSyncFolder.notesName))
       result.devices += 1
-      result.notes += notes.count { NoteSyncFolder.noteID(ofFileNamed: $0) != nil }
+      for file in listing(devices.appending(path: name).appending(path: NoteSyncFolder.notesName)) {
+        // 旧式占位 `.编号.md.icloud` 也算一条
+        let real =
+          file.hasPrefix(".") && file.hasSuffix(".icloud")
+          ? String(file.dropFirst().dropLast(".icloud".count)) : file
+        if let id = NoteSyncFolder.noteID(ofFileNamed: real) { ids.insert(id) }
+      }
     }
+    result.notes = ids.count
     return result
   }
 

@@ -1144,7 +1144,8 @@ struct SnapshotProbeTests {
     try snapshot(
       root(list), size: NSSize(width: 780, height: 1000), dark: false,
       to: "\(out)/settings-status-hotkeys.png")
-    // 关于页的「未来计划」（2026-10-18）：品牌区下面、更新日志上面那一节，拉高看全
+    // 关于页的「未来计划」（2026-10-18）：品牌区下面、更新日志上面那一节，拉高看全（roadmap.json 空了时没有这一节：
+    // 2026-10-23 起都做完了，图里是品牌区接着更新日志）
     for dark in [false, true] {
       try snapshot(
         AboutTab(), size: NSSize(width: 590, height: 900), dark: dark,
@@ -3792,6 +3793,84 @@ struct SnapshotProbeTests {
     try snapshot(
       root(), size: NSSize(width: 780, height: 1120), dark: false,
       to: "\(out)/features-launchpad-off.png")
+  }
+
+  /// 设置 › 便签「同步」（便签未来计划 A2，2026-10-23；NoteSyncSection）：没开、第一轮还没完 / 第一轮就停了、好了（两台别的 Mac、还在
+  /// 下载几个；浅 / 深）、还没有别的 Mac、等确认（刹车）、停了（文件夹不在、写不进去）。几秒，图以 notes-sync- 开头。
+  /// 同步接的是内存库和临时偏好域，状态直接设，不碰真的文件夹和偏好
+  @Test(.enabled(if: directory != nil)) func notesSync() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    Prefs.registerDefaults()
+    let name = "kitty-snapshot-sync-\(UUID().uuidString)"
+    let prefs = try #require(UserDefaults(suiteName: name))
+    defer { prefs.removePersistentDomain(forName: name) }
+    let store = try NoteStore(db: Database(path: ":memory:"))
+    let size = NSSize(width: 640, height: 300)
+    func section(_ prepare: (NoteSyncer) -> Void = { _ in }) -> some View {
+      let syncer = NoteSyncer(store: store, defaults: prefs)
+      prepare(syncer)
+      return Form { NoteSyncSection(syncer: syncer) }.formStyle(.grouped)
+    }
+    try snapshot(section(), size: size, dark: false, to: "\(out)/notes-sync-off.png")
+    prefs.set(
+      NoteSyncSection.iCloudDrive.appending(path: "Kitty Tools 便签").path,
+      forKey: Prefs.notesSyncFolder)
+    prefs.set("库", forKey: Prefs.notesSyncLibrary)
+    let now = Date.now
+    let air = NoteSyncDisk.Peer(id: "1", name: "MacBook Air", seen: now.addingTimeInterval(-300))
+    let imac = NoteSyncDisk.Peer(id: "2", name: "iMac", seen: now.addingTimeInterval(-86_400 * 1.2))
+    let states: [(String, (NoteSyncer) -> Void)] = [
+      ("first", { $0.status = .syncing }),
+      ("first-stopped", { $0.status = .stopped(.downloading) }),
+      (
+        "idle",
+        {
+          $0.status = .idle
+          $0.lastSync = now.addingTimeInterval(-120)
+          $0.downloading = 3
+          $0.peers = [air, imac]
+        }
+      ),
+      (
+        "alone",
+        {
+          $0.status = .idle
+          $0.lastSync = now
+        }
+      ),
+      (
+        "waiting",
+        {
+          $0.status = .waiting(trashing: 8)
+          $0.lastSync = now.addingTimeInterval(-40)
+          $0.peers = [air]
+        }
+      ),
+      (
+        "missing",
+        {
+          $0.status = .stopped(.missingFolder)
+          $0.lastSync = now.addingTimeInterval(-3600 * 5)
+          $0.peers = [air]
+        }
+      ),
+      (
+        "failed",
+        {
+          $0.status = .stopped(.failed("文件“2C1F7A.md”无法存储，因为卷是只读的。"))
+          $0.lastSync = now.addingTimeInterval(-600)
+          $0.peers = [air]
+        }
+      ),
+    ]
+    for (state, prepare) in states {
+      for dark in state == "idle" ? [false, true] : [false] {
+        try snapshot(
+          section(prepare), size: size, dark: dark,
+          to: "\(out)/notes-sync-\(state)\(dark ? "-dark" : "").png")
+      }
+    }
   }
 
   private func snapshot(

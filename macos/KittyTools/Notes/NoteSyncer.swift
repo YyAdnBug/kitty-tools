@@ -1,7 +1,8 @@
 // 便签同步的执行层（便签未来计划 A1–A5，2026-10-22；规矩在 mac-native §2「便签同步」）：什么时候合一轮、一轮怎么走。
 // 文件夹的写法和一轮该做什么在 NoteSyncFolder（纯函数），读写文件夹在 NoteSyncDisk（主线程外），合并规则在 NoteSync。
 // - **开关**（A2 默认关）：设置里选了文件夹才开（enable：新的文件夹写标记、已经有库的接着用——标记还没下载完、读不出来，
-//   或者没标记却有别的电脑的子文件夹，都不开：新写一个会把别的电脑全挡在外面；文件夹和库编号记在这台电脑自己的偏好里，
+//   或者没标记却有别的电脑的子文件夹，都不开：新写一个会把别的电脑全挡在外面；没标记的还得是空的，不往放着别的东西的
+//   文件夹里撒子文件夹；文件夹和库编号记在这台电脑自己的偏好里，
 //   不注册默认值、不跟着导出走；开了之后由调用方 start）；关掉（disable）只是不再同步，文件夹里的东西留着、本机的便签不动。
 //   便签这个功能关着（Feature.notes）时也停（算「后台活」：stop 之后 syncNow、刹车的「继续」都不再起一轮），库照开。
 // - **什么时候合**：开的时候一轮，之后每 20 秒一轮（ponytail: 轮询；同步盘本来就是几秒到几分钟的延迟，没变的文件只看属性
@@ -43,8 +44,8 @@ import Observation
     case notTheFolder
     /// 文件夹是更新版本的 Kitty Tools 写的
     case newerFormat
-    /// 这台电脑的墓碑读不出来（多半是还没下载完）
-    case unreadable(String)
+    /// 哪台电脑的墓碑读不出来（多半是还没下载完；它的名字，没写名字是 nil）
+    case unreadable(String?)
     /// 标记、本机自己的 device.json 读不出来（多半是还没下载完；ponytail: 真写坏了会一直停在这，要删掉那个文件）
     case downloading
     /// 读写出错（原因）
@@ -56,12 +57,16 @@ import Observation
   /// 库里记「写出去的是第几轮」的那一项（note_meta）
   static let epochKey = "sync-epoch"
 
-  private(set) var status: Status = .off
-  private(set) var lastSync: Date?
+  // 下面四样只由一轮改（截图自检直接设）
+  var status: Status = .off
+  var lastSync: Date?
   /// 别的电脑（名字、最后一次看到它的文件变的时刻），按名字排
-  private(set) var peers: [NoteSyncDisk.Peer] = []
+  var peers: [NoteSyncDisk.Peer] = []
   /// 这一轮还在等同步盘下载的文件有几个
-  private(set) var downloading = 0
+  var downloading = 0
+  /// 同步的文件夹、它的库编号（没开 = nil）：偏好里那两项的样子（设置页要跟着变，放在这里）
+  private(set) var folder: URL?
+  private(set) var library: String?
 
   @ObservationIgnored let store: NoteStore
   @ObservationIgnored private let defaults: UserDefaults
@@ -83,16 +88,11 @@ import Observation
   init(store: NoteStore, defaults: UserDefaults = .standard) {
     self.store = store
     self.defaults = defaults
-  }
-
-  /// 同步的文件夹（没开 = nil）
-  var folder: URL? {
-    defaults.string(forKey: Prefs.notesSyncFolder).map {
+    folder = defaults.string(forKey: Prefs.notesSyncFolder).map {
       URL(filePath: $0, directoryHint: .isDirectory)
     }
+    library = defaults.string(forKey: Prefs.notesSyncLibrary)
   }
-
-  var library: String? { defaults.string(forKey: Prefs.notesSyncLibrary) }
 
   var isEnabled: Bool { folder != nil && library != nil }
 
@@ -111,7 +111,11 @@ import Observation
       return "这个文件夹是更新版本的 Kitty Tools 用的，先更新再同步"
     }
     if library == nil, inspection.devices > 0 {
-      return "这个文件夹里有别的电脑同步过的便签，却找不到同步记录（可能还没下载完），稍后再试"
+      return "这个文件夹里有别的 Mac 同步过的便签，却找不到同步记录（可能还没下载完），稍后再试"
+    }
+    // 没同步过的文件夹要是空的：不往「文稿」这种放着别的东西的文件夹里撒子文件夹
+    if library == nil, !inspection.empty {
+      return "这个文件夹里已经有别的东西了，新建一个空文件夹来同步"
     }
     if library == nil {
       let fresh = UUID().uuidString
@@ -122,6 +126,8 @@ import Observation
     }
     defaults.set(folder.path, forKey: Prefs.notesSyncFolder)
     defaults.set(library, forKey: Prefs.notesSyncLibrary)
+    self.folder = folder
+    self.library = library
     cache = NoteSyncDisk.Cache()
     return nil
   }
@@ -131,6 +137,8 @@ import Observation
     stop()
     defaults.removeObject(forKey: Prefs.notesSyncFolder)
     defaults.removeObject(forKey: Prefs.notesSyncLibrary)
+    folder = nil
+    library = nil
     cache = NoteSyncDisk.Cache()
     peers = []
     lastSync = nil
@@ -314,7 +322,7 @@ import Observation
     case .notTheFolder: .notTheFolder
     case .newerFormat: .newerFormat
     case .unreadableTombstones(let device):
-      .unreadable(snapshot.peers.first { $0.id == device }?.name ?? "另一台电脑")
+      .unreadable(snapshot.peers.first { $0.id == device }?.name)
     }
   }
 
