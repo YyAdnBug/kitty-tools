@@ -7,7 +7,7 @@
 // Linger），收着时不看。不用追踪区的进出：面板改尺寸会重建追踪区、淡出时进来的事件会丢，进出状态会卡住（评审 H1）；
 // 也不全信程序坞的选中（鼠标离开程序坞时它不一定清选中）。
 // 面板是普通 NSPanel 实例（不子类化，mac-overlay-panel §1）：无边框、不激活本 App、永不当 key（键盘一直在前台 App 里）、
-// 状态栏层级（盖住程序坞的名字提示）、所有桌面和全屏 App 上都在；内容第一下点击就给（宿主 acceptsFirstMouse）。
+// 状态栏层级（盖住程序坞的名字提示）、弹在哪个桌面就属于哪个桌面（全屏 App 的桌面上也能弹）；内容第一下点击就给（宿主 acceptsFirstMouse）。
 // 永不当 key，收起直接淡掉窗口自己的透明度（OverlayPanel 要替身是因为淡出时它还当着 key）。
 // 第一次弹时才建，收起时清掉内容、面板留着（弹过一次 14 扇的约 +10 MB，收起后照样占着，屏上量的，PLAN §10）；空闲回收
 // 时收着的面板整块放掉（回落约 6 MB）、连同缩略图缓存，下次弹时再建；关掉功能时清缓存。开关是功能开关 Feature.dockPreview（默认关，拍板 A3），
@@ -287,8 +287,9 @@ import SwiftUI
     RunLoop.main.add(timer, forMode: .common)
     watch = timer
     watchClicks()
-    // 切到别的桌面（触控板横扫、⌃← →、点了别的桌面上的窗口）就收：面板在所有桌面上都在，鼠标又还停在面板那块，
-    // 不收会跟到新桌面上一直留着（2026-10-23 用户手测报的）
+    // 切到别的桌面（触控板横扫、⌃← →、点了别的桌面上的窗口）就收：鼠标还停在面板那块，按位置判断一直算「在附近」，
+    // 不收回到原来的桌面时它还在（2026-10-23 用户手测报的）。面板只属于弹出时的那个桌面（makePanel 的
+    // moveToActiveSpace），切的时候跟着旧桌面一起滑走，这个通知到的时候（切换动画走完）新桌面上本来就没有它
     spaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
       forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
     ) { [weak self] _ in
@@ -373,7 +374,9 @@ import SwiftUI
     panel.backgroundColor = .clear
     panel.hasShadow = true
     panel.level = .statusBar
-    panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+    // 不用 canJoinAllSpaces：那样切桌面时面板会被带到新桌面上，等切完收到通知再收就闪一下（2026-10-23 手测报的）。
+    // moveToActiveSpace：每次 orderFront 挪到当前桌面；fullScreenAuxiliary：全屏 App 的桌面上程序坞滑出来时也能弹
+    panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .ignoresCycle]
     panel.animationBehavior = .none
     panel.isReleasedWhenClosed = false
     panel.becomesKeyOnlyIfNeeded = true
