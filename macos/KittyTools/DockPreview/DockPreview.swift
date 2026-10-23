@@ -136,7 +136,7 @@ import SwiftUI
     let edge = DockPreviewLayout.Edge(orientation: Self.dockOrientation())
     let showsThumbnails = Permissions.isScreenRecordingAllowed
     let (plan, frame) = layout(
-      windows, item: item.frame, edge: edge, screen: screen, compact: !showsThumbnails)
+      windows, item: item, edge: edge, screen: screen, compact: !showsThumbnails)
     let listed = Array(windows.prefix(plan.thumbs.count))
     let sameApp = shown?.app.processIdentifier == target.processIdentifier
     let panel = self.panel ?? makePanel()
@@ -182,15 +182,16 @@ import SwiftUI
 
   /// 排好、算出面板的帧（夹进这块屏）
   private func layout(
-    _ windows: [DockWindow], item: CGRect, edge: DockPreviewLayout.Edge, screen: NSScreen,
+    _ windows: [DockWindow], item: DockWatcher.Item, edge: DockPreviewLayout.Edge, screen: NSScreen,
     compact: Bool
   ) -> (DockPreviewLayout.Plan, NSRect) {
     let room = DockPreviewLayout.room(
-      item: item, edge: edge, screen: screen.frame, visible: screen.visibleFrame)
+      item: item.frame, edge: edge, screen: screen.frame, visible: screen.visibleFrame)
     let plan = DockPreviewLayout.plan(
-      windows.map(\.size), edge: edge, along: room.along, across: room.across, compact: compact)
+      windows.map(\.size), edge: edge, along: room.along, across: room.across, compact: compact,
+      minimumWidth: DockPreviewLayout.labelWidth(item.title))
     let origin = DockPreviewLayout.origin(
-      panel: plan.panel, item: item, edge: edge, screen: screen.frame,
+      panel: plan.panel, item: item.frame, edge: edge, screen: screen.frame,
       visible: screen.visibleFrame)
     return (plan, NSRect(origin: origin, size: plan.panel))
   }
@@ -340,7 +341,7 @@ import SwiftUI
     let windows = model.windows.filter { $0.id != window.id }
     guard !windows.isEmpty else { return hide(animated: true) }
     let (plan, frame) = layout(
-      windows, item: shown.item.frame, edge: model.edge, screen: shown.screen,
+      windows, item: shown.item, edge: model.edge, screen: shown.screen,
       compact: !model.showsThumbnails)
     withAnimation(Style.Motion.settle.animation()) {
       model.windows = Array(windows.prefix(plan.thumbs.count))

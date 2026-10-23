@@ -2,7 +2,8 @@
 // 缩略图高 140 点、宽按窗口比例（夹在 80…260）；沿程序坞的方向排一排（程序坞在下面就横排，在左右两边就竖排），
 // 放不下先把缩略图一起缩（最小高 90），还放不下就换行（往屏幕里面多排几排）；排满这块屏还放不下的不列。不用滚动：
 // 面板从不当 key，滚动视图里的点击、只有竖滚轮的鼠标都靠不住（评审 M5 M6）。没有屏幕录制授权时缩略图换成一块
-// 140 × 76 的图标位（拍板 A2：只列图标和标题）。面板贴着图标那一边、离图标 6 点，夹进那块屏里（内缩 8）。
+// 140 × 76 的图标位（拍板 A2：只列图标和标题）。面板贴着图标那一边，夹进那块屏里（内缩 8）；**压住程序坞自己的名字提示**：
+// 往图标框里压 6 点、至少和提示一样宽（gap、labelWidth，用户 2026-10-23 手测报的重叠）。
 
 import AppKit
 
@@ -39,8 +40,19 @@ enum DockPreviewLayout {
   static let titleHeight: CGFloat = 15
   /// 卡片之间、排和排之间
   static let spacing: CGFloat = 4
-  /// 面板离图标
-  static let gap: CGFloat = 6
+  /// 面板离图标框的距离：负的 = 压进图标框里。程序坞的名字提示画在它自己那块窗口里（层级 20，面板在 25），三角尖在看得见的
+  /// 图标上方约 8 点、气泡顶约 39 点；程序坞给的图标框比看得见的图标高出约 13.5 点（2026-10-23 本机 macOS 27、程序坞在下面、
+  /// 没开放大，悬停时屏上截图量的）。离图标框 +6 时面板底边在图标上方 20 点，三角和气泡下沿从缝里露出来，看着像叠在一起；
+  /// 压进 6 点，底边在图标上方约 7.5 点，正好盖过三角尖、碰不到图标（同 DockDoor 往程序坞里压 20 点、Wins 贴着图标的做法）。
+  /// ponytail: 左右两边的程序坞、开着放大时没量过，照同一个数（HANDTEST「程序坞预览手测」11）；露出来了再分开量
+  static let gap: CGFloat = -6
+
+  /// 程序坞名字提示的宽：14 点系统字的 App 名 + 左右各约 13.5 点（同上量的：「DeepSeek Harness」字宽 122.5、气泡 149）。
+  /// 面板至少这么宽（再各多 4 点），不然提示会从两边露出来
+  static func labelWidth(_ title: String) -> CGFloat {
+    let text = (title as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 14)])
+    return (text.width + 27 + 8).rounded(.up)
+  }
   /// 面板离屏幕边
   static let screenInset: CGFloat = 8
   /// 没有屏幕录制授权时最底下那行说明
@@ -76,7 +88,8 @@ enum DockPreviewLayout {
   /// 排：along 是沿程序坞方向能用的长度（下面：屏宽；左右：可见区的高），across 是往屏幕里能用的长度（下面：图标上沿
   /// 到可见区顶；左右：图标外沿到屏幕另一边）；compact = 没有屏幕录制授权（图标位 + 最底下一行说明）
   static func plan(
-    _ windows: [CGSize], edge: Edge, along: CGFloat, across: CGFloat, compact: Bool = false
+    _ windows: [CGSize], edge: Edge, along: CGFloat, across: CGFloat, compact: Bool = false,
+    minimumWidth: CGFloat = 0
   ) -> Plan {
     let horizontal = edge.isHorizontal
     let note = compact ? noteHeight : 0
@@ -129,8 +142,10 @@ enum DockPreviewLayout {
     let content =
       horizontal
       ? CGSize(width: longest, height: depth(lines)) : CGSize(width: depth(lines), height: longest)
+    // 至少和程序坞的名字提示一样宽（盖住它），夹在这一边能用的长度里；卡片在里面居中
+    let widest = horizontal ? along : CGFloat.infinity
     let panel = CGSize(
-      width: content.width + padding * 2,
+      width: max(content.width + padding * 2, min(minimumWidth, widest)),
       height: content.height + headerHeight + padding * 2 + note)
     return Plan(thumbs: Array(sized.prefix(shown)), lines: lines, content: content, panel: panel)
   }

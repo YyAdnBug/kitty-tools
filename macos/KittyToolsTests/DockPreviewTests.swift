@@ -272,6 +272,24 @@ struct DockPreviewTests {
     #expect(columns.panel == CGSize(width: 336, height: 371 + 26 + 20))
   }
 
+  @Test func panelIsAtLeastAsWideAsTheDockLabel() {
+    // 「DeepSeek Harness」14 点字约 123 点宽，提示气泡约 149，面板再各多 4 点
+    let label = DockPreviewLayout.labelWidth("DeepSeek Harness")
+    #expect(label >= 155 && label <= 162)
+    let narrow = DockPreviewLayout.plan(
+      [CGSize(width: 300, height: 1200)], edge: .bottom, along: 1500, across: 800,
+      minimumWidth: 300)
+    #expect(narrow.panel.width == 300, "一张瘦窗口的卡片只有 112 宽：撑到提示那么宽")
+    #expect(narrow.content.width == 92, "卡片本身不变，在面板里居中")
+    let wide = DockPreviewLayout.plan(
+      [page, page], edge: .bottom, along: 1500, across: 800, minimumWidth: 300)
+    #expect(wide.panel.width == 496, "比提示宽的不动（236 × 2 + 4 + 20）")
+    let cramped = DockPreviewLayout.plan(
+      [CGSize(width: 300, height: 1200)], edge: .bottom, along: 200, across: 800,
+      minimumWidth: 300)
+    #expect(cramped.panel.width == 200, "不超过这一边能用的长度")
+  }
+
   @Test func originHugsTheIconAndStaysOnScreen() {
     let screen = CGRect(x: 0, y: 0, width: 1512, height: 982)
     let visible = CGRect(x: 0, y: 70, width: 1512, height: 879)
@@ -280,7 +298,7 @@ struct DockPreviewTests {
     #expect(
       DockPreviewLayout.origin(
         panel: panel, item: item, edge: .bottom, screen: screen, visible: visible)
-        == CGPoint(x: 530, y: 70))
+        == CGPoint(x: 530, y: 58), "压进图标框 6 点（盖住程序坞的名字提示）")
     let nearLeft = CGRect(x: 10, y: 4, width: 60, height: 60)
     #expect(
       DockPreviewLayout.origin(
@@ -290,12 +308,12 @@ struct DockPreviewTests {
     #expect(
       DockPreviewLayout.origin(
         panel: panel, item: side, edge: .left, screen: screen, visible: visible)
-        == CGPoint(x: 66, y: 949 - 8 - 200))
+        == CGPoint(x: 54, y: 741))
     let right = CGRect(x: 1452, y: 400, width: 60, height: 60)
     #expect(
       DockPreviewLayout.origin(
         panel: panel, item: right, edge: .right, screen: screen, visible: visible)
-        == CGPoint(x: 1452 - 6 - 400, y: 330))
+        == CGPoint(x: 1058, y: 330))
   }
 
   @Test func roomAlongAndAcross() {
@@ -304,15 +322,15 @@ struct DockPreviewTests {
     let bottom = DockPreviewLayout.room(
       item: CGRect(x: 700, y: 4, width: 60, height: 60), edge: .bottom, screen: screen,
       visible: visible)
-    #expect(bottom.along == 1496 && bottom.across == 949 - 8 - 70)
+    #expect(bottom.along == 1496 && bottom.across == 883)
     let left = DockPreviewLayout.room(
       item: CGRect(x: 0, y: 400, width: 60, height: 60), edge: .left, screen: screen,
       visible: visible)
-    #expect(left.along == 863 && left.across == 1512 - 8 - 66)
+    #expect(left.along == 863 && left.across == 1450)
     let right = DockPreviewLayout.room(
       item: CGRect(x: 1452, y: 400, width: 60, height: 60), edge: .right, screen: screen,
       visible: visible)
-    #expect(right.across == 1438, "图标左沿 1452 − 缝 6 − 屏幕边 8")
+    #expect(right.across == 1450, "图标左沿 1452 + 压进去的 6 − 屏幕边 8")
   }
 
   @Test func screenIsTheOneHoldingTheIconOrTheNearest() {
