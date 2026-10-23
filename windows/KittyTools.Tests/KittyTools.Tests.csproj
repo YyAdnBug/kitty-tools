@@ -1,0 +1,14 @@
+<Project Sdk="MSTest.Sdk/4.5.1">
+  <!-- 只测 Core 的纯函数；不引 WinUI，不碰真实窗口。 -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>KittyTools.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- .NET 10 的 dotnet test 默认只认 Microsoft.Testing.Platform；用 VSTest 才能在仓库根目录直接跑。 -->
+    <UseVSTest>true</UseVSTest>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\KittyTools.Core\KittyTools.Core.csproj" />
+  </ItemGroup>
+</Project>

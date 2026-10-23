@@ -3,6 +3,7 @@
 // 窗口过程用 [UnmanagedCallersOnly] + 函数指针，不用委托封送。
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using KittyTools.Infrastructure;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.UI.WindowsAndMessaging;
@@ -28,7 +29,7 @@ internal static unsafe class HiddenWindow
         _instance = new HINSTANCE(module.Value);
         TaskbarCreatedMessage = PInvoke.RegisterWindowMessage("TaskbarCreated");
 
-        var wc = new WNDCLASSEXW
+        var windowClass = new WNDCLASSEXW
         {
             cbSize = (uint)sizeof(WNDCLASSEXW),
             lpfnWndProc = WndProcPtr,
@@ -37,24 +38,23 @@ internal static unsafe class HiddenWindow
 
         fixed (char* className = ClassName)
         {
-            wc.lpszClassName = new PCWSTR(className);
-            if (PInvoke.RegisterClassEx(in wc) == 0)
+            windowClass.lpszClassName = new PCWSTR(className);
+            if (PInvoke.RegisterClassEx(in windowClass) == 0)
             {
-                ProbeLog.Write("hidden.class-failed", ("error", Marshal.GetLastWin32Error()));
+                Log.Error($"hidden.class-failed {Marshal.GetLastWin32Error()}");
                 return false;
             }
         }
 
-        // 不设 lpfnWndProc：用窗口类里登记的那个。
         Hwnd = Native.CreateWindowEx(0, ClassName, "KittyTools.Hidden", 0, 0, 0, 0, 0, default, default, _instance, (void*)0);
         if (Hwnd == default)
         {
-            ProbeLog.Write("hidden.create-failed", ("error", Marshal.GetLastWin32Error()));
+            Log.Error($"hidden.create-failed {Marshal.GetLastWin32Error()}");
             return false;
         }
 
         PInvoke.AddClipboardFormatListener(Hwnd);
-        ProbeLog.Write("hidden.ready", ("hwnd", ((IntPtr)Hwnd.Value).ToInt64()));
+        Log.Info("hidden.ready");
         return true;
     }
 
@@ -72,17 +72,7 @@ internal static unsafe class HiddenWindow
         }
         catch (Exception ex)
         {
-            ProbeLog.Write("wndproc.exception", ("type", ex.GetType().Name), ("hr", ex.HResult));
-            try
-            {
-                File.AppendAllText(
-                    Path.Combine(Path.GetTempPath(), "kitty-crash.txt"),
-                    $"{DateTime.Now:O} wndproc: {ex}\n\n");
-            }
-            catch
-            {
-                // 调试日志写不出来就算了。
-            }
+            Log.Error("wndproc.exception", ex);
         }
 
         return PInvoke.DefWindowProc(hwnd, msg, wParam, lParam);

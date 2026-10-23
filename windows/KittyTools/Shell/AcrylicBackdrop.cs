@@ -4,6 +4,7 @@ using Microsoft.UI.Composition;
 using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
+using KittyTools.Infrastructure;
 
 namespace KittyTools;
 
@@ -19,7 +20,7 @@ internal sealed partial class AcrylicBackdrop : SystemBackdrop
 
         if (!DesktopAcrylicController.IsSupported())
         {
-            ProbeLog.Write("acrylic.unsupported");
+            Log.Info("acrylic.unsupported");
             return;
         }
 
@@ -39,7 +40,7 @@ internal sealed partial class AcrylicBackdrop : SystemBackdrop
             _root.ActualThemeChanged += OnActualThemeChanged;
         }
 
-        ProbeLog.Write("acrylic.connected", ("theme", _configuration.Theme.ToString()));
+        Log.Info("acrylic.connected");
     }
 
     protected override void OnTargetDisconnected(ICompositionSupportsSystemBackdrop target)
@@ -65,7 +66,7 @@ internal sealed partial class AcrylicBackdrop : SystemBackdrop
     {
         if (_configuration is not null)
         {
-            _configuration.Theme = sender.ActualTheme == ElementTheme.Dark ? SystemBackdropTheme.Dark : SystemBackdropTheme.Light;
+            _configuration.Theme = MapTheme(sender.ActualTheme);
             _configuration.IsInputActive = true;
         }
     }

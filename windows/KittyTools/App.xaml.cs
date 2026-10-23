@@ -1,12 +1,12 @@
-// 进程入口。第 0 批是验证样机：没有主窗口，启动后只建隐藏窗口、托盘图标和热键，
-// 由 Probe 运行时按命令行参数 / 命名管道驱动各项实测。第 1 批会把它换成正式的单实例入口。
+// 第 1 批的壳：单实例、设置、托盘、热键、浮层和轻提示。各模块后续接上。
+using KittyTools.Infrastructure;
 using Microsoft.UI.Xaml;
 
 namespace KittyTools;
 
 public partial class App : Application
 {
-    private ProbeRuntime? _runtime;
+    private ShellRuntime? _runtime;
 
     public App()
     {
@@ -27,17 +27,29 @@ public partial class App : Application
     {
         try
         {
-            var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "kitty-crash.txt");
-            File.AppendAllText(path, $"{DateTime.Now:O} {stage}: {ex}\n\n");
+            System.IO.File.AppendAllText(
+                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "kitty-crash.txt"),
+                $"{DateTime.Now:O} {stage}: {ex}\n\n");
         }
         catch
         {
-            // 崩溃日志写不出来就算了，别再抛一次。
+            // 崩溃日志写不出来就算了。
         }
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        _runtime = ProbeRuntime.Start();
+        try
+        {
+            Log.Initialize();
+            SettingsService.Load();
+            Theme.ApplyAccent();
+            _runtime = ShellRuntime.Start();
+        }
+        catch (Exception ex)
+        {
+            LogCrash("launched", ex);
+            throw;
+        }
     }
 }

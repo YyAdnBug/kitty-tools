@@ -1,64 +1,105 @@
-// 全局热键。第 0 批只注册三个验证用的键：Alt+C（剪贴板）、Alt+Space（启动器）、Alt+X（截图）。
-// 注册失败 = 被别的程序占了；Windows 能查出来，先记日志，第 1 批再做设置页标红。
+// 全局热键。默认键在 SettingsDefaults；注册失败 = 被别的程序占了，
+// Windows 能查出来，设置 › 快捷键里那一行标红，托盘菜单里不写这个键。
 using System.Runtime.InteropServices;
+using KittyTools.Infrastructure;
+using KittyTools.Core;
 using Windows.Win32;
-using Windows.Win32.Foundation;
 using Windows.Win32.UI.Input.KeyboardAndMouse;
 
 namespace KittyTools;
 
-internal static class HotKeys
+internal sealed class HotKeyManager
 {
-    public const int Clipboard = 1;
-    public const int Launcher = 2;
-    public const int Capture = 3;
+    private readonly Dictionary<int, string> _idToAction = new();
+    private readonly HashSet<string> _registered = new();
+    private readonly Dictionary<string, string> _failures = new();
 
-    private static readonly (int Id, HOT_KEY_MODIFIERS Modifiers, uint VirtualKey, string Name)[] Bindings =
-    {
-        (Clipboard, HOT_KEY_MODIFIERS.MOD_ALT | HOT_KEY_MODIFIERS.MOD_NOREPEAT, (uint)'C', "Alt+C"),
-        (Launcher, HOT_KEY_MODIFIERS.MOD_ALT | HOT_KEY_MODIFIERS.MOD_NOREPEAT, 0x20, "Alt+Space"),
-        (Capture, HOT_KEY_MODIFIERS.MOD_ALT | HOT_KEY_MODIFIERS.MOD_NOREPEAT, (uint)'X', "Alt+X"),
-    };
+    public event Action<string>? Pressed;
 
-    public static void RegisterAll()
+    public void RegisterAll(Settings settings)
     {
-        foreach (var binding in Bindings)
+        UnregisterAll();
+
+        var id = 1;
+        foreach (var definition in SettingsDefaults.DefaultHotKeys)
         {
-            if (PInvoke.RegisterHotKey(HiddenWindow.Hwnd, binding.Id, binding.Modifiers, binding.VirtualKey))
+            var binding = SettingsDefaults.BindingFor(settings, definition.Action);
+            if (binding.VirtualKey == 0)
             {
-                ProbeLog.Write("hotkey.registered", ("name", binding.Name), ("id", binding.Id));
+                id++;
+                continue;
+            }
+
+            var validation = HotKeyRules.Validate(binding.VirtualKey, binding.Modifiers);
+            if (!validation.Ok)
+            {
+                _failures[definition.Action] = validation.Reason ?? "组合无效";
+                id++;
+                continue;
+            }
+
+            var nativeModifiers = HOT_KEY_MODIFIERS.MOD_NOREPEAT;
+            if ((binding.Modifiers & HotKeyModifiers.Control) != 0) nativeModifiers |= HOT_KEY_MODIFIERS.MOD_CONTROL;
+            if ((binding.Modifiers & HotKeyModifiers.Alt) != 0) nativeModifiers |= HOT_KEY_MODIFIERS.MOD_ALT;
+            if ((binding.Modifiers & HotKeyModifiers.Shift) != 0) nativeModifiers |= HOT_KEY_MODIFIERS.MOD_SHIFT;
+            if ((binding.Modifiers & HotKeyModifiers.Win) != 0) nativeModifiers |= HOT_KEY_MODIFIERS.MOD_WIN;
+
+            if (PInvoke.RegisterHotKey(HiddenWindow.Hwnd, id, nativeModifiers, binding.VirtualKey))
+            {
+                _idToAction[id] = definition.Action;
+                _registered.Add(definition.Action);
             }
             else
             {
-                ProbeLog.Write("hotkey.failed", ("name", binding.Name), ("id", binding.Id), ("error", Marshal.GetLastWin32Error()));
+                var error = Marshal.GetLastWin32Error();
+                _failures[definition.Action] = error == 1409 ? "被占用" : $"注册失败（{error}）";
+                Log.Warn($"hotkey.failed {definition.Action} {error}");
             }
+
+            id++;
         }
     }
 
-    public static void UnregisterAll()
+    public void UnregisterAll()
     {
-        foreach (var binding in Bindings)
+        foreach (var id in _idToAction.Keys)
         {
-            PInvoke.UnregisterHotKey(HiddenWindow.Hwnd, binding.Id);
+            PInvoke.UnregisterHotKey(HiddenWindow.Hwnd, id);
+        }
+
+        _idToAction.Clear();
+        _registered.Clear();
+        _failures.Clear();
+    }
+
+    public void OnHotKey(int id)
+    {
+        if (_idToAction.TryGetValue(id, out var action))
+        {
+            Pressed?.Invoke(action);
         }
     }
 
-    public static void OnHotKey(int id)
-    {
-        var ticks = System.Diagnostics.Stopwatch.GetTimestamp();
-        ProbeLog.Write("hotkey.message", ("id", id));
+    public bool IsRegistered(string action) => _registered.Contains(action);
 
-        switch (id)
+    public string? ShortcutFor(string action)
+    {
+        if (!_registered.Contains(action))
         {
-            case Clipboard:
-                OverlayHost.Toggle(OverlayKind.Clipboard, ticks);
-                break;
-            case Launcher:
-                OverlayHost.Toggle(OverlayKind.Launcher, ticks);
-                break;
-            case Capture:
-                CaptureHost.Toggle(ticks);
-                break;
+            return null;
         }
+
+        var binding = SettingsDefaults.BindingFor(SettingsService.Current, action);
+        return HotKeyRules.Format(binding.VirtualKey, binding.Modifiers);
+    }
+
+    public string? FailureFor(string action) => _failures.GetValueOrDefault(action);
+
+    public static string FormatFor(string action)
+    {
+        var binding = SettingsDefaults.BindingFor(SettingsService.Current, action);
+        return binding.VirtualKey == 0
+            ? "未设置"
+            : HotKeyRules.Format(binding.VirtualKey, binding.Modifiers);
     }
 }
