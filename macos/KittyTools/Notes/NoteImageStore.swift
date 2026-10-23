@@ -124,6 +124,12 @@ final class NoteImageStore {
     return names.compactMap(Self.identifier(ofFileNamed:))
   }
 
+  /// 目录里像图片的文件的文件名（同步写出去时比两头有没有，NoteSyncFolder.publish）
+  func fileNames() -> Set<String> {
+    let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+    return Set(names.filter { Self.identifier(ofFileNamed: $0) != nil })
+  }
+
   /// 文件名 → 编号；不像 `<UUID>.<ext>` 的给 nil
   nonisolated static func identifier(ofFileNamed name: String) -> UUID? {
     let parts = name.split(separator: ".", omittingEmptySubsequences: false)

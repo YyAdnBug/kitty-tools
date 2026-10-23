@@ -225,21 +225,37 @@ import Observation
     try? db.execute("DELETE FROM note_meta WHERE key = 'device'")
   }
 
+  /// note_meta 里的一项（同步记的「写出去的是第几轮」等，NoteSyncer）。读不出来抛错（不当成没有：同步拿它认库被退回去了）
+  func meta(_ key: String) throws -> String? {
+    try db.query("SELECT value FROM note_meta WHERE key = ?", [key]) { $0.text(0) }.first ?? nil
+  }
+
+  /// 记下 note_meta 的一项（当场写进库）
+  func setMeta(_ key: String, _ value: String) throws {
+    try db.execute("INSERT OR REPLACE INTO note_meta(key, value) VALUES (?, ?)", [key, value])
+  }
+
   /// 同步时认出库被退回去了（NoteSyncFolder.regressed：时间机器整个恢复了数据目录，本机那一格的计数比已经发出去的小）：
-  /// 换一个新的电脑编号，给 bumping 里的每一条记一笔新编号的改动（钟新编号那一格 +1、修订号 +1）——它们就和发出去的那几版
-  /// 「各改各的」，恢复后打的字走另存那条路，不被当成被盖过。当场落盘：新编号写不进库抛错（什么都没动），便签没落下去
-  /// 返回 false（留在内存里照常重试；这一轮先不合）
+  /// 换一个新的电脑编号，bumping 里的每一条：**钟里去掉旧编号那一格**（那几个计数被重复用过，信不得：留着的话发出去的那版
+  /// 会被当成它的前身、悄悄扔掉——单测抓到的），再记一笔新编号的改动（新编号那一格 +1、修订号 +1）。它们就和发出去的那几版
+  /// 「各改各的」，恢复后打的字走另存那条路，两版都留下（代价：恢复之后没再改过的那几条，旧的样子也会另存一条进最近删除）。
+  /// **先把那几条落盘、再记新编号**：反过来的话新编号记上了、那几条没落下去就退出，下次恢复后打的字没有新编号的改动、
+  /// 会被发出去的那版悄悄盖掉；这样落下去了编号没记上，下一轮照样认出退回去了、再换一次（多一格，不丢字）。
+  /// 便签没落下去返回 false（留在内存里照常重试；这一轮先不合），新编号写不进库抛错
   @discardableResult
   func switchDevice(bumping ids: Set<String>) throws -> Bool {
+    let old = deviceID
     let id = UUID().uuidString
-    try db.execute("INSERT OR REPLACE INTO note_meta(key, value) VALUES ('device', ?)", [id])
-    deviceID = id
     for index in notes.indices where ids.contains(notes[index].id) {
+      notes[index].clock[old] = nil
       notes[index].clock[id, default: 0] += 1
       notes[index].revision = Note.nextRevision(after: notes[index].revision)
       unsaved.insert(notes[index].id)
     }
-    return flush()
+    guard flush() else { return false }
+    try db.execute("INSERT OR REPLACE INTO note_meta(key, value) VALUES ('device', ?)", [id])
+    deviceID = id
+    return true
   }
 
   // MARK: 视图

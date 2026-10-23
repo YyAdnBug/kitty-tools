@@ -214,6 +214,10 @@ enum Prefs {
   /// 便签纸色「最近用过」的自定义颜色（便签未来计划 B4，2026-10-22；一组 "#RRGGBB"，最近的在前、最多 8 个，
   /// NoteColorPicker）：这台电脑自己的状态、**不注册默认值**——别人给的导出文件不该换掉你的最近用过
   nonisolated static let notesRecentColors = "notesRecentColors"
+  /// 便签同步（便签未来计划 A，2026-10-22；NoteSyncer）：同步的文件夹（路径字符串）和它的库编号（文件夹根上标记里的那个）。
+  /// 这台电脑自己的状态、**不注册默认值**——别人给的导出文件不该改你同步到哪；没有 = 没开同步（A2 默认关）
+  nonisolated static let notesSyncFolder = "notesSyncFolder"
+  nonisolated static let notesSyncLibrary = "notesSyncLibrary"
   /// 全部便签窗口上次用的显示方式（NotesWindowModel.Layout 的 rawValue：wall 便签墙 / list 列表；没存过 = 便签墙，
   /// 2026-10-15 手测反馈）。同窗口位置一样是这台电脑自己的状态、**不注册默认值**：不跟着导出 / 导入走
   nonisolated static let notesWindowLayout = "notesWindowLayout"

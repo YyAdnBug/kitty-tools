@@ -219,9 +219,11 @@ struct NoteSyncFolderTests {
     let pictured = note(
       "图 \(NoteImages.token(image)) 和 \(NoteImages.token(other))", revision: 1)
     let goneID = UUID().uuidString
+    // 本机没有、也没墓碑、读不出来（还在下载 / 库被退回去了）：可能是唯一的一份，不删
+    let strayID = UUID().uuidString
     let own = NoteSyncFolder.Device(
       notes: [synced.id: synced, edited.id: stale, goneID: note("永久删了的", id: goneID)],
-      unreadable: [broken.id])
+      unreadable: [broken.id, strayID])
     let tombstones = [goneID: NoteSync.Tombstone(clock: ["A": 1], state: Self.at(9))]
     let plan = NoteSyncFolder.publish(
       local: [synced, edited, missing, broken, pictured], erased: tombstones, own: own,

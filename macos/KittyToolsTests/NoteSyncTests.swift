@@ -437,7 +437,7 @@ struct NoteSyncTests {
     #expect(reopened.note(gone.id) == back && reopened.erased[gone.id] == nil)
   }
 
-  /// 认出库被退回去了：换一个新编号（记进库），给那几条各记一笔新编号的改动（钟 +1、修订号 +1、落盘）；别的不动
+  /// 认出库被退回去了：换一个新编号（记进库），那几条去掉旧编号那一格、记一笔新编号的改动（修订号 +1、落盘）；别的不动
   @Test func switchDeviceBumpsTheNamedNotes() throws {
     let db = try Database(path: ":memory:")
     let store = try NoteStore(db: db, host: "mac")
@@ -447,7 +447,8 @@ struct NoteSyncTests {
     #expect(try store.switchDevice(bumping: [first.id]))
     let new = store.deviceID
     #expect(new != old && UUID(uuidString: new) != nil)
-    #expect(store.note(first.id)?.clock == [old: 1, new: 1] && store.note(first.id)?.revision == 1)
+    #expect(
+      store.note(first.id)?.clock == [new: 1] && store.note(first.id)?.revision == 1, "旧编号那一格去掉")
     #expect(store.note(second.id) == second)
     let reopened = try NoteStore(db: db, host: "mac")
     #expect(reopened.deviceID == new && reopened.note(first.id) == store.note(first.id))

@@ -58,6 +58,8 @@ nonisolated enum NoteSyncFolder {
   struct DeviceInfo: Codable, Equatable, Sendable {
     var format = NoteSyncFolder.format
     var name: String
+    /// 写出去的是第几轮（只增不减，同时记在库里；文件夹里的比库里的大 = 库被退回去了，NoteSyncer）
+    var epoch: Int?
   }
 
   /// erased.json：编号 → 被删那一版的钟和状态时刻（整数毫秒）
@@ -226,6 +228,8 @@ nonisolated enum NoteSyncFolder {
   /// 读到的一台电脑的子文件夹
   struct Device: Equatable, Sendable {
     var name: String?
+    /// device.json 里记的「写出去的是第几轮」（见 DeviceInfo.epoch）
+    var epoch: Int?
     /// 读出来的便签
     var notes: [String: Note] = [:]
     /// 有文件、但读不出来的（没下载完、写坏了、格式认不出）
@@ -274,14 +278,20 @@ nonisolated enum NoteSyncFolder {
     trashing > brakeCount || (trashing >= brakeFloor && trashing * 10 > alive * 3)
   }
 
+  /// 是不是那个文件夹：有标记、格式不比这一版新、库编号对得上（文件夹里的东西信得过之前什么都不做，NoteSyncer 先看它）
+  static func check(_ marker: Marker?, library: String) -> Stop? {
+    guard let marker else { return .notTheFolder }
+    guard marker.format <= format else { return .newerFormat }
+    guard marker.library == library else { return .notTheFolder }
+    return nil
+  }
+
   /// 合一轮：local / erased 是本机的便签和墓碑，folder 是读到的文件夹，library 是本机记着的库编号
   static func round(
     local: [Note], erased: [String: NoteSync.Tombstone], folder: Folder, library: String,
     now: Date
   ) -> Result<Round, Stop> {
-    guard let marker = folder.marker else { return .failure(.notTheFolder) }
-    guard marker.format <= format else { return .failure(.newerFormat) }
-    guard marker.library == library else { return .failure(.notTheFolder) }
+    if let stop = check(folder.marker, library: library) { return .failure(stop) }
     var tombstones = erased
     for (device, other) in folder.devices.sorted(by: { $0.key < $1.key }) {
       switch other.erased {
@@ -319,7 +329,7 @@ nonisolated enum NoteSyncFolder {
   struct Publish: Equatable, Sendable {
     /// 要（重）写的便签
     var writes: [Note] = []
-    /// 要删的便签文件（本机已经没有了）
+    /// 要删的便签文件（本机已经没有了、有墓碑的）
     var deletes: [String] = []
     /// erased.json 要重写成这样（nil = 不用动）
     var erased: [String: NoteSync.Tombstone]?
@@ -327,9 +337,9 @@ nonisolated enum NoteSyncFolder {
     var uploads: [NoteImages.Image] = []
     var downloads: [NoteImages.Image] = []
     /// 什么都不用做
-    var isEmpty: Bool {
-      writes.isEmpty && deletes.isEmpty && erased == nil && uploads.isEmpty && downloads.isEmpty
-    }
+    var isEmpty: Bool { !touchesNotes && uploads.isEmpty && downloads.isEmpty }
+    /// 便签文件、墓碑文件要动（这才算写出去新的一轮：图片两头补齐不算，NoteSyncer 的 epoch）
+    var touchesNotes: Bool { !writes.isEmpty || !deletes.isEmpty || erased != nil }
   }
 
   /// own：读到的自己的子文件夹（还没有 = nil）；localImages：本机图片目录里的文件名
@@ -342,7 +352,9 @@ nonisolated enum NoteSyncFolder {
     plan.writes = local.filter { own?.notes[$0.id] != $0 }
     let ids = Set(local.map(\.id))
     let onDisk = Set(own.map { Array($0.notes.keys) } ?? []).union(own?.unreadable ?? [])
-    plan.deletes = onDisk.subtracting(ids).sorted()
+    // 只删永久删过的（有墓碑）：本机没有、又没墓碑的，读得出来的这一轮已经合回来了；读不出来的（还在下载、库被退回去了）
+    // 可能是唯一的一份，留着
+    plan.deletes = onDisk.subtracting(ids).filter { erased[$0] != nil }.sorted()
     if own?.erased != .read(erased) { plan.erased = erased }
     var referenced: [String: NoteImages.Image] = [:]
     for note in local where NoteImages.containsToken(note.body) {

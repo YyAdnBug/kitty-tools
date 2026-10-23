@@ -78,6 +78,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 便签（PLAN §10「便签」，Notes/NoteStore.swift）：单独的库 notes.sqlite3，启动的最后才开（finishLaunchingNotes）。
   /// 打不开时单独问（openNotes），不让 App 退出；这次运行里不可用时是 nil——导出和每日备份不带便签这一类，导入跳过便签
   private var noteStore: NoteStore?
+  /// 便签同步（便签未来计划 A，NoteSyncer）：便签库开成了才有；开没开同步看它自己记的偏好
+  private var noteSyncer: NoteSyncer?
   /// 便签开过了（开成了、用户选了先不用都算）。之前不做每日备份（backupIfDue）：便签还没开时写出去的当天那份 JSON
   /// 里没有便签，而当天那份只写一次
   private var hasOpenedNotes = false
@@ -625,6 +627,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) { [weak self] _ in
       MainActor.assumeIsolated { _ = self?.noteStore?.flush() }
     }
+    // 醒来时便签同步马上合一轮（睡着的这段时间别的电脑可能改过；便签关着、没开同步时它自己不做事）
+    NSWorkspace.shared.notificationCenter.addObserver(
+      forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+    ) { [weak self] _ in
+      MainActor.assumeIsolated {
+        guard let self, Feature.notes.isOn else { return }
+        self.noteSyncer?.syncNow()
+      }
+    }
     // 每天一份备份：启动时一次（在最后，等便签开好：finishLaunchingNotes），一直开着不退的靠系统的换日通知
     // （午夜发；睡过了午夜的醒来时补发，不保证准点），锁屏时再看一眼（换日那次没备成的补上）。都是现成的事件，
     // 不为它加定时器
@@ -742,6 +753,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NoteSample.addIfFirst(
           to: noteStore, defaults: .standard, hotKey: HotKeyAction.noteCapture.hotKey?.display)
       }
+      if !launching { noteSyncer?.start() }
       if let noteEdge, !startedNoteEdge {
         startedNoteEdge = true
         noteEdge.start()
@@ -789,6 +801,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
       // 浮动便签先藏起来（固定着的位置记录不清，打开后放回原处）；那叠看着偏好自己收起
       noteEdge?.floats.suspend(covering: .infinite)
+      noteSyncer?.stop()
     }
     if turnedOff.contains(.launchpad) { launchpad.turnOff() }
     if turnedOff.contains(.statusScreen) { statusPicker.panel?.hide() }
@@ -813,6 +826,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     backupIfDue()
     noteEdge = noteStore.map(makeNoteEdge)
+    if let noteStore {
+      let syncer = NoteSyncer(store: noteStore)
+      syncer.island = island
+      noteSyncer = syncer
+      if Feature.notes.isOn { syncer.start() }
+    }
   }
 
   /// 便签的定期清理：「最近删除」里放满 30 天的真删；图片目录里没人引用满 30 天的文件删掉
