@@ -3795,10 +3795,10 @@ struct SnapshotProbeTests {
       to: "\(out)/features-launchpad-off.png")
   }
 
-  /// 设置 › 便签「同步」（便签未来计划 A2，2026-10-23；NoteSyncSection）：没开、第一轮还没完 / 第一轮就停了、好了（两台别的 Mac、还在
-  /// 下载几个；浅 / 深）、还没有别的 Mac、等确认（刹车）、停了（文件夹不在、写不进去）。几秒，图以 notes-sync- 开头。
-  /// 同步接的是内存库和临时偏好域，状态直接设，不碰真的文件夹和偏好
-  @Test(.enabled(if: directory != nil)) func notesSync() throws {
+  /// 设置 › 通用「同步」（2026-10-23，SyncSection）：没开、第一轮还没完 / 第一轮就停了、好了（两台别的 Mac、还在下载几个；
+  /// 浅 / 深）、还没有别的 Mac、等确认（刹车）、停了（文件夹不在、写不进去）、便签关着。几秒，图以 sync- 开头。
+  /// 同步接的是内存库和临时偏好域（便签的功能开关也读它），状态直接设，不碰真的文件夹和偏好
+  @Test(.enabled(if: directory != nil)) func sync() throws {
     let out = try #require(Self.directory)
     try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
     Prefs.registerDefaults()
@@ -3810,11 +3810,11 @@ struct SnapshotProbeTests {
     func section(_ prepare: (NoteSyncer) -> Void = { _ in }) -> some View {
       let syncer = NoteSyncer(store: store, defaults: prefs)
       prepare(syncer)
-      return Form { NoteSyncSection(syncer: syncer) }.formStyle(.grouped)
+      return Form { SyncSection(syncer: syncer) }.formStyle(.grouped).defaultAppStorage(prefs)
     }
-    try snapshot(section(), size: size, dark: false, to: "\(out)/notes-sync-off.png")
+    try snapshot(section(), size: size, dark: false, to: "\(out)/sync-off.png")
     prefs.set(
-      NoteSyncSection.iCloudDrive.appending(path: "Kitty Tools 便签").path,
+      SyncSection.iCloudDrive.appending(path: "Kitty Tools 便签").path,
       forKey: Prefs.notesSyncFolder)
     prefs.set("库", forKey: Prefs.notesSyncLibrary)
     let now = Date.now
@@ -3868,9 +3868,23 @@ struct SnapshotProbeTests {
       for dark in state == "idle" ? [false, true] : [false] {
         try snapshot(
           section(prepare), size: size, dark: dark,
-          to: "\(out)/notes-sync-\(state)\(dark ? "-dark" : "").png")
+          to: "\(out)/sync-\(state)\(dark ? "-dark" : "").png")
       }
     }
+    // 在通用页里的位置（导出与导入上面）、便签关着时
+    let general = NoteSyncer(store: store, defaults: prefs)
+    general.status = .idle
+    general.lastSync = now.addingTimeInterval(-120)
+    general.peers = [air]
+    try snapshot(
+      GeneralTab(sync: general).defaultAppStorage(prefs), size: NSSize(width: 640, height: 1500),
+      dark: false, to: "\(out)/sync-general.png")
+    prefs.set(false, forKey: Feature.notes.prefsKey)
+    try snapshot(
+      section {
+        $0.status = .off
+        $0.lastSync = now.addingTimeInterval(-3600)
+      }, size: size, dark: false, to: "\(out)/sync-notes-off.png")
   }
 
   private func snapshot(

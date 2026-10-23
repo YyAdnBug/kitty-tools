@@ -513,7 +513,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               applied: { [unowned self] in settingsImported() },
               backupFolder: Backup.folder(in: dataDirectory),
               snapshot: { [unowned self] in try snapshotBeforeImport() },
-              backupNow: { [unowned self] in await backupSettingsIfDue() })
+              backupNow: { [unowned self] in await backupSettingsIfDue() }),
+            sync: noteSyncer
           )
           .environment(island))
       case .clipboard: AnyView(ClipboardTab(store: clipboardStore).environment(island))
@@ -547,8 +548,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             openNotes: { [unowned self] in showNotes() },
             notes: { [unowned self] in noteStore },
             images: { [unowned self] in noteStore?.images },
-            island: island,
-            sync: { [unowned self] in noteSyncer }))
+            island: island))
       case .statusScreen: AnyView(StatusScreenTab())
       case .translate:
         AnyView(

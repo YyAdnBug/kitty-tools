@@ -4,7 +4,8 @@
 // 单独成组，默认仍关）、
 // 菜单栏图标（显示 / 隐藏、单色 / 彩色，StatusItem 看着偏好立刻跟着变，第 9 批 M1 M2）、登录时打开、
 // 权限状态（辅助功能、屏幕录制、麦克风（录屏第 4 批）、15.4 起的剪贴板访问，同一种 PermissionRow；从未授权变已授权时
-// 符号替换 + 弹一下）、全部设置的导出与导入（TransferSection，Settings/SettingsTransfer.swift）。
+// 符号替换 + 弹一下）、几台 Mac 之间的同步（SyncSection，Settings/SyncSection.swift，2026-10-23）、全部设置的导出与导入
+// （TransferSection，Settings/SettingsTransfer.swift）。
 
 import AVFoundation
 import ServiceManagement
@@ -13,6 +14,8 @@ import SwiftUI
 struct GeneralTab: View {
   /// 导出 / 导入要用到的翻译服务列表和导入后的收尾（AppDelegate 给）；不给就没有「导出与导入」那一组
   var transfer: SettingsTransfer?
+  /// 同步（便签这次用不了时给 nil，「同步」一节不显示）
+  var sync: NoteSyncer?
   @AppStorage(Prefs.appearance) private var appearance = AppAppearance.system
   @AppStorage(Prefs.statusItemVisible) private var statusItemVisible = true
   @AppStorage(Prefs.statusItemStyle) private var statusItemStyle = StatusItem.IconStyle.template
@@ -132,6 +135,7 @@ struct GeneralTab: View {
         }
         if #available(macOS 15.4, *) { pasteboardAccess }
       }
+      if let sync { SyncSection(syncer: sync) }
       if let transfer { TransferSection(transfer: transfer) }
     }
     .formStyle(.grouped)
