@@ -530,6 +530,8 @@ struct SnapshotProbeTests {
       case .notes: AnyView(NotesTab {})
       // 自带的三个状态（固定的列表：不读用户改过的那份）
       case .statusScreen: AnyView(StatusScreenTab(fixed: StatusPreset.builtIn))
+      // 私有接口在不在按固定的「都在」画（图不跟着机器变）
+      case .dockPreview: AnyView(DockPreviewTab(missing: []))
       case .translate:
         AnyView(TranslateTab(services: services, history: history, speaker: speaker))
       case .hotkeys: AnyView(HotkeysTab(center: hotKeys))
@@ -3792,6 +3794,110 @@ struct SnapshotProbeTests {
     try snapshot(
       root(), size: NSSize(width: 780, height: 1120), dark: false,
       to: "\(out)/features-launchpad-off.png")
+  }
+
+  /// 程序坞预览（第九族第 2 批）：面板（程序坞在下面 / 左边、窗口多到要滚、没有屏幕录制授权、长标题），浅深各一份；
+  /// 设置 › 程序坞预览（私有接口都在 / 缺几个）。图以 dock-preview- 开头（设置页是 settings-dock-preview-）。悬停的样子
+  /// （浅灰底、抬起、✕）是视图自己的状态，屏外摆不出来，看真机
+  @Test(.enabled(if: directory != nil)) func dockPreview() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    Prefs.registerDefaults()
+    // /Applications/Safari.app 是链接，直接取图标会带替身的小箭头
+    let icon = NSWorkspace.shared.icon(
+      forFile: URL(filePath: "/Applications/Safari.app").resolvingSymlinksInPath().path)
+    /// 假的窗口画面：浅色底、一条标题栏、几块内容
+    func shot(_ size: CGSize, tint: NSColor) throws -> CGImage {
+      let width = Int(size.width) * 2
+      let height = Int(size.height) * 2
+      let context = try #require(
+        CGContext(
+          data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+          space: CGColorSpaceCreateDeviceRGB(),
+          bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue))
+      context.setFillColor(NSColor(white: 0.97, alpha: 1).cgColor)
+      context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+      context.setFillColor(NSColor(white: 0.88, alpha: 1).cgColor)
+      context.fill(CGRect(x: 0, y: height - 28, width: width, height: 28))
+      context.setFillColor(tint.cgColor)
+      context.fill(CGRect(x: 24, y: height - 120, width: width / 2, height: 40))
+      context.setFillColor(NSColor(white: 0.8, alpha: 1).cgColor)
+      for row in 0..<4 {
+        context.fill(CGRect(x: 24, y: height - 170 - row * 30, width: width * 2 / 3, height: 12))
+      }
+      return try #require(context.makeImage())
+    }
+    func model(
+      _ windows: [DockWindow], edge: DockPreviewLayout.Edge = .bottom, along: CGFloat = 1400,
+      thumbnails: Bool = true, imaged: Set<CGWindowID>? = nil, hovered: CGWindowID? = nil
+    ) throws -> DockPreviewModel {
+      let model = DockPreviewModel()
+      model.appName = "Safari"
+      model.appIcon = icon
+      model.edge = edge
+      model.showsThumbnails = thumbnails
+      model.plan = DockPreviewLayout.plan(
+        windows.map(\.size), edge: edge, along: along, across: 860, compact: !thumbnails)
+      model.windows = Array(windows.prefix(model.plan.thumbs.count))
+      model.closable = Set(windows.filter { $0.state != .elsewhere }.map(\.id))
+      model.hovered = hovered
+      if thumbnails {
+        let tints: [NSColor] = [.systemBlue, .systemPink, .systemGreen, .systemOrange]
+        for (index, window) in model.windows.enumerated() where imaged?.contains(window.id) ?? true
+        {
+          model.images[window.id] = try shot(window.size, tint: tints[index % tints.count])
+        }
+      }
+      return model
+    }
+    let three = [
+      DockWindow(id: 11, title: "起始页", state: .shown, size: CGSize(width: 1440, height: 900)),
+      DockWindow(
+        id: 12, title: "kitty-tools · GitHub", state: .elsewhere,
+        size: CGSize(width: 1280, height: 800)),
+      DockWindow(
+        id: 13, title: "Apple 开发者文档：ScreenCaptureKit 与窗口截图的最佳做法", state: .minimized,
+        size: CGSize(width: 1000, height: 1000)),
+    ]
+    func render(_ model: DockPreviewModel, _ name: String, dark: Bool) throws {
+      try snapshot(
+        DockPreviewView(model: model), size: model.plan.panel, dark: dark,
+        to: "\(out)/dock-preview-\(name)\(dark ? "-dark" : "").png")
+    }
+    for dark in [false, true] {
+      // 第一扇悬停着（浅灰底、抬起、✕），第二扇在别的桌面、还没截到图（图标位）
+      try render(model(three, imaged: [11, 13], hovered: 11), "bottom", dark: dark)
+      try render(model(three, edge: .left, along: 800, hovered: 13), "left", dark: dark)
+      try render(model(three, thumbnails: false), "no-recording", dark: dark)
+    }
+    let many = (1...14).map {
+      DockWindow(
+        id: CGWindowID(100 + $0), title: "文稿 \($0)", state: $0 == 14 ? .hidden : .shown,
+        size: CGSize(width: 1200, height: 800))
+    }
+    // 窗口多到一排放不下：缩到最小再换行
+    try render(model(many, along: 1100), "crowded", dark: false)
+    try render(
+      model([
+        DockWindow(id: 1, title: "", state: .elsewhere, size: CGSize(width: 900, height: 2000))
+      ]), "single-untitled", dark: false)
+
+    let navigation = SettingsNavigation(defaults: nil)  // 换页不写用户的偏好
+    navigation.page = .dockPreview
+    for (missing, suffix) in [
+      ([String](), ""), (["CGSCopySpacesForWindows", "SLPSPostEventRecordTo"], "-missing"),
+    ] {
+      for dark in [false, true] where suffix.isEmpty || !dark {
+        try snapshot(
+          SettingsRoot(navigation: navigation) { _ in
+            AnyView(DockPreviewTab(missing: missing))
+          } onboarding: {
+            AnyView(EmptyView())
+          },
+          size: NSSize(width: 780, height: 560), dark: dark,
+          to: "\(out)/settings-dock-preview\(suffix)\(dark ? "-dark" : "").png")
+      }
+    }
   }
 
   private func snapshot(

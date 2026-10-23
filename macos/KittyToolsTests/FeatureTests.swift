@@ -10,10 +10,11 @@ import Testing
 struct FeatureTests {
   private let all = Set(Feature.allCases)
 
-  /// 每个动作恰好归一个功能，就是它所在那一节里的；每个功能至少一个动作；和设置页同名
+  /// 每个动作恰好归一个功能，就是它所在那一节里的；每个功能至少一个动作（程序坞预览除外：它停在程序坞上就弹，
+  /// 没有快捷键，拍板 D1）；和设置页同名
   @Test func everyActionBelongsToOneFeature() {
     for feature in Feature.allCases {
-      #expect(HotKeyAction.allCases.contains { $0.feature == feature })
+      #expect(HotKeyAction.allCases.contains { $0.feature == feature } == (feature != .dockPreview))
       #expect(feature.page.rawValue == feature.rawValue)
     }
     #expect(HotKeyAction.screenshotTranslate.feature == .translate)
@@ -150,10 +151,11 @@ struct FeatureTests {
     #expect(defaults.object(forKey: Prefs.launchpadEnabledLegacy) == nil)
   }
 
-  /// 开关注册了默认值（跟着导出的「设置」一类走），默认开
+  /// 开关注册了默认值（跟着导出的「设置」一类走），默认开；程序坞预览默认关（拍板 A3）
   @Test func switchesAreExportedSettings() {
+    #expect(Feature.allCases.filter { !$0.defaultOn } == [.dockPreview])
     for feature in Feature.allCases {
-      #expect(Prefs.defaults[feature.prefsKey] as? Bool == true)
+      #expect(Prefs.defaults[feature.prefsKey] as? Bool == feature.defaultOn)
       #expect(SettingsArchive.kinds[feature.prefsKey] != nil)
     }
   }

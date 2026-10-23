@@ -198,4 +198,186 @@ struct DockPreviewTests {
     #expect(windows.map(\.id) == [4, 20, 22, 23])
     #expect(windows.first?.title == "一")
   }
+
+  // MARK: 面板的排法（DockPreviewLayout）
+
+  private let page = CGSize(width: 1600, height: 1000)
+
+  @Test func thumbKeepsRatioWithinWidthBounds() {
+    #expect(DockPreviewLayout.thumb(for: page, height: 140) == CGSize(width: 224, height: 140))
+    #expect(
+      DockPreviewLayout.thumb(for: CGSize(width: 3000, height: 600), height: 140).width == 260,
+      "很宽的窗口夹到 260")
+    #expect(
+      DockPreviewLayout.thumb(for: CGSize(width: 300, height: 1200), height: 140).width == 80,
+      "很瘦的夹到 80")
+    #expect(
+      DockPreviewLayout.thumb(for: CGSize(width: 3000, height: 600), height: 90).width == 167,
+      "缩小时上下限跟着等比缩")
+  }
+
+  @Test func planFitsInOneRowAtFullSize() {
+    let plan = DockPreviewLayout.plan(
+      [page, CGSize(width: 800, height: 800)], edge: .bottom, along: 1500, across: 800)
+    #expect(plan.thumbs == [CGSize(width: 224, height: 140), CGSize(width: 140, height: 140)])
+    #expect(plan.lines == [0..<2])
+    // 两张卡：(224 + 12) + (140 + 12) + 间距 4；高 140 + 4 + 15 + 12；再加面板四周 10、顶上一行 26
+    #expect(plan.content == CGSize(width: 392, height: 171))
+    #expect(plan.panel == CGSize(width: 412, height: 217))
+    let compact = DockPreviewLayout.plan(
+      [page], edge: .bottom, along: 1500, across: 800, compact: true)
+    #expect(compact.thumbs == [DockPreviewLayout.compactThumb], "没有屏幕录制授权：图标位，不按窗口比例")
+    #expect(
+      compact.panel == CGSize(width: 172, height: 107 + 26 + 20 + DockPreviewLayout.noteHeight))
+  }
+
+  @Test func planShrinksBeforeWrapping() {
+    // 一排 6 张放进 1200：缩到高 113（宽 181）正好放下（1198），再高一点就放不下
+    let plan = DockPreviewLayout.plan(
+      Array(repeating: page, count: 6), edge: .bottom, along: 1200, across: 800)
+    #expect(plan.thumbs[0] == CGSize(width: 181, height: 113))
+    #expect(plan.lines == [0..<6])
+    #expect(plan.panel.width == 1198)
+  }
+
+  @Test func planWrapsIntoLinesAndDropsWhatDoesNotFit() {
+    // 缩到下限 90 还放不下：每排 7 张（156 × 7 + 4 × 6 = 1116 ≤ 1180），20 张排 3 排
+    let many = Array(repeating: page, count: 20)
+    let plan = DockPreviewLayout.plan(many, edge: .bottom, along: 1200, across: 900)
+    #expect(plan.thumbs.count == 20 && plan.thumbs[0] == CGSize(width: 144, height: 90))
+    #expect(plan.lines == [0..<7, 7..<14, 14..<20])
+    #expect(plan.content == CGSize(width: 1116, height: 121 * 3 + 8))
+    #expect(plan.panel == CGSize(width: 1136, height: 371 + 26 + 20))
+    // 往屏幕里只放得下两排：第三排那 6 扇不列
+    let short = DockPreviewLayout.plan(many, edge: .bottom, along: 1200, across: 300)
+    #expect(short.lines == [0..<7, 7..<14])
+    #expect(short.thumbs.count == 14)
+    #expect(short.panel.height <= 300)
+    // 一张都放不下也自己占一排，不会死循环
+    let narrow = DockPreviewLayout.plan(
+      [page, page], edge: .bottom, along: 50, across: 900)
+    #expect(narrow.lines == [0..<1, 1..<2])
+  }
+
+  @Test func sideDockStacksVerticallyAndWrapsIntoColumns() {
+    let plan = DockPreviewLayout.plan(
+      [page, CGSize(width: 800, height: 800)], edge: .left, along: 900, across: 600)
+    #expect(plan.lines == [0..<2])
+    #expect(plan.content == CGSize(width: 236, height: 171 * 2 + 4))
+    #expect(plan.panel == CGSize(width: 256, height: 392), "两张卡 346 + 顶上一行 26 + 上下 20")
+    let columns = DockPreviewLayout.plan(
+      Array(repeating: page, count: 6), edge: .left, along: 500, across: 1000)
+    #expect(columns.lines == [0..<3, 3..<6], "竖着放不下：每列 3 张，往屏幕里排两列")
+    #expect(columns.content == CGSize(width: 156 * 2 + 4, height: 121 * 3 + 8))
+    #expect(columns.panel == CGSize(width: 336, height: 371 + 26 + 20))
+  }
+
+  @Test func originHugsTheIconAndStaysOnScreen() {
+    let screen = CGRect(x: 0, y: 0, width: 1512, height: 982)
+    let visible = CGRect(x: 0, y: 70, width: 1512, height: 879)
+    let panel = CGSize(width: 400, height: 200)
+    let item = CGRect(x: 700, y: 4, width: 60, height: 60)
+    #expect(
+      DockPreviewLayout.origin(
+        panel: panel, item: item, edge: .bottom, screen: screen, visible: visible)
+        == CGPoint(x: 530, y: 70))
+    let nearLeft = CGRect(x: 10, y: 4, width: 60, height: 60)
+    #expect(
+      DockPreviewLayout.origin(
+        panel: panel, item: nearLeft, edge: .bottom, screen: screen, visible: visible
+      ).x == 8)
+    let side = CGRect(x: 0, y: 900, width: 60, height: 60)
+    #expect(
+      DockPreviewLayout.origin(
+        panel: panel, item: side, edge: .left, screen: screen, visible: visible)
+        == CGPoint(x: 66, y: 949 - 8 - 200))
+    let right = CGRect(x: 1452, y: 400, width: 60, height: 60)
+    #expect(
+      DockPreviewLayout.origin(
+        panel: panel, item: right, edge: .right, screen: screen, visible: visible)
+        == CGPoint(x: 1452 - 6 - 400, y: 330))
+  }
+
+  @Test func roomAlongAndAcross() {
+    let screen = CGRect(x: 0, y: 0, width: 1512, height: 982)
+    let visible = CGRect(x: 0, y: 70, width: 1512, height: 879)
+    let bottom = DockPreviewLayout.room(
+      item: CGRect(x: 700, y: 4, width: 60, height: 60), edge: .bottom, screen: screen,
+      visible: visible)
+    #expect(bottom.along == 1496 && bottom.across == 949 - 8 - 70)
+    let left = DockPreviewLayout.room(
+      item: CGRect(x: 0, y: 400, width: 60, height: 60), edge: .left, screen: screen,
+      visible: visible)
+    #expect(left.along == 863 && left.across == 1512 - 8 - 66)
+    let right = DockPreviewLayout.room(
+      item: CGRect(x: 1452, y: 400, width: 60, height: 60), edge: .right, screen: screen,
+      visible: visible)
+    #expect(right.across == 1438, "图标左沿 1452 − 缝 6 − 屏幕边 8")
+  }
+
+  @Test func screenIsTheOneHoldingTheIconOrTheNearest() {
+    let screens = [
+      CGRect(x: 0, y: 0, width: 1512, height: 982),
+      CGRect(x: 1512, y: 0, width: 1920, height: 1080),
+    ]
+    #expect(
+      DockPreviewLayout.screenIndex(for: CGRect(x: 2000, y: 4, width: 60, height: 60), in: screens)
+        == 1)
+    #expect(
+      DockPreviewLayout.screenIndex(
+        for: CGRect(x: 2000, y: -70, width: 60, height: 60), in: screens)
+        == 1, "自动隐藏的程序坞还在屏幕外：挑最近的，不退回主屏")
+    #expect(
+      DockPreviewLayout.screenIndex(for: CGRect(x: -90, y: 400, width: 60, height: 60), in: screens)
+        == 0)
+    #expect(DockPreviewLayout.screenIndex(for: .zero, in: []) == nil)
+  }
+
+  @Test func keepsOpenOverPanelIconAndTheGapBetween() {
+    let panel = CGRect(x: 530, y: 90, width: 400, height: 200)
+    let item = CGRect(x: 700, y: 4, width: 60, height: 60)
+    func keeps(_ x: CGFloat, _ y: CGFloat) -> Bool {
+      DockPreviewLayout.keepsOpen(
+        mouse: CGPoint(x: x, y: y), panel: panel, item: item, edge: .bottom)
+    }
+    #expect(keeps(600, 150), "面板上")
+    #expect(keeps(730, 30), "图标上")
+    #expect(keeps(730, 75), "图标和面板之间那道缝")
+    #expect(!keeps(600, 75), "缝的两边不算")
+    #expect(!keeps(100, 500), "桌面上")
+    let sidePanel = CGRect(x: 90, y: 300, width: 300, height: 400)
+    let sideItem = CGRect(x: 0, y: 450, width: 60, height: 60)
+    #expect(
+      DockPreviewLayout.keepsOpen(
+        mouse: CGPoint(x: 75, y: 480), panel: sidePanel, item: sideItem, edge: .left))
+    #expect(
+      !DockPreviewLayout.keepsOpen(
+        mouse: CGPoint(x: 75, y: 300), panel: sidePanel, item: sideItem, edge: .left))
+  }
+
+  @Test func lingerHidesOnlyAfterStayingAway() {
+    var linger = DockPreviewLayout.Linger()
+    // 依次喂（在不在附近，此刻），看每一步该不该收
+    let steps: [(Bool, TimeInterval)] = [
+      (false, 0), (false, 0.2), (false, 0.31), (true, 0.4), (false, 0.5), (false, 0.79),
+      (false, 0.81),
+    ]
+    let hides = steps.map { linger.update(inside: $0.0, now: $0.1) }
+    #expect(hides == [false, false, true, false, false, false, true], "回来就重新算")
+  }
+
+  @Test func missingInterfacesExplainedInPlainWords() {
+    #expect(
+      WindowServer.consequences(of: [
+        "CGSCopySpacesForWindows", "SLPSPostEventRecordTo", "_SLPSSetFrontProcessWithOptions",
+      ]) == ["别的桌面上的窗口不列", "点缩略图可能切不到那一扇"])
+    #expect(WindowServer.consequences(of: []).isEmpty)
+  }
+
+  @Test func edgeFromDockOrientation() {
+    #expect(DockPreviewLayout.Edge(orientation: "left") == .left)
+    #expect(DockPreviewLayout.Edge(orientation: "right") == .right)
+    #expect(DockPreviewLayout.Edge(orientation: "bottom") == .bottom)
+    #expect(DockPreviewLayout.Edge(orientation: nil) == .bottom)
+  }
 }

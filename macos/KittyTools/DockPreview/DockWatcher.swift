@@ -16,8 +16,24 @@ import ApplicationServices
     let title: String
     /// 图标指向的 App（程序坞给的 AXURL）；拿它找开着的进程
     let bundleURL: URL?
-    /// 图标在屏幕上的位置（AppKit 全局坐标，原点在主屏左下）；开着放大时是放大后的
-    let frame: CGRect
+    /// 图标在屏幕上的位置（AppKit 全局坐标，原点在主屏左下）；开着放大时是放大后的。收到通知那一刻读的：
+    /// 放大、自动隐藏滑出的动画可能还没走完，真用之前拿 currentFrame 重读一次
+    var frame: CGRect
+    /// 图标的辅助功能对象（重读位置用；不参与相等）
+    let element: AXUIElement?
+
+    static func == (lhs: Item, rhs: Item) -> Bool {
+      lhs.title == rhs.title && lhs.bundleURL == rhs.bundleURL && lhs.frame == rhs.frame
+    }
+  }
+
+  /// 图标现在的位置（AppKit 全局坐标）；读不到时 nil
+  static func currentFrame(of item: Item) -> CGRect? {
+    guard let element = item.element, let origin = point(element, kAXPositionAttribute),
+      let size = size(element, kAXSizeAttribute)
+    else { return nil }
+    return appKitFrame(
+      origin: origin, size: size, primaryHeight: NSScreen.screens.first?.frame.height ?? 0)
   }
 
   /// 停着的图标变了（nil = 离开了程序坞，或停在不是 App 的图标上）
@@ -147,7 +163,8 @@ import ApplicationServices
     return Item(
       title: value(selected, kAXTitleAttribute) as? String ?? "",
       bundleURL: value(selected, kAXURLAttribute) as? URL,
-      frame: appKitFrame(origin: origin, size: size, primaryHeight: primaryHeight))
+      frame: appKitFrame(origin: origin, size: size, primaryHeight: primaryHeight),
+      element: selected)
   }
 
   /// 辅助功能的坐标（原点主屏左上、y 向下）→ AppKit 全局坐标（原点主屏左下）。纯函数，配单测

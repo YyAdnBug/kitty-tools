@@ -114,6 +114,23 @@ nonisolated enum WindowServer {
     return all.filter { !$0.1 }.map(\.0)
   }
 
+  /// 缺了这些接口，用的人会碰到什么（设置页的橙字；同一个后果只说一次，按缺的先后）
+  static func consequences(of missing: [String]) -> [String] {
+    var result: [String] = []
+    for name in missing {
+      let consequence =
+        switch name {
+        case "_AXUIElementGetWindow": "缩略图可能对不上窗口"
+        case "CGSHWCaptureWindowList": "别的桌面上的窗口没有缩略图"
+        case "CGSCopySpacesForWindows": "别的桌面上的窗口不列"
+        case "CGSMainConnectionID": "别的桌面上的窗口不列，也没有缩略图"
+        default: "点缩略图可能切不到那一扇"
+        }
+      if !result.contains(consequence) { result.append(consequence) }
+    }
+    return result
+  }
+
   // MARK: 符号
 
   private typealias GetWindow =

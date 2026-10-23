@@ -209,6 +209,8 @@ enum Style {
     static let notes = Color(nsColor: .systemYellow)
     /// 启动台（第八族，2026-10-18；薄荷绿，和现有家族都没撞）：设置页头、快捷键页、速查表、菜单栏
     static let launchpad = Color(nsColor: .systemMint)
+    /// 程序坞预览（第九族，2026-10-22）：系统色里最后一个没用过的
+    static let dockPreview = Color(nsColor: .systemCyan)
 
     /// 种类色块上的符号色：白；便签的黄上白色只有约 1.5:1，换成 black 0.85（同强调色选黄时 onBrand 的做法）
     static func onTile(_ color: Color) -> Color { color == notes ? .black.opacity(0.85) : .white }
