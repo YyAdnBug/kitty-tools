@@ -116,6 +116,11 @@ TEST_RUNNER_KITTY_NOTES_COLOR_PROBE=1 xcodebuild -project macos/KittyTools.xcode
 TEST_RUNNER_KITTY_NOTES_FUZZ=20000 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/NoteEditorFuzzTests/randomEditsMatchWholeText()'
 
+# 全局同步里一条一条的数据的随机测试（三台随机加改删合、读到旧文件、钟快慢、退回、丢账本；默认 20 个种子约 9 秒随全量跑，
+# 按需加大，2000 个种子约 15 分钟；另可加 TEST_RUNNER_KITTY_SYNC_RECORDS_FUZZ_SEED=<起始种子>）
+TEST_RUNNER_KITTY_SYNC_RECORDS_FUZZ=2000 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -only-testing:'KittyToolsTests/SyncRecordsFuzzTests/randomOperationsConverge()'
+
 # 启动台的性能 / 内存探针（按需，屏外，几秒；grep「launchpad-probe」：扫目录、第一帧、翻页布局、footprint）
 TEST_RUNNER_KITTY_LAUNCHPAD_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/LaunchpadProbeTests/measure()'
