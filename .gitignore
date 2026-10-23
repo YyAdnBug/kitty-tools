@@ -22,6 +22,14 @@ macos/build/
 macos/Config/Secrets.xcconfig
 xcuserdata/
 
+# Windows 版：构建产物、截图、内置密钥（不入库）、Visual Studio 用户态
+windows/build/
+windows/**/bin/
+windows/**/obj/
+windows/Secrets.props
+.vs/
+*.csproj.user
+
 # 签名证书、私钥、描述文件（任何位置都不入库）
 .secrets/
 *.p12
@@ -30,8 +38,9 @@ xcuserdata/
 *.key
 *.mobileprovision
 
-# 常见误写文件名（不忽略正确的 AGENTS.md / CLAUDE.md）
-AGENTs.md
+# 常见误写文件名（不忽略正确的 AGENTS.md / CLAUDE.md；AGENTs.md 只管根目录：
+# 文件名不分大小写时它也会匹配 AGENTS.md，不加 / 会把 windows/AGENTS.md 这类新文件一起忽略）
+/AGENTs.md
 CALUDE.md
 
 # 拍板页的本地副本（只在本机留看，不进仓库）
