@@ -159,6 +159,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     return board
   }()
+  /// 程序坞预览（第九族，2026-10-22，PLAN §10「程序坞预览」）：鼠标停在程序坞的 App 图标上弹出它所有窗口的缩略图。
+  /// 功能开关开着才起（默认关）；启动台开着、状态屏、截图框选时不弹。设置 › 程序坞预览。
+  private lazy var dockPreview: DockPreview = {
+    let preview = DockPreview()
+    preview.isSuppressed = { [unowned self] in
+      isCapturing || statusScreen.isActive || OverlayPanel.isSelectingRegion(in: NSApp.windows)
+        || (Feature.launchpad.isOn && launchpad.isOpen)
+    }
+    preview.onHide = { [unowned self] in idleReclaim.schedule() }
+    return preview
+  }()
 
   /// 用时再建、收起后放掉（TransientPanel）：不像三块主面板那样天天呼出，里面最多 20 张缩小的状态屏，不常驻。
   /// 没有固定，点外面就收起；出现在鼠标所在屏的中央（OverlayPanel 不带 frameName、不 topAnchored 时就是居中）
@@ -202,7 +213,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 空闲回收（常驻内存，2026-10-07，PLAN §10）：三块主面板哪块收起、进程内识完一次字、全部便签窗口关掉、屏幕边缘
   /// 那叠收起、浮动便签收回（2026-10-18）都重新计时，过了 Memory.idleDelay 还闲着（isIdle），就把闲着白占的还回去——
   /// 透镜缓存（装满约 50 MB，再看到时重做）、链接预览的头图（12 条都看过约 70 MB；字节留着，再看到时重解，不联网）、
-  /// 关着的全部便签窗口（约 12 MB）、便签图片的缩略图（便签墙上看过 50 张图约 65 MB）、识字模型（约 50 MB，下次识字
+  /// 关着的全部便签窗口（约 12 MB）、便签图片的缩略图（便签墙上看过 50 张图约 65 MB）、程序坞预览的缩略图缓存（最多
+  /// 20 张、最坏约 11 MB）和收着的预览面板（约 6 MB；预览收起时也重新计时）、识字模型（约 50 MB，下次识字
   /// 重新加载，慢 0.2–0.4 s；放它要 18–200 ms，在主线程外做）、分配器手里的空页（跑了三天的正式版估 20–34 MB；放在
   /// 最后，前几样腾出来的页一起还）。到点时还忙着（面板固定着、正在用）就再等一轮
   private lazy var idleReclaim = Memory.IdleTimer(
@@ -224,6 +236,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   private func reclaimIdleMemory() {
     ThumbnailView.dropPreviews()
+    if Feature.dockPreview.isOn { dockPreview.reclaim() }
     LinkPreview.shared.dropHeroes()
     releaseClosedNotesWindow()
     // 便签正文里解好的图片缩略图（第 7 批：按像素数算 cost，闲下来整块放掉）；浮在屏幕上的那张便签里的图留着
@@ -550,6 +563,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             images: { [unowned self] in noteStore?.images },
             island: island))
       case .statusScreen: AnyView(StatusScreenTab())
+      case .dockPreview: AnyView(DockPreviewTab())
       case .translate:
         AnyView(
           TranslateTab(services: serviceStore, history: historyStore, speaker: speaker)
@@ -763,6 +777,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
     }
 
+    if turnedOn.contains(.dockPreview) {
+      dockPreview.start()
+      // 运行中打开时缺授权就带去授权（拍板 A3）：先要辅助功能（没有它用不了），有了再要屏幕录制（没有只列标题）；
+      // 启动时不问（关着的人、早就给过的人都不打扰）
+      if !launching {
+        if !Permissions.isAccessibilityTrusted {
+          Permissions.requestAccessibility()
+        } else if !Permissions.isScreenRecordingAllowed {
+          Permissions.requestScreenRecording()
+        }
+      }
+    }
+
     guard !launching else { return }
     // 正在录快捷键时热键停着，录完它自己会重新注册；只是复制即译开关变了不用重新注册
     if now != before, hotKeys.recording == nil { hotKeys.reload() }
@@ -806,6 +833,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     if turnedOff.contains(.launchpad) { launchpad.turnOff() }
     if turnedOff.contains(.statusScreen) { statusPicker.panel?.hide() }
+    if turnedOff.contains(.dockPreview) { dockPreview.stop() }
     idleReclaim.schedule()  // 关掉的功能占着的缓存跟着还
   }
 

@@ -113,8 +113,8 @@ final class OverlayPanel: NSPanel {
     }
   }
 
-  /// 材质底：返回窗口的 contentView 和放内容的那一层（面板和退场淡出的替身用同一份）
-  private static func makeBackground() -> (root: NSView, background: NSView) {
+  /// 材质底：返回窗口的 contentView 和放内容的那一层（面板和退场淡出的替身用同一份；程序坞预览的面板也用它，2026-10-22）
+  static func makeBackground() -> (root: NSView, background: NSView) {
     if #available(macOS 26, *) {
       // 液态玻璃：圆角交给玻璃（不用 maskImage、PanelRim 不画），内容进它的 contentView（玻璃用 Auto Layout 撑满）
       let glass = NSGlassEffectView()

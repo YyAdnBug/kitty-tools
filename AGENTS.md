@@ -6,7 +6,7 @@
 
 **kitty-tools 原生 macOS 版**：用 Swift 6 + SwiftUI / AppKit 重写的纯原生菜单栏工具，替代 Tauri 版的 macOS 端。基本自用：只支持 Apple 芯片（arm64），最低 macOS 15.0。
 
-- **功能**：剪贴板历史、翻译（划词 / 输入 / 复制即译 / 截图翻译，全部翻译服务）、启动器（`Launcher/`，⌥Space 的搜索框）、启动台（`Launchpad/`，第八族，0.6.0，复刻 macOS 15 的全屏图标网格，只在 macOS 26 起出现：分页、搜索、拖动排序、文件夹、抖动删 App、触控板捏合、触发角、导入系统旧布局）、截图（`Screenshot/`：框选、标注、识字、钉图、长截图）、录屏与录音（`Screenshot/ScreenRecorder.swift`、`AudioRecorder.swift`）都已做完。状态屏（`StatusScreen/`：一键把所有屏幕盖上告示、拦住键盘鼠标，状态可自定义；2026-10-10 立项，0.4.0，代码已做完、待真机手测，PLAN §10「状态屏」；告示上的图标是 Microsoft Fluent Emoji 的动画表情，MIT，素材随包）。每个功能都能在 设置 › 通用 › 功能 里整个关掉（2026-10-22，`Shell/Feature.swift`，PLAN §10「功能开关」）。
+- **功能**：剪贴板历史、翻译（划词 / 输入 / 复制即译 / 截图翻译，全部翻译服务）、启动器（`Launcher/`，⌥Space 的搜索框）、启动台（`Launchpad/`，第八族，0.6.0，复刻 macOS 15 的全屏图标网格，只在 macOS 26 起出现：分页、搜索、拖动排序、文件夹、抖动删 App、触控板捏合、触发角、导入系统旧布局）、截图（`Screenshot/`：框选、标注、识字、钉图、长截图）、录屏与录音（`Screenshot/ScreenRecorder.swift`、`AudioRecorder.swift`）都已做完。程序坞预览（`DockPreview/`，第九族，0.7.0，2026-10-22 立项：鼠标停在程序坞的 App 图标上弹出它所有窗口的缩略图，点一张切过去；拍板页 `macos/build/research/dock-preview-2026-10-22/decisions.html` 全部按推荐，主会话在 `kitty-tools-macos-dock`（分支 `dock-wip`）分批做，第 1–3 批（底层、面板和设置页、内存和规则）已提交、没并进 main（等 0.6.0 发布后升 0.7.0 再并），规矩在 `mac-dock-preview.mdc` + `mac-whisker-dock-preview.mdc`，PLAN §10「程序坞预览」）。状态屏（`StatusScreen/`：一键把所有屏幕盖上告示、拦住键盘鼠标，状态可自定义；2026-10-10 立项，0.4.0，代码已做完、待真机手测，PLAN §10「状态屏」；告示上的图标是 Microsoft Fluent Emoji 的动画表情，MIT，素材随包）。每个功能都能在 设置 › 通用 › 功能 里整个关掉（2026-10-22，`Shell/Feature.swift`，PLAN §10「功能开关」）。
 - **版本**：已发布 0.1.0、0.2.0、0.3.0（录屏录音）、0.3.1（第二轮体检）、0.3.2（设置的导出与导入、每天自动备份、启动器 port、长列表性能和常驻内存）、0.4.0（状态屏和全 App 的视觉对齐）、0.5.0（latest，2026-10-19；便签。这几版都是用户要求发布的，真机手测都还没走完，`macos/HANDTEST.md`「状态屏手测」「视觉对齐手测」「便签手测」照旧待做）。**便签**（屏幕边缘的便签，第七族，0.5.0）2026-10-12 立项、2026-10-18 八批全部做完，2026-10-19 随 0.5.0 发布：⌥N 快速记一条、全部便签窗口（便签墙 / 列表）、屏幕边缘那叠、浮动便签；正文是纯文本 + Markdown 显示样式、任务五种状态、文字颜色、行内图片、查找和撤销，能整个或单条导出成 Markdown 再导回，和剪贴板 / 启动器 / 划词翻译打通；便签有单独的库和每日备份、删除留 30 天。代码在 `Notes/`（39 个文件，§4 文件表），拍板和每批摘要看 PLAN §10「便签」（详细记录在 `docs/archive/PLAN-notes.md`），规矩在 mac-overlay-panel §3 §5 §12、mac-whisker-notes、mac-translate §5、mac-clipboard §1；手测 `HANDTEST.md`「便签手测」1–264，发版前先走冒烟清单「便签」15 步（用户试过几轮、报的问题都修了，清单还没逐条打勾）。**启动台**（第八族，0.6.0）2026-10-18 立项，四批、两轮审查和六轮真机反馈都做完，2026-10-19（0.5.0 发布后）并进 main、没发布：拍板和做法在 PLAN §10「启动台」，代码在 `Launchpad/`，规矩在 `mac-launchpad.mdc` + `mac-whisker-launchpad.mdc`，手测在 `macos/HANDTEST.md`「启动台手测」1–66（真机都还没走）。哪些待手测、下一步做什么看 PLAN §12「现状」；手测条目和发版冒烟清单在 `macos/HANDTEST.md`；里程碑 M7–M13、已拍板的 D1–D5 与不迁清单见 PLAN §10。
 - Bundle ID `com.yy.kitty-tools.native`（Debug `com.yy.kitty-tools.native.dev`），不再改（改了会丢偏好、钥匙串和授权）；产品名 / .app 名 `Kitty Tools`（Debug `Kitty Tools Dev`，2026-09-26 起，之前叫 Kitty Tools Native）。和 Tauri 旧版同名：安装前先删掉 /Applications 里旧版的 `Kitty Tools.app`。
 - **规格**：各 `mac-*` 规则（界面与动效按 `mac-whisker`）+ 对标产品（启动器 Alfred / Raycast、翻译 Bob、截图 iShot / CleanShot、录屏 CleanShot / ⌘⇧5、录音 QuickTime / iShot、剪贴板 Paste）。`macos/PLAN.md` 只留仍有效的：§2 技术栈白名单、§4 架构与文件表、§8 打包、§10 约束与已拍板决定、§11 旧逻辑问题与语言规则、§12 现状与下一步；迁移期历史（§5 的 Tauri 映射、§6 数据迁移等）和已完成批次的实现记录原样归档在 `macos/docs/archive/`（PLAN 原位置写了去处）。
@@ -24,7 +24,7 @@
 ```
 macos/                       # 本分支唯一开发区
 ├── KittyTools.xcodeproj/    # 共享 scheme：KittyTools
-├── KittyTools/              # 同步文件夹：App/ Shell/ Storage/ Clipboard/ Translate/ Launcher/ Launchpad/ Screenshot/ StatusScreen/ Notes/ Settings/ Resources/
+├── KittyTools/              # 同步文件夹：App/ Shell/ Storage/ Clipboard/ Translate/ Launcher/ Launchpad/ Screenshot/ StatusScreen/ Notes/ DockPreview/ Settings/ Resources/
 ├── KittyToolsTests/         # 纯函数单测（Swift Testing），M2 起建
 ├── Config/                  # Base/Debug/Release.xcconfig、Info.plist（局部）、Secrets.xcconfig（不入库）
 ├── build-dmg.sh             # 打包：archive → 自检 → DMG + App 内更新用的 zip → notes
@@ -73,7 +73,9 @@ xcrun swift-format format -i -r macos/KittyTools
 # 不到一分钟，图都以 notes- 开头：-only-testing:'KittyToolsTests/SnapshotProbeTests/notes()'；
 # 便签屏幕边缘那叠（药丸、标签列、预览卡、打开的便签、设置 › 便签「屏幕边缘」）是 notesDeck()，约一分钟，图以 notes-deck- 开头：-only-testing:'KittyToolsTests/SnapshotProbeTests/notesDeck()'；
 # 浮动便签（浅深、固定 / 没固定、8 种纸色、最小尺寸、操作菜单、那叠里浮着那条的标签）是 notesFloat()，约半分钟，图以 notes-float- 开头：-only-testing:'KittyToolsTests/SnapshotProbeTests/notesFloat()'；
-# 设置 › 通用「同步」那一节（没开、第一轮、好了、等确认、停了、便签关着、它在通用页里的位置）是 sync()，几秒，图以 sync- 开头）
+# 设置 › 通用「同步」那一节（没开、第一轮、好了、等确认、停了、便签关着、它在通用页里的位置）是 sync()，几秒，图以 sync- 开头；
+# 程序坞预览（面板：程序坞在下 / 左、悬停、换行、没有屏幕录制授权、没标题；设置 › 程序坞预览）是 dockPreview()，十几秒，
+# 图以 dock-preview- / settings-dock-preview 开头：-only-testing:'KittyToolsTests/SnapshotProbeTests/dockPreview()'）
 TEST_RUNNER_KITTY_SNAPSHOT_DIR=/tmp/kitty-shots xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:KittyToolsTests/SnapshotProbeTests
 
@@ -120,6 +122,12 @@ TEST_RUNNER_KITTY_NOTES_FUZZ=20000 xcodebuild -project macos/KittyTools.xcodepro
 # 按需加大，2000 个种子约 15 分钟；另可加 TEST_RUNNER_KITTY_SYNC_RECORDS_FUZZ_SEED=<起始种子>）
 TEST_RUNNER_KITTY_SYNC_RECORDS_FUZZ=2000 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/SyncRecordsFuzzTests/randomOperationsConverge()'
+# 程序坞预览的本机探针（按需，几秒；只读：不动屏幕、不切 / 关窗口，会把开着的窗口截进内存、不存盘；测试宿主 = Dev 版，
+# 有辅助功能 / 屏幕录制授权才量得全；grep「dock-probe」：私有接口在不在、程序坞结构、列窗口 / 截缩略图耗时、全透明的几扇）
+# 面板占多少内存（同一个开关，屏上量：**屏幕右上角有一块透明度 0.02 的面板约两秒**，不接鼠标；grep「dock-probe memory」）：
+# -only-testing:'KittyToolsTests/DockPreviewMemoryProbeTests/memory()'
+TEST_RUNNER_KITTY_DOCK_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -only-testing:'KittyToolsTests/DockPreviewProbeTests/measure()'
 
 # 启动台的性能 / 内存探针（按需，屏外，几秒；grep「launchpad-probe」：扫目录、第一帧、翻页布局、footprint）
 TEST_RUNNER_KITTY_LAUNCHPAD_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
@@ -155,11 +163,12 @@ defaults delete com.yy.kitty-tools.native.dev folderAccessRequested
 |---|---|---|---|
 | `mac-native` | 常驻规则 `.cursor/rules/mac-native.mdc` | 已有 | 始终加载 |
 | `ponytail` | 常驻规则 `.cursor/rules/ponytail.mdc` | 已有 | 只给 Cursor；Claude 侧由用户级插件生效 |
-| `mac-overlay-panel` | 技能 | 已有（M1，M9 补截图与钉图，2026-10-10 补状态屏，2026-10-13 补便签的边缘那叠、便签编辑器和撤销 / 重做、正文里的 Markdown，2026-10-14 补浮动便签，2026-10-16 补便签墙和行内图片，2026-10-17 补导出导入、任务五态、文字颜色，2026-10-18 补快速记一条和全部便签窗口、整包覆盖，2026-10-22 补图片的宽度档位和裁切、取色面板、同时浮几张） | `Shell/**`、`Screenshot/**`、`StatusScreen/**`、`Translate/SelectionReader.swift`、`Translate/SourceTextView.swift`、`Notes/` 里除 `Note.swift`、`NoteStore.swift`、`NotesBackup.swift`、`NoteSample.swift` 之外的全部（`NoteCapture*`、`NotesWindow*`、`NoteWall*`、`NoteEdge`、`NoteDeck*`、`NoteFloat*`、`NoteSheet*`、`NotePanel`、`NoteFields`、`NoteTextView*`、`NoteStyles`、`NoteMarkdown*`、`NoteTasks`、`NoteTaskBox`、`NotePaper`、`NoteImages`、`NoteImageStore`、`NoteImageAttachment`、`NoteImageCrop`、`NoteColorPicker`）；NSPanel、热键、前台快照、粘贴回原 App、划词时序、设置窗激活、截图框选遮罩、钉图、状态屏的全屏面板和事件拦截、便签屏幕边缘的药丸和那叠、浮动便签、便签正文的编辑器（TextKit 1、Markdown、行距 / 代码块、行内图片和裁切、五种任务状态、文字颜色）、Markdown 导出导入、从剪贴板 / 启动器粘贴落进便签、输入框里的撤销 / 重做 |
+| `mac-overlay-panel` | 技能 | 已有（M1，M9 补截图与钉图，2026-10-10 补状态屏，2026-10-13 补便签的边缘那叠、便签编辑器和撤销 / 重做、正文里的 Markdown，2026-10-14 补浮动便签，2026-10-16 补便签墙和行内图片，2026-10-17 补导出导入、任务五态、文字颜色，2026-10-18 补快速记一条和全部便签窗口、整包覆盖，2026-10-22 补图片的宽度档位和裁切、取色面板、同时浮几张） | `Shell/**`、`Screenshot/**`、`StatusScreen/**`、`DockPreview/**`、`Translate/SelectionReader.swift`、`Translate/SourceTextView.swift`、`Notes/` 里除 `Note.swift`、`NoteStore.swift`、`NotesBackup.swift`、`NoteSample.swift` 之外的全部（`NoteCapture*`、`NotesWindow*`、`NoteWall*`、`NoteEdge`、`NoteDeck*`、`NoteFloat*`、`NoteSheet*`、`NotePanel`、`NoteFields`、`NoteTextView*`、`NoteStyles`、`NoteMarkdown*`、`NoteTasks`、`NoteTaskBox`、`NotePaper`、`NoteImages`、`NoteImageStore`、`NoteImageAttachment`、`NoteImageCrop`、`NoteColorPicker`）；NSPanel、热键、前台快照、粘贴回原 App、划词时序、设置窗激活、截图框选遮罩、钉图、状态屏的全屏面板和事件拦截、便签屏幕边缘的药丸和那叠、浮动便签、便签正文的编辑器（TextKit 1、Markdown、行距 / 代码块、行内图片和裁切、五种任务状态、文字颜色）、Markdown 导出导入、从剪贴板 / 启动器粘贴落进便签、输入框里的撤销 / 重做 |
 | `mac-launchpad` | 技能 | 已有（2026-10-18，第八族） | `Launchpad/**`、`Settings/LaunchpadTab.swift`；启动台的模型与不变式、App 目录、布局存法、全屏面板、入口与互斥、触控板捏合、触发角、旧库导入、删 App、测试口径 |
+| `mac-dock-preview` | 技能 | 已有（2026-10-23，第九族） | `DockPreview/**`、`Settings/DockPreviewTab.swift`；私有接口和退路、听程序坞、列窗口、缩略图、切 / 关窗口、面板和时机（按鼠标位置收、不用滚动）、默认关和授权、内存、测试口径 |
 | `mac-clipboard` | 技能 | 已有（M3） | `Clipboard/**`、`Storage/Database.swift`、`Storage/Backup.swift`（每日备份、打不开时的恢复）、`Notes/NotesBackup.swift`（便签库平行的那一份，2026-10-12） |
 | `mac-translate` | 技能 | 已有（M4） | `Translate/**` |
-| `mac-whisker` | 技能 | 已有（2026-09-25；2026-10-03 拆成核心 + 5 个界面文件，2026-10-10 加状态屏一个，2026-10-12 加便签一个，2026-10-18 加启动台一个） | 任何界面、动效、图标改动：先读核心 `rule.mdc`（三种皮肤、刻度、七条弹簧曲线、五个招牌时刻、无障碍、验收），再读那个界面的文件（`launcher` / `clipboard` / `translate` / `capture` / `settings` / `status-screen` / `notes` / `launchpad`.mdc，Cursor 按路径自动带上）；**用户要求以后都按它执行** |
+| `mac-whisker` | 技能 | 已有（2026-09-25；2026-10-03 拆成核心 + 5 个界面文件，2026-10-10 加状态屏一个，2026-10-12 加便签一个，2026-10-18 加启动台一个，2026-10-23 加程序坞预览一个） | 任何界面、动效、图标改动：先读核心 `rule.mdc`（三种皮肤、刻度、七条弹簧曲线、五个招牌时刻、无障碍、验收），再读那个界面的文件（`launcher` / `clipboard` / `translate` / `capture` / `settings` / `status-screen` / `notes` / `launchpad` / `dock-preview`.mdc，Cursor 按路径自动带上）；**用户要求以后都按它执行** |
 
 - 规则正文只写在 `.cursor/rules/mac-*.mdc`。技能目录 `.claude/skills/mac-<name>/` 里 `SKILL.md` 只写触发描述和红线速查，`rule.mdc` 是符号链接：`ln -s ../../../.cursor/rules/mac-<name>.mdc .claude/skills/mac-<name>/rule.mdc`。mac-whisker 另有按界面拆出的 `mac-whisker-<界面>.mdc`，技能目录里各一个链接：`ln -s ../../../.cursor/rules/mac-whisker-<界面>.mdc .claude/skills/mac-whisker/<界面>.mdc`。
 - 动手前先读对应技能的 `rule.mdc` 全文。没有对应技能的地方按 `mac-native.mdc` 和 `mac-whisker` 执行，文件归属看 PLAN §4。
