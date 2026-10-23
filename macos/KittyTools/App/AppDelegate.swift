@@ -1825,7 +1825,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     return result
   }
 
-  /// 本机识别文字 → 原文记进剪贴板历史 → 翻译浮窗走现有的多服务翻译（截图翻译、截图工具栏的翻译共用）。
+  /// 本机识别文字 → 原文记进剪贴板历史（设置 › 翻译 开着「截图翻译时复制识别出的原文」时同时写进剪贴板）→ 翻译浮窗走
+  /// 现有的多服务翻译（截图翻译、截图工具栏的翻译、钉图上的翻译共用）。
   /// 总是按段送去翻（体检 A32：同一段的行接起来、段间空一行，不看「接起来」开关），记进历史的原文也是这一份
   private func translateImage(_ image: CGImage) async {
     // 同识字：失败不为一句话开浮窗
@@ -1838,8 +1839,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 没有结果岛（接着开浮窗）：「识别中」出过就收掉
     if island.content?.title == Self.recognizingTitle { island.dismiss() }
     let text = OCR.text(lines, joined: true, separator: "\n\n")
-    // 原文不写剪贴板、只记进历史（同一个入口：过敏感文本过滤、已有同文只挪到最前）
-    Paster.recordText?(text)
+    // 默认不写剪贴板、只记进历史（同一个入口：过敏感文本过滤、已有同文只挪到最前）；开了就当复制一次（写剪贴板 + 记历史）
+    if UserDefaults.standard.bool(forKey: Prefs.translateCopyRecognized) {
+      Paster.write(string: text, record: true)
+    } else {
+      Paster.recordText?(text)
+    }
     coordinator.translate(text)
     presentTranslate()
   }

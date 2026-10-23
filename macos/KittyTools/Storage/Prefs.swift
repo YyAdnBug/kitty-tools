@@ -77,6 +77,9 @@ enum Prefs {
   static let translateRemoveNewlines = "translateDeleteNewline"
   /// 自动复制第一个服务的译文
   static let translateAutoCopy = "autoCopy"
+  /// 截图翻译时把识别出的原文也写进剪贴板（2026-10-23 用户要的，⌘V 就能贴原文）；默认关：照旧只记进剪贴板历史、
+  /// 不换掉剪贴板里原来的东西
+  static let translateCopyRecognized = "translateCopyRecognized"
   static let translateHistoryEnabled = "translateHistoryEnabled"
   /// 翻译历史保留条数（收藏不算、永不淘汰），0 = 不限（体检 A18：1000 / 5000 / 不限，默认 5000）
   static let translateHistoryLimit = "translateHistoryLimit"
@@ -309,6 +312,7 @@ enum Prefs {
       translateSecond: Lang.en.rawValue,
       translateRemoveNewlines: false,
       translateAutoCopy: false,
+      translateCopyRecognized: false,
       translateHistoryEnabled: true,
       translateHistoryLimit: 5000,
       translatePanelPosition: "mouse",

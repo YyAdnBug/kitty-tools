@@ -49,7 +49,7 @@ alwaysApply: false
 - **浮窗位置**（体检 A13，设置 › 翻译「浮窗位置」，`Prefs.translatePanelPosition`）：跟随鼠标（默认）时划词、截图翻译、复制即译、剪贴板「翻译」带 `anchor` 出现在光标右下 12 pt（mac-overlay-panel §1）；上次位置时都用上次拖到的位置；输入翻译总是上次位置。
 - **复制即译**：watcher 文本回调 → `TranslateCoordinator.worthTranslating` 过滤（体检 A12 B20：网址、`/` `~/` 开头的单行路径、纯数字 / 符号（`Lang.detect` 为 nil）、超过 32 KB、目标自动时本来就是第一语言、和最近一次翻译的原文相同，都静默跳过、不弹浮窗）→ `translate(_:fromCopy: true)` → `present(makingKey: false)`（只露出来不抢键盘，靠点外关闭）。在自家浮层里 ⌘C（翻译原文 / 译文、剪贴板备注等）不触发，来源记本 App（复制那一刻记 `Paster.panelCopyChangeCount`，见 mac-clipboard §1）。
 - **剪贴板预览里的「翻译」**：剪贴板面板保持打开（兄弟浮层）。
-- **截图翻译**（`AppDelegate.screenshotTranslate`，默认 ⌥S）：冻结帧框选 → Vision 识字（`OCR.recognizeLines`，带行框）→ **总是按段**（`OCR.text(joined: true, separator: "\n\n")`：同一段的行接起来、段间空一行，不看「接起来」开关，体检 A32）→ 原文过敏感过滤后记进剪贴板历史（同一份）→ `coordinator.translate`。
+- **截图翻译**（`AppDelegate.screenshotTranslate`，默认 ⌥S）：冻结帧框选 → Vision 识字（`OCR.recognizeLines`，带行框）→ **总是按段**（`OCR.text(joined: true, separator: "\n\n")`：同一段的行接起来、段间空一行，不看「接起来」开关，体检 A32）→ 原文过敏感过滤后记进剪贴板历史（同一份；**默认不写剪贴板**，设置 › 翻译「截图翻译时复制识别出的原文」`Prefs.translateCopyRecognized` 开着时走 `Paster.write(string:record: true)` 写进剪贴板，2026-10-23 用户要的；开着自动复制时译文出来后剪贴板换成译文）→ `coordinator.translate`。
 - **「翻译前把同一段里的换行接起来」**（`Prefs.translateRemoveNewlines`，默认关）：预处理调 `OCR.joiningLines(_:paragraphSeparator: "\n\n")`，和识字同一套规则（中日文直接连、其它加空格、行尾紧跟字母的连字符：下一行小写去掉、大写留着；空行是段落分隔、保留）。静默替换不套它。识别失败 / 没有文字、缺屏幕录制授权、截屏失败都走刘海岛（同识字），不为一句提示开浮窗、不开翻译会话；缺授权时同时打开系统设置的「屏幕录制」。浮窗的 `showNotice(_:permission:)` 只剩划词缺辅助功能授权（浮窗本来就要开）。框选细节见 mac-overlay-panel §8。
 
 ## 5.1 浮窗补强（M12，对标 Bob）

@@ -24,6 +24,7 @@ struct TranslateTab: View {
   /// 和翻译浮窗「⋯」菜单、状态胶囊、菜单栏的勾是同一个偏好
   @AppStorage(Prefs.translateCopyToTranslate) private var copyToTranslate = false
   @AppStorage(Prefs.translateAutoCopy) private var autoCopy = false
+  @AppStorage(Prefs.translateCopyRecognized) private var copyRecognized = false
   @AppStorage(Prefs.translateHistoryEnabled) private var historyEnabled = true
   @AppStorage(Prefs.translateHistoryLimit) private var historyLimit = 5000
   @AppStorage(Prefs.translatePanelPosition) private var panelPosition = "mouse"
@@ -150,6 +151,13 @@ struct TranslateTab: View {
           }
           Toggle("自动复制第一个服务的译文", isOn: $autoCopy)
             .help("复制即译弹出的翻译不会自动复制，免得覆盖你刚复制的原文")
+          Toggle(isOn: $copyRecognized) {
+            Text("截图翻译时复制识别出的原文")
+            Text(
+              autoCopy
+                ? "识别出来就放进剪贴板；译文出来后，剪贴板换成译文（上面开着自动复制）"
+                : "识别出来就放进剪贴板，⌘V 能直接粘贴；关着时只记进剪贴板历史")
+          }
           Toggle("记录翻译历史", isOn: $historyEnabled)
         }
         .gated(by: .translate)
