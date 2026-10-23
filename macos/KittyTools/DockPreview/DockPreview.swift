@@ -2,7 +2,7 @@
 // 鼠标停在程序坞的 App 图标上 0.2 秒，图标上方弹出它所有窗口的缩略图；弹着时换到别的图标立刻换（面板滑过去、内容交叉淡变）；
 // 鼠标离开图标和面板 0.3 秒后收起（留时间从图标挪到面板上）；点程序坞图标、点别处立刻收（拍板 B1–B3）。
 // 点一张切到那扇窗口，点 ✕ 关掉那扇。没窗口的 App、不是 App 的图标不弹（B4）。启动台开着、状态屏、截图框选时不弹，
-// 弹着时它们一来就收（D2）。
+// 弹着时它们一来就收（D2）；切到别的桌面也收。
 // 收不收按鼠标在哪定：弹着时每 0.1 秒看一眼鼠标还在不在面板、图标和两者之间那道缝里（DockPreviewLayout.keepsOpen /
 // Linger），收着时不看。不用追踪区的进出：面板改尺寸会重建追踪区、淡出时进来的事件会丢，进出状态会卡住（评审 H1）；
 // 也不全信程序坞的选中（鼠标离开程序坞时它不一定清选中）。
@@ -40,6 +40,8 @@ import SwiftUI
   private var watch: Timer?
   private var linger = DockPreviewLayout.Linger()
   private var clickMonitors: [Any] = []
+  /// 弹着时盯着切桌面（收着时不盯）
+  private var spaceObserver: NSObjectProtocol?
   /// 点了程序坞图标（或别处）收起之后，程序坞可能对着同一个图标再报一次选中：鼠标离开那个图标之前不再弹
   private var dismissedURL: URL?
   /// 图标的 URL → bundle id（路径经过符号链接时按它配进程；读一次 Info.plist 就记下）
@@ -285,6 +287,13 @@ import SwiftUI
     RunLoop.main.add(timer, forMode: .common)
     watch = timer
     watchClicks()
+    // 切到别的桌面（触控板横扫、⌃← →、点了别的桌面上的窗口）就收：面板在所有桌面上都在，鼠标又还停在面板那块，
+    // 不收会跟到新桌面上一直留着（2026-10-23 用户手测报的）
+    spaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+      forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
+    ) { [weak self] _ in
+      MainActor.assumeIsolated { self?.hide(animated: false) }
+    }
   }
 
   private func stopWatching() {
@@ -293,6 +302,8 @@ import SwiftUI
     linger = DockPreviewLayout.Linger()
     for monitor in clickMonitors { NSEvent.removeMonitor(monitor) }
     clickMonitors = []
+    if let spaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(spaceObserver) }
+    spaceObserver = nil
   }
 
   private func check() {
