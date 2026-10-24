@@ -57,6 +57,7 @@ internal sealed class SettingsWindow : Window
         });
         _navPanel.Children.Add(CreateNavButton("general", "通用", "\uE713"));
         _navPanel.Children.Add(CreateNavButton("hotkeys", "快捷键", "\uE765"));
+        _navPanel.Children.Add(CreateNavButton("clipboard", "剪贴板", "\uE8C8"));
         _navPanel.Children.Add(CreateNavButton("about", "关于", "\uE946"));
 
         _navBorder = new Border
@@ -102,11 +103,11 @@ internal sealed class SettingsWindow : Window
 
     public bool IsClosed { get; private set; }
 
-    public void ShowPage(bool welcome)
+    public void ShowPage(bool welcome, string page = "general")
     {
         _firstRun = welcome;
-        _currentPage = "general";
-        BuildPage("general");
+        _currentPage = page;
+        BuildPage(page);
         if (AppWindow.Presenter is OverlappedPresenter presenter)
         {
             presenter.Restore();
@@ -139,6 +140,9 @@ internal sealed class SettingsWindow : Window
         {
             case "hotkeys":
                 BuildHotKeys();
+                break;
+            case "clipboard":
+                BuildClipboard();
                 break;
             case "about":
                 BuildAbout();
@@ -290,6 +294,186 @@ internal sealed class SettingsWindow : Window
         panel.Children.Add(start);
 
         return Card(panel);
+    }
+
+    private void BuildClipboard()
+    {
+        _content.Children.Add(Header("剪贴板", "记录文本、图片和文件；面板里按 Ctrl+D 收藏。收藏的条目不受保留天数和图片额度影响。"));
+        var service = ClipboardService.Instance;
+        if (service is null)
+        {
+            _content.Children.Add(new TextBlock
+            {
+                Text = "剪贴板数据库打不开，这一页暂时用不了。看看数据目录里的 kitty.sqlite3 是不是被占着。",
+                TextWrapping = TextWrapping.Wrap,
+                Opacity = 0.75,
+            });
+            return;
+        }
+
+        AddToggle("暂停记录", "只在这次运行有效，重启后自动恢复记录。",
+            service.Paused,
+            isOn => service.Paused = isOn);
+
+        var dayIndex = SettingsService.Current.ClipboardRetentionDays switch
+        {
+            1 => 0,
+            7 => 1,
+            30 => 2,
+            90 => 3,
+            365 => 4,
+            _ => 5,
+        };
+        AddCombo("保留普通历史", "收藏的不清理；选「永久」就不按时间删。",
+            new[] { "1 天", "7 天", "30 天", "90 天", "365 天", "永久" },
+            dayIndex,
+            index =>
+            {
+                SettingsService.Current.ClipboardRetentionDays = index switch
+                {
+                    0 => 1,
+                    1 => 7,
+                    2 => 30,
+                    3 => 90,
+                    4 => 365,
+                    _ => 0,
+                };
+                SettingsService.Save();
+                ReportCleanup(service.EnforceLimits());
+            });
+
+        var budgetIndex = SettingsService.Current.ClipboardImageBudgetMB switch
+        {
+            128 => 0,
+            256 => 1,
+            1024 => 3,
+            0 => 4,
+            _ => 2,
+        };
+        AddCombo("图片最多占用", "只算普通图片；超了从最旧的删起，最新的一张这一轮不删。",
+            new[] { "128 MB", "256 MB", "512 MB", "1 GB", "不限" },
+            budgetIndex,
+            index =>
+            {
+                SettingsService.Current.ClipboardImageBudgetMB = index switch
+                {
+                    0 => 128,
+                    1 => 256,
+                    3 => 1024,
+                    4 => 0,
+                    _ => 512,
+                };
+                SettingsService.Save();
+                ReportCleanup(service.EnforceLimits());
+            });
+
+        AddToggle("不记录疑似密钥和卡号", "看起来像 API Key、Bearer token、私钥或银行卡号的文本不记录。",
+            SettingsService.Current.ClipboardBlockSensitive,
+            isOn =>
+            {
+                SettingsService.Current.ClipboardBlockSensitive = isOn;
+                SettingsService.Save();
+            });
+
+        _content.Children.Add(Section("不记录的应用", "按 exe 名，不分大小写。密码管理器默认就在里面。"));
+
+        foreach (var app in SettingsService.Current.ClipboardExcludedApps.ToList())
+        {
+            var row = new Grid { ColumnSpacing = 12 };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.Children.Add(new TextBlock
+            {
+                Text = app,
+                VerticalAlignment = VerticalAlignment.Center,
+                FontFamily = new FontFamily("Consolas"),
+            });
+            var remove = new Button { Content = "移除", Padding = new Thickness(10, 2, 10, 2) };
+            remove.Click += (_, _) =>
+            {
+                SettingsService.Current.ClipboardExcludedApps.RemoveAll(
+                    value => string.Equals(value, app, StringComparison.OrdinalIgnoreCase));
+                SettingsService.Save();
+                BuildPage("clipboard");
+            };
+            Grid.SetColumn(remove, 1);
+            row.Children.Add(remove);
+            _content.Children.Add(row);
+        }
+
+        var addRow = new Grid { ColumnSpacing = 8 };
+        addRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(240) });
+        addRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var input = new TextBox { PlaceholderText = "比如 WeChat.exe" };
+        var add = new Button { Content = "添加" };
+        add.Click += (_, _) =>
+        {
+            var name = input.Text.Trim();
+            if (name.Length == 0)
+            {
+                return;
+            }
+
+            if (!name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            {
+                name += ".exe";
+            }
+
+            if (SettingsService.Current.ClipboardExcludedApps
+                .Any(value => string.Equals(value, name, StringComparison.OrdinalIgnoreCase)))
+            {
+                return;
+            }
+
+            SettingsService.Current.ClipboardExcludedApps.Add(name);
+            SettingsService.Save();
+            BuildPage("clipboard");
+        };
+        Grid.SetColumn(add, 1);
+        addRow.Children.Add(input);
+        addRow.Children.Add(add);
+        _content.Children.Add(addRow);
+
+        _content.Children.Add(Section("占用",
+            $"普通图片约 {service.Store.OrdinaryImageBytes / 1_048_576.0:F0} MB，共 {service.Store.Count} 条。"));
+
+        var clear = new Button { Content = "立即清空普通历史" };
+        var armed = false;
+        clear.Click += (_, _) =>
+        {
+            if (!armed)
+            {
+                armed = true;
+                clear.Content = "再点一次：清空（收藏保留）";
+                return;
+            }
+
+            var removed = service.Store.ClearOrdinary();
+            SettingsService.Save();
+            NoticeHost.Show("已清空", $"删了 {removed} 条，收藏还在", NoticeTone.Normal);
+            BuildPage("clipboard");
+        };
+        _content.Children.Add(clear);
+    }
+
+    private void ReportCleanup(int removed)
+    {
+        if (removed > 0)
+        {
+            NoticeHost.Show("已按新上限清理", $"删了 {removed} 条旧记录", NoticeTone.Normal);
+        }
+    }
+
+    private static UIElement Section(string title, string subtitle)
+    {
+        var panel = new StackPanel { Spacing = 2, Margin = new Thickness(0, 6, 0, 0) };
+        panel.Children.Add(new TextBlock { Text = title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        if (!string.IsNullOrEmpty(subtitle))
+        {
+            panel.Children.Add(new TextBlock { Text = subtitle, Opacity = 0.7, TextWrapping = TextWrapping.Wrap });
+        }
+
+        return panel;
     }
 
     private void BuildHotKeys()

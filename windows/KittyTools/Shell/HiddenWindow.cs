@@ -72,7 +72,7 @@ internal static unsafe class HiddenWindow
         }
         catch (Exception ex)
         {
-            Log.Error("wndproc.exception", ex);
+            Log.Error($"wndproc.exception {ex}");
         }
 
         return PInvoke.DefWindowProc(hwnd, msg, wParam, lParam);

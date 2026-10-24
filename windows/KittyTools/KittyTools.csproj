@@ -48,4 +48,16 @@
     <None Include="NativeMethods.txt" />
     <None Include="NativeMethods.json" />
   </ItemGroup>
+  <!--
+    Native AOT 的 publish 不会把 WinUI 生成的 KittyTools.pri 带进发布目录；缺了它
+    Application.LoadComponent 在 Release AOT 下会抛 XamlParseException（浮层里的 XAML 面板打不开）。
+    这里在 publish 之后补一份，zip 里的发布物才完整。
+  -->
+  <Target Name="CopyPriFileToPublish" AfterTargets="Publish">
+    <Copy
+      SourceFiles="$(TargetDir)$(AssemblyName).pri"
+      DestinationFolder="$(PublishDir)"
+      SkipUnchangedFiles="true"
+      Condition="Exists('$(TargetDir)$(AssemblyName).pri')" />
+  </Target>
 </Project>

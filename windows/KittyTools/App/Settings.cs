@@ -19,7 +19,21 @@ internal sealed class Settings
 
     public bool CopyTranslate { get; set; }
 
-    public bool PauseClipboard { get; set; }
+    /// <summary>保留天数：1 / 7 / 30 / 90 / 365 / 0（永久）。</summary>
+    public int ClipboardRetentionDays { get; set; } = 7;
+
+    /// <summary>普通图片总占用上限（MB），0 = 不限。</summary>
+    public int ClipboardImageBudgetMB { get; set; } = 512;
+
+    public bool ClipboardBlockSensitive { get; set; } = true;
+
+    public List<string> ClipboardExcludedApps { get; set; } = new()
+    {
+        "KeePass.exe",
+        "KeePassXC.exe",
+        "1Password.exe",
+        "Bitwarden.exe",
+    };
 
     public List<HotKeySetting> HotKeys { get; set; } = new();
 }

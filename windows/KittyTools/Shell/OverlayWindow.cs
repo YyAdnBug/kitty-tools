@@ -1,8 +1,7 @@
-// 浮层：剪贴板面板和启动器共用的窗口（第 1 批只有壳和占位内容）。
+// 浮层：剪贴板面板和启动器共用的窗口。
 // WinUI Window + OverlappedPresenter：无标题栏、保留边框（系统圆角 / 阴影 / 细描边）、
 // 置顶、不可缩放、不进任务栏和 Alt+Tab；内容用亚克力。
 // 关闭：Esc、Ctrl+W、再按一次热键、失去激活（不还前台）。
-using System.Runtime.InteropServices;
 using KittyTools.Infrastructure;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
@@ -27,13 +26,14 @@ internal enum OverlayKind
 internal sealed unsafe class OverlayWindow : Window
 {
     private const int WidthDip = 720;
-    private const int HeightDip = 360;
+    private const int LauncherHeightDip = 360;
+    private const int ClipboardHeightDip = 520;
 
-    private readonly TextBlock _title;
-    private readonly TextBox _input;
-    private readonly TextBlock _body;
-    private readonly Grid _root;
+    private readonly Grid _host;
+    private readonly TextBox _launcherInput;
+    private readonly TextBlock _launcherBody;
 
+    private ClipboardPanel? _clipboard;
     private OverlayKind _kind;
     private HWND _hwnd;
     private HWND _previousForeground;
@@ -43,68 +43,30 @@ internal sealed unsafe class OverlayWindow : Window
     public OverlayWindow()
     {
         Title = Paths.ProductName + " 浮层";
-        _root = new Grid
-        {
-            Padding = new Thickness(20, 16, 20, 16),
-            RowSpacing = 10,
-            Background = new SolidColorBrush(Colors.Transparent),
-            RequestedTheme = Theme.ElementTheme,
-        };
-        _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        _host = new Grid { RequestedTheme = Theme.ElementTheme };
 
-        var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        header.Children.Add(new FontIcon
+        _launcherInput = new TextBox
         {
-            Glyph = "\uE8C8",
-            FontSize = 16,
-            Foreground = new SolidColorBrush(Theme.BrandPink),
-        });
-        _title = new TextBlock
-        {
-            Text = "剪贴板历史",
-            FontSize = 14,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        header.Children.Add(_title);
-
-        _input = new TextBox
-        {
-            PlaceholderText = "搜索剪贴板…",
+            PlaceholderText = "搜索应用、设置、命令…",
             FontSize = 20,
             Height = 56,
+            Margin = new Thickness(20, 16, 20, 8),
             VerticalContentAlignment = VerticalAlignment.Center,
         };
-        _input.KeyDown += OnKeyDown;
-
-        _body = new TextBlock
+        _launcherInput.KeyDown += OnLauncherKeyDown;
+        _launcherBody = new TextBlock
         {
-            Text = "第 1 批只做了壳：这里以后放真正的列表。",
+            Text = "第 4 批接上：应用、设置页、系统命令、计算和网址直达。",
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.65,
-            Margin = new Thickness(2, 4, 0, 0),
+            Margin = new Thickness(22, 6, 22, 16),
         };
+        var launcher = new StackPanel();
+        launcher.Children.Add(_launcherInput);
+        launcher.Children.Add(_launcherBody);
 
-        var card = new Border
-        {
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(16),
-            Background = new SolidColorBrush(Theme.ElementTheme == ElementTheme.Dark
-                ? Windows.UI.Color.FromArgb(36, 255, 255, 255)
-                : Windows.UI.Color.FromArgb(20, 0, 0, 0)),
-            Child = _body,
-        };
-
-        Grid.SetRow(header, 0);
-        Grid.SetRow(_input, 1);
-        Grid.SetRow(card, 2);
-        _root.Children.Add(header);
-        _root.Children.Add(_input);
-        _root.Children.Add(card);
-
-        Content = _root;
+        _host.Children.Add(launcher);
+        Content = _host;
         SystemBackdrop = new AcrylicBackdrop();
         ExtendsContentIntoTitleBar = true;
 
@@ -125,17 +87,12 @@ internal sealed unsafe class OverlayWindow : Window
 
     public OverlayKind Kind => _kind;
 
+    public HWND PasteTarget => _previousForeground;
+
     public void ShowOverlay(OverlayKind kind)
     {
         _kind = kind;
-        _root.RequestedTheme = Theme.ElementTheme;
-        var clipboard = kind == OverlayKind.Clipboard;
-        _title.Text = clipboard ? "剪贴板历史" : "启动器";
-        _input.PlaceholderText = clipboard ? "搜索剪贴板…" : "搜索应用、设置、命令…";
-        _input.Text = string.Empty;
-        _body.Text = clipboard
-            ? "第 1 批只做了壳：剪贴板历史在第 2 批接上。"
-            : "第 1 批只做了壳：应用、设置和命令在第 4 批接上。";
+        _host.RequestedTheme = Theme.ElementTheme;
 
         var before = Foreground.Get();
         if (before != default && !Foreground.IsOurs(before))
@@ -143,11 +100,33 @@ internal sealed unsafe class OverlayWindow : Window
             _previousForeground = before;
         }
 
-        PositionAtPointer();
+        _host.Children.Clear();
+        if (kind == OverlayKind.Clipboard && ClipboardService.Instance is not null)
+        {
+            _clipboard ??= CreateClipboardPanel();
+            _host.Children.Add(_clipboard);
+        }
+        else
+        {
+            _host.Children.Add(BuildLauncherPlaceholder());
+        }
+
+        PositionAtPointer(kind == OverlayKind.Clipboard ? ClipboardHeightDip : LauncherHeightDip);
         _visible = true;
         Activate();
         Foreground.Restore(_hwnd);
-        _input.Focus(FocusState.Programmatic);
+        if (kind == OverlayKind.Clipboard)
+        {
+            _clipboard?.OnShown();
+            DispatcherQueue.TryEnqueue(() => _clipboard?.FocusSearch());
+        }
+        else
+        {
+            _launcherInput.Text = string.Empty;
+            _launcherInput.Focus(FocusState.Programmatic);
+            DispatcherQueue.TryEnqueue(() => _launcherInput.Focus(FocusState.Programmatic));
+        }
+
         PInvoke.DwmFlush();
         Log.Info($"overlay.show kind={kind}");
     }
@@ -163,6 +142,7 @@ internal sealed unsafe class OverlayWindow : Window
         try
         {
             _visible = false;
+            _clipboard?.OnHidden();
             AppWindow.Hide();
             Log.Info($"overlay.hide restore={restoreForeground}");
             if (restoreForeground && _previousForeground != default)
@@ -176,15 +156,42 @@ internal sealed unsafe class OverlayWindow : Window
         }
     }
 
+    private ClipboardPanel CreateClipboardPanel()
+    {
+        var panel = new ClipboardPanel();
+        panel.CloseRequested += () => HideOverlay(restoreForeground: true);
+        panel.SettingsRequested += () =>
+        {
+            HideOverlay(restoreForeground: false);
+            ShellRuntime.Instance?.ShowSettings(welcome: false, page: "clipboard");
+        };
+        return panel;
+    }
+
+    private UIElement BuildLauncherPlaceholder()
+    {
+        var panel = new StackPanel();
+        panel.Children.Add(_launcherInput);
+        panel.Children.Add(_launcherBody);
+        return panel;
+    }
+
     private void OnActivated(object sender, WindowActivatedEventArgs args)
     {
         if (args.WindowActivationState == WindowActivationState.Deactivated && _visible && !_hiding)
         {
             HideOverlay(restoreForeground: false);
+            return;
+        }
+
+        if (args.WindowActivationState == WindowActivationState.CodeActivated && _visible &&
+            _kind == OverlayKind.Clipboard)
+        {
+            DispatcherQueue.TryEnqueue(() => _clipboard?.FocusSearch());
         }
     }
 
-    private void OnKeyDown(object sender, KeyRoutedEventArgs e)
+    private void OnLauncherKeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (e.Key == Windows.System.VirtualKey.Escape)
         {
@@ -198,14 +205,9 @@ internal sealed unsafe class OverlayWindow : Window
             e.Handled = true;
             HideOverlay(restoreForeground: true);
         }
-        else if (e.Key == Windows.System.VirtualKey.Enter)
-        {
-            e.Handled = true;
-            NoticeHost.Show("还没做", "第 1 批只有壳，这个面板的内容在后面几批接上", NoticeTone.Normal);
-        }
     }
 
-    private void PositionAtPointer()
+    private void PositionAtPointer(int heightDip)
     {
         PInvoke.GetCursorPos(out var cursor);
         var monitor = PInvoke.MonitorFromPoint(cursor, MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST);
@@ -217,7 +219,7 @@ internal sealed unsafe class OverlayWindow : Window
 
         var scale = PInvoke.GetDpiForWindow(_hwnd) / 96.0;
         var width = (int)Math.Round(WidthDip * scale);
-        var height = (int)Math.Round(HeightDip * scale);
+        var height = (int)Math.Round(heightDip * scale);
         var work = info.rcWork;
         var x = work.left + Math.Max(0, (work.right - work.left - width) / 2);
         var y = work.top + (int)Math.Round((work.bottom - work.top) * 0.2);
@@ -230,6 +232,8 @@ internal static class OverlayHost
     private static OverlayWindow? _window;
 
     public static bool IsVisible => _window?.IsVisible == true;
+
+    public static HWND PasteTarget => _window?.PasteTarget ?? default;
 
     public static void Toggle(OverlayKind kind)
     {

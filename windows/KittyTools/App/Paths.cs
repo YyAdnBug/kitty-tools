@@ -27,6 +27,8 @@ internal static class Paths
 
     public static string ImagesDirectory => Path.Combine(DataDirectory, "images");
 
+    public static string ImagesFile(long id) => Path.Combine(ImagesDirectory, $"{id}.png");
+
     public static string DatabaseFile => Path.Combine(DataDirectory, "kitty.sqlite3");
 
     public static string ExecutablePath => Environment.ProcessPath ?? string.Empty;

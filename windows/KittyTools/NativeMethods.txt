@@ -39,6 +39,7 @@ DwmSetWindowAttribute
 DwmGetWindowAttribute
 DwmFlush
 GetClipboardSequenceNumber
+GetClipboardOwner
 OpenClipboard
 CloseClipboard
 EmptyClipboard
@@ -46,6 +47,8 @@ SetClipboardData
 GetClipboardData
 IsClipboardFormatAvailable
 RegisterClipboardFormat
+GlobalSize
+QueryFullProcessImageName
 CLIPBOARD_FORMAT
 GLOBAL_ALLOC_FLAGS
 GlobalAlloc

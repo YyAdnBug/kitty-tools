@@ -13,10 +13,11 @@ namespace KittyTools;
 
 internal static unsafe class Paster
 {
-    // CF_UNICODETEXT，取自 winuser.h。
-    private const uint CF_UNICODETEXT = 13;
-
     public static bool PasteText(HWND target, string text)
+        => Paste(target, () => ClipboardWriter.WriteText(text), ClipboardService.Instance);
+
+    /// <summary>收起面板 → 还前台 → 写剪贴板（由 write 负责）→ 等修饰键 → 发 Ctrl+V。</summary>
+    public static bool Paste(HWND target, Func<bool> write, ClipboardService? clipboard)
     {
         var started = Stopwatch.GetTimestamp();
         OverlayHost.Hide(restoreForeground: false);
@@ -32,11 +33,13 @@ internal static unsafe class Paster
             Log.Warn("paste.foreground-failed");
         }
 
-        if (!WriteText(text))
+        if (!write())
         {
             NoticeHost.Show("没能复制", "剪贴板被别的程序占着，稍后再试", NoticeTone.Error);
             return false;
         }
+
+        clipboard?.MarkOwnWrite();
 
         if (adminBlocked)
         {
@@ -56,55 +59,7 @@ internal static unsafe class Paster
         return sent;
     }
 
-    public static bool WriteText(string text)
-    {
-        if (!PInvoke.OpenClipboard(HiddenWindow.Hwnd))
-        {
-            Log.Warn($"clipboard.open-failed {Marshal.GetLastWin32Error()}");
-            return false;
-        }
-
-        try
-        {
-            if (!PInvoke.EmptyClipboard())
-            {
-                Log.Warn($"clipboard.empty-failed {Marshal.GetLastWin32Error()}");
-                return false;
-            }
-
-            var bytes = (nuint)((text.Length + 1) * sizeof(char));
-            var memory = PInvoke.GlobalAlloc(GLOBAL_ALLOC_FLAGS.GMEM_MOVEABLE, bytes);
-            if (memory == default)
-            {
-                Log.Warn($"clipboard.alloc-failed {Marshal.GetLastWin32Error()}");
-                return false;
-            }
-
-            var destination = PInvoke.GlobalLock(memory);
-            if (destination is null)
-            {
-                PInvoke.GlobalFree(memory);
-                return false;
-            }
-
-            text.AsSpan().CopyTo(new Span<char>(destination, text.Length));
-            ((char*)destination)[text.Length] = '\0';
-            PInvoke.GlobalUnlock(memory);
-
-            if (PInvoke.SetClipboardData(CF_UNICODETEXT, new HANDLE(memory.Value)) == default)
-            {
-                PInvoke.GlobalFree(memory);
-                Log.Warn($"clipboard.set-failed {Marshal.GetLastWin32Error()}");
-                return false;
-            }
-
-            return true;
-        }
-        finally
-        {
-            PInvoke.CloseClipboard();
-        }
-    }
+    public static bool WriteText(string text) => ClipboardWriter.WriteText(text);
 }
 
 internal static unsafe class Keyboard

@@ -16,6 +16,8 @@ internal sealed class ShellRuntime
 
     public HotKeyManager HotKeys { get; } = new();
 
+    public ClipboardService? Clipboard { get; private set; }
+
     public static ShellRuntime Start()
     {
         var runtime = new ShellRuntime();
@@ -38,6 +40,17 @@ internal sealed class ShellRuntime
             return;
         }
 
+        try
+        {
+            var database = Database.OpenDefault();
+            Clipboard = ClipboardService.Start(database, new ImageStore(Paths.ImagesDirectory));
+        }
+        catch (Exception ex)
+        {
+            Log.Error("clipboard.start-failed", ex);
+            NoticeHost.Show("剪贴板历史用不了", "数据库打不开，其它功能不受影响", NoticeTone.Error);
+        }
+
         HiddenWindow.Message += OnHiddenMessage;
         Tray.Add();
         HotKeys.Pressed += OnHotKey;
@@ -53,6 +66,21 @@ internal sealed class ShellRuntime
         {
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(Tray.ShowMenu);
         }
+
+        // 调试用：跳过热键直接打开剪贴板面板（热键被别的实例占着时也能看界面）。
+        if (Environment.GetCommandLineArgs().Contains("--clipboard-panel", StringComparer.OrdinalIgnoreCase))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(OpenClipboard);
+        }
+
+        // 调试用：直接打开设置里的某一页，比如 --settings=clipboard。
+        var settingsArg = Environment.GetCommandLineArgs()
+            .FirstOrDefault(arg => arg.StartsWith("--settings=", StringComparison.OrdinalIgnoreCase));
+        if (settingsArg is not null)
+        {
+            var page = settingsArg["--settings=".Length..];
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => ShowSettings(welcome: false, page));
+        }
 #endif
         if (SettingsService.IsNew)
         {
@@ -60,7 +88,7 @@ internal sealed class ShellRuntime
         }
     }
 
-    public void ShowSettings(bool welcome)
+    public void ShowSettings(bool welcome, string page = "general")
     {
         OverlayHost.Hide(restoreForeground: false);
         if (_settingsWindow is null || _settingsWindow.IsClosed)
@@ -68,7 +96,7 @@ internal sealed class ShellRuntime
             _settingsWindow = new SettingsWindow();
         }
 
-        _settingsWindow.ShowPage(welcome);
+        _settingsWindow.ShowPage(welcome, page);
     }
 
     public void ToggleCopyTranslate()
@@ -80,10 +108,16 @@ internal sealed class ShellRuntime
 
     public void TogglePauseClipboard()
     {
-        SettingsService.Current.PauseClipboard = !SettingsService.Current.PauseClipboard;
-        SettingsService.Save();
-        NoticeHost.Show("剪贴板记录", SettingsService.Current.PauseClipboard ? "已暂停" : "已恢复", NoticeTone.Normal);
+        if (Clipboard is null)
+        {
+            return;
+        }
+
+        Clipboard.Paused = !Clipboard.Paused;
+        NoticeHost.Show("剪贴板记录", Clipboard.Paused ? "已暂停" : "已恢复", NoticeTone.Normal);
     }
+
+    public void OpenClipboard() => OverlayHost.Show(OverlayKind.Clipboard);
 
     public void ShowNotice(string title, string detail, NoticeTone tone = NoticeTone.Normal)
         => NoticeHost.Show(title, detail, tone);
@@ -91,6 +125,7 @@ internal sealed class ShellRuntime
     public void Exit()
     {
         Log.Info("app.exit");
+        Clipboard?.CommitDeletion();
         HotKeys.UnregisterAll();
         Tray.Remove();
         Application.Current.Exit();
@@ -101,6 +136,14 @@ internal sealed class ShellRuntime
         if (msg == PInvoke.WM_HOTKEY)
         {
             HotKeys.OnHotKey((int)wParam.Value);
+        }
+        else if (msg == PInvoke.WM_CLIPBOARDUPDATE)
+        {
+            Clipboard?.OnClipboardUpdate();
+        }
+        else if (msg == Tray.CallbackMessage)
+        {
+            Tray.OnCallback(msg, wParam, lParam);
         }
     }
 

@@ -85,6 +85,10 @@ internal sealed unsafe partial class NoticeHost
         _window.AppWindow.SetPresenter(presenter);
         _window.AppWindow.IsShownInSwitchers = false;
         _hwnd = (HWND)WinRT.Interop.WindowNative.GetWindowHandle(_window);
+        // 建好就把「不抢焦点、不接鼠标」的样式挂上：第一次显示也不能激活，
+        // 否则会在浮层里复制 / 删除之后把浮层抢掉（浮层失去激活就会收起）。
+        var style = GetWindowLong((IntPtr)_hwnd.Value, GwlExStyle);
+        SetWindowLong((IntPtr)_hwnd.Value, GwlExStyle, style | WsExNoActivate | WsExToolWindow | WsExTransparent);
         _timer = _window.DispatcherQueue.CreateTimer();
         _timer.Interval = TimeSpan.FromSeconds(2);
         _timer.IsRepeating = false;
@@ -110,13 +114,11 @@ internal sealed unsafe partial class NoticeHost
         };
 
         PositionAtPointer();
-        var style = GetWindowLong((IntPtr)_hwnd.Value, GwlExStyle);
-        SetWindowLong((IntPtr)_hwnd.Value, GwlExStyle, style | WsExNoActivate | WsExToolWindow | WsExTransparent);
         if (!_shown)
         {
-            _window.AppWindow.Show();
             _shown = true;
         }
+
         PInvoke.ShowWindow(_hwnd, (SHOW_WINDOW_CMD)SwShowNoActivate);
         PInvoke.DwmFlush();
         _timer.Stop();
