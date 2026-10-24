@@ -313,4 +313,22 @@ internal static class PinHost
         window.Closed += (_, _) => Windows.Remove(window);
         window.ShowPin();
     }
+
+    /// <summary>全部关掉（内存探针、退出时用）。</summary>
+    public static void CloseAll()
+    {
+        foreach (var window in Windows.ToList())
+        {
+            try
+            {
+                window.Close();
+            }
+            catch
+            {
+                // 已经关掉的跳过。
+            }
+        }
+
+        Windows.Clear();
+    }
 }

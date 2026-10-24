@@ -30,6 +30,9 @@ internal sealed class ScreenshotSession
 
     public static bool IsActive => _current is not null;
 
+    /// <summary>结束当前会话（含内存探针这种没有遮罩交互的调用方）。</summary>
+    public static void FinishCurrent() => _current?.Finish();
+
     public ScreenshotMode Mode { get; }
 
     public List<FrozenScreen> Screens { get; }

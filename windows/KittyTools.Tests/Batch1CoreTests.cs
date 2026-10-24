@@ -303,6 +303,47 @@ public sealed class StartMenuFilterTests
 }
 
 [TestClass]
+public sealed class MotionCurveTests
+{
+    [TestMethod]
+    public void ParametersMatchTheMacTable()
+    {
+        Assert.IsNull(MotionCurves.Of(MotionCurve.Instant));
+        Assert.AreEqual(new SpringSpec(0.16, 0.15), MotionCurves.Of(MotionCurve.Snap));
+        Assert.AreEqual(new SpringSpec(0.26, 0.10), MotionCurves.Of(MotionCurve.Glide));
+        Assert.AreEqual(new SpringSpec(0.24, 0), MotionCurves.Of(MotionCurve.Settle));
+        Assert.AreEqual(new SpringSpec(0.32, 0.25), MotionCurves.Of(MotionCurve.Pop));
+        Assert.AreEqual(new SpringSpec(0.42, 0.22), MotionCurves.Of(MotionCurve.Island));
+        Assert.AreEqual(new SpringSpec(0.34, 0), MotionCurves.Of(MotionCurve.Retract));
+    }
+
+    [TestMethod]
+    public void DampingRatioAndPeriodFollowComposition()
+    {
+        var pop = MotionCurves.Of(MotionCurve.Pop)!.Value;
+        Assert.AreEqual(1 - 0.25, pop.DampingRatio, 1e-9);
+        Assert.AreEqual(TimeSpan.FromSeconds(0.32), pop.Period);
+        var settle = MotionCurves.Of(MotionCurve.Settle)!.Value;
+        Assert.AreEqual(1.0, settle.DampingRatio, 1e-9);
+    }
+
+    [TestMethod]
+    public void ReducedMotionKeepsOnlyFades()
+    {
+        // snap / glide 减弱动画时不做；其余退成 0.2 s 淡入淡出（调用方只动透明度）。
+        Assert.IsNull(MotionCurves.Effective(MotionCurve.Snap, reduced: true));
+        Assert.IsNull(MotionCurves.Effective(MotionCurve.Glide, reduced: true));
+        Assert.IsNull(MotionCurves.Effective(MotionCurve.Instant, reduced: false));
+        Assert.IsNull(MotionCurves.Effective(MotionCurve.Settle, reduced: true));
+        Assert.IsNull(MotionCurves.Effective(MotionCurve.Pop, reduced: true));
+        Assert.IsNotNull(MotionCurves.Effective(MotionCurve.Settle, reduced: false));
+        Assert.IsNotNull(MotionCurves.Effective(MotionCurve.Snap, reduced: false));
+        Assert.IsFalse(MotionCurves.RunsWhenReduced(MotionCurve.Glide));
+        Assert.IsTrue(MotionCurves.RunsWhenReduced(MotionCurve.Island));
+    }
+}
+
+[TestClass]
 public sealed class UndoStackTests
 {
     private sealed class Item

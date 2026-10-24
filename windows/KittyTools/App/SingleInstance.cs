@@ -10,19 +10,51 @@ internal static class SingleInstance
     private const string ShowSettingsCommand = "show-settings";
 
     private static Mutex? _mutex;
+    private static volatile bool _stopping;
 
-    public static bool TryStart()
+    /// <summary>
+    /// waitMs &gt; 0 时反复试：自动更新会先启动新版本、自己再退出，
+    /// 新进程要等旧进程把互斥量放掉（第二版 §5）。
+    /// </summary>
+    public static bool TryStart(int waitMs = 0)
     {
-        _mutex = new Mutex(initiallyOwned: true, Paths.MutexName, out var createdNew);
-        if (createdNew)
+        var deadline = Environment.TickCount64 + waitMs;
+        while (true)
         {
-            return true;
+            var mutex = new Mutex(initiallyOwned: true, Paths.MutexName, out var createdNew);
+            if (createdNew)
+            {
+                _mutex = mutex;
+                _stopping = false;
+                return true;
+            }
+
+            mutex.Dispose();
+            if (Environment.TickCount64 >= deadline)
+            {
+                NotifyFirstInstance();
+                return false;
+            }
+
+            Thread.Sleep(150);
+        }
+    }
+
+    /// <summary>自动更新替换完文件、要启动新版本之前：把互斥量和转发服务都让出来。</summary>
+    public static void Release()
+    {
+        _stopping = true;
+        try
+        {
+            _mutex?.ReleaseMutex();
+        }
+        catch (ApplicationException)
+        {
+            // 不是自己持有的（已经放过）就算了。
         }
 
-        _mutex.Dispose();
+        _mutex?.Dispose();
         _mutex = null;
-        NotifyFirstInstance();
-        return false;
     }
 
     public static void StartServer(Action showSettings)
@@ -61,7 +93,7 @@ internal static class SingleInstance
 
     private static void ServerLoop(Action showSettings)
     {
-        while (true)
+        while (!_stopping)
         {
             try
             {

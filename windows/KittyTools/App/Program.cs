@@ -10,7 +10,9 @@ public static class Program
     [STAThread]
     public static int Main(string[] args)
     {
-        if (!SingleInstance.TryStart())
+        // 自动更新换上的新版本要等旧进程退出并放掉互斥量，所以带 --updated 时多等几秒。
+        var updated = args.Contains("--updated", StringComparer.OrdinalIgnoreCase);
+        if (!SingleInstance.TryStart(updated ? 8000 : 0))
         {
             return 0;
         }

@@ -76,6 +76,10 @@ internal sealed class ShellRuntime
             dispatcher?.TryEnqueue(() => ShowSettings(welcome: false)));
 
         Log.Info("shell.ready");
+        if (MemoryProbe.Requested)
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(MemoryProbe.Run);
+        }
 #if DEBUG
         if (Environment.GetCommandLineArgs().Contains("--tray-menu", StringComparer.OrdinalIgnoreCase))
         {
@@ -165,6 +169,12 @@ internal sealed class ShellRuntime
             Log.Info($"cred.smoke write={written} read={read} delete={deleted}");
         }
 #endif
+        // 自动更新换上新版本后带 --updated 启动：清理 *.old 并提示一次（第二版 §5）。
+        if (Environment.GetCommandLineArgs().Contains("--updated", StringComparer.OrdinalIgnoreCase))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(AutoUpdater.HandleUpdatedLaunch);
+        }
+
         if (SettingsService.IsNew)
         {
             ShowSettings(welcome: true);
@@ -180,6 +190,21 @@ internal sealed class ShellRuntime
         }
 
         _settingsWindow.ShowPage(welcome, page);
+    }
+
+    /// <summary>关掉设置窗（内存探针、自动更新重启前用）。</summary>
+    public void CloseSettings()
+    {
+        try
+        {
+            _settingsWindow?.Close();
+        }
+        catch
+        {
+            // 已经关掉的跳过。
+        }
+
+        _settingsWindow = null;
     }
 
     public void ToggleCopyTranslate()

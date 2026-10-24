@@ -627,3 +627,75 @@ Windows 原生版的发版冒烟清单和每批手测。编号一直往下排，
      系统强调色改了（设置 › 个性化 › 颜色）时，「跟随系统」下界面跟着变（监听 `ColorValuesChanged`）。
      单测见 `AccentRampTests`。
 
+## 第二版第 2 批：系统底座（121–132）
+
+环境同上：Windows 11 22H2 以上、单屏 100%；涉及第二块屏 / 150% 的条目没测，报告里写明。
+
+121. **AOT 根因：PRI 文件和主题资源**（§6 第 2 批，已走）
+     Release AOT 发布目录里跑 `KITTY_XAML_PROBE=1` 启动（探针写在日志里）；
+     再把发布目录复制一份、删掉 `KittyTools.pri` / `Microsoft.UI.Xaml.Controls.pri` / `Microsoft.UI.pri` 再跑一次。
+     → 带 PRI：`probe.theme.card-brush #B3FFFFFF`、`probe.theme.text-brush #E4000000`、
+     `probe.ok xaml.panel`、`probe.ok navigationview.create / window / content` 全部 ok，
+     NavigationView 窗口能画出来（左侧导航 + 齿轮）；强调色改成品牌粉时 `probe.theme.accent #FFFF4D7E`。
+     缺 PRI：主题资源变成 `<missing>`，`new ClipboardPanel()` 抛 `XamlParseException: XAML parsing failed`
+     （`LoadComponent` 里），NavigationView 虽然能 new 出来但样式缺失。
+     结论：根因就是 AOT publish 不带 PRI；csproj 现在补拷并在 publish 之后校验（缺了直接构建失败）。
+
+122. **入场动效和减弱动态效果**（§3.1，已走）
+     Alt+C / Alt+Space / Alt+T 各开一次；再到 设置 › 辅助功能 › 视觉效果 关掉「动画效果」再开一次。
+     → 开着动画：浮层和翻译浮窗淡入 + 轻微下落 6 px（glide 弹簧），不是生硬出现。
+     关掉动画：只淡入、没有位移；`snap` / `glide` 类的位移直接设值（拖动、放大镜跟随照旧不动画）。
+
+123. **内存探针**（§4.1，已走）
+     Release AOT 发布目录，`KITTY_MEMORY_PROBE=1` 启动（`..._FAST=1` 把等待缩成 3 s / 10 s，只调试用）。
+     日志里 grep `memprobe.`：托盘 → 5000 条剪贴板数据 → 面板 → 启动器 → 翻译浮窗 → 截图 → 钉图 → 设置窗 → 收起后。
+     → 每一步都有一行 private / working / managed / committed / fragmented；5000 条用的是临时库，
+     跑完自动删掉，不动用户的剪贴板历史。数字见提交报告。
+
+124. **发布体积**（§4.1，已走）
+     看 Release AOT 的发布目录和 zip。
+     → 241 个文件 / 135 MB，其中 `KittyTools.pdb` 60.5 MB（第一版 58.8 MB）；不含 pdb 的 zip 28.4 MB，
+     带 pdb 的 zip 41 MB。多出来的体积就是原生 AOT 的 pdb，第 6 批按 §4.2 单独存、不进 zip。
+
+125. **自动更新：成功路径**（§5，已走）
+     本地假发布列表（`KITTY_UPDATE_FEED` 指向的 JSON 里 assets 用 `file://` 指向本地 zip）+ `KITTY_UPDATE_APPLY=1`，
+     从 0.1.0 的发布目录启动（`KittyTools-0.1.1-windows-x64.zip` 和它的 `.sha256`）。
+     → 日志 `update.check newer=True` → `update.downloaded` → `update.verified` → `update.installed files=241`
+     → 新进程 `update.relaunched version=0.1.1 removed-old=241`；安装目录里的 exe 变成 0.1.1、
+     没有 `*.old` 残留、轻提示「已更新到 0.1.1」；再检查更新写「已是最新」。
+
+126. **自动更新：校验失败**（§5，已走）
+     把 `.sha256` 改成全 0 再走一次上一条。
+     → 日志 `update.hash-mismatch`，提示「下载的更新包校验对不上」，安装目录还是 0.1.0、
+     没有 `*.old`、进程照常运行。
+
+127. **自动更新：覆盖失败回滚**（§5，已走）
+     在安装目录里把 `KittyTools.pri` 换成一个同名目录（让复制必然失败），再走一次更新；
+     真机等价情形是某个文件改不了名 / 拷不进去。
+     → 日志 `update.install-failed`，提示「覆盖安装失败，已回到原版本」；exe 仍是 0.1.0，
+     没有 `*.old`、没有半截新文件，挡住的那个目录还在（单测 `FailedCopyRollsEverythingBack` 覆盖同一条）。
+
+128. **自动更新：安装目录没写权限**（§5，待走）
+     把程序装到 `C:\Program Files\Kitty Tools`（非管理员目录不可写），有新版时点「更新到 x.y.z」。
+     → 不尝试自动替换；轻提示「装在没有写权限的目录」，并打开发布页（日志 `update.install-dir-readonly`）。
+
+129. **更新后重启**（§5，已走）
+     走完 125 之后看新进程和安装目录。
+     → 新进程带的 `--updated` 让它等旧进程放掉互斥量（最多 8 s）再接管；启动后删掉 `*.old` 并轻提示一次；
+     托盘、热键、剪贴板历史都还在（数据在 `%LOCALAPPDATA%` 里，升级不动）。
+
+130. **发布脚本出 .sha256**（§5，已走）
+     在 `windows/` 跑 `pwsh build-release.ps1`。
+     → 每个 zip 旁边多一个 `KittyTools-<版本>-windows-<架构>.zip.sha256`，内容是一行
+     `<64 位小写哈希>  文件名`；`SIZES.txt` 里每个架构也写了哈希前缀。
+
+131. **更新日志**（D9，已走）
+     设置 › 关于。
+     → 0.1.0 的条目里既有第一版的功能，也有第二版第 1、2 批用户看得到的修复
+     （热键不再失效、修饰键、切回前台、划词不丢剪贴板、多屏缩放、启动器过滤和图标、托盘、轻提示点穿、
+     截图内存、大图复制、翻译卡滚动、Ctrl+T 保留面板、入场动效、自动更新）。
+
+132. **数据库逐版本迁移**（§6 第 2 批点名，已在第 1 批做完）
+     见第 114 条和 `SchemaMigrationTests`；第 2 批没有新增表，`Schema.CurrentVersion` 仍是 2。
+
+

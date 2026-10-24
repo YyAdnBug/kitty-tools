@@ -384,6 +384,8 @@ internal sealed unsafe partial class TranslateWindow : Window
         _pinButton.IsChecked = SettingsService.Current.TranslatePinned;
         UpdateHeader();
         RebuildFooter();
+        // 入场：透明度 0→1 + 下落 6 px（减弱动画时只淡入）。
+        Motion.Entrance(_root);
         Log.Info($"translate.show activate={activate}");
     }
 

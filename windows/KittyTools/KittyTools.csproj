@@ -69,4 +69,17 @@
       SkipUnchangedFiles="true"
       Condition="Exists('$(TargetDir)$(AssemblyName).pri')" />
   </Target>
+  <!--
+    发布目录里缺 PRI 的后果（第二版 §6 第 2 批查清的根因）：
+    主题资源（CardBackgroundFillColorDefaultBrush 等）全部查不到、任何 XAML 面板在 LoadComponent 时
+    抛 XamlParseException，NavigationView 的样式也画不出来。缺了就当场报错，不要发出这样的包。
+  -->
+  <Target Name="VerifyPriInPublish" AfterTargets="CopyPriFileToPublish">
+    <Error
+      Condition="!Exists('$(PublishDir)$(AssemblyName).pri')"
+      Text="发布目录里没有 $(AssemblyName).pri：XAML 面板和主题资源都会失效（见 PLAN-v2 §6 第 2 批）。" />
+    <Error
+      Condition="!Exists('$(PublishDir)Microsoft.UI.Xaml.Controls.pri')"
+      Text="发布目录里没有 Microsoft.UI.Xaml.Controls.pri：NavigationView 等控件的样式会缺失。" />
+  </Target>
 </Project>

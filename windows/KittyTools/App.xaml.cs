@@ -45,6 +45,7 @@ public partial class App : Application
             SettingsService.Load();
             Theme.ApplyAccent();
             Theme.WatchSystemAccent();
+            XamlProbe.Run();
             _runtime = ShellRuntime.Start();
         }
         catch (Exception ex)

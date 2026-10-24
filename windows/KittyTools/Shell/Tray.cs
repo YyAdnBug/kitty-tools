@@ -174,7 +174,7 @@ internal static unsafe partial class Tray
                 menu,
                 10,
                 UpdateService.AvailableVersion is { } available
-                    ? $"下载新版本 {available}"
+                    ? $"更新到 {available}"
                     : "检查更新",
                 enabled: true);
             Append(menu, 11, "退出 Kitty Tools", enabled: true);
@@ -224,7 +224,7 @@ internal static unsafe partial class Tray
                 case 10:
                     if (UpdateService.AvailableVersion is not null)
                     {
-                        UpdateService.OpenAvailable();
+                        _ = AutoUpdater.StartAsync();
                     }
                     else
                     {

@@ -109,6 +109,7 @@ internal sealed class SettingsWindow : Window
 
     public void ShowPage(bool welcome, string page = "general")
     {
+        Motion.Refresh();
         _firstRun = welcome;
         _currentPage = page;
         BuildPage(page);
@@ -1286,14 +1287,14 @@ internal sealed class SettingsWindow : Window
         var update = new Button
         {
             Content = UpdateService.AvailableVersion is { } available
-                ? $"下载新版本 {available}"
+                ? $"更新到 {available}"
                 : "检查更新",
         };
         update.Click += async (_, _) =>
         {
             if (UpdateService.AvailableVersion is not null)
             {
-                UpdateService.OpenAvailable();
+                await AutoUpdater.StartAsync();
                 return;
             }
 
@@ -1301,7 +1302,7 @@ internal sealed class SettingsWindow : Window
             update.Content = "正在检查…";
             await UpdateService.CheckAsync(userInitiated: true);
             update.Content = UpdateService.AvailableVersion is { } version
-                ? $"下载新版本 {version}"
+                ? $"更新到 {version}"
                 : "检查更新";
             update.IsEnabled = true;
         };

@@ -27,6 +27,14 @@ internal static class UpdateService
 
     public static string? AvailableUrl { get; private set; }
 
+    /// <summary>对应架构的 zip 和它的 .sha256（App 内自动更新用，第二版 §5）。</summary>
+    public static string? AvailableZipUrl { get; private set; }
+
+    public static string? AvailableHashUrl { get; private set; }
+
+    /// <summary>zip 的资产名（按它去 .sha256 里找哈希）。</summary>
+    public static string? AvailableAssetName { get; private set; }
+
     public static event Action? Changed;
 
     /// <summary>本地假发布列表（KITTY_UPDATE_FEED）：验证每日检查会走线程池那条路。</summary>
@@ -78,6 +86,9 @@ internal static class UpdateService
             var current = typeof(UpdateService).Assembly.GetName().Version ?? new Version(0, 0, 0);
             string? bestVersion = null;
             string? bestUrl = null;
+            string? bestZip = null;
+            string? bestHash = null;
+            string? bestAsset = null;
             Version? best = null;
             foreach (var release in document.RootElement.EnumerateArray())
             {
@@ -110,11 +121,12 @@ internal static class UpdateService
                 best = version;
                 bestVersion = version.ToString(3);
                 bestUrl = release.TryGetProperty("html_url", out var url) ? url.GetString() : null;
+                (bestZip, bestHash, bestAsset) = AssetsFor(release, bestVersion);
             }
 
             var newer = best is not null && best > current;
             Log.Info($"update.check newer={newer} version={bestVersion ?? "none"} localFeed={UsingLocalFeed}");
-            ApplyResult(newer, bestVersion, bestUrl, current, userInitiated);
+            ApplyResult(newer, bestVersion, bestUrl, bestZip, bestHash, bestAsset, current, userInitiated);
         }
         catch (Exception ex)
         {
@@ -130,16 +142,28 @@ internal static class UpdateService
     /// 检查出来的结果只在 UI 线程落地：改设置、轻提示、托盘菜单文本都要 UI 线程；
     /// 这一步以前留在线程池上，第一次真的发现新版本时全部热键会失效（第二版 §2 第 1 条）。
     /// </summary>
-    private static void ApplyResult(bool newer, string? bestVersion, string? bestUrl, Version current, bool userInitiated)
+    private static void ApplyResult(
+        bool newer,
+        string? bestVersion,
+        string? bestUrl,
+        string? bestZip,
+        string? bestHash,
+        string? bestAsset,
+        Version current,
+        bool userInitiated)
     {
         if (_dispatcher is { } dispatcher && !dispatcher.HasThreadAccess)
         {
-            dispatcher.TryEnqueue(() => ApplyResult(newer, bestVersion, bestUrl, current, userInitiated));
+            dispatcher.TryEnqueue(
+                () => ApplyResult(newer, bestVersion, bestUrl, bestZip, bestHash, bestAsset, current, userInitiated));
             return;
         }
 
         AvailableVersion = newer ? bestVersion : null;
         AvailableUrl = newer ? bestUrl : null;
+        AvailableZipUrl = newer ? bestZip : null;
+        AvailableHashUrl = newer ? bestHash : null;
+        AvailableAssetName = newer ? bestAsset : null;
         Notify();
         if (newer && bestVersion is not null &&
             SettingsService.Current.NotifiedUpdateVersion != bestVersion)
@@ -155,6 +179,55 @@ internal static class UpdateService
                 newer ? $"Kitty Tools {bestVersion}" : current.ToString(3),
                 NoticeTone.Normal);
         }
+
+        // 手测自动更新用：KITTY_UPDATE_APPLY=1 时直接走下载 / 校验 / 替换（假发布列表配本地 zip）。
+        if (newer && Environment.GetEnvironmentVariable("KITTY_UPDATE_APPLY") == "1")
+        {
+            _ = AutoUpdater.StartAsync();
+        }
+    }
+
+    /// <summary>
+    /// 从 release 的 assets 里找当前架构的 zip 和同名 .sha256（发布脚本两个都传）。
+    /// 资产名形如 KittyTools-0.1.1-windows-x64.zip。
+    /// </summary>
+    private static (string? Zip, string? Hash, string? Name) AssetsFor(JsonElement release, string? version)
+    {
+        if (version is null ||
+            !release.TryGetProperty("assets", out var assets) ||
+            assets.ValueKind != JsonValueKind.Array)
+        {
+            return (null, null, null);
+        }
+
+        var architecture = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture switch
+        {
+            System.Runtime.InteropServices.Architecture.Arm64 => "arm64",
+            _ => "x64",
+        };
+        var wanted = $"KittyTools-{version}-windows-{architecture}.zip";
+        string? zip = null;
+        string? hash = null;
+        foreach (var asset in assets.EnumerateArray())
+        {
+            var name = asset.TryGetProperty("name", out var nameValue) ? nameValue.GetString() : null;
+            var url = asset.TryGetProperty("browser_download_url", out var urlValue) ? urlValue.GetString() : null;
+            if (name is null || url is null)
+            {
+                continue;
+            }
+
+            if (string.Equals(name, wanted, StringComparison.OrdinalIgnoreCase))
+            {
+                zip = url;
+            }
+            else if (string.Equals(name, wanted + ".sha256", StringComparison.OrdinalIgnoreCase))
+            {
+                hash = url;
+            }
+        }
+
+        return (zip, hash, zip is null ? null : wanted);
     }
 
     private static async Task<string> GetFeedAsync()

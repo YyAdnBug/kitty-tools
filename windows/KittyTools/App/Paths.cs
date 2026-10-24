@@ -33,5 +33,8 @@ internal static class Paths
 
     public static string DatabaseFile => Path.Combine(DataDirectory, "kitty.sqlite3");
 
+    /// <summary>自动更新的下载目录（第二版 §5）。</summary>
+    public static string UpdatesDirectory => Path.Combine(DataDirectory, "updates");
+
     public static string ExecutablePath => Environment.ProcessPath ?? string.Empty;
 }

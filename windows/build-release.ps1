@@ -75,7 +75,15 @@ foreach ($target in $targets) {
     $files = Get-ChildItem "$stage/Kitty Tools" -Recurse -File
     $size = [math]::Round(($files | Measure-Object Length -Sum).Sum / 1MB, 1)
     $zipSize = [math]::Round((Get-Item $zip).Length / 1MB, 1)
-    $summary += "$($target.Label)：$size MB / $($files.Count) 个文件，zip $zipSize MB"
+
+    # 自动更新用的校验文件（第二版 §5）：和 zip 一起当 release 附件传，格式同 sha256sum。
+    $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+    [System.IO.File]::WriteAllText(
+        "$zip.sha256",
+        "$hash  $([System.IO.Path]::GetFileName($zip))`n",
+        [System.Text.UTF8Encoding]::new($false))
+
+    $summary += "$($target.Label)：$size MB / $($files.Count) 个文件，zip $zipSize MB，sha256 $($hash.Substring(0, 12))…"
 }
 
 $notesPath = Join-Path $outRoot 'release-notes.md'
@@ -85,3 +93,4 @@ $notesPath = Join-Path $outRoot 'release-notes.md'
 Write-Host ''
 Write-Host "产物在 $outRoot"
 $summary | ForEach-Object { Write-Host "  $_" }
+

@@ -108,6 +108,8 @@ internal sealed unsafe class OverlayWindow : Window
         }
 
         PInvoke.DwmFlush();
+        // 入场：透明度 0→1 + 内容下落 6 px（减弱动画时只淡入）。
+        Motion.Entrance(kind == OverlayKind.Clipboard ? _clipboard! : _launcher!);
         Log.Info($"overlay.show kind={kind}");
     }
 
