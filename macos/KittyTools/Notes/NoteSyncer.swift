@@ -2,13 +2,14 @@
 // 合一轮、一轮怎么走。便签的文件夹写法和一轮该做什么在 NoteSyncFolder（纯函数），合并规则在 NoteSync；别的几类（片段和收藏、
 // 生词本……，SyncSource）的合并规则在 SyncRecords；读写文件夹在 NoteSyncDisk（主线程外）。
 // - **几部分**：便签（「notes」）和每一类 SyncSource；每部分一个勾（这台电脑自己的偏好 syncSkipped，默认都勾上）、跟着
-//   各自的功能开关（featureOn：便签跟便签、片段跟剪贴板、生词本跟翻译）——关着的那部分这一轮不合，几部分都关着时整个停
-//   （AppDelegate）。一类先便签后别的：便签那部分停下来（文件夹不对、刹车）整轮都停；别的哪一类出了问题只跳过那一类。
+//   各自的功能开关（featureOn：便签跟便签、片段跟剪贴板、生词本和翻译服务跟翻译、搜索和启动器收藏跟启动器、状态跟状态屏）
+//   ——关着的那部分这一轮不合；设置那部分不跟功能，同步一开着就一直在合。一类先便签后别的：便签那部分停下来（文件夹不对、
+//   刹车）整轮都停；别的哪一类出了问题只跳过那一类。
 // - **开关**（A2 默认关）：设置里选了文件夹才开（enable：新的文件夹写标记、已经有库的接着用——标记还没下载完、读不出来，
 //   或者没标记却有别的电脑的子文件夹，都不开：新写一个会把别的电脑全挡在外面；没标记的还得是空的，不往放着别的东西的
 //   文件夹里撒子文件夹；文件夹和库编号记在这台电脑自己的偏好里，
 //   不注册默认值、不跟着导出走；开了之后由调用方 start）；关掉（disable）只是不再同步，文件夹里的东西留着、本机的便签不动。
-//   便签这个功能关着（Feature.notes）时也停（算「后台活」：stop 之后 syncNow、刹车的「继续」都不再起一轮），库照开。
+//   stop 之后 syncNow、刹车的「继续」都不再起一轮。
 // - **什么时候合**：开的时候一轮，之后每 20 秒一轮（ponytail: 轮询；同步盘本来就是几秒到几分钟的延迟，没变的文件只看属性
 //   不读，几百个文件一轮几毫秒——真嫌慢再换 FSEvents），醒来时一轮，设置里「立即同步」一轮；一轮没完时再要的排在它后面。
 // - **一轮**：先落盘（flush：写进文件夹的东西必须是落下去了的）→ 主线程外读文件夹 → 先认是不是那个文件夹（标记、格式；
@@ -82,8 +83,6 @@ import Observation
   @ObservationIgnored var sources: [SyncSource] = []
   /// 一部分（"notes" / 类别名）的功能开着没有（AppDelegate 给；单测里都开着）
   @ObservationIgnored var featureOn: (String) -> Bool = { _ in true }
-  /// 同步管的功能有一个开着（AppDelegate 给：设置页开同步之后照它决定起不起）
-  @ObservationIgnored var wanted: () -> Bool = { true }
   /// 这台电脑上不同步的几部分（设置页的勾）
   private(set) var skipped: Set<String>
   /// 这台电脑叫什么（device.json）；单测换成固定的
@@ -407,9 +406,10 @@ import Observation
     let outcome = SyncRecords.round(
       local: source.syncValues(), changed: source.syncChanged(), ledger: ledger, own: own,
       others: others, me: me, now: Note.milliseconds(clock()), join: source.syncJoin)
-    // 刹车：别处要删掉本机的、本机自己一下删掉的，加起来按删之前有几条算
+    // 刹车：别处要删掉本机的、本机自己一下删掉的，加起来按删之前有几条算（设置不算：删一项 = 改回默认，没丢东西）
     let deleting = outcome.trashing + outcome.erasing
-    if NoteSyncFolder.brakes(trashing: deleting, alive: outcome.alive + outcome.erasing),
+    if source.syncKind != .settings,
+      NoteSyncFolder.brakes(trashing: deleting, alive: outcome.alive + outcome.erasing),
       deleting > allowance
     {
       return .braked(deleting)

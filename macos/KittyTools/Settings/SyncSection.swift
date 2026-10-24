@@ -15,6 +15,7 @@ struct SyncSection: View {
   @AppStorage(Feature.clipboard.prefsKey) private var clipboardOn = true
   @AppStorage(Feature.translate.prefsKey) private var translateOn = true
   @AppStorage(Feature.launcher.prefsKey) private var launcherOn = true
+  @AppStorage(Feature.statusScreen.prefsKey) private var statusScreenOn = true
   /// 开同步没成的原因（橙字）
   @State private var problem: String?
   /// 面板开着、正在看文件夹、正在开
@@ -37,6 +38,9 @@ struct SyncSection: View {
       if let folder = syncer.folder {
         folderRow(folder)
         part(
+          SyncRecords.Kind.settings.rawValue, title: SyncRecords.Kind.settings.title,
+          detail: "各页的设置、全局快捷键和功能开关；启动台、录音的麦克风、菜单栏图标这些跟着这台 Mac 的不同步")
+        part(
           NoteSyncer.notesPart, title: "便签", detail: "连同正文里的图片", feature: "便签",
           isOn: notesOn)
         part(
@@ -52,6 +56,9 @@ struct SyncSection: View {
           SyncRecords.Kind.services.rawValue, title: SyncRecords.Kind.services.title,
           detail: "哪几个服务、顺序和设置；密钥不同步，别的 Mac 上要自己填一次", feature: "翻译",
           isOn: translateOn)
+        part(
+          SyncRecords.Kind.statuses.rawValue, title: SyncRecords.Kind.statuses.title,
+          detail: "状态屏里自己写的那几个状态", feature: "状态屏", isOn: statusScreenOn)
         part(
           SyncRecords.Kind.launcher.rawValue, title: SyncRecords.Kind.launcher.title,
           detail: "空搜索框里收藏的那几个；这台没装的 App 不显示，装上就回来", feature: "启动器",
@@ -103,7 +110,7 @@ struct SyncSection: View {
         (joining.notes > 0
           ? "这个文件夹里已经有 \(joining.devices) 台 Mac 在同步，有 \(joining.notes) 条便签（含「最近删除」里的）。"
           : "这个文件夹里已经有 \(joining.devices) 台 Mac 在同步。")
-          + "合在一起后，这台 Mac 上的便签、片段、收藏和生词和它们的会出现在每台 Mac 上（同样的不重复），设置（连同内置的网页搜索、翻译服务）跟着已经在同步的那几台；同一条两边都改过的，后改的留下。"
+          + "合在一起后，这台 Mac 上的便签、片段、收藏、生词和状态屏的状态和它们的会出现在每台 Mac 上（同样的不重复）；设置、快捷键、功能开关（连同内置的网页搜索、翻译服务）换成已经在同步的那几台的——剪贴板的保留天数、「不记录」的 App 也跟着换，超出新保留天数的历史会清掉。之后同一条两边都改过的，后改的留下。"
       )
     }
   }
@@ -154,8 +161,7 @@ struct SyncSection: View {
       problem = await syncer.enable(folder: folder).map(Self.clause)
       looking = false
       isBusy = false
-      // 同步管的功能（便签、剪贴板、翻译）都关着时只记下文件夹，打开其中一个时 AppDelegate.applyFeatures 起
-      if problem == nil, syncer.wanted() { syncer.start() }
+      if problem == nil { syncer.start() }
     }
   }
 
@@ -198,7 +204,7 @@ struct SyncSection: View {
 
   /// 「同步的内容」里的一类：勾上才同步；它跟着的功能关着时说一声（勾着也先不同步）
   private func part(
-    _ name: String, title: String, detail: String, feature: String, isOn featureOn: Bool
+    _ name: String, title: String, detail: String, feature: String = "", isOn featureOn: Bool = true
   ) -> some View {
     Toggle(
       isOn: Binding {

@@ -31,7 +31,7 @@ import Foundation
 nonisolated enum SyncRecords {
   /// 一类数据（文件名、设置页那一行都按它）
   enum Kind: String, CaseIterable, Sendable {
-    case clips, vocabulary, engines, services, launcher, settings
+    case clips, vocabulary, engines, services, launcher, settings, statuses
 
     /// 自己子文件夹里的文件名
     var fileName: String { "\(rawValue).json" }
@@ -45,6 +45,7 @@ nonisolated enum SyncRecords {
       case .services: "翻译服务"
       case .launcher: "启动器收藏"
       case .settings: "设置与快捷键"
+      case .statuses: "状态屏的状态"
       }
     }
   }
