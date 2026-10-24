@@ -53,7 +53,14 @@ internal sealed class ClipboardService
             return;
         }
 
-        if (ClipboardFormats.IsPrivate())
+        // 一次更新只开一次剪贴板：隐私标记和内容一起读（第二版 §2 P3）。
+        var capture = ClipboardFormats.Capture();
+        if (capture is null)
+        {
+            return;
+        }
+
+        if (capture.IsPrivate)
         {
             Log.Info("clipboard.skip-private");
             return;
@@ -66,7 +73,7 @@ internal sealed class ClipboardService
             return;
         }
 
-        var read = ClipboardFormats.Read();
+        var read = capture.Content;
         if (read is null)
         {
             return;

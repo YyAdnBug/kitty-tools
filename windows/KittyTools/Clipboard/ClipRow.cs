@@ -35,31 +35,60 @@ public sealed class ClipRow
 
     internal static ClipRow Create(ClipEntry entry, bool showDateHeader, string query = "")
     {
-        var (title, glyph) = entry.Kind switch
-        {
-            ClipKind.Image => ($"图片 {entry.Width} × {entry.Height}", "\uEB9F"),
-            ClipKind.Files => FilesTitle(entry),
-            _ => (OneLine(entry.Text ?? string.Empty), "\uE8C8"),
-        };
-        var subtitle = entry.Kind switch
-        {
-            ClipKind.Image => Size(entry.ImageBytes) + SourceSuffix(entry),
-            ClipKind.Files => SourceSuffix(entry).TrimStart(' ', '·'),
-            _ => $"{entry.Text?.Length ?? 0} 字" + SourceSuffix(entry),
-        };
-
         return new ClipRow
         {
             Entry = entry,
-            Title = title,
-            Subtitle = subtitle,
-            Glyph = glyph,
-            Time = DateTimeOffset.FromUnixTimeMilliseconds(entry.CopiedAt).ToLocalTime().ToString("HH:mm"),
+            Title = TitleOf(entry),
+            Subtitle = SubtitleOf(entry),
+            Glyph = GlyphOf(entry),
+            Time = TimeLabel(entry.CopiedAt),
             DateHeader = showDateHeader ? DateLabel(entry.CopiedAt) : string.Empty,
-            DateHeaderVisibility = showDateHeader ? Visibility.Visible : Visibility.Collapsed,
-            FavoriteVisibility = entry.Favorite ? Visibility.Visible : Visibility.Collapsed,
+            DateHeaderVisibility = HeaderVisibility(showDateHeader),
+            FavoriteVisibility = FavoriteVisibilityOf(entry),
         };
     }
+
+    /// <summary>
+    /// 这一行和「同一条条目、同样的日期分隔」画出来是不是一模一样。
+    /// 面板按键搜索时靠它找出可以沿用的前缀，不再整表重建 ItemsSource（第二版 §2 P3）。
+    /// </summary>
+    internal bool SameAs(ClipEntry entry, bool showDateHeader)
+        => ReferenceEquals(Entry, entry) &&
+           Time == TimeLabel(entry.CopiedAt) &&
+           DateHeaderVisibility == HeaderVisibility(showDateHeader) &&
+           FavoriteVisibility == FavoriteVisibilityOf(entry) &&
+           Subtitle == SubtitleOf(entry) &&
+           Title == TitleOf(entry);
+
+    private static string TitleOf(ClipEntry entry) => entry.Kind switch
+    {
+        ClipKind.Image => $"图片 {entry.Width} × {entry.Height}",
+        ClipKind.Files => FilesTitle(entry).Title,
+        _ => OneLine(entry.Text ?? string.Empty),
+    };
+
+    private static string GlyphOf(ClipEntry entry) => entry.Kind switch
+    {
+        ClipKind.Image => "\uEB9F",
+        ClipKind.Files => FilesTitle(entry).Glyph,
+        _ => "\uE8C8",
+    };
+
+    private static string SubtitleOf(ClipEntry entry) => entry.Kind switch
+    {
+        ClipKind.Image => Size(entry.ImageBytes) + SourceSuffix(entry),
+        ClipKind.Files => SourceSuffix(entry).TrimStart(' ', '·'),
+        _ => $"{entry.Text?.Length ?? 0} 字" + SourceSuffix(entry),
+    };
+
+    private static string TimeLabel(long copiedAt)
+        => DateTimeOffset.FromUnixTimeMilliseconds(copiedAt).ToLocalTime().ToString("HH:mm");
+
+    private static Visibility HeaderVisibility(bool showDateHeader)
+        => showDateHeader ? Visibility.Visible : Visibility.Collapsed;
+
+    private static Visibility FavoriteVisibilityOf(ClipEntry entry)
+        => entry.Favorite ? Visibility.Visible : Visibility.Collapsed;
 
     public static string DateLabel(long copiedAt)
     {

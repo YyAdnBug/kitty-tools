@@ -75,7 +75,15 @@ internal sealed class ClipboardStore
         var existing = _items.FirstOrDefault(item => item.HasSameContent(probe)) ?? Reclaim(probe);
         if (existing is not null)
         {
-            Bump(existing.Id);
+            // 可能在列表里（同内容又复制了一次），也可能是刚从撤销栈拿回来的（已经不在列表里）。
+            // 两种都按「最新」挪到最前面：只靠 Bump 的话，撤销栈里拿回来的那条找不到就丢了，
+            // 结果列表和撤销栈里都没有、库里却还在（第二版 §2 第 8 条）。
+            _items.Remove(existing);
+            existing.CopiedAt = now;
+            _items.Insert(0, existing);
+            _database.Touch(existing.Id, existing.CopiedAt);
+            EnforceLimits();
+            Changed?.Invoke();
             return true;
         }
 
@@ -165,14 +173,15 @@ internal sealed class ClipboardStore
     /// <summary>可撤销的删除：先从列表拿掉、压进撤销栈，收起面板时才真的删库删图片。</summary>
     public void DeleteWithUndo(IReadOnlyCollection<long> ids)
     {
-        var batch = _items.Where(item => ids.Contains(item.Id)).ToList();
+        var doomed = ids.ToHashSet();
+        var batch = _items.Where(item => doomed.Contains(item.Id)).ToList();
         if (batch.Count == 0)
         {
             return;
         }
 
         _undo.Add(batch);
-        _items.RemoveAll(item => ids.Contains(item.Id));
+        _items.RemoveAll(item => doomed.Contains(item.Id));
         Changed?.Invoke();
     }
 
@@ -294,29 +303,7 @@ internal sealed class ClipboardStore
     }
 
     /// <summary>删了还没提交的同内容条目：再复制一次等于自动撤销，不新建一条。</summary>
-    private ClipEntry? Reclaim(ClipEntry probe)
-    {
-        for (var batchIndex = 0; batchIndex < _undo.Count; batchIndex++)
-        {
-            var batch = _undo[batchIndex];
-            var index = batch.FindIndex(item => item.HasSameContent(probe));
-            if (index < 0)
-            {
-                continue;
-            }
-
-            var entry = batch[index];
-            batch.RemoveAt(index);
-            if (batch.Count == 0)
-            {
-                _undo.RemoveAt(batchIndex);
-            }
-
-            return entry;
-        }
-
-        return null;
-    }
+    private ClipEntry? Reclaim(ClipEntry probe) => UndoStack.Take(_undo, item => item.HasSameContent(probe));
 
     private void Purge(IReadOnlyCollection<long> ids)
     {
@@ -325,7 +312,8 @@ internal sealed class ClipboardStore
             return;
         }
 
-        foreach (var id in ids)
+        var doomed = ids.ToHashSet();
+        foreach (var id in doomed)
         {
             var entry = _items.FirstOrDefault(item => item.Id == id);
             if (entry?.Kind == ClipKind.Image)
@@ -334,10 +322,10 @@ internal sealed class ClipboardStore
             }
         }
 
-        _items.RemoveAll(item => ids.Contains(item.Id));
+        _items.RemoveAll(item => doomed.Contains(item.Id));
         try
         {
-            _database.Delete(ids);
+            _database.Delete(doomed);
         }
         catch (Exception ex)
         {

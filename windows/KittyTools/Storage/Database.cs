@@ -1,4 +1,4 @@
-// 数据库：建表、迁移（PRAGMA user_version，幂等）和 clips 的增删改查。
+// 数据库：逐版本迁移（USER_VERSION 1 → 2 → …，每步幂等，见 Core 的 Schema）和 clips 的增删改查。
 // 图片文件由 ImageStore 管；这里只存路径要用的字段和元数据。
 using KittyTools.Core;
 
@@ -6,7 +6,6 @@ namespace KittyTools.Infrastructure;
 
 internal sealed class Database : IDisposable
 {
-    private const int SchemaVersion = 2;
     private readonly SqliteConnection _connection;
 
     public Database(string path)
@@ -18,7 +17,7 @@ internal sealed class Database : IDisposable
         }
 
         _connection = new SqliteConnection(path);
-        Migrate();
+        Schema.Migrate(new MigrationExecutor(_connection));
     }
 
     public static Database OpenDefault() => new(Paths.DatabaseFile);
@@ -209,56 +208,28 @@ internal sealed class Database : IDisposable
 
     public void Dispose() => _connection.Dispose();
 
-    private void Migrate()
+    /// <summary>把 SqliteConnection 包成 Schema 的逐版本迁移执行者。</summary>
+    private sealed class MigrationExecutor : ISchemaExecutor
     {
-        using (var version = _connection.Prepare("PRAGMA user_version;"))
+        private readonly SqliteConnection _connection;
+
+        public MigrationExecutor(SqliteConnection connection)
         {
-            if (version.Step() && version.GetInt64(0) >= SchemaVersion)
+            _connection = connection;
+        }
+
+        public int Version
+        {
+            get
             {
-                return;
+                using var version = _connection.Prepare("PRAGMA user_version;");
+                return version.Step() ? (int)version.GetInt64(0) : 0;
             }
         }
 
-        _connection.Execute("BEGIN IMMEDIATE;");
-        try
-        {
-            _connection.Execute(
-                """
-                CREATE TABLE IF NOT EXISTS clips(
-                  id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  kind TEXT NOT NULL,
-                  text TEXT,
-                  file_paths TEXT,
-                  html TEXT,
-                  rtf TEXT,
-                  image_hash TEXT,
-                  width INTEGER NOT NULL DEFAULT 0,
-                  height INTEGER NOT NULL DEFAULT 0,
-                  image_bytes INTEGER NOT NULL DEFAULT 0,
-                  source_exe TEXT,
-                  source_name TEXT,
-                  copied_at INTEGER NOT NULL,
-                  favorite INTEGER NOT NULL DEFAULT 0
-                );
-                CREATE INDEX IF NOT EXISTS clips_copied_at ON clips(copied_at DESC, id DESC);
-                CREATE TABLE IF NOT EXISTS launcher_usage(
-                  query TEXT NOT NULL,
-                  kind TEXT NOT NULL,
-                  target TEXT NOT NULL,
-                  title TEXT NOT NULL DEFAULT '',
-                  score INTEGER NOT NULL,
-                  used_at INTEGER NOT NULL,
-                  PRIMARY KEY(query, kind, target)
-                );
-                """);
-            _connection.Execute($"PRAGMA user_version = {SchemaVersion};");
-            _connection.Execute("COMMIT;");
-        }
-        catch
-        {
-            _connection.Execute("ROLLBACK;");
-            throw;
-        }
+        public void Execute(string sql) => _connection.Execute(sql);
+
+        public void SetVersion(int version) => _connection.Execute($"PRAGMA user_version = {version};");
     }
 
     private static string KindText(ClipKind kind) => kind switch

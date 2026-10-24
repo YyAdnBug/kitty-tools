@@ -1,7 +1,10 @@
 // 设置：settings.json，带 version，源生成 JSON；写入走临时文件 + File.Replace；
 // 读不出来时改名成 settings.broken-<时间>.json，再用默认值启动。
+// Save 和 Changed 只许在 UI 线程上用（热键注册、XAML 资源都只认 UI 线程）；Debug 下断言，Release 下自动转回 UI 线程。
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.UI.Dispatching;
 
 namespace KittyTools.Infrastructure;
 
@@ -122,6 +125,7 @@ internal static class SettingsService
 {
     private static readonly object Gate = new();
     private static Settings _current = new();
+    private static DispatcherQueue? _dispatcher;
 
     public static Settings Current => _current;
 
@@ -129,8 +133,12 @@ internal static class SettingsService
 
     public static event Action? Changed;
 
+    /// <summary>当前在不在 UI 线程上（没有 dispatcher 时当作在：Load 之前的调用都发生在启动线程上）。</summary>
+    public static bool OnUiThread => _dispatcher is null || _dispatcher.HasThreadAccess;
+
     public static void Load()
     {
+        _dispatcher ??= DispatcherQueue.GetForCurrentThread();
         lock (Gate)
         {
             try
@@ -172,6 +180,16 @@ internal static class SettingsService
 
     public static void Save()
     {
+        // 第二版 §2 P0：Save 和 Changed 只许在 UI 线程上跑。更新检查的线程池回调以前直接 Save，
+        // 结果热键从错的线程上重注册全部失效、改主题颜色还会跨线程访问 XAML 资源。
+        if (!OnUiThread)
+        {
+            Log.Error("settings.save-off-ui-thread");
+            Debug.Assert(false, "SettingsService.Save 只能在 UI 线程调用");
+            _dispatcher?.TryEnqueue(Save);
+            return;
+        }
+
         lock (Gate)
         {
             try

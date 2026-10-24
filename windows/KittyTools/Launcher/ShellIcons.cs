@@ -1,6 +1,14 @@
-// 桌面应用 /.lnk 的图标：SHGetFileInfo 取 HICON，DrawIconEx 画进 32 位 DIB，
-// 再交给 ImageCodec 编成 PNG。都在后台扫描线程上用，不碰 UI 线程。
-using System.Runtime.InteropServices;
+// 图标：按「32 DIP × 缩放」的像素数取清晰的那一档（150% 下要 48 px，不再是 32 px 放大成 48 的发糊图）。
+// 两种来源：
+//   1. SHGetFileInfo(SHGFI_ICONLOCATION) 拿到图标所在的 exe / dll / ico + 序号，
+//      再用 SHDefExtractIcon 按要的尺寸直接取出（系统会挑最接近的一档并缩放）；
+//   2. 取不到图标位置时退回 SHGetFileInfo 的大图标（32 px），用 DrawIconEx 缩放到目标尺寸。
+// 都是 HICON → 32 位 DIB → PNG。都在后台扫描线程上用，不碰 UI 线程。
+// 第二版 §2 第 13 条点名 IShellItemImageFactory；CsWin32 在这个配置下生成的
+// IShellItemImageFactory 是托管接口（AOT 下不能用运行时 COM 封送），改用上面这条公开的等价路子，
+// 见提交正文的「和 PLAN 不一样的地方」。
+using KittyTools.Core;
+using KittyTools.Infrastructure;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.Graphics.Gdi;
@@ -9,12 +17,63 @@ using Windows.Win32.UI.WindowsAndMessaging;
 
 namespace KittyTools;
 
-internal static unsafe class ShellIcons
+internal static unsafe partial class ShellIcons
 {
-    public static byte[]? LoadPng(string path, int size = 32)
+    /// <summary>启动器里的图标画成 32 DIP：按显示器缩放取出对应像素数的图。</summary>
+    public static byte[]? LoadPng(string path, double scale = 1.0)
+    {
+        var size = MonitorLayout.Pixels(32, Math.Max(1.0, scale));
+        var info = default(SHFILEINFOW);
+        fixed (char* name = path)
+        {
+            if (PInvoke.SHGetFileInfo(
+                    new PCWSTR(name), default, &info, (uint)sizeof(SHFILEINFOW),
+                    SHGFI_FLAGS.SHGFI_ICONLOCATION) == 0)
+            {
+                return null;
+            }
+        }
+
+        if (LoadFromIconLocation(info.szDisplayName.ToString(), info.iIcon, size) is { } png)
+        {
+            return png;
+        }
+
+        return LoadLargeIcon(path, size);
+    }
+
+    /// <summary>按图标位置（exe / dll / ico + 序号）和像素尺寸直接取一档图标。</summary>
+    private static byte[]? LoadFromIconLocation(string iconPath, int index, int size)
+    {
+        if (string.IsNullOrWhiteSpace(iconPath))
+        {
+            return null;
+        }
+
+        fixed (char* location = iconPath)
+        {
+            HICON large = default;
+            var result = PInvoke.SHDefExtractIcon(
+                new PCWSTR(location), index, 0, &large, null, (uint)(size | (size << 16)));
+            if (result.Failed || large == default)
+            {
+                return null;
+            }
+
+            try
+            {
+                return IconToPng(large, size);
+            }
+            finally
+            {
+                PInvoke.DestroyIcon(large);
+            }
+        }
+    }
+
+    private static byte[]? LoadLargeIcon(string path, int size)
     {
         var info = default(SHFILEINFOW);
-        byte[]? png = null;
         fixed (char* name = path)
         {
             var result = PInvoke.SHGetFileInfo(
@@ -30,35 +89,19 @@ internal static unsafe class ShellIcons
 
             try
             {
-                png = IconToPng(info.hIcon, size);
+                return IconToPng(info.hIcon, size);
             }
             finally
             {
                 PInvoke.DestroyIcon(info.hIcon);
             }
         }
-
-        return png;
     }
 
     private static byte[]? IconToPng(HICON icon, int size)
     {
-        var bitmapInfo = new BITMAPINFO
-        {
-            bmiHeader = new BITMAPINFOHEADER
-            {
-                biSize = (uint)sizeof(BITMAPINFOHEADER),
-                biWidth = size,
-                biHeight = -size,
-                biPlanes = 1,
-                biBitCount = 32,
-                biCompression = 0, // BI_RGB
-            },
-        };
-        void* bits = null;
-        var bitmap = PInvoke.CreateDIBSection(
-            default, &bitmapInfo, DIB_USAGE.DIB_RGB_COLORS, &bits, default, 0);
-        if (bitmap == default || bits is null)
+        var bitmap = CreateBitmap(size);
+        if (bitmap == default)
         {
             return null;
         }
@@ -72,6 +115,8 @@ internal static unsafe class ShellIcons
             {
                 return null;
             }
+
+            return ToPng(bitmap);
         }
         finally
         {
@@ -84,35 +129,75 @@ internal static unsafe class ShellIcons
             {
                 PInvoke.DeleteDC(dc);
             }
-        }
 
-        try
-        {
-            var bgra = new byte[size * size * 4];
-            new ReadOnlySpan<byte>(bits, bgra.Length).CopyTo(bgra);
-            var hasAlpha = false;
-            for (var index = 3; index < bgra.Length; index += 4)
-            {
-                if (bgra[index] != 0)
-                {
-                    hasAlpha = true;
-                    break;
-                }
-            }
-
-            if (!hasAlpha)
-            {
-                for (var index = 3; index < bgra.Length; index += 4)
-                {
-                    bgra[index] = 255;
-                }
-            }
-
-            return ImageCodec.BgraToPngAsync(size, size, bgra).GetAwaiter().GetResult();
-        }
-        finally
-        {
             PInvoke.DeleteObject(new HGDIOBJ(bitmap.Value));
         }
+    }
+
+    private static HBITMAP CreateBitmap(int size)
+    {
+        var bitmapInfo = new BITMAPINFO
+        {
+            bmiHeader = new BITMAPINFOHEADER
+            {
+                biSize = (uint)sizeof(BITMAPINFOHEADER),
+                biWidth = size,
+                biHeight = -size, // 自上而下
+                biPlanes = 1,
+                biBitCount = 32,
+                biCompression = 0, // BI_RGB
+            },
+        };
+        void* bits = null;
+        return PInvoke.CreateDIBSection(default, &bitmapInfo, DIB_USAGE.DIB_RGB_COLORS, &bits, default, 0);
+    }
+
+    /// <summary>32 位 HBITMAP → PNG（GetObject 拿 DIBSECTION 的像素指针，不用再开 DC 拷一遍）。</summary>
+    private static byte[]? ToPng(HBITMAP bitmap)
+    {
+        var section = default(DIBSECTION);
+        if (PInvoke.GetObject(new HGDIOBJ(bitmap.Value), sizeof(DIBSECTION), &section) == 0)
+        {
+            return null;
+        }
+
+        var width = section.dsBm.bmWidth;
+        var height = Math.Abs(section.dsBm.bmHeight);
+        var stride = section.dsBm.bmWidthBytes;
+        var bits = (byte*)section.dsBm.bmBits;
+        if (width <= 0 || height <= 0 || bits is null || section.dsBm.bmBitsPixel != 32)
+        {
+            return null;
+        }
+
+        var pixels = new byte[width * height * 4];
+        var bottomUp = section.dsBmih.biHeight > 0;
+        for (var row = 0; row < height; row++)
+        {
+            var sourceRow = bottomUp ? height - 1 - row : row;
+            new ReadOnlySpan<byte>(bits + sourceRow * stride, width * 4)
+                .CopyTo(pixels.AsSpan(row * width * 4, width * 4));
+        }
+
+        return ImageCodec.BgraToPngAsync(width, height, OpaqueIfNoAlpha(pixels)).GetAwaiter().GetResult();
+    }
+
+    /// <summary>图标没有 alpha 通道时全填不透明（不然整张图透明）。</summary>
+    private static byte[] OpaqueIfNoAlpha(byte[] bgra)
+    {
+        for (var index = 3; index < bgra.Length; index += 4)
+        {
+            if (bgra[index] != 0)
+            {
+                return bgra;
+            }
+        }
+
+        for (var index = 3; index < bgra.Length; index += 4)
+        {
+            bgra[index] = 255;
+        }
+
+        return bgra;
     }
 }

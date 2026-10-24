@@ -156,16 +156,28 @@ internal static class TranslateHttp
 
             stream = await response.Content.ReadAsStreamAsync(cancellationToken);
             reader = new StreamReader(stream, Encoding.UTF8);
+            // HttpClient.Timeout 只管到响应头（ResponseHeadersRead 之后就不管了）：服务卡住不发数据时
+            // 卡片会永远停在「生成中」。每次读行都套一个空闲超时，本机 / 局域网 180 s，其余 30 s（PLAN §7.2）。
+            var idleTimeout = ReferenceEquals(ClientFor(url), Local)
+                ? TimeSpan.FromSeconds(180)
+                : TimeSpan.FromSeconds(30);
+            using var idle = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             while (true)
             {
                 string? line;
                 try
                 {
-                    line = await reader.ReadLineAsync(cancellationToken);
+                    idle.CancelAfter(idleTimeout);
+                    line = await reader.ReadLineAsync(idle.Token);
+                    idle.CancelAfter(Timeout.InfiniteTimeSpan);
                 }
                 catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
                 {
-                    throw new TranslateError("连接中断了，请重试", TranslateErrorKind.Network);
+                    throw new TranslateError("服务太久没有返回内容，请检查网络后再试", TranslateErrorKind.Network);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
                 }
                 catch (IOException)
                 {

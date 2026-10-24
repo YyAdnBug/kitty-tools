@@ -1,5 +1,7 @@
-﻿// 剪贴板面板：搜索框 + 收藏范围 + 左列表右预览。焦点一直在搜索框，方向键转给列表。
+// 剪贴板面板：搜索框 + 收藏范围 + 左列表右预览。焦点一直在搜索框，方向键转给列表。
 // 按键表见 PLAN §6.3；删除先只从列表拿掉（Ctrl+Z 可撤），面板收起时才真的删库。
+// 列表用一个固定的 ObservableCollection，按键搜索时只替换变了的尾部，不整表重建 ItemsSource。
+using System.Collections.ObjectModel;
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 using Microsoft.UI.Xaml;
@@ -20,6 +22,7 @@ namespace KittyTools;
 public sealed partial class ClipboardPanel : UserControl
 {
     private readonly List<ClipEntry> _visible = new();
+    private readonly ObservableCollection<ClipRow> _rows = new();
     private bool _favoritesOnly;
     private bool _active;
 
@@ -80,7 +83,8 @@ public sealed partial class ClipboardPanel : UserControl
         _active = false;
         SearchBox.Text = string.Empty;
         _visible.Clear();
-        List.ItemsSource = null;
+        _rows.Clear();
+        List.SelectedIndex = -1;
         PreviewHost.Children.Clear();
         if (Store is { } store)
         {
@@ -100,30 +104,59 @@ public sealed partial class ClipboardPanel : UserControl
         _visible.Clear();
         _visible.AddRange(store.Filter(SearchBox.Text.Trim(), _favoritesOnly));
 
-        var rows = new List<ClipRow>(_visible.Count);
-        var lastDate = long.MinValue;
-        foreach (var entry in _visible)
-        {
-            var localDate = DateTimeOffset.FromUnixTimeMilliseconds(entry.CopiedAt).ToLocalTime().Date.Ticks;
-            rows.Add(ClipRow.Create(entry, localDate != lastDate));
-            lastDate = localDate;
-        }
+        ApplyRows();
 
-        List.ItemsSource = rows;
-        if (rows.Count == 0)
+        if (_visible.Count == 0)
         {
             List.SelectedIndex = -1;
             ShowPreview(null);
         }
         else
         {
-            var index = previous is { } id ? rows.FindIndex(row => row.Entry.Id == id) : 0;
+            var index = previous is { } id ? _visible.FindIndex(entry => entry.Id == id) : 0;
             List.SelectedIndex = index < 0 ? 0 : index;
-            List.ScrollIntoView(rows[List.SelectedIndex]);
-            ShowPreview(rows[List.SelectedIndex].Entry);
+            List.ScrollIntoView(_rows[List.SelectedIndex]);
+            ShowPreview(_visible[List.SelectedIndex]);
         }
 
         UpdateFooter();
+    }
+
+    /// <summary>
+    /// 只把变了的尾部换掉：前缀的条目和日期分隔都没变就沿用原来的行，
+    /// 不重设 ItemsSource（每按一个键整表重建会让列表跳动、虚拟化的容器全丢）。
+    /// </summary>
+    private void ApplyRows()
+    {
+        if (!ReferenceEquals(List.ItemsSource, _rows))
+        {
+            List.ItemsSource = _rows;
+        }
+
+        var headers = new bool[_visible.Count];
+        var lastDate = long.MinValue;
+        for (var index = 0; index < _visible.Count; index++)
+        {
+            var localDate = DateTimeOffset.FromUnixTimeMilliseconds(_visible[index].CopiedAt).ToLocalTime().Date.Ticks;
+            headers[index] = localDate != lastDate;
+            lastDate = localDate;
+        }
+
+        var reuse = 0;
+        while (reuse < _visible.Count && reuse < _rows.Count && _rows[reuse].SameAs(_visible[reuse], headers[reuse]))
+        {
+            reuse++;
+        }
+
+        for (var index = _rows.Count - 1; index >= reuse; index--)
+        {
+            _rows.RemoveAt(index);
+        }
+
+        for (var index = reuse; index < _visible.Count; index++)
+        {
+            _rows.Add(ClipRow.Create(_visible[index], headers[index]));
+        }
     }
 
     private void UpdateFooter()
@@ -314,15 +347,25 @@ public sealed partial class ClipboardPanel : UserControl
             FontSize = 12,
             Opacity = 0.6,
         });
-        _ = LoadImageAsync(image, path);
+        _ = LoadImageAsync(image, path, PreviewDecodeWidth());
     }
 
-    private async Task LoadImageAsync(Image image, string path)
+    /// <summary>
+    /// 预览按预览区的宽度 × 缩放比例解码（4K 截图整张解码要 33 MB）。预览区还没排好时给个保守值。
+    /// </summary>
+    private int PreviewDecodeWidth()
+    {
+        var width = PreviewScroll.ActualWidth > 0 ? PreviewScroll.ActualWidth : 520;
+        var scale = XamlRoot?.RasterizationScale ?? 1.0;
+        return Math.Clamp((int)Math.Round(width * scale), 64, 2048);
+    }
+
+    private async Task LoadImageAsync(Image image, string path, int decodeWidth)
     {
         try
         {
             using var stream = await FileRandomAccessStream.OpenAsync(path, FileAccessMode.Read);
-            var bitmap = new BitmapImage();
+            var bitmap = new BitmapImage { DecodePixelWidth = decodeWidth };
             await bitmap.SetSourceAsync(stream);
             image.Source = bitmap;
         }
@@ -478,7 +521,7 @@ public sealed partial class ClipboardPanel : UserControl
         List.ScrollIntoView(List.SelectedItem);
     }
 
-    private void Paste(bool plain)
+    private async void Paste(bool plain)
     {
         var entry = SelectedEntry;
         if (entry is null)
@@ -499,27 +542,41 @@ public sealed partial class ClipboardPanel : UserControl
             return;
         }
 
-        var rich = RichOf(entry);
-        var service = ClipboardService.Instance;
-        var pasted = Paster.Paste(
-            target,
-            () => ClipboardWriter.WriteEntry(entry, rich.Html, rich.Rtf, plain),
-            service);
-        if (pasted)
+        try
         {
-            service?.Store.Bump(entry.Id);
+            // 图片的 DIB 先在后台转好，写剪贴板时一次写完（不占着剪贴板等编码）。
+            var dib = entry.Kind == ClipKind.Image ? await PrepareDibAsync(entry) : null;
+            var rich = RichOf(entry);
+            var service = ClipboardService.Instance;
+            var pasted = Paster.Paste(
+                target,
+                () => ClipboardWriter.WriteEntry(entry, rich.Html, rich.Rtf, plain, dib),
+                service);
+            if (pasted)
+            {
+                service?.Store.Bump(entry.Id);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error("clipboard.paste-failed", ex);
+            NoticeHost.Show("没能粘贴", ex.GetType().Name, NoticeTone.Error);
         }
     }
+
+    private static async Task<byte[]?> PrepareDibAsync(ClipEntry entry)
+        => (await ClipboardWriter.PrepareImageAsync(entry))?.Dib;
 
     private static (string? Html, string? Rtf) RichOf(ClipEntry entry)
         => entry.Kind == ClipKind.Text && ClipboardService.Instance is { } service
             ? service.Database.LoadRich(entry.Id)
             : (null, null);
 
+    /// <summary>文件条目：只要还有一个在就还能粘（PLAN 和 mac 是全都不在才拦）。</summary>
     private static bool EntryUsable(ClipEntry entry) => entry.Kind switch
     {
         ClipKind.Image => File.Exists(Paths.ImagesFile(entry.Id)),
-        ClipKind.Files => entry.Files.All(file => File.Exists(file) || Directory.Exists(file)),
+        ClipKind.Files => entry.Files.Any(file => File.Exists(file) || Directory.Exists(file)),
         _ => true,
     };
 
@@ -532,7 +589,7 @@ public sealed partial class ClipboardPanel : UserControl
         }
     }
 
-    private void Copy(ClipEntry entry)
+    private async void Copy(ClipEntry entry)
     {
         if (!EntryUsable(entry))
         {
@@ -540,15 +597,24 @@ public sealed partial class ClipboardPanel : UserControl
             return;
         }
 
-        var rich = RichOf(entry);
-        if (!ClipboardWriter.WriteEntry(entry, rich.Html, rich.Rtf, plainText: false))
+        try
         {
-            NoticeHost.Show("没能复制", "剪贴板被别的程序占着，稍后再试", NoticeTone.Error);
-            return;
-        }
+            var dib = entry.Kind == ClipKind.Image ? await PrepareDibAsync(entry) : null;
+            var rich = RichOf(entry);
+            if (!ClipboardWriter.WriteEntry(entry, rich.Html, rich.Rtf, plainText: false, dib))
+            {
+                NoticeHost.Show("没能复制", "剪贴板被别的程序占着，稍后再试", NoticeTone.Error);
+                return;
+            }
 
-        ClipboardService.Instance?.MarkOwnWrite();
-        NoticeHost.Show("已复制", PreviewLine(entry), NoticeTone.Normal);
+            ClipboardService.Instance?.MarkOwnWrite();
+            NoticeHost.Show("已复制", PreviewLine(entry), NoticeTone.Normal);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("clipboard.copy-failed", ex);
+            NoticeHost.Show("没能复制", ex.GetType().Name, NoticeTone.Error);
+        }
     }
 
     private static string PreviewLine(ClipEntry entry) => entry.Kind switch
@@ -612,7 +678,8 @@ public sealed partial class ClipboardPanel : UserControl
             return;
         }
 
-        TranslateHost.ShowText(entry.Text);
+        // 剪贴板面板留着，翻译浮窗只露出（PLAN §7.4 / PLAN-v2 §6 第 1 批）。
+        TranslateHost.ShowTextKeepOverlay(entry.Text);
     }
 
     private async Task PinImageAsync(ClipEntry entry)

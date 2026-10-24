@@ -77,7 +77,8 @@ internal sealed class AppCatalog
         {
             await Task.Yield();
             var apps = new List<LauncherItem>();
-            var desktop = ScanStartMenu().ToList();
+            var stats = new ScanStats();
+            var desktop = ScanStartMenu(stats).ToList();
             apps.AddRange(desktop);
             var store = await ScanStoreAppsAsync();
             apps.AddRange(store);
@@ -95,7 +96,9 @@ internal sealed class AppCatalog
             Log.Info($"launcher.apps count={deduped.Count} desktop={desktop.Count} store={store.Count} " +
                      $"icons={deduped.Count(item => item.IconData is { Length: > 0 })} " +
                      $"desktop-icons={desktop.Count(item => item.IconData is { Length: > 0 })} " +
-                     $"store-icons={store.Count(item => item.IconData is { Length: > 0 })}");
+                     $"store-icons={store.Count(item => item.IconData is { Length: > 0 })} " +
+                     $"skipped-name={stats.SkippedByName} skipped-target={stats.SkippedByTarget} " +
+                     $"duplicates={stats.Duplicates}");
             _dispatcher?.TryEnqueue(() => Changed?.Invoke());
         }
         catch (Exception ex)
@@ -108,14 +111,18 @@ internal sealed class AppCatalog
         }
     }
 
-    private static IEnumerable<LauncherItem> ScanStartMenu()
+    private static IEnumerable<LauncherItem> ScanStartMenu(ScanStats stats)
     {
         var folders = new[]
         {
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu), "Programs"),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), "Programs"),
         };
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // 「所有用户」和「当前用户」下各有一个快捷方式 = 同一个程序：按解析出来的目标去重，
+        // 先扫到的那份（所有用户）留下（第二版 §2 第 13 条）。
+        var seenTargets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var scale = Displays.SystemScale;
         foreach (var folder in folders)
         {
             if (!Directory.Exists(folder))
@@ -136,7 +143,7 @@ internal sealed class AppCatalog
 
             foreach (var file in files)
             {
-                if (!seen.Add(file))
+                if (!seenFiles.Add(file))
                 {
                     continue;
                 }
@@ -144,6 +151,26 @@ internal sealed class AppCatalog
                 var title = Path.GetFileNameWithoutExtension(file);
                 if (string.IsNullOrWhiteSpace(title))
                 {
+                    continue;
+                }
+
+                if (StartMenuFilter.ShouldSkip(title))
+                {
+                    stats.SkippedByName++;
+                    continue;
+                }
+
+                var target = Shortcuts.ResolveTarget(file);
+                if (target is not null && StartMenuFilter.ShouldSkipTarget(target))
+                {
+                    stats.SkippedByTarget++;
+                    continue;
+                }
+
+                var key = target ?? file;
+                if (!seenTargets.Add(key))
+                {
+                    stats.Duplicates++;
                     continue;
                 }
 
@@ -168,7 +195,7 @@ internal sealed class AppCatalog
                     Names = names.Distinct().ToList(),
                     Initials = initials.Distinct().ToList(),
                     IconPath = file,
-                    IconData = ShellIcons.LoadPng(file),
+                    IconData = ShellIcons.LoadPng(file, scale),
                 };
                 yield return item;
             }
@@ -269,5 +296,15 @@ internal sealed class AppCatalog
         var bytes = new byte[size];
         reader.ReadBytes(bytes);
         return bytes;
+    }
+
+    /// <summary>这一轮扫描跳过了多少、合并了多少（只进日志，用来核对过滤规则）。</summary>
+    private sealed class ScanStats
+    {
+        public int SkippedByName;
+
+        public int SkippedByTarget;
+
+        public int Duplicates;
     }
 }

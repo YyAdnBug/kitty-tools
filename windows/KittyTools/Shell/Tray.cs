@@ -1,6 +1,7 @@
 // 托盘图标和右键菜单（Shell_NotifyIcon，NOTIFYICON_VERSION_4）。
 // Windows 11 默认把新图标收进「^」溢出区；资源管理器重启时靠 TaskbarCreated 重新加。
 // 菜单是 Win32 浅色菜单（没有公开的深色接口），没做的模块灰着，但右边仍写快捷键。
+// v4 下右键会先后收到 WM_RBUTTONUP 和 WM_CONTEXTMENU，只认后者；左键认 NIN_SELECT，键盘认 NIN_KEYSELECT。
 using System.Runtime.InteropServices;
 using KittyTools.Infrastructure;
 using Windows.Win32;
@@ -10,12 +11,18 @@ using Windows.Win32.UI.WindowsAndMessaging;
 
 namespace KittyTools;
 
-internal static unsafe class Tray
+internal static unsafe partial class Tray
 {
     private const uint TrayIconId = 1;
     public const uint CallbackMessage = 0x8000 + 1; // WM_APP + 1
     private const uint TpmRightButton = 0x0002;
     private const uint TpmReturnCmd = 0x0100;
+
+    // NOTIFYICON_VERSION_4 的回调消息（WM_APP + 1 之外的那几种通知码）。
+    private const uint NinSelect = 0x0400;     // 左键单击
+    private const uint NinKeySelect = 0x0401;  // 键盘选中
+    private const uint NinContextMenu = 0x0403; // 右键（键盘菜单键也是它）
+    private const uint WmContextMenu = 0x007B;
 
     private static HICON _icon;
     private static bool _added;
@@ -27,9 +34,7 @@ internal static unsafe class Tray
             return true;
         }
 
-        var module = PInvoke.GetModuleHandle(default(PCWSTR));
-        var instance = new HINSTANCE(module.Value);
-        _icon = PInvoke.LoadIcon(instance, new PCWSTR((char*)32512)); // IDI_APPLICATION：exe 的主图标
+        _icon = LoadTrayIcon();
         if (_icon == default)
         {
             Log.Error($"tray.icon-failed {Marshal.GetLastWin32Error()}");
@@ -72,6 +77,34 @@ internal static unsafe class Tray
         return true;
     }
 
+    /// <summary>
+    /// 按当前 DPI 取托盘该用的那一档（图标里有手调过的 16 px 就用它），不再拿 32 px 的大图标硬缩（PLAN §5.2）。
+    /// 用 SHDefExtractIcon 按像素尺寸取：应用清单没有引 comctl32 v6，LoadIconWithScaleDown 在这个进程里
+    /// 找不到入口点（实测 EntryPointNotFoundException），所以不走它。
+    /// </summary>
+    private static HICON LoadTrayIcon()
+    {
+        var size = Math.Max(16, PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_CXSMICON));
+        var path = Environment.ProcessPath;
+        if (!string.IsNullOrEmpty(path))
+        {
+            fixed (char* location = path)
+            {
+                HICON icon = default;
+                if (PInvoke.SHDefExtractIcon(
+                        new PCWSTR(location), 0, 0, &icon, null, (uint)(size | (size << 16))).Succeeded &&
+                    icon != default)
+                {
+                    return icon;
+                }
+            }
+        }
+
+        // 取不到（极少数精简系统）：退回 exe 主图标。
+        var module = PInvoke.GetModuleHandle(default(PCWSTR));
+        return PInvoke.LoadIcon(new HINSTANCE(module.Value), new PCWSTR((char*)32512));
+    }
+
     public static void ReAdd()
     {
         _added = false;
@@ -101,9 +134,12 @@ internal static unsafe class Tray
         var mouseMessage = (uint)(lParam.Value & 0xFFFF);
         switch (mouseMessage)
         {
-            case 0x0205: // WM_RBUTTONUP
-            case 0x007B: // WM_CONTEXTMENU
-            case 0x0202: // WM_LBUTTONUP
+            // 只认 WM_CONTEXTMENU：右键在 v4 下先来一个 WM_RBUTTONUP，两个都弹菜单会弹两次或重入。
+            case WmContextMenu:
+            case NinContextMenu:
+            // 左键 / 键盘选中：v4 发 NIN_SELECT 和 NIN_KEYSELECT，不再发 WM_LBUTTONUP。
+            case NinSelect:
+            case NinKeySelect:
                 ShowMenu();
                 break;
         }

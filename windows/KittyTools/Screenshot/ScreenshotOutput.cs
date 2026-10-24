@@ -1,4 +1,4 @@
-﻿// 截图输出：裁出选区的像素、编 PNG、复制（PNG + CF_DIBV5，同时记进剪贴板历史）、
+// 截图输出：裁出选区的像素、编 PNG、复制（PNG + CF_DIBV5，同时记进剪贴板历史）、
 // 快速保存（系统的「屏幕截图」文件夹，设置里可改）、另存为（Windows App SDK 的 FileSavePicker）。
 using System.Runtime.InteropServices;
 using KittyTools.Infrastructure;
@@ -30,20 +30,24 @@ internal static partial class ScreenshotOutput
         return png is not null && await CopyPngAsync(png, screen, selection);
     }
 
-    public static Task<bool> CopyPngAsync(byte[] png, FrozenScreen screen, Core.RectD selection)
+    public static async Task<bool> CopyPngAsync(byte[] png, FrozenScreen screen, Core.RectD selection)
     {
         var rect = SelectionPixels(screen, selection);
-        if (!ClipboardWriter.WriteImagePng(png))
+        // DIB 先在后台转好，写剪贴板时一次写完（第二版 §2 第 7 条）。
+        var prepared = await ClipboardWriter.PrepareImageAsync(png);
+        if (!ClipboardWriter.WriteImagePng(prepared.Png, prepared.Dib))
         {
             NoticeHost.Show("没能复制", "剪贴板被别的程序占着", NoticeTone.Error);
-            return Task.FromResult(false);
+            Log.Warn("screenshot.copy-failed");
+            return false;
         }
 
         var service = ClipboardService.Instance;
         service?.MarkOwnWrite();
         service?.Store.RecordImage(png, rect.Width, rect.Height, null, "截图");
         NoticeHost.Show("已复制截图", $"{rect.Width} × {rect.Height}", NoticeTone.Normal);
-        return Task.FromResult(true);
+        Log.Info($"screenshot.copy ok=true {rect.Width}x{rect.Height}");
+        return true;
     }
 
     public static async Task<string?> QuickSaveAsync(FrozenScreen screen, Core.RectD selection)

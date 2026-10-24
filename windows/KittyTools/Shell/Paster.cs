@@ -1,8 +1,10 @@
 // 写剪贴板和发 Ctrl+V / Ctrl+C。PLAN §5.5：
 // 收起面板 → 还前台 → 等它真的到前台 → 写剪贴板 → 等修饰键松开 → 发 Ctrl+V。
 // 目标窗口是管理员时只写剪贴板、不粘贴，轻提示让用户手动粘。
+// 修饰键还按着就补发抬起（Ctrl+Alt+C / Ctrl+Shift+V 那种事故），详见 Core 的 ModifierRelease。
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using KittyTools.Core;
 using KittyTools.Infrastructure;
 using Windows.Win32;
 using Windows.Win32.Foundation;
@@ -30,6 +32,7 @@ internal static unsafe class Paster
         var reached = Foreground.Restore(target);
         if (!reached)
         {
+            // 没回到目标窗口就别发 Ctrl+V：那会粘进当时在前台的别的窗口（第二版 §2 第 3 条）。
             Log.Warn("paste.foreground-failed");
         }
 
@@ -48,7 +51,12 @@ internal static unsafe class Paster
             return false;
         }
 
-        Keyboard.WaitModifiersReleased(300);
+        if (!reached)
+        {
+            NoticeHost.Show("已复制", "没能切回原窗口，请手动粘贴", NoticeTone.Warning);
+            return false;
+        }
+
         var sent = Keyboard.SendCtrlV();
         if (!sent)
         {
@@ -64,32 +72,90 @@ internal static unsafe class Paster
 
 internal static unsafe class Keyboard
 {
-    public static void TapAlt()
+    /// <summary>Ctrl / Alt / Shift / Win 都按着时的虚拟键码（等它们松开用）。</summary>
+    private static readonly int[] ModifierVirtualKeys =
+    {
+        0x11, 0x12, 0x10, 0x5B, 0x5C,
+    };
+
+    /// <summary>等修饰键松开，最多 maxMs；还按着就按开头读到的状态补发它们的抬起。</summary>
+    public static double WaitAndReleaseModifiers(int maxMs)
+    {
+        var started = Stopwatch.GetTimestamp();
+        // 状态在函数开头读一次，作为参数传进纯函数 ModifierRelease.Plan。
+        var control = IsDown(0x11);
+        var alt = IsDown(0x12);
+        var shift = IsDown(0x10);
+        var leftWindows = IsDown(0x5B);
+        var rightWindows = IsDown(0x5C);
+        if (!control && !alt && !shift && !leftWindows && !rightWindows)
+        {
+            return 0;
+        }
+
+        var deadline = started + (long)(Stopwatch.Frequency * maxMs / 1000.0);
+        while (Stopwatch.GetTimestamp() < deadline)
+        {
+            if (ModifierVirtualKeys.All(key => !IsDown(key)))
+            {
+                return (Stopwatch.GetTimestamp() - started) * 1000.0 / Stopwatch.Frequency;
+            }
+
+            Thread.Sleep(5);
+        }
+
+        var plan = ModifierRelease.Plan(control, alt, shift, leftWindows, rightWindows);
+        ReleaseModifiers(plan);
+        return (Stopwatch.GetTimestamp() - started) * 1000.0 / Stopwatch.Frequency;
+    }
+
+    /// <summary>按计划补发抬起：Alt 之前先敲一下没分配的 vkE8，免得目标窗口激活菜单栏。</summary>
+    public static void ReleaseModifiers(IReadOnlyList<ModifierKey> plan)
+    {
+        Span<INPUT> inputs = stackalloc INPUT[1];
+        foreach (var key in plan)
+        {
+            if (ModifierRelease.NeedsAltGuard(key))
+            {
+                TapUnassigned();
+            }
+
+            inputs[0] = KeyInput((VIRTUAL_KEY)ModifierRelease.VirtualKey(key), KEYBD_EVENT_FLAGS.KEYEVENTF_KEYUP);
+            SendInputs(inputs);
+        }
+
+        if (plan.Count > 0)
+        {
+            Log.Info($"keys.modifiers-released {string.Join(',', plan)}");
+        }
+    }
+
+    /// <summary>敲一下没分配的 vkE8（按下 + 抬起）。</summary>
+    public static void TapUnassigned()
     {
         Span<INPUT> inputs = stackalloc INPUT[2];
-        inputs[0] = KeyInput((VIRTUAL_KEY)0x12, KEYBD_EVENT_FLAGS.KEYEVENTF_EXTENDEDKEY);
-        inputs[1] = KeyInput((VIRTUAL_KEY)0x12, KEYBD_EVENT_FLAGS.KEYEVENTF_KEYUP | KEYBD_EVENT_FLAGS.KEYEVENTF_EXTENDEDKEY);
-        Send(inputs);
+        inputs[0] = KeyInput((VIRTUAL_KEY)ModifierRelease.TapVirtualKey, 0);
+        inputs[1] = KeyInput((VIRTUAL_KEY)ModifierRelease.TapVirtualKey, KEYBD_EVENT_FLAGS.KEYEVENTF_KEYUP);
+        SendInputs(inputs);
     }
 
-    public static bool SendCtrlV()
-    {
-        Span<INPUT> inputs = stackalloc INPUT[4];
-        inputs[0] = KeyInput((VIRTUAL_KEY)0x11, 0);
-        inputs[1] = KeyInput((VIRTUAL_KEY)0x56, 0);
-        inputs[2] = KeyInput((VIRTUAL_KEY)0x56, KEYBD_EVENT_FLAGS.KEYEVENTF_KEYUP);
-        inputs[3] = KeyInput((VIRTUAL_KEY)0x11, KEYBD_EVENT_FLAGS.KEYEVENTF_KEYUP);
-        return Send(inputs) == 4;
-    }
+    /// <summary>还前台失败时的兜底：先敲一下 vkE8 再 SetForegroundWindow（同 PLAN §5.4）。</summary>
+    public static void TapAlt() => TapUnassigned();
 
-    public static bool SendCtrlC()
+    public static bool SendCtrlV() => SendCtrlCombo((VIRTUAL_KEY)0x56);
+
+    public static bool SendCtrlC() => SendCtrlCombo((VIRTUAL_KEY)0x43);
+
+    private static bool SendCtrlCombo(VIRTUAL_KEY key)
     {
+        // 先等修饰键松开（最多 300 ms）；还按着就补发抬起，免得变成 Ctrl+Alt+V / Ctrl+Shift+V。
+        WaitAndReleaseModifiers(300);
         Span<INPUT> inputs = stackalloc INPUT[4];
         inputs[0] = KeyInput((VIRTUAL_KEY)0x11, 0);
-        inputs[1] = KeyInput((VIRTUAL_KEY)0x43, 0);
-        inputs[2] = KeyInput((VIRTUAL_KEY)0x43, KEYBD_EVENT_FLAGS.KEYEVENTF_KEYUP);
+        inputs[1] = KeyInput(key, 0);
+        inputs[2] = KeyInput(key, KEYBD_EVENT_FLAGS.KEYEVENTF_KEYUP);
         inputs[3] = KeyInput((VIRTUAL_KEY)0x11, KEYBD_EVENT_FLAGS.KEYEVENTF_KEYUP);
-        return Send(inputs) == 4;
+        return SendInputs(inputs) == 4;
     }
 
     public static bool SendHotkey(VIRTUAL_KEY key, bool alt = false)
@@ -100,31 +166,7 @@ internal static unsafe class Keyboard
         inputs[index++] = KeyInput(key, 0);
         inputs[index++] = KeyInput(key, KEYBD_EVENT_FLAGS.KEYEVENTF_KEYUP);
         if (alt) inputs[index++] = KeyInput((VIRTUAL_KEY)0x12, KEYBD_EVENT_FLAGS.KEYEVENTF_KEYUP);
-        return Send(inputs[..index]) == (uint)index;
-    }
-
-    public static double WaitModifiersReleased(int maxMs)
-    {
-        var started = Stopwatch.GetTimestamp();
-        var deadline = started + (long)(Stopwatch.Frequency * maxMs / 1000.0);
-        while (Stopwatch.GetTimestamp() < deadline)
-        {
-            if (!IsDown(0x11) && !IsDown(0x12) && !IsDown(0x10) && !IsDown(0x5B) && !IsDown(0x5C))
-            {
-                return (Stopwatch.GetTimestamp() - started) * 1000.0 / Stopwatch.Frequency;
-            }
-
-            Thread.Sleep(5);
-        }
-
-        // 还按着就补发它们的抬起。补 Alt 之前先敲一下没分配的 VK 0xE8，
-        // 免得目标窗口把单独一个 Alt 当成「激活菜单栏」。
-        if (IsDown(0x12))
-        {
-            SendHotkey((VIRTUAL_KEY)0xE8, alt: false);
-        }
-
-        return (Stopwatch.GetTimestamp() - started) * 1000.0 / Stopwatch.Frequency;
+        return SendInputs(inputs[..index]) == (uint)index;
     }
 
     public static bool IsDown(int vk) => (PInvoke.GetAsyncKeyState(vk) & 0x8000) != 0;
@@ -143,7 +185,7 @@ internal static unsafe class Keyboard
         },
     };
 
-    private static uint Send(ReadOnlySpan<INPUT> inputs)
+    private static uint SendInputs(ReadOnlySpan<INPUT> inputs)
     {
         fixed (INPUT* p = inputs)
         {

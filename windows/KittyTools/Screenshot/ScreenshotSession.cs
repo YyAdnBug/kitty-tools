@@ -1,4 +1,4 @@
-﻿// 一次截图会话：冻结帧 → 每块屏一个遮罩 → 框选 / 吸附 / 放大镜 / 快捷键出图。
+// 一次截图会话：冻结帧 → 每块屏一个遮罩 → 框选 / 吸附 / 放大镜 / 快捷键出图。
 // 截图模式出图后停下（标注工具栏在下一轮补）；识字 / 截图翻译模式松手就确认。
 // 会话期间暂停全部全局热键，结束再注册回来。
 using KittyTools.Core;
@@ -44,8 +44,9 @@ internal sealed class ScreenshotSession
 
     public static void Start(ScreenshotMode mode)
     {
-        if (_current is not null)
+        if (_current is not null || TranslateHost.IsSelectionBusy)
         {
+            // 划词还在取词：不要叠一次截图（两边都要拿剪贴板 / 前台）。
             return;
         }
 
@@ -73,6 +74,7 @@ internal sealed class ScreenshotSession
         var windows = WindowList.Capture();
         var session = new ScreenshotSession(mode, screens, windows);
         _current = session;
+        Log.Info($"screenshot.begin mode={mode} screens={screens.Count}");
         session.ShowOverlays();
     }
 
@@ -237,7 +239,30 @@ internal sealed class ScreenshotSession
         }
 
         _overlays.Clear();
+        // 冻结帧（每块屏「宽 × 高 × 4」字节）和遮罩上的 CanvasBitmap 都在大对象堆里：
+        // 会话结束就把像素放掉、引用清空，再延后一拍做一次带大对象堆压缩的 GC
+        // （Close 之后 WinUI 还要把窗口从内部列表里放掉，紧接着 GC 收不到）。
+        foreach (var screen in Screens)
+        {
+            screen.ReleasePixels();
+        }
+
+        Screens.Clear();
+        Windows.Clear();
         ShellRuntime.Instance?.HotKeys.RegisterAll(SettingsService.Current);
+        ReleaseCapturedMemory();
+    }
+
+    private static void ReleaseCapturedMemory()
+    {
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(400);
+            System.Runtime.GCSettings.LargeObjectHeapCompactionMode =
+                System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
+            GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
+            Log.Info("screenshot.memory-released");
+        });
     }
 
     private async Task CopyRecognizedTextAsync(FrozenScreen screen, RectD selection)

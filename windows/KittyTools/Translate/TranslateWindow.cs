@@ -14,7 +14,6 @@ using Windows.Graphics;
 using Windows.System;
 using Windows.Win32;
 using Windows.Win32.Foundation;
-using Windows.Win32.Graphics.Gdi;
 using Windows.Win32.UI.WindowsAndMessaging;
 using Color = Windows.UI.Color;
 
@@ -281,6 +280,23 @@ internal sealed unsafe partial class TranslateWindow : Window
         }
     }
 
+    /// <summary>
+    /// 剪贴板里的「翻译」（Ctrl+T）：浮窗只露出、不抢焦点，剪贴板面板留着（PLAN §7.4）。
+    /// 面板还在前台，所以这里不能激活；点浮窗外面（包括点回面板）自己收起。
+    /// </summary>
+    public void ShowTextPassive(string text)
+    {
+        _noActivate = true;
+        ShowCore(activate: false);
+        ApplyNoActivateStyle();
+        _source.Text = text;
+        _coordinator.Translate(text);
+        PositionAtPointer(save: false);
+        PInvoke.ShowWindow(_hwnd, (SHOW_WINDOW_CMD)4); // SW_SHOWNOACTIVATE
+        OutsideClickHook.Install(_hwnd, () => Hide(restoreForeground: false));
+        ResizeToContent();
+    }
+
     public void ToggleInput()
     {
         if (_visible && !_noActivate)
@@ -407,7 +423,7 @@ internal sealed unsafe partial class TranslateWindow : Window
     {
         if (args.DidSizeChange && !_resizing && sender.Size.Width > 0)
         {
-            var scale = PInvoke.GetDpiForWindow(_hwnd) / 96.0;
+            var scale = Displays.AtWindow(_hwnd).Scale;
             _widthDip = (int)Math.Round(sender.Size.Width / scale);
         }
     }
@@ -536,12 +552,12 @@ internal sealed unsafe partial class TranslateWindow : Window
             return;
         }
 
-        var scale = PInvoke.GetDpiForWindow(_hwnd) / 96.0;
-        var work = WorkArea();
-        var workHeightDip = work.bottom - work.top;
-        var heightDip = Math.Clamp(NeededHeightDip(), MinHeightDip, workHeightDip * 0.85);
-        var widthPx = (int)Math.Round(_widthDip * scale);
-        var heightPx = (int)Math.Round(heightDip * scale);
+        // 窗口已经在这块屏上了：按它所在显示器的缩放比例换算。
+        var display = Displays.AtWindow(_hwnd);
+        var maxHeightDip = display.Work.Height / display.Scale * 0.85;
+        var heightDip = Math.Clamp(NeededHeightDip(), MinHeightDip, maxHeightDip);
+        var widthPx = MonitorLayout.Pixels(_widthDip, display.Scale);
+        var heightPx = MonitorLayout.Pixels(heightDip, display.Scale);
         if (Math.Abs(AppWindow.Size.Height - heightPx) < 2 && Math.Abs(AppWindow.Size.Width - widthPx) < 2)
         {
             return;
@@ -561,48 +577,35 @@ internal sealed unsafe partial class TranslateWindow : Window
 
     private void PositionAtPointer(bool save)
     {
-        var scale = PInvoke.GetDpiForWindow(_hwnd) / 96.0;
-        var work = WorkArea();
-        var widthPx = (int)Math.Round(_widthDip * scale);
-        var heightDip = Math.Clamp(NeededHeightDip(), MinHeightDip, (work.bottom - work.top) * 0.85);
-        var heightPx = (int)Math.Round(heightDip * scale);
-
-        int x;
-        int y;
-        if (SettingsService.Current.TranslateWindowPosition == "last" && save is false &&
-            SettingsService.Current.TranslateWindowX != 0)
+        var settings = SettingsService.Current;
+        var useSaved = settings.TranslateWindowPosition == "last" && !save && settings.TranslateWindowX != 0;
+        if (useSaved)
         {
-            x = (int)SettingsService.Current.TranslateWindowX;
-            y = (int)SettingsService.Current.TranslateWindowY;
-        }
-        else
-        {
-            PInvoke.GetCursorPos(out var cursor);
-            x = cursor.X + (int)Math.Round(12 * scale);
-            y = cursor.Y + (int)Math.Round(12 * scale);
-            if (x + widthPx > work.right)
-            {
-                x = cursor.X - widthPx - (int)Math.Round(12 * scale);
-            }
-
-            if (y + heightPx > work.bottom)
-            {
-                y = cursor.Y - heightPx - (int)Math.Round(12 * scale);
-            }
+            // 上次的位置：按那块屏（存的是像素坐标）的缩放比例换算尺寸。
+            var savedX = (int)settings.TranslateWindowX;
+            var savedY = (int)settings.TranslateWindowY;
+            var display = Displays.AtPoint(savedX, savedY);
+            var maxHeightDip = display.Work.Height / display.Scale * 0.85;
+            var heightDip = Math.Clamp(NeededHeightDip(), MinHeightDip, maxHeightDip);
+            var rect = MonitorLayout.Clamp(
+                new PixelRect(
+                    savedX, savedY,
+                    MonitorLayout.Pixels(_widthDip, display.Scale),
+                    MonitorLayout.Pixels(heightDip, display.Scale)),
+                display.Work);
+            AppWindow.MoveAndResize(new RectInt32(rect.X, rect.Y, rect.Width, rect.Height));
+            return;
         }
 
-        x = Math.Clamp(x, work.left, Math.Max(work.left, work.right - widthPx));
-        y = Math.Clamp(y, work.top, Math.Max(work.top, work.bottom - heightPx));
-        AppWindow.MoveAndResize(new RectInt32(x, y, widthPx, heightPx));
-    }
-
-    private static (int left, int top, int right, int bottom) WorkArea()
-    {
+        // 跟随鼠标：按鼠标所在显示器自己的缩放比例算，放不下就翻到左边 / 上边。
+        var pointerDisplay = Displays.AtCursor();
+        var height = NeededHeightDip();
+        var maxHeight = pointerDisplay.Work.Height / pointerDisplay.Scale * 0.85;
+        height = Math.Clamp(height, MinHeightDip, maxHeight);
         PInvoke.GetCursorPos(out var cursor);
-        var monitor = PInvoke.MonitorFromPoint(cursor, MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST);
-        var info = new MONITORINFO { cbSize = (uint)sizeof(MONITORINFO) };
-        PInvoke.GetMonitorInfo(monitor, ref info);
-        return (info.rcWork.left, info.rcWork.top, info.rcWork.right, info.rcWork.bottom);
+        var placed = MonitorLayout.NearPointer(
+            cursor.X, cursor.Y, pointerDisplay.Work, pointerDisplay.Scale, _widthDip, height);
+        AppWindow.MoveAndResize(new RectInt32(placed.X, placed.Y, placed.Width, placed.Height));
     }
 
     private void ShowLanguageMenu(Button anchor, bool target)
@@ -808,9 +811,15 @@ internal sealed unsafe partial class TranslateWindow : Window
 
     private sealed class CardView
     {
+        /// <summary>正文最多 8 行，超出的在卡片里滚动（PLAN §3.7 / PLAN-v2 §6 第 1 批）。</summary>
+        private const int MaxBodyLines = 8;
+
+        private const double BodyLineHeight = 21;
+
         private readonly TextBlock _name;
         private readonly TextBlock _status;
         private readonly TextBlock _body;
+        private readonly ScrollViewer _bodyScroll;
         private readonly TextBlock _error;
         private readonly ProgressRing _spinner;
         private readonly Button _copy;
@@ -841,9 +850,17 @@ internal sealed unsafe partial class TranslateWindow : Window
                 TextWrapping = TextWrapping.Wrap,
                 IsTextSelectionEnabled = true,
                 FontSize = 14,
-                LineHeight = 21,
-                MaxLines = 8,
-                TextTrimming = TextTrimming.WordEllipsis,
+                LineHeight = BodyLineHeight,
+            };
+            // 正文不截断、改成卡片里滚动：下面还有内容时能看到自己的滚动条。
+            _bodyScroll = new ScrollViewer
+            {
+                Content = _body,
+                MaxHeight = MaxBodyLines * BodyLineHeight,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                VerticalScrollMode = ScrollMode.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                HorizontalScrollMode = ScrollMode.Disabled,
             };
             _error = new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 12, Foreground = new SolidColorBrush(Color.FromArgb(255, 200, 60, 60)) };
             _copy = SmallButton("复制");
@@ -875,7 +892,7 @@ internal sealed unsafe partial class TranslateWindow : Window
 
             var panel = new StackPanel { Spacing = 6 };
             panel.Children.Add(header);
-            panel.Children.Add(_body);
+            panel.Children.Add(_bodyScroll);
             panel.Children.Add(_error);
             Root = new Border
             {
@@ -894,8 +911,19 @@ internal sealed unsafe partial class TranslateWindow : Window
         public void Update(TranslateCard card)
         {
             var hasText = card.Text.Length > 0;
-            _body.Text = card.Text;
-            _body.Visibility = hasText ? Visibility.Visible : Visibility.Collapsed;
+            // 生成中自动跟到末尾；用户往上滚过就不再跟（PLAN §3.7）。
+            var follow = IsNearBottom();
+            if (_body.Text != card.Text)
+            {
+                _body.Text = card.Text;
+                if (follow)
+                {
+                    _body.UpdateLayout();
+                    _bodyScroll.ChangeView(null, _bodyScroll.ScrollableHeight, null, disableAnimation: true);
+                }
+            }
+
+            _bodyScroll.Visibility = hasText ? Visibility.Visible : Visibility.Collapsed;
             _error.Visibility = Visibility.Collapsed;
             _spinner.IsActive = card.State is CardState.Waiting or CardState.Running;
             _spinner.Visibility = _spinner.IsActive ? Visibility.Visible : Visibility.Collapsed;
@@ -938,6 +966,13 @@ internal sealed unsafe partial class TranslateWindow : Window
             {
                 _actions.Children.Add(_copy);
             }
+        }
+
+        private bool IsNearBottom()
+        {
+            // 还有 8 px 以内就算在底部：流式输出时跟着走。
+            var remaining = _bodyScroll.ScrollableHeight - _bodyScroll.VerticalOffset;
+            return remaining <= 8 || double.IsNaN(remaining);
         }
 
         private static Button SmallButton(string text) => new()

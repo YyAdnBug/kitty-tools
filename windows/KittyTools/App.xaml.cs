@@ -44,6 +44,7 @@ public partial class App : Application
             Log.Initialize();
             SettingsService.Load();
             Theme.ApplyAccent();
+            Theme.WatchSystemAccent();
             _runtime = ShellRuntime.Start();
         }
         catch (Exception ex)

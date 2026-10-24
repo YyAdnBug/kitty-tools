@@ -2,6 +2,7 @@
 // WinUI Window + OverlappedPresenter：无标题栏、保留边框（系统圆角 / 阴影 / 细描边）、
 // 置顶、不可缩放、不进任务栏和 Alt+Tab；内容用亚克力。
 // 关闭：Esc、Ctrl+W、再按一次热键、失去激活（不还前台）。
+using KittyTools.Core;
 using KittyTools.Infrastructure;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
@@ -12,7 +13,6 @@ using Microsoft.UI.Xaml.Media;
 using Windows.Graphics;
 using Windows.Win32;
 using Windows.Win32.Foundation;
-using Windows.Win32.Graphics.Gdi;
 using Windows.Win32.UI.WindowsAndMessaging;
 
 namespace KittyTools;
@@ -184,21 +184,12 @@ internal sealed unsafe class OverlayWindow : Window
 
     private void PositionAtPointer(int heightDip)
     {
-        PInvoke.GetCursorPos(out var cursor);
-        var monitor = PInvoke.MonitorFromPoint(cursor, MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST);
-        var info = new MONITORINFO { cbSize = (uint)sizeof(MONITORINFO) };
-        if (!PInvoke.GetMonitorInfo(monitor, ref info))
-        {
-            return;
-        }
-
-        var scale = PInvoke.GetDpiForWindow(_hwnd) / 96.0;
-        var width = (int)Math.Round(WidthDip * scale);
-        var height = (int)Math.Round(heightDip * scale);
-        var work = info.rcWork;
-        var x = work.left + Math.Max(0, (work.right - work.left - width) / 2);
-        var y = work.top + (int)Math.Round((work.bottom - work.top) * 0.2);
-        AppWindow.MoveAndResize(new RectInt32(x, y, width, height));
+        // 按鼠标所在显示器自己的缩放比例算尺寸，不用窗口当前所在那块屏的 DPI
+        // （两块屏缩放不同时，720 DIP 会算成一块屏的像素、摆到另一块屏上就缩水了）。
+        var display = Displays.AtCursor();
+        var rect = MonitorLayout.Overlay(
+            display.Work, display.Scale, WidthDip, heightDip, MonitorLayout.ClipboardTopFraction);
+        AppWindow.MoveAndResize(new RectInt32(rect.X, rect.Y, rect.Width, rect.Height));
     }
 }
 

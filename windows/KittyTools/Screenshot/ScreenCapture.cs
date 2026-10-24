@@ -22,11 +22,18 @@ internal sealed class FrozenScreen
 
     public required double Scale { get; init; }
 
-    public required byte[] Bgra { get; init; }
+    public required byte[] Bgra { get; set; }
 
     public int Width => Bounds.Width;
 
     public int Height => Bounds.Height;
+
+    /// <summary>
+    /// 会话结束时把像素放掉：这块「宽 × 高 × 4」的数组在大对象堆里，
+    /// 光等 GC 就是「截一次图多 32 MB、关掉不还」（第二版 §2 第 6 条）。
+    /// 调用之后不能再画这一帧。
+    /// </summary>
+    public void ReleasePixels() => Bgra = Array.Empty<byte>();
 
     public byte[] Crop(PixelBounds rect)
     {

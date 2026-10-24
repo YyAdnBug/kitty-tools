@@ -1,4 +1,5 @@
 // 读剪贴板：隐私标记 → 来源 → 内容（文件 → 文本 + 格式 → 图片）。
+// 一次更新只开一次剪贴板：隐私标记和内容在同一次打开里读完（第二版 §2 P3）。
 // 只读要用的那几种格式（读格式可能触发对方的延迟渲染）。OpenClipboard 失败时隔 30 ms 重试，最多 5 次。
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -18,6 +19,9 @@ internal sealed record ClipboardRead(
     string? Rtf,
     byte[]? ImageData,
     bool ImageIsPng);
+
+/// <summary>一次剪贴板更新的全部信息：隐私标记（是的话不带内容）+ 内容。</summary>
+internal sealed record ClipboardCapture(bool IsPrivate, ClipboardRead? Content);
 
 /// <summary>划词取词的 Ctrl+C 兜底：只备份这几样常用格式，还原时再写回去。</summary>
 internal sealed record ClipboardSnapshot(
@@ -41,6 +45,9 @@ internal static unsafe partial class ClipboardFormats
     /// <summary>带格式数据超过就只留纯文本。</summary>
     public const int MaxRichBytes = 2 * 1_048_576;
 
+    /// <summary>图片最多读这么多字节（8K 的 32 位 DIB 约 132 MB，再大就只按 PNG 记）。</summary>
+    public const int MaxImageBytes = 128 * 1_048_576;
+
     private const int MaxOpenAttempts = 5;
     private const int OpenRetryDelayMs = 30;
 
@@ -62,17 +69,49 @@ internal static unsafe partial class ClipboardFormats
 
         try
         {
-            if (Has(ExcludeFromMonitorFormat) || Has(ClipboardViewerIgnoreFormat))
-            {
-                return true;
-            }
-
-            return Has(CanIncludeInHistoryFormat) && ReadDword(CanIncludeInHistoryFormat) == 0;
+            return IsPrivateCore();
         }
         finally
         {
             PInvoke.CloseClipboard();
         }
+    }
+
+    /// <summary>
+    /// 一次更新只开一次剪贴板：先看隐私标记，不是隐私的就把内容读出来。
+    /// 打开失败返回 null（调用方当这次更新没发生）。
+    /// </summary>
+    public static ClipboardCapture? Capture()
+    {
+        if (!OpenClipboard())
+        {
+            Log.Warn("clipboard.read-open-failed");
+            return null;
+        }
+
+        try
+        {
+            if (IsPrivateCore())
+            {
+                return new ClipboardCapture(true, null);
+            }
+
+            return new ClipboardCapture(false, ReadCore());
+        }
+        finally
+        {
+            PInvoke.CloseClipboard();
+        }
+    }
+
+    private static bool IsPrivateCore()
+    {
+        if (Has(ExcludeFromMonitorFormat) || Has(ClipboardViewerIgnoreFormat))
+        {
+            return true;
+        }
+
+        return Has(CanIncludeInHistoryFormat) && ReadDword(CanIncludeInHistoryFormat) == 0;
     }
 
     /// <summary>备份常用格式（划词时 Ctrl+C 会覆盖剪贴板）。</summary>
@@ -88,9 +127,9 @@ internal static unsafe partial class ClipboardFormats
             var text = Has(CF_UNICODETEXT) ? ReadText() : null;
             var html = Has(HtmlFormat) ? ReadRich(HtmlFormat) : null;
             var rtf = Has(RtfFormat) ? ReadRich(RtfFormat) : null;
-            var png = PngFormat != 0 && Has(PngFormat) ? ReadBlob(PngFormat, MaxTextBytes * 2) : null;
-            var dib = Has(CF_DIBV5) ? ReadBlob(CF_DIBV5, MaxTextBytes * 2)
-                : Has(CF_DIB) ? ReadBlob(CF_DIB, MaxTextBytes * 2)
+            var png = PngFormat != 0 && Has(PngFormat) ? ReadBlobWithin(PngFormat, MaxImageBytes) : null;
+            var dib = Has(CF_DIBV5) ? ReadBlobWithin(CF_DIBV5, MaxImageBytes)
+                : Has(CF_DIB) ? ReadBlobWithin(CF_DIB, MaxImageBytes)
                 : null;
             var files = Has(CF_HDROP) ? ReadFiles() : new List<string>();
             return new ClipboardSnapshot(text, html, rtf, png, dib, files);
@@ -171,51 +210,58 @@ internal static unsafe partial class ClipboardFormats
 
         try
         {
-            if (Has(CF_HDROP))
-            {
-                var paths = ReadFiles();
-                if (paths.Count > 0)
-                {
-                    return new ClipboardRead(ClipKind.Files, null, string.Join('\n', paths), null, null, null, false);
-                }
-            }
-
-            if (Has(CF_UNICODETEXT))
-            {
-                var text = ReadText();
-                if (!string.IsNullOrEmpty(text) && !string.IsNullOrWhiteSpace(text) &&
-                    Encoding.UTF8.GetByteCount(text) <= MaxTextBytes)
-                {
-                    var html = ReadRich(HtmlFormat);
-                    var rtf = html is null ? ReadRich(RtfFormat) : null;
-                    return new ClipboardRead(ClipKind.Text, text, null, html, rtf, null, false);
-                }
-            }
-
-            if (PngFormat != 0 && Has(PngFormat))
-            {
-                var png = ReadBlob(PngFormat);
-                if (png is { Length: > 0 })
-                {
-                    return new ClipboardRead(ClipKind.Image, null, null, null, null, png, true);
-                }
-            }
-
-            if (Has(CF_DIBV5) || Has(CF_DIB))
-            {
-                var dib = ReadBlob(Has(CF_DIBV5) ? CF_DIBV5 : CF_DIB);
-                if (dib is { Length: > 0 })
-                {
-                    return new ClipboardRead(ClipKind.Image, null, null, null, null, dib, false);
-                }
-            }
-
-            return null;
+            return ReadCore();
         }
         finally
         {
             PInvoke.CloseClipboard();
         }
+    }
+
+    /// <summary>调用方已经打开着剪贴板。</summary>
+    private static ClipboardRead? ReadCore()
+    {
+        if (Has(CF_HDROP))
+        {
+            var paths = ReadFiles();
+            if (paths.Count > 0)
+            {
+                return new ClipboardRead(ClipKind.Files, null, string.Join('\n', paths), null, null, null, false);
+            }
+        }
+
+        if (Has(CF_UNICODETEXT))
+        {
+            var text = ReadText();
+            if (!string.IsNullOrEmpty(text) && !string.IsNullOrWhiteSpace(text) &&
+                Encoding.UTF8.GetByteCount(text) <= MaxTextBytes)
+            {
+                // PLAN §6.1：HTML 和 RTF 两样都存（以前有 HTML 就不读 RTF）。
+                var html = ReadRich(HtmlFormat);
+                var rtf = ReadRich(RtfFormat);
+                return new ClipboardRead(ClipKind.Text, text, null, html, rtf, null, false);
+            }
+        }
+
+        if (PngFormat != 0 && Has(PngFormat))
+        {
+            var png = ReadBlobWithin(PngFormat, MaxImageBytes);
+            if (png is { Length: > 0 })
+            {
+                return new ClipboardRead(ClipKind.Image, null, null, null, null, png, true);
+            }
+        }
+
+        if (Has(CF_DIBV5) || Has(CF_DIB))
+        {
+            var dib = ReadBlobWithin(Has(CF_DIBV5) ? CF_DIBV5 : CF_DIB, MaxImageBytes);
+            if (dib is { Length: > 0 })
+            {
+                return new ClipboardRead(ClipKind.Image, null, null, null, null, dib, false);
+            }
+        }
+
+        return null;
     }
 
     /// <summary>剪贴板写入方（拿不到时用当时的前台窗口，标成推测值）。本 App 自己的窗口返回 null。</summary>
@@ -396,6 +442,33 @@ internal static unsafe partial class ClipboardFormats
             var length = (int)Math.Min(size, (nuint)maximum);
             var bytes = new byte[length];
             new ReadOnlySpan<byte>(pointer, length).CopyTo(bytes);
+            return bytes;
+        }
+        finally
+        {
+            GlobalUnlock(local);
+        }
+    }
+
+    /// <summary>超过上限就当读不到：图片截一半写回去会坏，不能截断。</summary>
+    private static byte[]? ReadBlobWithin(uint format, int maximum)
+    {
+        var pointer = Lock(format, out var size, out var local);
+        if (pointer is null || size == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            if (size > (nuint)maximum)
+            {
+                Log.Warn($"clipboard.read-too-large format={format} bytes={size}");
+                return null;
+            }
+
+            var bytes = new byte[(int)size];
+            new ReadOnlySpan<byte>(pointer, bytes.Length).CopyTo(bytes);
             return bytes;
         }
         finally

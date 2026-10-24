@@ -1,5 +1,7 @@
 // 写剪贴板：文本（可选带 HTML / RTF）、图片（PNG + CF_DIBV5）、文件（CF_HDROP + 复制效果）。
 // 写完由 ClipboardService.MarkOwnWrite() 记下序号，监听那边就跳过这次自己写入。
+// 图片要的 DIB 有几百毫秒的转换：先在后台转好（PrepareImageAsync），再打开剪贴板一次写完，
+// 不占着全局剪贴板等编码（第二版 §2 第 7 条）。
 using System.Buffers.Binary;
 using System.Text;
 using KittyTools.Core;
@@ -10,13 +12,42 @@ using Windows.Win32.System.Memory;
 
 namespace KittyTools;
 
-internal static unsafe class ClipboardWriter
+internal static class ClipboardWriter
 {
-    public static bool WriteEntry(ClipEntry entry, string? html, string? rtf, bool plainText)
+    /// <summary>准备写进剪贴板的图片：PNG 原字节 + 后台转好的 CF_DIBV5 字节。</summary>
+    internal readonly record struct PreparedImage(byte[] Png, byte[]? Dib);
+
+    /// <summary>在后台把 PNG 转成 DIB（大图要几百毫秒，别放在 UI 线程上，也别占着剪贴板等）。</summary>
+    public static async Task<PreparedImage> PrepareImageAsync(byte[] png)
+    {
+        var dib = await Task.Run(() => ImageCodec.PngToDibAsync(png));
+        return new PreparedImage(png, dib);
+    }
+
+    public static async Task<PreparedImage?> PrepareImageAsync(ClipEntry entry)
+    {
+        if (!File.Exists(Paths.ImagesFile(entry.Id)))
+        {
+            return null;
+        }
+
+        try
+        {
+            var png = await File.ReadAllBytesAsync(Paths.ImagesFile(entry.Id));
+            return await PrepareImageAsync(png);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("clipboard.read-image-failed", ex);
+            return null;
+        }
+    }
+
+    public static bool WriteEntry(ClipEntry entry, string? html, string? rtf, bool plainText, byte[]? dib = null)
     {
         return entry.Kind switch
         {
-            ClipKind.Image => WriteImage(entry),
+            ClipKind.Image => WriteImage(entry, dib),
             ClipKind.Files => WriteFiles(entry.Files),
             _ => WriteText(entry.Text ?? string.Empty, plainText ? null : html, plainText ? null : rtf),
         };
@@ -61,7 +92,7 @@ internal static unsafe class ClipboardWriter
         }
     }
 
-    public static bool WriteImage(ClipEntry entry)
+    public static bool WriteImage(ClipEntry entry, byte[]? dib = null)
     {
         if (!File.Exists(Paths.ImagesFile(entry.Id)))
         {
@@ -79,31 +110,18 @@ internal static unsafe class ClipboardWriter
             return false;
         }
 
-        if (!ClipboardFormats.OpenClipboard())
-        {
-            return false;
-        }
-
-        try
-        {
-            if (!PInvoke.EmptyClipboard())
-            {
-                return false;
-            }
-
-            return WriteImageCore(png);
-        }
-        finally
-        {
-            PInvoke.CloseClipboard();
-        }
+        return WriteImagePng(png, dib);
     }
 
-    /// <summary>截图 / 钉图用：把 PNG 字节写进剪贴板（PNG + CF_DIBV5）。</summary>
-    public static bool WriteImagePng(byte[] png)
+    /// <summary>截图 / 钉图 / 剪贴板条目用：把 PNG 字节写进剪贴板（PNG + CF_DIBV5）。</summary>
+    public static bool WriteImagePng(byte[] png, byte[]? dib = null)
     {
+        // 没转好就当场转，但一定在打开剪贴板之前转完：转换期间别的程序还要能用剪贴板。
+        // 转换必须在后台线程上等（WinRT 的异步 API 在 UI 线程上阻塞等会等不到结果）。
+        dib ??= Task.Run(() => ImageCodec.PngToDibAsync(png)).GetAwaiter().GetResult();
         if (!ClipboardFormats.OpenClipboard())
         {
+            Log.Warn("clipboard.write-open-failed");
             return false;
         }
 
@@ -114,7 +132,7 @@ internal static unsafe class ClipboardWriter
                 return false;
             }
 
-            return WriteImageCore(png);
+            return WriteImageCore(png, dib);
         }
         finally
         {
@@ -122,10 +140,9 @@ internal static unsafe class ClipboardWriter
         }
     }
 
-    private static bool WriteImageCore(byte[] png)
+    private static bool WriteImageCore(byte[] png, byte[]? dib)
     {
         SetBytes(ClipboardFormats.PngFormat, png);
-        var dib = Task.Run(() => ImageCodec.PngToDibAsync(png)).GetAwaiter().GetResult();
         if (dib is { Length: > 0 })
         {
             SetBytes(ClipboardFormats.CF_DIBV5, dib);
@@ -136,9 +153,16 @@ internal static unsafe class ClipboardWriter
 
     public static bool WriteFiles(IReadOnlyList<string> paths)
     {
-        if (paths.Count == 0)
+        // 只有全都不在原处才算失败（PLAN §6.3 / mac）：还有的在，就只写还在的那几个。
+        var existing = paths.Where(path => File.Exists(path) || Directory.Exists(path)).ToList();
+        if (existing.Count == 0)
         {
             return false;
+        }
+
+        if (existing.Count != paths.Count)
+        {
+            Log.Info($"clipboard.write-files partial total={paths.Count} existing={existing.Count}");
         }
 
         if (!ClipboardFormats.OpenClipboard())
@@ -153,7 +177,7 @@ internal static unsafe class ClipboardWriter
                 return false;
             }
 
-            SetBytes(ClipboardFormats.CF_HDROP, BuildDropFiles(paths));
+            SetBytes(ClipboardFormats.CF_HDROP, BuildDropFiles(existing));
 
             // DROPEFFECT_COPY：资源管理器粘贴时是「复制」，不是「移动」。
             var effect = new byte[4];
@@ -193,7 +217,7 @@ internal static unsafe class ClipboardWriter
         return bytes;
     }
 
-    private static bool SetBytes(uint format, byte[] bytes)
+    private static unsafe bool SetBytes(uint format, byte[] bytes)
     {
         var memory = PInvoke.GlobalAlloc(GLOBAL_ALLOC_FLAGS.GMEM_MOVEABLE, (nuint)bytes.Length);
         if (memory == default)

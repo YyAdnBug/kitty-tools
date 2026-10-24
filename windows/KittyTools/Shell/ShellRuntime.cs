@@ -1,4 +1,4 @@
-﻿// 壳的运行时：隐藏窗口、托盘、热键、浮层、轻提示、设置窗和单实例转发。
+// 壳的运行时：隐藏窗口、托盘、热键、浮层、轻提示、设置窗和单实例转发。
 // 第 1 批只把壳做齐；各模块的入口先给轻提示，面板内容是占位。
 using KittyTools.Infrastructure;
 using Microsoft.UI.Dispatching;
@@ -11,6 +11,8 @@ internal sealed class ShellRuntime
 {
     private Window? _keeper;
     private SettingsWindow? _settingsWindow;
+    private string _hotKeySignature = string.Empty;
+    private bool? _autoCheck;
 
     public static ShellRuntime? Instance { get; private set; }
 
@@ -64,10 +66,11 @@ internal sealed class ShellRuntime
         HiddenWindow.Message += OnHiddenMessage;
         Tray.Add();
         HotKeys.Pressed += OnHotKey;
-        HotKeys.RegisterAll(SettingsService.Current);
+        RegisterHotKeys();
         SettingsService.Changed += OnSettingsChanged;
         var dispatcher = DispatcherQueue.GetForCurrentThread();
         UpdateService.Initialize(dispatcher!);
+        _autoCheck = SettingsService.Current.AutoCheckUpdates;
         UpdateService.Configure(SettingsService.Current.AutoCheckUpdates);
         SingleInstance.StartServer(() =>
             dispatcher?.TryEnqueue(() => ShowSettings(welcome: false)));
@@ -257,10 +260,36 @@ internal sealed class ShellRuntime
 
     private void OnSettingsChanged()
     {
-        HotKeys.RegisterAll(SettingsService.Current);
-        UpdateService.Configure(SettingsService.Current.AutoCheckUpdates);
+        // 只在热键真的变了时才重注册：每次保存都清空重注册的话，别的设置一改热键也会短暂失效
+        // （第二版 §2 第 1 条）。
+        var signature = HotKeySignature(SettingsService.Current);
+        if (signature != _hotKeySignature)
+        {
+            RegisterHotKeys();
+        }
+
+        if (_autoCheck != SettingsService.Current.AutoCheckUpdates)
+        {
+            _autoCheck = SettingsService.Current.AutoCheckUpdates;
+            UpdateService.Configure(SettingsService.Current.AutoCheckUpdates);
+        }
+
         Theme.ApplyAccent();
         TranslateHost.ApplyCopyTranslate();
         _settingsWindow?.RefreshTheme();
     }
+
+    /// <summary>重注册全部热键，并记下这次用的绑定组合（用来判断下次保存要不要重注册）。</summary>
+    private void RegisterHotKeys()
+    {
+        HotKeys.RegisterAll(SettingsService.Current);
+        _hotKeySignature = HotKeySignature(SettingsService.Current);
+    }
+
+    private static string HotKeySignature(Settings settings)
+        => string.Join(
+            '|',
+            settings.HotKeys
+                .OrderBy(hotkey => hotkey.Action, StringComparer.Ordinal)
+                .Select(hotkey => $"{hotkey.Action}:{hotkey.Modifiers}:{hotkey.VirtualKey}"));
 }

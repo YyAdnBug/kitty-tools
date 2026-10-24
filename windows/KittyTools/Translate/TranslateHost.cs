@@ -10,8 +10,12 @@ internal static class TranslateHost
     private static TranslateWindow? _window;
     private static bool _copyTranslateHooked;
     private static string? _lastCopyTranslated;
+    private static bool _selectionBusy;
 
     public static bool IsVisible => _window?.IsVisible == true;
+
+    /// <summary>正在「备份剪贴板 → Ctrl+C → 还原」取词：忙时忽略重复热键，截图也让路（第二版 §2 第 4 条）。</summary>
+    public static bool IsSelectionBusy => _selectionBusy;
 
     public static void Initialize() => ApplyCopyTranslate();
 
@@ -50,17 +54,37 @@ internal static class TranslateHost
 
     public static async void ShowSelection()
     {
-        OverlayHost.Hide(restoreForeground: false);
-        _window?.Hide(restoreForeground: false);
-        var text = await SelectionReader.ReadAsync(CancellationToken.None);
-        _window ??= new TranslateWindow();
-        if (string.IsNullOrWhiteSpace(text))
+        // 连按两次 Alt+E 时两次「备份剪贴板 → Ctrl+C → 还原」会交错，第二次备份到的是第一次
+        // Ctrl+C 的结果，用户原来的剪贴板就丢了。忙时直接忽略（同 mac：忙时忽略重复热键）。
+        if (_selectionBusy || ScreenshotSession.IsActive)
         {
-            _window.ShowInput(missedSelection: true);
+            Log.Info("translate.selection-busy");
+            return;
         }
-        else
+
+        _selectionBusy = true;
+        try
         {
-            _window.ShowSelection(text);
+            OverlayHost.Hide(restoreForeground: false);
+            _window?.Hide(restoreForeground: false);
+            var text = await SelectionReader.ReadAsync(CancellationToken.None);
+            _window ??= new TranslateWindow();
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                _window.ShowInput(missedSelection: true);
+            }
+            else
+            {
+                _window.ShowSelection(text);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error("translate.selection-failed", ex);
+        }
+        finally
+        {
+            _selectionBusy = false;
         }
     }
 
@@ -69,6 +93,13 @@ internal static class TranslateHost
         OverlayHost.Hide(restoreForeground: false);
         _window ??= new TranslateWindow();
         _window.ShowText(text, fromCopy);
+    }
+
+    /// <summary>剪贴板面板里的 Ctrl+T：剪贴板面板留着，浮窗只露出（PLAN §7.4）。</summary>
+    public static void ShowTextKeepOverlay(string text)
+    {
+        _window ??= new TranslateWindow();
+        _window.ShowTextPassive(text);
     }
 
     public static void Hide(bool restoreForeground = false) => _window?.Hide(restoreForeground);

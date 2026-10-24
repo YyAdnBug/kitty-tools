@@ -1,4 +1,4 @@
-﻿RegisterClassEx
+RegisterClassEx
 WNDCLASSEXW
 WNDPROC
 DefWindowProc
@@ -35,6 +35,7 @@ EnumDisplayMonitors
 GetSystemMetrics
 GetDpiForWindow
 GetDpiForMonitor
+GetDpiForSystem
 DwmSetWindowAttribute
 DwmGetWindowAttribute
 DwmFlush
@@ -152,12 +153,14 @@ IShellFolder
 IEnumIDList
 IShellItem
 IShellItemImageFactory
+SHCreateItemFromParsingName
 SIGDN
 SFGAO_FLAGS
 SIIGBF
 SIZE
 CoTaskMemFree
 GetObject
+DIBSECTION
 LockWorkStation
 ExitWindowsEx
 SHEmptyRecycleBin
@@ -177,3 +180,11 @@ BITMAPINFOHEADER
 DIB_USAGE
 CreateCompatibleDC
 DeleteDC
+IShellLinkW
+IPersistFile
+ShellLink
+SHDefExtractIcon
+SHGFI_FLAGS
+SLGP_FLAGS
+STGM
+SHGFI_FLAGS

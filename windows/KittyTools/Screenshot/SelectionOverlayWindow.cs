@@ -1,4 +1,4 @@
-﻿// 每块显示器一个全屏遮罩：画冻结帧、窗口高亮、框选、8 个手柄、尺寸胶囊和放大镜。
+// 每块显示器一个全屏遮罩：画冻结帧、窗口高亮、框选、8 个手柄、尺寸胶囊和放大镜。
 // 只让鼠标所在屏那个窗口拿键盘焦点；其它屏只负责显示同一份选区。
 using System.Runtime.InteropServices;
 using KittyTools.Core;
@@ -27,7 +27,7 @@ internal sealed partial class SelectionOverlayWindow : Window
     private static readonly Color HandleFill = Color.FromArgb(255, 255, 255, 255);
 
     private readonly FrozenScreen _screen;
-    private readonly ScreenshotSession _session;
+    private ScreenshotSession _session;
     private readonly CanvasControl _canvas;
     private readonly Canvas _root;
     private readonly Dictionary<AnnotationTool, Button> _toolButtons = new();
@@ -75,7 +75,7 @@ internal sealed partial class SelectionOverlayWindow : Window
             _hover = null;
             _canvas.Invalidate();
         };
-        _canvas.PointerWheelChanged += (_, e) => e.Handled = true;
+        _canvas.PointerWheelChanged += OnPointerWheel;
         _canvas.IsTabStop = true;
         _canvas.KeyDown += OnKeyDown;
         _root = new Canvas
@@ -96,8 +96,9 @@ internal sealed partial class SelectionOverlayWindow : Window
         ExtendsContentIntoTitleBar = true;
 
         _hwnd = (HWND)WinRT.Interop.WindowNative.GetWindowHandle(this);
-        _scale = PInvoke.GetDpiForWindow(_hwnd) / 96.0;
-        _scale = Math.Max(1, _scale);
+        // 直接用冻结帧里这块屏自己的缩放比例：构造时窗口还没挪到那块屏上，GetDpiForWindow 拿到的是错的
+        // （第二版 §2 第 5 条）。
+        _scale = Math.Max(1, screen.Scale);
         _canvas.Width = screen.Bounds.Width / _scale;
         _canvas.Height = screen.Bounds.Height / _scale;
 
@@ -120,11 +121,33 @@ internal sealed partial class SelectionOverlayWindow : Window
         _timer.Interval = TimeSpan.FromMilliseconds(20);
         _timer.IsRepeating = true;
         _timer.Tick += (_, _) => PollCursor();
-        Closed += (_, _) =>
-        {
-            _timer?.Stop();
-            _canvas.RemoveFromVisualTree();
-        };
+        Closed += (_, _) => Release();
+    }
+
+    /// <summary>
+    /// 关闭时把资源和事件都放掉：冻结帧的 CanvasBitmap 不 Dispose、Bgra 字节数组还在大对象堆里，
+    /// 就是「截一次图多 32 MB、关掉不还」（第二版 §2 第 6 条）。
+    /// </summary>
+    public void Release()
+    {
+        _timer?.Stop();
+        _timer = null;
+        _canvas.Draw -= OnDraw;
+        _canvas.PointerPressed -= OnPointerPressed;
+        _canvas.PointerMoved -= OnPointerMoved;
+        _canvas.PointerReleased -= OnPointerReleased;
+        _canvas.PointerWheelChanged -= OnPointerWheel;
+        _canvas.KeyDown -= OnKeyDown;
+        _bitmap?.Dispose();
+        _bitmap = null;
+        _windows.Clear();
+        _annotations.Clear();
+        _undoStack.Clear();
+        _redoStack.Clear();
+        _activeAnnotation = null;
+        _canvas.RemoveFromVisualTree();
+        Content = null;
+        Log.Info("screenshot.overlay-released");
     }
 
     public PixelBounds ScreenBounds => _screen.Bounds;
@@ -691,10 +714,17 @@ internal sealed partial class SelectionOverlayWindow : Window
 
     private void PollCursor()
     {
+        var previousCursor = _cursor;
+        var previousHover = _hover;
         ReadCursor();
         if (_drag == DragKind.None)
         {
             UpdateHover();
+            // 鼠标、悬停目标都没变就不重画：不动鼠标也按 50 帧 / 秒整屏重画是白烧 CPU（第二版 §2 第 6 条）。
+            if (previousCursor == _cursor && Nullable.Equals(previousHover, _hover))
+            {
+                return;
+            }
         }
         else
         {
@@ -703,6 +733,8 @@ internal sealed partial class SelectionOverlayWindow : Window
 
         _canvas.Invalidate();
     }
+
+    private void OnPointerWheel(object sender, PointerRoutedEventArgs e) => e.Handled = true;
 
     private void ReadCursor()
     {
