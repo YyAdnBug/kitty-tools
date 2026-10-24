@@ -5,8 +5,9 @@ Kitty Tools 的 **Windows 原生版**（C# + WinUI 3，2026-10-23 立项）。�
 ## 先读
 
 1. **第二版（2026-10-24 起）先读 `PLAN-v2.md` 全文**：第一版的审查结果（= 第 1 批要修的）、UI 风格、系统优化、分批和每批的验收；它没提到的规格照旧以 `PLAN.md` 为准。
-2. `PLAN.md`：第一版的范围、技术栈、架构、每个模块的规格。
-3. 做到哪一批，就读那一批引用的 mac 源码和规则章节（只看行为，不搬 AppKit 的做法）。
+2. **第二版全部审完之后读 `PLAN-v3.md`**：第三版六批的细则（数据安全、翻译 / 剪贴板 / 启动器 / 截图补齐）和第四、五版的路线。
+3. `PLAN.md`：第一版的范围、技术栈、架构、每个模块的规格。
+4. 做到哪一批，就读那一批引用的 mac 源码和规则章节（只看行为，不搬 AppKit 的做法）。
 
 ## 红线
 
@@ -23,7 +24,8 @@ Kitty Tools 的 **Windows 原生版**（C# + WinUI 3，2026-10-23 立项）。�
 
 - **一批一停**（PLAN §0）：构建通过 → `dotnet test` 全部通过 → 按 `HANDTEST.md` 自己手测 → 提交 → 推送 → 停下等审查。
 - **只推 `origin`（`github.com/YyAdnBug/kitty-tools`）**，不推任何 fork；推送失败要停下来报告，不要换个远端推。
-- **分支**：在 `windows-wip` 上做。推送前先 `git fetch origin && git rebase origin/main`（`windows/` 和 `macos/` 互不相交，基本不会冲突）。不改写已经推上去的提交，不碰 `main`；审查通过后由审查方把 `main` 快进到 `windows-wip`。
+- **分支**：在 `windows-wip` 上做。审查方也会往这个分支提交文档，所以**推送前先 `git fetch origin && git rebase origin/windows-wip`**；不再 rebase `origin/main`（并进 `main` 时由审查方处理）。**推送被拒就重复这一步，绝不强推**，也不改写已经推上去的提交；不碰 `main`。
+- **推完一批就停**：等用户说「审完了，做下一批」再开始下一批，不要连着做。
 - **提交格式**：`<type>(win): <description>`，type 取 feat / fix / ui / refactor / docs / perf / build / chore。标题一行、70 字以内；空一行写正文，**正文就是这批的报告**：做了什么、怎么验的、量到的数、和 PLAN 不一样的地方和原因、待定的问题。
 - **截图**：新界面的浅色、深色各一张，放 `windows/build/shots/<批次>/`（不入库），报告里列文件名。
 - 拿不准的系统行为：先查 learn.microsoft.com，或看 PowerToys 源码（MIT）怎么做；查不到写进报告的「待定」，不自己发明。
