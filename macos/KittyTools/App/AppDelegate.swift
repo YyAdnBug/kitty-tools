@@ -159,6 +159,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     return board
   }()
+  /// 程序坞预览（第九族，2026-10-22，PLAN §10「程序坞预览」）：鼠标停在程序坞的 App 图标上弹出它所有窗口的缩略图。
+  /// 功能开关开着才起（默认关）；启动台开着、状态屏、截图框选时不弹。设置 › 程序坞预览。
+  private lazy var dockPreview: DockPreview = {
+    let preview = DockPreview()
+    preview.isSuppressed = { [unowned self] in
+      isCapturing || statusScreen.isActive || OverlayPanel.isSelectingRegion(in: NSApp.windows)
+        || (Feature.launchpad.isOn && launchpad.isOpen)
+    }
+    preview.onHide = { [unowned self] in idleReclaim.schedule() }
+    return preview
+  }()
 
   /// 用时再建、收起后放掉（TransientPanel）：不像三块主面板那样天天呼出，里面最多 20 张缩小的状态屏，不常驻。
   /// 没有固定，点外面就收起；出现在鼠标所在屏的中央（OverlayPanel 不带 frameName、不 topAnchored 时就是居中）
@@ -202,7 +213,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 空闲回收（常驻内存，2026-10-07，PLAN §10）：三块主面板哪块收起、进程内识完一次字、全部便签窗口关掉、屏幕边缘
   /// 那叠收起、浮动便签收回（2026-10-18）都重新计时，过了 Memory.idleDelay 还闲着（isIdle），就把闲着白占的还回去——
   /// 透镜缓存（装满约 50 MB，再看到时重做）、链接预览的头图（12 条都看过约 70 MB；字节留着，再看到时重解，不联网）、
-  /// 关着的全部便签窗口（约 12 MB）、便签图片的缩略图（便签墙上看过 50 张图约 65 MB）、识字模型（约 50 MB，下次识字
+  /// 关着的全部便签窗口（约 12 MB）、便签图片的缩略图（便签墙上看过 50 张图约 65 MB）、程序坞预览的缩略图缓存（最多
+  /// 20 张、最坏约 11 MB）和收着的预览面板（约 6 MB；预览收起时也重新计时）、识字模型（约 50 MB，下次识字
   /// 重新加载，慢 0.2–0.4 s；放它要 18–200 ms，在主线程外做）、分配器手里的空页（跑了三天的正式版估 20–34 MB；放在
   /// 最后，前几样腾出来的页一起还）。到点时还忙着（面板固定着、正在用）就再等一轮
   private lazy var idleReclaim = Memory.IdleTimer(
@@ -224,6 +236,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   private func reclaimIdleMemory() {
     ThumbnailView.dropPreviews()
+    if Feature.dockPreview.isOn { dockPreview.reclaim() }
     LinkPreview.shared.dropHeroes()
     releaseClosedNotesWindow()
     // 便签正文里解好的图片缩略图（第 7 批：按像素数算 cost，闲下来整块放掉）；浮在屏幕上的那张便签里的图留着
@@ -550,6 +563,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             images: { [unowned self] in noteStore?.images },
             island: island))
       case .statusScreen: AnyView(StatusScreenTab())
+      case .dockPreview: AnyView(DockPreviewTab())
       case .translate:
         AnyView(
           TranslateTab(services: serviceStore, history: historyStore, speaker: speaker)
@@ -628,12 +642,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) { [weak self] _ in
       MainActor.assumeIsolated { _ = self?.noteStore?.flush() }
     }
-    // 醒来时便签同步马上合一轮（睡着的这段时间别的电脑可能改过；便签关着、没开同步时它自己不做事）
+    // 醒来时同步马上合一轮（睡着的这段时间别的电脑可能改过；没开同步时它自己不做事）
     NSWorkspace.shared.notificationCenter.addObserver(
       forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
     ) { [weak self] _ in
       MainActor.assumeIsolated {
-        guard let self, Feature.notes.isOn else { return }
+        guard let self else { return }
         self.noteSyncer?.syncNow()
       }
     }
@@ -754,12 +768,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NoteSample.addIfFirst(
           to: noteStore, defaults: .standard, hotKey: HotKeyAction.noteCapture.hotKey?.display)
       }
-      if !launching { noteSyncer?.start() }
       if let noteEdge, !startedNoteEdge {
         startedNoteEdge = true
         noteEdge.start()
       } else {
         noteEdge?.floats.resume()  // 关掉时藏起来的浮动便签放回来（那叠看着偏好自己摆回来）
+      }
+    }
+
+    if turnedOn.contains(.dockPreview) {
+      dockPreview.start()
+      // 运行中打开时缺授权就带去授权（拍板 A3）：先要辅助功能（没有它用不了），有了再要屏幕录制（没有只列标题）；
+      // 启动时不问（关着的人、早就给过的人都不打扰）
+      if !launching {
+        if !Permissions.isAccessibilityTrusted {
+          Permissions.requestAccessibility()
+        } else if !Permissions.isScreenRecordingAllowed {
+          Permissions.requestScreenRecording()
+        }
       }
     }
 
@@ -802,10 +828,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
       // 浮动便签先藏起来（固定着的位置记录不清，打开后放回原处）；那叠看着偏好自己收起
       noteEdge?.floats.suspend(covering: .infinite)
-      noteSyncer?.stop()
     }
+    // 同步不跟着功能开关起停（设置那部分一直在合）：关着的功能那部分一轮里跳过（featureOn）；打开的那一刻合一轮
+    if !launching, !turnedOn.isDisjoint(with: Self.syncFeatures.values) { noteSyncer?.syncNow() }
     if turnedOff.contains(.launchpad) { launchpad.turnOff() }
     if turnedOff.contains(.statusScreen) { statusPicker.panel?.hide() }
+    if turnedOff.contains(.dockPreview) { dockPreview.stop() }
     idleReclaim.schedule()  // 关掉的功能占着的缓存跟着还
   }
 
@@ -830,10 +858,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if let noteStore {
       let syncer = NoteSyncer(store: noteStore)
       syncer.island = island
+      let settings = SettingsSync(applied: { [unowned self] in
+        // 换了保留天数、图片上限这些，清掉了历史的说一声（不然无声少了东西）
+        let pruned = settingsImported()
+        if pruned > 0 {
+          island.show(
+            "同步换了剪贴板的保留设置", detail: "按新的设置清掉了 \(pruned) 条历史", tone: .info,
+            symbol: "arrow.triangle.2.circlepath")
+        }
+      })
+      // 正在录屏 / 录音、录快捷键、状态屏开着：这一轮先不合设置（对面关掉录制功能会把这台正在录的停掉）
+      settings.isBusy = { [unowned self] in
+        recorder != nil || audioRecorder != nil || hotKeys.recording != nil
+          || statusScreen.isActive
+      }
+      settings.conflicted = { [unowned self] pair in
+        island.show(
+          "同步来的快捷键撞上了", detail: "\(pair)用的是同一个组合，到 设置 › 快捷键 里改一个",
+          tone: .warning)
+      }
+      syncer.sources = [
+        clipboardStore, historyStore, WebSearchSync(), TranslateServiceSync(store: serviceStore),
+        launcherUsage, StatusPresetSync(), settings,
+      ]
+      syncer.featureOn = { Self.syncFeatures[$0]?.isOn ?? true }
       noteSyncer = syncer
-      if Feature.notes.isOn { syncer.start() }
+      syncer.start()
     }
   }
+
+  /// 同步的每一部分跟着哪个功能（NoteSyncer.featureOn：关着的那部分不合；设置不跟任何功能，一直合）
+  private static let syncFeatures: [String: Feature] = [
+    NoteSyncer.notesPart: .notes, SyncRecords.Kind.clips.rawValue: .clipboard,
+    SyncRecords.Kind.vocabulary.rawValue: .translate, SyncRecords.Kind.engines.rawValue: .launcher,
+    SyncRecords.Kind.services.rawValue: .translate, SyncRecords.Kind.launcher.rawValue: .launcher,
+    SyncRecords.Kind.statuses.rawValue: .statusScreen,
+  ]
 
   /// 便签的定期清理：「最近删除」里放满 30 天的真删；图片目录里没人引用满 30 天的文件删掉
   /// （账记在目录里的 .orphans.plist，从**第一次发现**没人引用算起）。便签这次用不了时不清（noteStore 是 nil）

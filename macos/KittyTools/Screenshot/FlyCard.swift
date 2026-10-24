@@ -333,7 +333,8 @@ extension View {
   /// 压在卡片图上的 HUD 小标记（时长 / GIF 胶囊、播放圆、录音的 waveform 圆）：HUD 底色 + 内描边 + 主文字色。
   /// 有描边才在录音的波形卡、没取到最后一帧的占位卡上看得见（它们的底是同色的 `HUD.solidFill`）。和 hudSkin 的区别：
   /// 不是按钮（没有外圈描边、不接点击），macOS 26 上也还是填充（静态标记，不换玻璃）
-  fileprivate func hudMark<S: InsettableShape>(_ shape: S) -> some View {
+  /// 程序坞预览的角标和 ✕ 也用它（2026-10-22）
+  func hudMark<S: InsettableShape>(_ shape: S) -> some View {
     foregroundStyle(Color(nsColor: Style.HUD.text))
       .background(Color(nsColor: Style.HUD.fill), in: shape)
       .overlay(

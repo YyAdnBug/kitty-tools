@@ -1,0 +1,73 @@
+---
+description: 程序坞预览（第九族，2026-10-22）的规矩：私有接口和退路、听程序坞、列窗口、缩略图、切 / 关窗口、面板和时机、默认关和授权、内存、测试口径
+globs: macos/KittyTools/DockPreview/**,macos/KittyTools/Settings/DockPreviewTab.swift
+alwaysApply: false
+---
+
+# mac-dock-preview：程序坞预览红线
+
+Kitty 的第九族「程序坞预览」（拍板页 `macos/build/research/dock-preview-2026-10-22/decisions.html`，17 项全部按推荐；
+0.7.0）：鼠标停在程序坞的 App 图标上，图标上方弹出它所有窗口的缩略图，点一张切过去、✕ 关掉。对标 wins.cool 的
+Dock Preview；开源的 DockDoor、AltTab 是 GPL，**只借做法、一行代码都不拷**。代码在 `KittyTools/DockPreview/`，设置页
+`Settings/DockPreviewTab.swift`；长相和动效见 `mac-whisker-dock-preview.mdc`；本机实测和每批的做法在 PLAN §10「程序坞预览」。
+
+## 1. 私有接口（`WindowServer.swift`，全仓库只有它碰）
+- 用户拍板的五个 + 两个配套：`_AXUIElementGetWindow`、`CGSHWCaptureWindowList`、`CGSCopySpacesForWindows`、
+  `_SLPSSetFrontProcessWithOptions` + `SLPSPostEventRecordTo`，配套 `CGSMainConnectionID`、`GetProcessForPID`（废弃的公开函数）。
+  一律跑起来时 `dlopen` / `dlsym`，**取不到就退回公开做法**（按标题 + 位置配编号、ScreenCaptureKit 截当前桌面的、不列别的
+  桌面的、`NSRunningApplication.activate`），不崩、不弹框；设置页用大白话说缺了会怎样（`WindowServer.consequences`）。
+  **要加新的私有接口先问用户**（mac-native §3）。
+- 第一次取符号要在主线程、NSApplication 起来之后（`CGSMainConnectionID` 太早调会断言崩溃）：用的地方先调 `prepare()`。
+- 「当 key」的事件照 AltTab 踩过的坑写，别改回 yabai / Hammerspoon 的老写法：缓冲区 0x100 清零（0xf8 会让系统读到堆上的
+  垃圾闪退）、只发按下（按下 + 松开在 Figma / Telegram 里会点到左上角）、坐标在窗口右下方很远（NaN 会被纠成 (0, 0)，贴着
+  窗口边在 macOS 27 上会把窗口拉大）。`keyWindowEvent` 的单测锁住字节。
+- 掩码、选项位、事件格式都是逆向来的：系统升级后跑 `DockPreviewProbeTests`、走 HANDTEST「程序坞预览手测」1–4。
+
+## 2. 听程序坞（`DockWatcher.swift`）
+- 听程序坞 AXList 的 `kAXSelectedChildrenChangedNotification`，只认 `AXApplicationDockItem`（文件夹、废纸篓、分隔线算没停在
+  App 上）。图标的位置在收到通知那一刻读，**真用之前 `currentFrame` 重读一次**（放大、自动隐藏的动画可能没走完）。
+- **程序坞是 LSUIElement，系统不发它的启动通知**：每 5 秒体检（进程号变了、列表换了一份、上次没挂上就重挂），别改回
+  盯 `didLaunchApplicationNotification`。观察者拿的是不持有的 self，`isolated deinit` 里摘干净。
+- 读别的进程的辅助功能一律经 `DockWatcher.value`（每次读先给那个对象设 0.3 秒超时：超时只管设了的那一个对象）。
+
+## 3. 列窗口、切、关（`DockWindows.swift`）
+- 列 = 辅助功能 `kAXWindows`（当前桌面 + 最小化）+ 窗口服务器全表里在别的桌面上的（辅助功能看不到它们）。只要标准窗口和
+  对话框、宽高 ≥ 100 点；**不在任何桌面上的不列**（微信关掉的聊天窗口还留在窗口服务器里）；全表里没标题、整个套在同一 App
+  另一扇别的桌面上的窗口里的当成表单不列。按编号（= 打开先后）排，最小化的最后。并表和配编号是纯函数，单测锁住。
+- 切 = 显示隐藏的 App → 还原最小化的 → 按编号拿到最前并当 key（不成就 activate）→ 设主窗口、抬起。关 = 按关闭钮，
+  别的桌面上的拿不到辅助功能对象，不给 ✕。
+- 在主线程列（中位约 20 ms），换一次图标列一次；觉得卡了再加防抖（ponytail 在 `DockPreview`）。
+
+## 4. 缩略图（`WindowShots.swift`）
+- 一律私有接口 1x 截、`@concurrent` 缩进 8 位 BGRA（mac-native §3 第 1 类），一扇中位约 15 ms；全透明当没截到。私有接口
+  不在时当前桌面上的退回 ScreenCaptureKit。**一扇扇串行截**，不并发几十个。
+- 内存里最多 20 张（先进先出），空闲回收、关掉功能时清；没有屏幕录制授权时不截、也不拿缓存里的旧图。
+
+## 5. 面板和时机（`DockPreview.swift`、`DockPreviewLayout.swift`）
+- 面板是**普通 NSPanel 实例**（mac-overlay-panel §1）：无边框、不激活本 App、**永不当 key**、`.statusBar` 层级、弹在哪个桌面就属于哪个桌面（`moveToActiveSpace` + `fullScreenAuxiliary`，**不用 `canJoinAllSpaces`**：切桌面时面板会被带到新桌面上、收到通知再收就闪一下），全屏 App 的桌面上也能弹；
+  宿主只改 `acceptsFirstMouse`。收起直接淡掉窗口自己的透明度（不当 key，不用替身）。
+- 停 0.2 秒弹；弹着时换图标立刻换（滑过去、交叉淡变）；**收不收按鼠标位置**：弹着时 0.1 秒看一次鼠标在不在面板、图标、
+  两者之间那道缝里（`keepsOpen`），离开满 0.3 秒收（`Linger`）。**不用追踪区的进出、不全信程序坞的选中**（评审 H1：
+  面板改尺寸重建追踪区、淡出时进来的事件会丢，状态卡住面板收不掉）。收着时这个定时器不跑。
+- **切到别的桌面立刻收**（弹着时盯 `NSWorkspace.activeSpaceDidChangeNotification`）：鼠标还停在面板那块、按位置一直算「在附近」，
+  不收回到原来的桌面时还在（2026-10-23 手测报的）；面板只属于弹出时的桌面，切的时候跟着旧桌面滑走，新桌面上不闪。
+- 点面板以外（全局 + 本地监听）立刻收；点的是那个图标就记下，鼠标离开它之前不再弹；按着鼠标拖东西经过程序坞不弹。
+- 启动台开着、状态屏、截图框选时不弹，弹着时它们一来就收（同一个定时器里查 `isSuppressed`）。
+- **不用滚动视图**：面板不当 key，滚动视图里的点击、只有竖滚轮的鼠标都靠不住。一排放不下先缩（最小高 90），再换行；
+  排满这块屏还放不下的不列。排法、选屏、`keepsOpen`、`Linger` 都是纯函数，单测锁住。
+- **压住程序坞的名字提示**：提示画在程序坞自己那块窗口里（层级 20，面板 25 在它上面），面板往图标框里压 6 点（`gap = -6`）、
+  至少和提示一样宽（`labelWidth`）。离图标框留缝的话提示的三角和气泡下沿会从缝里露出来（2026-10-23 手测报的）。数是程序坞在下面、
+  没开放大时屏上量的，左右两边和开着放大的要手测。
+- 程序坞的 AXURL 和进程的 bundleURL **都解开链接再比**（/Applications/Safari.app 是链接），比不上按 bundle id。
+
+## 6. 开关、授权、内存
+- 功能开关 `Feature.dockPreview`，**默认关**（`Feature.defaultOn`，拍板 A3）；没有全局快捷键、菜单栏、启动器入口（D1）。
+  运行中打开时缺辅助功能就弹系统授权框，有了再要屏幕录制；启动时不问。
+- 弹过一次面板约 +10 MB（14 扇、976 × 417 点，屏上量），收起后照样占着；**空闲回收时收着的面板整块放掉**（回落约 6 MB，
+  下次弹时再建），连同缩略图缓存。收起时排空闲回收（`onHide`）。
+
+## 7. 测试口径
+- 单测只测纯函数（`DockPreviewTests`）：并表、配编号、排法、选屏、`keepsOpen`、`Linger`、事件字节、缺接口的说法。
+- 按需探针 `TEST_RUNNER_KITTY_DOCK_PROBE=1`：`DockPreviewProbeTests/measure()`（只读：私有接口、程序坞结构、列 / 截的耗时）、
+  `DockPreviewMemoryProbeTests/memory()`（**屏幕右上角有一块透明度 0.02 的面板约两秒**，不接鼠标）。
+- 截图自检 `SnapshotProbeTests/dockPreview()`；单测和探针**不切窗口、不关窗口、不挪鼠标**（停上去的手感、切窗口准不准只能手测）。

@@ -1,4 +1,4 @@
-// 设置 › 通用：功能（八个功能各一个开关，最上面一组，2026-10-21；关掉的功能入口全藏、后台不干活，Shell/Feature.swift）、
+// 设置 › 通用：功能（各功能一个开关（2026-10-23 加了程序坞预览，九个），最上面一组，2026-10-21；关掉的功能入口全藏、后台不干活，Shell/Feature.swift）、
 // 外观（跟随系统 / 浅色 / 深色三张缩略图）与强调色（跟随系统 + 系统设置那一排 8 色，都是改了立刻生效）、
 // 动效：呼出面板时挤压弹开（剪贴板 / 启动器 / 翻译浮窗共用，2026-09-29 从启动器页挪来；2026-10-03 用户定转正：去掉「实验」、
 // 单独成组，默认仍关）、
@@ -107,14 +107,15 @@ struct GeneralTab: View {
       }
       Section("权限") {
         PermissionRow(
-          title: "辅助功能", detail: "粘贴回原 App、划词翻译、长截图自动滚动、录屏显示按键", symbol: "hand.raised.fill",
+          title: "辅助功能", detail: "粘贴回原 App、划词翻译、长截图自动滚动、录屏显示按键、程序坞预览",
+          symbol: "hand.raised.fill",
           color: Style.Family.command, granted: trusted
         ) {
           Permissions.requestAccessibility()
           Permissions.openAccessibilitySettings()
         }
         PermissionRow(
-          title: "屏幕录制", detail: "截图、截图翻译、识字、录屏、录系统声音；授权后可能要重新打开本 App 才生效",
+          title: "屏幕录制", detail: "截图、截图翻译、识字、录屏、录系统声音、程序坞预览的缩略图；授权后可能要重新打开本 App 才生效",
           symbol: "record.circle", color: Style.Family.screenshot, granted: screenRecording
         ) {
           Permissions.requestScreenRecording()
@@ -430,7 +431,7 @@ struct FeatureToggle: View {
   init(feature: Feature, inPage: Bool = false) {
     self.feature = feature
     self.inPage = inPage
-    _isOn = AppStorage(wrappedValue: true, feature.prefsKey)
+    _isOn = AppStorage(wrappedValue: feature.defaultOn, feature.prefsKey)
   }
 
   var body: some View {
@@ -461,7 +462,7 @@ extension View {
 private struct FeatureGate: ViewModifier {
   @AppStorage private var isOn: Bool
 
-  init(feature: Feature) { _isOn = AppStorage(wrappedValue: true, feature.prefsKey) }
+  init(feature: Feature) { _isOn = AppStorage(wrappedValue: feature.defaultOn, feature.prefsKey) }
 
   /// 分组表单里系统的 .disabled 只让控件变淡、标签和说明不变（屏外实测；同通用页「图标样式」那行的注释），
   /// 一眼看不出这块用不了：整块再乘上禁用的不透明度

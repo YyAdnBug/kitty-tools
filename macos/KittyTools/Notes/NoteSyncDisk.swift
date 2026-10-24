@@ -11,6 +11,8 @@
 // - 写（write）：先写临时名再改名（原子写：同步盘不会传上一半的文件；图片尤其——传了一半的那份会被当成「已经有了」）。
 //   便签文件、墓碑文件、device.json（名字、第几轮变了才写，**最后写**）、图片两头补齐；要删的删。每一样写不成记下第一个
 //   原因，别的照写。文件夹本身不在了就什么都不写（不替它建回来）。
+// - 全局同步的一类一类数据（2026-10-23，SyncRecords）：每台子文件夹里的 `<类别>.json`，读法同上（先看属性、没下载的
+//   算读不出来、按文件号 + 时刻 + 大小记着上一轮读出来的），写在 device.json 之前。
 // - 标记（inspect / createMarker）：开同步时看这个文件夹是新的、还是已经有库了（有几台电脑、多少条便签：设置页问一句要不要
 //   合在一起）；标记**不覆盖**着写（两台同时开、别处刚传来一个：先到的算）。
 // 测试在临时目录里真读真写（不是同步盘，没有下载状态）。
@@ -31,6 +33,14 @@ nonisolated enum NoteSyncDisk {
       var note: Note?
     }
     var files: [String: Entry] = [:]
+    /// 一类一类数据的文件：路径 → 同上，读出来的是整份（SyncRecords.file）
+    struct KindEntry: Sendable {
+      var file: UInt64?
+      var modified: Date
+      var size: Int
+      var read: SyncRecords.Read
+    }
+    var kinds: [String: KindEntry] = [:]
   }
 
   /// 一台别的电脑：叫什么、它的文件最后一次变的时刻（设置页列出来）
@@ -50,6 +60,8 @@ nonisolated enum NoteSyncDisk {
     /// device.json 有、但读不出来的电脑（编号）
     var unreadableInfo: Set<String> = []
     var cache = Cache()
+    /// 一类一类数据：类别 → 电脑编号 → 那台的那份（没有这个文件的不在里面）
+    var kinds: [SyncRecords.Kind: [String: SyncRecords.Read]] = [:]
     var peers: [Peer] = []
     /// 这一轮请系统去下载了几个（状态行说「还在下载」）
     var downloading = 0
@@ -57,7 +69,10 @@ nonisolated enum NoteSyncDisk {
 
   // MARK: 读
 
-  @concurrent static func read(folder root: URL, cache old: Cache) async -> Snapshot {
+  /// kinds：这一轮要合的几类（每台子文件夹里读它们的 `<类别>.json`）
+  @concurrent static func read(
+    folder root: URL, cache old: Cache, kinds: [SyncRecords.Kind] = []
+  ) async -> Snapshot {
     var snapshot = Snapshot()
     guard isDirectory(root) else {
       snapshot.missing = true
@@ -142,6 +157,33 @@ nonisolated enum NoteSyncDisk {
           } else {
             device.unreadable.insert(id)
           }
+        }
+      }
+      for kind in kinds {
+        let url = folder.appending(path: kind.fileName)
+        switch state(of: url, limit: maxErasedBytes) {
+        case .absent: continue
+        case .notHere:
+          snapshot.kinds[kind, default: [:]][name] = .unreadable
+          snapshot.downloading += 1
+        case .tooLarge:
+          snapshot.kinds[kind, default: [:]][name] = .unreadable
+        case .here(let attributes):
+          if attributes.modified > (seen ?? .distantPast) { seen = attributes.modified }
+          var entry: Cache.KindEntry?
+          if let cached = old.kinds[url.path], cached.file == attributes.file,
+            cached.modified == attributes.modified, cached.size == attributes.size
+          {
+            entry = cached
+          } else if let data = coordinatedRead(url) {
+            entry = Cache.KindEntry(
+              file: attributes.file, modified: attributes.modified, size: attributes.size,
+              read: SyncRecords.file(from: data, kind: kind))
+          }
+          if let entry, Date.now.timeIntervalSince(attributes.modified) > 2 {
+            snapshot.cache.kinds[url.path] = entry
+          }
+          snapshot.kinds[kind, default: [:]][name] = entry?.read ?? .unreadable
         }
       }
       snapshot.folder.devices[name] = device
@@ -265,9 +307,10 @@ nonisolated enum NoteSyncDisk {
 
   /// 照 NoteSyncFolder.publish 的计划写：便签文件、要删的、墓碑文件、图片两头补齐，**最后**是 device.json（名字、epoch
   /// 变了才写：前面的都写成了它才是这一轮的，NoteSyncer）。images 是本机的图片目录
+  /// kinds：一类一类数据里要（重）写的那几份（编好的文件内容，SyncRecords.data），写在 device.json 之前
   @concurrent static func write(
     _ plan: NoteSyncFolder.Publish, folder root: URL, device: String, name: String,
-    epoch: Int, images: URL?
+    epoch: Int, images: URL?, kinds: [SyncRecords.Kind: Data] = [:]
   ) async -> Written {
     var result = Written()
     func note(_ error: Error) {
@@ -334,6 +377,11 @@ nonisolated enum NoteSyncDisk {
         } catch {
           note(error)
         }
+      }
+    }
+    for (kind, data) in kinds.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
+      do { try coordinatedWrite(data, to: mine.appending(path: kind.fileName)) } catch {
+        note(error)
       }
     }
     guard result.problem == nil else { return result }

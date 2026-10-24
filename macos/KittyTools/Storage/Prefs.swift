@@ -221,12 +221,15 @@ enum Prefs {
   /// 这台电脑自己的状态、**不注册默认值**——别人给的导出文件不该改你同步到哪；没有 = 没开同步（A2 默认关）
   nonisolated static let notesSyncFolder = "notesSyncFolder"
   nonisolated static let notesSyncLibrary = "notesSyncLibrary"
+  /// 这台电脑上不同步的几部分（全局同步 A3：设置页每类一个勾；"notes" 和 SyncRecords.Kind 的名字），同样是这台电脑自己的
+  /// 状态、不注册默认值（没有 = 都同步）
+  nonisolated static let syncSkipped = "syncSkipped"
   /// 全部便签窗口上次用的显示方式（NotesWindowModel.Layout 的 rawValue：wall 便签墙 / list 列表；没存过 = 便签墙，
   /// 2026-10-15 手测反馈）。同窗口位置一样是这台电脑自己的状态、**不注册默认值**：不跟着导出 / 导入走
   nonisolated static let notesWindowLayout = "notesWindowLayout"
 
-  /// 功能开关（2026-10-21，Shell/Feature.swift）：八个功能各一个键「feature.<Feature.rawValue>」（Feature.prefsKey 拼），
-  /// 默认开、注册默认值（跟着导出 / 导入的「设置」一类走）。读用 Feature.isOn
+  /// 功能开关（2026-10-21，Shell/Feature.swift）：九个功能各一个键「feature.<Feature.rawValue>」（Feature.prefsKey 拼），
+  /// 注册的默认值是 Feature.defaultOn（程序坞预览关、别的开；跟着导出 / 导入的「设置」一类走）。读用 Feature.isOn
   nonisolated static let featurePrefix = "feature."
   /// 启动台原来的总开关（启动台没发布过；2026-10-21 并进功能开关 feature.launchpad，migrate 挪一次）
   static let launchpadEnabledLegacy = "launchpadEnabled"
@@ -354,7 +357,7 @@ enum Prefs {
       notesDeckOpensOnHover: false,
       notesDeckOverFullScreen: false,
       notesDeckNoteSize: NoteDeckOptions.NoteSize.medium.rawValue,
-    ].merging(Feature.allCases.map { ($0.prefsKey, true as Any) }) { current, _ in current }
+    ].merging(Feature.allCases.map { ($0.prefsKey, $0.defaultOn as Any) }) { current, _ in current }
   }
 
   /// 旧偏好升级（启动时在 registerDefaults 之后跑，幂等）：

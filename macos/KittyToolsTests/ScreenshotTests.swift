@@ -612,9 +612,10 @@ struct ScreenshotTests {
   }
 
   /// Subprocess 的超时：到点杀掉、拿到非零状态（子进程识字卡住时靠它兜住，之后退回进程内识）。
-  /// 只验「杀得掉」，不验多快：杀它的任务在主线程上，全量单测时主线程常被别的测试占着十几二十秒，会晚到
+  /// 只验「杀得掉」，不验多快：杀它的任务在主线程上，全量单测时主线程常被别的测试占着，会晚到——2026-10-24 全量里晚到过
+  /// 130 秒（sleep 120 先自己睡完、正常退出，就成了「没杀掉」），所以睡 600 秒：杀它的总是先到
   @Test func subprocessTimeout() async throws {
-    let result = try await Subprocess.run("/bin/sleep", ["120"], timeout: .milliseconds(200))
+    let result = try await Subprocess.run("/bin/sleep", ["600"], timeout: .milliseconds(200))
     #expect(result.status != 0)
   }
 

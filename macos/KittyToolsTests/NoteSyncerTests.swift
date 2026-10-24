@@ -23,7 +23,17 @@ struct NoteSyncerTests {
     let syncer: NoteSyncer
     let suite: String
     let defaults: UserDefaults
+    /// 剪贴板库（片段、收藏）和翻译历史（生词本）：同一个内存库，同 App 里的 kitty.sqlite3
+    let kitty: Database
+    let clipboard: ClipboardStore
+    let history: HistoryStore
+    /// 启动器收藏（同一个内存库）、网页搜索与快捷链接（临时偏好域）、翻译服务（不读写偏好的一份）
+    let launcher: LauncherUsage
+    let services: TranslateServiceStore
+    /// 设置、快捷键、功能开关（同一个临时偏好域）
+    let settings: SettingsSync
     var editing: Set<String> = []
+    var featuresOff: Set<String> = []
 
     init(host: String, root: URL, file: URL? = nil) throws {
       let db = try Database(path: file?.path ?? ":memory:", wal: file == nil)
@@ -32,8 +42,41 @@ struct NoteSyncerTests {
       suite = "kitty-notes-sync-tests-\(UUID().uuidString)"
       defaults = UserDefaults(suiteName: suite)!
       syncer = NoteSyncer(store: store, defaults: defaults)
+      kitty = try Database(path: ":memory:")
+      clipboard = try ClipboardStore(
+        db: kitty, images: ImageStore(directory: root.appending(path: "剪贴板图片-\(host)")))
+      history = try HistoryStore(db: kitty)
+      launcher = try LauncherUsage(db: kitty)
+      services = TranslateServiceStore(services: [.zhipu])
+      settings = SettingsSync(defaults: defaults, domainName: suite)
+      syncer.sources = [
+        clipboard, history, WebSearchSync(defaults: defaults),
+        TranslateServiceSync(store: services, defaults: defaults), launcher,
+        StatusPresetSync(defaults: defaults), settings,
+      ]
       syncer.computerName = { host }
       syncer.editing = { [unowned self] in editing }
+      syncer.featureOn = { [unowned self] in !featuresOff.contains($0) }
+    }
+
+    /// 留下来的文字条目（收藏、片段）：正文 → (收藏、片段、收藏夹的名字、备注)
+    var retained: [String: (Bool, Bool, String?, String?)] {
+      var result: [String: (Bool, Bool, String?, String?)] = [:]
+      for item in clipboard.items where item.isRetained {
+        let group = item.groupID.flatMap { id in clipboard.groups.first { $0.id == id }?.name }
+        result[item.text ?? ""] = (item.favorite, item.isSnippet, group, item.note)
+      }
+      return result
+    }
+
+    var words: [String] { history.search("", favoritesOnly: true, limit: 0).map(\.source).sorted() }
+
+    /// 偏好里存着的（持久域里的；object(forKey:) 会落到注册的默认值上——注册域整个进程共用，别的测试注册过）
+    func stored(_ key: String) -> Any? { defaults.persistentDomain(forName: suite)?[key] }
+
+    var engines: [SearchEngine] {
+      get { WebSearch.engines(in: defaults) }
+      set { WebSearch.setEngines(newValue, in: defaults) }
     }
 
     deinit { UserDefaults().removePersistentDomain(forName: suite) }
@@ -401,5 +444,450 @@ struct NoteSyncerTests {
     } else {
       Issue.record("墓碑文件读不出来")
     }
+  }
+
+  // MARK: 片段、收藏、生词本（全局同步第 3 批）
+
+  /// 片段、收藏和收藏夹、生词本来回传；对面改了正文、备注跟着变；对面删了的这台只是不再收藏（还在历史里）
+  @Test func clipsAndWordsTravel() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    a.clipboard.saveSnippet("此致敬礼")
+    a.clipboard.recordOwnText("收藏的一段")
+    let favorite = try #require(a.clipboard.items.first { $0.text == "收藏的一段" })
+    a.clipboard.toggleFavorite([favorite.id])
+    let group = try #require(a.clipboard.createGroup(named: "工作"))
+    a.clipboard.assign([favorite.id], to: group.id)
+    a.clipboard.recordOwnText("普通历史不同步")
+    a.history.setFavorite(
+      source: "serendipity", target: .zhHans, result: "意外之喜", service: "s", true)
+    for mac in [a, b] { #expect(await mac.syncer.enable(folder: shared) == nil) }
+    await settle([a, b])
+    #expect(b.retained["此致敬礼"].map { !$0.0 && $0.1 } == true)
+    #expect(b.retained["收藏的一段"].map { $0.0 && $0.2 == "工作" } == true)
+    #expect(b.retained["普通历史不同步"] == nil && b.words == ["serendipity"])
+    // B 改正文和备注，A 跟着变
+    let snippet = try #require(b.clipboard.items.first { $0.text == "此致敬礼" })
+    b.clipboard.update([snippet.id]) {
+      $0.text = "此致\n敬礼"
+      $0.note = "落款"
+    }
+    await settle([b, a])
+    #expect(a.retained["此致\n敬礼"]?.3 == "落款" && a.retained["此致敬礼"] == nil)
+    // B 取消收藏：A 那条不再收藏，但还在历史里
+    b.clipboard.toggleFavorite([favorite.id])
+    b.history.setFavorite(
+      source: "serendipity", target: .zhHans, result: "意外之喜", service: "s", false)
+    await settle([b, a])
+    #expect(a.retained["收藏的一段"] == nil)
+    #expect(a.clipboard.items.contains { $0.text == "收藏的一段" } && a.words.isEmpty)
+    // 账本和数据在同一个库里
+    let ledger = try SyncLedger.load(.clips, library: try #require(a.syncer.library), in: a.kitty)
+    #expect(ledger != nil)
+  }
+
+  /// 第一次合：两台都有同样正文的收藏，合完各只有一条
+  @Test func joiningDoesNotDuplicateClips() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    for mac in [a, b] { mac.clipboard.saveSnippet("同样的片段") }
+    // 两台各有一个「工作」收藏夹，B 那条收藏在里面、带备注；A 那条同正文、没备注
+    for mac in [a, b] { mac.clipboard.recordOwnText("同样的收藏") }
+    let ga = try #require(a.clipboard.createGroup(named: "工作"))
+    let gb = try #require(b.clipboard.createGroup(named: "工作"))
+    for (mac, group) in [(a, ga), (b, gb)] {
+      let item = try #require(mac.clipboard.items.first { $0.text == "同样的收藏" })
+      mac.clipboard.toggleFavorite([item.id])
+      mac.clipboard.assign([item.id], to: group.id)
+    }
+    let mine = try #require(b.clipboard.items.first { $0.text == "同样的收藏" })
+    b.clipboard.update([mine.id]) { $0.note = "B 的备注" }
+    for mac in [a, b] { #expect(await mac.syncer.enable(folder: shared) == nil) }
+    await settle([a, b], times: 3)
+    for mac in [a, b] {
+      #expect(mac.clipboard.items.count { $0.text == "同样的片段" } == 1)
+      // 本机的备注、收藏夹没丢；同名收藏夹只剩一个
+      #expect(mac.retained["同样的收藏"].map { $0.2 == "工作" && $0.3 == "B 的备注" } == true)
+      #expect(mac.clipboard.groups.map(\.name) == ["工作"])
+      // 库里和内存一样（重开一次不多出一条）
+      let reopened = try ClipboardStore(
+        db: mac.kitty, images: ImageStore(directory: root.appending(path: "重开")))
+      #expect(reopened.items.count { $0.text == "同样的片段" } == 1)
+      #expect(reopened.items.count { $0.text == "同样的收藏" } == 1)
+    }
+  }
+
+  /// 两台都开着同步、合之前各自收藏同一句、存同样一段片段：合完各只剩一条，还是收藏 / 片段
+  @Test func concurrentSameTextConverges() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    for mac in [a, b] { #expect(await mac.syncer.enable(folder: shared) == nil) }
+    await settle([a, b])
+    for mac in [a, b] {
+      mac.clipboard.saveSnippet("同时存的片段")
+      mac.history.setFavorite(source: "both", target: .zhHans, result: "两边", service: "s", true)
+    }
+    await settle([a, b], times: 4)
+    for mac in [a, b] {
+      #expect(mac.clipboard.items.count { $0.text == "同时存的片段" } == 1)
+      #expect(mac.retained["同时存的片段"]?.1 == true && mac.words == ["both"])
+    }
+  }
+
+  /// 合完再合一轮：自己那份不重写、账本不变（编 → 落 → 再编字节一样）
+  @Test func settledRoundsWriteNothing() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    a.clipboard.saveSnippet("片段")
+    let group = try #require(a.clipboard.createGroup(named: "收藏夹"))
+    a.clipboard.recordOwnText("收藏")
+    let item = try #require(a.clipboard.items.first { $0.text == "收藏" })
+    a.clipboard.toggleFavorite([item.id])
+    a.clipboard.assign([item.id], to: group.id)
+    a.history.setFavorite(source: "word", target: .zhHans, result: "词", service: "s", true)
+    var ai = TranslateService.newAI()
+    ai.baseURL = "https://ai.example/v1"
+    a.services.services.append(ai)
+    a.launcher.toggleFavorite(
+      LauncherItem(kind: .url, target: "https://example.com", title: "示例", subtitle: ""))
+    // 设置：小数、整数值的小数、字符串数组、清除了的快捷键；状态屏：加一个自己写的状态
+    a.defaults.set(1.1, forKey: Prefs.translateFontScale)
+    a.defaults.set(["com.example.app"], forKey: Prefs.clipboardExcludedBundleIDs)
+    a.defaults.set(HotKeyAction.stored(nil), forKey: HotKeyAction.clipboard.prefsKey)
+    var presets = StatusPreset.builtIn
+    presets.append(
+      StatusPreset(
+        id: "mine", title: "开会中", detail: nil, symbol: "", style: .dim, power: .normal,
+        autoEndMinutes: 0))
+    StatusPreset.save(presets, to: a.defaults)
+    for mac in [a, b] { #expect(await mac.syncer.enable(folder: shared) == nil) }
+    await settle([a, b], times: 3)
+    func stamps(_ mac: Mac) throws -> [Date?] {
+      try SyncRecords.Kind.allCases.map(\.rawValue).map { kind in
+        let url = shared.appending(path: "devices/\(mac.store.deviceID)/\(kind).json")
+        return try FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate]
+          as? Date
+      }
+    }
+    let library = try #require(a.syncer.library)
+    let before = try [a, b].map { try stamps($0) }
+    let ledgers = try [a, b].map { try SyncLedger.load(.clips, library: library, in: $0.kitty) }
+    await settle([a, b])
+    let after = try [a, b].map { try stamps($0) }
+    let ledgersAfter = try [a, b].map {
+      try SyncLedger.load(.clips, library: library, in: $0.kitty)
+    }
+    #expect(after == before && ledgersAfter == ledgers)
+  }
+
+  /// 便签这部分不合时，device.json 里的「第几轮」不往小里写
+  @Test func skippingNotesKeepsTheEpoch() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let note = a.store.create(body: "一", now: .now)
+    #expect(await a.syncer.enable(folder: shared) == nil)
+    await a.syncer.round()
+    a.store.setBody("一二", of: note.id, now: .now.addingTimeInterval(5))
+    await a.syncer.round()
+    let epoch = await NoteSyncDisk.read(folder: shared, cache: .init()).folder.devices[
+      a.store.deviceID]?.epoch
+    #expect((epoch ?? 0) >= 2)
+    // 库里记的那一轮被退回去（时间机器），这时候便签不合、只合片段
+    try a.store.setMeta(NoteSyncer.epochKey, "1")
+    a.featuresOff = [NoteSyncer.notesPart]
+    a.clipboard.saveSnippet("片段")
+    await a.syncer.round()
+    let after = await NoteSyncDisk.read(folder: shared, cache: .init()).folder.devices[
+      a.store.deviceID]?.epoch
+    #expect(after == epoch)
+  }
+
+  /// 刹车的「继续」每部分各算：便签那边点了继续，片段一下删很多照样停下来问
+  @Test func brakeAllowanceIsPerPart() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    let notes = (0..<10).map { a.store.create(body: "第 \($0) 条", now: .now) }
+    for index in 0..<10 { a.clipboard.saveSnippet("片段 \(index)") }
+    for mac in [a, b] { #expect(await mac.syncer.enable(folder: shared) == nil) }
+    await settle([a, b])
+    for note in notes.prefix(8) { a.store.delete(note.id, now: .now.addingTimeInterval(5)) }
+    let doomed = Set(a.clipboard.items.filter { $0.isSnippet }.prefix(8).map(\.id))
+    a.clipboard.removeFromSnippets(doomed)
+    // A 自己一下删了 8 条片段：先停下来问
+    await a.syncer.round()
+    #expect(a.syncer.status == .waiting(trashing: 8))
+    a.syncer.allowTrashing()
+    await a.syncer.round()
+    #expect(a.syncer.status == .idle)
+    // B：便签先停（8 条进最近删除），点继续之后片段还要再问一次
+    await b.syncer.round()
+    #expect(b.syncer.status == .waiting(trashing: 8) && b.store.trashed.isEmpty)
+    b.syncer.allowTrashing()
+    await b.syncer.round()
+    #expect(b.store.trashed.count == 8 && b.syncer.status == .waiting(trashing: 8))
+    #expect(b.clipboard.items.count(where: \.isSnippet) == 10)
+    b.syncer.allowTrashing()
+    await b.syncer.round()
+    #expect(b.syncer.status == .idle && b.clipboard.items.count(where: \.isSnippet) == 2)
+  }
+
+  /// 剪贴板面板里有还能撤销的删除时这一类先不合；没勾上的、功能关着的那类不合
+  @Test func busySkippedAndOffPartsWait() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    a.clipboard.saveSnippet("一")
+    for mac in [a, b] { #expect(await mac.syncer.enable(folder: shared) == nil) }
+    await settle([a, b])
+    b.clipboard.recordOwnText("会被撤销删除的")
+    let pending = try #require(b.clipboard.items.first { $0.text == "会被撤销删除的" })
+    b.clipboard.deleteWithUndo([pending.id])
+    a.clipboard.saveSnippet("二")
+    await settle([a, b])
+    #expect(b.retained["二"] == nil, "面板里有能撤销的删除：先不合")
+    b.clipboard.commitDeletion()
+    await settle([a, b])
+    #expect(b.retained["二"] != nil)
+    // B 不同步片段：A 新加的不过来
+    b.syncer.setSyncs(SyncRecords.Kind.clips.rawValue, false)
+    a.clipboard.saveSnippet("三")
+    await settle([a, b])
+    #expect(b.retained["三"] == nil)
+    b.syncer.setSyncs(SyncRecords.Kind.clips.rawValue, true)
+    // 翻译关着：生词本不合
+    b.featuresOff = [SyncRecords.Kind.vocabulary.rawValue]
+    a.history.setFavorite(source: "hello", target: .zhHans, result: "你好", service: "s", true)
+    await settle([a, b])
+    #expect(b.retained["三"] != nil && b.words.isEmpty)
+  }
+
+  // MARK: 网页搜索与快捷链接、翻译服务、启动器收藏（全局同步第 4 批）
+
+  /// 三类来回传：加、改、挪、删都过去；翻译服务只传配置（密钥在钥匙串里，不碰）
+  @Test func enginesServicesAndLauncherFavoritesTravel() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    var engines = a.engines
+    engines.insert(
+      SearchEngine(
+        id: "custom-1", name: "公司内网", keyword: "wiki", urlTemplate: "https://wiki.example/{query}",
+        enabled: false), at: 0)
+    a.engines = engines
+    var ai = TranslateService.newAI()
+    ai.name = "自建"
+    ai.baseURL = "https://ai.example/v1"
+    ai.model = "m1"
+    a.services.services.append(ai)
+    a.launcher.toggleFavorite(
+      LauncherItem(kind: .url, target: "https://example.com", title: "示例", subtitle: ""))
+    for mac in [a, b] { #expect(await mac.syncer.enable(folder: shared) == nil) }
+    await settle([a, b])
+    #expect(b.engines.first?.id == "custom-1" && b.engines.map(\.id) == a.engines.map(\.id))
+    #expect(b.services.services.map(\.id) == ["zhipu", ai.id])
+    #expect(b.services.services.last?.baseURL == "https://ai.example/v1")
+    #expect(b.launcher.favorites.map(\.target) == ["https://example.com"])
+    // B 删掉那条搜索、改 AI 服务的模型、取消收藏 → A 跟着变
+    b.engines = b.engines.filter { $0.id != "custom-1" }
+    b.services.services[1].model = "m2"
+    b.launcher.toggleFavorite(
+      LauncherItem(kind: .url, target: "https://example.com", title: "示例", subtitle: ""))
+    await settle([b, a])
+    #expect(!a.engines.contains { $0.id == "custom-1" })
+    #expect(a.services.services.last?.model == "m2" && a.launcher.favorites.isEmpty)
+  }
+
+  /// 启动器收藏两台同时各加满：都留着（不卡 8 个）
+  @Test func launcherFavoritesFromBothMacsAreKept() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    for mac in [a, b] { #expect(await mac.syncer.enable(folder: shared) == nil) }
+    await settle([a, b])
+    for (mac, name) in [(a, "a"), (b, "b")] {
+      for index in 0..<LauncherUsage.favoriteLimit {
+        mac.launcher.toggleFavorite(
+          LauncherItem(
+            kind: .url, target: "https://\(name).example/\(index)", title: "\(index)", subtitle: "")
+        )
+      }
+    }
+    await settle([a, b], times: 3)
+    for mac in [a, b] { #expect(mac.launcher.favorites.count == LauncherUsage.favoriteLimit * 2) }
+    #expect(a.launcher.favorites == b.launcher.favorites)
+  }
+
+  /// 两台同时在列表末尾各加一条（搜索、收藏夹）、一台挪顺序一台改名：几轮内两台一样，改名和挪顺序都留下
+  @Test func listOrderConvergesAndKeepsBothEdits() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    for mac in [a, b] { #expect(await mac.syncer.enable(folder: shared) == nil) }
+    await settle([a, b])
+    for (mac, name) in [(a, "a"), (b, "b")] {
+      mac.engines.append(
+        SearchEngine(
+          id: "custom-\(name)", name: name, keyword: name, urlTemplate: "https://\(name)/{query}",
+          enabled: false))
+      _ = mac.clipboard.createGroup(named: "收藏夹 \(name)")
+    }
+    await settle([a, b], times: 3)
+    #expect(
+      a.engines.map(\.id) == b.engines.map(\.id) && a.engines.count == WebSearch.defaults.count + 2)
+    #expect(a.clipboard.groups.map(\.name) == b.clipboard.groups.map(\.name))
+    // A 把最后一条挪到最前，B 同时给第一条改名
+    var reordered = a.engines
+    reordered.insert(reordered.removeLast(), at: 0)
+    a.engines = reordered
+    var renamed = b.engines
+    renamed[0].name = "改过名的"
+    b.engines = renamed
+    await settle([a, b], times: 3)
+    #expect(a.engines.map(\.id) == b.engines.map(\.id) && a.engines.first?.id == reordered[0].id)
+    #expect(a.engines.contains { $0.name == "改过名的" } && b.engines.contains { $0.name == "改过名的" })
+  }
+
+  // MARK: 设置、快捷键、功能开关（全局同步第 5 批）
+
+  /// 设置、快捷键、功能开关传过去；新加入的那台跟着已有的（它改过、对面没有的回到默认）；跟着这台 Mac 的那几项不传；
+  /// 一边改回默认，另一边也回到默认
+  @Test func settingsFollowTheExistingMacs() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    let combo = try JSONDecoder().decode(
+      HotKey.self, from: Data(#"{"keyCode":0,"modifiers":2048}"#.utf8))
+    a.defaults.set(17, forKey: Prefs.notesFontSize)
+    a.defaults.set(false, forKey: Feature.launcher.prefsKey)
+    a.defaults.set(HotKeyAction.stored(combo), forKey: HotKeyAction.noteAll.prefsKey)
+    a.defaults.set(HotKeyAction.stored(nil), forKey: HotKeyAction.clipboard.prefsKey)
+    a.defaults.set(9, forKey: Prefs.launchpadColumns)
+    // B 加入之前自己改过：字号跟着 A，Markdown（A 没改过）回到默认
+    b.defaults.set(13, forKey: Prefs.notesFontSize)
+    b.defaults.set(false, forKey: Prefs.notesMarkdown)
+    #expect(await a.syncer.enable(folder: shared) == nil)
+    await a.syncer.round()
+    #expect(await b.syncer.enable(folder: shared) == nil)
+    await settle([b, a])
+    #expect(b.defaults.integer(forKey: Prefs.notesFontSize) == 17)
+    #expect(b.stored(Prefs.notesMarkdown) == nil)
+    #expect(b.stored(Feature.launcher.prefsKey) as? Bool == false)
+    let received = try b.defaults.data(forKey: HotKeyAction.noteAll.prefsKey).map {
+      try JSONDecoder().decode(HotKey.self, from: $0)
+    }
+    #expect(received == combo)
+    #expect(b.defaults.data(forKey: HotKeyAction.clipboard.prefsKey) == Data(), "清除了的也传过去")
+    #expect(b.stored(Prefs.launchpadColumns) == nil, "启动台跟着这台 Mac")
+    // B 把字号改回默认（删掉这一项）→ A 也回到默认
+    b.defaults.removeObject(forKey: Prefs.notesFontSize)
+    await settle([b, a])
+    #expect(a.stored(Prefs.notesFontSize) == nil)
+  }
+
+  /// 一项一项后改的赢，按真正改的时刻：A 先改（记下了改的时刻，之后才合到）、B 后改 → 两边都是 B 的；
+  /// 两台各改不同的项，两项都留下
+  @Test func settingsLaterChangeWinsPerKey() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    for mac in [a, b] { #expect(await mac.syncer.enable(folder: shared) == nil) }
+    await settle([a, b])
+    a.defaults.set(20, forKey: Prefs.notesFontSize)
+    a.settings.recordChanges()
+    try await Task.sleep(for: .milliseconds(30))
+    b.defaults.set(13, forKey: Prefs.notesFontSize)
+    b.defaults.set(false, forKey: Prefs.notesMarkdown)
+    b.settings.recordChanges()
+    await b.syncer.round()
+    await a.syncer.round()
+    await b.syncer.round()
+    for mac in [a, b] {
+      #expect(mac.defaults.integer(forKey: Prefs.notesFontSize) == 13)
+      #expect(mac.stored(Prefs.notesMarkdown) as? Bool == false)
+    }
+  }
+
+  /// 状态屏的状态一个一条：第一次合两台各自写的都留下；之后两台同时各加一个，两个都留下
+  @Test func statusPresetsMerge() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    func add(_ id: String, _ title: String, to mac: Mac) {
+      var presets = StatusPreset.load(mac.defaults)
+      presets.append(
+        StatusPreset(
+          id: id, title: title, detail: nil, symbol: "", style: .dim, power: .normal,
+          autoEndMinutes: 0))
+      StatusPreset.save(presets, to: mac.defaults)
+    }
+    add("a1", "A 写的", to: a)
+    add("b1", "B 写的", to: b)
+    #expect(await a.syncer.enable(folder: shared) == nil)
+    await a.syncer.round()
+    #expect(await b.syncer.enable(folder: shared) == nil)
+    await settle([b, a])
+    add("a2", "A 又加的", to: a)
+    add("b2", "B 又加的", to: b)
+    await settle([a, b], times: 3)
+    for mac in [a, b] {
+      let ids = Set(StatusPreset.load(mac.defaults).map(\.id))
+      #expect(ids.isSuperset(of: ["clean", "busy", "back", "a1", "b1", "a2", "b2"]))
+    }
+    #expect(StatusPreset.load(a.defaults) == StatusPreset.load(b.defaults))
+  }
+
+  /// 新旧版本混用：这一版不认识的设置原样透传（不落进设置、下一轮原样交回去），这一类照常合；忙着时设置先不合
+  @Test func unknownSettingsPassThroughAndBusyWaits() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    for mac in [a, b] { #expect(await mac.syncer.enable(folder: shared) == nil) }
+    await settle([a, b])
+    // 模拟更新版本：A 交出去一项这一版不认识的（透传），B 收到后也透传、不落进偏好、不停
+    let future = "pref:新版本才有的设置"
+    a.defaults.set([future: "{\"bool\":{\"_0\":true}}"], forKey: SettingsSync.passthroughKey)
+    await settle([a, b])
+    #expect(b.settings.syncValues()[future] != nil && b.stored("新版本才有的设置") == nil)
+    #expect(b.syncer.status == .idle)
+    // 认得的键、这一版落不下的值（新版本放宽了范围）：B 透传着、交出去的也是它，不拿本机的旧值翻回去；B 自己再改才换成 B 的
+    let size = "pref:" + Prefs.notesFontSize
+    b.defaults.set(15, forKey: Prefs.notesFontSize)
+    await settle([b, a])
+    a.defaults.set([size: "5000000"], forKey: SettingsSync.passthroughKey)
+    await settle([a, b], times: 3)
+    #expect(b.settings.syncValues()[size] == "5000000")
+    #expect(b.stored(Prefs.notesFontSize) as? Int == 15)
+    #expect(a.settings.syncValues()[size] == "5000000")
+    b.defaults.set(16, forKey: Prefs.notesFontSize)
+    await settle([b, a])
+    #expect(a.stored(Prefs.notesFontSize) as? Int == 16 && a.settings.syncValues()[size] == "16")
+    #expect(b.settings.syncValues()[size] == "16")
+    // B 忙着（正在录屏之类）：设置先不合；不忙了照常合
+    b.settings.isBusy = { true }
+    a.defaults.set(19, forKey: Prefs.notesFontSize)
+    await settle([a, b])
+    #expect(b.stored(Prefs.notesFontSize) as? Int == 16)
+    b.settings.isBusy = { false }
+    await settle([a, b])
+    #expect(b.stored(Prefs.notesFontSize) as? Int == 19)
   }
 }

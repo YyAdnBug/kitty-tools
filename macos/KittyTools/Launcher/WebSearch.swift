@@ -46,14 +46,17 @@ enum WebSearch {
   }
 
   static var engines: [SearchEngine] {
-    get {
-      UserDefaults.standard.data(forKey: Prefs.launcherWebSearchEngines)
-        .flatMap { try? JSONDecoder().decode([SearchEngine].self, from: $0) } ?? defaults
-    }
-    set {
-      UserDefaults.standard.set(
-        try? JSONEncoder().encode(newValue), forKey: Prefs.launcherWebSearchEngines)
-    }
+    get { engines(in: .standard) }
+    set { setEngines(newValue, in: .standard) }
+  }
+
+  static func engines(in defaults: UserDefaults) -> [SearchEngine] {
+    defaults.data(forKey: Prefs.launcherWebSearchEngines)
+      .flatMap { try? JSONDecoder().decode([SearchEngine].self, from: $0) } ?? Self.defaults
+  }
+
+  static func setEngines(_ engines: [SearchEngine], in defaults: UserDefaults) {
+    defaults.set(try? JSONEncoder().encode(engines), forKey: Prefs.launcherWebSearchEngines)
   }
 
   /// 「g swift」→ 用关键词为 g 的搜索搜 swift。关键词直达不看 enabled（enabled 只管兜底，和 Alfred 一致）；

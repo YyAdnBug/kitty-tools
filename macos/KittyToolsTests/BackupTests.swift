@@ -295,11 +295,16 @@ struct BackupTests {
     #expect(stripped.count < unstripped.count / 2)
 
     let copy = try Database(path: backup(10, 1).path, readOnly: true)
-    // 库里现在就这五张表。加了新表这里会报错：先想清楚它进不进备份（Backup.dropped），再改这一行
+    // 库里现在就这六张表。加了新表这里会报错：先想清楚它进不进备份（Backup.dropped），再改这一行。
+    // sync_ledger（全局同步的账本，2026-10-23）整张留着：从备份恢复时账本要跟着数据一起退回去（SyncRecords 文件头），
+    // 它记的只有片段、收藏、生词这些留下来的东西的钟和哈希，没有正文
     #expect(
       Set(
         try copy.query("SELECT name FROM sqlite_master WHERE type = 'table'") { $0.text(0) ?? "" })
-        == ["clips", "clip_groups", "translations", "launcher_usage", "launcher_favorites"])
+        == [
+          "clips", "clip_groups", "translations", "launcher_usage", "launcher_favorites",
+          "sync_ledger",
+        ])
     let kept = try copy.query("SELECT id FROM clips") { $0.text(0).flatMap(UUID.init(uuidString:)) }
     let retained = stores.clipboard.items.filter(\.isRetained)
     #expect(Set(kept.compactMap { $0 }) == Set(retained.map(\.id)))

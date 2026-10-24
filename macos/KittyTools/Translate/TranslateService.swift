@@ -176,7 +176,7 @@ nonisolated struct TranslateService: Codable, Identifiable, Hashable, Sendable {
 
 /// 服务列表（设置页编辑，翻译时读）。从没存过时只有智谱（启用）；存过的原样用，删掉的内置服务不再补回来（体检 B21）
 @Observable final class TranslateServiceStore {
-  private static let key = "translateServices"
+  nonisolated static let key = "translateServices"
 
   var services: [TranslateService] {
     didSet {

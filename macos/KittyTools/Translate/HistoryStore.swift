@@ -35,6 +35,7 @@ import Observation
       """)
     try db.execute(
       "CREATE INDEX IF NOT EXISTS translations_created_at ON translations(created_at DESC)")
+    try SyncLedger.prepare(db)
   }
 
   /// 存进库里的原文：去首尾空白、最多 1 万字（add、收藏按同一个规则找同一条）
@@ -264,5 +265,121 @@ import Observation
     } catch {
       Log.storage.error("翻译历史写库失败：\(error)")
     }
+  }
+}
+
+// MARK: 同步（全局同步：生词本，PLAN §10「全局同步」B6）
+
+extension HistoryStore: SyncSource {
+  /// 同步文件里的一个生词（收藏的那条翻译；编号 = 这条的编号）
+  private nonisolated struct SyncedWord: Codable {
+    var source: String
+    var target: String
+    var result: String
+    var service: String
+    /// 时间（毫秒）
+    var created: Int64
+  }
+
+  var syncKind: SyncRecords.Kind { .vocabulary }
+
+  /// 第一次合：同原文 + 同目标语言的只留文件夹里那条
+  var syncJoin: SyncRecords.Join {
+    .union { value in
+      (try? JSONDecoder().decode(SyncedWord.self, from: Data(value.utf8))).map {
+        $0.source + "\u{0}" + $0.target
+      }
+    }
+  }
+
+  var syncBusy: Bool { false }
+
+  func syncValues() -> [String: String] {
+    let rows =
+      (try? db.query(
+        "SELECT id, source, target, result, service, created_at FROM translations WHERE favorite = 1"
+      ) { row -> (String, SyncedWord)? in
+        guard let id = row.text(0), let source = row.text(1), let target = row.text(2),
+          let result = row.text(3), let created = row.double(5)
+        else { return nil }
+        let milliseconds = Int64(
+          (Date(timeIntervalSinceReferenceDate: created).timeIntervalSince1970 * 1000).rounded())
+        return (
+          id,
+          SyncedWord(
+            source: source, target: target, result: result, service: row.text(4) ?? "",
+            created: milliseconds)
+        )
+      }) ?? []
+    var values: [String: String] = [:]
+    // 带 NUL 的不同步（库里存的是截断的，重启后和账本对不上）
+    for case (let id, let word)? in rows where !(word.source + word.result).contains("\0") {
+      if let data = try? SyncRecords.encoder.encode(word) {
+        values[id] = String(decoding: data, as: UTF8.self)
+      }
+    }
+    return values
+  }
+
+  func syncLedger(library: String) throws -> SyncRecords.Ledger? {
+    try SyncLedger.load(.vocabulary, library: library, in: db)
+  }
+
+  /// 落合并结果（库和账本一个事务；有一条解不出来就整个不落，这一类停在「没存上」）：别处不再收藏的，本机取消收藏（还在历史里）；
+  /// 新来的 / 改了的记成收藏，同原文 + 同目标语言的普通记录让位（一句话只留一条）。和本机另一条**收藏的**撞上：**编号小的
+  /// 留下**（几台挑的一样）——本机那条小就不落来的这条（它的编号本机删掉，下一轮这个删除传出去），来的小就换掉本机那条
+  func applySync(_ changes: [String: String?], ledger: SyncRecords.Ledger, library: String) -> Bool
+  {
+    var words: [(String, SyncedWord?)] = []
+    for (id, value) in changes {
+      guard let value else {
+        words.append((id, nil))
+        continue
+      }
+      guard let word = SyncRecords.decodeExact(SyncedWord.self, from: value) else {
+        return false
+      }
+      words.append((id, word))
+    }
+    // 先取消收藏的、再新来的；同一类里按编号（几台的先后一样）
+    words.sort { ($0.1 == nil ? 0 : 1, $0.0) < ($1.1 == nil ? 0 : 1, $1.0) }
+    do {
+      try db.transaction {
+        for (id, word) in words {
+          guard let word else {
+            try db.execute("UPDATE translations SET favorite = 0 WHERE id = ?", [id])
+            continue
+          }
+          let kept = try db.query(
+            """
+            SELECT id FROM translations WHERE source = ? AND target = ? AND id <> ? AND favorite = 1
+            """, [word.source, word.target, id]
+          ) { $0.text(0) }.compactMap { $0 }.filter { $0 < id }
+          if !kept.isEmpty {
+            try db.execute("DELETE FROM translations WHERE id = ?", [id])
+            continue
+          }
+          let created =
+            Date(timeIntervalSince1970: Double(word.created) / 1000).timeIntervalSinceReferenceDate
+          try db.execute(
+            "DELETE FROM translations WHERE source = ? AND target = ? AND id <> ?",
+            [word.source, word.target, id])
+          try db.execute(
+            """
+            INSERT INTO translations(id, source, target, result, service, created_at, favorite)
+            VALUES (?, ?, ?, ?, ?, ?, 1)
+            ON CONFLICT(id) DO UPDATE SET source = excluded.source, target = excluded.target,
+              result = excluded.result, service = excluded.service, created_at = excluded.created_at,
+              favorite = 1
+            """, [id, word.source, word.target, word.result, word.service, created])
+        }
+        try SyncLedger.save(ledger, kind: .vocabulary, library: library, in: db)
+      }
+    } catch {
+      Log.storage.error("生词本同步写库失败：\(error)")
+      return false
+    }
+    revision += 1
+    return true
   }
 }
