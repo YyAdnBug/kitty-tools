@@ -91,21 +91,47 @@ internal static unsafe class ClipboardWriter
                 return false;
             }
 
-            SetBytes(ClipboardFormats.PngFormat, png);
-
-            // WinRT 的解码在后台线程上等，别在 UI 线程上等它。
-            var dib = Task.Run(() => ImageCodec.PngToDibAsync(png)).GetAwaiter().GetResult();
-            if (dib is { Length: > 0 })
-            {
-                SetBytes(ClipboardFormats.CF_DIBV5, dib);
-            }
-
-            return true;
+            return WriteImageCore(png);
         }
         finally
         {
             PInvoke.CloseClipboard();
         }
+    }
+
+    /// <summary>截图 / 钉图用：把 PNG 字节写进剪贴板（PNG + CF_DIBV5）。</summary>
+    public static bool WriteImagePng(byte[] png)
+    {
+        if (!ClipboardFormats.OpenClipboard())
+        {
+            return false;
+        }
+
+        try
+        {
+            if (!PInvoke.EmptyClipboard())
+            {
+                return false;
+            }
+
+            return WriteImageCore(png);
+        }
+        finally
+        {
+            PInvoke.CloseClipboard();
+        }
+    }
+
+    private static bool WriteImageCore(byte[] png)
+    {
+        SetBytes(ClipboardFormats.PngFormat, png);
+        var dib = Task.Run(() => ImageCodec.PngToDibAsync(png)).GetAwaiter().GetResult();
+        if (dib is { Length: > 0 })
+        {
+            SetBytes(ClipboardFormats.CF_DIBV5, dib);
+        }
+
+        return true;
     }
 
     public static bool WriteFiles(IReadOnlyList<string> paths)

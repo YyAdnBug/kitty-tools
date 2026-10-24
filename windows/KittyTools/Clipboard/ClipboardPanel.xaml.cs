@@ -1,4 +1,4 @@
-// 剪贴板面板：搜索框 + 收藏范围 + 左列表右预览。焦点一直在搜索框，方向键转给列表。
+﻿// 剪贴板面板：搜索框 + 收藏范围 + 左列表右预览。焦点一直在搜索框，方向键转给列表。
 // 按键表见 PLAN §6.3；删除先只从列表拿掉（Ctrl+Z 可撤），面板收起时才真的删库。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
@@ -8,6 +8,9 @@ using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Microsoft.UI.Windowing;
+using Windows.Graphics;
+using Windows.Win32;
 using Windows.Storage;
 using Windows.Storage.Streams;
 using Windows.System;
@@ -612,6 +615,38 @@ public sealed partial class ClipboardPanel : UserControl
         TranslateHost.ShowText(entry.Text);
     }
 
+    private async Task PinImageAsync(ClipEntry entry)
+    {
+        try
+        {
+            var path = Paths.ImagesFile(entry.Id);
+            if (!File.Exists(path))
+            {
+                return;
+            }
+            var png = await File.ReadAllBytesAsync(path);
+            var decoded = await ImageCodec.PngToBgraAsync(png);
+            if (decoded is not { } image)
+            {
+                return;
+            }
+            PInvoke.GetCursorPos(out var cursor);
+            var area = DisplayArea.GetFromPoint(
+                new PointInt32(cursor.X, cursor.Y), DisplayAreaFallback.Primary).WorkArea;
+            var scale = Math.Min(1, Math.Min(area.Width * 0.8 / image.Width, area.Height * 0.8 / image.Height));
+            var width = Math.Max(1, (int)(image.Width * scale));
+            var height = Math.Max(1, (int)(image.Height * scale));
+            var left = Math.Clamp(cursor.X - width / 2, area.X, area.X + area.Width - width);
+            var top = Math.Clamp(cursor.Y - height / 2, area.Y, area.Y + area.Height - height);
+            PinHost.Show(png, new PixelBounds(left, top, left + width, top + height));
+        }
+        catch (Exception ex)
+        {
+            Log.Error("clipboard.pin-failed", ex);
+            NoticeHost.Show("没能钉图", ex.GetType().Name, NoticeTone.Error);
+        }
+    }
+
     private void OnListRightTapped(object sender, RightTappedRoutedEventArgs e)
     {
         var row = (e.OriginalSource as FrameworkElement)?.DataContext as ClipRow;
@@ -634,7 +669,7 @@ public sealed partial class ClipboardPanel : UserControl
 
         if (entry.Kind == ClipKind.Image)
         {
-            AddItem(menu, "钉到屏幕", () => NoticeHost.Show("钉图", "第 5 批接上", NoticeTone.Normal));
+            AddItem(menu, "钉到屏幕", () => _ = PinImageAsync(entry));
         }
 
         if (entry.Kind == ClipKind.Files && entry.Files.FirstOrDefault() is { } first)

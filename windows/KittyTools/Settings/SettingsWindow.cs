@@ -10,6 +10,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.Windows.Storage.Pickers;
 using Windows.System;
 using Windows.UI.Core;
 using Windows.Win32;
@@ -60,6 +61,7 @@ internal sealed class SettingsWindow : Window
         _navPanel.Children.Add(CreateNavButton("clipboard", "剪贴板", "\uE8C8"));
         _navPanel.Children.Add(CreateNavButton("translate", "翻译", "\uE774"));
         _navPanel.Children.Add(CreateNavButton("launcher", "启动器", "\uE721"));
+        _navPanel.Children.Add(CreateNavButton("screenshot", "截图", "\uE722"));
         _navPanel.Children.Add(CreateNavButton("about", "关于", "\uE946"));
 
         _navBorder = new Border
@@ -153,6 +155,9 @@ internal sealed class SettingsWindow : Window
                 break;
             case "launcher":
                 BuildLauncher();
+                break;
+            case "screenshot":
+                BuildScreenshot();
                 break;
             case "about":
                 BuildAbout();
@@ -622,6 +627,65 @@ internal sealed class SettingsWindow : Window
             BuildPage("launcher");
         };
         _content.Children.Add(clear);
+    }
+
+    private void BuildScreenshot()
+    {
+        _content.Children.Add(Header("截图", "框选、标注、识字、钉图和截图翻译；Ctrl+S 快速保存。"));
+        _content.Children.Add(Section(
+            "快速保存位置",
+            "默认是系统的「屏幕截图」文件夹；Ctrl+Shift+S 每次另存为。"));
+        var row = new Grid { ColumnSpacing = 8 };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var path = new TextBox
+        {
+            Text = string.IsNullOrWhiteSpace(SettingsService.Current.ScreenshotSaveFolder)
+                ? ScreenshotOutput.DefaultFolder()
+                : SettingsService.Current.ScreenshotSaveFolder!,
+            IsReadOnly = true,
+            FontSize = 13,
+        };
+        row.Children.Add(path);
+        var choose = new Button { Content = "选择文件夹…" };
+        choose.Click += async (_, _) =>
+        {
+            try
+            {
+                var picker = new FolderPicker(AppWindow.Id);
+                var result = await picker.PickSingleFolderAsync();
+                if (result is not null && !string.IsNullOrEmpty(result.Path))
+                {
+                    SettingsService.Current.ScreenshotSaveFolder = result.Path;
+                    SettingsService.Save();
+                    BuildPage("screenshot");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error("settings.folder-picker-failed", ex);
+                NoticeHost.Show("没能选择文件夹", ex.GetType().Name, NoticeTone.Error);
+            }
+        };
+        Grid.SetColumn(choose, 1);
+        row.Children.Add(choose);
+        var reset = new Button { Content = "恢复默认" };
+        reset.Click += (_, _) =>
+        {
+            SettingsService.Current.ScreenshotSaveFolder = null;
+            SettingsService.Save();
+            BuildPage("screenshot");
+        };
+        Grid.SetColumn(reset, 2);
+        row.Children.Add(reset);
+        _content.Children.Add(row);
+        _content.Children.Add(new TextBlock
+        {
+            Text = "截图不会上传到任何服务；识字和截图翻译只在本机用 Windows 的识字组件。",
+            Opacity = 0.65,
+            TextWrapping = TextWrapping.Wrap,
+        });
     }
 
     private void BuildTranslate()

@@ -59,6 +59,9 @@ internal sealed class Settings
 
     public bool TranslatePinned { get; set; }
 
+    /// <summary>截图快速保存的文件夹；空 = 系统的「屏幕截图」文件夹。</summary>
+    public string? ScreenshotSaveFolder { get; set; }
+
     public List<TranslateServiceConfig>? TranslateServices { get; set; }
 
     /// <summary>启动器的网页搜索列表；null = 从没存过（默认前 8 个，Bing 兜底）。</summary>

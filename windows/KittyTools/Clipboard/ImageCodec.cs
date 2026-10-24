@@ -46,6 +46,33 @@ internal static class ImageCodec
         }
     }
 
+    /// <summary>PNG → BGRA 像素（自上而下）；钉图识字用。</summary>
+    public static async Task<(byte[] Bgra, int Width, int Height)?> PngToBgraAsync(byte[] png)
+    {
+        try
+        {
+            using var stream = await ToStreamAsync(png);
+            var decoder = await BitmapDecoder.CreateAsync(stream);
+            using var bitmap = await decoder.GetSoftwareBitmapAsync(
+                BitmapPixelFormat.Bgra8, BitmapAlphaMode.Straight);
+            var width = bitmap.PixelWidth;
+            var height = bitmap.PixelHeight;
+            var pixels = new byte[width * height * 4];
+            var buffer = new Windows.Storage.Streams.Buffer((uint)pixels.Length);
+            bitmap.CopyToBuffer(buffer);
+            using (var reader = DataReader.FromBuffer(buffer))
+            {
+                reader.ReadBytes(pixels);
+            }
+
+            return (pixels, width, height);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     /// <summary>BGRA 像素（自上而下）→ PNG；应用图标用。</summary>
     public static async Task<byte[]?> BgraToPngAsync(int width, int height, byte[] bgra)
     {

@@ -111,6 +111,21 @@ internal sealed class ShellRuntime
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => TranslateHost.ShowSelection());
         }
 
+        if (Environment.GetCommandLineArgs().Contains("--ocr", StringComparer.OrdinalIgnoreCase))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => ScreenshotSession.Start(ScreenshotMode.Ocr));
+        }
+
+        if (Environment.GetCommandLineArgs().Contains("--screenshot-translate", StringComparer.OrdinalIgnoreCase))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => ScreenshotSession.Start(ScreenshotMode.Translate));
+        }
+
+        if (Environment.GetCommandLineArgs().Contains("--screenshot", StringComparer.OrdinalIgnoreCase))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => ScreenshotSession.Start(ScreenshotMode.Capture));
+        }
+
         if (Environment.GetCommandLineArgs().Contains("--launcher", StringComparer.OrdinalIgnoreCase))
         {
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => OverlayHost.Show(OverlayKind.Launcher));
@@ -223,13 +238,13 @@ internal sealed class ShellRuntime
                 TranslateHost.ToggleInput();
                 break;
             case HotKeyActions.ScreenshotTranslate:
-                ShowNotice("截图翻译", "第 5 批接上", NoticeTone.Normal);
+                ScreenshotSession.Start(ScreenshotMode.Translate);
                 break;
             case HotKeyActions.Screenshot:
-                ShowNotice("截图", "第 5 批接上", NoticeTone.Normal);
+                ScreenshotSession.Start(ScreenshotMode.Capture);
                 break;
             case HotKeyActions.Ocr:
-                ShowNotice("识字", "第 5 批接上", NoticeTone.Normal);
+                ScreenshotSession.Start(ScreenshotMode.Ocr);
                 break;
         }
     }

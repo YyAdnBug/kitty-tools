@@ -124,11 +124,11 @@ internal static unsafe class Tray
             var clipboardReady = runtime?.Clipboard is not null;
 
             Append(menu, 1, MenuText("剪贴板历史", HotKeyActions.Clipboard), enabled: clipboardReady);
-            Append(menu, 2, MenuText("启动器", HotKeyActions.Launcher), enabled: false);
+            Append(menu, 2, MenuText("启动器", HotKeyActions.Launcher), enabled: true);
             Append(menu, 3, MenuText("输入翻译", HotKeyActions.InputTranslate), enabled: true);
-            Append(menu, 4, MenuText("截图", HotKeyActions.Screenshot), enabled: false);
-            Append(menu, 5, MenuText("截图翻译", HotKeyActions.ScreenshotTranslate), enabled: false);
-            Append(menu, 6, MenuText("识字", HotKeyActions.Ocr), enabled: false);
+            Append(menu, 4, MenuText("截图", HotKeyActions.Screenshot), enabled: true);
+            Append(menu, 5, MenuText("截图翻译", HotKeyActions.ScreenshotTranslate), enabled: true);
+            Append(menu, 6, MenuText("识字", HotKeyActions.Ocr), enabled: true);
             PInvoke.AppendMenu(menu, MENU_ITEM_FLAGS.MF_SEPARATOR, 0, default(PCWSTR));
             Append(menu, 7, "复制即译", enabled: runtime is not null, @checked: settings.CopyTranslate);
             Append(menu, 8, "暂停记录剪贴板", enabled: clipboardReady, @checked: runtime?.Clipboard?.Paused == true);
@@ -155,8 +155,20 @@ internal static unsafe class Tray
                 case 1:
                     runtime?.OpenClipboard();
                     break;
+                case 2:
+                    OverlayHost.Toggle(OverlayKind.Launcher);
+                    break;
                 case 3:
                     TranslateHost.ToggleInput();
+                    break;
+                case 4:
+                    ScreenshotSession.Start(ScreenshotMode.Capture);
+                    break;
+                case 5:
+                    ScreenshotSession.Start(ScreenshotMode.Translate);
+                    break;
+                case 6:
+                    ScreenshotSession.Start(ScreenshotMode.Ocr);
                     break;
                 case 7:
                     runtime?.ToggleCopyTranslate();
