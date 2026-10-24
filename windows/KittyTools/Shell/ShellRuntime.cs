@@ -53,6 +53,13 @@ internal sealed class ShellRuntime
 
         TranslateServiceStore.Start(SettingsService.Current);
         TranslateHost.Initialize();
+        if (Clipboard is not null)
+        {
+            LauncherUsageStore.Start(Clipboard.Database);
+        }
+
+        AppCatalog.Start();
+        LauncherModel.Start();
 
         HiddenWindow.Message += OnHiddenMessage;
         Tray.Add();
@@ -102,6 +109,28 @@ internal sealed class ShellRuntime
         if (Environment.GetCommandLineArgs().Contains("--selection", StringComparer.OrdinalIgnoreCase))
         {
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => TranslateHost.ShowSelection());
+        }
+
+        if (Environment.GetCommandLineArgs().Contains("--launcher", StringComparer.OrdinalIgnoreCase))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => OverlayHost.Show(OverlayKind.Launcher));
+        }
+
+        if (Environment.GetCommandLineArgs().Contains("--dump-icon", StringComparer.OrdinalIgnoreCase))
+        {
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(6000);
+                var app = AppCatalog.Instance?.Apps.FirstOrDefault(
+                              item => item.Title.Contains("Chrome", StringComparison.OrdinalIgnoreCase))
+                          ?? AppCatalog.Instance?.Apps.FirstOrDefault(item => item.IconData is { Length: > 0 });
+                if (app?.IconData is { } bytes)
+                {
+                    var path = Path.Combine(Paths.DataDirectory, "icon-dump.png");
+                    await File.WriteAllBytesAsync(path, bytes);
+                    Log.Info($"launcher.icon-dump {path} {bytes.Length}");
+                }
+            });
         }
 
         if (Environment.GetCommandLineArgs().Contains("--cred-smoke", StringComparer.OrdinalIgnoreCase))

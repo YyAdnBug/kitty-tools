@@ -6,4 +6,7 @@
     <IsAotCompatible>true</IsAotCompatible>
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
   </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\pinyin.txt" />
+  </ItemGroup>
 </Project>

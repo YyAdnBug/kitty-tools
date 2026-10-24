@@ -6,7 +6,7 @@ namespace KittyTools.Infrastructure;
 
 internal sealed class Database : IDisposable
 {
-    private const int SchemaVersion = 1;
+    private const int SchemaVersion = 2;
     private readonly SqliteConnection _connection;
 
     public Database(string path)
@@ -161,6 +161,52 @@ internal sealed class Database : IDisposable
         _connection.Execute("DELETE FROM clips;");
     }
 
+    // 启动器使用记录：每行 =（查询, 类型, 目标）；查询空串是全局使用分。
+    public IReadOnlyList<LauncherUsageRow> LoadLauncherUsage()
+    {
+        var rows = new List<LauncherUsageRow>();
+        using var statement = _connection.Prepare(
+            "SELECT query, kind, target, title, score, used_at FROM launcher_usage");
+        while (statement.Step())
+        {
+            rows.Add(new LauncherUsageRow(
+                statement.GetText(0) ?? string.Empty,
+                statement.GetText(1) ?? string.Empty,
+                statement.GetText(2) ?? string.Empty,
+                statement.GetText(3) ?? string.Empty,
+                statement.GetInt64(4) == 0 ? 0 : BitConverter.Int64BitsToDouble(statement.GetInt64(4)),
+                statement.GetInt64(5)));
+        }
+
+        return rows;
+    }
+
+    public void SaveLauncherUsage(LauncherUsageRow row)
+    {
+        using var statement = _connection.Prepare(
+            """
+            INSERT OR REPLACE INTO launcher_usage(query, kind, target, title, score, used_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            """);
+        statement.BindText(1, row.Query)
+            .BindText(2, row.Kind)
+            .BindText(3, row.Target)
+            .BindText(4, row.Title)
+            .BindInt64(5, BitConverter.DoubleToInt64Bits(row.Score))
+            .BindInt64(6, row.UsedAt);
+        statement.Step();
+    }
+
+    public void DeleteLauncherUsage(string query, string kind, string target)
+    {
+        using var statement = _connection.Prepare(
+            "DELETE FROM launcher_usage WHERE query = ?1 AND kind = ?2 AND target = ?3");
+        statement.BindText(1, query).BindText(2, kind).BindText(3, target);
+        statement.Step();
+    }
+
+    public void ClearLauncherUsage() => _connection.Execute("DELETE FROM launcher_usage;");
+
     public void Dispose() => _connection.Dispose();
 
     private void Migrate()
@@ -195,6 +241,15 @@ internal sealed class Database : IDisposable
                   favorite INTEGER NOT NULL DEFAULT 0
                 );
                 CREATE INDEX IF NOT EXISTS clips_copied_at ON clips(copied_at DESC, id DESC);
+                CREATE TABLE IF NOT EXISTS launcher_usage(
+                  query TEXT NOT NULL,
+                  kind TEXT NOT NULL,
+                  target TEXT NOT NULL,
+                  title TEXT NOT NULL DEFAULT '',
+                  score INTEGER NOT NULL,
+                  used_at INTEGER NOT NULL,
+                  PRIMARY KEY(query, kind, target)
+                );
                 """);
             _connection.Execute($"PRAGMA user_version = {SchemaVersion};");
             _connection.Execute("COMMIT;");

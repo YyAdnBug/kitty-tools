@@ -59,6 +59,7 @@ internal sealed class SettingsWindow : Window
         _navPanel.Children.Add(CreateNavButton("hotkeys", "快捷键", "\uE765"));
         _navPanel.Children.Add(CreateNavButton("clipboard", "剪贴板", "\uE8C8"));
         _navPanel.Children.Add(CreateNavButton("translate", "翻译", "\uE774"));
+        _navPanel.Children.Add(CreateNavButton("launcher", "启动器", "\uE721"));
         _navPanel.Children.Add(CreateNavButton("about", "关于", "\uE946"));
 
         _navBorder = new Border
@@ -149,6 +150,9 @@ internal sealed class SettingsWindow : Window
                 break;
             case "translate":
                 BuildTranslate();
+                break;
+            case "launcher":
+                BuildLauncher();
                 break;
             case "about":
                 BuildAbout();
@@ -458,6 +462,164 @@ internal sealed class SettingsWindow : Window
             SettingsService.Save();
             NoticeHost.Show("已清空", $"删了 {removed} 条，收藏还在", NoticeTone.Normal);
             BuildPage("clipboard");
+        };
+        _content.Children.Add(clear);
+    }
+
+    private void BuildLauncher()
+    {
+        _content.Children.Add(Header("启动器", "应用、系统设置、系统命令、计算和网址直达；网页搜索只有一个兜底。"));
+        var settings = SettingsService.Current;
+        var engines = (settings.LauncherSearchEngines ?? WebSearch.Defaults())
+            .Select(engine => new KittyTools.Core.SearchEngine
+            {
+                Id = engine.Id,
+                Name = engine.Name,
+                Keyword = engine.Keyword,
+                UrlTemplate = engine.UrlTemplate,
+                Fallback = engine.Fallback,
+            })
+            .ToList();
+
+        void Persist()
+        {
+            settings.LauncherSearchEngines = engines;
+            SettingsService.Save();
+            BuildPage("launcher");
+        }
+
+        _content.Children.Add(Section("网页搜索", "有关键词的用「关键词 空格 内容」直达；勾「兜底」的只在没有本地结果时列在最后（只能有一个）。"));
+        for (var index = 0; index < engines.Count; index++)
+        {
+            var engine = engines[index];
+            var row = new Grid { ColumnSpacing = 10 };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var name = new StackPanel { Spacing = 1 };
+            name.Children.Add(new TextBlock
+            {
+                Text = engine.Name,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            });
+            name.Children.Add(new TextBlock
+            {
+                Text = string.IsNullOrEmpty(engine.Keyword) ? "无关键词" : engine.Keyword,
+                FontSize = 11,
+                Opacity = 0.6,
+            });
+            Grid.SetColumn(name, 0);
+            row.Children.Add(name);
+
+            var url = new TextBlock
+            {
+                Text = engine.UrlTemplate,
+                FontSize = 11,
+                Opacity = 0.7,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            Grid.SetColumn(url, 2);
+            row.Children.Add(url);
+
+            var fallback = new CheckBox
+            {
+                Content = "兜底",
+                IsChecked = engine.Fallback,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            fallback.Click += (_, _) =>
+            {
+                var value = fallback.IsChecked == true;
+                foreach (var other in engines)
+                {
+                    other.Fallback = false;
+                }
+
+                engine.Fallback = value;
+                Persist();
+            };
+            Grid.SetColumn(fallback, 3);
+            row.Children.Add(fallback);
+
+            var up = new Button { Content = "↑", Padding = new Thickness(8, 2, 8, 2), IsEnabled = index > 0 };
+            up.Click += (_, _) =>
+            {
+                (engines[index - 1], engines[index]) = (engines[index], engines[index - 1]);
+                Persist();
+            };
+            Grid.SetColumn(up, 4);
+            row.Children.Add(up);
+
+            var down = new Button
+            {
+                Content = "↓",
+                Padding = new Thickness(8, 2, 8, 2),
+                IsEnabled = index < engines.Count - 1,
+            };
+            down.Click += (_, _) =>
+            {
+                (engines[index + 1], engines[index]) = (engines[index], engines[index + 1]);
+                Persist();
+            };
+            Grid.SetColumn(down, 5);
+            row.Children.Add(down);
+
+            var remove = new Button { Content = "删除", Padding = new Thickness(8, 2, 8, 2) };
+            remove.Click += (_, _) =>
+            {
+                engines.RemoveAt(index);
+                Persist();
+            };
+            Grid.SetColumn(remove, 6);
+            row.Children.Add(remove);
+            _content.Children.Add(row);
+        }
+
+        var add = new Button { Content = "＋ 添加搜索" };
+        var addMenu = new MenuFlyout();
+        foreach (var preset in KittyTools.Core.WebSearch.Presets
+                     .Where(preset => engines.All(engine => engine.Id != preset.Id)))
+        {
+            var item = new MenuFlyoutItem { Text = preset.Name };
+            item.Click += (_, _) =>
+            {
+                engines.Add(new KittyTools.Core.SearchEngine
+                {
+                    Id = preset.Id,
+                    Name = preset.Name,
+                    Keyword = preset.Keyword,
+                    UrlTemplate = preset.UrlTemplate,
+                    Fallback = false,
+                });
+                Persist();
+            };
+            addMenu.Items.Add(item);
+        }
+
+        add.Flyout = addMenu;
+        _content.Children.Add(add);
+
+        _content.Children.Add(Section("使用记录", "「常用」和排序从这里学；清空后收藏和网页搜索列表不动。"));
+        var clear = new Button { Content = "清空使用记录" };
+        var armed = false;
+        clear.Click += (_, _) =>
+        {
+            if (!armed)
+            {
+                armed = true;
+                clear.Content = "再点一次：清空";
+                return;
+            }
+
+            LauncherUsageStore.Instance?.Clear();
+            NoticeHost.Show("已清空", "「常用」从头开始学", NoticeTone.Normal);
+            BuildPage("launcher");
         };
         _content.Children.Add(clear);
     }

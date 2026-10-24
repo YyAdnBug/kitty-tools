@@ -26,14 +26,13 @@ internal enum OverlayKind
 internal sealed unsafe class OverlayWindow : Window
 {
     private const int WidthDip = 720;
-    private const int LauncherHeightDip = 360;
+    private const int LauncherHeightDip = 520;
     private const int ClipboardHeightDip = 520;
 
     private readonly Grid _host;
-    private readonly TextBox _launcherInput;
-    private readonly TextBlock _launcherBody;
 
     private ClipboardPanel? _clipboard;
+    private LauncherPanel? _launcher;
     private OverlayKind _kind;
     private HWND _hwnd;
     private HWND _previousForeground;
@@ -45,27 +44,6 @@ internal sealed unsafe class OverlayWindow : Window
         Title = Paths.ProductName + " 浮层";
         _host = new Grid { RequestedTheme = Theme.ElementTheme };
 
-        _launcherInput = new TextBox
-        {
-            PlaceholderText = "搜索应用、设置、命令…",
-            FontSize = 20,
-            Height = 56,
-            Margin = new Thickness(20, 16, 20, 8),
-            VerticalContentAlignment = VerticalAlignment.Center,
-        };
-        _launcherInput.KeyDown += OnLauncherKeyDown;
-        _launcherBody = new TextBlock
-        {
-            Text = "第 4 批接上：应用、设置页、系统命令、计算和网址直达。",
-            TextWrapping = TextWrapping.Wrap,
-            Opacity = 0.65,
-            Margin = new Thickness(22, 6, 22, 16),
-        };
-        var launcher = new StackPanel();
-        launcher.Children.Add(_launcherInput);
-        launcher.Children.Add(_launcherBody);
-
-        _host.Children.Add(launcher);
         Content = _host;
         SystemBackdrop = new AcrylicBackdrop();
         ExtendsContentIntoTitleBar = true;
@@ -89,6 +67,8 @@ internal sealed unsafe class OverlayWindow : Window
 
     public HWND PasteTarget => _previousForeground;
 
+    public void SetClipboardQuery(string query) => _clipboard?.SetQuery(query);
+
     public void ShowOverlay(OverlayKind kind)
     {
         _kind = kind;
@@ -108,7 +88,8 @@ internal sealed unsafe class OverlayWindow : Window
         }
         else
         {
-            _host.Children.Add(BuildLauncherPlaceholder());
+            _launcher ??= CreateLauncherPanel();
+            _host.Children.Add(_launcher);
         }
 
         PositionAtPointer(kind == OverlayKind.Clipboard ? ClipboardHeightDip : LauncherHeightDip);
@@ -122,9 +103,8 @@ internal sealed unsafe class OverlayWindow : Window
         }
         else
         {
-            _launcherInput.Text = string.Empty;
-            _launcherInput.Focus(FocusState.Programmatic);
-            DispatcherQueue.TryEnqueue(() => _launcherInput.Focus(FocusState.Programmatic));
+            _launcher?.OnShown();
+            DispatcherQueue.TryEnqueue(() => _launcher?.FocusSearch());
         }
 
         PInvoke.DwmFlush();
@@ -143,6 +123,7 @@ internal sealed unsafe class OverlayWindow : Window
         {
             _visible = false;
             _clipboard?.OnHidden();
+            _launcher?.OnHidden();
             AppWindow.Hide();
             Log.Info($"overlay.hide restore={restoreForeground}");
             if (restoreForeground && _previousForeground != default)
@@ -168,11 +149,15 @@ internal sealed unsafe class OverlayWindow : Window
         return panel;
     }
 
-    private UIElement BuildLauncherPlaceholder()
+    private LauncherPanel CreateLauncherPanel()
     {
-        var panel = new StackPanel();
-        panel.Children.Add(_launcherInput);
-        panel.Children.Add(_launcherBody);
+        var panel = new LauncherPanel();
+        panel.CloseRequested += () => HideOverlay(restoreForeground: true);
+        panel.SettingsRequested += () =>
+        {
+            HideOverlay(restoreForeground: false);
+            ShellRuntime.Instance?.ShowSettings(welcome: false, page: "launcher");
+        };
         return panel;
     }
 
@@ -184,26 +169,16 @@ internal sealed unsafe class OverlayWindow : Window
             return;
         }
 
-        if (args.WindowActivationState == WindowActivationState.CodeActivated && _visible &&
-            _kind == OverlayKind.Clipboard)
+        if (args.WindowActivationState == WindowActivationState.CodeActivated && _visible)
         {
-            DispatcherQueue.TryEnqueue(() => _clipboard?.FocusSearch());
-        }
-    }
-
-    private void OnLauncherKeyDown(object sender, KeyRoutedEventArgs e)
-    {
-        if (e.Key == Windows.System.VirtualKey.Escape)
-        {
-            e.Handled = true;
-            HideOverlay(restoreForeground: true);
-        }
-        else if (e.Key == Windows.System.VirtualKey.W &&
-                 Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Control)
-                     .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down))
-        {
-            e.Handled = true;
-            HideOverlay(restoreForeground: true);
+            if (_kind == OverlayKind.Clipboard)
+            {
+                DispatcherQueue.TryEnqueue(() => _clipboard?.FocusSearch());
+            }
+            else
+            {
+                DispatcherQueue.TryEnqueue(() => _launcher?.FocusSearch());
+            }
         }
     }
 
@@ -261,4 +236,6 @@ internal static class OverlayHost
     }
 
     public static void Hide(bool restoreForeground) => _window?.HideOverlay(restoreForeground);
+
+    public static void SetClipboardQuery(string query) => _window?.SetClipboardQuery(query);
 }

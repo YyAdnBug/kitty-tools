@@ -156,6 +156,12 @@ public static class SensitiveText
 
     private static bool LooksLikeJwt(string text)
     {
+        // 先看有没有 JWT 的第二段标记：大文本里只有 eyJ、没有 .eyJ 时不必逐处找。
+        if (!text.Contains(".eyJ", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
         var from = 0;
         while (from < text.Length - 10)
         {

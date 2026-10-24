@@ -174,6 +174,17 @@ internal sealed unsafe partial class SqliteStatement : IDisposable
         }
 
         var bytes = Encoding.UTF8.GetBytes(value);
+        if (bytes.Length == 0)
+        {
+            // fixed 空数组会得到 null 指针，SQLite 会当成 NULL；这里绑一个有效的空串指针。
+            fixed (byte* empty = &EmptyString)
+            {
+                Check(Sqlite3BindText(_statement, index, empty, 0, Transient));
+            }
+
+            return this;
+        }
+
         fixed (byte* text = bytes)
         {
             Check(Sqlite3BindText(_statement, index, text, bytes.Length, Transient));
@@ -290,6 +301,7 @@ internal sealed unsafe partial class SqliteStatement : IDisposable
     }
 
     private static readonly IntPtr Transient = new(-1); // SQLITE_TRANSIENT
+    private static byte EmptyString;
 
     [LibraryImport("winsqlite3.dll", EntryPoint = "sqlite3_bind_text")]
     private static partial int Sqlite3BindText(IntPtr statement, int index, byte* value, int bytes, IntPtr destructor);

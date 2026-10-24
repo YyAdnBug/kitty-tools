@@ -61,6 +61,9 @@ internal sealed class Settings
 
     public List<TranslateServiceConfig>? TranslateServices { get; set; }
 
+    /// <summary>启动器的网页搜索列表；null = 从没存过（默认前 8 个，Bing 兜底）。</summary>
+    public List<KittyTools.Core.SearchEngine>? LauncherSearchEngines { get; set; }
+
     public List<HotKeySetting> HotKeys { get; set; } = new();
 }
 

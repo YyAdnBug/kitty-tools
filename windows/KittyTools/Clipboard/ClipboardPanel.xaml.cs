@@ -52,6 +52,15 @@ public sealed partial class ClipboardPanel : UserControl
         FocusSearch();
     }
 
+    /// <summary>从启动器「cb 词」进来：把词填进搜索框。</summary>
+    public void SetQuery(string query)
+    {
+        SearchBox.Text = query;
+        SearchBox.SelectionStart = SearchBox.Text.Length;
+        Refresh();
+        FocusSearch();
+    }
+
     /// <summary>窗口激活后再抢一次焦点：刚 Activate 时 Focus 可能落不下去。</summary>
     public void FocusSearch()
     {

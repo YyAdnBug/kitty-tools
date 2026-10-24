@@ -46,6 +46,29 @@ internal static class ImageCodec
         }
     }
 
+    /// <summary>BGRA 像素（自上而下）→ PNG；应用图标用。</summary>
+    public static async Task<byte[]?> BgraToPngAsync(int width, int height, byte[] bgra)
+    {
+        try
+        {
+            var writer = new DataWriter();
+            writer.WriteBytes(bgra);
+            var buffer = writer.DetachBuffer();
+            using var bitmap = new SoftwareBitmap(
+                BitmapPixelFormat.Bgra8, width, height, BitmapAlphaMode.Premultiplied);
+            bitmap.CopyFromBuffer(buffer);
+            using var output = new InMemoryRandomAccessStream();
+            var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId, output);
+            encoder.SetSoftwareBitmap(bitmap);
+            await encoder.FlushAsync();
+            return await ReadAllAsync(output);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     /// <summary>PNG → CF_DIBV5 的字节（32 位 BGRA、自下而上）。</summary>
     public static async Task<byte[]?> PngToDibAsync(byte[] png)
     {
