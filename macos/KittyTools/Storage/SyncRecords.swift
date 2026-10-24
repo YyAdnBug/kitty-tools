@@ -32,6 +32,21 @@ nonisolated enum SyncRecords {
   /// 一类数据（文件名、设置页那一行都按它）
   enum Kind: String, CaseIterable, Sendable {
     case clips, vocabulary, engines, services, launcher, settings
+
+    /// 自己子文件夹里的文件名
+    var fileName: String { "\(rawValue).json" }
+
+    /// 设置页、提示里的叫法
+    var title: String {
+      switch self {
+      case .clips: "片段和收藏"
+      case .vocabulary: "生词本"
+      case .engines: "网页搜索与快捷链接"
+      case .services: "翻译服务"
+      case .launcher: "启动器收藏"
+      case .settings: "设置与快捷键"
+      }
+    }
   }
 
   /// 一条

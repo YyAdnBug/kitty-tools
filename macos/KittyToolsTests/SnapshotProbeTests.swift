@@ -3808,7 +3808,7 @@ struct SnapshotProbeTests {
     let prefs = try #require(UserDefaults(suiteName: name))
     defer { prefs.removePersistentDomain(forName: name) }
     let store = try NoteStore(db: Database(path: ":memory:"))
-    let size = NSSize(width: 640, height: 300)
+    let size = NSSize(width: 640, height: 640)
     func section(_ prepare: (NoteSyncer) -> Void = { _ in }) -> some View {
       let syncer = NoteSyncer(store: store, defaults: prefs)
       prepare(syncer)

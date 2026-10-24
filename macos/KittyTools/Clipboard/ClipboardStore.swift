@@ -73,6 +73,7 @@ import Observation
         created_at REAL NOT NULL, position INTEGER NOT NULL DEFAULT 0)
       """)
     try Self.migrate(db)
+    try SyncLedger.prepare(db)
     try reload()
   }
 
@@ -624,5 +625,261 @@ import Observation
     item.note = row.text(15)
     item.groupID = row.text(16).flatMap(UUID.init(uuidString:))
     return item
+  }
+}
+
+// MARK: 同步（全局同步：片段、文字的收藏和收藏夹，PLAN §10「全局同步」B4）
+
+extension ClipboardStore: SyncSource {
+  /// 同步文件里的一条片段 / 收藏（编号 = 条目的编号）。复制时间不同步：每粘贴一次就变，会让别处同时改的备注输掉、
+  /// 文件跟着重写；新来的条目排在最前（来的那一刻）
+  private nonisolated struct SyncedClip: Codable {
+    var text: String
+    var favorite: Bool
+    var snippet: Bool
+    var note: String?
+    /// 所在的收藏夹（编号）
+    var group: String?
+  }
+
+  /// 同步文件里的一个收藏夹（编号 = "group:" + 收藏夹的编号）
+  private nonisolated struct SyncedGroup: Codable {
+    var name: String
+    var position: Int
+    var created: Int64
+  }
+
+  private static let groupPrefix = "group:"
+
+  var syncKind: SyncRecords.Kind { .clips }
+
+  /// 第一次合：同样正文的片段 / 收藏、同名的收藏夹只留文件夹里那个
+  var syncJoin: SyncRecords.Join {
+    .union { value in
+      let data = Data(value.utf8)
+      if let clip = try? JSONDecoder().decode(SyncedClip.self, from: data) {
+        return "clip:" + clip.text
+      }
+      return (try? JSONDecoder().decode(SyncedGroup.self, from: data)).map { "group:" + $0.name }
+    }
+  }
+
+  /// 面板里有还能撤销的删除 / 取消收藏：还没落库，这一轮先不合
+  var syncBusy: Bool { !undoStack.isEmpty }
+
+  private static func encoded(_ value: some Encodable) -> String? {
+    (try? SyncRecords.encoder.encode(value)).map { String(decoding: $0, as: UTF8.self) }
+  }
+
+  /// 留下来的文字条目（收藏、片段：图片和文件的不同步，B5）和收藏夹。带 NUL 的不同步（库里存的是截断的，重启后和账本
+  /// 对不上，会被当成本机改了、把截断的那版传出去）
+  func syncValues() -> [String: String] {
+    var values: [String: String] = [:]
+    for item in items where item.kind == .text && item.isRetained {
+      guard let text = item.text, !text.contains("\0"), item.note?.contains("\0") != true else {
+        continue
+      }
+      values[item.id.uuidString] = Self.encoded(
+        SyncedClip(
+          text: text, favorite: item.favorite, snippet: item.isSnippet, note: item.note,
+          group: item.groupID?.uuidString))
+    }
+    for (index, group) in groups.enumerated() where !group.name.contains("\0") {
+      values[Self.groupPrefix + group.id.uuidString] = Self.encoded(
+        SyncedGroup(
+          name: group.name, position: index,
+          created: Int64((group.createdAt.timeIntervalSince1970 * 1000).rounded())))
+    }
+    return values
+  }
+
+  func syncLedger(library: String) throws -> SyncRecords.Ledger? {
+    try SyncLedger.load(.clips, library: library, in: db)
+  }
+
+  /// 落合并结果（先算好新的样子，库和账本一个事务写下去，成了才换进内存；有一条解不出来就整个不落，这一类停在「没存上」——
+  /// 当成删了的话会一路删到每一台）：
+  /// - 收藏夹先（条目要归进去）。和本机另一个同名的撞上：**编号小的留下**（几台挑的一样），另一个的条目归进留下的那个。
+  /// - 别处删了 / 不再留着的：本机这条**取消收藏、移出片段和收藏夹**（还在历史里，按保留天数清理；不直接删行）。先落这些，
+  ///   再落新来的。
+  /// - 新来的 / 改了的：和本机同样正文的普通条目合成一条（备注没有就用本机的）；和本机另一条留下来的同正文的撞上：**编号小的
+  ///   留下**，收藏、片段取并集，备注、收藏夹缺的补上（同 adopt）——输的那条本机删掉，下一轮它的删除和留下那条的改动传出去，
+  ///   几台合到同一条（同一段文字只出现一次）
+  func applySync(_ changes: [String: String?], ledger: SyncRecords.Ledger, library: String) -> Bool
+  {
+    var groupChanges: [(UUID, SyncedGroup?)] = []
+    var clipChanges: [(UUID, SyncedClip?)] = []
+    for (key, value) in changes {
+      let isGroup = key.hasPrefix(Self.groupPrefix)
+      guard let id = UUID(uuidString: isGroup ? String(key.dropFirst(Self.groupPrefix.count)) : key)
+      else { return false }
+      guard let value else {
+        if isGroup { groupChanges.append((id, nil)) } else { clipChanges.append((id, nil)) }
+        continue
+      }
+      let data = Data(value.utf8)
+      if isGroup {
+        guard let group = try? JSONDecoder().decode(SyncedGroup.self, from: data) else {
+          return false
+        }
+        groupChanges.append((id, group))
+      } else {
+        guard let clip = try? JSONDecoder().decode(SyncedClip.self, from: data) else {
+          return false
+        }
+        clipChanges.append((id, clip))
+      }
+    }
+    // 先「不再留着」的、再新来的；同一类里按编号（几台的先后一样）
+    func order<T>(_ a: (UUID, T?), _ b: (UUID, T?)) -> Bool {
+      (a.1 == nil ? 0 : 1, a.0.uuidString) < (b.1 == nil ? 0 : 1, b.0.uuidString)
+    }
+    groupChanges.sort(by: order)
+    clipChanges.sort(by: order)
+
+    // 收藏夹
+    var newGroups = groups
+    var positions: [UUID: Int] = Dictionary(
+      uniqueKeysWithValues: groups.enumerated().map { ($0.element.id, $0.offset) })
+    var removedGroups: Set<UUID> = []
+    /// 收藏夹编号 → 它的条目该归进的那个（同名撞上、被删了但还有同名的）
+    var remap: [UUID: UUID] = [:]
+    for (id, synced) in groupChanges {
+      guard let synced else {
+        newGroups.removeAll { $0.id == id }
+        removedGroups.insert(id)
+        continue
+      }
+      if let other = newGroups.first(where: { $0.id != id && $0.name == synced.name }) {
+        if other.id.uuidString < id.uuidString {
+          remap[id] = other.id
+          newGroups.removeAll { $0.id == id }
+          removedGroups.insert(id)
+          continue
+        }
+        remap[other.id] = id
+        newGroups.removeAll { $0.id == other.id }
+        removedGroups.insert(other.id)
+      }
+      let group = ClipGroup(
+        id: id, name: synced.name,
+        createdAt: Date(timeIntervalSince1970: Double(synced.created) / 1000))
+      if let index = newGroups.firstIndex(where: { $0.id == id }) {
+        newGroups[index] = group
+      } else {
+        newGroups.append(group)
+      }
+      positions[id] = synced.position
+    }
+    // 被删的收藏夹还有同名的：条目归过去
+    for id in removedGroups where remap[id] == nil {
+      if let name = groups.first(where: { $0.id == id })?.name,
+        let same = newGroups.first(where: { $0.name == name })
+      {
+        remap[id] = same.id
+      }
+    }
+    newGroups.sort {
+      (positions[$0.id] ?? .max, $0.createdAt, $0.id.uuidString)
+        < (positions[$1.id] ?? .max, $1.createdAt, $1.id.uuidString)
+    }
+    let groupIDs = Set(newGroups.map(\.id))
+    func resolved(_ id: UUID?) -> UUID? {
+      guard let id else { return nil }
+      let target = remap[id] ?? id
+      return groupIDs.contains(target) ? target : nil
+    }
+
+    // 条目
+    var newItems = items
+    var touched: [UUID: ClipItem] = [:]
+    var removedItems: Set<UUID> = []
+    for index in newItems.indices {
+      guard let group = newItems[index].groupID, !groupIDs.contains(group) else { continue }
+      newItems[index].groupID = resolved(group)
+      touched[newItems[index].id] = newItems[index]
+    }
+    for (id, synced) in clipChanges {
+      let index = newItems.firstIndex { $0.id == id }
+      guard let synced else {
+        // 别处删了 / 不再留着：本机取消收藏、移出片段和收藏夹
+        guard let index else { continue }
+        newItems[index].favorite = false
+        newItems[index].isSnippet = false
+        newItems[index].groupID = nil
+        touched[id] = newItems[index]
+        continue
+      }
+      var item: ClipItem
+      if let index {
+        item = newItems.remove(at: index)
+      } else {
+        item = ClipItem(kind: .text)
+        item.id = id
+      }
+      if item.text != synced.text { item.richType = nil }
+      item.text = synced.text
+      item.isSnippet = synced.snippet
+      item.note = synced.note
+      item.groupID = resolved(synced.group.flatMap(UUID.init(uuidString:)))
+      item.favorite = synced.favorite || item.groupID != nil
+      if let other = newItems.first(where: {
+        $0.kind == .text && $0.text == synced.text && $0.id != id
+      }) {
+        newItems.removeAll { $0.id == other.id }
+        var keeper = other.isRetained && other.id.uuidString < id.uuidString ? other : item
+        let loser = keeper.id == other.id ? item : other
+        keeper.favorite = keeper.favorite || loser.favorite
+        keeper.isSnippet = keeper.isSnippet || loser.isSnippet
+        keeper.note = keeper.note ?? loser.note
+        keeper.groupID = keeper.groupID ?? loser.groupID
+        keeper.favorite = keeper.favorite || keeper.groupID != nil
+        keeper.copiedAt = max(keeper.copiedAt, loser.copiedAt)
+        removedItems.insert(loser.id)
+        touched[loser.id] = nil
+        item = keeper
+      }
+      newItems.append(item)
+      touched[item.id] = item
+    }
+    newItems.sort { ($0.copiedAt, $0.id.uuidString) > ($1.copiedAt, $1.id.uuidString) }
+
+    do {
+      try db.transaction {
+        for id in removedGroups {
+          try db.execute("DELETE FROM clip_groups WHERE id = ?", [id.uuidString])
+        }
+        for (index, group) in newGroups.enumerated() {
+          try db.execute(
+            """
+            INSERT INTO clip_groups(id, name, created_at, position) VALUES (?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET name = excluded.name, position = excluded.position
+            """,
+            [
+              group.id.uuidString, group.name, group.createdAt.timeIntervalSinceReferenceDate,
+              index,
+            ])
+        }
+        for id in removedItems { try db.execute("DELETE FROM clips WHERE id = ?", [id.uuidString]) }
+        for item in touched.values where !removedItems.contains(item.id) {
+          try db.execute(
+            """
+            INSERT INTO clips(\(Self.columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET text = excluded.text, favorite = excluded.favorite,
+              snippet = excluded.snippet, note = excluded.note, group_id = excluded.group_id,
+              copied_at = excluded.copied_at, rich_type = excluded.rich_type,
+              rich_data = CASE WHEN excluded.rich_type IS NULL THEN NULL ELSE rich_data END
+            """, Self.encode(item))
+        }
+        try SyncLedger.save(ledger, kind: .clips, library: library, in: db)
+      }
+    } catch {
+      Log.storage.error("剪贴板同步写库失败：\(error)")
+      return false
+    }
+    groups = newGroups
+    items = newItems
+    for id in Set(touched.keys).union(removedItems) { searchKeys[id] = nil }
+    return true
   }
 }

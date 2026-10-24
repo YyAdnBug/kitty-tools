@@ -23,7 +23,12 @@ struct NoteSyncerTests {
     let syncer: NoteSyncer
     let suite: String
     let defaults: UserDefaults
+    /// 剪贴板库（片段、收藏）和翻译历史（生词本）：同一个内存库，同 App 里的 kitty.sqlite3
+    let kitty: Database
+    let clipboard: ClipboardStore
+    let history: HistoryStore
     var editing: Set<String> = []
+    var featuresOff: Set<String> = []
 
     init(host: String, root: URL, file: URL? = nil) throws {
       let db = try Database(path: file?.path ?? ":memory:", wal: file == nil)
@@ -32,9 +37,27 @@ struct NoteSyncerTests {
       suite = "kitty-notes-sync-tests-\(UUID().uuidString)"
       defaults = UserDefaults(suiteName: suite)!
       syncer = NoteSyncer(store: store, defaults: defaults)
+      kitty = try Database(path: ":memory:")
+      clipboard = try ClipboardStore(
+        db: kitty, images: ImageStore(directory: root.appending(path: "剪贴板图片-\(host)")))
+      history = try HistoryStore(db: kitty)
+      syncer.sources = [clipboard, history]
       syncer.computerName = { host }
       syncer.editing = { [unowned self] in editing }
+      syncer.featureOn = { [unowned self] in !featuresOff.contains($0) }
     }
+
+    /// 留下来的文字条目（收藏、片段）：正文 → (收藏、片段、收藏夹的名字、备注)
+    var retained: [String: (Bool, Bool, String?, String?)] {
+      var result: [String: (Bool, Bool, String?, String?)] = [:]
+      for item in clipboard.items where item.isRetained {
+        let group = item.groupID.flatMap { id in clipboard.groups.first { $0.id == id }?.name }
+        result[item.text ?? ""] = (item.favorite, item.isSnippet, group, item.note)
+      }
+      return result
+    }
+
+    var words: [String] { history.search("", favoritesOnly: true, limit: 0).map(\.source).sorted() }
 
     deinit { UserDefaults().removePersistentDomain(forName: suite) }
   }
@@ -401,5 +424,217 @@ struct NoteSyncerTests {
     } else {
       Issue.record("墓碑文件读不出来")
     }
+  }
+
+  // MARK: 片段、收藏、生词本（全局同步第 3 批）
+
+  /// 片段、收藏和收藏夹、生词本来回传；对面改了正文、备注跟着变；对面删了的这台只是不再收藏（还在历史里）
+  @Test func clipsAndWordsTravel() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    a.clipboard.saveSnippet("此致敬礼")
+    a.clipboard.recordOwnText("收藏的一段")
+    let favorite = try #require(a.clipboard.items.first { $0.text == "收藏的一段" })
+    a.clipboard.toggleFavorite([favorite.id])
+    let group = try #require(a.clipboard.createGroup(named: "工作"))
+    a.clipboard.assign([favorite.id], to: group.id)
+    a.clipboard.recordOwnText("普通历史不同步")
+    a.history.setFavorite(
+      source: "serendipity", target: .zhHans, result: "意外之喜", service: "s", true)
+    for mac in [a, b] { #expect(await mac.syncer.enable(folder: shared) == nil) }
+    await settle([a, b])
+    #expect(b.retained["此致敬礼"].map { !$0.0 && $0.1 } == true)
+    #expect(b.retained["收藏的一段"].map { $0.0 && $0.2 == "工作" } == true)
+    #expect(b.retained["普通历史不同步"] == nil && b.words == ["serendipity"])
+    // B 改正文和备注，A 跟着变
+    let snippet = try #require(b.clipboard.items.first { $0.text == "此致敬礼" })
+    b.clipboard.update([snippet.id]) {
+      $0.text = "此致\n敬礼"
+      $0.note = "落款"
+    }
+    await settle([b, a])
+    #expect(a.retained["此致\n敬礼"]?.3 == "落款" && a.retained["此致敬礼"] == nil)
+    // B 取消收藏：A 那条不再收藏，但还在历史里
+    b.clipboard.toggleFavorite([favorite.id])
+    b.history.setFavorite(
+      source: "serendipity", target: .zhHans, result: "意外之喜", service: "s", false)
+    await settle([b, a])
+    #expect(a.retained["收藏的一段"] == nil)
+    #expect(a.clipboard.items.contains { $0.text == "收藏的一段" } && a.words.isEmpty)
+    // 账本和数据在同一个库里
+    let ledger = try SyncLedger.load(.clips, library: try #require(a.syncer.library), in: a.kitty)
+    #expect(ledger != nil)
+  }
+
+  /// 第一次合：两台都有同样正文的收藏，合完各只有一条
+  @Test func joiningDoesNotDuplicateClips() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    for mac in [a, b] { mac.clipboard.saveSnippet("同样的片段") }
+    // 两台各有一个「工作」收藏夹，B 那条收藏在里面、带备注；A 那条同正文、没备注
+    for mac in [a, b] { mac.clipboard.recordOwnText("同样的收藏") }
+    let ga = try #require(a.clipboard.createGroup(named: "工作"))
+    let gb = try #require(b.clipboard.createGroup(named: "工作"))
+    for (mac, group) in [(a, ga), (b, gb)] {
+      let item = try #require(mac.clipboard.items.first { $0.text == "同样的收藏" })
+      mac.clipboard.toggleFavorite([item.id])
+      mac.clipboard.assign([item.id], to: group.id)
+    }
+    let mine = try #require(b.clipboard.items.first { $0.text == "同样的收藏" })
+    b.clipboard.update([mine.id]) { $0.note = "B 的备注" }
+    for mac in [a, b] { #expect(await mac.syncer.enable(folder: shared) == nil) }
+    await settle([a, b], times: 3)
+    for mac in [a, b] {
+      #expect(mac.clipboard.items.count { $0.text == "同样的片段" } == 1)
+      // 本机的备注、收藏夹没丢；同名收藏夹只剩一个
+      #expect(mac.retained["同样的收藏"].map { $0.2 == "工作" && $0.3 == "B 的备注" } == true)
+      #expect(mac.clipboard.groups.map(\.name) == ["工作"])
+      // 库里和内存一样（重开一次不多出一条）
+      let reopened = try ClipboardStore(
+        db: mac.kitty, images: ImageStore(directory: root.appending(path: "重开")))
+      #expect(reopened.items.count { $0.text == "同样的片段" } == 1)
+      #expect(reopened.items.count { $0.text == "同样的收藏" } == 1)
+    }
+  }
+
+  /// 两台都开着同步、合之前各自收藏同一句、存同样一段片段：合完各只剩一条，还是收藏 / 片段
+  @Test func concurrentSameTextConverges() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    for mac in [a, b] { #expect(await mac.syncer.enable(folder: shared) == nil) }
+    await settle([a, b])
+    for mac in [a, b] {
+      mac.clipboard.saveSnippet("同时存的片段")
+      mac.history.setFavorite(source: "both", target: .zhHans, result: "两边", service: "s", true)
+    }
+    await settle([a, b], times: 4)
+    for mac in [a, b] {
+      #expect(mac.clipboard.items.count { $0.text == "同时存的片段" } == 1)
+      #expect(mac.retained["同时存的片段"]?.1 == true && mac.words == ["both"])
+    }
+  }
+
+  /// 合完再合一轮：自己那份不重写、账本不变（编 → 落 → 再编字节一样）
+  @Test func settledRoundsWriteNothing() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    a.clipboard.saveSnippet("片段")
+    let group = try #require(a.clipboard.createGroup(named: "收藏夹"))
+    a.clipboard.recordOwnText("收藏")
+    let item = try #require(a.clipboard.items.first { $0.text == "收藏" })
+    a.clipboard.toggleFavorite([item.id])
+    a.clipboard.assign([item.id], to: group.id)
+    a.history.setFavorite(source: "word", target: .zhHans, result: "词", service: "s", true)
+    for mac in [a, b] { #expect(await mac.syncer.enable(folder: shared) == nil) }
+    await settle([a, b], times: 3)
+    func stamps(_ mac: Mac) throws -> [Date?] {
+      try ["clips", "vocabulary"].map { kind in
+        let url = shared.appending(path: "devices/\(mac.store.deviceID)/\(kind).json")
+        return try FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate]
+          as? Date
+      }
+    }
+    let library = try #require(a.syncer.library)
+    let before = try [a, b].map { try stamps($0) }
+    let ledgers = try [a, b].map { try SyncLedger.load(.clips, library: library, in: $0.kitty) }
+    await settle([a, b])
+    let after = try [a, b].map { try stamps($0) }
+    let ledgersAfter = try [a, b].map {
+      try SyncLedger.load(.clips, library: library, in: $0.kitty)
+    }
+    #expect(after == before && ledgersAfter == ledgers)
+  }
+
+  /// 便签这部分不合时，device.json 里的「第几轮」不往小里写
+  @Test func skippingNotesKeepsTheEpoch() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let note = a.store.create(body: "一", now: .now)
+    #expect(await a.syncer.enable(folder: shared) == nil)
+    await a.syncer.round()
+    a.store.setBody("一二", of: note.id, now: .now.addingTimeInterval(5))
+    await a.syncer.round()
+    let epoch = await NoteSyncDisk.read(folder: shared, cache: .init()).folder.devices[
+      a.store.deviceID]?.epoch
+    #expect((epoch ?? 0) >= 2)
+    // 库里记的那一轮被退回去（时间机器），这时候便签不合、只合片段
+    try a.store.setMeta(NoteSyncer.epochKey, "1")
+    a.featuresOff = [NoteSyncer.notesPart]
+    a.clipboard.saveSnippet("片段")
+    await a.syncer.round()
+    let after = await NoteSyncDisk.read(folder: shared, cache: .init()).folder.devices[
+      a.store.deviceID]?.epoch
+    #expect(after == epoch)
+  }
+
+  /// 刹车的「继续」每部分各算：便签那边点了继续，片段一下删很多照样停下来问
+  @Test func brakeAllowanceIsPerPart() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    let notes = (0..<10).map { a.store.create(body: "第 \($0) 条", now: .now) }
+    for index in 0..<10 { a.clipboard.saveSnippet("片段 \(index)") }
+    for mac in [a, b] { #expect(await mac.syncer.enable(folder: shared) == nil) }
+    await settle([a, b])
+    for note in notes.prefix(8) { a.store.delete(note.id, now: .now.addingTimeInterval(5)) }
+    let doomed = Set(a.clipboard.items.filter { $0.isSnippet }.prefix(8).map(\.id))
+    a.clipboard.removeFromSnippets(doomed)
+    // A 自己一下删了 8 条片段：先停下来问
+    await a.syncer.round()
+    #expect(a.syncer.status == .waiting(trashing: 8))
+    a.syncer.allowTrashing()
+    await a.syncer.round()
+    #expect(a.syncer.status == .idle)
+    // B：便签先停（8 条进最近删除），点继续之后片段还要再问一次
+    await b.syncer.round()
+    #expect(b.syncer.status == .waiting(trashing: 8) && b.store.trashed.isEmpty)
+    b.syncer.allowTrashing()
+    await b.syncer.round()
+    #expect(b.store.trashed.count == 8 && b.syncer.status == .waiting(trashing: 8))
+    #expect(b.clipboard.items.count(where: \.isSnippet) == 10)
+    b.syncer.allowTrashing()
+    await b.syncer.round()
+    #expect(b.syncer.status == .idle && b.clipboard.items.count(where: \.isSnippet) == 2)
+  }
+
+  /// 剪贴板面板里有还能撤销的删除时这一类先不合；没勾上的、功能关着的那类不合
+  @Test func busySkippedAndOffPartsWait() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    a.clipboard.saveSnippet("一")
+    for mac in [a, b] { #expect(await mac.syncer.enable(folder: shared) == nil) }
+    await settle([a, b])
+    b.clipboard.recordOwnText("会被撤销删除的")
+    let pending = try #require(b.clipboard.items.first { $0.text == "会被撤销删除的" })
+    b.clipboard.deleteWithUndo([pending.id])
+    a.clipboard.saveSnippet("二")
+    await settle([a, b])
+    #expect(b.retained["二"] == nil, "面板里有能撤销的删除：先不合")
+    b.clipboard.commitDeletion()
+    await settle([a, b])
+    #expect(b.retained["二"] != nil)
+    // B 不同步片段：A 新加的不过来
+    b.syncer.setSyncs(SyncRecords.Kind.clips.rawValue, false)
+    a.clipboard.saveSnippet("三")
+    await settle([a, b])
+    #expect(b.retained["三"] == nil)
+    b.syncer.setSyncs(SyncRecords.Kind.clips.rawValue, true)
+    // 翻译关着：生词本不合
+    b.featuresOff = [SyncRecords.Kind.vocabulary.rawValue]
+    a.history.setFavorite(source: "hello", target: .zhHans, result: "你好", service: "s", true)
+    await settle([a, b])
+    #expect(b.retained["三"] != nil && b.words.isEmpty)
   }
 }

@@ -221,6 +221,9 @@ enum Prefs {
   /// 这台电脑自己的状态、**不注册默认值**——别人给的导出文件不该改你同步到哪；没有 = 没开同步（A2 默认关）
   nonisolated static let notesSyncFolder = "notesSyncFolder"
   nonisolated static let notesSyncLibrary = "notesSyncLibrary"
+  /// 这台电脑上不同步的几部分（全局同步 A3：设置页每类一个勾；"notes" 和 SyncRecords.Kind 的名字），同样是这台电脑自己的
+  /// 状态、不注册默认值（没有 = 都同步）
+  nonisolated static let syncSkipped = "syncSkipped"
   /// 全部便签窗口上次用的显示方式（NotesWindowModel.Layout 的 rawValue：wall 便签墙 / list 列表；没存过 = 便签墙，
   /// 2026-10-15 手测反馈）。同窗口位置一样是这台电脑自己的状态、**不注册默认值**：不跟着导出 / 导入走
   nonisolated static let notesWindowLayout = "notesWindowLayout"

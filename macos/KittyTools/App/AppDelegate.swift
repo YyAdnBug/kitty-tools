@@ -647,7 +647,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
     ) { [weak self] _ in
       MainActor.assumeIsolated {
-        guard let self, Feature.notes.isOn else { return }
+        guard let self, Self.syncWanted else { return }
         self.noteSyncer?.syncNow()
       }
     }
@@ -768,7 +768,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NoteSample.addIfFirst(
           to: noteStore, defaults: .standard, hotKey: HotKeyAction.noteCapture.hotKey?.display)
       }
-      if !launching { noteSyncer?.start() }
       if let noteEdge, !startedNoteEdge {
         startedNoteEdge = true
         noteEdge.start()
@@ -829,7 +828,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
       // 浮动便签先藏起来（固定着的位置记录不清，打开后放回原处）；那叠看着偏好自己收起
       noteEdge?.floats.suspend(covering: .infinite)
-      noteSyncer?.stop()
+    }
+    // 同步跟着它管的几个功能：有一个开着就跑（关着的那部分一轮里跳过），都关了就停
+    if !launching, !turnedOn.union(turnedOff).isDisjoint(with: Self.syncFeatures.values) {
+      if Self.syncWanted { noteSyncer?.start() } else { noteSyncer?.stop() }
     }
     if turnedOff.contains(.launchpad) { launchpad.turnOff() }
     if turnedOff.contains(.statusScreen) { statusPicker.panel?.hide() }
@@ -858,10 +860,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if let noteStore {
       let syncer = NoteSyncer(store: noteStore)
       syncer.island = island
+      syncer.sources = [clipboardStore, historyStore]
+      syncer.featureOn = { Self.syncFeatures[$0]?.isOn ?? true }
+      syncer.wanted = { Self.syncWanted }
       noteSyncer = syncer
-      if Feature.notes.isOn { syncer.start() }
+      if Self.syncWanted { syncer.start() }
     }
   }
+
+  /// 同步的每一部分跟着哪个功能（NoteSyncer.featureOn：关着的那部分不合）
+  private static let syncFeatures: [String: Feature] = [
+    NoteSyncer.notesPart: .notes, SyncRecords.Kind.clips.rawValue: .clipboard,
+    SyncRecords.Kind.vocabulary.rawValue: .translate,
+  ]
+
+  /// 同步管的功能有一个开着
+  private static var syncWanted: Bool { syncFeatures.values.contains { $0.isOn } }
 
   /// 便签的定期清理：「最近删除」里放满 30 天的真删；图片目录里没人引用满 30 天的文件删掉
   /// （账记在目录里的 .orphans.plist，从**第一次发现**没人引用算起）。便签这次用不了时不清（noteStore 是 nil）
