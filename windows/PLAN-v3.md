@@ -2,22 +2,24 @@
 
 2026-10-24 写。内容是 `PLAN-v2.md` §7「第三版候选」整理出来的路线图，外加第三版每一批的细则。
 
-- **第二版全部审完之后再开始**（第二版是 0.2.0；按 PLAN-v2 的 D9，0.1.0 在第二版第 2 批之后就发了）。
+- **第二版第 6 批做完就接着开始**（全程自主，流程和自查清单见 `AGENTS.md`）。第二版是 0.2.0，第三版做完是 0.3.0。
 - 本文只写新功能；工作方式、视觉规矩（PLAN-v2 §3 的主题资源、`Motion`、无障碍）、AOT 和依赖的红线照旧。
 - 每个新功能的**行为**以 mac 版为准：下面每项都点了 mac 的规则章节和源码，只当行为规格读，实现照 Windows 的做法。和本文冲突时以本文为准。
-- §1 的 E1–E10 等用户拍板。用户没改的项按推荐做。
+- **§1 的 E1–E10 已定：一律按推荐**（2026-10-24 用户要求全程自主做完）。
 
 ## 版本划分
 
 | 版本 | 内容 | 细则 |
 |---|---|---|
 | 第三版（0.3.0） | 数据安全、功能开关；翻译、剪贴板、启动器、截图这四样补齐 mac 版的日常功能 | 本文 §2–§7，六批 |
-| 第四版（0.4.0） | 录屏和录音 | 本文 §8 只列要点，开始前另写 `PLAN-v4.md` |
-| 第五版起 | 和 Mac 互通的同步，其余待定 | 本文 §9，开始前先出拍板页 |
+| 第四版（0.4.0） | 录屏和录音 | `PLAN-v4.md` |
+| 第五版（0.5.0） | 和 Mac 互通的同步 | `PLAN-v5.md` |
 
-## 1. 需要拍板的
+## 1. 拍板结果（一律按推荐）
 
-| # | 问题 | 推荐 | 其他选择 |
+「推荐」一列就是定下来的做法，「其他选择」只留作记录。
+
+| # | 问题 | 推荐（已定） | 其他选择 |
 |---|---|---|---|
 | E1 | 版本划分和顺序 | **按上表**：第三版补齐四样日常功能，第四版录屏录音，第五版做和 Mac 互通的同步 | 调换顺序，比如录屏录音提前 |
 | E2 | 导出文件和 mac 版通用吗 | **通用**：读写同一种格式（mac 的 `SettingsArchive` format 2）。Mac 上导出的文件能导进 Windows（片段、文字收藏、收藏夹、生词本、翻译服务、网页搜索，用密码加密的密钥），反过来也一样；设置和快捷键两边不一样，只在同一个平台之间导 | Windows 自己一种格式 |
@@ -29,6 +31,33 @@
 | E8 | 启动器里结束进程 | **Enter = 先请它正常关闭，2 s 没退出再问要不要强制；Ctrl+Enter = 强制结束，要按两次确认** | 直接强制结束 |
 | E9 | 「截取上次区域」的默认键 | **不设**（mac 的 ⌥X 在 Windows 版上已经是截图） | 给一个默认键 |
 | E10 | 功能开关（设置 › 通用 › 功能，每一样都能整个关掉） | **做**：第三版功能多了，用不着的整个关掉，热键、托盘项、后台工作一起停 | 不做 |
+
+## 1.5 为第五版互通先定好的约定（第三版就照这个做）
+
+第五版要和 Mac 共用一个同步文件夹（`PLAN-v5.md`），导出导入（E2）也要和 Mac 通用。下面这些值两边必须**一字不差**，第三版建表、写代码时就照着来，以后也不许改：
+
+- **语言代码**：`zh-Hans`、`zh-Hant`、`en`、`ja`、`ko`、`fr`、`de`、`es`、`ru`、`pt`、`it`（mac `Translate/Language.swift` 的 `Lang` 原值）。Windows 的 `Lang.Code()` 现在已经是这一套。存储、导出、生词本的目标语言都用它。
+- **翻译服务编号**：内置服务就是种类名（`zhipu`、`baidu`、`youdao`、`google`、`deepl`、`microsoft`、`volcengine`、`tencent`），AI 服务是 `ai:` + 8 位小写十六进制（mac `Translate/TranslateService.swift`）。Windows 现在已经一致，新加的四家照这个命名。
+- **网页搜索预设编号**：`google`、`bing`、`baidu`、`github`、`zhihu`、`bilibili`、`wikipedia`、`youtube`、`maps`、`taobao`、`jd`、`douban`、`mdn`（mac `Launcher/WebSearch.swift`）。「地图」的地址存成 mac 的 `maps://?q={query}` 不改，Windows 打开时换成 `bingmaps:?q=…`。
+- **片段、文字收藏、收藏夹、生词本，每条都有稳定的 UUID**：大写、带连字符，和 Swift 的 `uuidString` 一样（比如 `0F8FAD5B-D9CB-469F-A165-70867728950E`）。
+  - `clips` 加 `uid` 列：条目变成「留下的」（收藏或片段）时生成，之后不变；普通历史不用。
+  - `clip_groups`、`translations` 的编号直接用这种 UUID 字符串。
+  - 导出导入、同步都认这个编号。
+- **时间**：导出和同步里的时间一律是 Unix 毫秒（整数）。
+- **生词本唯一**：「原文 + 目标语言」只留一条。
+
+### 第三版要加的表和列
+
+照第二版的逐版本迁移（`KittyTools.Core.Schema`）一步一步加，每步配迁移单测：
+
+| 批 | 改动 |
+|---|---|
+| 第 2 批 | 新表 `translations(id TEXT PRIMARY KEY, source TEXT NOT NULL, source_lang TEXT, target_lang TEXT NOT NULL, result TEXT NOT NULL, service TEXT NOT NULL, created_at INTEGER NOT NULL, favorite INTEGER NOT NULL DEFAULT 0)`；索引 `(created_at DESC)`；收藏的「原文 + 目标语言」唯一（部分唯一索引 `WHERE favorite = 1`） |
+| 第 3 批 | `clips` 加 `uid TEXT`（唯一，允许空）、`snippet INTEGER NOT NULL DEFAULT 0`、`note TEXT`、`group_id TEXT`；新表 `clip_groups(id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, position INTEGER NOT NULL, created_at INTEGER NOT NULL)` |
+| 第 4 批 | `clips` 加 `ocr_text TEXT`、`ocr_state INTEGER NOT NULL DEFAULT 0`（0 没识、1 识过、2 识不出来） |
+| 第 5 批 | 新表 `launcher_favorites(kind TEXT NOT NULL, target TEXT NOT NULL, title TEXT NOT NULL, position INTEGER NOT NULL, PRIMARY KEY(kind, target))` |
+
+第 1 批的每日备份要知道哪些表、哪些行算「留下的」：收藏、片段、收藏夹、生词本、启动器收藏。以后每加一张表，都先想清楚它算不算，不算的就加进备份时删行的清单（同 mac `Backup.dropped`）。
 
 ## 2. 第 1 批：数据安全、导出导入、功能开关
 
@@ -84,7 +113,7 @@
 ### 2.4 验收
 
 - 备份：造一个坏库（连 `-wal` 一起删），确认弹框和三个选项都对，`damaged-` 里的文件齐全。
-- 导入导出：用 mac 版真导出的文件（用户提供，或者用 mac 的单测样本）导进 Windows，片段、收藏、生词本都对；带密钥的文件用对的密码能解开，地址被改过的文件解不开。
+- 导入导出：照 `SettingsArchive.swift` 和 `SettingsArchiveTests.swift` 手写几份 format 2 的样本（没有 `platform` 的当成 Mac 的；带加密密钥的那份在单测里用 mac 的算法参数现场生成），导进 Windows 后片段、收藏、生词本都对；密码对能解开，服务地址被改过的解不开。真 Mac 导出的文件留给用户手测（写进 `HANDTEST.md`）。
 - 功能开关：关掉以后热键不响、托盘里没有它；再打开一切照常。
 
 ## 3. 第 2 批：翻译补齐
@@ -135,7 +164,7 @@
 
 - 历史：写入、搜索、收藏、删除和撤销、导出两种格式、清空保留收藏、保留条数的淘汰（单测）。
 - 替换：记事本、Edge 的输入框、Word（有的话）里替换成功；切到别的程序再点「替换原文」只复制；管理员窗口只复制。
-- 四家服务：签名单测全过；有 key 的话每家联网冒烟一次（环境变量开关，默认不跑）。
+- 四家服务：签名单测全过；有 key 的话每家联网冒烟一次（环境变量开关，默认不跑）；没有 key 就写「没测」。
 
 ## 4. 第 3 批：剪贴板（一）片段、收藏夹、备注、固定、操作面板
 
@@ -207,7 +236,7 @@
   - `port 词`：列在监听的 TCP / UDP 端口（`GetExtendedTcpTable` / `GetExtendedUdpTable`，IPv4 和 IPv6）和占用它的进程；
   - 结束进程照 E8；以管理员身份运行的、系统的进程结束不了时说明原因；
   - 列表在后台取，再呼出时重新取。
-- **验收**：收藏的顺序和备份；文件搜索的延迟；书签和历史在 Chrome、Edge、Firefox（有的话）上都能搜到；端口列表和 `netstat -ano` 对得上；结束进程的两种方式。
+- **验收**：收藏的顺序和备份；文件搜索的延迟；书签和历史在 Chrome、Edge、Firefox（有的话）上都能搜到；端口列表和 `netstat -ano` 对得上；结束进程的两种方式（用自己起的测试进程，不碰用户的程序）。
 
 ## 7. 第 6 批：截图补齐
 
@@ -218,28 +247,14 @@
   - 滚动：用户自己滚；或者点「自动滚动」，往选区中心发滚轮（`SendInput` 的 `MOUSEEVENTF_WHEEL`）。
   - 每隔一会儿截一帧选区交给拼接；Enter 或「完成」结束，Esc 放弃；高度到上限（30000 px）自动结束。
   - 结果走截图的输出（复制、保存、钉图、飞入）。
+- **第三版收尾**（第 6 批最后）：版本号改 0.3.0，更新日志加 0.3.0 的条目，跑 `build-release.ps1` 准备好 zip 和 `.sha256`（不发布）。
 - **验收**：
   - 拼接单测；
   - 在 Edge 网页、资源管理器的长列表、VS Code 的长文件上各截一次，往下拼、往上拼都试，看有没有接错或重复的行；
   - 截图期间的内存峰值。
 
-## 8. 第四版：录屏和录音（要点，开始前另写 PLAN-v4）
+## 8. 第四版、第五版
 
-- **录屏**：
-  - 入口：截图框选时按 R（同 mac），可以选区域、窗口或整屏，倒数 3 s；
-  - 画面用 Windows.Graphics.Capture（按显示器或按窗口，区域靠裁剪；`IsBorderRequired = false`），编码用 Media Foundation 的 SinkWriter（H.264，优先硬件编码），出 MP4；
-  - 声音：系统声音用 WASAPI 回环，麦克风用 WASAPI；
-  - 录制条和点按圈都用 `WDA_EXCLUDEFROMCAPTURE`，不进画面；
-  - 可选：显示点按、显示按键；结束后可以转 GIF、压缩；
-  - 麦克风受系统「隐私和安全性 › 麦克风 › 允许桌面应用访问」管着，被拒时照样开录、不带麦克风，并说明原因。
-- **录音**：麦克风或系统声音，出 m4a（AAC），录音控制条上有电平。
-- 行为参照 mac 的 `Screenshot/ScreenRecorder.swift`、`AudioRecorder.swift` 文件头、mac-overlay-panel §8 和录屏相关的条目、mac-whisker-capture。
-
-## 9. 第五版起的候选（开始前先出拍板页）
-
-- **和 Mac 互通的同步**（推荐作为第五版的主题）：
-  - mac 版 0.7.0 已经有全局同步：一个用户选的文件夹，每类一个 JSON，版本钟 + 墓碑，后改的赢，详见 `macos/PLAN.md` §10「全局同步」、`Storage/SyncRecords.swift`、`SyncRecordsTests` / `SyncRecordsFuzzTests`；
-  - Windows 版照同一格式实现，放在 OneDrive / Dropbox / iCloud for Windows 的文件夹里，就能和 Mac 互通片段、收藏、生词本、网页搜索、翻译服务列表（密钥不同步）；
-  - 先研究格式和合并规则再出拍板页。
-- **便签**（mac 的第七族）、**状态屏**：工作量大，以后再评估。状态屏在 Windows 上拦不住 Ctrl+Alt+Del。
-- **不迁**：启动台（Windows 的开始菜单就是）、程序坞预览（任务栏自带窗口缩略图）。
+- 第四版（录屏和录音）的细则在 `PLAN-v4.md`。
+- 第五版（和 Mac 互通的同步）的细则在 `PLAN-v5.md`。
+- **不做**：便签、状态屏（工作量大，Windows 上也拦不住 Ctrl+Alt+Del）、启动台（Windows 的开始菜单就是）、程序坞预览（任务栏自带窗口缩略图）。第五版做完就算「全部完成」。

@@ -1,0 +1,455 @@
+{
+  "cases" : [
+    {
+      "hash" : "89885c090ca743a5e2c98a04234a922f",
+      "input" : {
+        "favorite" : true,
+        "group" : null,
+        "note" : null,
+        "snippet" : false,
+        "text" : "hello"
+      },
+      "json" : "{\"favorite\":true,\"snippet\":false,\"text\":\"hello\"}",
+      "kind" : "clip"
+    },
+    {
+      "hash" : "c385400c2e0e0b32482ec52cf1188aed",
+      "input" : {
+        "created" : 1761300000000,
+        "result" : "你好，世界",
+        "service" : "zhipu",
+        "source" : "hello",
+        "target" : "en"
+      },
+      "json" : "{\"created\":1761300000000,\"result\":\"你好，世界\",\"service\":\"zhipu\",\"source\":\"hello\",\"target\":\"en\"}",
+      "kind" : "word"
+    },
+    {
+      "hash" : "7ed1c48b9b0e628bd78cb3a844b4b82b",
+      "input" : {
+        "favorite" : false,
+        "group" : "group:0F8FAD5B-D9CB-469F-A165-70867728950E",
+        "note" : "line1\nline2\tTab\rCR",
+        "snippet" : true,
+        "text" : ""
+      },
+      "json" : "{\"favorite\":false,\"group\":\"group:0F8FAD5B-D9CB-469F-A165-70867728950E\",\"note\":\"line1\\nline2\\tTab\\rCR\",\"snippet\":true,\"text\":\"\"}",
+      "kind" : "clip"
+    },
+    {
+      "hash" : "77c9db7a9424bde7afdb620362ef3c5c",
+      "input" : {
+        "created" : 1761300000001,
+        "result" : "emoji 😀👍🏽🇨🇳",
+        "service" : "ai:1a2b3c4d",
+        "source" : "",
+        "target" : "zh-Hans"
+      },
+      "json" : "{\"created\":1761300000001,\"result\":\"emoji 😀👍🏽🇨🇳\",\"service\":\"ai:1a2b3c4d\",\"source\":\"\",\"target\":\"zh-Hans\"}",
+      "kind" : "word"
+    },
+    {
+      "hash" : "eb3e82bf5dc383ff7a0c76ee70b76469",
+      "input" : {
+        "favorite" : true,
+        "group" : null,
+        "note" : "ctrl \u0001\b\f\u001f",
+        "snippet" : false,
+        "text" : "你好，世界"
+      },
+      "json" : "{\"favorite\":true,\"note\":\"ctrl \\u0001\\b\\f\\u001f\",\"snippet\":false,\"text\":\"你好，世界\"}",
+      "kind" : "clip"
+    },
+    {
+      "hash" : "93fe84d9ea081cb62054aa2c1290e945",
+      "input" : {
+        "created" : 1761300000002,
+        "result" : "quote \" backslash \\ slash /",
+        "service" : "zhipu",
+        "source" : "你好，世界",
+        "target" : "en"
+      },
+      "json" : "{\"created\":1761300000002,\"result\":\"quote \\\" backslash \\\\ slash /\",\"service\":\"zhipu\",\"source\":\"你好，世界\",\"target\":\"en\"}",
+      "kind" : "word"
+    },
+    {
+      "hash" : "5b2069cac8a13de18de5089f0ebdb30e",
+      "input" : {
+        "favorite" : false,
+        "group" : "group:0F8FAD5B-D9CB-469F-A165-70867728950E",
+        "note" : null,
+        "snippet" : false,
+        "text" : "emoji 😀👍🏽🇨🇳"
+      },
+      "json" : "{\"favorite\":false,\"group\":\"group:0F8FAD5B-D9CB-469F-A165-70867728950E\",\"snippet\":false,\"text\":\"emoji 😀👍🏽🇨🇳\"}",
+      "kind" : "clip"
+    },
+    {
+      "hash" : "850b8d1fc77ae7371acd21e07b81d267",
+      "input" : {
+        "created" : 1761300000003,
+        "result" : "line1\nline2\tTab\rCR",
+        "service" : "ai:1a2b3c4d",
+        "source" : "emoji 😀👍🏽🇨🇳",
+        "target" : "zh-Hans"
+      },
+      "json" : "{\"created\":1761300000003,\"result\":\"line1\\nline2\\tTab\\rCR\",\"service\":\"ai:1a2b3c4d\",\"source\":\"emoji 😀👍🏽🇨🇳\",\"target\":\"zh-Hans\"}",
+      "kind" : "word"
+    },
+    {
+      "hash" : "461931d0ed8917192d259f619b506383",
+      "input" : {
+        "favorite" : true,
+        "group" : null,
+        "note" : "é vs é",
+        "snippet" : true,
+        "text" : "quote \" backslash \\ slash /"
+      },
+      "json" : "{\"favorite\":true,\"note\":\"é vs é\",\"snippet\":true,\"text\":\"quote \\\" backslash \\\\ slash /\"}",
+      "kind" : "clip"
+    },
+    {
+      "hash" : "584ea90c6ffeecfe08c9f1e8d20787ba",
+      "input" : {
+        "created" : 1761300000004,
+        "result" : "ctrl \u0001\b\f\u001f",
+        "service" : "zhipu",
+        "source" : "quote \" backslash \\ slash /",
+        "target" : "en"
+      },
+      "json" : "{\"created\":1761300000004,\"result\":\"ctrl \\u0001\\b\\f\\u001f\",\"service\":\"zhipu\",\"source\":\"quote \\\" backslash \\\\ slash /\",\"target\":\"en\"}",
+      "kind" : "word"
+    },
+    {
+      "hash" : "4f3d0e3383bfedd9f38e64ea455de16d",
+      "input" : {
+        "favorite" : false,
+        "group" : "group:0F8FAD5B-D9CB-469F-A165-70867728950E",
+        "note" : "<b>&amp;</b> 'single'",
+        "snippet" : false,
+        "text" : "line1\nline2\tTab\rCR"
+      },
+      "json" : "{\"favorite\":false,\"group\":\"group:0F8FAD5B-D9CB-469F-A165-70867728950E\",\"note\":\"<b>&amp;</b> 'single'\",\"snippet\":false,\"text\":\"line1\\nline2\\tTab\\rCR\"}",
+      "kind" : "clip"
+    },
+    {
+      "hash" : "c8e89c693c5aeeccab616b70726d66cf",
+      "input" : {
+        "created" : 1761300000005,
+        "result" : "sep   ",
+        "service" : "ai:1a2b3c4d",
+        "source" : "line1\nline2\tTab\rCR",
+        "target" : "zh-Hans"
+      },
+      "json" : "{\"created\":1761300000005,\"result\":\"sep   \",\"service\":\"ai:1a2b3c4d\",\"source\":\"line1\\nline2\\tTab\\rCR\",\"target\":\"zh-Hans\"}",
+      "kind" : "word"
+    },
+    {
+      "hash" : "93ab412c25d7f79a92cc77bac133403a",
+      "input" : {
+        "favorite" : true,
+        "group" : null,
+        "note" : null,
+        "snippet" : false,
+        "text" : "ctrl \u0001\b\f\u001f"
+      },
+      "json" : "{\"favorite\":true,\"snippet\":false,\"text\":\"ctrl \\u0001\\b\\f\\u001f\"}",
+      "kind" : "clip"
+    },
+    {
+      "hash" : "46cc9f14180243dcba2c7bfa1b720ca9",
+      "input" : {
+        "created" : 1761300000006,
+        "result" : "é vs é",
+        "service" : "zhipu",
+        "source" : "ctrl \u0001\b\f\u001f",
+        "target" : "en"
+      },
+      "json" : "{\"created\":1761300000006,\"result\":\"é vs é\",\"service\":\"zhipu\",\"source\":\"ctrl \\u0001\\b\\f\\u001f\",\"target\":\"en\"}",
+      "kind" : "word"
+    },
+    {
+      "hash" : "d538d8408a290334f5623300e04351af",
+      "input" : {
+        "favorite" : false,
+        "group" : "group:0F8FAD5B-D9CB-469F-A165-70867728950E",
+        "note" : "﻿bom",
+        "snippet" : true,
+        "text" : "sep   "
+      },
+      "json" : "{\"favorite\":false,\"group\":\"group:0F8FAD5B-D9CB-469F-A165-70867728950E\",\"note\":\"﻿bom\",\"snippet\":true,\"text\":\"sep   \"}",
+      "kind" : "clip"
+    },
+    {
+      "hash" : "8887369f5069218acc035a9219261aa1",
+      "input" : {
+        "created" : 1761300000007,
+        "result" : "<b>&amp;</b> 'single'",
+        "service" : "ai:1a2b3c4d",
+        "source" : "sep   ",
+        "target" : "zh-Hans"
+      },
+      "json" : "{\"created\":1761300000007,\"result\":\"<b>&amp;</b> 'single'\",\"service\":\"ai:1a2b3c4d\",\"source\":\"sep   \",\"target\":\"zh-Hans\"}",
+      "kind" : "word"
+    },
+    {
+      "hash" : "1b141f81b86a74197402776e97197f96",
+      "input" : {
+        "favorite" : true,
+        "group" : null,
+        "note" : "tab\t\tend ",
+        "snippet" : false,
+        "text" : "é vs é"
+      },
+      "json" : "{\"favorite\":true,\"note\":\"tab\\t\\tend \",\"snippet\":false,\"text\":\"é vs é\"}",
+      "kind" : "clip"
+    },
+    {
+      "hash" : "6ee295c49ca3f30c8ef61b3fb04b7b08",
+      "input" : {
+        "created" : 1761300000008,
+        "result" : "https://example.com/a?b=1&c=2#x",
+        "service" : "zhipu",
+        "source" : "é vs é",
+        "target" : "en"
+      },
+      "json" : "{\"created\":1761300000008,\"result\":\"https://example.com/a?b=1&c=2#x\",\"service\":\"zhipu\",\"source\":\"é vs é\",\"target\":\"en\"}",
+      "kind" : "word"
+    },
+    {
+      "hash" : "ac8390d80e00e50f7cbfe0b6638103ff",
+      "input" : {
+        "favorite" : false,
+        "group" : "group:0F8FAD5B-D9CB-469F-A165-70867728950E",
+        "note" : null,
+        "snippet" : false,
+        "text" : "<b>&amp;</b> 'single'"
+      },
+      "json" : "{\"favorite\":false,\"group\":\"group:0F8FAD5B-D9CB-469F-A165-70867728950E\",\"snippet\":false,\"text\":\"<b>&amp;</b> 'single'\"}",
+      "kind" : "clip"
+    },
+    {
+      "hash" : "59bd47536559744eab605a66c68afac1",
+      "input" : {
+        "created" : 1761300000009,
+        "result" : "﻿bom",
+        "service" : "ai:1a2b3c4d",
+        "source" : "<b>&amp;</b> 'single'",
+        "target" : "zh-Hans"
+      },
+      "json" : "{\"created\":1761300000009,\"result\":\"﻿bom\",\"service\":\"ai:1a2b3c4d\",\"source\":\"<b>&amp;</b> 'single'\",\"target\":\"zh-Hans\"}",
+      "kind" : "word"
+    },
+    {
+      "hash" : "41a80ba812b32f7d77b8e4af729ba598",
+      "input" : {
+        "favorite" : true,
+        "group" : null,
+        "note" : "",
+        "snippet" : true,
+        "text" : "https://example.com/a?b=1&c=2#x"
+      },
+      "json" : "{\"favorite\":true,\"note\":\"\",\"snippet\":true,\"text\":\"https://example.com/a?b=1&c=2#x\"}",
+      "kind" : "clip"
+    },
+    {
+      "hash" : "24f72d3a6960e801b2c7046ffe5770df",
+      "input" : {
+        "created" : 1761300000010,
+        "result" : "tab\t\tend ",
+        "service" : "zhipu",
+        "source" : "https://example.com/a?b=1&c=2#x",
+        "target" : "en"
+      },
+      "json" : "{\"created\":1761300000010,\"result\":\"tab\\t\\tend \",\"service\":\"zhipu\",\"source\":\"https://example.com/a?b=1&c=2#x\",\"target\":\"en\"}",
+      "kind" : "word"
+    },
+    {
+      "hash" : "1f29b18cd61e45d8896fda4c79d22cce",
+      "input" : {
+        "favorite" : false,
+        "group" : "group:0F8FAD5B-D9CB-469F-A165-70867728950E",
+        "note" : "你好，世界",
+        "snippet" : false,
+        "text" : "﻿bom"
+      },
+      "json" : "{\"favorite\":false,\"group\":\"group:0F8FAD5B-D9CB-469F-A165-70867728950E\",\"note\":\"你好，世界\",\"snippet\":false,\"text\":\"﻿bom\"}",
+      "kind" : "clip"
+    },
+    {
+      "hash" : "060dafcdefab3330baad74d763503ac5",
+      "input" : {
+        "created" : 1761300000011,
+        "result" : "hello",
+        "service" : "ai:1a2b3c4d",
+        "source" : "﻿bom",
+        "target" : "zh-Hans"
+      },
+      "json" : "{\"created\":1761300000011,\"result\":\"hello\",\"service\":\"ai:1a2b3c4d\",\"source\":\"﻿bom\",\"target\":\"zh-Hans\"}",
+      "kind" : "word"
+    },
+    {
+      "hash" : "9b1c3243d580a5f188bfb985571373a8",
+      "input" : {
+        "favorite" : true,
+        "group" : null,
+        "note" : null,
+        "snippet" : false,
+        "text" : "tab\t\tend "
+      },
+      "json" : "{\"favorite\":true,\"snippet\":false,\"text\":\"tab\\t\\tend \"}",
+      "kind" : "clip"
+    },
+    {
+      "hash" : "5e0a0f237ea5d3ae281ab6cc6fdfdc79",
+      "input" : {
+        "created" : 1761300000012,
+        "result" : "",
+        "service" : "zhipu",
+        "source" : "tab\t\tend ",
+        "target" : "en"
+      },
+      "json" : "{\"created\":1761300000012,\"result\":\"\",\"service\":\"zhipu\",\"source\":\"tab\\t\\tend \",\"target\":\"en\"}",
+      "kind" : "word"
+    },
+    {
+      "hash" : "47ccc2b5fe8f5e54ab89de8ef35f6e66",
+      "input" : {
+        "created" : 1761000000000,
+        "name" : "收藏"
+      },
+      "json" : "{\"created\":1761000000000,\"name\":\"收藏\"}",
+      "kind" : "group"
+    },
+    {
+      "hash" : "c88685d4c5c08e7daec346c9f149a9d7",
+      "input" : {
+        "created" : 1761000001000,
+        "name" : "工作 / Work"
+      },
+      "json" : "{\"created\":1761000001000,\"name\":\"工作 / Work\"}",
+      "kind" : "group"
+    },
+    {
+      "hash" : "9bd920f53493cd7868b53e9bd56a1f9d",
+      "input" : {
+        "created" : 1761000002000,
+        "name" : "emoji 🐱"
+      },
+      "json" : "{\"created\":1761000002000,\"name\":\"emoji 🐱\"}",
+      "kind" : "group"
+    },
+    {
+      "hash" : "8b82f6819e455e6d23b2aac5e5350369",
+      "input" : {
+        "created" : 1761000003000,
+        "name" : "\"quoted\""
+      },
+      "json" : "{\"created\":1761000003000,\"name\":\"\\\"quoted\\\"\"}",
+      "kind" : "group"
+    },
+    {
+      "hash" : "c6e5502a70cac96a5ac0d13813ddaf45",
+      "input" : {
+        "fallback" : false,
+        "keyword" : "g",
+        "name" : "Google",
+        "url" : "https://www.google.com/search?q={query}"
+      },
+      "json" : "{\"fallback\":false,\"keyword\":\"g\",\"name\":\"Google\",\"url\":\"https://www.google.com/search?q={query}\"}",
+      "kind" : "engine"
+    },
+    {
+      "hash" : "4c6ea4f3ace579fce239074654b5a51c",
+      "input" : {
+        "fallback" : true,
+        "keyword" : "bd",
+        "name" : "百度",
+        "url" : "https://www.baidu.com/s?wd={query}"
+      },
+      "json" : "{\"fallback\":true,\"keyword\":\"bd\",\"name\":\"百度\",\"url\":\"https://www.baidu.com/s?wd={query}\"}",
+      "kind" : "engine"
+    },
+    {
+      "hash" : "0d7dc8c6b9a559deaed029be67969936",
+      "input" : {
+        "fallback" : false,
+        "keyword" : "map",
+        "name" : "地图",
+        "url" : "maps://?q={query}&t=m"
+      },
+      "json" : "{\"fallback\":false,\"keyword\":\"map\",\"name\":\"地图\",\"url\":\"maps://?q={query}&t=m\"}",
+      "kind" : "engine"
+    },
+    {
+      "hash" : "4f53cda18c2baa0c0354bb5f9a3ecbe5",
+      "input" : {
+        "ids" : [
+
+        ]
+      },
+      "json" : "[]",
+      "kind" : "order"
+    },
+    {
+      "hash" : "a228a388cbbbbdcca148d09f8386ecd2",
+      "input" : {
+        "ids" : [
+          "google",
+          "bing"
+        ]
+      },
+      "json" : "[\"google\",\"bing\"]",
+      "kind" : "order"
+    },
+    {
+      "hash" : "e60c66f2387de2925387c585fee8dec5",
+      "input" : {
+        "ids" : [
+          "group:0F8FAD5B-D9CB-469F-A165-70867728950E",
+          "group:7C9E6679-7425-40DE-944B-E07FC1F90AE7"
+        ]
+      },
+      "json" : "[\"group:0F8FAD5B-D9CB-469F-A165-70867728950E\",\"group:7C9E6679-7425-40DE-944B-E07FC1F90AE7\"]",
+      "kind" : "order"
+    },
+    {
+      "input" : {
+        "clock" : {
+
+        }
+      },
+      "kind" : "clock",
+      "text" : ""
+    },
+    {
+      "input" : {
+        "clock" : {
+          "MAC-1" : 3
+        }
+      },
+      "kind" : "clock",
+      "text" : "MAC-1:3"
+    },
+    {
+      "input" : {
+        "clock" : {
+          "MAC-1" : 12,
+          "WIN-2" : 1,
+          "a-b-c" : 7
+        }
+      },
+      "kind" : "clock",
+      "text" : "MAC-1:12,WIN-2:1,a-b-c:7"
+    },
+    {
+      "hash" : "286378493821d6d043982f1323194a0a",
+      "input" : {
+
+      },
+      "json" : "{\"erased\":[{\"clock\":\"WIN-2:4\",\"id\":\"7C9E6679-7425-40DE-944B-E07FC1F90AE7\"}],\"format\":1,\"kind\":\"clips\",\"records\":[{\"clock\":\"MAC-1:2,WIN-2:1\",\"id\":\"0F8FAD5B-D9CB-469F-A165-70867728950E\",\"modified\":1761300000123,\"value\":\"{\\\"favorite\\\":true,\\\"snippet\\\":false,\\\"text\\\":\\\"你好 / hi\\\"}\"},{\"clock\":\"MAC-1:1\",\"id\":\"~order\",\"modified\":1761300000000,\"value\":\"[\\\"group:7C9E6679-7425-40DE-944B-E07FC1F90AE7\\\"]\"}]}",
+      "kind" : "file"
+    }
+  ],
+  "generatedBy" : "windows/tools/sync-golden.swift"
+}
