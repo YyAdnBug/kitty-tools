@@ -125,7 +125,7 @@ internal static unsafe class Tray
 
             Append(menu, 1, MenuText("剪贴板历史", HotKeyActions.Clipboard), enabled: clipboardReady);
             Append(menu, 2, MenuText("启动器", HotKeyActions.Launcher), enabled: false);
-            Append(menu, 3, MenuText("输入翻译", HotKeyActions.InputTranslate), enabled: false);
+            Append(menu, 3, MenuText("输入翻译", HotKeyActions.InputTranslate), enabled: true);
             Append(menu, 4, MenuText("截图", HotKeyActions.Screenshot), enabled: false);
             Append(menu, 5, MenuText("截图翻译", HotKeyActions.ScreenshotTranslate), enabled: false);
             Append(menu, 6, MenuText("识字", HotKeyActions.Ocr), enabled: false);
@@ -154,6 +154,9 @@ internal static unsafe class Tray
             {
                 case 1:
                     runtime?.OpenClipboard();
+                    break;
+                case 3:
+                    TranslateHost.ToggleInput();
                     break;
                 case 7:
                     runtime?.ToggleCopyTranslate();

@@ -82,6 +82,16 @@ internal static unsafe class Keyboard
         return Send(inputs) == 4;
     }
 
+    public static bool SendCtrlC()
+    {
+        Span<INPUT> inputs = stackalloc INPUT[4];
+        inputs[0] = KeyInput((VIRTUAL_KEY)0x11, 0);
+        inputs[1] = KeyInput((VIRTUAL_KEY)0x43, 0);
+        inputs[2] = KeyInput((VIRTUAL_KEY)0x43, KEYBD_EVENT_FLAGS.KEYEVENTF_KEYUP);
+        inputs[3] = KeyInput((VIRTUAL_KEY)0x11, KEYBD_EVENT_FLAGS.KEYEVENTF_KEYUP);
+        return Send(inputs) == 4;
+    }
+
     public static bool SendHotkey(VIRTUAL_KEY key, bool alt = false)
     {
         Span<INPUT> inputs = stackalloc INPUT[4];

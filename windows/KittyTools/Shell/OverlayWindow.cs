@@ -245,6 +245,7 @@ internal static class OverlayHost
                 return;
             }
 
+            TranslateHost.Hide(restoreForeground: false);
             _window.ShowOverlay(kind);
             return;
         }
@@ -254,6 +255,7 @@ internal static class OverlayHost
 
     public static void Show(OverlayKind kind)
     {
+        TranslateHost.Hide(restoreForeground: false);
         _window ??= new OverlayWindow();
         _window.ShowOverlay(kind);
     }

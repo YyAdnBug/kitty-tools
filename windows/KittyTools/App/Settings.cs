@@ -35,7 +35,59 @@ internal sealed class Settings
         "Bitwarden.exe",
     };
 
+    // 翻译：语言、浮窗、服务列表。服务列表 null = 从没存过（默认只有智谱）；空列表 = 用户全删了。
+    public string? TranslateFirstLanguage { get; set; } = "zh-Hans";
+
+    public string? TranslateSecondLanguage { get; set; } = "en";
+
+    /// <summary>浮窗上固定的源语言，null = 自动。</summary>
+    public string? TranslateSource { get; set; }
+
+    /// <summary>浮窗上固定的目标语言，null = 自动（第一 ⇄ 第二语言）。</summary>
+    public string? TranslateTarget { get; set; }
+
+    public bool TranslateAutoCopy { get; set; }
+
+    /// <summary>浮窗位置：pointer = 跟随鼠标；last = 上次位置。</summary>
+    public string TranslateWindowPosition { get; set; } = "pointer";
+
+    public double TranslateWindowX { get; set; }
+
+    public double TranslateWindowY { get; set; }
+
+    public double TranslateWindowWidth { get; set; } = 460;
+
+    public bool TranslatePinned { get; set; }
+
+    public List<TranslateServiceConfig>? TranslateServices { get; set; }
+
     public List<HotKeySetting> HotKeys { get; set; } = new();
+}
+
+/// <summary>一个翻译服务的非密钥配置（密钥在凭据管理器，字段名见 SecretField）。</summary>
+internal sealed class TranslateServiceConfig
+{
+    public string Id { get; set; } = string.Empty;
+
+    /// <summary>zhipu / google / deepl / microsoft / ai。</summary>
+    public string Kind { get; set; } = "ai";
+
+    public string Name { get; set; } = string.Empty;
+
+    public bool Enabled { get; set; } = true;
+
+    public string? Model { get; set; }
+
+    public string? BaseUrl { get; set; }
+
+    /// <summary>openai / azure / anthropic。</summary>
+    public string? Protocol { get; set; } = "openai";
+
+    /// <summary>微软翻译填了 key 时的区域。</summary>
+    public string? Region { get; set; }
+
+    /// <summary>DeepL 走自建 DeepLX。</summary>
+    public bool UsesDeepLX { get; set; }
 }
 
 internal sealed class HotKeySetting

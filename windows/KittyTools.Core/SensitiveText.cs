@@ -12,10 +12,12 @@ public static class SensitiveText
             return false;
         }
 
-        return HasToken(trimmed, "sk-", 20, IsApiKeyChar)
-               || HasToken(trimmed, "bearer ", 24, IsBearerChar)
+        // 先折一次小写再按 Ordinal 找：大文本上比逐个前缀 OrdinalIgnoreCase 快一个数量级。
+        var lower = trimmed.ToLowerInvariant();
+        return HasToken(trimmed, lower, "sk-", 20, IsApiKeyChar)
+               || HasToken(trimmed, lower, "bearer ", 24, IsBearerChar)
                || LooksLikeCardNumber(trimmed)
-               || HasKnownSecret(trimmed);
+               || HasKnownSecret(trimmed, lower);
     }
 
     public static bool LooksLikeCardNumber(string text)
@@ -76,30 +78,30 @@ public static class SensitiveText
         return sum % 10 == 0;
     }
 
-    private static bool HasKnownSecret(string text)
+    private static bool HasKnownSecret(string text, string lower)
     {
-        if (ContainsSecret(text, "ghp_", 36, IsAsciiLetterOrDigit) ||
-            ContainsSecret(text, "gho_", 36, IsAsciiLetterOrDigit) ||
-            ContainsSecret(text, "ghu_", 36, IsAsciiLetterOrDigit) ||
-            ContainsSecret(text, "ghs_", 36, IsAsciiLetterOrDigit) ||
-            ContainsSecret(text, "ghr_", 36, IsAsciiLetterOrDigit) ||
-            ContainsSecret(text, "github_pat_", 60, c => IsAsciiLetterOrDigit(c) || c == '_') ||
-            ContainsSecret(text, "AKIA", 16, c => c is >= 'A' and <= 'Z' or >= '0' and <= '9') ||
-            ContainsSecret(text, "xoxb-", 10, IsSlackChar) ||
-            ContainsSecret(text, "xoxa-", 10, IsSlackChar) ||
-            ContainsSecret(text, "xoxp-", 10, IsSlackChar) ||
-            ContainsSecret(text, "xoxo-", 10, IsSlackChar) ||
-            ContainsSecret(text, "xoxs-", 10, IsSlackChar) ||
-            ContainsSecret(text, "xoxr-", 10, IsSlackChar) ||
-            ContainsSecret(text, "AIza", 35, c => IsAsciiLetterOrDigit(c) || c is '_' or '-'))
+        if (ContainsSecret(text, lower, "ghp_", 36, IsAsciiLetterOrDigit) ||
+            ContainsSecret(text, lower, "gho_", 36, IsAsciiLetterOrDigit) ||
+            ContainsSecret(text, lower, "ghu_", 36, IsAsciiLetterOrDigit) ||
+            ContainsSecret(text, lower, "ghs_", 36, IsAsciiLetterOrDigit) ||
+            ContainsSecret(text, lower, "ghr_", 36, IsAsciiLetterOrDigit) ||
+            ContainsSecret(text, lower, "github_pat_", 60, c => IsAsciiLetterOrDigit(c) || c == '_') ||
+            ContainsSecret(text, lower, "akia", 16, c => IsAsciiLetterOrDigit(c)) ||
+            ContainsSecret(text, lower, "xoxb-", 10, IsSlackChar) ||
+            ContainsSecret(text, lower, "xoxa-", 10, IsSlackChar) ||
+            ContainsSecret(text, lower, "xoxp-", 10, IsSlackChar) ||
+            ContainsSecret(text, lower, "xoxo-", 10, IsSlackChar) ||
+            ContainsSecret(text, lower, "xoxs-", 10, IsSlackChar) ||
+            ContainsSecret(text, lower, "xoxr-", 10, IsSlackChar) ||
+            ContainsSecret(text, lower, "aiza", 35, c => IsAsciiLetterOrDigit(c) || c is '_' or '-'))
         {
             return true;
         }
 
-        if (text.Contains("-----BEGIN ", StringComparison.Ordinal) &&
-            (text.Contains("PRIVATE KEY-----", StringComparison.Ordinal) ||
-             text.Contains("RSA PRIVATE KEY-----", StringComparison.Ordinal) ||
-             text.Contains("EC PRIVATE KEY-----", StringComparison.Ordinal)))
+        if (lower.Contains("-----begin ", StringComparison.Ordinal) &&
+            (lower.Contains("private key-----", StringComparison.Ordinal) ||
+             lower.Contains("rsa private key-----", StringComparison.Ordinal) ||
+             lower.Contains("ec private key-----", StringComparison.Ordinal)))
         {
             return true;
         }
@@ -109,15 +111,16 @@ public static class SensitiveText
 
     private static bool ContainsSecret(
         string text,
-        string prefix,
+        string lower,
+        string prefixLower,
         int minimumLength,
         Func<char, bool> allowed,
         bool requirePrefix = true)
     {
         var from = 0;
-        while (from <= text.Length - prefix.Length)
+        while (from <= lower.Length - prefixLower.Length)
         {
-            var index = text.IndexOf(prefix, from, StringComparison.OrdinalIgnoreCase);
+            var index = lower.IndexOf(prefixLower, from, StringComparison.Ordinal);
             if (index < 0)
             {
                 return false;
@@ -135,7 +138,7 @@ public static class SensitiveText
             }
 
             var count = 0;
-            var cursor = index + prefix.Length;
+            var cursor = index + prefixLower.Length;
             while (cursor < text.Length && allowed(text[cursor]))
             {
                 count++;
@@ -197,12 +200,17 @@ public static class SensitiveText
         return false;
     }
 
-    private static bool HasToken(string text, string prefix, int minimumLength, Func<char, bool> allowed)
+    private static bool HasToken(
+        string text,
+        string lower,
+        string prefixLower,
+        int minimumLength,
+        Func<char, bool> allowed)
     {
         var from = 0;
-        while (from <= text.Length - prefix.Length)
+        while (from <= lower.Length - prefixLower.Length)
         {
-            var index = text.IndexOf(prefix, from, StringComparison.OrdinalIgnoreCase);
+            var index = lower.IndexOf(prefixLower, from, StringComparison.Ordinal);
             if (index < 0)
             {
                 return false;
@@ -216,7 +224,7 @@ public static class SensitiveText
 
             var length = 0;
             var hasDigit = false;
-            var cursor = index + prefix.Length;
+            var cursor = index + prefixLower.Length;
             while (cursor < text.Length && allowed(text[cursor]))
             {
                 hasDigit |= char.IsAsciiDigit(text[cursor]);

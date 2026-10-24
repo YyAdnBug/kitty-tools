@@ -51,6 +51,9 @@ internal sealed class ShellRuntime
             NoticeHost.Show("剪贴板历史用不了", "数据库打不开，其它功能不受影响", NoticeTone.Error);
         }
 
+        TranslateServiceStore.Start(SettingsService.Current);
+        TranslateHost.Initialize();
+
         HiddenWindow.Message += OnHiddenMessage;
         Tray.Add();
         HotKeys.Pressed += OnHotKey;
@@ -80,6 +83,33 @@ internal sealed class ShellRuntime
         {
             var page = settingsArg["--settings=".Length..];
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => ShowSettings(welcome: false, page));
+        }
+
+        // 调试用：直接打开翻译浮窗，带文字时自动翻。
+        if (Environment.GetCommandLineArgs().Contains("--translate", StringComparer.OrdinalIgnoreCase))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => TranslateHost.ShowInput());
+        }
+
+        var translateArg = Environment.GetCommandLineArgs()
+            .FirstOrDefault(arg => arg.StartsWith("--translate-text=", StringComparison.OrdinalIgnoreCase));
+        if (translateArg is not null)
+        {
+            var text = translateArg["--translate-text=".Length..];
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => TranslateHost.ShowText(text));
+        }
+
+        if (Environment.GetCommandLineArgs().Contains("--selection", StringComparer.OrdinalIgnoreCase))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => TranslateHost.ShowSelection());
+        }
+
+        if (Environment.GetCommandLineArgs().Contains("--cred-smoke", StringComparer.OrdinalIgnoreCase))
+        {
+            var written = Credentials.Set("smoke-test", "credential-value");
+            var read = Credentials.Get("smoke-test") == "credential-value";
+            var deleted = Credentials.Delete("smoke-test");
+            Log.Info($"cred.smoke write={written} read={read} delete={deleted}");
         }
 #endif
         if (SettingsService.IsNew)
@@ -158,10 +188,10 @@ internal sealed class ShellRuntime
                 OverlayHost.Toggle(OverlayKind.Launcher);
                 break;
             case HotKeyActions.SelectionTranslate:
-                ShowNotice("划词翻译", "第 3 批接上", NoticeTone.Normal);
+                TranslateHost.ShowSelection();
                 break;
             case HotKeyActions.InputTranslate:
-                ShowNotice("输入翻译", "第 3 批接上", NoticeTone.Normal);
+                TranslateHost.ToggleInput();
                 break;
             case HotKeyActions.ScreenshotTranslate:
                 ShowNotice("截图翻译", "第 5 批接上", NoticeTone.Normal);
@@ -179,6 +209,7 @@ internal sealed class ShellRuntime
     {
         HotKeys.RegisterAll(SettingsService.Current);
         Theme.ApplyAccent();
+        TranslateHost.ApplyCopyTranslate();
         _settingsWindow?.RefreshTheme();
     }
 }

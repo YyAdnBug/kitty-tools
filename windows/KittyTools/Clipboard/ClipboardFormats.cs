@@ -19,6 +19,15 @@ internal sealed record ClipboardRead(
     byte[]? ImageData,
     bool ImageIsPng);
 
+/// <summary>划词取词的 Ctrl+C 兜底：只备份这几样常用格式，还原时再写回去。</summary>
+internal sealed record ClipboardSnapshot(
+    string? Text,
+    string? Html,
+    string? Rtf,
+    byte[]? Png,
+    byte[]? Dib,
+    IReadOnlyList<string> Files);
+
 internal static unsafe partial class ClipboardFormats
 {
     public const uint CF_DIB = 8;
@@ -59,6 +68,91 @@ internal static unsafe partial class ClipboardFormats
             }
 
             return Has(CanIncludeInHistoryFormat) && ReadDword(CanIncludeInHistoryFormat) == 0;
+        }
+        finally
+        {
+            PInvoke.CloseClipboard();
+        }
+    }
+
+    /// <summary>备份常用格式（划词时 Ctrl+C 会覆盖剪贴板）。</summary>
+    public static ClipboardSnapshot? CaptureSnapshot()
+    {
+        if (!OpenClipboard())
+        {
+            return null;
+        }
+
+        try
+        {
+            var text = Has(CF_UNICODETEXT) ? ReadText() : null;
+            var html = Has(HtmlFormat) ? ReadRich(HtmlFormat) : null;
+            var rtf = Has(RtfFormat) ? ReadRich(RtfFormat) : null;
+            var png = PngFormat != 0 && Has(PngFormat) ? ReadBlob(PngFormat, MaxTextBytes * 2) : null;
+            var dib = Has(CF_DIBV5) ? ReadBlob(CF_DIBV5, MaxTextBytes * 2)
+                : Has(CF_DIB) ? ReadBlob(CF_DIB, MaxTextBytes * 2)
+                : null;
+            var files = Has(CF_HDROP) ? ReadFiles() : new List<string>();
+            return new ClipboardSnapshot(text, html, rtf, png, dib, files);
+        }
+        finally
+        {
+            PInvoke.CloseClipboard();
+        }
+    }
+
+    /// <summary>把备份写回去；同时打上「不要进系统剪贴板历史」的标记，免得 Win+V 里多一份。</summary>
+    public static bool RestoreSnapshot(ClipboardSnapshot snapshot)
+    {
+        if (!OpenClipboard())
+        {
+            return false;
+        }
+
+        try
+        {
+            if (!PInvoke.EmptyClipboard())
+            {
+                return false;
+            }
+
+            if (snapshot.Text is { } text)
+            {
+                SetBytes(CF_UNICODETEXT, Encoding.Unicode.GetBytes(text + "\0"));
+            }
+
+            if (snapshot.Html is { } html)
+            {
+                SetBytes(HtmlFormat, Encoding.UTF8.GetBytes(html));
+            }
+
+            if (snapshot.Rtf is { } rtf)
+            {
+                SetBytes(RtfFormat, Encoding.ASCII.GetBytes(rtf));
+            }
+
+            if (snapshot.Png is { } png)
+            {
+                SetBytes(PngFormat, png);
+            }
+
+            if (snapshot.Dib is { } dib)
+            {
+                SetBytes(CF_DIBV5, dib);
+            }
+
+            if (snapshot.Files.Count > 0)
+            {
+                SetBytes(CF_HDROP, BuildDropFiles(snapshot.Files));
+            }
+
+            if (CanIncludeInHistoryFormat != 0)
+            {
+                var marker = new byte[4];
+                SetBytes(CanIncludeInHistoryFormat, marker);
+            }
+
+            return true;
         }
         finally
         {
@@ -393,6 +487,51 @@ internal static unsafe partial class ClipboardFormats
         {
             return PInvoke.RegisterClipboardFormat(new PCWSTR(p));
         }
+    }
+
+    private static bool SetBytes(uint format, byte[] bytes)
+    {
+        var memory = PInvoke.GlobalAlloc(Windows.Win32.System.Memory.GLOBAL_ALLOC_FLAGS.GMEM_MOVEABLE, (nuint)bytes.Length);
+        if (memory == default)
+        {
+            return false;
+        }
+
+        var destination = PInvoke.GlobalLock(memory);
+        if (destination is null)
+        {
+            PInvoke.GlobalFree(memory);
+            return false;
+        }
+
+        bytes.AsSpan().CopyTo(new Span<byte>(destination, bytes.Length));
+        PInvoke.GlobalUnlock(memory);
+        if (PInvoke.SetClipboardData(format, new HANDLE(memory.Value)) == default)
+        {
+            PInvoke.GlobalFree(memory);
+            return false;
+        }
+
+        return true;
+    }
+
+    private static byte[] BuildDropFiles(IReadOnlyList<string> paths)
+    {
+        var names = paths.Select(path => path.Replace('/', '\\')).ToList();
+        var chars = names.Sum(name => name.Length + 1) + 1;
+        const int header = 20;
+        var bytes = new byte[header + chars * sizeof(char)];
+        BitConverter.TryWriteBytes(bytes.AsSpan(0), header);
+        BitConverter.TryWriteBytes(bytes.AsSpan(16), 1); // fWide
+        var cursor = header;
+        foreach (var name in names)
+        {
+            var encoded = Encoding.Unicode.GetBytes(name);
+            encoded.CopyTo(bytes, cursor);
+            cursor += encoded.Length + sizeof(char);
+        }
+
+        return bytes;
     }
 
     // 剪贴板数据是 HGLOBAL：CsWin32 生成的 GlobalLock / GlobalSize 重载要 SafeHandle，这里自己声明。

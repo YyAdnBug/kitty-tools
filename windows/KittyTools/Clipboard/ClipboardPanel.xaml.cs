@@ -216,7 +216,7 @@ public sealed partial class ClipboardPanel : UserControl
         if (entry.Kind == ClipKind.Text)
         {
             var translate = new Button { Content = "翻译", Padding = new Thickness(10, 4, 10, 4) };
-            translate.Click += (_, _) => NoticeHost.Show("翻译", "第 3 批接上", NoticeTone.Normal);
+            translate.Click += (_, _) => TranslateEntry(entry);
             actions.Children.Add(translate);
         }
 
@@ -429,7 +429,11 @@ public sealed partial class ClipboardPanel : UserControl
                 break;
             case VirtualKey.T when control:
                 e.Handled = true;
-                NoticeHost.Show("翻译", "第 3 批接上", NoticeTone.Normal);
+                if (SelectedEntry is { } selected)
+                {
+                    TranslateEntry(selected);
+                }
+
                 break;
             case VirtualKey.Number1 or VirtualKey.Number2 or VirtualKey.Number3 or VirtualKey.Number4
                 or VirtualKey.Number5 or VirtualKey.Number6 or VirtualKey.Number7 or VirtualKey.Number8
@@ -588,6 +592,17 @@ public sealed partial class ClipboardPanel : UserControl
         Refresh(entry.Id);
     }
 
+    private static void TranslateEntry(ClipEntry entry)
+    {
+        if (entry.Kind != ClipKind.Text || string.IsNullOrWhiteSpace(entry.Text))
+        {
+            NoticeHost.Show("不能翻译", "只有文本条目能翻译", NoticeTone.Warning);
+            return;
+        }
+
+        TranslateHost.ShowText(entry.Text);
+    }
+
     private void OnListRightTapped(object sender, RightTappedRoutedEventArgs e)
     {
         var row = (e.OriginalSource as FrameworkElement)?.DataContext as ClipRow;
@@ -605,7 +620,7 @@ public sealed partial class ClipboardPanel : UserControl
         AddItem(menu, entry.Favorite ? "取消收藏" : "收藏", () => FavoriteSelected());
         if (entry.Kind == ClipKind.Text)
         {
-            AddItem(menu, "翻译", () => NoticeHost.Show("翻译", "第 3 批接上", NoticeTone.Normal));
+            AddItem(menu, "翻译", () => TranslateEntry(entry));
         }
 
         if (entry.Kind == ClipKind.Image)

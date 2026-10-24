@@ -1,4 +1,4 @@
-RegisterClassEx
+﻿RegisterClassEx
 WNDCLASSEXW
 WNDPROC
 DefWindowProc
@@ -138,3 +138,7 @@ OpenProcessToken
 TOKEN_ACCESS_MASK
 SET_WINDOW_POS_FLAGS
 ClientToScreen
+SetWindowsHookEx
+UnhookWindowsHookEx
+CallNextHookEx
+MSLLHOOKSTRUCT

@@ -48,6 +48,14 @@
     <None Include="NativeMethods.txt" />
     <None Include="NativeMethods.json" />
   </ItemGroup>
+  <!-- 内置智谱 key：Secrets.props 不入库（模板 Secrets.props.example），构建时写进程序集元数据。 -->
+  <Import Project="Secrets.props" Condition="Exists('Secrets.props')" />
+  <ItemGroup Condition="'$(KittyBuiltinZhipuKey)' != ''">
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>KittyBuiltinZhipuKey</_Parameter1>
+      <_Parameter2>$(KittyBuiltinZhipuKey)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
   <!--
     Native AOT 的 publish 不会把 WinUI 生成的 KittyTools.pri 带进发布目录；缺了它
     Application.LoadComponent 在 Release AOT 下会抛 XamlParseException（浮层里的 XAML 面板打不开）。

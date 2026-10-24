@@ -10,12 +10,14 @@ internal static class Paths
     public const string MutexName = @"Local\KittyTools.Dev";
     public const string InstancePipeName = "KittyTools.Dev.Instance";
     public const string RunValueName = "KittyTools.Dev";
+    public const string CredentialPrefix = "KittyTools.Dev/";
 #else
     public const string ProductName = "Kitty Tools";
     public const string DataFolderName = "KittyTools";
     public const string MutexName = @"Local\KittyTools";
     public const string InstancePipeName = "KittyTools.Instance";
     public const string RunValueName = "KittyTools";
+    public const string CredentialPrefix = "KittyTools/";
 #endif
 
     public static string DataDirectory =>
