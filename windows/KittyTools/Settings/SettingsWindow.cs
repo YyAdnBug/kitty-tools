@@ -1275,7 +1275,7 @@ internal sealed class SettingsWindow : Window
         });
         _content.Children.Add(new TextBlock
         {
-            Text = "第 1 批：壳。剪贴板、翻译、启动器、截图分别在后面几批接上。",
+            Text = "剪贴板、翻译、启动器和截图都已接上；Windows 版的 release 不标 latest。",
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.75,
         });
@@ -1283,7 +1283,28 @@ internal sealed class SettingsWindow : Window
         _content.Children.Add(ChangelogBlock());
 
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        var update = new Button { Content = "检查更新", IsEnabled = false };
+        var update = new Button
+        {
+            Content = UpdateService.AvailableVersion is { } available
+                ? $"下载新版本 {available}"
+                : "检查更新",
+        };
+        update.Click += async (_, _) =>
+        {
+            if (UpdateService.AvailableVersion is not null)
+            {
+                UpdateService.OpenAvailable();
+                return;
+            }
+
+            update.IsEnabled = false;
+            update.Content = "正在检查…";
+            await UpdateService.CheckAsync(userInitiated: true);
+            update.Content = UpdateService.AvailableVersion is { } version
+                ? $"下载新版本 {version}"
+                : "检查更新";
+            update.IsEnabled = true;
+        };
         var data = new Button { Content = "打开数据目录" };
         data.Click += (_, _) => OpenDataDirectory();
         buttons.Children.Add(update);
@@ -1317,6 +1338,32 @@ internal sealed class SettingsWindow : Window
                         TextWrapping = TextWrapping.Wrap,
                         Opacity = 0.8,
                     });
+                    if (entry.TryGetProperty("items", out var items) &&
+                        items.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var item in items.EnumerateArray())
+                        {
+                            var type = item.TryGetProperty("type", out var t) ? t.GetString() : null;
+                            if (type is not ("feat" or "fix" or "perf" or "ui"))
+                            {
+                                continue;
+                            }
+
+                            var text = item.TryGetProperty("text", out var itemText)
+                                ? itemText.GetString()
+                                : null;
+                            if (!string.IsNullOrEmpty(text))
+                            {
+                                panel.Children.Add(new TextBlock
+                                {
+                                    Text = "• " + text,
+                                    TextWrapping = TextWrapping.Wrap,
+                                    Opacity = 0.65,
+                                    FontSize = 13,
+                                });
+                            }
+                        }
+                    }
                 }
             }
 

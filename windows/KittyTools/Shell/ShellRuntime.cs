@@ -1,4 +1,4 @@
-// 壳的运行时：隐藏窗口、托盘、热键、浮层、轻提示、设置窗和单实例转发。
+﻿// 壳的运行时：隐藏窗口、托盘、热键、浮层、轻提示、设置窗和单实例转发。
 // 第 1 批只把壳做齐；各模块的入口先给轻提示，面板内容是占位。
 using KittyTools.Infrastructure;
 using Microsoft.UI.Dispatching;
@@ -67,6 +67,8 @@ internal sealed class ShellRuntime
         HotKeys.RegisterAll(SettingsService.Current);
         SettingsService.Changed += OnSettingsChanged;
         var dispatcher = DispatcherQueue.GetForCurrentThread();
+        UpdateService.Initialize(dispatcher!);
+        UpdateService.Configure(SettingsService.Current.AutoCheckUpdates);
         SingleInstance.StartServer(() =>
             dispatcher?.TryEnqueue(() => ShowSettings(welcome: false)));
 
@@ -121,6 +123,10 @@ internal sealed class ShellRuntime
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => ScreenshotSession.Start(ScreenshotMode.Translate));
         }
 
+        if (Environment.GetCommandLineArgs().Contains("--update-check", StringComparer.OrdinalIgnoreCase))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => _ = UpdateService.CheckAsync(userInitiated: true));
+        }
         if (Environment.GetCommandLineArgs().Contains("--screenshot", StringComparer.OrdinalIgnoreCase))
         {
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => ScreenshotSession.Start(ScreenshotMode.Capture));
@@ -252,6 +258,7 @@ internal sealed class ShellRuntime
     private void OnSettingsChanged()
     {
         HotKeys.RegisterAll(SettingsService.Current);
+        UpdateService.Configure(SettingsService.Current.AutoCheckUpdates);
         Theme.ApplyAccent();
         TranslateHost.ApplyCopyTranslate();
         _settingsWindow?.RefreshTheme();

@@ -17,6 +17,9 @@ internal sealed class Settings
 
     public bool AutoCheckUpdates { get; set; } = true;
 
+    /// <summary>已经轻提示过的版本；每个版本只提示一次。</summary>
+    public string? NotifiedUpdateVersion { get; set; }
+
     public bool CopyTranslate { get; set; }
 
     /// <summary>保留天数：1 / 7 / 30 / 90 / 365 / 0（永久）。</summary>

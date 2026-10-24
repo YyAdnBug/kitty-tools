@@ -134,7 +134,13 @@ internal static unsafe class Tray
             Append(menu, 8, "暂停记录剪贴板", enabled: clipboardReady, @checked: runtime?.Clipboard?.Paused == true);
             PInvoke.AppendMenu(menu, MENU_ITEM_FLAGS.MF_SEPARATOR, 0, default(PCWSTR));
             Append(menu, 9, "设置…", enabled: true);
-            Append(menu, 10, "检查更新", enabled: false);
+            Append(
+                menu,
+                10,
+                UpdateService.AvailableVersion is { } available
+                    ? $"下载新版本 {available}"
+                    : "检查更新",
+                enabled: true);
             Append(menu, 11, "退出 Kitty Tools", enabled: true);
 
             PInvoke.SetForegroundWindow(HiddenWindow.Hwnd);
@@ -178,6 +184,17 @@ internal static unsafe class Tray
                     break;
                 case 9:
                     runtime?.ShowSettings(welcome: false);
+                    break;
+                case 10:
+                    if (UpdateService.AvailableVersion is not null)
+                    {
+                        UpdateService.OpenAvailable();
+                    }
+                    else
+                    {
+                        _ = UpdateService.CheckAsync(userInitiated: true);
+                    }
+
                     break;
                 case 11:
                     runtime?.Exit();
