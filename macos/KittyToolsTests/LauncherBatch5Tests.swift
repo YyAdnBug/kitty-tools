@@ -154,8 +154,9 @@ struct LauncherBatch5Tests {
     #expect(!LauncherModel.needsRescan(scannedAt: .now, scanned: after, now: after))
   }
 
-  /// D13（评审）：还原不出来的收藏（文件已删）直接删掉，不占 8 个名额、不挡 ⌥⌘↑↓；钉图两项不能收藏
-  @Test func missingFavoritesAreDropped() throws {
+  /// D13（评审）：还原不出来的收藏（文件已删）不显示、不挡 ⌥⌘↑↓（只和看得见的邻居换）、不占 8 个名额；2026-10-24
+  /// 全局同步起**不删**（别的 Mac 上有用，删了会同步删掉每一台的）；钉图两项不能收藏
+  @Test func missingFavoritesAreHidden() throws {
     let usage = try LauncherUsage(db: Database(path: ":memory:"))
     let apps = (1...8).map { app("App\($0)") }
     let model = LauncherModel(usage: usage, apps: apps)
@@ -174,17 +175,18 @@ struct LauncherBatch5Tests {
     try FileManager.default.removeItem(at: files[0])
     model.query = "a"
     model.query = ""
-    #expect(model.favoriteCount == 2 && usage.favorites.count == 2)
+    #expect(model.favoriteCount == 2 && usage.favorites.count == 3)
     model.selection = 1
     #expect(model.handleKeyEquivalent(try key(kVK_UpArrow, [.command, .option])))
     #expect(model.results.prefix(2) == [apps[1], apps[0]] && model.selection == 0)
-    // 有查询时（空查询没刷新过）收藏满 8 个、其中一个文件删了：⌘D 照样加得进去
+    // 藏着的不占名额：看得见的加满 8 个（连藏着的一共 9 个）；再有一个文件删了，⌘D 照样加得进去，藏着的都留着（不删）
     for item in [docs[1]] + apps[2..<7] { model.toggleFavorite(item) }
-    #expect(usage.favorites.count == 8)
+    #expect(usage.favorites.count == 9)
     try FileManager.default.removeItem(at: files[1])
     model.query = "App8"
     model.toggleFavorite(apps[7])
-    #expect(usage.isFavorite(apps[7]) && !usage.isFavorite(docs[1]) && usage.favorites.count == 8)
+    #expect(usage.isFavorite(apps[7]) && usage.isFavorite(docs[0]) && usage.isFavorite(docs[1]))
+    #expect(usage.favorites.count == 10)
     // 只在有钉图时才有的动作不能收藏
     let pins = LauncherItem.actions(.init(pinsHidden: false)).filter {
       $0.target.hasPrefix("pins-")

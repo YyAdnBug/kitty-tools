@@ -642,10 +642,9 @@ extension ClipboardStore: SyncSource {
     var group: String?
   }
 
-  /// 同步文件里的一个收藏夹（编号 = "group:" + 收藏夹的编号）
+  /// 同步文件里的一个收藏夹（编号 = "group:" + 收藏夹的编号）；收藏夹的顺序单独一条（SyncRecords.orderID，编号数组）
   private nonisolated struct SyncedGroup: Codable {
     var name: String
-    var position: Int
     var created: Int64
   }
 
@@ -684,12 +683,15 @@ extension ClipboardStore: SyncSource {
           text: text, favorite: item.favorite, snippet: item.isSnippet, note: item.note,
           group: item.groupID?.uuidString))
     }
-    for (index, group) in groups.enumerated() where !group.name.contains("\0") {
+    let synced = groups.filter { !$0.name.contains("\0") }
+    for group in synced {
       values[Self.groupPrefix + group.id.uuidString] = Self.encoded(
         SyncedGroup(
-          name: group.name, position: index,
+          name: group.name,
           created: Int64((group.createdAt.timeIntervalSince1970 * 1000).rounded())))
     }
+    values[SyncRecords.orderID] = SyncRecords.orderValue(
+      synced.map { Self.groupPrefix + $0.id.uuidString })
     return values
   }
 
@@ -709,7 +711,14 @@ extension ClipboardStore: SyncSource {
   {
     var groupChanges: [(UUID, SyncedGroup?)] = []
     var clipChanges: [(UUID, SyncedClip?)] = []
+    var groupOrder = groups.map { Self.groupPrefix + $0.id.uuidString }
     for (key, value) in changes {
+      if key == SyncRecords.orderID {
+        guard let value else { continue }
+        guard let ids = SyncRecords.decodeExact([String].self, from: value) else { return false }
+        groupOrder = ids
+        continue
+      }
       let isGroup = key.hasPrefix(Self.groupPrefix)
       guard let id = UUID(uuidString: isGroup ? String(key.dropFirst(Self.groupPrefix.count)) : key)
       else { return false }
@@ -717,14 +726,14 @@ extension ClipboardStore: SyncSource {
         if isGroup { groupChanges.append((id, nil)) } else { clipChanges.append((id, nil)) }
         continue
       }
-      let data = Data(value.utf8)
+      // 解不出来、或者是更新版本写的（编回去不一样）：整个不落
       if isGroup {
-        guard let group = try? JSONDecoder().decode(SyncedGroup.self, from: data) else {
+        guard let group = SyncRecords.decodeExact(SyncedGroup.self, from: value) else {
           return false
         }
         groupChanges.append((id, group))
       } else {
-        guard let clip = try? JSONDecoder().decode(SyncedClip.self, from: data) else {
+        guard let clip = SyncRecords.decodeExact(SyncedClip.self, from: value) else {
           return false
         }
         clipChanges.append((id, clip))
@@ -739,8 +748,6 @@ extension ClipboardStore: SyncSource {
 
     // 收藏夹
     var newGroups = groups
-    var positions: [UUID: Int] = Dictionary(
-      uniqueKeysWithValues: groups.enumerated().map { ($0.element.id, $0.offset) })
     var removedGroups: Set<UUID> = []
     /// 收藏夹编号 → 它的条目该归进的那个（同名撞上、被删了但还有同名的）
     var remap: [UUID: UUID] = [:]
@@ -769,7 +776,6 @@ extension ClipboardStore: SyncSource {
       } else {
         newGroups.append(group)
       }
-      positions[id] = synced.position
     }
     // 被删的收藏夹还有同名的：条目归过去
     for id in removedGroups where remap[id] == nil {
@@ -779,10 +785,10 @@ extension ClipboardStore: SyncSource {
         remap[id] = same.id
       }
     }
-    newGroups.sort {
-      (positions[$0.id] ?? .max, $0.createdAt, $0.id.uuidString)
-        < (positions[$1.id] ?? .max, $1.createdAt, $1.id.uuidString)
-    }
+    // 按顺序那条排（不在里面的排在后面、按编号：几台排出来的一样）
+    let byKey = Dictionary(
+      newGroups.map { (Self.groupPrefix + $0.id.uuidString, $0) }, uniquingKeysWith: { a, _ in a })
+    newGroups = SyncRecords.arranged(byKey.keys, by: groupOrder).compactMap { byKey[$0] }
     let groupIDs = Set(newGroups.map(\.id))
     func resolved(_ id: UUID?) -> UUID? {
       guard let id else { return nil }

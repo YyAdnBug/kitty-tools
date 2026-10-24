@@ -104,6 +104,33 @@ nonisolated enum SyncRecords {
   /// 文件里一条的编号最长多少（设置的键、UUID 都远在这以内）
   static let maxIDLength = 256
 
+  // MARK: 给仓库用的两样
+
+  /// 一张有序列表（网页搜索、翻译服务、启动器收藏、收藏夹）的**顺序单独一条记录**：编号 orderID，内容是编号数组，整条后改的赢
+  /// ——改一条的内容和挪顺序不互相盖掉（顺序写在每条里的话，挪一下就改到后面每一条，和别处同时改它们的冲突）
+  static let orderID = "~order"
+
+  static func orderValue(_ ids: [String]) -> String {
+    (try? encoder.encode(ids)).map { String(decoding: $0, as: UTF8.self) } ?? "[]"
+  }
+
+  /// 按顺序排：在顺序里的按顺序（同一个编号出现几次按第一次），不在的排在后面、按编号（几台排出来的一样）
+  static func arranged(_ ids: some Sequence<String>, by order: [String]) -> [String] {
+    var index: [String: Int] = [:]
+    for (position, id) in order.enumerated() where index[id] == nil { index[id] = position }
+    return ids.sorted { (index[$0] ?? .max, $0) < (index[$1] ?? .max, $1) }
+  }
+
+  /// 解开一条内容，**编回去要一字不差**：更新版本写的（多了这一版不认识的字段）解得开但编回去会丢字段——落下去再发出去就把
+  /// 别人的字段删了，所以当成解不出来（这一类停在「没存上」，等更新）
+  static func decodeExact<Value: Codable>(_ type: Value.Type, from value: String) -> Value? {
+    guard let decoded = try? JSONDecoder().decode(type, from: Data(value.utf8)),
+      let again = try? encoder.encode(decoded),
+      String(decoding: again, as: UTF8.self) == value
+    else { return nil }
+    return decoded
+  }
+
   /// 内容的哈希：比「两版一不一样」、同一刻时定先后
   static func hash(_ value: String) -> String {
     SHA256.hash(data: Data(value.utf8)).prefix(16).map { String(format: "%02x", $0) }.joined()

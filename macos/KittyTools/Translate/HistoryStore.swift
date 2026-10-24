@@ -336,7 +336,7 @@ extension HistoryStore: SyncSource {
         words.append((id, nil))
         continue
       }
-      guard let word = try? JSONDecoder().decode(SyncedWord.self, from: Data(value.utf8)) else {
+      guard let word = SyncRecords.decodeExact(SyncedWord.self, from: value) else {
         return false
       }
       words.append((id, word))

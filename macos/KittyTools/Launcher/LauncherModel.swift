@@ -606,32 +606,13 @@ import UniformTypeIdentifiers
     return items
   }
 
-  /// 还原得出来的收藏；还原不出来的（App 已卸载、文件已删）顺手删掉：看不见的收藏会占着 8 个名额（⌘D 说满了却
-  /// 找不到可取消的）、夹在中间让 ⌥⌘↑↓ 换了位置却看不出变化。有时有、有时没有的内置动作（钉图）不让收藏（canFavorite）。
-  /// ponytail: 外接磁盘上的 App / 文件拔掉磁盘时也会被删，真碰到再按宗卷是否挂着区分
+  /// 还原得出来的收藏。还原不出来的（App 没装 / 已卸载、文件已删）**只藏起来、不删**（全局同步：别的 Mac 收藏了这台没装的
+  /// App，装上就回来——删了的话会同步删掉每一台的），也不占 8 个名额（⌘D 按看得见的数，LauncherUsage.toggleFavorite）。
+  /// 有时有、有时没有的内置动作（钉图）不让收藏（canFavorite）。
+  /// ⌥⌘↑↓ 只和看得见的邻居换（moveFavorite）。
   /// 归关着的功能（Feature）的内置动作：不显示，收藏也**不删**（打开功能就回来）——按全部功能都开着时的列表认
   private func favorites(_ actions: [LauncherItem]) -> [LauncherItem] {
-    var items: [LauncherItem] = []
-    var missing: [LauncherUsage.Favorite] = []
-    var everything: Set<String>?
-    for favorite in usage.favorites {
-      if let item = restore(favorite.kind, favorite.target, favorite.title, actions) {
-        items.append(item)
-      } else if favorite.kind == .action {
-        // 全开时的那份只在真遇到时算一次、不进缓存
-        if everything == nil {
-          var all = actionState()
-          all.features = Set(Feature.allCases)
-          everything = Set(LauncherItem.actions(all, caching: false).map(\.target))
-        }
-        // ponytail: 藏着的收藏照样占 8 个名额（满了时 ⌘D 说满、看得见的不到 8 个），真碰到再分开数
-        if everything?.contains(favorite.target) != true { missing.append(favorite) }
-      } else {
-        missing.append(favorite)
-      }
-    }
-    if !missing.isEmpty { usage.removeFavorites(missing) }
-    return items
+    usage.favorites.compactMap { restore($0.kind, $0.target, $0.title, actions) }
   }
 
   private func restore(
@@ -1062,8 +1043,7 @@ import UniformTypeIdentifiers
   func toggleFavorite(_ item: LauncherItem) {
     guard canFavorite(item) else { return NSSound.beep() }
     let adding = !usage.isFavorite(item)
-    if adding { _ = favorites(builtIns) }  // 先清掉还原不出来的，别让它们占名额
-    guard usage.toggleFavorite(item) else {
+    guard usage.toggleFavorite(item, visible: adding ? favorites(builtIns).count : nil) else {
       NSSound.beep()
       return show(.warning("收藏最多 \(LauncherUsage.favoriteLimit) 个，先取消一个"))
     }
@@ -1072,9 +1052,15 @@ import UniformTypeIdentifiers
   }
 
   /// ⌥⌘↑↓：空查询里选中的收藏和上一个 / 下一个换位置（⌘1–N 跟着固定下来）；不是收藏时不接这个键
+  /// 和**看得见的**上一个 / 下一个换（藏着的收藏——这台还原不出来的——不挡着，换了看得出变化）
   private func moveFavorite(by offset: Int) -> Bool {
     guard isShowingRecent, let item = selectedItem, selection < favoriteCount else { return false }
-    if usage.moveFavorite(item, by: offset) { refresh(keeping: item.id) } else { NSSound.beep() }
+    let neighbor = selection + offset
+    if (0..<favoriteCount).contains(neighbor), usage.swapFavorites(item, results[neighbor]) {
+      refresh(keeping: item.id)
+    } else {
+      NSSound.beep()
+    }
     return true
   }
 

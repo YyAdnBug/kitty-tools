@@ -2,8 +2,8 @@
 // 查询为空的行是全局使用分（时间常数 14 天，给空查询的「常用」和排序加成）；非空的是「这个查询选过它」
 // （时间常数 3 天）。每用一次：分 = 衰减到现在的分 + 1（修旧版次数永不衰减，§11 #31）。
 // 内存里一份字典，改动直接写库（修旧版另起线程整份覆盖写 JSON、可能乱序，§11 #29）。
-// 收藏（体检 D13，launcher_favorites 表）：用户自己挑的，空查询排在「常用」上面，按加入顺序、⌥⌘↑↓ 调，最多 8 个；
-// 清空使用记录不动它。
+// 收藏（体检 D13，launcher_favorites 表）：用户自己挑的，空查询排在「常用」上面，按加入顺序、⌥⌘↑↓ 调，最多 8 个
+// （自己加的时候；全局同步时两台同时各加一个可以超过，都留着）；清空使用记录不动它。收藏接进全局同步（文件末尾）。
 
 import Foundation
 import OSLog
@@ -42,6 +42,7 @@ final class LauncherUsage {
 
   init(db: Database) throws {
     self.db = db
+    try SyncLedger.prepare(db)
     try db.execute(
       """
       CREATE TABLE IF NOT EXISTS launcher_usage(
@@ -165,31 +166,27 @@ final class LauncherUsage {
     favorites.contains { $0.kind == item.kind && $0.target == item.target }
   }
 
-  /// 加入（排到最后）/ 取消收藏；满了不加，返回 false
-  @discardableResult func toggleFavorite(_ item: LauncherItem) -> Bool {
+  /// 加入（排到最后）/ 取消收藏；满了不加，返回 false。visible：看得见的有几个（启动器给：这台还原不出来的收藏藏着、不删、
+  /// 不占名额——全局同步时它们是别的 Mac 上有用的，删了会同步删掉每一台的；不给就按全部算）。
+  /// ponytail: 藏着的会一直留着（卸掉的 App 那种越积越多），真碰到再加「清理这台没有的收藏」
+  @discardableResult func toggleFavorite(_ item: LauncherItem, visible: Int? = nil) -> Bool {
     if isFavorite(item) {
       favorites.removeAll { $0.kind == item.kind && $0.target == item.target }
     } else {
-      guard favorites.count < Self.favoriteLimit else { return false }
+      guard (visible ?? favorites.count) < Self.favoriteLimit else { return false }
       favorites.append(Favorite(kind: item.kind, target: item.target, title: item.title))
     }
     saveFavorites()
     return true
   }
 
-  /// 删掉还原不出来的收藏（App 已卸载、文件已删）
-  func removeFavorites(_ removed: [Favorite]) {
-    favorites.removeAll(where: removed.contains)
-    saveFavorites()
-  }
-
-  /// ⌥⌘↑↓：和上一个 / 下一个换位置；到头了返回 false
-  @discardableResult func moveFavorite(_ item: LauncherItem, by offset: Int) -> Bool {
+  /// 两个收藏换位置（⌥⌘↑↓：启动器只和看得见的邻居换，中间藏着的不动）；有一个不是收藏返回 false
+  @discardableResult func swapFavorites(_ a: LauncherItem, _ b: LauncherItem) -> Bool {
     guard
-      let index = favorites.firstIndex(where: { $0.kind == item.kind && $0.target == item.target }),
-      favorites.indices.contains(index + offset)
+      let i = favorites.firstIndex(where: { $0.kind == a.kind && $0.target == a.target }),
+      let j = favorites.firstIndex(where: { $0.kind == b.kind && $0.target == b.target })
     else { return false }
-    favorites.swapAt(index, index + offset)
+    favorites.swapAt(i, j)
     saveFavorites()
     return true
   }
@@ -253,5 +250,90 @@ final class LauncherUsage {
   private static func key(_ entry: Entry) -> String { key(entry.query, entry.kind, entry.target) }
   private static func key(_ query: String, _ kind: LauncherItem.Kind, _ target: String) -> String {
     query + "\n" + kind.rawValue + "\n" + target
+  }
+}
+
+// MARK: 同步（全局同步：启动器收藏，PLAN §10「全局同步」B9）
+
+extension LauncherUsage: SyncSource {
+  /// 同步文件里的一个收藏（编号 = 类型 + 目标的哈希：同一个 App / 网址每台都是同一个编号）；顺序单独一条（SyncRecords.orderID）
+  private nonisolated struct Synced: Codable {
+    var kind: String
+    var target: String
+    var title: String
+  }
+
+  private static func syncID(kind: String, target: String) -> String {
+    SyncRecords.hash(kind + "\u{0}" + target)
+  }
+
+  private static func syncID(_ favorite: Favorite) -> String {
+    syncID(kind: favorite.kind.rawValue, target: favorite.target)
+  }
+
+  var syncKind: SyncRecords.Kind { .launcher }
+  /// 编号由内容推出来，同一个收藏各台的编号本来就一样，不用另外去重
+  var syncJoin: SyncRecords.Join { .union { _ in nil } }
+  var syncBusy: Bool { false }
+
+  func syncValues() -> [String: String] {
+    var values: [String: String] = [
+      SyncRecords.orderID: SyncRecords.orderValue(favorites.map(Self.syncID))
+    ]
+    for favorite in favorites {
+      let synced = Synced(
+        kind: favorite.kind.rawValue, target: favorite.target, title: favorite.title)
+      if let data = try? SyncRecords.encoder.encode(synced) {
+        values[Self.syncID(favorite)] = String(decoding: data, as: UTF8.self)
+      }
+    }
+    return values
+  }
+
+  func syncLedger(library: String) throws -> SyncRecords.Ledger? {
+    try SyncLedger.load(.launcher, library: library, in: db)
+  }
+
+  /// 落合并结果：按顺序那条排；不卡 8 个（两台同时各加一个都留着）；库和账本一个事务；有一条解不出来（或者是更新版本写的、
+  /// 编号和内容对不上）整个不落
+  func applySync(_ changes: [String: String?], ledger: SyncRecords.Ledger, library: String) -> Bool
+  {
+    var list = Dictionary(
+      favorites.map { (Self.syncID($0), $0) }, uniquingKeysWith: { first, _ in first })
+    var order = favorites.map(Self.syncID)
+    for (id, value) in changes {
+      if id == SyncRecords.orderID {
+        guard let value else { continue }
+        guard let ids = SyncRecords.decodeExact([String].self, from: value) else { return false }
+        order = ids
+        continue
+      }
+      guard let value else {
+        list[id] = nil
+        continue
+      }
+      guard let synced = SyncRecords.decodeExact(Synced.self, from: value),
+        let kind = LauncherItem.Kind(rawValue: synced.kind),
+        Self.syncID(kind: synced.kind, target: synced.target) == id
+      else { return false }
+      list[id] = Favorite(kind: kind, target: synced.target, title: synced.title)
+    }
+    let ordered = SyncRecords.arranged(list.keys, by: order).compactMap { list[$0] }
+    do {
+      try db.transaction {
+        try db.execute("DELETE FROM launcher_favorites")
+        for (position, favorite) in ordered.enumerated() {
+          try db.execute(
+            "INSERT INTO launcher_favorites(kind, target, title, position) VALUES (?, ?, ?, ?)",
+            [favorite.kind.rawValue, favorite.target, favorite.title, position])
+        }
+        try SyncLedger.save(ledger, kind: .launcher, library: library, in: db)
+      }
+    } catch {
+      Log.storage.error("启动器收藏同步写库失败：\(error)")
+      return false
+    }
+    favorites = ordered
+    return true
   }
 }

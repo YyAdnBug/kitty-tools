@@ -860,7 +860,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if let noteStore {
       let syncer = NoteSyncer(store: noteStore)
       syncer.island = island
-      syncer.sources = [clipboardStore, historyStore]
+      syncer.sources = [
+        clipboardStore, historyStore, WebSearchSync(), TranslateServiceSync(store: serviceStore),
+        launcherUsage,
+      ]
       syncer.featureOn = { Self.syncFeatures[$0]?.isOn ?? true }
       syncer.wanted = { Self.syncWanted }
       noteSyncer = syncer
@@ -871,7 +874,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 同步的每一部分跟着哪个功能（NoteSyncer.featureOn：关着的那部分不合）
   private static let syncFeatures: [String: Feature] = [
     NoteSyncer.notesPart: .notes, SyncRecords.Kind.clips.rawValue: .clipboard,
-    SyncRecords.Kind.vocabulary.rawValue: .translate,
+    SyncRecords.Kind.vocabulary.rawValue: .translate, SyncRecords.Kind.engines.rawValue: .launcher,
+    SyncRecords.Kind.services.rawValue: .translate, SyncRecords.Kind.launcher.rawValue: .launcher,
   ]
 
   /// 同步管的功能有一个开着

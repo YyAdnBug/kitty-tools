@@ -14,6 +14,7 @@ struct SyncSection: View {
   @AppStorage(Feature.notes.prefsKey) private var notesOn = true
   @AppStorage(Feature.clipboard.prefsKey) private var clipboardOn = true
   @AppStorage(Feature.translate.prefsKey) private var translateOn = true
+  @AppStorage(Feature.launcher.prefsKey) private var launcherOn = true
   /// 开同步没成的原因（橙字）
   @State private var problem: String?
   /// 面板开着、正在看文件夹、正在开
@@ -44,6 +45,17 @@ struct SyncSection: View {
         part(
           SyncRecords.Kind.vocabulary.rawValue, title: SyncRecords.Kind.vocabulary.title,
           detail: "翻译里收藏的词句", feature: "翻译", isOn: translateOn)
+        part(
+          SyncRecords.Kind.engines.rawValue, title: SyncRecords.Kind.engines.title,
+          detail: "启动器里的网页搜索和快捷链接", feature: "启动器", isOn: launcherOn)
+        part(
+          SyncRecords.Kind.services.rawValue, title: SyncRecords.Kind.services.title,
+          detail: "哪几个服务、顺序和设置；密钥不同步，别的 Mac 上要自己填一次", feature: "翻译",
+          isOn: translateOn)
+        part(
+          SyncRecords.Kind.launcher.rawValue, title: SyncRecords.Kind.launcher.title,
+          detail: "空搜索框里收藏的那几个；这台没装的 App 不显示，装上就回来", feature: "启动器",
+          isOn: launcherOn)
         LabeledContent {
           EmptyView()
         } label: {
@@ -91,7 +103,7 @@ struct SyncSection: View {
         (joining.notes > 0
           ? "这个文件夹里已经有 \(joining.devices) 台 Mac 在同步，有 \(joining.notes) 条便签（含「最近删除」里的）。"
           : "这个文件夹里已经有 \(joining.devices) 台 Mac 在同步。")
-          + "合在一起后，这台 Mac 上的便签、片段、收藏和生词和它们的会出现在每台 Mac 上（同样的不重复），设置跟着已经在同步的那几台；同一条两边都改过的，后改的留下。"
+          + "合在一起后，这台 Mac 上的便签、片段、收藏和生词和它们的会出现在每台 Mac 上（同样的不重复），设置（连同内置的网页搜索、翻译服务）跟着已经在同步的那几台；同一条两边都改过的，后改的留下。"
       )
     }
   }

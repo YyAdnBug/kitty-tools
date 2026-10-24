@@ -27,6 +27,9 @@ struct NoteSyncerTests {
     let kitty: Database
     let clipboard: ClipboardStore
     let history: HistoryStore
+    /// 启动器收藏（同一个内存库）、网页搜索与快捷链接（临时偏好域）、翻译服务（不读写偏好的一份）
+    let launcher: LauncherUsage
+    let services: TranslateServiceStore
     var editing: Set<String> = []
     var featuresOff: Set<String> = []
 
@@ -41,7 +44,12 @@ struct NoteSyncerTests {
       clipboard = try ClipboardStore(
         db: kitty, images: ImageStore(directory: root.appending(path: "剪贴板图片-\(host)")))
       history = try HistoryStore(db: kitty)
-      syncer.sources = [clipboard, history]
+      launcher = try LauncherUsage(db: kitty)
+      services = TranslateServiceStore(services: [.zhipu])
+      syncer.sources = [
+        clipboard, history, WebSearchSync(defaults: defaults),
+        TranslateServiceSync(store: services, defaults: defaults), launcher,
+      ]
       syncer.computerName = { host }
       syncer.editing = { [unowned self] in editing }
       syncer.featureOn = { [unowned self] in !featuresOff.contains($0) }
@@ -58,6 +66,11 @@ struct NoteSyncerTests {
     }
 
     var words: [String] { history.search("", favoritesOnly: true, limit: 0).map(\.source).sorted() }
+
+    var engines: [SearchEngine] {
+      get { WebSearch.engines(in: defaults) }
+      set { WebSearch.setEngines(newValue, in: defaults) }
+    }
 
     deinit { UserDefaults().removePersistentDomain(forName: suite) }
   }
@@ -533,10 +546,15 @@ struct NoteSyncerTests {
     a.clipboard.toggleFavorite([item.id])
     a.clipboard.assign([item.id], to: group.id)
     a.history.setFavorite(source: "word", target: .zhHans, result: "词", service: "s", true)
+    var ai = TranslateService.newAI()
+    ai.baseURL = "https://ai.example/v1"
+    a.services.services.append(ai)
+    a.launcher.toggleFavorite(
+      LauncherItem(kind: .url, target: "https://example.com", title: "示例", subtitle: ""))
     for mac in [a, b] { #expect(await mac.syncer.enable(folder: shared) == nil) }
     await settle([a, b], times: 3)
     func stamps(_ mac: Mac) throws -> [Date?] {
-      try ["clips", "vocabulary"].map { kind in
+      try SyncRecords.Kind.allCases.filter { $0 != .settings }.map(\.rawValue).map { kind in
         let url = shared.appending(path: "devices/\(mac.store.deviceID)/\(kind).json")
         return try FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate]
           as? Date
@@ -636,5 +654,94 @@ struct NoteSyncerTests {
     a.history.setFavorite(source: "hello", target: .zhHans, result: "你好", service: "s", true)
     await settle([a, b])
     #expect(b.retained["三"] != nil && b.words.isEmpty)
+  }
+
+  // MARK: 网页搜索与快捷链接、翻译服务、启动器收藏（全局同步第 4 批）
+
+  /// 三类来回传：加、改、挪、删都过去；翻译服务只传配置（密钥在钥匙串里，不碰）
+  @Test func enginesServicesAndLauncherFavoritesTravel() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    var engines = a.engines
+    engines.insert(
+      SearchEngine(
+        id: "custom-1", name: "公司内网", keyword: "wiki", urlTemplate: "https://wiki.example/{query}",
+        enabled: false), at: 0)
+    a.engines = engines
+    var ai = TranslateService.newAI()
+    ai.name = "自建"
+    ai.baseURL = "https://ai.example/v1"
+    ai.model = "m1"
+    a.services.services.append(ai)
+    a.launcher.toggleFavorite(
+      LauncherItem(kind: .url, target: "https://example.com", title: "示例", subtitle: ""))
+    for mac in [a, b] { #expect(await mac.syncer.enable(folder: shared) == nil) }
+    await settle([a, b])
+    #expect(b.engines.first?.id == "custom-1" && b.engines.map(\.id) == a.engines.map(\.id))
+    #expect(b.services.services.map(\.id) == ["zhipu", ai.id])
+    #expect(b.services.services.last?.baseURL == "https://ai.example/v1")
+    #expect(b.launcher.favorites.map(\.target) == ["https://example.com"])
+    // B 删掉那条搜索、改 AI 服务的模型、取消收藏 → A 跟着变
+    b.engines = b.engines.filter { $0.id != "custom-1" }
+    b.services.services[1].model = "m2"
+    b.launcher.toggleFavorite(
+      LauncherItem(kind: .url, target: "https://example.com", title: "示例", subtitle: ""))
+    await settle([b, a])
+    #expect(!a.engines.contains { $0.id == "custom-1" })
+    #expect(a.services.services.last?.model == "m2" && a.launcher.favorites.isEmpty)
+  }
+
+  /// 启动器收藏两台同时各加满：都留着（不卡 8 个）
+  @Test func launcherFavoritesFromBothMacsAreKept() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    for mac in [a, b] { #expect(await mac.syncer.enable(folder: shared) == nil) }
+    await settle([a, b])
+    for (mac, name) in [(a, "a"), (b, "b")] {
+      for index in 0..<LauncherUsage.favoriteLimit {
+        mac.launcher.toggleFavorite(
+          LauncherItem(
+            kind: .url, target: "https://\(name).example/\(index)", title: "\(index)", subtitle: "")
+        )
+      }
+    }
+    await settle([a, b], times: 3)
+    for mac in [a, b] { #expect(mac.launcher.favorites.count == LauncherUsage.favoriteLimit * 2) }
+    #expect(a.launcher.favorites == b.launcher.favorites)
+  }
+
+  /// 两台同时在列表末尾各加一条（搜索、收藏夹）、一台挪顺序一台改名：几轮内两台一样，改名和挪顺序都留下
+  @Test func listOrderConvergesAndKeepsBothEdits() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    for mac in [a, b] { #expect(await mac.syncer.enable(folder: shared) == nil) }
+    await settle([a, b])
+    for (mac, name) in [(a, "a"), (b, "b")] {
+      mac.engines.append(
+        SearchEngine(
+          id: "custom-\(name)", name: name, keyword: name, urlTemplate: "https://\(name)/{query}",
+          enabled: false))
+      _ = mac.clipboard.createGroup(named: "收藏夹 \(name)")
+    }
+    await settle([a, b], times: 3)
+    #expect(
+      a.engines.map(\.id) == b.engines.map(\.id) && a.engines.count == WebSearch.defaults.count + 2)
+    #expect(a.clipboard.groups.map(\.name) == b.clipboard.groups.map(\.name))
+    // A 把最后一条挪到最前，B 同时给第一条改名
+    var reordered = a.engines
+    reordered.insert(reordered.removeLast(), at: 0)
+    a.engines = reordered
+    var renamed = b.engines
+    renamed[0].name = "改过名的"
+    b.engines = renamed
+    await settle([a, b], times: 3)
+    #expect(a.engines.map(\.id) == b.engines.map(\.id) && a.engines.first?.id == reordered[0].id)
+    #expect(a.engines.contains { $0.name == "改过名的" } && b.engines.contains { $0.name == "改过名的" })
   }
 }

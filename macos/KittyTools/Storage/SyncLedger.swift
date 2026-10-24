@@ -3,7 +3,8 @@
 // **账本和数据在同一个库、同一个事务里**（SyncRecords 文件头「执行层必须守住的」）：片段、收藏、生词本都在 kitty.sqlite3，
 // 账本表也建在那里，落合并结果和存账本是一个事务——从每日备份恢复这个库时账本跟着一起退回去（引擎会追上），「重新开始」
 // 时一起清空（等于第一次合）。账本记着是哪个库（文件夹的库编号）的：换了文件夹就当第一次合。不升 user_version：旧版本
-// 不认识这张表，碰不到它。
+// 不认识这张表，碰不到它。存在偏好里的几类（网页搜索与快捷链接、翻译服务、设置）账本也放在偏好里（同一个偏好域，键
+// `syncLedger.<类别>`，这台电脑自己的、不注册默认值、不跟着导出），写数据和写账本挨着做（偏好没有事务）。
 
 import Foundation
 
@@ -58,5 +59,30 @@ nonisolated enum SyncLedger {
     try db.execute(
       "INSERT OR REPLACE INTO sync_ledger(kind, library, ledger) VALUES (?, ?, ?)",
       [kind.rawValue, library, text])
+  }
+
+  // MARK: 存在偏好里的几类
+
+  private struct Stored: Codable {
+    var library: String
+    var ledger: SyncRecords.Ledger
+  }
+
+  static func key(_ kind: SyncRecords.Kind) -> String { "syncLedger.\(kind.rawValue)" }
+
+  /// 读偏好里的账本：没有、是别的库的给 nil；解不出来抛错
+  static func load(_ kind: SyncRecords.Kind, library: String, in defaults: UserDefaults) throws
+    -> SyncRecords.Ledger?
+  {
+    guard let data = defaults.data(forKey: key(kind)) else { return nil }
+    let stored = try JSONDecoder().decode(Stored.self, from: data)
+    return stored.library == library ? stored.ledger : nil
+  }
+
+  static func save(
+    _ ledger: SyncRecords.Ledger, kind: SyncRecords.Kind, library: String, in defaults: UserDefaults
+  ) throws {
+    defaults.set(
+      try SyncRecords.encoder.encode(Stored(library: library, ledger: ledger)), forKey: key(kind))
   }
 }
