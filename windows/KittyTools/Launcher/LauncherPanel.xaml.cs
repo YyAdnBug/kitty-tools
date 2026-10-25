@@ -57,6 +57,16 @@ public sealed partial class LauncherPanel : UserControl
         {
             catalog.Changed += OnCatalogChanged;
         }
+
+        // 空闲两分钟后放掉缓存的图标位图，下次打开再按需解码。
+        IdleReclaimer.Register(ReleaseCaches);
+    }
+
+    /// <summary>空闲回收：放掉暂时不用的图标位图。</summary>
+    public void ReleaseCaches()
+    {
+        _icons.Clear();
+        Log.Info("launcher.caches-released");
     }
 
     public event Action? CloseRequested;

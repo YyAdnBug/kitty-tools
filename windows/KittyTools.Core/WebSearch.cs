@@ -30,7 +30,7 @@ public static class WebSearch
         Engine("bilibili", "哔哩哔哩", "bili", "https://search.bilibili.com/all?keyword={query}"),
         Engine("wikipedia", "维基百科", "wiki", "https://zh.wikipedia.org/w/index.php?search={query}"),
         Engine("youtube", "YouTube", "yt", "https://www.youtube.com/results?search_query={query}"),
-        Engine("maps", "地图", "map", "https://www.bing.com/maps?q={query}"),
+        Engine("maps", "地图", "map", "maps://?q={query}"),
         Engine("taobao", "淘宝", "tb", "https://s.taobao.com/search?q={query}"),
         Engine("jd", "京东", "jd", "https://search.jd.com/Search?keyword={query}"),
         Engine("douban", "豆瓣", "db", "https://www.douban.com/search?q={query}"),
@@ -84,6 +84,15 @@ public static class WebSearch
 
     public static string Url(SearchEngine engine, string text)
         => engine.UrlTemplate.Replace("{query}", Uri.EscapeDataString(text), StringComparison.Ordinal);
+
+    /// <summary>
+    /// 打开时把 mac 的 <c>maps://?q=…</c> 换成 Windows 的地图协议（PLAN-v3 §1.5：存的地址两边一字不差，
+    /// 打开时各用各的）。其它网址原样返回。
+    /// </summary>
+    public static string OpenUrl(string url)
+        => url.StartsWith("maps://?", StringComparison.OrdinalIgnoreCase)
+            ? "bingmaps:?" + url["maps://?".Length..]
+            : url;
 
     public static LauncherItem Item(SearchEngine engine, string text) => new()
     {

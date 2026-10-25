@@ -171,7 +171,8 @@ internal sealed class LauncherModel
             case LauncherKind.Url:
             case LauncherKind.Search:
             case LauncherKind.Path:
-                if (!Start(item.Target, null, out var openError))
+                // 地图预设存的是 mac 的 maps://…，打开时换成 Windows 的地图协议（PLAN-v3 §1.5）。
+                if (!Start(WebSearch.OpenUrl(item.Target), null, out var openError))
                 {
                     error = openError;
                     return false;

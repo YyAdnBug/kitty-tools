@@ -79,6 +79,7 @@ internal sealed unsafe class OverlayWindow : Window
 
     public void ShowOverlay(OverlayKind kind)
     {
+        IdleReclaimer.Cancel();
         Log.Info($"overlay.begin kind={kind}");
         _kind = kind;
         _host.RequestedTheme = Theme.ElementTheme;
@@ -146,6 +147,8 @@ internal sealed unsafe class OverlayWindow : Window
             _clipboard?.OnHidden();
             _launcher?.OnHidden();
             AppWindow.Hide();
+            // 所有面板都收起两分钟后回收可以重建的缓存（第二版 §4.2）。
+            IdleReclaimer.Schedule();
             Log.Info($"overlay.hide restore={restoreForeground}");
             if (restoreForeground && _previousForeground != default)
             {
@@ -156,6 +159,14 @@ internal sealed unsafe class OverlayWindow : Window
         {
             _hiding = false;
         }
+    }
+
+    /// <summary>预建两块面板（不显示），第一次打开就不用再建 XAML 树。</summary>
+    public void PrewarmPanels()
+    {
+        _clipboard ??= CreateClipboardPanel();
+        _launcher ??= CreateLauncherPanel();
+        Log.Info("overlay.prewarmed");
     }
 
     private ClipboardPanel CreateClipboardPanel()
@@ -304,4 +315,18 @@ internal static class OverlayHost
     public static void Hide(bool restoreForeground) => _window?.HideOverlay(restoreForeground);
 
     public static void SetClipboardQuery(string query) => _window?.SetClipboardQuery(query);
+
+    /// <summary>启动 3 秒后预建浮层和两块面板（第二版 §4.2：第一次按热键 115–256 ms → 十几毫秒）。</summary>
+    public static void Prewarm()
+    {
+        try
+        {
+            _window ??= new OverlayWindow();
+            _window.PrewarmPanels();
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"overlay.prewarm-failed {ex.GetType().Name}");
+        }
+    }
 }

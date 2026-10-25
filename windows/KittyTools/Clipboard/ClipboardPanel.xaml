@@ -58,6 +58,7 @@
                             Text="{x:Bind RightText}"
                             FontSize="12"
                             Opacity="0.6"
+                            MaxWidth="220"
                             TextTrimming="CharacterEllipsis"
                             MaxLines="1" />
                         <FontIcon

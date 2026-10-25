@@ -76,6 +76,15 @@ internal sealed class ShellRuntime
             dispatcher?.TryEnqueue(() => ShowSettings(welcome: false)));
 
         Log.Info("shell.ready");
+
+        // 启动 3 秒后预建浮层 / 翻译浮窗：第一次按热键不用再建 XAML 树（第二版 §4.2）。
+        DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
+        {
+            await Task.Delay(3000);
+            OverlayHost.Prewarm();
+            TranslateHost.Prewarm();
+        });
+
         if (MemoryProbe.Requested)
         {
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(MemoryProbe.Run);

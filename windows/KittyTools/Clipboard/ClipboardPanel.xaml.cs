@@ -66,6 +66,16 @@ public sealed partial class ClipboardPanel : UserControl
         {
             store.Changed += OnStoreChanged;
         }
+
+        // 空闲两分钟后放掉预览卡（图片解码最占内存），下次选中再建。
+        IdleReclaimer.Register(ReleaseCaches);
+    }
+
+    /// <summary>空闲回收：清掉预览里的图片和控件。</summary>
+    public void ReleaseCaches()
+    {
+        PreviewHost.Children.Clear();
+        Log.Info("clipboard.caches-released");
     }
 
     public event Action? CloseRequested;

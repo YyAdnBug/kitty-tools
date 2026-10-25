@@ -1,6 +1,7 @@
 // 应用目录：商店应用走 PackageManager 的 AppListEntry（中文显示名、AUMID、logo），
 // 桌面应用扫开始菜单的 .lnk；都按显示名 / 文件名 / 拼音 / 首字母能搜到。
-// 后台线程扫：启动时一次，打开面板时距上次超过 5 分钟再扫；扫的时候先用上一次的结果。
+// 第二版 §4.2：启动时先读磁盘缓存（launcher-cache.json），15 秒后在后台刷新一次；
+// 打开面板时距上次超过 5 分钟再扫；扫的时候先用上一次的结果。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 using Microsoft.UI.Dispatching;
@@ -32,7 +33,25 @@ internal sealed class AppCatalog
     {
         var catalog = new AppCatalog();
         Instance = catalog;
-        catalog.RefreshIfStale();
+        // 先用上次的结果，界面立刻能用；15 秒后再后台扫一遍。
+        var cached = LauncherCache.Load();
+        if (cached.Count > 0)
+        {
+            lock (catalog._gate)
+            {
+                catalog._apps = cached
+                    .OrderBy(item => item.Title, StringComparer.CurrentCulture)
+                    .ToList();
+            }
+
+            catalog._dispatcher?.TryEnqueue(() => catalog.Changed?.Invoke());
+        }
+
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(15_000);
+            catalog.RefreshIfStale();
+        });
         return catalog;
     }
 
@@ -93,6 +112,7 @@ internal sealed class AppCatalog
                 _scannedAt = Environment.TickCount64;
             }
 
+            LauncherCache.Save(deduped);
             Log.Info($"launcher.apps count={deduped.Count} desktop={desktop.Count} store={store.Count} " +
                      $"icons={deduped.Count(item => item.IconData is { Length: > 0 })} " +
                      $"desktop-icons={desktop.Count(item => item.IconData is { Length: > 0 })} " +

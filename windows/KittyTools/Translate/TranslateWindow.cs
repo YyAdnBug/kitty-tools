@@ -144,7 +144,8 @@ internal sealed unsafe partial class TranslateWindow : Window
         _source = new TextBox
         {
             PlaceholderText = "输入要翻译的文字，Enter 翻译，Shift+Enter 换行",
-            AcceptsReturn = false,
+            // 多行模式才会换行：单行 TextBox 会把长原文横向截掉（Enter 由 OnSourceKeyDown 接管）。
+            AcceptsReturn = true,
             TextWrapping = TextWrapping.Wrap,
             MinHeight = 64,
             MaxHeight = 150,
@@ -340,6 +341,7 @@ internal sealed unsafe partial class TranslateWindow : Window
             SaveGeometry();
             _coordinator.Cancel();
             AppWindow.Hide();
+            IdleReclaimer.Schedule();
             Log.Info($"translate.hide restore={restoreForeground}");
             if (restoreForeground && _previousForeground != default && !_noActivate)
             {
@@ -376,6 +378,7 @@ internal sealed unsafe partial class TranslateWindow : Window
 
     private void ShowCore(bool activate)
     {
+        IdleReclaimer.Cancel();
         _root.RequestedTheme = Theme.ElementTheme;
 
         var before = Foreground.Get();

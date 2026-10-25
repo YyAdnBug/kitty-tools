@@ -65,6 +65,13 @@ foreach ($target in $targets) {
         throw "$($target.Rid) 发布失败"
     }
 
+    # Native AOT 的原生 pdb 单独放一份（同 mac 留 dSYM 的做法）：zip 里不放，以后用来解析崩溃转储。
+    $pdbDir = Join-Path $outRoot "pdb/$($target.Label)"
+    New-Item -ItemType Directory -Force $pdbDir | Out-Null
+    Get-ChildItem "$stage/Kitty Tools" -Filter '*.pdb' -File | ForEach-Object {
+        Move-Item $_.FullName (Join-Path $pdbDir $_.Name) -Force
+    }
+
     $zip = Join-Path $outRoot "KittyTools-$version-windows-$($target.Label).zip"
     if (Test-Path $zip) {
         Remove-Item $zip -Force
@@ -83,7 +90,7 @@ foreach ($target in $targets) {
         "$hash  $([System.IO.Path]::GetFileName($zip))`n",
         [System.Text.UTF8Encoding]::new($false))
 
-    $summary += "$($target.Label)：$size MB / $($files.Count) 个文件，zip $zipSize MB，sha256 $($hash.Substring(0, 12))…"
+    $summary += "$($target.Label)：$size MB / $($files.Count) 个文件（不含 pdb），zip $zipSize MB，sha256 $($hash.Substring(0, 12))…"
 }
 
 $notesPath = Join-Path $outRoot 'release-notes.md'
