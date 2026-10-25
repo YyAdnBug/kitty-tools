@@ -73,6 +73,13 @@
 - 链接预览的头图：`BitmapImage.DecodePixelWidth` 缩到长边 1200 再解码。
 - 有道、火山、腾讯的签名单测：期望值换成 mac `macos/KittyToolsTests/ProviderSigningTests.swift` 里的固定向量（`origin/main` 上就有；百度那条是官方文档的例子）。自己算出来的期望值，可能和实现错在同一处。
 
+**进展（`3e978d9`）**：
+- 已做：Chrome / Edge / Brave / Vivaldi 历史（`HistoryIndex`，临时拷贝 + WAL；本机 Edge 的库拷出来 malformed，
+  跳过并记日志；Chrome 等 217 条）、Firefox 书签（`places.sqlite`，书签数 404）、
+  Ctrl+K 操作面板改成自建 Flyout（过滤框 + 按钮列表，Enter / Esc）、链接头图 `DecodePixelWidth=1200`、
+  有道 / 火山 / 腾讯签名换成 mac 固定向量（3 个全过）。
+- 还没做：长截图的上滚入口 / 自动滚动拼图。
+
 ### R21（P3）几处小问题
 
 - 剪贴板预览头部的时间被右边的按钮盖住（`0.3.0-batch-3/clipboard-snippets.png` 只剩「16:20:3」，`0.3.0-batch-4/ocr-search.png` 只剩「16:33:4」）。时间那一列给最小宽度，放不下就不显示秒。
