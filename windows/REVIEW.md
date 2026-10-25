@@ -10,6 +10,102 @@
 
 ## 待修
 
+（2026-10-25 审到 `864fc5b8`：第三版、第四版、第五版和全部完成报告。按 P0 → P1 → P2 → P3 的顺序修。）
+
+### R13（P0）同步的合并规则和 mac 不一样，和真 Mac 一起用会丢改动
+
+**先说审查方的错**：PLAN-v5 让你照搬的 `SyncRecords.swift` 等文件，写方案时只在 Mac 本地、没推到 `origin`，你那边拿不到，只能按文字重写。现在原样拷在 `windows/reference/mac-sync/`（README 里有对照表）。
+
+- **差在哪**：你写的是「`modified` 大的赢，一样再看钟」；mac 是**先比钟**——一版的钟每一格都不小于另一版（盖过它）就直接赢，跟改于无关；只有两版谁也盖不住谁（真的并发改）才比改于，再一样比内容哈希（`SyncRecords.swift` 文件头「合（C1）」）。
+- **会出什么事**：Windows 的系统时间比 Mac 快 5 分钟。Windows 改了一条 → Mac 读到、在它上面又改了一次（Mac 这版的钟盖过 Windows 那版，但改于比 Windows 的小）→ Windows 这一轮按改于判自己赢、把 Mac 的改动丢掉，再把钟并起来写出去 → Mac 下一轮看到的钟盖过自己的，跟着退回旧值。两台的时钟差几分钟很常见，这个不是小概率。
+- 别的没对上的（都在文件头里写着）：改于不晚于现在、取 changed 时刻；账本被退回去时只追自己那一格（你现在是换编号，那是 device.json epoch 的规矩，两件事都要有）；第一次合的规则（同一编号的不算改动、内容一样的只留文件夹那条、丢的不留墓碑不进刹车）；墓碑不过期。
+- **要做**：
+  1. 照 `SyncRecords.swift` **逐行**搬成 `KittyTools.Core` 里的纯函数：`round`、`Join.union`、`orderID`、`arranged`、`decodeExact`、`buried`、`standing`，文件头那几段原样保留成注释。你现在的 `SyncClock`、`SyncJson`、`SyncFile` 能对上 golden 的部分留着用。
+  2. `SyncRecordsTests.swift` 的 17 个用例全部移植、期望值原样；`SyncRecordsFuzzTests.swift` 照着移植（三台随机加改删合、读到旧文件、钟快慢、退回、丢账本，查三台最后一样），默认 20 个种子随全量跑，`KITTY_SYNC_FUZZ=2000` 跑 2000 个。
+  3. PLAN-v5 第 3 批的集成测试：临时文件夹里两台 Windows（两个数据目录）+ 一台用 golden 样本手写的假 Mac，随机改几轮，最后三份一样。
+  4. 执行层挪出 UI 线程：同步文件夹多半在云盘里，读一个还没下载的文件会卡几秒。照 `NoteSyncer.swift`：后台读写、合，回 UI 线程落地（落地和账本同一个事务）。
+- **修好之前**：设置 › 通用 ›「同步」这一节先藏起来（`// ponytail:` 写上 R13），0.5.0 的产物不能给用户装来同步。
+- **验收**：上面 2、3 全过；报告里写 fuzz 2000 个种子的耗时。
+
+### R14（P1）录屏换成 H.264 MP4，补系统声音
+
+现在是 GDI 抓屏 → CPU 编 JPEG → 自己写 AVI：
+
+- 大：`0.4.0-batch-1` 那段 12.5 MB 才几秒，约 2.5 MB/s，10 分钟 1.5 GB；
+- 坏：`AviWriter` 的大小字段是 32 位，过 4 GB 就写坏；没有 OpenDML，很多播放器打不开 1 GB 以上的 AVI 1.0；
+- 占内存：`AviReader` 压缩、转 GIF 时 `File.ReadAllBytes` 把整个文件读进来；
+- 费 CPU：1440p 30 fps 的 JPEG 编码全在 CPU 上；
+- 没有系统声音。
+
+**做法（全走 WinRT，项目里已经在用 WinRT 投影，AOT 能用，不用手写 Media Foundation 的 COM）**，参考 robmikh/SimpleRecorder（MIT）：
+
+1. **抓屏**：`GraphicsCaptureItem`（整屏用 `IGraphicsCaptureItemInterop.CreateForMonitor`、选区先抓整屏再裁，这一个接口用 CsWin32 / 函数指针）+ `Direct3D11CaptureFramePool.CreateFreeThreaded` + `GraphicsCaptureSession`（`IsCursorCaptureEnabled` 按设置；Win11 上能关就把 `IsBorderRequired` 关掉）。
+2. **编码**：`MediaStreamSource`（`VideoStreamDescriptor`，BGRA8，选区尺寸取偶数），`SampleRequested` 里交 `MediaStreamSample.CreateFromDirect3D11Surface(frame.Surface, 时间戳)`；`MediaTranscoder.PrepareMediaStreamSourceTranscodeAsync(source, 输出流, MediaEncodingProfile.CreateMp4(...))` → `TranscodeAsync()`。码率按像素数算（1080p30 约 8 Mbps）。没有硬件编码器的机器系统会自己换软件编码，不用管。
+3. **系统声音**：WASAPI 回环。CsWin32 在 `allowMarshaling=false` 下生成的 `IAudioClient` / `IAudioCaptureClient` 是带函数指针的结构体，AOT 能用。用**轮询**（每 10 ms `GetNextPacketSize`），**不要用事件模式**（回环 + 事件模式在没有声音播放时不来事件）；包上带 `AUDCLNT_BUFFERFLAGS_SILENT`、或中间断了，按时间戳补静音，不然音画会越录越不同步。PCM 作为同一个 `MediaStreamSource` 的 `AudioStreamDescriptor` 交进去，输出 AAC。
+4. **麦克风**：一样走 WASAPI 采集，和回环在 PCM 层混（相加 + 限幅），重采样到同一个采样率。录音功能（现在是 `MediaCapture` 出 M4A）可以留着，也可以换成同一套，自己定。
+5. **点按圈、按键胶囊**：改成画在 D3D 纹理上（Win2D：`CanvasDevice.CreateFromDirect3D11Device` + 在拷出来的纹理上画）。
+6. **压缩**：同一个 `MediaTranscoder` 降码率再转一遍。**转 GIF**：`MediaComposition` / `MediaPlayer` 的帧服务器逐帧取。不用自己解 AVI 了，`AviWriter / AviReader / JpegEncoder / JpegDecoder` 删掉。
+
+**在换完之前**：AVI 录到 1 GB 自动停止并提示（`// ponytail:` 写上 R14），免得写出打不开的文件。
+
+**验收**：1440p 30 fps 录 60 s，文件 < 60 MB、录制期间本进程 CPU < 15%、内存不随时长涨；放系统声音 + 对着麦克风拍手，音画同步；资源管理器能出缩略图、「媒体播放器」能放；录满 10 分钟一次。
+
+### R15（P1）R4 没修好：深色下设置卡还是浅底白字
+
+- **证据**：`windows-shots` 的 `0.3.0-batch-1/settings-features.png`，是 `4b7e0c1` 之后推的。外观选深色、系统是浅色时，卡片底约 `#BFBFBF`（正好是浅色主题那个 70% 白的卡片底叠在深色窗口上），标题白字，几乎看不清。如果这张是旧进程截的，就补一张新的证明，再把这条挪到「有异议」。
+- **可能的根因**（`Shell/Theme.cs`）：
+  - XamlControlsResources 的 `ThemeDictionaries` 里，深色那套的键是 **`Default`**，不是 `Dark`（只有 `Default` / `Light` / `HighContrast` 三个），`ThemeKey` 返回 `"Dark"` 就永远找不到。
+  - `Find` 返回第一个带这个主题键的字典，不管里面有没有要的画刷，有可能先碰到一个没有 `CardBackgroundFillColorDefaultBrush` 的字典。
+  - 两种情况最后都会退回 `Application.Current.Resources`，拿到的是跟系统走的那一套。
+- **修**：
+  - 深色先找 `Default` 再找 `Dark`；`Find` 只认里面真有这个 key 的字典。
+  - 加一个启动自检（Debug 下记日志）：用三个主题键各取一次 `CardBackgroundFillColorDefaultBrush`，颜色要互不相同。
+  - 能写进 XAML 的地方改成 `{ThemeResource}`：元素有 `RequestedTheme` 时会自动选对的那一套，换外观也跟着刷新。`Theme.Brush` 只留给真写不了 XAML 的地方。
+- 同一张图：「功能」那一节的卡左边没有图标，上面的卡都有。
+- **验收**：系统浅色 + 设置深色、系统深色 + 设置浅色两种组合，各截设置 › 通用、翻译卡、启动器的计算行，推到 `windows-shots`。
+
+### R16（P1）截图拍到了用户的隐私，而 `windows-shots` 在公开仓库里
+
+- `0.4.0-batch-1/record-saved.png`、`0.4.0-batch-2/record-select.png`、`0.4.0-batch-3/hud.png` 都是 2560×1440 的整个桌面，拍进了用户别的窗口：代理配置、局域网和代理服务器的 IP、别的对话的内容。`0.4.0-batch-4/effects-frame.jpg`、`0.4.0-batch-5/gif-frame.png` 这两张录屏帧里也有。
+- **以后的规矩**（已写进 `AGENTS.md`）：
+  - 截图只截我们自己的窗口：按窗口矩形裁，或者只抓我们的 HWND。
+  - 录屏的验证先开一个自己的测试窗口（满屏测试图案），只录它的范围。
+  - 整屏的图一律不推。推之前自己看一遍，不能有别的 App 的内容。
+- 已经推上去的那几张怎么处理，由用户定（要改写 `windows-shots` 的历史），agent **不要动**。
+
+### R17（P1）启动器文件搜索是自己扫目录，E6 否掉的就是这种做法
+
+- `Launcher/LookupServices.cs` 的 `Walk` 递归 `GetFiles` / `GetDirectories`。用户目录大的时候要几秒、费电，结果还被 `MaxCandidates` 截断（同一个词有时搜得到有时搜不到）。
+- 照 E6 做：WinRT 的 `StorageFolder.GetFolderFromPathAsync(用户目录).CreateFileQueryWithOptions(new QueryOptions { FolderDepth = FolderDepth.Deep, IndexerOption = IndexerOption.OnlyUseIndexer, UserSearchFilter = … })`，非打包的桌面程序能用，只走索引。查不到（索引服务关着）时退回现在的扫目录，但限深度、限 300 ms。
+- **验收**：报告里写同一个词两种做法的耗时，以及索引服务停掉后的退路。
+
+### R18（P2）端口靠解析 `netstat` 的输出
+
+- 每查一次起一个进程（一两百毫秒）；有些语言的系统上状态那一列是本地化的（德语是 `ABHÖREN`），解析会漏。
+- 改用 `GetExtendedTcpTable(TCP_TABLE_OWNER_PID_LISTENER)` / `GetExtendedUdpTable(UDP_TABLE_OWNER_PID)`（CsWin32 能生成），IPv4、IPv6 各调一次，`LauncherCommands.cs` 文件头的说明一起改。单测改成测「表的行 → 列表项」。
+
+### R19（P2）编码：一个文件的注释是乱码、提交信息带 BOM
+
+- `KittyTools/Shell/OverlayWindow.cs` 第 1–4 行和第 146 行：UTF-8 被当成 GBK 读了一遍再存回去。照原意重写这几行注释（文件头的意思大概是「浮层：剪贴板面板和启动器共用的窗口……」）。
+- 提交 `6ac10d9c`、`ea1ec3b3` 的标题开头有 U+FEFF，`6ac10d9c` 的正文是乱码（报告文件本身没坏）。旧提交不改，以后这样写提交信息：
+  - 写进文件再 `git commit -F <文件>`，文件是**不带 BOM 的 UTF-8**。PowerShell 7 用 `Set-Content -Encoding utf8NoBOM`；Windows PowerShell 5.1 的 `-Encoding UTF8` 会带 BOM，别用。
+  - 另外设一次 `git config i18n.commitEncoding utf-8`，并让控制台 `[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)`。
+- `Translate/Providers/` 下 DeepL、Google、Microsoft 三个文件开头有 BOM，其余的没有。统一成不带 BOM：`windows/.editorconfig` 加 `charset = utf-8`。
+
+### R20（P2）第三版报告里记的「没做成」，补上
+
+- 启动器：浏览器历史（Chrome / Edge 的 `History` 是 SQLite，先拷到临时文件再读，别直接打开正在用的那个）、Firefox 书签；Ctrl+K 子列表的打字过滤。
+- 长截图：向上滚的入口、自动滚动（`SendInput` 滚轮，每一屏对比重叠再拼）。
+- 链接预览的头图：`BitmapImage.DecodePixelWidth` 缩到长边 1200 再解码。
+- 有道、火山、腾讯的签名单测：期望值换成 mac `macos/KittyToolsTests/ProviderSigningTests.swift` 里的固定向量（`origin/main` 上就有；百度那条是官方文档的例子）。自己算出来的期望值，可能和实现错在同一处。
+
+### R21（P3）几处小问题
+
+- 剪贴板预览头部的时间被右边的按钮盖住（`0.3.0-batch-3/clipboard-snippets.png` 只剩「16:20:3」，`0.3.0-batch-4/ocr-search.png` 只剩「16:33:4」）。时间那一列给最小宽度，放不下就不显示秒。
+- `ocr-search.png` 里搜到的那张图，预览是一片灰格子。确认是测试图本身透明，还是图没画出来。
+- 录屏 HUD 胶囊外面有一圈浅色方框（`0.4.0-batch-3/hud.png`），和 R5 是一回事：宿主窗口没有透明的 SystemBackdrop，用 R5 那套修。
+- 按键胶囊写的是 `CTRL + SHIFT + S`，按 Windows 的习惯写成 `Ctrl + Shift + S`。
+
 ### R12（P2）第 4、5 批欠的验证
 
 报告里写了，这里列出来免得漏。系统自带的截图工具就能录屏（Win+Shift+R），不需要额外装工具。

@@ -12,7 +12,8 @@ Kitty Tools 的 **Windows 原生版**（C# + WinUI 3，2026-10-23 立项）。�
 2. `PLAN-v3.md` 第 1–6 批 → 0.3.0
 3. `PLAN-v4.md`（录屏和录音）第 1–4 批 → 0.4.0
 4. `PLAN-v5.md`（和 Mac 互通的同步）第 1–3 批 → 0.5.0
-5. 写「全部完成报告」（见文末），结束。
+5. 写「全部完成报告」（见文末）。
+6. **之后**（2026-10-25 起，1–5 已经做完）：每一轮照样 fetch + rebase，按 `REVIEW.md`「待修」的 P0 → P1 → P2 → P3 一条一条修，修完一条就提交、推送（报告写在提交正文里，条目挪到「已修」）。待修清空了就停，等审查方加新的。R13–R21 都修完后升 0.6.0（changelog + `build-release.ps1`，不发布）。
 
 `PLAN.md` 是第一版的规格，后面几版没提到的地方照它。
 
@@ -90,6 +91,8 @@ Kitty Tools 的 **Windows 原生版**（C# + WinUI 3，2026-10-23 立项）。�
 - **分支**：在 `windows-wip` 上做。审查方也会往这个分支提交文档（`REVIEW.md`、方案的修订），所以推送前一定先 rebase 到 `origin/windows-wip`；不 rebase `origin/main`（并进 `main` 时由审查方处理）。**绝不强推**，也不改写已经推上去的提交。
 - **提交格式**：`<type>(win): <description>`，type 取 feat / fix / ui / refactor / docs / perf / build / chore。标题一行、70 字以内；空一行写正文，**正文就是这批的报告**。一批可以拆成几个提交，报告写在最后一个里。
 - **截图**：推到孤儿分支 `windows-shots`（`git worktree add ../kitty-shots windows-shots` 之后在那个目录里提交、推送），每批一个目录、6–10 张、单张 < 500 KB；动效录 3–5 秒的短视频（mp4 < 5 MB）也放这里。
+- **截图里不能有别的东西**（`windows-shots` 在公开仓库里）：只截我们自己的窗口（按窗口矩形裁，或只抓我们的 HWND）；录屏要验证时，先开一个自己的满屏测试图案窗口，只录它。整个桌面的图一律不推；推之前自己看一遍，不能出现别的 App、别的对话、IP、账号。
+- **提交信息用不带 BOM 的 UTF-8**：写进文件再 `git commit -F`；PowerShell 7 用 `Set-Content -Encoding utf8NoBOM`（5.1 的 `-Encoding UTF8` 会带 BOM）。
 - 拿不准的系统行为：先查 learn.microsoft.com，或看 PowerToys 源码（MIT）怎么做。
 - 用中文写文档和报告，代码注释可以写中文。
 

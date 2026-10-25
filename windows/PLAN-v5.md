@@ -26,6 +26,8 @@ mac 还有 `settings.json`（设置与快捷键）、`launcher.json`（启动器
 
 ## 1. 要读的 mac 源码（全部只当规格读）
 
+下表的文件都拷在 `windows/reference/mac-sync/`（原样，只读；原因见 REVIEW R13）。
+
 | 内容 | 文件（`macos/KittyTools/` 下） | 单测（`macos/KittyToolsTests/` 下） |
 |---|---|---|
 | 一条一条的合并规则、文件格式、读写校验 | `Storage/SyncRecords.swift`（**整份照搬成 Core 里的纯函数**） | `SyncRecordsTests.swift`、`SyncRecordsFuzzTests.swift` |
