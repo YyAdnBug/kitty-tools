@@ -353,7 +353,7 @@ internal sealed class Syncer
         {
             // ponytail: 文件都很小（每类几十 KB），直接在 UI 线程上跑；变成几千条再挪到后台 + 回 UI 线程落地。
             await Task.Yield();
-            RunRound(folder);
+            await RunRoundAsync(folder);
         }
         catch (Exception ex)
         {
@@ -368,7 +368,7 @@ internal sealed class Syncer
         }
     }
 
-    private void RunRound(string folder)
+    private async Task RunRoundAsync(string folder)
     {
         var disk = new SyncFolder(folder);
         if (!disk.IsUsable)
@@ -424,7 +424,7 @@ internal sealed class Syncer
         {
             try
             {
-                SyncKind(disk, kind, library);
+                await SyncKindAsync(disk, kind, library);
             }
             catch (Exception ex)
             {
@@ -440,24 +440,61 @@ internal sealed class Syncer
         Status.LastSync = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     }
 
-    private void SyncKind(SyncFolder disk, string kind, string library)
+    private async Task SyncKindAsync(SyncFolder disk, string kind, string library)
     {
         var local = Local(kind);
         var localMap = local.ToDictionary(item => item.Id, item => item.Value, StringComparer.Ordinal);
         var old = ReadEngineLedger(kind, library);
 
+        Func<string, string?> dedupe = kind switch
+        {
+            "clips" => ExtractClipText,
+            "vocabulary" => ExtractVocabularyKey,
+            _ => value => value,
+        };
+
+        // 云盘里读一个还没下载的文件会卡几秒：读文件和合都放到线程池，回 UI 线程落地。
+        var plan = await Task.Run(() => BuildPlan(disk, kind, localMap, old, dedupe));
+        if (plan.Error is not null)
+        {
+            Status.State = "stopped";
+            Status.Message = plan.Error;
+            return;
+        }
+
+        var outcome = plan.Outcome!;
+        if (SyncFolderRules.ShouldBrake(outcome.Trashing, outcome.Alive))
+        {
+            Status.State = "confirm";
+            Status.PendingDeletions = outcome.Trashing;
+            Status.Message = $"同步要删掉 {outcome.Trashing} 条，等你确认";
+            return;
+        }
+
+        var merged = ToSyncFile(kind, outcome.Own);
+        Apply(kind, merged, localMap.Keys.ToHashSet(StringComparer.Ordinal));
+        WriteEngineLedger(kind, library, outcome.Ledger);
+        var ownPath = Path.Combine(SyncFolderRules.DevicesFolder, _device.Id, SyncFolderRules.FileName(kind));
+        var encoded = merged.Encode();
+        await Task.Run(() => disk.WriteText(ownPath, encoded));
+        Status.LastSync = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        Status.State = "idle";
+        Status.Message = string.Empty;
+    }
+
+    private (SyncOutcome? Outcome, string? Error) BuildPlan(
+        SyncFolder disk, string kind, Dictionary<string, string> localMap,
+        SyncLedgerData? old, Func<string, string?> dedupe)
+    {
         // 自己那份（账本退回时要用它的钟追上）。
         var ownPath = Path.Combine(SyncFolderRules.DevicesFolder, _device.Id, SyncFolderRules.FileName(kind));
         var own = ReadEngineFile(disk.ReadText(ownPath), kind, out var ownNewer);
         if (ownNewer)
         {
-            Status.State = "stopped";
-            Status.Message = "同步文件夹是新版本写的，请更新 Kitty Tools";
-            return;
+            return (null, "同步文件夹是新版本写的，请更新 Kitty Tools");
         }
 
         var others = new List<SyncFileData>();
-        Status.Message = string.Empty;
         foreach (var id in disk.DeviceIds().Where(id => id != _device.Id))
         {
             var text = disk.ReadText(Path.Combine(SyncFolderRules.DevicesFolder, id, SyncFolderRules.FileName(kind)));
@@ -475,39 +512,16 @@ internal sealed class Syncer
 
             if (newer)
             {
-                Status.State = "stopped";
-                Status.Message = "同步文件夹是新版本写的，请更新 Kitty Tools";
-                return;
+                return (null, "同步文件夹是新版本写的，请更新 Kitty Tools");
             }
 
             others.Add(remote);
         }
 
-        Func<string, string?> dedupe = kind switch
-        {
-            "clips" => ExtractClipText,
-            "vocabulary" => ExtractVocabularyKey,
-            _ => value => value,
-        };
         var outcome = SyncEngine.Round(
             localMap, new Dictionary<string, long>(), old, own, others, _device.Id,
             DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), JoinMode.Union, dedupe);
-
-        if (SyncFolderRules.ShouldBrake(outcome.Trashing, outcome.Alive))
-        {
-            Status.State = "confirm";
-            Status.PendingDeletions = outcome.Trashing;
-            Status.Message = $"同步要删掉 {outcome.Trashing} 条，等你确认";
-            return;
-        }
-
-        var merged = ToSyncFile(kind, outcome.Own);
-        Apply(kind, merged, localMap.Keys.ToHashSet(StringComparer.Ordinal));
-        WriteEngineLedger(kind, library, outcome.Ledger);
-        disk.WriteText(ownPath, merged.Encode());
-        Status.LastSync = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        Status.State = "idle";
-        Status.Message = string.Empty;
+        return (outcome, null);
     }
 
     private static string? ExtractClipText(string value)

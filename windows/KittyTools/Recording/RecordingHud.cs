@@ -37,6 +37,7 @@ internal sealed class RecordingHud
     private RecordingHud(PixelBounds region)
     {
         _window = new Window { Title = "录屏" };
+        _window.SystemBackdrop = new TransparentBackdrop();
         _window.AppWindow.IsShownInSwitchers = false;
         var presenter = OverlappedPresenter.Create();
         presenter.IsAlwaysOnTop = true;

@@ -232,7 +232,17 @@ internal sealed class ShellRuntime
             });
         }
 
-        // 调试 / 自检：自动录 N 秒麦克风（MediaCapture 的 M4A），手测托盘 / 文件。
+        // 调试：打印端口表的前几行（R18）。
+        if (Environment.GetCommandLineArgs().Contains("--ports", StringComparer.OrdinalIgnoreCase))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() =>
+            {
+                var rows = PortTable.Read();
+                Log.Info($"ports.count={rows.Count} first={string.Join(';', rows.Take(5).Select(row => $"{row.Protocol} {row.Local}:{row.Port} pid={row.Pid}"))}");
+            });
+        }
+
+        // 调试用：自动录 N 秒麦克风（MediaCapture 的 M4A），手测托盘 / 文件。
         var audioUiArg = Environment.GetCommandLineArgs()
             .FirstOrDefault(arg => arg.StartsWith("--audio-rec-ui=", StringComparison.OrdinalIgnoreCase));
         if (audioUiArg is not null && int.TryParse(audioUiArg["--audio-rec-ui=".Length..], out var audioSeconds))

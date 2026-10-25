@@ -546,14 +546,18 @@ public sealed partial class ClipboardPanel : UserControl
             FontSize = 12,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             VerticalAlignment = VerticalAlignment.Center,
+            MaxWidth = 120,
+            TextTrimming = TextTrimming.CharacterEllipsis,
         });
         title.Children.Add(new TextBlock
         {
             Text = PreviewRules.SourceAndAge(null, ClipRow.Relative(entry.CopiedAt)) + " · " +
-                   DateTimeOffset.FromUnixTimeMilliseconds(entry.CopiedAt).ToLocalTime().ToString("HH:mm:ss"),
+                   DateTimeOffset.FromUnixTimeMilliseconds(entry.CopiedAt).ToLocalTime().ToString("HH:mm"),
             FontSize = 12,
             Opacity = 0.6,
             VerticalAlignment = VerticalAlignment.Center,
+            MinWidth = 72,
+            TextTrimming = TextTrimming.CharacterEllipsis,
         });
         Grid.SetColumn(title, 0);
         header.Children.Add(title);

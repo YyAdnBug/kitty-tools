@@ -1,7 +1,7 @@
 // 启动器的四类额外查找（第三版 §6）：
 // - 文件搜索：桌面 / 文档 / 下载 / 图片 / 视频 / 音乐 / OneDrive，最多跑 1.2 秒或 6000 个候选；空查询列最近文件；
 // - 进程：kill 词 → 名字 / PID / 内存；结束进程带确认，失败说原因；
-// - 端口：port 词 → netstat -ano 的监听行 + 占用进程（先用 netstat 的输出，报告里记为偏差）；
+// - 端口：port 词 → GetExtendedTcpTable / GetExtendedUdpTable 的监听行 + 占用进程（REVIEW R18：不再解析 netstat）；
 // - 书签：Chromium 系（Chrome / Edge / Brave / Vivaldi）的 Bookmarks JSON。
 // 全是后台取、结果回 UI 线程再显示；历史（History 库）这一批没做。
 using System.Diagnostics;
@@ -238,22 +238,7 @@ internal static class PortSearch
     {
         try
         {
-            using var process = Process.Start(new ProcessStartInfo
-            {
-                FileName = "netstat.exe",
-                Arguments = "-ano",
-                RedirectStandardOutput = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            });
-            if (process is null)
-            {
-                return new List<PortEntry>();
-            }
-
-            var output = process.StandardOutput.ReadToEnd();
-            process.WaitForExit(3000);
-            var rows = NetstatOutput.Parse(output);
+            var rows = PortTable.Read();
             var tokens = query.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             var names = new Dictionary<int, string>();
             return rows
