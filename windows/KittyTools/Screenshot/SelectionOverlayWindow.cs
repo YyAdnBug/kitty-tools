@@ -11,6 +11,7 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Windows.Graphics;
 using Windows.Graphics.DirectX;
 using Windows.Storage.Streams;
@@ -30,12 +31,12 @@ internal sealed partial class SelectionOverlayWindow : Window
     private ScreenshotSession _session;
     private readonly CanvasControl _canvas;
     private readonly Canvas _root;
+    private readonly Border _toolbar;
     private readonly Dictionary<AnnotationTool, Button> _toolButtons = new();
     private readonly List<PixelBounds> _windows = new();
     private readonly List<Annotation> _annotations = new();
     private readonly List<List<Annotation>> _undoStack = new();
     private readonly List<List<Annotation>> _redoStack = new();
-    private readonly List<(RectD Rect, Action Action)> _toolbarHits = new();
     private readonly CanvasTextFormat _text = new() { FontFamily = "Segoe UI", FontSize = 12 };
     private readonly CanvasTextFormat _small = new() { FontFamily = "Segoe UI", FontSize = 11 };
 
@@ -56,6 +57,16 @@ internal sealed partial class SelectionOverlayWindow : Window
     private double _width = 3;
     private Annotation? _activeAnnotation;
     private PointD _annotationStart;
+    private Annotation? _selectedAnnotation;
+    private PointD _annotationDragStart;
+    private RectD _annotationDragRect;
+    private List<PointD>? _annotationDragPoints;
+    private TextBox? _textEditor;
+    private PointD _textPoint;
+    private RectD? _holeFrom;
+    private RectD? _holeTo;
+    private long _holeStarted;
+    private bool _holeAnimating;
 
     public SelectionOverlayWindow(FrozenScreen screen, ScreenshotSession session)
     {
@@ -83,6 +94,8 @@ internal sealed partial class SelectionOverlayWindow : Window
             Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Colors.Transparent),
         };
         _root.Children.Add(_canvas);
+        _toolbar = BuildToolbar();
+        _root.Children.Add(_toolbar);
         Content = _root;
 
         var presenter = OverlappedPresenter.Create();
@@ -122,6 +135,7 @@ internal sealed partial class SelectionOverlayWindow : Window
         _timer.IsRepeating = true;
         _timer.Tick += (_, _) => PollCursor();
         Closed += (_, _) => Release();
+        UpdateToolbarChrome();
     }
 
     /// <summary>
@@ -198,59 +212,188 @@ internal sealed partial class SelectionOverlayWindow : Window
 
     private async Task ShowTextAsync(PointD point)
     {
+        // 文字改成原位输入（PLAN-v2 §3.8）：在点下的位置叠一个 TextBox，Esc / 点到外面收下。
         if (_session.SelectionScreen != _screen || !_session.HasSelection ||
             !_session.Selection.Contains(point))
         {
             return;
         }
-        var input = new TextBox
+
+        CommitText();
+        _textPoint = point;
+        var editor = new TextBox
         {
             Text = string.Empty,
             FontSize = 15,
-            MinWidth = 260,
+            MinWidth = 200,
             AcceptsReturn = false,
+            PlaceholderText = "输入文字，Enter 确认",
         };
-        ContentDialog? dialog = null;
-        var confirmed = false;
-        dialog = new ContentDialog
-        {
-            Title = "文字",
-            Content = input,
-            PrimaryButtonText = "确定",
-            CloseButtonText = "取消",
-            DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = _canvas.XamlRoot,
-            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Theme.Shot.HudBackground),
-        };
-        input.KeyDown += (_, e) =>
+        Canvas.SetLeft(editor, point.X / _scale);
+        Canvas.SetTop(editor, point.Y / _scale);
+        editor.KeyDown += (_, e) =>
         {
             if (e.Key == Windows.System.VirtualKey.Enter)
             {
                 e.Handled = true;
-                confirmed = true;
-                dialog.Hide();
+                CommitText();
             }
             else if (e.Key == Windows.System.VirtualKey.Escape)
             {
                 e.Handled = true;
-                dialog.Hide();
+                CancelText();
             }
         };
-        var result = await dialog.ShowAsync();
-        if ((result == ContentDialogResult.Primary || confirmed) && input.Text.Trim().Length > 0)
+        editor.LostFocus += (_, _) => CommitText();
+        _root.Children.Add(editor);
+        _textEditor = editor;
+        editor.Focus(FocusState.Programmatic);
+        await Task.CompletedTask;
+    }
+
+    private void CommitText()
+    {
+        if (_textEditor is not { } editor)
+        {
+            return;
+        }
+
+        _textEditor = null;
+        var text = editor.Text.Trim();
+        _root.Children.Remove(editor);
+        if (text.Length > 0)
         {
             PushUndo();
             _annotations.Add(new Annotation
             {
                 Tool = AnnotationTool.Text,
-                Rect = new RectD(point.X, point.Y, 0, 0),
-                Text = input.Text.Trim(),
+                Rect = new RectD(_textPoint.X, _textPoint.Y, 0, 0),
+                Text = text,
                 Color = _color,
                 Width = _width,
             });
-            _canvas.Invalidate();
         }
+
+        _canvas.Invalidate();
         _canvas.Focus(FocusState.Programmatic);
+    }
+
+    private void CancelText()
+    {
+        if (_textEditor is { } editor)
+        {
+            _textEditor = null;
+            _root.Children.Remove(editor);
+        }
+
+        _canvas.Focus(FocusState.Programmatic);
+    }
+
+    /// <summary>点中的标注（后画的在上层，所以倒着找）。</summary>
+    private Annotation? HitAnnotation(PointD point)
+    {
+        for (var index = _annotations.Count - 1; index >= 0; index--)
+        {
+            var annotation = _annotations[index];
+            var hit = annotation.Tool switch
+            {
+                AnnotationTool.Text => new RectD(annotation.Rect.X, annotation.Rect.Y,
+                    Math.Max(40, annotation.Text.Length * 8.0), 22).Contains(point),
+                AnnotationTool.Pen or AnnotationTool.Arrow => NearPolyline(annotation.Points, point),
+                AnnotationTool.Rectangle or AnnotationTool.Mosaic => annotation.Rect.Contains(point),
+                _ => false,
+            };
+            if (hit)
+            {
+                return annotation;
+            }
+        }
+
+        return null;
+    }
+
+    private bool NearPolyline(List<PointD> points, PointD point)
+    {
+        var tolerance = 10 * _scale;
+        for (var index = 1; index < points.Count; index++)
+        {
+            if (RegionMath.DistanceToSegment(point, points[index - 1], points[index]) <= tolerance)
+            {
+                return true;
+            }
+        }
+
+        return points.Count == 1 &&
+               Math.Abs(points[0].X - point.X) + Math.Abs(points[0].Y - point.Y) <= tolerance;
+    }
+
+    private void DeleteSelectedAnnotation()
+    {
+        if (_selectedAnnotation is not { } annotation)
+        {
+            return;
+        }
+
+        PushUndo();
+        _annotations.Remove(annotation);
+        _selectedAnnotation = null;
+        _canvas.Invalidate();
+    }
+
+    private void MoveSelectedAnnotation()
+    {
+        if (_selectedAnnotation is not { } annotation)
+        {
+            return;
+        }
+
+        var dx = _cursor.X - _annotationDragStart.X;
+        var dy = _cursor.Y - _annotationDragStart.Y;
+        annotation.Rect = new RectD(
+            _annotationDragRect.X + dx, _annotationDragRect.Y + dy,
+            _annotationDragRect.Width, _annotationDragRect.Height);
+        if (_annotationDragPoints is { } original)
+        {
+            annotation.Points.Clear();
+            annotation.Points.AddRange(original.Select(point => new PointD(point.X + dx, point.Y + dy)));
+        }
+
+        _canvas.Invalidate();
+    }
+
+    /// <summary>选中标注的框 / 手柄（矩形四角、箭头两端）。</summary>
+    private void DrawAnnotationSelection(Microsoft.Graphics.Canvas.CanvasDrawingSession ds)
+    {
+        if (_selectedAnnotation is not { } annotation)
+        {
+            return;
+        }
+
+        if (annotation.Points.Count >= 2)
+        {
+            foreach (var point in new[] { annotation.Points[0], annotation.Points[^1] })
+            {
+                var dip = new Windows.Foundation.Point(point.X / _scale, point.Y / _scale);
+                ds.FillRectangle(new Windows.Foundation.Rect(dip.X - 4, dip.Y - 4, 8, 8), HandleFill);
+                ds.DrawRectangle(new Windows.Foundation.Rect(dip.X - 4, dip.Y - 4, 8, 8), Accent, 1);
+            }
+
+            return;
+        }
+
+        var rect = ToDip(annotation.Rect);
+        ds.DrawRectangle(rect, Accent, 1);
+        foreach (var corner in new[]
+                 {
+                     new Windows.Foundation.Point(rect.X, rect.Y),
+                     new Windows.Foundation.Point(rect.X + rect.Width, rect.Y),
+                     new Windows.Foundation.Point(rect.X, rect.Y + rect.Height),
+                     new Windows.Foundation.Point(rect.X + rect.Width, rect.Y + rect.Height),
+                 })
+        {
+            ds.FillRectangle(new Windows.Foundation.Rect(corner.X - 3, corner.Y - 3, 6, 6), HandleFill);
+            ds.DrawRectangle(new Windows.Foundation.Rect(corner.X - 3, corner.Y - 3, 6, 6), Accent, 1);
+        }
     }
     private void PushUndo()
     {
@@ -325,7 +468,12 @@ internal sealed partial class SelectionOverlayWindow : Window
         _timer?.Start();
     }
 
-    public void Invalidate() => _canvas.Invalidate();
+    public void Invalidate()
+    {
+        PositionToolbar();
+        UpdateToolbarChrome();
+        _canvas.Invalidate();
+    }
 
     private void OnActivated(object sender, WindowActivatedEventArgs args)
     {
@@ -335,121 +483,209 @@ internal sealed partial class SelectionOverlayWindow : Window
         }
     }
 
-    private void DrawToolbar(Microsoft.Graphics.Canvas.CanvasDrawingSession ds)
+    /// <summary>
+    /// 工具栏改成 XAML 控件（PLAN-v2 §3.8）：两段「工具」和「动作」，悬停提示里带快捷键，
+    /// 每个按钮都有读屏名字，当前工具用品牌粉实心底。尺寸胶囊和放大镜还画在 Win2D 上。
+    /// </summary>
+    private Border BuildToolbar()
     {
-        _toolbarHits.Clear();
-        if (_session.Mode != ScreenshotMode.Capture || _session.SelectionScreen != _screen ||
-            !_session.HasSelection)
-        {
-            return;
-        }
-
-        const double panelWidth = 510;
-        const double panelHeight = 34;
-        var screenWidth = _screen.Width / _scale;
-        var screenHeight = _screen.Height / _scale;
-        var selection = _session.Selection;
-        var x = selection.X / _scale;
-        var y = selection.Bottom / _scale + 8;
-        if (y + panelHeight > screenHeight)
-        {
-            y = selection.Y / _scale - panelHeight - 8;
-        }
-
-        x = Math.Clamp(x, 0, Math.Max(0, screenWidth - panelWidth));
-        y = Math.Clamp(y, 0, Math.Max(0, screenHeight - panelHeight));
-        ds.FillRoundedRectangle(
-            new Windows.Foundation.Rect(x, y, panelWidth, panelHeight), 8, 8,
-            Theme.Shot.HudBackgroundStrong);
-
-        var offset = x + 4;
-        void Add(double width, string label, Action action, bool selected = false, bool enabled = true,
-            Color? color = null)
-        {
-            var rect = new RectD(offset, y + 4, width, 26);
-            _toolbarHits.Add((rect, action));
-            if (selected)
-            {
-                ds.FillRoundedRectangle(
-                    new Windows.Foundation.Rect(offset, y + 4, width, 26), 5, 5, Accent);
-            }
-
-            if (label.Length > 0)
-            {
-                var textColor = !enabled
-                    ? Theme.Shot.HudTextFaint
-                    : selected ? Colors.White : Theme.Shot.HudTextMuted;
-                var format = new CanvasTextFormat
-                {
-                    FontFamily = "Segoe UI",
-                    FontSize = label.Length <= 2 ? 12 : 11,
-                    HorizontalAlignment = CanvasHorizontalAlignment.Center,
-                    VerticalAlignment = CanvasVerticalAlignment.Center,
-                };
-                ds.DrawText(label, new Windows.Foundation.Rect(offset, y + 4, width, 26), textColor, format);
-            }
-
-            if (color is { } dot)
-            {
-                ds.FillCircle((float)(offset + width / 2), (float)(y + 17), 5, dot);
-            }
-
-            offset += width + 2;
-        }
-
-        foreach (var (tool, label) in new[]
+        var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
+        foreach (var (tool, label, name, shortcut) in new[]
                  {
-                     (AnnotationTool.Select, "↖"), (AnnotationTool.Rectangle, "▭"),
-                     (AnnotationTool.Arrow, "↗"), (AnnotationTool.Pen, "✎"),
-                     (AnnotationTool.Text, "T"), (AnnotationTool.Mosaic, "▦"),
+                     (AnnotationTool.Select, "↖", "选择", "V"),
+                     (AnnotationTool.Rectangle, "▭", "矩形", "R"),
+                     (AnnotationTool.Arrow, "↗", "箭头", "A"),
+                     (AnnotationTool.Pen, "✎", "画笔", "B"),
+                     (AnnotationTool.Text, "T", "文字", "T"),
+                     (AnnotationTool.Mosaic, "▦", "马赛克", "M"),
                  })
         {
-            Add(26, label, () =>
+            var button = ToolbarButton(label, $"{name}（{shortcut}）", name);
+            button.Click += (_, _) =>
             {
                 _tool = tool;
+                UpdateToolbarChrome();
                 _canvas.Invalidate();
-            }, selected: _tool == tool);
+            };
+            _toolButtons[tool] = button;
+            tools.Children.Add(button);
         }
 
-        offset += 4;
-        Add(24, string.Empty, () =>
+        var extras = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
+        _colorButton = ToolbarButton(string.Empty, "换颜色", "颜色", 24);
+        _colorButton.Click += (_, _) =>
         {
             var palette = Theme.Shot.AnnotationPalette;
             var index = Array.IndexOf(palette, _color);
             _color = palette[(index + 1) % palette.Length];
+            UpdateToolbarChrome();
             _canvas.Invalidate();
-        }, color: _color);
-        Add(24, _width.ToString("F0"), () =>
+        };
+        extras.Children.Add(_colorButton);
+
+        _widthButton = ToolbarButton("3", "线宽", "线宽", 24);
+        _widthButton.Click += (_, _) =>
         {
             var widths = new[] { 2.0, 3, 5, 8 };
             var index = Array.IndexOf(widths, _width);
             _width = widths[(index + 1) % widths.Length];
+            UpdateToolbarChrome();
             _canvas.Invalidate();
+        };
+        extras.Children.Add(_widthButton);
+
+        _undoButton = ToolbarButton("↶", "撤销（Ctrl+Z）", "撤销", 24);
+        _undoButton.Click += (_, _) => Undo();
+        extras.Children.Add(_undoButton);
+        _redoButton = ToolbarButton("↷", "重做（Ctrl+Y）", "重做", 24);
+        _redoButton.Click += (_, _) => Redo();
+        extras.Children.Add(_redoButton);
+
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
+        foreach (var (label, tip, name, action) in new (string, string, string, Action)[]
+                 {
+                     ("复制", "复制（Enter）", "复制截图", () => _ = _session.CopySelectionAsync()),
+                     ("保存", "快速保存（Ctrl+S）", "保存截图", () => _ = _session.SaveSelectionAsync(saveAs: false)),
+                     ("钉图", "钉在屏幕上（P）", "钉图", () => _ = PinSelectionAsync()),
+                     ("识字", "识字（O）", "识别文字", () => _ = _session.RecognizedSelectionAsync()),
+                     ("翻译", "翻译（T）", "截图翻译", () => _ = _session.TranslateSelectionAsync()),
+                 })
+        {
+            var button = ToolbarButton(label, tip, name, 44);
+            button.Click += (_, _) => action();
+            actions.Children.Add(button);
+        }
+
+        var close = ToolbarButton("✕", "取消（Esc）", "取消截图", 24);
+        close.Click += (_, _) => _session.Finish();
+        actions.Children.Add(close);
+
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        row.Children.Add(tools);
+        row.Children.Add(new Border
+        {
+            Width = 1,
+            Height = 18,
+            Background = new SolidColorBrush(Theme.Shot.ToolbarSeparator),
+            VerticalAlignment = VerticalAlignment.Center,
         });
-        Add(24, "↶", Undo, enabled: _undoStack.Count > 0);
-        Add(24, "↷", Redo, enabled: _redoStack.Count > 0);
-        offset += 4;
-        Add(42, "复制", () => _ = _session.CopySelectionAsync());
-        Add(42, "保存", () => _ = _session.SaveSelectionAsync(saveAs: false));
-        Add(42, "钉图", () => _ = PinSelectionAsync());
-        Add(42, "识字", () => _ = _session.RecognizedSelectionAsync());
-        Add(42, "翻译", () => _ = _session.TranslateSelectionAsync());
-        Add(24, "✕", () => _session.Finish());
+        row.Children.Add(extras);
+        row.Children.Add(new Border
+        {
+            Width = 1,
+            Height = 18,
+            Background = new SolidColorBrush(Theme.Shot.ToolbarSeparator),
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        row.Children.Add(actions);
+
+        var toolbar = new Border
+        {
+            Padding = new Thickness(5, 4, 5, 4),
+            CornerRadius = new CornerRadius(8),
+            Background = new SolidColorBrush(Theme.Shot.HudBackgroundStrong),
+            Child = row,
+            Visibility = Visibility.Collapsed,
+        };
+        Canvas.SetZIndex(toolbar, 10);
+        return toolbar;
     }
 
-    private bool HandleToolbarClick(PointD physical)
+    private static Button ToolbarButton(string label, string tooltip, string automationName, double width = 26)
     {
-        var point = new PointD(physical.X / _scale, physical.Y / _scale);
-        foreach (var (rect, action) in _toolbarHits)
+        var button = new Button
         {
-            if (rect.Contains(point))
+            Content = label.Length == 0
+                ? new FontIcon { Glyph = "\uE790", FontSize = 10 }
+                : new TextBlock
+                {
+                    Text = label,
+                    FontSize = label.Length <= 2 ? 12 : 11,
+                    Foreground = new SolidColorBrush(Theme.Shot.HudTextMuted),
+                },
+            Width = width,
+            Height = 26,
+            MinWidth = 0,
+            MinHeight = 0,
+            Padding = new Thickness(0),
+            CornerRadius = new CornerRadius(5),
+            Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0, 0, 0, 0)),
+            BorderThickness = new Thickness(0),
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+        };
+        ToolTipService.SetToolTip(button, tooltip);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, automationName);
+        return button;
+    }
+
+    private Button? _colorButton;
+    private Button? _widthButton;
+    private Button? _undoButton;
+    private Button? _redoButton;
+
+    /// <summary>当前工具（品牌粉实心底）、颜色块、线宽、撤销 / 重做可用状态。</summary>
+    private void UpdateToolbarChrome()
+    {
+        foreach (var (tool, button) in _toolButtons)
+        {
+            var selected = tool == _tool;
+            button.Background = new SolidColorBrush(
+                selected ? Theme.BrandPink : Windows.UI.Color.FromArgb(0, 0, 0, 0));
+            if (button.Content is TextBlock text)
             {
-                action();
-                return true;
+                text.Foreground = new SolidColorBrush(selected ? Colors.White : Theme.Shot.HudTextMuted);
             }
         }
 
-        return false;
+        if (_colorButton is not null)
+        {
+            _colorButton.Background = new SolidColorBrush(_color);
+        }
+
+        if (_widthButton?.Content is TextBlock width)
+        {
+            width.Text = _width.ToString("F0");
+        }
+
+        if (_undoButton is not null)
+        {
+            _undoButton.IsEnabled = _undoStack.Count > 0;
+        }
+
+        if (_redoButton is not null)
+        {
+            _redoButton.IsEnabled = _redoStack.Count > 0;
+        }
+    }
+
+    /// <summary>工具栏贴着选区下方；下面放不下就放上方，再夹进这块屏。</summary>
+    private void PositionToolbar()
+    {
+        if (_session.Mode != ScreenshotMode.Capture || _session.SelectionScreen != _screen ||
+            !_session.HasSelection)
+        {
+            _toolbar.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        _toolbar.Visibility = Visibility.Visible;
+        _toolbar.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+        var size = _toolbar.DesiredSize;
+        var selection = ToDip(_session.Selection);
+        var screenWidth = _screen.Width / _scale;
+        var screenHeight = _screen.Height / _scale;
+        var x = selection.X;
+        var y = selection.Bottom + 8;
+        if (y + size.Height > screenHeight)
+        {
+            y = selection.Y - size.Height - 8;
+        }
+
+        x = Math.Clamp(x, 0, Math.Max(0, screenWidth - size.Width));
+        y = Math.Clamp(y, 0, Math.Max(0, screenHeight - size.Height));
+        Canvas.SetLeft(_toolbar, x);
+        Canvas.SetTop(_toolbar, y);
     }
 
     private void OnDraw(CanvasControl sender, CanvasDrawEventArgs args)
@@ -467,9 +703,13 @@ internal sealed partial class SelectionOverlayWindow : Window
         ds.DrawImage(_bitmap, new Windows.Foundation.Rect(0, 0, width, height));
 
         var selection = _session.SelectionScreen == _screen ? _session.Selection : (RectD?)null;
-        var hole = selection ?? (_hover is { } hover
-            ? new RectD(hover.Left, hover.Top, hover.Width, hover.Height)
-            : (RectD?)null);
+        var hoverHole = _hover is { } h ? new RectD(h.Left, h.Top, h.Width, h.Height) : (RectD?)null;
+        if (selection is null && _holeAnimating)
+        {
+            hoverHole = AnimatedHole();
+        }
+
+        var hole = selection ?? hoverHole;
         if (hole is { } area)
         {
             var top = Math.Max(0, area.Y) / _scale;
@@ -497,6 +737,7 @@ internal sealed partial class SelectionOverlayWindow : Window
             AnnotationRenderer.Draw(
                 ds, _annotations, _screen, new PointD(0, 0), 1 / _scale, 1);
             DrawSelection(ds, own);
+            DrawAnnotationSelection(ds);
         }
 
         if (_key)
@@ -504,7 +745,6 @@ internal sealed partial class SelectionOverlayWindow : Window
             DrawHint(ds, width, height);
             DrawMagnifier(ds, width, height);
         }
-        DrawToolbar(ds);
     }
 
     private void DrawSelection(Microsoft.Graphics.Canvas.CanvasDrawingSession ds, RectD selection)
@@ -607,11 +847,6 @@ internal sealed partial class SelectionOverlayWindow : Window
         _pressed = point;
         _anchor = point;
         _cursor = point;
-        if (HandleToolbarClick(point))
-        {
-            e.Handled = true;
-            return;
-        }
 
         if (e.GetCurrentPoint(_canvas).Properties.IsRightButtonPressed)
         {
@@ -630,38 +865,56 @@ internal sealed partial class SelectionOverlayWindow : Window
 
         _canvas.CapturePointer(e.Pointer);
         if (_session.Mode == ScreenshotMode.Capture &&
-            _session.SelectionScreen == _screen && _session.HasSelection &&
-            _tool != AnnotationTool.Select && _session.Selection.Contains(point))
+            _session.SelectionScreen == _screen && _session.HasSelection)
         {
-            if (_tool == AnnotationTool.Text)
+            // 选中工具：点已画好的标注 → 选中、拖动（PLAN-v2 §3.8）。
+            if (_tool == AnnotationTool.Select && _session.Selection.Contains(point) &&
+                HitAnnotation(point) is { } hit)
             {
-                _ = ShowTextAsync(point);
+                PushUndo();
+                _selectedAnnotation = hit;
+                _annotationDragStart = point;
+                _annotationDragRect = hit.Rect;
+                _annotationDragPoints = hit.Points.Count > 0 ? new List<PointD>(hit.Points) : null;
+                _drag = DragKind.MoveAnnotation;
+                _canvas.Invalidate();
                 e.Handled = true;
                 return;
             }
 
-            _annotationStart = point;
-            _activeAnnotation = new Annotation
+            if (_tool != AnnotationTool.Select && _session.Selection.Contains(point))
             {
-                Tool = _tool,
-                Color = _color,
-                Width = _width,
-                Rect = new RectD(point.X, point.Y, 0, 0),
-            };
-            if (_tool is AnnotationTool.Pen or AnnotationTool.Arrow)
-            {
-                _activeAnnotation.Points.Add(point);
-                if (_tool == AnnotationTool.Arrow)
+                if (_tool == AnnotationTool.Text)
+                {
+                    _ = ShowTextAsync(point);
+                    e.Handled = true;
+                    return;
+                }
+
+                _annotationStart = point;
+                _activeAnnotation = new Annotation
+                {
+                    Tool = _tool,
+                    Color = _color,
+                    Width = _width,
+                    Rect = new RectD(point.X, point.Y, 0, 0),
+                };
+                if (_tool is AnnotationTool.Pen or AnnotationTool.Arrow)
                 {
                     _activeAnnotation.Points.Add(point);
+                    if (_tool == AnnotationTool.Arrow)
+                    {
+                        _activeAnnotation.Points.Add(point);
+                    }
                 }
-            }
 
-            _annotations.Add(_activeAnnotation);
-            _drag = DragKind.Annotate;
-            _canvas.Invalidate();
-            e.Handled = true;
-            return;
+                _annotations.Add(_activeAnnotation);
+                _selectedAnnotation = _activeAnnotation;
+                _drag = DragKind.Annotate;
+                _canvas.Invalidate();
+                e.Handled = true;
+                return;
+            }
         }
 
         if (_session.SelectionScreen == _screen && _session.HasSelection)
@@ -715,7 +968,7 @@ internal sealed partial class SelectionOverlayWindow : Window
         {
             UpdateHover();
             // 鼠标、悬停目标都没变就不重画：不动鼠标也按 50 帧 / 秒整屏重画是白烧 CPU（第二版 §2 第 6 条）。
-            if (previousCursor == _cursor && Nullable.Equals(previousHover, _hover))
+            if (previousCursor == _cursor && Nullable.Equals(previousHover, _hover) && !_holeAnimating)
             {
                 return;
             }
@@ -739,6 +992,12 @@ internal sealed partial class SelectionOverlayWindow : Window
     private void UpdateDrag()
     {
         var point = _cursor;
+        if (_drag == DragKind.MoveAnnotation)
+        {
+            MoveSelectedAnnotation();
+            return;
+        }
+
         if (_drag == DragKind.Annotate && _activeAnnotation is { } annotation)
         {
             if (annotation.Tool == AnnotationTool.Pen)
@@ -786,6 +1045,15 @@ internal sealed partial class SelectionOverlayWindow : Window
     {
         if (_drag == DragKind.None)
         {
+            return;
+        }
+
+        if (_drag == DragKind.MoveAnnotation)
+        {
+            _drag = DragKind.None;
+            _canvas.ReleasePointerCaptures();
+            _annotationDragPoints = null;
+            e.Handled = true;
             return;
         }
 
@@ -876,7 +1144,16 @@ internal sealed partial class SelectionOverlayWindow : Window
                 break;
             case Windows.System.VirtualKey.Escape:
                 e.Handled = true;
-                if (_session.HasSelection)
+                if (_textEditor is not null)
+                {
+                    CancelText();
+                }
+                else if (_selectedAnnotation is not null)
+                {
+                    _selectedAnnotation = null;
+                    _canvas.Invalidate();
+                }
+                else if (_session.HasSelection)
                 {
                     ResetAnnotations();
                     _session.ClearSelection();
@@ -886,6 +1163,11 @@ internal sealed partial class SelectionOverlayWindow : Window
                     _session.Finish();
                 }
 
+                break;
+            case Windows.System.VirtualKey.Delete:
+            case Windows.System.VirtualKey.Back:
+                e.Handled = true;
+                DeleteSelectedAnnotation();
                 break;
             case Windows.System.VirtualKey.Z when control:
                 e.Handled = true;
@@ -963,11 +1245,50 @@ internal sealed partial class SelectionOverlayWindow : Window
 
     private void UpdateHover()
     {
+        var previous = _hover;
         _hover = _windows.FirstOrDefault(window => window.Contains((int)_cursor.X, (int)_cursor.Y));
         if (_hover is { Width: > 0, Height: > 0 } && _session.HasSelection)
         {
             _hover = null;
         }
+
+        // 鼠标在窗口之间移动时，挖开的洞用 glide 弹簧滑过去（mac S5，PLAN-v2 §3.8）。
+        // 拖选区、拖手柄时洞跟着选区走，不做动画。
+        if (!Motion.Reduced && !_session.HasSelection && previous != _hover)
+        {
+            _holeFrom = previous is { } from
+                ? new RectD(from.Left, from.Top, from.Width, from.Height)
+                : _holeTo;
+            _holeTo = _hover is { } to ? new RectD(to.Left, to.Top, to.Width, to.Height) : null;
+            _holeStarted = Environment.TickCount64;
+            _holeAnimating = _holeFrom is not null && _holeTo is not null;
+        }
+    }
+
+    /// <summary>正在滑动的洞（没有起点或终点时直接给终点 / 不算）。</summary>
+    private RectD? AnimatedHole()
+    {
+        var spec = MotionCurves.Of(MotionCurve.Glide);
+        var duration = spec?.Duration ?? 0.26;
+        var t = (Environment.TickCount64 - _holeStarted) / 1000.0 / duration;
+        if (t >= 1)
+        {
+            _holeAnimating = false;
+            return _holeTo;
+        }
+
+        if (_holeFrom is not { } from || _holeTo is not { } to)
+        {
+            _holeAnimating = false;
+            return _holeTo;
+        }
+
+        var p = SpringEase.Progress(t, spec?.Bounce ?? 0.1);
+        return new RectD(
+            from.X + (to.X - from.X) * p,
+            from.Y + (to.Y - from.Y) * p,
+            from.Width + (to.Width - from.Width) * p,
+            from.Height + (to.Height - from.Height) * p);
     }
 
     private PointD Snap(PointD point)
@@ -1034,6 +1355,7 @@ internal sealed partial class SelectionOverlayWindow : Window
         Resize,
         Move,
         Annotate,
+        MoveAnnotation,
     }
 
     [StructLayout(LayoutKind.Sequential)]

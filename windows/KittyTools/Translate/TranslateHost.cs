@@ -102,6 +102,13 @@ internal static class TranslateHost
         _window.ShowTextPassive(text);
     }
 
+    /// <summary>截图翻译：浮窗贴着选区出现（PLAN-v2 §3.8），锚点是选区的全局像素矩形。</summary>
+    public static void ShowTextNear(string text, Core.PixelRect anchor)
+    {
+        _window ??= new TranslateWindow();
+        _window.ShowTextNear(text, anchor);
+    }
+
     public static void Hide(bool restoreForeground = false) => _window?.Hide(restoreForeground);
 
     public static void OpenSettings()

@@ -1,7 +1,7 @@
-// 浮层：剪贴板面板和启动器共用的窗口。
-// WinUI Window + OverlappedPresenter：无标题栏、保留边框（系统圆角 / 阴影 / 细描边）、
-// 置顶、不可缩放、不进任务栏和 Alt+Tab；内容用亚克力。
-// 关闭：Esc、Ctrl+W、再按一次热键、失去激活（不还前台）。
+// 娴眰锛氬壀璐存澘闈㈡澘鍜屽惎鍔ㄥ櫒鍏辩敤鐨勭獥鍙ｃ€?
+// WinUI Window + OverlappedPresenter锛氭棤鏍囬鏍忋€佷繚鐣欒竟妗嗭紙绯荤粺鍦嗚 / 闃村奖 / 缁嗘弿杈癸級銆?
+// 缃《銆佷笉鍙缉鏀俱€佷笉杩涗换鍔℃爮鍜?Alt+Tab锛涘唴瀹圭敤浜氬厠鍔涖€?
+// 鍏抽棴锛欵sc銆丆trl+W銆佸啀鎸変竴娆＄儹閿€佸け鍘绘縺娲伙紙涓嶈繕鍓嶅彴锛夈€?
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 using Microsoft.UI;
@@ -26,10 +26,9 @@ internal enum OverlayKind
 internal sealed unsafe class OverlayWindow : Window
 {
     private const int WidthDip = 720;
-    private const int LauncherHeightDip = 520;
-    private const int ClipboardHeightDip = 520;
 
     private readonly Grid _host;
+    private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _heightTimer;
 
     private ClipboardPanel? _clipboard;
     private LauncherPanel? _launcher;
@@ -38,10 +37,15 @@ internal sealed unsafe class OverlayWindow : Window
     private HWND _previousForeground;
     private bool _visible;
     private bool _hiding;
+    private double _scale = 1;
+    private double _heightDip = 520;
+    private double _heightFrom;
+    private double _heightTo;
+    private long _heightStarted;
 
     public OverlayWindow()
     {
-        Title = Paths.ProductName + " 浮层";
+        Title = Paths.ProductName + " 娴眰";
         _host = new Grid { RequestedTheme = Theme.ElementTheme };
 
         Content = _host;
@@ -57,6 +61,10 @@ internal sealed unsafe class OverlayWindow : Window
         AppWindow.SetPresenter(presenter);
         AppWindow.IsShownInSwitchers = false;
 
+        _heightTimer = DispatcherQueue.CreateTimer();
+        _heightTimer.Interval = TimeSpan.FromMilliseconds(16);
+        _heightTimer.IsRepeating = true;
+        _heightTimer.Tick += (_, _) => StepHeight();
         _hwnd = (HWND)WinRT.Interop.WindowNative.GetWindowHandle(this);
         Activated += OnActivated;
     }
@@ -71,6 +79,7 @@ internal sealed unsafe class OverlayWindow : Window
 
     public void ShowOverlay(OverlayKind kind)
     {
+        Log.Info($"overlay.begin kind={kind}");
         _kind = kind;
         _host.RequestedTheme = Theme.ElementTheme;
 
@@ -92,25 +101,35 @@ internal sealed unsafe class OverlayWindow : Window
             _host.Children.Add(_launcher);
         }
 
-        PositionAtPointer(kind == OverlayKind.Clipboard ? ClipboardHeightDip : LauncherHeightDip);
-        _visible = true;
+        // 鍏堟妸鍐呭濉ソ锛屽啀鎸夊唴瀹圭畻绗竴娆￠珮搴︼紙PLAN-v2 搂3.5锛氶珮搴﹂殢鍐呭锛夈€?
+        if (kind == OverlayKind.Clipboard && _clipboard is not null)
+        {
+            _clipboard.OnShown();
+            _heightDip = _clipboard.ContentHeightDip;
+        }
+        else if (_launcher is not null)
+        {
+            _launcher.OnShown();
+            _heightDip = _launcher.ContentHeightDip;
+        }
+
+        Log.Info($"overlay.content kind={kind} height={_heightDip:F0}");
+        PositionAtPointer(_heightDip);        _visible = true;
         Activate();
         Foreground.Restore(_hwnd);
         if (kind == OverlayKind.Clipboard)
         {
-            _clipboard?.OnShown();
             DispatcherQueue.TryEnqueue(() => _clipboard?.FocusSearch());
         }
         else
         {
-            _launcher?.OnShown();
             DispatcherQueue.TryEnqueue(() => _launcher?.FocusSearch());
         }
 
         PInvoke.DwmFlush();
-        // 入场：透明度 0→1 + 内容下落 6 px（减弱动画时只淡入）。
+        // 鍏ュ満锛氶€忔槑搴?0鈫? + 鍐呭涓嬭惤 6 px锛堝噺寮卞姩鐢绘椂鍙贰鍏ワ級銆?
         Motion.Entrance(kind == OverlayKind.Clipboard ? _clipboard! : _launcher!);
-        Log.Info($"overlay.show kind={kind}");
+        Log.Info($"overlay.show kind={kind} height={_heightDip:F0}");
     }
 
     public void HideOverlay(bool restoreForeground)
@@ -148,6 +167,7 @@ internal sealed unsafe class OverlayWindow : Window
             HideOverlay(restoreForeground: false);
             ShellRuntime.Instance?.ShowSettings(welcome: false, page: "clipboard");
         };
+        panel.HeightRequested += RequestHeight;
         return panel;
     }
 
@@ -160,7 +180,59 @@ internal sealed unsafe class OverlayWindow : Window
             HideOverlay(restoreForeground: false);
             ShellRuntime.Instance?.ShowSettings(welcome: false, page: "launcher");
         };
+        panel.HeightRequested += RequestHeight;
         return panel;
+    }
+
+    /// <summary>
+    /// 鍐呭楂樺害鍙樹簡锛氶《杈逛笉鍔紝鍙敼楂樺害锛圥LAN-v2 搂3.5锛夈€傛寜鍐呭鍙樺寲锛堟崲閫変腑銆佹崲鑼冨洿銆佸紑闈㈡澘锛?
+    /// 鐢?settle 寮圭哀锛涙瘡鎸変竴涓敭缁撴灉灏卞彉鐨勯偅绉嶄笉甯﹀姩鐢伙紝鐩存帴璺炽€?
+    /// </summary>
+    private void RequestHeight(double dip, bool animated)
+    {
+        if (!_visible || Math.Abs(dip - _heightDip) < 1)
+        {
+            return;
+        }
+
+        if (!animated || Motion.Reduced)
+        {
+            _heightTimer.Stop();
+            _heightDip = dip;
+            ApplyHeight(dip);
+            return;
+        }
+
+        _heightFrom = _heightDip;
+        _heightTo = dip;
+        _heightStarted = Environment.TickCount64;
+        _heightTimer.Start();
+    }
+
+    private void StepHeight()
+    {
+        var spec = MotionCurves.Of(MotionCurve.Settle);
+        var duration = spec?.Duration ?? 0.24;
+        var t = (Environment.TickCount64 - _heightStarted) / 1000.0 / duration;
+        if (t >= 1)
+        {
+            _heightTimer.Stop();
+            _heightDip = _heightTo;
+            ApplyHeight(_heightTo);
+            return;
+        }
+
+        var height = SpringEase.Lerp(_heightFrom, _heightTo, t, spec?.Bounce ?? 0);
+        _heightDip = height;
+        ApplyHeight(height);
+    }
+
+    private void ApplyHeight(double dip)
+    {
+        var widthPx = MonitorLayout.Pixels(WidthDip, _scale);
+        var heightPx = MonitorLayout.Pixels(dip, _scale);
+        var position = AppWindow.Position;
+        AppWindow.MoveAndResize(new RectInt32(position.X, position.Y, widthPx, heightPx));
     }
 
     private void OnActivated(object sender, WindowActivatedEventArgs args)
@@ -184,13 +256,14 @@ internal sealed unsafe class OverlayWindow : Window
         }
     }
 
-    private void PositionAtPointer(int heightDip)
+    private void PositionAtPointer(double heightDip)
     {
-        // 按鼠标所在显示器自己的缩放比例算尺寸，不用窗口当前所在那块屏的 DPI
-        // （两块屏缩放不同时，720 DIP 会算成一块屏的像素、摆到另一块屏上就缩水了）。
+        // 鎸夐紶鏍囨墍鍦ㄦ樉绀哄櫒鑷繁鐨勭缉鏀炬瘮渚嬬畻灏哄锛屼笉鐢ㄧ獥鍙ｅ綋鍓嶆墍鍦ㄩ偅鍧楀睆鐨?DPI
+        // 锛堜袱鍧楀睆缂╂斁涓嶅悓鏃讹紝720 DIP 浼氱畻鎴愪竴鍧楀睆鐨勫儚绱犮€佹憜鍒板彟涓€鍧楀睆涓婂氨缂╂按浜嗭級銆?
         var display = Displays.AtCursor();
+        _scale = display.Scale <= 0 ? 1 : display.Scale;
         var rect = MonitorLayout.Overlay(
-            display.Work, display.Scale, WidthDip, heightDip, MonitorLayout.ClipboardTopFraction);
+            display.Work, _scale, WidthDip, heightDip, MonitorLayout.ClipboardTopFraction);
         AppWindow.MoveAndResize(new RectInt32(rect.X, rect.Y, rect.Width, rect.Height));
     }
 }

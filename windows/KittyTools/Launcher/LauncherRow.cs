@@ -1,4 +1,4 @@
-// 启动器列表的一行：图标 / 名字 / 副标题 / 右边 Ctrl+数字键帽。
+// 启动器列表的一行：图标 / 名字 / 副标题 / 右边 Ctrl+数字键帽 / 计算结果的特殊排版（PLAN-v2 §3.6）。
 using KittyTools.Core;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
@@ -17,6 +17,8 @@ public sealed class LauncherRow
 
     public string KeyHint { get; private init; } = string.Empty;
 
+    public Visibility KeyHintVisibility { get; private init; }
+
     public string Glyph { get; private init; } = string.Empty;
 
     public Brush IconBackground { get; private init; } = new SolidColorBrush(Colors.Transparent);
@@ -27,25 +29,39 @@ public sealed class LauncherRow
 
     public Visibility ImageVisibility { get; private init; }
 
+    /// <summary>计算结果那一行用 28 号等宽（PLAN-v2 §3.6），普通行 14 号。</summary>
+    public double TitleSize { get; private init; }
+
+    public string TitleFontFamily { get; private init; } = "Segoe UI";
+
+    /// <summary>危险命令上膛时副标题用危险色。</summary>
+    public Brush SubtitleBrush { get; private init; } = Theme.SecondaryText();
+
     public static LauncherRow Create(
         LauncherItem item,
         string subtitle,
         int index,
         bool showKeyHint,
-        ImageSource? icon)
+        ImageSource? icon,
+        bool armed = false)
     {
         var hasImage = icon is not null;
+        var calculation = item.Kind == LauncherKind.Calculation;
         return new LauncherRow
         {
             Item = item,
             Title = item.Title,
             Subtitle = subtitle,
-            KeyHint = showKeyHint && index < 9 ? $"Ctrl+{index + 1}" : string.Empty,
+            KeyHint = showKeyHint && index < 9 ? (index + 1).ToString() : string.Empty,
+            KeyHintVisibility = showKeyHint && index < 9 ? Visibility.Visible : Visibility.Collapsed,
             Glyph = GlyphFor(item.Kind),
             IconBackground = BackgroundFor(item.Kind),
             IconImage = icon,
             GlyphVisibility = hasImage ? Visibility.Collapsed : Visibility.Visible,
             ImageVisibility = hasImage ? Visibility.Visible : Visibility.Collapsed,
+            TitleSize = calculation ? 28 : 14,
+            TitleFontFamily = calculation ? "Consolas" : "Segoe UI",
+            SubtitleBrush = armed ? Theme.Critical() : Theme.SecondaryText(),
         };
     }
 

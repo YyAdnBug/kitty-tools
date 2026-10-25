@@ -7,6 +7,21 @@
     mc:Ignorable="mc">
 
     <UserControl.Resources>
+        <!-- 和剪贴板面板一样：系统选中底色设成透明，只用我们自己那块会滑动的高亮。 -->
+        <SolidColorBrush x:Key="ListViewItemBackgroundSelected" Color="Transparent" />
+        <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver" Color="Transparent" />
+        <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPressed" Color="Transparent" />
+        <SolidColorBrush x:Key="ListViewItemSelectionIndicatorBrush" Color="Transparent" />
+        <SolidColorBrush x:Key="ListViewItemSelectionIndicatorPointerOverBrush" Color="Transparent" />
+        <SolidColorBrush x:Key="ListViewItemSelectionIndicatorPressedBrush" Color="Transparent" />
+
+        <Style x:Key="LauncherRowStyle" TargetType="ListViewItem">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        </Style>
+
         <DataTemplate x:Key="LauncherRowTemplate" x:DataType="local:LauncherRow">
             <Grid Height="48" ColumnSpacing="10" Padding="6,0">
                 <Grid.ColumnDefinitions>
@@ -18,7 +33,8 @@
                     Width="32"
                     Height="32"
                     CornerRadius="7"
-                    Background="{x:Bind IconBackground}">
+                    Background="{x:Bind IconBackground}"
+                    VerticalAlignment="Center">
                     <Grid>
                         <FontIcon
                             Glyph="{x:Bind Glyph}"
@@ -34,26 +50,37 @@
                             Visibility="{x:Bind ImageVisibility}" />
                     </Grid>
                 </Border>
-                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="0">
                     <TextBlock
                         Text="{x:Bind Title}"
+                        FontSize="{x:Bind TitleSize}"
+                        FontWeight="SemiBold"
                         TextTrimming="CharacterEllipsis"
                         TextWrapping="NoWrap"
                         MaxLines="1" />
                     <TextBlock
                         Text="{x:Bind Subtitle}"
                         FontSize="12"
-                        Opacity="0.65"
+                        Foreground="{x:Bind SubtitleBrush}"
                         TextTrimming="CharacterEllipsis"
                         TextWrapping="NoWrap"
                         MaxLines="1" />
                 </StackPanel>
-                <TextBlock
+                <Border
                     Grid.Column="2"
-                    Text="{x:Bind KeyHint}"
-                    FontSize="11"
-                    Opacity="0.55"
-                    VerticalAlignment="Center" />
+                    MinWidth="18"
+                    Height="18"
+                    Padding="4,0"
+                    CornerRadius="4"
+                    Background="{ThemeResource ControlFillColorSecondaryBrush}"
+                    Visibility="{x:Bind KeyHintVisibility}"
+                    VerticalAlignment="Center">
+                    <TextBlock
+                        Text="{x:Bind KeyHint}"
+                        FontSize="10"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center" />
+                </Border>
             </Grid>
         </DataTemplate>
     </UserControl.Resources>
@@ -73,26 +100,38 @@
             VerticalContentAlignment="Center"
             TextChanged="OnSearchTextChanged" />
 
-        <TextBlock
-            x:Name="EmptyState"
-            Grid.Row="1"
-            Text="输入以搜索应用、设置、命令…"
-            Opacity="0.45"
-            FontSize="14"
-            HorizontalAlignment="Center"
-            VerticalAlignment="Center" />
-
-        <ListView
-            x:Name="List"
-            Grid.Row="1"
-            ItemTemplate="{StaticResource LauncherRowTemplate}"
-            SelectionMode="Single"
-            IsItemClickEnabled="True"
-            ItemClick="OnItemClick"
-            SelectionChanged="OnSelectionChanged"
-            DoubleTapped="OnListDoubleTapped"
-            RightTapped="OnListRightTapped"
-            ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
+        <Grid Grid.Row="1">
+            <Border
+                x:Name="Highlight"
+                Height="48"
+                CornerRadius="6"
+                Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                IsHitTestVisible="False"
+                Visibility="Collapsed"
+                HorizontalAlignment="Stretch"
+                VerticalAlignment="Top" />
+            <StackPanel
+                x:Name="EmptyState"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Spacing="8"
+                Visibility="Collapsed"
+                IsHitTestVisible="False">
+                <FontIcon x:Name="EmptyIcon" Glyph="&#xE721;" FontSize="26" Opacity="0.35" HorizontalAlignment="Center" />
+                <TextBlock x:Name="EmptyText" Opacity="0.5" FontSize="13" TextAlignment="Center" />
+            </StackPanel>
+            <ListView
+                x:Name="List"
+                ItemTemplate="{StaticResource LauncherRowTemplate}"
+                ItemContainerStyle="{StaticResource LauncherRowStyle}"
+                SelectionMode="Single"
+                IsItemClickEnabled="True"
+                ItemClick="OnItemClick"
+                SelectionChanged="OnSelectionChanged"
+                DoubleTapped="OnListDoubleTapped"
+                RightTapped="OnListRightTapped"
+                ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
+        </Grid>
 
         <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
@@ -112,6 +151,7 @@
                 Background="Transparent"
                 BorderThickness="0"
                 AutomationProperties.Name="打开启动器设置"
+                ToolTipService.ToolTip="设置"
                 Click="OnSettingsClick">
                 <FontIcon Glyph="&#xE713;" FontSize="14" />
             </Button>

@@ -52,7 +52,8 @@ internal sealed partial class PinWindow : Window
         presenter.IsResizable = false;
         presenter.IsMaximizable = false;
         presenter.IsMinimizable = false;
-        presenter.SetBorderAndTitleBar(false, false);
+        // 保留系统的细边框：有边框 DWM 才给阴影（PLAN-v2 §3.8「钉图保留边框、拿到圆角和阴影」）。
+        presenter.SetBorderAndTitleBar(true, false);
         AppWindow.SetPresenter(presenter);
         AppWindow.IsShownInSwitchers = false;
         Title = Paths.ProductName + " 钉图";
@@ -80,6 +81,9 @@ internal sealed partial class PinWindow : Window
             var pref = 1;
             DwmSetWindowAttribute(_hwnd, 33, &pref, sizeof(int));
         }
+
+        // 钉上时从 1.04 倍弹回原大小、淡入（pop，PLAN-v2 §3.8）。
+        Motion.Appear(_root);
     }
 
     private async Task LoadImageAsync()

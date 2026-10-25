@@ -1,5 +1,8 @@
 // 启动器面板：搜索框 + 单列结果（行高 48，最多同时看到 8 行）+ 底栏。
 // 空查询是「常用」8 行；结果来源和顺序在 LauncherModel。焦点一直在搜索框，方向键转给列表。
+// 第二版 §3.6：高度随内容（三行起、八行封顶）、选中高亮滑动、按住 Ctrl 150 ms 后前九行出数字键帽、
+// 计算结果单独一种行（28 号等宽）、危险命令上膛时副标题用危险色。
+using System.Numerics;
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 using Microsoft.UI.Xaml;
@@ -21,16 +24,35 @@ public sealed partial class LauncherPanel : UserControl
 
     private readonly List<LauncherItem> _items = new();
     private readonly Dictionary<string, BitmapImage> _icons = new();
+    private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _keyHintTimer;
     private bool _active;
     private bool _showKeyHints;
     private bool _executed;
+    private bool _animateHighlight;
+    private MotionCurve _highlightCurve = MotionCurve.Glide;
     private string _query = string.Empty;
+    private ScrollViewer? _listScroll;
 
     public LauncherPanel()
     {
         InitializeComponent();
         AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(OnKeyDown), handledEventsToo: true);
         AddHandler(UIElement.KeyUpEvent, new KeyEventHandler(OnKeyUp), handledEventsToo: true);
+        _keyHintTimer = DispatcherQueue.CreateTimer();
+        _keyHintTimer.Interval = TimeSpan.FromMilliseconds(150);
+        _keyHintTimer.IsRepeating = false;
+        _keyHintTimer.Tick += (_, _) => SetKeyHints(true);
+
+        List.Loaded += (_, _) =>
+        {
+            _listScroll ??= FindDescendant<ScrollViewer>(List);
+            if (_listScroll is not null)
+            {
+                _listScroll.ViewChanged += (_, _) => MoveHighlight(animated: false);
+            }
+
+            MoveHighlight(animated: false);
+        };
         if (AppCatalog.Instance is { } catalog)
         {
             catalog.Changed += OnCatalogChanged;
@@ -41,21 +63,29 @@ public sealed partial class LauncherPanel : UserControl
 
     public event Action? SettingsRequested;
 
+    /// <summary>内容高度变了（DIP，是否带动画）：浮层窗口据此改高度、顶边不动。</summary>
+    public event Action<double, bool>? HeightRequested;
+
+    public double ContentHeightDip => PanelMetrics.LauncherHeight(_items.Count);
+
     public void OnShown()
     {
         _active = true;
         _executed = false;
+        SetKeyHints(false);
         var restore = _lastClosedAt != 0 &&
                       Environment.TickCount64 - _lastClosedAt <= 60_000 &&
                       _lastQuery.Trim().Length > 0;
         _query = restore ? _lastQuery : string.Empty;
         SearchBox.Text = _query;
-        Refresh(keepSelection: restore);
+        Refresh(keepSelection: restore, animated: false);
         if (restore && _lastTarget is not null)
         {
             var index = _items.FindIndex(item => item.Target == _lastTarget);
             if (index >= 0)
             {
+                _highlightCurve = MotionCurve.Snap;
+                _animateHighlight = true;
                 List.SelectedIndex = index;
                 List.ScrollIntoView(List.SelectedItem);
             }
@@ -92,6 +122,9 @@ public sealed partial class LauncherPanel : UserControl
         SearchBox.Text = string.Empty;
         _items.Clear();
         List.ItemsSource = null;
+        Highlight.Visibility = Visibility.Collapsed;
+        _keyHintTimer.Stop();
+        _showKeyHints = false;
     }
 
     private void OnCatalogChanged()
@@ -105,10 +138,10 @@ public sealed partial class LauncherPanel : UserControl
     private void OnSearchTextChanged(object sender, TextChangedEventArgs e)
     {
         _query = SearchBox.Text;
-        Refresh();
+        Refresh(animated: false);
     }
 
-    private void Refresh(bool keepSelection = false)
+    private void Refresh(bool keepSelection = false, bool animated = true)
     {
         if (LauncherModel.Instance is not { } model)
         {
@@ -128,34 +161,48 @@ public sealed partial class LauncherPanel : UserControl
                 model.SubtitleFor(item),
                 index,
                 _showKeyHints,
-                IconFor(item)));
+                IconFor(item),
+                model.IsArmed(item)));
         }
 
         List.ItemsSource = rows;
         EmptyState.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         if (rows.Count == 0)
         {
-            EmptyState.Text = AppCatalog.Instance is { IsScanning: true, HasScanned: false }
+            EmptyIcon.Glyph = _query.Trim().Length == 0 ? "\uE721" : "\uE946";
+            EmptyText.Text = AppCatalog.Instance is { IsScanning: true, HasScanned: false }
                 ? "正在扫描应用…"
                 : _query.Trim().Length == 0
                     ? "输入以搜索应用、设置、命令…"
-                    : "没有结果";
+                    : "没有结果\n换个词试试";
         }
 
         if (rows.Count == 0)
         {
             List.SelectedIndex = -1;
+            Highlight.Visibility = Visibility.Collapsed;
         }
         else
         {
             var index = previousTarget is null
                 ? 0
                 : Math.Max(0, _items.FindIndex(item => item.Target == previousTarget));
-            List.SelectedIndex = index;
+            if (List.SelectedIndex != index)
+            {
+                _animateHighlight = animated;
+                _highlightCurve = MotionCurve.Snap;
+                List.SelectedIndex = index;
+            }
+            else
+            {
+                DispatcherQueue.TryEnqueue(() => MoveHighlight(animated: false));
+            }
+
             List.ScrollIntoView(rows[index]);
         }
 
         UpdateFooter();
+        HeightRequested?.Invoke(ContentHeightDip, animated);
     }
 
     private void UpdateFooter()
@@ -182,12 +229,79 @@ public sealed partial class LauncherPanel : UserControl
     {
         if (e.ClickedItem is LauncherRow row)
         {
+            _animateHighlight = true;
+            _highlightCurve = MotionCurve.Glide;
             List.SelectedItem = row;
         }
     }
 
     private void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        var animated = _animateHighlight;
+        _animateHighlight = false;
+        DispatcherQueue.TryEnqueue(() => MoveHighlight(animated));
+    }
+
+    /// <summary>只有一块中性高亮，换选中项时滑过去（PLAN-v2 §3.6）。</summary>
+    private void MoveHighlight(bool animated)
+    {
+        var index = List.SelectedIndex;
+        if (index < 0 || index >= _items.Count)
+        {
+            Highlight.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        if (List.ContainerFromIndex(index) is not ListViewItem container)
+        {
+            Highlight.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var offset = container.TransformToVisual(List).TransformPoint(new Windows.Foundation.Point(0, 0));
+        Highlight.Width = Math.Max(0, List.ActualWidth - 2);
+        Highlight.Height = Math.Max(24, container.ActualHeight);
+        Highlight.Visibility = Visibility.Visible;
+        if (animated)
+        {
+            Motion.SlideTo(Highlight, 0, offset.Y, Motion.Reduced ? MotionCurve.Instant : _highlightCurve);
+        }
+        else
+        {
+            Highlight.Translation = new Vector3(0, (float)offset.Y, 0);
+        }
+    }
+
+    private void SetKeyHints(bool show)
+    {
+        if (_showKeyHints == show)
+        {
+            return;
+        }
+
+        _showKeyHints = show;
+        Refresh(keepSelection: true, animated: false);
+    }
+
+    private static T? FindDescendant<T>(DependencyObject root)
+        where T : DependencyObject
+    {
+        var count = VisualTreeHelper.GetChildrenCount(root);
+        for (var index = 0; index < count; index++)
+        {
+            var child = VisualTreeHelper.GetChild(root, index);
+            if (child is T match)
+            {
+                return match;
+            }
+
+            if (FindDescendant<T>(child) is { } deeper)
+            {
+                return deeper;
+            }
+        }
+
+        return null;
     }
 
     private void OnListDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
@@ -209,10 +323,11 @@ public sealed partial class LauncherPanel : UserControl
         var shift = IsDown(VirtualKey.Shift);
         if (e.Key == VirtualKey.Control)
         {
+            // 按住 Ctrl 150 ms 才浮现键帽（PLAN-v2 §3.6）。
             if (!_showKeyHints)
             {
-                _showKeyHints = true;
-                Refresh(keepSelection: true);
+                _keyHintTimer.Stop();
+                _keyHintTimer.Start();
             }
 
             return;
@@ -267,10 +382,10 @@ public sealed partial class LauncherPanel : UserControl
 
     private void OnKeyUp(object sender, KeyRoutedEventArgs e)
     {
-        if (e.Key == VirtualKey.Control && _showKeyHints)
+        if (e.Key == VirtualKey.Control)
         {
-            _showKeyHints = false;
-            Refresh(keepSelection: true);
+            _keyHintTimer.Stop();
+            SetKeyHints(false);
         }
     }
 
@@ -286,6 +401,8 @@ public sealed partial class LauncherPanel : UserControl
         }
 
         var index = (List.SelectedIndex + delta + _items.Count) % _items.Count;
+        _animateHighlight = true;
+        _highlightCurve = MotionCurve.Snap;
         List.SelectedIndex = index;
         List.ScrollIntoView(List.SelectedItem);
     }

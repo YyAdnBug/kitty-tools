@@ -154,13 +154,21 @@ internal sealed class ScreenshotSession
             return;
         }
 
+        var selection = Selection;
         var png = await SelectionPngAsync();
+        var copied = false;
         if (png is not null)
         {
-            await ScreenshotOutput.CopyPngAsync(png, screen, Selection);
+            copied = await ScreenshotOutput.CopyPngAsync(png, screen, selection);
         }
 
+        var origin = GlobalRect(screen, selection);
         Finish();
+        // 飞入 + 角落缩略图（PLAN-v2 §3.8 / D5）。
+        if (copied && png is not null)
+        {
+            ScreenshotCard.Show(png, origin);
+        }
     }
 
     public async Task SaveSelectionAsync(bool saveAs)
@@ -170,6 +178,7 @@ internal sealed class ScreenshotSession
             return;
         }
 
+        var selection = Selection;
         var png = await SelectionPngAsync();
         if (png is null)
         {
@@ -177,17 +186,30 @@ internal sealed class ScreenshotSession
             return;
         }
 
+        string? saved = null;
         if (saveAs && _overlays.FirstOrDefault() is { } overlay)
         {
             await ScreenshotOutput.SavePngAsAsync(overlay.AppWindow, png);
         }
         else
         {
-            await ScreenshotOutput.QuickSavePngAsync(png);
+            saved = await ScreenshotOutput.QuickSavePngAsync(png);
         }
 
+        var origin = GlobalRect(screen, selection);
         Finish();
+        if (saved is not null)
+        {
+            ScreenshotCard.Show(png, origin, saved);
+        }
     }
+
+    private static PixelBounds GlobalRect(FrozenScreen screen, RectD selection)
+        => new(
+            screen.Bounds.Left + (int)Math.Round(selection.X),
+            screen.Bounds.Top + (int)Math.Round(selection.Y),
+            screen.Bounds.Left + (int)Math.Round(selection.Right),
+            screen.Bounds.Top + (int)Math.Round(selection.Bottom));
 
     private async Task<byte[]?> SelectionPngAsync()
     {
@@ -366,8 +388,14 @@ internal sealed class ScreenshotSession
 
             // 原文记进剪贴板历史，但不覆盖剪贴板（PLAN §9.4）。
             ClipboardService.Instance?.Store.RecordOwnText(text);
+            var anchor = new PixelRect(
+                screen.Bounds.Left + (int)Math.Round(selection.X),
+                screen.Bounds.Top + (int)Math.Round(selection.Y),
+                Math.Max(1, (int)Math.Round(selection.Width)),
+                Math.Max(1, (int)Math.Round(selection.Height)));
             Finish();
-            TranslateHost.ShowText(text);
+            // 浮窗贴着选区出现（PLAN-v2 §3.8）。
+            TranslateHost.ShowTextNear(text, anchor);
         }
         catch (Exception ex)
         {

@@ -1,9 +1,13 @@
 // 剪贴板面板：搜索框 + 收藏范围 + 左列表右预览。焦点一直在搜索框，方向键转给列表。
 // 按键表见 PLAN §6.3；删除先只从列表拿掉（Ctrl+Z 可撤），面板收起时才真的删库。
 // 列表用一个固定的 ObservableCollection，按键搜索时只替换变了的尾部，不整表重建 ItemsSource。
+// 第二版 §3.5：高度随内容（三行起、十行封顶）、只有一块会滑动的选中高亮、按住 Ctrl 150 ms 后
+// 前九行右边浮现数字键帽、预览卡按内容换字体 / 色块 / 棋盘格、空状态各一句。
 using System.Collections.ObjectModel;
+using System.Numerics;
 using KittyTools.Core;
 using KittyTools.Infrastructure;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -23,19 +27,40 @@ public sealed partial class ClipboardPanel : UserControl
 {
     private readonly List<ClipEntry> _visible = new();
     private readonly ObservableCollection<ClipRow> _rows = new();
+    private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _keyHintTimer;
     private bool _favoritesOnly;
     private bool _active;
+    private bool _showKeyHints;
+    private bool _animateHighlight;
+    private MotionCurve _highlightCurve = MotionCurve.Glide;
+    private ScrollViewer? _listScroll;
 
     public ClipboardPanel()
     {
         InitializeComponent();
         AddHandler(KeyDownEvent, new KeyEventHandler(OnKeyDown), handledEventsToo: true);
+        AddHandler(KeyUpEvent, new KeyEventHandler(OnKeyUp), handledEventsToo: true);
         SearchBox.Loaded += (_, _) =>
         {
             if (_active)
             {
                 FocusSearch();
             }
+        };
+        _keyHintTimer = DispatcherQueue.CreateTimer();
+        _keyHintTimer.Interval = TimeSpan.FromMilliseconds(150);
+        _keyHintTimer.IsRepeating = false;
+        _keyHintTimer.Tick += (_, _) => SetKeyHints(true);
+
+        List.Loaded += (_, _) =>
+        {
+            _listScroll ??= FindDescendant<ScrollViewer>(List);
+            if (_listScroll is not null)
+            {
+                _listScroll.ViewChanged += (_, _) => MoveHighlight(animated: false);
+            }
+
+            MoveHighlight(animated: false);
         };
         if (ClipboardService.Instance?.Store is { } store)
         {
@@ -47,14 +72,21 @@ public sealed partial class ClipboardPanel : UserControl
 
     public event Action? SettingsRequested;
 
+    /// <summary>内容高度变了（DIP，是否带动画）：浮层窗口据此改高度、顶边不动（第二版 §3.5）。</summary>
+    public event Action<double, bool>? HeightRequested;
+
+    /// <summary>按当前条数算出来的面板高度（三行起、十行封顶、最多 520 DIP）。</summary>
+    public double ContentHeightDip => PanelMetrics.ClipboardHeight(_visible.Count);
+
     private static ClipboardStore? Store => ClipboardService.Instance?.Store;
 
     public void OnShown()
     {
         _active = true;
         SearchBox.Text = string.Empty;
+        SetKeyHints(false);
         SetScope(favorites: false, refresh: false);
-        Refresh();
+        Refresh(animated: false);
         FocusSearch();
     }
 
@@ -81,10 +113,13 @@ public sealed partial class ClipboardPanel : UserControl
     public void OnHidden()
     {
         _active = false;
+        _keyHintTimer.Stop();
+        _showKeyHints = false;
         SearchBox.Text = string.Empty;
         _visible.Clear();
         _rows.Clear();
         List.SelectedIndex = -1;
+        Highlight.Visibility = Visibility.Collapsed;
         PreviewHost.Children.Clear();
         if (Store is { } store)
         {
@@ -93,7 +128,7 @@ public sealed partial class ClipboardPanel : UserControl
         }
     }
 
-    public void Refresh(long? keepSelection = null)
+    public void Refresh(long? keepSelection = null, bool animated = true)
     {
         if (Store is not { } store)
         {
@@ -108,18 +143,32 @@ public sealed partial class ClipboardPanel : UserControl
 
         if (_visible.Count == 0)
         {
+            _animateHighlight = false;
             List.SelectedIndex = -1;
             ShowPreview(null);
         }
         else
         {
             var index = previous is { } id ? _visible.FindIndex(entry => entry.Id == id) : 0;
-            List.SelectedIndex = index < 0 ? 0 : index;
+            index = index < 0 ? 0 : index;
+            if (List.SelectedIndex == index)
+            {
+                // 同一条还在同一个位置：选中项没变，高亮自己重新量一次就行。
+                ShowPreview(_visible[index]);
+                DispatcherQueue.TryEnqueue(() => MoveHighlight(animated: false));
+            }
+            else
+            {
+                _animateHighlight = animated;
+                List.SelectedIndex = index;
+            }
+
             List.ScrollIntoView(_rows[List.SelectedIndex]);
-            ShowPreview(_visible[List.SelectedIndex]);
         }
 
         UpdateFooter();
+        UpdateEmptyState();
+        HeightRequested?.Invoke(ContentHeightDip, animated);
     }
 
     /// <summary>
@@ -143,7 +192,8 @@ public sealed partial class ClipboardPanel : UserControl
         }
 
         var reuse = 0;
-        while (reuse < _visible.Count && reuse < _rows.Count && _rows[reuse].SameAs(_visible[reuse], headers[reuse]))
+        while (reuse < _visible.Count && reuse < _rows.Count &&
+               _rows[reuse].SameAs(_visible[reuse], headers[reuse], reuse, _showKeyHints))
         {
             reuse++;
         }
@@ -155,7 +205,7 @@ public sealed partial class ClipboardPanel : UserControl
 
         for (var index = reuse; index < _visible.Count; index++)
         {
-            _rows.Add(ClipRow.Create(_visible[index], headers[index]));
+            _rows.Add(ClipRow.Create(_visible[index], headers[index], index, _showKeyHints));
         }
     }
 
@@ -163,13 +213,95 @@ public sealed partial class ClipboardPanel : UserControl
     {
         if (_visible.Count == 0)
         {
-            FooterText.Text = SearchBox.Text.Length > 0 ? "没有匹配的条目" : "还没有记录，复制点什么试试";
+            FooterText.Text = string.Empty;
             return;
         }
 
         var scope = _favoritesOnly ? "收藏 · " : string.Empty;
         FooterText.Text =
-            $"{_visible.Count} 条 · {scope}粘贴 Enter · 纯文本 Shift+Enter · 更多 右键 · 收藏 Ctrl+D";
+            $"{_visible.Count} 条 ｜ {scope}粘贴 Enter · 纯文本 Shift+Enter · 更多（右键）· 收藏 Ctrl+D";
+    }
+
+    private void UpdateEmptyState()
+    {
+        var empty = _visible.Count == 0;
+        EmptyState.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
+        if (empty)
+        {
+            EmptyText.Text = SearchBox.Text.Trim().Length > 0
+                ? "没有匹配的条目\n换个词试试"
+                : "还没有剪贴板历史\n复制点什么就会出现";
+        }
+    }
+
+    /// <summary>按住 Ctrl 150 ms 后前九行右边浮现数字键帽（PLAN-v2 §3.5）。</summary>
+    private void SetKeyHints(bool show)
+    {
+        if (_showKeyHints == show)
+        {
+            return;
+        }
+
+        _showKeyHints = show;
+        ApplyRows();
+    }
+
+    /// <summary>只有一块中性高亮，换选中项时滑过去：键盘用 snap，鼠标点用 glide，换列表时不动画。</summary>
+    private void MoveHighlight(bool animated)
+    {
+        var index = List.SelectedIndex;
+        if (index < 0 || index >= _visible.Count)
+        {
+            Highlight.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        if (List.ContainerFromIndex(index) is not ListViewItem container)
+        {
+            // 容器还没实现（虚拟化 / 刚换列表）：等下一次布局。
+            Highlight.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var row = container.ContentTemplateRoot is Panel panel && panel.Children.Count > 1 &&
+                  panel.Children[1] is FrameworkElement inner
+            ? inner
+            : container;
+        var offset = row.TransformToVisual(List).TransformPoint(new Windows.Foundation.Point(0, 0));
+        Highlight.Width = Math.Max(0, List.ActualWidth - 2);
+        Highlight.Height = Math.Max(24, row.ActualHeight);
+        Highlight.Visibility = Visibility.Visible;
+        if (animated)
+        {
+            Motion.SlideTo(Highlight, 0, offset.Y, EnableAnimations ? _highlightCurve : MotionCurve.Instant);
+        }
+        else
+        {
+            Highlight.Translation = new Vector3(0, (float)offset.Y, 0);
+        }
+    }
+
+    private bool EnableAnimations => !Motion.Reduced;
+
+    private static T? FindDescendant<T>(DependencyObject root)
+        where T : DependencyObject
+    {
+        var count = VisualTreeHelper.GetChildrenCount(root);
+        for (var index = 0; index < count; index++)
+        {
+            var child = VisualTreeHelper.GetChild(root, index);
+            if (child is T match)
+            {
+                return match;
+            }
+
+            if (FindDescendant<T>(child) is { } deeper)
+            {
+                return deeper;
+            }
+        }
+
+        return null;
     }
 
     private ClipEntry? SelectedEntry => (List.SelectedItem as ClipRow)?.Entry;
@@ -178,11 +310,11 @@ public sealed partial class ClipboardPanel : UserControl
     {
         if (_active)
         {
-            Refresh(SelectedEntry?.Id);
+            Refresh(SelectedEntry?.Id, animated: false);
         }
     }
 
-    private void OnSearchTextChanged(object sender, TextChangedEventArgs e) => Refresh();
+    private void OnSearchTextChanged(object sender, TextChangedEventArgs e) => Refresh(animated: false);
 
     private void OnAllScopeClick(object sender, RoutedEventArgs e) => SetScope(favorites: false);
 
@@ -201,12 +333,20 @@ public sealed partial class ClipboardPanel : UserControl
     }
 
     private void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
-        => ShowPreview(SelectedEntry);
+    {
+        ShowPreview(SelectedEntry);
+        var animated = _animateHighlight;
+        _animateHighlight = false;
+        // 选中项的容器可能还没实现：等这一轮布局完再量它的位置。
+        DispatcherQueue.TryEnqueue(() => MoveHighlight(animated));
+    }
 
     private void OnItemClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is ClipRow row)
         {
+            _animateHighlight = true;
+            _highlightCurve = MotionCurve.Glide;
             List.SelectedItem = row;
         }
     }
@@ -236,14 +376,38 @@ public sealed partial class ClipboardPanel : UserControl
         var header = new Grid { ColumnSpacing = 8 };
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        header.Children.Add(new TextBlock
+
+        // 卡头：类型图标 + 来源 + 时间（PLAN-v2 §3.5）。
+        var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        title.Children.Add(new FontIcon
         {
-            Text = ClipRow.DateLabel(entry.CopiedAt) + " " +
-                   DateTimeOffset.FromUnixTimeMilliseconds(entry.CopiedAt).ToLocalTime().ToString("HH:mm:ss"),
-            FontSize = 12,
-            Opacity = 0.65,
+            Glyph = entry.Kind switch
+            {
+                ClipKind.Image => "\uEB9F",
+                ClipKind.Files => "\uE8B7",
+                _ => "\uE8C8",
+            },
+            FontSize = 13,
+            Foreground = new SolidColorBrush(Theme.Family.Clipboard),
             VerticalAlignment = VerticalAlignment.Center,
         });
+        title.Children.Add(new TextBlock
+        {
+            Text = string.IsNullOrEmpty(entry.SourceName) ? "本机" : entry.SourceName,
+            FontSize = 12,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        title.Children.Add(new TextBlock
+        {
+            Text = PreviewRules.SourceAndAge(null, ClipRow.Relative(entry.CopiedAt)) + " · " +
+                   DateTimeOffset.FromUnixTimeMilliseconds(entry.CopiedAt).ToLocalTime().ToString("HH:mm:ss"),
+            FontSize = 12,
+            Opacity = 0.6,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        Grid.SetColumn(title, 0);
+        header.Children.Add(title);
 
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
         var favorite = new Button
@@ -254,7 +418,7 @@ public sealed partial class ClipboardPanel : UserControl
         favorite.Click += (_, _) =>
         {
             Store?.ToggleFavorite(entry.Id);
-            Refresh(entry.Id);
+            Refresh(entry.Id, animated: false);
         };
         var copy = new Button { Content = "复制", Padding = new Thickness(10, 4, 10, 4) };
         copy.Click += (_, _) => Copy(entry);
@@ -283,32 +447,52 @@ public sealed partial class ClipboardPanel : UserControl
                 ShowText(entry);
                 break;
         }
-
-        var source = new TextBlock
-        {
-            Text = string.IsNullOrEmpty(entry.SourceName)
-                ? entry.Kind == ClipKind.Text ? "来源：未知" : "本机生成"
-                : $"来源：{entry.SourceName}",
-            FontSize = 12,
-            Opacity = 0.55,
-            Margin = new Thickness(0, 6, 0, 0),
-        };
-        PreviewHost.Children.Add(source);
     }
 
     private void ShowText(ClipEntry entry)
     {
         var text = entry.Text ?? string.Empty;
+
+        // 整条就是一个颜色值：上面加一块色块（PLAN-v2 §3.5）。
+        if (PreviewRules.TryParseColor(text, out var red, out var green, out var blue))
+        {
+            var swatch = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+            swatch.Children.Add(new Border
+            {
+                Width = 44,
+                Height = 44,
+                CornerRadius = new CornerRadius(8),
+                Background = new SolidColorBrush(Windows.UI.Color.FromArgb(255, red, green, blue)),
+                BorderThickness = new Thickness(1),
+                BorderBrush = Theme.Brush("ControlStrokeColorDefaultBrush", Windows.UI.Color.FromArgb(40, 128, 128, 128)),
+            });
+            swatch.Children.Add(new TextBlock
+            {
+                Text = $"#{red:X2}{green:X2}{blue:X2}",
+                FontFamily = new FontFamily("Consolas"),
+                FontSize = 13,
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+            PreviewHost.Children.Add(swatch);
+        }
+
         const int limit = 50_000;
         var truncated = text.Length > limit;
+        var code = PreviewRules.LooksLikeCode(text);
         var block = new TextBlock
         {
             Text = truncated ? text[..limit] : text,
             TextWrapping = TextWrapping.Wrap,
             IsTextSelectionEnabled = true,
-            FontSize = 14,
-            LineHeight = 22,
+            FontSize = code ? 13 : 14,
+            LineHeight = code ? 20 : 22,
         };
+        if (code)
+        {
+            // FontFamily 不能设成 null（WinUI 里会直接挂掉），只在是代码时才换字体。
+            block.FontFamily = new FontFamily("Consolas");
+        }
+
         PreviewHost.Children.Add(block);
         if (truncated)
         {
@@ -334,20 +518,70 @@ public sealed partial class ClipboardPanel : UserControl
             return;
         }
 
+        var stack = new Grid { HorizontalAlignment = HorizontalAlignment.Left };
+        var checker = Checkerboard();
+        stack.Children.Add(checker);
+
         var image = new Image
         {
             MaxHeight = 340,
             Stretch = Stretch.Uniform,
             HorizontalAlignment = HorizontalAlignment.Left,
         };
-        PreviewHost.Children.Add(image);
-        PreviewHost.Children.Add(new TextBlock
+        stack.Children.Add(image);
+
+        // 右上角标「宽 × 高」（PLAN-v2 §3.5）。
+        var size = new Border
         {
-            Text = $"{entry.Width} × {entry.Height} · {entry.ImageBytes / 1024.0:F1} KB",
-            FontSize = 12,
-            Opacity = 0.6,
-        });
+            Padding = new Thickness(6, 2, 6, 2),
+            CornerRadius = new CornerRadius(4),
+            Background = Theme.Brush("ControlFillColorSecondaryBrush", Windows.UI.Color.FromArgb(160, 32, 32, 32)),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, 4, 4, 0),
+            Child = new TextBlock
+            {
+                Text = $"{entry.Width} × {entry.Height}",
+                FontSize = 11,
+                FontFamily = new FontFamily("Consolas"),
+            },
+        };
+        stack.Children.Add(size);
+        PreviewHost.Children.Add(stack);
         _ = LoadImageAsync(image, path, PreviewDecodeWidth());
+    }
+
+    /// <summary>透明图片后面的棋盘格（十来行，比引一个平铺画刷省事）。</summary>
+    private static Grid Checkerboard()
+    {
+        var grid = new Grid
+        {
+            Width = 320,
+            Height = 240,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Opacity = 0.5,
+        };
+        var light = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 220, 220, 220));
+        var dark = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 190, 190, 190));
+        const int cell = 16;
+        for (var row = 0; row < 15; row++)
+        {
+            for (var column = 0; column < 20; column++)
+            {
+                var square = new Border
+                {
+                    Width = cell,
+                    Height = cell,
+                    Background = (row + column) % 2 == 0 ? light : dark,
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    VerticalAlignment = VerticalAlignment.Top,
+                    Margin = new Thickness(column * cell, row * cell, 0, 0),
+                };
+                grid.Children.Add(square);
+            }
+        }
+
+        return grid;
     }
 
     /// <summary>
@@ -416,6 +650,14 @@ public sealed partial class ClipboardPanel : UserControl
     {
         if (!_active)
         {
+            return;
+        }
+
+        if (e.Key == VirtualKey.Control)
+        {
+            // 按住 Ctrl 150 ms 才浮现键帽：中途松开就不显示（PLAN-v2 §3.5）。
+            _keyHintTimer.Stop();
+            _keyHintTimer.Start();
             return;
         }
 
@@ -505,6 +747,15 @@ public sealed partial class ClipboardPanel : UserControl
         }
     }
 
+    private void OnKeyUp(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == VirtualKey.Control)
+        {
+            _keyHintTimer.Stop();
+            SetKeyHints(false);
+        }
+    }
+
     private static bool IsDown(VirtualKey key)
         => Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(key)
             .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
@@ -517,6 +768,8 @@ public sealed partial class ClipboardPanel : UserControl
         }
 
         var index = Math.Clamp(List.SelectedIndex + delta, 0, _visible.Count - 1);
+        _highlightCurve = MotionCurve.Snap;
+        _animateHighlight = true;
         List.SelectedIndex = index;
         List.ScrollIntoView(List.SelectedItem);
     }

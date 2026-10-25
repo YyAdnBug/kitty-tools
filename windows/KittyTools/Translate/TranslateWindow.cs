@@ -297,9 +297,26 @@ internal sealed unsafe partial class TranslateWindow : Window
         ResizeToContent();
     }
 
-    public void ToggleInput()
+    /// <summary>
+    /// 截图翻译：浮窗贴着选区出现（PLAN-v2 §3.8）。其它行为和输入翻译一样（要拿焦点才能选中原文）。
+    /// </summary>
+    public void ShowTextNear(string text, PixelRect anchor)
     {
-        if (_visible && !_noActivate)
+        _noActivate = false;
+        ShowCore(activate: true);
+        RemoveNoActivateStyle();
+        _source.Text = text;
+        _coordinator.Translate(text);
+        var display = Displays.AtPoint(anchor.X, anchor.Y);
+        var rect = MonitorLayout.NearRect(anchor, display.Work, display.Scale, _widthDip, NeededHeightDip());
+        AppWindow.MoveAndResize(new RectInt32(rect.X, rect.Y, rect.Width, rect.Height));
+        ActivateWindow();
+        FocusSource();
+        DispatcherQueue.TryEnqueue(ResizeToContent);
+    }
+
+    public void ToggleInput()
+    {        if (_visible && !_noActivate)
         {
             Hide(restoreForeground: true);
             return;
@@ -820,15 +837,21 @@ internal sealed unsafe partial class TranslateWindow : Window
 
         private readonly TextBlock _name;
         private readonly TextBlock _status;
+        private readonly Border _badge;
+        private readonly TextBlock _badgeLetter;
         private readonly TextBlock _body;
         private readonly ScrollViewer _bodyScroll;
+        private readonly Border _fade;
+        private readonly Border _cursor;
+        private readonly StackPanel _skeleton;
         private readonly TextBlock _error;
-        private readonly ProgressRing _spinner;
         private readonly Button _copy;
         private readonly Button _retry;
         private readonly Button _settings;
         private readonly StackPanel _actions;
         private readonly TranslateWindow _owner;
+        private bool _blinking;
+        private bool _shimmering;
 
         public CardView(TranslateServiceConfig service, TranslateWindow owner)
         {
@@ -846,7 +869,27 @@ internal sealed unsafe partial class TranslateWindow : Window
                 Opacity = 0.65,
                 VerticalAlignment = VerticalAlignment.Center,
             };
-            _spinner = new ProgressRing { IsActive = true, Width = 14, Height = 14 };
+
+            // 服务的标识：品牌色首字母方块（内置服务用中文短名，AI 服务按厂商，PLAN-v2 §3.7）。
+            _badgeLetter = new TextBlock
+            {
+                Text = ServiceBadge.Letter(service.Kind, service.Protocol, service.Name),
+                FontSize = 10,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 255, 255, 255)),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            _badge = new Border
+            {
+                Width = 22,
+                Height = 22,
+                CornerRadius = new CornerRadius(6),
+                Background = Theme.ServiceBadge(ServiceBadge.Vendor(service.Kind, service.Protocol)),
+                Child = _badgeLetter,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
             _body = new TextBlock
             {
                 TextWrapping = TextWrapping.Wrap,
@@ -864,6 +907,62 @@ internal sealed unsafe partial class TranslateWindow : Window
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 HorizontalScrollMode = ScrollMode.Disabled,
             };
+
+            // 下面还有内容时底部渐隐（PLAN-v2 §3.7）。
+            var cardColor = Theme.CardColor();
+            _fade = new Border
+            {
+                Height = 26,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                IsHitTestVisible = false,
+                Visibility = Visibility.Collapsed,
+                Background = new LinearGradientBrush
+                {
+                    StartPoint = new Windows.Foundation.Point(0, 0),
+                    EndPoint = new Windows.Foundation.Point(0, 1),
+                    GradientStops =
+                    {
+                        new GradientStop
+                        {
+                            Color = Windows.UI.Color.FromArgb(0, cardColor.R, cardColor.G, cardColor.B),
+                            Offset = 0,
+                        },
+                        new GradientStop { Color = cardColor, Offset = 1 },
+                    },
+                },
+            };
+            var bodyHost = new Grid { MaxHeight = MaxBodyLines * BodyLineHeight };
+            bodyHost.Children.Add(_bodyScroll);
+            bodyHost.Children.Add(_fade);
+
+            // 生成中末尾一根强调色闪烁光标（PLAN-v2 §3.7）。
+            _cursor = new Border
+            {
+                Width = 2,
+                Height = 14,
+                CornerRadius = new CornerRadius(1),
+                Background = new SolidColorBrush(Theme.BrandPink),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(2, 2, 0, 0),
+                Visibility = Visibility.Collapsed,
+                Opacity = 0,
+            };
+
+            // 等待 / 思考中的骨架条（只动透明度，交给合成器，进程 CPU 接近 0）。
+            _skeleton = new StackPanel { Spacing = 8, Margin = new Thickness(0, 2, 0, 2) };
+            foreach (var width in new[] { 1.0, 0.82, 0.55 })
+            {
+                _skeleton.Children.Add(new Border
+                {
+                    Height = 8,
+                    CornerRadius = new CornerRadius(4),
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    Width = 340 * width,
+                    Background = Theme.Brush(
+                        "ControlFillColorSecondaryBrush", Windows.UI.Color.FromArgb(40, 128, 128, 128)),
+                });
+            }
+
             _error = new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 12, Foreground = Theme.Critical() };
             _copy = SmallButton("复制");
             _copy.Click += (_, _) => _owner.CopyText(_body.Text);
@@ -877,15 +976,8 @@ internal sealed unsafe partial class TranslateWindow : Window
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-            title.Children.Add(new FontIcon
-            {
-                Glyph = "\uE8C8",
-                FontSize = 13,
-                Foreground = Theme.Success(),
-                VerticalAlignment = VerticalAlignment.Center,
-            });
+            title.Children.Add(_badge);
             title.Children.Add(_name);
-            title.Children.Add(_spinner);
             title.Children.Add(_status);
             Grid.SetColumn(title, 0);
             Grid.SetColumn(_actions, 1);
@@ -894,7 +986,9 @@ internal sealed unsafe partial class TranslateWindow : Window
 
             var panel = new StackPanel { Spacing = 6 };
             panel.Children.Add(header);
-            panel.Children.Add(_bodyScroll);
+            panel.Children.Add(_skeleton);
+            panel.Children.Add(bodyHost);
+            panel.Children.Add(_cursor);
             panel.Children.Add(_error);
             Root = new Border
             {
@@ -904,6 +998,7 @@ internal sealed unsafe partial class TranslateWindow : Window
                 Background = Theme.CardBackground(),
                 Child = panel,
             };
+            _bodyScroll.ViewChanged += (_, _) => UpdateFade();
             Update(new TranslateCard { Service = service });
         }
 
@@ -924,11 +1019,17 @@ internal sealed unsafe partial class TranslateWindow : Window
                 }
             }
 
+            var waiting = (card.State is CardState.Waiting or CardState.Running) && !hasText;
             _bodyScroll.Visibility = hasText ? Visibility.Visible : Visibility.Collapsed;
+            _skeleton.Visibility = waiting ? Visibility.Visible : Visibility.Collapsed;
             _error.Visibility = Visibility.Collapsed;
-            _spinner.IsActive = card.State is CardState.Waiting or CardState.Running;
-            _spinner.Visibility = _spinner.IsActive ? Visibility.Visible : Visibility.Collapsed;
             _actions.Children.Clear();
+
+            // 生成中末尾的闪烁光标（PLAN-v2 §3.7）。
+            var generating = card.State == CardState.Running && hasText && !card.Thinking;
+            _cursor.Visibility = generating ? Visibility.Visible : Visibility.Collapsed;
+            SetBlink(generating, _cursor);
+            SetShimmer(waiting);
 
             switch (card.State)
             {
@@ -947,12 +1048,17 @@ internal sealed unsafe partial class TranslateWindow : Window
                 case CardState.Truncated:
                     _status.Text = "只翻了前一部分";
                     _error.Text = card.Error?.Message ?? "超出单次输出上限";
+                    _error.Foreground = Theme.Caution();
                     _error.Visibility = Visibility.Visible;
                     _actions.Children.Add(_retry);
                     break;
                 case CardState.Failed:
                     _status.Text = "失败";
                     _error.Text = card.Error?.Message ?? "翻译失败";
+                    // 设置问题是橙色，网络 / 服务问题是红色（PLAN-v2 §3.7）。
+                    _error.Foreground = card.Error?.Kind == TranslateErrorKind.Config
+                        ? Theme.Caution()
+                        : Theme.Critical();
                     _error.Visibility = Visibility.Visible;
                     if (card.Error?.Kind == TranslateErrorKind.Config)
                     {
@@ -966,6 +1072,68 @@ internal sealed unsafe partial class TranslateWindow : Window
             if (hasText)
             {
                 _actions.Children.Add(_copy);
+            }
+
+            UpdateFade();
+        }
+
+        /// <summary>下面还有内容时显示底部渐隐。</summary>
+        private void UpdateFade()
+        {
+            var more = _bodyScroll.Visibility == Visibility.Visible &&
+                       _bodyScroll.ScrollableHeight - _bodyScroll.VerticalOffset > 8;
+            _fade.Visibility = more ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void SetShimmer(bool on)
+        {
+            if (on == _shimmering)
+            {
+                return;
+            }
+
+            _shimmering = on;
+            var visual = Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.GetElementVisual(_skeleton);
+            if (on)
+            {
+                var animation = visual.Compositor.CreateScalarKeyFrameAnimation();
+                animation.InsertKeyFrame(0f, 0.35f);
+                animation.InsertKeyFrame(0.5f, 0.85f);
+                animation.InsertKeyFrame(1f, 0.35f);
+                animation.Duration = TimeSpan.FromSeconds(1.2);
+                animation.IterationBehavior = Microsoft.UI.Composition.AnimationIterationBehavior.Forever;
+                visual.StartAnimation("Opacity", animation);
+            }
+            else
+            {
+                visual.StopAnimation("Opacity");
+                visual.Opacity = 1;
+            }
+        }
+
+        private void SetBlink(bool on, UIElement element)
+        {
+            if (on == _blinking)
+            {
+                return;
+            }
+
+            _blinking = on;
+            var visual = Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.GetElementVisual(element);
+            if (on)
+            {
+                var animation = visual.Compositor.CreateScalarKeyFrameAnimation();
+                animation.InsertKeyFrame(0f, 1f);
+                animation.InsertKeyFrame(0.5f, 0f);
+                animation.InsertKeyFrame(1f, 1f);
+                animation.Duration = TimeSpan.FromSeconds(0.9);
+                animation.IterationBehavior = Microsoft.UI.Composition.AnimationIterationBehavior.Forever;
+                visual.StartAnimation("Opacity", animation);
+            }
+            else
+            {
+                visual.StopAnimation("Opacity");
+                visual.Opacity = 0;
             }
         }
 

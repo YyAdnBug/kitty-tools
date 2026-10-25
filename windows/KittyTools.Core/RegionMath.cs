@@ -215,6 +215,27 @@ public static class RegionMath
         return rect with { X = x, Y = y };
     }
 
+    /// <summary>点到线段的最短距离（像素）：用来点中画笔 / 箭头这些折线标注（PLAN-v2 §3.8）。</summary>
+    public static double DistanceToSegment(PointD point, PointD start, PointD end)
+    {
+        var dx = end.X - start.X;
+        var dy = end.Y - start.Y;
+        var lengthSquared = dx * dx + dy * dy;
+        if (lengthSquared <= double.Epsilon)
+        {
+            var sx = point.X - start.X;
+            var sy = point.Y - start.Y;
+            return Math.Sqrt(sx * sx + sy * sy);
+        }
+
+        var t = Math.Clamp(((point.X - start.X) * dx + (point.Y - start.Y) * dy) / lengthSquared, 0, 1);
+        var x = start.X + t * dx;
+        var y = start.Y + t * dy;
+        var ex = point.X - x;
+        var ey = point.Y - y;
+        return Math.Sqrt(ex * ex + ey * ey);
+    }
+
     /// <summary>套用比例预设：宽不变、高按比例，顶边和水平中心不动；下面放不下就按剩下的高反推宽。</summary>
     public static RectD ApplyingRatio(double ratio, RectD rect, RectD bounds)
     {

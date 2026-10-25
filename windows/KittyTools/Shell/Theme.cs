@@ -127,6 +127,33 @@ internal static class Theme
         "CardBackgroundFillColorDefaultBrush",
         ElementTheme == ElementTheme.Dark ? Color.FromArgb(36, 255, 255, 255) : Color.FromArgb(18, 0, 0, 0));
 
+    /// <summary>设置卡的底色（不透明近似，用给渐隐遮罩的渐变终点）。</summary>
+    public static Color CardColor()
+        => ElementTheme == ElementTheme.Dark
+            ? Color.FromArgb(255, 0x2B, 0x2B, 0x2B)
+            : Color.FromArgb(255, 0xFB, 0xFB, 0xFB);
+
+    /// <summary>翻译卡左上角服务徽标的底色（按厂商挑，AI 服务再按协议）。</summary>
+    public static Brush ServiceBadge(string vendor)
+    {
+        var color = vendor switch
+        {
+            "zhipu" => Color.FromArgb(255, 16, 122, 87),
+            "baidu" => Color.FromArgb(255, 41, 98, 255),
+            "youdao" => Color.FromArgb(255, 216, 52, 45),
+            "google" => Color.FromArgb(255, 66, 133, 244),
+            "deepl" => Color.FromArgb(255, 15, 43, 124),
+            "microsoft" => Color.FromArgb(255, 0, 120, 212),
+            "volcengine" => Color.FromArgb(255, 22, 93, 255),
+            "tencent" => Color.FromArgb(255, 0, 91, 234),
+            "ai:azure" => Color.FromArgb(255, 0, 120, 212),
+            "ai:anthropic" => Color.FromArgb(255, 209, 128, 69),
+            "ai:openai" => Color.FromArgb(255, 16, 163, 127),
+            _ => Family.Launcher,
+        };
+        return new SolidColorBrush(color);
+    }
+
     /// <summary>危险 / 错误色（快捷键被占用、错误卡）。</summary>
     public static Brush Critical() => Brush("SystemFillColorCriticalBrush", Color.FromArgb(255, 196, 43, 28));
 

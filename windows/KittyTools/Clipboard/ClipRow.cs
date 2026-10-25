@@ -31,10 +31,24 @@ public sealed class ClipRow
 
     public Visibility FavoriteVisibility { get; private init; }
 
+    /// <summary>右边的「来源 · 多久前」（PLAN-v2 §3.5）。</summary>
+    public string RightText { get; private init; } = string.Empty;
+
+    /// <summary>按住 Ctrl 时右侧浮现的数字键帽。</summary>
+    public string KeyHint { get; private init; } = string.Empty;
+
+    public Visibility KeyHintVisibility { get; private init; } = Visibility.Collapsed;
+
     internal ClipEntry Entry { get; private init; } = null!;
 
-    internal static ClipRow Create(ClipEntry entry, bool showDateHeader, string query = "")
+    internal static ClipRow Create(
+        ClipEntry entry,
+        bool showDateHeader,
+        int index = -1,
+        bool showKeyHint = false,
+        string query = "")
     {
+        var right = PreviewRules.SourceAndAge(entry.SourceName, Relative(entry.CopiedAt));
         return new ClipRow
         {
             Entry = entry,
@@ -42,6 +56,9 @@ public sealed class ClipRow
             Subtitle = SubtitleOf(entry),
             Glyph = GlyphOf(entry),
             Time = TimeLabel(entry.CopiedAt),
+            RightText = right,
+            KeyHint = showKeyHint && index is >= 0 and < 9 ? (index + 1).ToString() : string.Empty,
+            KeyHintVisibility = showKeyHint && index is >= 0 and < 9 ? Visibility.Visible : Visibility.Collapsed,
             DateHeader = showDateHeader ? DateLabel(entry.CopiedAt) : string.Empty,
             DateHeaderVisibility = HeaderVisibility(showDateHeader),
             FavoriteVisibility = FavoriteVisibilityOf(entry),
@@ -52,13 +69,46 @@ public sealed class ClipRow
     /// 这一行和「同一条条目、同样的日期分隔」画出来是不是一模一样。
     /// 面板按键搜索时靠它找出可以沿用的前缀，不再整表重建 ItemsSource（第二版 §2 P3）。
     /// </summary>
-    internal bool SameAs(ClipEntry entry, bool showDateHeader)
+    internal bool SameAs(ClipEntry entry, bool showDateHeader, int index, bool showKeyHint)
         => ReferenceEquals(Entry, entry) &&
            Time == TimeLabel(entry.CopiedAt) &&
            DateHeaderVisibility == HeaderVisibility(showDateHeader) &&
            FavoriteVisibility == FavoriteVisibilityOf(entry) &&
            Subtitle == SubtitleOf(entry) &&
+           RightText == PreviewRules.SourceAndAge(entry.SourceName, Relative(entry.CopiedAt)) &&
+           KeyHint == (showKeyHint && index is >= 0 and < 9 ? (index + 1).ToString() : string.Empty) &&
+           KeyHintVisibility == (showKeyHint && index is >= 0 and < 9 ? Visibility.Visible : Visibility.Collapsed) &&
            Title == TitleOf(entry);
+
+    /// <summary>「3 分钟前」/「昨天」这种相对时间（列表右栏用）。</summary>
+    internal static string Relative(long copiedAt)
+    {
+        var then = DateTimeOffset.FromUnixTimeMilliseconds(copiedAt).ToLocalTime();
+        var span = DateTimeOffset.Now - then;
+        if (span.TotalSeconds < 60)
+        {
+            return "刚刚";
+        }
+
+        if (span.TotalMinutes < 60)
+        {
+            return $"{(int)span.TotalMinutes} 分钟前";
+        }
+
+        if (then.Date == DateTime.Today)
+        {
+            return $"{(int)span.TotalHours} 小时前";
+        }
+
+        if (then.Date == DateTime.Today.AddDays(-1))
+        {
+            return "昨天";
+        }
+
+        return then.Date.Year == DateTime.Today.Year
+            ? $"{then.Month} 月 {then.Day} 日"
+            : $"{then.Year} 年 {then.Month} 月 {then.Day} 日";
+    }
 
     private static string TitleOf(ClipEntry entry) => entry.Kind switch
     {

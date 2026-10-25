@@ -79,6 +79,43 @@ public static class MonitorLayout
         return Clamp(new PixelRect(x, y, width, height), work);
     }
 
+    /// <summary>
+    /// 贴着某个矩形出现（截图翻译的浮窗，PLAN-v2 §3.8）：优先放右边，放不下换左边，再放不下放下边，
+    /// 最后夹进工作区。锚点用物理像素（选区是像素坐标）。
+    /// </summary>
+    public static PixelRect NearRect(
+        PixelRect anchor,
+        WorkArea work,
+        double scale,
+        double widthDip,
+        double heightDip,
+        double gapDip = NearPointerOffsetDip)
+    {
+        var width = Pixels(widthDip, scale);
+        var height = Pixels(heightDip, scale);
+        var gap = (int)Math.Round(gapDip * scale);
+
+        var x = anchor.Right + gap;
+        if (x + width > work.Right)
+        {
+            x = anchor.X - width - gap;
+        }
+
+        var y = anchor.Y;
+        if (x < work.Left || x + width > work.Right)
+        {
+            // 左右都放不下：放到选区下面，宽度还是按工作区夹。
+            x = anchor.X;
+            y = anchor.Bottom + gap;
+            if (y + height > work.Bottom)
+            {
+                y = anchor.Y - height - gap;
+            }
+        }
+
+        return Clamp(new PixelRect(x, y, width, height), work);
+    }
+
     /// <summary>把矩形夹进工作区；比工作区还大时贴左 / 上。</summary>
     public static PixelRect Clamp(PixelRect rect, WorkArea work)
     {
