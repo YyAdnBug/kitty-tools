@@ -165,38 +165,64 @@ internal static partial class TrayMenu
     {
         var runtime = ShellRuntime.Instance;
         var settings = SettingsService.Current;
-        var clipboardReady = runtime?.Clipboard is not null;
+        var clipboardReady = runtime?.Clipboard is not null && Features.IsOn(Feature.Clipboard);
         var menu = new MenuFlyout { Placement = FlyoutPlacementMode.TopEdgeAlignedRight };
 
-        Add(menu, "\uE8C8", "剪贴板历史", HotKeyActions.Clipboard, () => runtime?.OpenClipboard(), clipboardReady);
-        Add(menu, "\uE721", "启动器", HotKeyActions.Launcher, () => OverlayHost.Toggle(OverlayKind.Launcher));
-        Add(menu, "\uE774", "输入翻译", HotKeyActions.InputTranslate, () => TranslateHost.ToggleInput());
-        Add(menu, "\uE722", "截图", HotKeyActions.Screenshot, () => ScreenshotSession.Start(ScreenshotMode.Capture));
-        Add(menu, "\uE7C4", "截图翻译", HotKeyActions.ScreenshotTranslate,
-            () => ScreenshotSession.Start(ScreenshotMode.Translate));
-        Add(menu, "\uE8D3", "识字", HotKeyActions.Ocr, () => ScreenshotSession.Start(ScreenshotMode.Ocr));
+        // 关掉的功能整项不出现（第三版 §2.3）。
+        if (Features.IsOn(Feature.Clipboard))
+        {
+            Add(menu, "\uE8C8", "剪贴板历史", HotKeyActions.Clipboard, () => runtime?.OpenClipboard(), clipboardReady);
+        }
+
+        if (Features.IsOn(Feature.Launcher))
+        {
+            Add(menu, "\uE721", "启动器", HotKeyActions.Launcher, () => OverlayHost.Toggle(OverlayKind.Launcher));
+        }
+
+        if (Features.IsOn(Feature.Translate))
+        {
+            Add(menu, "\uE774", "输入翻译", HotKeyActions.InputTranslate, () => TranslateHost.ToggleInput());
+        }
+
+        if (Features.IsOn(Feature.Screenshot))
+        {
+            Add(menu, "\uE722", "截图", HotKeyActions.Screenshot, () => ScreenshotSession.Start(ScreenshotMode.Capture));
+            if (Features.IsOn(Feature.Translate))
+            {
+                Add(menu, "\uE7C4", "截图翻译", HotKeyActions.ScreenshotTranslate,
+                    () => ScreenshotSession.Start(ScreenshotMode.Translate));
+            }
+
+            Add(menu, "\uE8D3", "识字", HotKeyActions.Ocr, () => ScreenshotSession.Start(ScreenshotMode.Ocr));
+        }
 
         menu.Items.Add(new MenuFlyoutSeparator());
 
-        var copyTranslate = new ToggleMenuFlyoutItem
+        if (Features.IsOn(Feature.Translate))
         {
-            Text = "复制即译",
-            IsChecked = settings.CopyTranslate,
-            Icon = new FontIcon { Glyph = "\uE8C8" },
-            IsEnabled = runtime is not null,
-        };
-        copyTranslate.Click += (_, _) => runtime?.ToggleCopyTranslate();
-        menu.Items.Add(copyTranslate);
+            var copyTranslate = new ToggleMenuFlyoutItem
+            {
+                Text = "复制即译",
+                IsChecked = settings.CopyTranslate,
+                Icon = new FontIcon { Glyph = "\uE8C8" },
+                IsEnabled = runtime is not null,
+            };
+            copyTranslate.Click += (_, _) => runtime?.ToggleCopyTranslate();
+            menu.Items.Add(copyTranslate);
+        }
 
-        var pause = new ToggleMenuFlyoutItem
+        if (Features.IsOn(Feature.Clipboard))
         {
-            Text = "暂停记录剪贴板",
-            IsChecked = runtime?.Clipboard?.Paused == true,
-            Icon = new FontIcon { Glyph = "\uE769" },
-            IsEnabled = clipboardReady,
-        };
-        pause.Click += (_, _) => runtime?.TogglePauseClipboard();
-        menu.Items.Add(pause);
+            var pause = new ToggleMenuFlyoutItem
+            {
+                Text = "暂停记录剪贴板",
+                IsChecked = runtime?.Clipboard?.Paused == true,
+                Icon = new FontIcon { Glyph = "\uE769" },
+                IsEnabled = clipboardReady,
+            };
+            pause.Click += (_, _) => runtime?.TogglePauseClipboard();
+            menu.Items.Add(pause);
+        }
 
         menu.Items.Add(new MenuFlyoutSeparator());
 

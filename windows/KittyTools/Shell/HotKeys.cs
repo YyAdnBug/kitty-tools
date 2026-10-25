@@ -23,6 +23,13 @@ internal sealed class HotKeyManager
         var id = 1;
         foreach (var definition in SettingsDefaults.DefaultHotKeys)
         {
+            // 功能关掉了：热键不注册（第三版 §2.3）。
+            if (!Features.IsOn(Features.ForHotKey(definition.Action)))
+            {
+                id++;
+                continue;
+            }
+
             var binding = SettingsDefaults.BindingFor(settings, definition.Action);
             if (binding.VirtualKey == 0)
             {

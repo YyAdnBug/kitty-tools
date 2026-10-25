@@ -156,6 +156,58 @@ internal sealed class ClipboardStore
         Changed?.Invoke();
     }
 
+    /// <summary>
+    /// 导入文件里的片段 / 收藏（第三版 §2.2）：同样的正文不重复加，只把收藏标记补上；不删本机已有的。
+    /// 片段 / 备注 / 收藏夹第三版第 3 批有了列之后再补（现在只合并正文和收藏）。
+    /// </summary>
+    public (int Added, int Updated) AdoptTextClips(
+        IReadOnlyList<(string Text, bool Favorite, DateTimeOffset? CopiedAt)> clips)
+    {
+        var added = 0;
+        var updated = 0;
+        foreach (var clip in clips)
+        {
+            if (string.IsNullOrEmpty(clip.Text))
+            {
+                continue;
+            }
+
+            var existing = _items.FirstOrDefault(item =>
+                item.Kind == ClipKind.Text && string.Equals(item.Text, clip.Text, StringComparison.Ordinal));
+            if (existing is not null)
+            {
+                if (clip.Favorite && !existing.Favorite)
+                {
+                    existing.Favorite = true;
+                    _database.SetFavorite(existing.Id, true);
+                    updated++;
+                }
+
+                continue;
+            }
+
+            var entry = new ClipEntry
+            {
+                Kind = ClipKind.Text,
+                Text = clip.Text,
+                Favorite = clip.Favorite,
+                CopiedAt = clip.CopiedAt?.ToUnixTimeMilliseconds()
+                           ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            };
+            entry.Id = _database.Insert(entry);
+            _items.Insert(0, entry);
+            added++;
+        }
+
+        if (added + updated > 0)
+        {
+            Changed?.Invoke();
+        }
+
+        Log.Info($"clipboard.adopt added={added} updated={updated}");
+        return (added, updated);
+    }
+
     public void ToggleFavorite(long id)
     {
         var entry = _items.FirstOrDefault(item => item.Id == id);

@@ -120,6 +120,65 @@ public static class HotKeyRules
         return sb.ToString();
     }
 
+    /// <summary>把 <see cref="Format"/> 写出来的「Ctrl+Alt+K」读回来（导入导出的文件里用这个写法）。</summary>
+    public static bool TryParse(string text, out uint virtualKey, out HotKeyModifiers modifiers)
+    {
+        virtualKey = 0;
+        modifiers = HotKeyModifiers.None;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        var parts = text.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0)
+        {
+            return false;
+        }
+
+        foreach (var part in parts[..^1])
+        {
+            modifiers |= part switch
+            {
+                "Ctrl" or "Control" => HotKeyModifiers.Control,
+                "Alt" => HotKeyModifiers.Alt,
+                "Shift" => HotKeyModifiers.Shift,
+                "Win" => HotKeyModifiers.Win,
+                _ => 0,
+            };
+        }
+
+        var key = parts[^1];
+        if (key.Length == 1 && char.IsAsciiLetterOrDigit(key[0]))
+        {
+            virtualKey = char.ToUpperInvariant(key[0]);
+            return true;
+        }
+
+        if (key.Length is 2 or 3 && (key[0] is 'F' or 'f') &&
+            int.TryParse(key[1..], out var function) && function is >= 1 and <= 24)
+        {
+            virtualKey = (uint)(VkF1 + function - 1);
+            return true;
+        }
+
+        virtualKey = key switch
+        {
+            "Space" => VkSpace,
+            "Tab" => VkTab,
+            "Enter" => VkReturn,
+            "Esc" or "Escape" => VkEscape,
+            "Backspace" => VkBack,
+            "Delete" => VkDelete,
+            "Left" => VkLeft,
+            "Up" => VkUp,
+            "Right" => VkRight,
+            "Down" => VkDown,
+            _ => 0,
+        };
+        return virtualKey != 0;
+    }
+
     public static string KeyName(uint virtualKey) => virtualKey switch
     {
         >= 0x30 and <= 0x39 => ((char)virtualKey).ToString(),

@@ -314,6 +314,15 @@ internal static class OverlayHost
 
     public static void Hide(bool restoreForeground) => _window?.HideOverlay(restoreForeground);
 
+    /// <summary>关掉某个功能时把它的浮层收起来（第三版 §2.3）。</summary>
+    public static void HideKind(OverlayKind kind)
+    {
+        if (_window is { IsVisible: true } window && window.Kind == kind)
+        {
+            window.HideOverlay(restoreForeground: false);
+        }
+    }
+
     public static void SetClipboardQuery(string query) => _window?.SetClipboardQuery(query);
 
     /// <summary>启动 3 秒后预建浮层和两块面板（第二版 §4.2：第一次按热键 115–256 ms → 十几毫秒）。</summary>

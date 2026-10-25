@@ -256,6 +256,21 @@ internal sealed class SettingsWindow : Window
                 SettingsService.Save();
             });
 
+        _content.Children.Add(SettingsUi.Section(
+            "功能", "用不着的整个关掉：它的热键、托盘菜单项和后台工作一起停；数据和设置都留着。"));
+        foreach (var feature in Enum.GetValues<Feature>())
+        {
+            AddToggle(
+                Features.Title(feature),
+                Features.Blurb(feature),
+                Features.IsOn(feature),
+                isOn =>
+                {
+                    Features.Set(feature, isOn);
+                    BuildPage(_currentPage);
+                });
+        }
+
         var dataButton = SettingsUi.Card(
             "\uE8B7",
             "数据目录",
@@ -263,7 +278,190 @@ internal sealed class SettingsWindow : Window
             null,
             OpenDataDirectory);
         _content.Children.Add(dataButton);
+
+        _content.Children.Add(SettingsUi.Section(
+            "导出与导入", "换电脑、重装或备份时用。密钥默认不带；片段、收藏、生词本是合并，不会删本机已有的。"));
+        _content.Children.Add(SettingsUi.Card(
+            "\uE896",
+            "导出…",
+            "把设置、翻译服务、网页搜索、片段与收藏存成一个文件；要带密钥就设一个密码。",
+            null,
+            () => _ = ExportArchiveAsync()));
+        _content.Children.Add(SettingsUi.Card(
+            "\uE8B5",
+            "导入…",
+            "从 Kitty Tools 导出的文件导回来；导入前会先自动备份一次现在的数据。",
+            null,
+            () => _ = ImportArchiveAsync()));
     }
+
+    /// <summary>导出：按类别勾选，可选密码（第三版 §2.2）。</summary>
+    private async Task ExportArchiveAsync()
+    {
+        try
+        {
+            var checks = new Dictionary<ArchiveSection, CheckBox>();
+            var panel = new StackPanel { Spacing = 8, MinWidth = 360 };
+            foreach (var section in Enum.GetValues<ArchiveSection>())
+            {
+                var check = new CheckBox
+                {
+                    Content = SectionTitle(section),
+                    IsChecked = true,
+                };
+                checks[section] = check;
+                panel.Children.Add(check);
+            }
+
+            var password = new PasswordBox
+            {
+                Header = "给密钥设个密码（可以不填）",
+                PlaceholderText = "至少 8 位；留空就不带密钥",
+            };
+            panel.Children.Add(password);
+            panel.Children.Add(new TextBlock
+            {
+                Text = "密钥会用这个密码加密；Mac 和 Windows 两边都能解开。密码丢了就解不回来。",
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Theme.SecondaryText(),
+            });
+
+            var dialog = new ContentDialog
+            {
+                Title = "导出",
+                PrimaryButtonText = "选择文件…",
+                CloseButtonText = "取消",
+                DefaultButton = ContentDialogButton.Primary,
+                Content = panel,
+                XamlRoot = _shell.XamlRoot,
+            };
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+            {
+                return;
+            }
+
+            var selected = checks.Where(pair => pair.Value.IsChecked == true).Select(pair => pair.Key).ToList();
+            var secret = password.Password;
+            if (secret.Length is > 0 and < SettingsArchive.MinPasswordLength)
+            {
+                NoticeHost.Show("密码太短", "至少 8 位", NoticeTone.Warning);
+                return;
+            }
+
+            var picker = new FileSavePicker(AppWindow.Id)
+            {
+                SuggestedFileName = $"Kitty Tools 设置 {DateTime.Now:yyyy-MM-dd}",
+                DefaultFileExtension = ".json",
+            };
+            picker.FileTypeChoices.Add("JSON 文件", new List<string> { ".json" });
+            var file = await picker.PickSaveFileAsync();
+            if (file is null || string.IsNullOrEmpty(file.Path))
+            {
+                return;
+            }
+
+            var archive = ArchiveService.Build(selected, secret.Length > 0 ? secret : null);
+            if (ArchiveService.WriteFile(file.Path, archive) is null)
+            {
+                NoticeHost.Show("没能导出", "文件写不进去，或者内容超过了上限", NoticeTone.Error);
+                return;
+            }
+
+            NoticeHost.Show(
+                "已导出", archive.Secrets is null ? "文件里没有密钥" : "密钥已用密码加密", NoticeTone.Normal);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("settings.export-failed", ex);
+            NoticeHost.Show("没能导出", ex.GetType().Name, NoticeTone.Error);
+        }
+    }
+
+    /// <summary>导入：读文件 → 需要时问密码 → 先自动备份 → 合并进本机（第三版 §2.2）。</summary>
+    private async Task ImportArchiveAsync()
+    {
+        try
+        {
+            var picker = new FileOpenPicker(AppWindow.Id);
+            picker.FileTypeFilter.Add(".json");
+            var file = await picker.PickSingleFileAsync();
+            if (file is null || string.IsNullOrEmpty(file.Path))
+            {
+                return;
+            }
+
+            var info = new FileInfo(file.Path);
+            if (!info.Exists || info.Length > SettingsArchive.MaxFileBytes)
+            {
+                NoticeHost.Show("文件太大", "导出文件最多 32 MB", NoticeTone.Warning);
+                return;
+            }
+
+            var archive = ArchiveService.Decode(await File.ReadAllTextAsync(file.Path));
+            if (archive is null)
+            {
+                NoticeHost.Show("这不是 Kitty Tools 导出的设置文件", "换一个文件试试", NoticeTone.Error);
+                return;
+            }
+
+            string? password = null;
+            if (archive.Secrets is not null)
+            {
+                var box = new PasswordBox { Header = "这个文件带了加密的密钥，输入密码（不导密钥就留空）" };
+                var dialog = new ContentDialog
+                {
+                    Title = "导入",
+                    PrimaryButtonText = "导入",
+                    CloseButtonText = "取消",
+                    DefaultButton = ContentDialogButton.Primary,
+                    Content = box,
+                    XamlRoot = _shell.XamlRoot,
+                };
+                if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+                {
+                    return;
+                }
+
+                password = box.Password;
+            }
+
+            if (ArchiveService.BackupBeforeImport() is null)
+            {
+                NoticeHost.Show("没能先备份现在的数据", "所以没有导入", NoticeTone.Error);
+                return;
+            }
+
+            var (outcome, error) = ArchiveService.Apply(archive, password);
+            if (error is not null)
+            {
+                NoticeHost.Show("导入没成功", error, NoticeTone.Error);
+                return;
+            }
+
+            NoticeHost.Show(
+                "已导入",
+                $"片段 {outcome.ClipsAdded} 条、收藏 {outcome.ClipsUpdated} 条、生词 {outcome.WordsAdded} 条、" +
+                $"服务 {outcome.ServicesAdded} 个、搜索 {outcome.EnginesAdded} 个、密钥 {outcome.Secrets} 个",
+                NoticeTone.Normal);
+            BuildPage("general");
+        }
+        catch (Exception ex)
+        {
+            Log.Error("settings.import-failed", ex);
+            NoticeHost.Show("没能导入", ex.GetType().Name, NoticeTone.Error);
+        }
+    }
+
+    private static string SectionTitle(ArchiveSection section) => section switch
+    {
+        ArchiveSection.Preferences => "设置",
+        ArchiveSection.Hotkeys => "快捷键",
+        ArchiveSection.Services => "翻译服务",
+        ArchiveSection.Engines => "网页搜索与快捷链接",
+        ArchiveSection.Clips => "片段与收藏",
+        _ => "生词本",
+    };
 
     private Border BuildWelcome()
     {
@@ -316,6 +514,11 @@ internal sealed class SettingsWindow : Window
 
     private void BuildClipboard()
     {
+        if (!ShowIfDisabled(Feature.Clipboard))
+        {
+            return;
+        }
+
         _content.Children.Add(Header("剪贴板", "记录文本、图片和文件；面板里按 Ctrl+D 收藏。收藏的条目不受保留天数和图片额度影响。"));
         var service = ClipboardService.Instance;
         if (service is null)
@@ -476,6 +679,11 @@ internal sealed class SettingsWindow : Window
 
     private void BuildLauncher()
     {
+        if (!ShowIfDisabled(Feature.Launcher))
+        {
+            return;
+        }
+
         _content.Children.Add(Header("启动器", "应用、系统设置、系统命令、计算和网址直达；网页搜索只有一个兜底。"));
         var settings = SettingsService.Current;
         var engines = (settings.LauncherSearchEngines ?? WebSearch.Defaults())
@@ -634,6 +842,11 @@ internal sealed class SettingsWindow : Window
 
     private void BuildScreenshot()
     {
+        if (!ShowIfDisabled(Feature.Screenshot))
+        {
+            return;
+        }
+
         _content.Children.Add(Header("截图", "框选、标注、识字、钉图和截图翻译；Ctrl+S 快速保存。"));
         _content.Children.Add(Section(
             "快速保存位置",
@@ -693,6 +906,11 @@ internal sealed class SettingsWindow : Window
 
     private void BuildTranslate()
     {
+        if (!ShowIfDisabled(Feature.Translate))
+        {
+            return;
+        }
+
         Log.Info("settings.translate.build-start");
         _content.Children.Add(Header("翻译", "划词、输入和复制即译共用一个浮窗；每个启用的服务一张结果卡。"));
         var store = TranslateServiceStore.Instance;
@@ -1083,6 +1301,24 @@ internal sealed class SettingsWindow : Window
         {
             return "测试失败：" + ex.Message;
         }
+    }
+
+    /// <summary>功能关掉了：这一页只留一张「已关闭」的卡和去打开的按钮（第三版 §2.3）。</summary>
+    private bool ShowIfDisabled(Feature feature)
+    {
+        if (Features.IsOn(feature))
+        {
+            return true;
+        }
+
+        _content.Children.Add(Header(Features.Title(feature), string.Empty));
+        _content.Children.Add(SettingsUi.Card(
+            "\uE7E8",
+            "已关闭",
+            "这个功能关掉了：热键、托盘菜单项和后台工作都停了。到 通用 › 功能 里打开就回来。",
+            null,
+            () => BuildPage("general")));
+        return false;
     }
 
     private void ReportCleanup(int removed)

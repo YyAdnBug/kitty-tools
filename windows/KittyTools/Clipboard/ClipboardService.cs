@@ -22,6 +22,9 @@ internal sealed class ClipboardService
     /// <summary>用户在托盘菜单暂停记录：不存盘，重启后恢复记录。</summary>
     public bool Paused { get; set; }
 
+    /// <summary>功能开关关掉剪贴板时挂起（第三版 §2.3）：不记录、托盘和热键都不出现。</summary>
+    public bool Suspended { get; set; }
+
     /// <summary>新文本入库后回调（复制即译在第 3 批接上）。</summary>
     public event Action<string>? TextCopied;
 
@@ -42,7 +45,7 @@ internal sealed class ClipboardService
 
     public void OnClipboardUpdate()
     {
-        if (Paused || _selectionPaused)
+        if (Paused || Suspended || _selectionPaused)
         {
             return;
         }

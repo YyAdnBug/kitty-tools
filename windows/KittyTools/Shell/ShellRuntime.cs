@@ -44,14 +44,25 @@ internal sealed class ShellRuntime
 
         try
         {
-            var database = Database.OpenDefault();
+            // 打不开时先问用户：用备份 / 重新开始 / 退出（第三版 §2.1）。
+            var database = Recovery.OpenWithRecovery();
+            if (database is null)
+            {
+                Application.Current.Exit();
+                return;
+            }
+
             Clipboard = ClipboardService.Start(database, new ImageStore(Paths.ImagesDirectory));
+            Clipboard.Suspended = !Features.IsOn(Feature.Clipboard);
         }
         catch (Exception ex)
         {
             Log.Error("clipboard.start-failed", ex);
             NoticeHost.Show("剪贴板历史用不了", "数据库打不开，其它功能不受影响", NoticeTone.Error);
         }
+
+        // 每日备份：启动时、锁屏 / 解锁、睡眠唤醒各看一眼今天备过没有（不另加定时器）。
+        ScheduleBackup();
 
         TranslateServiceStore.Start(SettingsService.Current);
         TranslateHost.Initialize();
@@ -98,8 +109,15 @@ internal sealed class ShellRuntime
         DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
         {
             await Task.Delay(3000);
-            OverlayHost.Prewarm();
-            TranslateHost.Prewarm();
+            if (Features.IsOn(Feature.Clipboard) || Features.IsOn(Feature.Launcher))
+            {
+                OverlayHost.Prewarm();
+            }
+
+            if (Features.IsOn(Feature.Translate))
+            {
+                TranslateHost.Prewarm();
+            }
         });
 
         if (MemoryProbe.Requested)
@@ -255,7 +273,7 @@ internal sealed class ShellRuntime
 
     public void TogglePauseClipboard()
     {
-        if (Clipboard is null)
+        if (Clipboard is null || !Features.IsOn(Feature.Clipboard))
         {
             return;
         }
@@ -264,7 +282,64 @@ internal sealed class ShellRuntime
         NoticeHost.Show("剪贴板记录", Clipboard.Paused ? "已暂停" : "已恢复", NoticeTone.Normal);
     }
 
-    public void OpenClipboard() => OverlayHost.Show(OverlayKind.Clipboard);
+    public void OpenClipboard()
+    {
+        if (!Features.IsOn(Feature.Clipboard))
+        {
+            NoticeHost.Show("剪贴板已关闭", "到 设置 › 通用 › 功能 里打开", NoticeTone.Warning);
+            return;
+        }
+
+        OverlayHost.Show(OverlayKind.Clipboard);
+    }
+
+    /// <summary>功能开关改了：停 / 起后台工作、收起被关掉的那块浮层（第三版 §2.3）。</summary>
+    private void ApplyFeatures()
+    {
+        if (Clipboard is { } clipboard)
+        {
+            clipboard.Suspended = !Features.IsOn(Feature.Clipboard);
+        }
+
+        Log.Info(
+            "features " + string.Join(
+                ' ',
+                Enum.GetValues<Feature>().Select(feature => $"{Features.Key(feature)}={Features.IsOn(feature)}")));
+
+        if (!Features.IsOn(Feature.Clipboard))
+        {
+            OverlayHost.HideKind(OverlayKind.Clipboard);
+        }
+
+        if (!Features.IsOn(Feature.Launcher))
+        {
+            OverlayHost.HideKind(OverlayKind.Launcher);
+        }
+
+        if (!Features.IsOn(Feature.Translate))
+        {
+            TranslateHost.Hide(restoreForeground: false);
+        }
+    }
+
+    /// <summary>后台跑一次每日备份（今天备过就直接返回）。</summary>
+    private static void ScheduleBackup()
+    {
+        var directory = Paths.DataDirectory;
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                Backup.Run(directory, DateTime.Now);
+                // 设置与数据的每日自动备份（第三版 §2.2），和数据库备份同一个 backups 文件夹。
+                ArchiveService.BackupDaily();
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"backup.task-failed {ex.GetType().Name}");
+            }
+        });
+    }
 
     public void ShowNotice(string title, string detail, NoticeTone tone = NoticeTone.Normal)
         => NoticeHost.Show(title, detail, tone);
@@ -280,6 +355,8 @@ internal sealed class ShellRuntime
 
     private void OnHiddenMessage(uint msg, Windows.Win32.Foundation.WPARAM wParam, Windows.Win32.Foundation.LPARAM lParam)
     {
+        const uint WmWtsSessionChange = 0x02B1;
+        const uint WmPowerBroadcast = 0x0218;
         if (msg == PInvoke.WM_HOTKEY)
         {
             HotKeys.OnHotKey((int)wParam.Value);
@@ -292,10 +369,29 @@ internal sealed class ShellRuntime
         {
             Tray.OnCallback(msg, wParam, lParam);
         }
+        else if (msg == WmWtsSessionChange)
+        {
+            // 7 = 锁屏、8 = 解锁：各看一眼今天备过没有。
+            if (wParam.Value is 7 or 8)
+            {
+                ScheduleBackup();
+            }
+        }
+        else if (msg == WmPowerBroadcast && wParam.Value is 7 or 0x12)
+        {
+            // 7 = 从睡眠唤醒（PBT_APMRESUMESUSPEND）、0x12 = 自动唤醒。
+            ScheduleBackup();
+        }
     }
 
     private void OnHotKey(string action)
     {
+        // 功能关掉了就什么都不做（热键本来也没注册，保险）。
+        if (!Features.IsOn(Features.ForHotKey(action)))
+        {
+            return;
+        }
+
         switch (action)
         {
             case HotKeyActions.Clipboard:
@@ -340,6 +436,7 @@ internal sealed class ShellRuntime
 
         Theme.ApplyAccent();
         TranslateHost.ApplyCopyTranslate();
+        ApplyFeatures();
         _settingsWindow?.RefreshTheme();
     }
 
@@ -353,7 +450,8 @@ internal sealed class ShellRuntime
     private static string HotKeySignature(Settings settings)
         => string.Join(
             '|',
-            settings.HotKeys
-                .OrderBy(hotkey => hotkey.Action, StringComparer.Ordinal)
-                .Select(hotkey => $"{hotkey.Action}:{hotkey.Modifiers}:{hotkey.VirtualKey}"));
+            Enum.GetValues<Feature>().Select(feature => $"{feature}:{Features.IsOn(feature)}")
+                .Concat(settings.HotKeys
+                    .OrderBy(hotkey => hotkey.Action, StringComparer.Ordinal)
+                    .Select(hotkey => $"{hotkey.Action}:{hotkey.Modifiers}:{hotkey.VirtualKey}")));
 }

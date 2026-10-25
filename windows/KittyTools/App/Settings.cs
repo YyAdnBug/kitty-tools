@@ -74,6 +74,12 @@ internal sealed class Settings
     public List<KittyTools.Core.SearchEngine>? LauncherSearchEngines { get; set; }
 
     public List<HotKeySetting> HotKeys { get; set; } = new();
+
+    /// <summary>
+    /// 功能开关（第三版 §2.3）：clipboard / translate / launcher / screenshot → 开没开。
+    /// 没存过的当开；关掉只停入口和后台工作，数据层照常。
+    /// </summary>
+    public Dictionary<string, bool>? Features { get; set; }
 }
 
 /// <summary>一个翻译服务的非密钥配置（密钥在凭据管理器，字段名见 SecretField）。</summary>

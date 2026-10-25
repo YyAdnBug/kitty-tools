@@ -11,6 +11,7 @@ internal sealed unsafe partial class SqliteConnection : IDisposable
     private const int Ok = 0;
     private const int Row = 100;
     private const int Done = 101;
+    private const int OpenReadOnly = 0x00000001;
     private const int OpenReadWrite = 0x00000002;
     private const int OpenCreate = 0x00000004;
     private const int OpenFullMutex = 0x00010000;
@@ -18,13 +19,25 @@ internal sealed unsafe partial class SqliteConnection : IDisposable
     private IntPtr _db;
 
     public SqliteConnection(string path)
+        : this(path, readOnly: false)
+    {
+    }
+
+    /// <summary>
+    /// 只读连接（第二版 §2.1 的每日备份用）：不建库、不设 WAL，打开后 query_only。
+    /// VACUUM INTO 在只读连接上也能用（它只读源库、写目标文件）。
+    /// </summary>
+    public SqliteConnection(string path, bool readOnly)
     {
         var bytes = Encoding.UTF8.GetBytes(path + "\0");
         IntPtr db;
         int result;
         fixed (byte* fileName = bytes)
         {
-            result = Sqlite3OpenV2(fileName, &db, OpenReadWrite | OpenCreate | OpenFullMutex, null);
+            var flags = readOnly
+                ? OpenReadOnly | OpenFullMutex
+                : OpenReadWrite | OpenCreate | OpenFullMutex;
+            result = Sqlite3OpenV2(fileName, &db, flags, null);
         }
 
         if (result != Ok || db == IntPtr.Zero)
@@ -40,6 +53,12 @@ internal sealed unsafe partial class SqliteConnection : IDisposable
 
         _db = db;
         Execute("PRAGMA busy_timeout = 5000;");
+        if (readOnly)
+        {
+            Execute("PRAGMA query_only = ON;");
+            return;
+        }
+
         Execute("PRAGMA journal_mode = WAL;");
         Execute("PRAGMA synchronous = NORMAL;");
         Execute("PRAGMA foreign_keys = ON;");

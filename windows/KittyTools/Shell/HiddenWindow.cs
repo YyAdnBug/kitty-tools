@@ -54,9 +54,15 @@ internal static unsafe class HiddenWindow
         }
 
         PInvoke.AddClipboardFormatListener(Hwnd);
+        // 锁屏 / 解锁的通知（第三版 §2.1：锁屏时看一眼今天备过没有）。
+        WtsRegisterSessionNotification((IntPtr)Hwnd.Value, 0);
         Log.Info("hidden.ready");
         return true;
     }
+
+    [DllImport("wtsapi32.dll", EntryPoint = "WTSRegisterSessionNotification", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool WtsRegisterSessionNotification(IntPtr hwnd, uint flags);
 
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]
     private static LRESULT WndProc(HWND hwnd, uint msg, WPARAM wParam, LPARAM lParam)
