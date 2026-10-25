@@ -1,4 +1,4 @@
-﻿// 大模型翻译（用户自建 AI 实例：OpenAI 兼容 / Azure OpenAI / Anthropic），SSE 流式输出。
+// 大模型翻译（用户自建 AI 实例：OpenAI 兼容 / Azure OpenAI / Anthropic），SSE 流式输出。
 // 地址补全、max_tokens、关思考分档都是 Core 的纯函数（AiEndpoint）。
 using System.Text.Json.Nodes;
 using KittyTools.Core;
@@ -25,8 +25,13 @@ internal static class AiServiceProvider
         var target = request.To.EnglishName();
         var from = request.From is { } source ? $" from {source.EnglishName()}" : string.Empty;
         var system =
-            "You are a translation engine. Translate the user's text" + from + " into " + target + ". " +
-            "Output only the translation: no explanations, no quotes. Keep line breaks and Markdown structure.";
+            SettingsService.Current.TranslateWordLookup && WordLookup.IsWord(request.Text)
+                ? "You are a concise dictionary. Explain the user's word in " + target +
+                  ", in the same shape as this example and nothing else:\n\n### example\n" +
+                  "**Part of speech** noun\n**Meaning** a word used as an example\n" +
+                  "**Example** This is an example. 这是一个例子。"
+                : "You are a translation engine. Translate the user's text" + from + " into " + target + ". " +
+                  "Output only the translation: no explanations, no quotes. Keep line breaks and Markdown structure.";
 
         switch (protocol)
         {

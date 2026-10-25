@@ -22,6 +22,9 @@ internal sealed class Database : IDisposable
 
     public static Database OpenDefault() => new(Paths.DatabaseFile);
 
+    /// <summary>同一条连接（翻译历史 / 生词本 / 同步账本用）；只许在 UI 线程上用。</summary>
+    public SqliteConnection Connection => _connection;
+
     public IReadOnlyList<ClipEntry> LoadClips()
     {
         var entries = new List<ClipEntry>();

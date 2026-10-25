@@ -124,10 +124,19 @@ internal static class ArchiveService
             archive.ClipGroups = new List<string>();
         }
 
-        // 翻译历史 / 生词本第三版第 2 批才有；现在留空（格式里可以有，不写就是没有）。
-        if (sections.Contains(ArchiveSection.Vocabulary))
+        // 生词本（第三版第 2 批）：收藏的翻译。
+        if (sections.Contains(ArchiveSection.Vocabulary) && TranslationHistory.Instance is { } history)
         {
-            archive.Vocabulary = new List<SettingsArchive.ArchiveWord>();
+            archive.Vocabulary = history.Search(string.Empty, favoritesOnly: true, limit: 0)
+                .Select(entry => new SettingsArchive.ArchiveWord
+                {
+                    Source = entry.Source,
+                    Target = entry.TargetLang,
+                    Result = entry.Result,
+                    Service = entry.Service,
+                    CreatedAt = DateTimeOffset.FromUnixTimeMilliseconds(entry.CreatedAt),
+                })
+                .ToList();
         }
 
         if (!string.IsNullOrEmpty(password) && archive.TranslateServices is { } services)
@@ -197,10 +206,9 @@ internal static class ArchiveService
                 outcome.ClipsUpdated = updated;
             }
 
-            if (archive.Vocabulary is { Count: > 0 })
+            if (archive.Vocabulary is { Count: > 0 } words && TranslationHistory.Instance is { } vocabulary)
             {
-                // 第三版第 2 批的翻译历史接上之后再合并生词；现在文件里带了也先不落（不删本机）。
-                Log.Warn("archive.vocabulary-not-supported-yet");
+                outcome.WordsAdded = vocabulary.AdoptFavorites(words);
             }
 
             if (archive.Secrets is { } sealedSecrets && archive.TranslateServices is { Count: > 0 } secretServices)
@@ -474,10 +482,12 @@ internal static class ArchiveService
                 continue;
             }
 
-            var field = TranslateKinds.SecretField(service.Kind);
-            if (store.Secret(service, field) is { } value)
+            foreach (var field in TranslateKinds.SecretFields(service.Kind))
             {
-                secrets[$"{service.Id}.{field}"] = value;
+                if (store.Secret(service, field) is { } value)
+                {
+                    secrets[$"{service.Id}.{field}"] = value;
+                }
             }
         }
 
@@ -500,11 +510,13 @@ internal static class ArchiveService
                 continue;
             }
 
-            var field = TranslateKinds.SecretField(service.Kind);
-            if (secrets.TryGetValue($"{service.Id}.{field}", out var value) &&
-                !string.IsNullOrEmpty(value) && value.Length <= 4096)
+            foreach (var field in TranslateKinds.SecretFields(service.Kind))
             {
-                store.SetSecret(service, value, field);
+                if (secrets.TryGetValue($"{service.Id}.{field}", out var value) &&
+                    !string.IsNullOrEmpty(value) && value.Length <= 4096)
+                {
+                    store.SetSecret(service, value, field);
+                }
             }
         }
     }

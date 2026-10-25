@@ -11,9 +11,16 @@ internal static class TranslateKinds
     public const string Google = "google";
     public const string DeepL = "deepl";
     public const string Microsoft = "microsoft";
+    public const string Baidu = "baidu";
+    public const string Youdao = "youdao";
+    public const string Volcengine = "volcengine";
+    public const string Tencent = "tencent";
     public const string Ai = "ai";
 
-    public static readonly string[] All = { Zhipu, Google, DeepL, Microsoft, Ai };
+    public static readonly string[] All =
+    {
+        Zhipu, Google, DeepL, Microsoft, Baidu, Youdao, Volcengine, Tencent, Ai,
+    };
 
     public static string DefaultName(string kind) => kind switch
     {
@@ -21,25 +28,48 @@ internal static class TranslateKinds
         Google => "Google 翻译",
         DeepL => "DeepL",
         Microsoft => "微软翻译",
+        Baidu => "百度翻译",
+        Youdao => "有道翻译",
+        Volcengine => "火山引擎翻译",
+        Tencent => "腾讯云翻译",
         _ => "AI 服务",
     };
 
-    /// <summary>内置服务要存进凭据管理器的字段；AI 服务固定是 apiKey。</summary>
-    public static string SecretField(string kind) => kind switch
+    /// <summary>内置服务要存进凭据管理器的字段（有的是两个）；AI 服务固定是 apiKey。</summary>
+    public static string[] SecretFields(string kind) => kind switch
     {
-        DeepL => "authKey",
-        Microsoft => "subscriptionKey",
-        _ => "apiKey",
+        DeepL => new[] { "authKey" },
+        Microsoft => new[] { "subscriptionKey" },
+        Baidu => new[] { "appId", "secret" },
+        Youdao => new[] { "appKey", "appSecret" },
+        Volcengine => new[] { "accessKey", "secretKey" },
+        Tencent => new[] { "secretId", "secretKey" },
+        _ => new[] { "apiKey" },
     };
 
-    public static string SecretLabel(string kind) => kind switch
+    /// <summary>第一个字段（单字段的服务的旧写法都还用它）。</summary>
+    public static string SecretField(string kind) => SecretFields(kind)[0];
+
+    public static string SecretLabel(string kind, string field) => (kind, field) switch
     {
-        DeepL => "Auth Key",
-        Microsoft => "Key",
+        (DeepL, _) => "Auth Key",
+        (Microsoft, _) => "Key",
+        (Baidu, "appId") => "App ID",
+        (Baidu, _) => "密钥",
+        (Youdao, "appKey") => "应用 ID",
+        (Youdao, _) => "应用密钥",
+        (Volcengine, "accessKey") => "Access Key",
+        (Volcengine, _) => "Secret Key",
+        (Tencent, "secretId") => "SecretId",
+        (Tencent, _) => "SecretKey",
         _ => "API Key",
     };
 
-    public static bool IsBuiltin(string kind) => kind is Zhipu or Google or DeepL or Microsoft;
+    /// <summary>兼容只传种类的旧调用（标签只用于单字段服务）。</summary>
+    public static string SecretLabel(string kind) => SecretLabel(kind, SecretField(kind));
+
+    public static bool IsBuiltin(string kind)
+        => kind is Zhipu or Google or DeepL or Microsoft or Baidu or Youdao or Volcengine or Tencent;
 }
 
 internal sealed record AiPreset(string Name, AiProtocol Protocol, string BaseUrl)
@@ -225,6 +255,10 @@ internal sealed class TranslateServiceStore
         TranslateKinds.Google => GoogleProvider.StreamAsync(service, request, cancellationToken),
         TranslateKinds.DeepL => DeepLProvider.StreamAsync(service, request, cancellationToken),
         TranslateKinds.Microsoft => MicrosoftProvider.StreamAsync(service, request, cancellationToken),
+        TranslateKinds.Baidu => BaiduProvider.StreamAsync(service, request, cancellationToken),
+        TranslateKinds.Youdao => YoudaoProvider.StreamAsync(service, request, cancellationToken),
+        TranslateKinds.Volcengine => VolcengineProvider.StreamAsync(service, request, cancellationToken),
+        TranslateKinds.Tencent => TencentProvider.StreamAsync(service, request, cancellationToken),
         _ => AiServiceProvider.StreamAsync(service, request, cancellationToken),
     };
 }

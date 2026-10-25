@@ -65,6 +65,18 @@ internal sealed class Settings
 
     public bool TranslatePinned { get; set; }
 
+    /// <summary>翻译历史开关（第三版 §3.1）。</summary>
+    public bool TranslateHistoryEnabled { get; set; } = true;
+
+    /// <summary>普通历史保留条数：1000 / 5000 / 0（不限）；收藏的不算、永不淘汰。</summary>
+    public int TranslateHistoryLimit { get; set; } = 5000;
+
+    /// <summary>查词（单词模式）开关（第三版 §3.4）。</summary>
+    public bool TranslateWordLookup { get; set; } = true;
+
+    /// <summary>「划词翻译并替换」的独立热键动作是否已在快捷键表里（第三版 §3.2，不设默认键）。</summary>
+    public bool TranslateReplaceHotKeySeen { get; set; }
+
     /// <summary>截图快速保存的文件夹；空 = 系统的「屏幕截图」文件夹。</summary>
     public string? ScreenshotSaveFolder { get; set; }
 

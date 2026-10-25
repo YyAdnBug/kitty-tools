@@ -453,6 +453,76 @@ internal sealed class SettingsWindow : Window
         }
     }
 
+    /// <summary>导出全部历史或只有收藏；CSV 或 Anki 用的 TSV（第三版 §3.1）。</summary>
+    private async Task ExportHistoryAsync()
+    {
+        if (TranslationHistory.Instance is not { } history)
+        {
+            return;
+        }
+
+        try
+        {
+            var favoritesOnly = new CheckBox { Content = "只导出收藏（生词本）" };
+            var format = new ComboBox
+            {
+                Header = "格式",
+                Items = { "CSV（Excel 能打开）", "Anki TSV（正面 / 背面）" },
+                SelectedIndex = 0,
+                MinWidth = 220,
+            };
+            var panel = new StackPanel { Spacing = 8 };
+            panel.Children.Add(format);
+            panel.Children.Add(favoritesOnly);
+            var dialog = new ContentDialog
+            {
+                Title = "导出历史",
+                PrimaryButtonText = "导出…",
+                CloseButtonText = "取消",
+                DefaultButton = ContentDialogButton.Primary,
+                Content = panel,
+                XamlRoot = _shell.XamlRoot,
+            };
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+            {
+                return;
+            }
+
+            var entries = history.Search(string.Empty, favoritesOnly.IsChecked == true, limit: 0);
+            var rows = entries
+                .Select(entry => new HistoryRow(
+                    entry.Source, entry.Result, entry.TargetLang, entry.Service, entry.CreatedAt, entry.Favorite))
+                .ToList();
+            var tsv = format.SelectedIndex == 1;
+            var temporary = Path.Combine(Path.GetTempPath(), "kitty-history.txt");
+            await File.WriteAllTextAsync(
+                temporary,
+                tsv ? HistoryExport.AnkiTsv(rows) : HistoryExport.Csv(rows),
+                new System.Text.UTF8Encoding(tsv));
+
+            var picker = new FileSavePicker(AppWindow.Id)
+            {
+                SuggestedFileName = tsv ? "Kitty Tools 生词本" : "Kitty Tools 翻译历史",
+                DefaultFileExtension = tsv ? ".txt" : ".csv",
+            };
+            picker.FileTypeChoices.Add(tsv ? "文本文件" : "CSV 文件",
+                new List<string> { tsv ? ".txt" : ".csv" });
+            var file = await picker.PickSaveFileAsync();
+            if (file is null || string.IsNullOrEmpty(file.Path))
+            {
+                return;
+            }
+
+            File.Copy(temporary, file.Path, overwrite: true);
+            NoticeHost.Show("已导出", $"{entries.Count} 条", NoticeTone.Normal);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("settings.history-export-failed", ex);
+            NoticeHost.Show("没能导出", ex.GetType().Name, NoticeTone.Error);
+        }
+    }
+
     private static string SectionTitle(ArchiveSection section) => section switch
     {
         ArchiveSection.Preferences => "设置",
@@ -959,6 +1029,65 @@ internal sealed class SettingsWindow : Window
                 SettingsService.Save();
             });
 
+        AddToggle("查词（单词模式）", "原文是一个词时，智谱和 AI 服务按词典样式解释；结果不自动复制、不给替换原文。",
+            SettingsService.Current.TranslateWordLookup,
+            isOn =>
+            {
+                SettingsService.Current.TranslateWordLookup = isOn;
+                SettingsService.Save();
+            });
+
+        _content.Children.Add(SettingsUi.Section("历史", "只记第一个服务的完成结果；收藏的不受保留条数影响（就是生词本）。"));
+        AddToggle("记录翻译历史", "浮窗里按 Ctrl+H 查看。",
+            SettingsService.Current.TranslateHistoryEnabled,
+            isOn =>
+            {
+                SettingsService.Current.TranslateHistoryEnabled = isOn;
+                SettingsService.Save();
+            });
+
+        var limitIndex = SettingsService.Current.TranslateHistoryLimit switch
+        {
+            1000 => 0,
+            0 => 2,
+            _ => 1,
+        };
+        AddCombo("普通历史保留条数", "收藏的不算、永不淘汰。",
+            new[] { "1000 条", "5000 条", "不限" },
+            limitIndex,
+            index =>
+            {
+                SettingsService.Current.TranslateHistoryLimit = index switch
+                {
+                    0 => 1000,
+                    2 => 0,
+                    _ => 5000,
+                };
+                SettingsService.Save();
+            });
+
+        var historyButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var exportHistory = new Button { Content = "导出历史…" };
+        exportHistory.Click += (_, _) => _ = ExportHistoryAsync();
+        historyButtons.Children.Add(exportHistory);
+        var clearHistory = new Button { Content = "清空历史（收藏保留）" };
+        var armedClear = false;
+        clearHistory.Click += (_, _) =>
+        {
+            if (!armedClear)
+            {
+                armedClear = true;
+                clearHistory.Content = "再点一次：清空";
+                return;
+            }
+
+            TranslationHistory.Instance?.ClearNonFavorites();
+            NoticeHost.Show("已清空", "收藏的还在", NoticeTone.Normal);
+            BuildPage("translate");
+        };
+        historyButtons.Children.Add(clearHistory);
+        _content.Children.Add(historyButtons);
+
         _content.Children.Add(Section("服务", "列表顺序就是浮窗里卡片的顺序。密钥只存在凭据管理器，不写 settings.json。"));
         if (TranslateServiceStore.BuiltinZhipuKey is null)
         {
@@ -1170,18 +1299,25 @@ internal sealed class SettingsWindow : Window
             panel.Children.Add(region);
         }
 
-        var existingSecret = store.Secret(service);
-        var key = new PasswordBox
+        // 一个服务可能有多个密钥字段（百度 App ID + 密钥、火山 Access Key + Secret Key…）。
+        var secretBoxes = new List<(string Field, PasswordBox Box)>();
+        foreach (var field in TranslateKinds.SecretFields(service.Kind))
         {
-            Header = TranslateKinds.SecretLabel(service.Kind),
-            PlaceholderText = existingSecret is not null
-                ? "已保存，留空不修改"
-                : service.Kind == TranslateKinds.Zhipu && TranslateServiceStore.BuiltinZhipuKey is not null
-                    ? "留空使用内置免费额度"
-                    : "填密钥",
-        };
-        panel.Children.Add(key);
-        var clearKey = new CheckBox { Content = "清除已保存的密钥" };
+            var existingSecret = store.Secret(service, field);
+            var box = new PasswordBox
+            {
+                Header = TranslateKinds.SecretLabel(service.Kind, field),
+                PlaceholderText = existingSecret is not null
+                    ? "已保存，留空不修改"
+                    : service.Kind == TranslateKinds.Zhipu && TranslateServiceStore.BuiltinZhipuKey is not null
+                        ? "留空使用内置免费额度"
+                        : "填密钥",
+            };
+            secretBoxes.Add((field, box));
+            panel.Children.Add(box);
+        }
+
+        var clearKey = new CheckBox { Content = "清除已保存的全部密钥" };
         panel.Children.Add(clearKey);
 
         var result = new TextBlock
@@ -1241,11 +1377,20 @@ internal sealed class SettingsWindow : Window
 
             if (clearKey.IsChecked == true)
             {
-                store.SetSecret(service, null);
+                foreach (var (field, _) in secretBoxes)
+                {
+                    store.SetSecret(service, null, field);
+                }
             }
-            else if (!string.IsNullOrEmpty(key.Password))
+            else
             {
-                store.SetSecret(service, key.Password);
+                foreach (var (field, box) in secretBoxes)
+                {
+                    if (!string.IsNullOrEmpty(box.Password))
+                    {
+                        store.SetSecret(service, box.Password, field);
+                    }
+                }
             }
 
             store.Save();

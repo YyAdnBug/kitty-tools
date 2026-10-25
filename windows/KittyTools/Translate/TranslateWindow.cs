@@ -34,6 +34,15 @@ internal sealed unsafe partial class TranslateWindow : Window
     private readonly StackPanel _cardsPanel;
     private readonly TextBlock _footer;
     private readonly ScrollViewer _scroll;
+    private readonly Grid _historyHost;
+    private readonly TextBox _historySearch;
+    private readonly ScrollViewer _historyList;
+    private readonly StackPanel _historyRows;
+    private readonly TextBlock _historyHint;
+    private readonly List<TranslationEntry> _historyEntries = new();
+    private TranslationEntry? _historySelected;
+    private bool _historyVisible;
+    private IntPtr _replaceTarget;
     private readonly TranslateCoordinator _coordinator = new();
     private readonly Dictionary<string, CardView> _cardViews = new();
 
@@ -130,6 +139,13 @@ internal sealed unsafe partial class TranslateWindow : Window
         var closeButton = IconButton("\uE711", "关闭");
         closeButton.Click += (_, _) => Hide(restoreForeground: true);
         actions.Children.Add(_pinButton);
+        // 朗读原文（第三版 §3.3）。
+        var speak = IconButton("\uE767", "朗读原文");
+        speak.Click += (_, _) => SpeakSource();
+        actions.Children.Add(speak);
+        var history = IconButton("\uE81C", "历史（Ctrl+H）");
+        history.Click += (_, _) => ToggleHistory();
+        actions.Children.Add(history);
         actions.Children.Add(more);
         actions.Children.Add(closeButton);
         Grid.SetColumn(actions, 5);
@@ -191,15 +207,52 @@ internal sealed unsafe partial class TranslateWindow : Window
             TextTrimming = TextTrimming.CharacterEllipsis,
         };
 
+        // 历史（Ctrl+H，第三版 §3.1）：原文区不动，结果区换成历史列表。
+        _historySearch = new TextBox
+        {
+            PlaceholderText = "搜索原文或译文…",
+            FontSize = 13,
+            Height = 32,
+            Margin = new Thickness(0, 0, 0, 6),
+        };
+        _historySearch.TextChanged += (_, _) => RefreshHistory();
+        _historySearch.KeyDown += OnHistoryKeyDown;
+        _historyRows = new StackPanel { Spacing = 2 };
+        _historyList = new ScrollViewer
+        {
+            Content = _historyRows,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        };
+        _historyHint = new TextBlock
+        {
+            FontSize = 11,
+            Opacity = 0.6,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        };
+        var historyGrid = new Grid();
+        historyGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        historyGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        historyGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        Grid.SetRow(_historySearch, 0);
+        Grid.SetRow(_historyList, 1);
+        Grid.SetRow(_historyHint, 2);
+        historyGrid.Children.Add(_historySearch);
+        historyGrid.Children.Add(_historyList);
+        historyGrid.Children.Add(_historyHint);
+        _historyHost = historyGrid;
+        _historyHost.Visibility = Visibility.Collapsed;
+
         Grid.SetRow(_topBar, 0);
         Grid.SetRow(_source, 1);
         Grid.SetRow(_translateButton, 2);
         Grid.SetRow(_scroll, 3);
+        Grid.SetRow(_historyHost, 3);
         Grid.SetRow(_footer, 4);
         _root.Children.Add(_topBar);
         _root.Children.Add(_source);
         _root.Children.Add(_translateButton);
         _root.Children.Add(_scroll);
+        _root.Children.Add(_historyHost);
         _root.Children.Add(_footer);
 
         Content = _root;
@@ -338,6 +391,14 @@ internal sealed unsafe partial class TranslateWindow : Window
         {
             _visible = false;
             OutsideClickHook.Uninstall();
+            Speech.Stop();
+            if (_historyVisible)
+            {
+                _historyVisible = false;
+                _historyHost.Visibility = Visibility.Collapsed;
+                _scroll.Visibility = Visibility.Visible;
+            }
+
             SaveGeometry();
             _coordinator.Cancel();
             AppWindow.Hide();
@@ -387,6 +448,7 @@ internal sealed unsafe partial class TranslateWindow : Window
             _previousForeground = before;
         }
 
+        _replaceTarget = (IntPtr)_previousForeground.Value;
         if (!_visible)
         {
             _visible = true;
@@ -465,7 +527,19 @@ internal sealed unsafe partial class TranslateWindow : Window
                 break;
             case VirtualKey.Escape:
                 e.Handled = true;
-                Hide(restoreForeground: true);
+                if (_historyVisible)
+                {
+                    ToggleHistory();
+                }
+                else
+                {
+                    Hide(restoreForeground: true);
+                }
+
+                break;
+            case VirtualKey.H when control:
+                e.Handled = true;
+                ToggleHistory();
                 break;
             case VirtualKey.W when control:
                 e.Handled = true;
@@ -510,6 +584,308 @@ internal sealed unsafe partial class TranslateWindow : Window
         ToolTipService.SetToolTip(_pinButton, SettingsService.Current.TranslatePinned ? "已固定（Esc 仍可关闭）" : "固定（点别处不收起）");
     }
 
+    // ---- 历史（第三版 §3.1）----
+
+    public bool HistoryVisible => _historyVisible;
+
+    /// <summary>Ctrl+H：结果区换成历史列表；再按一次回来。</summary>
+    public void ToggleHistory()
+    {
+        _historyVisible = !_historyVisible;
+        _historyHost.Visibility = _historyVisible ? Visibility.Visible : Visibility.Collapsed;
+        _scroll.Visibility = _historyVisible ? Visibility.Collapsed : Visibility.Visible;
+        _translateButton.Visibility = Visibility.Collapsed;
+        if (_historyVisible)
+        {
+            RefreshHistory();
+            _historySearch.Focus(FocusState.Programmatic);
+        }
+        else
+        {
+            _footer.Text = FooterText();
+            FocusSource();
+        }
+
+        ResizeToContent();
+    }
+
+    private string FooterText()
+    {
+        var detected = _coordinator.Detected is { } lang ? "检测：" + lang.Title() + " · " : string.Empty;
+        return detected + "目标：" + _coordinator.Target.Title() + " · Enter 翻译 · Ctrl+H 历史 · Esc 关闭 · Ctrl+P 固定";
+    }
+
+    /// <summary>按搜索框重排历史列表（原文 / 译文都搜，新→旧）。</summary>
+    private void RefreshHistory()
+    {
+        if (TranslationHistory.Instance is not { } history)
+        {
+            return;
+        }
+
+        var favorites = IsDown(VirtualKey.Shift) && IsDown(VirtualKey.Tab);
+        _historyEntries.Clear();
+        _historyEntries.AddRange(history.Search(_historySearch.Text, favorites, limit: 200));
+        _historyRows.Children.Clear();
+        _historySelected = _historyEntries.FirstOrDefault();
+        foreach (var entry in _historyEntries)
+        {
+            _historyRows.Children.Add(HistoryRow(entry));
+        }
+
+        var (total, favoritesCount) = history.Counts();
+        _historyHint.Text = _historyEntries.Count == 0
+            ? "还没有历史（翻译一段就会记下来）"
+            : $"{_historyEntries.Count} 条 · 共 {total} 条、收藏 {favoritesCount} 条 · " +
+              "Enter 重新翻译 · Ctrl+D 收藏 · Delete 删除 · Ctrl+Z 撤销 · Esc 回到浮窗";
+        UpdateHistorySelection();
+    }
+
+    private FrameworkElement HistoryRow(TranslationEntry entry)
+    {
+        var panel = new StackPanel { Spacing = 2 };
+        panel.Children.Add(new TextBlock
+        {
+            Text = OneLine(entry.Source),
+            FontSize = 13,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        });
+        panel.Children.Add(new TextBlock
+        {
+            Text = OneLine(entry.Result),
+            FontSize = 12,
+            Opacity = 0.7,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        });
+        var meta = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        meta.Children.Add(new TextBlock
+        {
+            Text = entry.Favorite ? "★ " + entry.TargetLang : entry.TargetLang,
+            FontSize = 10,
+            Opacity = 0.55,
+        });
+        meta.Children.Add(new TextBlock
+        {
+            Text = DateTimeOffset.FromUnixTimeMilliseconds(entry.CreatedAt).ToLocalTime()
+                .ToString("MM-dd HH:mm"),
+            FontSize = 10,
+            Opacity = 0.55,
+        });
+        panel.Children.Add(meta);
+
+        var border = new Border
+        {
+            Padding = new Thickness(8, 5, 8, 5),
+            CornerRadius = new CornerRadius(6),
+            Child = panel,
+        };
+        border.Tapped += (_, _) =>
+        {
+            _historySelected = entry;
+            UpdateHistorySelection();
+        };
+        border.DoubleTapped += (_, _) =>
+        {
+            _historySelected = entry;
+            RetranslateSelected();
+        };
+        border.ContextFlyout = HistoryMenu(entry);
+        border.Tag = entry;
+        return border;
+    }
+
+    private MenuFlyout HistoryMenu(TranslationEntry entry)
+    {
+        var menu = new MenuFlyout();
+        void Add(string text, Action action)
+        {
+            var item = new MenuFlyoutItem { Text = text };
+            item.Click += (_, _) =>
+            {
+                _historySelected = entry;
+                action();
+            };
+            menu.Items.Add(item);
+        }
+
+        Add("重新翻译", RetranslateSelected);
+        Add("复制译文", CopySelectedResult);
+        Add("复制原文", CopySelectedSource);
+        Add(entry.Favorite ? "取消收藏" : "收藏", ToggleSelectedFavorite);
+        menu.Items.Add(new MenuFlyoutSeparator());
+        Add("删除", DeleteSelected);
+        return menu;
+    }
+
+    private void UpdateHistorySelection()
+    {
+        foreach (var child in _historyRows.Children.OfType<Border>())
+        {
+            var selected = ReferenceEquals(child.Tag, _historySelected);
+            child.Background = selected
+                ? Theme.Brush("SubtleFillColorSecondaryBrush", Windows.UI.Color.FromArgb(30, 128, 128, 128))
+                : new SolidColorBrush(Colors.Transparent);
+        }
+    }
+
+    private void OnHistoryKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (!_historyVisible)
+        {
+            return;
+        }
+
+        var control = IsDown(VirtualKey.Control);
+        switch (e.Key)
+        {
+            case VirtualKey.Escape:
+                e.Handled = true;
+                ToggleHistory();
+                break;
+            case VirtualKey.Down:
+                e.Handled = true;
+                MoveHistory(1);
+                break;
+            case VirtualKey.Up:
+                e.Handled = true;
+                MoveHistory(-1);
+                break;
+            case VirtualKey.Enter:
+                e.Handled = true;
+                RetranslateSelected();
+                break;
+            case VirtualKey.Delete when _historySearch.SelectionStart == _historySearch.Text.Length:
+                e.Handled = true;
+                DeleteSelected();
+                break;
+            case VirtualKey.C when control && !IsDown(VirtualKey.Shift):
+                e.Handled = true;
+                CopySelectedResult();
+                break;
+            case VirtualKey.C when control && IsDown(VirtualKey.Shift):
+                e.Handled = true;
+                CopySelectedSource();
+                break;
+            case VirtualKey.D when control:
+                e.Handled = true;
+                ToggleSelectedFavorite();
+                break;
+            case VirtualKey.Z when control:
+                e.Handled = true;
+                if (TranslationHistory.Instance?.Undo() is not null)
+                {
+                    RefreshHistory();
+                }
+
+                break;
+        }
+    }
+
+    private void MoveHistory(int delta)
+    {
+        if (_historyEntries.Count == 0)
+        {
+            return;
+        }
+
+        var index = _historySelected is null ? 0 : _historyEntries.IndexOf(_historySelected);
+        index = Math.Clamp(index + delta, 0, _historyEntries.Count - 1);
+        _historySelected = _historyEntries[index];
+        UpdateHistorySelection();
+        if (_historyRows.Children.OfType<Border>().FirstOrDefault(
+                border => ReferenceEquals(border.Tag, _historySelected)) is { } row)
+        {
+            row.StartBringIntoView();
+        }
+    }
+
+    private void RetranslateSelected()
+    {
+        if (_historySelected is not { } entry)
+        {
+            return;
+        }
+
+        _source.Text = entry.Source;
+        ToggleHistory();
+        _coordinator.Translate(entry.Source);
+    }
+
+    private void CopySelectedResult()
+    {
+        if (_historySelected is { } entry)
+        {
+            CopyText(entry.Result);
+        }
+    }
+
+    private void CopySelectedSource()
+    {
+        if (_historySelected is { } entry)
+        {
+            CopyText(entry.Source);
+        }
+    }
+
+    private void ToggleSelectedFavorite()
+    {
+        if (_historySelected is not { } entry || TranslationHistory.Instance is not { } history)
+        {
+            return;
+        }
+
+        history.SetFavorite(entry.Id, !entry.Favorite);
+        RefreshHistory();
+    }
+
+    private void DeleteSelected()
+    {
+        if (_historySelected is not { } entry || TranslationHistory.Instance is not { } history)
+        {
+            return;
+        }
+
+        history.Delete(entry.Id);
+        RefreshHistory();
+        NoticeHost.Show("已删除", "Ctrl+Z 可以撤销", NoticeTone.Normal);
+    }
+
+    // ---- 替换原文、朗读（第三版 §3.2 / §3.3）----
+
+    /// <summary>替换原文：先收起浮窗，再写入译文并粘回原窗口；切不回去就只复制。</summary>
+    public void ReplaceWith(string text)
+    {
+        var target = new Windows.Win32.Foundation.HWND(_replaceTarget);
+        Hide(restoreForeground: false);
+        if (target == default)
+        {
+            if (ClipboardWriter.WriteText(text))
+            {
+                ClipboardService.Instance?.MarkOwnWrite();
+                ClipboardService.Instance?.Store.RecordOwnText(text);
+            }
+
+            NoticeHost.Show("已复制译文", "没能切回原窗口", NoticeTone.Warning);
+            return;
+        }
+
+        var ok = Paster.Paste(target, () => ClipboardWriter.WriteText(text), ClipboardService.Instance);
+        NoticeHost.Show(
+            ok ? "已替换原文" : "已复制译文",
+            ok ? string.Empty : "没能切回原窗口",
+            ok ? NoticeTone.Normal : NoticeTone.Warning);
+    }
+
+    public void SpeakSource()
+        => Speech.Speak(_source.Text, _coordinator.Detected?.Code() ?? SettingsService.Current.TranslateSource);
+
+    private static string OneLine(string text)
+    {
+        var line = text.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        return line.Length <= 120 ? line : line[..120] + "…";
+    }
+
     private void UpdateHeader()
     {
         var settings = SettingsService.Current;
@@ -523,12 +899,10 @@ internal sealed unsafe partial class TranslateWindow : Window
 
     private void RebuildFooter()
     {
-        var target = _coordinator.Target.Title();
-        var detected = _coordinator.Detected is { } lang ? "检测：" + lang.Title() + " · " : string.Empty;
         var abandoned = _coordinator.AbandonedTarget is { } old
             ? $"（原文已是{old.Title()}，改按自动）"
             : string.Empty;
-        _footer.Text = detected + "目标：" + target + abandoned + " · Enter 翻译 · Esc 关闭 · Ctrl+P 固定";
+        _footer.Text = FooterText() + abandoned;
     }
 
     private void OnCoordinatorChanged()
@@ -1086,6 +1460,16 @@ internal sealed unsafe partial class TranslateWindow : Window
             if (hasText)
             {
                 _actions.Children.Add(_copy);
+                var speak = SmallButton("朗读");
+                speak.Click += (_, _) => Speech.Speak(_body.Text, _owner._coordinator.Target.Code());
+                _actions.Children.Add(speak);
+                // 替换原文（第三版 §3.2）：单词模式的结果是释义、不给替换。
+                if (!_owner._coordinator.WordMode && card.State == CardState.Done)
+                {
+                    var replace = SmallButton("替换原文");
+                    replace.Click += (_, _) => _owner.ReplaceWith(_body.Text);
+                    _actions.Children.Add(replace);
+                }
             }
 
             UpdateFade();

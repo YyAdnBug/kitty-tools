@@ -52,6 +52,9 @@ internal sealed class TranslateCoordinator
 
     public string? TranslatedSource { get; private set; }
 
+    /// <summary>这次是查词（单词模式）：结果不自动复制、不给「替换原文」（第三版 §3.4）。</summary>
+    public bool WordMode { get; private set; }
+
     public bool IsRunning => _cards.Any(card => card.State is CardState.Waiting or CardState.Running);
 
     /// <summary>原文改过（只多了首尾空白不算）之后才显示「翻译 ↵」。</summary>
@@ -104,6 +107,7 @@ internal sealed class TranslateCoordinator
         AbandonedTarget = plan.FellBack ? chosenTarget : null;
         _request = new TranslateRequest(trimmed, plan.From, plan.To);
         TranslatedSource = trimmed;
+        WordMode = SettingsService.Current.TranslateWordLookup && WordLookup.IsWord(trimmed);
 
         var enabled = store.Enabled.ToList();
         if (enabled.Count == 0)
@@ -213,6 +217,7 @@ internal sealed class TranslateCoordinator
             Changed?.Invoke();
             if (ReferenceEquals(card, _cards.FirstOrDefault()))
             {
+                RecordHistory(latest, card.Service.Id);
                 Finished(latest);
             }
         }
@@ -257,7 +262,7 @@ internal sealed class TranslateCoordinator
     /// <summary>只认第一张卡：设置开了自动复制、且不是复制即译带来又没改过的原文时才复制。</summary>
     private void Finished(string text)
     {
-        if (text.Length == 0 || !SettingsService.Current.TranslateAutoCopy)
+        if (text.Length == 0 || !SettingsService.Current.TranslateAutoCopy || WordMode)
         {
             return;
         }
@@ -275,5 +280,25 @@ internal sealed class TranslateCoordinator
         ClipboardService.Instance?.MarkOwnWrite();
         ClipboardService.Instance?.Store.RecordOwnText(text);
         Notice?.Invoke("已复制译文");
+    }
+
+    /// <summary>只有第一个服务的完成结果写历史（同自动复制），第三版 §3.1。</summary>
+    private void RecordHistory(string result, string serviceId)
+    {
+        if (!SettingsService.Current.TranslateHistoryEnabled ||
+            TranslationHistory.Instance is not { } history ||
+            _request is not { } request ||
+            result.Length == 0)
+        {
+            return;
+        }
+
+        history.Add(
+            SourceText,
+            request.From?.Code(),
+            request.To.Code(),
+            result,
+            serviceId,
+            SettingsService.Current.TranslateHistoryLimit);
     }
 }

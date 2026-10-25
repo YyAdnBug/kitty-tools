@@ -1,4 +1,4 @@
-﻿// 智谱 GLM 翻译（内置免费服务，可填自己的 key），SSE 流式。
+// 智谱 GLM 翻译（内置免费服务，可填自己的 key），SSE 流式。
 // 接口硬约束：max_tokens 合法范围 [1, 1024]；混合推理模型默认开思考，必须显式关闭，
 // 否则 content 可能为空；目标语言必须是具体语言（提示词里不能出现「自动」）。提示词用中文。
 using System.Text.Json.Nodes;
@@ -28,9 +28,12 @@ internal static class ZhipuProvider
         var model = TranslatePresets.ZhipuModel(service.Model);
         var from = request.From is { } source ? source.Title() : string.Empty;
         var target = request.To.Title();
-        var prompt =
-            $"请把下面的{from}文本翻译成{target}。只输出译文，不要解释，不要加引号，保留原文的换行和段落。\n\n" +
-            request.Text;
+        // 查词（第三版 §3.4）：给一个完整示例让模型照着写，不写格式说明——
+        // mac 实测免费的 glm-4-flash 会把格式说明原样抄出来。
+        var prompt = SettingsService.Current.TranslateWordLookup && Core.WordLookup.IsWord(request.Text)
+            ? WordPrompt(request.Text, target)
+            : $"请把下面的{from}文本翻译成{target}。只输出译文，不要解释，不要加引号，保留原文的换行和段落。\n\n" +
+              request.Text;
 
         var body = new JsonObject
         {
@@ -48,4 +51,19 @@ internal static class ZhipuProvider
             yield return piece;
         }
     }
+
+    /// <summary>单词模式：给一个完整例子，让模型照着写（不写格式说明）。</summary>
+    private static string WordPrompt(string word, string target)
+        => $"""
+           请像一本{target}词典那样解释这个词，按下面这个例子的样子写（不要写别的说明）：
+
+           ### example
+           **词性** 名词
+           **释义** 一个用来举例的词
+           **例句** This is an example. 这是一个例子。
+
+           现在解释这个词：
+
+           {word}
+           """;
 }

@@ -19,7 +19,8 @@ public interface ISchemaExecutor
 public static class Schema
 {
     /// <summary>代码里写的最新版本。加表 / 加列就往下加一步。</summary>
-    public const int CurrentVersion = 2;
+    /// <summary>代码认识的最新版本（跟着步骤表走，别再手改）。</summary>
+    public static int CurrentVersion => Steps.Count == 0 ? 0 : Steps[^1].Version;
 
     /// <summary>所有步骤，按版本升序；每步都在自己的事务里跑。</summary>
     public static readonly IReadOnlyList<SchemaStep> Steps = new[]
@@ -59,6 +60,24 @@ public static class Schema
               used_at INTEGER NOT NULL,
               PRIMARY KEY(query, kind, target)
             );
+            """),
+        new SchemaStep(
+            3,
+            "translations：翻译历史与生词本（第三版第 2 批）",
+            """
+            CREATE TABLE IF NOT EXISTS translations(
+              id TEXT PRIMARY KEY,
+              source TEXT NOT NULL,
+              source_lang TEXT,
+              target_lang TEXT NOT NULL,
+              result TEXT NOT NULL,
+              service TEXT NOT NULL,
+              created_at INTEGER NOT NULL,
+              favorite INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS translations_created_at ON translations(created_at DESC);
+            CREATE UNIQUE INDEX IF NOT EXISTS translations_favorite_unique
+              ON translations(source, target_lang) WHERE favorite = 1;
             """),
     };
 

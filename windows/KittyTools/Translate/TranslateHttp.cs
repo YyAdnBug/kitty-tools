@@ -110,6 +110,83 @@ internal static class TranslateHttp
         }
     }
 
+    /// <summary>
+    /// 传统接口用：表单 POST（百度 / 有道的 x-www-form-urlencoded）。
+    /// </summary>
+    public static async Task<JsonDocument> SendFormAsync(
+        Uri url,
+        IReadOnlyDictionary<string, string> headers,
+        IEnumerable<(string Name, string Value)> fields,
+        CancellationToken cancellationToken)
+        => await SendRawAsync(
+            url,
+            headers,
+            TranslateSigning.Form(fields),
+            "application/x-www-form-urlencoded",
+            cancellationToken);
+
+    /// <summary>按原始字节发（签名要签确切的 body：火山引擎 / 腾讯云）。</summary>
+    public static async Task<JsonDocument> SendRawAsync(
+        Uri url,
+        IReadOnlyDictionary<string, string> headers,
+        byte[] body,
+        string contentType,
+        CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new ByteArrayContent(body),
+        };
+        request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+            contentType.Split(';')[0]);
+        foreach (var (name, value) in headers)
+        {
+            if (!request.Headers.TryAddWithoutValidation(name, value))
+            {
+                request.Content.Headers.TryAddWithoutValidation(name, value);
+            }
+        }
+
+        try
+        {
+            using var response = await ClientFor(url).SendAsync(request, cancellationToken);
+            var text = await response.Content.ReadAsStringAsync(cancellationToken);
+            JsonDocument document;
+            try
+            {
+                document = JsonDocument.Parse(text);
+            }
+            catch (JsonException)
+            {
+                if (!response.IsSuccessStatusCode)
+                {
+                    throw Describe(response.StatusCode, null);
+                }
+
+                throw new TranslateError("服务返回的不是 JSON", TranslateErrorKind.Service, (int)response.StatusCode);
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw Describe(response.StatusCode, ServerMessage(document.RootElement));
+            }
+
+            return document;
+        }
+        catch (TranslateError)
+        {
+            throw;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TranslateError("请求超时，请检查网络或服务地址", TranslateErrorKind.Network);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw NetworkError(ex);
+        }
+    }
+
     /// <summary>SSE：逐行给出 data: 之后的内容（遇到 [DONE] 结束）。</summary>
     public static async IAsyncEnumerable<string> StreamAsync(
         Uri url,

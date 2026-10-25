@@ -185,9 +185,9 @@ public sealed class SchemaMigrationTests
     [TestMethod]
     public void OlderDatabaseOnlyRunsTheNewerSteps()
     {
-        // 第一版停在 1 的库：只补跑 2。
+        // 第一版停在 1 的库：补跑 2 和 3（第三版第 2 批的翻译历史）。
         CollectionAssert.AreEqual(
-            new[] { 2 },
+            new[] { 2, 3 }.Where(version => version <= Schema.CurrentVersion).ToArray(),
             Schema.Pending(1).Select(step => step.Version).ToArray());
         Assert.AreEqual(0, Schema.Pending(0).Count(step => step.Version < 1));
     }
@@ -207,7 +207,9 @@ public sealed class SchemaMigrationTests
         Assert.AreEqual(1, executor.Version);
         Assert.IsTrue(executor.Log.Contains("ROLLBACK;"));
         // 1 的那一步已经提交过了，重跑时不会再跑。
-        CollectionAssert.AreEqual(new[] { 2 }, Schema.Pending(executor.Version).Select(step => step.Version).ToArray());
+        CollectionAssert.AreEqual(
+            new[] { 2, 3 }.Where(version => version <= Schema.CurrentVersion).ToArray(),
+            Schema.Pending(executor.Version).Select(step => step.Version).ToArray());
     }
 
     [TestMethod]

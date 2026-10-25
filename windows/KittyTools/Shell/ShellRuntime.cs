@@ -54,6 +54,8 @@ internal sealed class ShellRuntime
 
             Clipboard = ClipboardService.Start(database, new ImageStore(Paths.ImagesDirectory));
             Clipboard.Suspended = !Features.IsOn(Feature.Clipboard);
+            // 翻译历史和生词本用同一个库（第三版 §3.1）。
+            TranslationHistory.Start(database);
         }
         catch (Exception ex)
         {
