@@ -143,6 +143,55 @@ internal static class Motion
         });
     }
 
+    /// <summary>
+    /// 单独一次淡入 / 淡出（轻提示的内容晚 60 ms 淡入用）。<paramref name="delayMs"/> 是延迟。
+    /// 减弱动画时保留这段淡变（PLAN-v2 §3.3：关了动画效果只留淡入淡出）。
+    /// </summary>
+    public static void Fade(FrameworkElement? element, float to, double seconds, int delayMs = 0)
+    {
+        if (element is null)
+        {
+            return;
+        }
+
+        WhenReady(element, visual =>
+        {
+            var fade = visual.Compositor.CreateScalarKeyFrameAnimation();
+            fade.InsertKeyFrame(1f, to);
+            fade.Duration = TimeSpan.FromSeconds(seconds);
+            if (delayMs > 0)
+            {
+                fade.DelayTime = TimeSpan.FromMilliseconds(delayMs);
+            }
+
+            visual.StartAnimation("Opacity", fade);
+        });
+    }
+
+    /// <summary>出错时左右抖一下（±6 DIP，四下，0.36 s）；减弱动画时不做。</summary>
+    public static void Shake(FrameworkElement element)
+    {
+        if (Reduced)
+        {
+            return;
+        }
+
+        WhenReady(element, visual =>
+        {
+            var shake = visual.Compositor.CreateVector3KeyFrameAnimation();
+            shake.Duration = TimeSpan.FromSeconds(0.36);
+            var offsets = new[] { 0f, -6f, 6f, -4f, 4f, 0f };
+            for (var i = 0; i < offsets.Length; i++)
+            {
+                shake.InsertKeyFrame(
+                    i / (float)(offsets.Length - 1),
+                    new Vector3(offsets[i], element.Translation.Y, 0));
+            }
+
+            visual.StartAnimation("Translation", shake);
+        });
+    }
+
     private static void StartFade(Visual visual, float target, double seconds)
     {
         var fade = visual.Compositor.CreateScalarKeyFrameAnimation();

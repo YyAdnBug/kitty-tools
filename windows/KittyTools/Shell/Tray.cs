@@ -1,6 +1,6 @@
-// 托盘图标和右键菜单（Shell_NotifyIcon，NOTIFYICON_VERSION_4）。
+// 托盘图标（Shell_NotifyIcon，NOTIFYICON_VERSION_4）。
 // Windows 11 默认把新图标收进「^」溢出区；资源管理器重启时靠 TaskbarCreated 重新加。
-// 菜单是 Win32 浅色菜单（没有公开的深色接口），没做的模块灰着，但右边仍写快捷键。
+// 菜单换成 WinUI 的 MenuFlyout（Shell/TrayMenu.cs，PLAN-v2 §3.2 / D2），跟随深浅色。
 // v4 下右键会先后收到 WM_RBUTTONUP 和 WM_CONTEXTMENU，只认后者；左键认 NIN_SELECT，键盘认 NIN_KEYSELECT。
 using System.Runtime.InteropServices;
 using KittyTools.Infrastructure;
@@ -15,8 +15,6 @@ internal static unsafe partial class Tray
 {
     private const uint TrayIconId = 1;
     public const uint CallbackMessage = 0x8000 + 1; // WM_APP + 1
-    private const uint TpmRightButton = 0x0002;
-    private const uint TpmReturnCmd = 0x0100;
 
     // NOTIFYICON_VERSION_4 的回调消息（WM_APP + 1 之外的那几种通知码）。
     private const uint NinSelect = 0x0400;     // 左键单击
@@ -145,127 +143,7 @@ internal static unsafe partial class Tray
         }
     }
 
-    public static void ShowMenu()
-    {
-        var menu = PInvoke.CreatePopupMenu();
-        if (menu == default)
-        {
-            return;
-        }
-
-        try
-        {
-            var runtime = ShellRuntime.Instance;
-            var settings = SettingsService.Current;
-            var clipboardReady = runtime?.Clipboard is not null;
-
-            Append(menu, 1, MenuText("剪贴板历史", HotKeyActions.Clipboard), enabled: clipboardReady);
-            Append(menu, 2, MenuText("启动器", HotKeyActions.Launcher), enabled: true);
-            Append(menu, 3, MenuText("输入翻译", HotKeyActions.InputTranslate), enabled: true);
-            Append(menu, 4, MenuText("截图", HotKeyActions.Screenshot), enabled: true);
-            Append(menu, 5, MenuText("截图翻译", HotKeyActions.ScreenshotTranslate), enabled: true);
-            Append(menu, 6, MenuText("识字", HotKeyActions.Ocr), enabled: true);
-            PInvoke.AppendMenu(menu, MENU_ITEM_FLAGS.MF_SEPARATOR, 0, default(PCWSTR));
-            Append(menu, 7, "复制即译", enabled: runtime is not null, @checked: settings.CopyTranslate);
-            Append(menu, 8, "暂停记录剪贴板", enabled: clipboardReady, @checked: runtime?.Clipboard?.Paused == true);
-            PInvoke.AppendMenu(menu, MENU_ITEM_FLAGS.MF_SEPARATOR, 0, default(PCWSTR));
-            Append(menu, 9, "设置…", enabled: true);
-            Append(
-                menu,
-                10,
-                UpdateService.AvailableVersion is { } available
-                    ? $"更新到 {available}"
-                    : "检查更新",
-                enabled: true);
-            Append(menu, 11, "退出 Kitty Tools", enabled: true);
-
-            PInvoke.SetForegroundWindow(HiddenWindow.Hwnd);
-            PInvoke.GetCursorPos(out var point);
-            Log.Info("tray.menu-open");
-            var raw = PInvoke.TrackPopupMenuEx(
-                menu,
-                TpmRightButton | TpmReturnCmd,
-                point.X,
-                point.Y,
-                HiddenWindow.Hwnd,
-                null);
-            PInvoke.PostMessage(HiddenWindow.Hwnd, PInvoke.WM_NULL, default, default);
-            Log.Info($"tray.menu-close command={(uint)raw.Value}");
-
-            switch ((uint)raw.Value)
-            {
-                case 1:
-                    runtime?.OpenClipboard();
-                    break;
-                case 2:
-                    OverlayHost.Toggle(OverlayKind.Launcher);
-                    break;
-                case 3:
-                    TranslateHost.ToggleInput();
-                    break;
-                case 4:
-                    ScreenshotSession.Start(ScreenshotMode.Capture);
-                    break;
-                case 5:
-                    ScreenshotSession.Start(ScreenshotMode.Translate);
-                    break;
-                case 6:
-                    ScreenshotSession.Start(ScreenshotMode.Ocr);
-                    break;
-                case 7:
-                    runtime?.ToggleCopyTranslate();
-                    break;
-                case 8:
-                    runtime?.TogglePauseClipboard();
-                    break;
-                case 9:
-                    runtime?.ShowSettings(welcome: false);
-                    break;
-                case 10:
-                    if (UpdateService.AvailableVersion is not null)
-                    {
-                        _ = AutoUpdater.StartAsync();
-                    }
-                    else
-                    {
-                        _ = UpdateService.CheckAsync(userInitiated: true);
-                    }
-
-                    break;
-                case 11:
-                    runtime?.Exit();
-                    break;
-            }
-        }
-        finally
-        {
-            PInvoke.DestroyMenu(menu);
-        }
-    }
-
-    private static string MenuText(string text, string action)
-    {
-        var shortcut = ShellRuntime.Instance?.HotKeys.ShortcutFor(action);
-        return string.IsNullOrEmpty(shortcut) ? text : $"{text}\t{shortcut}";
-    }
-
-    private static void Append(HMENU menu, uint id, string text, bool enabled = true, bool @checked = false)
-    {
-        var flags = MENU_ITEM_FLAGS.MF_STRING;
-        if (!enabled)
-        {
-            flags |= MENU_ITEM_FLAGS.MF_GRAYED;
-        }
-        if (@checked)
-        {
-            flags |= MENU_ITEM_FLAGS.MF_CHECKED;
-        }
-
-        fixed (char* p = text)
-        {
-            PInvoke.AppendMenu(menu, flags, id, new PCWSTR(p));
-        }
-    }
+    public static void ShowMenu() => TrayMenu.Show();
 
     private static void SetText(ref Windows.Win32.__char_128 buffer, string text)
     {

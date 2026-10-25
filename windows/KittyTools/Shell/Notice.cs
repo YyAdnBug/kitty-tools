@@ -1,7 +1,9 @@
-// 轻提示：鼠标所在屏、工作区顶部居中、往下 12 px；
-// 深色圆角条，图标 + 标题 + 一行详情，停 2 s 自己收起。新的一条原地替换旧的。
-// 不抢焦点、不接鼠标：WS_EX_NOACTIVATE | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_LAYERED + SW_SHOWNOACTIVATE。
-// 必须有 WS_EX_LAYERED 才能点穿：只加 WS_EX_TRANSPARENT 的话鼠标照样被挡住（第二版 §2 第 10 条）。
+// 轻提示（mac 的「刘海岛」）：鼠标所在屏、工作区顶部居中、往下 12 px。
+// 第二版 §3.3：真正的胶囊——窗口透明（DWM 把边框扩到客户区，只留下中间那颗 36 DIP 高的深色药丸），
+// 宽度从 36 用 settle 弹簧长到实际宽度，内容晚 60 ms 淡入；原地换内容时只动宽度；
+// 出错时左右抖一下；系统关了动画效果时只淡入淡出。
+// 点得穿：WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW，SW_SHOWNOACTIVATE。
+// （只加 WS_EX_TRANSPARENT 的话鼠标照样被挡住——第二版 §2 第 10 条。）
 using System.Runtime.InteropServices;
 using KittyTools.Core;
 using KittyTools.Infrastructure;
@@ -32,41 +34,68 @@ internal sealed unsafe partial class NoticeHost
     private const int WsExLayered = 0x00080000;
     private const int WsExNoActivate = 0x08000000;
     private const int SwShowNoActivate = 4;
-
-    // 逐像素 alpha = 0 的「分层窗口」：整窗透明，鼠标事件直接穿到下面的窗口。
     private const int LwaAlpha = 0x00000002;
 
+    /// <summary>胶囊高度（DIP）。圆角等于高度一半。</summary>
+    private const double PillHeight = 36;
+
+    /// <summary>窗口比胶囊四周多出来的透明边：抖动和阴影用。</summary>
+    private const double WindowPadding = 10;
+
+    /// <summary>内容最宽（DIP），再长就省略。</summary>
+    private const double MaxPillWidth = 460;
+
     private static NoticeHost? _current;
+
     private readonly Window _window;
-    private readonly Border _border;
+    private readonly Grid _root;
+    private readonly Border _pill;
     private readonly FontIcon _icon;
     private readonly TextBlock _title;
     private readonly TextBlock _detail;
     private readonly HWND _hwnd;
-    private readonly DispatcherQueueTimer _timer;
+    private readonly DispatcherQueueTimer _hideTimer;
+    private readonly DispatcherQueueTimer _widthTimer;
+
+    private NoticeTone _tone = NoticeTone.Normal;
     private bool _shown;
+    private double _pillWidth = 36;
+    private double _widthFrom;
+    private double _widthTo;
+    private long _widthStarted;
+    private bool _growing;
 
     private NoticeHost()
     {
-        _border = new Border
+        _pill = new Border
         {
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(14, 10, 14, 10),
-            Background = new SolidColorBrush(Windows.UI.Color.FromArgb(235, 32, 32, 32)),
+            Height = PillHeight,
+            Width = 36,
+            CornerRadius = new CornerRadius(PillHeight / 2),
+            Padding = new Thickness(14, 0, 16, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Background = new SolidColorBrush(Theme.Capsule.Normal),
         };
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
-        _icon = new FontIcon { FontSize = 16, Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 255, 255, 255)) };
-        var texts = new StackPanel { Spacing = 1 };
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 9 };
+        _icon = new FontIcon
+        {
+            FontSize = 15,
+            Foreground = new SolidColorBrush(Theme.Shot.HudText),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        var texts = new StackPanel { Spacing = 0, VerticalAlignment = VerticalAlignment.Center };
         _title = new TextBlock
         {
             FontSize = 13,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 255, 255, 255)),
+            Foreground = new SolidColorBrush(Theme.Shot.HudText),
+            TextTrimming = TextTrimming.CharacterEllipsis,
         };
         _detail = new TextBlock
         {
             FontSize = 12,
-            Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(210, 255, 255, 255)),
+            Foreground = new SolidColorBrush(Theme.Shot.HudTextMuted),
             TextTrimming = TextTrimming.CharacterEllipsis,
             MaxWidth = 420,
         };
@@ -74,12 +103,18 @@ internal sealed unsafe partial class NoticeHost
         texts.Children.Add(_detail);
         row.Children.Add(_icon);
         row.Children.Add(texts);
-        _border.Child = row;
+        _pill.Child = row;
+
+        _root = new Grid
+        {
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+        };
+        _root.Children.Add(_pill);
 
         _window = new Window
         {
             Title = Paths.ProductName + " 提示",
-            Content = _border,
+            Content = _root,
         };
         var presenter = OverlappedPresenter.Create();
         presenter.IsAlwaysOnTop = true;
@@ -90,19 +125,40 @@ internal sealed unsafe partial class NoticeHost
         _window.AppWindow.SetPresenter(presenter);
         _window.AppWindow.IsShownInSwitchers = false;
         _hwnd = (HWND)WinRT.Interop.WindowNative.GetWindowHandle(_window);
+
         // 建好就把「不抢焦点、不接鼠标」的样式挂上：第一次显示也不能激活，
         // 否则会在浮层里复制 / 删除之后把浮层抢掉（浮层失去激活就会收起）。
-        // LAYERED + 不透明的分层属性：鼠标能穿过去，窗口内容照常由 WinUI 画。
         var style = GetWindowLong((IntPtr)_hwnd.Value, GwlExStyle);
         SetWindowLong(
             (IntPtr)_hwnd.Value,
             GwlExStyle,
             style | WsExNoActivate | WsExToolWindow | WsExTransparent | WsExLayered);
         SetLayeredWindowAttributes((IntPtr)_hwnd.Value, 0, 255, LwaAlpha);
-        _timer = _window.DispatcherQueue.CreateTimer();
-        _timer.Interval = TimeSpan.FromSeconds(2);
-        _timer.IsRepeating = false;
-        _timer.Tick += (_, _) => Hide();
+
+        // 把 DWM 的边框扩到整个客户区：客户区里 XAML 没画东西的地方就是真透明，
+        // 只剩中间那颗胶囊（第二版 §3.3）。
+        var margins = new Margins { Left = -1, Right = -1, Top = -1, Bottom = -1 };
+        var noBorder = unchecked((int)0xFFFFFFFE); // DWMWA_COLOR_NONE
+        try
+        {
+            DwmExtendFrameIntoClientArea((IntPtr)_hwnd.Value, ref margins);
+            // 扩了边框之后系统会在窗口四周画一圈 1 px 的边框，胶囊外面会多出一圈白线。
+            DwmSetWindowAttribute((IntPtr)_hwnd.Value, 34 /* DWMWA_BORDER_COLOR */, ref noBorder, sizeof(int));
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"notice.transparent-failed {ex.GetType().Name}");
+        }
+
+        _hideTimer = _window.DispatcherQueue.CreateTimer();
+        _hideTimer.Interval = TimeSpan.FromSeconds(2);
+        _hideTimer.IsRepeating = false;
+        _hideTimer.Tick += (_, _) => Hide();
+
+        _widthTimer = _window.DispatcherQueue.CreateTimer();
+        _widthTimer.Interval = TimeSpan.FromMilliseconds(16);
+        _widthTimer.IsRepeating = true;
+        _widthTimer.Tick += (_, _) => StepWidth();
     }
 
     public static void Show(string title, string detail, NoticeTone tone)
@@ -113,41 +169,119 @@ internal sealed unsafe partial class NoticeHost
 
     private void ShowCore(string title, string detail, NoticeTone tone)
     {
+        var toneChanged = tone != _tone;
+        _tone = tone;
         _title.Text = title;
         _detail.Text = detail;
         _detail.Visibility = string.IsNullOrEmpty(detail) ? Visibility.Collapsed : Visibility.Visible;
-        (_icon.Glyph, _border.Background) = tone switch
+        (_icon.Glyph, _pill.Background) = tone switch
         {
-            NoticeTone.Warning => ("\uE7BA", new SolidColorBrush(Windows.UI.Color.FromArgb(240, 194, 65, 12))),
-            NoticeTone.Error => ("\uEA39", new SolidColorBrush(Windows.UI.Color.FromArgb(240, 185, 28, 28))),
-            _ => ("\uE946", new SolidColorBrush(Windows.UI.Color.FromArgb(235, 32, 32, 32))),
+            NoticeTone.Warning => ("\uE7BA", new SolidColorBrush(Theme.Capsule.Warning)),
+            NoticeTone.Error => ("\uEA39", new SolidColorBrush(Theme.Capsule.Error)),
+            _ => ("\uE946", new SolidColorBrush(Theme.Capsule.Normal)),
         };
 
-        PositionAtPointer();
-        if (!_shown)
-        {
-            _shown = true;
-        }
-
+        var target = MeasurePillWidth();
+        PositionAtPointer(target);
         PInvoke.ShowWindow(_hwnd, (SHOW_WINDOW_CMD)SwShowNoActivate);
         PInvoke.DwmFlush();
-        _timer.Stop();
-        _timer.Start();
+
+        // 第一次长出来：宽度从 36 弹簧到实际宽度，内容晚 60 ms 淡入。
+        // 原地换内容：只动宽度，内容直接换。
+        if (!_shown || toneChanged)
+        {
+            _pillWidth = 36;
+            _pill.Width = 36;
+            Motion.Fade(_pill.Child as FrameworkElement, 0, 0);
+            Motion.Fade(_pill.Child as FrameworkElement, 1, MotionCurves.FadeInSeconds, delayMs: 60);
+        }
+
+        StartGrow(target);
+        if (tone == NoticeTone.Error)
+        {
+            Motion.Shake(_pill);
+        }
+
+        _shown = true;
+        _hideTimer.Stop();
+        _hideTimer.Start();
+    }
+
+    private void StartGrow(double target)
+    {
+        _widthFrom = _pillWidth;
+        _widthTo = target;
+        if (Math.Abs(_widthTo - _widthFrom) < 0.5 || Motion.Reduced)
+        {
+            _growing = false;
+            _pillWidth = _widthTo;
+            _pill.Width = _widthTo;
+            return;
+        }
+
+        _widthStarted = Environment.TickCount64;
+        _growing = true;
+        _widthTimer.Start();
+    }
+
+    private void StepWidth()
+    {
+        var spec = MotionCurves.Of(MotionCurve.Island);
+        var duration = spec?.Duration ?? 0.42;
+        var bounce = spec?.Bounce ?? 0.22;
+        var t = (Environment.TickCount64 - _widthStarted) / 1000.0 / duration;
+        if (t >= 1)
+        {
+            _pillWidth = _widthTo;
+            _pill.Width = _widthTo;
+            _growing = false;
+            _widthTimer.Stop();
+            return;
+        }
+
+        _pillWidth = _widthFrom + (_widthTo - _widthFrom) * SpringEase.Progress(t, bounce);
+        _pill.Width = _pillWidth;
+    }
+
+    /// <summary>按内容量一遍胶囊要多宽（标题 / 详情不折行，超过上限就省略）。</summary>
+    private double MeasurePillWidth()
+    {
+        _pill.Width = double.NaN;
+        _pill.Measure(new Windows.Foundation.Size(MaxPillWidth, PillHeight));
+        var width = Math.Clamp(_pill.DesiredSize.Width, 36, MaxPillWidth);
+        return width;
     }
 
     private void Hide()
     {
-        _timer.Stop();
+        if (_growing)
+        {
+            _widthTimer.Stop();
+            _growing = false;
+        }
+
+        _hideTimer.Stop();
         _window.AppWindow.Hide();
     }
 
-    private void PositionAtPointer()
+    /// <summary>窗口按胶囊最终宽度摆好（透明边留给抖动），位置在鼠标所在屏顶部居中。</summary>
+    private void PositionAtPointer(double pillWidth)
     {
-        // 按鼠标所在显示器的缩放比例算，不按窗口当前所在那块屏（第二版 §2 第 5 条）。
         var display = Displays.AtCursor();
         var rect = MonitorLayout.Notice(
-            display.Work, display.Scale, 460, 64, MonitorLayout.NoticeTopOffsetDip);
+            display.Work, display.Scale,
+            pillWidth + WindowPadding * 2, PillHeight + WindowPadding * 2,
+            MonitorLayout.NoticeTopOffsetDip);
         _window.AppWindow.MoveAndResize(new RectInt32(rect.X, rect.Y, rect.Width, rect.Height));
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Margins
+    {
+        public int Left;
+        public int Right;
+        public int Top;
+        public int Bottom;
     }
 
     [LibraryImport("user32.dll", EntryPoint = "GetWindowLongW", SetLastError = true)]
@@ -159,4 +293,10 @@ internal sealed unsafe partial class NoticeHost
     [LibraryImport("user32.dll", EntryPoint = "SetLayeredWindowAttributes", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool SetLayeredWindowAttributes(IntPtr hWnd, uint colorKey, byte alpha, uint flags);
+
+    [LibraryImport("dwmapi.dll", EntryPoint = "DwmExtendFrameIntoClientArea")]
+    private static partial int DwmExtendFrameIntoClientArea(IntPtr hWnd, ref Margins margins);
+
+    [LibraryImport("dwmapi.dll", EntryPoint = "DwmSetWindowAttribute")]
+    private static partial int DwmSetWindowAttribute(IntPtr hWnd, int attribute, ref int value, int size);
 }

@@ -2,6 +2,11 @@
 // （正在运行的 exe / DLL 先改名成 *.old）→ 带 --updated 重启自己 → 新进程删掉 *.old。
 // 任何一步失败都回到原样：校验失败不覆盖、覆盖失败回滚（逻辑在 Core 的 UpdateInstaller，配单测）。
 // 安装目录没有写权限（装在 Program Files）就不自动更新，打开发布页并说明原因。
+//
+// REVIEW R1：下载和 .sha256 都走 UpdateHttp（逐跳白名单，只有 Debug / --update-test 才认测试地址）。
+// REVIEW R2：拉起新进程之后走 ShellRuntime.Exit()，提交删除、注销热键、删托盘图标。
+// REVIEW R3：流式写到 updates\<文件名>.partial，写完才改名；失败 / 取消 / 校验不过都删掉半成品；
+//            下载中托盘那一项显示「正在下载 37%」，不另外弹窗。
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
@@ -14,8 +19,15 @@ internal static class AutoUpdater
 {
     private static bool _busy;
 
+    /// <summary>下载进度（0–100，-1 表示还不知道）。只用来改托盘的菜单文字。</summary>
+    private static int _progressPercent = -1;
+
     /// <summary>正在下载 / 安装：托盘和设置里的按钮据此变灰。</summary>
     public static bool IsBusy => _busy;
+
+    /// <summary>下载中托盘菜单那一项的文字（R3）；不在下载时返回 null。</summary>
+    public static string? ProgressMenuText
+        => _busy ? _progressPercent < 0 ? "正在下载…" : $"正在下载 {_progressPercent}%" : null;
 
     public static async Task StartAsync()
     {
@@ -45,18 +57,20 @@ internal static class AutoUpdater
         }
 
         _busy = true;
+        _progressPercent = -1;
         var staging = Path.Combine(Path.GetTempPath(), "kitty-update-" + Guid.NewGuid().ToString("N"));
         var downloadDir = Paths.UpdatesDirectory;
         string? zip = null;
         try
         {
             Directory.CreateDirectory(downloadDir);
+            UpdateHttp.CleanupPartialFiles(downloadDir);
             Directory.CreateDirectory(staging);
             var assetName = UpdateService.AvailableAssetName ?? $"KittyTools-{version}-{ArchitectureLabel()}.zip";
             zip = Path.Combine(downloadDir, assetName);
 
             NoticeHost.Show("正在下载更新", $"Kitty Tools {version}", NoticeTone.Normal);
-            await DownloadAsync(zipUrl, zip);
+            await UpdateHttp.DownloadAsync(zipUrl, zip, OnProgress);
             Log.Info($"update.downloaded version={version} bytes={new FileInfo(zip).Length}");
 
             // 校验：release 里的 .sha256（找不到就放弃，宁可不更新）。
@@ -66,7 +80,7 @@ internal static class AutoUpdater
                 return;
             }
 
-            var hashText = await ReadTextAsync(hashUrl);
+            var hashText = await UpdateHttp.GetTextAsync(hashUrl);
             var expected = UpdateHash.ExpectedFor(hashText, Path.GetFileName(zip));
             if (expected is null || !UpdateHash.FileMatches(zip, expected))
             {
@@ -106,16 +120,20 @@ internal static class AutoUpdater
             // 先把互斥量和转发服务让出来，不然新进程会以为自己才是第二个实例、转发完就退出。
             SingleInstance.Release();
             Process.Start(new ProcessStartInfo(exe, "--updated") { UseShellExecute = true });
-            Application_Exit();
+            // R2：走正常的退出流程（提交剪贴板删除、注销热键、删托盘图标），不要直接 Exit：
+            // 直接退会留下托盘图标，鼠标移过去才消失。
+            ExitApplication();
         }
         catch (Exception ex)
         {
             Log.Error("update.failed", ex);
+            // 取消 / 断网 / 写盘失败：半成品已经由 UpdateHttp 删掉，这里只提示。
             NoticeHost.Show("更新失败", "旧版本还能正常用，详情看日志", NoticeTone.Error);
         }
         finally
         {
             _busy = false;
+            _progressPercent = -1;
             TryDeleteDirectory(staging);
             if (zip is not null)
             {
@@ -151,8 +169,18 @@ internal static class AutoUpdater
         NoticeHost.Show("没能更新到 " + version, message, NoticeTone.Warning);
     }
 
-    private static void Application_Exit()
-        => Microsoft.UI.Xaml.Application.Current.Exit();
+    /// <summary>R2：更新完走正常的退出流程；没有壳（理论上不会）时退回 Application.Exit。</summary>
+    private static void ExitApplication()
+    {
+        if (ShellRuntime.Instance is { } runtime)
+        {
+            runtime.Exit();
+        }
+        else
+        {
+            Microsoft.UI.Xaml.Application.Current.Exit();
+        }
+    }
 
     private static string? InstallDirectory()
     {
@@ -188,40 +216,21 @@ internal static class AutoUpdater
         }
     }
 
-    private static async Task DownloadAsync(string url, string path)
+    /// <summary>R3：下载进度只用来改托盘菜单那一项的文字（调用可能来自线程池，只写一个整数）。</summary>
+    private static void OnProgress(long received, long? total)
     {
-        using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("KittyTools-Windows");
-        var bytes = await ReadBytesAsync(client, url);
-        await File.WriteAllBytesAsync(path, bytes);
-    }
-
-    private static async Task<string> ReadTextAsync(string url)
-    {
-        using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(1) };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("KittyTools-Windows");
-        return System.Text.Encoding.UTF8.GetString(await ReadBytesAsync(client, url));
-    }
-
-    /// <summary>
-    /// 支持 http(s)，也支持本地路径 / file://（手测自动更新时用本地假发布列表 + 两个 zip，不联网）。
-    /// </summary>
-    private static async Task<byte[]> ReadBytesAsync(HttpClient client, string url)
-    {
-        if (url.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
+        if (total is > 0)
         {
-            return await File.ReadAllBytesAsync(new Uri(url).LocalPath);
+            var percent = (int)Math.Clamp(received * 100 / total.Value, 0, 100);
+            if (percent != _progressPercent)
+            {
+                _progressPercent = percent;
+            }
         }
-
-        if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
-            !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        else if (_progressPercent < 0 && received > 0)
         {
-            return await File.ReadAllBytesAsync(url);
+            _progressPercent = 0;
         }
-
-        using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsByteArrayAsync();
     }
 
     private static void TryDeleteDirectory(string path)

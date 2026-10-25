@@ -1,7 +1,12 @@
 // 品牌色与深浅色。默认品牌粉 #FF4D7E；浅色背景上的强调文字用深一档 #D12A5F。
 // 设置里可以换成「跟随系统」；跟随时监听 UISettings.ColorValuesChanged，系统一改强调色就重算。
 // Light1–3 / Dark1–3 在 HSL 里调亮度（纯函数在 Core 的 AccentRamp），不是每个通道加减同一个常数。
+//
+// 第二版 §3.1：除截图 HUD（Theme.Shot）和功能家族色（Theme.Family）之外，界面里的颜色一律走
+// 主题资源（Theme.Brush 按 key 取 CardBackgroundFillColorDefaultBrush 这类内置主题资源，深色 /
+// 高对比度自动跟着变）。写死的颜色只剩这个文件里的两组常量。
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media;
 using Windows.UI;
 using Windows.UI.ViewManagement;
 using KittyTools.Core;
@@ -13,6 +18,123 @@ internal static class Theme
 {
     public static readonly Color BrandPink = Color.FromArgb(255, 0xFF, 0x4D, 0x7E);
     public static readonly Color BrandPinkDeep = Color.FromArgb(255, 0xD1, 0x2A, 0x5F);
+
+    /// <summary>
+    /// 截图家族的深色 HUD 皮肤（PLAN-v2 §3.1：这一套不跟深浅色变）。
+    /// 只给截图遮罩的工具栏、尺寸胶囊、放大镜、标注颜色、轻提示的深色胶囊用。
+    /// </summary>
+    public static class Shot
+    {
+        public static readonly Color Accent = BrandPink;
+        public static readonly Color Dim = Color.FromArgb(115, 0, 0, 0);
+        public static readonly Color HandleFill = Color.FromArgb(255, 255, 255, 255);
+        public static readonly Color HudBackground = Color.FromArgb(255, 32, 32, 32);
+        public static readonly Color HudBackgroundStrong = Color.FromArgb(235, 24, 24, 24);
+        public static readonly Color HudText = Color.FromArgb(255, 255, 255, 255);
+        public static readonly Color HudTextMuted = Color.FromArgb(230, 255, 255, 255);
+        public static readonly Color HudTextFaint = Color.FromArgb(90, 255, 255, 255);
+        public static readonly Color LabelBackground = Color.FromArgb(225, 20, 20, 20);
+        public static readonly Color Outline = Color.FromArgb(255, 255, 255, 255);
+        public static readonly Color Danger = Color.FromArgb(255, 235, 60, 60);
+        public static readonly Color ToolbarSeparator = Color.FromArgb(60, 255, 255, 255);
+
+        /// <summary>标注可选的颜色（9 种，最后一档白和黑）。</summary>
+        public static readonly Color[] AnnotationPalette =
+        {
+            Accent,
+            Color.FromArgb(255, 235, 60, 60),
+            Color.FromArgb(255, 240, 150, 30),
+            Color.FromArgb(255, 245, 205, 40),
+            Color.FromArgb(255, 60, 180, 90),
+            Color.FromArgb(255, 60, 130, 240),
+            Color.FromArgb(255, 150, 80, 220),
+            Color.FromArgb(255, 255, 255, 255),
+            Color.FromArgb(255, 0, 0, 0),
+        };
+    }
+
+    /// <summary>
+    /// 轻提示胶囊的颜色：深色胶囊和截图的 HUD 一样不跟深浅色变，提示的语气靠底色区分。
+    /// </summary>
+    public static class Capsule
+    {
+        public static readonly Color Normal = Color.FromArgb(235, 32, 32, 32);
+        public static readonly Color Warning = Color.FromArgb(240, 194, 65, 12);
+        public static readonly Color Error = Color.FromArgb(240, 185, 28, 28);
+        public static readonly Color Text = Color.FromArgb(255, 255, 255, 255);
+        public static readonly Color TextMuted = Color.FromArgb(210, 255, 255, 255);
+    }
+
+    /// <summary>
+    /// 功能家族色（PLAN-v2 §3.1）：只用在图标块上——剪贴板蓝、启动器紫、截图粉、翻译绿。
+    /// 启动器里每种行再细分一档浅色块（不透明度的衬底），也在这一处。
+     /// </summary>
+    public static class Family
+    {
+        public static readonly Color Clipboard = Color.FromArgb(255, 59, 130, 246);
+        public static readonly Color Launcher = Color.FromArgb(255, 124, 92, 255);
+        public static readonly Color Capture = BrandPink;
+        public static readonly Color Translate = Color.FromArgb(255, 60, 170, 110);
+
+        /// <summary>图标块的衬底色：家族色压到 12% 左右。</summary>
+        public static Brush Tint(Color color, byte alpha = 28)
+            => new SolidColorBrush(Color.FromArgb(alpha, color.R, color.G, color.B));
+
+        /// <summary>启动器一行的图标块（按行的种类）。</summary>
+        public static Brush KindTint(LauncherKind kind) => kind switch
+        {
+            LauncherKind.App => Tint(Launcher, 32),
+            LauncherKind.Setting => Tint(Color.FromArgb(255, 128, 128, 128), 28),
+            LauncherKind.Command => Tint(Color.FromArgb(255, 234, 120, 40), 30),
+            LauncherKind.Action => Tint(Capture, 30),
+            LauncherKind.Url => Tint(Color.FromArgb(255, 40, 140, 240), 30),
+            LauncherKind.Path => Tint(Color.FromArgb(255, 220, 170, 40), 30),
+            LauncherKind.Search => Tint(Color.FromArgb(255, 140, 90, 240), 30),
+            _ => Tint(Translate, 30),
+        };
+    }
+
+    /// <summary>
+    /// 按 key 取内置主题资源里的画刷（深色 / 高对比度自动跟着变）；取不到时用兜底色。
+    /// AOT 的 PRI 问题第二版第 2 批已经修好，代码里查主题资源可用了。
+    /// </summary>
+    public static Brush Brush(string key, Color fallback)
+    {
+        try
+        {
+            if (Application.Current?.Resources is { } resources &&
+                resources.TryGetValue(key, out var value) &&
+                value is Brush brush)
+            {
+                return brush;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"theme.resource-missing {key} {ex.GetType().Name}");
+        }
+
+        return new SolidColorBrush(fallback);
+    }
+
+    /// <summary>正文次要色（说明文字用）。</summary>
+    public static Brush SecondaryText() => Brush(
+        "TextFillColorSecondaryBrush",
+        ElementTheme == ElementTheme.Dark ? Color.FromArgb(255, 190, 190, 190) : Color.FromArgb(255, 96, 96, 96));
+
+    /// <summary>设置卡的底色。</summary>
+    public static Brush CardBackground() => Brush(
+        "CardBackgroundFillColorDefaultBrush",
+        ElementTheme == ElementTheme.Dark ? Color.FromArgb(36, 255, 255, 255) : Color.FromArgb(18, 0, 0, 0));
+
+    /// <summary>危险 / 错误色（快捷键被占用、错误卡）。</summary>
+    public static Brush Critical() => Brush("SystemFillColorCriticalBrush", Color.FromArgb(255, 196, 43, 28));
+
+    /// <summary>警告 / 设置问题色。</summary>
+    public static Brush Caution() => Brush("SystemFillColorCautionBrush", Color.FromArgb(255, 157, 93, 0));
+
+    /// <summary>成功色（连接正常、已同步）。</summary>
+    public static Brush Success() => Brush("SystemFillColorSuccessBrush", Color.FromArgb(255, 15, 123, 15));
 
     private static UISettings? _systemSettings;
 

@@ -61,19 +61,5 @@ public sealed class LauncherRow
         _ => "\uE8EF",
     };
 
-    private static Brush BackgroundFor(LauncherKind kind)
-    {
-        var color = kind switch
-        {
-            LauncherKind.App => Color.FromArgb(32, 124, 92, 255),
-            LauncherKind.Setting => Color.FromArgb(28, 128, 128, 128),
-            LauncherKind.Command => Color.FromArgb(30, 234, 120, 40),
-            LauncherKind.Action => Color.FromArgb(30, 255, 77, 126),
-            LauncherKind.Url => Color.FromArgb(30, 40, 140, 240),
-            LauncherKind.Path => Color.FromArgb(30, 220, 170, 40),
-            LauncherKind.Search => Color.FromArgb(30, 140, 90, 240),
-            _ => Color.FromArgb(30, 60, 170, 110),
-        };
-        return new SolidColorBrush(color);
-    }
+    private static Brush BackgroundFor(LauncherKind kind) => Theme.Family.KindTint(kind);
 }

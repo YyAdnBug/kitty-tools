@@ -2,22 +2,17 @@
 // 有新版只轻提示一次（每个版本一次），托盘「检查更新」变成「下载新版本 x.y.z」打开发布页。
 // 每日检查跑在线程池上，所以检查的后半段（改设置、通知、改托盘）一律回 UI 线程（第二版 §2 第 1 条）。
 // 调试开关：KITTY_UPDATE_FEED 指向一个本地 JSON 文件或 URL，用它代替 GitHub 的发布列表。
-// ponytail: 第一版不自动替换 exe；要自动更新时用「改名正在运行的 exe → 解压新文件 → 重启」。
-using System.Net.Http;
+// 这个开关、以及 http:// / file:// / 本地路径只在 Debug 或 --update-test 下认（REVIEW R1）；
+// 正常 Release 只认 GitHub 的 https 地址（白名单在 Core 的 UpdateTrust，配单测）。
 using System.Text.Json;
+using KittyTools.Core;
 using KittyTools.Infrastructure;
 
 namespace KittyTools;
 
 internal static class UpdateService
 {
-    private const string DefaultFeed =
-        "https://api.github.com/repos/YyAdnBug/kitty-tools/releases?per_page=20";
-
-    private static readonly HttpClient Http = new()
-    {
-        Timeout = TimeSpan.FromSeconds(12),
-    };
+    private const string DefaultFeed = UpdateTrust.FeedUrl + "?per_page=20";
 
     private static Timer? _timer;
     private static bool _started;
@@ -75,8 +70,17 @@ internal static class UpdateService
         try
         {
             var feed = Environment.GetEnvironmentVariable("KITTY_UPDATE_FEED");
+            if (!string.IsNullOrWhiteSpace(feed) && !UpdateHttp.TestMode)
+            {
+                // Release 正常启动：测试用的发布列表不认（R1 的验收：日志里写一行就够）。
+                Log.Warn("update.feed-ignored 忽略测试用的发布列表（只在 Debug 或 --update-test 下生效）");
+                feed = null;
+            }
+
             UsingLocalFeed = !string.IsNullOrWhiteSpace(feed);
-            var json = string.IsNullOrWhiteSpace(feed) ? await GetFeedAsync() : await GetLocalFeedAsync(feed);
+            var json = string.IsNullOrWhiteSpace(feed)
+                ? await UpdateHttp.GetFeedAsync(DefaultFeed)
+                : await UpdateHttp.GetFeedAsync(feed);
             using var document = JsonDocument.Parse(json);
             if (document.RootElement.ValueKind != JsonValueKind.Array)
             {
@@ -181,7 +185,8 @@ internal static class UpdateService
         }
 
         // 手测自动更新用：KITTY_UPDATE_APPLY=1 时直接走下载 / 校验 / 替换（假发布列表配本地 zip）。
-        if (newer && Environment.GetEnvironmentVariable("KITTY_UPDATE_APPLY") == "1")
+        // 和测试用的发布列表一样，只在 Debug 或 --update-test 下认（R1）。
+        if (newer && UpdateHttp.TestMode && Environment.GetEnvironmentVariable("KITTY_UPDATE_APPLY") == "1")
         {
             _ = AutoUpdater.StartAsync();
         }
@@ -217,6 +222,13 @@ internal static class UpdateService
                 continue;
             }
 
+            // 正常 Release 不认白名单以外的下载地址（R1）：宁可不自动更新，也不去别处拿 zip。
+            if (!UpdateHttp.TestMode && !UpdateTrust.IsAllowedDownloadUrl(url))
+            {
+                Log.Warn("update.untrusted-asset");
+                continue;
+            }
+
             if (string.Equals(name, wanted, StringComparison.OrdinalIgnoreCase))
             {
                 zip = url;
@@ -228,29 +240,6 @@ internal static class UpdateService
         }
 
         return (zip, hash, zip is null ? null : wanted);
-    }
-
-    private static async Task<string> GetFeedAsync()
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Get, DefaultFeed);
-        request.Headers.UserAgent.ParseAdd("KittyTools-Windows");
-        request.Headers.Accept.ParseAdd("application/vnd.github+json");
-        using var response = await Http.SendAsync(request);
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsStringAsync();
-    }
-
-    private static async Task<string> GetLocalFeedAsync(string feed)
-    {
-        // 本地假发布列表：文件路径直接读，http(s) 才发请求（验证不联网也能跑）。
-        if (File.Exists(feed))
-        {
-            return await File.ReadAllTextAsync(feed);
-        }
-
-        using var response = await Http.GetAsync(feed);
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsStringAsync();
     }
 
     public static void OpenAvailable()

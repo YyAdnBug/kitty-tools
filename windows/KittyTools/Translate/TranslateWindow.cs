@@ -787,7 +787,7 @@ internal sealed unsafe partial class TranslateWindow : Window
         Content = text,
         Padding = new Thickness(10, 3, 10, 3),
         CornerRadius = new CornerRadius(14),
-        Background = new SolidColorBrush(Color.FromArgb(26, 128, 128, 128)),
+        Background = Theme.Brush("SubtleFillColorSecondaryBrush", Color.FromArgb(26, 128, 128, 128)),
         BorderThickness = new Thickness(0),
         FontSize = 12,
     };
@@ -864,7 +864,7 @@ internal sealed unsafe partial class TranslateWindow : Window
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 HorizontalScrollMode = ScrollMode.Disabled,
             };
-            _error = new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 12, Foreground = new SolidColorBrush(Color.FromArgb(255, 200, 60, 60)) };
+            _error = new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 12, Foreground = Theme.Critical() };
             _copy = SmallButton("复制");
             _copy.Click += (_, _) => _owner.CopyText(_body.Text);
             _retry = SmallButton("重试");
@@ -881,7 +881,7 @@ internal sealed unsafe partial class TranslateWindow : Window
             {
                 Glyph = "\uE8C8",
                 FontSize = 13,
-                Foreground = new SolidColorBrush(Color.FromArgb(255, 76, 175, 120)),
+                Foreground = Theme.Success(),
                 VerticalAlignment = VerticalAlignment.Center,
             });
             title.Children.Add(_name);
@@ -900,9 +900,8 @@ internal sealed unsafe partial class TranslateWindow : Window
             {
                 CornerRadius = new CornerRadius(8),
                 Padding = new Thickness(10, 8, 10, 8),
-                Background = new SolidColorBrush(Theme.ElementTheme == ElementTheme.Dark
-                    ? Color.FromArgb(26, 255, 255, 255)
-                    : Color.FromArgb(14, 0, 0, 0)),
+                // 按深浅色取主题资源（PLAN-v2 §3.1）。
+                Background = Theme.CardBackground(),
                 Child = panel,
             };
             Update(new TranslateCard { Service = service });

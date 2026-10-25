@@ -1,5 +1,5 @@
-// 设置窗：左侧 NavigationView，三页（通用 / 快捷键 / 关于），Mica。
-// 第 1 批只做 PLAN §5.7 的三页；其它页在各模块那批里补。
+// 设置窗：左侧 NavigationView（带图标），右边每页一个大标题 + 一组组设置卡，Mica。
+// AOT 下 NavigationView 崩溃的根因（发布目录缺 PRI）第二版第 2 批已经修好，这一批换回 NavigationView（PLAN-v2 §2b / §3.4）。
 using System.Diagnostics;
 using System.Text.Json;
 using KittyTools.Infrastructure;
@@ -7,6 +7,7 @@ using KittyTools.Core;
 using Microsoft.UI.Input;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
@@ -20,9 +21,7 @@ namespace KittyTools;
 internal sealed class SettingsWindow : Window
 {
     private readonly Grid _shell;
-    private readonly Border _navBorder;
-    private readonly StackPanel _navPanel;
-    private readonly Dictionary<string, Button> _navButtons = new();
+    private readonly NavigationView _nav;
     private readonly ScrollViewer _scroll;
     private readonly StackPanel _content;
     private readonly InfoBar _hotKeyError;
@@ -31,52 +30,70 @@ internal sealed class SettingsWindow : Window
     private readonly int _height;
 
     private bool _firstRun;
+    private bool _suppressNav;
     private string _currentPage = "general";
     private string? _recordingAction;
     private TextBlock? _recordHint;
 
+    private static readonly (string Tag, string Title, string Glyph)[] Pages =
+    {
+        ("general", "通用", "\uE713"),
+        ("hotkeys", "快捷键", "\uE765"),
+        ("clipboard", "剪贴板", "\uE8C8"),
+        ("translate", "翻译", "\uE774"),
+        ("launcher", "启动器", "\uE721"),
+        ("screenshot", "截图", "\uE722"),
+        ("about", "关于", "\uE946"),
+    };
+
     public SettingsWindow()
     {
         Title = Paths.ProductName + " 设置";
-        _content = new StackPanel { Spacing = 18 };
+        _content = new StackPanel { Spacing = 8, Margin = new Thickness(0, 0, 8, 0) };
         _scroll = new ScrollViewer
         {
             Content = _content,
-            Padding = new Thickness(32, 24, 32, 32),
+            Padding = new Thickness(36, 20, 24, 32),
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         };
 
-        // 左栏自己搭：Release AOT 下 NavigationView 会在渲染时 0xc000027b 崩掉
-        // （Debug 正常），所以用一排 Button 做导航。外观和 NavigationView 的左栏一致。
-        _navPanel = new StackPanel { Spacing = 2, Padding = new Thickness(8, 16, 8, 8) };
-        _navPanel.Children.Add(new TextBlock
+        _nav = new NavigationView
         {
-            Text = "Kitty Tools",
-            FontSize = 16,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            Margin = new Thickness(10, 0, 0, 12),
-        });
-        _navPanel.Children.Add(CreateNavButton("general", "通用", "\uE713"));
-        _navPanel.Children.Add(CreateNavButton("hotkeys", "快捷键", "\uE765"));
-        _navPanel.Children.Add(CreateNavButton("clipboard", "剪贴板", "\uE8C8"));
-        _navPanel.Children.Add(CreateNavButton("translate", "翻译", "\uE774"));
-        _navPanel.Children.Add(CreateNavButton("launcher", "启动器", "\uE721"));
-        _navPanel.Children.Add(CreateNavButton("screenshot", "截图", "\uE722"));
-        _navPanel.Children.Add(CreateNavButton("about", "关于", "\uE946"));
-
-        _navBorder = new Border
-        {
-            Background = NavBackground(),
-            Child = new ScrollViewer { Content = _navPanel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto },
+            PaneDisplayMode = NavigationViewPaneDisplayMode.Left,
+            IsSettingsVisible = false,
+            IsBackButtonVisible = NavigationViewBackButtonVisible.Collapsed,
+            IsPaneToggleButtonVisible = false,
+            IsTitleBarAutoPaddingEnabled = false,
+            OpenPaneLength = 208,
+            PaneTitle = "Kitty Tools",
+            Content = _scroll,
+            RequestedTheme = Theme.ElementTheme,
         };
-        Grid.SetColumn(_navBorder, 0);
-        Grid.SetColumn(_scroll, 1);
+        foreach (var (tag, title, glyph) in Pages)
+        {
+            _nav.MenuItems.Add(new NavigationViewItem
+            {
+                Content = title,
+                Tag = tag,
+                Icon = new FontIcon { Glyph = glyph },
+            });
+        }
+
+        _nav.SelectionChanged += (_, args) =>
+        {
+            if (_suppressNav)
+            {
+                return;
+            }
+
+            if (args.SelectedItemContainer?.Tag is string tag)
+            {
+                BuildPage(tag);
+            }
+        };
 
         _shell = new Grid { RequestedTheme = Theme.ElementTheme };
-        _shell.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(210) });
-        _shell.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        _shell.Children.Add(_navBorder);
-        _shell.Children.Add(_scroll);
+        _shell.Children.Add(_nav);
 
         _hotKeyError = new InfoBar
         {
@@ -111,7 +128,6 @@ internal sealed class SettingsWindow : Window
     {
         Motion.Refresh();
         _firstRun = welcome;
-        _currentPage = page;
         BuildPage(page);
         Log.Info($"settings.page {page}");
         if (AppWindow.Presenter is OverlappedPresenter presenter)
@@ -130,8 +146,7 @@ internal sealed class SettingsWindow : Window
 
     public void RefreshTheme()
     {
-        _shell.RequestedTheme = Theme.ElementTheme;
-        _navBorder.Background = NavBackground();
+        _nav.RequestedTheme = Theme.ElementTheme;
         if (_recordingAction is null)
         {
             BuildPage(_currentPage);
@@ -171,41 +186,17 @@ internal sealed class SettingsWindow : Window
         UpdateNavSelection();
     }
 
-    private Button CreateNavButton(string tag, string text, string glyph)
-    {
-        var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
-        content.Children.Add(new FontIcon { Glyph = glyph, FontSize = 16 });
-        content.Children.Add(new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center });
-        var button = new Button
-        {
-            Tag = tag,
-            Content = content,
-            HorizontalContentAlignment = HorizontalAlignment.Left,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            Padding = new Thickness(10, 8, 10, 8),
-            Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0, 0, 0, 0)),
-            BorderThickness = new Thickness(0),
-            CornerRadius = new CornerRadius(4),
-        };
-        button.Click += (_, _) => BuildPage(tag);
-        _navButtons[tag] = button;
-        return button;
-    }
-
     private void UpdateNavSelection()
     {
-        foreach (var (tag, button) in _navButtons)
+        var item = _nav.MenuItems.OfType<NavigationViewItem>()
+            .FirstOrDefault(candidate => string.Equals(candidate.Tag as string, _currentPage, StringComparison.Ordinal));
+        if (item is not null && !ReferenceEquals(_nav.SelectedItem, item))
         {
-            button.Background = tag == _currentPage
-                ? new SolidColorBrush(Windows.UI.Color.FromArgb(28, Theme.BrandPink.R, Theme.BrandPink.G, Theme.BrandPink.B))
-                : new SolidColorBrush(Windows.UI.Color.FromArgb(0, 0, 0, 0));
+            _suppressNav = true;
+            _nav.SelectedItem = item;
+            _suppressNav = false;
         }
     }
-
-    private static Brush NavBackground()
-        => new SolidColorBrush(Theme.ElementTheme == ElementTheme.Dark
-            ? Windows.UI.Color.FromArgb(255, 32, 32, 32)
-            : Windows.UI.Color.FromArgb(255, 243, 243, 243));
 
     private void BuildGeneral()
     {
@@ -238,6 +229,7 @@ internal sealed class SettingsWindow : Window
                 SettingsService.Current.Theme = index switch { 1 => "light", 2 => "dark", _ => "system" };
                 SettingsService.Save();
                 Theme.ApplyTo(_shell);
+                _nav.RequestedTheme = Theme.ElementTheme;
                 BuildPage(_currentPage);
             });
 
@@ -295,7 +287,9 @@ internal sealed class SettingsWindow : Window
         {
             Content = "开始使用",
             Background = new SolidColorBrush(Theme.BrandPink),
-            Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 255, 255, 255)),
+            Foreground = Theme.Brush(
+                "TextOnAccentFillColorPrimaryBrush",
+                Windows.UI.Color.FromArgb(255, 255, 255, 255)),
         };
         start.Click += (_, _) =>
         {
@@ -1092,16 +1086,7 @@ internal sealed class SettingsWindow : Window
     }
 
     private static UIElement Section(string title, string subtitle)
-    {
-        var panel = new StackPanel { Spacing = 2, Margin = new Thickness(0, 6, 0, 0) };
-        panel.Children.Add(new TextBlock { Text = title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
-        if (!string.IsNullOrEmpty(subtitle))
-        {
-            panel.Children.Add(new TextBlock { Text = subtitle, Opacity = 0.7, TextWrapping = TextWrapping.Wrap });
-        }
-
-        return panel;
-    }
+        => SettingsUi.Section(title, subtitle);
 
     private void BuildHotKeys()
     {
@@ -1113,64 +1098,61 @@ internal sealed class SettingsWindow : Window
         _recordHint = new TextBlock
         {
             Text = " ",
-            Opacity = 0.7,
+            Foreground = Theme.SecondaryText(),
             FontSize = 12,
         };
         _content.Children.Add(_recordHint);
 
         foreach (var definition in SettingsDefaults.DefaultHotKeys)
         {
-            var row = new Grid { ColumnSpacing = 12, Padding = new Thickness(0, 4, 0, 4) };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(140) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-            var name = new TextBlock
-            {
-                Text = definition.DisplayName,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            var shortcut = new TextBlock
-            {
-                Text = HotKeyManager.FormatFor(definition.Action),
-                FontFamily = new FontFamily("Consolas"),
-                VerticalAlignment = VerticalAlignment.Center,
-            };
+            var shortcut = HotKeyManager.FormatFor(definition.Action);
+            var binding = SettingsDefaults.BindingFor(SettingsService.Current, definition.Action);
             var failure = ShellRuntime.Instance?.HotKeys.FailureFor(definition.Action);
-            var status = new TextBlock
-            {
-                Text = SettingsDefaults.BindingFor(SettingsService.Current, definition.Action).VirtualKey == 0
-                    ? "未设置"
-                    : failure ?? (ShellRuntime.Instance?.HotKeys.IsRegistered(definition.Action) == true ? "正常" : ""),
-                Foreground = failure is null
-                    ? new SolidColorBrush(Windows.UI.Color.FromArgb(180, 128, 128, 128))
-                    : new SolidColorBrush(Windows.UI.Color.FromArgb(255, 196, 43, 28)),
-                VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-            };
+            var statusText = binding.VirtualKey == 0
+                ? "未设置"
+                : failure ?? (ShellRuntime.Instance?.HotKeys.IsRegistered(definition.Action) == true ? "正常" : "");
 
+            var right = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            right.Children.Add(SettingsUi.KeyCaps(shortcut));
             var record = new Button { Content = "录制", Tag = definition.Action };
+            AutomationProperties.SetName(record, $"录制 {definition.DisplayName} 的快捷键");
             record.Click += (_, _) => BeginRecording(definition.Action);
             var clear = new Button { Content = "清空", Tag = definition.Action };
+            AutomationProperties.SetName(clear, $"清空 {definition.DisplayName} 的快捷键");
             clear.Click += (_, _) => ClearHotKey(definition.Action);
-            clear.IsEnabled = SettingsDefaults.BindingFor(SettingsService.Current, definition.Action).VirtualKey != 0;
+            clear.IsEnabled = binding.VirtualKey != 0;
+            right.Children.Add(record);
+            right.Children.Add(clear);
 
-            Grid.SetColumn(name, 0);
-            Grid.SetColumn(shortcut, 1);
-            Grid.SetColumn(status, 2);
-            Grid.SetColumn(record, 3);
-            Grid.SetColumn(clear, 4);
-            row.Children.Add(name);
-            row.Children.Add(shortcut);
-            row.Children.Add(status);
-            row.Children.Add(record);
-            row.Children.Add(clear);
-            _content.Children.Add(row);
+            var card = SettingsUi.Card(
+                "\uE765",
+                definition.DisplayName,
+                binding.VirtualKey == 0
+                    ? "未设置"
+                    : failure is null
+                        ? statusText == "正常" ? "正在使用" : "已设置"
+                        : failure,
+                right);
+            if (failure is not null)
+            {
+                // 被占用时红字说明原因（PLAN-v2 §3.4）。
+                var text = (card.Child as Grid)?.Children.OfType<StackPanel>().FirstOrDefault();
+                if (text?.Children.OfType<TextBlock>().LastOrDefault() is { } detail)
+                {
+                    detail.Foreground = Theme.Critical();
+                }
+            }
+
+            _content.Children.Add(card);
         }
 
         var reset = new Button { Content = "全部恢复默认" };
+        AutomationProperties.SetName(reset, "全部恢复默认快捷键");
         reset.Click += (_, _) =>
         {
             SettingsService.Current.HotKeys.Clear();
@@ -1268,49 +1250,53 @@ internal sealed class SettingsWindow : Window
     {
         _content.Children.Add(Header("关于", ""));
         var version = typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3) ?? "0.1.0";
-        _content.Children.Add(new TextBlock
+
+        var identity = new StackPanel { Spacing = 6 };
+        identity.Children.Add(new TextBlock
         {
-            Text = $"Kitty Tools {version}（Windows 原生版）",
-            FontSize = 16,
+            Text = $"Kitty Tools {version}",
+            FontSize = 20,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
         });
-        _content.Children.Add(new TextBlock
+        identity.Children.Add(new TextBlock
         {
-            Text = "剪贴板、翻译、启动器和截图都已接上；Windows 版的 release 不标 latest。",
+            Text = "Windows 原生版。剪贴板、翻译、启动器和截图都已接上；Windows 版的 release 不标 latest。",
             TextWrapping = TextWrapping.Wrap,
-            Opacity = 0.75,
+            Foreground = Theme.SecondaryText(),
         });
+        _content.Children.Add(Card(identity));
+
+        _content.Children.Add(SettingsUi.Section("更新"));
+        var updateCard = SettingsUi.Card(
+            "\uE895",
+            "检查更新",
+            UpdateService.AvailableVersion is { } available
+                ? $"有可用的新版本 {available}"
+                : "每天检查一次；下载后可以直接安装。",
+            null,
+            () => _ = CheckOrInstallAsync());
+        _content.Children.Add(updateCard);
+
+        _content.Children.Add(SettingsUi.Card(
+            "\uE8B7",
+            "数据目录",
+            "数据库、图片、日志和设置都放在这里。",
+            null,
+            OpenDataDirectory));
 
         _content.Children.Add(ChangelogBlock());
+    }
 
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        var update = new Button
+    private async Task CheckOrInstallAsync()
+    {
+        if (UpdateService.AvailableVersion is not null)
         {
-            Content = UpdateService.AvailableVersion is { } available
-                ? $"更新到 {available}"
-                : "检查更新",
-        };
-        update.Click += async (_, _) =>
-        {
-            if (UpdateService.AvailableVersion is not null)
-            {
-                await AutoUpdater.StartAsync();
-                return;
-            }
+            await AutoUpdater.StartAsync();
+            return;
+        }
 
-            update.IsEnabled = false;
-            update.Content = "正在检查…";
-            await UpdateService.CheckAsync(userInitiated: true);
-            update.Content = UpdateService.AvailableVersion is { } version
-                ? $"更新到 {version}"
-                : "检查更新";
-            update.IsEnabled = true;
-        };
-        var data = new Button { Content = "打开数据目录" };
-        data.Click += (_, _) => OpenDataDirectory();
-        buttons.Children.Add(update);
-        buttons.Children.Add(data);
-        _content.Children.Add(buttons);
+        await UpdateService.CheckAsync(userInitiated: true);
+        BuildPage("about");
     }
 
     private UIElement ChangelogBlock()
@@ -1320,52 +1306,59 @@ internal sealed class SettingsWindow : Window
             var path = Path.Combine(AppContext.BaseDirectory, "Resources", "changelog.json");
             if (!File.Exists(path))
             {
-                return new TextBlock { Text = "更新日志在第 6 批接上。", Opacity = 0.6 };
+                return new TextBlock { Text = "更新日志不在发布目录里。", Opacity = 0.6 };
             }
 
             using var document = JsonDocument.Parse(File.ReadAllText(path));
             var root = document.RootElement;
-            var panel = new StackPanel { Spacing = 6 };
-            panel.Children.Add(new TextBlock { Text = "更新日志", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
-            if (root.TryGetProperty("entries", out var entries) && entries.ValueKind == JsonValueKind.Array)
+            var panel = new StackPanel { Spacing = 8 };
+            panel.Children.Add(SettingsUi.Section("更新日志", "按版本分组；标签是这次改动属于哪一类。"));
+            if (!root.TryGetProperty("entries", out var entries) || entries.ValueKind != JsonValueKind.Array)
             {
-                foreach (var entry in entries.EnumerateArray().Take(5))
-                {
-                    var version = entry.TryGetProperty("version", out var v) ? v.GetString() : "";
-                    var summary = entry.TryGetProperty("summary", out var s) ? s.GetString() : "";
-                    panel.Children.Add(new TextBlock
-                    {
-                        Text = $"{version}  {summary}",
-                        TextWrapping = TextWrapping.Wrap,
-                        Opacity = 0.8,
-                    });
-                    if (entry.TryGetProperty("items", out var items) &&
-                        items.ValueKind == JsonValueKind.Array)
-                    {
-                        foreach (var item in items.EnumerateArray())
-                        {
-                            var type = item.TryGetProperty("type", out var t) ? t.GetString() : null;
-                            if (type is not ("feat" or "fix" or "perf" or "ui"))
-                            {
-                                continue;
-                            }
+                return panel;
+            }
 
-                            var text = item.TryGetProperty("text", out var itemText)
-                                ? itemText.GetString()
-                                : null;
-                            if (!string.IsNullOrEmpty(text))
-                            {
-                                panel.Children.Add(new TextBlock
-                                {
-                                    Text = "• " + text,
-                                    TextWrapping = TextWrapping.Wrap,
-                                    Opacity = 0.65,
-                                    FontSize = 13,
-                                });
-                            }
+            foreach (var entry in entries.EnumerateArray().Take(6))
+            {
+                var version = entry.TryGetProperty("version", out var v) ? v.GetString() : "";
+                var summary = entry.TryGetProperty("summary", out var s) ? s.GetString() : "";
+                var group = new StackPanel { Spacing = 6 };
+                group.Children.Add(new TextBlock
+                {
+                    Text = $"{version}  {summary}",
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    TextWrapping = TextWrapping.Wrap,
+                });
+                if (entry.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in items.EnumerateArray())
+                    {
+                        var type = item.TryGetProperty("type", out var t) ? t.GetString() : null;
+                        if (type is not ("feat" or "fix" or "perf" or "ui"))
+                        {
+                            continue;
                         }
+
+                        var text = item.TryGetProperty("text", out var itemText) ? itemText.GetString() : null;
+                        if (string.IsNullOrEmpty(text))
+                        {
+                            continue;
+                        }
+
+                        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+                        row.Children.Add(SettingsUi.TypeTag(type));
+                        row.Children.Add(new TextBlock
+                        {
+                            Text = text,
+                            TextWrapping = TextWrapping.Wrap,
+                            FontSize = 13,
+                            Foreground = Theme.SecondaryText(),
+                        });
+                        group.Children.Add(row);
                     }
                 }
+
+                panel.Children.Add(Card(group));
             }
 
             return panel;
@@ -1396,72 +1389,27 @@ internal sealed class SettingsWindow : Window
     }
 
     private static UIElement Header(string title, string subtitle)
-    {
-        var panel = new StackPanel { Spacing = 4 };
-        panel.Children.Add(new TextBlock
-        {
-            Text = title,
-            FontSize = 28,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-        });
-        if (!string.IsNullOrEmpty(subtitle))
-        {
-            panel.Children.Add(new TextBlock
-            {
-                Text = subtitle,
-                Opacity = 0.7,
-                TextWrapping = TextWrapping.Wrap,
-            });
-        }
-
-        return panel;
-    }
+        => SettingsUi.Header(title, subtitle);
 
     private void AddToggle(string title, string subtitle, bool value, Action<bool> changed)
-    {
-        var panel = new StackPanel { Spacing = 2 };
-        panel.Children.Add(new TextBlock { Text = title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
-        panel.Children.Add(new TextBlock { Text = subtitle, Opacity = 0.7, TextWrapping = TextWrapping.Wrap });
-        var toggle = new ToggleSwitch { IsOn = value, HorizontalAlignment = HorizontalAlignment.Left };
-        toggle.Toggled += (_, _) => changed(toggle.IsOn);
-        var row = new Grid { ColumnSpacing = 16 };
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        Grid.SetColumn(panel, 0);
-        Grid.SetColumn(toggle, 1);
-        row.Children.Add(panel);
-        row.Children.Add(toggle);
-        _content.Children.Add(row);
-    }
+        => _content.Children.Add(SettingsUi.Card(
+            "\uE73E",
+            title,
+            subtitle,
+            SettingsUi.Toggle(value, changed, title)));
 
     private void AddCombo(string title, string subtitle, string[] items, int selected, Action<int> changed)
-    {
-        var panel = new StackPanel { Spacing = 2 };
-        panel.Children.Add(new TextBlock { Text = title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
-        panel.Children.Add(new TextBlock { Text = subtitle, Opacity = 0.7, TextWrapping = TextWrapping.Wrap });
-        var combo = new ComboBox { SelectedIndex = selected, MinWidth = 160 };
-        foreach (var item in items)
-        {
-            combo.Items.Add(item);
-        }
-        combo.SelectionChanged += (_, _) => changed(combo.SelectedIndex);
-        var row = new Grid { ColumnSpacing = 16 };
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        Grid.SetColumn(panel, 0);
-        Grid.SetColumn(combo, 1);
-        row.Children.Add(panel);
-        row.Children.Add(combo);
-        _content.Children.Add(row);
-    }
+        => _content.Children.Add(SettingsUi.Card(
+            "\uE70D",
+            title,
+            subtitle,
+            SettingsUi.Combo(items, selected, changed, title)));
 
     private static Border Card(UIElement child) => new()
     {
         CornerRadius = new CornerRadius(8),
         Padding = new Thickness(18),
-        Background = new SolidColorBrush(Theme.ElementTheme == ElementTheme.Dark
-            ? Windows.UI.Color.FromArgb(36, 255, 255, 255)
-            : Windows.UI.Color.FromArgb(18, 0, 0, 0)),
+        Background = Theme.CardBackground(),
         Child = child,
     };
 }

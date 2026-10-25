@@ -22,9 +22,9 @@ namespace KittyTools;
 
 internal sealed partial class SelectionOverlayWindow : Window
 {
-    private static readonly Color Accent = Color.FromArgb(255, 255, 77, 126);
-    private static readonly Color Dim = Color.FromArgb(115, 0, 0, 0);
-    private static readonly Color HandleFill = Color.FromArgb(255, 255, 255, 255);
+    private static readonly Color Accent = Theme.Shot.Accent;
+    private static readonly Color Dim = Theme.Shot.Dim;
+    private static readonly Color HandleFill = Theme.Shot.HandleFill;
 
     private readonly FrozenScreen _screen;
     private ScreenshotSession _session;
@@ -220,7 +220,7 @@ internal sealed partial class SelectionOverlayWindow : Window
             CloseButtonText = "取消",
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = _canvas.XamlRoot,
-            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Color.FromArgb(255, 32, 32, 32)),
+            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Theme.Shot.HudBackground),
         };
         input.KeyDown += (_, e) =>
         {
@@ -360,7 +360,7 @@ internal sealed partial class SelectionOverlayWindow : Window
         y = Math.Clamp(y, 0, Math.Max(0, screenHeight - panelHeight));
         ds.FillRoundedRectangle(
             new Windows.Foundation.Rect(x, y, panelWidth, panelHeight), 8, 8,
-            Color.FromArgb(235, 24, 24, 24));
+            Theme.Shot.HudBackgroundStrong);
 
         var offset = x + 4;
         void Add(double width, string label, Action action, bool selected = false, bool enabled = true,
@@ -377,8 +377,8 @@ internal sealed partial class SelectionOverlayWindow : Window
             if (label.Length > 0)
             {
                 var textColor = !enabled
-                    ? Color.FromArgb(90, 255, 255, 255)
-                    : selected ? Colors.White : Color.FromArgb(230, 255, 255, 255);
+                    ? Theme.Shot.HudTextFaint
+                    : selected ? Colors.White : Theme.Shot.HudTextMuted;
                 var format = new CanvasTextFormat
                 {
                     FontFamily = "Segoe UI",
@@ -414,13 +414,7 @@ internal sealed partial class SelectionOverlayWindow : Window
         offset += 4;
         Add(24, string.Empty, () =>
         {
-            var palette = new[]
-            {
-                Accent, Color.FromArgb(255, 235, 60, 60), Color.FromArgb(255, 240, 150, 30),
-                Color.FromArgb(255, 245, 205, 40), Color.FromArgb(255, 60, 180, 90),
-                Color.FromArgb(255, 60, 130, 240), Color.FromArgb(255, 150, 80, 220),
-                Color.FromArgb(255, 255, 255, 255), Color.FromArgb(255, 0, 0, 0),
-            };
+            var palette = Theme.Shot.AnnotationPalette;
             var index = Array.IndexOf(palette, _color);
             _color = palette[(index + 1) % palette.Length];
             _canvas.Invalidate();
@@ -490,7 +484,7 @@ internal sealed partial class SelectionOverlayWindow : Window
                 left, top, Math.Max(0, right - left), Math.Max(0, bottom - top));
             if (selection is null)
             {
-                ds.DrawRectangle(outline, Color.FromArgb(255, 255, 255, 255), 1.5f);
+                ds.DrawRectangle(outline, Theme.Shot.Outline, 1.5f);
             }
         }
         else
@@ -537,8 +531,8 @@ internal sealed partial class SelectionOverlayWindow : Window
         }
 
         ds.FillRoundedRectangle(
-            new Windows.Foundation.Rect(x, y, labelWidth, 22), 5, 5, Color.FromArgb(225, 20, 20, 20));
-        ds.DrawText(label, x + 8, y + 4, Colors.White, _text);
+            new Windows.Foundation.Rect(x, y, labelWidth, 22), 5, 5, Theme.Shot.LabelBackground);
+        ds.DrawText(label, x + 8, y + 4, Theme.Shot.HudText, _text);
     }
 
     private void DrawHint(Microsoft.Graphics.Canvas.CanvasDrawingSession ds, float width, float height)
@@ -553,11 +547,11 @@ internal sealed partial class SelectionOverlayWindow : Window
         var textWidth = Math.Min(width - 32, 640);
         ds.FillRoundedRectangle(
             new Windows.Foundation.Rect((width - textWidth) / 2, 14, textWidth, 26),
-            6, 6, Color.FromArgb(200, 20, 20, 20));
+            6, 6, Theme.Shot.LabelBackground);
         ds.DrawText(
             hint,
             new Windows.Foundation.Rect((width - textWidth) / 2 + 10, 19, textWidth - 20, 20),
-            Colors.White, _small);
+            Theme.Shot.HudText, _small);
     }
 
     private void DrawMagnifier(Microsoft.Graphics.Canvas.CanvasDrawingSession ds, float width, float height)
@@ -596,14 +590,14 @@ internal sealed partial class SelectionOverlayWindow : Window
 
         ds.DrawRectangle(
             new Windows.Foundation.Rect(x + radius * cell, y + radius * cell, cell, cell),
-            Colors.White, 1.5f);
+            Theme.Shot.Outline, 1.5f);
         var globalX = (int)(_screen.Bounds.Left + _cursor.X);
         var globalY = (int)(_screen.Bounds.Top + _cursor.Y);
         var text = $"{globalX}, {globalY}   {_screen.HexAt((int)_cursor.X, (int)_cursor.Y)}";
         ds.FillRoundedRectangle(
             new Windows.Foundation.Rect(x, y + size + 4, size, 22), 4, 4,
-            Color.FromArgb(225, 20, 20, 20));
-        ds.DrawText(text, x + 6, y + size + 7, Colors.White, _small);
+            Theme.Shot.LabelBackground);
+        ds.DrawText(text, x + 6, y + size + 7, Theme.Shot.HudText, _small);
     }
 
     private void OnPointerPressed(object sender, PointerRoutedEventArgs e)

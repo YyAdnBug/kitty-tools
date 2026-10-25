@@ -86,6 +86,19 @@ internal sealed class ShellRuntime
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(Tray.ShowMenu);
         }
 
+        // 调试用：看轻提示胶囊的样子（截图 / 手测用，不影响正常启动）。
+        if (Environment.GetCommandLineArgs().Contains("--notice", StringComparer.OrdinalIgnoreCase))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(
+                () => NoticeHost.Show("已复制到剪贴板", "3 条记录已合并", NoticeTone.Normal));
+        }
+
+        if (Environment.GetCommandLineArgs().Contains("--notice-error", StringComparer.OrdinalIgnoreCase))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(
+                () => NoticeHost.Show("更新失败", "旧版本还能正常用，详情看日志", NoticeTone.Error));
+        }
+
         // 调试用：跳过热键直接打开剪贴板面板（热键被别的实例占着时也能看界面）。
         if (Environment.GetCommandLineArgs().Contains("--clipboard-panel", StringComparer.OrdinalIgnoreCase))
         {

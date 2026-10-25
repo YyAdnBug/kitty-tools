@@ -9,7 +9,7 @@ namespace KittyTools;
 public sealed class ClipRow
 {
     private static readonly SolidColorBrush ClipboardBlue =
-        new(Color.FromArgb(32, 59, 130, 246));
+        (SolidColorBrush)Theme.Family.Tint(Theme.Family.Clipboard, 32);
 
     private ClipRow()
     {

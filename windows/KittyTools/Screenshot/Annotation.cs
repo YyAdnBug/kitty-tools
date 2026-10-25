@@ -1,4 +1,4 @@
-﻿// 截图标注的数据和绘制：矩形、箭头、画笔、文字、马赛克。
+// 截图标注的数据和绘制：矩形、箭头、画笔、文字、马赛克。
 // 坐标一律是遮罩窗口里的物理像素（相对这块屏）；屏幕绘制时按 DPI 换成 DIP，导出时按 1:1 像素。
 using System.Numerics;
 using KittyTools.Core;
@@ -28,7 +28,7 @@ internal sealed class Annotation
 
     public string Text { get; set; } = string.Empty;
 
-    public Color Color { get; set; } = Color.FromArgb(255, 255, 77, 126);
+    public Color Color { get; set; } = Theme.Shot.Accent;
 
     public double Width { get; set; } = 3;
 
