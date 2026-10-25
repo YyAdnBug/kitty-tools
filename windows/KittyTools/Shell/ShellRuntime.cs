@@ -207,6 +207,43 @@ internal sealed class ShellRuntime
                 () => ScreenshotSession.Start(ScreenshotMode.Record));
         }
 
+        // 调试：读一个音频 / 视频文件的时长（MediaPlayer），验证录音 / 压缩产物能解码。
+        var checkArg = Environment.GetCommandLineArgs()
+            .FirstOrDefault(arg => arg.StartsWith("--media-check=", StringComparison.OrdinalIgnoreCase));
+        if (checkArg is not null)
+        {
+            var path = checkArg["--media-check=".Length..];
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
+            {
+                try
+                {
+                    using var player = new Windows.Media.Playback.MediaPlayer
+                    {
+                        Source = Windows.Media.Core.MediaSource.CreateFromUri(new Uri(path)),
+                    };
+                    await Task.Delay(1500);
+                    Log.Info($"media.check {Path.GetFileName(path)} duration={player.NaturalDuration.TotalSeconds:F2}s");
+                }
+                catch (Exception ex)
+                {
+                    Log.Warn($"media.check-failed {ex.GetType().Name}");
+                }
+            });
+        }
+
+        // 调试 / 自检：自动录 N 秒麦克风（MediaCapture 的 M4A），手测托盘 / 文件。
+        var audioUiArg = Environment.GetCommandLineArgs()
+            .FirstOrDefault(arg => arg.StartsWith("--audio-rec-ui=", StringComparison.OrdinalIgnoreCase));
+        if (audioUiArg is not null && int.TryParse(audioUiArg["--audio-rec-ui=".Length..], out var audioSeconds))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
+            {
+                AudioHost.Start();
+                await Task.Delay(TimeSpan.FromSeconds(Math.Clamp(audioSeconds, 1, 60)));
+                AudioHost.Stop();
+            });
+        }
+
         // 调试用：自动录 N 秒（手测托盘 / 轻提示 / 保存目录，不用真的按热键）。
         var recordUiArg = Environment.GetCommandLineArgs()
             .FirstOrDefault(arg => arg.StartsWith("--record-ui=", StringComparison.OrdinalIgnoreCase));

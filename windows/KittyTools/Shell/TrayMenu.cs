@@ -189,6 +189,15 @@ internal static partial class TrayMenu
                     () => _ = GifService.ConvertLastAsync());
             }
 
+            if (AudioHost.IsRecording)
+            {
+                Add(menu, "\uE71A", "■ 停止录音 " + AudioHost.Elapsed, string.Empty, AudioHost.Stop);
+            }
+            else
+            {
+                Add(menu, "\uE720", "录音（麦克风）", string.Empty, AudioHost.Start);
+            }
+
             menu.Items.Add(new MenuFlyoutSeparator());
         }
 
