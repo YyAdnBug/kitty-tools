@@ -323,10 +323,7 @@ internal sealed class Syncer
         }
     }
 
-    // ponytail: R13 修完之前不跑同步；引擎和集成测试过了改成 true（R13 完成）。
-    public static readonly bool Ready = true;
-
-    public bool Enabled => Ready && SettingsService.Current.SyncEnabled && !string.IsNullOrEmpty(Folder);
+    public bool Enabled => SettingsService.Current.SyncEnabled && !string.IsNullOrEmpty(Folder);
 
     public void StartTimer(Microsoft.UI.Dispatching.DispatcherQueue dispatcher)
     {
@@ -643,7 +640,7 @@ internal sealed class Syncer
             return null;
         }
 
-        if (!file.Records.All(record => CanonicalJson.IsCanonical(record.Value)))
+        if (!file.Records.All(record => SyncEngine.DecodeExact(record.Value)))
         {
             Log.Warn($"sync.decode-exact-failed kind={kind}");
             return null;

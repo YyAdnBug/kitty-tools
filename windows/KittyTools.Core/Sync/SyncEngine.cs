@@ -94,6 +94,10 @@ public static class SyncEngine
 
     public static string Hash(string value) => CanonicalJson.Hash(value);
 
+    /// <summary>解开一条内容，<b>编回去要一字不差</b>（照 mac 的 decodeExact）：更新版本写的（多了这一版不认识的字段）
+    /// 解得开但编回去会丢字段——落下去再发出去就把别人的字段删了，所以当成解不出来（这一类停在「没存上」，等更新）。</summary>
+    public static bool DecodeExact(string value) => CanonicalJson.IsCanonical(value);
+
     public static bool Buried(SyncClock clock, SyncClock? tombstone)
         => tombstone is not null && clock.Counters.All(pair => pair.Value <= tombstone[pair.Key]);
 

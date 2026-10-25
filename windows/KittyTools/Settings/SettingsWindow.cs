@@ -20,9 +20,6 @@ namespace KittyTools;
 
 internal sealed class SettingsWindow : Window
 {
-    // ponytail: R13 修完、集成测试过了改成 true（同步页的开关）。
-    private static readonly bool SyncUiVisible = true;
-
     private readonly Grid _shell;
     private readonly NavigationView _nav;
     private readonly ScrollViewer _scroll;
@@ -461,13 +458,6 @@ internal sealed class SettingsWindow : Window
     /// <summary>设置 › 通用 › 同步（PLAN-v5 §4.4）：文件夹、状态、四类、别的电脑、立即同步 / 停止。</summary>
     private void BuildSyncSection()
     {
-        // ponytail: R13（P0）没修完之前先把这一节藏起来：合并规则还在换（参考 windows/reference/mac-sync），
-        // 0.5.0 不能给用户装来同步。接好 SyncEngine、集成测试过了就删掉这个开关。
-        if (!SyncUiVisible)
-        {
-            return;
-        }
-
         var settings = SettingsService.Current;
         _content.Children.Add(SettingsUi.Section(
             "同步", "和 Mac 版（0.7.0 或更新）共用一个同步盘文件夹，互通片段与收藏、生词本、网页搜索和翻译服务。密钥不同步。"));
