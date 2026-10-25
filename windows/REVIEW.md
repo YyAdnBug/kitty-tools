@@ -27,6 +27,12 @@
 - **修好之前**：设置 › 通用 ›「同步」这一节先藏起来（`// ponytail:` 写上 R13），0.5.0 的产物不能给用户装来同步。
 - **验收**：上面 2、3 全过；报告里写 fuzz 2000 个种子的耗时。
 
+**进展（2026-10-25）：**
+- 已照 `SyncRecords.swift` 把 `round / standing / buried / hash / union / joined / arrange / orderID` 写成
+  `KittyTools.Core/Sync/SyncEngine.cs`；`SyncRecordsTests.swift` 的 17 个用例原样移植，全过（`SyncEngineTests`）。
+- 设置里的「同步」先藏起来（`SettingsWindow.SyncUiVisible = false`），`Syncer.Ready = false` 不跑，等接好执行层和集成测试再打开。
+- 还没做：执行层接引擎、旧账本迁移、17 个用例之外的 fuzz、集成测试、UI 线程外读写。
+
 ### R14（P1）录屏换成 H.264 MP4，补系统声音
 
 现在是 GDI 抓屏 → CPU 编 JPEG → 自己写 AVI：

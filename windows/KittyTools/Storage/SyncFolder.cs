@@ -324,7 +324,10 @@ internal sealed class Syncer
         }
     }
 
-    public bool Enabled => SettingsService.Current.SyncEnabled && !string.IsNullOrEmpty(Folder);
+    // ponytail: R13 没修完之前不跑同步（设置页也藏着），免得拿旧合并规则去写 Mac 的文件。
+    public static readonly bool Ready = false;
+
+    public bool Enabled => Ready && SettingsService.Current.SyncEnabled && !string.IsNullOrEmpty(Folder);
 
     public void StartTimer(Microsoft.UI.Dispatching.DispatcherQueue dispatcher)
     {

@@ -154,6 +154,13 @@ internal sealed class AviRecorder : IDisposable
                 written += count;
                 Frames = written;
                 ElapsedMs = (long)elapsed;
+                // ponytail: R14（AVI 换成 H.264 MP4 之前）先卡在 1 GB：AVI 1.0 过 1 GB 很多播放器打不开。
+                if (new FileInfo(_temporary).Length > 1L * 1024 * 1024 * 1024)
+                {
+                    Log.Warn("record.size-cap");
+                    _stop.Set();
+                    break;
+                }
                 if (!_effectsInjected && written >= 10 &&
                     Environment.GetEnvironmentVariable("KITTY_RECORD_EFFECTS") == "1")
                 {
