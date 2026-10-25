@@ -66,16 +66,16 @@
 - screenshot-last-card.png：Ctrl+Alt+Z 直接截上次区域后的飞入卡片
 ## 0.4.0-batch-1（第四版基础录屏）
 
-- record-saved.png：录 4 秒后轻提示「录屏已保存」，资源管理器里选中 `录屏 2026-10-25 18.15.46.avi`（12.5 MB）
+- record-saved.png：拍到了整个桌面，已删（windows/REVIEW.md R16）。要重拍的话只截我们自己的窗口。
 ## 0.4.0-batch-2（录屏选区与倒数）
 
-- record-select.png：Alt+R 打开的录屏选区遮罩（提示「拖动选区，单击窗口取整窗 · Esc 取消」）
+- record-select.png：拍到了整个桌面，已删（windows/REVIEW.md R16）。要重拍的话只截我们自己的窗口。
 ## 0.4.0-batch-3（录屏 HUD）
 
-- hud.png：录制中的控制条（红点、0:02 计时、✕ 放弃、■ 停止）；用 KITTY_HUD_CAPTURE=1 关掉排除捕获才截得到，正常录制时它不会进画面
+- hud.png：拍到了整个桌面，已删（windows/REVIEW.md R16）。要重拍的话只截我们自己的窗口。
 ## 0.4.0-batch-4（点按圈与按键胶囊）
 
-- effects-frame.jpg：从录好的 AVI 里抽的一帧，能看到左键粉圈、右键蓝圈和底部的「CTRL + SHIFT + S」胶囊（自检注入）
+- effects-frame.jpg：拍到了整个桌面，已删（windows/REVIEW.md R16）。要重拍的话只截我们自己的窗口。
 ## 0.4.0-batch-5（录屏转 GIF）
 
-- gif-frame.png：从生成的 GIF 里用 WIC 解出来的第 6 帧（800×600），画面上还有点按圈和按键胶囊
+- gif-frame.png：拍到了整个桌面，已删（windows/REVIEW.md R16）。要重拍的话只截我们自己的窗口。
