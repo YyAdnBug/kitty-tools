@@ -92,6 +92,7 @@ Kitty Tools 的 **Windows 原生版**（C# + WinUI 3，2026-10-23 立项）。�
 - **提交格式**：`<type>(win): <description>`，type 取 feat / fix / ui / refactor / docs / perf / build / chore。标题一行、70 字以内；空一行写正文，**正文就是这批的报告**。一批可以拆成几个提交，报告写在最后一个里。
 - **截图**：推到孤儿分支 `windows-shots`（`git worktree add ../kitty-shots windows-shots` 之后在那个目录里提交、推送），每批一个目录、6–10 张、单张 < 500 KB；动效录 3–5 秒的短视频（mp4 < 5 MB）也放这里。
 - **截图里不能有别的东西**（`windows-shots` 在公开仓库里）：只截我们自己的窗口（按窗口矩形裁，或只抓我们的 HWND）；录屏要验证时，先开一个自己的满屏测试图案窗口，只录它。整个桌面的图一律不推；推之前自己看一遍，不能出现别的 App、别的对话、IP、账号。
+- **`windows-shots` 在 2026-10-25 被改写过**（删了五张拍到整个桌面的图）：下次往那里提交前，先在 `../kitty-shots` 目录里 `git fetch origin && git reset --hard origin/windows-shots`。不要 pull、也不要 rebase 本地旧的那条分支，否则删掉的图会被带回来。
 - **提交信息用不带 BOM 的 UTF-8**：写进文件再 `git commit -F`；PowerShell 7 用 `Set-Content -Encoding utf8NoBOM`（5.1 的 `-Encoding UTF8` 会带 BOM）。
 - 拿不准的系统行为：先查 learn.microsoft.com，或看 PowerToys 源码（MIT）怎么做。
 - 用中文写文档和报告，代码注释可以写中文。
