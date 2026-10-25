@@ -68,6 +68,9 @@ internal static unsafe class Paster
     }
 
     public static bool WriteText(string text) => ClipboardWriter.WriteText(text);
+
+    /// <summary>片段里的 {cursor}：粘贴之后往左挪这么多下（第三版 §4）。</summary>
+    public static void SendLeft(int count) => Keyboard.SendLeft(count);
 }
 
 internal static unsafe class Keyboard
@@ -143,6 +146,19 @@ internal static unsafe class Keyboard
     public static void TapAlt() => TapUnassigned();
 
     public static bool SendCtrlV() => SendCtrlCombo((VIRTUAL_KEY)0x56);
+
+    /// <summary>片段里的 {cursor}：粘贴之后往左挪这么多下（第三版 §4）。</summary>
+    public static void SendLeft(int count)
+    {
+        Span<INPUT> inputs = stackalloc INPUT[2];
+        inputs[0] = KeyInput((VIRTUAL_KEY)0x25, 0); // VK_LEFT
+        inputs[1] = KeyInput((VIRTUAL_KEY)0x25, KEYBD_EVENT_FLAGS.KEYEVENTF_KEYUP);
+        for (var index = 0; index < Math.Min(count, Core.SnippetRules.MaxCursorBackChars); index++)
+        {
+            SendInputs(inputs);
+            Thread.Sleep(8);
+        }
+    }
 
     public static bool SendCtrlC() => SendCtrlCombo((VIRTUAL_KEY)0x43);
 

@@ -114,14 +114,18 @@ internal static class ArchiveService
                 .Select(entry => new SettingsArchive.ArchiveClip
                 {
                     Text = entry.Text,
-                    Note = null,
+                    Note = entry.Note,
                     Favorite = true,
-                    Snippet = false,
-                    Group = null,
+                    Snippet = entry.Snippet,
+                    Group = clips.GroupName(entry.GroupId),
                     CopiedAt = DateTimeOffset.FromUnixTimeMilliseconds(entry.CopiedAt),
                 })
                 .ToList();
-            archive.ClipGroups = new List<string>();
+            archive.ClipGroups = clips.Groups
+                .OrderBy(group => group.Position)
+                .Select(group => group.Name)
+                .Take(SettingsArchive.MaxGroups)
+                .ToList();
         }
 
         // 生词本（第三版第 2 批）：收藏的翻译。
@@ -200,8 +204,14 @@ internal static class ArchiveService
 
             if (archive.Clips is { Count: > 0 } clips && ClipboardService.Instance?.Store is { } clipboard)
             {
-                var (added, updated) = clipboard.AdoptTextClips(
-                    clips.Select(clip => (clip.Text!, clip.Favorite == true, clip.CopiedAt)).ToList());
+                var (added, updated) = clipboard.AdoptClips(
+                    clips.Select(clip => (
+                        clip.Text!,
+                        clip.Favorite == true,
+                        clip.CopiedAt,
+                        clip.Note,
+                        clip.Snippet == true,
+                        clip.Group)).ToList());
                 outcome.ClipsAdded = added;
                 outcome.ClipsUpdated = updated;
             }

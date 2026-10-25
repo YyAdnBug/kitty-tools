@@ -31,6 +31,16 @@ internal sealed class ClipEntry
 
     public bool Favorite { get; set; }
 
+    /// <summary>稳定的 UUID（片段 / 收藏才生成；大写带连字符，导出和第五版同步用）。</summary>
+    public string? Uid { get; set; }
+
+    public bool Snippet { get; set; }
+
+    /// <summary>备注（能搜到；取消收藏不清备注）。</summary>
+    public string? Note { get; set; }
+
+    public string? GroupId { get; set; }
+
     /// <summary>搜索用的折叠文本（Search.FoldBytes），第一次搜索时建。</summary>
     public byte[]? Folded { get; set; }
 
@@ -59,11 +69,12 @@ internal sealed class ClipEntry
         ClipKind.Image => string.Join('\n', new[]
         {
             $"图片 {Width} {Height}",
+            Note,
             SourceName,
             SourceExe,
         }.Where(s => !string.IsNullOrEmpty(s))),
-        ClipKind.Files => string.Join('\n', new[] { FilePaths, SourceName, SourceExe }.Where(s => !string.IsNullOrEmpty(s))),
-        _ => string.Join('\n', new[] { Text, SourceName, SourceExe }.Where(s => !string.IsNullOrEmpty(s))),
+        ClipKind.Files => string.Join('\n', new[] { FilePaths, Note, SourceName, SourceExe }.Where(s => !string.IsNullOrEmpty(s))),
+        _ => string.Join('\n', new[] { Text, Note, SourceName, SourceExe }.Where(s => !string.IsNullOrEmpty(s))),
     };
 
     public RetentionItem ToRetentionItem()

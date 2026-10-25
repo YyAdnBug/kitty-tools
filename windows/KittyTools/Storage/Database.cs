@@ -4,6 +4,17 @@ using KittyTools.Core;
 
 namespace KittyTools.Infrastructure;
 
+internal sealed class ClipGroup
+{
+    public string Id { get; init; } = string.Empty;
+
+    public string Name { get; init; } = string.Empty;
+
+    public int Position { get; init; }
+
+    public long CreatedAt { get; init; }
+}
+
 internal sealed class Database : IDisposable
 {
     private readonly SqliteConnection _connection;
@@ -31,7 +42,8 @@ internal sealed class Database : IDisposable
         using var statement = _connection.Prepare(
             """
             SELECT id, kind, text, file_paths, image_hash, width, height, image_bytes,
-                   source_exe, source_name, copied_at, favorite
+                   source_exe, source_name, copied_at, favorite,
+                   uid, snippet, note, group_id
             FROM clips ORDER BY copied_at DESC, id DESC
             """);
         while (statement.Step())
@@ -56,6 +68,10 @@ internal sealed class Database : IDisposable
                 SourceName = statement.GetText(9),
                 CopiedAt = statement.GetInt64(10),
                 Favorite = statement.GetInt64(11) != 0,
+                Uid = statement.GetText(12),
+                Snippet = statement.GetInt64(13) != 0,
+                Note = statement.GetText(14),
+                GroupId = statement.GetText(15),
             });
         }
 
@@ -67,8 +83,9 @@ internal sealed class Database : IDisposable
         using var statement = _connection.Prepare(
             """
             INSERT INTO clips(kind, text, file_paths, html, rtf, image_hash, width, height, image_bytes,
-                              source_exe, source_name, copied_at, favorite)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+                              source_exe, source_name, copied_at, favorite,
+                              uid, snippet, note, group_id)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
             """);
         statement.BindText(1, KindText(entry.Kind))
             .BindText(2, entry.Text)
@@ -82,7 +99,11 @@ internal sealed class Database : IDisposable
             .BindText(10, entry.SourceExe)
             .BindText(11, entry.SourceName)
             .BindInt64(12, entry.CopiedAt)
-            .BindInt64(13, entry.Favorite ? 1 : 0);
+            .BindInt64(13, entry.Favorite ? 1 : 0)
+            .BindText(14, entry.Uid)
+            .BindInt64(15, entry.Snippet ? 1 : 0)
+            .BindText(16, entry.Note)
+            .BindText(17, entry.GroupId);
         statement.Step();
         return _connection.LastInsertRowId;
     }
@@ -113,9 +134,136 @@ internal sealed class Database : IDisposable
 
     public void SetFavorite(long id, bool favorite)
     {
-        using var statement = _connection.Prepare("UPDATE clips SET favorite = ?2 WHERE id = ?1");
+        using var statement = _connection.Prepare(
+            "UPDATE clips SET favorite = ?2 WHERE id = ?1");
         statement.BindInt64(1, id).BindInt64(2, favorite ? 1 : 0);
         statement.Step();
+        if (!favorite)
+        {
+            // 不变式：有收藏夹的条目一定是收藏；取消收藏就解除归属。
+            using var clear = _connection.Prepare("UPDATE clips SET group_id = NULL WHERE id = ?1");
+            clear.BindInt64(1, id);
+            clear.Step();
+        }
+    }
+
+    public void SetSnippet(long id, bool snippet)
+    {
+        using var statement = _connection.Prepare("UPDATE clips SET snippet = ?2 WHERE id = ?1");
+        statement.BindInt64(1, id).BindInt64(2, snippet ? 1 : 0);
+        statement.Step();
+    }
+
+    public void SetNote(long id, string? note)
+    {
+        using var statement = _connection.Prepare("UPDATE clips SET note = ?2 WHERE id = ?1");
+        statement.BindInt64(1, id).BindText(2, note);
+        statement.Step();
+    }
+
+    public void SetText(long id, string text)
+    {
+        using var statement = _connection.Prepare("UPDATE clips SET text = ?2 WHERE id = ?1");
+        statement.BindInt64(1, id).BindText(2, text);
+        statement.Step();
+    }
+
+    public void SetGroup(long id, string? groupId)
+    {
+        using (var statement = _connection.Prepare(
+                   "UPDATE clips SET group_id = ?2, favorite = CASE WHEN ?2 IS NULL THEN favorite ELSE 1 END " +
+                   "WHERE id = ?1"))
+        {
+            statement.BindInt64(1, id).BindText(2, groupId);
+            statement.Step();
+        }
+    }
+
+    public void SetUid(long id, string uid)
+    {
+        using var statement = _connection.Prepare("UPDATE clips SET uid = ?2 WHERE id = ?1");
+        statement.BindInt64(1, id).BindText(2, uid);
+        statement.Step();
+    }
+
+    public List<ClipGroup> LoadGroups()
+    {
+        var groups = new List<ClipGroup>();
+        using var statement = _connection.Prepare(
+            "SELECT id, name, position, created_at FROM clip_groups ORDER BY position ASC, name ASC;");
+        while (statement.Step())
+        {
+            groups.Add(new ClipGroup
+            {
+                Id = statement.GetText(0) ?? string.Empty,
+                Name = statement.GetText(1) ?? string.Empty,
+                Position = statement.GetInt32(2),
+                CreatedAt = statement.GetInt64(3),
+            });
+        }
+
+        return groups;
+    }
+
+    public void InsertGroup(string id, string name, int position, long createdAt)
+    {
+        using var statement = _connection.Prepare(
+            "INSERT INTO clip_groups(id, name, position, created_at) VALUES (?1, ?2, ?3, ?4);");
+        statement.BindText(1, id).BindText(2, name).BindInt64(3, position).BindInt64(4, createdAt);
+        statement.Step();
+    }
+
+    public void RenameGroup(string id, string name)
+    {
+        using var statement = _connection.Prepare("UPDATE clip_groups SET name = ?2 WHERE id = ?1;");
+        statement.BindText(1, id).BindText(2, name);
+        statement.Step();
+    }
+
+    public void MoveGroup(string id, int position)
+    {
+        using var statement = _connection.Prepare("UPDATE clip_groups SET position = ?2 WHERE id = ?1;");
+        statement.BindText(1, id).BindInt64(2, position);
+        statement.Step();
+    }
+
+    /// <summary>删除收藏夹：只解除归属（条目回到默认收藏），不删条目。</summary>
+    public void DeleteGroup(string id)
+    {
+        _connection.Execute("BEGIN IMMEDIATE;");
+        try
+        {
+            using (var clear = _connection.Prepare("UPDATE clips SET group_id = NULL WHERE group_id = ?1;"))
+            {
+                clear.BindText(1, id);
+                clear.Step();
+            }
+
+            using (var delete = _connection.Prepare("DELETE FROM clip_groups WHERE id = ?1;"))
+            {
+                delete.BindText(1, id);
+                delete.Step();
+            }
+
+            _connection.Execute("COMMIT;");
+        }
+        catch
+        {
+            _connection.Execute("ROLLBACK;");
+            throw;
+        }
+    }
+
+    public string? GroupName(string? id)
+    {
+        if (id is null)
+        {
+            return null;
+        }
+
+        using var statement = _connection.Prepare("SELECT name FROM clip_groups WHERE id = ?1;");
+        statement.BindText(1, id);
+        return statement.Step() ? statement.GetText(0) : null;
     }
 
     public void Delete(IReadOnlyCollection<long> ids)

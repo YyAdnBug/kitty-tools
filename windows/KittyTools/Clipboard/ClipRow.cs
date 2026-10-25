@@ -31,6 +31,14 @@ public sealed class ClipRow
 
     public Visibility FavoriteVisibility { get; private init; }
 
+    /// <summary>片段的小标签（第三版 §4）。</summary>
+    public Visibility SnippetVisibility { get; private init; }
+
+    /// <summary>备注（显示在行的右栏第二行，能搜到）。</summary>
+    public string NoteText { get; private init; } = string.Empty;
+
+    public Visibility NoteVisibility { get; private init; }
+
     /// <summary>右边的「来源 · 多久前」（PLAN-v2 §3.5）。</summary>
     public string RightText { get; private init; } = string.Empty;
 
@@ -62,6 +70,9 @@ public sealed class ClipRow
             DateHeader = showDateHeader ? DateLabel(entry.CopiedAt) : string.Empty,
             DateHeaderVisibility = HeaderVisibility(showDateHeader),
             FavoriteVisibility = FavoriteVisibilityOf(entry),
+            SnippetVisibility = entry.Snippet ? Visibility.Visible : Visibility.Collapsed,
+            NoteText = entry.Note ?? string.Empty,
+            NoteVisibility = string.IsNullOrWhiteSpace(entry.Note) ? Visibility.Collapsed : Visibility.Visible,
         };
     }
 
@@ -78,6 +89,8 @@ public sealed class ClipRow
            RightText == Relative(entry.CopiedAt) &&
            KeyHint == (showKeyHint && index is >= 0 and < 9 ? (index + 1).ToString() : string.Empty) &&
            KeyHintVisibility == (showKeyHint && index is >= 0 and < 9 ? Visibility.Visible : Visibility.Collapsed) &&
+           SnippetVisibility == (entry.Snippet ? Visibility.Visible : Visibility.Collapsed) &&
+           NoteText == (entry.Note ?? string.Empty) &&
            Title == TitleOf(entry);
 
     /// <summary>行右栏只放短时间（REVIEW R6）：列表窄，标题要占六成以上；来源在预览卡的卡头显示。</summary>

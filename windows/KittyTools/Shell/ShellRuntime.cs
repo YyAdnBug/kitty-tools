@@ -151,6 +151,27 @@ internal sealed class ShellRuntime
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(OpenClipboard);
         }
 
+#if DEBUG
+        // 调试用：塞一条示例片段（截图 / 手测片段、备注和收藏夹）。
+        if (Environment.GetCommandLineArgs().Contains("--seed-snippet", StringComparer.OrdinalIgnoreCase))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() =>
+            {
+                ClipboardService.Instance?.Store.AddSnippet(
+                    "Hello {cursor}world — {date} {time}", "示例片段（自动填日期）");
+            });
+        }
+#endif
+
+        // 调试用：打开面板时带一个搜索词。
+        var queryArg = Environment.GetCommandLineArgs()
+            .FirstOrDefault(arg => arg.StartsWith("--clipboard-query=", StringComparison.OrdinalIgnoreCase));
+        if (queryArg is not null)
+        {
+            var query = queryArg["--clipboard-query=".Length..];
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => OverlayHost.SetClipboardQuery(query));
+        }
+
         // 调试用：直接打开设置里的某一页，比如 --settings=clipboard。
         var settingsArg = Environment.GetCommandLineArgs()
             .FirstOrDefault(arg => arg.StartsWith("--settings=", StringComparison.OrdinalIgnoreCase));

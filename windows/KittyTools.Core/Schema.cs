@@ -79,6 +79,22 @@ public static class Schema
             CREATE UNIQUE INDEX IF NOT EXISTS translations_favorite_unique
               ON translations(source, target_lang) WHERE favorite = 1;
             """),
+        new SchemaStep(
+            4,
+            "clips 的片段 / 备注 / 收藏夹，新表 clip_groups（第三版第 3 批）",
+            """
+            ALTER TABLE clips ADD COLUMN uid TEXT;
+            ALTER TABLE clips ADD COLUMN snippet INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE clips ADD COLUMN note TEXT;
+            ALTER TABLE clips ADD COLUMN group_id TEXT;
+            CREATE UNIQUE INDEX IF NOT EXISTS clips_uid ON clips(uid) WHERE uid IS NOT NULL;
+            CREATE TABLE IF NOT EXISTS clip_groups(
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL UNIQUE,
+              position INTEGER NOT NULL,
+              created_at INTEGER NOT NULL
+            );
+            """),
     };
 
     /// <summary>从 currentVersion 开始还要跑的步骤（升序）。比代码新的库（用户装过更新的版本）一步都不跑。</summary>

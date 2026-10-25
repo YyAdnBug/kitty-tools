@@ -6,6 +6,14 @@ using KittyTools.Infrastructure;
 
 namespace KittyTools;
 
+/// <summary>剪贴板面板的范围（第三版 §4）。</summary>
+internal enum ClipScope
+{
+    All,
+    Favorites,
+    Snippets,
+}
+
 internal sealed class ClipboardStore
 {
     private readonly Database _database;
@@ -30,8 +38,200 @@ internal sealed class ClipboardStore
     {
         _items.Clear();
         _items.AddRange(_database.LoadClips());
+        Groups = _database.LoadGroups();
         Images.CleanupOrphans(_items.Select(item => item.Id).ToHashSet());
     }
+
+    /// <summary>收藏夹（按位置）。</summary>
+    public IReadOnlyList<ClipGroup> Groups { get; private set; } = Array.Empty<ClipGroup>();
+
+    /// <summary>收藏 / 片段一定要有 uid（导出与第五版同步用）：没有就补一个。</summary>
+    private void EnsureUid(ClipEntry entry)
+    {
+        if (!string.IsNullOrEmpty(entry.Uid))
+        {
+            return;
+        }
+
+        entry.Uid = Guid.NewGuid().ToString("D").ToUpperInvariant();
+        _database.SetUid(entry.Id, entry.Uid);
+    }
+
+    public void ToggleSnippet(long id)
+    {
+        var entry = _items.FirstOrDefault(item => item.Id == id);
+        if (entry is null)
+        {
+            return;
+        }
+
+        entry.Snippet = !entry.Snippet;
+        if (entry.Snippet)
+        {
+            entry.Favorite = true;
+            _database.SetFavorite(id, true);
+            EnsureUid(entry);
+        }
+
+        _database.SetSnippet(id, entry.Snippet);
+        Changed?.Invoke();
+    }
+
+    public void SetNote(long id, string? note)
+    {
+        var entry = _items.FirstOrDefault(item => item.Id == id);
+        if (entry is null)
+        {
+            return;
+        }
+
+        entry.Note = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+        entry.Folded = null;
+        _database.SetNote(id, entry.Note);
+        Changed?.Invoke();
+    }
+
+    public void MoveToGroup(long id, string? groupId)
+    {
+        var entry = _items.FirstOrDefault(item => item.Id == id);
+        if (entry is null)
+        {
+            return;
+        }
+
+        entry.GroupId = groupId;
+        if (groupId is not null)
+        {
+            entry.Favorite = true;
+            entry.Snippet = false;
+            _database.SetSnippet(id, false);
+            EnsureUid(entry);
+        }
+
+        _database.SetGroup(id, groupId);
+        Changed?.Invoke();
+    }
+
+    /// <summary>新建片段（第三版 §4）：正文 + 可选名称（存成备注），一定是收藏并带 uid。</summary>
+    public ClipEntry? AddSnippet(string text, string? note)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        var entry = new ClipEntry
+        {
+            Kind = ClipKind.Text,
+            Text = text,
+            Favorite = true,
+            Snippet = true,
+            Note = string.IsNullOrWhiteSpace(note) ? null : note.Trim(),
+            Uid = Guid.NewGuid().ToString("D").ToUpperInvariant(),
+            CopiedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            SourceName = "片段",
+        };
+        entry.Id = _database.Insert(entry);
+        _items.Insert(0, entry);
+        Changed?.Invoke();
+        return entry;
+    }
+
+    /// <summary>改正文（编辑片段用）。</summary>
+    public void UpdateText(long id, string text)
+    {
+        var entry = _items.FirstOrDefault(item => item.Id == id);
+        if (entry is null || entry.Kind != ClipKind.Text || string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        entry.Text = text;
+        entry.Folded = null;
+        _database.SetText(id, text);
+        Changed?.Invoke();
+    }
+
+    /// <summary>新建收藏夹；名字不合法 / 重名返回 null（规则在 Core 的 ClipGroups）。</summary>
+    public ClipGroup? CreateGroup(string name)
+    {
+        var normalized = ClipGroups.Normalize(name);
+        if (normalized is null || Groups.Count >= ClipGroups.MaxCount ||
+            !ClipGroups.IsUnique(normalized, Groups.Select(group => group.Name)))
+        {
+            return null;
+        }
+
+        var group = new ClipGroup
+        {
+            Id = Guid.NewGuid().ToString("D").ToUpperInvariant(),
+            Name = normalized,
+            Position = Groups.Count == 0 ? 0 : Groups.Max(item => item.Position) + 1,
+            CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+        };
+        _database.InsertGroup(group.Id, group.Name, group.Position, group.CreatedAt);
+        Groups = _database.LoadGroups();
+        Changed?.Invoke();
+        return group;
+    }
+
+    public bool RenameGroup(string id, string name)
+    {
+        var normalized = ClipGroups.Normalize(name);
+        var current = Groups.FirstOrDefault(group => group.Id == id);
+        if (normalized is null || current is null ||
+            !ClipGroups.IsUnique(normalized, Groups.Select(group => group.Name), current.Name))
+        {
+            return false;
+        }
+
+        _database.RenameGroup(id, normalized);
+        Groups = _database.LoadGroups();
+        Changed?.Invoke();
+        return true;
+    }
+
+    public void MoveGroup(string id, int delta)
+    {
+        var ordered = Groups.OrderBy(group => group.Position).ToList();
+        var index = ordered.FindIndex(group => group.Id == id);
+        if (index < 0)
+        {
+            return;
+        }
+
+        var target = Math.Clamp(index + delta, 0, ordered.Count - 1);
+        if (target == index)
+        {
+            return;
+        }
+
+        var moved = ordered[index];
+        ordered.RemoveAt(index);
+        ordered.Insert(target, moved);
+        for (var position = 0; position < ordered.Count; position++)
+        {
+            _database.MoveGroup(ordered[position].Id, position);
+        }
+
+        Groups = _database.LoadGroups();
+        Changed?.Invoke();
+    }
+
+    /// <summary>删除收藏夹：只解除归属，条目留在默认收藏里。</summary>
+    public void DeleteGroup(string id)
+    {
+        _database.DeleteGroup(id);
+        foreach (var entry in _items.Where(item => item.GroupId == id))
+        {
+            entry.GroupId = null;
+        }
+
+        Groups = _database.LoadGroups();
+        Changed?.Invoke();
+    }
+
+    public string? GroupName(string? id) => Groups.FirstOrDefault(group => group.Id == id)?.Name;
 
     /// <summary>新采集的文本 / 文件。敏感过滤由调用方先做；这里只负责去重、落库和上限。</summary>
     public void Record(ClipEntry entry, string? html = null, string? rtf = null)
@@ -162,6 +362,16 @@ internal sealed class ClipboardStore
     /// </summary>
     public (int Added, int Updated) AdoptTextClips(
         IReadOnlyList<(string Text, bool Favorite, DateTimeOffset? CopiedAt)> clips)
+        => AdoptClips(clips.Select(clip =>
+            (clip.Text, clip.Favorite, clip.CopiedAt, (string?)null, false, (string?)null)).ToList());
+
+    /// <summary>
+    /// 导入片段 / 收藏 / 收藏夹（第三版 §2.2 / §4）：同样的正文不重复加，只补收藏、备注、片段和收藏夹；
+    /// 收藏夹按名字找，没有就建；不删本机已有的。
+    /// </summary>
+    public (int Added, int Updated) AdoptClips(
+        IReadOnlyList<(string Text, bool Favorite, DateTimeOffset? CopiedAt, string? Note, bool Snippet, string? Group)>
+            clips)
     {
         var added = 0;
         var updated = 0;
@@ -172,14 +382,54 @@ internal sealed class ClipboardStore
                 continue;
             }
 
+            string? groupId = null;
+            if (!string.IsNullOrWhiteSpace(clip.Group))
+            {
+                var name = ClipGroups.Normalize(clip.Group);
+                var group = Groups.FirstOrDefault(item =>
+                    string.Equals(item.Name, name, StringComparison.OrdinalIgnoreCase));
+                group ??= name is null ? null : CreateGroup(name);
+                groupId = group?.Id;
+            }
+
             var existing = _items.FirstOrDefault(item =>
                 item.Kind == ClipKind.Text && string.Equals(item.Text, clip.Text, StringComparison.Ordinal));
             if (existing is not null)
             {
-                if (clip.Favorite && !existing.Favorite)
+                var changed = false;
+                if ((clip.Favorite || clip.Snippet) && !existing.Favorite)
                 {
                     existing.Favorite = true;
                     _database.SetFavorite(existing.Id, true);
+                    changed = true;
+                }
+
+                if (!string.IsNullOrWhiteSpace(clip.Note) && existing.Note != clip.Note)
+                {
+                    existing.Note = clip.Note!.Trim();
+                    existing.Folded = null;
+                    _database.SetNote(existing.Id, existing.Note);
+                    changed = true;
+                }
+
+                if (clip.Snippet && !existing.Snippet)
+                {
+                    existing.Snippet = true;
+                    _database.SetSnippet(existing.Id, true);
+                    changed = true;
+                }
+
+                if (groupId is not null && existing.GroupId != groupId)
+                {
+                    existing.GroupId = groupId;
+                    existing.Favorite = true;
+                    _database.SetGroup(existing.Id, groupId);
+                    changed = true;
+                }
+
+                if (changed)
+                {
+                    EnsureUid(existing);
                     updated++;
                 }
 
@@ -190,7 +440,13 @@ internal sealed class ClipboardStore
             {
                 Kind = ClipKind.Text,
                 Text = clip.Text,
-                Favorite = clip.Favorite,
+                Favorite = clip.Favorite || clip.Snippet || groupId is not null,
+                Snippet = clip.Snippet,
+                Note = string.IsNullOrWhiteSpace(clip.Note) ? null : clip.Note!.Trim(),
+                GroupId = groupId,
+                Uid = clip.Favorite || clip.Snippet || groupId is not null
+                    ? Guid.NewGuid().ToString("D").ToUpperInvariant()
+                    : null,
                 CopiedAt = clip.CopiedAt?.ToUnixTimeMilliseconds()
                            ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             };
@@ -218,6 +474,22 @@ internal sealed class ClipboardStore
 
         entry.Favorite = !entry.Favorite;
         _database.SetFavorite(id, entry.Favorite);
+        if (entry.Favorite)
+        {
+            EnsureUid(entry);
+        }
+        else
+        {
+            // 不变式：片段也是收藏；取消收藏同时不再是片段、也不再属于收藏夹（SetFavorite 已清 group_id）。
+            if (entry.Snippet)
+            {
+                entry.Snippet = false;
+                _database.SetSnippet(id, false);
+            }
+
+            entry.GroupId = null;
+        }
+
         Log.Info($"clipboard.favorite id={id} value={entry.Favorite}");
         Changed?.Invoke();
     }
@@ -328,13 +600,27 @@ internal sealed class ClipboardStore
     public long OrdinaryImageBytes => _items.Where(item => !item.Favorite).Sum(item => (long)item.ImageBytes);
 
     public List<ClipEntry> Filter(string query, bool favoritesOnly)
+        => Filter(query, favoritesOnly ? ClipScope.Favorites : ClipScope.All, groupId: null);
+
+    /// <summary>范围：全部 / 收藏 / 片段；选了收藏时还可以只看某个收藏夹。</summary>
+    public List<ClipEntry> Filter(string query, ClipScope scope, string? groupId)
     {
         var tokens = Search.Tokens(query);
         var foldedTokens = Search.FoldTokens(tokens);
         var result = new List<ClipEntry>();
         foreach (var entry in _items)
         {
-            if (favoritesOnly && !entry.Favorite)
+            if (scope == ClipScope.Favorites && !entry.Favorite)
+            {
+                continue;
+            }
+
+            if (scope == ClipScope.Snippets && !entry.Snippet)
+            {
+                continue;
+            }
+
+            if (groupId is not null && !string.Equals(entry.GroupId, groupId, StringComparison.Ordinal))
             {
                 continue;
             }

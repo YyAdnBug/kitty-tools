@@ -37,6 +37,9 @@ internal sealed unsafe class OverlayWindow : Window
     private HWND _previousForeground;
     private bool _visible;
     private bool _hiding;
+    // 固定面板（第三版 §4）：固定后点别处不收起，粘贴粘进最近一个不是本 App 的前台窗口。
+    private bool _pinned;
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _foregroundTimer;
     private double _scale = 1;
     private double _heightDip = 520;
     private double _heightFrom;
@@ -75,6 +78,40 @@ internal sealed unsafe class OverlayWindow : Window
 
     public HWND PasteTarget => _previousForeground;
 
+    /// <summary>Ctrl+P / 底栏图钉：固定后点别处不收起（Esc 照样收）。</summary>
+    public void TogglePin()
+    {
+        _pinned = !_pinned;
+        NoticeHost.Show("剪贴板面板", _pinned ? "已固定（Esc 仍然可以收起）" : "已取消固定", NoticeTone.Normal);
+        if (_pinned)
+        {
+            // 固定时用户可能点进别的程序再回来：隔一会儿记一下「最近一个不是本 App 的前台窗口」，粘贴就粘进它。
+            _foregroundTimer ??= DispatcherQueue.CreateTimer();
+            _foregroundTimer.Interval = TimeSpan.FromMilliseconds(400);
+            _foregroundTimer.IsRepeating = true;
+            _foregroundTimer.Tick += (_, _) => TrackExternalForeground();
+            _foregroundTimer.Start();
+        }
+        else
+        {
+            _foregroundTimer?.Stop();
+        }
+    }
+
+    private void TrackExternalForeground()
+    {
+        if (!_visible || !_pinned)
+        {
+            _foregroundTimer?.Stop();
+            return;
+        }
+
+        var current = Foreground.Get();
+        if (current != default && !Foreground.IsOurs(current) && current != _hwnd)
+        {
+            _previousForeground = current;
+        }
+    }
     public void SetClipboardQuery(string query) => _clipboard?.SetQuery(query);
 
     public void ShowOverlay(OverlayKind kind)
@@ -82,6 +119,7 @@ internal sealed unsafe class OverlayWindow : Window
         IdleReclaimer.Cancel();
         Log.Info($"overlay.begin kind={kind}");
         _kind = kind;
+        _pinned = false;
         _host.RequestedTheme = Theme.ElementTheme;
 
         var before = Foreground.Get();
@@ -144,6 +182,8 @@ internal sealed unsafe class OverlayWindow : Window
         try
         {
             _visible = false;
+            _pinned = false;
+            _foregroundTimer?.Stop();
             _clipboard?.OnHidden();
             _launcher?.OnHidden();
             AppWindow.Hide();
@@ -248,7 +288,7 @@ internal sealed unsafe class OverlayWindow : Window
 
     private void OnActivated(object sender, WindowActivatedEventArgs args)
     {
-        if (args.WindowActivationState == WindowActivationState.Deactivated && _visible && !_hiding)
+        if (args.WindowActivationState == WindowActivationState.Deactivated && _visible && !_hiding && !_pinned)
         {
             HideOverlay(restoreForeground: false);
             return;
