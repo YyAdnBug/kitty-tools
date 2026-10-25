@@ -66,20 +66,6 @@
   - 整屏的图一律不推。推之前自己看一遍，不能有别的 App 的内容。
 - 已经推上去的那几张怎么处理，由用户定（要改写 `windows-shots` 的历史），agent **不要动**。
 
-### R20（P2）第三版报告里记的「没做成」，补上
-
-- 启动器：浏览器历史（Chrome / Edge 的 `History` 是 SQLite，先拷到临时文件再读，别直接打开正在用的那个）、Firefox 书签；Ctrl+K 子列表的打字过滤。
-- 长截图：向上滚的入口、自动滚动（`SendInput` 滚轮，每一屏对比重叠再拼）。
-- 链接预览的头图：`BitmapImage.DecodePixelWidth` 缩到长边 1200 再解码。
-- 有道、火山、腾讯的签名单测：期望值换成 mac `macos/KittyToolsTests/ProviderSigningTests.swift` 里的固定向量（`origin/main` 上就有；百度那条是官方文档的例子）。自己算出来的期望值，可能和实现错在同一处。
-
-**进展（`3e978d9`）**：
-- 已做：Chrome / Edge / Brave / Vivaldi 历史（`HistoryIndex`，临时拷贝 + WAL；本机 Edge 的库拷出来 malformed，
-  跳过并记日志；Chrome 等 217 条）、Firefox 书签（`places.sqlite`，书签数 404）、
-  Ctrl+K 操作面板改成自建 Flyout（过滤框 + 按钮列表，Enter / Esc）、链接头图 `DecodePixelWidth=1200`、
-  有道 / 火山 / 腾讯签名换成 mac 固定向量（3 个全过）。
-- 还没做：长截图的上滚入口 / 自动滚动拼图。
-
 ### R21（P3）几处小问题
 
 - 剪贴板预览头部的时间被右边的按钮盖住（`0.3.0-batch-3/clipboard-snippets.png` 只剩「16:20:3」，`0.3.0-batch-4/ocr-search.png` 只剩「16:33:4」）。时间那一列给最小宽度，放不下就不显示秒。
@@ -123,6 +109,16 @@
   （退路被 300 ms 截断；这台机器 Downloads 只有 500 多个文件，索引本身约 0.9 s）。
 
 ## 已修
+
+### R20（P2）第三版报告里记的「没做成」→ 已修（`3e978d9`、`fb0aa36`）
+
+- 浏览器历史：`HistoryIndex` 拷 `History` + `-wal`/`-shm` 到临时文件；本机 Chrome 等载入 217 条，
+  Edge 的库拷出来 malformed（正在写），跳过并记日志。
+- Firefox 书签：`places.sqlite` 的 `moz_bookmarks`（type=1）并入，书签 404 条。
+- Ctrl+K：自建 Flyout（过滤框 + 按钮列表，Enter / Esc），条目和右键菜单同名同顺序。
+- 长截图：`S` 向下、`Shift+S` 向上、`A` 自动向下、`Shift+A` 自动向上；自动每 600 ms `SendInput` 滚一格。
+- 链接头图 `DecodePixelWidth=1200`；有道 / 火山 / 腾讯签名换成 mac 固定向量（3 个全过）。
+- 没测：自动滚动的真机效果（会滚当前窗口，没自动化）；Edge 历史（库正在写时拷不出来）。
 
 ### R15（P1）R4 没修好：深色下设置卡还是浅底白字 → 已修（`2728574`）
 
