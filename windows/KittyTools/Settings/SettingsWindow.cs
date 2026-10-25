@@ -1116,7 +1116,7 @@ internal sealed class SettingsWindow : Window
         if (Features.IsOn(Feature.Recording))
         {
             _content.Children.Add(Section(
-                "录屏", "Alt+R 开始 / 停止；现在录鼠标所在那块屏的整屏，没有声音、没有选区（基础版）。"));
+                "录屏", "Alt+R 开始 / 停止；录鼠标所在那块屏的整屏，可以带系统声音和麦克风。"));
             AddCombo("帧率", "15 够用；30 更顺、文件更大。",
                 new[] { "15 fps", "30 fps" },
                 SettingsService.Current.RecordFps >= 30 ? 1 : 0,
@@ -1145,6 +1145,20 @@ internal sealed class SettingsWindow : Window
                 value =>
                 {
                     SettingsService.Current.RecordMp4 = value;
+                    SettingsService.Save();
+                });
+            AddToggle("系统声音", "录默认输出设备的声音（WASAPI 回环）；关掉只录麦克风或只有画面。",
+                SettingsService.Current.RecordSystemSound,
+                value =>
+                {
+                    SettingsService.Current.RecordSystemSound = value;
+                    SettingsService.Save();
+                });
+            AddToggle("麦克风", "录默认麦克风，和系统声音混成一条音轨。第一次会要系统麦克风权限。",
+                SettingsService.Current.RecordMicrophone,
+                value =>
+                {
+                    SettingsService.Current.RecordMicrophone = value;
                     SettingsService.Save();
                 });
 

@@ -57,13 +57,38 @@ internal static class RecordingHost
             return;
         }
 
-        IVideoRecorder? recorder = SettingsService.Current.RecordMp4
-            ? Mp4Recorder.StartRegion(region, SettingsService.Current.RecordFps, Folder, out var error)
-            : AviRecorder.StartRegion(region, SettingsService.Current.RecordFps, Folder, out error);
+        var settings = SettingsService.Current;
+        var wantsAudio = settings.RecordSystemSound || settings.RecordMicrophone;
+        IVideoRecorder? recorder;
+        string? error;
+        string? note;
+        if (settings.RecordMp4)
+        {
+            recorder = Mp4Recorder.StartRegion(
+                region, settings.RecordFps, Folder,
+                settings.RecordSystemSound, settings.RecordMicrophone, out error, out note);
+        }
+        else
+        {
+            recorder = AviRecorder.StartRegion(region, settings.RecordFps, Folder, out error);
+            note = wantsAudio ? "AVI 这一版不带声音；要声音请在设置里打开「直接录 MP4」" : null;
+        }
+
         if (recorder is null)
         {
             NoticeHost.Show("没能开始录屏", error ?? "未知原因", NoticeTone.Error);
             return;
+        }
+
+        if (note is not null)
+        {
+            NoticeHost.Show("这段录屏没有完整声音", note, NoticeTone.Warning);
+        }
+
+        if (recorder is Mp4Recorder { MicrophoneDenied: true })
+        {
+            settings.RecordMicrophone = false;
+            SettingsService.Save();
         }
 
         _recorder = recorder;

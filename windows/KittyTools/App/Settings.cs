@@ -10,7 +10,7 @@ namespace KittyTools.Infrastructure;
 
 internal sealed class Settings
 {
-    public int Version { get; set; } = 1;
+    public int Version { get; set; } = 2;
 
     public bool StartWithWindows { get; set; } = true;
 
@@ -121,6 +121,12 @@ internal sealed class Settings
     /// <summary>停止后另存一份 H.264 MP4（R14 的中间步骤，默认开）。</summary>
     public bool RecordMp4 { get; set; } = true;
 
+    /// <summary>录屏时录系统声音（默认开，PLAN-v6 第 2 批）。</summary>
+    public bool RecordSystemSound { get; set; } = true;
+
+    /// <summary>录屏时录麦克风（默认关）。</summary>
+    public bool RecordMicrophone { get; set; }
+
     public List<TranslateServiceConfig>? TranslateServices { get; set; }
 
     /// <summary>启动器的网页搜索列表；null = 从没存过（默认前 8 个，Bing 兜底）。</summary>
@@ -224,6 +230,13 @@ internal static class SettingsService
                 if (_current.Version < 1)
                 {
                     _current.Version = 1;
+                }
+
+                // 0.6.0 之前没有「录屏系统声音」这个字段；JSON 里缺了会解成 false，这里补回默认开。
+                if (_current.Version < 2)
+                {
+                    _current.RecordSystemSound = true;
+                    _current.Version = 2;
                 }
             }
             catch (Exception ex)

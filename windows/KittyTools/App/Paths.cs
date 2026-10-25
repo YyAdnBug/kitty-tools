@@ -5,12 +5,22 @@ namespace KittyTools.Infrastructure;
 internal static class Paths
 {
 #if DEBUG
-    public const string ProductName = "Kitty Tools Dev";
-    public const string DataFolderName = "KittyTools.Dev";
-    public const string MutexName = @"Local\KittyTools.Dev";
-    public const string InstancePipeName = "KittyTools.Dev.Instance";
-    public const string RunValueName = "KittyTools.Dev";
-    public const string CredentialPrefix = "KittyTools.Dev/";
+    // 调试构建可以用 KITTY_DEV_SUFFIX 另开一套数据 / 互斥量 / 托盘名，方便同时跑多个自检
+    // （Release 永远用下面固定的那套，不受影响）。
+    private static readonly string Suffix =
+        Environment.GetEnvironmentVariable("KITTY_DEV_SUFFIX") is { Length: > 0 } value ? "." + value : string.Empty;
+
+    public static string ProductName => "Kitty Tools Dev" + Suffix;
+
+    public static string DataFolderName => "KittyTools.Dev" + Suffix;
+
+    public static string MutexName => @"Local\KittyTools.Dev" + Suffix;
+
+    public static string InstancePipeName => "KittyTools.Dev.Instance" + Suffix;
+
+    public static string RunValueName => "KittyTools.Dev" + Suffix;
+
+    public static string CredentialPrefix => "KittyTools.Dev/" + Suffix;
 #else
     public const string ProductName = "Kitty Tools";
     public const string DataFolderName = "KittyTools";

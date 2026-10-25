@@ -1143,7 +1143,7 @@ internal sealed partial class SelectionOverlayWindow : Window
         e.Handled = true;
     }
 
-    /// <summary>录屏条：点按 / 按键开关（记在设置里），声音和麦克风这一版没做，灰着说明。</summary>
+    /// <summary>录屏条：点按 / 按键 / 系统声音 / 麦克风四个开关（记在设置里，开录那一刻才读）。</summary>
     private StackPanel BuildRecordBar()
     {
         var bar = new StackPanel
@@ -1182,23 +1182,20 @@ internal sealed partial class SelectionOverlayWindow : Window
                 SettingsService.Save();
             }));
 
-        foreach (var (label, tip) in new[]
-                 {
-                     ("声音", "系统声音这一版没做"),
-                     ("麦克风", "录屏时录麦克风这一版没做"),
-                 })
-        {
-            var disabled = new ToggleButton
+        bar.Children.Add(Toggle(
+            "声音", SettingsService.Current.RecordSystemSound, "把系统声音录进 MP4",
+            value =>
             {
-                Content = label,
-                IsEnabled = false,
-                FontSize = 12,
-                Padding = new Thickness(8, 3, 8, 3),
-                MinWidth = 0,
-            };
-            ToolTipService.SetToolTip(disabled, tip);
-            bar.Children.Add(disabled);
-        }
+                SettingsService.Current.RecordSystemSound = value;
+                SettingsService.Save();
+            }));
+        bar.Children.Add(Toggle(
+            "麦克风", SettingsService.Current.RecordMicrophone, "把麦克风声音混进 MP4",
+            value =>
+            {
+                SettingsService.Current.RecordMicrophone = value;
+                SettingsService.Save();
+            }));
 
         return bar;
     }
