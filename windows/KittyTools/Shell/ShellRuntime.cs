@@ -182,6 +182,13 @@ internal sealed class ShellRuntime
         }
 
 #if DEBUG
+        // 调试用：直接开录屏的选区遮罩（截图 / 手测 Alt+R 的界面）。
+        if (Environment.GetCommandLineArgs().Contains("--record-select", StringComparer.OrdinalIgnoreCase))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(
+                () => ScreenshotSession.Start(ScreenshotMode.Record));
+        }
+
         // 调试用：自动录 N 秒（手测托盘 / 轻提示 / 保存目录，不用真的按热键）。
         var recordUiArg = Environment.GetCommandLineArgs()
             .FirstOrDefault(arg => arg.StartsWith("--record-ui=", StringComparison.OrdinalIgnoreCase));
@@ -189,8 +196,21 @@ internal sealed class ShellRuntime
         {
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
             {
-                RecordingHost.Start();
+                RecordingHost.StartRegion(new PixelBounds(0, 0, 1280, 720));
                 await Task.Delay(TimeSpan.FromSeconds(Math.Clamp(seconds, 1, 60)));
+                RecordingHost.Stop();
+            });
+        }
+
+        // 调试用：直接录一块固定区域 N 秒（不经过遮罩 / 倒数），验区域裁剪和文件头。
+        var regionArg = Environment.GetCommandLineArgs()
+            .FirstOrDefault(arg => arg.StartsWith("--record-region=", StringComparison.OrdinalIgnoreCase));
+        if (regionArg is not null && int.TryParse(regionArg["--record-region=".Length..], out var regionSeconds))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
+            {
+                RecordingHost.StartRegion(new PixelBounds(100, 100, 900, 700));
+                await Task.Delay(TimeSpan.FromSeconds(Math.Clamp(regionSeconds, 1, 60)));
                 RecordingHost.Stop();
             });
         }
@@ -442,6 +462,13 @@ internal sealed class ShellRuntime
         const uint WmPowerBroadcast = 0x0218;
         if (msg == PInvoke.WM_HOTKEY)
         {
+            // 录屏倒数期间 Esc 取消（第四版）。
+            if (RecordingCountdown.Active && (int)wParam.Value == RecordingCountdown.EscapeId)
+            {
+                RecordingCountdown.Cancel();
+                return;
+            }
+
             // 长截图期间 Enter / Esc 是临时注册的（第三版 §7）。
             if (ScrollingCapture.Active && (int)wParam.Value is ScrollingCapture.EnterId or ScrollingCapture.EscapeId)
             {

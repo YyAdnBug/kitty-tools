@@ -41,6 +41,13 @@ internal sealed class AviRecorder : IDisposable
     public bool IsRecording => _thread is { IsAlive: true };
 
     public static AviRecorder? Start(int fps, string folder, out string? error)
+        => StartCore(fps, folder, null, out error);
+
+    /// <summary>录一块区域（物理像素，全局坐标）；Alt+R 选区走这条。</summary>
+    public static AviRecorder? StartRegion(PixelBounds region, int fps, string folder, out string? error)
+        => StartCore(fps, folder, region, out error);
+
+    private static AviRecorder? StartCore(int fps, string folder, PixelBounds? region, out string? error)
     {
         error = null;
         List<FrozenScreen> screens;
@@ -62,7 +69,8 @@ internal sealed class AviRecorder : IDisposable
 
         PInvoke.GetCursorPos(out var cursor);
         var screen = screens.FirstOrDefault(item => item.Bounds.Contains(cursor.X, cursor.Y)) ?? screens[0];
-        var size = RecorderRules.Even(screen.Bounds.Width, screen.Bounds.Height);
+        var target = region ?? screen.Bounds;
+        var size = RecorderRules.Even(target.Width, target.Height);
         try
         {
             Directory.CreateDirectory(folder);
@@ -81,12 +89,11 @@ internal sealed class AviRecorder : IDisposable
         var final = UniquePath(Path.Combine(folder, RecorderRules.FileName(DateTime.Now)));
         var temporary = RecorderRules.TemporaryPath(folder);
         var recorder = new AviRecorder(
-            new PixelBounds(screen.Bounds.Left, screen.Bounds.Top, screen.Bounds.Left + size.Width,
-                screen.Bounds.Top + size.Height),
+            new PixelBounds(target.Left, target.Top, target.Left + size.Width, target.Top + size.Height),
             fps, temporary, final);
         recorder._thread = new Thread(recorder.Run) { IsBackground = true, Name = "kitty-recorder" };
         recorder._thread.Start();
-        Log.Info($"record.start {size.Width}x{size.Height} fps={fps}");
+        Log.Info($"record.start {size.Width}x{size.Height} fps={fps} at={target.Left},{target.Top}");
         return recorder;
     }
 
@@ -193,13 +200,16 @@ internal sealed class AviRecorder : IDisposable
         {
             var screens = ScreenCapture.CaptureAll();
             var screen = screens.FirstOrDefault(item =>
-                item.Bounds.Left == _region.Left && item.Bounds.Top == _region.Top);
+                item.Bounds.Contains(_region.Left, _region.Top) &&
+                _region.Right <= item.Bounds.Right && _region.Bottom <= item.Bounds.Bottom);
             if (screen is null)
             {
                 return null;
             }
 
-            var local = new PixelBounds(0, 0, width, height);
+            var local = new PixelBounds(
+                _region.Left - screen.Bounds.Left, _region.Top - screen.Bounds.Top,
+                _region.Right - screen.Bounds.Left, _region.Bottom - screen.Bounds.Top);
             var bgra = screen.Crop(local);
             return JpegEncoder.EncodeAsync(bgra, width, height, 0.7f).GetAwaiter().GetResult();
         }

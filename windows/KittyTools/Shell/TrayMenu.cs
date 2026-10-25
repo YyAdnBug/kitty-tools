@@ -178,7 +178,7 @@ internal static partial class TrayMenu
             }
             else
             {
-                Add(menu, "\uE7C8", "录屏", HotKeyActions.Record, RecordingHost.Start);
+                Add(menu, "\uE7C8", "录屏", HotKeyActions.Record, RecordingHost.Toggle);
             }
 
             menu.Items.Add(new MenuFlyoutSeparator());

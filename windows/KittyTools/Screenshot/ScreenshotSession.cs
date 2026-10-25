@@ -12,6 +12,7 @@ internal enum ScreenshotMode
     Capture,
     Ocr,
     Translate,
+    Record,
 }
 
 internal sealed class ScreenshotSession
@@ -129,6 +130,19 @@ internal sealed class ScreenshotSession
     }
 
     /// <summary>截图翻译 / 识字：松手立即确认。</summary>
+    /// <summary>录屏模式：选区确认后收起遮罩，倒数 3 秒开始录这块区域（第四版）。</summary>
+    public void BeginRecordingSelection()
+    {
+        if (!HasSelection || SelectionScreen is not { } screen)
+        {
+            return;
+        }
+
+        var global = GlobalRect(screen, Selection);
+        Finish();
+        RecordingCountdown.Start(global);
+    }
+
     public async void ConfirmQuick()
     {
         if (!HasSelection || SelectionScreen is not { } screen)

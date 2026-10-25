@@ -42,21 +42,22 @@ internal static class RecordingHost
         if (IsRecording)
         {
             Stop();
+            return;
         }
-        else
-        {
-            Start();
-        }
+
+        // 没在录：先开截图遮罩选区域（和截图同一套），Enter 后倒数 3 秒开始。
+        ScreenshotSession.Start(ScreenshotMode.Record);
     }
 
-    public static void Start()
+    /// <summary>选区确认、倒数结束后真正开始录。</summary>
+    public static void StartRegion(PixelBounds region)
     {
         if (_recorder is not null)
         {
             return;
         }
 
-        var recorder = AviRecorder.Start(SettingsService.Current.RecordFps, Folder, out var error);
+        var recorder = AviRecorder.StartRegion(region, SettingsService.Current.RecordFps, Folder, out var error);
         if (recorder is null)
         {
             NoticeHost.Show("没能开始录屏", error ?? "未知原因", NoticeTone.Error);

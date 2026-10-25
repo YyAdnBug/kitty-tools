@@ -542,21 +542,29 @@ internal sealed partial class SelectionOverlayWindow : Window
         extras.Children.Add(_redoButton);
 
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
-        foreach (var (label, tip, name, action) in new (string, string, string, Action)[]
-                 {
-                     ("复制", "复制（Enter）", "复制截图", () => _ = _session.CopySelectionAsync()),
-                     ("保存", "快速保存（Ctrl+S）", "保存截图", () => _ = _session.SaveSelectionAsync(saveAs: false)),
-                     ("钉图", "钉在屏幕上（P）", "钉图", () => _ = PinSelectionAsync()),
-                     ("识字", "识字（O）", "识别文字", () => _ = _session.RecognizedSelectionAsync()),
-                     ("翻译", "翻译（T）", "截图翻译", () => _ = _session.TranslateSelectionAsync()),
-                 })
+        var actionItems = _session.Mode == ScreenshotMode.Record
+            ? new (string, string, string, Action)[]
+            {
+                ("开始录屏", "开始录屏（Enter，倒数 3 秒）", "开始录屏",
+                    () => _session.BeginRecordingSelection()),
+            }
+            : new (string, string, string, Action)[]
+            {
+                ("复制", "复制（Enter）", "复制截图", () => _ = _session.CopySelectionAsync()),
+                ("保存", "快速保存（Ctrl+S）", "保存截图", () => _ = _session.SaveSelectionAsync(saveAs: false)),
+                ("钉图", "钉在屏幕上（P）", "钉图", () => _ = PinSelectionAsync()),
+                ("识字", "识字（O）", "识别文字", () => _ = _session.RecognizedSelectionAsync()),
+                ("翻译", "翻译（T）", "截图翻译", () => _ = _session.TranslateSelectionAsync()),
+            };
+        foreach (var (label, tip, name, action) in actionItems)
         {
             var button = ToolbarButton(label, tip, name, 44);
             button.Click += (_, _) => action();
             actions.Children.Add(button);
         }
 
-        var close = ToolbarButton("✕", "取消（Esc）", "取消截图", 24);
+        var close = ToolbarButton("✕", _session.Mode == ScreenshotMode.Record ? "取消录屏（Esc）" : "取消（Esc）",
+            "取消截图", 24);
         close.Click += (_, _) => _session.Finish();
         actions.Children.Add(close);
 
@@ -1182,6 +1190,10 @@ internal sealed partial class SelectionOverlayWindow : Window
                 if (_session.Mode is ScreenshotMode.Ocr or ScreenshotMode.Translate)
                 {
                     _session.ConfirmQuick();
+                }
+                else if (_session.Mode == ScreenshotMode.Record)
+                {
+                    _session.BeginRecordingSelection();
                 }
                 else
                 {
