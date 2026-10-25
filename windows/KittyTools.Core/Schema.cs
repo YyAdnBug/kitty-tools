@@ -101,6 +101,18 @@ public static class Schema
             """
             ALTER TABLE clips ADD COLUMN ocr_text TEXT;
             """),
+        new SchemaStep(
+            6,
+            "launcher_favorites：启动器收藏与顺序（第三版第 5 批）",
+            """
+            CREATE TABLE IF NOT EXISTS launcher_favorites(
+              target TEXT PRIMARY KEY,
+              kind TEXT NOT NULL,
+              title TEXT NOT NULL DEFAULT '',
+              position INTEGER NOT NULL,
+              added_at INTEGER NOT NULL
+            );
+            """),
     };
 
     /// <summary>从 currentVersion 开始还要跑的步骤（升序）。比代码新的库（用户装过更新的版本）一步都不跑。</summary>

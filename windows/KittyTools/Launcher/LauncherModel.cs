@@ -33,7 +33,7 @@ internal sealed class LauncherModel
 
         if (string.IsNullOrWhiteSpace(query))
         {
-            return Frequent();
+            return FavoritesAndFrequent();
         }
 
         var items = new List<LauncherItem>();
@@ -52,6 +52,20 @@ internal sealed class LauncherModel
         var local = AppsAndBuiltins(query);
         items.AddRange(local);
 
+        // 浏览器书签（第三版 §6）：排在应用后面、网页搜索兜底前面。
+        BookmarkIndex.Load();
+        foreach (var bookmark in BookmarkIndex.Search(query))
+        {
+            items.Add(new LauncherItem
+            {
+                Kind = LauncherKind.Url,
+                Target = bookmark.Url,
+                Title = bookmark.Title,
+                Subtitle = "书签 · " + bookmark.Source,
+                Priority = 8,
+            });
+        }
+
         if (items.Count == 0)
         {
             items.AddRange(WebSearch.FallbackItems(query, Engines));
@@ -60,7 +74,98 @@ internal sealed class LauncherModel
         return items;
     }
 
-    public bool IsArmed(LauncherItem item) => item.Kind == LauncherKind.Command && _armed == item.Target;
+    public bool IsArmed(LauncherItem item) => _armed == item.Target &&
+                                              (item.Kind == LauncherKind.Command || item.Kind == LauncherKind.Action);
+
+    /// <summary>收藏（第三版 §6）：Ctrl+D 切换；空查询先列收藏。</summary>
+    public bool IsFavorite(LauncherItem item) => LauncherFavorites.Instance?.IsFavorite(item.Target) == true;
+
+    public bool ToggleFavorite(LauncherItem item)
+        => LauncherFavorites.Instance?.Toggle(item.Target, item.Kind.ToString(), item.Title) == true;
+
+    public void MoveFavorite(LauncherItem item, int delta)
+        => LauncherFavorites.Instance?.Move(item.Target, delta);
+
+    public List<LauncherItem> Favorites()
+    {
+        if (LauncherFavorites.Instance is not { } store)
+        {
+            return new List<LauncherItem>();
+        }
+
+        var items = new List<LauncherItem>();
+        foreach (var favorite in store.Load())
+        {
+            if (!Enum.TryParse<LauncherKind>(favorite.Kind, out var kind))
+            {
+                kind = LauncherKind.App;
+            }
+
+            items.Add(new LauncherItem
+            {
+                Kind = kind,
+                Target = favorite.Target,
+                Title = favorite.Title,
+                Subtitle = kind == LauncherKind.Path ? Path.GetDirectoryName(favorite.Target) ?? string.Empty : "收藏",
+                Names = new List<string> { favorite.Title, favorite.Target },
+            });
+        }
+
+        return items;
+    }
+
+    private List<LauncherItem> FavoritesAndFrequent()
+    {
+        var favorites = Favorites();
+        if (favorites.Count == 0)
+        {
+            return Frequent();
+        }
+
+        var result = new List<LauncherItem>(favorites);
+        foreach (var item in Frequent())
+        {
+            if (result.Count >= 8)
+            {
+                break;
+            }
+
+            if (result.All(existing => existing.Target != item.Target))
+            {
+                result.Add(item);
+            }
+        }
+
+        return result.Take(8).ToList();
+    }
+
+    /// <summary>文件搜索结果（第三版 §6）：Kind=Path，Ctrl+Enter 在资源管理器里显示。</summary>
+    public static List<LauncherItem> FileItems(IEnumerable<string> paths)
+        => paths.Select(path => new LauncherItem
+        {
+            Kind = LauncherKind.Path,
+            Target = path,
+            Title = Path.GetFileName(path),
+            Subtitle = Path.GetDirectoryName(path) ?? string.Empty,
+        }).ToList();
+
+    public static List<LauncherItem> ProcessItems(IEnumerable<ProcessRow> rows)
+        => rows.Select(row => new LauncherItem
+        {
+            Kind = LauncherKind.Action,
+            Target = "kill:" + row.Pid,
+            Title = row.Name,
+            Subtitle = $"PID {row.Pid} · {row.WorkingSetBytes / 1024 / 1024} MB · 再按 Enter 结束",
+        }).ToList();
+
+    public static List<LauncherItem> PortItems(IEnumerable<PortEntry> rows)
+        => rows.Select(row => new LauncherItem
+        {
+            Kind = LauncherKind.Action,
+            Target = $"port:{row.Pid}:{row.Port}",
+            Title = $"{row.Protocol} :{row.Port}",
+            Subtitle = $"{row.Local} · PID {row.Pid} {row.ProcessName} · Enter 复制地址",
+        }).ToList();
 
     public string SubtitleFor(LauncherItem item)
         => IsArmed(item) ? SystemCommands.ConfirmSubtitle : item.Subtitle;
@@ -97,6 +202,42 @@ internal sealed class LauncherModel
                 else if (item.Target.StartsWith("fy:", StringComparison.Ordinal))
                 {
                     TranslateHost.ShowText(item.Payload ?? string.Empty);
+                }
+                else if (item.Target.StartsWith("kill:", StringComparison.Ordinal))
+                {
+                    if (_armed != item.Target)
+                    {
+                        _armed = item.Target;
+                        return false;
+                    }
+
+                    _armed = null;
+                    var pid = int.TryParse(item.Target[5..], out var parsed) ? parsed : 0;
+                    if (pid <= 0)
+                    {
+                        error = "PID 不对";
+                        return false;
+                    }
+
+                    if (ProcessSearch.Kill(pid) is { } reason)
+                    {
+                        error = "没能结束 " + reason;
+                        return false;
+                    }
+
+                    return true;
+                }
+                else if (item.Target.StartsWith("port:", StringComparison.Ordinal))
+                {
+                    var parts = item.Target.Split(':');
+                    if (parts.Length >= 3 && int.TryParse(parts[2], out var port))
+                    {
+                        ClipboardWriter.WriteText("localhost:" + port);
+                        ClipboardService.Instance?.MarkOwnWrite();
+                        NoticeHost.Show("已复制", "localhost:" + port, NoticeTone.Normal);
+                    }
+
+                    return true;
                 }
                 else
                 {
@@ -171,6 +312,19 @@ internal sealed class LauncherModel
             case LauncherKind.Url:
             case LauncherKind.Search:
             case LauncherKind.Path:
+                // Ctrl+Enter：在资源管理器里显示（第三版 §6）。
+                if (control && File.Exists(item.Target))
+                {
+                    Start("explorer.exe", $"/select,\"{item.Target}\"", out var revealError);
+                    if (revealError is not null)
+                    {
+                        error = revealError;
+                        return false;
+                    }
+
+                    return true;
+                }
+
                 // 地图预设存的是 mac 的 maps://…，打开时换成 Windows 的地图协议（PLAN-v3 §1.5）。
                 if (!Start(WebSearch.OpenUrl(item.Target), null, out var openError))
                 {

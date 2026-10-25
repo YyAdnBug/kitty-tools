@@ -78,6 +78,9 @@ internal sealed unsafe class OverlayWindow : Window
 
     public HWND PasteTarget => _previousForeground;
 
+    /// <summary>给启动器带一个查询（调试 / 从剪贴板等入口打开用）。</summary>
+    public void SetLauncherQueryInner(string query) => _launcher?.SetQuery(query);
+
     /// <summary>Ctrl+P / 底栏图钉：固定后点别处不收起（Esc 照样收）。</summary>
     public void TogglePin()
     {
@@ -150,6 +153,12 @@ internal sealed unsafe class OverlayWindow : Window
         {
             _launcher.OnShown();
             _heightDip = _launcher.ContentHeightDip;
+            if (OverlayHost.PendingLauncherQuery is { } pending)
+            {
+                OverlayHost.PendingLauncherQuery = null;
+                _launcher.SetQuery(pending);
+                _heightDip = _launcher.ContentHeightDip;
+            }
         }
 
         Log.Info($"overlay.content kind={kind} height={_heightDip:F0}");
@@ -364,6 +373,19 @@ internal static class OverlayHost
     }
 
     public static void SetClipboardQuery(string query) => _window?.SetClipboardQuery(query);
+
+    public static void SetLauncherQuery(string query)
+    {
+        if (_window is { IsVisible: true } window)
+        {
+            window.SetLauncherQueryInner(query);
+            return;
+        }
+
+        PendingLauncherQuery = query;
+    }
+
+    internal static string? PendingLauncherQuery;
 
     /// <summary>启动 3 秒后预建浮层和两块面板（第二版 §4.2：第一次按热键 115–256 ms → 十几毫秒）。</summary>
     public static void Prewarm()

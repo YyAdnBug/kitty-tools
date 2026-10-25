@@ -83,6 +83,15 @@ internal sealed class Settings
     /// <summary>截图快速保存的文件夹；空 = 系统的「屏幕截图」文件夹。</summary>
     public string? ScreenshotSaveFolder { get; set; }
 
+    /// <summary>上一次截图的区域（物理像素，只在内存里，不进导出文件；第三版 §7）。</summary>
+    public int ScreenshotLastX { get; set; }
+
+    public int ScreenshotLastY { get; set; }
+
+    public int ScreenshotLastWidth { get; set; }
+
+    public int ScreenshotLastHeight { get; set; }
+
     public List<TranslateServiceConfig>? TranslateServices { get; set; }
 
     /// <summary>启动器的网页搜索列表；null = 从没存过（默认前 8 个，Bing 兜底）。</summary>

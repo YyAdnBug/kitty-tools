@@ -25,6 +25,11 @@ public sealed partial class LauncherPanel : UserControl
     private readonly List<LauncherItem> _items = new();
     private readonly Dictionary<string, BitmapImage> _icons = new();
     private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _keyHintTimer;
+    private LauncherMode _specialMode = LauncherMode.Normal;
+    private readonly List<LauncherItem> _specialItems = new();
+    private CancellationTokenSource? _specialCts;
+    private string? _specialQuery;
+    private bool _specialLoading;
     private bool _active;
     private bool _showKeyHints;
     private bool _executed;
@@ -70,6 +75,19 @@ public sealed partial class LauncherPanel : UserControl
     }
 
     public event Action? CloseRequested;
+
+    /// <summary>调试 / 从别处带查询打开（截图和手测用）。</summary>
+    public void SetQuery(string query)
+    {
+        _query = query;
+        SearchBox.Text = query;
+        SearchBox.SelectionStart = query.Length;
+        Refresh(keepSelection: false, animated: false);
+        _heightDip = ContentHeightDip;
+        SearchBox.Focus(FocusState.Programmatic);
+    }
+
+    private double _heightDip;
 
     public event Action? SettingsRequested;
 
@@ -169,6 +187,22 @@ public sealed partial class LauncherPanel : UserControl
             return;
         }
 
+        // 空格开头 / open / find / kill / port：走异步的额外查找（第三版 §6）。
+        var classified = LauncherCommands.Classify(_query);
+        if (classified.Mode != LauncherMode.Normal)
+        {
+            _specialMode = classified.Mode;
+            _items.Clear();
+            _items.AddRange(_specialItems);
+            RenderRows(model, keepSelection, animated);
+            ScheduleSpecial(classified);
+            return;
+        }
+
+        _specialMode = LauncherMode.Normal;
+        _specialCts?.Cancel();
+        _specialQuery = null;
+
         var previousTarget = keepSelection ? SelectedItem?.Target : null;
         _items.Clear();
         _items.AddRange(model.Results(_query));
@@ -226,8 +260,130 @@ public sealed partial class LauncherPanel : UserControl
         HeightRequested?.Invoke(ContentHeightDip, animated);
     }
 
+    /// <summary>特殊模式的行和普通模式一样渲染（图标、键帽、选中）。</summary>
+    private void RenderRows(LauncherModel model, bool keepSelection, bool animated)
+    {
+        var previousTarget = keepSelection ? SelectedItem?.Target : null;
+        var rows = new List<LauncherRow>(_items.Count);
+        for (var index = 0; index < _items.Count; index++)
+        {
+            var item = _items[index];
+            rows.Add(LauncherRow.Create(
+                item, model.SubtitleFor(item), index, _showKeyHints, IconFor(item), model.IsArmed(item)));
+        }
+
+        List.ItemsSource = rows;
+        EmptyState.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (rows.Count == 0)
+        {
+            EmptyIcon.Glyph = "\uE721";
+            EmptyText.Text = _specialLoading
+                ? _specialMode switch
+                {
+                    LauncherMode.FileSearch => "正在找文件…",
+                    LauncherMode.Kill => "正在列进程…",
+                    _ => "正在列端口…",
+                }
+                : _specialMode switch
+                {
+                    LauncherMode.FileSearch => "没有找到文件\n会搜桌面、文档、下载、图片、视频、音乐和 OneDrive",
+                    LauncherMode.Kill => "没有匹配的进程",
+                    _ => "没有匹配的端口",
+                };
+            List.SelectedIndex = -1;
+            Highlight.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            var index = previousTarget is null
+                ? 0
+                : Math.Max(0, _items.FindIndex(item => item.Target == previousTarget));
+            _animateHighlight = animated;
+            _highlightCurve = MotionCurve.Snap;
+            List.SelectedIndex = index;
+            List.ScrollIntoView(rows[index]);
+        }
+
+        UpdateFooter();
+        HeightRequested?.Invoke(ContentHeightDip, animated);
+    }
+
+    private void ScheduleSpecial((LauncherMode Mode, string Query) request)
+    {
+        _specialLoading = _specialItems.Count == 0;
+        if (_specialQuery == request.Query && _specialCts is not null && !_specialCts.IsCancellationRequested)
+        {
+            return;
+        }
+
+        _specialQuery = request.Query;
+        _specialCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _specialCts = cts;
+        var query = request.Query;
+        var mode = request.Mode;
+        _ = Task.Run(async () =>
+        {
+            // 打字时别每个字都扫一遍磁盘。
+            await Task.Delay(180, cts.Token);
+            List<LauncherItem> items;
+            try
+            {
+                items = mode switch
+                {
+                    LauncherMode.FileSearch => LauncherModel.FileItems(
+                        query.Length == 0
+                            ? FileSearch.Recent(20)
+                            : await FileSearch.SearchAsync(query, cts.Token)),
+                    LauncherMode.Kill => LauncherModel.ProcessItems(
+                        await ProcessSearch.SearchAsync(query, cts.Token)),
+                    _ => LauncherModel.PortItems(await PortSearch.SearchAsync(query, cts.Token)),
+                };
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"launcher.special-failed {ex.GetType().Name}");
+                items = new List<LauncherItem>();
+            }
+
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (cts.IsCancellationRequested || _specialQuery != query || _specialMode != mode)
+                {
+                    return;
+                }
+
+                _specialItems.Clear();
+                _specialItems.AddRange(items);
+                _specialLoading = false;
+                if (LauncherModel.Instance is { } model)
+                {
+                    _items.Clear();
+                    _items.AddRange(_specialItems);
+                    RenderRows(model, keepSelection: true, animated: false);
+                }
+            });
+        });
+    }
+
     private void UpdateFooter()
     {
+        if (_specialMode != LauncherMode.Normal)
+        {
+            FooterText.Text = _specialMode switch
+            {
+                LauncherMode.FileSearch =>
+                    "文件搜索 · Enter 打开 · Ctrl+Enter 在资源管理器里显示 · Ctrl+C 复制路径 · Esc 关闭",
+                LauncherMode.Kill => "进程 · Enter 两次结束（第二次才真的结束）· Esc 关闭",
+                _ => "端口 · Enter 复制 localhost:端口 · Esc 关闭",
+            };
+            return;
+        }
+
         var catalog = AppCatalog.Instance;
         if (_items.Count == 0)
         {
@@ -370,11 +526,31 @@ public sealed partial class LauncherPanel : UserControl
                 break;
             case VirtualKey.Down:
                 e.Handled = true;
-                MoveSelection(1);
+                if (control && IsDown(VirtualKey.Menu) && SelectedItem is { } downItem &&
+                    LauncherModel.Instance is { } downModel)
+                {
+                    downModel.MoveFavorite(downItem, 1);
+                    Refresh(keepSelection: true, animated: false);
+                }
+                else
+                {
+                    MoveSelection(1);
+                }
+
                 break;
             case VirtualKey.Up:
                 e.Handled = true;
-                MoveSelection(-1);
+                if (control && IsDown(VirtualKey.Menu) && SelectedItem is { } upItem &&
+                    LauncherModel.Instance is { } upModel)
+                {
+                    upModel.MoveFavorite(upItem, -1);
+                    Refresh(keepSelection: true, animated: false);
+                }
+                else
+                {
+                    MoveSelection(-1);
+                }
+
                 break;
             case VirtualKey.Enter:
                 e.Handled = true;
@@ -383,6 +559,16 @@ public sealed partial class LauncherPanel : UserControl
             case VirtualKey.Tab:
                 e.Handled = true;
                 Complete();
+                break;
+            case VirtualKey.D when control:
+                e.Handled = true;
+                if (SelectedItem is { } favorite && LauncherModel.Instance is { } favoriteModel)
+                {
+                    var on = favoriteModel.ToggleFavorite(favorite);
+                    NoticeHost.Show("启动器", on ? "已收藏" : "已取消收藏", NoticeTone.Normal);
+                    Refresh(keepSelection: true, animated: false);
+                }
+
                 break;
             case VirtualKey.C when control:
                 e.Handled = true;

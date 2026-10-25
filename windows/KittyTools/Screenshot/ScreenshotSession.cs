@@ -163,6 +163,7 @@ internal sealed class ScreenshotSession
         }
 
         var origin = GlobalRect(screen, selection);
+        SaveLast(origin);
         Finish();
         // 飞入 + 角落缩略图（PLAN-v2 §3.8 / D5）。
         if (copied && png is not null)
@@ -197,6 +198,7 @@ internal sealed class ScreenshotSession
         }
 
         var origin = GlobalRect(screen, selection);
+        SaveLast(origin);
         Finish();
         if (saved is not null)
         {
@@ -204,8 +206,140 @@ internal sealed class ScreenshotSession
         }
     }
 
-    private static PixelBounds GlobalRect(FrozenScreen screen, RectD selection)
-        => new(
+    /// <summary>截取上次区域（第三版 §7）：不再弹遮罩，直接裁出来复制 + 飞入。</summary>
+    public static async void StartLast()
+    {
+        if (_current is not null)
+        {
+            return;
+        }
+
+        var settings = SettingsService.Current;
+        var width = settings.ScreenshotLastWidth;
+        var height = settings.ScreenshotLastHeight;
+        if (width < 8 || height < 8)
+        {
+            NoticeHost.Show("还没有上次区域", "先截一次图，再按这个热键", NoticeTone.Normal);
+            Start(ScreenshotMode.Capture);
+            return;
+        }
+
+        var global = new PixelBounds(
+            settings.ScreenshotLastX, settings.ScreenshotLastY,
+            settings.ScreenshotLastX + width, settings.ScreenshotLastY + height);
+        List<FrozenScreen> screens;
+        try
+        {
+            screens = ScreenCapture.CaptureAll();
+        }
+        catch (Exception ex)
+        {
+            Log.Error("screenshot.last-failed", ex);
+            return;
+        }
+
+        var screen = screens.FirstOrDefault(item =>
+            global.Left >= item.Bounds.Left && global.Top >= item.Bounds.Top &&
+            global.Right <= item.Bounds.Right && global.Bottom <= item.Bounds.Bottom);
+        if (screen is null)
+        {
+            NoticeHost.Show("上次的区域不在屏幕上了", "改成普通截图", NoticeTone.Warning);
+            Start(ScreenshotMode.Capture);
+            return;
+        }
+
+        var local = new RectD(
+            global.Left - screen.Bounds.Left, global.Top - screen.Bounds.Top,
+            global.Width, global.Height);
+        var pixels = new PixelBounds(0, 0, global.Width, global.Height);
+        try
+        {
+            var bgra = screen.Crop(pixels);
+            var png = await ImageCodec.BgraToPngAsync(global.Width, global.Height, bgra);
+            if (png is not null && await ScreenshotOutput.CopyPngAsync(png, screen, local))
+            {
+                ScreenshotCard.Show(png, global);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"screenshot.last-copy-failed {ex.GetType().Name}");
+        }
+        finally
+        {
+            foreach (var item in screens)
+            {
+                item.ReleasePixels();
+            }
+        }
+    }
+
+    /// <summary>选区收起，开始长截图（S 键或工具栏）：自己滚，Enter 完成、Esc 放弃。</summary>
+    public void BeginScrolling()
+    {
+        if (!HasSelection || SelectionScreen is not { } screen)
+        {
+            return;
+        }
+
+        var global = GlobalRect(screen, Selection);
+        foreach (var overlay in _overlays)
+        {
+            overlay.Close();
+        }
+
+        _overlays.Clear();
+        ScrollingCapture.Start(
+            screen,
+            global,
+            frame => _ = CompleteScrollingAsync(frame, global),
+            () =>
+            {
+                NoticeHost.Show("已取消长截图", string.Empty, NoticeTone.Normal);
+                Finish();
+            });
+    }
+
+    private async Task CompleteScrollingAsync(ScrollFrame frame, PixelBounds global)
+    {
+        var bgra = new byte[frame.Width * frame.Height * 4];
+        for (var index = 0; index < frame.Pixels.Length; index++)
+        {
+            var value = frame.Pixels[index];
+            bgra[index * 4] = (byte)(value & 0xFF);
+            bgra[index * 4 + 1] = (byte)((value >> 8) & 0xFF);
+            bgra[index * 4 + 2] = (byte)((value >> 16) & 0xFF);
+            bgra[index * 4 + 3] = (byte)((value >> 24) & 0xFF);
+        }
+
+        var png = await ImageCodec.BgraToPngAsync(frame.Width, frame.Height, bgra);
+        var screen = SelectionScreen;
+        var selection = Selection;
+        var copied = false;
+        if (png is not null && screen is not null)
+        {
+            copied = await ScreenshotOutput.CopyPngAsync(png, screen, selection);
+        }
+
+        Finish();
+        if (copied && png is not null)
+        {
+            ScreenshotCard.Show(png, global);
+        }
+    }
+
+    /// <summary>记住这次截图的区域（物理像素，进 settings 但不进导出文件）。</summary>
+    private static void SaveLast(PixelBounds origin)
+    {
+        var settings = SettingsService.Current;
+        settings.ScreenshotLastX = origin.Left;
+        settings.ScreenshotLastY = origin.Top;
+        settings.ScreenshotLastWidth = origin.Width;
+        settings.ScreenshotLastHeight = origin.Height;
+        SettingsService.Save();
+    }
+
+    private static PixelBounds GlobalRect(FrozenScreen screen, RectD selection)        => new(
             screen.Bounds.Left + (int)Math.Round(selection.X),
             screen.Bounds.Top + (int)Math.Round(selection.Y),
             screen.Bounds.Left + (int)Math.Round(selection.Right),

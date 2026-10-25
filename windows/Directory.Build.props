@@ -4,7 +4,7 @@
     第 1 批加 KittyTools.Core / KittyTools.Tests 时在这里统一版本号和警告策略。
   -->
   <PropertyGroup>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>

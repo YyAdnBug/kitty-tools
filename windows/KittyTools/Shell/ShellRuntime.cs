@@ -56,6 +56,7 @@ internal sealed class ShellRuntime
             Clipboard.Suspended = !Features.IsOn(Feature.Clipboard);
             // 翻译历史和生词本用同一个库（第三版 §3.1）。
             TranslationHistory.Start(database);
+            LauncherFavorites.Start(database);
             // 图片的后台识字排队（第三版 §5）。
             OcrQueue.Start(DispatcherQueue.GetForCurrentThread()!);
         }
@@ -153,6 +154,12 @@ internal sealed class ShellRuntime
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(OpenClipboard);
         }
 
+        // 调试用：直接走「截取上次区域」（先手动把 ScreenshotLast* 写进设置）。
+        if (Environment.GetCommandLineArgs().Contains("--screenshot-last", StringComparer.OrdinalIgnoreCase))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(ScreenshotSession.StartLast);
+        }
+
 #if DEBUG
         // 调试用：塞一条示例片段（截图 / 手测片段、备注和收藏夹）。
         if (Environment.GetCommandLineArgs().Contains("--seed-snippet", StringComparer.OrdinalIgnoreCase))
@@ -223,7 +230,24 @@ internal sealed class ShellRuntime
 
         if (Environment.GetCommandLineArgs().Contains("--launcher", StringComparer.OrdinalIgnoreCase))
         {
-            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => OverlayHost.Show(OverlayKind.Launcher));
+            var launcherQuery = Environment.GetCommandLineArgs()
+                .FirstOrDefault(arg => arg.StartsWith("--launcher-query=", StringComparison.OrdinalIgnoreCase));
+            var launcherMode = Environment.GetCommandLineArgs()
+                .FirstOrDefault(arg => arg.StartsWith("--launcher-mode=", StringComparison.OrdinalIgnoreCase));
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() =>
+            {
+                OverlayHost.Show(OverlayKind.Launcher);
+                if (launcherQuery is not null)
+                {
+                    var value = launcherQuery["--launcher-query=".Length..];
+                    if (launcherMode is not null)
+                    {
+                        value = launcherMode["--launcher-mode=".Length..] + " " + value;
+                    }
+
+                    OverlayHost.SetLauncherQuery(value);
+                }
+            });
         }
 
         if (Environment.GetCommandLineArgs().Contains("--dump-icon", StringComparer.OrdinalIgnoreCase))
@@ -384,6 +408,21 @@ internal sealed class ShellRuntime
         const uint WmPowerBroadcast = 0x0218;
         if (msg == PInvoke.WM_HOTKEY)
         {
+            // 长截图期间 Enter / Esc 是临时注册的（第三版 §7）。
+            if (ScrollingCapture.Active && (int)wParam.Value is ScrollingCapture.EnterId or ScrollingCapture.EscapeId)
+            {
+                if ((int)wParam.Value == ScrollingCapture.EnterId)
+                {
+                    ScrollingCapture.Complete();
+                }
+                else
+                {
+                    ScrollingCapture.Cancel();
+                }
+
+                return;
+            }
+
             HotKeys.OnHotKey((int)wParam.Value);
         }
         else if (msg == PInvoke.WM_CLIPBOARDUPDATE)
@@ -436,6 +475,9 @@ internal sealed class ShellRuntime
                 break;
             case HotKeyActions.Screenshot:
                 ScreenshotSession.Start(ScreenshotMode.Capture);
+                break;
+            case HotKeyActions.ScreenshotLast:
+                ScreenshotSession.StartLast();
                 break;
             case HotKeyActions.Ocr:
                 ScreenshotSession.Start(ScreenshotMode.Ocr);
