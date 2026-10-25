@@ -11,6 +11,7 @@ internal static class RecordingHost
 {
     private static IVideoRecorder? _recorder;
     private static long _startedAt;
+    private static bool _microphoneSettingsPending;
 
     public static bool IsRecording => _recorder is not null;
 
@@ -89,6 +90,7 @@ internal static class RecordingHost
         {
             settings.RecordMicrophone = false;
             SettingsService.Save();
+            _microphoneSettingsPending = true;
         }
 
         _recorder = recorder;
@@ -148,6 +150,7 @@ internal static class RecordingHost
 
         Log.Info($"record.saved {Path.GetFileName(path)}");
         NoticeHost.Show("录屏已保存", Path.GetFileName(path), NoticeTone.Normal);
+        OpenMicrophoneSettingsIfPending();
         try
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
@@ -195,6 +198,30 @@ internal static class RecordingHost
 
         Log.Info("record.abandoned");
         NoticeHost.Show("已放弃这段录屏", string.Empty, NoticeTone.Normal);
+        OpenMicrophoneSettingsIfPending();
+    }
+
+    /// <summary>麦克风权限被拒绝时，录完再打开系统设置，免得起录那一刻挡住画面 / 被录进去。</summary>
+    private static void OpenMicrophoneSettingsIfPending()
+    {
+        if (!_microphoneSettingsPending)
+        {
+            return;
+        }
+
+        _microphoneSettingsPending = false;
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "ms-settings:privacy-microphone",
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"record.mic-settings {ex.GetType().Name}");
+        }
     }
 
     /// <summary>上次录到一半（闪退 / 断电）：把临时文件挪进保存目录并提示。</summary>
