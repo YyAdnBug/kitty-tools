@@ -232,6 +232,20 @@ internal sealed class ShellRuntime
             });
         }
 
+        // 调试 / 自检：文件搜索（R17）的耗时和结果数。
+        var fileSearchArg = Environment.GetCommandLineArgs()
+            .FirstOrDefault(arg => arg.StartsWith("--file-search=", StringComparison.OrdinalIgnoreCase));
+        if (fileSearchArg is not null)
+        {
+            var word = fileSearchArg["--file-search=".Length..];
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
+            {
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                var hits = await FileSearch.SearchAsync(word, CancellationToken.None);
+                Log.Info($"files.search-debug hits={hits.Count} ms={watch.ElapsedMilliseconds}");
+            });
+        }
+
         // 调试：打印端口表的前几行（R18）。
         if (Environment.GetCommandLineArgs().Contains("--ports", StringComparer.OrdinalIgnoreCase))
         {

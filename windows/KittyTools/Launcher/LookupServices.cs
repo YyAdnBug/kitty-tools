@@ -5,6 +5,7 @@
 // - 书签：Chromium 系（Chrome / Edge / Brave / Vivaldi）的 Bookmarks JSON。
 // 全是后台取、结果回 UI 线程再显示；历史（History 库）这一批没做。
 using System.Diagnostics;
+using System.Runtime.InteropServices.WindowsRuntime;
 using System.Text.Json;
 using KittyTools.Core;
 using KittyTools.Infrastructure;
@@ -39,10 +40,7 @@ internal static class FileSearch
         return roots;
     }
 
-    public static Task<List<string>> SearchAsync(string query, CancellationToken cancellationToken)
-        => Task.Run(() => Search(query, cancellationToken), cancellationToken);
-
-    public static List<string> Search(string query, CancellationToken cancellationToken)
+    public static async Task<List<string>> SearchAsync(string query, CancellationToken cancellationToken)
     {
         var tokens = query.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (tokens.Length == 0)
@@ -52,37 +50,94 @@ internal static class FileSearch
 
         var started = Stopwatch.GetTimestamp();
         var results = new List<(int Score, string Path)>();
-        var candidates = 0;
+        var usedIndexer = false;
+        var forceFallback = Environment.GetEnvironmentVariable("KITTY_FS_FORCE_FALLBACK") == "1";
         foreach (var root in Roots())
         {
-            foreach (var file in Walk(root, ref candidates, cancellationToken))
+            if (forceFallback)
             {
-                if (cancellationToken.IsCancellationRequested || Elapsed(started) > Budget.TotalMilliseconds ||
-                    candidates > MaxCandidates)
-                {
-                    break;
-                }
-
-                var name = Path.GetFileName(file);
-                var score = LauncherCommands.ScoreFileName(name, tokens);
-                if (score != int.MinValue)
-                {
-                    results.Add((score, file));
-                }
+                break;
+            }
+            if (cancellationToken.IsCancellationRequested || Elapsed(started) > Budget.TotalMilliseconds)
+            {
+                break;
             }
 
-            if (cancellationToken.IsCancellationRequested || Elapsed(started) > Budget.TotalMilliseconds)
+            try
+            {
+                // R17：只走 Windows 搜索索引（非打包桌面程序也能用），不自己递归目录。
+                var folder = await Windows.Storage.StorageFolder.GetFolderFromPathAsync(root);
+                var options = new Windows.Storage.Search.QueryOptions
+                {
+                    FolderDepth = Windows.Storage.Search.FolderDepth.Deep,
+                    IndexerOption = Windows.Storage.Search.IndexerOption.OnlyUseIndexer,
+                    UserSearchFilter = BuildFilter(tokens),
+                };
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeout.CancelAfter(TimeSpan.FromMilliseconds(900));
+                var files = await folder.CreateFileQueryWithOptions(options)
+                    .GetFilesAsync().AsTask(timeout.Token);
+                usedIndexer = true;
+                foreach (var file in files)
+                {
+                    var score = LauncherCommands.ScoreFileName(file.Name, tokens);
+                    if (score != int.MinValue)
+                    {
+                        results.Add((score, file.Path));
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Log.Warn($"files.index-failed {ex.GetType().Name}");
+                break;
+            }
+            catch (OperationCanceledException)
             {
                 break;
             }
         }
 
+        if (!usedIndexer && !cancellationToken.IsCancellationRequested)
+        {
+            // 索引服务关着：退回扫目录，但只给 300 ms、最多 6 层。
+            Log.Info("files.index-fallback");
+            var candidates = 0;
+            var fallbackStart = Stopwatch.GetTimestamp();
+            foreach (var root in Roots())
+            {
+                foreach (var file in Walk(root, maxDepth: 6, ref candidates, cancellationToken))
+                {
+                    if (cancellationToken.IsCancellationRequested ||
+                        Elapsed(fallbackStart) > 300 || candidates > 2000)
+                    {
+                        break;
+                    }
+
+                    var score = LauncherCommands.ScoreFileName(Path.GetFileName(file), tokens);
+                    if (score != int.MinValue)
+                    {
+                        results.Add((score, file));
+                    }
+                }
+            }
+        }
+
+        Log.Info($"files.search indexed={usedIndexer} ms={Elapsed(started):F0} hits={results.Count}");
         return results
             .OrderByDescending(item => item.Score)
             .ThenBy(item => item.Path.Length)
             .Select(item => item.Path)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(20)
             .ToList();
+    }
+
+    private static string BuildFilter(IReadOnlyList<string> tokens)
+    {
+        static string Escape(string value) => value.Replace("\"", string.Empty, StringComparison.Ordinal);
+        return string.Join(" AND ",
+            tokens.Select(token => $"System.FileName:*{Escape(token)}*"));
     }
 
     /// <summary>最近的文件：%APPDATA%\Microsoft\Windows\Recent 里的快捷方式（打开 .lnk 本身）。</summary>
@@ -111,14 +166,15 @@ internal static class FileSearch
         }
     }
 
-    private static IEnumerable<string> Walk(string root, ref int candidates, CancellationToken cancellationToken)
+    private static IEnumerable<string> Walk(
+        string root, int maxDepth, ref int candidates, CancellationToken cancellationToken)
     {
-        var pending = new Stack<string>();
-        pending.Push(root);
+        var pending = new Stack<(string Path, int Depth)>();
+        pending.Push((root, 0));
         var found = new List<string>();
         while (pending.Count > 0 && !cancellationToken.IsCancellationRequested)
         {
-            var directory = pending.Pop();
+            var (directory, depth) = pending.Pop();
             string[] files;
             try
             {
@@ -139,6 +195,11 @@ internal static class FileSearch
                 }
             }
 
+            if (depth >= maxDepth)
+            {
+                continue;
+            }
+
             try
             {
                 foreach (var child in Directory.GetDirectories(directory))
@@ -150,7 +211,7 @@ internal static class FileSearch
                         continue;
                     }
 
-                    pending.Push(child);
+                    pending.Push((child, depth + 1));
                 }
             }
             catch
