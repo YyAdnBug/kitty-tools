@@ -45,8 +45,8 @@ internal sealed class ClipboardStore
     /// <summary>收藏夹（按位置）。</summary>
     public IReadOnlyList<ClipGroup> Groups { get; private set; } = Array.Empty<ClipGroup>();
 
-    /// <summary>收藏 / 片段一定要有 uid（导出与第五版同步用）：没有就补一个。</summary>
-    private void EnsureUid(ClipEntry entry)
+    /// <summary>收藏 / 片段 / 收藏夹一定带 uid；公开给同步用（没有就补一个）。</summary>
+    public void EnsureUid(ClipEntry entry)
     {
         if (!string.IsNullOrEmpty(entry.Uid))
         {
@@ -55,6 +55,75 @@ internal sealed class ClipboardStore
 
         entry.Uid = Guid.NewGuid().ToString("D").ToUpperInvariant();
         _database.SetUid(entry.Id, entry.Uid);
+    }
+
+    /// <summary>同步用：按 uid（或同样的正文）找一条；没有就新建一条收藏。</summary>
+    public ClipEntry EnsureClip(string uid, string text)
+    {
+        var existing = _items.FirstOrDefault(item => item.Uid == uid) ??
+                       _items.FirstOrDefault(item => item.Kind == ClipKind.Text &&
+                                                     string.Equals(item.Text, text, StringComparison.Ordinal));
+        if (existing is not null)
+        {
+            if (existing.Uid != uid)
+            {
+                existing.Uid = uid;
+                _database.SetUid(existing.Id, uid);
+            }
+
+            return existing;
+        }
+
+        var entry = new ClipEntry
+        {
+            Kind = ClipKind.Text,
+            Text = text,
+            Uid = uid,
+            Favorite = true,
+            CopiedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+        };
+        entry.Id = _database.Insert(entry);
+        _items.Insert(0, entry);
+        Changed?.Invoke();
+        return entry;
+    }
+
+    /// <summary>同步落地：收藏、片段、备注、收藏夹一起写（收藏夹编号可能来自别的电脑）。</summary>
+    public void ApplySynced(long id, bool favorite, bool snippet, string? note, string? groupId)
+    {
+        var entry = _items.FirstOrDefault(item => item.Id == id);
+        if (entry is null)
+        {
+            return;
+        }
+
+        entry.Favorite = favorite;
+        entry.Snippet = snippet;
+        entry.Note = string.IsNullOrWhiteSpace(note) ? null : note;
+        entry.GroupId = favorite ? groupId : null;
+        entry.Folded = null;
+        _database.SetFavorite(id, favorite);
+        _database.SetSnippet(id, snippet);
+        _database.SetNote(id, entry.Note);
+        _database.SetGroup(id, entry.GroupId);
+        Changed?.Invoke();
+    }
+
+    /// <summary>同步：别处不再保留的条目只取消收藏、移出片段和收藏夹，不删行。</summary>
+    public void UnfavoriteMissing(HashSet<string> keepUids)
+    {
+        foreach (var entry in _items.Where(item =>
+                     item.Favorite && item.Uid is not null && !keepUids.Contains(item.Uid)))
+        {
+            entry.Favorite = false;
+            entry.Snippet = false;
+            entry.GroupId = null;
+            _database.SetFavorite(entry.Id, false);
+            _database.SetSnippet(entry.Id, false);
+            _database.SetGroup(entry.Id, null);
+        }
+
+        Changed?.Invoke();
     }
 
     public void ToggleSnippet(long id)

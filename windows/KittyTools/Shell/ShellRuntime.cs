@@ -57,6 +57,15 @@ internal sealed class ShellRuntime
             // 翻译历史和生词本用同一个库（第三版 §3.1）。
             TranslationHistory.Start(database);
             LauncherFavorites.Start(database);
+            // 同步（第五版）：本机编号、账本和执行层。
+            var syncDevice = SyncDevice.Start(database);
+            var syncLedger = SyncLedger.Start(database);
+            var syncer = Syncer.Start(syncDevice, syncLedger);
+            if (syncer.Enabled)
+            {
+                syncer.StartTimer(DispatcherQueue.GetForCurrentThread()!);
+                _ = syncer.RoundAsync();
+            }
             // 图片的后台识字排队（第三版 §5）。
             OcrQueue.Start(DispatcherQueue.GetForCurrentThread()!);
         }
@@ -445,6 +454,7 @@ internal sealed class ShellRuntime
         {
             // 7 = 从睡眠唤醒（PBT_APMRESUMESUSPEND）、0x12 = 自动唤醒。
             ScheduleBackup();
+            _ = Syncer.Instance?.RoundAsync();
         }
     }
 

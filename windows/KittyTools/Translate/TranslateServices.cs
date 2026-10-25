@@ -136,6 +136,13 @@ internal sealed class TranslateServiceStore
 
     public void Save() => SettingsService.Save();
 
+    /// <summary>同步落地：整份换掉服务列表（密钥不在列表里，凭据管理器的键不动）。</summary>
+    public void ReplaceServices(List<TranslateServiceConfig> services)
+    {
+        _settings.TranslateServices = services;
+        Save();
+    }
+
     public TranslateServiceConfig? Find(string id) => Services.FirstOrDefault(service => service.Id == id);
 
     public static TranslateServiceConfig Builtin(string kind) => new()

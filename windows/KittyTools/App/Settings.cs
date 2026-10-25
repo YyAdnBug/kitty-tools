@@ -80,6 +80,19 @@ internal sealed class Settings
     /// <summary>「划词翻译并替换」的独立热键动作是否已在快捷键表里（第三版 §3.2，不设默认键）。</summary>
     public bool TranslateReplaceHotKeySeen { get; set; }
 
+    // 同步（第五版）：用户选的同步文件夹、开关和四类。
+    public bool SyncEnabled { get; set; }
+
+    public string? SyncFolder { get; set; }
+
+    public bool SyncClips { get; set; } = true;
+
+    public bool SyncVocabulary { get; set; } = true;
+
+    public bool SyncEngines { get; set; } = true;
+
+    public bool SyncServices { get; set; } = true;
+
     /// <summary>截图快速保存的文件夹；空 = 系统的「屏幕截图」文件夹。</summary>
     public string? ScreenshotSaveFolder { get; set; }
 

@@ -279,6 +279,8 @@ internal sealed class SettingsWindow : Window
             OpenDataDirectory);
         _content.Children.Add(dataButton);
 
+        BuildSyncSection();
+
         _content.Children.Add(SettingsUi.Section(
             "导出与导入", "换电脑、重装或备份时用。密钥默认不带；片段、收藏、生词本是合并，不会删本机已有的。"));
         _content.Children.Add(SettingsUi.Card(
@@ -450,6 +452,120 @@ internal sealed class SettingsWindow : Window
         {
             Log.Error("settings.import-failed", ex);
             NoticeHost.Show("没能导入", ex.GetType().Name, NoticeTone.Error);
+        }
+    }
+
+    /// <summary>设置 › 通用 › 同步（PLAN-v5 §4.4）：文件夹、状态、四类、别的电脑、立即同步 / 停止。</summary>
+    private void BuildSyncSection()
+    {
+        var settings = SettingsService.Current;
+        _content.Children.Add(SettingsUi.Section(
+            "同步", "和 Mac 版（0.7.0 或更新）共用一个同步盘文件夹，互通片段与收藏、生词本、网页搜索和翻译服务。密钥不同步。"));
+        AddToggle("开启同步", "每 20 秒一轮，睡眠唤醒时也合一次。",
+            settings.SyncEnabled,
+            isOn =>
+            {
+                settings.SyncEnabled = isOn;
+                SettingsService.Save();
+                if (isOn)
+                {
+                    if (string.IsNullOrEmpty(settings.SyncFolder))
+                    {
+                        _ = PickSyncFolderAsync();
+                    }
+                    else
+                    {
+                        _ = Syncer.Instance?.RoundAsync();
+                    }
+                }
+
+                BuildPage("general");
+            });
+
+        var folder = string.IsNullOrEmpty(settings.SyncFolder) ? "还没选文件夹" : settings.SyncFolder;
+        var status = Syncer.Instance?.Status;
+        var statusText = status is null
+            ? string.Empty
+            : status.State switch
+            {
+                "syncing" => "正在同步…",
+                "idle" => "好了" + (status.LastSync > 0
+                    ? "（上次 " + DateTimeOffset.FromUnixTimeMilliseconds(status.LastSync).ToLocalTime()
+                        .ToString("HH:mm") + "）"
+                    : string.Empty),
+                "confirm" => status.Message,
+                "stopped" => "停了：" + status.Message,
+                _ => "关着",
+            };
+        _content.Children.Add(SettingsUi.Card(
+            "\uE8F7",
+            "同步文件夹",
+            folder + (statusText.Length > 0 ? "\n" + statusText : string.Empty),
+            null,
+            () => _ = PickSyncFolderAsync()));
+
+        AddToggle("片段与收藏", "只同步文字里收藏 / 片段的条目和收藏夹。", settings.SyncClips,
+            value => { settings.SyncClips = value; SettingsService.Save(); });
+        AddToggle("生词本", "收藏的翻译。", settings.SyncVocabulary,
+            value => { settings.SyncVocabulary = value; SettingsService.Save(); });
+        AddToggle("网页搜索与快捷链接", string.Empty, settings.SyncEngines,
+            value => { settings.SyncEngines = value; SettingsService.Save(); });
+        AddToggle("翻译服务", "只同步服务配置，密钥每台自己填。", settings.SyncServices,
+            value => { settings.SyncServices = value; SettingsService.Save(); });
+
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var syncNow = new Button { Content = "立即同步" };
+        syncNow.Click += (_, _) =>
+        {
+            _ = Syncer.Instance?.RoundAsync();
+            NoticeHost.Show("同步", "开始同步…", NoticeTone.Normal);
+        };
+        row.Children.Add(syncNow);
+        var stop = new Button { Content = "停止同步" };
+        stop.Click += (_, _) =>
+        {
+            settings.SyncEnabled = false;
+            SettingsService.Save();
+            BuildPage("general");
+        };
+        row.Children.Add(stop);
+        _content.Children.Add(row);
+
+        if (status is { Devices.Count: > 0 })
+        {
+            _content.Children.Add(SettingsUi.Section(
+                "别的电脑", string.Join("、", status.Devices)));
+        }
+    }
+
+    private async Task PickSyncFolderAsync()
+    {
+        try
+        {
+            var picker = new FolderPicker(AppWindow.Id);
+            var folder = await picker.PickSingleFolderAsync();
+            if (folder is null || string.IsNullOrEmpty(folder.Path))
+            {
+                return;
+            }
+
+            // 空文件夹才开（或者已经有我们的标记）；否则提示。
+            var disk = new SyncFolder(folder.Path);
+            if (disk.Marker() is null && disk.LooksForeign())
+            {
+                NoticeHost.Show("这个文件夹里已经有别的东西了", "请新建一个空文件夹来同步", NoticeTone.Warning);
+                return;
+            }
+
+            SettingsService.Current.SyncFolder = folder.Path;
+            SettingsService.Current.SyncEnabled = true;
+            SettingsService.Save();
+            _ = Syncer.Instance?.RoundAsync();
+            BuildPage("general");
+        }
+        catch (Exception ex)
+        {
+            Log.Error("settings.sync-folder-failed", ex);
         }
     }
 

@@ -113,6 +113,21 @@ public static class Schema
               added_at INTEGER NOT NULL
             );
             """),
+        new SchemaStep(
+            7,
+            "sync_ledger / sync_device：同步账本与本机编号（第五版）",
+            """
+            CREATE TABLE IF NOT EXISTS sync_ledger(
+              kind TEXT PRIMARY KEY,
+              library TEXT NOT NULL,
+              ledger TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS sync_device(
+              id TEXT PRIMARY KEY,
+              machine_guid TEXT NOT NULL DEFAULT '',
+              library TEXT NOT NULL DEFAULT ''
+            );
+            """),
     };
 
     /// <summary>从 currentVersion 开始还要跑的步骤（升序）。比代码新的库（用户装过更新的版本）一步都不跑。</summary>

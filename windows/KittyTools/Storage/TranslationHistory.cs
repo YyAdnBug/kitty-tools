@@ -243,6 +243,41 @@ internal sealed class TranslationHistory
         return added;
     }
 
+    /// <summary>同步落地：按编号（或原文 + 目标语言）插入 / 更新一条收藏。</summary>
+    public void UpsertSynced(string id, string source, string targetLang, string result, string service, long created)
+    {
+        var existing = ById(id) ?? Find(source, targetLang);
+        if (existing is null)
+        {
+            Insert(id, Stored(source), null, targetLang, result, service, created, favorite: true);
+        }
+        else
+        {
+            using var statement = _database.Connection.Prepare(
+                "UPDATE translations SET source = $source, target_lang = $target, result = $result, " +
+                "service = $service, created_at = $created, favorite = 1 WHERE id = $id;");
+            statement.BindText(1, Stored(source));
+            statement.BindText(2, targetLang);
+            statement.BindText(3, result);
+            statement.BindText(4, service);
+            statement.BindInt64(5, created);
+            statement.BindText(6, existing.Id);
+            statement.Step();
+        }
+
+        Changed?.Invoke();
+    }
+
+    /// <summary>同步：别处不再收藏的取消收藏（还在历史里）。</summary>
+    public void UnfavoriteMissing(HashSet<string> keepIds)
+    {
+        foreach (var entry in Search(string.Empty, favoritesOnly: true, limit: 0)
+                     .Where(entry => !keepIds.Contains(entry.Id)))
+        {
+            SetFavorite(entry.Id, false);
+        }
+    }
+
     private void Insert(
         string id, string source, string? sourceLang, string targetLang, string result, string service,
         long createdAt, bool favorite)
