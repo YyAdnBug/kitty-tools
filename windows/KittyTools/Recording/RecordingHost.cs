@@ -69,6 +69,7 @@ internal static class RecordingHost
         SettingsService.Current.RecordingTempPath = recorder.TemporaryPath;
         SettingsService.Save();
         SetThreadExecutionState(EsContinuous | EsSystemRequired | EsDisplayRequired);
+        RecordingHud.Show(region);
         Log.Info("record.begin");
         NoticeHost.Show("正在录屏", "Alt+R 或托盘「停止录屏」结束", NoticeTone.Normal);
         Changed?.Invoke();
@@ -82,6 +83,7 @@ internal static class RecordingHost
         }
 
         _recorder = null;
+        RecordingHud.Hide();
         var path = recorder.Stop();
         recorder.Dispose();
         SettingsService.Current.RecordingTempPath = null;
@@ -110,6 +112,38 @@ internal static class RecordingHost
         {
             // 打不开资源管理器就算了。
         }
+    }
+
+    /// <summary>放弃这段录屏：停止、删掉文件。</summary>
+    public static void Abandon()
+    {
+        if (_recorder is not { } recorder)
+        {
+            return;
+        }
+
+        _recorder = null;
+        RecordingHud.Hide();
+        var path = recorder.Stop();
+        recorder.Dispose();
+        SettingsService.Current.RecordingTempPath = null;
+        SettingsService.Save();
+        SetThreadExecutionState(EsContinuous);
+        Changed?.Invoke();
+        if (path is not null)
+        {
+            try
+            {
+                File.Delete(path);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"record.abandon-delete {ex.GetType().Name}");
+            }
+        }
+
+        Log.Info("record.abandoned");
+        NoticeHost.Show("已放弃这段录屏", string.Empty, NoticeTone.Normal);
     }
 
     /// <summary>上次录到一半（闪退 / 断电）：把临时文件挪进保存目录并提示。</summary>
