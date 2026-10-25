@@ -50,3 +50,17 @@
 - settings-features.png：设置 › 通用 › 功能（四项开关）+「导出与导入」两张卡
 - settings-feature-off.png：关掉剪贴板后，设置 › 剪贴板 只留一张「已关闭」的卡
 - 每日数据库备份和自动备份 JSON 在数据目录的 backups\ 里（文件名见 HANDTEST §168、§174，不是界面）
+## 0.3.0-batch-2（第三版第 2 批：翻译历史）
+- translate-history.png：翻译浮窗的 Ctrl+H 历史列表（搜索框、空列表提示、底栏快捷键）
+
+## 0.3.0-batch-3（第三版第 3 批：片段、收藏夹、备注）
+- clipboard-snippets.png：三枚范围胶囊（全部 / 收藏 / 片段）、片段标签与备注、右侧预览和底栏
+
+## 0.3.0-batch-4（第三版第 4 批：识字后可搜）
+- ocr-search.png：搜索「OCR」命中一张图片条目（靠后台识字的结果）；多选、链接预览在 HANDTEST 待走
+
+## 0.3.0-batch-5（第三版第 5 批：启动器补齐）
+- launcher-port.png：`port 135` 列出监听的端口、PID 和进程名
+
+## 0.3.0-batch-6（第三版第 6 批：截取上次区域）
+- screenshot-last-card.png：Ctrl+Alt+Z 直接截上次区域后的飞入卡片
