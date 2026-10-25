@@ -172,6 +172,15 @@ internal sealed class ShellRuntime
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(ScreenshotSession.StartLast);
         }
 
+        // 调试 / 自检：压缩一个已有的录屏（第四版第 3 批）。
+        var compressArg = Environment.GetCommandLineArgs()
+            .FirstOrDefault(arg => arg.StartsWith("--compress=", StringComparison.OrdinalIgnoreCase));
+        if (compressArg is not null)
+        {
+            var path = compressArg["--compress=".Length..];
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => _ = CompressionService.CompressAsync(path));
+        }
+
         // 调试 / 自检：录 4 秒整屏，报告写进给定目录（第四版第 1 批的验收用）。
         var probeArg = Environment.GetCommandLineArgs()
             .FirstOrDefault(arg => arg.StartsWith("--record-probe=", StringComparison.OrdinalIgnoreCase));
