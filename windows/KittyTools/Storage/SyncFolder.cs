@@ -109,154 +109,121 @@ internal sealed class SyncFolder(string root)
 
 internal static class SyncSources
 {
-    public static (string Id, string Value, long Modified)[] ClipRecords(ClipboardStore store)
+    /// <summary>本机交给引擎的一条：编号 → 编好的内容（键排好序，和 mac 各自的 Synced 结构一字不差）。</summary>
+    // 片段 / 收藏：留下来的文字条目（收藏、片段、在收藏夹里的；mac isRetained）。带 NUL 的整条不同步（同 mac syncValues）。
+    // 收藏夹是空表时也交 ~order（同 mac）。拿不到仓库时返回 null：这一类这一轮不合（当成空的会把账本里的全当成删了）。
+    public static Dictionary<string, string>? ClipRecords(ClipboardStore? store)
     {
-        var records = new List<(string, string, long)>();
-        foreach (var entry in store.Items.Where(item => item.Kind == ClipKind.Text && item.Favorite))
+        if (store is null)
         {
-            if (entry.Text is null || entry.Text.Contains('\0'))
+            return null;
+        }
+
+        var records = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var entry in store.Items.Where(item => item.Kind == ClipKind.Text && IsRetained(item)))
+        {
+            if (entry.Text is null || entry.Text.Contains('\0') || entry.Note?.Contains('\0') == true)
             {
                 continue;
             }
 
             store.EnsureUid(entry);
-            var builder = new System.Text.StringBuilder("{");
-            builder.Append("\"favorite\":").Append(entry.Favorite ? "true" : "false");
-            if (entry.GroupId is { } group)
-            {
-                builder.Append(",\"group\":");
-                CanonicalJson.WriteString("group:" + group, builder);
-            }
-
-            if (!string.IsNullOrEmpty(entry.Note) && !entry.Note.Contains('\0'))
-            {
-                builder.Append(",\"note\":");
-                CanonicalJson.WriteString(entry.Note, builder);
-            }
-
-            builder.Append(",\"snippet\":").Append(entry.Snippet ? "true" : "false");
-            builder.Append(",\"text\":");
-            CanonicalJson.WriteString(entry.Text, builder);
-            builder.Append('}');
-            records.Add((entry.Uid!, builder.ToString(), entry.CopiedAt));
+            records[entry.Uid!] = Clip(entry.Text, entry.Favorite, entry.Snippet, entry.Note, entry.GroupId);
         }
 
-        foreach (var group in store.Groups)
+        var groups = store.Groups.Where(group => !group.Name.Contains('\0')).OrderBy(group => group.Position).ToList();
+        foreach (var group in groups)
         {
-            records.Add(("group:" + group.Id,
-                $"{{\"created\":{group.CreatedAt},\"name\":{Quote(group.Name)}}}", group.CreatedAt));
+            records[GroupPrefix + group.Id] = Group(group.Name, group.CreatedAt);
         }
 
-        records.Add(("~order", Order(store.Groups.OrderBy(item => item.Position).Select(item => "group:" + item.Id)),
-            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
-        return records.ToArray();
+        records[SyncEngine.OrderID] = SyncEngine.OrderValue(groups.Select(group => GroupPrefix + group.Id));
+        return records;
     }
 
-    public static (string Id, string Value, long Modified)[] VocabularyRecords()
+    public const string GroupPrefix = "group:";
+
+    public static bool IsRetained(ClipEntry entry) => entry.Favorite || entry.Snippet || entry.GroupId is not null;
+
+    /// <summary>mac SyncedClip：favorite / group? / note? / snippet / text；group 是收藏夹编号本身（不带 group: 前缀）。</summary>
+    public static string Clip(string text, bool favorite, bool snippet, string? note, string? group)
     {
-        if (TranslationHistory.Instance is not { } history)
+        var builder = new System.Text.StringBuilder("{");
+        builder.Append("\"favorite\":").Append(favorite ? "true" : "false");
+        if (group is not null)
         {
-            return Array.Empty<(string, string, long)>();
+            builder.Append(",\"group\":");
+            CanonicalJson.WriteString(group, builder);
         }
 
-        return history.Search(string.Empty, favoritesOnly: true, limit: 0)
-            .Select(entry => (entry.Id,
-                $"{{\"created\":{entry.CreatedAt},\"result\":{Quote(entry.Result)}," +
-                $"\"service\":{Quote(entry.Service)},\"source\":{Quote(entry.Source)}," +
-                $"\"target\":{Quote(entry.TargetLang)}}}",
-                entry.CreatedAt))
-            .ToArray();
-    }
-
-    public static (string Id, string Value, long Modified)[] EngineRecords()
-    {
-        var engines = SettingsService.Current.LauncherSearchEngines ?? WebSearch.Defaults();
-        var records = engines
-            .Select(engine => (engine.Id,
-                $"{{\"fallback\":{(engine.Fallback ? "true" : "false")},\"keyword\":{Quote(engine.Keyword)}," +
-                $"\"name\":{Quote(engine.Name)},\"url\":{Quote(engine.UrlTemplate)}}}",
-                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()))
-            .ToList();
-        records.Add(("~order", Order(engines.Select(engine => engine.Id)),
-            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
-        return records.ToArray();
-    }
-
-    public static (string Id, string Value, long Modified)[] ServiceRecords()
-    {
-        if (TranslateServiceStore.Instance is not { } store)
+        if (note is not null)
         {
-            return Array.Empty<(string, string, long)>();
+            builder.Append(",\"note\":");
+            CanonicalJson.WriteString(note, builder);
         }
 
-        var records = new List<(string, string, long)>();
+        builder.Append(",\"snippet\":").Append(snippet ? "true" : "false");
+        builder.Append(",\"text\":");
+        CanonicalJson.WriteString(text, builder);
+        return builder.Append('}').ToString();
+    }
+
+    /// <summary>mac SyncedGroup：created（毫秒）/ name。</summary>
+    public static string Group(string name, long created)
+        => $"{{\"created\":{created},\"name\":{Quote(name)}}}";
+
+    public static Dictionary<string, string>? VocabularyRecords(TranslationHistory? history)
+        => history?.Search(string.Empty, favoritesOnly: true, limit: 0)
+            .ToDictionary(
+                entry => entry.Id,
+                entry => Vocabulary(entry.Source, entry.TargetLang, entry.Result, entry.Service, entry.CreatedAt),
+                StringComparer.Ordinal);
+
+    /// <summary>mac SyncedWord：created / result / service / source / target。</summary>
+    public static string Vocabulary(string source, string target, string result, string service, long created)
+        => $"{{\"created\":{created},\"result\":{Quote(result)},\"service\":{Quote(service)}," +
+           $"\"source\":{Quote(source)},\"target\":{Quote(target)}}}";
+
+    public static Dictionary<string, string> EngineRecords(IReadOnlyList<SearchEngine> engines)
+    {
+        var records = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var engine in engines)
+        {
+            records.TryAdd(engine.Id, Engine(engine));
+        }
+
+        records[SyncEngine.OrderID] = SyncEngine.OrderValue(engines.Select(engine => engine.Id));
+        return records;
+    }
+
+    /// <summary>mac WebSearchSync.Synced：fallback / keyword / name / url。</summary>
+    public static string Engine(SearchEngine engine)
+        => $"{{\"fallback\":{(engine.Fallback ? "true" : "false")},\"keyword\":{Quote(engine.Keyword)}," +
+           $"\"name\":{Quote(engine.Name)},\"url\":{Quote(engine.UrlTemplate)}}}";
+
+    public static Dictionary<string, string>? ServiceRecords(TranslateServiceStore? store)
+    {
+        if (store is null)
+        {
+            return null;
+        }
+
+        var records = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var service in store.Services)
         {
-            // 键按字母排：aiProtocol / baseURL / id / isEnabled / kind / model / name / region / usesDeepLX。
-            var builder = new System.Text.StringBuilder("{");
-            var first = true;
-            void Field(string name, string value)
-            {
-                if (!first)
-                {
-                    builder.Append(',');
-                }
-
-                first = false;
-                CanonicalJson.WriteString(name, builder);
-                builder.Append(':').Append(value);
-            }
-
-            if (!string.IsNullOrEmpty(service.Protocol))
-            {
-                Field("aiProtocol", Quote(service.Protocol));
-            }
-
-            if (!string.IsNullOrEmpty(service.BaseUrl))
-            {
-                Field("baseURL", Quote(service.BaseUrl));
-            }
-
-            Field("id", Quote(service.Id));
-            Field("isEnabled", service.Enabled ? "true" : "false");
-            Field("kind", Quote(service.Kind));
-            if (!string.IsNullOrEmpty(service.Model))
-            {
-                Field("model", Quote(service.Model));
-            }
-
-            Field("name", Quote(service.Name));
-            if (!string.IsNullOrEmpty(service.Region))
-            {
-                Field("region", Quote(service.Region));
-            }
-
-            if (service.UsesDeepLX)
-            {
-                Field("usesDeepLX", "true");
-            }
-
-            builder.Append('}');
-            records.Add((service.Id, builder.ToString(), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+            records.TryAdd(service.Id, Service(service));
         }
 
-        records.Add(("~order", Order(store.Services.Select(service => service.Id)),
-            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
-        return records.ToArray();
+        records[SyncEngine.OrderID] = SyncEngine.OrderValue(store.Services.Select(service => service.Id));
+        return records;
     }
 
-    private static string Quote(string value)
+    /// <summary>键按字母排：aiProtocol / baseURL / id / isEnabled / kind / model / name / region / usesDeepLX。</summary>
+    public static string Service(TranslateServiceConfig service)
     {
-        var builder = new System.Text.StringBuilder();
-        CanonicalJson.WriteString(value, builder);
-        return builder.ToString();
-    }
-
-    private static string Order(IEnumerable<string> ids)
-    {
-        var builder = new System.Text.StringBuilder("[");
+        var builder = new System.Text.StringBuilder("{");
         var first = true;
-        foreach (var id in ids)
+        void Field(string name, string value)
         {
             if (!first)
             {
@@ -264,10 +231,76 @@ internal static class SyncSources
             }
 
             first = false;
-            CanonicalJson.WriteString(id, builder);
+            CanonicalJson.WriteString(name, builder);
+            builder.Append(':').Append(value);
         }
 
-        builder.Append(']');
+        if (!string.IsNullOrEmpty(service.Protocol))
+        {
+            Field("aiProtocol", Quote(service.Protocol));
+        }
+
+        if (!string.IsNullOrEmpty(service.BaseUrl))
+        {
+            Field("baseURL", Quote(service.BaseUrl));
+        }
+
+        Field("id", Quote(service.Id));
+        Field("isEnabled", service.Enabled ? "true" : "false");
+        Field("kind", Quote(service.Kind));
+        if (!string.IsNullOrEmpty(service.Model))
+        {
+            Field("model", Quote(service.Model));
+        }
+
+        Field("name", Quote(service.Name));
+        if (!string.IsNullOrEmpty(service.Region))
+        {
+            Field("region", Quote(service.Region));
+        }
+
+        if (service.UsesDeepLX)
+        {
+            Field("usesDeepLX", "true");
+        }
+
+        return builder.Append('}').ToString();
+    }
+
+    /// <summary>顺序那条（编号数组）；解不出来、或编回去不一样 = null。</summary>
+    public static List<string>? DecodeOrder(string value)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(value);
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            var ids = new List<string>();
+            foreach (var item in document.RootElement.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.String)
+                {
+                    return null;
+                }
+
+                ids.Add(item.GetString()!);
+            }
+
+            return SyncEngine.OrderValue(ids) == value ? ids : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string Quote(string value)
+    {
+        var builder = new System.Text.StringBuilder();
+        CanonicalJson.WriteString(value, builder);
         return builder.ToString();
     }
 }
@@ -293,6 +326,7 @@ internal sealed class Syncer
     private readonly SyncLedger _ledger;
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _timer;
     private bool _busy;
+    private bool _confirmed;
 
     private Syncer(SyncDevice device, SyncLedger ledger)
     {
@@ -358,6 +392,7 @@ internal sealed class Syncer
         finally
         {
             _busy = false;
+            _confirmed = false;
             Changed?.Invoke();
         }
     }
@@ -414,6 +449,8 @@ internal sealed class Syncer
 
         var otherDevices = disk.DeviceIds().Where(id => id != _device.Id).ToList();
         Status.Devices = otherDevices;
+        Status.PendingDeletions = 0;
+        Status.Message = string.Empty;
         foreach (var kind in kinds)
         {
             try
@@ -429,15 +466,30 @@ internal sealed class Syncer
         // device.json 最后写：epoch 每轮 +1。
         disk.WriteText(devicePath, SyncFolderRules.DeviceJson(epoch + 1, Environment.MachineName));
         _ledger.WriteEpoch(epoch + 1);
-        Status.State = "idle";
-        Status.Message = string.Empty;
-        Status.LastSync = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        // 某一类停在「等你确认」「停了」时不盖掉它（之前每轮最后都改回「好了」，刹车的提示永远看不到）。
+        if (Status.State == "syncing")
+        {
+            Status.State = "idle";
+            Status.LastSync = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        }
+    }
+
+    /// <summary>刹车之后用户点了「照样同步」：下一轮放过删除。</summary>
+    public void ConfirmDeletions()
+    {
+        _confirmed = true;
+        _ = RoundAsync();
     }
 
     private async Task SyncKindAsync(SyncFolder disk, string kind, string library)
     {
-        var local = Local(kind);
-        var localMap = local.ToDictionary(item => item.Id, item => item.Value, StringComparer.Ordinal);
+        // 仓库还没起来（或读不出来）：这一类这一轮不合。当成空表交进去的话，账本里的每一条都成了「本机删了」，删到每一台。
+        if (Local(kind) is not { } localMap)
+        {
+            Log.Warn($"sync.kind-unavailable {kind}");
+            return;
+        }
+
         var old = ReadEngineLedger(kind, library);
 
         Func<string, string?> dedupe = kind switch
@@ -460,11 +512,17 @@ internal sealed class Syncer
         }
 
         var outcome = plan.Outcome!;
-        if (SyncFolderRules.ShouldBrake(outcome.Trashing, outcome.Alive))
+        // 刹车两样（mac NoteSyncFolder.brakes + SyncRecords 文件头）：别处来的删掉本机一大批（trashing）、本机自己这一轮
+        // 删了一大批（erasing，比如库被清空）——都先问，用户点了「照样同步」的那一轮才放过去。
+        var erasingTotal = old?.Entries.Count ?? 0;
+        var braking = SyncFolderRules.ShouldBrake(outcome.Trashing, outcome.Alive) ||
+                      SyncFolderRules.ShouldBrake(outcome.Erasing, erasingTotal);
+        if (braking && !_confirmed)
         {
+            var count = Math.Max(outcome.Trashing, outcome.Erasing);
             Status.State = "confirm";
-            Status.PendingDeletions = outcome.Trashing;
-            Status.Message = $"同步要删掉 {outcome.Trashing} 条，等你确认";
+            Status.PendingDeletions += count;
+            Status.Message = $"同步要删掉 {Status.PendingDeletions} 条，等你确认";
             return;
         }
 
@@ -476,13 +534,27 @@ internal sealed class Syncer
             _ledger.Database.BeginTransaction();
         }
 
+        bool applied;
         try
         {
-            Apply(kind, merged);
-            WriteEngineLedger(kind, library, outcome.Ledger);
+            // 有一条解不出来（或者是更新版本写的、编回去不一样）：整个不落、也不存账本（照 mac applySync 返回 false）。
+            // 落了一半的话，没落下的那几条下一轮成了「本机删了」，删到每一台。
+            applied = Apply(kind, merged);
+            if (applied)
+            {
+                WriteEngineLedger(kind, library, outcome.Ledger);
+            }
+
             if (transactional)
             {
-                _ledger.Database.Commit();
+                if (applied)
+                {
+                    _ledger.Database.Commit();
+                }
+                else
+                {
+                    _ledger.Database.Rollback();
+                }
             }
         }
         catch
@@ -495,12 +567,17 @@ internal sealed class Syncer
             throw;
         }
 
+        if (!applied)
+        {
+            Log.Warn($"sync.apply-refused {kind}");
+            Status.State = "stopped";
+            Status.Message = "有内容这一版读不懂，先没存上（可能要更新 Kitty Tools）";
+            return;
+        }
+
         var ownPath = Path.Combine(SyncFolderRules.DevicesFolder, _device.Id, SyncFolderRules.FileName(kind));
         var encoded = merged.Encode();
         await Task.Run(() => disk.WriteText(ownPath, encoded));
-        Status.LastSync = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        Status.State = "idle";
-        Status.Message = string.Empty;
     }
 
     private (SyncOutcome? Outcome, string? Error) BuildPlan(
@@ -692,14 +769,12 @@ internal sealed class Syncer
     // 以后设置 / 服务记了每一项真正改的时刻，再从这里传进去。
     private static readonly Dictionary<string, long> NoChanged = new(StringComparer.Ordinal);
 
-    private List<(string Id, string Value, long Modified)> Local(string kind) => kind switch
+    private static Dictionary<string, string>? Local(string kind) => kind switch
     {
-        "clips" => ClipboardService.Instance?.Store is { } store
-            ? SyncSources.ClipRecords(store).ToList()
-            : new(),
-        "vocabulary" => SyncSources.VocabularyRecords().ToList(),
-        "engines" => SyncSources.EngineRecords().ToList(),
-        _ => SyncSources.ServiceRecords().ToList(),
+        "clips" => SyncSources.ClipRecords(ClipboardService.Instance?.Store),
+        "vocabulary" => SyncSources.VocabularyRecords(TranslationHistory.Instance),
+        "engines" => SyncSources.EngineRecords(SettingsService.Current.LauncherSearchEngines ?? WebSearch.Defaults()),
+        _ => SyncSources.ServiceRecords(TranslateServiceStore.Instance),
     };
 
     /// <summary>账本：每条的钟、内容哈希、改于 + 墓碑；旧格式（clock|hash）当 modified=0 迁过来。</summary>
@@ -815,258 +890,271 @@ internal sealed class Syncer
         _ledger.Write(kind, library, builder.ToString());
     }
 
-    private void Apply(string kind, SyncFile merged)
+    /// <summary>落合并结果。先把每一条按 mac 的结构解开、再用本机的编码编回去，必须一字不差（mac decodeExact）：
+    /// 多了这一版不认识的字段、类型不对的，整类不落（返回 false），免得落下去再发出去把别人的字段删了。
+    /// 全部解得开才动本机。</summary>
+    private static bool Apply(string kind, SyncFile merged) => kind switch
     {
-        switch (kind)
+        "clips" => ApplyClips(merged),
+        "vocabulary" => ApplyVocabulary(merged),
+        "engines" => ApplyEngines(merged),
+        _ => ApplyServices(merged),
+    };
+
+    private static string? Text(JsonElement root, string name)
+        => root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+
+    private static bool Flag(JsonElement root, string name)
+        => root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.True;
+
+    private static long? Number(JsonElement root, string name)
+        => root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number &&
+           value.TryGetInt64(out var number)
+            ? number
+            : null;
+
+    /// <summary>解开一条；不是对象 = null。</summary>
+    private static T? Decode<T>(string value, Func<JsonElement, T?> read)
+        where T : class
+    {
+        try
         {
-            case "clips":
-                ApplyClips(merged);
-                break;
-            case "vocabulary":
-                ApplyVocabulary(merged);
-                break;
-            case "engines":
-                ApplyEngines(merged);
-                break;
-            default:
-                ApplyServices(merged);
-                break;
+            using var document = JsonDocument.Parse(value);
+            return document.RootElement.ValueKind == JsonValueKind.Object ? read(document.RootElement) : null;
+        }
+        catch (JsonException)
+        {
+            return null;
         }
     }
 
-    private static void ApplyClips(SyncFile merged)
+    private sealed record SyncedClip(string Text, bool Favorite, bool Snippet, string? Note, string? Group);
+
+    private sealed record SyncedGroup(string Name, long Created);
+
+    private static bool ApplyClips(SyncFile merged)
     {
         if (ClipboardService.Instance?.Store is not { } store)
         {
-            return;
+            return false;
         }
 
-        var keep = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var record in merged.Records)
+        var order = new List<string>();
+        var groups = new List<ClipGroup>();
+        var clips = new List<(string Uid, SyncedClip Clip)>();
+        foreach (var record in merged.Records.OrderBy(record => record.Id, StringComparer.Ordinal))
         {
-            if (record.Id == "~order")
+            if (record.Id == SyncEngine.OrderID)
             {
-                continue;
-            }
-
-            if (record.Id.StartsWith("group:", StringComparison.Ordinal))
-            {
-                keep.Add(record.Id);
-                continue;
-            }
-
-            try
-            {
-                using var document = JsonDocument.Parse(record.Value);
-                var root = document.RootElement;
-                var text = root.TryGetProperty("text", out var textElement) ? textElement.GetString() : null;
-                if (string.IsNullOrEmpty(text))
+                if (SyncSources.DecodeOrder(record.Value) is not { } ids)
                 {
-                    continue;
+                    return false;
                 }
 
-                var existing = store.EnsureClip(record.Id, text);
-                keep.Add(record.Id);
-                var favorite = root.TryGetProperty("favorite", out var favoriteElement) && favoriteElement.GetBoolean();
-                var snippet = root.TryGetProperty("snippet", out var snippetElement) && snippetElement.GetBoolean();
-                var note = root.TryGetProperty("note", out var noteElement) ? noteElement.GetString() : null;
-                var groupId = root.TryGetProperty("group", out var groupElement) && groupElement.GetString() is { } g
-                    ? g.StartsWith("group:", StringComparison.Ordinal) ? g[6..] : null
-                    : null;
-                store.ApplySynced(existing.Id, favorite, snippet, note, groupId);
+                order = ids;
             }
-            catch (JsonException)
+            else if (record.Id.StartsWith(SyncSources.GroupPrefix, StringComparison.Ordinal))
             {
-                // 解不开的这一条跳过。
+                var group = Decode(record.Value, root =>
+                    Text(root, "name") is { } name && Number(root, "created") is { } created
+                        ? new SyncedGroup(name, created)
+                        : null);
+                var id = record.Id[SyncSources.GroupPrefix.Length..];
+                if (group is null || SyncSources.Group(group.Name, group.Created) != record.Value ||
+                    !Guid.TryParse(id, out _))
+                {
+                    return false;
+                }
+
+                groups.Add(new ClipGroup { Id = id, Name = group.Name, CreatedAt = group.Created });
+            }
+            else
+            {
+                var clip = Decode(record.Value, root =>
+                    Text(root, "text") is { } text
+                        ? new SyncedClip(text, Flag(root, "favorite"), Flag(root, "snippet"),
+                            Text(root, "note"), Text(root, "group"))
+                        : null);
+                if (clip is null ||
+                    SyncSources.Clip(clip.Text, clip.Favorite, clip.Snippet, clip.Note, clip.Group) != record.Value ||
+                    !Guid.TryParse(record.Id, out _))
+                {
+                    return false;
+                }
+
+                clips.Add((record.Id, clip));
             }
         }
 
-        store.UnfavoriteMissing(keep);
+        // 收藏夹先（条目要归进去），再条目；别处不再留着的取消收藏、移出片段和收藏夹（不删行）。
+        var arranged = SyncEngine.Arranged(groups.Select(group => SyncSources.GroupPrefix + group.Id), order);
+        var resolve = store.ReplaceSyncedGroups(arranged
+            .Select(key => groups.First(group => SyncSources.GroupPrefix + group.Id == key))
+            .ToList());
+        // 先「不再留着」的、再新来的（照 mac：先放掉的那条才能被同样正文的新来的接过去）。
+        store.UnfavoriteMissing(clips.Select(item => item.Uid).ToHashSet(StringComparer.Ordinal));
+        foreach (var (uid, clip) in clips)
+        {
+            var entry = store.EnsureClip(uid, clip.Text);
+            store.ApplySynced(entry.Id, clip.Favorite, clip.Snippet, clip.Note, resolve(clip.Group));
+        }
+
+        return true;
     }
 
-    private static void ApplyVocabulary(SyncFile merged)
+    private static bool ApplyVocabulary(SyncFile merged)
     {
         if (TranslationHistory.Instance is not { } history)
         {
-            return;
+            return false;
         }
 
-        var keep = new HashSet<string>(StringComparer.Ordinal);
+        var words = new List<(string Id, TranslationEntry Word)>();
+        foreach (var record in merged.Records.OrderBy(record => record.Id, StringComparer.Ordinal))
+        {
+            var word = Decode(record.Value, root =>
+                Text(root, "source") is { } source && Text(root, "target") is { } target &&
+                Text(root, "result") is { } result && Text(root, "service") is { } service &&
+                Number(root, "created") is { } created
+                    ? new TranslationEntry
+                    {
+                        Id = record.Id, Source = source, TargetLang = target, Result = result, Service = service,
+                        CreatedAt = created,
+                    }
+                    : null);
+            if (word is null ||
+                SyncSources.Vocabulary(word.Source, word.TargetLang, word.Result, word.Service, word.CreatedAt) !=
+                record.Value)
+            {
+                return false;
+            }
+
+            words.Add((record.Id, word));
+        }
+
+        // 先取消收藏的、再新来的（照 mac）：不然别处删了的那条还占着「同原文 + 目标语言」，新来的会被它挤掉。
+        history.UnfavoriteMissing(words.Select(item => item.Id).ToHashSet(StringComparer.Ordinal));
+        foreach (var (id, word) in words)
+        {
+            history.UpsertSynced(id, word.Source, word.TargetLang, word.Result, word.Service, word.CreatedAt);
+        }
+
+        return true;
+    }
+
+    private static bool ApplyEngines(SyncFile merged)
+    {
+        var order = new List<string>();
+        var byId = new Dictionary<string, SearchEngine>(StringComparer.Ordinal);
         foreach (var record in merged.Records)
         {
-            if (record.Id == "~order")
+            if (record.Id == SyncEngine.OrderID)
             {
+                if (SyncSources.DecodeOrder(record.Value) is not { } ids)
+                {
+                    return false;
+                }
+
+                order = ids;
                 continue;
             }
 
-            keep.Add(record.Id);
-            try
+            var engine = Decode(record.Value, root =>
+                Text(root, "name") is { } name && Text(root, "keyword") is { } keyword &&
+                Text(root, "url") is { } url
+                    ? new SearchEngine
+                    {
+                        Id = record.Id, Name = name, Keyword = keyword, UrlTemplate = url,
+                        Fallback = Flag(root, "fallback"),
+                    }
+                    : null);
+            if (engine is null || SyncSources.Engine(engine) != record.Value)
             {
-                using var document = JsonDocument.Parse(record.Value);
-                var root = document.RootElement;
-                var source = root.TryGetProperty("source", out var sourceElement) ? sourceElement.GetString() : null;
-                var target = root.TryGetProperty("target", out var targetElement) ? targetElement.GetString() : null;
-                var result = root.TryGetProperty("result", out var resultElement) ? resultElement.GetString() : null;
-                var service = root.TryGetProperty("service", out var serviceElement) ? serviceElement.GetString() : null;
-                var created = root.TryGetProperty("created", out var createdElement) ? createdElement.GetInt64() : 0;
-                if (!string.IsNullOrEmpty(source) && !string.IsNullOrEmpty(target) && !string.IsNullOrEmpty(result))
-                {
-                    history.UpsertSynced(record.Id, source!, target!, result!, service ?? "unknown", created);
-                }
+                return false;
             }
-            catch (JsonException)
-            {
-                // 跳过这一条。
-            }
+
+            byId[record.Id] = engine;
         }
 
-        history.UnfavoriteMissing(keep);
-    }
-
-    private static void ApplyEngines(SyncFile merged)
-    {
-        var settings = SettingsService.Current;
-        var current = settings.LauncherSearchEngines ?? WebSearch.Defaults();
-        var order = merged.Records.FirstOrDefault(record => record.Id == "~order");
-        var ids = new List<string>();
-        if (order is not null)
-        {
-            try
-            {
-                using var document = JsonDocument.Parse(order.Value);
-                ids.AddRange(document.RootElement.EnumerateArray().Select(item => item.GetString() ?? string.Empty));
-            }
-            catch (JsonException)
-            {
-                // 顺序解不开就按 id 排。
-            }
-        }
-
-        var byId = new Dictionary<string, SearchEngine>(StringComparer.Ordinal);
-        foreach (var record in merged.Records.Where(record => record.Id != "~order"))
-        {
-            try
-            {
-                using var document = JsonDocument.Parse(record.Value);
-                var root = document.RootElement;
-                byId[record.Id] = new SearchEngine
-                {
-                    Id = record.Id,
-                    Name = root.TryGetProperty("name", out var name) ? name.GetString() ?? record.Id : record.Id,
-                    Keyword = root.TryGetProperty("keyword", out var keyword) ? keyword.GetString() ?? string.Empty : string.Empty,
-                    UrlTemplate = root.TryGetProperty("url", out var url) ? url.GetString() ?? string.Empty : string.Empty,
-                    Fallback = root.TryGetProperty("fallback", out var fallback) && fallback.GetBoolean(),
-                };
-            }
-            catch (JsonException)
-            {
-                return; // 有一条解不出来就整类不落。
-            }
-        }
-
-        var result = ids.Where(byId.ContainsKey).Select(id => byId[id]).ToList();
-        foreach (var engine in byId.Values.Where(engine => !ids.Contains(engine.Id)))
-        {
-            result.Add(engine);
-        }
-
-        settings.LauncherSearchEngines = result;
+        SettingsService.Current.LauncherSearchEngines =
+            SyncEngine.Arranged(byId.Keys, order).Select(id => byId[id]).ToList();
         SettingsService.Save();
+        return true;
     }
 
-    private static void ApplyServices(SyncFile merged)
+    private static bool ApplyServices(SyncFile merged)
     {
         if (TranslateServiceStore.Instance is not { } store)
         {
-            return;
+            return false;
         }
 
+        var order = new List<string>();
         var byId = new Dictionary<string, TranslateServiceConfig>(StringComparer.Ordinal);
-        foreach (var record in merged.Records.Where(record => record.Id != "~order"))
+        foreach (var record in merged.Records)
         {
-            try
+            if (record.Id == SyncEngine.OrderID)
             {
-                using var document = JsonDocument.Parse(record.Value);
-                var root = document.RootElement;
-                var kind = root.TryGetProperty("kind", out var kindElement) ? kindElement.GetString() : null;
-                if (string.IsNullOrEmpty(kind))
+                if (SyncSources.DecodeOrder(record.Value) is not { } ids)
                 {
-                    continue;
+                    return false;
                 }
 
-                byId[record.Id] = new TranslateServiceConfig
-                {
-                    Id = record.Id,
-                    Kind = kind!,
-                    Name = root.TryGetProperty("name", out var name) ? name.GetString() ?? record.Id : record.Id,
-                    Enabled = root.TryGetProperty("isEnabled", out var enabled) && enabled.GetBoolean(),
-                    Protocol = root.TryGetProperty("aiProtocol", out var protocol) ? protocol.GetString() : "openai",
-                    BaseUrl = root.TryGetProperty("baseURL", out var baseUrl) ? baseUrl.GetString() : null,
-                    Model = root.TryGetProperty("model", out var model) ? model.GetString() : null,
-                    Region = root.TryGetProperty("region", out var region) ? region.GetString() : null,
-                    UsesDeepLX = root.TryGetProperty("usesDeepLX", out var deep) && deep.GetBoolean(),
-                };
-            }
-            catch (JsonException)
-            {
-                return;
-            }
-        }
-
-        // 第一次合时：别处来的自建 AI 服务如果和本机「协议 + 地址 + 模型」一样，只留文件夹里那个，
-        // 本机的密钥搬过去（PLAN-v5 §4.2）。
-        foreach (var incoming in byId.Values)
-        {
-            if (incoming.Kind != "ai")
-            {
+                order = ids;
                 continue;
             }
 
-            var duplicate = store.Services.FirstOrDefault(local =>
-                local.Id != incoming.Id && local.Kind == "ai" &&
-                string.Equals(local.Protocol ?? "openai", incoming.Protocol ?? "openai", StringComparison.Ordinal) &&
-                string.Equals(local.BaseUrl ?? string.Empty, incoming.BaseUrl ?? string.Empty, StringComparison.Ordinal) &&
-                string.Equals(local.Model ?? string.Empty, incoming.Model ?? string.Empty, StringComparison.Ordinal));
-            if (duplicate is null)
+            var service = Decode(record.Value, root =>
+                Text(root, "kind") is { Length: > 0 } kind && Text(root, "name") is { } name &&
+                Text(root, "id") == record.Id
+                    ? new TranslateServiceConfig
+                    {
+                        Id = record.Id,
+                        Kind = kind,
+                        Name = name,
+                        Enabled = Flag(root, "isEnabled"),
+                        // 没写协议就是没有（不补 openai）：补了编回去就多一个字段，对不上。
+                        Protocol = Text(root, "aiProtocol"),
+                        BaseUrl = Text(root, "baseURL"),
+                        Model = Text(root, "model"),
+                        Region = Text(root, "region"),
+                        UsesDeepLX = Flag(root, "usesDeepLX"),
+                    }
+                    : null);
+            if (service is null || SyncSources.Service(service) != record.Value)
+            {
+                return false;
+            }
+
+            byId[record.Id] = service;
+        }
+
+        // 第一次合时被去重掉的本机自建 AI 服务（协议 + 地址 + 模型一样）：密钥搬给留下的那个（它在本机还没有密钥时，
+        // PLAN-v5 §4.2）。别处删了的只拿出列表，密钥不删（凭据管理器里的键还在）。
+        foreach (var old in store.Services.Where(service => !byId.ContainsKey(service.Id) && service.Kind == "ai"))
+        {
+            var kept = byId.Values.FirstOrDefault(incoming => incoming.Kind == "ai" &&
+                string.Equals(incoming.Protocol ?? string.Empty, old.Protocol ?? string.Empty, StringComparison.Ordinal) &&
+                string.Equals(incoming.BaseUrl ?? string.Empty, old.BaseUrl ?? string.Empty, StringComparison.Ordinal) &&
+                string.Equals(incoming.Model ?? string.Empty, old.Model ?? string.Empty, StringComparison.Ordinal));
+            if (kept is null)
             {
                 continue;
             }
 
             foreach (var field in TranslateKinds.SecretFields("ai"))
             {
-                var secret = store.Secret(duplicate, field);
-                if (!string.IsNullOrEmpty(secret) && string.IsNullOrEmpty(store.Secret(incoming, field)))
+                var secret = store.Secret(old, field);
+                if (!string.IsNullOrEmpty(secret) && string.IsNullOrEmpty(store.Secret(kept, field)))
                 {
-                    store.SetSecret(incoming, secret, field);
+                    store.SetSecret(kept, secret, field);
                 }
             }
 
-            Log.Info($"sync.service-dedupe keep={incoming.Id} drop={duplicate.Id}");
+            Log.Info($"sync.service-dedupe keep={kept.Id} drop={old.Id}");
         }
 
-        // 别处删了的从列表拿掉；密钥不删（凭据管理器里的键还在）。
-        var ordered = new List<TranslateServiceConfig>();
-        var order = merged.Records.FirstOrDefault(record => record.Id == "~order");
-        if (order is not null)
-        {
-            try
-            {
-                using var document = JsonDocument.Parse(order.Value);
-                foreach (var item in document.RootElement.EnumerateArray())
-                {
-                    if (item.GetString() is { } id && byId.Remove(id, out var service))
-                    {
-                        ordered.Add(service);
-                    }
-                }
-            }
-            catch (JsonException)
-            {
-                // 顺序坏了就按 id 排。
-            }
-        }
-
-        ordered.AddRange(byId.Values.OrderBy(service => service.Id, StringComparer.Ordinal));
-        store.ReplaceServices(ordered);
+        store.ReplaceServices(SyncEngine.Arranged(byId.Keys, order).Select(id => byId[id]).ToList());
+        return true;
     }
 }

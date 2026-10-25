@@ -228,6 +228,16 @@ internal sealed class Database : IDisposable
         statement.Step();
     }
 
+    /// <summary>同步落地：整张收藏夹表换成这些（名字唯一，先清后插免得改名互换时撞上）。调用方在事务里。</summary>
+    public void ReplaceGroups(IReadOnlyList<ClipGroup> groups)
+    {
+        _connection.Execute("DELETE FROM clip_groups;");
+        foreach (var group in groups)
+        {
+            InsertGroup(group.Id, group.Name, group.Position, group.CreatedAt);
+        }
+    }
+
     public void RenameGroup(string id, string name)
     {
         using var statement = _connection.Prepare("UPDATE clip_groups SET name = ?2 WHERE id = ?1;");

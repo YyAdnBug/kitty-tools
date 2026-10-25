@@ -243,29 +243,42 @@ internal sealed class TranslationHistory
         return added;
     }
 
-    /// <summary>同步落地：按编号（或原文 + 目标语言）插入 / 更新一条收藏。</summary>
-    public void UpsertSynced(string id, string source, string targetLang, string result, string service, long created)
+    /// <summary>同步落地一条收藏（照 mac HistoryStore.applySync）：同原文 + 目标语言已经有编号更小的收藏，这条不落
+    /// （返回 false，下一轮它的删除传出去，几台留同一条）；否则删掉同原文 + 目标语言的别的行，按这个编号写下。
+    /// 原文原样存（不 Trim）：存的和同步来的不一样，编回去对不上，两台来回改。</summary>
+    public bool UpsertSynced(string id, string source, string targetLang, string result, string service, long created)
     {
-        var existing = ById(id) ?? Find(source, targetLang);
-        if (existing is null)
+        using (var kept = _database.Connection.Prepare(
+                   "SELECT id FROM translations WHERE source = $source AND target_lang = $target AND id <> $id " +
+                   "AND favorite = 1;"))
         {
-            Insert(id, Stored(source), null, targetLang, result, service, created, favorite: true);
-        }
-        else
-        {
-            using var statement = _database.Connection.Prepare(
-                "UPDATE translations SET source = $source, target_lang = $target, result = $result, " +
-                "service = $service, created_at = $created, favorite = 1 WHERE id = $id;");
-            statement.BindText(1, Stored(source));
-            statement.BindText(2, targetLang);
-            statement.BindText(3, result);
-            statement.BindText(4, service);
-            statement.BindInt64(5, created);
-            statement.BindText(6, existing.Id);
-            statement.Step();
+            kept.BindText(1, source);
+            kept.BindText(2, targetLang);
+            kept.BindText(3, id);
+            while (kept.Step())
+            {
+                if (string.CompareOrdinal(kept.GetText(0), id) < 0)
+                {
+                    using var drop = _database.Connection.Prepare("DELETE FROM translations WHERE id = $id;");
+                    drop.BindText(1, id);
+                    drop.Step();
+                    return false;
+                }
+            }
         }
 
+        using (var others = _database.Connection.Prepare(
+                   "DELETE FROM translations WHERE source = $source AND target_lang = $target AND id <> $id;"))
+        {
+            others.BindText(1, source);
+            others.BindText(2, targetLang);
+            others.BindText(3, id);
+            others.Step();
+        }
+
+        Insert(id, source, null, targetLang, result, service, created, favorite: true);
         Changed?.Invoke();
+        return true;
     }
 
     /// <summary>同步：别处不再收藏的取消收藏（还在历史里）。</summary>

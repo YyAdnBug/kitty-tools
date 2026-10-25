@@ -57,11 +57,14 @@ internal sealed class ClipboardStore
         _database.SetUid(entry.Id, entry.Uid);
     }
 
-    /// <summary>同步用：按 uid（或同样的正文）找一条；没有就新建一条收藏。</summary>
+    /// <summary>同步用：按 uid 找一条（正文跟着同步来的走）；没有就找同样正文、还没留着的普通条目接过来；再没有就新建。
+    /// 已经留着（收藏 / 片段 / 收藏夹）的另一条不抢它的 uid：抢了那条的 uid 就从本机消失，下一轮成了删除，
+    /// 和 mac「编号小的留下」挑的不一样时两条都会被删光。</summary>
     public ClipEntry EnsureClip(string uid, string text)
     {
         var existing = _items.FirstOrDefault(item => item.Uid == uid) ??
                        _items.FirstOrDefault(item => item.Kind == ClipKind.Text &&
+                                                     (item.Uid is null || !IsRetained(item)) &&
                                                      string.Equals(item.Text, text, StringComparison.Ordinal));
         if (existing is not null)
         {
@@ -69,6 +72,12 @@ internal sealed class ClipboardStore
             {
                 existing.Uid = uid;
                 _database.SetUid(existing.Id, uid);
+            }
+
+            if (!string.Equals(existing.Text, text, StringComparison.Ordinal))
+            {
+                existing.Text = text;
+                _database.SetText(existing.Id, text);
             }
 
             return existing;
@@ -97,23 +106,83 @@ internal sealed class ClipboardStore
             return;
         }
 
-        entry.Favorite = favorite;
+        // 照 mac：在收藏夹里的就是收藏；备注原样存（改成 null 的话编回去和同步来的那版对不上，两台来回改）。
+        entry.Favorite = favorite || groupId is not null;
         entry.Snippet = snippet;
-        entry.Note = string.IsNullOrWhiteSpace(note) ? null : note;
-        entry.GroupId = favorite ? groupId : null;
+        entry.Note = note;
+        entry.GroupId = groupId;
         entry.Folded = null;
-        _database.SetFavorite(id, favorite);
+        _database.SetFavorite(id, entry.Favorite);
         _database.SetSnippet(id, snippet);
         _database.SetNote(id, entry.Note);
         _database.SetGroup(id, entry.GroupId);
         Changed?.Invoke();
     }
 
+    /// <summary>同步落地收藏夹（照 mac applySync）：整张表换成 groups（已按顺序排好）；同名的编号小的留下，
+    /// 另一个的条目归过去；被删的收藏夹还有同名的，条目也归过去。返回「条目的收藏夹编号 → 落地后归进哪个」。</summary>
+    public Func<string?, string?> ReplaceSyncedGroups(IReadOnlyList<ClipGroup> groups)
+    {
+        var remap = new Dictionary<string, string>(StringComparer.Ordinal);
+        var final = new List<ClipGroup>();
+        foreach (var same in groups.GroupBy(group => group.Name, StringComparer.Ordinal))
+        {
+            var winner = same.MinBy(group => group.Id, StringComparer.Ordinal)!;
+            foreach (var loser in same.Where(group => group.Id != winner.Id))
+            {
+                remap[loser.Id] = winner.Id;
+            }
+        }
+
+        foreach (var group in groups.Where(group => !remap.ContainsKey(group.Id)))
+        {
+            final.Add(new ClipGroup
+            {
+                Id = group.Id, Name = group.Name, Position = final.Count, CreatedAt = group.CreatedAt,
+            });
+        }
+
+        var ids = final.Select(group => group.Id).ToHashSet(StringComparer.Ordinal);
+        foreach (var old in Groups.Where(group => !ids.Contains(group.Id) && !remap.ContainsKey(group.Id)))
+        {
+            if (final.FirstOrDefault(group => group.Name == old.Name) is { } same)
+            {
+                remap[old.Id] = same.Id;
+            }
+        }
+
+        string? Resolve(string? id)
+        {
+            if (id is null)
+            {
+                return null;
+            }
+
+            var target = remap.TryGetValue(id, out var mapped) ? mapped : id;
+            return ids.Contains(target) ? target : null;
+        }
+
+        _database.ReplaceGroups(final);
+        foreach (var entry in _items.Where(item => item.GroupId is not null && !ids.Contains(item.GroupId)))
+        {
+            entry.GroupId = Resolve(entry.GroupId);
+            _database.SetGroup(entry.Id, entry.GroupId);
+        }
+
+        Groups = _database.LoadGroups();
+        Changed?.Invoke();
+        return Resolve;
+    }
+
+    private static bool IsRetained(ClipEntry entry) => entry.Favorite || entry.Snippet || entry.GroupId is not null;
+
     /// <summary>同步：别处不再保留的条目只取消收藏、移出片段和收藏夹，不删行。</summary>
     public void UnfavoriteMissing(HashSet<string> keepUids)
     {
         foreach (var entry in _items.Where(item =>
-                     item.Favorite && item.Uid is not null && !keepUids.Contains(item.Uid)))
+                     IsRetained(item) && item.Uid is not null && !keepUids.Contains(item.Uid) &&
+                     // 带 NUL 的本来就不同步（SyncSources.ClipRecords），不在文件里不等于别处不要了。
+                     item.Text?.Contains('\0') != true && item.Note?.Contains('\0') != true))
         {
             entry.Favorite = false;
             entry.Snippet = false;

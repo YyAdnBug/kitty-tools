@@ -521,6 +521,18 @@ internal sealed class SettingsWindow : Window
             NoticeHost.Show("同步", "开始同步…", NoticeTone.Normal);
         };
         row.Children.Add(syncNow);
+        if (status?.State == "confirm")
+        {
+            // 刹车停下的那一类：用户看过要删几条之后放行这一轮。
+            var confirm = new Button { Content = "照样同步" };
+            confirm.Click += (_, _) =>
+            {
+                Syncer.Instance?.ConfirmDeletions();
+                NoticeHost.Show("同步", "开始同步…", NoticeTone.Normal);
+            };
+            row.Children.Add(confirm);
+        }
+
         var stop = new Button { Content = "停止同步" };
         stop.Click += (_, _) =>
         {
