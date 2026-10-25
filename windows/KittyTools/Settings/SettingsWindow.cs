@@ -1114,6 +1114,21 @@ internal sealed class SettingsWindow : Window
                     SettingsService.Save();
                 });
 
+            AddToggle("显示点按", "录制画面里画一个圈（左键粉色、右键蓝色）。",
+                SettingsService.Current.RecordClicks,
+                value =>
+                {
+                    SettingsService.Current.RecordClicks = value;
+                    SettingsService.Save();
+                });
+            AddToggle("显示按键", "只显示带修饰键的快捷键（如 Ctrl + Shift + S），单个字母不显示。",
+                SettingsService.Current.RecordKeys,
+                value =>
+                {
+                    SettingsService.Current.RecordKeys = value;
+                    SettingsService.Save();
+                });
+
             var folderRow = new Grid { ColumnSpacing = 8 };
             folderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             folderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });

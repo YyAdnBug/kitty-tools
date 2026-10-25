@@ -112,6 +112,12 @@ internal sealed class Settings
 
     public string? RecordingTempPath { get; set; }
 
+    /// <summary>录制中显示点按圈（第四版第 3 批，默认关）。</summary>
+    public bool RecordClicks { get; set; }
+
+    /// <summary>录制中显示快捷键胶囊（默认关）。</summary>
+    public bool RecordKeys { get; set; }
+
     public List<TranslateServiceConfig>? TranslateServices { get; set; }
 
     /// <summary>启动器的网页搜索列表；null = 从没存过（默认前 8 个，Bing 兜底）。</summary>

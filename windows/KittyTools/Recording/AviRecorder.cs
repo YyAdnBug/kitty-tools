@@ -19,6 +19,8 @@ internal sealed class AviRecorder : IDisposable
     private readonly ManualResetEventSlim _stop = new(false);
     private Thread? _thread;
     private byte[]? _lastJpeg;
+    private bool _effectsInjected;
+    private int _effectsLogged;
 
     private AviRecorder(PixelBounds region, int fps, string temporary, string final)
     {
@@ -152,6 +154,13 @@ internal sealed class AviRecorder : IDisposable
                 written += count;
                 Frames = written;
                 ElapsedMs = (long)elapsed;
+                if (!_effectsInjected && written >= 10 &&
+                    Environment.GetEnvironmentVariable("KITTY_RECORD_EFFECTS") == "1")
+                {
+                    _effectsInjected = true;
+                    RecordingEffects.InjectDemo(width, height);
+                    Log.Info("record.effects-demo");
+                }
             }
 
             writer.Finish();
@@ -211,6 +220,18 @@ internal sealed class AviRecorder : IDisposable
                 _region.Left - screen.Bounds.Left, _region.Top - screen.Bounds.Top,
                 _region.Right - screen.Bounds.Left, _region.Bottom - screen.Bounds.Top);
             var bgra = screen.Crop(local);
+            var (rings, keycap) = RecordingEffects.Snapshot();
+            if ((rings.Count > 0 || keycap is not null) && _effectsLogged < 3)
+            {
+                _effectsLogged++;
+                Log.Info($"record.effects rings={rings.Count} key={keycap?.Text}");
+            }
+
+            if (rings.Count > 0 || keycap is not null)
+            {
+                RecordingOverlay.Render(bgra, width, height, Environment.TickCount64, rings, keycap);
+            }
+
             return JpegEncoder.EncodeAsync(bgra, width, height, 0.7f).GetAwaiter().GetResult();
         }
         catch (Exception ex)

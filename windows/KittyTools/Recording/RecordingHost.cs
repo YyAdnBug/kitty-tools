@@ -70,6 +70,26 @@ internal static class RecordingHost
         SettingsService.Save();
         SetThreadExecutionState(EsContinuous | EsSystemRequired | EsDisplayRequired);
         RecordingHud.Show(region);
+        if (SettingsService.Current.RecordClicks || SettingsService.Current.RecordKeys)
+        {
+            InputHooks.Start(
+                region,
+                (x, y, down, right) =>
+                {
+                    if (SettingsService.Current.RecordClicks)
+                    {
+                        RecordingEffects.Click(x, y, down, right);
+                    }
+                },
+                text =>
+                {
+                    if (SettingsService.Current.RecordKeys)
+                    {
+                        RecordingEffects.Key(text);
+                    }
+                });
+        }
+
         Log.Info("record.begin");
         NoticeHost.Show("正在录屏", "Alt+R 或托盘「停止录屏」结束", NoticeTone.Normal);
         Changed?.Invoke();
@@ -84,6 +104,8 @@ internal static class RecordingHost
 
         _recorder = null;
         RecordingHud.Hide();
+        InputHooks.Stop();
+        RecordingEffects.Clear();
         var path = recorder.Stop();
         recorder.Dispose();
         SettingsService.Current.RecordingTempPath = null;
@@ -124,6 +146,8 @@ internal static class RecordingHost
 
         _recorder = null;
         RecordingHud.Hide();
+        InputHooks.Stop();
+        RecordingEffects.Clear();
         var path = recorder.Stop();
         recorder.Dispose();
         SettingsService.Current.RecordingTempPath = null;
