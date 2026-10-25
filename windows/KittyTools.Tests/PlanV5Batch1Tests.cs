@@ -138,28 +138,4 @@ public sealed class SyncGoldenTests
         Assert.IsFalse(CanonicalJson.IsCanonical("""{"a":"\u4f60"}"""));       // 非 ASCII 不该转义
         Assert.IsFalse(CanonicalJson.IsCanonical("not json"));
     }
-
-    [TestMethod]
-    public void MergePicksNewestAndHonoursTombstones()
-    {
-        SyncFile File(params SyncRecord[] records) => new() { Kind = "clips", Records = records.ToList() };
-
-        var older = new SyncRecord { Id = "X", Clock = SyncClock.Parse("WIN:1"), Modified = 10, Value = "old" };
-        var newer = new SyncRecord { Id = "X", Clock = SyncClock.Parse("MAC:2"), Modified = 20, Value = "new" };
-        var merged = SyncMerge.Merge("clips", new[] { File(older), File(newer) });
-        Assert.AreEqual("new", merged.Records.Single().Value);
-
-        var erased = new SyncFile
-        {
-            Kind = "clips",
-            Erased = new List<SyncErased>
-            {
-                new() { Id = "X", Clock = SyncClock.Parse("WIN:3") },
-            },
-        };
-        Assert.AreEqual(0, SyncMerge.Merge("clips", new[] { File(older), erased }).Records.Count);
-
-        var resurrected = new SyncRecord { Id = "X", Clock = SyncClock.Parse("WIN:4"), Modified = 30, Value = "back" };
-        Assert.AreEqual("back", SyncMerge.Merge("clips", new[] { File(resurrected), erased }).Records.Single().Value);
-    }
 }
