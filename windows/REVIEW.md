@@ -27,11 +27,12 @@
 - **修好之前**：设置 › 通用 ›「同步」这一节先藏起来（`// ponytail:` 写上 R13），0.5.0 的产物不能给用户装来同步。
 - **验收**：上面 2、3 全过；报告里写 fuzz 2000 个种子的耗时。
 
-**进展（2026-10-25）：**
-- 已照 `SyncRecords.swift` 把 `round / standing / buried / hash / union / joined / arrange / orderID` 写成
-  `KittyTools.Core/Sync/SyncEngine.cs`；`SyncRecordsTests.swift` 的 17 个用例原样移植，全过（`SyncEngineTests`）。
-- 设置里的「同步」先藏起来（`SettingsWindow.SyncUiVisible = false`），`Syncer.Ready = false` 不跑，等接好执行层和集成测试再打开。
-- 还没做：执行层接引擎、旧账本迁移、17 个用例之外的 fuzz、集成测试、UI 线程外读写。
+**进展（2026-10-25，`2728574`）：**
+- 引擎已接执行层：`SyncKind` 用 `SyncEngine.Round`，旧账本 `clock|hash` 迁成新格式；设置里的「同步」重新打开。
+- 17 个移植用例 + 20 个种子的 fuzz 随全量跑；`KITTY_SYNC_RECORDS_FUZZ=2000` 实测 2000 个种子 34.9 秒；
+  两台 Windows + 假 Mac 的临时目录集成测试（8 轮，三份一样）也过了。
+- 还差：执行层挪出 UI 线程（云盘未下载文件会卡，仍 `Task.Yield` + UI 线程）；旧账本迁移只把 modified 记 0；
+  真机 / 真 Mac 的长期同步没测。
 
 ### R14（P1）录屏换成 H.264 MP4，补系统声音
 
@@ -56,20 +57,6 @@
 
 **验收**：1440p 30 fps 录 60 s，文件 < 60 MB、录制期间本进程 CPU < 15%、内存不随时长涨；放系统声音 + 对着麦克风拍手，音画同步；资源管理器能出缩略图、「媒体播放器」能放；录满 10 分钟一次。
 
-### R15（P1）R4 没修好：深色下设置卡还是浅底白字
-
-- **证据**：`windows-shots` 的 `0.3.0-batch-1/settings-features.png`，是 `4b7e0c1` 之后推的。外观选深色、系统是浅色时，卡片底约 `#BFBFBF`（正好是浅色主题那个 70% 白的卡片底叠在深色窗口上），标题白字，几乎看不清。如果这张是旧进程截的，就补一张新的证明，再把这条挪到「有异议」。
-- **可能的根因**（`Shell/Theme.cs`）：
-  - XamlControlsResources 的 `ThemeDictionaries` 里，深色那套的键是 **`Default`**，不是 `Dark`（只有 `Default` / `Light` / `HighContrast` 三个），`ThemeKey` 返回 `"Dark"` 就永远找不到。
-  - `Find` 返回第一个带这个主题键的字典，不管里面有没有要的画刷，有可能先碰到一个没有 `CardBackgroundFillColorDefaultBrush` 的字典。
-  - 两种情况最后都会退回 `Application.Current.Resources`，拿到的是跟系统走的那一套。
-- **修**：
-  - 深色先找 `Default` 再找 `Dark`；`Find` 只认里面真有这个 key 的字典。
-  - 加一个启动自检（Debug 下记日志）：用三个主题键各取一次 `CardBackgroundFillColorDefaultBrush`，颜色要互不相同。
-  - 能写进 XAML 的地方改成 `{ThemeResource}`：元素有 `RequestedTheme` 时会自动选对的那一套，换外观也跟着刷新。`Theme.Brush` 只留给真写不了 XAML 的地方。
-- 同一张图：「功能」那一节的卡左边没有图标，上面的卡都有。
-- **验收**：系统浅色 + 设置深色、系统深色 + 设置浅色两种组合，各截设置 › 通用、翻译卡、启动器的计算行，推到 `windows-shots`。
-
 ### R16（P1）截图拍到了用户的隐私，而 `windows-shots` 在公开仓库里
 
 - `0.4.0-batch-1/record-saved.png`、`0.4.0-batch-2/record-select.png`、`0.4.0-batch-3/hud.png` 都是 2560×1440 的整个桌面，拍进了用户别的窗口：代理配置、局域网和代理服务器的 IP、别的对话的内容。`0.4.0-batch-4/effects-frame.jpg`、`0.4.0-batch-5/gif-frame.png` 这两张录屏帧里也有。
@@ -89,14 +76,6 @@
 
 - 每查一次起一个进程（一两百毫秒）；有些语言的系统上状态那一列是本地化的（德语是 `ABHÖREN`），解析会漏。
 - 改用 `GetExtendedTcpTable(TCP_TABLE_OWNER_PID_LISTENER)` / `GetExtendedUdpTable(UDP_TABLE_OWNER_PID)`（CsWin32 能生成），IPv4、IPv6 各调一次，`LauncherCommands.cs` 文件头的说明一起改。单测改成测「表的行 → 列表项」。
-
-### R19（P2）编码：一个文件的注释是乱码、提交信息带 BOM
-
-- `KittyTools/Shell/OverlayWindow.cs` 第 1–4 行和第 146 行：UTF-8 被当成 GBK 读了一遍再存回去。照原意重写这几行注释（文件头的意思大概是「浮层：剪贴板面板和启动器共用的窗口……」）。
-- 提交 `6ac10d9c`、`ea1ec3b3` 的标题开头有 U+FEFF，`6ac10d9c` 的正文是乱码（报告文件本身没坏）。旧提交不改，以后这样写提交信息：
-  - 写进文件再 `git commit -F <文件>`，文件是**不带 BOM 的 UTF-8**。PowerShell 7 用 `Set-Content -Encoding utf8NoBOM`；Windows PowerShell 5.1 的 `-Encoding UTF8` 会带 BOM，别用。
-  - 另外设一次 `git config i18n.commitEncoding utf-8`，并让控制台 `[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)`。
-- `Translate/Providers/` 下 DeepL、Google、Microsoft 三个文件开头有 BOM，其余的没有。统一成不带 BOM：`windows/.editorconfig` 加 `charset = utf-8`。
 
 ### R20（P2）第三版报告里记的「没做成」，补上
 
@@ -132,6 +111,22 @@
   这些按 `AGENTS.md` 记「没测」，继续做 `PLAN-v3.md`；`HANDTEST.md` §144–161 里已经标了「待走」。
 
 ## 已修
+
+### R15（P1）R4 没修好：深色下设置卡还是浅底白字 → 已修（`2728574`）
+
+- `Theme.CardBackground/SecondaryText` 不再从 XamlControlsResources 的主题字典取（实测 Default/Light
+  解出来都是 `#B3FFFFFF`，深色用错），改成跟 `EffectiveTheme` 给具体颜色；`ThemeKey` 深色先找
+  `Default`，`FindTheme` 只认里面真有这个 key 的字典；启动自检日志 `theme.check` 记实际颜色。
+- 怎么验的：系统浅色 + 设置深色，只截设置窗口（`0.5.0-review-r15/settings-dark-system-light.png`，
+  卡片深底白字、功能卡有图标）。系统深色 + 设置浅色的组合没测（要改系统主题）；
+  XAML 里能写 `ThemeResource` 的地方还没全换，留给 R4 的后续。
+
+### R19（P2）编码：一个文件的注释是乱码、提交信息带 BOM → 已修（`2728574`）
+
+- `Shell/OverlayWindow.cs` 文件头 4 行和第 146 行按原意重写；DeepL / Google / Microsoft 三个
+  Provider 去掉 BOM；新增 `windows/.editorconfig`（`charset = utf-8`）；
+  本地设了 `git config i18n.commitEncoding utf-8`，提交信息用 Python / write 工具写不带 BOM 的 UTF-8。
+- 怎么验的：读文件头是正常中文；`python` 检查 Providers 下没有 BOM；本次提交标题无 U+FEFF。
 
 ### R4（P1）设置里选的外观和系统不一样时，代码里设的颜色全是错的那一套 → 已修（`4b7e0c1`）
 
