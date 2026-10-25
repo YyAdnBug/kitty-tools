@@ -79,3 +79,6 @@
 ## 0.4.0-batch-5（录屏转 GIF）
 
 - gif-frame.png：拍到了整个桌面，已删（windows/REVIEW.md R16）。要重拍的话只截我们自己的窗口。
+## 0.5.0-review-r15（R15 深色设置卡）
+
+- settings-dark-system-light.png：系统浅色 + 设置深色，只截设置窗口；卡片深底白字
