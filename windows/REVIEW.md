@@ -10,31 +10,11 @@
 
 ## 待修
 
-（2026-10-25 审到 `864fc5b8`：第三版、第四版、第五版和全部完成报告。按 P0 → P1 → P2 → P3 的顺序修。）
+（2026-10-25 审到 `1bdfde8f`：R13–R21 都处理完了，现在没有待修。接下来做 `PLAN-v6.md`。）
 
-### R13（P0）同步的合并规则和 mac 不一样，和真 Mac 一起用会丢改动
+## 转入 PLAN-v6
 
-**先说审查方的错**：PLAN-v5 让你照搬的 `SyncRecords.swift` 等文件，写方案时只在 Mac 本地、没推到 `origin`，你那边拿不到，只能按文字重写。现在原样拷在 `windows/reference/mac-sync/`（README 里有对照表）。
-
-- **差在哪**：你写的是「`modified` 大的赢，一样再看钟」；mac 是**先比钟**——一版的钟每一格都不小于另一版（盖过它）就直接赢，跟改于无关；只有两版谁也盖不住谁（真的并发改）才比改于，再一样比内容哈希（`SyncRecords.swift` 文件头「合（C1）」）。
-- **会出什么事**：Windows 的系统时间比 Mac 快 5 分钟。Windows 改了一条 → Mac 读到、在它上面又改了一次（Mac 这版的钟盖过 Windows 那版，但改于比 Windows 的小）→ Windows 这一轮按改于判自己赢、把 Mac 的改动丢掉，再把钟并起来写出去 → Mac 下一轮看到的钟盖过自己的，跟着退回旧值。两台的时钟差几分钟很常见，这个不是小概率。
-- 别的没对上的（都在文件头里写着）：改于不晚于现在、取 changed 时刻；账本被退回去时只追自己那一格（你现在是换编号，那是 device.json epoch 的规矩，两件事都要有）；第一次合的规则（同一编号的不算改动、内容一样的只留文件夹那条、丢的不留墓碑不进刹车）；墓碑不过期。
-- **要做**：
-  1. 照 `SyncRecords.swift` **逐行**搬成 `KittyTools.Core` 里的纯函数：`round`、`Join.union`、`orderID`、`arranged`、`decodeExact`、`buried`、`standing`，文件头那几段原样保留成注释。你现在的 `SyncClock`、`SyncJson`、`SyncFile` 能对上 golden 的部分留着用。
-  2. `SyncRecordsTests.swift` 的 17 个用例全部移植、期望值原样；`SyncRecordsFuzzTests.swift` 照着移植（三台随机加改删合、读到旧文件、钟快慢、退回、丢账本，查三台最后一样），默认 20 个种子随全量跑，`KITTY_SYNC_FUZZ=2000` 跑 2000 个。
-  3. PLAN-v5 第 3 批的集成测试：临时文件夹里两台 Windows（两个数据目录）+ 一台用 golden 样本手写的假 Mac，随机改几轮，最后三份一样。
-  4. 执行层挪出 UI 线程：同步文件夹多半在云盘里，读一个还没下载的文件会卡几秒。照 `NoteSyncer.swift`：后台读写、合，回 UI 线程落地（落地和账本同一个事务）。
-- **修好之前**：设置 › 通用 ›「同步」这一节先藏起来（`// ponytail:` 写上 R13），0.5.0 的产物不能给用户装来同步。
-- **验收**：上面 2、3 全过；报告里写 fuzz 2000 个种子的耗时。
-
-**进展（2026-10-25，`2728574` / `a381cbe`）：**
-- 引擎已接执行层：`SyncKind` 用 `SyncEngine.Round`，旧账本 `clock|hash` 迁成新格式；设置里的「同步」重新打开。
-- 17 个移植用例 + 20 个种子的 fuzz 随全量跑；`KITTY_SYNC_RECORDS_FUZZ=2000` 实测 2000 个种子 34.9 秒；
-  两台 Windows + 假 Mac 的临时目录集成测试（8 轮，三份一样）也过了。
-- 文件读 / 解码 / 合并已放到线程池（`Task.Run`），回 UI 线程落地和写账本。
-- 还差：旧账本迁移只把 modified 记 0；真机 / 真 Mac 的长期同步没测。
-
-### R14（P1）录屏换成 H.264 MP4，补系统声音
+### R14（P1）录屏换成 H.264 MP4，补系统声音 → 转入 PLAN-v6 第 1–3 批
 
 现在是 GDI 抓屏 → CPU 编 JPEG → 自己写 AVI：
 
@@ -65,16 +45,9 @@
 - **还没做**：系统声音 / 麦克风混音（MP4 目前只有画面）、真实 60 秒 / 10 分钟长录制的内存曲线、
   压缩 / GIF 对 MP4 的支持（现在只对 AVI 显示）。
 
-### R16（P1）截图拍到了用户的隐私，而 `windows-shots` 在公开仓库里
+**审查（`1bdfde8`）**：MP4 能录了，但还是 GDI 抓屏，SinkWriter 没开 `MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS`，所以用不上硬件编码器。系统声音没做成，原因是用了事件模式：回环流在没有声音播放时根本不出包。这些连同删 AVI、录音补齐，都写进了 PLAN-v6 第 1–3 批。
 
-- `0.4.0-batch-1/record-saved.png`、`0.4.0-batch-2/record-select.png`、`0.4.0-batch-3/hud.png` 都是 2560×1440 的整个桌面，拍进了用户别的窗口：代理配置、局域网和代理服务器的 IP、别的对话的内容。`0.4.0-batch-4/effects-frame.jpg`、`0.4.0-batch-5/gif-frame.png` 这两张录屏帧里也有。
-- **以后的规矩**（已写进 `AGENTS.md`）：
-  - 截图只截我们自己的窗口：按窗口矩形裁，或者只抓我们的 HWND。
-  - 录屏的验证先开一个自己的测试窗口（满屏测试图案），只录它的范围。
-  - 整屏的图一律不推。推之前自己看一遍，不能有别的 App 的内容。
-- 已经推上去的那几张怎么处理，由用户定（要改写 `windows-shots` 的历史），agent **不要动**。
-
-### R12（P2）第 4、5 批欠的验证
+### R12（P2）第 4、5 批欠的验证 → 剩下的转入 PLAN-v6 第 6 批
 
 报告里写了，这里列出来免得漏。系统自带的截图工具就能录屏（Win+Shift+R），不需要额外装工具。
 
@@ -93,11 +66,40 @@
   第二次截图的内存（内存探针只截一次，下一轮看要不要给探针加第二步）。
   这些按 `AGENTS.md` 记「没测」，继续做 `PLAN-v3.md`；`HANDTEST.md` §144–161 里已经标了「待走」。
 
-### R18（P2）端口靠解析 `netstat` 的输出 → 已修（`a381cbe`）
+## 已修
 
-- `Launcher/PortTable.cs` 改用 `GetExtendedTcpTable` / `GetExtendedUdpTable`（IPv4 + IPv6，TCP 只要 LISTEN，
-  UDP 全部）；纯函数 `PortMath.PortOf/FormatV4` 在 Core；`PortSearch` 不再起进程。
-- 怎么验的：`--ports` 实测 129 行（TCP/UDP、IPv4/IPv6、pid 都对）；`PortMath` 2 个单测（字节序、格式）。
+### R13（P0）同步的合并规则和 mac 不一样 → 已修（`f29f437`、`2728574`、`a381cbe`）
+
+**先说审查方的错**：PLAN-v5 让你照搬的 `SyncRecords.swift` 等文件，写方案时只在 Mac 本地、没推到 `origin`，你那边拿不到，只能按文字重写。现在原样拷在 `windows/reference/mac-sync/`（README 里有对照表）。
+
+- **差在哪**：你写的是「`modified` 大的赢，一样再看钟」；mac 是**先比钟**——一版的钟每一格都不小于另一版（盖过它）就直接赢，跟改于无关；只有两版谁也盖不住谁（真的并发改）才比改于，再一样比内容哈希（`SyncRecords.swift` 文件头「合（C1）」）。
+- **会出什么事**：Windows 的系统时间比 Mac 快 5 分钟。Windows 改了一条 → Mac 读到、在它上面又改了一次（Mac 这版的钟盖过 Windows 那版，但改于比 Windows 的小）→ Windows 这一轮按改于判自己赢、把 Mac 的改动丢掉，再把钟并起来写出去 → Mac 下一轮看到的钟盖过自己的，跟着退回旧值。两台的时钟差几分钟很常见，这个不是小概率。
+- 别的没对上的（都在文件头里写着）：改于不晚于现在、取 changed 时刻；账本被退回去时只追自己那一格（你现在是换编号，那是 device.json epoch 的规矩，两件事都要有）；第一次合的规则（同一编号的不算改动、内容一样的只留文件夹那条、丢的不留墓碑不进刹车）；墓碑不过期。
+- **要做**：
+  1. 照 `SyncRecords.swift` **逐行**搬成 `KittyTools.Core` 里的纯函数：`round`、`Join.union`、`orderID`、`arranged`、`decodeExact`、`buried`、`standing`，文件头那几段原样保留成注释。你现在的 `SyncClock`、`SyncJson`、`SyncFile` 能对上 golden 的部分留着用。
+  2. `SyncRecordsTests.swift` 的 17 个用例全部移植、期望值原样；`SyncRecordsFuzzTests.swift` 照着移植（三台随机加改删合、读到旧文件、钟快慢、退回、丢账本，查三台最后一样），默认 20 个种子随全量跑，`KITTY_SYNC_FUZZ=2000` 跑 2000 个。
+  3. PLAN-v5 第 3 批的集成测试：临时文件夹里两台 Windows（两个数据目录）+ 一台用 golden 样本手写的假 Mac，随机改几轮，最后三份一样。
+  4. 执行层挪出 UI 线程：同步文件夹多半在云盘里，读一个还没下载的文件会卡几秒。照 `NoteSyncer.swift`：后台读写、合，回 UI 线程落地（落地和账本同一个事务）。
+- **修好之前**：设置 › 通用 ›「同步」这一节先藏起来（`// ponytail:` 写上 R13），0.5.0 的产物不能给用户装来同步。
+- **验收**：上面 2、3 全过；报告里写 fuzz 2000 个种子的耗时。
+
+**进展（2026-10-25，`2728574` / `a381cbe`）：**
+- 引擎已接执行层：`SyncKind` 用 `SyncEngine.Round`，旧账本 `clock|hash` 迁成新格式；设置里的「同步」重新打开。
+- 17 个移植用例 + 20 个种子的 fuzz 随全量跑；`KITTY_SYNC_RECORDS_FUZZ=2000` 实测 2000 个种子 34.9 秒；
+  两台 Windows + 假 Mac 的临时目录集成测试（8 轮，三份一样）也过了。
+- 文件读 / 解码 / 合并已放到线程池（`Task.Run`），回 UI 线程落地和写账本。
+- 还差：旧账本迁移只把 modified 记 0；真机 / 真 Mac 的长期同步没测。
+
+**审查（2026-10-25，`1bdfde8`）**：`SyncEngine.Round` 逐段对过 `SyncRecords.round`，账本、墓碑、退回只追自己那一格、第一次合的 union / adopt、`standing`、改于取 `min(changed, now)`、赢家按（改于，哈希）都对得上。旧的 `SyncMerge` 和它的测试还在，PLAN-v6 第 0 批删掉。
+
+### R16（P1）截图拍到了用户的隐私 → 已修（审查方：`windows-shots` 已改写并强推，`d2d38b6`；规矩在 `AGENTS.md`）
+
+- `0.4.0-batch-1/record-saved.png`、`0.4.0-batch-2/record-select.png`、`0.4.0-batch-3/hud.png` 都是 2560×1440 的整个桌面，拍进了用户别的窗口：代理配置、局域网和代理服务器的 IP、别的对话的内容。`0.4.0-batch-4/effects-frame.jpg`、`0.4.0-batch-5/gif-frame.png` 这两张录屏帧里也有。
+- **以后的规矩**（已写进 `AGENTS.md`）：
+  - 截图只截我们自己的窗口：按窗口矩形裁，或者只抓我们的 HWND。
+  - 录屏的验证先开一个自己的测试窗口（满屏测试图案），只录它的范围。
+  - 整屏的图一律不推。推之前自己看一遍，不能有别的 App 的内容。
+- 已经推上去的那几张怎么处理，由用户定（要改写 `windows-shots` 的历史），agent **不要动**。
 
 ### R17（P1）启动器文件搜索是自己扫目录 → 已修（`ed4428d`）
 
@@ -106,7 +108,13 @@
 - 怎么验的：`--file-search=jpg` 索引 **880 ms / 20 条**，`KITTY_FS_FORCE_FALLBACK=1` 退路 **33 ms / 20 条**
   （退路被 300 ms 截断；这台机器 Downloads 只有 500 多个文件，索引本身约 0.9 s）。
 
-## 已修
+**审查**：改成走索引了，但 WinRT 的查询一次要 880 ms，打字时等不起。转入 PLAN-v6 第 4 批，换成 OLE DB 查索引。
+
+### R18（P2）端口靠解析 `netstat` 的输出 → 已修（`a381cbe`）
+
+- `Launcher/PortTable.cs` 改用 `GetExtendedTcpTable` / `GetExtendedUdpTable`（IPv4 + IPv6，TCP 只要 LISTEN，
+  UDP 全部）；纯函数 `PortMath.PortOf/FormatV4` 在 Core；`PortSearch` 不再起进程。
+- 怎么验的：`--ports` 实测 129 行（TCP/UDP、IPv4/IPv6、pid 都对）；`PortMath` 2 个单测（字节序、格式）。
 
 ### R21（P3）几处小问题 → 已修（`a381cbe`）
 
