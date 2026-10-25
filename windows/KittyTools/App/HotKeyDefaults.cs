@@ -12,6 +12,7 @@ internal static class HotKeyActions
     public const string ScreenshotTranslate = "screenshotTranslate";
     public const string Screenshot = "screenshot";
     public const string ScreenshotLast = "screenshotLast";
+    public const string Record = "record";
     public const string Ocr = "ocr";
 }
 
@@ -32,6 +33,7 @@ internal static class SettingsDefaults
         new(HotKeyActions.ScreenshotTranslate, "截图翻译", HotKeyModifiers.Alt, (uint)'S'),
         new(HotKeyActions.Screenshot, "截图", HotKeyModifiers.Alt, (uint)'X'),
         new(HotKeyActions.ScreenshotLast, "截取上次区域", HotKeyModifiers.Control | HotKeyModifiers.Alt, (uint)'Z'),
+        new(HotKeyActions.Record, "录屏（再按一次停止）", HotKeyModifiers.Alt, (uint)'R'),
         new(HotKeyActions.Ocr, "识字", HotKeyModifiers.Alt, (uint)'O'),
     };
 

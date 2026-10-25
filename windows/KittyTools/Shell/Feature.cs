@@ -11,6 +11,7 @@ internal enum Feature
     Translate,
     Launcher,
     Screenshot,
+    Recording,
 }
 
 internal static class Features
@@ -20,6 +21,7 @@ internal static class Features
         Feature.Clipboard => "clipboard",
         Feature.Translate => "translate",
         Feature.Launcher => "launcher",
+        Feature.Recording => "recording",
         _ => "screenshot",
     };
 
@@ -28,6 +30,7 @@ internal static class Features
         Feature.Clipboard => "剪贴板",
         Feature.Translate => "翻译",
         Feature.Launcher => "启动器",
+        Feature.Recording => "录屏",
         _ => "截图",
     };
 
@@ -36,6 +39,7 @@ internal static class Features
         Feature.Clipboard => "记下复制过的文字、图片和文件，随时找回来粘贴",
         Feature.Translate => "划词、输入、截图翻译，复制即译",
         Feature.Launcher => "一个搜索框：打开应用、设置和网页，顺手算算式",
+        Feature.Recording => "把屏幕录成视频（Alt+R 开始 / 停止）",
         _ => "框选截图、识别图中文字、钉在屏幕上",
     };
 
@@ -59,6 +63,7 @@ internal static class Features
         HotKeyActions.Launcher => Feature.Launcher,
         HotKeyActions.SelectionTranslate or HotKeyActions.InputTranslate or HotKeyActions.ScreenshotTranslate =>
             Feature.Translate,
+        HotKeyActions.Record => Feature.Recording,
         _ => Feature.Screenshot,
     };
 }

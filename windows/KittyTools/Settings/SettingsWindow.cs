@@ -1100,6 +1100,74 @@ internal sealed class SettingsWindow : Window
             Opacity = 0.65,
             TextWrapping = TextWrapping.Wrap,
         });
+
+        if (Features.IsOn(Feature.Recording))
+        {
+            _content.Children.Add(Section(
+                "录屏", "Alt+R 开始 / 停止；现在录鼠标所在那块屏的整屏，没有声音、没有选区（基础版）。"));
+            AddCombo("帧率", "15 够用；30 更顺、文件更大。",
+                new[] { "15 fps", "30 fps" },
+                SettingsService.Current.RecordFps >= 30 ? 1 : 0,
+                index =>
+                {
+                    SettingsService.Current.RecordFps = index == 1 ? 30 : 15;
+                    SettingsService.Save();
+                });
+
+            var folderRow = new Grid { ColumnSpacing = 8 };
+            folderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            folderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            folderRow.Children.Add(new TextBox
+            {
+                Text = RecordingHost.Folder,
+                IsReadOnly = true,
+                FontSize = 13,
+            });
+            var pick = new Button { Content = "选择文件夹…" };
+            pick.Click += async (_, _) =>
+            {
+                try
+                {
+                    var picker = new FolderPicker(AppWindow.Id);
+                    var result = await picker.PickSingleFolderAsync();
+                    if (result is not null && !string.IsNullOrEmpty(result.Path))
+                    {
+                        SettingsService.Current.RecordDirectory = result.Path;
+                        SettingsService.Save();
+                        BuildPage("screenshot");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("settings.record-folder-failed", ex);
+                }
+            };
+            Grid.SetColumn(pick, 1);
+            folderRow.Children.Add(pick);
+            _content.Children.Add(folderRow);
+            _content.Children.Add(SettingsUi.Card(
+                "\uE8B7",
+                "打开录屏文件夹",
+                RecordingHost.Folder,
+                null,
+                () =>
+                {
+                    try
+                    {
+                        Directory.CreateDirectory(RecordingHost.Folder);
+                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = "explorer.exe",
+                            Arguments = "\"" + RecordingHost.Folder + "\"",
+                            UseShellExecute = true,
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warn($"settings.record-folder-open {ex.GetType().Name}");
+                    }
+                }));
+        }
     }
 
     private void BuildTranslate()

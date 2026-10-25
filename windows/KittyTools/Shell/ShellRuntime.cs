@@ -102,6 +102,9 @@ internal sealed class ShellRuntime
 
         Log.Info("shell.ready");
 
+        // 上次录到一半的文件（第四版闪退恢复）。
+        RecordingHost.RecoverOnStartup();
+
         // REVIEW R11：截图卡片拖出去的临时 PNG 启动时清空（用时生成，不在每次拖出后删）。
         try
         {
@@ -169,7 +172,29 @@ internal sealed class ShellRuntime
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(ScreenshotSession.StartLast);
         }
 
+        // 调试 / 自检：录 4 秒整屏，报告写进给定目录（第四版第 1 批的验收用）。
+        var probeArg = Environment.GetCommandLineArgs()
+            .FirstOrDefault(arg => arg.StartsWith("--record-probe=", StringComparison.OrdinalIgnoreCase));
+        if (probeArg is not null)
+        {
+            var folder = probeArg["--record-probe=".Length..];
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => _ = RecordingProbe.RunAsync(folder));
+        }
+
 #if DEBUG
+        // 调试用：自动录 N 秒（手测托盘 / 轻提示 / 保存目录，不用真的按热键）。
+        var recordUiArg = Environment.GetCommandLineArgs()
+            .FirstOrDefault(arg => arg.StartsWith("--record-ui=", StringComparison.OrdinalIgnoreCase));
+        if (recordUiArg is not null && int.TryParse(recordUiArg["--record-ui=".Length..], out var seconds))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
+            {
+                RecordingHost.Start();
+                await Task.Delay(TimeSpan.FromSeconds(Math.Clamp(seconds, 1, 60)));
+                RecordingHost.Stop();
+            });
+        }
+
         // 调试用：塞一条示例片段（截图 / 手测片段、备注和收藏夹）。
         if (Environment.GetCommandLineArgs().Contains("--seed-snippet", StringComparer.OrdinalIgnoreCase))
         {
@@ -488,6 +513,9 @@ internal sealed class ShellRuntime
                 break;
             case HotKeyActions.ScreenshotLast:
                 ScreenshotSession.StartLast();
+                break;
+            case HotKeyActions.Record:
+                RecordingHost.Toggle();
                 break;
             case HotKeyActions.Ocr:
                 ScreenshotSession.Start(ScreenshotMode.Ocr);

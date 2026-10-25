@@ -105,6 +105,13 @@ internal sealed class Settings
 
     public int ScreenshotLastHeight { get; set; }
 
+    // 录制（第四版）：帧率、保存目录、上次没写完的临时文件（闪退恢复用）。
+    public int RecordFps { get; set; } = 15;
+
+    public string? RecordDirectory { get; set; }
+
+    public string? RecordingTempPath { get; set; }
+
     public List<TranslateServiceConfig>? TranslateServices { get; set; }
 
     /// <summary>启动器的网页搜索列表；null = 从没存过（默认前 8 个，Bing 兜底）。</summary>

@@ -169,6 +169,21 @@ internal static partial class TrayMenu
         var menu = new MenuFlyout { Placement = FlyoutPlacementMode.TopEdgeAlignedRight };
 
         // 关掉的功能整项不出现（第三版 §2.3）。
+        if (Features.IsOn(Feature.Recording))
+        {
+            if (RecordingHost.IsRecording)
+            {
+                Add(menu, "\uE71A", "■ 停止录屏 " + RecordingHost.Elapsed, HotKeyActions.Record,
+                    RecordingHost.Stop);
+            }
+            else
+            {
+                Add(menu, "\uE7C8", "录屏", HotKeyActions.Record, RecordingHost.Start);
+            }
+
+            menu.Items.Add(new MenuFlyoutSeparator());
+        }
+
         if (Features.IsOn(Feature.Clipboard))
         {
             Add(menu, "\uE8C8", "剪贴板历史", HotKeyActions.Clipboard, () => runtime?.OpenClipboard(), clipboardReady);
