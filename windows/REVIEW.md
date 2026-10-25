@@ -66,12 +66,6 @@
   - 整屏的图一律不推。推之前自己看一遍，不能有别的 App 的内容。
 - 已经推上去的那几张怎么处理，由用户定（要改写 `windows-shots` 的历史），agent **不要动**。
 
-### R17（P1）启动器文件搜索是自己扫目录，E6 否掉的就是这种做法
-
-- `Launcher/LookupServices.cs` 的 `Walk` 递归 `GetFiles` / `GetDirectories`。用户目录大的时候要几秒、费电，结果还被 `MaxCandidates` 截断（同一个词有时搜得到有时搜不到）。
-- 照 E6 做：WinRT 的 `StorageFolder.GetFolderFromPathAsync(用户目录).CreateFileQueryWithOptions(new QueryOptions { FolderDepth = FolderDepth.Deep, IndexerOption = IndexerOption.OnlyUseIndexer, UserSearchFilter = … })`，非打包的桌面程序能用，只走索引。查不到（索引服务关着）时退回现在的扫目录，但限深度、限 300 ms。
-- **验收**：报告里写同一个词两种做法的耗时，以及索引服务停掉后的退路。
-
 ### R20（P2）第三版报告里记的「没做成」，补上
 
 - 启动器：浏览器历史（Chrome / Edge 的 `History` 是 SQLite，先拷到临时文件再读，别直接打开正在用的那个）、Firefox 书签；Ctrl+K 子列表的打字过滤。
@@ -113,6 +107,13 @@
 - `Launcher/PortTable.cs` 改用 `GetExtendedTcpTable` / `GetExtendedUdpTable`（IPv4 + IPv6，TCP 只要 LISTEN，
   UDP 全部）；纯函数 `PortMath.PortOf/FormatV4` 在 Core；`PortSearch` 不再起进程。
 - 怎么验的：`--ports` 实测 129 行（TCP/UDP、IPv4/IPv6、pid 都对）；`PortMath` 2 个单测（字节序、格式）。
+
+### R17（P1）启动器文件搜索是自己扫目录 → 已修（`ed4428d`）
+
+- 改成 `StorageFolder.CreateFileQueryWithOptions` + `IndexerOption.OnlyUseIndexer` + `System.FileName:*词*`；
+  失败才退回扫目录，退路 6 层 / 2000 候选 / 300 ms。
+- 怎么验的：`--file-search=jpg` 索引 **880 ms / 20 条**，`KITTY_FS_FORCE_FALLBACK=1` 退路 **33 ms / 20 条**
+  （退路被 300 ms 截断；这台机器 Downloads 只有 500 多个文件，索引本身约 0.9 s）。
 
 ## 已修
 
