@@ -32,7 +32,10 @@ internal static class AudioHost
         var started = await AudioCapture.StartAsync(path);
         if (started is null)
         {
-            NoticeHost.Show("没能开始录音", "没有麦克风权限，或者没有可用的麦克风", NoticeTone.Error);
+            NoticeHost.Show(
+                "没能开始录音",
+                "没有麦克风权限，或者没有可用的麦克风。可以在 设置 › 隐私 › 麦克风 里允许桌面应用。",
+                NoticeTone.Error);
             return;
         }
 

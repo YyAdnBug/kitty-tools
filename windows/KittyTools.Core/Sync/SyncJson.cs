@@ -22,6 +22,23 @@ public static class CanonicalJson
         return Convert.ToHexStringLower(digest.AsSpan(0, 16));
     }
 
+    /// <summary>
+    /// 同步的 decodeExact（PLAN-v5 §2.4）：把内容解开再按我们的规矩编回去，必须和原来的字节一样。
+    /// 不一样说明这份不是按规矩写的（或者有我们不认识的写法），这一条不能落地。
+    /// </summary>
+    public static bool IsCanonical(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return string.Equals(Write(document.RootElement), json, StringComparison.Ordinal);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
     private static void Write(JsonElement element, StringBuilder builder)
     {
         switch (element.ValueKind)

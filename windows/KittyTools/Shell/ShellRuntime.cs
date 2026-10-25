@@ -551,8 +551,13 @@ internal sealed class ShellRuntime
         }
         else if (msg == WmWtsSessionChange)
         {
-            // 7 = 锁屏、8 = 解锁：各看一眼今天备过没有。
-            if (wParam.Value is 7 or 8)
+            // 7 = 锁屏：录屏 / 录音停掉并保存；8 = 解锁时看一眼今天的备份。
+            if (wParam.Value == 7)
+            {
+                StopRecordingForSession();
+                ScheduleBackup();
+            }
+            else if (wParam.Value == 8)
             {
                 ScheduleBackup();
             }
@@ -562,6 +567,27 @@ internal sealed class ShellRuntime
             // 7 = 从睡眠唤醒（PBT_APMRESUMESUSPEND）、0x12 = 自动唤醒。
             ScheduleBackup();
             _ = Syncer.Instance?.RoundAsync();
+        }
+        else if (msg == WmPowerBroadcast && wParam.Value == 4)
+        {
+            // PBT_APMSUSPEND：睡之前把录屏 / 录音收尾。
+            StopRecordingForSession();
+        }
+    }
+
+    /// <summary>锁屏 / 睡眠：录屏和录音都停止并保存（第四版）。</summary>
+    private static void StopRecordingForSession()
+    {
+        if (RecordingHost.IsRecording)
+        {
+            Log.Info("record.session-stop");
+            RecordingHost.Stop();
+        }
+
+        if (AudioHost.IsRecording)
+        {
+            Log.Info("audio.session-stop");
+            AudioHost.Stop();
         }
     }
 

@@ -194,34 +194,48 @@ internal static class SyncSources
         var records = new List<(string, string, long)>();
         foreach (var service in store.Services)
         {
+            // 键按字母排：aiProtocol / baseURL / id / isEnabled / kind / model / name / region / usesDeepLX。
             var builder = new System.Text.StringBuilder("{");
-            builder.Append("\"id\":").Append(Quote(service.Id));
-            builder.Append(",\"kind\":").Append(Quote(service.Kind));
-            builder.Append(",\"name\":").Append(Quote(service.Name));
-            builder.Append(",\"isEnabled\":").Append(service.Enabled ? "true" : "false");
+            var first = true;
+            void Field(string name, string value)
+            {
+                if (!first)
+                {
+                    builder.Append(',');
+                }
+
+                first = false;
+                CanonicalJson.WriteString(name, builder);
+                builder.Append(':').Append(value);
+            }
+
             if (!string.IsNullOrEmpty(service.Protocol))
             {
-                builder.Append(",\"aiProtocol\":").Append(Quote(service.Protocol));
+                Field("aiProtocol", Quote(service.Protocol));
             }
 
             if (!string.IsNullOrEmpty(service.BaseUrl))
             {
-                builder.Append(",\"baseURL\":").Append(Quote(service.BaseUrl));
+                Field("baseURL", Quote(service.BaseUrl));
             }
 
+            Field("id", Quote(service.Id));
+            Field("isEnabled", service.Enabled ? "true" : "false");
+            Field("kind", Quote(service.Kind));
             if (!string.IsNullOrEmpty(service.Model))
             {
-                builder.Append(",\"model\":").Append(Quote(service.Model));
+                Field("model", Quote(service.Model));
             }
 
+            Field("name", Quote(service.Name));
             if (!string.IsNullOrEmpty(service.Region))
             {
-                builder.Append(",\"region\":").Append(Quote(service.Region));
+                Field("region", Quote(service.Region));
             }
 
             if (service.UsesDeepLX)
             {
-                builder.Append(",\"usesDeepLX\":true");
+                Field("usesDeepLX", "true");
             }
 
             builder.Append('}');
@@ -491,6 +505,15 @@ internal sealed class Syncer
             {
                 Status.State = "stopped";
                 Status.Message = "同步文件夹是新版本写的，请更新 Kitty Tools";
+                return;
+            }
+
+            // decodeExact：内容再编回去必须和原文一样，否则这一类先不落地（PLAN-v5 §2.4）。
+            if (!remote.Records.All(record => CanonicalJson.IsCanonical(record.Value)))
+            {
+                Status.State = "stopped";
+                Status.Message = "同步文件里有解不开的内容，这一类先不合";
+                Log.Warn($"sync.decode-exact-failed kind={kind}");
                 return;
             }
 

@@ -128,6 +128,18 @@ public sealed class SyncGoldenTests
     }
 
     [TestMethod]
+    public void DecodeExactRejectsNonCanonicalValues()
+    {
+        Assert.IsTrue(CanonicalJson.IsCanonical("""{"a":1,"b":"x"}"""));
+        Assert.IsTrue(CanonicalJson.IsCanonical("""["a","b"]"""));
+        Assert.IsFalse(CanonicalJson.IsCanonical("""{"b":"x","a":1}"""));      // 键没排序
+        Assert.IsFalse(CanonicalJson.IsCanonical("""{"a":1,"b":null}"""));     // 空值要省掉
+        Assert.IsFalse(CanonicalJson.IsCanonical("""{"a":"x\/y"}"""));          // 不该转义 /
+        Assert.IsFalse(CanonicalJson.IsCanonical("""{"a":"\u4f60"}"""));       // 非 ASCII 不该转义
+        Assert.IsFalse(CanonicalJson.IsCanonical("not json"));
+    }
+
+    [TestMethod]
     public void MergePicksNewestAndHonoursTombstones()
     {
         SyncFile File(params SyncRecord[] records) => new() { Kind = "clips", Records = records.ToList() };
