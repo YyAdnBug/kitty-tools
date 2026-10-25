@@ -9,7 +9,7 @@ namespace KittyTools;
 
 internal static class RecordingHost
 {
-    private static AviRecorder? _recorder;
+    private static IVideoRecorder? _recorder;
     private static long _startedAt;
 
     public static bool IsRecording => _recorder is not null;
@@ -57,7 +57,9 @@ internal static class RecordingHost
             return;
         }
 
-        var recorder = AviRecorder.StartRegion(region, SettingsService.Current.RecordFps, Folder, out var error);
+        IVideoRecorder? recorder = SettingsService.Current.RecordMp4
+            ? Mp4Recorder.StartRegion(region, SettingsService.Current.RecordFps, Folder, out var error)
+            : AviRecorder.StartRegion(region, SettingsService.Current.RecordFps, Folder, out error);
         if (recorder is null)
         {
             NoticeHost.Show("没能开始录屏", error ?? "未知原因", NoticeTone.Error);
@@ -121,10 +123,6 @@ internal static class RecordingHost
 
         Log.Info($"record.saved {Path.GetFileName(path)}");
         NoticeHost.Show("录屏已保存", Path.GetFileName(path), NoticeTone.Normal);
-        if (SettingsService.Current.RecordMp4)
-        {
-            _ = VideoTranscoder.TranscodeAsync(path, notify: true);
-        }
         try
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo

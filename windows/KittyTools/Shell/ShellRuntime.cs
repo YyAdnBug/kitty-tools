@@ -300,7 +300,7 @@ internal sealed class ShellRuntime
         {
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
             {
-                RecordingHost.StartRegion(new PixelBounds(0, 0, 1280, 720));
+                RecordingHost.StartRegion(new PixelBounds(0, 0, 2560, 1440));
                 await Task.Delay(TimeSpan.FromSeconds(Math.Clamp(seconds, 1, 60)));
                 RecordingHost.Stop();
             });

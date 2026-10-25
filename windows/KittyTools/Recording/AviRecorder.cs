@@ -10,7 +10,20 @@ using Windows.Win32;
 
 namespace KittyTools;
 
-internal sealed class AviRecorder : IDisposable
+internal interface IVideoRecorder : IDisposable
+{
+    int Frames { get; }
+
+    long ElapsedMs { get; }
+
+    string TemporaryPath { get; }
+
+    string OutputPath { get; }
+
+    string? Stop();
+}
+
+internal sealed class AviRecorder : IVideoRecorder
 {
     private readonly PixelBounds _region;
     private readonly int _fps;

@@ -181,7 +181,8 @@ internal static partial class TrayMenu
                 Add(menu, "\uE7C8", "录屏", HotKeyActions.Record, RecordingHost.Toggle);
             }
 
-            if (RecordingHost.LastPath is { } last && File.Exists(last))
+            if (RecordingHost.LastPath is { } last && File.Exists(last) &&
+                last.EndsWith(".avi", StringComparison.OrdinalIgnoreCase))
             {
                 Add(menu, "\uE7C8", "压缩最近的录屏（不超过 60%）", string.Empty,
                     () => _ = CompressionService.CompressLastAsync());

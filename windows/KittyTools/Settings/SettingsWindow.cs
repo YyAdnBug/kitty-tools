@@ -1138,7 +1138,7 @@ internal sealed class SettingsWindow : Window
                     SettingsService.Current.RecordKeys = value;
                     SettingsService.Save();
                 });
-            AddToggle("停止后另存 MP4", "录完再转一份 H.264 MP4（录屏本身仍是 AVI）。",
+            AddToggle("直接录 MP4", "用 H.264 直接录 MP4（硬件编码）；关掉退回 MJPEG AVI。",
                 SettingsService.Current.RecordMp4,
                 value =>
                 {
