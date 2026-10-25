@@ -1293,9 +1293,14 @@ internal sealed partial class SelectionOverlayWindow : Window
                 _ = _session.SaveSelectionAsync(saveAs: shift);
                 break;
             case Windows.System.VirtualKey.S when !control && _session.HasSelection:
-                // 长截图（第三版 §7）。
+                // 长截图（第三版 §7）：S 向下、Shift+S 向上。
                 e.Handled = true;
-                _session.BeginScrolling();
+                _session.BeginScrolling(up: shift);
+                break;
+            case Windows.System.VirtualKey.A when !control && _session.HasSelection:
+                // 自动滚动长截图：A 向下、Shift+A 向上。
+                e.Handled = true;
+                _session.BeginScrolling(up: shift, autoScroll: true);
                 break;
             case Windows.System.VirtualKey.O when !control:
                 e.Handled = true;

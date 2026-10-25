@@ -289,7 +289,7 @@ internal sealed class ScreenshotSession
     }
 
     /// <summary>选区收起，开始长截图（S 键或工具栏）：自己滚，Enter 完成、Esc 放弃。</summary>
-    public void BeginScrolling()
+    public void BeginScrolling(bool up = false, bool autoScroll = false)
     {
         if (!HasSelection || SelectionScreen is not { } screen)
         {
@@ -306,6 +306,8 @@ internal sealed class ScreenshotSession
         ScrollingCapture.Start(
             screen,
             global,
+            up ? ScrollDirection.Up : ScrollDirection.Down,
+            autoScroll,
             frame => _ = CompleteScrollingAsync(frame, global),
             () =>
             {

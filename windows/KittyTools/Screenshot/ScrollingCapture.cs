@@ -25,11 +25,14 @@ internal static class ScrollingCapture
     private static int _frames;
     private static Action<ScrollFrame>? _onComplete;
     private static Action? _onCancel;
+    private static ScrollDirection _direction = ScrollDirection.Down;
+    private static bool _autoScroll;
 
     public static bool Active { get; private set; }
 
     public static void Start(
-        FrozenScreen screen, PixelBounds rect, Action<ScrollFrame> onComplete, Action onCancel)
+        FrozenScreen screen, PixelBounds rect, ScrollDirection direction, bool autoScroll,
+        Action<ScrollFrame> onComplete, Action onCancel)
     {
         if (Active || rect.Width < 8 || rect.Height < 8)
         {
@@ -40,6 +43,8 @@ internal static class ScrollingCapture
         _rect = rect;
         _current = null;
         _frames = 0;
+        _direction = direction;
+        _autoScroll = autoScroll;
         _onComplete = onComplete;
         _onCancel = onCancel;
         Active = true;
@@ -51,8 +56,11 @@ internal static class ScrollingCapture
         _timer.IsRepeating = true;
         _timer.Tick += (_, _) => CaptureFrame();
         _timer.Start();
-        Log.Info($"scroll.begin {rect.Width}x{rect.Height}");
-        NoticeHost.Show("长截图", "滚动选区，Enter 完成，Esc 放弃", NoticeTone.Normal);
+        Log.Info($"scroll.begin {rect.Width}x{rect.Height} direction={direction} auto={autoScroll}");
+        NoticeHost.Show(
+            "长截图",
+            autoScroll ? "自动滚动中，Enter 完成，Esc 放弃" : "滚动选区，Enter 完成，Esc 放弃",
+            NoticeTone.Normal);
     }
 
     public static void Complete()
@@ -130,7 +138,7 @@ internal static class ScrollingCapture
             }
             else
             {
-                var next = ScrollStitcher.Append(_current, frame, ScrollDirection.Down);
+                var next = ScrollStitcher.Append(_current, frame, _direction);
                 if (next is not null)
                 {
                     _current = next;
@@ -141,6 +149,12 @@ internal static class ScrollingCapture
             if (_current.Height >= ScrollStitcher.MaxOutputHeight)
             {
                 Complete();
+                return;
+            }
+
+            if (_autoScroll)
+            {
+                SendWheel();
             }
         }
         catch (Exception ex)
@@ -148,4 +162,32 @@ internal static class ScrollingCapture
             Log.Warn($"scroll.frame-failed {ex.GetType().Name}");
         }
     }
+
+    /// <summary>自动滚动：把光标放到选区中间滚一格（滚完放回原处），不点击。</summary>
+    private static unsafe void SendWheel()    {
+        try
+        {
+            PInvoke.GetCursorPos(out var cursor);
+            SetCursorPos(_rect.Left + _rect.Width / 2, _rect.Top + _rect.Height / 2);
+            var input = new INPUT { type = INPUT_TYPE.INPUT_MOUSE };
+            input.Anonymous.mi = new MOUSEINPUT
+            {
+                dx = 0,
+                dy = 0,
+                mouseData = (uint)(_direction == ScrollDirection.Down ? -120 : 120),
+                dwFlags = MOUSE_EVENT_FLAGS.MOUSEEVENTF_WHEEL,
+                time = 0,
+                dwExtraInfo = 0,
+            };
+            PInvoke.SendInput(1, &input, System.Runtime.InteropServices.Marshal.SizeOf<INPUT>());
+            SetCursorPos(cursor.X, cursor.Y);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"scroll.wheel-failed {ex.GetType().Name}");
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool SetCursorPos(int x, int y);
 }
