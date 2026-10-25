@@ -114,7 +114,10 @@ public sealed class SyncFile
 
             var records = new List<SyncRecord>();
             var erased = new List<SyncErased>();
-            var ids = new HashSet<string>(StringComparer.Ordinal);
+            // records 和 erased 各自查重（同一编号在两边的都有是合法的：别处删过、本机又改回来了——
+            // mac 的 file(from:) 也是分开查的；共用一套会把这一份整份当成读不出来）。
+            var recordIds = new HashSet<string>(StringComparer.Ordinal);
+            var erasedIds = new HashSet<string>(StringComparer.Ordinal);
             if (root.TryGetProperty("records", out var recordsElement))
             {
                 if (recordsElement.ValueKind != JsonValueKind.Array)
@@ -125,7 +128,7 @@ public sealed class SyncFile
                 foreach (var item in recordsElement.EnumerateArray())
                 {
                     var record = ReadRecord(item);
-                    if (record is null || !ids.Add(record.Id))
+                    if (record is null || !recordIds.Add(record.Id))
                     {
                         return null;
                     }
@@ -144,7 +147,7 @@ public sealed class SyncFile
                 foreach (var item in erasedElement.EnumerateArray())
                 {
                     var erasedItem = ReadErased(item);
-                    if (erasedItem is null || !ids.Add(erasedItem.Id))
+                    if (erasedItem is null || !erasedIds.Add(erasedItem.Id))
                     {
                         return null;
                     }

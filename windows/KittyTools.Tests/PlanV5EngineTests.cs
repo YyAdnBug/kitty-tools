@@ -443,5 +443,18 @@ public sealed class SyncEngineTests
             """{"format":1,"kind":"clips","erased":[],"records":[{"id":"x","clock":"A:1","modified":1,"value":"1"},{"id":"x","clock":"A:2","modified":2,"value":"2"}]}""",
             "clips"));
         Assert.IsNull(SyncFile.Decode("{", "clips"));
+
+        // 同一编号在 records 和 erased 里都有（别处删过、本机又改回来了）是合法的：两个列表各自查重；
+        // 共用一套会把这一份整份当成读不出来，几台就合不到一起（集成测试抓到的）。
+        var both = new SyncFile { Kind = "clips" };
+        both.Records.Add(new SyncRecord { Id = "x", Value = "{}", Clock = SyncClock.Parse("A:2"), Modified = 2 });
+        both.Erased.Add(new SyncErased { Id = "x", Clock = SyncClock.Parse("A:1") });
+        var bothText = both.Encode();
+        var bothBack = SyncFile.Decode(bothText, "clips");
+        Assert.IsNotNull(bothBack);
+        Assert.AreEqual(bothText, bothBack!.Encode());
+        Assert.IsNull(SyncFile.Decode(
+            """{"format":1,"kind":"clips","erased":[{"clock":"A:1","id":"x"},{"clock":"A:2","id":"x"}],"records":[]}""",
+            "clips"));
     }
 }
