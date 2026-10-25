@@ -107,8 +107,6 @@ internal sealed class SyncFolder(string root)
     }
 }
 
-internal sealed record SyncReadResult(SyncFile? File, bool Newer, bool Unreadable);
-
 internal static class SyncSources
 {
     public static (string Id, string Value, long Modified)[] ClipRecords(ClipboardStore store)
@@ -351,8 +349,7 @@ internal sealed class Syncer
         Changed?.Invoke();
         try
         {
-            // ponytail: 文件都很小（每类几十 KB），直接在 UI 线程上跑；变成几千条再挪到后台 + 回 UI 线程落地。
-            await Task.Yield();
+            // 读文件夹 / 合在线程池上跑（云盘里读一个还没下载的文件会卡几秒），回 UI 线程落地。
             await RunRoundAsync(folder);
         }
         catch (Exception ex)
@@ -546,7 +543,7 @@ internal sealed class Syncer
         }
 
         var outcome = SyncEngine.Round(
-            localMap, new Dictionary<string, long>(), old, own, others, _device.Id,
+            localMap, NoChanged, old, own, others, _device.Id,
             DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), JoinMode.Union, dedupe);
         return (outcome, null);
     }
@@ -693,8 +690,6 @@ internal sealed class Syncer
         return file;
     }
 
-    private readonly Dictionary<string, int> _counters = new(StringComparer.Ordinal);
-
     // ponytail: 四类都没给「真正改的时刻」（剪贴板的复制时间不是改动时间，mac 也不拿它当改于），
     // 所以 changed 交空表：改于用「这一轮发现它变了」的现在（不晚于 now，SyncEngine 里取 min）。
     // 以后设置 / 服务记了每一项真正改的时刻，再从这里传进去。
@@ -823,7 +818,7 @@ internal sealed class Syncer
         _ledger.Write(kind, library, builder.ToString());
     }
 
-    private void Apply(string kind, SyncFile merged, HashSet<string> localIds)
+    private void Apply(string kind, SyncFile merged)
     {
         switch (kind)
         {

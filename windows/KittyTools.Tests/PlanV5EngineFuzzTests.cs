@@ -1,6 +1,7 @@
 // 同步合并的随机测试（照 reference/mac-sync/SyncRecordsFuzzTests.swift）：三台电脑随机加 / 改 / 删 / 合，
 // 读到旧文件、自己那份偶尔读不出来、钟差、退回旧库、丢账本；最后查三台一样、值都是写过的、再合不变，
-// 以及钟最慢的那台最后改的 / 删的都能传遍。默认 20 个种子 × 300 步，KITTY_SYNC_RECORDS_FUZZ=2000 跑 2000 个。
+// 以及钟最慢的那台最后改的 / 删的都能传遍。默认 20 个种子 × 300 步随全量跑；
+// KITTY_SYNC_FUZZ=2000 跑 2000 个（REVIEW R13 的验收；mac 原来的 KITTY_SYNC_RECORDS_FUZZ 也认）。
 using System.Diagnostics;
 using KittyTools.Core.Sync;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -52,9 +53,11 @@ public sealed class SyncEngineFuzzTests
     [TestMethod]
     public void RandomOperationsConverge()
     {
-        var countText = Environment.GetEnvironmentVariable("KITTY_SYNC_RECORDS_FUZZ");
+        var countText = Environment.GetEnvironmentVariable("KITTY_SYNC_FUZZ") ??
+                        Environment.GetEnvironmentVariable("KITTY_SYNC_RECORDS_FUZZ");
         var count = int.TryParse(countText, out var parsed) ? parsed : 20;
-        var firstText = Environment.GetEnvironmentVariable("KITTY_SYNC_RECORDS_FUZZ_SEED");
+        var firstText = Environment.GetEnvironmentVariable("KITTY_SYNC_FUZZ_SEED") ??
+                        Environment.GetEnvironmentVariable("KITTY_SYNC_RECORDS_FUZZ_SEED");
         var first = ulong.TryParse(firstText, out var seed) ? seed : 1;
         var watch = Stopwatch.StartNew();
         for (var currentSeed = first; currentSeed < first + (ulong)count; currentSeed++)

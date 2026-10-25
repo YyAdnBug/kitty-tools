@@ -395,4 +395,53 @@ public sealed class SyncEngineTests
         var outcome = a.Round(new[] { b }, 4);
         Assert.AreEqual(3, outcome.Erasing);
     }
+
+    /// <summary>文件的往返和读得严（照 mac 的 fileRoundTripAndStrictRead）：同样的内容同样的字节，
+    /// 怪字符原样存；类别不对、编号重复、钟写坏了、结构对不上都算读不出来；format 更大又结构对的是「更新版本写的」。</summary>
+    [TestMethod]
+    public void FileRoundTripAndStrictRead()
+    {
+        var odd = "引号\"、换行\n、NUL\0、\u2028、👩‍👩‍👧、" + new string('长', 100_000);
+        var file = new SyncFile { Kind = "clips" };
+        file.Records.Add(new SyncRecord
+        {
+            Id = "x", Value = """{"text":"你好"}""", Clock = SyncClock.Parse("A:2,B:1"), Modified = 1234,
+        });
+        file.Records.Add(new SyncRecord
+        {
+            Id = "z", Value = odd, Clock = SyncClock.Parse("B:1"), Modified = 1,
+        });
+        file.Erased.Add(new SyncErased { Id = "y", Clock = SyncClock.Parse("A:1") });
+        var data = file.Encode();
+        var back = SyncFile.Decode(data, "clips");
+        Assert.IsNotNull(back);
+        Assert.IsFalse(back!.IsNewer);
+        Assert.AreEqual(data, back.Encode(), "同样的内容同样的字节");
+        Assert.AreEqual(odd, back.Records.Single(record => record.Id == "z").Value);
+        Assert.AreEqual(2, back.Records.Count);
+        Assert.AreEqual(1, back.Erased.Count);
+
+        // 换个顺序建的同一份：同样的字节。
+        var reordered = new SyncFile { Kind = "clips" };
+        reordered.Erased.Add(new SyncErased { Id = "y", Clock = SyncClock.Parse("A:1") });
+        reordered.Records.Add(back.Records.Single(record => record.Id == "z"));
+        reordered.Records.Add(back.Records.Single(record => record.Id == "x"));
+        Assert.AreEqual(data, reordered.Encode());
+
+        Assert.IsNull(SyncFile.Decode(data, "vocabulary"));
+        var newer = """{"format":99,"kind":"clips","records":[],"erased":[],"extra":1}""";
+        var newerFile = SyncFile.Decode(newer, "clips");
+        Assert.IsNotNull(newerFile);
+        Assert.IsTrue(newerFile!.IsNewer);
+        // 结构对不上的、别的类别的：不算更新版本。
+        Assert.IsNull(SyncFile.Decode("""{"format":2,"kind":"clips","records":{}}""", "clips"));
+        Assert.IsNull(SyncFile.Decode(newer, "settings"));
+        Assert.IsNull(SyncFile.Decode(
+            """{"format":1,"kind":"clips","erased":[],"records":[{"id":"x","clock":"A:1,B:x","modified":1,"value":"1"}]}""",
+            "clips"));
+        Assert.IsNull(SyncFile.Decode(
+            """{"format":1,"kind":"clips","erased":[],"records":[{"id":"x","clock":"A:1","modified":1,"value":"1"},{"id":"x","clock":"A:2","modified":2,"value":"2"}]}""",
+            "clips"));
+        Assert.IsNull(SyncFile.Decode("{", "clips"));
+    }
 }
