@@ -237,6 +237,11 @@ internal sealed class ShellRuntime
                     };
                     await Task.Delay(1500);
                     Log.Info($"media.check {Path.GetFileName(path)} duration={player.NaturalDuration.TotalSeconds:F2}s");
+                    var audio = await AudioWavProbe.CheckAsync(path);
+                    Log.Info(
+                        $"media.check-audio peak={audio.Peak:F3} bursts={audio.Bursts} " +
+                        $"frames={audio.Frames} gap={audio.MinGap:F3}-{audio.MaxGap:F3}s " +
+                        $"error={audio.Error ?? "-"}");
                 }
                 catch (Exception ex)
                 {

@@ -83,7 +83,7 @@ internal sealed unsafe class WasaCapture : IDisposable
             var flags = loopback ? StreamFlagsLoopback : 0u;
             client->Initialize(
                 AUDCLNT_SHAREMODE.AUDCLNT_SHAREMODE_SHARED, flags,
-                0, 0, mix, null);
+                BufferDuration100Ns, 0, mix, null);
 
             capture._formatTag = mix->wFormatTag;
             capture._channels = mix->nChannels;
@@ -188,6 +188,13 @@ internal sealed unsafe class WasaCapture : IDisposable
                         var samples = _converter.Convert(source, (int)frames);
                         if (!samples.IsEmpty)
                         {
+                            if (frame < buffer.Flushed)
+                            {
+                                Log.Warn(
+                                    $"audio.late-prefix frame={frame} flushed={buffer.Flushed} " +
+                                    $"frames={samples.Length / 2}");
+                            }
+
                             Packets++;
                             var peak = PeakOf(samples);
                             if (peak > Peak)

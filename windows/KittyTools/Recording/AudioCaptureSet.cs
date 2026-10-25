@@ -119,7 +119,7 @@ internal sealed class AudioCaptureSet : IDisposable
 
     public void Stop()
     {
-        _started = false;
+        // 只停设备，不关 Poll：停止后还要再收一次缓冲里剩下的包。
         foreach (var source in _sources)
         {
             try
@@ -135,6 +135,7 @@ internal sealed class AudioCaptureSet : IDisposable
 
     public void Dispose()
     {
+        _started = false;
         Stop();
         foreach (var source in _sources)
         {
