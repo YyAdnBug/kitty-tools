@@ -112,6 +112,35 @@ internal sealed class ClipboardStore
         Changed?.Invoke();
     }
 
+    public void SetOcrText(long id, string? text)
+    {
+        var entry = _items.FirstOrDefault(item => item.Id == id);
+        if (entry is null)
+        {
+            return;
+        }
+
+        // 空字符串 = 识别过、图里没有字（不再排队）；null = 没识别过。
+        entry.OcrText = text is null ? null : OcrHit.Clean(text);
+        entry.Folded = null;
+        _database.SetOcr(id, entry.OcrText);
+        Changed?.Invoke();
+    }
+
+    /// <summary>还没识字的图片（新的先来），后台排队用。</summary>
+    public List<ClipEntry> PendingOcr(int limit = 4)
+        => _items
+            .Where(item => item.Kind == ClipKind.Image && item.OcrText is null)
+            .OrderByDescending(item => item.CopiedAt)
+            .Take(limit)
+            .ToList();
+
+    /// <summary>靠识字命中时行标题显示的那一段（不命中返回 null）。</summary>
+    public static string? OcrSnippet(ClipEntry entry, string query)
+        => entry.Kind == ClipKind.Image
+            ? OcrHit.Snippet(entry.OcrText, Search.Tokens(query))
+            : null;
+
     /// <summary>新建片段（第三版 §4）：正文 + 可选名称（存成备注），一定是收藏并带 uid。</summary>
     public ClipEntry? AddSnippet(string text, string? note)
     {

@@ -17,6 +17,7 @@ using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Windowing;
 using Windows.Graphics;
 using Windows.Win32;
+using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage;
 using Windows.Storage.Streams;
 using Windows.System;
@@ -36,6 +37,9 @@ public sealed partial class ClipboardPanel : UserControl
     private bool _animateHighlight;
     private MotionCurve _highlightCurve = MotionCurve.Glide;
     private ScrollViewer? _listScroll;
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _linkTimer;
+    private CancellationTokenSource? _linkCts;
+    private Uri? _linkPending;
 
     public ClipboardPanel()
     {
@@ -233,8 +237,73 @@ public sealed partial class ClipboardPanel : UserControl
         }
 
         var scope = _favoritesOnly ? "收藏 · " : string.Empty;
-        FooterText.Text =
-            $"{_visible.Count} 条 ｜ {scope}粘贴 Enter · 纯文本 Shift+Enter · 更多（右键）· 收藏 Ctrl+D";
+        var selected = SelectedEntries;
+        FooterText.Text = selected.Count > 1
+            ? $"{_visible.Count} 条 ｜ {MultiPaste.Footer(selected.Count, MultiPaste.Mode(selected.Count, selected.All(entry => entry.Kind == ClipKind.Text), selected.All(entry => entry.Kind == ClipKind.Files)))}"
+            : $"{_visible.Count} 条 ｜ {scope}粘贴 Enter · 纯文本 Shift+Enter · 更多（右键）· 收藏 Ctrl+D";
+    }
+
+    private List<ClipEntry> SelectedEntries => List.SelectedItems
+        .OfType<ClipRow>()
+        .Select(row => row.Entry)
+        .OrderBy(entry => entry.CopiedAt)
+        .ToList();
+
+    /// <summary>拖出去（第三版 §5）：文本带格式、文件给原文件、图片给临时 PNG；拖不算粘贴，不挪顺序也不记历史。</summary>
+    private void OnDragItemsStarting(object sender, DragItemsStartingEventArgs e)
+    {
+        var entries = e.Items.OfType<ClipRow>()
+            .Select(row => row.Entry)
+            .OrderBy(entry => entry.CopiedAt)
+            .ToList();
+        if (entries.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            e.Data.Properties.Title = "Kitty Tools";
+            if (entries.All(entry => entry.Kind == ClipKind.Text))
+            {
+                var text = MultiPaste.Merge(entries.Select(entry => entry.Text ?? string.Empty));
+                e.Data.SetText(text);
+                if (entries.Count == 1)
+                {
+                    var rich = RichOf(entries[0]);
+                    if (!string.IsNullOrEmpty(rich.Html))
+                    {
+                        e.Data.SetHtmlFormat(HtmlFormatHelper.CreateHtmlFormat(rich.Html));
+                    }
+                }
+            }
+            else
+            {
+                var files = entries
+                    .Where(entry => entry.Kind == ClipKind.Files)
+                    .SelectMany(entry => entry.Files)
+                    .Where(File.Exists)
+                    .ToList();
+                if (files.Count == 0 && Store is { } store)
+                {
+                    files = entries
+                        .Where(entry => entry.Kind == ClipKind.Image)
+                        .Select(entry => store.Images.PathFor(entry.Id))
+                        .Where(File.Exists)
+                        .ToList();
+                }
+
+                if (files.Count > 0)
+                {
+                    e.Data.SetStorageItems(files.Select(path =>
+                        StorageFile.GetFileFromPathAsync(path).AsTask().GetAwaiter().GetResult()));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"clipboard.drag-failed {ex.GetType().Name}");
+        }
     }
 
     private void UpdateEmptyState()
@@ -413,6 +482,8 @@ public sealed partial class ClipboardPanel : UserControl
     private void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         ShowPreview(SelectedEntry);
+        ScheduleLinkPreview();
+        UpdateFooter();
         var animated = _animateHighlight;
         _animateHighlight = false;
         // 选中项的容器可能还没实现：等这一轮布局完再量它的位置。
@@ -875,6 +946,13 @@ public sealed partial class ClipboardPanel : UserControl
 
     private async void Paste(bool plain)
     {
+        var selected = SelectedEntries;
+        if (selected.Count > 1)
+        {
+            await PasteManyAsync(selected, plain);
+            return;
+        }
+
         var entry = SelectedEntry;
         if (entry is null)
         {
@@ -921,6 +999,223 @@ public sealed partial class ClipboardPanel : UserControl
         {
             Log.Error("clipboard.paste-failed", ex);
             NoticeHost.Show("没能粘贴", ex.GetType().Name, NoticeTone.Error);
+        }
+    }
+
+    /// <summary>多选粘贴（第三版 §5）：全文本合并、全文件一起、其余依次（间隔 250 ms）。</summary>
+    private async Task PasteManyAsync(List<ClipEntry> entries, bool plain)
+    {
+        if (entries.Any(entry => !EntryUsable(entry)))
+        {
+            NoticeHost.Show("有文件已经不在原处", "先取消选择那几条", NoticeTone.Warning);
+            return;
+        }
+
+        var mode = MultiPaste.Mode(
+            entries.Count,
+            entries.All(entry => entry.Kind == ClipKind.Text),
+            entries.All(entry => entry.Kind == ClipKind.Files));
+        var target = OverlayHost.PasteTarget;
+        if (target == default)
+        {
+            // 没有可粘的目标：合并的复制合并结果，其余只复制第一条。
+            var text = mode == MultiPasteMode.MergeText
+                ? MultiPaste.Merge(entries.Select(entry => entry.Text ?? string.Empty))
+                : entries[0].Text;
+            if (!string.IsNullOrEmpty(text))
+            {
+                CopyText(text);
+            }
+
+            return;
+        }
+
+        try
+        {
+            switch (mode)
+            {
+                case MultiPasteMode.MergeText:
+                {
+                    var merged = MultiPaste.Merge(entries.Select(entry => entry.Text ?? string.Empty));
+                    if (Paster.Paste(target, () => ClipboardWriter.WriteText(merged), ClipboardService.Instance))
+                    {
+                        ClipboardService.Instance?.Store.RecordOwnText(merged);
+                        NoticeHost.Show("已合并粘贴", $"{entries.Count} 条", NoticeTone.Normal);
+                    }
+
+                    break;
+                }
+
+                case MultiPasteMode.FilesTogether:
+                {
+                    var combined = new ClipEntry
+                    {
+                        Kind = ClipKind.Files,
+                        FilePaths = string.Join('\n', entries.SelectMany(entry => entry.Files)),
+                    };
+                    Paster.Paste(
+                        target,
+                        () => ClipboardWriter.WriteEntry(combined, null, null, plainText: false, null),
+                        ClipboardService.Instance);
+                    NoticeHost.Show("已一起粘贴", $"{combined.Files.Length} 个文件", NoticeTone.Normal);
+                    break;
+                }
+
+                default:
+                {
+                    for (var index = 0; index < entries.Count; index++)
+                    {
+                        var entry = entries[index];
+                        var dib = entry.Kind == ClipKind.Image ? await PrepareDibAsync(entry) : null;
+                        var rich = RichOf(entry);
+                        var expansion = Expander.Of(entry, Store);
+                        var pasted = Paster.Paste(
+                            target,
+                            expansion is { } expanded
+                                ? () => ClipboardWriter.WriteText(expanded.Text)
+                                : () => ClipboardWriter.WriteEntry(entry, rich.Html, rich.Rtf, plain, dib),
+                            ClipboardService.Instance);
+                        if (!pasted)
+                        {
+                            NoticeHost.Show("没能粘贴", "第 " + (index + 1) + " 条失败", NoticeTone.Error);
+                            break;
+                        }
+
+                        if (index < entries.Count - 1)
+                        {
+                            await Task.Delay(MultiPaste.SequentialDelayMs);
+                        }
+                    }
+
+                    NoticeHost.Show("已依次粘贴", $"{entries.Count} 条", NoticeTone.Normal);
+                    break;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error("clipboard.paste-many-failed", ex);
+            NoticeHost.Show("没能粘贴", ex.GetType().Name, NoticeTone.Error);
+        }
+    }
+
+    /// <summary>选中「只有一个网址」的文本，停 0.25 s 再取预览（第三版 §5）；关掉设置时连缓存都不显示。</summary>
+    private void ScheduleLinkPreview()
+    {
+        _linkTimer ??= DispatcherQueue.CreateTimer();
+        _linkTimer.Interval = TimeSpan.FromMilliseconds(250);
+        _linkTimer.IsRepeating = false;
+        _linkTimer.Stop();
+        _linkCts?.Cancel();
+        _linkPending = null;
+
+        if (!LinkPreviewService.Enabled || SelectedEntries is not { Count: 1 } selected ||
+            selected[0].Kind != ClipKind.Text || LinkPreviewRules.SingleUrl(selected[0].Text) is not { } uri)
+        {
+            return;
+        }
+
+        _linkPending = uri;
+        _linkTimer.Tick -= OnLinkTimerTick;
+        _linkTimer.Tick += OnLinkTimerTick;
+        _linkTimer.Start();
+    }
+
+    private void OnLinkTimerTick(Microsoft.UI.Dispatching.DispatcherQueueTimer sender, object args)
+    {
+        sender.Stop();
+        if (_linkPending is { } uri)
+        {
+            _linkCts = new CancellationTokenSource();
+            _ = LoadLinkPreviewAsync(uri, _linkCts.Token);
+        }
+    }
+
+    private async Task LoadLinkPreviewAsync(Uri uri, CancellationToken cancellationToken)
+    {
+        var cached = await LinkPreviewService.FetchAsync(uri, cancellationToken);
+        if (cancellationToken.IsCancellationRequested || !LinkPreviewService.Enabled || cached is null ||
+            SelectedEntry is not { } entry || LinkPreviewRules.SingleUrl(entry.Text) != uri)
+        {
+            return;
+        }
+
+        AppendLinkCard(cached);
+    }
+
+    private void AppendLinkCard(LinkPreviewService.CachedPreview cached)
+    {
+        var stack = new StackPanel { Spacing = 6 };
+        stack.Children.Add(new TextBlock
+        {
+            Text = cached.Preview.Title,
+            FontSize = 14,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+        });
+        stack.Children.Add(new TextBlock
+        {
+            Text = cached.Preview.Site,
+            FontSize = 11,
+            Opacity = 0.6,
+        });
+        if (!string.IsNullOrEmpty(cached.Preview.Description))
+        {
+            stack.Children.Add(new TextBlock
+            {
+                Text = cached.Preview.Description,
+                FontSize = 12,
+                Opacity = 0.8,
+                TextWrapping = TextWrapping.Wrap,
+                MaxLines = 3,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            });
+        }
+
+        if (cached.ImageBytes is { Length: > 0 } bytes)
+        {
+            try
+            {
+                var bitmap = new BitmapImage();
+                var stream = new InMemoryRandomAccessStream();
+                using (var writer = new DataWriter(stream.GetOutputStreamAt(0)))
+                {
+                    writer.WriteBytes(bytes);
+                    writer.StoreAsync().AsTask().GetAwaiter().GetResult();
+                }
+
+                bitmap.SetSource(stream);
+                stack.Children.Add(new Image
+                {
+                    Source = bitmap,
+                    Stretch = Stretch.Uniform,
+                    MaxHeight = 160,
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                });
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"linkpreview.image-show-failed {ex.GetType().Name}");
+            }
+        }
+
+        var card = new Border
+        {
+            Padding = new Thickness(10, 8, 10, 8),
+            CornerRadius = new CornerRadius(8),
+            Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"],
+            Child = stack,
+            Margin = new Thickness(0, 8, 0, 0),
+        };
+        PreviewHost.Children.Add(card);
+    }
+
+    private void CopyText(string text)
+    {
+        if (ClipboardWriter.WriteText(text))
+        {
+            ClipboardService.Instance?.MarkOwnWrite();
+            NoticeHost.Show("已复制", KillLine(text), NoticeTone.Normal);
         }
     }
 
@@ -996,14 +1291,17 @@ public sealed partial class ClipboardPanel : UserControl
 
     private void DeleteSelected()
     {
-        var entry = SelectedEntry;
-        if (entry is null || Store is not { } store)
+        var entries = SelectedEntries;
+        if (entries.Count == 0 || Store is not { } store)
         {
             return;
         }
 
-        store.DeleteWithUndo(new[] { entry.Id });
-        NoticeHost.Show("已删除", "收起面板前可以按 Ctrl+Z 撤销", NoticeTone.Normal);
+        store.DeleteWithUndo(entries.Select(entry => entry.Id).ToList());
+        NoticeHost.Show(
+            entries.Count > 1 ? $"已删除 {entries.Count} 条" : "已删除",
+            "收起面板前可以按 Ctrl+Z 撤销",
+            NoticeTone.Normal);
         Refresh();
     }
 
@@ -1024,14 +1322,20 @@ public sealed partial class ClipboardPanel : UserControl
 
     private void FavoriteSelected()
     {
-        var entry = SelectedEntry;
-        if (entry is null)
+        var entries = SelectedEntries;
+        if (entries.Count == 0 || Store is not { } store)
         {
             return;
         }
 
-        Store?.ToggleFavorite(entry.Id);
-        Refresh(entry.Id);
+        // 批量：只要有一条不是收藏就全部收藏；全是收藏就全部取消。
+        var target = entries.Any(entry => !entry.Favorite);
+        foreach (var entry in entries.Where(entry => entry.Favorite != target))
+        {
+            store.ToggleFavorite(entry.Id);
+        }
+
+        Refresh(entries[0].Id);
     }
 
     private static void TranslateEntry(ClipEntry entry)
@@ -1115,6 +1419,10 @@ public sealed partial class ClipboardPanel : UserControl
         if (entry.Kind == ClipKind.Image)
         {
             AddItem(menu, "钉到屏幕", () => _ = PinImageAsync(entry));
+            if (!string.IsNullOrWhiteSpace(entry.OcrText))
+            {
+                AddItem(menu, "复制图中文字", () => CopyText(entry.OcrText!));
+            }
         }
 
         if (entry.Kind == ClipKind.Files && entry.Files.FirstOrDefault() is { } first)

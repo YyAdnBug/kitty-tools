@@ -224,10 +224,19 @@ public sealed class SchemaMigrationTests
                 .Where(part => part.StartsWith("TABLE", StringComparison.OrdinalIgnoreCase) ||
                                part.StartsWith("INDEX", StringComparison.OrdinalIgnoreCase))
                 .ToList();
-            Assert.IsTrue(creates.Count > 0, step.Description);
+            Assert.IsTrue(creates.Count > 0 || sql.Contains("ADD COLUMN", StringComparison.OrdinalIgnoreCase),
+                step.Description);
             Assert.IsTrue(
                 creates.All(part => part.Contains("IF NOT EXISTS", StringComparison.OrdinalIgnoreCase)),
                 $"{step.Description} 的每一步都要幂等");
+            // 加列的步骤只加一次：同一列不能在这个步骤里出现两次（迁移只会跑一次，重跑会报 duplicate column）。
+            var added = sql.Split("ADD COLUMN", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Skip(1)
+                .Select(part => part.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault())
+                .Where(name => name is not null)
+                .ToList();
+            Assert.AreEqual(added.Count, added.Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+                $"{step.Description} 有重复的列");
         }
     }
 }

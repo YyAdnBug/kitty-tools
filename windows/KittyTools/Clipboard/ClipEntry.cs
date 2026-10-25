@@ -41,6 +41,9 @@ internal sealed class ClipEntry
 
     public string? GroupId { get; set; }
 
+    /// <summary>后台识字的结果（第三版 §5）：搜索也搜它，靠它命中时行标题显示命中的那一段。</summary>
+    public string? OcrText { get; set; }
+
     /// <summary>搜索用的折叠文本（Search.FoldBytes），第一次搜索时建。</summary>
     public byte[]? Folded { get; set; }
 
@@ -70,6 +73,7 @@ internal sealed class ClipEntry
         {
             $"图片 {Width} {Height}",
             Note,
+            OcrText,
             SourceName,
             SourceExe,
         }.Where(s => !string.IsNullOrEmpty(s))),

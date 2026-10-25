@@ -158,6 +158,7 @@ internal sealed class ClipboardService
         }
 
         Store.RecordImage(image.Png, image.Width, image.Height, exe, name);
+        OcrQueue.Kick();
         Log.Info($"clipboard.record kind=image count={Store.Count}");
     }
 }

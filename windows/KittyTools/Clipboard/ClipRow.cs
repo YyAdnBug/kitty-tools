@@ -60,7 +60,8 @@ public sealed class ClipRow
         return new ClipRow
         {
             Entry = entry,
-            Title = TitleOf(entry),
+            // 靠识字命中时标题显示命中的那一段（第三版 §5）。
+            Title = ClipboardStore.OcrSnippet(entry, query) is { } hit ? "「" + hit + "」" : TitleOf(entry),
             Subtitle = SubtitleOf(entry),
             Glyph = GlyphOf(entry),
             Time = TimeLabel(entry.CopiedAt),

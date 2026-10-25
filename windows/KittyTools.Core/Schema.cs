@@ -95,6 +95,12 @@ public static class Schema
               created_at INTEGER NOT NULL
             );
             """),
+        new SchemaStep(
+            5,
+            "clips 的识字结果 ocr_text（第三版第 4 批）",
+            """
+            ALTER TABLE clips ADD COLUMN ocr_text TEXT;
+            """),
     };
 
     /// <summary>从 currentVersion 开始还要跑的步骤（升序）。比代码新的库（用户装过更新的版本）一步都不跑。</summary>

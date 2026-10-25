@@ -33,6 +33,9 @@ internal sealed class Settings
 
     public bool ClipboardBlockSensitive { get; set; } = true;
 
+    /// <summary>链接预览（第三版 §5）：选中「只有一个网址」的文本时取标题 / 描述 / 头图。</summary>
+    public bool LinkPreviews { get; set; } = true;
+
     public List<string> ClipboardExcludedApps { get; set; } = new()
     {
         "KeePass.exe",

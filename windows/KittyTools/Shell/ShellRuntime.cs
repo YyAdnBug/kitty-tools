@@ -56,6 +56,8 @@ internal sealed class ShellRuntime
             Clipboard.Suspended = !Features.IsOn(Feature.Clipboard);
             // 翻译历史和生词本用同一个库（第三版 §3.1）。
             TranslationHistory.Start(database);
+            // 图片的后台识字排队（第三版 §5）。
+            OcrQueue.Start(DispatcherQueue.GetForCurrentThread()!);
         }
         catch (Exception ex)
         {

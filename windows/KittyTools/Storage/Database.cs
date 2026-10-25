@@ -43,7 +43,7 @@ internal sealed class Database : IDisposable
             """
             SELECT id, kind, text, file_paths, image_hash, width, height, image_bytes,
                    source_exe, source_name, copied_at, favorite,
-                   uid, snippet, note, group_id
+                   uid, snippet, note, group_id, ocr_text
             FROM clips ORDER BY copied_at DESC, id DESC
             """);
         while (statement.Step())
@@ -72,6 +72,7 @@ internal sealed class Database : IDisposable
                 Snippet = statement.GetInt64(13) != 0,
                 Note = statement.GetText(14),
                 GroupId = statement.GetText(15),
+                OcrText = statement.GetText(16),
             });
         }
 
@@ -177,6 +178,13 @@ internal sealed class Database : IDisposable
             statement.BindInt64(1, id).BindText(2, groupId);
             statement.Step();
         }
+    }
+
+    public void SetOcr(long id, string? text)
+    {
+        using var statement = _connection.Prepare("UPDATE clips SET ocr_text = ?2 WHERE id = ?1");
+        statement.BindInt64(1, id).BindText(2, text);
+        statement.Step();
     }
 
     public void SetUid(long id, string uid)

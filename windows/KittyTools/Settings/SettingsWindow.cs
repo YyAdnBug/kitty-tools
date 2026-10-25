@@ -666,6 +666,18 @@ internal sealed class SettingsWindow : Window
                 SettingsService.Save();
             });
 
+        AddToggle("链接预览", "选中「只有一个网址」的文本时，取网页标题、描述和头图（不访问本机 / 内网地址）。",
+            SettingsService.Current.LinkPreviews,
+            isOn =>
+            {
+                SettingsService.Current.LinkPreviews = isOn;
+                SettingsService.Save();
+                if (!isOn)
+                {
+                    LinkPreviewService.Clear();
+                }
+            });
+
         _content.Children.Add(Section("不记录的应用", "按 exe 名，不分大小写。密码管理器默认就在里面。"));
 
         foreach (var app in SettingsService.Current.ClipboardExcludedApps.ToList())
