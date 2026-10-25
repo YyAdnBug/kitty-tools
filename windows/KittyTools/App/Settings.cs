@@ -118,6 +118,9 @@ internal sealed class Settings
     /// <summary>录制中显示快捷键胶囊（默认关）。</summary>
     public bool RecordKeys { get; set; }
 
+    /// <summary>停止后另存一份 H.264 MP4（R14 的中间步骤，默认开）。</summary>
+    public bool RecordMp4 { get; set; } = true;
+
     public List<TranslateServiceConfig>? TranslateServices { get; set; }
 
     /// <summary>启动器的网页搜索列表；null = 从没存过（默认前 8 个，Bing 兜底）。</summary>

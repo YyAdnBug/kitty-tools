@@ -121,6 +121,10 @@ internal static class RecordingHost
 
         Log.Info($"record.saved {Path.GetFileName(path)}");
         NoticeHost.Show("录屏已保存", Path.GetFileName(path), NoticeTone.Normal);
+        if (SettingsService.Current.RecordMp4)
+        {
+            _ = VideoTranscoder.TranscodeAsync(path, notify: true);
+        }
         try
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo

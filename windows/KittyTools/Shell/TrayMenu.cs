@@ -187,6 +187,8 @@ internal static partial class TrayMenu
                     () => _ = CompressionService.CompressLastAsync());
                 Add(menu, "\uE7C8", "转成 GIF（10 fps，长边 800）", string.Empty,
                     () => _ = GifService.ConvertLastAsync());
+                Add(menu, "\uE7C8", "转成 MP4（H.264）", string.Empty,
+                    () => _ = VideoTranscoder.TranscodeLastAsync());
             }
 
             if (AudioHost.IsRecording)

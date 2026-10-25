@@ -173,6 +173,19 @@ internal sealed class ShellRuntime
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(ScreenshotSession.StartLast);
         }
 
+        // 调试 / 自检：把已有的录屏转 MP4（R14 的中间步骤）。
+        var mp4Arg = Environment.GetCommandLineArgs()
+            .FirstOrDefault(arg => arg.StartsWith("--mp4=", StringComparison.OrdinalIgnoreCase));
+        if (mp4Arg is not null)
+        {
+            var path = mp4Arg["--mp4=".Length..];
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
+            {
+                var result = await VideoTranscoder.ToMp4Async(path);
+                Log.Info($"video.mp4-debug {(result is null ? "failed" : Path.GetFileName(result))}");
+            });
+        }
+
         // 调试 / 自检：把已有的录屏转成 GIF（第四版第 3 批）。
         var gifArg = Environment.GetCommandLineArgs()
             .FirstOrDefault(arg => arg.StartsWith("--gif=", StringComparison.OrdinalIgnoreCase));

@@ -1138,6 +1138,13 @@ internal sealed class SettingsWindow : Window
                     SettingsService.Current.RecordKeys = value;
                     SettingsService.Save();
                 });
+            AddToggle("停止后另存 MP4", "录完再转一份 H.264 MP4（录屏本身仍是 AVI）。",
+                SettingsService.Current.RecordMp4,
+                value =>
+                {
+                    SettingsService.Current.RecordMp4 = value;
+                    SettingsService.Save();
+                });
 
             var folderRow = new Grid { ColumnSpacing = 8 };
             folderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
