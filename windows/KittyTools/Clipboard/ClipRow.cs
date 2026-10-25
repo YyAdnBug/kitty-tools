@@ -48,7 +48,7 @@ public sealed class ClipRow
         bool showKeyHint = false,
         string query = "")
     {
-        var right = PreviewRules.SourceAndAge(entry.SourceName, Relative(entry.CopiedAt));
+        var right = Relative(entry.CopiedAt);
         return new ClipRow
         {
             Entry = entry,
@@ -75,12 +75,12 @@ public sealed class ClipRow
            DateHeaderVisibility == HeaderVisibility(showDateHeader) &&
            FavoriteVisibility == FavoriteVisibilityOf(entry) &&
            Subtitle == SubtitleOf(entry) &&
-           RightText == PreviewRules.SourceAndAge(entry.SourceName, Relative(entry.CopiedAt)) &&
+           RightText == Relative(entry.CopiedAt) &&
            KeyHint == (showKeyHint && index is >= 0 and < 9 ? (index + 1).ToString() : string.Empty) &&
            KeyHintVisibility == (showKeyHint && index is >= 0 and < 9 ? Visibility.Visible : Visibility.Collapsed) &&
            Title == TitleOf(entry);
 
-    /// <summary>「3 分钟前」/「昨天」这种相对时间（列表右栏用）。</summary>
+    /// <summary>行右栏只放短时间（REVIEW R6）：列表窄，标题要占六成以上；来源在预览卡的卡头显示。</summary>
     internal static string Relative(long copiedAt)
     {
         var then = DateTimeOffset.FromUnixTimeMilliseconds(copiedAt).ToLocalTime();
@@ -106,8 +106,8 @@ public sealed class ClipRow
         }
 
         return then.Date.Year == DateTime.Today.Year
-            ? $"{then.Month} 月 {then.Day} 日"
-            : $"{then.Year} 年 {then.Month} 月 {then.Day} 日";
+            ? then.ToString("MM-dd")
+            : then.ToString("yyyy-MM-dd");
     }
 
     private static string TitleOf(ClipEntry entry) => entry.Kind switch

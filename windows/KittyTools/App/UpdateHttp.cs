@@ -85,7 +85,8 @@ internal static class UpdateHttp
                 return new ResponseStream(stream, total);
             },
             progress,
-            cancellationToken);
+            cancellationToken,
+            knownTotal: total);
     }
 
     /// <summary>下载 / 校验途中失败时删掉半成品（R3 的验收：断网后 updates\ 里没有残留）。</summary>

@@ -562,6 +562,22 @@ internal sealed unsafe partial class TranslateWindow : Window
 
     private double NeededHeightDip()
     {
+        // 按内容重新量一遍（REVIEW R8）：以前拿 ActualHeight，卡片被窗口高度裁住时会越量越小，
+        // 最后一张卡被底栏盖住。Measure 用无限高度，拿到的是内容真正想要的高度。
+        try
+        {
+            _root.Measure(new Windows.Foundation.Size(_widthDip, double.PositiveInfinity));
+            var measured = _root.DesiredSize.Height;
+            if (measured > 0 && !double.IsNaN(measured) && !double.IsInfinity(measured))
+            {
+                return measured + 8;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"translate.measure-failed {ex.GetType().Name}");
+        }
+
         var needed = _topBar.ActualHeight + _source.ActualHeight + _translateButton.ActualHeight +
                      _cardsPanel.ActualHeight + _footer.ActualHeight + 20 + 32;
         return needed > 0 && !double.IsNaN(needed) ? needed : MinHeightDip;
@@ -1059,16 +1075,11 @@ internal sealed unsafe partial class TranslateWindow : Window
                     _status.Text = "失败";
                     _error.Text = card.Error?.Message ?? "翻译失败";
                     // 设置问题是橙色，网络 / 服务问题是红色（PLAN-v2 §3.7）。
-                    _error.Foreground = card.Error?.Kind == TranslateErrorKind.Config
-                        ? Theme.Caution()
-                        : Theme.Critical();
+                    var config = card.Error?.Kind == TranslateErrorKind.Config;
+                    _error.Foreground = config ? Theme.Caution() : Theme.Critical();
                     _error.Visibility = Visibility.Visible;
-                    if (card.Error?.Kind == TranslateErrorKind.Config)
-                    {
-                        _actions.Children.Add(_settings);
-                    }
-
-                    _actions.Children.Add(_retry);
+                    // 设置类错误只给「打开设置」（PLAN §7.2：缺密钥 / 401–404 重试也没用）。
+                    _actions.Children.Add(config ? _settings : _retry);
                     break;
             }
 

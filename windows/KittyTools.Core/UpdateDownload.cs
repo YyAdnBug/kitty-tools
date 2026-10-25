@@ -18,7 +18,8 @@ public static class UpdateDownload
         string path,
         Func<CancellationToken, Task<Stream>> openSource,
         Action<long, long?>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        long? knownTotal = null)
     {
         var partial = PartialPath(path);
         TryDelete(partial);
@@ -27,7 +28,8 @@ public static class UpdateDownload
             await using var source = await openSource(cancellationToken);
             await using var target = new FileStream(
                 partial, FileMode.Create, FileAccess.Write, FileShare.None, BufferSize, useAsync: true);
-            long? total = source.CanSeek ? source.Length : null;
+            // 网络流的 CanSeek 是 false，Content-Length 要由调用方给（REVIEW R11：否则托盘只显示「正在下载…」）。
+            long? total = knownTotal ?? (source.CanSeek ? source.Length : null);
             await CopyAsync(source, target, progress, total, cancellationToken);
             await target.FlushAsync(cancellationToken);
             target.Close();

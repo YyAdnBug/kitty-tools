@@ -122,11 +122,9 @@ internal sealed class ScreenshotCard : Window
         {
             Padding = new Thickness(PaddingDip),
             CornerRadius = new CornerRadius(10),
-            Background = Theme.Brush(
-                "AcrylicInAppFillColorDefaultBrush",
-                Theme.ElementTheme == ElementTheme.Dark
-                    ? Windows.UI.Color.FromArgb(242, 40, 40, 40)
-                    : Windows.UI.Color.FromArgb(242, 248, 248, 248)),
+            // 卡片是浮在桌面上的独立小窗：用不透明的卡片底色，别用半透明亚克力（窗口没有背景层，
+            // 半透明会透出黑色，深色下按钮文字几乎看不见）。
+            Background = new SolidColorBrush(Theme.CardColor()),
             Child = panel,
         };
         root.PointerEntered += (_, _) =>
@@ -151,6 +149,22 @@ internal sealed class ScreenshotCard : Window
         AppWindow.IsShownInSwitchers = false;
         Title = Paths.ProductName + " 截图";
         _hwnd = (HWND)WinRT.Interop.WindowNative.GetWindowHandle(this);
+
+        // 系统画的那一圈细边框跟着卡片底色走（深色下不要留一圈白边）。
+        unsafe
+        {
+            try
+            {
+                var color = Theme.CardColor();
+                var value = color.R | (color.G << 8) | (color.B << 16);
+                PInvoke.DwmSetWindowAttribute(
+                    _hwnd, Windows.Win32.Graphics.Dwm.DWMWINDOWATTRIBUTE.DWMWA_BORDER_COLOR, &value, sizeof(int));
+            }
+            catch
+            {
+                // 设不上就保留系统默认边框。
+            }
+        }
 
         _ = LoadImageAsync();
     }
@@ -292,15 +306,18 @@ internal sealed class ScreenshotCard : Window
         CloseCard();
     }
 
-    private void OnDragStarting(UIElement sender, DragStartingEventArgs args)
+    private async void OnDragStarting(UIElement sender, DragStartingEventArgs args)
     {
+        // REVIEW R11：不要在 UI 线程上同步等异步（第二版第 1 批这样卡死过一次），用 deferral + await。
+        var deferral = args.GetDeferral();
         try
         {
             var folder = Path.Combine(Path.GetTempPath(), "kitty-shots");
             Directory.CreateDirectory(folder);
             var path = Path.Combine(folder, $"截图 {DateTime.Now:yyyy-MM-dd HH.mm.ss}.png");
-            File.WriteAllBytes(path, _png);
-            args.Data.SetStorageItems(new[] { StorageFile.GetFileFromPathAsync(path).AsTask().GetAwaiter().GetResult() });
+            await File.WriteAllBytesAsync(path, _png);
+            var file = await StorageFile.GetFileFromPathAsync(path);
+            args.Data.SetStorageItems(new[] { file });
             args.Data.RequestedOperation = DataPackageOperation.Copy;
             args.Data.Properties.Title = Path.GetFileName(path);
         }
@@ -308,6 +325,10 @@ internal sealed class ScreenshotCard : Window
         {
             Log.Warn($"screenshot.card-drag-failed {ex.GetType().Name}");
             args.Cancel = true;
+        }
+        finally
+        {
+            deferral.Complete();
         }
     }
 

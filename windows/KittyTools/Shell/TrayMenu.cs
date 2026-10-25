@@ -134,6 +134,7 @@ internal static partial class TrayMenu
         {
             Title = Paths.ProductName + " 菜单",
             Content = new Grid { Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), Children = { _anchor } },
+            SystemBackdrop = new TransparentBackdrop(),
         };
         var presenter = OverlappedPresenter.Create();
         presenter.IsAlwaysOnTop = true;

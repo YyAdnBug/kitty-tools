@@ -115,6 +115,8 @@ internal sealed unsafe partial class NoticeHost
         {
             Title = Paths.ProductName + " 提示",
             Content = _root,
+            // 真正的透明（REVIEW R5）：只扩 DWM 边框，胶囊外面会露出一圈窗口底色。
+            SystemBackdrop = new TransparentBackdrop(),
         };
         var presenter = OverlappedPresenter.Create();
         presenter.IsAlwaysOnTop = true;

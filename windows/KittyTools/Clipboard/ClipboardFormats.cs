@@ -285,14 +285,95 @@ internal static unsafe partial class ClipboardFormats
             return (null, null, pid);
         }
 
-        var path = ProcessImage(pid);
+        // REVIEW R6：从 WebView2 之类的子进程复制时，往上找到主程序。
+        var resolved = ProcessTree.Resolve(pid, SnapshotProcesses());
+        var processId = resolved != 0 ? resolved : pid;
+        var path = ProcessImage(processId);
         if (path is null)
         {
-            return (null, null, pid);
+            return (null, null, processId);
         }
 
-        return (path, DisplayName(path), pid);
+        return (path, DisplayName(path), processId);
     }
+
+    /// <summary>进程号 → （父进程号, 文件名）：用 Toolhelp 快照一次拿全，找主程序时只查表。</summary>
+    private static Dictionary<uint, (uint Parent, string Name)> SnapshotProcesses()
+    {
+        var map = new Dictionary<uint, (uint, string)>();
+        var snapshot = CreateToolhelp32Snapshot(Th32CsSnapProcess, 0);
+        if (snapshot == IntPtr.Zero || snapshot == new IntPtr(-1))
+        {
+            return map;
+        }
+
+        try
+        {
+            var entry = new ProcessEntry32W
+            {
+                dwSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<ProcessEntry32W>(),
+            };
+            if (!Process32FirstW(snapshot, ref entry))
+            {
+                return map;
+            }
+
+            do
+            {
+                var name = (entry.szExeFile ?? string.Empty).TrimEnd('\0');
+                map[entry.th32ProcessID] = (entry.th32ParentProcessID, name);
+            }
+            while (Process32NextW(snapshot, ref entry));
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"clipboard.process-snapshot-failed {ex.GetType().Name}");
+        }
+        finally
+        {
+            CloseHandle(snapshot);
+        }
+
+        return map;
+    }
+
+    private const uint Th32CsSnapProcess = 0x00000002;
+
+    [System.Runtime.InteropServices.StructLayout(
+        System.Runtime.InteropServices.LayoutKind.Sequential, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private struct ProcessEntry32W
+    {
+        public uint dwSize;
+        public uint cntUsage;
+        public uint th32ProcessID;
+        public IntPtr th32DefaultHeapID;
+        public uint th32ModuleID;
+        public uint cntThreads;
+        public uint th32ParentProcessID;
+        public int pcPriClassBase;
+        public uint dwFlags;
+
+        [System.Runtime.InteropServices.MarshalAs(
+            System.Runtime.InteropServices.UnmanagedType.ByValTStr, SizeConst = 260)]
+        public string szExeFile;
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr CreateToolhelp32Snapshot(uint flags, uint processId);
+
+    [System.Runtime.InteropServices.DllImport(
+        "kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool Process32FirstW(IntPtr snapshot, ref ProcessEntry32W entry);
+
+    [System.Runtime.InteropServices.DllImport(
+        "kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool Process32NextW(IntPtr snapshot, ref ProcessEntry32W entry);
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool CloseHandle(IntPtr handle);
 
     public static string? ProcessImage(uint pid)
     {

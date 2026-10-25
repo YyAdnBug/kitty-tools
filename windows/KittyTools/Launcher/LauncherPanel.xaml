@@ -23,7 +23,7 @@
         </Style>
 
         <DataTemplate x:Key="LauncherRowTemplate" x:DataType="local:LauncherRow">
-            <Grid Height="48" ColumnSpacing="10" Padding="6,0">
+            <Grid Height="{x:Bind RowHeight}" ColumnSpacing="10" Padding="6,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />

@@ -113,6 +113,7 @@ internal sealed class SettingsWindow : Window
         _height = (int)Math.Round(720 * scale);
         AppWindow.Resize(new Windows.Graphics.SizeInt32(_width, _height));
         AppWindow.SetIcon(Paths.ExecutablePath);
+        Theme.ApplyTitleBar(AppWindow);
 
         BuildPage("general");
         Closed += (_, _) =>
@@ -141,12 +142,15 @@ internal sealed class SettingsWindow : Window
             area.X + Math.Max(0, (area.Width - _width) / 2),
             area.Y + Math.Max(0, (area.Height - _height) / 2)));
         Foreground.Restore(_hwnd);
+        // 焦点给内容区，不落在左栏第一项上（REVIEW R10：鼠标打开时不该有焦点框）。
+        _scroll.Focus(FocusState.Programmatic);
         Log.Info($"settings.show firstRun={welcome}");
     }
 
     public void RefreshTheme()
     {
         _nav.RequestedTheme = Theme.ElementTheme;
+        Theme.ApplyTitleBar(AppWindow);
         if (_recordingAction is null)
         {
             BuildPage(_currentPage);
@@ -244,7 +248,7 @@ internal sealed class SettingsWindow : Window
                 BuildPage(_currentPage);
             });
 
-        AddToggle("自动检查更新", "每天检查一次；Windows 版的更新不标 latest。",
+        AddToggle("自动检查更新", "每天检查一次，有新版本时提示。",
             SettingsService.Current.AutoCheckUpdates,
             isOn =>
             {
@@ -252,8 +256,12 @@ internal sealed class SettingsWindow : Window
                 SettingsService.Save();
             });
 
-        var dataButton = new Button { Content = "打开数据目录" };
-        dataButton.Click += (_, _) => OpenDataDirectory();
+        var dataButton = SettingsUi.Card(
+            "\uE8B7",
+            "数据目录",
+            "数据库、图片、日志和设置都放在这里。",
+            null,
+            OpenDataDirectory);
         _content.Children.Add(dataButton);
     }
 
@@ -1251,16 +1259,39 @@ internal sealed class SettingsWindow : Window
         _content.Children.Add(Header("关于", ""));
         var version = typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3) ?? "0.1.0";
 
-        var identity = new StackPanel { Spacing = 6 };
-        identity.Children.Add(new TextBlock
+        var identity = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 14 };
+        // 应用图标（REVIEW R10）：直接从 exe 里取一张 PNG，不额外放一份素材。
+        try
+        {
+            if (ShellIcons.LoadPng(
+                    Paths.ExecutablePath,
+                    (Content as FrameworkElement)?.XamlRoot?.RasterizationScale ?? 1) is { Length: > 0 } icon)
+            {
+                identity.Children.Add(new Image
+                {
+                    Width = 48,
+                    Height = 48,
+                    Stretch = Stretch.Uniform,
+                    Source = IconSource(icon),
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"settings.icon-failed {ex.GetType().Name}");
+        }
+
+        var identityText = new StackPanel { Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
+        identity.Children.Add(identityText);
+        identityText.Children.Add(new TextBlock
         {
             Text = $"Kitty Tools {version}",
             FontSize = 20,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
         });
-        identity.Children.Add(new TextBlock
+        identityText.Children.Add(new TextBlock
         {
-            Text = "Windows 原生版。剪贴板、翻译、启动器和截图都已接上；Windows 版的 release 不标 latest。",
+            Text = "Windows 原生版。剪贴板历史、翻译、启动器和截图。",
             TextWrapping = TextWrapping.Wrap,
             Foreground = Theme.SecondaryText(),
         });
@@ -1391,19 +1422,38 @@ internal sealed class SettingsWindow : Window
     private static UIElement Header(string title, string subtitle)
         => SettingsUi.Header(title, subtitle);
 
-    private void AddToggle(string title, string subtitle, bool value, Action<bool> changed)
+    private void AddToggle(string title, string subtitle, bool value, Action<bool> changed, string glyph = "")
         => _content.Children.Add(SettingsUi.Card(
-            "\uE73E",
+            glyph.Length > 0 ? glyph : GlyphFor(title),
             title,
             subtitle,
             SettingsUi.Toggle(value, changed, title)));
 
-    private void AddCombo(string title, string subtitle, string[] items, int selected, Action<int> changed)
+    private void AddCombo(
+        string title, string subtitle, string[] items, int selected, Action<int> changed, string glyph = "")
         => _content.Children.Add(SettingsUi.Card(
-            "\uE70D",
+            glyph.Length > 0 ? glyph : GlyphFor(title),
             title,
             subtitle,
             SettingsUi.Combo(items, selected, changed, title)));
+
+    /// <summary>每个设置项一个有意思的图标（REVIEW R10）；没有合适的就不画图标块。</summary>
+    private static string GlyphFor(string title) => title switch
+    {
+        "登录时自动打开" => "\uE7E8",
+        "外观" => "\uE790",
+        "强调色" => "\uE790",
+        "自动检查更新" => "\uE895",
+        "暂停记录" => "\uE769",
+        "保留普通历史" => "\uE787",
+        "图片最多占用" => "\uEB9F",
+        "不记录疑似密钥和卡号" => "\uE72E",
+        "第一语言" => "\uE774",
+        "第二语言" => "\uE774",
+        "浮窗位置" => "\uE7C2",
+        "自动复制第一个服务的结果" => "\uE8C8",
+        _ => string.Empty,
+    };
 
     private static Border Card(UIElement child) => new()
     {
@@ -1412,4 +1462,34 @@ internal sealed class SettingsWindow : Window
         Background = Theme.CardBackground(),
         Child = child,
     };
+
+    /// <summary>把 PNG 字节变成一个 ImageSource（应用图标用）。</summary>
+    private static ImageSource IconSource(byte[] bytes)
+    {
+        var image = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
+        _ = SetImageAsync(image, bytes);
+        return image;
+    }
+
+    private static async Task SetImageAsync(Microsoft.UI.Xaml.Media.Imaging.BitmapImage image, byte[] bytes)
+    {
+        try
+        {
+            using var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+            using (var writer = new Windows.Storage.Streams.DataWriter(stream))
+            {
+                writer.WriteBytes(bytes);
+                await writer.StoreAsync();
+                await writer.FlushAsync();
+                writer.DetachStream();
+            }
+
+            stream.Seek(0);
+            await image.SetSourceAsync(stream);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"settings.icon-load-failed {ex.GetType().Name}");
+        }
+    }
 }

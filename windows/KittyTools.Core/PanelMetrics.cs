@@ -24,6 +24,9 @@ public static class PanelMetrics
 
     public const double LauncherRowHeight = 48;
 
+    /// <summary>计算结果那一行更高：28 号数字 + 下面一行说明（REVIEW R7）。</summary>
+    public const double LauncherCalculationRowHeight = 64;
+
     public static double ClipboardHeight(int rows)
         => Math.Clamp(
             ClipboardChrome + Math.Clamp(rows, MinRows, ClipboardMaxRows) * ClipboardRowHeight,
@@ -35,4 +38,18 @@ public static class PanelMetrics
             LauncherChrome + Math.Clamp(rows, MinRows, LauncherMaxRows) * LauncherRowHeight,
             LauncherChrome + MinRows * LauncherRowHeight,
             MaxHeightDip);
+
+    /// <summary>
+    /// 启动器按每行实际高度算（计算结果行 64、普通行 48）：取前八行，至少按三行普通行的高度算，
+    /// 再封顶 520（REVIEW R7：结果行 28 号字会顶出 48 的行高）。
+    /// </summary>
+    public static double LauncherHeightFor(IReadOnlyList<double> rowHeights)
+    {
+        var visible = rowHeights.Take(LauncherMaxRows).Sum();
+        var minimum = MinRows * LauncherRowHeight;
+        return Math.Clamp(
+            LauncherChrome + Math.Max(visible, minimum),
+            LauncherChrome + minimum,
+            MaxHeightDip);
+    }
 }

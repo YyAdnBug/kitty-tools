@@ -77,6 +77,23 @@ internal sealed class ShellRuntime
 
         Log.Info("shell.ready");
 
+        // REVIEW R11：截图卡片拖出去的临时 PNG 启动时清空（用时生成，不在每次拖出后删）。
+        try
+        {
+            var temp = Path.Combine(Path.GetTempPath(), "kitty-shots");
+            if (Directory.Exists(temp))
+            {
+                foreach (var file in Directory.EnumerateFiles(temp, "*.png"))
+                {
+                    File.Delete(file);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"screenshot.temp-cleanup-failed {ex.GetType().Name}");
+        }
+
         // 启动 3 秒后预建浮层 / 翻译浮窗：第一次按热键不用再建 XAML 树（第二版 §4.2）。
         DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
         {

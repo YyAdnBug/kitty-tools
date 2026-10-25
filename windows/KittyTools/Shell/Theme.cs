@@ -95,13 +95,23 @@ internal static class Theme
     }
 
     /// <summary>
-    /// 按 key 取内置主题资源里的画刷（深色 / 高对比度自动跟着变）；取不到时用兜底色。
-    /// AOT 的 PRI 问题第二版第 2 批已经修好，代码里查主题资源可用了。
+    /// 按 key 取内置主题资源里的画刷，**按设置里选的那套深浅色**（REVIEW R4）：
+    /// 以前从 `Application.Current.Resources` 直接取，拿到的是跟系统走的那一套；设置里选了另一种外观时，
+    /// 代码里设上去的卡片底 / 次要文字全是反的。现在先找 XamlControlsResources 的
+    /// `ThemeDictionaries[Dark / Light / HighContrast]`，取不到再退回应用资源，最后用兜底色。
+    /// 不跟深浅色变的常量（截图 HUD、胶囊、家族色）本来就不走这里。
     /// </summary>
     public static Brush Brush(string key, Color fallback)
     {
         try
         {
+            if (ThemeResources(ThemeKey) is { } themed &&
+                themed.TryGetValue(key, out var themedValue) &&
+                themedValue is Brush themedBrush)
+            {
+                return themedBrush;
+            }
+
             if (Application.Current?.Resources is { } resources &&
                 resources.TryGetValue(key, out var value) &&
                 value is Brush brush)
@@ -117,19 +127,92 @@ internal static class Theme
         return new SolidColorBrush(fallback);
     }
 
+    /// <summary>设置里选的外观（「跟随系统」时看系统的）。</summary>
+    public static ElementTheme EffectiveTheme => ElementTheme switch
+    {
+        ElementTheme.Light => ElementTheme.Light,
+        ElementTheme.Dark => ElementTheme.Dark,
+        _ => Application.Current?.RequestedTheme == ApplicationTheme.Dark
+            ? ElementTheme.Dark
+            : ElementTheme.Light,
+    };
+
+    private static string ThemeKey
+    {
+        get
+        {
+            try
+            {
+                var settings = new Windows.UI.ViewManagement.AccessibilitySettings();
+                if (settings.HighContrast)
+                {
+                    return "HighContrast";
+                }
+            }
+            catch
+            {
+                // 读不到辅助功能设置就按普通深浅色。
+            }
+
+            return EffectiveTheme == ElementTheme.Dark ? "Dark" : "Light";
+        }
+    }
+
+    /// <summary>在应用资源的合并字典里找某一套深浅色的主题字典。</summary>
+    private static ResourceDictionary? ThemeResources(string key)
+    {
+        if (Application.Current?.Resources is not { } resources)
+        {
+            return null;
+        }
+
+        return Find(resources, key, depth: 0);
+
+        static ResourceDictionary? Find(ResourceDictionary dictionary, string key, int depth)
+        {
+            if (depth > 4)
+            {
+                return null;
+            }
+
+            try
+            {
+                if (dictionary.ThemeDictionaries.TryGetValue(key, out var themed) &&
+                    themed is ResourceDictionary themedDictionary)
+                {
+                    return themedDictionary;
+                }
+            }
+            catch
+            {
+                // 有的字典没有 ThemeDictionaries，忽略。
+            }
+
+            foreach (var merged in dictionary.MergedDictionaries)
+            {
+                if (Find(merged, key, depth + 1) is { } found)
+                {
+                    return found;
+                }
+            }
+
+            return null;
+        }
+    }
+
     /// <summary>正文次要色（说明文字用）。</summary>
     public static Brush SecondaryText() => Brush(
         "TextFillColorSecondaryBrush",
-        ElementTheme == ElementTheme.Dark ? Color.FromArgb(255, 190, 190, 190) : Color.FromArgb(255, 96, 96, 96));
+        EffectiveTheme == ElementTheme.Dark ? Color.FromArgb(255, 190, 190, 190) : Color.FromArgb(255, 96, 96, 96));
 
     /// <summary>设置卡的底色。</summary>
     public static Brush CardBackground() => Brush(
         "CardBackgroundFillColorDefaultBrush",
-        ElementTheme == ElementTheme.Dark ? Color.FromArgb(36, 255, 255, 255) : Color.FromArgb(18, 0, 0, 0));
+        EffectiveTheme == ElementTheme.Dark ? Color.FromArgb(36, 255, 255, 255) : Color.FromArgb(18, 0, 0, 0));
 
     /// <summary>设置卡的底色（不透明近似，用给渐隐遮罩的渐变终点）。</summary>
     public static Color CardColor()
-        => ElementTheme == ElementTheme.Dark
+        => EffectiveTheme == ElementTheme.Dark
             ? Color.FromArgb(255, 0x2B, 0x2B, 0x2B)
             : Color.FromArgb(255, 0xFB, 0xFB, 0xFB);
 
@@ -162,6 +245,21 @@ internal static class Theme
 
     /// <summary>成功色（连接正常、已同步）。</summary>
     public static Brush Success() => Brush("SystemFillColorSuccessBrush", Color.FromArgb(255, 15, 123, 15));
+
+    /// <summary>窗口标题栏跟着设置里的深浅色走（REVIEW R4）。</summary>
+    public static void ApplyTitleBar(Microsoft.UI.Windowing.AppWindow window)
+    {
+        try
+        {
+            window.TitleBar.PreferredTheme = EffectiveTheme == ElementTheme.Dark
+                ? Microsoft.UI.Windowing.TitleBarTheme.Dark
+                : Microsoft.UI.Windowing.TitleBarTheme.Light;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"theme.titlebar-failed {ex.GetType().Name}");
+        }
+    }
 
     private static UISettings? _systemSettings;
 

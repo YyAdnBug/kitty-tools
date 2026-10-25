@@ -76,7 +76,18 @@ public sealed partial class LauncherPanel : UserControl
     /// <summary>内容高度变了（DIP，是否带动画）：浮层窗口据此改高度、顶边不动。</summary>
     public event Action<double, bool>? HeightRequested;
 
-    public double ContentHeightDip => PanelMetrics.LauncherHeight(_items.Count);
+    public double ContentHeightDip
+    {
+        get
+        {
+            var heights = _items
+                .Select(item => item.Kind == LauncherKind.Calculation
+                    ? PanelMetrics.LauncherCalculationRowHeight
+                    : PanelMetrics.LauncherRowHeight)
+                .ToList();
+            return PanelMetrics.LauncherHeightFor(heights);
+        }
+    }
 
     public void OnShown()
     {

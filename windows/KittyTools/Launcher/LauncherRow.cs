@@ -29,6 +29,9 @@ public sealed class LauncherRow
 
     public Visibility ImageVisibility { get; private init; }
 
+    /// <summary>计算结果那一行 28 号字 + 说明，行高要单独高一点（REVIEW R7）。</summary>
+    public double RowHeight { get; private init; }
+
     /// <summary>计算结果那一行用 28 号等宽（PLAN-v2 §3.6），普通行 14 号。</summary>
     public double TitleSize { get; private init; }
 
@@ -60,6 +63,7 @@ public sealed class LauncherRow
             GlyphVisibility = hasImage ? Visibility.Collapsed : Visibility.Visible,
             ImageVisibility = hasImage ? Visibility.Visible : Visibility.Collapsed,
             TitleSize = calculation ? 28 : 14,
+            RowHeight = calculation ? PanelMetrics.LauncherCalculationRowHeight : PanelMetrics.LauncherRowHeight,
             TitleFontFamily = calculation ? "Consolas" : "Segoe UI",
             SubtitleBrush = armed ? Theme.Critical() : Theme.SecondaryText(),
         };
