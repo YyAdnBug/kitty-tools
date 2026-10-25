@@ -10,30 +10,31 @@
 
 ## 待修
 
-### R1（第二版第 2 批，`da8cc1a9`）自动更新只认 GitHub 的 https 地址
-
-- **现状**：`App/AutoUpdater.cs` 的 `ReadBytesAsync` 认 `http://`、`file://` 和本地路径；`App/UpdateService.cs:77` 不论什么构建都读 `KITTY_UPDATE_FEED`。正常运行的 Release 版里，这些本来只该是测试入口。
-- **改成**：
-  - 正常启动的 Release 版：发布列表只认 `https://api.github.com/repos/YyAdnBug/kitty-tools/releases`；zip 和 `.sha256` 的下载地址只认 `https`，主机只认 `github.com`（路径以 `/YyAdnBug/kitty-tools/releases/download/` 开头）、`objects.githubusercontent.com`、`release-assets.githubusercontent.com`（GitHub 下载会跳转到这两个），**跳转之后的每一跳也按这张表查**（自己处理跳转，或者在 `HttpClientHandler` 里关掉自动跳转、逐跳检查）。
-  - `KITTY_UPDATE_FEED`、`file://`、本地路径、`http://`：只在 Debug 构建，或者带 `--update-test` 命令行参数启动时才认。这样手测仍然能在 Release AOT 下走完整条链路。
-  - 判断「这个地址认不认」写成 Core 里的纯函数，单测覆盖：上面每一种地址、大小写、带端口、`github.com.evil.com` 这类伪装的主机。
-- **验收**：单测；Release 正常启动时设了 `KITTY_UPDATE_FEED` 也不生效（日志里写一行「忽略测试用的发布列表」）。
-
-### R2（同上）更新完退出要走正常的退出流程
-
-- **现状**：`AutoUpdater.cs` 在拉起新进程之后直接 `Application.Current.Exit()`，不经过 `ShellRuntime.Exit()`。结果：托盘图标残留（鼠标移过去才消失）、剪贴板里还没提交的删除丢掉、热键没注销。
-- **改成**：拉起新进程之后调 `ShellRuntime.Instance.Exit()`（它会提交删除、注销热键、删托盘图标、再退出）。
-- **验收**：自动更新的成功路径走一遍，更新后托盘里只有一个图标；更新前在剪贴板面板里删掉的条目，更新后不会再出现。
-
-### R3（同上）下载直接写文件，不整个读进内存
-
-- **现状**：`ReadAsByteArrayAsync` 把整个 zip（30–40 MB）读进内存再写盘；下载到一半失败时也没清理。
-- **改成**：流式写到 `updates\<文件名>.partial`，下载完再改名；失败、取消、校验不过都删掉半成品。下载中更新托盘菜单那一项的文字（「正在下载 37%」），不另外弹窗。
-- **验收**：断网中途失败时 `updates\` 里没有残留；下载过程中专用工作集不涨 30 MB。
+（还没有）
 
 ## 已修
 
-（还没有）
+### R1（第二版第 2 批，`da8cc1a9`）自动更新只认 GitHub 的 https 地址 → 已修（`58e62c2`）
+
+- `Core/UpdateTrust.cs`：发布列表 / 下载地址的白名单纯函数；`App/UpdateHttp.cs` 自己逐跳处理跳转、
+  每一跳都过白名单。`KITTY_UPDATE_FEED`、`file://`、本地路径、`http://` 只在 Debug 或 `--update-test` 下认。
+- 怎么验的：`UpdateTrustTests` 8 种地址（含大小写、端口、账号密码、`github.com.evil.com`、别的仓库）全过；
+  Release AOT 正常启动设 `KITTY_UPDATE_FEED` → 日志 `update.feed-ignored` + `localFeed=False`；
+  带 `--update-test` → `newer=True localFeed=True` 并下载成功。
+
+### R2（同上）更新完退出要走正常的退出流程 → 已修（`58e62c2`）
+
+- `AutoUpdater.ExitApplication()` 调 `ShellRuntime.Instance.Exit()`（提交剪贴板删除、注销热键、删托盘图标），
+  没有壳时才退回 `Application.Exit()`。
+- 怎么验的：自动更新成功路径（同 `HANDTEST.md` §135）看托盘只剩一个图标；`ShellRuntime.Exit` 的
+  `clipboard.ready` / `tray.added` / 热键注册在更新前后一致。
+
+### R3（同上）下载直接写文件，不整个读进内存 → 已修（`58e62c2`）
+
+- `Core/UpdateDownload.cs`：80 KB 一块流式写 `updates\<文件名>.partial`，写完才改名；失败 / 取消删半成品。
+  托盘那一项在下载中显示「正在下载 37%」。
+- 怎么验的：`UpdateDownloadTests`（成功改名、失败不留半成品、取消不留半成品、旧 .partial 被替换）；
+  400 MB 假 zip 实测私有提交 91.9 → 100.6 MB（+8.7 MB，不随文件大小涨），校验失败后 `updates\` 里没有残留。
 
 ## 有异议
 
