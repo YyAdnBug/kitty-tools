@@ -76,3 +76,6 @@
 ## 0.4.0-batch-4（点按圈与按键胶囊）
 
 - effects-frame.jpg：从录好的 AVI 里抽的一帧，能看到左键粉圈、右键蓝圈和底部的「CTRL + SHIFT + S」胶囊（自检注入）
+## 0.4.0-batch-5（录屏转 GIF）
+
+- gif-frame.png：从生成的 GIF 里用 WIC 解出来的第 6 帧（800×600），画面上还有点按圈和按键胶囊
