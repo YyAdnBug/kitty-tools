@@ -393,6 +393,21 @@ internal sealed class Syncer
             _device.SetLibrary(library);
         }
 
+        // 认出库被退回去了（从旧备份恢复过）：文件夹里本机的 epoch 比上次写出去的大，就换一个新编号。
+        var devicePath = Path.Combine(SyncFolderRules.DevicesFolder, _device.Id, SyncFolderRules.DeviceFile);
+        var existing = disk.ReadText(devicePath);
+        var epoch = existing is not null && SyncFolderRules.ParseDevice(existing) is { } parsed ? parsed.Epoch : 0;
+        var localEpoch = _ledger.ReadEpoch();
+        if (localEpoch > 0 && epoch > localEpoch)
+        {
+            Log.Warn($"sync.epoch-rollback folder={epoch} local={localEpoch}");
+            _device.Rotate();
+            _device.SetLibrary(library);
+            devicePath = Path.Combine(SyncFolderRules.DevicesFolder, _device.Id, SyncFolderRules.DeviceFile);
+            existing = null;
+            epoch = 0;
+        }
+
         var kinds = new List<string>();
         if (SettingsService.Current.SyncClips) kinds.Add("clips");
         if (SettingsService.Current.SyncVocabulary) kinds.Add("vocabulary");
@@ -414,10 +429,8 @@ internal sealed class Syncer
         }
 
         // device.json 最后写：epoch 每轮 +1。
-        var devicePath = Path.Combine(SyncFolderRules.DevicesFolder, _device.Id, SyncFolderRules.DeviceFile);
-        var existing = disk.ReadText(devicePath);
-        var epoch = existing is not null && SyncFolderRules.ParseDevice(existing) is { } parsed ? parsed.Epoch : 0;
         disk.WriteText(devicePath, SyncFolderRules.DeviceJson(epoch + 1, Environment.MachineName));
+        _ledger.WriteEpoch(epoch + 1);
         Status.State = "idle";
         Status.Message = string.Empty;
         Status.LastSync = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -802,6 +815,37 @@ internal sealed class Syncer
             {
                 return;
             }
+        }
+
+        // 第一次合时：别处来的自建 AI 服务如果和本机「协议 + 地址 + 模型」一样，只留文件夹里那个，
+        // 本机的密钥搬过去（PLAN-v5 §4.2）。
+        foreach (var incoming in byId.Values)
+        {
+            if (incoming.Kind != "ai")
+            {
+                continue;
+            }
+
+            var duplicate = store.Services.FirstOrDefault(local =>
+                local.Id != incoming.Id && local.Kind == "ai" &&
+                string.Equals(local.Protocol ?? "openai", incoming.Protocol ?? "openai", StringComparison.Ordinal) &&
+                string.Equals(local.BaseUrl ?? string.Empty, incoming.BaseUrl ?? string.Empty, StringComparison.Ordinal) &&
+                string.Equals(local.Model ?? string.Empty, incoming.Model ?? string.Empty, StringComparison.Ordinal));
+            if (duplicate is null)
+            {
+                continue;
+            }
+
+            foreach (var field in TranslateKinds.SecretFields("ai"))
+            {
+                var secret = store.Secret(duplicate, field);
+                if (!string.IsNullOrEmpty(secret) && string.IsNullOrEmpty(store.Secret(incoming, field)))
+                {
+                    store.SetSecret(incoming, secret, field);
+                }
+            }
+
+            Log.Info($"sync.service-dedupe keep={incoming.Id} drop={duplicate.Id}");
         }
 
         // 别处删了的从列表拿掉；密钥不删（凭据管理器里的键还在）。

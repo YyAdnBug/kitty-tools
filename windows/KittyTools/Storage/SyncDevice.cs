@@ -177,14 +177,29 @@ internal sealed class SyncLedger
         return counter;
     }
 
+    /// <summary>本机上一次写出去的 device.json 的 epoch（用来认出库被退回去了）。</summary>
+    public int ReadEpoch()
+    {
+        using var statement = _database.Connection.Prepare(
+            "SELECT ledger FROM sync_ledger WHERE kind = '~epoch';");
+        return statement.Step() && int.TryParse(statement.GetText(0), out var value) ? value : 0;
+    }
+
+    public void WriteEpoch(int epoch) => WriteRaw("~epoch", epoch.ToString(
+        System.Globalization.CultureInfo.InvariantCulture));
+
     private void WriteRawClock(int counter)
+        => WriteRaw("~clock", counter.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+    private void WriteRaw(string kind, string value)
     {
         using var statement = _database.Connection.Prepare(
             """
-            INSERT INTO sync_ledger(kind, library, ledger) VALUES ('~clock', '', $value)
+            INSERT INTO sync_ledger(kind, library, ledger) VALUES ($kind, '', $value)
             ON CONFLICT(kind) DO UPDATE SET ledger = $value;
             """);
-        statement.BindText(1, counter.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        statement.BindText(1, kind);
+        statement.BindText(2, value);
         statement.Step();
     }
 
