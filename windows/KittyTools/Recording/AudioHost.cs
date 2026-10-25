@@ -36,6 +36,22 @@ internal static class AudioHost
                 "没能开始录音",
                 "没有麦克风权限，或者没有可用的麦克风。可以在 设置 › 隐私 › 麦克风 里允许桌面应用。",
                 NoticeTone.Error);
+            if (AudioCapture.LastAccessDenied)
+            {
+                try
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "ms-settings:privacy-microphone",
+                        UseShellExecute = true,
+                    });
+                }
+                catch
+                {
+                    // 打不开设置就算了。
+                }
+            }
+
             return;
         }
 

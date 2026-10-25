@@ -10,6 +10,7 @@ using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Windows.Graphics;
@@ -569,22 +570,40 @@ internal sealed partial class SelectionOverlayWindow : Window
         actions.Children.Add(close);
 
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        row.Children.Add(tools);
-        row.Children.Add(new Border
+        if (_session.Mode == ScreenshotMode.Record)
         {
-            Width = 1,
-            Height = 18,
-            Background = new SolidColorBrush(Theme.Shot.ToolbarSeparator),
-            VerticalAlignment = VerticalAlignment.Center,
-        });
-        row.Children.Add(extras);
-        row.Children.Add(new Border
+            // 录屏时不需要标注工具，只留录制条。
+            tools.Visibility = Visibility.Collapsed;
+            extras.Visibility = Visibility.Collapsed;
+            row.Children.Add(BuildRecordBar());
+            row.Children.Add(new Border
+            {
+                Width = 1,
+                Height = 18,
+                Background = new SolidColorBrush(Theme.Shot.ToolbarSeparator),
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+        }
+        else
         {
-            Width = 1,
-            Height = 18,
-            Background = new SolidColorBrush(Theme.Shot.ToolbarSeparator),
-            VerticalAlignment = VerticalAlignment.Center,
-        });
+            row.Children.Add(tools);
+            row.Children.Add(new Border
+            {
+                Width = 1,
+                Height = 18,
+                Background = new SolidColorBrush(Theme.Shot.ToolbarSeparator),
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+            row.Children.Add(extras);
+            row.Children.Add(new Border
+            {
+                Width = 1,
+                Height = 18,
+                Background = new SolidColorBrush(Theme.Shot.ToolbarSeparator),
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+        }
+
         row.Children.Add(actions);
 
         var toolbar = new Border
@@ -1122,6 +1141,66 @@ internal sealed partial class SelectionOverlayWindow : Window
         }
 
         e.Handled = true;
+    }
+
+    /// <summary>录屏条：点按 / 按键开关（记在设置里），声音和麦克风这一版没做，灰着说明。</summary>
+    private StackPanel BuildRecordBar()
+    {
+        var bar = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 4,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToggleButton Toggle(string text, bool value, string tip, Action<bool> changed)
+        {
+            var toggle = new ToggleButton
+            {
+                Content = text,
+                IsChecked = value,
+                FontSize = 12,
+                Padding = new Thickness(8, 3, 8, 3),
+                MinWidth = 0,
+            };
+            ToolTipService.SetToolTip(toggle, tip);
+            toggle.Click += (_, _) => changed(toggle.IsChecked == true);
+            return toggle;
+        }
+
+        bar.Children.Add(Toggle(
+            "点按", SettingsService.Current.RecordClicks, "在录出的画面里显示点按圈",
+            value =>
+            {
+                SettingsService.Current.RecordClicks = value;
+                SettingsService.Save();
+            }));
+        bar.Children.Add(Toggle(
+            "按键", SettingsService.Current.RecordKeys, "在录出的画面里显示快捷键",
+            value =>
+            {
+                SettingsService.Current.RecordKeys = value;
+                SettingsService.Save();
+            }));
+
+        foreach (var (label, tip) in new[]
+                 {
+                     ("声音", "系统声音这一版没做"),
+                     ("麦克风", "录屏时录麦克风这一版没做"),
+                 })
+        {
+            var disabled = new ToggleButton
+            {
+                Content = label,
+                IsEnabled = false,
+                FontSize = 12,
+                Padding = new Thickness(8, 3, 8, 3),
+                MinWidth = 0,
+            };
+            ToolTipService.SetToolTip(disabled, tip);
+            bar.Children.Add(disabled);
+        }
+
+        return bar;
     }
 
     private void OnKeyDown(object sender, KeyRoutedEventArgs e)

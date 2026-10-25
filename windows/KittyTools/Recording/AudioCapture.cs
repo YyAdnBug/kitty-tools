@@ -14,6 +14,9 @@ internal static class AudioCapture
 
     public static bool IsRecording => _capture is not null;
 
+    /// <summary>上一次失败是不是「没有麦克风权限」（E_ACCESSDENIED）。</summary>
+    public static bool LastAccessDenied { get; private set; }
+
     public static async Task<string?> StartAsync(string path)
     {
         try
@@ -35,6 +38,7 @@ internal static class AudioCapture
         }
         catch (Exception ex)
         {
+            LastAccessDenied = ex.HResult == unchecked((int)0x80070005);
             Log.Error($"audio.capture-start-failed hr=0x{ex.HResult:X8} {ex.Message}");
             _capture = null;
             return null;
