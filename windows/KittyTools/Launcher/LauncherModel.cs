@@ -66,6 +66,20 @@ internal sealed class LauncherModel
             });
         }
 
+        // 浏览器历史（R20）：书签后面。
+        HistoryIndex.Load();
+        foreach (var visit in HistoryIndex.Search(query))
+        {
+            items.Add(new LauncherItem
+            {
+                Kind = LauncherKind.Url,
+                Target = visit.Url,
+                Title = visit.Title,
+                Subtitle = visit.Source,
+                Priority = 9,
+            });
+        }
+
         if (items.Count == 0)
         {
             items.AddRange(WebSearch.FallbackItems(query, Engines));

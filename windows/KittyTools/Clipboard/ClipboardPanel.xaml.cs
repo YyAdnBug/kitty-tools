@@ -1180,7 +1180,7 @@ public sealed partial class ClipboardPanel : UserControl
         {
             try
             {
-                var bitmap = new BitmapImage();
+                var bitmap = new BitmapImage { DecodePixelWidth = 1200 };
                 var stream = new InMemoryRandomAccessStream();
                 using (var writer = new DataWriter(stream.GetOutputStreamAt(0)))
                 {
@@ -1464,7 +1464,7 @@ public sealed partial class ClipboardPanel : UserControl
         return submenu;
     }
 
-    /// <summary>Ctrl+K：在选中行旁边弹出同一份操作（第三版 §4）。</summary>
+    /// <summary>Ctrl+K：在选中行旁边弹出同一份操作（第三版 §4），可以打字过滤。</summary>
     private void ShowActionPanel()
     {
         if (SelectedEntry is not { } entry || List.ContainerFromItem(List.SelectedItem) is not FrameworkElement row)
@@ -1472,10 +1472,129 @@ public sealed partial class ClipboardPanel : UserControl
             return;
         }
 
-        BuildEntryMenu(entry).ShowAt(row, new FlyoutShowOptions
+        var panel = new StackPanel { Width = 260, Spacing = 4 };
+        var filter = new TextBox
+        {
+            PlaceholderText = "过滤操作…",
+            FontSize = 12,
+            Padding = new Thickness(8, 4, 8, 4),
+        };
+        var list = new StackPanel { Spacing = 1 };
+        panel.Children.Add(filter);
+        panel.Children.Add(list);
+        var flyout = new Flyout
+        {
+            Content = panel,
+            Placement = FlyoutPlacementMode.BottomEdgeAlignedLeft,
+            FlyoutPresenterStyle = null,
+        };
+
+        var actions = EntryActionList(entry);
+        void Populate()
+        {
+            list.Children.Clear();
+            foreach (var (text, action) in actions.Where(item =>
+                         item.Text.Contains(filter.Text, StringComparison.OrdinalIgnoreCase)))
+            {
+                var button = new Button
+                {
+                    Content = text,
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Left,
+                    Padding = new Thickness(8, 4, 8, 4),
+                    BorderThickness = new Thickness(0),
+                    FontSize = 12,
+                };
+                button.Click += (_, _) =>
+                {
+                    flyout.Hide();
+                    action();
+                };
+                list.Children.Add(button);
+            }
+
+            if (list.Children.Count == 0)
+            {
+                list.Children.Add(new TextBlock
+                {
+                    Text = "没有匹配的操作",
+                    Opacity = 0.6,
+                    FontSize = 12,
+                    Margin = new Thickness(8, 4, 8, 4),
+                });
+            }
+        }
+
+        filter.TextChanged += (_, _) => Populate();
+        filter.KeyDown += (_, args) =>
+        {
+            if (args.Key == VirtualKey.Escape)
+            {
+                args.Handled = true;
+                flyout.Hide();
+            }
+            else if (args.Key == VirtualKey.Enter && list.Children.FirstOrDefault() is Button first)
+            {
+                args.Handled = true;
+                first.Focus(FocusState.Programmatic);
+            }
+        };
+        flyout.Opened += (_, _) =>
+        {
+            Populate();
+            filter.Focus(FocusState.Programmatic);
+        };
+        flyout.ShowAt(row, new FlyoutShowOptions
         {
             Position = new Windows.Foundation.Point(8, Math.Min(row.ActualHeight, 24)),
         });
+    }
+
+    /// <summary>Ctrl+K 操作面板的条目（和右键菜单同名同顺序，收藏夹摊平）。</summary>
+    private List<(string Text, Action Action)> EntryActionList(ClipEntry entry)
+    {
+        var actions = new List<(string, Action)>
+        {
+            ("粘贴", () => Paste(plain: false)),
+            ("粘贴为纯文本", () => Paste(plain: true)),
+            ("复制", () => Copy(entry)),
+            (entry.Favorite ? "取消收藏" : "收藏", FavoriteSelected),
+            (entry.Snippet ? "移出片段" : "存为片段", () => Store?.ToggleSnippet(entry.Id)),
+            ("编辑片段…", () => _ = EditSnippetAsync(entry)),
+            ("编辑备注…", () => _ = EditNoteAsync(entry)),
+        };
+        if (Store is { } store)
+        {
+            actions.Add(("移到收藏夹：默认收藏", () => store.MoveToGroup(entry.Id, null)));
+            foreach (var group in store.Groups.OrderBy(item => item.Position))
+            {
+                var id = group.Id;
+                actions.Add(("移到收藏夹：" + group.Name, () => store.MoveToGroup(entry.Id, id)));
+            }
+        }
+
+        actions.Add(("管理收藏夹…", () => _ = ManageGroupsAsync()));
+        if (entry.Kind == ClipKind.Text)
+        {
+            actions.Add(("翻译", () => TranslateEntry(entry)));
+        }
+
+        if (entry.Kind == ClipKind.Image)
+        {
+            actions.Add(("钉到屏幕", () => _ = PinImageAsync(entry)));
+            if (!string.IsNullOrWhiteSpace(entry.OcrText))
+            {
+                actions.Add(("复制图中文字", () => CopyText(entry.OcrText!)));
+            }
+        }
+
+        if (entry.Kind == ClipKind.Files && entry.Files.FirstOrDefault() is { } first)
+        {
+            actions.Add(("在资源管理器中显示", () => RevealInExplorer(first)));
+        }
+
+        actions.Add(("删除", DeleteSelected));
+        return actions;
     }
 
     private async Task NewSnippetAsync()

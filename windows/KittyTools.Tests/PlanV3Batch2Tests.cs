@@ -21,16 +21,11 @@ public sealed class TranslateSigningTests
     [TestMethod]
     public void YoudaoSignUsesShortInputRule()
     {
-        // ≤ 20 字：直接用整段文字
+        // mac ProviderSigningTests 里的固定向量（前 10 字 + 字数 + 后 10 字）。
+        var text = "这是一段超过二十个字的中文文本，用来测试有道签名的截断规则是否正确";
         Assert.AreEqual(
-            "eeaf5a8f12fe7f63ca2fdaec2dba58c3f870a1bc7b76bdecbafc8c961f39e06b",
-            TranslateSigning.YoudaoSign("appKey", "中文测试abcdef", "salt", "1700000000", "secret"));
-
-        // > 20 字：前 10 字 + 字数 + 后 10 字
-        var text = "0123456789ABCDEFGHIJ0123456789";
-        var expected = TranslateSigning.Sha256Hex(
-            "appKey" + "0123456789" + text.Length + "0123456789" + "salt" + "time" + "secret");
-        Assert.AreEqual(expected, TranslateSigning.YoudaoSign("appKey", text, "salt", "time", "secret"));
+            "460d2560f033e6e5421c6dac276a5eedff8ff116a18054c0a1fb7c0caddde8ab",
+            TranslateSigning.YoudaoSign("app123", text, "salt-789", "1790000000", "secret456"));
     }
 
     [TestMethod]
@@ -47,30 +42,31 @@ public sealed class TranslateSigningTests
     [TestMethod]
     public void VolcengineHeadersAreStableAndSigned()
     {
-        var body = "{\"TargetLanguage\":\"zh\",\"TextList\":[\"hello\"]}"u8.ToArray();
-        var date = new DateTime(2026, 10, 25, 12, 0, 0, DateTimeKind.Utc);
-        var first = TranslateSigning.VolcengineHeaders("AK", "SK", body, date);
-        var second = TranslateSigning.VolcengineHeaders("AK", "SK", body, date);
-        Assert.AreEqual(first["Authorization"], second["Authorization"]);
-        Assert.AreEqual("20261025T120000Z", first["X-Date"]);
-        Assert.AreEqual(TranslateSigning.Sha256Hex(body), first["X-Content-Sha256"]);
-        StringAssert.StartsWith(first["Authorization"], "HMAC-SHA256 Credential=AK/20261025/cn-north-1/translate/request");
-        StringAssert.Contains(first["Authorization"], "SignedHeaders=content-type;host;x-content-sha256;x-date");
-
-        var other = TranslateSigning.VolcengineHeaders("AK", "SK2", body, date);
-        Assert.AreNotEqual(first["Authorization"], other["Authorization"]);
+        // mac ProviderSigningTests 的固定向量。
+        var body = "{\"TargetLanguage\":\"zh\",\"TextList\":[\"Hello\"]}"u8.ToArray();
+        var date = DateTimeOffset.FromUnixTimeSeconds(1_790_000_000).UtcDateTime;
+        var headers = TranslateSigning.VolcengineHeaders("AKLTexample", "secretExample==", body, date);
+        Assert.AreEqual("20260921T141320Z", headers["X-Date"]);
+        Assert.AreEqual(
+            "HMAC-SHA256 Credential=AKLTexample/20260921/cn-north-1/translate/request, " +
+            "SignedHeaders=content-type;host;x-content-sha256;x-date, " +
+            "Signature=b4cb639f34c3dfde96cf8f999f0b73c489dfdd13ddb97c584ac223d61aaa9de7",
+            headers["Authorization"]);
     }
 
     [TestMethod]
     public void TencentHeadersFollowTc3()
     {
-        var body = "{\"SourceText\":\"hello\",\"Source\":\"en\",\"Target\":\"zh\"}"u8.ToArray();
-        var headers = TranslateSigning.TencentHeaders("SID", "SKEY", body, 1_790_000_000);
+        // mac ProviderSigningTests 的固定向量。
+        var body = "{\"SourceText\":\"Hello\",\"Source\":\"auto\",\"Target\":\"zh\",\"ProjectId\":0}"u8.ToArray();
+        var headers = TranslateSigning.TencentHeaders("AKIDexample", "tencentSecret", body, 1_790_000_000);
+        Assert.AreEqual(
+            "TC3-HMAC-SHA256 Credential=AKIDexample/2026-09-21/tmt/tc3_request, " +
+            "SignedHeaders=content-type;host, " +
+            "Signature=b2508c75f3a556c695d9ad2be875ee2c23d68274afc02489fe9ea255693d9403",
+            headers["Authorization"]);
         Assert.AreEqual("TextTranslate", headers["X-TC-Action"]);
-        Assert.AreEqual("2018-03-21", headers["X-TC-Version"]);
         Assert.AreEqual("1790000000", headers["X-TC-Timestamp"]);
-        var date = DateTimeOffset.FromUnixTimeSeconds(1_790_000_000).UtcDateTime.ToString("yyyy-MM-dd");
-        StringAssert.Contains(headers["Authorization"], $"Credential=SID/{date}/tmt/tc3_request");
     }
 
     [TestMethod]

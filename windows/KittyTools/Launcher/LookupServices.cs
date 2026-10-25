@@ -340,6 +340,139 @@ internal static class PortSearch
     }
 }
 
+internal static class HistoryIndex
+{
+    /// <summary>SQLite 正在用的库可能带 -wal / -shm，一并拷到临时文件再读。</summary>
+    internal static void CopyWithWal(string source, string target)
+    {
+        using (var input = new FileStream(source, FileMode.Open, FileAccess.Read,
+                   FileShare.ReadWrite | FileShare.Delete))
+        using (var output = File.Create(target))
+        {
+            input.CopyTo(output);
+        }
+
+        foreach (var suffix in new[] { "-wal", "-shm" })
+        {
+            var extra = source + suffix;
+            if (File.Exists(extra))
+            {
+                try
+                {
+                    File.Copy(extra, target + suffix, overwrite: true);
+                }
+                catch
+                {
+                    // 拷不到就只读主库。
+                }
+            }
+        }
+    }
+
+    internal static void DeleteWithWal(string target)
+    {
+        foreach (var path in new[] { target, target + "-wal", target + "-shm" })
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch
+            {
+                // 临时文件留给系统清理。
+            }
+        }
+    }
+    private static List<BookmarkItem> _items = new();
+    private static bool _loaded;
+
+    public static void Load()
+    {
+        if (_loaded)
+        {
+            return;
+        }
+
+        _loaded = true;
+        var items = new List<BookmarkItem>();
+        var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var browsers = new (string Name, string Folder)[]
+        {
+            ("Chrome", Path.Combine(local, "Google", "Chrome", "User Data")),
+            ("Edge", Path.Combine(local, "Microsoft", "Edge", "User Data")),
+            ("Brave", Path.Combine(local, "BraveSoftware", "Brave-Browser", "User Data")),
+            ("Vivaldi", Path.Combine(local, "Vivaldi", "User Data")),
+        };
+        foreach (var (name, folder) in browsers)
+        {
+            try
+            {
+                if (!Directory.Exists(folder))
+                {
+                    continue;
+                }
+
+                foreach (var profile in Directory.EnumerateDirectories(folder))
+                {
+                    var history = Path.Combine(profile, "History");
+                    if (!File.Exists(history))
+                    {
+                        continue;
+                    }
+
+                    var copy = Path.Combine(Path.GetTempPath(), "kitty-history-" + Guid.NewGuid().ToString("N"));
+                    try
+                    {
+                        CopyWithWal(history, copy);
+                        using var connection = new SqliteConnection(copy);
+                        using var statement = connection.Prepare(
+                            "SELECT url, title FROM urls WHERE title <> '' ORDER BY last_visit_time DESC LIMIT 300;");
+                        while (statement.Step())
+                        {
+                            var url = statement.GetText(0);
+                            var title = statement.GetText(1);
+                            if (!string.IsNullOrWhiteSpace(url))
+                            {
+                                items.Add(new BookmarkItem(title ?? url, url, name + " 历史"));
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        HistoryIndex.DeleteWithWal(copy);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"history.load-failed {name} {ex.GetType().Name} {ex.Message}");
+            }
+        }
+
+        _items = items;
+        Log.Info($"history.ready count={_items.Count}");
+    }
+
+    public static List<BookmarkItem> Search(string query, int limit = 5)
+    {
+        var tokens = query.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (tokens.Length == 0)
+        {
+            return new List<BookmarkItem>();
+        }
+
+        return _items
+            .Where(item => tokens.All(token =>
+                item.Title.Contains(token, StringComparison.OrdinalIgnoreCase) ||
+                item.Url.Contains(token, StringComparison.OrdinalIgnoreCase)))
+            .Take(limit)
+            .ToList();
+    }
+}
+
 internal static class BookmarkIndex
 {
     private static List<BookmarkItem> _items = new();
@@ -389,6 +522,56 @@ internal static class BookmarkIndex
             {
                 Log.Warn($"bookmarks.load-failed {name} {ex.GetType().Name}");
             }
+        }
+
+        // Firefox 书签（R20）：places.sqlite 里的 moz_bookmarks（type=1 才是书签）。
+        try
+        {
+            var profiles = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "Mozilla", "Firefox", "Profiles");
+            if (Directory.Exists(profiles))
+            {
+                foreach (var profile in Directory.EnumerateDirectories(profiles))
+                {
+                    var places = Path.Combine(profile, "places.sqlite");
+                    if (!File.Exists(places))
+                    {
+                        continue;
+                    }
+
+                    var copy = Path.Combine(Path.GetTempPath(), "kitty-places-" + Guid.NewGuid().ToString("N"));
+                    try
+                    {
+                        HistoryIndex.CopyWithWal(places, copy);
+                        using var connection = new SqliteConnection(copy);
+                        using var statement = connection.Prepare(
+                            """
+                            SELECT COALESCE(b.title, p.title, p.url), p.url
+                            FROM moz_bookmarks b JOIN moz_places p ON b.fk = p.id
+                            WHERE b.type = 1 AND p.url IS NOT NULL
+                            ORDER BY b.lastModified DESC LIMIT 500;
+                            """);
+                        while (statement.Step())
+                        {
+                            var title = statement.GetText(0);
+                            var url = statement.GetText(1);
+                            if (!string.IsNullOrWhiteSpace(url))
+                            {
+                                items.Add(new BookmarkItem(title ?? url, url, "Firefox"));
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        HistoryIndex.DeleteWithWal(copy);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"bookmarks.firefox-failed {ex.GetType().Name}");
         }
 
         _items = items

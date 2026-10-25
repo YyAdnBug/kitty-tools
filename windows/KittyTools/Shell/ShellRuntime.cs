@@ -232,6 +232,17 @@ internal sealed class ShellRuntime
             });
         }
 
+        // 调试：浏览器历史 / Firefox 书签（R20）。
+        if (Environment.GetCommandLineArgs().Contains("--history", StringComparer.OrdinalIgnoreCase))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() =>
+            {
+                HistoryIndex.Load();
+                BookmarkIndex.Load();
+                Log.Info($"history.debug hits={HistoryIndex.Search("github").Count}");
+            });
+        }
+
         // 调试 / 自检：文件搜索（R17）的耗时和结果数。
         var fileSearchArg = Environment.GetCommandLineArgs()
             .FirstOrDefault(arg => arg.StartsWith("--file-search=", StringComparison.OrdinalIgnoreCase));
