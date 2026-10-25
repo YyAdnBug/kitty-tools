@@ -114,6 +114,9 @@ internal sealed class SyncLedger
 
     public static SyncLedger? Instance { get; private set; }
 
+    /// <summary>落地和账本同一个事务要用（R13）。</summary>
+    public Database Database => _database;
+
     public static SyncLedger Start(Database database)
     {
         Instance = new SyncLedger(database);

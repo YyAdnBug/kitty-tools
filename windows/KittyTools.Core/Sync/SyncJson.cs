@@ -160,6 +160,10 @@ public sealed class SyncClock
 
     public const int MaxTextBytes = 64 * 1024;
 
+    /// <summary>一格计数最大到多少：mac 是 1 &lt;&lt; 40，Windows 的计数是 int，收到 1 &lt;&lt; 30（再加一也不溢出）。
+    /// 超出的格子读文件时算读不出来（同 mac 的 NoteSync.clock 丢格子后 count 对不上）。</summary>
+    public const int MaxCounter = 1 << 30;
+
     private readonly Dictionary<string, int> _counters = new(StringComparer.Ordinal);
 
     public SyncClock()
@@ -212,7 +216,8 @@ public sealed class SyncClock
             }
 
             var id = entry[..colon];
-            if (!IsValidId(id) || !int.TryParse(entry[(colon + 1)..], out var counter) || counter < 0)
+            if (!IsValidId(id) || !int.TryParse(entry[(colon + 1)..], out var counter) ||
+                counter is < 1 or > MaxCounter)
             {
                 throw new FormatException("clock entry");
             }

@@ -448,9 +448,12 @@ internal sealed class Syncer
 
         Func<string, string?> dedupe = kind switch
         {
-            "clips" => ExtractClipText,
+            // 第一次合的去重键（照 mac 各自的 syncJoin）：同样的正文 / 收藏夹名、同原文和目标语言、
+            // 同网址和关键词、同协议 + 地址 + 模型的自建 AI 服务，只留文件夹里那条。
+            "clips" => ExtractClipKey,
             "vocabulary" => ExtractVocabularyKey,
-            _ => value => value,
+            "engines" => ExtractEngineKey,
+            _ => ExtractServiceKey,
         };
 
         // 云盘里读一个还没下载的文件会卡几秒：读文件和合都放到线程池，回 UI 线程落地。
@@ -472,8 +475,32 @@ internal sealed class Syncer
         }
 
         var merged = ToSyncFile(kind, outcome.Own);
-        Apply(kind, merged, localMap.Keys.ToHashSet(StringComparer.Ordinal));
-        WriteEngineLedger(kind, library, outcome.Ledger);
+        // 落地和账本同一个事务（R13 / SyncRecords 文件头「执行层必须守住的」）：片段、生词在库里，账本也在库里。
+        var transactional = kind is "clips" or "vocabulary";
+        if (transactional)
+        {
+            _ledger.Database.BeginTransaction();
+        }
+
+        try
+        {
+            Apply(kind, merged);
+            WriteEngineLedger(kind, library, outcome.Ledger);
+            if (transactional)
+            {
+                _ledger.Database.Commit();
+            }
+        }
+        catch
+        {
+            if (transactional)
+            {
+                _ledger.Database.Rollback();
+            }
+
+            throw;
+        }
+
         var ownPath = Path.Combine(SyncFolderRules.DevicesFolder, _device.Id, SyncFolderRules.FileName(kind));
         var encoded = merged.Encode();
         await Task.Run(() => disk.WriteText(ownPath, encoded));
@@ -524,12 +551,58 @@ internal sealed class Syncer
         return (outcome, null);
     }
 
-    private static string? ExtractClipText(string value)
+    private static string? ExtractClipKey(string value)
     {
         try
         {
             using var document = JsonDocument.Parse(value);
-            return document.RootElement.TryGetProperty("text", out var text) ? text.GetString() : null;
+            var root = document.RootElement;
+            if (root.TryGetProperty("text", out var text))
+            {
+                return "clip:" + (text.GetString() ?? string.Empty);
+            }
+
+            // 收藏夹：同样的名字只留文件夹里的那条。
+            return root.TryGetProperty("name", out var name) ? "group:" + (name.GetString() ?? string.Empty) : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string? ExtractEngineKey(string value)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(value);
+            var root = document.RootElement;
+            var url = root.TryGetProperty("url", out var urlElement) ? urlElement.GetString() : null;
+            var keyword = root.TryGetProperty("keyword", out var keywordElement) ? keywordElement.GetString() : null;
+            return url is null || keyword is null ? null : url + "\0" + keyword;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string? ExtractServiceKey(string value)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(value);
+            var root = document.RootElement;
+            var kind = root.TryGetProperty("kind", out var kindElement) ? kindElement.GetString() : null;
+            if (kind != "ai")
+            {
+                return null;
+            }
+
+            var protocol = root.TryGetProperty("aiProtocol", out var protocolElement) ? protocolElement.GetString() : null;
+            var baseUrl = root.TryGetProperty("baseURL", out var baseElement) ? baseElement.GetString() : null;
+            var model = root.TryGetProperty("model", out var modelElement) ? modelElement.GetString() : null;
+            return (protocol ?? string.Empty) + "\0" + (baseUrl ?? string.Empty) + "\0" + (model ?? string.Empty);
         }
         catch (JsonException)
         {
@@ -621,6 +694,11 @@ internal sealed class Syncer
     }
 
     private readonly Dictionary<string, int> _counters = new(StringComparer.Ordinal);
+
+    // ponytail: 四类都没给「真正改的时刻」（剪贴板的复制时间不是改动时间，mac 也不拿它当改于），
+    // 所以 changed 交空表：改于用「这一轮发现它变了」的现在（不晚于 now，SyncEngine 里取 min）。
+    // 以后设置 / 服务记了每一项真正改的时刻，再从这里传进去。
+    private static readonly Dictionary<string, long> NoChanged = new(StringComparer.Ordinal);
 
     private List<(string Id, string Value, long Modified)> Local(string kind) => kind switch
     {

@@ -36,6 +36,13 @@ internal sealed class Database : IDisposable
     /// <summary>同一条连接（翻译历史 / 生词本 / 同步账本用）；只许在 UI 线程上用。</summary>
     public SqliteConnection Connection => _connection;
 
+    /// <summary>同步落地：合并出来的改动和账本在同一个事务里提交（R13；SyncRecords 文件头「执行层必须守住的」）。</summary>
+    public void BeginTransaction() => _connection.Execute("BEGIN IMMEDIATE;");
+
+    public void Commit() => _connection.Execute("COMMIT;");
+
+    public void Rollback() => _connection.Execute("ROLLBACK;");
+
     public IReadOnlyList<ClipEntry> LoadClips()
     {
         var entries = new List<ClipEntry>();
