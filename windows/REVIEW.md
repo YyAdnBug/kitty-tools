@@ -27,12 +27,12 @@
 - **修好之前**：设置 › 通用 ›「同步」这一节先藏起来（`// ponytail:` 写上 R13），0.5.0 的产物不能给用户装来同步。
 - **验收**：上面 2、3 全过；报告里写 fuzz 2000 个种子的耗时。
 
-**进展（2026-10-25，`2728574`）：**
+**进展（2026-10-25，`2728574` / `a381cbe`）：**
 - 引擎已接执行层：`SyncKind` 用 `SyncEngine.Round`，旧账本 `clock|hash` 迁成新格式；设置里的「同步」重新打开。
 - 17 个移植用例 + 20 个种子的 fuzz 随全量跑；`KITTY_SYNC_RECORDS_FUZZ=2000` 实测 2000 个种子 34.9 秒；
   两台 Windows + 假 Mac 的临时目录集成测试（8 轮，三份一样）也过了。
-- 还差：执行层挪出 UI 线程（云盘未下载文件会卡，仍 `Task.Yield` + UI 线程）；旧账本迁移只把 modified 记 0；
-  真机 / 真 Mac 的长期同步没测。
+- 文件读 / 解码 / 合并已放到线程池（`Task.Run`），回 UI 线程落地和写账本。
+- 还差：旧账本迁移只把 modified 记 0；真机 / 真 Mac 的长期同步没测。
 
 ### R14（P1）录屏换成 H.264 MP4，补系统声音
 
@@ -72,11 +72,6 @@
 - 照 E6 做：WinRT 的 `StorageFolder.GetFolderFromPathAsync(用户目录).CreateFileQueryWithOptions(new QueryOptions { FolderDepth = FolderDepth.Deep, IndexerOption = IndexerOption.OnlyUseIndexer, UserSearchFilter = … })`，非打包的桌面程序能用，只走索引。查不到（索引服务关着）时退回现在的扫目录，但限深度、限 300 ms。
 - **验收**：报告里写同一个词两种做法的耗时，以及索引服务停掉后的退路。
 
-### R18（P2）端口靠解析 `netstat` 的输出
-
-- 每查一次起一个进程（一两百毫秒）；有些语言的系统上状态那一列是本地化的（德语是 `ABHÖREN`），解析会漏。
-- 改用 `GetExtendedTcpTable(TCP_TABLE_OWNER_PID_LISTENER)` / `GetExtendedUdpTable(UDP_TABLE_OWNER_PID)`（CsWin32 能生成），IPv4、IPv6 各调一次，`LauncherCommands.cs` 文件头的说明一起改。单测改成测「表的行 → 列表项」。
-
 ### R20（P2）第三版报告里记的「没做成」，补上
 
 - 启动器：浏览器历史（Chrome / Edge 的 `History` 是 SQLite，先拷到临时文件再读，别直接打开正在用的那个）、Firefox 书签；Ctrl+K 子列表的打字过滤。
@@ -90,6 +85,9 @@
 - `ocr-search.png` 里搜到的那张图，预览是一片灰格子。确认是测试图本身透明，还是图没画出来。
 - 录屏 HUD 胶囊外面有一圈浅色方框（`0.4.0-batch-3/hud.png`），和 R5 是一回事：宿主窗口没有透明的 SystemBackdrop，用 R5 那套修。
 - 按键胶囊写的是 `CTRL + SHIFT + S`，按 Windows 的习惯写成 `Ctrl + Shift + S`。
+
+**进展（`a381cbe`）**：时间改 `HH:mm` + 最小宽度、来源名省略；HUD 加 `TransparentBackdrop`（本地截图无方框）；
+按键胶囊加小写字形，现在是 `Ctrl + Shift + S`。还没做：灰格子那张图确认（可能是测试图透明）。
 
 ### R12（P2）第 4、5 批欠的验证
 
@@ -109,6 +107,12 @@
   把卡片拖到资源管理器、等待动画期间的 CPU（手上没有可用的 key / 服务能停在「思考中」）、
   第二次截图的内存（内存探针只截一次，下一轮看要不要给探针加第二步）。
   这些按 `AGENTS.md` 记「没测」，继续做 `PLAN-v3.md`；`HANDTEST.md` §144–161 里已经标了「待走」。
+
+### R18（P2）端口靠解析 `netstat` 的输出 → 已修（`a381cbe`）
+
+- `Launcher/PortTable.cs` 改用 `GetExtendedTcpTable` / `GetExtendedUdpTable`（IPv4 + IPv6，TCP 只要 LISTEN，
+  UDP 全部）；纯函数 `PortMath.PortOf/FormatV4` 在 Core；`PortSearch` 不再起进程。
+- 怎么验的：`--ports` 实测 129 行（TCP/UDP、IPv4/IPv6、pid 都对）；`PortMath` 2 个单测（字节序、格式）。
 
 ## 已修
 
