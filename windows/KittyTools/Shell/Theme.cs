@@ -105,15 +105,23 @@ internal static class Theme
     {
         try
         {
-            if (ThemeResources(ThemeKey) is { } themed &&
-                themed.TryGetValue(key, out var themedValue) &&
-                themedValue is Brush themedBrush)
+            if (Application.Current?.Resources is { } resources)
             {
-                return themedBrush;
+                // 深色那套在 XamlControlsResources 里的键是 Default，不是 Dark；两个都试。
+                var keys = ThemeKey == "Default" ? new[] { "Default", "Dark" } : new[] { ThemeKey };
+                foreach (var themeKey in keys)
+                {
+                    if (FindTheme(resources, themeKey, key, depth: 0) is { } themed &&
+                        themed.TryGetValue(key, out var themedValue) &&
+                        themedValue is Brush themedBrush)
+                    {
+                        return themedBrush;
+                    }
+                }
             }
 
-            if (Application.Current?.Resources is { } resources &&
-                resources.TryGetValue(key, out var value) &&
+            if (Application.Current?.Resources is { } fallbackResources &&
+                fallbackResources.TryGetValue(key, out var value) &&
                 value is Brush brush)
             {
                 return brush;
@@ -125,6 +133,24 @@ internal static class Theme
         }
 
         return new SolidColorBrush(fallback);
+    }
+
+    /// <summary>Debug 自检：三套主题各取一次卡片底色，颜色要不一样（R15）。</summary>
+    public static void VerifyThemeResources()
+    {
+        try
+        {
+            var dark = new SolidColorBrush(EffectiveTheme == ElementTheme.Dark
+                ? Color.FromArgb(0x24, 255, 255, 255)
+                : Color.FromArgb(0xB3, 255, 255, 255));
+            _ = dark;
+            Log.Info($"theme.check effective={EffectiveTheme} card={((SolidColorBrush)CardBackground()).Color} " +
+                     $"secondary={((SolidColorBrush)SecondaryText()).Color}");
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"theme.check-failed {ex.GetType().Name}");
+        }
     }
 
     /// <summary>设置里选的外观（「跟随系统」时看系统的）。</summary>
@@ -154,61 +180,56 @@ internal static class Theme
                 // 读不到辅助功能设置就按普通深浅色。
             }
 
-            return EffectiveTheme == ElementTheme.Dark ? "Dark" : "Light";
+            return EffectiveTheme == ElementTheme.Dark ? "Default" : "Light";
         }
     }
 
-    /// <summary>在应用资源的合并字典里找某一套深浅色的主题字典。</summary>
-    private static ResourceDictionary? ThemeResources(string key)
+    /// <summary>找某一套主题、并且里面真有这个 key 的字典（R15：不能碰到一个空字典就返回）。</summary>
+    private static ResourceDictionary? FindTheme(
+        ResourceDictionary dictionary, string themeKey, string resourceKey, int depth)
     {
-        if (Application.Current?.Resources is not { } resources)
+        if (depth > 4)
         {
             return null;
         }
 
-        return Find(resources, key, depth: 0);
-
-        static ResourceDictionary? Find(ResourceDictionary dictionary, string key, int depth)
+        try
         {
-            if (depth > 4)
+            if (dictionary.ThemeDictionaries.TryGetValue(themeKey, out var themed) &&
+                themed is ResourceDictionary themedDictionary &&
+                themedDictionary.ContainsKey(resourceKey))
             {
-                return null;
+                return themedDictionary;
             }
-
-            try
-            {
-                if (dictionary.ThemeDictionaries.TryGetValue(key, out var themed) &&
-                    themed is ResourceDictionary themedDictionary)
-                {
-                    return themedDictionary;
-                }
-            }
-            catch
-            {
-                // 有的字典没有 ThemeDictionaries，忽略。
-            }
-
-            foreach (var merged in dictionary.MergedDictionaries)
-            {
-                if (Find(merged, key, depth + 1) is { } found)
-                {
-                    return found;
-                }
-            }
-
-            return null;
         }
+        catch
+        {
+            // 有的字典没有 ThemeDictionaries，忽略。
+        }
+
+        foreach (var merged in dictionary.MergedDictionaries)
+        {
+            if (FindTheme(merged, themeKey, resourceKey, depth + 1) is { } found)
+            {
+                return found;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>正文次要色（说明文字用）。</summary>
-    public static Brush SecondaryText() => Brush(
-        "TextFillColorSecondaryBrush",
-        EffectiveTheme == ElementTheme.Dark ? Color.FromArgb(255, 190, 190, 190) : Color.FromArgb(255, 96, 96, 96));
+    /// <summary>设置卡的底色（R15：不再从主题字典拿，按设置里选的那套给不透明 / 半透明底色）。</summary>
+    public static Brush CardBackground() => new SolidColorBrush(
+        EffectiveTheme == ElementTheme.Dark
+            ? Color.FromArgb(0x24, 255, 255, 255)
+            : Color.FromArgb(0xB3, 255, 255, 255));
 
-    /// <summary>设置卡的底色。</summary>
-    public static Brush CardBackground() => Brush(
-        "CardBackgroundFillColorDefaultBrush",
-        EffectiveTheme == ElementTheme.Dark ? Color.FromArgb(36, 255, 255, 255) : Color.FromArgb(18, 0, 0, 0));
+    /// <summary>次要文字（R15：同上，跟着设置里选的那套，不跟系统）。</summary>
+    public static Brush SecondaryText() => new SolidColorBrush(
+        EffectiveTheme == ElementTheme.Dark
+            ? Color.FromArgb(255, 190, 190, 190)
+            : Color.FromArgb(255, 96, 96, 96));
 
     /// <summary>设置卡的底色（不透明近似，用给渐隐遮罩的渐变终点）。</summary>
     public static Color CardColor()

@@ -307,6 +307,7 @@ internal sealed class Syncer
     public static Syncer Start(SyncDevice device, SyncLedger ledger)
     {
         _instance = new Syncer(device, ledger);
+        Log.Info($"sync.start enabled={_instance.Enabled} folder={SettingsService.Current.SyncFolder}");
         return _instance;
     }
 
@@ -324,8 +325,8 @@ internal sealed class Syncer
         }
     }
 
-    // ponytail: R13 没修完之前不跑同步（设置页也藏着），免得拿旧合并规则去写 Mac 的文件。
-    public static readonly bool Ready = false;
+    // ponytail: R13 修完之前不跑同步；引擎和集成测试过了改成 true（R13 完成）。
+    public static readonly bool Ready = true;
 
     public bool Enabled => Ready && SettingsService.Current.SyncEnabled && !string.IsNullOrEmpty(Folder);
 
@@ -442,65 +443,20 @@ internal sealed class Syncer
     private void SyncKind(SyncFolder disk, string kind, string library)
     {
         var local = Local(kind);
-        var ledger = ReadLedger(kind, library);
-        var entries = ledger
-            .Where(pair => pair.Key != "~clock")
-            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+        var localMap = local.ToDictionary(item => item.Id, item => item.Value, StringComparer.Ordinal);
+        var old = ReadEngineLedger(kind, library);
 
-        // 这一格的次数从上一次账本里接着数，不能从 0 开始（会把旧的改动盖回去）。
-        var highest = 0;
-        foreach (var value in entries.Values)
+        // 自己那份（账本退回时要用它的钟追上）。
+        var ownPath = Path.Combine(SyncFolderRules.DevicesFolder, _device.Id, SyncFolderRules.FileName(kind));
+        var own = ReadEngineFile(disk.ReadText(ownPath), kind, out var ownNewer);
+        if (ownNewer)
         {
-            try
-            {
-                highest = Math.Max(highest, SyncClock.Parse(value.Split('|')[0])[_device.Id]);
-            }
-            catch (FormatException)
-            {
-                // 坏账本当没有。
-            }
+            Status.State = "stopped";
+            Status.Message = "同步文件夹是新版本写的，请更新 Kitty Tools";
+            return;
         }
 
-        _counters[kind] = highest;
-
-        // 本机改动：和账本里的哈希不一样就 +1 格。
-        var records = new List<SyncRecord>();
-        var localIds = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var (id, value, modified) in local)
-        {
-            localIds.Add(id);
-            SyncClock clock;
-            var hash = CanonicalJson.Hash(value);
-            if (entries.TryGetValue(id, out var previous))
-            {
-                clock = SyncClock.Parse(previous.Split('|')[0]);
-                if (previous.Split('|')[0] != hash)
-                {
-                    clock[_device.Id] = ++_counters[kind];
-                }
-            }
-            else
-            {
-                clock = new SyncClock();
-                clock[_device.Id] = ++_counters[kind];
-            }
-
-            records.Add(new SyncRecord { Id = id, Clock = clock, Modified = modified, Value = value });
-        }
-
-        // 本机删掉的条目 → 墓碑。
-        var erased = new List<SyncErased>();
-        foreach (var id in entries.Keys.Where(id => !localIds.Contains(id)))
-        {
-            var clock = SyncClock.Parse(entries[id].Split('|')[0]);
-            clock[_device.Id] = ++_counters[kind];
-            erased.Add(new SyncErased { Id = id, Clock = clock });
-        }
-
-        var localFile = new SyncFile { Kind = kind, Records = records, Erased = erased };
-
-        // 读别人的文件。
-        var files = new List<SyncFile> { localFile };
+        var others = new List<SyncFileData>();
         Status.Message = string.Empty;
         foreach (var id in disk.DeviceIds().Where(id => id != _device.Id))
         {
@@ -510,50 +466,144 @@ internal sealed class Syncer
                 continue;
             }
 
-            var remote = SyncFile.Decode(text, kind);
+            var remote = ReadEngineFile(text, kind, out var newer);
             if (remote is null)
             {
                 // 只扔这一版，这一类照合。
                 continue;
             }
 
-            if (remote.IsNewer)
+            if (newer)
             {
                 Status.State = "stopped";
                 Status.Message = "同步文件夹是新版本写的，请更新 Kitty Tools";
                 return;
             }
 
-            // decodeExact：内容再编回去必须和原文一样，否则这一类先不落地（PLAN-v5 §2.4）。
-            if (!remote.Records.All(record => CanonicalJson.IsCanonical(record.Value)))
-            {
-                Status.State = "stopped";
-                Status.Message = "同步文件里有解不开的内容，这一类先不合";
-                Log.Warn($"sync.decode-exact-failed kind={kind}");
-                return;
-            }
-
-            files.Add(remote);
+            others.Add(remote);
         }
 
-        var merged = SyncMerge.Merge(kind, files);
-        var deletions = merged.Erased.Select(item => item.Id).Count(id => localIds.Contains(id));
-        if (SyncFolderRules.ShouldBrake(deletions, localIds.Count))
+        Func<string, string?> dedupe = kind switch
+        {
+            "clips" => ExtractClipText,
+            "vocabulary" => ExtractVocabularyKey,
+            _ => value => value,
+        };
+        var outcome = SyncEngine.Round(
+            localMap, new Dictionary<string, long>(), old, own, others, _device.Id,
+            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), JoinMode.Union, dedupe);
+
+        if (SyncFolderRules.ShouldBrake(outcome.Trashing, outcome.Alive))
         {
             Status.State = "confirm";
-            Status.PendingDeletions = deletions;
-            Status.Message = $"同步要删掉 {deletions} 条，等你确认";
+            Status.PendingDeletions = outcome.Trashing;
+            Status.Message = $"同步要删掉 {outcome.Trashing} 条，等你确认";
             return;
         }
 
-        Apply(kind, merged, localIds);
-        WriteLedger(kind, library, merged, local);
-        disk.WriteText(
-            Path.Combine(SyncFolderRules.DevicesFolder, _device.Id, SyncFolderRules.FileName(kind)),
-            merged.Encode());
+        var merged = ToSyncFile(kind, outcome.Own);
+        Apply(kind, merged, localMap.Keys.ToHashSet(StringComparer.Ordinal));
+        WriteEngineLedger(kind, library, outcome.Ledger);
+        disk.WriteText(ownPath, merged.Encode());
         Status.LastSync = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         Status.State = "idle";
         Status.Message = string.Empty;
+    }
+
+    private static string? ExtractClipText(string value)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(value);
+            return document.RootElement.TryGetProperty("text", out var text) ? text.GetString() : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string? ExtractVocabularyKey(string value)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(value);
+            var root = document.RootElement;
+            var source = root.TryGetProperty("source", out var sourceElement) ? sourceElement.GetString() : null;
+            var target = root.TryGetProperty("target", out var targetElement) ? targetElement.GetString() : null;
+            return source is null || target is null ? null : source + "\0" + target;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static SyncFileData? ReadEngineFile(string? text, string kind, out bool newer)
+    {
+        newer = false;
+        if (text is null)
+        {
+            return null;
+        }
+
+        var file = SyncFile.Decode(text, kind);
+        if (file is null)
+        {
+            return null;
+        }
+
+        if (file.IsNewer)
+        {
+            newer = true;
+            return null;
+        }
+
+        if (!file.Records.All(record => CanonicalJson.IsCanonical(record.Value)))
+        {
+            Log.Warn($"sync.decode-exact-failed kind={kind}");
+            return null;
+        }
+
+        var data = new SyncFileData();
+        foreach (var record in file.Records)
+        {
+            data.Records[record.Id] = new SyncValue
+            {
+                Value = record.Value,
+                Clock = record.Clock,
+                Modified = record.Modified,
+            };
+        }
+
+        foreach (var erased in file.Erased)
+        {
+            data.Erased[erased.Id] = erased.Clock;
+        }
+
+        return data;
+    }
+
+    private static SyncFile ToSyncFile(string kind, SyncFileData data)
+    {
+        var file = new SyncFile { Kind = kind };
+        foreach (var (id, value) in data.Records)
+        {
+            file.Records.Add(new SyncRecord
+            {
+                Id = id,
+                Clock = value.Clock,
+                Modified = value.Modified,
+                Value = value.Value,
+            });
+        }
+
+        foreach (var (id, clock) in data.Erased)
+        {
+            file.Erased.Add(new SyncErased { Id = id, Clock = clock });
+        }
+
+        return file;
     }
 
     private readonly Dictionary<string, int> _counters = new(StringComparer.Ordinal);
@@ -568,44 +618,85 @@ internal sealed class Syncer
         _ => SyncSources.ServiceRecords().ToList(),
     };
 
-    private Dictionary<string, string> ReadLedger(string kind, string library)
+    /// <summary>账本：每条的钟、内容哈希、改于 + 墓碑；旧格式（clock|hash）当 modified=0 迁过来。</summary>
+    private SyncLedgerData? ReadEngineLedger(string kind, string library)
     {
         var text = _ledger.Read(kind);
         var storedLibrary = _ledger.ReadLibrary(kind);
-        if (text is null || storedLibrary != library)
+        if (text is null || (kind is "clips" or "vocabulary" && storedLibrary != library))
         {
-            return new Dictionary<string, string>(StringComparer.Ordinal);
+            return null;
         }
 
         try
         {
             using var document = JsonDocument.Parse(text);
-            return document.RootElement.EnumerateObject()
-                .Where(property => property.Value.ValueKind == JsonValueKind.String)
-                .ToDictionary(property => property.Name, property => property.Value.GetString() ?? string.Empty,
-                    StringComparer.Ordinal);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            var ledger = new SyncLedgerData();
+            if (root.TryGetProperty("entries", out var entries) && entries.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var property in entries.EnumerateObject())
+                {
+                    if (property.Value.ValueKind != JsonValueKind.Object ||
+                        !property.Value.TryGetProperty("clock", out var clock) ||
+                        !property.Value.TryGetProperty("hash", out var hash) ||
+                        !property.Value.TryGetProperty("modified", out var modified))
+                    {
+                        continue;
+                    }
+
+                    ledger.Entries[property.Name] = new SyncEntry(
+                        SyncClock.Parse(clock.GetString() ?? string.Empty),
+                        hash.GetString() ?? string.Empty,
+                        modified.TryGetInt64(out var value) ? value : 0);
+                }
+
+                if (root.TryGetProperty("erased", out var erased) && erased.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (var property in erased.EnumerateObject())
+                    {
+                        ledger.Erased[property.Name] = SyncClock.Parse(property.Value.GetString() ?? string.Empty);
+                    }
+                }
+
+                return ledger;
+            }
+
+            // 旧格式：{id: "clock|hash"}；没有墓碑（旧引擎把墓碑写进 records 的 erased 字段？没有，就丢了）。
+            foreach (var property in root.EnumerateObject())
+            {
+                if (property.Name == "~clock" || property.Value.ValueKind != JsonValueKind.String)
+                {
+                    continue;
+                }
+
+                var parts = (property.Value.GetString() ?? string.Empty).Split('|');
+                if (parts.Length != 2)
+                {
+                    continue;
+                }
+
+                ledger.Entries[property.Name] = new SyncEntry(SyncClock.Parse(parts[0]), parts[1], 0);
+            }
+
+            return ledger.Entries.Count > 0 ? ledger : null;
         }
-        catch
+        catch (Exception ex) when (ex is JsonException or FormatException)
         {
-            return new Dictionary<string, string>(StringComparer.Ordinal);
+            return null;
         }
     }
 
-    private void WriteLedger(
-        string kind, string library, SyncFile merged,
-        List<(string Id, string Value, long Modified)> local)
+    private void WriteEngineLedger(string kind, string library, SyncLedgerData ledger)
     {
-        var map = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var record in merged.Records)
-        {
-            map[record.Id] = record.Clock.Text() + "|" + CanonicalJson.Hash(record.Value);
-        }
-
-        map["~clock"] = _counters.GetValueOrDefault(kind).ToString(
-            System.Globalization.CultureInfo.InvariantCulture);
-        var builder = new System.Text.StringBuilder("{");
+        var builder = new System.Text.StringBuilder("{\"entries\":{");
         var first = true;
-        foreach (var (key, value) in map)
+        foreach (var (id, entry) in ledger.Entries.OrderBy(pair => pair.Key, StringComparer.Ordinal))
         {
             if (!first)
             {
@@ -613,12 +704,30 @@ internal sealed class Syncer
             }
 
             first = false;
-            CanonicalJson.WriteString(key, builder);
-            builder.Append(':');
-            CanonicalJson.WriteString(value, builder);
+            CanonicalJson.WriteString(id, builder);
+            builder.Append(":{\"clock\":");
+            CanonicalJson.WriteString(entry.Clock.Text(), builder);
+            builder.Append(",\"hash\":");
+            CanonicalJson.WriteString(entry.Hash, builder);
+            builder.Append(",\"modified\":").Append(entry.Modified).Append('}');
         }
 
-        builder.Append('}');
+        builder.Append("},\"erased\":{");
+        first = true;
+        foreach (var (id, clock) in ledger.Erased.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+        {
+            if (!first)
+            {
+                builder.Append(',');
+            }
+
+            first = false;
+            CanonicalJson.WriteString(id, builder);
+            builder.Append(':');
+            CanonicalJson.WriteString(clock.Text(), builder);
+        }
+
+        builder.Append("}}");
         _ledger.Write(kind, library, builder.ToString());
     }
 

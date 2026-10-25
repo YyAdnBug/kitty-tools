@@ -1,4 +1,4 @@
-﻿// Google 翻译（v2，需要 API Key；非流式）。
+// Google 翻译（v2，需要 API Key；非流式）。
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using KittyTools.Core;

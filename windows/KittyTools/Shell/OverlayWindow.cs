@@ -1,7 +1,7 @@
-// 娴眰锛氬壀璐存澘闈㈡澘鍜屽惎鍔ㄥ櫒鍏辩敤鐨勭獥鍙ｃ€?
-// WinUI Window + OverlappedPresenter锛氭棤鏍囬鏍忋€佷繚鐣欒竟妗嗭紙绯荤粺鍦嗚 / 闃村奖 / 缁嗘弿杈癸級銆?
-// 缃《銆佷笉鍙缉鏀俱€佷笉杩涗换鍔℃爮鍜?Alt+Tab锛涘唴瀹圭敤浜氬厠鍔涖€?
-// 鍏抽棴锛欵sc銆丆trl+W銆佸啀鎸変竴娆＄儹閿€佸け鍘绘縺娲伙紙涓嶈繕鍓嶅彴锛夈€?
+// 浮层：剪贴板面板和启动器共用的窗口。
+// WinUI Window + OverlappedPresenter：无标题栏、保留边框（系统圆角 / 阴影 / 细描边）。
+// 置顶、不可缩放、不进任务栏和 Alt+Tab；内容用亚克力。
+// 关闭：Esc、Ctrl+W、再按一次热键、失去激活（不还前台）。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 using Microsoft.UI;
@@ -143,7 +143,7 @@ internal sealed unsafe class OverlayWindow : Window
             _host.Children.Add(_launcher);
         }
 
-        // 鍏堟妸鍐呭濉ソ锛屽啀鎸夊唴瀹圭畻绗竴娆￠珮搴︼紙PLAN-v2 搂3.5锛氶珮搴﹂殢鍐呭锛夈€?
+        // 先把内容填好，再按内容算第一次高度（PLAN-v2 §3.5：高度随内容）。
         if (kind == OverlayKind.Clipboard && _clipboard is not null)
         {
             _clipboard.OnShown();

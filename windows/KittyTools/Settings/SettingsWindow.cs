@@ -21,7 +21,7 @@ namespace KittyTools;
 internal sealed class SettingsWindow : Window
 {
     // ponytail: R13 修完、集成测试过了改成 true（同步页的开关）。
-    private static readonly bool SyncUiVisible = false;
+    private static readonly bool SyncUiVisible = true;
 
     private readonly Grid _shell;
     private readonly NavigationView _nav;

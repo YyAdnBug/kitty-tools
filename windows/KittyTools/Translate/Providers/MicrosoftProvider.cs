@@ -1,4 +1,4 @@
-﻿// 微软翻译（非流式）：填了 key 走认知服务，没填走 Edge 浏览器翻译的免登录接口（translatetext）。
+// 微软翻译（非流式）：填了 key 走认知服务，没填走 Edge 浏览器翻译的免登录接口（translatetext）。
 // 免 key 那条是 2026-08 起可用的新地址；旧的 auth 换 token 流程已经 404。
 using System.Text.Json;
 using System.Text.Json.Nodes;

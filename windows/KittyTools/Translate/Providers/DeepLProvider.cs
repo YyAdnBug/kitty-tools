@@ -1,4 +1,4 @@
-﻿// DeepL（官方接口，免费版 key 以 :fx 结尾）或自建 DeepLX（设置里填地址）。
+// DeepL（官方接口，免费版 key 以 :fx 结尾）或自建 DeepLX（设置里填地址）。
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using KittyTools.Core;

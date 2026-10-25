@@ -101,6 +101,7 @@ internal sealed class ShellRuntime
             dispatcher?.TryEnqueue(() => ShowSettings(welcome: false)));
 
         Log.Info("shell.ready");
+        Theme.VerifyThemeResources();
 
         // 上次录到一半的文件（第四版闪退恢复）。
         RecordingHost.RecoverOnStartup();
