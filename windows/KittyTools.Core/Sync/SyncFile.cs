@@ -254,7 +254,7 @@ public static class SyncMerge
             foreach (var tombstone in file.Erased)
             {
                 if (!erased.TryGetValue(tombstone.Id, out var current) ||
-                    current.Clock.Precedes(tombstone.Clock))
+                    ClockWins(tombstone.Clock, current.Clock))
                 {
                     erased[tombstone.Id] = tombstone;
                 }
@@ -285,6 +285,33 @@ public static class SyncMerge
             return candidate.Modified > current.Modified;
         }
 
-        return current.Clock.Precedes(candidate.Clock);
+        // 同时改的两条（钟互不包含）也要有一个确定的结果，几台合出来才收敛：
+        // 先看钟的文本，再看内容本身。
+        if (ClockWins(candidate.Clock, current.Clock))
+        {
+            return true;
+        }
+
+        if (ClockWins(current.Clock, candidate.Clock))
+        {
+            return false;
+        }
+
+        return string.CompareOrdinal(candidate.Value, current.Value) > 0;
+    }
+
+    private static bool ClockWins(SyncClock candidate, SyncClock current)
+    {
+        if (current.Precedes(candidate))
+        {
+            return true;
+        }
+
+        if (candidate.Precedes(current))
+        {
+            return false;
+        }
+
+        return string.CompareOrdinal(candidate.Text(), current.Text()) > 0;
     }
 }
