@@ -185,6 +185,8 @@ internal static partial class TrayMenu
             {
                 Add(menu, "\uE7C8", "压缩最近的录屏（不超过 60%）", string.Empty,
                     () => _ = CompressionService.CompressLastAsync());
+                Add(menu, "\uE7C8", "转成 GIF（10 fps，长边 800）", string.Empty,
+                    () => _ = GifService.ConvertLastAsync());
             }
 
             menu.Items.Add(new MenuFlyoutSeparator());

@@ -172,6 +172,15 @@ internal sealed class ShellRuntime
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(ScreenshotSession.StartLast);
         }
 
+        // 调试 / 自检：把已有的录屏转成 GIF（第四版第 3 批）。
+        var gifArg = Environment.GetCommandLineArgs()
+            .FirstOrDefault(arg => arg.StartsWith("--gif=", StringComparison.OrdinalIgnoreCase));
+        if (gifArg is not null)
+        {
+            var path = gifArg["--gif=".Length..];
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => _ = GifService.ConvertAsync(path));
+        }
+
         // 调试 / 自检：压缩一个已有的录屏（第四版第 3 批）。
         var compressArg = Environment.GetCommandLineArgs()
             .FirstOrDefault(arg => arg.StartsWith("--compress=", StringComparison.OrdinalIgnoreCase));
