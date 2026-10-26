@@ -6,7 +6,7 @@
 // 画布不把长图整张贴给图层（长图上限 30000 像素高，超过约 16384 会撞 GPU 纹理上限）：draw 里按脏区裁出看得见的那一段
 // 画（CGImage.cropping 是零拷贝的视图）。缩放交给 NSScrollView 的 magnification（拍板 A3：默认按宽适配、最大 1:1，
 // ⌘0 适配宽度、⌘1 原始大小、⌘+ / ⌘-），标注坐标一律存图的点坐标，所以缩放不影响画好的标注。
-// 标注本身（十种工具、选中和手柄、文字、撤销重做）是第 2 批，这一批只有画布、滚动、缩放和出图。
+// 画布和标注交互在 ScrollCanvas.swift；这里管窗口、滚动、缩放、工具栏和样式托盘、出图。
 
 import AppKit
 import Carbon.HIToolbox
@@ -27,6 +27,7 @@ import Carbon.HIToolbox
   private let scrollView = NSScrollView()
   private let canvas: ScrollCanvas
   private let bar = EditorToolbar(mode: .longShot)
+  private let styleBar = StyleBar()
   private let output: Output
   /// 关掉了（AppDelegate 放掉这个会话）
   var onClose: () -> Void = {}
@@ -54,19 +55,30 @@ import Carbon.HIToolbox
     scrollView.minMagnification = Self.zoomRange.lowerBound
     scrollView.maxMagnification = Self.zoomRange.upperBound
     scrollView.backgroundColor = .underPageBackgroundColor
+    // 底部给浮着的工具栏留地方：滚到长图最底下时最后几行不被它压住
+    scrollView.automaticallyAdjustsContentInsets = false
+    scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 16 + 40, right: 0)
     scrollView.contentView = CenteringClipView()  // 图比视口窄 / 矮时居中，不贴着左下角
     scrollView.documentView = canvas
     scrollView.autoresizingMask = [.width, .height]
     bar.onClick = { [unowned self] item in clicked(item) }
+    styleBar.onColor = { [unowned self] color in canvas.restyle { $0.color = color } }
+    styleBar.onWeight = { [unowned self] weight in canvas.restyle { $0.weight = weight } }
+    styleBar.onOption = { [unowned self] option in canvas.restyle { $0.option = option } }
+    canvas.onState = { [unowned self] in syncBars() }
 
     let content = ScrollEditorView()
     content.frame = CGRect(origin: .zero, size: window.contentLayoutRect.size)
     content.onKey = { [unowned self] key in self.key(key) }
     scrollView.frame = content.bounds
     content.addSubview(scrollView)
+    content.addSubview(styleBar)
     content.addSubview(bar)
     window.contentView = content
     window.delegate = self
+    NotificationCenter.default.addObserver(
+      self, selector: #selector(magnified), name: NSScrollView.didEndLiveMagnifyNotification,
+      object: scrollView)
     window.isReleasedWhenClosed = false
     window.collectionBehavior = [.fullScreenAuxiliary]
     window.contentMinSize = CGSize(width: 480, height: 360)
@@ -77,9 +89,10 @@ import Carbon.HIToolbox
     } else {
       window.center()
     }
-    window.initialFirstResponder = content
+    window.initialFirstResponder = canvas
     placeBar()
     bar.grow(true, from: .bottom)  // 同截图工具栏：从靠边的那条边长出来
+    syncBars()
     zoomToFit()
     scrollToTop()
     updateTitle()
@@ -106,6 +119,7 @@ import Carbon.HIToolbox
   func show() {
     NSApp.setActivationPolicy(.regular)
     window.makeKeyAndOrderFront(nil)
+    window.makeFirstResponder(canvas)
     NSApp.activate()
     // macOS 14 起 activate() 是协作式的，前台 App 不让出时可能到不了最前：退回旧 API（同设置窗）
     if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
@@ -123,6 +137,13 @@ import Carbon.HIToolbox
 
   private func setMagnification(_ value: CGFloat) {
     scrollView.magnification = min(max(value, Self.zoomRange.lowerBound), Self.zoomRange.upperBound)
+    canvas.zoom = scrollView.magnification  // 选中框和手柄的线宽按它补偿
+    updateTitle()
+  }
+
+  /// 捏合缩放完（没经 setMagnification）：手柄的粗细和标题跟上
+  @objc private func magnified() {
+    canvas.zoom = scrollView.magnification
     updateTitle()
   }
 
@@ -134,6 +155,24 @@ import Carbon.HIToolbox
   }
 
   /// 工具栏浮在内容底部居中（离底 16，同截图工具栏离选区 10 的那条边）
+  /// 工具栏和样式托盘跟着画布的状态走：托盘在工具栏上方 6 pt、x 对着当前工具那颗钮（夹在窗口里 10 pt）
+  private func syncBars() {
+    bar.update(tool: canvas.tool, canUndo: canvas.canUndo, canRedo: canvas.canRedo)
+    guard let owner = canvas.styleOwner, let content = window.contentView else {
+      return styleBar.setShown(false)
+    }
+    styleBar.update(tool: owner, style: canvas.shownStyle)
+    let button = bar.toolButtonFrame(owner).offsetBy(dx: bar.frame.minX, dy: bar.frame.minY)
+    let size = styleBar.preferredSize
+    let x = max(
+      10, min(button.midX - size.width / 2, content.bounds.maxX - size.width - 10)
+    ).rounded()
+    let y = bar.frame.maxY + 6
+    styleBar.move(
+      to: CGRect(x: x, y: y, width: size.width, height: size.height), animated: styleBar.isShown)
+    styleBar.setShown(true, anchorX: button.midX - x, growingFrom: .bottom)
+  }
+
   private func placeBar() {
     guard let content = window.contentView else { return }
     bar.frame.origin = CGPoint(
@@ -148,15 +187,18 @@ import Carbon.HIToolbox
 
   // MARK: 出图
 
-  /// 合成好的长图（第 2 批起带标注：有标注才重渲，拍板 C2）
-  private func composed() -> CGImage { image }
+  /// 合成好的长图（有标注才重渲，拍板 C2）
+  private func composed() -> CGImage { canvas.composed() }
 
   private func clicked(_ item: EditorToolbar.Item) {
     switch item {
     case .output(let action): emit(action)
     case .cancel: close()
     case .saveMenu: emit(.saveAs)  // 第 3 批换成 HUD 菜单（存储到… / 另存为…）
-    case .tool, .undo, .redo, .scroll, .record: break  // 标注是第 2 批
+    case .tool(let tool): canvas.choose(tool)
+    case .undo: canvas.undo()
+    case .redo: canvas.redo()
+    case .scroll, .record: break  // 长图的工具栏里没有这两颗
     }
   }
 
@@ -190,9 +232,13 @@ import Carbon.HIToolbox
 
   // MARK: 窗口
 
-  func windowDidResize(_ notification: Notification) { placeBar() }
+  func windowDidResize(_ notification: Notification) {
+    placeBar()
+    syncBars()
+  }
 
   func windowWillClose(_ notification: Notification) {
+    NotificationCenter.default.removeObserver(self)
     NSApp.leaveDockIfNoWindows(closing: window)
     onClose()
   }
@@ -210,62 +256,6 @@ final class ScrollEditorView: NSView {
 
   override func performKeyEquivalent(with event: NSEvent) -> Bool {
     onKey(event) || super.performKeyEquivalent(with: event)
-  }
-}
-
-/// 长图画布：一张很高的图，只画看得见的那一段。坐标系同截图标注——点、原点在左下（Annotation 的约定），
-/// 所以不 flipped；标注层第 2 批加在这里
-final class ScrollCanvas: NSView {
-  let image: CGImage
-  /// 像素 / 点
-  let scale: CGFloat
-
-  init(image: CGImage, scale: CGFloat) {
-    self.image = image
-    self.scale = scale
-    super.init(
-      frame: CGRect(
-        x: 0, y: 0, width: CGFloat(image.width) / scale, height: CGFloat(image.height) / scale))
-  }
-
-  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-  override var isOpaque: Bool { true }
-
-  override func draw(_ dirtyRect: NSRect) {
-    guard let context = NSGraphicsContext.current?.cgContext else { return }
-    let pixels = Self.pixelRect(
-      of: dirtyRect, in: bounds.size, pixels: CGSize(width: image.width, height: image.height))
-    guard pixels.width >= 1, pixels.height >= 1, let crop = image.cropping(to: pixels) else {
-      return
-    }
-    context.interpolationQuality = .medium
-    context.draw(
-      crop,
-      in: Self.pointRect(
-        of: pixels, in: bounds.size, pixels: CGSize(width: image.width, height: image.height)))
-  }
-
-  /// 脏区（点，原点在左下）→ 图里的像素矩形（原点在左上）：取整往外扩一像素，夹进图里。纯函数，配单测
-  static func pixelRect(of dirty: CGRect, in size: CGSize, pixels: CGSize) -> CGRect {
-    guard size.width > 0, size.height > 0 else { return .zero }
-    let sx = pixels.width / size.width
-    let sy = pixels.height / size.height
-    let rect = CGRect(
-      x: dirty.minX * sx, y: (size.height - dirty.maxY) * sy, width: dirty.width * sx,
-      height: dirty.height * sy
-    ).insetBy(dx: -1, dy: -1).integral
-    return rect.intersection(CGRect(origin: .zero, size: pixels))
-  }
-
-  /// 像素矩形（原点在左上）→ 画在画布的哪儿（点，原点在左下）。纯函数，配单测
-  static func pointRect(of pixels: CGRect, in size: CGSize, pixels total: CGSize) -> CGRect {
-    guard total.width > 0, total.height > 0 else { return .zero }
-    let sx = size.width / total.width
-    let sy = size.height / total.height
-    return CGRect(
-      x: pixels.minX * sx, y: (total.height - pixels.maxY) * sy, width: pixels.width * sx,
-      height: pixels.height * sy)
   }
 }
 

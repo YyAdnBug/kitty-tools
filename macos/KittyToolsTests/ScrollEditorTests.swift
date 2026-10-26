@@ -105,6 +105,168 @@ struct ScrollEditorTests {
     editor.close()
   }
 
+  // MARK: 标注（第 2 批）
+
+  /// 画布摆进一扇屏外窗口：坐标就是窗口坐标（画布当 contentView，原点一致），事件可以直接喂
+  private func canvasInWindow(_ pixels: (width: Int, height: Int) = (800, 2400)) -> (
+    canvas: ScrollCanvas, window: NSWindow
+  ) {
+    let canvas = ScrollCanvas(image: image(width: pixels.width, height: pixels.height), scale: 2)
+    let window = NSWindow(
+      contentRect: CGRect(origin: CGPoint(x: -20000, y: -20000), size: canvas.bounds.size),
+      styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false  // 不设的话 close() 会把窗口放掉，局部变量再放一次就崩
+    window.contentView = canvas
+    canvas.styleDefaults = UserDefaults(suiteName: "scroll-editor-tests")!
+    return (canvas, window)
+  }
+
+  private func mouse(
+    _ type: NSEvent.EventType, at point: CGPoint, flags: NSEvent.ModifierFlags = [],
+    clickCount: Int = 1
+  ) throws -> NSEvent {
+    try #require(
+      NSEvent.mouseEvent(
+        with: type, location: point, modifierFlags: flags, timestamp: 0, windowNumber: 0,
+        context: nil, eventNumber: 0, clickCount: clickCount, pressure: 1))
+  }
+
+  /// 按下 → 拖到 → 松手（from == to 就是单击）
+  private func drag(
+    _ canvas: ScrollCanvas, from: CGPoint, to: CGPoint, flags: NSEvent.ModifierFlags = [],
+    clickCount: Int = 1
+  ) throws {
+    canvas.mouseDown(
+      with: try mouse(.leftMouseDown, at: from, flags: flags, clickCount: clickCount))
+    if from != to { canvas.mouseDragged(with: try mouse(.leftMouseDragged, at: to, flags: flags)) }
+    canvas.mouseUp(with: try mouse(.leftMouseUp, at: to, flags: flags))
+  }
+
+  private func press(
+    _ canvas: ScrollCanvas, _ keyCode: Int, _ characters: String,
+    _ flags: NSEvent.ModifierFlags = []
+  ) throws {
+    let event = try #require(
+      NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0,
+        context: nil, characters: characters, charactersIgnoringModifiers: characters,
+        isARepeat: false, keyCode: UInt16(keyCode)))
+    if flags.contains(.command) {
+      _ = canvas.performKeyEquivalent(with: event)
+    } else {
+      canvas.keyDown(with: event)
+    }
+  }
+
+  /// 选工具、拖一个矩形出来：画完自动选中、工具保持；撤销重做回得去
+  @Test func drawsAndUndoes() throws {
+    let (canvas, window) = canvasInWindow()
+    defer { window.orderOut(nil) }
+    try press(canvas, kVK_ANSI_1, "1")
+    #expect(canvas.tool == .rectangle)
+    try drag(canvas, from: CGPoint(x: 60, y: 900), to: CGPoint(x: 260, y: 1000))
+    #expect(canvas.annotations.count == 1)
+    #expect(canvas.selectedAnnotation == canvas.annotations.first?.id)
+    #expect(canvas.tool == .rectangle)  // 工具保持
+    #expect(canvas.canUndo && !canvas.canRedo)
+    canvas.undo()
+    #expect(canvas.annotations.isEmpty && canvas.canRedo)
+    canvas.redo()
+    #expect(canvas.annotations.count == 1)
+    // 再按一次同一个数字键收起工具
+    try press(canvas, kVK_ANSI_1, "1")
+    #expect(canvas.tool == nil)
+  }
+
+  /// 选中之后：拖本体移动、⌥ 拖复制、⌘D 复制、方向键微调、⌫ 删除
+  @Test func movesCopiesAndDeletes() throws {
+    let (canvas, window) = canvasInWindow()
+    defer { window.orderOut(nil) }
+    try press(canvas, kVK_ANSI_1, "1")
+    try drag(canvas, from: CGPoint(x: 60, y: 900), to: CGPoint(x: 260, y: 1000))
+    try press(canvas, kVK_ANSI_1, "1")  // 收起工具，免得下一下又画一个
+    let drawn = try #require(canvas.annotations.first)
+    // 空心矩形点中间不算命中（同遮罩里的标注）：拖它的边
+    let onEdge = CGPoint(x: 160, y: 900)
+    try drag(canvas, from: onEdge, to: CGPoint(x: 200, y: 900))
+    #expect(canvas.annotations.count == 1)
+    #expect(canvas.annotations[0].bounds.minX > drawn.bounds.minX)
+    // ⌥ 拖：多一份（序号类还会换号），选中的是副本
+    try drag(canvas, from: CGPoint(x: 200, y: 900), to: CGPoint(x: 300, y: 900), flags: .option)
+    #expect(canvas.annotations.count == 2)
+    #expect(canvas.selectedAnnotation != drawn.id)
+    try press(canvas, kVK_ANSI_D, "d", .command)
+    #expect(canvas.annotations.count == 3)
+    let before = try #require(canvas.annotations.last?.bounds.minX)
+    try press(canvas, kVK_RightArrow, "\u{F703}")
+    #expect(canvas.annotations.last?.bounds.minX == before + 1)
+    try press(canvas, kVK_Delete, "\u{8}")
+    #expect(canvas.annotations.count == 2 && canvas.selectedAnnotation == nil)
+  }
+
+  /// 文字：单击放输入框，收下时变成一条标注；空的不留下
+  @Test func textBecomesAnnotation() throws {
+    let (canvas, window) = canvasInWindow()
+    defer { window.orderOut(nil) }
+    try press(canvas, kVK_ANSI_7, "7")
+    #expect(canvas.tool == .text)
+    canvas.beginEditing(at: CGPoint(x: 80, y: 800))
+    let field = try #require(canvas.subviews.compactMap { $0 as? EditorField }.first)
+    field.string = "注意这里"
+    canvas.endEditing()
+    #expect(canvas.annotations.count == 1)
+    if case .text(let string, _)? = canvas.annotations.first?.shape {
+      #expect(string == "注意这里")
+    } else {
+      Issue.record("收下的不是文字标注")
+    }
+    canvas.beginEditing(at: CGPoint(x: 80, y: 600))
+    canvas.endEditing()
+    #expect(canvas.annotations.count == 1)  // 空的不留下
+  }
+
+  /// 序号：单击放一个，编号自动 +1
+  @Test func countersNumberThemselves() throws {
+    let (canvas, window) = canvasInWindow()
+    defer { window.orderOut(nil) }
+    try press(canvas, kVK_ANSI_8, "8")
+    try drag(canvas, from: CGPoint(x: 100, y: 1000), to: CGPoint(x: 100, y: 1000))
+    try drag(canvas, from: CGPoint(x: 200, y: 1000), to: CGPoint(x: 200, y: 1000))
+    let numbers = canvas.annotations.compactMap { annotation -> Int? in
+      if case .counter(let number, _) = annotation.shape { return number }
+      return nil
+    }
+    #expect(numbers == [1, 2])
+  }
+
+  /// 出图：没画标注就是原图（很长的图不白渲一遍），画了就重渲一张
+  @Test func composedRendersOnlyWithAnnotations() throws {
+    let (canvas, window) = canvasInWindow()
+    defer { window.orderOut(nil) }
+    #expect(canvas.composed() === canvas.image)
+    try press(canvas, kVK_ANSI_1, "1")
+    try drag(canvas, from: CGPoint(x: 60, y: 900), to: CGPoint(x: 260, y: 1000))
+    let composed = canvas.composed()
+    #expect(composed !== canvas.image)
+    #expect(composed.width == canvas.image.width && composed.height == canvas.image.height)
+  }
+
+  /// 缩小看长图时手柄还点得中（命中半径按缩放补偿）、选中框跟着画在标注层上
+  @Test func handlesScaleWithZoom() throws {
+    let (canvas, window) = canvasInWindow()
+    defer { window.orderOut(nil) }
+    try press(canvas, kVK_ANSI_1, "1")
+    try drag(canvas, from: CGPoint(x: 60, y: 900), to: CGPoint(x: 260, y: 1000))
+    let corner = CGPoint(x: 260, y: 1000)  // 画完自动选中，手柄就在四角
+    canvas.zoom = 0.25
+    // 离角 20 点：1:1 时够不着，缩到 0.25 时在屏幕上只有 5 点，够得着
+    try drag(canvas, from: CGPoint(x: corner.x + 20, y: corner.y), to: CGPoint(x: 400, y: 1000))
+    #expect(canvas.annotations.first?.bounds.maxX ?? 0 > 300)
+    let chrome = try #require(
+      canvas.subviews.compactMap { $0 as? AnnotationCanvas }.first?.chrome)
+    #expect(chrome.selected.id == canvas.selectedAnnotation && chrome.zoom == 0.25)
+  }
+
   /// 画布的点尺寸 = 像素 / scale；长图一打开停在最上面（原点左下，顶边是最大的 y）
   @Test func canvasUsesPointSize() {
     let canvas = ScrollCanvas(image: image(width: 1200, height: 7480), scale: 2)

@@ -2063,7 +2063,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
   // MARK: 键盘（输入文字时按键都归输入框，不到这里）
 
   /// 数字键 1–9、0 依次对应 10 个工具（Tool.rawValue 1–10）
-  private static let toolKeys: [Int: Annotation.Tool] = Dictionary(
+  /// 数字键 1–9、0 对应十种工具（长图标注窗口共用）。ponytail: 按物理键位，Dvorak 等布局下位置不同
+  static let toolKeys: [Int: Annotation.Tool] = Dictionary(
     uniqueKeysWithValues: zip(
       [
         kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4, kVK_ANSI_5, kVK_ANSI_6, kVK_ANSI_7,
@@ -2196,7 +2197,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
 /// 文字标注的输入框。「描边」样式时先画带阴影的外描边、再让 NSTextView 画字（和收下后画出来的一样）。
 /// 焦点环（Whisker §3 输入框焦点）：1 pt 粉 0.55 + 粉 0.18 r4 外发光，单独一层（输入框图层自己的阴影给底色色块用）。
 /// 右键不出文本菜单（菜单层级比遮罩低，会被压在下面看不见），交给遮罩（回到待选）
-private final class EditorField: NSTextView {
+final class EditorField: NSTextView {
   /// 外描边（Annotation.outlineAttributes）；nil = 不描边
   var outline: [NSAttributedString.Key: Any]? { didSet { needsDisplay = true } }
   /// 焦点环的圆角：同底色色块（有底色 6，否则 3）
@@ -2254,9 +2255,11 @@ private final class EditorField: NSTextView {
 /// （偶奇填充的 CAShapeLayer，拖选区、挪洞时只换路径），这一层只给垫底的（马赛克、荧光笔垫的底）补同样的压暗
 /// （Annotation.drawAll 的 dimsUnderlaysOnly）。AppKit 会把几条 setNeedsDisplay 并成一块外框重画，压暗画在这里时
 /// 拖一下选区就要按整个选区压暗一遍（2300 × 1250 一次 20 多毫秒）。不接事件
-private final class AnnotationCanvas: NSView {
+/// 标注层：画全部标注，只重画变了的那块。遮罩和长图标注窗口共用——遮罩给 dim（聚光灯压暗画在下面那层，
+/// 它还要配合选区），长图不给（压暗在这一层自己画，范围就是整张图），选中框和手柄也只有长图这边画在这里（chrome）
+final class AnnotationCanvas: NSView {
   let image: CGImage
-  private let dim: CAShapeLayer
+  private let dim: CAShapeLayer?
   var annotations: [Annotation] = [] {
     didSet {
       invalidate(from: oldValue)
@@ -2280,7 +2283,18 @@ private final class AnnotationCanvas: NSView {
     }
   }
 
-  init(image: CGImage, dim: CAShapeLayer) {
+  /// 选中的那条：1 pt 粉虚线框（线类不画框）+ 白底粉边的手柄；zoom 是画布缩放，线宽和半径按它补偿
+  /// （缩小看长图时手柄还是一样大）。遮罩那边用 CALayer 画，不设这个
+  var chrome: (selected: Annotation, zoom: CGFloat)? {
+    didSet {
+      for side in [oldValue, chrome] {
+        guard let side else { continue }
+        setNeedsDisplay(Self.chromeBounds(side.selected, zoom: side.zoom))
+      }
+    }
+  }
+
+  init(image: CGImage, dim: CAShapeLayer? = nil) {
     self.image = image
     self.dim = dim
     super.init(frame: .zero)
@@ -2293,6 +2307,7 @@ private final class AnnotationCanvas: NSView {
 
   /// 下面的压暗图层：选区 + 聚光灯的洞（没有聚光灯、没有选区时空）
   private func updateDim() {
+    guard let dim else { return }  // 长图标注窗口：压暗在这一层自己画（draw 里 dimsUnderlaysOnly 为假）
     let spotlights = annotations.filter { $0.tool == .spotlight }
     let shape = selection.flatMap { Annotation.spotlightDim(spotlights, bounds: $0) }
     let fill = CGColor(gray: 0, alpha: shape?.alpha ?? 0)
@@ -2313,7 +2328,46 @@ private final class AnnotationCanvas: NSView {
     guard let context = NSGraphicsContext.current?.cgContext else { return }
     Annotation.drawAll(
       annotations, in: context, image: image, viewSize: bounds.size, shadowScale: 1,
-      dirty: dirtyRect, spotlightBounds: selection ?? .zero, dimsUnderlaysOnly: true)
+      dirty: dirtyRect, spotlightBounds: dim == nil ? bounds : (selection ?? .zero),
+      dimsUnderlaysOnly: dim != nil)
+    if let chrome, chromeBounds(chrome).intersects(dirtyRect) {
+      Self.drawChrome(chrome.selected, zoom: chrome.zoom, in: context)
+    }
+  }
+
+  private func chromeBounds(_ chrome: (selected: Annotation, zoom: CGFloat)) -> CGRect {
+    Self.chromeBounds(chrome.selected, zoom: chrome.zoom)
+  }
+
+  /// 选中框和手柄盖住多大（外扩手柄半径和虚线框）。纯函数，配单测
+  static func chromeBounds(_ selected: Annotation, zoom: CGFloat) -> CGRect {
+    let reach = (3 + 6) / max(zoom, 0.01)
+    return selected.bounds.insetBy(dx: -reach, dy: -reach)
+  }
+
+  /// 画选中框和手柄（样式同遮罩里的那两个图层：1 pt 粉虚线 [4, 3]、手柄白底 1.5 pt 粉边，半径 4.5 / 弯曲手柄 3.5）
+  static func drawChrome(_ selected: Annotation, zoom: CGFloat, in context: CGContext) {
+    let pink = Style.Shot.accent.cgColor
+    let thin = 1 / max(zoom, 0.01)
+    context.saveGState()
+    defer { context.restoreGState() }
+    if ![.arrow, .line, .highlighter].contains(selected.tool) {
+      context.setStrokeColor(pink)
+      context.setLineWidth(thin)
+      context.setLineDash(phase: 0, lengths: [4 * thin, 3 * thin])
+      context.stroke(selected.bounds.insetBy(dx: -3 * thin, dy: -3 * thin))
+      context.setLineDash(phase: 0, lengths: [])
+    }
+    context.setFillColor(NSColor.white.cgColor)
+    context.setStrokeColor(pink)
+    context.setLineWidth(1.5 * thin)
+    for (handle, point) in selected.handles {
+      let radius = (handle == .bend ? 3.5 : 4.5) * thin
+      let dot = CGRect(
+        x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2)
+      context.fillEllipse(in: dot)
+      context.strokeEllipse(in: dot)
+    }
   }
 
   private func invalidate(from old: [Annotation]) {
