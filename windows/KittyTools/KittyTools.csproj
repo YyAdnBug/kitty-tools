@@ -18,6 +18,8 @@
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <PublishAot>true</PublishAot>
+    <!-- PLAN-v6 第 5 批：逐项量过的 AOT 选项，只留省了、没变慢的。 -->
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
     <CsWinRTAotOptimizerEnabled>true</CsWinRTAotOptimizerEnabled>
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>

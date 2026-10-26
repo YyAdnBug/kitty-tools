@@ -1,4 +1,4 @@
-﻿# Kitty Tools Windows 发布脚本：AOT 发布 x64 + ARM64，打 zip，生成发布说明。
+# Kitty Tools Windows 发布脚本：AOT 发布 x64 + ARM64，打 zip，生成发布说明。
 # 不调用 gh，不自动上传；发布前先问用户，release 一律 --latest=false。
 [CmdletBinding()]
 param(
@@ -71,6 +71,13 @@ foreach ($target in $targets) {
     Get-ChildItem "$stage/Kitty Tools" -Filter '*.pdb' -File | ForEach-Object {
         Move-Item $_.FullName (Join-Path $pdbDir $_.Name) -Force
     }
+
+    # PLAN-v6 第 5 批：Windows App SDK 带了 80 多个语言文件夹（.mui），界面只有中文，只留中英文；
+    # WinUI 自带控件（右键菜单等）回退到 en-us。
+    $keep = @('en-us', 'en-US', 'zh-CN', 'zh-TW', 'zh-Hans', 'zh-Hant')
+    Get-ChildItem "$stage/Kitty Tools" -Directory |
+        Where-Object { $_.Name -match '^[a-z]{2,3}(-[A-Za-z]{4})?-[A-Za-z]{2,4}$' -and $_.Name -notin $keep } |
+        Remove-Item -Recurse -Force
 
     $zip = Join-Path $outRoot "KittyTools-$version-windows-$($target.Label).zip"
     if (Test-Path $zip) {

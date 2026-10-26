@@ -51,6 +51,8 @@ CPU 一律「% 单核」（100% = 占满一个核）；内存是专用工作集�
 | 400 MB 更新下载的提交内存 | +8.7 MB | 0.5.0 |
 | 0.5.0 x64 发布 | 80.4 MB / 240 个文件（不含 pdb），zip 30.6 MB | |
 | 0.5.0 ARM64 发布 | 86.1 MB / 240 个文件，zip 29.8 MB | |
+| AOT 选项（ConcurrentGC=false） | 冷启动 90 ms（app.start → shell.ready）；发布 80.6 MB / 240 个文件（不含 pdb） | 第 5 批；其他选项试了又撤 |
+| 语言文件夹裁剪 | 85 个 `xx-XX` 目录共 3.33 MB，发布前只留 en-us / zh-CN / zh-TW / zh-Hans / zh-Hant | 第 5 批，build-release.ps1 |
 
 AOT x64 / ARM64 每次发布都零 trim / AOT 警告；PRI 四个文件齐全
 （`KittyTools.pri`、`Microsoft.UI.pri`、`Microsoft.UI.Xaml.Controls.pri`、`Microsoft.WindowsAppRuntime.pri`）。
@@ -65,7 +67,9 @@ AOT x64 / ARM64 每次发布都零 trim / AOT 警告；PRI 四个文件齐全
   设置还没加。
 - 录屏声音：5.1 / 44.1 kHz 只有单测，没真设备；麦克风说话、真耳听音画同步、HUD 里的「麦克风断开了」没测。
 - 文件搜索一次约 880 ms（WinRT `StorageFile` 查询），打字时等不起。第 4 批换 OLE DB。
-- AOT 选项没逐项量过（PLAN-v2 就要求了）。第 5 批。
+- 截图后 / 设置窗关闭后 / 录屏后的内存回落没按第 5 批重测（探针没跑）；AOT 选项只留了
+  `ConcurrentGarbageCollection=false`，`IlcOptimizationPreference=Size`、`UseSystemResourceKeys`、
+  `IlcFoldIdenticalMethodBodies`、`System.GC.ConserveMemory` 没量到「省了且不变慢」，没开。
 - 高对比度、150% 缩放、第二块屏、中文输入法、ARM64 真机没测。第 6 批尽量补。
 
 **要用户真机走的**（详见 `HANDTEST.md`，标「待走 / 待定 / 没测」的条目）
@@ -99,7 +103,7 @@ AOT x64 / ARM64 每次发布都零 trim / AOT 警告；PRI 四个文件齐全
 | 第 2 批 | 系统声音 / 麦克风 / 混音进 MP4 | 已进 WGC 管线；缺 5.1 真机、拔麦克风、静音 20 秒、真耳同步 |
 | 第 3 批 | MP4 后处理、删 AVI、录音补齐 | 大部分做完：压缩 / GIF / 删 AVI / 录音采集；录音控制条、待录、电平 UI 待补 |
 | 第 4 批 | 文件搜索走 OLE DB | 未开始 |
-| 第 5 批 | 内存回落、AOT 选项、发布体积 | 未开始 |
+| 第 5 批 | 内存回落、AOT 选项、发布体积 | 部分：AOT 选项（只留 ConcurrentGC=false）、语言目录裁剪；内存回落 / 发布体积逐项没走完 |
 | 第 6 批 | 主题、多屏、无障碍、输入法、长截图、R12 剩余 | 未开始 |
 | 第 7 批 | 开始菜单 / 卸载、崩溃记录、更新 e2e、冒烟清单、0.6.0 | 未开始 |
 
