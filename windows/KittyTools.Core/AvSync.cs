@@ -15,26 +15,27 @@ public static class AvSync
         int Pairs, int Flashes, int Beeps, double First, double Last, double? AfterGap, double MaxAbs, bool Passed);
 
     /// <summary>
-    /// 单声道 PCM 里 <paramref name="frequency"/> 那一声的起点（秒）。10 ms 窗口、2.5 ms 一跳：
-    /// 窗口里这个频率的能量占总能量的比例 r 过半、而且不是静音，就算在响。r 约等于窗口里提示音占的比例，
-    /// 所以起点按「窗口起点 + 窗长 × (1 − r)」往回推，误差在一跳以内。响过之后要隔 300 ms 才认下一声。
+    /// 单声道 PCM 里 <paramref name="frequency"/> 那一声的起点（秒）。10 ms 窗口、2.5 ms 一跳，每个窗口算这个频率的能量
+    /// 占总能量的比例 r（Goertzel；纯正弦为 1，宽带噪声接近 0）。r 超过 0.3、而且不是静音，就算在响；别的声音只会把 r
+    /// 整体压低，不会把它抬上去。窗口里提示音占的比例约等于 r / 平台值（往后一个窗长里 r 的最大值），
+    /// 所以起点按「窗口起点 + 窗长 × (1 − r / 平台值)」往回推，误差在一跳以内。响过之后要隔 300 ms 才认下一声。
     /// </summary>
     public static List<double> ToneOnsets(ReadOnlySpan<float> mono, int sampleRate, double frequency = 1000)
     {
-        var onsets = new List<double>();
         var window = sampleRate / 100;
         var hop = Math.Max(1, window / 4);
+        var count = mono.Length < window ? 0 : (mono.Length - window) / hop + 1;
+        var ratios = new double[count];
+        var loud = new bool[count];
         var coefficient = 2 * Math.Cos(2 * Math.PI * frequency / sampleRate);
-        var quiet = sampleRate * 3 / 10;
-        int? lastLoud = null;
-        for (var start = 0; start + window <= mono.Length; start += hop)
+        for (var step = 0; step < count; step++)
         {
             double previous = 0;
             double older = 0;
             double energy = 0;
             for (var index = 0; index < window; index++)
             {
-                double sample = mono[start + index];
+                double sample = mono[step * hop + index];
                 energy += sample * sample;
                 var current = sample + coefficient * previous - older;
                 older = previous;
@@ -42,16 +43,30 @@ public static class AvSync
             }
 
             var power = previous * previous + older * older - coefficient * previous * older;
-            var ratio = energy <= 1e-12 ? 0 : power / (window / 2.0 * energy);
-            var rms = Math.Sqrt(energy / window);
-            if (ratio <= 0.5 || rms <= 0.003)
+            ratios[step] = energy <= 1e-12 ? 0 : power / (window / 2.0 * energy);
+            loud[step] = ratios[step] > 0.3 && Math.Sqrt(energy / window) > 0.003;
+        }
+
+        var onsets = new List<double>();
+        var quiet = sampleRate * 3 / 10;
+        int? lastLoud = null;
+        for (var step = 0; step < count; step++)
+        {
+            if (!loud[step])
             {
                 continue;
             }
 
+            var start = step * hop;
             if (lastLoud is null || start - lastLoud.Value > quiet)
             {
-                onsets.Add((start + window * (1 - Math.Min(1, ratio))) / sampleRate);
+                var plateau = ratios[step];
+                for (var ahead = step + 1; ahead < Math.Min(count, step + window / hop + 1); ahead++)
+                {
+                    plateau = Math.Max(plateau, ratios[ahead]);
+                }
+
+                onsets.Add((start + window * (1 - Math.Min(1, ratios[step] / plateau))) / sampleRate);
             }
 
             lastLoud = start;

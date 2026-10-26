@@ -38,6 +38,38 @@ public sealed class AvSyncTests
     }
 
     [TestMethod]
+    public void FindsQuietBeepsUnderOtherSound()
+    {
+        // 系统音量低（提示音峰值只有 0.094），底下一直有比它还响的别的声音（几个音 + 噪声，rms 约 0.045）。
+        var samples = new float[Rate * 3];
+        var random = new Random(2);
+        for (var index = 0; index < samples.Length; index++)
+        {
+            samples[index] = (float)((random.NextDouble() - 0.5) * 0.02);
+        }
+
+        foreach (var (frequency, amplitude) in new[] { (220.0, 0.04), (330.0, 0.03), (660.0, 0.02), (1500.0, 0.015) })
+        {
+            AddTone(samples, 0, 3, frequency, amplitude);
+        }
+
+        var expected = new[] { 0.5137, 1.5, 2.5021 };
+        foreach (var start in expected)
+        {
+            AddTone(samples, start, 0.1, 1000, 0.094);
+        }
+
+        var onsets = AvSync.ToneOnsets(samples, Rate);
+        Assert.AreEqual(expected.Length, onsets.Count, string.Join(",", onsets));
+        for (var index = 0; index < expected.Length; index++)
+        {
+            Assert.IsTrue(
+                Math.Abs(onsets[index] - expected[index]) < 0.004,
+                $"{index}: {onsets[index]:F4} vs {expected[index]:F4}");
+        }
+    }
+
+    [TestMethod]
     public void PairsAndSummarizesWithSilenceGap()
     {
         // 0–19 s 每秒一对，声音晚 12 ms；20–39 s 静音没有提示音也不闪；40–59 s 声音晚 30 ms。
