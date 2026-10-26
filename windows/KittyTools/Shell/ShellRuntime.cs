@@ -217,6 +217,24 @@ internal sealed class ShellRuntime
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(Tray.ShowMenu);
         }
 
+        // 截图自检用：不录屏，只把录制条摆出来（配 KITTY_HUD_CAPTURE=1 才截得到它）。
+        if (Environment.GetCommandLineArgs().Contains("--record-hud", StringComparer.OrdinalIgnoreCase))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(
+                () => RecordingHud.Show(new PixelBounds(200, 200, 1000, 700)));
+        }
+
+        // 截图自检用：打开设置、弹出卸载对话框（REVIEW R30 补第六版截图；只看，不点）。
+        if (Environment.GetCommandLineArgs().Contains("--uninstall-dialog", StringComparer.OrdinalIgnoreCase))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
+            {
+                ShowSettings(welcome: false);
+                await Task.Delay(800);
+                _settingsWindow?.ShowUninstallDialogForSnapshot();
+            });
+        }
+
         // 调试用：看轻提示胶囊的样子（截图 / 手测用，不影响正常启动）。
         if (Environment.GetCommandLineArgs().Contains("--notice", StringComparer.OrdinalIgnoreCase))
         {
@@ -467,7 +485,17 @@ internal sealed class ShellRuntime
         if (settingsArg is not null)
         {
             var page = settingsArg["--settings=".Length..];
-            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => ShowSettings(welcome: false, page));
+            var scrollArg = Environment.GetCommandLineArgs()
+                .FirstOrDefault(arg => arg.StartsWith("--settings-scroll=", StringComparison.OrdinalIgnoreCase));
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
+            {
+                ShowSettings(welcome: false, page);
+                if (scrollArg is not null && double.TryParse(scrollArg["--settings-scroll=".Length..], out var offset))
+                {
+                    await Task.Delay(600);
+                    _settingsWindow?.ScrollForSnapshot(offset);
+                }
+            });
         }
 
         // 调试用：直接打开翻译浮窗，带文字时自动翻。

@@ -1814,6 +1814,7 @@ public sealed partial class ClipboardPanel : UserControl
         };
         var dialog = new ContentDialog
         {
+            RequestedTheme = Theme.ElementTheme,
             Title = "新建片段",
             PrimaryButtonText = "保存",
             CloseButtonText = "取消",
@@ -1853,6 +1854,7 @@ public sealed partial class ClipboardPanel : UserControl
         };
         var dialog = new ContentDialog
         {
+            RequestedTheme = Theme.ElementTheme,
             Title = entry.Snippet ? "编辑片段" : "新建片段",
             PrimaryButtonText = "保存",
             CloseButtonText = "取消",
@@ -1888,6 +1890,7 @@ public sealed partial class ClipboardPanel : UserControl
         };
         var dialog = new ContentDialog
         {
+            RequestedTheme = Theme.ElementTheme,
             Title = "备注",
             PrimaryButtonText = "保存",
             CloseButtonText = "取消",
@@ -1992,6 +1995,7 @@ public sealed partial class ClipboardPanel : UserControl
         content.Children.Add(footer);
         var dialog = new ContentDialog
         {
+            RequestedTheme = Theme.ElementTheme,
             Title = "管理收藏夹",
             CloseButtonText = "完成",
             Content = new ScrollViewer { Content = content, MaxHeight = 360 },

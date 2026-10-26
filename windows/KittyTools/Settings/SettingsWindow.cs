@@ -341,6 +341,7 @@ internal sealed class SettingsWindow : Window
 
             var dialog = new ContentDialog
             {
+                RequestedTheme = Theme.ElementTheme,
                 Title = "导出",
                 PrimaryButtonText = "选择文件…",
                 CloseButtonText = "取消",
@@ -423,6 +424,7 @@ internal sealed class SettingsWindow : Window
                 var box = new PasswordBox { Header = "这个文件带了加密的密钥，输入密码（不导密钥就留空）" };
                 var dialog = new ContentDialog
                 {
+                    RequestedTheme = Theme.ElementTheme,
                     Title = "导入",
                     PrimaryButtonText = "导入",
                     CloseButtonText = "取消",
@@ -614,6 +616,7 @@ internal sealed class SettingsWindow : Window
             panel.Children.Add(favoritesOnly);
             var dialog = new ContentDialog
             {
+                RequestedTheme = Theme.ElementTheme,
                 Title = "导出历史",
                 PrimaryButtonText = "导出…",
                 CloseButtonText = "取消",
@@ -1592,6 +1595,7 @@ internal sealed class SettingsWindow : Window
 
         var dialog = new ContentDialog
         {
+            RequestedTheme = Theme.ElementTheme,
             Title = service.Name,
             PrimaryButtonText = "保存",
             SecondaryButtonText = "测试连接",
@@ -2045,10 +2049,19 @@ internal sealed class SettingsWindow : Window
 
     public void AuditAccessibility(string page = "settings") => AccessibilityAudit.Run(_content, "settings-" + page);
 
+#if DEBUG
+    /// <summary>截图自检用（--uninstall-dialog）：只把卸载对话框弹出来；默认按钮是「取消」。</summary>
+    public void ShowUninstallDialogForSnapshot() => _ = UninstallAsync();
+
+    /// <summary>截图自检用（--settings-scroll=）：滚到页面里某一段（超出范围自动停在底部）。</summary>
+    public void ScrollForSnapshot(double offset) => _scroll.ChangeView(null, offset, null, disableAnimation: true);
+#endif
+
     private async Task UninstallAsync()
     {
         var dialog = new ContentDialog
         {
+            RequestedTheme = Theme.ElementTheme,
             Title = "从这台电脑移除 Kitty Tools？",
             Content = "会删掉开始菜单快捷方式、开机启动和凭据管理器里的密钥。程序文件要你自己删。",
             PrimaryButtonText = "只卸载",
@@ -2076,6 +2089,7 @@ internal sealed class SettingsWindow : Window
             {
                 var failed = new ContentDialog
                 {
+                    RequestedTheme = Theme.ElementTheme,
                     Title = "数据目录没删干净",
                     Content = "可能还有程序占用着文件。请手动删除：" + Paths.DataDirectory,
                     PrimaryButtonText = "打开文件夹",

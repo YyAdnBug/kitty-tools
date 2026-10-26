@@ -117,6 +117,7 @@ internal static class Recovery
             window.Activate();
             var dialog = new ContentDialog
             {
+                RequestedTheme = Theme.ElementTheme,
                 Title = title,
                 Content = new ScrollViewer
                 {
