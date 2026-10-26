@@ -152,6 +152,8 @@ enum Prefs {
 
   /// 识字后把同一段的换行合成一行（中日文直接连、其它加空格）
   static let ocrJoinLines = "ocrJoinLines"
+  /// 识字模型已经为哪个系统版本编好了（OCR.prepare；存系统版本字符串）。这台电脑自己的状态：不注册默认值、不跟着导出
+  nonisolated static let ocrPreparedSystem = "ocrPreparedSystem"
 
   /// 状态屏的状态列表（StatusPreset 数组的 JSON）。**不注册默认值**：没存过 / 解不出 / 为空时用自带的三个
   /// （StatusPreset.load）。照样跟着设置的导出 / 导入和每日备份走——SettingsArchive.kinds 里单独登记（文件里写成一组状态，

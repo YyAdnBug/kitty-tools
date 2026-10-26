@@ -759,6 +759,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) { [weak self] _ in
       MainActor.assumeIsolated { self?.applyFeatures() }
     }
+    // 新装、系统更新后识字模型要现场编译一回（约一分钟）：用得到识字的功能开着就趁早在后台子进程里编好，
+    // 第一次截图翻译 / 识字不用干等（OCR.prepare；编好了它直接返回）
+    if !Feature.enabled.isDisjoint(with: [.clipboard, .translate, .screenshot]) {
+      Task { await OCR.prepare() }
+    }
   }
 
   /// 剪贴板历史现在记不记（剪贴板这个功能开着、没在菜单栏暂停）：本 App 自己写剪贴板的几处（Paster.recordText、截图、
@@ -2104,8 +2109,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard !lines.isEmpty else {
       return island.show("没有识别到文字", detail: "可以把选区框大一些再试", tone: .warning)
     }
-    // 没有结果岛（接着开浮窗）：「识别中」出过就收掉
+    // 没有结果岛（接着开浮窗）：「识别中」「正在准备」出过就收掉
     island.dismiss(ifShowing: Self.recognizingTitle)
+    island.dismiss(ifShowing: Self.preparingTitle)
     let text = OCR.text(lines, joined: true, separator: "\n\n")
     // 默认不写剪贴板、只记进历史（同一个入口：过敏感文本过滤、已有同文只挪到最前）；开了就当复制一次（写剪贴板 + 记历史）
     if UserDefaults.standard.bool(forKey: Prefs.translateCopyRecognized) {
@@ -2120,10 +2126,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 识字慢的时候先出「识别中」（第二轮体检 R3）：常见选区 0.04–0.13 s，不出；整屏密集文字约 0.9 s，过了 0.3 s 还没出结果
   /// 刘海岛先说一声，结果出来原地换掉（识字、截图翻译、钉图上的识字 / 翻译都走这里）
   private static let recognizingTitle = "识别中…"
+  /// 新装、系统更新后第一次识字：系统要先现场编译识字模型（OCR.prepare，冷的约一分钟）。岛一直挂着、每秒报等了多久，
+  /// 不然看着像卡死了
+  private static let preparingTitle = "正在准备识字模型…"
 
   private func recognizing<T>(_ work: () async -> T) async -> T {
     // 进程内识过字，模型就留在内存里：这一路不一定开关面板（⌥O 识字、钉图上识字），自己记得回头放掉
     defer { idleReclaim.schedule() }
+    if !OCR.isPrepared {
+      let note = "第一次识字要等一分钟左右，以后就快了"
+      island.show(Self.preparingTitle, detail: note, tone: .progress, symbol: "text.viewfinder")
+      let started = ContinuousClock.now
+      let ticker = Task { [island] in
+        while !Task.isCancelled {
+          try? await Task.sleep(for: .seconds(1))
+          let seconds = (ContinuousClock.now - started).components.seconds
+          island.progress(Self.preparingTitle, detail: "\(note) · 已等 \(seconds) 秒")
+        }
+      }
+      await OCR.prepare()
+      ticker.cancel()
+    }
     return await island.showIfSlow(Self.recognizingTitle, work)
   }
 
