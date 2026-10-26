@@ -104,7 +104,9 @@ enum SystemControl {
     }
     // 退路：系统的锁屏快捷键 ⌃⌘Q。远程桌面 / 虚拟机在前台时会被它们收走，改过这个快捷键也会失效
     guard Permissions.isAccessibilityTrusted else {
-      island?.show("没能锁定屏幕", detail: "授权辅助功能后再试", tone: .warning)
+      island?.show(
+        "没能锁定屏幕", detail: "授权辅助功能后再试", tone: .warning,
+        actions: [.settings(for: .accessibility)])
       return Permissions.requestAccessibility()
     }
     let source = CGEventSource(stateID: .combinedSessionState)
@@ -210,7 +212,8 @@ enum SystemControl {
     if result.error.contains("-1743") || result.error.contains("-1744") {
       island?.show(
         "没有权限控制「\(target)」",
-        detail: "在 系统设置 › \(Permissions.privacyPane) › 自动化 里打开", tone: .warning)
+        detail: "在 系统设置 › \(Permissions.privacyPane) › 自动化 里打开", tone: .warning,
+        actions: [.settings(for: .automation)])
       Permissions.Kind.automation.openSettings()
     } else if !result.error.contains("-128") {
       island?.show(failure, detail: Island.excerpt(result.error), tone: .error)

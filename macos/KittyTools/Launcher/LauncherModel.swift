@@ -847,7 +847,9 @@ import UniformTypeIdentifiers
     guard Permissions.isAccessibilityTrusted else {
       copy()
       // 系统授权框一点，启动器就收了，面板里的提示会跟着丢
-      island?.show("已复制到剪贴板", detail: "授权辅助功能后才能直接粘贴", tone: .warning)
+      island?.show(
+        "已复制到剪贴板", detail: "授权辅助功能后才能直接粘贴", tone: .warning,
+        actions: [.settings(for: .accessibility)])
       return Permissions.requestAccessibility()
     }
     hidePanel()

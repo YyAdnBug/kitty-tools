@@ -355,7 +355,8 @@ struct ExportSheet: View {
         try data.write(to: url, options: .atomic)
         dismiss()
         island?.show(
-          "已导出", detail: url.lastPathComponent, symbol: "square.and.arrow.up.circle.fill")
+          "已导出", detail: url.lastPathComponent, symbol: "square.and.arrow.up.circle.fill",
+          actions: [.reveal(url)])
       } catch {
         island?.show("导出失败", detail: error.localizedDescription, tone: .error)
       }

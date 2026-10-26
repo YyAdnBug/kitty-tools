@@ -286,6 +286,16 @@ struct IslandExcerptTests {
     #expect(ran == ["显示"] && fresh.content?.detail == "b.png")
   }
 
+  /// 常用的几种按钮（C1）：打开系统设置、在访达中显示、存成的文件（在访达中显示 + 打开）都是打开类，点岛本身也执行
+  @MainActor @Test func commonActions() {
+    let url = URL(filePath: "/tmp/截屏.png")
+    #expect(Island.Action.settings(for: .screenRecording).title == "打开系统设置")
+    #expect(Island.Action.reveal(url).title == "在访达中显示")
+    let file = [Island.Action].file(url)
+    #expect(file.map(\.title) == ["在访达中显示", "打开"] && file.allSatisfy(\.opens))
+    #expect(Island.Action.settings(for: .accessibility).opens)
+  }
+
   /// 双指往上滑收起：按手指方向算，「自然滚动」开着时 scrollingDeltaY 和手指同向（往下为正）
   @Test func swipeUpFollowsFingers() {
     #expect(Island.fingersUp(deltaY: -10, inverted: true) == 10)

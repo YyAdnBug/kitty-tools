@@ -897,7 +897,9 @@ final class ScreenRecorder: NSObject {
     }
     // 等框时已经取消了：没有「这段录屏 / 录音」
     if !stoppedWhileAsking {
-      island?.show("没有麦克风授权", detail: "这段\(medium.noun)不带麦克风", tone: .warning)
+      island?.show(
+        "没有麦克风授权", detail: "这段\(medium.noun)不带麦克风", tone: .warning,
+        actions: [.settings(for: .microphone)])
     }
     return false
   }
@@ -914,7 +916,9 @@ final class ScreenRecorder: NSObject {
       keysDenied = true
       defaults.set(false, forKey: Prefs.screenRecordShowsKeys)
       let notice = Self.keysDeniedNotice(withoutMicrophone: withoutMicrophone)
-      island?.show(notice.title, detail: notice.detail, tone: .warning)
+      island?.show(
+        notice.title, detail: notice.detail, tone: .warning,
+        actions: [.settings(for: .accessibility)])
       return false
     }
   }

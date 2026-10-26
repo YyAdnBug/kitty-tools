@@ -148,7 +148,8 @@ struct NotesTab: View {
         if result.missingImages > 0 { detail += " · \(result.missingImages) 张图片不在，没导出" }
         island?.show(
           "已导出 \(result.count) 条便签", detail: detail,
-          symbol: "square.and.arrow.up.circle.fill")
+          symbol: "square.and.arrow.up.circle.fill",
+          actions: result.folder.map { [Island.Action.reveal($0)] } ?? [])
       }
     }
   }

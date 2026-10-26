@@ -702,7 +702,7 @@ import Observation
       island?.show(
         "已复制到剪贴板",
         detail: payload.writes.count > 1 ? "只复制了第 1 条，授权辅助功能后才能直接粘贴" : "授权辅助功能后才能直接粘贴",
-        tone: .warning)
+        tone: .warning, actions: [.settings(for: .accessibility)])
       Permissions.requestAccessibility()
       return
     }
@@ -1072,7 +1072,11 @@ import Observation
   private func showUndo(_ text: String, symbol: String) {
     showToast(.undo(text), spoken: "\(text)，按 Command-Z 撤销")
     if isQuickLooking, let island {
-      island.show(text, detail: "⌘Z 撤销", tone: .info, symbol: symbol)
+      island.show(
+        text, tone: .info, symbol: symbol,
+        actions: [
+          .init("撤销") { [weak self] in if self?.store.canUndo == true { self?.undoDelete() } }
+        ])
     }
   }
 

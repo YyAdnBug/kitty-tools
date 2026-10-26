@@ -134,7 +134,9 @@ import UniformTypeIdentifiers
     deleted.append((entry, store.clears))
     withAnimation(Style.Motion.settle.animation()) { store.delete(entry.id) }
     // 行消失看得见，能 ⌘Z 撤销却只有读屏用户知道（岛自己也会播报）
-    island?.show("已删除", detail: "⌘Z 撤销", tone: .info, symbol: "trash.circle.fill")
+    island?.show(
+      "已删除", tone: .info, symbol: "trash.circle.fill",
+      actions: [.init("撤销") { [weak self] in self?.undoDelete() }])
   }
 
   /// ⌘Z：插回最近删掉的一条并选中它；没有可撤销的返回 false（交还输入框自己的撤销）
@@ -717,7 +719,7 @@ enum HistoryMenu {
         try text.write(to: url, atomically: true, encoding: .utf8)
         island?.show(
           "已导出 \(entries.count) 条", detail: url.lastPathComponent,
-          symbol: "square.and.arrow.up.circle.fill")
+          symbol: "square.and.arrow.up.circle.fill", actions: [.reveal(url)])
       } catch {
         island?.show("导出失败", detail: error.localizedDescription, tone: .error)
       }

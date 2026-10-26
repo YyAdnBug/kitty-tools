@@ -131,7 +131,7 @@ import AppKit
             ? "点菜单栏图标，选「更新到 \(release.version)」" : "到 设置 › 关于 里点「更新并重新打开」"
           island?.show(
             "有新版本 \(release.version)", detail: hint, tone: .info,
-            symbol: "arrow.down.circle.fill")
+            symbol: "arrow.down.circle.fill", actions: [installAction("更新")])
         }
       } else {
         state = .upToDate
@@ -150,7 +150,16 @@ import AppKit
       } else {
         state = .failed("检查更新失败：\(error.localizedDescription)")
       }
-      if toMenu { island?.show("检查更新失败", detail: error.localizedDescription, tone: .error) }
+      if toMenu {
+        island?.show(
+          "检查更新失败", detail: error.localizedDescription, tone: .error,
+          actions: [
+            .init("重试") { [weak self] in
+              guard let self else { return }
+              Task { await self.check(.menu) }
+            }
+          ])
+      }
       return false
     }
   }
@@ -177,7 +186,17 @@ import AppKit
     } catch {
       state = .available(release)
       progress = nil
-      island?.show("更新失败", detail: error.localizedDescription, tone: .error)
+      island?.show(
+        "更新失败", detail: error.localizedDescription, tone: .error,
+        actions: [installAction("重试")])
+    }
+  }
+
+  /// 岛上的「更新」「重试」：同菜单栏的「更新到 x」
+  private func installAction(_ title: String) -> Island.Action {
+    .init(title) { [weak self] in
+      guard let self else { return }
+      Task { await self.install(.menu) }
     }
   }
 

@@ -594,12 +594,13 @@ nonisolated enum NoteMarkdownFiles {
         if result.missingImages > 0 {
           var detail = "\(result.missingImages) 张图片不在，没导出"
           if result.images > 0 { detail = "\(result.images) 张图片在旁边的 attachments 文件夹 · " + detail }
-          island.show("已导出「\(result.fileName)」", detail: detail)
+          island.show("已导出「\(result.fileName)」", detail: detail, actions: [.reveal(url)])
           return
         }
         island.show(
           "已导出「\(result.fileName)」",
-          detail: result.images > 0 ? "\(result.images) 张图片在旁边的 attachments 文件夹" : nil)
+          detail: result.images > 0 ? "\(result.images) 张图片在旁边的 attachments 文件夹" : nil,
+          actions: [.reveal(url)])
       }
     }
   }

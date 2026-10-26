@@ -309,7 +309,8 @@ import Observation
     guard !isActive else { return }
     guard Permissions.isAccessibilityTrusted else {
       Permissions.requestAccessibility()
-      island?.show("状态屏需要「辅助功能」授权", tone: .warning)
+      island?.show(
+        "状态屏需要「辅助功能」授权", tone: .warning, actions: [.settings(for: .accessibility)])
       return
     }
     // 框选遮罩要键盘；设置里正在录快捷键时热键停着、录制框等着按键：都不进（一会儿就完，不出提示）

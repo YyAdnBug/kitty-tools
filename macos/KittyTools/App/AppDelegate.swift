@@ -203,7 +203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           guard let saved = await saveImage(image, scale: scale, asking: false) else { return }
           island.show(
             FlyCard.Badge.saved(saved.url).title, detail: saved.url.lastPathComponent,
-            leading: Island.thumbnail(of: image))
+            leading: Island.thumbnail(of: image), actions: .file(saved.url))
         case .saveAs: await saveImageAs(image, scale: scale)
         case .recognize: await copyRecognizedText(in: image)
         case .translate: await translateImage(image)
@@ -723,7 +723,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       island.show(
         count == 1 ? "「\(failed.title)」快捷键没注册上" : "有 \(count) 个快捷键没注册上",
         detail: "到 设置 › 快捷键 里看原因、换一个组合",
-        tone: .warning, symbol: "keyboard")
+        tone: .warning, symbol: "keyboard", actions: [openHotKeySettings])
     }
     // 上次录屏 / 录音没正常收尾（闪退）：能播的挪进快速保存目录，说一声（C7）
     Task {
@@ -891,7 +891,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       settings.conflicted = { [unowned self] pair in
         island.show(
           "同步来的快捷键撞上了", detail: "\(pair)用的是同一个组合，到 设置 › 快捷键 里改一个",
-          tone: .warning)
+          tone: .warning, actions: [openHotKeySettings])
       }
       syncer.sources = [
         clipboardStore, historyStore, WebSearchSync(), TranslateServiceSync(store: serviceStore),
@@ -1236,6 +1236,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     panel.present()
   }
 
+  /// 岛上的「打开设置」：跳到 设置 › 快捷键（快捷键没注册上、同步来的撞上了）
+  private var openHotKeySettings: Island.Action {
+    .init("打开设置", opens: true) { [unowned self] in showSettings(page: .hotkeys) }
+  }
+
   /// 暂停 / 恢复记录剪贴板（菜单栏、启动器，D4）：不存盘，重启 App 自动恢复记录（免得忘了关）；
   /// 菜单一关就看不出开没开，用刘海说
   private func togglePauseRecording() {
@@ -1245,7 +1250,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     island.show(
       paused ? "已恢复记录剪贴板" : "已暂停记录剪贴板",
       detail: paused ? nil : "复制的内容不进历史，再点一次恢复", tone: .info,
-      symbol: paused ? "play.circle.fill" : "pause.circle.fill")
+      symbol: paused ? "play.circle.fill" : "pause.circle.fill",
+      actions: [.init("撤销") { [unowned self] in togglePauseRecording() }])
   }
 
   /// 复制即译开关（菜单栏、启动器）：开关一关就看不出开没开，这个后台模式会影响之后的每次复制，用刘海说
@@ -1254,7 +1260,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     UserDefaults.standard.set(!wasOn, forKey: Prefs.translateCopyToTranslate)
     island.show(
       wasOn ? "已关闭复制即译" : "已开启复制即译", detail: wasOn ? nil : "复制文字后会弹出翻译", tone: .info,
-      symbol: wasOn ? "character.bubble" : "character.bubble.fill")
+      symbol: wasOn ? "character.bubble" : "character.bubble.fill",
+      actions: [.init("撤销") { [unowned self] in toggleCopyToTranslate() }])
   }
 
   /// 关闭全部钉图（菜单栏、启动器）：关了就回不来，隐藏着时屏幕上什么也看不到，用刘海说
@@ -1307,7 +1314,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       island.show(
         "没有权限搜" + denied.map { "「\($0)」" }.joined(),
         detail: "可在系统设置 › \(Permissions.privacyPane) › 文件和文件夹里打开",
-        tone: .warning)
+        tone: .warning, actions: [.settings(for: .filesAndFolders)])
     }
   }
 
@@ -1437,7 +1444,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     guard Permissions.isAccessibilityTrusted else {
       Paster.write(string: text, record: true)
-      island.show("已复制译文", detail: "授权辅助功能后才能直接替换", tone: .warning)
+      island.show(
+        "已复制译文", detail: "授权辅助功能后才能直接替换", tone: .warning,
+        actions: [.settings(for: .accessibility)])
       return Permissions.requestAccessibility()
     }
     builtTranslatePanel?.hide()
@@ -1462,7 +1471,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       return island.show("没有选中文字", tone: .warning)
     }
     guard note != nil || Permissions.isAccessibilityTrusted else {
-      island.show("需要「辅助功能」授权", detail: "划词翻译并替换要用", tone: .warning)
+      island.show(
+        "需要「辅助功能」授权", detail: "划词翻译并替换要用", tone: .warning,
+        actions: [.settings(for: .accessibility)])
       return Permissions.requestAccessibility()
     }
     let sourceApp = NSWorkspace.shared.frontmostApplication?.processIdentifier
@@ -1498,7 +1509,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       // （后者会一直挂到 60 秒兜底）
       guard !Task.isCancelled else { return }
       guard let text else { return island.show("没有选中文字", tone: .warning) }
-      island.show("翻译中…", detail: "再按一次快捷键取消", tone: .progress, symbol: "character.bubble.fill")
+      // 「取消」= 再按一次快捷键（还在翻才算：刚好翻完时点的不能又开一次）
+      island.show(
+        "翻译中…", detail: "再按一次快捷键取消", tone: .progress, symbol: "character.bubble.fill",
+        actions: [.init("取消") { [unowned self] in if replaceTask != nil { translateAndReplace() } }]
+      )
       do {
         let result = TranslateCoordinator.rewrap(
           try await coordinator.translateOnce(text), like: text)
@@ -1524,7 +1539,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         island.show("已替换为译文", detail: Island.excerpt(result))
       } catch {
         guard !Task.isCancelled else { return }
-        island.show("翻译失败", detail: error.localizedDescription, tone: .error)
+        // 重试 = 再划一次：前台还是取词的 App（点岛不激活本 App），选区多半还在
+        island.show(
+          "翻译失败", detail: error.localizedDescription, tone: .error,
+          actions: [.init("重试") { [unowned self] in translateAndReplace() }])
       }
     }
   }
@@ -1763,7 +1781,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let symbol = medium == .screen ? "video.circle.fill" : "waveform.circle.fill"
     island.show(
       summary.title, detail: summary.detail, tone: summary.tone,
-      symbol: summary.tone == .success ? symbol : nil, leading: leading)
+      symbol: summary.tone == .success ? symbol : nil, leading: leading,
+      actions: result.file.map([Island.Action].file) ?? [])
   }
 
   /// 录屏存进快速保存目录后（拍板 R11-a）：最后一帧从选区（整屏录制就是那块屏）按 S1 飞到右下角，没有快门声，落地弹文件夹
@@ -1968,7 +1987,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           if let history { shotHistory.markSaved(history, to: saved.url) }
           island.show(
             FlyCard.Badge.saved(saved.url).title, detail: saved.url.lastPathComponent,
-            leading: Island.thumbnail(of: image))
+            leading: Island.thumbnail(of: image), actions: .file(saved.url))
         case .saveAs:
           if let saved = await saveImageAs(image, scale: scale), let history {
             shotHistory.markSaved(history, to: saved)
@@ -2018,7 +2037,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     Permissions.requestScreenRecording()
     Permissions.Kind.screenRecording.openSettings()
     island.show(
-      "需要「屏幕录制」授权", detail: "\(feature)要用，授权后可能要重新打开本 App", tone: .warning)
+      "需要「屏幕录制」授权", detail: "\(feature)要用，授权后可能要重新打开本 App", tone: .warning,
+      actions: [.settings(for: .screenRecording)])
     return false
   }
 
@@ -2142,7 +2162,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 另存为（截图、长截图、钉图）：不飞卡片、不进常驻缩略图，存好了用刘海说。返回存到哪（取消、失败是 nil）
   @discardableResult private func saveImageAs(_ image: CGImage, scale: CGFloat) async -> URL? {
     guard let saved = await saveImage(image, scale: scale, asking: true) else { return nil }
-    island.show("已保存", detail: saved.url.lastPathComponent, leading: Island.thumbnail(of: image))
+    island.show(
+      "已保存", detail: saved.url.lastPathComponent, leading: Island.thumbnail(of: image),
+      actions: .file(saved.url))
     return saved.url
   }
 
@@ -2181,7 +2203,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     return { [weak self] badge, data in
       png = data
       // 不飞就没有落地的角标：结果用刘海说（Whisker：减弱动态效果时飞行卡片改成轻提示；岛自己会播报）
-      self?.island.show(badge.title, leading: Island.thumbnail(of: image))
+      let actions: [Island.Action] = if case .saved(let url) = badge { .file(url) } else { [] }
+      self?.island.show(badge.title, leading: Island.thumbnail(of: image), actions: actions)
       guard keepsThumbnail, let rect = FlyCard.landingRect(for: frame) else { return }
       linger(rect, badge)
     }
@@ -2332,7 +2355,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       let summary = AboutTab.releases.first { $0.version == AboutTab.version }?.summary
       island.show(
         "已更新到 \(AboutTab.version)", detail: summary.map(Island.excerpt), tone: .success,
-        symbol: "sparkles")
+        symbol: "sparkles",
+        actions: [.init("看更新了什么", opens: true) { [unowned self] in showSettings(page: .about) }])
     }
   }
 

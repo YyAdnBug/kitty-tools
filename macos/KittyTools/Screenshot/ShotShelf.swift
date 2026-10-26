@@ -427,7 +427,7 @@ final class ShotShelf {
         {
           shelf.island?.show(
             "已保存", detail: url.lastPathComponent,
-            leading: shown.map(Island.thumbnail(of:)) ?? .tone)
+            leading: shown.map(Island.thumbnail(of:)) ?? .tone, actions: .file(url))
         }
         badge = .saved(url)
         fileURL = url
@@ -560,7 +560,9 @@ final class ShotShelf {
     let progress = "正在转成 GIF…"
     let note = Double(seconds) > VideoExport.maxSeconds ? "只转前 60 秒" : nil
     let target = VideoExport.target(for: url, in: ScreenshotOutput.saveDirectory)
-    island?.show(progress, detail: note, tone: .progress, symbol: Self.gifIslandSymbol)
+    island?.show(
+      progress, detail: note, tone: .progress, symbol: Self.gifIslandSymbol,
+      actions: [cancelExport])
     exporting = (progress, Self.gifIslandSymbol)
     export = Task {
       do {
@@ -572,7 +574,7 @@ final class ShotShelf {
         let bytes = (try? target.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
         island?.show(
           "已存成 GIF", detail: Int64(bytes).formatted(.byteCount(style: .file)),
-          leading: Island.thumbnail(of: first))
+          leading: Island.thumbnail(of: first), actions: .file(target))
         // 叠在同一块屏的角落（最新的在最下面，这张视频卡往上让位）
         shelf?.remember(target, first, .gif)
         if let shelf, let corner = FlyCard.landingRect(for: rect, size: rect.size) {
@@ -597,7 +599,8 @@ final class ShotShelf {
     let island = shelf?.island
     let progress = "正在压缩…"
     let target = VideoExport.compressedTarget(for: url, in: url.deletingLastPathComponent())
-    island?.show(progress, tone: .progress, symbol: Self.compressIslandSymbol)
+    island?.show(
+      progress, tone: .progress, symbol: Self.compressIslandSymbol, actions: [cancelExport])
     exporting = (progress, Self.compressIslandSymbol)
     export = Task {
       do {
@@ -607,7 +610,7 @@ final class ShotShelf {
         }
         island?.show(
           "已压缩", detail: Self.sizeChange(from: url, to: target),
-          leading: shown.map(Island.thumbnail(of:)) ?? .tone)
+          leading: shown.map(Island.thumbnail(of:)) ?? .tone, actions: .file(target))
         shelf?.remember(target, shown, .video)
         if let shelf, let corner = FlyCard.landingRect(for: rect, size: rect.size) {
           shelf.add(
@@ -631,8 +634,14 @@ final class ShotShelf {
   private func isExporting() -> Bool {
     guard export != nil, let exporting else { return false }
     shelf?.island?.show(
-      exporting.title, detail: "这一段还没做完", tone: .progress, symbol: exporting.symbol)
+      exporting.title, detail: "这一段还没做完", tone: .progress, symbol: exporting.symbol,
+      actions: [cancelExport])
     return true
+  }
+
+  /// 进度岛上的「取消」：同关掉卡片，GIF 不转了、不压了（不出岛、不留半成品）
+  private var cancelExport: Island.Action {
+    .init("取消") { [weak self] in self?.export?.cancel() }
   }
 
   private func finishExport() {

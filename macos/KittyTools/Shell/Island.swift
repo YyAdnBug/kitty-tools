@@ -473,6 +473,26 @@ import SwiftUI
   }
 }
 
+/// 几种常用的按钮（拍板 C1 的表）
+extension Island.Action {
+  /// 打开系统设置里那一项授权（点岛本身也是它）
+  static func settings(for kind: Permissions.Kind) -> Self {
+    Self("打开系统设置", opens: true) { kind.openSettings() }
+  }
+
+  /// 在访达里选中这个文件 / 文件夹（点岛本身也是它）
+  static func reveal(_ url: URL) -> Self {
+    Self("在访达中显示", opens: true) { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+  }
+}
+
+extension [Island.Action] {
+  /// 存成的文件：在访达中显示（主按钮，点岛也是它）+ 用默认的 App 打开
+  static func file(_ url: URL) -> Self {
+    [.reveal(url), Island.Action("打开", opens: true) { NSWorkspace.shared.open(url) }]
+  }
+}
+
 /// 岛的画面：黑色形体（刘海屏带耳朵的下巴 / 其它屏的胶囊）+ 一行内容，悬停时长成卡片
 struct IslandView: View {
   let island: Island

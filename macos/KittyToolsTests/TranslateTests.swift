@@ -375,6 +375,22 @@ struct HistoryListTests {
     #expect(list.query.isEmpty && list.entries.count == 3)
   }
 
+  /// 删了一条：刘海岛带「撤销」（刘海岛交互 C1），点了和 ⌘Z 一样插回来
+  @Test func deleteOffersUndoOnIsland() throws {
+    let store = try HistoryStore(db: Database(path: ":memory:"))
+    for word in ["b", "a"] {
+      store.add(source: word, target: .en, result: word.uppercased(), service: "", limit: 0)
+    }
+    let list = HistoryList(store: store)
+    let island = Island(showing: nil)
+    list.island = island
+    list.delete(try #require(list.selected))
+    #expect(island.content?.title == "已删除" && island.actions.map(\.title) == ["撤销"])
+    #expect(island.actions.allSatisfy { !$0.opens })  // 撤销只能点按钮，点岛本身不撤
+    island.actions[0].run()
+    #expect(list.entries.map(\.source) == ["a", "b"])
+  }
+
   /// 「收藏」范围里 ⌘D 取消收藏选中的一条：这行消失，选中和删除一样挪到下一条（不跳回第一条）
   @Test func unfavoriteInFavoritesScopeMovesSelection() throws {
     let store = try HistoryStore(db: Database(path: ":memory:"))
