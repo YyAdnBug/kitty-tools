@@ -469,9 +469,13 @@ import SwiftUI
   /// 先不接鼠标，指针落在形状上再接（hover）
   private func showWindow() {
     guard !isStaged else { return }
+    let fresh = self.window == nil
     let window = self.window ?? makeWindow()
     self.window = window
     if !isOpen || !window.isVisible { place(window) }
+    // 新建的窗口先按收着的样子排一遍，再改状态：SwiftUI 第一次画它时状态要是已经变了（鼓起、展开），就没有动画的起点、
+    // 直接画成终点的样子（2026-10-26 用户：「首次启动，hover 没有动画效果」）
+    if fresh { window.contentView?.layoutSubtreeIfNeeded() }
     window.ignoresMouseEvents = true
     window.orderFrontRegardless()
     watchMouse()
@@ -481,11 +485,25 @@ import SwiftUI
   /// （只看位置、不吞事件；鼠标移动和点击都不要授权）
   func start() {
     updateNotches()
+    prepareWindow()
     screenObserver = NotificationCenter.default.addObserver(
       forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
     ) { [weak self] _ in
       MainActor.assumeIsolated { self?.updateNotches() }
     }
+  }
+
+  /// 刘海屏的 Mac：启动时先把窗口建好、按刘海屏收着的样子排一遍（不显示）——第一次停到刘海上就有现成的窗口和
+  /// 动画的起点，也不用在那一下当场建窗口
+  private func prepareWindow() {
+    guard !isStaged, window == nil,
+      let screen = NSScreen.screens.first(where: { Self.notchRect(of: $0) != nil })
+    else { return }
+    geometry = Self.geometry(of: screen)
+    let window = makeWindow()
+    self.window = window
+    host?.rootView = IslandView(island: self)
+    window.contentView?.layoutSubtreeIfNeeded()
   }
 
   /// 屏幕变了（接上 / 拔掉外接屏、合盖、改分辨率）：重算刘海在哪；没有刘海屏就不常驻监听
@@ -552,12 +570,14 @@ import SwiftUI
   /// 鼓起 / 缩回的曲线由 IslandView 定（鼓起 0.2 s easeOut，缩回同收起）
   private func peek(_ on: Bool) {
     guard on != isPeeking, !isStaged else { return }
-    isPeeking = on
     if on {
+      // 先摆好窗口（新建的先按收着的样子排一遍），再鼓：顺序反了第一次鼓起没有动画
       showWindow()
       window?.ignoresMouseEvents = false
+      isPeeking = true
       return
     }
+    isPeeking = false
     window?.ignoresMouseEvents = true
     Task { [weak self] in
       try? await Task.sleep(for: Self.retractTime)
@@ -781,18 +801,13 @@ struct IslandView: View {
   }
 
   /// 黑底：刘海屏纯黑带耳朵，无刘海屏 black 0.92 + 发丝线的圆角卡片；只有开着时有阴影（挂在纯形体上，不挂在内容上）
-  @ViewBuilder private func backdrop(_ shape: IslandGeometry) -> some View {
+  /// 不按两种屏分支（分支一换就是新视图，动画没有起点）：两种屏只是颜色、描边的参数不同
+  private func backdrop(_ shape: IslandGeometry) -> some View {
     let outline = IslandOutline(shape: shape)
-    if shape.capsule {
-      outline.fill(.black.opacity(0.92))
-        .overlay(outline.hairlineBorder(.white.opacity(0.12)))
-        .islandShadow(open: island.isOpen)
-        .animation(curve, value: shape)
-    } else {
-      outline.fill(.black)
-        .islandShadow(open: island.isOpen)
-        .animation(curve, value: shape)
-    }
+    return outline.fill(.black.opacity(shape.capsule ? 0.92 : 1))
+      .overlay(outline.hairlineBorder(.white.opacity(shape.capsule ? 0.12 : 0)))
+      .islandShadow(open: island.isOpen)
+      .animation(curve, value: shape)
   }
 
   /// 收着是一行（前导 + 标题 + 详情 + 主按钮），展开是卡片；那一张开着时是 IslandBoard。换内容时模糊交叉替换，
@@ -993,20 +1008,20 @@ struct IslandLeading: View {
   }
 }
 
-/// 岛在不在：无刘海屏收起时缩到 0.6、淡掉（顶部锚点）；刘海屏减弱动态效果时只淡入淡出。都是渲染变换，不重排
+/// 岛在不在：无刘海屏收起时缩到 0.6、淡掉（顶部锚点）；刘海屏减弱动态效果时只淡入淡出。都是渲染变换，不重排；
+/// 不按两种屏分支（理由同 backdrop）
 private struct Presence: ViewModifier {
   let island: Island
   let capsule: Bool
   let reduceMotion: Bool
 
   func body(content: Content) -> some View {
-    if capsule {
+    let open = island.isOpen
+    let shown = capsule ? open : !(reduceMotion && !open && !island.isPeeking)
+    return
       content
-        .scaleEffect(island.isOpen || reduceMotion ? 1 : 0.6, anchor: .top)
-        .opacity(island.isOpen ? 1 : 0)
-    } else {
-      content.opacity(reduceMotion && !island.isOpen && !island.isPeeking ? 0 : 1)
-    }
+      .scaleEffect(capsule && !open && !reduceMotion ? 0.6 : 1, anchor: .top)
+      .opacity(shown ? 1 : 0)
   }
 }
 
