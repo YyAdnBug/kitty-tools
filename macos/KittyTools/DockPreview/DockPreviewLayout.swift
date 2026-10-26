@@ -202,8 +202,12 @@ enum DockPreviewLayout {
 
   /// 鼠标还算不算在预览附近：在面板上（外扩 4 点）、在图标上（外扩 2 点），或者在图标和面板之间那道缝里
   /// （图标那么宽、从图标边到面板边）。弹着时按它决定收不收，不看追踪区的进出（面板改尺寸、淡出时进出事件会丢）
-  static func keepsOpen(mouse: CGPoint, panel: CGRect, item: CGRect, edge: Edge) -> Bool {
+  /// pending：鼠标停着、还等着换过去的那个图标（顺着程序坞划过去时它也算在附近，面板不收）
+  static func keepsOpen(
+    mouse: CGPoint, panel: CGRect, item: CGRect, edge: Edge, pending: CGRect? = nil
+  ) -> Bool {
     if panel.insetBy(dx: -4, dy: -4).contains(mouse) || item.insetBy(dx: -2, dy: -2).contains(mouse)
+      || pending?.insetBy(dx: -2, dy: -2).contains(mouse) == true
     {
       return true
     }

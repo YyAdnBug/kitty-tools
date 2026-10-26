@@ -363,6 +363,14 @@ struct DockPreviewTests {
     #expect(keeps(730, 75), "图标和面板之间那道缝")
     #expect(!keeps(600, 75), "缝的两边不算")
     #expect(!keeps(100, 500), "桌面上")
+    // 顺着程序坞划到旁边的图标、还在等着换过去：那个图标上也算在附近，面板不收
+    let next = CGRect(x: 770, y: 4, width: 60, height: 60)
+    #expect(
+      DockPreviewLayout.keepsOpen(
+        mouse: CGPoint(x: 800, y: 30), panel: panel, item: item, edge: .bottom, pending: next))
+    #expect(
+      !DockPreviewLayout.keepsOpen(
+        mouse: CGPoint(x: 800, y: 30), panel: panel, item: item, edge: .bottom))
     let sidePanel = CGRect(x: 90, y: 300, width: 300, height: 400)
     let sideItem = CGRect(x: 0, y: 450, width: 60, height: 60)
     #expect(

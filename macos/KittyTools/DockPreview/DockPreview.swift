@@ -1,5 +1,6 @@
 // 程序坞预览（第九族，2026-10-22；拍板页 build/research/dock-preview-2026-10-22/decisions.html，PLAN §10「程序坞预览」）：
-// 鼠标停在程序坞的 App 图标上 0.2 秒，图标上方弹出它所有窗口的缩略图；弹着时换到别的图标立刻换（面板滑过去、内容交叉淡变）；
+// 鼠标停在程序坞的 App 图标上 0.2 秒，图标上方弹出它所有窗口的缩略图；弹着时换到别的图标、停稳 80 毫秒就换（面板滑过去、
+// 内容交叉淡变；0.3 秒内连着换的不淡变，直接换）；
 // 鼠标离开图标和面板 0.3 秒后收起（留时间从图标挪到面板上）；点程序坞图标、点别处立刻收（拍板 B1–B3）。
 // 点一张切到那扇窗口，点 ✕ 关掉那扇。没窗口的 App、不是 App 的图标不弹（B4）。启动台开着、状态屏、截图框选时不弹，
 // 弹着时它们一来就收（D2）；切到别的桌面也收。
@@ -12,8 +13,11 @@
 // 第一次弹时才建，收起时清掉内容、面板留着（弹过一次 14 扇的约 +10 MB，收起后照样占着，屏上量的，PLAN §10）；空闲回收
 // 时收着的面板整块放掉（回落约 6 MB）、连同缩略图缓存，下次弹时再建；关掉功能时清缓存。开关是功能开关 Feature.dockPreview（默认关，拍板 A3），
 // 起停在 AppDelegate.applyFeatures。
-// ponytail: 换一次图标就在主线程同步列一次窗口（中位约 20 ms、最长约 50 ms，PLAN §10）；缩略图一扇扇串行截（一扇约
-// 15 ms，二十扇约 0.3 s，先显示上次的图）。顺着程序坞划过一排图标觉得卡了，再给列窗口加防抖、截图开两三路并发。
+// 顺着程序坞快速划过一排图标（2026-10-26 用户报：一路冒出好几个预览、动画卡顿掉帧）：原来每路过一个图标就在主线程列一遍
+// 窗口（辅助功能，约 20–50 ms）、重排一遍、开一段 0.24 s 的交叉淡变，几段淡变叠在一起、主线程被堵；现在路过的不换，停稳
+// switchDelay 才换（这期间鼠标停着的那个图标也算「在附近」，面板不收），连着换的不淡变。
+// ponytail: 换一次还是在主线程同步列一次窗口（中位约 20 ms、最长约 50 ms，PLAN §10）；缩略图一扇扇串行截（一扇约
+// 15 ms，二十扇约 0.3 s，先显示上次的图）。停稳了换还嫌顿，再把列窗口挪到截图那样的后台、截图开两三路并发。
 
 import AppKit
 import SwiftUI
@@ -33,8 +37,12 @@ import SwiftUI
   private var host: PreviewHost?
   /// 正在预览的：哪个 App、哪个图标（位置是弹出那一刻重读过的）、哪块屏（nil = 收着）
   private var shown: (app: NSRunningApplication, item: DockWatcher.Item, screen: NSScreen)?
-  /// 等着出现的那一下（新的到来就作废旧的）
+  /// 等着出现 / 换过去的那一下（新的到来就作废旧的）
   private var pendingShow: Task<Void, Never>?
+  /// 鼠标停着、还没换过去的那个 App 图标（等 switchDelay 的这段时间它也算「在附近」，面板不收）
+  private var pendingItem: DockWatcher.Item?
+  /// 上一次换 App 的时刻：0.3 秒内连着换的不做交叉淡变
+  private var lastSwitch: TimeInterval = 0
   private var capturing: Task<Void, Never>?
   /// 弹着时看鼠标在哪的定时器（收着时不跑）
   private var watch: Timer?
@@ -48,6 +56,10 @@ import SwiftUI
   private var bundleIDs: [URL: String] = [:]
 
   static let showDelay: Duration = .milliseconds(200)
+  /// 弹着时换到别的图标要停稳多久：路过的图标不换（不列窗口、不重排、不淡变）
+  static let switchDelay: Duration = .milliseconds(80)
+  /// 两次换 App 隔得比这短就不做交叉淡变（Whisker §1：连发瞬时），不然几段淡变叠在一起
+  static let crossfadeGap: TimeInterval = 0.3
   static let watchInterval: TimeInterval = 0.1
 
   init() {
@@ -86,6 +98,7 @@ import SwiftUI
   private func dockChanged(_ item: DockWatcher.Item?) {
     pendingShow?.cancel()
     // 离开了程序坞、停在不是 App 的图标上：收不收由 watch 按鼠标在哪定
+    pendingItem = nil
     guard let item else {
       dismissedURL = nil
       return
@@ -95,26 +108,24 @@ import SwiftUI
     guard dismissedURL == nil, NSEvent.pressedMouseButtons == 0,
       let target = runningApp(at: item.bundleURL)
     else { return }
-    if shown != nil {
-      present(target, at: item)
-    } else {
-      pendingShow = Task { [weak self] in
-        try? await Task.sleep(for: Self.showDelay)
-        guard !Task.isCancelled else { return }
-        self?.present(target, at: item)
-      }
+    // 收着时停 0.2 秒才弹；弹着时停稳 80 毫秒才换：快速划过去的图标一个都不列、不画
+    pendingItem = item
+    let delay = shown == nil ? Self.showDelay : Self.switchDelay
+    pendingShow = Task { [weak self] in
+      try? await Task.sleep(for: delay)
+      guard !Task.isCancelled, let self else { return }
+      self.pendingItem = nil
+      self.present(target, at: item)
     }
   }
 
-  /// 程序坞图标指向的那个开着的 App：先按解开链接后的路径配（/Applications/Safari.app 是指向别处的链接），配不上再按
-  /// bundle id
+  /// 程序坞图标指向的那个开着的 App：先按路径配（不碰磁盘），配不上再按 bundle id（/Applications/Safari.app 是指向别处的
+  /// 链接，两边路径不一样；bundle id 读一次 Info.plist 就记下）。每路过一个图标都要配一次，所以不逐个解开所有 App 的链接
   private func runningApp(at url: URL?) -> NSRunningApplication? {
     guard let url else { return nil }
-    let path = url.resolvingSymlinksInPath().standardizedFileURL
+    let path = url.standardizedFileURL
     let apps = NSWorkspace.shared.runningApplications
-    if let match = apps.first(where: {
-      $0.bundleURL?.resolvingSymlinksInPath().standardizedFileURL == path
-    }) {
+    if let match = apps.first(where: { $0.bundleURL?.standardizedFileURL == path }) {
       return match
     }
     if bundleIDs[url] == nil { bundleIDs[url] = Bundle(url: url)?.bundleIdentifier }
@@ -160,8 +171,16 @@ import SwiftUI
       if !sameApp { self.model.generation += 1 }
     }
     let reduced = Style.reduceMotion
+    let now = CACurrentMediaTime()
+    let quick = now - lastSwitch < Self.crossfadeGap
+    if !sameApp { lastSwitch = now }
     if switching {
-      withAnimation(Style.Motion.settle.animation(reduced: reduced)) { update() }
+      // 连着换的直接换内容（不叠几段淡变），面板照样滑过去
+      if quick || sameApp {
+        update()
+      } else {
+        withAnimation(Style.Motion.settle.animation(reduced: reduced)) { update() }
+      }
       move(panel, to: frame, animated: !reduced)
     } else {
       update()
@@ -247,6 +266,7 @@ import SwiftUI
 
   func hide(animated: Bool) {
     pendingShow?.cancel()
+    pendingItem = nil
     capturing?.cancel()
     stopWatching()
     shown = nil
@@ -311,7 +331,8 @@ import SwiftUI
     guard let shown, let panel else { return stopWatching() }
     if isSuppressed() { return hide(animated: false) }
     let inside = DockPreviewLayout.keepsOpen(
-      mouse: NSEvent.mouseLocation, panel: panel.frame, item: shown.item.frame, edge: model.edge)
+      mouse: NSEvent.mouseLocation, panel: panel.frame, item: shown.item.frame, edge: model.edge,
+      pending: pendingItem?.frame)
     if linger.update(inside: inside, now: CACurrentMediaTime()) { hide(animated: true) }
   }
 
