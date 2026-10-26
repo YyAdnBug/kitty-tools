@@ -517,12 +517,12 @@ internal sealed partial class SelectionOverlayWindow : Window
         var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
         foreach (var (tool, label, name, shortcut) in new[]
                  {
-                     (AnnotationTool.Select, "\uE8B0", "选择", "V"),
-                     (AnnotationTool.Rectangle, "\uE7C3", "矩形", "1"),
-                     (AnnotationTool.Arrow, "\uE8AB", "箭头", "2"),
-                     (AnnotationTool.Pen, "\uE70F", "画笔", "3"),
-                     (AnnotationTool.Text, "\uE8D2", "文字", "4"),
-                     (AnnotationTool.Mosaic, "\uE7C4", "马赛克", "5"),
+                     (AnnotationTool.Select, Glyphs.ToolSelect, "选择", "V"),
+                     (AnnotationTool.Rectangle, Glyphs.ToolRectangle, "矩形", "1"),
+                     (AnnotationTool.Arrow, Glyphs.ToolArrow, "箭头", "2"),
+                     (AnnotationTool.Pen, Glyphs.ToolPen, "画笔", "3"),
+                     (AnnotationTool.Text, Glyphs.ToolText, "文字", "4"),
+                     (AnnotationTool.Mosaic, Glyphs.ToolMosaic, "马赛克", "5"),
                  })
         {
             var button = ToolbarButton(label, $"{name}（{shortcut}）", name);

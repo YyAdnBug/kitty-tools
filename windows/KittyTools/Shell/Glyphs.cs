@@ -26,18 +26,33 @@ internal static class Glyphs
     public const string Undo = "\uE7A7";
     public const string Redo = "\uE7A6";
     public const string Camera = "\uE722";
-    // \u4E0B\u9762\u51E0\u9879\u5BF9\u7740 mac \u7684\u7B26\u53F7\u6311\uFF08HotKeyCenter.symbol\uFF09\u3002E7B8 \u662F\u4E2A\u6536\u7EB3\u76D2\uFF0C\u4EE5\u524D\u8BEF\u5F53\u6210\u622A\u56FE\u7528\u4E86\u3002
-    /// <summary>\u526A\u8D34\u677F\u5386\u53F2\uFF08mac doc.on.clipboard\uFF09\uFF1A\u526A\u8D34\u677F\u5939\u5B50\uFF0C\u548C\u300C\u590D\u5236\u300D\u90A3\u4E24\u5F20\u53E0\u7740\u7684\u7EB8\u5206\u5F00\u3002</summary>
+    // 下面几项对着 mac 的符号挑（HotKeyCenter.symbol）。E7B8 是个收纳盒，以前误当成截图用了。
+    /// <summary>剪贴板历史（mac doc.on.clipboard）：剪贴板夹子，和「复制」那两张叠着的纸分开。</summary>
     public const string ClipboardHistory = "\uE77F";
-    /// <summary>\u622A\u56FE\uFF08mac camera.viewfinder\uFF09\uFF1A\u526A\u5200 + \u865A\u7EBF\u6846\u3002</summary>
+    /// <summary>截图（mac camera.viewfinder）：剪刀 + 虚线框。</summary>
     public const string Screenshot = "\uE924";
-    /// <summary>\u8BC6\u5B57\uFF08mac text.viewfinder\uFF09\uFF1A\u4E00\u6BB5\u5B57\u3002</summary>
+    /// <summary>识字（mac text.viewfinder）：一段字。</summary>
     public const string Ocr = "\uF714";
-    /// <summary>\u622A\u56FE\u7FFB\u8BD1\uFF08mac translate\uFF09\uFF1A\u300CA\u5B57\u300D\u3002</summary>
+    /// <summary>截图翻译（mac translate）：「A字」。</summary>
     public const string Translate = "\uE8C1";
     public const string ScreenshotTranslate = Translate;
-    /// <summary>\u8F93\u5165 / \u5212\u8BCD\u7FFB\u8BD1\uFF08mac character.bubble\uFF09\uFF1A\u5E26\u5B57\u7684\u6C14\u6CE1\u3002</summary>
+    /// <summary>输入 / 划词翻译（mac character.bubble）：带字的气泡。</summary>
     public const string TextTranslate = "\uE8BD";
+
+    // 截图的标注工具，对着 mac Annotation.Tool.symbol 挑。以前矩形是文档（E7C3）、箭头是 ⇄（E8AB）、
+    // 马赛克是任务视图（E7C4）。
+    public const string ToolSelect = "\uE8B0";
+    /// <summary>矩形（mac rectangle）：圆角矩形框。</summary>
+    public const string ToolRectangle = "\uE7FB";
+    /// <summary>箭头（mac arrow.up.right）。</summary>
+    public const string ToolArrow = "\uE8AD";
+    /// <summary>画笔（mac scribble.variable）：一道涂鸦线。</summary>
+    public const string ToolPen = "\uF463";
+    /// <summary>文字（mac t.square；Fluent 里没有方框里的 T，用单个「A」）。</summary>
+    public const string ToolText = "\uE97E";
+    /// <summary>马赛克（mac checkerboard.rectangle）：网格。</summary>
+    public const string ToolMosaic = "\uE80A";
+
     public const string Play = "\uE768";
     public const string Pause = "\uE769";
     public const string Stop = "\uE71A";
