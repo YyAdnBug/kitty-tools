@@ -43,6 +43,8 @@ internal sealed class ShellRuntime
             return;
         }
 
+        StartMenuShortcut.Ensure();
+
         try
         {
             // 打不开时先问用户：用备份 / 重新开始 / 退出（第三版 §2.1）。

@@ -59,6 +59,49 @@ internal static unsafe partial class Credentials
 
     public static bool Delete(string name) => CredDelete(name, TypeGeneric, 0);
 
+    /// <summary>删掉本产品在凭据管理器里的全部条目（卸载用）。</summary>
+    public static int DeleteAll()
+    {
+        var deleted = 0;
+        try
+        {
+            if (!CredEnumerate(Paths.CredentialPrefix + "*", 0, out var count, out var list) ||
+                list == IntPtr.Zero)
+            {
+                return 0;
+            }
+
+            try
+            {
+                for (var index = 0; index < count; index++)
+                {
+                    var target = ((IntPtr*)list)[index];
+                    if (target == IntPtr.Zero)
+                    {
+                        continue;
+                    }
+
+                    var credential = (Credential*)target;
+                    if (credential->TargetName != IntPtr.Zero &&
+                        CredDelete(Marshal.PtrToStringUni(credential->TargetName) ?? string.Empty, TypeGeneric, 0))
+                    {
+                        deleted++;
+                    }
+                }
+            }
+            finally
+            {
+                CredFree(list);
+            }
+        }
+        catch
+        {
+            // 凭据管理器打不开就算了。
+        }
+
+        return deleted;
+    }
+
     /// <summary>TargetName 是 KittyTools/… 或 KittyTools.Dev/…，由调用方拼服务 id 和字段名。</summary>
     public static string Target(string name) => Paths.CredentialPrefix + name;
 
@@ -90,6 +133,10 @@ internal static unsafe partial class Credentials
     [LibraryImport("advapi32.dll", EntryPoint = "CredDeleteW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool CredDelete(string target, int type, uint flags);
+
+    [LibraryImport("advapi32.dll", EntryPoint = "CredEnumerateW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool CredEnumerate(string filter, uint flags, out int count, out IntPtr list);
 
     [LibraryImport("advapi32.dll", EntryPoint = "CredFree")]
     private static partial void CredFree(IntPtr credential);

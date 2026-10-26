@@ -1,6 +1,7 @@
 // 设置窗：左侧 NavigationView（带图标），右边每页一个大标题 + 一组组设置卡，Mica。
 // AOT 下 NavigationView 崩溃的根因（发布目录缺 PRI）第二版第 2 批已经修好，这一批换回 NavigationView（PLAN-v2 §2b / §3.4）。
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using KittyTools.Infrastructure;
 using KittyTools.Core;
@@ -278,6 +279,12 @@ internal sealed class SettingsWindow : Window
             null,
             OpenDataDirectory);
         _content.Children.Add(dataButton);
+        _content.Children.Add(SettingsUi.Card(
+            "\uE74D",
+            "从这台电脑移除 Kitty Tools…",
+            "删掉开始菜单快捷方式、开机启动和保存的密钥；数据可以留着。",
+            null,
+            () => _ = UninstallAsync()));
 
         BuildSyncSection();
 
@@ -2018,6 +2025,94 @@ internal sealed class SettingsWindow : Window
             return new TextBlock { Text = "更新日志读不出来。", Opacity = 0.6 };
         }
     }
+
+    private async Task UninstallAsync()
+    {
+        var dialog = new ContentDialog
+        {
+            Title = "从这台电脑移除 Kitty Tools？",
+            Content = "会删掉开始菜单快捷方式、开机启动和凭据管理器里的密钥。程序文件要你自己删。",
+            PrimaryButtonText = "只卸载",
+            SecondaryButtonText = "卸载并删除数据",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = _content.XamlRoot,
+        };
+        var result = await dialog.ShowAsync();
+        if (result == ContentDialogResult.None)
+        {
+            return;
+        }
+
+        StartMenuShortcut.Remove();
+        Autostart.Set(false);
+        var deleted = Credentials.DeleteAll();
+        if (result == ContentDialogResult.Secondary)
+        {
+            Recycle(Paths.DataDirectory);
+        }
+
+        Log.Info($"uninstall shortcut credentials={deleted} data={result == ContentDialogResult.Secondary}");
+        var exe = Environment.ProcessPath;
+        var folder = exe is null ? null : Path.GetDirectoryName(exe);
+        if (!string.IsNullOrEmpty(folder))
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = "\"" + folder + "\"",
+                    UseShellExecute = true,
+                });
+            }
+            catch
+            {
+                // 打不开就算了。
+            }
+        }
+
+        ShellRuntime.Instance?.Exit();
+    }
+
+    private static void Recycle(string path)
+    {
+        try
+        {
+            if (!Directory.Exists(path))
+            {
+                return;
+            }
+
+            var operation = new SHFILEOPSTRUCT
+            {
+                wFunc = 3, // FO_DELETE
+                pFrom = path + "\0",
+                fFlags = 0x40 | 0x10 | 0x4, // ALLOWUNDO | NOCONFIRMATION | SILENT
+            };
+            SHFileOperationW(ref operation);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"uninstall.recycle-failed {ex.GetType().Name}");
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct SHFILEOPSTRUCT
+    {
+        public IntPtr hwnd;
+        public uint wFunc;
+        public string pFrom;
+        public string? pTo;
+        public ushort fFlags;
+        [MarshalAs(UnmanagedType.Bool)] public bool fAnyOperationsAborted;
+        public IntPtr hNameMappings;
+        public string? lpszProgressTitle;
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern int SHFileOperationW(ref SHFILEOPSTRUCT operation);
 
     private void OpenDataDirectory()
     {

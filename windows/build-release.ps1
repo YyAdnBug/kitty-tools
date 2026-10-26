@@ -1,4 +1,4 @@
-# Kitty Tools Windows 发布脚本：AOT 发布 x64 + ARM64，打 zip，生成发布说明。
+﻿# Kitty Tools Windows 发布脚本：AOT 发布 x64 + ARM64，打 zip，生成发布说明。
 # 不调用 gh，不自动上传；发布前先问用户，release 一律 --latest=false。
 [CmdletBinding()]
 param(

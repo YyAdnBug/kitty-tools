@@ -1,6 +1,21 @@
 {
   "entries": [
     {
+      "version": "0.6.0",
+      "date": "2026-10-26",
+      "summary": "第六版：录屏换成 GPU 管线（WGC + 硬件 H.264）、加系统声音 / 麦克风，MP4 压缩与 GIF 重做，删除 AVI，体积与启动优化",
+      "items": [
+        { "type": "feat", "text": "录屏改用 Windows.Graphics.Capture + D3D11 + 硬件 H.264：1440p30 六十秒约 12 MB，画面不再走 GDI 抓屏；点按圈 / 按键胶囊在 GPU 纹理上画" },
+        { "type": "feat", "text": "录屏加系统声音回环和麦克风，混成一条 AAC 音轨，和画面同一个时钟；设置 / 录制条可分别开关，默认系统声音开、麦克风关" },
+        { "type": "feat", "text": "压缩和转 GIF 都改成对 MP4 做：压缩到原文件 60% 以内（实测 39%）并保留音轨；GIF 每帧八叉树 256 色，长边 800、10 fps" },
+        { "type": "feat", "text": "录音改用 WASAPI，系统声音 / 麦克风 / 两者都能录，支持暂停 / 继续和电平；输出 AAC 的 .m4a" },
+        { "type": "feat", "text": "第一次运行在开始菜单 › 程序里建 Kitty Tools 快捷方式；设置 › 通用 ›「从这台电脑移除 Kitty Tools…」会删快捷方式、开机启动和凭据，数据可选放进回收站" },
+        { "type": "feat", "text": "崩溃记录：三个异常入口都写 logs\\crash-时间.log，下次启动提示一次；--crash-test 可自检" },
+        { "type": "fix", "text": "删掉 AVI / MJPEG 那一套（AviWriter / AviReader / AviRecorder / JPEG 编解码 / 转 MP4），录屏统一 MP4；设置里不再有「直接录 MP4」" },
+        { "type": "perf", "text": "AOT 只留 ConcurrentGarbageCollection=false；发布前删掉 85 个用不到的语言文件夹（约 3.3 MB）；Release 冷启动约 90 ms" }
+      ]
+    },
+    {
       "version": "0.4.0",
       "date": "2026-10-25",
       "summary": "第四版：录屏（直接 H.264 MP4，可选 AVI）、选区 / 倒数 / HUD、点按圈、转 GIF / 压缩、麦克风录音",

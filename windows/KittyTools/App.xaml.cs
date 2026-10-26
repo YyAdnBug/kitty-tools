@@ -10,32 +10,21 @@ public partial class App : Application
 
     public App()
     {
-        AppDomain.CurrentDomain.UnhandledException += (_, e) => LogCrash("appdomain", e.ExceptionObject as Exception);
-        UnhandledException += (_, e) => LogCrash("xaml", e.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => CrashLog.Record("appdomain", e.ExceptionObject as Exception);
+        UnhandledException += (_, e) => CrashLog.Record("xaml", e.Exception);
+        TaskScheduler.UnobservedTaskException += (_, e) => CrashLog.Record("task", e.Exception);
         try
         {
             InitializeComponent();
         }
         catch (Exception ex)
         {
-            LogCrash("initialize", ex);
+            CrashLog.Record("initialize", ex);
             throw;
         }
     }
 
-    private static void LogCrash(string stage, Exception? ex)
-    {
-        try
-        {
-            System.IO.File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "kitty-crash.txt"),
-                $"{DateTime.Now:O} {stage}: {ex}\n\n");
-        }
-        catch
-        {
-            // 崩溃日志写不出来就算了。
-        }
-    }
+    private static void LogCrash(string stage, Exception? ex) => CrashLog.Record(stage, ex);
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
@@ -43,10 +32,15 @@ public partial class App : Application
         {
             Log.Initialize();
             SettingsService.Load();
+            CrashLog.CheckOnStartup();
             Theme.ApplyAccent();
             Theme.WatchSystemAccent();
             XamlProbe.Run();
             _runtime = ShellRuntime.Start();
+            if (Environment.GetCommandLineArgs().Contains("--crash-test", StringComparer.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("--crash-test");
+            }
         }
         catch (Exception ex)
         {
