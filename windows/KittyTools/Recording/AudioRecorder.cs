@@ -48,6 +48,9 @@ internal sealed class AudioRecorder : IDisposable
 
     public string? Note => _note;
 
+    /// <summary>录音中实时备注：麦克风 / 系统声音断了会在这里出现（R28）。</summary>
+    public string? LiveNote => _audio?.Note;
+
     public bool MicrophoneDenied => _microphoneDenied;
 
     public string? OutputPath => File.Exists(_final) ? _final : null;

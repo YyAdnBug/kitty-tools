@@ -17,6 +17,8 @@ internal static unsafe class RecordingHost
 
     public static bool IsRecording => _recorder is not null;
 
+    public static string? LiveNote => _recorder?.LiveNote;
+
     public static string? LastPath { get; private set; }
 
     public static event Action? Changed;

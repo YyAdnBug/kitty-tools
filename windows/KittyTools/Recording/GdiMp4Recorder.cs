@@ -69,6 +69,8 @@ internal sealed unsafe class GdiMp4Recorder : IVideoRecorder
 
     public int Frames { get; private set; }
 
+    public string? LiveNote => null;
+
     public long ElapsedMs { get; private set; }
 
     public string TemporaryPath => _temporary;

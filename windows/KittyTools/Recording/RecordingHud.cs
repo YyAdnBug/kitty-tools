@@ -32,6 +32,7 @@ internal sealed partial class RecordingHud
 
     private readonly Window _window;
     private readonly TextBlock _timer;
+    private readonly TextBlock _note;
     private readonly Button _abandon;
     private readonly DispatcherQueueTimer _tick;
     private int _seconds;
@@ -70,6 +71,15 @@ internal sealed partial class RecordingHud
             VerticalAlignment = VerticalAlignment.Center,
             MinWidth = 42,
         };
+        _note = new TextBlock
+        {
+            Foreground = new SolidColorBrush(Theme.Argb(255, 255, 159, 10)),
+            FontSize = 11,
+            VerticalAlignment = VerticalAlignment.Center,
+            MaxWidth = 150,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Visibility = Visibility.Collapsed,
+        };
         _abandon = new Button
         {
             Content = "✕ 放弃",
@@ -99,6 +109,7 @@ internal sealed partial class RecordingHud
         };
         panel.Children.Add(dot);
         panel.Children.Add(_timer);
+        panel.Children.Add(_note);
         panel.Children.Add(new Border
         {
             Width = 1,
@@ -148,6 +159,9 @@ internal sealed partial class RecordingHud
         {
             _seconds++;
             _timer.Text = RecorderRules.Duration(_seconds * 1000);
+            var note = RecordingHost.LiveNote;
+            _note.Text = note ?? string.Empty;
+            _note.Visibility = string.IsNullOrEmpty(note) ? Visibility.Collapsed : Visibility.Visible;
         };
         _tick.Start();
         Log.Info("record.hud-shown");

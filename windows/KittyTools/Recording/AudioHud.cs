@@ -26,6 +26,7 @@ internal sealed partial class AudioHud
     private readonly Button _pause;
     private readonly DispatcherQueueTimer _tick;
     private bool _pending;
+    private bool _noteCleared;
 
     private AudioHud(string? note, bool pending)
     {
@@ -239,9 +240,16 @@ internal sealed partial class AudioHud
         _timer.Text = AudioHost.Elapsed;
         var level = Math.Clamp((AudioHost.Level + 60) / 60.0, 0, 1);
         _levelFill.Width = 54 * level;
-        if (!string.IsNullOrEmpty(_hint.Text) && AudioHost.Level > -45)
+        var note = AudioHost.StatusNote;
+        if (!string.IsNullOrEmpty(note))
+        {
+            _hint.Text = note;
+            _noteCleared = false;
+        }
+        else if (!_noteCleared && AudioHost.Level > -45)
         {
             _hint.Text = string.Empty;
+            _noteCleared = true;
         }
 
         UpdatePause();

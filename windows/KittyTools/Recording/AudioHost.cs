@@ -21,6 +21,9 @@ internal static class AudioHost
 
     public static float Level => _recorder?.Level ?? -90;
 
+    /// <summary>录音中的实时状态：麦克风 / 系统声音断了（R28）。</summary>
+    public static string? StatusNote => _recorder?.LiveNote;
+
     public static string? LastPath { get; private set; }
 
     public static event Action? Changed;

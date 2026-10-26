@@ -127,6 +127,8 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
 
     public string? Note => _note;
 
+    public string? LiveNote => _audio?.Note ?? _note;
+
     public bool MicrophoneDenied => _microphoneDenied;
 
     private sealed class PendingFrame

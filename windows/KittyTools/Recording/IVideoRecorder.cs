@@ -12,4 +12,7 @@ internal interface IVideoRecorder : IDisposable
     string OutputPath { get; }
 
     string? Stop();
+
+    /// <summary>录制中的实时备注（麦克风 / 系统声音断了会变），给 HUD 的橙字用。</summary>
+    string? LiveNote { get; }
 }
