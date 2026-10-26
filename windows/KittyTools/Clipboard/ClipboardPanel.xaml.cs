@@ -40,12 +40,19 @@ public sealed partial class ClipboardPanel : UserControl
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _linkTimer;
     private CancellationTokenSource? _linkCts;
     private Uri? _linkPending;
+    private bool _composing;
 
     public ClipboardPanel()
     {
         InitializeComponent();
         AddHandler(KeyDownEvent, new KeyEventHandler(OnKeyDown), handledEventsToo: true);
         AddHandler(KeyUpEvent, new KeyEventHandler(OnKeyUp), handledEventsToo: true);
+        SearchBox.TextCompositionStarted += (_, _) => _composing = true;
+        SearchBox.TextCompositionEnded += (_, _) =>
+        {
+            _composing = false;
+            Refresh(animated: false);
+        };
         SearchBox.Loaded += (_, _) =>
         {
             if (_active)
@@ -398,7 +405,15 @@ public sealed partial class ClipboardPanel : UserControl
         }
     }
 
-    private void OnSearchTextChanged(object sender, TextChangedEventArgs e) => Refresh(animated: false);
+    private void OnSearchTextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (!CompositionRules.ShouldSearch(_composing, SearchBox.Text))
+        {
+            return;
+        }
+
+        Refresh(animated: false);
+    }
 
     private void OnAllScopeClick(object sender, RoutedEventArgs e) =>
         SetScope(ClipScope.All);

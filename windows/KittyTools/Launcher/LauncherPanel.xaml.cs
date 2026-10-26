@@ -36,6 +36,7 @@ public sealed partial class LauncherPanel : UserControl
     private bool _animateHighlight;
     private MotionCurve _highlightCurve = MotionCurve.Glide;
     private string _query = string.Empty;
+    private bool _composing;
     private ScrollViewer? _listScroll;
 
     public LauncherPanel()
@@ -43,6 +44,12 @@ public sealed partial class LauncherPanel : UserControl
         InitializeComponent();
         AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(OnKeyDown), handledEventsToo: true);
         AddHandler(UIElement.KeyUpEvent, new KeyEventHandler(OnKeyUp), handledEventsToo: true);
+        SearchBox.TextCompositionStarted += (_, _) => _composing = true;
+        SearchBox.TextCompositionEnded += (_, _) =>
+        {
+            _composing = false;
+            OnSearchTextChanged(SearchBox, null!);
+        };
         _keyHintTimer = DispatcherQueue.CreateTimer();
         _keyHintTimer.Interval = TimeSpan.FromMilliseconds(150);
         _keyHintTimer.IsRepeating = false;
@@ -177,6 +184,11 @@ public sealed partial class LauncherPanel : UserControl
     private void OnSearchTextChanged(object sender, TextChangedEventArgs e)
     {
         _query = SearchBox.Text;
+        if (!CompositionRules.ShouldSearch(_composing, _query))
+        {
+            return;
+        }
+
         Refresh(animated: false);
     }
 
