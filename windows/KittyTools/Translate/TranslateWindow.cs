@@ -762,7 +762,8 @@ internal sealed unsafe partial class TranslateWindow : Window
                 e.Handled = true;
                 RetranslateSelected();
                 break;
-            case VirtualKey.Delete when _historySearch.SelectionStart == _historySearch.Text.Length:
+            case VirtualKey.Delete when _historySearch.SelectionLength == 0 &&
+                _historySearch.SelectionStart == _historySearch.Text.Length:
                 e.Handled = true;
                 DeleteSelected();
                 break;
