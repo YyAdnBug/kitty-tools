@@ -1397,26 +1397,45 @@ internal sealed unsafe partial class TranslateWindow : Window
                 Padding = new Thickness(10, 8, 10, 8),
                 Child = panel,
             };
-            // ponytail: 强调色呼吸边，不是真正的彗星沿边跑；升级再做 Composition 几何 + 渐变偏移。
+            // 彗星边：三段渐变（透明 → 强调色 → 透明）沿对角线跑；不做几何路径，先保证观感。
+            var glowBrush = new LinearGradientBrush
+            {
+                StartPoint = new Windows.Foundation.Point(0, 0),
+                EndPoint = new Windows.Foundation.Point(1, 1),
+            };
+            var stops = new[]
+            {
+                new GradientStop { Color = Theme.Argb(0, 255, 77, 126), Offset = 0 },
+                new GradientStop { Color = Theme.AccentColor, Offset = 0.5 },
+                new GradientStop { Color = Theme.Argb(0, 255, 77, 126), Offset = 1 },
+            };
+            foreach (var stop in stops)
+            {
+                glowBrush.GradientStops.Add(stop);
+            }
+
             _glow = new Border
             {
                 CornerRadius = new CornerRadius(8),
                 BorderThickness = new Thickness(1.5),
-                BorderBrush = new SolidColorBrush(Theme.AccentColor),
+                BorderBrush = glowBrush,
                 Opacity = 0,
                 IsHitTestVisible = false,
             };
-            _glowStoryboard = new Storyboard { RepeatBehavior = RepeatBehavior.Forever, AutoReverse = true };
-            var glowFade = new DoubleAnimation
+            _glowStoryboard = new Storyboard { RepeatBehavior = RepeatBehavior.Forever };
+            for (var index = 0; index < stops.Length; index++)
             {
-                From = 0.12,
-                To = 0.8,
-                Duration = new Duration(TimeSpan.FromMilliseconds(900)),
-                EnableDependentAnimation = true,
-            };
-            Storyboard.SetTarget(glowFade, _glow);
-            Storyboard.SetTargetProperty(glowFade, "Opacity");
-            _glowStoryboard.Children.Add(glowFade);
+                var slide = new DoubleAnimation
+                {
+                    From = -0.6 + index * 0.5,
+                    To = 1.4 + index * 0.5,
+                    Duration = new Duration(TimeSpan.FromMilliseconds(1600)),
+                    EnableDependentAnimation = true,
+                };
+                Storyboard.SetTarget(slide, stops[index]);
+                Storyboard.SetTargetProperty(slide, "Offset");
+                _glowStoryboard.Children.Add(slide);
+            }
             var host = new Grid();
             host.Children.Add(card);
             host.Children.Add(_glow);
