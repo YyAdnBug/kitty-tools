@@ -207,6 +207,12 @@ internal sealed class ScreenshotCard : Window
             FontSize = 12,
             MinWidth = 0,
             MinHeight = 0,
+            Height = 28,
+            CornerRadius = new CornerRadius(14),
+            Background = new SolidColorBrush(Theme.Shot.HudBackgroundStrong),
+            Foreground = new SolidColorBrush(Theme.Shot.HudText),
+            BorderBrush = new SolidColorBrush(Theme.Argb(36, 255, 255, 255)),
+            BorderThickness = new Thickness(0.5),
         };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, label);
         button.Click += (_, _) => action();
