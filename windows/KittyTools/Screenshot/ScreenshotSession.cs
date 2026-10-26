@@ -34,6 +34,17 @@ internal sealed class ScreenshotSession
     /// <summary>结束当前会话（含内存探针这种没有遮罩交互的调用方）。</summary>
     public static void FinishCurrent() => _current?.Finish();
 
+    public static void AuditAccessibility()
+    {
+        if (_current is not null)
+        {
+            foreach (var overlay in _current._overlays)
+            {
+                overlay.AuditAccessibility();
+            }
+        }
+    }
+
     public ScreenshotMode Mode { get; }
 
     public List<FrozenScreen> Screens { get; }

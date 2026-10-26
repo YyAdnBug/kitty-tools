@@ -22,7 +22,7 @@ internal static class AccessibilityAudit
 
     private static void Walk(DependencyObject node, ref int total, ref int unnamed, ref int unreachable)
     {
-        if (node is Control control && control.Visibility == Visibility.Visible && IsInteractive(control))
+        if (node is Control control && control.Visibility == Visibility.Visible && control.IsEnabled && IsInteractive(control))
         {
             total++;
             if (string.IsNullOrWhiteSpace(ReadName(control)))
@@ -31,7 +31,7 @@ internal static class AccessibilityAudit
                 Log.Warn($"a11y.unnamed {control.GetType().Name} {Describe(control)}");
             }
 
-            if (!control.IsTabStop || !control.IsEnabled)
+            if (!control.IsTabStop)
             {
                 unreachable++;
                 Log.Warn($"a11y.unreachable {control.GetType().Name} {Describe(control)}");

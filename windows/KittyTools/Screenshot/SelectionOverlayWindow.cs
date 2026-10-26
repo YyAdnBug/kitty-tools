@@ -469,6 +469,8 @@ internal sealed partial class SelectionOverlayWindow : Window
         _timer?.Start();
     }
 
+    public void AuditAccessibility() => AccessibilityAudit.Run(_root, "screenshot");
+
     public void Invalidate()
     {
         PositionToolbar();

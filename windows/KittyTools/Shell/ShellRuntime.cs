@@ -337,6 +337,10 @@ internal sealed class ShellRuntime
                 await Task.Delay(600);
                 TranslateHost.AuditAccessibility();
                 TranslateHost.Hide();
+                ScreenshotSession.Start(ScreenshotMode.Capture);
+                await Task.Delay(900);
+                ScreenshotSession.AuditAccessibility();
+                ScreenshotSession.FinishCurrent();
             });
         }
 
