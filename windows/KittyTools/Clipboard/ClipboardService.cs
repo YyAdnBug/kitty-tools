@@ -43,6 +43,23 @@ internal sealed class ClipboardService
         return service;
     }
 
+    /// <summary>卸载前停掉采集并真正关掉 SQLite 连接（REVIEW R25）；之后不能再读写这个库。</summary>
+    public void Stop()
+    {
+        try
+        {
+            Store.CommitDeletion();
+        }
+        catch
+        {
+            // 已经关掉的跳过。
+        }
+
+        _database?.Dispose();
+        _database = null;
+        Instance = null;
+    }
+
     public void OnClipboardUpdate()
     {
         if (Paused || Suspended || _selectionPaused)

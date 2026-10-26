@@ -343,6 +343,13 @@ internal sealed class Syncer
         return _instance;
     }
 
+    /// <summary>卸载前停掉定时器（REVIEW R25），不再往数据目录里写。</summary>
+    public static void StopAll()
+    {
+        _instance?._timer?.Stop();
+        _instance?._timer = null;
+    }
+
     public SyncStatus Status { get; } = new();
 
     public event Action? Changed;

@@ -27,6 +27,15 @@ internal static class Log
 
     public static void Info(string message) => Write("INFO", message);
 
+    /// <summary>卸载前不再写日志，免得数据目录被挪走时日志还开着（REVIEW R25）。</summary>
+    public static void Shutdown()
+    {
+        lock (Gate)
+        {
+            _path = null;
+        }
+    }
+
     public static void Warn(string message) => Write("WARN", message);
 
     public static void Error(string message) => Write("ERROR", message);

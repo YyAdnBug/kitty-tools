@@ -2072,12 +2072,29 @@ internal sealed class SettingsWindow : Window
         StartMenuShortcut.Remove();
         Autostart.Set(false);
         var deleted = Credentials.DeleteAll();
-        if (result == ContentDialogResult.Secondary)
+        var removeData = result == ContentDialogResult.Secondary;
+        Log.Info($"uninstall shortcut credentials={deleted} data={removeData}");
+        if (removeData)
         {
-            Recycle(Paths.DataDirectory);
+            // R25：先停掉所有会写数据目录的后台服务、关掉 SQLite，再挪进回收站。
+            ShellRuntime.Instance?.PrepareForUninstall();
+            if (!Recycle(Paths.DataDirectory))
+            {
+                var failed = new ContentDialog
+                {
+                    Title = "数据目录没删干净",
+                    Content = "可能还有程序占用着文件。请手动删除：" + Paths.DataDirectory,
+                    PrimaryButtonText = "打开文件夹",
+                    CloseButtonText = "关闭",
+                    XamlRoot = _content.XamlRoot,
+                };
+                if (await failed.ShowAsync() == ContentDialogResult.Primary)
+                {
+                    OpenDataDirectory();
+                }
+            }
         }
 
-        Log.Info($"uninstall shortcut credentials={deleted} data={result == ContentDialogResult.Secondary}");
         var exe = Environment.ProcessPath;
         var folder = exe is null ? null : Path.GetDirectoryName(exe);
         if (!string.IsNullOrEmpty(folder))
@@ -2097,47 +2114,31 @@ internal sealed class SettingsWindow : Window
             }
         }
 
-        ShellRuntime.Instance?.Exit();
+        Microsoft.UI.Xaml.Application.Current.Exit();
     }
 
-    private static void Recycle(string path)
+    /// <summary>把整个目录挪进回收站；返回是否真的不在了（R25：失败要能告诉用户）。</summary>
+    private static bool Recycle(string path)
     {
         try
         {
             if (!Directory.Exists(path))
             {
-                return;
+                return true;
             }
 
-            var operation = new SHFILEOPSTRUCT
-            {
-                wFunc = 3, // FO_DELETE
-                pFrom = path + "\0",
-                fFlags = 0x40 | 0x10 | 0x4, // ALLOWUNDO | NOCONFIRMATION | SILENT
-            };
-            SHFileOperationW(ref operation);
+            Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(
+                path,
+                Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
+                Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
+            return !Directory.Exists(path);
         }
         catch (Exception ex)
         {
             Log.Warn($"uninstall.recycle-failed {ex.GetType().Name}");
+            return false;
         }
     }
-
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    private struct SHFILEOPSTRUCT
-    {
-        public IntPtr hwnd;
-        public uint wFunc;
-        public string pFrom;
-        public string? pTo;
-        public ushort fFlags;
-        [MarshalAs(UnmanagedType.Bool)] public bool fAnyOperationsAborted;
-        public IntPtr hNameMappings;
-        public string? lpszProgressTitle;
-    }
-
-    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
-    private static extern int SHFileOperationW(ref SHFILEOPSTRUCT operation);
 
     private void OpenDataDirectory()
     {

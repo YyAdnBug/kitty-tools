@@ -674,6 +674,22 @@ internal sealed class ShellRuntime
     public void ShowNotice(string title, string detail, NoticeTone tone = NoticeTone.Normal)
         => NoticeHost.Show(title, detail, tone);
 
+    /// <summary>
+    /// 卸载并删除数据之前：停采集、同步、更新、热键，关掉数据库和日志（REVIEW R25）。
+    /// 之后这个进程只剩退出，不能再读写数据目录。
+    /// </summary>
+    public void PrepareForUninstall()
+    {
+        Log.Info("uninstall.prepare");
+        Clipboard?.Stop();
+        Clipboard = null;
+        Syncer.StopAll();
+        UpdateService.Configure(false);
+        HotKeys.UnregisterAll();
+        Tray.Remove();
+        Log.Shutdown();
+    }
+
     public void Exit()
     {
         Log.Info("app.exit");
