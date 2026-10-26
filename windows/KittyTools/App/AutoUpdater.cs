@@ -18,8 +18,11 @@ internal static class AutoUpdater
 {
     private static bool _busy;
 
-    /// <summary>下载进度（0–100，-1 表示还不知道）。只用来改托盘的菜单文字。</summary>
+    /// <summary>下载进度（0–100，-1 表示还不知道）：托盘的菜单文字和轻提示的细进度条用。</summary>
     private static int _progressPercent = -1;
+
+    /// <summary>开始下载时的 UI 线程：进度回调来自线程池，改轻提示要切回来（PLAN-v7 §3.4）。</summary>
+    private static Microsoft.UI.Dispatching.DispatcherQueue? _queue;
 
     /// <summary>正在下载 / 安装：托盘和设置里的按钮据此变灰。</summary>
     public static bool IsBusy => _busy;
@@ -66,7 +69,8 @@ internal static class AutoUpdater
             Directory.CreateDirectory(staging);
             var assetName = UpdateService.AvailableAssetName ?? $"KittyTools-{version}-{ArchitectureLabel()}.zip";
 
-            NoticeHost.Show("正在下载更新", $"Kitty Tools {version}", NoticeTone.Normal);
+            _queue = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+            NoticeHost.ShowProgress("正在下载更新", $"Kitty Tools {version}", 0);
             var plan = new UpdatePlan(version, zipUrl, hashUrl, assetName);
             UpdateFlowResult result;
             try
@@ -194,7 +198,10 @@ internal static class AutoUpdater
         }
     }
 
-    /// <summary>R3：下载进度只用来改托盘菜单那一项的文字（调用可能来自线程池，只写一个整数）。</summary>
+    /// <summary>
+    /// R3：下载进度改托盘菜单那一项的文字（调用可能来自线程池，只写一个整数）；百分比变了再切回 UI 线程
+    /// 改轻提示的细进度条。下载结束（_busy 清掉）之后才到的不再改，免得盖掉结果提示。
+    /// </summary>
     private static void OnProgress(long received, long? total)
     {
         if (total is > 0)
@@ -203,6 +210,13 @@ internal static class AutoUpdater
             if (percent != _progressPercent)
             {
                 _progressPercent = percent;
+                _queue?.TryEnqueue(() =>
+                {
+                    if (_busy)
+                    {
+                        NoticeHost.ShowProgress("正在下载更新", $"已下载 {percent}%", percent / 100.0);
+                    }
+                });
             }
         }
         else if (_progressPercent < 0 && received > 0)

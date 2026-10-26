@@ -45,7 +45,9 @@ internal static class GifService
         var temporary = final + ".tmp";
         try
         {
-            NoticeHost.Show("正在转 GIF", "10 fps，长边 800", NoticeTone.Normal);
+            // 报得出百分比：轻提示带细进度条（PLAN-v7 §3.4），这个循环在 UI 线程上，直接调。
+            NoticeHost.ShowProgress("正在转 GIF", "10 fps，长边 800 · 0%", 0);
+            var shownPercent = 0;
             var file = await StorageFile.GetFileFromPathAsync(source);
             var clip = await MediaClip.CreateFromFileAsync(file);
             var composition = new MediaComposition();
@@ -73,6 +75,12 @@ internal static class GifService
                     var (indices, palette) = OctreeQuantizer.Quantize(bgra, target.Width, target.Height);
                     writer.AddFrameWithPalette(indices, palette);
                     Progress = (double)index / frames;
+                    var percent = (int)(Progress * 100);
+                    if (percent != shownPercent)
+                    {
+                        shownPercent = percent;
+                        NoticeHost.ShowProgress("正在转 GIF", $"10 fps，长边 800 · {percent}%", Progress);
+                    }
                     if (writer.Frames >= GifRules.MaxFrames(GifRules.TargetFps))
                     {
                         break;

@@ -21,6 +21,14 @@
 
 审查方做完会在这里写「已交还」，之后这些文件照常归你们。
 
+**已交还（审查方，2026-10-26 深夜，提交见 `git log --grep "v7 轻提示"`；没编译过）**：上面这些文件从现在起照常归你们，编译错直接修。
+
+- `Notice.cs` 重写：窗口一次定死在最大宽（左右透明边 24：island 弹簧冲过头约 8% 加抖动 7），黑底是 `ShapeVisual` 里的 `CompositionRoundedRectangleGeometry`，内容层用同一组尺寸的 `CompositionGeometricClip` 裁；宽度动画是 `SpringEase` 采样成 20 个表达式关键帧（`Lerp(this.StartingValue, target, k)`），中途换内容从当前大小接着走，主线程每帧不排版（原来 16 ms 定时器改 XAML `Width` 删掉了）。出现：36 的圆 → 实际宽度，内容晚 60 ms 淡入 + 0.9 → 1（顶边锚点）；原地换内容只动宽度；错误抖 [0, −7, 6, −4, 2, 0] 0.4 s（`Motion.Shake` 现在没人用了，要删随你们）；收起：内容 0.12 s 退场，0.08 s 后形体 retract 缩成圆、最后 0.12 s 淡掉，`CompositionScopedBatch` 走完才 `Hide`。胶囊顶边离工作区顶边 8（原来是 22），white 0.12 发丝线；信息的符号用 `OnAccent`。原来 `_shown` 收起后不复位、第二次出现不再从圆长出来，一起改了。
+- `NoticeHost.ShowProgress(title, detail, fraction)`：标题后面 56 × 4 细进度条（填充按比例横向缩放，0.2 s 线性），同标题原地改、不重新出场、不播报，60 s 兜底。接了三处：转 GIF、压缩、下载更新（后两处的回调在线程池，切回 UI 线程，结束后才到的回调丢掉）。
+- **压缩进度的单位**：`TranscodeAsync` 报的是 0–100 的百分数（learn.microsoft.com「Transcode media files」的示例参数就叫 percent），原来 `Progress = progress` 存进去、托盘按 `Progress * 100` 显示，会出「压缩中 4300%」。改成存 0–1。压一次看日志 `video.compress-progress` 是不是 0–100 往上走；要是本来就是 0–1，把 `/ 100` 去掉。
+- `HANDTEST.md` 加了「第七版：界面对齐手测（细项，302–329）」，逐条是 PLAN-v7 §2–§4 的数值；轻提示是 316–320。
+- **要验**：编译；`--notice` / `--notice-error` 录 3–5 秒（PLAN-v7 第 3 批的验收：长出 / 换内容 / 抖动 / 缩回）；`--ui-snapshots` 的 `island-notice`、`island-error`；HANDTEST 316–320。最可能要改的：表达式关键帧的写法（报错就看 `this.StartingValue` 和 `Lerp` 的参数类型）、`Translation.X` 动画（`SetIsTranslationEnabled` 已在构造里开）。
+
 ## 待修
 
 （2026-10-26 晚复查到 `3fe1725e`：R22、R25、R26、R28、R29 认可；R23 认可，60 s 和 10 分钟的重封装耗时并进 R24 一起量；R30 认可，托盘和 HUD 的截图见 R33。新加 R31–R35。R24 一直没动，排在最前面。）

@@ -44,7 +44,11 @@ internal static class CompressionService
         Progress = 0;
         try
         {
-            NoticeHost.Show("正在压缩录屏", "目标不超过原文件的 60%", NoticeTone.Normal);
+            // 报得出百分比：轻提示带细进度条（PLAN-v7 §3.4）。进度回调在后台线程，切回 UI 线程再改；
+            // 压缩结束（_running 清空）之后才到的回调不再改，免得盖掉结果提示。
+            var queue = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+            var shownPercent = 0;
+            NoticeHost.ShowProgress("正在压缩录屏", "目标不超过原文件的 60% · 0%", 0);
             var file = await StorageFile.GetFileFromPathAsync(source);
             var profile = await MediaEncodingProfile.CreateFromFileAsync(file);
             var video = await file.Properties.GetVideoPropertiesAsync();
@@ -78,10 +82,25 @@ internal static class CompressionService
 
             var action = prepared.TranscodeAsync();
             _running = action;
+            // TranscodeAsync 报的是百分数（0–100，见 learn.microsoft.com「Transcode media files」），
+            // Progress 存 0–1（托盘菜单按 Progress * 100 显示）。
             action.Progress = (_, progress) =>
             {
-                Progress = progress;
-                Log.Info($"video.compress-progress {(int)(progress * 100)}");
+                Progress = Math.Clamp(progress / 100, 0, 1);
+                var percent = (int)Math.Clamp(progress, 0, 100);
+                Log.Info($"video.compress-progress {percent}");
+                if (percent != shownPercent)
+                {
+                    shownPercent = percent;
+                    queue?.TryEnqueue(() =>
+                    {
+                        if (_running is not null)
+                        {
+                            NoticeHost.ShowProgress(
+                                "正在压缩录屏", $"目标不超过原文件的 60% · {percent}%", percent / 100.0);
+                        }
+                    });
+                }
             };
             await action;
             _running = null;
