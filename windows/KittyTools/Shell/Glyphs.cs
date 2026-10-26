@@ -26,9 +26,18 @@ internal static class Glyphs
     public const string Undo = "\uE7A7";
     public const string Redo = "\uE7A6";
     public const string Camera = "\uE722";
-    public const string Screenshot = "\uE7B8";
-    public const string Ocr = "\uE8D2";
+    // \u4E0B\u9762\u51E0\u9879\u5BF9\u7740 mac \u7684\u7B26\u53F7\u6311\uFF08HotKeyCenter.symbol\uFF09\u3002E7B8 \u662F\u4E2A\u6536\u7EB3\u76D2\uFF0C\u4EE5\u524D\u8BEF\u5F53\u6210\u622A\u56FE\u7528\u4E86\u3002
+    /// <summary>\u526A\u8D34\u677F\u5386\u53F2\uFF08mac doc.on.clipboard\uFF09\uFF1A\u526A\u8D34\u677F\u5939\u5B50\uFF0C\u548C\u300C\u590D\u5236\u300D\u90A3\u4E24\u5F20\u53E0\u7740\u7684\u7EB8\u5206\u5F00\u3002</summary>
+    public const string ClipboardHistory = "\uE77F";
+    /// <summary>\u622A\u56FE\uFF08mac camera.viewfinder\uFF09\uFF1A\u526A\u5200 + \u865A\u7EBF\u6846\u3002</summary>
+    public const string Screenshot = "\uE924";
+    /// <summary>\u8BC6\u5B57\uFF08mac text.viewfinder\uFF09\uFF1A\u4E00\u6BB5\u5B57\u3002</summary>
+    public const string Ocr = "\uF714";
+    /// <summary>\u622A\u56FE\u7FFB\u8BD1\uFF08mac translate\uFF09\uFF1A\u300CA\u5B57\u300D\u3002</summary>
     public const string Translate = "\uE8C1";
+    public const string ScreenshotTranslate = Translate;
+    /// <summary>\u8F93\u5165 / \u5212\u8BCD\u7FFB\u8BD1\uFF08mac character.bubble\uFF09\uFF1A\u5E26\u5B57\u7684\u6C14\u6CE1\u3002</summary>
+    public const string TextTranslate = "\uE8BD";
     public const string Play = "\uE768";
     public const string Pause = "\uE769";
     public const string Stop = "\uE71A";

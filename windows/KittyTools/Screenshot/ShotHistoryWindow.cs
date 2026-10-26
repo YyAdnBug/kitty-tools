@@ -123,7 +123,8 @@ internal sealed class ShotHistoryWindow : Window
         _root = new Grid
         {
             RequestedTheme = Theme.ElementTheme,
-            Background = Theme.Brush("ApplicationPageBackgroundThemeBrush", Color.FromArgb(255, 243, 243, 243)),
+            // ApplicationPageBackgroundThemeBrush 不在我们的主题字典里，取到的是跟系统走的那一套。
+            Background = Theme.Brush("Kitty.PageBackground", Color.FromArgb(255, 243, 243, 243)),
         };
         _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });

@@ -38,6 +38,14 @@ internal static class Theme
         public static readonly Color Danger = Color.FromArgb(255, 235, 60, 60);
         public static readonly Color ToolbarSeparator = Color.FromArgb(60, 255, 255, 255);
 
+        /// <summary>角落缩略图悬停时盖在图上的蒙层（mac Shot.cardScrim，black 0.35）。</summary>
+        public static readonly Color CardScrim = Color.FromArgb(89, 0, 0, 0);
+
+        /// <summary>HUD 小控件的内描边（white 0.14）和悬停、按下的底。</summary>
+        public static readonly Color HudStroke = Color.FromArgb(36, 255, 255, 255);
+        public static readonly Color HudHover = Color.FromArgb(245, 52, 52, 52);
+        public static readonly Color HudPressed = Color.FromArgb(245, 40, 40, 40);
+
         /// <summary>标注可选的颜色（9 种，最后一档白和黑）。</summary>
         public static readonly Color[] AnnotationPalette =
         {

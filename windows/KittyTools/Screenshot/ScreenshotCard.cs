@@ -1,6 +1,8 @@
-// 截图后的「飞入 + 角落缩略图」（PLAN-v2 §3.8 / D5，mac 的招牌时刻 S1）：
+// 截图后的「飞入 + 角落缩略图」（PLAN-v2 §3.8 / D5，mac 的招牌时刻 S1 和常驻缩略图）：
 // 复制或快速保存之后，遮罩收起的那一帧就是选区原样；下一帧开始飞向屏幕右下角，变成一张缩略图卡片。
-// 卡片停 5 秒，悬停时不消失，有复制 / 保存 / 钉图 / 关闭四个按钮，可以拖到别的程序（拖出去的是 PNG 文件）。
+// 卡片就是截图本身（缩进 200 × 140 以内，圆角和阴影是系统的）；悬停时盖一层 black 0.35 的蒙层，
+// 中间「复制」「保存」两个 HUD 胶囊，左上关闭、右上钉图两个圆钮（PLAN-v7 §3.6）。
+// 卡片停 5 秒，悬停时不消失，可以拖到别的程序（拖出去的是 PNG 文件）。
 // 系统关了动画效果时不飞，卡片直接淡入。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
@@ -14,30 +16,33 @@ using Windows.ApplicationModel.DataTransfer;
 using Windows.Graphics;
 using Windows.Storage;
 using Windows.Storage.Streams;
-using Windows.Win32;
-using Windows.Win32.Foundation;
 
 namespace KittyTools;
 
 internal sealed class ScreenshotCard : Window
 {
-    private const double CardWidthDip = 300;
-    private const double ToolbarHeightDip = 36;
-    private const double PaddingDip = 8;
-    private const double MarginDip = 24;
+    // mac：飞行卡片缩到 200 × 140 以内；太窄太矮的照样留出能放下按钮的最小尺寸（图按比例裁中间）。
+    private const double MaxWidthDip = 200;
+    private const double MaxHeightDip = 140;
+    private const double MinWidthDip = 112;
+    private const double MinHeightDip = 72;
+    private const double MarginDip = 16;
+    private const double CapsuleHeightDip = 26;
+    private const double RoundButtonDip = 22;
 
     private static ScreenshotCard? _current;
 
     private readonly byte[] _png;
     private readonly PixelBounds _origin;
     private readonly Image _image;
-    private readonly StackPanel _actions;
-    private readonly HWND _hwnd;
+    private readonly Grid _hoverLayer;
+    private readonly Grid _root;
     private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _hideTimer;
     private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _flyTimer;
     private readonly double _scale;
     private readonly RectInt32 _from;
     private readonly RectInt32 _to;
+    private Border? _savedBadge;
     private long _flyStarted;
     private bool _hovering;
 
@@ -64,80 +69,48 @@ internal sealed class ScreenshotCard : Window
         _flyTimer.IsRepeating = true;
         _flyTimer.Tick += (_, _) => StepFly();
 
-        var cardWidthPx = MonitorLayout.Pixels(CardWidthDip, _scale);
-        var imageRatio = png.Length == 0 || origin.Width <= 0 ? 0.6 : (double)origin.Height / origin.Width;
-        var imageHeightDip = Math.Clamp(CardWidthDip * imageRatio, 80, 190);
-        var cardHeightPx = MonitorLayout.Pixels(imageHeightDip + ToolbarHeightDip + PaddingDip * 2, _scale);
-
-        _to = new RectInt32(
-            display.Work.Right - cardWidthPx - MonitorLayout.Pixels(MarginDip, _scale),
-            display.Work.Bottom - cardHeightPx - MonitorLayout.Pixels(MarginDip, _scale),
-            cardWidthPx,
-            cardHeightPx);
-        _from = new RectInt32(origin.Left, origin.Top, Math.Max(1, origin.Width), Math.Max(1, origin.Height));
+        var (cardWidth, cardHeight) = CardSize(origin.Width, origin.Height);
 
         _image = new Image
         {
-            Stretch = Stretch.Uniform,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalAlignment = VerticalAlignment.Top,
+            Stretch = Stretch.UniformToFill,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
         };
         _image.CanDrag = true;
         _image.DragStarting += OnDragStarting;
 
-        _actions = new StackPanel
+        _hoverLayer = BuildHoverLayer(cardWidth, cardHeight);
+
+        _root = new Grid
         {
-            Orientation = Orientation.Horizontal,
-            Spacing = 6,
-            Margin = new Thickness(0, 6, 0, 0),
-            VerticalAlignment = VerticalAlignment.Bottom,
+            // HUD 一律深色：按钮的悬停提示、焦点框跟着深色走。
+            RequestedTheme = ElementTheme.Dark,
+            Background = new SolidColorBrush(Theme.Shot.HudBackground),
         };
-        AddAction("复制", () => _ = CopyAsync());
-        AddAction("保存", () => _ = SaveAsync());
-        AddAction("钉图", () => Pin());
-        AddAction("关闭", CloseCard);
+        _root.Children.Add(_image);
+        _root.Children.Add(_hoverLayer);
         if (savedPath is not null)
         {
-            _actions.Children.Add(new TextBlock
-            {
-                Text = "已保存",
-                FontSize = Theme.FontSize("Kitty.FontSize.KeyCap"),
-                Foreground = Theme.SecondaryText(),
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(4, 0, 0, 0),
-            });
+            ShowSavedBadge();
         }
 
-        var panel = new StackPanel { Spacing = 0 };
-        panel.Children.Add(new Border
-        {
-            CornerRadius = Theme.Corner("Kitty.Corner.Card"),
-            Clip = new RectangleGeometry { Rect = new Windows.Foundation.Rect(0, 0, CardWidthDip, imageHeightDip) },
-            Background = new SolidColorBrush(Theme.Argb(255, 24, 24, 24)),
-            Child = _image,
-        });
-        panel.Children.Add(_actions);
-
-        var root = new Border
-        {
-            Padding = new Thickness(PaddingDip),
-            CornerRadius = new CornerRadius(10),
-            // 卡片是浮在桌面上的独立小窗：用不透明的卡片底色，别用半透明亚克力（窗口没有背景层，
-            // 半透明会透出黑色，深色下按钮文字几乎看不见）。
-            Background = new SolidColorBrush(Theme.CardColor()),
-            Child = panel,
-        };
-        root.PointerEntered += (_, _) =>
+        _root.PointerEntered += (_, _) =>
         {
             _hovering = true;
             _hideTimer.Stop();
+            SetHover(true);
         };
-        root.PointerExited += (_, _) =>
+        _root.PointerExited += (_, _) =>
         {
             _hovering = false;
-            _hideTimer.Start();
+            SetHover(false);
+            if (!_flyTimer.IsRunning)
+            {
+                _hideTimer.Start();
+            }
         };
-        Content = new Grid { RequestedTheme = Theme.ElementTheme, Children = { root } };
+        Content = _root;
 
         var presenter = OverlappedPresenter.Create();
         presenter.IsAlwaysOnTop = true;
@@ -148,25 +121,52 @@ internal sealed class ScreenshotCard : Window
         AppWindow.SetPresenter(presenter);
         AppWindow.IsShownInSwitchers = false;
         Title = Paths.ProductName + " 截图";
-        _hwnd = (HWND)WinRT.Interop.WindowNative.GetWindowHandle(this);
 
-        // 系统画的那一圈细边框跟着卡片底色走（深色下不要留一圈白边）。
-        unsafe
-        {
-            try
-            {
-                var color = Theme.CardColor();
-                var value = color.R | (color.G << 8) | (color.B << 16);
-                PInvoke.DwmSetWindowAttribute(
-                    _hwnd, Windows.Win32.Graphics.Dwm.DWMWINDOWATTRIBUTE.DWMWA_BORDER_COLOR, &value, sizeof(int));
-            }
-            catch
-            {
-                // 设不上就保留系统默认边框。
-            }
-        }
+        // 窗口留着系统的细边框（圆角和阴影靠它），客户区比窗口小一圈：按客户区算卡片，
+        // 再把边框加回窗口尺寸。原来直接按窗口尺寸排，图和按钮被挤出底边一截。
+        var frameX = Math.Max(0, AppWindow.Size.Width - AppWindow.ClientSize.Width);
+        var frameY = Math.Max(0, AppWindow.Size.Height - AppWindow.ClientSize.Height);
+        var widthPx = MonitorLayout.Pixels(cardWidth, _scale) + frameX;
+        var heightPx = MonitorLayout.Pixels(cardHeight, _scale) + frameY;
+        _to = new RectInt32(
+            display.Work.Right - widthPx - MonitorLayout.Pixels(MarginDip, _scale),
+            display.Work.Bottom - heightPx - MonitorLayout.Pixels(MarginDip, _scale),
+            widthPx,
+            heightPx);
+        _from = new RectInt32(origin.Left, origin.Top, Math.Max(1, origin.Width), Math.Max(1, origin.Height));
 
         _ = LoadImageAsync();
+    }
+
+    /// <summary>截图自检用（`--ui-snapshots` 的 shot-card / shot-card-hover）。</summary>
+    internal static IntPtr HandleForProbe =>
+        _current is null ? IntPtr.Zero : WinRT.Interop.WindowNative.GetWindowHandle(_current);
+
+    internal static void HoverForProbe()
+    {
+        if (_current is { } card)
+        {
+            card._hovering = true;
+            card._hideTimer.Stop();
+            card.SetHover(true);
+        }
+    }
+
+    internal static void CloseForProbe() => _current?.CloseCard();
+
+    /// <summary>卡片的客户区尺寸（DIP）：按截图比例缩进 200 × 140，再保住最小尺寸。</summary>
+    internal static (double Width, double Height) CardSize(int pixelWidth, int pixelHeight)
+    {
+        var ratio = pixelWidth > 0 && pixelHeight > 0 ? (double)pixelWidth / pixelHeight : MaxWidthDip / MaxHeightDip;
+        var width = MaxWidthDip;
+        var height = MaxWidthDip / ratio;
+        if (height > MaxHeightDip)
+        {
+            height = MaxHeightDip;
+            width = MaxHeightDip * ratio;
+        }
+
+        return (Math.Round(Math.Max(width, MinWidthDip)), Math.Round(Math.Max(height, MinHeightDip)));
     }
 
     public static void Show(byte[] png, PixelBounds origin, string? savedPath = null)
@@ -198,25 +198,183 @@ internal sealed class ScreenshotCard : Window
         }
     }
 
-    private void AddAction(string label, Action action)
+    /// <summary>悬停层：蒙层 + 中间两个胶囊 + 两个角上的圆钮。平时透明、不接点击。</summary>
+    private Grid BuildHoverLayer(double width, double height)
+    {
+        // 淡入淡出走 XAML 自己的透明度过渡：XAML 的 Opacity 和合成层那份是相乘的，
+        // 先设 0 再用 Motion.Fade 动合成层，悬停层永远出不来。
+        var layer = new Grid
+        {
+            Opacity = 0,
+            IsHitTestVisible = false,
+            OpacityTransition = new ScalarTransition { Duration = TimeSpan.FromSeconds(MotionCurves.FadeInSeconds) },
+        };
+        layer.Children.Add(new Border
+        {
+            Background = new SolidColorBrush(Theme.Shot.CardScrim),
+            IsHitTestVisible = false,
+        });
+
+        // 两个带字的胶囊约 140 宽；卡片窄了就只留图标（mac：矮卡只剩图标的圆）。
+        var withText = width >= 168;
+        var center = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        center.Children.Add(HudButton(Glyphs.Copy, "复制", withText, () => _ = CopyAsync()));
+        center.Children.Add(HudButton(Glyphs.Save, "保存", withText, () => _ = SaveAsync()));
+        layer.Children.Add(center);
+
+        // mac：卡片小于 120 × 84 时不画角上的圆钮，免得和胶囊挤在一起。
+        if (width >= 120 && height >= 84)
+        {
+            var close = RoundButton(Glyphs.Close, "关闭", CloseCard);
+            close.HorizontalAlignment = HorizontalAlignment.Left;
+            close.VerticalAlignment = VerticalAlignment.Top;
+            layer.Children.Add(close);
+
+            var pin = RoundButton(Glyphs.Pin, "钉在屏幕上", Pin);
+            pin.HorizontalAlignment = HorizontalAlignment.Right;
+            pin.VerticalAlignment = VerticalAlignment.Top;
+            layer.Children.Add(pin);
+        }
+
+        return layer;
+    }
+
+    private void SetHover(bool on)
+    {
+        _hoverLayer.IsHitTestVisible = on;
+        _hoverLayer.Opacity = on ? 1 : 0;
+    }
+
+    /// <summary>HUD 胶囊：深色底 + white 0.14 内描边，高 26、12 号字、图标和字间距 6。</summary>
+    private static Button HudButton(string glyph, string label, bool withText, Action action)
+    {
+        var icon = new FontIcon { Glyph = glyph, FontSize = 13 };
+        object content = icon;
+        if (withText)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            row.Children.Add(icon);
+            row.Children.Add(new TextBlock
+            {
+                Text = label,
+                FontSize = Theme.FontSize("Kitty.FontSize.Label"),
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+            content = row;
+        }
+
+        var button = new Button
+        {
+            Content = content,
+            Height = CapsuleHeightDip,
+            MinWidth = 0,
+            MinHeight = 0,
+            Width = withText ? double.NaN : CapsuleHeightDip,
+            Padding = withText ? new Thickness(10, 0, 10, 0) : new Thickness(0),
+            CornerRadius = new CornerRadius(CapsuleHeightDip / 2),
+            BorderThickness = new Thickness(0.5),
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+        };
+        ApplyHudSkin(button);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, label);
+        ToolTipService.SetToolTip(button, label);
+        button.Click += (_, _) => action();
+        return button;
+    }
+
+    /// <summary>角上的 22 圆钮（离两边各 6）。</summary>
+    private static Button RoundButton(string glyph, string label, Action action)
     {
         var button = new Button
         {
-            Content = label,
-            Padding = new Thickness(10, 3, 10, 3),
-            FontSize = 12,
+            Content = new FontIcon { Glyph = glyph, FontSize = 10 },
+            Width = RoundButtonDip,
+            Height = RoundButtonDip,
             MinWidth = 0,
             MinHeight = 0,
-            Height = 28,
-            CornerRadius = new CornerRadius(14),
-            Background = new SolidColorBrush(Theme.Shot.HudBackgroundStrong),
-            Foreground = new SolidColorBrush(Theme.Shot.HudText),
-            BorderBrush = new SolidColorBrush(Theme.Argb(36, 255, 255, 255)),
+            Padding = new Thickness(0),
+            Margin = new Thickness(6),
+            CornerRadius = new CornerRadius(RoundButtonDip / 2),
             BorderThickness = new Thickness(0.5),
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
         };
+        ApplyHudSkin(button);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, label);
+        ToolTipService.SetToolTip(button, label);
         button.Click += (_, _) => action();
-        _actions.Children.Add(button);
+        return button;
+    }
+
+    /// <summary>
+    /// 按钮的几种状态都换成 HUD 的颜色（轻量样式）：只设 Background 的话，悬停时模板换回主题的浅灰底。
+    /// </summary>
+    private static void ApplyHudSkin(Button button)
+    {
+        var fill = new SolidColorBrush(Theme.Shot.HudBackgroundStrong);
+        var hover = new SolidColorBrush(Theme.Shot.HudHover);
+        var pressed = new SolidColorBrush(Theme.Shot.HudPressed);
+        var text = new SolidColorBrush(Theme.Shot.HudText);
+        var stroke = new SolidColorBrush(Theme.Shot.HudStroke);
+        button.Resources["ButtonBackground"] = fill;
+        button.Resources["ButtonBackgroundPointerOver"] = hover;
+        button.Resources["ButtonBackgroundPressed"] = pressed;
+        button.Resources["ButtonForeground"] = text;
+        button.Resources["ButtonForegroundPointerOver"] = text;
+        button.Resources["ButtonForegroundPressed"] = text;
+        button.Resources["ButtonBorderBrush"] = stroke;
+        button.Resources["ButtonBorderBrushPointerOver"] = stroke;
+        button.Resources["ButtonBorderBrushPressed"] = stroke;
+        button.Background = fill;
+        button.Foreground = text;
+        button.BorderBrush = stroke;
+    }
+
+    /// <summary>左下角「已保存」的小 HUD 胶囊（快速保存过就一直挂着）。</summary>
+    private void ShowSavedBadge()
+    {
+        if (_savedBadge is not null)
+        {
+            return;
+        }
+
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        row.Children.Add(new FontIcon
+        {
+            Glyph = Glyphs.Check,
+            FontSize = 10,
+            Foreground = new SolidColorBrush(Theme.Shot.HudText),
+        });
+        row.Children.Add(new TextBlock
+        {
+            Text = "已保存",
+            FontSize = Theme.FontSize("Kitty.FontSize.KeyCap"),
+            Foreground = new SolidColorBrush(Theme.Shot.HudText),
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        _savedBadge = new Border
+        {
+            Height = 20,
+            Padding = new Thickness(7, 0, 8, 0),
+            Margin = new Thickness(6),
+            CornerRadius = new CornerRadius(10),
+            Background = new SolidColorBrush(Theme.Shot.HudBackgroundStrong),
+            BorderBrush = new SolidColorBrush(Theme.Shot.HudStroke),
+            BorderThickness = new Thickness(0.5),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            IsHitTestVisible = false,
+            Child = row,
+        };
+        _root.Children.Add(_savedBadge);
+        Motion.Appear(_savedBadge);
     }
 
     private async Task LoadImageAsync()
@@ -254,7 +412,11 @@ internal sealed class ScreenshotCard : Window
             _flyTimer.Stop();
             AppWindow.MoveAndResize(_to);
             Motion.Appear(_image);
-            _hideTimer.Start();
+            if (!_hovering)
+            {
+                _hideTimer.Start();
+            }
+
             return;
         }
 
@@ -291,13 +453,7 @@ internal sealed class ScreenshotCard : Window
             var path = await ScreenshotOutput.QuickSavePngAsync(_png);
             if (path is not null)
             {
-                _actions.Children.Add(new TextBlock
-                {
-                    Text = "已保存",
-                    FontSize = 11,
-                    Opacity = 0.7,
-                    VerticalAlignment = VerticalAlignment.Center,
-                });
+                ShowSavedBadge();
             }
         }
         catch (Exception ex)

@@ -107,7 +107,9 @@ internal sealed class SettingsWindow : Window
             }
         };
 
-        _shell = new Grid { RequestedTheme = Theme.ElementTheme };
+        // 没有 Mica 时窗口底色跟系统的深浅色走：设置里选了另一种外观，深色的白字就落在白底上
+        // （左栏的页名整个看不见）。铺一层按设置里选的那套取的不透明底，同截图历史窗。
+        _shell = new Grid { RequestedTheme = Theme.ElementTheme, Background = PageBackground() };
         _shell.Children.Add(_nav);
 
         _hotKeyError = new InfoBar
@@ -192,8 +194,15 @@ internal sealed class SettingsWindow : Window
         Log.Info($"settings.show firstRun={welcome}");
     }
 
+    private static Brush PageBackground()
+        => Theme.Brush("Kitty.PageBackground", Theme.EffectiveTheme == ElementTheme.Dark
+            ? Theme.Argb(255, 32, 32, 32)
+            : Theme.Argb(255, 243, 243, 243));
+
     public void RefreshTheme()
     {
+        _shell.RequestedTheme = Theme.ElementTheme;
+        _shell.Background = PageBackground();
         _nav.RequestedTheme = Theme.ElementTheme;
         Theme.ApplyTitleBar(AppWindow);
         if (_recordingAction is null)

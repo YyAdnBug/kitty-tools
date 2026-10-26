@@ -173,6 +173,19 @@ internal static class UiSnapshotProbe
                 await WindowShot.SaveAsync(overlay.Handle, Path.Combine(directory, "shot-toolbar.png"), crop);
                 ScreenshotSession.FinishCurrent();
             }
+
+            // 角落缩略图：拿刚出的设置窗那张当截图内容（图里只有我们自己的界面）；落地后一张、悬停一张。
+            var sample = Path.Combine(directory, "settings-light.png");
+            if (File.Exists(sample))
+            {
+                ScreenshotCard.Show(await File.ReadAllBytesAsync(sample), new PixelBounds(200, 200, 1184, 881), "saved");
+                await Task.Delay(1200);
+                await WindowShot.SaveAsync(ScreenshotCard.HandleForProbe, Path.Combine(directory, "shot-card.png"));
+                ScreenshotCard.HoverForProbe();
+                await Task.Delay(400);
+                await WindowShot.SaveAsync(ScreenshotCard.HandleForProbe, Path.Combine(directory, "shot-card-hover.png"));
+                ScreenshotCard.CloseForProbe();
+            }
         }
         catch (Exception ex)
         {

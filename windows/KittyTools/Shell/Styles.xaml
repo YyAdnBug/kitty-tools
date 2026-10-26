@@ -15,6 +15,8 @@
             <SolidColorBrush x:Key="Kitty.Hairline" Color="#14000000" />
             <SolidColorBrush x:Key="Kitty.Card" Color="#8CFFFFFF" />
             <SolidColorBrush x:Key="Kitty.CardSolid" Color="#FBFBFB" />
+            <!-- 没有 Mica 的普通窗口（设置、截图历史）的底：Win11 的 SolidBackgroundFillColorBase。 -->
+            <SolidColorBrush x:Key="Kitty.PageBackground" Color="#F3F3F3" />
             <SolidColorBrush x:Key="Kitty.Input" Color="#0B000000" />
             <SolidColorBrush x:Key="Kitty.Accent" Color="#FF4D7E" />
             <SolidColorBrush x:Key="Kitty.AccentText" Color="#D12A5F" />
@@ -34,6 +36,7 @@
             <SolidColorBrush x:Key="Kitty.Hairline" Color="#1AFFFFFF" />
             <SolidColorBrush x:Key="Kitty.Card" Color="#0FFFFFFF" />
             <SolidColorBrush x:Key="Kitty.CardSolid" Color="#2B2B2B" />
+            <SolidColorBrush x:Key="Kitty.PageBackground" Color="#202020" />
             <SolidColorBrush x:Key="Kitty.Input" Color="#12FFFFFF" />
             <SolidColorBrush x:Key="Kitty.Accent" Color="#FF375F" />
             <SolidColorBrush x:Key="Kitty.AccentText" Color="#FF6B8D" />
@@ -53,6 +56,7 @@
             <SolidColorBrush x:Key="Kitty.Hairline" Color="{ThemeResource SystemColorWindowTextColor}" />
             <SolidColorBrush x:Key="Kitty.Card" Color="{ThemeResource SystemColorWindowColor}" />
             <SolidColorBrush x:Key="Kitty.CardSolid" Color="{ThemeResource SystemColorWindowColor}" />
+            <SolidColorBrush x:Key="Kitty.PageBackground" Color="{ThemeResource SystemColorWindowColor}" />
             <SolidColorBrush x:Key="Kitty.Input" Color="{ThemeResource SystemColorWindowColor}" />
             <SolidColorBrush x:Key="Kitty.Accent" Color="{ThemeResource SystemColorHighlightColor}" />
             <SolidColorBrush x:Key="Kitty.AccentText" Color="{ThemeResource SystemColorHighlightColor}" />

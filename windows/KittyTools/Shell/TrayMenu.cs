@@ -10,7 +10,6 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
-using Windows.Foundation;
 using Windows.Win32;
 
 namespace KittyTools;
@@ -19,6 +18,10 @@ internal static partial class TrayMenu
 {
     private const int HostWidth = 360;
     private const int HostHeight = 480;
+    private const int GwlExStyle = -20;
+    private const int WsExToolWindow = 0x00000080;
+    private const int WsExLayered = 0x00080000;
+    private const uint LwaAlpha = 0x00000002;
 
     private static Window? _host;
 
@@ -78,6 +81,8 @@ internal static partial class TrayMenu
             // 1×1 的窗口会把菜单裁成一条（实测）。整块窗口是透明的，看不见。
             _host.AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(
                 cursor.X - HostWidth + 1, cursor.Y - HostHeight + 1, HostWidth, HostHeight));
+            // 每次弹都按现在的外观设：宿主只建一次，运行中换了深浅色菜单不会自己跟着变。
+            Theme.ApplyTo(_host.Content as FrameworkElement ?? _anchor);
             _host.Activate();
 
             _menu = Build();
@@ -93,11 +98,10 @@ internal static partial class TrayMenu
                     // 隐藏失败不影响下一次弹菜单。
                 }
             };
-            // 托盘贴着屏幕底边：往上展开，右边缘对齐鼠标。
+            // 托盘贴着屏幕底边：往上展开，右边缘对齐鼠标。不给 Position：给了之后菜单把那一点当左上角，往右展开。
             var options = new FlyoutShowOptions
             {
                 Placement = FlyoutPlacementMode.TopEdgeAlignedRight,
-                Position = new Point(0, 0),
             };
             _menu.ShowAt(_anchor, options);
         }
@@ -133,7 +137,14 @@ internal static partial class TrayMenu
             return;
         }
 
-        _anchor = new Grid { Width = 1, Height = 1 };
+        // 锚点放在宿主的右下角，也就是鼠标那一点。原来是 Grid 默认的居中：菜单离托盘图标差半个宿主高（约 240 px）。
+        _anchor = new Grid
+        {
+            Width = 1,
+            Height = 1,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Bottom,
+        };
         _host = new Window
         {
             Title = Paths.ProductName + " 菜单",
@@ -158,6 +169,12 @@ internal static partial class TrayMenu
         {
             DwmExtendFrameIntoClientArea(hwnd, ref margins);
             DwmSetWindowAttribute(hwnd, 34, ref noBorder, sizeof(int));
+            // 菜单画在它自己的弹出窗口里（会伸出宿主窗口的范围），宿主只当锚点。上面两步在有的机器上不管用：
+            // 宿主整块白、或者留一圈白框（用户截图，360 × 480 正好是宿主大小）。分层 + 透明度 0，
+            // 宿主连同系统边框一起看不见，也不挡鼠标；菜单窗口不受影响。
+            var style = GetWindowLong(hwnd, GwlExStyle);
+            SetWindowLong(hwnd, GwlExStyle, style | WsExLayered | WsExToolWindow);
+            SetLayeredWindowAttributes(hwnd, 0, 0, LwaAlpha);
         }
         catch (Exception ex)
         {
@@ -172,15 +189,22 @@ internal static partial class TrayMenu
         var clipboardReady = runtime?.Clipboard is not null && Features.IsOn(Feature.Clipboard);
         var menu = new MenuFlyout { Placement = FlyoutPlacementMode.TopEdgeAlignedRight };
 
+        // 图标的颜色跟着所在那一节走（mac 菜单栏：暂停记录算剪贴板、复制即译算翻译），最后一节是通用灰。
+        var clip = Theme.Family.Clipboard;
+        var translate = Theme.Family.Translate;
+        var capture = Theme.Family.Capture;
+        var general = Theme.Family.General;
+
         // 第一节：剪贴板与启动器。
         if (Features.IsOn(Feature.Clipboard))
         {
-            Add(menu, Glyphs.Copy, "剪贴板历史", HotKeyActions.Clipboard, () => runtime?.OpenClipboard(), clipboardReady);
+            Add(menu, Glyphs.ClipboardHistory, clip, "剪贴板历史", HotKeyActions.Clipboard,
+                () => runtime?.OpenClipboard(), clipboardReady);
         }
 
         if (Features.IsOn(Feature.Launcher))
         {
-            Add(menu, Glyphs.Search, "启动器", HotKeyActions.Launcher, () => OverlayHost.Toggle(OverlayKind.Launcher));
+            Add(menu, Glyphs.Search, clip, "启动器", HotKeyActions.Launcher, () => OverlayHost.Toggle(OverlayKind.Launcher));
         }
 
         if (Features.IsOn(Feature.Clipboard))
@@ -189,7 +213,7 @@ internal static partial class TrayMenu
             {
                 Text = "暂停记录剪贴板",
                 IsChecked = runtime?.Clipboard?.Paused == true,
-                Icon = new FontIcon { Glyph = Glyphs.Pause },
+                Icon = Icon(Glyphs.Pause, clip),
                 IsEnabled = clipboardReady,
             };
             pause.Click += (_, _) => runtime?.TogglePauseClipboard();
@@ -201,12 +225,14 @@ internal static partial class TrayMenu
         // 第二节：翻译。
         if (Features.IsOn(Feature.Translate))
         {
-            Add(menu, Glyphs.Translate, "输入翻译", HotKeyActions.InputTranslate, () => TranslateHost.ToggleInput());
+            Add(menu, Glyphs.TextTranslate, translate, "输入翻译", HotKeyActions.InputTranslate,
+                () => TranslateHost.ToggleInput());
             var copyTranslate = new ToggleMenuFlyoutItem
             {
                 Text = "复制即译",
                 IsChecked = settings.CopyTranslate,
-                Icon = new FontIcon { Glyph = Glyphs.Language },
+                // mac 的 doc.on.doc：复制一下就翻译。
+                Icon = Icon(Glyphs.Copy, translate),
                 IsEnabled = runtime is not null,
             };
             copyTranslate.Click += (_, _) => runtime?.ToggleCopyTranslate();
@@ -218,51 +244,53 @@ internal static partial class TrayMenu
         // 第三节：截图与录制。
         if (Features.IsOn(Feature.Screenshot))
         {
-            Add(menu, Glyphs.Screenshot, "截图", HotKeyActions.Screenshot, () => ScreenshotSession.Start(ScreenshotMode.Capture));
+            Add(menu, Glyphs.Screenshot, capture, "截图", HotKeyActions.Screenshot,
+                () => ScreenshotSession.Start(ScreenshotMode.Capture));
             if (Features.IsOn(Feature.Translate))
             {
-                Add(menu, Glyphs.Language, "截图翻译", HotKeyActions.ScreenshotTranslate,
+                Add(menu, Glyphs.ScreenshotTranslate, capture, "截图翻译", HotKeyActions.ScreenshotTranslate,
                     () => ScreenshotSession.Start(ScreenshotMode.Translate));
             }
 
-            Add(menu, Glyphs.Text, "识字", HotKeyActions.Ocr, () => ScreenshotSession.Start(ScreenshotMode.Ocr));
-            Add(menu, Glyphs.History, "截图历史", HotKeyActions.ShotHistory, ShotHistoryWindow.ShowWindow);
+            Add(menu, Glyphs.Ocr, capture, "识字", HotKeyActions.Ocr, () => ScreenshotSession.Start(ScreenshotMode.Ocr));
+            Add(menu, Glyphs.History, capture, "截图历史", HotKeyActions.ShotHistory, ShotHistoryWindow.ShowWindow);
         }
 
         if (Features.IsOn(Feature.Recording))
         {
             if (RecordingHost.IsRecording)
             {
-                Add(menu, Glyphs.Stop, "停止录屏 " + RecordingHost.Elapsed, HotKeyActions.Record, RecordingHost.Stop);
+                Add(menu, Glyphs.Stop, capture, "停止录屏 " + RecordingHost.Elapsed, HotKeyActions.Record,
+                    RecordingHost.Stop);
             }
             else
             {
-                Add(menu, Glyphs.Record, "录屏", HotKeyActions.Record, RecordingHost.Toggle);
+                Add(menu, Glyphs.Record, capture, "录屏", HotKeyActions.Record, RecordingHost.Toggle);
             }
 
             if (RecordingHost.LastPath is { } last && File.Exists(last) &&
                 last.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase))
             {
-                Add(menu, Glyphs.File,
+                Add(menu, Glyphs.File, capture,
                     CompressionService.IsRunning
                         ? $"压缩中 {(int)(CompressionService.Progress * 100)}%"
                         : "压缩最近的录屏（不超过 60%）",
                     string.Empty, () => _ = CompressionService.CompressLastAsync());
-                Add(menu, Glyphs.Image, "转成 GIF（10 fps，长边 800）", string.Empty,
+                Add(menu, Glyphs.Image, capture, "转成 GIF（10 fps，长边 800）", string.Empty,
                     () => _ = GifService.ConvertLastAsync());
             }
 
             if (AudioHost.IsRecording)
             {
-                Add(menu, Glyphs.Stop, "停止录音 " + AudioHost.Elapsed, string.Empty, AudioHost.Stop);
+                Add(menu, Glyphs.Stop, capture, "停止录音 " + AudioHost.Elapsed, string.Empty, AudioHost.Stop);
             }
             else if (AudioHost.IsArmed)
             {
-                Add(menu, Glyphs.Close, "取消待录", string.Empty, AudioHost.Toggle);
+                Add(menu, Glyphs.Close, capture, "取消待录", string.Empty, AudioHost.Toggle);
             }
             else
             {
-                Add(menu, Glyphs.Microphone, "录音（麦克风）", string.Empty, AudioHost.Toggle);
+                Add(menu, Glyphs.Microphone, capture, "录音（麦克风）", string.Empty, AudioHost.Toggle);
             }
         }
 
@@ -271,7 +299,7 @@ internal static partial class TrayMenu
         var settingsItem = new MenuFlyoutItem
         {
             Text = "设置…",
-            Icon = new FontIcon { Glyph = Glyphs.Settings },
+            Icon = Icon(Glyphs.Settings, general),
         };
         settingsItem.Click += (_, _) => runtime?.ShowSettings(welcome: false);
         menu.Items.Add(settingsItem);
@@ -283,7 +311,8 @@ internal static partial class TrayMenu
         var update = new MenuFlyoutItem
         {
             Text = updateText,
-            Icon = new FontIcon { Glyph = Glyphs.Update },
+            // 有新版本时用强调色（mac：菜单最上面那一项「更新到 x」）。
+            Icon = Icon(Glyphs.Update, UpdateService.AvailableVersion is null ? general : Theme.AccentColor),
             IsEnabled = !AutoUpdater.IsBusy,
         };
         update.Click += (_, _) =>
@@ -302,7 +331,7 @@ internal static partial class TrayMenu
         var exit = new MenuFlyoutItem
         {
             Text = "退出 Kitty Tools",
-            Icon = new FontIcon { Glyph = Glyphs.Shutdown },
+            Icon = Icon(Glyphs.Shutdown, general),
         };
         exit.Click += (_, _) => runtime?.Exit();
         menu.Items.Add(exit);
@@ -310,9 +339,13 @@ internal static partial class TrayMenu
         return menu;
     }
 
+    private static FontIcon Icon(string glyph, Windows.UI.Color color)
+        => new() { Glyph = glyph, Foreground = new SolidColorBrush(color) };
+
     private static void Add(
         MenuFlyout menu,
         string glyph,
+        Windows.UI.Color color,
         string text,
         string action,
         Action invoke,
@@ -321,7 +354,7 @@ internal static partial class TrayMenu
         var item = new MenuFlyoutItem
         {
             Text = text,
-            Icon = new FontIcon { Glyph = glyph },
+            Icon = Icon(glyph, color),
             IsEnabled = enabled,
         };
         var shortcut = ShellRuntime.Instance?.HotKeys.ShortcutFor(action);
@@ -349,4 +382,14 @@ internal static partial class TrayMenu
 
     [System.Runtime.InteropServices.LibraryImport("dwmapi.dll", EntryPoint = "DwmSetWindowAttribute")]
     private static partial int DwmSetWindowAttribute(IntPtr hWnd, int attribute, ref int value, int size);
+
+    [System.Runtime.InteropServices.LibraryImport("user32.dll", EntryPoint = "GetWindowLongW", SetLastError = true)]
+    private static partial int GetWindowLong(IntPtr hWnd, int index);
+
+    [System.Runtime.InteropServices.LibraryImport("user32.dll", EntryPoint = "SetWindowLongW", SetLastError = true)]
+    private static partial int SetWindowLong(IntPtr hWnd, int index, int value);
+
+    [System.Runtime.InteropServices.LibraryImport("user32.dll", EntryPoint = "SetLayeredWindowAttributes", SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static partial bool SetLayeredWindowAttributes(IntPtr hWnd, uint colorKey, byte alpha, uint flags);
 }
