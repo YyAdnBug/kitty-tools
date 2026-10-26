@@ -52,7 +52,7 @@ x64 包冒烟通过。设置窗的 Mica 在 Release AOT 下会抛 `ArgumentExcep
 
 **验收**：故意把 `Kitty.CardStyle` 改回同名，`build-release.ps1` 要失败，并指出是设置窗那一步；改回来再过。
 
-### R32（P1）翻译服务同步：mac 会写 `"usesDeepLX": false`，Windows 读到会把整类停住
+### R32（P1）翻译服务同步：mac 会写 `"usesDeepLX": false`，Windows 读到会把整类停住 → 已修（`8ce539d`）
 
 - `6ebe6041` 报告里的疑问：「mac TranslateService 的编码没有源码可对：usesDeepLX 只在 true 时写」。审查方查了 mac 源码：
   - 翻译服务同步的就是 `TranslateService` 这个结构本身，用的是合成的 `Codable`：可选字段是 nil 才不写，`false` 和 `""` 照写。
@@ -66,6 +66,8 @@ x64 包冒烟通过。设置窗的 Mica 在 Release AOT 下会抛 `ArgumentExcep
   - `SyncSourceTests.GoldenSamplesRoundTripThroughTheWindowsEncoders` 加 `case "service"`：用 `ServiceSync` 落下去再编回来，和 `json` 一字不差；
   - Windows 的服务模型里，`usesDeepLX` 改成 `bool?`，`model` / `baseURL` / `region` / `aiProtocol` 都保留 null 和 `""` 的区别（PLAN-v3 §1.5 的互通约定里补一句）。
 - 审查方还改了片段样本：之前有「在收藏夹里但没收藏」的组合，mac 的不变式是在收藏夹里的一定是收藏，所以已经不会出现了。`SyncSourceTests` 里为它写的那句特殊处理可以删掉。
+
+**修（`8ce539d`）**：`SyncService.UsesDeepLX` 改 `bool?`，encode 三态（没写 / false / true），decode 用 `FlagOrNull`；App 的 `TranslateServiceConfig` 同步改 `bool?`，DeepLProvider / 设置页按 `== true`。golden 加 service case，8 个 mac 样本全过。
 
 ### R33（P2）第七版的截图一张都没推；透明窗口用 WGC 只抓自己的窗口
 
