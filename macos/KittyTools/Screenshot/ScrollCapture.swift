@@ -15,7 +15,7 @@ import ScreenCaptureKit
 import SwiftUI
 
 final class ScrollCapture {
-  /// annotate：交给长图的标注窗口（ScrollEditor），别的三样直接出图
+  /// annotate：交给标注遮罩（AnnotateOverlay），别的三样直接出图
   enum Action { case copy, save, saveAs, annotate }
 
   struct Result {

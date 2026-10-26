@@ -184,8 +184,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
   /// 菜单栏图标与菜单（启动后才建：单测以本 App 为宿主时不往菜单栏加东西）
   private var statusItem: StatusItem?
-  /// 长图的标注窗口（长截图按 A 打开，关掉就放掉）
-  var scrollEditor: ScrollEditor?
+  /// 标注遮罩（长截图按 A、历史里双击打开，收起就放掉）
+  var annotateOverlay: AnnotateOverlay?
   /// 截图历史窗口（菜单栏 / 启动器打开，关掉就放掉）
   private var shotHistoryWindow: ShotHistoryWindow?
   /// 钉图（菜单栏显示「隐藏 / 关闭全部钉图」）
@@ -1885,7 +1885,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
       case .annotate:
         let id = await rememberScroll(result, region: region)
-        openScrollEditor(result.image, scale: result.scale, history: id)
+        openAnnotate(result.image, scale: result.scale, history: id)
       }
     } catch {
       pins.resume()
@@ -1964,9 +1964,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       guard let image = model.composed(item) else { return missingShot() }
       Task { await copyRecognizedText(in: image) }
     }
+    model.onNotice = { [unowned self] text, warning in
+      island.show(text, tone: warning ? .warning : .info)
+    }
     model.onEdit = { [unowned self] item in
       guard let original = shotHistory.image(for: item.id) else { return missingShot() }
-      openScrollEditor(
+      openAnnotate(
         original, scale: item.scale, history: item.id, annotations: item.annotations)
     }
     // 改完标注、缩略图重做好了：清掉那张的缓存、重画网格（2026-10-26 用户手测：历史里看着像没改过）
@@ -1991,11 +1994,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 长图标注（2026-10-26 拍板）：拼好的长图在自己的窗口里标注，出图走截图那条路、用刘海说结果（同钉图，不飞卡片：
   /// 这时选区多半已经不在眼前了）。一次只开一扇，再开一次就把前一扇换掉
-  private func openScrollEditor(
+  private func openAnnotate(
     _ image: CGImage, scale: CGFloat, history: UUID? = nil, annotations: [Annotation] = []
   ) {
-    scrollEditor?.close()
-    let editor = ScrollEditor(image: image, scale: scale, annotations: annotations) {
+    annotateOverlay?.close()
+    let editor = AnnotateOverlay(image: image, scale: scale, annotations: annotations) {
       [unowned self] action, image, scale, annotations in
       // 改完的标注回写到历史那一条（拍板 C4：更新同一条，不新建）
       if let history { shotHistory.update(history, annotations: annotations) }
@@ -2019,8 +2022,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
       }
     }
-    editor.onClose = { [weak self] in self?.scrollEditor = nil }
-    scrollEditor = editor
+    editor.onClose = { [weak self] in self?.annotateOverlay = nil }
+    annotateOverlay = editor
     editor.show()
   }
 

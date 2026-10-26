@@ -1,8 +1,9 @@
-// 长截图的标注窗口（2026-10-26 拍板，macos/build/research/scroll-annotate-2026-10-26/decisions.html）：长图拼完之后
-// 按 A（第 3 批在面板上加「标注」钮）打开这扇窗口，在长图上标注，标完拷贝 / 存储 / 另存为 / 识字。
-// 为什么是正经窗口、不是浮层（拍板 A2）：长图比屏幕高得多，缩进一屏既看不清也标不准，得能滚动；标注要打字、要 ⌘Z，
-// 窗口得拿得住键盘——长截图这时已经结束，不用再护着前台 App，所以打开时激活本 App（同设置窗、全部便签窗口，
-// 关掉时 leaveDockIfNoWindows）。
+// 标注遮罩（2026-10-26；原来是一扇正经窗口，用户手测说「我要的是截图后出现工具栏的那种效果」，当天改成遮罩）：
+// 长截图拼完按 A、截图历史里双击一条，都用它——整屏盖一层暗底，图摆在中间，工具栏贴在图下方，
+// 和截图框选确定之后那一套看齐；标完拷贝 / 存储 / 另存为 / 识字。
+// 窗口形态是无边框的 NSPanel 子类（要当 key 收按键、收文字输入；mac-overlay-panel §1 的例外之一），
+// 状态栏层级、盖住鼠标所在的那块屏、**不激活本 App**（同截图遮罩，前台 App 不变）。
+// 图比遮罩里那块地方大时（长截图）在框里滚动、能缩放，所以长图照样标得了。
 // 画布不把长图整张贴给图层（长图上限 30000 像素高，超过约 16384 会撞 GPU 纹理上限）：draw 里按脏区裁出看得见的那一段
 // 画（CGImage.cropping 是零拷贝的视图）。缩放交给 NSScrollView 的 magnification（拍板 A3：默认按宽适配、最大 1:1，
 // ⌘0 适配宽度、⌘1 原始大小、⌘+ / ⌘-），标注坐标一律存图的点坐标，所以缩放不影响画好的标注。
@@ -11,7 +12,7 @@
 import AppKit
 import Carbon.HIToolbox
 
-@MainActor final class ScrollEditor: NSObject, NSWindowDelegate {
+@MainActor final class AnnotateOverlay: NSObject {
   /// 出图：动作、合成好的图、像素 / 点、画了哪些标注（AppDelegate 接到截图那条路上，顺手把标注回写进历史）
   typealias Output = @MainActor (RegionSelector.Action, CGImage, CGFloat, [Annotation]) -> Void
 
@@ -23,7 +24,13 @@ import Carbon.HIToolbox
   /// 像素 / 点
   private let scale: CGFloat
   /// 单测直接摆状态、发按键用
-  let window: NSWindow
+  let panel: AnnotatePanel
+  /// 整屏的暗底（图那一块挖空）
+  private let shade = CALayer()
+  /// 图在遮罩里占的那一块（点，面板坐标）
+  private var box = CGRect.zero
+  /// Esc 第一下是「再按一次放弃」（画过标注时；遮罩里不弹系统框，同录屏放弃两下）
+  private var armedEscape = false
   private let scrollView = NSScrollView()
   private let canvas: ScrollCanvas
   private let bar = EditorToolbar(mode: .longShot)
@@ -32,22 +39,25 @@ import Carbon.HIToolbox
   /// 关掉了（AppDelegate 放掉这个会话）
   var onClose: () -> Void = {}
 
-  var isVisible: Bool { window.isVisible }
+  var isVisible: Bool { panel.isVisible }
 
-  /// frameName：记住窗口位置和大小用的名字（单测传 nil：不写偏好）
-  /// annotations：打开时就画上的标注（历史里「改标注」给的，坐标是这张图的点坐标）
+  /// screen：盖哪块屏（默认鼠标所在的那块）。annotations：打开时就画上的标注（历史里「改标注」给的，
+  /// 坐标是这张图的点坐标）
   init(
-    image: CGImage, scale: CGFloat, annotations: [Annotation] = [],
-    frameName: String? = "ScrollEditor", output: @escaping Output
+    image: CGImage, scale: CGFloat, annotations: [Annotation] = [], screen: NSScreen? = nil,
+    output: @escaping Output
   ) {
     self.image = image
     self.scale = scale
     self.output = output
     canvas = ScrollCanvas(image: image, scale: scale)
-    window = NSWindow(
-      contentRect: CGRect(origin: .zero, size: CGSize(width: 900, height: 640)),
-      styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered,
-      defer: false)
+    let target =
+      screen
+      ?? NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }
+      ?? NSScreen.main ?? NSScreen.screens[0]
+    panel = AnnotatePanel(
+      contentRect: target.frame, styleMask: [.borderless, .nonactivatingPanel],
+      backing: .buffered, defer: false)
     super.init()
 
     scrollView.hasVerticalScroller = true
@@ -56,23 +66,30 @@ import Carbon.HIToolbox
     scrollView.allowsMagnification = true
     scrollView.minMagnification = Self.zoomRange.lowerBound
     scrollView.maxMagnification = Self.zoomRange.upperBound
-    scrollView.backgroundColor = .underPageBackgroundColor
-    // 底部给浮着的工具栏留地方：滚到长图最底下时最后几行不被它压住
+    scrollView.drawsBackground = false
     scrollView.automaticallyAdjustsContentInsets = false
-    scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: Self.barMargin + 40, right: 0)
-    scrollView.contentView = CenteringClipView()  // 图比视口窄 / 矮时居中，不贴着左下角
+    scrollView.contentView = CenteringClipView()  // 图比框窄 / 矮时居中，不贴着左下角
     scrollView.documentView = canvas
-    scrollView.autoresizingMask = [.width, .height]
+    scrollView.wantsLayer = true
+    scrollView.layer?.cornerRadius = Style.Radius.card
+    scrollView.layer?.cornerCurve = .continuous
+    scrollView.layer?.masksToBounds = true
     bar.onClick = { [unowned self] item in clicked(item) }
     styleBar.onColor = { [unowned self] color in canvas.restyle { $0.color = color } }
     styleBar.onWeight = { [unowned self] weight in canvas.restyle { $0.weight = weight } }
     styleBar.onOption = { [unowned self] option in canvas.restyle { $0.option = option } }
     canvas.onState = { [unowned self] in syncBars() }
 
-    let content = ScrollEditorView()
-    content.frame = CGRect(origin: .zero, size: window.contentLayoutRect.size)
+    let content = AnnotateOverlayView()
+    content.frame = CGRect(origin: .zero, size: target.frame.size)
     content.onKey = { [unowned self] key in self.key(key) }
-    scrollView.frame = content.bounds
+    content.wantsLayer = true
+    // 整屏压暗（同截图遮罩的 shade）：图那一块由 scrollView 盖住，所以直接铺一层就行
+    shade.frame = content.bounds
+    shade.backgroundColor = Style.HUD.scrim.cgColor
+    content.layer?.addSublayer(shade)
+    box = Self.imageBox(pointSize: pointSize, in: target.visibleFrame, origin: target.frame.origin)
+    scrollView.frame = box
     content.addSubview(scrollView)
     // 先藏起来再加进去（同遮罩里的两条栏）：PopView 的 isShown 一开始就是 false，
     // setShown(false) 会直接返回、不动 isHidden——不这么做的话没选工具时托盘就停在窗口左下角露着
@@ -81,38 +98,45 @@ import Carbon.HIToolbox
       view.isHidden = true
       content.addSubview(view)
     }
-    window.contentView = content
-    window.delegate = self
+    panel.contentView = content
     NotificationCenter.default.addObserver(
       self, selector: #selector(magnified), name: NSScrollView.didEndLiveMagnifyNotification,
       object: scrollView)
-    window.isReleasedWhenClosed = false
-    window.collectionBehavior = [.fullScreenAuxiliary]
-    // 再窄也要放得下底部那条工具栏（2026-10-26 手测：长图只有 486 点宽时窗口跟着只有 486，
-    // 工具栏 590 两头被切）。工具栏的宽度由它自己排出来，别写死
-    let minimum = max(480, bar.frame.width + 2 * Self.barMargin)
-    window.contentMinSize = CGSize(width: minimum, height: 360)
-    window.setContentSize(
-      Self.contentSize(for: pointSize, on: window.screen ?? NSScreen.main, atLeast: minimum))
-    if let frameName {
-      if !window.setFrameUsingName(frameName) { window.center() }
-      window.setFrameAutosaveName(frameName)
-      // 存着的可能是更早的版本留下的、比工具栏还窄的尺寸：撑回来
-      if window.contentLayoutRect.width < minimum {
-        window.setContentSize(
-          CGSize(width: minimum, height: max(window.contentLayoutRect.height, 360)))
-      }
-    } else {
-      window.center()
-    }
+    panel.level = .statusBar  // 同截图遮罩：盖住菜单栏和程序坞
+    panel.collectionBehavior = [.fullScreenAuxiliary, .ignoresCycle]
+    panel.isOpaque = false
+    panel.backgroundColor = .clear
+    panel.hasShadow = false
+    panel.isReleasedWhenClosed = false
+    panel.animationBehavior = .none
+    panel.allowsToolTipsWhenApplicationIsInactive = true  // 本 App 不激活，按钮的提示照样出
     canvas.annotations = annotations
-    window.initialFirstResponder = canvas
+    panel.initialFirstResponder = canvas
     placeBar()
-    bar.grow(true, from: .bottom)  // 同截图工具栏：从靠边的那条边长出来
+    bar.grow(true, from: box.minY >= bar.frame.height + 2 * Self.barMargin ? .top : .bottom)
     syncBars()
     zoomToFit()
     scrollToTop()
-    updateTitle()
+  }
+
+  /// 图在遮罩里占哪一块（点，面板坐标）：按可见区的 80% 适配、最大 1:1，居中；
+  /// 下面给工具栏留出 56。纯函数，配单测
+  static func imageBox(pointSize: CGSize, in visible: CGRect, origin: CGPoint) -> CGRect {
+    let room = CGSize(width: visible.width * 0.84, height: visible.height * 0.78)
+    guard pointSize.width > 0, pointSize.height > 0 else {
+      return CGRect(origin: .zero, size: room)
+    }
+    let ratio = min(min(room.width / pointSize.width, room.height / pointSize.height), 1)
+    let size = CGSize(
+      width: max((pointSize.width * ratio).rounded(), 240),
+      height: max((pointSize.height * ratio).rounded(), 160))
+    // 面板盖的是整块屏，可见区（去掉菜单栏）要换成面板里的坐标
+    let area = CGRect(
+      x: visible.minX - origin.x, y: visible.minY - origin.y, width: visible.width,
+      height: visible.height)
+    return CGRect(
+      x: (area.midX - size.width / 2).rounded(),
+      y: (area.midY - size.height / 2 + 28).rounded(), width: size.width, height: size.height)
   }
 
   /// 图的点尺寸（标注的坐标系；长图的像素 / scale）
@@ -121,34 +145,24 @@ import Carbon.HIToolbox
   /// 工具栏离窗口左右和底边多远（窄窗口里也要留出这么多）
   static let barMargin: CGFloat = 16
 
-  /// 窗口默认多大（拍板 A2）：宽按长图的点宽、上限可见区的 90%，高是可见区的 85%；
-  /// atLeast 是工具栏要求的最小宽，比可见区还宽时以它为准（宁可超出屏幕也不切工具栏）。纯函数，配单测
-  static func contentSize(for pointSize: CGSize, on screen: NSScreen?, atLeast: CGFloat = 480)
-    -> CGSize
-  {
-    let visible = screen?.visibleFrame.size ?? CGSize(width: 1440, height: 900)
-    return CGSize(
-      width: max(min(max(pointSize.width, atLeast), visible.width * 0.9), atLeast),
-      height: min(max(pointSize.height, 360), visible.height * 0.85))
-  }
-
   /// 按宽适配的缩放（拍板 A3）：窄的长图不放大，最大 1:1。纯函数，配单测
   static func fitMagnification(pointWidth: CGFloat, viewportWidth: CGFloat) -> CGFloat {
     guard pointWidth > 0, viewportWidth > 0 else { return 1 }
     return min(1, max(zoomRange.lowerBound, viewportWidth / pointWidth))
   }
 
-  /// 显示并激活（同设置窗、全部便签窗口：浮层已经在长截图结束时收了）
+  /// 显示：同截图遮罩——不激活本 App（前台 App 不变），面板自己当 key 收按键
   func show() {
-    NSApp.setActivationPolicy(.regular)
-    window.makeKeyAndOrderFront(nil)
-    window.makeFirstResponder(canvas)
-    NSApp.activate()
-    // macOS 14 起 activate() 是协作式的，前台 App 不让出时可能到不了最前：退回旧 API（同设置窗）
-    if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
+    panel.orderFrontRegardless()
+    panel.makeKey()
+    panel.makeFirstResponder(canvas)
   }
 
-  func close() { window.close() }
+  func close() {
+    NotificationCenter.default.removeObserver(self)
+    panel.orderOut(nil)
+    onClose()
+  }
 
   // MARK: 缩放与位置
 
@@ -161,18 +175,14 @@ import Carbon.HIToolbox
   private func setMagnification(_ value: CGFloat) {
     scrollView.magnification = min(max(value, Self.zoomRange.lowerBound), Self.zoomRange.upperBound)
     canvas.zoom = scrollView.magnification  // 选中框和手柄的线宽按它补偿
-    updateTitle()
   }
 
-  /// 捏合缩放完（没经 setMagnification）：手柄的粗细和标题跟上
-  @objc private func magnified() {
-    canvas.zoom = scrollView.magnification
-    updateTitle()
-  }
+  /// 捏合缩放完（没经 setMagnification）：手柄的粗细跟上
+  @objc private func magnified() { canvas.zoom = scrollView.magnification }
 
   /// 长图从上往下看：一打开停在最上面（画布原点在左下，顶边是最大的 y）
   private func scrollToTop() {
-    window.layoutIfNeeded()
+    panel.layoutIfNeeded()
     let clip = scrollView.contentView
     canvas.scroll(NSPoint(x: 0, y: max(canvas.bounds.height - clip.documentVisibleRect.height, 0)))
   }
@@ -181,7 +191,7 @@ import Carbon.HIToolbox
   /// 工具栏和样式托盘跟着画布的状态走：托盘在工具栏上方 6 pt、x 对着当前工具那颗钮（夹在窗口里 10 pt）
   private func syncBars() {
     bar.update(tool: canvas.tool, canUndo: canvas.canUndo, canRedo: canvas.canRedo)
-    guard let owner = canvas.styleOwner, let content = window.contentView else {
+    guard let owner = canvas.styleOwner, let content = panel.contentView else {
       return styleBar.setShown(false)
     }
     styleBar.update(tool: owner, style: canvas.shownStyle)
@@ -190,24 +200,21 @@ import Carbon.HIToolbox
     let x = max(
       10, min(button.midX - size.width / 2, content.bounds.maxX - size.width - 10)
     ).rounded()
-    let y = bar.frame.maxY + 6
+    // 栏在图下面时托盘再往下叠，栏在图上面时往上叠（同遮罩里的做法）
+    let below = bar.frame.minY < box.minY
+    let y = below ? bar.frame.minY - 6 - size.height : bar.frame.maxY + 6
     styleBar.move(
       to: CGRect(x: x, y: y, width: size.width, height: size.height), animated: styleBar.isShown)
     styleBar.setShown(true, anchorX: button.midX - x, growingFrom: .bottom)
   }
 
+  /// 工具栏贴在图下方 10 pt、水平以图为中心（同截图工具栏贴着选区）；下面放不下就放上方，
+  /// 都放不下贴在图里底部。纯函数那一半在 SelectionView.toolbarPlacement，这里直接用它
   private func placeBar() {
-    guard let content = window.contentView else { return }
-    // 居中；窗口真比工具栏还窄时（恢复出来的旧尺寸、系统夹过的）贴左边留边距，别让左半截跑到窗口外
-    bar.frame.origin = CGPoint(
-      x: max(Self.barMargin, (content.bounds.width - bar.frame.width) / 2).rounded(),
-      y: Self.barMargin)
-    bar.autoresizingMask = [.minXMargin, .maxXMargin, .maxYMargin]
-  }
-
-  private func updateTitle() {
-    let percent = Int((scrollView.magnification * 100).rounded())
-    window.title = "长截图 · \(image.width) × \(image.height) · \(percent)%"
+    guard let content = panel.contentView else { return }
+    let (origin, _) = SelectionView.toolbarPlacement(
+      size: bar.frame.size, selection: box, in: content.bounds)
+    bar.frame.origin = origin
   }
 
   // MARK: 出图
@@ -218,7 +225,7 @@ import Carbon.HIToolbox
   private func clicked(_ item: EditorToolbar.Item) {
     switch item {
     case .output(let action): emit(action)
-    case .cancel: window.performClose(nil)  // 画过标注会问一次（windowShouldClose）
+    case .cancel: dismiss()
     case .saveMenu: emit(.saveAs)  // 第 3 批换成 HUD 菜单（存储到… / 另存为…）
     case .tool(let tool): canvas.choose(tool)
     case .undo: canvas.undo()
@@ -227,17 +234,26 @@ import Carbon.HIToolbox
     }
   }
 
-  /// 拷贝 / 存储 / 另存为完就关掉窗口（这次长截图到此结束）；识字只是把文字拿走，窗口留着
+  /// 拷贝 / 存储 / 另存为完就收起遮罩（这一次到此结束）；识字只是把文字拿走，遮罩留着
   private func emit(_ action: RegionSelector.Action) {
+    armedEscape = false
     output(action, composed(), scale, canvas.annotations)
     if action != .recognize { close() }
+  }
+
+  /// 取消：画过标注的要按两下（遮罩里不弹系统框，同录屏的放弃；第一下提示音 + 顶部提示）
+  private func dismiss() {
+    guard canvas.hasAnnotations, !armedEscape else { return close() }
+    armedEscape = true
+    NSSound.beep()
+    Island.announce("再按一次 Esc 放弃这些标注")
   }
 
   /// 窗口里的按键（内容视图收，第 2 批标注的键也走这里）
   private func key(_ event: NSEvent) -> Bool {
     let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
     switch (Int(event.keyCode), flags) {
-    case (kVK_Escape, []): window.performClose(nil)
+    case (kVK_Escape, []): dismiss()
     case (kVK_Return, []), (kVK_ANSI_KeypadEnter, []): emit(.copy)
     case (kVK_ANSI_O, []): emit(.recognize)
     case (kVK_ANSI_C, .command): emit(.copy)
@@ -252,39 +268,21 @@ import Carbon.HIToolbox
       setMagnification(scrollView.magnification / Self.zoomStep)
     default: return false
     }
+    if Int(event.keyCode) != kVK_Escape { armedEscape = false }  // 按了别的键就不再上膛
     return true
   }
 
-  // MARK: 窗口
-
-  /// 画过标注就问一次（拍板 C3）；没画过直接关（长图丢掉，同长截图的取消）。
-  /// 拷贝 / 存储 / 另存为之后的关窗口走 close()，不经这里
-  func windowShouldClose(_ sender: NSWindow) -> Bool {
-    guard canvas.hasAnnotations else { return true }
-    let alert = NSAlert()
-    alert.messageText = "不保存就关闭？"
-    alert.informativeText = "这张长截图和上面的标注都会丢掉。"
-    alert.addButton(withTitle: "关闭")
-    alert.addButton(withTitle: "取消")
-    alert.buttons.first?.hasDestructiveAction = true
-    alert.buttons.last?.keyEquivalent = "\u{1b}"
-    return alert.runModal() == .alertFirstButtonReturn
-  }
-
-  func windowDidResize(_ notification: Notification) {
-    placeBar()
-    syncBars()
-  }
-
-  func windowWillClose(_ notification: Notification) {
-    NotificationCenter.default.removeObserver(self)
-    NSApp.leaveDockIfNoWindows(closing: window)
-    onClose()
-  }
 }
 
-/// 窗口的内容视图：工具栏和画布的壳，按键在这里收（画布第 2 批要当第一响应者画标注，键照旧经这里）
-final class ScrollEditorView: NSView {
+/// 遮罩面板：无边框窗口默认当不了 key（收不到 Esc、↩、打字），所以要子类化（同截图遮罩、长截图面板；
+/// mac-overlay-panel §1 的例外之一）
+final class AnnotatePanel: NSPanel {
+  override var canBecomeKey: Bool { true }
+  override var canBecomeMain: Bool { false }
+}
+
+/// 遮罩的内容视图：暗底、图框和工具栏的壳，按键在这里收（画布当第一响应者画标注，没处理的键冒泡到这里）
+final class AnnotateOverlayView: NSView {
   var onKey: (NSEvent) -> Bool = { _ in false }
 
   override var acceptsFirstResponder: Bool { true }

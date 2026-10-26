@@ -1,6 +1,6 @@
 // 长图标注窗口（第 1 批）的单测：画布的坐标换算（脏区 ↔ 图里的像素）、窗口默认大小、按宽适配的缩放、
 // 工具栏是长图那一套（只有识字，没有翻译 / 长截图 / 录屏 / 钉图）、按键出图。
-// 很高的长图在真窗口里滚动、导出要多久、占多少内存在按需探针 ScrollEditorProbeTests 里量。
+// 很高的长图在真窗口里滚动、导出要多久、占多少内存在按需探针 AnnotateOverlayProbeTests 里量。
 
 import AppKit
 import Carbon.HIToolbox
@@ -9,7 +9,7 @@ import Testing
 @testable import KittyTools
 
 @MainActor
-struct ScrollEditorTests {
+struct AnnotateOverlayTests {
   /// 长图：width × height 像素的纯色图（scale 2 时点尺寸是一半）
   private func image(width: Int, height: Int) -> CGImage {
     let context = CGContext(
@@ -49,42 +49,34 @@ struct ScrollEditorTests {
 
   /// 按宽适配：宽的长图缩小，窄的不放大（最大 1:1）
   @Test func fitMagnificationNeverEnlarges() {
-    #expect(ScrollEditor.fitMagnification(pointWidth: 1200, viewportWidth: 600) == 0.5)
-    #expect(ScrollEditor.fitMagnification(pointWidth: 400, viewportWidth: 900) == 1)
-    #expect(ScrollEditor.fitMagnification(pointWidth: 0, viewportWidth: 900) == 1)
+    #expect(AnnotateOverlay.fitMagnification(pointWidth: 1200, viewportWidth: 600) == 0.5)
+    #expect(AnnotateOverlay.fitMagnification(pointWidth: 400, viewportWidth: 900) == 1)
+    #expect(AnnotateOverlay.fitMagnification(pointWidth: 0, viewportWidth: 900) == 1)
     // 极宽的长图也不缩到看不见（夹在缩放下限）
-    #expect(ScrollEditor.fitMagnification(pointWidth: 100_000, viewportWidth: 600) == 0.1)
+    #expect(AnnotateOverlay.fitMagnification(pointWidth: 100_000, viewportWidth: 600) == 0.1)
   }
 
-  /// 窗口默认大小：宽跟长图的点宽、上限屏幕可见区 90%，高是 85%，都不小于最小尺寸
-  @Test func contentSizeFitsScreen() {
-    let screen = NSScreen.main
-    let visible = screen?.visibleFrame.size ?? CGSize(width: 1440, height: 900)
-    let wide = ScrollEditor.contentSize(
-      for: CGSize(width: 9000, height: 20000), on: screen)
-    #expect(abs(wide.width - visible.width * 0.9) < 0.01)
-    #expect(abs(wide.height - visible.height * 0.85) < 0.01)
-    let narrow = ScrollEditor.contentSize(for: CGSize(width: 320, height: 200), on: screen)
-    #expect(narrow == CGSize(width: 480, height: 360))
-    // atLeast（工具栏要的宽）比长图和下限都大时以它为准
-    let wideBar = ScrollEditor.contentSize(
-      for: CGSize(width: 320, height: 200), on: screen, atLeast: 640)
-    #expect(wideBar.width == 640)
-  }
-
-  /// 长图比底部工具栏还窄时，窗口也要放得下整条工具栏（2026-10-26 手测报的：973 像素宽的长图
-  /// 把窗口挤成 486 点，工具栏两头被切掉）
-  @Test func toolbarFitsEvenForNarrowImage() throws {
-    let editor = ScrollEditor(image: image(width: 972, height: 4800), scale: 2, frameName: nil) {
-      _, _, _, _ in
-    }
-    defer { editor.close() }
-    let content = try #require(editor.window.contentView)
-    let bar = try #require(content.subviews.compactMap { $0 as? EditorToolbar }.first)
-    #expect(bar.frame.width > 486, "工具栏比这张长图的点宽还窄，这个用例就不复现了")
-    #expect(editor.window.contentMinSize.width >= bar.frame.width + 32)
-    #expect(content.bounds.width >= bar.frame.width + 32)
-    #expect(bar.frame.minX >= 16 && bar.frame.maxX <= content.bounds.maxX - 16)
+  /// 图在遮罩里占哪一块：按可见区的八成多适配、最大 1:1、居中；超小的图也有最小尺寸
+  @Test func imageBoxFitsTheScreen() {
+    let visible = CGRect(x: 0, y: 0, width: 1600, height: 1000)
+    let big = AnnotateOverlay.imageBox(
+      pointSize: CGSize(width: 4000, height: 3000), in: visible, origin: .zero)
+    #expect(big.width <= visible.width * 0.84 + 1 && big.height <= visible.height * 0.78 + 1)
+    #expect(abs(big.width / big.height - 4.0 / 3.0) < 0.01)  // 比例不变
+    #expect(abs(big.midX - visible.midX) <= 1)  // 横向居中
+    // 小图不放大
+    let small = AnnotateOverlay.imageBox(
+      pointSize: CGSize(width: 300, height: 200), in: visible, origin: .zero)
+    #expect(small.size == CGSize(width: 300, height: 200))
+    // 很长的长图：高度按框封顶（里面滚），宽度跟着比例缩
+    let long = AnnotateOverlay.imageBox(
+      pointSize: CGSize(width: 600, height: 15000), in: visible, origin: .zero)
+    #expect(long.height <= visible.height * 0.78 + 1 && long.width >= 240)
+    // 面板盖整块屏：可见区的原点要换算进面板坐标（菜单栏那一条）
+    let offset = AnnotateOverlay.imageBox(
+      pointSize: CGSize(width: 300, height: 200),
+      in: CGRect(x: 0, y: 0, width: 1600, height: 960), origin: CGPoint(x: 0, y: -40))
+    #expect(offset.midY > 0)
   }
 
   /// 工具栏是长图那一套（拍板 C1）：识字留着，翻译 / 长截图 / 录屏 / 钉图不出现；标注工具和撤销重做照旧在
@@ -104,10 +96,10 @@ struct ScrollEditorTests {
   /// ↩ 拷贝之后窗口关掉（这次长截图到此结束）；O 识字只把文字拿走、窗口留着；Esc 什么都不出
   @Test func keysEmitAndClose() throws {
     var actions: [RegionSelector.Action] = []
-    let editor = ScrollEditor(image: image(width: 400, height: 2400), scale: 2, frameName: nil) {
+    let editor = AnnotateOverlay(image: image(width: 400, height: 2400), scale: 2) {
       action, _, _, _ in actions.append(action)
     }
-    let content = try #require(editor.window.contentView as? ScrollEditorView)
+    let content = try #require(editor.panel.contentView as? AnnotateOverlayView)
     func press(_ keyCode: Int, _ characters: String, _ flags: NSEvent.ModifierFlags = []) throws {
       let event = try #require(
         NSEvent.keyEvent(
@@ -118,7 +110,7 @@ struct ScrollEditorTests {
     }
     try press(kVK_ANSI_O, "o")
     #expect(actions == [.recognize])
-    #expect(editor.window.isVisible == false)  // 没 show 过：这里只看它没被关掉的副作用影响
+    #expect(editor.panel.isVisible == false)  // 没 show 过：这里只看它没被关掉的副作用影响
     try press(kVK_Return, "\r")
     #expect(actions == [.recognize, .copy])
     editor.close()
@@ -289,11 +281,11 @@ struct ScrollEditorTests {
   /// 没选工具时样式托盘是藏着的（2026-10-26 手测：窗口左下角露出半块空胶囊）；
   /// 选了工具出来、收起工具又收回去
   @Test func styleBarOnlyShowsWithTool() throws {
-    let editor = ScrollEditor(image: image(width: 972, height: 4800), scale: 2, frameName: nil) {
+    let editor = AnnotateOverlay(image: image(width: 972, height: 4800), scale: 2) {
       _, _, _, _ in
     }
     defer { editor.close() }
-    let content = try #require(editor.window.contentView)
+    let content = try #require(editor.panel.contentView)
     let styleBar = try #require(content.subviews.compactMap { $0 as? StyleBar }.first)
     #expect(styleBar.isHidden && !styleBar.isShown)
     let scroll = try #require(content.subviews.compactMap { $0 as? NSScrollView }.first)

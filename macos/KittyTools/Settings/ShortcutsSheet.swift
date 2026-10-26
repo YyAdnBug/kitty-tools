@@ -338,9 +338,10 @@ struct ShortcutsSheet: View {
           Entry("双击", text: "改标注（录制的是用默认 App 打开）"),
           Entry("⌫", text: "删掉选中的那条"),
         ]),
-      // 长图标注窗口（2026-10-26）；代码在 ScrollCanvas.keyDown 和 ScrollEditor.key
+      // 标注遮罩（2026-10-26：长截图按 A、截图历史里双击都用它）；代码在 ScrollCanvas.keyDown
+      // 和 AnnotateOverlay.key
       Group(
-        title: "长图标注", symbol: "pencil.tip.crop.circle", color: Style.Family.screenshot,
+        title: "标注", symbol: "pencil.tip.crop.circle", color: Style.Family.screenshot,
         features: [.screenshot],
         entries: [
           Entry("1", "0", text: "十种标注工具（再按一次收起）"),
@@ -348,13 +349,13 @@ struct ShortcutsSheet: View {
           Entry("⌘D", text: "复制选中的标注"),
           Entry("⌘Z", "⇧⌘Z", text: "撤销 / 重做"),
           Entry("空格", text: "按住拖动平移画面"),
-          Entry("⌘0", "⌘1", text: "适配宽度 / 原始大小"),
+          Entry("⌘0", "⌘1", text: "适配 / 原始大小"),
           Entry("⌘+", "⌘-", text: "放大 / 缩小"),
           Entry("↩", "⌘C", text: "拷贝"),
           Entry("⌘S", text: "快速保存"),
           Entry("⇧⌘S", text: "另存为…"),
           Entry("O", text: "识字并拷贝"),
-          Entry("Esc", text: "收起工具 / 关闭（画过会问一次）"),
+          Entry("Esc", text: "收起工具 / 退出（画过要按两下）"),
         ]),
       // mac-whisker §6 截图「录屏」（录屏第 1、2 批）；框选、拖边、方向键同「截图 · 框选」，代码在 SelectionView.keyDown，
       // 倒数的 Esc 是 ScreenRecorder 临时注册的热键

@@ -819,7 +819,7 @@ struct SnapshotProbeTests {
         dark: false, to: "\(out)/\(name).png")
     }
     try renderScrollCapture(out)
-    try renderScrollEditor(out)
+    try renderAnnotateOverlay(out)
     try renderShotHistory(out)
     try await renderLauncher(out)
     // 刘海岛：刘海屏的下巴（成功 / 进行中）、无刘海屏的胶囊（取色色块 / 错误）
@@ -3351,7 +3351,7 @@ struct SnapshotProbeTests {
       to: "\(out)/shot-history-nothing.png")
   }
 
-  private func renderScrollEditor(_ out: String) throws {
+  private func renderAnnotateOverlay(_ out: String) throws {
     let page = try ScreenshotTests.render([
       "The quick brown fox jumps over the lazy dog", "敏捷的棕色狐狸跳过了懒狗", "日本語のテキスト",
       "한국어 텍스트", "Привет мир", "Hello World", "第七行", "第八行",

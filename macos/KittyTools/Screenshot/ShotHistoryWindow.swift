@@ -50,6 +50,8 @@ import SwiftUI
   @ObservationIgnored var onPin: (ShotHistory.Item) -> Void = { _ in }
   @ObservationIgnored var onRecognize: (ShotHistory.Item) -> Void = { _ in }
   @ObservationIgnored var onEdit: (ShotHistory.Item) -> Void = { _ in }
+  /// 说一句（接到刘海岛上）：Island.announce 只给读屏，用户看不见
+  @ObservationIgnored var onNotice: (String, Bool) -> Void = { _, _ in }
 
   init(history: ShotHistory) {
     self.history = history
@@ -148,17 +150,26 @@ import SwiftUI
     return FileManager.default.fileExists(atPath: path)
   }
 
+  /// 在访达中显示：只有存过盘（或录制的那几条）才有文件；没存过的那条这一项是灰的，
+  /// 真点到了也说一声——原来只调 Island.announce（读屏播报），看着就是「点了没反应」
+  /// （2026-10-26 用户手测报的）
   func reveal(_ item: ShotHistory.Item) {
-    guard let path = item.filePath ?? item.savedPath, fileExists(item) else {
-      return Island.announce("文件已经不在了")
+    guard let path = item.filePath ?? item.savedPath else {
+      return onNotice("这张还没存成文件，先「存储到…」", false)
     }
+    guard fileExists(item) else { return onNotice("文件已经不在了", true) }
     NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: path)])
   }
 
   func open(_ item: ShotHistory.Item) {
-    guard let path = item.filePath, fileExists(item) else { return Island.announce("文件已经不在了") }
+    guard let path = item.filePath, fileExists(item) else {
+      return onNotice("文件已经不在了", true)
+    }
     NSWorkspace.shared.open(URL(filePath: path))
   }
+
+  /// 这一条有没有文件可以显示 / 打开（没有时那一项置灰）
+  func hasFile(_ item: ShotHistory.Item) -> Bool { (item.filePath ?? item.savedPath) != nil }
 
   func delete(_ ids: [UUID]) {
     if let selection, ids.contains(selection) { self.selection = nil }

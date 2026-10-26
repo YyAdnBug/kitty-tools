@@ -12,7 +12,7 @@ import Testing
 @testable import KittyTools
 
 @MainActor
-struct ScrollEditorProbeTests {
+struct AnnotateOverlayProbeTests {
   nonisolated private static var isEnabled: Bool {
     ProcessInfo.processInfo.environment["KITTY_SCROLL_EDITOR_PROBE"] == "1"
   }
@@ -65,7 +65,7 @@ struct ScrollEditorProbeTests {
     return context.makeImage()!
   }
 
-  @Test(.enabled(if: ScrollEditorProbeTests.isEnabled)) func measure() async throws {
+  @Test(.enabled(if: AnnotateOverlayProbeTests.isEnabled)) func measure() async throws {
     let megabyte = 1024 * 1024
     let base = footprint()
     let pixels = (width: 1600, height: 30000)  // 点宽 800 > 一屏 880 的内容宽：适配那一档真的会缩
@@ -76,10 +76,10 @@ struct ScrollEditorProbeTests {
 
     let scale: CGFloat = 2
     let canvas = ScrollCanvas(image: image, scale: scale)
-    var editor: ScrollEditor? = ScrollEditor(image: image, scale: scale, frameName: nil) {
+    var editor: AnnotateOverlay? = AnnotateOverlay(image: image, scale: scale) {
       _, _, _, _ in
     }
-    let window = try #require(editor?.window)
+    let window = try #require(editor?.panel)
     window.setFrameOrigin(NSPoint(x: -20000, y: -20000))
     window.orderFront(nil)
     window.layoutIfNeeded()
@@ -95,7 +95,7 @@ struct ScrollEditorProbeTests {
       times[name] = [paint(canvas, rect, scale: scale), paint(canvas, rect, scale: scale)]
     }
     // 适配那一档（缩到约 0.73）：同样一屏，画的内容更多
-    let fit = ScrollEditor.fitMagnification(
+    let fit = AnnotateOverlay.fitMagnification(
       pointWidth: canvas.bounds.width, viewportWidth: viewport.width)
     let fitRect = CGRect(
       x: 0, y: canvas.bounds.height / 2, width: viewport.width / fit, height: viewport.height / fit)
