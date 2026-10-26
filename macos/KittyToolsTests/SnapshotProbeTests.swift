@@ -4172,6 +4172,83 @@ struct SnapshotProbeTests {
     }
   }
 
+  /// 晾衣绳（第十族第 1 批，2026-10-26 拍板 D1）：挂 1 / 4 / 8 张（有一张是长截图那种细长的），
+  /// 浅深各一张；另出一张刘海屏的（中间让得更宽）。图是真写进临时目录的缩略图（和历史窗口同一份缓存）
+  @Test(.enabled(if: directory != nil)) func clothesline() async throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    Prefs.registerDefaults()
+    let root = FileManager.default.temporaryDirectory.appending(path: "kitty-clothesline-shots")
+    try? FileManager.default.removeItem(at: root)
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      ShotThumbnails.shared.clear()
+    }
+    let history = try ShotHistory(
+      db: Database(path: ":memory:"), directory: root.appending(path: "shots"))
+    let model = ClotheslineModel(history: history)
+    // 八张：几种常见比例 + 一张细长的长截图
+    let sizes = [
+      CGSize(width: 1600, height: 1000), CGSize(width: 1200, height: 1200),
+      CGSize(width: 2400, height: 900), CGSize(width: 1000, height: 1400),
+      CGSize(width: 1600, height: 1000), CGSize(width: 900, height: 1600),
+      CGSize(width: 1400, height: 1000), CGSize(width: 1200, height: 7000),
+    ]
+    let tints: [NSColor] = [
+      .systemBlue, .systemPink, .systemGreen, .systemOrange, .systemPurple, .systemTeal,
+      .systemIndigo, .systemBrown,
+    ]
+    var items: [ShotHistory.Item] = []
+    for (index, size) in sizes.enumerated() {
+      let id = UUID()
+      let thumb = try Self.swatch(size: size, tint: tints[index])
+      let png = try #require(await ScreenshotOutput.png(thumb, scale: 1))
+      try png.write(to: history.thumbnailURL(for: id))
+      items.append(
+        ShotHistory.Item(
+          id: id, kind: index == 7 ? .scroll : .shot,
+          createdAt: Date.now.addingTimeInterval(-Double(index) * 60), pixelSize: size, scale: 2,
+          source: "Safari", bytes: png.count))
+    }
+    history.seed(items)
+    let width: CGFloat = 1512
+    let size = NSSize(width: width, height: ClotheslineLayout.panelHeight)
+    for (count, notch) in [
+      (1, CGRect?.none), (4, nil), (8, nil), (8, CGRect(x: 0, y: 0, width: 260, height: 38)),
+    ] {
+      model.setPegged(items.prefix(count).map(\.id))
+      model.plan = ClotheslineLayout.plan(
+        model.items.map(\.pixelSize), width: width, gap: ClotheslineLayout.gap(notch: notch))
+      let name = notch == nil ? "clothesline-\(count)" : "clothesline-notch"
+      for dark in [false, true] where notch == nil || !dark {
+        try snapshot(
+          ClotheslineView(model: model), size: size, dark: dark,
+          to: "\(out)/\(name)\(dark ? "-dark" : "").png")
+      }
+    }
+  }
+
+  /// 一块带渐变的色块，当缩略图用
+  private static func swatch(size: CGSize, tint: NSColor) throws -> CGImage {
+    let width = max(Int(size.width) / 8, 8)
+    let height = max(Int(size.height) / 8, 8)
+    let context = try #require(
+      CGContext(
+        data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue))
+    context.setFillColor(tint.withAlphaComponent(0.85).cgColor)
+    context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+    context.setFillColor(NSColor(white: 1, alpha: 0.85).cgColor)
+    context.fill(CGRect(x: 0, y: height * 3 / 4, width: width, height: height / 4))
+    context.setFillColor(NSColor(white: 0, alpha: 0.25).cgColor)
+    for row in 0..<4 {
+      context.fill(
+        CGRect(x: width / 10, y: height / 2 - row * height / 8, width: width * 2 / 3, height: 4))
+    }
+    return try #require(context.makeImage())
+  }
+
   private func snapshot(
     _ view: some View, size: NSSize, dark: Bool, to path: String,
     prepare: ((NSView) -> Void)? = nil

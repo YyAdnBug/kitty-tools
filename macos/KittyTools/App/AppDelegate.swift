@@ -110,6 +110,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private let updater = Updater()
   /// CleanShot 式常驻缩略图（截图飞入右下角后留在那里）
   private let shelf = ShotShelf()
+  /// 晾衣绳（第十族，2026-10-26 拍板）：屏幕顶上一根绳子，挂着截图历史里的几条；和常驻缩略图二选一
+  /// （设置 › 截图「截完图放哪」）。截图这个功能开着才起，鼠标停到菜单栏那一条上才滑下来
+  private lazy var clothesline: Clothesline = {
+    let line = Clothesline(history: shotHistory)
+    line.isSuppressed = { [unowned self] in
+      isCapturing || statusScreen.isActive || OverlayPanel.isSelectingRegion(in: NSApp.windows)
+        || (Feature.launchpad.isOn && launchpad.isOpen)
+    }
+    line.onHide = { [unowned self] in idleReclaim.schedule() }
+    return line
+  }()
   /// 状态屏（PLAN §10）：进入时收起三块浮层、停用全局热键，退出时恢复。正在录屏 / 录音时不让进（控制条和停止项
   /// 会被盖住、热键停着，退出前停不了）；截图框选、读选中文字这类一会儿就完的事进行中也不进
   private lazy var statusScreen: StatusScreen = {
@@ -246,6 +257,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func reclaimIdleMemory() {
     ThumbnailView.dropPreviews()
     if Feature.dockPreview.isOn { dockPreview.reclaim() }
+    if Feature.screenshot.isOn { clothesline.reclaim() }
     LinkPreview.shared.dropHeroes()
     releaseClosedNotesWindow()
     // 便签正文里解好的图片缩略图（第 7 批：按像素数算 cost，闲下来整块放掉）；浮在屏幕上的那张便签里的图留着
@@ -807,6 +819,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
     }
 
+    // 晾衣绳（第十族）：截图开着才听鼠标；关掉时取下全部、收起（挂着的标记本来就不跨重启）
+    if turnedOn.contains(.screenshot) { clothesline.start() }
+
     if turnedOn.contains(.dockPreview) {
       dockPreview.start()
       // 运行中打开时缺授权就带去授权（拍板 A3）：先要辅助功能（没有它用不了），有了再要屏幕录制（没有只列标题）；
@@ -843,7 +858,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       replaceTask?.cancel()
       replaceTask = nil
     }
-    if turnedOff.contains(.screenshot), !pins.panels.isEmpty { pins.closeAll() }
+    if turnedOff.contains(.screenshot) {
+      if !pins.panels.isEmpty { pins.closeAll() }
+      clothesline.stop()
+    }
     if turnedOff.contains(.record) {
       // 正在录：照常停止并收尾（文件存好、飞出卡片，同退出时）；待录的控制条直接收掉
       closeReadyAudio()
