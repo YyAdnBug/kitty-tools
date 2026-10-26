@@ -616,7 +616,16 @@ internal sealed partial class SelectionOverlayWindow : Window
         Height = 40,
         CornerRadius = new CornerRadius(8),
         Padding = new Thickness(4),
-        Background = new SolidColorBrush(Theme.Shot.HudBackgroundStrong),
+        Background = new LinearGradientBrush
+        {
+            StartPoint = new Windows.Foundation.Point(0, 0),
+            EndPoint = new Windows.Foundation.Point(0, 1),
+            GradientStops =
+            {
+                new GradientStop { Color = Theme.Argb(242, 38, 38, 38), Offset = 0 },
+                new GradientStop { Color = Theme.Shot.HudBackgroundStrong, Offset = 1 },
+            },
+        },
         BorderBrush = new SolidColorBrush(Theme.Argb(36, 255, 255, 255)),
         BorderThickness = new Thickness(0.5),
         Child = child,
