@@ -75,6 +75,7 @@ Kitty Tools 的 **Windows 原生版**（C# + WinUI 3，2026-10-23 立项）。�
 - **`PLAN-v5.md`**：第五版（和 Mac 互通的同步）。mac 的源码在 `reference/mac-sync/`。
 - **`PLAN-v6.md`**：第六版（收尾与优化）。§0 的规矩（数字口径、录屏只录测试窗口、COM 写法、删比加好）这一版起一直有效。
 - **`PLAN-v7.md`**：第七版（界面对齐 mac）。§2 的刻度和共用部件定下来以后，所有界面都从那里取；规格是 mac 的 Whisker（`.cursor/rules/mac-whisker*.mdc`），只读方案里点名的章节。
+- **`PLAN-setup.md`**：exe 安装程序（2026-10-26）。**由 Claude 在单独的会话里做**：`windows/KittyTools.Setup/` 和方案 §3 点名的 Core 文件、测试、脚本，交接之前你们不要动。§4 是 App 项目里要开的三个口子，碰到时照那里的约定来。做完后审查方会在 `REVIEW.md` 里加一条「安装程序真机验收」交给你们跑。
 - `PLAN.md`：第一版的规格。
 - 做到哪一批，就读那一批引用的 mac 源码和规则章节（只看行为，不搬 AppKit 的做法）。
 
