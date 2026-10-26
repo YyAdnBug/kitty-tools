@@ -495,12 +495,12 @@ internal sealed partial class SelectionOverlayWindow : Window
         var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
         foreach (var (tool, label, name, shortcut) in new[]
                  {
-                     (AnnotationTool.Select, "↖", "选择", "V"),
-                     (AnnotationTool.Rectangle, "▭", "矩形", "R"),
-                     (AnnotationTool.Arrow, "↗", "箭头", "A"),
-                     (AnnotationTool.Pen, "✎", "画笔", "B"),
-                     (AnnotationTool.Text, "T", "文字", "T"),
-                     (AnnotationTool.Mosaic, "▦", "马赛克", "M"),
+                     (AnnotationTool.Select, "\uE8B0", "选择", "V"),
+                     (AnnotationTool.Rectangle, "\uE7C3", "矩形", "R"),
+                     (AnnotationTool.Arrow, "\uE8AB", "箭头", "A"),
+                     (AnnotationTool.Pen, "\uE70F", "画笔", "B"),
+                     (AnnotationTool.Text, "\uE8D2", "文字", "T"),
+                     (AnnotationTool.Mosaic, "\uE7C4", "马赛克", "M"),
                  })
         {
             var button = ToolbarButton(label, $"{name}（{shortcut}）", name);
@@ -515,7 +515,7 @@ internal sealed partial class SelectionOverlayWindow : Window
         }
 
         var extras = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
-        _colorButton = ToolbarButton(string.Empty, "换颜色", "颜色", 24);
+        _colorButton = ToolbarButton(string.Empty, "换颜色", "颜色");
         _colorButton.Click += (_, _) =>
         {
             var palette = Theme.Shot.AnnotationPalette;
@@ -526,7 +526,7 @@ internal sealed partial class SelectionOverlayWindow : Window
         };
         extras.Children.Add(_colorButton);
 
-        _widthButton = ToolbarButton("3", "线宽", "线宽", 24);
+        _widthButton = ToolbarButton("3", "线宽", "线宽");
         _widthButton.Click += (_, _) =>
         {
             var widths = new[] { 2.0, 3, 5, 8 };
@@ -537,10 +537,10 @@ internal sealed partial class SelectionOverlayWindow : Window
         };
         extras.Children.Add(_widthButton);
 
-        _undoButton = ToolbarButton("↶", "撤销（Ctrl+Z）", "撤销", 24);
+        _undoButton = ToolbarButton(Glyphs.Undo, "撤销（Ctrl+Z）", "撤销");
         _undoButton.Click += (_, _) => Undo();
         extras.Children.Add(_undoButton);
-        _redoButton = ToolbarButton("↷", "重做（Ctrl+Y）", "重做", 24);
+        _redoButton = ToolbarButton(Glyphs.Redo, "重做（Ctrl+Y）", "重做");
         _redoButton.Click += (_, _) => Redo();
         extras.Children.Add(_redoButton);
 
@@ -548,26 +548,26 @@ internal sealed partial class SelectionOverlayWindow : Window
         var actionItems = _session.Mode == ScreenshotMode.Record
             ? new (string, string, string, Action)[]
             {
-                ("开始录屏", "开始录屏（Enter，倒数 3 秒）", "开始录屏",
+                (Glyphs.Record, "开始录屏（Enter，倒数 3 秒）", "开始录屏",
                     () => _session.BeginRecordingSelection()),
             }
             : new (string, string, string, Action)[]
             {
-                ("复制", "复制（Enter）", "复制截图", () => _ = _session.CopySelectionAsync()),
-                ("保存", "快速保存（Ctrl+S）", "保存截图", () => _ = _session.SaveSelectionAsync(saveAs: false)),
-                ("钉图", "钉在屏幕上（P）", "钉图", () => _ = PinSelectionAsync()),
-                ("识字", "识字（O）", "识别文字", () => _ = _session.RecognizedSelectionAsync()),
-                ("翻译", "翻译（T）", "截图翻译", () => _ = _session.TranslateSelectionAsync()),
+                (Glyphs.Copy, "复制（Enter）", "复制截图", () => _ = _session.CopySelectionAsync()),
+                (Glyphs.Save, "快速保存（Ctrl+S）", "保存截图", () => _ = _session.SaveSelectionAsync(saveAs: false)),
+                (Glyphs.Pin, "钉在屏幕上（P）", "钉图", () => _ = PinSelectionAsync()),
+                (Glyphs.Ocr, "识字（O）", "识别文字", () => _ = _session.RecognizedSelectionAsync()),
+                (Glyphs.Translate, "翻译（T）", "截图翻译", () => _ = _session.TranslateSelectionAsync()),
             };
-        foreach (var (label, tip, name, action) in actionItems)
+        foreach (var (glyph, tip, name, action) in actionItems)
         {
-            var button = ToolbarButton(label, tip, name, 44);
+            var button = ToolbarButton(glyph, tip, name);
             button.Click += (_, _) => action();
             actions.Children.Add(button);
         }
 
-        var close = ToolbarButton("✕", _session.Mode == ScreenshotMode.Record ? "取消录屏（Esc）" : "取消（Esc）",
-            "取消截图", 24);
+        var close = ToolbarButton(Glyphs.Close, _session.Mode == ScreenshotMode.Record ? "取消录屏（Esc）" : "取消（Esc）",
+            "取消截图");
         close.Click += (_, _) => _session.Finish();
         actions.Children.Add(close);
 
@@ -577,42 +577,25 @@ internal sealed partial class SelectionOverlayWindow : Window
             // 录屏时不需要标注工具，只留录制条。
             tools.Visibility = Visibility.Collapsed;
             extras.Visibility = Visibility.Collapsed;
-            row.Children.Add(BuildRecordBar());
-            row.Children.Add(new Border
-            {
-                Width = 1,
-                Height = 18,
-                Background = new SolidColorBrush(Theme.Shot.ToolbarSeparator),
-                VerticalAlignment = VerticalAlignment.Center,
-            });
+            var record = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            record.Children.Add(BuildRecordBar());
+            row.Children.Add(Capsule(record));
         }
         else
         {
-            row.Children.Add(tools);
-            row.Children.Add(new Border
-            {
-                Width = 1,
-                Height = 18,
-                Background = new SolidColorBrush(Theme.Shot.ToolbarSeparator),
-                VerticalAlignment = VerticalAlignment.Center,
-            });
-            row.Children.Add(extras);
-            row.Children.Add(new Border
-            {
-                Width = 1,
-                Height = 18,
-                Background = new SolidColorBrush(Theme.Shot.ToolbarSeparator),
-                VerticalAlignment = VerticalAlignment.Center,
-            });
+            var left = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
+            left.Children.Add(tools);
+            left.Children.Add(Separator());
+            left.Children.Add(extras);
+            row.Children.Add(Capsule(left));
         }
 
-        row.Children.Add(actions);
+        row.Children.Add(Capsule(actions));
 
         var toolbar = new Border
         {
-            Padding = new Thickness(5, 4, 5, 4),
-            CornerRadius = new CornerRadius(8),
-            Background = new SolidColorBrush(Theme.Shot.HudBackgroundStrong),
+            Padding = new Thickness(0),
+            Background = new SolidColorBrush(Colors.Transparent),
             Child = row,
             Visibility = Visibility.Collapsed,
         };
@@ -620,24 +603,52 @@ internal sealed partial class SelectionOverlayWindow : Window
         return toolbar;
     }
 
-    private static Button ToolbarButton(string label, string tooltip, string automationName, double width = 26)
+    private static Border Capsule(UIElement child) => new()
     {
+        Height = 40,
+        CornerRadius = new CornerRadius(8),
+        Padding = new Thickness(4),
+        Background = new SolidColorBrush(Theme.Shot.HudBackgroundStrong),
+        BorderBrush = new SolidColorBrush(Theme.Argb(36, 255, 255, 255)),
+        BorderThickness = new Thickness(0.5),
+        Child = child,
+    };
+
+    private static Border Separator() => new()
+    {
+        Width = 1,
+        Height = 18,
+        Background = new SolidColorBrush(Theme.Shot.ToolbarSeparator),
+        VerticalAlignment = VerticalAlignment.Center,
+        Margin = new Thickness(2, 0, 2, 0),
+    };
+
+    private static Button ToolbarButton(string label, string tooltip, string automationName, double width = 32)
+    {
+        var glyph = label.Length >= 1 && label[0] >= '\uE000' && label[0] <= '\uF8FF';
         var button = new Button
         {
-            Content = label.Length == 0
-                ? new FontIcon { Glyph = "\uE790", FontSize = 10 }
-                : new TextBlock
+            Content = glyph
+                ? new FontIcon
                 {
-                    Text = label,
-                    FontSize = label.Length <= 2 ? 12 : 11,
+                    Glyph = label,
+                    FontSize = 16,
                     Foreground = new SolidColorBrush(Theme.Shot.HudTextMuted),
-                },
+                }
+                : label.Length == 0
+                    ? new FontIcon { Glyph = "\uE790", FontSize = 14 }
+                    : new TextBlock
+                    {
+                        Text = label,
+                        FontSize = 12,
+                        Foreground = new SolidColorBrush(Theme.Shot.HudTextMuted),
+                    },
             Width = width,
-            Height = 26,
+            Height = 32,
             MinWidth = 0,
             MinHeight = 0,
             Padding = new Thickness(0),
-            CornerRadius = new CornerRadius(5),
+            CornerRadius = new CornerRadius(4),
             Background = new SolidColorBrush(Colors.Transparent),
             BorderThickness = new Thickness(0),
             HorizontalContentAlignment = HorizontalAlignment.Center,
@@ -660,10 +671,15 @@ internal sealed partial class SelectionOverlayWindow : Window
         {
             var selected = tool == _tool;
             button.Background = new SolidColorBrush(
-                selected ? Theme.BrandPink : Colors.Transparent);
+                selected ? Theme.AccentColor : Colors.Transparent);
+            var foreground = new SolidColorBrush(selected ? Theme.OnAccentColor : Theme.Shot.HudTextMuted);
             if (button.Content is TextBlock text)
             {
-                text.Foreground = new SolidColorBrush(selected ? Colors.White : Theme.Shot.HudTextMuted);
+                text.Foreground = foreground;
+            }
+            else if (button.Content is FontIcon icon)
+            {
+                icon.Foreground = foreground;
             }
         }
 
