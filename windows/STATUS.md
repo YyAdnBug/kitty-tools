@@ -38,9 +38,11 @@ CPU 一律「% 单核」（100% = 占满一个核）；内存是专用工作集�
 | 自动化测试 | **267 个全过**（`dotnet test`） | 第 6 批加了组字规则 + 负坐标 / 竖屏用例 |
 | 启动（app.start → shell.ready） | 64 ms | 0.5.0 |
 | 预建浮层 / 翻译浮窗 | 启动后 3.1 s | 0.5.0 |
-| 空闲专用工作集（只有托盘） | 41.8 MB | 0.5.0 |
-| 四个功能各用一次后 | 59.9 MB | 0.5.0 |
-| 截图后 / 设置打开 / 稳定 | 76.0 / 78.6 / 78.5 MB | 0.5.0 |
+| 空闲专用工作集（只有托盘） | 41.1 MB | 0.6.0 全量探针 |
+| 5000 条剪贴板数据 | 46.0 MB | 0.6.0 |
+| 剪贴板面板 / 启动器 / 翻译窗 | 57.4 / 57.8 / 57.7 MB | 0.6.0 |
+| 截图后 / 第二次截图 / 钉图 | 74.0 / 75.5 / 76.3 MB | 0.6.0；第二次只涨 1.5 MB |
+| 设置打开 / 稳定 | 83.6 / 83.5 MB | 0.6.0 |
 | 空闲 CPU（60 s） | 0.062 s ≈ 0.1% 单核 | 0.5.0 |
 | 5000 条搜索 | 5.7 ms 冷 / 0.14 ms 热 | 0.5.0 |
 | 录屏 1440p30 60 s（WGC + 系统声音，Release AOT） | 1805 帧 / 60.1 秒 / 1.6 MB / 30 fps；AAC 48 kHz 立体声 160 kbps、音频 60.17 秒；CPU 9.2% 单核；ws 192 MB | 第 2 批；测试图案在这台机器上被前台窗口限帧，画面是补帧 |
@@ -67,9 +69,8 @@ AOT x64 / ARM64 每次发布都零 trim / AOT 警告；PRI 四个文件齐全
 - 录音的采集 / 编码 / 暂停 / 电平接口有了，录音控制条、电平方块、待录状态还没接界面；「按快捷键后立即开始录音」
   设置还没加。
 - 录屏声音：5.1 / 44.1 kHz 只有单测，没真设备；麦克风说话、真耳听音画同步、HUD 里的「麦克风断开了」没测。
-- 文件搜索一次约 880 ms（WinRT `StorageFile` 查询），打字时等不起。第 4 批换 OLE DB。
-- 截图后 / 设置窗关闭后 / 录屏后的内存回落没按第 5 批重测（探针没跑）；AOT 选项只留了
-  `ConcurrentGarbageCollection=false`，`IlcOptimizationPreference=Size`、`UseSystemResourceKeys`、
+- 截图 / 设置 / 录屏后的内存回落：0.6.0 全量探针已跑（见上表），设置窗关闭后稳定在 83.5 MB。
+- AOT 选项只留了 `ConcurrentGarbageCollection=false`；`IlcOptimizationPreference=Size`、`UseSystemResourceKeys`、
   `IlcFoldIdenticalMethodBodies`、`System.GC.ConserveMemory` 没量到「省了且不变慢」，没开。
 - 文件搜索还是 WinRT 的 StorageFile 查询（约 880 ms）：`System.Data.OleDb` 在 AOT 下报
   RequiresDynamicCode，CsWin32 的 OLE DB 接口已生成但还没接上。第 4 批没做成。
