@@ -63,8 +63,8 @@ internal sealed unsafe partial class TranslateWindow : Window
         _root = new Grid
         {
             RequestedTheme = Theme.ElementTheme,
-            Padding = new Thickness(16, 10, 16, 10),
-            RowSpacing = 8,
+            Padding = new Thickness(12),
+            RowSpacing = 10,
         };
         _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -1233,7 +1233,7 @@ internal sealed unsafe partial class TranslateWindow : Window
         /// <summary>正文最多 8 行，超出的在卡片里滚动（PLAN §3.7 / PLAN-v2 §6 第 1 批）。</summary>
         private const int MaxBodyLines = 8;
 
-        private const double BodyLineHeight = 21;
+        private const double BodyLineHeight = 22;
 
         private readonly TextBlock _name;
         private readonly TextBlock _status;
@@ -1244,6 +1244,7 @@ internal sealed unsafe partial class TranslateWindow : Window
         private readonly Border _cursor;
         private readonly StackPanel _skeleton;
         private readonly TextBlock _error;
+        private readonly Border _errorCard;
         private readonly Button _copy;
         private readonly Button _retry;
         private readonly Button _settings;
@@ -1277,8 +1278,8 @@ internal sealed unsafe partial class TranslateWindow : Window
             {
                 TextWrapping = TextWrapping.Wrap,
                 IsTextSelectionEnabled = true,
-                FontSize = 14,
-                LineHeight = BodyLineHeight,
+                FontSize = Theme.FontSize("Kitty.FontSize.Reading"),
+                LineHeight = 22,
             };
             // 正文不截断、改成卡片里滚动：下面还有内容时能看到自己的滚动条。
             // 光标和正文放在同一层，坐标才对得上（不再单独占正文下面一行）。
@@ -1353,6 +1354,14 @@ internal sealed unsafe partial class TranslateWindow : Window
             }
 
             _error = new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 12, Foreground = Theme.Critical() };
+            _errorCard = new Border
+            {
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(10, 7, 10, 7),
+                BorderThickness = new Thickness(1),
+                Visibility = Visibility.Collapsed,
+                Child = _error,
+            };
             _copy = SmallButton("复制");
             _copy.Click += (_, _) => _owner.CopyText(_body.Text);
             _retry = SmallButton("重试");
@@ -1377,13 +1386,11 @@ internal sealed unsafe partial class TranslateWindow : Window
             panel.Children.Add(header);
             panel.Children.Add(_skeleton);
             panel.Children.Add(bodyHost);
-            panel.Children.Add(_error);
+            panel.Children.Add(_errorCard);
             Root = new Border
             {
-                CornerRadius = new CornerRadius(8),
+                Style = Theme.Style("Kitty.Card"),
                 Padding = new Thickness(10, 8, 10, 8),
-                // 按深浅色取主题资源（PLAN-v2 §3.1）。
-                Background = Theme.CardBackground(),
                 Child = panel,
             };
             _bodyScroll.ViewChanged += (_, _) => UpdateFade();
@@ -1410,7 +1417,7 @@ internal sealed unsafe partial class TranslateWindow : Window
             var waiting = (card.State is CardState.Waiting or CardState.Running) && !hasText;
             _bodyScroll.Visibility = hasText ? Visibility.Visible : Visibility.Collapsed;
             _skeleton.Visibility = waiting ? Visibility.Visible : Visibility.Collapsed;
-            _error.Visibility = Visibility.Collapsed;
+            _errorCard.Visibility = Visibility.Collapsed;
             _actions.Children.Clear();
 
             // 生成中末尾的闪烁光标（PLAN-v2 §3.7）。
@@ -1442,7 +1449,9 @@ internal sealed unsafe partial class TranslateWindow : Window
                     _status.Text = "只翻了前一部分";
                     _error.Text = card.Error?.Message ?? "超出单次输出上限";
                     _error.Foreground = Theme.Caution();
-                    _error.Visibility = Visibility.Visible;
+                    _errorCard.Background = Theme.Brush("Kitty.WarningFill", Theme.Argb(13, 157, 93, 0));
+                    _errorCard.BorderBrush = Theme.Brush("Kitty.WarningStroke", Theme.Argb(46, 157, 93, 0));
+                    _errorCard.Visibility = Visibility.Visible;
                     _actions.Children.Add(_retry);
                     break;
                 case CardState.Failed:
@@ -1451,7 +1460,13 @@ internal sealed unsafe partial class TranslateWindow : Window
                     // 设置问题是橙色，网络 / 服务问题是红色（PLAN-v2 §3.7）。
                     var config = card.Error?.Kind == TranslateErrorKind.Config;
                     _error.Foreground = config ? Theme.Caution() : Theme.Critical();
-                    _error.Visibility = Visibility.Visible;
+                    _errorCard.Background = config
+                        ? Theme.Brush("Kitty.WarningFill", Theme.Argb(13, 157, 93, 0))
+                        : Theme.Brush("Kitty.ErrorFill", Theme.Argb(13, 196, 43, 28));
+                    _errorCard.BorderBrush = config
+                        ? Theme.Brush("Kitty.WarningStroke", Theme.Argb(46, 157, 93, 0))
+                        : Theme.Brush("Kitty.ErrorStroke", Theme.Argb(46, 196, 43, 28));
+                    _errorCard.Visibility = Visibility.Visible;
                     // 设置类错误只给「打开设置」（PLAN §7.2：缺密钥 / 401–404 重试也没用）。
                     _actions.Children.Add(config ? _settings : _retry);
                     break;
