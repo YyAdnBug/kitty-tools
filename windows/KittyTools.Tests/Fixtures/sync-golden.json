@@ -25,15 +25,15 @@
       "kind" : "word"
     },
     {
-      "hash" : "92fc889be2a7bd54ac4d4c6c2e38b2bc",
+      "hash" : "550abdc459ad2054f5674a13ebf92870",
       "input" : {
-        "favorite" : false,
+        "favorite" : true,
         "group" : "0F8FAD5B-D9CB-469F-A165-70867728950E",
         "note" : "line1\nline2\tTab\rCR",
         "snippet" : true,
         "text" : ""
       },
-      "json" : "{\"favorite\":false,\"group\":\"0F8FAD5B-D9CB-469F-A165-70867728950E\",\"note\":\"line1\\nline2\\tTab\\rCR\",\"snippet\":true,\"text\":\"\"}",
+      "json" : "{\"favorite\":true,\"group\":\"0F8FAD5B-D9CB-469F-A165-70867728950E\",\"note\":\"line1\\nline2\\tTab\\rCR\",\"snippet\":true,\"text\":\"\"}",
       "kind" : "clip"
     },
     {
@@ -73,15 +73,15 @@
       "kind" : "word"
     },
     {
-      "hash" : "6d9b622ac5e9074a6c2bd161d2916b73",
+      "hash" : "5c4d036dde9a680cd57a50b33aa5bc44",
       "input" : {
         "favorite" : false,
-        "group" : "0F8FAD5B-D9CB-469F-A165-70867728950E",
+        "group" : null,
         "note" : null,
         "snippet" : false,
         "text" : "emoji 😀👍🏽🇨🇳"
       },
-      "json" : "{\"favorite\":false,\"group\":\"0F8FAD5B-D9CB-469F-A165-70867728950E\",\"snippet\":false,\"text\":\"emoji 😀👍🏽🇨🇳\"}",
+      "json" : "{\"favorite\":false,\"snippet\":false,\"text\":\"emoji 😀👍🏽🇨🇳\"}",
       "kind" : "clip"
     },
     {
@@ -121,15 +121,15 @@
       "kind" : "word"
     },
     {
-      "hash" : "63e4de08b80817dd25b50ddcd6ed578d",
+      "hash" : "40f2049111841cbeaadc2d222192ca96",
       "input" : {
-        "favorite" : false,
+        "favorite" : true,
         "group" : "0F8FAD5B-D9CB-469F-A165-70867728950E",
         "note" : "<b>&amp;</b> 'single'",
         "snippet" : false,
         "text" : "line1\nline2\tTab\rCR"
       },
-      "json" : "{\"favorite\":false,\"group\":\"0F8FAD5B-D9CB-469F-A165-70867728950E\",\"note\":\"<b>&amp;</b> 'single'\",\"snippet\":false,\"text\":\"line1\\nline2\\tTab\\rCR\"}",
+      "json" : "{\"favorite\":true,\"group\":\"0F8FAD5B-D9CB-469F-A165-70867728950E\",\"note\":\"<b>&amp;</b> 'single'\",\"snippet\":false,\"text\":\"line1\\nline2\\tTab\\rCR\"}",
       "kind" : "clip"
     },
     {
@@ -169,15 +169,15 @@
       "kind" : "word"
     },
     {
-      "hash" : "435c30f3c8a07238c54d9e260042adf1",
+      "hash" : "56c9339279d03115373409c5a2304164",
       "input" : {
         "favorite" : false,
-        "group" : "0F8FAD5B-D9CB-469F-A165-70867728950E",
+        "group" : null,
         "note" : "﻿bom",
         "snippet" : true,
         "text" : "sep   "
       },
-      "json" : "{\"favorite\":false,\"group\":\"0F8FAD5B-D9CB-469F-A165-70867728950E\",\"note\":\"﻿bom\",\"snippet\":true,\"text\":\"sep   \"}",
+      "json" : "{\"favorite\":false,\"note\":\"﻿bom\",\"snippet\":true,\"text\":\"sep   \"}",
       "kind" : "clip"
     },
     {
@@ -217,15 +217,15 @@
       "kind" : "word"
     },
     {
-      "hash" : "7644ebb649c1b8d639c65ed4f708c690",
+      "hash" : "375c101ba877e83b7c8c477752e8da36",
       "input" : {
-        "favorite" : false,
+        "favorite" : true,
         "group" : "0F8FAD5B-D9CB-469F-A165-70867728950E",
         "note" : null,
         "snippet" : false,
         "text" : "<b>&amp;</b> 'single'"
       },
-      "json" : "{\"favorite\":false,\"group\":\"0F8FAD5B-D9CB-469F-A165-70867728950E\",\"snippet\":false,\"text\":\"<b>&amp;</b> 'single'\"}",
+      "json" : "{\"favorite\":true,\"group\":\"0F8FAD5B-D9CB-469F-A165-70867728950E\",\"snippet\":false,\"text\":\"<b>&amp;</b> 'single'\"}",
       "kind" : "clip"
     },
     {
@@ -265,15 +265,15 @@
       "kind" : "word"
     },
     {
-      "hash" : "59801145fbf266f96c52758bdb0fa224",
+      "hash" : "4f488f4e8445e6b5c8eb6c9c908efe26",
       "input" : {
         "favorite" : false,
-        "group" : "0F8FAD5B-D9CB-469F-A165-70867728950E",
+        "group" : null,
         "note" : "你好，世界",
         "snippet" : false,
         "text" : "﻿bom"
       },
-      "json" : "{\"favorite\":false,\"group\":\"0F8FAD5B-D9CB-469F-A165-70867728950E\",\"note\":\"你好，世界\",\"snippet\":false,\"text\":\"﻿bom\"}",
+      "json" : "{\"favorite\":false,\"note\":\"你好，世界\",\"snippet\":false,\"text\":\"﻿bom\"}",
       "kind" : "clip"
     },
     {
@@ -382,6 +382,134 @@
       "kind" : "engine"
     },
     {
+      "hash" : "0d72813e7d651352015c005f0913ed8d",
+      "input" : {
+        "aiProtocol" : null,
+        "baseURL" : null,
+        "id" : "zhipu",
+        "isEnabled" : true,
+        "kind" : "zhipu",
+        "model" : "glm-4-flash",
+        "name" : "智谱 GLM（免费）",
+        "region" : null,
+        "usesDeepLX" : null
+      },
+      "json" : "{\"id\":\"zhipu\",\"isEnabled\":true,\"kind\":\"zhipu\",\"model\":\"glm-4-flash\",\"name\":\"智谱 GLM（免费）\"}",
+      "kind" : "service"
+    },
+    {
+      "hash" : "447f131f85695d5423c7861b5461c250",
+      "input" : {
+        "aiProtocol" : null,
+        "baseURL" : null,
+        "id" : "google",
+        "isEnabled" : false,
+        "kind" : "google",
+        "model" : null,
+        "name" : "Google 翻译",
+        "region" : null,
+        "usesDeepLX" : null
+      },
+      "json" : "{\"id\":\"google\",\"isEnabled\":false,\"kind\":\"google\",\"name\":\"Google 翻译\"}",
+      "kind" : "service"
+    },
+    {
+      "hash" : "43dfa5f95d44a66885ad88798f089157",
+      "input" : {
+        "aiProtocol" : null,
+        "baseURL" : null,
+        "id" : "deepl",
+        "isEnabled" : false,
+        "kind" : "deepl",
+        "model" : null,
+        "name" : "DeepL",
+        "region" : null,
+        "usesDeepLX" : false
+      },
+      "json" : "{\"id\":\"deepl\",\"isEnabled\":false,\"kind\":\"deepl\",\"name\":\"DeepL\",\"usesDeepLX\":false}",
+      "kind" : "service"
+    },
+    {
+      "hash" : "262d9973f6e29e510da29a123a1babe3",
+      "input" : {
+        "aiProtocol" : null,
+        "baseURL" : "http://127.0.0.1:1188/translate",
+        "id" : "deepl",
+        "isEnabled" : true,
+        "kind" : "deepl",
+        "model" : null,
+        "name" : "DeepL",
+        "region" : null,
+        "usesDeepLX" : true
+      },
+      "json" : "{\"baseURL\":\"http://127.0.0.1:1188/translate\",\"id\":\"deepl\",\"isEnabled\":true,\"kind\":\"deepl\",\"name\":\"DeepL\",\"usesDeepLX\":true}",
+      "kind" : "service"
+    },
+    {
+      "hash" : "1d4560ce22bb0723486868ab999c9cdc",
+      "input" : {
+        "aiProtocol" : null,
+        "baseURL" : "",
+        "id" : "deepl",
+        "isEnabled" : true,
+        "kind" : "deepl",
+        "model" : null,
+        "name" : "DeepL",
+        "region" : null,
+        "usesDeepLX" : false
+      },
+      "json" : "{\"baseURL\":\"\",\"id\":\"deepl\",\"isEnabled\":true,\"kind\":\"deepl\",\"name\":\"DeepL\",\"usesDeepLX\":false}",
+      "kind" : "service"
+    },
+    {
+      "hash" : "6029f7d01d07b90b47d59f5025438982",
+      "input" : {
+        "aiProtocol" : null,
+        "baseURL" : null,
+        "id" : "microsoft",
+        "isEnabled" : true,
+        "kind" : "microsoft",
+        "model" : null,
+        "name" : "微软翻译",
+        "region" : "eastasia",
+        "usesDeepLX" : null
+      },
+      "json" : "{\"id\":\"microsoft\",\"isEnabled\":true,\"kind\":\"microsoft\",\"name\":\"微软翻译\",\"region\":\"eastasia\"}",
+      "kind" : "service"
+    },
+    {
+      "hash" : "088513cbbf1700d93bec444edb4761f1",
+      "input" : {
+        "aiProtocol" : "openai",
+        "baseURL" : "",
+        "id" : "ai:1a2b3c4d",
+        "isEnabled" : false,
+        "kind" : "ai",
+        "model" : "",
+        "name" : "AI 服务",
+        "region" : null,
+        "usesDeepLX" : null
+      },
+      "json" : "{\"aiProtocol\":\"openai\",\"baseURL\":\"\",\"id\":\"ai:1a2b3c4d\",\"isEnabled\":false,\"kind\":\"ai\",\"model\":\"\",\"name\":\"AI 服务\"}",
+      "kind" : "service"
+    },
+    {
+      "hash" : "80709f169dfd1ed9f3a291ca8490c09c",
+      "input" : {
+        "aiProtocol" : "anthropic",
+        "baseURL" : "",
+        "id" : "ai:5e6f7a8b",
+        "isEnabled" : true,
+        "kind" : "ai",
+        "model" : "claude-sonnet",
+        "name" : "Anthropic",
+        "region" : null,
+        "usesDeepLX" : null
+      },
+      "json" : "{\"aiProtocol\":\"anthropic\",\"baseURL\":\"\",\"id\":\"ai:5e6f7a8b\",\"isEnabled\":true,\"kind\":\"ai\",\"model\":\"claude-sonnet\",\"name\":\"Anthropic\"}",
+      "kind" : "service"
+    },
+    {
       "hash" : "4f53cda18c2baa0c0354bb5f9a3ecbe5",
       "input" : {
         "ids" : [
@@ -400,6 +528,18 @@
         ]
       },
       "json" : "[\"google\",\"bing\"]",
+      "kind" : "order"
+    },
+    {
+      "hash" : "6b4a42a6aec5e4756317375b209fb530",
+      "input" : {
+        "ids" : [
+          "zhipu",
+          "deepl",
+          "ai:1a2b3c4d"
+        ]
+      },
+      "json" : "[\"zhipu\",\"deepl\",\"ai:1a2b3c4d\"]",
       "kind" : "order"
     },
     {

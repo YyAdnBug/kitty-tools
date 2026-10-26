@@ -15,6 +15,7 @@ Windows 这边拿不到（REVIEW R13）。这里是从 Mac 本地 `main` 的 `09
 | `HistoryStore.swift` | `macos/KittyTools/Translate/` | 只看 `extension HistoryStore: SyncSource` |
 | `WebSearchSync.swift` | `macos/KittyTools/Launcher/` | 网页搜索与快捷链接 |
 | `TranslateServiceSync.swift` | `macos/KittyTools/Translate/` | 翻译服务（第一次合的去重、密钥不进文件） |
+| `TranslateService.swift` | `macos/KittyTools/Translate/` | 翻译服务同步的就是这个结构本身（合成的 Codable）：可选字段 nil 不写，`false` 和 `""` 照写（REVIEW R32，2026-10-26 补拷） |
 | `SyncSection.swift` | `macos/KittyTools/Settings/` | 设置页的样子和说法 |
 | `SyncRecordsTests.swift` | `macos/KittyToolsTests/` | 17 个用例，期望值原样移植 |
 | `SyncRecordsFuzzTests.swift` | `macos/KittyToolsTests/` | 随机测试，照着移植 |

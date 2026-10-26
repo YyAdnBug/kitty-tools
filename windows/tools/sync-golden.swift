@@ -1,9 +1,10 @@
 // 在 Mac 上生成「和 Mac 互通的同步」（PLAN-v5）要逐字节对上的样本：swift windows/tools/sync-golden.swift <输出文件>
 // mac 版的全局同步按「内容的字节」算哈希、比改没改（macos/KittyTools/Storage/SyncRecords.swift）：Windows 编出来的 JSON
 // 只要和 Swift 的 JSONEncoder（.sortedKeys + .withoutEscapingSlashes）差一个字节，两边就会互相当成对方改过、来回改个不停。
-// 这里用和 mac 一样的结构和编码器设置，把四类内容（片段 / 收藏、收藏夹、生词、网页搜索）、顺序记录、版本钟写法、整份文件
+// 这里用和 mac 一样的结构和编码器设置，把五种内容（片段 / 收藏、收藏夹、生词、网页搜索、翻译服务）、顺序记录、版本钟写法、整份文件
 // 和一批容易出错的字符串编出来，连同哈希写进样本；Windows 的单测从 input 自己编一遍，和 json / hash / text 逐字节比。
 // 结构和字段名照 mac：ClipboardStore 的 SyncedClip / SyncedGroup、HistoryStore 的 SyncedWord、WebSearchSync 的 Synced、
+// TranslateService（reference/mac-sync/TranslateService.swift）、
 // SyncRecords 的 Stored、NoteSync.text(of:)。mac 那边改了结构，这里跟着改、重新生成。
 import CryptoKit
 import Foundation
@@ -11,6 +12,12 @@ import Foundation
 struct SyncedClip: Codable { var text: String; var favorite: Bool; var snippet: Bool; var note: String?; var group: String? }
 struct SyncedGroup: Codable { var name: String; var created: Int64 }
 struct SyncedWord: Codable { var source: String; var target: String; var result: String; var service: String; var created: Int64 }
+// 翻译服务：mac 的 TranslateService 整个编进去（TranslateServiceSync.syncValues），合成的 Codable：可选字段 nil 不写，
+// 但 false 和 "" 照写——DeepL 切到 DeepLX 再切回来就是 usesDeepLX:false，AI 服务新建时 model / baseURL 是 ""
+struct SyncedService: Codable {
+  var id: String; var kind: String; var name: String; var isEnabled: Bool
+  var model: String?; var baseURL: String?; var aiProtocol: String?; var region: String?; var usesDeepLX: Bool?
+}
 struct SyncedEngine: Codable { var name: String; var keyword: String; var url: String; var fallback: Bool }
 struct StoredItem: Codable { var id: String; var clock: String; var modified: Int64; var value: String }
 struct StoredGone: Codable { var id: String; var clock: String }
@@ -60,8 +67,9 @@ enum Value: Encodable {
 var cases: [Case] = []
 for (index, text) in tricky.enumerated() {
   let note: String? = index % 3 == 0 ? nil : tricky[(index + 4) % tricky.count]
-  let group: String? = index % 2 == 0 ? nil : "0F8FAD5B-D9CB-469F-A165-70867728950E"  // 条目里只写收藏夹的编号；"group:" 前缀只在收藏夹那条记录自己的编号上
-  let clip = SyncedClip(text: text, favorite: index % 2 == 0, snippet: index % 3 == 1, note: note, group: group)
+  // 条目里只写收藏夹的编号；"group:" 前缀只在收藏夹那条记录自己的编号上。mac 的不变式：在收藏夹里的一定是收藏
+  let group: String? = index % 4 == 1 ? "0F8FAD5B-D9CB-469F-A165-70867728950E" : nil
+  let clip = SyncedClip(text: text, favorite: index % 2 == 0 || group != nil, snippet: index % 3 == 1, note: note, group: group)
   let value = json(clip)
   cases.append(Case(kind: "clip", input: [
     "text": .s(text), "favorite": .b(clip.favorite), "snippet": .b(clip.snippet),
@@ -90,7 +98,28 @@ for engine in [
     "name": .s(engine.name), "keyword": .s(engine.keyword), "url": .s(engine.url), "fallback": .b(engine.fallback),
   ], json: value, hash: hash(value)))
 }
-for ids in [[String](), ["google", "bing"], ["group:0F8FAD5B-D9CB-469F-A165-70867728950E", "group:7C9E6679-7425-40DE-944B-E07FC1F90AE7"]] {
+for service in [
+  SyncedService(id: "zhipu", kind: "zhipu", name: "智谱 GLM（免费）", isEnabled: true, model: "glm-4-flash"),
+  SyncedService(id: "google", kind: "google", name: "Google 翻译", isEnabled: false),
+  SyncedService(id: "deepl", kind: "deepl", name: "DeepL", isEnabled: false, usesDeepLX: false),
+  SyncedService(id: "deepl", kind: "deepl", name: "DeepL", isEnabled: true, baseURL: "http://127.0.0.1:1188/translate", usesDeepLX: true),
+  SyncedService(id: "deepl", kind: "deepl", name: "DeepL", isEnabled: true, baseURL: "", usesDeepLX: false),
+  SyncedService(id: "microsoft", kind: "microsoft", name: "微软翻译", isEnabled: true, region: "eastasia"),
+  SyncedService(id: "ai:1a2b3c4d", kind: "ai", name: "AI 服务", isEnabled: false, model: "", baseURL: "", aiProtocol: "openai"),
+  SyncedService(id: "ai:5e6f7a8b", kind: "ai", name: "Anthropic", isEnabled: true, model: "claude-sonnet", baseURL: "", aiProtocol: "anthropic"),
+] {
+  let value = json(service)
+  var input: [String: Value] = [
+    "id": .s(service.id), "kind": .s(service.kind), "name": .s(service.name), "isEnabled": .b(service.isEnabled),
+  ]
+  input["model"] = service.model.map(Value.s) ?? .n
+  input["baseURL"] = service.baseURL.map(Value.s) ?? .n
+  input["aiProtocol"] = service.aiProtocol.map(Value.s) ?? .n
+  input["region"] = service.region.map(Value.s) ?? .n
+  input["usesDeepLX"] = service.usesDeepLX.map(Value.b) ?? .n
+  cases.append(Case(kind: "service", input: input, json: value, hash: hash(value)))
+}
+for ids in [[String](), ["google", "bing"], ["zhipu", "deepl", "ai:1a2b3c4d"], ["group:0F8FAD5B-D9CB-469F-A165-70867728950E", "group:7C9E6679-7425-40DE-944B-E07FC1F90AE7"]] {
   let value = json(ids)
   cases.append(Case(kind: "order", input: ["ids": .list(ids)], json: value, hash: hash(value)))
 }
