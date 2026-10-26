@@ -1140,13 +1140,6 @@ internal sealed class SettingsWindow : Window
                     SettingsService.Current.RecordKeys = value;
                     SettingsService.Save();
                 });
-            AddToggle("直接录 MP4", "用 H.264 直接录 MP4（硬件编码）；关掉退回 MJPEG AVI。",
-                SettingsService.Current.RecordMp4,
-                value =>
-                {
-                    SettingsService.Current.RecordMp4 = value;
-                    SettingsService.Save();
-                });
             AddToggle("系统声音", "录默认输出设备的声音（WASAPI 回环）；关掉只录麦克风或只有画面。",
                 SettingsService.Current.RecordSystemSound,
                 value =>

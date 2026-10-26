@@ -1,5 +1,5 @@
-// 录音的入口（第四版基础版）：托盘开始 / 停止，存到录屏同一个文件夹，文件名「录音 日期.m4a」。
-// 只录麦克风；没有录音控制条 / 电平表 / 暂停按钮，暂停只在调试时用（报告 §3）。
+// 录音的入口（PLAN-v6 第 3 批）：托盘 / 快捷键开始或停止，和录屏同一个文件夹、同一套 WASAPI 采集。
+// 只建一路 AAC 音轨写 .m4a；支持系统声音 / 麦克风、暂停 / 继续、电平（RMS dBFS）。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 
@@ -7,36 +7,67 @@ namespace KittyTools;
 
 internal static class AudioHost
 {
-    private static bool _recording;
+    private static AudioRecorder? _recorder;
     private static long _startedAt;
-    private static string? _path;
+    private static long _pausedAt;
+    private static long _pausedTotal;
 
-    public static bool IsRecording => _recording;
+    public static bool IsRecording => _recorder is not null;
 
-    public static string? LastPath => _path;
+    public static bool IsPaused => _recorder?.IsPaused == true;
+
+    public static float Level => _recorder?.Level ?? -90;
+
+    public static string? LastPath { get; private set; }
 
     public static event Action? Changed;
 
-    public static string Elapsed => RecorderRules.Duration(
-        _recording ? Environment.TickCount64 - _startedAt : 0);
-
-    public static async void Start()
+    public static string Elapsed
     {
-        if (_recording)
+        get
+        {
+            if (_recorder is null)
+            {
+                return RecorderRules.Duration(0);
+            }
+
+            var elapsed = Environment.TickCount64 - _startedAt - _pausedTotal;
+            if (IsPaused)
+            {
+                elapsed -= Environment.TickCount64 - _pausedAt;
+            }
+
+            return RecorderRules.Duration(Math.Max(0, elapsed));
+        }
+    }
+
+    public static void Toggle()
+    {
+        if (IsRecording)
+        {
+            Stop();
+        }
+        else
+        {
+            Start();
+        }
+    }
+
+    public static void Start()
+    {
+        if (_recorder is not null)
         {
             return;
         }
 
-        Directory.CreateDirectory(RecordingHost.Folder);
-        var path = Path.Combine(RecordingHost.Folder, RecorderRules.FileName(DateTime.Now, audio: true));
-        var started = await AudioCapture.StartAsync(path);
-        if (started is null)
+        var settings = SettingsService.Current;
+        var recorder = AudioRecorder.Start(
+            RecordingHost.Folder, settings.RecordSystemSound, settings.RecordMicrophone,
+            out var error, out var note);
+        if (recorder is null)
         {
-            NoticeHost.Show(
-                "没能开始录音",
-                "没有麦克风权限，或者没有可用的麦克风。可以在 设置 › 隐私 › 麦克风 里允许桌面应用。",
-                NoticeTone.Error);
-            if (AudioCapture.LastAccessDenied)
+            NoticeHost.Show("没能开始录音", error ?? "未知原因", NoticeTone.Error);
+            if (settings.RecordMicrophone)
             {
                 try
                 {
@@ -55,73 +86,77 @@ internal static class AudioHost
             return;
         }
 
-        _recording = true;
+        _recorder = recorder;
         _startedAt = Environment.TickCount64;
-        _path = path;
+        _pausedAt = 0;
+        _pausedTotal = 0;
         Log.Info("audio.begin");
-        NoticeHost.Show("正在录音", "托盘「停止录音」结束", NoticeTone.Normal);
+        NoticeHost.Show(
+            "正在录音",
+            string.IsNullOrEmpty(note) ? "托盘「停止录音」结束" : note,
+            string.IsNullOrEmpty(note) ? NoticeTone.Normal : NoticeTone.Warning);
         Changed?.Invoke();
     }
 
-    public static async void Stop()
+    public static void Pause()
     {
-        if (!_recording)
+        if (_recorder is null || _recorder.IsPaused)
         {
             return;
         }
 
-        _recording = false;
-        var stopped = await AudioCapture.StopAsync();
-        _path = await LatestAsync(_path);
+        _recorder.Pause();
+        _pausedAt = Environment.TickCount64;
         Changed?.Invoke();
-        if (!stopped || _path is null || !File.Exists(_path))
+        Log.Info("audio.paused");
+    }
+
+    public static void Resume()
+    {
+        if (_recorder is null || !_recorder.IsPaused)
+        {
+            return;
+        }
+
+        _recorder.Resume();
+        _pausedTotal += Environment.TickCount64 - _pausedAt;
+        _pausedAt = 0;
+        Changed?.Invoke();
+        Log.Info("audio.resumed");
+    }
+
+    public static void Stop()
+    {
+        if (_recorder is not { } recorder)
+        {
+            return;
+        }
+
+        _recorder = null;
+        var path = recorder.Stop();
+        recorder.Dispose();
+        LastPath = path;
+        Changed?.Invoke();
+        if (path is null || !File.Exists(path))
         {
             NoticeHost.Show("录音失败", "没有写出文件", NoticeTone.Error);
             return;
         }
 
-        Log.Info($"audio.saved {Path.GetFileName(_path)} size={new FileInfo(_path).Length}");
-        NoticeHost.Show("录音已保存", Path.GetFileName(_path), NoticeTone.Normal);
+        Log.Info($"audio.saved {Path.GetFileName(path)} size={new FileInfo(path).Length}");
+        NoticeHost.Show("录音已保存", Path.GetFileName(path), NoticeTone.Normal);
         try
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
                 FileName = "explorer.exe",
-                Arguments = "/select,\"" + _path + "\"",
+                Arguments = "/select,\"" + path + "\"",
                 UseShellExecute = true,
             });
         }
         catch
         {
             // 打不开资源管理器就算了。
-        }
-    }
-
-    /// <summary>MediaCapture 偶尔会加后缀；取目录里最新的那一个。</summary>
-    private static Task<string?> LatestAsync(string? path)
-    {
-        if (path is null)
-        {
-            return Task.FromResult<string?>(null);
-        }
-
-        try
-        {
-            if (File.Exists(path))
-            {
-                return Task.FromResult<string?>(path);
-            }
-
-            var folder = Path.GetDirectoryName(path)!;
-            var name = Path.GetFileNameWithoutExtension(path);
-            var latest = Directory.EnumerateFiles(folder, name + "*.m4a")
-                .OrderByDescending(File.GetLastWriteTimeUtc)
-                .FirstOrDefault();
-            return Task.FromResult(latest);
-        }
-        catch
-        {
-            return Task.FromResult<string?>(path);
         }
     }
 }

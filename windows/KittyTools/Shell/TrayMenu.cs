@@ -182,14 +182,15 @@ internal static partial class TrayMenu
             }
 
             if (RecordingHost.LastPath is { } last && File.Exists(last) &&
-                last.EndsWith(".avi", StringComparison.OrdinalIgnoreCase))
+                last.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase))
             {
-                Add(menu, "\uE7C8", "压缩最近的录屏（不超过 60%）", string.Empty,
-                    () => _ = CompressionService.CompressLastAsync());
+                Add(menu, "\uE7C8",
+                    CompressionService.IsRunning
+                        ? $"压缩中 {(int)(CompressionService.Progress * 100)}%"
+                        : "压缩最近的录屏（不超过 60%）",
+                    string.Empty, () => _ = CompressionService.CompressLastAsync());
                 Add(menu, "\uE7C8", "转成 GIF（10 fps，长边 800）", string.Empty,
                     () => _ = GifService.ConvertLastAsync());
-                Add(menu, "\uE7C8", "转成 MP4（H.264）", string.Empty,
-                    () => _ = VideoTranscoder.TranscodeLastAsync());
             }
 
             if (AudioHost.IsRecording)

@@ -1,7 +1,7 @@
 // GPU 录屏（PLAN-v6 第 1 批）：Windows.Graphics.Capture 抓屏 → D3D11 纹理 → Media Foundation SinkWriter
 // （DXGI 设备管理器 + 硬件 H.264 编码，分段 MP4）。选区用 CopySubresourceRegion 裁，纹理池复用，不每帧新建。
 // 时间戳用 Direct3D11CaptureFrame.SystemRelativeTime（QPC）；超过 1 秒没新帧就补上一帧，帧率是上限。
-// 失败返回 null，由 RecordingHost 退 GDI 那条路（Mp4Recorder / AviRecorder）。
+// 失败返回 null，由 RecordingHost 退 GDI 那条路（GdiMp4Recorder）。
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using KittyTools.Core;
@@ -53,7 +53,7 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
     private static readonly Guid SinkWriterD3DManager = new("ec822da2-e1e9-4b29-a0d8-563c719f5269");
     private static readonly Guid EnableHardwareTransforms = new("a634a91c-822b-41b9-a494-4de4643612b0");
     private static readonly Guid TranscodeContainerType = new("150ff23f-4abc-478b-ac4f-e1916fba1cca");
-    private static readonly Guid Fmp4Container = new("9ba876f1-419f-4b77-a1e0-35959d9d4004");
+    private static readonly Guid Mpeg4Container = new("dc6cd05d-b9d0-40ef-bd35-fa622c1ab28a");
 
     private readonly PixelBounds _region;
     private readonly IntPtr _window;
@@ -1023,7 +1023,7 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
         var managerKey = SinkWriterD3DManager;
         (*attributes)->SetUnknown(&managerKey, (IUnknown*)*manager);
         (*attributes)->SetUINT32(EnableHardwareTransforms, 1);
-        (*attributes)->SetGUID(TranscodeContainerType, Fmp4Container);
+        (*attributes)->SetGUID(TranscodeContainerType, Mpeg4Container);
 
         // 先试硬件编码；不行再去掉硬件标志（软件编码也能用 GPU 抓屏），还不行就退 GDI。
         hr = PInvoke.MFCreateSinkWriterFromURL(_temporary, null, *attributes, (IMFSinkWriter**)writer);

@@ -78,6 +78,47 @@ public sealed class GifWriter : IDisposable
         _frames++;
     }
 
+    /// <summary>用每帧自己的 256 色调色板写一帧（八叉树量化的结果）。</summary>
+    public void AddFrameWithPalette(byte[] indices, byte[] palette)
+    {
+        if (_finished || indices.Length < _width * _height || palette.Length < 256 * 3)
+        {
+            return;
+        }
+
+        Span<byte> gce = stackalloc byte[8];
+        gce[0] = 0x21;
+        gce[1] = 0xF9;
+        gce[2] = 4;
+        gce[3] = 0x04;
+        BinaryPrimitives.WriteUInt16LittleEndian(gce[4..], (ushort)_delayHundredths);
+        gce[6] = 0;
+        gce[7] = 0;
+        _stream.Write(gce);
+
+        Span<byte> descriptor = stackalloc byte[10];
+        descriptor[0] = 0x2C;
+        BinaryPrimitives.WriteUInt16LittleEndian(descriptor[1..], 0);
+        BinaryPrimitives.WriteUInt16LittleEndian(descriptor[3..], 0);
+        BinaryPrimitives.WriteUInt16LittleEndian(descriptor[5..], (ushort)_width);
+        BinaryPrimitives.WriteUInt16LittleEndian(descriptor[7..], (ushort)_height);
+        descriptor[9] = 0x87; // 本地调色板、256 色、8 位
+        _stream.Write(descriptor);
+        _stream.Write(palette, 0, 256 * 3);
+
+        _stream.WriteByte(8);
+        var compressed = LzwCompress(indices);
+        for (var offset = 0; offset < compressed.Length; offset += 255)
+        {
+            var length = Math.Min(255, compressed.Length - offset);
+            _stream.WriteByte((byte)length);
+            _stream.Write(compressed, offset, length);
+        }
+
+        _stream.WriteByte(0);
+        _frames++;
+    }
+
     public void Finish()
     {
         if (_finished)

@@ -233,20 +233,7 @@ internal sealed class ShellRuntime
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(ScreenshotSession.StartLast);
         }
 
-        // 调试 / 自检：把已有的录屏转 MP4（R14 的中间步骤）。
-        var mp4Arg = Environment.GetCommandLineArgs()
-            .FirstOrDefault(arg => arg.StartsWith("--mp4=", StringComparison.OrdinalIgnoreCase));
-        if (mp4Arg is not null)
-        {
-            var path = mp4Arg["--mp4=".Length..];
-            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
-            {
-                var result = await VideoTranscoder.ToMp4Async(path);
-                Log.Info($"video.mp4-debug {(result is null ? "failed" : Path.GetFileName(result))}");
-            });
-        }
-
-        // 调试 / 自检：把已有的录屏转成 GIF（第四版第 3 批）。
+        // 调试 / 自检：把已有的录屏转成 GIF（PLAN-v6 第 3 批）。
         var gifArg = Environment.GetCommandLineArgs()
             .FirstOrDefault(arg => arg.StartsWith("--gif=", StringComparison.OrdinalIgnoreCase));
         if (gifArg is not null)
@@ -346,7 +333,7 @@ internal sealed class ShellRuntime
             });
         }
 
-        // 调试用：自动录 N 秒麦克风（MediaCapture 的 M4A），手测托盘 / 文件。
+        // 调试用：自动录 N 秒声音，手测托盘 / 文件。
         var audioUiArg = Environment.GetCommandLineArgs()
             .FirstOrDefault(arg => arg.StartsWith("--audio-rec-ui=", StringComparison.OrdinalIgnoreCase));
         if (audioUiArg is not null && int.TryParse(audioUiArg["--audio-rec-ui=".Length..], out var audioSeconds))

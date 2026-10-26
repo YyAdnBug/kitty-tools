@@ -20,12 +20,12 @@ public sealed class RecorderRulesTests
     public void NamesAndTemporaryFiles()
     {
         var now = new DateTime(2026, 10, 25, 18, 15, 46);
-        Assert.AreEqual("录屏 2026-10-25 18.15.46.avi", RecorderRules.FileName(now));
+        Assert.AreEqual("录屏 2026-10-25 18.15.46.mp4", RecorderRules.FileName(now));
         Assert.AreEqual("录音 2026-10-25 18.15.46.m4a", RecorderRules.FileName(now, audio: true));
 
         var temporary = RecorderRules.TemporaryPath(@"C:\Users\Y\Videos\Screen Recordings");
         Assert.AreEqual(@"C:\", Path.GetPathRoot(temporary));
-        Assert.IsTrue(temporary.EndsWith(".avi", StringComparison.Ordinal));
+        Assert.IsTrue(temporary.EndsWith(".mp4", StringComparison.Ordinal));
         Assert.AreNotEqual(temporary, RecorderRules.TemporaryPath(@"C:\Users\Y\Videos\Screen Recordings"));
     }
 

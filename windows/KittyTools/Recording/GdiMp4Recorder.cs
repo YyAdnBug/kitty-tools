@@ -338,13 +338,6 @@ internal sealed unsafe class GdiMp4Recorder : IVideoRecorder
                     continue;
                 }
 
-                var (rings, keycap) = RecordingEffects.Snapshot();
-                if (rings.Count > 0 || keycap is not null)
-                {
-                    RecordingOverlay.Render(
-                        last, width, height, Environment.TickCount64, rings, keycap);
-                }
-
                 // 时间戳用抓这一帧开始时的 QPC，和音频同一个时钟；编码慢不会让声音跑到画面前面。
                 var sampleTime = frame100 - start100;
                 if (sampleTime <= lastVideoTime)

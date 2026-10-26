@@ -118,9 +118,6 @@ internal sealed class Settings
     /// <summary>录制中显示快捷键胶囊（默认关）。</summary>
     public bool RecordKeys { get; set; }
 
-    /// <summary>停止后另存一份 H.264 MP4（R14 的中间步骤，默认开）。</summary>
-    public bool RecordMp4 { get; set; } = true;
-
     /// <summary>录屏时录系统声音（默认开，PLAN-v6 第 2 批）。</summary>
     public bool RecordSystemSound { get; set; } = true;
 

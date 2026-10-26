@@ -81,31 +81,22 @@ internal static unsafe class RecordingHost
         }
 
         var settings = SettingsService.Current;
-        var wantsAudio = settings.RecordSystemSound || settings.RecordMicrophone;
         IVideoRecorder? recorder;
         string? error;
         string? note;
-        if (!settings.RecordMp4)
+        recorder = window != IntPtr.Zero
+            ? WgcRecorder.StartWindow(
+                window, settings.RecordFps, Folder,
+                settings.RecordSystemSound, settings.RecordMicrophone, out error, out note)
+            : WgcRecorder.StartRegion(
+                region, settings.RecordFps, Folder,
+                settings.RecordSystemSound, settings.RecordMicrophone, out error, out note);
+        if (recorder is null)
         {
-            recorder = AviRecorder.StartRegion(region, settings.RecordFps, Folder, out error);
-            note = wantsAudio ? "AVI 这一版不带声音；要声音请在设置里打开「直接录 MP4」" : null;
-        }
-        else
-        {
-            recorder = window != IntPtr.Zero
-                ? WgcRecorder.StartWindow(
-                    window, settings.RecordFps, Folder,
-                    settings.RecordSystemSound, settings.RecordMicrophone, out error, out note)
-                : WgcRecorder.StartRegion(
-                    region, settings.RecordFps, Folder,
-                    settings.RecordSystemSound, settings.RecordMicrophone, out error, out note);
-            if (recorder is null)
-            {
-                Log.Warn($"record.wgc-fallback {error}");
-                recorder = GdiMp4Recorder.StartRegion(
-                    region, settings.RecordFps, Folder,
-                    settings.RecordSystemSound, settings.RecordMicrophone, out error, out note);
-            }
+            Log.Warn($"record.wgc-fallback {error}");
+            recorder = GdiMp4Recorder.StartRegion(
+                region, settings.RecordFps, Folder,
+                settings.RecordSystemSound, settings.RecordMicrophone, out error, out note);
         }
 
         if (recorder is null)
