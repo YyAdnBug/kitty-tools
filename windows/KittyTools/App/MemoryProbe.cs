@@ -63,6 +63,13 @@ internal static class MemoryProbe
             await Task.Delay(IdleSeconds * 1000);
             Report("screenshot-overlay");
 
+            // R12：第二次截图后的内存（第一次的缓存已经热了，看会不会再涨）。
+            ScreenshotSession.Start(ScreenshotMode.Capture);
+            await Task.Delay(1500);
+            ScreenshotSession.FinishCurrent();
+            await Task.Delay(IdleSeconds * 1000);
+            Report("screenshot-second");
+
             await ProbePinAsync();
             await Task.Delay(IdleSeconds * 1000);
             Report("pin-window");
