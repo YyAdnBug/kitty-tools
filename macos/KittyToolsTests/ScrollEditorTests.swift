@@ -286,6 +286,24 @@ struct ScrollEditorTests {
     #expect(chrome.selected.id == canvas.selectedAnnotation && chrome.zoom == 0.25)
   }
 
+  /// 没选工具时样式托盘是藏着的（2026-10-26 手测：窗口左下角露出半块空胶囊）；
+  /// 选了工具出来、收起工具又收回去
+  @Test func styleBarOnlyShowsWithTool() throws {
+    let editor = ScrollEditor(image: image(width: 972, height: 4800), scale: 2, frameName: nil) {
+      _, _, _ in
+    }
+    defer { editor.close() }
+    let content = try #require(editor.window.contentView)
+    let styleBar = try #require(content.subviews.compactMap { $0 as? StyleBar }.first)
+    #expect(styleBar.isHidden && !styleBar.isShown)
+    let scroll = try #require(content.subviews.compactMap { $0 as? NSScrollView }.first)
+    let canvas = try #require(scroll.documentView as? ScrollCanvas)
+    canvas.choose(.rectangle)
+    #expect(styleBar.isShown && !styleBar.isHidden)
+    canvas.choose(nil)
+    #expect(!styleBar.isShown)
+  }
+
   /// 聚光灯：压暗盖住整张长图，所以它一动整层都要重画（2026-10-26 手测「画的时候不变暗，
   /// 存出来的图却是暗的」）；遮罩那边压暗在自己的图层上，照旧只重画变了的那块
   @Test func spotlightRedrawsWholeCanvas() {

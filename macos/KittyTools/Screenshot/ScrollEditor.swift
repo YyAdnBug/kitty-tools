@@ -72,8 +72,13 @@ import Carbon.HIToolbox
     content.onKey = { [unowned self] key in self.key(key) }
     scrollView.frame = content.bounds
     content.addSubview(scrollView)
-    content.addSubview(styleBar)
-    content.addSubview(bar)
+    // 先藏起来再加进去（同遮罩里的两条栏）：PopView 的 isShown 一开始就是 false，
+    // setShown(false) 会直接返回、不动 isHidden——不这么做的话没选工具时托盘就停在窗口左下角露着
+    // （2026-10-26 手测报的）
+    for view in [styleBar, bar] as [NSView] {
+      view.isHidden = true
+      content.addSubview(view)
+    }
     window.contentView = content
     window.delegate = self
     NotificationCenter.default.addObserver(
