@@ -905,17 +905,18 @@ internal sealed partial class SelectionOverlayWindow : Window
         }
 
         var label = $"{Math.Round(selection.Width)} × {Math.Round(selection.Height)}";
-        var labelWidth = 84f;
+        var labelWidth = 92f;
         var x = (float)(rect.X);
-        var y = (float)(rect.Y - 26);
+        var y = (float)(rect.Y - 30);
         if (y < 4)
         {
             y = (float)(rect.Y + 6);
         }
 
-        ds.FillRoundedRectangle(
-            new Windows.Foundation.Rect(x, y, labelWidth, 22), 5, 5, Theme.Shot.LabelBackground);
-        ds.DrawText(label, x + 8, y + 4, Theme.Shot.HudText, _text);
+        var pill = new Windows.Foundation.Rect(x, y, labelWidth, 24);
+        ds.FillRoundedRectangle(pill, 6, 6, Theme.Shot.LabelBackground);
+        ds.DrawRoundedRectangle(pill, 6, 6, Theme.Argb(40, 255, 255, 255), 1);
+        ds.DrawText(label, x + 9, y + 5, Theme.Shot.HudText, _text);
     }
 
     private void DrawHint(Microsoft.Graphics.Canvas.CanvasDrawingSession ds, float width, float height)
