@@ -1,11 +1,14 @@
-// 晾衣绳面板的内容（第十族第 1、2 批，2026-10-26 拍板 C3 D1；长相见 mac-whisker-capture.mdc「晾衣绳」）：
-// 一根绳子横在屏幕顶上、中间断开给刘海岛让位，挂着的截图一张张从两边往中间挂，每张上面一枚品牌粉的小夹子。
+// 晾衣绳面板的内容（第十族，2026-10-26 拍板 C3 D1 + 同日手测反馈重做了线 / 夹子 / 动画；
+// 长相见 mac-whisker-capture.mdc「晾衣绳」）：一根绳子横在屏幕顶上、中间断开给刘海岛让位，
+// 挂着的截图一张张从两边往中间挂，每张上面一枚品牌粉的木夹子。
+// **位置和角度每帧由绳子的物理给**（ClotheslineRope，verlet；模型里的 hangs / ropes），这里只管画——
+// 摇摆是绳子带的，卡片自己没有动画。
 // 卡片就是常驻缩略图那一张（圆角 10、white 0.25 发丝线描边 + black 0.28 / r16 / y6 阴影，Style.shotCard），
-// 图是截图历史里那条的缩略图（ShotThumbnails，和历史窗口共用一份缓存）；刚挂上去的摇一下就停。
+// 图是截图历史里那条的缩略图（ShotThumbnails，和历史窗口共用一份缓存）。
 // 悬停压一层蒙层、右上角出 ✕（点它取下，拍板 D2）；单击拷贝、双击进标注窗口、拖出去是一个文件、
 // 拖到废纸篓取下、右键是一整套菜单——鼠标全在 CardMouse 那块 AppKit 视图里收（本 App 不激活、面板永不当 key，
 // SwiftUI 的 onHover 和手势在这种窗口里都不稳，同常驻缩略图的做法）。
-// 排法、绳子的下垂都由 ClotheslineLayout 算好（面板内坐标，原点左上）；这里只管画。
+// 排法、静止时的样子由 ClotheslineLayout 算（面板内坐标，原点左上）。
 // 面板是整块透明的（没有毛玻璃底）：透明的地方系统自己点穿，只有卡片接鼠标（Clothesline.makePanel）。
 
 import AppKit
@@ -19,35 +22,75 @@ struct ClotheslineView: View {
     // 读一下：改完标注、缩略图重做好之后要重画（ShotThumbnails 不是 @Observable）
     let _ = model.redraws
     ZStack(alignment: .topLeading) {
-      // 绳子：底下压一道深的、上面一道浅的（HUD 的内外描边那一套）——面板整块透明，桌面深浅都看得见
-      RopeShape(ropes: model.plan.ropes)
-        .stroke(Color(nsColor: Style.HUD.outerStroke), lineWidth: ClotheslineLayout.ropeWidth + 1.5)
-        .overlay {
-          RopeShape(ropes: model.plan.ropes)
-            .stroke(
-              Color(nsColor: Style.HUD.secondaryText), lineWidth: ClotheslineLayout.ropeWidth)
+      rope
+      ForEach(model.hangs) { hang in
+        if let item = model.item(hang.id) {
+          ClotheslineCard(model: model, item: item)
+            .frame(width: hang.rect.width, height: hang.rect.height)
+            // 绕挂点转（挂点在卡片顶边上面 hangDrop 点，夹子就在那儿）
+            .rotationEffect(
+              .radians(hang.angle),
+              anchor: UnitPoint(x: 0.5, y: -ClotheslineLayout.hangDrop / hang.rect.height)
+            )
+            .position(x: hang.rect.midX, y: hang.rect.midY)
+            // 取下：往下坠一截、淡出（不进物理，绳子那边是一个向上的释放脉冲）
+            .transition(
+              .asymmetric(
+                insertion: .identity,
+                removal: .offset(y: ClotheslineLayout.leaveDrop).combined(with: .opacity)))
         }
-        .allowsHitTesting(false)
-      ForEach(Array(zip(model.items, model.plan.cards)), id: \.0.id) { item, rect in
-        ClotheslineCard(model: model, item: item)
-          .frame(width: rect.width, height: rect.height)
-          .position(x: rect.midX, y: rect.midY)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
   }
+
+  /// 细线 + 投影：1.5 pt 的墨色实线（圆头）、底下垫一道同形状、线宽 +1、往下偏 2.5 的黑影（看得出悬空），
+  /// 两端各一个 3 pt 的实心挂点
+  private var rope: some View {
+    let shape = RopeShape(ropes: model.ropes)
+    return ZStack {
+      shape
+        .stroke(
+          .black.opacity(ClotheslineLayout.ropeShadowInk),
+          style: StrokeStyle(lineWidth: ClotheslineLayout.ropeWidth + 1, lineCap: .round)
+        )
+        .offset(y: ClotheslineLayout.ropeShadowOffset)
+      shape
+        .stroke(
+          .primary.opacity(ClotheslineLayout.ropeInk),
+          style: StrokeStyle(lineWidth: ClotheslineLayout.ropeWidth, lineCap: .round))
+      ForEach(
+        Array(model.ropes.flatMap { [$0.first, $0.last] }.compactMap { $0 }.enumerated()),
+        id: \.offset
+      ) { _, end in
+        Circle()
+          .fill(.primary.opacity(ClotheslineLayout.ropeEndInk))
+          .frame(
+            width: ClotheslineLayout.ropeEndRadius * 2, height: ClotheslineLayout.ropeEndRadius * 2
+          )
+          .position(end)
+      }
+    }
+    .allowsHitTesting(false)
+  }
 }
 
-/// 绳子：两端固定在屏幕两边、中间自然下垂的二次贝塞尔，正中间断开一段给刘海岛（拍板 C2）。
+/// 绳子：质点连成的线（相邻质点的中点当锚、质点当控制点，同样机的 ropePath，拐角才圆滑）。
 /// nonisolated：path(in:) 可能在 SwiftUI 的渲染线程上调（mac-native §3），只读传进来的几何
 nonisolated private struct RopeShape: Shape {
-  let ropes: [ClotheslineLayout.Rope]
+  let ropes: [[CGPoint]]
 
   func path(in rect: CGRect) -> Path {
     var path = Path()
-    for rope in ropes {
-      path.move(to: rope.from)
-      path.addQuadCurve(to: rope.to, control: rope.control)
+    for points in ropes where points.count > 1 {
+      path.move(to: points[0])
+      for index in 1..<(points.count - 1) {
+        let point = points[index]
+        let next = points[index + 1]
+        path.addQuadCurve(
+          to: CGPoint(x: (point.x + next.x) / 2, y: (point.y + next.y) / 2), control: point)
+      }
+      path.addLine(to: points[points.count - 1])
     }
     return path
   }
@@ -57,10 +100,6 @@ nonisolated private struct RopeShape: Shape {
 private struct ClotheslineCard: View {
   let model: ClotheslineModel
   let item: ShotHistory.Item
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  /// 刚挂上去那一下的摇摆：出现时从 swingAngle 弹回 0
-  @State private var swing: Double = 0
-
   private var isHovered: Bool { model.hovered == item.id }
 
   var body: some View {
@@ -88,13 +127,13 @@ private struct ClotheslineCard: View {
         }
       }
       .shotCard(shape)
-      // 夹子压在卡片顶边、往上伸到绳子上
-      .overlay(alignment: .top) { Clip().offset(y: -ClotheslineLayout.clipHeight) }
+      // 夹子夹在卡片顶边上：中心在顶边上方 clipCenterAboveCard，绳子正好从两片之间穿过去
+      .overlay(alignment: .top) {
+        Clip()
+          .offset(y: -ClotheslineLayout.clipBar.height / 2 - ClotheslineLayout.clipCenterAboveCard)
+      }
       .animation(.easeOut(duration: 0.12), value: isHovered)
-      // 夹子在上面，摇摆就绕着它（拍板 D1：挂上去摇一下就停，减弱动态效果时不摇）
-      .rotationEffect(.degrees(swing), anchor: .top)
       .overlay { mouse }
-      .onAppear(perform: startSwing)
       .accessibilityElement(children: .ignore)
       .accessibilityLabel("\(item.kind.title)，\(ShotHistoryModel.caption(item))")
       .accessibilityActions {
@@ -147,28 +186,43 @@ private struct ClotheslineCard: View {
       .accessibilityHidden(true)
   }
 
-  private func startSwing() {
-    guard model.swinging == item.id, !reduceMotion else { return }
-    swing = ClotheslineLayout.swingAngle
-    withAnimation(Style.Motion.pop.animation(reduced: reduceMotion)) { swing = 0 }
+}
+
+/// 木夹子（2026-10-26 手测反馈「要真的像夹子」，样机里挑的那个）：品牌粉的两片圆角竖条
+/// （各 4.5 × 20、圆角 2、0.9 透明度，中间留 1.5 的缝）+ 中间一道 0.65 透明度的弧当弹簧
+private struct Clip: View {
+  var body: some View {
+    let bar = ClotheslineLayout.clipBar
+    let pink = Color(nsColor: Style.Shot.accent)
+    ZStack {
+      HStack(spacing: ClotheslineLayout.clipGap) {
+        ForEach(0..<2, id: \.self) { _ in
+          RoundedRectangle(cornerRadius: ClotheslineLayout.clipRadius, style: .continuous)
+            .fill(pink.opacity(0.9))
+            .frame(width: bar.width, height: bar.height)
+        }
+      }
+      Spring()
+        .stroke(
+          pink.opacity(0.65),
+          style: StrokeStyle(lineWidth: ClotheslineLayout.clipSpringWidth, lineCap: .round))
+    }
+    .frame(width: bar.width * 2 + ClotheslineLayout.clipGap, height: bar.height)
+    .shadow(color: Style.Shot.cardShadow, radius: 3, y: 1)
+    .accessibilityHidden(true)
   }
 }
 
-/// 夹子：品牌粉的小圆角条，中间一道浅色的缝
-private struct Clip: View {
-  var body: some View {
-    let shape = RoundedRectangle(cornerRadius: 3, style: .continuous)
-    shape
-      .fill(Color(nsColor: Style.Shot.accent))
-      .frame(width: 13, height: ClotheslineLayout.clipHeight + 7)
-      .overlay {
-        Color(nsColor: Style.Shot.onAccent).opacity(0.45)
-          .frame(width: 1)
-          .padding(.vertical, 3)
-      }
-      .overlay { shape.strokeBorder(Style.Shot.cardStroke, lineWidth: Style.HUD.strokeWidth) }
-      .shadow(color: Style.Shot.cardShadow, radius: 4, y: 2)
-      .accessibilityHidden(true)
+/// 夹子中间那道弹簧：半径 4.6 的弧，从 0.15π 到 0.85π（下半圈），圆心在中心往上 1 点。
+/// nonisolated：同 RopeShape
+nonisolated private struct Spring: Shape {
+  func path(in rect: CGRect) -> Path {
+    var path = Path()
+    path.addArc(
+      center: CGPoint(x: rect.midX, y: rect.midY - 1),
+      radius: ClotheslineLayout.clipSpringRadius, startAngle: .radians(.pi * 0.15),
+      endAngle: .radians(.pi * 0.85), clockwise: false)
+    return path
   }
 }
 

@@ -23,8 +23,17 @@ import SwiftUI
   var plan = ClotheslineLayout.Plan()
   /// 鼠标停在哪一张上（压一层蒙层、右上角出 ✕）；截图自检直接摆它
   var hovered: UUID?
-  /// 刚挂上去的那一张：出现时摇一下就停（拍板 D1）
-  var swinging: UUID?
+  /// 这一帧每张卡挂在哪、歪多少（物理在跑时每帧换一份；减弱动态效果时就是 plan 里静止的样子）
+  var hangs: [Hang] = []
+  /// 两段绳子这一帧的质点（画线用）
+  var ropes: [[CGPoint]] = []
+
+  /// 挂着的一张：面板内的框 + 绕挂点转的角度（弧度）
+  struct Hang: Identifiable, Equatable {
+    let id: UUID
+    var rect: CGRect
+    var angle: Double
+  }
   /// 拖出去的那个文件（挂上去时在主线程外备好）：存过的就是存的那个，录制的是那段视频 / 音频
   var dragFiles: [UUID: URL] = [:]
   /// 改完标注、缩略图重做好了要重画（ShotThumbnails 不是 @Observable，视图读它来建立依赖）
@@ -67,11 +76,14 @@ import SwiftUI
 
   var isEmpty: Bool { items.isEmpty }
 
+  func item(_ id: UUID) -> ShotHistory.Item? { items.first { $0.id == id } }
+
   /// 换一批（Clothesline 算好容量之后给）
   func setPegged(_ ids: [UUID]) { pegged = ids }
 }
 
-@MainActor final class Clothesline {
+/// NSObject：display link 要一个 @objc 的靶子（同钉图的 popIn、OverlayPanel 的挤压入场）
+@MainActor final class Clothesline: NSObject {
   let model: ClotheslineModel
   /// 别的功能占着屏幕时不出来（AppDelegate 给：截图框选 / 长截图中、状态屏、启动台开着）
   var isSuppressed: () -> Bool = { false }
@@ -81,6 +93,8 @@ import SwiftUI
   var notch: (NSScreen) -> CGRect? = { Island.notchRect(of: $0) }
   /// 一条历史的那几样操作（AppDelegate 给，和截图历史窗口共用一份）
   var actions = ShotActions()
+  /// 减弱动态效果（不跑物理：卡片直接在静止位置上，绳子画成静止的）；截图自检注入
+  var reducesMotion: () -> Bool = { Style.reduceMotion }
 
   private var panel: NSPanel?
   private var host: ClotheslineHost?
@@ -96,9 +110,23 @@ import SwiftUI
   /// 挂着东西时才装的鼠标监听（绳子上空着时一点开销都不要）
   private var monitors: [Any] = []
   private var started = false
+  /// 两段绳子的物理（左、右）；挂着的卡片各挂在哪一段的哪个质点上
+  private var ropes: [ClotheslineRope] = []
+  private var nodes: [UUID: (rope: Int, index: Int)] = [:]
+  /// 还在往下落的那几张（挂上去那一下，拍板的物理）
+  private var falling: [UUID: Falling] = [:]
+  /// 每帧走一步的表；全停了就停表（Whisker §8：不能有常驻的循环动画）
+  private var link: CADisplayLink?
+
+  /// 一张正在落下来的卡片：离挂点还有多远（负数 = 在上面）、这一帧多快
+  private struct Falling {
+    var drop: CGFloat
+    var speed: CGFloat = 0
+  }
 
   init(history: ShotHistory?) {
     model = ClotheslineModel(history: history)
+    super.init()
     model.onCommand = { [unowned self] command, item in perform(command, on: item) }
   }
 
@@ -144,7 +172,7 @@ import SwiftUI
     model.setPegged([])
     model.dragFiles = [:]
     model.hovered = nil
-    model.swinging = nil
+    falling = [:]
     hide(animated: false)
     updateWatching()
   }
@@ -168,9 +196,13 @@ import SwiftUI
     var ids = model.pegged.filter { $0 != id }
     ids.append(id)
     ids = trimmed(ids, on: screenForMouse())
-    for dropped in Set(model.pegged).subtracting(ids) { model.dragFiles[dropped] = nil }
+    for dropped in Set(model.pegged).subtracting(ids) {
+      model.dragFiles[dropped] = nil
+      falling[dropped] = nil
+    }
     model.setPegged(ids)
-    model.swinging = id
+    // 从挂点上方落下来（减弱动态效果时直接到位）；飞行卡片刚把它送到的就是这个高度（slot 已经抬高了）
+    falling[id] = reducesMotion() ? nil : Falling(drop: -ClotheslineLayout.dropHeight)
     holdUntil = .now.advanced(by: ClotheslineLayout.pegHold)
     updateWatching()
     if let screen = screenForMouse() { present(on: screen) }
@@ -179,15 +211,23 @@ import SwiftUI
     }
   }
 
-  /// 取下（只去掉「挂着」这一笔，历史不动，拍板 B2 D2）
+  /// 取下（只去掉「挂着」这一笔，历史不动，拍板 B2 D2）：给那个质点一个向上的释放脉冲，绳子回弹；
+  /// 卡片往下坠一截、淡出（SwiftUI 的离场过渡，不进物理）
   func unpeg(_ id: UUID) {
     guard model.pegged.contains(id) else { return }
     if model.hovered == id { model.hovered = nil }
     model.dragFiles[id] = nil
-    withAnimation(Style.Motion.settle.animation()) {
-      model.setPegged(model.pegged.filter { $0 != id })
-      replan()
+    falling[id] = nil
+    if let node = nodes[id], ropes.indices.contains(node.rope) {
+      ropes[node.rope].setLoaded(node.index, false)
+      ropes[node.rope].push(
+        node.index, dx: ClotheslineLayout.releaseImpulse.dx,
+        dy: ClotheslineLayout.releaseImpulse.dy)
     }
+    nodes[id] = nil
+    model.setPegged(model.pegged.filter { $0 != id })
+    replan()
+    withAnimation(.easeIn(duration: ClotheslineLayout.leaveDuration)) { publish() }
     if model.isEmpty { hide(animated: true) }
     updateWatching()
   }
@@ -228,7 +268,10 @@ import SwiftUI
     let plan = ClotheslineLayout.plan(sizes, width: width, gap: gap)
     // 新的那一张排在最后（挂上的先后）
     guard let card = plan.cards.last, plan.cards.count == sizes.count else { return nil }
-    return Self.screenRect(card, in: Self.panelFrame(for: screen))
+    // 往上抬一个落差：飞行卡片把它送到这儿，交接之后它从这儿落到绳子上（减弱动态效果时不落、直接到位）
+    let raised =
+      reducesMotion() ? card : card.offsetBy(dx: 0, dy: -ClotheslineLayout.dropHeight)
+    return Self.screenRect(raised, in: Self.panelFrame(for: screen))
   }
 
   /// 挂不下的先从最旧的取下来（还在历史里）
@@ -262,10 +305,11 @@ import SwiftUI
     pendingShow = nil
     guard started, !model.isEmpty, !isSuppressed() else { return }
     let panel = self.panel ?? makePanel()
-    replan(for: screen)
     let frame = Self.panelFrame(for: screen)
     let moving = shown != nil && panel.isVisible
+    // 先记下挂在哪块屏：replan 要起表，起表得先认准面板是露着的
     shown = screen
+    replan(for: screen)
     linger = ClotheslineLayout.Linger()
     if moving {
       // 换屏跟过去（D3）：直接挪，不再滑一次
@@ -287,15 +331,15 @@ import SwiftUI
   /// 滑下来 / 收回去：窗口淡入淡出，内容在菜单栏下面上下滑（glide 弹簧）。
   /// 减弱动态效果时 caAnimation 给 nil，只剩淡入淡出（拍板 D1）
   private func slide(down: Bool) {
-    guard let layer = host?.layer else { return }
+    guard let layer = host?.layer, let height = panel?.frame.height else { return }
     layer.transform = CATransform3DIdentity
     guard
       let slide = Style.Motion.glide.caAnimation(keyPath: "transform.translation.y")
         as? CASpringAnimation
     else { return }
     // AppKit 图层 y 向上：收着时内容在面板上面（菜单栏底下，看不见）
-    slide.fromValue = down ? ClotheslineLayout.panelHeight : 0
-    slide.toValue = down ? 0 : ClotheslineLayout.panelHeight
+    slide.fromValue = down ? height : 0
+    slide.toValue = down ? 0 : height
     layer.add(slide, forKey: "slide")
   }
 
@@ -304,6 +348,7 @@ import SwiftUI
     pendingShow = nil
     holdUntil = nil
     stopWatching()
+    stopTicking()  // 收起了一定停表（看不见的东西不许还在跑物理）
     guard shown != nil else { return }
     shown = nil
     guard let panel, panel.isVisible else { return }
@@ -327,22 +372,142 @@ import SwiftUI
     }
   }
 
-  // MARK: 排版
+  // MARK: 排版和物理
 
+  /// 重排：算静止时的样子（plan），再按它搭两段绳子、把每张卡挂到最近的那个质点上。
+  /// 绳子只在这块屏的宽度变了时重搭（换屏、插拔显示器）：不然每挂一张就把正在晃的绳子清零了
   private func replan(for screen: NSScreen? = nil) {
     guard let screen = screen ?? shown else { return }
-    model.plan = ClotheslineLayout.plan(
-      model.items.map(\.pixelSize), width: screen.frame.width,
-      gap: ClotheslineLayout.gap(notch: notch(screen)))
+    layout(width: screen.frame.width, gap: ClotheslineLayout.gap(notch: notch(screen)))
+    startTicking()
+  }
+
+  /// 按这块宽度重排、搭绳子、把这一帧交给视图（截图自检和单测直接调它，不用真屏幕）
+  func layout(width: CGFloat, gap: CGFloat) {
+    model.plan = ClotheslineLayout.plan(model.items.map(\.pixelSize), width: width, gap: gap)
+    if ropes.count != model.plan.ropes.count
+      || zip(ropes, model.plan.ropes).contains(where: { rope, planned in
+        rope.point(0) != planned.from || rope.point(rope.nodes.count - 1) != planned.to
+      })
+    {
+      ropes = model.plan.ropes.map { ClotheslineRope(from: $0.from, to: $0.to) }
+      // 第一帧就是挂着东西时的静止样子（刚搭起来的绳子还没被重力拉开）
+      for index in ropes.indices { ropes[index].settle() }
+      nodes = [:]
+    }
+    // 每张卡挂在哪个质点上：按它静止时的中线找最近的
+    var taken: [UUID: (rope: Int, index: Int)] = [:]
+    for (item, card) in zip(model.items, model.plan.cards) {
+      let side = card.midX < CGFloat(model.plan.ropes[0].to.x) ? 0 : 1
+      guard ropes.indices.contains(side) else { continue }
+      taken[item.id] = (side, ropes[side].nearest(x: card.midX))
+    }
+    // 挂上 / 取下的重量跟着变
+    for index in ropes.indices {
+      for node in ropes[index].nodes.indices { ropes[index].setLoaded(node, false) }
+    }
+    for (id, node) in taken where falling[id] == nil {
+      ropes[node.rope].setLoaded(node.index, true)
+    }
+    nodes = taken
+    publish()
+  }
+
+  /// 跑到静止再出图（截图自检；真用的时候是 display link 一帧帧跑）
+  func settleNow() {
+    for index in ropes.indices { ropes[index].settle() }
+    falling = [:]
+    publish()
+  }
+
+  /// 把这一帧的样子交给视图：卡片挂在质点下面、跟着两侧质点的连线转；减弱动态效果时就是 plan 里静止的样子
+  private func publish() {
+    guard !reducesMotion(), !ropes.isEmpty else {
+      model.ropes = model.plan.ropes.map { Self.staticPoints($0) }
+      model.hangs = zip(model.items, model.plan.cards).map {
+        Hang(id: $0.id, rect: $1, angle: 0)
+      }
+      return
+    }
+    model.ropes = ropes.map(\.points)
+    model.hangs = zip(model.items, model.plan.cards).compactMap { item, card in
+      guard let node = nodes[item.id], ropes.indices.contains(node.rope) else { return nil }
+      let point = ropes[node.rope].point(node.index)
+      let drop = falling[item.id]?.drop ?? 0
+      let rect = CGRect(
+        x: point.x - card.width / 2, y: point.y + ClotheslineLayout.hangDrop + drop,
+        width: card.width, height: card.height)
+      let tilted =
+        Double(ropes[node.rope].angle(at: node.index)) + ClotheslineLayout.tilt(for: item.id)
+      return Hang(
+        id: item.id, rect: rect,
+        angle: min(max(tilted, -ClotheslineLayout.maxTilt), ClotheslineLayout.maxTilt))
+    }
+  }
+
+  private typealias Hang = ClotheslineModel.Hang
+
+  /// 静止的绳子（减弱动态效果时画它）：plan 里那条二次贝塞尔采几个点
+  private static func staticPoints(_ rope: ClotheslineLayout.Rope) -> [CGPoint] {
+    (0..<ClotheslineRope.count).map { index in
+      let t = CGFloat(index) / CGFloat(ClotheslineRope.count - 1)
+      let inverse = 1 - t
+      return CGPoint(
+        x: inverse * inverse * rope.from.x + 2 * inverse * t * rope.control.x + t * t * rope.to.x,
+        y: inverse * inverse * rope.from.y + 2 * inverse * t * rope.control.y + t * t * rope.to.y)
+    }
+  }
+
+  // MARK: 表
+
+  /// 起表（减弱动态效果时不跑物理）。挂上、取下、换屏之后都调一次；全停了自己停表
+  private func startTicking() {
+    guard !reducesMotion(), link == nil, shown != nil, let view = panel?.contentView
+    else { return }
+    let link = view.displayLink(target: self, selector: #selector(stepPhysics))
+    // 逐帧算物理，同钉图的 popIn、面板的挤压入场：最高 60 Hz
+    link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+    link.add(to: .main, forMode: .common)
+    self.link = link
+  }
+
+  private func stopTicking() {
+    link?.invalidate()
+    link = nil
+  }
+
+  @objc private func stepPhysics(_ link: CADisplayLink) {
+    var moving = false
+    // 还在落的：自由落体，碰到绳子那一刻「咬住」——把挂点压低一下，波自然沿绳子传开
+    for (id, var fall) in falling {
+      fall.speed += ClotheslineLayout.dropGravity
+      fall.drop += fall.speed
+      if fall.drop >= 0 {
+        falling[id] = nil
+        if let node = nodes[id], ropes.indices.contains(node.rope) {
+          ropes[node.rope].setLoaded(node.index, true)
+          ropes[node.rope].push(node.index, dy: ClotheslineLayout.catchDip)
+        }
+      } else {
+        falling[id] = fall
+      }
+      moving = true
+    }
+    for index in ropes.indices {
+      ropes[index].step()
+      if !ropes[index].isAtRest { moving = true }
+    }
+    publish()
+    if !moving { stopTicking() }
   }
 
   /// 面板：贴在菜单栏下沿、铺满这块屏的宽度
   static func panelFrame(for screen: NSScreen) -> CGRect {
     let top = ClotheslineLayout.top(
       screen: screen.frame, visible: screen.visibleFrame, menuBar: NSStatusBar.system.thickness)
+    let height = ClotheslineLayout.panelHeight(width: screen.frame.width)
     return CGRect(
-      x: screen.frame.minX, y: top - ClotheslineLayout.panelHeight, width: screen.frame.width,
-      height: ClotheslineLayout.panelHeight)
+      x: screen.frame.minX, y: top - height, width: screen.frame.width, height: height)
   }
 
   /// 这块屏上菜单栏那一条（停上去就滑下来、停在上面不收）

@@ -24,11 +24,14 @@ struct ClotheslineTests {
     #expect(plan.cards[3].maxX < plan.cards[1].maxX)
     // 中间那一段（刘海岛的位置）空着
     let hole = CGRect(
-      x: (width - gap) / 2, y: 0, width: gap, height: ClotheslineLayout.panelHeight)
+      x: (width - gap) / 2, y: 0, width: gap, height: ClotheslineLayout.panelHeight(width: width))
     #expect(plan.cards.allSatisfy { !$0.intersects(hole) })
     // 绳子两段也在中间断开，两端顶着屏幕两边
     #expect(plan.ropes.count == 2)
-    #expect(plan.ropes[0].from.x == 0 && plan.ropes[1].to.x == width)
+    // 两端往里收一个挂点的半径（那两个点整个看得见）
+    #expect(
+      plan.ropes[0].from.x == ClotheslineLayout.ropeEndRadius
+        && plan.ropes[1].to.x == width - ClotheslineLayout.ropeEndRadius)
     #expect(plan.ropes[1].from.x - plan.ropes[0].to.x == gap)
   }
 
@@ -63,15 +66,102 @@ struct ClotheslineTests {
     #expect(ClotheslineLayout.width(of: .zero) == ClotheslineLayout.cardHeight)
   }
 
-  /// 绳子两端固定、中间垂 sag
+  /// 绳子两端固定、中间垂 restSag（绳长比跨度多出来的那一截摊成抛物线）
   @Test func ropeSagsInTheMiddle() {
     #expect(ClotheslineLayout.drop(x: 0, from: 0, to: 600) == 0)
     #expect(ClotheslineLayout.drop(x: 600, from: 0, to: 600) == 0)
-    #expect(ClotheslineLayout.drop(x: 300, from: 0, to: 600) == ClotheslineLayout.sag)
+    #expect(
+      ClotheslineLayout.drop(x: 300, from: 0, to: 600) == ClotheslineLayout.restSag(span: 600))
+    // 跨度越大垂得越深；面板高得装得下它
+    #expect(ClotheslineLayout.restSag(span: 1200) > ClotheslineLayout.restSag(span: 600))
+    #expect(
+      ClotheslineLayout.panelHeight(width: 1512)
+        > ClotheslineLayout.restSag(span: (1512 - ClotheslineLayout.minimumGap) / 2)
+        + ClotheslineLayout.cardHeight)
     // 卡片跟着绳子垂下来：靠中间那张比靠边那张低
     let plan = ClotheslineLayout.plan(
       Array(repeating: photo, count: 4), width: 1512, gap: ClotheslineLayout.gap(notch: nil))
     #expect(plan.cards[2].minY > plan.cards[0].minY)
+  }
+
+  // MARK: 绳子的物理（2026-10-26 手测反馈：动画改成物理驱动）
+
+  private func rope(span: CGFloat = 646) -> ClotheslineRope {
+    ClotheslineRope(
+      from: CGPoint(x: 0, y: ClotheslineLayout.ropeTop),
+      to: CGPoint(x: span, y: ClotheslineLayout.ropeTop))
+  }
+
+  /// 两端钉死、中间垂下去；垂的深浅和 ClotheslineLayout.restSag 的估值对得上（面板就是照它留的地方）。
+  /// 停下来之后 isAtRest 为真——调用方据此停表（Whisker §8：不能有常驻的循环动画）
+  @Test func ropeSettlesIntoASag() {
+    var rope = rope()
+    rope.settle()
+    #expect(rope.isAtRest)
+    #expect(rope.point(0).y == ClotheslineLayout.ropeTop)
+    #expect(abs(rope.point(ClotheslineRope.count - 1).y - ClotheslineLayout.ropeTop) < 0.001)
+    for span in [CGFloat(400), 646, 900, 1292] {
+      var measured = self.rope(span: span)
+      measured.settle()
+      let depth =
+        (measured.nodes.map(\.y).max() ?? 0) - ClotheslineLayout.ropeTop
+      let estimate = ClotheslineLayout.restSag(span: span)
+      #expect(abs(depth - estimate) < estimate * 0.08, "跨度 \(span) 垂了 \(depth)，估的是 \(estimate)")
+    }
+    // 中间最低、两头最高
+    #expect(rope.point(1).y < rope.point(ClotheslineRope.count / 2).y)
+  }
+
+  /// 挂上去那一下：挂点压低 6 点 + 多吃 2.2 倍重力，绳子动起来（不再是「停了」），波传开之后又停下来，
+  /// 挂着的那一段比空着时低
+  @Test func catchingACardShakesTheRopeThenStops() {
+    var rope = rope()
+    rope.settle()
+    let node = ClotheslineRope.count / 2
+    let empty = rope.point(node).y
+    rope.setLoaded(node, true)
+    rope.push(node, dy: ClotheslineLayout.catchDip)
+    #expect(!rope.isAtRest)
+    // 旁边的质点也被带着动（摇摆是绳子带的，不是卡片自己的动画）
+    rope.step()
+    #expect(rope.nodes[node - 3].speed > 0)
+    rope.settle()
+    #expect(rope.isAtRest)
+    #expect(rope.point(node).y > empty)
+  }
+
+  /// 取下：给那个质点一个向上的释放脉冲，绳子回弹、过一会儿停下来，回到空着时的样子
+  @Test func releaseReboundsThenStops() {
+    var rope = rope()
+    let node = ClotheslineRope.count / 2
+    rope.setLoaded(node, true)
+    rope.settle()
+    let loaded = rope.point(node).y
+    rope.setLoaded(node, false)
+    rope.push(
+      node, dx: ClotheslineLayout.releaseImpulse.dx, dy: ClotheslineLayout.releaseImpulse.dy)
+    #expect(!rope.isAtRest)
+    #expect(rope.point(node).y < loaded)  // 当场被弹上去
+    rope.settle()
+    #expect(rope.isAtRest)
+    var empty = self.rope()
+    empty.settle()
+    #expect(abs(rope.point(node).y - empty.point(node).y) < 6)
+  }
+
+  /// 挂在哪个质点上按 x 找最近的；卡片的角度跟着两侧质点的连线走（中间平、两头翘），钉死的两端不动
+  @Test func nodesAndAngles() {
+    var rope = rope()
+    rope.settle()
+    #expect(rope.nearest(x: -100) == 0)
+    #expect(rope.nearest(x: 1000) == ClotheslineRope.count - 1)
+    let middle = ClotheslineRope.count / 2
+    #expect(abs(rope.angle(at: middle)) < 0.02)
+    #expect(rope.angle(at: 2) > 0.1)  // 左边往下走
+    #expect(rope.angle(at: ClotheslineRope.count - 3) < -0.1)  // 右边往上走
+    rope.push(0, dy: 50)
+    rope.step()
+    #expect(rope.point(0).y == ClotheslineLayout.ropeTop)  // 钉死的推不动
   }
 
   /// 菜单栏那一条：量得到菜单栏就是它；菜单栏自动隐藏时 visible 顶到屏幕顶边，这时按菜单栏的高往下让
@@ -206,8 +296,8 @@ struct ClotheslineTests {
     let visible = CGRect(x: 0, y: 32, width: 1512, height: 912)
     let top = ClotheslineLayout.top(screen: screen, visible: visible, menuBar: 24)
     let panel = CGRect(
-      x: screen.minX, y: top - ClotheslineLayout.panelHeight, width: screen.width,
-      height: ClotheslineLayout.panelHeight)
+      x: screen.minX, y: top - ClotheslineLayout.panelHeight(width: screen.width),
+      width: screen.width, height: ClotheslineLayout.panelHeight(width: screen.width))
     #expect(panel.maxY == visible.maxY)  // 不盖菜单栏
     let card = CGRect(x: 16, y: 30, width: 123, height: 92)
     let onScreen = Clothesline.screenRect(card, in: panel)

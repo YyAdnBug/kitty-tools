@@ -14,17 +14,32 @@ nonisolated enum ClotheslineLayout {
   /// 卡片的高（宽按原图的比例算，夹在 cardWidths 里）：常驻缩略图的一半出头，一排挂得下 8 张
   static let cardHeight: CGFloat = 92
   static let cardWidths: ClosedRange<CGFloat> = 64...180
-  /// 卡片之间、离屏幕两边
+  /// 卡片之间、离屏幕两边（两头的卡片跟着绳子斜得最厉害，留宽一点别让角出屏幕）
   static let spacing: CGFloat = 10
-  static let sideInset: CGFloat = 16
+  static let sideInset: CGFloat = 44
   /// 绳子离面板顶边（面板顶边贴着菜单栏下沿）
   static let ropeTop: CGFloat = 8
-  /// 中间垂下来多少（两端固定的二次贝塞尔，最低点在中点）
-  static let sag: CGFloat = 9
-  /// 夹子多高：卡片从绳子往下让这么多，夹子正好压在绳子上
-  static let clipHeight: CGFloat = 13
-  /// 绳子粗细
+  /// 挂满卡片时绳子还会再往下坠一点（每张多吃 2.2 倍重力，量出来最多多一成）：面板按这个倍数留地方
+  static let loadedSagRoom: CGFloat = 1.15
+  /// 挂点到卡片顶边：绳子从夹子中间穿过去（样机里卡片画在 node.y + 6）
+  static let hangDrop: CGFloat = 6
+  /// 夹子：两片圆角竖条（各 4.5 × 20、圆角 2、0.9 透明度，中间留 1.5 的缝）+ 中间一道弧当弹簧
+  /// （半径 4.6、1.5 pt 描边、0.65 透明度，从 0.15π 到 0.85π）。夹子的中心在卡片顶边上方 4 点（= 挂点下方 2 点）
+  static let clipBar = CGSize(width: 4.5, height: 20)
+  static let clipGap: CGFloat = 1.5
+  static let clipRadius: CGFloat = 2
+  static let clipSpringRadius: CGFloat = 4.6
+  static let clipSpringWidth: CGFloat = 1.5
+  static let clipCenterAboveCard: CGFloat = 4
+  /// 夹子整个占多高（排面板高度用）
+  static var clipHeight: CGFloat { clipBar.height / 2 + clipCenterAboveCard }
+  /// 绳子粗细、墨色的透明度、底下那道影（线宽 +1、往下偏 2.5、black 0.16）、两端挂点的半径
   static let ropeWidth: CGFloat = 1.5
+  static let ropeInk: Double = 0.55
+  static let ropeShadowOffset: CGFloat = 2.5
+  static let ropeShadowInk: Double = 0.16
+  static let ropeEndRadius: CGFloat = 3
+  static let ropeEndInk: Double = 0.5
   /// 中间给刘海岛让出来的那一段至少这么宽（C2）：刘海屏按刘海宽 + 两边各 12
   static let minimumGap: CGFloat = 220
   /// 最多挂几张（B3）
@@ -34,12 +49,47 @@ nonisolated enum ClotheslineLayout {
   /// 悬停时右上角那个 ✕（和常驻缩略图的圆钮同样大）和它离卡片边的距离
   static let closeSide: CGFloat = 22
   static let closeInset: CGFloat = 6
-  /// 刚挂上去摇一下：从这个角度弹回 0（拍板 D1，用现成的 pop 弹簧，别新造曲线）
-  static let swingAngle: Double = -5
+  /// 挂上去：卡片从挂点上方这么高落下（重力 × dropGravity 加速），碰到绳子那一刻「咬住」。
+  /// 样机里是 180，那块画布绳子上面有的是地方；我们的面板上沿就贴着菜单栏、绳子离顶边只有 8 点，
+  /// 落得再高也被窗口裁掉（飞行卡片的落点还会跑到屏幕外面去），所以收成 26：卡片从面板顶边那儿落下来
+  static let dropHeight: CGFloat = 26
+  static let dropGravity: CGFloat = ClotheslineRope.gravity * 1.6
+  /// 咬住那一下把挂点压低多少（波自然沿绳子传开，不另写衰减曲线）
+  static let catchDip: CGFloat = 6
+  /// 取下时给那个质点的释放脉冲（绳子回弹；样机「抖一抖」同一个量级）
+  static let releaseImpulse = CGVector(dx: 8, dy: -26)
+  /// 取下的卡片往下坠多少、淡出多久
+  static let leaveDrop: CGFloat = 60
+  static let leaveDuration: Double = 0.22
+  /// 卡片最多歪多少（弧度）：绳子两端最陡，不夹住的话最外面那张要歪十几度，看着像要掉下去。
+  /// 只夹角度、不动位置，夹子照旧在挂点上
+  static let maxTilt: Double = 0.16
+  /// 每张卡自己的一点固定小倾角（样机里是随机，这里按编号算：同一张每次都一样，截图自检才稳）
+  static let tiltRange: Double = 0.14
 
-  /// 面板多高：绳子 + 下垂 + 夹子 + 卡片 + 阴影余量
-  static var panelHeight: CGFloat {
-    ropeTop + sag + clipHeight + cardHeight + shadowMargin
+  /// 这张卡自己歪多少（弧度）：按编号散开，范围 ±tiltRange / 2
+  static func tilt(for id: UUID) -> Double {
+    var hash: UInt64 = 0x9E37_79B9_7F4A_7C15
+    for byte in withUnsafeBytes(of: id.uuid, Array.init) {
+      hash = (hash ^ UInt64(byte)) &* 0x0100_0000_01B3
+    }
+    return (Double(hash % 1000) / 1000 - 0.5) * tiltRange
+  }
+
+  /// 绳子静止时中间垂多少。**这是量出来的**（`ClotheslineRope` 那套参数跑到静止、取最低点，
+  /// 跨度 400 / 646 / 900 / 1292 分别是 71.7 / 95.8 / 125.2 / 169.3 点）：verlet 的约束是软的，
+  /// 重力会把它拉得比「绳长多出那一截」的几何值更低，所以不去推公式、直接用这条拟合线（跨度很小时按比例封顶）。
+  /// 单测 `ropeSettlesIntoASag` 拿真的绳子对着它比：改了物理参数这里要重新量
+  static func restSag(span: CGFloat) -> CGFloat {
+    guard span > 0 else { return 0 }
+    return min(span * 0.11 + 25, span * 0.25)
+  }
+
+  /// 面板多高：绳子 + 坠下去 + 挂点到卡片顶边 + 卡片 + 阴影余量。
+  /// 按中间只让 minimumGap 算（刘海屏让得更宽、跨度更小、垂得更浅，宽一点的估值兜得住）
+  static func panelHeight(width: CGFloat) -> CGFloat {
+    let span = max((width - minimumGap) / 2, 1)
+    return ropeTop + restSag(span: span) * loadedSagRoom + hangDrop + cardHeight + shadowMargin
   }
 
   /// 中间断开多宽：刘海那一块两边各多 12，至少 minimumGap
@@ -52,17 +102,19 @@ nonisolated enum ClotheslineLayout {
     var control: CGPoint
   }
 
-  /// 排好的样子：卡片的框和绳子那两段，都是面板内坐标（原点左上，同 SwiftUI）
+  /// 排好的样子：卡片静止时的框和绳子那两段（面板内坐标，原点左上，同 SwiftUI）。
+  /// 真跑起来时卡片的位置和角度由绳子的物理给（ClotheslineRope），这里只管：挂在哪个 x、多宽、
+  /// 飞行卡片的落点、减弱动态效果时画成什么样
   struct Plan: Equatable {
     var cards: [CGRect] = []
     var ropes: [Rope] = []
   }
 
-  /// 绳子在 x 处垂下来多少：两端固定、控制点在中点，所以 x 和参数 t 是线性的，y = 4 × sag × t(1 − t)
+  /// 绳子在 x 处垂下来多少：两端固定、控制点在中点，所以 x 和参数 t 是线性的，y = 4 × 垂度 × t(1 − t)
   static func drop(x: CGFloat, from: CGFloat, to: CGFloat) -> CGFloat {
     guard to > from else { return 0 }
     let t = min(max((x - from) / (to - from), 0), 1)
-    return 4 * sag * t * (1 - t)
+    return 4 * restSag(span: to - from) * t * (1 - t)
   }
 
   /// 一张卡片多宽：按原图的比例，夹在 cardWidths 里（长截图这种细长的不会把绳子占满）
@@ -79,9 +131,10 @@ nonisolated enum ClotheslineLayout {
     var plan = Plan()
     let half = ((width - gap) / 2).rounded()
     guard half > sideInset else { return plan }
+    // 两端往里收一个挂点的半径：那两个实心点整个看得见
     plan.ropes = [
-      rope(from: 0, to: half),
-      rope(from: width - half, to: width),
+      rope(from: ropeEndRadius, to: half),
+      rope(from: width - half, to: width - ropeEndRadius),
     ]
     // 两边各一个游标：左边从左往右，右边从右往左
     var cursors = [sideInset, width - sideInset]
@@ -100,7 +153,7 @@ nonisolated enum ClotheslineLayout {
       let sagging = Self.drop(
         x: minX + box / 2, from: plan.ropes[side].from.x, to: plan.ropes[side].to.x)
       plan.cards.append(
-        CGRect(x: minX, y: ropeTop + sagging + clipHeight, width: box, height: cardHeight))
+        CGRect(x: minX, y: ropeTop + sagging + hangDrop, width: box, height: cardHeight))
     }
     return plan
   }
@@ -108,7 +161,7 @@ nonisolated enum ClotheslineLayout {
   private static func rope(from: CGFloat, to: CGFloat) -> Rope {
     Rope(
       from: CGPoint(x: from, y: ropeTop), to: CGPoint(x: to, y: ropeTop),
-      control: CGPoint(x: (from + to) / 2, y: ropeTop + 2 * sag))
+      control: CGPoint(x: (from + to) / 2, y: ropeTop + 2 * restSag(span: to - from)))
   }
 
   /// 一块屏上这几张能挂下几张（挂不下的调用方把最旧的取下来，B3）

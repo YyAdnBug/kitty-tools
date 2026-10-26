@@ -4186,7 +4186,6 @@ struct SnapshotProbeTests {
     }
     let history = try ShotHistory(
       db: Database(path: ":memory:"), directory: root.appending(path: "shots"))
-    let model = ClotheslineModel(history: history)
     // 八张：几种常见比例 + 一张细长的长截图
     let sizes = [
       CGSize(width: 1600, height: 1000), CGSize(width: 1200, height: 1200),
@@ -4212,13 +4211,21 @@ struct SnapshotProbeTests {
     }
     history.seed(items)
     let width: CGFloat = 1512
-    let size = NSSize(width: width, height: ClotheslineLayout.panelHeight)
+    let size = NSSize(width: width, height: ClotheslineLayout.panelHeight(width: width))
+    // 绳子的物理跑到静止再出图（真用的时候是 display link 一帧帧跑）
+    let line = Clothesline(history: history)
+    let model = line.model
+    func stage(_ ids: [UUID], notch: CGRect?, reduced: Bool = false) {
+      line.reducesMotion = { reduced }
+      model.setPegged(ids)
+      line.layout(width: width, gap: ClotheslineLayout.gap(notch: notch))
+      line.settleNow()
+    }
     for (count, notch) in [
-      (1, CGRect?.none), (4, nil), (8, nil), (8, CGRect(x: 0, y: 0, width: 260, height: 38)),
+      (0, CGRect?.none), (1, nil), (4, nil), (8, nil),
+      (8, CGRect(x: 0, y: 0, width: 260, height: 38)),
     ] {
-      model.setPegged(items.prefix(count).map(\.id))
-      model.plan = ClotheslineLayout.plan(
-        model.items.map(\.pixelSize), width: width, gap: ClotheslineLayout.gap(notch: notch))
+      stage(items.prefix(count).map(\.id), notch: notch)
       let name = notch == nil ? "clothesline-\(count)" : "clothesline-notch"
       for dark in [false, true] where notch == nil || !dark {
         try snapshot(
@@ -4226,10 +4233,8 @@ struct SnapshotProbeTests {
           to: "\(out)/\(name)\(dark ? "-dark" : "").png")
       }
     }
-    // 悬停在中间那张上：压一层蒙层、右上角出 ✕（第 2 批）；长截图那张的左下角有角标
-    model.setPegged(items.prefix(4).map(\.id) + [items[7].id])
-    model.plan = ClotheslineLayout.plan(
-      model.items.map(\.pixelSize), width: width, gap: ClotheslineLayout.gap(notch: nil))
+    // 悬停在中间那张上：压一层蒙层、右上角出 ✕；长截图那张的左下角有角标
+    stage(items.prefix(4).map(\.id) + [items[7].id], notch: nil)
     model.hovered = items[2].id
     for dark in [false, true] {
       try snapshot(
@@ -4237,6 +4242,11 @@ struct SnapshotProbeTests {
         to: "\(out)/clothesline-hover\(dark ? "-dark" : "").png")
     }
     model.hovered = nil
+    // 减弱动态效果：不跑物理，卡片在静止位置上、绳子是静止的悬链线
+    stage(items.prefix(4).map(\.id), notch: nil, reduced: true)
+    try snapshot(
+      ClotheslineView(model: model), size: size, dark: false,
+      to: "\(out)/clothesline-reduced.png")
   }
 
   /// 一块带渐变的色块，当缩略图用
