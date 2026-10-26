@@ -518,11 +518,11 @@ internal sealed partial class SelectionOverlayWindow : Window
         foreach (var (tool, label, name, shortcut) in new[]
                  {
                      (AnnotationTool.Select, "\uE8B0", "选择", "V"),
-                     (AnnotationTool.Rectangle, "\uE7C3", "矩形", "R"),
-                     (AnnotationTool.Arrow, "\uE8AB", "箭头", "A"),
-                     (AnnotationTool.Pen, "\uE70F", "画笔", "B"),
-                     (AnnotationTool.Text, "\uE8D2", "文字", "T"),
-                     (AnnotationTool.Mosaic, "\uE7C4", "马赛克", "M"),
+                     (AnnotationTool.Rectangle, "\uE7C3", "矩形", "1"),
+                     (AnnotationTool.Arrow, "\uE8AB", "箭头", "2"),
+                     (AnnotationTool.Pen, "\uE70F", "画笔", "3"),
+                     (AnnotationTool.Text, "\uE8D2", "文字", "4"),
+                     (AnnotationTool.Mosaic, "\uE7C4", "马赛克", "5"),
                  })
         {
             var button = ToolbarButton(label, $"{name}（{shortcut}）", name);
@@ -790,6 +790,13 @@ internal sealed partial class SelectionOverlayWindow : Window
     private Button? _redoButton;
 
     /// <summary>当前工具（品牌粉实心底）、颜色块、线宽、撤销 / 重做可用状态。</summary>
+    private void SelectTool(AnnotationTool tool)
+    {
+        _tool = tool;
+        UpdateToolbarChrome();
+        _canvas.Invalidate();
+    }
+
     private void UpdateToolbarChrome()
     {
         foreach (var (tool, button) in _toolButtons)
@@ -1350,24 +1357,30 @@ internal sealed partial class SelectionOverlayWindow : Window
         var shift = IsDown(Windows.System.VirtualKey.Shift);
         switch (e.Key)
         {
-            case Windows.System.VirtualKey.R when !control:
-                _tool = AnnotationTool.Rectangle;
+            // R39：工具键改成数字（1 矩形 / 2 箭头 / 3 画笔 / 4 文字 / 5 马赛克），
+            // A 留给长截图自动滚动、T 留给截图翻译；换工具和点按钮走同一个 SelectTool。
+            case Windows.System.VirtualKey.Number1 when !control:
+                SelectTool(AnnotationTool.Rectangle);
                 e.Handled = true;
                 break;
-            case Windows.System.VirtualKey.A when !control:
-                _tool = AnnotationTool.Arrow;
+            case Windows.System.VirtualKey.Number2 when !control:
+                SelectTool(AnnotationTool.Arrow);
                 e.Handled = true;
                 break;
-            case Windows.System.VirtualKey.B when !control:
-                _tool = AnnotationTool.Pen;
+            case Windows.System.VirtualKey.Number3 when !control:
+                SelectTool(AnnotationTool.Pen);
                 e.Handled = true;
                 break;
-            case Windows.System.VirtualKey.M when !control:
-                _tool = AnnotationTool.Mosaic;
+            case Windows.System.VirtualKey.Number4 when !control:
+                SelectTool(AnnotationTool.Text);
+                e.Handled = true;
+                break;
+            case Windows.System.VirtualKey.Number5 when !control:
+                SelectTool(AnnotationTool.Mosaic);
                 e.Handled = true;
                 break;
             case Windows.System.VirtualKey.V when !control:
-                _tool = AnnotationTool.Select;
+                SelectTool(AnnotationTool.Select);
                 e.Handled = true;
                 break;
             case Windows.System.VirtualKey.Escape:

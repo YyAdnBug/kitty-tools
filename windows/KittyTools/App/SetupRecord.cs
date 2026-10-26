@@ -42,13 +42,11 @@ internal static class SetupRecord
                 return;
             }
 
-            var files = installed
-                .Select(path => Path.GetRelativePath(installDir, path))
-                .Union(marker.Files, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            var updated = SetupRules.WithInstalledFiles(
+                marker, version, installed.Select(path => Path.GetRelativePath(installDir, path)));
             File.WriteAllText(
                 Path.Combine(installDir, SetupRules.MarkerName),
-                SetupRules.WriteMarker(marker with { Version = version, Files = files }),
+                SetupRules.WriteMarker(updated),
                 new UTF8Encoding(false));
             UpdateRegistration(installDir, version);
             Log.Info($"setup.record-updated files={updated.Files.Count}");

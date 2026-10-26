@@ -361,7 +361,7 @@ internal static class ShortcutsSheet
             }),
         new("screenshot", "截图 · 标注", "capture", Glyphs.Edit, Array.Empty<string>(), new ShortcutEntry[]
         {
-            new(new[] { "R", "A", "B", "M", "V" }, "矩形 · 箭头 · 画笔 · 马赛克 · 选择"),
+            new(new[] { "1", "2", "3", "4", "5", "V" }, "矩形 · 箭头 · 画笔 · 文字 · 马赛克 · 选择"),
             new("Delete", "Backspace", "删除选中的标注"),
             new("Ctrl+Z", "Ctrl+Y", "撤销 / 重做"),
             new("Enter", "文字框里确认文字（Esc 取消）"),
