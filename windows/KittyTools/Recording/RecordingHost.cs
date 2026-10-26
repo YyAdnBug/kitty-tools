@@ -262,9 +262,18 @@ internal static unsafe class RecordingHost
         {
             Directory.CreateDirectory(Folder);
             var path = Path.Combine(Folder, RecorderRules.FileName(DateTime.Now));
-            File.Move(temporary, path, overwrite: true);
+            if (Mp4Remux.TryRemux(temporary, path))
+            {
+                File.Delete(temporary);
+            }
+            else
+            {
+                // 分段 MP4 原样挪过去，至少能放（R23 的退路）。
+                File.Move(temporary, path, overwrite: true);
+            }
             SettingsService.Current.RecordingTempPath = null;
             SettingsService.Save();
+            Log.Info($"record.recovered size={(File.Exists(path) ? new FileInfo(path).Length : 0)}");
             NoticeHost.Show("上次的录屏已保存", Path.GetFileName(path), NoticeTone.Normal);
         }
         catch (Exception ex)

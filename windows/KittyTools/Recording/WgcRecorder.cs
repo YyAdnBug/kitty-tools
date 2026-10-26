@@ -54,6 +54,8 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
     private static readonly Guid EnableHardwareTransforms = new("a634a91c-822b-41b9-a494-4de4643612b0");
     private static readonly Guid TranscodeContainerType = new("150ff23f-4abc-478b-ac4f-e1916fba1cca");
     private static readonly Guid Mpeg4Container = new("dc6cd05d-b9d0-40ef-bd35-fa622c1ab28a");
+    // REVIEW R23：录制写分段 MP4（moov 及时写盘，闪退也能放），停止时再无损重封装成普通 MP4。
+    private static readonly Guid Fmp4Container = new("9ba876f1-419f-4b77-a1e0-35959d9d4004");
 
     private readonly PixelBounds _region;
     private readonly IntPtr _window;
@@ -578,7 +580,15 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
             {
                 if (File.Exists(_temporary))
                 {
-                    File.Move(_temporary, _final, overwrite: true);
+                    if (Mp4Remux.TryRemux(_temporary, _final))
+                    {
+                        File.Delete(_temporary);
+                    }
+                    else
+                    {
+                        // 重封装失败：分段 MP4 原样改名，至少能放（R23 的退路）。
+                        File.Move(_temporary, _final, overwrite: true);
+                    }
                 }
             }
             catch (Exception ex)
@@ -1023,7 +1033,7 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
         var managerKey = SinkWriterD3DManager;
         (*attributes)->SetUnknown(&managerKey, (IUnknown*)*manager);
         (*attributes)->SetUINT32(EnableHardwareTransforms, 1);
-        (*attributes)->SetGUID(TranscodeContainerType, Mpeg4Container);
+        (*attributes)->SetGUID(TranscodeContainerType, Fmp4Container);
 
         // 先试硬件编码；不行再去掉硬件标志（软件编码也能用 GPU 抓屏），还不行就退 GDI。
         hr = PInvoke.MFCreateSinkWriterFromURL(_temporary, null, *attributes, (IMFSinkWriter**)writer);
