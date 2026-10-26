@@ -60,7 +60,7 @@ enum Value: Encodable {
 var cases: [Case] = []
 for (index, text) in tricky.enumerated() {
   let note: String? = index % 3 == 0 ? nil : tricky[(index + 4) % tricky.count]
-  let group: String? = index % 2 == 0 ? nil : "group:0F8FAD5B-D9CB-469F-A165-70867728950E"
+  let group: String? = index % 2 == 0 ? nil : "0F8FAD5B-D9CB-469F-A165-70867728950E"  // 条目里只写收藏夹的编号；"group:" 前缀只在收藏夹那条记录自己的编号上
   let clip = SyncedClip(text: text, favorite: index % 2 == 0, snippet: index % 3 == 1, note: note, group: group)
   let value = json(clip)
   cases.append(Case(kind: "clip", input: [

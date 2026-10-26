@@ -25,15 +25,15 @@
       "kind" : "word"
     },
     {
-      "hash" : "7ed1c48b9b0e628bd78cb3a844b4b82b",
+      "hash" : "92fc889be2a7bd54ac4d4c6c2e38b2bc",
       "input" : {
         "favorite" : false,
-        "group" : "group:0F8FAD5B-D9CB-469F-A165-70867728950E",
+        "group" : "0F8FAD5B-D9CB-469F-A165-70867728950E",
         "note" : "line1\nline2\tTab\rCR",
         "snippet" : true,
         "text" : ""
       },
-      "json" : "{\"favorite\":false,\"group\":\"group:0F8FAD5B-D9CB-469F-A165-70867728950E\",\"note\":\"line1\\nline2\\tTab\\rCR\",\"snippet\":true,\"text\":\"\"}",
+      "json" : "{\"favorite\":false,\"group\":\"0F8FAD5B-D9CB-469F-A165-70867728950E\",\"note\":\"line1\\nline2\\tTab\\rCR\",\"snippet\":true,\"text\":\"\"}",
       "kind" : "clip"
     },
     {
@@ -73,15 +73,15 @@
       "kind" : "word"
     },
     {
-      "hash" : "5b2069cac8a13de18de5089f0ebdb30e",
+      "hash" : "6d9b622ac5e9074a6c2bd161d2916b73",
       "input" : {
         "favorite" : false,
-        "group" : "group:0F8FAD5B-D9CB-469F-A165-70867728950E",
+        "group" : "0F8FAD5B-D9CB-469F-A165-70867728950E",
         "note" : null,
         "snippet" : false,
         "text" : "emoji 😀👍🏽🇨🇳"
       },
-      "json" : "{\"favorite\":false,\"group\":\"group:0F8FAD5B-D9CB-469F-A165-70867728950E\",\"snippet\":false,\"text\":\"emoji 😀👍🏽🇨🇳\"}",
+      "json" : "{\"favorite\":false,\"group\":\"0F8FAD5B-D9CB-469F-A165-70867728950E\",\"snippet\":false,\"text\":\"emoji 😀👍🏽🇨🇳\"}",
       "kind" : "clip"
     },
     {
@@ -121,15 +121,15 @@
       "kind" : "word"
     },
     {
-      "hash" : "4f3d0e3383bfedd9f38e64ea455de16d",
+      "hash" : "63e4de08b80817dd25b50ddcd6ed578d",
       "input" : {
         "favorite" : false,
-        "group" : "group:0F8FAD5B-D9CB-469F-A165-70867728950E",
+        "group" : "0F8FAD5B-D9CB-469F-A165-70867728950E",
         "note" : "<b>&amp;</b> 'single'",
         "snippet" : false,
         "text" : "line1\nline2\tTab\rCR"
       },
-      "json" : "{\"favorite\":false,\"group\":\"group:0F8FAD5B-D9CB-469F-A165-70867728950E\",\"note\":\"<b>&amp;</b> 'single'\",\"snippet\":false,\"text\":\"line1\\nline2\\tTab\\rCR\"}",
+      "json" : "{\"favorite\":false,\"group\":\"0F8FAD5B-D9CB-469F-A165-70867728950E\",\"note\":\"<b>&amp;</b> 'single'\",\"snippet\":false,\"text\":\"line1\\nline2\\tTab\\rCR\"}",
       "kind" : "clip"
     },
     {
@@ -169,15 +169,15 @@
       "kind" : "word"
     },
     {
-      "hash" : "d538d8408a290334f5623300e04351af",
+      "hash" : "435c30f3c8a07238c54d9e260042adf1",
       "input" : {
         "favorite" : false,
-        "group" : "group:0F8FAD5B-D9CB-469F-A165-70867728950E",
+        "group" : "0F8FAD5B-D9CB-469F-A165-70867728950E",
         "note" : "﻿bom",
         "snippet" : true,
         "text" : "sep   "
       },
-      "json" : "{\"favorite\":false,\"group\":\"group:0F8FAD5B-D9CB-469F-A165-70867728950E\",\"note\":\"﻿bom\",\"snippet\":true,\"text\":\"sep   \"}",
+      "json" : "{\"favorite\":false,\"group\":\"0F8FAD5B-D9CB-469F-A165-70867728950E\",\"note\":\"﻿bom\",\"snippet\":true,\"text\":\"sep   \"}",
       "kind" : "clip"
     },
     {
@@ -217,15 +217,15 @@
       "kind" : "word"
     },
     {
-      "hash" : "ac8390d80e00e50f7cbfe0b6638103ff",
+      "hash" : "7644ebb649c1b8d639c65ed4f708c690",
       "input" : {
         "favorite" : false,
-        "group" : "group:0F8FAD5B-D9CB-469F-A165-70867728950E",
+        "group" : "0F8FAD5B-D9CB-469F-A165-70867728950E",
         "note" : null,
         "snippet" : false,
         "text" : "<b>&amp;</b> 'single'"
       },
-      "json" : "{\"favorite\":false,\"group\":\"group:0F8FAD5B-D9CB-469F-A165-70867728950E\",\"snippet\":false,\"text\":\"<b>&amp;</b> 'single'\"}",
+      "json" : "{\"favorite\":false,\"group\":\"0F8FAD5B-D9CB-469F-A165-70867728950E\",\"snippet\":false,\"text\":\"<b>&amp;</b> 'single'\"}",
       "kind" : "clip"
     },
     {
@@ -265,15 +265,15 @@
       "kind" : "word"
     },
     {
-      "hash" : "1f29b18cd61e45d8896fda4c79d22cce",
+      "hash" : "59801145fbf266f96c52758bdb0fa224",
       "input" : {
         "favorite" : false,
-        "group" : "group:0F8FAD5B-D9CB-469F-A165-70867728950E",
+        "group" : "0F8FAD5B-D9CB-469F-A165-70867728950E",
         "note" : "你好，世界",
         "snippet" : false,
         "text" : "﻿bom"
       },
-      "json" : "{\"favorite\":false,\"group\":\"group:0F8FAD5B-D9CB-469F-A165-70867728950E\",\"note\":\"你好，世界\",\"snippet\":false,\"text\":\"﻿bom\"}",
+      "json" : "{\"favorite\":false,\"group\":\"0F8FAD5B-D9CB-469F-A165-70867728950E\",\"note\":\"你好，世界\",\"snippet\":false,\"text\":\"﻿bom\"}",
       "kind" : "clip"
     },
     {
