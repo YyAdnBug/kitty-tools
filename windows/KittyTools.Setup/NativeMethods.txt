@@ -1,0 +1,11 @@
+CoCreateInstance
+CoTaskMemFree
+IShellLinkW
+IPersistFile
+IFileOpenDialog
+IShellItem
+SHCreateItemFromParsingName
+SIGDN
+FILEOPENDIALOGOPTIONS
+CoInitializeEx
+COINIT

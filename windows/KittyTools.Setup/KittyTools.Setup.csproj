@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    exe 安装程序（PLAN-setup）：系统的任务对话框 + 选文件夹框，不用 WinUI，Native AOT 出一个小 exe。
+    build-release.ps1 发布它，再用它自己的打包模式把 release 的 zip 接在后面（KittyTools.Core/SetupPayload.cs）。
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>KittyTools.Setup</RootNamespace>
+    <AssemblyName>KittyTools.Setup</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\KittyTools\Resources\AppIcon.ico</ApplicationIcon>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <PublishAot>true</PublishAot>
+    <OptimizationPreference>Size</OptimizationPreference>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyTitle>Kitty Tools 安装程序</AssemblyTitle>
+    <Product>Kitty Tools</Product>
+    <!-- 和 App 一样按架构给 CsWin32 指定目标平台（这里按 RID，没有 Platform 那一层）。 -->
+    <CsWin32PlatformTarget Condition="'$(RuntimeIdentifier)' == 'win-arm64'">arm64</CsWin32PlatformTarget>
+    <CsWin32PlatformTarget Condition="'$(CsWin32PlatformTarget)' == ''">x64</CsWin32PlatformTarget>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Windows.CsWin32" Version="0.3.367">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\KittyTools.Core\KittyTools.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="NativeMethods.txt" />
+    <None Include="NativeMethods.json" />
+  </ItemGroup>
+</Project>

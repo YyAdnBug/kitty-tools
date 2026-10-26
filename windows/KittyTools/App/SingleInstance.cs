@@ -1,13 +1,16 @@
 // 单实例：命名互斥量 Local\KittyTools（Debug 版 .Dev）。
 // 第二个实例把「打开设置」转给第一个，然后自己退出。
+// 管道还认 quit：安装 / 卸载程序（KittyTools.Setup，PLAN-setup §4.1）发来，走和托盘「退出」一样的 ShellRuntime.Exit。
 using System.IO.Pipes;
 using System.Text;
+using Microsoft.UI.Dispatching;
 
 namespace KittyTools.Infrastructure;
 
 internal static class SingleInstance
 {
     private const string ShowSettingsCommand = "show-settings";
+    private const string QuitCommand = "quit";
 
     private static Mutex? _mutex;
     private static volatile bool _stopping;
@@ -57,9 +60,12 @@ internal static class SingleInstance
         _mutex = null;
     }
 
+    /// <summary>在界面线程上调：quit 要回到这个线程的 DispatcherQueue 上退出。</summary>
     public static void StartServer(Action showSettings)
     {
-        var thread = new Thread(() => ServerLoop(showSettings))
+        var dispatcher = DispatcherQueue.GetForCurrentThread();
+        Action quit = () => dispatcher?.TryEnqueue(() => ShellRuntime.Instance?.Exit());
+        var thread = new Thread(() => ServerLoop(showSettings, quit))
         {
             IsBackground = true,
             Name = "KittyTools.InstanceServer",
@@ -91,7 +97,7 @@ internal static class SingleInstance
         }
     }
 
-    private static void ServerLoop(Action showSettings)
+    private static void ServerLoop(Action showSettings, Action quit)
     {
         while (!_stopping)
         {
@@ -108,6 +114,11 @@ internal static class SingleInstance
                 if (command == ShowSettingsCommand)
                 {
                     showSettings();
+                }
+                else if (command == QuitCommand)
+                {
+                    Log.Info("instance.quit");
+                    quit();
                 }
             }
             catch (Exception ex)

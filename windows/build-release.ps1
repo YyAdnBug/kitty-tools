@@ -1,4 +1,7 @@
 ﻿# Kitty Tools Windows 发布脚本：AOT 发布 x64 + ARM64，打 zip，生成发布说明。
+# 每个架构出三样（PLAN-setup S1）：
+#   KittyTools-<版本>-windows-<x64|arm64>.zip（+ .sha256）       程序内更新用，也能手动解压
+#   KittyTools-<版本>-windows-<x64|arm64>-setup.exe（+ .sha256） 安装程序：KittyTools.Setup 的 AOT 本体 + 上面那个 zip + 64 字节尾巴
 # 不调用 gh，不自动上传；发布前先问用户，release 一律 --latest=false。
 [CmdletBinding()]
 param(
@@ -42,14 +45,19 @@ foreach ($item in $entry.items) {
     [void]$notes.AppendLine("- $($item.text)")
 }
 [void]$notes.AppendLine('')
-[void]$notes.AppendLine('第一次运行：')
-[void]$notes.AppendLine('1. 解压到任意位置（建议 %LOCALAPPDATA%\Programs\Kitty Tools）')
-[void]$notes.AppendLine('2. 双击 KittyTools.exe')
-[void]$notes.AppendLine('3. 出现「Windows 已保护你的电脑」时点「更多信息」→「仍要运行」')
+[void]$notes.AppendLine('安装：')
+[void]$notes.AppendLine("1. 下载 KittyTools-$version-windows-x64-setup.exe（ARM64 的电脑下载 arm64 那个），双击")
+[void]$notes.AppendLine('2. 出现「Windows 已保护你的电脑」时点「更多信息」→「仍要运行」')
+[void]$notes.AppendLine('3. 默认装到 %LOCALAPPDATA%\Programs\Kitty Tools，不需要管理员权限；以后在程序里自动更新')
+[void]$notes.AppendLine('')
+[void]$notes.AppendLine('卸载：设置 › 应用 › 已安装的应用 › Kitty Tools › 卸载。')
+[void]$notes.AppendLine('不想安装：下载 zip 解压到任意位置，双击 KittyTools.exe。')
 [void]$notes.AppendLine('')
 [void]$notes.AppendLine('Windows 版 release 不标 latest，避免 mac 版收不到更新。')
 
 $summary = @()
+# 打包（--pack）用 x64 那份安装程序本体：ARM64 的 Windows 也能跑 x64，反过来不行。
+$packer = $null
 foreach ($target in $targets) {
     $stage = Join-Path $outRoot $target.Label
     if (Test-Path $stage) {
@@ -129,7 +137,49 @@ foreach ($target in $targets) {
         "$hash  $([System.IO.Path]::GetFileName($zip))`n",
         [System.Text.UTF8Encoding]::new($false))
 
-    $summary += "$($target.Label)：$size MB / $($files.Count) 个文件（不含 pdb），zip $zipSize MB，sha256 $($hash.Substring(0, 12))…"
+    # PLAN-setup：发布安装程序本体（AOT），把上面的 zip 接在后面。
+    $setupStage = Join-Path $outRoot "setup-stub/$($target.Label)"
+    if (Test-Path $setupStage) {
+        Remove-Item $setupStage -Recurse -Force
+    }
+
+    Write-Host "发布安装程序 $($target.Rid)..."
+    & dotnet publish (Join-Path $root 'KittyTools.Setup/KittyTools.Setup.csproj') `
+        -c $Configuration -r $target.Rid -o $setupStage
+    if ($LASTEXITCODE -ne 0) {
+        throw "安装程序 $($target.Rid) 发布失败"
+    }
+
+    Get-ChildItem $setupStage -Filter '*.pdb' -File | ForEach-Object {
+        Move-Item $_.FullName (Join-Path $pdbDir $_.Name) -Force
+    }
+
+    $stub = Join-Path $setupStage 'KittyTools.Setup.exe'
+    if ($target.Label -eq 'x64') {
+        $packer = $stub
+    }
+
+    $setupExe = Join-Path $outRoot "KittyTools-$version-windows-$($target.Label)-setup.exe"
+    if (Test-Path $setupExe) {
+        Remove-Item $setupExe -Force
+    }
+
+    # 安装程序没有控制台，只看退出码；失败原因在 %TEMP%\KittyTools-setup.log。
+    $pack = Start-Process -FilePath $packer -ArgumentList "--pack `"$stub`" `"$zip`" `"$setupExe`"" -Wait -PassThru
+    if ($pack.ExitCode -ne 0 -or -not (Test-Path $setupExe)) {
+        throw "安装程序 $($target.Label) 打包失败（exit $($pack.ExitCode)），看 %TEMP%\KittyTools-setup.log"
+    }
+
+    $setupHash = (Get-FileHash $setupExe -Algorithm SHA256).Hash.ToLowerInvariant()
+    [System.IO.File]::WriteAllText(
+        "$setupExe.sha256",
+        "$setupHash  $([System.IO.Path]::GetFileName($setupExe))`n",
+        [System.Text.UTF8Encoding]::new($false))
+    $stubSize = [math]::Round((Get-Item $stub).Length / 1MB, 1)
+    $setupSize = [math]::Round((Get-Item $setupExe).Length / 1MB, 1)
+
+    $summary += "$($target.Label)：$size MB / $($files.Count) 个文件（不含 pdb），zip $zipSize MB，sha256 $($hash.Substring(0, 12))…；" +
+        "安装包 $setupSize MB（本体 $stubSize MB），sha256 $($setupHash.Substring(0, 12))…"
 }
 
 $notesPath = Join-Path $outRoot 'release-notes.md'
