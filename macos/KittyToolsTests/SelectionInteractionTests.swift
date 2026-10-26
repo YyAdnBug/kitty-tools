@@ -691,6 +691,12 @@ struct SelectionInteractionTests {
     let h = Harness(mode: .quick)
     h.move(CGPoint(x: 300, y: 300))
     #expect(h.view.showsMagnifier)
+    // 只有放大镜本身，没有色值那张信息卡（2026-10-26：这两种模式下色值是噪音，
+    // 卡上的「C」也按不动）；截图那边照旧有，所以放大镜整块更高
+    #expect(h.view.magnifierHeight == SelectionView.loupeSide)
+    let shot = Harness()
+    shot.move(CGPoint(x: 300, y: 300))
+    #expect(shot.view.magnifierHeight > SelectionView.loupeSide)
     let outcome = await h.outcome {
       h.begin(CGPoint(x: 300, y: 200), to: CGPoint(x: 500, y: 260), flags: .shift)
       #expect(h.view.showsMagnifier)

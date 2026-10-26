@@ -3223,6 +3223,8 @@ struct SnapshotProbeTests {
     let translate: [(String, (SelectionView) -> Void)] = [
       ("select-idle", { _ in }),
       ("select-drag", { $0.selection = CGRect(x: 10, y: 95, width: 440, height: 60) }),
+      // 翻译 / 识字的放大镜：只有格子，没有色值那张卡（2026-10-26）
+      ("select-loupe", { $0.mouse = CGPoint(x: 300, y: 110) }),
     ]
     for (name, configure) in translate {
       try renderLayers(
