@@ -2330,6 +2330,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }) ?? NSScreen.main,
       let slot = clothesline.slot(for: pixels, on: screen)
     else { return (placement == .clothesline ? .none : placement, nil) }
+    // 绳子先滑下来等着（这会儿卡片才刚起飞）：空绳时原来是卡片先停在那儿、绳子过一会儿才来
+    clothesline.prepare(on: screen)
     return (.clothesline, slot)
   }
 

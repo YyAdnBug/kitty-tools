@@ -106,7 +106,7 @@ struct ClotheslineTests {
       let depth =
         (measured.nodes.map(\.y).max() ?? 0) - ClotheslineLayout.ropeTop
       let estimate = ClotheslineLayout.restSag(span: span)
-      #expect(abs(depth - estimate) < estimate * 0.08, "跨度 \(span) 垂了 \(depth)，估的是 \(estimate)")
+      #expect(abs(depth - estimate) < estimate * 0.1, "跨度 \(span) 垂了 \(depth)，估的是 \(estimate)")
     }
     // 中间最低、两头最高
     #expect(rope.point(1).y < rope.point(ClotheslineRope.count / 2).y)

@@ -109,6 +109,8 @@ import SwiftUI
   private var linger = ClotheslineLayout.Linger()
   /// 挂着东西时才装的鼠标监听（绳子上空着时一点开销都不要）
   private var monitors: [Any] = []
+  /// 有一张正在飞过来（截图刚出图、飞行卡片在路上）：绳子先摆出来等着它，别等卡片到了才滑下来
+  private var awaitingCard = false
   private var started = false
   /// 两段绳子的物理（左、右）；挂着的卡片各挂在哪一段的哪个质点上
   private var ropes: [ClotheslineRope] = []
@@ -169,6 +171,7 @@ import SwiftUI
   /// 停（关掉截图功能、退出）：收起、取下全部（挂着的标记本来就不跨重启）
   func stop() {
     started = false
+    awaitingCard = false
     model.setPegged([])
     model.dragFiles = [:]
     model.hovered = nil
@@ -201,6 +204,7 @@ import SwiftUI
       falling[dropped] = nil
     }
     model.setPegged(ids)
+    awaitingCard = false
     // 从挂点上方落下来（减弱动态效果时直接到位）；飞行卡片刚把它送到的就是这个高度（slot 已经抬高了）
     falling[id] = reducesMotion() ? nil : Falling(drop: -ClotheslineLayout.dropHeight)
     holdUntil = .now.advanced(by: ClotheslineLayout.pegHold)
@@ -291,6 +295,15 @@ import SwiftUI
 
   // MARK: 出来、收起
 
+  /// 有一张正在飞过来：绳子先滑下来等着（2026-10-26 用户手测反馈——原来空绳时卡片先停在那儿、
+  /// 过一会儿绳子才滑下来，看着像「飞到一半又回来」）。等不来（截图取消了、没拷成）就按 pegHold 自己收
+  func prepare(on screen: NSScreen) {
+    guard started, model.history != nil else { return }
+    awaitingCard = true
+    holdUntil = .now.advanced(by: ClotheslineLayout.pegHold)
+    present(on: screen)
+  }
+
   /// 全局快捷键（C1）：出来 / 收起
   func toggle() {
     guard started, !model.isEmpty else { return }
@@ -303,7 +316,7 @@ import SwiftUI
   private func present(on screen: NSScreen) {
     pendingShow?.cancel()
     pendingShow = nil
-    guard started, !model.isEmpty, !isSuppressed() else { return }
+    guard started, !model.isEmpty || awaitingCard, !isSuppressed() else { return }
     let panel = self.panel ?? makePanel()
     let frame = Self.panelFrame(for: screen)
     let moving = shown != nil && panel.isVisible
@@ -347,6 +360,7 @@ import SwiftUI
     pendingShow?.cancel()
     pendingShow = nil
     holdUntil = nil
+    awaitingCard = false
     stopWatching()
     stopTicking()  // 收起了一定停表（看不见的东西不许还在跑物理）
     guard shown != nil else { return }
@@ -599,15 +613,19 @@ import SwiftUI
   /// 出来之后每 0.1 秒：别的功能来了、挂着的没了就收；换屏跟过去；鼠标离开满 0.4 秒收起
   private func check() {
     guard let screen = shown, let panel else { return stopWatching() }
-    if isSuppressed() || model.isEmpty { return hide(animated: false) }
+    if isSuppressed() { return hide(animated: false) }
+    // 亮够了：等不来的那张就不等了（截图取消了、没拷成）
+    if let deadline = holdUntil, .now >= deadline {
+      holdUntil = nil
+      awaitingCard = false
+    }
+    if model.isEmpty, !awaitingCard { return hide(animated: false) }
     guard let under = screenForMouse() else { return }
     if under !== screen, wantsShow(on: under) { return present(on: under) }
-    if let holdUntil {
-      guard .now >= holdUntil else {
-        linger = ClotheslineLayout.Linger()
-        return
-      }
-      self.holdUntil = nil
+    // 还亮着：离开的倒计时等亮完再算
+    guard holdUntil == nil else {
+      linger = ClotheslineLayout.Linger()
+      return
     }
     let inside = ClotheslineLayout.keepsOpen(
       mouse: NSEvent.mouseLocation, panel: panel.frame, strip: Self.strip(for: screen))

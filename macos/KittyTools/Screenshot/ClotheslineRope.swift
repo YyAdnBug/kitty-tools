@@ -28,9 +28,11 @@ nonisolated struct ClotheslineRope: Equatable {
   static let count = 34
   static let gravity: CGFloat = 0.5
   static let damping: CGFloat = 0.95
-  static let iterations = 24
-  /// 垂度：绳长比两端直线距离多出来的那一点（`rest` 里的 /900 就是它）
-  static let sag: CGFloat = 26
+  /// 每帧把距离约束迭代几遍（= 绳子有多绷）。样机是 24，2026-10-26 用户说「弧度小一点」之后调到 64：
+  /// verlet 的约束是软的，迭代少了重力就把绳子拉得很深——绷紧它比调垂度管用（两样都调了）
+  static let iterations = 64
+  /// 垂度：绳长比两端直线距离多出来的那一点（`rest` 里的 /900 就是它）。样机是 26，同日按用户要求收到 12
+  static let sag: CGFloat = 12
   /// 挂着卡片的质点多吃几倍重力
   static let load: CGFloat = 2.2
   /// 全部质点都慢过这个数就算停了
