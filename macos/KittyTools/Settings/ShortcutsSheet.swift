@@ -329,6 +329,15 @@ struct ShortcutsSheet: View {
           Entry("⇧⌘S", text: "另存为…"),
           Entry("Esc", text: "取消"),
         ]),
+      // 截图历史（2026-10-26 拍板 C1）：全局的「截图历史」不设默认键，没设时那一行写「未设置」。
+      // 窗口里的键在 ShotHistoryView
+      Group(
+        title: "截图历史", symbol: "clock.arrow.circlepath", color: Style.Family.screenshot,
+        features: [.screenshot], globals: [.shotHistory],
+        entries: [
+          Entry("双击", text: "改标注（录制的是用默认 App 打开）"),
+          Entry("⌫", text: "删掉选中的那条"),
+        ]),
       // 长图标注窗口（2026-10-26）；代码在 ScrollCanvas.keyDown 和 ScrollEditor.key
       Group(
         title: "长图标注", symbol: "pencil.tip.crop.circle", color: Style.Family.screenshot,

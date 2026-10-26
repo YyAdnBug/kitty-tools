@@ -494,11 +494,12 @@ struct NotesWindowTests {
 
   // MARK: 入口
 
-  /// 三个全局动作追加在末尾（注册 id 是下标；启动台又接在它们后面）；只有「快速记一条」有默认键 ⌥N；
+  /// 三个全局动作追加在末尾（注册 id 是下标；启动台、截图历史又接在它们后面）；只有「快速记一条」有默认键 ⌥N；
   /// 「便签」一节在「截图与录制」之后、「启动台」之前，三项按这个顺序
   @Test func hotKeyActions() throws {
     #expect(
-      Array(HotKeyAction.allCases.suffix(4)) == [.noteCapture, .noteNew, .noteAll, .launchpad])
+      Array(HotKeyAction.allCases.suffix(5))
+        == [.noteCapture, .noteNew, .noteAll, .launchpad, .shotHistory])
     #expect(
       HotKeyAction.noteCapture.defaultHotKey == HotKey(keyCode: kVK_ANSI_N, modifiers: optionKey))
     #expect(HotKeyAction.noteNew.defaultHotKey == nil && HotKeyAction.noteAll.defaultHotKey == nil)
@@ -526,7 +527,7 @@ struct NotesWindowTests {
     let start = try #require(targets.firstIndex(of: "noteCapture"))
     #expect(Array(targets[start..<start + 3]) == ["noteCapture", "noteNew", "noteAll"])
     #expect(
-      targets[start - 1] == "pinClipboard" && targets[start + 3] == "launchpad"
+      targets[start - 1] == "shotHistory" && targets[start + 3] == "launchpad"
         && targets[start + 4] == "settings")
     #expect(launcher[start..<start + 3].map(\.title) == ["快速记一条", "新建便签", "全部便签"])
     for item in launcher[start..<start + 3] {

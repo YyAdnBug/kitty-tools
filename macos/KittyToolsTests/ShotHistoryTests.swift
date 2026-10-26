@@ -121,6 +121,87 @@ struct ShotHistoryTests {
     #expect(history.items.count == 1)
   }
 
+  // MARK: 历史窗口（第 2 批）
+
+  private func item(
+    _ kind: ShotHistory.Kind, _ daysAgo: Double, source: String? = nil, now: Date = .now
+  ) -> ShotHistory.Item {
+    ShotHistory.Item(
+      id: UUID(), kind: kind, createdAt: now.addingTimeInterval(-daysAgo * 86400),
+      pixelSize: CGSize(width: 1200, height: 800), scale: 2, source: source)
+  }
+
+  /// 筛选和搜索：按种类分「全部 / 截图 / 长截图 / 录制」，搜的是来源和种类
+  @Test func filtersAndSearches() {
+    let items = [
+      item(.shot, 0, source: "Safari"), item(.scroll, 0, source: "Chrome"),
+      item(.video, 0, source: "Xcode"), item(.audio, 0), item(.gif, 0),
+    ]
+    func shown(_ filter: ShotHistoryModel.Filter, _ search: String = "") -> Int {
+      ShotHistoryModel.filtered(items, search: search, filter: filter).count
+    }
+    #expect(shown(.all) == 5)
+    #expect(shown(.shot) == 1)
+    #expect(shown(.scroll) == 1)
+    #expect(shown(.recording) == 3)  // 录屏 + 录音 + GIF
+    #expect(shown(.all, "safari") == 1)  // 不分大小写
+    #expect(shown(.all, "长截图") == 1)  // 种类名也搜得到
+    #expect(shown(.recording, "safari") == 0)  // 筛选和搜索一起生效
+    #expect(shown(.all, "  ") == 5)  // 只有空格不算搜
+  }
+
+  /// 按天分组：今天、昨天写成字，更早的写日期；每组内部新的在前
+  @Test func groupsByDay() {
+    let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
+    let today = [item(.shot, 0, now: now), item(.shot, 0.2, now: now)]
+    let groups = ShotHistoryModel.group(today + [item(.shot, 1, now: now)], now: now)
+    #expect(groups.count == 2)
+    #expect(groups.first?.title == "今天" && groups.first?.items.count == 2)
+    #expect(groups.first?.items.first?.id == today[0].id)  // 新的在前
+    #expect(groups.last?.title == "昨天")
+    #expect(ShotHistoryModel.group([], now: now).isEmpty)
+  }
+
+  /// 说明那两行：时间 · 尺寸 · 来源；第二行写存到哪、几条标注、钉过没有
+  @Test func captions() {
+    var shot = item(.shot, 0, source: "Safari")
+    #expect(ShotHistoryModel.caption(shot).contains("1200 × 800"))
+    #expect(ShotHistoryModel.caption(shot).hasSuffix("Safari"))
+    #expect(ShotHistoryModel.details(shot).isEmpty)
+    shot.savedPath = "/tmp/a.png"
+    shot.annotations = [Annotation(shape: .rectangle(CGRect(x: 0, y: 0, width: 2, height: 2)))]
+    shot.pinnedAt = .now
+    let details = ShotHistoryModel.details(shot)
+    #expect(details.contains("1 条标注") && details.contains("钉过") && details.contains("已存到"))
+  }
+
+  /// 成品图：没标注就是原图本身，有标注才合成一张新的（拍板 A1、C2）
+  @Test func composesOnlyWithAnnotations() async throws {
+    let (history, root) = try makeHistory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let model = ShotHistoryModel(history: history)
+    let id = try #require(await history.record(image(), scale: 2))
+    let plain = try #require(history.items.first)
+    let original = try #require(model.composed(plain))
+    #expect(original.width == 400)
+    history.update(
+      id, annotations: [Annotation(shape: .rectangle(CGRect(x: 1, y: 1, width: 9, height: 9)))])
+    let drawn = try #require(history.items.first)
+    let composed = try #require(model.composed(drawn))
+    #expect(composed.width == 400 && composed.height == 300)
+  }
+
+  /// 窗口建得出来、标题对，关掉之后不再可见
+  @Test func windowOpens() throws {
+    let (history, root) = try makeHistory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let window = ShotHistoryWindow(model: ShotHistoryModel(history: history), frameName: nil)
+    #expect(window.window.title == "截图历史")
+    #expect(window.window.contentMinSize.width >= 720)
+    window.window.close()
+    #expect(!window.isVisible)
+  }
+
   /// 清理：过期的删掉，从新到旧累计超过上限的删掉；两个上限给 0 就都不清（拍板 A3）
   @Test func staleByAgeAndSize() {
     let now = Date(timeIntervalSinceReferenceDate: 800_000_000)

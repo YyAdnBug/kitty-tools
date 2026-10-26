@@ -35,8 +35,10 @@ import Carbon.HIToolbox
   var isVisible: Bool { window.isVisible }
 
   /// frameName：记住窗口位置和大小用的名字（单测传 nil：不写偏好）
+  /// annotations：打开时就画上的标注（历史里「改标注」给的，坐标是这张图的点坐标）
   init(
-    image: CGImage, scale: CGFloat, frameName: String? = "ScrollEditor", output: @escaping Output
+    image: CGImage, scale: CGFloat, annotations: [Annotation] = [],
+    frameName: String? = "ScrollEditor", output: @escaping Output
   ) {
     self.image = image
     self.scale = scale
@@ -103,6 +105,7 @@ import Carbon.HIToolbox
     } else {
       window.center()
     }
+    canvas.annotations = annotations
     window.initialFirstResponder = canvas
     placeBar()
     bar.grow(true, from: .bottom)  // 同截图工具栏：从靠边的那条边长出来

@@ -46,6 +46,8 @@ import Foundation
     var annotations: [Annotation] = []
     /// 钉过的时间（拍板 B2：历史里能再钉出来）
     var pinnedAt: Date?
+    /// 当初在屏幕上框的那一块（点，全局坐标）：钉回原来的位置用（拍板 B2）；录制的没有
+    var frame: CGRect?
     /// 原图 + 缩略图占多少字节（算总量上限用）
     var bytes: Int = 0
   }
@@ -72,8 +74,13 @@ import Foundation
         pixel_width INTEGER NOT NULL, pixel_height INTEGER NOT NULL, scale REAL NOT NULL,
         source_name TEXT, saved_path TEXT, file_path TEXT,
         annotations TEXT, -- [Annotation] 的 JSON（拍板 A1）
-        pinned_at REAL, bytes INTEGER NOT NULL DEFAULT 0)
+        pinned_at REAL, bytes INTEGER NOT NULL DEFAULT 0,
+        frame TEXT) -- 当初框的那一块（NSStringFromRect），钉回原位用
       """)
+    // 旧库补列（幂等，每次启动都跑）
+    if try !db.query("PRAGMA table_info(shots)", row: { $0.text(1) }).contains("frame") {
+      try db.execute("ALTER TABLE shots ADD COLUMN frame TEXT")
+    }
     try db.execute("CREATE INDEX IF NOT EXISTS shots_created_at ON shots(created_at DESC)")
     try reload()
     prune()  // 关了几天再开：过期的这时就清掉，不等下一次截图
@@ -87,7 +94,7 @@ import Foundation
   /// 截图 / 长截图：原图和缩略图写盘、入库。返回这一条的 id（没记返回 nil）
   @discardableResult func record(
     _ image: CGImage, scale: CGFloat, kind: Kind = .shot, annotations: [Annotation] = [],
-    source: String? = nil, saved: URL? = nil, pinned: Bool = false
+    source: String? = nil, saved: URL? = nil, pinned: Bool = false, frame: CGRect? = nil
   ) async -> UUID? {
     guard isOn else { return nil }
     let id = UUID()
@@ -97,7 +104,7 @@ import Foundation
         id: id, kind: kind, createdAt: .now,
         pixelSize: CGSize(width: image.width, height: image.height), scale: scale, source: source,
         savedPath: saved?.path, filePath: nil, annotations: annotations,
-        pinnedAt: pinned ? .now : nil, bytes: bytes))
+        pinnedAt: pinned ? .now : nil, frame: frame, bytes: bytes))
     return id
   }
 
@@ -201,14 +208,15 @@ import Foundation
     try? db.execute(
       """
       INSERT INTO shots(id, kind, created_at, pixel_width, pixel_height, scale, source_name,
-        saved_path, file_path, annotations, pinned_at, bytes)
-      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        saved_path, file_path, annotations, pinned_at, bytes, frame)
+      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       """,
       [
         item.id.uuidString, item.kind.rawValue, item.createdAt.timeIntervalSinceReferenceDate,
         Int(item.pixelSize.width), Int(item.pixelSize.height), Double(item.scale), item.source,
         item.savedPath, item.filePath, Self.encode(item.annotations),
         item.pinnedAt?.timeIntervalSinceReferenceDate, item.bytes,
+        item.frame.map(NSStringFromRect),
       ])
     prune()
   }
@@ -217,7 +225,7 @@ import Foundation
     items = try db.query(
       """
       SELECT id, kind, created_at, pixel_width, pixel_height, scale, source_name, saved_path,
-        file_path, annotations, pinned_at, bytes FROM shots ORDER BY created_at DESC
+        file_path, annotations, pinned_at, bytes, frame FROM shots ORDER BY created_at DESC
       """
     ) { row -> Item? in
       guard let id = row.text(0).flatMap(UUID.init(uuidString:)),
@@ -229,7 +237,7 @@ import Foundation
         scale: CGFloat(row.double(5) ?? 2), source: row.text(6), savedPath: row.text(7),
         filePath: row.text(8), annotations: row.text(9).flatMap(Self.decode) ?? [],
         pinnedAt: row.double(10).map(Date.init(timeIntervalSinceReferenceDate:)),
-        bytes: Int(row.int(11) ?? 0))
+        frame: row.text(12).map(NSRectFromString), bytes: Int(row.int(11) ?? 0))
     }.compactMap { $0 }
   }
 

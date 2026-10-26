@@ -215,7 +215,8 @@ struct LauncherBatch5Tests {
       plain.map(\.target) == [
         "clipboard", "pause-clipboard", "selectionTranslate", "translate-input", "translateReplace",
         "translate-screenshot", "copyToTranslate", "screenshot", "screenshotLastRegion", "ocr",
-        "screenRecord", "audioRecord", "pinClipboard", "noteCapture", "noteNew", "noteAll",
+        "screenRecord", "audioRecord", "pinClipboard", "shotHistory", "noteCapture", "noteNew",
+        "noteAll",
         "launchpad", "settings", "shortcuts", "about", "quit",
       ])
     // 状态屏不是一条：每个状态一条（StatusScreenTests.entries）
@@ -230,10 +231,13 @@ struct LauncherBatch5Tests {
     #expect(busy.first { $0.target == "copyToTranslate" }?.subtitle == "已开启")
     #expect(busy.first { $0.target == "pause-clipboard" }?.subtitle == "已暂停")
     #expect(busy.map(\.title).contains("显示全部钉图") && busy.last?.target == "quit")
-    // 钉住剪贴板里的图（第二轮体检 F1）在截图节末尾，有钉图时紧接着是钉图的两项
+    // 钉住剪贴板里的图（第二轮体检 F1）和截图历史（2026-10-26）在截图节末尾，有钉图时紧接着是钉图的两项
     #expect(
-      Array(busy.map(\.target)[9...14])
-        == ["ocr", "screenRecord", "audioRecord", "pinClipboard", "pins-toggle", "pins-close"])
+      Array(busy.map(\.target)[9...15])
+        == [
+          "ocr", "screenRecord", "audioRecord", "pinClipboard", "shotHistory", "pins-toggle",
+          "pins-close",
+        ])
     let pinClipboard = plain.first { $0.target == "pinClipboard" }!
     #expect(
       ["钉图", "pin", "dingzhu"].allSatisfy { LauncherMatch.score($0, item: pinClipboard) > 0 })

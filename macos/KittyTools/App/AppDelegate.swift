@@ -186,6 +186,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var statusItem: StatusItem?
   /// 长图的标注窗口（长截图按 A 打开，关掉就放掉）
   var scrollEditor: ScrollEditor?
+  /// 截图历史窗口（菜单栏 / 启动器打开，关掉就放掉）
+  private var shotHistoryWindow: ShotHistoryWindow?
   /// 钉图（菜单栏显示「隐藏 / 关闭全部钉图」）
   lazy var pins: PinBoard = {
     let board = PinBoard()
@@ -1190,6 +1192,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     case .screenRecord: screenRecord()
     case .audioRecord: audioRecord()
     case .pinClipboard: pinClipboard()
+    case .shotHistory: showShotHistory()
     case .statusScreen: pickStatus()
     case .noteCapture: toggleNoteCapture()
     case .noteNew: newNote()
@@ -1822,23 +1825,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       switch result.action {
       case .copy:
         let land = captured(result.image, scale: result.scale, frame: region)
-        await rememberScroll(result)
+        await rememberScroll(result, region: region)
         if let png = await copyImage(result.image, scale: result.scale) { land(.copied, png) }
       case .save:
         let land = captured(result.image, scale: result.scale, frame: region)
-        let id = await rememberScroll(result)
+        let id = await rememberScroll(result, region: region)
         if let saved = await saveImage(result.image, scale: result.scale, asking: false) {
           land(.saved(saved.url), saved.png)
           if let id { shotHistory.markSaved(id, to: saved.url) }
         }
       case .saveAs:
         FlyCard.playShutter()
-        let id = await rememberScroll(result)
+        let id = await rememberScroll(result, region: region)
         if let saved = await saveImageAs(result.image, scale: result.scale), let id {
           shotHistory.markSaved(id, to: saved)
         }
       case .annotate:
-        let id = await rememberScroll(result)
+        let id = await rememberScroll(result, region: region)
         openScrollEditor(result.image, scale: result.scale, history: id)
       }
     } catch {
@@ -1849,9 +1852,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   /// 长截图进历史（拼好的那张没有标注；标注窗口里改完了再回写）
-  @discardableResult private func rememberScroll(_ result: ScrollCapture.Result) async -> UUID? {
+  @discardableResult private func rememberScroll(_ result: ScrollCapture.Result, region: CGRect)
+    async -> UUID?
+  {
     await shotHistory.record(
-      result.image, scale: result.scale, kind: .scroll, source: frontmostAppName())
+      result.image, scale: result.scale, kind: .scroll, source: frontmostAppName(), frame: region)
   }
 
   /// 记进截图历史（2026-10-26 拍板）：存没画标注的那张 + 标注，成品用时再合成；识字、翻译不记（不产出图）。
@@ -1861,7 +1866,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   ) async -> UUID? {
     await shotHistory.record(
       capture.original ?? capture.image, scale: capture.scale, kind: .shot,
-      annotations: capture.annotations, source: frontmostAppName(), pinned: pinned)
+      annotations: capture.annotations, source: frontmostAppName(), pinned: pinned,
+      frame: capture.frame)
   }
 
   /// 截的时候前台是哪个 App（历史里显示来源用；本 App 从不激活，所以这就是用户正在用的那个）
@@ -1869,11 +1875,78 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     NSWorkspace.shared.frontmostApplication?.localizedName
   }
 
+  /// 截图历史窗口（2026-10-26 拍板 C1）：用时才建，关掉放掉（连缩略图缓存一起）。
+  /// 每条的操作都接到截图那条路上：拷贝 / 存储 / 另存为走同一套出图，钉图走钉图，改标注开标注窗口
+  func showShotHistory() {
+    if let window = shotHistoryWindow { return window.show() }
+    let model = ShotHistoryModel(history: shotHistory)
+    model.onCopy = { [unowned self] item in
+      guard let image = model.composed(item) else { return missingShot() }
+      Task {
+        guard await copyImage(image, scale: item.scale) != nil else { return }
+        island.show("已复制截图", leading: Island.thumbnail(of: image))
+      }
+    }
+    model.onSave = { [unowned self] item in
+      guard let image = model.composed(item) else { return missingShot() }
+      Task {
+        guard let saved = await saveImage(image, scale: item.scale, asking: false) else { return }
+        shotHistory.markSaved(item.id, to: saved.url)
+        island.show(
+          FlyCard.Badge.saved(saved.url).title, detail: saved.url.lastPathComponent,
+          leading: Island.thumbnail(of: image))
+      }
+    }
+    model.onSaveAs = { [unowned self] item in
+      guard let image = model.composed(item) else { return missingShot() }
+      Task {
+        if let saved = await saveImageAs(image, scale: item.scale) {
+          shotHistory.markSaved(item.id, to: saved)
+        }
+      }
+    }
+    model.onPin = { [unowned self] item in
+      guard let image = model.composed(item) else { return missingShot() }
+      // 钉回当初那一块（拍板 B2）；没记位置的（老条目）钉在可见区中央，同「钉住剪贴板里的图」
+      let frame =
+        item.frame
+        ?? PinBoard.clipboardFrame(
+          pixels: CGSize(width: image.width, height: image.height),
+          scale: item.scale, visible: (NSScreen.main ?? NSScreen.screens[0]).visibleFrame,
+          pinned: pins.panels.map(\.frame))
+      pins.pin(image, frame: frame)
+      shotHistory.markPinned(item.id)
+    }
+    model.onRecognize = { [unowned self] item in
+      guard let image = model.composed(item) else { return missingShot() }
+      Task { await copyRecognizedText(in: image) }
+    }
+    model.onEdit = { [unowned self] item in
+      guard let original = shotHistory.image(for: item.id) else { return missingShot() }
+      openScrollEditor(
+        original, scale: item.scale, history: item.id, annotations: item.annotations)
+    }
+    let window = ShotHistoryWindow(model: model)
+    window.onClose = { [weak self] in
+      self?.shotHistoryWindow = nil
+      ShotThumbnails.shared.clear()
+    }
+    shotHistoryWindow = window
+    window.show()
+  }
+
+  /// 历史里那条的原图读不出来（盘上被清了 / 坏了）
+  private func missingShot() {
+    island.show("这张图已经不在了", detail: "历史里的原图被清掉了", tone: .warning)
+  }
+
   /// 长图标注（2026-10-26 拍板）：拼好的长图在自己的窗口里标注，出图走截图那条路、用刘海说结果（同钉图，不飞卡片：
   /// 这时选区多半已经不在眼前了）。一次只开一扇，再开一次就把前一扇换掉
-  private func openScrollEditor(_ image: CGImage, scale: CGFloat, history: UUID? = nil) {
+  private func openScrollEditor(
+    _ image: CGImage, scale: CGFloat, history: UUID? = nil, annotations: [Annotation] = []
+  ) {
     scrollEditor?.close()
-    let editor = ScrollEditor(image: image, scale: scale) {
+    let editor = ScrollEditor(image: image, scale: scale, annotations: annotations) {
       [unowned self] action, image, scale, annotations in
       // 改完的标注回写到历史那一条（拍板 C4：更新同一条，不新建）
       if let history { shotHistory.update(history, annotations: annotations) }
