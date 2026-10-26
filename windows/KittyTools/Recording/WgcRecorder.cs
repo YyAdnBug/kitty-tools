@@ -88,7 +88,7 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
     private int _sourceHeight;
     private TimeSpan _startCpu;
     private long _startWall;
-    private long _startWorkingSet;
+    private double _startPrivateMb;
     private int _nextStatMs = 10_000;
     private int _arrivedFrames;
     private int _acceptedFrames;
@@ -349,9 +349,11 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
 
             ((IMFSinkWriter*)writer)->BeginWriting();
 
+            // 帧池 2 张（PLAN-v6 第 1 批；R24 量过 4 张时录制中专用工作集比录之前多一百多 MB）：
+            // 写入线程每次只拷最新那一帧，2 张够轮换。
             pool = Direct3D11CaptureFramePool.CreateFreeThreaded(
                 context.WinRt, Windows.Graphics.DirectX.DirectXPixelFormat.B8G8R8A8UIntNormalized,
-                4, item.Size);
+                2, item.Size);
             pool.FrameArrived += OnFrameArrived;
             session = pool.CreateCaptureSession(item);
             try
@@ -384,7 +386,7 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
             var process = Process.GetCurrentProcess();
             _startCpu = process.TotalProcessorTime;
             _startWall = Stopwatch.GetTimestamp();
-            _startWorkingSet = process.WorkingSet64;
+            _startPrivateMb = MemoryProbe.PrivateWorkingSetMb();
 
             var interval = 10_000_000L / _fps;
             var nextWrite = 0L;
@@ -466,7 +468,7 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
                 if (elapsed >= _nextStatMs)
                 {
                     _nextStatMs = (int)(elapsed / 10_000 + 1) * 10_000;
-                    Log.Info($"wgc.mem t={elapsed / 1000}s ws={process.WorkingSet64 / (1024 * 1024)}MB frames={Frames} arrived={_arrivedFrames} accepted={_acceptedFrames}");
+                    Log.Info($"wgc.mem t={elapsed / 1000}s private={MemoryProbe.PrivateWorkingSetMb():F1}MB frames={Frames} arrived={_arrivedFrames} accepted={_acceptedFrames}");
                 }
             }
 
@@ -636,8 +638,8 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
                 var wall = (Stopwatch.GetTimestamp() - _startWall) / (double)Stopwatch.Frequency;
                 var cpu = (process.TotalProcessorTime - _startCpu).TotalSeconds;
                 var cpuPercent = wall <= 0 ? 0 : cpu / wall * 100;
-                var memory = (process.WorkingSet64 - _startWorkingSet) / (1024 * 1024);
-                Log.Info($"wgc.stats cpu={cpuPercent:F1}%single memDelta={memory}MB ws={process.WorkingSet64 / (1024 * 1024)}MB wall={wall:F1}s arrived={_arrivedFrames} accepted={_acceptedFrames} writeMs={_writeTicks * 1000.0 / Stopwatch.Frequency:F0} copyMs={_copyTicks * 1000.0 / Stopwatch.Frequency:F0} qiMs={_qiTicks * 1000.0 / Stopwatch.Frequency:F0}");
+                var privateMb = MemoryProbe.PrivateWorkingSetMb();
+                Log.Info($"wgc.stats cpu={cpuPercent:F1}%single privateDelta={privateMb - _startPrivateMb:F1}MB private={privateMb:F1}MB wall={wall:F1}s arrived={_arrivedFrames} accepted={_acceptedFrames} writeMs={_writeTicks * 1000.0 / Stopwatch.Frequency:F0} copyMs={_copyTicks * 1000.0 / Stopwatch.Frequency:F0} qiMs={_qiTicks * 1000.0 / Stopwatch.Frequency:F0}");
             }
         }
     }

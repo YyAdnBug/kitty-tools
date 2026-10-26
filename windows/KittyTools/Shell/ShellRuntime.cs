@@ -199,9 +199,14 @@ internal sealed class ShellRuntime
                     .Contains("--record-effects", StringComparer.OrdinalIgnoreCase);
                 var resizeTest = Environment.GetCommandLineArgs()
                     .Contains("--record-resize", StringComparer.OrdinalIgnoreCase);
+                // R24：第 20–40 秒停掉提示音，看静音 20 秒之后音画还对不对得上（要 --record-test ≥ 45）。
+                var silenceTest = Environment.GetCommandLineArgs()
+                    .Contains("--sync-silence", StringComparer.OrdinalIgnoreCase) && testSeconds >= 45;
                 var startedAt = Environment.TickCount64;
                 var shrunk = false;
                 var restored = false;
+                var silenced = false;
+                var unsilenced = false;
                 var deadline = startedAt + Math.Clamp(testSeconds, 1, 600) * 1000;
                 while (Environment.TickCount64 < deadline)
                 {
@@ -223,6 +228,21 @@ internal sealed class ShellRuntime
                             restored = true;
                             var bounds = TestPatternWindow.PrimaryBounds();
                             TestPatternWindow.Resize(bounds.Width, bounds.Height);
+                        }
+                    }
+
+                    if (silenceTest)
+                    {
+                        var elapsed = Environment.TickCount64 - startedAt;
+                        if (!silenced && elapsed > 20_000)
+                        {
+                            silenced = true;
+                            TestPatternWindow.PauseTone();
+                        }
+                        else if (silenced && !unsilenced && elapsed > 40_000)
+                        {
+                            unsilenced = true;
+                            TestPatternWindow.ResumeTone();
                         }
                     }
 
@@ -318,8 +338,7 @@ internal sealed class ShellRuntime
             var path = syncArg["--sync-probe=".Length..];
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
             {
-                await VideoFlashProbe.FirstFlashAsync(path);
-                await AudioWavProbe.CheckAsync(path);
+                await SyncProbe.RunAsync(path);
                 Application.Current.Exit();
             });
         }

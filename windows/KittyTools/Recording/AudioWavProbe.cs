@@ -1,5 +1,7 @@
-// 调试用：把录好的 MP4 的音轨用 MediaTranscoder 转成 WAV，再读 PCM 算峰值和 1 kHz 提示音的间隔。
-// 只验证「文件里的 AAC 真的能解出声音、间隔还是 1 秒」，不参与录屏。--media-check=<文件> 时调用。
+// 调试用：把录好的 MP4 的音轨用 MediaTranscoder 转成 WAV，再读 PCM 算峰值和 1 kHz 提示音的起点 / 间隔。
+// 只验证「文件里的 AAC 真的能解出声音、间隔还是 1 秒」，不参与录屏。--media-check / --sync-probe 时调用。
+// 提示音只认 1 kHz（AvSync.ToneOnsets，REVIEW R24：按峰值找会把系统声音里别的响动也算进去）。
+using KittyTools.Core;
 using KittyTools.Infrastructure;
 using Windows.Media.MediaProperties;
 using Windows.Media.Transcoding;
@@ -10,7 +12,11 @@ namespace KittyTools;
 internal static class AudioWavProbe
 {
     public sealed record Result(
-        float Peak, int Bursts, int Frames, double MinGap, double MaxGap, string? Error);
+        float Peak, int Bursts, int Frames, double MinGap, double MaxGap, string? Error)
+    {
+        /// <summary>每一声 1 kHz 的起点（秒）。</summary>
+        public IReadOnlyList<double> Onsets { get; init; } = Array.Empty<double>();
+    }
 
     public static async Task<Result> CheckAsync(string path)
     {
@@ -91,8 +97,8 @@ internal static class AudioWavProbe
     }
 
     /// <summary>
-    /// 读 WAV：fmt 里取声道 / 位数 / 浮点标记；按 10 ms 一段算峰值，超过 0.1 算提示音，
-    /// 回落到 0.03 以下结束一段，再算相邻两段起点之间的间隔。
+    /// 读 WAV：fmt 里取声道 / 位数 / 浮点标记；各声道平均成单声道，记峰值，
+    /// 再交给 AvSync.ToneOnsets 找 1 kHz 的起点，算相邻两声之间的间隔。
     /// </summary>
     private static Result ReadWav(byte[] bytes)
     {
@@ -152,48 +158,30 @@ internal static class AudioWavProbe
         var samples = dataLength / bytesPerSample;
         var frames = samples / channels;
         var peak = 0f;
-        var starts = new List<int>();
-        var inside = false;
-        const int window = 480; // 10 ms
-        var frame = 0;
-        for (var start = 0; start + window * channels <= samples; start += window * channels, frame += window)
+        var mono = new float[frames];
+        for (var frame = 0; frame < frames; frame++)
         {
-            var windowPeak = 0f;
-            for (var index = start; index < start + window * channels; index++)
+            var sum = 0f;
+            for (var channel = 0; channel < channels; channel++)
             {
                 var value = ReadSample(
-                    bytes, dataOffset + index * bytesPerSample, bits, isFloat);
-                if (Math.Abs(value) > windowPeak)
-                {
-                    windowPeak = Math.Abs(value);
-                }
+                    bytes, dataOffset + (frame * channels + channel) * bytesPerSample, bits, isFloat);
+                peak = Math.Max(peak, Math.Abs(value));
+                sum += value;
             }
 
-            if (windowPeak > peak)
-            {
-                peak = windowPeak;
-            }
-
-
-            if (windowPeak > 0.25f && !inside)
-            {
-                starts.Add(frame);
-                inside = true;
-            }
-            else if (windowPeak <= 0.08f)
-            {
-                inside = false;
-            }
+            mono[frame] = sum / channels;
         }
 
+        var onsets = AvSync.ToneOnsets(mono, 48_000);
         var minGap = 0.0;
         var maxGap = 0.0;
-        if (starts.Count > 1)
+        if (onsets.Count > 1)
         {
             minGap = double.MaxValue;
-            for (var index = 1; index < starts.Count; index++)
+            for (var index = 1; index < onsets.Count; index++)
             {
-                var gap = (starts[index] - starts[index - 1]) / 48_000.0;
+                var gap = onsets[index] - onsets[index - 1];
                 if (gap < minGap)
                 {
                     minGap = gap;
@@ -206,8 +194,7 @@ internal static class AudioWavProbe
             }
         }
 
-        Log.Info("audio.starts " + string.Join(
-            ',', starts.Take(24).Select(frame => (frame / 48_000.0).ToString("F3"))));
-        return new Result(peak, starts.Count, frames, minGap, maxGap, null);
+        Log.Info("audio.starts " + string.Join(',', onsets.Take(24).Select(onset => onset.ToString("F3"))));
+        return new Result(peak, onsets.Count, frames, minGap, maxGap, null) { Onsets = onsets };
     }
 }

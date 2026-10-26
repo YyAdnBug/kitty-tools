@@ -252,6 +252,18 @@ internal static class MemoryProbe
         }
     }
 
+    /// <summary>专用工作集（MB），口径同文件头；录屏的统计也用它（REVIEW R24，不用 WorkingSet64）。</summary>
+    public static unsafe double PrivateWorkingSetMb()
+    {
+        var counters = default(PROCESS_MEMORY_COUNTERS_EX2);
+        counters.cb = (uint)sizeof(PROCESS_MEMORY_COUNTERS_EX2);
+        var ok = PInvoke.GetProcessMemoryInfo(
+            PInvoke.GetCurrentProcess(),
+            (PROCESS_MEMORY_COUNTERS*)&counters,
+            counters.cb);
+        return ok ? counters.PrivateWorkingSetSize / 1_048_576.0 : -1;
+    }
+
     private static unsafe void Report(string step)
     {
         var counters = default(PROCESS_MEMORY_COUNTERS_EX2);

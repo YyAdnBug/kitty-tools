@@ -25,13 +25,17 @@ internal static unsafe class Mp4Remux
     private static readonly Guid Mpeg4Container = new("dc6cd05d-b9d0-40ef-bd35-fa622c1ab28a");
     private static readonly Guid EnableHardwareTransforms = new("a634a91c-822b-41b9-a494-4de4643612b0");
 
-    /// <summary>带超时的重封装：坏源 / 驱动卡住时，启动和停止不跟着一起卡死。</summary>
-    public static bool TryRemuxWithTimeout(string source, string destination, int seconds = 5)
+    /// <summary>
+    /// 带超时的重封装：坏源 / 驱动卡住时，启动和停止不跟着一起卡死。不给秒数时按文件大小放宽：
+    /// 5 s 起、每 100 MB 多 1 s、最多 60 s（R24：10 分钟的录屏一百多 MB，固定 5 s 可能误判超时）。
+    /// </summary>
+    public static bool TryRemuxWithTimeout(string source, string destination, int? seconds = null)
     {
         try
         {
+            seconds ??= (int)Math.Min(60, 5 + new FileInfo(source).Length / (100L * 1024 * 1024));
             var task = Task.Run(() => TryRemux(source, destination));
-            if (!task.Wait(TimeSpan.FromSeconds(seconds)))
+            if (!task.Wait(TimeSpan.FromSeconds(seconds.Value)))
             {
                 Log.Warn($"record.remux-timeout {seconds}s");
                 return false;

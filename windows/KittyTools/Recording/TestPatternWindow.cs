@@ -1,5 +1,7 @@
 // 录屏自检用的满屏测试窗口（PLAN-v6 §0 第 3 条）：整块主屏、不透明，画移动色块、滚动文字、帧号，
 // 每秒闪一次白、响一声 1 kHz。录屏验证只录这个窗口，不录用户的桌面。
+// 闪白跟着提示音的播放位置走（REVIEW R24：两边原来各走各的钟，量出来的音画差没有意义）；
+// 右上角 16 格条码是更新计数，SyncProbe 读它查录下来的帧号连不连续。
 // 除了 30 fps 的 XAML 更新，再加一条 Composition 动画横条：它在合成线程上跑 60 fps，
 // 保证 WGC 一直有新帧可抓（XAML 布局慢了也不会把录制降到十几帧）。
 // 由 --test-pattern 打开；--record-test=<秒> 会开窗、录 N 秒、关窗。
@@ -32,7 +34,13 @@ internal sealed class TestPatternWindow
     private readonly List<Rectangle> _blocks = new();
     private readonly Rectangle _flash;
     private readonly Rectangle _marker;
+    private readonly Rectangle[] _bits = new Rectangle[BarcodeBits];
+    private readonly SolidColorBrush _bitOn = new(Colors.White);
+    private readonly SolidColorBrush _bitOff = new(Colors.Black);
+    private readonly System.Diagnostics.Stopwatch _clockWatch = System.Diagnostics.Stopwatch.StartNew();
     private int _frameCount;
+    private int _renderCount;
+    private bool _tonePaused;
     private int _lastLoggedSecond = -1;
     private bool _renderToggle;
 
@@ -131,6 +139,15 @@ internal sealed class TestPatternWindow
         Canvas.SetTop(_flash, 0);
         _canvas.Children.Add(_flash);
 
+        // 条码在闪白上面：闪白时照样读得出来。0 位是不透明黑，不是透明。
+        for (var index = 0; index < BarcodeBits; index++)
+        {
+            _bits[index] = new Rectangle { Fill = _bitOff };
+            _canvas.Children.Add(_bits[index]);
+        }
+
+        _canvas.SizeChanged += (_, _) => LayoutBarcode();
+
         Microsoft.UI.Xaml.Media.CompositionTarget.Rendering += OnRendering;
         _window.Closed += (_, _) =>
         {
@@ -141,11 +158,69 @@ internal sealed class TestPatternWindow
 
     private void OnRendering(object? sender, object args)
     {
-        // Rendering 是 60 Hz；测试图案按 30 fps 更新，省一半 UI 线程的活。
+        _renderCount++;
+        // 闪白每拍都看一次提示音的位置（只改 Opacity，不排版），对齐误差不超过一拍。
+        UpdateFlash();
+        // Rendering 是 60 Hz；文字和条码按 30 fps 更新，省一半 UI 线程的活。
         _renderToggle = !_renderToggle;
         if (_renderToggle)
         {
             Tick();
+        }
+    }
+
+    /// <summary>条码的格数和位置（按画布宽高的比例摆，探针按同样的比例读，不用知道 DPI）。</summary>
+    public const int BarcodeBits = 16;
+
+    public const double BarcodeLeft = 0.45;
+
+    public const double BarcodeStep = 0.033;
+
+    public const double BarcodeSize = 0.025;
+
+    public const double BarcodeTop = 0.02;
+
+    private void LayoutBarcode()
+    {
+        var width = _canvas.ActualWidth;
+        var height = _canvas.ActualHeight;
+        for (var index = 0; index < BarcodeBits; index++)
+        {
+            _bits[index].Width = width * BarcodeSize;
+            _bits[index].Height = width * BarcodeSize;
+            Canvas.SetLeft(_bits[index], width * (BarcodeLeft + index * BarcodeStep));
+            Canvas.SetTop(_bits[index], height * BarcodeTop);
+        }
+    }
+
+    /// <summary>提示音每秒前 100 ms 响，闪白就在播放位置落在这 100 ms 里时亮；暂停（静音段）时不闪。</summary>
+    private void UpdateFlash()
+    {
+        var session = _player?.PlaybackSession;
+        var playing = !_tonePaused && session is not null &&
+            session.PlaybackState == MediaPlaybackState.Playing;
+        var lit = playing && session!.Position.TotalMilliseconds % 1000 < 100;
+        _flash.Opacity = lit ? 0.85 : 0;
+    }
+
+    /// <summary>R24「静音 20 秒后照样同步」：停掉提示音（系统声音回环这时一个包都不出）。</summary>
+    public static void PauseTone()
+    {
+        if (_current is { } current)
+        {
+            current._tonePaused = true;
+            current._player?.Pause();
+            Log.Info("test-pattern.tone-paused");
+        }
+    }
+
+    public static void ResumeTone()
+    {
+        if (_current is { } current)
+        {
+            current._tonePaused = false;
+            current._player?.Play();
+            Log.Info("test-pattern.tone-resumed");
         }
     }
 
@@ -254,15 +329,22 @@ internal sealed class TestPatternWindow
         var width = Math.Max(800, _canvas.ActualWidth);
         var height = Math.Max(600, _canvas.ActualHeight);
         _frame.Text = $"frame {_frameCount}";
-        _clock.Text = $"{(double)_frameCount / 60:F1} s";
+        _clock.Text = $"{_clockWatch.Elapsed.TotalSeconds:F1} s";
         // 色块 / 滚动文字 / 竖条的位移交给 Composition 动画，XAML 每帧只改文字，避免布局把渲染拖到 20 fps。
-        _flash.Opacity = _frameCount % 60 < 6 ? 0.85 : 0;
+        for (var index = 0; index < BarcodeBits; index++)
+        {
+            var on = ((_frameCount >> (BarcodeBits - 1 - index)) & 1) != 0;
+            _bits[index].Fill = on ? _bitOn : _bitOff;
+        }
 
-        var second = _frameCount / 60;
+        // 记它自己画了多少拍：WGC 收到的帧少时，先看这里是不是测试窗口自己就没在画。
+        var second = (int)_clockWatch.Elapsed.TotalSeconds;
         if (second != _lastLoggedSecond)
         {
             _lastLoggedSecond = second;
-            Log.Info($"test-pattern.second {second} frames={_frameCount} canvas={width:F0}x{height:F0}");
+            Log.Info(
+                $"test-pattern.second {second} updates={_frameCount} renders={_renderCount} " +
+                $"canvas={width:F0}x{height:F0}");
         }
     }
 

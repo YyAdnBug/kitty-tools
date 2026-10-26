@@ -37,6 +37,25 @@
 
 **进展（--sync-probe）**：测试图案 10 秒带系统声音，第一次样本闪白 0.417 s / 提示音 0.430 s（差约 13 ms），但 10 秒重测时 AudioWavProbe 仍把系统声音里的其它声音当成提示音（0.333 s 对 0.180 s，差 153 ms），**还不能据此下 < 50 ms 的结论**；试过 Goertzel 1 kHz 频段能量，系统声音里的峰值只有 0.094，仍分不干净，实验代码已回退（不影响产品）。60 秒无音轨文件 1812 帧 / 13.1 MB / 重封装 78 ms，专用工作集约 192 MB。还没做第 60 秒的逐帧差、20 秒静音后同步、10 分钟重封装。
 
+**审查方在 Mac 上改了探针（没编译过，提交见下面「复查」）**：13 ms 和 153 ms 两个数都不能用——测试图案的闪白按渲染计数走（`_frameCount % 60`，而且计数是 30 Hz 加一，实际两秒才闪一次），提示音是另一个 MediaPlayer 循环放的 7 秒文件，**两边没有共用的钟**，量出来的差只是两个钟碰巧差多少。改成：
+
+- `TestPatternWindow`：闪白每一拍（60 Hz）看提示音的 `PlaybackSession.Position`，落在每秒前 100 ms 就亮，暂停时不亮；右上角加 16 格条码（更新计数，按画布宽高的比例摆，读的时候不用知道 DPI）；时钟文字改用 Stopwatch；日志 `test-pattern.second` 记 updates / renders 两个数。
+- `--sync-silence`（配 `--record-test` ≥ 45）：第 20–40 秒暂停提示音，这 20 秒系统声音回环一个包都不出。
+- 提示音只认 1 kHz：`Core/AvSync.ToneOnsets`（Goertzel，10 ms 窗、2.5 ms 一跳，起点误差几毫秒；单测里一段很响的 440 Hz 不会被认成提示音）。`AudioWavProbe` 改用它，`Result.Onsets` 给出每一声的起点。
+- `VideoFlashProbe` 换成 `SyncProbe`：扫整个文件的每一次闪白（1/15 s 粗扫、1/60 s 往回找起点），和每一声逐个配对（`AvSync.PairUp` / `Summarize`），日志 `sync.pair`、`sync.summary`（第一对 / 最后一对 / 静音后第一对 / 平均 / 最大）；再在第 1、30、最后一秒连着抽 10 帧读条码（`sync.frames … continuous=`）。视频按帧取样，单个差带着最多一帧的误差，所以**量的时候录 60 fps**。
+- 录制中的内存改成专用工作集（`MemoryProbe.PrivateWorkingSetMb`，日志 `wgc.mem private=`、`wgc.stats privateDelta=`）；192 MB 已经是专用工作集、比录之前多一百多 MB，按本条的规矩帧池 4 → 2。
+- `Mp4Remux.TryRemuxWithTimeout` 不给秒数时按文件大小放宽（5 s 起、每 100 MB 加 1 s、最多 60 s），10 分钟的文件不会因为固定 5 s 误判超时、退回分段 MP4。
+
+**要做（Windows 上）**：先编译、跑 `AvSyncTests`；然后
+
+```powershell
+KittyTools.exe --record-test=65 --record-fps=60 --sync-silence     # Release AOT
+KittyTools.exe --sync-probe=<上一步的 mp4>
+KittyTools.exe --record-test=600 --record-fps=30                     # 看 record.remux 的耗时
+```
+
+报告写 `sync.summary` 整行（验收：第一对、最后一对、静音后第一对都 < 50 ms，`passed=True`）、三行 `sync.frames`（都 `continuous=True`）、`wgc.stats` 的 CPU 和 `privateDelta`（目标 ≤ 40 MB）、60 秒和 10 分钟两次的重封装耗时。`passed=False` 时把 `sync.pair` 贴出来，看是固定偏移还是越走越偏。
+
 ### R31（P1）0.7.0 的包是在「设置窗一打开就崩」修好之前打的，要重打；打包时加启动冒烟 → 已修（`5db1e8f`）
 
 **进展（`b10cbce`）**：新增 `--smoke`（设置六页、剪贴板 / 启动器、翻译、截图遮罩、录音待录条），
