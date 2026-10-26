@@ -3,6 +3,7 @@
 // 位置：跟随鼠标（默认）或上次位置；复制即译只露出、不激活。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
+using KittyTools.Ui;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -22,7 +23,7 @@ namespace KittyTools;
 internal sealed unsafe partial class TranslateWindow : Window
 {
     private const int MinHeightDip = 220;
-    private const int DefaultWidthDip = 460;
+    private const int DefaultWidthDip = 420;
 
     private readonly Grid _root;
     private readonly Grid _topBar;
@@ -166,7 +167,11 @@ internal sealed unsafe partial class TranslateWindow : Window
             TextWrapping = TextWrapping.Wrap,
             MinHeight = 64,
             MaxHeight = 150,
-            FontSize = 15,
+            Style = Theme.Style("Kitty.Input"),
+            Background = Theme.Brush("Kitty.Input", Theme.Argb(11, 0, 0, 0)),
+            BorderThickness = new Thickness(0),
+            CornerRadius = Theme.Corner("Kitty.Corner.Card"),
+            FontSize = Theme.FontSize("Kitty.FontSize.Reading"),
             VerticalContentAlignment = VerticalAlignment.Top,
         };
         _source.TextChanged += (_, _) =>
@@ -187,8 +192,8 @@ internal sealed unsafe partial class TranslateWindow : Window
         {
             Content = "翻译 ↵",
             HorizontalAlignment = HorizontalAlignment.Right,
-            Background = new SolidColorBrush(Theme.BrandPink),
-            Foreground = new SolidColorBrush(Colors.White),
+            Background = new SolidColorBrush(Theme.AccentColor),
+            Foreground = new SolidColorBrush(Theme.OnAccentColor),
             Padding = new Thickness(12, 4, 12, 4),
             Visibility = Visibility.Collapsed,
         };
@@ -248,13 +253,11 @@ internal sealed unsafe partial class TranslateWindow : Window
         Grid.SetRow(_translateButton, 2);
         Grid.SetRow(_scroll, 3);
         Grid.SetRow(_historyHost, 3);
-        Grid.SetRow(_footer, 4);
         _root.Children.Add(_topBar);
         _root.Children.Add(_source);
         _root.Children.Add(_translateButton);
         _root.Children.Add(_scroll);
         _root.Children.Add(_historyHost);
-        _root.Children.Add(_footer);
 
         Content = _root;
         SystemBackdrop = new AcrylicBackdrop();
@@ -1234,8 +1237,7 @@ internal sealed unsafe partial class TranslateWindow : Window
 
         private readonly TextBlock _name;
         private readonly TextBlock _status;
-        private readonly Border _badge;
-        private readonly TextBlock _badgeLetter;
+        private readonly FrameworkElement _badge;
         private readonly TextBlock _body;
         private readonly ScrollViewer _bodyScroll;
         private readonly Border _fade;
@@ -1267,25 +1269,9 @@ internal sealed unsafe partial class TranslateWindow : Window
                 VerticalAlignment = VerticalAlignment.Center,
             };
 
-            // 服务的标识：品牌色首字母方块（内置服务用中文短名，AI 服务按厂商，PLAN-v2 §3.7）。
-            _badgeLetter = new TextBlock
-            {
-                Text = ServiceBadge.Letter(service.Kind, service.Protocol, service.Name),
-                FontSize = 10,
-                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                Foreground = new SolidColorBrush(Colors.White),
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            _badge = new Border
-            {
-                Width = 22,
-                Height = 22,
-                CornerRadius = new CornerRadius(6),
-                Background = Theme.ServiceBadge(ServiceBadge.Vendor(service.Kind, service.Protocol)),
-                Child = _badgeLetter,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
+            // 服务标识：有官方 logo 用 logo，没有用品牌色首字母（PLAN-v7 §2.1）。
+            _badge = ServiceTile.Create(
+                ServiceBadge.Vendor(service.Kind, service.Protocol), service.Name, 18);
 
             _body = new TextBlock
             {
