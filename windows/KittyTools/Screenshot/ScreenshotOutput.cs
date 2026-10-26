@@ -76,7 +76,8 @@ internal static partial class ScreenshotOutput
         try
         {
             await File.WriteAllBytesAsync(path, png);
-            NoticeHost.Show("已保存截图", Path.GetFileName(path), NoticeTone.Normal);
+            NoticeHost.Show("已保存截图", Path.GetFileName(path), NoticeTone.Normal,
+                NoticeActions.Reveal(path), NoticeActions.Open(path));
             return path;
         }
         catch (Exception ex)
@@ -115,7 +116,8 @@ internal static partial class ScreenshotOutput
             }
 
             await File.WriteAllBytesAsync(result.Path, png);
-            NoticeHost.Show("已保存图片", Path.GetFileName(result.Path), NoticeTone.Normal);
+            NoticeHost.Show("已保存图片", Path.GetFileName(result.Path), NoticeTone.Normal,
+                NoticeActions.Reveal(result.Path), NoticeActions.Open(result.Path));
             return result.Path;
         }
         catch (Exception ex)

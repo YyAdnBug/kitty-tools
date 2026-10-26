@@ -335,7 +335,8 @@ internal sealed partial class PinWindow : Window
             }
 
             await File.WriteAllBytesAsync(path, _png);
-            NoticeHost.Show("已保存钉图", Path.GetFileName(path), NoticeTone.Normal);
+            NoticeHost.Show("已保存钉图", Path.GetFileName(path), NoticeTone.Normal,
+                NoticeActions.Reveal(path), NoticeActions.Open(path));
         }
         catch (Exception ex)
         {
@@ -348,7 +349,8 @@ internal sealed partial class PinWindow : Window
     {
         if (!OcrService.HasEngine)
         {
-            NoticeHost.Show("没装中文识字组件", string.Empty, NoticeTone.Warning);
+            NoticeHost.Show("没装中文识字组件", string.Empty, NoticeTone.Warning,
+                NoticeActions.SystemSettings("ms-settings:regionlanguage"));
             return;
         }
 

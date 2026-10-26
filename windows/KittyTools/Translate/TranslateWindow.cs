@@ -855,7 +855,13 @@ internal sealed unsafe partial class TranslateWindow : Window
 
         history.Delete(entry.Id);
         RefreshHistory();
-        NoticeHost.Show("已删除", "Ctrl+Z 可以撤销", NoticeTone.Normal);
+        NoticeHost.Show("已删除", "Ctrl+Z 可以撤销", NoticeTone.Normal, new NoticeAction("撤销", () =>
+        {
+            if (TranslationHistory.Instance?.Undo() is not null)
+            {
+                RefreshHistory();
+            }
+        }));
     }
 
     // ---- 替换原文、朗读（第三版 §3.2 / §3.3）----

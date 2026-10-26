@@ -604,21 +604,12 @@ internal sealed class ScreenshotSession
     {
         if (!OcrService.HasEngine)
         {
+            // 不再自己弹系统设置（PLAN-v8 H14）：提示上给「打开设置」。
             NoticeHost.Show(
                 "没装中文识字组件",
                 "设置 › 时间和语言 › 语言和区域 › 中文 › 语言选项 › 光学字符识别",
-                NoticeTone.Warning);
-            try
-            {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:regionlanguage")
-                {
-                    UseShellExecute = true,
-                });
-            }
-            catch
-            {
-                // 打不开设置就算了。
-            }
+                NoticeTone.Warning,
+                NoticeActions.SystemSettings("ms-settings:regionlanguage"));
 
             Finish();
             return;
@@ -672,7 +663,8 @@ internal sealed class ScreenshotSession
             NoticeHost.Show(
                 "没装中文识字组件",
                 "设置 › 时间和语言 › 语言和区域 › 中文 › 语言选项 › 光学字符识别",
-                NoticeTone.Warning);
+                NoticeTone.Warning,
+                NoticeActions.SystemSettings("ms-settings:regionlanguage"));
             Finish();
             return;
         }

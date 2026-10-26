@@ -174,7 +174,8 @@ internal static class UpdateService
         {
             SettingsService.Current.NotifiedUpdateVersion = bestVersion;
             SettingsService.Save();
-            NotifyUser("有新版本", $"Kitty Tools {bestVersion} 已发布，托盘里可打开发布页", NoticeTone.Normal);
+            NotifyUser("有新版本", $"Kitty Tools {bestVersion} 已发布", NoticeTone.Normal,
+                new NoticeAction("更新", () => _ = AutoUpdater.StartAsync()));
         }
         else if (userInitiated)
         {
@@ -262,15 +263,15 @@ internal static class UpdateService
         }
     }
 
-    private static void NotifyUser(string title, string detail, NoticeTone tone)
+    private static void NotifyUser(string title, string detail, NoticeTone tone, params NoticeAction[] actions)
     {
         if (_dispatcher is null || _dispatcher.HasThreadAccess)
         {
-            NoticeHost.Show(title, detail, tone);
+            NoticeHost.Show(title, detail, tone, actions);
         }
         else
         {
-            _dispatcher.TryEnqueue(() => NoticeHost.Show(title, detail, tone));
+            _dispatcher.TryEnqueue(() => NoticeHost.Show(title, detail, tone, actions));
         }
     }
 
