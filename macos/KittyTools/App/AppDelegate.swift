@@ -1937,7 +1937,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         shotHistory.markSaved(item.id, to: saved.url)
         island.show(
           FlyCard.Badge.saved(saved.url).title, detail: saved.url.lastPathComponent,
-          leading: Island.thumbnail(of: image))
+          leading: Island.thumbnail(of: image), actions: .file(saved.url))
       }
     }
     model.onSaveAs = { [unowned self] item in
