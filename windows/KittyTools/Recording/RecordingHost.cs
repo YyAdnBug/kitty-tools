@@ -90,24 +90,21 @@ internal static unsafe class RecordingHost
             recorder = AviRecorder.StartRegion(region, settings.RecordFps, Folder, out error);
             note = wantsAudio ? "AVI 这一版不带声音；要声音请在设置里打开「直接录 MP4」" : null;
         }
-        else if (wantsAudio)
-        {
-            // 第 2 批把 WASAPI 并进 GPU 管线之前，带声音的录制还走 GDI 的 SinkWriter（它已经有音轨）；
-            // 窗口录制这时退化成录屏幕上那块矩形，等第 2 批再把窗口 + 声音一起接上。
-            recorder = GdiMp4Recorder.StartRegion(
-                region, settings.RecordFps, Folder,
-                settings.RecordSystemSound, settings.RecordMicrophone, out error, out note);
-        }
         else
         {
             recorder = window != IntPtr.Zero
-                ? WgcRecorder.StartWindow(window, settings.RecordFps, Folder, out error, out note)
-                : WgcRecorder.StartRegion(region, settings.RecordFps, Folder, out error, out note);
+                ? WgcRecorder.StartWindow(
+                    window, settings.RecordFps, Folder,
+                    settings.RecordSystemSound, settings.RecordMicrophone, out error, out note)
+                : WgcRecorder.StartRegion(
+                    region, settings.RecordFps, Folder,
+                    settings.RecordSystemSound, settings.RecordMicrophone, out error, out note);
             if (recorder is null)
             {
                 Log.Warn($"record.wgc-fallback {error}");
                 recorder = GdiMp4Recorder.StartRegion(
-                    region, settings.RecordFps, Folder, false, false, out error, out note);
+                    region, settings.RecordFps, Folder,
+                    settings.RecordSystemSound, settings.RecordMicrophone, out error, out note);
             }
         }
 
@@ -122,7 +119,8 @@ internal static unsafe class RecordingHost
             NoticeHost.Show("这段录屏没有完整声音", note, NoticeTone.Warning);
         }
 
-        if (recorder is GdiMp4Recorder { MicrophoneDenied: true })
+        if (recorder is WgcRecorder { MicrophoneDenied: true } ||
+            recorder is GdiMp4Recorder { MicrophoneDenied: true })
         {
             settings.RecordMicrophone = false;
             SettingsService.Save();

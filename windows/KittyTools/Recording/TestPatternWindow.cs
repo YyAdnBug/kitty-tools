@@ -13,6 +13,8 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
+using Windows.Media.Core;
+using Windows.Media.Playback;
 using Windows.UI;
 
 namespace KittyTools;
@@ -23,7 +25,7 @@ internal sealed class TestPatternWindow
 
     private readonly Window _window;
     private readonly Canvas _canvas;
-    private readonly DispatcherTimer _beep;
+    private MediaPlayer? _player;
     private readonly TextBlock _frame;
     private readonly TextBlock _scroll;
     private readonly TextBlock _clock;
@@ -130,22 +132,10 @@ internal sealed class TestPatternWindow
         _canvas.Children.Add(_flash);
 
         Microsoft.UI.Xaml.Media.CompositionTarget.Rendering += OnRendering;
-        _beep = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-        _beep.Tick += (_, _) =>
-        {
-            try
-            {
-                Beep(1000, 80);
-            }
-            catch
-            {
-                // 没有蜂鸣器就算了；麦克风 / 系统声音用别的方式验。
-            }
-        };
         _window.Closed += (_, _) =>
         {
-            _beep.Stop();
             Microsoft.UI.Xaml.Media.CompositionTarget.Rendering -= OnRendering;
+            _player?.Pause();
         };
     }
 
@@ -182,7 +172,7 @@ internal sealed class TestPatternWindow
 
             window.AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(0, 0, bounds.Width, bounds.Height));
             window.Activate();
-            _current._beep.Start();
+            _current.StartPlayer();
             Log.Info("test-pattern.show");
         }
         catch (Exception ex)
@@ -198,8 +188,21 @@ internal sealed class TestPatternWindow
         _current = null;
         try
         {
-            current?._beep.Stop();
+            current?._player?.Pause();
             current?._window.Close();
+        }
+        catch
+        {
+            // 窗口已经没了。
+        }
+    }
+
+    /// <summary>把测试窗口抢回前台：录屏 HUD 起来后 WinUI 会把后台窗口的渲染降下来。</summary>
+    public static void Activate()
+    {
+        try
+        {
+            _current?._window.Activate();
         }
         catch
         {
@@ -251,9 +254,60 @@ internal sealed class TestPatternWindow
         }
     }
 
-    [DllImport("kernel32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool Beep(uint frequency, uint duration);
+    private void StartPlayer()
+    {
+        try
+        {
+            _player ??= new MediaPlayer
+            {
+                Source = MediaSource.CreateFromUri(new Uri(EnsureTone())),
+                IsLoopingEnabled = true,
+            };
+            _player.Play();
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"test-pattern.tone {ex.GetType().Name}");
+        }
+    }
+
+    /// <summary>7 秒的 WAV：每秒前 100 ms 是 1 kHz，剩下静音；循环播放，系统声音回环能采到。</summary>
+    private static string EnsureTone()
+    {
+        var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "kitty-test-1khz.wav");
+        if (File.Exists(path))
+        {
+            return path;
+        }
+
+        const int rate = 48_000;
+        const int seconds = 7;
+        var samples = rate * seconds;
+        using var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read);
+        using var writer = new BinaryWriter(stream);
+        writer.Write("RIFF"u8.ToArray());
+        writer.Write(36 + samples * 2);
+        writer.Write("WAVEfmt "u8.ToArray());
+        writer.Write(16);
+        writer.Write((short)1);
+        writer.Write((short)1);
+        writer.Write(rate);
+        writer.Write(rate * 2);
+        writer.Write((short)2);
+        writer.Write((short)16);
+        writer.Write("data"u8.ToArray());
+        writer.Write(samples * 2);
+        for (var index = 0; index < samples; index++)
+        {
+            var inSecond = index % rate;
+            var value = inSecond < rate / 10
+                ? (short)(Math.Sin(2 * Math.PI * 1000 * inSecond / rate) * 16_000)
+                : (short)0;
+            writer.Write(value);
+        }
+
+        return path;
+    }
 
     [DllImport("user32.dll")]
     private static extern int GetSystemMetrics(int index);

@@ -165,12 +165,19 @@ internal sealed class ShellRuntime
             {
                 // 自检产物只写临时目录，不碰用户设置的保存位置。
                 SettingsService.Current.RecordDirectory = Path.Combine(Path.GetTempPath(), "kitty-v6-record");
+                if (Environment.GetCommandLineArgs().Contains("--record-no-audio", StringComparer.OrdinalIgnoreCase))
+                {
+                    SettingsService.Current.RecordSystemSound = false;
+                    SettingsService.Current.RecordMicrophone = false;
+                }
+
                 TestPatternWindow.Show();
                 await Task.Delay(1200);
                 var handle = TestPatternWindow.Handle;
                 if (handle != IntPtr.Zero)
                 {
                     RecordingHost.StartWindow(handle);
+                    TestPatternWindow.Activate();
                 }
                 else
                 {

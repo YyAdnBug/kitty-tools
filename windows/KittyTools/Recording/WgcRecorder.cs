@@ -25,7 +25,6 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
 {
     private const uint MfVersion = 0x00020070;
     private const int RingSize = 2;
-    private const long RepeatAfter100Ns = 10_000_000; // 1 s
 
     private static readonly Guid MajorType = new("48eba18e-f8c9-4687-bf11-0a74c9f96a8f");
     private static readonly Guid Subtype = new("f7e34c9a-42e8-4714-b74b-cb29d72c35e5");
@@ -38,6 +37,19 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
     private static readonly Guid InterlaceMode = new("e2724bb8-e676-4806-b4b2-a8d6efb44ccd");
     private static readonly Guid Mpeg2Profile = new("ad76a80b-2d5c-4e0b-b375-64e520137036");
     private static readonly Guid DefaultStride = new("644b4e48-1e02-4516-b0eb-c01ca9d49ac6");
+    private static readonly Guid AudioMajor = new("73647561-0000-0010-8000-00AA00389B71");
+    private static readonly Guid Aac = new("00001610-0000-0010-8000-00AA00389B71");
+    private static readonly Guid Pcm = new("00000001-0000-0010-8000-00AA00389B71");
+    private static readonly Guid AudioChannels = new("37e48bf5-645e-4c5b-89de-ada9e29b696a");
+    private static readonly Guid AudioSamplesPerSecond = new("5faeeae7-0290-4c31-9e8a-c534f68d9dba");
+    private static readonly Guid AudioAvgBytesPerSecond = new("1aab75c8-cfef-451c-ab95-ac034b8e1731");
+    private static readonly Guid AudioBlockAlignment = new("322de230-9eeb-43bd-ab7a-ff412251541d");
+    private static readonly Guid AudioBitsPerSample = new("f2deb57f-40fa-4764-aa33-ed4f2d1ff669");
+    private static readonly Guid AacPayloadType = new("bfbabe79-7434-4d1c-94f0-72a3b9e17188");
+    private static readonly Guid AacProfile = new("7632f0e6-9538-4d61-acda-ea29c8c14456");
+    private const int AudioBitrateBytes = 20_000; // 160 kbps
+    private const long AudioFlushMargin100Ns = 1_500_000; // 提前 150 ms 交出，等两路都到齐
+    private const uint AacLcProfile = 0x29;
     private static readonly Guid SinkWriterD3DManager = new("ec822da2-e1e9-4b29-a0d8-563c719f5269");
     private static readonly Guid EnableHardwareTransforms = new("a634a91c-822b-41b9-a494-4de4643612b0");
     private static readonly Guid TranscodeContainerType = new("150ff23f-4abc-478b-ac4f-e1916fba1cca");
@@ -46,6 +58,8 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
     private readonly PixelBounds _region;
     private readonly IntPtr _window;
     private readonly int _fps;
+    private readonly bool _systemAudio;
+    private readonly bool _microphone;
     private readonly string _temporary;
     private readonly string _final;
     private readonly ManualResetEventSlim _stop = new(false);
@@ -77,13 +91,23 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
     private long _writeTicks;
     private long _copyTicks;
     private long _qiTicks;
+    private AudioCaptureSet? _audio;
+    private uint _audioStream;
+    private bool _hasAudio;
+    private long _audioFrames;
+    private bool _microphoneDenied;
+    private long _start100;
     private volatile bool _closed;
 
-    private WgcRecorder(PixelBounds region, IntPtr window, int fps, string temporary, string final)
+    private WgcRecorder(
+        PixelBounds region, IntPtr window, int fps, bool systemAudio, bool microphone,
+        string temporary, string final)
     {
         _region = region;
         _window = window;
         _fps = Math.Clamp(fps, RecorderRules.MinFps, RecorderRules.MaxFps);
+        _systemAudio = systemAudio;
+        _microphone = microphone;
         _temporary = temporary;
         _final = final;
     }
@@ -100,6 +124,8 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
 
     public string? Note => _note;
 
+    public bool MicrophoneDenied => _microphoneDenied;
+
     private sealed class PendingFrame
     {
         public ID3D11Texture2D* Source;
@@ -109,20 +135,24 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
         public int Height;
     }
 
-    public static WgcRecorder? Start(int fps, string folder, out string? error, out string? note)
-        => StartCore(fps, folder, null, IntPtr.Zero, out error, out note);
+    public static WgcRecorder? Start(
+        int fps, string folder, bool systemAudio, bool microphone, out string? error, out string? note)
+        => StartCore(fps, folder, null, IntPtr.Zero, systemAudio, microphone, out error, out note);
 
     public static WgcRecorder? StartRegion(
-        PixelBounds region, int fps, string folder, out string? error, out string? note)
-        => StartCore(fps, folder, region, IntPtr.Zero, out error, out note);
+        PixelBounds region, int fps, string folder, bool systemAudio, bool microphone,
+        out string? error, out string? note)
+        => StartCore(fps, folder, region, IntPtr.Zero, systemAudio, microphone, out error, out note);
 
     /// <summary>录一个窗口本身：窗口挪动、被挡住都照录。</summary>
     public static WgcRecorder? StartWindow(
-        IntPtr hwnd, int fps, string folder, out string? error, out string? note)
-        => StartCore(fps, folder, null, hwnd, out error, out note);
+        IntPtr hwnd, int fps, string folder, bool systemAudio, bool microphone,
+        out string? error, out string? note)
+        => StartCore(fps, folder, null, hwnd, systemAudio, microphone, out error, out note);
 
     private static WgcRecorder? StartCore(
-        int fps, string folder, PixelBounds? region, IntPtr window, out string? error, out string? note)
+        int fps, string folder, PixelBounds? region, IntPtr window,
+        bool systemAudio, bool microphone, out string? error, out string? note)
     {
         error = null;
         note = null;
@@ -145,7 +175,7 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
         var name = Path.ChangeExtension(RecorderRules.FileName(DateTime.Now), ".mp4");
         var final = UniquePath(Path.Combine(folder, name));
         var temporary = Path.Combine(folder, "." + Guid.NewGuid().ToString("N") + ".tmp.mp4");
-        var recorder = new WgcRecorder(region ?? default, window, fps, temporary, final);
+        var recorder = new WgcRecorder(region ?? default, window, fps, systemAudio, microphone, temporary, final);
         recorder._thread = new Thread(recorder.Run) { IsBackground = true, Name = "kitty-wgc-recorder" };
         recorder._thread.Start();
         if (!recorder._ready.Wait(TimeSpan.FromSeconds(12)))
@@ -286,11 +316,32 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
             first->GetDesc(&ringDesc);
             Log.Info($"wgc.texture {ringDesc.Width}x{ringDesc.Height} fmt={ringDesc.Format} bind={ringDesc.BindFlags} usage={ringDesc.Usage}");
 
+            if (_systemAudio || _microphone)
+            {
+                _audio = AudioCaptureSet.Open(_systemAudio, _microphone);
+                _note = _audio.Note;
+                _microphoneDenied = _audio.MicrophoneDenied;
+            }
+
             if (!CreateSinkWriter(context, &writer, &manager, &attributes, out var writerError))
             {
                 _startupError = writerError ?? "没建起 MP4 写入器";
                 return;
             }
+
+            if (_audio is { HasSource: true })
+            {
+                uint audioStream;
+                _hasAudio = AddAudioStream(writer, &audioStream, out var audioError);
+                _audioStream = audioStream;
+                if (!_hasAudio)
+                {
+                    AppendNote(audioError ?? "音轨没建起来");
+                    Log.Warn("wgc.audio-stream-failed");
+                }
+            }
+
+            ((IMFSinkWriter*)writer)->BeginWriting();
 
             pool = Direct3D11CaptureFramePool.CreateFreeThreaded(
                 context.WinRt, Windows.Graphics.DirectX.DirectXPixelFormat.B8G8R8A8UIntNormalized,
@@ -316,7 +367,13 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
             }
 
 
+            _start100 = AudioRules.Now100Ns();
             session.StartCapture();
+            if (_hasAudio)
+            {
+                _audio?.Start(_start100);
+            }
+
             _ready.Set();
             var process = Process.GetCurrentProcess();
             _startCpu = process.TotalProcessorTime;
@@ -325,11 +382,11 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
 
             var interval = 10_000_000L / _fps;
             var nextWrite = 0L;
-            var clockStart = RecordingPipeline.Now100Ns();
             ID3D11Texture2D* lastTexture = null;
             while (!_stop.IsSet)
             {
-                var now = RecordingPipeline.Now100Ns() - clockStart;
+                var now = AudioRules.Now100Ns() - _start100;
+                _audio?.Poll();
                 PendingFrame? latest = null;
                 lock (_gate)
                 {
@@ -394,6 +451,11 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
                     nextWrite = now;
                 }
 
+                if (_hasAudio && _audio is not null)
+                {
+                    FlushAudio(writer, _audioStream, AudioRules.FramesAt(now - AudioFlushMargin100Ns, 0));
+                }
+
                 var elapsed = Math.Max(0, now / 10_000);
                 if (elapsed >= _nextStatMs)
                 {
@@ -406,6 +468,18 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
             {
                 ReturnTexture(lastTexture);
                 lastTexture = null;
+            }
+
+            if (_hasAudio && _audio is not null)
+            {
+                _audio.Stop();
+                _audio.Poll();
+                FlushAudio(writer, _audioStream, nextWrite * AudioRules.SampleRate / 10_000_000);
+            }
+
+            if (_note is not null)
+            {
+                Log.Info($"wgc.audio-note {_note}");
             }
         }
         catch (Exception ex)
@@ -513,6 +587,12 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
             }
 
             Log.Info($"wgc.done frames={Frames} ms={ElapsedMs} size={(File.Exists(_final) ? new FileInfo(_final).Length : 0)}");
+            if (_audio is not null)
+            {
+                Log.Info(
+                    $"wgc.audio frames={_audioFrames} loop={_audio.LoopbackPackets}@{_audio.LoopbackPeak:F3} " +
+                    $"mic={_audio.MicrophonePackets}@{_audio.MicrophonePeak:F3} note={_audio.Note}");
+            }
             if (_startWall != 0)
             {
                 var process = Process.GetCurrentProcess();
@@ -560,6 +640,7 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
 
             System.Threading.Interlocked.Increment(ref _arrivedFrames);
             var content = frame.ContentSize;
+
             if (content.Width != _sourceWidth || content.Height != _sourceHeight)
             {
                 _note = "屏幕尺寸变了，录制已停止";
@@ -678,6 +759,159 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
         _effects?.Draw(
             texture, _outputWidth, _outputHeight, _originX, _originY, rings, keycap,
             Environment.TickCount64);
+    }
+
+    private bool AddAudioStream(IntPtr writer, uint* audioStream, out string? error)
+    {
+        error = null;
+        IMFMediaType* outType = null;
+        try
+        {
+            PInvoke.MFCreateMediaType(&outType).ThrowOnFailure();
+            outType->SetGUID(MajorType, AudioMajor);
+            outType->SetGUID(Subtype, Aac);
+            outType->SetUINT32(AudioChannels, AudioRules.Channels);
+            outType->SetUINT32(AudioSamplesPerSecond, AudioRules.SampleRate);
+            outType->SetUINT32(AudioBitsPerSample, 16);
+            outType->SetUINT32(AudioBlockAlignment, AudioRules.PcmBlockAlign);
+            outType->SetUINT32(AudioAvgBytesPerSecond, AudioBitrateBytes);
+            outType->SetUINT32(AacPayloadType, 0);
+            outType->SetUINT32(AacProfile, AacLcProfile);
+            ((IMFSinkWriter*)writer)->AddStream(outType, audioStream);
+        }
+        catch (Exception ex)
+        {
+            error = $"MP4 写入器不接受 AAC 音轨（0x{ex.HResult:X8}）";
+            return false;
+        }
+        finally
+        {
+            if (outType is not null)
+            {
+                outType->Release();
+            }
+        }
+
+        IMFMediaType* inType = null;
+        try
+        {
+            PInvoke.MFCreateMediaType(&inType).ThrowOnFailure();
+            inType->SetGUID(MajorType, AudioMajor);
+            inType->SetGUID(Subtype, Pcm);
+            inType->SetUINT32(AudioChannels, AudioRules.Channels);
+            inType->SetUINT32(AudioSamplesPerSecond, AudioRules.SampleRate);
+            inType->SetUINT32(AudioBitsPerSample, 16);
+            inType->SetUINT32(AudioBlockAlignment, AudioRules.PcmBlockAlign);
+            inType->SetUINT32(AudioAvgBytesPerSecond, AudioRules.PcmBytesPerSecond);
+            ((IMFSinkWriter*)writer)->SetInputMediaType(*audioStream, inType, null);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = $"AAC 编码器不接受 48 kHz 16 位 PCM（0x{ex.HResult:X8}）";
+            return false;
+        }
+        finally
+        {
+            if (inType is not null)
+            {
+                inType->Release();
+            }
+        }
+    }
+
+    /// <summary>把缓冲里到 <paramref name="untilFrame"/> 的混音写成 10 ms 一包的 PCM。</summary>
+    private void FlushAudio(IntPtr writer, uint stream, long untilFrame)
+    {
+        if (_audio is null)
+        {
+            return;
+        }
+
+        var pcm = new byte[AudioRules.ChunkFrames * AudioRules.PcmBlockAlign];
+        while (true)
+        {
+            var frames = _audio.Bus.DrainPcm16(untilFrame, pcm, AudioRules.ChunkFrames);
+            if (frames <= 0)
+            {
+                break;
+            }
+
+            var startFrame = _audio.Bus.Flushed - frames;
+            var sampleTime = startFrame * 10_000_000L / AudioRules.SampleRate;
+            if (!WriteAudio(writer, stream, pcm, frames, sampleTime))
+            {
+                AppendNote("音轨写到一半失败了");
+                Log.Warn("wgc.audio-write-failed");
+                _hasAudio = false;
+                return;
+            }
+
+            _audioFrames += frames;
+            if (frames < AudioRules.ChunkFrames)
+            {
+                break;
+            }
+        }
+    }
+
+    private static bool WriteAudio(
+        IntPtr writer, uint stream, byte[] pcm, int frames, long sampleTime)
+    {
+        IMFMediaBuffer* buffer = null;
+        IMFSample* sample = null;
+        try
+        {
+            var bytes = (uint)(frames * AudioRules.PcmBlockAlign);
+            if (PInvoke.MFCreateMemoryBuffer(bytes, &buffer).Failed)
+            {
+                return false;
+            }
+
+            byte* pointer;
+            uint max;
+            uint current;
+            buffer->Lock(&pointer, &max, &current);
+            fixed (byte* source = pcm)
+            {
+                Buffer.MemoryCopy(source, pointer, bytes, bytes);
+            }
+
+            buffer->Unlock();
+            buffer->SetCurrentLength(bytes);
+            if (PInvoke.MFCreateSample(&sample).Failed)
+            {
+                return false;
+            }
+
+            sample->AddBuffer(buffer);
+            sample->SetSampleTime(sampleTime);
+            sample->SetSampleDuration(frames * 10_000_000L / AudioRules.SampleRate);
+            ((IMFSinkWriter*)writer)->WriteSample(stream, sample);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"wgc.audio-sample 0x{ex.HResult:X8}");
+            return false;
+        }
+        finally
+        {
+            if (sample is not null)
+            {
+                sample->Release();
+            }
+
+            if (buffer is not null)
+            {
+                buffer->Release();
+            }
+        }
+    }
+
+    private void AppendNote(string note)
+    {
+        _note = string.IsNullOrEmpty(_note) ? note : _note + "；" + note;
     }
 
     private void ReturnTexture(ID3D11Texture2D* texture)
@@ -821,8 +1055,6 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
                 {
                     input->Release();
                 }
-
-                ((IMFSinkWriter*)*writer)->BeginWriting();
             }
             finally
             {
