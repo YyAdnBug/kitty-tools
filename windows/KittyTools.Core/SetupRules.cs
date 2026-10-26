@@ -166,6 +166,23 @@ public static class SetupRules
         return Encoding.UTF8.GetString(buffer.ToArray());
     }
 
+    /// <summary>更新后并文件清单（R38）：新装的文件并上旧的，大小写不敏感去重，版本换成新的。</summary>
+    public static SetupMarker WithInstalledFiles(
+        SetupMarker marker, string version, IEnumerable<string> installedRelative)
+    {
+        var files = marker.Files.ToList();
+        var seen = new HashSet<string>(files, StringComparer.OrdinalIgnoreCase);
+        foreach (var relative in installedRelative.Select(NormalizeRelative))
+        {
+            if (seen.Add(relative))
+            {
+                files.Add(relative);
+            }
+        }
+
+        return marker with { Version = version, Files = files };
+    }
+
     /// <summary>读 .kitty-install；结构不对返回 null。files 是后加的，没有就当空。</summary>
     public static SetupMarker? ParseMarker(string text)
     {

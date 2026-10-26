@@ -250,6 +250,17 @@ public sealed class SetupRulesTests
     }
 
     [TestMethod]
+    public void UpdatedMarkerMergesFilesCaseInsensitively()
+    {
+        var marker = new SetupMarker(@"D:\Kitty Tools", "0.7.0", 1, ["KittyTools.exe", "a.dll"]);
+        var updated = SetupRules.WithInstalledFiles(marker, "0.7.1", ["b.dll", "A.DLL", @"sub\c.dll"]);
+        Assert.AreEqual("0.7.1", updated.Version);
+        Assert.AreEqual(1, updated.InstalledAt);
+        CollectionAssert.AreEquivalent(
+            new[] { "KittyTools.exe", "a.dll", "b.dll", @"sub\c.dll" }, updated.Files.ToArray());
+    }
+
+    [TestMethod]
     public void UninstallValues()
     {
         var values = SetupRules.UninstallValues(@"D:\Apps\Kitty Tools\", "0.7.0", 51_234, new DateTime(2026, 10, 26))

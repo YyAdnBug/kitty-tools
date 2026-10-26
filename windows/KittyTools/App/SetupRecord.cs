@@ -51,7 +51,7 @@ internal static class SetupRecord
                 SetupRules.WriteMarker(marker with { Version = version, Files = files }),
                 new UTF8Encoding(false));
             UpdateRegistration(installDir, version);
-            Log.Info($"setup.record-updated files={files.Count}");
+            Log.Info($"setup.record-updated files={updated.Files.Count}");
         }
         catch (Exception ex)
         {
