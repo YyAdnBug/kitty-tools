@@ -57,8 +57,10 @@ final class SelectionView: NSView, NSTextViewDelegate {
       refresh()
     }
   }
-  /// 鼠标位置（悬停窗口、放大镜）；nil = 鼠标不在这块屏上
-  var mouse: CGPoint? { didSet { refresh() } }
+  /// 鼠标位置（悬停窗口、放大镜）；nil = 鼠标不在这块屏上。
+  /// 只更新跟着鼠标走的那几样（悬停的洞和尺寸、手柄的悬停态、放大镜、十字）——整屏蒙层的底、选区描边、
+  /// 工具栏、参考线和鼠标位置无关，没必要每帧都碰一遍图层（2026-10-26 用户手测「快速移动很卡」）
+  var mouse: CGPoint? { didSet { refreshPointer() } }
   private var drag: Drag? { didSet { refresh() } }
   /// 拖动框选途中按下空格：整块平移（系统截屏的习惯）。按下鼠标前就按着的不算（自动重复的按键也不算），
   /// 不然按着空格从选区外拖，会去平移旧选区而不是框新的
@@ -518,10 +520,11 @@ final class SelectionView: NSView, NSTextViewDelegate {
     hint.scale = scale
   }
 
-  /// 出场：蒙层 0.15 s 淡入；提示浮上来，3 s 后淡出
+  /// 出场：蒙层 0.15 s 淡入；提示浮上来，3 s 后淡出。同时挂上跟手的显示链（见 followPointer）
   override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
-    guard window != nil else { return }
+    guard window != nil else { return stopFollowing() }
+    startFollowing()
     updateScale()
     let fade = CABasicAnimation(keyPath: "opacity")
     fade.fromValue = 0
@@ -594,6 +597,26 @@ final class SelectionView: NSView, NSTextViewDelegate {
 
   /// 按状态摆好全部图层（关掉隐式动画，拖动时跟手；只有换悬停窗口、单击选中窗口、蒙层深浅切换、手柄出现 / 悬停放大、
   /// 放大镜出现 / 翻边、两条栏长出 / 淡出时才加动画）
+  /// 鼠标动一下：只碰跟着它走的那几样。别的（选区描边、工具栏、参考线、标注的选中框）都由改它们的地方自己刷
+  private func refreshPointer() {
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    defer { CATransaction.commit() }
+    // 悬停窗口只有待选时有；占位跟着光标走的规矩同 refresh
+    let hovered = selection == nil ? mouse.flatMap(windowRect(at:)) : nil
+    if let mouse, hovered != nil || shownHover != nil || shade.animation(forKey: "morph") != nil {
+      placeholder = mouse
+    }
+    if selection == nil || hovered != shownHover {
+      updateHole(hovered: hovered, shown: selection.map(pixelAligned))
+      updateSizeField(for: selection ?? hovered)
+    }
+    // 调整时手柄有悬停态（指着的那条边加粗、手柄放大）
+    if adjusts && isAdjusting { updateHandles(selection.map(pixelAligned)) }
+    updateMagnifier()
+    updateCrosshair()
+  }
+
   private func refresh() {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
@@ -625,30 +648,33 @@ final class SelectionView: NSView, NSTextViewDelegate {
     updateHandles(adjusting ? shown : nil)
     updateAnnotationChrome()
     placeBars(showing: adjusting && !movesSelection)
-    // 尺寸：选区（或悬停的窗口）旁边，见 sizeFieldOrigin；哪儿都放不下时放进里面、只读（不挡拖边和平移）。调整时可输入
-    let measured = selection ?? hovered
-    sizeField.isHidden = measured == nil
-    if let measured {
-      let pixels = pixelSize(of: measured)
-      let show = { (interactive: Bool) in
-        self.sizeField.show(
-          width: pixels.width, height: pixels.height, interactive: interactive,
-          ratio: RegionSelector.ratioTitle(self.session.lockedRatio),
-          locked: self.session.lockedRatio != nil)
-      }
-      show(adjusting)
-      var origin = sizeFieldOrigin(for: measured, size: sizeField.frame.size)
-      if origin == nil {
-        show(false)
-        let size = sizeField.frame.size
-        origin = CGPoint(
-          x: max(bounds.minX, min(measured.minX + 8, bounds.maxX - size.width)).rounded(),
-          y: (measured.maxY - 8 - size.height).rounded())
-      }
-      if let origin, sizeField.frame.origin != origin { sizeField.setFrameOrigin(origin) }
-    }
+    updateSizeField(for: selection ?? hovered)
     updateMagnifier()
     updateCrosshair()
+  }
+
+  /// 尺寸：选区（或悬停的窗口）旁边，见 sizeFieldOrigin；哪儿都放不下时放进里面、只读（不挡拖边和平移）。调整时可输入
+  private func updateSizeField(for measured: CGRect?) {
+    sizeField.isHidden = measured == nil
+    guard let measured else { return }
+    let adjusting = adjusts && isAdjusting
+    let pixels = pixelSize(of: measured)
+    let show = { (interactive: Bool) in
+      self.sizeField.show(
+        width: pixels.width, height: pixels.height, interactive: interactive,
+        ratio: RegionSelector.ratioTitle(self.session.lockedRatio),
+        locked: self.session.lockedRatio != nil)
+    }
+    show(adjusting)
+    var origin = sizeFieldOrigin(for: measured, size: sizeField.frame.size)
+    if origin == nil {
+      show(false)
+      let size = sizeField.frame.size
+      origin = CGPoint(
+        x: max(bounds.minX, min(measured.minX + 8, bounds.maxX - size.width)).rounded(),
+        y: (measured.maxY - 8 - size.height).rounded())
+    }
+    if let origin, sizeField.frame.origin != origin { sizeField.setFrameOrigin(origin) }
   }
 
   /// 尺寸胶囊放哪（左下角，取整到整点：选区给的是小数点，文字落在半像素上会糊）：左上角外 8 pt → 选区里离左边、上边各 8 pt
@@ -2076,6 +2102,39 @@ final class SelectionView: NSView, NSTextViewDelegate {
     case .topLeft: .topLeft
     case .left: .left
     }
+  }
+
+  // MARK: 跟手
+
+  /// 放大镜跟手（2026-10-26 用户手测「颜色识别快速移动时很卡」）：鼠标移动事件默认是合并的
+  /// （`NSEvent.isMouseCoalescingEnabled`），本 App 又从不激活前台，快速划过时收到的移动事件比屏幕刷新稀，
+  /// 放大镜就一直落在光标后面。挂一条显示链每帧补读一次光标位置——位置没变就直接回（几乎不花时间），
+  /// 变了才走和 mouseMoved 同一条路。只在遮罩挂在可见窗口上时跑，窗口 orderOut 或视图离开窗口就停，
+  /// 不是常驻动画（Whisker 核心 §8）
+  private var follow: CADisplayLink?
+
+  private func startFollowing() {
+    stopFollowing()
+    let link = displayLink(target: self, selector: #selector(followPointer))
+    link.add(to: .main, forMode: .common)
+    follow = link
+  }
+
+  private func stopFollowing() {
+    follow?.invalidate()
+    follow = nil
+  }
+
+  @objc private func followPointer() {
+    // 会话结束是 orderOut（视图还在窗口里，viewDidMoveToWindow 不会再来），在这儿收摊
+    guard let window, window.isVisible else { return stopFollowing() }
+    // 拖动时让拖动事件自己带着走：放大镜跑到选区前面更难看
+    guard case nil = drag, !session.hasSelection(besides: self) else { return }
+    let global = NSEvent.mouseLocation
+    guard window.frame.contains(global) else { return }  // 不在这块屏上：交给 mouseExited 清
+    let now = clamped(convert(window.convertPoint(fromScreen: global), from: nil))
+    if let mouse, abs(mouse.x - now.x) < 0.01, abs(mouse.y - now.y) < 0.01 { return }
+    mouse = now
   }
 
   /// 事件位置（视图坐标），夹在本屏范围内

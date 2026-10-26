@@ -137,6 +137,12 @@ TEST_RUNNER_KITTY_DOCK_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -s
 TEST_RUNNER_KITTY_ISLAND_FRAMES=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/IslandFrameProbeTests/measure()'
 
+# 框选遮罩「鼠标动一下」的探针（按需，屏外，几秒；grep「selection-probe」：放大镜采样、待选 / 框好 / 拖框时
+# 设一次 mouse 各要多久。量的只是主线程的那一下——跟不跟手得真机看，鼠标移动事件是合并的，靠
+# SelectionView.followPointer 那条显示链每帧补读光标位置）
+TEST_RUNNER_KITTY_SELECTION_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -only-testing:'KittyToolsTests/SelectionProbeTests/measure()'
+
 # 启动台的性能 / 内存探针（按需，屏外，几秒；grep「launchpad-probe」：扫目录、第一帧、翻页布局、footprint）
 TEST_RUNNER_KITTY_LAUNCHPAD_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/LaunchpadProbeTests/measure()'
