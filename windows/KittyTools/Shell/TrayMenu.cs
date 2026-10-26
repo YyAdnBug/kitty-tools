@@ -21,6 +21,10 @@ internal static partial class TrayMenu
     private const int HostHeight = 480;
 
     private static Window? _host;
+
+    /// <summary>R33 截图自检用：菜单的宿主窗口（菜单画在它里面）。</summary>
+    internal static IntPtr HandleForProbe =>
+        _host is null ? IntPtr.Zero : WinRT.Interop.WindowNative.GetWindowHandle(_host);
     private static Grid? _anchor;
     private static MenuFlyout? _menu;
     private static bool _opening;

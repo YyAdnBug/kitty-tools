@@ -93,6 +93,26 @@ internal sealed class ScreenshotSession
         session.ShowOverlays();
     }
 
+    /// <summary>
+    /// R33 截图自检：用合成的冻结帧开一次遮罩（不抓桌面、不列窗口），在主屏中间选好一块，工具栏就出来了。
+    /// 返回那扇遮罩；用完调 FinishCurrent。
+    /// </summary>
+    internal static SelectionOverlayWindow? StartSynthetic()
+    {
+        if (_current is not null)
+        {
+            return null;
+        }
+
+        ShellRuntime.Instance?.HotKeys.UnregisterAll();
+        var screen = ScreenCapture.Synthetic();
+        var session = new ScreenshotSession(ScreenshotMode.Capture, new List<FrozenScreen> { screen }, new List<SnapWindow>());
+        _current = session;
+        session.ShowOverlays();
+        session.SetSelection(screen, new RectD(screen.Width * 0.3, screen.Height * 0.25, screen.Width * 0.4, screen.Height * 0.35));
+        return session._overlays.FirstOrDefault();
+    }
+
     private void ShowOverlays()
     {
         try

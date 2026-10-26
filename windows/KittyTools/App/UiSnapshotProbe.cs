@@ -3,6 +3,8 @@
 //
 // 做法：开一个窗口（位置在屏幕外），把面板放进纯色底里，等布局稳定后用 RenderTargetBitmap 出图。
 // 亚克力在 RenderTargetBitmap 里画不出来，所以底下垫的是 Kitty.CardSolid 的实色近似。
+// 透明宿主窗口（轻提示、录制条、录音待录条、托盘菜单）和截图遮罩的工具栏走 WindowShot：
+// WGC 只抓那一扇窗口；截图遮罩用合成的冻结帧，不抓桌面（REVIEW R33）。
 using System.Runtime.InteropServices.WindowsRuntime;
 using KittyTools.Infrastructure;
 using Microsoft.UI.Windowing;
@@ -81,6 +83,8 @@ internal static class UiSnapshotProbe
                 TranslateHost.Hide();
             }
 
+            await RenderWithWgcAsync(directory);
+
             SettingsService.Current.Theme = originalTheme;
             SettingsService.Save();
             Log.Info($"ui-snapshots done dir={directory}");
@@ -101,6 +105,65 @@ internal static class UiSnapshotProbe
             }
 
             Environment.Exit(0);
+        }
+    }
+
+    /// <summary>R33：轻提示、录制条、录音待录条、托盘菜单（浅 / 深）、截图工具栏，各抓各的窗口。</summary>
+    private static async Task RenderWithWgcAsync(string directory)
+    {
+        try
+        {
+            // 录制条平时不让自己被录进去（显示亲和性），这里要拍它。
+            Environment.SetEnvironmentVariable("KITTY_HUD_CAPTURE", "1");
+            NoticeHost.Show("已复制到剪贴板", "3 条记录已合并", NoticeTone.Normal);
+            await Task.Delay(900);
+            await WindowShot.SaveAsync(NoticeHost.HandleForProbe, Path.Combine(directory, "island-notice.png"));
+            NoticeHost.Show("更新失败", "旧版本还能正常用，详情看日志", NoticeTone.Error);
+            await Task.Delay(1200);
+            await WindowShot.SaveAsync(NoticeHost.HandleForProbe, Path.Combine(directory, "island-error.png"));
+
+            RecordingHud.Show(new PixelBounds(200, 200, 1000, 700));
+            await Task.Delay(800);
+            await WindowShot.SaveAsync(RecordingHud.HandleForProbe, Path.Combine(directory, "shot-record-hud.png"));
+            RecordingHud.Hide();
+
+            AudioHud.ShowPending();
+            await Task.Delay(800);
+            await WindowShot.SaveAsync(AudioHud.HandleForProbe, Path.Combine(directory, "shot-audio-pending.png"));
+            AudioHud.Hide();
+
+            foreach (var dark in new[] { false, true })
+            {
+                SettingsService.Current.Theme = dark ? "dark" : "light";
+                SettingsService.Save();
+                TrayMenu.Show();
+                await Task.Delay(900);
+                await WindowShot.SaveAsync(
+                    TrayMenu.HandleForProbe, Path.Combine(directory, $"tray-menu-{(dark ? "dark" : "light")}.png"));
+                TrayMenu.Close();
+                await Task.Delay(300);
+            }
+
+            if (ScreenshotSession.StartSynthetic() is { } overlay)
+            {
+                await Task.Delay(900);
+                // 选区是主屏中间 0.3–0.7 × 0.25–0.6；工具栏和样式托盘在选区下面。
+                var width = overlay.ScreenBounds.Width;
+                var height = overlay.ScreenBounds.Height;
+                var below = (int)(160 * overlay.Screen.Scale);
+                var crop = new PixelBounds(
+                    (int)(width * 0.3) - 40, (int)(height * 0.25) - 40, (int)(width * 0.7) + 40, (int)(height * 0.6) + below);
+                await WindowShot.SaveAsync(overlay.Handle, Path.Combine(directory, "shot-toolbar.png"), crop);
+                ScreenshotSession.FinishCurrent();
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"ui-snapshots wgc-set failed {ex.GetType().Name} {ex.Message}");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("KITTY_HUD_CAPTURE", null);
         }
     }
 

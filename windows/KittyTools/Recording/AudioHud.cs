@@ -19,6 +19,10 @@ internal sealed partial class AudioHud
 {
     private static AudioHud? _instance;
 
+    /// <summary>R33 截图自检（WindowShot）用：当前这扇窗口的 HWND，没开就是 0。</summary>
+    internal static IntPtr HandleForProbe =>
+        _instance is null ? IntPtr.Zero : WinRT.Interop.WindowNative.GetWindowHandle(_instance._window);
+
     private readonly Window _window;
     private readonly TextBlock _timer;
     private readonly Border _levelFill;

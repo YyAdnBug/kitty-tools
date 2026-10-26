@@ -171,6 +171,9 @@ internal sealed partial class SelectionOverlayWindow : Window
 
     public PixelBounds ScreenBounds => _screen.Bounds;
 
+    /// <summary>R33 截图自检用。</summary>
+    internal IntPtr Handle => WinRT.Interop.WindowNative.GetWindowHandle(this);
+
     public FrozenScreen Screen => _screen;
 
     /// <summary>选区 + 标注合成成 PNG（像素和冻结帧 1:1）。</summary>

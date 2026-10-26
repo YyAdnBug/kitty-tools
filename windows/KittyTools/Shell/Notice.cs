@@ -49,6 +49,10 @@ internal sealed unsafe partial class NoticeHost
 
     private static NoticeHost? _current;
 
+    /// <summary>R33 截图自检（WindowShot）用：当前这扇窗口的 HWND，没开就是 0。</summary>
+    internal static IntPtr HandleForProbe =>
+        _current is null ? IntPtr.Zero : WinRT.Interop.WindowNative.GetWindowHandle(_current._window);
+
     private readonly Window _window;
     private readonly Grid _root;
     private readonly Border _pill;

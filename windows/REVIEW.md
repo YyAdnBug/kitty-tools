@@ -99,6 +99,10 @@ x64 包冒烟通过。设置窗的 Mica 在 Release AOT 下会抛 `ArgumentExcep
 - **要做**：把 `--ui-snapshots` 扩展到所有面板和这几个透明窗口，浅色 / 深色各一套，推到 `windows-shots` 的 `0.7.0-v7/`，`STATUS.md` 里列文件名。推之前照旧逐张看，不能有别的程序。
 **进展（`e5100bd`）**：`--ui-snapshots` 的启动器 / 剪贴板 / 设置窗浅深 + 翻译输入态共 7 张已推到 `windows-shots/0.7.0-v7/`；`--clip-scroll-test` 5000 条实测中位 **0.8 ms**、p95 **1.3 ms**，远低于 16 ms，不做 ItemsRepeater。翻译 / 设置 / 截图遮罩 / 透明窗口的截图还没接。
 
+**审查方在 Mac 上补了透明窗口和截图工具栏（没编译过）**：新文件 `App/WindowShot.cs`——WGC `CreateForWindow` 只抓一扇窗口，`SoftwareBitmap.CreateCopyFromSurfaceAsync` 拿像素，裁到不透明的部分、垫 10 px 棋盘格存 PNG。`--ui-snapshots` 在翻译窗之后多出 7 张：`island-notice`、`island-error`、`shot-record-hud`（进程里临时设 `KITTY_HUD_CAPTURE=1`）、`shot-audio-pending`、`tray-menu-light` / `-dark`、`shot-toolbar`。截图遮罩用 `ScreenshotSession.StartSynthetic()`：冻结帧是 `ScreenCapture.Synthetic()` 画的深灰底加三块色块，**不抓桌面、不列窗口**，选区固定在主屏中间，图裁到选区加下面的工具栏。各窗口加了只给自检用的 `HandleForProbe`。
+
+**要做（Windows 上）**：编译、跑一遍 `--ui-snapshots`，逐张看（尤其 `shot-toolbar` 里只有合成的底），推到 `windows-shots/0.7.0-v7/`，`STATUS.md` 列文件名。拍不到的（日志 `ui-snapshots <名字> wgc-timeout / no-item / empty`）写原因。托盘菜单的浅 / 深两张要是一样，说明宿主窗口不跟设置里的外观，记下来，第 3 批一起看。高对比度要改系统设置，不在自检里切，手测时截。
+
 - 第七版第 2 批没做 `ItemsRepeater` + 自定义虚拟化布局，现在是 `ListView` 加变高的行。照 PLAN-v7 量一次：5000 条剪贴板按住 ↓ 连发 3 s，每次按键到画面更新的耗时，取中位数和最慢的 5%。超过 16 ms 再做虚拟化布局。
 
 ### R34（P2）截图后 +18 MB、设置窗关掉后 +10 MB：先确认会不会越积越多 → 已修（`1f03f72`）

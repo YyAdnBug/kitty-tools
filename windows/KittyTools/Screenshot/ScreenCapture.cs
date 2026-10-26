@@ -112,6 +112,55 @@ internal static unsafe partial class ScreenCapture
 
     private static List<IntPtr>? _collected;
 
+    /// <summary>
+    /// R33 截图自检用的假冻结帧：主屏大小，深灰底上几块浅一点的「窗口」，不含任何真实的屏幕内容，
+    /// 截出来的图可以直接推到公开的 windows-shots。
+    /// </summary>
+    internal static FrozenScreen Synthetic()
+    {
+        var monitor = (IntPtr)Windows.Win32.PInvoke.MonitorFromPoint(
+            new System.Drawing.Point(0, 0), Windows.Win32.Graphics.Gdi.MONITOR_FROM_FLAGS.MONITOR_DEFAULTTOPRIMARY).Value;
+        var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+        GetMonitorInfo(monitor, ref info);
+        var dpiX = 96u;
+        var dpiY = 96u;
+        GetDpiForMonitor(monitor, 0, ref dpiX, ref dpiY);
+        var bounds = new PixelBounds(
+            info.rcMonitor.Left, info.rcMonitor.Top, info.rcMonitor.Right, info.rcMonitor.Bottom);
+        var width = Math.Max(800, bounds.Width);
+        var height = Math.Max(600, bounds.Height);
+        bounds = new PixelBounds(bounds.Left, bounds.Top, bounds.Left + width, bounds.Top + height);
+        var bgra = new byte[width * height * 4];
+        var blocks = new[]
+        {
+            (0.08, 0.10, 0.42, 0.55, (byte)0x3A, (byte)0x3C, (byte)0x44),
+            (0.35, 0.30, 0.40, 0.45, (byte)0xE8, (byte)0xE8, (byte)0xEC),
+            (0.62, 0.15, 0.30, 0.30, (byte)0x2F, (byte)0x6F, (byte)0xD6),
+        };
+        for (var y = 0; y < height; y++)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                byte b = 0x33, g = 0x2D, r = 0x2B;
+                foreach (var (left, top, w, h, bb, gg, rr) in blocks)
+                {
+                    if (x >= left * width && x < (left + w) * width && y >= top * height && y < (top + h) * height)
+                    {
+                        (b, g, r) = (bb, gg, rr);
+                    }
+                }
+
+                var index = (y * width + x) * 4;
+                bgra[index] = b;
+                bgra[index + 1] = g;
+                bgra[index + 2] = r;
+                bgra[index + 3] = 255;
+            }
+        }
+
+        return new FrozenScreen { Index = 0, Bounds = bounds, Scale = Math.Max(1.0, dpiX / 96.0), Bgra = bgra };
+    }
+
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvStdcall) })]
     private static int CollectMonitor(IntPtr monitor, IntPtr hdc, RECT* clip, IntPtr data)
     {
