@@ -715,6 +715,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 有新版本：菜单栏图标右上角出小圆点，常驻到更新为止
     updater.onAvailableChange = { [weak statusItem] in statusItem?.updateVersion = $0?.version }
     updater.start()
+    // 刘海岛：点刘海、快捷键「打开刘海岛」叫出那一张。快捷动作每次打开时现取（关着的功能不出，录着时写「停止录屏」）
+    island.boardActions = { [unowned self] in
+      let recording: HotKeyAction? =
+        recorder != nil ? .screenRecord : audioRecorder?.isStarted == true ? .audioRecord : nil
+      return HotKeyAction.islandShortcuts.filter(\.isActive).map { action in
+        Island.Action(action.title(recording: recording == action), symbol: action.symbol) {
+          [unowned self] in run(action)
+        }
+      }
+    }
+    // 框选截图 / 录屏、启动台、状态屏盖着刘海时，点它、停在它上面都不算
+    island.isSuppressed = { [unowned self] in
+      isCapturing || launchpad.isOpen || statusScreen.isActive
+    }
+    island.start()
     showWelcomeIfNeeded()
     // 有快捷键没注册上（15.0 / 15.1 上只带 ⌥ 的组合）：按了没反应又不知道为什么，启动时说一次
     // （放在「已更新」之后：同一座岛原地换内容，警告不能被盖掉）
@@ -1206,6 +1221,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     case .noteNew: newNote()
     case .noteAll: showNotes()
     case .launchpad: launchpad.toggle()
+    case .island: island.toggleBoard()
     }
   }
 

@@ -162,7 +162,7 @@ struct HotKeyRecorder: View {
     {
       message =
         other.isActive
-        ? "和「\(other.title)」重复" : "和「\(other.title)」重复（\(other.feature.title)已关闭）"
+        ? "和「\(other.title)」重复" : "和「\(other.title)」重复（\(other.feature?.title ?? "它")已关闭）"
       return
     }
     action.hotKey = hotKey

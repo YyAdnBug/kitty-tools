@@ -296,6 +296,62 @@ struct IslandExcerptTests {
     #expect(Island.Action.settings(for: .accessibility).opens)
   }
 
+  /// 最近的提示（那一张里的列表）：最多 10 条、新的在前；进行中的不记；按钮只留打开类的（撤销过后再点会出事）
+  @MainActor @Test func historyKeepsRecentNotices() {
+    let island = Island(showing: nil)
+    let url = URL(filePath: "/tmp/a.png")
+    for index in 1...12 {
+      island.show("第 \(index) 条", actions: [.init("撤销") {}, .reveal(url)])
+    }
+    island.show("翻译中…", tone: .progress)
+    #expect(island.history.count == Island.historyLimit)
+    #expect(island.history.first?.content.title == "第 12 条")
+    #expect(island.history.last?.content.title == "第 3 条")
+    #expect(island.history.allSatisfy { $0.actions.map(\.title) == ["在访达中显示"] })
+  }
+
+  /// 那一张（点刘海 / 快捷键叫出来）：开着时来的提示先排着、列表里当场就有；收起那一张时换上排着的那条
+  @MainActor @Test func boardQueuesNotices() {
+    let island = Island(showing: nil)
+    island.boardActions = { [.init("截图", symbol: "camera.viewfinder") {}] }
+    island.toggleBoard()
+    #expect(island.isBoardOpen && island.isOpen && island.content == nil)
+    #expect(island.quickActions.map(\.title) == ["截图"])
+    island.show("已复制")
+    #expect(island.isBoardOpen && island.content == nil)
+    #expect(island.history.first?.content.title == "已复制")
+    island.toggleBoard()
+    #expect(!island.isBoardOpen && island.content?.title == "已复制")
+    // 岛上正有提示时叫出那一张：换成那一张（那条已经在列表里）
+    island.toggleBoard()
+    #expect(island.isBoardOpen && island.content == nil && island.actions.isEmpty)
+  }
+
+  /// 指针停在刘海上才算：只认刘海本身（鼓起那一圈不算），含屏幕最顶那一行、不往上越过顶边；没有刘海的屏都不算
+  @Test func notchHitIsTheNotchOnly() {
+    let notch = CGRect(x: 650, y: 1074, width: 200, height: 38)  // 屏幕坐标，屏顶 y = 1112
+    #expect(Island.onNotch(CGPoint(x: 750, y: 1100), notches: [notch]))
+    #expect(Island.onNotch(CGPoint(x: 750, y: 1112), notches: [notch]))  // 最顶那一行
+    #expect(!Island.onNotch(CGPoint(x: 750, y: 1114), notches: [notch]))  // 上面那块屏的底边
+    #expect(!Island.onNotch(CGPoint(x: 645, y: 1100), notches: [notch]))  // 鼓起那一圈
+    #expect(!Island.onNotch(CGPoint(x: 750, y: 1071), notches: [notch]))
+    #expect(!Island.onNotch(CGPoint(x: 750, y: 1100), notches: []))
+  }
+
+  /// 那一张开着时排着的提示（评审 1、6）：指针离开那一张不当场换；在进行中的提示上叫出那一张，进行中的留着、收起后回来
+  @MainActor @Test func boardKeepsProgressAndWaitsOnLeave() {
+    let island = Island(showing: nil)
+    island.show("正在压缩…", tone: .progress)
+    island.toggleBoard()
+    island.progress("正在压缩…", detail: "40%", fraction: 0.4)
+    island.hover(true)
+    island.show("已复制")
+    island.hover(false)
+    #expect(island.isBoardOpen && island.content == nil)
+    island.toggleBoard()
+    #expect(!island.isBoardOpen && island.content?.title == "已复制")
+  }
+
   /// 双指往上滑收起：按手指方向算，「自然滚动」开着时 scrollingDeltaY 和手指同向（往下为正）
   @Test func swipeUpFollowsFingers() {
     #expect(Island.fingersUp(deltaY: -10, inverted: true) == 10)

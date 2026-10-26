@@ -963,6 +963,43 @@ struct SnapshotProbeTests {
         IslandView(island: island), size: geometry.windowSize, dark: false, to: "\(out)/\(name).png"
       )
     }
+    // 那一张（点刘海 / 快捷键叫出来，2026-10-26）：一排快捷动作 + 最近的提示（带打开类按钮的、截图缩略图前导、错误）；
+    // 无刘海屏上是圆角卡片、还没有提示时的空样子；指针停在刘海上时鼓起一点
+    let quick = HotKeyAction.islandShortcuts.map { Island.Action($0.title, symbol: $0.symbol) {} }
+    let records = [
+      Island.Record(
+        content: .init(
+          title: "已保存到「桌面」", detail: "截屏 2026-10-26 14.32.08.png", tone: .success,
+          symbol: "checkmark.circle.fill", leading: .color(.systemTeal)),
+        actions: [.reveal(URL(filePath: "/tmp/a.png"))], at: .now.addingTimeInterval(-40)),
+      Island.Record(
+        content: .init(
+          title: "已复制", detail: "https://example.com/kitty-tools", tone: .success,
+          symbol: "checkmark.circle.fill", leading: .tone), actions: [],
+        at: .now.addingTimeInterval(-300)),
+      Island.Record(
+        content: .init(
+          title: "翻译失败", detail: longError, tone: .error, symbol: "exclamationmark.circle.fill",
+          leading: .tone), actions: [], at: .now.addingTimeInterval(-1500)),
+      Island.Record(
+        content: .init(
+          title: "需要「屏幕录制」授权", detail: "截图翻译要用，授权后可能要重新打开本 App", tone: .warning,
+          symbol: "exclamationmark.triangle.fill", leading: .tone),
+        actions: [.settings(for: .screenRecording)], at: .now.addingTimeInterval(-4000)),
+    ]
+    let boards: [(String, Island.Geometry, [Island.Record])] = [
+      ("island-board", notch, records), ("island-board-capsule", .capsule(menuBar: 24), records),
+      ("island-board-empty", notch, []),
+    ]
+    for (name, geometry, list) in boards {
+      let island = Island(showing: nil, geometry: geometry, board: list, quickActions: quick)
+      try snapshot(
+        IslandView(island: island), size: geometry.boardWindowSize, dark: false,
+        to: "\(out)/\(name).png")
+    }
+    try snapshot(
+      IslandView(island: Island(showing: nil, geometry: notch, peeking: true)),
+      size: notch.windowSize, dark: false, to: "\(out)/island-peek.png")
     // 黄色强调色：信息 / 进行中的底是强调色，上面的符号要换深色（Style.onBrand）才看得见——岛垫的圆底、自带圆底的各一张。
     // 只换内存里的颜色，不写偏好
     Accent.shared.select(.yellow, persists: false)

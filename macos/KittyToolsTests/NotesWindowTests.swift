@@ -498,8 +498,9 @@ struct NotesWindowTests {
   /// 「便签」一节在「截图与录制」之后、「启动台」之前，三项按这个顺序
   @Test func hotKeyActions() throws {
     #expect(
-      Array(HotKeyAction.allCases.suffix(5))
-        == [.noteCapture, .noteNew, .noteAll, .launchpad, .shotHistory])
+      Array(HotKeyAction.allCases.suffix(6)) == [
+        .noteCapture, .noteNew, .noteAll, .launchpad, .shotHistory, .island,
+      ])
     #expect(
       HotKeyAction.noteCapture.defaultHotKey == HotKey(keyCode: kVK_ANSI_N, modifiers: optionKey))
     #expect(HotKeyAction.noteNew.defaultHotKey == nil && HotKeyAction.noteAll.defaultHotKey == nil)
@@ -528,7 +529,7 @@ struct NotesWindowTests {
     #expect(Array(targets[start..<start + 3]) == ["noteCapture", "noteNew", "noteAll"])
     #expect(
       targets[start - 1] == "shotHistory" && targets[start + 3] == "launchpad"
-        && targets[start + 4] == "settings")
+        && targets[start + 4] == "island" && targets[start + 5] == "settings")
     #expect(launcher[start..<start + 3].map(\.title) == ["快速记一条", "新建便签", "全部便签"])
     for item in launcher[start..<start + 3] {
       #expect(item.symbol == item.hotKeyAction?.symbol, "\(item.title)")

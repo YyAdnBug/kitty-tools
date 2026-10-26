@@ -146,7 +146,7 @@ struct HotKey: Codable, Hashable {
 enum HotKeyAction: String, CaseIterable {
   case clipboard, selectionTranslate, inputTranslate, screenshotTranslate, launcher, screenshot,
     screenshotLastRegion, recognizeText, translateReplace, screenRecord, audioRecord, pinClipboard,
-    statusScreen, noteCapture, noteNew, noteAll, launchpad, shotHistory
+    statusScreen, noteCapture, noteNew, noteAll, launchpad, shotHistory, island
 
   var title: String {
     switch self {
@@ -168,6 +168,7 @@ enum HotKeyAction: String, CaseIterable {
     case .noteNew: "新建便签"
     case .noteAll: "全部便签"
     case .launchpad: "启动台"
+    case .island: "打开刘海岛"
     }
   }
 
@@ -233,6 +234,8 @@ enum HotKeyAction: String, CaseIterable {
     case .noteNew, .noteAll: nil
     // 启动台（第八族）不设默认键：触控板捏合是主入口（系统那项开着时设置页会提示关），快捷键到 设置 › 快捷键 里自己设（SPEC R8）
     case .launchpad: nil
+    // 刘海岛（2026-10-26）：刘海屏点刘海就能打开，键给没有刘海的屏用，到 设置 › 快捷键 里自己设
+    case .island: nil
     }
   }
 
@@ -272,16 +275,17 @@ enum HotKeyAction: String, CaseIterable {
   /// 节标题换成它的名字
   static func visibleSections(enabled: Set<Feature>) -> [(title: String, actions: [HotKeyAction])] {
     allSections.compactMap { section in
-      let actions = section.actions.filter { enabled.contains($0.feature) }
+      let actions = section.actions.filter { $0.feature.map(enabled.contains) ?? true }
       guard let first = actions.first else { return nil }
       let shared = Set(section.actions.map(\.feature)).count > 1
       let alone = Set(actions.map(\.feature)).count == 1
-      return (shared && alone ? first.feature.title : section.title, actions)
+      return (shared && alone ? first.feature?.title ?? section.title : section.title, actions)
     }
   }
 
-  /// 归哪个功能（Feature）：就是它所在的那一节——截图翻译归翻译（截图关了它照样能用）、钉住剪贴板里的图归截图
-  var feature: Feature {
+  /// 归哪个功能（Feature）：就是它所在的那一节——截图翻译归翻译（截图关了它照样能用）、钉住剪贴板里的图归截图。
+  /// nil = 不属于哪个功能、一直在（打开刘海岛：岛是全 App 的轻提示，关不掉）
+  var feature: Feature? {
     switch self {
     case .clipboard: .clipboard
     case .launcher: .launcher
@@ -292,15 +296,16 @@ enum HotKeyAction: String, CaseIterable {
     case .noteCapture, .noteNew, .noteAll: .notes
     case .launchpad: .launchpad
     case .statusScreen: .statusScreen
+    case .island: nil
     }
   }
 
   /// 这台系统上有没有这一项（启动台只在 macOS 26 起有）：没有的不注册、不参与查重
-  var isAvailable: Bool { feature.isAvailable }
+  var isAvailable: Bool { feature?.isAvailable ?? true }
 
   /// 现在用得上：系统有、功能也开着。关着的功能不注册热键（交还给系统和别的 App）、不出现在任何入口；
   /// 查重仍然算它（HotKeyRecorder：重新打开时不和别的动作抢同一个组合）
-  var isActive: Bool { feature.isOn }
+  var isActive: Bool { feature?.isOn ?? true }
 
   private static let allSections: [(title: String, actions: [HotKeyAction])] = [
     ("剪贴板与启动器", [.clipboard, .launcher]),
@@ -319,6 +324,13 @@ enum HotKeyAction: String, CaseIterable {
     ("启动台", [.launchpad]),
     // 菜单栏里这一节不画节标题，只有一项「状态屏」带子菜单（每个状态一行，AppDelegate.buildStatusMenu）
     ("状态屏", [.statusScreen]),
+    // 刘海岛（2026-10-26）：不属于哪个功能、一直在
+    ("刘海岛", [.island]),
+  ]
+
+  /// 刘海岛那一张上的快捷动作（2026-10-26）：截图家族在前（同截图工具栏的顺序），再录制、快速记一条
+  static let islandShortcuts: [HotKeyAction] = [
+    .screenshot, .recognizeText, .screenshotTranslate, .screenRecord, .audioRecord, .noteCapture,
   ]
 
   /// 种类色块里的符号
@@ -345,6 +357,7 @@ enum HotKeyAction: String, CaseIterable {
     // 便签家族的符号（设置页头、速查表那一组也是它）
     case .noteAll: "note.text"
     case .launchpad: "square.grid.3x3.fill"
+    case .island: "rectangle.topthird.inset.filled"
     }
   }
 
@@ -361,6 +374,7 @@ enum HotKeyAction: String, CaseIterable {
     case .statusScreen: Style.Family.statusScreen
     case .noteCapture, .noteNew, .noteAll: Style.Family.notes
     case .launchpad: Style.Family.launchpad
+    case .island: Style.Family.general
     }
   }
 }

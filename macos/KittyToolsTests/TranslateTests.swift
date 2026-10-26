@@ -272,11 +272,12 @@ struct HistoryStoreTests {
     // 只能加在末尾（注册 id 是下标）：录屏（2026-09-30）接在划词翻译并替换后面，录音（录音第 5 批，不设默认键）再接在后面，
     // 钉住剪贴板里的图（第二轮体检 F1，不设默认键）又接在后面，状态屏（2026-10-10，不设默认键）再接在后面，
     // 便签的三个（2026-10-12，只有快速记一条有默认键）接在后面，启动台（2026-10-18，不设默认键）再接在后面，
-    // 截图历史（2026-10-26，不设默认键）接在最后——它在菜单和启动器里排在钉图后面，但枚举里只能往末尾加
+    // 截图历史（2026-10-26，不设默认键）接在后面——它在菜单和启动器里排在钉图后面，但枚举里只能往末尾加——
+    // 打开刘海岛（2026-10-26，不设默认键）接在最后
     #expect(
-      Array(HotKeyAction.allCases.suffix(10)) == [
+      Array(HotKeyAction.allCases.suffix(11)) == [
         .translateReplace, .screenRecord, .audioRecord, .pinClipboard, .statusScreen, .noteCapture,
-        .noteNew, .noteAll, .launchpad, .shotHistory,
+        .noteNew, .noteAll, .launchpad, .shotHistory, .island,
       ])
     #expect(HotKeyAction.audioRecord.defaultHotKey == nil)
     #expect(HotKeyAction.pinClipboard.defaultHotKey == nil)

@@ -149,10 +149,10 @@ struct ShortcutsSheet: View {
   /// 单测喂集合：关着的功能的组不列；列出来的组里关着的功能的全局键、指向关着的功能的行也去掉
   static func groups(enabled: Set<Feature>) -> [Group] {
     allGroups.compactMap { group in
-      let owners = group.features.isEmpty ? group.globals.map(\.feature) : group.features
+      let owners = group.features.isEmpty ? group.globals.compactMap(\.feature) : group.features
       guard owners.isEmpty || owners.contains(where: enabled.contains) else { return nil }
       var group = group
-      group.globals = group.globals.filter { enabled.contains($0.feature) }
+      group.globals = group.globals.filter { $0.feature.map(enabled.contains) ?? true }
       group.entries = group.entries.filter { $0.needs.map(enabled.contains) ?? true }
       return group
     }
@@ -511,6 +511,14 @@ struct ShortcutsSheet: View {
           Entry("Esc", text: "进入之后按住 2 秒：退出"),
           Entry(text: "进入之后用鼠标按住屏幕底部的提示 2 秒：退出（动一下鼠标，提示就出现）"),
           Entry("0–9", text: "设了退出密码时：按住满 2 秒后输入密码（⌫ 删一位，Esc 不输了）"),
+        ]),
+      // 刘海岛（mac-whisker S2，2026-10-26）：不属于哪个功能，一直列
+      Group(
+        title: "刘海岛", symbol: HotKeyAction.island.symbol, color: Style.Family.general,
+        globals: [.island],
+        entries: [
+          Entry(text: "点刘海：打开 / 收起最近的提示和快捷动作（指针停在刘海上时岛会鼓起一点）"),
+          Entry(text: "鼠标挪到弹出的提示上：停住、展开看全文和按钮；在岛上双指往上滑收起"),
         ]),
       // mac-whisker §6 设置；代码在 SettingsWindow 的 SettingsCommands（主菜单「显示 › 返回」）
       Group(
