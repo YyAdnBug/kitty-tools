@@ -6,6 +6,7 @@ using System.Text.Json;
 using KittyTools.Infrastructure;
 using KittyTools.Core;
 using KittyTools.Ui;
+using Microsoft.UI;
 using Microsoft.UI.Input;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -15,6 +16,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.Windows.Storage.Pickers;
 using Windows.System;
+using Windows.UI;
 using Windows.UI.Core;
 using Windows.Win32;
 
@@ -238,33 +240,11 @@ internal sealed class SettingsWindow : Window
                 SettingsService.Save();
             });
 
-        AddCombo("外观", "跟随系统 / 浅色 / 深色。",
-            new[] { "跟随系统", "浅色", "深色" },
-            SettingsService.Current.Theme switch { "light" => 1, "dark" => 2, _ => 0 },
-            index =>
-            {
-                SettingsService.Current.Theme = index switch { 1 => "light", 2 => "dark", _ => "system" };
-                SettingsService.Save();
-                Theme.ApplyTo(_shell);
-                _nav.RequestedTheme = Theme.ElementTheme;
-                BuildPage(_currentPage);
-            });
+        _content.Children.Add(SettingsUi.Card(
+            Glyphs.Palette, "外观", "跟随系统、浅色或深色。", ThemePicker()));
 
-        // PLAN-v7 U5：跟随系统 + 8 档。旧值 brand 当作品牌粉。
-        var accentKeys = new[] { "system", "blue", "purple", "pink", "red", "orange", "yellow", "green", "graphite" };
-        var accentNames = new[] { "跟随系统", "蓝", "紫", "品牌粉", "红", "橙", "黄", "绿", "石墨" };
-        var currentAccent = SettingsService.Current.Accent == "brand" ? "pink" : SettingsService.Current.Accent;
-        var accentIndex = Math.Max(0, Array.IndexOf(accentKeys, currentAccent));
-        AddCombo("强调色", "跟随系统，或者固定成一种颜色。",
-            accentNames,
-            accentIndex,
-            index =>
-            {
-                SettingsService.Current.Accent = accentKeys[Math.Clamp(index, 0, accentKeys.Length - 1)];
-                SettingsService.Save();
-                Theme.ApplyAccent();
-                BuildPage(_currentPage);
-            });
+        _content.Children.Add(SettingsUi.Card(
+            Glyphs.Palette, "强调色", "跟随系统，或者固定成一种颜色。", AccentPicker()));
 
         AddToggle("自动检查更新", "每天检查一次，有新版本时提示。",
             SettingsService.Current.AutoCheckUpdates,
@@ -2171,6 +2151,131 @@ internal sealed class SettingsWindow : Window
 
     private static UIElement Header(string title, string subtitle)
         => SettingsUi.Header(title, subtitle);
+
+    /// <summary>PLAN-v7 §3.7：外观三张缩略图（跟随系统 / 浅色 / 深色）。</summary>
+    private FrameworkElement ThemePicker()
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var options = new[]
+        {
+            ("system", "跟随系统", Theme.Argb(255, 245, 245, 245), Theme.Argb(255, 32, 32, 32)),
+            ("light", "浅色", Theme.Argb(255, 250, 250, 250), Theme.Argb(255, 250, 250, 250)),
+            ("dark", "深色", Theme.Argb(255, 28, 28, 28), Theme.Argb(255, 28, 28, 28)),
+        };
+        var current = SettingsService.Current.Theme;
+        foreach (var (key, name, left, right) in options)
+        {
+            var preview = new Border
+            {
+                Width = 56,
+                Height = 36,
+                CornerRadius = new CornerRadius(4),
+                Background = new LinearGradientBrush
+                {
+                    StartPoint = new Windows.Foundation.Point(0, 0),
+                    EndPoint = new Windows.Foundation.Point(1, 0),
+                    GradientStops =
+                    {
+                        new GradientStop { Color = left, Offset = 0 },
+                        new GradientStop { Color = right, Offset = 1 },
+                    },
+                },
+            };
+            var content = new StackPanel { Spacing = 4 };
+            content.Children.Add(preview);
+            content.Children.Add(new TextBlock
+            {
+                Text = name,
+                FontSize = Theme.FontSize("Kitty.FontSize.Label"),
+                HorizontalAlignment = HorizontalAlignment.Center,
+            });
+            var button = new Button
+            {
+                Content = content,
+                Padding = new Thickness(3),
+                Background = new SolidColorBrush(Colors.Transparent),
+                BorderThickness = new Thickness(current == key || current == "system" && key == "system" ? 2 : 1),
+                BorderBrush = current == key
+                    ? new SolidColorBrush(Theme.AccentColor)
+                    : Theme.Brush("Kitty.Hairline", Theme.Argb(20, 0, 0, 0)),
+                CornerRadius = new CornerRadius(6),
+            };
+            AutomationProperties.SetName(button, "外观：" + name);
+            button.Click += (_, _) =>
+            {
+                SettingsService.Current.Theme = key;
+                SettingsService.Save();
+                Theme.ApplyTo(_shell);
+                _nav.RequestedTheme = Theme.ElementTheme;
+                BuildPage(_currentPage);
+            };
+            row.Children.Add(button);
+        }
+
+        return row;
+    }
+
+    /// <summary>PLAN-v7 U5：跟随系统 + 8 个色点，选中的中间有白点。</summary>
+    private FrameworkElement AccentPicker()
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var current = SettingsService.Current.Accent == "brand" ? "pink" : SettingsService.Current.Accent;
+        var options = new List<(string Key, string Name, Color Color)>
+        {
+            ("system", "跟随系统", Theme.AccentColor),
+        };
+        foreach (var accent in AccentPalette.All)
+        {
+            options.Add((accent.Key, accent.Name, Theme.ToColor(AccentPalette.Value(accent, Theme.EffectiveTheme == ElementTheme.Dark))));
+        }
+
+        foreach (var (key, name, color) in options)
+        {
+            var selected = string.Equals(current, key, StringComparison.OrdinalIgnoreCase);
+            var dot = new Border
+            {
+                Width = 24,
+                Height = 24,
+                CornerRadius = new CornerRadius(12),
+                Background = new SolidColorBrush(color),
+                BorderBrush = new SolidColorBrush(selected ? Theme.OnAccentColor : Theme.Argb(40, 128, 128, 128)),
+                BorderThickness = new Thickness(selected ? 2 : 1),
+                Child = selected
+                    ? new Border
+                    {
+                        Width = 6,
+                        Height = 6,
+                        CornerRadius = new CornerRadius(3),
+                        Background = new SolidColorBrush(Theme.OnAccentColor),
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center,
+                    }
+                    : null,
+            };
+            var button = new Button
+            {
+                Content = dot,
+                Width = 32,
+                Height = 32,
+                Padding = new Thickness(0),
+                Background = new SolidColorBrush(Colors.Transparent),
+                BorderThickness = new Thickness(0),
+                CornerRadius = new CornerRadius(16),
+            };
+            ToolTipService.SetToolTip(button, name);
+            AutomationProperties.SetName(button, "强调色：" + name);
+            button.Click += (_, _) =>
+            {
+                SettingsService.Current.Accent = key;
+                SettingsService.Save();
+                Theme.ApplyAccent();
+                BuildPage(_currentPage);
+            };
+            row.Children.Add(button);
+        }
+
+        return row;
+    }
 
     private void AddToggle(string title, string subtitle, bool value, Action<bool> changed, string glyph = "")
         => _content.Children.Add(SettingsUi.Card(
