@@ -19,7 +19,12 @@ internal static unsafe class StartMenuShortcut
     public static void Ensure()
     {
 #if !DEBUG
-        // Dev 版不建开始菜单项，正式版才建。
+        // Dev 版不建开始菜单项，正式版才建；Release 的探针档（KITTY_PROBE_PROFILE）也不碰用户的开始菜单。
+        if (Paths.IsTestProfile)
+        {
+            return;
+        }
+
         try
         {
             var exe = Environment.ProcessPath;

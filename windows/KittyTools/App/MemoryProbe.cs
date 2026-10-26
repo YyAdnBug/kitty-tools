@@ -70,6 +70,10 @@ internal static class MemoryProbe
             await Task.Delay(IdleSeconds * 1000);
             Report("screenshot-second");
 
+            // R27：截图之后空闲两分钟（空闲回收会在截图结束两分钟后跑一次），看回没回到截图之前。
+            await Task.Delay(SettleSeconds * 1000);
+            Report("screenshot-settled");
+
             await ProbePinAsync();
             await Task.Delay(IdleSeconds * 1000);
             Report("pin-window");
@@ -82,6 +86,11 @@ internal static class MemoryProbe
 
             await Task.Delay(SettleSeconds * 1000);
             Report("settled");
+
+            // R27：录屏之后两分钟回到录之前 +5 MB 以内。只录探针自己开的一个小窗口（R16：不录桌面），不录声音。
+            await ProbeRecordingAsync();
+            await Task.Delay(SettleSeconds * 1000);
+            Report("recording-settled");
             Cleanup();
             Log.Info("memprobe.end");
         }
@@ -157,6 +166,61 @@ internal static class MemoryProbe
         catch (Exception ex)
         {
             Log.Warn($"memprobe.pin-failed {ex.GetType().Name}");
+        }
+    }
+
+    private static async Task ProbeRecordingAsync()
+    {
+        Microsoft.UI.Xaml.Window? window = null;
+        var folder = Path.Combine(Path.GetTempPath(), "kitty-memprobe-record-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            window = new Microsoft.UI.Xaml.Window
+            {
+                Title = Paths.ProductName + " 内存探针",
+                Content = new Microsoft.UI.Xaml.Controls.Grid
+                {
+                    Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                        Windows.UI.Color.FromArgb(255, 0x7E, 0x4D, 0xFF)),
+                },
+            };
+            window.AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(40, 40, 640, 360));
+            window.AppWindow.Show(false);
+            await Task.Delay(800);
+            Report("recording-before");
+            var recorder = WgcRecorder.StartWindow(
+                WinRT.Interop.WindowNative.GetWindowHandle(window), 30, folder,
+                systemAudio: false, microphone: false, out var error, out _);
+            if (recorder is null)
+            {
+                Log.Warn($"memprobe.record-failed {error}");
+                return;
+            }
+
+            await Task.Delay(5000);
+            var path = await Task.Run(recorder.Stop);
+            recorder.Dispose();
+            Log.Info($"memprobe.recorded bytes={(path is not null && File.Exists(path) ? new FileInfo(path).Length : 0)}");
+            IdleReclaimer.Schedule();
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"memprobe.record-failed {ex.GetType().Name}");
+        }
+        finally
+        {
+            window?.Close();
+            try
+            {
+                if (Directory.Exists(folder))
+                {
+                    Directory.Delete(folder, recursive: true);
+                }
+            }
+            catch
+            {
+                // 临时目录删不掉无所谓。
+            }
         }
     }
 

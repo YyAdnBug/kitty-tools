@@ -22,12 +22,33 @@ internal static class Paths
 
     public static string CredentialPrefix => "KittyTools.Dev/" + Suffix;
 #else
-    public const string ProductName = "Kitty Tools";
-    public const string DataFolderName = "KittyTools";
-    public const string MutexName = @"Local\KittyTools";
-    public const string InstancePipeName = "KittyTools.Instance";
-    public const string RunValueName = "KittyTools";
-    public const string CredentialPrefix = "KittyTools/";
+    // 自检（内存探针、冷启动这类要在 Release AOT 下量的）用的独立一套：KITTY_PROBE_PROFILE=<字母数字> 时数据目录、
+    // 互斥量、托盘名、凭据前缀都换成「.Probe.<名字>」，不碰真实数据，也不和正在用的那个抢单实例（REVIEW R27）。
+    // 正常运行不设这个变量，永远是下面固定的那套。
+    private static readonly string Suffix =
+        Environment.GetEnvironmentVariable("KITTY_PROBE_PROFILE") is { Length: > 0 and <= 32 } value &&
+        value.All(char.IsAsciiLetterOrDigit)
+            ? ".Probe." + value
+            : string.Empty;
+
+    public static string ProductName => "Kitty Tools" + Suffix;
+
+    public static string DataFolderName => "KittyTools" + Suffix;
+
+    public static string MutexName => @"Local\KittyTools" + Suffix;
+
+    public static string InstancePipeName => "KittyTools.Instance" + Suffix;
+
+    public static string RunValueName => "KittyTools" + Suffix;
+
+    public static string CredentialPrefix => "KittyTools/" + Suffix;
+#endif
+
+    /// <summary>自检那一套（Debug 版、或 Release 的探针档）：才认 --clipboard-paused 这类自检开关。</summary>
+#if DEBUG
+    public static bool IsTestProfile => true;
+#else
+    public static bool IsTestProfile => Suffix.Length > 0;
 #endif
 
     public static string DataDirectory =>

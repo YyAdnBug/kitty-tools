@@ -65,11 +65,9 @@ internal sealed class ShellRuntime
 
             Clipboard = ClipboardService.Start(database, new ImageStore(Paths.ImagesDirectory));
             Clipboard.Suspended = !Features.IsOn(Feature.Clipboard);
-#if DEBUG
-            // 调试用：不记剪贴板（同步冒烟这类自检不该把用户此刻复制的东西录进测试库）。
-            Clipboard.Paused = Environment.GetCommandLineArgs()
+            // 自检用：不记剪贴板（同步冒烟、内存探针这类不该把用户此刻复制的东西录进测试库）。
+            Clipboard.Paused = Paths.IsTestProfile && Environment.GetCommandLineArgs()
                 .Contains("--clipboard-paused", StringComparer.OrdinalIgnoreCase);
-#endif
             // 翻译历史和生词本用同一个库（第三版 §3.1）。
             TranslationHistory.Start(database);
             LauncherFavorites.Start(database);
