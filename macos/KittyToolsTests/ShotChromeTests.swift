@@ -168,11 +168,12 @@ struct ShotChromeTests {
     #expect(buttons.map(frame) == rects)
     #expect(abs(frame(status).midY - oneLine.midY) < 0.6)
     // 平常的几句都是一行（面板内宽 196）：操作说明、自动滚动中、对不上、最长了
-    for (isFull, isLost, auto) in [
-      (false, false, true), (false, true, false), (true, false, false),
+    for (isFull, isLost, auto, browsing) in [
+      (false, false, true, false), (false, true, false, false), (true, false, false, false),
+      (false, false, false, true),
     ] {
       let text = ScrollCapture.status(
-        notice: nil, isFull: isFull, isLost: isLost, isAutoScrolling: auto
+        notice: nil, isFull: isFull, isLost: isLost, isAutoScrolling: auto, isBrowsing: browsing
       ).text
       hud.show(text, width: 1200, height: 480)
       window.layoutIfNeeded()

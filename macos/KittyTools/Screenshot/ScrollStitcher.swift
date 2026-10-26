@@ -180,14 +180,17 @@ struct ScrollStitcher {
   /// 拼好的长图
   func makeImage() -> CGImage? { image(of: top..<bottom) }
 
-  /// 预览：宽 width 像素，最高 maxHeight 像素；长图更高时只取最近接的那头。
+  /// 长图现在占的行（绝对行号，往上接时往负数长；`preview` 和 `previewRange` 的 from 是同一套坐标）
+  var rows: Range<Int> { top..<bottom }
+
+  /// 预览：宽 width 像素，最高 maxHeight 像素；长图更高时取 from 起的那一段（nil = 最近接的那头）。
   /// 缩得越小隔的行越多（选区很宽时整张长图都在预览里，逐行拷贝要上百 MB）
-  func preview(width: Int, maxHeight: Int) -> CGImage? {
+  func preview(width: Int, maxHeight: Int, from: Int? = nil) -> CGImage? {
     guard width > 0, maxHeight > 0 else { return nil }
     let scale = Double(width) / Double(self.width)
-    let rows = min(outputHeight, Int(Double(maxHeight) / scale))
-    let range = lastGrown == .top ? top..<(top + rows) : (bottom - rows)..<bottom
-    let height = max(Int((Double(rows) * scale).rounded()), 1)
+    let range = previewRange(width: width, maxHeight: maxHeight, from: from)
+    guard !range.isEmpty else { return nil }
+    let height = max(Int((Double(range.count) * scale).rounded()), 1)
     guard let source = image(of: range, every: max(Int(1 / scale), 1)),
       let context = CGContext(
         data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
@@ -196,6 +199,29 @@ struct ScrollStitcher {
     context.interpolationQuality = .medium
     context.draw(source, in: CGRect(x: 0, y: 0, width: width, height: height))
     return context.makeImage()
+  }
+
+  /// 这个预览框现在显示长图的哪一段（绝对行号）：面板按它算滚轮走多少、位置指示条画在哪
+  func previewRange(width: Int, maxHeight: Int, from: Int?) -> Range<Int> {
+    guard width > 0, maxHeight > 0 else { return top..<top }
+    let scale = Double(width) / Double(self.width)
+    return Self.previewRange(
+      rows: rows, visible: Int(Double(maxHeight) / scale), from: from, growingUp: isGrowingUp)
+  }
+
+  /// 预览取哪一段：visible 是预览里放得下多少行，from 是起始行（nil = 跟着最近接的那头，长图整张放得下时
+  /// 两头一样），夹进长图范围。纯函数，配单测
+  static func previewRange(rows: Range<Int>, visible: Int, from: Int?, growingUp: Bool)
+    -> Range<Int>
+  {
+    let count = min(rows.count, max(visible, 0))
+    guard count > 0 else { return rows.lowerBound..<rows.lowerBound }
+    guard let from else {
+      return growingUp
+        ? rows.lowerBound..<(rows.lowerBound + count) : (rows.upperBound - count)..<rows.upperBound
+    }
+    let start = min(max(from, rows.lowerBound), rows.upperBound - count)
+    return start..<(start + count)
   }
 
   // MARK: 位移

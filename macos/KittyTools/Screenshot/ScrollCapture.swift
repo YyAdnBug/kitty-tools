@@ -2,6 +2,7 @@
 // （拼接预览、状态、按钮）。用户在选区里滚动（滚轮、触控板都行），或按空格自动滚动；一直用 ScreenCaptureKit
 // 截选区（滤掉本 App 的所有窗口），交给 ScrollStitcher 拼。↩ 拷贝、⌘S 存储、⇧⌘S 另存为…，Esc 取消。
 // 边框和面板是不激活前台的 NSPanel（面板要当 key 收按键），会话结束立即释放；前台 App 一直不变。
+// 预览上滚轮 = 往回看长图前面的内容（右边一条细指示条说在哪一段，双击或滚回最新那头回到跟随；浏览时不滑纸带、不闪接缝）。
 // Whisker（mac-whisker §6 长截图）：面板是永远深色的 HUD（216 宽、圆角 16）；预览像纸带一样滚动、上下 18 pt 渐隐，
 // 每拼上一段接缝处闪一下品牌粉；高度数字 22 pt 圆体滚动变化；选区边框 2 pt 品牌粉 + 外发光呼吸，自动滚动时只走蚂蚁线
 // （同一表面只留一个循环动画，呼吸暂停），对不上时变橙、状态文字抖一下；拷贝钮和截图工具栏一样是 28 pt 品牌粉实心圆。
@@ -126,6 +127,12 @@ final class ScrollCapture {
 
   private func start(continuation: CheckedContinuation<Result?, Never>) {
     self.continuation = continuation
+    // 在预览上滚动 = 往回看长图前面的内容（HUD 改 browseFrom，这里重取那一段）
+    panel.hudView.onBrowse = { [unowned self] in
+      previewIsStale = true
+      refreshPreview(force: false, interval: .milliseconds(30))
+      updateStatus()  // 重画时会把滚到最新那头的 browseFrom 清掉，状态行读的是清过的值
+    }
     panel.hudView.onAction = { [unowned self] action in
       switch action {
       case .toggleAuto: toggleAutoScroll()
@@ -195,9 +202,10 @@ final class ScrollCapture {
     refreshPreview(force: false)
   }
 
-  /// 预览最多每 0.2 秒重画一次（要缩放一大块像素）；没赶上的下一帧补上。一开始就算没画过：start 里先摆上第一帧
-  private func refreshPreview(force: Bool) {
-    guard previewIsStale, force || ContinuousClock.now - lastPreview > .milliseconds(200) else {
+  /// 预览最多每 0.2 秒重画一次（要缩放一大块像素），滚轮浏览时 30 ms；没赶上的下一帧补上（抓帧循环一直在跑）。
+  /// 一开始就算没画过：start 里先摆上第一帧
+  private func refreshPreview(force: Bool, interval: Duration = .milliseconds(200)) {
+    guard previewIsStale, force || ContinuousClock.now - lastPreview > interval else {
       return
     }
     previewIsStale = false
@@ -215,10 +223,14 @@ final class ScrollCapture {
 
   /// 要停留的提示 > 最长 > 对不上 > 操作说明。滚到底 / 到顶 / 最长是正常结束，用平常的颜色（体检 B42）；
   /// 但对不上（没到最长，同边框变橙的条件）盖过平常色的提示：停在「已经滚到底了」后手动滚得太快，要看到橙字、听到播报。纯函数，配单测
-  static func status(notice: Status?, isFull: Bool, isLost: Bool, isAutoScrolling: Bool) -> Status {
+  static func status(
+    notice: Status?, isFull: Bool, isLost: Bool, isAutoScrolling: Bool, isBrowsing: Bool = false
+  ) -> Status {
     if let notice, !(isLost && !isFull && notice.tone == .normal) { return notice }
     if isFull { return Status(text: "已经最长了，按 ↩ 拷贝") }
     if isLost { return Status(text: "对不上了：往回滚一点，再慢慢滚", tone: .lost) }
+    // 滚轮往回看长图（哪一段看右边的指示条）：不播报，滚的时候别一直念
+    if isBrowsing { return Status(text: "双击预览回到最新", announces: false) }
     return Status(
       text: isAutoScrolling ? "自动滚动中，按空格或移出选区停止" : "在选区里滚动，或按空格自动滚动",
       announces: false)
@@ -226,7 +238,8 @@ final class ScrollCapture {
 
   private func updateStatus() {
     let status = Self.status(
-      notice: notice, isFull: isFull, isLost: isLost, isAutoScrolling: isAutoScrolling)
+      notice: notice, isFull: isFull, isLost: isLost, isAutoScrolling: isAutoScrolling,
+      isBrowsing: panel.hudView.browseFrom != nil)
     panel.hudView.show(
       status.text, tone: status.tone, width: stitcher.width, height: stitcher.outputHeight)
     borderView.update(lost: isLost && !isFull, marching: isAutoScrolling)
@@ -509,6 +522,11 @@ final class ScrollCaptureHUD: NSView {
   private static let fade: CGFloat = 18
 
   var onAction: (Item) -> Void = { _ in }
+  /// 滚轮浏览 / 双击回到最新：会话重取预览那一段、更新状态行
+  var onBrowse: () -> Void = {}
+  /// 预览正看着长图哪一段（起始行，ScrollStitcher 的绝对行号；nil = 跟着最近接的那头）。
+  /// 会话只读它，截图自检直接设它摆出浏览态
+  var browseFrom: Int?
   var isAutoScrolling = false {
     didSet {
       autoButton.image = Self.symbol(isAutoScrolling ? "pause.fill" : "play.fill")
@@ -528,6 +546,13 @@ final class ScrollCaptureHUD: NSView {
   /// 上次预览时长图的高度（像素）：算这次往前推了多少
   private var previewedHeight = 0
   private var lastTone = Tone.normal
+  /// 浏览时预览右边的位置指示条（在 HUD 自己的图层上：不进预览的渐隐蒙版，到头时不跟着淡掉）
+  private let scrubber = CALayer()
+  /// 上次画预览时：显示的是长图的哪一段、长图一共哪些行、预览里 1 点等于多少行、往哪头长
+  private var shown = 0..<0
+  private var total = 0..<0
+  private var rowsPerPoint: CGFloat = 1
+  private var growingUp = false
 
   init() {
     // 材质：15 是毛玻璃，26 是液态玻璃；内容放进 surface：15 就是材质本身（vibrancy 和原来一样），26 是玻璃的 contentView
@@ -666,11 +691,16 @@ final class ScrollCaptureHUD: NSView {
     ])
     // 盖在内容上面（只是一圈 0.5 pt，挨着边，碰不到内容）
     if #unavailable(macOS 26) { surface.layer?.addSublayer(rim) }
+    scrubber.backgroundColor = Style.HUD.secondaryText.cgColor
+    scrubber.cornerRadius = 1.5
+    scrubber.opacity = 0
+    layer?.addSublayer(scrubber)
   }
 
   override func layout() {
     super.layout()
     layoutFade()
+    layoutScrubber()
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     rim.frame = bounds.insetBy(dx: 0.5, dy: 0.5)
@@ -686,6 +716,76 @@ final class ScrollCaptureHUD: NSView {
     let edge = NSNumber(value: Double(min(Self.fade / max(bounds.height, 1), 0.3)))
     fadeMask.locations = [0, edge, NSNumber(value: 1 - edge.doubleValue), 1]
     CATransaction.commit()
+  }
+
+  /// 位置指示条：浏览时画在预览右边，跟随时不画
+  private func layoutScrubber() {
+    let frame =
+      browseFrom == nil
+      ? nil
+      : Self.scrubberFrame(
+        in: preview.convert(preview.bounds, to: self), shown: shown, total: total)
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    scrubber.opacity = frame == nil ? 0 : 1
+    if let frame { scrubber.frame = frame }
+    CATransaction.commit()
+  }
+
+  /// 位置指示条画在哪：预览框 box 右边 3 pt 处的一条（宽 3、上下各留 2），高度按看得见的那段占长图多少
+  /// （最矮 20），从上往下走。nil = 不画（长图整张都在预览里）。纯函数，配单测
+  static func scrubberFrame(in box: CGRect, shown: Range<Int>, total: Range<Int>) -> CGRect? {
+    guard shown.count > 0, total.count > shown.count else { return nil }
+    let track = max(box.height - 4, 0)
+    let height = min(max(track * CGFloat(shown.count) / CGFloat(total.count), 20), track)
+    // 长图从上往下、视图原点在左下：看的是最前面时条贴预览顶边
+    let progress =
+      CGFloat(shown.lowerBound - total.lowerBound) / CGFloat(total.count - shown.count)
+    return CGRect(
+      x: box.maxX - 6, y: box.maxY - 2 - height - (track - height) * progress, width: 3,
+      height: height)
+  }
+
+  /// 在预览上滚动 = 往回看长图前面的内容。面板本来就不把滚轮传给下面的窗口（自动滚动时鼠标在面板附近会暂停发滚轮，
+  /// 手动滚时鼠标不在选区里画面不动），所以这里收滚轮不和滚页面打架；滚回最近接的那头就回到跟随
+  override func scrollWheel(with event: NSEvent) {
+    let point = convert(event.locationInWindow, from: nil)
+    guard shown.count > 0, total.count > shown.count,
+      preview.convert(preview.bounds, to: self).contains(point)
+    else { return super.scrollWheel(with: event) }
+    // 真滚轮按行给，一格算 16 点
+    let points =
+      event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.scrollingDeltaY * 16
+    let next = Self.browse(
+      from: browseFrom, by: points, shown: shown, total: total, rowsPerPoint: rowsPerPoint,
+      growingUp: growingUp)
+    guard next != browseFrom else { return }
+    browseFrom = next
+    onBrowse()
+  }
+
+  /// 滚轮浏览：滚了 points 点（正的是往回看长图前面的内容）后看哪一段，nil = 滚回最近接的那头、回到跟随。
+  /// 纯函数，配单测
+  static func browse(
+    from: Int?, by points: CGFloat, shown: Range<Int>, total: Range<Int>, rowsPerPoint: CGFloat,
+    growingUp: Bool
+  ) -> Int? {
+    let limit = total.upperBound - shown.count
+    guard limit > total.lowerBound else { return nil }
+    let moved = CGFloat(from ?? shown.lowerBound) - points * rowsPerPoint
+    let row = min(max(Int(moved.rounded()), total.lowerBound), limit)
+    // 最新的内容接在哪头就以哪头为「跟随」
+    return (growingUp ? row <= total.lowerBound : row >= limit) ? nil : row
+  }
+
+  /// 双击预览：回到最新那头（面板靠背景拖动，别的点击照旧交给它）
+  override func mouseDown(with event: NSEvent) {
+    let point = convert(event.locationInWindow, from: nil)
+    guard event.clickCount == 2, browseFrom != nil,
+      preview.convert(preview.bounds, to: self).contains(point)
+    else { return super.mouseDown(with: event) }
+    browseFrom = nil
+    onBrowse()
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -725,12 +825,24 @@ final class ScrollCaptureHUD: NSView {
 
   func updatePreview(stitcher: ScrollStitcher, scale: CGFloat) {
     let box = preview.bounds.size
-    guard box.width > 0, box.height > 0,
-      let image = stitcher.preview(
-        width: Int(box.width * scale), maxHeight: Int(box.height * scale))
+    guard box.width > 0, box.height > 0 else { return }
+    let pixels = Int(box.width * scale)
+    let tall = Int(box.height * scale)
+    let range = stitcher.previewRange(width: pixels, maxHeight: tall, from: browseFrom)
+    // 滚到最近接的那头（或长图整张都放得下）= 回到跟随
+    let rows = stitcher.rows
+    browseFrom =
+      (stitcher.isGrowingUp
+        ? range.lowerBound <= rows.lowerBound : range.upperBound >= rows.upperBound)
+      ? nil : range.lowerBound
+    guard let image = stitcher.preview(width: pixels, maxHeight: tall, from: browseFrom)
     else { return }
+    shown = range
+    total = rows
+    rowsPerPoint = CGFloat(stitcher.width) / box.width
+    growingUp = stitcher.isGrowingUp
     layoutFade()
-    let growingUp = stitcher.isGrowingUp
+    layoutScrubber()
     preview.imageAlignment = growingUp ? .alignBottom : .alignTop
     preview.image = NSImage(
       cgImage: image,
@@ -738,7 +850,10 @@ final class ScrollCaptureHUD: NSView {
     // 第一帧不算新拼上的一段：不滑、不闪
     let grown = previewedHeight == 0 ? 0 : stitcher.outputHeight - previewedHeight
     previewedHeight = stitcher.outputHeight
-    guard grown > 0, !Style.reduceMotion, let layer = preview.layer else { return }
+    // 浏览时看的是前面的内容，新接上的那段不在眼前：不滑、不闪
+    guard grown > 0, browseFrom == nil, !Style.reduceMotion, let layer = preview.layer else {
+      return
+    }
     // 纸带：预览已经撑满时，新内容从长的那头推进来（旧内容先停在原位，再滑过去）
     let shift = CGFloat(grown) * box.width / CGFloat(max(stitcher.width, 1))
     if CGFloat(image.height) / scale >= box.height - 1 {

@@ -3266,6 +3266,25 @@ struct SnapshotProbeTests {
         }
       ),
     ]
+    // 浏览态（滚轮往回看长图、右边一条位置指示条）：长图要比预览框高，所以另拼一张窄的
+    let narrowFirst = try #require(page.cropping(to: CGRect(x: 0, y: 0, width: 400, height: 480)))
+    let narrowNext = try #require(page.cropping(to: CGRect(x: 0, y: 360, width: 400, height: 480)))
+    var narrow = try #require(
+      ScrollStitcher(first: narrowFirst, scrollbarWidth: 32, maxHeight: 30_000))
+    _ = narrow.add(narrowNext)
+    let browsing = narrow
+    states.append(
+      (
+        "scroll-browse", false,
+        {
+          $0.browseFrom = browsing.rows.lowerBound + 120
+          $0.show(
+            ScrollCapture.status(
+              notice: nil, isFull: false, isLost: false, isAutoScrolling: false, isBrowsing: true
+            ).text, width: browsing.width, height: browsing.outputHeight)
+          $0.updatePreview(stitcher: browsing, scale: 2)
+        }
+      ))
     // 正常结束（到底 / 到顶 / 最长）不变橙（体检 B42），深浅色；缺授权是橙字（不抖）
     for (name, dark, status) in [
       (

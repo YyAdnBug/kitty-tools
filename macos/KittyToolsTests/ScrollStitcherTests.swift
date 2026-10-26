@@ -358,6 +358,28 @@ struct ScrollStitcherTests {
     #expect(stitcher.add(Self.strokesFrame(at: 600.5)) == .lost)
   }
 
+  /// 预览取长图的哪一段（面板上滚轮浏览）：跟随最近接的那头、from 夹进范围、整张放得下时只有一段
+  @Test func previewRangePicksSegment() {
+    let rows = 100..<400
+    func range(_ visible: Int, _ from: Int?, _ up: Bool = false) -> Range<Int> {
+      ScrollStitcher.previewRange(rows: rows, visible: visible, from: from, growingUp: up)
+    }
+    // 跟随：往下接看末尾那段，往上接看开头那段
+    #expect(range(80, nil) == 320..<400)
+    #expect(range(80, nil, true) == 100..<180)
+    // from 给到哪看哪，越界夹住
+    #expect(range(80, 200) == 200..<280)
+    #expect(range(80, 0) == 100..<180)
+    #expect(range(80, 9000) == 320..<400)
+    // 整张都放得下：两头一样，from 也只能是这一段
+    #expect(range(500, nil, true) == rows)
+    #expect(range(500, 250) == rows)
+    // 预览框放不下一行、长图还空着：空段（preview 返回 nil）
+    #expect(range(0, nil).isEmpty)
+    #expect(
+      ScrollStitcher.previewRange(rows: 0..<0, visible: 80, from: 5, growingUp: false).isEmpty)
+  }
+
   @Test func refusesAmbiguousRepeatingContent() throws {
     // 整页都是同一小段（周期 20 行）重复：往哪个整周期位移都对得上，分不出来就不接
     let rowBytes = Self.width * 4

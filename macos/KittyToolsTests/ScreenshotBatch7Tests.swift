@@ -79,8 +79,49 @@ struct ScreenshotBatch7Tests {
 
   // MARK: B42 长截图状态行
 
+  /// 预览上滚轮浏览长图：跟随态 nil、往回看给起始行、滚回最新那头回到跟随、整张放得下时滚不动
+  @Test func scrollPreviewBrowse() throws {
+    func browse(_ from: Int?, _ points: CGFloat, shown: Range<Int> = 300..<400) -> Int? {
+      ScrollCaptureHUD.browse(
+        from: from, by: points, shown: shown, total: 0..<400, rowsPerPoint: 4, growingUp: false)
+    }
+    // 往回滚 10 点 = 40 行（跟随态从现在看的那段算起）
+    #expect(browse(nil, 10) == 260)
+    #expect(browse(260, 10) == 220)
+    // 往前滚回最新那头（含滚过头）：回到跟随
+    #expect(browse(260, -10) == nil)
+    #expect(browse(260, -1000) == nil)
+    // 滚到最前面夹住；长图整张都在预览里时滚不动
+    #expect(browse(20, 100) == 0)
+    #expect(browse(nil, 10, shown: 0..<400) == nil)
+    // 往上接（聊天记录往上翻）：最新的在顶上，贴着顶就是跟随
+    #expect(
+      ScrollCaptureHUD.browse(
+        from: 40, by: 20, shown: 0..<100, total: 0..<400, rowsPerPoint: 4, growingUp: true) == nil)
+
+    // 预览右边的位置指示条：宽 3、离右边 3、上下各留 2，看最前面时贴顶、最后面时贴底
+    let box = CGRect(x: 10, y: 100, width: 196, height: 220)
+    let top = try #require(ScrollCaptureHUD.scrubberFrame(in: box, shown: 0..<100, total: 0..<1000))
+    let bottom = try #require(
+      ScrollCaptureHUD.scrubberFrame(in: box, shown: 900..<1000, total: 0..<1000))
+    #expect(top.width == 3 && box.maxX - top.maxX == 3)
+    #expect(abs(box.maxY - 2 - top.maxY) < 0.01 && abs(bottom.minY - (box.minY + 2)) < 0.01)
+    #expect(top.size == bottom.size && top.height >= 20)
+    // 半截高的长图：条占一半、落在正中
+    let half = try #require(
+      ScrollCaptureHUD.scrubberFrame(in: box, shown: 50..<150, total: 0..<200))
+    #expect(abs(half.height - (box.height - 4) / 2) < 0.01 && abs(half.midY - box.midY) < 0.01)
+    // 长图整张都在预览里：不画
+    #expect(ScrollCaptureHUD.scrubberFrame(in: box, shown: 0..<200, total: 0..<200) == nil)
+  }
+
   @Test func scrollStatusTones() {
-    let status = ScrollCapture.status
+    func status(
+      _ notice: ScrollCapture.Status?, _ isFull: Bool, _ isLost: Bool, _ isAutoScrolling: Bool
+    ) -> ScrollCapture.Status {
+      ScrollCapture.status(
+        notice: notice, isFull: isFull, isLost: isLost, isAutoScrolling: isAutoScrolling)
+    }
     // 平常的操作说明：不变色、不播报
     let idle = status(nil, false, false, false)
     #expect(idle.tone == .normal && !idle.announces)
@@ -98,6 +139,18 @@ struct ScreenshotBatch7Tests {
     #expect(status(bottom, false, true, false).tone == .lost)
     let lostStop = ScrollCapture.Status(text: "对不上，已停止自动滚动", tone: .lost)
     #expect(status(lostStop, false, true, false) == lostStop)
+    // 浏览提示只盖过平常的操作说明，不播报；对不上、最长了、停留的提示都优先
+    let browsing = ScrollCapture.status(
+      notice: nil, isFull: false, isLost: false, isAutoScrolling: false, isBrowsing: true)
+    #expect(browsing == ScrollCapture.Status(text: "双击预览回到最新", announces: false))
+    for (notice, isFull, isLost) in [
+      (nil, true, false), (nil, false, true), (bottom, false, false),
+    ] as [(ScrollCapture.Status?, Bool, Bool)] {
+      #expect(
+        ScrollCapture.status(
+          notice: notice, isFull: isFull, isLost: isLost, isAutoScrolling: false, isBrowsing: true)
+          != browsing)
+    }
   }
 
   // 面板按钮叫法和截图工具栏一致：拷贝 / 存储到「访达里的名字」/ 另存为…（B41）
