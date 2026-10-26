@@ -323,10 +323,29 @@ struct ShortcutsSheet: View {
         features: [.screenshot],
         entries: [
           Entry("空格", text: "自动滚动 / 停下（要辅助功能授权）"),
+          Entry("A", text: "标注（在长图上画，画完再出图）"),
           Entry("↩", "⌘C", text: "拷贝"),
           Entry("⌘S", text: "快速保存"),
           Entry("⇧⌘S", text: "另存为…"),
           Entry("Esc", text: "取消"),
+        ]),
+      // 长图标注窗口（2026-10-26）；代码在 ScrollCanvas.keyDown 和 ScrollEditor.key
+      Group(
+        title: "长图标注", symbol: "pencil.tip.crop.circle", color: Style.Family.screenshot,
+        features: [.screenshot],
+        entries: [
+          Entry("1", "0", text: "十种标注工具（再按一次收起）"),
+          Entry("⌫", text: "删除选中的标注"),
+          Entry("⌘D", text: "复制选中的标注"),
+          Entry("⌘Z", "⇧⌘Z", text: "撤销 / 重做"),
+          Entry("空格", text: "按住拖动平移画面"),
+          Entry("⌘0", "⌘1", text: "适配宽度 / 原始大小"),
+          Entry("⌘+", "⌘-", text: "放大 / 缩小"),
+          Entry("↩", "⌘C", text: "拷贝"),
+          Entry("⌘S", text: "快速保存"),
+          Entry("⇧⌘S", text: "另存为…"),
+          Entry("O", text: "识字并拷贝"),
+          Entry("Esc", text: "收起工具 / 关闭（画过会问一次）"),
         ]),
       // mac-whisker §6 截图「录屏」（录屏第 1、2 批）；框选、拖边、方向键同「截图 · 框选」，代码在 SelectionView.keyDown，
       // 倒数的 Esc 是 ScreenRecorder 临时注册的热键

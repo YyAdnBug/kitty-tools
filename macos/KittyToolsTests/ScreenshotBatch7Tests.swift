@@ -159,7 +159,8 @@ struct ScreenshotBatch7Tests {
     #expect(ScreenshotOutput.saveTitle == "存储到「\(folder)」")  // 四处共用的叫法
     func views(in view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + views(in: $0) } }
     let tips = Set(views(in: ScrollCaptureHUD()).compactMap { ($0 as? NSButton)?.toolTip })
-    #expect(tips.isSuperset(of: ["拷贝（↩）", "存储到「\(folder)」（⌘S）", "另存为…（⇧⌘S）"]))
+    // 面板上「另存为…」在存储右边的 ▾ 菜单里（2026-10-26 加「标注」时收进去的），按钮提示只剩这三样
+    #expect(tips.isSuperset(of: ["拷贝（↩）", "存储到「\(folder)」（⌘S）", "存储到… / 另存为…", "标注（A）"]))
     let h = Harness()
     h.makeSelection()
     #expect(h.toolbar?.button(for: .output(.save))?.toolTip == "存储到「\(folder)」（⌘S）")
@@ -185,6 +186,59 @@ struct ScreenshotBatch7Tests {
       Issue.record("够高的选区没进长截图：\(String(describing: accepted))")
       return
     }
+  }
+
+  /// 画了标注再按 S：照旧进长截图，但说一声标注去哪儿了（拍板 D1）
+  @Test func scrollWithAnnotationsExplainsItself() async {
+    let h = Harness()
+    h.drag(CGPoint(x: 300, y: 200), CGPoint(x: 700, y: 400))
+    h.key(kVK_ANSI_1, "1")  // 矩形
+    h.drag(CGPoint(x: 340, y: 240), CGPoint(x: 500, y: 320))
+    #expect(h.view.hasAnnotations)
+    let outcome = await h.outcome { h.key(kVK_ANSI_S, "s") }
+    guard case .scroll? = outcome else {
+      Issue.record("有标注时没进长截图：\(String(describing: outcome))")
+      return
+    }
+    #expect(h.view.announcement == "长截图不带这些标注，拼完可以在长图上标")
+  }
+
+  /// 长截图面板：A 进标注；存储右边的 ▾ 弹「存储到…／另存为…」，点了交回 saveAs
+  @MainActor @Test func scrollPanelAnnotateAndSaveMenu() throws {
+    let hud = ScrollCaptureHUD()
+    var actions: [ScrollCaptureHUD.Item] = []
+    hud.onAction = { actions.append($0) }
+    let window = NSWindow(
+      contentRect: CGRect(x: -20000, y: -20000, width: ScrollCaptureHUD.width, height: 360),
+      styleMask: [.borderless], backing: .buffered, defer: true)
+    window.isReleasedWhenClosed = false
+    window.contentView = hud
+    window.layoutIfNeeded()
+    defer { window.orderOut(nil) }
+    let event = try #require(
+      NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+        context: nil, characters: "a", charactersIgnoringModifiers: "a", isARepeat: false,
+        keyCode: UInt16(kVK_ANSI_A)))
+    hud.keyDown(with: event)
+    if case .output(.annotate)? = actions.first {
+    } else {
+      Issue.record("按 A 没进标注：\(actions)")
+    }
+    func all(_ view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + all($0) } }
+    let caret = try #require(
+      all(hud).compactMap { $0 as? NSButton }.first { $0.toolTip == "存储到… / 另存为…" })
+    caret.performClick(nil)
+    #expect(actions.count == 1)  // 只弹菜单，不出图
+    let menu = try #require(hud.subviews.compactMap { $0 as? HUDMenu }.first)
+    let rows = all(menu).filter { $0.accessibilityRole() == .button }
+    #expect(rows.compactMap { $0.accessibilityLabel() } == [ScreenshotOutput.saveTitle, "另存为…"])
+    _ = rows.last?.accessibilityPerformPress()
+    if case .output(.saveAs)? = actions.last {
+    } else {
+      Issue.record("菜单里的另存为没交回：\(actions)")
+    }
+    #expect(hud.subviews.compactMap { $0 as? HUDMenu }.isEmpty)  // 点了就收起
   }
 
   // MARK: C9 D17 钉图的按键与右键菜单

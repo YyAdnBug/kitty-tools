@@ -193,7 +193,7 @@ import Carbon.HIToolbox
   private func clicked(_ item: EditorToolbar.Item) {
     switch item {
     case .output(let action): emit(action)
-    case .cancel: close()
+    case .cancel: window.performClose(nil)  // 画过标注会问一次（windowShouldClose）
     case .saveMenu: emit(.saveAs)  // 第 3 批换成 HUD 菜单（存储到… / 另存为…）
     case .tool(let tool): canvas.choose(tool)
     case .undo: canvas.undo()
@@ -212,7 +212,7 @@ import Carbon.HIToolbox
   private func key(_ event: NSEvent) -> Bool {
     let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
     switch (Int(event.keyCode), flags) {
-    case (kVK_Escape, []): close()
+    case (kVK_Escape, []): window.performClose(nil)
     case (kVK_Return, []), (kVK_ANSI_KeypadEnter, []): emit(.copy)
     case (kVK_ANSI_O, []): emit(.recognize)
     case (kVK_ANSI_C, .command): emit(.copy)
@@ -231,6 +231,20 @@ import Carbon.HIToolbox
   }
 
   // MARK: 窗口
+
+  /// 画过标注就问一次（拍板 C3）；没画过直接关（长图丢掉，同长截图的取消）。
+  /// 拷贝 / 存储 / 另存为之后的关窗口走 close()，不经这里
+  func windowShouldClose(_ sender: NSWindow) -> Bool {
+    guard canvas.hasAnnotations else { return true }
+    let alert = NSAlert()
+    alert.messageText = "不保存就关闭？"
+    alert.informativeText = "这张长截图和上面的标注都会丢掉。"
+    alert.addButton(withTitle: "关闭")
+    alert.addButton(withTitle: "取消")
+    alert.buttons.first?.hasDestructiveAction = true
+    alert.buttons.last?.keyEquivalent = "\u{1b}"
+    return alert.runModal() == .alertFirstButtonReturn
+  }
 
   func windowDidResize(_ notification: Notification) {
     placeBar()

@@ -94,6 +94,20 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
 
   override var isOpaque: Bool { true }
   override var acceptsFirstResponder: Bool { true }
+
+  // 旁白：整块画布是一个分组，标签读长图多大、画了几条标注；换工具、收工具时另外播报（choose）
+  override func isAccessibilityElement() -> Bool { true }
+  override func accessibilityRole() -> NSAccessibility.Role? { .group }
+
+  override func accessibilityLabel() -> String? {
+    let count = annotations.count
+    return "长截图，\(image.width) × \(image.height) 像素"
+      + (count > 0 ? "，\(count) 条标注" : "")
+  }
+
+  override func accessibilityHelp() -> String? {
+    "数字键 1 到 0 选标注工具，⌫ 删除选中的，⌘Z 撤销，↩ 拷贝"
+  }
   override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
   // MARK: 画面

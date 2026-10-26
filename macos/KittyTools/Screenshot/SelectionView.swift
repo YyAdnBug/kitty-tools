@@ -1596,7 +1596,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
           action: action)))
   }
 
-  /// 长截图：只交出选区位置，边滚边截的是实时画面（标注不带过去）；太矮的选区两帧之间没几行可比
+  /// 长截图：只交出选区位置，边滚边截的是实时画面（标注不带过去，长图是重截的、坐标对不上；
+  /// 拍板 D1：照旧丢掉，但说一声拼完能在长图上标）；太矮的选区两帧之间没几行可比
   private func startScroll() {
     endEditing()
     guard let selection, let window else { return }
@@ -1605,6 +1606,10 @@ final class SelectionView: NSView, NSTextViewDelegate {
       NSSound.beep()
       flashHint(["选区太矮，拉高一点再长截图"])
       return announce("选区太矮，拉高一点再长截图")
+    }
+    if hasAnnotations || session.hasAnnotations(besides: self) {
+      flashHint(["长截图不带这些标注，拼完可以在长图上标"])
+      announce("长截图不带这些标注，拼完可以在长图上标")
     }
     session.finish(.scroll(selection.offsetBy(dx: window.frame.minX, dy: window.frame.minY)))
   }

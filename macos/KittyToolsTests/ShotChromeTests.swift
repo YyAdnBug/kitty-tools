@@ -140,18 +140,23 @@ struct ShotChromeTests {
     let buttons = all(hud).compactMap { $0 as? BarButton }.sorted {
       frame($0).minX < frame($1).minX
     }
+    // ▶ 标注 ｜ 存储 ▾ ｜ ✕ ✓（2026-10-26 加「标注」，另存为收进了 ▾）
     #expect(
       buttons.map(\.toolTip) == [
-        "自动滚动（空格）", "另存为…（⇧⌘S）", ScreenshotOutput.saveTitle + "（⌘S）", "取消（Esc）", "拷贝（↩）",
+        "自动滚动（空格）", "标注（A）", ScreenshotOutput.saveTitle + "（⌘S）", "存储到… / 另存为…",
+        "取消（Esc）", "拷贝（↩）",
       ])
     let rects = buttons.map(frame)
-    #expect(rects.dropLast().allSatisfy { $0.size == CGSize(width: 32, height: 32) })
-    #expect(rects[4].size == CGSize(width: 28, height: 28))
-    #expect(rects[4].minX - rects[3].maxX == 4 && rects[3].minX - rects[2].maxX > 4)
+    #expect(rects[0].size == CGSize(width: 32, height: 32))
+    #expect(rects[1].size == rects[0].size && rects[4].size == rects[0].size)
+    #expect(rects[2].size == CGSize(width: 30, height: 32))  // 存储本体 + 右边 14 的 ▾，贴着
+    #expect(rects[3].size == CGSize(width: 14, height: 32) && rects[3].minX == rects[2].maxX)
+    #expect(rects[5].size == CGSize(width: 28, height: 28))
+    #expect(rects[5].minX - rects[4].maxX == 4 && rects[4].minX - rects[3].maxX > 4)
     // 行居中、不歧义；上下左右内缩 10（按钮行离底 10，预览离顶 10）
     let row = try #require(buttons[0].superview as? NSStackView)
     #expect(!row.hasAmbiguousLayout)
-    #expect(abs(rects[0].minX - (hud.bounds.maxX - rects[4].maxX)) < 0.01)
+    #expect(abs(rects[0].minX - (hud.bounds.maxX - rects[5].maxX)) < 0.01)
     #expect(rects[0].minY == 10 && frame(row).height == 32)
     let preview = try #require(all(hud).first { $0 is NSImageView && !($0.superview is NSButton) })
     #expect(frame(preview).maxY == hud.bounds.maxY - 10 && frame(preview).minX == 10)

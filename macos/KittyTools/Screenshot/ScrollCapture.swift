@@ -139,6 +139,7 @@ final class ScrollCapture {
       case .toggleAuto: toggleAutoScroll()
       case .cancel: finish(nil)
       case .output(let output): finish(output)
+      case .saveMenu: break  // HUD 自己弹菜单，不会传上来
       }
     }
     border.orderFrontRegardless()
@@ -512,6 +513,8 @@ final class ScrollCapturePanel: NSPanel {
 final class ScrollCaptureHUD: NSView {
   enum Item {
     case toggleAuto, cancel
+    /// 存储右边的 ▾：弹「存储到… / 另存为…」（同截图工具栏）
+    case saveMenu
     case output(ScrollCapture.Action)
   }
 
@@ -544,6 +547,8 @@ final class ScrollCaptureHUD: NSView {
   private let reading = HeightReading()
   private var autoButton = NSButton()
   private var buttons: [(item: Item, button: NSButton)] = []
+  /// 开着的存储菜单（点别处、按键时收起；别叫 menu，NSView 自己有一个同名的右键菜单属性）
+  private var openMenu: HUDMenu?
   /// 上次预览时长图的高度（像素）：算这次往前推了多少
   private var previewedHeight = 0
   private var lastTone = Tone.normal
@@ -633,27 +638,39 @@ final class ScrollCaptureHUD: NSView {
     readingView.sizingOptions = [.intrinsicContentSize]
 
     // 截图家族同一套叫法（体检 B41）：拷贝 / 存储到「桌面」（访达里的名字，不写 Desktop）/ 另存为…。
-    // 顺序同截图工具栏、录制条：▶ ｜ 另存为 存储 ｜ ✕ ✓（取消紧挨主圆钮）
+    // 顺序同截图工具栏、录制条：▶ 标注 ｜ 存储 ▾ ｜ ✕ ✓（取消紧挨主圆钮）。
+    // 2026-10-26 加「标注」时另存为收进存储右边的 ▾（同截图工具栏）：六颗 32 pt 的钮在 196 的内容宽里排不下
     let items: [(Item, String, String)] = [
       (.toggleAuto, "play.fill", "自动滚动（空格）"),
-      (.output(.saveAs), "square.and.arrow.down.on.square", "另存为…（⇧⌘S）"),
+      (.output(.annotate), "pencil.tip.crop.circle", "标注（A）"),
       (.output(.save), "square.and.arrow.down", ScreenshotOutput.saveTitle + "（⌘S）"),
+      (.saveMenu, "chevron.down", "存储到… / 另存为…"),
       (.cancel, "xmark", "取消（Esc）"),
       (.output(.copy), "checkmark", "拷贝（↩）"),
     ]
     var row: [NSView] = []
     for (index, (item, symbol, tip)) in items.enumerated() {
-      if index == 1 || index == 3 { row.append(barSeparator()) }
+      if index == 2 || index == 4 { row.append(barSeparator()) }
       // 拷贝是主按钮：和截图工具栏的拷贝钮一样，28 pt 品牌粉实心圆 + 白对勾；其余同各条 HUD 栏的 32 × 32
       let primary = index == items.count - 1
+      let size: CGSize =
+        switch item {
+        case .output(.copy): CGSize(width: 28, height: 28)
+        case .output(.save): CGSize(width: 30, height: 32)
+        case .saveMenu: CGSize(width: 14, height: 32)
+        default: CGSize(width: 32, height: 32)
+        }
       let button =
         primary
         ? barButton(
-          Self.primaryImage(), tip: tip, action: #selector(clicked(_:)),
-          size: CGSize(width: 28, height: 28))
-        : barButton(Self.symbol(symbol), tip: tip, action: #selector(clicked(_:)))
+          Self.primaryImage(), tip: tip, action: #selector(clicked(_:)), size: size)
+        : barButton(Self.symbol(symbol), tip: tip, action: #selector(clicked(_:)), size: size)
       button.tag = buttons.count
       button.contentTintColor = Style.HUD.text
+      if case .saveMenu = item {
+        button.contentTintColor = Style.HUD.secondaryText
+        button.symbolConfiguration = .init(pointSize: 9, weight: .semibold)
+      }
       button.showsHover = !primary  // 粉圆是图，悬停底会在圆后面露出一块方角
       buttons.append((item, button))
       row.append(button)
@@ -661,7 +678,8 @@ final class ScrollCaptureHUD: NSView {
     autoButton = buttons[0].button
     let bar = NSStackView(views: row)
     bar.spacing = 2
-    bar.setCustomSpacing(4, after: buttons[3].button)  // 主圆钮前隔 4（同工具栏、录制条）
+    bar.setCustomSpacing(0, after: buttons[2].button)  // 存储和它的 ▾ 贴着（同截图工具栏）
+    bar.setCustomSpacing(4, after: buttons[4].button)  // 主圆钮前隔 4（同工具栏、录制条）
     // 按钮行就是内容那么宽。不设的话它在 centerX 对齐的竖栈里宽度不定（内容宽到面板内宽之间都满足约束，
     // hasAmbiguousLayout）：有时被拉满，按钮靠左排、整行偏左（截图自检里每次运行出现在不同的图上）
     bar.setHuggingPriority(.required, for: .horizontal)
@@ -781,6 +799,7 @@ final class ScrollCaptureHUD: NSView {
 
   /// 双击预览：回到最新那头（面板靠背景拖动，别的点击照旧交给它）
   override func mouseDown(with event: NSEvent) {
+    if openMenu != nil { return openMenu?.dismiss() ?? () }  // 点菜单外面：只收菜单
     let point = convert(event.locationInWindow, from: nil)
     guard event.clickCount == 2, browseFrom != nil,
       preview.convert(preview.bounds, to: self).contains(point)
@@ -881,9 +900,45 @@ final class ScrollCaptureHUD: NSView {
     seam.add(flash, forKey: "flash")
   }
 
-  @objc private func clicked(_ sender: NSButton) { onAction(buttons[sender.tag].item) }
+  @objc private func clicked(_ sender: NSButton) {
+    let item = buttons[sender.tag].item
+    if case .saveMenu = item { return toggleSaveMenu() }
+    openMenu?.dismiss()
+    onAction(item)
+  }
+
+  /// 存储右边的 ▾：HUD 菜单「存储到「桌面」⌘S / 另存为… ⇧⌘S」（同截图工具栏的那一份），再点一下收起
+  private func toggleSaveMenu() {
+    guard openMenu == nil else { return openMenu?.dismiss() ?? () }
+    guard let body = button(for: .output(.save)), let caret = button(for: .saveMenu) else { return }
+    let next = HUDMenu(
+      [
+        .init(title: ScreenshotOutput.saveTitle, key: "⌘S") { [weak self] in
+          self?.onAction(.output(.save))
+        },
+        .init(title: "另存为…", key: "⇧⌘S") { [weak self] in self?.onAction(.output(.saveAs)) },
+      ], label: "存储选项")
+    openMenu = next
+    next.onDismiss = { [weak self, weak next] in
+      if self?.openMenu === next { self?.openMenu = nil }
+    }
+    next.present(
+      in: self,
+      anchor: body.convert(body.bounds, to: self).union(caret.convert(caret.bounds, to: self)))
+  }
+
+  private func button(for item: Item) -> NSButton? {
+    buttons.first {
+      switch ($0.item, item) {
+      case (.saveMenu, .saveMenu), (.toggleAuto, .toggleAuto), (.cancel, .cancel): true
+      case (.output(let a), .output(let b)): a == b
+      default: false
+      }
+    }?.button
+  }
 
   override func keyDown(with event: NSEvent) {
+    openMenu?.dismiss()
     let flags = event.modifierFlags.intersection([.command, .control, .option])
     switch Int(event.keyCode) {
     case kVK_Escape: onAction(.cancel)

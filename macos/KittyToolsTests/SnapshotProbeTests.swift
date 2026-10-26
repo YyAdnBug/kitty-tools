@@ -818,6 +818,7 @@ struct SnapshotProbeTests {
         dark: false, to: "\(out)/\(name).png")
     }
     try renderScrollCapture(out)
+    try renderScrollEditor(out)
     try await renderLauncher(out)
     // 刘海岛：刘海屏的下巴（成功 / 进行中）、无刘海屏的胶囊（取色色块 / 错误）
     let notch = Island.Geometry.notch(width: 200, height: 32)
@@ -3219,6 +3220,36 @@ struct SnapshotProbeTests {
   }
 
   /// 长截图面板：刚开始（还没预览）、拼了一段（预览 + 尺寸）、对不上（橙色提示）、自动滚动中，深浅色
+  /// 长图标注窗口的画布：长图上画了矩形、箭头、序号，选中的那条带虚线框和手柄（工具栏是 HUD 皮肤，
+  /// 和长截图面板一样在 macOS 26 起的玻璃下渲染出来是空白，这里只出画布）
+  private func renderScrollEditor(_ out: String) throws {
+    let page = try ScreenshotTests.render([
+      "The quick brown fox jumps over the lazy dog", "敏捷的棕色狐狸跳过了懒狗", "日本語のテキスト",
+      "한국어 텍스트", "Привет мир", "Hello World", "第七行", "第八行",
+    ])
+    let long = try #require(page.cropping(to: CGRect(x: 0, y: 0, width: 1200, height: 1600)))
+    let canvas = ScrollCanvas(image: long, scale: 2)
+    let rectangle = Annotation(
+      shape: .rectangle(CGRect(x: 40, y: 560, width: 300, height: 90)),
+      style: Annotation.Style(color: .red, weight: .medium))
+    canvas.annotations = [
+      rectangle,
+      Annotation(
+        shape: .arrow(from: CGPoint(x: 460, y: 420), to: CGPoint(x: 340, y: 540)),
+        style: Annotation.Style(color: .red, weight: .medium)),
+      Annotation(
+        shape: .counter(1, center: CGPoint(x: 70, y: 700)),
+        style: Annotation.Style(color: .blue, weight: .medium)),
+    ]
+    canvas.selectedAnnotation = rectangle.id
+    canvas.layoutSubtreeIfNeeded()
+    let shown = CGRect(x: 0, y: 380, width: 600, height: 400)
+    let bitmap = try #require(canvas.bitmapImageRepForCachingDisplay(in: shown))
+    canvas.cacheDisplay(in: shown, to: bitmap)
+    try #require(bitmap.representation(using: .png, properties: [:]))
+      .write(to: URL(filePath: "\(out)/scroll-editor-canvas.png"))
+  }
+
   private func renderScrollCapture(_ out: String) throws {
     let page = try ScreenshotTests.render([
       "The quick brown fox jumps over the lazy dog", "敏捷的棕色狐狸跳过了懒狗", "日本語のテキスト",
