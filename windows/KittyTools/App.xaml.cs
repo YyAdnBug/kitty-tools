@@ -36,6 +36,18 @@ public partial class App : Application
             Theme.ApplyAccent();
             Theme.WatchSystemAccent();
             XamlProbe.Run();
+            var commandLine = Environment.GetCommandLineArgs();
+            if (HeightAnimationProbe.IsRequested(commandLine))
+            {
+                // R12 的高度动画逐帧自检：只开自己的无边框窗口，跑完写报告就退。
+                var directory = HeightAnimationProbe.DirectoryFrom(commandLine);
+                if (directory is not null)
+                {
+                    _ = HeightAnimationProbe.RunAsync(directory);
+                    return;
+                }
+            }
+
             _runtime = ShellRuntime.Start();
             if (Environment.GetCommandLineArgs().Contains("--crash-test", StringComparer.OrdinalIgnoreCase))
             {

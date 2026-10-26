@@ -52,7 +52,37 @@ internal static class FileSearch
         var results = new List<(int Score, string Path)>();
         var usedIndexer = false;
         var forceFallback = Environment.GetEnvironmentVariable("KITTY_FS_FORCE_FALLBACK") == "1";
-        foreach (var root in Roots())
+        var roots = Roots();
+
+        // PLAN-v6 第 4 批：先走 OLE DB 直查 SYSTEMINDEX（毫秒级）；索引服务不可用时才退回
+        // R17 的 WinRT 查询 / 扫目录。退路保留，是为了在没装搜索服务或索引被关掉的机器上还能用。
+        if (!forceFallback && !cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                var indexed = await Task.Run(() => OleDbFileSearch.Search(tokens, roots), cancellationToken);
+                if (indexed is not null)
+                {
+                    foreach (var path in indexed)
+                    {
+                        var score = LauncherCommands.ScoreFileName(Path.GetFileName(path), tokens);
+                        if (score != int.MinValue)
+                        {
+                            results.Add((score, path));
+                        }
+                    }
+
+                    Log.Info($"files.search source=oledb ms={Elapsed(started):F0} hits={results.Count}");
+                    return Rank(results);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                return new List<string>();
+            }
+        }
+
+        foreach (var root in roots)
         {
             if (forceFallback)
             {
@@ -104,7 +134,7 @@ internal static class FileSearch
             Log.Info("files.index-fallback");
             var candidates = 0;
             var fallbackStart = Stopwatch.GetTimestamp();
-            foreach (var root in Roots())
+            foreach (var root in roots)
             {
                 foreach (var file in Walk(root, maxDepth: 6, ref candidates, cancellationToken))
                 {
@@ -124,14 +154,17 @@ internal static class FileSearch
         }
 
         Log.Info($"files.search indexed={usedIndexer} ms={Elapsed(started):F0} hits={results.Count}");
-        return results
+        return Rank(results);
+    }
+
+    private static List<string> Rank(List<(int Score, string Path)> results)
+        => results
             .OrderByDescending(item => item.Score)
             .ThenBy(item => item.Path.Length)
             .Select(item => item.Path)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(20)
             .ToList();
-    }
 
     private static string BuildFilter(IReadOnlyList<string> tokens)
     {

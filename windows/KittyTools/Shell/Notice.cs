@@ -10,6 +10,8 @@ using KittyTools.Infrastructure;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.Graphics;
@@ -110,6 +112,9 @@ internal sealed unsafe partial class NoticeHost
             Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
         };
         _root.Children.Add(_pill);
+        // 读屏：轻提示是活区，出现时用 UIA 通知播报（讲述人 / NVDA 都认这一条）。
+        AutomationProperties.SetLiveSetting(_root, AutomationLiveSetting.Polite);
+        AutomationProperties.SetName(_root, Paths.ProductName + " 提示");
 
         _window = new Window
         {
@@ -207,6 +212,26 @@ internal sealed unsafe partial class NoticeHost
         _shown = true;
         _hideTimer.Stop();
         _hideTimer.Start();
+        Announce(title, detail);
+    }
+
+    private void Announce(string title, string detail)
+    {
+        try
+        {
+            var text = string.IsNullOrWhiteSpace(detail) ? title : $"{title}，{detail}";
+            var peer = FrameworkElementAutomationPeer.FromElement(_root) ??
+                       FrameworkElementAutomationPeer.CreatePeerForElement(_root);
+            peer?.RaiseNotificationEvent(
+                AutomationNotificationKind.ActionCompleted,
+                AutomationNotificationProcessing.ImportantMostRecent,
+                text,
+                "kitty-notice");
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"notice.announce-failed {ex.GetType().Name}");
+        }
     }
 
     private void StartGrow(double target)

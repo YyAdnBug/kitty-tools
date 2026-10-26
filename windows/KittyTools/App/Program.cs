@@ -10,6 +10,13 @@ public static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        // 自动更新失败路径的端到端自检（PLAN-v6 第 7 批）：不需要窗口、单实例或 COM，
+        // 在真正启动 WinUI 之前跑完就退出，报告写在 --update-e2e 目录里。
+        if (UpdateE2E.IsRequested(args))
+        {
+            return UpdateE2E.Run(args);
+        }
+
         // 自动更新换上的新版本要等旧进程退出并放掉互斥量，所以带 --updated 时多等几秒。
         var updated = args.Contains("--updated", StringComparer.OrdinalIgnoreCase);
         if (!SingleInstance.TryStart(updated ? 8000 : 0))

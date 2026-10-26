@@ -8,7 +8,6 @@
 // REVIEW R3：流式写到 updates\<文件名>.partial，写完才改名；失败 / 取消 / 校验不过都删掉半成品；
 //            下载中托盘那一项显示「正在下载 37%」，不另外弹窗。
 using System.Diagnostics;
-using System.IO.Compression;
 using System.Runtime.InteropServices;
 using KittyTools.Core;
 using KittyTools.Infrastructure;
@@ -60,58 +59,36 @@ internal static class AutoUpdater
         _progressPercent = -1;
         var staging = Path.Combine(Path.GetTempPath(), "kitty-update-" + Guid.NewGuid().ToString("N"));
         var downloadDir = Paths.UpdatesDirectory;
-        string? zip = null;
         try
         {
             Directory.CreateDirectory(downloadDir);
             UpdateHttp.CleanupPartialFiles(downloadDir);
             Directory.CreateDirectory(staging);
             var assetName = UpdateService.AvailableAssetName ?? $"KittyTools-{version}-{ArchitectureLabel()}.zip";
-            zip = Path.Combine(downloadDir, assetName);
 
             NoticeHost.Show("正在下载更新", $"Kitty Tools {version}", NoticeTone.Normal);
-            await UpdateHttp.DownloadAsync(zipUrl, zip, OnProgress);
-            Log.Info($"update.downloaded version={version} bytes={new FileInfo(zip).Length}");
-
-            // 校验：release 里的 .sha256（找不到就放弃，宁可不更新）。
-            if (hashUrl is null)
+            var plan = new UpdatePlan(version, zipUrl, hashUrl, assetName);
+            UpdateFlowResult result;
+            try
             {
-                Fail(version, "这个版本没有附 .sha256，没法校验，请在发布页手动下载");
+                result = await UpdateFlow.RunAsync(
+                    plan,
+                    downloadDir,
+                    staging,
+                    installDir,
+                    UpdateHttp.DownloadAsync,
+                    UpdateHttp.GetTextAsync,
+                    UpdateFlow.ReadVersion,
+                    OnProgress);
+            }
+            catch (OperationCanceledException)
+            {
                 return;
             }
 
-            var hashText = await UpdateHttp.GetTextAsync(hashUrl);
-            var expected = UpdateHash.ExpectedFor(hashText, Path.GetFileName(zip));
-            if (expected is null || !UpdateHash.FileMatches(zip, expected))
-            {
-                Log.Warn("update.hash-mismatch");
-                Fail(version, "下载的更新包校验对不上，已放弃（旧版本没动）");
-                return;
-            }
-
-            Log.Info("update.verified");
-            ZipFile.ExtractToDirectory(zip, staging, overwriteFiles: true);
-            var entryDir = UpdateInstaller.FindEntryDirectory(staging, "KittyTools.exe");
-            if (entryDir is null)
-            {
-                Fail(version, "更新包里没有 KittyTools.exe，已放弃（旧版本没动）");
-                return;
-            }
-
-            var stagedVersion = VersionOf(Path.Combine(entryDir, "KittyTools.exe"));
-            if (stagedVersion is null || stagedVersion.ToString(3) != version)
-            {
-                Log.Warn($"update.version-mismatch expected={version} actual={stagedVersion}");
-                Fail(version, "更新包的版本对不上，已放弃（旧版本没动）");
-                return;
-            }
-
-            // 覆盖：先改名再拷；失败会自动回滚。
-            var result = UpdateInstaller.Install(entryDir, installDir);
             if (!result.Ok)
             {
-                Log.Error($"update.install-failed {result.Error}");
-                Fail(version, "覆盖安装失败，已回到原版本");
+                ReportFailure(version, result);
                 return;
             }
 
@@ -135,17 +112,6 @@ internal static class AutoUpdater
             _busy = false;
             _progressPercent = -1;
             TryDeleteDirectory(staging);
-            if (zip is not null)
-            {
-                try
-                {
-                    File.Delete(zip);
-                }
-                catch
-                {
-                    // 删不掉就留着，下次下载会覆盖。
-                }
-            }
         }
     }
 
@@ -194,25 +160,34 @@ internal static class AutoUpdater
         _ => "x64",
     };
 
-    /// <summary>更新包里的 exe 的版本号（FileVersionInfo 在 AOT 下能用）。</summary>
-    private static Version? VersionOf(string exePath)
+    /// <summary>
+    /// 把 UpdateFlow 的失败步映射成用户提示；日志里保留原始错误。
+    /// 文案和以前手工链路一致（HANDTEST §126 / §127）。
+    /// </summary>
+    private static void ReportFailure(string version, UpdateFlowResult result)
     {
-        try
+        switch (result.Step)
         {
-            var text = FileVersionInfo.GetVersionInfo(exePath).ProductVersion
-                       ?? FileVersionInfo.GetVersionInfo(exePath).FileVersion;
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                return null;
-            }
-
-            // ProductVersion 常常是 "0.1.1+abc123" 这种：取前面能解析的部分。
-            var cut = text.IndexOfAny(new[] { '+', '-', ' ' });
-            return Version.TryParse(cut < 0 ? text : text[..cut], out var version) ? version : null;
-        }
-        catch
-        {
-            return null;
+            case UpdateStep.Hash:
+                Log.Warn("update.hash-mismatch");
+                Fail(version, "下载的更新包校验对不上，已放弃（旧版本没动）");
+                break;
+            case UpdateStep.Entry:
+                Log.Warn("update.entry-missing");
+                Fail(version, "更新包里没有 KittyTools.exe，已放弃（旧版本没动）");
+                break;
+            case UpdateStep.Version:
+                Log.Warn($"update.version-mismatch {result.Error}");
+                Fail(version, "更新包的版本对不上，已放弃（旧版本没动）");
+                break;
+            case UpdateStep.Install:
+                Log.Error($"update.install-failed {result.Error}");
+                Fail(version, "覆盖安装失败，已回到原版本");
+                break;
+            default:
+                Log.Error($"update.{result.Step.ToString().ToLowerInvariant()} failed {result.Error}");
+                NoticeHost.Show("更新失败", "旧版本还能正常用，详情看日志", NoticeTone.Error);
+                break;
         }
     }
 

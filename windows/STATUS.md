@@ -11,8 +11,8 @@
 - **翻译**：八个服务（含百度 / 有道 / 火山引擎 / 腾讯云）、流式、划词 / 输入 / 复制即译、自动复制、固定浮窗；
   历史与生词本（Ctrl+H、搜索、重译、收藏、删除 / 撤销、CSV / Anki TSV 导出）、查词、替换原文、朗读。
 - **启动器**：应用 / 设置页 / 系统命令 / 计算 / 网址路径直达 / 网页搜索 / 使用记录、收藏与顺序、
-  文件搜索（目前走 Windows 索引的 WinRT 查询，慢，PLAN-v6 第 4 批改 OLE DB）、浏览器书签 / 历史、
-  kill 进程、port 端口（`GetExtendedTcpTable` / `GetExtendedUdpTable`）。
+  文件搜索（走 Windows 索引的 OLE DB `SYSTEMINDEX`，100 条约 62 ms；索引不可用时退回 WinRT / 扫目录）、
+  浏览器书签 / 历史、kill 进程、port 端口（`GetExtendedTcpTable` / `GetExtendedUdpTable`）。
 - **截图**：冻结帧框选、吸附、放大镜、标注、识字、钉图、截图翻译、截取上次区域（Ctrl+Alt+Z）、
   长截图（S 向下、Shift+S 向上、A / Shift+A 自动滚动）、飞入卡片、选区里直接打字。
 - **录屏**：Alt+R / 托盘 → 选区遮罩 → 倒数 → 录制条；Windows.Graphics.Capture 抓屏 → D3D11 → Media Foundation
@@ -35,7 +35,7 @@ CPU 一律「% 单核」（100% = 占满一个核）；内存是专用工作集�
 
 | 项目 | 数字 | 备注 |
 |---|---|---|
-| 自动化测试 | **267 个全过**（`dotnet test`） | 第 6 批加了组字规则 + 负坐标 / 竖屏用例 |
+| 自动化测试 | **277 个全过**（`dotnet test`） | 第 6 批加了更新端到端 + 文件搜索 SQL |
 | 启动（app.start → shell.ready） | 64 ms | 0.5.0 |
 | 预建浮层 / 翻译浮窗 | 启动后 3.1 s | 0.5.0 |
 | 空闲专用工作集（只有托盘） | 41.1 MB | 0.6.0 全量探针 |
@@ -45,6 +45,9 @@ CPU 一律「% 单核」（100% = 占满一个核）；内存是专用工作集�
 | 设置打开 / 稳定 | 83.6 / 83.5 MB | 0.6.0 |
 | 空闲 CPU（60 s） | 0.062 s ≈ 0.1% 单核 | 0.5.0 |
 | 5000 条搜索 | 5.7 ms 冷 / 0.14 ms 热 | 0.5.0 |
+| 文件搜索（OLE DB，100 条） | 62 ms 查询 / 127 ms 整条 | Debug，`--file-search=jpg`；原 WinRT 约 880 ms |
+| 更新端到端自检 | 4 条全过（成功 / sha256 错 / 挡住回滚 / 包内无 exe） | `windows/tools/update-e2e.ps1` |
+| 高度动画逐帧 | 69 帧 / 0 异常 | `--height-anim-test`，约 32 fps |
 | 录屏 1440p30 60 s（WGC + 系统声音，Release AOT） | 1805 帧 / 60.1 秒 / 1.6 MB / 30 fps；AAC 48 kHz 立体声 160 kbps、音频 60.17 秒；CPU 9.2% 单核；ws 192 MB | 第 2 批；测试图案在这台机器上被前台窗口限帧，画面是补帧 |
 | 转 GIF（800 长边、10 fps） | 5 秒 MP4 → 436 KB / 800×450，每帧八叉树调色板 | 第 3 批 |
 | 压缩（1440p30 60 秒） | 12.5 MB → 4.96 MB（39%），音轨 160 kbps 保留 | 第 3 批 |
@@ -72,13 +75,13 @@ AOT x64 / ARM64 每次发布都零 trim / AOT 警告；PRI 四个文件齐全
 - 截图 / 设置 / 录屏后的内存回落：0.6.0 全量探针已跑（见上表），设置窗关闭后稳定在 83.5 MB。
 - AOT 选项只留了 `ConcurrentGarbageCollection=false`；`IlcOptimizationPreference=Size`、`UseSystemResourceKeys`、
   `IlcFoldIdenticalMethodBodies`、`System.GC.ConserveMemory` 没量到「省了且不变慢」，没开。
-- 文件搜索还是 WinRT 的 StorageFile 查询（约 880 ms）：`System.Data.OleDb` 在 AOT 下报
-  RequiresDynamicCode；CsWin32 的 OLE DB 接口已接上 SearchManager / QueryHelper / 命令 / GetNextRows，
-  但 `IAccessor.CreateAccessor` 对 VARIANT / BYREF-VARIANT / BSTR / WSTR 的各种绑定都返回 `0x80040E46`
-  （DB_E_BADBINDINFO），取不到列。第 4 批没做成，代码已回滚。
-- 第 6 批剩余：设置其他页 / 讲述人朗读没走；R12 的高度动画逐帧、卡片拖到资源管理器没做；
-  高对比度 / 150% / 真多屏 / 真麦克风仍没测。
-- 更新的端到端失败用例（sha256 错误、替换时文件被占用回滚）没写成脚本自动验。
+- 文件搜索已从 WinRT 换成 OLE DB 直查 `SYSTEMINDEX`（第 4 批做成）：x64 上 `DBBINDING` 的偏移 / 长度字段是
+  8 字节、`IRowset` 不继承 `IAccessor`（必须单独 QI），修正后 `CreateAccessor` 返回 0；100 条结果约 62 ms。
+  索引服务被关掉时的 WinRT / 扫目录退路只有代码路径，没在真机停过服务验证。
+- 第 6 批剩余：讲述人真机朗读没走（轻提示已发 UIA 活区 + 通知）；卡片拖到资源管理器没走；
+  高对比度 / 150% / 真多屏 / 真麦克风仍没测。高度动画已加逐帧自检（69 帧 / 0 异常）。
+- 更新的端到端失败用例已有脚本：`pwsh windows/tools/update-e2e.ps1` 跑成功 / sha256 错 / 挡住回滚 / 包内无 exe
+  四条路；真机替换正在运行的 App 仍需手工走一次。
 
 **要用户真机走的**（详见 `HANDTEST.md`，标「待走 / 待定 / 没测」的条目）
 
@@ -110,11 +113,10 @@ AOT x64 / ARM64 每次发布都零 trim / AOT 警告；PRI 四个文件齐全
 | 第 1 批 | 录屏换 GPU 管线（D3D11 + WGC + 硬件 H.264） | 做完（10 分钟 / 闪退 / 拖窗口待手测） |
 | 第 2 批 | 系统声音 / 麦克风 / 混音进 MP4 | 已进 WGC 管线；缺 5.1 真机、拔麦克风、静音 20 秒、真耳同步 |
 | 第 3 批 | MP4 后处理、删 AVI、录音补齐 | 大部分做完：压缩 / GIF / 删 AVI / 录音采集；录音控制条、待录、电平 UI 待补 |
-| 第 4 批 | 文件搜索走 OLE DB | 未开始 |
-| 第 4 批 | 文件搜索走 OLE DB | 没做成：OleDb AOT 不可用；CsWin32 接口已生成未接 |
+| 第 4 批 | 文件搜索走 OLE DB | 做完：OLE DB 直查 `SYSTEMINDEX`，100 幅 62 ms；索引关闭的退路待真机验证 |
 | 第 5 批 | 内存回落、AOT 选项、发布体积 | 部分：AOT 选项（只留 ConcurrentGC=false）、语言目录裁剪；内存回落 / 发布体积逐项没走完 |
-| 第 6 批 | 主题、多屏、无障碍、输入法、长截图、R12 剩余 | 部分：组字不搜、`--fake-dpi`、长截图暂停、`--a11y-audit`（五界面 + 设置七页 0/0）、第二次截图内存、翻译等待 CPU 0.0%；高度动画 / 拖动 / 讲述人没走；主题资源并进 v7 |
-| 第 7 批 | 开始菜单 / 卸载、崩溃记录、更新 e2e、冒烟清单、0.6.0 | 开始菜单 / 卸载 / 崩溃记录 / 冒烟清单 / 0.6.0 包做完；更新 e2e 没写 |
+| 第 6 批 | 主题、多屏、无障碍、输入法、长截图、R12 剩余 | 部分：组字不搜、`--fake-dpi`、长截图暂停、`--a11y-audit`（五界面 + 设置七页 0/0）、第二次截图内存、翻译等待 CPU 0.0%、高度动画逐帧探针、轻提示 UIA 通知；讲述人真机朗读 / 卡片拖动 / 高对比度 / 真多屏 / 真麦克风仍没走；主题资源并进 v7 |
+| 第 7 批 | 开始菜单 / 卸载、崩溃记录、更新 e2e、冒烟清单、0.6.0 | 开始菜单 / 卸载 / 崩溃记录 / 冒烟清单 / 0.6.0 包做完；更新 e2e 脚本 4 条全过 |
 
 ## 6. 提交与产物
 

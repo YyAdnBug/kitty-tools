@@ -119,9 +119,11 @@ internal static unsafe partial class ScreenCapture
         return 1;
     }
 
+    /// <summary>截屏幕上一块（物理像素）；给高度动画探针逐帧看窗口边缘用。</summary>
+    internal static byte[]? CaptureRegion(PixelBounds bounds) => Capture(bounds);
+
     private static byte[]? Capture(PixelBounds bounds)
-    {
-        if (bounds.Width <= 0 || bounds.Height <= 0)
+    {        if (bounds.Width <= 0 || bounds.Height <= 0)
         {
             return null;
         }
