@@ -126,6 +126,18 @@ internal static class UiSnapshotProbe
             NoticeHost.Show("更新失败", "旧版本还能正常用，详情看日志", NoticeTone.Error);
             await Task.Delay(1200);
             await WindowShot.SaveAsync(NoticeHost.HandleForProbe, Path.Combine(directory, "island-error.png"));
+            // PLAN-v8 第 5 批：带按钮的提示，收着 / 悬停展开两张。
+            NoticeHost.Show(
+                "录屏已保存",
+                "录屏 2026-10-26 23.15.08.mp4 · 1 分 23 秒，存在「视频 › Kitty Tools」",
+                NoticeTone.Normal,
+                new NoticeAction("在资源管理器中显示", () => { }, Opens: true),
+                new NoticeAction("打开", () => { }, Opens: true));
+            await Task.Delay(900);
+            await WindowShot.SaveAsync(NoticeHost.HandleForProbe, Path.Combine(directory, "island-buttons.png"));
+            NoticeHost.ExpandForProbe();
+            await Task.Delay(700);
+            await WindowShot.SaveAsync(NoticeHost.HandleForProbe, Path.Combine(directory, "island-expanded.png"));
 
             RecordingHud.Show(new PixelBounds(200, 200, 1000, 700));
             await Task.Delay(800);

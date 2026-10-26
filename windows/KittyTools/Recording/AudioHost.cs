@@ -185,20 +185,9 @@ internal static class AudioHost
 
         Log.Info($"audio.saved {Path.GetFileName(path)} size={new FileInfo(path).Length}");
         _ = ShotHistory.RecordFileAsync(path, Core.ShotKind.Audio);
-        NoticeHost.Show("录音已保存", Path.GetFileName(path), NoticeTone.Normal);
-        try
-        {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = "explorer.exe",
-                Arguments = "/select,\"" + path + "\"",
-                UseShellExecute = true,
-            });
-        }
-        catch
-        {
-            // 打不开资源管理器就算了。
-        }
+        // 不再自己弹资源管理器（PLAN-v8 H14）：提示上给「在资源管理器中显示」「打开」。
+        NoticeHost.Show("录音已保存", Path.GetFileName(path), NoticeTone.Normal,
+            NoticeActions.Reveal(path), NoticeActions.Open(path));
     }
 
     /// <summary>上次录音闪退：把临时分段 MP4 重封装成 .m4a 并提示（R28，照 R23）。</summary>
@@ -226,7 +215,7 @@ internal static class AudioHost
             SettingsService.Current.AudioTempPath = null;
             SettingsService.Save();
             Log.Info($"audio.recovered size={(File.Exists(final) ? new FileInfo(final).Length : 0)}");
-            NoticeHost.Show("上次的录音已保存", Path.GetFileName(final), NoticeTone.Normal);
+            NoticeHost.Show("上次的录音已保存", Path.GetFileName(final), NoticeTone.Normal, NoticeActions.Reveal(final));
         }
         catch (Exception ex)
         {

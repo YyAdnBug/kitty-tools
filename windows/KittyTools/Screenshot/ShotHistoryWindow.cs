@@ -645,7 +645,8 @@ internal sealed class ShotHistoryWindow : Window
     {
         if (!OcrService.HasEngine)
         {
-            NoticeHost.Show("没装中文识字组件", string.Empty, NoticeTone.Warning);
+            NoticeHost.Show("没装中文识字组件", string.Empty, NoticeTone.Warning,
+                NoticeActions.SystemSettings("ms-settings:regionlanguage"));
             return;
         }
 

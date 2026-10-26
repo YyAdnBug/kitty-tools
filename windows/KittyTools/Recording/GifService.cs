@@ -46,7 +46,8 @@ internal static class GifService
         try
         {
             // 报得出百分比：轻提示带细进度条（PLAN-v7 §3.4），这个循环在 UI 线程上，直接调。
-            NoticeHost.ShowProgress("正在转 GIF", "10 fps，长边 800 · 0%", 0);
+            var cancel = new NoticeAction("取消", Cancel);
+            NoticeHost.ShowProgress("正在转 GIF", "10 fps，长边 800 · 0%", 0, cancel);
             var shownPercent = 0;
             var file = await StorageFile.GetFileFromPathAsync(source);
             var clip = await MediaClip.CreateFromFileAsync(file);
@@ -79,7 +80,7 @@ internal static class GifService
                     if (percent != shownPercent)
                     {
                         shownPercent = percent;
-                        NoticeHost.ShowProgress("正在转 GIF", $"10 fps，长边 800 · {percent}%", Progress);
+                        NoticeHost.ShowProgress("正在转 GIF", $"10 fps，长边 800 · {percent}%", Progress, cancel);
                     }
                     if (writer.Frames >= GifRules.MaxFrames(GifRules.TargetFps))
                     {
@@ -99,7 +100,8 @@ internal static class GifService
             var size = new FileInfo(final).Length;
             Log.Info($"video.gif {Path.GetFileName(final)} size={size}");
             _ = ShotHistory.RecordFileAsync(final, ShotKind.Gif);
-            NoticeHost.Show("GIF 好了", $"{Path.GetFileName(final)} · {size / 1024} KB", NoticeTone.Normal);
+            NoticeHost.Show("GIF 好了", $"{Path.GetFileName(final)} · {size / 1024} KB", NoticeTone.Normal,
+                NoticeActions.Reveal(final), NoticeActions.Open(final));
             return final;
         }
         catch (OperationCanceledException)

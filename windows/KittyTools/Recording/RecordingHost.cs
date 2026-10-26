@@ -178,21 +178,10 @@ internal static unsafe class RecordingHost
 
         Log.Info($"record.saved {Path.GetFileName(path)}");
         _ = ShotHistory.RecordFileAsync(path, Core.ShotKind.Video);
-        NoticeHost.Show("录屏已保存", Path.GetFileName(path), NoticeTone.Normal);
+        // 不再自己弹资源管理器（mac 也不弹，PLAN-v8 H14）：提示上给「在资源管理器中显示」「打开」。
+        NoticeHost.Show("录屏已保存", Path.GetFileName(path), NoticeTone.Normal,
+            NoticeActions.Reveal(path), NoticeActions.Open(path));
         OpenMicrophoneSettingsIfPending();
-        try
-        {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = "explorer.exe",
-                Arguments = "/select,\"" + path + "\"",
-                UseShellExecute = true,
-            });
-        }
-        catch
-        {
-            // 打不开资源管理器就算了。
-        }
     }
 
     /// <summary>放弃这段录屏：停止、删掉文件。</summary>
@@ -279,7 +268,7 @@ internal static unsafe class RecordingHost
             SettingsService.Current.RecordingTempPath = null;
             SettingsService.Save();
             Log.Info($"record.recovered size={(File.Exists(path) ? new FileInfo(path).Length : 0)}");
-            NoticeHost.Show("上次的录屏已保存", Path.GetFileName(path), NoticeTone.Normal);
+            NoticeHost.Show("上次的录屏已保存", Path.GetFileName(path), NoticeTone.Normal, NoticeActions.Reveal(path));
         }
         catch (Exception ex)
         {

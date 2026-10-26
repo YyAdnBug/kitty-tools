@@ -287,6 +287,18 @@ internal sealed class ShellRuntime
                 () => NoticeHost.Show("已复制到剪贴板", "3 条记录已合并", NoticeTone.Normal));
         }
 
+        // 调试用：看带按钮的提示（PLAN-v8 第 5 批验收：悬停展开 / 点按钮 / 点胶囊）。
+        if (Environment.GetCommandLineArgs().Contains("--notice-buttons", StringComparer.OrdinalIgnoreCase))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => NoticeHost.Show(
+                "录屏已保存",
+                "录屏 2026-10-26 23.15.08.mp4 · 1 分 23 秒，存在「视频 › Kitty Tools」，鼠标停上来能看到这一整段说明",
+                NoticeTone.Normal,
+                new NoticeAction("在资源管理器中显示", () => Log.Info("notice-buttons reveal"), Opens: true),
+                new NoticeAction("打开", () => Log.Info("notice-buttons open"), Opens: true),
+                new NoticeAction("撤销", () => NoticeHost.Show("已撤销", string.Empty, NoticeTone.Normal))));
+        }
+
         if (Environment.GetCommandLineArgs().Contains("--notice-error", StringComparer.OrdinalIgnoreCase))
         {
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(
@@ -779,7 +791,8 @@ internal sealed class ShellRuntime
     {
         SettingsService.Current.CopyTranslate = !SettingsService.Current.CopyTranslate;
         SettingsService.Save();
-        NoticeHost.Show("复制即译", SettingsService.Current.CopyTranslate ? "已打开" : "已关闭", NoticeTone.Normal);
+        NoticeHost.Show("复制即译", SettingsService.Current.CopyTranslate ? "已打开" : "已关闭", NoticeTone.Normal,
+            new NoticeAction("撤销", ToggleCopyTranslate));
     }
 
     public void TogglePauseClipboard()
@@ -790,14 +803,16 @@ internal sealed class ShellRuntime
         }
 
         Clipboard.Paused = !Clipboard.Paused;
-        NoticeHost.Show("剪贴板记录", Clipboard.Paused ? "已暂停" : "已恢复", NoticeTone.Normal);
+        NoticeHost.Show("剪贴板记录", Clipboard.Paused ? "已暂停" : "已恢复", NoticeTone.Normal,
+            new NoticeAction("撤销", TogglePauseClipboard));
     }
 
     public void OpenClipboard()
     {
         if (!Features.IsOn(Feature.Clipboard))
         {
-            NoticeHost.Show("剪贴板已关闭", "到 设置 › 通用 › 功能 里打开", NoticeTone.Warning);
+            NoticeHost.Show("剪贴板已关闭", "到 设置 › 通用 › 功能 里打开", NoticeTone.Warning,
+                NoticeActions.AppSettings("general"));
             return;
         }
 

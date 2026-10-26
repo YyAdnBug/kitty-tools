@@ -48,7 +48,8 @@ internal static class CompressionService
             // 压缩结束（_running 清空）之后才到的回调不再改，免得盖掉结果提示。
             var queue = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
             var shownPercent = 0;
-            NoticeHost.ShowProgress("正在压缩录屏", "目标不超过原文件的 60% · 0%", 0);
+            var cancel = new NoticeAction("取消", Cancel);
+            NoticeHost.ShowProgress("正在压缩录屏", "目标不超过原文件的 60% · 0%", 0, cancel);
             var file = await StorageFile.GetFileFromPathAsync(source);
             var profile = await MediaEncodingProfile.CreateFromFileAsync(file);
             var video = await file.Properties.GetVideoPropertiesAsync();
@@ -97,7 +98,7 @@ internal static class CompressionService
                         if (_running is not null)
                         {
                             NoticeHost.ShowProgress(
-                                "正在压缩录屏", $"目标不超过原文件的 60% · {percent}%", percent / 100.0);
+                                "正在压缩录屏", $"目标不超过原文件的 60% · {percent}%", percent / 100.0, cancel);
                         }
                     });
                 }
@@ -123,7 +124,8 @@ internal static class CompressionService
             NoticeHost.Show(
                 "压缩完成",
                 $"{size / 1024.0 / 1024.0:F1} MB（原来的 {percent}%）· {Path.GetFileName(final)}",
-                CompressionRules.IsSmallEnough(original, size) ? NoticeTone.Normal : NoticeTone.Warning);
+                CompressionRules.IsSmallEnough(original, size) ? NoticeTone.Normal : NoticeTone.Warning,
+                NoticeActions.Reveal(final), NoticeActions.Open(final));
             return final;
         }
         catch (Exception ex)

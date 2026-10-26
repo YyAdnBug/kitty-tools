@@ -111,7 +111,8 @@ internal static class AutoUpdater
         {
             Log.Error("update.failed", ex);
             // 取消 / 断网 / 写盘失败：半成品已经由 UpdateHttp 删掉，这里只提示。
-            NoticeHost.Show("更新失败", "旧版本还能正常用，详情看日志", NoticeTone.Error);
+            NoticeHost.Show("更新失败", "旧版本还能正常用，详情看日志", NoticeTone.Error,
+                new NoticeAction("重试", () => _ = StartAsync()));
         }
         finally
         {
@@ -134,7 +135,8 @@ internal static class AutoUpdater
         SetupRecord.RefreshSize(installDir);
         var version = typeof(AutoUpdater).Assembly.GetName().Version?.ToString(3) ?? "?";
         Log.Info($"update.relaunched version={version} removed-old={removed}");
-        NoticeHost.Show("已更新到 " + version, "旧版本的文件已清理", NoticeTone.Normal);
+        NoticeHost.Show("已更新到 " + version, "旧版本的文件已清理", NoticeTone.Normal,
+            NoticeActions.AppSettings("about", "看更新了什么"));
     }
 
     private static void Fail(string version, string message)
@@ -193,7 +195,8 @@ internal static class AutoUpdater
                 break;
             default:
                 Log.Error($"update.{result.Step.ToString().ToLowerInvariant()} failed {result.Error}");
-                NoticeHost.Show("更新失败", "旧版本还能正常用，详情看日志", NoticeTone.Error);
+                NoticeHost.Show("更新失败", "旧版本还能正常用，详情看日志", NoticeTone.Error,
+                new NoticeAction("重试", () => _ = StartAsync()));
                 break;
         }
     }
