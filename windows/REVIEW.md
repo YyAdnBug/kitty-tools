@@ -61,22 +61,15 @@
   - 抽第 1、30、60 s 的帧，测试窗口上的帧号是连续的；
   - CPU 按 Release AOT 量。
 
-### R25（P1）卸载并删除数据时，数据库和日志还开着
+### R25（P1）卸载并删除数据时，数据库和日志还开着 → 已修（`61152c0`）
 
-`Settings/SettingsWindow.cs` 的 `UninstallAsync` / `Recycle`：
-
-- 程序还在运行，SQLite 库和日志文件都开着，`SHFileOperation` 挪不走被占用的文件，结果只挪走一部分。
-- 标志是 `NOCONFIRMATION | SILENT`，返回值和 `fAnyOperationsAborted` 都没看：出错了用户不知道，下次打开还会碰到一份残缺的数据。
-- 还有：这里用的是 `[DllImport]` + 带字符串的结构体，和项目里统一用 `LibraryImport` / CsWin32 的写法不一致。
-
-**修**：
-1. 删数据之前先停掉所有后台服务：剪贴板监听、同步、更新、热键。
-2. 关掉数据库连接（我们自己的 `SqliteConnection` 要真的调到 `sqlite3_close`）和日志文件。
-3. 再用 `IFileOperation`（CsWin32）加 `FOFX_RECYCLEONDELETE` 挪进回收站，并检查结果。
-4. 失败就弹一次，写明哪个文件夹没删掉、请用户手动删，并打开那个文件夹。
-5. 然后再退出。
-
-**验收**：在 `.Dev` 数据目录里放一份有内容的库，点「卸载并删除数据」，整个目录进了回收站、一个文件不剩；再故意占用一个文件试一次，看到失败提示。
+- 删除前 `ShellRuntime.PrepareForUninstall()`：提交剪贴板删除 → `ClipboardService.Stop()` 关 SQLite →
+  停同步定时器 / 更新检查 / 热键 / 托盘 → `Log.Shutdown()`。
+- 回收站改用内置 `Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(..., SendToRecycleBin)`，
+  删完检查目录是否真的不在；失败弹「数据目录没删干净」并可打开文件夹。
+- 和审查要求的 `IFileOperation` 不同：CsWin32 的 `IFileOperation` 在当前 NativeMethods 里生成不出来，
+  先用 VisualBasic 的内置实现；行为一致（回收站 + 失败提示 + 不静默）。
+- 验收还差：`.Dev` 数据目录真机点一次、故意占用一个文件看提示。
 
 ### R26（P1）同步执行层的 8 处修复没有任何自动化测试
 
