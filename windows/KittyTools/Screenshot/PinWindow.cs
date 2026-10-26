@@ -25,6 +25,7 @@ internal sealed partial class PinWindow : Window
     private readonly PixelBounds _origin;
     private readonly Grid _root;
     private readonly Image _image;
+    private readonly Border _hover;
     private readonly HWND _hwnd;
     private double _scale = 1;
     private bool _dragging;
@@ -43,8 +44,10 @@ internal sealed partial class PinWindow : Window
             IsTabStop = true,
             RequestedTheme = Theme.ElementTheme,
         };
-        _image = new Image { Stretch = Stretch.Fill };
+        _image = new Image { IsHitTestVisible = false, Stretch = Stretch.Fill };
         _root.Children.Add(_image);
+        _hover = BuildHoverBar();
+        _root.Children.Add(_hover);
         Content = _root;
 
         var presenter = OverlappedPresenter.Create();
@@ -108,6 +111,68 @@ internal sealed partial class PinWindow : Window
         {
             Log.Error("pin.image-failed", ex);
         }
+    }
+
+    /// <summary>PLAN-v7 §3.6：钉图右上角悬停出现复制 / 保存 / 关闭三个圆钮。</summary>
+    private Border BuildHoverBar()
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
+        Button Action(string glyph, string name, Action click)
+        {
+            var button = new Button
+            {
+                Content = new FontIcon
+                {
+                    Glyph = glyph,
+                    FontSize = 12,
+                    Foreground = new SolidColorBrush(Colors.White),
+                },
+                Width = 28,
+                Height = 28,
+                MinWidth = 0,
+                MinHeight = 0,
+                Padding = new Thickness(0),
+                Background = new SolidColorBrush(Colors.Transparent),
+                BorderThickness = new Thickness(0),
+                CornerRadius = new CornerRadius(14),
+            };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, name);
+            button.Click += (_, _) => click();
+            row.Children.Add(button);
+            return button;
+        }
+
+        Action(Glyphs.Copy, "复制钉图", Copy);
+        Action(Glyphs.Save, "保存钉图", () => _ = SaveQuickAsync());
+        Action(Glyphs.Close, "关闭钉图", Close);
+        var bar = new Border
+        {
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(8),
+            Padding = new Thickness(2),
+            CornerRadius = new CornerRadius(16),
+            Background = new SolidColorBrush(Theme.Argb(210, 0, 0, 0)),
+            Child = row,
+            Opacity = 0,
+            IsHitTestVisible = false,
+        };
+        _root.PointerEntered += (_, _) =>
+        {
+            bar.Opacity = 1;
+            bar.IsHitTestVisible = true;
+        };
+        bar.PointerExited += (_, _) =>
+        {
+            bar.Opacity = 0;
+            bar.IsHitTestVisible = false;
+        };
+        bar.PointerEntered += (_, _) =>
+        {
+            bar.Opacity = 1;
+            bar.IsHitTestVisible = true;
+        };
+        return bar;
     }
 
     private void OnPressed(object sender, PointerRoutedEventArgs e)
