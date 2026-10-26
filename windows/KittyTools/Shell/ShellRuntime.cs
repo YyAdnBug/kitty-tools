@@ -326,6 +326,17 @@ internal sealed class ShellRuntime
                 ShowSettings(welcome: false);
                 await Task.Delay(800);
                 _settingsWindow?.AuditAccessibility();
+                OverlayHost.Show(OverlayKind.Clipboard);
+                await Task.Delay(600);
+                OverlayHost.AuditAccessibility();
+                OverlayHost.Show(OverlayKind.Launcher);
+                await Task.Delay(600);
+                OverlayHost.AuditAccessibility();
+                OverlayHost.Hide(restoreForeground: false);
+                TranslateHost.ShowInput();
+                await Task.Delay(600);
+                TranslateHost.AuditAccessibility();
+                TranslateHost.Hide();
             });
         }
 

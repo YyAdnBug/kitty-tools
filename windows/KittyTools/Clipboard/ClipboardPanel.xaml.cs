@@ -53,6 +53,14 @@ public sealed partial class ClipboardPanel : UserControl
             _composing = false;
             Refresh(animated: false);
         };
+        List.ContainerContentChanging += (_, e) =>
+        {
+            if (e.Item is ClipRow row && e.ItemContainer is { } container)
+            {
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
+                    container, $"{row.Title}，{row.RightText}");
+            }
+        };
         SearchBox.Loaded += (_, _) =>
         {
             if (_active)

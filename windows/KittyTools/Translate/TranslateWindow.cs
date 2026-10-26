@@ -112,6 +112,7 @@ internal sealed unsafe partial class TranslateWindow : Window
             Background = new SolidColorBrush(Colors.Transparent),
             BorderThickness = new Thickness(0),
         };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_pinButton, "固定翻译窗口");
         ToolTipService.SetToolTip(_pinButton, "固定（点别处不收起）");
         _pinButton.Click += (_, _) => UpdatePin();
         var more = IconButton("\uE712", "更多");
@@ -589,6 +590,8 @@ internal sealed unsafe partial class TranslateWindow : Window
     public bool HistoryVisible => _historyVisible;
 
     /// <summary>Ctrl+H：结果区换成历史列表；再按一次回来。</summary>
+    public void AuditAccessibility() => AccessibilityAudit.Run(_root, "translate");
+
     public void ToggleHistory()
     {
         _historyVisible = !_historyVisible;
@@ -1212,6 +1215,7 @@ internal sealed unsafe partial class TranslateWindow : Window
             BorderThickness = new Thickness(0),
         };
         ToolTipService.SetToolTip(button, tooltip);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, tooltip);
         return button;
     }
 

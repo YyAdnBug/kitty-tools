@@ -218,6 +218,19 @@ internal sealed unsafe class OverlayWindow : Window
         Log.Info("overlay.prewarmed");
     }
 
+    public void AuditAccessibility()
+    {
+        if (_clipboard is not null)
+        {
+            AccessibilityAudit.Run(_clipboard, "clipboard");
+        }
+
+        if (_launcher is not null)
+        {
+            AccessibilityAudit.Run(_launcher, "launcher");
+        }
+    }
+
     private ClipboardPanel CreateClipboardPanel()
     {
         var panel = new ClipboardPanel();
@@ -362,6 +375,8 @@ internal static class OverlayHost
     }
 
     public static void Hide(bool restoreForeground) => _window?.HideOverlay(restoreForeground);
+
+    public static void AuditAccessibility() => _window?.AuditAccessibility();
 
     /// <summary>关掉某个功能时把它的浮层收起来（第三版 §2.3）。</summary>
     public static void HideKind(OverlayKind kind)

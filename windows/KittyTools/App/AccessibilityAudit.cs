@@ -22,7 +22,7 @@ internal static class AccessibilityAudit
 
     private static void Walk(DependencyObject node, ref int total, ref int unnamed, ref int unreachable)
     {
-        if (node is Control control && IsInteractive(control))
+        if (node is Control control && control.Visibility == Visibility.Visible && IsInteractive(control))
         {
             total++;
             if (string.IsNullOrWhiteSpace(ReadName(control)))

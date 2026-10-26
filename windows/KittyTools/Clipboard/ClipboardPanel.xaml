@@ -146,6 +146,7 @@
                     x:Name="GroupFilter"
                     MinWidth="110"
                     PlaceholderText="收藏夹"
+                    AutomationProperties.Name="收藏夹筛选"
                     Visibility="Collapsed"
                     SelectionChanged="OnGroupFilterChanged" />
             </StackPanel>

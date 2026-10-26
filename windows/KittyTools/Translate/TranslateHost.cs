@@ -111,6 +111,8 @@ internal static class TranslateHost
 
     public static void Hide(bool restoreForeground = false) => _window?.Hide(restoreForeground);
 
+    public static void AuditAccessibility() => _window?.AuditAccessibility();
+
     /// <summary>启动 3 秒后预建翻译浮窗（第二版 §4.2）。</summary>
     public static void Prewarm()
     {
