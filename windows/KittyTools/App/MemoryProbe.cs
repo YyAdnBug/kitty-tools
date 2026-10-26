@@ -31,6 +31,11 @@ internal static class MemoryProbe
 
         try
         {
+            if (Fast)
+            {
+                IdleReclaimer.DelaySeconds = 5;
+            }
+
             Log.Info($"memprobe.begin fast={Fast} wait={IdleSeconds}s settle={SettleSeconds}s");
             await Task.Delay(IdleSeconds * 1000);
             Report("tray-only");
@@ -88,9 +93,13 @@ internal static class MemoryProbe
             Report("settled");
 
             // R27：录屏之后两分钟回到录之前 +5 MB 以内。只录探针自己开的一个小窗口（R16：不录桌面），不录声音。
+            // 多等 15 秒：空闲回收也是两分钟，不和读数撞在同一刻。录两次，分清一次性的（编码器、驱动的 DLL）和每次都涨的。
             await ProbeRecordingAsync();
-            await Task.Delay(SettleSeconds * 1000);
+            await Task.Delay((SettleSeconds + 15) * 1000);
             Report("recording-settled");
+            await ProbeRecordingAsync();
+            await Task.Delay((SettleSeconds + 15) * 1000);
+            Report("recording-second-settled");
             Cleanup();
             Log.Info("memprobe.end");
         }

@@ -51,7 +51,8 @@ internal sealed class WgcEffects : IDisposable
             var key = (IntPtr)texture;
             if (!_targets.TryGetValue(key, out target))
             {
-                var surface = WgcInterop.SurfaceOf(texture);
+                // 包装用完就关（REVIEW R27）：CanvasRenderTarget 自己拿着这张纹理，包装不关要等 GC 才放设备。
+                using var surface = WgcInterop.SurfaceOf(texture);
                 target = CanvasRenderTarget.CreateFromDirect3D11Surface(_device, surface);
                 _targets[key] = target;
             }

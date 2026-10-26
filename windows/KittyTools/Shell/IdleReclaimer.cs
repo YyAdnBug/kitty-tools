@@ -7,7 +7,8 @@ namespace KittyTools;
 
 internal static class IdleReclaimer
 {
-    private const int DelaySeconds = 120;
+    /// <summary>两分钟；内存探针的快速模式改成几秒，好在短时间里把回收那一步也走到。</summary>
+    public static int DelaySeconds { get; set; } = 120;
 
     private static readonly List<Action> Actions = new();
     private static Microsoft.UI.Dispatching.DispatcherQueueTimer? _timer;

@@ -51,8 +51,6 @@ internal sealed class ShellRuntime
             return;
         }
 
-        StartMenuShortcut.Ensure();
-
         try
         {
             // 打不开时先问用户：用备份 / 重新开始 / 退出（第三版 §2.1）。
@@ -137,6 +135,9 @@ internal sealed class ShellRuntime
         DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
         {
             await Task.Delay(3000);
+            // 开始菜单快捷方式（第 7 批）：每次都要用 COM 解析一遍 .lnk，放在启动路径上冷启动中位数 107 ms，
+            // 挪到这里之后 77 ms（REVIEW R27）。
+            StartMenuShortcut.Ensure();
             if (Features.IsOn(Feature.Clipboard) || Features.IsOn(Feature.Launcher))
             {
                 OverlayHost.Prewarm();
@@ -600,7 +601,18 @@ internal sealed class ShellRuntime
         OverlayHost.Hide(restoreForeground: false);
         if (_settingsWindow is null || _settingsWindow.IsClosed)
         {
-            _settingsWindow = new SettingsWindow();
+            var window = new SettingsWindow();
+            // 用户点 × 关掉时也放掉引用（REVIEW R27：之前要等下次打开设置才放，整棵页面一直占着），两分钟后空闲回收。
+            window.Closed += (_, _) =>
+            {
+                if (ReferenceEquals(_settingsWindow, window))
+                {
+                    _settingsWindow = null;
+                }
+
+                IdleReclaimer.Schedule();
+            };
+            _settingsWindow = window;
         }
 
         _settingsWindow.ShowPage(welcome, page);

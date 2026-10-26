@@ -1588,3 +1588,18 @@ Windows 原生版的发版冒烟清单和每批手测。编号一直往下排，
 298. **设置侧栏 / 卡片**
      逐页打开设置。
      → 侧栏每页 20 家族色块、页头 32 色块、卡片图标单色、外观缩略图、强调色圆点、快捷键中性键帽。
+
+299. **截图、设置窗、录屏之后的内存回落**（REVIEW R27，开发机用探针走过）
+     任务管理器「详细信息」里加「内存(专用工作集)」列。录一段 5 秒的屏再停，什么都不碰等两分钟；再录一次、再等两分钟。
+     → 第二次之后不比第一次之后高（只有第一次会加载一次硬件编码器）；日志里没有 `d3d.still-referenced`。
+     截图、设置窗关掉之后也会排一次空闲回收（日志 `idle.reclaim`）。
+     开发机：Release AOT 探针（`KITTY_MEMORY_PROBE=1` + `KITTY_PROBE_PROFILE=<名字>`），数字见 STATUS §2。
+
+300. **探针档不碰真实数据**（REVIEW R27）
+     Release 版设环境变量 `KITTY_PROBE_PROFILE=abc` 启动一次。
+     → 数据在 `%LOCALAPPDATA%\KittyTools.Probe.abc`，托盘提示是「Kitty Tools.Probe.abc」，能和正在用的那个同时开；
+     开始菜单里的「Kitty Tools.lnk」不变；不设这个变量时一切照旧。
+
+301. **冷启动**（REVIEW R27）
+     Release 版退出后连着启动 10 次，看日志里 `app.start` 到 `shell.ready` 的时间。
+     → 中位数 80 ms 上下（开发机 77 ms；开始菜单快捷方式挪到启动后 3 秒再检查之前是 107 ms）。

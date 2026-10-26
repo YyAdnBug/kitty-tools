@@ -129,6 +129,18 @@ internal sealed unsafe class D3DContext : IDisposable
 
     public void Dispose()
     {
+        // WinRT 那层的 IDirect3DDevice 也拿着 DXGI 设备：不先关掉它，D3D 设备（连同驱动里的视频缓存）要等 GC 终结才放；
+        // 录屏之后托管堆几乎不动，终结器一直不跑。它和 WgcRecorder 里没关的 frame.Surface 一起，让每录一次就留下
+        // 一个设备、约 24 MB（REVIEW R27）。
+        try
+        {
+            WinRt.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"d3d.winrt-dispose-failed 0x{ex.HResult:X8}");
+        }
+
         if (Context is not null)
         {
             Context->Release();
@@ -136,7 +148,11 @@ internal sealed unsafe class D3DContext : IDisposable
 
         if (Device is not null)
         {
-            Device->Release();
+            // 还有别人拿着（R27 查出来的那种包装没关）：记一笔，设备没销毁、驱动里的那几 MB 也就没还。
+            if (Device->Release() is var remaining and > 0)
+            {
+                Log.Warn($"d3d.still-referenced refs={remaining}");
+            }
         }
     }
 }

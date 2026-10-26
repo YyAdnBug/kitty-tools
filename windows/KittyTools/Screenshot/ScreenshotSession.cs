@@ -442,6 +442,8 @@ internal sealed class ScreenshotSession
         Windows.Clear();
         ShellRuntime.Instance?.HotKeys.RegisterAll(SettingsService.Current);
         ReleaseCapturedMemory();
+        // 两分钟后空闲回收：放掉遮罩的 Win2D 设备等（REVIEW R27，之前截图之后从不回收）。
+        IdleReclaimer.Schedule();
     }
 
     private static void ReleaseCapturedMemory()

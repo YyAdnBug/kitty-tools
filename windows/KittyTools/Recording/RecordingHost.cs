@@ -167,6 +167,7 @@ internal static unsafe class RecordingHost
         SettingsService.Current.RecordingTempPath = null;
         SettingsService.Save();
         SetThreadExecutionState(EsContinuous);
+        IdleReclaimer.Schedule();
         LastPath = path;
         Changed?.Invoke();
         if (path is null)
@@ -210,6 +211,7 @@ internal static unsafe class RecordingHost
         SettingsService.Current.RecordingTempPath = null;
         SettingsService.Save();
         SetThreadExecutionState(EsContinuous);
+        IdleReclaimer.Schedule();
         Changed?.Invoke();
         if (path is not null)
         {

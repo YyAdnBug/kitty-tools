@@ -47,7 +47,8 @@ internal static unsafe class WgcSelfTest
                 ID3D11Texture2D* texture = null;
                 try
                 {
-                    texture = WgcInterop.TextureOf(frame.Surface);
+                    using var surface = frame.Surface;
+                    texture = WgcInterop.TextureOf(surface);
                     D3D11_TEXTURE2D_DESC desc;
                     texture->GetDesc(&desc);
                     format = desc.Format;

@@ -678,10 +678,19 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
             }
 
             var time = frame.SystemRelativeTime.Ticks;
+            // frame.Surface 每取一次就是一个新的 WinRT 包装，拿着这张纹理（连带整个 D3D 设备）：不 Dispose 的话要等 GC
+            // 终结才放，录屏时几乎不 GC，停止后设备就销毁不掉（REVIEW R27：每录一次留下一个设备）。
+            using var surface = frame.Surface;
             lock (_gate)
             {
+                if (_closed)
+                {
+                    // 正在收尾（finally 已经放过 _latest 了）：迟到的这一帧自己放掉，不再存进去。
+                    return;
+                }
+
                 var qiStart = Stopwatch.GetTimestamp();
-                texture = WgcInterop.TextureOf(frame.Surface);
+                texture = WgcInterop.TextureOf(surface);
                 _qiTicks += Stopwatch.GetTimestamp() - qiStart;
                 if (_latest is not null)
                 {

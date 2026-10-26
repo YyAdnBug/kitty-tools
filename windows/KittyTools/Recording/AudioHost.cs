@@ -170,6 +170,7 @@ internal static class AudioHost
         AudioHud.Hide();
         var path = recorder.Stop();
         recorder.Dispose();
+        IdleReclaimer.Schedule();
         LastPath = path;
         Changed?.Invoke();
         if (path is null || !File.Exists(path))

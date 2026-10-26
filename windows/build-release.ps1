@@ -79,6 +79,13 @@ foreach ($target in $targets) {
         Where-Object { $_.Name -match '^[a-z]{2,3}(-[A-Za-z]{4})?-[A-Za-z]{2,4}$' -and $_.Name -notin $keep } |
         Remove-Item -Recurse -Force
 
+    # REVIEW R27（发布目录前 20 个逐个看）：WinUI 包带进来的 WebView2 加载器，我们不用 WebView2（0.91 MB）。
+    # 删掉后 Release 快速内存探针把剪贴板、启动器、翻译、截图、钉图、设置、录屏都走了一遍。
+    # Microsoft.UI.Xaml.Phone.dll 不能删（设置窗要用，删了打开就 0x8007007E）；.winmd 删了也能走完，但文件夹选择器等没走到，先留着。
+    foreach ($name in 'Microsoft.Web.WebView2.Core.dll', 'WebView2Loader.dll') {
+        Remove-Item (Join-Path "$stage/Kitty Tools" $name) -Force -ErrorAction SilentlyContinue
+    }
+
     $zip = Join-Path $outRoot "KittyTools-$version-windows-$($target.Label).zip"
     if (Test-Path $zip) {
         Remove-Item $zip -Force
