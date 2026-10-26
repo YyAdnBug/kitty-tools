@@ -117,7 +117,7 @@ internal static class SetupLog
 internal static class Program
 {
     [STAThread]
-    private static int Main(string[] args)
+    private static unsafe int Main(string[] args)
     {
         var options = SetupArgs.Parse(args);
         if (options.Pack is not null)

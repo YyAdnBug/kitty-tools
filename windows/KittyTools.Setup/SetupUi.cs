@@ -197,19 +197,28 @@ internal static unsafe partial class SetupUi
                 }
             }
 
-            var shown = dialog->Show((HWND)_hwnd);
-            if (shown.Failed)
+            try
             {
-                if (shown.Value != Cancelled)
-                {
-                    SetupLog.Write($"ui.picker-show 0x{shown.Value:X8}");
-                }
-
+                dialog->Show((HWND)_hwnd);
+            }
+            catch (COMException ex)
+            {
+                SetupLog.Write($"ui.picker-show 0x{ex.HResult:X8}");
                 return null;
             }
 
             IShellItem* result = null;
-            if (dialog->GetResult(&result).Failed || result is null)
+            try
+            {
+                dialog->GetResult(&result);
+            }
+            catch (COMException ex)
+            {
+                SetupLog.Write($"ui.picker-result 0x{ex.HResult:X8}");
+                return null;
+            }
+
+            if (result is null)
             {
                 return null;
             }
@@ -217,10 +226,7 @@ internal static unsafe partial class SetupUi
             try
             {
                 PWSTR name;
-                if (result->GetDisplayName(SIGDN.SIGDN_FILESYSPATH, &name).Failed)
-                {
-                    return null;
-                }
+                result->GetDisplayName(SIGDN.SIGDN_FILESYSPATH, &name);
 
                 try
                 {
