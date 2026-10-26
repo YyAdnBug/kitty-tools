@@ -2,6 +2,7 @@
 // 同样内容再复制 = 把原条目挪到最前（保留 id 和收藏）；删除可以 Ctrl+Z 撤销，面板收起时才真的删库。
 // 保留天数和图片上限在启动时、每次收起面板时、每次入库后执行。
 using KittyTools.Core;
+using KittyTools.Core.Sync;
 using KittyTools.Infrastructure;
 
 namespace KittyTools;
@@ -57,143 +58,97 @@ internal sealed class ClipboardStore
         _database.SetUid(entry.Id, entry.Uid);
     }
 
-    /// <summary>同步用：按 uid 找一条（正文跟着同步来的走）；没有就找同样正文、还没留着的普通条目接过来；再没有就新建。
-    /// 已经留着（收藏 / 片段 / 收藏夹）的另一条不抢它的 uid：抢了那条的 uid 就从本机消失，下一轮成了删除，
-    /// 和 mac「编号小的留下」挑的不一样时两条都会被删光。</summary>
-    public ClipEntry EnsureClip(string uid, string text)
+    /// <summary>同步：面板里还有能撤销的删除（还没落库）时这一轮先不合（mac syncBusy）。</summary>
+    public bool SyncBusy => _undo.Count > 0;
+
+    /// <summary>同步要的本机文字条目（留着的先补上 uid）。</summary>
+    public List<SyncClipRow> SyncRows()
     {
-        var existing = _items.FirstOrDefault(item => item.Uid == uid) ??
-                       _items.FirstOrDefault(item => item.Kind == ClipKind.Text &&
-                                                     (item.Uid is null || !IsRetained(item)) &&
-                                                     string.Equals(item.Text, text, StringComparison.Ordinal));
-        if (existing is not null)
+        var rows = new List<SyncClipRow>();
+        foreach (var entry in _items.Where(item => item.Kind == ClipKind.Text && item.Text is not null))
         {
-            if (existing.Uid != uid)
+            if (IsRetained(entry))
             {
-                existing.Uid = uid;
-                _database.SetUid(existing.Id, uid);
+                EnsureUid(entry);
             }
 
-            if (!string.Equals(existing.Text, text, StringComparison.Ordinal))
-            {
-                existing.Text = text;
-                _database.SetText(existing.Id, text);
-            }
-
-            return existing;
+            rows.Add(new SyncClipRow(
+                entry.Id, entry.Uid, entry.Text!, entry.Favorite, entry.Snippet, entry.Note, entry.GroupId,
+                entry.CopiedAt));
         }
 
-        var entry = new ClipEntry
-        {
-            Kind = ClipKind.Text,
-            Text = text,
-            Uid = uid,
-            Favorite = true,
-            CopiedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-        };
-        entry.Id = _database.Insert(entry);
-        _items.Insert(0, entry);
-        Changed?.Invoke();
-        return entry;
+        return rows;
     }
 
-    /// <summary>同步落地：收藏、片段、备注、收藏夹一起写（收藏夹编号可能来自别的电脑）。</summary>
-    public void ApplySynced(long id, bool favorite, bool snippet, string? note, string? groupId)
+    public List<SyncClipGroup> SyncGroups()
+        => Groups.OrderBy(group => group.Position).Select(group => new SyncClipGroup(group.Id, group.Name, group.CreatedAt))
+            .ToList();
+
+    /// <summary>同步落地（照 mac applySync）：规划（Core 的 ClipSync.Plan）先写进库、和账本同一个事务（saveLedger 在事务里调），
+    /// 成了才换进内存；没成回滚、抛出去，内存不动。</summary>
+    public void ApplySyncPlan(ClipSyncPlan plan, Action saveLedger)
     {
-        var entry = _items.FirstOrDefault(item => item.Id == id);
-        if (entry is null)
+        var inserted = new Dictionary<SyncClipWrite, long>();
+        _database.BeginTransaction();
+        try
         {
-            return;
-        }
-
-        // 照 mac：在收藏夹里的就是收藏；备注原样存（改成 null 的话编回去和同步来的那版对不上，两台来回改）。
-        entry.Favorite = favorite || groupId is not null;
-        entry.Snippet = snippet;
-        entry.Note = note;
-        entry.GroupId = groupId;
-        entry.Folded = null;
-        _database.SetFavorite(id, entry.Favorite);
-        _database.SetSnippet(id, snippet);
-        _database.SetNote(id, entry.Note);
-        _database.SetGroup(id, entry.GroupId);
-        Changed?.Invoke();
-    }
-
-    /// <summary>同步落地收藏夹（照 mac applySync）：整张表换成 groups（已按顺序排好）；同名的编号小的留下，
-    /// 另一个的条目归过去；被删的收藏夹还有同名的，条目也归过去。返回「条目的收藏夹编号 → 落地后归进哪个」。</summary>
-    public Func<string?, string?> ReplaceSyncedGroups(IReadOnlyList<ClipGroup> groups)
-    {
-        var remap = new Dictionary<string, string>(StringComparer.Ordinal);
-        var final = new List<ClipGroup>();
-        foreach (var same in groups.GroupBy(group => group.Name, StringComparer.Ordinal))
-        {
-            var winner = same.MinBy(group => group.Id, StringComparer.Ordinal)!;
-            foreach (var loser in same.Where(group => group.Id != winner.Id))
+            _database.ReplaceGroups(plan.Groups.Select((group, index) => new ClipGroup
             {
-                remap[loser.Id] = winner.Id;
-            }
-        }
-
-        foreach (var group in groups.Where(group => !remap.ContainsKey(group.Id)))
-        {
-            final.Add(new ClipGroup
+                Id = group.Id, Name = group.Name, Position = index, CreatedAt = group.Created,
+            }).ToList());
+            _database.DeleteRows(plan.Deletes);
+            foreach (var write in plan.Writes)
             {
-                Id = group.Id, Name = group.Name, Position = final.Count, CreatedAt = group.CreatedAt,
-            });
-        }
-
-        var ids = final.Select(group => group.Id).ToHashSet(StringComparer.Ordinal);
-        foreach (var old in Groups.Where(group => !ids.Contains(group.Id) && !remap.ContainsKey(group.Id)))
-        {
-            if (final.FirstOrDefault(group => group.Name == old.Name) is { } same)
-            {
-                remap[old.Id] = same.Id;
-            }
-        }
-
-        string? Resolve(string? id)
-        {
-            if (id is null)
-            {
-                return null;
+                if (write.Row is { } row)
+                {
+                    _database.SetSynced(row, write);
+                }
+                else
+                {
+                    inserted[write] = _database.Insert(new ClipEntry
+                    {
+                        Kind = ClipKind.Text, Text = write.Text, Uid = write.Uid, Favorite = write.Favorite,
+                        Snippet = write.Snippet, Note = write.Note, GroupId = write.Group, CopiedAt = write.CopiedAt,
+                    });
+                }
             }
 
-            var target = remap.TryGetValue(id, out var mapped) ? mapped : id;
-            return ids.Contains(target) ? target : null;
+            saveLedger();
+            _database.Commit();
         }
-
-        _database.ReplaceGroups(final);
-        foreach (var entry in _items.Where(item => item.GroupId is not null && !ids.Contains(item.GroupId)))
+        catch
         {
-            entry.GroupId = Resolve(entry.GroupId);
-            _database.SetGroup(entry.Id, entry.GroupId);
+            _database.Rollback();
+            throw;
         }
 
+        var deleted = plan.Deletes.ToHashSet();
+        _items.RemoveAll(item => deleted.Contains(item.Id));
+        foreach (var write in plan.Writes)
+        {
+            var entry = write.Row is { } row ? _items.FirstOrDefault(item => item.Id == row) : null;
+            if (entry is null)
+            {
+                entry = new ClipEntry { Kind = ClipKind.Text, Id = write.Row ?? inserted[write] };
+                _items.Add(entry);
+            }
+
+            entry.Uid = write.Uid ?? entry.Uid;
+            entry.Text = write.Text;
+            entry.Favorite = write.Favorite;
+            entry.Snippet = write.Snippet;
+            entry.Note = write.Note;
+            entry.GroupId = write.Group;
+            entry.CopiedAt = write.CopiedAt;
+            entry.Folded = null;
+        }
+
+        _items.Sort((a, b) => b.CopiedAt != a.CopiedAt ? b.CopiedAt.CompareTo(a.CopiedAt) : b.Id.CompareTo(a.Id));
         Groups = _database.LoadGroups();
         Changed?.Invoke();
-        return Resolve;
     }
 
     private static bool IsRetained(ClipEntry entry) => entry.Favorite || entry.Snippet || entry.GroupId is not null;
-
-    /// <summary>同步：别处不再保留的条目只取消收藏、移出片段和收藏夹，不删行。</summary>
-    public void UnfavoriteMissing(HashSet<string> keepUids)
-    {
-        foreach (var entry in _items.Where(item =>
-                     IsRetained(item) && item.Uid is not null && !keepUids.Contains(item.Uid) &&
-                     // 带 NUL 的本来就不同步（SyncSources.ClipRecords），不在文件里不等于别处不要了。
-                     item.Text?.Contains('\0') != true && item.Note?.Contains('\0') != true))
-        {
-            entry.Favorite = false;
-            entry.Snippet = false;
-            entry.GroupId = null;
-            _database.SetFavorite(entry.Id, false);
-            _database.SetSnippet(entry.Id, false);
-            _database.SetGroup(entry.Id, null);
-        }
-
-        Changed?.Invoke();
-    }
 
     public void ToggleSnippet(long id)
     {

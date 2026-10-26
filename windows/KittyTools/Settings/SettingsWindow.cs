@@ -586,7 +586,7 @@ internal sealed class SettingsWindow : Window
             }
 
             // 空文件夹才开（或者已经有我们的标记）；否则提示。
-            var disk = new SyncFolder(folder.Path);
+            var disk = new Core.Sync.SyncDisk(folder.Path);
             if (disk.Marker() is null && disk.LooksForeign())
             {
                 NoticeHost.Show("这个文件夹里已经有别的东西了", "请新建一个空文件夹来同步", NoticeTone.Warning);

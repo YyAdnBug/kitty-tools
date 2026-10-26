@@ -146,7 +146,8 @@ internal sealed class SyncLedger
             return statement.Step() ? statement.GetText(0) : null;
         }
 
-        return null;
+        // 存在 sync-ledger.json 的两类：库编号记在旁边的「<类别>@library」（R26 之前没记，读出来是 null，照旧用）。
+        return ReadFile().GetValueOrDefault(kind + "@library");
     }
 
     public void Write(string kind, string library, string ledger)
@@ -167,6 +168,7 @@ internal sealed class SyncLedger
 
         var map = ReadFile();
         map[kind] = ledger;
+        map[kind + "@library"] = library;
         WriteFile(map);
     }
 

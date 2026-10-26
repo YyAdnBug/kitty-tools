@@ -1,6 +1,7 @@
 // 数据库：逐版本迁移（USER_VERSION 1 → 2 → …，每步幂等，见 Core 的 Schema）和 clips 的增删改查。
 // 图片文件由 ImageStore 管；这里只存路径要用的字段和元数据。
 using KittyTools.Core;
+using KittyTools.Core.Sync;
 
 namespace KittyTools.Infrastructure;
 
@@ -183,6 +184,41 @@ internal sealed class Database : IDisposable
                    "WHERE id = ?1"))
         {
             statement.BindInt64(1, id).BindText(2, groupId);
+            statement.Step();
+        }
+    }
+
+    /// <summary>同步落地一条（调用方开着事务）：正文变了时带格式的原始数据跟着清掉（不然粘出来的还是旧格式）。</summary>
+    public void SetSynced(long id, SyncClipWrite write)
+    {
+        using var statement = _connection.Prepare(
+            """
+            UPDATE clips SET uid = COALESCE(?2, uid), text = ?3, favorite = ?4, snippet = ?5, note = ?6, group_id = ?7,
+                             copied_at = ?8,
+                             html = CASE WHEN ?9 = 1 THEN NULL ELSE html END,
+                             rtf = CASE WHEN ?9 = 1 THEN NULL ELSE rtf END
+            WHERE id = ?1
+            """);
+        statement.BindInt64(1, id)
+            .BindText(2, write.Uid)
+            .BindText(3, write.Text)
+            .BindInt64(4, write.Favorite ? 1 : 0)
+            .BindInt64(5, write.Snippet ? 1 : 0)
+            .BindText(6, write.Note)
+            .BindText(7, write.Group)
+            .BindInt64(8, write.CopiedAt)
+            .BindInt64(9, write.TextChanged ? 1 : 0);
+        statement.Step();
+    }
+
+    /// <summary>删行，不开自己的事务（同步落地时调用方已经开着）。</summary>
+    public void DeleteRows(IReadOnlyCollection<long> ids)
+    {
+        using var statement = _connection.Prepare("DELETE FROM clips WHERE id = ?1");
+        foreach (var id in ids)
+        {
+            statement.Reset();
+            statement.BindInt64(1, id);
             statement.Step();
         }
     }

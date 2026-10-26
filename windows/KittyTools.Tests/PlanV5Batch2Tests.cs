@@ -46,8 +46,12 @@ public sealed class SyncFolderRuleTests
         Assert.IsFalse(SyncFolderRules.ShouldBrake(20, 100));
         Assert.IsTrue(SyncFolderRules.ShouldBrake(21, 100));
         Assert.IsFalse(SyncFolderRules.ShouldBrake(1, 4));
-        Assert.IsTrue(SyncFolderRules.ShouldBrake(2, 5));  // 40%
         Assert.IsFalse(SyncFolderRules.ShouldBrake(1, 10)); // 10%
-        Assert.IsTrue(SyncFolderRules.ShouldBrake(3, 9));   // 33%
+        // R26：「至少 5 条」是要删的条数（mac NoteSyncFolder.brakes），之前按总数算，删 5 条里的 2 条也会刹。
+        Assert.IsFalse(SyncFolderRules.ShouldBrake(2, 5));  // 40%，但只删 2 条
+        Assert.IsFalse(SyncFolderRules.ShouldBrake(4, 9));  // 44%，但只删 4 条
+        Assert.IsTrue(SyncFolderRules.ShouldBrake(5, 16));  // 31%
+        Assert.IsFalse(SyncFolderRules.ShouldBrake(5, 17)); // 29%
+        Assert.IsTrue(SyncFolderRules.ShouldBrake(6, 10));  // 60%
     }
 }

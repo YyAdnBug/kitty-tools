@@ -87,9 +87,12 @@ public static class SyncFolderRules
         }
     }
 
-    /// <summary>刹车：要删本机没删的条目超过 20 条，或者（至少 5 条时）超过三成。</summary>
+    public const int MinDeletionsForShare = 5;
+
+    /// <summary>刹车（照 mac NoteSyncFolder.brakes）：要删本机没删的条目超过 20 条，或者要删的至少 5 条、又超过三成。
+    /// 「至少 5 条」说的是要删的条数（只有三四条时删一条就是三成，每次都问太吵），不是总数。</summary>
     public static bool ShouldBrake(int deletions, int total)
-        => deletions > MaxDeletions || (total >= 5 && deletions * 10 > total * 3);
+        => deletions > MaxDeletions || (deletions >= MinDeletionsForShare && deletions * 10 > total * 3);
 
     public static string FileName(string kind) => kind + ".json";
 

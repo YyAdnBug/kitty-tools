@@ -2,6 +2,7 @@
 // 「原文 + 实际目标语言」唯一；只有第一个服务的完成结果写历史（同自动复制）；收藏的不受保留条数影响。
 // 时间一律 Unix 毫秒；编号是 UUID（大写、带连字符，和 mac 一致——第五版同步要用）。
 using KittyTools.Core;
+using KittyTools.Core.Sync;
 using KittyTools.Infrastructure;
 
 namespace KittyTools;
@@ -243,51 +244,69 @@ internal sealed class TranslationHistory
         return added;
     }
 
-    /// <summary>同步落地一条收藏（照 mac HistoryStore.applySync）：同原文 + 目标语言已经有编号更小的收藏，这条不落
-    /// （返回 false，下一轮它的删除传出去，几台留同一条）；否则删掉同原文 + 目标语言的别的行，按这个编号写下。
-    /// 原文原样存（不 Trim）：存的和同步来的不一样，编回去对不上，两台来回改。</summary>
-    public bool UpsertSynced(string id, string source, string targetLang, string result, string service, long created)
+    /// <summary>同步要的本机收藏（生词本）。</summary>
+    public List<SyncWordRow> SyncRows()
+        => Search(string.Empty, favoritesOnly: true, limit: 0)
+            .Select(entry => new SyncWordRow(
+                entry.Id, entry.Source, entry.TargetLang, entry.Result, entry.Service, entry.CreatedAt, entry.Favorite))
+            .ToList();
+
+    /// <summary>同步落地（照 mac HistoryStore.applySync）：Core 的 VocabularySync.Plan 算好的几步，和账本同一个事务
+    /// （saveLedger 在事务里调）；没成回滚、抛出去。原文原样存（不 Trim）：存的和同步来的不一样，编回去对不上。</summary>
+    public void ApplySyncOps(IReadOnlyList<SyncWordOp> ops, Action saveLedger)
     {
-        using (var kept = _database.Connection.Prepare(
-                   "SELECT id FROM translations WHERE source = $source AND target_lang = $target AND id <> $id " +
-                   "AND favorite = 1;"))
+        _database.BeginTransaction();
+        try
         {
-            kept.BindText(1, source);
-            kept.BindText(2, targetLang);
-            kept.BindText(3, id);
-            while (kept.Step())
+            foreach (var op in ops)
             {
-                if (string.CompareOrdinal(kept.GetText(0), id) < 0)
+                switch (op.Step)
                 {
-                    using var drop = _database.Connection.Prepare("DELETE FROM translations WHERE id = $id;");
-                    drop.BindText(1, id);
-                    drop.Step();
-                    return false;
+                    case SyncWordStep.Unfavorite:
+                        using (var statement = _database.Connection.Prepare(
+                                   "UPDATE translations SET favorite = 0 WHERE id = $id;"))
+                        {
+                            statement.BindText(1, op.Id);
+                            statement.Step();
+                        }
+
+                        break;
+                    case SyncWordStep.Delete:
+                        using (var statement = _database.Connection.Prepare("DELETE FROM translations WHERE id = $id;"))
+                        {
+                            statement.BindText(1, op.Id);
+                            statement.Step();
+                        }
+
+                        break;
+                    case SyncWordStep.Replace when op.Word is { } word:
+                        using (var others = _database.Connection.Prepare(
+                                   "DELETE FROM translations WHERE source = $source AND target_lang = $target AND id <> $id;"))
+                        {
+                            others.BindText(1, word.Source);
+                            others.BindText(2, word.Target);
+                            others.BindText(3, op.Id);
+                            others.Step();
+                        }
+
+                        Insert(op.Id, word.Source, null, word.Target, word.Result, word.Service, word.Created,
+                            favorite: true);
+                        break;
                 }
             }
+
+            saveLedger();
+            _database.Commit();
+        }
+        catch
+        {
+            _database.Rollback();
+            throw;
         }
 
-        using (var others = _database.Connection.Prepare(
-                   "DELETE FROM translations WHERE source = $source AND target_lang = $target AND id <> $id;"))
+        if (ops.Count > 0)
         {
-            others.BindText(1, source);
-            others.BindText(2, targetLang);
-            others.BindText(3, id);
-            others.Step();
-        }
-
-        Insert(id, source, null, targetLang, result, service, created, favorite: true);
-        Changed?.Invoke();
-        return true;
-    }
-
-    /// <summary>同步：别处不再收藏的取消收藏（还在历史里）。</summary>
-    public void UnfavoriteMissing(HashSet<string> keepIds)
-    {
-        foreach (var entry in Search(string.Empty, favoritesOnly: true, limit: 0)
-                     .Where(entry => !keepIds.Contains(entry.Id)))
-        {
-            SetFavorite(entry.Id, false);
+            Changed?.Invoke();
         }
     }
 

@@ -65,18 +65,19 @@ internal sealed class ShellRuntime
 
             Clipboard = ClipboardService.Start(database, new ImageStore(Paths.ImagesDirectory));
             Clipboard.Suspended = !Features.IsOn(Feature.Clipboard);
+#if DEBUG
+            // 调试用：不记剪贴板（同步冒烟这类自检不该把用户此刻复制的东西录进测试库）。
+            Clipboard.Paused = Environment.GetCommandLineArgs()
+                .Contains("--clipboard-paused", StringComparer.OrdinalIgnoreCase);
+#endif
             // 翻译历史和生词本用同一个库（第三版 §3.1）。
             TranslationHistory.Start(database);
             LauncherFavorites.Start(database);
             // 同步（第五版）：本机编号、账本和执行层。
             var syncDevice = SyncDevice.Start(database);
             var syncLedger = SyncLedger.Start(database);
-            var syncer = Syncer.Start(syncDevice, syncLedger);
-            if (syncer.Enabled)
-            {
-                syncer.StartTimer(DispatcherQueue.GetForCurrentThread()!);
-                _ = syncer.RoundAsync();
-            }
+            // 开着同步就马上合一轮；定时器由 Syncer 自己开 / 停（设置里后来才打开也会转起来）。
+            _ = Syncer.Start(syncDevice, syncLedger, DispatcherQueue.GetForCurrentThread()!).RoundAsync();
             // 图片的后台识字排队（第三版 §5）。
             OcrQueue.Start(DispatcherQueue.GetForCurrentThread()!);
         }

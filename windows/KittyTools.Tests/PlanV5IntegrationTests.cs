@@ -1,9 +1,10 @@
-// PLAN-v5 第 3 批的集成测试（R13 验收）：一个临时同步文件夹里两台 Windows（各自一个数据目录：本机数据 + 账本 + epoch）
-// 和一台按 §2 格式写文件的假 Mac（值取自 golden 样本），随机加 / 改 / 删几轮，最后三份一样；
-// 中途把一台的数据目录换成旧备份（库被退回去）→ 它认出并换编号、旧内容不翻回来；
+// PLAN-v5 第 3 批的集成测试，REVIEW R26 §3 起走真的执行层（Core 的 SyncRunner + ClipSync / VocabularySync / EngineSync）：
+// 一个临时同步文件夹里两台 Windows（各自一份数据：片段与收藏 + 收藏夹、生词本、网页搜索；账本和数据存在一起，能整份存成
+// 备份再读回来）和一台假 Mac（照文件格式存内容本身、落什么存什么；起始的值取自 golden 样本），随机加 / 改 / 删几轮，
+// 最后三边一样、再合一轮谁都不写；中途把一台的数据换成旧备份（库被退回去）→ 它认出并换编号、旧内容不翻回来；
 // 在假 Mac 的子文件夹里放一个写坏的文件 → 只跳过那一版，别的照合。
-using System.Text;
 using System.Text.Json;
+using KittyTools.Core;
 using KittyTools.Core.Sync;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -12,37 +13,8 @@ namespace KittyTools.Tests;
 [TestClass]
 public sealed class SyncIntegrationTests
 {
-    private const string Kind = "clips";
-    private const string Library = "5B2E1F7A-6C3D-4E8F-9A01-2B3C4D5E6F70";
-
-    /// <summary>一台电脑：数据目录（本机数据 + 账本 + epoch）+ 同步文件夹里的子目录。</summary>
-    private sealed class Node
-    {
-        public Node(string root, string id, bool joining)
-        {
-            Root = root;
-            Id = id;
-            Ledger = joining ? null : new SyncLedgerData();
-        }
-
-        public string Root { get; }
-
-        public string Id { get; set; }
-
-        public Dictionary<string, string> Local { get; } = new(StringComparer.Ordinal);
-
-        public SyncLedgerData? Ledger { get; set; }
-
-        public int Epoch { get; set; }
-
-        public bool Rotated { get; set; }
-
-        public string Folder => Path.Combine(Root, "sync");
-
-        public string DeviceFolder => Path.Combine(Folder, "devices", Id);
-
-        public string DataFolder => Path.Combine(Root, "data", Id);
-    }
+    private const string GroupA = "0F8FAD5B-D9CB-469F-A165-70867728950E";
+    private const string GroupB = "7C9E6679-7425-40DE-944B-E07FC1F90AE7";
 
     private sealed class Rng(ulong seed)
     {
@@ -60,450 +32,314 @@ public sealed class SyncIntegrationTests
         public int Below(int n) => (int)(Next() % (ulong)n);
 
         public bool Chance(int percent) => Below(100) < percent;
+
+        public T Pick<T>(IReadOnlyList<T> items) => items[Below(items.Count)];
     }
+
+    private static SyncNode Windows(string name, string data)
+        => new(name, data, new MemoryClipSource(), new MemoryWordSource(), new MemoryEngineSource());
+
+    private static SyncNode Mac(string data)
+        => new("MAC-TEST", data,
+            new MemoryValueSource(ClipSync.Kind, ClipSync.JoinKey),
+            new MemoryValueSource(VocabularySync.Kind, VocabularySync.JoinKey),
+            new MemoryValueSource(EngineSync.Kind, EngineSync.JoinKey));
+
+    private static MemoryValueSource Map(SyncNode node, string kind)
+        => node.Sources.OfType<MemoryValueSource>().Single(source => source.Kind == kind);
 
     [TestMethod]
     public void TwoWindowsAndAFakeMacConvergeWithRollbackAndABadFile()
     {
-        var root = Path.Combine(Path.GetTempPath(), "kitty-sync-it-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        try
+        foreach (var seed in new ulong[] { 20261025, 20261026, 7 })
         {
-            var a = new Node(root, "WIN-A", joining: false);
-            var b = new Node(root, "WIN-B", joining: false);
-            var mac = new Node(root, "MAC-TEST", joining: true);
-            var nodes = new[] { a, b, mac };
-            Directory.CreateDirectory(Path.Combine(a.Folder, "devices"));
-            File.WriteAllText(
-                Path.Combine(a.Folder, SyncFolderRules.MarkerFile), SyncFolderRules.Marker(Library));
+            Run(seed);
+        }
+    }
 
-            // 假 Mac 的值用 golden 样本里的写法（键排序、不写 null），写出去之前先确认是规范写法。
-            var golden = GoldenClipValue();
-            Assert.IsTrue(CanonicalJson.IsCanonical(golden));
-            mac.Local["mac-1"] = golden;
-            WriteData(mac);
+    private static void Run(ulong seed)
+    {
+        using var temp = new TempFolder();
+        var folder = temp.Sub("sync");
+        var a = Windows("WIN-A", temp.Sub("a"));
+        var b = Windows("WIN-B", temp.Sub("b"));
+        var mac = Mac(temp.Sub("mac"));
+        var nodes = new[] { a, b, mac };
+        SeedMacFromGolden(mac);
+        a.Source<MemoryClipSource>().Add("A 原来就有的");
+        b.Source<MemoryWordSource>().Add("cat", "zh-Hans", "猫");
 
-            long now = 0;
-            now = Round(a, now);
-            now = Round(b, now);
-            now = Round(mac, now);
+        long now = 0;
+        foreach (var node in new[] { mac, a, b })
+        {
+            Assert.AreNotEqual("stopped", node.Round(folder, ref now).State, node.Name);
+        }
+
+        var rng = new Rng(seed);
+        for (var step = 0; step < 24; step++)
+        {
             foreach (var node in nodes)
             {
-                var path = Path.Combine(node.DeviceFolder, Kind + ".json");
-                Assert.IsTrue(File.Exists(path), node.Id + " 没写文件");
-                Assert.IsNotNull(ReadFile(path), node.Id + " 的文件读不回来");
-            }
-
-            // 随机加 / 改 / 删：两台 Windows 各自动，Mac 也动。
-            var rng = new Rng(20261025);
-            for (var step = 0; step < 24; step++)
-            {
-                foreach (var node in nodes)
+                if (node == mac)
                 {
-                    if (rng.Chance(45) && node.Local.Count > 0)
-                    {
-                        var key = node.Local.Keys.OrderBy(item => item, StringComparer.Ordinal)
-                            .ElementAt(rng.Below(node.Local.Count));
-                        if (rng.Chance(35))
-                        {
-                            node.Local.Remove(key);
-                        }
-                        else
-                        {
-                            node.Local[key] = ClipJson($"{node.Id} 改的 {step}");
-                        }
-                    }
-                    else if (rng.Chance(55))
-                    {
-                        node.Local[$"{node.Id}-{step}"] = ClipJson($"{node.Id} 新加的 {step}");
-                    }
-
-                    WriteData(node);
-                    now = Round(node, now);
+                    EditMac(mac, rng, step);
                 }
-            }
-
-            // 安静下来：都读最新的，各合两轮。
-            for (var settle = 0; settle < 2; settle++)
-            {
-                foreach (var node in nodes)
+                else
                 {
-                    now = Round(node, now);
+                    EditWindows(node, rng, step);
                 }
-            }
 
-            AssertSame(a, b, mac);
-
-            // 写坏假 Mac 的文件：只跳过那一版，别人照合，本机不变。
-            var macFile = Path.Combine(mac.DeviceFolder, Kind + ".json");
-            var macGood = File.ReadAllText(macFile);
-            File.WriteAllText(macFile, "{ 这不是 JSON");
-            var before = new Dictionary<string, string>(a.Local, StringComparer.Ordinal);
-            now = Round(a, now);
-            AssertSameLocal(before, a.Local, "坏文件不该改动别的电脑");
-            File.WriteAllText(macFile, macGood);
-            now = Round(a, now);
-            now = Round(mac, now);
-
-            // 时间机器：先把 B 的一条旧内容放到同步文件夹里，再备份 B 的数据目录。
-            b.Local["WIN-B-old"] = ClipJson("B 的旧内容");
-            WriteData(b);
-            now = Round(b, now);
-            now = Round(a, now);
-            var backup = Path.Combine(root, "data", "WIN-B-backup");
-            CopyDirectory(b.DataFolder, backup);
-            var backupEpoch = b.Epoch;
-
-            // 备份之后 B 把那条改了、A 也加了一条，三台合完。
-            b.Local["WIN-B-old"] = ClipJson("B 的新内容");
-            b.Local["WIN-B-after"] = ClipJson("备份之后才有的");
-            WriteData(b);
-            now = Round(b, now);
-            a.Local["WIN-A-after"] = ClipJson("备份之后才有的 A");
-            now = Round(a, now);
-            now = Round(b, now);
-            now = Round(mac, now);
-            AssertSameLocal(a.Local, b.Local, "备份之前三台应该已经一样");
-
-            // 换回旧备份；同步文件夹里本机那一份的 epoch 已经比备份里的新（从备份恢复过）。
-            CopyDirectory(backup, b.DataFolder);
-            ReadData(b);
-            Assert.IsFalse(b.Local.ContainsKey("WIN-B-after"), "备份恢复之后本机是旧的样子");
-            var folderDevice = Path.Combine(a.Folder, "devices", b.Id, SyncFolderRules.DeviceFile);
-            File.WriteAllText(folderDevice, SyncFolderRules.DeviceJson(backupEpoch + 3, "WIN-B"));
-
-            // 下一轮认出被退回去了：换编号，旧内容（备份里那些）不翻回来。
-            now = Round(b, now);
-            Assert.IsTrue(b.Rotated, "应该认出库被退回去了");
-            Assert.AreNotEqual("WIN-B", b.Id, "换一个新编号");
-            for (var settle = 0; settle < 3; settle++)
-            {
-                foreach (var node in nodes)
+                // 两台 Windows 同时加了一样的正文：合到同一条（编号小的留下）。
+                if (step == 5 && node != mac)
                 {
-                    now = Round(node, now);
+                    node.Source<MemoryClipSource>().Add("两台都加的同一段");
                 }
-            }
 
-            AssertSame(a, b, mac);
-            Assert.IsFalse(
-                b.Local.Values.Contains(ClipJson("B 的旧内容")), "备份里的旧内容不该被救回来");
-            Assert.IsTrue(b.Local.ContainsKey("WIN-B-after"), "备份之后的新内容应该回来");
+                var result = node.Round(folder, ref now);
+                Assert.AreNotEqual("stopped", result.State, $"{node.Name} 第 {step} 步：{result.Message}");
+            }
         }
-        finally
+
+        Settle(nodes, folder, ref now);
+        AssertSame(nodes, seed);
+        AssertQuiet(nodes, folder, ref now);
+        Assert.AreEqual(1, a.Source<MemoryClipSource>().Rows.Count(row => row.Text == "两台都加的同一段"),
+            "同一段文字只留一条");
+
+        // 写坏假 Mac 的文件：只跳过那一版，别人照合，本机不变。
+        var macFile = Path.Combine(folder, SyncDisk.KindPath(mac.Device.Id, ClipSync.Kind));
+        var macGood = File.ReadAllText(macFile);
+        File.WriteAllText(macFile, "{ 这不是 JSON");
+        var before = Values(a, ClipSync.Kind);
+        Assert.AreNotEqual("stopped", a.Round(folder, ref now).State);
+        AssertSameMap(before, Values(a, ClipSync.Kind), "坏文件不该改动别的电脑");
+        File.WriteAllText(macFile, macGood);
+
+        // 时间机器：B 先有一条旧内容并同步出去，再备份 B 的数据。
+        var clipsB = b.Source<MemoryClipSource>();
+        var old = clipsB.Add("B 的旧内容");
+        Settle(nodes, folder, ref now);
+        var backup = b.Save();
+
+        // 备份之后 B 把那条改了、又加了一条，三台合完。
+        clipsB.Replace(clipsB.Rows.Single(row => row.Uid == old.Uid) with { Text = "B 的新内容" });
+        clipsB.Add("备份之后才有的");
+        a.Source<MemoryClipSource>().Add("备份之后才有的 A");
+        Settle(nodes, folder, ref now);
+        AssertSame(nodes, seed);
+
+        // 换回旧备份（同步文件夹里本机那份的 epoch 已经比备份里的大）。
+        b.Load(backup);
+        Assert.IsFalse(clipsB.Rows.Any(row => row.Text == "备份之后才有的"), "备份里是旧的样子");
+        var rolled = b.Round(folder, ref now);
+        Assert.IsTrue(rolled.Rotated, "应该认出库被退回去了");
+        Assert.AreNotEqual("WIN-B", b.Device.Id, "换一个新编号");
+        Settle(nodes, folder, ref now);
+        AssertSame(nodes, seed);
+        Assert.IsFalse(clipsB.Rows.Any(row => row.Text == "B 的旧内容" && row.Favorite), "备份里的旧内容不该翻回来");
+        Assert.IsTrue(clipsB.Rows.Any(row => row.Text == "B 的新内容"));
+        Assert.IsTrue(clipsB.Rows.Any(row => row.Text == "备份之后才有的"), "备份之后的新内容应该回来");
+        AssertQuiet(nodes, folder, ref now);
+    }
+
+    private static void Settle(SyncNode[] nodes, string folder, ref long now)
+    {
+        for (var settle = 0; settle < 4; settle++)
         {
-            if (Environment.GetEnvironmentVariable("KITTY_IT_KEEP") != "1")
+            foreach (var node in nodes)
             {
-                try
-                {
-                    Directory.Delete(root, recursive: true);
-                }
-                catch
-                {
-                    // 临时目录留给系统清理。
-                }
+                var result = node.Round(folder, ref now);
+                Assert.AreNotEqual("stopped", result.State, $"{node.Name}：{result.Message}");
             }
         }
     }
 
-    private static string ClipJson(string text)
-        => $"{{\"favorite\":true,\"snippet\":false,\"text\":{Quote(text)}}}";
+    // ---- 起始数据和随机改动 ----
 
-    private static string Quote(string value)
+    private static void SeedMacFromGolden(SyncNode mac)
     {
-        var builder = new StringBuilder();
-        CanonicalJson.WriteString(value, builder);
-        return builder.ToString();
-    }
-
-    /// <summary>跑一轮：读自己那份和别的电脑的、合、落地、写自己的文件和 device.json（epoch +1）。</summary>
-    private static long Round(Node node, long now)
-    {
-        now += 1000;
-        Directory.CreateDirectory(Path.Combine(node.Folder, "devices"));
-        if (!File.Exists(Path.Combine(node.Folder, SyncFolderRules.MarkerFile)))
+        using var document = JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "sync-golden.json")));
+        var clips = Map(mac, ClipSync.Kind).Map;
+        var words = Map(mac, VocabularySync.Kind).Map;
+        var engines = Map(mac, EngineSync.Kind).Map;
+        var groups = new List<string>();
+        var engineIds = new[] { "google", "baidu", "maps" };
+        foreach (var item in document.RootElement.GetProperty("cases").EnumerateArray())
         {
-            File.WriteAllText(
-                Path.Combine(node.Folder, SyncFolderRules.MarkerFile), SyncFolderRules.Marker(Library));
-        }
-
-        // 文件夹里本机那一份的 epoch 比本机记的大：库被退回去了，换一个新编号（同 Syncer）。
-        var devicePath = Path.Combine(node.DeviceFolder, SyncFolderRules.DeviceFile);
-        var folderEpoch = File.Exists(devicePath) &&
-                          SyncFolderRules.ParseDevice(File.ReadAllText(devicePath)) is { } parsed
-            ? parsed.Epoch
-            : 0;
-        if (node.Epoch > 0 && folderEpoch > node.Epoch)
-        {
-            node.Id = NewDeviceId();
-            node.Epoch = 0;
-            node.Rotated = true;
-            devicePath = Path.Combine(node.DeviceFolder, SyncFolderRules.DeviceFile);
-        }
-
-        var own = ReadFile(Path.Combine(node.DeviceFolder, Kind + ".json"));
-        var others = new List<SyncFileData>();
-        foreach (var directory in Directory.EnumerateDirectories(Path.Combine(node.Folder, "devices")))
-        {
-            var id = Path.GetFileName(directory);
-            if (id == node.Id || !SyncFolderRules.IsDeviceName(id))
+            if (!item.TryGetProperty("json", out var jsonElement) || jsonElement.GetString() is not { } json)
             {
                 continue;
             }
 
-            if (ReadFile(Path.Combine(directory, Kind + ".json")) is { } file)
+            switch (item.GetProperty("kind").GetString())
             {
-                others.Add(file);
+                case "clip" when clips.Count < 8:
+                    clips[MemoryClipSource.NewUid()] = json;
+                    break;
+                case "word" when words.Count < 6:
+                    words[MemoryClipSource.NewUid()] = json;
+                    break;
+                case "group" when groups.Count < 2:
+                    groups.Add(json);
+                    break;
+                case "engine" when engines.Count < engineIds.Length:
+                    engines[engineIds[engines.Count]] = json;
+                    break;
             }
         }
 
-        var outcome = SyncEngine.Round(
-            node.Local, new Dictionary<string, long>(), node.Ledger, own, others, node.Id, now,
-            JoinMode.Union, value => value);
-        foreach (var (id, value) in outcome.Changes)
-        {
-            if (value is null)
-            {
-                node.Local.Remove(id);
-            }
-            else
-            {
-                node.Local[id] = value;
-            }
-        }
-
-        node.Ledger = outcome.Ledger;
-        WriteData(node);
-        Directory.CreateDirectory(node.DeviceFolder);
-        File.WriteAllText(
-            Path.Combine(node.DeviceFolder, Kind + ".json"), ToFile(Kind, outcome.Own).Encode());
-        File.WriteAllText(devicePath, SyncFolderRules.DeviceJson(node.Epoch + 1, node.Id));
-        node.Epoch++;
-        return now;
+        clips[ClipSync.GroupPrefix + GroupA] = groups[0];
+        clips[ClipSync.GroupPrefix + GroupB] = groups[1];
+        clips[SyncEngine.OrderID] = SyncEngine.OrderValue(new[] { ClipSync.GroupPrefix + GroupA, ClipSync.GroupPrefix + GroupB });
+        engines[SyncEngine.OrderID] = SyncEngine.OrderValue(new[] { "google", "bing" });
     }
 
-    private static string NewDeviceId() => "W" + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
-
-    private static void AssertSame(Node first, Node second, Node third)
+    private static void EditWindows(SyncNode node, Rng rng, int step)
     {
-        AssertSameLocal(first.Local, second.Local, "两台 Windows 应该一样");
-        AssertSameLocal(first.Local, third.Local, "假 Mac 和 Windows 应该一样");
-        // 文件里也是同一组编号和同样的内容。
-        var records = new[] { first, second, third }
-            .Select(node => Records(File.ReadAllText(Path.Combine(node.DeviceFolder, Kind + ".json"))))
-            .ToList();
-        Assert.AreEqual(records[0], records[1]);
-        Assert.AreEqual(records[0], records[2]);
+        var clips = node.Source<MemoryClipSource>();
+        var words = node.Source<MemoryWordSource>();
+        var retained = clips.Rows.Where(row => row.IsRetained).ToList();
+        switch (rng.Below(9))
+        {
+            case 0:
+            case 1:
+                clips.Add($"{node.Name} 新加的 {step}", snippet: rng.Chance(30));
+                break;
+            case 2 when retained.Count > 0:
+            {
+                // 备注：带空白、空串的也要原样同步。
+                var row = rng.Pick(retained);
+                clips.Replace(row with { Note = rng.Pick(new[] { $"备注 {step}", "  ", "", "tab\t\tend " }) });
+                break;
+            }
+
+            case 3 when retained.Count > 0:
+            {
+                var row = rng.Pick(retained);
+                clips.Replace(row with { Favorite = false, Snippet = false, Group = null });
+                break;
+            }
+
+            case 4 when retained.Count > 0 && clips.Groups.Count > 0:
+            {
+                var row = rng.Pick(retained);
+                clips.Replace(row with { Favorite = true, Group = rng.Pick(clips.Groups).Id });
+                break;
+            }
+
+            case 5:
+                if (clips.Groups.Count < 4)
+                {
+                    clips.Groups.Add(new SyncClipGroup(MemoryClipSource.NewUid(), $"{node.Name} 的收藏夹 {step}", step));
+                }
+                else
+                {
+                    var doomed = rng.Pick(clips.Groups);
+                    clips.Groups.Remove(doomed);
+                    clips.Rows = clips.Rows.Select(row => row.Group == doomed.Id ? row with { Group = null } : row)
+                        .ToList();
+                }
+
+                break;
+            case 6:
+                words.Add($"{node.Name} word {step}", "zh-Hans", $"词 {step}");
+                break;
+            case 7 when words.Rows.Count(row => row.Favorite) > 0:
+            {
+                var word = rng.Pick(words.Rows.Where(row => row.Favorite).ToList());
+                words.Rows = words.Rows.Select(row => row.Id == word.Id ? row with { Favorite = false } : row).ToList();
+                break;
+            }
+
+            case 8:
+            {
+                var engines = node.Source<MemoryEngineSource>();
+                if (rng.Chance(50) || engines.Engines.Count < 3)
+                {
+                    engines.Engines.Add(new SearchEngine
+                    {
+                        Id = "custom-" + node.Name + "-" + step, Name = "自建 " + step, Keyword = "k" + step,
+                        UrlTemplate = "https://example.com/" + step + "?q={query}",
+                    });
+                }
+                else
+                {
+                    engines.Engines.RemoveAt(rng.Below(engines.Engines.Count));
+                }
+
+                break;
+            }
+        }
     }
 
-    private static void AssertSameLocal(
+    private static void EditMac(SyncNode mac, Rng rng, int step)
+    {
+        var clips = Map(mac, ClipSync.Kind).Map;
+        var words = Map(mac, VocabularySync.Kind).Map;
+        var ids = clips.Keys.Where(id => Guid.TryParse(id, out _)).OrderBy(id => id, StringComparer.Ordinal).ToList();
+        switch (rng.Below(4))
+        {
+            case 0:
+                clips[MemoryClipSource.NewUid()] = ClipSync.Clip($"Mac 新加的 {step}", true, rng.Chance(30), null, null);
+                break;
+            case 1 when ids.Count > 0:
+                // Mac 那边取消收藏：这条从文件里拿掉。
+                clips.Remove(rng.Pick(ids));
+                break;
+            case 2 when ids.Count > 0:
+            {
+                var id = rng.Pick(ids);
+                using var document = JsonDocument.Parse(clips[id]);
+                var text = document.RootElement.GetProperty("text").GetString()!;
+                clips[id] = ClipSync.Clip(text, true, true, $"Mac 备注 {step}", null);
+                break;
+            }
+
+            case 3:
+                words[MemoryClipSource.NewUid()] = VocabularySync.Word($"mac word {step}", "en", $"word {step}", "zhipu", step);
+                break;
+        }
+    }
+
+    // ---- 断言 ----
+
+    private static Dictionary<string, string> Values(SyncNode node, string kind)
+        => new(node.Sources.Single(source => source.Kind == kind).Values()!, StringComparer.Ordinal);
+
+    private static void AssertSame(SyncNode[] nodes, ulong seed)
+    {
+        foreach (var kind in new[] { ClipSync.Kind, VocabularySync.Kind, EngineSync.Kind })
+        {
+            var expected = Values(nodes[0], kind);
+            foreach (var node in nodes.Skip(1))
+            {
+                AssertSameMap(expected, Values(node, kind), $"种子 {seed}：{kind} 在 {node.Name} 和 {nodes[0].Name} 不一样");
+            }
+        }
+    }
+
+    /// <summary>安静下来以后再合一轮：谁都不写文件、不落改动（编 → 落 → 再编字节一样）。</summary>
+    private static void AssertQuiet(SyncNode[] nodes, string folder, ref long now)
+    {
+        foreach (var node in nodes)
+        {
+            var applied = node.Sources.Sum(source => source.Applied);
+            var result = node.Round(folder, ref now);
+            Assert.AreEqual("idle", result.State, $"{node.Name}：{result.Message}");
+            Assert.AreEqual(0, result.Written.Count, $"{node.Name} 安静下来以后还在重写 {string.Join(',', result.Written)}");
+            Assert.AreEqual(applied, node.Sources.Sum(source => source.Applied), $"{node.Name} 安静下来以后还在落改动");
+        }
+    }
+
+    private static void AssertSameMap(
         IReadOnlyDictionary<string, string> expected, IReadOnlyDictionary<string, string> actual, string note)
     {
         var missing = expected.Keys.Where(key => !actual.ContainsKey(key)).ToList();
         var extra = actual.Keys.Where(key => !expected.ContainsKey(key)).ToList();
-        var changed = expected.Where(pair =>
-            actual.TryGetValue(pair.Key, out var value) && value != pair.Value).Select(pair => pair.Key).ToList();
-        Assert.AreEqual(expected.Count, actual.Count,
+        var changed = expected.Where(pair => actual.TryGetValue(pair.Key, out var value) && value != pair.Value)
+            .Select(pair => pair.Key).ToList();
+        Assert.IsTrue(missing.Count == 0 && extra.Count == 0 && changed.Count == 0,
             $"{note}；少 {string.Join(',', missing)}；多 {string.Join(',', extra)}；不一样 {string.Join(',', changed)}");
-        foreach (var (id, value) in expected)
-        {
-            Assert.IsTrue(actual.TryGetValue(id, out var other) && other == value, note + "：" + id);
-        }
-    }
-
-    private static string Records(string json)
-    {
-        using var document = JsonDocument.Parse(json);
-        return string.Join('|', document.RootElement.GetProperty("records").EnumerateArray()
-            .Select(item => item.GetProperty("id").GetString() + ":" + item.GetProperty("value").GetString())
-            .OrderBy(item => item, StringComparer.Ordinal));
-    }
-
-    private static string GoldenClipValue()
-    {
-        var path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "sync-golden.json");
-        using var document = JsonDocument.Parse(File.ReadAllText(path));
-        foreach (var item in document.RootElement.GetProperty("cases").EnumerateArray())
-        {
-            if (item.GetProperty("kind").GetString() == "clip")
-            {
-                return item.GetProperty("json").GetString() ?? string.Empty;
-            }
-        }
-
-        throw new InvalidOperationException("golden 里没有 clip 样本");
-    }
-
-    // ---- 数据目录（本机数据 + 账本 + epoch）的落盘 / 读回 ----
-
-    private static void WriteData(Node node)
-    {
-        Directory.CreateDirectory(node.DataFolder);
-        var builder = new StringBuilder("{");
-        var first = true;
-        foreach (var (id, value) in node.Local.OrderBy(pair => pair.Key, StringComparer.Ordinal))
-        {
-            if (!first)
-            {
-                builder.Append(',');
-            }
-
-            first = false;
-            CanonicalJson.WriteString(id, builder);
-            builder.Append(':');
-            CanonicalJson.WriteString(value, builder);
-        }
-
-        builder.Append('}');
-        File.WriteAllText(Path.Combine(node.DataFolder, "local.json"), builder.ToString());
-        File.WriteAllText(Path.Combine(node.DataFolder, "ledger.json"), LedgerText(node.Ledger));
-        File.WriteAllText(Path.Combine(node.DataFolder, "epoch.txt"), node.Epoch.ToString());
-    }
-
-    private static void ReadData(Node node)
-    {
-        node.Local.Clear();
-        using (var local = JsonDocument.Parse(File.ReadAllText(Path.Combine(node.DataFolder, "local.json"))))
-        {
-            foreach (var property in local.RootElement.EnumerateObject())
-            {
-                node.Local[property.Name] = property.Value.GetString() ?? string.Empty;
-            }
-        }
-
-        node.Ledger = ParseLedger(File.ReadAllText(Path.Combine(node.DataFolder, "ledger.json")));
-        node.Epoch = int.Parse(File.ReadAllText(Path.Combine(node.DataFolder, "epoch.txt")));
-    }
-
-    private static string LedgerText(SyncLedgerData? ledger)
-    {
-        if (ledger is null)
-        {
-            return "null";
-        }
-
-        var builder = new StringBuilder("{\"entries\":{");
-        var first = true;
-        foreach (var (id, entry) in ledger.Entries.OrderBy(pair => pair.Key, StringComparer.Ordinal))
-        {
-            if (!first)
-            {
-                builder.Append(',');
-            }
-
-            first = false;
-            CanonicalJson.WriteString(id, builder);
-            builder.Append(":{\"clock\":");
-            CanonicalJson.WriteString(entry.Clock.Text(), builder);
-            builder.Append(",\"hash\":");
-            CanonicalJson.WriteString(entry.Hash, builder);
-            builder.Append(",\"modified\":").Append(entry.Modified).Append('}');
-        }
-
-        builder.Append("},\"erased\":{");
-        first = true;
-        foreach (var (id, clock) in ledger.Erased.OrderBy(pair => pair.Key, StringComparer.Ordinal))
-        {
-            if (!first)
-            {
-                builder.Append(',');
-            }
-
-            first = false;
-            CanonicalJson.WriteString(id, builder);
-            builder.Append(':');
-            CanonicalJson.WriteString(clock.Text(), builder);
-        }
-
-        builder.Append("}}");
-        return builder.ToString();
-    }
-
-    private static SyncLedgerData? ParseLedger(string text)
-    {
-        if (text == "null")
-        {
-            return null;
-        }
-
-        using var document = JsonDocument.Parse(text);
-        var ledger = new SyncLedgerData();
-        foreach (var property in document.RootElement.GetProperty("entries").EnumerateObject())
-        {
-            ledger.Entries[property.Name] = new SyncEntry(
-                SyncClock.Parse(property.Value.GetProperty("clock").GetString()),
-                property.Value.GetProperty("hash").GetString() ?? string.Empty,
-                property.Value.GetProperty("modified").GetInt64());
-        }
-
-        foreach (var property in document.RootElement.GetProperty("erased").EnumerateObject())
-        {
-            ledger.Erased[property.Name] = SyncClock.Parse(property.Value.GetString());
-        }
-
-        return ledger;
-    }
-
-    private static SyncFileData? ReadFile(string path)
-    {
-        if (!File.Exists(path))
-        {
-            return null;
-        }
-
-        var file = SyncFile.Decode(File.ReadAllText(path), Kind);
-        if (file is null || file.IsNewer)
-        {
-            // 读不出来（写坏了、别的类别）：只扔这一版，这一类照合。
-            return null;
-        }
-
-        var data = new SyncFileData();
-        foreach (var record in file.Records)
-        {
-            data.Records[record.Id] = new SyncValue
-            {
-                Value = record.Value,
-                Clock = record.Clock,
-                Modified = record.Modified,
-            };
-        }
-
-        foreach (var erased in file.Erased)
-        {
-            data.Erased[erased.Id] = erased.Clock;
-        }
-
-        return data;
-    }
-
-    private static SyncFile ToFile(string kind, SyncFileData data)
-    {
-        var file = new SyncFile { Kind = kind };
-        foreach (var (id, value) in data.Records)
-        {
-            file.Records.Add(new SyncRecord
-            {
-                Id = id,
-                Clock = value.Clock,
-                Modified = value.Modified,
-                Value = value.Value,
-            });
-        }
-
-        foreach (var (id, clock) in data.Erased)
-        {
-            file.Erased.Add(new SyncErased { Id = id, Clock = clock });
-        }
-
-        return file;
-    }
-
-    private static void CopyDirectory(string source, string destination)
-    {
-        Directory.CreateDirectory(destination);
-        foreach (var file in Directory.EnumerateFiles(source))
-        {
-            File.Copy(file, Path.Combine(destination, Path.GetFileName(file)), overwrite: true);
-        }
     }
 }
