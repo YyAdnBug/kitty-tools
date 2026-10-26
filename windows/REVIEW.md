@@ -130,7 +130,9 @@ x64 包冒烟通过。设置窗的 Mica 在 Release AOT 下会抛 `ArgumentExcep
 - `bcd3eb7f` 报告里写了：探针被「主工作区另一个 agent 重编时按进程名结束了」。按进程名结束，会把用户正在用的那份 Kitty Tools、或者别的 agent 正在跑的测试一起杀掉。
 - `AGENTS.md` 红线里已经加了一条：只结束自己起的那个 PID。两个 agent 各自查一下脚本里的 `taskkill /im`、`Stop-Process -Name`，都改掉。
 
-### R36（P1）安装程序真机验收（`616840b`：Claude 在 Mac 上写的，一次都没编译过）
+### R36（P1）安装程序真机验收 → 大部分已修（`2bb2186`；截图 / 真实安装未走）
+
+**进展（`2bb2186`）**：`SetupTests` 320 个全过；Setup 编进 slnx、零警告；x64/ARM64 AOT 零 trim/AOT，本体 2.5 MB；`build-release.ps1` 出 setup.exe（x64 31.5 MB / arm64 30.7 MB）；`setup-e2e.ps1` 七步全过。**未走**：七张对话框截图、真实安装 / 自动更新 / 设置应用的卸载。
 
 - PLAN-setup 的代码都写完了，但 Mac 上没装 .NET SDK（用户定的），Core 单测、Setup 编译、AOT 发布、端到端一个都没跑。`KittyTools.Setup` 还**没加进** `KittyTools.slnx`，免得没编过的代码让你们每批的 slnx 构建红掉。
 - **要做**（按顺序）：
@@ -157,6 +159,7 @@ x64 包冒烟通过。设置窗的 Mica 在 Release AOT 下会抛 `ArgumentExcep
 - 日志在 `%TEMP%\KittyTools-setup.log`（测试名下是 `KittyTools-setup.Test.<名字>.log`）。修完挪到「已修」，写提交号、两个架构的安装包大小、七步结果。
 
 ### R37（P2）设置里「从这台电脑移除」交给 Uninstall.exe（PLAN-setup §4.2 / S10）→ 审查方写了，待编译验证
+
 
 - `Settings/SettingsWindow.cs` 的 `UninstallAsync` 现在自己删快捷方式、开机启动和凭据，程序文件让用户自己删。安装程序装的（exe 旁边有 `.kitty-install`）改成：
   - `SetupRules.ReadMarker(<exe 所在目录>)` 不是 null，且同目录有 `SetupRules.UninstallerName`：启动它（不带参数，它会自己弹确认，含「同时删除我的数据」），然后走 `ShellRuntime.Exit`，不再弹自己的 ContentDialog。卸载程序会先通过管道发 `quit`，程序没退也会等。
