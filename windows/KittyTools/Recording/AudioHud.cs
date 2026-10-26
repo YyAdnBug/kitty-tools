@@ -25,9 +25,11 @@ internal sealed partial class AudioHud
     private readonly TextBlock _hint;
     private readonly Button _pause;
     private readonly DispatcherQueueTimer _tick;
+    private bool _pending;
 
-    private AudioHud(string? note)
+    private AudioHud(string? note, bool pending)
     {
+        _pending = pending;
         _window = new Window { Title = "录音" };
         _window.SystemBackdrop = new TransparentBackdrop();
         _window.AppWindow.IsShownInSwitchers = false;
@@ -83,7 +85,7 @@ internal sealed partial class AudioHud
         };
         _pause = new Button
         {
-            Content = "暂停",
+            Content = pending ? "开始" : "暂停",
             FontSize = Theme.FontSize("Kitty.FontSize.Label"),
             Padding = new Thickness(8, 3, 8, 3),
             Background = new SolidColorBrush(Colors.Transparent),
@@ -92,6 +94,14 @@ internal sealed partial class AudioHud
         };
         _pause.Click += (_, _) =>
         {
+            if (_pending)
+            {
+                _pending = false;
+                AudioHost.BeginFromHud();
+                UpdatePause();
+                return;
+            }
+
             if (AudioHost.IsPaused)
             {
                 AudioHost.Resume();
@@ -161,7 +171,11 @@ internal sealed partial class AudioHud
         Refresh();
     }
 
-    public static void Show(string? note = null)
+    public static void Show(string? note = null) => ShowInternal(note, pending: false);
+
+    public static void ShowPending() => ShowInternal(null, pending: true);
+
+    private static void ShowInternal(string? note, bool pending)
     {
         if (_instance is not null)
         {
@@ -170,13 +184,26 @@ internal sealed partial class AudioHud
 
         try
         {
-            _instance = new AudioHud(note);
-            Log.Info("audio.hud-shown");
+            _instance = new AudioHud(note, pending);
+            Log.Info($"audio.hud-shown pending={pending}");
         }
         catch (Exception ex)
         {
             Log.Warn($"audio.hud-failed {ex.GetType().Name}");
         }
+    }
+
+    /// <summary>控制条上的 ● 被点了：从“待录”切成计时。</summary>
+    public static void MarkStarted()
+    {
+        if (_instance is not { } hud)
+        {
+            return;
+        }
+
+        hud._pending = false;
+        hud.UpdatePause();
+        hud.Refresh();
     }
 
     public static void Hide()
@@ -202,6 +229,13 @@ internal sealed partial class AudioHud
 
     private void Refresh()
     {
+        if (_pending)
+        {
+            _timer.Text = "待录";
+            _levelFill.Width = 0;
+            return;
+        }
+
         _timer.Text = AudioHost.Elapsed;
         var level = Math.Clamp((AudioHost.Level + 60) / 60.0, 0, 1);
         _levelFill.Width = 54 * level;

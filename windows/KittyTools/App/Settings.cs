@@ -124,6 +124,9 @@ internal sealed class Settings
     /// <summary>录屏时录麦克风（默认关）。</summary>
     public bool RecordMicrophone { get; set; }
 
+    /// <summary>按录音快捷键后立即开始；关掉时先出控制条，点 ● 才录（REVIEW R28）。</summary>
+    public bool RecordInstantStart { get; set; } = true;
+
     public List<TranslateServiceConfig>? TranslateServices { get; set; }
 
     /// <summary>启动器的网页搜索列表；null = 从没存过（默认前 8 个，Bing 兜底）。</summary>

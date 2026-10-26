@@ -14,6 +14,9 @@ internal static class AudioHost
 
     public static bool IsRecording => _recorder is not null;
 
+    /// <summary>“待录”：控制条出来了，但还没开始采（R28 的「按快捷键后立即开始录音」关掉时）。</summary>
+    public static bool IsArmed { get; private set; }
+
     public static bool IsPaused => _recorder?.IsPaused == true;
 
     public static float Level => _recorder?.Level ?? -90;
@@ -46,11 +49,33 @@ internal static class AudioHost
         if (IsRecording)
         {
             Stop();
+            return;
         }
-        else
+
+        if (IsArmed)
+        {
+            IsArmed = false;
+            AudioHud.Hide();
+            return;
+        }
+
+        if (SettingsService.Current.RecordInstantStart)
         {
             Start();
         }
+        else
+        {
+            IsArmed = true;
+            AudioHud.ShowPending();
+        }
+    }
+
+    /// <summary>控制条上的 ●：从待录开始真正采。</summary>
+    public static void BeginFromHud()
+    {
+        IsArmed = false;
+        AudioHud.MarkStarted();
+        Start();
     }
 
     public static void Start()
@@ -66,6 +91,8 @@ internal static class AudioHost
             out var error, out var note);
         if (recorder is null)
         {
+            IsArmed = false;
+            AudioHud.Hide();
             NoticeHost.Show("没能开始录音", error ?? "未知原因", NoticeTone.Error);
             if (settings.RecordMicrophone)
             {
@@ -87,6 +114,8 @@ internal static class AudioHost
         }
 
         _recorder = recorder;
+        IsArmed = false;
+        AudioHud.MarkStarted();
         _startedAt = Environment.TickCount64;
         _pausedAt = 0;
         _pausedTotal = 0;
@@ -134,6 +163,7 @@ internal static class AudioHost
         }
 
         _recorder = null;
+        IsArmed = false;
         AudioHud.Hide();
         var path = recorder.Stop();
         recorder.Dispose();

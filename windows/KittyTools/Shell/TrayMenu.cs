@@ -251,9 +251,13 @@ internal static partial class TrayMenu
             {
                 Add(menu, Glyphs.Stop, "停止录音 " + AudioHost.Elapsed, string.Empty, AudioHost.Stop);
             }
+            else if (AudioHost.IsArmed)
+            {
+                Add(menu, Glyphs.Close, "取消待录", string.Empty, AudioHost.Toggle);
+            }
             else
             {
-                Add(menu, Glyphs.Microphone, "录音（麦克风）", string.Empty, AudioHost.Start);
+                Add(menu, Glyphs.Microphone, "录音（麦克风）", string.Empty, AudioHost.Toggle);
             }
         }
 

@@ -1163,6 +1163,14 @@ internal sealed class SettingsWindow : Window
                     SettingsService.Current.RecordMicrophone = value;
                     SettingsService.Save();
                 });
+            AddToggle("按快捷键后立即开始录音",
+                "关掉时先出控制条，点 ● 才开始；适合先调麦克风再用。",
+                SettingsService.Current.RecordInstantStart,
+                value =>
+                {
+                    SettingsService.Current.RecordInstantStart = value;
+                    SettingsService.Save();
+                });
 
             var folderRow = new Grid { ColumnSpacing = 8 };
             folderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
