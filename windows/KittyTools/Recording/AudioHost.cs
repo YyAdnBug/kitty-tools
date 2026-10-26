@@ -213,7 +213,7 @@ internal static class AudioHost
         {
             Directory.CreateDirectory(RecordingHost.Folder);
             var final = Path.Combine(RecordingHost.Folder, RecorderRules.FileName(DateTime.Now, audio: true));
-            if (!Mp4Remux.TryRemux(temporary, final))
+            if (!Mp4Remux.TryRemuxWithTimeout(temporary, final))
             {
                 File.Move(temporary, final, overwrite: true);
             }

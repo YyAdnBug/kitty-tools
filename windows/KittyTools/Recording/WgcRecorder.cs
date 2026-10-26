@@ -592,12 +592,27 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
             {
                 if (File.Exists(_temporary))
                 {
-                    if (Mp4Remux.TryRemux(_temporary, _final))
+                    // 先写 .remux 临时名；超时 / 失败时不会在 _final 留一个 80 字节壳。
+                    var staging = _final + ".remux.mp4";
+                    if (Mp4Remux.TryRemuxWithTimeout(_temporary, staging))
                     {
+                        File.Move(staging, _final, overwrite: true);
                         File.Delete(_temporary);
                     }
                     else
                     {
+                        try
+                        {
+                            if (File.Exists(staging))
+                            {
+                                File.Delete(staging);
+                            }
+                        }
+                        catch
+                        {
+                            // 卡住的线程还占着就先留着。
+                        }
+
                         // 重封装失败：分段 MP4 原样改名，至少能放（R23 的退路）。
                         File.Move(_temporary, _final, overwrite: true);
                     }

@@ -17,9 +17,29 @@ internal static unsafe class Mp4Remux
     private static readonly Guid Mpeg4Container = new("dc6cd05d-b9d0-40ef-bd35-fa622c1ab28a");
     private static readonly Guid EnableHardwareTransforms = new("a634a91c-822b-41b9-a494-4de4643612b0");
 
-    public static bool TryRemux(string source, string destination)
+    /// <summary>带超时的重封装：坏源 / 驱动卡住时，启动和停止不跟着一起卡死。</summary>
+    public static bool TryRemuxWithTimeout(string source, string destination, int seconds = 5)
     {
-        var started = Environment.TickCount64;
+        try
+        {
+            var task = Task.Run(() => TryRemux(source, destination));
+            if (!task.Wait(TimeSpan.FromSeconds(seconds)))
+            {
+                Log.Warn($"record.remux-timeout {seconds}s");
+                return false;
+            }
+
+            return task.Result;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"record.remux-timeout-failed {ex.GetType().Name}");
+            return false;
+        }
+    }
+
+    public static bool TryRemux(string source, string destination)
+    {        var started = Environment.TickCount64;
         IMFSourceReader* videoReader = null;
         IMFSourceReader* audioReader = null;
         IMFSinkWriter* writer = null;
@@ -47,8 +67,10 @@ internal static unsafe class Mp4Remux
             }
 
             var video = AddStream(writer, source, 0, out var videoReaderLocal, out var videoOutput);
+            Log.Info($"record.remux video={video}");
             videoReader = videoReaderLocal;
             var audio = AddStream(writer, source, 1, out var audioReaderLocal, out var audioOutput);
+            Log.Info($"record.remux audio={audio}");
             audioReader = audioReaderLocal;
             if (!video && !audio)
             {
@@ -58,14 +80,20 @@ internal static unsafe class Mp4Remux
             writer->BeginWriting();
             if (video)
             {
+                Log.Info("record.remux copy-video"); 
                 Copy(videoReader, writer, videoOutput, 0);
+                Log.Info("record.remux copy-video-done");
             }
 
             if (audio)
             {
+                Log.Info("record.remux copy-audio");
                 Copy(audioReader, writer, audioOutput, 1);
+                Log.Info("record.remux copy-audio-done");
             }
+            Log.Info("record.remux finalize");
             writer->Finalize();
+            Log.Info("record.remux finalize-done");
             var ok = File.Exists(destination) && new FileInfo(destination).Length > 0;
             Log.Info($"record.remux ok={ok} ms={Environment.TickCount64 - started}");
             return ok;
@@ -118,6 +146,9 @@ internal static unsafe class Mp4Remux
             }
 
             reader = localReader;
+            // 只读这一路；否则另一路（音频）没被消费时，ReadSample 到后面会等它。
+            reader->SetStreamSelection(0xFFFFFFFE, false);
+            reader->SetStreamSelection(streamIndex, true);
             reader->GetNativeMediaType(streamIndex, 0, &type);
             if (type is null)
             {
@@ -157,6 +188,7 @@ internal static unsafe class Mp4Remux
         IMFSourceReader* reader, IMFSinkWriter* writer, uint outputStream, uint inputStream)
     {
         long first = -1;
+        var written = 0;
         while (true)
         {
             uint actualStream = 0;
@@ -178,13 +210,21 @@ internal static unsafe class Mp4Remux
 
                 if (sample is null)
                 {
-                    continue;
+                    // 有的源在 EOF 时不置 ENDOFSTREAM，只返回空样本；再 continue 会死循环。
+                    break;
                 }
 
                 if (first < 0)
                 {
                     first = timestamp;
                 }
+                if (++written > 200_000 || timestamp - first > 900_000_000L)
+                {
+                    // 上限保险：15 分钟 / 20 万个样本；坏源不带 EOF 时别把停止卡死。
+                    Log.Warn($"record.remux cap stream={inputStream} written={written}");
+                    break;
+                }
+
                 sample->SetSampleTime(timestamp - first);
                 writer->WriteSample(outputStream, sample);
             }

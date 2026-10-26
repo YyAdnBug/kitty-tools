@@ -311,6 +311,20 @@ internal sealed class ShellRuntime
         }
 
 
+        var syncArg = Environment.GetCommandLineArgs()
+            .FirstOrDefault(arg => arg.StartsWith("--sync-probe=", StringComparison.OrdinalIgnoreCase));
+        if (syncArg is not null)
+        {
+            var path = syncArg["--sync-probe=".Length..];
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
+            {
+                await VideoFlashProbe.FirstFlashAsync(path);
+                await AudioWavProbe.CheckAsync(path);
+                Application.Current.Exit();
+            });
+        }
+
+
 #if DEBUG
         // 调试用：直接开录屏的选区遮罩（截图 / 手测 Alt+R 的界面）。
         if (Environment.GetCommandLineArgs().Contains("--record-select", StringComparer.OrdinalIgnoreCase))

@@ -266,7 +266,7 @@ internal static unsafe class RecordingHost
         {
             Directory.CreateDirectory(Folder);
             var path = Path.Combine(Folder, RecorderRules.FileName(DateTime.Now));
-            if (Mp4Remux.TryRemux(temporary, path))
+            if (Mp4Remux.TryRemuxWithTimeout(temporary, path))
             {
                 File.Delete(temporary);
             }
