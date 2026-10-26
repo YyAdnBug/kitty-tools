@@ -197,12 +197,33 @@ internal sealed class ShellRuntime
 
                 var effects = Environment.GetCommandLineArgs()
                     .Contains("--record-effects", StringComparer.OrdinalIgnoreCase);
-                var deadline = Environment.TickCount64 + Math.Clamp(testSeconds, 1, 600) * 1000;
+                var resizeTest = Environment.GetCommandLineArgs()
+                    .Contains("--record-resize", StringComparer.OrdinalIgnoreCase);
+                var startedAt = Environment.TickCount64;
+                var shrunk = false;
+                var restored = false;
+                var deadline = startedAt + Math.Clamp(testSeconds, 1, 600) * 1000;
                 while (Environment.TickCount64 < deadline)
                 {
                     if (effects)
                     {
                         RecordingEffects.InjectDemo(2560, 1440);
+                    }
+
+                    if (resizeTest)
+                    {
+                        var elapsed = Environment.TickCount64 - startedAt;
+                        if (!shrunk && elapsed > 1500)
+                        {
+                            shrunk = true;
+                            TestPatternWindow.Resize(900, 600);
+                        }
+                        else if (shrunk && !restored && elapsed > 3000)
+                        {
+                            restored = true;
+                            var bounds = TestPatternWindow.PrimaryBounds();
+                            TestPatternWindow.Resize(bounds.Width, bounds.Height);
+                        }
                     }
 
                     await Task.Delay(500);

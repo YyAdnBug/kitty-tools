@@ -74,6 +74,7 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
     private Thread? _thread;
     private D3DContext? _context;
     private WgcEffects? _effects;
+    private WgcScaler? _scaler;
     private bool _effectsTried;
     private int _originX;
     private int _originY;
@@ -566,6 +567,8 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
             _context = null;
             try
             {
+                _scaler?.Dispose();
+                _scaler = null;
                 _effects?.Dispose();
             }
             catch
@@ -776,6 +779,21 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
             _stop.Set();
             _note = "裁不出选区";
             return null;
+        }
+
+        // R29：窗口尺寸变了就等比缩放 + 居中补黑；缩放器起不来再退回居中裁。
+        if (_window != IntPtr.Zero &&
+            (pending.Width != _outputWidth || pending.Height != _outputHeight))
+        {
+            _scaler ??= WgcScaler.TryCreate(_context!);
+            var scaleStart = Stopwatch.GetTimestamp();
+            if (_scaler?.Draw(
+                    pending.Source, pending.Width, pending.Height,
+                    target, _outputWidth, _outputHeight) == true)
+            {
+                _copyTicks += Stopwatch.GetTimestamp() - scaleStart;
+                return target;
+            }
         }
         var box = new D3D11_BOX
         {

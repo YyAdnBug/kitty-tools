@@ -211,6 +211,18 @@ internal sealed class TestPatternWindow
     }
 
     /// <summary>主屏的物理像素矩形（测试图案是满屏的，录它不会录到别的窗口）。</summary>
+    public static void Resize(int width, int height)
+    {
+        try
+        {
+            _current?._window.AppWindow.Resize(new Windows.Graphics.SizeInt32(width, height));
+        }
+        catch
+        {
+            // 自检窗口已经关掉就算了。
+        }
+    }
+
     public static PixelBounds PrimaryBounds()
     {
         var width = GetSystemMetrics(0);
