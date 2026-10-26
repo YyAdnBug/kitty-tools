@@ -196,8 +196,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
   /// 菜单栏图标与菜单（启动后才建：单测以本 App 为宿主时不往菜单栏加东西）
   private var statusItem: StatusItem?
-  /// 长图的标注窗口（长截图按 A 打开，关掉就放掉）
-  var scrollEditor: ScrollEditor?
+  /// 标注遮罩（长截图按 A、历史里双击打开，收起就放掉）
+  var annotateOverlay: AnnotateOverlay?
   /// 截图历史窗口（菜单栏 / 启动器打开，关掉就放掉）
   private var shotHistoryWindow: ShotHistoryWindow?
   /// 钉图（菜单栏显示「隐藏 / 关闭全部钉图」）
@@ -778,6 +778,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       forName: UserDefaults.didChangeNotification, object: UserDefaults.standard, queue: .main
     ) { [weak self] _ in
       MainActor.assumeIsolated { self?.applyFeatures() }
+    }
+    // 新装、系统更新后识字模型要现场编译一回（约一分钟）：用得到识字的功能开着就趁早在后台子进程里编好，
+    // 第一次截图翻译 / 识字不用干等（OCR.prepare；编好了它直接返回）
+    if !Feature.enabled.isDisjoint(with: [.clipboard, .translate, .screenshot]) {
+      Task { await OCR.prepare() }
     }
   }
 
@@ -1925,7 +1930,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
       case .annotate:
         let id = await rememberScroll(result, region: region)
-        openScrollEditor(result.image, scale: result.scale, history: id)
+        openAnnotate(result.image, scale: result.scale, history: id)
       }
     } catch {
       pins.resume()
@@ -2035,9 +2040,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       guard let image = shotHistory.composed(item) else { return missingShot() }
       Task { await copyRecognizedText(in: image) }
     }
+    actions.notice = { [unowned self] text, warning in
+      island.show(text, tone: warning ? .warning : .info)
+    }
     actions.edit = { [unowned self] item in
       guard let original = shotHistory.image(for: item.id) else { return missingShot() }
-      openScrollEditor(
+      openAnnotate(
         original, scale: item.scale, history: item.id, annotations: item.annotations)
     }
     actions.forget = { [unowned self] item in showShotHistory(deleting: item) }
@@ -2067,11 +2075,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 长图标注（2026-10-26 拍板）：拼好的长图在自己的窗口里标注，出图走截图那条路、用刘海说结果（同钉图，不飞卡片：
   /// 这时选区多半已经不在眼前了）。一次只开一扇，再开一次就把前一扇换掉
-  private func openScrollEditor(
+  private func openAnnotate(
     _ image: CGImage, scale: CGFloat, history: UUID? = nil, annotations: [Annotation] = []
   ) {
-    scrollEditor?.close()
-    let editor = ScrollEditor(image: image, scale: scale, annotations: annotations) {
+    annotateOverlay?.close()
+    let editor = AnnotateOverlay(image: image, scale: scale, annotations: annotations) {
       [unowned self] action, image, scale, annotations in
       // 改完的标注回写到历史那一条（拍板 C4：更新同一条，不新建）
       if let history { shotHistory.update(history, annotations: annotations) }
@@ -2095,8 +2103,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
       }
     }
-    editor.onClose = { [weak self] in self?.scrollEditor = nil }
-    scrollEditor = editor
+    editor.onClose = { [weak self] in self?.annotateOverlay = nil }
+    annotateOverlay = editor
     editor.show()
   }
 
@@ -2177,8 +2185,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard !lines.isEmpty else {
       return island.show("没有识别到文字", detail: "可以把选区框大一些再试", tone: .warning)
     }
-    // 没有结果岛（接着开浮窗）：「识别中」出过就收掉
+    // 没有结果岛（接着开浮窗）：「识别中」「正在准备」出过就收掉
     island.dismiss(ifShowing: Self.recognizingTitle)
+    island.dismiss(ifShowing: Self.preparingTitle)
     let text = OCR.text(lines, joined: true, separator: "\n\n")
     // 默认不写剪贴板、只记进历史（同一个入口：过敏感文本过滤、已有同文只挪到最前）；开了就当复制一次（写剪贴板 + 记历史）
     if UserDefaults.standard.bool(forKey: Prefs.translateCopyRecognized) {
@@ -2193,10 +2202,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 识字慢的时候先出「识别中」（第二轮体检 R3）：常见选区 0.04–0.13 s，不出；整屏密集文字约 0.9 s，过了 0.3 s 还没出结果
   /// 刘海岛先说一声，结果出来原地换掉（识字、截图翻译、钉图上的识字 / 翻译都走这里）
   private static let recognizingTitle = "识别中…"
+  /// 新装、系统更新后第一次识字：系统要先现场编译识字模型（OCR.prepare，冷的约一分钟）。岛一直挂着、每秒报等了多久，
+  /// 不然看着像卡死了
+  private static let preparingTitle = "正在准备识字模型…"
 
   private func recognizing<T>(_ work: () async -> T) async -> T {
     // 进程内识过字，模型就留在内存里：这一路不一定开关面板（⌥O 识字、钉图上识字），自己记得回头放掉
     defer { idleReclaim.schedule() }
+    if !OCR.isPrepared {
+      let note = "第一次识字要等一分钟左右，以后就快了"
+      island.show(Self.preparingTitle, detail: note, tone: .progress, symbol: "text.viewfinder")
+      let started = ContinuousClock.now
+      let ticker = Task { [island] in
+        while !Task.isCancelled {
+          try? await Task.sleep(for: .seconds(1))
+          let seconds = (ContinuousClock.now - started).components.seconds
+          island.progress(Self.preparingTitle, detail: "\(note) · 已等 \(seconds) 秒")
+        }
+      }
+      await OCR.prepare()
+      ticker.cancel()
+    }
     return await island.showIfSlow(Self.recognizingTitle, work)
   }
 

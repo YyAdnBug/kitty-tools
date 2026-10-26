@@ -10,8 +10,8 @@ struct ShotHistoryView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   /// 网格里一张卡多宽（高按 3:2 留，图按自己的比例缩在里面）
-  private static let cardWidth: CGFloat = 168
-  private static let cardHeight: CGFloat = 112
+  static let cardWidth: CGFloat = 168
+  static let cardHeight: CGFloat = 112
 
   var body: some View {
     HStack(spacing: 0) {
@@ -80,7 +80,14 @@ struct ShotHistoryView: View {
             LazyVGrid(
               columns: [GridItem(.adaptive(minimum: Self.cardWidth), spacing: 12)], spacing: 12
             ) {
-              ForEach(group.items) { card($0) }
+              ForEach(group.items) { item in
+                ShotCard(
+                  item: item, chosen: model.selection == item.id,
+                  thumbnail: ShotThumbnails.shared.image(for: item, in: model.history),
+                  select: { model.selection = item.id }, edit: { edit(item) }
+                )
+                .contextMenu { menu(item) }
+              }
             }
           } header: {
             Text(group.title)
@@ -97,53 +104,7 @@ struct ShotHistoryView: View {
     .frame(minWidth: 420)
   }
 
-  private func card(_ item: ShotHistory.Item) -> some View {
-    let chosen = model.selection == item.id
-    return VStack(spacing: 6) {
-      ZStack {
-        RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
-          .fill(.quaternary.opacity(0.4))
-        if let image = ShotThumbnails.shared.image(for: item, in: model.history) {
-          Image(nsImage: image)
-            .resizable()
-            .aspectRatio(contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: Style.Radius.card - 2, style: .continuous))
-            .padding(2)
-        } else {
-          Image(systemName: symbol(item.kind))
-            .font(.system(size: 22))
-            .foregroundStyle(.secondary)
-        }
-        if item.kind != .shot {
-          Text(item.kind.title)
-            .font(.system(size: 10, weight: .semibold))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(.black.opacity(0.55), in: Capsule())
-            .foregroundStyle(.white)
-            .padding(6)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-        }
-      }
-      .frame(width: Self.cardWidth, height: Self.cardHeight)
-      .overlay {
-        RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
-          .strokeBorder(chosen ? Style.brand : .clear, lineWidth: 2)
-      }
-      Text(item.createdAt.formatted(date: .omitted, time: .shortened))
-        .font(.system(size: 11))
-        .foregroundStyle(.secondary)
-    }
-    .contentShape(.rect)
-    .onTapGesture(count: 2) { edit(item) }
-    .onTapGesture { model.selection = item.id }
-    .contextMenu { menu(item) }
-    .accessibilityElement(children: .combine)
-    .accessibilityLabel("\(item.kind.title)，\(ShotHistoryModel.caption(item))")
-    .accessibilityAddTraits(chosen ? [.isSelected, .isButton] : .isButton)
-  }
-
-  private func symbol(_ kind: ShotHistory.Kind) -> String {
+  static func symbol(_ kind: ShotHistory.Kind) -> String {
     switch kind {
     case .shot: "photo"
     case .scroll: "rectangle.expand.vertical"
@@ -166,7 +127,8 @@ struct ShotHistoryView: View {
             .aspectRatio(contentMode: .fit)
             .padding(4)
         } else {
-          Image(systemName: symbol(item.kind)).font(.system(size: 28)).foregroundStyle(.secondary)
+          Image(systemName: Self.symbol(item.kind)).font(.system(size: 28)).foregroundStyle(
+            .secondary)
         }
       }
       .frame(height: 180)
@@ -197,6 +159,7 @@ struct ShotHistoryView: View {
         row("打开", "play.rectangle") { model.open(item) }
       }
       row("在访达中显示", "folder") { model.reveal(item) }
+        .disabled(!model.hasFile(item))
       row("删除", "trash", danger: true) { model.deleting = [item.id] }
     }
   }
@@ -224,6 +187,7 @@ struct ShotHistoryView: View {
       Button("打开") { model.open(item) }
     }
     Button("在访达中显示") { model.reveal(item) }
+      .disabled(!model.hasFile(item))
     Divider()
     Button("删除", role: .destructive) { model.deleting = [item.id] }
   }
@@ -232,5 +196,60 @@ struct ShotHistoryView: View {
   private func edit(_ item: ShotHistory.Item) {
     model.selection = item.id
     if item.filePath == nil { model.actions.edit(item) } else { model.open(item) }
+  }
+}
+
+/// 网格里的一张卡：单独一个视图，换选中时只有受影响的那两张重画（整片网格重画会卡，
+/// 2026-10-26 用户手测报的）。单击和双击都用 simultaneousGesture：
+/// 叠着两个 onTapGesture 的话，单击要等双击判定超时才落地，看着就是「点了半天才高亮」
+private struct ShotCard: View {
+  let item: ShotHistory.Item
+  let chosen: Bool
+  let thumbnail: NSImage?
+  let select: () -> Void
+  let edit: () -> Void
+
+  var body: some View {
+    VStack(spacing: 6) {
+      ZStack {
+        RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
+          .fill(.quaternary.opacity(0.4))
+        if let thumbnail {
+          Image(nsImage: thumbnail)
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: Style.Radius.card - 2, style: .continuous))
+            .padding(2)
+        } else {
+          Image(systemName: ShotHistoryView.symbol(item.kind))
+            .font(.system(size: 22))
+            .foregroundStyle(.secondary)
+        }
+        if item.kind != .shot {
+          Text(item.kind.title)
+            .font(.system(size: 10, weight: .semibold))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(.black.opacity(0.55), in: Capsule())
+            .foregroundStyle(.white)
+            .padding(6)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+        }
+      }
+      .frame(width: ShotHistoryView.cardWidth, height: ShotHistoryView.cardHeight)
+      .overlay {
+        RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
+          .strokeBorder(chosen ? Style.brand : .clear, lineWidth: 2)
+      }
+      Text(item.createdAt.formatted(date: .omitted, time: .shortened))
+        .font(.system(size: 11))
+        .foregroundStyle(.secondary)
+    }
+    .contentShape(.rect)
+    .simultaneousGesture(TapGesture(count: 2).onEnded { edit() })
+    .simultaneousGesture(TapGesture().onEnded { select() })
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel("\(item.kind.title)，\(ShotHistoryModel.caption(item))")
+    .accessibilityAddTraits(chosen ? [.isSelected, .isButton] : .isButton)
   }
 }

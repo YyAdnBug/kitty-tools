@@ -25,6 +25,8 @@ import Foundation
   var forget: @MainActor (ShotHistory.Item) -> Void = { _ in }
   /// 「在历史里看」：打开截图历史窗口
   var openHistory: @MainActor () -> Void = {}
+  /// 说一句（接到刘海岛上，第二个参数是警告不警告）：Island.announce 只给读屏，用户看不见
+  var notice: @MainActor (String, Bool) -> Void = { _, _ in }
 }
 
 @MainActor @Observable final class ShotHistory {
@@ -212,17 +214,22 @@ import Foundation
     return FileManager.default.fileExists(atPath: path)
   }
 
-  /// 在访达中显示（历史窗口、晾衣绳共用）
-  static func reveal(_ item: Item) {
-    guard let path = item.filePath ?? item.savedPath, fileExists(item) else {
-      return Island.announce("文件已经不在了")
+  /// 在访达中显示（历史窗口、晾衣绳共用）：只有存过盘（或录制的那几条）才有文件；没存过的那条
+  /// 历史窗口里那一项是灰的，真点到了也说一声——只调 Island.announce（读屏播报）的话，看着就是
+  /// 「点了没反应」（2026-10-26 用户手测报的）
+  static func reveal(_ item: Item, notice: (String, Bool) -> Void) {
+    guard let path = item.filePath ?? item.savedPath else {
+      return notice("这张还没存成文件，先「存储到…」", false)
     }
+    guard fileExists(item) else { return notice("文件已经不在了", true) }
     NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: path)])
   }
 
   /// 用默认 App 打开（录制的那几条）
-  static func open(_ item: Item) {
-    guard let path = item.filePath, fileExists(item) else { return Island.announce("文件已经不在了") }
+  static func open(_ item: Item, notice: (String, Bool) -> Void) {
+    guard let path = item.filePath, fileExists(item) else {
+      return notice("文件已经不在了", true)
+    }
     NSWorkspace.shared.open(URL(filePath: path))
   }
 

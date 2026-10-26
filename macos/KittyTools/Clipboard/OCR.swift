@@ -5,9 +5,12 @@
 // 分段（体检 A32）：按行框的纵向间距和句末短行切段，段内的行按中日文 / 其它文字的规则接起来；截图翻译总是按段送去翻，
 // 识字按设置 › 截图的开关；翻译的「把同一段里的换行接起来」调这里的 joiningLines（纯文本按空行分段），段内接行和识字同一个 joinLine。
 
+import CoreText
 import Foundation
+import ImageIO
 import OSLog
 import Synchronization
+import UniformTypeIdentifiers
 import Vision
 
 nonisolated enum OCR {
@@ -188,6 +191,79 @@ nonisolated enum OCR {
     .joined(separator: "\n")
   }
 
+  // MARK: 准备识字模型（第一次识字）
+
+  /// 系统第一次给本 App 识字时要先把识字模型现场编译一遍，存进 ~/Library/Caches/<bundle id>/com.apple.e5rt.e5bundlecache/
+  /// <系统版本号>：按 App、按系统版本各一份，新装和每次系统更新后的第一次识字都会撞上。2026-10-26 本机实测（27.0.1，机器忙）
+  /// 冷的 45–68 s；编好之后哪个进程第一次识都只要 0.2–0.3 s，中日韩英混排也是——一张只有一个英文词的小图就把要用的都编好了。
+  /// 所以启动时在子进程里拿这样一张小图先识一次（编好的留在缓存里，模型的内存跟着子进程退掉）；当场要识时还没好就等它
+  /// （AppDelegate.recognizing 让刘海岛说在等什么），好了记下系统版本，以后启动不再做。
+  /// ponytail: 只认系统版本，缓存被手动清掉时不知道——那一回照旧慢、只显示「识别中」；要准就改看缓存目录在不在（私有布局）
+  static var isPrepared: Bool {
+    UserDefaults.standard.string(forKey: Prefs.ocrPreparedSystem)
+      == ProcessInfo.processInfo.operatingSystemVersionString
+  }
+
+  /// 编译最多等这么久，到点杀掉，下次启动再来（本机忙的时候冷的也就一分来钟）
+  static let prepareTimeout = Duration.seconds(300)
+
+  @MainActor private static var preparing: Task<Void, Never>?
+
+  /// 没准备好就准备，同时来的等同一个；好了直接返回。子进程起不来、失败、超时都不记，接下来那次识字自己编（照样慢一回）
+  @MainActor static func prepare() async {
+    guard !isPrepared, let executable = Bundle.main.executablePath else { return }
+    let task =
+      preparing
+      ?? Task {
+        defer { preparing = nil }
+        guard let sample = writeSample() else { return }
+        defer { try? FileManager.default.removeItem(at: sample) }
+        let result = try? await Subprocess.run(
+          executable, [helperFlag, sample.path],
+          environment: helperEnvironment(ProcessInfo.processInfo.environment),
+          timeout: prepareTimeout, quality: .utility)
+        if result?.status == 0 {
+          UserDefaults.standard.set(
+            ProcessInfo.processInfo.operatingSystemVersionString, forKey: Prefs.ocrPreparedSystem)
+        } else {
+          Log.clipboard.error("准备识字模型没成（状态 \(result?.status ?? -1)）")
+        }
+      }
+    preparing = task
+    await task.value
+  }
+
+  /// 白底黑字「Kitty」的小图，写进临时目录（子进程肯识的两处之一）。得真识得出字：空白图子进程照样成功退出，
+  /// 却只编了文字检测、没编识字的模型（ScreenshotTests.preparesModelOnce 锁住）
+  static func writeSample() -> URL? {
+    guard
+      let context = CGContext(
+        data: nil, width: 240, height: 80, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)
+    else { return nil }
+    context.setFillColor(gray: 1, alpha: 1)
+    context.fill(CGRect(x: 0, y: 0, width: 240, height: 80))
+    let font = CTFontCreateWithName("Helvetica" as CFString, 40, nil)
+    let line = CTLineCreateWithAttributedString(
+      NSAttributedString(
+        string: "Kitty",
+        attributes: [
+          NSAttributedString.Key(kCTFontAttributeName as String): font,
+          NSAttributedString.Key(kCTForegroundColorAttributeName as String): CGColor(
+            gray: 0, alpha: 1),
+        ]))
+    context.textPosition = CGPoint(x: 20, y: 24)
+    CTLineDraw(line, context)
+    let url = FileManager.default.temporaryDirectory.appending(
+      path: "kitty-ocr-sample-\(UUID().uuidString).png")
+    guard let image = context.makeImage(),
+      let destination = CGImageDestinationCreateWithURL(
+        url as CFURL, UTType.png.identifier as CFString, 1, nil)
+    else { return nil }
+    CGImageDestinationAddImage(destination, image, nil)
+    return CGImageDestinationFinalize(destination) ? url : nil
+  }
+
   // MARK: 子进程识字（剪贴板后台识字）
 
   /// 子进程就是本 App 的可执行文件带这个参数再起一次：`<可执行文件> --ocr <图片路径>`（入口在 KittyToolsApp.swift 的 Main）
@@ -300,6 +376,8 @@ nonisolated enum OCR {
     in url: URL, executable: String? = Bundle.main.executablePath
   ) async -> String? {
     guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+    // 模型还没编好时先等它：不然这一个子进程自己去编，过了 helperTimeout 被杀、退回进程内再编一遍
+    await prepare()
     let result: Subprocess.Result? =
       if let executable {
         try? await Subprocess.run(

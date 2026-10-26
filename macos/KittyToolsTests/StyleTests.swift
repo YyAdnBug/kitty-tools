@@ -352,6 +352,15 @@ struct IslandExcerptTests {
     #expect(!island.isBoardOpen && island.content?.title == "已复制")
   }
 
+  /// 刘海屏收起的终点整个藏在真刘海里面（2026-10-26 用户录屏：收起最后一瞬间跳一下）：比刘海窄、比刘海矮、没有耳朵。
+  /// Island.geometry 给的宽是真刘海 + 4
+  @Test func tuckedShapeHidesBehindTheNotch() {
+    let notch = CGSize(width: 200, height: 38)
+    let tucked = IslandGeometry.tucked(notchWidth: notch.width + 4, notchHeight: notch.height)
+    #expect(tucked.width < notch.width - 8 && tucked.height < notch.height - 4)
+    #expect(tucked.width > 0 && tucked.height > 0)
+  }
+
   /// 双指往上滑收起：按手指方向算，「自然滚动」开着时 scrollingDeltaY 和手指同向（往下为正）
   @Test func swipeUpFollowsFingers() {
     #expect(Island.fingersUp(deltaY: -10, inverted: true) == 10)

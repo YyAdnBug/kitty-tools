@@ -28,10 +28,9 @@ struct ClotheslineTests {
     #expect(plan.cards.allSatisfy { !$0.intersects(hole) })
     // 绳子两段也在中间断开，两端顶着屏幕两边
     #expect(plan.ropes.count == 2)
-    // 两端往里收一个挂点的半径（那两个点整个看得见）
-    #expect(
-      plan.ropes[0].from.x == ClotheslineLayout.ropeEndRadius
-        && plan.ropes[1].to.x == width - ClotheslineLayout.ropeEndRadius)
+    #expect(plan.ropes[0].from.x == 0 && plan.ropes[1].to.x == width)
+    // 四个端点都钉在面板上沿以上：看不见（2026-10-26 用户要求）
+    #expect(plan.ropes.allSatisfy { $0.from.y < 0 && $0.to.y < 0 })
     #expect(plan.ropes[1].from.x - plan.ropes[0].to.x == gap)
   }
 

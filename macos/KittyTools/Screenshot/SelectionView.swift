@@ -292,12 +292,21 @@ final class SelectionView: NSView, NSTextViewDelegate {
   }
 
   /// 放大镜：15 × 15 像素、每格 9 pt（135 pt，圆角 10，2 pt 白环 + 阴影），0.5 pt 像素网格，中心行列粉色十字条带，
-  /// 中心格按亮度描黑或白；下贴一张 40 pt 的 HUD 信息卡（色块 + HEX + 坐标 +「C」键帽）
+  /// 放大镜那块格子有多大（交互测试按它判断有没有带色值卡）
+  static var loupeSide: CGFloat { CGFloat(loupePixels) * loupeCell }
+  /// 整块放大镜多高：截图时是格子 + 6 + 信息卡，翻译 / 识字只有格子
+  var magnifierHeight: CGFloat { magnifier.bounds.height }
+
+  /// 中心格按亮度描黑或白；截图时下贴一张 40 pt 的 HUD 信息卡（色块 + HEX + 坐标 +「C」键帽）。
+  /// 截图翻译 / 识字只有放大镜本身、没有那张卡（2026-10-26 用户问「翻译识字时有必要出现吗」）：
+  /// 这两种模式下用户要的是把文字框准，色值是噪音；而且那张卡上的「C」在这两种模式里本来就按不动
+  /// （取色那一句在 keyDown 里被 `guard adjusts` 挡着）
   private func setUpMagnifier() {
     let side = CGFloat(Self.loupePixels) * Self.loupeCell
     let cell = Self.loupeCell
     let middle = CGFloat(Self.loupePixels / 2) * cell
-    let loupeFrame = CGRect(x: 0, y: Self.infoHeight + 6, width: side, height: side)
+    let loupeFrame = CGRect(
+      x: 0, y: annotates ? Self.infoHeight + 6 : 0, width: side, height: side)
     loupe.frame = loupeFrame
     loupe.magnificationFilter = .nearest
     loupe.cornerRadius = Style.Radius.card
@@ -364,7 +373,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
     for layer in [infoSwatch, infoText, infoKey] { infoCard.addSublayer(layer) }
     magnifier.bounds = CGRect(x: 0, y: 0, width: side, height: loupeFrame.maxY)
     magnifier.anchorPoint = CGPoint(x: 0.5, y: 0.5)
-    for layer in [loupeShadow, loupe, infoCard] { magnifier.addSublayer(layer) }
+    for layer in annotates ? [loupeShadow, loupe, infoCard] : [loupeShadow, loupe] {
+      magnifier.addSublayer(layer)
+    }
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -927,6 +938,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
       let luminance =
         0.299 * color.redComponent + 0.587 * color.greenComponent + 0.114 * color.blueComponent
       loupeCenter.strokeColor = (luminance > 0.6 ? NSColor.black : NSColor.white).cgColor
+      guard annotates else { return placeMagnifier() }  // 翻译 / 识字没有那张信息卡
       let info = NSMutableAttributedString(
         string: sample.hex,
         attributes: [
@@ -942,7 +954,12 @@ final class SelectionView: NSView, NSTextViewDelegate {
           ]))
       infoText.string = info
     }
-    // 放在光标右下，靠边时翻到另一侧；平时死贴光标，只有翻边那一下滑过去（glide）
+    placeMagnifier()
+  }
+
+  /// 放在光标右下，靠边时翻到另一侧；平时死贴光标，只有翻边那一下滑过去（glide）
+  private func placeMagnifier() {
+    guard let mouse else { return }
     let size = magnifier.bounds.size
     let left = mouse.x + 20 + size.width > bounds.maxX
     let above = mouse.y - 20 - size.height < bounds.minY

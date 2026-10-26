@@ -106,21 +106,8 @@ struct GeneralTab: View {
         }
       }
       Section("权限") {
-        PermissionRow(
-          title: "辅助功能", detail: "粘贴回原 App、划词翻译、长截图自动滚动、录屏显示按键、程序坞预览",
-          symbol: "hand.raised.fill",
-          color: Style.Family.command, granted: trusted
-        ) {
-          Permissions.requestAccessibility()
-          Permissions.openAccessibilitySettings()
-        }
-        PermissionRow(
-          title: "屏幕录制", detail: "截图、截图翻译、识字、录屏、录系统声音、程序坞预览的缩略图；授权后可能要重新打开本 App 才生效",
-          symbol: "record.circle", color: Style.Family.screenshot, granted: screenRecording
-        ) {
-          Permissions.requestScreenRecording()
-          Permissions.Kind.screenRecording.openSettings()
-        }
+        PermissionRow.accessibility(granted: trusted)
+        PermissionRow.screenRecording(granted: screenRecording)
         // 没问过时请求（系统弹框，回来就刷新）；拒绝过 / 受限的系统不再弹框，打开系统设置的麦克风页
         PermissionRow(
           title: "麦克风", detail: "录屏、录音时录下你的声音", symbol: "mic.fill",
@@ -211,6 +198,29 @@ struct PermissionRow: View {
       PermissionStatus(granted: granted, button: button, grant: grant)
     }
     .accessibilityElement(children: .combine)
+  }
+}
+
+extension PermissionRow {
+  /// 辅助功能、屏幕录制这两行：通用 › 权限和欢迎引导的「授权」一屏共用，用途只写这一处
+  static func accessibility(granted: Bool) -> PermissionRow {
+    PermissionRow(
+      title: "辅助功能", detail: "粘贴回原 App、划词翻译、长截图自动滚动、录屏显示按键、程序坞预览",
+      symbol: "hand.raised.fill", color: Style.Family.command, granted: granted
+    ) {
+      Permissions.requestAccessibility()
+      Permissions.openAccessibilitySettings()
+    }
+  }
+
+  static func screenRecording(granted: Bool) -> PermissionRow {
+    PermissionRow(
+      title: "屏幕录制", detail: "截图、截图翻译、识字、录屏、录系统声音、程序坞预览的缩略图；授权后可能要重新打开本 App 才生效",
+      symbol: "record.circle", color: Style.Family.screenshot, granted: granted
+    ) {
+      Permissions.requestScreenRecording()
+      Permissions.Kind.screenRecording.openSettings()
+    }
   }
 }
 

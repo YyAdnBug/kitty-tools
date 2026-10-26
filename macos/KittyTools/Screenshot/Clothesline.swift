@@ -143,8 +143,8 @@ import SwiftUI
     case .edit: actions.edit(item)
     case .forget: actions.forget(item)
     case .history: actions.openHistory()
-    case .reveal: ShotHistory.reveal(item)
-    case .open: ShotHistory.open(item)
+    case .reveal: ShotHistory.reveal(item, notice: actions.notice)
+    case .open: ShotHistory.open(item, notice: actions.notice)
     case .unpeg: unpeg(item.id)
     // 绳子上没有这几样（menu 里不给）
     case .gif, .compress, .trash, .close: break

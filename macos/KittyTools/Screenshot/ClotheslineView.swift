@@ -44,8 +44,8 @@ struct ClotheslineView: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
   }
 
-  /// 细线 + 投影：1.5 pt 的墨色实线（圆头）、底下垫一道同形状、线宽 +1、往下偏 2.5 的黑影（看得出悬空），
-  /// 两端各一个 3 pt 的实心挂点
+  /// 细线 + 投影：1.5 pt 的墨色实线（圆头）、底下垫一道同形状、线宽 +1、往下偏 2.5 的黑影（看得出悬空）。
+  /// 两端不画挂点：四个端点钉在面板上沿以上，藏在菜单栏后面（2026-10-26 用户要求）
   private var rope: some View {
     let shape = RopeShape(ropes: model.ropes)
     return ZStack {
@@ -59,17 +59,6 @@ struct ClotheslineView: View {
         .stroke(
           .primary.opacity(ClotheslineLayout.ropeInk),
           style: StrokeStyle(lineWidth: ClotheslineLayout.ropeWidth, lineCap: .round))
-      ForEach(
-        Array(model.ropes.flatMap { [$0.first, $0.last] }.compactMap { $0 }.enumerated()),
-        id: \.offset
-      ) { _, end in
-        Circle()
-          .fill(.primary.opacity(ClotheslineLayout.ropeEndInk))
-          .frame(
-            width: ClotheslineLayout.ropeEndRadius * 2, height: ClotheslineLayout.ropeEndRadius * 2
-          )
-          .position(end)
-      }
     }
     .allowsHitTesting(false)
   }

@@ -1,26 +1,32 @@
 // 快捷键速查表（N11，mac-whisker §6 设置）：设置各页不写整段按键说明，只留一句话 +「查看全部快捷键…」
-// （`ShortcutsButton`，哪一页都能直接放），点开是这张 sheet：按家族分组（20 pt 家族色块 + 组名），Whisker 键帽。
+// （`ShortcutsButton`，哪一页都能直接放），点开是这张 sheet：左栏按设置页分类（20 pt 家族色块 + 页名，顶上搜索框），
+// 右边只列选中那一类的几组（20 pt 家族色块 + 组名，Whisker 键帽）。从哪一页点开就停在哪一类（2026-10-26 用户报：
+// 原来是一整条长表 + 顶上三排跳转胶囊，从哪页点开都停在最上面的剪贴板）；搜索框一打开就有焦点，打字跨类找
+// （说明、按键、组名都算），↑↓ 换类，Esc 先清空搜索再关。
 // 全局快捷键从 HotKeyAction 实时读（当前设的组合）；面板里的按键散在各面板的按键处理里、没有集中定义，
 // 就集中写在本文件的 groups 里，每组注明对应的规则章节和代码。改了面板按键要同步这里（mac-whisker §10 第 7 条）。
 
 import SwiftUI
 
-/// 「查看全部快捷键…」文字按钮，自己管 sheet 的开关，任何设置页都能直接放
+/// 「查看全部快捷键…」文字按钮，自己管 sheet 的开关，任何设置页都能直接放；打开时停在按钮所在那一页的那一类
 struct ShortcutsButton: View {
   @State private var isPresented = false
+  /// 设置窗里有（SettingsRoot 放进环境）；截图自检单独渲染一页时没有
+  @Environment(SettingsNavigation.self) private var navigation: SettingsNavigation?
 
   var body: some View {
     Button("查看全部快捷键…") { isPresented = true }
       .buttonStyle(.plain)
       .foregroundStyle(Style.brandInk)
       .pointerStyle(.link)
-      .sheet(isPresented: $isPresented) { Self.sheet() }
+      .sheet(isPresented: $isPresented) { Self.sheet(page: navigation?.page) }
   }
 
-  /// 速查表 sheet（这个按钮和启动器的「快捷键速查表」共用），按打开时窗口的可用高度定高
-  static func sheet() -> some View {
-    ShortcutsSheet().frame(
-      width: 560, height: sheetHeight(available: NSApp.keyWindow?.contentLayoutRect.height ?? 548))
+  /// 速查表 sheet（这个按钮和启动器的「快捷键速查表」共用），按打开时窗口的可用高度定高。page：停在哪一类
+  static func sheet(page: SettingsPage? = nil) -> some View {
+    ShortcutsSheet(page: page).frame(
+      width: ShortcutsSheet.width,
+      height: sheetHeight(available: NSApp.keyWindow?.contentLayoutRect.height ?? 548))
   }
 
   /// sheet 挂在设置窗工具栏下沿，不能比窗口内容区（去掉工具栏）高：设置窗默认 600、最小 460，工具栏约 52。
@@ -31,32 +37,64 @@ struct ShortcutsButton: View {
 }
 
 struct ShortcutsSheet: View {
+  /// 整张的宽（设置窗最窄 700，放得下）：左栏 168 + 右边，右边的卡片约 470 宽
+  static let width: CGFloat = 680
+  private static let sidebarWidth: CGFloat = 168
+
   @Environment(\.dismiss) private var dismiss
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var selection: SettingsPage
+  @State private var query: String
+  @State private var searchFocused = false
+  @Namespace private var highlight
+
+  /// page：从哪一页点开就停在哪一类（不是速查表里的一类——快捷键页、启动器里打开的——停在第一类）；
+  /// query：截图自检摆搜索中的样子
+  init(page: SettingsPage? = nil, query: String = "") {
+    let sections = Self.sections(Self.groups)
+    _selection = State(
+      initialValue: page.flatMap { sections.contains($0) ? $0 : nil } ?? sections.first ?? .general)
+    _query = State(initialValue: query)
+  }
 
   var body: some View {
-    ScrollViewReader { proxy in
-      VStack(spacing: 0) {
-        header(proxy)
+    let groups = Self.groups
+    let searching = !query.trimmingCharacters(in: .whitespaces).isEmpty
+    let shown =
+      searching ? Self.matching(groups, query: query) : groups.filter { $0.page == selection }
+    VStack(spacing: 0) {
+      header
+      HStack(spacing: 0) {
+        sidebar(Self.sections(groups), searching: searching)
+        Hairline(vertical: true)
         ScrollView {
           VStack(alignment: .leading, spacing: 18) {
-            ForEach(Self.groups) { GroupCard(group: $0).id($0.id) }
+            ForEach(shown) { GroupCard(group: $0) }
           }
           .padding(.horizontal, 20)
           .padding(.vertical, 14)
+          .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .overlay(alignment: .top) { Hairline() }
-        HStack {
-          Spacer()
-          // 主按钮 = ↩（defaultAction）；Esc 靠下面那个看不见的 cancelAction 按钮（同欢迎引导）
-          Button("完成") { dismiss() }
-            .buttonStyle(BrandButtonStyle())
-            .keyboardShortcut(.defaultAction)
+        // 换一类从顶上看起；搜索中打字不回顶
+        .id(searching ? "搜索" : selection.rawValue)
+        .overlay {
+          if shown.isEmpty {
+            Text("没有匹配的快捷键").font(.callout).foregroundStyle(.secondary)
+          }
         }
-        .padding(.horizontal, 20)
-        .frame(height: 52)
-        .overlay(alignment: .top) { Hairline() }
       }
+      .overlay(alignment: .top) { Hairline() }
+      HStack {
+        Spacer()
+        // 主按钮 = ↩（defaultAction）；Esc 靠下面那个看不见的 cancelAction 按钮（同欢迎引导）。焦点在搜索框里时
+        // 这两个键由 command 接
+        Button("完成") { dismiss() }
+          .buttonStyle(BrandButtonStyle())
+          .keyboardShortcut(.defaultAction)
+      }
+      .padding(.horizontal, 20)
+      .frame(height: 52)
+      .overlay(alignment: .top) { Hairline() }
     }
     .background {
       Button("关闭") { dismiss() }
@@ -67,54 +105,122 @@ struct ShortcutsSheet: View {
     }
   }
 
-  /// 页头（40 pt 色块 + 标题 + 说明）+ 各家族的跳转胶囊。胶囊一行 5 枚、折成两行：加了状态屏、便签是 9 枚（5 + 4），
-  /// 一行（560 宽的表单里 520）放不下，系统会把字截成「剪…」
-  private func header(_ proxy: ScrollViewProxy) -> some View {
-    // 有全局快捷键的组就是一个家族的第一组
-    let chips = Self.groups.filter { !$0.globals.isEmpty }
-    let rows = stride(from: 0, to: chips.count, by: 5).map { Array(chips[$0...].prefix(5)) }
-    return VStack(alignment: .leading, spacing: 12) {
-      HStack(spacing: 12) {
-        KindTile(symbol: "keyboard.fill", color: Style.Family.keyboard, size: 40)
-        VStack(alignment: .leading, spacing: 2) {
-          Text("快捷键速查").font(.title2.weight(.semibold))
-          Text("标着「全局」的在任何 App 里都能按，可到 设置 › 快捷键 里改；其余是面板和设置窗里的按键。")
-            .font(.callout).foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-        }
-        Spacer(minLength: 0)
+  /// 页头：40 pt 色块 + 标题 + 说明
+  private var header: some View {
+    HStack(spacing: 12) {
+      KindTile(symbol: "keyboard.fill", color: Style.Family.keyboard, size: 40)
+      VStack(alignment: .leading, spacing: 2) {
+        Text("快捷键速查").font(.title2.weight(.semibold))
+        Text("标着「全局」的在任何 App 里都能按，可到 设置 › 快捷键 里改；其余是面板和设置窗里的按键。")
+          .font(.callout).foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
       }
-      .accessibilityElement(children: .combine)
-      VStack(alignment: .leading, spacing: 6) {
-        ForEach(rows, id: \.first?.id) { row in
-          HStack(spacing: 6) {
-            ForEach(row) { group in
-              let name = group.title.components(separatedBy: " · ")[0]
-              Button {
-                withAnimation(Style.Motion.settle.animation(reduced: reduceMotion)) {
-                  proxy.scrollTo(group.id, anchor: .top)
-                }
-              } label: {
-                HStack(spacing: 6) {
-                  KindTile(symbol: group.symbol, color: group.color, size: 16)
-                  Text(name).font(.system(size: 12, weight: .medium))
-                }
-                .padding(.leading, 4)
-                .padding(.trailing, 10)
-                .frame(height: 24)
-                .background(Style.controlFill, in: .capsule)
-                .contentShape(.capsule)
-              }
-              .buttonStyle(.plain)
-              .accessibilityLabel("跳到\(name)")
-            }
-          }
-        }
-      }
+      Spacer(minLength: 0)
     }
+    .accessibilityElement(children: .combine)
     .padding(.horizontal, 20)
     .padding(.top, 18)
-    .padding(.bottom, 12)
+    .padding(.bottom, 14)
+  }
+
+  /// 左栏：搜索框 + 一类一行（20 pt 色块 + 页名，同设置侧栏）。选中是中性的一块灰，换类时滑过去（snap）；搜索中不标选中。
+  /// 设置窗最矮时九类放不下，类的那一列自己滚（搜索框不跟着滚）
+  private func sidebar(_ sections: [SettingsPage], searching: Bool) -> some View {
+    let shape = RoundedRectangle(cornerRadius: Style.Radius.control, style: .continuous)
+    return VStack(alignment: .leading, spacing: 0) {
+      HStack(spacing: 6) {
+        Image(systemName: "magnifyingglass")
+          .font(.system(size: 12, weight: .medium))
+          .foregroundStyle(.tertiary)
+        // 对话框式输入框：一打开就拿焦点，直接打字就是搜
+        CommandTextField(
+          text: $query, placeholder: "搜索快捷键", isDialogField: true, fontSize: 13,
+          onCommand: { command($0, sections: sections, searching: searching) },
+          onFocusChange: { searchFocused = $0 })
+      }
+      .padding(.horizontal, 8)
+      .frame(height: 28)
+      .modifier(InputBox(isFocused: searchFocused))
+      .padding(10)
+      ScrollView {
+        VStack(spacing: 2) {
+          ForEach(sections) { page in
+            let selected = !searching && page == selection
+            Button {
+              choose(page)
+            } label: {
+              HStack(spacing: 8) {
+                KindTile(symbol: page.symbol, color: page.color, size: 20)
+                Text(page.title)
+                Spacer(minLength: 0)
+              }
+              .padding(.horizontal, 6)
+              .frame(height: 28)
+              .background {
+                if selected {
+                  shape.fill(Style.selectedFill)
+                    .overlay(shape.contrastSelectionBorder())
+                    .matchedGeometryEffect(id: "selection", in: highlight)
+                }
+              }
+              .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(selected ? .isSelected : [])
+          }
+        }
+        .padding([.horizontal, .bottom], 10)
+      }
+    }
+    .frame(width: Self.sidebarWidth)
+  }
+
+  /// 点了一类（搜索中点也算：清掉搜索去那一类）
+  private func choose(_ page: SettingsPage) {
+    query = ""
+    withAnimation(Style.Motion.snap.animation(reduced: reduceMotion)) { selection = page }
+  }
+
+  /// 搜索框里的键：↑↓ 换类（搜索中不动），↩ 搜索中不做事、没搜时同「完成」，Esc 先清空搜索再关
+  private func command(_ selector: Selector, sections: [SettingsPage], searching: Bool) -> Bool {
+    switch selector {
+    case #selector(NSResponder.moveUp(_:)), #selector(NSResponder.moveDown(_:)):
+      guard !searching, let index = sections.firstIndex(of: selection) else { return true }
+      let next = index + (selector == #selector(NSResponder.moveUp(_:)) ? -1 : 1)
+      if sections.indices.contains(next) { choose(sections[next]) }
+      return true
+    case #selector(NSResponder.insertNewline(_:)):
+      if !searching { dismiss() }
+      return true
+    case #selector(NSResponder.cancelOperation(_:)):
+      if query.isEmpty { dismiss() } else { query = "" }
+      return true
+    default:
+      return false
+    }
+  }
+
+  /// 左栏的类：各组所在的设置页，按组的先后、不重复
+  static func sections(_ groups: [Group]) -> [SettingsPage] {
+    var seen = Set<SettingsPage>()
+    return groups.map(\.page).filter { seen.insert($0).inserted }
+  }
+
+  /// 搜索（空格分开的几个词都要对上，不分大小写）：每一行拿「组名 + 说明 + 按键」去对，全局快捷键拿「组名 + 动作名 +
+  /// 当前组合」；词全在组名里的整组列出。一行都没对上的组不列
+  static func matching(_ groups: [Group], query: String) -> [Group] {
+    let words = query.split(whereSeparator: \.isWhitespace).map(String.init)
+    guard !words.isEmpty else { return groups }
+    return groups.compactMap { group in
+      func hits(_ text: String) -> Bool {
+        words.allSatisfy { (group.title + " " + text).localizedStandardContains($0) }
+      }
+      if hits("") { return group }
+      var group = group
+      group.globals = group.globals.filter { hits($0.rowTitle + " " + ($0.hotKey?.display ?? "")) }
+      group.entries = group.entries.filter { hits($0.text + " " + $0.keys.joined(separator: " ")) }
+      return group.globals.isEmpty && group.entries.isEmpty ? nil : group
+    }
   }
 
   /// 一行：说明 + 按键（keys 里每项是一种按法，多项之间写「/」）
@@ -141,6 +247,10 @@ struct ShortcutsSheet: View {
     var globals: [HotKeyAction] = []
     var entries: [Entry]
     var id: String { title }
+
+    /// 归左栏的哪一类（同名的设置页）：头一个功能那一页（截图 · 框选归截图、钉图归截图、录屏录音归录制）；
+    /// 不归功能的（刘海岛、设置）归通用
+    var page: SettingsPage { (features.first ?? globals.first?.feature)?.page ?? .general }
   }
 
   /// 只列开着的功能（Feature；macOS 15 上没有启动台那一组）
@@ -346,13 +456,14 @@ struct ShortcutsSheet: View {
         entries: [
           Entry("停在菜单栏", text: "绳子滑下来（移开收起；截完图挂上去时也会自己滑下来）"),
           Entry("单击", text: "拷贝那一张"),
-          Entry("双击", text: "改标注（在长图标注窗口里打开）"),
+          Entry("双击", text: "改标注（在标注遮罩里打开）"),
           Entry("拖出去", text: "发一份到别的 App 或文件夹（原图还挂着）；拖到废纸篓是取下"),
           Entry("✕", text: "取下（右键菜单里还有存储、钉图、从历史里删掉）"),
         ]),
-      // 长图标注窗口（2026-10-26）；代码在 ScrollCanvas.keyDown 和 ScrollEditor.key
+      // 标注遮罩（2026-10-26：长截图按 A、截图历史里双击都用它）；代码在 ScrollCanvas.keyDown
+      // 和 AnnotateOverlay.key
       Group(
-        title: "长图标注", symbol: "pencil.tip.crop.circle", color: Style.Family.screenshot,
+        title: "标注", symbol: "pencil.tip.crop.circle", color: Style.Family.screenshot,
         features: [.screenshot],
         entries: [
           Entry("1", "0", text: "十种标注工具（再按一次收起）"),
@@ -360,13 +471,13 @@ struct ShortcutsSheet: View {
           Entry("⌘D", text: "复制选中的标注"),
           Entry("⌘Z", "⇧⌘Z", text: "撤销 / 重做"),
           Entry("空格", text: "按住拖动平移画面"),
-          Entry("⌘0", "⌘1", text: "适配宽度 / 原始大小"),
+          Entry("⌘0", "⌘1", text: "适配 / 原始大小"),
           Entry("⌘+", "⌘-", text: "放大 / 缩小"),
           Entry("↩", "⌘C", text: "拷贝"),
           Entry("⌘S", text: "快速保存"),
           Entry("⇧⌘S", text: "另存为…"),
           Entry("O", text: "识字并拷贝"),
-          Entry("Esc", text: "收起工具 / 关闭（画过会问一次）"),
+          Entry("Esc", text: "收起工具 / 退出（画过要按两下）"),
         ]),
       // mac-whisker §6 截图「录屏」（录屏第 1、2 批）；框选、拖边、方向键同「截图 · 框选」，代码在 SelectionView.keyDown，
       // 倒数的 Esc 是 ScreenRecorder 临时注册的热键

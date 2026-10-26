@@ -512,6 +512,21 @@ struct ScreenshotTests {
     #expect(environment == ["HOME": "/Users/x", "TMPDIR": "/tmp/"])
   }
 
+  /// 准备识字模型（OCR.prepare）：没记过就起子进程拿那张小图识一次、记下系统版本，记过了 isPrepared 直接是真。
+  /// 那张小图得真识得出字（空白图子进程也成功退出，编不到识字的模型）。宿主的缓存早编好了，这里几秒钟
+  @Test func preparesModelOnce() async throws {
+    let key = Prefs.ocrPreparedSystem
+    let saved = UserDefaults.standard.string(forKey: key)
+    defer { UserDefaults.standard.set(saved, forKey: key) }
+    UserDefaults.standard.removeObject(forKey: key)
+    #expect(!OCR.isPrepared)
+    await OCR.prepare()
+    #expect(OCR.isPrepared)
+    let sample = try #require(OCR.writeSample())
+    defer { try? FileManager.default.removeItem(at: sample) }
+    #expect(await OCR.recognizeText(in: sample) == "Kitty")
+  }
+
   /// 真的起子进程识字（单测宿主的可执行文件带 --ocr；图在临时目录，子进程只读图、写标准输出，不碰用户数据）。
   /// 平时就跑（几秒，和别的测试并行）：入口分流、环境变量、输出约定、退出码这几样只有真起一次才验得到
   @Test func helperRecognizesInSubprocess() async throws {

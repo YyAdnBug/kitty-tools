@@ -17,8 +17,10 @@ nonisolated enum ClotheslineLayout {
   /// 卡片之间、离屏幕两边（两头的卡片跟着绳子斜得最厉害，留宽一点别让角出屏幕）
   static let spacing: CGFloat = 10
   static let sideInset: CGFloat = 44
-  /// 绳子离面板顶边（面板顶边贴着菜单栏下沿）
-  static let ropeTop: CGFloat = 8
+  /// 两端钉在哪（面板内坐标）：**在面板上沿以上**，所以两头和中间断口那四个端点都藏在菜单栏后面、
+  /// 看不见（2026-10-26 用户：「绳子两边的点…期望往上一点，隐藏起来」）。绳子沉得快，离端点十几点就落进
+  /// 面板里了，看着就是从菜单栏底下伸出来的一条
+  static let ropeTop: CGFloat = -6
   /// 挂满卡片时绳子还会再往下坠一点（每张多吃 2.2 倍重力，量出来最多多一成）：面板按这个倍数留地方
   static let loadedSagRoom: CGFloat = 1.15
   /// 挂点到卡片顶边：绳子从夹子中间穿过去（样机里卡片画在 node.y + 6）
@@ -33,13 +35,12 @@ nonisolated enum ClotheslineLayout {
   static let clipCenterAboveCard: CGFloat = 4
   /// 夹子整个占多高（排面板高度用）
   static var clipHeight: CGFloat { clipBar.height / 2 + clipCenterAboveCard }
-  /// 绳子粗细、墨色的透明度、底下那道影（线宽 +1、往下偏 2.5、black 0.16）、两端挂点的半径
+  /// 绳子粗细、墨色的透明度、底下那道影（线宽 +1、往下偏 2.5、black 0.16）。
+  /// 两端不画挂点：端点本来就在面板外面，画了也看不见（上面 ropeTop 那条）
   static let ropeWidth: CGFloat = 1.5
   static let ropeInk: Double = 0.55
   static let ropeShadowOffset: CGFloat = 2.5
   static let ropeShadowInk: Double = 0.16
-  static let ropeEndRadius: CGFloat = 3
-  static let ropeEndInk: Double = 0.5
   /// 中间给刘海岛让出来的那一段至少这么宽（C2）：刘海屏按刘海宽 + 两边各 12
   static let minimumGap: CGFloat = 220
   /// 最多挂几张（B3）
@@ -132,10 +133,9 @@ nonisolated enum ClotheslineLayout {
     var plan = Plan()
     let half = ((width - gap) / 2).rounded()
     guard half > sideInset else { return plan }
-    // 两端往里收一个挂点的半径：那两个实心点整个看得见
     plan.ropes = [
-      rope(from: ropeEndRadius, to: half),
-      rope(from: width - half, to: width - ropeEndRadius),
+      rope(from: 0, to: half),
+      rope(from: width - half, to: width),
     ]
     // 两边各一个游标：左边从左往右，右边从右往左
     var cursors = [sideInset, width - sideInset]

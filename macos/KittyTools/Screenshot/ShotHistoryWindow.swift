@@ -43,7 +43,7 @@ import SwiftUI
 
   func touch() { redraws += 1 }
 
-  /// 每条的操作（AppDelegate 给，晾衣绳和这里共用一份 ShotActions）
+  /// 每条的操作（AppDelegate 给，晾衣绳和这里共用一份 ShotActions；说一句话的 notice 也在里面）
   @ObservationIgnored var actions = ShotActions()
 
   init(history: ShotHistory, actions: ShotActions = ShotActions()) {
@@ -142,9 +142,12 @@ import SwiftUI
   /// 在访达中显示、打开都挪到了 ShotHistory 上（晾衣绳也要用），这里留两个薄壳给界面调
   func fileExists(_ item: ShotHistory.Item) -> Bool { ShotHistory.fileExists(item) }
 
-  func reveal(_ item: ShotHistory.Item) { ShotHistory.reveal(item) }
+  func reveal(_ item: ShotHistory.Item) { ShotHistory.reveal(item, notice: actions.notice) }
 
-  func open(_ item: ShotHistory.Item) { ShotHistory.open(item) }
+  func open(_ item: ShotHistory.Item) { ShotHistory.open(item, notice: actions.notice) }
+
+  /// 这一条有没有文件可以显示 / 打开（没有时那一项置灰）
+  func hasFile(_ item: ShotHistory.Item) -> Bool { (item.filePath ?? item.savedPath) != nil }
 
   func delete(_ ids: [UUID]) {
     if let selection, ids.contains(selection) { self.selection = nil }
