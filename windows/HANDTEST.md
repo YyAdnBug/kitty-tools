@@ -1522,3 +1522,13 @@ Windows 原生版的发版冒烟清单和每批手测。编号一直往下排，
      `KittyTools.exe --height-anim-test=D:\tmp\height-anim`（Debug；会弹出自己的 720 宽无边框窗口约 2 秒）。
      → 目录里有 `report.md` 和几张 `frame-*.bmp`；报告里「异常帧」为 0；底边那条深色是窗口边框，不算闪。
      开发机：69 帧 / 0 异常。
+
+286. **UI 截图自检**（PLAN-v7 第 1 批）
+     `KittyTools.exe --ui-snapshots=D:\tmp\ui`（Debug / Release 都行；会短暂出现一块自己的窗口）。
+     → 目录里有 `launcher-light/dark.png`、`clip-light/dark.png`，画面里只有我们自己的元素。
+     开发机：4 张都出图；翻译 / 设置 / 截图还没接进这个工具。
+
+287. **强调色 8 档**（PLAN-v7 U5）
+     设置 › 通用 › 强调色依次选蓝、紫、品牌粉、红、橙、黄、绿、石墨、跟随系统。
+     → 设置页的按钮 / 选中高亮立刻变；灰色键帽保持中性；橙黄绿上是深色符号，其余是白符号。
+     开发机：`AccentPaletteTests` 4 个单测全过；运行中已经开着的浮层要重开才取新画刷（第 1 批的已知缺口）。

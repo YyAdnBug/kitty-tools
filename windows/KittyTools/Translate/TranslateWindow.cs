@@ -204,7 +204,7 @@ internal sealed unsafe partial class TranslateWindow : Window
         _footer = new TextBlock
         {
             FontSize = 11,
-            Opacity = 0.6,
+            Foreground = Theme.SecondaryText(),
             TextTrimming = TextTrimming.CharacterEllipsis,
         };
 
@@ -227,7 +227,7 @@ internal sealed unsafe partial class TranslateWindow : Window
         _historyHint = new TextBlock
         {
             FontSize = 11,
-            Opacity = 0.6,
+            Foreground = Theme.SecondaryText(),
             TextTrimming = TextTrimming.CharacterEllipsis,
         };
         var historyGrid = new Grid();
@@ -658,7 +658,7 @@ internal sealed unsafe partial class TranslateWindow : Window
         {
             Text = OneLine(entry.Result),
             FontSize = 12,
-            Opacity = 0.7,
+            Foreground = Theme.SecondaryText(),
             TextTrimming = TextTrimming.CharacterEllipsis,
         });
         var meta = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
@@ -666,14 +666,14 @@ internal sealed unsafe partial class TranslateWindow : Window
         {
             Text = entry.Favorite ? "★ " + entry.TargetLang : entry.TargetLang,
             FontSize = 10,
-            Opacity = 0.55,
+            Foreground = Theme.SecondaryText(),
         });
         meta.Children.Add(new TextBlock
         {
             Text = DateTimeOffset.FromUnixTimeMilliseconds(entry.CreatedAt).ToLocalTime()
                 .ToString("MM-dd HH:mm"),
             FontSize = 10,
-            Opacity = 0.55,
+            Foreground = Theme.SecondaryText(),
         });
         panel.Children.Add(meta);
 
@@ -727,7 +727,7 @@ internal sealed unsafe partial class TranslateWindow : Window
         {
             var selected = ReferenceEquals(child.Tag, _historySelected);
             child.Background = selected
-                ? Theme.Brush("SubtleFillColorSecondaryBrush", Windows.UI.Color.FromArgb(30, 128, 128, 128))
+                ? Theme.Brush("SubtleFillColorSecondaryBrush", Theme.Argb(30, 128, 128, 128))
                 : new SolidColorBrush(Colors.Transparent);
         }
     }
@@ -1200,7 +1200,7 @@ internal sealed unsafe partial class TranslateWindow : Window
         Content = text,
         Padding = new Thickness(10, 3, 10, 3),
         CornerRadius = new CornerRadius(14),
-        Background = Theme.Brush("SubtleFillColorSecondaryBrush", Color.FromArgb(26, 128, 128, 128)),
+        Background = Theme.Brush("SubtleFillColorSecondaryBrush", Theme.Argb(26, 128, 128, 128)),
         BorderThickness = new Thickness(0),
         FontSize = 12,
     };
@@ -1263,7 +1263,7 @@ internal sealed unsafe partial class TranslateWindow : Window
             {
                 Text = "等待中…",
                 FontSize = 11,
-                Opacity = 0.65,
+                Foreground = Theme.SecondaryText(),
                 VerticalAlignment = VerticalAlignment.Center,
             };
 
@@ -1273,7 +1273,7 @@ internal sealed unsafe partial class TranslateWindow : Window
                 Text = ServiceBadge.Letter(service.Kind, service.Protocol, service.Name),
                 FontSize = 10,
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 255, 255, 255)),
+                Foreground = new SolidColorBrush(Colors.White),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
             };
@@ -1295,9 +1295,12 @@ internal sealed unsafe partial class TranslateWindow : Window
                 LineHeight = BodyLineHeight,
             };
             // 正文不截断、改成卡片里滚动：下面还有内容时能看到自己的滚动条。
+            // 光标和正文放在同一层，坐标才对得上（不再单独占正文下面一行）。
+            var bodyLayer = new Grid();
+            bodyLayer.Children.Add(_body);
             _bodyScroll = new ScrollViewer
             {
-                Content = _body,
+                Content = bodyLayer,
                 MaxHeight = MaxBodyLines * BodyLineHeight,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 VerticalScrollMode = ScrollMode.Auto,
@@ -1321,7 +1324,7 @@ internal sealed unsafe partial class TranslateWindow : Window
                     {
                         new GradientStop
                         {
-                            Color = Windows.UI.Color.FromArgb(0, cardColor.R, cardColor.G, cardColor.B),
+                            Color = Theme.Argb(0, cardColor.R, cardColor.G, cardColor.B),
                             Offset = 0,
                         },
                         new GradientStop { Color = cardColor, Offset = 1 },
@@ -1338,12 +1341,15 @@ internal sealed unsafe partial class TranslateWindow : Window
                 Width = 2,
                 Height = 14,
                 CornerRadius = new CornerRadius(1),
-                Background = new SolidColorBrush(Theme.BrandPink),
+                Background = new SolidColorBrush(Theme.AccentColor),
                 HorizontalAlignment = HorizontalAlignment.Left,
-                Margin = new Thickness(2, 2, 0, 0),
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0),
+                IsHitTestVisible = false,
                 Visibility = Visibility.Collapsed,
                 Opacity = 0,
             };
+            bodyLayer.Children.Add(_cursor);
 
             // 等待 / 思考中的骨架条（只动透明度，交给合成器，进程 CPU 接近 0）。
             _skeleton = new StackPanel { Spacing = 8, Margin = new Thickness(0, 2, 0, 2) };
@@ -1356,7 +1362,7 @@ internal sealed unsafe partial class TranslateWindow : Window
                     HorizontalAlignment = HorizontalAlignment.Left,
                     Width = 340 * width,
                     Background = Theme.Brush(
-                        "ControlFillColorSecondaryBrush", Windows.UI.Color.FromArgb(40, 128, 128, 128)),
+                        "ControlFillColorSecondaryBrush", Theme.Argb(40, 128, 128, 128)),
                 });
             }
 
@@ -1385,7 +1391,6 @@ internal sealed unsafe partial class TranslateWindow : Window
             panel.Children.Add(header);
             panel.Children.Add(_skeleton);
             panel.Children.Add(bodyHost);
-            panel.Children.Add(_cursor);
             panel.Children.Add(_error);
             Root = new Border
             {
@@ -1425,6 +1430,11 @@ internal sealed unsafe partial class TranslateWindow : Window
             // 生成中末尾的闪烁光标（PLAN-v2 §3.7）。
             var generating = card.State == CardState.Running && hasText && !card.Thinking;
             _cursor.Visibility = generating ? Visibility.Visible : Visibility.Collapsed;
+            if (generating)
+            {
+                PositionCursor();
+            }
+
             SetBlink(generating, _cursor);
             SetShimmer(waiting);
 
@@ -1485,6 +1495,27 @@ internal sealed unsafe partial class TranslateWindow : Window
             var more = _bodyScroll.Visibility == Visibility.Visible &&
                        _bodyScroll.ScrollableHeight - _bodyScroll.VerticalOffset > 8;
             _fade.Visibility = more ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        /// <summary>
+        /// 把光标贴到正文最后一个字后面（PLAN-v7 §3.3）：ContentEnd 的字符矩形是相对 TextBlock 的，
+        /// 光标和正文在同一个 Grid 里，所以直接当 Margin 用；取不到就留在左上角。
+        /// </summary>
+        private void PositionCursor()
+        {
+            try
+            {
+                var rect = _body.ContentEnd.GetCharacterRect(default);
+                if (!rect.IsEmpty)
+                {
+                    _cursor.Height = Math.Max(10, rect.Height * 0.82);
+                    _cursor.Margin = new Thickness(rect.X, rect.Y + (rect.Height - _cursor.Height) / 2, 0, 0);
+                }
+            }
+            catch
+            {
+                _cursor.Margin = new Thickness(0);
+            }
         }
 
         private void SetShimmer(bool on)

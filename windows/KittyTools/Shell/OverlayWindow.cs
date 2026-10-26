@@ -48,7 +48,7 @@ internal sealed unsafe class OverlayWindow : Window
 
     public OverlayWindow()
     {
-        Title = Paths.ProductName + " 娴眰";
+        Title = Paths.ProductName + " 浮层";
         _host = new Grid { RequestedTheme = Theme.ElementTheme };
 
         Content = _host;

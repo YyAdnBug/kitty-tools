@@ -6,6 +6,8 @@
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+                <!-- PLAN-v7 §2.1：刻度与颜色。 -->
+                <ResourceDictionary Source="ms-appx:///Shell/Styles.xaml" />
             </ResourceDictionary.MergedDictionaries>
 
             <!-- REVIEW R10：导航项和菜单项不再画系统键盘焦点框（用鼠标打开时也看不到那圈框）。 -->

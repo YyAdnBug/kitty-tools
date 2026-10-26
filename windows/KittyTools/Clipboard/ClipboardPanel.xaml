@@ -19,8 +19,8 @@
                 <TextBlock
                     Text="{x:Bind DateHeader}"
                     Visibility="{x:Bind DateHeaderVisibility}"
-                    FontSize="11"
-                    Opacity="0.55"
+                    FontSize="{StaticResource Kitty.FontSize.GroupHeader}"
+                    Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                     Margin="8,10,0,4" />
                 <Grid Height="40" ColumnSpacing="10" Padding="6,0">
                     <Grid.ColumnDefinitions>
@@ -32,7 +32,7 @@
                     <Border
                         Width="24"
                         Height="24"
-                        CornerRadius="6"
+                        CornerRadius="5.5"
                         Background="{x:Bind IconBackground}"
                         VerticalAlignment="Center">
                         <FontIcon
@@ -44,7 +44,7 @@
                     <TextBlock
                         Grid.Column="1"
                         Text="{x:Bind Title}"
-                        FontSize="14"
+                        FontSize="{StaticResource Kitty.FontSize.RowTitle}"
                         TextTrimming="CharacterEllipsis"
                         TextWrapping="NoWrap"
                         MaxLines="1"
@@ -56,29 +56,27 @@
                         <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
                             <TextBlock
                                 Text="{x:Bind RightText}"
-                                FontSize="12"
-                                Opacity="0.6"
+                                FontSize="{StaticResource Kitty.FontSize.Meta}"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                 MaxWidth="90"
                                 TextTrimming="CharacterEllipsis"
                                 MaxLines="1" />
                             <FontIcon
                                 Glyph="&#xE735;"
                                 FontSize="11"
-                                Foreground="{ThemeResource SystemAccentColor}"
+                                Foreground="{ThemeResource Kitty.Accent}"
                                 Visibility="{x:Bind FavoriteVisibility}" />
                             <Border
-                                Padding="4,0"
-                                CornerRadius="4"
-                                Background="{ThemeResource ControlFillColorSecondaryBrush}"
+                                Style="{StaticResource Kitty.KeyCap}"
                                 Visibility="{x:Bind SnippetVisibility}">
-                                <TextBlock Text="片段" FontSize="9" />
+                                <TextBlock Text="片段" FontSize="{StaticResource Kitty.FontSize.KeyCap}" />
                             </Border>
                         </StackPanel>
                         <TextBlock
                             Text="{x:Bind NoteText}"
                             Visibility="{x:Bind NoteVisibility}"
-                            FontSize="10"
-                            Opacity="0.55"
+                            FontSize="{StaticResource Kitty.FontSize.Label}"
+                            Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                             MaxWidth="150"
                             TextTrimming="CharacterEllipsis"
                             MaxLines="1"
@@ -86,16 +84,11 @@
                     </StackPanel>
                     <Border
                         Grid.Column="3"
-                        MinWidth="18"
-                        Height="18"
-                        Padding="4,0"
-                        CornerRadius="4"
-                        Background="{ThemeResource ControlFillColorSecondaryBrush}"
-                        Visibility="{x:Bind KeyHintVisibility}"
-                        VerticalAlignment="Center">
+                        Style="{StaticResource Kitty.KeyCap}"
+                        Visibility="{x:Bind KeyHintVisibility}">
                         <TextBlock
                             Text="{x:Bind KeyHint}"
-                            FontSize="10"
+                            FontSize="{StaticResource Kitty.FontSize.KeyCap}"
                             HorizontalAlignment="Center"
                             VerticalAlignment="Center" />
                     </Border>
@@ -120,7 +113,11 @@
             <TextBox
                 x:Name="SearchBox"
                 PlaceholderText="搜索剪贴板…"
-                FontSize="20"
+                Style="{StaticResource Kitty.Input}"
+                Background="Transparent"
+                BorderThickness="0"
+                Padding="0"
+                FontSize="{StaticResource Kitty.FontSize.Search}"
                 Height="56"
                 VerticalContentAlignment="Center"
                 TextChanged="OnSearchTextChanged" />
@@ -169,8 +166,8 @@
                 <Border
                     x:Name="Highlight"
                     Height="40"
-                    CornerRadius="6"
-                    Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                    CornerRadius="4"
+                    Background="{ThemeResource Kitty.Fill.Selected}"
                     IsHitTestVisible="False"
                     Visibility="Collapsed"
                     HorizontalAlignment="Stretch"
@@ -195,17 +192,22 @@
                     Spacing="8"
                     Visibility="Collapsed"
                     IsHitTestVisible="False">
-                    <FontIcon Glyph="&#xE8C8;" FontSize="26" Opacity="0.35" HorizontalAlignment="Center" />
-                    <TextBlock x:Name="EmptyText" Opacity="0.5" FontSize="13" TextAlignment="Center" />
+                    <FontIcon
+                        Glyph="&#xE8C8;"
+                        FontSize="28"
+                        Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                        HorizontalAlignment="Center" />
+                    <TextBlock
+                        x:Name="EmptyText"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        FontSize="{StaticResource Kitty.FontSize.RowTitle}"
+                        TextAlignment="Center" />
                 </StackPanel>
             </Grid>
 
             <Border
                 Grid.Column="1"
-                CornerRadius="8"
-                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                BorderThickness="1"
-                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
+                Style="{StaticResource Kitty.Card}">
                 <ScrollViewer
                     x:Name="PreviewScroll"
                     Padding="18,14,18,16"
@@ -225,8 +227,8 @@
             <TextBlock
                 x:Name="FooterText"
                 VerticalAlignment="Center"
-                FontSize="12"
-                Opacity="0.65"
+                FontSize="{StaticResource Kitty.FontSize.Meta}"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                 TextTrimming="CharacterEllipsis" />
             <Button
                 x:Name="PinButton"
@@ -237,7 +239,7 @@
                 AutomationProperties.Name="固定剪贴板面板"
                 ToolTipService.ToolTip="固定面板（Ctrl+P）"
                 Click="OnPinClick">
-                <FontIcon Glyph="&#xE840;" FontSize="14" />
+                <FontIcon Glyph="&#xE718;" FontSize="14" />
             </Button>
             <Button
                 x:Name="SettingsButton"

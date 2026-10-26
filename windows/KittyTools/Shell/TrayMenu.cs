@@ -168,83 +168,15 @@ internal static partial class TrayMenu
         var clipboardReady = runtime?.Clipboard is not null && Features.IsOn(Feature.Clipboard);
         var menu = new MenuFlyout { Placement = FlyoutPlacementMode.TopEdgeAlignedRight };
 
-        // 关掉的功能整项不出现（第三版 §2.3）。
-        if (Features.IsOn(Feature.Recording))
-        {
-            if (RecordingHost.IsRecording)
-            {
-                Add(menu, "\uE71A", "■ 停止录屏 " + RecordingHost.Elapsed, HotKeyActions.Record,
-                    RecordingHost.Stop);
-            }
-            else
-            {
-                Add(menu, "\uE7C8", "录屏", HotKeyActions.Record, RecordingHost.Toggle);
-            }
-
-            if (RecordingHost.LastPath is { } last && File.Exists(last) &&
-                last.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase))
-            {
-                Add(menu, "\uE7C8",
-                    CompressionService.IsRunning
-                        ? $"压缩中 {(int)(CompressionService.Progress * 100)}%"
-                        : "压缩最近的录屏（不超过 60%）",
-                    string.Empty, () => _ = CompressionService.CompressLastAsync());
-                Add(menu, "\uE7C8", "转成 GIF（10 fps，长边 800）", string.Empty,
-                    () => _ = GifService.ConvertLastAsync());
-            }
-
-            if (AudioHost.IsRecording)
-            {
-                Add(menu, "\uE71A", "■ 停止录音 " + AudioHost.Elapsed, string.Empty, AudioHost.Stop);
-            }
-            else
-            {
-                Add(menu, "\uE720", "录音（麦克风）", string.Empty, AudioHost.Start);
-            }
-
-            menu.Items.Add(new MenuFlyoutSeparator());
-        }
-
+        // 第一节：剪贴板与启动器。
         if (Features.IsOn(Feature.Clipboard))
         {
-            Add(menu, "\uE8C8", "剪贴板历史", HotKeyActions.Clipboard, () => runtime?.OpenClipboard(), clipboardReady);
+            Add(menu, Glyphs.Copy, "剪贴板历史", HotKeyActions.Clipboard, () => runtime?.OpenClipboard(), clipboardReady);
         }
 
         if (Features.IsOn(Feature.Launcher))
         {
-            Add(menu, "\uE721", "启动器", HotKeyActions.Launcher, () => OverlayHost.Toggle(OverlayKind.Launcher));
-        }
-
-        if (Features.IsOn(Feature.Translate))
-        {
-            Add(menu, "\uE774", "输入翻译", HotKeyActions.InputTranslate, () => TranslateHost.ToggleInput());
-        }
-
-        if (Features.IsOn(Feature.Screenshot))
-        {
-            Add(menu, "\uE722", "截图", HotKeyActions.Screenshot, () => ScreenshotSession.Start(ScreenshotMode.Capture));
-            if (Features.IsOn(Feature.Translate))
-            {
-                Add(menu, "\uE7C4", "截图翻译", HotKeyActions.ScreenshotTranslate,
-                    () => ScreenshotSession.Start(ScreenshotMode.Translate));
-            }
-
-            Add(menu, "\uE8D3", "识字", HotKeyActions.Ocr, () => ScreenshotSession.Start(ScreenshotMode.Ocr));
-        }
-
-        menu.Items.Add(new MenuFlyoutSeparator());
-
-        if (Features.IsOn(Feature.Translate))
-        {
-            var copyTranslate = new ToggleMenuFlyoutItem
-            {
-                Text = "复制即译",
-                IsChecked = settings.CopyTranslate,
-                Icon = new FontIcon { Glyph = "\uE8C8" },
-                IsEnabled = runtime is not null,
-            };
-            copyTranslate.Click += (_, _) => runtime?.ToggleCopyTranslate();
-            menu.Items.Add(copyTranslate);
+            Add(menu, Glyphs.Search, "启动器", HotKeyActions.Launcher, () => OverlayHost.Toggle(OverlayKind.Launcher));
         }
 
         if (Features.IsOn(Feature.Clipboard))
@@ -253,7 +185,7 @@ internal static partial class TrayMenu
             {
                 Text = "暂停记录剪贴板",
                 IsChecked = runtime?.Clipboard?.Paused == true,
-                Icon = new FontIcon { Glyph = "\uE769" },
+                Icon = new FontIcon { Glyph = Glyphs.Pause },
                 IsEnabled = clipboardReady,
             };
             pause.Click += (_, _) => runtime?.TogglePauseClipboard();
@@ -262,10 +194,75 @@ internal static partial class TrayMenu
 
         menu.Items.Add(new MenuFlyoutSeparator());
 
+        // 第二节：翻译。
+        if (Features.IsOn(Feature.Translate))
+        {
+            Add(menu, Glyphs.Translate, "输入翻译", HotKeyActions.InputTranslate, () => TranslateHost.ToggleInput());
+            var copyTranslate = new ToggleMenuFlyoutItem
+            {
+                Text = "复制即译",
+                IsChecked = settings.CopyTranslate,
+                Icon = new FontIcon { Glyph = Glyphs.Language },
+                IsEnabled = runtime is not null,
+            };
+            copyTranslate.Click += (_, _) => runtime?.ToggleCopyTranslate();
+            menu.Items.Add(copyTranslate);
+        }
+
+        menu.Items.Add(new MenuFlyoutSeparator());
+
+        // 第三节：截图与录制。
+        if (Features.IsOn(Feature.Screenshot))
+        {
+            Add(menu, Glyphs.Screenshot, "截图", HotKeyActions.Screenshot, () => ScreenshotSession.Start(ScreenshotMode.Capture));
+            if (Features.IsOn(Feature.Translate))
+            {
+                Add(menu, Glyphs.Language, "截图翻译", HotKeyActions.ScreenshotTranslate,
+                    () => ScreenshotSession.Start(ScreenshotMode.Translate));
+            }
+
+            Add(menu, Glyphs.Text, "识字", HotKeyActions.Ocr, () => ScreenshotSession.Start(ScreenshotMode.Ocr));
+        }
+
+        if (Features.IsOn(Feature.Recording))
+        {
+            if (RecordingHost.IsRecording)
+            {
+                Add(menu, Glyphs.Stop, "停止录屏 " + RecordingHost.Elapsed, HotKeyActions.Record, RecordingHost.Stop);
+            }
+            else
+            {
+                Add(menu, Glyphs.Record, "录屏", HotKeyActions.Record, RecordingHost.Toggle);
+            }
+
+            if (RecordingHost.LastPath is { } last && File.Exists(last) &&
+                last.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase))
+            {
+                Add(menu, Glyphs.File,
+                    CompressionService.IsRunning
+                        ? $"压缩中 {(int)(CompressionService.Progress * 100)}%"
+                        : "压缩最近的录屏（不超过 60%）",
+                    string.Empty, () => _ = CompressionService.CompressLastAsync());
+                Add(menu, Glyphs.Image, "转成 GIF（10 fps，长边 800）", string.Empty,
+                    () => _ = GifService.ConvertLastAsync());
+            }
+
+            if (AudioHost.IsRecording)
+            {
+                Add(menu, Glyphs.Stop, "停止录音 " + AudioHost.Elapsed, string.Empty, AudioHost.Stop);
+            }
+            else
+            {
+                Add(menu, Glyphs.Microphone, "录音（麦克风）", string.Empty, AudioHost.Start);
+            }
+        }
+
+        menu.Items.Add(new MenuFlyoutSeparator());
+
         var settingsItem = new MenuFlyoutItem
         {
             Text = "设置…",
-            Icon = new FontIcon { Glyph = "\uE713" },
+            Icon = new FontIcon { Glyph = Glyphs.Settings },
         };
         settingsItem.Click += (_, _) => runtime?.ShowSettings(welcome: false);
         menu.Items.Add(settingsItem);
@@ -277,7 +274,7 @@ internal static partial class TrayMenu
         var update = new MenuFlyoutItem
         {
             Text = updateText,
-            Icon = new FontIcon { Glyph = UpdateService.AvailableVersion is null ? "\uE895" : "\uE896" },
+            Icon = new FontIcon { Glyph = Glyphs.Update },
             IsEnabled = !AutoUpdater.IsBusy,
         };
         update.Click += (_, _) =>
@@ -296,7 +293,7 @@ internal static partial class TrayMenu
         var exit = new MenuFlyoutItem
         {
             Text = "退出 Kitty Tools",
-            Icon = new FontIcon { Glyph = "\uE7E8" },
+            Icon = new FontIcon { Glyph = Glyphs.Shutdown },
         };
         exit.Click += (_, _) => runtime?.Exit();
         menu.Items.Add(exit);

@@ -238,12 +238,17 @@ internal sealed class SettingsWindow : Window
                 BuildPage(_currentPage);
             });
 
-        AddCombo("强调色", "品牌粉，或者跟随系统的强调色。",
-            new[] { "品牌粉", "跟随系统" },
-            SettingsService.Current.Accent == "system" ? 1 : 0,
+        // PLAN-v7 U5：跟随系统 + 8 档。旧值 brand 当作品牌粉。
+        var accentKeys = new[] { "system", "blue", "purple", "pink", "red", "orange", "yellow", "green", "graphite" };
+        var accentNames = new[] { "跟随系统", "蓝", "紫", "品牌粉", "红", "橙", "黄", "绿", "石墨" };
+        var currentAccent = SettingsService.Current.Accent == "brand" ? "pink" : SettingsService.Current.Accent;
+        var accentIndex = Math.Max(0, Array.IndexOf(accentKeys, currentAccent));
+        AddCombo("强调色", "跟随系统，或者固定成一种颜色。",
+            accentNames,
+            accentIndex,
             index =>
             {
-                SettingsService.Current.Accent = index == 1 ? "system" : "brand";
+                SettingsService.Current.Accent = accentKeys[Math.Clamp(index, 0, accentKeys.Length - 1)];
                 SettingsService.Save();
                 Theme.ApplyAccent();
                 BuildPage(_currentPage);
@@ -684,7 +689,7 @@ internal sealed class SettingsWindow : Window
                    "默认快捷键：剪贴板 Alt+C、启动器 Alt+Space、划词翻译 Alt+E、输入翻译 Alt+T、" +
                    "截图翻译 Alt+S、截图 Alt+X、识字 Alt+O。",
             TextWrapping = TextWrapping.Wrap,
-            Opacity = 0.8,
+            Foreground = Theme.SecondaryText(),
         });
 
         var autostart = new CheckBox
@@ -697,10 +702,8 @@ internal sealed class SettingsWindow : Window
         var start = new Button
         {
             Content = "开始使用",
-            Background = new SolidColorBrush(Theme.BrandPink),
-            Foreground = Theme.Brush(
-                "TextOnAccentFillColorPrimaryBrush",
-                Windows.UI.Color.FromArgb(255, 255, 255, 255)),
+            Background = new SolidColorBrush(Theme.AccentColor),
+            Foreground = new SolidColorBrush(Theme.OnAccentColor),
         };
         start.Click += (_, _) =>
         {
@@ -732,7 +735,7 @@ internal sealed class SettingsWindow : Window
             {
                 Text = "剪贴板数据库打不开，这一页暂时用不了。看看数据目录里的 kitty.sqlite3 是不是被占着。",
                 TextWrapping = TextWrapping.Wrap,
-                Opacity = 0.75,
+                Foreground = Theme.SecondaryText(),
             });
             return;
         }
@@ -944,7 +947,7 @@ internal sealed class SettingsWindow : Window
             {
                 Text = string.IsNullOrEmpty(engine.Keyword) ? "无关键词" : engine.Keyword,
                 FontSize = 11,
-                Opacity = 0.6,
+                Foreground = Theme.SecondaryText(),
             });
             Grid.SetColumn(name, 0);
             row.Children.Add(name);
@@ -953,7 +956,7 @@ internal sealed class SettingsWindow : Window
             {
                 Text = engine.UrlTemplate,
                 FontSize = 11,
-                Opacity = 0.7,
+                Foreground = Theme.SecondaryText(),
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 VerticalAlignment = VerticalAlignment.Center,
             };
@@ -1117,7 +1120,7 @@ internal sealed class SettingsWindow : Window
         _content.Children.Add(new TextBlock
         {
             Text = "截图不会上传到任何服务；识字和截图翻译只在本机用 Windows 的识字组件。",
-            Opacity = 0.65,
+            Foreground = Theme.SecondaryText(),
             TextWrapping = TextWrapping.Wrap,
         });
 
@@ -1233,7 +1236,7 @@ internal sealed class SettingsWindow : Window
         var store = TranslateServiceStore.Instance;
         if (store is null)
         {
-            _content.Children.Add(new TextBlock { Text = "翻译服务还没准备好。", Opacity = 0.7 });
+            _content.Children.Add(new TextBlock { Text = "翻译服务还没准备好。", Foreground = Theme.SecondaryText() });
             return;
         }
 
@@ -1341,7 +1344,7 @@ internal sealed class SettingsWindow : Window
             _content.Children.Add(new TextBlock
             {
                 Text = "这个构建没有内置智谱 key：要使用免费的智谱，请点「详情」填自己的 API Key。",
-                Opacity = 0.7,
+                Foreground = Theme.SecondaryText(),
                 TextWrapping = TextWrapping.Wrap,
                 FontSize = 12,
             });
@@ -1376,7 +1379,7 @@ internal sealed class SettingsWindow : Window
             {
                 Text = ServiceSubtitle(service),
                 FontSize = 12,
-                Opacity = 0.7,
+                Foreground = Theme.SecondaryText(),
                 TextWrapping = TextWrapping.Wrap,
             });
             Grid.SetColumn(info, 1);
@@ -1451,7 +1454,7 @@ internal sealed class SettingsWindow : Window
         {
             Text = "复制即译和「暂停记录剪贴板」在托盘菜单里；浮窗里按 Ctrl+P 固定、Ctrl+1–9 复制第 N 张卡。",
             FontSize = 12,
-            Opacity = 0.6,
+            Foreground = Theme.SecondaryText(),
             TextWrapping = TextWrapping.Wrap,
         };
         _content.Children.Add(hint);
@@ -1576,7 +1579,7 @@ internal sealed class SettingsWindow : Window
         {
             TextWrapping = TextWrapping.Wrap,
             FontSize = 12,
-            Opacity = 0.8,
+            Foreground = Theme.SecondaryText(),
             IsTextSelectionEnabled = true,
         };
         panel.Children.Add(result);
@@ -1970,7 +1973,7 @@ internal sealed class SettingsWindow : Window
             var path = Path.Combine(AppContext.BaseDirectory, "Resources", "changelog.json");
             if (!File.Exists(path))
             {
-                return new TextBlock { Text = "更新日志不在发布目录里。", Opacity = 0.6 };
+                return new TextBlock { Text = "更新日志不在发布目录里。", Foreground = Theme.SecondaryText() };
             }
 
             using var document = JsonDocument.Parse(File.ReadAllText(path));
@@ -2030,7 +2033,7 @@ internal sealed class SettingsWindow : Window
         catch (Exception ex)
         {
             Log.Error("changelog.read-failed", ex);
-            return new TextBlock { Text = "更新日志读不出来。", Opacity = 0.6 };
+            return new TextBlock { Text = "更新日志读不出来。", Foreground = Theme.SecondaryText() };
         }
     }
 

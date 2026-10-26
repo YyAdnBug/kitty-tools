@@ -66,32 +66,105 @@ internal static class Theme
     }
 
     /// <summary>
-    /// 功能家族色（PLAN-v2 §3.1）：只用在图标块上——剪贴板蓝、启动器紫、截图粉、翻译绿。
+    /// 功能家族色（PLAN-v7 §2.1）：只用在图标块上。颜色取苹果系统色，浅 / 深各一档。
     /// 启动器里每种行再细分一档浅色块（不透明度的衬底），也在这一处。
-     /// </summary>
+    /// </summary>
     public static class Family
     {
-        public static readonly Color Clipboard = Color.FromArgb(255, 59, 130, 246);
-        public static readonly Color Launcher = Color.FromArgb(255, 124, 92, 255);
-        public static readonly Color Capture = BrandPink;
-        public static readonly Color Translate = Color.FromArgb(255, 60, 170, 110);
+        public static Color Clipboard => Value(0x007AFF, 0x0A84FF);
+        public static Color Launcher => Value(0xAF52DE, 0xBF5AF2);
+        public static Color Capture => Value(0xFF2D55, 0xFF375F);
+        public static Color Translate => Value(0x34C759, 0x30D158);
+        public static Color Shortcut => Value(0xFF9500, 0xFF9F0A);
+        public static Color General => Value(0x8E8E93, 0x98989D);
+        public static Color Url => Value(0x30B0C7, 0x40C8E0);
+        public static Color Search => Value(0x5856D6, 0x5E5CE6);
 
-        /// <summary>图标块的衬底色：家族色压到 12% 左右。</summary>
+        public static Color For(string key) => key switch
+        {
+            "clipboard" => Clipboard,
+            "launcher" or "command" => Launcher,
+            "capture" or "screenshot" or "recording" => Capture,
+            "translate" => Translate,
+            "shortcut" or "hotkey" or "calculator" => Shortcut,
+            "url" => Url,
+            "search" or "web" => Search,
+            _ => General,
+        };
+
+        /// <summary>图标块的衬底色：家族色压到 12% 左右（旧的淡底画法，过渡期保留）。</summary>
         public static Brush Tint(Color color, byte alpha = 28)
             => new SolidColorBrush(Color.FromArgb(alpha, color.R, color.G, color.B));
+
+        public static Brush Tint(string key, byte alpha = 28) => Tint(For(key), alpha);
 
         /// <summary>启动器一行的图标块（按行的种类）。</summary>
         public static Brush KindTint(LauncherKind kind) => kind switch
         {
             LauncherKind.App => Tint(Launcher, 32),
-            LauncherKind.Setting => Tint(Color.FromArgb(255, 128, 128, 128), 28),
-            LauncherKind.Command => Tint(Color.FromArgb(255, 234, 120, 40), 30),
+            LauncherKind.Setting => Tint(General, 28),
+            LauncherKind.Command => Tint(Shortcut, 30),
             LauncherKind.Action => Tint(Capture, 30),
-            LauncherKind.Url => Tint(Color.FromArgb(255, 40, 140, 240), 30),
-            LauncherKind.Path => Tint(Color.FromArgb(255, 220, 170, 40), 30),
-            LauncherKind.Search => Tint(Color.FromArgb(255, 140, 90, 240), 30),
+            LauncherKind.Url => Tint(Url, 30),
+            LauncherKind.Path => Tint(Shortcut, 30),
+            LauncherKind.Search => Tint(Search, 30),
             _ => Tint(Translate, 30),
         };
+    }
+
+    /// <summary>浅 / 深两档取一档。</summary>
+    public static Color Value(uint light, uint dark)
+        => ToColor(EffectiveTheme == ElementTheme.Dark ? dark : light);
+
+    public static Color ToColor(uint rgb)
+        => Color.FromArgb(255, (byte)((rgb >> 16) & 0xFF), (byte)((rgb >> 8) & 0xFF), (byte)(rgb & 0xFF));
+
+    /// <summary>代码里要拼颜色时走这里（Alpha 明确给）；界面文件不再直接写 Color.FromArgb。</summary>
+    public static Color Argb(byte alpha, byte red, byte green, byte blue)
+        => Windows.UI.Color.FromArgb(alpha, red, green, blue);
+
+    /// <summary>当前强调色（跟随系统时读系统色）。</summary>
+    public static Color AccentColor
+    {
+        get
+        {
+            if (SettingsService.Current.Accent == "system")
+            {
+                try
+                {
+                    return new UISettings().GetColorValue(UIColorType.Accent);
+                }
+                catch
+                {
+                    return BrandPink;
+                }
+            }
+
+            var palette = AccentPalette.FromSetting(SettingsService.Current.Accent, EffectiveTheme == ElementTheme.Dark);
+            return ToColor(AccentPalette.Value(palette, EffectiveTheme == ElementTheme.Dark));
+        }
+    }
+
+    /// <summary>填充上的符号色（键帽主动作、图标）。</summary>
+    public static Color OnAccentColor
+    {
+        get
+        {
+            var accent = AccentColor;
+            var rgb = ((uint)accent.R << 16) | ((uint)accent.G << 8) | accent.B;
+            return ToColor(AccentPalette.OnAccent(rgb));
+        }
+    }
+
+    /// <summary>浅色背景上的强调文字（对比度 ≥ 4.5:1）。</summary>
+    public static Color AccentTextColor
+    {
+        get
+        {
+            var accent = AccentColor;
+            var rgb = ((uint)accent.R << 16) | ((uint)accent.G << 8) | accent.B;
+            return ToColor(AccentPalette.AccentText(rgb, EffectiveTheme == ElementTheme.Dark));
+        }
     }
 
     /// <summary>
@@ -107,8 +180,9 @@ internal static class Theme
         {
             if (Application.Current?.Resources is { } resources)
             {
-                // 深色那套在 XamlControlsResources 里的键是 Default，不是 Dark；两个都试。
-                var keys = ThemeKey == "Default" ? new[] { "Default", "Dark" } : new[] { ThemeKey };
+                // 深色先找 Dark，再退回 Default（XamlControlsResources 有的键只在 Default 里；
+                // 但 Default 也可能拿到浅色那套，R15 的教训）。
+                var keys = ThemeKey == "Default" ? new[] { "Dark", "Default" } : new[] { ThemeKey };
                 foreach (var themeKey in keys)
                 {
                     if (FindTheme(resources, themeKey, key, depth: 0) is { } themed &&
@@ -135,17 +209,29 @@ internal static class Theme
         return new SolidColorBrush(fallback);
     }
 
+    /// <summary>PLAN-v7 §2.1：从 Styles.xaml 取字号；取不到给 14。</summary>
+    public static double FontSize(string key)
+        => Application.Current?.Resources.TryGetValue(key, out var value) == true && value is double size
+            ? size
+            : 14;
+
+    /// <summary>PLAN-v7 §2.1：从 Styles.xaml 取圆角。</summary>
+    public static CornerRadius Corner(string key)
+        => Application.Current?.Resources.TryGetValue(key, out var value) == true && value is CornerRadius radius
+            ? radius
+            : new CornerRadius(4);
+
+    /// <summary>PLAN-v7 §2.1：从 Styles.xaml 取样式。</summary>
+    public static Style? Style(string key)
+        => Application.Current?.Resources.TryGetValue(key, out var value) == true ? value as Style : null;
+
     /// <summary>Debug 自检：三套主题各取一次卡片底色，颜色要不一样（R15）。</summary>
     public static void VerifyThemeResources()
     {
         try
         {
-            var dark = new SolidColorBrush(EffectiveTheme == ElementTheme.Dark
-                ? Color.FromArgb(0x24, 255, 255, 255)
-                : Color.FromArgb(0xB3, 255, 255, 255));
-            _ = dark;
             Log.Info($"theme.check effective={EffectiveTheme} card={((SolidColorBrush)CardBackground()).Color} " +
-                     $"secondary={((SolidColorBrush)SecondaryText()).Color}");
+                     $"secondary={((SolidColorBrush)SecondaryText()).Color} accent={AccentColor}");
         }
         catch (Exception ex)
         {
@@ -218,24 +304,23 @@ internal static class Theme
         return null;
     }
 
-    /// <summary>正文次要色（说明文字用）。</summary>
-    /// <summary>设置卡的底色（R15：不再从主题字典拿，按设置里选的那套给不透明 / 半透明底色）。</summary>
-    public static Brush CardBackground() => new SolidColorBrush(
-        EffectiveTheme == ElementTheme.Dark
-            ? Color.FromArgb(0x24, 255, 255, 255)
-            : Color.FromArgb(0xB3, 255, 255, 255));
+    /// <summary>设置卡的底色（PLAN-v7：从 Styles.xaml 的 Kitty.Card 取，跟着当前深浅色）。</summary>
+    public static Brush CardBackground()
+        => Brush("Kitty.Card", EffectiveTheme == ElementTheme.Dark
+            ? Color.FromArgb(0x0F, 255, 255, 255)
+            : Color.FromArgb(0x8C, 255, 255, 255));
 
-    /// <summary>次要文字（R15：同上，跟着设置里选的那套，不跟系统）。</summary>
+    /// <summary>次要文字。代码建的元素不在主题作用域里，直接按设置里选的那套给颜色（R15）。</summary>
     public static Brush SecondaryText() => new SolidColorBrush(
         EffectiveTheme == ElementTheme.Dark
             ? Color.FromArgb(255, 190, 190, 190)
             : Color.FromArgb(255, 96, 96, 96));
 
-    /// <summary>设置卡的底色（不透明近似，用给渐隐遮罩的渐变终点）。</summary>
+    /// <summary>设置卡的实色近似（渐隐遮罩的终点）。</summary>
     public static Color CardColor()
-        => EffectiveTheme == ElementTheme.Dark
+        => ((SolidColorBrush)Brush("Kitty.CardSolid", EffectiveTheme == ElementTheme.Dark
             ? Color.FromArgb(255, 0x2B, 0x2B, 0x2B)
-            : Color.FromArgb(255, 0xFB, 0xFB, 0xFB);
+            : Color.FromArgb(255, 0xFB, 0xFB, 0xFB))).Color;
 
     /// <summary>翻译卡左上角服务徽标的底色（按厂商挑，AI 服务再按协议）。</summary>
     public static Brush ServiceBadge(string vendor)
@@ -324,23 +409,13 @@ internal static class Theme
     public static void ApplyAccent()
     {
         var resources = Application.Current.Resources;
-        Color accent;
-        if (SettingsService.Current.Accent == "system")
-        {
-            try
-            {
-                accent = new UISettings().GetColorValue(UIColorType.Accent);
-            }
-            catch
-            {
-                accent = BrandPink;
-            }
-        }
-        else
-        {
-            accent = BrandPink;
-        }
-
+        var accent = AccentColor;
+        var accentText = AccentTextColor;
+        var onAccent = OnAccentColor;
+        resources["Kitty.Accent"] = new SolidColorBrush(accent);
+        resources["Kitty.AccentText"] = new SolidColorBrush(accentText);
+        resources["Kitty.OnAccent"] = new SolidColorBrush(onAccent);
+        // 老控件还在用 SystemAccentColor*：照旧写，让系统控件也跟着变。
         resources["SystemAccentColor"] = accent;
         var ramp = new AccentRamp.Rgb(accent.R, accent.G, accent.B);
         var steps = AccentRamp.Steps;

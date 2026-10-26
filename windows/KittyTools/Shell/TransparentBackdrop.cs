@@ -4,6 +4,7 @@
 // 只调 DwmExtendFrameIntoClientArea 不够：扩进客户区的边框露出的是窗口底色。
 // 做法照 WinUIEx 的 TransparentTintBackdrop（MIT，只看做法，不引包）：在 OnTargetConnected 里
 // 给 connectedTarget.SystemBackdrop 设一个全透明的 Composition 颜色画刷。
+using Microsoft.UI;
 using Microsoft.UI.Composition;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
@@ -21,8 +22,7 @@ internal sealed partial class TransparentBackdrop : SystemBackdrop
             // 接口要的是系统那一套 Windows.UI.Composition 的画刷（不是 Microsoft.UI.Composition）。
             // 这里在 UI 线程上（系统在连 backdrop 时回调），可以新建一个 Compositor。
             var compositor = new Windows.UI.Composition.Compositor();
-            connectedTarget.SystemBackdrop = compositor.CreateColorBrush(
-                Windows.UI.Color.FromArgb(0, 0, 0, 0));
+            connectedTarget.SystemBackdrop = compositor.CreateColorBrush(Colors.Transparent);
         }
         catch (Exception ex)
         {

@@ -539,7 +539,7 @@ public sealed partial class ClipboardPanel : UserControl
             PreviewHost.Children.Add(new TextBlock
             {
                 Text = "选中一条看预览",
-                Opacity = 0.55,
+                Foreground = Theme.SecondaryText(),
                 Margin = new Thickness(0, 8, 0, 0),
             });
             return;
@@ -576,8 +576,8 @@ public sealed partial class ClipboardPanel : UserControl
         {
             Text = PreviewRules.SourceAndAge(null, ClipRow.Relative(entry.CopiedAt)) + " · " +
                    DateTimeOffset.FromUnixTimeMilliseconds(entry.CopiedAt).ToLocalTime().ToString("HH:mm"),
-            FontSize = 12,
-            Opacity = 0.6,
+            FontSize = Theme.FontSize("Kitty.FontSize.Meta"),
+            Foreground = Theme.SecondaryText(),
             VerticalAlignment = VerticalAlignment.Center,
             MinWidth = 72,
             TextTrimming = TextTrimming.CharacterEllipsis,
@@ -638,9 +638,9 @@ public sealed partial class ClipboardPanel : UserControl
                 Width = 44,
                 Height = 44,
                 CornerRadius = new CornerRadius(8),
-                Background = new SolidColorBrush(Windows.UI.Color.FromArgb(255, red, green, blue)),
+                Background = new SolidColorBrush(Theme.Argb(255, red, green, blue)),
                 BorderThickness = new Thickness(1),
-                BorderBrush = Theme.Brush("ControlStrokeColorDefaultBrush", Windows.UI.Color.FromArgb(40, 128, 128, 128)),
+                BorderBrush = Theme.Brush("ControlStrokeColorDefaultBrush", Theme.Argb(40, 128, 128, 128)),
             });
             swatch.Children.Add(new TextBlock
             {
@@ -675,8 +675,8 @@ public sealed partial class ClipboardPanel : UserControl
             PreviewHost.Children.Add(new TextBlock
             {
                 Text = $"只显示前 {limit:N0} 个字，粘贴时是完整内容",
-                FontSize = 12,
-                Opacity = 0.55,
+                FontSize = Theme.FontSize("Kitty.FontSize.Label"),
+                Foreground = Theme.SecondaryText(),
             });
         }
     }
@@ -689,7 +689,7 @@ public sealed partial class ClipboardPanel : UserControl
             PreviewHost.Children.Add(new TextBlock
             {
                 Text = "图片文件丢了（可能被清理了）",
-                Opacity = 0.7,
+                Foreground = Theme.SecondaryText(),
             });
             return;
         }
@@ -711,7 +711,7 @@ public sealed partial class ClipboardPanel : UserControl
         {
             Padding = new Thickness(6, 2, 6, 2),
             CornerRadius = new CornerRadius(4),
-            Background = Theme.Brush("ControlFillColorSecondaryBrush", Windows.UI.Color.FromArgb(160, 32, 32, 32)),
+            Background = Theme.Brush("ControlFillColorSecondaryBrush", Theme.Argb(160, 32, 32, 32)),
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Top,
             Margin = new Thickness(0, 4, 4, 0),
@@ -737,8 +737,8 @@ public sealed partial class ClipboardPanel : UserControl
             HorizontalAlignment = HorizontalAlignment.Left,
             Opacity = 0.5,
         };
-        var light = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 220, 220, 220));
-        var dark = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 190, 190, 190));
+        var light = new SolidColorBrush(Theme.Argb(255, 220, 220, 220));
+        var dark = new SolidColorBrush(Theme.Argb(255, 190, 190, 190));
         const int cell = 16;
         for (var row = 0; row < 15; row++)
         {
@@ -814,8 +814,8 @@ public sealed partial class ClipboardPanel : UserControl
             panel.Children.Add(new TextBlock
             {
                 Text = $"还有 {files.Length - 50} 个文件",
-                FontSize = 12,
-                Opacity = 0.55,
+                FontSize = Theme.FontSize("Kitty.FontSize.Label"),
+                Foreground = Theme.SecondaryText(),
             });
         }
 
@@ -1183,16 +1183,16 @@ public sealed partial class ClipboardPanel : UserControl
         stack.Children.Add(new TextBlock
         {
             Text = cached.Preview.Site,
-            FontSize = 11,
-            Opacity = 0.6,
+            FontSize = Theme.FontSize("Kitty.FontSize.Label"),
+            Foreground = Theme.SecondaryText(),
         });
         if (!string.IsNullOrEmpty(cached.Preview.Description))
         {
             stack.Children.Add(new TextBlock
             {
                 Text = cached.Preview.Description,
-                FontSize = 12,
-                Opacity = 0.8,
+                FontSize = Theme.FontSize("Kitty.FontSize.Label"),
+                Foreground = Theme.SecondaryText(),
                 TextWrapping = TextWrapping.Wrap,
                 MaxLines = 3,
                 TextTrimming = TextTrimming.CharacterEllipsis,
@@ -1541,8 +1541,8 @@ public sealed partial class ClipboardPanel : UserControl
                 list.Children.Add(new TextBlock
                 {
                     Text = "没有匹配的操作",
-                    Opacity = 0.6,
-                    FontSize = 12,
+                    Foreground = Theme.SecondaryText(),
+                    FontSize = Theme.FontSize("Kitty.FontSize.Label"),
                     Margin = new Thickness(8, 4, 8, 4),
                 });
             }
@@ -1784,7 +1784,7 @@ public sealed partial class ClipboardPanel : UserControl
 
             if (store.Groups.Count == 0)
             {
-                list.Children.Add(new TextBlock { Text = "还没有收藏夹。", Opacity = 0.6 });
+                list.Children.Add(new TextBlock { Text = "还没有收藏夹。", Foreground = Theme.SecondaryText() });
             }
         }
 

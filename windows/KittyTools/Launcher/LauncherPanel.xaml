@@ -60,7 +60,7 @@
                         MaxLines="1" />
                     <TextBlock
                         Text="{x:Bind Subtitle}"
-                        FontSize="12"
+                        FontSize="{StaticResource Kitty.FontSize.Meta}"
                         Foreground="{x:Bind SubtitleBrush}"
                         TextTrimming="CharacterEllipsis"
                         TextWrapping="NoWrap"
@@ -68,16 +68,11 @@
                 </StackPanel>
                 <Border
                     Grid.Column="2"
-                    MinWidth="18"
-                    Height="18"
-                    Padding="4,0"
-                    CornerRadius="4"
-                    Background="{ThemeResource ControlFillColorSecondaryBrush}"
-                    Visibility="{x:Bind KeyHintVisibility}"
-                    VerticalAlignment="Center">
+                    Style="{StaticResource Kitty.KeyCap}"
+                    Visibility="{x:Bind KeyHintVisibility}">
                     <TextBlock
                         Text="{x:Bind KeyHint}"
-                        FontSize="10"
+                        FontSize="{StaticResource Kitty.FontSize.KeyCap}"
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center" />
                 </Border>
@@ -95,7 +90,11 @@
         <TextBox
             x:Name="SearchBox"
             PlaceholderText="搜索应用、设置、命令…"
-            FontSize="20"
+            Style="{StaticResource Kitty.Input}"
+            Background="Transparent"
+            BorderThickness="0"
+            Padding="0"
+            FontSize="{StaticResource Kitty.FontSize.Search}"
             Height="56"
             VerticalContentAlignment="Center"
             TextChanged="OnSearchTextChanged" />
@@ -117,8 +116,17 @@
                 Spacing="8"
                 Visibility="Collapsed"
                 IsHitTestVisible="False">
-                <FontIcon x:Name="EmptyIcon" Glyph="&#xE721;" FontSize="26" Opacity="0.35" HorizontalAlignment="Center" />
-                <TextBlock x:Name="EmptyText" Opacity="0.5" FontSize="13" TextAlignment="Center" />
+                <FontIcon
+                    x:Name="EmptyIcon"
+                    Glyph="&#xE721;"
+                    FontSize="28"
+                    Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                    HorizontalAlignment="Center" />
+                <TextBlock
+                    x:Name="EmptyText"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    FontSize="{StaticResource Kitty.FontSize.RowTitle}"
+                    TextAlignment="Center" />
             </StackPanel>
             <ListView
                 x:Name="List"
@@ -141,8 +149,8 @@
             <TextBlock
                 x:Name="FooterText"
                 VerticalAlignment="Center"
-                FontSize="12"
-                Opacity="0.65"
+                FontSize="{StaticResource Kitty.FontSize.Meta}"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                 TextTrimming="CharacterEllipsis" />
             <Button
                 x:Name="SettingsButton"

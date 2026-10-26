@@ -49,6 +49,16 @@ public partial class App : Application
             }
 
             _runtime = ShellRuntime.Start();
+            if (UiSnapshotProbe.IsRequested(commandLine))
+            {
+                // PLAN-v7 §2.4：离屏出图，跑完就退；不影响正常启动。
+                var directory = UiSnapshotProbe.DirectoryFrom(commandLine);
+                if (directory is not null)
+                {
+                    _ = UiSnapshotProbe.RunAsync(directory);
+                    return;
+                }
+            }
             if (Environment.GetCommandLineArgs().Contains("--crash-test", StringComparer.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException("--crash-test");

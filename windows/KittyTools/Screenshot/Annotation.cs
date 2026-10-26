@@ -144,7 +144,7 @@ internal static class AnnotationRenderer
                 var (r, g, b) = Average(screen, x, y, endX, endY);
                 var rect = ToRect(
                     new RectD(x, y, endX - x, endY - y), origin, unit);
-                ds.FillRectangle((float)rect.X, (float)rect.Y, (float)rect.Width, (float)rect.Height, Color.FromArgb(255, r, g, b));
+                ds.FillRectangle((float)rect.X, (float)rect.Y, (float)rect.Width, (float)rect.Height, Theme.Argb(255, r, g, b));
             }
         }
     }

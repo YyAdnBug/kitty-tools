@@ -72,8 +72,8 @@ internal sealed class WgcEffects : IDisposable
                 var radius = (float)(8 + (RecordingOverlay.RingMaxRadius - 8) * progress);
                 var alpha = (byte)Math.Clamp((int)(200 * (1 - progress)), 20, 200);
                 var color = ring.Right
-                    ? Color.FromArgb(alpha, 74, 144, 255)
-                    : Color.FromArgb(alpha, 255, 150, 186);
+                    ? Theme.Argb(alpha, 74, 144, 255)
+                    : Theme.Argb(alpha, 255, 150, 186);
                 session.DrawCircle(
                     ring.X - originX, ring.Y - originY, radius, color,
                     (float)Math.Max(2, 4 - progress * 2));
@@ -99,11 +99,11 @@ internal sealed class WgcEffects : IDisposable
                 var top = height - RecordingOverlay.KeycapHeight - 16;
                 session.FillRoundedRectangle(
                     new Windows.Foundation.Rect(left, top, textWidth, RecordingOverlay.KeycapHeight),
-                    10, 10, Color.FromArgb(alpha, 32, 32, 36));
+                    10, 10, Theme.Argb(alpha, 32, 32, 36));
                 session.DrawText(
                     cap.Text,
                     new Windows.Foundation.Rect(left, top, textWidth, RecordingOverlay.KeycapHeight),
-                    Color.FromArgb(alpha, 250, 250, 252), format);
+                    Theme.Argb(alpha, 250, 250, 252), format);
             }
 
             return true;

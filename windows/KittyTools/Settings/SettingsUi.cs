@@ -1,6 +1,7 @@
 // 设置页的「设置卡」和几个小零件（PLAN-v2 §3.4 / D4）：自己写，几十行，不引 CommunityToolkit。
 // 一张卡的组成：左边 36×36 的图标块 + 标题 + 一行说明，右边是控件（开关 / 下拉 / 按钮）或一个箭头。
 // 子设置放在可以展开的卡里（Expand 参数）。全部颜色走主题资源，深浅色和高对比度自动跟着变。
+using KittyTools.Ui;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -32,7 +33,7 @@ internal static class SettingsUi
             text.Children.Add(new TextBlock
             {
                 Text = description,
-                FontSize = 12,
+                FontSize = Theme.FontSize("Kitty.FontSize.Label"),
                 Foreground = Theme.SecondaryText(),
                 TextWrapping = TextWrapping.Wrap,
             });
@@ -50,16 +51,16 @@ internal static class SettingsUi
         }
         else
         {
+            // PLAN-v7 §3.7：卡片上的图标一律单色；不再每张都套剪贴板蓝。
             icon = new Border
             {
                 Width = 36,
                 Height = 36,
-                CornerRadius = new CornerRadius(8),
-                Background = Theme.Family.Tint(Theme.Family.Clipboard, 24),
                 Child = new FontIcon
                 {
                     Glyph = glyph,
-                    FontSize = 16,
+                    FontSize = 20,
+                    Foreground = Theme.SecondaryText(),
                     HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center,
                 },
@@ -78,16 +79,19 @@ internal static class SettingsUi
         }
         else if (onClick is not null)
         {
-            var chevron = new FontIcon { Glyph = "\uE76C", FontSize = 12, Opacity = 0.6 };
+            var chevron = new FontIcon
+            {
+                Glyph = Glyphs.ChevronRight,
+                FontSize = 12,
+                Foreground = Theme.SecondaryText(),
+            };
             Grid.SetColumn(chevron, 2);
             row.Children.Add(chevron);
         }
 
         var card = new Border
         {
-            Padding = new Thickness(16, 12, 16, 12),
-            CornerRadius = new CornerRadius(8),
-            Background = Theme.CardBackground(),
+            Style = Theme.Style("Kitty.Card"),
             Child = row,
             IsHitTestVisible = enabled,
             Opacity = enabled ? 1 : 0.55,
@@ -189,33 +193,13 @@ internal static class SettingsUi
         };
         if (string.IsNullOrEmpty(shortcut) || shortcut == "未设置")
         {
-            row.Children.Add(new TextBlock { Text = "未设置", Opacity = 0.6 });
+            row.Children.Add(new TextBlock { Text = "未设置", Foreground = Theme.SecondaryText() });
             return row;
         }
 
         foreach (var key in shortcut.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            var cap = new Border
-            {
-                MinWidth = 22,
-                Height = 22,
-                Padding = new Thickness(6, 0, 6, 0),
-                CornerRadius = new CornerRadius(5),
-                Background = Theme.Brush(
-                    "AccentFillColorDefaultBrush", Theme.BrandPink),
-                Child = new TextBlock
-                {
-                    Text = key,
-                    FontSize = 11,
-                    FontFamily = new FontFamily("Segoe UI"),
-                    Foreground = Theme.Brush(
-                        "TextOnAccentFillColorPrimaryBrush",
-                        Windows.UI.Color.FromArgb(255, 255, 255, 255)),
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                },
-            };
-            row.Children.Add(cap);
+            row.Children.Add(KeyCap.Create(key));
         }
 
         return row;
@@ -238,7 +222,7 @@ internal static class SettingsUi
             CornerRadius = new CornerRadius(4),
             Background = Theme.Brush(
                 "ControlFillColorSecondaryBrush",
-                Windows.UI.Color.FromArgb(40, 128, 128, 128)),
+                Theme.Argb(40, 128, 128, 128)),
             VerticalAlignment = VerticalAlignment.Top,
             Child = new TextBlock { Text = label, FontSize = 10, Foreground = brush },
         };

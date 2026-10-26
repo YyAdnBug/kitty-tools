@@ -101,8 +101,8 @@ internal sealed class ScreenshotCard : Window
             _actions.Children.Add(new TextBlock
             {
                 Text = "已保存",
-                FontSize = 11,
-                Opacity = 0.7,
+                FontSize = Theme.FontSize("Kitty.FontSize.KeyCap"),
+                Foreground = Theme.SecondaryText(),
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(4, 0, 0, 0),
             });
@@ -111,9 +111,9 @@ internal sealed class ScreenshotCard : Window
         var panel = new StackPanel { Spacing = 0 };
         panel.Children.Add(new Border
         {
-            CornerRadius = new CornerRadius(6),
+            CornerRadius = Theme.Corner("Kitty.Corner.Card"),
             Clip = new RectangleGeometry { Rect = new Windows.Foundation.Rect(0, 0, CardWidthDip, imageHeightDip) },
-            Background = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 24, 24, 24)),
+            Background = new SolidColorBrush(Theme.Argb(255, 24, 24, 24)),
             Child = _image,
         });
         panel.Children.Add(_actions);

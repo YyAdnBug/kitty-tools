@@ -638,7 +638,7 @@ internal sealed partial class SelectionOverlayWindow : Window
             MinHeight = 0,
             Padding = new Thickness(0),
             CornerRadius = new CornerRadius(5),
-            Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0, 0, 0, 0)),
+            Background = new SolidColorBrush(Colors.Transparent),
             BorderThickness = new Thickness(0),
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center,
@@ -660,7 +660,7 @@ internal sealed partial class SelectionOverlayWindow : Window
         {
             var selected = tool == _tool;
             button.Background = new SolidColorBrush(
-                selected ? Theme.BrandPink : Windows.UI.Color.FromArgb(0, 0, 0, 0));
+                selected ? Theme.BrandPink : Colors.Transparent);
             if (button.Content is TextBlock text)
             {
                 text.Foreground = new SolidColorBrush(selected ? Colors.White : Theme.Shot.HudTextMuted);
@@ -848,7 +848,7 @@ internal sealed partial class SelectionOverlayWindow : Window
                 var pixelX = (int)Math.Clamp(_cursor.X + column, 0, _screen.Width - 1);
                 var pixelY = (int)Math.Clamp(_cursor.Y + row, 0, _screen.Height - 1);
                 var index = (pixelY * _screen.Width + pixelX) * 4;
-                var color = Color.FromArgb(
+                var color = Theme.Argb(
                     255, _screen.Bgra[index + 2], _screen.Bgra[index + 1], _screen.Bgra[index]);
                 ds.FillRectangle(
                     new Windows.Foundation.Rect(

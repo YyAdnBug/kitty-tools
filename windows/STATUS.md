@@ -1,6 +1,6 @@
 # windows/STATUS.md：现状
 
-最后更新：2026-10-26，PLAN-v6 第 7 批。版本 **0.6.0**，未发布（产物在 `windows/build/release/0.6.0/`）。
+最后更新：2026-10-26，PLAN-v7 第 1 批。版本 **0.6.0**，未发布（产物在 `windows/build/release/0.6.0/`）；0.7.0 还在做第 2–6 批。
 这份文档写**现在是什么样**，不写历史；每批收尾更新。
 
 ## 1. 现在能做什么
@@ -121,5 +121,14 @@ AOT x64 / ARM64 每次发布都零 trim / AOT 警告；PRI 四个文件齐全
 ## 6. 提交与产物
 
 - 分支 `windows-wip`；截图在 `windows-shots` 的 `<版本>-batch-<N>/`。
-- 发布产物（未发布）：`windows/build/release/0.5.0/`
+- 发布产物（未发布）：`windows/build/release/0.6.0/`
   （x64 / ARM64 的 zip + `.sha256` + `release-notes.md` + `SIZES.txt`）。
+
+## 7. PLAN-v7 进度（界面对齐 mac，0.7.0）
+
+| 批次 | 内容 | 状态 |
+|---|---|---|
+| 第 1 批 | 底座：Styles.xaml、强调色 8 档、家族色 / Glyphs、服务 logo、共用部件、`--ui-snapshots`、§0.3 毛病 | 做完：`Styles.xaml`（浅 / 深 / 高对比度）、`AccentPalette` + 4 个单测、8 个家族色、`Glyphs`、`Shell/Ui/*`（KeyCap / KindTile / ServiceTile / SearchLine / PanelFooter / EmptyState / BarNotice / ListHighlight / ActionMenu）、`--ui-snapshots`（启动器 / 剪贴板浅深 4 张）、设置卡单色图标、设置里的 8 色强调色、托盘菜单三节、翻译光标贴字；`Color.FromArgb` 只剩 Theme + 录屏测试图案，文字 Opacity 只剩 4 处非文字 |
+| 第 2–6 批 | 剪贴板透镜 / 启动器 40 / 翻译浮窗 / 截图 HUD / 设置收尾 | 未开始（第 2 批先做透镜原型） |
+
+第 1 批的已知缺口：`--ui-snapshots` 现在只出启动器和剪贴板，翻译 / 设置 / 截图要后续批次补；运行中换强调色时，已经建好的代码画刷不会自动重取（设置页会重建，浮层重开会取新值）；高对比度只在资源层映射，真机没切过。
