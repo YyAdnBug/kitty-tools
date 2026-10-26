@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using KittyTools.Infrastructure;
 using KittyTools.Core;
+using KittyTools.Ui;
 using Microsoft.UI.Input;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -72,11 +73,22 @@ internal sealed class SettingsWindow : Window
         };
         foreach (var (tag, title, glyph) in Pages)
         {
+            var row = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 10,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            row.Children.Add(KindTile.Create(FamilyForPage(tag), glyph, 20));
+            row.Children.Add(new TextBlock
+            {
+                Text = title,
+                VerticalAlignment = VerticalAlignment.Center,
+            });
             _nav.MenuItems.Add(new NavigationViewItem
             {
-                Content = title,
+                Content = row,
                 Tag = tag,
-                Icon = new FontIcon { Glyph = glyph },
             });
         }
 
@@ -2144,6 +2156,17 @@ internal sealed class SettingsWindow : Window
             Log.Error("settings.open-data-failed", ex);
         }
     }
+
+    private static string FamilyForPage(string tag) => tag switch
+    {
+        "hotkeys" or "shortcuts" => "shortcut",
+        "clipboard" => "clipboard",
+        "translate" => "translate",
+        "launcher" => "launcher",
+        "screenshot" => "capture",
+        "about" => "general",
+        _ => "general",
+    };
 
     private static UIElement Header(string title, string subtitle)
         => SettingsUi.Header(title, subtitle);

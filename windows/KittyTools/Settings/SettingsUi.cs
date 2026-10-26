@@ -159,11 +159,11 @@ internal static class SettingsUi
         return panel;
     }
 
-    /// <summary>页头：一个大标题 + 一句说明（Windows 11 设置的样子）。</summary>
+    /// <summary>页头：一个家族色块 + 大标题 + 一句说明（PLAN-v7 §3.7）。</summary>
     public static UIElement Header(string title, string subtitle)
     {
-        var panel = new StackPanel { Spacing = 4, Margin = new Thickness(2, 0, 2, 8) };
-        panel.Children.Add(new TextBlock
+        var texts = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
+        texts.Children.Add(new TextBlock
         {
             Text = title,
             FontSize = 28,
@@ -171,16 +171,35 @@ internal static class SettingsUi
         });
         if (!string.IsNullOrEmpty(subtitle))
         {
-            panel.Children.Add(new TextBlock
+            texts.Children.Add(new TextBlock
             {
                 Text = subtitle,
+                FontSize = Theme.FontSize("Kitty.FontSize.Body"),
                 Foreground = Theme.SecondaryText(),
                 TextWrapping = TextWrapping.Wrap,
             });
         }
 
-        return panel;
+        var row = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 12,
+            Margin = new Thickness(2, 0, 2, 8),
+        };
+        row.Children.Add(KindTile.Create(FamilyOfPage(title), Glyphs.Settings, 32));
+        row.Children.Add(texts);
+        return row;
     }
+
+    private static string FamilyOfPage(string title) => title switch
+    {
+        "快捷键" => "shortcut",
+        "剪贴板" => "clipboard",
+        "翻译" => "translate",
+        "启动器" => "launcher",
+        "截图" => "capture",
+        _ => "general",
+    };
 
     /// <summary>一个键一个键帽（快捷键页用）：强调色底的小方块。</summary>
     public static UIElement KeyCaps(string shortcut)
