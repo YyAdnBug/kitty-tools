@@ -14,6 +14,9 @@ internal static class TranslateHost
 
     public static bool IsVisible => _window?.IsVisible == true;
 
+    /// <summary>UI 截图自检用；正常入口不碰。</summary>
+    public static Microsoft.UI.Xaml.Window? WindowForProbe => _window;
+
     /// <summary>正在「备份剪贴板 → Ctrl+C → 还原」取词：忙时忽略重复热键，截图也让路（第二版 §2 第 4 条）。</summary>
     public static bool IsSelectionBusy => _selectionBusy;
 

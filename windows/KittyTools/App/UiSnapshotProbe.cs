@@ -58,14 +58,31 @@ internal static class UiSnapshotProbe
 
         try
         {
+            var originalTheme = SettingsService.Current.Theme;
             foreach (var dark in new[] { false, true })
             {
                 var theme = dark ? ElementTheme.Dark : ElementTheme.Light;
                 root.RequestedTheme = theme;
                 await SafeRenderAsync(root, () => new LauncherPanel(), "launcher", dark, directory);
                 await SafeRenderAsync(root, () => new ClipboardPanel(), "clip", dark, directory);
+                SettingsService.Current.Theme = dark ? "dark" : "light";
+                SettingsService.Save();
+                await SafeRenderSettingsAsync(dark, directory);
             }
 
+            // 翻译窗只出浅色一张：两次 Show/Hide 在 Debug 下偶尔会撞 XAML 异常（R33 先保证设置窗两张）。
+            SettingsService.Current.Theme = "light";
+            SettingsService.Save();
+            TranslateHost.ShowInput();
+            await Task.Delay(500);
+            if (TranslateHost.WindowForProbe is { } translate)
+            {
+                await RenderWindowAsync(translate, "translate", false, directory);
+                TranslateHost.Hide();
+            }
+
+            SettingsService.Current.Theme = originalTheme;
+            SettingsService.Save();
             Log.Info($"ui-snapshots done dir={directory}");
         }
         catch (Exception ex)
@@ -83,7 +100,7 @@ internal static class UiSnapshotProbe
                 // 关不掉就让退出流程收尾。
             }
 
-            Microsoft.UI.Xaml.Application.Current.Exit();
+            Environment.Exit(0);
         }
     }
 
@@ -110,6 +127,75 @@ internal static class UiSnapshotProbe
                 root.Children.Clear();
             }
         }
+    }
+
+    private static async Task SafeRenderSettingsAsync(bool dark, string directory)
+    {
+        SettingsWindow? settings = null;
+        try
+        {
+            settings = new SettingsWindow();
+            settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 720));
+            settings.ShowPage(welcome: false, "general");
+            await RenderWindowAsync(settings, "settings", dark, directory);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"ui-snapshots settings dark={dark} failed {ex.GetType().Name} {ex.Message}");
+        }
+        finally
+        {
+            try
+            {
+                settings?.AppWindow.Hide();
+            }
+            catch
+            {
+                // 已经关了。
+            }
+        }
+    }
+
+    private static async Task RenderWindowAsync(
+        Window window, string name, bool dark, string directory)
+    {
+        await Task.Delay(800);
+        if (window.Content is not FrameworkElement content)
+        {
+            return;
+        }
+
+        var bitmap = new RenderTargetBitmap();
+        await bitmap.RenderAsync(content);
+        var pixels = (await bitmap.GetPixelsAsync()).ToArray();
+        // 透明窗口的空白像素是 alpha=0，PNG 查看器会显示成黑；截图里补成卡片实色。
+        for (var index = 0; index + 3 < pixels.Length; index += 4)
+        {
+            if (pixels[index + 3] == 0)
+            {
+                pixels[index] = 251;
+                pixels[index + 1] = 251;
+                pixels[index + 2] = 251;
+                pixels[index + 3] = 255;
+            }
+        }
+
+        var path = Path.Combine(directory, $"{name}-{(dark ? "dark" : "light")}.png");
+        using (var stream = File.Create(path))
+        {
+            var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId, stream.AsRandomAccessStream());
+            encoder.SetPixelData(
+                BitmapPixelFormat.Bgra8,
+                BitmapAlphaMode.Premultiplied,
+                (uint)bitmap.PixelWidth,
+                (uint)bitmap.PixelHeight,
+                96,
+                96,
+                pixels);
+            await encoder.FlushAsync();
+        }
+
+        Log.Info($"ui-snapshots {name} dark={dark} px={bitmap.PixelWidth}x{bitmap.PixelHeight}");
     }
 
     private static async Task RenderAsync(
@@ -140,7 +226,19 @@ internal static class UiSnapshotProbe
 
         var bitmap = new RenderTargetBitmap();
         await bitmap.RenderAsync(surface);
-        var pixels = await bitmap.GetPixelsAsync();
+        var pixels = (await bitmap.GetPixelsAsync()).ToArray();
+        // 透明窗口的空白像素是 alpha=0，PNG 查看器会显示成黑；截图里补成卡片实色。
+        for (var index = 0; index + 3 < pixels.Length; index += 4)
+        {
+            if (pixels[index + 3] == 0)
+            {
+                pixels[index] = 251;
+                pixels[index + 1] = 251;
+                pixels[index + 2] = 251;
+                pixels[index + 3] = 255;
+            }
+        }
+
         var path = Path.Combine(directory, $"{name}-{(dark ? "dark" : "light")}.png");
         using (var stream = File.Create(path))
         {
@@ -152,7 +250,7 @@ internal static class UiSnapshotProbe
                 (uint)bitmap.PixelHeight,
                 96,
                 96,
-                pixels.ToArray());
+                pixels);
             await encoder.FlushAsync();
         }
 
