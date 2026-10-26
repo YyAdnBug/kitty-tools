@@ -29,7 +29,7 @@ public static class FileSearchSql
         var conditions = new List<string>();
         foreach (var word in words)
         {
-            conditions.Add($"System.FileName LIKE '%{Escape(word)}%'");
+            conditions.Add($"System.FileName LIKE '%{EscapeLike(word)}%'");
         }
 
         var rootFilter = RootFilter(roots);
@@ -62,7 +62,7 @@ public static class FileSearchSql
                 continue;
             }
 
-            parts.Add($"System.ItemUrl LIKE '{Escape("file:" + normalized + "/")}%'");
+            parts.Add($"System.ItemUrl LIKE '{EscapeLike("file:" + normalized + "/")}%'");
         }
 
         return parts.Count == 0 ? string.Empty : "(" + string.Join(" OR ", parts) + ")";
@@ -95,7 +95,8 @@ public static class FileSearchSql
                 text = text[1..];
             }
 
-            text = Uri.UnescapeDataString(text);
+            // System.ItemUrl 不按百分号编码（实测空格就是空格），不能再 Unescape，
+            // 否则文件名里本来就是「%20」的会被改成空格（REVIEW R30）。
         }
 
         text = text.Replace('/', '\\');
@@ -103,4 +104,11 @@ public static class FileSearchSql
     }
 
     private static string Escape(string value) => value.Replace("'", "''", StringComparison.Ordinal);
+
+    /// <summary>LIKE 里的通配符：`[` 先转义，再把 `%` / `_` 包成字符类（REVIEW R30）。</summary>
+    private static string EscapeLike(string value)
+        => Escape(value)
+            .Replace("[", "[[]", StringComparison.Ordinal)
+            .Replace("%", "[%]", StringComparison.Ordinal)
+            .Replace("_", "[_]", StringComparison.Ordinal);
 }

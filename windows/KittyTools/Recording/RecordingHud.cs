@@ -17,10 +17,16 @@ using System.Runtime.InteropServices;
 
 namespace KittyTools;
 
-internal sealed class RecordingHud
+internal sealed partial class RecordingHud
 {
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SetWindowDisplayAffinity(IntPtr hwnd, uint affinity);
+
+    [System.Runtime.InteropServices.LibraryImport("user32.dll", EntryPoint = "GetWindowLongW")]
+    private static partial int GetWindowLong(IntPtr hwnd, int index);
+
+    [System.Runtime.InteropServices.LibraryImport("user32.dll", EntryPoint = "SetWindowLongW")]
+    private static partial int SetWindowLong(IntPtr hwnd, int index, int value);
 
     private static RecordingHud? _instance;
 
@@ -118,18 +124,19 @@ internal sealed class RecordingHud
         root.PointerCaptureLost += (_, _) => _dragging = false;
         _window.Content = root;
 
-        var width = 268;
-        var height = 46;
-        var x = region.Left + (region.Width - width) / 2;
-        var y = region.Bottom + 8;
-        if (y + height > region.Bottom && y + height > 1440)
-        {
-            y = Math.Max(0, region.Top - height - 8);
-        }
-
-        _window.AppWindow.MoveAndResize(new RectInt32(x, y, width, height));
-        _window.Activate();
+        var display = Displays.AtPoint(
+            region.Left + region.Width / 2, region.Top + region.Height / 2);
+        var placement = HudPlacement.Compute(
+            region.Left, region.Top, region.Right, region.Bottom,
+            display.Work.Left, display.Work.Top, display.Work.Right, display.Work.Bottom,
+            display.Scale);
+        _window.AppWindow.MoveAndResize(new RectInt32(
+            placement.X, placement.Y, placement.Width, placement.Height));
         var hwnd = (IntPtr)WinRT.Interop.WindowNative.GetWindowHandle(_window);
+        // R22：显示但不抢焦点（用户接着打的字还在原来的程序里）。
+        var style = GetWindowLong(hwnd, -20);
+        SetWindowLong(hwnd, -20, style | 0x08000000 /* WS_EX_NOACTIVATE */);
+        _window.AppWindow.Show(false);
         if (Environment.GetEnvironmentVariable("KITTY_HUD_CAPTURE") != "1")
         {
             // 录制时不把自己录进去；截图自检时用 KITTY_HUD_CAPTURE=1 关掉，才能在截图里看到它。

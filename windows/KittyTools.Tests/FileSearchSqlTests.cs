@@ -29,6 +29,15 @@ public sealed class FileSearchSqlTests
     }
 
     [TestMethod]
+    public void EscapesLikeWildcards()
+    {
+        var sql = FileSearchSql.Build(new[] { "[草稿]", "50%", "a_b" }, Array.Empty<string>());
+        StringAssert.Contains(sql, "LIKE '%[[]草稿]%'");
+        StringAssert.Contains(sql, "LIKE '%50[%]%'");
+        StringAssert.Contains(sql, "LIKE '%a[_]b%'");
+    }
+
+    [TestMethod]
     public void LimitsTokensAndFallsBackToEmpty()
     {
         var sql = FileSearchSql.Build(new[] { "a", "b", "c", "d", "e" }, Array.Empty<string>());
@@ -50,7 +59,7 @@ public sealed class FileSearchSqlTests
     [TestMethod]
     public void ConvertsItemUrlToLocalPath()
     {
-        Assert.AreEqual(@"C:\Users\YY\a b\1.jpg", FileSearchSql.LocalPathFromItemUrl("file:C:/Users/YY/a%20b/1.jpg"));
+        Assert.AreEqual(@"C:\Users\YY\a%20b\1.jpg", FileSearchSql.LocalPathFromItemUrl("file:C:/Users/YY/a%20b/1.jpg"));
         Assert.AreEqual(@"C:\a\b.txt", FileSearchSql.LocalPathFromItemUrl("file:///C:/a/b.txt"));
         Assert.AreEqual(@"C:\a\b.txt", FileSearchSql.LocalPathFromItemUrl(@"C:\a\b.txt"));
         Assert.IsNull(FileSearchSql.LocalPathFromItemUrl(null));
