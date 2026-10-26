@@ -407,7 +407,8 @@ import SwiftUI
   }
 
   /// 缩回动画走完的时间（retract 0.34 s + 余量）：之后才移走窗口
-  private static let retractTime = Duration.milliseconds(400)
+  /// （缩回的弹簧标的 0.34 s 是感知上的时长，真停稳还要一会儿；终点藏在刘海后面，多留一会儿看不出来）
+  private static let retractTime = Duration.milliseconds(600)
 
   /// 打开 / 收起那一张（快捷键「打开刘海岛」、点刘海）。岛上正有提示时换成那一张（那条已经记在列表里）
   func toggleBoard() {
@@ -730,7 +731,7 @@ struct IslandView: View {
   }
 
   /// 这一刻形体该长成什么样（目标值，不是动画中途的值）：刘海屏开着时 = 内容 + 刘海，最小刘海宽 + 64、下巴 36；
-  /// 指针停在刘海上鼓起一圈；收起是刘海本身。无刘海屏一直是内容那么大（收起靠缩放 + 淡出）
+  /// 指针停在刘海上鼓起一圈；收起缩进真刘海里面（IslandGeometry.tucked）。无刘海屏一直是内容那么大（收起靠缩放 + 淡出）
   private func shape(_ geometry: Island.Geometry) -> IslandGeometry {
     let canvas = Island.canvasWidth
     switch geometry {
@@ -748,14 +749,14 @@ struct IslandView: View {
             width: notchWidth + Island.peekGrow.width * 2,
             height: notchHeight + Island.peekGrow.height)
         } else {
-          CGSize(width: notchWidth, height: notchHeight)
+          IslandGeometry.tucked(notchWidth: notchWidth, notchHeight: notchHeight)
         }
       return IslandGeometry(
         frame: CGRect(x: (canvas - size.width) / 2, y: 0, width: size.width, height: size.height),
-        ear: open ? 10 : (peek ? 8 : 6),
-        bottom: open ? (island.isExpanded || island.isBoardOpen ? 24 : 22) : (peek ? 13 : 10),
-        floor: CGSize(width: notchWidth, height: notchHeight), contentTop: notchHeight,
-        capsule: false)
+        ear: open ? 10 : (peek ? 8 : 0),
+        bottom: open ? (island.isExpanded || island.isBoardOpen ? 24 : 22) : (peek ? 13 : 8),
+        floor: IslandGeometry.tucked(notchWidth: notchWidth, notchHeight: notchHeight),
+        contentTop: notchHeight, capsule: false)
     case .capsule:
       let size = CGSize(
         width: min(max(120, contentSize.width), Island.maxWidth),
@@ -1110,6 +1111,14 @@ nonisolated struct IslandGeometry: Equatable {
   var contentTop: CGFloat
   /// 无刘海屏的圆角卡片（没有耳朵、四角同一个半径）
   var capsule: Bool
+
+  /// 刘海屏收起时的形体：缩进真刘海里面（每侧让出 6、底边让出 6、没有耳朵、底角 8），被硬件刘海整个挡住。
+  /// 收起的终点要是比刘海大（原来每侧宽 2、顶上带 6 的耳朵），缩回走完移走窗口时露在外面的那几点黑边一下子没了，
+  /// 看着像最后卡了一下（2026-10-26 用户录屏：提示收起、悬停刘海后退出都这样）；出现时也从刘海里面长出来。
+  /// notchWidth 是 Island.geometry 给的宽（真刘海 + 4）
+  static func tucked(notchWidth: CGFloat, notchHeight: CGFloat) -> CGSize {
+    CGSize(width: max(notchWidth - 16, 0), height: max(notchHeight - 6, 0))
+  }
 }
 
 /// 刘海岛形体：刘海屏是顶边两侧向外弯出的「耳朵」（凹弧接到菜单栏顶边）+ 圆角下巴；无刘海屏是圆角 = 半高（最大 18）的
