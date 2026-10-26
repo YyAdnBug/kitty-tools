@@ -207,6 +207,9 @@ class HUDBar: PopView {
 // MARK: - 主栏
 
 final class EditorToolbar: PopView {
+  /// 用在哪儿：截图框选的调整阶段（完整），或长截图的标注窗口（右段只有识字和出图，拍板 C1）
+  enum Mode { case capture, longShot }
+
   enum Item: Equatable {
     case tool(Annotation.Tool)
     case undo
@@ -229,7 +232,7 @@ final class EditorToolbar: PopView {
   private let toolHighlight = CALayer()
   private var state: (tool: Annotation.Tool?, canUndo: Bool, canRedo: Bool)?
 
-  init() {
+  init(mode: Mode = .capture) {
     super.init(frame: .zero)
     wantsLayer = true
     // (item, 符号, 旁白名字, 悬停提示)
@@ -249,8 +252,10 @@ final class EditorToolbar: PopView {
         (.record, "record.circle", "录屏", "录屏（R）"),
         (.output(.pin), "pin", "钉到屏幕", "钉到屏幕（T）"),
       ] as [Spec]).filter { spec in
+        // 长图的标注窗口：这一组只留识字（翻译、长截图、录屏、钉图对一张长图没意义，拍板 C1）
+        guard mode == .capture || spec.0 == .output(.recognize) else { return false }
         // 翻译、录制这两个功能关着（Feature）时没有它们的钮
-        (spec.0 != .output(.translate) || Feature.translate.isOn)
+        return (spec.0 != .output(.translate) || Feature.translate.isOn)
           && (spec.0 != .record || Feature.record.isOn)
       },
       [

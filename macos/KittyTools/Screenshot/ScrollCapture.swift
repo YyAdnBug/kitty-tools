@@ -15,7 +15,8 @@ import ScreenCaptureKit
 import SwiftUI
 
 final class ScrollCapture {
-  enum Action { case copy, save, saveAs }
+  /// annotate：交给长图的标注窗口（ScrollEditor），别的三样直接出图
+  enum Action { case copy, save, saveAs, annotate }
 
   struct Result {
     let image: CGImage
@@ -888,6 +889,7 @@ final class ScrollCaptureHUD: NSView {
     case kVK_Escape: onAction(.cancel)
     case kVK_Return where flags.isEmpty, kVK_ANSI_KeypadEnter where flags.isEmpty:
       onAction(.output(.copy))
+    case kVK_ANSI_A where flags.isEmpty: onAction(.output(.annotate))
     case kVK_Space where flags.isEmpty:
       if !event.isARepeat { onAction(.toggleAuto) }  // 按住不放不反复开关
     default: super.keyDown(with: event)

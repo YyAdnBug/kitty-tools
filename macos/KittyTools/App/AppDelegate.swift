@@ -180,6 +180,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
   /// 菜单栏图标与菜单（启动后才建：单测以本 App 为宿主时不往菜单栏加东西）
   private var statusItem: StatusItem?
+  /// 长图的标注窗口（长截图按 A 打开，关掉就放掉）
+  var scrollEditor: ScrollEditor?
   /// 钉图（菜单栏显示「隐藏 / 关闭全部钉图」）
   lazy var pins: PinBoard = {
     let board = PinBoard()
@@ -1812,12 +1814,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       case .saveAs:
         FlyCard.playShutter()
         await saveImageAs(result.image, scale: result.scale)
+      case .annotate:
+        openScrollEditor(result.image, scale: result.scale)
       }
     } catch {
       pins.resume()
       if Feature.notes.isOn { noteEdge?.floats.resume() }  // 便签关着时它们是藏着的，别放出来
       island.show("长截图失败", detail: error.localizedDescription, tone: .error)
     }
+  }
+
+  /// 长图标注（2026-10-26 拍板）：拼好的长图在自己的窗口里标注，出图走截图那条路、用刘海说结果（同钉图，不飞卡片：
+  /// 这时选区多半已经不在眼前了）。一次只开一扇，再开一次就把前一扇换掉
+  private func openScrollEditor(_ image: CGImage, scale: CGFloat) {
+    scrollEditor?.close()
+    let editor = ScrollEditor(image: image, scale: scale) { [unowned self] action, image, scale in
+      Task {
+        switch action {
+        case .copy:
+          guard await copyImage(image, scale: scale) != nil else { return }
+          island.show("已复制长截图", leading: Island.thumbnail(of: image))
+        case .save:
+          guard let saved = await saveImage(image, scale: scale, asking: false) else { return }
+          island.show(
+            FlyCard.Badge.saved(saved.url).title, detail: saved.url.lastPathComponent,
+            leading: Island.thumbnail(of: image))
+        case .saveAs: await saveImageAs(image, scale: scale)
+        case .recognize: await copyRecognizedText(in: image)
+        case .translate, .pin: break  // 长图的工具栏里没有这两样
+        }
+      }
+    }
+    editor.onClose = { [weak self] in self?.scrollEditor = nil }
+    scrollEditor = editor
+    editor.show()
   }
 
   /// 截图和截图翻译共用的开头：互斥；work 跑完才算这次截图结束。
