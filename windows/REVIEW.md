@@ -133,7 +133,7 @@
 
 ### R30（P3）几处小问题
 
-**进展（`82a5a07`）**：文件搜索的 LIKE 已把 `%` / `_` / `[` 用字符类转义；`System.ItemUrl` 实测不按百分号编码（空格就是空格），不再 `Uri.UnescapeDataString`，补了 `%20` 保持原样的单测。剩下：根目录过滤换 `SCOPE='file:…'`、第六版截图、提交格式、多 agent worktree。
+**进展（`82a5a07`、`356bb30`）**：文件搜索的 LIKE 已把 `%` / `_` / `[` 用字符类转义；`System.ItemUrl` 实测不按百分号编码（空格就是空格），不再 `Uri.UnescapeDataString`，补了 `%20` 保持原样的单测；根目录过滤改成 `SCOPE='file:C:/…'`，`--file-search=jpg` 100 条从 62 ms 降到 31 ms。剩下：第六版截图、提交格式、多 agent worktree。
 
 - **文件搜索的 SQL**（`Core/FileSearchSql.cs`）：
   - 只转义了 `'`。`%`、`_`、`[` 在 LIKE 里是通配符，搜「[草稿]」会搜不到。改成放进方括号转义：`[%]`、`[_]`、`[[]`。
