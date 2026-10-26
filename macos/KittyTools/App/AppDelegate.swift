@@ -52,6 +52,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let clipboard: ClipboardStore
     let launcher: LauncherUsage
     let history: HistoryStore
+    /// 截图历史（2026-10-26 拍板）：图在 <数据目录>/shots/，记录在同一个库的 shots 表
+    let shots: ShotHistory
 
     init(in directory: URL) throws {
       let images = directory.appending(path: "images")
@@ -60,12 +62,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       clipboard = try ClipboardStore(db: database, images: ImageStore(directory: images))
       launcher = try LauncherUsage(db: database)
       history = try HistoryStore(db: database)
+      shots = try ShotHistory(db: database, directory: directory.appending(path: "shots"))
     }
   }
   private lazy var stores = Self.openOrQuit(in: dataDirectory)
   private var clipboardStore: ClipboardStore { stores.clipboard }
   private var launcherUsage: LauncherUsage { stores.launcher }
   private var historyStore: HistoryStore { stores.history }
+  var shotHistory: ShotHistory { stores.shots }
   /// 备份正在做（backupIfDue）：换日和锁屏的通知挨着来时不做两遍
   private var isBackingUp = false
   /// 设置与数据的自动备份正在做（backupSettingsIfDue）：本机那份、另存到用户选的文件夹的那份各一个标记——
@@ -1567,18 +1571,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch capture.action {
         case .copy:
           let land = captured(capture.image, scale: capture.scale, frame: capture.frame)
+          await remember(capture)
           if let png = await copyImage(capture.image, scale: capture.scale) { land(.copied, png) }
         case .pin:
           FlyCard.playShutter()
+          await remember(capture, pinned: true)
           pins.pin(capture.image, frame: capture.frame)
         case .save:
           let land = captured(capture.image, scale: capture.scale, frame: capture.frame)
+          let id = await remember(capture)
           if let saved = await saveImage(capture.image, scale: capture.scale, asking: false) {
             land(.saved(saved.url), saved.png)
+            if let id { shotHistory.markSaved(id, to: saved.url) }
           }
         case .saveAs:
           FlyCard.playShutter()
-          await saveImageAs(capture.image, scale: capture.scale)
+          let id = await remember(capture)
+          if let saved = await saveImageAs(capture.image, scale: capture.scale), let id {
+            shotHistory.markSaved(id, to: saved)
+          }
         case .recognize: await copyRecognizedText(in: capture.image)
         case .translate: await translateImage(capture.image)
         }
@@ -1753,6 +1764,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   ) -> Bool {
     let seconds = Int(result.duration.components.seconds)
     let audio = medium == .audio
+    // 录制的也进同一个历史（拍板 B1）：只记文件路径和一张封面，不复制那个文件
+    Task {
+      await shotHistory.record(
+        file: file, poster: result.poster, kind: audio ? .audio : .video,
+        source: frontmostAppName())
+    }
     let size = audio ? AudioRecorder.posterSize : nil
     let keepsThumbnail = UserDefaults.standard.bool(forKey: Prefs.screenshotShelf)
     let flies = result.poster != nil && !Style.reduceMotion
@@ -1805,17 +1822,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       switch result.action {
       case .copy:
         let land = captured(result.image, scale: result.scale, frame: region)
+        await rememberScroll(result)
         if let png = await copyImage(result.image, scale: result.scale) { land(.copied, png) }
       case .save:
         let land = captured(result.image, scale: result.scale, frame: region)
+        let id = await rememberScroll(result)
         if let saved = await saveImage(result.image, scale: result.scale, asking: false) {
           land(.saved(saved.url), saved.png)
+          if let id { shotHistory.markSaved(id, to: saved.url) }
         }
       case .saveAs:
         FlyCard.playShutter()
-        await saveImageAs(result.image, scale: result.scale)
+        let id = await rememberScroll(result)
+        if let saved = await saveImageAs(result.image, scale: result.scale), let id {
+          shotHistory.markSaved(id, to: saved)
+        }
       case .annotate:
-        openScrollEditor(result.image, scale: result.scale)
+        let id = await rememberScroll(result)
+        openScrollEditor(result.image, scale: result.scale, history: id)
       }
     } catch {
       pins.resume()
@@ -1824,11 +1848,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
+  /// 长截图进历史（拼好的那张没有标注；标注窗口里改完了再回写）
+  @discardableResult private func rememberScroll(_ result: ScrollCapture.Result) async -> UUID? {
+    await shotHistory.record(
+      result.image, scale: result.scale, kind: .scroll, source: frontmostAppName())
+  }
+
+  /// 记进截图历史（2026-10-26 拍板）：存没画标注的那张 + 标注，成品用时再合成；识字、翻译不记（不产出图）。
+  /// 返回这一条的 id（历史关着时是 nil）
+  @discardableResult private func remember(
+    _ capture: RegionSelector.Capture, pinned: Bool = false
+  ) async -> UUID? {
+    await shotHistory.record(
+      capture.original ?? capture.image, scale: capture.scale, kind: .shot,
+      annotations: capture.annotations, source: frontmostAppName(), pinned: pinned)
+  }
+
+  /// 截的时候前台是哪个 App（历史里显示来源用；本 App 从不激活，所以这就是用户正在用的那个）
+  private func frontmostAppName() -> String? {
+    NSWorkspace.shared.frontmostApplication?.localizedName
+  }
+
   /// 长图标注（2026-10-26 拍板）：拼好的长图在自己的窗口里标注，出图走截图那条路、用刘海说结果（同钉图，不飞卡片：
   /// 这时选区多半已经不在眼前了）。一次只开一扇，再开一次就把前一扇换掉
-  private func openScrollEditor(_ image: CGImage, scale: CGFloat) {
+  private func openScrollEditor(_ image: CGImage, scale: CGFloat, history: UUID? = nil) {
     scrollEditor?.close()
-    let editor = ScrollEditor(image: image, scale: scale) { [unowned self] action, image, scale in
+    let editor = ScrollEditor(image: image, scale: scale) {
+      [unowned self] action, image, scale, annotations in
+      // 改完的标注回写到历史那一条（拍板 C4：更新同一条，不新建）
+      if let history { shotHistory.update(history, annotations: annotations) }
       Task {
         switch action {
         case .copy:
@@ -1836,10 +1884,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           island.show("已复制长截图", leading: Island.thumbnail(of: image))
         case .save:
           guard let saved = await saveImage(image, scale: scale, asking: false) else { return }
+          if let history { shotHistory.markSaved(history, to: saved.url) }
           island.show(
             FlyCard.Badge.saved(saved.url).title, detail: saved.url.lastPathComponent,
             leading: Island.thumbnail(of: image))
-        case .saveAs: await saveImageAs(image, scale: scale)
+        case .saveAs:
+          if let saved = await saveImageAs(image, scale: scale), let history {
+            shotHistory.markSaved(history, to: saved)
+          }
         case .recognize: await copyRecognizedText(in: image)
         case .translate, .pin: break  // 长图的工具栏里没有这两样
         }
@@ -2006,10 +2058,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     return await savePNG(png, asking: asking).map { ($0, png) }
   }
 
-  /// 另存为（截图、长截图、钉图）：不飞卡片、不进常驻缩略图，存好了用刘海说
-  private func saveImageAs(_ image: CGImage, scale: CGFloat) async {
-    guard let saved = await saveImage(image, scale: scale, asking: true) else { return }
+  /// 另存为（截图、长截图、钉图）：不飞卡片、不进常驻缩略图，存好了用刘海说。返回存到哪（取消、失败是 nil）
+  @discardableResult private func saveImageAs(_ image: CGImage, scale: CGFloat) async -> URL? {
+    guard let saved = await saveImage(image, scale: scale, asking: true) else { return nil }
     island.show("已保存", detail: saved.url.lastPathComponent, leading: Island.thumbnail(of: image))
+    return saved.url
   }
 
   /// 存编码好的 PNG；返回存到的文件（取消、失败为 nil）。失败时截图改放进剪贴板，别让这张图就这么丢了

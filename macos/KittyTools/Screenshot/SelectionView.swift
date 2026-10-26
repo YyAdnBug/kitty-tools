@@ -1589,11 +1589,18 @@ final class SelectionView: NSView, NSTextViewDelegate {
       ? Annotation.render(annotations, over: image, pixelRect: pixels, viewSize: bounds.size)
       : image.cropping(to: pixels)
     guard let result else { return session.finish(nil) }
+    // 截图历史要没画标注的那一张 + 挪到这张图里的标注坐标（拍板 A1）；没画标注时成品就是原图，不白渲一遍
+    let original =
+      annotations.isEmpty
+      ? result : Annotation.render([], over: image, pixelRect: pixels, viewSize: bounds.size)
+    let moved = annotations.map {
+      $0.offset(by: CGSize(width: -selection.minX, height: -selection.minY))
+    }
     session.finish(
       .capture(
         .init(
           image: result, frame: selection.offsetBy(dx: window.frame.minX, dy: window.frame.minY),
-          action: action)))
+          action: action, original: original, annotations: moved)))
   }
 
   /// 长截图：只交出选区位置，边滚边截的是实时画面（标注不带过去，长图是重截的、坐标对不上；

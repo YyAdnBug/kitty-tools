@@ -12,8 +12,8 @@ import AppKit
 import Carbon.HIToolbox
 
 @MainActor final class ScrollEditor: NSObject, NSWindowDelegate {
-  /// 出图：动作、合成好的图、像素 / 点（AppDelegate 接到截图那条路上，同钉图 PinBoard.output）
-  typealias Output = @MainActor (RegionSelector.Action, CGImage, CGFloat) -> Void
+  /// 出图：动作、合成好的图、像素 / 点、画了哪些标注（AppDelegate 接到截图那条路上，顺手把标注回写进历史）
+  typealias Output = @MainActor (RegionSelector.Action, CGImage, CGFloat, [Annotation]) -> Void
 
   /// 缩放的上下限和一档（⌘+ / ⌘-）
   private static let zoomRange: ClosedRange<CGFloat> = 0.1...4
@@ -226,7 +226,7 @@ import Carbon.HIToolbox
 
   /// 拷贝 / 存储 / 另存为完就关掉窗口（这次长截图到此结束）；识字只是把文字拿走，窗口留着
   private func emit(_ action: RegionSelector.Action) {
-    output(action, composed(), scale)
+    output(action, composed(), scale, canvas.annotations)
     if action != .recognize { close() }
   }
 

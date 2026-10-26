@@ -23,9 +23,11 @@ nonisolated enum Backup {
   static let databaseName = "kitty.sqlite3"
   /// 备份里不留的行（留下的见文件头）。条件都用各自仓库里现成的那一份，不另写一套：剪贴板的「留下的条目」在
   /// ClipItem.isRetained 旁边，翻译历史和启动器用的是它们各自「清空」的那一句
+  /// 截图历史（2026-10-26）整张不留：图在 <数据目录>/shots/ 里、本来就不备份，记录恢复回来也打不开；
+  /// 它本来就是 30 天自动清的临时货，不是用户攒下来的东西
   static let dropped = [
     "DELETE FROM clips WHERE NOT (\(ClipItem.retainedSQL))", HistoryStore.dropNonFavorites,
-    LauncherUsage.dropUsage,
+    LauncherUsage.dropUsage, "DROP TABLE IF EXISTS shots",
   ]
 
   /// 一份备份：文件和它是哪一天的（当地那天的零点）

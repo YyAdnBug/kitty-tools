@@ -27,6 +27,11 @@ enum RegionSelector {
     let frame: CGRect
     /// 截图翻译 / 识字只取图，不看它
     let action: Action
+    /// 没画标注的那一张（和 image 一样是裁好的选区；没画标注时就是 image 本身）：
+    /// 截图历史存它 + 标注另存，才能回头接着改（2026-10-26 拍板 A1）
+    var original: CGImage?
+    /// 画了哪些标注，坐标已经挪成「相对这张图的左下角」（历史和标注窗口按它摆）
+    var annotations: [Annotation] = []
 
     /// 像素 / 点
     var scale: CGFloat { frame.width > 0 ? CGFloat(image.width) / frame.width : 1 }

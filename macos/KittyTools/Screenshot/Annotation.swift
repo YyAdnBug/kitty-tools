@@ -8,7 +8,9 @@
 
 import AppKit
 
-struct Annotation: Identifiable, Equatable {
+/// Codable 是给截图历史用的（2026-10-26 拍板 A1：原图和标注分开存，才能回头接着改）：
+/// 自动合成的格式拿 case 名和成员名当键，**这些名字进了磁盘，改名要连旧数据一起想清楚**（加 case、加带默认值的成员没问题）。
+struct Annotation: Identifiable, Equatable, Codable, Sendable {
   /// 顺序即工具栏顺序和数字键（1–9、0）
   enum Tool: Int, CaseIterable {
     case rectangle = 1
@@ -72,7 +74,7 @@ struct Annotation: Identifiable, Equatable {
     var isDragDrawn: Bool { self != .text && self != .counter }
   }
 
-  enum Shape: Equatable {
+  enum Shape: Equatable, Codable, Sendable {
     case rectangle(CGRect)
     case ellipse(CGRect)
     /// bend：弯箭头 / 弯直线的弧线中点（弯曲手柄）离弦中点的偏移，按弦记——dx 沿弦（from → to）、dy 在弦的左侧，单位是
@@ -90,7 +92,7 @@ struct Annotation: Identifiable, Equatable {
     case spotlight(CGRect)
   }
 
-  enum Palette: Int, CaseIterable, Codable {
+  enum Palette: Int, CaseIterable, Codable, Sendable {
     case pink, red, orange, yellow, green, blue, black, white
 
     var title: String {
@@ -129,7 +131,7 @@ struct Annotation: Identifiable, Equatable {
     var ink: NSColor { self == .yellow || self == .white ? .black : .white }
   }
 
-  enum Weight: Int, CaseIterable, Codable {
+  enum Weight: Int, CaseIterable, Codable, Sendable {
     case small, medium, large
 
     var title: String { ["细", "中", "粗"][rawValue] }
@@ -144,7 +146,7 @@ struct Annotation: Identifiable, Equatable {
   }
 
   /// 第一次用是红色中号（荧光笔黄色）；option 是 Tool.optionTitles 的下标
-  struct Style: Equatable, Codable {
+  struct Style: Equatable, Codable, Sendable {
     var color = Palette.red
     var weight = Weight.medium
     var option = 0

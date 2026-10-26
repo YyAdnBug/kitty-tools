@@ -77,7 +77,7 @@ struct ScrollEditorProbeTests {
     let scale: CGFloat = 2
     let canvas = ScrollCanvas(image: image, scale: scale)
     var editor: ScrollEditor? = ScrollEditor(image: image, scale: scale, frameName: nil) {
-      _, _, _ in
+      _, _, _, _ in
     }
     let window = try #require(editor?.window)
     window.setFrameOrigin(NSPoint(x: -20000, y: -20000))

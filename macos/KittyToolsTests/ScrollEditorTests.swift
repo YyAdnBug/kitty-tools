@@ -76,7 +76,7 @@ struct ScrollEditorTests {
   /// 把窗口挤成 486 点，工具栏两头被切掉）
   @Test func toolbarFitsEvenForNarrowImage() throws {
     let editor = ScrollEditor(image: image(width: 972, height: 4800), scale: 2, frameName: nil) {
-      _, _, _ in
+      _, _, _, _ in
     }
     defer { editor.close() }
     let content = try #require(editor.window.contentView)
@@ -105,7 +105,7 @@ struct ScrollEditorTests {
   @Test func keysEmitAndClose() throws {
     var actions: [RegionSelector.Action] = []
     let editor = ScrollEditor(image: image(width: 400, height: 2400), scale: 2, frameName: nil) {
-      action, _, _ in actions.append(action)
+      action, _, _, _ in actions.append(action)
     }
     let content = try #require(editor.window.contentView as? ScrollEditorView)
     func press(_ keyCode: Int, _ characters: String, _ flags: NSEvent.ModifierFlags = []) throws {
@@ -290,7 +290,7 @@ struct ScrollEditorTests {
   /// 选了工具出来、收起工具又收回去
   @Test func styleBarOnlyShowsWithTool() throws {
     let editor = ScrollEditor(image: image(width: 972, height: 4800), scale: 2, frameName: nil) {
-      _, _, _ in
+      _, _, _, _ in
     }
     defer { editor.close() }
     let content = try #require(editor.window.contentView)

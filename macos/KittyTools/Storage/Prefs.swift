@@ -110,6 +110,12 @@ enum Prefs {
   static let screenshotShutterSound = "screenshotShutterSound"
   /// 拷贝 / 快速保存后在屏幕右下角留常驻缩略图（ShotShelf）；关掉后飞行卡片落地停 0.9 s 就滑走（体检 D18）
   static let screenshotShelf = "screenshotShelf"
+  /// 保留截图历史（2026-10-26 拍板 B3，默认开）：关掉之后不再往历史里记，已经记下的留着（设置里另有「现在清空」）
+  static let shotHistory = "shotHistory"
+  /// 截图历史留多少天（拍板 A3，默认 30；0 = 不按天清）
+  static let shotHistoryDays = "shotHistoryDays"
+  /// 截图历史总共最多占多少字节（拍板 A3，默认 2 GB；超了先删最旧的。0 = 不限）
+  static let shotHistoryBytes = "shotHistoryBytes"
 
   /// 正在录的屏的文件路径（ScreenRecorder.workFile，开录时写、收尾时删）：启动时还在 = 上次闪退了，
   /// ScreenRecorder.recover 把能播的挪进快速保存目录（录屏第 1 批，C7）
@@ -327,6 +333,9 @@ enum Prefs {
       ocrJoinLines: false,
       screenshotShutterSound: true,
       screenshotShelf: true,
+      shotHistory: true,
+      shotHistoryDays: 30,
+      shotHistoryBytes: 2 * 1024 * 1024 * 1024,
       screenRecordFrameRate: 30,
       screenRecordCountdown: 3,
       screenRecordShowsCursor: true,
