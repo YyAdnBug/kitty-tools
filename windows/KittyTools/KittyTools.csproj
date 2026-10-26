@@ -28,6 +28,10 @@
     <CsWin32PlatformTarget Condition="'$(CsWin32PlatformTarget)' == ''">x64</CsWin32PlatformTarget>
   </PropertyGroup>
   <ItemGroup>
+    <!-- R27：让 GC 在空闲时更积极地把不用的堆还给系统；只影响回收节奏，不压工作集。 -->
+    <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="5" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- 只引组件包：聚合包会带进 AI / ML / Search / Widgets，发布目录多 50 多 MB。 -->
     <PackageReference Include="Microsoft.WindowsAppSDK.Base" Version="2.0.4" />
     <PackageReference Include="Microsoft.WindowsAppSDK.Foundation" Version="2.3.12" />

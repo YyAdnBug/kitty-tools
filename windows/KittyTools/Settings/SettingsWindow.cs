@@ -134,7 +134,13 @@ internal sealed class SettingsWindow : Window
         Closed += (_, _) =>
         {
             IsClosed = true;
+            // R27：设置页的卡片 / 键帽 / 缩略图都是代码建的，关窗后放掉，别等下一次开才回收。
+            _content.Children.Clear();
+            _nav.MenuItems.Clear();
+            _nav.FooterMenuItems.Clear();
+            _nav.Content = null;
             Log.Info("settings.closed");
+            GC.Collect(2, GCCollectionMode.Optimized, blocking: false, compacting: false);
         };
     }
 
