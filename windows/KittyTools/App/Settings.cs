@@ -96,6 +96,9 @@ internal sealed class Settings
     /// <summary>截图快速保存的文件夹；空 = 系统的「屏幕截图」文件夹。</summary>
     public string? ScreenshotSaveFolder { get; set; }
 
+    /// <summary>保留截图历史（PLAN-v8 H3）：关掉后不再记、已记的留着。</summary>
+    public bool ShotHistory { get; set; } = true;
+
     /// <summary>上一次截图的区域（物理像素，只在内存里，不进导出文件；第三版 §7）。</summary>
     public int ScreenshotLastX { get; set; }
 

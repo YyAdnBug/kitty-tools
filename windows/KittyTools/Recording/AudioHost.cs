@@ -184,6 +184,7 @@ internal static class AudioHost
         }
 
         Log.Info($"audio.saved {Path.GetFileName(path)} size={new FileInfo(path).Length}");
+        _ = ShotHistory.RecordFileAsync(path, Core.ShotKind.Audio);
         NoticeHost.Show("录音已保存", Path.GetFileName(path), NoticeTone.Normal);
         try
         {

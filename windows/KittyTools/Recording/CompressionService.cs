@@ -119,6 +119,7 @@ internal static class CompressionService
             var size = new FileInfo(final).Length;
             var percent = original == 0 ? 0 : size * 100 / original;
             Log.Info($"video.compressed from={original} to={size} percent={percent}");
+            _ = ShotHistory.RecordFileAsync(final, ShotKind.Video);
             NoticeHost.Show(
                 "压缩完成",
                 $"{size / 1024.0 / 1024.0:F1} MB（原来的 {percent}%）· {Path.GetFileName(final)}",

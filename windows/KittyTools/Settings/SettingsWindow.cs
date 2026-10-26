@@ -1155,6 +1155,17 @@ internal sealed class SettingsWindow : Window
             TextWrapping = TextWrapping.Wrap,
         });
 
+        // 截图历史（PLAN-v8 H3）。
+        _content.Children.Add(Section(
+            "截图历史", "截图、长截图、钉过的图和录制都记在这里，留 30 天、最多 2 GB，超了先删最旧的。"));
+        AddToggle("保留截图历史", "关掉后不再记，已经记下的留着",
+            SettingsService.Current.ShotHistory,
+            value =>
+            {
+                SettingsService.Current.ShotHistory = value;
+                SettingsService.Save();
+            });
+
         if (Features.IsOn(Feature.Recording))
         {
             _content.Children.Add(Section(

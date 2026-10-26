@@ -69,6 +69,8 @@ internal sealed class ShellRuntime
             // 翻译历史和生词本用同一个库（第三版 §3.1）。
             TranslationHistory.Start(database);
             LauncherFavorites.Start(database);
+            // 截图历史（PLAN-v8）：同一个库的 shots 表，图在 <数据目录>\shots\。
+            ShotHistory.Start(database, DispatcherQueue.GetForCurrentThread()!);
             // 同步（第五版）：本机编号、账本和执行层。
             var syncDevice = SyncDevice.Start(database);
             var syncLedger = SyncLedger.Start(database);

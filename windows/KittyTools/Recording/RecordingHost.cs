@@ -177,6 +177,7 @@ internal static unsafe class RecordingHost
         }
 
         Log.Info($"record.saved {Path.GetFileName(path)}");
+        _ = ShotHistory.RecordFileAsync(path, Core.ShotKind.Video);
         NoticeHost.Show("录屏已保存", Path.GetFileName(path), NoticeTone.Normal);
         OpenMicrophoneSettingsIfPending();
         try

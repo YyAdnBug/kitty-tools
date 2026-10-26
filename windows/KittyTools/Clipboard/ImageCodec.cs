@@ -96,6 +96,39 @@ internal static class ImageCodec
         }
     }
 
+    /// <summary>
+    /// 等比缩到最长边 <paramref name="maxSide"/> 再编 PNG（截图历史的缩略图，PLAN-v8）；本来就小的原样返回。
+    /// </summary>
+    public static async Task<byte[]?> ScaledPngAsync(byte[] png, int maxSide)
+    {
+        try
+        {
+            using var stream = await ToStreamAsync(png);
+            var decoder = await BitmapDecoder.CreateAsync(stream);
+            var (width, height) = Core.ShotHistoryRules.ThumbnailSize(
+                (int)decoder.PixelWidth, (int)decoder.PixelHeight, maxSide);
+            if (width == decoder.PixelWidth && height == decoder.PixelHeight)
+            {
+                return png;
+            }
+
+            using var bitmap = await decoder.GetSoftwareBitmapAsync(
+                BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied);
+            using var output = new InMemoryRandomAccessStream();
+            var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId, output);
+            encoder.SetSoftwareBitmap(bitmap);
+            encoder.BitmapTransform.ScaledWidth = (uint)width;
+            encoder.BitmapTransform.ScaledHeight = (uint)height;
+            encoder.BitmapTransform.InterpolationMode = BitmapInterpolationMode.Fant;
+            await encoder.FlushAsync();
+            return await ReadAllAsync(output);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     /// <summary>PNG → CF_DIBV5 的字节（32 位 BGRA、自下而上）。</summary>
     public static async Task<byte[]?> PngToDibAsync(byte[] png)
     {

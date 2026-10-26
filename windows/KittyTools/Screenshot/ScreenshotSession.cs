@@ -212,6 +212,11 @@ internal sealed class ScreenshotSession
             copied = await ScreenshotOutput.CopyPngAsync(png, screen, selection);
         }
 
+        if (copied && png is not null)
+        {
+            RecordHistory(screen, selection, png);
+        }
+
         var origin = GlobalRect(screen, selection);
         SaveLast(origin);
         Finish();
@@ -238,13 +243,19 @@ internal sealed class ScreenshotSession
         }
 
         string? saved = null;
+        string? savedAs = null;
         if (saveAs && _overlays.FirstOrDefault() is { } overlay)
         {
-            await ScreenshotOutput.SavePngAsAsync(overlay.AppWindow, png);
+            savedAs = await ScreenshotOutput.SavePngAsAsync(overlay.AppWindow, png);
         }
         else
         {
             saved = await ScreenshotOutput.QuickSavePngAsync(png);
+        }
+
+        if ((saved ?? savedAs) is { } path)
+        {
+            RecordHistory(screen, selection, png, path);
         }
 
         var origin = GlobalRect(screen, selection);
@@ -308,6 +319,7 @@ internal sealed class ScreenshotSession
             var png = await ImageCodec.BgraToPngAsync(global.Width, global.Height, bgra);
             if (png is not null && await ScreenshotOutput.CopyPngAsync(png, screen, local))
             {
+                _ = ShotHistory.RecordAsync(png, global.Width, global.Height, screen.Scale, ShotKind.Shot, frame: global);
                 ScreenshotCard.Show(png, global);
             }
         }
@@ -376,7 +388,39 @@ internal sealed class ScreenshotSession
         Finish();
         if (copied && png is not null)
         {
+            _ = ShotHistory.RecordAsync(png, frame.Width, frame.Height, screen?.Scale ?? 1, ShotKind.Scroll);
             ScreenshotCard.Show(png, global);
+        }
+    }
+
+    /// <summary>
+    /// 截图历史（PLAN-v8）：在 Finish 放掉冻结帧之前，取出没画标注的原图和标注坐标，后台写盘入库、不用等。
+    /// 没有标注时成品就是原图，直接拿 <paramref name="composed"/> 存，不再编一遍。
+    /// </summary>
+    internal void RecordHistory(FrozenScreen screen, RectD selection, byte[] composed, string? savedPath = null, bool pinned = false)
+    {
+        if (!ShotHistory.IsOn)
+        {
+            return;
+        }
+
+        var overlay = _overlays.FirstOrDefault(item => item.Screen == screen);
+        var annotations = overlay?.AnnotationsForHistory() ?? new List<ShotAnnotationData>();
+        var rect = ScreenshotOutput.SelectionPixels(screen, selection);
+        var original = annotations.Count == 0 ? null : screen.Crop(rect);
+        var frame = GlobalRect(screen, selection);
+        var scale = screen.Scale;
+        _ = RecordAsync();
+
+        async Task RecordAsync()
+        {
+            var png = original is null ? composed : await ImageCodec.BgraToPngAsync(rect.Width, rect.Height, original);
+            if (png is not null)
+            {
+                await ShotHistory.RecordAsync(
+                    png, rect.Width, rect.Height, scale, ShotKind.Shot, annotations,
+                    original is null ? null : composed, savedPath, pinned, frame);
+            }
         }
     }
 

@@ -98,6 +98,7 @@ internal static class GifService
             File.Move(temporary, final, overwrite: true);
             var size = new FileInfo(final).Length;
             Log.Info($"video.gif {Path.GetFileName(final)} size={size}");
+            _ = ShotHistory.RecordFileAsync(final, ShotKind.Gif);
             NoticeHost.Show("GIF 好了", $"{Path.GetFileName(final)} · {size / 1024} KB", NoticeTone.Normal);
             return final;
         }

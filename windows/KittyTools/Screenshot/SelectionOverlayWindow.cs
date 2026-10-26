@@ -174,6 +174,13 @@ internal sealed partial class SelectionOverlayWindow : Window
     /// <summary>R33 截图自检用。</summary>
     internal IntPtr Handle => WinRT.Interop.WindowNative.GetWindowHandle(this);
 
+    /// <summary>截图历史（PLAN-v8）：现在画着的标注，坐标换成选区里的像素。</summary>
+    internal List<ShotAnnotationData> AnnotationsForHistory()
+    {
+        var origin = _session.Selection;
+        return _annotations.Select(annotation => ShotAnnotations.ToData(annotation, origin.X, origin.Y)).ToList();
+    }
+
     public FrozenScreen Screen => _screen;
 
     /// <summary>选区 + 标注合成成 PNG（像素和冻结帧 1:1）。</summary>
@@ -1457,6 +1464,7 @@ internal sealed partial class SelectionOverlayWindow : Window
             screen.Bounds.Top + (int)Math.Round(selection.Y),
             screen.Bounds.Left + (int)Math.Round(selection.Right),
             screen.Bounds.Top + (int)Math.Round(selection.Bottom));
+        _session.RecordHistory(screen, selection, png, pinned: true);
         _session.Finish();
         PinHost.Show(png, global);
     }

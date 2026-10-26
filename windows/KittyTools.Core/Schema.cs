@@ -128,6 +128,27 @@ public static class Schema
               library TEXT NOT NULL DEFAULT ''
             );
             """),
+        new SchemaStep(
+            8,
+            "shots：截图历史（PLAN-v8 第 1 批）",
+            """
+            CREATE TABLE IF NOT EXISTS shots(
+              id TEXT PRIMARY KEY,
+              kind TEXT NOT NULL,
+              created_at INTEGER NOT NULL,
+              pixel_width INTEGER NOT NULL DEFAULT 0,
+              pixel_height INTEGER NOT NULL DEFAULT 0,
+              scale_percent INTEGER NOT NULL DEFAULT 100,
+              source_name TEXT,
+              saved_path TEXT,
+              file_path TEXT,
+              annotations TEXT,
+              pinned_at INTEGER,
+              bytes INTEGER NOT NULL DEFAULT 0,
+              frame TEXT
+            );
+            CREATE INDEX IF NOT EXISTS shots_created_at ON shots(created_at DESC);
+            """),
     };
 
     /// <summary>从 currentVersion 开始还要跑的步骤（升序）。比代码新的库（用户装过更新的版本）一步都不跑。</summary>
