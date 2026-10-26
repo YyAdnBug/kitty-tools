@@ -1,17 +1,19 @@
-// 首次安装的欢迎引导（N14，Whisker 品牌时刻，对标 Apple 自家 App 的首次启动页 / Raycast）：盖在设置窗上的 sheet，奶油底，两屏。
-// 第一屏 = 品牌图标 + 大标题 + 四行功能（家族色块 + 一句话），要授权的那两行右边直接是授权状态（PermissionStatus，每秒刷新）；
-// 第二屏「按一下试试」= 主要全局快捷键一行一个（Whisker 键帽），用户真的按下、热键触发时（热键照常执行，面板照样弹出）
+// 首次安装的欢迎引导（N14，Whisker 品牌时刻，对标 Apple 自家 App 的首次启动页 / Raycast）：盖在设置窗上的 sheet，奶油底，三屏。
+// 第一屏 = 品牌图标 + 大标题 + 全部功能两列（家族色块 + 名字 + Feature.blurb，这台系统上有的都列，加了功能这里自己跟上；
+// 2026-10-26 用户报引导还停在四件套）；
+// 第二屏「授权」= 辅助功能、屏幕录制两行（PermissionRow，同 设置 › 通用 › 权限，每秒刷新），别的授权用到时再问；
+// 第三屏「按一下试试」= 主要全局快捷键一行一个（Whisker 键帽），用户真的按下、热键触发时（热键照常执行，面板照样弹出）
 // 那一行弹出品牌粉 ✓（pop）：热键弹出的面板 / 截图遮罩正盖在引导上，所以 ✓ 等引导所在的 sheet 重新成为 key
-// （用户关掉面板、截完图回来）再弹，播报是即时的。两屏之间 settle 滑过去，减弱动态效果时只淡入淡出；
+// （用户关掉面板、截完图回来）再弹，播报是即时的。屏与屏之间 settle 滑过去，减弱动态效果时只淡入淡出；
 // 没有跳过、页码点、上一步 / 下一步，只有一个品牌粉主按钮（Esc 照样关：藏着一个 cancelAction 按钮）。「关于」页可以重看。
-// 第二屏底下一个勾选框「登录时自动打开」（首次安装默认勾，体检 D20：不开机自启的话重启后快捷键全都没反应；重看时跟随当前状态），点「开始使用」时生效，
+// 第三屏底下一个勾选框「登录时自动打开」（首次安装默认勾，体检 D20：不开机自启的话重启后快捷键全都没反应；重看时跟随当前状态），点「开始使用」时生效，
 // 失败走刘海岛；从磁盘映像等临时位置运行时换成一行说明。关掉引导后照旧停在通用页（下面就是这个开关）。
 
 import ServiceManagement
 import SwiftUI
 
 struct OnboardingView: View {
-  enum Screen { case welcome, tryIt }
+  enum Screen { case welcome, permissions, tryIt }
 
   let center: HotKeyCenter
   @Environment(\.dismiss) private var dismiss
@@ -26,6 +28,9 @@ struct OnboardingView: View {
   @State private var pending: Set<HotKeyAction> = []
   /// 引导所在的窗口（sheet），只认它重新成为 key
   @State private var window: ObjectIdentifier?
+
+  /// 挂在设置窗工具栏下沿：首次安装时设置窗是默认大小（内容 600，工具栏约 52），高 520 放得下
+  static let size = CGSize(width: 580, height: 520)
 
   /// firstRun：首次安装，「登录时自动打开」默认勾；关于页重看时跟随当前状态（不把用户在通用页关掉的又打开）。
   /// screen / tried：从哪一屏开始、哪些已经按过（截图自检摆状态用）
@@ -44,6 +49,7 @@ struct OnboardingView: View {
       ZStack {
         switch screen {
         case .welcome: WelcomeScreen().transition(slide)
+        case .permissions: PermissionScreen().transition(slide)
         case .tryIt:
           TryScreen(center: center, tried: tried, launchAtLogin: $launchAtLogin).transition(slide)
         }
@@ -51,13 +57,19 @@ struct OnboardingView: View {
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       .clipped()
       Button {
-        if screen == .welcome {
-          withAnimation(Style.Motion.settle.animation(reduced: reduceMotion)) { screen = .tryIt }
+        let next: Screen? =
+          switch screen {
+          case .welcome: .permissions
+          case .permissions: .tryIt
+          case .tryIt: nil
+          }
+        if let next {
+          withAnimation(Style.Motion.settle.animation(reduced: reduceMotion)) { screen = next }
         } else {
           finish()
         }
       } label: {
-        Text(screen == .welcome ? "继续" : "开始使用").frame(minWidth: 160)
+        Text(screen == .tryIt ? "开始使用" : "继续").frame(minWidth: 160)
       }
       .buttonStyle(BrandButtonStyle())
       .controlSize(.large)
@@ -65,7 +77,7 @@ struct OnboardingView: View {
       .padding(.top, 12)
       .padding(.bottom, 24)
     }
-    .frame(width: 580, height: 480)
+    .frame(width: Self.size.width, height: Self.size.height)
     .background(Style.brandCream)
     .background {
       // 没有可见的「跳过」（N14），Esc 靠这个看不见的按钮：macOS 上 sheet 没有 cancelAction 就不认 Esc
@@ -154,65 +166,69 @@ private struct RowCard<Item: Hashable, Row: View>: View {
   }
 }
 
-/// 第一屏：品牌图标 + 大标题 + 四行功能；辅助功能、屏幕录制的状态每秒刷新（在系统设置里打开开关后，回到这里马上变）
+/// 第一屏：品牌图标 + 大标题 + 这台系统上有的全部功能，两列（名字、色块取设置页的，一句话是 Feature.blurb）
 private struct WelcomeScreen: View {
+  var body: some View {
+    let features = Feature.allCases.filter(\.isAvailable)
+    let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
+    VStack(spacing: 0) {
+      BrandIcon(size: 64)
+      Heading(
+        title: "欢迎使用 Kitty Tools",
+        subtitle: "这些小工具都住在菜单栏里，用快捷键随叫随到。\n用不上的可以到 设置 › 通用 › 功能 里关掉。"
+      )
+      .padding(.top, 8)
+      Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 12) {
+        ForEach(Array(stride(from: 0, to: features.count, by: 2)), id: \.self) { start in
+          GridRow {
+            ForEach(features[start..<min(start + 2, features.count)], id: \.self) { feature in
+              HStack(alignment: .top, spacing: 10) {
+                KindTile(symbol: feature.page.symbol, color: feature.page.color, size: 24)
+                VStack(alignment: .leading, spacing: 1) {
+                  Text(feature.title).fontWeight(.medium)
+                  Text(feature.defaultOn ? feature.blurb : "\(feature.blurb)（默认关）")
+                    .font(.subheadline).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+              }
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .accessibilityElement(children: .combine)
+            }
+          }
+        }
+      }
+      .padding(14)
+      .background(.background, in: shape)
+      .overlay(shape.hairlineBorder())
+      .padding(.horizontal, 36)
+      .padding(.top, 16)
+    }
+  }
+}
+
+/// 第二屏：辅助功能、屏幕录制两行（同 设置 › 通用 › 权限），每秒刷新（在系统设置里打开开关后，回到这里马上变）
+private struct PermissionScreen: View {
   @State private var trusted = Permissions.isAccessibilityTrusted
   @State private var screenRecording = Permissions.isScreenRecordingAllowed
 
-  private struct Feature: Hashable {
-    let title: String
-    let detail: String
-    let symbol: String
-    let color: Color
-    /// 这一行要的授权（粘贴回原 App、划词翻译靠辅助功能；截图、识字靠屏幕录制）
-    var permission: Permissions.Kind?
-  }
-
-  private static let features = [
-    Feature(
-      title: "剪贴板历史", detail: "复制过的文字、图片、文件都记下来，选一条直接粘贴回原 App",
-      symbol: "doc.on.clipboard.fill", color: Style.Family.clipboard, permission: .accessibility),
-    Feature(
-      title: "启动器", detail: "搜 App、文件、书签和网页，顺手算个算式",
-      symbol: "command", color: Style.Family.command),
-    Feature(
-      title: "翻译", detail: "划词、输入、截图都能翻，内置服务不用配密钥",
-      symbol: "character.bubble.fill", color: Style.Family.translate),
-    Feature(
-      title: "截图", detail: "框选、标注、钉图、长截图，还能识别图里的文字",
-      symbol: "camera.viewfinder", color: Style.Family.screenshot, permission: .screenRecording),
-  ]
-
   var body: some View {
     VStack(spacing: 0) {
-      BrandIcon(size: 84)
-      Heading(title: "欢迎使用 Kitty Tools", subtitle: "剪贴板、启动器、翻译和截图，都住在菜单栏里。")
-        .padding(.top, 10)
-      RowCard(items: Self.features) { feature in
-        HStack(spacing: 10) {
-          KindTile(symbol: feature.symbol, color: feature.color, size: 24)
-          VStack(alignment: .leading, spacing: 1) {
-            Text(feature.title).fontWeight(.medium)
-            Text(feature.detail).font(.subheadline).foregroundStyle(.secondary)
-          }
-          Spacer(minLength: 8)
-          switch feature.permission {
-          case .accessibility:
-            PermissionStatus(granted: trusted, button: "授权辅助功能") {
-              Permissions.requestAccessibility()
-              Permissions.openAccessibilitySettings()
-            }
-          case .screenRecording:
-            PermissionStatus(granted: screenRecording, button: "授权屏幕录制") {
-              Permissions.requestScreenRecording()
-              Permissions.Kind.screenRecording.openSettings()
-            }
-          default: EmptyView()
-          }
+      Heading(
+        title: "先开两项授权",
+        subtitle: "粘贴回原 App、截图都要靠它们。\n点「去授权」后在系统设置里打开开关，回到这里状态会自己变。")
+      RowCard(items: [true, false]) { isAccessibility in
+        if isAccessibility {
+          PermissionRow.accessibility(granted: trusted)
+        } else {
+          PermissionRow.screenRecording(granted: screenRecording)
         }
-        .accessibilityElement(children: .combine)
       }
-      .padding(.top, 20)
+      .padding(.top, 18)
+      Text("麦克风、文件夹这类授权等用到时再问；以后都在 设置 › 通用 › 权限 里")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.top, 12)
     }
     .task {
       while !Task.isCancelled {
@@ -224,15 +240,17 @@ private struct WelcomeScreen: View {
   }
 }
 
-/// 第二屏「按一下试试」：列的是设好的组合；注册失败的那一行下面橙字写原因（按了也不会响）
+/// 第三屏「按一下试试」：列的是设好的组合；注册失败的那一行下面橙字写原因（按了也不会响）
 private struct TryScreen: View {
   let center: HotKeyCenter
   let tried: Set<HotKeyAction>
   @Binding var launchAtLogin: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+  /// 有默认键的几个功能各挑最常用的一个（七行正好放得下）
   private static let shown: [HotKeyAction] = [
-    .clipboard, .launcher, .selectionTranslate, .inputTranslate, .screenshot, .screenshotTranslate,
+    .clipboard, .launcher, .selectionTranslate, .screenshot, .screenshotTranslate, .screenRecord,
+    .noteCapture,
   ]
 
   var body: some View {
@@ -254,9 +272,10 @@ private struct TryScreen: View {
         }
       }
       .padding(.top, 12)
-      Text("想换键或看面板里的按键：设置 › 快捷键")
+      Text("提示从屏幕顶部正中冒出来，有刘海时点一下刘海能看最近几条\n换键、看面板里的按键：设置 › 快捷键")
         .font(.caption)
         .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
         .padding(.top, 10)
     }
   }

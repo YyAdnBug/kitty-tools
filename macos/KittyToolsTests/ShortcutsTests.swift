@@ -99,6 +99,32 @@ struct ShortcutsTests {
     #expect(HotKeyAction.inputTranslate.resolve { stored[$0] } == optionT)
   }
 
+  /// 速查表左栏按设置页分类：和设置侧栏同序、通用排最后，钉图归截图、录屏录音归录制、刘海岛和「设置」归通用。
+  /// 搜索跨类找：空格分开的词都要对上（组名 + 说明 + 按键），词全在组名里的整组列出，别的只留对上的行
+  @Test func cheatSheetSectionsAndSearch() throws {
+    let groups = ShortcutsSheet.groups(enabled: Set(Feature.allCases))
+    #expect(
+      ShortcutsSheet.sections(groups) == [
+        .clipboard, .launcher, .translate, .screenshot, .record, .notes, .launchpad, .statusScreen,
+        .general,
+      ])
+    func page(_ title: String) -> SettingsPage? { groups.first { $0.title == title }?.page }
+    #expect(page("钉图") == .screenshot && page("截图 · 框选") == .screenshot)
+    #expect(page("录音") == .record && page("系统命令") == .launcher)
+    #expect(page("刘海岛") == .general && page("设置") == .general)
+
+    let pin = ShortcutsSheet.matching(groups, query: "钉")
+    let pinGroup = try #require(groups.first { $0.title == "钉图" })
+    #expect(pin.first { $0.title == "钉图" }?.entries == pinGroup.entries)
+    #expect(pin.first { $0.title == "截图 · 出图" }?.entries.map(\.keys) == [["T"]])
+    let menu = ShortcutsSheet.matching(groups, query: "剪贴板 ⌘K")
+    #expect(menu.map(\.title) == ["剪贴板"])
+    #expect(menu.first?.globals.isEmpty == true && menu.first?.entries.count == 1)
+    #expect(!ShortcutsSheet.matching(groups, query: "esc").isEmpty)
+    #expect(ShortcutsSheet.matching(groups, query: "没有这种键").isEmpty)
+    #expect(ShortcutsSheet.matching(groups, query: "  ").count == groups.count)
+  }
+
   /// 速查表 sheet 挂在设置窗工具栏下沿：默认内容 600、最小 460，减去约 52 的工具栏后都放得下，窗口再大也只到 520
   @Test func cheatSheetFitsSettingsWindow() {
     #expect(ShortcutsButton.sheetHeight(available: 600 - 52) <= 600 - 52)

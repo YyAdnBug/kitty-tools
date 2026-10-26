@@ -433,10 +433,10 @@ struct SnapshotProbeTests {
           to: "\(out)/about-update-accent-\(suffix).png")
         try snapshot(
           OnboardingView(center: HotKeyCenter(), firstRun: true, screen: .tryIt),
-          size: NSSize(width: 580, height: 480), dark: dark,
+          size: OnboardingView.size, dark: dark,
           to: "\(out)/onboarding-try-accent-\(suffix).png")
         try snapshot(
-          ShortcutsSheet(), size: NSSize(width: 560, height: 400), dark: dark,
+          ShortcutsSheet(), size: NSSize(width: ShortcutsSheet.width, height: 400), dark: dark,
           to: "\(out)/shortcuts-accent-\(suffix).png")
       }
     }
@@ -772,32 +772,40 @@ struct SnapshotProbeTests {
       LauncherTab().defaultAppStorage(browserPrefs).environment(navigation),
       size: NSSize(width: 590, height: 900), dark: false,
       to: "\(out)/settings-launcher-browsers-granted.png")
-    // 快捷键速查表（N11）：默认大小的设置窗里 sheet 的尺寸，另出一张拉长的看全部分组
+    // 快捷键速查表（N11）：默认大小的设置窗里 sheet 的尺寸（停在第一类、深色）；左栏每一类各出一张拉长的看全，
+    // 搜索中（跨类列出对上的行）、什么都没搜到各一张
     let sheetHeight = ShortcutsButton.sheetHeight(available: 600 - 52)
-    for (name, height, dark) in [
-      ("shortcuts", sheetHeight, false), ("shortcuts-dark", sheetHeight, true),
-      ("shortcuts-full", 5400, false),
-    ] {
+    let sheetSize = NSSize(width: ShortcutsSheet.width, height: sheetHeight)
+    for (name, dark) in [("shortcuts", false), ("shortcuts-dark", true)] {
+      try snapshot(ShortcutsSheet(), size: sheetSize, dark: dark, to: "\(out)/\(name).png")
+    }
+    for page in ShortcutsSheet.sections(ShortcutsSheet.groups) {
       try snapshot(
-        ShortcutsSheet(), size: NSSize(width: 560, height: height), dark: dark,
-        to: "\(out)/\(name).png")
+        ShortcutsSheet(page: page), size: NSSize(width: ShortcutsSheet.width, height: 2400),
+        dark: false, to: "\(out)/shortcuts-\(page.rawValue).png")
+    }
+    for (name, query) in [("shortcuts-search", "删除"), ("shortcuts-search-empty", "没有这种键")] {
+      try snapshot(
+        ShortcutsSheet(query: query), size: sheetSize, dark: false, to: "\(out)/\(name).png")
     }
     // 增强对比度（体检 B53）：速查表、通用页的发丝线 1 pt
     try snapshot(
       ShortcutsSheet().environment(\._colorSchemeContrast, .increased),
-      size: NSSize(width: 560, height: sheetHeight), dark: false,
+      size: sheetSize, dark: false,
       to: "\(out)/shortcuts-contrast.png")
     try snapshot(
       GeneralTab().environment(\._colorSchemeContrast, .increased),
       size: NSSize(width: 640, height: 560), dark: true,
       to: "\(out)/settings-general-contrast-dark.png")
-    // 欢迎引导（N14）：第一屏、第二屏「按一下试试」（两行已按过），各出深色
-    for (name, screen) in [("welcome", OnboardingView.Screen.welcome), ("try", .tryIt)] {
+    // 欢迎引导（N14）：第一屏（全部功能）、第二屏「授权」、第三屏「按一下试试」（两行已按过），各出深色
+    for (name, screen) in [
+      ("welcome", OnboardingView.Screen.welcome), ("permissions", .permissions), ("try", .tryIt),
+    ] {
       for dark in [false, true] {
         try snapshot(
           OnboardingView(
             center: hotKeys, firstRun: true, screen: screen, tried: [.clipboard, .screenshot]),
-          size: NSSize(width: 580, height: 480), dark: dark,
+          size: OnboardingView.size, dark: dark,
           to: "\(out)/onboarding-\(name)\(dark ? "-dark" : "").png")
       }
     }
@@ -1217,14 +1225,12 @@ struct SnapshotProbeTests {
       StatusPresetDetail(id: "clean", fixed: [StatusPreset.builtIn[0]]),
       size: NSSize(width: 590, height: 940), dark: false,
       to: "\(out)/settings-status-detail-only.png")
-    // 速查表：默认大小的设置窗里的 sheet（页头的跳转胶囊两行），和拉长的全表
+    // 速查表：从状态屏页点开（停在状态屏那一类），默认大小的设置窗里的 sheet
     let sheetHeight = ShortcutsButton.sheetHeight(available: 600 - 52)
-    for (name, height, dark) in [
-      ("shortcuts-status", sheetHeight, false), ("shortcuts-status-dark", sheetHeight, true),
-      ("shortcuts-status-full", 5700, false),
-    ] {
+    for (name, dark) in [("shortcuts-status", false), ("shortcuts-status-dark", true)] {
       try snapshot(
-        ShortcutsSheet(), size: NSSize(width: 560, height: height), dark: dark,
+        ShortcutsSheet(page: .statusScreen),
+        size: NSSize(width: ShortcutsSheet.width, height: sheetHeight), dark: dark,
         to: "\(out)/\(name).png")
     }
     // 快捷键页拉长看到底：最后一节「状态屏」那一行
@@ -2033,14 +2039,15 @@ struct SnapshotProbeTests {
     try snapshot(
       settings, size: NSSize(width: 780, height: 1120), dark: false,
       to: "\(out)/notes-settings-hotkeys.png")
+    // 速查表从便签页点开：停在便签那一类（默认大小的 sheet，另出一张拉长的看全四组）
     let sheetHeight = ShortcutsButton.sheetHeight(available: 600 - 52)
     for (name, height, dark) in [
       ("shortcuts", sheetHeight, false), ("shortcuts-dark", sheetHeight, true),
-      ("shortcuts-full", 6200, false),
+      ("shortcuts-full", 3200, false),
     ] {
       try snapshot(
-        ShortcutsSheet(), size: NSSize(width: 560, height: height), dark: dark,
-        to: "\(out)/notes-\(name).png")
+        ShortcutsSheet(page: .notes), size: NSSize(width: ShortcutsSheet.width, height: height),
+        dark: dark, to: "\(out)/notes-\(name).png")
     }
     let launcher = LauncherModel(
       usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
