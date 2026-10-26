@@ -193,6 +193,7 @@ public sealed class SyncSourceTests
         foreach (var value in new[]
                  {
                      "{\"id\":\"google\",\"isEnabled\":true,\"kind\":\"google\",\"name\":\"Google 翻译\"}",
+                     "{\"id\":\"google\",\"isEnabled\":false,\"kind\":\"google\",\"name\":\"Google 翻译\"}",
                      // 空串照写（写成空串的那台不会被当成「这一版读不懂」）。
                      "{\"baseURL\":\"\",\"id\":\"ai:1a2b3c4d\",\"isEnabled\":false,\"kind\":\"ai\",\"model\":\"\",\"name\":\"AI\"}",
                  })
@@ -275,6 +276,21 @@ public sealed class SyncSourceTests
                         new List<KittyTools.Core.SearchEngine>(), out var failure);
                     Assert.IsNull(failure, json);
                     Assert.AreEqual(json, EngineSync.Values(engines!)["custom"]);
+                    checkedCount++;
+                    break;
+                }
+
+                case "service":
+                {
+                    // R32：mac 会写 usesDeepLX:false / model:"" / baseURL:""，落下来再编要一模一样。
+                    using var serviceDocument = System.Text.Json.JsonDocument.Parse(json);
+                    var serviceId = serviceDocument.RootElement.GetProperty("id").GetString()!;
+                    var plan = ServiceSync.Plan(
+                        new Dictionary<string, string?> { [serviceId] = json },
+                        new List<SyncService>(), out var failure);
+                    Assert.IsNull(failure, json);
+                    var encoded = ServiceSync.Values(plan!.Services)[serviceId];
+                    Assert.AreEqual(json, encoded, encoded);
                     checkedCount++;
                     break;
                 }

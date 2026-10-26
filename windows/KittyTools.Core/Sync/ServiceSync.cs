@@ -3,13 +3,13 @@
 // 第一次合时同协议、同地址、同模型的自建 AI 服务只留文件夹里那个，本机那个的密钥搬给它（它在本机还没有密钥时）。
 // 别处删了的服务只拿出列表、不删凭据管理器里的密钥。
 // 编码：键按字母排；可空的字段是 null 才不写（空串照写）——两边编 → 落 → 再编都一字不差，写成空串的那台不会被当成
-// 「这一版读不懂」。usesDeepLX 只在 true 时写（Windows 这边是布尔）。
+// 「这一版读不懂」。usesDeepLX 是三态：没写 / false / true，三态都原样编回去（R32）。
 namespace KittyTools.Core.Sync;
 
 /// <summary>同步里的一个翻译服务（mac TranslateService 的字段；Windows 专有的设置不进来）。</summary>
 public sealed record SyncService(
     string Id, string Kind, string Name, bool Enabled, string? Model, string? BaseUrl, string? Protocol,
-    string? Region, bool UsesDeepLX);
+    string? Region, bool? UsesDeepLX);
 
 /// <summary>去重掉的本机自建 AI 服务：密钥从 From 搬给 To（To 在本机还没有密钥时）。</summary>
 public sealed record SyncSecretMove(string From, string To);
@@ -78,9 +78,9 @@ public static class ServiceSync
             Field("region", SyncValues.Quote(service.Region));
         }
 
-        if (service.UsesDeepLX)
+        if (service.UsesDeepLX is { } usesDeepLX)
         {
-            Field("usesDeepLX", "true");
+            Field("usesDeepLX", usesDeepLX ? "true" : "false");
         }
 
         return builder.Append('}').ToString();
@@ -108,7 +108,7 @@ public static class ServiceSync
                     SyncValues.Text(root, "baseURL"),
                     // 没写协议就是没有（不补 openai）：补了编回去就多一个字段，对不上。
                     SyncValues.Text(root, "aiProtocol"), SyncValues.Text(root, "region"),
-                    SyncValues.Flag(root, "usesDeepLX"))
+                    SyncValues.FlagOrNull(root, "usesDeepLX"))
                 : null);
         return service is not null && Service(service) == value ? service : null;
     }

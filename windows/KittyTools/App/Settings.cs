@@ -166,8 +166,8 @@ internal sealed class TranslateServiceConfig
     /// <summary>微软翻译填了 key 时的区域。</summary>
     public string? Region { get; set; }
 
-    /// <summary>DeepL 走自建 DeepLX。</summary>
-    public bool UsesDeepLX { get; set; }
+    /// <summary>DeepL 走自建 DeepLX；null = 从没写过（同步时要和 false 区分，R32）。</summary>
+    public bool? UsesDeepLX { get; set; }
 }
 
 internal sealed class HotKeySetting

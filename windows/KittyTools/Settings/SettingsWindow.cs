@@ -1479,7 +1479,7 @@ internal sealed class SettingsWindow : Window
         {
             TranslateKinds.Zhipu => "智谱 GLM",
             TranslateKinds.Google => "Google",
-            TranslateKinds.DeepL => service.UsesDeepLX ? "DeepLX" : "DeepL",
+            TranslateKinds.DeepL => service.UsesDeepLX == true ? "DeepLX" : "DeepL",
             TranslateKinds.Microsoft => "微软（留空 key 用 Edge 免费接口）",
             _ => service.Protocol switch
             {
@@ -1553,7 +1553,7 @@ internal sealed class SettingsWindow : Window
         ToggleSwitch? deepLx = null;
         if (service.Kind == TranslateKinds.DeepL)
         {
-            deepLx = new ToggleSwitch { Header = "用自建 DeepLX", IsOn = service.UsesDeepLX };
+            deepLx = new ToggleSwitch { Header = "用自建 DeepLX", IsOn = service.UsesDeepLX == true };
             panel.Children.Add(deepLx);
             url = new TextBox { Header = "DeepLX 地址", Text = service.BaseUrl ?? string.Empty, PlaceholderText = "http://127.0.0.1:1188/translate" };
             panel.Children.Add(url);

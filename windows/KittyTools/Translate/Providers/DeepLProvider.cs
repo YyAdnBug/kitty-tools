@@ -16,7 +16,7 @@ internal static class DeepLProvider
         Uri url;
         var headers = new Dictionary<string, string>();
         JsonObject body;
-        var deeplx = service.UsesDeepLX;
+        var deeplx = service.UsesDeepLX == true;
         if (deeplx)
         {
             var raw = service.BaseUrl?.Trim() ?? string.Empty;

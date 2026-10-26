@@ -443,6 +443,13 @@ public static class SyncValues
     public static bool Flag(JsonElement root, string name)
         => root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.True;
 
+    /// <summary>三态布尔：没写 = null，false / true 原样。R32 的 usesDeepLX 要用。</summary>
+    public static bool? FlagOrNull(JsonElement root, string name)
+        => root.TryGetProperty(name, out var value) &&
+           value.ValueKind is JsonValueKind.True or JsonValueKind.False
+            ? value.GetBoolean()
+            : null;
+
     public static long? Number(JsonElement root, string name)
         => root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number &&
            value.TryGetInt64(out var number)
