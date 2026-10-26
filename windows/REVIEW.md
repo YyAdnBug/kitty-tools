@@ -218,7 +218,9 @@ x64 包冒烟通过。设置窗的 Mica 在 Release AOT 下会抛 `ArgumentExcep
 - 顺带：第一次运行的欢迎页里「登录时自动打开」取的是设置的默认值（true），点「开始使用」会把安装时没勾的开机启动又写回去。有标记时改成取 `Autostart.IsEnabled()`，并同步到 `SettingsService.Current.StartWithWindows`。
 - 设置窗第七版还在改，所以这条交给你们。
 
-### R38（P2）程序内更新之后改「设置 › 应用」里的登记（PLAN-setup §4.3 / S11）→ 审查方写了，待编译验证
+### R38（P2）程序内更新之后改「设置 › 应用」里的登记（PLAN-setup §4.3 / S11）→ 已编译 / 补测，真机更新待走
+
+**进展（`76f94b4`）**：`SetupRules.WithInstalledFiles` 抽成纯函数（旧文件保留原大小写、新文件大小写不敏感去重、版本更新），`SetupRecord.AfterUpdate` 改用它；新增单测，325 个全过。登记写入仍要真机更新验一次。
 
 - 在 `App/AutoUpdater.cs` 的 `update.installed` 之后（这时有 `result.Installed` 和 `version`），安装目录有 `.kitty-install` 就：
   - 改 `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\<UninstallKey>` 的 `DisplayVersion`（新版本）和 `EstimatedSize`（`SetupRules.DirectorySizeKb(安装目录)`）。登记的 `InstallLocation` 不是这个目录就不动。
