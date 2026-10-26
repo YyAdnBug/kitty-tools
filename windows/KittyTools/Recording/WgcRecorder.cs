@@ -69,6 +69,7 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
     private readonly object _gate = new();
     private PendingFrame? _latest;
     private readonly List<IntPtr> _free = new();
+    private readonly Dictionary<IntPtr, IntPtr> _renderTargets = new();
     private readonly ManualResetEventSlim _ready = new(false);
     private Thread? _thread;
     private D3DContext? _context;
@@ -521,6 +522,12 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
             }
 
             _free.Clear();
+            foreach (var view in _renderTargets.Values)
+            {
+                ((ID3D11RenderTargetView*)view)->Release();
+            }
+
+            _renderTargets.Clear();
             lock (_gate)
             {
                 if (_latest is not null)
@@ -653,9 +660,19 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
 
             if (content.Width != _sourceWidth || content.Height != _sourceHeight)
             {
-                _note = "屏幕尺寸变了，录制已停止";
-                _stop.Set();
-                return;
+                if (_window == IntPtr.Zero)
+                {
+                    _note = "屏幕尺寸变了，录制已停止";
+                    _stop.Set();
+                    return;
+                }
+
+                // R29：录单个窗口时拖边不停止；输出尺寸不变，后面按新内容居中裁 / 补黑边。
+                _sourceWidth = content.Width;
+                _sourceHeight = content.Height;
+                _cropLeft = 0;
+                _cropTop = 0;
+                _note = "窗口尺寸变了";
             }
 
             var time = frame.SystemRelativeTime.Ticks;
@@ -715,30 +732,83 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
             _free.RemoveAt(_free.Count - 1);
         }
 
-        var right = Math.Min(_cropLeft + _outputWidth, pending.Width);
-        var bottom = Math.Min(_cropTop + _outputHeight, pending.Height);
-        if (right - _cropLeft < 2 || bottom - _cropTop < 2)
+        int sourceLeft;
+        int sourceTop;
+        int destinationLeft;
+        int destinationTop;
+        int copyWidth;
+        int copyHeight;
+        if (_window == IntPtr.Zero)
+        {
+            // 选区：从屏幕帧里裁固定的 cropLeft / cropTop，不做居中。
+            sourceLeft = _cropLeft;
+            sourceTop = _cropTop;
+            copyWidth = Math.Min(_outputWidth, pending.Width - sourceLeft);
+            copyHeight = Math.Min(_outputHeight, pending.Height - sourceTop);
+            destinationLeft = 0;
+            destinationTop = 0;
+        }
+        else
+        {
+            // 窗口：窗口尺寸变了就按新内容居中裁 / 补黑边，输出尺寸不变（R29）。
+            copyWidth = Math.Min(_outputWidth, pending.Width);
+            copyHeight = Math.Min(_outputHeight, pending.Height);
+            sourceLeft = Math.Max(0, (pending.Width - copyWidth) / 2);
+            sourceTop = Math.Max(0, (pending.Height - copyHeight) / 2);
+            destinationLeft = Math.Max(0, (_outputWidth - copyWidth) / 2);
+            destinationTop = Math.Max(0, (_outputHeight - copyHeight) / 2);
+        }
+
+        if (copyWidth < 2 || copyHeight < 2)
         {
             ReturnTexture(target);
             _stop.Set();
             _note = "裁不出选区";
             return null;
         }
-
         var box = new D3D11_BOX
         {
-            left = (uint)Math.Max(0, _cropLeft),
-            top = (uint)Math.Max(0, _cropTop),
+            left = (uint)sourceLeft,
+            top = (uint)sourceTop,
             front = 0,
-            right = (uint)right,
-            bottom = (uint)bottom,
+            right = (uint)(sourceLeft + copyWidth),
+            bottom = (uint)(sourceTop + copyHeight),
             back = 1,
         };
         var copyStart = Stopwatch.GetTimestamp();
+        if (_window != IntPtr.Zero || copyWidth < _outputWidth || copyHeight < _outputHeight)
+        {
+            ClearTarget(target);
+        }
         _context!.Context->CopySubresourceRegion(
-            (ID3D11Resource*)target, 0, 0, 0, 0, (ID3D11Resource*)pending.Source, 0, &box);
+            (ID3D11Resource*)target, 0, (uint)destinationLeft, (uint)destinationTop, 0,
+            (ID3D11Resource*)pending.Source, 0, box);
         _copyTicks += Stopwatch.GetTimestamp() - copyStart;
-        return target;    }
+        return target;
+    }
+
+    /// <summary>窗口变小 / 变大时四周补黑；目标纹理是 render target。</summary>
+    private void ClearTarget(ID3D11Texture2D* target)
+    {
+        var key = (IntPtr)target;
+        if (!_renderTargets.TryGetValue(key, out var viewValue))
+        {
+            ID3D11RenderTargetView* created = null;
+            _context!.Device->CreateRenderTargetView((ID3D11Resource*)target, null, &created);
+            viewValue = (IntPtr)created;
+            if (created is not null)
+            {
+                _renderTargets[key] = viewValue;
+            }
+        }
+
+        var view = (ID3D11RenderTargetView*)viewValue;
+        if (view is not null)
+        {
+            var black = stackalloc float[4];
+            _context!.Context->ClearRenderTargetView(view, black);
+        }
+    }
 
     private static void ReleasePending(PendingFrame pending)
     {
