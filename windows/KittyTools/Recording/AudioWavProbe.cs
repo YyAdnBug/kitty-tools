@@ -175,12 +175,12 @@ internal static class AudioWavProbe
             }
 
 
-            if (windowPeak > 0.1f && !inside)
+            if (windowPeak > 0.25f && !inside)
             {
                 starts.Add(frame);
                 inside = true;
             }
-            else if (windowPeak <= 0.03f)
+            else if (windowPeak <= 0.08f)
             {
                 inside = false;
             }
