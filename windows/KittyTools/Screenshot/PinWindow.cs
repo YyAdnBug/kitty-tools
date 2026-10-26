@@ -26,6 +26,8 @@ internal sealed partial class PinWindow : Window
     private readonly Grid _root;
     private readonly Image _image;
     private readonly Border _hover;
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer _hoverTimer = null!;
+    private int _opacityIndex;
     private readonly HWND _hwnd;
     private double _scale = 1;
     private bool _dragging;
@@ -142,8 +144,11 @@ internal sealed partial class PinWindow : Window
             return button;
         }
 
-        Action(Glyphs.Copy, "复制钉图", Copy);
-        Action(Glyphs.Save, "保存钉图", () => _ = SaveQuickAsync());
+        Action("\uE7B3", "透明度", () =>
+        {
+            _opacityIndex = (_opacityIndex + 1) % 4;
+            _image.Opacity = 1 - _opacityIndex * 0.25;
+        });
         Action(Glyphs.Close, "关闭钉图", Close);
         var bar = new Border
         {
@@ -151,24 +156,36 @@ internal sealed partial class PinWindow : Window
             VerticalAlignment = VerticalAlignment.Top,
             Margin = new Thickness(8),
             Padding = new Thickness(2),
-            CornerRadius = new CornerRadius(16),
+            CornerRadius = new CornerRadius(14),
             Background = new SolidColorBrush(Theme.Argb(210, 0, 0, 0)),
             Child = row,
             Opacity = 0,
             IsHitTestVisible = false,
         };
-        _root.PointerEntered += (_, _) =>
+        _hoverTimer = _root.DispatcherQueue.CreateTimer();
+        _hoverTimer.Interval = TimeSpan.FromMilliseconds(300);
+        _hoverTimer.IsRepeating = false;
+        _hoverTimer.Tick += (_, _) =>
         {
             bar.Opacity = 1;
             bar.IsHitTestVisible = true;
         };
-        bar.PointerExited += (_, _) =>
+        _root.PointerEntered += (_, _) =>
         {
+            if (!_hoverTimer.IsRunning && bar.Opacity == 0)
+            {
+                _hoverTimer.Start();
+            }
+        };
+        _root.PointerExited += (_, _) =>
+        {
+            _hoverTimer.Stop();
             bar.Opacity = 0;
             bar.IsHitTestVisible = false;
         };
         bar.PointerEntered += (_, _) =>
         {
+            _hoverTimer.Stop();
             bar.Opacity = 1;
             bar.IsHitTestVisible = true;
         };
