@@ -11,6 +11,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using Windows.Graphics;
 using Windows.System;
 using Windows.Win32;
@@ -1245,6 +1246,9 @@ internal sealed unsafe partial class TranslateWindow : Window
         private readonly StackPanel _skeleton;
         private readonly TextBlock _error;
         private readonly Border _errorCard;
+        private readonly Border _glow;
+        private readonly Storyboard _glowStoryboard;
+        private bool _glowActive;
         private readonly Button _copy;
         private readonly Button _retry;
         private readonly Button _settings;
@@ -1387,17 +1391,41 @@ internal sealed unsafe partial class TranslateWindow : Window
             panel.Children.Add(_skeleton);
             panel.Children.Add(bodyHost);
             panel.Children.Add(_errorCard);
-            Root = new Border
+            var card = new Border
             {
-                Style = Theme.Style("Kitty.Card"),
+                Style = Theme.Style("Kitty.CardStyle"),
                 Padding = new Thickness(10, 8, 10, 8),
                 Child = panel,
             };
+            // ponytail: 强调色呼吸边，不是真正的彗星沿边跑；升级再做 Composition 几何 + 渐变偏移。
+            _glow = new Border
+            {
+                CornerRadius = new CornerRadius(8),
+                BorderThickness = new Thickness(1.5),
+                BorderBrush = new SolidColorBrush(Theme.AccentColor),
+                Opacity = 0,
+                IsHitTestVisible = false,
+            };
+            _glowStoryboard = new Storyboard { RepeatBehavior = RepeatBehavior.Forever, AutoReverse = true };
+            var glowFade = new DoubleAnimation
+            {
+                From = 0.12,
+                To = 0.8,
+                Duration = new Duration(TimeSpan.FromMilliseconds(900)),
+                EnableDependentAnimation = true,
+            };
+            Storyboard.SetTarget(glowFade, _glow);
+            Storyboard.SetTargetProperty(glowFade, "Opacity");
+            _glowStoryboard.Children.Add(glowFade);
+            var host = new Grid();
+            host.Children.Add(card);
+            host.Children.Add(_glow);
+            Root = host;
             _bodyScroll.ViewChanged += (_, _) => UpdateFade();
             Update(new TranslateCard { Service = service });
         }
 
-        public Border Root { get; }
+        public Grid Root { get; }
 
         public void Update(TranslateCard card)
         {
@@ -1430,6 +1458,21 @@ internal sealed unsafe partial class TranslateWindow : Window
 
             SetBlink(generating, _cursor);
             SetShimmer(waiting);
+
+            var glow = card.State is CardState.Waiting or CardState.Running;
+            if (glow && !_glowActive)
+            {
+                _glowActive = true;
+                _glow.Visibility = Visibility.Visible;
+                _glowStoryboard.Begin();
+            }
+            else if (!glow && _glowActive)
+            {
+                _glowActive = false;
+                _glowStoryboard.Stop();
+                _glow.Opacity = 0;
+                _glow.Visibility = Visibility.Collapsed;
+            }
 
             switch (card.State)
             {
