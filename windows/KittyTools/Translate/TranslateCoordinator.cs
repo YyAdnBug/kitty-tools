@@ -196,6 +196,13 @@ internal sealed class TranslateCoordinator
         string latest = string.Empty;
         try
         {
+            // R12 调试用：让请求停在等待状态，量等待动画期间的 CPU（KITTY_TRANSLATE_FAKE_DELAY_MS）。
+            if (int.TryParse(Environment.GetEnvironmentVariable("KITTY_TRANSLATE_FAKE_DELAY_MS"), out var fakeDelay) &&
+                fakeDelay > 0)
+            {
+                await Task.Delay(fakeDelay, cts.Token);
+            }
+
             await foreach (var piece in TranslateServiceStore.Translate(
                                card.Service, request, cts.Token).WithCancellation(cts.Token))
             {
