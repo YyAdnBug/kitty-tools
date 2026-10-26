@@ -1,11 +1,15 @@
 // 动效：mac 的七条弹簧在 Windows 上的做法（参数和规则的纯数据在 Core 的 MotionCurves）。
-// 用 Composition 的 Spring 动画（DampingRatio = 1 − bounce、Period = duration）；
+// 位移和尺寸走 CurveTo：把 Core 的 SpringEase 曲线采样成 Composition 关键帧（合成器里跑，不占主线程）；
+// Appear / HeightChange 的缩放还是 Composition 的 Spring（DampingRatio = 1 − bounce、Period = duration）。
 // 读 UISettings.AnimationsEnabled，系统关了动画效果时只留淡入淡出。
 // 各界面只用下面四个现成的用法，不要自己拼 Composition：
 //   Entrance  入场：透明度 0→1 + 下落 6 px
 //   Appear    小东西出现：从 0.85 放大到 1（带淡入）
 //   SlideTo   选中高亮滑动（把一块高亮挪到目标位置）
 //   HeightChange 高度变化，顶边不动
+// 另有 FadeIn / Fade 两个淡变（底栏就地提示）。唯一的例外是轻提示（Notice.cs）：PLAN-v7 §2.3 要求它
+// 只动 Composition 圆角矩形几何的尺寸，形状、抖动和退场都在那个文件里自己拼（曲线也用 CurveTo）。
+using System.Globalization;
 using System.Numerics;
 using KittyTools.Core;
 using KittyTools.Infrastructure;
@@ -59,13 +63,9 @@ internal static class Motion
                 return;
             }
 
-            element.Translation = Vector3.Zero;
-            var drop = compositor.CreateSpringVector3Animation();
-            drop.DampingRatio = (float)spring.Value.DampingRatio;
-            drop.Period = spring.Value.Period;
-            drop.InitialValue = new Vector3(0, -6, 0);
-            drop.FinalValue = Vector3.Zero;
-            visual.StartAnimation("Translation", drop);
+            EnableTranslation(element);
+            visual.Properties.InsertVector3("Translation", new Vector3(0, -6, 0));
+            visual.StartAnimation("Translation", CurveTo(compositor, Vector3.Zero, spring.Value));
         });
 
     /// <summary>小东西出现：从 0.85 放大到 1（pop），同时淡入。系统关了动画就只淡入。</summary>
@@ -92,26 +92,62 @@ internal static class Motion
             visual.StartAnimation("Scale", scale);
         });
 
-    /// <summary>选中高亮滑动：把一块高亮从当前位置挪到目标位置（glide；减弱动画时直接跳过去）。</summary>
+    /// <summary>
+    /// 选中高亮滑动：把一块高亮从当前位置（正在滑的话从滑到的地方）挪到目标位置；
+    /// Instant 或减弱动画时直接跳过去，并停掉还在跑的那一段。
+    /// </summary>
     public static void SlideTo(FrameworkElement element, double x, double y, MotionCurve curve = MotionCurve.Glide)
         => WhenReady(element, visual =>
         {
             var target = new Vector3((float)x, (float)y, 0);
+            EnableTranslation(element);
             var spring = MotionCurves.Effective(curve, Reduced);
             if (spring is null)
             {
-                element.Translation = target;
+                visual.StopAnimation("Translation");
+                visual.Properties.InsertVector3("Translation", target);
                 return;
             }
 
-            element.Translation = target;
-            var slide = visual.Compositor.CreateSpringVector3Animation();
-            slide.DampingRatio = (float)spring.Value.DampingRatio;
-            slide.Period = spring.Value.Period;
-            slide.InitialValue = element.Translation;
-            slide.FinalValue = target;
-            visual.StartAnimation("Translation", slide);
+            visual.StartAnimation("Translation", CurveTo(visual.Compositor, target, spring.Value));
         });
+
+    /// <summary>
+    /// 弹簧曲线采样成关键帧（Core 的 SpringEase，时长 = 曲线的 duration）：每一帧是
+    /// this.StartingValue + (target − this.StartingValue) × p，被打断时从当前值接着走。
+    /// ponytail: 不用 CreateSpring*Animation——第七版第 3 批实测轻提示几何上的 Composition 弹簧 2 秒多还在
+    /// 一像素一像素地爬；采样 24 帧肉眼看不出折线。要换回真弹簧先用 --notice-anim-test 量。
+    /// </summary>
+    public static Vector3KeyFrameAnimation CurveTo(Compositor compositor, Vector3 target, SpringSpec spec)
+    {
+        var animation = compositor.CreateVector3KeyFrameAnimation();
+        animation.SetVector3Parameter("target", target);
+        FillCurve(compositor, animation, spec);
+        return animation;
+    }
+
+    /// <inheritdoc cref="CurveTo(Compositor, Vector3, SpringSpec)"/>
+    public static Vector2KeyFrameAnimation CurveTo(Compositor compositor, Vector2 target, SpringSpec spec)
+    {
+        var animation = compositor.CreateVector2KeyFrameAnimation();
+        animation.SetVector2Parameter("target", target);
+        FillCurve(compositor, animation, spec);
+        return animation;
+    }
+
+    private static void FillCurve(Compositor compositor, KeyFrameAnimation animation, SpringSpec spec)
+    {
+        const int steps = 24;
+        animation.Duration = spec.Period;
+        var linear = compositor.CreateLinearEasingFunction();
+        for (var step = 1; step <= steps; step++)
+        {
+            var t = step / (double)steps;
+            var progress = SpringEase.Progress(t, spec.Bounce).ToString("0.####", CultureInfo.InvariantCulture);
+            animation.InsertExpressionKeyFrame(
+                (float)t, $"this.StartingValue + (target - this.StartingValue) * {progress}", linear);
+        }
+    }
 
     /// <summary>
     /// 高度变化（顶边不动）：把新内容按 old/new 的比例从顶边压一下再弹回 1。
@@ -168,29 +204,35 @@ internal static class Motion
         });
     }
 
-    /// <summary>出错时左右抖一下（±6 DIP，四下，0.36 s）；减弱动画时不做。</summary>
-    public static void Shake(FrameworkElement element)
-    {
-        if (Reduced)
+    /// <summary>
+    /// 从完全透明淡入（底栏就地提示、轻提示的内容）。<paramref name="delayMs"/> 期间保持透明。
+    /// 不能用 Fade(…, 0, 0) 先清零：Composition 的关键帧动画时长至少 1 ms，0 会抛异常。
+    /// </summary>
+    public static void FadeIn(FrameworkElement element, double seconds, int delayMs = 0)
+        => WhenReady(element, visual =>
         {
-            return;
-        }
-
-        WhenReady(element, visual =>
-        {
-            var shake = visual.Compositor.CreateVector3KeyFrameAnimation();
-            shake.Duration = TimeSpan.FromSeconds(0.36);
-            var offsets = new[] { 0f, -6f, 6f, -4f, 4f, 0f };
-            for (var i = 0; i < offsets.Length; i++)
+            visual.Opacity = 0f;
+            var fade = visual.Compositor.CreateScalarKeyFrameAnimation();
+            fade.InsertKeyFrame(0f, 0f);
+            fade.InsertKeyFrame(1f, 1f);
+            fade.Duration = TimeSpan.FromSeconds(Math.Max(0.001, seconds));
+            if (delayMs > 0)
             {
-                shake.InsertKeyFrame(
-                    i / (float)(offsets.Length - 1),
-                    new Vector3(offsets[i], element.Translation.Y, 0));
+                fade.DelayTime = TimeSpan.FromMilliseconds(delayMs);
+                fade.DelayBehavior = AnimationDelayBehavior.SetInitialValueBeforeDelay;
             }
 
-            visual.StartAnimation("Translation", shake);
+            visual.StartAnimation("Opacity", fade);
         });
-    }
+
+    /// <summary>
+    /// 要在合成器里动 handoff visual 的 "Translation"，得先打开它；不开的话 StartAnimation 抛 ArgumentException
+    /// （第七版之前入场的下落和高亮滑动一直是这样失败的，日志里的 motion.failed，只剩淡入 / 直接跳）。
+    /// 打开之后它和 XAML 的 UIElement.Translation 是叠加的两份：只写合成器这份（Properties 里的 "Translation"），
+    /// XAML 那份别碰，否则偏移翻倍（实测高亮往下错了一行的一半）。
+    /// </summary>
+    private static void EnableTranslation(UIElement element)
+        => ElementCompositionPreview.SetIsTranslationEnabled(element, true);
 
     private static void StartFade(Visual visual, float target, double seconds)
     {

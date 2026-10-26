@@ -98,21 +98,10 @@ internal static class Theme
 
         public static Brush Tint(string key, byte alpha = 28) => Tint(For(key), alpha);
 
-        /// <summary>U3 的 24 图标块：家族色从上往下 0.95 → 0.75 的渐变。</summary>
-        public static Brush Tile(LauncherKind kind)
+        /// <summary>U3 的 24 图标块：家族色从上往下 0.95 → 0.75 的渐变（家族名见 KindTile.FamilyOf）。</summary>
+        public static Brush Tile(string family)
         {
-            var color = For(kind switch
-            {
-                LauncherKind.App => "launcher",
-                LauncherKind.Setting => "general",
-                LauncherKind.Command => "command",
-                LauncherKind.Action => "capture",
-                LauncherKind.Url => "url",
-                LauncherKind.Path => "shortcut",
-                LauncherKind.Search => "search",
-                LauncherKind.Calculation => "calculator",
-                _ => "translate",
-            });
+            var color = For(family);
             var gradient = new LinearGradientBrush
             {
                 StartPoint = new Windows.Foundation.Point(0, 0),

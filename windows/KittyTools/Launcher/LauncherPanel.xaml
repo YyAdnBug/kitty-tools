@@ -169,39 +169,7 @@
                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
         </Grid>
 
-        <Grid Grid.Row="2">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <TextBlock
-                x:Name="FooterText"
-                VerticalAlignment="Center"
-                FontSize="{StaticResource Kitty.FontSize.Meta}"
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                TextTrimming="CharacterEllipsis" />
-            <StackPanel
-                Grid.Column="1"
-                Orientation="Horizontal"
-                Spacing="4"
-                VerticalAlignment="Center">
-                <Border Style="{StaticResource Kitty.KeyCap}">
-                    <TextBlock Text="↑↓" FontSize="{StaticResource Kitty.FontSize.KeyCap}" />
-                </Border>
-                <Border Style="{StaticResource Kitty.KeyCap}">
-                    <TextBlock Text="Enter" FontSize="{StaticResource Kitty.FontSize.KeyCap}" />
-                </Border>
-                <Button
-                    x:Name="SettingsButton"
-                    Padding="8,4"
-                    Background="Transparent"
-                    BorderThickness="0"
-                    AutomationProperties.Name="打开启动器设置"
-                    ToolTipService.ToolTip="设置"
-                    Click="OnSettingsClick">
-                    <FontIcon Glyph="&#xE713;" FontSize="14" />
-                </Button>
-            </StackPanel>
-        </Grid>
+        <!-- PLAN-v7 §3.2 底栏：左选中项的种类（16 色块 + 种类名），右「打开 ↩」「操作 Ctrl+K」；没有齿轮（Ctrl+, 直达设置） -->
+        <ui:PanelFooter x:Name="Footer" Grid.Row="2" Margin="-16,0,-16,0" />
     </Grid>
 </UserControl>

@@ -34,7 +34,6 @@ public sealed partial class ClipboardPanel : UserControl
     /// <summary>当前选中行透镜里的内容（U1：原地展开，不再有右边那一栏）。</summary>
     private readonly StackPanel PreviewHost = new() { Spacing = 8 };
     private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _keyHintTimer;
-    private bool _favoritesOnly;
     private ClipScope _scope = ClipScope.All;
     private string? _groupFilterId;
     private bool _active;
@@ -46,6 +45,10 @@ public sealed partial class ClipboardPanel : UserControl
     private CancellationTokenSource? _linkCts;
     private Uri? _linkPending;
     private bool _composing;
+    private bool _shiftHeld;
+    private bool _pinned;
+    /// <summary>底栏右边现在摆的是哪一套按钮：没变就不重建（按 ↓ 连发时每下都重建会拖慢）。</summary>
+    private string _footerActions = string.Empty;
 
     /// <summary>R33 性能探针用：当前显示的面板。</summary>
     public static ClipboardPanel? Current { get; private set; }
@@ -139,6 +142,11 @@ public sealed partial class ClipboardPanel : UserControl
     {
         Current = this;
         _active = true;
+        _shiftHeld = false;
+        _pinned = false;
+        // 外观可能在收起期间换过：底栏按钮按新颜色重建一次。
+        _footerActions = string.Empty;
+        Footer.HideNotice();
         SearchBox.Text = string.Empty;
         SetKeyHints(false);
         SetScope(ClipScope.All, refresh: false);
@@ -172,6 +180,8 @@ public sealed partial class ClipboardPanel : UserControl
         _active = false;
         _keyHintTimer.Stop();
         _showKeyHints = false;
+        _shiftHeld = false;
+        Footer.HideNotice();
         SearchBox.Text = string.Empty;
         _visible.Clear();
         _rows.Clear();
@@ -289,19 +299,101 @@ public sealed partial class ClipboardPanel : UserControl
         }
     }
 
+    /// <summary>
+    /// PLAN-v7 §3.1 底栏：左边「N 条」（暂停记录时带「⏸ 已暂停记录 ·」，按住 Shift 换成纯文本粘贴的说明），
+    /// 右边「粘贴 ↩ · 操作 Ctrl+K ｜ 齿轮 图钉」；多选时左边「已选 N 条」，右边 合并粘贴 / 收藏 / 删除 / 取消。
+    /// </summary>
     private void UpdateFooter()
     {
-        if (_visible.Count == 0)
+        var selected = SelectedEntries;
+        if (selected.Count > 1)
         {
-            FooterText.Text = string.Empty;
+            var mode = MultiPaste.Mode(
+                selected.Count,
+                selected.All(entry => entry.Kind == ClipKind.Text),
+                selected.All(entry => entry.Kind == ClipKind.Files));
+            Footer.Status = PanelFooterText.ClipSelected(selected.Count);
+            SetFooterActions($"multi:{mode}", () =>
+            {
+                Footer.AddVerb(MultiPaste.ShortVerb(mode), "↩", primary: true, () => Paste(plain: false));
+                Footer.AddVerb("收藏", "Ctrl+D", primary: false, FavoriteSelected);
+                Footer.AddVerb("删除", "Del", primary: false, DeleteSelected, danger: true);
+                Footer.AddVerb("取消", "Esc", primary: false, CancelMultiSelect);
+            });
             return;
         }
 
-        var scope = _favoritesOnly ? "收藏 · " : string.Empty;
-        var selected = SelectedEntries;
-        FooterText.Text = selected.Count > 1
-            ? $"{_visible.Count} 条 ｜ {MultiPaste.Footer(selected.Count, MultiPaste.Mode(selected.Count, selected.All(entry => entry.Kind == ClipKind.Text), selected.All(entry => entry.Kind == ClipKind.Files)))}"
-            : $"{_visible.Count} 条 ｜ {scope}粘贴 Enter · 纯文本 Shift+Enter · 更多（右键）· 收藏 Ctrl+D";
+        var paused = ClipboardService.Instance?.Paused == true;
+        Footer.Status = _shiftHeld && _visible.Count > 0
+            ? PanelFooterText.ShiftHint
+            : _visible.Count > 0 || paused
+                ? PanelFooterText.ClipStatus(_visible.Count, paused)
+                : string.Empty;
+        var hasItems = _visible.Count > 0;
+        SetFooterActions($"single:{hasItems}:{_pinned}", () =>
+        {
+            if (hasItems)
+            {
+                Footer.AddVerb("粘贴", "↩", primary: true, () => Paste(plain: false));
+                Footer.AddVerb("操作", "Ctrl+K", primary: false, ShowActionPanel);
+                Footer.AddSeparator();
+            }
+
+            Footer.AddIconButton(Glyphs.Settings, "打开剪贴板设置", "设置", () => SettingsRequested?.Invoke());
+            Footer.AddIconButton(
+                _pinned ? Glyphs.Unpin : Glyphs.Pin,
+                _pinned ? "取消固定剪贴板面板" : "固定剪贴板面板",
+                _pinned ? "取消固定（Ctrl+P）" : "固定面板（Ctrl+P）",
+                () => PinRequested?.Invoke());
+        });
+    }
+
+    private void SetFooterActions(string key, Action build)
+    {
+        if (key == _footerActions)
+        {
+            return;
+        }
+
+        _footerActions = key;
+        Footer.ClearActions();
+        build();
+    }
+
+    /// <summary>浮层固定 / 取消固定之后（Ctrl+P、底栏图钉）：图钉换样子，左边就地提示一下。</summary>
+    public void SetPinned(bool pinned)
+    {
+        _pinned = pinned;
+        UpdateFooter();
+        Footer.ShowNotice(pinned ? "已固定 · Esc 仍然可以收起" : "已取消固定");
+        // 点底栏图钉时焦点在按钮上（按钮也刚被重建掉）：还给搜索框。
+        FocusSearch();
+    }
+
+    /// <summary>--ui-snapshots：选中前 count 行，出多选底栏的图。</summary>
+    internal void SelectFirstForProbe(int count)
+    {
+        if (_rows.Count == 0)
+        {
+            return;
+        }
+
+        List.SelectRange(new Microsoft.UI.Xaml.Data.ItemIndexRange(0, (uint)Math.Min(count, _rows.Count)));
+        UpdateFooter();
+    }
+
+    /// <summary>多选时的「取消」/ Esc：只留第一条选中。</summary>
+    private void CancelMultiSelect()
+    {
+        if (List.SelectedItems.Count <= 1)
+        {
+            return;
+        }
+
+        var keep = List.SelectedIndex;
+        List.SelectedItems.Clear();
+        List.SelectedIndex = keep;
+        UpdateFooter();
     }
 
     private List<ClipEntry> SelectedEntries => List.SelectedItems
@@ -416,14 +508,8 @@ public sealed partial class ClipboardPanel : UserControl
         Highlight.Width = Math.Max(0, List.ActualWidth - 2);
         Highlight.Height = Math.Max(24, row.ActualHeight);
         Highlight.Visibility = Visibility.Visible;
-        if (animated)
-        {
-            Motion.SlideTo(Highlight, 0, offset.Y, EnableAnimations ? _highlightCurve : MotionCurve.Instant);
-        }
-        else
-        {
-            Highlight.Translation = new Vector3(0, (float)offset.Y, 0);
-        }
+        // 不带动画也走 SlideTo（Instant）：它会停掉还在滑的那一段，不然滚动时高亮会被旧动画拖走。
+        Motion.SlideTo(Highlight, 0, offset.Y, animated && EnableAnimations ? _highlightCurve : MotionCurve.Instant);
     }
 
     private bool EnableAnimations => !Motion.Reduced;
@@ -539,12 +625,9 @@ public sealed partial class ClipboardPanel : UserControl
         });
     }
 
-    private void OnPinClick(object sender, RoutedEventArgs e) => PinRequested?.Invoke();
-
     private void SetScope(ClipScope scope, bool refresh = true)
     {
         _scope = scope;
-        _favoritesOnly = scope == ClipScope.Favorites;
         AllScope.IsChecked = scope == ClipScope.All;
         FavoriteScope.IsChecked = scope == ClipScope.Favorites;
         SnippetScope.IsChecked = scope == ClipScope.Snippets;
@@ -650,8 +733,6 @@ public sealed partial class ClipboardPanel : UserControl
         e.Handled = true;
         Paste(plain: false);
     }
-
-    private void OnSettingsClick(object sender, RoutedEventArgs e) => SettingsRequested?.Invoke();
 
     private void ShowPreview(ClipEntry? entry)
     {
@@ -1052,13 +1133,29 @@ public sealed partial class ClipboardPanel : UserControl
             return;
         }
 
+        if (e.Key == VirtualKey.Shift)
+        {
+            // 按住 Shift：底栏左边换成「Shift+Enter 粘贴为纯文本」（PLAN-v7 §3.1）。
+            if (!_shiftHeld)
+            {
+                _shiftHeld = true;
+                UpdateFooter();
+            }
+
+            return;
+        }
+
         var control = IsDown(VirtualKey.Control);
         var shift = IsDown(VirtualKey.Shift);
         switch (e.Key)
         {
             case VirtualKey.Escape:
                 e.Handled = true;
-                if (SearchBox.Text.Length > 0)
+                if (List.SelectedItems.Count > 1)
+                {
+                    CancelMultiSelect();
+                }
+                else if (SearchBox.Text.Length > 0)
                 {
                     SearchBox.Text = string.Empty;
                 }
@@ -1160,6 +1257,11 @@ public sealed partial class ClipboardPanel : UserControl
         {
             _keyHintTimer.Stop();
             SetKeyHints(false);
+        }
+        else if (e.Key == VirtualKey.Shift && _shiftHeld)
+        {
+            _shiftHeld = false;
+            UpdateFooter();
         }
     }
 
@@ -1452,7 +1554,8 @@ public sealed partial class ClipboardPanel : UserControl
         if (ClipboardWriter.WriteText(text))
         {
             ClipboardService.Instance?.MarkOwnWrite();
-            NoticeHost.Show("已复制", KillLine(text), NoticeTone.Normal);
+            // 面板开着：成功的提示进底栏（PLAN-v7 §3.1），出错的才走轻提示。
+            Footer.ShowNotice("已复制");
         }
     }
 
@@ -1504,26 +1607,13 @@ public sealed partial class ClipboardPanel : UserControl
             }
 
             ClipboardService.Instance?.MarkOwnWrite();
-            NoticeHost.Show("已复制", PreviewLine(entry), NoticeTone.Normal);
+            Footer.ShowNotice("已复制");
         }
         catch (Exception ex)
         {
             Log.Error("clipboard.copy-failed", ex);
             NoticeHost.Show("没能复制", ex.GetType().Name, NoticeTone.Error);
         }
-    }
-
-    private static string PreviewLine(ClipEntry entry) => entry.Kind switch
-    {
-        ClipKind.Image => $"{entry.Width} × {entry.Height} 的图片",
-        ClipKind.Files => entry.Files.FirstOrDefault() ?? "文件",
-        _ => KillLine(entry.Text ?? string.Empty),
-    };
-
-    private static string KillLine(string text)
-    {
-        var line = text.Replace('\r', ' ').Replace('\n', ' ').Trim();
-        return line.Length <= 40 ? line : line[..40] + "…";
     }
 
     private void DeleteSelected()
@@ -1535,11 +1625,13 @@ public sealed partial class ClipboardPanel : UserControl
         }
 
         store.DeleteWithUndo(entries.Select(entry => entry.Id).ToList());
-        NoticeHost.Show(
-            entries.Count > 1 ? $"已删除 {entries.Count} 条" : "已删除",
-            "收起面板前可以按 Ctrl+Z 撤销",
-            NoticeTone.Normal);
         Refresh();
+        // 「已删除 N 条 · 撤销 Ctrl+Z」：撤销是 AccentText 的文字按钮，收起面板前都能撤（Refresh 之后再挂，免得被刷新顶掉）。
+        Footer.ShowNotice(
+            entries.Count > 1 ? $"已删除 {entries.Count} 条 ·" : "已删除 ·",
+            "撤销 Ctrl+Z",
+            UndoDelete,
+            success: false);
     }
 
     private void UndoDelete()
@@ -1552,8 +1644,8 @@ public sealed partial class ClipboardPanel : UserControl
         var restored = store.Undo();
         if (restored is { Count: > 0 })
         {
-            NoticeHost.Show("已撤销", string.Empty, NoticeTone.Normal);
             Refresh(restored[0].Id);
+            Footer.ShowNotice(restored.Count > 1 ? $"已恢复 {restored.Count} 条" : "已恢复");
         }
     }
 
@@ -1573,6 +1665,7 @@ public sealed partial class ClipboardPanel : UserControl
         }
 
         Refresh(entries[0].Id);
+        Footer.ShowNotice(target ? "已加入收藏" : "已取消收藏");
     }
 
     private static void TranslateEntry(ClipEntry entry)
@@ -1776,6 +1869,14 @@ public sealed partial class ClipboardPanel : UserControl
         {
             Populate();
             filter.Focus(FocusState.Programmatic);
+        };
+        // 关掉后焦点还给搜索框（从底栏「操作」点开时焦点在按钮上）；执行的动作收起了面板就不管。
+        flyout.Closed += (_, _) =>
+        {
+            if (_active)
+            {
+                FocusSearch();
+            }
         };
         flyout.ShowAt(row, new FlyoutShowOptions
         {

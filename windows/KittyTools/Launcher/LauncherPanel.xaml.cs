@@ -38,6 +38,10 @@ public sealed partial class LauncherPanel : UserControl
     private string _query = string.Empty;
     private bool _composing;
     private ScrollViewer? _listScroll;
+    /// <summary>底栏现在摆的是哪一套（家族 / 符号 / 动词）：没变就不重建。</summary>
+    private string _footerKey = string.Empty;
+    /// <summary>底栏的「操作 Ctrl+K」：操作菜单锚在它上面（mac：锚右下，右缘对着键帽）。</summary>
+    private Button? _actionsButton;
 
     /// <summary>搜索线的输入框（PLAN-v7 §2.2 的共用部件）。</summary>
     private TextBox SearchBox => SearchLineControl.Box;
@@ -123,6 +127,9 @@ public sealed partial class LauncherPanel : UserControl
     {
         _active = true;
         _executed = false;
+        // 外观可能在收起期间换过：底栏按新颜色重建一次。
+        _footerKey = string.Empty;
+        Footer.HideNotice();
         SetKeyHints(false);
         var restore = _lastClosedAt != 0 &&
                       Environment.TickCount64 - _lastClosedAt <= 60_000 &&
@@ -176,6 +183,7 @@ public sealed partial class LauncherPanel : UserControl
         Highlight.Visibility = Visibility.Collapsed;
         _keyHintTimer.Stop();
         _showKeyHints = false;
+        Footer.HideNotice();
     }
 
     private void OnCatalogChanged()
@@ -387,34 +395,54 @@ public sealed partial class LauncherPanel : UserControl
         });
     }
 
+    /// <summary>
+    /// PLAN-v7 §3.2 底栏：左边是选中项的种类（16 色块 + 种类名），右边「动词 ↩」「操作 Ctrl+K」；
+    /// 上膛的危险命令动词换成「确认…」，字和键帽都是危险色。没有选中项时只留就地提示。
+    /// 按 ↓ 连发时种类和动词多半不变：没变就不重建。
+    /// </summary>
     private void UpdateFooter()
     {
-        if (_specialMode != LauncherMode.Normal)
+        var item = SelectedItem;
+        if (item is null)
         {
-            FooterText.Text = _specialMode switch
+            SetFooter(string.Empty, null, () => { });
+            return;
+        }
+
+        var armed = LauncherModel.Instance?.IsArmed(item) == true;
+        var verb = PanelFooterText.LauncherVerb(item.Kind, item.Target, armed);
+        var family = Ui.KindTile.FamilyOf(item.Kind, item.Target);
+        var glyph = Ui.KindTile.GlyphOf(item.Kind, item.Target);
+        SetFooter(
+            $"{family}|{glyph}|{PanelFooterText.LauncherKindName(item.Kind, item.Target)}|{verb}",
+            item,
+            () =>
             {
-                LauncherMode.FileSearch =>
-                    "文件搜索 · Enter 打开 · Ctrl+Enter 在资源管理器里显示 · Ctrl+C 复制路径 · Esc 关闭",
-                LauncherMode.Kill => "进程 · Enter 两次结束（第二次才真的结束）· Esc 关闭",
-                _ => "端口 · Enter 复制 localhost:端口 · Esc 关闭",
-            };
-            return;
-        }
+                Footer.SetLeading(Ui.KindTile.Create(item.Kind, item.Target, 16));
+                Footer.Status = PanelFooterText.LauncherKindName(item.Kind, item.Target);
+                Footer.AddVerb(verb.Text, "↩", primary: true, () => Execute(control: false, shift: false), verb.Danger);
+                _actionsButton = Footer.AddVerb("操作", "Ctrl+K", primary: false, () => ShowActionMenu());
+            });
+    }
 
-        var catalog = AppCatalog.Instance;
-        if (_items.Count == 0)
+    private void SetFooter(string key, LauncherItem? item, Action build)
+    {
+        if (key == _footerKey)
         {
-            FooterText.Text = catalog is { IsScanning: true, HasScanned: false }
-                ? "正在扫描应用…"
-                : _query.Trim().Length == 0
-                    ? "输入以搜索应用、设置、命令…"
-                    : "没有结果";
             return;
         }
 
-        var prefix = _query.Trim().Length == 0 ? "常用 · " : string.Empty;
-        FooterText.Text =
-            $"{prefix}{_items.Count} 项 · Enter 打开 · Ctrl+Enter 位置 / 复制 · Ctrl+Shift+Enter 管理员 · Tab 补全 · Esc 关闭";
+        _footerKey = key;
+        Footer.ClearActions();
+        _actionsButton = null;
+        if (item is null)
+        {
+            Footer.SetLeading(null);
+            Footer.Status = string.Empty;
+            return;
+        }
+
+        build();
     }
 
     private LauncherItem? SelectedItem => (List.SelectedItem as LauncherRow)?.Item;
@@ -431,6 +459,7 @@ public sealed partial class LauncherPanel : UserControl
 
     private void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        UpdateFooter();
         var animated = _animateHighlight;
         _animateHighlight = false;
         DispatcherQueue.TryEnqueue(() => MoveHighlight(animated));
@@ -456,14 +485,8 @@ public sealed partial class LauncherPanel : UserControl
         Highlight.Width = Math.Max(0, List.ActualWidth - 2);
         Highlight.Height = Math.Max(24, container.ActualHeight);
         Highlight.Visibility = Visibility.Visible;
-        if (animated)
-        {
-            Motion.SlideTo(Highlight, 0, offset.Y, Motion.Reduced ? MotionCurve.Instant : _highlightCurve);
-        }
-        else
-        {
-            Highlight.Translation = new Vector3(0, (float)offset.Y, 0);
-        }
+        // 不带动画也走 SlideTo（Instant）：它会停掉还在滑的那一段，不然滚动时高亮会被旧动画拖走。
+        Motion.SlideTo(Highlight, 0, offset.Y, animated && !Motion.Reduced ? _highlightCurve : MotionCurve.Instant);
     }
 
     private void SetKeyHints(bool show)
@@ -503,8 +526,6 @@ public sealed partial class LauncherPanel : UserControl
         e.Handled = true;
         Execute(control: false, shift: false);
     }
-
-    private void OnSettingsClick(object sender, RoutedEventArgs e) => SettingsRequested?.Invoke();
 
     private void OnKeyDown(object sender, KeyRoutedEventArgs e)
     {
@@ -579,17 +600,20 @@ public sealed partial class LauncherPanel : UserControl
                 break;
             case VirtualKey.D when control:
                 e.Handled = true;
-                if (SelectedItem is { } favorite && LauncherModel.Instance is { } favoriteModel)
-                {
-                    var on = favoriteModel.ToggleFavorite(favorite);
-                    NoticeHost.Show("启动器", on ? "已收藏" : "已取消收藏", NoticeTone.Normal);
-                    Refresh(keepSelection: true, animated: false);
-                }
-
+                ToggleFavorite();
                 break;
             case VirtualKey.C when control:
                 e.Handled = true;
                 CopyTarget();
+                break;
+            case VirtualKey.K when control:
+                e.Handled = true;
+                ShowActionMenu();
+                break;
+            case (VirtualKey)188 when control:
+                // Ctrl+,（VK_OEM_COMMA）：直达设置 › 启动器，同 mac 的 ⌘,；底栏不再放齿轮。
+                e.Handled = true;
+                SettingsRequested?.Invoke();
                 break;
             case >= VirtualKey.Number1 and <= VirtualKey.Number9 when control:
                 e.Handled = true;
@@ -666,8 +690,21 @@ public sealed partial class LauncherPanel : UserControl
         {
             ClipboardService.Instance?.MarkOwnWrite();
             ClipboardService.Instance?.Store.RecordOwnText(text);
-            NoticeHost.Show("已复制", text, NoticeTone.Normal);
+            Footer.ShowNotice("已复制");
         }
+    }
+
+    /// <summary>Ctrl+D：加入 / 取消收藏，结果在底栏左边就地提示（mac 体检 B38）。</summary>
+    private void ToggleFavorite()
+    {
+        if (SelectedItem is not { } item || LauncherModel.Instance is not { } model)
+        {
+            return;
+        }
+
+        var on = model.ToggleFavorite(item);
+        Refresh(keepSelection: true, animated: false);
+        Footer.ShowNotice(on ? "已加入收藏" : "已取消收藏");
     }
 
     private void Execute(bool control, bool shift)
@@ -713,38 +750,84 @@ public sealed partial class LauncherPanel : UserControl
         }
 
         List.SelectedItem = row;
-        var item = row.Item;
-        var menu = new MenuFlyout();
-        AddItem(menu, "打开", () => Execute(control: false, shift: false));
-        if (item.Kind == LauncherKind.App)
-        {
-            if (!item.Target.StartsWith(@"shell:AppsFolder\", StringComparison.Ordinal))
-            {
-                AddItem(menu, "打开文件所在位置", () => Execute(control: true, shift: false));
-            }
-
-            AddItem(menu, "以管理员身份运行", () => Execute(control: true, shift: true));
-        }
-
-        if (item.Kind is LauncherKind.Url or LauncherKind.Path or LauncherKind.Search)
-        {
-            AddItem(menu, "复制路径 / 网址", CopyTarget);
-        }
-
-        if (item.Kind == LauncherKind.Calculation)
-        {
-            AddItem(menu, "复制结果", () => Execute(control: true, shift: false));
-        }
-
+        var menu = Ui.ActionMenu.Build(ActionsFor(row.Item));
         menu.ShowAt(List, new FlyoutShowOptions { Position = e.GetPosition(List) });
         e.Handled = true;
     }
 
-    private static void AddItem(MenuFlyout menu, string text, Action action)
+    /// <summary>Ctrl+K / 底栏「操作」：和右键同一份条目，锚在底栏「操作」上、右缘对齐（PLAN-v7 §2.2 ActionMenu）。</summary>
+    private void ShowActionMenu()
     {
-        var item = new MenuFlyoutItem { Text = text };
-        item.Click += (_, _) => action();
-        menu.Items.Add(item);
+        if (SelectedItem is not { } item)
+        {
+            return;
+        }
+
+        var menu = Ui.ActionMenu.Build(ActionsFor(item));
+        // 点底栏按钮时焦点跑到了按钮上：菜单关掉后还给搜索框，方向键和打字照常。
+        menu.Closed += (_, _) => FocusSearch();
+        FrameworkElement anchor = _actionsButton is { } button ? button : Footer;
+        menu.ShowAt(anchor, new FlyoutShowOptions { Placement = FlyoutPlacementMode.TopEdgeAlignedRight });
+    }
+
+    /// <summary>一项的全部操作：主动作（动词同底栏）、替代动作、复制、补全、收藏。危险的（上膛、结束进程）用危险色。</summary>
+    private List<Ui.ActionMenuItem> ActionsFor(LauncherItem item)
+    {
+        var armed = LauncherModel.Instance?.IsArmed(item) == true;
+        var verb = PanelFooterText.LauncherVerb(item.Kind, item.Target, armed);
+        var killing = item.Kind == LauncherKind.Action && item.Target.StartsWith("kill:", StringComparison.Ordinal);
+        var actions = new List<Ui.ActionMenuItem>
+        {
+            new(Ui.KindTile.GlyphOf(item.Kind, item.Target), verb.Text, "Enter",
+                () => Execute(control: false, shift: false), Danger: verb.Danger || killing),
+        };
+        var storeApp = item.Target.StartsWith(@"shell:AppsFolder\", StringComparison.Ordinal);
+        if (item.Kind == LauncherKind.App)
+        {
+            if (!storeApp)
+            {
+                actions.Add(new(Glyphs.Folder, "打开文件所在位置", "Ctrl+Enter", () => Execute(control: true, shift: false)));
+            }
+
+            actions.Add(new(Glyphs.App, "以管理员身份运行", "Ctrl+Shift+Enter", () => Execute(control: true, shift: true)));
+        }
+
+        if (item.Kind == LauncherKind.Path && File.Exists(item.Target))
+        {
+            actions.Add(new(Glyphs.Folder, "在资源管理器中显示", "Ctrl+Enter", () => Execute(control: true, shift: false)));
+        }
+
+        if (item.Kind is LauncherKind.Url or LauncherKind.Path or LauncherKind.Search ||
+            (item.Kind == LauncherKind.App && !storeApp))
+        {
+            actions.Add(new(
+                Glyphs.Copy,
+                item.Kind is LauncherKind.Url or LauncherKind.Search ? "复制网址" : "复制路径",
+                "Ctrl+C",
+                CopyTarget));
+        }
+
+        if (item.Kind == LauncherKind.Calculation)
+        {
+            actions.Add(new(Glyphs.Copy, "复制结果", "Ctrl+Enter", () => Execute(control: true, shift: false)));
+        }
+
+        if (item.Completion is { Length: > 0 })
+        {
+            actions.Add(new(Glyphs.ChevronRight, "补全", "Tab", Complete));
+        }
+
+        if (item.Kind != LauncherKind.Calculation && LauncherModel.Instance is { } model)
+        {
+            var favorite = model.IsFavorite(item);
+            actions.Add(new(
+                favorite ? Glyphs.FavoriteFilled : Glyphs.Favorite,
+                favorite ? "取消收藏" : "加入收藏",
+                "Ctrl+D",
+                ToggleFavorite));
+        }
+
+        return actions;
     }
 
     private BitmapImage? IconFor(LauncherItem item)

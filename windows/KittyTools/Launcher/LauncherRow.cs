@@ -37,19 +37,8 @@ public sealed class LauncherRow
 
     public string TitleFontFamily { get; private init; } = "Segoe UI";
 
-    /// <summary>U3：行尾的种类名（应用 / 设置 / 命令 …）。</summary>
-    public string KindLabel => Item.Kind switch
-    {
-        LauncherKind.App => "应用",
-        LauncherKind.Setting => "设置",
-        LauncherKind.Command => "系统",
-        LauncherKind.Action => "动作",
-        LauncherKind.Url => "网址",
-        LauncherKind.Path => "路径",
-        LauncherKind.Search => "搜索",
-        LauncherKind.Calculation => "计算",
-        _ => string.Empty,
-    };
+    /// <summary>U3：行尾的种类名（应用 / 设置 / 系统 / 进程 …），和底栏左边同一个字。</summary>
+    public string KindLabel => PanelFooterText.LauncherKindName(Item.Kind, Item.Target);
 
     public Visibility NormalVisibility => Item.Kind == LauncherKind.Calculation
         ? Visibility.Collapsed
@@ -79,8 +68,8 @@ public sealed class LauncherRow
             Subtitle = subtitle,
             KeyHint = showKeyHint && index < 9 ? (index + 1).ToString() : string.Empty,
             KeyHintVisibility = showKeyHint && index < 9 ? Visibility.Visible : Visibility.Collapsed,
-            Glyph = GlyphFor(item.Kind),
-            IconBackground = BackgroundFor(item.Kind),
+            Glyph = Ui.KindTile.GlyphOf(item.Kind, item.Target),
+            IconBackground = Theme.Family.Tile(Ui.KindTile.FamilyOf(item.Kind, item.Target)),
             IconImage = icon,
             GlyphVisibility = hasImage ? Visibility.Collapsed : Visibility.Visible,
             ImageVisibility = hasImage ? Visibility.Visible : Visibility.Collapsed,
@@ -90,18 +79,4 @@ public sealed class LauncherRow
             SubtitleBrush = armed ? Theme.Critical() : Theme.SecondaryText(),
         };
     }
-
-    private static string GlyphFor(LauncherKind kind) => kind switch
-    {
-        LauncherKind.App => "\uE71D",
-        LauncherKind.Setting => "\uE713",
-        LauncherKind.Command => "\uE7E8",
-        LauncherKind.Action => "\uE8C8",
-        LauncherKind.Url => "\uE774",
-        LauncherKind.Path => "\uE8B7",
-        LauncherKind.Search => "\uE721",
-        _ => "\uE8EF",
-    };
-
-    private static Brush BackgroundFor(LauncherKind kind) => Theme.Family.Tile(kind);
 }

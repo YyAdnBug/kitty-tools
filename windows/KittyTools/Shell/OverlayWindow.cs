@@ -85,7 +85,8 @@ internal sealed unsafe class OverlayWindow : Window
     public void TogglePin()
     {
         _pinned = !_pinned;
-        NoticeHost.Show("剪贴板面板", _pinned ? "已固定（Esc 仍然可以收起）" : "已取消固定", NoticeTone.Normal);
+        // 提示在面板底栏左边（PLAN-v7 §3.1），图钉跟着换样子。
+        _clipboard?.SetPinned(_pinned);
         if (_pinned)
         {
             // 固定时用户可能点进别的程序再回来：隔一会儿记一下「最近一个不是本 App 的前台窗口」，粘贴就粘进它。
@@ -162,7 +163,8 @@ internal sealed unsafe class OverlayWindow : Window
         }
 
         Log.Info($"overlay.content kind={kind} height={_heightDip:F0}");
-        PositionAtPointer(_heightDip);        _visible = true;
+        PositionAtPointer(_heightDip);
+        _visible = true;
         Activate();
         Foreground.Restore(_hwnd);
         if (kind == OverlayKind.Clipboard)
@@ -175,7 +177,7 @@ internal sealed unsafe class OverlayWindow : Window
         }
 
         PInvoke.DwmFlush();
-        // 鍏ュ満锛氶€忔槑搴?0鈫? + 鍐呭涓嬭惤 6 px锛堝噺寮卞姩鐢绘椂鍙贰鍏ワ級銆?
+        // 入场：透明度 0→1 + 内容下落 6 px（减弱动画时只淡入）。
         Motion.Entrance(kind == OverlayKind.Clipboard ? _clipboard! : _launcher!);
         Log.Info($"overlay.show kind={kind} height={_heightDip:F0}");
     }
@@ -241,6 +243,8 @@ internal sealed unsafe class OverlayWindow : Window
             ShellRuntime.Instance?.ShowSettings(welcome: false, page: "clipboard");
         };
         panel.HeightRequested += RequestHeight;
+        // 底栏图钉 / Ctrl+P（以前这条事件没人接，点了没反应）。
+        panel.PinRequested += TogglePin;
         return panel;
     }
 
@@ -258,8 +262,8 @@ internal sealed unsafe class OverlayWindow : Window
     }
 
     /// <summary>
-    /// 鍐呭楂樺害鍙樹簡锛氶《杈逛笉鍔紝鍙敼楂樺害锛圥LAN-v2 搂3.5锛夈€傛寜鍐呭鍙樺寲锛堟崲閫変腑銆佹崲鑼冨洿銆佸紑闈㈡澘锛?
-    /// 鐢?settle 寮圭哀锛涙瘡鎸変竴涓敭缁撴灉灏卞彉鐨勯偅绉嶄笉甯﹀姩鐢伙紝鐩存帴璺炽€?
+    /// 内容高度变了：顶边不动，只改高度（PLAN-v2 §3.5）。按内容变化（换选中、换范围、开面板）
+    /// 用 settle 弹簧；每按一个键结果就变的那种不带动画，直接跳。
     /// </summary>
     private void RequestHeight(double dip, bool animated)
     {

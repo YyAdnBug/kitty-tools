@@ -15,6 +15,10 @@ internal static class KindTile
     public static Border Create(LauncherKind kind, double size = 24, string? glyph = null)
         => Create(FamilyOf(kind), glyph ?? GlyphOf(kind), size);
 
+    /// <summary>启动器一项的色块（行首和底栏左边是同一个）：kill、port、cb、fy 和内置动作各有各的。</summary>
+    public static Border Create(LauncherKind kind, string target, double size)
+        => Create(FamilyOf(kind, target), GlyphOf(kind, target), size);
+
     public static Border Create(string family, string? glyph = null, double size = 24)
     {
         var color = Theme.Family.For(family);
@@ -84,12 +88,57 @@ internal static class KindTile
     {
         LauncherKind.App => Glyphs.App,
         LauncherKind.Setting => Glyphs.Settings,
-        LauncherKind.Command => Glyphs.CommandPrompt,
-        LauncherKind.Action => Glyphs.Screenshot,
-        LauncherKind.Url => Glyphs.Link,
+        LauncherKind.Command => Glyphs.Shutdown,
+        LauncherKind.Action => Glyphs.Copy,
+        LauncherKind.Url => Glyphs.Globe,
         LauncherKind.Path => Glyphs.Folder,
-        LauncherKind.Search => Glyphs.Globe,
+        LauncherKind.Search => Glyphs.Search,
         LauncherKind.Calculation => Glyphs.Calculator,
         _ => Glyphs.Translate,
     };
+
+    /// <summary>动作按目标细分家族（PLAN-v7 §3.2：端口、kill 用各自的色块，不要一律是复制图标）。</summary>
+    public static string FamilyOf(LauncherKind kind, string target)
+    {
+        if (kind != LauncherKind.Action)
+        {
+            return FamilyOf(kind);
+        }
+
+        return target switch
+        {
+            _ when target.StartsWith("kill:", StringComparison.Ordinal) => "command",
+            _ when target.StartsWith("port:", StringComparison.Ordinal) => "command",
+            _ when target.StartsWith("cb:", StringComparison.Ordinal) => "clipboard",
+            _ when target.StartsWith("fy:", StringComparison.Ordinal) => "translate",
+            LauncherActions.Clipboard => "clipboard",
+            LauncherActions.Translate => "translate",
+            LauncherActions.Settings or LauncherActions.Quit => "general",
+            _ => FamilyOf(kind),
+        };
+    }
+
+    public static string GlyphOf(LauncherKind kind, string target)
+    {
+        if (kind != LauncherKind.Action)
+        {
+            return GlyphOf(kind);
+        }
+
+        return target switch
+        {
+            _ when target.StartsWith("kill:", StringComparison.Ordinal) => Glyphs.Process,
+            _ when target.StartsWith("port:", StringComparison.Ordinal) => Glyphs.Port,
+            _ when target.StartsWith("cb:", StringComparison.Ordinal) => Glyphs.Paste,
+            _ when target.StartsWith("fy:", StringComparison.Ordinal) => Glyphs.Translate,
+            LauncherActions.Clipboard => Glyphs.Paste,
+            LauncherActions.Translate => Glyphs.Translate,
+            LauncherActions.Screenshot => Glyphs.Screenshot,
+            LauncherActions.ScreenshotTranslate => Glyphs.Translate,
+            LauncherActions.Ocr => Glyphs.Ocr,
+            LauncherActions.Settings => Glyphs.Settings,
+            LauncherActions.Quit => Glyphs.Close,
+            _ => GlyphOf(kind),
+        };
+    }
 }

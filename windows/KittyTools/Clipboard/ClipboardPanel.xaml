@@ -107,7 +107,6 @@
     <Grid Padding="16,14,16,0" RowSpacing="8">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="36" />
         </Grid.RowDefinitions>
@@ -147,14 +146,7 @@
             </StackPanel>
         </Grid>
 
-        <InfoBar
-            x:Name="Hint"
-            Grid.Row="1"
-            Severity="Informational"
-            IsOpen="False"
-            IsClosable="True" />
-
-        <Grid Grid.Row="2">
+        <Grid Grid.Row="1">
             <Border
                 x:Name="Highlight"
                 Height="40"
@@ -197,53 +189,7 @@
             </StackPanel>
         </Grid>
 
-        <Grid Grid.Row="3">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <TextBlock
-                x:Name="FooterText"
-                VerticalAlignment="Center"
-                FontSize="{StaticResource Kitty.FontSize.Meta}"
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                TextTrimming="CharacterEllipsis" />
-            <StackPanel
-                Grid.Column="1"
-                Orientation="Horizontal"
-                Spacing="4"
-                VerticalAlignment="Center">
-                <Border Style="{StaticResource Kitty.KeyCap}">
-                    <TextBlock Text="↑↓" FontSize="{StaticResource Kitty.FontSize.KeyCap}" />
-                </Border>
-                <Border Style="{StaticResource Kitty.KeyCap}">
-                    <TextBlock Text="Enter" FontSize="{StaticResource Kitty.FontSize.KeyCap}" />
-                </Border>
-            </StackPanel>
-            <Button
-                x:Name="PinButton"
-                Grid.Column="2"
-                Padding="8,4"
-                Background="Transparent"
-                BorderThickness="0"
-                AutomationProperties.Name="固定剪贴板面板"
-                ToolTipService.ToolTip="固定面板（Ctrl+P）"
-                Click="OnPinClick">
-                <FontIcon Glyph="&#xE718;" FontSize="14" />
-            </Button>
-            <Button
-                x:Name="SettingsButton"
-                Grid.Column="3"
-                Padding="8,4"
-                Background="Transparent"
-                BorderThickness="0"
-                AutomationProperties.Name="打开剪贴板设置"
-                ToolTipService.ToolTip="设置"
-                Click="OnSettingsClick">
-                <FontIcon Glyph="&#xE713;" FontSize="14" />
-            </Button>
-        </Grid>
+        <!-- PLAN-v7 §3.1 底栏：左「N 条」/ 就地提示，右「粘贴 ↩ · 操作 Ctrl+K ｜ 齿轮 图钉」；负外边距撑到整宽 -->
+        <ui:PanelFooter x:Name="Footer" Grid.Row="2" Margin="-16,0,-16,0" />
     </Grid>
 </UserControl>

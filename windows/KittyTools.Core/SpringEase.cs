@@ -1,6 +1,5 @@
-// 弹簧进度的纯函数（配单测）：轻提示胶囊的宽度生长、需要逐帧设值的小动效用它。
-// 和 Motion 的 Composition 弹簧（DampingRatio / Period）是同一个感知参数：bounce 越大越弹。
-// 只在做宽度（布局属性）这种 Composition 插不了的场景用；其它地方用 Motion。
+// 弹簧进度的纯函数（配单测）：Motion.CurveTo 把它采样成 Composition 关键帧（轻提示胶囊的几何、
+// 高亮滑动、入场下落）；需要逐帧设值的小动效也可以直接用。bounce 越大越弹。
 namespace KittyTools.Core;
 
 public static class SpringEase

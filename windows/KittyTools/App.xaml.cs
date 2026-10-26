@@ -58,6 +58,17 @@ public partial class App : Application
                 }
             }
 
+            if (NoticeAnimationProbe.IsRequested(commandLine))
+            {
+                // PLAN-v7 第 3 批：轻提示长出 / 换内容 / 抖 / 缩回的逐帧自检，只抓自己的提示窗口，跑完就退。
+                var directory = NoticeAnimationProbe.DirectoryFrom(commandLine);
+                if (directory is not null)
+                {
+                    _ = NoticeAnimationProbe.RunAsync(directory);
+                    return;
+                }
+            }
+
             _runtime = ShellRuntime.Start();
             if (UiSnapshotProbe.IsRequested(commandLine))
             {

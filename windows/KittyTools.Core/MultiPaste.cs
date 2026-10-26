@@ -42,8 +42,13 @@ public static class MultiPaste
         _ => $"依次粘贴 {count} 条",
     };
 
-    public static string Footer(int count, MultiPasteMode mode)
-        => count <= 1 ? string.Empty : $"已选 {count} 条 · {Verb(mode, count)} · Esc 取消选择";
+    /// <summary>多选时底栏主动作的动词（条数已经写在左边「已选 N 条」里）。</summary>
+    public static string ShortVerb(MultiPasteMode mode) => mode switch
+    {
+        MultiPasteMode.MergeText => "合并粘贴",
+        MultiPasteMode.FilesTogether => "一起粘贴",
+        _ => "依次粘贴",
+    };
 }
 
 /// <summary>图片的识字结果（后台排队写进 ocr_text）与「靠它命中时显示哪一段」。</summary>

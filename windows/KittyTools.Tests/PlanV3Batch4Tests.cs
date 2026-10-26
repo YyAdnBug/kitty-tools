@@ -95,8 +95,6 @@ public sealed class MultiPasteTests
         Assert.AreEqual("a\nc", MultiPaste.Merge(new[] { "a", string.Empty, "c" }));
         Assert.AreEqual("合并粘贴 3 条", MultiPaste.Verb(MultiPasteMode.MergeText, 3));
         Assert.AreEqual("一起粘贴 2 个文件", MultiPaste.Verb(MultiPasteMode.FilesTogether, 2));
-        StringAssert.Contains(MultiPaste.Footer(3, MultiPasteMode.MergeText), "已选 3 条");
-        Assert.AreEqual(string.Empty, MultiPaste.Footer(1, MultiPasteMode.MergeText));
     }
 
     [TestMethod]

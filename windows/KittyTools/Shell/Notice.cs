@@ -8,7 +8,6 @@
 // 报得出百分比的（下载更新、转 GIF、压缩）走 ShowProgress：标题后面一条 56 × 4 的细进度条，原地改、不重新出场、不播报。
 // 点得穿：WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW，SW_SHOWNOACTIVATE。
 // （只加 WS_EX_TRANSPARENT 的话鼠标照样被挡住——第二版 §2 第 10 条。）
-using System.Globalization;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using KittyTools.Core;
@@ -67,14 +66,14 @@ internal sealed unsafe partial class NoticeHost
 
     private const double ProgressWidth = 56;
 
-    /// <summary>弹簧按这么多段采样成关键帧（Composition 的关键帧之间线性插值）。</summary>
-    private const int SpringSteps = 20;
-
     private static NoticeHost? _current;
 
     /// <summary>R33 截图自检（WindowShot）用：当前这扇窗口的 HWND，没开就是 0。</summary>
     internal static IntPtr HandleForProbe =>
         _current is null ? IntPtr.Zero : WinRT.Interop.WindowNative.GetWindowHandle(_current._window);
+
+    /// <summary>--notice-anim-test 用：XAML 一共排了几次版（第 3 批验收「动画期间主线程没有每帧布局」）。</summary>
+    internal static int LayoutPassesForProbe { get; private set; }
 
     private readonly Window _window;
     private readonly Grid _root;
@@ -180,6 +179,7 @@ internal sealed unsafe partial class NoticeHost
             Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
         };
         _root.Children.Add(_stage);
+        _root.LayoutUpdated += (_, _) => LayoutPassesForProbe++;
         // 读屏：轻提示是活区，出现时用 UIA 通知播报（讲述人 / NVDA 都认这一条）。
         AutomationProperties.SetLiveSetting(_root, AutomationLiveSetting.Polite);
         AutomationProperties.SetName(_root, Paths.ProductName + " 提示");
@@ -482,25 +482,17 @@ internal sealed unsafe partial class NoticeHost
     }
 
     /// <summary>
-    /// SpringEase（和 mac 同一组 duration / bounce）采样成关键帧：每一帧是「起点 → 目标」的插值，
-    /// 起点用 this.StartingValue，动画在合成器里跑，主线程每帧不做事。
+    /// SpringEase（和 mac 同一组 duration / bounce）采样成关键帧（Motion.CurveTo）：起点用 this.StartingValue，
+    /// 动画在合成器里跑，主线程每帧不做事。
+    /// 不用表达式的 Lerp(start, target, p)：它把 p 夹在 [0, 1]，island 的回弹冲不过头
+    /// （--notice-anim-test 量到最大宽 = 最后宽；改成 start + (target − start) × p 之后 36 → 110 → 104）。
     /// </summary>
     private Vector2KeyFrameAnimation PillAnimation(Vector2 target, SpringSpec spring, int delayMs)
     {
-        var animation = _compositor.CreateVector2KeyFrameAnimation();
-        animation.Duration = spring.Period;
+        var animation = Motion.CurveTo(_compositor, target, spring);
         if (delayMs > 0)
         {
             animation.DelayTime = TimeSpan.FromMilliseconds(delayMs);
-        }
-
-        animation.SetVector2Parameter("target", target);
-        var linear = _compositor.CreateLinearEasingFunction();
-        for (var step = 1; step <= SpringSteps; step++)
-        {
-            var t = step / (double)SpringSteps;
-            var progress = SpringEase.Progress(t, spring.Bounce).ToString("0.####", CultureInfo.InvariantCulture);
-            animation.InsertExpressionKeyFrame((float)t, $"Lerp(this.StartingValue, target, {progress})", linear);
         }
 
         return animation;

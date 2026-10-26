@@ -22,9 +22,12 @@ internal static class KeyCap
             border.Background = Theme.Brush("Kitty.Danger", Color.FromArgb(255, 196, 43, 28));
         }
 
+        // 危险色实心键帽上的符号用 OnDanger（浅深都是白，高对比度换成窗口底色）。
         var foreground = primary
             ? new SolidColorBrush(Theme.OnAccentColor)
-            : Theme.Brush("TextFillColorPrimaryBrush", Color.FromArgb(255, 32, 32, 32));
+            : danger
+                ? Theme.Brush("Kitty.OnDanger", Color.FromArgb(255, 255, 255, 255))
+                : Theme.Brush("TextFillColorPrimaryBrush", Color.FromArgb(255, 32, 32, 32));
         border.Child = new TextBlock
         {
             Text = text,

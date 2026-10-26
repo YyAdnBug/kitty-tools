@@ -60,15 +60,20 @@ internal static class UiSnapshotProbe
 
         try
         {
+            SeedSampleClips();
             var originalTheme = SettingsService.Current.Theme;
             foreach (var dark in new[] { false, true })
             {
                 var theme = dark ? ElementTheme.Dark : ElementTheme.Light;
+                // 先切设置里的外观：代码里建的画刷（Theme.Brush、垫底的 Kitty.CardSolid）按它取色，
+                // 只改 RequestedTheme 的话深色图会是浅底白字。
+                SettingsService.Current.Theme = dark ? "dark" : "light";
+                SettingsService.Save();
                 root.RequestedTheme = theme;
                 await SafeRenderAsync(root, () => new LauncherPanel(), "launcher", dark, directory);
                 await SafeRenderAsync(root, () => new ClipboardPanel(), "clip", dark, directory);
-                SettingsService.Current.Theme = dark ? "dark" : "light";
-                SettingsService.Save();
+                // PLAN-v7 §3.1：多选时的底栏（已选 N 条 · 合并粘贴 / 收藏 / 删除 / 取消）。
+                await SafeRenderAsync(root, () => new ClipboardPanel(), "clip-multi", dark, directory);
                 await SafeRenderSettingsAsync(dark, directory);
             }
 
@@ -165,6 +170,30 @@ internal static class UiSnapshotProbe
         {
             Environment.SetEnvironmentVariable("KITTY_HUD_CAPTURE", null);
         }
+    }
+
+    /// <summary>
+    /// 自检的那套数据里剪贴板是空的时候塞几条假文本，底栏和透镜才有东西可看。
+    /// 只在自检档（Debug / KITTY_PROBE_PROFILE）、而且一条都没有时才塞，不碰真实历史。
+    /// </summary>
+    private static void SeedSampleClips()
+    {
+        if (!Paths.IsTestProfile || ClipboardService.Instance?.Store is not { Count: 0 } store)
+        {
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        store.AdoptTextClips(new List<(string Text, bool Favorite, DateTimeOffset? CopiedAt)>
+        {
+            ("会议改到周四下午三点，地点不变", false, now.AddMinutes(-2)),
+            ("https://github.com/microsoft/WindowsAppSDK", false, now.AddMinutes(-9)),
+            ("dotnet publish -c Release -r win-x64", true, now.AddMinutes(-31)),
+            ("#FF2D55", false, now.AddHours(-3)),
+            ("Kitty Tools 0.7.0 界面对齐 mac", false, now.AddHours(-26)),
+            ("SELECT id, text FROM clips ORDER BY copied_at DESC LIMIT 20;", false, now.AddHours(-30)),
+        });
+        Log.Info("ui-snapshots seeded sample clips");
     }
 
     private static async Task SafeRenderAsync(
@@ -281,6 +310,12 @@ internal static class UiSnapshotProbe
                 break;
             case ClipboardPanel clipboard:
                 clipboard.OnShown();
+                if (name == "clip-multi")
+                {
+                    await Task.Delay(300);
+                    clipboard.SelectFirstForProbe(3);
+                }
+
                 break;
         }
 

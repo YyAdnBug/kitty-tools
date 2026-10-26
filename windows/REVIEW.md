@@ -38,6 +38,8 @@
 - `HANDTEST.md` 加了「第七版：界面对齐手测（细项，302–329）」，逐条是 PLAN-v7 §2–§4 的数值；轻提示是 316–320。
 - **要验**：编译；`--notice` / `--notice-error` 录 3–5 秒（PLAN-v7 第 3 批的验收：长出 / 换内容 / 抖动 / 缩回）；`--ui-snapshots` 的 `island-notice`、`island-error`；HANDTEST 316–320。最可能要改的：表达式关键帧的写法（报错就看 `this.StartingValue` 和 `Lerp` 的参数类型）、`Translation.X` 动画（`SetIsTranslationEnabled` 已在构造里开）。
 
+**Windows 这边验过（2026-10-26 深夜，Claude 的 worktree）**：`Notice.cs` 原样编过（Debug、AOT x64 / ARM64 都 0 警告），没有编译错。新加 `--notice-anim-test=<目录>`（`App/NoticeAnimationProbe.cs`）：WGC 只抓提示窗口，逐帧量胶囊宽度，依次放长出 → 原地换长内容 → 出错 → 停留到点缩回。结果：形状和顺序都对，四段动画期间 XAML 排版 0 次；**改了一处**——表达式的 `Lerp(this.StartingValue, target, p)` 在 Composition 里把 p 夹在 [0, 1]，island 的回弹冲不过头（量到最大宽 = 最后宽：36 → 104、104 → 372）。`PillAnimation` 改用共用的 `Motion.CurveTo`（`start + (target − start) × p`），之后 36 → 112 → 104、143 → 402 → 372。另外 `Notice.cs` 只加了一个给探针数排版次数的 `LayoutPassesForProbe`。帧图见 `windows-shots/0.7.0-v7/island-anim-*.png` 和 `island-anim-report.md`，`--ui-snapshots` 的 `island-notice` / `island-error` 也用合并后的构建重出了（`12b0d71`）。
+
 ## 待修
 
 （2026-10-26 晚复查到 `3fe1725e`：R22、R25、R26、R28、R29 认可；R23 认可，60 s 和 10 分钟的重封装耗时并进 R24 一起量；R30 认可，托盘和 HUD 的截图见 R33。新加 R31–R35。R24 一直没动，排在最前面。）
