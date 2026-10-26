@@ -1969,9 +1969,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       openScrollEditor(
         original, scale: item.scale, history: item.id, annotations: item.annotations)
     }
+    // 改完标注、缩略图重做好了：清掉那张的缓存、重画网格（2026-10-26 用户手测：历史里看着像没改过）
+    shotHistory.onThumbnailChanged = { [weak model] id in
+      ShotThumbnails.shared.forget(id)
+      model?.touch()
+    }
     let window = ShotHistoryWindow(model: model)
     window.onClose = { [weak self] in
       self?.shotHistoryWindow = nil
+      self?.shotHistory.onThumbnailChanged = { _ in }
       ShotThumbnails.shared.clear()
     }
     shotHistoryWindow = window

@@ -195,6 +195,51 @@ struct ShotHistoryTests {
     #expect(composed.width == 400 && composed.height == 300)
   }
 
+  /// 改完标注之后缩略图跟着重做（2026-10-26 手测：历史里看着像没改过）
+  @Test func updateRedrawsThumbnail() async throws {
+    let (history, root) = try makeHistory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let id = try #require(await history.record(image(), scale: 2))
+    let before = try Data(contentsOf: history.thumbnailURL(for: id))
+    var redrawn: UUID?
+    history.onThumbnailChanged = { redrawn = $0 }
+    history.update(
+      id,
+      annotations: [
+        Annotation(
+          shape: .rectangle(CGRect(x: 10, y: 10, width: 120, height: 80)),
+          style: Annotation.Style(color: .red, weight: .large))
+      ])
+    // 重做是异步的：等它写完
+    for _ in 0..<40 where redrawn == nil {
+      try await Task.sleep(for: .milliseconds(25))
+    }
+    #expect(redrawn == id)
+    let after = try Data(contentsOf: history.thumbnailURL(for: id))
+    #expect(after != before, "缩略图没跟着标注变")
+  }
+
+  /// 记一条时缩略图画的就是成品：框选里画过标注的，历史里一眼就看得见
+  @Test func thumbnailShowsAnnotations() async throws {
+    let (history, root) = try makeHistory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let plain = try #require(await history.record(image(), scale: 2))
+    let drawn = try #require(
+      await history.record(
+        image(), scale: 2,
+        annotations: [
+          Annotation(
+            shape: .rectangle(CGRect(x: 10, y: 10, width: 120, height: 80)),
+            style: Annotation.Style(color: .red, weight: .large))
+        ]))
+    let a = try Data(contentsOf: history.thumbnailURL(for: plain))
+    let b = try Data(contentsOf: history.thumbnailURL(for: drawn))
+    #expect(a != b)
+    // 原图那份不带标注（回头还能接着改）
+    #expect(
+      try Data(contentsOf: history.url(for: plain)) == Data(contentsOf: history.url(for: drawn)))
+  }
+
   /// 窗口建得出来、标题对，关掉之后不再可见
   @Test func windowOpens() throws {
     let (history, root) = try makeHistory()

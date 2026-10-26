@@ -38,6 +38,10 @@ import SwiftUI
   var selection: UUID?
   /// 正在问「删掉这几条？」
   var deleting: [UUID] = []
+  /// 缩略图重做好了要重画（改完标注那一下）：视图读它来建立依赖
+  private(set) var redraws = 0
+
+  func touch() { redraws += 1 }
 
   /// 每条的操作（AppDelegate 给）：拷贝、快速保存、另存为、钉到屏幕、识字并拷贝、改标注、用默认 App 打开
   @ObservationIgnored var onCopy: (ShotHistory.Item) -> Void = { _ in }
@@ -136,15 +140,7 @@ import SwiftUI
   }
 
   /// 成品图：有标注才合成（拍板 A1、C2），录制的那几条没有图
-  func composed(_ item: ShotHistory.Item) -> CGImage? {
-    guard let original = history.image(for: item.id) else { return nil }
-    guard !item.annotations.isEmpty else { return original }
-    let pixels = CGRect(x: 0, y: 0, width: original.width, height: original.height)
-    let points = CGSize(
-      width: CGFloat(original.width) / item.scale, height: CGFloat(original.height) / item.scale)
-    return Annotation.render(item.annotations, over: original, pixelRect: pixels, viewSize: points)
-      ?? original
-  }
+  func composed(_ item: ShotHistory.Item) -> CGImage? { history.composed(item) }
 
   /// 录制的那几条：文件还在不在（拍板 D2：不在了那一条照常能看）
   func fileExists(_ item: ShotHistory.Item) -> Bool {
@@ -228,6 +224,8 @@ import SwiftUI
     cache[item.id] = image
     return image
   }
+
+  func forget(_ id: UUID) { cache[id] = nil }
 
   func clear() { cache.removeAll() }
 }

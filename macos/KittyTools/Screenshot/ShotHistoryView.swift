@@ -63,7 +63,9 @@ struct ShotHistoryView: View {
   // MARK: 左边的网格
 
   private var grid: some View {
-    ScrollView {
+    // 读一下：改完标注、缩略图重做好之后要重画这片网格
+    let _ = model.redraws
+    return ScrollView {
       if model.groups.isEmpty {
         EmptyState(symbol: "clock.arrow.circlepath", title: "还没有截图") {
           Text(

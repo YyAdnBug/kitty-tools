@@ -98,7 +98,9 @@ import Foundation
   ) async -> UUID? {
     guard isOn else { return nil }
     let id = UUID()
-    guard let bytes = await write(image, id: id) else { return nil }
+    guard let bytes = await write(image, id: id, annotations: annotations, scale: scale) else {
+      return nil
+    }
     add(
       Item(
         id: id, kind: kind, createdAt: .now,
@@ -123,14 +125,27 @@ import Foundation
     return id
   }
 
-  /// 改完标注回写（拍板 C4：更新同一条，原图不动）
+  /// 改完标注回写（拍板 C4：更新同一条，原图不动）。
+  /// **缩略图跟着重做**：它画的是成品（原图 + 标注），不重做的话历史里看着像没改过
+  /// （2026-10-26 用户手测报的）
   func update(_ id: UUID, annotations: [Annotation]) {
     guard let index = items.firstIndex(where: { $0.id == id }) else { return }
     items[index].annotations = annotations
     try? db.execute(
       "UPDATE shots SET annotations = ? WHERE id = ?",
       [Self.encode(annotations), id.uuidString])
+    let item = items[index]
+    Task {
+      guard let original = image(for: id) else { return }
+      let composed = Self.compose(original, annotations: annotations, scale: item.scale)
+      guard let small = await Self.thumbnail(of: composed) else { return }
+      try? small.write(to: thumbnailURL(for: id), options: .atomic)
+      onThumbnailChanged(id)
+    }
   }
+
+  /// 某一条的缩略图重做好了（历史窗口清掉它的缓存、重画那张卡）
+  @ObservationIgnored var onThumbnailChanged: (UUID) -> Void = { _ in }
 
   /// 存过盘了 / 又钉了一次：历史里那条跟着记上
   func markSaved(_ id: UUID, to url: URL) {
@@ -153,6 +168,26 @@ import Foundation
 
   /// 原图（用时才读盘；录制的那几条没有原图）
   func image(for id: UUID) -> CGImage? { Self.decode(url(for: id)) }
+
+  /// 成品图（原图 + 标注）：没画标注就是原图本身，不白渲一遍（拍板 A1、C2）。
+  /// 拷贝 / 存储 / 钉图、缩略图都走它
+  func composed(_ item: Item) -> CGImage? {
+    guard let original = image(for: item.id) else { return nil }
+    return Self.compose(original, annotations: item.annotations, scale: item.scale)
+  }
+
+  /// 纯函数：把标注画到原图上（标注的坐标是这张图的点坐标）。
+  /// Annotation.render 是 MainActor 的（它只碰图和路径，没有共享状态）：这里留在主 actor 上
+  static func compose(
+    _ original: CGImage, annotations: [Annotation], scale: CGFloat
+  ) -> CGImage {
+    guard !annotations.isEmpty else { return original }
+    let pixels = CGRect(x: 0, y: 0, width: original.width, height: original.height)
+    let points = CGSize(
+      width: CGFloat(original.width) / scale, height: CGFloat(original.height) / scale)
+    return Annotation.render(annotations, over: original, pixelRect: pixels, viewSize: points)
+      ?? original
+  }
 
   func thumbnail(for id: UUID) -> CGImage? { Self.decode(thumbnailURL(for: id)) }
 
@@ -247,11 +282,16 @@ import Foundation
   // MARK: 图和 JSON
 
   /// 原图 + 缩略图写盘，返回一共多少字节（写不成返回 nil）
-  private func write(_ image: CGImage, id: UUID) async -> Int? {
+  /// 原图写 <id>.png，缩略图写 <id>-t.png——**缩略图画的是成品**（原图 + 标注），
+  /// 历史里一眼看到的就是最后那张的样子
+  private func write(_ image: CGImage, id: UUID, annotations: [Annotation] = [], scale: CGFloat = 2)
+    async -> Int?
+  {
     let full = url(for: id)
     let thumb = thumbnailURL(for: id)
     guard let png = await ScreenshotOutput.png(image, scale: 1) else { return nil }
-    let small = await Self.thumbnail(of: image)
+    let small = await Self.thumbnail(
+      of: Self.compose(image, annotations: annotations, scale: scale))
     return await Self.writeFiles(png: png, to: full, thumbnail: small, to: thumb)
   }
 
