@@ -105,6 +105,24 @@ public sealed class MonitorLayoutTests
     }
 
     [TestMethod]
+    public void NegativeAndPortraitMonitorsKeepContentInside()
+    {
+        // 副屏在左边：坐标是负的，居中不能按 0 夹。
+        var left = new WorkArea(-1920, 0, 0, 1040);
+        var rect = MonitorLayout.Overlay(left, 1.5, 720, 520, 0.2);
+        Assert.AreEqual(-1500, rect.X);
+        Assert.IsTrue(rect.X >= left.Left);
+        Assert.IsTrue(rect.Right <= left.Right);
+
+        // 副屏竖放：工作区高大于宽，轻提示仍然居中、贴顶。
+        var portrait = new WorkArea(1920, 0, 3000, 1920);
+        var notice = MonitorLayout.Notice(portrait, 1.25, 460, 64, 12);
+        Assert.AreEqual(1920 + (1080 - 575) / 2, notice.X);
+        Assert.AreEqual(15, notice.Y);
+        Assert.IsTrue(notice.Right <= portrait.Right);
+    }
+
+    [TestMethod]
     public void NearPointerFlipsWhenItDoesNotFit()
     {
         var right = MonitorLayout.NearPointer(100, 100, Primary, 1.0, 460, 320);

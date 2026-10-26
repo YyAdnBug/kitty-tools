@@ -6,6 +6,7 @@ using KittyTools.Core;
 using KittyTools.Infrastructure;
 using Microsoft.UI.Dispatching;
 using Windows.Win32;
+using Windows.Win32.Foundation;
 using Windows.Win32.UI.Input.KeyboardAndMouse;
 
 namespace KittyTools;
@@ -15,6 +16,8 @@ internal static class ScrollingCapture
     public const int EnterId = 920;
 
     public const int EscapeId = 921;
+
+    public const int ResumeId = 934;
 
     private static readonly TimeSpan Interval = TimeSpan.FromMilliseconds(600);
 
@@ -27,6 +30,11 @@ internal static class ScrollingCapture
     private static Action? _onCancel;
     private static ScrollDirection _direction = ScrollDirection.Down;
     private static bool _autoScroll;
+    private static bool _paused;
+    private static bool _hasRestore;
+    private static int _restoreX;
+    private static int _restoreY;
+    private static bool _messageHooked;
 
     public static bool Active { get; private set; }
 
@@ -45,9 +53,16 @@ internal static class ScrollingCapture
         _frames = 0;
         _direction = direction;
         _autoScroll = autoScroll;
+        _paused = false;
+        _hasRestore = false;
         _onComplete = onComplete;
         _onCancel = onCancel;
         Active = true;
+        if (autoScroll && !_messageHooked)
+        {
+            _messageHooked = true;
+            HiddenWindow.Message += OnHiddenMessage;
+        }
         PInvoke.RegisterHotKey(HiddenWindow.Hwnd, EnterId, 0, (uint)VIRTUAL_KEY.VK_RETURN);
         PInvoke.RegisterHotKey(HiddenWindow.Hwnd, EscapeId, 0, (uint)VIRTUAL_KEY.VK_ESCAPE);
         CaptureFrame();
@@ -98,6 +113,15 @@ internal static class ScrollingCapture
         _timer = null;
         PInvoke.UnregisterHotKey(HiddenWindow.Hwnd, EnterId);
         PInvoke.UnregisterHotKey(HiddenWindow.Hwnd, EscapeId);
+        PInvoke.UnregisterHotKey(HiddenWindow.Hwnd, ResumeId);
+        if (_messageHooked)
+        {
+            HiddenWindow.Message -= OnHiddenMessage;
+            _messageHooked = false;
+        }
+
+        _paused = false;
+        _hasRestore = false;
         _screen = null;
         _current = null;
         _onComplete = null;
@@ -168,6 +192,12 @@ internal static class ScrollingCapture
         try
         {
             PInvoke.GetCursorPos(out var cursor);
+            if (_hasRestore && (cursor.X != _restoreX || cursor.Y != _restoreY))
+            {
+                Pause();
+                return;
+            }
+
             SetCursorPos(_rect.Left + _rect.Width / 2, _rect.Top + _rect.Height / 2);
             var input = new INPUT { type = INPUT_TYPE.INPUT_MOUSE };
             input.Anonymous.mi = new MOUSEINPUT
@@ -181,11 +211,50 @@ internal static class ScrollingCapture
             };
             PInvoke.SendInput(1, &input, System.Runtime.InteropServices.Marshal.SizeOf<INPUT>());
             SetCursorPos(cursor.X, cursor.Y);
+            _restoreX = cursor.X;
+            _restoreY = cursor.Y;
+            _hasRestore = true;
         }
         catch (Exception ex)
         {
             Log.Warn($"scroll.wheel-failed {ex.GetType().Name}");
         }
+    }
+
+    private static void OnHiddenMessage(uint message, WPARAM wParam, LPARAM lParam)
+    {
+        if (message == PInvoke.WM_HOTKEY && wParam.Value == ResumeId)
+        {
+            Resume();
+        }
+    }
+
+    private static void Pause()
+    {
+        if (_paused || !Active)
+        {
+            return;
+        }
+
+        _paused = true;
+        _autoScroll = false;
+        PInvoke.RegisterHotKey(HiddenWindow.Hwnd, ResumeId, 0, (uint)VIRTUAL_KEY.VK_A);
+        NoticeHost.Show("自动滚动暂停了", "动鼠标就暂停；按 A 继续，Enter 完成", NoticeTone.Warning);
+        Log.Info("scroll.paused");
+    }
+
+    private static void Resume()
+    {
+        if (!_paused || !Active)
+        {
+            return;
+        }
+
+        _paused = false;
+        _autoScroll = true;
+        PInvoke.UnregisterHotKey(HiddenWindow.Hwnd, ResumeId);
+        NoticeHost.Show("自动滚动继续", "Enter 完成，Esc 放弃", NoticeTone.Normal);
+        Log.Info("scroll.resumed");
     }
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]

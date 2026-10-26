@@ -31,6 +31,14 @@ internal sealed class ShellRuntime
 
     private void Initialize()
     {
+        var fakeDpi = Environment.GetCommandLineArgs()
+            .FirstOrDefault(arg => arg.StartsWith("--fake-dpi=", StringComparison.OrdinalIgnoreCase));
+        if (fakeDpi is not null && int.TryParse(fakeDpi["--fake-dpi=".Length..], out var percent) && percent > 0)
+        {
+            Displays.FakeScale = percent / 100.0;
+            Log.Info($"dpi.fake {percent}%");
+        }
+
         // WinUI 3 在最后一个 XAML 窗口关闭时会结束进程；常驻托盘要留一个永不关闭的
         // 隐藏窗口。它不激活、不进任务栏和 Alt+Tab，只负责把 XAML 生命周期撑住。
         _keeper = new Window { Title = Paths.ProductName };

@@ -45,6 +45,11 @@ internal static unsafe class Displays
 
     public static double ScaleOf(HMONITOR monitor)
     {
+        if (FakeScale is { } fake)
+        {
+            return fake;
+        }
+
         if (monitor == default)
         {
             return 1.0;
@@ -62,4 +67,7 @@ internal static unsafe class Displays
 
     /// <summary>系统 DPI（后台扫描应用图标时用：那时还没有面板窗口）。</summary>
     public static double SystemScale => MonitorLayout.ScaleOf(PInvoke.GetDpiForSystem());
+
+    /// <summary>调试用 --fake-dpi=150：没有第二块屏也能看 150% 布局；null 表示用真实 DPI。</summary>
+    public static double? FakeScale { get; set; }
 }
