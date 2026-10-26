@@ -62,7 +62,7 @@ public static class FileSearchSql
                 continue;
             }
 
-            parts.Add($"System.ItemUrl LIKE '{EscapeLike("file:" + normalized + "/")}%'");
+            parts.Add($"SCOPE='{Escape("file:" + normalized)}'");
         }
 
         return parts.Count == 0 ? string.Empty : "(" + string.Join(" OR ", parts) + ")";

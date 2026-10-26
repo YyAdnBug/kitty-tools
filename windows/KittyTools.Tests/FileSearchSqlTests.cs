@@ -13,7 +13,7 @@ public sealed class FileSearchSqlTests
         var sql = FileSearchSql.Build(new[] { "jpg" }, new[] { @"C:\Users\YY\Downloads" }, 20);
         StringAssert.Contains(sql, "SELECT TOP 20 System.ItemUrl, System.FileName FROM SYSTEMINDEX");
         StringAssert.Contains(sql, "System.FileName LIKE '%jpg%'");
-        StringAssert.Contains(sql, "System.ItemUrl LIKE 'file:C:/Users/YY/Downloads/%'");
+        StringAssert.Contains(sql, "SCOPE='file:C:/Users/YY/Downloads'");
         StringAssert.Contains(sql, "ORDER BY System.DateModified DESC");
     }
 
@@ -50,8 +50,8 @@ public sealed class FileSearchSqlTests
     public void RootFilterHandlesSeveralRootsAndTrailingSlashes()
     {
         var filter = FileSearchSql.RootFilter(new[] { @"C:\Users\YY\Desktop\", @"D:\Media" });
-        StringAssert.Contains(filter, "file:C:/Users/YY/Desktop/%");
-        StringAssert.Contains(filter, "file:D:/Media/%");
+        StringAssert.Contains(filter, "SCOPE='file:C:/Users/YY/Desktop'");
+        StringAssert.Contains(filter, "SCOPE='file:D:/Media'");
         StringAssert.Contains(filter, " OR ");
         Assert.AreEqual(string.Empty, FileSearchSql.RootFilter(Array.Empty<string>()));
     }
