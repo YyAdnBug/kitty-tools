@@ -57,7 +57,7 @@ import Carbon.HIToolbox
     scrollView.backgroundColor = .underPageBackgroundColor
     // 底部给浮着的工具栏留地方：滚到长图最底下时最后几行不被它压住
     scrollView.automaticallyAdjustsContentInsets = false
-    scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 16 + 40, right: 0)
+    scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: Self.barMargin + 40, right: 0)
     scrollView.contentView = CenteringClipView()  // 图比视口窄 / 矮时居中，不贴着左下角
     scrollView.documentView = canvas
     scrollView.autoresizingMask = [.width, .height]
@@ -81,11 +81,20 @@ import Carbon.HIToolbox
       object: scrollView)
     window.isReleasedWhenClosed = false
     window.collectionBehavior = [.fullScreenAuxiliary]
-    window.contentMinSize = CGSize(width: 480, height: 360)
-    window.setContentSize(Self.contentSize(for: pointSize, on: window.screen ?? NSScreen.main))
+    // 再窄也要放得下底部那条工具栏（2026-10-26 手测：长图只有 486 点宽时窗口跟着只有 486，
+    // 工具栏 590 两头被切）。工具栏的宽度由它自己排出来，别写死
+    let minimum = max(480, bar.frame.width + 2 * Self.barMargin)
+    window.contentMinSize = CGSize(width: minimum, height: 360)
+    window.setContentSize(
+      Self.contentSize(for: pointSize, on: window.screen ?? NSScreen.main, atLeast: minimum))
     if let frameName {
       if !window.setFrameUsingName(frameName) { window.center() }
       window.setFrameAutosaveName(frameName)
+      // 存着的可能是更早的版本留下的、比工具栏还窄的尺寸：撑回来
+      if window.contentLayoutRect.width < minimum {
+        window.setContentSize(
+          CGSize(width: minimum, height: max(window.contentLayoutRect.height, 360)))
+      }
     } else {
       window.center()
     }
@@ -101,11 +110,17 @@ import Carbon.HIToolbox
   /// 图的点尺寸（标注的坐标系；长图的像素 / scale）
   private var pointSize: CGSize { canvas.bounds.size }
 
-  /// 窗口默认多大（拍板 A2）：宽按长图的点宽、上限可见区的 90%，高是可见区的 85%。纯函数，配单测
-  static func contentSize(for pointSize: CGSize, on screen: NSScreen?) -> CGSize {
+  /// 工具栏离窗口左右和底边多远（窄窗口里也要留出这么多）
+  static let barMargin: CGFloat = 16
+
+  /// 窗口默认多大（拍板 A2）：宽按长图的点宽、上限可见区的 90%，高是可见区的 85%；
+  /// atLeast 是工具栏要求的最小宽，比可见区还宽时以它为准（宁可超出屏幕也不切工具栏）。纯函数，配单测
+  static func contentSize(for pointSize: CGSize, on screen: NSScreen?, atLeast: CGFloat = 480)
+    -> CGSize
+  {
     let visible = screen?.visibleFrame.size ?? CGSize(width: 1440, height: 900)
     return CGSize(
-      width: min(max(pointSize.width, 480), visible.width * 0.9),
+      width: max(min(max(pointSize.width, atLeast), visible.width * 0.9), atLeast),
       height: min(max(pointSize.height, 360), visible.height * 0.85))
   }
 
@@ -175,8 +190,10 @@ import Carbon.HIToolbox
 
   private func placeBar() {
     guard let content = window.contentView else { return }
+    // 居中；窗口真比工具栏还窄时（恢复出来的旧尺寸、系统夹过的）贴左边留边距，别让左半截跑到窗口外
     bar.frame.origin = CGPoint(
-      x: ((content.bounds.width - bar.frame.width) / 2).rounded(), y: 16)
+      x: max(Self.barMargin, (content.bounds.width - bar.frame.width) / 2).rounded(),
+      y: Self.barMargin)
     bar.autoresizingMask = [.minXMargin, .maxXMargin, .maxYMargin]
   }
 

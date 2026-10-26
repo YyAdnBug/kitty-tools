@@ -66,6 +66,25 @@ struct ScrollEditorTests {
     #expect(abs(wide.height - visible.height * 0.85) < 0.01)
     let narrow = ScrollEditor.contentSize(for: CGSize(width: 320, height: 200), on: screen)
     #expect(narrow == CGSize(width: 480, height: 360))
+    // atLeast（工具栏要的宽）比长图和下限都大时以它为准
+    let wideBar = ScrollEditor.contentSize(
+      for: CGSize(width: 320, height: 200), on: screen, atLeast: 640)
+    #expect(wideBar.width == 640)
+  }
+
+  /// 长图比底部工具栏还窄时，窗口也要放得下整条工具栏（2026-10-26 手测报的：973 像素宽的长图
+  /// 把窗口挤成 486 点，工具栏两头被切掉）
+  @Test func toolbarFitsEvenForNarrowImage() throws {
+    let editor = ScrollEditor(image: image(width: 972, height: 4800), scale: 2, frameName: nil) {
+      _, _, _ in
+    }
+    defer { editor.close() }
+    let content = try #require(editor.window.contentView)
+    let bar = try #require(content.subviews.compactMap { $0 as? EditorToolbar }.first)
+    #expect(bar.frame.width > 486, "工具栏比这张长图的点宽还窄，这个用例就不复现了")
+    #expect(editor.window.contentMinSize.width >= bar.frame.width + 32)
+    #expect(content.bounds.width >= bar.frame.width + 32)
+    #expect(bar.frame.minX >= 16 && bar.frame.maxX <= content.bounds.maxX - 16)
   }
 
   /// 工具栏是长图那一套（拍板 C1）：识字留着，翻译 / 长截图 / 录屏 / 钉图不出现；标注工具和撤销重做照旧在
