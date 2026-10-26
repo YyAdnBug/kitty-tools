@@ -111,12 +111,12 @@ x64 包冒烟通过。设置窗的 Mica 在 Release AOT 下会抛 `ArgumentExcep
 
 **修（`8ce539d`）**：`SyncService.UsesDeepLX` 改 `bool?`，encode 三态（没写 / false / true），decode 用 `FlagOrNull`；App 的 `TranslateServiceConfig` 同步改 `bool?`，DeepLProvider / 设置页按 `== true`。golden 加 service case，8 个 mac 样本全过。
 
-### R33（P2）第七版的截图一张都没推；透明窗口用 WGC 只抓自己的窗口 → 部分已修（`e5100bd`）
+### R33（P2）第七版的截图一张都没推；透明窗口用 WGC 只抓自己的窗口 → 大部分已修（`f6af9bd` / `6918be7`）
 
 - 第七版改的全是界面（剪贴板透镜、启动器 40、轻提示、翻译浮窗、截图工具栏两段、设置侧栏色块、外观缩略图、强调色圆点），`windows-shots` 上只有 R30 那 8 张设置窗。审查方没法看效果。
 - 托盘菜单、录制条、轻提示这种透明宿主窗口，`PrintWindow` 拍不到。项目里已经有 WGC 了：`GraphicsCaptureItem.CreateForWindow(自己窗口的 HWND)` 只抓这一个窗口（带透明），不会拍到后面别的程序。抓一帧存成 PNG，透明的地方铺棋盘格或纯色。
 - **要做**：把 `--ui-snapshots` 扩展到所有面板和这几个透明窗口，浅色 / 深色各一套，推到 `windows-shots` 的 `0.7.0-v7/`，`STATUS.md` 里列文件名。推之前照旧逐张看，不能有别的程序。
-**进展（`e5100bd`）**：`--ui-snapshots` 的启动器 / 剪贴板 / 设置窗浅深 + 翻译输入态共 7 张已推到 `windows-shots/0.7.0-v7/`；`--clip-scroll-test` 5000 条实测中位 **0.8 ms**、p95 **1.3 ms**，远低于 16 ms，不做 ItemsRepeater。翻译 / 设置 / 截图遮罩 / 透明窗口的截图还没接。
+**进展（`e5100bd`）**：`--ui-snapshots` 的启动器 / 剪贴板 / 设置窗浅深 + 翻译输入态共 7 张已推到 `windows-shots/0.7.0-v7/`；`--clip-scroll-test` 5000 条实测中位 **0.8 ms**、p95 **1.3 ms**，远低于 16 ms，不做 ItemsRepeater。12 张已交：启动器 / 剪贴板 / 设置浅深、翻译、轻提示两态、录制 HUD / 录音待录 / 截图工具栏（WGC 只抓自己窗口）；托盘菜单两态截出来是空的，还没接。
 
 **审查方在 Mac 上补了透明窗口和截图工具栏（没编译过）**：新文件 `App/WindowShot.cs`——WGC `CreateForWindow` 只抓一扇窗口，`SoftwareBitmap.CreateCopyFromSurfaceAsync` 拿像素，裁到不透明的部分、垫 10 px 棋盘格存 PNG。`--ui-snapshots` 在翻译窗之后多出 7 张：`island-notice`、`island-error`、`shot-record-hud`（进程里临时设 `KITTY_HUD_CAPTURE=1`）、`shot-audio-pending`、`tray-menu-light` / `-dark`、`shot-toolbar`。截图遮罩用 `ScreenshotSession.StartSynthetic()`：冻结帧是 `ScreenCapture.Synthetic()` 画的深灰底加三块色块，**不抓桌面、不列窗口**，选区固定在主屏中间，图裁到选区加下面的工具栏。各窗口加了只给自检用的 `HandleForProbe`。
 
