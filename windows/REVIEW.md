@@ -8,6 +8,15 @@
 
 条目编号不复用。行号按条目里写的那个提交。
 
+## v8 分工（2026-10-26 深夜，用户定：审查方接着把 mac 新功能搬过来）
+
+方案在 `PLAN-v8.md`（截图历史、标注遮罩、速查表）。审查方在 Mac 上写、**不编译**，推上来由你们编译、截图、手测；编译错直接修，在这一节下面记一句。v7 照常归你们。
+
+**归审查方的文件**（新文件你们不用管；下面这些现有文件只是加几行挂钩，你们照常改，rebase 撞了以你们的为准、把挂钩那几行补回去）：
+
+- 新文件：`Core/ShotHistoryRules.cs`、`Tests/ShotHistoryTests.cs`、`Screenshot/ShotHistory.cs`、`Screenshot/ShotHistoryWindow.cs`、`Screenshot/AnnotateOverlay*.cs`、`Settings/ShortcutsSheet.cs`。
+- 挂钩：`Core/Schema.cs`（第 8 步）、`App/Settings.cs`（`ShotHistory`）、`App/HotKeyDefaults.cs`（默认表最后加一项）、`Shell/ShellRuntime.cs`（启动 + 动作分发）、`Shell/TrayMenu.cs`（一项）、启动器的命令表（一项）、`Screenshot/ScreenshotSession.cs` / `SelectionOverlayWindow.cs` / `ScreenshotCard.cs`（记录和「在历史里看」）、录制的几处出口、设置 › 截图页（一个开关）。
+
 ## v7 分工（2026-10-26 深夜，用户定）
 
 用户让审查方（Claude，在 Mac 上，**不编译**）分着做 PLAN-v7 里你们还没动的两块。写完推上来，编译、截图、录屏由你们验；有编译错误直接修，在这一节下面记一句。
