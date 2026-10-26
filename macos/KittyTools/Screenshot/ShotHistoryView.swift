@@ -31,6 +31,16 @@ struct ShotHistoryView: View {
       }
     }
     .searchable(text: $model.search, prompt: "搜来源或种类")
+    .onKeyPress(.delete) {
+      guard let item = model.selected else { return .ignored }
+      model.deleting = [item.id]
+      return .handled
+    }
+    .onKeyPress(.return) {
+      guard let item = model.selected else { return .ignored }
+      edit(item)
+      return .handled
+    }
     .confirmationDialog(
       "删掉 \(model.deleting.count) 条？",
       isPresented: Binding {
@@ -76,7 +86,7 @@ struct ShotHistoryView: View {
               .foregroundStyle(.tertiary)
               .padding(.leading, 10)
               .frame(maxWidth: .infinity, alignment: .leading)
-              .background(.background)
+              .background(.bar)  // 吸顶时盖住下面滚过去的卡片（深浅自适应）
           }
         }
       }

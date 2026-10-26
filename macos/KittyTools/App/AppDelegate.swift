@@ -192,6 +192,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   lazy var pins: PinBoard = {
     let board = PinBoard()
     // 钉图不变、不飞卡片：拷贝、存好了都用刘海说（体检 C9：⌘S 快速保存，同截图；识字 / 翻译同截图工具栏，D17）
+
     board.output = { [unowned self] action, image, scale in
       Task {
         switch action {
@@ -561,7 +562,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             pinchAvailable: { [unowned self] in launchpad.pinchAvailable },
             systemPinchOn: { [unowned self] in launchpad.systemPinchIsOn },
             openTrackpadSettings: { [unowned self] in openTrackpadSettings() }))
-      case .screenshot: AnyView(ScreenshotTab())
+      case .screenshot:
+        AnyView(
+          ScreenshotTab(shots: shotHistory, openHistory: { [unowned self] in showShotHistory() }))
       case .record: AnyView(RecordTab())
       case .notes:
         AnyView(
@@ -695,6 +698,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     shelf.save = { [unowned self] in await savePNG($0, asking: false) }
     shelf.pin = { [unowned self] in pins.pin($0, frame: $1) }
     // 录屏 / 录音卡的「拷贝」：拷的是文件，同截图的图片自己记进剪贴板历史（C8-a：点了才进；暂停记录、剪贴板关着时不记）
+    // 转出来的 GIF、压缩版也进历史；右键「在历史里看」打开历史窗口（2026-10-26 拍板 B1、D1）
+    shelf.remember = { [unowned self] file, poster, kind in
+      Task { await shotHistory.record(file: file, poster: poster, kind: kind) }
+    }
+    shelf.openHistory = { [unowned self] in showShotHistory() }
     shelf.copyFile = { [unowned self] url in
       Paster.write(files: [url])
       if recordsClipboard { clipboardStore.recordFiles([url]) }

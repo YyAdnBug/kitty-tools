@@ -21,11 +21,12 @@ struct VideoCardTests {
 
   @Test func menuHasNoSaveOrPinButTrash() throws {
     let video = card(URL(filePath: "/tmp/录屏 a.mp4"))
-    // 第 7 批：「转成 GIF」紧跟「拷贝」；第二轮体检 R1：后面再跟「压缩」
-    #expect(video.menu == [[.copy, .gif, .compress, .open, .reveal], [.trash], [.close]])
+    // 第 7 批：「转成 GIF」紧跟「拷贝」；第二轮体检 R1：后面再跟「压缩」；2026-10-26：末尾多「在历史里看」
+    #expect(
+      video.menu == [[.copy, .gif, .compress, .open, .reveal, .history], [.trash], [.close]])
     #expect(
       video.menu.flatMap { $0 }.map(\.title) == [
-        "拷贝", "转成 GIF", "压缩", "打开", "在访达中显示", "移到废纸篓", "关闭",
+        "拷贝", "转成 GIF", "压缩", "打开", "在访达中显示", "在历史里看", "移到废纸篓", "关闭",
       ])
     #expect(video.canCompress)
     // 压缩出来的那张视频卡：能转 GIF，不能再压
@@ -33,7 +34,7 @@ struct VideoCardTests {
       file: .video(URL(filePath: "/tmp/录屏 a 压缩版.mp4"), seconds: 83), poster: nil,
       source: Self.rect, rect: Self.rect, screen: nil, panel: NSPanel(), shelf: ShotShelf(),
       isCompressed: true)
-    #expect(compressed.menu == [[.copy, .gif, .open, .reveal], [.trash], [.close]])
+    #expect(compressed.menu == [[.copy, .gif, .open, .reveal, .history], [.trash], [.close]])
     #expect(!compressed.canCompress && compressed.accessibilityName == "录屏，1 分 23 秒")
     #expect(video.accessibilityName == "录屏，1 分 23 秒")
     #expect(video.badge.folder == FileManager.default.displayName(atPath: "/tmp"))
@@ -44,8 +45,11 @@ struct VideoCardTests {
         space: CGColorSpaceCreateDeviceRGB(),
         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)?.makeImage())
     for (badge, menu) in [
-      (FlyCard.Badge.copied, [[ShelfCard.Command.copy, .save, .pin], [.close]]),
-      (.saved(URL(filePath: "/nonexistent/a.png")), [[.copy, .save, .pin, .reveal], [.close]]),
+      (FlyCard.Badge.copied, [[ShelfCard.Command.copy, .save, .pin, .history], [.close]]),
+      (
+        .saved(URL(filePath: "/nonexistent/a.png")),
+        [[.copy, .save, .pin, .reveal, .history], [.close]]
+      ),
     ] {
       let shot = ShelfCard(
         image: image, png: Data(), scale: 2, source: Self.rect, rect: Self.rect, badge: badge,
@@ -107,7 +111,8 @@ struct VideoCardTests {
       screen: nil, panel: NSPanel(), shelf: shelf)
     #expect(audio.kind == .audio(file, seconds: 83))
     #expect(audio.kind.recording?.medium == .audio)
-    #expect(audio.menu == [[.copy, .open, .reveal], [.trash], [.close]])  // 没有「转成 GIF」
+    // 没有「转成 GIF」；末尾同别的卡多一条「在历史里看」（2026-10-26）
+    #expect(audio.menu == [[.copy, .open, .reveal, .history], [.trash], [.close]])
     #expect(audio.accessibilityName == "录音，1 分 23 秒")
     #expect(audio.badge.folder == FileManager.default.displayName(atPath: folder.path))
     audio.perform(.copy)
@@ -130,7 +135,7 @@ struct VideoCardTests {
       file: .gif(file), poster: nil, source: Self.rect, rect: Self.rect, screen: nil,
       panel: NSPanel(), shelf: shelf)
     #expect(gif.kind.file == file && gif.kind.recording == nil)
-    #expect(gif.menu == [[.copy, .open, .reveal], [.trash], [.close]])
+    #expect(gif.menu == [[.copy, .open, .reveal, .history], [.trash], [.close]])
     #expect(!gif.canCompress)
     #expect(gif.accessibilityName == "GIF 动图")
     #expect(gif.badge.folder == FileManager.default.displayName(atPath: folder.path))

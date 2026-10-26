@@ -7,9 +7,17 @@ import AppKit
 import SwiftUI
 
 struct ScreenshotTab: View {
+  /// 截图历史（2026-10-26 拍板 B3：开关、保留多久、占多少、现在清空都在这里）
+  let shots: ShotHistory?
+  /// 打开历史窗口（AppDelegate 给）
+  var openHistory: () -> Void = {}
   @AppStorage(Prefs.ocrJoinLines) private var joinLines = false
   @AppStorage(Prefs.screenshotShutterSound) private var shutterSound = true
   @AppStorage(Prefs.screenshotShelf) private var keepsThumbnail = true
+  @AppStorage(Prefs.shotHistory) private var keepsHistory = true
+  @AppStorage(Prefs.shotHistoryDays) private var historyDays = 30
+  @AppStorage(Prefs.shotHistoryBytes) private var historyBytes = 2 * 1024 * 1024 * 1024
+  @State private var confirmClear = false
 
   var body: some View {
     // 关着时（Feature）变灰；存到哪个文件夹录制也在用，照常能改
@@ -38,6 +46,33 @@ struct ScreenshotTab: View {
           SectionFootnote("拷贝、存储、钉图时响；还要 系统设置 › 声音 里的「播放用户界面音效」开着。截图翻译、识字不出声。")
         }
         Section {
+          Toggle("保留截图历史", isOn: $keepsHistory)
+          if keepsHistory {
+            Picker("保留", selection: $historyDays) {
+              Text("7 天").tag(7)
+              Text("30 天").tag(30)
+              Text("90 天").tag(90)
+              Text("一直留着").tag(0)
+            }
+            Picker("最多占用", selection: $historyBytes) {
+              Text("1 GB").tag(1024 * 1024 * 1024)
+              Text("2 GB").tag(2 * 1024 * 1024 * 1024)
+              Text("5 GB").tag(5 * 1024 * 1024 * 1024)
+              Text("不限").tag(0)
+            }
+          }
+          HStack {
+            Button("打开截图历史…", action: openHistory)
+            Spacer()
+            DangerButton("现在清空…") { confirmClear = true }
+              .disabled(shots?.items.isEmpty ?? true)
+          }
+        } footer: {
+          SectionFootnote(
+            "截图、长截图、录屏录音都留在这里，能回头接着改标注、再钉一次。超过保留期或占用的先删最旧的（已经存到文件夹里的文件不动）。历史只在这台 Mac 上，不跟着同步。"
+          )
+        }
+        Section {
           Toggle("截图后在屏幕角落留缩略图", isOn: $keepsThumbnail)
         } footer: {
           SectionFootnote("可以拖出、钉图、存储；关掉后截图只在右下角闪一下。")
@@ -60,6 +95,11 @@ struct ScreenshotTab: View {
       .gated(by: .screenshot)
     }
     .formStyle(.grouped)
+    .confirmationDialog("清空截图历史？", isPresented: $confirmClear) {
+      Button("清空", role: .destructive) { shots?.clear() }
+    } message: {
+      Text("\(shots?.items.count ?? 0) 条历史连同留着的原图一起删掉，不能撤销；已经存到文件夹里的文件不动。")
+    }
   }
 }
 

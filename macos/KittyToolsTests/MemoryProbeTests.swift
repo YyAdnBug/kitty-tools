@@ -802,7 +802,7 @@ private final class Probe {
         case .clipboard: AnyView(ClipboardTab(store: store))
         case .launcher: AnyView(EmptyView())
         case .launchpad: AnyView(EmptyView())
-        case .screenshot: AnyView(ScreenshotTab())
+        case .screenshot: AnyView(ScreenshotTab(shots: nil))
         // 录制页 2026-10-03 才拆出来，下面点的还是原来那五页（和以前的数可比）
         case .record: AnyView(RecordTab())
         case .notes: AnyView(NotesTab {})

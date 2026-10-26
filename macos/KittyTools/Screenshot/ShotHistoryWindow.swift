@@ -106,10 +106,11 @@ import SwiftUI
     let today = calendar.startOfDay(for: now)
     if day == today { return "今天" }
     if day == calendar.date(byAdding: .day, value: -1, to: today) { return "昨天" }
-    let format = Date.FormatStyle.dateTime.year(
-      calendar.isDate(day, equalTo: now, toGranularity: .year) ? .omitted : .defaultDigits
-    ).month().day()
-    return day.formatted(format)
+    // 只要日期、不带时间（Date.FormatStyle 加了字段也还会带上 0:00，实测）；今年的不写年份
+    let formatter = DateFormatter()
+    formatter.setLocalizedDateFormatFromTemplate(
+      calendar.isDate(day, equalTo: now, toGranularity: .year) ? "Md" : "yMd")
+    return formatter.string(from: day)
   }
 
   /// 一条的说明（时间 · 尺寸 · 来源）。纯函数，配单测

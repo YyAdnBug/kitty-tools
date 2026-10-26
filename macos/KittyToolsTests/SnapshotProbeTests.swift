@@ -525,7 +525,7 @@ struct SnapshotProbeTests {
       case .clipboard: AnyView(ClipboardTab(store: store))
       case .launcher: AnyView(LauncherTab())
       case .launchpad: AnyView(LaunchpadTab())
-      case .screenshot: AnyView(ScreenshotTab())
+      case .screenshot: AnyView(ScreenshotTab(shots: nil))
       case .record: AnyView(RecordTab())
       case .notes: AnyView(NotesTab {})
       // 自带的三个状态（固定的列表：不读用户改过的那份）
@@ -594,7 +594,8 @@ struct SnapshotProbeTests {
     shotPrefs.set(true, forKey: Prefs.audioRecordStartsImmediately)
     for dark in [false, true] {
       try snapshot(
-        ScreenshotTab().defaultAppStorage(shotPrefs), size: NSSize(width: 640, height: 720),
+        ScreenshotTab(shots: nil).defaultAppStorage(shotPrefs),
+        size: NSSize(width: 640, height: 720),
         dark: dark, to: "\(out)/settings-screenshot-custom\(dark ? "-dark" : "").png")
       try snapshot(
         RecordTab().defaultAppStorage(shotPrefs), size: NSSize(width: 640, height: 860),
@@ -819,6 +820,7 @@ struct SnapshotProbeTests {
     }
     try renderScrollCapture(out)
     try renderScrollEditor(out)
+    try renderShotHistory(out)
     try await renderLauncher(out)
     // 刘海岛：刘海屏的下巴（成功 / 进行中）、无刘海屏的胶囊（取色色块 / 错误）
     let notch = Island.Geometry.notch(width: 200, height: 32)
@@ -3222,6 +3224,50 @@ struct SnapshotProbeTests {
   /// 长截图面板：刚开始（还没预览）、拼了一段（预览 + 尺寸）、对不上（橙色提示）、自动滚动中，深浅色
   /// 长图标注窗口的画布：长图上画了矩形、箭头、序号，选中的那条带虚线框和手柄（工具栏是 HUD 皮肤，
   /// 和长截图面板一样在 macOS 26 起的玻璃下渲染出来是空白，这里只出画布）
+  /// 截图历史窗口（历史第 2 批）：空的、有几条（按天分组、选中一条出右边的预览）、搜不到，深浅各一张
+  private func renderShotHistory(_ out: String) throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "kitty-shot-history-shots")
+    try? FileManager.default.removeItem(at: root)
+    let history = try ShotHistory(
+      db: Database(path: ":memory:"), directory: root.appending(path: "shots"))
+    defer { try? FileManager.default.removeItem(at: root) }
+    let model = ShotHistoryModel(history: history)
+    for dark in [false, true] {
+      try snapshot(
+        ShotHistoryView(model: model), size: NSSize(width: 900, height: 560), dark: dark,
+        to: "\(out)/shot-history-empty\(dark ? "-dark" : "").png")
+    }
+    // 摆几条（图不写盘：缩略图读不到就画种类符号，网格的排法一样看得出来）
+    let now = Date.now
+    let made: [(ShotHistory.Kind, Double, String?)] = [
+      (.shot, 0, "Safari"), (.scroll, 0.02, "Chrome"), (.shot, 0.05, "Xcode"),
+      (.video, 1.1, "Keynote"), (.audio, 1.2, nil), (.gif, 2.3, "Safari"),
+    ]
+    var items: [ShotHistory.Item] = []
+    for (kind, daysAgo, source) in made {
+      items.append(
+        ShotHistory.Item(
+          id: UUID(), kind: kind, createdAt: now.addingTimeInterval(-daysAgo * 86400),
+          pixelSize: CGSize(width: 1600, height: 1000), scale: 2, source: source,
+          savedPath: kind == .shot ? nil : "/tmp/\(kind.rawValue).mov",
+          annotations: kind == .shot
+            ? [Annotation(shape: .rectangle(CGRect(x: 1, y: 2, width: 3, height: 4)))] : [],
+          bytes: 1024))
+    }
+    history.seed(items)
+    model.selection = items.first?.id
+    for dark in [false, true] {
+      try snapshot(
+        ShotHistoryView(model: model), size: NSSize(width: 900, height: 560), dark: dark,
+        to: "\(out)/shot-history\(dark ? "-dark" : "").png")
+    }
+    model.selection = nil
+    model.search = "找不到的东西"
+    try snapshot(
+      ShotHistoryView(model: model), size: NSSize(width: 900, height: 560), dark: false,
+      to: "\(out)/shot-history-nothing.png")
+  }
+
   private func renderScrollEditor(_ out: String) throws {
     let page = try ScreenshotTests.render([
       "The quick brown fox jumps over the lazy dog", "敏捷的棕色狐狸跳过了懒狗", "日本語のテキスト",

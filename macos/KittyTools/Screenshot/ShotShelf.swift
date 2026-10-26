@@ -30,6 +30,11 @@ final class ShotShelf {
   var copyFile: (URL) -> Void = { _ in }
   /// 刘海岛（AppDelegate 给）：缩略图看起来没变的结果（再拷贝、存到同一个文件夹）、文件已不在时用它说
   var island: Island?
+  /// 转出来的 GIF、压缩版也记进截图历史（AppDelegate 给，2026-10-26 拍板 B1）
+  var remember: (URL, CGImage?, ShotHistory.Kind) -> Void = { _, _, _ in }
+  /// 右键「在历史里看」：打开截图历史窗口（AppDelegate 给）。
+  /// ponytail: 只打开窗口、不定位到这一条——最新的本来就排在最前面
+  var openHistory: () -> Void = {}
 
   private(set) var cards: [ShelfCard] = []
   private var idle: [NSPanel] = []
@@ -183,7 +188,7 @@ final class ShotShelf {
 
   /// 右键菜单和 VoiceOver 自定义动作（同一份 menu）
   enum Command {
-    case copy, gif, compress, save, pin, open, reveal, trash, close
+    case copy, gif, compress, save, pin, open, reveal, history, trash, close
 
     var title: String {
       switch self {
@@ -194,6 +199,7 @@ final class ShotShelf {
       case .pin: "钉图"
       case .open: "打开"
       case .reveal: "在访达中显示"
+      case .history: "在历史里看"
       case .trash: "移到废纸篓"
       case .close: "关闭"
       }
@@ -310,12 +316,12 @@ final class ShotShelf {
     guard kind.file == nil else {
       var convert: [Command] = []
       if case .video = kind { convert = canCompress ? [.gif, .compress] : [.gif] }
-      return [[.copy] + convert + [.open, .reveal], [.trash], [.close]]
+      return [[.copy] + convert + [.open, .reveal, .history], [.trash], [.close]]
     }
     let saved = if case .saved = badge { true } else { false }
     // 截图这个功能关掉之后还留在角落的：没有钉图（Feature）
     let pin: [Command] = Feature.screenshot.isOn ? [.pin] : []
-    return [[.copy, .save] + pin + (saved ? [.reveal] : []), [.close]]
+    return [[.copy, .save] + pin + (saved ? [.reveal] : []) + [.history], [.close]]
   }
 
   func perform(_ command: Command) {
@@ -327,6 +333,7 @@ final class ShotShelf {
     case .pin: pin()
     case .open: open()
     case .reveal: revealInFinder()
+    case .history: shelf?.openHistory()
     case .trash: moveToTrash()
     case .close: close()
     }
@@ -567,6 +574,7 @@ final class ShotShelf {
           "已存成 GIF", detail: Int64(bytes).formatted(.byteCount(style: .file)),
           leading: Island.thumbnail(of: first))
         // 叠在同一块屏的角落（最新的在最下面，这张视频卡往上让位）
+        shelf?.remember(target, first, .gif)
         if let shelf, let corner = FlyCard.landingRect(for: rect, size: rect.size) {
           shelf.add(gif: target, first: first, source: source, at: corner)
         }
@@ -600,6 +608,7 @@ final class ShotShelf {
         island?.show(
           "已压缩", detail: Self.sizeChange(from: url, to: target),
           leading: shown.map(Island.thumbnail(of:)) ?? .tone)
+        shelf?.remember(target, shown, .video)
         if let shelf, let corner = FlyCard.landingRect(for: rect, size: rect.size) {
           shelf.add(
             compressed: target, seconds: seconds, poster: shown, source: source, at: corner)

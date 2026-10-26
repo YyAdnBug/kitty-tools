@@ -151,7 +151,7 @@ struct ShotHistoryTests {
   }
 
   /// 按天分组：今天、昨天写成字，更早的写日期；每组内部新的在前
-  @Test func groupsByDay() {
+  @Test func groupsByDay() throws {
     let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
     let today = [item(.shot, 0, now: now), item(.shot, 0.2, now: now)]
     let groups = ShotHistoryModel.group(today + [item(.shot, 1, now: now)], now: now)
@@ -160,6 +160,10 @@ struct ShotHistoryTests {
     #expect(groups.first?.items.first?.id == today[0].id)  // 新的在前
     #expect(groups.last?.title == "昨天")
     #expect(ShotHistoryModel.group([], now: now).isEmpty)
+    // 更早的写日期、不带时间（原来会跟出个 0:00）；写法跟系统语言走，这里只锁「没有时间」
+    let older = ShotHistoryModel.group([item(.shot, 9, now: now)], now: now)
+    let title = try #require(older.first?.title)
+    #expect(!title.isEmpty && !title.contains(":") && title != "今天" && title != "昨天")
   }
 
   /// 说明那两行：时间 · 尺寸 · 来源；第二行写存到哪、几条标注、钉过没有

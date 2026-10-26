@@ -201,6 +201,9 @@ import Foundation
     return doomed
   }
 
+  /// 截图自检直接摆几条（不写盘、不入库）
+  func seed(_ items: [Item]) { self.items = items }
+
   // MARK: 库
 
   private func add(_ item: Item) {
