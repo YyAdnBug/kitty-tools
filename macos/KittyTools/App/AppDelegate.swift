@@ -1242,6 +1242,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     case .audioRecord: audioRecord()
     case .pinClipboard: pinClipboard()
     case .shotHistory: showShotHistory()
+    case .clothesline: toggleClothesline()
     case .statusScreen: pickStatus()
     case .noteCapture: toggleNoteCapture()
     case .noteNew: newNote()
@@ -2043,6 +2044,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     actions.openHistory = { [unowned self] in showShotHistory() }
     return actions
   }()
+
+  /// 晾衣绳的全局快捷键（第十族拍板 C1）：绳子出来 / 收起。上面空着时说一声——不然按了没反应
+  private func toggleClothesline() {
+    guard !clothesline.isEmpty else {
+      return island.show(
+        "晾衣绳上没有东西", detail: "截完图挂上去（设置 › 截图「截完图放哪」）", tone: .info,
+        symbol: "info.circle.fill")
+    }
+    clothesline.toggle()
+  }
 
   /// 录制的那一条的文件被移走 / 删掉了
   private func missingShotFile() {

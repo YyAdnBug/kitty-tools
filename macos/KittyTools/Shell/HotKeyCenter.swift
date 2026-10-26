@@ -146,7 +146,7 @@ struct HotKey: Codable, Hashable {
 enum HotKeyAction: String, CaseIterable {
   case clipboard, selectionTranslate, inputTranslate, screenshotTranslate, launcher, screenshot,
     screenshotLastRegion, recognizeText, translateReplace, screenRecord, audioRecord, pinClipboard,
-    statusScreen, noteCapture, noteNew, noteAll, launchpad, shotHistory, island
+    statusScreen, noteCapture, noteNew, noteAll, launchpad, shotHistory, island, clothesline
 
   var title: String {
     switch self {
@@ -163,6 +163,7 @@ enum HotKeyAction: String, CaseIterable {
     case .audioRecord: "录音"
     case .pinClipboard: "钉住剪贴板里的图"
     case .shotHistory: "截图历史"
+    case .clothesline: "晾衣绳"
     case .statusScreen: "状态屏"
     case .noteCapture: "快速记一条"
     case .noteNew: "新建便签"
@@ -226,6 +227,8 @@ enum HotKeyAction: String, CaseIterable {
     case .pinClipboard: nil
     // 截图历史（2026-10-26 拍板 C2）：不占默认键，要的人自己设
     case .shotHistory: nil
+    // 晾衣绳（第十族，2026-10-26 拍板 C1）：主入口是鼠标停到菜单栏那一条上，键给要的人自己设
+    case .clothesline: nil
     // 状态屏（Z10）不设默认键：不能让人误触。设了键是先出选状态的面板（Z13a；设置里可改成直接进入列表里的第一个状态）
     case .statusScreen: nil
     // N = Note，和别的默认键一样是单 ⌥（便签拍板 F①：只有「快速记一条」有默认键）
@@ -290,7 +293,8 @@ enum HotKeyAction: String, CaseIterable {
     case .clipboard: .clipboard
     case .launcher: .launcher
     case .selectionTranslate, .inputTranslate, .translateReplace, .screenshotTranslate: .translate
-    case .screenshot, .screenshotLastRegion, .recognizeText, .pinClipboard, .shotHistory:
+    case .screenshot, .screenshotLastRegion, .recognizeText, .pinClipboard, .shotHistory,
+      .clothesline:
       .screenshot
     case .screenRecord, .audioRecord: .record
     case .noteCapture, .noteNew, .noteAll: .notes
@@ -315,7 +319,7 @@ enum HotKeyAction: String, CaseIterable {
       "截图与录制",
       [
         .screenshot, .screenshotLastRegion, .recognizeText, .screenRecord, .audioRecord,
-        .pinClipboard, .shotHistory,
+        .pinClipboard, .shotHistory, .clothesline,
       ]
     ),
     // 便签（PLAN §10「便签」F②）：菜单栏、启动器、快捷键页、速查表各一节，三项同名同序
@@ -351,6 +355,8 @@ enum HotKeyAction: String, CaseIterable {
     // 同速查表的「钉图」组、常驻缩略图的钉图钮；不用 pin：菜单里紧挨着的「隐藏全部钉图」是它
     case .pinClipboard: "pin.fill"
     case .shotHistory: "clock.arrow.circlepath"
+    // 晾衣绳：挂着照片的绳子（SF Symbols 里没有绳子，用挂在横杆上的那个）
+    case .clothesline: "photo.on.rectangle.angled"
     case .statusScreen: "hand.raised.fill"
     case .noteCapture: "square.and.pencil"
     case .noteNew: "note.text.badge.plus"
@@ -369,7 +375,7 @@ enum HotKeyAction: String, CaseIterable {
     case .selectionTranslate, .inputTranslate, .translateReplace, .screenshotTranslate:
       Style.Family.translate
     case .screenshot, .screenshotLastRegion, .recognizeText, .screenRecord, .audioRecord,
-      .pinClipboard, .shotHistory:
+      .pinClipboard, .shotHistory, .clothesline:
       Style.Family.screenshot
     case .statusScreen: Style.Family.statusScreen
     case .noteCapture, .noteNew, .noteAll: Style.Family.notes

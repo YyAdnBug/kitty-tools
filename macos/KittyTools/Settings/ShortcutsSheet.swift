@@ -338,6 +338,18 @@ struct ShortcutsSheet: View {
           Entry("双击", text: "改标注（录制的是用默认 App 打开）"),
           Entry("⌫", text: "删掉选中的那条"),
         ]),
+      // 晾衣绳（第十族，2026-10-26 拍板 C1 C3）：全局的「晾衣绳」不设默认键，没设时那一行写「未设置」。
+      // 绳子上的动作在 ClotheslineView 的 CardMouse（面板永不当 key，没有按键）
+      Group(
+        title: "晾衣绳", symbol: HotKeyAction.clothesline.symbol, color: Style.Family.screenshot,
+        features: [.screenshot], globals: [.clothesline],
+        entries: [
+          Entry("停在菜单栏", text: "绳子滑下来（移开收起；截完图挂上去时也会自己滑下来）"),
+          Entry("单击", text: "拷贝那一张"),
+          Entry("双击", text: "改标注（在长图标注窗口里打开）"),
+          Entry("拖出去", text: "发一份到别的 App 或文件夹（原图还挂着）；拖到废纸篓是取下"),
+          Entry("✕", text: "取下（右键菜单里还有存储、钉图、从历史里删掉）"),
+        ]),
       // 长图标注窗口（2026-10-26）；代码在 ScrollCanvas.keyDown 和 ScrollEditor.key
       Group(
         title: "长图标注", symbol: "pencil.tip.crop.circle", color: Style.Family.screenshot,

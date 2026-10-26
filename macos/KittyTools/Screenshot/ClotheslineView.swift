@@ -239,7 +239,11 @@ private struct CardMouse: NSViewRepresentable {
 
     override func viewDidMoveToWindow() {
       super.viewDidMoveToWindow()
-      if window == nil { setInside(false) }
+      guard window == nil else { return }
+      // 卡片被取下 / 面板收起：等着的那一下单击作废（不然动作落在已经不在绳子上的那条上）
+      NSObject.cancelPreviousPerformRequests(
+        withTarget: self, selector: #selector(fireClick), object: nil)
+      setInside(false)
     }
 
     private func setInside(_ inside: Bool) {
