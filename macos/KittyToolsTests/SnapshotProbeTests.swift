@@ -4226,6 +4226,17 @@ struct SnapshotProbeTests {
           to: "\(out)/\(name)\(dark ? "-dark" : "").png")
       }
     }
+    // 悬停在中间那张上：压一层蒙层、右上角出 ✕（第 2 批）；长截图那张的左下角有角标
+    model.setPegged(items.prefix(4).map(\.id) + [items[7].id])
+    model.plan = ClotheslineLayout.plan(
+      model.items.map(\.pixelSize), width: width, gap: ClotheslineLayout.gap(notch: nil))
+    model.hovered = items[2].id
+    for dark in [false, true] {
+      try snapshot(
+        ClotheslineView(model: model), size: size, dark: dark,
+        to: "\(out)/clothesline-hover\(dark ? "-dark" : "").png")
+    }
+    model.hovered = nil
   }
 
   /// 一块带渐变的色块，当缩略图用

@@ -21,10 +21,42 @@ import SwiftUI
   private(set) var pegged: [UUID] = []
   /// 这块屏上排好的样子（面板内坐标）
   var plan = ClotheslineLayout.Plan()
+  /// 鼠标停在哪一张上（压一层蒙层、右上角出 ✕）；截图自检直接摆它
+  var hovered: UUID?
+  /// 刚挂上去的那一张：出现时摇一下就停（拍板 D1）
+  var swinging: UUID?
+  /// 拖出去的那个文件（挂上去时在主线程外备好）：存过的就是存的那个，录制的是那段视频 / 音频
+  var dragFiles: [UUID: URL] = [:]
+  /// 改完标注、缩略图重做好了要重画（ShotThumbnails 不是 @Observable，视图读它来建立依赖）
+  private(set) var redraws = 0
+  /// 卡片上的动作（Clothesline 接）
+  @ObservationIgnored var onCommand: (ShelfCard.Command, ShotHistory.Item) -> Void = { _, _ in }
   /// 截图历史：绳子只是它的一个视图（B2）。这次用不了（功能关着、历史关着）时是 nil，什么都挂不上
   @ObservationIgnored let history: ShotHistory?
 
   init(history: ShotHistory?) { self.history = history }
+
+  func touch() { redraws += 1 }
+
+  /// 这一条的缩略图（和历史窗口共用一份缓存）
+  func thumbnail(for item: ShotHistory.Item) -> NSImage? {
+    history.flatMap { ShotThumbnails.shared.image(for: item, in: $0) }
+  }
+
+  /// 右键菜单和旁白动作（一节一组，节间分隔线）：截图「改标注 / 拷贝 / 存储 / 钉图 /（存过的）在访达中显示 /
+  /// 在历史里看 ｜ 取下 ｜ 从历史里删掉」——同常驻缩略图那一整套（拍板 C3），多了「改标注」和末尾两条；
+  /// 录制的那几条没有图，只有「拷贝 / 打开 / 在访达中显示 / 在历史里看」。纯函数，配单测
+  static func menu(for item: ShotHistory.Item, screenshotOn: Bool = Feature.screenshot.isOn)
+    -> [[ShelfCard.Command]]
+  {
+    guard item.filePath == nil else {
+      return [[.copy, .open, .reveal, .history], [.unpeg], [.forget]]
+    }
+    let saved: [ShelfCard.Command] = item.savedPath == nil ? [] : [.reveal]
+    // 截图这个功能关掉时绳子整个就没了，这里仍按开关给（同常驻缩略图）
+    let pin: [ShelfCard.Command] = screenshotOn ? [.pin] : []
+    return [[.edit, .copy, .save] + pin + saved + [.history], [.unpeg], [.forget]]
+  }
 
   /// 挂着、而且历史里还在的那几条（历史里删掉的跟着没，B2）。
   /// ponytail: 8 张各在历史里线性找一遍（历史几千条时也就几万次比较，都在一次重画里）；慢了再给历史加一张按编号的表
@@ -47,6 +79,8 @@ import SwiftUI
   var onHide: () -> Void = {}
   /// 这块屏上刘海那一块（中间给刘海岛让位，拍板 C2）；单测和截图自检注入
   var notch: (NSScreen) -> CGRect? = { Island.notchRect(of: $0) }
+  /// 一条历史的那几样操作（AppDelegate 给，和截图历史窗口共用一份）
+  var actions = ShotActions()
 
   private var panel: NSPanel?
   private var host: ClotheslineHost?
@@ -63,9 +97,38 @@ import SwiftUI
   private var monitors: [Any] = []
   private var started = false
 
-  init(history: ShotHistory?) { model = ClotheslineModel(history: history) }
+  init(history: ShotHistory?) {
+    model = ClotheslineModel(history: history)
+    model.onCommand = { [unowned self] command, item in perform(command, on: item) }
+  }
 
   var isEmpty: Bool { model.isEmpty }
+
+  /// 卡片上的一个动作（单击、双击、✕、拖到废纸篓、右键菜单、旁白动作都走它）
+  func perform(_ command: ShelfCard.Command, on item: ShotHistory.Item) {
+    switch command {
+    case .copy: actions.copy(item)
+    case .save: actions.save(item)
+    case .pin: actions.pin(item)
+    case .edit: actions.edit(item)
+    case .forget: actions.forget(item)
+    case .history: actions.openHistory()
+    case .reveal: ShotHistory.reveal(item)
+    case .open: ShotHistory.open(item)
+    case .unpeg: unpeg(item.id)
+    // 绳子上没有这几样（menu 里不给）
+    case .gif, .compress, .trash, .close: break
+    }
+  }
+
+  /// 改完标注、缩略图重做好了（AppDelegate 转过来）：重画那张卡、拖出去的那份也要重做
+  func thumbnailChanged(_ id: UUID) {
+    guard model.pegged.contains(id) else { return }
+    model.touch()
+    model.dragFiles[id] = nil
+    guard let item = model.items.first(where: { $0.id == id }) else { return }
+    Task { await prepareDragFile(item) }
+  }
 
   // MARK: 起停
 
@@ -79,6 +142,9 @@ import SwiftUI
   func stop() {
     started = false
     model.setPegged([])
+    model.dragFiles = [:]
+    model.hovered = nil
+    model.swinging = nil
     hide(animated: false)
     updateWatching()
   }
@@ -101,21 +167,51 @@ import SwiftUI
     guard started, model.history != nil else { return }
     var ids = model.pegged.filter { $0 != id }
     ids.append(id)
-    model.setPegged(trimmed(ids, on: screenForMouse()))
+    ids = trimmed(ids, on: screenForMouse())
+    for dropped in Set(model.pegged).subtracting(ids) { model.dragFiles[dropped] = nil }
+    model.setPegged(ids)
+    model.swinging = id
     holdUntil = .now.advanced(by: ClotheslineLayout.pegHold)
     updateWatching()
     if let screen = screenForMouse() { present(on: screen) }
+    if let item = model.items.first(where: { $0.id == id }) {
+      Task { await prepareDragFile(item) }
+    }
   }
 
   /// 取下（只去掉「挂着」这一笔，历史不动，拍板 B2 D2）
   func unpeg(_ id: UUID) {
     guard model.pegged.contains(id) else { return }
+    if model.hovered == id { model.hovered = nil }
+    model.dragFiles[id] = nil
     withAnimation(Style.Motion.settle.animation()) {
       model.setPegged(model.pegged.filter { $0 != id })
       replan()
     }
     if model.isEmpty { hide(animated: true) }
     updateWatching()
+  }
+
+  /// 拖出去的那个文件：存过的就是存的那个、录制的就是那段文件（名字是用户自己的），别的在临时目录里写一份成品
+  /// PNG（原图 + 标注），名字同快速保存。常驻缩略图也往这个目录写、启动时清空（ShotShelf.dragDirectory）
+  private func prepareDragFile(_ item: ShotHistory.Item) async {
+    if let path = item.savedPath ?? item.filePath, FileManager.default.fileExists(atPath: path) {
+      model.dragFiles[item.id] = URL(filePath: path)
+      return
+    }
+    guard let history = model.history, let image = history.composed(item),
+      let png = await ScreenshotOutput.png(image, scale: item.scale)
+    else { return }
+    let url = ScreenshotOutput.availableURL(in: ShotShelf.dragDirectory)
+    guard await Self.write(png, to: url), model.pegged.contains(item.id) else { return }
+    model.dragFiles[item.id] = url
+  }
+
+  /// 写临时文件（几 MB 到几十 MB，不在主线程写；同常驻缩略图）
+  @concurrent nonisolated private static func write(_ png: Data, to url: URL) async -> Bool {
+    try? FileManager.default.createDirectory(
+      at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    return (try? png.write(to: url)) != nil
   }
 
   /// 下一张挂在哪（屏幕坐标）：截图的飞行卡片照它落地（拍板 B1）。pixels 是原图的像素尺寸；

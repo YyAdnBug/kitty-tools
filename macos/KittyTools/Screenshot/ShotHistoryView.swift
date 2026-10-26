@@ -188,11 +188,11 @@ struct ShotHistoryView: View {
     VStack(alignment: .leading, spacing: 8) {
       if isImage {
         row("改标注", "pencil.tip.crop.circle") { edit(item) }
-        row("拷贝", "doc.on.doc") { model.onCopy(item) }
-        row("存储到…", "square.and.arrow.down") { model.onSave(item) }
-        row("另存为…", "square.and.arrow.down.on.square") { model.onSaveAs(item) }
-        row("钉到屏幕", "pin") { model.onPin(item) }
-        row("识字并拷贝", "text.viewfinder") { model.onRecognize(item) }
+        row("拷贝", "doc.on.doc") { model.actions.copy(item) }
+        row("存储到…", "square.and.arrow.down") { model.actions.save(item) }
+        row("另存为…", "square.and.arrow.down.on.square") { model.actions.saveAs(item) }
+        row("钉到屏幕", "pin") { model.actions.pin(item) }
+        row("识字并拷贝", "text.viewfinder") { model.actions.recognize(item) }
       } else {
         row("打开", "play.rectangle") { model.open(item) }
       }
@@ -215,11 +215,11 @@ struct ShotHistoryView: View {
   @ViewBuilder private func menu(_ item: ShotHistory.Item) -> some View {
     if item.filePath == nil {
       Button("改标注") { edit(item) }
-      Button("拷贝") { model.onCopy(item) }
-      Button("存储到…") { model.onSave(item) }
-      Button("另存为…") { model.onSaveAs(item) }
-      Button("钉到屏幕") { model.onPin(item) }
-      Button("识字并拷贝") { model.onRecognize(item) }
+      Button("拷贝") { model.actions.copy(item) }
+      Button("存储到…") { model.actions.save(item) }
+      Button("另存为…") { model.actions.saveAs(item) }
+      Button("钉到屏幕") { model.actions.pin(item) }
+      Button("识字并拷贝") { model.actions.recognize(item) }
     } else {
       Button("打开") { model.open(item) }
     }
@@ -231,6 +231,6 @@ struct ShotHistoryView: View {
   /// 双击 / 「改标注」：录制的那几条双击是用默认 App 打开（拍板 C3）
   private func edit(_ item: ShotHistory.Item) {
     model.selection = item.id
-    if item.filePath == nil { model.onEdit(item) } else { model.open(item) }
+    if item.filePath == nil { model.actions.edit(item) } else { model.open(item) }
   }
 }

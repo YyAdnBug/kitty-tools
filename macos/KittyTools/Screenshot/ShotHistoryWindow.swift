@@ -43,16 +43,12 @@ import SwiftUI
 
   func touch() { redraws += 1 }
 
-  /// 每条的操作（AppDelegate 给）：拷贝、快速保存、另存为、钉到屏幕、识字并拷贝、改标注、用默认 App 打开
-  @ObservationIgnored var onCopy: (ShotHistory.Item) -> Void = { _ in }
-  @ObservationIgnored var onSave: (ShotHistory.Item) -> Void = { _ in }
-  @ObservationIgnored var onSaveAs: (ShotHistory.Item) -> Void = { _ in }
-  @ObservationIgnored var onPin: (ShotHistory.Item) -> Void = { _ in }
-  @ObservationIgnored var onRecognize: (ShotHistory.Item) -> Void = { _ in }
-  @ObservationIgnored var onEdit: (ShotHistory.Item) -> Void = { _ in }
+  /// 每条的操作（AppDelegate 给，晾衣绳和这里共用一份 ShotActions）
+  @ObservationIgnored var actions = ShotActions()
 
-  init(history: ShotHistory) {
+  init(history: ShotHistory, actions: ShotActions = ShotActions()) {
     self.history = history
+    self.actions = actions
   }
 
   /// 筛过、搜过的那些（新的在前）
@@ -142,23 +138,13 @@ import SwiftUI
   /// 成品图：有标注才合成（拍板 A1、C2），录制的那几条没有图
   func composed(_ item: ShotHistory.Item) -> CGImage? { history.composed(item) }
 
-  /// 录制的那几条：文件还在不在（拍板 D2：不在了那一条照常能看）
-  func fileExists(_ item: ShotHistory.Item) -> Bool {
-    guard let path = item.filePath ?? item.savedPath else { return false }
-    return FileManager.default.fileExists(atPath: path)
-  }
+  /// 录制的那几条：文件还在不在（拍板 D2：不在了那一条照常能看）。
+  /// 在访达中显示、打开都挪到了 ShotHistory 上（晾衣绳也要用），这里留两个薄壳给界面调
+  func fileExists(_ item: ShotHistory.Item) -> Bool { ShotHistory.fileExists(item) }
 
-  func reveal(_ item: ShotHistory.Item) {
-    guard let path = item.filePath ?? item.savedPath, fileExists(item) else {
-      return Island.announce("文件已经不在了")
-    }
-    NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: path)])
-  }
+  func reveal(_ item: ShotHistory.Item) { ShotHistory.reveal(item) }
 
-  func open(_ item: ShotHistory.Item) {
-    guard let path = item.filePath, fileExists(item) else { return Island.announce("文件已经不在了") }
-    NSWorkspace.shared.open(URL(filePath: path))
-  }
+  func open(_ item: ShotHistory.Item) { ShotHistory.open(item) }
 
   func delete(_ ids: [UUID]) {
     if let selection, ids.contains(selection) { self.selection = nil }

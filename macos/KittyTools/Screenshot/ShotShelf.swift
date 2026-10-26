@@ -186,9 +186,10 @@ final class ShotShelf {
     }
   }
 
-  /// 右键菜单和 VoiceOver 自定义动作（同一份 menu）
+  /// 右键菜单和 VoiceOver 自定义动作（同一份 menu）。
+  /// edit / unpeg / forget 是晾衣绳（第十族，2026-10-26）用的：同一个动作全 App 一个名字，不各写一份
   enum Command {
-    case copy, gif, compress, save, pin, open, reveal, history, trash, close
+    case copy, gif, compress, save, pin, open, reveal, history, trash, close, edit, unpeg, forget
 
     var title: String {
       switch self {
@@ -197,6 +198,9 @@ final class ShotShelf {
       case .compress: "压缩"
       case .save: "存储"
       case .pin: "钉图"
+      case .edit: "改标注"
+      case .unpeg: "取下"
+      case .forget: "从历史里删掉"
       case .open: "打开"
       case .reveal: "在访达中显示"
       case .history: "在历史里看"
@@ -336,6 +340,8 @@ final class ShotShelf {
     case .history: shelf?.openHistory()
     case .trash: moveToTrash()
     case .close: close()
+    // 晾衣绳那边的三个（menu 里不给，常驻缩略图没有这几样）
+    case .edit, .unpeg, .forget: break
     }
   }
 

@@ -125,6 +125,60 @@ struct ClotheslineTests {
     #expect(hides == [false, false, false, false])
   }
 
+  /// 右键菜单（拍板 C3 D2）：截图是常驻缩略图那一整套 + 改标注，末尾「取下」「从历史里删掉」各一节；
+  /// 存过的才有「在访达中显示」；录制的那几条没有图，只有拷贝 / 打开 / 在访达中显示
+  @Test func cardMenu() {
+    let shot = ShotHistory.Item(
+      id: UUID(), kind: .shot, createdAt: .now, pixelSize: CGSize(width: 800, height: 600),
+      scale: 2)
+    #expect(
+      ClotheslineModel.menu(for: shot, screenshotOn: true) == [
+        [.edit, .copy, .save, .pin, .history], [.unpeg], [.forget],
+      ])
+    var saved = shot
+    saved.savedPath = "/tmp/截图.png"
+    #expect(
+      ClotheslineModel.menu(for: saved, screenshotOn: true) == [
+        [.edit, .copy, .save, .pin, .reveal, .history], [.unpeg], [.forget],
+      ])
+    var video = shot
+    video.kind = .video
+    video.filePath = "/tmp/录屏.mp4"
+    #expect(
+      ClotheslineModel.menu(for: video, screenshotOn: true) == [
+        [.copy, .open, .reveal, .history], [.unpeg], [.forget],
+      ])
+    // 名字：同一个动作全 App 一个叫法
+    #expect(
+      ClotheslineModel.menu(for: shot, screenshotOn: true).flatMap { $0 }.map(\.title) == [
+        "改标注", "拷贝", "存储", "钉图", "在历史里看", "取下", "从历史里删掉",
+      ])
+  }
+
+  /// 绳子只是历史的一个视图（拍板 B2）：历史里删掉的跟着没，取下只去掉「挂着」这一笔、历史不动
+  @MainActor @Test func pegsFollowTheHistory() throws {
+    let root = FileManager.default.temporaryDirectory.appending(
+      path: "kitty-clothesline-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let history = try ShotHistory(
+      db: Database(path: ":memory:"), directory: root.appending(path: "shots"))
+    let items = (0..<3).map {
+      ShotHistory.Item(
+        id: UUID(), kind: .shot, createdAt: Date.now.addingTimeInterval(Double($0)),
+        pixelSize: CGSize(width: 800, height: 600), scale: 2)
+    }
+    history.seed(items)
+    let model = ClotheslineModel(history: history)
+    model.setPegged(items.map(\.id))
+    #expect(model.items.map(\.id) == items.map(\.id))
+    history.remove([items[1].id])
+    #expect(model.items.map(\.id) == [items[0].id, items[2].id])
+    model.setPegged([items[0].id])
+    #expect(!model.isEmpty && model.items.count == 1)
+    // 历史里那条还在
+    #expect(history.items.contains { $0.id == items[2].id })
+  }
+
   /// 面板贴在菜单栏下沿、铺满这块屏；卡片的面板内坐标换成屏幕坐标
   @Test func panelSitsUnderTheMenuBar() {
     let screen = CGRect(x: 0, y: 0, width: 1512, height: 982)

@@ -31,6 +31,11 @@ nonisolated enum ClotheslineLayout {
   static let maxCards = 8
   /// 卡片四周给阴影留的余量（面板比卡片高这么多）
   static let shadowMargin: CGFloat = 18
+  /// 悬停时右上角那个 ✕（和常驻缩略图的圆钮同样大）和它离卡片边的距离
+  static let closeSide: CGFloat = 22
+  static let closeInset: CGFloat = 6
+  /// 刚挂上去摇一下：从这个角度弹回 0（拍板 D1，用现成的 pop 弹簧，别新造曲线）
+  static let swingAngle: Double = -5
 
   /// 面板多高：绳子 + 下垂 + 夹子 + 卡片 + 阴影余量
   static var panelHeight: CGFloat {

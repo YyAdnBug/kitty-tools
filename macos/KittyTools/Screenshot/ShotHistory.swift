@@ -12,6 +12,21 @@ import AppKit
 import CoreGraphics
 import Foundation
 
+/// 历史里一条的那几样操作（AppDelegate 接到截图那条路上：拷贝、快速保存、另存为、钉到屏幕、识字并拷贝、改标注）。
+/// 截图历史窗口（ShotHistoryModel）和晾衣绳（Clothesline）共用一份，不各接一遍
+@MainActor struct ShotActions {
+  var copy: @MainActor (ShotHistory.Item) -> Void = { _ in }
+  var save: @MainActor (ShotHistory.Item) -> Void = { _ in }
+  var saveAs: @MainActor (ShotHistory.Item) -> Void = { _ in }
+  var pin: @MainActor (ShotHistory.Item) -> Void = { _ in }
+  var recognize: @MainActor (ShotHistory.Item) -> Void = { _ in }
+  var edit: @MainActor (ShotHistory.Item) -> Void = { _ in }
+  /// 「从历史里删掉」：照历史的规矩问一次（AppDelegate 打开历史窗口、在那里问，拍板 D2）
+  var forget: @MainActor (ShotHistory.Item) -> Void = { _ in }
+  /// 「在历史里看」：打开截图历史窗口
+  var openHistory: @MainActor () -> Void = {}
+}
+
 @MainActor @Observable final class ShotHistory {
   /// 这一条是什么（录制的三种只记文件）
   enum Kind: String, Codable, CaseIterable, Sendable {
@@ -190,6 +205,26 @@ import Foundation
   }
 
   func thumbnail(for id: UUID) -> CGImage? { Self.decode(thumbnailURL(for: id)) }
+
+  /// 这一条存过 / 录下来的那个文件还在不在（拍板 D2：不在了那一条照常能看能改）
+  static func fileExists(_ item: Item) -> Bool {
+    guard let path = item.filePath ?? item.savedPath else { return false }
+    return FileManager.default.fileExists(atPath: path)
+  }
+
+  /// 在访达中显示（历史窗口、晾衣绳共用）
+  static func reveal(_ item: Item) {
+    guard let path = item.filePath ?? item.savedPath, fileExists(item) else {
+      return Island.announce("文件已经不在了")
+    }
+    NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: path)])
+  }
+
+  /// 用默认 App 打开（录制的那几条）
+  static func open(_ item: Item) {
+    guard let path = item.filePath, fileExists(item) else { return Island.announce("文件已经不在了") }
+    NSWorkspace.shared.open(URL(filePath: path))
+  }
 
   func url(for id: UUID) -> URL { directory.appending(path: "\(id.uuidString).png") }
 

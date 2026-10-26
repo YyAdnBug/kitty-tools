@@ -119,6 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         || (Feature.launchpad.isOn && launchpad.isOpen)
     }
     line.onHide = { [unowned self] in idleReclaim.schedule() }
+    line.actions = shotActions
     return line
   }()
   /// 状态屏（PLAN §10）：进入时收起三块浮层、停用全局热键，退出时恢复。正在录屏 / 录音时不让进（控制条和停止项
@@ -715,6 +716,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       Task { await shotHistory.record(file: file, poster: poster, kind: kind) }
     }
     shelf.openHistory = { [unowned self] in showShotHistory() }
+    // 改完标注、缩略图重做好了（2026-10-26 用户手测：历史里看着像没改过）：清掉那张的缓存，
+    // 开着的历史窗口重画网格、晾衣绳重画那张卡并重做拖出去的那份
+    shotHistory.onThumbnailChanged = { [unowned self] id in
+      ShotThumbnails.shared.forget(id)
+      shotHistoryWindow?.model.touch()
+      if Feature.screenshot.isOn { clothesline.thumbnailChanged(id) }
+    }
     shelf.copyFile = { [unowned self] url in
       Paster.write(files: [url])
       if recordsClipboard { clipboardStore.recordFiles([url]) }
@@ -1937,19 +1945,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   /// 截图历史窗口（2026-10-26 拍板 C1）：用时才建，关掉放掉（连缩略图缓存一起）。
-  /// 每条的操作都接到截图那条路上：拷贝 / 存储 / 另存为走同一套出图，钉图走钉图，改标注开标注窗口
-  func showShotHistory() {
+  /// 每条的操作都接到截图那条路上：拷贝 / 存储 / 另存为走同一套出图，钉图走钉图，改标注开标注窗口。
+  /// 晾衣绳（第十族）上的卡片和这里共用同一份 ShotActions，不各接一遍。
+  /// deleting：从晾衣绳的「从历史里删掉」进来的（拍板 D2：照历史的规矩问一次，就在这扇窗口里问）
+  func showShotHistory(deleting: ShotHistory.Item? = nil) {
+    let model =
+      shotHistoryWindow?.model ?? ShotHistoryModel(history: shotHistory, actions: shotActions)
+    if let deleting {
+      model.selection = deleting.id
+      model.deleting = [deleting.id]
+    }
     if let window = shotHistoryWindow { return window.show() }
-    let model = ShotHistoryModel(history: shotHistory)
-    model.onCopy = { [unowned self] item in
-      guard let image = model.composed(item) else { return missingShot() }
+    let window = ShotHistoryWindow(model: model)
+    window.onClose = { [weak self] in
+      self?.shotHistoryWindow = nil
+      // 晾衣绳挂着的那几张还在用这份缓存：只在它空着时清
+      if self?.clothesline.isEmpty ?? true { ShotThumbnails.shared.clear() }
+    }
+    shotHistoryWindow = window
+    window.show()
+  }
+
+  /// 历史里一条的那几样操作：历史窗口和晾衣绳共用一份（只接一次）
+  private lazy var shotActions: ShotActions = {
+    var actions = ShotActions()
+    actions.copy = { [unowned self] item in
+      // 录制的那几条拷的是文件（同常驻缩略图的视频卡，C8-a：点了才进剪贴板历史）
+      if let path = item.filePath {
+        let url = URL(filePath: path)
+        guard ShotHistory.fileExists(item) else { return missingShotFile() }
+        Paster.write(files: [url])
+        if recordsClipboard { clipboardStore.recordFiles([url]) }
+        island.show(
+          "已复制\(item.kind.title)", detail: url.lastPathComponent,
+          leading: shotHistory.thumbnail(for: item.id).map { Island.thumbnail(of: $0) } ?? .tone)
+        return
+      }
+      guard let image = shotHistory.composed(item) else { return missingShot() }
       Task {
         guard await copyImage(image, scale: item.scale) != nil else { return }
         island.show("已复制截图", leading: Island.thumbnail(of: image))
       }
     }
-    model.onSave = { [unowned self] item in
-      guard let image = model.composed(item) else { return missingShot() }
+    actions.save = { [unowned self] item in
+      guard let image = shotHistory.composed(item) else { return missingShot() }
       Task {
         guard let saved = await saveImage(image, scale: item.scale, asking: false) else { return }
         shotHistory.markSaved(item.id, to: saved.url)
@@ -1958,16 +1997,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           leading: Island.thumbnail(of: image), actions: .file(saved.url))
       }
     }
-    model.onSaveAs = { [unowned self] item in
-      guard let image = model.composed(item) else { return missingShot() }
+    actions.saveAs = { [unowned self] item in
+      guard let image = shotHistory.composed(item) else { return missingShot() }
       Task {
         if let saved = await saveImageAs(image, scale: item.scale) {
           shotHistory.markSaved(item.id, to: saved)
         }
       }
     }
-    model.onPin = { [unowned self] item in
-      guard let image = model.composed(item) else { return missingShot() }
+    actions.pin = { [unowned self] item in
+      guard let image = shotHistory.composed(item) else { return missingShot() }
       // 钉回当初那一块（拍板 B2）；没记位置的（老条目）钉在可见区中央，同「钉住剪贴板里的图」
       let frame =
         item.frame
@@ -1978,28 +2017,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       pins.pin(image, frame: frame)
       shotHistory.markPinned(item.id)
     }
-    model.onRecognize = { [unowned self] item in
-      guard let image = model.composed(item) else { return missingShot() }
+    actions.recognize = { [unowned self] item in
+      guard let image = shotHistory.composed(item) else { return missingShot() }
       Task { await copyRecognizedText(in: image) }
     }
-    model.onEdit = { [unowned self] item in
+    actions.edit = { [unowned self] item in
       guard let original = shotHistory.image(for: item.id) else { return missingShot() }
       openScrollEditor(
         original, scale: item.scale, history: item.id, annotations: item.annotations)
     }
-    // 改完标注、缩略图重做好了：清掉那张的缓存、重画网格（2026-10-26 用户手测：历史里看着像没改过）
-    shotHistory.onThumbnailChanged = { [weak model] id in
-      ShotThumbnails.shared.forget(id)
-      model?.touch()
-    }
-    let window = ShotHistoryWindow(model: model)
-    window.onClose = { [weak self] in
-      self?.shotHistoryWindow = nil
-      self?.shotHistory.onThumbnailChanged = { _ in }
-      ShotThumbnails.shared.clear()
-    }
-    shotHistoryWindow = window
-    window.show()
+    actions.forget = { [unowned self] item in showShotHistory(deleting: item) }
+    actions.openHistory = { [unowned self] in showShotHistory() }
+    return actions
+  }()
+
+  /// 录制的那一条的文件被移走 / 删掉了
+  private func missingShotFile() {
+    island.show("文件已经不在了", tone: .warning, symbol: "questionmark.folder")
   }
 
   /// 历史里那条的原图读不出来（盘上被清了 / 坏了）
