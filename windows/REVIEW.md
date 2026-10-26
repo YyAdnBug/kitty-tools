@@ -21,22 +21,12 @@
 - 无障碍自查 0 / 0。
 - `275ea952` 自己查出了同步执行层 8 处会删到每一台的问题。
 
-### R22（P1）录屏 HUD 没按 DPI 算尺寸，还写死了屏幕高 1440
+### R22（P1）录屏 HUD 没按 DPI 算尺寸，还写死了屏幕高 1440 → 已修（`82a5a07`）
 
-`Recording/RecordingHud.cs` 第 121–131 行：
-
-- `width = 268; height = 46` 直接当物理像素传给 `MoveAndResize`。在 150% 的屏上，XAML 内容要 402 × 69 像素才放得下，所以会被裁掉。
-- `if (y + height > region.Bottom && y + height > 1440)`：前半句永远成立（`y` 就是 `region.Bottom + 8`），等于只看 1440，而 1440 是开发机的屏幕高。1080p 的屏上，选区贴着下边时 HUD 会出到屏幕外。
-- `_window.Activate()` 会把焦点从正在录的那个程序抢走，用户接着打的字就进了 HUD。mac 的 HUD 不抢焦点。
-
-**修**：
-- 尺寸用 DIP × 目标显示器的缩放比例（`Displays.ScaleOf`，显示器用 `MonitorFromRect(region)` 取）。
-- 位置限在那块屏的工作区里：下面放不下就放选区上面，上面也放不下就放进选区里、贴着下边。
-- 显示时不激活：`AppWindow.Show(false)`，加 `WS_EX_NOACTIVATE`。
-- 把这个位置计算抽进 Core（PLAN-v6 第 6 批说过「所有算窗口位置的地方」，这一个漏了），单测覆盖 100% / 150%、贴底、副屏在左边（负坐标）。
-- 同样查一遍录音控制条、倒数、钉图，有没有写死的像素或者屏幕尺寸。
-
-**验收**：`--fake-dpi=150` 下选区贴底开录，截 HUD（只截它和选区那一块）；开录后焦点还在原来的程序。
+- HUD 尺寸按目标显示器 `Displays.AtPoint(...).Scale` 换算成物理像素；位置由 Core `HudPlacement.Compute` 限在工作区，下方放不下放上方、再放不下贴选区里面下边。
+- `AppWindow.Show(false)` + `WS_EX_NOACTIVATE`，不再 `Activate()` 抢焦点。
+- 单测 `HudPlacementTests` 4 条：150%、贴底、整屏、负坐标副屏。
+- 还没做：`--fake-dpi=150` 真机截图和“开录后焦点还在原程序”的手测（见 HANDTEST）。
 
 ### R23（P1）去掉分段 MP4 以后，闪退会丢掉整段录屏
 
@@ -133,6 +123,8 @@
 - **验收**：录测试窗口，录的过程中拖大、拖小、最小化再恢复，文件能放、画面不变形。
 
 ### R30（P3）几处小问题
+
+**进展（`82a5a07`）**：文件搜索的 LIKE 已把 `%` / `_` / `[` 用字符类转义；`System.ItemUrl` 实测不按百分号编码（空格就是空格），不再 `Uri.UnescapeDataString`，补了 `%20` 保持原样的单测。剩下：根目录过滤换 `SCOPE='file:…'`、第六版截图、提交格式、多 agent worktree。
 
 - **文件搜索的 SQL**（`Core/FileSearchSql.cs`）：
   - 只转义了 `'`。`%`、`_`、`[` 在 LIKE 里是通配符，搜「[草稿]」会搜不到。改成放进方括号转义：`[%]`、`[_]`、`[[]`。
