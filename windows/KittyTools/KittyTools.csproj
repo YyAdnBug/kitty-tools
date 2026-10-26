@@ -55,8 +55,10 @@
     <None Include="NativeMethods.txt" />
     <None Include="NativeMethods.json" />
   </ItemGroup>
-  <!-- 内置智谱 key：Secrets.props 不入库（模板 Secrets.props.example），构建时写进程序集元数据。 -->
-  <Import Project="Secrets.props" Condition="Exists('Secrets.props')" />
+  <!-- 内置智谱 key：windows/Secrets.props 不入库（模板 windows/Secrets.props.example），构建时写进程序集元数据。
+       以前这里只认工程目录下的 Secrets.props，和模板说的位置对不上；两处都认，工程目录那份也已加进 .gitignore。 -->
+  <Import Project="..\Secrets.props" Condition="Exists('..\Secrets.props')" />
+  <Import Project="Secrets.props" Condition="!Exists('..\Secrets.props') And Exists('Secrets.props')" />
   <ItemGroup Condition="'$(KittyBuiltinZhipuKey)' != ''">
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
       <_Parameter1>KittyBuiltinZhipuKey</_Parameter1>

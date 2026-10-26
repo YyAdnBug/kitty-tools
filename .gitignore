@@ -27,6 +27,7 @@ windows/build/
 windows/**/bin/
 windows/**/obj/
 windows/Secrets.props
+windows/KittyTools/Secrets.props
 .vs/
 *.csproj.user
 
