@@ -997,6 +997,9 @@ internal sealed class ShellRuntime
             case HotKeyActions.Ocr:
                 ScreenshotSession.Start(ScreenshotMode.Ocr);
                 break;
+            case HotKeyActions.ShotHistory:
+                ShotHistoryWindow.ShowWindow();
+                break;
         }
     }
 

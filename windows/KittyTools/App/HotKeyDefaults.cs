@@ -14,6 +14,9 @@ internal static class HotKeyActions
     public const string ScreenshotLast = "screenshotLast";
     public const string Record = "record";
     public const string Ocr = "ocr";
+
+    /// <summary>截图历史（PLAN-v8），默认不设键。</summary>
+    public const string ShotHistory = "shotHistory";
 }
 
 internal sealed record HotKeyDefault(
@@ -35,6 +38,8 @@ internal static class SettingsDefaults
         new(HotKeyActions.ScreenshotLast, "截取上次区域", HotKeyModifiers.Control | HotKeyModifiers.Alt, (uint)'Z'),
         new(HotKeyActions.Record, "录屏（再按一次停止）", HotKeyModifiers.Alt, (uint)'R'),
         new(HotKeyActions.Ocr, "识字", HotKeyModifiers.Alt, (uint)'O'),
+        // 新动作只加在最后（快捷键页和速查表按这张表的顺序排）。
+        new(HotKeyActions.ShotHistory, "截图历史", HotKeyModifiers.None, 0),
     };
 
     public static void Apply(Settings settings)

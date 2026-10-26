@@ -226,6 +226,7 @@ internal static partial class TrayMenu
             }
 
             Add(menu, Glyphs.Text, "识字", HotKeyActions.Ocr, () => ScreenshotSession.Start(ScreenshotMode.Ocr));
+            Add(menu, Glyphs.History, "截图历史", HotKeyActions.ShotHistory, ShotHistoryWindow.ShowWindow);
         }
 
         if (Features.IsOn(Feature.Recording))

@@ -50,6 +50,8 @@ internal static class Glyphs
     public const string Process = "\uE9F5";
     public const string Port = "\uE968";
     public const string History = "\uE81C";
+    public const string Edit = "\uE70F";
+    public const string SaveAs = "\uE792";
     public const string Star = "\uE734";
     public const string Keyboard = "\uE765";
     public const string Palette = "\uE790";

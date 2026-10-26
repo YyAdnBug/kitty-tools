@@ -1165,6 +1165,9 @@ internal sealed class SettingsWindow : Window
                 SettingsService.Current.ShotHistory = value;
                 SettingsService.Save();
             });
+        var openHistory = new Button { Content = "打开…" };
+        openHistory.Click += (_, _) => ShotHistoryWindow.ShowWindow();
+        _content.Children.Add(SettingsUi.Card(string.Empty, "截图历史", "看、拷贝、再钉出来，或者删掉", openHistory));
 
         if (Features.IsOn(Feature.Recording))
         {

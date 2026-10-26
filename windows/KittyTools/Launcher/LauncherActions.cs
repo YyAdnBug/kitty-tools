@@ -1,4 +1,4 @@
-// 本 App 自己的动作：剪贴板历史、输入翻译、截图、截图翻译、识字、设置、退出。
+// 本 App 自己的动作：剪贴板历史、输入翻译、截图、截图翻译、识字、截图历史、录屏、设置、退出。
 // 名字和拼音都能搜到；退出排在最后（同系统命令），避免回车误退。
 using KittyTools.Core;
 
@@ -11,6 +11,8 @@ internal static class LauncherActions
     public const string Screenshot = "action:screenshot";
     public const string ScreenshotTranslate = "action:screenshot-translate";
     public const string Ocr = "action:ocr";
+    public const string ShotHistory = "action:shot-history";
+    public const string Record = "action:record";
     public const string Settings = "action:settings";
     public const string Quit = "action:quit";
 
@@ -21,6 +23,8 @@ internal static class LauncherActions
         Item(Screenshot, "截图", "Screenshot"),
         Item(ScreenshotTranslate, "截图翻译", "Screenshot translation"),
         Item(Ocr, "识字", "Text recognition"),
+        Item(ShotHistory, "截图历史", "Screenshot history"),
+        Item(Record, "录屏", "Screen recording"),
         Item(Settings, "设置", "Settings"),
         Item(Quit, "退出 Kitty Tools", "Quit Kitty Tools", priority: 1),
     };
@@ -38,13 +42,19 @@ internal static class LauncherActions
                 TranslateHost.ShowInput();
                 break;
             case Screenshot:
-                NoticeHost.Show("截图", "第 5 批接上", NoticeTone.Normal);
+                StartScreenshotLater(ScreenshotMode.Capture);
                 break;
             case ScreenshotTranslate:
-                NoticeHost.Show("截图翻译", "第 5 批接上", NoticeTone.Normal);
+                StartScreenshotLater(ScreenshotMode.Translate);
                 break;
             case Ocr:
-                NoticeHost.Show("识字", "第 5 批接上", NoticeTone.Normal);
+                StartScreenshotLater(ScreenshotMode.Ocr);
+                break;
+            case ShotHistory:
+                ShotHistoryWindow.ShowWindow();
+                break;
+            case Record:
+                StartLater(RecordingHost.Toggle);
                 break;
             case Settings:
                 ShellRuntime.Instance?.ShowSettings(welcome: false);
@@ -53,6 +63,18 @@ internal static class LauncherActions
                 ShellRuntime.Instance?.Exit();
                 break;
         }
+    }
+
+    private static void StartScreenshotLater(ScreenshotMode mode) => StartLater(() => ScreenshotSession.Start(mode));
+
+    /// <summary>
+    /// 启动器先收起再开截图 / 录屏：同一拍里开的话，冻结帧和录制的第一帧会拍到启动器自己
+    /// （以前这三项一直是「第 5 批接上」的占位，PLAN-v8 顺手接上）。
+    /// </summary>
+    private static async void StartLater(Action start)
+    {
+        await Task.Delay(200);
+        start();
     }
 
     private static LauncherItem Item(string target, string title, string english, int priority = 0)

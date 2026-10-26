@@ -1,6 +1,8 @@
 // 截图历史（PLAN-v8 第 1 批，照 mac 的 ShotHistory.swift）：截图、长截图、钉过的、录屏 / 录音 / GIF 都进这一个历史
 // （识字、翻译不产出图，不进）。每条存原图 + 标注（JSON）+ 一张小缩略图：<数据目录>\shots\<id>.png、<id>-t.png，
-// 记录在主库的 shots 表；拷贝 / 存储 / 钉图要的成品用时再合成。录制的只记文件路径和一张封面（有的话），不复制文件。
+// 记录在主库的 shots 表。录制的只记文件路径和一张封面（有的话），不复制文件。
+// 和 mac 不一样（替用户定的）：画了标注的那几条另存一张成品 <id>-c.png——Windows 的标注渲染要冻结帧（马赛克取像素），
+// 离开遮罩之后合成不了；没画标注的成品就是原图，不多存。
 // 留 30 天、总共 2 GB，超了先删最旧的（ShotHistoryRules.Stale）；「保留截图历史」关掉或截图功能关掉时不记、已记的留着。
 // 图不进每日备份、历史不进同步。写图在线程池，库只在 UI 线程上碰（和别的几个 store 共用主库连接）。
 using KittyTools.Core;
@@ -132,6 +134,9 @@ internal sealed class ShotHistory
 
     public static string ThumbnailPath(string id) => Path.Combine(Folder, id + "-t.png");
 
+    /// <summary>画了标注的那几条的成品图（原图 + 标注）。</summary>
+    public static string ComposedPath(string id) => Path.Combine(Folder, id + "-c.png");
+
     /// <summary>
     /// 截图 / 长截图：<paramref name="originalPng"/> 是没画标注的那张，<paramref name="composedPng"/> 是画了标注的成品
     /// （缩略图画成品，历史里一眼看到的就是最后那张；没有标注时传 null）。返回这一条的编号，没记返回 null。
@@ -154,7 +159,7 @@ internal sealed class ShotHistory
         }
 
         var id = NewId();
-        var bytes = await Task.Run(() => WriteFilesAsync(id, originalPng, composedPng ?? originalPng));
+        var bytes = await Task.Run(() => WriteFilesAsync(id, originalPng, composedPng ?? originalPng, composedPng));
         if (bytes is null)
         {
             return null;
@@ -213,7 +218,7 @@ internal sealed class ShotHistory
         {
             width = poster.Width;
             height = poster.Height;
-            bytes = await Task.Run(() => WriteFilesAsync(id, null, posterPng)) ?? 0;
+            bytes = await Task.Run(() => WriteFilesAsync(id, null, posterPng, null)) ?? 0;
         }
 
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -298,6 +303,15 @@ internal sealed class ShotHistory
         Changed?.Invoke();
         _ = Task.Run(async () =>
         {
+            if (annotations.Count > 0)
+            {
+                await File.WriteAllBytesAsync(ComposedPath(id), composedPng);
+            }
+            else
+            {
+                TryDelete(ComposedPath(id));
+            }
+
             if (await ImageCodec.ScaledPngAsync(composedPng, ShotHistoryRules.ThumbnailSide) is { } small)
             {
                 await File.WriteAllBytesAsync(ThumbnailPath(id), small);
@@ -309,14 +323,22 @@ internal sealed class ShotHistory
     public ShotItem? Find(string id) => _items.FirstOrDefault(item => item.Id == id);
 
     /// <summary>原图（截图 / 长截图才有）；文件没了返回 null。</summary>
-    public static byte[]? ReadImage(string id)
+    public static byte[]? ReadImage(string id) => ReadFile(ImagePath(id));
+
+    /// <summary>拷贝 / 存储 / 钉图用的成品：画了标注的是「编号-c.png」，没画的就是原图。</summary>
+    public static byte[]? ReadOutput(string id) => ReadFile(ComposedPath(id)) ?? ReadFile(ImagePath(id));
+
+    private static byte[]? ReadFile(string path)
     {
         try
         {
-            var path = ImagePath(id);
             return File.Exists(path) ? File.ReadAllBytes(path) : null;
         }
         catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
         {
             return null;
         }
@@ -341,6 +363,7 @@ internal sealed class ShotHistory
             Execute("DELETE FROM shots WHERE id = $id;", id);
             TryDelete(ImagePath(id));
             TryDelete(ThumbnailPath(id));
+            TryDelete(ComposedPath(id));
         }
 
         Log.Info($"shots.removed count={doomed.Count}");
@@ -439,8 +462,9 @@ internal sealed class ShotHistory
             : null;
     }
 
-    /// <summary>原图（可以没有）和缩略图写盘，返回一共多少字节；写不成返回 null。在线程池上跑。</summary>
-    private static async Task<long?> WriteFilesAsync(string id, byte[]? originalPng, byte[] thumbnailSource)
+    /// <summary>原图（可以没有）、成品（画了标注才有）和缩略图写盘，返回一共多少字节；写不成返回 null。在线程池上跑。</summary>
+    private static async Task<long?> WriteFilesAsync(
+        string id, byte[]? originalPng, byte[] thumbnailSource, byte[]? composedPng)
     {
         try
         {
@@ -450,6 +474,12 @@ internal sealed class ShotHistory
             {
                 await File.WriteAllBytesAsync(ImagePath(id), originalPng);
                 bytes += originalPng.Length;
+            }
+
+            if (composedPng is not null)
+            {
+                await File.WriteAllBytesAsync(ComposedPath(id), composedPng);
+                bytes += composedPng.Length;
             }
 
             if (await ImageCodec.ScaledPngAsync(thumbnailSource, ShotHistoryRules.ThumbnailSide) is { } small)
@@ -465,6 +495,7 @@ internal sealed class ShotHistory
             Log.Warn($"shots.write-failed {ex.GetType().Name}");
             TryDelete(ImagePath(id));
             TryDelete(ThumbnailPath(id));
+            TryDelete(ComposedPath(id));
             return null;
         }
     }
