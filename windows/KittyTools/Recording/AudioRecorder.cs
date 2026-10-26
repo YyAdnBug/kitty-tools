@@ -50,6 +50,8 @@ internal sealed class AudioRecorder : IDisposable
 
     public string? OutputPath => File.Exists(_final) ? _final : null;
 
+    public string TemporaryPath => _temporary;
+
     public static AudioRecorder? Start(
         string folder, bool systemAudio, bool microphone, out string? error, out string? note)
     {

@@ -117,6 +117,8 @@ internal static class AudioHost
         }
 
         _recorder = recorder;
+        SettingsService.Current.AudioTempPath = recorder.TemporaryPath;
+        SettingsService.Save();
         IsArmed = false;
         AudioHud.MarkStarted();
         _startedAt = Environment.TickCount64;
@@ -171,6 +173,8 @@ internal static class AudioHost
         var path = recorder.Stop();
         recorder.Dispose();
         IdleReclaimer.Schedule();
+        SettingsService.Current.AudioTempPath = null;
+        SettingsService.Save();
         LastPath = path;
         Changed?.Invoke();
         if (path is null || !File.Exists(path))
@@ -193,6 +197,39 @@ internal static class AudioHost
         catch
         {
             // 打不开资源管理器就算了。
+        }
+    }
+
+    /// <summary>上次录音闪退：把临时分段 MP4 重封装成 .m4a 并提示（R28，照 R23）。</summary>
+    public static void RecoverOnStartup()
+    {
+        var temporary = SettingsService.Current.AudioTempPath;
+        if (string.IsNullOrEmpty(temporary) || !File.Exists(temporary))
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(RecordingHost.Folder);
+            var final = Path.Combine(RecordingHost.Folder, RecorderRules.FileName(DateTime.Now, audio: true));
+            if (!Mp4Remux.TryRemux(temporary, final))
+            {
+                File.Move(temporary, final, overwrite: true);
+            }
+            else
+            {
+                File.Delete(temporary);
+            }
+
+            SettingsService.Current.AudioTempPath = null;
+            SettingsService.Save();
+            Log.Info($"audio.recovered size={(File.Exists(final) ? new FileInfo(final).Length : 0)}");
+            NoticeHost.Show("上次的录音已保存", Path.GetFileName(final), NoticeTone.Normal);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"audio.recover-failed {ex.GetType().Name}");
         }
     }
 }

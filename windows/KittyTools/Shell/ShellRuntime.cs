@@ -113,6 +113,7 @@ internal sealed class ShellRuntime
 
         // 上次录到一半的文件（第四版闪退恢复）。
         RecordingHost.RecoverOnStartup();
+        AudioHost.RecoverOnStartup();
 
         // REVIEW R11：截图卡片拖出去的临时 PNG 启动时清空（用时生成，不在每次拖出后删）。
         try

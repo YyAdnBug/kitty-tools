@@ -112,6 +112,9 @@ internal sealed class Settings
 
     public string? RecordingTempPath { get; set; }
 
+    /// <summary>录音中的临时分段 MP4（闪退恢复用，R28）。</summary>
+    public string? AudioTempPath { get; set; }
+
     /// <summary>录制中显示点按圈（第四版第 3 批，默认关）。</summary>
     public bool RecordClicks { get; set; }
 
