@@ -44,6 +44,7 @@ internal sealed unsafe partial class TranslateWindow : Window
     private readonly List<TranslationEntry> _historyEntries = new();
     private TranslationEntry? _historySelected;
     private bool _historyVisible;
+    private bool _historyFavoritesOnly;
     private IntPtr _replaceTarget;
     private readonly TranslateCoordinator _coordinator = new();
     private readonly Dictionary<string, CardView> _cardViews = new();
@@ -786,6 +787,19 @@ internal sealed unsafe partial class TranslateWindow : Window
                     RefreshHistory();
                 }
 
+                break;
+            case VirtualKey.H when control:
+                e.Handled = true;
+                ToggleHistory();
+                break;
+            case VirtualKey.W when control:
+                e.Handled = true;
+                Hide(restoreForeground: true);
+                break;
+            case VirtualKey.Tab when IsDown(VirtualKey.Shift):
+                e.Handled = true;
+                _historyFavoritesOnly = !_historyFavoritesOnly;
+                RefreshHistory();
                 break;
         }
     }
