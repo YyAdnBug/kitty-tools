@@ -1912,9 +1912,10 @@ internal sealed class SettingsWindow : Window
         // 应用图标（REVIEW R10）：直接从 exe 里取一张 PNG，不额外放一份素材。
         try
         {
-            if (ShellIcons.LoadPng(
-                    Paths.ExecutablePath,
-                    (Content as FrameworkElement)?.XamlRoot?.RasterizationScale ?? 1) is { Length: > 0 } icon)
+            var iconTask = Task.Run(() => ShellIcons.LoadPng(
+                Paths.ExecutablePath,
+                (Content as FrameworkElement)?.XamlRoot?.RasterizationScale ?? 1));
+            if (iconTask.Wait(500) && iconTask.Result is { Length: > 0 } icon)
             {
                 identity.Children.Add(new Image
                 {

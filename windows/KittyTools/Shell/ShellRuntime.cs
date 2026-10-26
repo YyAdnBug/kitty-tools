@@ -379,7 +379,7 @@ internal sealed class ShellRuntime
             {
                 ShowSettings(welcome: false);
                 await Task.Delay(700);
-                foreach (var page in new[] { "general", "hotkeys", "clipboard", "translate", "launcher", "screenshot" })
+                foreach (var page in new[] { "general", "hotkeys", "clipboard", "translate", "launcher", "screenshot", "about" })
                 {
                     _settingsWindow?.ShowPage(welcome: false, page);
                     await Task.Delay(400);
@@ -631,7 +631,7 @@ internal sealed class ShellRuntime
                 {
                     Log.Info("smoke.settings");
                     ShowSettings(welcome: false);
-                    foreach (var page in new[] { "general", "hotkeys", "clipboard", "translate", "launcher", "screenshot" })
+                    foreach (var page in new[] { "general", "hotkeys", "clipboard", "translate", "launcher", "screenshot", "about" })
                     {
                         Log.Info($"smoke.settings.{page}");
                         _settingsWindow?.ShowPage(welcome: false, page);
