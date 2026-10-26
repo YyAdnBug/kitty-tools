@@ -91,6 +91,7 @@ internal static class AudioHost
         _pausedAt = 0;
         _pausedTotal = 0;
         Log.Info("audio.begin");
+        AudioHud.Show(note);
         NoticeHost.Show(
             "正在录音",
             string.IsNullOrEmpty(note) ? "托盘「停止录音」结束" : note,
@@ -133,6 +134,7 @@ internal static class AudioHost
         }
 
         _recorder = null;
+        AudioHud.Hide();
         var path = recorder.Stop();
         recorder.Dispose();
         LastPath = path;
