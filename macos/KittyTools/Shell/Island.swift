@@ -63,6 +63,7 @@ import SwiftUI
   private(set) var isExpanded = false
   @ObservationIgnored private(set) var geometry = Geometry.capsule(menuBar: 24)
   @ObservationIgnored private var window: NSPanel?
+  @ObservationIgnored private var host: IslandHost?
   @ObservationIgnored private var dwell: Task<Void, Never>?
   /// 这一条到点收起的时刻；悬停时停住，离开后接着走剩下的（至少 leaveDelay）
   @ObservationIgnored private var deadline = ContinuousClock.now
@@ -408,7 +409,7 @@ import SwiftUI
         x: screen.frame.midX - size.width / 2, y: top - size.height, width: size.width,
         height: size.height),
       display: false)
-    (window.contentView as? IslandHost)?.rootView = IslandView(island: self)
+    host?.rootView = IslandView(island: self)
   }
 
   /// 刘海：左右两块 auxiliary 区都在、且顶部安全区 > 0；刘海宽 = 屏宽 − 两块区宽 + 4（盖住抗锯齿毛边）
@@ -440,10 +441,19 @@ import SwiftUI
     panel.acceptsMouseMovedEvents = true
     panel.isReleasedWhenClosed = false
     panel.animationBehavior = .none
+    // 宿主包在普通容器里、跟着容器铺满：宿主视图直接当窗口的 contentView 时，SwiftUI 会按内容去改窗口的最小 / 最大
+    // 尺寸（光 sizingOptions = [] 不够，同 mac-overlay-panel §1 普通窗口的 windowContent），窗口画过内容之后再改大小
+    // （刘海屏和外接屏换着弹、两种窗口不一样高）就在「更新约束」里一圈圈绕下去、抛异常崩掉（2026-10-26 屏上复现；
+    // 测试里还见过窗口被它改成 520 × 64）
     let host = IslandHost(rootView: IslandView(island: self))
     host.sizingOptions = []
     host.island = self
-    panel.contentView = host
+    let container = NSView(frame: CGRect(origin: .zero, size: geometry.windowSize))
+    host.frame = container.bounds
+    host.autoresizingMask = [.width, .height]
+    container.addSubview(host)
+    panel.contentView = container
+    self.host = host
     return panel
   }
 
