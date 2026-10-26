@@ -75,7 +75,7 @@ Kitty Tools 的 **Windows 原生版**（C# + WinUI 3，2026-10-23 立项）。�
 - **`PLAN-v5.md`**：第五版（和 Mac 互通的同步）。mac 的源码在 `reference/mac-sync/`。
 - **`PLAN-v6.md`**：第六版（收尾与优化）。§0 的规矩（数字口径、录屏只录测试窗口、COM 写法、删比加好）这一版起一直有效。
 - **`PLAN-v7.md`**：第七版（界面对齐 mac）。§2 的刻度和共用部件定下来以后，所有界面都从那里取；规格是 mac 的 Whisker（`.cursor/rules/mac-whisker*.mdc`），只读方案里点名的章节。
-- **`PLAN-setup.md`**：exe 安装程序（2026-10-26）。**由 Claude 在单独的会话里做**：`windows/KittyTools.Setup/` 和方案 §3 点名的 Core 文件、测试、脚本，交接之前你们不要动。§4 是 App 项目里要开的三个口子，碰到时照那里的约定来。做完后审查方会在 `REVIEW.md` 里加一条「安装程序真机验收」交给你们跑。
+- **`PLAN-setup.md`**：exe 安装程序（2026-10-26）。**已交接**：Claude 在单独的会话里写完了（`616840b`，没编译过），先做 `REVIEW.md` 的 R36（真机验收）、R37、R38。从现在起 `windows/KittyTools.Setup/`、`KittyTools.Core/SetupPayload.cs`、`SetupRules.cs`、`KittyTools.Tests/SetupTests.cs`、`tools/setup-e2e.ps1` 归你们维护，规矩照方案 §1–§2 和 §7 记下的改动。
 - `PLAN.md`：第一版的规格。
 - 做到哪一批，就读那一批引用的 mac 源码和规则章节（只看行为，不搬 AppKit 的做法）。
 
@@ -151,8 +151,11 @@ dotnet publish windows/KittyTools/KittyTools.csproj -c Release -r win-x64
 # 内存探针（每步空闲 30 s；_FAST=1 只用来调探针本身）
 $env:KITTY_MEMORY_PROBE = "1"
 
-# 打 zip + .sha256 + 发布说明（产物在 windows/build/）
+# 打 zip + 安装包（-setup.exe）+ 各自的 .sha256 + 发布说明（产物在 windows/build/release/<版本>/）
 pwsh windows/build-release.ps1
+
+# 安装程序端到端（PLAN-setup §5，全程测试名 + 临时目录）
+pwsh windows/tools/setup-e2e.ps1 -Zip windows/build/release/<版本>/KittyTools-<版本>-windows-x64.zip
 ```
 
 在 Mac 上生成好、提交进来的素材（Windows 上不用、也没法重新生成）：

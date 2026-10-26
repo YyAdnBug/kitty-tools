@@ -6,6 +6,7 @@
   - `windows/KittyTools.Setup/` 和这份方案点名的 Core 文件、测试、脚本，归做安装程序的 Claude 会话。
   - Windows 上的 agent 在它交接之前**不动这些文件**；改 App 项目时碰到这里点名的口子（§4），按这里的约定来。
   - 做完之后，审查方在 `REVIEW.md` 里加一条「安装程序真机验收」，交给 Windows 上的 agent 去跑。
+  - **2026-10-26 已交接**（`616840b`）：现状和改动见 §7，验收是 `REVIEW.md` 的 R36，§4.2 / §4.3 是 R37 / R38。
 - **红线照旧**（`AGENTS.md`）：只用微软的包、Native AOT 零警告、不按进程名结束进程、测试不碰用户的真实数据和注册表项。
 
 ## 0. 现在是什么样
@@ -144,3 +145,20 @@ exe 的最后 64 字节固定格式：
 - 装给所有用户（要管理员权限，程序内更新会失败）。
 - 安装程序自己联网下载（载荷已经在 exe 里了）。
 - 修复、修改安装（`NoModify` / `NoRepair`，重新运行安装程序就是重装）。
+
+## 7. 现状（2026-10-26，`616840b`）
+
+- **产物**（`build-release.ps1`，在 `windows/build/release/<版本>/`）：每个架构
+  - `KittyTools-<版本>-windows-<x64|arm64>.zip` + `.sha256`：程序内更新用，也能手动解压；
+  - `KittyTools-<版本>-windows-<x64|arm64>-setup.exe` + `.sha256`：安装包 = `KittyTools.Setup` 的 AOT 本体 + 上面那个 zip + 64 字节尾巴。打包统一用 x64 那份本体的 `--pack`（ARM64 的 Windows 能跑 x64）。
+  - 本体的发布目录在 `setup-stub/<架构>/`，pdb 和 App 的放在一起（`pdb/<架构>/`）。
+- **代码**：§3 的文件都有了，另加 `KittyTools.Setup/SystemSteps.cs`（安装、卸载共用的系统操作：quit、快捷方式、开机启动、凭据、回收站、登记）。§4.1（管道认 `quit`）做了；§4.2、§4.3 撞上设置窗第七版，交给 agent（R37、R38）。
+- **没验过**：Mac 上没装 .NET SDK，一行都没编译、没跑过；`KittyTools.Setup` 暂时没加进 `KittyTools.slnx`。全部在 R36。
+- **和上面写的不一样**（理由在 R36）：
+  - `.kitty-install` 多一个 `files` 数组（这次装的文件 + 上次记的）；卸载时「没有不认得的文件」算 §2.3 的第五条。
+  - 测试名（`KITTY_SETUP_TEST_KEY=<名字>`）：注册表键 `KittyTools.Test.<名字>`、快捷方式 `Kitty Tools.Test.<名字>.lnk`；开机启动值、互斥量、管道、凭据前缀、数据目录和 App 的 `KITTY_PROBE_PROFILE=<名字>` 同名（`.Probe.<名字>`）；默认安装位置放到 `%TEMP%`。名字只能是 1–32 个字母或数字，不合规直接退出，不退回正式名。
+  - S9 的 `MoveFileEx(MOVEFILE_DELAY_UNTIL_REBOOT)` 普通权限下系统不让登记：照样调，%TEMP% 里的副本留给下次安装 / 卸载清。
+  - 静默卸载时安装目录里那份转到 %TEMP% 就退出，结果看日志 `uninstall.exit <退出码>`。
+  - 不整个删时 `Uninstall.exe` 也删；开机启动值和登记只在指向这个安装目录时才删。更新时不显示、也不改「开机时自动打开」。
+  - 任务对话框的结构体手写（不是 COM），选文件夹、快捷方式用 CsWin32。
+- **退出码**：0 成功、1 出错、2 安装包坏了、3 程序退不掉、4 位置不能用、5 用户取消。日志在 `%TEMP%\KittyTools-setup.log`。

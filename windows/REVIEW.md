@@ -12,6 +12,8 @@
 
 （2026-10-26 晚复查到 `3fe1725e`：R22、R25、R26、R28、R29 认可；R23 认可，60 s 和 10 分钟的重封装耗时并进 R24 一起量；R30 认可，托盘和 HUD 的截图见 R33。新加 R31–R35。R24 一直没动，排在最前面。）
 
+（2026-10-26 夜：安装程序写完了（`616840b`，没编译过），新加 R36–R38。R36 排在 R24 前面先做：没编过的 Setup 不进 slnx，但 Core 单测里已经有它的测试。）
+
 ### R24（P1）第 2 批的音画同步是对着一张不动的画面量的，要重做 → 部分重测（`--sync-probe`）
 
 **复查（2026-10-26 晚）**：这一条还没动。重做的时候，顺手把 R23 的重封装耗时（60 s、10 分钟的文件各一次）一起量了，写进同一份报告。
@@ -91,6 +93,47 @@ x64 包冒烟通过。设置窗的 Mica 在 Release AOT 下会抛 `ArgumentExcep
 
 - `bcd3eb7f` 报告里写了：探针被「主工作区另一个 agent 重编时按进程名结束了」。按进程名结束，会把用户正在用的那份 Kitty Tools、或者别的 agent 正在跑的测试一起杀掉。
 - `AGENTS.md` 红线里已经加了一条：只结束自己起的那个 PID。两个 agent 各自查一下脚本里的 `taskkill /im`、`Stop-Process -Name`，都改掉。
+
+### R36（P1）安装程序真机验收（`616840b`：Claude 在 Mac 上写的，一次都没编译过）
+
+- PLAN-setup 的代码都写完了，但 Mac 上没装 .NET SDK（用户定的），Core 单测、Setup 编译、AOT 发布、端到端一个都没跑。`KittyTools.Setup` 还**没加进** `KittyTools.slnx`，免得没编过的代码让你们每批的 slnx 构建红掉。
+- **要做**（按顺序）：
+  1. `dotnet test windows/KittyTools.Tests`：新加的 `SetupTests.cs`（`SetupPayloadTests`、`SetupRulesTests`）全过。
+  2. `dotnet build windows/KittyTools.Setup` 编过、零警告，再把它加进 `KittyTools.slnx`（和 Core 一样，`*|x64`、`*|ARM64` 都映射到 `Any CPU`）。
+  3. `dotnet publish windows/KittyTools.Setup/KittyTools.Setup.csproj -c Release -r win-x64`，再来一遍 `-r win-arm64`：**零 trim / AOT 警告**，记下 exe 大小。
+  4. `pwsh windows/build-release.ps1`：每个架构多出 `KittyTools-<版本>-windows-<x64|arm64>-setup.exe` 和 `.sha256`，发布说明先讲安装包。
+  5. `pwsh windows/tools/setup-e2e.ps1 -Zip <上一步的 x64 zip>`：PLAN-setup §5 的七步全过（zip 要从 `616840b` 之后打，App 才认 `quit`）。ARM64 真机没有就写「没测」。
+  6. 截图，只截对话框本身（按 HWND 裁），推 `windows-shots` 的 `setup/`：安装页、选文件夹框、进度、完成、「已经装了 / 重新安装」、程序开着时的「重试」、卸载确认、已卸载（文件夹里留了别的文件那种）。用测试名跑（`$env:KITTY_SETUP_TEST_KEY = "shots"`），默认位置会落到 `%TEMP%`，不碰真实的。
+  7. 不用测试名手动走一遍真的：装 →「设置 › 应用」里图标、名字、版本、大小对 → 开始菜单能打开 → 程序里自动更新（R38 修完后）→ 从「设置 › 应用」卸载。做完把机器恢复原样。
+- **没编译过、最可能要改的地方**：
+  - `SetupUi.cs` 的 `TaskDialogConfig` 照 commctrl.h 手写（pack(1)，64 位下 160 字节）：`TaskDialogIndirect` 返回 `E_INVALIDARG`（日志 `ui.taskdialog 0x80070057`）就是布局错了，先对 `sizeof`。
+  - CsWin32 生成的名字和重载：`IFileOpenDialog` 的 `SetOptions` / `SetTitle` / `SetOkButtonLabel` / `SetFolder` / `Show` / `GetResult`，`IShellItem.GetDisplayName`，`SHCreateItemFromParsingName` 的指针重载，`CoInitializeEx(null, COINIT)`。照编译器报的改，不要换成手数 vtable。
+  - AOT 下清单有没有嵌进 exe：没嵌的话找不到 `TaskDialogIndirect`（日志 `ui.taskdialog missing`），文件名带 setup 还会被系统当成要管理员权限。
+  - 回调里换页（`TDM_NAVIGATE_PAGE`）后返回 `S_FALSE`；要是一点按钮对话框就关了，看 `SetupUi.Callback`。
+- **和方案不一样的地方**（审查方认可，验收按这个来）：
+  - `.kitty-install` 多了 `files` 数组（这次装的文件并上次记的）。§5 第 6 步要求「安装目录里多一个别的文件就不整个删」，§2.3 那四条做不到，所以「没有不认得的文件」算第五条。
+  - 测试名不只换注册表键：开机启动值、互斥量、管道、凭据前缀、数据目录都和 App 的 `KITTY_PROBE_PROFILE=<同一个名字>` 对齐（`.Probe.<名字>`），端到端才能真开一个 App 再叫它退出。注册表键照方案是 `KittyTools.Test.<名字>`，快捷方式是 `Kitty Tools.Test.<名字>.lnk`；测试名下默认安装位置在 `%TEMP%`。
+  - `MoveFileEx(MOVEFILE_DELAY_UNTIL_REBOOT)` 只有管理员能登记，普通权限下必失败：照样调（只记日志），%TEMP% 里那份卸载程序留到下次安装 / 卸载时清（`Uninstaller.CleanStaleCopies`）。
+  - 静默卸载：安装目录里那份复制到 %TEMP% 就退出（退出码 0），真正的结果写进日志 `uninstall.exit <退出码>`；`setup-e2e.ps1` 等的是这一行。
+  - 不整个删的时候 `Uninstall.exe` 也删掉（那时它已经退了）。开机启动值和登记只在指向这个安装目录时才删，另一份解压版的不动。
+  - 已经装过（更新）时不显示「开机时自动打开」，也不动开机启动值：用户可能在程序里关掉了。
+  - 任务对话框的结构体手写、没用 CsWin32（它不是 COM；在 Mac 上没法确认 CsWin32 生成的联合体和回调签名）。选文件夹、快捷方式照旧用 CsWin32。
+- 日志在 `%TEMP%\KittyTools-setup.log`（测试名下是 `KittyTools-setup.Test.<名字>.log`）。修完挪到「已修」，写提交号、两个架构的安装包大小、七步结果。
+
+### R37（P2）设置里「从这台电脑移除」交给 Uninstall.exe（PLAN-setup §4.2 / S10）
+
+- `Settings/SettingsWindow.cs` 的 `UninstallAsync` 现在自己删快捷方式、开机启动和凭据，程序文件让用户自己删。安装程序装的（exe 旁边有 `.kitty-install`）改成：
+  - `SetupRules.ReadMarker(<exe 所在目录>)` 不是 null，且同目录有 `SetupRules.UninstallerName`：启动它（不带参数，它会自己弹确认，含「同时删除我的数据」），然后走 `ShellRuntime.Exit`，不再弹自己的 ContentDialog。卸载程序会先通过管道发 `quit`，程序没退也会等。
+  - 没有标记（zip 解压的）：照现在的做法。
+- 顺带：第一次运行的欢迎页里「登录时自动打开」取的是设置的默认值（true），点「开始使用」会把安装时没勾的开机启动又写回去。有标记时改成取 `Autostart.IsEnabled()`，并同步到 `SettingsService.Current.StartWithWindows`。
+- 设置窗第七版还在改，所以这条交给你们。
+
+### R38（P2）程序内更新之后改「设置 › 应用」里的登记（PLAN-setup §4.3 / S11）
+
+- 在 `App/AutoUpdater.cs` 的 `update.installed` 之后（这时有 `result.Installed` 和 `version`），安装目录有 `.kitty-install` 就：
+  - 改 `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\<UninstallKey>` 的 `DisplayVersion`（新版本）和 `EstimatedSize`（`SetupRules.DirectorySizeKb(安装目录)`）。登记的 `InstallLocation` 不是这个目录就不动。
+  - `.kitty-install` 的 `version` 改成新版本，`files` 并上这次装进去的文件（相对路径，`SetupRules.WriteMarker`）。不然更新带进来的新文件，卸载时会被当成「不认得的」，安装目录就不会整个删。
+- 名字用 `SetupRules.NamesFor(null)`；Release 探针档（`KITTY_PROBE_PROFILE=<名字>`）下用 `SetupRules.NamesFor(<名字>)`，和安装程序的测试名是同一套。
 
 
 ## 转入 PLAN-v6
