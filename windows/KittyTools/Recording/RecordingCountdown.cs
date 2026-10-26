@@ -12,11 +12,12 @@ internal static class RecordingCountdown
 
     private static DispatcherQueueTimer? _timer;
     private static PixelBounds _region;
+    private static IntPtr _window;
     private static int _remaining;
 
     public static bool Active { get; private set; }
 
-    public static void Start(PixelBounds region)
+    public static void Start(PixelBounds region, IntPtr window = default)
     {
         if (Active)
         {
@@ -24,6 +25,7 @@ internal static class RecordingCountdown
         }
 
         _region = region;
+        _window = window;
         _remaining = 3;
         Active = true;
         PInvoke.RegisterHotKey(HiddenWindow.Hwnd, EscapeId, 0, (uint)Windows.Win32.UI.Input.KeyboardAndMouse.VIRTUAL_KEY.VK_ESCAPE);
@@ -45,7 +47,14 @@ internal static class RecordingCountdown
         }
 
         Finish();
-        RecordingHost.StartRegion(_region);
+        if (_window != IntPtr.Zero)
+        {
+            RecordingHost.StartWindow(_window);
+        }
+        else
+        {
+            RecordingHost.StartRegion(_region);
+        }
     }
 
     public static void Cancel()

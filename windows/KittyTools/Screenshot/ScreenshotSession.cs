@@ -139,8 +139,13 @@ internal sealed class ScreenshotSession
         }
 
         var global = GlobalRect(screen, Selection);
+        var window = Windows.FirstOrDefault(item =>
+            Math.Abs(item.Bounds.Left - global.Left) <= 2 &&
+            Math.Abs(item.Bounds.Top - global.Top) <= 2 &&
+            Math.Abs(item.Bounds.Right - global.Right) <= 2 &&
+            Math.Abs(item.Bounds.Bottom - global.Bottom) <= 2);
         Finish();
-        RecordingCountdown.Start(global);
+        RecordingCountdown.Start(global, window.Hwnd);
     }
 
     public async void ConfirmQuick()

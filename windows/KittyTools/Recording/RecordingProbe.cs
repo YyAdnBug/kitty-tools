@@ -30,7 +30,7 @@ internal static class RecordingProbe
             Log.Warn($"record.probe-tone {ex.GetType().Name}");
         }
 
-        var recorder = Mp4Recorder.StartRegion(
+        var recorder = GdiMp4Recorder.StartRegion(
             new PixelBounds(0, 0, 640, 480), 30, folder,
             systemAudio: true, microphone: true, out var error, out var note);
         if (recorder is null)

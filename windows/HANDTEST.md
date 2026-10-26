@@ -1303,3 +1303,64 @@ Windows 原生版的发版冒烟清单和每批手测。编号一直往下排，
 
 
 
+
+## PLAN-v6 第 1 批：录屏 GPU 管线（2026-10-26）
+
+248. **测试图案窗口**（新）
+     `KittyTools.exe --test-pattern`：开一块满屏、不透明的测试窗口（移动色块、滚动文字、帧号、每秒闪白 + 1 kHz）。
+     → 窗口盖住整块主屏，帧号一直在动；录屏验证只录它，不录桌面（PLAN-v6 §0）。
+     开发机：2560 × 1440；`CompositionTarget.Rendering` 按 30 fps 更新；`--record-test=<秒>` 不用再按热键。
+
+249. **WGC 录 60 秒**（新）
+     `KittyTools.exe --record-test=60 --record-fps=30`（Debug / Release 都能用，产物写 `%TEMP%\kitty-v6-record`）。
+     → 1440p30 文件 < 70 MB；资源管理器能出时长 / 缩略图，「媒体播放器」和 Edge 能放、能拖进度条。
+     开发机（Release AOT）：1810 帧 / 60.3 秒 / 12.5 MB / 30.0 fps；Shell 认 60.33 秒、H.264、2560 × 1440。
+     缩略图 / 拖动：MediaComposition 抽帧在 1 s 抽到约 4 s 的画面，**待定**（fragmented MP4 的 seek 见第 3 批重封装）。
+
+250. **录 10 分钟**（待走）
+     `--record-test=600 --record-fps=30`。
+     → 文件能放、时长准（±0.5 s）；第 10 s 和第 600 s 的专用工作集差 < 5 MB。
+     开发机只跑了 60 秒（ws 稳定在 142 MB）；10 分钟没跑。
+
+251. **闪退恢复**（待走）
+     录到一半用任务管理器结束 KittyTools，再启动。
+     → 启动时把临时 `.tmp.mp4` 挪进保存目录并提示；文件能放。
+     （fragmented MP4 已经写下段；停止后是否重封装见第 3 批。）
+
+252. **帧号对得上**（半走）
+     从 60 秒文件里抽第 1、30、60 秒的帧，看测试窗口上的帧号。
+     → 帧号连续、不重复超过 1 帧（不动时补的帧除外）。
+     开发机：`--thumb=<文件> --thumb-at=<秒>` 抽帧能出图；MediaComposition 的 seek 对 fragmented MP4 不准，**待定**。
+
+253. **窗口录制**（新，半走）
+     Alt+R → 在选区遮罩里单击一个窗口取整窗 → 开始录；录的时候拖动这个窗口、再被别的窗口挡住。
+     → 文件里始终是这个窗口本身，不是屏幕上那块矩形；窗口移动后画面跟着变。
+     开发机：`--record-test` 就是用 `CreateForWindow` 录测试窗口；拖动 / 被挡的实拍没做。
+
+254. **点按圈 / 按键胶囊在 GPU 管线上**（新，半走）
+     `--record-test=5 --record-fps=30 --record-effects`：每隔 0.5 秒注入一次点按和按键。
+     → 画面里能看到左键粉圈、右键蓝圈和「Ctrl + Shift + S」胶囊，和第四版的颜色 / 时长一样。
+     开发机：抽帧确认（`thumb-test.jpg`），按钮是 Win2D 画在 D3D 纹理上。
+
+255. **WGC 退路**（代码路径）
+     让 `GraphicsCaptureItem` 建不起来（例如远程会话 / 驱动不支持）。
+     → 日志 `record.wgc-fallback`，自动退 GDI + SinkWriter 那条老路，仍然出 MP4。
+     开发机没有强制失败开关，只验了 GDI 那条路在第 0 批之前能用。
+
+256. **录的过程中屏幕尺寸变了**（待走）
+     录整屏时改分辨率 / 插拔显示器。
+     → 停止录制、保存已经录好的部分、提示「屏幕尺寸变了，录制已停止」。
+     开发机没改分辨率。
+
+257. **CPU / 内存口径**（新）
+     §0：CPU 按「% 单核」。
+     开发机（Release AOT，1440p30，60 秒，测试图案本身也在跑）：
+     本进程 CPU 16.6% 单核；专用工作集 142 MB 稳定（第 10 s 到第 60 s 不变），
+     录完后的 delta 59 MB（含测试窗口 / 编码器收尾，稳定值以 142 MB 为准）。
+     测试图案窗口自己占一部分 CPU；只看录制线程的 copy / write 合计约 57 ms / 60 秒。
+
+258. **Release AOT**（新）
+     x64 / ARM64 都 `dotnet publish -c Release -r win-x64|win-arm64`。
+     → 零 trim / AOT 警告；发布目录里有 `KittyTools.pri`、`Microsoft.UI.pri`、`Microsoft.UI.Xaml.Controls.pri`、
+     `Microsoft.WindowsAppRuntime.pri`。
+     开发机：两边都是 0 警告 0 错误，四个 PRI 都在。

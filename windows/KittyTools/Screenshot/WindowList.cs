@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 
 namespace KittyTools;
 
-internal readonly record struct SnapWindow(PixelBounds Bounds, int Z);
+internal readonly record struct SnapWindow(PixelBounds Bounds, int Z, IntPtr Hwnd);
 
 internal static unsafe partial class WindowList
 {
@@ -72,7 +72,7 @@ internal static unsafe partial class WindowList
                 return 1;
             }
 
-            _result.Add(new SnapWindow(bounds, _result.Count));
+            _result.Add(new SnapWindow(bounds, _result.Count, hwnd));
         }
         catch
         {

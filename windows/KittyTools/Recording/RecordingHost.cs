@@ -1,13 +1,15 @@
-// 录屏的入口和收尾（第四版基础版）：Alt+R / 托盘切换；录制中禁掉系统闲置睡眠；停止后放到保存目录，
+// 录屏的入口和收尾：Alt+R / 托盘切换；录制中禁掉系统闲置睡眠；停止后放到保存目录，
 // 轻提示 + 在资源管理器里显示。启动时看到上次留下的临时文件就挪进保存目录（闪退恢复）。
-// 范围：整屏、无声音、无选区 / 倒数 / HUD / 点按圈 / 按键提示（这些在报告里记为没做）。
+// PLAN-v6 第 1 批起默认走 WGC + 硬件 H.264；有系统声音 / 麦克风时仍走 GDI 那条（第 2 批再并到 GPU 管线）。
 using System.Runtime.InteropServices;
 using KittyTools.Core;
 using KittyTools.Infrastructure;
+using Windows.Win32;
+using Windows.Win32.Foundation;
 
 namespace KittyTools;
 
-internal static class RecordingHost
+internal static unsafe class RecordingHost
 {
     private static IVideoRecorder? _recorder;
     private static long _startedAt;
@@ -51,7 +53,27 @@ internal static class RecordingHost
     }
 
     /// <summary>选区确认、倒数结束后真正开始录。</summary>
-    public static void StartRegion(PixelBounds region)
+    public static void StartRegion(PixelBounds region) => Start(region, IntPtr.Zero);
+
+    /// <summary>录一个窗口本身（选区遮罩里单击窗口取整窗时走这条）。</summary>
+    public static void StartWindow(IntPtr hwnd)
+    {
+        if (_recorder is not null || hwnd == IntPtr.Zero)
+        {
+            return;
+        }
+
+        RECT rect;
+        if (!PInvoke.GetWindowRect(new HWND(hwnd), &rect))
+        {
+            NoticeHost.Show("没能开始录屏", "拿不到这个窗口的位置", NoticeTone.Error);
+            return;
+        }
+
+        Start(new PixelBounds(rect.left, rect.top, rect.right, rect.bottom), hwnd);
+    }
+
+    private static void Start(PixelBounds region, IntPtr window)
     {
         if (_recorder is not null)
         {
@@ -63,16 +85,30 @@ internal static class RecordingHost
         IVideoRecorder? recorder;
         string? error;
         string? note;
-        if (settings.RecordMp4)
+        if (!settings.RecordMp4)
         {
-            recorder = Mp4Recorder.StartRegion(
+            recorder = AviRecorder.StartRegion(region, settings.RecordFps, Folder, out error);
+            note = wantsAudio ? "AVI 这一版不带声音；要声音请在设置里打开「直接录 MP4」" : null;
+        }
+        else if (wantsAudio)
+        {
+            // 第 2 批把 WASAPI 并进 GPU 管线之前，带声音的录制还走 GDI 的 SinkWriter（它已经有音轨）；
+            // 窗口录制这时退化成录屏幕上那块矩形，等第 2 批再把窗口 + 声音一起接上。
+            recorder = GdiMp4Recorder.StartRegion(
                 region, settings.RecordFps, Folder,
                 settings.RecordSystemSound, settings.RecordMicrophone, out error, out note);
         }
         else
         {
-            recorder = AviRecorder.StartRegion(region, settings.RecordFps, Folder, out error);
-            note = wantsAudio ? "AVI 这一版不带声音；要声音请在设置里打开「直接录 MP4」" : null;
+            recorder = window != IntPtr.Zero
+                ? WgcRecorder.StartWindow(window, settings.RecordFps, Folder, out error, out note)
+                : WgcRecorder.StartRegion(region, settings.RecordFps, Folder, out error, out note);
+            if (recorder is null)
+            {
+                Log.Warn($"record.wgc-fallback {error}");
+                recorder = GdiMp4Recorder.StartRegion(
+                    region, settings.RecordFps, Folder, false, false, out error, out note);
+            }
         }
 
         if (recorder is null)
@@ -86,7 +122,7 @@ internal static class RecordingHost
             NoticeHost.Show("这段录屏没有完整声音", note, NoticeTone.Warning);
         }
 
-        if (recorder is Mp4Recorder { MicrophoneDenied: true })
+        if (recorder is GdiMp4Recorder { MicrophoneDenied: true })
         {
             settings.RecordMicrophone = false;
             SettingsService.Save();

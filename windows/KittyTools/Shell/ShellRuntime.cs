@@ -1,5 +1,6 @@
 // 壳的运行时：隐藏窗口、托盘、热键、浮层、轻提示、设置窗和单实例转发。
 // 第 1 批只把壳做齐；各模块的入口先给轻提示，面板内容是占位。
+using KittyTools.Core;
 using KittyTools.Infrastructure;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
@@ -142,6 +143,58 @@ internal sealed class ShellRuntime
         {
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(MemoryProbe.Run);
         }
+        // 调试用：满屏测试图案窗口（PLAN-v6 §0：录屏验证只录它）。发布版也保留，方便验收。
+        if (Environment.GetCommandLineArgs().Contains("--test-pattern", StringComparer.OrdinalIgnoreCase))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(TestPatternWindow.Show);
+        }
+
+        // 调试用：开测试图案、录 N 秒、关窗；只录自己的窗口。发布版也保留，方便验收。
+        var recordTestArg = Environment.GetCommandLineArgs()
+            .FirstOrDefault(arg => arg.StartsWith("--record-test=", StringComparison.OrdinalIgnoreCase));
+        if (recordTestArg is not null && int.TryParse(recordTestArg["--record-test=".Length..], out var testSeconds))
+        {
+            var fpsArg = Environment.GetCommandLineArgs()
+                .FirstOrDefault(arg => arg.StartsWith("--record-fps=", StringComparison.OrdinalIgnoreCase));
+            if (fpsArg is not null && int.TryParse(fpsArg["--record-fps=".Length..], out var testFps))
+            {
+                SettingsService.Current.RecordFps = Math.Clamp(testFps, RecorderRules.MinFps, RecorderRules.MaxFps);
+            }
+
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
+            {
+                // 自检产物只写临时目录，不碰用户设置的保存位置。
+                SettingsService.Current.RecordDirectory = Path.Combine(Path.GetTempPath(), "kitty-v6-record");
+                TestPatternWindow.Show();
+                await Task.Delay(1200);
+                var handle = TestPatternWindow.Handle;
+                if (handle != IntPtr.Zero)
+                {
+                    RecordingHost.StartWindow(handle);
+                }
+                else
+                {
+                    RecordingHost.StartRegion(TestPatternWindow.PrimaryBounds());
+                }
+
+                var effects = Environment.GetCommandLineArgs()
+                    .Contains("--record-effects", StringComparer.OrdinalIgnoreCase);
+                var deadline = Environment.TickCount64 + Math.Clamp(testSeconds, 1, 600) * 1000;
+                while (Environment.TickCount64 < deadline)
+                {
+                    if (effects)
+                    {
+                        RecordingEffects.InjectDemo(2560, 1440);
+                    }
+
+                    await Task.Delay(500);
+                }
+
+                RecordingHost.Stop();
+                await Task.Delay(300);
+                TestPatternWindow.Close();
+            });
+        }
 #if DEBUG
         if (Environment.GetCommandLineArgs().Contains("--tray-menu", StringComparer.OrdinalIgnoreCase))
         {
@@ -212,6 +265,7 @@ internal sealed class ShellRuntime
             var folder = probeArg["--record-probe=".Length..];
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => _ = RecordingProbe.RunAsync(folder));
         }
+
 
 #if DEBUG
         // 调试用：直接开录屏的选区遮罩（截图 / 手测 Alt+R 的界面）。
@@ -296,6 +350,35 @@ internal sealed class ShellRuntime
                 await Task.Delay(TimeSpan.FromSeconds(Math.Clamp(audioSeconds, 1, 60)));
                 AudioHost.Stop();
             });
+        }
+
+        // 调试用：WGC + D3D11 自检（PLAN-v6 第 1 批），抓主屏 2 秒后写日志。
+        if (Environment.GetCommandLineArgs().Contains("--wgc-probe", StringComparer.OrdinalIgnoreCase))
+        {
+            var waitForPattern = Environment.GetCommandLineArgs()
+                .Contains("--test-pattern", StringComparer.OrdinalIgnoreCase);
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
+            {
+                if (waitForPattern)
+                {
+                    await Task.Delay(2000);
+                }
+
+                WgcSelfTest.Run();
+            });
+        }
+
+        // 调试用：从录好的 MP4 抽一帧缩略图（看帧号 / 效果）。
+        var thumbArg = Environment.GetCommandLineArgs()
+            .FirstOrDefault(arg => arg.StartsWith("--thumb=", StringComparison.OrdinalIgnoreCase));
+        if (thumbArg is not null)
+        {
+            var path = thumbArg["--thumb=".Length..];
+            var atArg = Environment.GetCommandLineArgs()
+                .FirstOrDefault(arg => arg.StartsWith("--thumb-at=", StringComparison.OrdinalIgnoreCase));
+            var at = atArg is not null && double.TryParse(atArg["--thumb-at=".Length..], out var parsed) ? parsed : 1;
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
+                await VideoThumb.RunAsync(path, at, Path.ChangeExtension(path, $".thumb-{at:F1}.png")));
         }
 
         // 调试用：自动录 N 秒（手测托盘 / 轻提示 / 保存目录，不用真的按热键）。

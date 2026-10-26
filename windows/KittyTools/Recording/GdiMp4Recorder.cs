@@ -10,7 +10,7 @@ using Windows.Win32;
 
 namespace KittyTools;
 
-internal sealed unsafe class Mp4Recorder : IVideoRecorder
+internal sealed unsafe class GdiMp4Recorder : IVideoRecorder
 {
     private const uint MfVersion = 0x00020070;
     private static readonly Guid MajorType = new("48eba18e-f8c9-4687-bf11-0a74c9f96a8f");
@@ -53,7 +53,7 @@ internal sealed unsafe class Mp4Recorder : IVideoRecorder
     private string? _audioNote;
     private bool _microphoneDenied;
 
-    private Mp4Recorder(
+    private GdiMp4Recorder(
         PixelBounds region, int fps, string temporary, string final, bool systemAudio, bool microphone)
     {
         _region = region;
@@ -78,16 +78,16 @@ internal sealed unsafe class Mp4Recorder : IVideoRecorder
     /// <summary>写进 MP4 的音频帧数（探针用）。</summary>
     public long AudioFrames { get; private set; }
 
-    public static Mp4Recorder? Start(
+    public static GdiMp4Recorder? Start(
         int fps, string folder, bool systemAudio, bool microphone, out string? error, out string? note)
         => StartCore(fps, folder, null, systemAudio, microphone, out error, out note);
 
-    public static Mp4Recorder? StartRegion(
+    public static GdiMp4Recorder? StartRegion(
         PixelBounds region, int fps, string folder, bool systemAudio, bool microphone,
         out string? error, out string? note)
         => StartCore(fps, folder, region, systemAudio, microphone, out error, out note);
 
-    private static Mp4Recorder? StartCore(
+    private static GdiMp4Recorder? StartCore(
         int fps, string folder, PixelBounds? region, bool systemAudio, bool microphone,
         out string? error, out string? note)
     {
@@ -134,7 +134,7 @@ internal sealed unsafe class Mp4Recorder : IVideoRecorder
         var name = Path.ChangeExtension(RecorderRules.FileName(DateTime.Now), ".mp4");
         var final = UniquePath(Path.Combine(folder, name));
         var temporary = Path.Combine(folder, "." + Guid.NewGuid().ToString("N") + ".tmp.mp4");
-        var recorder = new Mp4Recorder(
+        var recorder = new GdiMp4Recorder(
             new PixelBounds(target.Left, target.Top, target.Left + size.Width, target.Top + size.Height),
             fps, temporary, final, systemAudio, microphone);
         recorder._thread = new Thread(recorder.Run) { IsBackground = true, Name = "kitty-mp4-recorder" };
