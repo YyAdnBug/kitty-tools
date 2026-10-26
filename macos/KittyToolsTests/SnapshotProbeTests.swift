@@ -917,6 +917,52 @@ struct SnapshotProbeTests {
         IslandView(island: Island(showing: content, geometry: geometry)),
         size: geometry.windowSize, dark: false, to: "\(out)/\(name).png")
     }
+    // 能交互（2026-10-26）：带按钮的收着时主按钮露在行尾；悬停后长成卡片——完整详情最多 4 行，按钮在第一行（主按钮白底、
+    // 在 × 左边）。长错误、两个按钮、没按钮只有 ×、无刘海屏的卡片各一张
+    let longError =
+      "服务器返回 429：请求太频繁，请稍后再试。智谱 glm-4-flash 已经重试过 2 次，还是不行的话可以到 设置 › 翻译 里换一个服务，或者填上自己的密钥。"
+    let interactive: [(String, Island.Content, Island.Geometry, [String], Bool)] = [
+      (
+        "island-action",
+        .init(
+          title: "已删除 3 条", detail: "剪贴板历史", tone: .info, symbol: "trash.circle.fill",
+          leading: .tone), notch, ["撤销"], false
+      ),
+      (
+        "island-expanded-error",
+        .init(
+          title: "翻译失败", detail: longError, tone: .error,
+          symbol: "exclamationmark.circle.fill", leading: .tone), notch, ["重试"], true
+      ),
+      (
+        "island-expanded-saved",
+        .init(
+          title: "已保存", detail: "截屏 2026-10-26 14.32.08.png", tone: .success,
+          symbol: "checkmark.circle.fill", leading: .color(.systemTeal)), notch,
+        ["在访达中显示", "打开"], true
+      ),
+      (
+        "island-expanded-bare",
+        .init(
+          title: "已复制", detail: "https://example.com/kitty-tools", tone: .success,
+          symbol: "checkmark.circle.fill", leading: .tone), notch, [], true
+      ),
+      (
+        "island-expanded-capsule",
+        .init(
+          title: "需要「屏幕录制」授权", detail: "截图翻译要用，授权后可能要重新打开本 App", tone: .warning,
+          symbol: "exclamationmark.triangle.fill", leading: .tone), .capsule(menuBar: 24),
+        ["打开系统设置"], true
+      ),
+    ]
+    for (name, content, geometry, titles, expanded) in interactive {
+      let island = Island(
+        showing: content, geometry: geometry, actions: titles.map { Island.Action($0) {} },
+        expanded: expanded)
+      try snapshot(
+        IslandView(island: island), size: geometry.windowSize, dark: false, to: "\(out)/\(name).png"
+      )
+    }
     // 黄色强调色：信息 / 进行中的底是强调色，上面的符号要换深色（Style.onBrand）才看得见——岛垫的圆底、自带圆底的各一张。
     // 只换内存里的颜色，不写偏好
     Accent.shared.select(.yellow, persists: false)

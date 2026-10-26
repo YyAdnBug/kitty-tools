@@ -2060,7 +2060,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       return island.show("没有识别到文字", detail: "可以把选区框大一些再试", tone: .warning)
     }
     // 没有结果岛（接着开浮窗）：「识别中」出过就收掉
-    if island.content?.title == Self.recognizingTitle { island.dismiss() }
+    island.dismiss(ifShowing: Self.recognizingTitle)
     let text = OCR.text(lines, joined: true, separator: "\n\n")
     // 默认不写剪贴板、只记进历史（同一个入口：过敏感文本过滤、已有同文只挪到最前）；开了就当复制一次（写剪贴板 + 记历史）
     if UserDefaults.standard.bool(forKey: Prefs.translateCopyRecognized) {

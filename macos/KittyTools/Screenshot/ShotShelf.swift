@@ -579,7 +579,7 @@ final class ShotShelf {
           shelf.add(gif: target, first: first, source: source, at: corner)
         }
       } catch is CancellationError {
-        if island?.content?.title == progress { island?.dismiss() }
+        island?.dismiss(ifShowing: progress)
       } catch {
         island?.show("没能转成 GIF", detail: error.localizedDescription, tone: .error)
       }
@@ -614,7 +614,7 @@ final class ShotShelf {
             compressed: target, seconds: seconds, poster: shown, source: source, at: corner)
         }
       } catch is CancellationError {
-        if island?.content?.title == progress { island?.dismiss() }
+        island?.dismiss(ifShowing: progress)
       } catch {
         island?.show("没能压缩", detail: error.localizedDescription, tone: .error)
       }

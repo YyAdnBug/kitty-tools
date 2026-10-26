@@ -558,10 +558,11 @@ final class Launchpad {
           "没能删掉「\(app.name)」",
           detail: "可能没有权限，或者它正在被使用；可以在访达里看它",
           tone: .warning,
-          action: (
-            title: "在访达中显示",
-            run: { NSWorkspace.shared.activateFileViewerSelecting([app.url]) }
-          ))
+          actions: [
+            .init("在访达中显示", opens: true) {
+              NSWorkspace.shared.activateFileViewerSelecting([app.url])
+            }
+          ])
         return
       }
       self.catalog.removeAll { $0.id == app.id }
@@ -663,7 +664,7 @@ final class Launchpad {
       self.island?.show(
         "已按原来的启动台排好",
         detail: result.skipped > 0 ? "跳过 \(result.skipped) 个已经卸掉的 App" : nil,
-        symbol: "square.grid.3x3", action: self.undoAction(after: old))
+        symbol: "square.grid.3x3", actions: self.undoAction(after: old))
     }
   }
 
@@ -691,7 +692,7 @@ final class Launchpad {
     replaceOpenLayout(layout)
     island?.show(
       "已恢复默认排列", detail: old == nil ? nil : "需要的话点「撤销」换回原来的",
-      symbol: "arrow.uturn.backward", action: undoAction(after: old))
+      symbol: "arrow.uturn.backward", actions: undoAction(after: old))
   }
 
   /// 撤销上一次导入 / 恢复默认（只留一份；存在偏好里，重启后还能用一次，F41）
@@ -707,9 +708,9 @@ final class Launchpad {
 
   /// 岛上的「撤销」：之前没存过布局就没东西可撤，不带按钮（G25）。单独写成函数——直接在 Task 里写三目 + 捕获列表的闭包，
   /// Swift 6.2.4 的类型检查会崩
-  private func undoAction(after old: LaunchpadLayout?) -> (title: String, run: () -> Void)? {
-    guard old != nil else { return nil }
-    return (title: "撤销", run: { [weak self] in self?.undoLastLayoutChange() })
+  private func undoAction(after old: LaunchpadLayout?) -> [Island.Action] {
+    guard old != nil else { return [] }
+    return [.init("撤销") { [weak self] in self?.undoLastLayoutChange() }]
   }
 
   private func setUndoLayout(_ layout: LaunchpadLayout?) {

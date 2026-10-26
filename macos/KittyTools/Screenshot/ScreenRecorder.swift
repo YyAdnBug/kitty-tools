@@ -964,16 +964,17 @@ final class ScreenRecorder: NSObject {
     var file = temp
     if medium == .audio, keeps, FileManager.default.fileExists(atPath: temp.path) {
       let island = self.island
+      let saving = "正在存储录音…"
       let progress = Task {
         try? await Task.sleep(for: .seconds(1))
         guard !Task.isCancelled else { return false }
-        island?.show("正在存储录音…", tone: .progress, symbol: "waveform.circle.fill")
+        island?.show(saving, tone: .progress, symbol: "waveform.circle.fill")
         return true
       }
       file = await Self.extractAudio(from: temp) ?? temp
       progress.cancel()
       // 结果岛（出的话）随后由 AppDelegate 弹；飞了卡片的正常停只播报，进度岛得自己收
-      if await progress.value { island?.dismiss() }
+      if await progress.value { island?.dismiss(ifShowing: saving) }
     }
     defaults.removeObject(forKey: medium.inProgressKey)
     let (saved, moved) = Self.settle(file, into: directory, medium: medium, keeps: keeps)

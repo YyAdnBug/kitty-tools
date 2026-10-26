@@ -438,7 +438,7 @@ import Observation
     if braked != count {
       island?.show(
         title, detail: detail, tone: .warning,
-        action: ("继续", { [weak self] in self?.confirmTrashing() }))
+        actions: [.init("继续") { [weak self] in self?.confirmTrashing() }])
     }
     braked = count
   }

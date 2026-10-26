@@ -186,6 +186,113 @@ struct IslandExcerptTests {
     #expect(ShelfCard.progressDetail(140) == "100%" && ShelfCard.progressDetail(-3) == "0%")
   }
 
+  /// 能交互的岛（2026-10-26 拍板）：鼠标在岛上时来的新提示先排着、移开再换上（B5）；进行中的那条例外，结果原地换；
+  /// 点了 × / 按钮（dismiss）时排着的直接换上
+  @MainActor @Test func hoverQueuesNewNotices() {
+    let content = { (title: String, tone: Island.Tone) in
+      Island.Content(title: title, detail: nil, tone: tone, symbol: "circle", leading: .tone)
+    }
+    let island = Island(showing: content("已删除 3 条", .info), actions: [.init("撤销") {}])
+    island.hover(true)
+    #expect(island.isHovered && island.isExpanded)
+    island.show("已复制")
+    #expect(island.content?.title == "已删除 3 条" && island.actions.map(\.title) == ["撤销"])
+    island.hover(false)
+    #expect(island.content?.title == "已复制" && island.actions.isEmpty && !island.isExpanded)
+
+    let closed = Island(showing: content("已删除 3 条", .info))
+    closed.hover(true)
+    closed.show("翻译失败", tone: .error)
+    closed.dismiss()
+    #expect(closed.content?.title == "翻译失败" && closed.isOpen)
+
+    let working = Island(showing: content("翻译中…", .progress), actions: [.init("取消") {}])
+    working.hover(true)
+    working.show("已替换为译文")
+    #expect(working.content?.title == "已替换为译文" && working.actions.isEmpty)
+    // 进行中的离开就合上（它还要挂着）；别的离开后照旧展开着，到点再收
+    let progress = Island(showing: content("正在压缩…", .progress))
+    progress.hover(true)
+    progress.hover(false)
+    #expect(!progress.isExpanded && progress.content?.title == "正在压缩…")
+  }
+
+  /// 排着的进行中提示（评审 2）：调用方做完了按标题收时连排着的一起丢掉；排着时的百分比更新改的是排着的那条。
+  /// 离开后照旧展开的卡片换成新的一条就合上（评审 3）
+  @MainActor @Test func queuedProgressAndExpandedReset() {
+    let content = { (title: String, tone: Island.Tone) in
+      Island.Content(title: title, detail: nil, tone: tone, symbol: "circle", leading: .tone)
+    }
+    let island = Island(showing: content("已复制", .success))
+    island.hover(true)
+    island.show("识别中…", tone: .progress)
+    island.progress("识别中…", detail: "42%")
+    island.dismiss(ifShowing: "识别中…")
+    island.hover(false)
+    #expect(island.content?.title == "已复制")
+
+    let saving = Island(showing: content("已复制", .success))
+    saving.hover(true)
+    saving.show("正在压缩…", tone: .progress)
+    saving.progress("正在压缩…", detail: "37%", fraction: 0.37)
+    saving.hover(false)
+    #expect(saving.content?.title == "正在压缩…" && saving.content?.detail == "37%")
+    #expect(saving.content?.fraction == 0.37)
+
+    let left = Island(showing: content("翻译失败", .error), expanded: true)
+    #expect(left.isExpanded)
+    left.show("翻译中…", tone: .progress)
+    #expect(!left.isExpanded && left.content?.title == "翻译中…")
+  }
+
+  /// 点了按钮时排着的那条让给按钮自己的结果（评审 6）：按钮出了新提示，排着的等它收起再出；没出就直接换上
+  @MainActor @Test func performYieldsToActionResult() {
+    let content = Island.Content(
+      title: "已还原排列", detail: nil, tone: .success, symbol: "circle", leading: .tone)
+    var island: Island?
+    let undo = Island.Action("撤销") { island?.show("已撤销") }
+    island = Island(showing: content, actions: [undo], expanded: true)
+    island?.hover(true)
+    island?.show("翻译失败", tone: .error)
+    island?.perform(undo)
+    #expect(island?.content?.title == "已撤销")
+    island?.dismiss()
+    #expect(island?.content?.title == "翻译失败")
+
+    let quiet = Island(showing: content, actions: [.init("撤销") {}], expanded: true)
+    quiet.hover(true)
+    quiet.show("翻译失败", tone: .error)
+    quiet.perform(quiet.actions[0])
+    #expect(quiet.content?.title == "翻译失败")
+  }
+
+  /// 点岛本身只执行打开类的按钮（B3）：撤销这类只能点按钮；内容刚换过的那一下不算点击（B6）
+  @MainActor @Test func tapRunsOnlyOpeningAction() {
+    let content = Island.Content(
+      title: "已保存", detail: "a.png", tone: .success, symbol: "circle", leading: .tone)
+    var ran: [String] = []
+    let undo = Island.Action("撤销") { ran.append("撤销") }
+    let reveal = Island.Action("在访达中显示", opens: true) { ran.append("显示") }
+    Island(showing: content, actions: [undo], expanded: true).tapped()
+    #expect(ran.isEmpty)
+    let island = Island(showing: content, actions: [undo, reveal], expanded: true)
+    island.tapped()
+    #expect(ran == ["显示"] && island.content == nil)
+
+    let fresh = Island(showing: content)
+    fresh.show("已保存", detail: "b.png", actions: [reveal])
+    fresh.tapped()
+    fresh.perform(reveal)
+    #expect(ran == ["显示"] && fresh.content?.detail == "b.png")
+  }
+
+  /// 双指往上滑收起：按手指方向算，「自然滚动」开着时 scrollingDeltaY 和手指同向（往下为正）
+  @Test func swipeUpFollowsFingers() {
+    #expect(Island.fingersUp(deltaY: -10, inverted: true) == 10)
+    #expect(Island.fingersUp(deltaY: 10, inverted: false) == 10)
+    #expect(Island.fingersUp(deltaY: 10, inverted: true) == -10)
+  }
+
   /// 慢活才出「进行中」（识字的「识别中」）：很快做完的不出这一下；过了时限还没做完才出，而且只出一次。
   /// 慢活不靠墙上时钟模拟：全量并行跑时主线程被别的测试占着，「睡 300 ms」和「30 ms 后提示」谁先恢复说不准
   /// （活先恢复就把提示取消了，这在产品里是对的，测试却会判错）。所以慢活 = 等提示出过才做完
