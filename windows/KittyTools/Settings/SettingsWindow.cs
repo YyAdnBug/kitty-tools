@@ -759,6 +759,7 @@ internal sealed class SettingsWindow : Window
         }
 
         _content.Children.Add(Header("剪贴板", "记录文本、图片和文件；面板里按 Ctrl+D 收藏。收藏的条目不受保留天数和图片额度影响。"));
+        AddShortcutsLink("clipboard");
         var service = ClipboardService.Instance;
         if (service is null)
         {
@@ -936,6 +937,7 @@ internal sealed class SettingsWindow : Window
         }
 
         _content.Children.Add(Header("启动器", "应用、系统设置、系统命令、计算和网址直达；网页搜索只有一个兜底。"));
+        AddShortcutsLink("launcher");
         var settings = SettingsService.Current;
         var engines = (settings.LauncherSearchEngines ?? WebSearch.Defaults())
             .Select(engine => new KittyTools.Core.SearchEngine
@@ -1099,6 +1101,7 @@ internal sealed class SettingsWindow : Window
         }
 
         _content.Children.Add(Header("截图", "框选、标注、识字、钉图和截图翻译；Ctrl+S 快速保存。"));
+        AddShortcutsLink("screenshot");
         _content.Children.Add(Section(
             "快速保存位置",
             "默认是系统的「屏幕截图」文件夹；Ctrl+Shift+S 每次另存为。"));
@@ -1286,6 +1289,7 @@ internal sealed class SettingsWindow : Window
 
         Log.Info("settings.translate.build-start");
         _content.Children.Add(Header("翻译", "划词、输入和复制即译共用一个浮窗；每个启用的服务一张结果卡。"));
+        AddShortcutsLink("translate");
         var store = TranslateServiceStore.Instance;
         if (store is null)
         {
@@ -1789,6 +1793,7 @@ internal sealed class SettingsWindow : Window
     private void BuildHotKeys()
     {
         _content.Children.Add(Header("快捷键", "点「录制」后按新的组合；至少带 Ctrl 或 Alt，或者单独一个 F1–F24。"));
+        AddShortcutsLink("hotkeys");
 
         _hotKeyError.IsOpen = false;
         _content.Children.Add(_hotKeyError);
@@ -2253,6 +2258,19 @@ internal sealed class SettingsWindow : Window
 
     private static UIElement Header(string title, string subtitle)
         => SettingsUi.Header(title, subtitle);
+
+    /// <summary>页头下面一行「查看全部快捷键…」（PLAN-v8 第 4 批）：点开速查表，停在这一页那一类。</summary>
+    private void AddShortcutsLink(string page)
+    {
+        var link = new HyperlinkButton
+        {
+            Content = "查看全部快捷键…",
+            Padding = new Thickness(0),
+            Margin = new Thickness(0, -4, 0, 4),
+        };
+        link.Click += (_, _) => _ = ShortcutsSheet.ShowAsync(_content.XamlRoot, page);
+        _content.Children.Add(link);
+    }
 
     /// <summary>PLAN-v7 §3.7：外观三张缩略图（跟随系统 / 浅色 / 深色）。</summary>
     private FrameworkElement ThemePicker()

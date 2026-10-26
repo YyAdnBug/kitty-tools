@@ -138,6 +138,16 @@ internal sealed class ShotHistoryWindow : Window
         AppWindow.SetIcon(Paths.ExecutablePath);
         Theme.ApplyTitleBar(AppWindow);
 
+        // Delete 删掉选中的那条（先问一次）；焦点在搜索框里时是删字。
+        _root.KeyDown += (_, args) =>
+        {
+            if (args.Key == Windows.System.VirtualKey.Delete && args.OriginalSource is not TextBox &&
+                _selected is { } selected)
+            {
+                args.Handled = true;
+                _ = ForgetAsync(selected);
+            }
+        };
         _history.Changed += OnHistoryChanged;
         _history.ThumbnailChanged += OnThumbnailChanged;
         Closed += (_, _) =>

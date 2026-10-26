@@ -17,6 +17,16 @@
 - 新文件：`Core/ShotHistoryRules.cs`、`Tests/ShotHistoryTests.cs`、`Screenshot/ShotHistory.cs`、`Screenshot/ShotHistoryWindow.cs`、`Screenshot/AnnotateOverlay*.cs`、`Settings/ShortcutsSheet.cs`。
 - 挂钩：`Core/Schema.cs`（第 8 步）、`App/Settings.cs`（`ShotHistory`）、`App/HotKeyDefaults.cs`（默认表最后加一项）、`Shell/ShellRuntime.cs`（启动 + 动作分发）、`Shell/TrayMenu.cs`（一项）、启动器的命令表（一项）、`Screenshot/ScreenshotSession.cs` / `SelectionOverlayWindow.cs` / `ScreenshotCard.cs`（记录和「在历史里看」）、录制的几处出口、设置 › 截图页（一个开关）。
 
+**v8 进展（审查方，都没编译过；你们编过后在下面记一句）**：
+
+- 第 1 批 `8d43b40`：存储和记录（你们 `7eff53c` 已在它之上跑过 333 个单测、0 警告）。
+- 第 2 批 `e79620d`：历史窗口和入口。顺手把启动器里一直是「第 5 批接上」占位的截图 / 截图翻译 / 识字接上了（先收起启动器 200 ms 再开，不然冻结帧会拍到启动器），另加「录屏」「截图历史」两项。
+- 第 3 批上 `036f8b8`：历史里「改标注」——原图 1:1 摆在鼠标所在屏正中当冻结帧（四周深灰），用截图遮罩那一套接着改，拷贝 / 存储 / 钉图时选区没动就回写同一条。比屏幕还大的（长截图）提示不支持。
+- 第 4 批：速查表（`Settings/ShortcutsSheet.cs`），设置的剪贴板 / 启动器 / 截图 / 翻译 / 快捷键五页标题下面加了「查看全部快捷键…」。里面的面板按键是逐个对着现在的按键处理抄的（每组注明了文件），**改了面板按键要同步这里**；R39–R41 修完后跟着改。历史窗口加了 Delete 删选中的那条。
+- **第 3 批下（长图标注）先不做**：长图比屏幕高，截图遮罩那一套用不上，要另写一个能滚的长图画布、把标注交互再做一遍（约等于 `SelectionOverlayWindow` 的一半）。mac 那边的用户数据里长截图是 0 次，等用户要了再做。
+- **和方案不一样**：画了标注的另存一张成品 `<id>-c.png`（Windows 的 `AnnotationRenderer` 画马赛克要冻结帧，离开遮罩合成不了）；来源程序先不记；角落缩略图卡没有右键菜单，「在历史里看」没加。
+- **要验**：`ShotHistoryTests`；截图拷贝 / 存储 / 钉图 / 长截图 / 录屏 / 录音 / GIF 各来一次，`%LOCALAPPDATA%\KittyTools\shots\` 和 `shots` 表对得上；历史窗口每个操作；改标注后缩略图跟着变、再打开看到改过的标注；`Annotation` 以后加了字段（比如空心 / 实心）要在 `ShotAnnotations` 里一起存。
+
 ## v7 分工（2026-10-26 深夜，用户定）
 
 用户让审查方（Claude，在 Mac 上，**不编译**）分着做 PLAN-v7 里你们还没动的两块。写完推上来，编译、截图、录屏由你们验；有编译错误直接修，在这一节下面记一句。
@@ -45,6 +55,27 @@
 （2026-10-26 晚复查到 `3fe1725e`：R22、R25、R26、R28、R29 认可；R23 认可，60 s 和 10 分钟的重封装耗时并进 R24 一起量；R30 认可，托盘和 HUD 的截图见 R33。新加 R31–R35。R24 一直没动，排在最前面。）
 
 （2026-10-26 夜：安装程序写完了（`616840b`，没编译过），新加 R36–R38。R36 排在 R24 前面先做：没编过的 Setup 不进 slnx，但 Core 单测里已经有它的测试。）
+
+### R39（P2）截图遮罩的按键：A、T 和工具栏对不上，换工具不刷新（审查方写速查表时扫出来的）
+
+- `SelectionOverlayWindow.OnKeyDown`（L1338 起）里 `case A when !control` 排在 `case A when !control && HasSelection` 前面，**A 永远选箭头**：「A 向下、Shift+A 向上自动滚动长截图」走不到，长截图里「被鼠标打断后按 A 继续」也就没机会用。
+- 工具栏悬停提示写「文字（T）」，但 T 是截图翻译；**文字工具没有键**。
+- R / A / B / M / V 只改了 `_tool`，没调 `UpdateToolbarChrome()` / `Invalidate()`：按键换了工具，工具栏上高亮的还是原来那个（点按钮的那条路是对的）。
+- `P` 不看修饰键，Ctrl+P 也会钉图；方向键不能挪选区（mac 有：1 点 / Shift 10 点）。
+- **建议**：工具键照 mac 改成数字（1 矩形、2 箭头、3 画笔、4 文字、5 马赛克……），把 A 还给自动滚动、T 还给截图翻译；按键换工具和点按钮走同一个方法；P 只认不带修饰键的；方向键挪选区。改完同步 `Settings/ShortcutsSheet.cs` 的「截图 · 标注」「截图 · 出图」两组和 `HANDTEST`。
+
+### R40（P3）翻译历史里的键
+
+- `TranslateWindow`：Ctrl+H 只挂在原文框上，历史打开后焦点在历史的搜索框里，**按 Ctrl+H 回不去**（L596 的注释说「再按一次回来」）；Ctrl+W、Ctrl+P、Ctrl+1–9 在历史里也不响应。
+- `RefreshHistory` 里读 `Shift + Tab` 来筛收藏（L633），但没有哪个按键处理会在 Shift+Tab 时调它，等于走不到（mac 是 ⇧Tab 在 全部 / 收藏 之间切）。
+- 历史里的 Delete 只看光标在不在末尾，没看有没有选中文字（剪贴板那边两样都看）。
+
+### R41（P3）几处按键和说明对不上
+
+- 剪贴板的 Ctrl+K 操作面板里按 Enter 只是把焦点挪到第一个匹配的按钮，**不执行**（L1862）；mac 是直接执行第一项。
+- 钉图文件头说「右键菜单同这些」，菜单里少了快速保存和恢复 100%。
+- `OverlayWindow.cs` 文件头说浮层按 Esc、Ctrl+W 收起，启动器不认 Ctrl+W。
+- 设置窗没有返回（mac 有 ⌘[），也不能 Esc 关；要不要做你们定，做了同步速查表的「设置窗」一组。
 
 ### R24（P1）第 2 批的音画同步是对着一张不动的画面量的，要重做 → 探针已重写（`f07feaa`，审查方），等 Windows 上重测
 
