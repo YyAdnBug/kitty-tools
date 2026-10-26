@@ -10,6 +10,7 @@ using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
@@ -33,6 +34,7 @@ internal sealed partial class SelectionOverlayWindow : Window
     private readonly CanvasControl _canvas;
     private readonly Canvas _root;
     private readonly Border _toolbar;
+    private readonly Border _styleTray;
     private readonly Dictionary<AnnotationTool, Button> _toolButtons = new();
     private readonly List<PixelBounds> _windows = new();
     private readonly List<Annotation> _annotations = new();
@@ -97,6 +99,8 @@ internal sealed partial class SelectionOverlayWindow : Window
         _root.Children.Add(_canvas);
         _toolbar = BuildToolbar();
         _root.Children.Add(_toolbar);
+        _styleTray = BuildStyleTray();
+        _root.Children.Add(_styleTray);
         Content = _root;
 
         var presenter = OverlappedPresenter.Create();
@@ -515,26 +519,12 @@ internal sealed partial class SelectionOverlayWindow : Window
         }
 
         var extras = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
-        _colorButton = ToolbarButton(string.Empty, "换颜色", "颜色");
-        _colorButton.Click += (_, _) =>
-        {
-            var palette = Theme.Shot.AnnotationPalette;
-            var index = Array.IndexOf(palette, _color);
-            _color = palette[(index + 1) % palette.Length];
-            UpdateToolbarChrome();
-            _canvas.Invalidate();
-        };
+        _colorButton = ToolbarButton(string.Empty, "颜色 / 线宽", "颜色");
+        _colorButton.Click += (_, _) => ToggleStyleTray();
         extras.Children.Add(_colorButton);
 
         _widthButton = ToolbarButton("3", "线宽", "线宽");
-        _widthButton.Click += (_, _) =>
-        {
-            var widths = new[] { 2.0, 3, 5, 8 };
-            var index = Array.IndexOf(widths, _width);
-            _width = widths[(index + 1) % widths.Length];
-            UpdateToolbarChrome();
-            _canvas.Invalidate();
-        };
+        _widthButton.Click += (_, _) => ToggleStyleTray();
         extras.Children.Add(_widthButton);
 
         _undoButton = ToolbarButton(Glyphs.Undo, "撤销（Ctrl+Z）", "撤销");
@@ -622,6 +612,114 @@ internal sealed partial class SelectionOverlayWindow : Window
         VerticalAlignment = VerticalAlignment.Center,
         Margin = new Thickness(2, 0, 2, 0),
     };
+
+    /// <summary>样式托盘（PLAN-v7 §3.6）：8 个色点 + 三档线宽，从当前工具按钮下方长出来。</summary>
+    private Border BuildStyleTray()
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        foreach (var color in Theme.Shot.AnnotationPalette)
+        {
+            var swatch = new Border
+            {
+                Width = 22,
+                Height = 22,
+                CornerRadius = new CornerRadius(11),
+                Background = new SolidColorBrush(color),
+                BorderBrush = new SolidColorBrush(Theme.Argb(80, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+            };
+            var button = new Button
+            {
+                Content = swatch,
+                Width = 30,
+                Height = 30,
+                Padding = new Thickness(0),
+                Background = new SolidColorBrush(Colors.Transparent),
+                BorderThickness = new Thickness(0),
+                CornerRadius = new CornerRadius(4),
+            };
+            AutomationProperties.SetName(button, "标注颜色");
+            button.Click += (_, _) =>
+            {
+                _color = color;
+                UpdateToolbarChrome();
+                _canvas.Invalidate();
+                _styleTray.Visibility = Visibility.Collapsed;
+            };
+            row.Children.Add(button);
+        }
+
+        row.Children.Add(new Border
+        {
+            Width = 1,
+            Height = 18,
+            Background = new SolidColorBrush(Theme.Shot.ToolbarSeparator),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(3, 0, 3, 0),
+        });
+        foreach (var width in new[] { 2.0, 3, 5, 8 })
+        {
+            var button = ToolbarButton(width.ToString("F0"), $"线宽 {width:F0}", "线宽 " + width.ToString("F0"), 30);
+            button.Height = 30;
+            button.Click += (_, _) =>
+            {
+                _width = width;
+                UpdateToolbarChrome();
+                _canvas.Invalidate();
+                _styleTray.Visibility = Visibility.Collapsed;
+            };
+            row.Children.Add(button);
+        }
+
+        var tray = new Border
+        {
+            Height = 38,
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(4),
+            Background = new SolidColorBrush(Theme.Shot.HudBackgroundStrong),
+            BorderBrush = new SolidColorBrush(Theme.Argb(36, 255, 255, 255)),
+            BorderThickness = new Thickness(0.5),
+            Child = row,
+            Visibility = Visibility.Collapsed,
+        };
+        Canvas.SetZIndex(tray, 11);
+        return tray;
+    }
+
+    private void ToggleStyleTray()
+    {
+        if (_styleTray.Visibility == Visibility.Visible)
+        {
+            _styleTray.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        PositionStyleTray();
+        _styleTray.Visibility = Visibility.Visible;
+    }
+
+    private void PositionStyleTray()
+    {
+        _toolbar.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+        _styleTray.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+        var left = Canvas.GetLeft(_toolbar);
+        var top = Canvas.GetTop(_toolbar);
+        if (double.IsNaN(left))
+        {
+            left = 0;
+        }
+
+        if (double.IsNaN(top))
+        {
+            top = 0;
+        }
+
+        var x = Math.Max(0, left);
+        var y = top + _toolbar.DesiredSize.Height + 6;
+        var maxX = _screen.Bounds.Width / _scale - _styleTray.DesiredSize.Width - 4;
+        Canvas.SetLeft(_styleTray, Math.Min(x, Math.Max(0, maxX)));
+        Canvas.SetTop(_styleTray, y);
+    }
 
     private static Button ToolbarButton(string label, string tooltip, string automationName, double width = 32)
     {
