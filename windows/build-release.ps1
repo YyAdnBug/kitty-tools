@@ -93,6 +93,31 @@ foreach ($target in $targets) {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     [System.IO.Compression.ZipFile]::CreateFromDirectory($stage, $zip)
 
+    # REVIEW R31：解压刚打好的 zip，跑一次 --smoke（设置七页 / 面板 / 翻译 / 截图 / 录音条）。
+    # 0.7.0 曾经在设置窗一打开就崩、但单测和 AOT 都过；这一步专门挡住「编译过、界面打不开」。
+    if ($target.Rid -eq 'win-x64') {
+        $smokeRoot = Join-Path $build "smoke/$version-$($target.Label)"
+        if (Test-Path $smokeRoot) {
+            Remove-Item $smokeRoot -Recurse -Force
+        }
+
+        New-Item -ItemType Directory -Force $smokeRoot | Out-Null
+        [System.IO.Compression.ZipFile]::ExtractToDirectory($zip, $smokeRoot)
+        $smokeExe = Join-Path $smokeRoot 'Kitty Tools/KittyTools.exe'
+        $previousProfile = $env:KITTY_PROBE_PROFILE
+        $env:KITTY_PROBE_PROFILE = 'smoke'
+        try {
+            $smoke = Start-Process -FilePath $smokeExe -ArgumentList '--smoke' -PassThru -Wait
+            if ($smoke.ExitCode -ne 0) {
+                throw "发布包 --smoke 失败（exit $($smoke.ExitCode)），产物删掉"
+            }
+        }
+        finally {
+            $env:KITTY_PROBE_PROFILE = $previousProfile
+            Remove-Item $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     $files = Get-ChildItem "$stage/Kitty Tools" -Recurse -File
     $size = [math]::Round(($files | Measure-Object Length -Sum).Sum / 1MB, 1)
     $zipSize = [math]::Round((Get-Item $zip).Length / 1MB, 1)

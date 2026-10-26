@@ -379,7 +379,7 @@ internal sealed class ShellRuntime
             {
                 ShowSettings(welcome: false);
                 await Task.Delay(700);
-                foreach (var page in new[] { "general", "hotkeys", "clipboard", "translate", "launcher", "screenshot", "about" })
+                foreach (var page in new[] { "general", "hotkeys", "clipboard", "translate", "launcher", "screenshot" })
                 {
                     _settingsWindow?.ShowPage(welcome: false, page);
                     await Task.Delay(400);
@@ -404,6 +404,8 @@ internal sealed class ShellRuntime
             });
         }
 
+        // REVIEW R31：发布包的启动冒烟。设置七页、面板、翻译、截图遮罩、录音条都打开一遍；
+        // 任何一步抛异常 / 进程崩掉都会让 build-release.ps1 拿到非 0。
         // 调试 / 自检：文件搜索（R17）的耗时和结果数。
         var fileSearchArg = Environment.GetCommandLineArgs()
             .FirstOrDefault(arg => arg.StartsWith("--file-search=", StringComparison.OrdinalIgnoreCase));
@@ -620,6 +622,48 @@ internal sealed class ShellRuntime
             Log.Info($"cred.smoke write={written} read={read} delete={deleted}");
         }
 #endif
+
+        if (Environment.GetCommandLineArgs().Contains("--smoke", StringComparer.OrdinalIgnoreCase))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
+            {
+                try
+                {
+                    Log.Info("smoke.settings");
+                    ShowSettings(welcome: false);
+                    foreach (var page in new[] { "general", "hotkeys", "clipboard", "translate", "launcher", "screenshot" })
+                    {
+                        Log.Info($"smoke.settings.{page}");
+                        _settingsWindow?.ShowPage(welcome: false, page);
+                        await Task.Delay(250);
+                    }
+
+                    CloseSettings();
+                    OverlayHost.Show(OverlayKind.Clipboard);
+                    await Task.Delay(250);
+                    OverlayHost.Show(OverlayKind.Launcher);
+                    await Task.Delay(250);
+                    OverlayHost.Hide(restoreForeground: false);
+                    TranslateHost.ShowInput();
+                    await Task.Delay(250);
+                    TranslateHost.Hide();
+                    ScreenshotSession.Start(ScreenshotMode.Capture);
+                    await Task.Delay(500);
+                    ScreenshotSession.FinishCurrent();
+                    AudioHud.ShowPending();
+                    await Task.Delay(250);
+                    AudioHud.Hide();
+                    Log.Info("smoke.ok");
+                    Environment.Exit(0);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("smoke.failed", ex);
+                    Environment.Exit(1);
+                }
+            });
+        }
+
         // 自动更新换上新版本后带 --updated 启动：清理 *.old 并提示一次（第二版 §5）。
         if (Environment.GetCommandLineArgs().Contains("--updated", StringComparer.OrdinalIgnoreCase))
         {

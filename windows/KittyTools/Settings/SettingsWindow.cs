@@ -119,7 +119,10 @@ internal sealed class SettingsWindow : Window
         _shell.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(OnRecordKeyDown), handledEventsToo: true);
 
         Content = _shell;
-        SystemBackdrop = new MicaThemeBackdrop();
+        // Mica 在部分机器 / Release AOT 下会在 OnDefaultSystemBackdropConfigurationChanged 抛
+        // ArgumentException（R31 冒烟抓到）；设置窗改用不透明卡片底，稳过启动冒烟。
+        // ponytail: 要 Mica 时等 WinUI 修好再用，或换成自己挂 DesktopAcrylicController + try/catch。
+        SystemBackdrop = null;
 
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         _hwnd = (Windows.Win32.Foundation.HWND)hwnd;
