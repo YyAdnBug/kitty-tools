@@ -80,7 +80,14 @@
   先用 VisualBasic 的内置实现；行为一致（回收站 + 失败提示 + 不静默）。
 - 验收还差：`.Dev` 数据目录真机点一次、故意占用一个文件看提示。
 
-### R26（P1）同步执行层的 8 处修复没有任何自动化测试
+### R26（P1）同步执行层的 8 处修复没有任何自动化测试 → 已修（`6ebe604`）
+
+**修了什么（`6ebe604`）**：
+- 四类的编出去 / 落回来在 Core：`ClipSync`、`VocabularySync`、`EngineSync`、`ServiceSync`（一类一个文件，照 mac 的 SyncSource / applySync，按合出来的改动落）；一整轮在 Core 的 `SyncRunner`（+ `SyncDisk`、`SyncLedgerText`、`ISyncSource` / `ISyncDevice`）。App 的 `SyncFolder.cs` 只剩定时器、状态和四个薄适配（规划落进库，和账本同一个事务）。
+- 单测 `SyncSourceTests` 19 个，§2 每一条都有；集成测试 `SyncIntegrationTests` 走真的 `SyncRunner`：两台 Windows + 假 Mac（golden 样本），3 个种子 × 24 步，最后三边一样、再合一轮谁都不写；坏文件、换回旧备份照旧验。`SyncGoldenTests` 照过。全量 306 个。
+- 「两个临时数据库」没用真 SQLite（测试工程只引 Core）：仓库在内存里，落规划的几步和 `ClipboardStore.ApplySyncPlan` / `TranslationHistory.ApplySyncOps` 一一对应；SQL 那几行用真 App 冒烟验了（两份临时 `.Dev` 数据 + 临时同步文件夹，片段落进另一台的库，之后安静的轮次不重写文件）。
+- 顺手照 mac 改的（提交正文里有全单）：刹车的「至少 5 条」按要删的条数算（之前按总数，删 5 条里的 2 条也刹），「照样同步」只放行不超过当时那么多条；没东西要写就不重写文件、epoch 只在写了东西时 +1 且先记库；账本读不出来这一类停下；每一类跟着功能开关；面板里有能撤销的删除时先不合。
+- 没连真 Mac（用户要求 R26 做完前不连）。
 
 - `275ea952` 修的都是「会删到每一台」级别的问题，而且全在 App 项目的 `SyncFolder.cs` 里：仓库没起来时交空表、收藏夹没落地、`group` 的写法、只交收藏、落地失败照存账本、再编不稳定、抢别人的 uid、刹车。
 - 报告里也写了：「这次的改动没有自动化测试覆盖」。`PlanV5IntegrationTests` 测的是 Core 的引擎加手写的值，没经过这些代码。
