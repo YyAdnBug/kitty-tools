@@ -167,7 +167,7 @@ internal sealed unsafe partial class TranslateWindow : Window
             TextWrapping = TextWrapping.Wrap,
             MinHeight = 64,
             MaxHeight = 150,
-            Style = Theme.Style("Kitty.Input"),
+            Style = Theme.Style("Kitty.InputStyle"),
             Background = Theme.Brush("Kitty.Input", Theme.Argb(11, 0, 0, 0)),
             BorderThickness = new Thickness(0),
             CornerRadius = Theme.Corner("Kitty.Corner.Card"),

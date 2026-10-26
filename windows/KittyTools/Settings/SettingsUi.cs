@@ -91,7 +91,7 @@ internal static class SettingsUi
 
         var card = new Border
         {
-            Style = Theme.Style("Kitty.Card"),
+            Style = Theme.Style("Kitty.CardStyle"),
             Child = row,
             IsHitTestVisible = enabled,
             Opacity = enabled ? 1 : 0.55,

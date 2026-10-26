@@ -11,7 +11,17 @@ public partial class App : Application
     public App()
     {
         AppDomain.CurrentDomain.UnhandledException += (_, e) => CrashLog.Record("appdomain", e.ExceptionObject as Exception);
-        UnhandledException += (_, e) => CrashLog.Record("xaml", e.Exception);
+        UnhandledException += (_, e) =>
+        {
+#if DEBUG
+            // 原生层抛上来的只有「未指定的错误」，e.Message 里常有真正的原因（找不到的资源键之类）。
+            Log.Warn("xaml.unhandled " + e.Message);
+#endif
+            CrashLog.Record("xaml", e.Exception);
+        };
+#if DEBUG
+        DebugSettings.XamlResourceReferenceFailed += (_, e) => Log.Warn("xaml.resource-failed " + e.Message);
+#endif
         TaskScheduler.UnobservedTaskException += (_, e) => CrashLog.Record("task", e.Exception);
         try
         {

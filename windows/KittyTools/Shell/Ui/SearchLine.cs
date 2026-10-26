@@ -51,7 +51,7 @@ public sealed partial class SearchLine : Grid
         Box = new TextBox
         {
             PlaceholderText = placeholder,
-            Style = Theme.Style("Kitty.Input"),
+            Style = Theme.Style("Kitty.InputStyle"),
             Background = new SolidColorBrush(Colors.Transparent),
             BorderThickness = new Thickness(0),
             FontSize = Theme.FontSize("Kitty.FontSize.Search"),

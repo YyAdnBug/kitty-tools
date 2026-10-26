@@ -84,8 +84,9 @@
     <x:Double x:Key="Kitty.FontSize.Code">12</x:Double>
     <x:Double x:Key="Kitty.FontSize.Brand">26</x:Double>
 
-    <!-- 设置卡 -->
-    <Style x:Key="Kitty.Card" TargetType="Border">
+    <!-- 设置卡。样式键不能和主题字典里的画刷同名（Kitty.Card）：同名时 Setter 里的 {ThemeResource Kitty.Card}
+         会先找到样式自己，Background 拿到一个 Style，设置窗一打开就崩（E_FAIL）。输入框同理。 -->
+    <Style x:Key="Kitty.CardStyle" TargetType="Border">
         <Setter Property="Background" Value="{ThemeResource Kitty.Card}" />
         <Setter Property="BorderBrush" Value="{ThemeResource Kitty.Hairline}" />
         <Setter Property="BorderThickness" Value="1" />
@@ -123,7 +124,7 @@
     </Style>
 
     <!-- 无边框输入框：搜索线 / 翻译输入用，不要 Fluent 的底部粗线 -->
-    <Style x:Key="Kitty.Input" TargetType="TextBox">
+    <Style x:Key="Kitty.InputStyle" TargetType="TextBox">
         <Setter Property="Background" Value="{ThemeResource Kitty.Input}" />
         <Setter Property="BorderBrush" Value="{ThemeResource Kitty.Hairline}" />
         <Setter Property="BorderThickness" Value="0" />
