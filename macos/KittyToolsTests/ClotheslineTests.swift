@@ -155,6 +155,27 @@ struct ClotheslineTests {
       ])
   }
 
+  /// 旧的「留不留常驻缩略图」升成「截完图放哪」三选一（拍板 B1）：关过它的人是「都不要」，
+  /// 没存过（= 开着）照常是角落的缩略图；新键已经有值就不动它
+  @Test func placementUpgradesFromTheOldToggle() throws {
+    let suite = "kitty-test-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    Prefs.migrate(defaults, domainName: suite)
+    #expect(Prefs.ShotPlacement.current(defaults) == .corner)
+
+    defaults.set(false, forKey: Prefs.screenshotShelfLegacy)
+    Prefs.migrate(defaults, domainName: suite)
+    #expect(Prefs.ShotPlacement.current(defaults) == Prefs.ShotPlacement.none)
+
+    defaults.set(Prefs.ShotPlacement.clothesline.rawValue, forKey: Prefs.screenshotPlacement)
+    Prefs.migrate(defaults, domainName: suite)
+    #expect(Prefs.ShotPlacement.current(defaults) == .clothesline)
+    // 认不出来的值按默认的角落
+    defaults.set("什么", forKey: Prefs.screenshotPlacement)
+    #expect(Prefs.ShotPlacement.current(defaults) == .corner)
+  }
+
   /// 绳子只是历史的一个视图（拍板 B2）：历史里删掉的跟着没，取下只去掉「挂着」这一笔、历史不动
   @MainActor @Test func pegsFollowTheHistory() throws {
     let root = FileManager.default.temporaryDirectory.appending(

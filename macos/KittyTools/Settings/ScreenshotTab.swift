@@ -13,7 +13,8 @@ struct ScreenshotTab: View {
   var openHistory: () -> Void = {}
   @AppStorage(Prefs.ocrJoinLines) private var joinLines = false
   @AppStorage(Prefs.screenshotShutterSound) private var shutterSound = true
-  @AppStorage(Prefs.screenshotShelf) private var keepsThumbnail = true
+  @AppStorage(Prefs.screenshotPlacement) private var placement = Prefs.ShotPlacement.corner
+    .rawValue
   @AppStorage(Prefs.shotHistory) private var keepsHistory = true
   @AppStorage(Prefs.shotHistoryDays) private var historyDays = 30
   @AppStorage(Prefs.shotHistoryBytes) private var historyBytes = 2 * 1024 * 1024 * 1024
@@ -73,9 +74,22 @@ struct ScreenshotTab: View {
           )
         }
         Section {
-          Toggle("截图后在屏幕角落留缩略图", isOn: $keepsThumbnail)
+          Picker("截完图放哪", selection: $placement) {
+            ForEach(Prefs.ShotPlacement.allCases, id: \.rawValue) { choice in
+              Text(choice.title).tag(choice.rawValue)
+            }
+          }
+          if placement == Prefs.ShotPlacement.clothesline.rawValue, !keepsHistory {
+            Text("晾衣绳挂的就是历史里的那几条，要先打开上面的「保留截图历史」。")
+              .font(.system(size: 11))
+              .foregroundStyle(Color(nsColor: .systemOrange))
+          }
         } footer: {
-          SectionFootnote("可以拖出、钉图、存储；关掉后截图只在右下角闪一下。")
+          SectionFootnote(
+            placement == Prefs.ShotPlacement.clothesline.rawValue
+              ? "截完图挂到屏幕顶上的绳子上，最多 8 张：鼠标停到菜单栏那一条上它就滑下来，单击拷贝、双击改标注、拖出去发一份，点右上角的叉取下。取下不删历史。"
+              : "角落的缩略图可以拖出、钉图、存储；选「都不要」后截图只在右下角闪一下，仍然进历史。"
+          )
         }
         Section {
           Toggle("识字后把同一段里的换行接起来", isOn: $joinLines)

@@ -586,7 +586,7 @@ struct SnapshotProbeTests {
       try? FileManager.default.removeItem(at: inbox.deletingLastPathComponent())
     }
     shotPrefs.set(inbox.path, forKey: Prefs.screenshotSaveDirectory)
-    shotPrefs.set(false, forKey: Prefs.screenshotShelf)
+    shotPrefs.set(Prefs.ShotPlacement.clothesline.rawValue, forKey: Prefs.screenshotPlacement)
     shotPrefs.set(60, forKey: Prefs.screenRecordFrameRate)
     shotPrefs.set(5, forKey: Prefs.screenRecordCountdown)
     shotPrefs.set(false, forKey: Prefs.screenRecordShowsCursor)

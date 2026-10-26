@@ -108,8 +108,11 @@ enum Prefs {
   static let screenshotToolStyles = "screenshotToolStyles"
   /// 截图（复制、保存、钉图）时放快门声；还要系统「播放用户界面音效」开着
   static let screenshotShutterSound = "screenshotShutterSound"
-  /// 拷贝 / 快速保存后在屏幕右下角留常驻缩略图（ShotShelf）；关掉后飞行卡片落地停 0.9 s 就滑走（体检 D18）
-  static let screenshotShelf = "screenshotShelf"
+  /// 截完图放哪（2026-10-26 晾衣绳拍板 B1，ShotPlacement 的 rawValue）：corner 右下角的常驻缩略图（默认，
+  /// 体检 D18 原来那样）/ clothesline 挂到屏幕顶上的晾衣绳上 / none 都不要（只进历史，飞行卡片落地停 0.9 s 就滑走）
+  static let screenshotPlacement = "screenshotPlacement"
+  /// 旧键（0.7.0 之前是「留不留常驻缩略图」一个布尔）：migrate 里升成上面那个三选一，关过它的人升级后是「都不要」
+  static let screenshotShelfLegacy = "screenshotShelf"
   /// 保留截图历史（2026-10-26 拍板 B3，默认开）：关掉之后不再往历史里记，已经记下的留着（设置里另有「现在清空」）
   static let shotHistory = "shotHistory"
   /// 截图历史留多少天（拍板 A3，默认 30；0 = 不按天清）
@@ -332,7 +335,7 @@ enum Prefs {
       translateCollapsedServices: "",
       ocrJoinLines: false,
       screenshotShutterSound: true,
-      screenshotShelf: true,
+      screenshotPlacement: ShotPlacement.corner.rawValue,
       shotHistory: true,
       shotHistoryDays: 30,
       shotHistoryBytes: 2 * 1024 * 1024 * 1024,
@@ -369,13 +372,34 @@ enum Prefs {
     ].merging(Feature.allCases.map { ($0.prefsKey, $0.defaultOn as Any) }) { current, _ in current }
   }
 
+  /// 截完图放哪（2026-10-26 晾衣绳拍板 B1）：右下角的常驻缩略图 / 挂到晾衣绳上 / 都不要（只进历史）。
+  /// 两处放图二选一：挂到绳子上就不飞角落了
+  enum ShotPlacement: String, CaseIterable {
+    case corner, clothesline, none
+
+    var title: String {
+      switch self {
+      case .corner: "角落的缩略图"
+      case .clothesline: "挂到晾衣绳上"
+      case .none: "都不要"
+      }
+    }
+
+    /// 偏好里存的（认不出来按默认的角落）
+    static func current(_ defaults: UserDefaults = .standard) -> ShotPlacement {
+      defaults.string(forKey: Prefs.screenshotPlacement).flatMap(ShotPlacement.init(rawValue:))
+        ?? .corner
+    }
+  }
+
   /// 旧偏好升级（启动时在 registerDefaults 之后跑，幂等）：
   /// 排除 App 从关键词换成 bundle ID 列表（只在新键没存过、旧键改过时跑一次，体检 A11）；
   /// 保留天数不在新档位里的（旧的 3 / 14 天）挪到下一档，免得弹出菜单显示空白（体检 A4）；
   /// 翻译历史保留条数同理（旧的 100–2000 挪到 1000 / 5000，体检 A18）；
   /// 浏览器书签 / 历史的每家一个开关搬进两个 id 列表（第 12 批，只在新键没存过、旧键改过时，删掉旧键）；
   /// 去掉了的「标签倾斜」开关（notesDeckTiltLegacy）存过的值删掉；
-  /// 启动台原来的总开关 launchpadEnabled 挪进功能开关 feature.launchpad（只在新键没存过时，删掉旧键）
+  /// 启动台原来的总开关 launchpadEnabled 挪进功能开关 feature.launchpad（只在新键没存过时，删掉旧键）；
+  /// 常驻缩略图的布尔开关 screenshotShelf 升成「截完图放哪」三选一（晾衣绳拍板 B1，只在新键没存过、旧键关着时）
   static func migrate(
     _ defaults: UserDefaults = .standard, domainName: String? = Bundle.main.bundleIdentifier
   ) {
@@ -392,6 +416,11 @@ enum Prefs {
       defaults.set(old, forKey: panelSqueezeEntrance)
     }
     defaults.removeObject(forKey: launcherSqueezeEntranceLegacy)
+    // 常驻缩略图的布尔开关升成「截完图放哪」三选一（晾衣绳拍板 B1）：关过它的人是「都不要」，
+    // 没存过（= 开着）照常是角落的缩略图。旧键留着不删：退回旧版本还能用
+    if domain[screenshotPlacement] == nil, domain[screenshotShelfLegacy] as? Bool == false {
+      defaults.set(ShotPlacement.none.rawValue, forKey: screenshotPlacement)
+    }
     defaults.removeObject(forKey: notesDeckTiltLegacy)
     let launchpad = Feature.launchpad.prefsKey
     if domain[launchpad] == nil, let old = domain[launchpadEnabledLegacy] as? Bool {

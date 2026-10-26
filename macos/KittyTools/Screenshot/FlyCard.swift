@@ -116,13 +116,14 @@ enum FlyCard {
 
   /// image：选区的图；frame：选区（点，AppKit 全局坐标）。linger：角标弹完后交给常驻缩略图（落地位置、角标），
   /// 给了它卡片就不自己滑走。seconds：录屏的时长（录屏第 3 批）：落地时多出播放符号和时长。
-  /// 录音（第 5 批）：frame 是 HUD 处和 image 同比例的小框，size 是落地尺寸（landingRect），audio 让落地的标记换成 waveform
+  /// 录音（第 5 批）：frame 是 HUD 处和 image 同比例的小框，size 是落地尺寸（landingRect），audio 让落地的标记换成 waveform。
+  /// to：落点另给（2026-10-26 晾衣绳拍板 B1：挂到绳子上时落在绳子上那个位置，不飞右下角）
   static func fly(
-    _ image: CGImage, from frame: CGRect, size: CGSize? = nil,
+    _ image: CGImage, from frame: CGRect, size: CGSize? = nil, to: CGRect? = nil,
     linger: ((CGRect, Badge) -> Void)? = nil, seconds: Int? = nil, audio: Bool = false
   ) -> Landing {
     let landing = Landing()
-    guard let end = landingRect(for: frame, size: size),
+    guard let end = to ?? landingRect(for: frame, size: size),
       let screen = NSScreen.screens.first(where: { $0.frame.intersects(end) })
     else { return landing }
     // 起飞到落地显示选区原图（cropping 共享像素、不另编码；复制 / 保存编码期间本来就持有它）：第一帧和刚收起的

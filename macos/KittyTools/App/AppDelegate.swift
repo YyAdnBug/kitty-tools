@@ -1642,8 +1642,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch capture.action {
         case .copy:
           let land = captured(capture.image, scale: capture.scale, frame: capture.frame)
-          await remember(capture)
-          if let png = await copyImage(capture.image, scale: capture.scale) { land(.copied, png) }
+          let id = await remember(capture)
+          if let png = await copyImage(capture.image, scale: capture.scale) {
+            land(.copied, png, id)
+          }
         case .pin:
           FlyCard.playShutter()
           await remember(capture, pinned: true)
@@ -1652,7 +1654,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           let land = captured(capture.image, scale: capture.scale, frame: capture.frame)
           let id = await remember(capture)
           if let saved = await saveImage(capture.image, scale: capture.scale, asking: false) {
-            land(.saved(saved.url), saved.png)
+            land(.saved(saved.url), saved.png, id)
             if let id { shotHistory.markSaved(id, to: saved.url) }
           }
         case .saveAs:
@@ -1836,28 +1838,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   ) -> Bool {
     let seconds = Int(result.duration.components.seconds)
     let audio = medium == .audio
-    // 录制的也进同一个历史（拍板 B1）：只记文件路径和一张封面，不复制那个文件
+    // 录制的也进同一个历史（拍板 B1）：只记文件路径和一张封面，不复制那个文件。
+    // 挂到晾衣绳上时要它的编号（闭包按引用拿着，记完才有）
+    var pegID: UUID?
     Task {
-      await shotHistory.record(
+      pegID = await shotHistory.record(
         file: file, poster: result.poster, kind: audio ? .audio : .video,
         source: frontmostAppName())
     }
     let size = audio ? AudioRecorder.posterSize : nil
-    let keepsThumbnail = UserDefaults.standard.bool(forKey: Prefs.screenshotShelf)
+    let pixels = result.poster.map { CGSize(width: $0.width, height: $0.height) } ?? size ?? .zero
+    let (placement, slot) = shotLanding(pixels: pixels, frame: result.region)
     let flies = result.poster != nil && !Style.reduceMotion
     let linger: (CGRect, FlyCard.Badge) -> Void = { [weak self] rect, _ in
-      self?.shelf.add(
-        recording: file, seconds: seconds, audio: audio, poster: result.poster,
-        source: result.region, at: rect, fadesIn: !flies)
+      guard let self else { return }
+      switch placement {
+      case .corner:
+        shelf.add(
+          recording: file, seconds: seconds, audio: audio, poster: result.poster,
+          source: result.region, at: rect, fadesIn: !flies)
+      case .clothesline: if let pegID { clothesline.peg(pegID) }
+      case .none: break
+      }
     }
+    let keepsThumbnail = placement != .none
     guard flies, let poster = result.poster else {
-      if keepsThumbnail, let rect = FlyCard.landingRect(for: result.region, size: size) {
+      if keepsThumbnail, let rect = slot ?? FlyCard.landingRect(for: result.region, size: size) {
         linger(rect, .saved(file))
       }
       return false
     }
     let landing = FlyCard.fly(
-      poster, from: result.region, size: size, linger: keepsThumbnail ? linger : nil,
+      poster, from: result.region, size: size, to: slot,
+      linger: keepsThumbnail ? linger : nil,
       seconds: seconds, audio: audio)
     landing.onShow = { [weak self] in self?.statusItem?.pop() }
     // 文件已经存好了：直接给角标（落地时弹出来）；结果由调用方说（带时长，或中断的岛）
@@ -1894,13 +1907,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       switch result.action {
       case .copy:
         let land = captured(result.image, scale: result.scale, frame: region)
-        await rememberScroll(result, region: region)
-        if let png = await copyImage(result.image, scale: result.scale) { land(.copied, png) }
+        let id = await rememberScroll(result, region: region)
+        if let png = await copyImage(result.image, scale: result.scale) { land(.copied, png, id) }
       case .save:
         let land = captured(result.image, scale: result.scale, frame: region)
         let id = await rememberScroll(result, region: region)
         if let saved = await saveImage(result.image, scale: result.scale, asking: false) {
-          land(.saved(saved.url), saved.png)
+          land(.saved(saved.url), saved.png, id)
           if let id { shotHistory.markSaved(id, to: saved.url) }
         }
       case .saveAs:
@@ -2257,31 +2270,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// PNG，角标弹完后交给常驻缩略图（ShotShelf：拷贝、存储、拖出都用这份 PNG，不留整张解码的图）；减弱动态效果时不飞，
   /// land 时缩略图直接在角落淡入。失败不调（另有提示）
   private func captured(_ image: CGImage, scale: CGFloat, frame: CGRect) -> (
-    FlyCard.Badge, Data
+    FlyCard.Badge, Data, UUID?
   ) -> Void {
     FlyCard.playShutter()
     var png = Data()
+    // 挂到晾衣绳上的那一条是哪条历史（land 时才知道，闭包按引用拿着它）
+    var pegID: UUID?
+    let pixels = CGSize(width: image.width, height: image.height)
+    let (placement, slot) = shotLanding(pixels: pixels, frame: frame)
     let linger: (CGRect, FlyCard.Badge) -> Void = { [weak self] rect, badge in
-      self?.shelf.add(image, png: png, scale: scale, source: frame, at: rect, badge: badge)
+      guard let self else { return }
+      switch placement {
+      case .corner: shelf.add(image, png: png, scale: scale, source: frame, at: rect, badge: badge)
+      case .clothesline: if let pegID { clothesline.peg(pegID) }
+      case .none: break
+      }
     }
-    // 设置 › 截图关了常驻缩略图（体检 D18）：卡片落地弹完角标停 0.9 s 自己滑走（不给 linger）；减弱动态效果时只有岛
-    let keepsThumbnail = UserDefaults.standard.bool(forKey: Prefs.screenshotShelf)
+    // 设置 › 截图「截完图放哪」选了「都不要」（体检 D18 原来那个开关，晾衣绳拍板 B1 升成三选一）：
+    // 卡片落地弹完角标停 0.9 s 自己滑走（不给 linger）；减弱动态效果时只有岛
+    let keeps = placement != .none
     guard Style.reduceMotion else {
-      let landing = FlyCard.fly(image, from: frame, linger: keepsThumbnail ? linger : nil)
+      let landing = FlyCard.fly(image, from: frame, to: slot, linger: keeps ? linger : nil)
       landing.onShow = { [weak self] in self?.statusItem?.pop() }
-      return { badge, data in
+      return { badge, data, history in
         png = data
+        pegID = history
         landing.land(badge)
       }
     }
-    return { [weak self] badge, data in
+    return { [weak self] badge, data, history in
       png = data
+      pegID = history
       // 不飞就没有落地的角标：结果用刘海说（Whisker：减弱动态效果时飞行卡片改成轻提示；岛自己会播报）
       let actions: [Island.Action] = if case .saved(let url) = badge { .file(url) } else { [] }
       self?.island.show(badge.title, leading: Island.thumbnail(of: image), actions: actions)
-      guard keepsThumbnail, let rect = FlyCard.landingRect(for: frame) else { return }
+      guard keeps, let rect = slot ?? FlyCard.landingRect(for: frame) else { return }
       linger(rect, badge)
     }
+  }
+
+  /// 截完图放哪（晾衣绳拍板 B1）和落点：挂晾衣绳时落在绳子上那个位置（挂不上——历史关着、绳子一张都放不下——
+  /// 就当「都不要」）；角落的缩略图和「都不要」按原来的右下角落点（nil = FlyCard 自己算）
+  private func shotLanding(pixels: CGSize, frame: CGRect) -> (Prefs.ShotPlacement, CGRect?) {
+    let placement = Prefs.ShotPlacement.current()
+    guard placement == .clothesline, Feature.screenshot.isOn,
+      let screen = NSScreen.screens.first(where: {
+        $0.frame.contains(CGPoint(x: frame.midX, y: frame.midY))
+      }) ?? NSScreen.main,
+      let slot = clothesline.slot(for: pixels, on: screen)
+    else { return (placement == .clothesline ? .none : placement, nil) }
+    return (.clothesline, slot)
   }
 
   /// "#RRGGBB" → 色块（取色的轻提示用）

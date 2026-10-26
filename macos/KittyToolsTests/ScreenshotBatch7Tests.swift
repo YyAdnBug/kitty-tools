@@ -329,11 +329,12 @@ struct ScreenshotBatch7Tests {
     #expect(try row().0.doubleValue == 35)
   }
 
-  // MARK: D18 常驻缩略图开关
+  // MARK: D18 截完图放哪（2026-10-26 晾衣绳拍板 B1 起是三选一）
 
-  @Test func thumbnailShelfOnByDefault() {
+  @Test func shotPlacementDefaultsToTheCorner() {
     Prefs.registerDefaults()  // 只写注册域（不落盘）
     let registered = UserDefaults.standard.volatileDomain(forName: UserDefaults.registrationDomain)
-    #expect(registered[Prefs.screenshotShelf] as? Bool == true)
+    #expect(registered[Prefs.screenshotPlacement] as? String == "corner")
+    #expect(registered[Prefs.screenshotShelfLegacy] == nil)
   }
 }
