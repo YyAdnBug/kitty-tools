@@ -120,13 +120,7 @@ internal static unsafe partial class ScreenCapture
     {
         var monitor = (IntPtr)Windows.Win32.PInvoke.MonitorFromPoint(
             new System.Drawing.Point(0, 0), Windows.Win32.Graphics.Gdi.MONITOR_FROM_FLAGS.MONITOR_DEFAULTTOPRIMARY).Value;
-        var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
-        GetMonitorInfo(monitor, ref info);
-        var dpiX = 96u;
-        var dpiY = 96u;
-        GetDpiForMonitor(monitor, 0, ref dpiX, ref dpiY);
-        var bounds = new PixelBounds(
-            info.rcMonitor.Left, info.rcMonitor.Top, info.rcMonitor.Right, info.rcMonitor.Bottom);
+        var (bounds, scale) = MonitorOf(monitor);
         var width = Math.Max(800, bounds.Width);
         var height = Math.Max(600, bounds.Height);
         bounds = new PixelBounds(bounds.Left, bounds.Top, bounds.Left + width, bounds.Top + height);
@@ -158,7 +152,55 @@ internal static unsafe partial class ScreenCapture
             }
         }
 
-        return new FrozenScreen { Index = 0, Bounds = bounds, Scale = Math.Max(1.0, dpiX / 96.0), Bgra = bgra };
+        return new FrozenScreen { Index = 0, Bounds = bounds, Scale = scale, Bgra = bgra };
+    }
+
+    /// <summary>
+    /// 截图历史「改标注」（PLAN-v8 第 3 批）的冻结帧：鼠标所在那块屏大小，深灰底，原图 1:1 摆在正中。
+    /// 比这块屏还大的（长截图）返回 null。<paramref name="placed"/> 是图在这块屏里的位置（物理像素）。
+    /// </summary>
+    internal static FrozenScreen? CanvasAtCursor(byte[] bgra, int width, int height, out Core.RectD placed)
+    {
+        placed = default;
+        Windows.Win32.PInvoke.GetCursorPos(out var cursor);
+        var monitor = (IntPtr)Windows.Win32.PInvoke.MonitorFromPoint(
+            cursor, Windows.Win32.Graphics.Gdi.MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST).Value;
+        var (bounds, scale) = MonitorOf(monitor);
+        if (width <= 0 || height <= 0 || width > bounds.Width || height > bounds.Height ||
+            bgra.Length < width * height * 4)
+        {
+            return null;
+        }
+
+        var canvas = new byte[bounds.Width * bounds.Height * 4];
+        for (var index = 0; index < canvas.Length; index += 4)
+        {
+            canvas[index] = 0x20;
+            canvas[index + 1] = 0x20;
+            canvas[index + 2] = 0x20;
+            canvas[index + 3] = 0xFF;
+        }
+
+        var left = (bounds.Width - width) / 2;
+        var top = (bounds.Height - height) / 2;
+        for (var row = 0; row < height; row++)
+        {
+            Buffer.BlockCopy(bgra, row * width * 4, canvas, ((top + row) * bounds.Width + left) * 4, width * 4);
+        }
+
+        placed = new Core.RectD(left, top, width, height);
+        return new FrozenScreen { Index = 0, Bounds = bounds, Scale = scale, Bgra = canvas };
+    }
+
+    private static (PixelBounds Bounds, double Scale) MonitorOf(IntPtr monitor)
+    {
+        var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+        GetMonitorInfo(monitor, ref info);
+        var dpiX = 96u;
+        var dpiY = 96u;
+        GetDpiForMonitor(monitor, 0, ref dpiX, ref dpiY);
+        return (new PixelBounds(info.rcMonitor.Left, info.rcMonitor.Top, info.rcMonitor.Right, info.rcMonitor.Bottom),
+            Math.Max(1.0, dpiX / 96.0));
     }
 
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvStdcall) })]

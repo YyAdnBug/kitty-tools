@@ -22,6 +22,10 @@ internal sealed class ScreenshotSession
     private readonly List<SelectionOverlayWindow> _overlays = new();
     private bool _finished;
 
+    /// <summary>从截图历史打开的那一条（PLAN-v8 第 3 批）和图摆在哪：选区没动过就回写它，不另记一条。</summary>
+    private string? _editingId;
+    private RectD _editingRect;
+
     public ScreenshotSession(ScreenshotMode mode, List<FrozenScreen> screens, List<SnapWindow> windows)
     {
         Mode = mode;
@@ -91,6 +95,49 @@ internal sealed class ScreenshotSession
         _current = session;
         Log.Info($"screenshot.begin mode={mode} screens={screens.Count}");
         session.ShowOverlays();
+    }
+
+    /// <summary>
+    /// 截图历史「改标注」（PLAN-v8 第 3 批）：原图 1:1 摆在鼠标所在屏的正中当冻结帧（四周深灰），选区就是这张图，
+    /// 当初的标注照原样摆上，用截图遮罩那一套工具接着改；拷贝 / 存储 / 钉图时回写同一条。
+    /// ponytail: 比屏幕还大的（长截图）先不支持，要可滚动的长图画布（PLAN-v8 第 3 批下半）。
+    /// </summary>
+    internal static async void StartEditing(ShotItem item)
+    {
+        if (_current is not null || TranslateHost.IsSelectionBusy)
+        {
+            return;
+        }
+
+        if (ShotHistory.ReadImage(item.Id) is not { } png || await ImageCodec.PngToBgraAsync(png) is not { } image)
+        {
+            NoticeHost.Show("原图不在了", "这一条只剩记录", NoticeTone.Warning);
+            return;
+        }
+
+        if (ScreenCapture.CanvasAtCursor(image.Bgra, image.Width, image.Height, out var placed) is not { } screen)
+        {
+            NoticeHost.Show("这张比屏幕还大", "长图的标注还没做，可以先拷贝或钉出来看", NoticeTone.Normal);
+            return;
+        }
+
+        ShellRuntime.Instance?.HotKeys.UnregisterAll();
+        OverlayHost.Hide(restoreForeground: false);
+        TranslateHost.Hide(restoreForeground: false);
+        var session = new ScreenshotSession(ScreenshotMode.Capture, new List<FrozenScreen> { screen }, new List<SnapWindow>())
+        {
+            _editingId = item.Id,
+            _editingRect = placed,
+        };
+        _current = session;
+        session.ShowOverlays();
+        session.SetSelection(screen, placed);
+        var annotations = item.Annotations
+            .Select(data => ShotAnnotations.FromData(data, placed.X, placed.Y))
+            .OfType<Annotation>()
+            .ToList();
+        session._overlays.FirstOrDefault()?.LoadAnnotations(annotations);
+        Log.Info($"screenshot.edit-history annotations={annotations.Count}");
     }
 
     /// <summary>
@@ -218,7 +265,11 @@ internal sealed class ScreenshotSession
         }
 
         var origin = GlobalRect(screen, selection);
-        SaveLast(origin);
+        if (_editingId is null)
+        {
+            // 从历史里打开改的那张不算「上次截的区域」。
+            SaveLast(origin);
+        }
         Finish();
         // 飞入 + 角落缩略图（PLAN-v2 §3.8 / D5）。
         if (copied && png is not null)
@@ -259,7 +310,11 @@ internal sealed class ScreenshotSession
         }
 
         var origin = GlobalRect(screen, selection);
-        SaveLast(origin);
+        if (_editingId is null)
+        {
+            // 从历史里打开改的那张不算「上次截的区域」。
+            SaveLast(origin);
+        }
         Finish();
         if (saved is not null)
         {
@@ -399,13 +454,36 @@ internal sealed class ScreenshotSession
     /// </summary>
     internal void RecordHistory(FrozenScreen screen, RectD selection, byte[] composed, string? savedPath = null, bool pinned = false)
     {
-        if (!ShotHistory.IsOn)
+        // 「保留截图历史」关着时不记新的；从历史里打开改的那一条照样回写。
+        if (!ShotHistory.IsOn && _editingId is null)
         {
             return;
         }
 
         var overlay = _overlays.FirstOrDefault(item => item.Screen == screen);
         var annotations = overlay?.AnnotationsForHistory() ?? new List<ShotAnnotationData>();
+        if (_editingId is { } editing && selection == _editingRect && ShotHistory.Instance is { } history)
+        {
+            // 从历史里打开、选区没动：回写同一条（原图不动，标注和成品换新的）。框了别的范围就当新截的一张。
+            history.UpdateAnnotations(editing, annotations, composed);
+            if (savedPath is not null)
+            {
+                history.MarkSaved(editing, savedPath);
+            }
+
+            if (pinned)
+            {
+                history.MarkPinned(editing);
+            }
+
+            return;
+        }
+
+        if (!ShotHistory.IsOn)
+        {
+            return;
+        }
+
         var rect = ScreenshotOutput.SelectionPixels(screen, selection);
         var original = annotations.Count == 0 ? null : screen.Crop(rect);
         var frame = GlobalRect(screen, selection);

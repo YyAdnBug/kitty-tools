@@ -484,8 +484,7 @@ internal sealed class ShotHistoryWindow : Window
 
         return new()
         {
-            // 改标注要第 3 批的标注遮罩，先灰着。
-            (Glyphs.Edit, "改标注", () => Open(item), false, false),
+            (Glyphs.Edit, "改标注", () => Open(item), true, false),
             (Glyphs.Copy, "拷贝", () => _ = CopyAsync(item), true, false),
             (Glyphs.Save, "存储", () => _ = SaveAsync(item, saveAs: false), true, false),
             (Glyphs.SaveAs, "另存为…", () => _ = SaveAsync(item, saveAs: true), true, false),
@@ -513,11 +512,12 @@ internal sealed class ShotHistoryWindow : Window
         return row;
     }
 
-    /// <summary>双击：录制的用默认程序打开；截图的改标注（第 3 批起）。</summary>
+    /// <summary>双击：截图的改标注（截图遮罩里接着改，改完回写这一条）；录制的用默认程序打开。</summary>
     private void Open(ShotItem item)
     {
         if (!ShotHistoryRules.IsRecording(item.Kind))
         {
+            ScreenshotSession.StartEditing(item);
             return;
         }
 

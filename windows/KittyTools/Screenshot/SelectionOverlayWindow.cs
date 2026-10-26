@@ -174,6 +174,14 @@ internal sealed partial class SelectionOverlayWindow : Window
     /// <summary>R33 截图自检用。</summary>
     internal IntPtr Handle => WinRT.Interop.WindowNative.GetWindowHandle(this);
 
+    /// <summary>截图历史「改标注」（PLAN-v8 第 3 批）：摆上当初的标注接着改。</summary>
+    internal void LoadAnnotations(IEnumerable<Annotation> annotations)
+    {
+        _annotations.Clear();
+        _annotations.AddRange(annotations);
+        _canvas.Invalidate();
+    }
+
     /// <summary>截图历史（PLAN-v8）：现在画着的标注，坐标换成选区里的像素。</summary>
     internal List<ShotAnnotationData> AnnotationsForHistory()
     {
