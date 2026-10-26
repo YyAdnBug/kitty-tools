@@ -74,7 +74,7 @@ x64 包冒烟通过。设置窗的 Mica 在 Release AOT 下会抛 `ArgumentExcep
 - 第七版改的全是界面（剪贴板透镜、启动器 40、轻提示、翻译浮窗、截图工具栏两段、设置侧栏色块、外观缩略图、强调色圆点），`windows-shots` 上只有 R30 那 8 张设置窗。审查方没法看效果。
 - 托盘菜单、录制条、轻提示这种透明宿主窗口，`PrintWindow` 拍不到。项目里已经有 WGC 了：`GraphicsCaptureItem.CreateForWindow(自己窗口的 HWND)` 只抓这一个窗口（带透明），不会拍到后面别的程序。抓一帧存成 PNG，透明的地方铺棋盘格或纯色。
 - **要做**：把 `--ui-snapshots` 扩展到所有面板和这几个透明窗口，浅色 / 深色各一套，推到 `windows-shots` 的 `0.7.0-v7/`，`STATUS.md` 里列文件名。推之前照旧逐张看，不能有别的程序。
-**进展（`e5100bd`）**：`--ui-snapshots` 的启动器 / 剪贴板浅深 4 张已推到 `windows-shots/0.7.0-v7/`；`--clip-scroll-test` 5000 条实测中位 **0.8 ms**、p95 **1.3 ms**，远低于 16 ms，不做 ItemsRepeater。翻译 / 设置 / 截图遮罩 / 透明窗口的截图还没接。
+**进展（`e5100bd`）**：`--ui-snapshots` 的启动器 / 剪贴板 / 设置窗浅深 + 翻译输入态共 7 张已推到 `windows-shots/0.7.0-v7/`；`--clip-scroll-test` 5000 条实测中位 **0.8 ms**、p95 **1.3 ms**，远低于 16 ms，不做 ItemsRepeater。翻译 / 设置 / 截图遮罩 / 透明窗口的截图还没接。
 
 - 第七版第 2 批没做 `ItemsRepeater` + 自定义虚拟化布局，现在是 `ListView` 加变高的行。照 PLAN-v7 量一次：5000 条剪贴板按住 ↓ 连发 3 s，每次按键到画面更新的耗时，取中位数和最慢的 5%。超过 16 ms 再做虚拟化布局。
 
