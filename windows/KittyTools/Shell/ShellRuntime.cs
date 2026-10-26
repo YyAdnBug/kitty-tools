@@ -742,14 +742,16 @@ internal sealed class ShellRuntime
     {
         try
         {
-            _settingsWindow?.Close();
+            // R34：移到屏幕外而不是 Close / Hide：反复关开会重建 XAML 树和 DWM 合成，每次约 +3–5 MB。
+            if (_settingsWindow is { } window)
+            {
+                window.AppWindow.Move(new Windows.Graphics.PointInt32(-20000, -20000));
+            }
         }
         catch
         {
-            // 已经关掉的跳过。
+            // 已经隐藏的跳过。
         }
-
-        _settingsWindow = null;
     }
 
     public void ToggleCopyTranslate()

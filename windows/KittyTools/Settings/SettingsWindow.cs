@@ -145,22 +145,43 @@ internal sealed class SettingsWindow : Window
             Log.Info("settings.closed");
             GC.Collect(2, GCCollectionMode.Optimized, blocking: false, compacting: false);
         };
+        // R34：设置窗反复开关每次 +5 MB。改成「关 = 隐藏」，全进程只建一次窗口，不再重复分配 XAML 树。
+        AppWindow.Closing += (_, args) =>
+        {
+            args.Cancel = true;
+            IsClosed = false;
+            AppWindow.Hide();
+            Log.Info("settings.hidden");
+        };
     }
 
     public bool IsClosed { get; private set; }
+
+    private bool _everShown;
 
     public void ShowPage(bool welcome, string page = "general")
     {
         Motion.Refresh();
         _firstRun = welcome;
-        BuildPage(page);
+        // R34：同一页反复开关不重建 XAML 树（每次重建约 +5 MB）；换页或第一次才建。
+        if (welcome || page != _currentPage || _content.Children.Count == 0)
+        {
+            BuildPage(page);
+        }
+
         Log.Info($"settings.page {page}");
         if (AppWindow.Presenter is OverlappedPresenter presenter)
         {
             presenter.Restore();
         }
 
-        Activate();
+        if (!_everShown)
+        {
+            _everShown = true;
+            AppWindow.Show();
+            Activate();
+        }
+
         var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
         AppWindow.Move(new Windows.Graphics.PointInt32(
             area.X + Math.Max(0, (area.Width - _width) / 2),

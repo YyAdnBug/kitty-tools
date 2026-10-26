@@ -75,6 +75,25 @@ internal static class MemoryProbe
             await Task.Delay(IdleSeconds * 1000);
             Report("screenshot-second");
 
+            // R34：截图 / 设置窗各开关 5 次，每次空闲后记一个数，看会不会越积越多。
+            for (var index = 1; index <= 5; index++)
+            {
+                ScreenshotSession.Start(ScreenshotMode.Capture);
+                await Task.Delay(1200);
+                ScreenshotSession.FinishCurrent();
+                await Task.Delay(IdleSeconds * 1000);
+                Report($"screenshot-5x-{index}");
+            }
+
+            for (var index = 1; index <= 5; index++)
+            {
+                ShellRuntime.Instance?.ShowSettings(welcome: false);
+                await Task.Delay(1000);
+                ShellRuntime.Instance?.CloseSettings();
+                await Task.Delay(IdleSeconds * 1000);
+                Report($"settings-5x-{index}");
+            }
+
             // R27：截图之后空闲两分钟（空闲回收会在截图结束两分钟后跑一次），看回没回到截图之前。
             await Task.Delay(SettleSeconds * 1000);
             Report("screenshot-settled");
