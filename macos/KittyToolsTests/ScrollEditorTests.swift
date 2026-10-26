@@ -286,6 +286,44 @@ struct ScrollEditorTests {
     #expect(chrome.selected.id == canvas.selectedAnnotation && chrome.zoom == 0.25)
   }
 
+  /// 聚光灯：压暗盖住整张长图，所以它一动整层都要重画（2026-10-26 手测「画的时候不变暗，
+  /// 存出来的图却是暗的」）；遮罩那边压暗在自己的图层上，照旧只重画变了的那块
+  @Test func spotlightRedrawsWholeCanvas() {
+    let spotlight = Annotation(
+      shape: .spotlight(CGRect(x: 10, y: 10, width: 80, height: 60)), style: Annotation.Style())
+    let rectangle = Annotation(
+      shape: .rectangle(CGRect(x: 10, y: 10, width: 80, height: 60)), style: Annotation.Style())
+    // 加上第一个聚光灯、改它、删掉它：都要整层重来
+    #expect(AnnotationCanvas.redrawsEverything(from: [], to: [spotlight], dimsItself: true))
+    #expect(AnnotationCanvas.redrawsEverything(from: [spotlight], to: [], dimsItself: true))
+    #expect(
+      AnnotationCanvas.redrawsEverything(
+        from: [spotlight], to: [spotlight, rectangle], dimsItself: true))
+    // 没有聚光灯时照旧只重画变了的那块
+    #expect(!AnnotationCanvas.redrawsEverything(from: [], to: [rectangle], dimsItself: true))
+    // 遮罩那边压暗在自己的图层上，不走这条
+    #expect(!AnnotationCanvas.redrawsEverything(from: [], to: [spotlight], dimsItself: false))
+  }
+
+  /// 画了聚光灯之后，洞外面的画面真的被压暗了（端到端：直接画一块出来比像素）
+  @Test func spotlightDimsOutsideTheHole() throws {
+    let (canvas, window) = canvasInWindow()
+    defer { window.orderOut(nil) }
+    let outside = CGRect(x: 0, y: 1100, width: 120, height: 80)
+    func brightness(_ rect: CGRect) throws -> CGFloat {
+      let bitmap = try #require(canvas.bitmapImageRepForCachingDisplay(in: rect))
+      canvas.cacheDisplay(in: rect, to: bitmap)
+      return try #require(bitmap.colorAt(x: 10, y: 10)?.usingColorSpace(.deviceRGB))
+        .brightnessComponent
+    }
+    let before = try brightness(outside)
+    try press(canvas, kVK_ANSI_0, "0")  // 聚光灯
+    try drag(canvas, from: CGPoint(x: 200, y: 600), to: CGPoint(x: 320, y: 700))
+    #expect(canvas.annotations.count == 1)
+    let after = try brightness(outside)
+    #expect(after < before - 0.05, "聚光灯外面没被压暗：\(before) → \(after)")
+  }
+
   /// 画布的点尺寸 = 像素 / scale；长图一打开停在最上面（原点左下，顶边是最大的 y）
   @Test func canvasUsesPointSize() {
     let canvas = ScrollCanvas(image: image(width: 1200, height: 7480), scale: 2)

@@ -2344,6 +2344,15 @@ final class AnnotationCanvas: NSView {
     Self.chromeBounds(chrome.selected, zoom: chrome.zoom)
   }
 
+  /// 这次改动要不要整层重画：压暗由这一层自己画（长图标注窗口）、且前后有聚光灯时才要——它的压暗盖住整张图，
+  /// 按标注各自的框去重画只会挖出洞、周围不变暗。纯函数，配单测
+  static func redrawsEverything(from old: [Annotation], to new: [Annotation], dimsItself: Bool)
+    -> Bool
+  {
+    guard dimsItself else { return false }
+    return old.contains { $0.tool == .spotlight } || new.contains { $0.tool == .spotlight }
+  }
+
   /// 选中框和手柄盖住多大（外扩手柄半径和虚线框）。纯函数，配单测
   static func chromeBounds(_ selected: Annotation, zoom: CGFloat) -> CGRect {
     let reach = (3 + 6) / max(zoom, 0.01)
@@ -2376,6 +2385,11 @@ final class AnnotationCanvas: NSView {
   }
 
   private func invalidate(from old: [Annotation]) {
+    // 长图那边压暗画在这一层（dim 为 nil），范围是整张图：聚光灯一动得整层重来，只重画它自己那块的话
+    // 洞挖好了、周围还是亮的（2026-10-26 用户手测「绘制时不生效，保存后又生效」）
+    if Self.redrawsEverything(from: old, to: annotations, dimsItself: dim == nil) {
+      return setNeedsDisplay(bounds)
+    }
     // 压暗的档变了（加上第一个聚光灯、改深浅）：垫底的补的那层压暗跟着变
     if Annotation.dimLevel(of: annotations) != Annotation.dimLevel(of: old) {
       for annotation in annotations where Self.isUnderlay(annotation) {
