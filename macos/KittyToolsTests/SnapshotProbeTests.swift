@@ -994,7 +994,7 @@ struct SnapshotProbeTests {
     for (name, geometry, list) in boards {
       let island = Island(showing: nil, geometry: geometry, board: list, quickActions: quick)
       try snapshot(
-        IslandView(island: island), size: geometry.boardWindowSize, dark: false,
+        IslandView(island: island), size: geometry.windowSize, dark: false,
         to: "\(out)/\(name).png")
     }
     try snapshot(

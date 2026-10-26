@@ -120,16 +120,13 @@ import SwiftUI
     case notch(width: CGFloat, height: CGFloat)
     case capsule(menuBar: CGFloat)
 
-    /// 窗口尺寸：最宽 460 的岛（展开成卡片最高 cardHeight）+ 两侧耳朵与阴影余量
-    var windowSize: CGSize { size(holding: Island.cardHeight) }
-
-    /// 那一张开着时的窗口：高到放得下 boardHeight（打开那一张时加高；那一张原地换成提示时不变，下次从收起弹出来时换回来）
-    var boardWindowSize: CGSize { size(holding: Island.boardHeight) }
-
-    private func size(holding height: CGFloat) -> CGSize {
+    /// 窗口尺寸：一次定死成最大的那个（那一张，boardHeight）+ 两侧耳朵与阴影余量——开那一张不改窗口大小，
+    /// 改大小会卡一下（窗口服务器的 frame 变化和图层动画不在一个事务里）。开过一次那一张和一直这么高，常驻内存一样
+    var windowSize: CGSize {
       switch self {
-      case .notch(_, let notch): CGSize(width: 520, height: notch + height + 26)
-      case .capsule: CGSize(width: 520, height: height + 34)
+      case .notch(_, let notch):
+        CGSize(width: Island.canvasWidth, height: notch + Island.boardHeight + 26)
+      case .capsule: CGSize(width: Island.canvasWidth, height: Island.boardHeight + 34)
       }
     }
   }
@@ -177,8 +174,8 @@ import SwiftUI
   /// 下巴 / 胶囊高度
   static let chin: CGFloat = 36
   static let maxWidth: CGFloat = 460
-  /// 展开的卡片最高多少（第一行 + 4 行详情 + 底边）：窗口按它一次定死
-  static let cardHeight: CGFloat = 120
+  /// 画布（窗口）宽：最宽 460 的岛 + 两侧耳朵与阴影余量
+  static let canvasWidth: CGFloat = 520
   /// 离开岛后至少再留多久
   static let leaveDelay = Duration.milliseconds(1500)
   static let clickGuard = Duration.milliseconds(300)
@@ -392,25 +389,25 @@ import SwiftUI
     isExpanded = false
     window?.ignoresMouseEvents = true
     onToneChange?(nil)
+    // 内容淡出和形体缩回同时走（内容被缩着的形体裁着），不再先退内容、等一下再缩——中间那一顿看着就是卡
     withAnimation(.easeIn(duration: 0.12)) {
       content = nil
       isBoardOpen = false
     }
+    isRetracting = true
+    withAnimation(Style.Motion.retract.animation()) { isOpen = false }
     dwell = Task { [weak self] in
-      try? await Task.sleep(for: .seconds(0.2))
+      try? await Task.sleep(for: Self.retractTime)
       guard let self, !Task.isCancelled else { return }
-      self.isRetracting = true
-      withAnimation(Style.Motion.retract.animation(), completionCriteria: .logicallyComplete) {
-        self.isOpen = false
-      } completion: { [weak self] in
-        guard let self else { return }
-        self.isRetracting = false
-        guard !self.isOpen, !self.isPeeking else { return }
-        self.window?.orderOut(nil)
-        if !self.watchesNotch { self.unwatchMouse() }
-      }
+      self.isRetracting = false
+      guard !self.isOpen, !self.isPeeking else { return }
+      self.window?.orderOut(nil)
+      if !self.watchesNotch { self.unwatchMouse() }
     }
   }
+
+  /// 缩回动画走完的时间（retract 0.34 s + 余量）：之后才移走窗口
+  private static let retractTime = Duration.milliseconds(400)
 
   /// 打开 / 收起那一张（快捷键「打开刘海岛」、点刘海）。岛上正有提示时换成那一张（那条已经记在列表里）
   func toggleBoard() {
@@ -434,7 +431,7 @@ import SwiftUI
     quickActions = boardActions()
     changedAt = .now
     deadline = .now
-    showWindow(tall: true)
+    showWindow()
     withAnimation(isOpen ? Self.resize : Style.Motion.island.animation()) {
       isOpen = true
       content = nil
@@ -462,21 +459,13 @@ import SwiftUI
     }
   }
 
-  /// 摆好窗口、拿到最前（摆出来的岛不建）。tall：那一张要的高度（窗口已经在屏上就只往下加高，顶边不动）。
-  /// 先不接鼠标，指针落在形状上再接（hover）。改窗口大小不会和 SwiftUI 打架：宿主包在普通容器里（makeWindow）
-  private func showWindow(tall: Bool = false) {
+  /// 摆好窗口、拿到最前（摆出来的岛不建）。窗口在屏上时不动它（尺寸一次定死，见 Geometry.windowSize）。
+  /// 先不接鼠标，指针落在形状上再接（hover）
+  private func showWindow() {
     guard !isStaged else { return }
     let window = self.window ?? makeWindow()
     self.window = window
-    if !isOpen || !window.isVisible {
-      place(window, tall: tall)
-    } else if tall {
-      let size = geometry.boardWindowSize
-      var frame = window.frame
-      frame.origin.y = frame.maxY - size.height
-      frame.size.height = size.height
-      window.setFrame(frame, display: false)
-    }
+    if !isOpen || !window.isVisible { place(window) }
     window.ignoresMouseEvents = true
     window.orderFrontRegardless()
     watchMouse()
@@ -554,18 +543,18 @@ import SwiftUI
   }
 
   /// 指针停在刘海上（没有提示、没开那一张）：鼓起一点，窗口这时接住点击；离开就缩回、移走窗口
+  /// 鼓起 / 缩回的曲线由 IslandView 定（鼓起 0.2 s easeOut，缩回同收起）
   private func peek(_ on: Bool) {
     guard on != isPeeking, !isStaged else { return }
+    isPeeking = on
     if on {
       showWindow()
       window?.ignoresMouseEvents = false
-      withAnimation(Style.Motion.pop.animation()) { isPeeking = true }
       return
     }
     window?.ignoresMouseEvents = true
-    withAnimation(Style.Motion.retract.animation(), completionCriteria: .logicallyComplete) {
-      isPeeking = false
-    } completion: { [weak self] in
+    Task { [weak self] in
+      try? await Task.sleep(for: Self.retractTime)
       guard let self, !self.isOpen, !self.isPeeking else { return }
       self.window?.orderOut(nil)
     }
@@ -596,15 +585,15 @@ import SwiftUI
     peek(!isSuppressed() && Self.onNotch(mouse, notches: notchRects))
   }
 
-  /// 放到鼠标所在屏顶部正中（刘海屏贴着顶边，其它屏在菜单栏下方）；tall：那一张要的高度
-  private func place(_ window: NSPanel, tall: Bool = false) {
+  /// 放到鼠标所在屏顶部正中（刘海屏贴着顶边，其它屏在菜单栏下方）。只在窗口不在屏上时调
+  private func place(_ window: NSPanel) {
     let mouse = NSEvent.mouseLocation
     guard
       let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) })
         ?? NSScreen.main
     else { return }
     geometry = Self.geometry(of: screen)
-    let size = tall ? geometry.boardWindowSize : geometry.windowSize
+    let size = geometry.windowSize
     let menuBar = screen.frame.maxY - screen.visibleFrame.maxY
     let top =
       if case .notch = geometry { screen.frame.maxY } else { screen.frame.maxY - menuBar - 8 }
@@ -706,108 +695,138 @@ extension [Island.Action] {
   }
 }
 
-/// 岛的画面：黑色形体（刘海屏带耳朵的下巴 / 其它屏的胶囊）+ 一行内容，悬停时长成卡片
+/// 岛的画面：一块定死的透明画布上，黑色形体（刘海屏带耳朵的下巴 / 其它屏的胶囊）+ 内容（一行、卡片或那一张）。
+/// **动画只有一份几何**（宽、高、耳朵、底角）：形体、裁内容的遮罩、阴影都读它，弹簧只推这几个数；内容按最终尺寸一次排好、
+/// 被同一个形体裁出来，每帧只是路径在变，形体和内容天然同步（2026-10-26 用户报卡顿，照开源刘海项目改：jackson-storm/
+/// DynamicNotch 的遮罩、CodeIsland 的最小尺寸和开 / 关两条弹簧、boring.notch 的收起不过冲，调研在
+/// build/research/notch-oss-shell.md §5.3）
 struct IslandView: View {
   let island: Island
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  /// 有内容时的大小：内容先退场、形体再缩回的那一小段里冻住它，免得先跳一下
-  @State private var heldSize = CGSize.zero
+  /// 内容排好的大小：只记正在出场 / 显示着的那一份（换内容时退场的旧内容不算，免得形体先撑到两者的并集再缩回）；
+  /// 收起后留着最后一份，形体照它缩回
+  @State private var contentSize = CGSize.zero
   /// 收着时那一行多宽：卡片至少这么宽——卡片盖得住那一行，指针不会因为展开被挤到外面（进行中的会来回开合），
   /// 主按钮展开前后也差不多在同一处
   @State private var rowWidth: CGFloat = 0
 
   var body: some View {
     let geometry = island.geometry
+    let shape = shape(geometry)
     ZStack(alignment: .top) {
-      shape(geometry)
+      backdrop(shape)
+      content
+        .padding(.top, shape.contentTop)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .mask { IslandOutline(shape: shape).animation(curve, value: shape) }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    .contentShape(IslandOutline(shape: shape))
+    .onTapGesture { island.tapped() }
+    .onChange(of: shape.frame, initial: true) { island.shapeFrame = shape.frame }
+    .modifier(Shake(count: island.shakes, enabled: !reduceMotion))
+    .modifier(Presence(island: island, capsule: shape.capsule, reduceMotion: reduceMotion))
     .environment(\.colorScheme, .dark)
   }
 
-  @ViewBuilder private func shape(_ geometry: Island.Geometry) -> some View {
-    let open = island.isOpen
-    // 减弱动态效果：刘海下巴不伸缩，只淡入淡出
-    let sized = open || reduceMotion
-    let held = sized && island.content == nil && !island.isBoardOpen ? heldSize : .zero
+  /// 这一刻形体该长成什么样（目标值，不是动画中途的值）：刘海屏开着时 = 内容 + 刘海，最小刘海宽 + 64、下巴 36；
+  /// 指针停在刘海上鼓起一圈；收起是刘海本身。无刘海屏一直是内容那么大（收起靠缩放 + 淡出）
+  private func shape(_ geometry: Island.Geometry) -> IslandGeometry {
+    let canvas = Island.canvasWidth
     switch geometry {
     case .notch(let notchWidth, let notchHeight):
-      let expanded = island.isExpanded
-      // 指针停在刘海上（没有提示）：比刘海每侧宽 8、往下长 5，告诉你能点
-      let grow = island.isPeeking && !open ? Island.peekGrow : .zero
-      content
-        .padding(.top, notchHeight)
-        // 只设最小尺寸、贴合内容（内容自己限宽）；收起时就是刘海大小
-        .frame(
-          minWidth: sized ? max(notchWidth + 64, held.width) : notchWidth + grow.width * 2,
-          minHeight: sized
-            ? max(notchHeight + Island.chin, held.height) : notchHeight + grow.height,
-          maxHeight: sized ? .infinity : notchHeight + grow.height, alignment: .top
-        )
-        .fixedSize()
-        .clipped()
-        .background(
-          IslandShape(
-            ear: sized ? 10 : (grow == .zero ? 6 : 8),
-            bottom: sized ? (expanded || island.isBoardOpen ? 24 : 22) : (grow == .zero ? 10 : 13)
-          )
-          .fill(.black)
-          .islandShadow(open: open)
-        )
-        .modifier(Interactive(island: island, held: $heldSize))
-        .modifier(Shake(count: island.shakes, enabled: !reduceMotion))
-        .opacity(reduceMotion && !open && !island.isPeeking ? 0 : 1)
+      // 减弱动态效果：形体不伸缩（一直是开着的大小），整座岛只淡入淡出；鼓起照常
+      let open = island.isOpen || (reduceMotion && !island.isPeeking)
+      let peek = island.isPeeking && !island.isOpen
+      let size =
+        if open {
+          CGSize(
+            width: max(notchWidth + 64, contentSize.width),
+            height: notchHeight + max(Island.chin, contentSize.height))
+        } else if peek {
+          CGSize(
+            width: notchWidth + Island.peekGrow.width * 2,
+            height: notchHeight + Island.peekGrow.height)
+        } else {
+          CGSize(width: notchWidth, height: notchHeight)
+        }
+      return IslandGeometry(
+        frame: CGRect(x: (canvas - size.width) / 2, y: 0, width: size.width, height: size.height),
+        ear: open ? 10 : (peek ? 8 : 6),
+        bottom: open ? (island.isExpanded || island.isBoardOpen ? 24 : 22) : (peek ? 13 : 10),
+        floor: CGSize(width: notchWidth, height: notchHeight), contentTop: notchHeight,
+        capsule: false)
     case .capsule:
-      // 半径 = 收着时的半高：一行时就是胶囊，展开成卡片后是圆角 18 的卡片，同一种形状能连续变
-      let shape = RoundedRectangle(cornerRadius: Island.chin / 2, style: .continuous)
-      content
-        .frame(
-          minWidth: max(120, held.width), maxWidth: Island.maxWidth,
-          minHeight: max(Island.chin, held.height), alignment: .top
-        )
-        .fixedSize()
-        // 卡片和一行互换时高度差一大截：交叉淡变的半透明字不能画到黑底外面
-        .clipShape(shape)
-        .background(shape.fill(.black.opacity(0.92)))
-        .overlay(shape.hairlineBorder(.white.opacity(0.12)))
-        .modifier(Interactive(island: island, held: $heldSize))
-        .islandShadow(open: open)
-        .scaleEffect(open || reduceMotion ? 1 : 0.6, anchor: .top)
-        .opacity(open ? 1 : 0)
-        .modifier(Shake(count: island.shakes, enabled: !reduceMotion))
-        .padding(.top, 2)
+      let size = CGSize(
+        width: min(max(120, contentSize.width), Island.maxWidth),
+        height: max(Island.chin, contentSize.height))
+      return IslandGeometry(
+        frame: CGRect(x: (canvas - size.width) / 2, y: 2, width: size.width, height: size.height),
+        ear: 0, bottom: Island.chin / 2, floor: .zero, contentTop: 2, capsule: true)
     }
   }
 
-  /// 收着是一行（前导 + 标题 + 详情 + 主按钮），展开是卡片；那一张开着时是 IslandBoard。换内容时模糊交叉替换，
-  /// 首次出场晚 60 ms
+  /// 形体的弹簧：开着（出现、展开、换内容、开那一张）带一点弹；收起不过冲（过冲会露出真刘海，开源项目踩过）；
+  /// 鼓起是 0.2 s 的 easeOut 小反馈。减弱动态效果时不伸缩
+  private var curve: Animation? {
+    if reduceMotion { return nil }
+    if island.isOpen { return Style.Motion.island.animation() }
+    return island.isPeeking ? .easeOut(duration: 0.2) : Style.Motion.retract.animation()
+  }
+
+  /// 黑底：刘海屏纯黑带耳朵，无刘海屏 black 0.92 + 发丝线的圆角卡片；只有开着时有阴影（挂在纯形体上，不挂在内容上）
+  @ViewBuilder private func backdrop(_ shape: IslandGeometry) -> some View {
+    let outline = IslandOutline(shape: shape)
+    if shape.capsule {
+      outline.fill(.black.opacity(0.92))
+        .overlay(outline.hairlineBorder(.white.opacity(0.12)))
+        .islandShadow(open: island.isOpen)
+        .animation(curve, value: shape)
+    } else {
+      outline.fill(.black)
+        .islandShadow(open: island.isOpen)
+        .animation(curve, value: shape)
+    }
+  }
+
+  /// 收着是一行（前导 + 标题 + 详情 + 主按钮），展开是卡片；那一张开着时是 IslandBoard。换内容时交叉替换，
+  /// 新的晚 40 ms 出场
   @ViewBuilder private var content: some View {
-    ZStack {
+    ZStack(alignment: .top) {
       if island.isBoardOpen {
-        IslandBoard(island: island).transition(appear)
+        IslandBoard(island: island)
+          .measured { report($0) }
+          .transition(appear(blur: false))
       } else if let content = island.content {
         Group {
           if island.isExpanded {
-            card(content).transition(.opacity)
+            card(content).measured { report($0) }.transition(.opacity)
           } else {
-            row(content).transition(.opacity)
+            row(content).measured { report($0) }.transition(.opacity)
           }
         }
         // 进行中的岛只按标题认：详情里的百分比一直在变，不能每变一次就整行重新出场
         .id(content.tone == .progress ? content.title : content.title + (content.detail ?? ""))
-        .transition(appear)
+        .transition(appear(blur: true))
       }
     }
   }
 
-  /// 内容出场：晚 60 ms，blur 8 → 0、scale 0.9 → 1；退场 0.12 s 淡出
-  private var appear: AnyTransition {
+  /// 内容量好的大小：岛上有东西时才记（收起后退场的那一份不覆盖，形体照最后一份缩回）
+  private func report(_ size: CGSize) {
+    guard island.content != nil || island.isBoardOpen, size.width > 0 else { return }
+    contentSize = size
+  }
+
+  /// 内容出场：晚 40 ms，透明度 + 0.96 → 1 的缩放（顶部锚点）+ 半径 4 的模糊（那一张不模糊：大块内容做模糊动画要离屏
+  /// 渲染）；退场 0.12 s 淡出。形体那边同时在长，内容被它裁着出来
+  private func appear(blur: Bool) -> AnyTransition {
     reduceMotion
       ? .opacity
       : .asymmetric(
         insertion: .modifier(
-          active: Emerge(progress: 0), identity: Emerge(progress: 1)
-        ).animation(.smooth(duration: 0.28).delay(0.06)),
+          active: Emerge(progress: 0, blur: blur), identity: Emerge(progress: 1, blur: blur)
+        ).animation(.smooth(duration: 0.24).delay(0.04)),
         removal: .opacity.animation(.easeIn(duration: 0.12)))
   }
 
@@ -968,21 +987,31 @@ struct IslandLeading: View {
   }
 }
 
-/// 形状这一层：量出它在窗口里的位置报给岛（判断指针在不在岛上），有内容时记下大小（收起时冻住）；点岛本身走 tapped
-private struct Interactive: ViewModifier {
+/// 岛在不在：无刘海屏收起时缩到 0.6、淡掉（顶部锚点）；刘海屏减弱动态效果时只淡入淡出。都是渲染变换，不重排
+private struct Presence: ViewModifier {
   let island: Island
-  @Binding var held: CGSize
+  let capsule: Bool
+  let reduceMotion: Bool
 
   func body(content: Content) -> some View {
-    content
-      .contentShape(Rectangle())
-      .onTapGesture { island.tapped() }
-      .onGeometryChange(for: CGRect.self) {
-        $0.frame(in: .global)
-      } action: { frame in
-        island.shapeFrame = frame
-        if island.content != nil || island.isBoardOpen { held = frame.size }
-      }
+    if capsule {
+      content
+        .scaleEffect(island.isOpen || reduceMotion ? 1 : 0.6, anchor: .top)
+        .opacity(island.isOpen ? 1 : 0)
+    } else {
+      content.opacity(reduceMotion && !island.isOpen && !island.isPeeking ? 0 : 1)
+    }
+  }
+}
+
+extension View {
+  /// 量这块内容排好的大小（出现时、变了时各报一次；动画中途不报：内容自己不做尺寸动画）
+  fileprivate func measured(_ report: @escaping (CGSize) -> Void) -> some View {
+    onGeometryChange(for: CGSize.self) {
+      $0.size
+    } action: {
+      report($0)
+    }
   }
 }
 
@@ -1058,35 +1087,74 @@ extension View {
   }
 }
 
-/// 内容出场：blur 8 → 0、scale 0.9 → 1（顶部锚点）、透明度
+/// 内容出场：透明度、scale 0.96 → 1（顶部锚点）、blur 4 → 0（blur = false 时不模糊）
 private struct Emerge: ViewModifier {
   let progress: Double
+  let blur: Bool
 
   func body(content: Content) -> some View {
     content
-      .blur(radius: 8 * (1 - progress))
-      .scaleEffect(0.9 + 0.1 * progress, anchor: .top)
+      .blur(radius: blur ? 4 * (1 - progress) : 0)
+      .scaleEffect(0.96 + 0.04 * progress, anchor: .top)
       .opacity(progress)
   }
 }
 
-/// 刘海岛形体：顶边两侧向外弯出的「耳朵」（凹弧接到菜单栏顶边）+ 圆角下巴。耳朵和底角半径可动画
-/// nonisolated：path(in:) 可能在 SwiftUI 的异步渲染线程上调，纯几何计算，不绑定主线程
-nonisolated struct IslandShape: Shape {
+/// 形体的一份几何：画布里的位置大小、耳朵、底角（动画只推这几个数），和不参与动画的最小尺寸（真刘海：弹簧过冲也露不出来）
+nonisolated struct IslandGeometry: Equatable {
+  var frame: CGRect
   var ear: CGFloat
   var bottom: CGFloat
+  var floor: CGSize
+  /// 内容从多高开始排（刘海屏在刘海下面，无刘海屏离画布顶 2）
+  var contentTop: CGFloat
+  /// 无刘海屏的圆角卡片（没有耳朵、四角同一个半径）
+  var capsule: Bool
+}
 
-  var animatableData: AnimatablePair<CGFloat, CGFloat> {
-    get { AnimatablePair(ear, bottom) }
+/// 刘海岛形体：刘海屏是顶边两侧向外弯出的「耳朵」（凹弧接到菜单栏顶边）+ 圆角下巴；无刘海屏是圆角 = 半高（最大 18）的
+/// 连续圆角矩形，一行时就是胶囊，展开成卡片后圆角 18，同一种形状能连续变。宽高、耳朵、底角可动画；路径按画布居中
+/// nonisolated：path(in:) 可能在 SwiftUI 的异步渲染线程上调，纯几何计算，不绑定主线程
+nonisolated struct IslandOutline: InsettableShape {
+  var shape: IslandGeometry
+  var inset: CGFloat = 0
+
+  var animatableData:
+    AnimatablePair<AnimatablePair<CGFloat, CGFloat>, AnimatablePair<CGFloat, CGFloat>>
+  {
+    get {
+      AnimatablePair(
+        AnimatablePair(shape.frame.width, shape.frame.height),
+        AnimatablePair(shape.ear, shape.bottom))
+    }
     set {
-      ear = newValue.first
-      bottom = newValue.second
+      shape.frame.origin.x += (shape.frame.width - newValue.first.first) / 2
+      shape.frame.size = CGSize(width: newValue.first.first, height: newValue.first.second)
+      shape.ear = newValue.second.first
+      shape.bottom = newValue.second.second
     }
   }
 
-  func path(in rect: CGRect) -> Path {
-    let ear = min(ear, rect.width / 4, rect.height / 2)
-    let bottom = min(bottom, (rect.width - ear * 2) / 2, rect.height - ear)
+  func inset(by amount: CGFloat) -> IslandOutline {
+    var copy = self
+    copy.inset += amount
+    return copy
+  }
+
+  func path(in canvas: CGRect) -> Path {
+    let width = max(shape.frame.width, shape.floor.width)
+    let height = max(shape.frame.height, shape.floor.height)
+    let rect = CGRect(
+      x: canvas.midX - width / 2, y: canvas.minY + shape.frame.minY, width: width, height: height
+    ).insetBy(dx: inset, dy: inset)
+    guard !shape.capsule else {
+      return RoundedRectangle(
+        cornerRadius: max(min(shape.bottom, rect.height / 2) - inset, 0), style: .continuous
+      )
+      .path(in: rect)
+    }
+    let ear = min(shape.ear, rect.width / 4, rect.height / 2)
+    let bottom = min(shape.bottom, (rect.width - ear * 2) / 2, rect.height - ear)
     var path = Path()
     path.move(to: CGPoint(x: rect.minX - ear, y: rect.minY))
     path.addQuadCurve(
