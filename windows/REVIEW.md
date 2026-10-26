@@ -114,7 +114,7 @@ x64 包冒烟通过。设置窗的 Mica 在 Release AOT 下会抛 `ArgumentExcep
 
 **修（`1f03f72`）**：设置窗全进程只建一次，关闭移到屏幕外、同一页不重建 XAML 树。5 次开关实测 93.2 / 93.2 / 89.9 / 89.8 / 89.6 MB（平）；截图 5 次 86.3 → 88.6 MB（+2.3，模板缓存一次，可接受）。
 
-### R35（P3）别按进程名结束进程
+### R35（P3）别按进程名结束进程 → 已修（审查方复查 `ab78ce7`：`.ps1` 和代码里只剩按 PID 结束的，`setup-e2e.ps1` 用 `Stop-Process -Id`）
 
 - `bcd3eb7f` 报告里写了：探针被「主工作区另一个 agent 重编时按进程名结束了」。按进程名结束，会把用户正在用的那份 Kitty Tools、或者别的 agent 正在跑的测试一起杀掉。
 - `AGENTS.md` 红线里已经加了一条：只结束自己起的那个 PID。两个 agent 各自查一下脚本里的 `taskkill /im`、`Stop-Process -Name`，都改掉。
@@ -145,7 +145,7 @@ x64 包冒烟通过。设置窗的 Mica 在 Release AOT 下会抛 `ArgumentExcep
   - 任务对话框的结构体手写、没用 CsWin32（它不是 COM；在 Mac 上没法确认 CsWin32 生成的联合体和回调签名）。选文件夹、快捷方式照旧用 CsWin32。
 - 日志在 `%TEMP%\KittyTools-setup.log`（测试名下是 `KittyTools-setup.Test.<名字>.log`）。修完挪到「已修」，写提交号、两个架构的安装包大小、七步结果。
 
-### R37（P2）设置里「从这台电脑移除」交给 Uninstall.exe（PLAN-setup §4.2 / S10）
+### R37（P2）设置里「从这台电脑移除」交给 Uninstall.exe（PLAN-setup §4.2 / S10）→ 审查方写了，待编译验证
 
 - `Settings/SettingsWindow.cs` 的 `UninstallAsync` 现在自己删快捷方式、开机启动和凭据，程序文件让用户自己删。安装程序装的（exe 旁边有 `.kitty-install`）改成：
   - `SetupRules.ReadMarker(<exe 所在目录>)` 不是 null，且同目录有 `SetupRules.UninstallerName`：启动它（不带参数，它会自己弹确认，含「同时删除我的数据」），然后走 `ShellRuntime.Exit`，不再弹自己的 ContentDialog。卸载程序会先通过管道发 `quit`，程序没退也会等。
@@ -153,12 +153,17 @@ x64 包冒烟通过。设置窗的 Mica 在 Release AOT 下会抛 `ArgumentExcep
 - 顺带：第一次运行的欢迎页里「登录时自动打开」取的是设置的默认值（true），点「开始使用」会把安装时没勾的开机启动又写回去。有标记时改成取 `Autostart.IsEnabled()`，并同步到 `SettingsService.Current.StartWithWindows`。
 - 设置窗第七版还在改，所以这条交给你们。
 
-### R38（P2）程序内更新之后改「设置 › 应用」里的登记（PLAN-setup §4.3 / S11）
+### R38（P2）程序内更新之后改「设置 › 应用」里的登记（PLAN-setup §4.3 / S11）→ 审查方写了，待编译验证
 
 - 在 `App/AutoUpdater.cs` 的 `update.installed` 之后（这时有 `result.Installed` 和 `version`），安装目录有 `.kitty-install` 就：
   - 改 `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\<UninstallKey>` 的 `DisplayVersion`（新版本）和 `EstimatedSize`（`SetupRules.DirectorySizeKb(安装目录)`）。登记的 `InstallLocation` 不是这个目录就不动。
   - `.kitty-install` 的 `version` 改成新版本，`files` 并上这次装进去的文件（相对路径，`SetupRules.WriteMarker`）。不然更新带进来的新文件，卸载时会被当成「不认得的」，安装目录就不会整个删。
 - 名字用 `SetupRules.NamesFor(null)`；Release 探针档（`KITTY_PROBE_PROFILE=<名字>`）下用 `SetupRules.NamesFor(<名字>)`，和安装程序的测试名是同一套。
+
+**R37 / R38 的代码（审查方在 Mac 上写的，没编译过）**：新文件 `App/SetupRecord.cs`。
+- R37：`UninstallAsync` 开头先看 `SetupRecord.Uninstaller()`，有就启动 Uninstall.exe、走 `ShellRuntime.Exit`；启动失败才退回原来的对话框。欢迎页有标记时取 `Autostart.IsEnabled()` 写回 `StartWithWindows`。
+- R38：`AutoUpdater` 在 `update.installed` 后调 `SetupRecord.AfterUpdate`（标记的 version / files，登记的 DisplayVersion / EstimatedSize）；`HandleUpdatedLaunch` 删掉 `*.old` 后调 `RefreshSize` 再量一次大小（刚装完时旧文件还在，大小会翻倍）。登记的 InstallLocation 不是这个目录就只改标记。
+- **验收**并进 R36 第 7 步：装 → 程序里更新 →「设置 › 应用」版本号变了、大小没翻倍 → 从设置里「从这台电脑移除」弹的是 Uninstall.exe 的确认 → 卸完安装目录整个没了。
 
 
 ## 转入 PLAN-v6

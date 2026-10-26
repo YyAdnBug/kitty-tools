@@ -717,6 +717,12 @@ internal sealed class SettingsWindow : Window
             Foreground = Theme.SecondaryText(),
         });
 
+        // R37：安装程序装的，安装时已经问过开机启动，照它实际写下的值；不然「开始使用」会把没勾的又写回去。
+        if (SetupRecord.IsInstalled)
+        {
+            SettingsService.Current.StartWithWindows = Autostart.IsEnabled();
+        }
+
         var autostart = new CheckBox
         {
             Content = "登录时自动打开",
@@ -2084,6 +2090,35 @@ internal sealed class SettingsWindow : Window
 
     private async Task UninstallAsync()
     {
+        // R37：安装程序装的交给 Uninstall.exe：它自己确认（含「同时删除我的数据」），先通过管道叫我们退出，
+        // 删快捷方式、开机启动、登记和程序文件。这里不再弹自己的对话框。
+        if (SetupRecord.Uninstaller() is { } uninstaller)
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(uninstaller)
+                {
+                    UseShellExecute = true,
+                });
+                Log.Info("uninstall.handoff");
+                if (ShellRuntime.Instance is { } runtime)
+                {
+                    runtime.Exit();
+                }
+                else
+                {
+                    Microsoft.UI.Xaml.Application.Current.Exit();
+                }
+
+                return;
+            }
+            catch (Exception ex)
+            {
+                // 打不开（被拦、被删）就退回下面自己的那一套。
+                Log.Warn($"uninstall.handoff-failed {ex.GetType().Name}");
+            }
+        }
+
         var dialog = new ContentDialog
         {
             RequestedTheme = Theme.ElementTheme,

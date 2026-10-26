@@ -93,6 +93,8 @@ internal static class AutoUpdater
             }
 
             Log.Info($"update.installed files={result.Installed.Count} version={version}");
+            // R38：安装程序装的，把标记和「设置 › 应用」里的登记跟上新版本。
+            SetupRecord.AfterUpdate(installDir, version, result.Installed);
             var exe = Path.Combine(installDir, "KittyTools.exe");
             // 先把互斥量和转发服务让出来，不然新进程会以为自己才是第二个实例、转发完就退出。
             SingleInstance.Release();
@@ -125,6 +127,7 @@ internal static class AutoUpdater
         }
 
         var removed = UpdateInstaller.RemoveOldFiles(installDir);
+        SetupRecord.RefreshSize(installDir);
         var version = typeof(AutoUpdater).Assembly.GetName().Version?.ToString(3) ?? "?";
         Log.Info($"update.relaunched version={version} removed-old={removed}");
         NoticeHost.Show("已更新到 " + version, "旧版本的文件已清理", NoticeTone.Normal);
