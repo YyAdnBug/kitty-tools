@@ -180,17 +180,28 @@
                 FontSize="{StaticResource Kitty.FontSize.Meta}"
                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                 TextTrimming="CharacterEllipsis" />
-            <Button
-                x:Name="SettingsButton"
+            <StackPanel
                 Grid.Column="1"
-                Padding="8,4"
-                Background="Transparent"
-                BorderThickness="0"
-                AutomationProperties.Name="打开启动器设置"
-                ToolTipService.ToolTip="设置"
-                Click="OnSettingsClick">
-                <FontIcon Glyph="&#xE713;" FontSize="14" />
-            </Button>
+                Orientation="Horizontal"
+                Spacing="4"
+                VerticalAlignment="Center">
+                <Border Style="{StaticResource Kitty.KeyCap}">
+                    <TextBlock Text="↑↓" FontSize="{StaticResource Kitty.FontSize.KeyCap}" />
+                </Border>
+                <Border Style="{StaticResource Kitty.KeyCap}">
+                    <TextBlock Text="Enter" FontSize="{StaticResource Kitty.FontSize.KeyCap}" />
+                </Border>
+                <Button
+                    x:Name="SettingsButton"
+                    Padding="8,4"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    AutomationProperties.Name="打开启动器设置"
+                    ToolTipService.ToolTip="设置"
+                    Click="OnSettingsClick">
+                    <FontIcon Glyph="&#xE713;" FontSize="14" />
+                </Button>
+            </StackPanel>
         </Grid>
     </Grid>
 </UserControl>

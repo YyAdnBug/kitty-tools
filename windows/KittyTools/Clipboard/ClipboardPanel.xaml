@@ -202,6 +202,7 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <TextBlock
                 x:Name="FooterText"
@@ -209,9 +210,21 @@
                 FontSize="{StaticResource Kitty.FontSize.Meta}"
                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                 TextTrimming="CharacterEllipsis" />
+            <StackPanel
+                Grid.Column="1"
+                Orientation="Horizontal"
+                Spacing="4"
+                VerticalAlignment="Center">
+                <Border Style="{StaticResource Kitty.KeyCap}">
+                    <TextBlock Text="↑↓" FontSize="{StaticResource Kitty.FontSize.KeyCap}" />
+                </Border>
+                <Border Style="{StaticResource Kitty.KeyCap}">
+                    <TextBlock Text="Enter" FontSize="{StaticResource Kitty.FontSize.KeyCap}" />
+                </Border>
+            </StackPanel>
             <Button
                 x:Name="PinButton"
-                Grid.Column="1"
+                Grid.Column="2"
                 Padding="8,4"
                 Background="Transparent"
                 BorderThickness="0"
@@ -222,7 +235,7 @@
             </Button>
             <Button
                 x:Name="SettingsButton"
-                Grid.Column="2"
+                Grid.Column="3"
                 Padding="8,4"
                 Background="Transparent"
                 BorderThickness="0"
