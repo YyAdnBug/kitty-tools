@@ -324,8 +324,14 @@ internal sealed class ShellRuntime
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
             {
                 ShowSettings(welcome: false);
-                await Task.Delay(800);
-                _settingsWindow?.AuditAccessibility();
+                await Task.Delay(700);
+                foreach (var page in new[] { "general", "hotkeys", "clipboard", "translate", "launcher", "screenshot", "about" })
+                {
+                    _settingsWindow?.ShowPage(welcome: false, page);
+                    await Task.Delay(400);
+                    _settingsWindow?.AuditAccessibility(page);
+                }
+
                 OverlayHost.Show(OverlayKind.Clipboard);
                 await Task.Delay(600);
                 OverlayHost.AuditAccessibility();

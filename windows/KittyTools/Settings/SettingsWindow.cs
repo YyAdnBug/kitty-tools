@@ -1080,6 +1080,7 @@ internal sealed class SettingsWindow : Window
             IsReadOnly = true,
             FontSize = 13,
         };
+        AutomationProperties.SetName(path, "截图保存目录");
         row.Children.Add(path);
         var choose = new Button { Content = "选择文件夹…" };
         choose.Click += async (_, _) =>
@@ -1165,12 +1166,14 @@ internal sealed class SettingsWindow : Window
             var folderRow = new Grid { ColumnSpacing = 8 };
             folderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             folderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            folderRow.Children.Add(new TextBox
+            var folder = new TextBox
             {
                 Text = RecordingHost.Folder,
                 IsReadOnly = true,
                 FontSize = 13,
-            });
+            };
+            AutomationProperties.SetName(folder, "录制保存目录");
+            folderRow.Children.Add(folder);
             var pick = new Button { Content = "选择文件夹…" };
             pick.Click += async (_, _) =>
             {
@@ -1352,7 +1355,12 @@ internal sealed class SettingsWindow : Window
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            var enabled = new CheckBox { IsChecked = service.Enabled, VerticalAlignment = VerticalAlignment.Center };
+            var enabled = new CheckBox
+            {
+                IsChecked = service.Enabled,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            AutomationProperties.SetName(enabled, service.Name + " 启用");
             enabled.Checked += (_, _) => SetServiceEnabled(service, true);
             enabled.Unchecked += (_, _) => SetServiceEnabled(service, false);
             Grid.SetColumn(enabled, 0);
@@ -2026,7 +2034,7 @@ internal sealed class SettingsWindow : Window
         }
     }
 
-    public void AuditAccessibility() => AccessibilityAudit.Run(_content, "settings");
+    public void AuditAccessibility(string page = "settings") => AccessibilityAudit.Run(_content, "settings-" + page);
 
     private async Task UninstallAsync()
     {

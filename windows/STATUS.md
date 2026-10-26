@@ -73,8 +73,11 @@ AOT x64 / ARM64 每次发布都零 trim / AOT 警告；PRI 四个文件齐全
 - AOT 选项只留了 `ConcurrentGarbageCollection=false`；`IlcOptimizationPreference=Size`、`UseSystemResourceKeys`、
   `IlcFoldIdenticalMethodBodies`、`System.GC.ConserveMemory` 没量到「省了且不变慢」，没开。
 - 文件搜索还是 WinRT 的 StorageFile 查询（约 880 ms）：`System.Data.OleDb` 在 AOT 下报
-  RequiresDynamicCode，CsWin32 的 OLE DB 接口已生成但还没接上。第 4 批没做成。
-- 第 6 批（主题资源、多屏 DPI、无障碍、输入法、长截图、R12 剩余）没做；高对比度 / 150% / 多屏 / 输入法仍没测。
+  RequiresDynamicCode；CsWin32 的 OLE DB 接口已接上 SearchManager / QueryHelper / 命令 / GetNextRows，
+  但 `IAccessor.CreateAccessor` 对 VARIANT / BYREF-VARIANT / BSTR / WSTR 的各种绑定都返回 `0x80040E46`
+  （DB_E_BADBINDINFO），取不到列。第 4 批没做成，代码已回滚。
+- 第 6 批剩余：设置其他页 / 讲述人朗读没走；R12 的高度动画逐帧、卡片拖到资源管理器没做；
+  高对比度 / 150% / 真多屏 / 真麦克风仍没测。
 - 更新的端到端失败用例（sha256 错误、替换时文件被占用回滚）没写成脚本自动验。
 
 **要用户真机走的**（详见 `HANDTEST.md`，标「待走 / 待定 / 没测」的条目）
@@ -110,7 +113,7 @@ AOT x64 / ARM64 每次发布都零 trim / AOT 警告；PRI 四个文件齐全
 | 第 4 批 | 文件搜索走 OLE DB | 未开始 |
 | 第 4 批 | 文件搜索走 OLE DB | 没做成：OleDb AOT 不可用；CsWin32 接口已生成未接 |
 | 第 5 批 | 内存回落、AOT 选项、发布体积 | 部分：AOT 选项（只留 ConcurrentGC=false）、语言目录裁剪；内存回落 / 发布体积逐项没走完 |
-| 第 6 批 | 主题、多屏、无障碍、输入法、长截图、R12 剩余 | 部分：组字不搜、`--fake-dpi`、长截图暂停、`--a11y-audit`（五界面 0/0）、第二次截图内存、翻译等待 CPU 0.0%；高度动画 / 拖动没做；主题资源并进 v7 |
+| 第 6 批 | 主题、多屏、无障碍、输入法、长截图、R12 剩余 | 部分：组字不搜、`--fake-dpi`、长截图暂停、`--a11y-audit`（五界面 + 设置七页 0/0）、第二次截图内存、翻译等待 CPU 0.0%；高度动画 / 拖动 / 讲述人没走；主题资源并进 v7 |
 | 第 7 批 | 开始菜单 / 卸载、崩溃记录、更新 e2e、冒烟清单、0.6.0 | 开始菜单 / 卸载 / 崩溃记录 / 冒烟清单 / 0.6.0 包做完；更新 e2e 没写 |
 
 ## 6. 提交与产物
