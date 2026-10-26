@@ -389,16 +389,19 @@ import SwiftUI
     isExpanded = false
     window?.ignoresMouseEvents = true
     onToneChange?(nil)
-    // 内容淡出和形体缩回同时走（内容被缩着的形体裁着），不再先退内容、等一下再缩——中间那一顿看着就是卡
+    // 内容先退（0.12 s），0.08 s 后形体缩回刘海（Whisker S2 的两拍；用户 2026-10-26 改成同时走后觉得没原来好看，
+    // 改回来——那次的卡顿其实是收起终点露在刘海外面，已经由 IslandGeometry.tucked 解决）
     withAnimation(.easeIn(duration: 0.12)) {
       content = nil
       isBoardOpen = false
     }
-    isRetracting = true
-    withAnimation(Style.Motion.retract.animation()) { isOpen = false }
     dwell = Task { [weak self] in
-      try? await Task.sleep(for: Self.retractTime)
+      try? await Task.sleep(for: .milliseconds(200))
       guard let self, !Task.isCancelled else { return }
+      self.isRetracting = true
+      withAnimation(Style.Motion.retract.animation()) { self.isOpen = false }
+      try? await Task.sleep(for: Self.retractTime)
+      guard !Task.isCancelled else { return }
       self.isRetracting = false
       guard !self.isOpen, !self.isPeeking else { return }
       self.window?.orderOut(nil)
@@ -429,6 +432,7 @@ import SwiftUI
     isHovered = false
     isExpanded = false
     isPeeking = false
+    isRetracting = false
     quickActions = boardActions()
     changedAt = .now
     deadline = .now
@@ -451,6 +455,7 @@ import SwiftUI
 
   private func open(with next: Content) {
     isPeeking = false
+    isRetracting = false
     showWindow()
     content = nil
     // 先让形体从刘海 / 小胶囊长开，内容由自己的过渡晚 60 ms 出场
@@ -767,12 +772,12 @@ struct IslandView: View {
     }
   }
 
-  /// 形体的弹簧：开着（出现、展开、换内容、开那一张）带一点弹；收起不过冲（过冲会露出真刘海，开源项目踩过）；
-  /// 鼓起是 0.2 s 的 easeOut 小反馈。减弱动态效果时不伸缩
+  /// 形体的弹簧：开着（出现、展开、换内容、开那一张）带一点弹；收起不过冲（终点藏在刘海里，过冲会露出来）；
+  /// 鼓起是 pop（小东西出现的那条，带一点弹）。减弱动态效果时不伸缩
   private var curve: Animation? {
     if reduceMotion { return nil }
     if island.isOpen { return Style.Motion.island.animation() }
-    return island.isPeeking ? .easeOut(duration: 0.2) : Style.Motion.retract.animation()
+    return island.isPeeking ? Style.Motion.pop.animation() : Style.Motion.retract.animation()
   }
 
   /// 黑底：刘海屏纯黑带耳朵，无刘海屏 black 0.92 + 发丝线的圆角卡片；只有开着时有阴影（挂在纯形体上，不挂在内容上）
@@ -790,14 +795,14 @@ struct IslandView: View {
     }
   }
 
-  /// 收着是一行（前导 + 标题 + 详情 + 主按钮），展开是卡片；那一张开着时是 IslandBoard。换内容时交叉替换，
-  /// 新的晚 40 ms 出场
+  /// 收着是一行（前导 + 标题 + 详情 + 主按钮），展开是卡片；那一张开着时是 IslandBoard。换内容时模糊交叉替换，
+  /// 新的晚 60 ms 出场
   @ViewBuilder private var content: some View {
     ZStack(alignment: .top) {
       if island.isBoardOpen {
         IslandBoard(island: island)
           .measured { report($0) }
-          .transition(appear(blur: false))
+          .transition(appear)
       } else if let content = island.content {
         Group {
           if island.isExpanded {
@@ -808,7 +813,7 @@ struct IslandView: View {
         }
         // 进行中的岛只按标题认：详情里的百分比一直在变，不能每变一次就整行重新出场
         .id(content.tone == .progress ? content.title : content.title + (content.detail ?? ""))
-        .transition(appear(blur: true))
+        .transition(appear)
       }
     }
   }
@@ -819,15 +824,15 @@ struct IslandView: View {
     contentSize = size
   }
 
-  /// 内容出场：晚 40 ms，透明度 + 0.96 → 1 的缩放（顶部锚点）+ 半径 4 的模糊（那一张不模糊：大块内容做模糊动画要离屏
-  /// 渲染）；退场 0.12 s 淡出。形体那边同时在长，内容被它裁着出来
-  private func appear(blur: Bool) -> AnyTransition {
+  /// 内容出场：晚 60 ms，blur 8 → 0、scale 0.9 → 1（顶部锚点）、透明度（smooth 0.28）；退场 0.12 s 淡出。
+  /// 形体那边同时在长，内容被它裁着出来
+  private var appear: AnyTransition {
     reduceMotion
       ? .opacity
       : .asymmetric(
         insertion: .modifier(
-          active: Emerge(progress: 0, blur: blur), identity: Emerge(progress: 1, blur: blur)
-        ).animation(.smooth(duration: 0.24).delay(0.04)),
+          active: Emerge(progress: 0), identity: Emerge(progress: 1)
+        ).animation(.smooth(duration: 0.28).delay(0.06)),
         removal: .opacity.animation(.easeIn(duration: 0.12)))
   }
 
@@ -1088,15 +1093,14 @@ extension View {
   }
 }
 
-/// 内容出场：透明度、scale 0.96 → 1（顶部锚点）、blur 4 → 0（blur = false 时不模糊）
+/// 内容出场：blur 8 → 0、scale 0.9 → 1（顶部锚点）、透明度
 private struct Emerge: ViewModifier {
   let progress: Double
-  let blur: Bool
 
   func body(content: Content) -> some View {
     content
-      .blur(radius: blur ? 4 * (1 - progress) : 0)
-      .scaleEffect(0.96 + 0.04 * progress, anchor: .top)
+      .blur(radius: 8 * (1 - progress))
+      .scaleEffect(0.9 + 0.1 * progress, anchor: .top)
       .opacity(progress)
   }
 }
