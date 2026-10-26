@@ -1,4 +1,7 @@
 // 剪贴板列表的一行：标题 / 副标题 / 时间 / 日期分隔 / 收藏标记，给 x:Bind 用的只读属性。
+// U1 的透镜也挂在这一行上：Lens 是一个已经建好的元素，选中时由面板塞进来，未选中时是 null。
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using KittyTools.Core;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
@@ -6,14 +9,40 @@ using Windows.UI;
 
 namespace KittyTools;
 
-public sealed class ClipRow
+public sealed class ClipRow : INotifyPropertyChanged
 {
+    private FrameworkElement? _lens;
+    private double _lensHeight;
+    private Visibility _lensVisibility = Visibility.Collapsed;
+
     private static readonly SolidColorBrush ClipboardBlue =
         (SolidColorBrush)Theme.Family.Tint(Theme.Family.Clipboard, 32);
 
     private ClipRow()
     {
     }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    /// <summary>选中时原地展开的正文（U1 透镜）；没选中为 null。</summary>
+    public FrameworkElement? Lens => _lens;
+
+    public double LensHeight => _lensHeight;
+
+    public Visibility LensVisibility => _lensVisibility;
+
+    internal void SetLens(FrameworkElement? lens, double height)
+    {
+        _lens = lens;
+        _lensHeight = height;
+        _lensVisibility = lens is null ? Visibility.Collapsed : Visibility.Visible;
+        Raise(nameof(Lens));
+        Raise(nameof(LensHeight));
+        Raise(nameof(LensVisibility));
+    }
+
+    private void Raise([CallerMemberName] string? name = null)
+        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
     public string Title { get; private init; } = string.Empty;
 

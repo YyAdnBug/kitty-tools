@@ -128,7 +128,7 @@ internal static class UiSnapshotProbe
         {
             case LauncherPanel launcher:
                 launcher.OnShown();
-                launcher.SetQuery(string.Empty);
+                launcher.SetQuery("a");
                 break;
             case ClipboardPanel clipboard:
                 clipboard.OnShown();

@@ -53,6 +53,7 @@ internal sealed unsafe partial class NoticeHost
     private readonly Grid _root;
     private readonly Border _pill;
     private readonly FontIcon _icon;
+    private readonly Border _iconSlot;
     private readonly TextBlock _title;
     private readonly TextBlock _detail;
     private readonly HWND _hwnd;
@@ -77,33 +78,43 @@ internal sealed unsafe partial class NoticeHost
             Padding = new Thickness(14, 0, 16, 0),
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center,
-            Background = new SolidColorBrush(Theme.Capsule.Normal),
+            Background = new SolidColorBrush(Theme.Argb(235, 0, 0, 0)),
         };
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 9 };
         _icon = new FontIcon
         {
-            FontSize = 15,
-            Foreground = new SolidColorBrush(Theme.Shot.HudText),
+            FontSize = 12,
+            Foreground = new SolidColorBrush(Microsoft.UI.Colors.White),
+            HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
+        };
+        _iconSlot = new Border
+        {
+            Width = 22,
+            Height = 22,
+            CornerRadius = new CornerRadius(11),
+            Background = new SolidColorBrush(Theme.AccentColor),
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = _icon,
         };
         var texts = new StackPanel { Spacing = 0, VerticalAlignment = VerticalAlignment.Center };
         _title = new TextBlock
         {
-            FontSize = 13,
+            FontSize = Theme.FontSize("Kitty.FontSize.Body"),
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            Foreground = new SolidColorBrush(Theme.Shot.HudText),
+            Foreground = new SolidColorBrush(Theme.Argb(242, 255, 255, 255)),
             TextTrimming = TextTrimming.CharacterEllipsis,
         };
         _detail = new TextBlock
         {
-            FontSize = 12,
-            Foreground = new SolidColorBrush(Theme.Shot.HudTextMuted),
+            FontSize = Theme.FontSize("Kitty.FontSize.Label"),
+            Foreground = new SolidColorBrush(Theme.Argb(140, 255, 255, 255)),
             TextTrimming = TextTrimming.CharacterEllipsis,
             MaxWidth = 420,
         };
         texts.Children.Add(_title);
         texts.Children.Add(_detail);
-        row.Children.Add(_icon);
+        row.Children.Add(_iconSlot);
         row.Children.Add(texts);
         _pill.Child = row;
 
@@ -181,12 +192,16 @@ internal sealed unsafe partial class NoticeHost
         _title.Text = title;
         _detail.Text = detail;
         _detail.Visibility = string.IsNullOrEmpty(detail) ? Visibility.Collapsed : Visibility.Visible;
-        (_icon.Glyph, _pill.Background) = tone switch
+        (_icon.Glyph, _iconSlot.Background) = tone switch
         {
-            NoticeTone.Warning => ("\uE7BA", new SolidColorBrush(Theme.Capsule.Warning)),
-            NoticeTone.Error => ("\uEA39", new SolidColorBrush(Theme.Capsule.Error)),
-            _ => ("\uE946", new SolidColorBrush(Theme.Capsule.Normal)),
+            NoticeTone.Warning => (Glyphs.Warning,
+                new SolidColorBrush(Theme.Argb(255, 255, 159, 10))),
+            NoticeTone.Error => (Glyphs.Error,
+                new SolidColorBrush(Theme.Argb(255, 255, 69, 58))),
+            _ => (Glyphs.Info, new SolidColorBrush(Theme.AccentColor)),
         };
+        _hideTimer.Interval = TimeSpan.FromSeconds(
+            tone == NoticeTone.Error ? 3.0 : string.IsNullOrEmpty(detail) ? 1.4 : 2.0);
 
         var target = MeasurePillWidth();
         PositionAtPointer(target);

@@ -60,22 +60,22 @@ public sealed class PanelMetricsMixedRowsTests
     [TestMethod]
     public void CalculationRowIsTaller()
     {
-        var normal = PanelMetrics.LauncherHeightFor(new[] { 48.0, 48.0, 48.0 });
-        var withCalc = PanelMetrics.LauncherHeightFor(new[] { 64.0, 48.0, 48.0 });
-        Assert.AreEqual(PanelMetrics.LauncherChrome + 144, normal);
-        Assert.AreEqual(PanelMetrics.LauncherChrome + 160, withCalc);
+        var normal = PanelMetrics.LauncherHeightFor(new[] { 40.0, 40.0, 40.0 });
+        var withCalc = PanelMetrics.LauncherHeightFor(new[] { 64.0, 40.0, 40.0 });
+        Assert.AreEqual(PanelMetrics.LauncherChrome + 120, normal);
+        Assert.AreEqual(PanelMetrics.LauncherChrome + 144, withCalc);
         Assert.IsTrue(withCalc > normal);
     }
 
     [TestMethod]
     public void CapsAtEightRowsAndKeepsMinimum()
     {
-        var many = Enumerable.Repeat(48.0, 20).ToList();
-        // 八行普通行 = 116 + 384 = 500，还没到 520；十行才会封顶。
-        Assert.AreEqual(PanelMetrics.LauncherChrome + 8 * 48, PanelMetrics.LauncherHeightFor(many));
+        var many = Enumerable.Repeat(40.0, 20).ToList();
+        // 八行普通行 = 116 + 320 = 436，还没到 520。
+        Assert.AreEqual(PanelMetrics.LauncherChrome + 8 * 40, PanelMetrics.LauncherHeightFor(many));
 
-        var one = PanelMetrics.LauncherHeightFor(new[] { 48.0 });
-        Assert.AreEqual(PanelMetrics.LauncherChrome + 144, one);
+        var one = PanelMetrics.LauncherHeightFor(new[] { 40.0 });
+        Assert.AreEqual(PanelMetrics.LauncherChrome + 120, one);
     }
 }
 

@@ -39,9 +39,14 @@ public sealed partial class LauncherPanel : UserControl
     private bool _composing;
     private ScrollViewer? _listScroll;
 
+    /// <summary>搜索线的输入框（PLAN-v7 §2.2 的共用部件）。</summary>
+    private TextBox SearchBox => SearchLineControl.Box;
+
     public LauncherPanel()
     {
         InitializeComponent();
+        SearchBox.PlaceholderText = "搜索应用、设置、命令…";
+        SearchBox.TextChanged += OnSearchTextChanged;
         AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(OnKeyDown), handledEventsToo: true);
         AddHandler(UIElement.KeyUpEvent, new KeyEventHandler(OnKeyUp), handledEventsToo: true);
         SearchBox.TextCompositionStarted += (_, _) => _composing = true;

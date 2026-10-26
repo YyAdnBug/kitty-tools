@@ -98,6 +98,39 @@ internal static class Theme
 
         public static Brush Tint(string key, byte alpha = 28) => Tint(For(key), alpha);
 
+        /// <summary>U3 的 24 图标块：家族色从上往下 0.95 → 0.75 的渐变。</summary>
+        public static Brush Tile(LauncherKind kind)
+        {
+            var color = For(kind switch
+            {
+                LauncherKind.App => "launcher",
+                LauncherKind.Setting => "general",
+                LauncherKind.Command => "command",
+                LauncherKind.Action => "capture",
+                LauncherKind.Url => "url",
+                LauncherKind.Path => "shortcut",
+                LauncherKind.Search => "search",
+                LauncherKind.Calculation => "calculator",
+                _ => "translate",
+            });
+            var gradient = new LinearGradientBrush
+            {
+                StartPoint = new Windows.Foundation.Point(0, 0),
+                EndPoint = new Windows.Foundation.Point(0, 1),
+            };
+            gradient.GradientStops.Add(new GradientStop
+            {
+                Offset = 0,
+                Color = Color.FromArgb(242, color.R, color.G, color.B),
+            });
+            gradient.GradientStops.Add(new GradientStop
+            {
+                Offset = 1,
+                Color = Color.FromArgb(191, color.R, color.G, color.B),
+            });
+            return gradient;
+        }
+
         /// <summary>启动器一行的图标块（按行的种类）。</summary>
         public static Brush KindTint(LauncherKind kind) => kind switch
         {

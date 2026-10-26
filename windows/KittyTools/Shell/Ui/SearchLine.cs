@@ -10,8 +10,13 @@ using Windows.UI;
 
 namespace KittyTools.Ui;
 
-internal sealed partial class SearchLine : Grid
+public sealed partial class SearchLine : Grid
 {
+    public SearchLine()
+        : this("搜索…")
+    {
+    }
+
     public SearchLine(string placeholder)
     {
         Height = 56;
@@ -56,6 +61,16 @@ internal sealed partial class SearchLine : Grid
                 71, Theme.AccentColor.R, Theme.AccentColor.G, Theme.AccentColor.B)),
         };
         AutomationProperties.SetName(Box, placeholder);
+        foreach (var key in new[]
+                 {
+                     "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused",
+                     "TextControlBorderBrush", "TextControlBorderBrushPointerOver", "TextControlBorderBrushFocused",
+                     "TextControlElevationBorderFocusedBrush",
+                 })
+        {
+            Box.Resources[key] = new SolidColorBrush(Colors.Transparent);
+        }
+
         SetColumn(Box, 2);
         Children.Add(Box);
 

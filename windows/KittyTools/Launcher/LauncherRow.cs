@@ -37,6 +37,28 @@ public sealed class LauncherRow
 
     public string TitleFontFamily { get; private init; } = "Segoe UI";
 
+    /// <summary>U3：行尾的种类名（应用 / 设置 / 命令 …）。</summary>
+    public string KindLabel => Item.Kind switch
+    {
+        LauncherKind.App => "应用",
+        LauncherKind.Setting => "设置",
+        LauncherKind.Command => "系统",
+        LauncherKind.Action => "动作",
+        LauncherKind.Url => "网址",
+        LauncherKind.Path => "路径",
+        LauncherKind.Search => "搜索",
+        LauncherKind.Calculation => "计算",
+        _ => string.Empty,
+    };
+
+    public Visibility NormalVisibility => Item.Kind == LauncherKind.Calculation
+        ? Visibility.Collapsed
+        : Visibility.Visible;
+
+    public Visibility CalculationVisibility => Item.Kind == LauncherKind.Calculation
+        ? Visibility.Visible
+        : Visibility.Collapsed;
+
     /// <summary>危险命令上膛时副标题用危险色。</summary>
     public Brush SubtitleBrush { get; private init; } = Theme.SecondaryText();
 
@@ -81,5 +103,5 @@ public sealed class LauncherRow
         _ => "\uE8EF",
     };
 
-    private static Brush BackgroundFor(LauncherKind kind) => Theme.Family.KindTint(kind);
+    private static Brush BackgroundFor(LauncherKind kind) => Theme.Family.Tile(kind);
 }

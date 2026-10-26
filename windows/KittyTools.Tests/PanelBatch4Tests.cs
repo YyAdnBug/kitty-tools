@@ -16,16 +16,29 @@ public sealed class PanelMetricsTests
         Assert.AreEqual(PanelMetrics.ClipboardChrome + 8 * 40, PanelMetrics.ClipboardHeight(8));
         Assert.AreEqual(PanelMetrics.MaxHeightDip, PanelMetrics.ClipboardHeight(50));
         Assert.IsTrue(PanelMetrics.ClipboardHeight(8) <= PanelMetrics.MaxHeightDip);
-        Assert.AreEqual(PanelMetrics.LauncherChrome + 3 * 48, PanelMetrics.LauncherHeight(1));
-        Assert.AreEqual(PanelMetrics.LauncherChrome + 8 * 48, PanelMetrics.LauncherHeight(9));
-        Assert.AreEqual(PanelMetrics.LauncherChrome + 8 * 48, PanelMetrics.LauncherHeight(40));
+        Assert.AreEqual(PanelMetrics.LauncherChrome + 3 * PanelMetrics.LauncherRowHeight, PanelMetrics.LauncherHeight(1));
+        Assert.AreEqual(PanelMetrics.LauncherChrome + 8 * PanelMetrics.LauncherRowHeight, PanelMetrics.LauncherHeight(9));
+        Assert.AreEqual(PanelMetrics.LauncherChrome + 8 * PanelMetrics.LauncherRowHeight, PanelMetrics.LauncherHeight(40));
     }
 
     [TestMethod]
     public void LauncherShowsAtLeastAsMuchAsClipboardPerRow()
     {
-        // 启动器一行 48 比剪贴板 40 高：同样八行，启动器更高（但都封顶 520）。
-        Assert.IsTrue(PanelMetrics.LauncherHeight(5) > PanelMetrics.ClipboardHeight(5));
+        // PLAN-v7 U3：启动器一行 40，和剪贴板一样高；同样行数时两者只差顶栏 / 底栏的 6 DIP。
+        Assert.IsTrue(PanelMetrics.LauncherHeight(5) <= PanelMetrics.ClipboardHeight(5));
+    }
+
+    [TestMethod]
+    public void LensHeightReservesRoomWithoutJumping()
+    {
+        // U1：没有条目 140；三行一条分组给最高的透镜预留 160；12 条封顶 520。
+        Assert.AreEqual(PanelMetrics.ClipboardChrome + 140, PanelMetrics.ClipboardHeightFor(0, 0));
+        Assert.AreEqual(PanelMetrics.ClipboardChrome + 316, PanelMetrics.ClipboardHeightFor(3, 1));
+        Assert.AreEqual(PanelMetrics.MaxHeightDip, PanelMetrics.ClipboardHeightFor(12, 12));
+        // 选中行换成另一条（行数、分组数不变）时高度完全一样：窗口不会跟着改。
+        Assert.AreEqual(
+            PanelMetrics.ClipboardHeightFor(5, 2),
+            PanelMetrics.ClipboardHeightFor(5, 2));
     }
 }
 

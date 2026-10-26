@@ -20,6 +20,7 @@
             <SolidColorBrush x:Key="Kitty.AccentText" Color="#D12A5F" />
             <SolidColorBrush x:Key="Kitty.OnAccent" Color="#FFFFFF" />
             <SolidColorBrush x:Key="Kitty.Danger" Color="#C42B1C" />
+            <SolidColorBrush x:Key="Kitty.Favorite" Color="#FFCC00" />
             <SolidColorBrush x:Key="Kitty.ErrorFill" Color="#0DC42B1C" />
             <SolidColorBrush x:Key="Kitty.ErrorStroke" Color="#2EC42B1C" />
             <SolidColorBrush x:Key="Kitty.WarningFill" Color="#0D9D5D00" />
@@ -37,6 +38,7 @@
             <SolidColorBrush x:Key="Kitty.AccentText" Color="#FF6B8D" />
             <SolidColorBrush x:Key="Kitty.OnAccent" Color="#FFFFFF" />
             <SolidColorBrush x:Key="Kitty.Danger" Color="#FF6B5B" />
+            <SolidColorBrush x:Key="Kitty.Favorite" Color="#FFD60A" />
             <SolidColorBrush x:Key="Kitty.ErrorFill" Color="#16C42B1C" />
             <SolidColorBrush x:Key="Kitty.ErrorStroke" Color="#3DC42B1C" />
             <SolidColorBrush x:Key="Kitty.WarningFill" Color="#169D5D00" />
@@ -54,6 +56,7 @@
             <SolidColorBrush x:Key="Kitty.AccentText" Color="{ThemeResource SystemColorHighlightColor}" />
             <SolidColorBrush x:Key="Kitty.OnAccent" Color="{ThemeResource SystemColorHighlightTextColor}" />
             <SolidColorBrush x:Key="Kitty.Danger" Color="{ThemeResource SystemColorWindowTextColor}" />
+            <SolidColorBrush x:Key="Kitty.Favorite" Color="{ThemeResource SystemColorHighlightColor}" />
             <SolidColorBrush x:Key="Kitty.ErrorFill" Color="{ThemeResource SystemColorWindowColor}" />
             <SolidColorBrush x:Key="Kitty.ErrorStroke" Color="{ThemeResource SystemColorWindowTextColor}" />
             <SolidColorBrush x:Key="Kitty.WarningFill" Color="{ThemeResource SystemColorWindowColor}" />

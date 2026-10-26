@@ -22,7 +22,7 @@ public static class PanelMetrics
     /// <summary>启动器：上边距 12 + 搜索 56 + 间距 6 + 列表 + 间距 6 + 底栏 36。</summary>
     public const double LauncherChrome = 116;
 
-    public const double LauncherRowHeight = 48;
+    public const double LauncherRowHeight = 40;
 
     /// <summary>计算结果那一行更高：28 号数字 + 下面一行说明（REVIEW R7）。</summary>
     public const double LauncherCalculationRowHeight = 64;
@@ -32,6 +32,29 @@ public static class PanelMetrics
             ClipboardChrome + Math.Clamp(rows, MinRows, ClipboardMaxRows) * ClipboardRowHeight,
             ClipboardChrome + MinRows * ClipboardRowHeight,
             MaxHeightDip);
+
+    /// <summary>
+    /// U1 的单列透镜：窗口给最高那一档透镜预留常数（最高的正文 128 + 元信息 / 间距 32），
+    /// 按 ↑↓ 改选中行时窗口不再动；只有条数 / 分组数变了才改高度。列表最多 398（122 + 398 = 520）。
+    /// </summary>
+    public const double ClipboardLensReserve = 160;
+
+    public const double ClipboardListMax = 398;
+
+    public const int ClipboardLensMaxRows = 12;
+
+    public static double ClipboardHeightFor(int rows, int groups)
+    {
+        if (rows <= 0)
+        {
+            return ClipboardChrome + 140;
+        }
+
+        var list = 12 + 24 * Math.Clamp(groups, 1, 12) +
+                   40 * Math.Clamp(rows, 1, ClipboardLensMaxRows) +
+                   ClipboardLensReserve;
+        return ClipboardChrome + Math.Min(list, ClipboardListMax);
+    }
 
     public static double LauncherHeight(int rows)
         => Math.Clamp(

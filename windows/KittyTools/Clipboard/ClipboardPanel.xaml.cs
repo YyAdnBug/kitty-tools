@@ -28,6 +28,10 @@ public sealed partial class ClipboardPanel : UserControl
 {
     private readonly List<ClipEntry> _visible = new();
     private readonly ObservableCollection<ClipRow> _rows = new();
+    /// <summary>搜索线的输入框（PLAN-v7 §2.2 的共用部件）。</summary>
+    private TextBox SearchBox => SearchLineControl.Box;
+    /// <summary>当前选中行透镜里的内容（U1：原地展开，不再有右边那一栏）。</summary>
+    private readonly StackPanel PreviewHost = new() { Spacing = 8 };
     private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _keyHintTimer;
     private bool _favoritesOnly;
     private ClipScope _scope = ClipScope.All;
@@ -45,6 +49,8 @@ public sealed partial class ClipboardPanel : UserControl
     public ClipboardPanel()
     {
         InitializeComponent();
+        SearchBox.PlaceholderText = "搜索剪贴板…";
+        SearchBox.TextChanged += OnSearchTextChanged;
         AddHandler(KeyDownEvent, new KeyEventHandler(OnKeyDown), handledEventsToo: true);
         AddHandler(KeyUpEvent, new KeyEventHandler(OnKeyUp), handledEventsToo: true);
         SearchBox.TextCompositionStarted += (_, _) => _composing = true;
@@ -95,6 +101,7 @@ public sealed partial class ClipboardPanel : UserControl
     /// <summary>空闲回收：清掉预览里的图片和控件。</summary>
     public void ReleaseCaches()
     {
+        _lensScroll?.Content = null;
         PreviewHost.Children.Clear();
         Log.Info("clipboard.caches-released");
     }
@@ -110,7 +117,17 @@ public sealed partial class ClipboardPanel : UserControl
     public event Action<double, bool>? HeightRequested;
 
     /// <summary>按当前条数算出来的面板高度（三行起、十行封顶、最多 520 DIP）。</summary>
-    public double ContentHeightDip => PanelMetrics.ClipboardHeight(_visible.Count);
+    public double ContentHeightDip
+    {
+        get
+        {
+            var groups = _visible
+                .Select(entry => ClipRow.DateLabel(entry.CopiedAt))
+                .Distinct(StringComparer.Ordinal)
+                .Count();
+            return PanelMetrics.ClipboardHeightFor(_visible.Count, groups);
+        }
+    }
 
     private static ClipboardStore? Store => ClipboardService.Instance?.Store;
 
@@ -442,6 +459,55 @@ public sealed partial class ClipboardPanel : UserControl
         _groupFilterId = GroupFilter.SelectedItem is ComboBoxItem { Tag: string id } ? id : null;
         Refresh(animated: false);
         SearchBox.Focus(FocusState.Programmatic);
+        UpdateFilterChips();
+    }
+
+    /// <summary>U2：Tab 弹出筛选菜单（全部 / 收藏 / 片段 / 收藏夹）。</summary>
+    private void ShowFilterMenu()
+    {
+        var menu = new MenuFlyout();
+        void AddScope(string text, ClipScope scope, bool selected)
+        {
+            var item = new MenuFlyoutItem { Text = text };
+            if (selected)
+            {
+                item.Icon = new FontIcon { Glyph = Glyphs.Check };
+            }
+
+            item.Click += (_, _) => SetScope(scope);
+            menu.Items.Add(item);
+        }
+
+        AddScope("全部", ClipScope.All, _scope == ClipScope.All);
+        AddScope("收藏", ClipScope.Favorites, _scope == ClipScope.Favorites);
+        AddScope("片段", ClipScope.Snippets, _scope == ClipScope.Snippets);
+        if (Store is { } store && store.Groups.Count > 0)
+        {
+            menu.Items.Add(new MenuFlyoutSeparator());
+            foreach (var group in store.Groups.OrderBy(item => item.Position))
+            {
+                var item = new MenuFlyoutItem { Text = "收藏夹 · " + group.Name };
+                if (_groupFilterId == group.Id)
+                {
+                    item.Icon = new FontIcon { Glyph = Glyphs.Check };
+                }
+
+                item.Click += (_, _) =>
+                {
+                    SetScope(ClipScope.Favorites, refresh: false);
+                    _groupFilterId = group.Id;
+                    Refresh();
+                    UpdateFilterChips();
+                    SearchBox.Focus(FocusState.Programmatic);
+                };
+                menu.Items.Add(item);
+            }
+        }
+
+        menu.ShowAt(SearchLineControl, new FlyoutShowOptions
+        {
+            Placement = FlyoutPlacementMode.BottomEdgeAlignedLeft,
+        });
     }
 
     private void OnPinClick(object sender, RoutedEventArgs e) => PinRequested?.Invoke();
@@ -454,11 +520,37 @@ public sealed partial class ClipboardPanel : UserControl
         FavoriteScope.IsChecked = scope == ClipScope.Favorites;
         SnippetScope.IsChecked = scope == ClipScope.Snippets;
         RefreshGroups();
+        UpdateFilterChips();
         if (refresh)
         {
             Refresh();
             SearchBox.Focus(FocusState.Programmatic);
         }
+    }
+
+    /// <summary>U2：当前范围做成搜索线里的标签胶囊；点 × 回到全部。</summary>
+    private void UpdateFilterChips()
+    {
+        SearchLineControl.Chips.Children.Clear();
+        var text = _groupFilterId is { } id
+            ? Store?.Groups.FirstOrDefault(group => group.Id == id)?.Name ?? "收藏夹"
+            : _scope switch
+            {
+                ClipScope.Favorites => "收藏",
+                ClipScope.Snippets => "片段",
+                _ => "全部",
+            };
+        if (_scope == ClipScope.All && _groupFilterId is null)
+        {
+            SearchLineControl.AddChip(text);
+            return;
+        }
+
+        SearchLineControl.AddChip(text, () =>
+        {
+            _groupFilterId = null;
+            SetScope(ClipScope.All);
+        });
     }
 
     /// <summary>「收藏」范围旁边那个收藏夹下拉：第一项是全部收藏夹。</summary>
@@ -500,6 +592,7 @@ public sealed partial class ClipboardPanel : UserControl
 
         _groupFilterId = index == 0 ? null : previous;
         GroupFilter.SelectedIndex = index;
+        UpdateFilterChips();
     }
 
     private void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -536,6 +629,7 @@ public sealed partial class ClipboardPanel : UserControl
         PreviewHost.Children.Clear();
         if (entry is null)
         {
+            AttachLens(null);
             PreviewHost.Children.Add(new TextBlock
             {
                 Text = "选中一条看预览",
@@ -623,6 +717,98 @@ public sealed partial class ClipboardPanel : UserControl
                 ShowText(entry);
                 break;
         }
+
+        AttachLens(entry);
+    }
+
+    private ScrollViewer? _lensScroll;
+
+    /// <summary>把 PreviewHost 挂到选中行的透镜里；其它行的透镜收起来。</summary>
+    private void AttachLens(ClipEntry? entry)
+    {
+        foreach (var row in _rows)
+        {
+            row.SetLens(null, 0);
+        }
+
+        if (entry is null)
+        {
+            return;
+        }
+
+        var index = _visible.FindIndex(item => item.Id == entry.Id);
+        if (index < 0 || index >= _rows.Count)
+        {
+            return;
+        }
+
+        if (_lensScroll is not null)
+        {
+            _lensScroll.Content = null;
+        }
+
+        var body = LensBodyHeight(entry);
+        _lensScroll = new ScrollViewer
+        {
+            Content = PreviewHost,
+            MaxHeight = body,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Padding = new Thickness(16, 0, 16, 0),
+            IsTabStop = false,
+        };
+        var host = new Grid { Height = body + 28 };
+        host.Children.Add(_lensScroll);
+        var cardColor = Theme.CardColor();
+        host.Children.Add(new Border
+        {
+            Height = 26,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            IsHitTestVisible = false,
+            Background = new LinearGradientBrush
+            {
+                StartPoint = new Windows.Foundation.Point(0, 0),
+                EndPoint = new Windows.Foundation.Point(0, 1),
+                GradientStops =
+                {
+                    new GradientStop { Color = Theme.Argb(0, cardColor.R, cardColor.G, cardColor.B), Offset = 0 },
+                    new GradientStop { Color = cardColor, Offset = 1 },
+                },
+            },
+        });
+        _rows[index].SetLens(host, body + 28);
+        DispatcherQueue.TryEnqueue(() => MoveHighlight(animated: false));
+    }
+
+    private static double LensBodyHeight(ClipEntry entry)
+    {
+        if (entry.Kind == ClipKind.Image)
+        {
+            return 108;
+        }
+
+        if (entry.Kind == ClipKind.Files)
+        {
+            return 90;
+        }
+
+        var text = entry.Text ?? string.Empty;
+        if (PreviewRules.TryParseColor(text, out _, out _, out _))
+        {
+            return 72;
+        }
+
+        if (PreviewRules.LooksLikeCode(text))
+        {
+            return 128;
+        }
+
+        if (LinkPreviewRules.SingleUrl(text) is not null)
+        {
+            return 90;
+        }
+
+        return text.Length <= 80 && !text.Contains('\n') ? 36 : 90;
     }
 
     private void ShowText(ClipEntry entry)
@@ -765,7 +951,7 @@ public sealed partial class ClipboardPanel : UserControl
     /// </summary>
     private int PreviewDecodeWidth()
     {
-        var width = PreviewScroll.ActualWidth > 0 ? PreviewScroll.ActualWidth : 520;
+        var width = List.ActualWidth > 0 ? Math.Max(240, List.ActualWidth - 48) : 520;
         var scale = XamlRoot?.RasterizationScale ?? 1.0;
         return Math.Clamp((int)Math.Round(width * scale), 64, 2048);
     }
@@ -871,12 +1057,7 @@ public sealed partial class ClipboardPanel : UserControl
                 break;
             case VirtualKey.Tab:
                 e.Handled = true;
-                SetScope(_scope switch
-                {
-                    ClipScope.All => ClipScope.Favorites,
-                    ClipScope.Favorites => ClipScope.Snippets,
-                    _ => ClipScope.All,
-                });
+                ShowFilterMenu();
                 break;
             case VirtualKey.N when control:
                 e.Handled = true;
