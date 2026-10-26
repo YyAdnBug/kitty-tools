@@ -404,6 +404,45 @@ internal sealed class ShellRuntime
             });
         }
 
+        // R33：5000 条剪贴板按键到布局更新的耗时（用 KITTY_PROBE_PROFILE 独立数据）。
+        if (Environment.GetCommandLineArgs().Contains("--clip-scroll-test", StringComparer.OrdinalIgnoreCase))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
+            {
+                try
+                {
+                    if (ClipboardService.Instance?.Store is { } store)
+                    {
+                        var clips = new List<(string Text, bool Favorite, DateTimeOffset? CopiedAt)>();
+                        var now = DateTimeOffset.UtcNow;
+                        for (var index = 0; index < 5000; index++)
+                        {
+                            clips.Add((string.Concat("R33 样本 ", index.ToString(), "：一段普通剪贴板文本。"), false,
+                                now.AddSeconds(-index)));
+                        }
+
+                        store.AdoptTextClips(clips);
+                    }
+
+                    OverlayHost.Show(OverlayKind.Clipboard);
+                    await Task.Delay(1500);
+                    var panel = ClipboardPanel.Current;
+                    if (panel is not null)
+                    {
+                        var result = panel.MeasureSelection(150);
+                        Log.Info($"clip.scroll median={result.Median:F1}ms p95={result.P95:F1}ms n={result.Count}");
+                    }
+
+                    OverlayHost.Hide(restoreForeground: false);
+                    Environment.Exit(0);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("clip.scroll-failed", ex);
+                    Environment.Exit(1);
+                }
+            });
+        }
         // REVIEW R31：发布包的启动冒烟。设置七页、面板、翻译、截图遮罩、录音条都打开一遍；
         // 任何一步抛异常 / 进程崩掉都会让 build-release.ps1 拿到非 0。
         // 调试 / 自检：文件搜索（R17）的耗时和结果数。

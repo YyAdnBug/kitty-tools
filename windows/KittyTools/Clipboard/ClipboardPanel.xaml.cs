@@ -4,6 +4,7 @@
 // 第二版 §3.5：高度随内容（三行起、十行封顶）、只有一块会滑动的选中高亮、按住 Ctrl 150 ms 后
 // 前九行右边浮现数字键帽、预览卡按内容换字体 / 色块 / 棋盘格、空状态各一句。
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Numerics;
 using KittyTools.Core;
 using KittyTools.Infrastructure;
@@ -45,6 +46,9 @@ public sealed partial class ClipboardPanel : UserControl
     private CancellationTokenSource? _linkCts;
     private Uri? _linkPending;
     private bool _composing;
+
+    /// <summary>R33 性能探针用：当前显示的面板。</summary>
+    public static ClipboardPanel? Current { get; private set; }
 
     public ClipboardPanel()
     {
@@ -133,6 +137,7 @@ public sealed partial class ClipboardPanel : UserControl
 
     public void OnShown()
     {
+        Current = this;
         _active = true;
         SearchBox.Text = string.Empty;
         SetKeyHints(false);
@@ -163,6 +168,7 @@ public sealed partial class ClipboardPanel : UserControl
 
     public void OnHidden()
     {
+        Current = null;
         _active = false;
         _keyHintTimer.Stop();
         _showKeyHints = false;
@@ -177,6 +183,29 @@ public sealed partial class ClipboardPanel : UserControl
             store.CommitDeletion();
             store.EnforceLimits();
         }
+    }
+
+    /// <summary>R33：5000 条时按 ↓ 从选中到布局更新的耗时；返回中位数 / 最慢 5%。</summary>
+    public (double Median, double P95, int Count) MeasureSelection(int steps)
+    {
+        var times = new List<double>(Math.Max(1, steps));
+        for (var step = 0; step < steps && _rows.Count > 1; step++)
+        {
+            var watch = Stopwatch.StartNew();
+            List.SelectedIndex = (step * 37) % _rows.Count;
+            UpdateLayout();
+            times.Add(watch.Elapsed.TotalMilliseconds);
+        }
+
+        if (times.Count == 0)
+        {
+            return (0, 0, 0);
+        }
+
+        times.Sort();
+        var median = times[times.Count / 2];
+        var p95 = times[Math.Min(times.Count - 1, (int)(times.Count * 0.95))];
+        return (median, p95, times.Count);
     }
 
     public void Refresh(long? keepSelection = null, bool animated = true)
