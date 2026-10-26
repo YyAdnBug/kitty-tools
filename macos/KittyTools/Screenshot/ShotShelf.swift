@@ -940,7 +940,7 @@ struct ShelfCardView: View {
       .font(.system(size: 12, weight: .medium))
       if compact {
         // 矮卡只剩图标：固定 26 × 26 的圆（按图标的宽留边的话各个符号宽窄不一：27–29.5）
-        label.frame(width: 26, height: 26).hudSkin(Circle())
+        label.frame(width: 26, height: 26).hudSkin(Circle(), glass: false)
       } else {
         label.padding(.horizontal, 10).frame(height: 26).hudSkin(Capsule())
       }
@@ -956,7 +956,8 @@ struct ShelfCardView: View {
       Image(systemName: symbol)
         .font(.system(size: 10, weight: .bold))
         .frame(width: 22, height: 22)
-        .hudSkin(Circle())
+        // 同晾衣绳的 ✕：小圆钮不换玻璃
+        .hudSkin(Circle(), glass: false)
     }
     .buttonStyle(PressScale())
     .help(title)

@@ -215,7 +215,7 @@ private struct NoteFan: View {
       Image(systemName: "plus")
         .font(.system(size: metrics.fontSize, weight: .semibold))
         .frame(width: metrics.plusSize, height: metrics.plusSize)
-        .hudSkin(Circle())
+        .hudSkin(Circle(), glass: false)  // 小圆钮不换玻璃（Style.hudSkin）
     }
     .buttonStyle(.plain)
     .overlay { ActionSystemMenu(items: { model.edgeItems }, onMenu: model.menuShown) }

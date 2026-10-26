@@ -694,8 +694,12 @@ extension View {
   /// borderWidth）；圆角被夹到高的一半时，截图自检走的 `CALayer.render(in:)` 在两端各多画一段直线（内、外描边各一条，
   /// 和线宽无关，底色那层没有），窗口服务器画的没有。传 `Capsule(style: .circular)` 屏外也干净，但真机上两端的边缘像素
   /// 会跟着变，所以没换；纯图层那边的同一件事见 SelectionView 的提示胶囊
-  @ViewBuilder func hudSkin<S: InsettableShape>(_ shape: S) -> some View {
-    if #available(macOS 26, *) {
+  /// glass：macOS 26 起换不换液态玻璃。**小圆钮传 false**（2026-10-26 用户在 macOS 27 上报「晾衣绳的
+  /// 关闭按钮样式不对」：22 点的圆钮上玻璃画出来是一块比它大、带圆角的方块——玻璃自己的边缘和高光铺到了
+  /// 视图外面，圆形就看不出来了；排版尺寸是对的 22 × 22，问题只在画出来的样子）。照 mac-whisker §2
+  /// 「26 上仍是填充」那一条处理：这几件小控件留在填充皮肤上
+  @ViewBuilder func hudSkin<S: InsettableShape>(_ shape: S, glass: Bool = true) -> some View {
+    if #available(macOS 26, *), glass {
       foregroundStyle(Color(nsColor: Style.HUD.text))
         .glassEffect(.regular, in: shape)
         .environment(\.colorScheme, .dark)

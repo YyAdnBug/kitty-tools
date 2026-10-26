@@ -159,7 +159,8 @@ private struct ClotheslineCard: View {
     Image(systemName: "xmark")
       .font(.system(size: 10, weight: .bold))
       .frame(width: ClotheslineLayout.closeSide, height: ClotheslineLayout.closeSide)
-      .hudSkin(Circle())
+      // 小圆钮不换玻璃：26 起玻璃在这么小的圆上画出来是一块带圆角的方块（Style.hudSkin 那条注释）
+      .hudSkin(Circle(), glass: false)
       .padding(ClotheslineLayout.closeInset)
       .accessibilityHidden(true)
   }
