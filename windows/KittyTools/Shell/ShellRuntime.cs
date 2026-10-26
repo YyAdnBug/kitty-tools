@@ -319,6 +319,16 @@ internal sealed class ShellRuntime
             });
         }
 
+        if (Environment.GetCommandLineArgs().Contains("--a11y-audit", StringComparer.OrdinalIgnoreCase))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
+            {
+                ShowSettings(welcome: false);
+                await Task.Delay(800);
+                _settingsWindow?.AuditAccessibility();
+            });
+        }
+
         // 调试 / 自检：文件搜索（R17）的耗时和结果数。
         var fileSearchArg = Environment.GetCommandLineArgs()
             .FirstOrDefault(arg => arg.StartsWith("--file-search=", StringComparison.OrdinalIgnoreCase));

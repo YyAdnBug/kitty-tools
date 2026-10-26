@@ -1487,10 +1487,11 @@ Windows 原生版的发版冒烟清单和每批手测。编号一直往下排，
      → 位置和大小按目标显示器的 DPI 算（`Displays` 已经用 `MonitorFromPoint` + `GetDpiForMonitor`）。
      开发机：加了 `--fake-dpi=150` 覆盖缩放；负坐标 / 竖屏两个纯函数用例过了；真机第二块屏还没测。
 
-280. **`--a11y-audit`**（没做）
+280. **`--a11y-audit`**（半走）
      依次打开每个窗口 / 面板，遍历 UIA 树，列出没有名字和键盘到不了的可交互元素。
      → 两项都是 0。
-     开发机没写这个调试参数。
+     开发机：加了 `AccessibilityAudit`，`--a11y-audit` 打开设置页并遍历可视树，日志
+     `a11y.settings total=18 unnamed=0 unreachable=0`；剪贴板 / 启动器 / 翻译 / 截图面板还没逐个审计。
 
 281. **主题资源 / 高对比度**（并进 PLAN-v7 第 1 批）
      设置卡、次要文字、分隔线改成 `{ThemeResource ...}`；浅色 + 深色设置、运行中切换各截一遍。

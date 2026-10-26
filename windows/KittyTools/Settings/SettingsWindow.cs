@@ -2026,6 +2026,8 @@ internal sealed class SettingsWindow : Window
         }
     }
 
+    public void AuditAccessibility() => AccessibilityAudit.Run(_content, "settings");
+
     private async Task UninstallAsync()
     {
         var dialog = new ContentDialog
