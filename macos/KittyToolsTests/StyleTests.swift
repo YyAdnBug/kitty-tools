@@ -153,6 +153,7 @@ struct IslandExcerptTests {
       "eject.circle.fill", "xmark.circle.fill", "speaker.slash.circle.fill", "speaker.circle.fill",
       "speaker.wave.2.circle.fill", "minus.circle.fill", "play.circle.fill", "pause.circle.fill",
       "clock.circle.fill", "waveform.circle.fill", "video.circle.fill", "arrow.down.circle.fill",
+      "arrow.triangle.2.circlepath.circle.fill",
       ShelfCard.gifIslandSymbol, ShelfCard.compressIslandSymbol,
     ]
     let bare = [

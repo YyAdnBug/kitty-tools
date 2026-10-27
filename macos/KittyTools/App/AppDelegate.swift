@@ -474,7 +474,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // 变化 8 pt 以上才带动画：流式输出时每来几个字都会长一点，小变化直接设
             panel.setContentHeight(height, animated: abs(panel.frame.height - height) >= 8)
           },
-          replaceOriginal: { [unowned self] in replaceOriginal() }
+          replaceOriginal: { [unowned self] in replaceOriginal() },
+          isShown: { created?.isVisible ?? false }
         ).environment(island)))
     created = panel
     coordinator.historyList.island = island
@@ -531,6 +532,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 这次的欢迎引导是首次安装（「登录时自动打开」默认勾）；关于页重看时清掉，勾选框跟随当前状态
   private var firstInstall = false
+  /// 「已更新到」那座岛已经顺带说了同步新加的几类先没勾（NoteSyncer.isUpgrade）：便签库开好后不再单独弹
+  private var toldSyncUpgrade = false
 
   /// 设置窗的导航状态：窗口懒建，主菜单的「显示 › 返回」（KittyToolsApp 的 SettingsCommands）一启动就要读它
   let settingsNavigation = SettingsNavigation()
@@ -920,13 +923,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if let noteStore {
       let syncer = NoteSyncer(store: noteStore)
       syncer.island = island
+      // 从只同步便签的版本升上来：新加的几类先没勾（NoteSyncer.isUpgrade），说一声去哪里勾。「已更新到」那座岛已经并进去
+      // 说了的不再说；岛上正挂着警告（快捷键没注册上）时也不弹——同一座岛原地换内容，警告不能被盖掉，只靠设置页那句
+      if syncer.upgraded, !toldSyncUpgrade, island.content?.tone != .warning {
+        island.show(
+          "现在也能同步设置、片段和收藏这些了", detail: "要同步哪几类，到 设置 › 通用「同步」里勾上", tone: .info,
+          symbol: "arrow.triangle.2.circlepath.circle.fill", actions: [openSyncSettings])
+      }
       let settings = SettingsSync(applied: { [unowned self] in
         // 换了保留天数、图片上限这些，清掉了历史的说一声（不然无声少了东西）
         let pruned = settingsImported()
         if pruned > 0 {
           island.show(
             "同步换了剪贴板的保留设置", detail: "按新的设置清掉了 \(pruned) 条历史", tone: .info,
-            symbol: "arrow.triangle.2.circlepath")
+            symbol: "arrow.triangle.2.circlepath.circle.fill")
         }
       })
       // 正在录屏 / 录音、录快捷键、状态屏开着：这一轮先不合设置（对面关掉录制功能会把这台正在录的停掉）
@@ -1287,6 +1297,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 岛上的「打开设置」：跳到 设置 › 快捷键（快捷键没注册上、同步来的撞上了）
   private var openHotKeySettings: Island.Action {
     .init("打开设置", opens: true) { [unowned self] in showSettings(page: .hotkeys) }
+  }
+
+  /// 岛上的「勾选同步」：跳到 设置 › 通用（同步那一节在里面；从只同步便签的版本升上来时）
+  private var openSyncSettings: Island.Action {
+    .init("勾选同步", opens: true) { [unowned self] in showSettings(page: .general) }
   }
 
   /// 暂停 / 恢复记录剪贴板（菜单栏、启动器，D4）：不存盘，重启 App 自动恢复记录（免得忘了关）；
@@ -2504,10 +2519,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       showSettings(page: .general, onboarding: true)
     } else if last != AboutTab.version {
       let summary = AboutTab.releases.first { $0.version == AboutTab.version }?.summary
+      var actions = [
+        Island.Action("看更新了什么", opens: true) { [unowned self] in showSettings(page: .about) }
+      ]
+      // 从只同步便签的版本升上来、开着同步：新加的几类先没勾（NoteSyncer.isUpgrade；便签库开好后才真正存下），并进这座岛
+      // 说——便签库开好后单独弹的话会把这座岛原地换掉
+      var detail = summary.map(Island.excerpt)
+      if NoteSyncer.isUpgrade(.standard) {
+        toldSyncUpgrade = true
+        detail = [detail, "现在也能同步设置、片段和收藏这些了，到 设置 › 通用「同步」里勾上"]
+          .compactMap { $0 }.joined(separator: "；")
+        actions.append(openSyncSettings)
+      }
       island.show(
-        "已更新到 \(AboutTab.version)", detail: summary.map(Island.excerpt), tone: .success,
-        symbol: "sparkles",
-        actions: [.init("看更新了什么", opens: true) { [unowned self] in showSettings(page: .about) }])
+        "已更新到 \(AboutTab.version)", detail: detail, tone: .success, symbol: "sparkles",
+        actions: actions)
     }
   }
 

@@ -3986,7 +3986,8 @@ struct SnapshotProbeTests {
   }
 
   /// 设置 › 通用「同步」（2026-10-23，SyncSection）：没开、第一轮还没完 / 第一轮就停了、好了（两台别的 Mac、还在下载几个；
-  /// 浅 / 深）、还没有别的 Mac、等确认（刹车）、停了（文件夹不在、写不进去）、便签关着。几秒，图以 sync- 开头。
+  /// 浅 / 深）、还没有别的 Mac、等确认（刹车）、停了（文件夹不在、写不进去）、从只同步便签的版本升上来的（新加的几类没勾、
+  /// 文件夹那一行多一句）、便签关着。几秒，图以 sync- 开头。
   /// 同步接的是内存库和临时偏好域（便签的功能开关也读它），状态直接设，不碰真的文件夹和偏好
   @Test(.enabled(if: directory != nil)) func sync() throws {
     let out = try #require(Self.directory)
@@ -4007,6 +4008,8 @@ struct SnapshotProbeTests {
       SyncSection.iCloudDrive.appending(path: "Kitty Tools 便签").path,
       forKey: Prefs.notesSyncFolder)
     prefs.set("库", forKey: Prefs.notesSyncLibrary)
+    // 勾存过（这一版里开的同步）：不然每张都当成从只同步便签的版本升上来的
+    prefs.set([String](), forKey: Prefs.syncSkipped)
     let now = Date.now
     let air = NoteSyncDisk.Peer(id: "1", name: "MacBook Air", seen: now.addingTimeInterval(-300))
     let imac = NoteSyncDisk.Peer(id: "2", name: "iMac", seen: now.addingTimeInterval(-86_400 * 1.2))
@@ -4061,6 +4064,16 @@ struct SnapshotProbeTests {
           to: "\(out)/sync-\(state)\(dark ? "-dark" : "").png")
       }
     }
+    // 从只同步便签的版本升上来：新加的几类没勾、文件夹那一行多一句（第三轮体检 R1）
+    prefs.removeObject(forKey: Prefs.syncSkipped)
+    try snapshot(
+      section {
+        $0.status = .idle
+        $0.lastSync = now.addingTimeInterval(-120)
+        $0.peers = [air]
+      }, size: size, dark: false, to: "\(out)/sync-upgraded.png")
+    prefs.set([String](), forKey: Prefs.syncSkipped)
+    prefs.removeObject(forKey: Prefs.syncNewKindsHint)
     // 在通用页里的位置（导出与导入上面）、便签关着时
     let general = NoteSyncer(store: store, defaults: prefs)
     general.status = .idle

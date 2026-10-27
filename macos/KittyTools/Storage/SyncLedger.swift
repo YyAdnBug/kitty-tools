@@ -22,8 +22,18 @@ import Foundation
   /// 账本（library 是文件夹的库编号；没有、是别的库的 = nil，第一次合）。读不出来抛错（当成第一次合的话，本机上一轮之后改的
   /// 会被盖回去、删的被救回来）
   func syncLedger(library: String) throws -> SyncRecords.Ledger?
-  /// 落合并出来的改动（编号 → 新内容，nil = 不再留着）并在**同一个事务**里存账本；没成返回 false（什么都没改，账本也没存）
-  func applySync(_ changes: [String: String?], ledger: SyncRecords.Ledger, library: String) -> Bool
+  /// 落合并出来的改动（编号 → 新内容，nil = 不再留着）并在**同一个事务**里存账本；没成的时候什么都没改，账本也没存
+  func applySync(_ changes: [String: String?], ledger: SyncRecords.Ledger, library: String)
+    -> SyncApplied
+}
+
+/// 落合并结果落成了没有
+enum SyncApplied {
+  case saved
+  /// 有一条是更新版本写的（SyncRecords.decodeExact 解不出、编号或种类这一版不认识）：整个不落，这一类停下说先更新
+  case newer
+  /// 写库、存账本没成
+  case failed
 }
 
 extension SyncSource {

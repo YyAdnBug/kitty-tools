@@ -23,6 +23,8 @@ import Observation
   /// 清空过几次：历史列表的 ⌘Z 只插回同一次清空之后删掉的（清空像剪贴板的「立即清空」一样不能撤）
   @ObservationIgnored private(set) var clears = 0
   @ObservationIgnored private let db: Database
+  /// 读「记录翻译历史」开没开（同步来的取消收藏照本机的规矩：关着历史时整条删）；单测换成临时偏好域
+  @ObservationIgnored var defaults: UserDefaults = .standard
 
   init(db: Database) throws {
     self.db = db
@@ -325,10 +327,11 @@ extension HistoryStore: SyncSource {
     try SyncLedger.load(.vocabulary, library: library, in: db)
   }
 
-  /// 落合并结果（库和账本一个事务；有一条解不出来就整个不落，这一类停在「没存上」）：别处不再收藏的，本机取消收藏（还在历史里）；
+  /// 落合并结果（库和账本一个事务；有一条解不出来就整个不落，这一类停下说先更新（.newer））：别处不再收藏的，本机取消收藏（还在历史里；关着历史时整条删）；
   /// 新来的 / 改了的记成收藏，同原文 + 同目标语言的普通记录让位（一句话只留一条）。和本机另一条**收藏的**撞上：**编号小的
   /// 留下**（几台挑的一样）——本机那条小就不落来的这条（它的编号本机删掉，下一轮这个删除传出去），来的小就换掉本机那条
-  func applySync(_ changes: [String: String?], ledger: SyncRecords.Ledger, library: String) -> Bool
+  func applySync(_ changes: [String: String?], ledger: SyncRecords.Ledger, library: String)
+    -> SyncApplied
   {
     var words: [(String, SyncedWord?)] = []
     for (id, value) in changes {
@@ -337,17 +340,22 @@ extension HistoryStore: SyncSource {
         continue
       }
       guard let word = SyncRecords.decodeExact(SyncedWord.self, from: value) else {
-        return false
+        return .newer
       }
       words.append((id, word))
     }
     // 先取消收藏的、再新来的；同一类里按编号（几台的先后一样）
     words.sort { ($0.1 == nil ? 0 : 1, $0.0) < ($1.1 == nil ? 0 : 1, $1.0) }
+    // 关着历史时取消收藏 = 整条删（同 TranslateCoordinator.toggleFavorite：留着就成了「关了历史却有历史」）
+    let unfavorite =
+      defaults.bool(forKey: Prefs.translateHistoryEnabled)
+      ? "UPDATE translations SET favorite = 0 WHERE id = ?"
+      : "DELETE FROM translations WHERE id = ?"
     do {
       try db.transaction {
         for (id, word) in words {
           guard let word else {
-            try db.execute("UPDATE translations SET favorite = 0 WHERE id = ?", [id])
+            try db.execute(unfavorite, [id])
             continue
           }
           let kept = try db.query(
@@ -377,9 +385,9 @@ extension HistoryStore: SyncSource {
       }
     } catch {
       Log.storage.error("生词本同步写库失败：\(error)")
-      return false
+      return .failed
     }
     revision += 1
-    return true
+    return .saved
   }
 }

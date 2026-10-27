@@ -123,7 +123,7 @@ nonisolated enum SyncRecords {
   }
 
   /// 解开一条内容，**编回去要一字不差**：更新版本写的（多了这一版不认识的字段）解得开但编回去会丢字段——落下去再发出去就把
-  /// 别人的字段删了，所以当成解不出来（这一类停在「没存上」，等更新）
+  /// 别人的字段删了，所以当成解不出来（仓库返回 .newer，这一类停下说先更新）
   static func decodeExact<Value: Codable>(_ type: Value.Type, from value: String) -> Value? {
     guard let decoded = try? JSONDecoder().decode(type, from: Data(value.utf8)),
       let again = try? encoder.encode(decoded),

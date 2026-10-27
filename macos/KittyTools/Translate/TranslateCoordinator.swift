@@ -57,6 +57,8 @@ import Observation
   let historyList: HistoryList
   /// 最近一次翻译的原文（去首尾空白）。setter 不设 private 只为截图自检
   var translatedSource: String?
+  /// 浮窗收着时换了源 / 目标语言（同步来、导入设置；浮窗不在后台重译）：卡片还是旧语言的，下次 resumeInput 照新语言重译
+  @ObservationIgnored var languageChanged = false
   // 以下几项只由会话自己改；setter 不设 private 只为截图自检能直接摆出各种状态
   /// 本地检测出的原文语种（偏向第一 / 第二语言；纯数字等认不出时为 nil）
   var detected: Lang?
@@ -218,12 +220,13 @@ import Observation
   }
 
   /// 输入翻译热键 / 菜单再打开浮窗（体检 A14）：保留上次的原文和结果（调用方把原文全选，打字即替换），
-  /// 收起提示、关上历史；上次收起时被中断的卡片重新跑
+  /// 收起提示、关上历史；上次收起时被中断的卡片重新跑。收着时换过语言的整个重译
   func resumeInput() {
     notice = nil
     noticePermission = nil
     missedSelection = false
     showsHistory = false
+    if languageChanged, !sourceText.isEmpty { return start() }
     for card in cards where card.state == .failed(.interrupted) { run(card.service) }
   }
 
@@ -237,6 +240,7 @@ import Observation
 
   /// 用当前原文开新会话（语言设置变了也调它重译）
   func start() {
+    languageChanged = false
     cancel()
     showsHistory = false
     notice = nil

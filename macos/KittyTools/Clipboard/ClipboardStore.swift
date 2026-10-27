@@ -699,15 +699,17 @@ extension ClipboardStore: SyncSource {
     try SyncLedger.load(.clips, library: library, in: db)
   }
 
-  /// 落合并结果（先算好新的样子，库和账本一个事务写下去，成了才换进内存；有一条解不出来就整个不落，这一类停在「没存上」——
+  /// 落合并结果（先算好新的样子，库和账本一个事务写下去，成了才换进内存；有一条解不出来就整个不落，这一类停下说先更新（.newer）——
   /// 当成删了的话会一路删到每一台）：
   /// - 收藏夹先（条目要归进去）。和本机另一个同名的撞上：**编号小的留下**（几台挑的一样），另一个的条目归进留下的那个。
   /// - 别处删了 / 不再留着的：本机这条**取消收藏、移出片段和收藏夹**（还在历史里，按保留天数清理；不直接删行）。先落这些，
   ///   再落新来的。
   /// - 新来的 / 改了的：和本机同样正文的普通条目合成一条（备注没有就用本机的）；和本机另一条留下来的同正文的撞上：**编号小的
   ///   留下**，收藏、片段取并集，备注、收藏夹缺的补上（同 adopt）——输的那条本机删掉，下一轮它的删除和留下那条的改动传出去，
-  ///   几台合到同一条（同一段文字只出现一次）
-  func applySync(_ changes: [String: String?], ledger: SyncRecords.Ledger, library: String) -> Bool
+  ///   几台合到同一条（同一段文字只出现一次）。输的那条是第一次合时被去重掉的本机那条（这一轮刚清掉标记、没有墓碑）：标记照
+  ///   清之前的取
+  func applySync(_ changes: [String: String?], ledger: SyncRecords.Ledger, library: String)
+    -> SyncApplied
   {
     var groupChanges: [(UUID, SyncedGroup?)] = []
     var clipChanges: [(UUID, SyncedClip?)] = []
@@ -715,13 +717,13 @@ extension ClipboardStore: SyncSource {
     for (key, value) in changes {
       if key == SyncRecords.orderID {
         guard let value else { continue }
-        guard let ids = SyncRecords.decodeExact([String].self, from: value) else { return false }
+        guard let ids = SyncRecords.decodeExact([String].self, from: value) else { return .newer }
         groupOrder = ids
         continue
       }
       let isGroup = key.hasPrefix(Self.groupPrefix)
       guard let id = UUID(uuidString: isGroup ? String(key.dropFirst(Self.groupPrefix.count)) : key)
-      else { return false }
+      else { return .newer }
       guard let value else {
         if isGroup { groupChanges.append((id, nil)) } else { clipChanges.append((id, nil)) }
         continue
@@ -729,12 +731,12 @@ extension ClipboardStore: SyncSource {
       // 解不出来、或者是更新版本写的（编回去不一样）：整个不落
       if isGroup {
         guard let group = SyncRecords.decodeExact(SyncedGroup.self, from: value) else {
-          return false
+          return .newer
         }
         groupChanges.append((id, group))
       } else {
         guard let clip = SyncRecords.decodeExact(SyncedClip.self, from: value) else {
-          return false
+          return .newer
         }
         clipChanges.append((id, clip))
       }
@@ -800,6 +802,9 @@ extension ClipboardStore: SyncSource {
     var newItems = items
     var touched: [UUID: ClipItem] = [:]
     var removedItems: Set<UUID> = []
+    /// 第一次合时被去重掉的本机那条（先走了清标记那一支）清掉之前的样子：同正文合成一条时从它取标记。有墓碑的是别处真删了 /
+    /// 取消了的，不记（不然别处取消的标记会被带回来）
+    var unretained: [UUID: ClipItem] = [:]
     for index in newItems.indices {
       guard let group = newItems[index].groupID, !groupIDs.contains(group) else { continue }
       newItems[index].groupID = resolved(group)
@@ -810,6 +815,7 @@ extension ClipboardStore: SyncSource {
       guard let synced else {
         // 别处删了 / 不再留着：本机取消收藏、移出片段和收藏夹
         guard let index else { continue }
+        if ledger.erased[id.uuidString] == nil { unretained[id] = newItems[index] }
         newItems[index].favorite = false
         newItems[index].isSnippet = false
         newItems[index].groupID = nil
@@ -834,7 +840,7 @@ extension ClipboardStore: SyncSource {
       }) {
         newItems.removeAll { $0.id == other.id }
         var keeper = other.isRetained && other.id.uuidString < id.uuidString ? other : item
-        let loser = keeper.id == other.id ? item : other
+        let loser = keeper.id == other.id ? item : unretained[other.id] ?? other
         keeper.favorite = keeper.favorite || loser.favorite
         keeper.isSnippet = keeper.isSnippet || loser.isSnippet
         keeper.note = keeper.note ?? loser.note
@@ -881,11 +887,11 @@ extension ClipboardStore: SyncSource {
       }
     } catch {
       Log.storage.error("剪贴板同步写库失败：\(error)")
-      return false
+      return .failed
     }
     groups = newGroups
     items = newItems
     for id in Set(touched.keys).union(removedItems) { searchKeys[id] = nil }
-    return true
+    return .saved
   }
 }

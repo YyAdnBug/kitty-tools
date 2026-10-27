@@ -57,7 +57,8 @@ import Foundation
 
   /// 落合并结果：改了的换掉、新来的加上、别处删了的拿出列表（密钥留着），按顺序那条排；有一条解不出来（或者是更新版本写的）
   /// 整个不落
-  func applySync(_ changes: [String: String?], ledger: SyncRecords.Ledger, library: String) -> Bool
+  func applySync(_ changes: [String: String?], ledger: SyncRecords.Ledger, library: String)
+    -> SyncApplied
   {
     let before = Dictionary(store.services.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
     var services = before
@@ -65,7 +66,7 @@ import Foundation
     for (id, value) in changes {
       if id == SyncRecords.orderID {
         guard let value else { continue }
-        guard let ids = SyncRecords.decodeExact([String].self, from: value) else { return false }
+        guard let ids = SyncRecords.decodeExact([String].self, from: value) else { return .newer }
         order = ids
         continue
       }
@@ -75,7 +76,7 @@ import Foundation
       }
       guard let service = SyncRecords.decodeExact(TranslateService.self, from: value),
         service.id == id
-      else { return false }
+      else { return .newer }
       services[id] = service
     }
     // 第一次合时被去重掉的本机 AI 服务：密钥搬给留下的那个（它在本机还没有密钥时）
@@ -91,8 +92,8 @@ import Foundation
     do {
       try SyncLedger.save(ledger, kind: .services, library: library, in: defaults)
     } catch {
-      return false
+      return .failed
     }
-    return true
+    return .saved
   }
 }

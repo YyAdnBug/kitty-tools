@@ -464,15 +464,27 @@ struct ShotHistoryTests {
     #expect(ShotHistory.stale([fresh, old, middle], now: now, days: 0, limit: 0).isEmpty)
   }
 
-  /// 记一条之后自己清一遍：上限设得很小时旧的当场被删掉（连图一起）
+  /// 记一条之后自己清一遍，上限按 MB 算（第三轮体检 R9）：两条各约 0.4 MB、上限 1 MB 都留着（当成字节的话会删到只剩
+  /// 一条）；头一条长到 2 MB 后再记一条，它当场被删掉（连图一起）
   @Test func prunesAfterRecording() async throws {
     let (history, root) = try makeHistory()
     defer { try? FileManager.default.removeItem(at: root) }
+    history.defaults.set(1, forKey: Prefs.shotHistoryMegabytes)
     let first = try #require(await history.record(image(), scale: 2))
-    history.defaults.set(1, forKey: Prefs.shotHistoryBytes)  // 1 字节：只留最新那条
     _ = await history.record(image(), scale: 2)
-    #expect(history.items.count == 1)
+    history.seed(history.items.map { modified($0, bytes: 400_000) })
+    history.prune()
+    #expect(history.items.count == 2)
+    history.seed(history.items.map { $0.id == first ? modified($0, bytes: 2 * 1024 * 1024) : $0 })
+    _ = await history.record(image(), scale: 2)
+    #expect(history.items.count == 2 && !history.items.contains { $0.id == first })
     #expect(!FileManager.default.fileExists(atPath: history.url(for: first).path))
+  }
+
+  private func modified(_ item: ShotHistory.Item, bytes: Int) -> ShotHistory.Item {
+    var item = item
+    item.bytes = bytes
+    return item
   }
 }
 

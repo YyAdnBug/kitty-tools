@@ -42,7 +42,8 @@ import Foundation
   }
 
   /// 落合并结果：改了的换掉、新来的加上、别处删了的拿掉，按顺序那条排；有一条解不出来（或者是更新版本写的）整个不落
-  func applySync(_ changes: [String: String?], ledger: SyncRecords.Ledger, library: String) -> Bool
+  func applySync(_ changes: [String: String?], ledger: SyncRecords.Ledger, library: String)
+    -> SyncApplied
   {
     let current = StatusPreset.load(defaults)
     var presets = Dictionary(current.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -50,7 +51,7 @@ import Foundation
     for (id, value) in changes {
       if id == SyncRecords.orderID {
         guard let value else { continue }
-        guard let ids = SyncRecords.decodeExact([String].self, from: value) else { return false }
+        guard let ids = SyncRecords.decodeExact([String].self, from: value) else { return .newer }
         order = ids
         continue
       }
@@ -59,7 +60,7 @@ import Foundation
         continue
       }
       guard let preset = SyncRecords.decodeExact(StatusPreset.self, from: value), preset.id == id
-      else { return false }
+      else { return .newer }
       presets[id] = preset
     }
     let list = SyncRecords.arranged(presets.keys, by: order).compactMap { presets[$0] }
@@ -67,8 +68,8 @@ import Foundation
     do {
       try SyncLedger.save(ledger, kind: .statuses, library: library, in: defaults)
     } catch {
-      return false
+      return .failed
     }
-    return true
+    return .saved
   }
 }

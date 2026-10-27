@@ -53,7 +53,8 @@ import Foundation
   }
 
   /// 落合并结果：改了的换掉、新来的加上、别处删了的拿掉，按顺序那条排；有一条解不出来（或者是更新版本写的）整个不落
-  func applySync(_ changes: [String: String?], ledger: SyncRecords.Ledger, library: String) -> Bool
+  func applySync(_ changes: [String: String?], ledger: SyncRecords.Ledger, library: String)
+    -> SyncApplied
   {
     var engines = Dictionary(
       WebSearch.engines(in: defaults).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -61,7 +62,7 @@ import Foundation
     for (id, value) in changes {
       if id == SyncRecords.orderID {
         guard let value else { continue }
-        guard let ids = SyncRecords.decodeExact([String].self, from: value) else { return false }
+        guard let ids = SyncRecords.decodeExact([String].self, from: value) else { return .newer }
         order = ids
         continue
       }
@@ -69,7 +70,7 @@ import Foundation
         engines[id] = nil
         continue
       }
-      guard let synced = SyncRecords.decodeExact(Synced.self, from: value) else { return false }
+      guard let synced = SyncRecords.decodeExact(Synced.self, from: value) else { return .newer }
       engines[id] = SearchEngine(
         id: id, name: synced.name, keyword: synced.keyword, urlTemplate: synced.url,
         enabled: synced.fallback)
@@ -79,8 +80,8 @@ import Foundation
     do {
       try SyncLedger.save(ledger, kind: .engines, library: library, in: defaults)
     } catch {
-      return false
+      return .failed
     }
-    return true
+    return .saved
   }
 }

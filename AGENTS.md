@@ -74,7 +74,7 @@ xcrun swift-format format -i -r macos/KittyTools
 # 不到一分钟，图都以 notes- 开头：-only-testing:'KittyToolsTests/SnapshotProbeTests/notes()'；
 # 便签屏幕边缘那叠（药丸、标签列、预览卡、打开的便签、设置 › 便签「屏幕边缘」）是 notesDeck()，约一分钟，图以 notes-deck- 开头：-only-testing:'KittyToolsTests/SnapshotProbeTests/notesDeck()'；
 # 浮动便签（浅深、固定 / 没固定、8 种纸色、最小尺寸、操作菜单、那叠里浮着那条的标签）是 notesFloat()，约半分钟，图以 notes-float- 开头：-only-testing:'KittyToolsTests/SnapshotProbeTests/notesFloat()'；
-# 设置 › 通用「同步」那一节（没开、第一轮、好了、等确认、停了、便签关着、它在通用页里的位置）是 sync()，几秒，图以 sync- 开头；
+# 设置 › 通用「同步」那一节（没开、第一轮、好了、等确认、停了、升级上来的、便签关着、它在通用页里的位置）是 sync()，几秒，图以 sync- 开头；
 # 程序坞预览（面板：程序坞在下 / 左、悬停、换行、没有屏幕录制授权、没标题；设置 › 程序坞预览）是 dockPreview()，十几秒，
 # 图以 dock-preview- / settings-dock-preview 开头：-only-testing:'KittyToolsTests/SnapshotProbeTests/dockPreview()'）
 TEST_RUNNER_KITTY_SNAPSHOT_DIR=/tmp/kitty-shots xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \

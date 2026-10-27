@@ -10,6 +10,9 @@
 //   文件夹里撒子文件夹；文件夹和库编号记在这台电脑自己的偏好里，
 //   不注册默认值、不跟着导出走；开了之后由调用方 start）；关掉（disable）只是不再同步，文件夹里的东西留着、本机的便签不动。
 //   stop 之后 syncNow、刹车的「继续」都不再起一轮。
+// - **从只同步便签的版本升上来的**（第三轮体检 R1，isUpgrade）：开着同步、设置没合过、勾从没存过——便签之外的几类在第一轮
+//   之前先不勾（存下来），刘海岛（并进「已更新到」那座；岛上挂着警告时不弹）和设置页各说一声；设置页勾上还没合过的一类时
+//   先问「合在一起？」（joins）。
 // - **什么时候合**：开的时候一轮，之后每 20 秒一轮（ponytail: 轮询；同步盘本来就是几秒到几分钟的延迟，没变的文件只看属性
 //   不读，几百个文件一轮几毫秒——真嫌慢再换 FSEvents），醒来时一轮，设置里「立即同步」一轮；一轮没完时再要的排在它后面。
 // - **一轮**：先落盘（flush：写进文件夹的东西必须是落下去了的）→ 主线程外读文件夹 → 先认是不是那个文件夹（标记、格式；
@@ -47,7 +50,7 @@ import Observation
     case missingFolder
     /// 不是那个文件夹（标记没了 / 换了）
     case notTheFolder
-    /// 文件夹是更新版本的 Kitty Tools 写的
+    /// 文件夹或某一类里有更新版本的 Kitty Tools 写的东西
     case newerFormat
     /// 哪台电脑的墓碑读不出来（多半是还没下载完；它的名字，没写名字是 nil）
     case unreadable(String?)
@@ -85,6 +88,11 @@ import Observation
   @ObservationIgnored var featureOn: (String) -> Bool = { _ in true }
   /// 这台电脑上不同步的几部分（设置页的勾）
   private(set) var skipped: Set<String>
+  /// 设置页「同步」那一节说一句「现在也能同步别的几类，勾上要同步的」（upgraded 那次存下；勾上哪一类、看过那一节离开时
+  /// 清掉，停止同步不清——再开时那几类照旧没勾）
+  private(set) var newKindsHint: Bool
+  /// 这次启动认出是从只同步便签的版本升上来的（AppDelegate 在刘海岛说一声）
+  @ObservationIgnored private(set) var upgraded = false
   /// 这台电脑叫什么（device.json）；单测换成固定的
   @ObservationIgnored var computerName: () async -> String = { await NoteSyncDisk.computerName() }
   @ObservationIgnored private var cache = NoteSyncDisk.Cache()
@@ -105,7 +113,24 @@ import Observation
       URL(filePath: $0, directoryHint: .isDirectory)
     }
     library = defaults.string(forKey: Prefs.notesSyncLibrary)
+    // 升级上来的：便签之外的几类先不勾、存下来（必须在第一轮之前：设置第一次合是整个跟着别的 Mac）
+    let upgraded = Self.isUpgrade(defaults)
+    if upgraded {
+      defaults.set(SyncRecords.Kind.allCases.map(\.rawValue).sorted(), forKey: Prefs.syncSkipped)
+      defaults.set(true, forKey: Prefs.syncNewKindsHint)
+    }
     skipped = Set(defaults.stringArray(forKey: Prefs.syncSkipped) ?? [])
+    newKindsHint = defaults.bool(forKey: Prefs.syncNewKindsHint)
+    self.upgraded = upgraded
+  }
+
+  /// 从只同步便签的版本（0.6.0）升上来、开着同步的这台：文件夹有、设置这一类没合过（没账本）、「同步的内容」的勾从没存过
+  /// （0.7.0 起开同步时 enable 会存一份）。新加的几类要是默认都勾上，第一轮就把这台的设置、快捷键、功能开关整个换成别的
+  /// Mac 的（adopt），再按对面的保留天数清历史，谁也没问过——所以先不勾，到设置页勾上时再问合不合在一起（joins）
+  static func isUpgrade(_ defaults: UserDefaults) -> Bool {
+    defaults.string(forKey: Prefs.notesSyncFolder) != nil
+      && defaults.object(forKey: SyncLedger.key(.settings)) == nil
+      && defaults.object(forKey: Prefs.syncSkipped) == nil
   }
 
   /// 便签那部分的名字（和类别名放在同一组勾里）
@@ -118,7 +143,28 @@ import Observation
   func setSyncs(_ part: String, _ on: Bool) {
     if on { skipped.remove(part) } else { skipped.insert(part) }
     defaults.set(skipped.sorted(), forKey: Prefs.syncSkipped)
-    if on { syncNow() }
+    if on {
+      dismissHint()
+      syncNow()
+    }
+  }
+
+  /// 勾上这一类会是它第一次合（还没有这个库的账本），而文件夹里有（或者还不知道有没有）别的 Mac：设置页先问合不合在一起
+  /// ——设置第一次合整个跟着别的 Mac，片段、搜索、翻译服务这些同样内容的只留文件夹那条。便签那部分不问（它没有账本，
+  /// 合的时候两版都留下）
+  func joins(_ part: String) -> Bool {
+    guard let library, lastSync == nil || !peers.isEmpty,
+      let source = sources.first(where: { $0.syncKind.rawValue == part })
+    else { return false }
+    // 读不出来也问（这一轮反正不合）
+    return (try? source.syncLedger(library: library)) == nil
+  }
+
+  /// 不再说那句「现在也能同步别的几类」（勾上了哪一类、设置页那一节看过了）
+  func dismissHint() {
+    guard newKindsHint else { return }
+    newKindsHint = false
+    defaults.removeObject(forKey: Prefs.syncNewKindsHint)
   }
 
   var isEnabled: Bool { folder != nil && library != nil }
@@ -153,6 +199,8 @@ import Observation
     }
     defaults.set(folder.path, forKey: Prefs.notesSyncFolder)
     defaults.set(library, forKey: Prefs.notesSyncLibrary)
+    // 这一版里开的同步（合不合在一起已经问过）：勾存一份，下次启动不当成升级上来的（isUpgrade）
+    defaults.set(skipped.sorted(), forKey: Prefs.syncSkipped)
     self.folder = folder
     self.library = library
     cache = NoteSyncDisk.Cache()
@@ -311,7 +359,7 @@ import Observation
         if copied {
           island?.show(
             "两台电脑改了同一条便签", detail: "另一版放进了「最近删除」", tone: .info,
-            symbol: "arrow.triangle.2.circlepath")
+            symbol: "arrow.triangle.2.circlepath.circle.fill")
         }
       }
       plan = NoteSyncFolder.publish(
@@ -421,8 +469,11 @@ import Observation
         .failed("\(source.syncKind.title)超过 \(NoteSyncDisk.maxErasedBytes >> 20) MB，同步不了"))
     }
     if !outcome.changes.isEmpty || outcome.ledger != ledger {
-      guard source.applySync(outcome.changes, ledger: outcome.ledger, library: library) else {
-        return .problem(.failed("\(source.syncKind.title)没存上"))
+      switch source.applySync(outcome.changes, ledger: outcome.ledger, library: library) {
+      case .saved: break
+      // 有一条是更新版本写的（多了这一版不认识的字段）：整类没落，等这台更新
+      case .newer: return .problem(.newerFormat)
+      case .failed: return .problem(.failed("\(source.syncKind.title)没存上"))
       }
     }
     // 按字节比（String 的相等按 Unicode 等价，只换了写法的改动会漏写）

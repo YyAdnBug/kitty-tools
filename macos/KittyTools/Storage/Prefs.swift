@@ -117,8 +117,14 @@ enum Prefs {
   static let shotHistory = "shotHistory"
   /// 截图历史留多少天（拍板 A3，默认 30；0 = 不按天清）
   static let shotHistoryDays = "shotHistoryDays"
-  /// 截图历史总共最多占多少字节（拍板 A3，默认 2 GB；超了先删最旧的。0 = 不限）
-  static let shotHistoryBytes = "shotHistoryBytes"
+  /// 截图历史总共最多占多少 MB（拍板 A3，默认 2 GB；超了先删最旧的。0 = 不限）
+  static let shotHistoryMegabytes = "shotHistoryMegabytes"
+  /// 「最多占用」的档位（MB，0 = 不限）
+  static let shotHistoryMegabyteChoices = [1024, 2 * 1024, 5 * 1024, 0]
+  /// 旧键（0.7.0 测试版按字节存）：字节数超出设置导出 / 同步收的整数范围（0…100 万），导入、同步、恢复会把 1 / 5 GB 丢回
+  /// 默认，所以换成上面按 MB 存的新键（第三轮体检 R9）——不沿用旧键名：更早的测试版收到 MB 的数会当字节用，把历史删到只剩
+  /// 一条。migrate 换算一次、删掉旧键；开着同步的旧测试版那台收到旧键的墓碑，回到默认 2 GB（可以接受）
+  static let shotHistoryBytesLegacy = "shotHistoryBytes"
 
   /// 正在录的屏的文件路径（ScreenRecorder.workFile，开录时写、收尾时删）：启动时还在 = 上次闪退了，
   /// ScreenRecorder.recover 把能播的挪进快速保存目录（录屏第 1 批，C7）
@@ -235,6 +241,9 @@ enum Prefs {
   /// 这台电脑上不同步的几部分（全局同步 A3：设置页每类一个勾；"notes" 和 SyncRecords.Kind 的名字），同样是这台电脑自己的
   /// 状态、不注册默认值（没有 = 都同步）
   nonisolated static let syncSkipped = "syncSkipped"
+  /// 设置页「同步」那一节要不要说「现在也能同步别的几类」（从只同步便签的版本升上来时存下，勾上哪一类、看过那一节就删；NoteSyncer），
+  /// 同样是这台电脑自己的状态、不注册默认值
+  nonisolated static let syncNewKindsHint = "syncNewKindsHint"
   /// 全部便签窗口上次用的显示方式（NotesWindowModel.Layout 的 rawValue：wall 便签墙 / list 列表；没存过 = 便签墙，
   /// 2026-10-15 手测反馈）。同窗口位置一样是这台电脑自己的状态、**不注册默认值**：不跟着导出 / 导入走
   nonisolated static let notesWindowLayout = "notesWindowLayout"
@@ -340,7 +349,7 @@ enum Prefs {
       screenshotPlacement: ShotPlacement.corner.rawValue,
       shotHistory: true,
       shotHistoryDays: 30,
-      shotHistoryBytes: 2 * 1024 * 1024 * 1024,
+      shotHistoryMegabytes: 2 * 1024,
       screenRecordFrameRate: 30,
       screenRecordCountdown: 3,
       screenRecordShowsCursor: true,
@@ -401,7 +410,8 @@ enum Prefs {
   /// 浏览器书签 / 历史的每家一个开关搬进两个 id 列表（第 12 批，只在新键没存过、旧键改过时，删掉旧键）；
   /// 去掉了的「标签倾斜」开关（notesDeckTiltLegacy）存过的值删掉；
   /// 启动台原来的总开关 launchpadEnabled 挪进功能开关 feature.launchpad（只在新键没存过时，删掉旧键）；
-  /// 常驻缩略图的布尔开关 screenshotShelf 升成「截完图放哪」三选一（晾衣绳拍板 B1，只在新键没存过、旧键关着时）
+  /// 常驻缩略图的布尔开关 screenshotShelf 升成「截完图放哪」三选一（晾衣绳拍板 B1，只在新键没存过、旧键关着时）；
+  /// 截图历史的上限从旧键（字节）换进新键（MB，只在新键没存过时；0 照旧是不限），删掉旧键
   static func migrate(
     _ defaults: UserDefaults = .standard, domainName: String? = Bundle.main.bundleIdentifier
   ) {
@@ -423,6 +433,11 @@ enum Prefs {
     if domain[screenshotPlacement] == nil, domain[screenshotShelfLegacy] as? Bool == false {
       defaults.set(ShotPlacement.none.rawValue, forKey: screenshotPlacement)
     }
+    if domain[shotHistoryMegabytes] == nil, let bytes = domain[shotHistoryBytesLegacy] as? Int {
+      // 不到 1 MB 的正数算 1 MB（换成 0 就成了不限）
+      defaults.set(bytes > 0 ? max(1, bytes / (1024 * 1024)) : 0, forKey: shotHistoryMegabytes)
+    }
+    defaults.removeObject(forKey: shotHistoryBytesLegacy)
     defaults.removeObject(forKey: notesDeckTiltLegacy)
     let launchpad = Feature.launchpad.prefsKey
     if domain[launchpad] == nil, let old = domain[launchpadEnabledLegacy] as? Bool {

@@ -325,6 +325,43 @@ struct SettingsArchiveTests {
     #expect(target.integer(forKey: Prefs.clipboardRetentionDays) == 30)
   }
 
+  /// 截图历史「最多占用」按 MB 存（第三轮体检 R9）：默认值和设置页的每一档导出再导入都不变（按字节存时 1 / 5 GB 超出
+  /// 整数范围、导入时丢回默认 2 GB）；旧键（字节）migrate 换进新键、删掉旧键，0 照旧是不限，新键存过的不动
+  @Test func shotHistoryCapSurvivesImportAndMigrates() throws {
+    let (source, sourceName) = try suite()
+    defer { source.removePersistentDomain(forName: sourceName) }
+    let fallback = try #require(Prefs.defaults[Prefs.shotHistoryMegabytes] as? Int)
+    for megabytes in Set(Prefs.shotHistoryMegabyteChoices + [fallback]) {
+      source.set(megabytes, forKey: Prefs.shotHistoryMegabytes)
+      let archive = try SettingsArchive.read(
+        SettingsArchive.capture(from: source, domainName: sourceName, services: [], notes: [])
+          .encoded())
+      let (target, targetName) = try suite()
+      defer { target.removePersistentDomain(forName: targetName) }
+      archive.apply([.preferences], to: target, domainName: targetName)
+      let domain = target.persistentDomain(forName: targetName) ?? [:]
+      #expect(domain[Prefs.shotHistoryMegabytes] as? Int == megabytes, "\(megabytes)")
+    }
+    for (bytes, megabytes) in [
+      (5 * 1024 * 1024 * 1024, 5 * 1024), (1024 * 1024 * 1024, 1024), (0, 0),
+    ] {
+      let (old, oldName) = try suite()
+      defer { old.removePersistentDomain(forName: oldName) }
+      old.set(bytes, forKey: Prefs.shotHistoryBytesLegacy)
+      Prefs.migrate(old, domainName: oldName)
+      let domain = old.persistentDomain(forName: oldName) ?? [:]
+      #expect(domain[Prefs.shotHistoryMegabytes] as? Int == megabytes, "\(bytes)")
+      #expect(domain[Prefs.shotHistoryBytesLegacy] == nil)
+    }
+    let (both, bothName) = try suite()
+    defer { both.removePersistentDomain(forName: bothName) }
+    both.set(1024, forKey: Prefs.shotHistoryMegabytes)
+    both.set(5 * 1024 * 1024 * 1024, forKey: Prefs.shotHistoryBytesLegacy)
+    Prefs.migrate(both, domainName: bothName)
+    #expect(both.integer(forKey: Prefs.shotHistoryMegabytes) == 1024)
+    #expect(both.persistentDomain(forName: bothName)?[Prefs.shotHistoryBytesLegacy] == nil)
+  }
+
   /// 去掉了的设置（便签「标签倾斜」notesDeckTilt，2026-10-15 改成一律斜着、删掉开关）：旧的导出文件里带着它照样能读、
   /// 能导入，这个键被当成不认识的丢掉；本机偏好里存过的也删掉（导入后跑的 Prefs.migrate），不残留
   @Test func removedSettingIsDroppedOnImport() throws {

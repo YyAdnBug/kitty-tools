@@ -4,7 +4,7 @@
 // 才能回头接着改，成品再存一份就是双倍磁盘。录制的只记文件路径和一张封面，不复制那个文件。
 // 自己一个库（拍板 A2）：<数据目录>/shots/<id>.png 是原图、<id>-t.png 是缩略图，记录在主库的 shots 表，
 // 和剪贴板的图片库各管各的（拷贝出去的截图照旧也进剪贴板历史）。
-// 留 30 天、总共最多 2 GB，超了先删最旧的（拍板 A3，Prefs.shotHistoryDays / shotHistoryBytes）；
+// 留 30 天、总共最多 2 GB，超了先删最旧的（拍板 A3，Prefs.shotHistoryDays / shotHistoryMegabytes）；
 // 「保留截图历史」关掉后不再记、已记的留着（拍板 B3，Prefs.shotHistory）。历史不进全局同步（图太大）。
 // 写图、编码都在 @concurrent 里做，主线程只写一行库。
 
@@ -315,7 +315,7 @@ import UniformTypeIdentifiers
     remove(
       Self.stale(
         items, now: .now, days: defaults.integer(forKey: Prefs.shotHistoryDays),
-        limit: defaults.integer(forKey: Prefs.shotHistoryBytes)))
+        limit: defaults.integer(forKey: Prefs.shotHistoryMegabytes) * 1024 * 1024))
   }
 
   /// 该删哪些：过期的（days > 0 时），以及从新到旧累计超过 limit 之后的那些（limit > 0 时）。

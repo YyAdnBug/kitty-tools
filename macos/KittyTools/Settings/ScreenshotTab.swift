@@ -17,7 +17,7 @@ struct ScreenshotTab: View {
     .rawValue
   @AppStorage(Prefs.shotHistory) private var keepsHistory = true
   @AppStorage(Prefs.shotHistoryDays) private var historyDays = 30
-  @AppStorage(Prefs.shotHistoryBytes) private var historyBytes = 2 * 1024 * 1024 * 1024
+  @AppStorage(Prefs.shotHistoryMegabytes) private var historyMegabytes = 2 * 1024
   @State private var confirmClear = false
 
   var body: some View {
@@ -55,11 +55,10 @@ struct ScreenshotTab: View {
               Text("90 天").tag(90)
               Text("一直留着").tag(0)
             }
-            Picker("最多占用", selection: $historyBytes) {
-              Text("1 GB").tag(1024 * 1024 * 1024)
-              Text("2 GB").tag(2 * 1024 * 1024 * 1024)
-              Text("5 GB").tag(5 * 1024 * 1024 * 1024)
-              Text("不限").tag(0)
+            Picker("最多占用", selection: $historyMegabytes) {
+              ForEach(Prefs.shotHistoryMegabyteChoices, id: \.self) {
+                Text($0 == 0 ? "不限" : "\($0 / 1024) GB").tag($0)
+              }
             }
           }
           HStack {

@@ -155,8 +155,9 @@ import Foundation
     try SyncLedger.load(.settings, library: library, in: defaults)
   }
 
-  /// 先算好要写的（落不下的进透传），再写设置、存账本，最后让运行中的东西跟上。只有存账本没成才返回 false
-  func applySync(_ changes: [String: String?], ledger: SyncRecords.Ledger, library: String) -> Bool
+  /// 先算好要写的（落不下的进透传），再写设置、存账本，最后让运行中的东西跟上。只有存账本没成才是 .failed（落不下的不算更新版本：透传）
+  func applySync(_ changes: [String: String?], ledger: SyncRecords.Ledger, library: String)
+    -> SyncApplied
   {
     var writes: [(key: String, value: Any?)] = []
     var passed = passthrough()
@@ -183,7 +184,7 @@ import Foundation
     do {
       try SyncLedger.save(ledger, kind: .settings, library: library, in: defaults)
     } catch {
-      return false
+      return .failed
     }
     // 落下去的那几项不再算本机改的：清掉它们记着的时刻
     let times = changeTimes()
@@ -192,7 +193,7 @@ import Foundation
     }
     if !writes.isEmpty { applied() }
     if hotkeysChanged, let clash = clashingHotKeys() { conflicted(clash) }
-    return true
+    return .saved
   }
 
   /// 一项要写进偏好的什么（nil 值 = 删掉这个键）；这一版不认识、留在本机、落不下的给 nil（透传）

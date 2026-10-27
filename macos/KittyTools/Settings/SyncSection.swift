@@ -6,7 +6,8 @@ import SwiftUI
 
 /// 没开时一行「选择文件夹…」（打开面板先指到 iCloud 云盘）；选的文件夹里已经有别的 Mac 的便签，先问一句合不合在一起。
 /// 开着时：文件夹（悬停看路径）+「停止同步」+「立即同步」（刹车时换成「继续同步」），说明是状态（上次同步、还在下载几个），
-/// 出了问题橙字说为什么、能怎么办；下面一行列出别的 Mac 和它们上次有改动的时刻。**这一节不去碰那个文件夹**（可能在卡住的
+/// 出了问题橙字说为什么、能怎么办；下面一行列出别的 Mac 和它们上次有改动的时刻。勾上一类会是它第一次合（升级上来的那台
+/// 新加的几类先没勾，NoteSyncer.isUpgrade）时先问合不合在一起，说明和选文件夹时那段一样。**这一节不去碰那个文件夹**（可能在卡住的
 /// 网络盘上）：名字取路径最后一段，读写都在 NoteSyncer / NoteSyncDisk 的主线程外
 struct SyncSection: View {
   let syncer: NoteSyncer
@@ -26,6 +27,8 @@ struct SyncSection: View {
   @State private var tick = Date.now
   /// 要不要和文件夹里的合在一起（确认框开着时有值）
   @State private var joining: Joining?
+  /// 勾上会是第一次合的那一类（NoteSyncer.joins）：先问合不合在一起，确认框开着时有值
+  @State private var confirming: String?
 
   struct Joining {
     var folder: URL
@@ -37,6 +40,19 @@ struct SyncSection: View {
     Section {
       if let folder = syncer.folder {
         folderRow(folder)
+          .confirmationDialog(
+            "「\(confirming.flatMap(SyncRecords.Kind.init(rawValue:))?.title ?? "")」和已经在同步的 Mac 合在一起？",
+            isPresented: Binding {
+              confirming != nil
+            } set: {
+              if !$0 { confirming = nil }
+            },
+            presenting: confirming
+          ) { part in
+            Button("合在一起") { syncer.setSyncs(part, true) }
+          } message: { _ in
+            Text(Self.joinNote)
+          }
         part(
           SyncRecords.Kind.settings.rawValue, title: SyncRecords.Kind.settings.title,
           detail: "各页的设置、全局快捷键和功能开关；启动台、录音的麦克风、菜单栏图标这些跟着这台 Mac 的不同步")
@@ -110,10 +126,13 @@ struct SyncSection: View {
         (joining.notes > 0
           ? "这个文件夹里已经有 \(joining.devices) 台 Mac 在同步，有 \(joining.notes) 条便签（含「最近删除」里的）。"
           : "这个文件夹里已经有 \(joining.devices) 台 Mac 在同步。")
-          + "合在一起后，这台 Mac 上的便签、片段、收藏、生词和状态屏的状态和它们的会出现在每台 Mac 上（同样的不重复）；设置、快捷键、功能开关（连同内置的网页搜索、翻译服务）换成已经在同步的那几台的——剪贴板的保留天数、「不记录」的 App 也跟着换，超出新保留天数的历史会清掉。之后同一条两边都改过的，后改的留下。"
-      )
+          + Self.joinNote)
     }
   }
+
+  /// 「合在一起？」的说明：第一次选文件夹时、开着同步时勾上还没合过的一类时（升级上来的那台）共用
+  static let joinNote =
+    "合在一起后，这台 Mac 上的便签、片段、收藏、生词和状态屏的状态和它们的会出现在每台 Mac 上（同样的不重复）；设置、快捷键、功能开关（连同内置的网页搜索、翻译服务）换成已经在同步的那几台的——剪贴板的保留天数、「不记录」的 App 也跟着换，超出新保留天数的历史会清掉。之后同一条两边都改过的，后改的留下。"
 
   /// 选文件夹：先看一眼（主线程外），已经有别的 Mac 在用就先问，不然直接开。面板是设置窗上的表单（开着时点不到
   /// 便签的开关、换不了页：不然关掉便签之后还会把同步起起来，换了页这一节的状态也丢了）
@@ -190,6 +209,9 @@ struct SyncSection: View {
     } label: {
       Text("同步文件夹")
       Text(statusLine)
+      if syncer.newKindsHint {
+        Text("现在也能同步设置、片段和收藏这些了：在下面勾上要同步的几类，勾的时候先问合不合在一起")
+      }
       if let trouble {
         Text(trouble).foregroundStyle(Color(nsColor: .systemOrange))
       }
@@ -200,6 +222,8 @@ struct SyncSection: View {
         tick = .now
       }
     }
+    // 「现在也能同步…」那句看过了：离开这一节就不再说
+    .onDisappear { syncer.dismissHint() }
   }
 
   /// 「同步的内容」里的一类：勾上才同步；它跟着的功能关着时说一声（勾着也先不同步）
@@ -210,7 +234,7 @@ struct SyncSection: View {
       isOn: Binding {
         syncer.syncs(name)
       } set: {
-        syncer.setSyncs(name, $0)
+        if $0, syncer.joins(name) { confirming = name } else { syncer.setSyncs(name, $0) }
       }
     ) {
       Text(title)

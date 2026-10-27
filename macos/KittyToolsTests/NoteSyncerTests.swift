@@ -20,7 +20,8 @@ struct NoteSyncerTests {
   /// 一台电脑：仓库（内存库或者临时文件库）、图片目录、偏好域、同步
   private final class Mac {
     let store: NoteStore
-    let syncer: NoteSyncer
+    private(set) var syncer: NoteSyncer
+    let host: String
     let suite: String
     let defaults: UserDefaults
     /// 剪贴板库（片段、收藏）和翻译历史（生词本）：同一个内存库，同 App 里的 kitty.sqlite3
@@ -36,6 +37,7 @@ struct NoteSyncerTests {
     var featuresOff: Set<String> = []
 
     init(host: String, root: URL, file: URL? = nil) throws {
+      self.host = host
       let db = try Database(path: file?.path ?? ":memory:", wal: file == nil)
       store = try NoteStore(db: db, wait: { _ in }, host: host)
       store.images = NoteImageStore(directory: root.appending(path: "图片-\(host)"))
@@ -49,14 +51,28 @@ struct NoteSyncerTests {
       launcher = try LauncherUsage(db: kitty)
       services = TranslateServiceStore(services: [.zhipu])
       settings = SettingsSync(defaults: defaults, domainName: suite)
+      history.defaults = defaults
+      wire(syncer)
+    }
+
+    /// 接上几类、电脑名、正在编辑、功能开关
+    private func wire(_ syncer: NoteSyncer) {
       syncer.sources = [
         clipboard, history, WebSearchSync(defaults: defaults),
         TranslateServiceSync(store: services, defaults: defaults), launcher,
         StatusPresetSync(defaults: defaults), settings,
       ]
+      let host = self.host
       syncer.computerName = { host }
       syncer.editing = { [unowned self] in editing }
       syncer.featureOn = { [unowned self] in !featuresOff.contains($0) }
+    }
+
+    /// 重开一次 App：新的同步按偏好里记着的起来（升级判定在这时做）
+    func relaunch() {
+      syncer.stop()
+      syncer = NoteSyncer(store: store, defaults: defaults)
+      wire(syncer)
     }
 
     /// 留下来的文字条目（收藏、片段）：正文 → (收藏、片段、收藏夹的名字、备注)
@@ -889,5 +905,181 @@ struct NoteSyncerTests {
     b.settings.isBusy = { false }
     await settle([a, b])
     #expect(b.stored(Prefs.notesFontSize) as? Int == 19)
+  }
+
+  // MARK: 第三轮体检
+
+  /// 升级判定（R1）：开着同步、设置没合过（没账本）、勾从没存过 = 从只同步便签的版本升上来的——便签之外的几类先不勾、
+  /// 存下来、设置页说一句（停止同步不清，看过才清）；少一样都不算
+  @Test func detectsMacsUpgradedFromNotesOnlySync() throws {
+    let store = try NoteStore(db: Database(path: ":memory:"), wait: { _ in }, host: "a")
+    /// 在一个临时偏好域里按 prepare 摆好，起一个同步；交回它和偏好里存下的勾
+    func launch(_ prepare: (UserDefaults) -> Void) throws -> (NoteSyncer, [String]?) {
+      let name = "kitty-notes-sync-tests-\(UUID().uuidString)"
+      let defaults = try #require(UserDefaults(suiteName: name))
+      defer { defaults.removePersistentDomain(forName: name) }
+      prepare(defaults)
+      let syncer = NoteSyncer(store: store, defaults: defaults)
+      return (syncer, defaults.persistentDomain(forName: name)?[Prefs.syncSkipped] as? [String])
+    }
+    func syncing(_ defaults: UserDefaults) {
+      defaults.set("/tmp/同步", forKey: Prefs.notesSyncFolder)
+      defaults.set("库", forKey: Prefs.notesSyncLibrary)
+    }
+    let kinds = Set(SyncRecords.Kind.allCases.map(\.rawValue))
+    let (upgraded, stored) = try launch(syncing)
+    #expect(upgraded.upgraded && upgraded.newKindsHint)
+    #expect(upgraded.skipped == kinds && upgraded.syncs(NoteSyncer.notesPart))
+    #expect(stored.map(Set.init) == kinds)
+    // 停止同步不清那句（再开时那几类照旧没勾）；设置页那一节看过了才清
+    upgraded.disable()
+    #expect(upgraded.newKindsHint)
+    upgraded.dismissHint()
+    #expect(!upgraded.newKindsHint)
+    let others: [(String, (UserDefaults) -> Void, Set<String>)] = [
+      ("没开同步", { _ in }, []),
+      (
+        "设置合过",
+        {
+          syncing($0)
+          $0.set(Data("{}".utf8), forKey: SyncLedger.key(.settings))
+        }, []
+      ),
+      (
+        "勾存过（这一版里开的同步）",
+        {
+          syncing($0)
+          $0.set([String](), forKey: Prefs.syncSkipped)
+        }, []
+      ),
+      (
+        "勾存过、取消了一类",
+        {
+          syncing($0)
+          $0.set(["clips"], forKey: Prefs.syncSkipped)
+        }, ["clips"]
+      ),
+    ]
+    for (label, prepare, skipped) in others {
+      let (syncer, _) = try launch(prepare)
+      #expect(!syncer.upgraded && !syncer.newKindsHint && syncer.skipped == skipped, "\(label)")
+    }
+  }
+
+  /// 升级上来的那台（R1）：A 已经在同步设置和片段；B 从只同步便签的版本升上来——第一轮便签照常合，设置不换成 A 的
+  /// （不 adopt）、片段也不合；勾上「设置」前要先问（joins），勾上之后才跟着 A；再重开不再当成升级上来的
+  @Test func upgradedMacKeepsItsSettingsUntilAsked() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    a.defaults.set(17, forKey: Prefs.notesFontSize)
+    a.clipboard.saveSnippet("A 的片段")
+    #expect(await a.syncer.enable(folder: shared) == nil)
+    await a.syncer.round()
+    // B：0.6.0 时开的同步（文件夹、库编号记着；勾从没存过、设置没有账本），升级后重开
+    b.defaults.set(13, forKey: Prefs.notesFontSize)
+    b.store.create(body: "B 的便签", now: .now)
+    #expect(await b.syncer.enable(folder: shared) == nil)
+    b.defaults.removeObject(forKey: Prefs.syncSkipped)
+    b.relaunch()
+    #expect(b.syncer.upgraded && b.syncer.newKindsHint)
+    await settle([b, a])
+    #expect(bodies(a) == ["B 的便签"] && b.syncer.status == .idle)
+    #expect(b.defaults.integer(forKey: Prefs.notesFontSize) == 13, "设置没被换成 A 的")
+    #expect(b.retained["A 的片段"] == nil)
+    #expect(a.defaults.integer(forKey: Prefs.notesFontSize) == 17)
+    // 勾上「设置」要先问（便签那部分不问）；勾上之后才跟着已经在同步的 A，合过了不再问
+    let settings = SyncRecords.Kind.settings.rawValue
+    #expect(b.syncer.joins(settings) && !b.syncer.joins(NoteSyncer.notesPart))
+    b.syncer.setSyncs(settings, true)
+    #expect(!b.syncer.newKindsHint)
+    await settle([b, a])
+    #expect(b.defaults.integer(forKey: Prefs.notesFontSize) == 17)
+    #expect(!b.syncer.joins(settings))
+    // 重开：不再当成升级上来的，没勾的照旧没勾；这一版里开的同步（A）重开也不算
+    b.relaunch()
+    #expect(!b.syncer.upgraded && !b.syncer.syncs(SyncRecords.Kind.clips.rawValue))
+    a.relaunch()
+    #expect(!a.syncer.upgraded && a.syncer.syncs(settings))
+  }
+
+  /// 第一次合不丢本机那条的标记（R8）：A 上只是收藏，B 上同一句是片段、在收藏夹里、带备注——B 第一次合（本机那条被
+  /// 去重掉，留文件夹里 A 的那条）后标记都在，再传回 A
+  @Test func joiningKeepsTheLocalSnippetAndGroup() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    a.clipboard.recordOwnText("同一句")
+    let favorite = try #require(a.clipboard.items.first { $0.text == "同一句" })
+    a.clipboard.toggleFavorite([favorite.id])
+    #expect(await a.syncer.enable(folder: shared) == nil)
+    await a.syncer.round()
+    b.clipboard.saveSnippet("同一句")
+    let group = try #require(b.clipboard.createGroup(named: "工作"))
+    let snippet = try #require(b.clipboard.items.first { $0.text == "同一句" })
+    b.clipboard.assign([snippet.id], to: group.id)
+    b.clipboard.update([snippet.id]) { $0.note = "B 的备注" }
+    #expect(await b.syncer.enable(folder: shared) == nil)
+    await b.syncer.round()
+    let all: ((Bool, Bool, String?, String?)?) -> Bool = {
+      $0.map { $0.0 && $0.1 && $0.2 == "工作" && $0.3 == "B 的备注" } == true
+    }
+    #expect(all(b.retained["同一句"]) && b.clipboard.items.count { $0.text == "同一句" } == 1)
+    await settle([b, a])
+    #expect(all(a.retained["同一句"]))
+  }
+
+  /// 别处取消收藏一条生词（B9）：本机开着翻译历史时留成普通历史；关着时整条删（同本机取消收藏）
+  @Test func unfavoritedWordIsErasedWhenHistoryIsOff() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    for word in ["kept", "gone"] {
+      a.history.setFavorite(source: word, target: .zhHans, result: word, service: "s", true)
+    }
+    for mac in [a, b] { #expect(await mac.syncer.enable(folder: shared) == nil) }
+    await settle([a, b])
+    #expect(b.words == ["gone", "kept"])
+    func rows(_ mac: Mac) -> [String] { mac.history.search("", limit: 0).map(\.source).sorted() }
+    b.defaults.set(true, forKey: Prefs.translateHistoryEnabled)
+    a.history.setFavorite(source: "kept", target: .zhHans, result: "kept", service: "s", false)
+    await settle([a, b])
+    #expect(b.words == ["gone"] && rows(b) == ["gone", "kept"])
+    b.defaults.set(false, forKey: Prefs.translateHistoryEnabled)
+    a.history.setFavorite(source: "gone", target: .zhHans, result: "gone", service: "s", false)
+    await settle([a, b])
+    #expect(b.words.isEmpty && rows(b) == ["kept"])
+  }
+
+  /// 一类里有一条是更新版本写的（多了这一版不认识的字段，decodeExact 解不出，B9）：这一类不落，状态说先更新，不说「没存上」
+  @Test func newerValueAsksForAnUpdate() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    a.history.setFavorite(source: "future", target: .zhHans, result: "未来", service: "s", true)
+    for mac in [a, b] { #expect(await mac.syncer.enable(folder: shared) == nil) }
+    await a.syncer.round()
+    // A 那份生词本里的这条改成更新版本的样子：多一个字段
+    let url = shared.appending(path: NoteSyncFolder.devicesName).appending(path: a.store.deviceID)
+      .appending(path: SyncRecords.Kind.vocabulary.fileName)
+    let data = try Data(contentsOf: url)
+    guard case .read(var file) = SyncRecords.file(from: data, kind: .vocabulary),
+      let (id, record) = file.records.first,
+      var object = try JSONSerialization.jsonObject(with: Data(record.value.utf8)) as? [String: Any]
+    else {
+      Issue.record("A 那份生词本读不出来")
+      return
+    }
+    object["新版本才有的字段"] = 1
+    file.records[id]?.value = String(
+      decoding: try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]),
+      as: UTF8.self)
+    try SyncRecords.data(of: file, kind: .vocabulary).write(to: url)
+    await b.syncer.round()
+    #expect(b.syncer.status == .stopped(.newerFormat) && b.words.isEmpty)
   }
 }

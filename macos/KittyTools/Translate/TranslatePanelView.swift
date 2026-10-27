@@ -18,6 +18,8 @@ struct TranslatePanelView: View {
   var resize: (_ height: CGFloat, _ mustFit: CGFloat) -> Void = { _, _ in }
   /// 把第一个服务的译文粘回原 App 的选区
   var replaceOriginal: () -> Void = {}
+  /// 浮窗现在看得见没有（收着时换了语言不重译：同步、导入设置都会改这两项）
+  var isShown: () -> Bool = { true }
 
   @AppStorage(Prefs.floatingPinned) private var pinned = false
   /// 和菜单栏的勾、设置 › 翻译读写同一个偏好
@@ -257,7 +259,13 @@ struct TranslatePanelView: View {
     }
   }
 
+  /// 换了源 / 目标语言：浮窗开着才重译。收着时视图还在、偏好照样听得到——别的 Mac 同步来、导入设置换了语言，后台悄悄
+  /// 重译一遍白花额度；只记一笔，下次输入翻译打开时再译（resumeInput）
   private func retranslate() {
+    guard isShown() else {
+      coordinator.languageChanged = true
+      return
+    }
     if !coordinator.sourceText.isEmpty { coordinator.start() }
   }
 

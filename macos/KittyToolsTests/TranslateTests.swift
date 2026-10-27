@@ -428,6 +428,19 @@ struct HistoryListTests {
     #expect(!coordinator.handleHistoryCommand(#selector(NSResponder.cancelOperation(_:))))
     #expect(!coordinator.handleHistoryCommand(#selector(NSResponder.moveDown(_:))))
   }
+
+  /// 浮窗收着时换了语言（同步来、导入设置，第三轮体检 R7）：输入翻译再打开时照新语言重译一遍；没换过的只是重新露出来
+  @Test @MainActor func resumeRetranslatesAfterLanguageChangedWhileHidden() throws {
+    let coordinator = TranslateCoordinator(
+      services: TranslateServiceStore(services: []),
+      history: try HistoryStore(db: Database(path: ":memory:")))
+    coordinator.sourceText = "hello"
+    coordinator.resumeInput()
+    #expect(coordinator.translatedSource == nil)
+    coordinator.languageChanged = true
+    coordinator.resumeInput()
+    #expect(coordinator.translatedSource == "hello" && !coordinator.languageChanged)
+  }
 }
 
 struct ServiceLogoTests {

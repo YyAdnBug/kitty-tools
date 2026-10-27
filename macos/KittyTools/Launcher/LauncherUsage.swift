@@ -296,7 +296,8 @@ extension LauncherUsage: SyncSource {
 
   /// 落合并结果：按顺序那条排；不卡 8 个（两台同时各加一个都留着）；库和账本一个事务；有一条解不出来（或者是更新版本写的、
   /// 编号和内容对不上）整个不落
-  func applySync(_ changes: [String: String?], ledger: SyncRecords.Ledger, library: String) -> Bool
+  func applySync(_ changes: [String: String?], ledger: SyncRecords.Ledger, library: String)
+    -> SyncApplied
   {
     var list = Dictionary(
       favorites.map { (Self.syncID($0), $0) }, uniquingKeysWith: { first, _ in first })
@@ -304,7 +305,7 @@ extension LauncherUsage: SyncSource {
     for (id, value) in changes {
       if id == SyncRecords.orderID {
         guard let value else { continue }
-        guard let ids = SyncRecords.decodeExact([String].self, from: value) else { return false }
+        guard let ids = SyncRecords.decodeExact([String].self, from: value) else { return .newer }
         order = ids
         continue
       }
@@ -315,7 +316,7 @@ extension LauncherUsage: SyncSource {
       guard let synced = SyncRecords.decodeExact(Synced.self, from: value),
         let kind = LauncherItem.Kind(rawValue: synced.kind),
         Self.syncID(kind: synced.kind, target: synced.target) == id
-      else { return false }
+      else { return .newer }
       list[id] = Favorite(kind: kind, target: synced.target, title: synced.title)
     }
     let ordered = SyncRecords.arranged(list.keys, by: order).compactMap { list[$0] }
@@ -331,9 +332,9 @@ extension LauncherUsage: SyncSource {
       }
     } catch {
       Log.storage.error("启动器收藏同步写库失败：\(error)")
-      return false
+      return .failed
     }
     favorites = ordered
-    return true
+    return .saved
   }
 }
