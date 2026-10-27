@@ -1822,12 +1822,16 @@ public sealed partial class ClipboardPanel : UserControl
         };
 
         var actions = EntryActionList(entry);
+        Action? firstMatch = null;
+        var composing = false;
         void Populate()
         {
             list.Children.Clear();
+            firstMatch = null;
             foreach (var (text, action) in actions.Where(item =>
                          item.Text.Contains(filter.Text, StringComparison.OrdinalIgnoreCase)))
             {
+                firstMatch ??= action;
                 var button = new Button
                 {
                     Content = text,
@@ -1858,17 +1862,26 @@ public sealed partial class ClipboardPanel : UserControl
         }
 
         filter.TextChanged += (_, _) => Populate();
+        filter.TextCompositionStarted += (_, _) => composing = true;
+        filter.TextCompositionEnded += (_, _) => composing = false;
         filter.KeyDown += (_, args) =>
         {
+            if (composing)
+            {
+                return;
+            }
+
             if (args.Key == VirtualKey.Escape)
             {
                 args.Handled = true;
                 flyout.Hide();
             }
-            else if (args.Key == VirtualKey.Enter && list.Children.FirstOrDefault() is Button first)
+            else if (args.Key == VirtualKey.Enter && firstMatch is { } run)
             {
+                // REVIEW R41：Enter 直接执行第一个匹配的操作（mac 同样），不只是把焦点挪过去。
                 args.Handled = true;
-                first.Focus(FocusState.Programmatic);
+                flyout.Hide();
+                run();
             }
         };
         flyout.Opened += (_, _) =>

@@ -99,6 +99,9 @@ internal sealed class Settings
     /// <summary>保留截图历史（PLAN-v8 H3）：关掉后不再记、已记的留着。</summary>
     public bool ShotHistory { get; set; } = true;
 
+    /// <summary>识字后把同一段里的换行接起来（PLAN-v9 V2，默认关，同 mac 的 ocrJoinLines）；截图翻译不看它，总是接。</summary>
+    public bool OcrJoinLines { get; set; }
+
     /// <summary>上一次截图的区域（物理像素，只在内存里，不进导出文件；第三版 §7）。</summary>
     public int ScreenshotLastX { get; set; }
 

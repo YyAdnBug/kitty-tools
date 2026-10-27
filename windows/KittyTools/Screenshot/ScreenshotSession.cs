@@ -629,7 +629,9 @@ internal sealed class ScreenshotSession
                 return;
             }
 
-            var (text, _) = await OcrService.RecognizeAsync(image.Bgra, image.Width, image.Height);
+            // PLAN-v9 V2：识字看设置（默认不接行，和 mac 一样）；截图翻译那一处（下面）总是接。
+            var (text, _) = await OcrService.RecognizeAsync(
+                image.Bgra, image.Width, image.Height, joined: SettingsService.Current.OcrJoinLines);
             if (string.IsNullOrWhiteSpace(text))
             {
                 NoticeHost.Show("没有识别到文字", string.Empty, NoticeTone.Warning);

@@ -37,6 +37,11 @@ internal sealed class SettingsWindow : Window
     private bool _suppressNav;
     private string _currentPage = "general";
     private string? _recordingAction;
+
+    // REVIEW R44：别处存了设置（截图记上次区域、翻译窗记位置、托盘里的开关、同步……）时不当场重建这一页，
+    // 只记下来，等窗口下次显示、或者从别的窗口切回来时再建；在这一页里自己改的，控件已经是新值，不用重建。
+    private bool _stale;
+    private bool _active;
     private TextBlock? _recordHint;
 
     private static readonly (string Tag, string Title, string Glyph)[] Pages =
@@ -136,6 +141,14 @@ internal sealed class SettingsWindow : Window
         Theme.ApplyTitleBar(AppWindow);
 
         BuildPage("general");
+        Activated += (_, args) =>
+        {
+            _active = args.WindowActivationState != WindowActivationState.Deactivated;
+            if (_active && _stale && _recordingAction is null)
+            {
+                BuildPage(_currentPage);
+            }
+        };
         Closed += (_, _) =>
         {
             IsClosed = true;
@@ -166,7 +179,7 @@ internal sealed class SettingsWindow : Window
         Motion.Refresh();
         _firstRun = welcome;
         // R34：同一页反复开关不重建 XAML 树（每次重建约 +5 MB）；换页或第一次才建。
-        if (welcome || page != _currentPage || _content.Children.Count == 0)
+        if (welcome || _stale || page != _currentPage || _content.Children.Count == 0)
         {
             BuildPage(page);
         }
@@ -199,6 +212,15 @@ internal sealed class SettingsWindow : Window
             ? Theme.Argb(255, 32, 32, 32)
             : Theme.Argb(255, 243, 243, 243));
 
+    /// <summary>设置在别处被存了（不是外观 / 强调色 / 功能开关变了）：窗口不在前台时记一下，切回来再重建。</summary>
+    public void MarkStale()
+    {
+        if (!_active)
+        {
+            _stale = true;
+        }
+    }
+
     public void RefreshTheme()
     {
         _shell.RequestedTheme = Theme.ElementTheme;
@@ -214,6 +236,7 @@ internal sealed class SettingsWindow : Window
     private void BuildPage(string page)
     {
         Log.Info($"settings.build {page}");
+        _stale = false;
         _currentPage = page;
         _content.Children.Clear();
         switch (page)
@@ -1167,6 +1190,14 @@ internal sealed class SettingsWindow : Window
             Foreground = Theme.SecondaryText(),
             TextWrapping = TextWrapping.Wrap,
         });
+        AddToggle("识字后把同一段里的换行接起来",
+            "段和段之间保留换行；中文、日文的行直接接上，其它文字之间加空格。截图翻译总是这样接。",
+            SettingsService.Current.OcrJoinLines,
+            value =>
+            {
+                SettingsService.Current.OcrJoinLines = value;
+                SettingsService.Save();
+            });
 
         // 截图历史（PLAN-v8 H3）。
         _content.Children.Add(Section(

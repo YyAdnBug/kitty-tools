@@ -265,7 +265,7 @@ internal sealed partial class PinWindow : Window
                 break;
             case VirtualKey.C when control:
                 e.Handled = true;
-                Copy();
+                _ = CopyAsync();
                 break;
             case VirtualKey.S when control:
                 e.Handled = true;
@@ -293,7 +293,7 @@ internal sealed partial class PinWindow : Window
     private void OnRightTapped(object sender, RightTappedRoutedEventArgs e)
     {
         var menu = new MenuFlyout();
-        Add(menu, "复制", Copy);
+        Add(menu, "复制", () => _ = CopyAsync());
         Add(menu, "另存为…", () => _ = ScreenshotOutput.SavePngAsAsync(AppWindow, _png));
         Add(menu, "识字并复制", () => _ = RecognizeAsync());
         Add(menu, "关闭", Close);
@@ -308,9 +308,11 @@ internal sealed partial class PinWindow : Window
         menu.Items.Add(item);
     }
 
-    private void Copy()
+    private async Task CopyAsync()
     {
-        if (ClipboardWriter.WriteImagePng(_png))
+        // REVIEW R48：DIB 先在后台转好再写剪贴板；以前不带 DIB，WriteImagePng 在 UI 线程上干等转换，大图卡几百毫秒。
+        var prepared = await ClipboardWriter.PrepareImageAsync(_png);
+        if (ClipboardWriter.WriteImagePng(prepared.Png, prepared.Dib))
         {
             ClipboardService.Instance?.MarkOwnWrite();
             ClipboardService.Instance?.Store.RecordImage(
@@ -367,7 +369,8 @@ internal sealed partial class PinWindow : Window
                 return;
             }
 
-            var (text, _) = await OcrService.RecognizeAsync(image.Bgra, image.Width, image.Height);
+            var (text, _) = await OcrService.RecognizeAsync(
+                image.Bgra, image.Width, image.Height, joined: SettingsService.Current.OcrJoinLines);
             if (string.IsNullOrWhiteSpace(text))
             {
                 NoticeHost.Show("没有识别到文字", string.Empty, NoticeTone.Warning);

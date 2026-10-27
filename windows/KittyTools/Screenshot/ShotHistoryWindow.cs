@@ -659,7 +659,8 @@ internal sealed class ShotHistoryWindow : Window
 
         try
         {
-            var (text, _) = await OcrService.RecognizeAsync(image.Bgra, image.Width, image.Height);
+            var (text, _) = await OcrService.RecognizeAsync(
+                image.Bgra, image.Width, image.Height, joined: SettingsService.Current.OcrJoinLines);
             if (string.IsNullOrWhiteSpace(text))
             {
                 NoticeHost.Show("没有识别到文字", string.Empty, NoticeTone.Warning);

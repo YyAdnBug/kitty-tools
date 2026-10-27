@@ -242,16 +242,20 @@ internal static class ArchiveService
         }
     }
 
-    /// <summary>每天一份自动备份（留 7 份），返回写好的路径。</summary>
-    public static string? BackupDaily()
+    /// <summary>今天那份自动备份该写在哪；今天已经备过就返回 null。</summary>
+    public static string? DailyPathIfMissing()
     {
         var path = Path.Combine(Folder, $"Kitty Tools 自动备份 {DateTime.Now:yyyy-MM-dd}.json");
-        if (File.Exists(path))
-        {
-            return path;
-        }
+        return File.Exists(path) ? null : path;
+    }
 
-        var written = WriteFile(path, Build(Enum.GetValues<ArchiveSection>(), password: null));
+    /// <summary>
+    /// 每天一份自动备份（留 7 份），返回写好的路径。archive 要先在 UI 线程上 <see cref="Build"/> 好
+    /// （REVIEW R47：剪贴板列表和翻译历史的库连接只许 UI 线程碰）；这里只序列化、写文件、轮换，可以在后台线程上调。
+    /// </summary>
+    public static string? WriteDaily(string path, SettingsArchive archive)
+    {
+        var written = WriteFile(path, archive);
         if (written is not null)
         {
             Rotate(Folder, "Kitty Tools 自动备份 *.json", DailyKeep, written);
@@ -351,6 +355,7 @@ internal static class ArchiveService
             writer.WriteString("translateFirstLanguage", settings.TranslateFirstLanguage);
             writer.WriteString("translateSecondLanguage", settings.TranslateSecondLanguage);
             writer.WriteBoolean("translateAutoCopy", settings.TranslateAutoCopy);
+            writer.WriteBoolean("ocrJoinLines", settings.OcrJoinLines);
             writer.WriteEndObject();
         }
 
@@ -407,6 +412,9 @@ internal static class ArchiveService
                     break;
                 case "translateAutoCopy" when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
                     settings.TranslateAutoCopy = value.GetBoolean();
+                    break;
+                case "ocrJoinLines" when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
+                    settings.OcrJoinLines = value.GetBoolean();
                     break;
             }
         }

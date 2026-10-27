@@ -13,6 +13,7 @@ internal sealed class ShellRuntime
     private Window? _keeper;
     private SettingsWindow? _settingsWindow;
     private string _hotKeySignature = string.Empty;
+    private string? _appearanceSignature;
     private bool? _autoCheck;
 
     public static ShellRuntime? Instance { get; private set; }
@@ -852,13 +853,34 @@ internal sealed class ShellRuntime
     private static void ScheduleBackup()
     {
         var directory = Paths.DataDirectory;
+        // 设置与数据的每日自动备份（第三版 §2.2），和数据库备份同一个 backups 文件夹。
+        // REVIEW R47：快照在 UI 线程上取（剪贴板列表、翻译历史的库连接只许 UI 线程碰），后台只管写文件；
+        // 以前整个在线程池上做，碰上正在复制东西就「集合已修改」，当天那份没备成。
+        string? dailyPath = null;
+        SettingsArchive? archive = null;
+        try
+        {
+            dailyPath = ArchiveService.DailyPathIfMissing();
+            if (dailyPath is not null)
+            {
+                archive = ArchiveService.Build(Enum.GetValues<ArchiveSection>(), password: null);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"backup.snapshot-failed {ex.GetType().Name}");
+        }
+
         _ = Task.Run(() =>
         {
             try
             {
+                // 数据库那份自己开连接，照旧在后台。
                 Backup.Run(directory, DateTime.Now);
-                // 设置与数据的每日自动备份（第三版 §2.2），和数据库备份同一个 backups 文件夹。
-                ArchiveService.BackupDaily();
+                if (dailyPath is not null && archive is not null)
+                {
+                    ArchiveService.WriteDaily(dailyPath, archive);
+                }
             }
             catch (Exception ex)
             {
@@ -1034,11 +1056,27 @@ internal sealed class ShellRuntime
             UpdateService.Configure(SettingsService.Current.AutoCheckUpdates);
         }
 
-        Theme.ApplyAccent();
+        // REVIEW R44：外观、强调色、功能开关真的变了，才换强调色资源、重建设置页；别的保存（每次截图记上次区域、
+        // 翻译窗收起记位置……）以前也整页重建，设置窗关着（只是隐藏）也照建。
+        var appearance = AppearanceSignature(SettingsService.Current);
+        if (appearance != _appearanceSignature)
+        {
+            _appearanceSignature = appearance;
+            Theme.ApplyAccent();
+            ApplyFeatures();
+            _settingsWindow?.RefreshTheme();
+        }
+        else
+        {
+            _settingsWindow?.MarkStale();
+        }
+
         TranslateHost.ApplyCopyTranslate();
-        ApplyFeatures();
-        _settingsWindow?.RefreshTheme();
     }
+
+    private static string AppearanceSignature(Settings settings)
+        => settings.Theme + "|" + settings.Accent + "|" +
+           string.Concat(Enum.GetValues<Feature>().Select(feature => Features.IsOn(feature) ? '1' : '0'));
 
     /// <summary>重注册全部热键，并记下这次用的绑定组合（用来判断下次保存要不要重注册）。</summary>
     private void RegisterHotKeys()
