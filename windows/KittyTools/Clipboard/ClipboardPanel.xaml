@@ -8,6 +8,16 @@
     mc:Ignorable="mc">
 
     <UserControl.Resources>
+        <!-- 系统的悬停 / 选中底色都设成透明，只用我们自己那块会滑动的高亮（Highlight）。日期标题在同一个 ListViewItem 里，
+             系统底色会连它一起盖上，和高亮叠在一起（0.1.0 用户反馈）。 -->
+        <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver" Color="Transparent" />
+        <SolidColorBrush x:Key="ListViewItemBackgroundPressed" Color="Transparent" />
+        <SolidColorBrush x:Key="ListViewItemBackgroundSelected" Color="Transparent" />
+        <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver" Color="Transparent" />
+        <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPressed" Color="Transparent" />
+        <SolidColorBrush x:Key="ListViewItemSelectionIndicatorBrush" Color="Transparent" />
+        <SolidColorBrush x:Key="ListViewItemSelectionIndicatorPointerOverBrush" Color="Transparent" />
+        <SolidColorBrush x:Key="ListViewItemSelectionIndicatorPressedBrush" Color="Transparent" />
         <Style x:Key="ClipRowStyle" TargetType="ListViewItem">
             <Setter Property="Padding" Value="0" />
             <Setter Property="Margin" Value="0" />

@@ -41,13 +41,13 @@ public static class MonitorLayout
         return Clamp(new PixelRect(x, y, width, height), work);
     }
 
-    /// <summary>轻提示：宽 widthDip、高 heightDip，水平居中、顶边往下 topOffsetDip。</summary>
-    public static PixelRect Notice(WorkArea work, double scale, double widthDip, double heightDip, double topOffsetDip)
+    /// <summary>轻提示：宽 widthDip、高 heightDip，水平居中、底边离工作区底边 bottomOffsetDip（任务栏上方）。</summary>
+    public static PixelRect Notice(WorkArea work, double scale, double widthDip, double heightDip, double bottomOffsetDip)
     {
         var width = Pixels(widthDip, scale);
         var height = Pixels(heightDip, scale);
         var x = work.Left + Math.Max(0, (work.Width - width) / 2);
-        var y = work.Top + (int)Math.Round(topOffsetDip * scale);
+        var y = work.Bottom - height - (int)Math.Round(bottomOffsetDip * scale);
         return Clamp(new PixelRect(x, y, width, height), work);
     }
 

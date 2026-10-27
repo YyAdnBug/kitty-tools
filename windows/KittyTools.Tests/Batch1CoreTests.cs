@@ -91,17 +91,18 @@ public sealed class MonitorLayoutTests
     }
 
     [TestMethod]
-    public void NoticeIsCenteredAtTheTop()
+    public void NoticeIsCenteredAboveTheTaskbar()
     {
+        // 0.1.0 起轻提示在工作区底部居中（Win11 浮层的位置），底边离工作区底边 bottomOffset。
         var rect = MonitorLayout.Notice(Primary, 1.0, 460, 64, 12);
         Assert.AreEqual((1920 - 460) / 2, rect.X);
-        Assert.AreEqual(12, rect.Y);
+        Assert.AreEqual(1040 - 64 - 12, rect.Y);
         Assert.AreEqual(64, rect.Height);
 
         var scaled = MonitorLayout.Notice(Primary, 1.5, 460, 64, 12);
         Assert.AreEqual(690, scaled.Width);
         Assert.AreEqual(96, scaled.Height);
-        Assert.AreEqual(18, scaled.Y);
+        Assert.AreEqual(1040 - 96 - 18, scaled.Y);
     }
 
     [TestMethod]
@@ -114,11 +115,11 @@ public sealed class MonitorLayoutTests
         Assert.IsTrue(rect.X >= left.Left);
         Assert.IsTrue(rect.Right <= left.Right);
 
-        // 副屏竖放：工作区高大于宽，轻提示仍然居中、贴顶。
+        // 副屏竖放：工作区高大于宽，轻提示仍然居中、贴底。
         var portrait = new WorkArea(1920, 0, 3000, 1920);
         var notice = MonitorLayout.Notice(portrait, 1.25, 460, 64, 12);
         Assert.AreEqual(1920 + (1080 - 575) / 2, notice.X);
-        Assert.AreEqual(15, notice.Y);
+        Assert.AreEqual(1920 - 80 - 15, notice.Y);
         Assert.IsTrue(notice.Right <= portrait.Right);
     }
 
