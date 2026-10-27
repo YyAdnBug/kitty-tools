@@ -62,8 +62,18 @@ internal sealed class ClipboardService
 
     public void OnClipboardUpdate()
     {
-        if (Paused || Suspended || _selectionPaused)
+        // 用户在托盘「暂停记录」时连复制即译一起停（REVIEW R57，照 mac 的 isUserPaused：
+        // 那一处 guard 在 onText 之前，暂停了就不译）；划词自己发的那次 Ctrl+C 也不算用户的复制。
+        if (Paused || _selectionPaused)
         {
+            return;
+        }
+
+        // 剪贴板功能关着时照样监听：只为复制即译，只是不入库（REVIEW R57，照 mac 的 records）。
+        var records = !Suspended;
+        if (!records && !(SettingsService.Current.CopyTranslate && Features.IsOn(Feature.Translate)))
+        {
+            // 两样都用不上：照 mac 的 stop()，连读都不读。
             return;
         }
 
@@ -111,15 +121,19 @@ internal sealed class ClipboardService
                     return;
                 }
 
-                Store.Record(new ClipEntry
+                if (records)
                 {
-                    Kind = ClipKind.Text,
-                    Text = text,
-                    SourceExe = exe,
-                    SourceName = name,
-                    CopiedAt = now,
-                }, read.Html, read.Rtf);
-                Log.Info($"clipboard.record kind=text count={Store.Count}");
+                    Store.Record(new ClipEntry
+                    {
+                        Kind = ClipKind.Text,
+                        Text = text,
+                        SourceExe = exe,
+                        SourceName = name,
+                        CopiedAt = now,
+                    }, read.Html, read.Rtf);
+                    Log.Info($"clipboard.record kind=text count={Store.Count}");
+                }
+
                 if (!ownWindow)
                 {
                     TextCopied?.Invoke(text);
@@ -127,6 +141,11 @@ internal sealed class ClipboardService
 
                 break;
             case ClipKind.Files:
+                if (!records)
+                {
+                    break;
+                }
+
                 Store.Record(new ClipEntry
                 {
                     Kind = ClipKind.Files,
@@ -138,6 +157,11 @@ internal sealed class ClipboardService
                 Log.Info($"clipboard.record kind=files count={Store.Count}");
                 break;
             case ClipKind.Image when read.ImageData is not null:
+                if (!records)
+                {
+                    break;
+                }
+
                 _ = SaveImageAsync(read, exe, name);
                 break;
         }

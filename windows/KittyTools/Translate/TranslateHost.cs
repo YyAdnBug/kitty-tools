@@ -138,6 +138,12 @@ internal static class TranslateHost
 
     private static void OnTextCopied(string text)
     {
+        // REVIEW R57：翻译功能关着就别弹浮窗（托盘里那个开关这时候也是藏着的，关不掉）。
+        if (!Features.IsOn(Feature.Translate))
+        {
+            return;
+        }
+
         if (!SettingsService.Current.CopyTranslate || string.IsNullOrWhiteSpace(text))
         {
             return;
