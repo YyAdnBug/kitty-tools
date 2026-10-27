@@ -114,6 +114,11 @@
    没走的写「没测」，别打勾。
 8. 报告：做了哪些、量到的数、产物路径和大小、没修的写成「已知问题」（一条一句）。**不发布**；用户要发时，tag 用 `windows-v0.1.0`、`--latest=false`、别标预发布（`App/UpdateService.cs` 只认非预发布的 `windows-v*`）。
 
+**Windows 侧编译 / 打包时改的（2026-10-27）**：
+- rebase 到 `2efae4cc` 后 Debug、Release AOT x64 / ARM64 都直接编过，零警告，325 个单测全过；`KittyTools.iss` 用 ISCC 7.1.0 直接编过，没改。
+- Inno 7 的 winget id 是 `JRSoftware.InnoSetup.7`（`JRSoftware.InnoSetup` 装的是 6.7.3）：`build-release.ps1`、`setup-e2e.ps1` 的报错提示改了。
+- `setup-e2e.ps1` 第 3 步没过（exit 7，程序没被叫退）：`--quit` 送到了（日志有 `instance.quit` / `app.exit`），但 `Application.Current.Exit()` 之后总剩一扇窗没关（预建的浮层；显式关了浮层就剩 `_keeper`），消息循环不结束，进程留着互斥量。去掉 R64 A 的 Closing 也一样，不是它。托盘「退出」、更新后退出走的是同一个 `ShellRuntime.Exit`，也受影响。改：`Exit()` 收尾做完后起一个后台线程，2 秒后还在就 `Environment.Exit(0)`（日志 `app.exit-forced`，带 ponytail 注释）。根因没找到。
+
 ### R54（P1）「截取上次区域」裁的是屏幕左上角那一块 → 已修（`d07959f`）
 
 - `Screenshot/ScreenshotSession.cs:370`：`new PixelBounds(0, 0, global.Width, global.Height)` 从屏幕的 (0, 0) 开始裁，上一行算好的 `local`（减掉了 `screen.Bounds`）没用上。`Crop`（`Screenshot/ScreenCapture.cs:38`）吃的是这块屏里的像素坐标。

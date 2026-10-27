@@ -923,6 +923,22 @@ internal sealed class ShellRuntime
         HotKeys.UnregisterAll();
         Tray.Remove();
         Application.Current.Exit();
+
+        // REVIEW R53：Application.Exit 关窗时总会漏掉一扇（预建的浮层，或者显式关了浮层以后是撑生命周期的 _keeper），
+        // 消息循环不结束，进程带着互斥量留在后台：安装程序的 --quit 等不到它退，下次启动也被转发给这个没界面的进程。
+        // 上面该收尾的都做完了，2 秒后还在就直接结束本进程。
+        // ponytail: 没找到漏关的根因；以后 Application.Exit 能可靠退出了，这个兜底就不会触发。
+        var fallback = new Thread(() =>
+        {
+            Thread.Sleep(2000);
+            Log.Warn("app.exit-forced");
+            Environment.Exit(0);
+        })
+        {
+            IsBackground = true,
+            Name = "KittyTools.ExitFallback",
+        };
+        fallback.Start();
     }
 
     private void OnHiddenMessage(uint msg, Windows.Win32.Foundation.WPARAM wParam, Windows.Win32.Foundation.LPARAM lParam)

@@ -64,7 +64,7 @@ $iscc = @(
     (Join-Path ${env:LOCALAPPDATA} 'Programs/Inno Setup 7/ISCC.exe')
 ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
 if (-not $iscc) {
-    throw '找不到 Inno Setup 7 的 ISCC.exe。先装：winget install --id JRSoftware.InnoSetup -e（要 7.x）'
+    throw '找不到 Inno Setup 7 的 ISCC.exe。先装：winget install --id JRSoftware.InnoSetup.7 -e（JRSoftware.InnoSetup 装的是 6.x）'
 }
 foreach ($target in $targets) {
     $stage = Join-Path $outRoot $target.Label

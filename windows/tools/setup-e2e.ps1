@@ -33,7 +33,7 @@ $iscc = @(
     (Join-Path ${env:LOCALAPPDATA} 'Programs\Inno Setup 7\ISCC.exe')
 ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
 if (-not $iscc) {
-    throw '找不到 Inno Setup 7 的 ISCC.exe。先装：winget install --id JRSoftware.InnoSetup -e'
+    throw '找不到 Inno Setup 7 的 ISCC.exe。先装：winget install --id JRSoftware.InnoSetup.7 -e'
 }
 
 $key = "e2e" + (Get-Random -Minimum 100000 -Maximum 999999)
