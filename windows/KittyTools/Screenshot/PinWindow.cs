@@ -317,6 +317,11 @@ internal sealed partial class PinWindow : Window
                 _png, _origin.Width, _origin.Height, null, "钉图");
             NoticeHost.Show("已复制钉图", string.Empty, NoticeTone.Normal);
         }
+        else
+        {
+            // REVIEW R63：剪贴板被别的程序占着时以前什么都不显示。
+            NoticeHost.Show("没能复制", "剪贴板被别的程序占着，稍后再试", NoticeTone.Error);
+        }
     }
 
     private async Task SaveQuickAsync()

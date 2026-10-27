@@ -439,10 +439,16 @@ internal sealed class ScreenshotCard : Window
                 ClipboardService.Instance?.Store.RecordImage(_png, _origin.Width, _origin.Height, null, "截图");
                 NoticeHost.Show("已复制截图", $"{_origin.Width} × {_origin.Height}", NoticeTone.Normal);
             }
+            else
+            {
+                // REVIEW R63：剪贴板被别的程序占着时以前什么都不显示。
+                NoticeHost.Show("没能复制", "剪贴板被别的程序占着，稍后再试", NoticeTone.Error);
+            }
         }
         catch (Exception ex)
         {
             Log.Error("screenshot.card-copy-failed", ex);
+            NoticeHost.Show("没能复制", ex.GetType().Name, NoticeTone.Error);
         }
     }
 
