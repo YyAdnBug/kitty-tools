@@ -62,6 +62,8 @@
 
 （2026-10-26 夜：安装程序写完了（`616840b`，没编译过），新加 R36–R38。R36 排在 R24 前面先做：没编过的 Setup 不进 slnx，但 Core 单测里已经有它的测试。）
 
+（2026-10-27：审查方在 Mac 上把代码过了一遍，找还能优化、没优化的地方，新加 R42–R52，行号都对着 `e82715d2`。每一条都读过代码确认过，只是没在 Windows 上量过：**改之前先量一次、改完再量一次**，两个数都写进报告；量出来不值得改的，写上数挪到「有异议」。顺序：R41 修完先做 R42–R44（P1），再做 R24；P2、P3 照常一条一条来。功能缺口另写在 `PLAN-v9.md`，那是拍板页，用户拍板之前别动。）
+
 ### R39（P2）截图遮罩的按键：A、T 和工具栏对不上，换工具不刷新 → 已修（`901d4e3`）
 
 - `SelectionOverlayWindow.OnKeyDown`（L1338 起）里 `case A when !control` 排在 `case A when !control && HasSelection` 前面，**A 永远选箭头**：「A 向下、Shift+A 向上自动滚动长截图」走不到，长截图里「被鼠标打断后按 A 继续」也就没机会用。
@@ -82,6 +84,126 @@
 - 钉图文件头说「右键菜单同这些」，菜单里少了快速保存和恢复 100%。
 - `OverlayWindow.cs` 文件头说浮层按 Esc、Ctrl+W 收起，启动器不认 Ctrl+W。
 - 设置窗没有返回（mac 有 ⌘[），也不能 Esc 关；要不要做你们定，做了同步速查表的「设置窗」一组。
+
+### R42（P1）启动器第一次搜索时，在 UI 线程上把浏览器的库整个拷一遍
+
+- `Launcher/LauncherModel.cs:56,70`：每次搜索都调 `BookmarkIndex.Load()` / `HistoryIndex.Load()`。第一次是真读：`Launcher/LookupServices.cs:425` 起，每个浏览器的每个配置都 `CopyWithWal`（:379），把 `History` / `places.sqlite` 整个拷到临时目录，再开库查，全在 UI 线程上。用久了的 Chrome `History` 有几十到几百 MB，拷完之前启动器是卡住的。
+- 读过一次 `_loaded` 就一直是 true：新加的书签、新的浏览记录要等重启才搜得到。
+- `HistoryIndex` 和 `BookmarkIndex` 的浏览器表、`Search` 方法是一字不差的两份。
+- **建议**：
+  - 第一次打开启动器时（或者启动后空闲时）在线程池里读，读完换成一份不可变的快照，回 UI 线程刷新当前结果；没读完之前其它结果照常出。
+  - 之后按文件的修改时间在后台重读（隔 10 分钟看一次就够）。
+  - 两份浏览器表收成一份。PLAN-v9 的 V1 要给每家浏览器加开关、加 Firefox 书签，一份好改。
+  - 默认读不读浏览历史、读哪几家是 V1 的事。这一条只管两件：别卡住，能刷新。
+- **验收**：日志记读库的耗时和线程（`history.load ms= thread=`），本机 `History` 有多大写进报告；打开启动器后第一次输入到列表出来，前后各量一次。
+
+### R43（P1）长截图：每 600 ms 在 UI 线程上抓所有屏，再把整张长图重新分配、重算一遍
+
+- `Screenshot/ScrollingCapture.cs:141`：每一拍都 `ScreenCapture.CaptureAll()` 抓全部显示器的整屏，只用选区那一块。
+- `KittyTools.Core/ScrollStitcher.cs:53` 的 `Append(_current, frame)`：`Skip`、`Combine`、`Prepend`（:189 起）各新分配一份**整张**长图，再 `new ScrollFrame`；构造函数（:11）把整张图每一行重新哈希一遍。
+  - 长到 1440 × 30000 时一份 172 MB。有吸顶栏时一拍要分配三份、哈希三遍，全在 UI 线程上。
+  - 拷贝量随长度平方涨，峰值是成品的 2–3 倍，还会反复撑大大对象堆。STATUS「长截图内存峰值没测」说的就是这里。
+- **建议**：
+  - 只抓选区所在的那块屏，或者只 BitBlt 选区那一块。
+  - 拼接改成条带：已经拼好的部分存成一串条带，外加最后一帧（带行哈希）。每拍只拿最后一帧和新帧找重叠、追加一条；`Complete` 时合一次。吸顶栏照现在的规则，最后放回一次。
+  - 找重叠放到线程池，结果回 UI 线程。
+  - `Stitch`（:237）的接口和现有单测（`PlanV3Batch6Tests`）的期望值不变；加一个单测：条带拼出来的和现在逐帧拼的逐像素一样。
+- **验收**：Core 单测里 200 帧、1440 宽的合成样本，新旧两种拼法结果一致，两种的分配量（`GC.GetAllocatedBytesForCurrentThread`）写进报告；真机拍一张 20000 px 的长图（测试窗口，别拍用户的内容），拍的过程中专用工作集的峰值、每拍 UI 线程的耗时，前后各量一次。
+
+### R44（P1）每保存一次设置，设置窗就在后台整页重建一次
+
+- `Shell/ShellRuntime.cs:1021` 的 `OnSettingsChanged`：热键比过签名，但后面 :1036–1039 不管改了什么，每次都 `Theme.ApplyAccent()`（新建强调色那一组资源），再 `_settingsWindow?.RefreshTheme()`。`Settings/SettingsWindow.cs:202` 的 `RefreshTheme` 无条件 `BuildPage(_currentPage)`。
+- `SettingsService.Save()` 全仓 72 处调用，很多和设置窗无关：
+  - 每次截图记上次区域（`Screenshot/ScreenshotSession.cs:513`）；
+  - 翻译浮窗收起时记位置和宽（`Translate/TranslateWindow.cs` 里 7 处）；
+  - 录音（`Recording/AudioHost.cs:121,177`）、录制条的开关、同步写网页搜索……
+- 设置窗关掉只是隐藏（R34），所以打开过一次以后，后台每存一次设置就重建一整页。当前页是「关于」时，还要在 UI 线程上 `iconTask.Wait(500)`（:1973）。
+- **建议**：
+  - 照热键那样比签名：外观、强调色、功能开关真的变了，才 `ApplyAccent` / `RefreshTheme`。
+  - 设置窗不可见时只记一个「脏」，下次显示再建。
+  - `ApplyFeatures`、`TranslateHost.ApplyCopyTranslate` 也看一下：没比过的照这个办。
+- **验收**：打开设置窗再关掉，截 10 次图，`BuildPage` 次数是 0（加一行 Debug 日志数）；在设置里换强调色、换外观、关一个功能，照样立刻生效。
+
+### R45（P2）流式翻译：每来一段，UI 线程就把所有卡片和窗口高度重算一遍
+
+- `Translate/TranslateCoordinator.cs:206–213`：每个流式片段都 `card.Text = piece` → `Changed?.Invoke()`。全仓没有一处 `ConfigureAwait(false)`，读流、解析 JSON 的续延全回到 UI 线程。
+- `Translate/TranslateWindow.cs:936` 的 `OnCoordinatorChanged`：**所有**卡片 `Update`、`RebuildFooter`、`RefreshTranslateButton`，再 `ResizeToContent` 两次（一次当场、一次排队）。
+- `KittyTools.Core/StreamingText.cs:17` 的 `Visible`：每次都 `_raw.ToString()` 拼整段，再 `Trim`。
+- 长译文是平方级的；同时开几个大模型服务时，每秒几百次。
+- **建议**：读流、累积放线程池，UI 合并成 33 ms 刷一次，只刷变了的那张卡；高度只在这一拍里文字行数变了时才重量。
+- **验收**：一个大模型服务译 2000 字，生成期间进程 CPU（% 单核）和 UI 线程每拍耗时，前后各量一次；PLAN-v7 第 4 批「生成中 < 3% 单核」的那个数一起报。
+
+### R46（P2）剪贴板后台识字：大图不缩、失败不记、跨线程读列表
+
+- `Clipboard/OcrQueue.cs:107`：`GetSoftwareBitmapAsync` 整张解码、不缩放，一张 1440 × 30000 的长截图约 172 MB。截图那边的 `Screenshot/OcrService.cs:55` 已经按 `OcrEngine.MaxImageDimension` 先 `Fit` 了，这里没有。
+- 失败的只记在内存的 `Failed`（:15），下次启动又整张解一遍、又失败。
+- `PumpAsync` 是 `Task.Run` 起的（:25、:29），在线程池上调 `store.PendingOcr()`（:50），遍历的是 UI 线程正在改的 `_items`。
+- **建议**：解码时用 `BitmapTransform` 缩到上限以内（或者走 `OcrService` 那个 `Fit`）；失败的落库成空串，不再重识；待识的那一条回 UI 线程去取（`_dispatcher.TryEnqueue` + `TaskCompletionSource`）。
+- **验收**：复制一张 1440 × 20000 的图，识字期间专用工作集的峰值前后各量一次；重启后日志里同一张不再出现 `ocr.image-failed`。
+
+### R47（P2）每日备份在线程池上读 UI 线程的列表和数据库连接
+
+- `Shell/ShellRuntime.cs:852` 的 `ScheduleBackup` 在 `Task.Run` 里调 `ArchiveService.BackupDaily()`。它在 `Storage/ArchiveService.cs:111` 读 `ClipboardStore.Items`（UI 线程在改的 `List`），又调 `TranslationHistory.Search`（:134），用的是只许 UI 线程用的 `Database.Connection`。
+- 碰上那一刻在复制东西，枚举会抛「集合已修改」，当天那份就没备成；数据库连接跨线程用，是没定义的行为。
+- **建议**：要备份的数据（收藏的片段、收藏夹、生词本、设置）在 UI 线程上取成快照，序列化、加密、写文件放线程池。
+- **验收**：单测或者 `--backup-now` 调试参数：一边每 10 ms 往剪贴板库里加一条，一边备份 20 次，全部成功。
+
+### R48（P2）UI 线程上几处同步的图片活
+
+- `Screenshot/PinWindow.cs:313`：钉图「复制」直接 `WriteImagePng(_png)`，没带转好的 DIB，于是走到 `Clipboard/ClipboardWriter.cs:121` 的 `Task.Run(...).GetAwaiter().GetResult()`，在 UI 线程上干等 PNG → DIB（那里的注释自己写了大图要几百毫秒）。别的入口都先 `await PrepareImageAsync`。
+- `Clipboard/ClipboardStore.cs:389` 的 `RecordImage` 算一次 SHA-256，`:426` 的 `Images.Save` → `Clipboard/ImageStore.cs:22` 同步 `File.WriteAllBytes` 整张 PNG（单张上限 128 MB），再算一次 SHA-256（返回值没人用）。复制大图、截图、钉图、从历史复制都会走到。
+- `Clipboard/ClipboardPanel.xaml.cs:247`：选中的还是同一条、同一个位置，也调 `ShowPreview` 整个重建（:737），图片重新从盘上解码。搜索时第一条不变的每一次按键都会这样，OCR、同步带来的 `Store.Changed` 也会。
+- **建议**：钉图复制改成先 `await PrepareImageAsync`；`ImageStore.Save` 不再算哈希，哈希和写盘挪进 `ClipboardService.SaveImageAsync` 已有的那个 `Task.Run`；`ShowPreview` 记住上次显示的那一条和它的版本，一样就直接返回。
+- **验收**：钉一张 4K 截图，按复制，UI 线程卡多久前后各量一次；复制一张 20 MB 的图，`RecordImage` 在 UI 线程上的耗时前后各量一次。
+
+### R49（P2）同步每 20 秒全量跑一轮，什么都没变也照跑
+
+- `Storage/SyncFolder.cs:218` 的定时器每 20 秒 `RoundAsync`，`KittyTools.Core/Sync/SyncRunner.cs:64` 起：把文件夹里所有设备、所有类别的文件读进来，整份解码、合并，再编回去比较，没有「上一轮以来什么都没变」的短路。
+- UI 线程上每轮还有两件事：
+  - `Clipboard/ClipboardStore.cs:65` 的 `SyncRows()` 给全部文本条目各建一个 `SyncClipRow`，到 Core 里才按「留着的」过滤；
+  - 账本先解码一次，再 `SyncLedgerText.Encode` 编回去比较一次。
+- **建议**：记下每个文件的修改时间和大小，再给本机四类数据各记一个修订号（改一次加一）；都没变就跳过这一轮。`SyncRows` 先按 `IsRetained` 过滤。只改 Windows 的执行层，文件格式不动。
+- **验收**：开着同步静置 10 分钟，进程 CPU 和每轮耗时前后各量一次；R26 的集成测试照样全过。
+
+### R50（P3）日志：每写一行开关一次文件，跨天不换文件
+
+- `App/Log.cs:58`：每行都 `File.AppendAllText`，在调用方的线程上开、写、关一次文件（大多是 UI 线程；装了杀毒软件的机器上每次几毫秒）。
+- 文件名在 `Initialize`（:18）时就定死了，7 天清理也只在启动时跑：常驻托盘的进程几周不重启，就是一个越写越大的文件，清理也不跑。
+- **建议**：一个后台队列 + 常驻的 `StreamWriter`（退出、崩溃记录时 flush）；写之前看一眼日期，变了就换文件，顺手清理。
+- **验收**：单测或调试参数：把钟拨过午夜，新的一行进新文件；连写 1 万行的耗时前后各量一次。
+
+### R51（P3）几处小的
+
+- `Shell/OverlayWindow.cs:96`：每固定一次面板，都给复用的 `_foregroundTimer` 再挂一个 `Tick`，从不摘。固定 N 次以后，每 400 ms 跑 N 遍。只在建计时器时挂一次。
+- `Shell/Paster.cs:151` 的 `SendLeft`：片段里 `{cursor}` 往回挪时，每挪一格就一次 `SendInput` + `Thread.Sleep(8)`，上限 500 格，最多在 UI 线程上冻 4 秒（`Clipboard/ClipboardPanel.xaml.cs:1333` 调）。一次 `SendInput` 把 2 × N 个按键发完；真有程序吃不住，再分成 50 个一组。
+- `Clipboard/LinkPreviewService.cs`：
+  - 最多 12 条连同头图字节（单张上限 4 MB）一直留在内存里，文件头说空闲时会丢，其实没注册 `IdleReclaimer`；
+  - 每取一个网页都新分配 512 KB（:46）；
+  - 找 `</head` 时每读一块都从头扫（:57）。
+  
+  建议：注册空闲回收，缓冲用 `ArrayPool`，只扫新读进来的那一段（往回多看 5 个字节）。
+- `Storage/TranslationHistory.cs:357` 的 `Find` 按 `source, target_lang` 查，但只有 `WHERE favorite = 1` 的部分唯一索引（`KittyTools.Core/Schema.cs:79`），非收藏的要全表扫。`Add`、`SetFavorite`、`AdoptFavorites` 都调它。Schema 加一步，建普通索引 `(source, target_lang)`。
+- `Recording/RecordingHost.cs:247` 和 `Recording/AudioHost.cs:194` 的闪退恢复：跑在启动路径的 UI 线程上，`Mp4Remux.TryRemuxWithTimeout` 同步等重封装。挪到线程池，做完回 UI 线程弹提示。
+- `Clipboard/ClipboardPanel.xaml.cs:1091`：文件条目的预览在 UI 线程上，对最多 50 个路径各调一次 `File.Exists`、两次 `Directory.Exists`；路径在断开的网络位置上时，每个都能卡好几秒。先画出来，存在性放后台查，查完回来改图标和透明度。
+- `Clipboard/ClipboardStore.cs:697–705`：每复制一次，都给全部条目建 `RetentionItem`，每条一个 `Id.ToString()`，后面 `doomed.Contains(item.Id.ToString())` 又转一遍。保留规则直接用 long。
+- `Clipboard/ClipboardStore.cs:752`：第一次搜索后每条都缓存一份 UTF-8 折叠副本 `Folded`，等于全部文本再存一遍；空闲回收（`ClipboardPanel.xaml.cs:109 ReleaseCaches`）不清它。空闲回收时一起置空（重建只是一次冷搜，0.5.0 量过 5.7 ms）。
+
+### R52（P3）死代码和重复代码
+
+- 全仓（含测试）只剩声明、没有调用的：
+  - `Shell/Motion.cs:156 HeightChange`；
+  - `Screenshot/ScreenshotOutput.cs` 的 `PngAsync`、`CopyAsync`、`QuickSaveAsync`、`SaveAsAsync`（:19 / 26 / 53 / 91，都被带 Png 的版本取代了，只剩互相调）；
+  - `Storage/Sqlite.cs` 的 `BindBlob`、`GetBlob`；
+  - `Shell/Ui/ListHighlight.cs` 的 `GlideTo`、`HideHighlight`，`Shell/Ui/SearchLine.cs` 的 `FocusBox`；
+  - `Translate/TranslateServices.cs IsBuiltin`、`Shell/Theme.cs KindTint`、`Storage/SyncDevice.cs NextCounter`、`App/HotKeyDefaults.cs ResetBinding`、`Shell/Paster.cs SendHotkey`、`Shell/Speech.cs TagFor`、`Storage/ArchiveService.cs BackupFiles`；
+  - `KittyTools.Core/AudioRules.cs WritePcm16`、`KittyTools.Core/RegionMath.cs ApplyingRatio`；
+  - 整个 `Shell/MicaBackdrop.cs`（`MicaThemeBackdrop` 没人用，设置窗是 `SystemBackdrop = null`）；
+  - `KittyTools.Core/LauncherCommands.cs:133 NetstatOutput`：R18 之后只剩 `PlanV3Batch5Tests.cs:88–95` 在测它，连测试一起删。
+  - `App/Settings.cs:81 TranslateReplaceHotKeySeen`：第三版 §3.2「划词翻译并替换」的热键动作一直没做，这个字段也没人读。PLAN-v9 的 F1 要是做了，就留着用。
+- 重复：
+  - 「`byte[]` → `BitmapImage`」写了 6 份：`PinWindow.cs:94`、`ScreenshotCard.cs:380`、`LauncherPanel.xaml.cs:845`、`SettingsWindow.cs:2458`、`ClipboardPanel.xaml.cs:1074` 和 `:1518`（这一份还在 UI 线程上 `GetResult()`，流也没 Dispose）。`Clipboard/ImageCodec.cs:193` 已经有一个私有的 `ToStreamAsync`，放开它，收成一个 `ImageCodec.ToBitmapAsync(bytes, decodeWidth)`。
+  - 「留着的条目」的规则 `IsRetained` 写了三处：`ClipboardStore.cs:151`、`KittyTools.Core/Sync/ClipSync.cs:25` 和 `:159`，留 Core 那一份。
+- 截图飞入卡（`Screenshot/ScreenshotCard.cs:380`）整张解码：卡片最后只有 200 × 140 DIP，一张 1440p 截图解出来约 14.7 MB，和 STATUS 里「截图后 +18 MB」量级接近。上面那个公用方法加了 `decodeWidth` 以后，先量一下按卡片大小解码能省多少、飞入开头几帧会不会发糊，再决定用不用。
 
 ### R24（P1）第 2 批的音画同步是对着一张不动的画面量的，要重做 → 探针已重写（`f07feaa`，审查方），等 Windows 上重测
 
