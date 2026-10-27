@@ -1,9 +1,8 @@
-// 截图后的「飞入 + 角落缩略图」（PLAN-v2 §3.8 / D5，mac 的招牌时刻 S1 和常驻缩略图）：
-// 复制或快速保存之后，遮罩收起的那一帧就是选区原样；下一帧开始飞向屏幕右下角，变成一张缩略图卡片。
+// 截图后的角落缩略图（PLAN-v2 §3.8 / D5，mac 的常驻缩略图）：
+// 复制或快速保存之后，卡片直接在屏幕右下角淡入（0.1.0 用户定：不从选区飞过去）。
 // 卡片就是截图本身（缩进 200 × 140 以内，圆角和阴影是系统的）；悬停时盖一层 black 0.35 的蒙层，
 // 中间「复制」「保存」两个 HUD 胶囊，左上关闭、右上钉图两个圆钮（PLAN-v7 §3.6）。
 // 卡片停 5 秒，悬停时不消失，可以拖到别的程序（拖出去的是 PNG 文件）。
-// 系统关了动画效果时不飞，卡片直接淡入。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 using Microsoft.UI.Windowing;
@@ -21,7 +20,7 @@ namespace KittyTools;
 
 internal sealed class ScreenshotCard : Window
 {
-    // mac：飞行卡片缩到 200 × 140 以内；太窄太矮的照样留出能放下按钮的最小尺寸（图按比例裁中间）。
+    // mac：卡片缩到 200 × 140 以内；太窄太矮的照样留出能放下按钮的最小尺寸（图按比例裁中间）。
     private const double MaxWidthDip = 200;
     private const double MaxHeightDip = 140;
     private const double MinWidthDip = 112;
@@ -38,12 +37,9 @@ internal sealed class ScreenshotCard : Window
     private readonly Grid _hoverLayer;
     private readonly Grid _root;
     private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _hideTimer;
-    private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _flyTimer;
     private readonly double _scale;
-    private readonly RectInt32 _from;
     private readonly RectInt32 _to;
     private Border? _savedBadge;
-    private long _flyStarted;
     private bool _hovering;
 
     private ScreenshotCard(byte[] png, PixelBounds origin, string? savedPath)
@@ -64,10 +60,6 @@ internal sealed class ScreenshotCard : Window
             }
         };
 
-        _flyTimer = DispatcherQueue.CreateTimer();
-        _flyTimer.Interval = TimeSpan.FromMilliseconds(16);
-        _flyTimer.IsRepeating = true;
-        _flyTimer.Tick += (_, _) => StepFly();
 
         var (cardWidth, cardHeight) = CardSize(origin.Width, origin.Height);
 
@@ -105,10 +97,7 @@ internal sealed class ScreenshotCard : Window
         {
             _hovering = false;
             SetHover(false);
-            if (!_flyTimer.IsRunning)
-            {
-                _hideTimer.Start();
-            }
+            _hideTimer.Start();
         };
         Content = _root;
 
@@ -133,7 +122,6 @@ internal sealed class ScreenshotCard : Window
             display.Work.Bottom - heightPx - MonitorLayout.Pixels(MarginDip, _scale),
             widthPx,
             heightPx);
-        _from = new RectInt32(origin.Left, origin.Top, Math.Max(1, origin.Width), Math.Max(1, origin.Height));
 
         _ = LoadImageAsync();
     }
@@ -176,19 +164,12 @@ internal sealed class ScreenshotCard : Window
         {
             var card = new ScreenshotCard(png, origin, savedPath);
             _current = card;
-            card.AppWindow.MoveAndResize(card._from);
+            // 0.1.0 用户反馈：不飞了，直接在右下角淡入。以前从选区一路挪窗口过去，每一帧都改窗口大小，
+            // 看着是被拖过去的，不像 mac 那样顺。先摆好位置再露出来。
+            card.AppWindow.MoveAndResize(card._to);
             card.AppWindow.Show();
-            if (Motion.Reduced)
-            {
-                card.AppWindow.MoveAndResize(card._to);
-                Motion.Appear(card._image);
-                card._hideTimer.Start();
-            }
-            else
-            {
-                card._flyStarted = Environment.TickCount64;
-                card._flyTimer.Start();
-            }
+            Motion.Appear(card._image);
+            card._hideTimer.Start();
 
             Log.Info($"screenshot.card {origin.Width}x{origin.Height}");
         }
@@ -401,33 +382,6 @@ internal sealed class ScreenshotCard : Window
         }
     }
 
-    /// <summary>飞入：从选区的位置 / 大小 settle 到底部角落。</summary>
-    private void StepFly()
-    {
-        var spec = MotionCurves.Of(MotionCurve.Island);
-        var duration = spec?.Duration ?? 0.42;
-        var t = (Environment.TickCount64 - _flyStarted) / 1000.0 / duration;
-        if (t >= 1)
-        {
-            _flyTimer.Stop();
-            AppWindow.MoveAndResize(_to);
-            Motion.Appear(_image);
-            if (!_hovering)
-            {
-                _hideTimer.Start();
-            }
-
-            return;
-        }
-
-        var progress = SpringEase.Progress(t, spec?.Bounce ?? 0.2);
-        var x = (int)Math.Round(_from.X + (_to.X - _from.X) * progress);
-        var y = (int)Math.Round(_from.Y + (_to.Y - _from.Y) * progress);
-        var width = (int)Math.Round(_from.Width + (_to.Width - _from.Width) * progress);
-        var height = (int)Math.Round(_from.Height + (_to.Height - _from.Height) * progress);
-        AppWindow.MoveAndResize(new RectInt32(x, y, Math.Max(1, width), Math.Max(1, height)));
-    }
-
     private async Task CopyAsync()
     {
         try
@@ -502,7 +456,6 @@ internal sealed class ScreenshotCard : Window
 
     private void CloseCard()
     {
-        _flyTimer.Stop();
         _hideTimer.Stop();
         try
         {
