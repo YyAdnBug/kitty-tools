@@ -1392,11 +1392,16 @@ public sealed partial class ClipboardPanel : UserControl
                         Kind = ClipKind.Files,
                         FilePaths = string.Join('\n', entries.SelectMany(entry => entry.Files)),
                     };
-                    Paster.Paste(
-                        target,
-                        () => ClipboardWriter.WriteEntry(combined, null, null, plainText: false, null),
-                        ClipboardService.Instance);
-                    NoticeHost.Show("已一起粘贴", $"{combined.Files.Length} 个文件", NoticeTone.Normal);
+                    // REVIEW R60：Paster 失败时自己会弹具体原因（没能切回原窗口 / 管理员窗口 / 剪贴板被占），
+                    // 不能再无条件盖一句「已一起粘贴」。
+                    if (Paster.Paste(
+                            target,
+                            () => ClipboardWriter.WriteEntry(combined, null, null, plainText: false, null),
+                            ClipboardService.Instance))
+                    {
+                        NoticeHost.Show("已一起粘贴", $"{combined.Files.Length} 个文件", NoticeTone.Normal);
+                    }
+
                     break;
                 }
 
@@ -1416,8 +1421,9 @@ public sealed partial class ClipboardPanel : UserControl
                             ClipboardService.Instance);
                         if (!pasted)
                         {
+                            // REVIEW R60：失败就停在这一条，别再用「已依次粘贴 N 条」把刚报的错盖掉。
                             NoticeHost.Show("没能粘贴", "第 " + (index + 1) + " 条失败", NoticeTone.Error);
-                            break;
+                            return;
                         }
 
                         if (index < entries.Count - 1)

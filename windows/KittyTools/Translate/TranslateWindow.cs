@@ -903,11 +903,14 @@ internal sealed unsafe partial class TranslateWindow : Window
             return;
         }
 
-        var ok = Paster.Paste(target, () => ClipboardWriter.WriteText(text), ClipboardService.Instance);
-        NoticeHost.Show(
-            ok ? "已替换原文" : "已复制译文",
-            ok ? string.Empty : "没能切回原窗口",
-            ok ? NoticeTone.Normal : NoticeTone.Warning);
+        // REVIEW R60：失败时 Paster 已经弹了具体原因（没能切回原窗口 / 管理员窗口 / 剪贴板被占），
+        // 这里不再另报一遍、更不能报成功。
+        if (!Paster.Paste(target, () => ClipboardWriter.WriteText(text), ClipboardService.Instance))
+        {
+            return;
+        }
+
+        NoticeHost.Show("已替换原文", string.Empty, NoticeTone.Normal);
     }
 
     public void SpeakSource()

@@ -140,7 +140,7 @@
 - 划词走 Ctrl+C 兜底时，`CaptureSnapshot`（:128 起）还原回去的也是截断版，等于把用户剪贴板里原来的富文本弄坏了。
 - 改：`ReadRich` 改用 `ReadBlobWithin`（超了返回 null），和图片那几处一样。
 
-### R60（P2）多选粘贴、替换原文：失败了还显示成功
+### R60（P2）多选粘贴、替换原文：失败了还显示成功 → 已修（`8ea0d48`）
 
 - `Clipboard/ClipboardPanel.xaml.cs`：
   - 依次粘贴失败时，`break`（:1419–1420）只跳出循环，接着 :1429 照样显示「已依次粘贴 N 条」，把刚报的错盖掉（`NoticeHost.Show` 是原地换内容）；
