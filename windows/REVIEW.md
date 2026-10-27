@@ -80,6 +80,7 @@
   - `53d609e9` 第 4 步：R41 第一条、R44、R46、R47、R48 第一条、PLAN-v9 V2；
   - `9efc8da9` R64 五条：都按建议写了，**没在 Windows 上验过**，手测 358–362；
   - R66 托盘菜单换成系统的 Win32 菜单、安装程序加桌面快捷方式（`git log --grep R66`，用户真机反馈），手测 367–370；
+  - R67 用过一次右键菜单后点图标打不开（`git log --grep R67`），手测 371；
   - R65 Inno 安装程序（`git log --grep R65`）：`installer/KittyTools.iss`、App 的 `--quit` / `--uninstall-cleanup`、`SetupRecord` 改认 Inno 的登记、删掉 `KittyTools.Setup` 和 `Core/SetupPayload.cs`、`build-release.ps1` 调 ISCC、`setup-e2e.ps1` 重写。
 - **最可能要改的**：
   - `.iss` 的 Pascal 没用 ISCC 编过；
@@ -227,6 +228,19 @@
   - `[UninstallDelete]` 整个删 `{app}` 之前，位置规则一定要先保证这个文件夹整个是我们的；
   - `--uninstall-cleanup` 不能开数据库、不能往数据目录写日志（R25）。
 - **验收**：PLAN-setup-inno §7。`setup-e2e.ps1` 五步全过；浅 / 深色四张截图推到 `windows-shots`；报告写两个 setup.exe 的大小、装一次和卸载一次的耗时。
+
+### R67（P1）用户真机反馈：用过一次右键菜单，再点托盘图标打不开 → 已写（审查方，`git log --grep R67`，待编译）
+
+用户 2026-10-27：「右键菜单点击后会导致左键菜单也打不开」。审查方这边复现不了。旧菜单（WinUI 那一版）缺了托盘菜单收尾的两步，都没做：
+
+- 收起后 `PostMessage(WM_NULL)`；
+- `Shell_NotifyIcon(NIM_SETFOCUS)` 把焦点还给通知区域（NOTIFYICON_VERSION_4 的规矩）。
+
+缺了这两步，下次点图标常常没反应。
+
+- 新菜单（R66）已经有 `WM_NULL`，这次补上 `Tray.ReturnFocus()`（NIM_SETFOCUS），选了、Esc、点外面都调。
+- 选中的那一项不再在 `WM_CONTEXTMENU` 的回调里当场做，改成 `DispatcherQueue.TryEnqueue` 出来再做。截图 / 截图翻译 / 识字 / 录屏再等 300 ms：系统菜单选中项有淡出，免得拍进冻结帧。
+- **要验**：手测 371。还能复现的话，日志里看第二次点击有没有 `tray` 相关的行。没有就是系统没把 NIN_SELECT / WM_CONTEXTMENU 发过来，报告里写一句。
 
 ### R66（P1）用户真机反馈：没有桌面快捷方式；托盘菜单位置不对 → 已写（审查方，`git log --grep R66`，待编译）
 

@@ -1,6 +1,6 @@
 // 托盘图标（Shell_NotifyIcon，NOTIFYICON_VERSION_4）。
 // Windows 11 默认把新图标收进「^」溢出区；资源管理器重启时靠 TaskbarCreated 重新加。
-// 菜单换成 WinUI 的 MenuFlyout（Shell/TrayMenu.cs，PLAN-v2 §3.2 / D2），跟随深浅色。
+// 菜单是系统的 Win32 弹出菜单（Shell/TrayMenu.cs，2026-10-27 R66；以前是 WinUI 的 MenuFlyout）。
 // v4 下右键会先后收到 WM_RBUTTONUP 和 WM_CONTEXTMENU，只认后者；左键认 NIN_SELECT，键盘认 NIN_KEYSELECT。
 using System.Runtime.InteropServices;
 using KittyTools.Infrastructure;
@@ -108,6 +108,26 @@ internal static unsafe partial class Tray
         // 取不到（极少数精简系统）：退回 exe 主图标。
         var module = PInvoke.GetModuleHandle(default(PCWSTR));
         return PInvoke.LoadIcon(new HINSTANCE(module.Value), new PCWSTR((char*)32512));
+    }
+
+    /// <summary>
+    /// 菜单收起后把焦点还给通知区域（NOTIFYICON_VERSION_4 的规矩：图标弹的界面做完了要 NIM_SETFOCUS）。
+    /// REVIEW R67：不还的话，用过一次右键菜单以后再点图标常常没反应。
+    /// </summary>
+    public static void ReturnFocus()
+    {
+        if (!_added)
+        {
+            return;
+        }
+
+        var data = new NOTIFYICONDATAW
+        {
+            cbSize = (uint)sizeof(NOTIFYICONDATAW),
+            hWnd = HiddenWindow.Hwnd,
+            uID = TrayIconId,
+        };
+        PInvoke.Shell_NotifyIcon(NOTIFY_ICON_MESSAGE.NIM_SETFOCUS, in data);
     }
 
     public static void ReAdd()

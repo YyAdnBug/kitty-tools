@@ -52,6 +52,7 @@ internal static unsafe partial class TrayMenu
         }
 
         Action? chosen = null;
+        var capture = false;
         try
         {
             for (var index = 0; index < items.Count; index++)
@@ -77,9 +78,12 @@ internal static unsafe partial class TrayMenu
             var align = GetSystemMetrics(SmMenuDropAlignment) != 0 ? TpmRightAlign : 0;
             var command = TrackPopupMenuEx(_menu, TpmRightButton | TpmReturnCmd | align, x, y, hwnd, IntPtr.Zero);
             PostMessage(hwnd, 0, 0, 0);
+            // REVIEW R67：收起后（选了、Esc、点外面都一样）把焦点还给通知区域，不然下一次点图标可能没反应。
+            Tray.ReturnFocus();
             if (command > 0 && command <= items.Count)
             {
                 chosen = items[command - 1].Run;
+                capture = items[command - 1].Capture;
             }
         }
         catch (Exception ex)
@@ -92,7 +96,28 @@ internal static unsafe partial class TrayMenu
             _menu = IntPtr.Zero;
         }
 
-        chosen?.Invoke();
+        if (chosen is null)
+        {
+            return;
+        }
+
+        // 选中的那一项等菜单收起、从托盘的窗口过程（WM_CONTEXTMENU 回调）里出来以后再做；截图、识字、录屏这些
+        // 还要等系统菜单选中项的淡出（约 0.25 s）做完，免得拍进冻结帧。
+        Action run = chosen;
+        var queue = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+        var queued = queue?.TryEnqueue(async () =>
+        {
+            if (capture)
+            {
+                await Task.Delay(300);
+            }
+
+            run();
+        }) == true;
+        if (!queued)
+        {
+            run();
+        }
     }
 
     public static void Close()
@@ -103,8 +128,9 @@ internal static unsafe partial class TrayMenu
         }
     }
 
-    /// <summary>Text 为 null 是分隔线。</summary>
-    private sealed record Item(string? Text, string? Shortcut, Action Run, bool Enabled = true, bool Checked = false);
+    /// <summary>Text 为 null 是分隔线；Capture = 要拍屏幕的（截图、识字、录屏），等菜单淡完再开始。</summary>
+    private sealed record Item(
+        string? Text, string? Shortcut, Action Run, bool Enabled = true, bool Checked = false, bool Capture = false);
 
     private static void Build(List<Item> menu)
     {
@@ -148,14 +174,14 @@ internal static unsafe partial class TrayMenu
         if (Features.IsOn(Feature.Screenshot))
         {
             Add(menu, "截图", HotKeyActions.Screenshot,
-                () => ScreenshotSession.Start(ScreenshotMode.Capture));
+                () => ScreenshotSession.Start(ScreenshotMode.Capture), capture: true);
             if (Features.IsOn(Feature.Translate))
             {
                 Add(menu, "截图翻译", HotKeyActions.ScreenshotTranslate,
-                    () => ScreenshotSession.Start(ScreenshotMode.Translate));
+                    () => ScreenshotSession.Start(ScreenshotMode.Translate), capture: true);
             }
 
-            Add(menu, "识字", HotKeyActions.Ocr, () => ScreenshotSession.Start(ScreenshotMode.Ocr));
+            Add(menu, "识字", HotKeyActions.Ocr, () => ScreenshotSession.Start(ScreenshotMode.Ocr), capture: true);
             Add(menu, "截图历史", HotKeyActions.ShotHistory, ShotHistoryWindow.ShowWindow);
         }
 
@@ -168,7 +194,7 @@ internal static unsafe partial class TrayMenu
             }
             else
             {
-                Add(menu, "录屏", HotKeyActions.Record, RecordingHost.Toggle);
+                Add(menu, "录屏", HotKeyActions.Record, RecordingHost.Toggle, capture: true);
             }
 
             if (RecordingHost.LastPath is { } last && File.Exists(last) &&
@@ -221,8 +247,9 @@ internal static unsafe partial class TrayMenu
         menu.Add(new Item("退出 Kitty Tools", null, () => runtime?.Exit()));
     }
 
-    private static void Add(List<Item> menu, string text, string action, Action run, bool enabled = true)
-        => menu.Add(new Item(text, ShellRuntime.Instance?.HotKeys.ShortcutFor(action), run, enabled));
+    private static void Add(
+        List<Item> menu, string text, string action, Action run, bool enabled = true, bool capture = false)
+        => menu.Add(new Item(text, ShellRuntime.Instance?.HotKeys.ShortcutFor(action), run, enabled, Capture: capture));
 
     /// <summary>某一节整个没有（功能关了）时不留连着的两条分隔线，也不在最前面放一条。</summary>
     private static void AddSeparator(List<Item> menu)
