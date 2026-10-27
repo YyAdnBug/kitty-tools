@@ -70,6 +70,11 @@
 
 用户 2026-10-27：「你找出来，然后我 windows 上打包，并且 windows 就是 0.1.0 版本，没有现在那么多个版本」。Windows 的第一个对外版本叫 **0.1.0**，主打**剪贴板历史、截图、翻译**。
 
+**0.1.0 分工（2026-10-27 中午，用户：「要不你来接手」）**：
+- **归审查方**（在 Mac 上写、不编译，推上来）：第 4 步那几条（R41 第一条、R44、R46、R47、R48 第一条、PLAN-v9 V2）和 R65（Inno Setup）。这些文件你们先别动：`Clipboard/ClipboardPanel.xaml.cs` 的 Ctrl+K 那段、`Screenshot/PinWindow.cs` 的 `Copy`、`Shell/ShellRuntime.cs` 的 `OnSettingsChanged` 和 `ScheduleBackup`、`Settings/SettingsWindow.cs`、`Storage/ArchiveService.cs`、`Clipboard/OcrQueue.cs`、`Screenshot/OcrService.cs`、`App/Settings.cs`、`App/SetupRecord.cs`、`App/Program.cs`、`App/SingleInstance.cs`、`KittyTools.Setup/`、`KittyTools.Core/Setup*.cs`、`KittyTools.Tests/SetupTests.cs`、`build-release.ps1`、`tools/setup-e2e.ps1`、`installer/`。
+- **归你们**：R64 的五条真机验证（是真的就修；要改上面那些文件的，先在这里写一句再改）。做完以后 `git fetch && git rebase origin/windows-wip`，编译审查方推上来的提交，编译错、行为不对直接修，在这一节下面记一句；然后照第 6、7 步打包、跑 `setup-e2e.ps1`、手测、写报告。
+- 审查方每推一条就在这里记提交号。
+
 审查方已经提交了（在 Mac 上改的，**没编译**）：
 - `Directory.Build.props` 版本改成 0.1.0；`changelog.json` 的七条内部版本合成一条对外的 0.1.0。
 - `Shell/Feature.cs`：启动器和录屏没存过时默认关（`DefaultOn`，带 ponytail 注释）。启动器读浏览历史、默认值还没对齐 mac（R42、PLAN-v9 V1），录屏真机没走完（R24）。欢迎页的快捷键说明跟着改了（`Settings/SettingsWindow.cs` 的 `BuildWelcome`）。
