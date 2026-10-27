@@ -1006,8 +1006,11 @@ internal sealed partial class SelectionOverlayWindow : Window
             // 录屏时不需要标注工具，只留录制条。
             toolLayer.Visibility = Visibility.Collapsed;
             extras.Visibility = Visibility.Collapsed;
-            var record = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            // mac RecordBar：一段胶囊 [四个开关] ｜ [取消][● 开始]
+            var record = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
             record.Children.Add(BuildRecordBar());
+            record.Children.Add(Separator());
+            record.Children.Add(actions);
             row.Children.Add(Capsule(record));
         }
         else
@@ -1019,7 +1022,10 @@ internal sealed partial class SelectionOverlayWindow : Window
             row.Children.Add(Capsule(left));
         }
 
-        row.Children.Add(Capsule(actions));
+        if (_session.Mode != ScreenshotMode.Record)
+        {
+            row.Children.Add(Capsule(actions));
+        }
 
         var toolbar = new Border
         {
@@ -2114,60 +2120,69 @@ internal sealed partial class SelectionOverlayWindow : Window
         e.Handled = true;
     }
 
-    /// <summary>录屏条：点按 / 按键 / 系统声音 / 麦克风四个开关（记在设置里，开录那一刻才读）。</summary>
+    /// <summary>
+    /// 录制条的四个开关（mac RecordBar，顺序同 mac）：系统声音、麦克风、显示点按、显示按键。图标钮 32 × 32：开 = 品牌粉，
+    /// 关 = 白色且换成关着的图形（声音 / 麦克风带斜杠、点按是普通鼠标、按键是线框键盘），不只靠颜色分开；悬停提示和读屏
+    /// 名字带当前状态，点了播报新状态。记在设置里，开录那一刻才读。
+    /// </summary>
     private StackPanel BuildRecordBar()
     {
         var bar = new StackPanel
         {
             Orientation = Orientation.Horizontal,
-            Spacing = 4,
+            Spacing = 2,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        ToggleButton Toggle(string text, bool value, string tip, Action<bool> changed)
+        var settings = SettingsService.Current;
+        Button Toggle(string name, Func<bool> read, Action<bool> write, string onGlyph, string offGlyph, string detail)
         {
-            var toggle = new ToggleButton
+            var icon = new FontIcon { FontSize = 16 };
+            var button = new Button
             {
-                Content = text,
-                IsChecked = value,
-                FontSize = 12,
-                Padding = new Thickness(8, 3, 8, 3),
+                Content = icon,
+                Width = 32,
+                Height = 32,
                 MinWidth = 0,
+                MinHeight = 0,
+                Padding = new Thickness(0),
+                CornerRadius = new CornerRadius(4),
+                Background = new SolidColorBrush(Colors.Transparent),
+                BorderThickness = new Thickness(0),
+                AllowFocusOnInteraction = false,
             };
-            ToolTipService.SetToolTip(toggle, tip);
-            toggle.Click += (_, _) => changed(toggle.IsChecked == true);
-            return toggle;
+            string State() => $"{name}：{(read() ? "开" : "关")}";
+            void Apply()
+            {
+                var on = read();
+                icon.Glyph = on ? onGlyph : offGlyph;
+                icon.Foreground = new SolidColorBrush(on ? Accent : Theme.Shot.HudTextMuted);
+                ToolTipService.SetToolTip(button, State() + "\n" + detail);
+                AutomationProperties.SetName(button, State());
+            }
+
+            button.Click += (_, _) =>
+            {
+                write(!read());
+                SettingsService.Save();
+                Apply();
+                Announce(State());
+            };
+            Apply();
+            return button;
         }
 
         bar.Children.Add(Toggle(
-            "点按", SettingsService.Current.RecordClicks, "在录出的画面里显示点按圈",
-            value =>
-            {
-                SettingsService.Current.RecordClicks = value;
-                SettingsService.Save();
-            }));
+            "系统声音", () => settings.RecordSystemSound, value => settings.RecordSystemSound = value,
+            Glyphs.Volume, Glyphs.VolumeOff, "把系统声音录进 MP4"));
         bar.Children.Add(Toggle(
-            "按键", SettingsService.Current.RecordKeys, "在录出的画面里显示快捷键",
-            value =>
-            {
-                SettingsService.Current.RecordKeys = value;
-                SettingsService.Save();
-            }));
-
+            "麦克风", () => settings.RecordMicrophone, value => settings.RecordMicrophone = value,
+            Glyphs.Microphone, Glyphs.MicrophoneOff, "把麦克风声音混进 MP4"));
         bar.Children.Add(Toggle(
-            "声音", SettingsService.Current.RecordSystemSound, "把系统声音录进 MP4",
-            value =>
-            {
-                SettingsService.Current.RecordSystemSound = value;
-                SettingsService.Save();
-            }));
+            "显示点按", () => settings.RecordClicks, value => settings.RecordClicks = value,
+            Glyphs.TouchPointer, Glyphs.Mouse, "在录出的画面里显示点按圈"));
         bar.Children.Add(Toggle(
-            "麦克风", SettingsService.Current.RecordMicrophone, "把麦克风声音混进 MP4",
-            value =>
-            {
-                SettingsService.Current.RecordMicrophone = value;
-                SettingsService.Save();
-            }));
-
+            "显示按键", () => settings.RecordKeys, value => settings.RecordKeys = value,
+            Glyphs.Keyboard, Glyphs.KeyboardOutline, "只显示快捷键，打字不进画面"));
         return bar;
     }
 

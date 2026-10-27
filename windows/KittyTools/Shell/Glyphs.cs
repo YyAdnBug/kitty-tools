@@ -69,6 +69,13 @@ internal static class Glyphs
 
     /// <summary>长截图（截图工具栏，ScrollUpDown）。</summary>
     public const string LongScreenshot = "\uEC8F";
+
+    /// <summary>录制条开关关着时的图形（开着用 Volume / Microphone / TouchPointer / Keyboard）。</summary>
+    public const string VolumeOff = "\uE74F";
+    public const string MicrophoneOff = "\uEC54";
+    public const string TouchPointer = "\uE7C9";
+    public const string Mouse = "\uE962";
+    public const string KeyboardOutline = "\uE92E";
     public const string Microphone = "\uE720";
     public const string Volume = "\uE767";
     public const string Folder = "\uE8B7";

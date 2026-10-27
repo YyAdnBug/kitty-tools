@@ -19,6 +19,7 @@
 - 5c（选中样子、拖手柄 / 拖弯 / 双击拉直、Shift 锁轴、Alt 拖复制、Ctrl+D、方向键、双击文字重新编辑、光标）：见 `git log --grep "5c"`。
 - 5d（文字：三档字号、无底 / 描边 / 底色、所见即所得的多行输入框）：见 `git log --grep "5d"`。
 - 5e（选区和工具栏：尺寸胶囊输宽高 / 比例锁、Ctrl / Alt + 方向键推收边、空格平移、Ctrl 十字准线、工具栏放哪 / 长出来 / 让位、底块滑动、长截图和录屏按钮、拷贝圆钮、D 上次区域、R 切到录屏、双击拷贝、读屏播报）：见 `git log --grep "5e"`。新文件 `KittyTools/Screenshot/SelectionOverlayWindow.Chrome.cs`、`KittyTools.Core/SelectionChrome.cs`、`KittyTools.Tests/SelectionChromeTests.cs`；另动了 `Screenshot/ScreenshotSession.cs`（Mode 可切、LockedRatio、SelectLastRegion、SwitchToRecording）、`Shell/Motion.cs`（Entrance 加 rise 参数，默认不变）、`Shell/Glyphs.cs`（LongScreenshot）、`KittyTools.Core/RegionMath.cs`（ApplyingRatio 改成顶边不动，以前没人用、移植时上下弄反了）、`Settings/ShortcutsSheet.cs`、`App/UiSnapshotProbe.cs`。另动了 `Settings/ShortcutsSheet.cs`（文字框 Ctrl+Enter / Esc 收下）、`App/UiSnapshotProbe.cs`（shot-text*.png）。
+- 录制条的四个开关换成图标（2026-10-28，用户要的）：`SelectionOverlayWindow.cs` 的 BuildRecordBar，`Shell/Glyphs.cs` 加了关着时的五个图形。
 
 ## v8 分工（2026-10-26 深夜，用户定：审查方接着把 mac 新功能搬过来）
 
