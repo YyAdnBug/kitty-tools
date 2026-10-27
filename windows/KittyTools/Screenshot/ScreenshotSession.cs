@@ -367,7 +367,9 @@ internal sealed class ScreenshotSession
         var local = new RectD(
             global.Left - screen.Bounds.Left, global.Top - screen.Bounds.Top,
             global.Width, global.Height);
-        var pixels = new PixelBounds(0, 0, global.Width, global.Height);
+        // REVIEW R54：Crop 吃的是这块屏里的像素坐标，不是全局的，也不能从 (0, 0) 起。
+        var pixels = new PixelBounds(
+            (int)local.X, (int)local.Y, (int)local.X + global.Width, (int)local.Y + global.Height);
         try
         {
             var bgra = screen.Crop(pixels);

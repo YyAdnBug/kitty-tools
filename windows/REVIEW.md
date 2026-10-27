@@ -97,7 +97,7 @@
    没走的写「没测」，别打勾。
 8. 报告：做了哪些、量到的数、产物路径和大小、没修的写成「已知问题」（一条一句）。**不发布**；用户要发时，tag 用 `windows-v0.1.0`、`--latest=false`、别标预发布（`App/UpdateService.cs` 只认非预发布的 `windows-v*`）。
 
-### R54（P1）「截取上次区域」裁的是屏幕左上角那一块
+### R54（P1）「截取上次区域」裁的是屏幕左上角那一块 → 已修（`d07959f`）
 
 - `Screenshot/ScreenshotSession.cs:370`：`new PixelBounds(0, 0, global.Width, global.Height)` 从屏幕的 (0, 0) 开始裁，上一行算好的 `local`（减掉了 `screen.Bounds`）没用上。`Crop`（`Screenshot/ScreenCapture.cs:38`）吃的是这块屏里的像素坐标。
 - 触发：在屏幕中间截一次图，再按 Ctrl+Alt+Z。复制出去的、飞入卡、截图历史里，都是屏幕左上角同样大小的一块。
