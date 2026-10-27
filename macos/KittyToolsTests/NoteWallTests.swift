@@ -13,8 +13,11 @@
 
 import AppKit
 import Carbon.HIToolbox
+import Observation
 import SwiftUI
+import Synchronization
 import Testing
+import UniformTypeIdentifiers
 
 @testable import KittyTools
 
@@ -553,6 +556,41 @@ struct NoteWallTests {
         == .content)
   }
 
+  /// 同步来的图后到（第三轮体检 B7）：正文先合进来、图还没拷进图片目录时卡片按「没图」建（缩略图高 0）；拷进来之后
+  /// imagesArrived 把引用它的卡片作废、墙看着的值变一次，再建就有缩略图。不引用它的卡片不动
+  @Test func arrivedImagesRebuildCards() async throws {
+    let directory = FileManager.default.temporaryDirectory.appending(
+      path: "kitty-wall-arrived-\(UUID().uuidString)")
+    let elsewhere = directory.appending(path: "elsewhere")
+    try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let stored = try #require(
+      try? await NoteImageStore.store(
+        data: NoteImageFixture.data(type: .png, width: 800, height: 400), in: elsewhere
+      ).get())
+    let (store, ids) = try library(["\(NoteImages.token(stored.image))\n买菜", "牛奶"])
+    store.images = NoteImageStore(directory: directory)
+    let withImage = try #require(store.note(ids[0]))
+    let plain = try #require(store.note(ids[1]))
+    #expect(store.wallCard(of: withImage, markdown: true).thumbnailHeight == 0, "图还没到：按没图建")
+    _ = store.wallCard(of: plain, markdown: true)
+    let name = "\(stored.image.id.uuidString).\(stored.image.ext)"
+    try FileManager.default.copyItem(
+      at: elsewhere.appending(path: name), to: directory.appending(path: name))
+    #expect(store.cachedWallCard(of: withImage, markdown: true) != nil, "光是文件到了，缓存不知道")
+    let changed = ArrivalFlag()
+    withObservationTracking {
+      _ = store.cachedWallCard(of: plain, markdown: true)
+    } onChange: {
+      changed.fired.withLock { $0 = true }
+    }
+    store.imagesArrived([stored.image.id])
+    #expect(changed.fired.withLock { $0 }, "墙排的时候看着它：重排")
+    #expect(store.cachedWallCard(of: withImage, markdown: true) == nil)
+    #expect(store.cachedWallCard(of: plain, markdown: true) != nil, "不引用这张图的卡片不动")
+    #expect(store.wallCard(of: withImage, markdown: true).thumbnailHeight > 0)
+  }
+
   /// 卡片上的字：标题、正文开头几行带编辑器同一套样式，藏着的标记删掉；Markdown 关着时按原文（任务照常）。
   /// 高：只有标题的是最矮的那张，长的到上限、超出的截断
   @Test func cardTextAndHeight() throws {
@@ -901,4 +939,9 @@ private final class WallWindow: NSWindow {
   override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
     frameRect
   }
+}
+
+/// onChange 在任意线程回调：记一下回调过没有（Mutex 不能直接被逃逸闭包捕获，包一层）
+private final class ArrivalFlag: Sendable {
+  let fired = Mutex(false)
 }

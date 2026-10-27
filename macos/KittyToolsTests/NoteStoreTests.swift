@@ -8,6 +8,8 @@
 // 全用内存库；时间都是传进去的固定值，等待换成测试自己放行的，不等真实时间、不碰用户的数据目录。
 
 import Foundation
+import Observation
+import Synchronization
 import Testing
 
 @testable import KittyTools
@@ -857,7 +859,7 @@ struct NoteStoreTests {
     #expect(try saved(db).count == store.notes.count)
   }
 
-  /// 搜索折叠出来的正文按「编号 + 修订号」缓存：改正文 / 标题马上作废，换搜索词、重画不重折；
+  /// 搜索折叠出来的正文按「编号 + 标题、正文」缓存：改正文 / 标题马上作废，换搜索词、重画不重折；
   /// 永久删掉的跟着清（不留下已删便签的正文）
   @Test func cachedSearchMatchesFreshFoldingAndDropsErasedNotes() throws {
     let (store, _) = try open()
@@ -888,4 +890,78 @@ struct NoteStoreTests {
     store.erase(weekly.id)
     #expect(store.foldedEntries == 0)
   }
+
+  /// 正文里第一处命中（第三轮体检 U3）：口径同列表的搜索——不分大小写 / 全半角 / 变音符号，颜色标记、图片令牌（或编辑器
+  /// 里代替它的附件字符）夹在词中间也找得到，给的是原文里的位置（夹着的标记算在里面）；几个词取最靠前的；
+  /// 只在标题里命中、没有词、只碰到令牌原文的是 nil
+  @Test func firstMatchFollowsTheListSearch() {
+    func hit(_ query: String, _ text: String) -> String? {
+      NoteStore.firstMatch(of: query, in: text).map { (text as NSString).substring(with: $0) }
+    }
+    #expect(hit("apple", "买 APPLE 和牛奶") == "APPLE")
+    #expect(hit("ａｐｐｌｅ", "an apple") == "apple")
+    #expect(hit("cafe", "一杯 café") == "café")
+    #expect(hit("牛奶 买", "买 APPLE 和牛奶") == "买", "几个词取最靠前的")
+    #expect(NoteMarkdown.strippingColors(from: "说 he[llo]{red} 呀") == "说 hello 呀")
+    #expect(hit("hello", "说 he[llo]{red} 呀") == "he[llo", "颜色标记夹在中间")
+    let token = NoteImages.token(
+      NoteImages.Image(id: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!, ext: "png"))
+    #expect(hit("买菜", "买\(token)菜") == "买\(token)菜", "图片令牌夹在中间")
+    #expect(hit("买菜", "买\u{FFFC}菜") == "买\u{FFFC}菜", "编辑器里的附件字符夹在中间")
+    #expect(hit("png", "只有图 \(token)") == nil, "令牌原文不算（同列表）")
+    #expect(hit("后面", "前\(token)后面") == "后面", "位置换回原文")
+    #expect(hit("周报", "正文里没有") == nil)
+    #expect(hit("  ", "随便") == nil)
+    // 和列表的搜索同一个结论：列表搜得到的，正文里（只要不是只在标题里）就找得到
+    for body in ["说 he[llo]{red} 呀", "买\(token)菜", "ＡＢＣ ｄｅｆ"] {
+      let note = Note(id: "n", title: "", body: body, createdAt: Self.t0, modifiedAt: Self.t0)
+      for query in ["hello", "买菜", "abc def"] where !NoteStore.search(query, in: [note]).isEmpty {
+        #expect(NoteStore.firstMatch(of: query, in: body) != nil, "\(query) / \(body)")
+      }
+    }
+  }
+
+  /// 折叠缓存比的是字、不是修订号（第三轮体检 P4）：修订号到顶（导入了一个修订号离谱的文件）之后再改正文，修订号不变了，
+  /// 搜索还得搜到新字
+  @Test func cachedSearchFollowsTextWhenRevisionIsStuck() throws {
+    let (store, _) = try open()
+    let note = store.create(body: "苹果", now: Self.t0)
+    #expect(store.search("苹果", in: store.active).count == 1)
+    store.adopt(
+      [entry(note.id, "香蕉", modified: Note.milliseconds(Self.at(50)), revision: Note.maxRevision)],
+      now: Self.at(100))
+    #expect(store.note(note.id)?.revision == Note.maxRevision)
+    #expect(store.search("香蕉", in: store.active).count == 1)
+    store.setBody("橘子", of: note.id, now: Self.at(101))
+    #expect(store.note(note.id)?.revision == Note.maxRevision, "修订号到顶不再变")
+    #expect(store.search("橘子", in: store.active).count == 1)
+    #expect(store.search("香蕉", in: store.active).isEmpty)
+  }
+
+  /// 三个视图命中缓存时也登记「看着它变」（第三轮体检 P4）：同一代里第二个读的界面（屏幕边缘那叠扇开时的标签列、窗口的
+  /// 分段计数）也要在改了标题之后收到变化。原来命中缓存只读不被看着的 views、generation，只有第一个读的人登记上
+  @Test func cachedViewsStillRegisterObservation() throws {
+    let (store, _) = try open()
+    let note = store.create(body: "甲", now: Self.t0)
+    let reads: [(name: String, read: () -> Void)] = [
+      ("全部", { _ = store.active }), ("归档", { _ = store.archived }),
+      ("最近删除", { _ = store.trashed }),
+    ]
+    for (offset, view) in reads.enumerated() {
+      view.read()  // 第一个读的把这一代的缓存填上
+      let flag = ChangeFlag()
+      withObservationTracking {
+        view.read()
+      } onChange: {
+        flag.fired.withLock { $0 = true }
+      }
+      store.setTitle("标题 \(offset)", of: note.id, now: Self.at(Double(offset + 1)))
+      #expect(flag.fired.withLock { $0 }, "\(view.name)：命中缓存的那次读也要看着仓库变")
+    }
+  }
+}
+
+/// onChange 在任意线程回调：记一下回调过没有（Mutex 不能直接被逃逸闭包捕获，包一层）
+private final class ChangeFlag: Sendable {
+  let fired = Mutex(false)
 }

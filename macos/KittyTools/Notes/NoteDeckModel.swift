@@ -207,7 +207,7 @@ import SwiftUI
   var previewNote: Note? { preview.flatMap { id in tabs.first { $0.id == id } } }
 
   /// 一列的排法。露出的一截跟着最长的标题走：标题取仓库的缓存（NoteStore.summary），量出来的最长那一截按「仓库代数 +
-  /// 是不是展开 + 大小档」记下来（longestMemo）。「+N」展开成上千张时露出一截反正要压到最短（NoteDeckLayout.needsLongest），
+  /// 是不是展开 + 大小档」记下来（longestMemo）。「+N」展开成上千张时露出一截反正要压到最短（NoteDeckLayout.measuresLongest 是 false），
   /// 不去量那几千个标题——量一遍要几百毫秒（2026-10-21 第二批调优：5000 条 -O 展开到第一屏）
   var layout: NoteDeckLayout {
     let tabs = tabs
@@ -215,9 +215,8 @@ import SwiftUI
     let count = tabs.count
     let hidden = notes.count - count
     var longest: CGFloat = 0
-    if options.style == .tabs,
-      !NoteDeckLayout.needsLongest(
-        count: count, hidden: hidden, height: panelSize.height, options: options)
+    if NoteDeckLayout.measuresLongest(
+      count: count, hidden: hidden, height: panelSize.height, options: options)
     {
       if let memo = longestMemo, memo.generation == store.generation,
         memo.showsAll == state.showsAll, memo.scale == metrics.scale

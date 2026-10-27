@@ -804,6 +804,35 @@ struct NoteDeckTests {
     #expect(store.active.map(\.id) == [ids[2]])
   }
 
+  /// 删除的岛上带「放回」（第三轮体检 U2）：连着删的两条一起放回原处，标签列回到原来的顺序
+  @Test func islandRestoresDeletedNotes() throws {
+    let (model, store, ids) = try make(["一", "二", "三"])
+    let island = Island(showing: nil)
+    model.island = island
+    model.send(Self.enter)
+    model.tapTab(ids[0])
+    model.delete()
+    #expect(island.content?.title == "已删除")
+    model.tapTab(ids[2])
+    model.delete()
+    #expect(island.content?.title == "已删除 2 条")
+    #expect(model.tabs.map(\.id) == [ids[1]])
+    let restore = try #require(island.actions.first)
+    #expect(restore.title == NotesWindowModel.restoreTitle)
+    restore.run()
+    #expect(store.active.map(\.id) == ids && store.trashed.isEmpty)
+    #expect(model.tabs.map(\.id) == ids)
+    // 屏幕上看不出放回了（那叠已经收回成药丸）：岛上说一句
+    #expect(island.content?.title == "已放回 2 条")
+    #expect(island.content?.symbol == "arrow.uturn.backward.circle.fill")
+    // 已经放回的不再算进这一串：几秒内再删一条，岛上是单条的「已删除」；放回一条写标题
+    model.tapTab(ids[1])
+    model.delete()
+    #expect(island.content?.title == "已删除")
+    try #require(island.actions.first).run()
+    #expect(island.content?.title == "已放回「二」")
+  }
+
   /// 打开着的那条被别处（全部便签窗口）删了、归档了：关掉
   @Test func reconcileClosesANoteThatWentAway() throws {
     let (model, store, ids) = try make(["一", "二"])

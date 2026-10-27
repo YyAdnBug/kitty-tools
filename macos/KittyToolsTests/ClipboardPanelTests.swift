@@ -65,6 +65,31 @@ struct ClipboardPanelTests {
     #expect(model.actions(for: edited, targets: [edited]).contains { $0.title == "显示原文" })
   }
 
+  /// 另一台改了正文（同步直接换已有编号的正文，不经 edit）：链接、形态、美化都跟着新正文走（第三轮体检 B8）；删掉的
+  /// 条目收起面板时从缓存里裁掉
+  @Test func cachesFollowTextChangedElsewhere() throws {
+    let (model, store) = try makeModel(["看 https://example.com/a 这篇", #"{"b":1}"#, "留着"])
+    let link = try item(model, "看 https://example.com/a 这篇")
+    let json = try item(model, #"{"b":1}"#)
+    #expect(model.firstLink(of: link)?.absoluteString == "https://example.com/a")
+    #expect(model.contentForm(of: json) == .json)
+    #expect(model.displayText(of: json).contains(#""b" : 1"#))
+    store.update([link.id]) { $0.text = "改成 https://example.com/b 了" }
+    store.update([json.id]) { $0.text = #"{"c":2}"# }
+    let moved = try item(model, "改成 https://example.com/b 了")
+    #expect(model.firstLink(of: moved)?.absoluteString == "https://example.com/b", "不再开旧网址")
+    #expect(model.displayText(of: try item(model, #"{"c":2}"#)).contains(#""c" : 2"#))
+    store.update([json.id]) { $0.text = "不是 JSON 了" }
+    #expect(model.contentForm(of: try item(model, "不是 JSON 了")) == nil, "形态标签跟着变")
+    #expect(model.cachedEntries.forms == 1 && model.cachedEntries.links == 1)
+    store.delete([link.id, json.id])
+    model.reset()
+    #expect(model.cachedEntries.forms == 0 && model.cachedEntries.links == 0, "删掉的不留")
+    _ = model.contentForm(of: try item(model, "留着"))
+    model.reset()
+    #expect(model.cachedEntries.forms == 1, "还在的留着（按形态筛选要问整个历史）")
+  }
+
   /// 条目从列表消失后选中挪到下一条（体检 B7）：连按 ⌘⌫ 删的是第 3、4 条，不会跳回第一条；删最后一条挪到上一条；
   /// 「收藏」范围里 ⌘D 取消收藏、收藏夹筛选里移出同样；⌘Z 后选中回来的那批里最靠前的那条
   @Test func selectionMovesAwayFromRemoved() throws {

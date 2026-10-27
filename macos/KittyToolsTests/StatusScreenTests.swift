@@ -930,7 +930,8 @@ struct StatusScreenTests {
   }
 
   /// 17 个资源都在包里（测试宿主就是 App）而且解得出：每个都取得到文件，帧数大于 1、每帧 256 × 256、带透明通道
-  /// （四角是透明的）、每帧时长大于 0；静止画面就是第一帧那么大，取第二次是缓存里的同一张
+  /// （四角是透明的）、每帧时长大于 0；静止画面就是第一帧那么大，取第二次还是那张画面（比内容、不比对象：全量并行跑时
+  /// 系统内存压力会把 NSCache 整个清掉，「再要一次是缓存里那一个」就偶发落空，第三轮体检 D1）
   @Test func emojiResourcesDecode() async throws {
     for id in StatusEmoji.ids + [StatusEmoji.eyes] {
       let url = try #require(StatusEmoji.url(id), "\(id)")
@@ -947,7 +948,9 @@ struct StatusScreenTests {
       #expect(frames.keyTimes.count == frames.images.count + 1, "\(id)")
       let still = try #require(StatusEmoji.still(id), "\(id)")
       #expect(still.width == 256 && still.height == 256 && still.alphaInfo == .premultipliedFirst)
-      #expect(StatusEmoji.still(id) === still, "\(id)")
+      let again = try #require(StatusEmoji.still(id), "\(id)")
+      #expect(again.width == still.width && again.height == still.height, "\(id)")
+      #expect(Self.opaquePixels(in: again) == Self.opaquePixels(in: still), "\(id)")
       #expect(Self.opaquePixels(in: still) == Self.opaquePixels(in: frames.images[0]), "\(id)")
     }
     #expect(StatusEmoji.menuImage("rocket")?.size == NSSize(width: 16, height: 16))

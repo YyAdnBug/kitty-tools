@@ -201,13 +201,15 @@ private struct NoteFan: View {
     return (range.lowerBound, range.upperBound, range.map { (index: $0, id: tabs[$0].id) })
   }
 
-  /// 这一列里最宽的那张往屏幕里探出多少（打开 8、悬停 / 拖着 4；同 NoteTab 里的 reach）：没画的那几张也算
+  /// 这一列里最宽的那张往屏幕里探出多少（打开 8、悬停 / 排序拖着 4；口径同 stack 里传给 NoteTab 的 isOpen / isHovered /
+  /// isLifted，和它的 reach）：没画的那几张也算
   private func widestReach(_ tabs: [Note]) -> CGFloat {
     let (open, lifted, hovered) = (model.state.openID, model.liftedID, model.hovered)
+    let dragged = model.drag?.id
     var reach: CGFloat = 0
     for note in tabs {
       if note.id == open, note.id != lifted { return 8 }
-      if note.id == lifted || note.id == hovered { reach = 4 }
+      if note.id == dragged || note.id == hovered { reach = 4 }
     }
     return reach
   }

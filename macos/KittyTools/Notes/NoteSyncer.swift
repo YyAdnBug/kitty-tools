@@ -399,6 +399,8 @@ import Observation
     let written = await NoteSyncDisk.write(
       plan, folder: folder, device: store.deviceID, name: name, epoch: next,
       images: store.images?.directory, kinds: kindFiles)
+    // 拿下来的图已经在本机的图片目录里了（别处出了错、换了文件夹也一样）：按「没图」建的墙卡片、编辑器里的占位框换上它们
+    store.imagesArrived(Set(written.downloaded.map(\.id)))
     guard self.folder == folder else { return }
     if let problem = written.problem { return halt(.failed(problem)) }
     lastSync = clock()

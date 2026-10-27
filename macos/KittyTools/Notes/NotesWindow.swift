@@ -76,6 +76,8 @@ import SwiftUI
   }
   /// 刚删的便签（编号，后删的在后）：⌘Z 一条条放回；窗口关掉时清空
   private(set) var undoStack: [String] = []
+  /// 连着删的这一串（岛上的「放回」）
+  @ObservationIgnored private var deletions = Deletions()
   /// 正文打到上限了、这一次输入没进（底下那行小字换成警告）；再打进去字、换一条就收
   private(set) var isOverLimit = false
   /// 等确认永久删除的那条、等确认清空最近删除
@@ -92,6 +94,8 @@ import SwiftUI
   @ObservationIgnored var isEditingBody: () -> Bool = { false }
   /// 拿右边那条便签的正文编辑器做一件事（没有就不做：没选中、最近删除里的是只读的）
   @ObservationIgnored var withEditor: ((NoteTextView) -> Void) -> Void = { _ in }
+  /// 在选中那条的正文里标出搜索词的第一处命中（NotesWindow 给：晚一拍，新选中那条的正文框这时还没建出来 / 没换上字）
+  @ObservationIgnored var revealMatch: () -> Void = {}
   /// 浮动便签（第 4 批；2026-10-22 起同时可以浮几张）：浮着的是哪几条、屏幕边缘有没有那叠——工具栏和右键菜单里那一项
   /// 叫什么看它，界面读得到它的变化；让一条便签浮出来 / 收回去。AppDelegate 接到 NoteEdge 的那一份；没接（便签用不了）
   /// 时不做事
@@ -139,7 +143,7 @@ import SwiftUI
   }
 
   /// 左边现在列的：当前视图里搜出来的。仓库、视图、搜索词都没变就用上次算好的（listed）——换一次搜索词、一次重画
-  /// 要问它好几遍（手测反馈第 3 批）；正文折叠另有一层按「编号 + 修订号」的缓存（NoteStore.folded），
+  /// 要问它好几遍（手测反馈第 3 批）；正文折叠另有一层按「编号 + 标题、正文」的缓存（NoteStore.folded），
   /// 所以搜着的时候在正文里打字只折改过的那条：-O 5000 搜着时打一个字 1087 → 35 ms（2026-10-21）
   var notes: [Note] {
     _ = store.notes  // 界面看着仓库变（generation 不被看着）
@@ -207,6 +211,12 @@ import SwiftUI
     textUndo = UndoManager()
     // 编辑卡开着的那条不再是选中的（删了、归档了、放回了、换了视图、换了一条）：收回
     if expanded != nil, expanded != selection { expanded = nil }
+    revealSearchHit()
+  }
+
+  /// 在搜着的时候换了一条 / 打开了编辑卡：正文里标出第一处命中（第三轮体检 U3；NotesWindow 晚一拍去做）
+  private func revealSearchHit() {
+    if !Search.tokens(query).isEmpty { revealMatch() }
   }
 
   // MARK: 操作（工具栏、右键菜单、键盘同一份）
@@ -310,6 +320,7 @@ import SwiftUI
     } else if layout == .wall {
       wallFocus += 1
     }
+    revealSearchHit()
   }
 
   /// 编辑卡开着：放大着的那条还是这个视图里选中的那条（它在别处被删了、归档了的那一下 expanded 还留着，不算）。
@@ -427,7 +438,44 @@ import SwiftUI
     }
     removing(id) { store.delete(id) }
     undoStack.append(id)
-    island?.show("已删除", detail: "⌘Z 撤销，或到「最近删除」里放回", symbol: "trash.circle.fill")
+    // 这一串里已经放回 / 永久删了的不算（不然删 A、⌘Z、再删 B 会写成「已删除 2 条」）
+    let ids = deletions.add(id).filter { store.note($0)?.deletedAt != nil }
+    island?.show(
+      Self.deletedTitle(ids.count), detail: "⌘Z 撤销，或到「最近删除」里放回",
+      symbol: "trash.circle.fill",
+      actions: [.init(Self.restoreTitle) { [weak self] in self?.restoreDeleted(ids) }])
+  }
+
+  /// 岛上的「放回」（第三轮体检 U2）：这一串里还在「最近删除」里的都放回原处（顺序、归档照旧），选中最后删的那条（同 ⌘Z）
+  func restoreDeleted(_ ids: [String]) {
+    let back = NoteSheetModel.restore(ids, in: store)
+    guard let id = back.last, let note = store.note(id) else { return }
+    undoStack.removeAll(where: ids.contains)
+    select(restored: id)
+    // 结果就在列表上：只播报（同 ⌘Z）
+    Island.announce(NoteSheetModel.restoredTitle(back.count, first: note))
+  }
+
+  /// 删除的提示：一条是「已删除」，连着删了几条（岛上的「放回」放回这一串）带上条数
+  static func deletedTitle(_ count: Int) -> String {
+    count > 1 ? "已删除 \(count) 条" : "已删除"
+  }
+
+  /// 连着删的几条（岛上的「放回」放回这一串，第三轮体检 U2）：上一条删了不到 window 秒（带按钮的岛停多久）就接着记，
+  /// 不然重新起一串。全部便签窗口、屏幕边缘那叠、每张浮动便签各记各的
+  struct Deletions {
+    static let window: TimeInterval = 6
+    private var ids: [String] = []
+    private var last: Date?
+
+    /// 记一条，返回这一串（含这一条，按删的先后）
+    mutating func add(_ id: String, now: Date = .now) -> [String] {
+      if let last, now.timeIntervalSince(last) > Self.window { ids = [] }
+      ids.removeAll { $0 == id }
+      ids.append(id)
+      last = now
+      return ids
+    }
   }
 
   /// ⌘⌫（NotesWindow 的按键监听按键码认）：焦点在列表上（不在任何输入框里）才是删除这条便签。光标在标题、正文、
@@ -459,13 +507,19 @@ import SwiftUI
     while let id = undoStack.popLast() {
       guard let note = store.note(id), note.deletedAt != nil else { continue }
       store.restore(id)
-      scope = note.isArchived ? .archive : .all
-      if !notes.contains(where: { $0.id == id }) { query = "" }
-      selection = id
+      select(restored: id)
       Island.announce("已放回「\(note.displayTitle)」")
       return true
     }
     return false
+  }
+
+  /// 放回之后选中它：去它在的那个视图（归档的去归档），搜索词筛掉了它就清掉搜索
+  private func select(restored id: String) {
+    guard let note = store.note(id) else { return }
+    scope = note.isArchived ? .archive : .all
+    if !notes.contains(where: { $0.id == id }) { query = "" }
+    selection = id
   }
 
   /// ⇧⌘A：归档 / 取消归档（取消归档的排回「全部」最前）
@@ -738,6 +792,13 @@ final class NotesWindow: NSObject, NSWindowDelegate {
     model.withEditor = { [weak self] body in
       if let editor = self?.selectedEditor() { body(editor) }
     }
+    model.revealMatch = { [weak self] in
+      guard let self else { return }
+      // 换一条和打开编辑卡在同一下里各要一次：只做最后那次（排在拿焦点之后）
+      NSObject.cancelPreviousPerformRequests(
+        withTarget: self, selector: #selector(revealMatchNow), object: nil)
+      perform(#selector(revealMatchNow), with: nil, afterDelay: 0)
+    }
     model.pickColor = { [weak self] id in
       guard let self else { return }
       NoteColorPicker.shared.open(id, in: model.store, owner: model, from: window)
@@ -756,6 +817,12 @@ final class NotesWindow: NSObject, NSWindowDelegate {
     NSApp.activate()
     // macOS 14 起 activate() 是协作式的，前台 App 不让出时可能到不了最前：退回旧 API（同设置窗）
     if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
+  }
+
+  /// 选中的那条的正文里标出搜索词的第一处命中（不拿焦点、不动选区；NoteTextView.revealMatch）
+  @objc private func revealMatchNow() {
+    window.contentView?.layoutSubtreeIfNeeded()
+    selectedEditor()?.revealMatch(of: model.query)
   }
 
   /// 选中的那条的正文框拿焦点

@@ -1485,6 +1485,58 @@ struct NoteTextViewTests {
     #expect(wholeTextMismatch(rig) == nil)
   }
 
+  /// 从搜索结果打开一条时标出第一处命中（第三轮体检 U3）：正文没拿着焦点时只滚过去、选区不动（焦点在列表上）；
+  /// 拿着焦点时（便签墙的编辑卡）选区挪到命中（同 ⌘G，不然一打字跳回开头）
+  @Test func revealMatchMovesTheSelectionOnlyWhenFocused() throws {
+    let text = (1...200).map { "第 \($0) 行" }.joined(separator: "\n") + "\n这里有目标词"
+    let rig = try Rig(text)
+    let editor = rig.editor
+    let hit = (text as NSString).range(of: "目标")
+    rig.window.makeFirstResponder(nil)
+    editor.setSelectedRange(NSRange(location: 3, length: 0))
+    editor.revealMatch(of: "目标")
+    #expect(editor.pendingReveal == nil)
+    #expect(editor.selectedRange() == NSRange(location: 3, length: 0), "焦点不在正文：选区不动")
+    #expect(rig.scroll.contentView.bounds.minY > 0, "滚到了命中")
+    rig.scroll.contentView.scroll(to: .zero)
+    rig.window.makeFirstResponder(editor)
+    editor.revealMatch(of: "目标")
+    #expect(editor.selectedRange() == hit, "正文拿着焦点：选区挪到命中")
+    #expect(rig.scroll.contentView.bounds.minY > 0)
+    #expect(rig.changes.isEmpty, "不改字")
+  }
+
+  /// 命中离补过样式的地方太远（长便签）：不当场补，欠着；后台补过它再滚过去。换了正文、打了字就作废
+  @Test func revealMatchWaitsForFarUnstyledText() throws {
+    let rig = try Rig("")
+    let editor = rig.editor
+    editor.eagerStyleLength = 20
+    editor.restChunk = 200
+    editor.revealStyleLength = 300
+    let text = (1...200).map { "第 \($0) 行" }.joined(separator: "\n") + "\n这里有目标词"
+    editor.setText(text)
+    rig.layout()
+    rig.window.makeFirstResponder(nil)
+    editor.revealMatch(of: "目标")
+    #expect(editor.pendingReveal != nil && rig.scroll.contentView.bounds.minY == 0, "太远：先欠着")
+    for _ in 0..<400 where editor.pendingReveal != nil {
+      RunLoop.main.run(mode: .default, before: Date.now.addingTimeInterval(0.01))
+    }
+    #expect(editor.pendingReveal == nil, "补过它了")
+    #expect(rig.scroll.contentView.bounds.minY > 0, "这时才滚过去")
+    editor.setText(text + "。")
+    editor.revealMatch(of: "目标")
+    #expect(editor.pendingReveal != nil)
+    editor.setText("别的正文")
+    #expect(editor.pendingReveal == nil, "换了正文：作废")
+    editor.setText(text)
+    editor.revealMatch(of: "目标")
+    rig.window.makeFirstResponder(editor)
+    editor.setSelectedRange(NSRange(location: 0, length: 0))
+    editor.insertText("字", replacementRange: NSRange(location: NSNotFound, length: 0))
+    #expect(editor.pendingReveal == nil, "打了字：作废（补到了也不抢光标）")
+  }
+
   /// 第 index 个字所在的行片段、插入点（布局管理器给的、零长度选区的矩形：画插入点、摆输入法候选窗都按它）
   private func fragment(_ rig: Rig, _ index: Int) throws -> NSRect {
     rig.layout()

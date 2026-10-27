@@ -311,7 +311,9 @@ struct ShotHistoryTests {
     #expect(redrawn == 0)
   }
 
-  /// 缩略图还在重做时整条删了：不留孤儿缩略图（B9）
+  /// 缩略图还在重做时整条删了：不留孤儿缩略图（B9）。删文件是在主线程外做的：全量并行跑、线程池被别的测试占满时，
+  /// 400 ms 里不一定删完（第三轮体检第 5 批全量时偶发落空过）——先按轮数等它删掉（最多约 5 秒），再等 400 ms 看重做的
+  /// 那一下没把它写回来
   @Test func updateThenRemoveLeavesNoThumbnail() async throws {
     let (history, root) = try makeHistory()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -321,8 +323,12 @@ struct ShotHistoryTests {
       id, annotations: [Annotation(shape: .rectangle(CGRect(x: 1, y: 1, width: 9, height: 9)))],
       composed: big)
     history.remove([id])
+    let path = history.thumbnailURL(for: id).path
+    for _ in 0..<200 where FileManager.default.fileExists(atPath: path) {
+      try await Task.sleep(for: .milliseconds(25))
+    }
     try await Task.sleep(for: .milliseconds(400))
-    #expect(!FileManager.default.fileExists(atPath: history.thumbnailURL(for: id).path))
+    #expect(!FileManager.default.fileExists(atPath: path))
   }
 
   /// 改完标注之后缩略图跟着重做（2026-10-26 手测：历史里看着像没改过）

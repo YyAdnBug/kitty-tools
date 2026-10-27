@@ -170,12 +170,14 @@ import Observation
   /// 每次换列表（筛选 / 搜索）加一：视图据此在画完后恢复 listMotion
   private(set) var listGeneration = 0
   /// 条目里的第一个链接（⌘K / 右键「打开链接」；按条目缓存，右键菜单每画一行都要问，别每次都跑 NSDataDetector）。
-  /// 编辑正文时清掉那一条（体检 B18）
-  @ObservationIgnored private var linkCache: [UUID: URL?] = [:]
+  /// 三张按条目的缓存（链接、形态、美化）都连正文一起记、取的时候比正文：本机编辑（体检 B18）、另一台改了同步过来
+  /// （ClipboardStore.applySync 直接换已有编号的正文，第三轮体检 B8）都不会拿旧的；没变时两边是同一块存储，比较当场返回。
+  /// 删掉的条目收起面板（reset）时裁掉
+  @ObservationIgnored private var linkCache: [UUID: (text: String, url: URL?)] = [:]
   /// 透镜和放大预览里的 JSON 默认美化（体检 A10）：一次呼出里点过「原文」就一直看原文，收起面板（reset）才复位
   var prettyJSON = true
-  /// 美化后的 JSON（按条目缓存：透镜每次重画都要，别每次解析最多 10 万字）；编辑正文时清掉那一条、收起面板时清空
-  @ObservationIgnored private var prettyCache: [UUID: String] = [:]
+  /// 美化后的 JSON（按条目缓存：透镜每次重画都要，别每次解析最多 10 万字；连正文一起记，同 linkCache）；收起面板时清空
+  @ObservationIgnored private var prettyCache: [UUID: (text: String, pretty: String)] = [:]
 
   private var selectedID: UUID?
   /// 用户在主动浏览（方向键、⌘数字、修饰键点击）时，新条目进来不抢选中
@@ -185,7 +187,12 @@ import Observation
   /// ⌘C 复制的条目：面板开着时列表不动，收起（reset）时再挪到最前 / 记新历史（体检 A8）。
   /// changeCount 是写完那一刻的：收起时剪贴板已被别的内容换掉（复制图中文字、色值块、固定着去别处复制）就不挪
   @ObservationIgnored private var pendingCopy: (entry: Payload.Entry?, changeCount: Int)?
-  @ObservationIgnored private var formCache: [UUID: ContentForm?] = [:]
+  /// 形态识别的结果（按「形态」筛选时整个历史都要问一遍：收起面板不清，只裁掉删了的；连正文一起记，同 linkCache）
+  @ObservationIgnored private var formCache: [UUID: (text: String, form: ContentForm?)] = [:]
+  #if DEBUG
+    /// 单测用：形态、链接两张缓存里各有几条（删掉的条目收起面板后不许留在里面）
+    var cachedEntries: (forms: Int, links: Int) { (formCache.count, linkCache.count) }
+  #endif
 
   init(store: ClipboardStore) {
     self.store = store
@@ -244,9 +251,10 @@ import Observation
 
   /// 透镜和放大预览里的正文：JSON 按开关美化（结果按条目缓存）。ponytail: 超长文本只预览前 10 万字，粘贴仍是全文
   func displayText(of item: ClipItem) -> String {
-    let text = String((item.text ?? "").prefix(100_000))
+    let full = item.text ?? ""
+    let text = String(full.prefix(100_000))
     guard prettyJSON, contentForm(of: item) == .json else { return text }
-    if let cached = prettyCache[item.id] { return cached }
+    if let cached = prettyCache[item.id], cached.text == full { return cached.pretty }
     var pretty = text
     if let object = try? JSONSerialization.jsonObject(with: Data(text.utf8)),
       let data = try? JSONSerialization.data(
@@ -254,7 +262,7 @@ import Observation
     {
       pretty = String(decoding: data, as: UTF8.self)
     }
-    prettyCache[item.id] = pretty
+    prettyCache[item.id] = (full, pretty)
     return pretty
   }
 
@@ -325,9 +333,9 @@ import Observation
 
   func contentForm(of item: ClipItem) -> ContentForm? {
     guard item.kind == .text, let text = item.text else { return nil }
-    if let cached = formCache[item.id] { return cached }
+    if let cached = formCache[item.id], cached.text == text { return cached.form }
     let form = ContentForm.detect(text)
-    formCache[item.id] = form
+    formCache[item.id] = (text, form)
     return form
   }
 
@@ -1087,11 +1095,8 @@ import Observation
     showUndo("已删除收藏夹「\(group.name)」", symbol: "folder.badge.minus")
   }
 
-  /// 编辑正文：按正文缓存的形态、链接、美化结果都清掉（不然 ⌘K「打开链接」还开旧网址，体检 B18）
+  /// 编辑正文（按条目缓存的形态、链接、美化结果连正文一起记，换了正文自己就不认了：体检 B18）
   func edit(_ id: UUID, text: String) {
-    formCache[id] = nil
-    linkCache[id] = nil
-    prettyCache[id] = nil
     store.update([id]) { $0.text = text }
   }
 
@@ -1273,11 +1278,12 @@ import Observation
     return items
   }
 
-  private func firstLink(of item: ClipItem) -> URL? {
+  func firstLink(of item: ClipItem) -> URL? {
     guard item.kind == .text else { return nil }
-    if let cached = linkCache[item.id] { return cached }
-    let url = ContentForm.firstLink(in: item.text ?? "")
-    linkCache[item.id] = url
+    let text = item.text ?? ""
+    if let cached = linkCache[item.id], cached.text == text { return cached.url }
+    let url = ContentForm.firstLink(in: text)
+    linkCache[item.id] = (text, url)
     return url
   }
 
@@ -1468,6 +1474,10 @@ import Observation
     anchorID = nil
     prettyJSON = true
     prettyCache = [:]
+    // 删掉的条目（删除、清空、到期、同步删的）不留在缓存里
+    let live = Set(store.items.map(\.id))
+    formCache = formCache.filter { live.contains($0.key) }
+    linkCache = linkCache.filter { live.contains($0.key) }
   }
 
   /// 筛选 / 搜索变了：回到第一条；勾选只留新列表里看得见的（一条不剩就退出多选，体检 B8）

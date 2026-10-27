@@ -289,6 +289,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard let old = notesWindow, !old.isVisible, !old.window.isMiniaturized else { return }
     notesWindow = nil
     old.window.contentViewController = nil
+    // 搜索的折叠缓存只有这扇窗口的搜索框用：一起放掉
+    noteStore?.dropSearchCache()
   }
 
   /// 三块主面板建过没有（lazy：一碰就建）。只是要收起时看它们：没建过就不用收，别为了收起把关着的功能（Feature）的面板

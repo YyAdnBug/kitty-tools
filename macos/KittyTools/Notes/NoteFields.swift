@@ -56,6 +56,8 @@ struct NoteBodyField: View {
   var undo: UndoManager?
   /// 便签的图片目录（NoteStore.images）：正文里的图、粘进来的图都用它
   var images: NoteImageStore?
+  /// 同步来的图到了几回（NoteStore.imageArrivals）：宿主读它，变了正文里的占位框换成图
+  var imageArrivals = 0
   /// 设置 › 便签「Markdown 样式」「行距」：变了正文整篇重排
   @AppStorage(Prefs.notesMarkdown) private var markdown = true
   @AppStorage(Prefs.notesLineSpacing) private var spacing = NoteStyles.Spacing.standard
@@ -68,7 +70,8 @@ struct NoteBodyField: View {
     NoteTextEditor(
       note: note, fontSize: fontSize, horizontalInset: margin - 5, focusRequest: focusRequest,
       undo: undo, markdown: markdown, spacing: spacing, onChange: setBody, onOverflow: onOverflow,
-      onCancel: onCancel, onImageProblem: onImageProblem, images: images
+      onCancel: onCancel, onImageProblem: onImageProblem, images: images,
+      imageArrivals: imageArrivals
     )
     .accessibilityLabel("正文")
     .overlay(alignment: .topLeading) {

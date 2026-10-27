@@ -96,6 +96,14 @@ struct NoteTextViewImageTests {
       NoteImageAttachment.stored(from: editor.textStorage ?? NSAttributedString())
     }
 
+    /// 正文里第一张图的附件读到的尺寸（nil = 画占位框）
+    var firstImageMetrics: NoteImageSize? {
+      guard let index = images.first?.index else { return nil }
+      return
+        (editor.textStorage?.attribute(.attachment, at: index, effectiveRange: nil)
+        as? NoteImageAttachment)?.metrics
+    }
+
     /// 正文里所有图片的（位置、编号、记着的宽度）
     var images: [(index: Int, id: UUID, width: Int?)] {
       guard let storage = editor.textStorage else { return [] }
@@ -578,15 +586,78 @@ struct NoteTextViewImageTests {
     #expect(rig.editor.menu(for: click)?.items.first?.title != NoteTextView.imageWidthTitle)
     rig.editor.isEditable = true
     rig.editor.setSelectedRange(NSRange(location: 2, length: 0))
-    try rig.step {
+    rig.step {
       rig.editor.setMarkedText(
         "pin", selectedRange: NSRange(location: 3, length: 0),
         replacementRange: NSRange(location: NSNotFound, length: 0))
       #expect(
-        try rig.editor.menu(for: click)?.items.first?.title != NoteTextView.imageWidthTitle,
+        rig.editor.menu(for: click)?.items.first?.title != NoteTextView.imageWidthTitle,
         "组字中不弹")
       rig.editor.unmarkText()
     }
+  }
+
+  /// 同步来的图后到（第三轮体检 B7）：正文换进来时文件还不在、画占位框；图到了（imagesArrived 的次数变了）占位框换成
+  /// 有尺寸的附件——存的字、撤销栈、报出去的改动都不动；次数没变不再做
+  @Test func arrivedImagesReplacePlaceholders() async throws {
+    let rig = try Rig()
+    let elsewhere = rig.directory.appending(path: "elsewhere")
+    try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+    let stored = try #require(
+      try? await NoteImageStore.store(
+        data: NoteImageFixture.data(type: .png, width: 200, height: 100), in: elsewhere
+      ).get())
+    let body = "前面\n\(rig.token(stored.image))\n后面"
+    rig.load(body)
+    func metrics() -> NoteImageSize? { rig.firstImageMetrics }
+    #expect(rig.images.count == 1 && metrics() == nil, "文件不在：占位框")
+    let changes = rig.changes.count
+    let name = "\(stored.image.id.uuidString).\(stored.image.ext)"
+    try FileManager.default.copyItem(
+      at: elsewhere.appending(path: name), to: rig.directory.appending(path: name))
+    rig.editor.imagesArrived(0)
+    #expect(metrics() == nil, "次数没变：不动")
+    rig.editor.imagesArrived(1)
+    rig.layout()
+    #expect(metrics() != nil, "图到了：换成有尺寸的附件")
+    #expect(rig.images.count == 1)
+    #expect(rig.stored == body, "存的字不变")
+    #expect(rig.changes.count == changes, "不报改动")
+    #expect(!rig.window.notes.canUndo, "不进撤销")
+  }
+
+  /// 组字中图到了（第三轮体检 B7）：这次先不换；撤掉组字（没有别的刷新）时由那次收尾补上，选区和存的字不动
+  @Test func arrivedImagesWaitForComposition() async throws {
+    let rig = try Rig()
+    let elsewhere = rig.directory.appending(path: "elsewhere")
+    try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+    let stored = try #require(
+      try? await NoteImageStore.store(
+        data: NoteImageFixture.data(type: .png, width: 200, height: 100), in: elsewhere
+      ).get())
+    let body = "前面\n\(rig.token(stored.image))\n后面"
+    rig.load(body)
+    rig.editor.setSelectedRange(NSRange(location: 2, length: 0))
+    // 撤销栈按「一步一组」（groupsByEvent 关着）：改字都包在 step 里
+    rig.step {
+      rig.editor.setMarkedText(
+        "pin", selectedRange: NSRange(location: 3, length: 0),
+        replacementRange: NSRange(location: NSNotFound, length: 0))
+    }
+    let name = "\(stored.image.id.uuidString).\(stored.image.ext)"
+    try FileManager.default.copyItem(
+      at: elsewhere.appending(path: name), to: rig.directory.appending(path: name))
+    rig.editor.imagesArrived(1)
+    #expect(rig.firstImageMetrics == nil, "组字中不换")
+    rig.step {
+      rig.editor.setMarkedText(
+        "", selectedRange: NSRange(location: 0, length: 0),
+        replacementRange: NSRange(location: NSNotFound, length: 0))
+    }
+    #expect(!rig.editor.hasMarkedText())
+    #expect(rig.firstImageMetrics != nil, "撤掉组字的那次收尾补上")
+    #expect(rig.editor.selectedRange() == NSRange(location: 2, length: 0), "选区不动")
+    #expect(rig.stored == body)
   }
 
   @Test func draggedWidthIsClamped() {

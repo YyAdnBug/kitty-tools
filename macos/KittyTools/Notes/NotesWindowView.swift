@@ -452,7 +452,7 @@ struct NoteEditor: View {
           note: note, fontSize: fontSize, margin: Self.margin,
           setBody: { model.setBody($0, of: note.id) }, onOverflow: model.overflowed,
           onCancel: onClose ?? {}, undo: model.textUndo, images: model.store.images,
-          onImageProblem: model.imageProblem)
+          imageArrivals: model.store.imageArrivals, onImageProblem: model.imageProblem)
       } else {
         readOnly(paper)
       }

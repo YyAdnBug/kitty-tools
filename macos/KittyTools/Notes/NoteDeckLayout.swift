@@ -108,15 +108,16 @@ nonisolated struct NoteDeckLayout: Equatable, Sendable {
     return max((height * heightBudget).rounded(.down) - reserved, 0)
   }
 
-  /// 露出一截压到最短也放不下（「+N」展开成上千张时）：init 里这一压的结果跟最长标题无关，
-  /// 调用方可以省掉几千次标题排版（2026-10-21 第二批调优：5000 条量标题要几百毫秒）
-  static func needsLongest(
+  /// 这一列的排法要不要先量最长的标题（NoteDeckLabel.length）：只有色块的不用；露出一截压到最短也放不下时（「+N」展开成
+  /// 上千张）init 里这一压的结果跟最长标题无关，也不用——调用方省掉几千次标题排版（2026-10-21 第二批调优：5000 条量标题
+  /// 要几百毫秒）
+  static func measuresLongest(
     count: Int, hidden: Int, height: CGFloat, options: NoteDeckOptions
   ) -> Bool {
     guard options.style == .tabs else { return false }
     let metrics = NoteDeckMetrics(scale: options.size.scale)
     return CGFloat(max(count, 0)) * metrics.stripFloor + metrics.lap
-      > budget(hidden: hidden, height: height, options: options)
+      <= budget(hidden: hidden, height: height, options: options)
   }
 
   /// - Parameters:

@@ -1932,10 +1932,20 @@ nonisolated enum NoteMarkdown {
   /// 正文去掉颜色的标记（`[`、`]{red}`）之后的字（字数、搜索用）：别的 Markdown 标记照旧留着（那是用户自己打的）。
   /// 代码块里的行不动
   static func strippingColors(from body: String) -> String {
-    guard body.contains("]{") else { return body }
+    let markers = colorMarkers(in: body)
+    guard !markers.isEmpty else { return body }
+    let result = NSMutableString(string: body)
+    for range in markers.reversed() { result.deleteCharacters(in: range) }
+    return result as String
+  }
+
+  /// 颜色的标记在正文里的位置（UTF-16，从前到后）：strippingColors 去掉的就是它们；搜索命中换回正文里的位置也要它
+  /// （NoteStore.firstMatch）。代码块里的行不算
+  static func colorMarkers(in body: String) -> [NSRange] {
+    guard body.contains("]{") else { return [] }
     let text = body as NSString
     let blocks = codeBlocks(in: text)
-    let result = NSMutableString(capacity: text.length)
+    var found: [NSRange] = []
     var location = 0
     while location < text.length {
       var (start, end, contentsEnd) = (0, 0, 0)
@@ -1946,20 +1956,12 @@ nonisolated enum NoteMarkdown {
       if NoteMarkdown.role(at: start, in: blocks) == nil, line.contains("]{") {
         let units = Array(line.utf16)
         let runs = colorRuns(in: inline(units, in: 0..<units.count))
-        let resultLine = NSMutableString(string: line)
-        for range in runs.flatMap({ [$0.open, $0.close] }).sorted(by: { $0.location > $1.location })
-        {
-          resultLine.deleteCharacters(in: range)
-        }
-        result.append(resultLine as String)
-      } else {
-        result.append(line)
+        found += runs.flatMap { [$0.open, $0.close] }.sorted { $0.location < $1.location }
+          .map { NSRange(location: $0.location + start, length: $0.length) }
       }
-      result.append(
-        text.substring(with: NSRange(location: contentsEnd, length: end - contentsEnd)))
       location = max(end, location + 1)
     }
-    return result as String
+    return found
   }
 
   // MARK: 颜色 ⇄ <span>（导出 / 导入 Markdown 文件时换，正文里不存这些）

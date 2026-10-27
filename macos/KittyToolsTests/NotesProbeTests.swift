@@ -953,7 +953,7 @@ struct NotesProbeTests {
     let build = ProcessInfo.processInfo.environment["KITTY_NOTES_PROBE_BUILD"] ?? "Debug"
     // 只想量一个条数（拿 sample 拍主线程时少等两段）：KITTY_NOTES_PROBE_SCALE=5000
     let only = ProcessInfo.processInfo.environment["KITTY_NOTES_PROBE_SCALE"].flatMap(Int.init)
-    for count in only.map { [$0] } ?? [1000, 3000, 5000] { try measureScale(count, build: build) }
+    for count in only.map({ [$0] }) ?? [1000, 3000, 5000] { try measureScale(count, build: build) }
   }
 
   private func measureScale(_ count: Int, build: String) throws {

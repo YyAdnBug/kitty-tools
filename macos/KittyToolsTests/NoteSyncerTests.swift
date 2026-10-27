@@ -320,6 +320,9 @@ struct NoteSyncerTests {
     let name = "\(stored.image.id.uuidString).png"
     #expect(FileManager.default.fileExists(atPath: shared.appending(path: "images/\(name)").path))
     #expect(b.store.images?.fileNames() == [name])
+    // 拿下来的报给仓库（第三轮体检 B7：按「没图」建过的墙卡片、编辑器里的占位框换上它）；只传上去的不报
+    #expect(b.store.imageArrivals > 0)
+    #expect(a.store.imageArrivals == 0)
   }
 
   // MARK: 库被退回去了

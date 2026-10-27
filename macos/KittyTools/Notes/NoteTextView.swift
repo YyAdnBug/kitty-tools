@@ -102,6 +102,12 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   var hoveredImage: Int?
   /// 正文里有没有图片附件（鼠标动、改字这几条热路径先看它，省得每次都问排版）
   private var hasImages = false
+  /// 上次处理过的「同步来的图到了」的次数（imagesArrived）、最近一次要的次数（组字中先欠着，settle 里补）
+  private var imageArrivals = 0
+  private var wantedArrivals = 0
+  /// 欠着的「标出搜索命中」（revealMatch：命中在还没补样式、又离得太远的地方）：等 styleRest 补过它再滚过去。
+  /// 换了正文（replaceAll）、打了字就作废
+  private(set) var pendingReveal: (query: String, range: NSRange)?
   /// 正拖着把手改宽度的那张图（nil = 没在拖）
   var widthDrag: WidthDrag?
   /// 拖的时候按了 Esc（松手不写进正文，回原来的大小）
@@ -156,6 +162,9 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   /// 好走到「还没排完」的那段路
   var eagerStyleLength = 4000
   var restChunk = 8000
+  /// 从搜索结果打开时（revealMatch）当场补样式最多补多少个字（UTF-16）：命中离补到的地方更远就等后台补到再滚
+  /// （pendingReveal）。单测改小
+  var revealStyleLength = 65_536
 
   /// 建一个：TextKit 1 的栈在这里搭
   static func make() -> NoteTextView {
@@ -234,6 +243,8 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   private func replaceAll(with text: String) {
     // 正在裁的那张图可能已经不在了（别处改了这条、换了一条）：收起裁切层
     endImageCrop(nil)
+    // 欠着的「标出搜索命中」是上一份正文的
+    pendingReveal = nil
     reported = text
     reportedBytes = text.utf8.count
     // 建的时候就铺上基础样式（比建好再铺省一遍）：开头那一屏下面再排，其余的就这么等着补
@@ -286,6 +297,73 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     return attachment
   }
 
+  /// 同步拿下来的图到了几回（NoteStore.imageArrivals，NoteTextEditor 每次更新给）：变了就把画着占位框、现在读得到文件的
+  /// 那几张换成新附件（第三轮体检 B7：另一台贴的图，正文先合进来、图后到）。只换附件、字不变——不进撤销、不报改动；
+  /// 图片行的行高跟着图走，那几行重排一遍。组字中、有没收尾的编辑时这次先不换，等这次编辑收尾（settle）再补
+  func imagesArrived(_ count: Int) {
+    wantedArrivals = count
+    guard count != imageArrivals, !hasMarkedText(), pending.range == nil else { return }
+    imageArrivals = count
+    guard hasImages, let storage = textStorage, let store = imageStore else { return }
+    var arrived: [(range: NSRange, attachment: NoteImageAttachment)] = []
+    storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length)) {
+      value, range, _ in
+      guard let old = value as? NoteImageAttachment, old.metrics == nil,
+        store.size(of: old.picture.id, ext: old.picture.ext) != nil
+      else { return }
+      arrived.append((range, makeAttachment(for: old.picture)))
+    }
+    guard !arrived.isEmpty else { return }
+    storage.beginEditing()
+    for item in arrived {
+      storage.addAttribute(.attachment, value: item.attachment, range: item.range)
+    }
+    storage.endEditing()
+    for item in arrived.reversed() { restyle(storage.mutableString.lineRange(for: item.range)) }
+  }
+
+  /// 从搜索结果打开这条（全部便签窗口，第三轮体检 U3）：正文里第一处命中（NoteStore.firstMatch，口径同列表的搜索）滚进来、
+  /// 闪一下系统的查找高亮。**不拿焦点**；选区只在正文本来就拿着焦点时挪到命中（便签墙的编辑卡 ↩ 打开时，同 ⌘G：不挪的话
+  /// 一打字跳回开头、字打在开头），列表那条路焦点在列表上，选区不动（方向键照常在列表里走，点进正文时插入点还在原处）。
+  /// 命中在还没补样式的地方（replaceAll 只当场排开头一屏）时先把到它为止的补上，不然后面补的时候上面的行高变了、它又被
+  /// 挤出可见区。
+  /// ponytail: 当场最多补 revealStyleLength（64K）个字（-O 约 25 ms，restChunk 8000 字约 3 ms）；更远的记成 pendingReveal、
+  /// 等 styleRest 补过它再滚——长便签在结果里连按 ↑↓ 不至于每条都卡。滚过去时 TextKit 1 还得把到命中为止的版排一遍
+  /// （连续排版，见文件头「连续排版」那条 ponytail），1 MB 的便签这一下照样要排整篇；真卡了再开 allowsNonContiguousLayout
+  func revealMatch(of query: String) {
+    pendingReveal = nil
+    guard window != nil, let storage = textStorage,
+      let range = NoteStore.firstMatch(of: query, in: storage.string)
+    else { return }
+    if let start = Self.unstyled(in: storage), start < NSMaxRange(range) {
+      guard NSMaxRange(range) - start <= revealStyleLength, !hasMarkedText(), pending.range == nil
+      else {
+        pendingReveal = (query, range)
+        return
+      }
+      restyle(
+        storage.mutableString.lineRange(
+          for: NSRange(location: start, length: NSMaxRange(range) - start)))
+    }
+    show(match: range)
+  }
+
+  /// 滚到命中、闪查找高亮；正文拿着焦点时选区挪过去（先挪：挪了会露出那一行的标记、字横着挪，高亮要按挪完的位置画）
+  private func show(match range: NSRange) {
+    if window?.firstResponder === self { setSelectedRange(range) }
+    scrollRangeToVisible(range)
+    showFindIndicator(for: range)
+  }
+
+  /// 欠着的「标出搜索命中」：到它为止都补过样式了就现在滚过去（命中按现在的字重找一遍）
+  private func revealPendingIfStyled(in storage: NSTextStorage) {
+    guard let reveal = pendingReveal,
+      (Self.unstyled(in: storage) ?? .max) >= NSMaxRange(reveal.range)
+    else { return }
+    pendingReveal = nil
+    if let range = NoteStore.firstMatch(of: reveal.query, in: storage.string) { show(match: range) }
+  }
+
   /// 正文的可用宽（排版时算没记宽度的图显示多大）：正文框宽去掉两边的内缩和文本容器的内边距。
   /// 还没摆好（宽是 0）时给一个像样的数（同 NoteTextEditor.makeNSView 里给的那个）
   var availableWidth: CGFloat {
@@ -301,6 +379,7 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   @objc private func styleRest() {
     guard let storage = textStorage, let start = nextUnstyled(in: storage) else {
       layoutManager?.backgroundLayoutEnabled = true
+      if let storage = textStorage { revealPendingIfStyled(in: storage) }
       return
     }
     guard !hasMarkedText(), pending.range == nil else { return scheduleRest(after: 0.1) }
@@ -309,6 +388,10 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
       for: NSRange(location: start, length: min(restChunk, storage.length - start)))
     restyle(lines)
     restHint = NSMaxRange(lines)
+    // 补过了命中的位置才去细看（细看要从头扫一遍有没有没补的）
+    if let reveal = pendingReveal, restHint >= NSMaxRange(reveal.range) {
+      revealPendingIfStyled(in: storage)
+    }
     if nextUnstyled(in: storage) != nil {
       scheduleRest(after: 0)
     } else {
@@ -837,12 +920,18 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     } else if let edited {
       restyleEdited(edited, in: storage)
     }
-    // 改过字：悬停的那张图的下标可能已经指到别的字上了，清掉（把手不再画着，F20）
-    if edited != nil { clearHoveredImage() }
+    // 改过字：悬停的那张图的下标可能已经指到别的字上了，清掉（把手不再画着，F20）；欠着的「标出搜索命中」作废
+    // （人已经在打字了，补到了再把选区挪走就是抢光标）
+    if edited != nil {
+      clearHoveredImage()
+      pendingReveal = nil
+    }
     // 这次编辑可能把光标带到了别的行（撤销、粘贴了几行）：原来露着的收回去，现在这一行露出来
     syncMarkers()
     // 宽变了欠着的那次重排（组字中先欠着）
     if owesWidthRestyle { scheduleWidthRestyle() }
+    // 组字中没换成的图（imagesArrived 先欠着）：撤掉组字之后没有别的刷新也得换上
+    if wantedArrivals != imageArrivals { imagesArrived(wantedArrivals) }
     guard text != reported else { return }
     reported = text
     reportedBytes = text.utf8.count
@@ -2183,6 +2272,8 @@ struct NoteTextEditor: NSViewRepresentable {
   var onImageProblem: (String, String) -> Void = { _, _ in }
   /// 这条便签的图片目录（NoteStore.images）
   var images: NoteImageStore?
+  /// 同步来的图到了几回（NoteStore.imageArrivals）：变了把占位框换成图
+  var imageArrivals = 0
 
   func makeNSView(context: Context) -> NSScrollView {
     let view = NoteTextView.make()
@@ -2223,6 +2314,7 @@ struct NoteTextEditor: NSViewRepresentable {
       NotePaper.of(note), fontSize: fontSize, markdown: markdown, spacing: spacing,
       paperIndex: Note.clamped(color: note.color))
     view.setText(note.body)
+    view.imagesArrived(imageArrivals)
     // 选中文字的底色是强调色 0.28（不露系统蓝；读了 Style.brand，设置里换了强调色这里会重跑）
     view.selectedTextAttributes = [
       .backgroundColor: NSColor(Style.brand).withAlphaComponent(0.28)

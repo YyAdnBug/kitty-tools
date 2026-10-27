@@ -87,11 +87,15 @@ import Observation
       [:]
   /// 便签墙卡片的缓存（wallCard(of:markdown:)）：编号 → 建的时候看的那几样和卡片
   @ObservationIgnored private var wallCards: [String: (key: WallCardKey, card: NoteWallCard)] = [:]
-  /// 正文折叠结果的缓存（搜索用）：编号 → 折叠时那条的修订号和结果。改过的修订号就变，不用逐处作废；
-  /// 永久删掉的在 erase 里清（不留下已删便签的正文）
-  @ObservationIgnored private var folded: [String: (revision: Int, key: Search.Key)] = [:]
+  /// 正文折叠结果的缓存（搜索用）：编号 → 折叠时的标题、正文和结果。比的是字本身（同 summaries：修订号到顶就不再变，
+  /// 导入、读到被别的东西改过的库都可能带来到顶的修订号——按修订号认的话那条以后怎么改都搜旧字），没变时两边是同一块
+  /// 存储、比较当场返回，不用逐处作废；永久删掉的在 remove 里清（不留下已删便签的正文）
+  @ObservationIgnored private var folded: [String: (title: String, body: String, key: Search.Key)] =
+    [:]
   /// 三个视图的缓存（都只跟 notes 有关）：按代数整批作废。便签多了以后一次窗口更新要问好几遍（视图切换的计数、
-  /// 列表本身、快速记一条的候选），每一遍都 filter + sort；5000 条一遍两三毫秒，几遍就吃掉一帧（2026-10-21 量出来的）
+  /// 列表本身、快速记一条的候选），每一遍都 filter + sort；5000 条一遍两三毫秒，几遍就吃掉一帧（2026-10-21 量出来的）。
+  /// 三个 getter 开头都读一下 notes：命中缓存时不读的话，同一代里只有第一个读的界面登记上「看着它变」，后读的（那叠扇开时
+  /// 的标签列、窗口的分段计数）改了标题、新建、删除都不跟着变（第三轮体检 P4）
   @ObservationIgnored private var views = Views()
   private struct Views {
     var generation = -1
@@ -281,6 +285,7 @@ import Observation
 
   /// 没归档、没删的，按顺序（按代数缓存，见 views）
   var active: [Note] {
+    _ = notes  // 界面看着仓库变：命中缓存时也要登记（views、generation 都不被看着）
     #if DEBUG
       viewReads += 1
     #endif
@@ -293,6 +298,7 @@ import Observation
 
   /// 归档的，最近改过的在前
   var archived: [Note] {
+    _ = notes  // 界面看着仓库变：命中缓存时也要登记（views、generation 都不被看着）
     #if DEBUG
       viewReads += 1
     #endif
@@ -305,6 +311,7 @@ import Observation
 
   /// 「最近删除」里的，刚删的在前
   var trashed: [Note] {
+    _ = notes  // 界面看着仓库变：命中缓存时也要登记（views、generation 都不被看着）
     #if DEBUG
       viewReads += 1
     #endif
@@ -393,9 +400,23 @@ import Observation
 
   /// 同上，建好了而且没过时才给，不建（便签墙排的时候：可见区以下的先按估计的高排）
   func cachedWallCard(of note: Note, markdown: Bool) -> NoteWallCard? {
+    _ = imageArrivals  // 墙看着它：同步来的图到了，按「没图」建的卡片要重建
     guard let cached = wallCards[note.id], cached.key == WallCardKey(note, markdown: markdown)
     else { return nil }
     return cached.card
+  }
+
+  /// 同步拿下来的图到了几回（imagesArrived 加一）：便签墙排的时候、开着的正文编辑器都看着它（第三轮体检 B7）
+  private(set) var imageArrivals = 0
+
+  /// 同步把这几张图拷进了图片目录（NoteSyncer）：另一台贴的图，正文先合进来（墙当场按「没图」建了卡片、编辑器画了占位框），
+  /// 图后到。引用它们的墙卡片作废，imageArrivals 变一次——墙重排、卡片出缩略图，开着的编辑器把占位框换成图
+  func imagesArrived(_ ids: Set<UUID>) {
+    guard !ids.isEmpty else { return }
+    for note in notes where !ids.isDisjoint(with: NoteImages.ids(in: note.body)) {
+      wallCards[note.id] = nil
+    }
+    imageArrivals &+= 1
   }
 
   /// 谁排在前面：order 小的；一样时（导入带来的）新建的在前，再一样按编号——顺序总是确定的。
@@ -693,13 +714,17 @@ import Observation
 
   /// 在给的这些里搜（一般是 active / archived / trashed）：标题和正文，空白分词、每个词都要命中，不分大小写、全半角、
   /// 变音符号（分词和折叠用剪贴板搜索现成的，Search）；顺序不变，空查询原样返回。
-  /// 正文折叠一遍不便宜（5000 条 -O 一遍约 1 秒），按「编号 + 修订号」把结果存下来（folded，同 ClipboardStore.searchKeys）：
-  /// 换搜索词、同一次更新里重画、搜着的时候在正文里打字（只有那一条的修订号变）都只折变过的。
+  /// 正文折叠一遍不便宜（5000 条 -O 一遍约 1 秒），按编号把结果存下来、标题正文没变就接着用（folded，同 ClipboardStore.searchKeys）：
+  /// 换搜索词、同一次更新里重画、搜着的时候在正文里打字（只有那一条的字变）都只折变过的。
   /// 正文里的图片令牌先整段去掉：搜「image」「png」或者编号里的十六进制不该命中带图的便签（F19）；
   /// 颜色的标记也去掉（第 8 批）：搜「red」「blue」不该命中只是上了色的便签
   func search(_ query: String, in notes: [Note]) -> [Note] {
     Self.matching(query, in: notes) { foldedKey(of: $0) }
   }
+
+  /// 搜索的折叠缓存整个放掉（空闲回收：AppDelegate 真放掉关着的全部便签窗口时调）。5000 条、每条几 KB 时它和正文差不多大；
+  /// 下次搜第一个字再折一遍全库（同第一次搜索）
+  func dropSearchCache() { folded = [:] }
 
   /// 纯函数版（不走缓存的现折；单测和量测的对照）
   static func search(_ query: String, in notes: [Note]) -> [Note] {
@@ -710,13 +735,15 @@ import Observation
     }
   }
 
-  /// 这条便签折叠后的标题 + 正文（去图、去色），按「编号 + 修订号」缓存
+  /// 这条便签折叠后的标题 + 正文（去图、去色），按「编号 + 标题、正文」缓存
   private func foldedKey(of note: Note) -> Search.Key {
-    if let cached = folded[note.id], cached.revision == note.revision { return cached.key }
+    if let cached = folded[note.id], cached.title == note.title, cached.body == note.body {
+      return cached.key
+    }
     let key = Search.Key(
       bytes: Search.fold(
         note.title + "\n" + NoteMarkdown.strippingColors(from: NoteImages.stripping(note.body))))
-    folded[note.id] = (revision: note.revision, key: key)
+    folded[note.id] = (note.title, note.body, key)
     return key
   }
 
@@ -729,6 +756,52 @@ import Observation
       let bytes = key(note).bytes
       return tokens.allSatisfy { Search.contains(bytes, $0) }
     }
+  }
+
+  /// 正文里第一处命中（全部便签窗口从搜索结果打开一条时标出来，第三轮体检 U3）：口径同 search——在去掉图片（令牌，或编辑器
+  /// 里代替它的附件字符 U+FFFC）、颜色标记之后的字上按 Search.options 找每个词，取最靠前的一处，再换回 text 里的位置
+  /// （UTF-16；夹在中间的标记算在里面）。text 是存的正文、编辑器里的字都行；没有词、只在标题里命中是 nil
+  static func firstMatch(of query: String, in text: String) -> NSRange? {
+    let tokens = Search.tokens(query)
+    guard !tokens.isEmpty else { return nil }
+    let source = text as NSString
+    var images = NoteImages.matches(in: source).map(\.range)
+    if text.utf16.contains(0xFFFC) {
+      for index in 0..<source.length where source.character(at: index) == 0xFFFC {
+        images.append(NSRange(location: index, length: 1))
+      }
+      images.sort { $0.location < $1.location }
+    }
+    // 去色在去了图的字上认（同 search：先去图、再去色）
+    let (plain, toSource) = removing(images, from: source)
+    let (bare, toPlain) = removing(NoteMarkdown.colorMarkers(in: plain as String), from: plain)
+    guard
+      let hit = tokens.map({ bare.range(of: $0, options: Search.options) })
+        .filter({ $0.location != NSNotFound }).min(by: { $0.location < $1.location })
+    else { return nil }
+    let start = toSource(toPlain(hit.location))
+    let end = toSource(toPlain(NSMaxRange(hit) - 1)) + 1
+    return NSRange(location: start, length: end - start)
+  }
+
+  /// text 去掉这几段（从前到后、不重叠）之后的字，和「去掉之后的位置 → text 里的位置」
+  private static func removing(_ ranges: [NSRange], from text: NSString) -> (
+    NSString, (Int) -> Int
+  ) {
+    guard !ranges.isEmpty else { return (text, { $0 }) }
+    let result = NSMutableString(string: text)
+    for range in ranges.reversed() { result.deleteCharacters(in: range) }
+    return (
+      result,
+      { offset in
+        var position = offset
+        for range in ranges {
+          guard range.location <= position else { break }
+          position += range.length
+        }
+        return position
+      }
+    )
   }
 
   // MARK: 导出文件

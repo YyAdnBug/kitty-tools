@@ -158,6 +158,68 @@ struct NotesWindowTests {
     #expect(store.trashed.map(\.id) == [ids[0]])
   }
 
+  /// 删除的岛上带「放回」（第三轮体检 U2）：连着删的几条一起放回原处（顺序、归档照旧），像 ⌘Z 一样选中最后删的那条、
+  /// 去它在的视图，⌘Z 栈里也拿掉；已经自己放回 / 永久删了的跳过
+  @Test func islandRestoresTheDeletedStreak() throws {
+    let (model, store, ids) = try make(["A", "B", "C", "D"])
+    let island = Island(showing: nil)
+    model.island = island
+    store.setArchived(true, of: ids[2])
+    model.delete(ids[0])
+    #expect(island.content?.title == "已删除")
+    model.delete(ids[1])
+    model.delete(ids[2])
+    model.delete(ids[3])
+    #expect(island.content?.title == "已删除 4 条")
+    store.erase(ids[3])
+    let restore = try #require(island.actions.first)
+    #expect(restore.title == NotesWindowModel.restoreTitle && !restore.opens)
+    restore.run()
+    #expect(store.trashed.isEmpty)
+    #expect(store.active.map(\.id) == [ids[0], ids[1]] && store.archived.map(\.id) == [ids[2]])
+    #expect(model.scope == .archive && model.selection == ids[2])
+    #expect(model.undoStack.isEmpty)
+    // 这一串里已经放回的不算：删 A、⌘Z、几秒内再删 B → 岛上是单条的「已删除」，「放回」只放回 B
+    model.scope = .all
+    model.delete(ids[0])
+    #expect(model.undoDelete())
+    model.delete(ids[1])
+    #expect(island.content?.title == "已删除")
+    try #require(island.actions.first).run()
+    #expect(store.trashed.isEmpty && model.selection == ids[1])
+  }
+
+  /// 连着删的一串：上一条删了不到 6 秒（带按钮的岛停多久）接着记，隔久了另起一串；同一条不重复记
+  @Test func deletionStreak() {
+    var streak = NotesWindowModel.Deletions()
+    #expect(streak.add("a", now: Self.t0) == ["a"])
+    #expect(streak.add("b", now: Self.at(5)) == ["a", "b"])
+    #expect(streak.add("c", now: Self.at(12)) == ["c"], "上一条删了超过 6 秒：另起一串")
+    #expect(streak.add("c", now: Self.at(13)) == ["c"])
+    #expect(
+      NotesWindowModel.deletedTitle(1) == "已删除" && NotesWindowModel.deletedTitle(3) == "已删除 3 条")
+  }
+
+  /// 搜着的时候换了一条 / 打开了编辑卡：要窗口在正文里标出第一处命中（第三轮体检 U3）；没在搜的时候不要
+  @Test func searchHitIsRevealedWhenSelectionChanges() throws {
+    let (model, _, ids) = try make(["买菜 牛奶", "周报 牛奶", "读书"])
+    var reveals = 0
+    model.revealMatch = { reveals += 1 }
+    model.selection = ids[1]
+    #expect(reveals == 0, "没在搜")
+    model.query = "牛奶"
+    #expect(model.selection == ids[1] && reveals == 0, "选中的还在结果里：没换")
+    model.selection = ids[0]
+    #expect(reveals == 1)
+    model.layout = .wall
+    let before = reveals
+    model.open(ids[0], focus: false)
+    #expect(reveals > before, "选中的没变、打开了编辑卡也要")
+    model.query = "  "
+    model.selection = ids[2]
+    #expect(reveals == before + 1, "只有空白不算在搜")
+  }
+
   /// ⌘Z：焦点所在的输入框自己还有可撤销的打字，归它；否则先放回刚删的，再轮到正文里打的字。
   /// ⇧⌘Z：重做焦点所在输入框的；焦点不在输入框里看正文的
   @Test func undoGoesToTextWhileEditing() throws {

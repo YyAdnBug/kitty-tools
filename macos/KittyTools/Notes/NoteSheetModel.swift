@@ -48,6 +48,8 @@ import Observation
   private(set) var focus: Focus?
 
   @ObservationIgnored var island: Island?
+  /// 连着删的这一串（岛上的「放回」，NotesWindowModel.Deletions）
+  @ObservationIgnored private var deletions = NotesWindowModel.Deletions()
   /// 窗口当 key 并兜底把焦点放进正文（界面不直接调它，调 requestFocus）；操作菜单开关了
   @ObservationIgnored var focusBody: () -> Void = {}
   @ObservationIgnored var onMenu: (Bool) -> Void = { _ in }
@@ -209,12 +211,40 @@ import Observation
     Island.announce("已归档")
   }
 
-  /// 删除：进「最近删除」。这里没有列表、也没有 ⌘Z，放回的路由岛说
+  /// 删除：进「最近删除」。这里没有列表、也没有 ⌘Z：岛上带「放回」（连着删的几条一起放回，第三轮体检 U2），过后到
+  /// 「全部便签」的「最近删除」里放回。按钮拿的是仓库不是这个模型：浮动便签删了，它的模型跟着面板一起放掉
   func delete(_ id: String? = nil) {
     guard let note = target(id) else { return }
     if note.id == noteID { retire() }
     store.delete(note.id)
-    island?.show("已删除", detail: "到「全部便签」的「最近删除」里放回", symbol: "trash.circle.fill")
+    // 这一串里已经放回 / 永久删了的不算（同全部便签窗口）
+    let ids = deletions.add(note.id).filter { store.note($0)?.deletedAt != nil }
+    island?.show(
+      NotesWindowModel.deletedTitle(ids.count), detail: "到「全部便签」的「最近删除」里放回",
+      symbol: "trash.circle.fill",
+      actions: [
+        .init(NotesWindowModel.restoreTitle) { [store, island] in
+          // 屏幕上看不出放回了（那叠已经收回成药丸、浮动便签放回到收着的那叠里）：岛上说一句
+          let back = Self.restore(ids, in: store)
+          guard let first = back.first.flatMap(store.note) else { return }
+          island?.show(
+            Self.restoredTitle(back.count, first: first), symbol: "arrow.uturn.backward.circle.fill"
+          )
+        }
+      ])
+  }
+
+  /// 岛上的「放回」：这几条里还在「最近删除」里的放回原处（顺序、归档、固定照旧；浮着的不再浮起来，回到屏幕边缘那叠）。
+  /// 返回放回了哪几条（怎么告诉人由调用方定：全部便签窗口里结果就在列表上，只播报；那叠 / 浮动便签弹岛）
+  static func restore(_ ids: [String], in store: NoteStore) -> [String] {
+    let back = ids.filter { store.note($0)?.deletedAt != nil }
+    for id in back { store.restore(id) }
+    return back
+  }
+
+  /// 放回之后说的那句：一条写标题（摘录），几条写条数
+  static func restoredTitle(_ count: Int, first: Note) -> String {
+    count > 1 ? "已放回 \(count) 条" : "已放回「\(Island.excerpt(first.displayTitle))」"
   }
 
   func openInWindow() {
