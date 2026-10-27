@@ -1,6 +1,7 @@
-// 晾衣绳（第十族，2026-10-26 拍板）的纯函数单测：排法（从两边往中间、中间给刘海岛留着、屏幕窄时挂得少、
-// 最多 8 张）、绳子的下垂、卡片宽、菜单栏那一条、该不该滑下来 / 收起、面板的位置和坐标换算。
-// 都是 ClotheslineLayout 里的纯函数，不建窗口、不碰偏好。
+// 晾衣绳（第十族，2026-10-26 拍板）的单测：排法（从两边往中间、中间给刘海岛留着、屏幕窄时挂得少、
+// 最多 8 张）、绳子的下垂、卡片宽、菜单栏那一条、该不该滑下来 / 收起、面板的位置和坐标换算——这些是
+// ClotheslineLayout 里的纯函数；第三轮体检另加：窄屏上卡片按下标配对、物理按时间走、挂之前等历史记好、
+// 只让截图遮罩挡住、历史里删掉的跟着取下（Clothesline 本身，不建面板）。不碰偏好。
 
 import AppKit
 import Testing
@@ -303,5 +304,205 @@ struct ClotheslineTests {
     #expect(onScreen.minX == 16)
     #expect(onScreen.maxY == panel.maxY - 30)
     #expect(onScreen.size == card.size)
+  }
+
+  // MARK: 第三轮体检
+
+  /// 窄屏上放不下的跳过、后面小一点的还挂得上：排法带回每张卡是第几张（B9：原来按先后硬配，卡片配错了图）
+  @Test func planSkipsWhatDoesNotFitAndKeepsIndices() {
+    let wide = CGSize(width: 5000, height: 300)  // 夹到最宽 180
+    let thin = CGSize(width: 1200, height: 9000)  // 夹到最窄 64
+    // 1000 宽、中间让 220：两边各剩 346，两张 180 各占一边之后第三张哪边都放不下，第四张细的还挂得上
+    let plan = ClotheslineLayout.plan([wide, wide, wide, thin], width: 1000, gap: 220)
+    #expect(plan.indices == [0, 1, 3])
+    #expect(plan.cards.map(\.width) == [180, 180, 64])
+    // 都放得下时就是 0、1、2……
+    #expect(
+      ClotheslineLayout.plan([photo, photo], width: 1512, gap: 220).indices == [0, 1])
+  }
+
+  /// 同上，到绳子上：每张卡挂的是它自己那条（宽度对得上），放不下的那张不画
+  @MainActor @Test func narrowScreenHangsTheRightCards() throws {
+    let root = FileManager.default.temporaryDirectory.appending(
+      path: "kitty-clothesline-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let history = try ShotHistory(
+      db: Database(path: ":memory:"), directory: root.appending(path: "shots"))
+    let sizes = [
+      CGSize(width: 5000, height: 300), CGSize(width: 5000, height: 300),
+      CGSize(width: 5000, height: 300), CGSize(width: 1200, height: 9000),
+    ]
+    let items = sizes.enumerated().map { index, size in
+      ShotHistory.Item(
+        id: UUID(), kind: .shot, createdAt: Date.now.addingTimeInterval(Double(index)),
+        pixelSize: size, scale: 2)
+    }
+    history.seed(items)
+    let line = Clothesline(history: history)
+    line.reducesMotion = { true }
+    line.model.setPegged(items.map(\.id))
+    line.layout(width: 1000, gap: 220)
+    #expect(line.model.hangs.map(\.id) == [items[0].id, items[1].id, items[3].id])
+    #expect(line.model.hangs.last?.rect.width == 64)
+  }
+
+  /// 物理按真过去的时间走（P2：原来一帧一步，掉到 30 Hz 时摆得慢一半）
+  @Test func physicsStepsFollowTime() {
+    var carry: TimeInterval = 0
+    #expect(ClotheslineRope.steps(for: 1.0 / 60, carry: &carry) == 1)
+    #expect(ClotheslineRope.steps(for: 1.0 / 30, carry: &carry) == 2)
+    // 120 Hz：两帧走一步（零头攒着）
+    #expect(ClotheslineRope.steps(for: 1.0 / 120, carry: &carry) == 0)
+    #expect(ClotheslineRope.steps(for: 1.0 / 120, carry: &carry) == 1)
+    // 卡了一秒：最多补 4 步，补不完的扔掉（下一帧照常一步）
+    #expect(ClotheslineRope.steps(for: 1, carry: &carry) == ClotheslineRope.maxCatchUp)
+    #expect(ClotheslineRope.steps(for: 1.0 / 60, carry: &carry) == 1)
+  }
+
+  /// 挂之前等历史记好（R4 R6）：落地时编号已经有了就当场挂；还没记好就等记完再挂；没记上（历史关着）不挂。
+  /// 记好 = 拿到编号、缩略图也读进了缓存（warm）：交接那一帧卡片上就有图，不先露深色底
+  @MainActor @Test func pegWaitsForTheHistory() async throws {
+    let id = UUID()
+    var pegged: [UUID] = []
+    var log: [String] = []
+    // 先记好、后落地：落地那一刻当场挂（和飞行卡片交接在同一刻）
+    let ready = Task<UUID?, Never> { id }
+    let early = Clothesline.pegWhenRecorded(
+      ready, warm: { _ in log.append("warm") },
+      peg: {
+        log.append("peg")
+        pegged.append($0)
+      })
+    _ = await ready.value
+    for _ in 0..<5 { await Task.yield() }
+    #expect(pegged.isEmpty)  // 没落地不挂
+    early()
+    #expect(pegged == [id])
+    #expect(log == ["warm", "peg"])
+    // 缩略图还在读时落地：读完才挂
+    pegged = []
+    let (warming, warmed) = AsyncStream<Void>.makeStream()
+    let slowWarm = Clothesline.pegWhenRecorded(
+      ready, warm: { _ in for await _ in warming {} }, peg: { pegged.append($0) })
+    for _ in 0..<5 { await Task.yield() }
+    slowWarm()
+    #expect(pegged.isEmpty, "缩略图还没进缓存就挂上了")
+    warmed.finish()
+    for _ in 0..<20 where pegged.isEmpty { await Task.yield() }
+    #expect(pegged == [id])
+    // 先落地、后记好：记完才挂
+    pegged = []
+    let (stream, finish) = AsyncStream<Void>.makeStream()
+    let slow = Task<UUID?, Never> {
+      for await _ in stream {}
+      return id
+    }
+    let late = Clothesline.pegWhenRecorded(slow) { pegged.append($0) }
+    late()
+    #expect(pegged.isEmpty)
+    finish.finish()
+    _ = await slow.value
+    for _ in 0..<20 where pegged.isEmpty { await Task.yield() }
+    #expect(pegged == [id])
+    // 没记上：不挂
+    pegged = []
+    let none = Task<UUID?, Never> { nil }
+    let never = Clothesline.pegWhenRecorded(none) { pegged.append($0) }
+    _ = await none.value
+    for _ in 0..<5 { await Task.yield() }
+    never()
+    #expect(pegged.isEmpty)
+  }
+
+  /// 只有截图框选的遮罩、长截图的面板真的在屏幕上时才让开（R4：不看「这次截图还没完」那个标记）。
+  /// 两样都摆在屏外 (-20000, -20000)、只 orderFront：不遮屏、不抢键盘（同 ScreenshotTests 那条）
+  @MainActor @Test func onlyCaptureWindowsCoverTheLine() throws {
+    let screen = try #require(NSScreen.screens.first)
+    let context = try #require(
+      CGContext(
+        data: nil, width: 4, height: 4, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpace(name: CGColorSpace.sRGB)!,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    let overlay = SelectionOverlay(
+      shot: ScreenCapture.Shot(screen: screen, image: try #require(context.makeImage())),
+      session: SelectionSession(mode: .capture))
+    let scroll = ScrollCapturePanel(
+      region: CGRect(x: 0, y: 0, width: 300, height: 300), screen: screen)
+    // 长图标注的遮罩也算：开着时绳子盖上去，双击卡片会换掉遮罩、画了一半的标注不问就没了
+    let annotate = AnnotatePanel(
+      contentRect: NSRect(x: -20000, y: -20000, width: 40, height: 40),
+      styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    let other = NSWindow()
+    for window in [overlay, scroll] as [NSWindow] {
+      window.setFrame(NSRect(x: -20000, y: -20000, width: 40, height: 40), display: false)
+    }
+    defer {
+      overlay.orderOut(nil)
+      scroll.orderOut(nil)
+      annotate.orderOut(nil)
+    }
+    #expect(!Clothesline.isCovered(by: [overlay, scroll, annotate, other]))  // 收着的不算
+    annotate.orderFrontRegardless()
+    #expect(Clothesline.isCovered(by: [other, annotate]))
+    annotate.orderOut(nil)
+    overlay.orderFrontRegardless()
+    #expect(Clothesline.isCovered(by: [other, overlay]))
+    overlay.orderOut(nil)
+    scroll.orderFrontRegardless()
+    #expect(Clothesline.isCovered(by: [other, scroll]))
+    scroll.orderOut(nil)
+    #expect(!Clothesline.isCovered(by: [overlay, scroll, other]))
+  }
+
+  /// 历史里删掉的跟着取下（R10）：编号不留在「挂着」里，删光了鼠标监听拆掉
+  @MainActor @Test func deletedPegsComeDown() throws {
+    let root = FileManager.default.temporaryDirectory.appending(
+      path: "kitty-clothesline-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let history = try ShotHistory(
+      db: Database(path: ":memory:"), directory: root.appending(path: "shots"))
+    let items = (0..<2).map {
+      ShotHistory.Item(
+        id: UUID(), kind: .shot, createdAt: Date.now.addingTimeInterval(Double($0)),
+        pixelSize: CGSize(width: 800, height: 600), scale: 2)
+    }
+    history.seed(items)
+    let line = Clothesline(history: history)
+    history.onRemoved = { line.forget($0) }  // 同 AppDelegate 的接法
+    line.model.setPegged(items.map(\.id))
+    line.start()
+    defer { line.stop() }
+    #expect(line.isWatchingMouse)
+    history.remove([items[0].id])
+    #expect(line.model.pegged == [items[1].id])
+    #expect(line.isWatchingMouse)
+    history.remove([items[1].id])
+    #expect(line.model.pegged.isEmpty)
+    #expect(!line.isWatchingMouse, "挂着的全删光了，鼠标监听还装着")
+  }
+
+  /// 「保留截图历史」关着时挂不上：没有落点、绳子不先滑下来等（记不下就没有编号），打开之后照常
+  @MainActor @Test func noSlotWhileHistoryIsOff() throws {
+    let screen = try #require(NSScreen.screens.first)
+    let root = FileManager.default.temporaryDirectory.appending(
+      path: "kitty-clothesline-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let history = try ShotHistory(
+      db: Database(path: ":memory:"), directory: root.appending(path: "shots"))
+    let suite = "kitty-test-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    history.defaults = defaults
+    let line = Clothesline(history: history)
+    line.isSuppressed = { true }  // prepare 不真的把面板摆到屏幕上
+    line.start()
+    defer { line.stop() }
+    let photo = CGSize(width: 1600, height: 1200)
+    defaults.set(false, forKey: Prefs.shotHistory)
+    #expect(line.slot(for: photo, on: screen) == nil)
+    #expect(!line.prepare(on: screen))
+    defaults.set(true, forKey: Prefs.shotHistory)
+    #expect(line.slot(for: photo, on: screen) != nil)
+    #expect(line.prepare(on: screen))
   }
 }

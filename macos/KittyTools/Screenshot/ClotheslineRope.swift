@@ -4,6 +4,7 @@
 // 卡片的角度跟着它两侧质点的连线走（× 0.6），所以**摇摆是绳子带的、不是卡片自己的动画**——挂第二张时第一张会被带着晃。
 // 「挂上去」和「取下」也只是给质点一个位移脉冲，波自然沿绳子传开，不另写衰减曲线。
 // 全部质点的速度都小于 restSpeed 之后就算停了，调用方停表（Whisker §8：不能有常驻的循环动画）。
+// 参数是照 60 Hz 一帧一步调的：调用方按真过去的时间走几步（steps，第三轮体检 P2：掉到 30 Hz 时一帧两步）。
 // 纯值类型、nonisolated：配单测（ClotheslineTests），也方便截图自检先跑到静止再出图。
 
 import CoreGraphics
@@ -37,6 +38,24 @@ nonisolated struct ClotheslineRope: Equatable {
   static let load: CGFloat = 2.2
   /// 全部质点都慢过这个数就算停了
   static let restSpeed: CGFloat = 0.05
+  /// 一步是多久：上面这些参数都是照 60 Hz 一帧一步调的
+  static let tick: TimeInterval = 1.0 / 60
+  /// 一帧最多补几步（卡了很久之后别一口气算一大串）
+  static let maxCatchUp = 4
+
+  /// 这一帧该走几步：按真过去的时间算（30 Hz 时一帧两步——原来一帧一步，掉帧时摆得慢一半），不够一步的零头攒在
+  /// carry 里留到下一帧；补不完的（卡了很久）扔掉。纯函数，配单测
+  static func steps(for elapsed: TimeInterval, carry: inout TimeInterval) -> Int {
+    carry += max(elapsed, 0)
+    // 1/30 ÷ 1/60 算出来可能是 1.9999…：差一点点的算够一步，不然两帧一抖
+    let steps = Int(carry / tick + 0.001)
+    guard steps <= maxCatchUp else {
+      carry = 0
+      return maxCatchUp
+    }
+    carry = max(carry - Double(steps) * tick, 0)
+    return steps
+  }
 
   private(set) var nodes: [Node]
   /// 两个质点之间该有多长

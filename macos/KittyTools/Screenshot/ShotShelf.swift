@@ -43,7 +43,7 @@ final class ShotShelf {
   private static let gap: CGFloat = 10
   private static let maxPerScreen = 3
   /// 拖出去用的 PNG 放在这里；启动时清空（拖进邮件、聊天的附件可能还在读，用的时候不删）
-  static let dragDirectory = FileManager.default.temporaryDirectory.appending(
+  nonisolated static let dragDirectory = FileManager.default.temporaryDirectory.appending(
     path: "Kitty Tools 截图")
 
   /// 接手一张截图：png 是复制 / 保存时编码好的，rect 是落地位置（屏幕坐标），source 是选区（钉图钉回那里）

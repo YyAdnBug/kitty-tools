@@ -109,6 +109,9 @@ nonisolated enum ClotheslineLayout {
   /// 飞行卡片的落点、减弱动态效果时画成什么样
   struct Plan: Equatable {
     var cards: [CGRect] = []
+    /// 每张卡是 sizes 里的第几张：放不下的跳过了，后面小一点的还能挂上，所以不能按先后硬配（B9：原来按顺序 zip，
+    /// 换到窄屏上卡片配错了图）
+    var indices: [Int] = []
     var ropes: [Rope] = []
   }
 
@@ -155,6 +158,7 @@ nonisolated enum ClotheslineLayout {
         x: minX + box / 2, from: plan.ropes[side].from.x, to: plan.ropes[side].to.x)
       plan.cards.append(
         CGRect(x: minX, y: ropeTop + sagging + hangDrop, width: box, height: cardHeight))
+      plan.indices.append(index)
     }
     return plan
   }

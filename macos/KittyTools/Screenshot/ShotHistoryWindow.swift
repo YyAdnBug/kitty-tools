@@ -51,15 +51,29 @@ import SwiftUI
     self.actions = actions
   }
 
-  /// 筛过、搜过的那些（新的在前）
-  var shown: [ShotHistory.Item] {
-    Self.filtered(history.items, search: search, filter: filter)
+  /// 筛过、搜过的那些（新的在前，和网格里的先后一样）
+  var shown: [ShotHistory.Item] { groups.flatMap(\.items) }
+
+  /// 按天分组（新的在前），标题是「今天」「昨天」或者日期。
+  /// 按历史的版本号、搜索词、筛选和今天是哪天记一份（P2：原来每次画都筛一遍、排一遍、按天分一遍）
+  var groups: [Group] {
+    let key = GroupKey(
+      revision: history.revision, search: search, filter: filter,
+      day: Calendar.current.startOfDay(for: .now))
+    if let memo, memo.key == key { return memo.groups }
+    let groups = Self.group(
+      Self.filtered(history.items, search: search, filter: filter), now: .now)
+    memo = (key, groups)
+    return groups
   }
 
-  /// 按天分组（新的在前），标题是「今天」「昨天」或者日期
-  var groups: [Group] {
-    Self.group(shown, now: .now)
+  private struct GroupKey: Equatable {
+    let revision: Int
+    let search: String
+    let filter: Filter
+    let day: Date
   }
+  @ObservationIgnored private var memo: (key: GroupKey, groups: [Group])?
 
   struct Group: Identifiable {
     let title: String
@@ -67,9 +81,7 @@ import SwiftUI
     var id: String { title }
   }
 
-  var selected: ShotHistory.Item? {
-    selection.flatMap { id in history.items.first { $0.id == id } }
-  }
+  var selected: ShotHistory.Item? { selection.flatMap(history.item) }
 
   /// 搜的是来源 App 和种类（截图里没有文字可搜，拍板「搜图里的文字」留到以后）。纯函数，配单测
   static func filtered(_ items: [ShotHistory.Item], search: String, filter: Filter)
@@ -107,10 +119,19 @@ import SwiftUI
     if day == today { return "今天" }
     if day == calendar.date(byAdding: .day, value: -1, to: today) { return "昨天" }
     // 只要日期、不带时间（Date.FormatStyle 加了字段也还会带上 0:00，实测）；今年的不写年份
-    let formatter = DateFormatter()
-    formatter.setLocalizedDateFormatFromTemplate(
-      calendar.isDate(day, equalTo: now, toGranularity: .year) ? "Md" : "yMd")
+    let formatter =
+      calendar.isDate(day, equalTo: now, toGranularity: .year) ? thisYear : otherYears
     return formatter.string(from: day)
+  }
+
+  /// 分组标题的两种写法（建一个 DateFormatter 不便宜，P2：原来每组都新建一个）
+  private static let thisYear = dayFormatter("Md")
+  private static let otherYears = dayFormatter("yMd")
+
+  private static func dayFormatter(_ template: String) -> DateFormatter {
+    let formatter = DateFormatter()
+    formatter.setLocalizedDateFormatFromTemplate(template)
+    return formatter
   }
 
   /// 一条的说明（时间 · 尺寸 · 来源）。纯函数，配单测
@@ -135,9 +156,6 @@ import SwiftUI
     return parts.joined(separator: " · ")
   }
 
-  /// 成品图：有标注才合成（拍板 A1、C2），录制的那几条没有图
-  func composed(_ item: ShotHistory.Item) -> CGImage? { history.composed(item) }
-
   /// 录制的那几条：文件还在不在（拍板 D2：不在了那一条照常能看）。
   /// 在访达中显示、打开都挪到了 ShotHistory 上（晾衣绳也要用），这里留两个薄壳给界面调
   func fileExists(_ item: ShotHistory.Item) -> Bool { ShotHistory.fileExists(item) }
@@ -146,7 +164,7 @@ import SwiftUI
 
   func open(_ item: ShotHistory.Item) { ShotHistory.open(item, notice: actions.notice) }
 
-  /// 拖到别的 App 里去（同晾衣绳：存过的拖那个文件，别的拖一份现合成的成品 PNG）
+  /// 拖到别的 App 里去（同晾衣绳，见 ShotHistory.dragFile：截图拖现合成的成品、录制的拖一份克隆）
   func dragProvider(for item: ShotHistory.Item) -> NSItemProvider {
     history.dragProvider(for: item)
   }
@@ -263,23 +281,68 @@ import SwiftUI
   }
 }
 
-/// 缩略图：读盘解码一次就留着（历史窗口滚动时不反复读）。窗口关掉时清空
+/// 缩略图：读盘解码一次就留着（历史窗口滚动、晾衣绳每帧重画都不再读盘），读不到的也记下、不再读（P2：原来读不到的
+/// 每次画都再读一遍，晾衣绳的物理跑起来就是每帧每张卡读一次盘）。读盘解码在主线程外（见 ShotThumbnail）。
+/// 最多留 limit 张（NSCache，原来是没上限的字典）；历史窗口关掉、空闲回收时只留挂在晾衣绳上的那几张
+/// （AppDelegate），历史里删掉的跟着丢（ShotHistory.remove）
 @MainActor final class ShotThumbnails {
   static let shared = ShotThumbnails()
-  private var cache: [UUID: NSImage] = [:]
+  /// 一张最长边 480 像素，解好约 0.6–0.9 MB：一百张封顶约 90 MB（历史窗口一屏二三十张）
+  static let limit = 100
+  private let cache: NSCache<NSUUID, NSImage> = {
+    let cache = NSCache<NSUUID, NSImage>()
+    cache.countLimit = limit
+    return cache
+  }()
+  /// 读过、读不到的（录制时没取到封面的那几条）
+  private var missing: Set<UUID> = []
+  /// 丢过一次就加一：丢之前开始读的那份读回来不进缓存（改完标注时还在读的是旧图）
+  private var generation = 0
 
-  func image(for item: ShotHistory.Item, in history: ShotHistory) -> NSImage? {
-    if let cached = cache[item.id] { return cached }
-    guard let cg = history.thumbnail(for: item.id) else { return nil }
-    let image = NSImage(
-      cgImage: cg,
-      size: NSSize(
-        width: CGFloat(cg.width) / item.scale, height: CGFloat(cg.height) / item.scale))
-    cache[item.id] = image
+  /// 已经解好的（不读盘）
+  func cached(_ id: UUID) -> NSImage? { cache.object(forKey: id as NSUUID) }
+
+  /// 有就给；没有就在主线程外读盘解码一次
+  func image(for item: ShotHistory.Item, in history: ShotHistory) async -> NSImage? {
+    await image(for: item) { await history.thumbnail(for: item.id) }
+  }
+
+  /// 同上，读法另给（单测拿它卡在「正在读」的那一刻）
+  func image(for item: ShotHistory.Item, loading: () async -> CGImage?) async -> NSImage? {
+    if let cached = cached(item.id) { return cached }
+    guard !missing.contains(item.id) else { return nil }
+    let started = generation
+    let cg = await loading()
+    guard started == generation else { return cg.map { Self.image($0, scale: item.scale) } }
+    guard let cg else {
+      missing.insert(item.id)
+      return nil
+    }
+    let image = Self.image(cg, scale: item.scale)
+    cache.setObject(image, forKey: item.id as NSUUID)
     return image
   }
 
-  func forget(_ id: UUID) { cache[id] = nil }
+  private static func image(_ cg: CGImage, scale: CGFloat) -> NSImage {
+    NSImage(
+      cgImage: cg,
+      size: NSSize(width: CGFloat(cg.width) / scale, height: CGFloat(cg.height) / scale))
+  }
 
-  func clear() { cache.removeAll() }
+  func forget(_ id: UUID) {
+    cache.removeObject(forKey: id as NSUUID)
+    missing.remove(id)
+    generation += 1
+  }
+
+  /// 只留这几张（挂在晾衣绳上的），别的都丢
+  func keep(only ids: some Sequence<UUID>) {
+    let kept = ids.compactMap { id in cached(id).map { (id, $0) } }
+    cache.removeAllObjects()
+    missing.removeAll()
+    generation += 1
+    for (id, image) in kept { cache.setObject(image, forKey: id as NSUUID) }
+  }
+
+  func clear() { keep(only: []) }
 }

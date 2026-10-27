@@ -4,8 +4,8 @@
 // **位置和角度每帧由绳子的物理给**（ClotheslineRope，verlet；模型里的 hangs / ropes），这里只管画——
 // 摇摆是绳子带的，卡片自己没有动画。
 // 卡片就是常驻缩略图那一张（圆角 10、white 0.25 发丝线描边 + black 0.28 / r16 / y6 阴影，Style.shotCard），
-// 图是截图历史里那条的缩略图（ShotThumbnails，和历史窗口共用一份缓存）。
-// 悬停压一层蒙层、右上角出 ✕（点它取下，拍板 D2）；单击拷贝、双击进标注窗口、拖出去是一个文件、
+// 图是截图历史里那条的缩略图（ShotThumbnail：和历史窗口共用一份缓存，读盘在主线程外、每张卡只读一次）。
+// 悬停压一层蒙层、右上角出 ✕（点它取下，拍板 D2）；单击拷贝、双击进标注窗口（录制的是打开）、拖出去是一个文件、
 // 拖到废纸篓取下、右键是一整套菜单——鼠标全在 CardMouse 那块 AppKit 视图里收（本 App 不激活、面板永不当 key，
 // SwiftUI 的 onHover 和手势在这种窗口里都不稳，同常驻缩略图的做法）。
 // 排法、静止时的样子由 ClotheslineLayout 算（面板内坐标，原点左上）。
@@ -19,8 +19,6 @@ struct ClotheslineView: View {
   let model: ClotheslineModel
 
   var body: some View {
-    // 读一下：改完标注、缩略图重做好之后要重画（ShotThumbnails 不是 @Observable）
-    let _ = model.redraws
     ZStack(alignment: .topLeading) {
       rope
       ForEach(model.hangs) { hang in
@@ -92,11 +90,18 @@ private struct ClotheslineCard: View {
   private var isHovered: Bool { model.hovered == item.id }
 
   var body: some View {
+    // 代数跟着 redraws：改完标注、缩略图重做好之后重读（ShotThumbnails 不是 @Observable）
+    ShotThumbnail(item: item, history: model.history, generation: model.redraws) { image in
+      card(image)
+    }
+  }
+
+  private func card(_ image: NSImage?) -> some View {
     let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
     // 图放在 overlay 里铺满：比例和卡片不一样时也不会把卡片撑大（同常驻缩略图）
-    Color.clear
+    return Color.clear
       .overlay {
-        if let image = model.thumbnail(for: item) {
+        if let image {
           Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
         } else {
           Color(nsColor: Style.HUD.solidFill)
@@ -122,7 +127,7 @@ private struct ClotheslineCard: View {
           .offset(y: -ClotheslineLayout.clipBar.height / 2 - ClotheslineLayout.clipCenterAboveCard)
       }
       .animation(.easeOut(duration: 0.12), value: isHovered)
-      .overlay { mouse }
+      .overlay { mouse(image) }
       .accessibilityElement(children: .ignore)
       .accessibilityLabel("\(item.kind.title)，\(ShotHistoryModel.caption(item))")
       .accessibilityActions {
@@ -133,12 +138,13 @@ private struct ClotheslineCard: View {
   }
 
   /// 鼠标：悬停、单击 / 双击、点 ✕、拖出去（见 CardMouse）
-  private var mouse: some View {
+  private func mouse(_ image: NSImage?) -> some View {
     CardMouse(
-      image: model.thumbnail(for: item), file: model.dragFiles[item.id],
+      image: image, file: { [model] in model.history?.dragFileNow(for: item) },
       onHover: { inside in model.hovered = inside ? item.id : nil },
       onClick: { model.onCommand(.copy, item) },
-      onDoubleClick: { model.onCommand(.edit, item) },
+      // 录制的双击是用默认 App 打开（同截图历史窗口；原来一律进标注遮罩）
+      onDoubleClick: { model.onCommand(item.filePath == nil ? .edit : .open, item) },
       onClose: { model.onCommand(.unpeg, item) },
       onTrash: { model.onCommand(.unpeg, item) }
     )
@@ -222,10 +228,14 @@ nonisolated private struct Spring: Shape {
 /// 拖出去用 AppKit 的拖拽会话，**拖到废纸篓（operation 是 .delete）就取下**——SwiftUI 的 onDrag 没有结束回调，
 /// 收不到这件事；ponytail: 拖进文件夹和拖进别的 App 系统给的都是 .copy，分不出来，所以这两样都只发一份、卡片留着
 /// （拍板 C3 的「拖进文件夹存下并取下」做不到，要分得出来得自己接管落点）。
+/// **只有拖出目录里的那一份许拖进废纸篓**（第三轮体检 R3）：废纸篓收下的是文件本身，原来拖的是用户存的截图、录像，
+/// 一拖就真扔了。现在拖的是现合成的那份 / 拖的那一下才做的克隆（ShotHistory.dragFileNow）；克隆不了只能拖原文件
+/// 时不给 .delete，废纸篓不接，那张卡就点 ✕ 取下。
 /// 右键不接：落到宿主上弹 SwiftUI 的 contextMenu（危险项的红字交给系统画）
 private struct CardMouse: NSViewRepresentable {
   let image: NSImage?
-  let file: URL?
+  /// 拖的那一下才问（录制的那时才克隆，截图给已经做好的那份）
+  let file: () -> URL?
   let onHover: (Bool) -> Void
   let onClick: () -> Void
   let onDoubleClick: () -> Void
@@ -246,7 +256,9 @@ private struct CardMouse: NSViewRepresentable {
 
   final class MouseView: NSView, NSDraggingSource {
     var image: NSImage?
-    var file: URL?
+    var file: () -> URL? = { nil }
+    /// 这一回拖的是哪个文件（结束前 sourceOperationMaskFor 看它）
+    private var dragging: URL?
     var onHover: (Bool) -> Void = { _ in }
     var onClick: () -> Void = {}
     var onDoubleClick: () -> Void = {}
@@ -301,10 +313,12 @@ private struct CardMouse: NSViewRepresentable {
     }
 
     override func mouseDragged(with event: NSEvent) {
-      guard let pressedAt, let file else { return }
+      guard let pressedAt else { return }
       let point = convert(event.locationInWindow, from: nil)
-      guard abs(point.x - pressedAt.x) > 4 || abs(point.y - pressedAt.y) > 4 else { return }
+      guard abs(point.x - pressedAt.x) > 4 || abs(point.y - pressedAt.y) > 4, let file = file()
+      else { return }
       self.pressedAt = nil
+      dragging = file
       NSObject.cancelPreviousPerformRequests(
         withTarget: self, selector: #selector(fireClick), object: nil)
       let item = NSDraggingItem(pasteboardWriter: file as NSURL)
@@ -328,12 +342,14 @@ private struct CardMouse: NSViewRepresentable {
     func draggingSession(
       _ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext
     ) -> NSDragOperation {
-      context == .withinApplication ? [] : [.copy, .delete]
+      guard context != .withinApplication, let dragging else { return [] }
+      return ShotHistory.isDisposable(dragging) ? [.copy, .delete] : .copy
     }
 
     func draggingSession(
       _ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation
     ) {
+      dragging = nil
       // 拖到废纸篓：取下（东西还在历史里，拍板 D2 不问）
       if operation == .delete { onTrash() }
     }

@@ -116,6 +116,62 @@ struct AnnotateOverlayTests {
     editor.close()
   }
 
+  /// 输入文字时的编辑键交给输入框（第三轮体检 R5）：⌘S / ⌘C 不再出图关窗，⌘Z 撤的是框里打的字、不是整条标注
+  /// （之前画好的那条也还在），⌘← / ⌘⌫ 这类行编辑键交回给输入框、不吞。
+  /// ⌘C 只在框里没选中字、面板也不是 key（发出去的拷贝落不到它身上）时按一下，看剪贴板没动；⌘V / ⌘X 不按
+  @Test func typingKeepsEditKeysInTheField() throws {
+    var actions: [RegionSelector.Action] = []
+    let editor = AnnotateOverlay(image: image(width: 400, height: 600), scale: 2) {
+      action, _, _, _ in actions.append(action)
+    }
+    defer { editor.close() }
+    let content = try #require(editor.panel.contentView as? AnnotateOverlayView)
+    let scroll = try #require(content.subviews.compactMap { $0 as? NSScrollView }.first)
+    let canvas = try #require(scroll.documentView as? ScrollCanvas)
+    // 先有一条画好的，再开一个输入框打字
+    canvas.annotations = [
+      Annotation(shape: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 50)))
+    ]
+    canvas.choose(.text)
+    canvas.beginEditing(at: CGPoint(x: 40, y: 200))
+    let field = try #require(canvas.subviews.compactMap { $0 as? EditorField }.first)
+    #expect(editor.panel.firstResponder === field)
+    field.insertText("注意", replacementRange: NSRange(location: NSNotFound, length: 0))
+    RunLoop.main.run(until: .now.addingTimeInterval(0.05))  // 让撤销的分组收口
+    func press(_ keyCode: Int, _ characters: String, _ flags: NSEvent.ModifierFlags = .command)
+      throws -> Bool
+    {
+      try editor.panel.performKeyEquivalent(
+        with: #require(
+          NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0,
+            context: nil, characters: characters, charactersIgnoringModifiers: characters,
+            isARepeat: false, keyCode: UInt16(keyCode))))
+    }
+    let pasteboard = NSPasteboard.general.changeCount
+    #expect(try press(kVK_ANSI_S, "s"))
+    #expect(try press(kVK_ANSI_C, "c"))
+    #expect(actions.isEmpty, "打字时 ⌘S / ⌘C 出图了：\(actions)")
+    #expect(NSPasteboard.general.changeCount == pasteboard)
+    // ⌘← / ⌘⌫：没人在 performKeyEquivalent 里接（返回 false），AppKit 接着把它当 keyDown 交给输入框
+    let left = String(UnicodeScalar(UInt32(NSLeftArrowFunctionKey))!)
+    #expect(try !press(kVK_LeftArrow, left, [.command, .numericPad, .function]))
+    #expect(try !press(kVK_Delete, "\u{7F}"))
+    #expect(try press(kVK_ANSI_D, "d"))
+    #expect(canvas.annotations.count == 1)  // ⌘D 也没落到画布上
+    #expect(try press(kVK_ANSI_Z, "z"))
+    #expect(field.string.isEmpty, "⌘Z 没撤掉框里打的字")
+    #expect(editor.panel.firstResponder === field)  // 还在输入
+    #expect(canvas.annotations.count == 1)  // 画好的那条还在（原来整条撤掉）
+    #expect(try press(kVK_ANSI_Z, "Z", [.command, .shift]))
+    #expect(field.string == "注意")
+    canvas.endEditing()
+    #expect(canvas.annotations.count == 2)
+    // 输入框收起之后 ⌘C 照常出图
+    #expect(try press(kVK_ANSI_C, "c"))
+    #expect(actions == [.copy])
+  }
+
   // MARK: 标注（第 2 批）
 
   /// 画布摆进一扇屏外窗口：坐标就是窗口坐标（画布当 contentView，原点一致），事件可以直接喂

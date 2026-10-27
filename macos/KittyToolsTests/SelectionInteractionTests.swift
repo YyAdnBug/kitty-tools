@@ -786,6 +786,26 @@ struct SelectionInteractionTests {
     #expect(capture.action == .copy)
   }
 
+  // 输入文字时 ⌘Z / ⇧⌘Z 撤的是框里打的字（第三轮体检：原来发 undo: / redo: 动作，窗口接走、字不变），
+  // 输入框还开着、之前画的标注不动
+  @Test func typingUndoStaysInTheField() throws {
+    let h = Harness()
+    h.makeSelection()
+    h.view.tool = .rectangle
+    h.drag(CGPoint(x: 350, y: 250), CGPoint(x: 450, y: 350))
+    let drawn = h.view.annotations.count
+    h.view.beginEditing(at: CGPoint(x: 400, y: 450))
+    let field = try #require(h.fieldEditor)
+    field.insertText("hi", replacementRange: NSRange(location: NSNotFound, length: 0))
+    RunLoop.main.run(until: .now.addingTimeInterval(0.05))  // 让撤销的分组收口
+    #expect(h.keyEquivalent(kVK_ANSI_Z, "z", flags: .command))
+    #expect(field.string.isEmpty, "⌘Z 没撤掉框里打的字")
+    #expect(h.window.firstResponder === field)
+    #expect(h.view.annotations.count == drawn)
+    #expect(h.keyEquivalent(kVK_ANSI_Z, "Z", flags: [.command, .shift]))
+    #expect(field.string == "hi")
+  }
+
   // 输入文字时重做钮灰掉（点了只会收下文字、清空重做）
   @Test func redoDisabledWhileTyping() throws {
     let h = Harness()

@@ -6,7 +6,10 @@
 // 和剪贴板的图片库各管各的（拷贝出去的截图照旧也进剪贴板历史）。
 // 留 30 天、总共最多 2 GB，超了先删最旧的（拍板 A3，Prefs.shotHistoryDays / shotHistoryMegabytes）；
 // 「保留截图历史」关掉后不再记、已记的留着（拍板 B3，Prefs.shotHistory）。历史不进全局同步（图太大）。
-// 写图、编码都在 @concurrent 里做，主线程只写一行库。
+// 写图、编码、读原图、删掉的那几条的原图和缩略图都在 @concurrent 里做，主线程只写库（第三轮体检 R6 B9：原来
+// writeFiles / thumbnail 没标 @concurrent，其实在主线程上跑）；拖出去用的临时文件一个都不删（见 dragFile）。
+// **记历史不挡出图**：截图那条路先拷贝 / 存储 / 钉图，这里在后面并行记，拷贝 / 存储编好的那份 PNG 直接拿来当原图
+// （历史也按 72 × 倍率的 DPI 编，没画标注时两份一模一样），缩略图用现成的成品图做。
 
 import AppKit
 import CoreGraphics
@@ -71,7 +74,17 @@ import UniformTypeIdentifiers
   }
 
   /// 新的在前
-  private(set) var items: [Item] = []
+  private(set) var items: [Item] = [] {
+    didSet {
+      positions = Dictionary(
+        items.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+      revision &+= 1
+    }
+  }
+  /// 按编号找在第几条（晾衣绳每帧要找挂着的那几条，P2：原来每张卡都在整个历史里线性找一遍）
+  @ObservationIgnored private var positions: [UUID: Int] = [:]
+  /// items 变一次加一（历史窗口按它缓存分组，不用每次比整个数组）
+  private(set) var revision = 0
   private let db: Database
   private let directory: URL
   /// 开关和上限读哪儿（单测注入临时域）
@@ -109,14 +122,21 @@ import UniformTypeIdentifiers
 
   // MARK: 记一条
 
-  /// 截图 / 长截图：原图和缩略图写盘、入库。返回这一条的 id（没记返回 nil）
+  /// 这一条（按编号，O(1)）
+  func item(_ id: UUID) -> Item? { positions[id].map { items[$0] } }
+
+  /// 截图 / 长截图：原图和缩略图写盘、入库。返回这一条的 id（没记返回 nil）。
+  /// png：拷贝 / 存储时已经编好的原图（R6：同一张图不再编第二遍；nil 就在这里编）；
+  /// composed：成品图（原图 + 标注），缩略图照它缩（nil 就在这里合成）
   @discardableResult func record(
-    _ image: CGImage, scale: CGFloat, kind: Kind = .shot, annotations: [Annotation] = [],
-    source: String? = nil, saved: URL? = nil, pinned: Bool = false, frame: CGRect? = nil
+    _ image: CGImage, png: Data? = nil, composed: CGImage? = nil, scale: CGFloat,
+    kind: Kind = .shot, annotations: [Annotation] = [], source: String? = nil, saved: URL? = nil,
+    pinned: Bool = false, frame: CGRect? = nil
   ) async -> UUID? {
     guard isOn else { return nil }
     let id = UUID()
-    guard let bytes = await write(image, id: id, annotations: annotations, scale: scale) else {
+    let shown = composed ?? Self.compose(image, annotations: annotations, scale: scale)
+    guard let bytes = await write(image, png: png, thumbnailOf: shown, scale: scale, id: id) else {
       return nil
     }
     add(
@@ -134,7 +154,7 @@ import UniformTypeIdentifiers
   ) async -> UUID? {
     guard isOn else { return nil }
     let id = UUID()
-    let bytes = poster == nil ? 0 : await write(poster!, id: id)
+    let bytes = poster == nil ? 0 : await write(poster!, thumbnailOf: poster!, scale: 1, id: id)
     add(
       Item(
         id: id, kind: kind, createdAt: .now,
@@ -145,20 +165,30 @@ import UniformTypeIdentifiers
 
   /// 改完标注回写（拍板 C4：更新同一条，原图不动）。
   /// **缩略图跟着重做**：它画的是成品（原图 + 标注），不重做的话历史里看着像没改过
-  /// （2026-10-26 用户手测报的）
-  func update(_ id: UUID, annotations: [Annotation]) {
-    guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+  /// （2026-10-26 用户手测报的）。composed 是标注窗口出图时那张成品，缩略图直接照它缩——原来在主线程上读整张原图、
+  /// 全分辨率再合成一遍（长截图 3000 × 30000 时内存翻几倍，第三轮体检 R6）。标注没变就什么都不做。
+  /// 拖出去的那份旧的不再用（R2：原来照旧拖它，改完标注拖出去的还是旧图）
+  func update(_ id: UUID, annotations: [Annotation], composed: CGImage) {
+    guard let index = items.firstIndex(where: { $0.id == id }),
+      items[index].annotations != annotations
+    else { return }
     items[index].annotations = annotations
     try? db.execute(
       "UPDATE shots SET annotations = ? WHERE id = ?",
       [Self.encode(annotations), id.uuidString])
-    let item = items[index]
+    // 拖出去的那份不再用（下次重做）；文件不删，见 dragFile
+    dragFiles[id] = nil
     Task {
-      guard let original = image(for: id) else { return }
-      let composed = Self.compose(original, annotations: annotations, scale: item.scale)
-      guard let small = await Self.thumbnail(of: composed) else { return }
-      try? small.write(to: thumbnailURL(for: id), options: .atomic)
-      onThumbnailChanged(id)
+      // 这几步之间可能又改了一回（识字不关窗口，接着改再拷贝）、或者整条删了：只认最后那次，删了的别留孤儿缩略图
+      guard let small = await Self.thumbnail(of: composed),
+        item(id)?.annotations == annotations,
+        await Self.write(small, to: thumbnailURL(for: id))
+      else { return }
+      guard let now = item(id) else {
+        try? FileManager.default.removeItem(at: thumbnailURL(for: id))
+        return
+      }
+      if now.annotations == annotations { onThumbnailChanged(id) }
     }
   }
 
@@ -182,47 +212,117 @@ import UniformTypeIdentifiers
       [now.timeIntervalSinceReferenceDate, id.uuidString])
   }
 
-  // MARK: 读
-
   // MARK: 拖出去
 
-  /// 拖出去的那一份：存过的就是存的那个文件、录制的就是那段录像（名字是用户自己的），别的在临时目录里写一份
-  /// 成品 PNG（原图 + 标注），名字同快速保存。写过的留着，同一条再拖不重写；那个目录启动时清空
-  /// （ShotShelf.dragDirectory）
+  /// 拖出去的那一份（历史窗口用它；晾衣绳先 await 它把截图那份备好，拖的那一下用 dragFileNow）。
+  /// 都放在拖出目录里、每次一个新文件夹（ShotShelf.dragDirectory）。**一个都不删**：拖进邮件、聊天的附件可能还在读
+  /// （ShotShelf 的老规矩），留给下次启动时清空整个目录——改完标注、删掉一条只是不再用旧的那份。
+  /// - 截图 / 长截图：**一律是历史里的原图 + 现在的标注**（第三轮体检 R2：原来存过的就拖存的那个文件，改完标注
+  ///   拖出去的还是旧图）。存过的只借它的文件名。没画标注的直接克隆那张原图（不解码再编码：长截图整张解开要几百 MB）。
+  ///   做好的记着，同一条再拖不重做。
+  /// - 录屏 / 录音 / GIF：拖的那一下才克隆（dragFileNow；R3：晾衣绳允许拖进废纸篓，拖原文件的话扔掉的就是用户的录像）。
+  ///   不先备着：克隆和原文件共用数据块，用户删了原录像、空间要等克隆也没了才回来
   func dragFile(for item: Item) async -> URL? {
-    if let path = item.filePath ?? item.savedPath, FileManager.default.fileExists(atPath: path) {
-      return URL(filePath: path)
+    if item.filePath != nil { return dragFileNow(for: item) }
+    if let made = dragFileNow(for: item) { return made }
+    let name =
+      item.savedPath.map { ($0 as NSString).lastPathComponent }
+      ?? ScreenshotOutput.availableURL(in: ShotShelf.dragDirectory, date: item.createdAt)
+      .lastPathComponent
+    let target = Self.freshFolder().appending(path: name)
+    var cloned = false
+    if item.annotations.isEmpty {
+      cloned = await Self.cloneOriginal(url(for: item.id), scale: item.scale, to: target)
     }
-    if let made = dragFiles[item.id], FileManager.default.fileExists(atPath: made.path) {
-      return made
+    if !cloned {
+      guard let image = await composed(item),
+        let png = await ScreenshotOutput.png(image, scale: item.scale),
+        await Self.write(png, to: target)
+      else { return nil }
     }
-    guard let image = composed(item), let png = await ScreenshotOutput.png(image, scale: item.scale)
-    else { return nil }
-    let url = ScreenshotOutput.availableURL(in: ShotShelf.dragDirectory, date: item.createdAt)
-    guard await Self.write(png, to: url) else { return nil }
-    dragFiles[item.id] = url
-    return url
+    // 做的这一会儿删了、又改了标注：这份是旧的，不记（文件照旧不删）；改了的照新标注重做
+    guard let now = self.item(item.id) else { return nil }
+    guard now.annotations == item.annotations else { return await dragFile(for: now) }
+    dragFiles[item.id] = target
+    return target
   }
 
-  /// 写临时文件（几 MB 到几十 MB，不在主线程写）
+  /// 拖的那一下要的文件（同步：晾衣绳在鼠标拖动里调）。录制的当场克隆一份——克隆是常数时间；和拖出目录（临时目录）
+  /// 不在同一块卷上、或者那块卷不能克隆时（录制存在外接盘 / U 盘上：设置 › 截图「快速保存到」选了它）给原文件，
+  /// 调用方看 isDisposable 不许拖进废纸篓。
+  /// 截图给已经做好的那份，还没做好（刚改完标注、还在做）是 nil
+  func dragFileNow(for item: Item) -> URL? {
+    if let path = item.filePath {
+      guard FileManager.default.fileExists(atPath: path) else { return nil }
+      let file = URL(filePath: path)
+      return Self.clone(file, to: Self.freshFolder().appending(path: file.lastPathComponent))
+        ?? file
+    }
+    guard let made = dragFiles[item.id], FileManager.default.fileExists(atPath: made.path) else {
+      return nil
+    }
+    return made
+  }
+
+  /// 拖出目录里一个新文件夹（还没建，写的时候建）：名字照用户的 / 照快速保存，各放各的不撞名
+  nonisolated private static func freshFolder() -> URL {
+    ShotShelf.dragDirectory.appending(path: UUID().uuidString)
+  }
+
+  /// 是拖出目录里的那一份（克隆、现合成的），不是用户自己的文件：只有它许拖进废纸篓（R3）
+  nonisolated static func isDisposable(_ url: URL) -> Bool {
+    url.standardizedFileURL.path.hasPrefix(ShotShelf.dragDirectory.standardizedFileURL.path + "/")
+  }
+
+  /// 写临时文件、缩略图（几 MB 到几十 MB，不在主线程写）
   @concurrent nonisolated static func write(_ png: Data, to url: URL) async -> Bool {
     try? FileManager.default.createDirectory(
       at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-    return (try? png.write(to: url)) != nil
+    return (try? png.write(to: url, options: .atomic)) != nil
   }
 
-  /// 拖出去给别的 App 的那一份（历史窗口、晾衣绳都用这个文件，见 dragFile）。
-  /// **成品 PNG 是落到别人手上那一刻才合成写盘的**：历史里成百上千条，不像绳子上那 8 张能先备好
+  /// 用户自己的文件克隆到拖出目录（R3）。只在和拖出目录同一块、能克隆的卷上做：APFS 上 copyItem 就是克隆，常数时间、
+  /// 不占地方；别的卷上它会整个拷一遍（几个 GB 的录像拖一下要等很久），这时给 nil
+  nonisolated static func clone(_ file: URL, to target: URL) -> URL? {
+    let root = ShotShelf.dragDirectory
+    guard
+      (try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true))
+        != nil,
+      let source = try? file.resourceValues(forKeys: [
+        .volumeIdentifierKey, .volumeSupportsFileCloningKey,
+      ]),
+      source.volumeSupportsFileCloning == true,
+      let volume = source.volumeIdentifier,
+      volume.isEqual((try? root.resourceValues(forKeys: [.volumeIdentifierKey]))?.volumeIdentifier),
+      (try? FileManager.default.createDirectory(
+        at: target.deletingLastPathComponent(), withIntermediateDirectories: true)) != nil,
+      (try? FileManager.default.copyItem(at: file, to: target)) != nil
+    else { return nil }
+    return target
+  }
+
+  /// 没画标注的截图：历史里那张原图就是成品，克隆过去。这一版之前记的原图按 72 DPI 存的（拷贝 / 存储的那份是
+  /// 72 × 倍率），克隆过去别的 App 会按两倍大显示——DPI 对不上的返回 false，调用方照旧重编
+  @concurrent nonisolated static func cloneOriginal(_ source: URL, scale: CGFloat, to target: URL)
+    async -> Bool
+  {
+    guard let image = CGImageSourceCreateWithURL(source as CFURL, nil),
+      let properties = CGImageSourceCopyPropertiesAtIndex(image, 0, nil) as? [CFString: Any],
+      let dpi = properties[kCGImagePropertyDPIWidth] as? Double, abs(dpi - 72 * scale) < 0.5
+    else { return false }
+    return clone(source, to: target) != nil
+  }
+
+  /// 拖出去给别的 App 的那一份（历史窗口用；晾衣绳走 AppKit 的拖拽会话，直接用 dragFile）。
+  /// **文件是落到别人手上那一刻才做的**：历史里成百上千条，不像绳子上那 8 张能先备好
   func dragProvider(for item: Item) -> NSItemProvider {
-    if let path = item.filePath ?? item.savedPath, FileManager.default.fileExists(atPath: path),
-      let provider = NSItemProvider(contentsOf: URL(filePath: path))
-    {
-      provider.suggestedName = (path as NSString).lastPathComponent  // 自己写上，不是每次都有
-      return provider
-    }
     let provider = NSItemProvider()
+    let path = item.filePath ?? item.savedPath
+    provider.suggestedName = path.map { ($0 as NSString).lastPathComponent }  // 自己写上，不是每次都有
+    let type =
+      item.filePath.flatMap { UTType(filenameExtension: ($0 as NSString).pathExtension) } ?? .png
     provider.registerFileRepresentation(
-      for: .png, visibility: .all, openInPlace: false
+      for: type, visibility: .all, openInPlace: false
     ) { [weak self] completion in
       // 系统给的回调没标 sending，挪进 Task 里编译器拦；只在主 actor 上调一次，安全
       nonisolated(unsafe) let finish = completion
@@ -237,16 +337,18 @@ import UniformTypeIdentifiers
     return provider
   }
 
-  /// 已经写好的那几份（按 id）：同一条拖第二次不重写
+  /// 已经做好的截图那几份（按 id，都在拖出目录里）：同一条拖第二次不重做
   @ObservationIgnored private var dragFiles: [UUID: URL] = [:]
 
-  /// 原图（用时才读盘；录制的那几条没有原图）
-  func image(for id: UUID) -> CGImage? { Self.decode(url(for: id)) }
+  // MARK: 读
+
+  /// 原图（用时才读盘，解码在主线程外；录制的那几条没有原图）
+  func image(for id: UUID) async -> CGImage? { await Self.decode(url(for: id)) }
 
   /// 成品图（原图 + 标注）：没画标注就是原图本身，不白渲一遍（拍板 A1、C2）。
-  /// 拷贝 / 存储 / 钉图、缩略图都走它
-  func composed(_ item: Item) -> CGImage? {
-    guard let original = image(for: item.id) else { return nil }
+  /// 拷贝 / 存储 / 钉图、拖出去都走它。读原图在主线程外，合成在主线程（Annotation.render 是 MainActor 的）
+  func composed(_ item: Item) async -> CGImage? {
+    guard let original = await image(for: item.id) else { return nil }
     return Self.compose(original, annotations: item.annotations, scale: item.scale)
   }
 
@@ -263,7 +365,8 @@ import UniformTypeIdentifiers
       ?? original
   }
 
-  func thumbnail(for id: UUID) -> CGImage? { Self.decode(thumbnailURL(for: id)) }
+  /// 缩略图（读盘解码在主线程外）
+  func thumbnail(for id: UUID) async -> CGImage? { await Self.decode(thumbnailURL(for: id)) }
 
   /// 这一条存过 / 录下来的那个文件还在不在（拍板 D2：不在了那一条照常能看能改）
   static func fileExists(_ item: Item) -> Bool {
@@ -296,15 +399,28 @@ import UniformTypeIdentifiers
 
   // MARK: 删
 
+  /// 删掉这几条：一个事务里删记录（第三轮体检 B9：原来每条各自提交），原图、缩略图在主线程外删
   func remove(_ ids: [UUID]) {
     guard !ids.isEmpty else { return }
     let doomed = Set(ids)
     items.removeAll { doomed.contains($0.id) }
-    for id in ids {
-      try? db.execute("DELETE FROM shots WHERE id = ?", [id.uuidString])
-      try? FileManager.default.removeItem(at: url(for: id))
-      try? FileManager.default.removeItem(at: thumbnailURL(for: id))
+    try? db.transaction {
+      for id in ids { try? db.execute("DELETE FROM shots WHERE id = ?", [id.uuidString]) }
     }
+    for id in ids {
+      ShotThumbnails.shared.forget(id)
+      dragFiles[id] = nil  // 拖出去的那份不删（见 dragFile）
+    }
+    let files = ids.flatMap { [url(for: $0), thumbnailURL(for: $0)] }
+    Task { await Self.delete(files) }
+    onRemoved(ids)
+  }
+
+  /// 删掉了几条（晾衣绳把挂着的这几条取下，R10）
+  @ObservationIgnored var onRemoved: ([UUID]) -> Void = { _ in }
+
+  @concurrent nonisolated private static func delete(_ files: [URL]) async {
+    for file in files { try? FileManager.default.removeItem(at: file) }
   }
 
   /// 设置里的「现在清空」（第 4 批）：记录和图都删掉，录制的文件不动（它归快速保存的文件夹管）
@@ -381,20 +497,20 @@ import UniformTypeIdentifiers
   // MARK: 图和 JSON
 
   /// 原图 + 缩略图写盘，返回一共多少字节（写不成返回 nil）
-  /// 原图写 <id>.png，缩略图写 <id>-t.png——**缩略图画的是成品**（原图 + 标注），
+  /// 原图写 <id>.png（png 是现成的就直接用），缩略图写 <id>-t.png——**缩略图画的是成品**（shown：原图 + 标注），
   /// 历史里一眼看到的就是最后那张的样子
-  private func write(_ image: CGImage, id: UUID, annotations: [Annotation] = [], scale: CGFloat = 2)
-    async -> Int?
-  {
-    let full = url(for: id)
-    let thumb = thumbnailURL(for: id)
-    guard let png = await ScreenshotOutput.png(image, scale: 1) else { return nil }
-    let small = await Self.thumbnail(
-      of: Self.compose(image, annotations: annotations, scale: scale))
-    return await Self.writeFiles(png: png, to: full, thumbnail: small, to: thumb)
+  private func write(
+    _ image: CGImage, png: Data? = nil, thumbnailOf shown: CGImage, scale: CGFloat, id: UUID
+  ) async -> Int? {
+    var encoded = png
+    if encoded == nil { encoded = await ScreenshotOutput.png(image, scale: scale) }
+    guard let encoded else { return nil }
+    let small = await Self.thumbnail(of: shown)
+    return await Self.writeFiles(
+      png: encoded, to: url(for: id), thumbnail: small, to: thumbnailURL(for: id))
   }
 
-  nonisolated private static func writeFiles(
+  @concurrent nonisolated private static func writeFiles(
     png: Data, to full: URL, thumbnail: Data?, to thumb: URL
   ) async -> Int? {
     do {
@@ -407,7 +523,7 @@ import UniformTypeIdentifiers
   }
 
   /// 缩略图：最长边 thumbnailSide（本来就小的不放大）
-  nonisolated private static func thumbnail(of image: CGImage) async -> Data? {
+  @concurrent nonisolated private static func thumbnail(of image: CGImage) async -> Data? {
     let side = max(image.width, image.height)
     guard side > thumbnailSide else { return await ScreenshotOutput.png(image, scale: 1) }
     let ratio = Double(thumbnailSide) / Double(side)
@@ -427,11 +543,12 @@ import UniformTypeIdentifiers
     return await ScreenshotOutput.png(small, scale: 1)
   }
 
-  nonisolated private static func decode(_ url: URL) -> CGImage? {
-    guard let data = try? Data(contentsOf: url),
-      let source = CGImageSourceCreateWithData(data as CFData, nil)
-    else { return nil }
-    return CGImageSourceCreateImageAtIndex(source, 0, nil)
+  /// 读盘、当场解码（kCGImageSourceShouldCacheImmediately：不然解码拖到第一次画的时候、又回到主线程上，同
+  /// PinPanel.decode）
+  @concurrent nonisolated private static func decode(_ url: URL) async -> CGImage? {
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+    return CGImageSourceCreateImageAtIndex(
+      source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
   }
 
   /// 标注 ↔ JSON（拍板 A1）。纯函数，配单测

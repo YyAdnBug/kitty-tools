@@ -24,15 +24,55 @@ struct ShotHistoryTests {
     return (history, root)
   }
 
-  private func image(width: Int = 400, height: Int = 300) -> CGImage {
+  /// 等到 done 成立（主线程外删文件、写缩略图都是异步的；最多等一秒）
+  private func waitUntil(_ done: () -> Bool) async throws {
+    for _ in 0..<40 where !done() {
+      try await Task.sleep(for: .milliseconds(25))
+    }
+  }
+
+  /// 改标注：成品照标注窗口那样合成好了再给（update 不再自己读原图重合成）
+  private func update(
+    _ history: ShotHistory, _ id: UUID, _ annotations: [Annotation]
+  ) async throws {
+    let original = try #require(await history.image(for: id))
+    let item = try #require(history.item(id))
+    history.update(
+      id, annotations: annotations,
+      composed: ShotHistory.compose(original, annotations: annotations, scale: item.scale))
+  }
+
+  private func image(
+    width: Int = 400, height: Int = 300, tint: CGColor = CGColor(gray: 0.6, alpha: 1)
+  ) -> CGImage {
     let context = CGContext(
       data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
       space: CGColorSpace(name: CGColorSpace.sRGB)!,
       bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
         | CGBitmapInfo.byteOrder32Little.rawValue)!
-    context.setFillColor(CGColor(gray: 0.6, alpha: 1))
+    context.setFillColor(tint)
     context.fill(CGRect(x: 0, y: 0, width: width, height: height))
     return context.makeImage()!
+  }
+
+  /// 整张图平均下来有多红（0…1：红减去绿蓝的平均）
+  private static func redness(of image: CGImage) -> Double {
+    let context = CGContext(
+      data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 0,
+      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    context.interpolationQuality = .medium
+    context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+    let pixel = context.data!.assumingMemoryBound(to: UInt8.self)
+    return (Double(pixel[0]) - (Double(pixel[1]) + Double(pixel[2])) / 2) / 255
+  }
+
+  /// 拖出去的那份读回来
+  private func dragged(_ history: ShotHistory, _ id: UUID) async throws -> (URL, CGImage) {
+    let item = try #require(history.item(id))
+    let url = try #require(await history.dragFile(for: item))
+    let source = try #require(CGImageSourceCreateWithURL(url as CFURL, nil))
+    return (url, try #require(CGImageSourceCreateImageAtIndex(source, 0, nil)))
   }
 
   /// 十种工具存成 JSON 再读回来，一模一样（拍板 A1 的根基；这些 case 名进了磁盘）
@@ -76,9 +116,10 @@ struct ShotHistoryTests {
     #expect(item.bytes > 0 && item.annotations.isEmpty && item.pinnedAt == nil)
     #expect(FileManager.default.fileExists(atPath: history.url(for: id).path))
     #expect(FileManager.default.fileExists(atPath: history.thumbnailURL(for: id).path))
-    #expect(history.image(for: id)?.width == 400)
+    #expect(await history.image(for: id)?.width == 400)
+    #expect(history.item(id)?.source == "Safari")
     let drawn = [Annotation(shape: .rectangle(CGRect(x: 1, y: 2, width: 3, height: 4)))]
-    history.update(id, annotations: drawn)
+    try await update(history, id, drawn)
     #expect(history.items.first?.annotations == drawn)
     history.markSaved(id, to: URL(filePath: "/tmp/a.png"))
     history.markPinned(id)
@@ -91,14 +132,37 @@ struct ShotHistoryTests {
     let (history, root) = try makeHistory()
     defer { try? FileManager.default.removeItem(at: root) }
     let id = try #require(await history.record(image(), scale: 2))
+    var removed: [UUID] = []
+    history.onRemoved = { removed += $0 }
     history.remove([id])
-    #expect(history.items.isEmpty)
-    #expect(!FileManager.default.fileExists(atPath: history.url(for: id).path))
-    #expect(!FileManager.default.fileExists(atPath: history.thumbnailURL(for: id).path))
-    _ = await history.record(image(), scale: 2)
-    _ = await history.record(image(), scale: 2)
+    #expect(history.items.isEmpty && history.item(id) == nil)
+    #expect(removed == [id])
+    // 文件在主线程外删
+    func gone(_ id: UUID) -> Bool {
+      !FileManager.default.fileExists(atPath: history.url(for: id).path)
+        && !FileManager.default.fileExists(atPath: history.thumbnailURL(for: id).path)
+    }
+    try await waitUntil { gone(id) }
+    #expect(gone(id))
+    let a = try #require(await history.record(image(), scale: 2))
+    let b = try #require(await history.record(image(), scale: 2))
     history.clear()
     #expect(history.items.isEmpty)
+    try await waitUntil { gone(a) && gone(b) }
+    #expect(gone(a) && gone(b))
+  }
+
+  /// 删了的重开库也不回来（一次删几条）
+  @Test func removalSurvivesReopen() async throws {
+    let (history, root) = try makeHistory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    var ids: [UUID] = []
+    for _ in 0..<3 { ids.append(try #require(await history.record(image(), scale: 2))) }
+    history.remove([ids[0], ids[2]])
+    let reopened = try ShotHistory(
+      db: Database(path: root.appending(path: "test.sqlite").path),
+      directory: root.appending(path: "shots"))
+    #expect(reopened.items.map(\.id) == [ids[1]])
   }
 
   /// 录屏 / 录音：只记文件路径和封面（拍板 B1）
@@ -110,7 +174,7 @@ struct ShotHistoryTests {
       await history.record(file: file, poster: image(), kind: .video))
     let item = try #require(history.items.first)
     #expect(item.kind == .video && item.filePath == file.path && item.id == id)
-    #expect(history.thumbnail(for: id) != nil)
+    #expect(await history.thumbnail(for: id) != nil)
   }
 
   /// 「保留截图历史」关掉之后不再记，已经记下的留着（拍板 B3）
@@ -169,6 +233,28 @@ struct ShotHistoryTests {
     #expect(!title.isEmpty && !title.contains(":") && title != "今天" && title != "昨天")
   }
 
+  /// 分组记了一份（P2）：历史变了、搜索词 / 筛选换了都跟着重算，没变时给的是同一份
+  @Test func groupsFollowChanges() throws {
+    let (history, root) = try makeHistory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let items = [item(.shot, 0, source: "Safari"), item(.video, 1, source: "Xcode")]
+    history.seed(items)
+    let model = ShotHistoryModel(history: history)
+    #expect(model.groups.flatMap(\.items).map(\.id) == items.map(\.id))
+    model.search = "xcode"
+    #expect(model.shown.map(\.id) == [items[1].id])
+    model.search = ""
+    model.filter = .shot
+    #expect(model.shown.map(\.id) == [items[0].id])
+    model.filter = .all
+    var saved = items[0]
+    saved.savedPath = "/tmp/存过.png"
+    history.seed([saved, items[1]])
+    #expect(model.groups.first?.items.first?.savedPath == "/tmp/存过.png")
+    history.remove([items[1].id])
+    #expect(model.shown.map(\.id) == [items[0].id])
+  }
+
   /// 说明那两行：时间 · 尺寸 · 来源；第二行写存到哪、几条标注、钉过没有
   @Test func captions() {
     var shot = item(.shot, 0, source: "Safari")
@@ -186,16 +272,57 @@ struct ShotHistoryTests {
   @Test func composesOnlyWithAnnotations() async throws {
     let (history, root) = try makeHistory()
     defer { try? FileManager.default.removeItem(at: root) }
-    let model = ShotHistoryModel(history: history)
     let id = try #require(await history.record(image(), scale: 2))
     let plain = try #require(history.items.first)
-    let original = try #require(model.composed(plain))
+    let original = try #require(await history.composed(plain))
     #expect(original.width == 400)
-    history.update(
-      id, annotations: [Annotation(shape: .rectangle(CGRect(x: 1, y: 1, width: 9, height: 9)))])
+    try await update(
+      history, id, [Annotation(shape: .rectangle(CGRect(x: 1, y: 1, width: 9, height: 9)))])
     let drawn = try #require(history.items.first)
-    let composed = try #require(model.composed(drawn))
+    let composed = try #require(await history.composed(drawn))
     #expect(composed.width == 400 && composed.height == 300)
+  }
+
+  /// 拷贝 / 存储编好的那份 PNG 直接当原图（R6：不再编第二遍），成品图给了就照它缩缩略图（不再合成）
+  @Test func recordsWithTheSharedPNG() async throws {
+    let (history, root) = try makeHistory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let original = image()
+    let png = try #require(await ScreenshotOutput.png(original, scale: 2))
+    // 成品给一张不一样的（全红）：缩略图该照它，不是照原图
+    let red = image(tint: CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+    let id = try #require(
+      await history.record(original, png: png, composed: red, scale: 2))
+    #expect(try Data(contentsOf: history.url(for: id)) == png)
+    let thumbnail = try #require(await history.thumbnail(for: id))
+    #expect(Self.redness(of: thumbnail) > 0.9, "缩略图没照给的成品图缩")
+  }
+
+  /// 标注没变就不重做缩略图（R6：原来每次出图都在主线程上读原图重合成）
+  @Test func updateWithSameAnnotationsDoesNothing() async throws {
+    let (history, root) = try makeHistory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let drawn = [Annotation(shape: .rectangle(CGRect(x: 1, y: 1, width: 9, height: 9)))]
+    let id = try #require(await history.record(image(), scale: 2, annotations: drawn))
+    var redrawn = 0
+    history.onThumbnailChanged = { _ in redrawn += 1 }
+    history.update(id, annotations: drawn, composed: image())
+    try await Task.sleep(for: .milliseconds(200))
+    #expect(redrawn == 0)
+  }
+
+  /// 缩略图还在重做时整条删了：不留孤儿缩略图（B9）
+  @Test func updateThenRemoveLeavesNoThumbnail() async throws {
+    let (history, root) = try makeHistory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let id = try #require(await history.record(image(), scale: 2))
+    let big = image(width: 3000, height: 3000)
+    history.update(
+      id, annotations: [Annotation(shape: .rectangle(CGRect(x: 1, y: 1, width: 9, height: 9)))],
+      composed: big)
+    history.remove([id])
+    try await Task.sleep(for: .milliseconds(400))
+    #expect(!FileManager.default.fileExists(atPath: history.thumbnailURL(for: id).path))
   }
 
   /// 改完标注之后缩略图跟着重做（2026-10-26 手测：历史里看着像没改过）
@@ -206,9 +333,9 @@ struct ShotHistoryTests {
     let before = try Data(contentsOf: history.thumbnailURL(for: id))
     var redrawn: UUID?
     history.onThumbnailChanged = { redrawn = $0 }
-    history.update(
-      id,
-      annotations: [
+    try await update(
+      history, id,
+      [
         Annotation(
           shape: .rectangle(CGRect(x: 10, y: 10, width: 120, height: 80)),
           style: Annotation.Style(color: .red, weight: .large))
@@ -273,9 +400,9 @@ struct ShotHistoryTests {
     }
     let before = try shot()
     #expect(before.count > 2000, "网格那一块没画出东西，这个测就白跑了")
-    history.update(
-      id,
-      annotations: [
+    try await update(
+      history, id,
+      [
         Annotation(
           shape: .rectangle(CGRect(x: 20, y: 20, width: 360, height: 260)),
           style: Annotation.Style(color: .red, weight: .large))
@@ -318,12 +445,122 @@ struct ShotHistoryTests {
     #expect(data.prefix(4) == Data([0x89, 0x50, 0x4E, 0x47]), "拿到的不是 PNG")
     #expect(try data != Data(contentsOf: history.url(for: id)), "拖出去的那份要带标注，不是原图")
 
-    // 存过盘之后拖的是那个文件
+    // 存过盘之后：名字借存的那个文件的（内容照旧是历史里的成品，见 dragFollowsAnnotations）
     let saved = root.appending(path: "我自己命的名.png")
     try data.write(to: saved)
     history.markSaved(id, to: saved)
     let after = try #require(history.items.first { $0.id == id })
     #expect(history.dragProvider(for: after).suggestedName == "我自己命的名.png")
+  }
+
+  /// 改完标注拖出去的是新的那张（第三轮体检 R2）：存过盘的也不拖存的那个旧文件，拖历史里的原图 + 现在的标注；
+  /// 旧的那份不再给（文件留着：拖进聊天的附件可能还在读，启动时整个目录清空）
+  @Test func dragFollowsAnnotations() async throws {
+    let (history, root) = try makeHistory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let id = try #require(await history.record(image(), scale: 2))
+    let saved = root.appending(path: "我存过的.png")
+    try Data(contentsOf: history.url(for: id)).write(to: saved)
+    history.markSaved(id, to: saved)
+    let (first, plain) = try await dragged(history, id)
+    #expect(ShotHistory.isDisposable(first) && first.path != saved.path)
+    #expect(first.lastPathComponent == "我存过的.png")  // 名字借存的那个
+    #expect(Self.redness(of: plain) < 0.1)
+    // 盖一块整张大的实心红矩形（option 1 = 实心），改完再拖
+    try await update(
+      history, id,
+      [
+        Annotation(
+          shape: .rectangle(CGRect(x: 0, y: 0, width: 200, height: 150)),
+          style: Annotation.Style(color: .red, weight: .large, option: 1))
+      ])
+    #expect(history.dragFileNow(for: try #require(history.item(id))) == nil)  // 旧的不再给
+    let (second, drawn) = try await dragged(history, id)
+    #expect(second != first && ShotHistory.isDisposable(second))
+    #expect(FileManager.default.fileExists(atPath: first.path))  // 旧的那份不删
+    #expect(Self.redness(of: drawn) > Self.redness(of: plain) + 0.1, "拖出去的还是旧图")
+    // 存的那个文件不动
+    #expect(FileManager.default.fileExists(atPath: saved.path))
+    for made in [first, second] {
+      try? FileManager.default.removeItem(at: made.deletingLastPathComponent())
+    }
+  }
+
+  /// 录制的拖的那一下才克隆一份（第三轮体检 R3：晾衣绳允许拖进废纸篓，扔掉的得是这份、不是用户的录像；
+  /// 不先备着：克隆和原文件共用数据块，用户删了原录像空间回不来）
+  @Test func dragClonesUserFiles() async throws {
+    let (history, root) = try makeHistory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appending(path: "录屏 2026-10-27.mov")
+    try Data("假的录像".utf8).write(to: file)
+    let id = try #require(await history.record(file: file, poster: image(), kind: .video))
+    let item = try #require(history.item(id))
+    let url = try #require(history.dragFileNow(for: item))  // 同步：晾衣绳在鼠标拖动里调
+    #expect(url != file && ShotHistory.isDisposable(url))
+    #expect(url.lastPathComponent == file.lastPathComponent)
+    #expect(try Data(contentsOf: url) == Data(contentsOf: file))
+    // 拖进废纸篓扔的是克隆：用户的文件还在
+    try FileManager.default.removeItem(at: url)
+    #expect(FileManager.default.fileExists(atPath: file.path))
+    #expect(!ShotHistory.isDisposable(file))
+    // 每拖一次现克隆一份（不记着），历史窗口那条路也一样
+    let again = try #require(await history.dragFile(for: item))
+    #expect(again != url && ShotHistory.isDisposable(again))
+    // 删掉这一条：录制的原文件不动，拖出去的克隆也不删（启动时清空）
+    history.remove([id])
+    try await Task.sleep(for: .milliseconds(100))
+    #expect(FileManager.default.fileExists(atPath: file.path))
+    #expect(FileManager.default.fileExists(atPath: again.path))
+    for made in [url, again] {
+      try? FileManager.default.removeItem(at: made.deletingLastPathComponent())
+    }
+  }
+
+  /// 缩略图缓存（P2）：读不到的记下、不再读盘；读的途中被 forget（改完标注）的那份不进缓存；
+  /// keep(only:) 只留给的那几张。用自己的一份缓存（共用的那份别的测会清）
+  @Test func thumbnailCache() async throws {
+    let cache = ShotThumbnails()
+    let tiny = image(width: 40, height: 30)
+    let a = item(.shot, 0)
+    let b = item(.shot, 0)
+    var reads = 0
+    // 读不到：记下，第二次不再读
+    #expect(
+      await cache.image(for: a) {
+        reads += 1
+        return nil
+      } == nil)
+    #expect(
+      await cache.image(for: a) {
+        reads += 1
+        return tiny
+      } == nil)
+    #expect(reads == 1)
+    // forget 之后重新读
+    cache.forget(a.id)
+    #expect(await cache.image(for: a) { tiny } != nil)
+    #expect(cache.cached(a.id) != nil)
+    // 读的途中 forget：读回来的照样给调用方，但不进缓存
+    cache.forget(a.id)
+    let (gate, open) = AsyncStream<Void>.makeStream()
+    var begun = false
+    let loading = Task {
+      await cache.image(for: a) {
+        begun = true
+        for await _ in gate {}
+        return tiny
+      }
+    }
+    while !begun { await Task.yield() }
+    cache.forget(a.id)
+    open.finish()
+    #expect(await loading.value != nil)
+    #expect(cache.cached(a.id) == nil, "forget 之前开始读的那份进了缓存")
+    // keep(only:)：只留给的那几张
+    _ = await cache.image(for: a) { tiny }
+    _ = await cache.image(for: b) { tiny }
+    cache.keep(only: [b.id])
+    #expect(cache.cached(a.id) == nil && cache.cached(b.id) != nil)
   }
 
   /// 摆一扇屏幕外的窗口（同全部便签窗口的那几扇：不激活、不会被 AppKit 拽回屏幕里）
@@ -478,6 +715,7 @@ struct ShotHistoryTests {
     history.seed(history.items.map { $0.id == first ? modified($0, bytes: 2 * 1024 * 1024) : $0 })
     _ = await history.record(image(), scale: 2)
     #expect(history.items.count == 2 && !history.items.contains { $0.id == first })
+    try await waitUntil { !FileManager.default.fileExists(atPath: history.url(for: first).path) }
     #expect(!FileManager.default.fileExists(atPath: history.url(for: first).path))
   }
 

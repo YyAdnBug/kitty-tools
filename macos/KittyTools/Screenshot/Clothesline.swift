@@ -1,7 +1,7 @@
 // 晾衣绳（第十族，2026-10-26 拍板；SPEC 和拍板页在 macos/build/research/clothesline-2026-10-26/，规矩在
 // mac-overlay-panel §14、长相在 mac-whisker-capture.mdc「晾衣绳」）：截完图挂到屏幕顶上一根绳子上，
 // 手边常备一排——它和右下角的常驻缩略图二选一（设置 › 截图「截完图放哪」，拍板 B1）。
-// 挂的就是截图历史里的那几条（拍板 B2：挂着的在这里记一笔，取下只是把这一笔去掉，历史不动；历史里删掉的跟着没），
+// 挂的就是截图历史里的那几条（拍板 B2：挂着的在这里记一笔，取下只是把这一笔去掉，历史不动；历史里删掉的跟着取下，forget），
 // 不另存一份数据，也不跨重启（B3：退出即清）。最多 8 张、屏幕窄时按宽度减，超了最旧的自动取下（还在历史里）。
 // 什么时候出来（C1 D3）：鼠标停在菜单栏那一条上 0.3 秒滑下来，离开 0.4 秒收起；只在鼠标所在的那块屏上，换屏跟过去；
 // 另有一个可设的全局快捷键（HotKeyAction.clothesline，默认不占键）。收不收按鼠标位置算，不用追踪区的进出
@@ -34,8 +34,6 @@ import SwiftUI
     var rect: CGRect
     var angle: Double
   }
-  /// 拖出去的那个文件（挂上去时在主线程外备好）：存过的就是存的那个，录制的是那段视频 / 音频
-  var dragFiles: [UUID: URL] = [:]
   /// 改完标注、缩略图重做好了要重画（ShotThumbnails 不是 @Observable，视图读它来建立依赖）
   private(set) var redraws = 0
   /// 卡片上的动作（Clothesline 接）
@@ -46,11 +44,6 @@ import SwiftUI
   init(history: ShotHistory?) { self.history = history }
 
   func touch() { redraws += 1 }
-
-  /// 这一条的缩略图（和历史窗口共用一份缓存）
-  func thumbnail(for item: ShotHistory.Item) -> NSImage? {
-    history.flatMap { ShotThumbnails.shared.image(for: item, in: $0) }
-  }
 
   /// 右键菜单和旁白动作（一节一组，节间分隔线）：截图「改标注 / 拷贝 / 存储 / 钉图 /（存过的）在访达中显示 /
   /// 在历史里看 ｜ 取下 ｜ 从历史里删掉」——同常驻缩略图那一整套（拍板 C3），多了「改标注」和末尾两条；
@@ -67,16 +60,18 @@ import SwiftUI
     return [[.edit, .copy, .save] + pin + saved + [.history], [.unpeg], [.forget]]
   }
 
-  /// 挂着、而且历史里还在的那几条（历史里删掉的跟着没，B2）。
-  /// ponytail: 8 张各在历史里线性找一遍（历史几千条时也就几万次比较，都在一次重画里）；慢了再给历史加一张按编号的表
+  /// 挂着、而且历史里还在的那几条（历史里删掉的跟着没，B2；按编号找，P2）
   var items: [ShotHistory.Item] {
     guard let history else { return [] }
-    return pegged.compactMap { id in history.items.first { $0.id == id } }
+    return pegged.compactMap(history.item)
   }
 
   var isEmpty: Bool { items.isEmpty }
 
-  func item(_ id: UUID) -> ShotHistory.Item? { items.first { $0.id == id } }
+  /// 挂着的这一条（每帧每张卡都要找：按编号，不在整个历史里线性找，P2）
+  func item(_ id: UUID) -> ShotHistory.Item? {
+    pegged.contains(id) ? history?.item(id) : nil
+  }
 
   /// 换一批（Clothesline 算好容量之后给）
   func setPegged(_ ids: [UUID]) { pegged = ids }
@@ -85,7 +80,8 @@ import SwiftUI
 /// NSObject：display link 要一个 @objc 的靶子（同钉图的 popIn、OverlayPanel 的挤压入场）
 @MainActor final class Clothesline: NSObject {
   let model: ClotheslineModel
-  /// 别的功能占着屏幕时不出来（AppDelegate 给：截图框选 / 长截图中、状态屏、启动台开着）
+  /// 别的功能占着屏幕时不出来（AppDelegate 给：框选遮罩 / 长截图面板 / 长图标注遮罩在屏幕上——isCovered，不看
+  /// 「截图还没完」那个标记——、状态屏、启动台开着）
   var isSuppressed: () -> Bool = { false }
   /// 收起了（AppDelegate 拿它排空闲回收）
   var onHide: () -> Void = {}
@@ -115,10 +111,15 @@ import SwiftUI
   /// 两段绳子的物理（左、右）；挂着的卡片各挂在哪一段的哪个质点上
   private var ropes: [ClotheslineRope] = []
   private var nodes: [UUID: (rope: Int, index: Int)] = [:]
+  /// 这块屏上挂得下的那几张和它们静止时的框（排法里放不下的不在里面：窄屏上按下标配对，不按先后硬配，B9）
+  private var hung: [(id: UUID, card: CGRect)] = []
   /// 还在往下落的那几张（挂上去那一下，拍板的物理）
   private var falling: [UUID: Falling] = [:]
   /// 每帧走一步的表；全停了就停表（Whisker §8：不能有常驻的循环动画）
   private var link: CADisplayLink?
+  /// 上一帧的时刻和攒下的零头：物理按真过去的时间走几步（ClotheslineRope.steps）
+  private var lastTick: CFTimeInterval?
+  private var carry: TimeInterval = 0
 
   /// 一张正在落下来的卡片：离挂点还有多远（负数 = 在上面）、这一帧多快
   private struct Falling {
@@ -151,12 +152,12 @@ import SwiftUI
     }
   }
 
-  /// 改完标注、缩略图重做好了（AppDelegate 转过来）：重画那张卡、拖出去的那份也要重做
+  /// 改完标注、缩略图重做好了（AppDelegate 转过来）：重画那张卡、拖出去的那份重做（旧的那份历史在改标注那一刻
+  /// 就不给了，dragFileNow）
   func thumbnailChanged(_ id: UUID) {
     guard model.pegged.contains(id) else { return }
     model.touch()
-    model.dragFiles[id] = nil
-    guard let item = model.items.first(where: { $0.id == id }) else { return }
+    guard let item = model.item(id) else { return }
     Task { await prepareDragFile(item) }
   }
 
@@ -168,16 +169,63 @@ import SwiftUI
     updateWatching()
   }
 
-  /// 停（关掉截图功能、退出）：收起、取下全部（挂着的标记本来就不跨重启）
+  /// 停（关掉截图功能、退出）：收起、取下全部（挂着的标记本来就不跨重启），面板当场放掉（R10：原来一直留着，
+  /// 空闲回收又只在截图开着时才放它）
   func stop() {
     started = false
     awaitingCard = false
     model.setPegged([])
-    model.dragFiles = [:]
     model.hovered = nil
     falling = [:]
     hide(animated: false)
     updateWatching()
+    reclaim()
+  }
+
+  /// 鼠标监听装着没有（单测看：挂着的全没了就该拆掉）
+  var isWatchingMouse: Bool { !monitors.isEmpty }
+
+  /// 截图框选的遮罩、长截图的面板、长图标注的遮罩还在屏幕上（AppDelegate 的 isSuppressed 用；第三轮体检 R4）。
+  /// **只看这两样窗口，不看「这次截图还没完」那个标记**：框选一收起就要能出来——截完图绳子先滑下来等卡片（prepare）、
+  /// 减弱动态效果时当场挂上（peg），那时这次截图还在编码、拷贝、记历史，标记一直是真的，原来就被它挡着：
+  /// 绳子不先下来、挂上了也不出来
+  /// 长图标注的遮罩也算：开着时绳子盖上去，双击卡片会换掉遮罩、画了一半的标注不问就没了
+  static func isCovered(by windows: [NSWindow]) -> Bool {
+    windows.contains {
+      ($0 is SelectionOverlay || $0 is ScrollCapturePanel || $0 is AnnotatePanel) && $0.isVisible
+    }
+  }
+
+  /// 落到绳子上要历史那一条的编号，它在出图之后才并行记（R6：记历史不挡出图）。返回落地时调的那一下：
+  /// 记好了当场挂（和飞行卡片交接在同一刻，不隔一帧），没记好就等记完再挂（绳子已经摆出来等着了，prepare）；
+  /// 没记上（历史关着、写盘失败）就不挂。录制原来是异步赋编号、不飞的那条路同步就挂，编号永远是空的（R4）。
+  /// 拿到编号先 warm（把缩略图读进缓存）才算记好：交接那一帧卡片上就有图
+  static func pegWhenRecorded(
+    _ remembered: Task<UUID?, Never>, warm: @escaping (UUID) async -> Void = { _ in },
+    peg: @escaping (UUID) -> Void
+  ) -> () -> Void {
+    var id: UUID?
+    var recorded = false
+    var due = false
+    Task {
+      id = await remembered.value
+      if let id { await warm(id) }
+      recorded = true
+      if due, let id { peg(id) }
+    }
+    return {
+      guard recorded else {
+        due = true
+        return
+      }
+      if let id { peg(id) }
+    }
+  }
+
+  /// 历史里删掉了（历史窗口、按天数 / 总量清理、「现在清空」）：挂着的跟着取下（R10：原来只是画的时候跳过，
+  /// 编号留在 pegged 里——删光了鼠标监听也一直装着，显示着时绳子上还给它留着位置和配重）
+  func forget(_ ids: [UUID]) {
+    for id in ids where model.pegged.contains(id) { unpeg(id) }
   }
 
   /// 空闲回收：收着时把整块面板放掉（下次再建）
@@ -193,24 +241,23 @@ import SwiftUI
   // MARK: 挂上、取下
 
   /// 挂一张上去（截图 / 长截图 / 录制刚进历史的那一条）：挂满了最旧的自动取下（还在历史里，拍板 B3），
-  /// 出来摇一下、先亮 2.5 秒
-  func peg(_ id: UUID) {
+  /// 出来摇一下、先亮 2.5 秒。screen：飞行卡片落在哪块屏上（slot 照它排的；B9：原来按鼠标所在的屏取下，
+  /// 和落点不是一块屏时挂上去的位置对不上）
+  func peg(_ id: UUID, on screen: NSScreen? = nil) {
     guard started, model.history != nil else { return }
+    let screen = screen ?? screenForMouse()
     var ids = model.pegged.filter { $0 != id }
     ids.append(id)
-    ids = trimmed(ids, on: screenForMouse())
-    for dropped in Set(model.pegged).subtracting(ids) {
-      model.dragFiles[dropped] = nil
-      falling[dropped] = nil
-    }
+    ids = trimmed(ids, on: screen)
+    for dropped in Set(model.pegged).subtracting(ids) { falling[dropped] = nil }
     model.setPegged(ids)
     awaitingCard = false
     // 从挂点上方落下来（减弱动态效果时直接到位）；飞行卡片刚把它送到的就是这个高度（slot 已经抬高了）
     falling[id] = reducesMotion() ? nil : Falling(drop: -ClotheslineLayout.dropHeight)
     holdUntil = .now.advanced(by: ClotheslineLayout.pegHold)
     updateWatching()
-    if let screen = screenForMouse() { present(on: screen) }
-    if let item = model.items.first(where: { $0.id == id }) {
+    if let screen { present(on: screen) }
+    if let item = model.item(id) {
       Task { await prepareDragFile(item) }
     }
   }
@@ -220,7 +267,6 @@ import SwiftUI
   func unpeg(_ id: UUID) {
     guard model.pegged.contains(id) else { return }
     if model.hovered == id { model.hovered = nil }
-    model.dragFiles[id] = nil
     falling[id] = nil
     if let node = nodes[id], ropes.indices.contains(node.rope) {
       ropes[node.rope].setLoaded(node.index, false)
@@ -236,18 +282,23 @@ import SwiftUI
     updateWatching()
   }
 
-  /// 拖出去的那个文件（和历史窗口同一份，见 ShotHistory.dragFile）：挂上来就先备好，
-  /// 这样从绳子上拖的那一下不用等
+  /// 截图拖出去的那个文件（现合成的成品，和历史窗口同一份，见 ShotHistory.dragFile）：挂上来就先备好，
+  /// 拖的那一下不用等（卡片拖的时候找历史要：ShotHistory.dragFileNow）。录制的不先备：拖的那一下才克隆
   private func prepareDragFile(_ item: ShotHistory.Item) async {
-    guard let url = await model.history?.dragFile(for: item), model.pegged.contains(item.id)
-    else { return }
-    model.dragFiles[item.id] = url
+    guard item.filePath == nil else { return }
+    _ = await model.history?.dragFile(for: item)
+  }
+
+  /// 挂上去之前把它的缩略图读进缓存（第三轮体检：卡片的图原来要等它自己读，和飞行卡片交接那一刻先露一下深色底）
+  func warm(_ id: UUID) async {
+    guard let history = model.history, let item = history.item(id) else { return }
+    _ = await ShotThumbnails.shared.image(for: item, in: history)
   }
 
   /// 下一张挂在哪（屏幕坐标）：截图的飞行卡片照它落地（拍板 B1）。pixels 是原图的像素尺寸；
-  /// 挂不上（历史关着、绳子一张都放不下）时 nil
+  /// 挂不上（历史关着——「保留截图历史」关了也算，记不下就没有编号——、绳子一张都放不下）时 nil
   func slot(for pixels: CGSize, on screen: NSScreen) -> CGRect? {
-    guard started, model.history != nil else { return nil }
+    guard started, model.history?.isOn == true else { return nil }
     var sizes = model.items.map(\.pixelSize)
     sizes.append(pixels)
     let width = screen.frame.width
@@ -270,7 +321,7 @@ import SwiftUI
     var ids = ids
     let gap = ClotheslineLayout.gap(notch: notch(screen))
     while ids.count > 1 {
-      let sizes = ids.compactMap { id in history.items.first { $0.id == id }?.pixelSize }
+      let sizes = ids.compactMap { history.item($0)?.pixelSize }
       guard
         ClotheslineLayout.fits(sizes, width: screen.frame.width, gap: gap) < sizes.count
       else { break }
@@ -283,11 +334,13 @@ import SwiftUI
 
   /// 有一张正在飞过来：绳子先滑下来等着（2026-10-26 用户手测反馈——原来空绳时卡片先停在那儿、
   /// 过一会儿绳子才滑下来，看着像「飞到一半又回来」）。等不来（截图取消了、没拷成）就按 pegHold 自己收
-  func prepare(on screen: NSScreen) {
-    guard started, model.history != nil else { return }
+  /// 返回绳子等不等（单测看：历史关着时不等）
+  @discardableResult func prepare(on screen: NSScreen) -> Bool {
+    guard started, model.history?.isOn == true else { return false }
     awaitingCard = true
     holdUntil = .now.advanced(by: ClotheslineLayout.pegHold)
     present(on: screen)
+    return true
   }
 
   /// 全局快捷键（C1）：出来 / 收起
@@ -384,7 +437,9 @@ import SwiftUI
 
   /// 按这块宽度重排、搭绳子、把这一帧交给视图（截图自检和单测直接调它，不用真屏幕）
   func layout(width: CGFloat, gap: CGFloat) {
-    model.plan = ClotheslineLayout.plan(model.items.map(\.pixelSize), width: width, gap: gap)
+    let items = model.items
+    model.plan = ClotheslineLayout.plan(items.map(\.pixelSize), width: width, gap: gap)
+    hung = zip(model.plan.indices, model.plan.cards).map { (items[$0].id, $1) }
     if ropes.count != model.plan.ropes.count
       || zip(ropes, model.plan.ropes).contains(where: { rope, planned in
         rope.point(0) != planned.from || rope.point(rope.nodes.count - 1) != planned.to
@@ -397,10 +452,10 @@ import SwiftUI
     }
     // 每张卡挂在哪个质点上：按它静止时的中线找最近的
     var taken: [UUID: (rope: Int, index: Int)] = [:]
-    for (item, card) in zip(model.items, model.plan.cards) {
+    for (id, card) in hung {
       let side = card.midX < CGFloat(model.plan.ropes[0].to.x) ? 0 : 1
       guard ropes.indices.contains(side) else { continue }
-      taken[item.id] = (side, ropes[side].nearest(x: card.midX))
+      taken[id] = (side, ropes[side].nearest(x: card.midX))
     }
     // 挂上 / 取下的重量跟着变
     for index in ropes.indices {
@@ -424,23 +479,21 @@ import SwiftUI
   private func publish() {
     guard !reducesMotion(), !ropes.isEmpty else {
       model.ropes = model.plan.ropes.map { Self.staticPoints($0) }
-      model.hangs = zip(model.items, model.plan.cards).map {
-        Hang(id: $0.id, rect: $1, angle: 0)
-      }
+      model.hangs = hung.map { Hang(id: $0.id, rect: $0.card, angle: 0) }
       return
     }
     model.ropes = ropes.map(\.points)
-    model.hangs = zip(model.items, model.plan.cards).compactMap { item, card in
-      guard let node = nodes[item.id], ropes.indices.contains(node.rope) else { return nil }
+    model.hangs = hung.compactMap { id, card in
+      guard let node = nodes[id], ropes.indices.contains(node.rope) else { return nil }
       let point = ropes[node.rope].point(node.index)
-      let drop = falling[item.id]?.drop ?? 0
+      let drop = falling[id]?.drop ?? 0
       let rect = CGRect(
         x: point.x - card.width / 2, y: point.y + ClotheslineLayout.hangDrop + drop,
         width: card.width, height: card.height)
       let tilted =
-        Double(ropes[node.rope].angle(at: node.index)) + ClotheslineLayout.tilt(for: item.id)
+        Double(ropes[node.rope].angle(at: node.index)) + ClotheslineLayout.tilt(for: id)
       return Hang(
-        id: item.id, rect: rect,
+        id: id, rect: rect,
         angle: min(max(tilted, -ClotheslineLayout.maxTilt), ClotheslineLayout.maxTilt))
     }
   }
@@ -474,9 +527,25 @@ import SwiftUI
   private func stopTicking() {
     link?.invalidate()
     link = nil
+    lastTick = nil
+    carry = 0
   }
 
+  /// 一帧：按真过去的时间走几步物理（参数是照 60 Hz 一帧一步调的，30 Hz 时一帧走两步，P2：原来按帧走、
+  /// 掉到 30 Hz 时摆得慢一半），再把这一帧交给视图；全停了就停表
   @objc private func stepPhysics(_ link: CADisplayLink) {
+    let elapsed = lastTick.map { link.targetTimestamp - $0 } ?? ClotheslineRope.tick
+    lastTick = link.targetTimestamp
+    let steps = ClotheslineRope.steps(for: elapsed, carry: &carry)
+    guard steps > 0 else { return }
+    var moving = false
+    for _ in 0..<steps { moving = step() }
+    publish()
+    if !moving { stopTicking() }
+  }
+
+  /// 物理走一步，返回还在不在动
+  private func step() -> Bool {
     var moving = false
     // 还在落的：自由落体，碰到绳子那一刻「咬住」——把挂点压低一下，波自然沿绳子传开
     for (id, var fall) in falling {
@@ -497,8 +566,7 @@ import SwiftUI
       ropes[index].step()
       if !ropes[index].isAtRest { moving = true }
     }
-    publish()
-    if !moving { stopTicking() }
+    return moving
   }
 
   /// 面板：贴在菜单栏下沿、铺满这块屏的宽度

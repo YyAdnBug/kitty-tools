@@ -1,5 +1,6 @@
 // 截图历史窗口的界面（历史第 2 批，拍板 C1）：左边按日期分组的缩略图网格（顶上搜索和筛选），
 // 选中一条右边是大预览、信息和一排操作。模型和窗口在 ShotHistoryWindow.swift。
+// 文件末尾的 ShotThumbnail（缩略图在主线程外读、读好再画）是这里和晾衣绳的卡片共用的。
 // Whisker：系统皮肤的窗口（同设置窗、全部便签窗口），卡片圆角 card，选中那张画 2 pt 强调色描边
 // （强调色只标「现在该操作的东西」，核心 §1.2），空状态用 EmptyState。
 
@@ -110,8 +111,9 @@ struct ShotHistoryView: View {
   // MARK: 左边的网格
 
   private var grid: some View {
-    ScrollView {
-      if model.groups.isEmpty {
+    let groups = model.groups
+    return ScrollView {
+      if groups.isEmpty {
         EmptyState(symbol: "clock.arrow.circlepath", title: "还没有截图") {
           Text(
             model.search.isEmpty
@@ -120,15 +122,14 @@ struct ShotHistoryView: View {
         .padding(.top, 80)
       }
       LazyVStack(alignment: .leading, spacing: 18, pinnedViews: [.sectionHeaders]) {
-        ForEach(model.groups) { group in
+        ForEach(groups) { group in
           Section {
             LazyVGrid(
               columns: [GridItem(.adaptive(minimum: Self.cardWidth), spacing: 12)], spacing: 12
             ) {
               ForEach(group.items) { item in
                 ShotCard(
-                  item: item, chosen: model.selection == item.id,
-                  thumbnail: ShotThumbnails.shared.image(for: item, in: model.history),
+                  item: item, chosen: model.selection == item.id, history: model.history,
                   generation: model.redraws,
                   select: { model.selection = item.id }, edit: { edit(item) }
                 )
@@ -175,14 +176,16 @@ struct ShotHistoryView: View {
       ZStack {
         RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
           .fill(.quaternary.opacity(0.4))
-        if let image = ShotThumbnails.shared.image(for: item, in: model.history) {
-          Image(nsImage: image)
-            .resizable()
-            .aspectRatio(contentMode: .fit)
-            .padding(4)
-        } else {
-          Image(systemName: Self.symbol(item.kind)).font(.system(size: 28)).foregroundStyle(
-            .secondary)
+        ShotThumbnail(item: item, history: model.history, generation: model.redraws) { image in
+          if let image {
+            Image(nsImage: image)
+              .resizable()
+              .aspectRatio(contentMode: .fit)
+              .padding(4)
+          } else {
+            Image(systemName: Self.symbol(item.kind)).font(.system(size: 28)).foregroundStyle(
+              .secondary)
+          }
         }
       }
       .frame(height: 180)
@@ -268,7 +271,7 @@ struct ShotHistoryView: View {
 private struct ShotCard: View {
   let item: ShotHistory.Item
   let chosen: Bool
-  let thumbnail: NSImage?
+  let history: ShotHistory
   /// 缩略图重做了第几回（ShotThumbnails 不是 @Observable）：改完标注这一条本身没变，
   /// 不把代数摆进卡片的值里，LazyVGrid 就认为这一格没变、不重画
   /// （2026-10-26 用户手测：右边的预览变了、左边的列表没变）
@@ -281,16 +284,18 @@ private struct ShotCard: View {
       ZStack {
         RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
           .fill(.quaternary.opacity(0.4))
-        if let thumbnail {
-          Image(nsImage: thumbnail)
-            .resizable()
-            .aspectRatio(contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: Style.Radius.card - 2, style: .continuous))
-            .padding(2)
-        } else {
-          Image(systemName: ShotHistoryView.symbol(item.kind))
-            .font(.system(size: 22))
-            .foregroundStyle(.secondary)
+        ShotThumbnail(item: item, history: history, generation: generation) { thumbnail in
+          if let thumbnail {
+            Image(nsImage: thumbnail)
+              .resizable()
+              .aspectRatio(contentMode: .fit)
+              .clipShape(RoundedRectangle(cornerRadius: Style.Radius.card - 2, style: .continuous))
+              .padding(2)
+          } else {
+            Image(systemName: ShotHistoryView.symbol(item.kind))
+              .font(.system(size: 22))
+              .foregroundStyle(.secondary)
+          }
         }
         if item.kind != .shot {
           Text(item.kind.title)
@@ -318,5 +323,37 @@ private struct ShotCard: View {
     .accessibilityElement(children: .combine)
     .accessibilityLabel("\(item.kind.title)，\(ShotHistoryModel.caption(item))")
     .accessibilityAddTraits(chosen ? [.isSelected, .isButton] : .isButton)
+  }
+}
+
+/// 一条的缩略图（历史窗口的网格和预览、晾衣绳的卡片共用）：缓存里有就当场画，没有就在主线程外读盘、读好再画
+/// （P2：原来在 body 里同步读盘）。generation 变了（改完标注、缩略图重做好了）重读一次。
+/// 读回来的那张按编号记着：同一个位置换了一条（预览换了选中）时不会先露出上一条的图
+struct ShotThumbnail<Content: View>: View {
+  let item: ShotHistory.Item
+  let history: ShotHistory?
+  var generation = 0
+  @ViewBuilder let content: (NSImage?) -> Content
+  @State private var loaded: (id: UUID, image: NSImage?)?
+
+  /// 缓存里的（别处刚读好的新图也在这儿）优先，其次是自己读回来的那张（缓存满了被挤掉也还在）
+  private var image: NSImage? {
+    if let cached = ShotThumbnails.shared.cached(item.id) { return cached }
+    guard let loaded, loaded.id == item.id else { return nil }
+    return loaded.image
+  }
+
+  var body: some View {
+    content(image)
+      .task(id: Load(id: item.id, generation: generation)) {
+        guard let history else { return }
+        let image = await ShotThumbnails.shared.image(for: item, in: history)
+        loaded = (item.id, image)
+      }
+  }
+
+  private struct Load: Equatable {
+    let id: UUID
+    let generation: Int
   }
 }

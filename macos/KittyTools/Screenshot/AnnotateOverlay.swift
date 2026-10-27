@@ -252,6 +252,7 @@ import Carbon.HIToolbox
   /// 窗口里的按键（内容视图收，第 2 批标注的键也走这里）
   private func key(_ event: NSEvent) -> Bool {
     let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
+    if panel.firstResponder is EditorField { return typing(event, flags: flags) }
     switch (Int(event.keyCode), flags) {
     case (kVK_Escape, []): dismiss()
     case (kVK_Return, []), (kVK_ANSI_KeypadEnter, []): emit(.copy)
@@ -269,6 +270,22 @@ import Carbon.HIToolbox
     default: return false
     }
     if Int(event.keyCode) != kVK_Escape { armedEscape = false }  // 按了别的键就不再上膛
+    return true
+  }
+
+  /// 正在输入文字时的按键（第三轮体检 R5）：编辑键交给输入框——本 App 不激活、主菜单收不到，原来 ⌘C / ⌘S 直接出图
+  /// 关窗、⌘V ⌘A ⌘X 没反应、⌘Z 把整段字撤掉（落到了画布的撤销上）。同截图遮罩（SelectionView.performKeyEquivalent）；
+  /// ⌘Z / ⇧⌘Z 直接动输入框自己的撤销栈（NSWindow.undoFocusedText：发 undo: 动作的话窗口接走、字不变）。
+  /// 别的 ⌘ + 字母 / 数字（出图、⌘D、缩放）打字时都不认、吞掉，免得落到画布上。不带 ⌘ 的、⌘ + 方向键 / ⌫ 这类
+  /// 行编辑键（specialKey）都交回去，归输入框自己（返回 false）
+  private func typing(_ event: NSEvent, flags: NSEvent.ModifierFlags) -> Bool {
+    guard flags.contains(.command), event.specialKey == nil else { return false }
+    let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+    if key == "z", flags.subtracting(.shift) == .command {
+      if !panel.undoFocusedText(redo: flags.contains(.shift)) { NSSound.beep() }
+    } else if flags == .command, let action = OverlayPanel.editActions[key] {
+      _ = OverlayPanel.sendEditAction(action, from: panel.contentView)
+    }
     return true
   }
 

@@ -114,8 +114,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// （设置 › 截图「截完图放哪」）。截图这个功能开着才起，鼠标停到菜单栏那一条上才滑下来
   private lazy var clothesline: Clothesline = {
     let line = Clothesline(history: shotHistory)
+    // 看框选遮罩 / 长截图面板 / 长图标注遮罩在不在屏幕上，不看 isCapturing（第三轮体检 R4：框选收起后这次截图
+    // 还在出图、记历史，看标记的话绳子不先下来、挂上了也不出来）
     line.isSuppressed = { [unowned self] in
-      isCapturing || statusScreen.isActive || OverlayPanel.isSelectingRegion(in: NSApp.windows)
+      statusScreen.isActive || Clothesline.isCovered(by: NSApp.windows)
         || (Feature.launchpad.isOn && launchpad.isOpen)
     }
     line.onHide = { [unowned self] in idleReclaim.schedule() }
@@ -258,7 +260,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func reclaimIdleMemory() {
     ThumbnailView.dropPreviews()
     if Feature.dockPreview.isOn { dockPreview.reclaim() }
-    if Feature.screenshot.isOn { clothesline.reclaim() }
+    // 截图关着也放（R10：原来只在开着时放，关掉截图之后那块面板一直留着）；历史的缩略图只留挂在绳子上的那几张
+    clothesline.reclaim()
+    ShotThumbnails.shared.keep(only: clothesline.model.pegged)
     LinkPreview.shared.dropHeroes()
     releaseClosedNotesWindow()
     // 便签正文里解好的图片缩略图（第 7 批：按像素数算 cost，闲下来整块放掉）；浮在屏幕上的那张便签里的图留着
@@ -726,6 +730,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       shotHistoryWindow?.model.touch()
       if Feature.screenshot.isOn { clothesline.thumbnailChanged(id) }
     }
+    // 历史里删掉的（历史窗口、清理、「现在清空」）：晾衣绳上挂着的跟着取下（R10）
+    shotHistory.onRemoved = { [unowned self] ids in clothesline.forget(ids) }
     shelf.copyFile = { [unowned self] url in
       Paster.write(files: [url])
       if recordsClipboard { clipboardStore.recordFiles([url]) }
@@ -877,6 +883,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if turnedOff.contains(.screenshot) {
       if !pins.panels.isEmpty { pins.closeAll() }
       clothesline.stop()
+      // 截图历史窗口、长图标注也收（R10：原来关掉截图它们还开着、还能出图）；历史窗口走自己的 onClose 清缓存
+      shotHistoryWindow?.window.close()
+      annotateOverlay?.close()
     }
     if turnedOff.contains(.record) {
       // 正在录：照常停止并收尾（文件存好、飞出卡片，同退出时）；待录的控制条直接收掉
@@ -1660,29 +1669,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       case .capture(let capture):
         UserDefaults.standard.set(
           NSStringFromRect(capture.frame), forKey: Prefs.screenshotLastRegion)
+        // 先出图、历史在后面并行记（第三轮体检 R6：原来先等历史写完盘才拷贝 / 存储 / 钉图）；
+        // 拷贝 / 存储编好的那份 PNG 历史直接拿去当原图，不再编一遍
         switch capture.action {
         case .copy:
           let land = captured(capture.image, scale: capture.scale, frame: capture.frame)
-          let id = await remember(capture)
-          if let png = await copyImage(capture.image, scale: capture.scale) {
-            land(.copied, png, id)
-          }
+          guard let png = await encodePNG(capture.image, scale: capture.scale) else { return }
+          let remembered = remember(capture, png: png)
+          await copyPNG(png)
+          land(.copied, png, remembered)
         case .pin:
           FlyCard.playShutter()
-          await remember(capture, pinned: true)
           pins.pin(capture.image, frame: capture.frame)
+          remember(capture, pinned: true)
         case .save:
           let land = captured(capture.image, scale: capture.scale, frame: capture.frame)
-          let id = await remember(capture)
-          if let saved = await saveImage(capture.image, scale: capture.scale, asking: false) {
-            land(.saved(saved.url), saved.png, id)
-            if let id { shotHistory.markSaved(id, to: saved.url) }
+          guard let png = await encodePNG(capture.image, scale: capture.scale) else { return }
+          let remembered = remember(capture, png: png)
+          if let saved = await savePNG(png, asking: false) {
+            land(.saved(saved), png, remembered)
+            markSaved(remembered, at: saved)
           }
         case .saveAs:
           FlyCard.playShutter()
-          let id = await remember(capture)
-          if let saved = await saveImageAs(capture.image, scale: capture.scale), let id {
-            shotHistory.markSaved(id, to: saved)
+          guard let png = await encodePNG(capture.image, scale: capture.scale) else { return }
+          let remembered = remember(capture, png: png)
+          if let saved = await saveImageAs(capture.image, png: png) {
+            markSaved(remembered, at: saved)
           }
         case .recognize: await copyRecognizedText(in: capture.image)
         case .translate: await translateImage(capture.image)
@@ -1860,42 +1873,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let seconds = Int(result.duration.components.seconds)
     let audio = medium == .audio
     // 录制的也进同一个历史（拍板 B1）：只记文件路径和一张封面，不复制那个文件。
-    // 挂到晾衣绳上时要它的编号（闭包按引用拿着，记完才有）
-    var pegID: UUID?
-    Task {
-      pegID = await shotHistory.record(
-        file: file, poster: result.poster, kind: audio ? .audio : .video,
-        source: frontmostAppName())
+    // 挂到晾衣绳上要它的编号：记完再挂（R4：原来异步赋值、不飞的那条路同步就挂，编号一定是空的，绳子空着下来又收回）
+    let source = frontmostAppName()
+    let remembered = Task {
+      await shotHistory.record(
+        file: file, poster: result.poster, kind: audio ? .audio : .video, source: source)
     }
     let size = audio ? AudioRecorder.posterSize : nil
     let pixels = result.poster.map { CGSize(width: $0.width, height: $0.height) } ?? size ?? .zero
-    let (placement, slot) = shotLanding(pixels: pixels, frame: result.region)
+    let landing = shotLanding(pixels: pixels, frame: result.region)
+    let slot = landing.slot
+    let peg = pegger(remembered, on: landing.screen)
     let flies = result.poster != nil && !Style.reduceMotion
     let linger: (CGRect, FlyCard.Badge) -> Void = { [weak self] rect, _ in
       guard let self else { return }
-      switch placement {
+      switch landing.placement {
       case .corner:
         shelf.add(
           recording: file, seconds: seconds, audio: audio, poster: result.poster,
           source: result.region, at: rect, fadesIn: !flies)
-      case .clothesline: if let pegID { clothesline.peg(pegID) }
+      case .clothesline: peg()
       case .none: break
       }
     }
-    let keepsThumbnail = placement != .none
+    let keepsThumbnail = landing.placement != .none
     guard flies, let poster = result.poster else {
       if keepsThumbnail, let rect = slot ?? FlyCard.landingRect(for: result.region, size: size) {
         linger(rect, .saved(file))
       }
       return false
     }
-    let landing = FlyCard.fly(
+    let flight = FlyCard.fly(
       poster, from: result.region, size: size, to: slot,
       linger: keepsThumbnail ? linger : nil,
       seconds: seconds, audio: audio)
-    landing.onShow = { [weak self] in self?.statusItem?.pop() }
+    flight.onShow = { [weak self] in self?.statusItem?.pop() }
     // 文件已经存好了：直接给角标（落地时弹出来）；结果由调用方说（带时长，或中断的岛）
-    landing.land(.saved(file), announces: false)
+    flight.land(.saved(file), announces: false)
     return true
   }
 
@@ -1925,27 +1939,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       pins.resume()
       if Feature.notes.isOn { noteEdge?.floats.resume() }  // 便签关着时它们是藏着的，别放出来
       guard let result = finished else { return }
+      // 同截图：先出图、历史在后面并行记，拷贝 / 存储编好的那份历史直接用（R6，长图编一遍要好几百毫秒）
       switch result.action {
       case .copy:
         let land = captured(result.image, scale: result.scale, frame: region)
-        let id = await rememberScroll(result, region: region)
-        if let png = await copyImage(result.image, scale: result.scale) { land(.copied, png, id) }
+        guard let png = await encodePNG(result.image, scale: result.scale) else { return }
+        let remembered = rememberScroll(result, png: png, region: region)
+        await copyPNG(png)
+        land(.copied, png, remembered)
       case .save:
         let land = captured(result.image, scale: result.scale, frame: region)
-        let id = await rememberScroll(result, region: region)
-        if let saved = await saveImage(result.image, scale: result.scale, asking: false) {
-          land(.saved(saved.url), saved.png, id)
-          if let id { shotHistory.markSaved(id, to: saved.url) }
+        guard let png = await encodePNG(result.image, scale: result.scale) else { return }
+        let remembered = rememberScroll(result, png: png, region: region)
+        if let saved = await savePNG(png, asking: false) {
+          land(.saved(saved), png, remembered)
+          markSaved(remembered, at: saved)
         }
       case .saveAs:
         FlyCard.playShutter()
-        let id = await rememberScroll(result, region: region)
-        if let saved = await saveImageAs(result.image, scale: result.scale), let id {
-          shotHistory.markSaved(id, to: saved)
+        guard let png = await encodePNG(result.image, scale: result.scale) else { return }
+        let remembered = rememberScroll(result, png: png, region: region)
+        if let saved = await saveImageAs(result.image, png: png) {
+          markSaved(remembered, at: saved)
         }
       case .annotate:
-        let id = await rememberScroll(result, region: region)
-        openAnnotate(result.image, scale: result.scale, history: id)
+        // 遮罩先开（历史的任务这时还没跑）；遮罩里出图时要的编号那时早记好了
+        let remembered = rememberScroll(result, region: region)
+        openAnnotate(result.image, scale: result.scale, history: { await remembered.value })
       }
     } catch {
       pins.resume()
@@ -1954,23 +1974,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
-  /// 长截图进历史（拼好的那张没有标注；标注窗口里改完了再回写）
-  @discardableResult private func rememberScroll(_ result: ScrollCapture.Result, region: CGRect)
-    async -> UUID?
-  {
-    await shotHistory.record(
-      result.image, scale: result.scale, kind: .scroll, source: frontmostAppName(), frame: region)
+  /// 长截图进历史（拼好的那张没有标注；标注窗口里改完了再回写）。同 remember：并行记、png 现成的就直接用
+  private func rememberScroll(
+    _ result: ScrollCapture.Result, png: Data? = nil, region: CGRect
+  ) -> Task<UUID?, Never> {
+    let source = frontmostAppName()
+    return Task {
+      await shotHistory.record(
+        result.image, png: png, composed: result.image, scale: result.scale, kind: .scroll,
+        source: source, frame: region)
+    }
   }
 
   /// 记进截图历史（2026-10-26 拍板）：存没画标注的那张 + 标注，成品用时再合成；识字、翻译不记（不产出图）。
-  /// 返回这一条的 id（历史关着时是 nil）
+  /// **不挡出图**（第三轮体检 R6）：调用方先出图，这里在后面并行记；返回的任务给要编号的那几样（挂晾衣绳、记存到哪），
+  /// 编号是 nil = 没记（历史关着、写盘失败）。png 是拷贝 / 存储已经编好的那份：没画标注时原图就是它，直接共用
+  /// （历史也按 72 × 倍率的 DPI 编，两份一模一样）；缩略图照成品图（capture.image）缩，不再合成一遍
   @discardableResult private func remember(
-    _ capture: RegionSelector.Capture, pinned: Bool = false
-  ) async -> UUID? {
-    await shotHistory.record(
-      capture.original ?? capture.image, scale: capture.scale, kind: .shot,
-      annotations: capture.annotations, source: frontmostAppName(), pinned: pinned,
-      frame: capture.frame)
+    _ capture: RegionSelector.Capture, png: Data? = nil, pinned: Bool = false
+  ) -> Task<UUID?, Never> {
+    let original = capture.original ?? capture.image
+    let shared = original === capture.image ? png : nil
+    let source = frontmostAppName()
+    return Task {
+      await shotHistory.record(
+        original, png: shared, composed: capture.image, scale: capture.scale, kind: .shot,
+        annotations: capture.annotations, source: source, pinned: pinned, frame: capture.frame)
+    }
+  }
+
+  /// 历史那一条记好了再记上存到哪（要等编号，R6）：不挡这次截图收尾
+  private func markSaved(_ remembered: Task<UUID?, Never>, at url: URL) {
+    Task { if let id = await remembered.value { shotHistory.markSaved(id, to: url) } }
+  }
+
+  /// 落到晾衣绳上：历史那一条记好了、缩略图读进缓存了才挂（Clothesline.pegWhenRecorded：交接那一帧卡片上就有图），
+  /// 挂在飞行卡片落的那块屏上
+  private func pegger(_ remembered: Task<UUID?, Never>, on screen: NSScreen?) -> () -> Void {
+    Clothesline.pegWhenRecorded(
+      remembered, warm: { [weak self] id in await self?.clothesline.warm(id) },
+      peg: { [weak self] id in self?.clothesline.peg(id, on: screen) })
   }
 
   /// 截的时候前台是哪个 App（历史里显示来源用；本 App 从不激活，所以这就是用户正在用的那个）
@@ -1992,38 +2035,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if let window = shotHistoryWindow { return window.show() }
     let window = ShotHistoryWindow(model: model)
     window.onClose = { [weak self] in
-      self?.shotHistoryWindow = nil
-      // 晾衣绳挂着的那几张还在用这份缓存：只在它空着时清
-      if self?.clothesline.isEmpty ?? true { ShotThumbnails.shared.clear() }
+      guard let self else { return }
+      shotHistoryWindow = nil
+      // 缩略图缓存只留晾衣绳挂着的那几张（P2：原来绳子上挂着一张就整个不清）
+      ShotThumbnails.shared.keep(only: clothesline.model.pegged)
     }
     shotHistoryWindow = window
     window.show()
   }
 
-  /// 历史里一条的那几样操作：历史窗口和晾衣绳共用一份（只接一次）
+  /// 历史里一条的那几样操作：历史窗口和晾衣绳共用一份（只接一次）。
+  /// 读原图、缩略图都在主线程外（R6：原来点一下「改标注」、单击晾衣绳上带标注的那张，主线程上整张解码）
   private lazy var shotActions: ShotActions = {
     var actions = ShotActions()
     actions.copy = { [unowned self] item in
-      // 录制的那几条拷的是文件（同常驻缩略图的视频卡，C8-a：点了才进剪贴板历史）
-      if let path = item.filePath {
-        let url = URL(filePath: path)
-        guard ShotHistory.fileExists(item) else { return missingShotFile() }
-        Paster.write(files: [url])
-        if recordsClipboard { clipboardStore.recordFiles([url]) }
-        island.show(
-          "已复制\(item.kind.title)", detail: url.lastPathComponent,
-          leading: shotHistory.thumbnail(for: item.id).map { Island.thumbnail(of: $0) } ?? .tone)
-        return
-      }
-      guard let image = shotHistory.composed(item) else { return missingShot() }
       Task {
+        // 录制的那几条拷的是文件（同常驻缩略图的视频卡，C8-a：点了才进剪贴板历史）
+        if let path = item.filePath {
+          let url = URL(filePath: path)
+          guard ShotHistory.fileExists(item) else { return missingShotFile() }
+          Paster.write(files: [url])
+          if recordsClipboard { clipboardStore.recordFiles([url]) }
+          let poster = await shotHistory.thumbnail(for: item.id)
+          island.show(
+            "已复制\(item.kind.title)", detail: url.lastPathComponent,
+            leading: poster.map { Island.thumbnail(of: $0) } ?? .tone)
+          return
+        }
+        guard let image = await shotHistory.composed(item) else { return missingShot() }
         guard await copyImage(image, scale: item.scale) != nil else { return }
         island.show("已复制截图", leading: Island.thumbnail(of: image))
       }
     }
     actions.save = { [unowned self] item in
-      guard let image = shotHistory.composed(item) else { return missingShot() }
       Task {
+        guard let image = await shotHistory.composed(item) else { return missingShot() }
         guard let saved = await saveImage(image, scale: item.scale, asking: false) else { return }
         shotHistory.markSaved(item.id, to: saved.url)
         island.show(
@@ -2032,36 +2078,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
     }
     actions.saveAs = { [unowned self] item in
-      guard let image = shotHistory.composed(item) else { return missingShot() }
       Task {
+        guard let image = await shotHistory.composed(item) else { return missingShot() }
         if let saved = await saveImageAs(image, scale: item.scale) {
           shotHistory.markSaved(item.id, to: saved)
         }
       }
     }
     actions.pin = { [unowned self] item in
-      guard let image = shotHistory.composed(item) else { return missingShot() }
-      // 钉回当初那一块（拍板 B2）；没记位置的（老条目）钉在可见区中央，同「钉住剪贴板里的图」
-      let frame =
-        item.frame
-        ?? PinBoard.clipboardFrame(
-          pixels: CGSize(width: image.width, height: image.height),
-          scale: item.scale, visible: (NSScreen.main ?? NSScreen.screens[0]).visibleFrame,
-          pinned: pins.panels.map(\.frame))
-      pins.pin(image, frame: frame)
-      shotHistory.markPinned(item.id)
+      Task {
+        guard let image = await shotHistory.composed(item) else { return missingShot() }
+        // 钉回当初那一块（拍板 B2）；没记位置的（老条目）钉在可见区中央，同「钉住剪贴板里的图」
+        let frame =
+          item.frame
+          ?? PinBoard.clipboardFrame(
+            pixels: CGSize(width: image.width, height: image.height),
+            scale: item.scale, visible: (NSScreen.main ?? NSScreen.screens[0]).visibleFrame,
+            pinned: pins.panels.map(\.frame))
+        pins.pin(image, frame: frame)
+        shotHistory.markPinned(item.id)
+      }
     }
     actions.recognize = { [unowned self] item in
-      guard let image = shotHistory.composed(item) else { return missingShot() }
-      Task { await copyRecognizedText(in: image) }
+      Task {
+        guard let image = await shotHistory.composed(item) else { return missingShot() }
+        await copyRecognizedText(in: image)
+      }
     }
     actions.notice = { [unowned self] text, warning in
       island.show(text, tone: warning ? .warning : .info)
     }
     actions.edit = { [unowned self] item in
-      guard let original = shotHistory.image(for: item.id) else { return missingShot() }
-      openAnnotate(
-        original, scale: item.scale, history: item.id, annotations: item.annotations)
+      Task {
+        guard let original = await shotHistory.image(for: item.id) else { return missingShot() }
+        openAnnotate(
+          original, scale: item.scale, history: { item.id }, annotations: item.annotations)
+      }
     }
     actions.forget = { [unowned self] item in showShotHistory(deleting: item) }
     actions.openHistory = { [unowned self] in showShotHistory() }
@@ -2089,15 +2141,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   /// 长图标注（2026-10-26 拍板）：拼好的长图在自己的窗口里标注，出图走截图那条路、用刘海说结果（同钉图，不飞卡片：
-  /// 这时选区多半已经不在眼前了）。一次只开一扇，再开一次就把前一扇换掉
+  /// 这时选区多半已经不在眼前了）。一次只开一扇，再开一次就把前一扇换掉。
+  /// history：它在历史里是哪一条（刚拼好的长截图是并行记的，出图时等它记完拿编号，R6）
   private func openAnnotate(
-    _ image: CGImage, scale: CGFloat, history: UUID? = nil, annotations: [Annotation] = []
+    _ image: CGImage, scale: CGFloat, history: (() async -> UUID?)? = nil,
+    annotations: [Annotation] = []
   ) {
     annotateOverlay?.close()
     let editor = AnnotateOverlay(image: image, scale: scale, annotations: annotations) {
       [unowned self] action, image, scale, annotations in
-      // 改完的标注回写到历史那一条（拍板 C4：更新同一条，不新建）
-      if let history { shotHistory.update(history, annotations: annotations) }
+      // 改完的标注回写到历史那一条（拍板 C4：更新同一条，不新建），缩略图照这张成品缩、不再读原图重合成（R6）。
+      // 编号要等历史记完（刚拼好的长截图是并行记的）：另起任务等，不挡出图（同截图那条路）
+      let remembered = Task { await history?() }
+      Task {
+        if let id = await remembered.value {
+          shotHistory.update(id, annotations: annotations, composed: image)
+        }
+      }
       Task {
         switch action {
         case .copy:
@@ -2105,13 +2165,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           island.show("已复制长截图", leading: Island.thumbnail(of: image))
         case .save:
           guard let saved = await saveImage(image, scale: scale, asking: false) else { return }
-          if let history { shotHistory.markSaved(history, to: saved.url) }
+          markSaved(remembered, at: saved.url)
           island.show(
             FlyCard.Badge.saved(saved.url).title, detail: saved.url.lastPathComponent,
             leading: Island.thumbnail(of: image), actions: .file(saved.url))
         case .saveAs:
-          if let saved = await saveImageAs(image, scale: scale), let history {
-            shotHistory.markSaved(history, to: saved)
+          if let saved = await saveImageAs(image, scale: scale) {
+            markSaved(remembered, at: saved)
           }
         case .recognize: await copyRecognizedText(in: image)
         case .translate, .pin: break  // 长图的工具栏里没有这两样
@@ -2265,14 +2325,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       symbol: codes.isEmpty ? nil : "qrcode")
   }
 
-  /// 截图复制：PNG 写进剪贴板（经 Paster，watcher 会跳过），所以自己记进剪贴板历史。返回编码好的 PNG（常驻缩略图接着用，
-  /// 不再编码一遍），失败 nil
-  @discardableResult
-  private func copyImage(_ image: CGImage, scale: CGFloat) async -> Data? {
+  /// 编成 PNG（截图那条路上拷贝 / 存储 / 常驻缩略图 / 历史共用这一份，R6）；失败时岛说一声
+  private func encodePNG(_ image: CGImage, scale: CGFloat) async -> Data? {
     guard let png = await ScreenshotOutput.png(image, scale: scale) else {
       island.show("截图编码失败", detail: "请重试", tone: .error)
       return nil
     }
+    return png
+  }
+
+  /// 截图复制：PNG 写进剪贴板（经 Paster，watcher 会跳过），所以自己记进剪贴板历史。返回编码好的 PNG，失败 nil
+  @discardableResult
+  private func copyImage(_ image: CGImage, scale: CGFloat) async -> Data? {
+    guard let png = await encodePNG(image, scale: scale) else { return nil }
     await copyPNG(png)
     return png
   }
@@ -2291,20 +2356,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func saveImage(_ image: CGImage, scale: CGFloat, asking: Bool) async -> (
     url: URL, png: Data
   )? {
-    guard let png = await ScreenshotOutput.png(image, scale: scale) else {
-      island.show("截图编码失败", detail: "请重试", tone: .error)
-      return nil
-    }
+    guard let png = await encodePNG(image, scale: scale) else { return nil }
     return await savePNG(png, asking: asking).map { ($0, png) }
   }
 
   /// 另存为（截图、长截图、钉图）：不飞卡片、不进常驻缩略图，存好了用刘海说。返回存到哪（取消、失败是 nil）
   @discardableResult private func saveImageAs(_ image: CGImage, scale: CGFloat) async -> URL? {
-    guard let saved = await saveImage(image, scale: scale, asking: true) else { return nil }
+    guard let png = await encodePNG(image, scale: scale) else { return nil }
+    return await saveImageAs(image, png: png)
+  }
+
+  /// 另存为编好的那份（截图那条路上和历史共用一份 PNG，R6）；image 只给岛上的缩略图
+  private func saveImageAs(_ image: CGImage, png: Data) async -> URL? {
+    guard let url = await savePNG(png, asking: true) else { return nil }
     island.show(
-      "已保存", detail: saved.url.lastPathComponent, leading: Island.thumbnail(of: image),
-      actions: .file(saved.url))
-    return saved.url
+      "已保存", detail: url.lastPathComponent, leading: Island.thumbnail(of: image),
+      actions: .file(url))
+    return url
   }
 
   /// 存编码好的 PNG；返回存到的文件（取消、失败为 nil）。失败时截图改放进剪贴板，别让这张图就这么丢了
@@ -2318,62 +2386,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
-  /// 截图落地：快门声 + 飞行卡片（遮罩刚收起就飞，不等编码）。返回的 land 在复制 / 保存成功后调，给卡片角标和编码好的
-  /// PNG，角标弹完后交给常驻缩略图（ShotShelf：拷贝、存储、拖出都用这份 PNG，不留整张解码的图）；减弱动态效果时不飞，
-  /// land 时缩略图直接在角落淡入。失败不调（另有提示）
+  /// 截图落地：快门声 + 飞行卡片（遮罩刚收起就飞，不等编码）。返回的 land 在复制 / 保存成功后调，给卡片角标、编码好的
+  /// PNG 和记历史的那个任务，角标弹完后交给常驻缩略图（ShotShelf：拷贝、存储、拖出都用这份 PNG，不留整张解码的图）
+  /// 或者挂到晾衣绳上（要历史的编号，记好了才挂，pegger）；减弱动态效果时不飞，land 时缩略图直接在角落淡入。
+  /// 失败不调（另有提示）
   private func captured(_ image: CGImage, scale: CGFloat, frame: CGRect) -> (
-    FlyCard.Badge, Data, UUID?
+    FlyCard.Badge, Data, Task<UUID?, Never>
   ) -> Void {
     FlyCard.playShutter()
     var png = Data()
-    // 挂到晾衣绳上的那一条是哪条历史（land 时才知道，闭包按引用拿着它）
-    var pegID: UUID?
+    // 挂到晾衣绳上的那一下（land 时才有记历史的任务，闭包按引用拿着它）
+    var peg: () -> Void = {}
     let pixels = CGSize(width: image.width, height: image.height)
-    let (placement, slot) = shotLanding(pixels: pixels, frame: frame)
+    let landing = shotLanding(pixels: pixels, frame: frame)
     let linger: (CGRect, FlyCard.Badge) -> Void = { [weak self] rect, badge in
       guard let self else { return }
-      switch placement {
+      switch landing.placement {
       case .corner: shelf.add(image, png: png, scale: scale, source: frame, at: rect, badge: badge)
-      case .clothesline: if let pegID { clothesline.peg(pegID) }
+      case .clothesline: peg()
       case .none: break
       }
     }
     // 设置 › 截图「截完图放哪」选了「都不要」（体检 D18 原来那个开关，晾衣绳拍板 B1 升成三选一）：
     // 卡片落地弹完角标停 0.9 s 自己滑走（不给 linger）；减弱动态效果时只有岛
-    let keeps = placement != .none
+    let keeps = landing.placement != .none
     guard Style.reduceMotion else {
-      let landing = FlyCard.fly(image, from: frame, to: slot, linger: keeps ? linger : nil)
-      landing.onShow = { [weak self] in self?.statusItem?.pop() }
-      return { badge, data, history in
+      let flight = FlyCard.fly(image, from: frame, to: landing.slot, linger: keeps ? linger : nil)
+      flight.onShow = { [weak self] in self?.statusItem?.pop() }
+      return { [weak self] badge, data, remembered in
         png = data
-        pegID = history
-        landing.land(badge)
+        if let self { peg = pegger(remembered, on: landing.screen) }
+        flight.land(badge)
       }
     }
-    return { [weak self] badge, data, history in
+    return { [weak self] badge, data, remembered in
+      guard let self else { return }
       png = data
-      pegID = history
+      peg = pegger(remembered, on: landing.screen)
       // 不飞就没有落地的角标：结果用刘海说（Whisker：减弱动态效果时飞行卡片改成轻提示；岛自己会播报）
       let actions: [Island.Action] = if case .saved(let url) = badge { .file(url) } else { [] }
-      self?.island.show(badge.title, leading: Island.thumbnail(of: image), actions: actions)
-      guard keeps, let rect = slot ?? FlyCard.landingRect(for: frame) else { return }
+      island.show(badge.title, leading: Island.thumbnail(of: image), actions: actions)
+      guard keeps, let rect = landing.slot ?? FlyCard.landingRect(for: frame) else { return }
       linger(rect, badge)
     }
   }
 
   /// 截完图放哪（晾衣绳拍板 B1）和落点：挂晾衣绳时落在绳子上那个位置（挂不上——历史关着、绳子一张都放不下——
-  /// 就当「都不要」）；角落的缩略图和「都不要」按原来的右下角落点（nil = FlyCard 自己算）
-  private func shotLanding(pixels: CGSize, frame: CGRect) -> (Prefs.ShotPlacement, CGRect?) {
+  /// 就当「都不要」）；角落的缩略图和「都不要」按原来的右下角落点（nil = FlyCard 自己算）。
+  /// screen 是落在哪块屏上：挂的时候照它排（B9：原来挂的时候按鼠标所在的屏取下，和落点不是一块屏就对不上）
+  private func shotLanding(pixels: CGSize, frame: CGRect) -> (
+    placement: Prefs.ShotPlacement, slot: CGRect?, screen: NSScreen?
+  ) {
     let placement = Prefs.ShotPlacement.current()
     guard placement == .clothesline, Feature.screenshot.isOn,
       let screen = NSScreen.screens.first(where: {
         $0.frame.contains(CGPoint(x: frame.midX, y: frame.midY))
       }) ?? NSScreen.main,
       let slot = clothesline.slot(for: pixels, on: screen)
-    else { return (placement == .clothesline ? .none : placement, nil) }
+    else { return (placement == .clothesline ? .none : placement, nil, nil) }
     // 绳子先滑下来等着（这会儿卡片才刚起飞）：空绳时原来是卡片先停在那儿、绳子过一会儿才来
     clothesline.prepare(on: screen)
-    return (.clothesline, slot)
+    return (.clothesline, slot, screen)
   }
 
   /// "#RRGGBB" → 色块（取色的轻提示用）

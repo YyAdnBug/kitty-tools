@@ -2233,12 +2233,16 @@ final class SelectionView: NSView, NSTextViewDelegate {
     }
     let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
     let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
-    // 输入文字 / 尺寸时：⌘C / ⌘V / ⌘Z 等发给输入框（本 App 不激活，主菜单收不到）
+    // 输入文字 / 尺寸时：⌘C / ⌘V / ⌘X / ⌘A 发给输入框（本 App 不激活，主菜单收不到）；⌘Z / ⇧⌘Z 直接动输入框自己的
+    // 撤销栈（NSWindow.undoFocusedText，第三轮体检：原来发 undo: / redo: 动作，顺着响应链到头是窗口接、字不变）
     if editor != nil || sizeField.isEditing {
-      let action =
-        flags == [.command, .shift] && key == "z"
-        ? Selector(("redo:")) : flags == .command ? OverlayPanel.editActions[key] : nil
-      guard let action else { return super.performKeyEquivalent(with: event) }
+      if key == "z", flags.subtracting(.shift) == .command {
+        if window?.undoFocusedText(redo: flags.contains(.shift)) != true { NSSound.beep() }
+        return true
+      }
+      guard flags == .command, let action = OverlayPanel.editActions[key] else {
+        return super.performKeyEquivalent(with: event)
+      }
       return OverlayPanel.sendEditAction(action, from: self)
     }
     guard isAdjusting else { return super.performKeyEquivalent(with: event) }

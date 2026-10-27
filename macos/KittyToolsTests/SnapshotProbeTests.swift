@@ -4232,6 +4232,8 @@ struct SnapshotProbeTests {
           source: "Safari", bytes: png.count))
     }
     history.seed(items)
+    // 缩略图在主线程外读、读好才画（ShotThumbnail）：先读进缓存，屏外渲染的第一帧就有图
+    for item in items { _ = await ShotThumbnails.shared.image(for: item, in: history) }
     let width: CGFloat = 1512
     let size = NSSize(width: width, height: ClotheslineLayout.panelHeight(width: width))
     // 绳子的物理跑到静止再出图（真用的时候是 display link 一帧帧跑）
