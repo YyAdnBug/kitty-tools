@@ -1,14 +1,12 @@
 // 动效：mac 的七条弹簧在 Windows 上的做法（参数和规则的纯数据在 Core 的 MotionCurves）。
-// 位移和尺寸走 CurveTo：把 Core 的 SpringEase 曲线采样成 Composition 关键帧（合成器里跑，不占主线程）；
-// Appear / HeightChange 的缩放还是 Composition 的 Spring（DampingRatio = 1 − bounce、Period = duration）。
+// 位移走 CurveTo：把 Core 的 SpringEase 曲线采样成 Composition 关键帧（合成器里跑，不占主线程）。
 // 读 UISettings.AnimationsEnabled，系统关了动画效果时只留淡入淡出。
-// 各界面只用下面四个现成的用法，不要自己拼 Composition：
+// 不做「从小放到大」的缩放（0.1.0 用户定：Windows 版全 App 不要这种效果，截图卡片、钉图、轻提示原来都有）。
+// 各界面只用下面三个现成的用法，不要自己拼 Composition：
 //   Entrance  入场：透明度 0→1 + 下落 6 px
-//   Appear    小东西出现：从 0.85 放大到 1（带淡入）
+//   Appear    小东西出现：只淡入
 //   SlideTo   选中高亮滑动（把一块高亮挪到目标位置）
-//   HeightChange 高度变化，顶边不动
-// 另有 FadeIn / Fade 两个淡变（底栏就地提示）。唯一的例外是轻提示（Notice.cs）：PLAN-v7 §2.3 要求它
-// 只动 Composition 圆角矩形几何的尺寸，形状、抖动和退场都在那个文件里自己拼（曲线也用 CurveTo）。
+// 另有 FadeIn / Fade 两个淡变（底栏就地提示）。
 using System.Globalization;
 using System.Numerics;
 using KittyTools.Core;
@@ -68,28 +66,12 @@ internal static class Motion
             visual.StartAnimation("Translation", CurveTo(compositor, Vector3.Zero, spring.Value));
         });
 
-    /// <summary>小东西出现：从 0.85 放大到 1（pop），同时淡入。系统关了动画就只淡入。</summary>
+    /// <summary>小东西出现：只淡入（不再从 0.85 放大，0.1.0 用户反馈）。</summary>
     public static void Appear(FrameworkElement element)
         => WhenReady(element, visual =>
         {
             visual.Opacity = 0f;
             StartFade(visual, 1f, MotionCurves.FadeInSeconds);
-
-            var spring = MotionCurves.Effective(MotionCurve.Pop, Reduced);
-            if (spring is null)
-            {
-                return;
-            }
-
-            var center = new Vector3(
-                (float)(element.ActualSize.X / 2), (float)(element.ActualSize.Y / 2), 0);
-            visual.CenterPoint = center;
-            var scale = visual.Compositor.CreateSpringVector3Animation();
-            scale.DampingRatio = (float)spring.Value.DampingRatio;
-            scale.Period = spring.Value.Period;
-            scale.InitialValue = new Vector3(0.85f, 0.85f, 1);
-            scale.FinalValue = Vector3.One;
-            visual.StartAnimation("Scale", scale);
         });
 
     /// <summary>
@@ -147,36 +129,6 @@ internal static class Motion
             animation.InsertExpressionKeyFrame(
                 (float)t, $"this.StartingValue + (target - this.StartingValue) * {progress}", linear);
         }
-    }
-
-    /// <summary>
-    /// 高度变化（顶边不动）：把新内容按 old/new 的比例从顶边压一下再弹回 1。
-    /// 布局高度本身动不了，用 Y 向缩放近似；减弱动画时不做。
-    /// </summary>
-    public static void HeightChange(FrameworkElement element, double oldHeight, double newHeight)
-    {
-        if (Reduced || oldHeight <= 0 || newHeight <= 0 || Math.Abs(oldHeight - newHeight) < 1)
-        {
-            return;
-        }
-
-        WhenReady(element, visual =>
-        {
-            var spring = MotionCurves.Of(MotionCurve.Settle);
-            if (spring is null)
-            {
-                return;
-            }
-
-            visual.CenterPoint = new Vector3((float)(element.ActualSize.X / 2), 0, 0);
-            var from = (float)Math.Clamp(oldHeight / newHeight, 0.6, 1.4);
-            var scale = visual.Compositor.CreateSpringVector3Animation();
-            scale.DampingRatio = (float)spring.Value.DampingRatio;
-            scale.Period = spring.Value.Period;
-            scale.InitialValue = new Vector3(1, from, 1);
-            scale.FinalValue = Vector3.One;
-            visual.StartAnimation("Scale", scale);
-        });
     }
 
     /// <summary>

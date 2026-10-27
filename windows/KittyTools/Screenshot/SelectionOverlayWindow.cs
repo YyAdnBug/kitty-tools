@@ -66,12 +66,9 @@ internal sealed partial class SelectionOverlayWindow : Window
     private List<PointD>? _annotationDragPoints;
     private TextBox? _textEditor;
     private PointD _textPoint;
-    private RectD? _holeFrom;
-    private RectD? _holeTo;
-    private long _holeStarted;
-    private bool _holeAnimating;
     private bool _cloaked;
     private int _framesUntilUncloak;
+    private long _firstDrawAt;
 
     public SelectionOverlayWindow(FrozenScreen screen, ScreenshotSession session)
     {
@@ -928,20 +925,18 @@ internal sealed partial class SelectionOverlayWindow : Window
             DirectXPixelFormat.B8G8R8A8UIntNormalized);
         var ds = args.DrawingSession;
         ds.DrawImage(_bitmap, new Windows.Foundation.Rect(0, 0, width, height));
-        if (_cloaked && _framesUntilUncloak == 0)
+        if (_cloaked && _firstDrawAt == 0)
         {
-            // 画完这一帧还要等它提交上去：再过两次合成才露出来。
-            _framesUntilUncloak = 2;
+            // 画完这一帧还要等它真的上屏：至少再过 4 次合成、且至少 50 ms 才露出来。
+            // 实测（0.1.0 用户反馈「还会闪一下白」）：只等 2 次合成，3 次里 3 次整屏闪白；4 次 3 次里 0 次。
+            // 加上 50 ms 是给高刷新率屏留的（144 Hz 下 4 帧不到 30 ms）。
+            _framesUntilUncloak = 4;
+            _firstDrawAt = Environment.TickCount64;
             CompositionTarget.Rendering += OnRenderingWhileCloaked;
         }
 
         var selection = _session.SelectionScreen == _screen ? _session.Selection : (RectD?)null;
         var hoverHole = _hover is { } h ? new RectD(h.Left, h.Top, h.Width, h.Height) : (RectD?)null;
-        if (selection is null && _holeAnimating)
-        {
-            hoverHole = AnimatedHole();
-        }
-
         var hole = selection ?? hoverHole;
         if (hole is { } area)
         {
@@ -1206,7 +1201,7 @@ internal sealed partial class SelectionOverlayWindow : Window
         {
             UpdateHover();
             // 鼠标、悬停目标都没变就不重画：不动鼠标也按 50 帧 / 秒整屏重画是白烧 CPU（第二版 §2 第 6 条）。
-            if (previousCursor == _cursor && Nullable.Equals(previousHover, _hover) && !_holeAnimating)
+            if (previousCursor == _cursor && Nullable.Equals(previousHover, _hover))
             {
                 return;
             }
@@ -1445,20 +1440,12 @@ internal sealed partial class SelectionOverlayWindow : Window
                 e.Handled = true;
                 break;
             case Windows.System.VirtualKey.Escape:
+                // 按一下就退出截图（0.1.0 用户反馈：以前有选区时第一下只清选区、要按两下）。
+                // 只有正在打字时 Esc 是取消这段字（文字框自己先收到）。
                 e.Handled = true;
                 if (_textEditor is not null)
                 {
                     CancelText();
-                }
-                else if (_selectedAnnotation is not null)
-                {
-                    _selectedAnnotation = null;
-                    _canvas.Invalidate();
-                }
-                else if (_session.HasSelection)
-                {
-                    ResetAnnotations();
-                    _session.ClearSelection();
                 }
                 else
                 {
@@ -1560,52 +1547,14 @@ internal sealed partial class SelectionOverlayWindow : Window
         PinHost.Show(png, global);
     }
 
+    /// <summary>鼠标下面的窗口（挖洞用）。在窗口之间移动时洞直接跳过去，不滑（0.1.0 用户定：不学 mac S5）。</summary>
     private void UpdateHover()
     {
-        var previous = _hover;
         _hover = _windows.FirstOrDefault(window => window.Contains((int)_cursor.X, (int)_cursor.Y));
         if (_hover is { Width: > 0, Height: > 0 } && _session.HasSelection)
         {
             _hover = null;
         }
-
-        // 鼠标在窗口之间移动时，挖开的洞用 glide 弹簧滑过去（mac S5，PLAN-v2 §3.8）。
-        // 拖选区、拖手柄时洞跟着选区走，不做动画。
-        if (!Motion.Reduced && !_session.HasSelection && previous != _hover)
-        {
-            _holeFrom = previous is { } from
-                ? new RectD(from.Left, from.Top, from.Width, from.Height)
-                : _holeTo;
-            _holeTo = _hover is { } to ? new RectD(to.Left, to.Top, to.Width, to.Height) : null;
-            _holeStarted = Environment.TickCount64;
-            _holeAnimating = _holeFrom is not null && _holeTo is not null;
-        }
-    }
-
-    /// <summary>正在滑动的洞（没有起点或终点时直接给终点 / 不算）。</summary>
-    private RectD? AnimatedHole()
-    {
-        var spec = MotionCurves.Of(MotionCurve.Glide);
-        var duration = spec?.Duration ?? 0.26;
-        var t = (Environment.TickCount64 - _holeStarted) / 1000.0 / duration;
-        if (t >= 1)
-        {
-            _holeAnimating = false;
-            return _holeTo;
-        }
-
-        if (_holeFrom is not { } from || _holeTo is not { } to)
-        {
-            _holeAnimating = false;
-            return _holeTo;
-        }
-
-        var p = SpringEase.Progress(t, spec?.Bounce ?? 0.1);
-        return new RectD(
-            from.X + (to.X - from.X) * p,
-            from.Y + (to.Y - from.Y) * p,
-            from.Width + (to.Width - from.Width) * p,
-            from.Height + (to.Height - from.Height) * p);
     }
 
     private PointD Snap(PointD point)
@@ -1636,7 +1585,7 @@ internal sealed partial class SelectionOverlayWindow : Window
 
     private void OnRenderingWhileCloaked(object? sender, object args)
     {
-        if (--_framesUntilUncloak > 0)
+        if (--_framesUntilUncloak > 0 || Environment.TickCount64 - _firstDrawAt < 50)
         {
             return;
         }
