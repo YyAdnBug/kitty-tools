@@ -112,6 +112,13 @@ internal sealed partial class SelectionOverlayWindow : Window
         AppWindow.SetPresenter(presenter);
         AppWindow.IsShownInSwitchers = false;
         ExtendsContentIntoTitleBar = true;
+        // REVIEW R64 A：Alt+F4 当成 Esc：走 Finish 收掉每块屏的遮罩、把截图期间注销的热键注册回来。
+        // 以前只 Release 了这一块，会话不结束，热键全部失灵，多屏时别的屏上的遮罩还盖着。
+        AppWindow.Closing += (_, args) =>
+        {
+            args.Cancel = true;
+            _session.Finish();
+        };
 
         _hwnd = (HWND)WinRT.Interop.WindowNative.GetWindowHandle(this);
         // 直接用冻结帧里这块屏自己的缩放比例：构造时窗口还没挪到那块屏上，GetDpiForWindow 拿到的是错的
@@ -502,7 +509,9 @@ internal sealed partial class SelectionOverlayWindow : Window
 
     private void OnActivated(object sender, WindowActivatedEventArgs args)
     {
-        if (args.WindowActivationState == WindowActivationState.CodeActivated && _key)
+        // REVIEW R64 D：按键只挂在画布上。以前只有起始那块屏的遮罩在代码激活时给画布焦点；
+        // 多屏时到另一块屏上框选（点一下就激活了那扇窗），焦点没落到画布上，Enter / Esc / 1–5 都没反应。
+        if (args.WindowActivationState != WindowActivationState.Deactivated)
         {
             DispatcherQueue.TryEnqueue(() => _canvas.Focus(FocusState.Programmatic));
         }
@@ -1020,6 +1029,7 @@ internal sealed partial class SelectionOverlayWindow : Window
 
     private void OnPointerPressed(object sender, PointerRoutedEventArgs e)
     {
+        _canvas.Focus(FocusState.Pointer);
         ReadCursor();
         var point = _cursor;
         _pressed = point;

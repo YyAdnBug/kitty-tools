@@ -54,31 +54,33 @@ internal sealed class ShellRuntime
 
         try
         {
-            // 打不开时先问用户：用备份 / 重新开始 / 退出（第三版 §2.1）。
+            // 打不开时问用户：用备份 / 重新开始 / 退出（第三版 §2.1）。REVIEW R64 B：不在这里同步等对话框，
+            // 界面起来以后再问（Recovery.AskAndRepairAsync），选完会重启自己；这一次要库的功能先不起，别的照常。
             var database = Recovery.OpenWithRecovery();
             if (database is null)
             {
-                Application.Current.Exit();
-                return;
+                DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => _ = Recovery.AskAndRepairAsync());
             }
-
-            Clipboard = ClipboardService.Start(database, new ImageStore(Paths.ImagesDirectory));
-            Clipboard.Suspended = !Features.IsOn(Feature.Clipboard);
-            // 自检用：不记剪贴板（同步冒烟、内存探针这类不该把用户此刻复制的东西录进测试库）。
-            Clipboard.Paused = Paths.IsTestProfile && Environment.GetCommandLineArgs()
-                .Contains("--clipboard-paused", StringComparer.OrdinalIgnoreCase);
-            // 翻译历史和生词本用同一个库（第三版 §3.1）。
-            TranslationHistory.Start(database);
-            LauncherFavorites.Start(database);
-            // 截图历史（PLAN-v8）：同一个库的 shots 表，图在 <数据目录>\shots\。
-            ShotHistory.Start(database, DispatcherQueue.GetForCurrentThread()!);
-            // 同步（第五版）：本机编号、账本和执行层。
-            var syncDevice = SyncDevice.Start(database);
-            var syncLedger = SyncLedger.Start(database);
-            // 开着同步就马上合一轮；定时器由 Syncer 自己开 / 停（设置里后来才打开也会转起来）。
-            _ = Syncer.Start(syncDevice, syncLedger, DispatcherQueue.GetForCurrentThread()!).RoundAsync();
-            // 图片的后台识字排队（第三版 §5）。
-            OcrQueue.Start(DispatcherQueue.GetForCurrentThread()!);
+            else
+            {
+                Clipboard = ClipboardService.Start(database, new ImageStore(Paths.ImagesDirectory));
+                Clipboard.Suspended = !Features.IsOn(Feature.Clipboard);
+                // 自检用：不记剪贴板（同步冒烟、内存探针这类不该把用户此刻复制的东西录进测试库）。
+                Clipboard.Paused = Paths.IsTestProfile && Environment.GetCommandLineArgs()
+                    .Contains("--clipboard-paused", StringComparer.OrdinalIgnoreCase);
+                // 翻译历史和生词本用同一个库（第三版 §3.1）。
+                TranslationHistory.Start(database);
+                LauncherFavorites.Start(database);
+                // 截图历史（PLAN-v8）：同一个库的 shots 表，图在 <数据目录>\shots\。
+                ShotHistory.Start(database, DispatcherQueue.GetForCurrentThread()!);
+                // 同步（第五版）：本机编号、账本和执行层。
+                var syncDevice = SyncDevice.Start(database);
+                var syncLedger = SyncLedger.Start(database);
+                // 开着同步就马上合一轮；定时器由 Syncer 自己开 / 停（设置里后来才打开也会转起来）。
+                _ = Syncer.Start(syncDevice, syncLedger, DispatcherQueue.GetForCurrentThread()!).RoundAsync();
+                // 图片的后台识字排队（第三版 §5）。
+                OcrQueue.Start(DispatcherQueue.GetForCurrentThread()!);
+            }
         }
         catch (Exception ex)
         {
@@ -852,6 +854,12 @@ internal sealed class ShellRuntime
     /// <summary>后台跑一次每日备份（今天备过就直接返回）。</summary>
     private static void ScheduleBackup()
     {
+        // 库打不开、还没问用户怎么恢复的时候不备份：别拿坏的库顶掉好的备份。
+        if (Recovery.Needed is not null)
+        {
+            return;
+        }
+
         var directory = Paths.DataDirectory;
         // 设置与数据的每日自动备份（第三版 §2.2），和数据库备份同一个 backups 文件夹。
         // REVIEW R47：快照在 UI 线程上取（剪贴板列表、翻译历史的库连接只许 UI 线程碰），后台只管写文件；

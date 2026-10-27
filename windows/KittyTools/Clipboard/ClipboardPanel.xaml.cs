@@ -402,7 +402,10 @@ public sealed partial class ClipboardPanel : UserControl
         .OrderBy(entry => entry.CopiedAt)
         .ToList();
 
-    /// <summary>拖出去（第三版 §5）：文本带格式、文件给原文件、图片给临时 PNG；拖不算粘贴，不挪顺序也不记历史。</summary>
+    /// <summary>
+    /// 拖出去（第三版 §5）：文本带格式、文件给原文件、图片给一份临时副本；拖不算粘贴，不挪顺序也不记历史。
+    /// 一律请求「复制」（REVIEW R64 C）：资源管理器在同一个盘上默认是「移动」，以前会把 images 里的原图挪走、把用户的原文件搬走。
+    /// </summary>
     private void OnDragItemsStarting(object sender, DragItemsStartingEventArgs e)
     {
         var entries = e.Items.OfType<ClipRow>()
@@ -417,6 +420,7 @@ public sealed partial class ClipboardPanel : UserControl
         try
         {
             e.Data.Properties.Title = "Kitty Tools";
+            e.Data.RequestedOperation = DataPackageOperation.Copy;
             if (entries.All(entry => entry.Kind == ClipKind.Text))
             {
                 var text = MultiPaste.Merge(entries.Select(entry => entry.Text ?? string.Empty));
@@ -441,8 +445,8 @@ public sealed partial class ClipboardPanel : UserControl
                 {
                     files = entries
                         .Where(entry => entry.Kind == ClipKind.Image)
-                        .Select(entry => store.Images.PathFor(entry.Id))
-                        .Where(File.Exists)
+                        .Select(entry => DragCopy(store.Images.PathFor(entry.Id), entry))
+                        .OfType<string>()
                         .ToList();
                 }
 
@@ -456,6 +460,41 @@ public sealed partial class ClipboardPanel : UserControl
         catch (Exception ex)
         {
             Log.Warn($"clipboard.drag-failed {ex.GetType().Name}");
+        }
+    }
+
+    /// <summary>
+    /// 图片拖出去用的临时副本：%TEMP%\KittyTools-drag\Kitty Tools 图片 时间.png。拖的是副本，被「移动」走了也不碍事；
+    /// 每次拖之前顺手删掉一天前的。原图不在了返回 null。
+    /// </summary>
+    private static string? DragCopy(string source, ClipEntry entry)
+    {
+        if (!File.Exists(source))
+        {
+            return null;
+        }
+
+        try
+        {
+            var folder = Path.Combine(Path.GetTempPath(), "KittyTools-drag");
+            Directory.CreateDirectory(folder);
+            foreach (var old in Directory.EnumerateFiles(folder, "*.png"))
+            {
+                if (File.GetLastWriteTimeUtc(old) < DateTime.UtcNow.AddDays(-1))
+                {
+                    File.Delete(old);
+                }
+            }
+
+            var stamp = DateTimeOffset.FromUnixTimeMilliseconds(entry.CopiedAt).ToLocalTime();
+            var path = Path.Combine(folder, $"Kitty Tools 图片 {stamp:yyyy-MM-dd HH.mm.ss}-{entry.Id}.png");
+            File.Copy(source, path, overwrite: true);
+            return path;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"clipboard.drag-copy-failed {ex.GetType().Name}");
+            return null;
         }
     }
 
@@ -1120,7 +1159,9 @@ public sealed partial class ClipboardPanel : UserControl
 
     private void OnKeyDown(object sender, KeyRoutedEventArgs e)
     {
-        if (!_active)
+        // REVIEW R64 E：输入法组字时的 Enter / Esc / ↑↓ 是给输入法的（上屏、取消、选词），别当成粘贴、收起、换行。
+        // 0xE5 = VK_PROCESSKEY：按键先交给了输入法。
+        if (!_active || _composing || e.Key == (VirtualKey)0xE5)
         {
             return;
         }

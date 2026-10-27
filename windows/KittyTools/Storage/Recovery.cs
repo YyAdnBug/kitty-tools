@@ -6,6 +6,9 @@
 // 前两种都先把出问题的库（连 -wal、-shm）挪进 damaged-日期-时间\（一律不删），用备份时再把当时的图片拷一份进去；
 // 重新开始时图片目录和备份目录整个挪进去（旧的一整套都留着）。
 // 只问一次：恢复 / 重新开始之后再开还失败就抛出去，不循环。
+// REVIEW R64 B：启动时不当场问（以前在 UI 线程上同步等 ContentDialog：等不到，XamlRoot 也还是空的，
+// 异常被当成「退出」，App 一声不响就退了）。OpenWithRecovery 只判断、记下 Needed；界面起来以后
+// AskAndRepairAsync 再问，照选择挪开坏文件、恢复，然后重启自己（--restarted），要库的功能在新进程里正常起。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 using Microsoft.UI.Xaml;
@@ -22,7 +25,12 @@ internal static class Recovery
         Quit,
     }
 
-    /// <summary>打不开时问用户（只问一次），照选择恢复 / 重新开始后返回新的 Database；选退出返回 null。</summary>
+    /// <summary>OpenWithRecovery 返回 null 时要问的事：为什么、最近一份能用的备份、是不是整个丢了。</summary>
+    public sealed record Pending(string Reason, (string Path, DateTime Day)? Backup, bool Lost);
+
+    public static Pending? Needed { get; private set; }
+
+    /// <summary>能打开就返回库；打不开就记下 <see cref="Needed"/>、返回 null，等界面起来以后 <see cref="AskAndRepairAsync"/> 再问。</summary>
     public static Database? OpenWithRecovery()
     {
         var directory = Paths.DataDirectory;
@@ -49,12 +57,28 @@ internal static class Recovery
         }
 
         Log.Warn($"recovery.needed reason={reason} backup={backup is not null}");
-        var choice = Ask(reason, backup?.Day, lost: size is null or 0);
-        if (choice == Choice.Quit)
+        Needed = new Pending(reason, backup, Lost: size is null or 0);
+        return null;
+    }
+
+    /// <summary>界面起来以后问一次：用备份 / 重新开始就挪开坏文件、恢复、确认能打开，然后重启自己；选退出就退出。</summary>
+    public static async Task AskAndRepairAsync()
+    {
+        if (Needed is not { } pending)
         {
-            return null;
+            return;
         }
 
+        var choice = await AskAsync(pending.Reason, pending.Backup?.Day, pending.Lost);
+        if (choice == Choice.Quit)
+        {
+            ShellRuntime.Instance?.Exit();
+            return;
+        }
+
+        var directory = Paths.DataDirectory;
+        var databasePath = Paths.DatabaseFile;
+        var backup = pending.Backup;
         try
         {
             var staged = databasePath + ".restoring";
@@ -70,26 +94,33 @@ internal static class Recovery
                 File.Move(staged, databasePath, overwrite: true);
             }
 
-            var database = Database.OpenDefault();
+            // 先确认新库打得开，再重启；重启后的进程照常开库、起剪贴板这些。
+            using (Database.OpenDefault())
+            {
+            }
+
             Log.Info($"recovery.done choice={choice}");
-            return database;
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Paths.ExecutablePath, "--restarted")
+            {
+                UseShellExecute = false,
+            });
+            ShellRuntime.Instance?.Exit();
         }
         catch (Exception ex)
         {
             Log.Error("recovery.still-broken", ex);
             Show("还是打不开", ex.Message + "\n\n出问题的文件都挪开了，没有删。");
-            return null;
         }
     }
 
     /// <summary>弹框：按钮和 choices 一一对应；没有可用备份时只有「重新开始 / 退出」。</summary>
-    private static Choice Ask(string reason, DateTime? backupDay, bool lost)
+    private static async Task<Choice> AskAsync(string reason, DateTime? backupDay, bool lost)
     {
         var wording = BackupPlan.Wording(reason, backupDay, lost, DateTime.Now);
         var primary = backupDay is not null ? wording.Buttons[0] : "重新开始";
         var secondary = backupDay is not null ? "重新开始" : "退出";
         var close = backupDay is not null ? "退出" : string.Empty;
-        var choice = Prompt(wording.Title, wording.Text, primary, secondary, close);
+        var choice = await PromptAsync(wording.Title, wording.Text, primary, secondary, close);
         if (backupDay is null)
         {
             return choice switch
@@ -107,14 +138,18 @@ internal static class Recovery
         };
     }
 
-    /// <summary>用一个小窗口 + ContentDialog 问（启动早期也能用；按钮顺序固定）。</summary>
-    private static int Prompt(string title, string text, string primary, string secondary, string close)
+    /// <summary>用一个小窗口 + ContentDialog 问（按钮顺序固定）。XamlRoot 要等内容 Loaded 以后才有。</summary>
+    private static async Task<int> PromptAsync(string title, string text, string primary, string secondary, string close)
     {
         var window = new Window { Title = Paths.ProductName };
         try
         {
-            window.Content = new Grid();
+            var root = new Grid();
+            var loaded = new TaskCompletionSource();
+            root.Loaded += (_, _) => loaded.TrySetResult();
+            window.Content = root;
             window.Activate();
+            await loaded.Task;
             var dialog = new ContentDialog
             {
                 RequestedTheme = Theme.ElementTheme,
@@ -133,9 +168,9 @@ internal static class Recovery
                 SecondaryButtonText = secondary,
                 CloseButtonText = close,
                 DefaultButton = ContentDialogButton.Primary,
-                XamlRoot = (window.Content as FrameworkElement)?.XamlRoot,
+                XamlRoot = root.XamlRoot,
             };
-            var result = dialog.ShowAsync().AsTask().GetAwaiter().GetResult();
+            var result = await dialog.ShowAsync();
             return result switch
             {
                 ContentDialogResult.Primary => 0,

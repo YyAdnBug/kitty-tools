@@ -63,6 +63,13 @@ internal sealed unsafe class OverlayWindow : Window
         presenter.SetBorderAndTitleBar(true, false);
         AppWindow.SetPresenter(presenter);
         AppWindow.IsShownInSwitchers = false;
+        // REVIEW R64 A：Alt+F4 不真关（关掉以后 OverlayHost 还指着这扇窗，下次按热键就失灵到重启），当成 Esc 收起。
+        // AppWindow.Closing 只在系统入口（Alt+F4、标题栏）关的时候来，代码里的 Close() 不经过它。
+        AppWindow.Closing += (_, args) =>
+        {
+            args.Cancel = true;
+            HideOverlay(restoreForeground: true);
+        };
 
         _heightTimer = DispatcherQueue.CreateTimer();
         _heightTimer.Interval = TimeSpan.FromMilliseconds(16);

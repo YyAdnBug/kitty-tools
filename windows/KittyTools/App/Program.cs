@@ -17,8 +17,10 @@ public static class Program
             return UpdateE2E.Run(args);
         }
 
-        // 自动更新换上的新版本要等旧进程退出并放掉互斥量，所以带 --updated 时多等几秒。
-        var updated = args.Contains("--updated", StringComparer.OrdinalIgnoreCase);
+        // 自动更新换上的新版本要等旧进程退出并放掉互斥量，所以带 --updated 时多等几秒；
+        // 数据库恢复完重启自己（--restarted，REVIEW R64 B）也一样。
+        var updated = args.Contains("--updated", StringComparer.OrdinalIgnoreCase) ||
+                      args.Contains("--restarted", StringComparer.OrdinalIgnoreCase);
         if (!SingleInstance.TryStart(updated ? 8000 : 0))
         {
             return 0;

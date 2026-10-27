@@ -32,6 +32,7 @@ internal sealed unsafe partial class TranslateWindow : Window
     private readonly Button _targetPill;
     private readonly ToggleButton _pinButton;
     private readonly TextBox _source;
+    private bool _composing;
     private readonly Button _translateButton;
     private readonly StackPanel _cardsPanel;
     private readonly TextBlock _footer;
@@ -182,6 +183,8 @@ internal sealed unsafe partial class TranslateWindow : Window
             RefreshTranslateButton();
         };
         _source.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(OnSourceKeyDown), handledEventsToo: true);
+        _source.TextCompositionStarted += (_, _) => _composing = true;
+        _source.TextCompositionEnded += (_, _) => _composing = false;
         _source.Loaded += (_, _) =>
         {
             if (_visible && !_noActivate)
@@ -273,6 +276,12 @@ internal sealed unsafe partial class TranslateWindow : Window
         presenter.SetBorderAndTitleBar(true, false);
         AppWindow.SetPresenter(presenter);
         AppWindow.IsShownInSwitchers = false;
+        // REVIEW R64 A：Alt+F4 当成收起（真关了 TranslateHost 还指着这扇窗，之后的翻译热键都失灵到重启）。
+        AppWindow.Closing += (_, args) =>
+        {
+            args.Cancel = true;
+            Hide(restoreForeground: true);
+        };
 
         _hwnd = (HWND)WinRT.Interop.WindowNative.GetWindowHandle(this);
         Activated += OnActivated;
@@ -525,6 +534,12 @@ internal sealed unsafe partial class TranslateWindow : Window
 
     private void OnSourceKeyDown(object sender, KeyRoutedEventArgs e)
     {
+        // REVIEW R64 E：组字时的 Enter 是上屏，不是翻译（同剪贴板面板）。
+        if (_composing || e.Key == (VirtualKey)0xE5)
+        {
+            return;
+        }
+
         var control = IsDown(VirtualKey.Control);
         switch (e.Key)
         {
