@@ -49,7 +49,11 @@ internal sealed class ScreenshotSession
         }
     }
 
-    public ScreenshotMode Mode { get; }
+    /// <summary>截图调整时按 R / 点「录屏」会切成 Record（SwitchToRecording），别的时候不变。</summary>
+    public ScreenshotMode Mode { get; private set; }
+
+    /// <summary>尺寸胶囊锁住的比例（宽 / 高），null = 自由；框选、拖手柄都按它（mac session.lockedRatio，PLAN-v9 S4）。</summary>
+    public double? LockedRatio { get; set; }
 
     public List<FrozenScreen> Screens { get; }
 
@@ -211,7 +215,82 @@ internal sealed class ScreenshotSession
         }
     }
 
-    /// <summary>截图翻译 / 识字：松手立即确认。</summary>
+    /// <summary>
+    /// D 键（PLAN-v9 S5，mac selectLastRegion）：选中上次截的区域，落在哪块屏就在哪块屏上、那块屏的遮罩拿到键盘。
+    /// null = 没有上次区域或已不在任何屏上（调用方出提示音）；false = 在别的屏上、跳过去会清掉这边画的标注，没跳（调用方提示）。
+    /// </summary>
+    public bool? SelectLastRegion()
+    {
+        var settings = SettingsService.Current;
+        if (settings.ScreenshotLastWidth < 8 || settings.ScreenshotLastHeight < 8)
+        {
+            return null;
+        }
+
+        var global = new PixelBounds(
+            settings.ScreenshotLastX, settings.ScreenshotLastY,
+            settings.ScreenshotLastX + settings.ScreenshotLastWidth, settings.ScreenshotLastY + settings.ScreenshotLastHeight);
+        var target = _overlays.FirstOrDefault(overlay =>
+            global.Left >= overlay.ScreenBounds.Left && global.Top >= overlay.ScreenBounds.Top &&
+            global.Right <= overlay.ScreenBounds.Right && global.Bottom <= overlay.ScreenBounds.Bottom);
+        if (target is null)
+        {
+            return null;
+        }
+
+        if (HasAnnotations(besides: target))
+        {
+            return false;
+        }
+
+        SetSelection(target.Screen, new RectD(
+            global.Left - target.ScreenBounds.Left, global.Top - target.ScreenBounds.Top, global.Width, global.Height));
+        target.TakeKeyboard();
+        return true;
+    }
+
+    /// <summary>
+    /// 截图调整时按 R / 点工具栏「录屏」（mac switchToRecording）：会话切成录屏，每块屏的工具栏原地换成录制条，选区不变。
+    /// 切不了时返回原因（调用方提示音 + 顶部提示）：录屏功能关着、正在录、画了标注（录屏不带标注）、从截图历史打开的。
+    /// force 只给 --ui-snapshots 用（录屏功能默认关着也能截到录制条）。
+    /// </summary>
+    public string? SwitchToRecording(bool force = false)
+    {
+        if (Mode != ScreenshotMode.Capture)
+        {
+            return null;
+        }
+
+        if (!force && !Features.IsOn(Feature.Recording))
+        {
+            return "录屏在设置 › 通用里关着";
+        }
+
+        if (_editingId is not null)
+        {
+            return "从截图历史打开的不能录屏";
+        }
+
+        if (RecordingHost.IsRecording || AudioHost.IsRecording)
+        {
+            return "正在录制，先停掉再录";
+        }
+
+        if (_overlays.Any(overlay => overlay.HasAnnotations))
+        {
+            return "录屏不带标注，先撤销或 Esc 退出";
+        }
+
+        Mode = ScreenshotMode.Record;
+        foreach (var overlay in _overlays)
+        {
+            overlay.BecomeRecorder();
+        }
+
+        Log.Info("screenshot.switch-to-record");
+        return null;
+    }
+
     /// <summary>录屏模式：选区确认后收起遮罩，倒数 3 秒开始录这块区域（第四版）。</summary>
     public void BeginRecordingSelection()
     {
@@ -521,7 +600,7 @@ internal sealed class ScreenshotSession
         SettingsService.Save();
     }
 
-    private static PixelBounds GlobalRect(FrozenScreen screen, RectD selection)        => new(
+    private static PixelBounds GlobalRect(FrozenScreen screen, RectD selection) => new(
             screen.Bounds.Left + (int)Math.Round(selection.X),
             screen.Bounds.Top + (int)Math.Round(selection.Y),
             screen.Bounds.Left + (int)Math.Round(selection.Right),

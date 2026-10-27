@@ -37,12 +37,11 @@ internal sealed partial class SelectionOverlayWindow : Window
     /// <summary>包着画布、只管光标（CanvasControl 是 sealed，设不了 ProtectedCursor）；工具栏不在它里面，按钮上照旧是箭头。</summary>
     private readonly CursorHost _cursorHost = new();
     private InputSystemCursorShape? _cursorShape;
-    private readonly Border _toolbar;
+    private Border _toolbar;
     private readonly Border _styleTray;
     private readonly List<(AnnotationKind? Tool, Button Button)> _toolButtons = new();
     private readonly List<PixelBounds> _windows = new();
     private readonly AnnotationDocument _document = new();
-    private readonly CanvasTextFormat _text = new() { FontFamily = "Segoe UI", FontSize = 12 };
     private readonly CanvasTextFormat _small = new() { FontFamily = "Segoe UI", FontSize = 11 };
 
     private CanvasBitmap? _bitmap;
@@ -115,6 +114,7 @@ internal sealed partial class SelectionOverlayWindow : Window
         _canvas.PointerWheelChanged += OnPointerWheel;
         _canvas.IsTabStop = true;
         _canvas.KeyDown += OnKeyDown;
+        _canvas.KeyUp += OnKeyUp;
         _root = new Canvas
         {
             Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Colors.Transparent),
@@ -125,6 +125,8 @@ internal sealed partial class SelectionOverlayWindow : Window
         _root.Children.Add(_toolbar);
         _styleTray = BuildStyleTray();
         _root.Children.Add(_styleTray);
+        _sizeCapsule = BuildSizeCapsule();
+        _root.Children.Add(_sizeCapsule);
         Content = _root;
 
         var presenter = OverlappedPresenter.Create();
@@ -189,6 +191,8 @@ internal sealed partial class SelectionOverlayWindow : Window
         _canvas.PointerReleased -= OnPointerReleased;
         _canvas.PointerWheelChanged -= OnPointerWheel;
         _canvas.KeyDown -= OnKeyDown;
+        _canvas.KeyUp -= OnKeyUp;
+        _toolbarTimer?.Stop();
         _bitmap?.Dispose();
         _bitmap = null;
         _layer?.Dispose();
@@ -874,8 +878,9 @@ internal sealed partial class SelectionOverlayWindow : Window
     }
 
     /// <summary>
-    /// 工具栏改成 XAML 控件（PLAN-v2 §3.8）：两段「工具」和「动作」，悬停提示里带快捷键，
-    /// 每个按钮都有读屏名字，当前工具用品牌粉实心底。尺寸胶囊和放大镜还画在 Win2D 上。
+    /// 工具栏（mac EditorToolbar，PLAN-v9-annotate U1 / U2）：左段 10 个工具 ｜ 撤销、重做；右段识字、翻译、长截图、录屏、钉图 ｜
+    /// 存储 + ▾ ｜ 取消、拷贝（粉色实心圆钮）。翻译、录屏功能关着时没有它们的按钮。当前工具是一块在工具间滑动的底块（U3）。
+    /// 录屏模式只有录制条：四个开关 ｜ 取消、开始（粉色实心圆钮 + 圆点）。
     /// </summary>
     private Border BuildToolbar()
     {
@@ -901,6 +906,22 @@ internal sealed partial class SelectionOverlayWindow : Window
             tools.Children.Add(button);
         }
 
+        _toolChip = new Border
+        {
+            Width = 32,
+            Height = 32,
+            CornerRadius = new CornerRadius(4),
+            Background = new SolidColorBrush(Theme.AccentColor),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Center,
+            IsHitTestVisible = false,
+            Visibility = Visibility.Collapsed,
+        };
+        _chipTool = null;
+        var toolLayer = new Grid();
+        toolLayer.Children.Add(_toolChip);
+        toolLayer.Children.Add(tools);
+
         var extras = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
         _undoButton = ToolbarButton(Glyphs.Undo, "撤销（Ctrl+Z）", "撤销");
         _undoButton.Click += (_, _) => Undo();
@@ -910,18 +931,24 @@ internal sealed partial class SelectionOverlayWindow : Window
         extras.Children.Add(_redoButton);
 
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
-        var actionItems = _session.Mode == ScreenshotMode.Record
-            ? new (string, string, string, Action)[]
+        var actionItems = new List<(string, string, string, Action)>();
+        if (_session.Mode != ScreenshotMode.Record)
+        {
+            actionItems.Add((Glyphs.Ocr, "识字（O）", "识别文字", () => _ = _session.RecognizedSelectionAsync()));
+            if (Features.IsOn(Feature.Translate))
             {
-                (Glyphs.Record, "开始录屏（Enter，倒数 3 秒）", "开始录屏",
-                    () => _session.BeginRecordingSelection()),
+                actionItems.Add((Glyphs.Translate, "翻译（T）", "截图翻译", () => _ = _session.TranslateSelectionAsync()));
             }
-            : new (string, string, string, Action)[]
+
+            actionItems.Add((Glyphs.LongScreenshot, "长截图（S 向下 · Shift+S 向上 · A 自动滚）", "长截图", () => _session.BeginScrolling()));
+            if (Features.IsOn(Feature.Recording))
             {
-                (Glyphs.Ocr, "识字（O）", "识别文字", () => _ = _session.RecognizedSelectionAsync()),
-                (Glyphs.Translate, "翻译（T）", "截图翻译", () => _ = _session.TranslateSelectionAsync()),
-                (Glyphs.Pin, "钉在屏幕上（P）", "钉图", () => _ = PinSelectionAsync()),
-            };
+                actionItems.Add((Glyphs.Record, "录屏（R）", "切到录屏", SwitchToRecording));
+            }
+
+            actionItems.Add((Glyphs.Pin, "钉在屏幕上（P）", "钉图", () => _ = PinSelectionAsync()));
+        }
+
         foreach (var (glyph, tip, name, action) in actionItems)
         {
             var button = ToolbarButton(glyph, tip, name);
@@ -954,16 +981,30 @@ internal sealed partial class SelectionOverlayWindow : Window
         actions.Children.Add(close);
         if (_session.Mode != ScreenshotMode.Record)
         {
-            var done = ToolbarButton(Glyphs.Check, "复制（Enter）", "复制截图");
+            var done = AccentCircleButton(
+                new FontIcon { Glyph = Glyphs.Check, FontSize = 14, Foreground = new SolidColorBrush(Colors.White) },
+                "复制（Enter · 双击选区）", "复制截图");
             done.Click += (_, _) => _ = _session.CopySelectionAsync();
             actions.Children.Add(done);
+        }
+        else
+        {
+            var start = AccentCircleButton(
+                new Microsoft.UI.Xaml.Shapes.Ellipse
+                {
+                    Width = 10, Height = 10, Fill = new SolidColorBrush(Colors.White),
+                    HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+                },
+                "开始录制（Enter · 双击选区，倒数 3 秒）", "开始录制");
+            start.Click += (_, _) => _session.BeginRecordingSelection();
+            actions.Children.Add(start);
         }
 
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
         if (_session.Mode == ScreenshotMode.Record)
         {
             // 录屏时不需要标注工具，只留录制条。
-            tools.Visibility = Visibility.Collapsed;
+            toolLayer.Visibility = Visibility.Collapsed;
             extras.Visibility = Visibility.Collapsed;
             var record = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
             record.Children.Add(BuildRecordBar());
@@ -972,7 +1013,7 @@ internal sealed partial class SelectionOverlayWindow : Window
         else
         {
             var left = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
-            left.Children.Add(tools);
+            left.Children.Add(toolLayer);
             left.Children.Add(Separator());
             left.Children.Add(extras);
             row.Children.Add(Capsule(left));
@@ -1243,7 +1284,8 @@ internal sealed partial class SelectionOverlayWindow : Window
         }
 
         var size = _styleTray.DesiredSize;
-        var above = toolbarTop + 20 < ToDip(_session.Selection).Y;
+        // 托盘在栏外侧（选区下方的栏往下、上方的栏往上）；栏放进了选区时翻到栏上方（选区里面）
+        var above = _toolbarSide != ToolbarSide.Below;
         var y = above ? toolbarTop - size.Height - 6 : toolbarTop + _toolbar.DesiredSize.Height + 6;
         var x = Math.Clamp(center - size.Width / 2, 4, Math.Max(4, _screen.Width / _scale - size.Width - 4));
         Canvas.SetLeft(_styleTray, x);
@@ -1295,6 +1337,8 @@ internal sealed partial class SelectionOverlayWindow : Window
             BorderThickness = new Thickness(0),
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center,
+            // 不抢焦点：按键都挂在画布上，按钮拿了焦点数字键、Esc 就没反应了，空格 / Enter 还会再点一下它
+            AllowFocusOnInteraction = false,
         };
         ToolTipService.SetToolTip(button, tooltip);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, automationName);
@@ -1320,6 +1364,7 @@ internal sealed partial class SelectionOverlayWindow : Window
         _document.SelectedId = null;
         UpdateToolbarChrome();
         _canvas.Invalidate();
+        Announce(chosen is { } picked ? AnnotationKinds.Title(picked) + "工具" : "已收起工具");
     }
 
     /// <summary>
@@ -1369,8 +1414,6 @@ internal sealed partial class SelectionOverlayWindow : Window
         foreach (var (tool, button) in _toolButtons)
         {
             var selected = tool == _tool;
-            button.Background = new SolidColorBrush(
-                selected ? Theme.AccentColor : Colors.Transparent);
             var foreground = new SolidColorBrush(selected ? Theme.OnAccentColor : Theme.Shot.HudTextMuted);
             if (button.Content is TextBlock text)
             {
@@ -1382,6 +1425,7 @@ internal sealed partial class SelectionOverlayWindow : Window
             }
         }
 
+        UpdateToolChip();
         if (_undoButton is not null)
         {
             _undoButton.IsEnabled = _document.CanUndo;
@@ -1393,35 +1437,6 @@ internal sealed partial class SelectionOverlayWindow : Window
         }
 
         UpdateStyleTray();
-    }
-
-    /// <summary>工具栏贴着选区下方；下面放不下就放上方，再夹进这块屏。</summary>
-    private void PositionToolbar()
-    {
-        if (_session.Mode != ScreenshotMode.Capture || _session.SelectionScreen != _screen ||
-            !_session.HasSelection)
-        {
-            _toolbar.Visibility = Visibility.Collapsed;
-            return;
-        }
-
-        _toolbar.Visibility = Visibility.Visible;
-        _toolbar.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
-        var size = _toolbar.DesiredSize;
-        var selection = ToDip(_session.Selection);
-        var screenWidth = _screen.Width / _scale;
-        var screenHeight = _screen.Height / _scale;
-        var x = selection.X;
-        var y = selection.Bottom + 8;
-        if (y + size.Height > screenHeight)
-        {
-            y = selection.Y - size.Height - 8;
-        }
-
-        x = Math.Clamp(x, 0, Math.Max(0, screenWidth - size.Width));
-        y = Math.Clamp(y, 0, Math.Max(0, screenHeight - size.Height));
-        Canvas.SetLeft(_toolbar, x);
-        Canvas.SetTop(_toolbar, y);
     }
 
     private void OnDraw(CanvasControl sender, CanvasDrawEventArgs args)
@@ -1484,6 +1499,11 @@ internal sealed partial class SelectionOverlayWindow : Window
         if (_key)
         {
             DrawHint(ds, width, height);
+            if (ShowsCrosshair)
+            {
+                DrawCrosshair(ds, width, height);
+            }
+
             DrawMagnifier(ds, width, height);
         }
     }
@@ -1545,20 +1565,6 @@ internal sealed partial class SelectionOverlayWindow : Window
             ds.DrawRectangle(
                 new Windows.Foundation.Rect(dip.X - 4, dip.Y - 4, 8, 8), Accent, 1);
         }
-
-        var label = $"{Math.Round(selection.Width)} × {Math.Round(selection.Height)}";
-        var labelWidth = 92f;
-        var x = (float)(rect.X);
-        var y = (float)(rect.Y - 30);
-        if (y < 4)
-        {
-            y = (float)(rect.Y + 6);
-        }
-
-        var pill = new Windows.Foundation.Rect(x, y, labelWidth, 24);
-        ds.FillRoundedRectangle(pill, 6, 6, Theme.Shot.LabelBackground);
-        ds.DrawRoundedRectangle(pill, 6, 6, Theme.Argb(40, 255, 255, 255), 1);
-        ds.DrawText(label, x + 9, y + 5, Theme.Shot.HudText, _text);
     }
 
     private void DrawHint(Microsoft.Graphics.Canvas.CanvasDrawingSession ds, float width, float height)
@@ -1568,8 +1574,11 @@ internal sealed partial class SelectionOverlayWindow : Window
         {
             ScreenshotMode.Ocr => "拖动框选要识别的区域 · Esc 取消",
             ScreenshotMode.Translate => "拖动框选要翻译的区域 · Esc 取消",
-            _ when _session.HasSelection => "Enter 复制 · Ctrl+S 保存 · P 钉图 · O 识字 · T 翻译 · Esc 取消",
-            _ => "拖动框选 · 单击窗口截整窗 · Esc 取消",
+            ScreenshotMode.Record when _session.HasSelection => "Enter / 双击选区开始录制 · D 上次区域 · Esc 取消",
+            ScreenshotMode.Record => "拖动框选要录的区域 · 单击窗口录这个窗口 · D 上次区域 · Esc 取消",
+            _ when _session.HasSelection =>
+                "Enter 复制 · Ctrl+S 保存 · 1–0 标注 · S 长截图" + (Features.IsOn(Feature.Recording) ? " · R 录屏" : "") + " · Esc 取消",
+            _ => "拖动框选（按住空格平移）· 单击窗口截整窗 · D 上次区域 · Esc 取消",
         };
         var textWidth = Math.Min(width - 32, 640);
         ds.FillRoundedRectangle(
@@ -1636,12 +1645,17 @@ internal sealed partial class SelectionOverlayWindow : Window
             return;
         }
 
+        // 输着宽高点了别处：按输入的提交（mac：点别处提交），这一下照常处理
+        EndSizeEditing(commit: true);
         _canvas.Focus(FocusState.Pointer);
         ReadCursor();
         var point = _cursor;
         _pressed = point;
         _anchor = point;
         _cursor = point;
+        _lastDrag = point;
+        // 按下鼠标前就按着的空格不算平移（不然按着空格从选区外拖，会去平移旧选区而不是框新的）
+        _spaceDown = false;
 
         if (e.GetCurrentPoint(_canvas).Properties.IsRightButtonPressed)
         {
@@ -1769,6 +1783,23 @@ internal sealed partial class SelectionOverlayWindow : Window
             }
         }
 
+        // U11：没选工具时双击选区里的空白 = 拷贝（录屏是开始录制）
+        if (inside && doubleClick && _tool is null && _session.Mode is ScreenshotMode.Capture or ScreenshotMode.Record)
+        {
+            _canvas.ReleasePointerCaptures();
+            e.Handled = true;
+            if (_session.Mode == ScreenshotMode.Record)
+            {
+                _session.BeginRecordingSelection();
+            }
+            else
+            {
+                _ = _session.CopySelectionAsync();
+            }
+
+            return;
+        }
+
         if (inside)
         {
             _document.SelectedId = null;
@@ -1851,6 +1882,9 @@ internal sealed partial class SelectionOverlayWindow : Window
         var previousCursor = _cursor;
         var previousHover = _hover;
         ReadCursor();
+        var crosshair = ShowsCrosshair;
+        var crosshairChanged = crosshair != _crosshair;
+        _crosshair = crosshair;
         if (_flash is not null && Environment.TickCount64 >= _flashUntil)
         {
             _flash = null;
@@ -1864,7 +1898,7 @@ internal sealed partial class SelectionOverlayWindow : Window
         {
             UpdateHover();
             // 鼠标、悬停目标都没变就不重画：不动鼠标也按 50 帧 / 秒整屏重画是白烧 CPU（第二版 §2 第 6 条）。
-            if (previousCursor == _cursor && Nullable.Equals(previousHover, _hover))
+            if (previousCursor == _cursor && Nullable.Equals(previousHover, _hover) && !crosshairChanged)
             {
                 return;
             }
@@ -1948,12 +1982,26 @@ internal sealed partial class SelectionOverlayWindow : Window
         var shift = IsDown(Windows.System.VirtualKey.Shift);
         var fromCenter = IsDown(Windows.System.VirtualKey.Menu);
         var bounds = new RectD(0, 0, _screen.Width, _screen.Height);
+        if (_drag == DragKind.Draw && _spaceDown && _session.SelectionScreen == _screen)
+        {
+            // 拖动框选途中按着空格：整块平移，锚点跟着走（PLAN-v9 S4，mac extend(pans:)）
+            var current = _session.Selection;
+            var panned = RegionMath.Moved(current, point.X - _lastDrag.X, point.Y - _lastDrag.Y, bounds);
+            _anchor = new PointD(_anchor.X + panned.X - current.X, _anchor.Y + panned.Y - current.Y);
+            _lastDrag = point;
+            _session.SetSelection(_screen, panned);
+            return;
+        }
+
+        _lastDrag = point;
+        // 尺寸胶囊锁了比例就按它，否则 Shift 正方形
+        var ratio = _session.LockedRatio ?? (shift ? 1 : (double?)null);
         var rect = _drag switch
         {
             DragKind.Draw => RegionMath.Drawn(
-                _anchor, snapped, bounds, shift ? 1 : null, fromCenter),
+                _anchor, snapped, bounds, ratio, fromCenter),
             DragKind.Resize => RegionMath.Resized(
-                _original, _handle, snapped, bounds, shift ? 1 : null, fromCenter),
+                _original, _handle, snapped, bounds, ratio, fromCenter),
             _ => RegionMath.Moved(_original, point.X - _pressed.X, point.Y - _pressed.Y, bounds),
         };
         _session.SetSelection(_screen, rect);
@@ -2031,6 +2079,8 @@ internal sealed partial class SelectionOverlayWindow : Window
         var moved = Math.Abs(_cursor.X - _pressed.X) + Math.Abs(_cursor.Y - _pressed.Y);
         _canvas.ReleasePointerCaptures();
         _drag = DragKind.None;
+        // 松手：工具栏从选区那条边长回来、尺寸胶囊能点了（下面改了选区的话 SetSelection 也会排一次）
+        DispatcherQueue.TryEnqueue(Invalidate);
         if (wasDraw && moved < 3 && restore is null && _hover is { } hover)
         {
             ResetAnnotations();
@@ -2125,8 +2175,24 @@ internal sealed partial class SelectionOverlayWindow : Window
     {
         var control = IsDown(Windows.System.VirtualKey.Control);
         var shift = IsDown(Windows.System.VirtualKey.Shift);
+        var alt = IsDown(Windows.System.VirtualKey.Menu);
         switch (e.Key)
         {
+            // PLAN-v9 S4：Ctrl + 方向键把那条边往外推、Alt + 方向键往里收（Shift 10 DIP；mac ⌘ / ⌥）
+            case Windows.System.VirtualKey.Left or Windows.System.VirtualKey.Right or Windows.System.VirtualKey.Up
+                or Windows.System.VirtualKey.Down when control != alt:
+                e.Handled = true;
+                PushEdge(e.Key, outward: control);
+                break;
+            case Windows.System.VirtualKey.Space:
+                // 拖动框选途中按着空格整块平移；按住不放的自动重复不算新按下
+                e.Handled = true;
+                if (!e.KeyStatus.WasKeyDown)
+                {
+                    _spaceDown = true;
+                }
+
+                break;
             // 数字键 1–9、0 依次是十种工具（mac toolKeys），再按一次收起；A 留给长截图自动滚动、T 留给截图翻译。
             // 录屏没有标注（mac：数字键是截图的）。
             case >= Windows.System.VirtualKey.Number0 and <= Windows.System.VirtualKey.Number9
@@ -2167,6 +2233,17 @@ internal sealed partial class SelectionOverlayWindow : Window
                 // E9：复制选中的标注
                 e.Handled = true;
                 DuplicateSelectedAnnotation();
+                break;
+            case Windows.System.VirtualKey.D:
+                // S5：跳到上次截的区域（录屏、识字、翻译也认）
+                e.Handled = true;
+                SelectLastRegion();
+                break;
+            case Windows.System.VirtualKey.R when !control && _session.Mode == ScreenshotMode.Capture &&
+                                                  _session.SelectionScreen == _screen && _session.HasSelection:
+                // S5：截图调整时切到录屏（工具栏原地换成录制条）
+                e.Handled = true;
+                SwitchToRecording();
                 break;
             case Windows.System.VirtualKey.Left when !control:
                 e.Handled = true;
@@ -2251,6 +2328,15 @@ internal sealed partial class SelectionOverlayWindow : Window
                 e.Handled = true;
                 _session.Finish();
                 break;
+        }
+    }
+
+    private void OnKeyUp(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == Windows.System.VirtualKey.Space)
+        {
+            _spaceDown = false;
+            e.Handled = true;
         }
     }
 

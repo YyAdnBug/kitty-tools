@@ -236,18 +236,21 @@ public static class RegionMath
         return Math.Sqrt(ex * ex + ey * ey);
     }
 
-    /// <summary>套用比例预设：宽不变、高按比例，顶边和水平中心不动；下面放不下就按剩下的高反推宽。</summary>
+    /// <summary>
+    /// 套用比例预设：宽不变、高按比例，顶边和水平中心不动；下面放不下就按剩下的高反推宽（只会变窄，不会出屏）。
+    /// （mac 原点在左下，它的顶边是 maxY；这里原点左上，顶边是 Y。）
+    /// </summary>
     public static RectD ApplyingRatio(double ratio, RectD rect, RectD bounds)
     {
         var width = rect.Width;
         var height = ratio == 0 ? 0 : width / ratio;
-        if (rect.Bottom - height < bounds.Y)
+        if (rect.Y + height > bounds.Bottom)
         {
-            height = rect.Bottom - bounds.Y;
+            height = bounds.Bottom - rect.Y;
             width = height * ratio;
         }
 
-        return new RectD(rect.MidX - width / 2, rect.Bottom - height, width, height);
+        return new RectD(rect.MidX - width / 2, rect.Y, width, height);
     }
 
     /// <summary>选区的物理像素矩形：先乘缩放、四边向外取整，再夹进冻结帧。</summary>

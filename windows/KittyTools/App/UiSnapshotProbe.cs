@@ -191,6 +191,19 @@ internal static class UiSnapshotProbe
                     await Task.Delay(500);
                     await WindowShot.SaveAsync(overlay.Handle, Path.Combine(directory, $"shot-text-editing-{option}.png"), texts);
                 }
+
+                // 第 5e 批：底块停在矩形上 + 比例锁 16:9 + 宽度输入框；再切到录屏看录制条（选区上方留出尺寸胶囊）
+                var chrome = crop with
+                {
+                    Top = Math.Max(0, (int)(height * 0.25) - (int)(60 * overlay.Screen.Scale)),
+                    Bottom = Math.Min(height, crop.Bottom + (int)(120 * overlay.Screen.Scale)),
+                };
+                overlay.ShowProbeChrome(0);
+                await Task.Delay(600);
+                await WindowShot.SaveAsync(overlay.Handle, Path.Combine(directory, "shot-toolbar-chrome.png"), chrome);
+                overlay.ShowProbeChrome(1);
+                await Task.Delay(600);
+                await WindowShot.SaveAsync(overlay.Handle, Path.Combine(directory, "shot-record-bar.png"), chrome);
                 ScreenshotSession.FinishCurrent();
             }
 

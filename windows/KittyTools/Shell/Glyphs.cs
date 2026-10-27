@@ -66,6 +66,9 @@ internal static class Glyphs
     public const string Pause = "\uE769";
     public const string Stop = "\uE71A";
     public const string Record = "\uE7C8";
+
+    /// <summary>长截图（截图工具栏，ScrollUpDown）。</summary>
+    public const string LongScreenshot = "\uEC8F";
     public const string Microphone = "\uE720";
     public const string Volume = "\uE767";
     public const string Folder = "\uE8B7";
