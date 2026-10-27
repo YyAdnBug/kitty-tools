@@ -26,6 +26,15 @@
     <CsWin32PlatformTarget Condition="'$(Platform)' == 'x64'">x64</CsWin32PlatformTarget>
     <CsWin32PlatformTarget Condition="'$(Platform)' == 'ARM64'">arm64</CsWin32PlatformTarget>
     <CsWin32PlatformTarget Condition="'$(CsWin32PlatformTarget)' == ''">x64</CsWin32PlatformTarget>
+    <!--
+      exe 版本信息里的「文件说明」「产品名」：任务管理器、设置 › 任务栏「其他系统托盘图标」、文件属性显示的名字。
+      不写的话两个都是程序集名 KittyTools。Debug 叫 Kitty Tools Dev，和装着的正式版分开（2026-10-27 用户要求；
+      Paths.ProductName 在 Debug 下也是「Kitty Tools Dev」）。
+    -->
+    <AssemblyTitle>Kitty Tools</AssemblyTitle>
+    <Product>Kitty Tools</Product>
+    <AssemblyTitle Condition="'$(Configuration)' == 'Debug'">Kitty Tools Dev</AssemblyTitle>
+    <Product Condition="'$(Configuration)' == 'Debug'">Kitty Tools Dev</Product>
   </PropertyGroup>
   <ItemGroup>
     <!-- R27：让 GC 在空闲时更积极地把不用的堆还给系统；只影响回收节奏，不压工作集。 -->
