@@ -50,6 +50,9 @@ public sealed class AnnotationDocument
         _items = next;
     }
 
+    /// <summary>退回到 items、不记撤销（Alt 单击没拖开：不留一份叠在原处、看不出来的副本）。</summary>
+    public void Restore(IReadOnlyList<Annotation> items) => _items = items.ToArray();
+
     /// <summary>放在最上面、先不记撤销（单击放序号接着就能拖，松手时 RecordUndo 一共记一步）。</summary>
     public void AppendLive(Annotation annotation) => _items = _items.Append(annotation).ToArray();
 

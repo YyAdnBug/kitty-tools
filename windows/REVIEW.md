@@ -16,6 +16,7 @@
 
 - 5a（底子和 B1–B9）：见 `git log --grep "5a"`。
 - 5b（十种工具、mac 的画法、样式托盘、每个工具记住样式）：见 `git log --grep "5b"`。另动了 `Shell/Glyphs.cs`（五个工具图标、删掉 ToolSelect）、`Shell/Theme.cs`（托盘选项分段两色）、`App/Settings.cs`（`ScreenshotToolStyles`）、`Settings/ShortcutsSheet.cs`（标注那一组的键）。
+- 5c（选中样子、拖手柄 / 拖弯 / 双击拉直、Shift 锁轴、Alt 拖复制、Ctrl+D、方向键、双击文字重新编辑、光标）：见 `git log --grep "5c"`。
 
 ## v8 分工（2026-10-26 深夜，用户定：审查方接着把 mac 新功能搬过来）
 

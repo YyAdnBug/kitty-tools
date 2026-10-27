@@ -550,6 +550,14 @@ public sealed class AnnotationGeometryTests
         Assert.IsTrue(document.Undo());
         Assert.AreEqual(0, document.Items.Count);
         Assert.IsFalse(document.CanUndo);
+
+        // 5c：Alt 单击没拖开——副本放上去又退回，不留东西、不占撤销
+        document.Commit(new[] { counter });
+        before = document.Items;
+        document.AppendLive(counter.Duplicated(0, 0));
+        document.Restore(before);
+        Assert.IsFalse(document.RecordUndo(before));
+        Assert.AreEqual(1, document.Items.Count);
     }
 
     [TestMethod]
