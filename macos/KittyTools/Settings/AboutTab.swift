@@ -173,6 +173,13 @@ struct AboutTab: View {
           Text(Updater.installingLine(release.version, progress: updater.progress))
             .monospacedDigit()
             .foregroundStyle(.secondary)
+        case .installed(let release):
+          Label(
+            "新版本 \(release.version) 已装好，\(Updater.installedDetail)",
+            systemImage: "checkmark.circle.fill"
+          )
+          .foregroundStyle(.secondary)
+          link("现在重新打开") { NSApp.terminate(nil) }
         case .failed(let message):
           Text(message).foregroundStyle(Color(nsColor: .systemRed))
             .lineLimit(1).truncationMode(.tail)

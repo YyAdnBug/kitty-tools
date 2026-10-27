@@ -426,9 +426,13 @@ extension NoteTextView {
     let url = store.url(for: picture.id, ext: picture.ext)
     let directory = store.directory
     let noteID = identifier?.rawValue
-    imageCropTask = Task { @MainActor in
+    // 弱持有：裁的那一下正文框没了（便签收起、换了一条）就不换，新文件由 30 天的清理收；欠着的那一下（pendingCrop）
+    // 存在自己身上，也只弱持有
+    imageCropTask = Task { @MainActor [weak self] in
+      let result = await NoteImageStore.crop(fileAt: url, to: rect, in: directory)
+      guard let self else { return }
       defer { imageCropTask = nil }
-      switch await NoteImageStore.crop(fileAt: url, to: rect, in: directory) {
+      switch result {
       case .success(var stored):
         store.remember(stored)
         stored.image.width = NoteImages.croppedWidth(

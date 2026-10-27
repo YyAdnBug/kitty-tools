@@ -160,7 +160,7 @@ enum FlyCard {
         }
       })
     host.sizingOptions = []
-    panel.contentView = host
+    panel.setHostedContent(host)
     windows.insert(panel)
     panel.orderFrontRegardless()
     return landing

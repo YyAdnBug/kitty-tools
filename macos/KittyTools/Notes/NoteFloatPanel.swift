@@ -41,7 +41,7 @@ final class NoteFloatPanel: NotePanel {
     minSize = NoteFloatLayout.minSize
     let host = NoteFloatHost(rootView: NoteFloatView(model: model))
     host.sizingOptions = []  // 窗口大小由 NoteFloat 和用户定，不让 SwiftUI 的理想尺寸反推
-    contentView = host
+    setHostedContent(host)
     setFrame(frame, display: false)
   }
 

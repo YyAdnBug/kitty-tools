@@ -536,10 +536,9 @@ struct ShotHistoryTests {
         return tiny
       } == nil)
     #expect(reads == 1)
-    // forget 之后重新读
+    // forget 之后重新读。「还在缓存里」不断言：系统内存紧时 NSCache 会整个清掉（全量并行跑时见过），只测清不清
     cache.forget(a.id)
     #expect(await cache.image(for: a) { tiny } != nil)
-    #expect(cache.cached(a.id) != nil)
     // 读的途中 forget：读回来的照样给调用方，但不进缓存
     cache.forget(a.id)
     let (gate, open) = AsyncStream<Void>.makeStream()
@@ -560,7 +559,7 @@ struct ShotHistoryTests {
     _ = await cache.image(for: a) { tiny }
     _ = await cache.image(for: b) { tiny }
     cache.keep(only: [b.id])
-    #expect(cache.cached(a.id) == nil && cache.cached(b.id) != nil)
+    #expect(cache.cached(a.id) == nil)
   }
 
   /// 摆一扇屏幕外的窗口（同全部便签窗口的那几扇：不激活、不会被 AppKit 拽回屏幕里）

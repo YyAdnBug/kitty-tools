@@ -6,6 +6,7 @@
 // 不退：最小化的窗口截出来是空的，ScreenCaptureKit 也截不到）。调用方一扇扇按顺序截，不一下并发几十个（一扇是一次同步的
 // 进程间调用，并发多了占满协作线程池）。
 // 上次截的只存在内存里：最多 20 张（缩略图最大 520 × 280 像素，最坏约 11 MB），App 退出就丢；空闲回收、关掉功能时清掉（clear）。
+// 刚截过的几秒内直接用、不再截（fresh，第三轮体检 P5：来回划过同一个 App 的图标，原来每换回来一次就把它的窗口全截一遍）。
 // ponytail: 满了丢最早放进来的，不是最久没用的：一次预览最多截十几张，够用；常有几十扇窗口来回看时再换成按用过的先后。
 // 要「屏幕录制」授权，没有就不截（界面只列标题，拍板 A2）。
 
@@ -13,23 +14,49 @@ import AppKit
 import ScreenCaptureKit
 
 @MainActor final class WindowShots {
-  private var cache: [CGWindowID: CGImage] = [:]
+  /// 截到的一张，连同截的时候这扇窗口的标题和大小、缩到的框、什么时候截的（fresh 看）
+  private struct Shot {
+    let image: CGImage
+    let title: String
+    let size: CGSize
+    let box: CGSize
+    let time: TimeInterval
+  }
+
+  private var cache: [CGWindowID: Shot] = [:]
   /// 放进缓存的先后，满了先丢最早的
   private var order: [CGWindowID] = []
   static let capacity = 20
+  /// 截过多久之内不再截（秒）。
+  /// ponytail: 这期间窗口里的内容变了（放视频、打字）看到的是最多 2 秒前的，同类工具也是隔一两秒才刷新一次；
+  /// 要更新鲜就缩短它，要实时得换成 ScreenCaptureKit 的流（拍板 C2 没做实时画面）
+  static let freshness: TimeInterval = 2
 
-  /// 上次截的（没有就 nil）
-  func cached(_ id: CGWindowID) -> CGImage? { cache[id] }
+  /// 上次截的（没有就 nil）：换过去那一刻先顶上，截到新的再换
+  func cached(_ id: CGWindowID) -> CGImage? { cache[id]?.image }
 
-  /// 截一扇，缩到 maxPixels 以内；截到的放进缓存。截不到返回 nil（调用方用 cached 或图标）
+  /// 刚截过、还能直接用的：freshness 之内，窗口的标题和大小都没变（变了多半内容也变了、比例也不对了），当时缩到的框
+  /// 不比这次小（换成一行放得下更少的排法，框变大了，小图放大会糊）
+  func fresh(_ window: DockWindow, maxPixels: CGSize, now: TimeInterval = CACurrentMediaTime())
+    -> CGImage?
+  {
+    guard let shot = cache[window.id], now - shot.time < Self.freshness,
+      shot.title == window.title, shot.size == window.size,
+      shot.box.width >= maxPixels.width, shot.box.height >= maxPixels.height
+    else { return nil }
+    return shot.image
+  }
+
+  /// 截一扇，缩到 maxPixels 以内；截到的放进缓存。刚截过的直接给（fresh）。截不到返回 nil（调用方用 cached 或图标）
   func shoot(_ window: DockWindow, maxPixels: CGSize) async -> CGImage? {
     guard Permissions.isScreenRecordingAllowed else { return nil }
+    if let image = fresh(window, maxPixels: maxPixels) { return image }
     WindowServer.prepare()  // 第一次取符号要在主线程，别落到下面的截图线程上
     var image = await Self.capture(window.id, maxPixels: maxPixels)
     if image == nil, window.state == .shown, !WindowServer.canCapture {
       image = await Self.captureWithScreenCaptureKit(window.id, maxPixels: maxPixels)
     }
-    if let image { remember(image, for: window.id) }
+    if let image { remember(image, for: window, box: maxPixels) }
     return image
   }
 
@@ -39,8 +66,12 @@ import ScreenCaptureKit
   }
 
   /// 放进缓存（满了丢最早放进来的）
-  func remember(_ image: CGImage, for id: CGWindowID) {
-    if cache.updateValue(image, forKey: id) == nil { order.append(id) }
+  func remember(
+    _ image: CGImage, for window: DockWindow, box: CGSize,
+    at time: TimeInterval = CACurrentMediaTime()
+  ) {
+    let shot = Shot(image: image, title: window.title, size: window.size, box: box, time: time)
+    if cache.updateValue(shot, forKey: window.id) == nil { order.append(window.id) }
     while order.count > Self.capacity { cache[order.removeFirst()] = nil }
   }
 

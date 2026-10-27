@@ -42,6 +42,8 @@ Dock Preview；开源的 DockDoor、AltTab 是 GPL，**只借做法、一行代�
 - 一律私有接口 1x 截、`@concurrent` 缩进 8 位 BGRA（mac-native §3 第 1 类），一扇中位约 15 ms；全透明当没截到。私有接口
   不在时当前桌面上的退回 ScreenCaptureKit。**一扇扇串行截**，不并发几十个。
 - 内存里最多 20 张（先进先出），空闲回收、关掉功能时清；没有屏幕录制授权时不截、也不拿缓存里的旧图。
+- **2 秒内截过的不再截**（`WindowShots.fresh` / `freshness`，第三轮体检 P5：来回划过同一个 App 原来每次都整个重截）：
+  窗口的标题、大小变了，或者这次的缩略图框比上次大，照样重截。
 
 ## 5. 面板和时机（`DockPreview.swift`、`DockPreviewLayout.swift`）
 - 面板是**普通 NSPanel 实例**（mac-overlay-panel §1）：无边框、不激活本 App、**永不当 key**、`.statusBar` 层级、弹在哪个桌面就属于哪个桌面（`moveToActiveSpace` + `fullScreenAuxiliary`，**不用 `canJoinAllSpaces`**：切桌面时面板会被带到新桌面上、收到通知再收就闪一下），全屏 App 的桌面上也能弹；
@@ -67,7 +69,8 @@ Dock Preview；开源的 DockDoor、AltTab 是 GPL，**只借做法、一行代�
 - 功能开关 `Feature.dockPreview`，**默认关**（`Feature.defaultOn`，拍板 A3）；没有全局快捷键、菜单栏、启动器入口（D1）。
   运行中打开时缺辅助功能就弹系统授权框，有了再要屏幕录制；启动时不问。
 - 弹过一次面板约 +10 MB（14 扇、976 × 417 点，屏上量），收起后照样占着；**空闲回收时收着的面板整块放掉**（回落约 6 MB，
-  下次弹时再建），连同缩略图缓存。收起时排空闲回收（`onHide`）。
+  下次弹时再建），连同缩略图缓存；功能关着也放（AppDelegate 看 `builtDockPreview`，没建过不建）。**关掉功能（`stop()`）
+  时面板一起放掉**（R10：原来只清缓存、面板留到退出）。收起时排空闲回收（`onHide`）。
 
 ## 7. 测试口径
 - 单测只测纯函数（`DockPreviewTests`）：并表、配编号、排法、选屏、`keepsOpen`、`Linger`、事件字节、缺接口的说法。

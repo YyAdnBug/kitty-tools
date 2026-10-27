@@ -688,7 +688,8 @@ import SwiftUI
 
   // MARK: 窗口
 
-  private func makePanel() -> NSPanel {
+  /// 建面板（单测在屏外直接建：PanelHostingTests）
+  func makePanel() -> NSPanel {
     // styleMask 在 init 里一次写全（.nonactivatingPanel 之后再加不生效）
     let panel = NSPanel(
       contentRect: CGRect(origin: .zero, size: CGSize(width: 100, height: 100)),
@@ -708,7 +709,7 @@ import SwiftUI
     let host = ClotheslineHost(rootView: ClotheslineView(model: model))
     host.sizingOptions = []
     host.wantsLayer = true  // 滑下来的位移动在它的图层上
-    panel.contentView = host
+    panel.setHostedContent(host)
     self.panel = panel
     self.host = host
     return panel

@@ -895,6 +895,19 @@ private final class ResizeEdge: NSView {
 }
 
 extension NSWindow {
+  /// 面板放 SwiftUI 宿主（mac-overlay-panel §1）：宿主包在一个普通容器里、跟着容器铺满，**不直接当 contentView**。
+  /// 宿主当了 contentView 时，SwiftUI 会按内容去改窗口的最小 / 最大尺寸（光 sizingOptions = [] 不够），窗口一改大小就在
+  /// 「更新约束」里一圈圈绕下去、抛 NSGenericException 闪退（刘海岛 2026-10-26 屏上复现；那叠的面板屏外复现见
+  /// PanelHostingTests）。普通窗口用 NSViewController.windowContent，同一个道理
+  func setHostedContent(_ host: NSView) {
+    let container = NSView(
+      frame: NSRect(origin: .zero, size: contentRect(forFrameRect: frame).size))
+    host.frame = container.bounds
+    host.autoresizingMask = [.width, .height]
+    container.addSubview(host)
+    contentView = container
+  }
+
   /// 焦点所在的输入框自己的撤销栈：多行的文本视图问到的那个（便签正文是这条便签的，NoteTextView.noteUndo；别的顺着
   /// 响应链问到窗口的），单行输入框是它的字段编辑器的（系统给每个输入框单独一个，结束编辑就丢）。焦点不在输入框里是 nil
   var focusedTextUndo: UndoManager? { (firstResponder as? NSTextView)?.undoManager }

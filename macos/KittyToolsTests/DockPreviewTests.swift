@@ -1,4 +1,5 @@
-// 程序坞预览（第九族）的纯函数：两张窗口表怎么并、编号怎么配、坐标换算、缩略图尺寸、全透明判断、「当 key」事件的字节。
+// 程序坞预览（第九族）的纯函数：两张窗口表怎么并、编号怎么配、坐标换算、缩略图尺寸、全透明判断、缩略图缓存（新鲜的不再截）、
+// 「当 key」事件的字节；关掉功能时面板放掉（只建不显示）。
 
 import AppKit
 import ApplicationServices
@@ -152,12 +153,52 @@ struct DockPreviewTests {
         bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue))
     let image = try #require(context.makeImage())
     let shots = WindowShots()
-    for id in CGWindowID(1)...25 { shots.remember(image, for: id) }
-    shots.remember(image, for: 10)  // 已经在里面的换图不挪位置、不多占
+    func window(_ id: CGWindowID) -> DockWindow {
+      DockWindow(id: id, title: "文稿", state: .shown, size: CGSize(width: 800, height: 600))
+    }
+    let box = CGSize(width: 520, height: 280)
+    for id in CGWindowID(1)...25 { shots.remember(image, for: window(id), box: box) }
+    shots.remember(image, for: window(10), box: box)  // 已经在里面的换图不挪位置、不多占
     #expect((1...5).allSatisfy { shots.cached(CGWindowID($0)) == nil })
     #expect((6...25).allSatisfy { shots.cached(CGWindowID($0)) != nil })
     shots.clear()
     #expect(shots.cached(25) == nil)
+  }
+
+  /// 来回划过同一个 App（第三轮体检 P5）：2 秒内截过、标题大小没变、框不比上次大的直接用，不再截
+  @Test func freshShotIsReusedForAFewSeconds() throws {
+    let context = try #require(
+      CGContext(
+        data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue))
+    let image = try #require(context.makeImage())
+    let shots = WindowShots()
+    let window = DockWindow(
+      id: 7, title: "文稿", state: .shown, size: CGSize(width: 800, height: 600))
+    let box = CGSize(width: 520, height: 280)
+    shots.remember(image, for: window, box: box, at: 100)
+    #expect(shots.fresh(window, maxPixels: box, now: 101.9) === image)
+    #expect(shots.fresh(window, maxPixels: CGSize(width: 260, height: 140), now: 101) === image)
+    #expect(
+      shots.fresh(window, maxPixels: CGSize(width: 1040, height: 280), now: 101) == nil, "框变大了")
+    #expect(shots.fresh(window, maxPixels: box, now: 100 + WindowShots.freshness) == nil, "过时了")
+    let renamed = DockWindow(id: 7, title: "文稿 2", state: .shown, size: window.size)
+    let resized = DockWindow(
+      id: 7, title: "文稿", state: .shown, size: CGSize(width: 900, height: 600))
+    #expect(shots.fresh(renamed, maxPixels: box, now: 101) == nil)
+    #expect(shots.fresh(resized, maxPixels: box, now: 101) == nil)
+    #expect(shots.cached(7) === image, "不新鲜的照样先顶上")
+  }
+
+  /// 关掉程序坞预览（R10）：弹过的面板跟着放掉，不留到退出
+  @Test func stopReleasesThePanel() {
+    let preview = DockPreview()
+    weak var panel: NSPanel?
+    autoreleasepool { panel = preview.makePanel() }
+    #expect(panel != nil)
+    autoreleasepool { preview.stop() }
+    #expect(panel == nil)
   }
 
   @Test func keyWindowEventLayout() {

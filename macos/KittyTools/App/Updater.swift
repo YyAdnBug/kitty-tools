@@ -26,6 +26,9 @@ import AppKit
     case upToDate
     case available(Release)
     case installing(Release)
+    /// 新版本已经换上、退出却被取消了（便签没存上时点了「取消」，AppDelegate.applicationShouldTerminate）：
+    /// 下次退出时等着的那个 sh 会把新版打开
+    case installed(Release)
     case failed(String)
   }
 
@@ -98,6 +101,9 @@ import AppKit
       return true
     case .installing(let release):
       if trigger == .menu { showInstalling(release) }
+      return true
+    case .installed(let release):
+      if trigger == .menu { showInstalled(release) }
       return true
     default: break
     }
@@ -183,6 +189,8 @@ import AppKit
       }
       try Self.relaunch(app)
       NSApp.terminate(nil)
+      // 还走得到这里 = 退出被取消了（B5：原来一直显示「正在安装」）。等着本进程退出再重开的 sh 留着
+      quitCancelled(release, trigger: trigger)
     } catch {
       state = .available(release)
       progress = nil
@@ -198,6 +206,18 @@ import AppKit
       guard let self else { return }
       Task { await self.install(.menu) }
     }
+  }
+
+  /// 新版本换上了、退出却被取消了：改说「已装好，退出后重新打开即生效」，进度清掉；岛上那条「正在更新」原地换成它
+  /// （从关于页点的没有岛，页上自己换）
+  func quitCancelled(_ release: Release, trigger: Trigger) {
+    state = .installed(release)
+    progress = nil
+    if trigger != .page { showInstalled(release) }
+  }
+
+  private func showInstalled(_ release: Release) {
+    island?.show("新版本 \(release.version) 已装好", detail: Self.installedDetail)
   }
 
   private func showInstalling(_ release: Release) {
@@ -231,6 +251,9 @@ import AppKit
     }
   }
 
+  /// 装好了、还没退出：岛上的后半句，关于页那句话的后半句
+  static let installedDetail = "退出后重新打开即生效"
+
   /// 关于页上的那句话（进度条在它前面）
   static func installingLine(_ version: String, progress: Double?) -> String {
     switch progress {
@@ -245,7 +268,7 @@ import AppKit
   static func available(_ known: Release?, after state: State) -> Release? {
     switch state {
     case .available(let release): release
-    case .upToDate, .installing: nil
+    case .upToDate, .installing, .installed: nil
     case .idle, .checking, .failed: known
     }
   }

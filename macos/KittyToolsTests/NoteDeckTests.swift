@@ -1293,8 +1293,9 @@ struct NoteDeckTests {
   }
 
   /// 面板宿主上「跟鼠标」的那块追踪区（自己加的：activeAlways + mouseMoved）
+  /// 宿主（包在面板的容器里，setHostedContent）上自己挂的那块追踪区
   private func pointerAreas(_ panel: NSPanel?) -> [NSTrackingArea] {
-    panel?.contentView?.trackingAreas.filter {
+    panel?.contentView?.subviews.first?.trackingAreas.filter {
       $0.options.contains([.activeAlways, .mouseMoved])
     } ?? []
   }

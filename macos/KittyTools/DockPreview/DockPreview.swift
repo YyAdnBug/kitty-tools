@@ -17,7 +17,8 @@
 // 窗口（辅助功能，约 20–50 ms）、重排一遍、开一段 0.24 s 的交叉淡变，几段淡变叠在一起、主线程被堵；现在路过的不换，停稳
 // switchDelay 才换（这期间鼠标停着的那个图标也算「在附近」，面板不收），连着换的不淡变。
 // ponytail: 换一次还是在主线程同步列一次窗口（中位约 20 ms、最长约 50 ms，PLAN §10）；缩略图一扇扇串行截（一扇约
-// 15 ms，二十扇约 0.3 s，先显示上次的图）。停稳了换还嫌顿，再把列窗口挪到截图那样的后台、截图开两三路并发。
+// 15 ms，二十扇约 0.3 s，先显示上次的图；2 秒内截过的不再截，WindowShots.fresh）。停稳了换还嫌顿，再把列窗口挪到
+// 截图那样的后台、截图开两三路并发。
 
 import AppKit
 import SwiftUI
@@ -74,11 +75,11 @@ import SwiftUI
     watcher.start()
   }
 
-  /// 停：摘掉程序坞、收起、缩略图缓存跟着还（关掉功能 = 占着的缓存也放掉）
+  /// 停：摘掉程序坞、收起，缩略图缓存和面板跟着还（关掉功能 = 占着的都放掉；R10：原来面板留到退出）
   func stop() {
     watcher.stop()
     hide(animated: false)
-    shots.clear()
+    reclaim()
   }
 
   /// 空闲回收：丢掉缩略图缓存；收着时整块面板也放掉（下次弹时再建）。照 NoteDeck.releasePanel 的写法：
@@ -259,7 +260,8 @@ import SwiftUI
         let box = CGSize(width: thumb.width * scale, height: thumb.height * scale)
         guard let image = await self.shots.shoot(window, maxPixels: box) else { continue }
         guard !Task.isCancelled, self.model.generation == generation else { return }
-        self.model.images[window.id] = image
+        // 刚截过的（WindowShots.fresh）就是换过去时顶上的那张：不再赋一遍，免得每张卡片白重画
+        if self.model.images[window.id] !== image { self.model.images[window.id] = image }
       }
     }
   }

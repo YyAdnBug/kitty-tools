@@ -548,7 +548,8 @@ struct SnapshotProbeTests {
         size: NSSize(width: 780, height: 600), dark: dark,
         to: "\(out)/settings-\(page.rawValue)\(dark ? "-dark" : "").png")
     }
-    // 关于页的应用内更新：有新版本（强调色按钮）、正在更新（还不知道下了多少 / 下载到 42% / 下完在装）、已是最新、检查失败
+    // 关于页的应用内更新：有新版本（强调色按钮）、正在更新（还不知道下了多少 / 下载到 42% / 下完在装）、装好了但退出被取消、
+    // 已是最新、检查失败
     let release = Updater.Release(
       version: "0.2.0", archive: URL(string: "https://example.com/Kitty.zip")!,
       page: Updater.releasesPage)
@@ -558,7 +559,8 @@ struct SnapshotProbeTests {
       ("installing", .installing(release), false, nil),
       ("downloading", .installing(release), false, 0.42),
       ("downloading", .installing(release), true, 0.42),
-      ("downloaded", .installing(release), false, 1), ("latest", .upToDate, false, nil),
+      ("downloaded", .installing(release), false, 1), ("installed", .installed(release), false, nil),
+      ("latest", .upToDate, false, nil),
       ("failed", .failed("检查更新失败：网络连接已中断。"), false, nil),
     ]
     navigation.page = .about

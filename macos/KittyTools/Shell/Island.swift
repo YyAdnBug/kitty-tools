@@ -660,17 +660,12 @@ import SwiftUI
     panel.acceptsMouseMovedEvents = true
     panel.isReleasedWhenClosed = false
     panel.animationBehavior = .none
-    // 宿主包在普通容器里、跟着容器铺满：宿主视图直接当窗口的 contentView 时，SwiftUI 会按内容去改窗口的最小 / 最大
-    // 尺寸（光 sizingOptions = [] 不够，同 mac-overlay-panel §1 普通窗口的 windowContent），窗口一改大小就在「更新约束」
-    // 里一圈圈绕下去、抛异常崩掉（2026-10-26 屏上复现：先弹提示、再在上面开那一张；测试里还见过窗口被它改成 520 × 64）
+    // 宿主包在普通容器里（setHostedContent）：直接当 contentView 时窗口一改大小就在「更新约束」里绕下去、抛异常崩掉
+    // （2026-10-26 屏上复现：先弹提示、再在上面开那一张；测试里还见过窗口被它改成 520 × 64）
     let host = IslandHost(rootView: IslandView(island: self))
     host.sizingOptions = []
     host.island = self
-    let container = NSView(frame: CGRect(origin: .zero, size: geometry.windowSize))
-    host.frame = container.bounds
-    host.autoresizingMask = [.width, .height]
-    container.addSubview(host)
-    panel.contentView = container
+    panel.setHostedContent(host)
     self.host = host
     return panel
   }

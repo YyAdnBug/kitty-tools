@@ -186,8 +186,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         || (Feature.launchpad.isOn && launchpad.isOpen)
     }
     preview.onHide = { [unowned self] in idleReclaim.schedule() }
+    builtDockPreview = preview
     return preview
   }()
+  /// 程序坞预览建过没有（空闲回收看它，别为了回收把关着的功能建出来，同 builtLauncherPanel）
+  private weak var builtDockPreview: DockPreview?
 
   /// 用时再建、收起后放掉（TransientPanel）：不像三块主面板那样天天呼出，里面最多 20 张缩小的状态屏，不常驻。
   /// 没有固定，点外面就收起；出现在鼠标所在屏的中央（OverlayPanel 不带 frameName、不 topAnchored 时就是居中）
@@ -259,7 +262,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   private func reclaimIdleMemory() {
     ThumbnailView.dropPreviews()
-    if Feature.dockPreview.isOn { dockPreview.reclaim() }
+    // 程序坞预览关着也放（R10：原来只在开着时放，关掉之后弹过的面板一直留着）；没建过就不建
+    builtDockPreview?.reclaim()
     // 截图关着也放（R10：原来只在开着时放，关掉截图之后那块面板一直留着）；历史的缩略图只留挂在绳子上的那几张
     clothesline.reclaim()
     ShotThumbnails.shared.keep(only: clothesline.model.pegged)
@@ -1564,6 +1568,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     let id = UUID()
     replaceID = id
+    // 强持有 self（App 的代理，活到进程退出）：岛上「取消」「重试」也直接拿着它，岛收起时就放掉
     replaceTask = Task {
       defer {
         if replaceID == id { replaceTask = nil }
@@ -1584,7 +1589,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       // 「取消」= 再按一次快捷键（还在翻才算：刚好翻完时点的不能又开一次）
       island.show(
         "翻译中…", detail: "再按一次快捷键取消", tone: .progress, symbol: "character.bubble.fill",
-        actions: [.init("取消") { [unowned self] in if replaceTask != nil { translateAndReplace() } }]
+        actions: [.init("取消") { [self] in if replaceTask != nil { translateAndReplace() } }]
       )
       do {
         let result = TranslateCoordinator.rewrap(
@@ -1614,7 +1619,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 重试 = 再划一次：前台还是取词的 App（点岛不激活本 App），选区多半还在
         island.show(
           "翻译失败", detail: error.localizedDescription, tone: .error,
-          actions: [.init("重试") { [unowned self] in translateAndReplace() }])
+          actions: [.init("重试") { [self] in translateAndReplace() }])
       }
     }
   }

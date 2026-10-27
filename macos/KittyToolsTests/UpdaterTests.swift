@@ -99,6 +99,22 @@ struct UpdaterTests {
     #expect(Updater.available(release, after: .available(newer)) == newer)
     #expect(Updater.available(release, after: .upToDate) == nil)
     #expect(Updater.available(release, after: .installing(release)) == nil)
+    #expect(Updater.available(release, after: .installed(release)) == nil)
+  }
+
+  /// 新版本换上了、退出却被取消（B5）：不再显示「正在安装」，进度清掉、没有「更新到 x」；之后再查更新不去 GitHub、
+  /// 状态不变（测试宿主是开发版，真去查的话会变成「开发版不自动更新」）
+  @MainActor @Test func cancelledQuitAfterInstallSaysInstalled() async throws {
+    let archive = try #require(URL(string: "https://example.com/Kitty.zip"))
+    let release = Updater.Release(version: "0.9.0", archive: archive, page: Updater.releasesPage)
+    let updater = Updater(state: .installing(release), progress: 1)
+    updater.quitCancelled(release, trigger: .page)
+    #expect(updater.state == .installed(release))
+    #expect(updater.progress == nil && updater.available == nil)
+    #expect(await updater.check(.page))
+    #expect(updater.state == .installed(release))
+    await updater.install(.page)
+    #expect(updater.state == .installed(release), "没有可装的了：不会再装一遍")
   }
 
   /// 整条链路：好包能换上；版本号对不上、包被改过（签名失效）都拒绝、原 App 不动；

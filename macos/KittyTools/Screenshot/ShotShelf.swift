@@ -351,8 +351,8 @@ final class ShotShelf {
     host.sizingOptions = []
     host.onHover = { [weak self] in self?.isHovered = $0 }
     host.onSwipe = { [weak self] delta, ended in self?.swiped(delta, ended: ended) }
-    panel.contentView = host
     panel.setFrame(rect.insetBy(dx: -ShotShelf.margin, dy: -ShotShelf.margin), display: false)
+    panel.setHostedContent(host)
     // 飞行卡片刚在同一个位置关掉：直接出现就接上了；减弱动态效果时（没有飞）淡入
     panel.alphaValue = fadingIn ? 0 : 1
     panel.orderFrontRegardless()

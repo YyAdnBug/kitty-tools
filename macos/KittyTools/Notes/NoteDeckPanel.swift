@@ -47,7 +47,7 @@ final class NoteDeckPanel: NotePanel {
     animationBehavior = .none
     host.sizingOptions = []  // 窗口大小由 NoteDeck 定，不让 SwiftUI 的理想尺寸反推
     host.onPointer = onPointer
-    contentView = host
+    setHostedContent(host)
     setFrame(frame, display: false)
   }
 
