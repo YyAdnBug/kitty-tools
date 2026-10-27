@@ -29,6 +29,21 @@ internal static unsafe class Paster
         var selfElevated = Foreground.IsProcessElevated((uint)Environment.ProcessId);
         var adminBlocked = targetElevated && !selfElevated;
 
+        if (target == default)
+        {
+            // REVIEW R56：没有目标（从托盘 / 设置窗打开面板，前台是自己）就只复制，不粘贴。
+            if (!write())
+            {
+                NoticeHost.Show("没能复制", "剪贴板被别的程序占着，稍后再试", NoticeTone.Error);
+                return false;
+            }
+
+            clipboard?.MarkOwnWrite();
+            Log.Info("paste.no-target");
+            NoticeHost.Show("已复制", "没有可以粘贴的窗口", NoticeTone.Normal);
+            return false;
+        }
+
         var reached = Foreground.Restore(target);
         if (!reached)
         {

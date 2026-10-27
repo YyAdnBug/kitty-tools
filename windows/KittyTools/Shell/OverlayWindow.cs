@@ -131,6 +131,12 @@ internal sealed unsafe class OverlayWindow : Window
         {
             _previousForeground = before;
         }
+        else
+        {
+            // REVIEW R56：从托盘、设置窗、截图历史这些自己的窗口里打开时，前台是自己，
+            // 不能留着上一次的目标——那会把内容粘进一个跟这次无关的旧窗口。清空 = 只复制。
+            _previousForeground = default;
+        }
 
         _host.Children.Clear();
         if (kind == OverlayKind.Clipboard && ClipboardService.Instance is not null)

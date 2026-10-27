@@ -453,6 +453,11 @@ internal sealed unsafe partial class TranslateWindow : Window
         {
             _previousForeground = before;
         }
+        else
+        {
+            // REVIEW R56：「替换原文」的目标同上：前台是自己的窗口时不知道要换哪儿，只复制。
+            _previousForeground = default;
+        }
 
         _replaceTarget = (IntPtr)_previousForeground.Value;
         if (!_visible)
