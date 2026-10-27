@@ -2090,6 +2090,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           leading: Island.thumbnail(of: image), actions: .file(saved.url))
       }
     }
+    // 多选（2026-10-27）：拷贝写成几个文件放进剪贴板——剪贴板只装得下一张图，装文件才能一次给好几张
+    // （和拖出去的是同一份：存过的 / 录制的就是那个文件，别的现合成一份成品 PNG）
+    actions.copyMany = { [unowned self] items in
+      Task {
+        var urls: [URL] = []
+        for item in items {
+          if let url = await shotHistory.dragFile(for: item) { urls.append(url) }
+        }
+        guard !urls.isEmpty else { return missingShot() }
+        Paster.write(files: urls)
+        if recordsClipboard { clipboardStore.recordFiles(urls) }
+        island.show("已复制 \(urls.count) 项", detail: urls.first?.lastPathComponent)
+      }
+    }
+    // 多选存储：一条条存到快速保存目录，最后只说一句（一张张弹提示会刷屏）
+    actions.saveMany = { [unowned self] items in
+      Task {
+        var saved: [URL] = []
+        for item in items {
+          guard let image = await shotHistory.composed(item),
+            let out = await saveImage(image, scale: item.scale, asking: false)
+          else { continue }
+          shotHistory.markSaved(item.id, to: out.url)
+          saved.append(out.url)
+        }
+        guard let first = saved.first else { return missingShot() }
+        island.show(
+          "已存 \(saved.count) 张",
+          detail: FileManager.default.displayName(
+            atPath: first.deletingLastPathComponent().path), actions: .file(first))
+      }
+    }
     actions.saveAs = { [unowned self] item in
       Task {
         guard let image = await shotHistory.composed(item) else { return missingShot() }

@@ -649,6 +649,15 @@ struct ShotHistoryTests {
     #expect(try press("\r", kVK_Return, []))
     #expect(done == ["拷贝", "存储", "另存为", "钉图", "识字", "改标注"], "实际：\(done)")
 
+    // ⌘A 全选，之后 ⌘C 走批量那条
+    var copiedMany = 0
+    model.actions.copyMany = { copiedMany = $0.count }
+    #expect(try press("a", kVK_ANSI_A, plain: "a"))
+    #expect(model.picked.count == 3)
+    #expect(try press("c", kVK_ANSI_C))
+    #expect(copiedMany == 3, "多选时 ⌘C 没走批量（实际 \(copiedMany)）")
+    #expect(done.count == 6, "多选时不该再走单条那条（实际 \(done)）")
+
     // ⌘1…⌘4 换筛选
     #expect(try press("3", kVK_ANSI_3) && model.filter == .scroll)
     #expect(try press("1", kVK_ANSI_1) && model.filter == .all)
@@ -693,6 +702,78 @@ struct ShotHistoryTests {
     }
     #expect(model.selection == history.items.last?.id, "没走到最后一张")
     #expect(grid.documentVisibleRect.origin.y != before, "选中挪到看不见的那行，内容区没跟着滚")
+  }
+
+  /// 多选（2026-10-27 用户要的）：⌘ 点加选 / 去掉、⇧ 点连一段、⌘A 全选、⇧ 方向键连着选；
+  /// 批量动作拿到的是按列出来的顺序排好的那几条
+  @Test func multiSelect() async throws {
+    let (history, root) = try makeHistory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    var ids: [UUID] = []
+    for _ in 0..<5 { ids.append(try #require(await history.record(image(), scale: 2))) }
+    let model = ShotHistoryModel(history: history)
+    let order = model.shown.map(\.id)  // 最新的在前
+    #expect(order == ids.reversed())
+
+    model.click(order[0], flags: [])
+    #expect(model.picked == [order[0]] && model.selection == order[0])
+    // ⌘ 点：加进来，再点一下去掉
+    model.click(order[2], flags: .command)
+    #expect(model.picked == [order[0], order[2]])
+    #expect(model.selection == nil, "选着两条时右边不该出单条的预览")
+    model.click(order[2], flags: .command)
+    #expect(model.picked == [order[0]])
+    // ⇧ 点：从锚点连过去（往回点也一样）
+    model.click(order[3], flags: .shift)
+    // ⌘ 点过的 order[0] 不丢，⇧ 从锚点 order[2] 连到 order[3]（同访达）
+    #expect(model.picked == [order[0], order[2], order[3]])
+    model.click(order[4], flags: [])
+    model.click(order[1], flags: .shift)
+    #expect(model.picked == Set(order[1...4]))
+    // ⌘A：只全选现在列出来的
+    model.pickAll()
+    #expect(model.picked.count == 5)
+    model.filter = .scroll
+    model.pickAll()
+    #expect(model.picked.isEmpty, "筛掉的也被选上了")
+    model.filter = .all
+    // ⇧ 方向键：从锚点连着长
+    model.click(order[0], flags: [])
+    #expect(ShotHistoryWindow.arrowStep(UInt16(kVK_RightArrow), columns: 3) == 1)
+    #expect(ShotHistoryWindow.arrowStep(UInt16(kVK_DownArrow), columns: 3) == 3)
+    #expect(ShotHistoryWindow.arrowStep(UInt16(kVK_ANSI_A), columns: 3) == nil)
+    model.move(by: 1, extend: true)
+    model.move(by: 1, extend: true)
+    #expect(model.picked == Set(order[0...2]))
+    #expect(model.anchor == order[2])
+    #expect(model.chosen.map(\.id) == Array(order[0...2]))
+    // 不按 ⇧ 的方向键还是只选一张
+    model.move(by: 1)
+    #expect(model.picked == [order[3]])
+    // 删掉的不留在选中里
+    model.click(order[0], flags: [])
+    model.click(order[2], flags: .shift)
+    model.delete([order[1]])
+    #expect(model.picked == [order[0], order[2]])
+  }
+
+  /// 两条之间那一段、多选时那一行说明（纯函数）
+  @Test func spanAndSummary() {
+    let ids = (0..<5).map { _ in UUID() }
+    #expect(ShotHistoryModel.span(from: ids[1], to: ids[3], in: ids) == Array(ids[1...3]))
+    #expect(ShotHistoryModel.span(from: ids[3], to: ids[1], in: ids) == Array(ids[1...3]))
+    #expect(ShotHistoryModel.span(from: ids[2], to: ids[2], in: ids) == [ids[2]])
+    #expect(ShotHistoryModel.span(from: UUID(), to: ids[1], in: ids) == nil)
+    func made(_ kind: ShotHistory.Kind, _ bytes: Int) -> ShotHistory.Item {
+      var made = ShotHistory.Item(
+        id: UUID(), kind: kind, createdAt: .now, pixelSize: CGSize(width: 10, height: 10), scale: 2)
+      made.bytes = bytes
+      return made
+    }
+    let text = ShotHistoryModel.summary([made(.shot, 1000), made(.shot, 2000), made(.video, 0)])
+    #expect(text.contains("截图 × 2") && text.contains("录屏 × 1"))
+    #expect(text.contains("KB"), "没写一共多大：\(text)")
+    #expect(ShotHistoryModel.summary([]) == "")
   }
 
   /// 一行几张、方向键挪到第几张（纯函数）

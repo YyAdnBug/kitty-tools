@@ -25,6 +25,9 @@ import UniformTypeIdentifiers
   var pin: @MainActor (ShotHistory.Item) -> Void = { _ in }
   var recognize: @MainActor (ShotHistory.Item) -> Void = { _ in }
   var edit: @MainActor (ShotHistory.Item) -> Void = { _ in }
+  /// 多选时一起做（2026-10-27）：拷贝写成几个文件进剪贴板（剪贴板只装得下一张图），存储一次说一句话
+  var copyMany: @MainActor ([ShotHistory.Item]) -> Void = { _ in }
+  var saveMany: @MainActor ([ShotHistory.Item]) -> Void = { _ in }
   /// 「从历史里删掉」：照历史的规矩问一次（AppDelegate 打开历史窗口、在那里问，拍板 D2）
   var forget: @MainActor (ShotHistory.Item) -> Void = { _ in }
   /// 「在历史里看」：打开截图历史窗口
@@ -383,6 +386,20 @@ import UniformTypeIdentifiers
     }
     guard fileExists(item) else { return notice("文件已经不在了", true) }
     NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: path)])
+  }
+
+  /// 多选「在访达中显示」：存过文件的那几条一起选中（一条都没有时说一声，同单条）
+  static func reveal(_ items: [Item], notice: (String, Bool) -> Void) {
+    guard items.count > 1 else {
+      return items.first.map { reveal($0, notice: notice) } ?? ()
+    }
+    let urls =
+      items
+      .compactMap { $0.filePath ?? $0.savedPath }
+      .filter { FileManager.default.fileExists(atPath: $0) }
+      .map { URL(filePath: $0) }
+    guard !urls.isEmpty else { return notice("这几条都还没存成文件，先「存储到…」", false) }
+    NSWorkspace.shared.activateFileViewerSelecting(urls)
   }
 
   /// 用默认 App 打开（录制的那几条）

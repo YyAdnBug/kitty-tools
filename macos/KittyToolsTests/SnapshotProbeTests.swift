@@ -3355,7 +3355,13 @@ struct SnapshotProbeTests {
         ShotHistoryView(model: model), size: NSSize(width: 900, height: 560), dark: dark,
         to: "\(out)/shot-history\(dark ? "-dark" : "").png")
     }
-    model.selection = nil
+    // 多选（2026-10-27）：右边换成「已选 N 项」和能一起做的那几件
+    model.picked = Set(items.prefix(3).map(\.id))
+    model.anchor = items.first?.id
+    try snapshot(
+      ShotHistoryView(model: model), size: NSSize(width: 900, height: 560), dark: false,
+      to: "\(out)/shot-history-many.png")
+    model.picked = []
     model.search = "找不到的东西"
     try snapshot(
       ShotHistoryView(model: model), size: NSSize(width: 900, height: 560), dark: false,

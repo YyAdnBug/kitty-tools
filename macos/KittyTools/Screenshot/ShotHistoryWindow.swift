@@ -4,6 +4,7 @@
 // 操作本身不自己做：拷贝、存储、另存为、钉图、识字、改标注都由 AppDelegate 接到截图那条路上（同 ShotShelf、PinBoard）。
 
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 
 @MainActor @Observable final class ShotHistoryModel {
@@ -35,7 +36,21 @@ import SwiftUI
   let history: ShotHistory
   var search = ""
   var filter = Filter.all
-  var selection: UUID?
+  /// 选中的那几条（多选，2026-10-27 用户要的）：空 = 没选中。
+  /// 右边正好一条时是预览，多条时是「已选 N 张」+ 能一起做的那几件
+  var picked: Set<UUID> = []
+  /// ⇧ 点选连过去的锚点，也是方向键现在落在哪一条（同访达）
+  var anchor: UUID?
+
+  /// 正好选中一条时是它，否则 nil：右边的预览、只能单条做的那几件（改标注、钉图、识字）都看它。
+  /// 写它 = 只选这一条
+  var selection: UUID? {
+    get { picked.count == 1 ? picked.first : nil }
+    set {
+      picked = newValue.map { [$0] } ?? []
+      anchor = newValue
+    }
+  }
   /// 正在问「删掉这几条？」
   var deleting: [UUID] = []
   /// 缩略图重做好了要重画（改完标注那一下）：视图读它来建立依赖
@@ -185,19 +200,120 @@ import SwiftUI
     min(max(index + step, 0), max(count - 1, 0))
   }
 
-  /// 方向键换选中（没选中的时候选第一张）
-  func move(by step: Int) {
+  /// 方向键换选中（没选中的时候选第一张）。extend = 按着 ⇧：从锚点连过去，不是只选新落到的那张
+  func move(by step: Int, extend: Bool = false) {
     let list = shown
     guard !list.isEmpty else { return }
-    guard let now = selection.flatMap({ id in list.firstIndex { $0.id == id } }) else {
-      selection = list.first?.id
-      return
+    guard let now = (anchor ?? picked.first).flatMap({ id in list.firstIndex { $0.id == id } })
+    else { return pick(list[0].id) }
+    let next = list[Self.stepped(from: now, by: step, count: list.count)].id
+    guard extend else { return pick(next) }
+    picked.formUnion(Self.span(from: anchor ?? next, to: next, in: list.map(\.id)) ?? [next])
+    anchor = next
+  }
+
+  // MARK: 多选
+
+  /// 选中的那几条，按现在列出来的顺序（批量动作都拿它）
+  var chosen: [ShotHistory.Item] {
+    let ids = picked
+    return shown.filter { ids.contains($0.id) }
+  }
+
+  /// 点一张卡：按着 ⌘ 是加选 / 去掉，按着 ⇧ 是从锚点连过去，都没按就只选它。
+  /// 修饰键当场从 NSEvent 读——SwiftUI 的 TapGesture 不带修饰键，而加了 .modifiers(_:) 的那颗不排他，
+  /// 按着 ⌘ 点会和没带修饰键的那颗一起响（单测注入 flags）
+  func click(_ id: UUID, flags: NSEvent.ModifierFlags = NSEvent.modifierFlags) {
+    if flags.contains(.command) {
+      toggle(id)
+    } else if flags.contains(.shift) {
+      extend(to: id)
+    } else {
+      pick(id)
     }
-    selection = list[Self.stepped(from: now, by: step, count: list.count)].id
+  }
+
+  /// 单点一张：只选它
+  func pick(_ id: UUID) {
+    picked = [id]
+    anchor = id
+  }
+
+  /// ⌘ 点：加进来 / 去掉（去掉的那一下锚点也挪过来，同访达）
+  func toggle(_ id: UUID) {
+    if picked.contains(id) { picked.remove(id) } else { picked.insert(id) }
+    anchor = id
+  }
+
+  /// ⇧ 点：从锚点一直连到它，和现在选着的并起来（同访达：⌘ 点出几个零散的、再 ⇧ 点一段，零散的不丢）。
+  /// 锚点不在现在列出来的里面就当单点
+  func extend(to id: UUID) {
+    guard let from = anchor, let span = Self.span(from: from, to: id, in: shown.map(\.id))
+    else { return pick(id) }
+    picked.formUnion(span)
+  }
+
+  /// ⌘A：现在列出来的全选上（筛选、搜索之外的不算）
+  func pickAll() {
+    picked = Set(shown.map(\.id))
+    anchor = shown.first?.id
+  }
+
+  /// 两条之间那一段（含两头；谁在前面都行）。纯函数，配单测
+  static func span(from: UUID, to: UUID, in list: [UUID]) -> [UUID]? {
+    guard let a = list.firstIndex(of: from), let b = list.firstIndex(of: to) else { return nil }
+    return Array(list[min(a, b)...max(a, b)])
+  }
+
+  /// 多选时右边那一行说明：各几个、一共多大。纯函数，配单测
+  static func summary(_ items: [ShotHistory.Item]) -> String {
+    var parts = ShotHistory.Kind.allCases.compactMap { kind -> String? in
+      let count = items.filter { $0.kind == kind }.count
+      return count > 0 ? "\(kind.title) × \(count)" : nil
+    }
+    let bytes = items.reduce(0) { $0 + $1.bytes }
+    if bytes > 0 {
+      parts.append(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))
+    }
+    return parts.joined(separator: " · ")
+  }
+
+  /// 多选「在访达中显示」：存过文件的那几条一起选中
+  func reveal(_ items: [ShotHistory.Item]) { ShotHistory.reveal(items, notice: actions.notice) }
+
+  // MARK: 对着选中的那几条做
+  //
+  // 都是**按下那一刻**才去读 chosen：挂在按钮上的闭包捕获的是渲染那一刻的选中状态，
+  // ⌘A 之后紧接着按 ⌘C，那一下会按「只选着一条」走（2026-10-27 写多选时被这个咬过）
+
+  /// 能不能拷（选中了就行，录制的那几条拷的是文件）
+  var canCopy: Bool { !picked.isEmpty }
+  /// 能不能存（选中的里面有图才行：录制的那几条本来就是文件）
+  var canSave: Bool { chosen.contains { $0.filePath == nil } }
+
+  func copySelection() {
+    let items = chosen
+    guard !items.isEmpty else { return }
+    if items.count > 1 { actions.copyMany(items) } else { actions.copy(items[0]) }
+  }
+
+  func saveSelection() {
+    let items = chosen
+    guard !items.isEmpty else { return }
+    if items.count > 1 { actions.saveMany(items) } else { actions.save(items[0]) }
+  }
+
+  func revealSelection() { reveal(chosen) }
+
+  func deleteSelection() {
+    let ids = chosen.map(\.id)
+    guard !ids.isEmpty else { return }
+    deleting = ids
   }
 
   func delete(_ ids: [UUID]) {
-    if let selection, ids.contains(selection) { self.selection = nil }
+    picked.subtract(ids)
+    if let anchor, ids.contains(anchor) { self.anchor = picked.first }
     history.remove(ids)
   }
 }
@@ -246,21 +362,36 @@ import SwiftUI
     onClose()
   }
 
-  /// 窗口自己认的键：**⇧⌘S 另存为**。不挂 SwiftUI 的隐藏按钮——同一个字母上挂 ⌘S、⇧⌘S 两颗按钮，
-  /// 实测 ⌘S 会被带 ⇧ 的那颗抢走（三次里错一两次，和 NotesWindow 的 ⇧⌘Z 是同一个坑）。
-  /// 别的键都在 ShotHistoryView.shortcuts
+  /// 窗口自己认的键：**⇧⌘S 另存为**和 **⇧ + 方向键连选**。不挂 SwiftUI 的隐藏按钮——同一个键上挂
+  /// 带 ⇧ 和不带 ⇧ 的两颗按钮，实测不带 ⇧ 的那颗会被抢走（⌘S 三次里错一两次走成另存为；⇧← 一挂上，
+  /// 光按 ← 就变成连选），和 NotesWindow 的 ⇧⌘Z 是同一个坑。别的键都在 ShotHistoryView.shortcuts
   static func handlesKeyDown(_ event: NSEvent, in window: NSWindow, model: ShotHistoryModel)
     -> Bool
   {
     guard event.window === window else { return false }
-    guard
-      event.modifierFlags.intersection([.command, .control, .option, .shift])
-        == [.command, .shift],
+    let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
+    // ⇧ + 方向键：从锚点连着选过去
+    if flags == .shift, let step = Self.arrowStep(event.keyCode, columns: model.columnsPerRow) {
+      model.move(by: step, extend: true)
+      return true
+    }
+    guard flags == [.command, .shift],
       event.charactersIgnoringModifiers?.lowercased() == "s",
       let item = model.selected, item.filePath == nil  // 录制的那几条没有「另存为」
     else { return false }
     model.actions.saveAs(item)
     return true
+  }
+
+  /// 方向键挪几格（←→ 一张，↑↓ 一行）；不是方向键就 nil。纯函数，配单测
+  static func arrowStep(_ keyCode: UInt16, columns: Int) -> Int? {
+    switch Int(keyCode) {
+    case kVK_LeftArrow: -1
+    case kVK_RightArrow: 1
+    case kVK_UpArrow: -max(columns, 1)
+    case kVK_DownArrow: max(columns, 1)
+    default: nil
+    }
   }
 
   func windowDidBecomeKey(_ notification: Notification) {

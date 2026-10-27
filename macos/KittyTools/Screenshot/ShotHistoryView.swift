@@ -19,7 +19,11 @@ struct ShotHistoryView: View {
   var body: some View {
     HStack(spacing: 0) {
       grid
-      if let item = model.selected {
+      let chosen = model.chosen
+      if chosen.count > 1 {
+        Divider()
+        many(chosen).frame(width: 280)
+      } else if let item = model.selected {
         Divider()
         detail(item).frame(width: 280)
       }
@@ -37,8 +41,8 @@ struct ShotHistoryView: View {
     .searchable(text: $model.search, prompt: "搜来源或种类")
     .searchFocused($searching)
     .onKeyPress(.delete) {
-      guard let item = model.selected else { return .ignored }
-      model.deleting = [item.id]
+      guard !model.picked.isEmpty else { return .ignored }
+      model.deleteSelection()
       return .handled
     }
     .confirmationDialog(
@@ -67,9 +71,11 @@ struct ShotHistoryView: View {
   /// 见 NotesWindowView.shortcuts）。
   /// 方向键和 ⌘C 在搜索框里打字时让开：performKeyEquivalent 比输入框先看到键，不让开就没法在搜索框里
   /// 挪光标、拷贝选中的字。
-  /// ⇧⌘S 另存为不在这里：同一个字母上挂 ⌘S、⇧⌘S 两颗，⌘S 会被带 ⇧ 的那颗抢走（实测，三次里错一两次），
-  /// 由窗口自己认（ShotHistoryWindow.handlesKeyDown，同 NotesWindow 的 ⇧⌘Z）
+  /// ⇧⌘S 另存为、⇧ + 方向键连选不在这里：同一个键上挂带 ⇧ 和不带 ⇧ 的两颗，不带 ⇧ 的那颗会被抢走
+  /// （实测，⌘S 三次里错一两次；⇧← 一挂上，光按 ← 就变成连选了），都由窗口自己认
+  /// （ShotHistoryWindow.handlesKeyDown，同 NotesWindow 的 ⇧⌘Z）
   @ViewBuilder private var shortcuts: some View {
+    let chosen = model.chosen
     let item = model.selected
     let isImage = item.map { $0.filePath == nil } ?? false
     Group {
@@ -80,21 +86,22 @@ struct ShotHistoryView: View {
           .keyboardShortcut(.upArrow, modifiers: [])
         Button("下一行") { model.move(by: model.columnsPerRow) }
           .keyboardShortcut(.downArrow, modifiers: [])
-        Button("拷贝") { if let item { model.actions.copy(item) } }
-          .keyboardShortcut("c").disabled(!isImage)
+        Button("全选") { model.pickAll() }.keyboardShortcut("a")
+        Button("拷贝") { model.copySelection() }
+          .keyboardShortcut("c").disabled(!model.canCopy)
       }
       .disabled(searching)
       Button("改标注") { if let item { edit(item) } }
         .keyboardShortcut(.return, modifiers: []).disabled(item == nil)
-      Button("存储到…") { if let item { model.actions.save(item) } }
-        .keyboardShortcut("s").disabled(!isImage)
+      Button("存储到…") { model.saveSelection() }
+        .keyboardShortcut("s").disabled(!model.canSave)
       Button("钉到屏幕") { if let item { model.actions.pin(item) } }
         .keyboardShortcut("p").disabled(!isImage)
       Button("识字并拷贝") { if let item { model.actions.recognize(item) } }
         .keyboardShortcut("o").disabled(!isImage)
-      Button("在访达中显示") { if let item { model.reveal(item) } }
+      Button("在访达中显示") { model.revealSelection() }
         .keyboardShortcut("r", modifiers: [.command, .shift])
-        .disabled(item.map { !model.hasFile($0) } ?? true)
+        .disabled(chosen.isEmpty || (chosen.count == 1 && !model.hasFile(chosen[0])))
       Button("搜索") { searching = true }.keyboardShortcut("f")
       // ⌘1…⌘4：换筛选（同顶上那排）
       ForEach(Array(ShotHistoryModel.Filter.allCases.enumerated()), id: \.element) {
@@ -130,9 +137,9 @@ struct ShotHistoryView: View {
               ) {
                 ForEach(group.items) { item in
                   ShotCard(
-                    item: item, chosen: model.selection == item.id, history: model.history,
+                    item: item, chosen: model.picked.contains(item.id), history: model.history,
                     generation: model.redraws,
-                    select: { model.selection = item.id }, edit: { edit(item) }
+                    select: { model.click(item.id) }, edit: { edit(item) }
                   )
                   .onDrag { model.dragProvider(for: item) }
                   .contextMenu { menu(item) }
@@ -160,7 +167,7 @@ struct ShotHistoryView: View {
       }
       // 换选中时把那张滚进视野（2026-10-27 用户手测：方向键挑到看不见的那一行，内容区不跟着滚）。
       // anchor 给 nil 是「滚最少的距离、够看见就行」：已经看得见的（点一下、同一行里左右挪）一动不动
-      .onChange(of: model.selection) { _, now in
+      .onChange(of: model.anchor) { _, now in
         guard let now else { return }
         proxy.scrollTo(now, anchor: nil)
       }
@@ -211,6 +218,34 @@ struct ShotHistoryView: View {
     .frame(maxHeight: .infinity, alignment: .top)
   }
 
+  /// 多选时右边这一栏：已选几张、各几个多大，底下是能一起做的那几件
+  private func many(_ items: [ShotHistory.Item]) -> some View {
+    VStack(alignment: .leading, spacing: 10) {
+      ZStack {
+        RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
+          .fill(.quaternary.opacity(0.4))
+        VStack(spacing: 8) {
+          Image(systemName: "square.on.square").font(.system(size: 26)).foregroundStyle(.secondary)
+          Text("已选 \(items.count) 项").font(.system(size: 13, weight: .medium))
+        }
+      }
+      .frame(height: 180)
+      Text(ShotHistoryModel.summary(items)).font(.system(size: 12)).foregroundStyle(.secondary)
+      Divider()
+      VStack(alignment: .leading, spacing: 8) {
+        row("拷贝", "doc.on.doc", key: "⌘C") { model.copySelection() }
+        row("存储到…", "square.and.arrow.down", key: "⌘S") { model.saveSelection() }
+        row("在访达中显示", "folder", key: "⇧⌘R") { model.revealSelection() }
+        row("删除", "trash", key: "⌫", danger: true) { model.deleteSelection() }
+      }
+      Spacer()
+    }
+    .padding(16)
+    .frame(maxHeight: .infinity, alignment: .top)
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("已选 \(items.count) 项")
+  }
+
   @ViewBuilder private func actions(_ item: ShotHistory.Item) -> some View {
     let isImage = item.filePath == nil
     VStack(alignment: .leading, spacing: 8) {
@@ -250,7 +285,17 @@ struct ShotHistoryView: View {
   }
 
   @ViewBuilder private func menu(_ item: ShotHistory.Item) -> some View {
-    if item.filePath == nil {
+    let chosen = model.chosen
+    if chosen.count > 1, chosen.contains(where: { $0.id == item.id }) {
+      // 右键点的就是多选里的一张：整批做（点在选区外面的那张只管它自己，不动选中）
+      Button("拷贝 \(chosen.count) 项") { model.actions.copyMany(chosen) }
+      Button("存储 \(chosen.count) 项…") { model.actions.saveMany(chosen) }
+      Button("在访达中显示") { model.reveal(chosen) }
+      Divider()
+      Button("删除 \(chosen.count) 项", role: .destructive) {
+        model.deleting = chosen.map(\.id)
+      }
+    } else if item.filePath == nil {
       Button("改标注") { edit(item) }
       Button("拷贝") { model.actions.copy(item) }
       Button("存储到…") { model.actions.save(item) }
@@ -268,7 +313,7 @@ struct ShotHistoryView: View {
 
   /// 双击 / 「改标注」：录制的那几条双击是用默认 App 打开（拍板 C3）
   private func edit(_ item: ShotHistory.Item) {
-    model.selection = item.id
+    model.pick(item.id)
     if item.filePath == nil { model.actions.edit(item) } else { model.open(item) }
   }
 }
