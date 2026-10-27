@@ -133,7 +133,7 @@
 - 触发：在浏览器或 Word 里选 3000 字划词翻译，只翻了前 2048 个字符，没有任何提示（输入翻译的上限是 32 KB）。
 - 改：`GetText(-1)`，长度交给后面那道 32 KB 的检查；超了照输入翻译那样提示。
 
-### R59（P2）超过 2 MB 的 HTML / RTF 被截了一半存下来，不是丢掉
+### R59（P2）超过 2 MB 的 HTML / RTF 被截了一半存下来，不是丢掉 → 已修（`da9a6ca`）
 
 - `Clipboard/ClipboardFormats.cs:495` 的 `ReadRich` 调 `ReadBlob(format, MaxRichBytes)`，`:523` 的 `Math.Min` 把超长的截断；`MaxRichBytes`（:46）的注释说的是「超过就只留纯文本」。
 - 触发：复制几千行的 Excel 区域、带内嵌图片的网页，再从历史里粘回 Word / Outlook，格式是坏的，或者只出来一部分。

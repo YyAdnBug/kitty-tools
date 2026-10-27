@@ -494,7 +494,10 @@ internal static unsafe partial class ClipboardFormats
 
     private static string? ReadRich(uint format)
     {
-        var bytes = ReadBlob(format, MaxRichBytes);
+        // REVIEW R59：以前用 ReadBlob 带上限读，超长会被截断成一半再存下来——粘贴回 Word / Outlook
+        // 是坏的，划词兜底时还原的也是截断版（等于把用户原来的富文本弄坏）。改成超了就整块不要，
+        // 和图片那几处一样：只留纯文本。
+        var bytes = ReadBlobWithin(format, MaxRichBytes);
         if (bytes is not { Length: > 0 })
         {
             return null;
@@ -507,27 +510,6 @@ internal static unsafe partial class ClipboardFormats
         catch
         {
             return null;
-        }
-    }
-
-    private static byte[]? ReadBlob(uint format, int maximum = int.MaxValue)
-    {
-        var pointer = Lock(format, out var size, out var local);
-        if (pointer is null || size == 0)
-        {
-            return null;
-        }
-
-        try
-        {
-            var length = (int)Math.Min(size, (nuint)maximum);
-            var bytes = new byte[length];
-            new ReadOnlySpan<byte>(pointer, length).CopyTo(bytes);
-            return bytes;
-        }
-        finally
-        {
-            GlobalUnlock(local);
         }
     }
 
