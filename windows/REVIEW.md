@@ -8,6 +8,14 @@
 
 条目编号不复用。行号按条目里写的那个提交。
 
+## v9 标注分工（2026-10-27，用户拍板 PLAN-v9-annotate D1–D7 全部按推荐）
+
+截图标注编辑器对齐 mac（`PLAN-v9-annotate.md`，PLAN-v9 第 5 批拆成 5a–5e）由 **Claude 在自己的 worktree 里做**（D7），做完一小批推一次。
+
+**归 Claude 的文件**（这一轮别的 agent 先别改；真要改先在这里写一句再动）：`KittyTools.Core/AnnotationGeometry.cs`、`KittyTools.Core/AnnotationDocument.cs`、`KittyTools.Tests/AnnotationGeometryTests.cs`、`KittyTools/Screenshot/Annotation.cs`、`KittyTools/Screenshot/SelectionOverlayWindow.cs`；`ShotHistoryRules.cs` 里标注 JSON 那几段、`ShotHistory.cs` 的 `ShotAnnotations`。5e 再加尺寸胶囊和工具栏用到的文件，到时写在这里。
+
+- 5a（底子和 B1–B9）：见 `git log --grep "5a"`。
+
 ## v8 分工（2026-10-26 深夜，用户定：审查方接着把 mac 新功能搬过来）
 
 方案在 `PLAN-v8.md`（截图历史、标注遮罩、速查表）。审查方在 Mac 上写、**不编译**，推上来由你们编译、截图、手测；编译错直接修，在这一节下面记一句。v7 照常归你们。

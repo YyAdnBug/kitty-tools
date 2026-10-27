@@ -50,37 +50,19 @@ internal sealed class ShotItem
     public long Bytes { get; init; }
 }
 
-/// <summary>App 里的标注和存盘的样子互转（坐标挪到原图里：减掉选区左上角）。工具名就是枚举名的小写。</summary>
+/// <summary>标注和存盘的样子互转（规则在 Core 的 ShotHistoryRules.ToData / FromData，配单测）。</summary>
 internal static class ShotAnnotations
 {
-    public static ShotAnnotationData ToData(Annotation annotation, double dx, double dy) => new(
-        annotation.Tool.ToString().ToLowerInvariant(),
-        new RectD(annotation.Rect.X - dx, annotation.Rect.Y - dy, annotation.Rect.Width, annotation.Rect.Height),
-        annotation.Points.Select(point => new PointD(point.X - dx, point.Y - dy)).ToList(),
-        annotation.Text,
-        ((uint)annotation.Color.A << 24) | ((uint)annotation.Color.R << 16) |
-        ((uint)annotation.Color.G << 8) | annotation.Color.B,
-        annotation.Width);
+    public static ShotAnnotationData ToData(Annotation annotation, double dx, double dy)
+        => ShotHistoryRules.ToData(annotation, dx, dy);
 
-    /// <summary>存盘的 → App 里的；认不得的工具名返回 null（以后加的工具在旧版本里跳过）。</summary>
-    public static Annotation? FromData(ShotAnnotationData data, double dx, double dy)
-    {
-        if (!Enum.TryParse<AnnotationTool>(data.Tool, ignoreCase: true, out var tool))
-        {
-            return null;
-        }
-
-        return new Annotation
-        {
-            Tool = tool,
-            Rect = new RectD(data.Rect.X + dx, data.Rect.Y + dy, data.Rect.Width, data.Rect.Height),
-            Points = data.Points.Select(point => new PointD(point.X + dx, point.Y + dy)).ToList(),
-            Text = data.Text,
-            Color = Windows.UI.Color.FromArgb(
-                (byte)(data.Argb >> 24), (byte)(data.Argb >> 16), (byte)(data.Argb >> 8), (byte)data.Argb),
-            Width = data.Width,
-        };
-    }
+    /// <summary>存盘的 → 标注；认不得的工具名返回 null。旧数据的文字没存大小，按这块屏的缩放量一遍。</summary>
+    public static Annotation? FromData(ShotAnnotationData data, double dx, double dy, double scale)
+        => ShotHistoryRules.FromData(data, dx, dy) is { } annotation
+            ? annotation.Kind == AnnotationKind.Text && annotation.Rect.Width <= 0
+                ? AnnotationRenderer.Measured(annotation, scale)
+                : annotation
+            : null;
 }
 
 internal sealed class ShotHistory

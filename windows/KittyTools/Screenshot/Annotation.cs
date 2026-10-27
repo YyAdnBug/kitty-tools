@@ -1,5 +1,7 @@
-// 截图标注的数据和绘制：矩形、箭头、画笔、文字、马赛克。
+// 截图标注的画法（Win2D）。模型和几何在 Core 的 AnnotationGeometry.cs（KittyTools.Core.Annotation）。
 // 坐标一律是遮罩窗口里的物理像素（相对这块屏）；屏幕绘制时按 DPI 换成 DIP，导出时按 1:1 像素。
+// ponytail: 第 5a 批只换了模型，画法还是第一版那五种（矩形、箭头、画笔、文字、马赛克）；十种工具、阴影、层次、
+// 锥形箭头、文字三种样式是第 5b、5d 批（PLAN-v9-annotate §3、§6），没画法的工具这里先跳过。
 using System.Numerics;
 using KittyTools.Core;
 using Microsoft.Graphics.Canvas;
@@ -8,43 +10,39 @@ using Windows.UI;
 
 namespace KittyTools;
 
-internal enum AnnotationTool
-{
-    Select,
-    Rectangle,
-    Arrow,
-    Pen,
-    Text,
-    Mosaic,
-}
-
-internal sealed class Annotation
-{
-    public AnnotationTool Tool { get; set; }
-
-    public RectD Rect { get; set; }
-
-    public List<PointD> Points { get; set; } = new();
-
-    public string Text { get; set; } = string.Empty;
-
-    public Color Color { get; set; } = Theme.Shot.Accent;
-
-    public double Width { get; set; } = 3;
-
-    public Annotation Clone() => new()
-    {
-        Tool = Tool,
-        Rect = Rect,
-        Points = new List<PointD>(Points),
-        Text = Text,
-        Color = Color,
-        Width = Width,
-    };
-}
-
 internal static class AnnotationRenderer
 {
+    /// <summary>文字标注的字号（DIP）。第 5d 批换成三档。</summary>
+    private const float TextSize = 16;
+
+    public static Color ColorOf(int palette)
+    {
+        var argb = AnnotationPalette.ArgbOf(palette);
+        return Color.FromArgb((byte)(argb >> 24), (byte)(argb >> 16), (byte)(argb >> 8), (byte)argb);
+    }
+
+    /// <summary>文字框的大小（DIP），和 Draw 画字用同一个格式；空串、末尾换行也留一行高。</summary>
+    public static (double Width, double Height) MeasureText(string text)
+    {
+        var measured = text.Length == 0 || text.EndsWith('\n') ? text + " " : text;
+        using var format = TextFormat(1);
+        using var layout = new CanvasTextLayout(CanvasDevice.GetSharedDevice(), measured, format, float.MaxValue, float.MaxValue);
+        var bounds = layout.LayoutBounds;
+        return (Math.Ceiling(bounds.Width), Math.Ceiling(bounds.Height));
+    }
+
+    /// <summary>文字标注补上量出来的框（像素）：收下文字时、从截图历史读出旧数据时。</summary>
+    public static Annotation Measured(Annotation annotation, double scale)
+    {
+        if (annotation.Kind != AnnotationKind.Text)
+        {
+            return annotation;
+        }
+
+        var (width, height) = MeasureText(annotation.Text);
+        return annotation with { Rect = annotation.Rect with { Width = width * scale, Height = height * scale } };
+    }
+
     public static void Draw(
         CanvasDrawingSession ds,
         IReadOnlyList<Annotation> annotations,
@@ -55,72 +53,70 @@ internal static class AnnotationRenderer
     {
         foreach (var annotation in annotations)
         {
-            switch (annotation.Tool)
+            var color = ColorOf(annotation.Style.Color);
+            var width = (float)(annotation.Style.LineWidth * strokeScale);
+            switch (annotation.Kind)
             {
-                case AnnotationTool.Rectangle:
-                {
-                    var rect = ToRect(annotation.Rect, origin, unit);
-                    ds.DrawRectangle(rect, annotation.Color, (float)(annotation.Width * strokeScale));
+                case AnnotationKind.Rectangle:
+                    ds.DrawRectangle(ToRect(annotation.Rect, origin, unit), color, width);
                     break;
-                }
-                case AnnotationTool.Arrow:
-                    DrawArrow(ds, annotation, origin, unit, strokeScale);
+                case AnnotationKind.Arrow:
+                    DrawArrow(ds, annotation, color, width, origin, unit, strokeScale);
                     break;
-                case AnnotationTool.Pen:
+                case AnnotationKind.Pen:
                     for (var index = 1; index < annotation.Points.Count; index++)
                     {
-                        var from = ToPoint(annotation.Points[index - 1], origin, unit);
-                        var to = ToPoint(annotation.Points[index], origin, unit);
-                        ds.DrawLine(from, to, annotation.Color, (float)(annotation.Width * strokeScale));
+                        ds.DrawLine(
+                            ToPoint(annotation.Points[index - 1], origin, unit),
+                            ToPoint(annotation.Points[index], origin, unit), color, width);
                     }
 
                     break;
-                case AnnotationTool.Text:
+                case AnnotationKind.Text:
                 {
                     var point = ToPoint(new PointD(annotation.Rect.X, annotation.Rect.Y), origin, unit);
-                    var format = new CanvasTextFormat
-                    {
-                        FontFamily = "Segoe UI",
-                        FontSize = (float)(16 * strokeScale),
-                        WordWrapping = CanvasWordWrapping.NoWrap,
-                    };
-                    ds.DrawText(annotation.Text, point.X, point.Y, annotation.Color, format);
+                    using var format = TextFormat(strokeScale);
+                    ds.DrawText(annotation.Text, point.X, point.Y, color, format);
                     break;
                 }
-                case AnnotationTool.Mosaic:
+                case AnnotationKind.Mosaic:
                     DrawMosaic(ds, annotation, screen, origin, unit);
                     break;
             }
         }
     }
 
+    private static CanvasTextFormat TextFormat(double scale) => new()
+    {
+        FontFamily = "Segoe UI",
+        FontSize = (float)(TextSize * scale),
+        WordWrapping = CanvasWordWrapping.NoWrap,
+    };
+
     private static void DrawArrow(
         CanvasDrawingSession ds,
         Annotation annotation,
+        Color color,
+        float width,
         PointD origin,
         double unit,
         double strokeScale)
     {
-        if (annotation.Points.Count < 2)
-        {
-            return;
-        }
-
-        var from = annotation.Points[0];
-        var to = annotation.Points[^1];
+        var from = annotation.From;
+        var to = annotation.To;
         var start = ToPoint(from, origin, unit);
         var end = ToPoint(to, origin, unit);
-        ds.DrawLine(start, end, annotation.Color, (float)(annotation.Width * strokeScale));
+        ds.DrawLine(start, end, color, width);
         var angle = Math.Atan2(to.Y - from.Y, to.X - from.X);
-        var length = (float)(14 * unit);
+        var length = (float)(14 * strokeScale);
         var left = new Vector2(
             (float)(end.X - length * Math.Cos(angle - 0.45)),
             (float)(end.Y - length * Math.Sin(angle - 0.45)));
         var right = new Vector2(
             (float)(end.X - length * Math.Cos(angle + 0.45)),
             (float)(end.Y - length * Math.Sin(angle + 0.45)));
-        ds.DrawLine(end, left, annotation.Color, (float)(annotation.Width * strokeScale));
-        ds.DrawLine(end, right, annotation.Color, (float)(annotation.Width * strokeScale));
+        ds.DrawLine(end, left, color, width);
+        ds.DrawLine(end, right, color, width);
     }
 
     private static void DrawMosaic(

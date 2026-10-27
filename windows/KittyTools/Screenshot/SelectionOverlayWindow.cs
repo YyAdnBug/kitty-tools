@@ -35,11 +35,9 @@ internal sealed partial class SelectionOverlayWindow : Window
     private readonly Canvas _root;
     private readonly Border _toolbar;
     private readonly Border _styleTray;
-    private readonly Dictionary<AnnotationTool, Button> _toolButtons = new();
+    private readonly List<(AnnotationKind? Tool, Button Button)> _toolButtons = new();
     private readonly List<PixelBounds> _windows = new();
-    private readonly List<Annotation> _annotations = new();
-    private readonly List<List<Annotation>> _undoStack = new();
-    private readonly List<List<Annotation>> _redoStack = new();
+    private readonly AnnotationDocument _document = new();
     private readonly CanvasTextFormat _text = new() { FontFamily = "Segoe UI", FontSize = 12 };
     private readonly CanvasTextFormat _small = new() { FontFamily = "Segoe UI", FontSize = 11 };
 
@@ -55,15 +53,21 @@ internal sealed partial class SelectionOverlayWindow : Window
     private RectD _original;
     private SelectionHandle _handle;
     private bool _key;
-    private AnnotationTool _tool = AnnotationTool.Select;
-    private Color _color = Accent;
-    private double _width = 3;
-    private Annotation? _activeAnnotation;
+    /// <summary>当前工具；null = 选择（点标注选中、拖动，点空白平移选区）。</summary>
+    private AnnotationKind? _tool;
+    /// <summary>新标注用的样式。第 5b 批起按工具记住（PLAN-v9-annotate Y8）。</summary>
+    private AnnotationStyle _style = AnnotationStyle.Default;
+    /// <summary>正在拖出来的那条（还不在 _document 里，松手够大才收下）。</summary>
+    private Annotation? _draft;
     private PointD _annotationStart;
-    private Annotation? _selectedAnnotation;
-    private PointD _annotationDragStart;
-    private RectD _annotationDragRect;
-    private List<PointD>? _annotationDragPoints;
+    /// <summary>拖着挪的那条按下时的样子，和按下前整份标注（松手时记一步撤销，B1）。</summary>
+    private Annotation? _dragOriginal;
+    private IReadOnlyList<Annotation> _dragBefore = Array.Empty<Annotation>();
+    /// <summary>调整中在选区外拖开重新框：太小作废时退回原来的选区（mac draw(restore:)）。</summary>
+    private RectD? _restore;
+    /// <summary>挡下会清掉标注的操作时，顶部提示临时换成这几句（mac refuseWipe / flashHint）。</summary>
+    private string? _flash;
+    private long _flashUntil;
     private TextBox? _textEditor;
     private PointD _textPoint;
     private bool _cloaked;
@@ -167,10 +171,8 @@ internal sealed partial class SelectionOverlayWindow : Window
         _bitmap?.Dispose();
         _bitmap = null;
         _windows.Clear();
-        _annotations.Clear();
-        _undoStack.Clear();
-        _redoStack.Clear();
-        _activeAnnotation = null;
+        _document.Reset();
+        _draft = null;
         _canvas.RemoveFromVisualTree();
         Content = null;
         Log.Info("screenshot.overlay-released");
@@ -184,8 +186,8 @@ internal sealed partial class SelectionOverlayWindow : Window
     /// <summary>截图历史「改标注」（PLAN-v8 第 3 批）：摆上当初的标注接着改。</summary>
     internal void LoadAnnotations(IEnumerable<Annotation> annotations)
     {
-        _annotations.Clear();
-        _annotations.AddRange(annotations);
+        _document.Load(annotations);
+        UpdateToolbarChrome();
         _canvas.Invalidate();
     }
 
@@ -193,8 +195,53 @@ internal sealed partial class SelectionOverlayWindow : Window
     internal List<ShotAnnotationData> AnnotationsForHistory()
     {
         var origin = _session.Selection;
-        return _annotations.Select(annotation => ShotAnnotations.ToData(annotation, origin.X, origin.Y)).ToList();
+        return _document.Items.Select(annotation => ShotAnnotations.ToData(annotation, origin.X, origin.Y)).ToList();
     }
+
+    /// <summary>
+    /// --ui-snapshots（PLAN-v9 第 5a 批）：在选区里摆五种标注（新的 8 色、三档粗细、量出来的文字框），
+    /// 选中箭头、开着样式托盘，再顶部提示一句「有标注时右键不清空」。只在合成的冻结帧上用。
+    /// </summary>
+    internal void ShowProbeAnnotations()
+    {
+        var area = _session.Selection;
+        PointD At(double x, double y) => new(area.X + area.Width * x, area.Y + area.Height * y);
+        var arrow = new Annotation
+        {
+            Kind = AnnotationKind.Arrow, From = At(0.55, 0.2), To = At(0.85, 0.45), Style = new(AnnotationPalette.Red, 2, 0),
+        };
+        _document.Load(new[]
+        {
+            new Annotation
+            {
+                Kind = AnnotationKind.Mosaic, Rect = new RectD(At(0.08, 0.6).X, At(0.08, 0.6).Y, area.Width * 0.3, area.Height * 0.3),
+            },
+            new Annotation
+            {
+                Kind = AnnotationKind.Rectangle, Rect = new RectD(At(0.08, 0.1).X, At(0.08, 0.1).Y, area.Width * 0.35, area.Height * 0.35),
+                Style = new(AnnotationPalette.Pink, 1, 0),
+            },
+            arrow,
+            new Annotation
+            {
+                Kind = AnnotationKind.Pen, Style = new(4, 0, 0),
+                Points = Enumerable.Range(0, 24).Select(step => At(0.5 + step * 0.018, 0.75 + Math.Sin(step / 3.0) * 0.06)).ToArray(),
+            },
+            AnnotationRenderer.Measured(
+                new Annotation { Kind = AnnotationKind.Text, Rect = new RectD(At(0.5, 0.55).X, At(0.5, 0.55).Y, 0, 0), Text = "标注 5a" },
+                _scale) with { Style = new(5, 1, 0) },
+        });
+        _document.SelectedId = arrow.Id;
+        UpdateToolbarChrome();
+        PositionToolbar();
+        PositionStyleTray();
+        _styleTray.Visibility = Visibility.Visible;
+        RefuseWipe("有标注时右键不清空");
+    }
+
+    /// <summary>画了标注，或正在输入还没收下的字：会把它们清掉的操作都不做（mac hasAnnotations）。</summary>
+    internal bool HasAnnotations
+        => _document.Items.Count > 0 || !string.IsNullOrWhiteSpace(_textEditor?.Text);
 
     public FrozenScreen Screen => _screen;
 
@@ -206,6 +253,8 @@ internal sealed partial class SelectionOverlayWindow : Window
             return null;
         }
 
+        // 打着字就点了拷贝 / 保存 / 钉图：先把字收下（mac output 先 endEditing）
+        CommitText();
         var selection = _session.Selection;
         var width = Math.Max(1, (int)Math.Ceiling(selection.Width));
         var height = Math.Max(1, (int)Math.Ceiling(selection.Height));
@@ -217,7 +266,7 @@ internal sealed partial class SelectionOverlayWindow : Window
                 new Windows.Foundation.Rect(0, 0, width, height),
                 new Windows.Foundation.Rect(selection.X, selection.Y, width, height));
             AnnotationRenderer.Draw(
-                ds, _annotations, _screen,
+                ds, _document.Items, _screen,
                 new PointD(selection.X, selection.Y), 1, _scale);
         }
 
@@ -270,8 +319,9 @@ internal sealed partial class SelectionOverlayWindow : Window
             }
             else if (e.Key == Windows.System.VirtualKey.Escape)
             {
+                // B5：照 mac，Esc 是收下打的字（要扔就清空再 Esc，空的不留）
                 e.Handled = true;
-                CancelText();
+                CommitText();
             }
         };
         editor.LostFocus += (_, _) => CommitText();
@@ -291,117 +341,65 @@ internal sealed partial class SelectionOverlayWindow : Window
         _textEditor = null;
         var text = editor.Text.Trim();
         _root.Children.Remove(editor);
-        if (text.Length > 0)
-        {
-            PushUndo();
-            _annotations.Add(new Annotation
+        var added = AnnotationRenderer.Measured(
+            new Annotation
             {
-                Tool = AnnotationTool.Text,
+                Kind = AnnotationKind.Text,
                 Rect = new RectD(_textPoint.X, _textPoint.Y, 0, 0),
                 Text = text,
-                Color = _color,
-                Width = _width,
-            });
+                Style = _style,
+            },
+            _scale);
+        if (added.IsMeaningful(_scale) && _document.Commit(_document.Items.Append(added)))
+        {
+            // 收下后选中这条（同画完自动选中）
+            _document.SelectedId = added.Id;
         }
 
+        UpdateToolbarChrome();
         _canvas.Invalidate();
         _canvas.Focus(FocusState.Programmatic);
     }
 
-    private void CancelText()
-    {
-        if (_textEditor is { } editor)
-        {
-            _textEditor = null;
-            _root.Children.Remove(editor);
-        }
+    /// <summary>点中的最上面那条（按画的层次，规则见 Core 的 Annotation.Topmost / Contains）。</summary>
+    private Annotation? HitAnnotation(PointD point) => Annotation.Topmost(_document.Items, point, _scale);
 
-        _canvas.Focus(FocusState.Programmatic);
-    }
-
-    /// <summary>点中的标注（后画的在上层，所以倒着找）。</summary>
-    private Annotation? HitAnnotation(PointD point)
-    {
-        for (var index = _annotations.Count - 1; index >= 0; index--)
-        {
-            var annotation = _annotations[index];
-            var hit = annotation.Tool switch
-            {
-                AnnotationTool.Text => new RectD(annotation.Rect.X, annotation.Rect.Y,
-                    Math.Max(40, annotation.Text.Length * 8.0), 22).Contains(point),
-                AnnotationTool.Pen or AnnotationTool.Arrow => NearPolyline(annotation.Points, point),
-                AnnotationTool.Rectangle or AnnotationTool.Mosaic => annotation.Rect.Contains(point),
-                _ => false,
-            };
-            if (hit)
-            {
-                return annotation;
-            }
-        }
-
-        return null;
-    }
-
-    private bool NearPolyline(List<PointD> points, PointD point)
-    {
-        var tolerance = 10 * _scale;
-        for (var index = 1; index < points.Count; index++)
-        {
-            if (RegionMath.DistanceToSegment(point, points[index - 1], points[index]) <= tolerance)
-            {
-                return true;
-            }
-        }
-
-        return points.Count == 1 &&
-               Math.Abs(points[0].X - point.X) + Math.Abs(points[0].Y - point.Y) <= tolerance;
-    }
+    /// <summary>正拖着标注（画、挪）：撤销 / 重做 / 删除都不响应，不然松手时记的那一步和栈对不上（B8）。</summary>
+    private bool IsDraggingAnnotation => _drag is DragKind.Annotate or DragKind.MoveAnnotation;
 
     private void DeleteSelectedAnnotation()
     {
-        if (_selectedAnnotation is not { } annotation)
+        if (IsDraggingAnnotation || !_document.DeleteSelected())
         {
             return;
         }
 
-        PushUndo();
-        _annotations.Remove(annotation);
-        _selectedAnnotation = null;
+        UpdateToolbarChrome();
         _canvas.Invalidate();
     }
 
     private void MoveSelectedAnnotation()
     {
-        if (_selectedAnnotation is not { } annotation)
+        if (_dragOriginal is not { } original)
         {
             return;
         }
 
-        var dx = _cursor.X - _annotationDragStart.X;
-        var dy = _cursor.Y - _annotationDragStart.Y;
-        annotation.Rect = new RectD(
-            _annotationDragRect.X + dx, _annotationDragRect.Y + dy,
-            _annotationDragRect.Width, _annotationDragRect.Height);
-        if (_annotationDragPoints is { } original)
-        {
-            annotation.Points.Clear();
-            annotation.Points.AddRange(original.Select(point => new PointD(point.X + dx, point.Y + dy)));
-        }
-
+        _document.Replace(original.Offset(_cursor.X - _annotationStart.X, _cursor.Y - _annotationStart.Y));
         _canvas.Invalidate();
     }
 
-    /// <summary>选中标注的框 / 手柄（矩形四角、箭头两端）。</summary>
+    /// <summary>选中标注的框 / 手柄：矩形类四角、线类两端，其余画外框（第 5c 批换成 mac 的虚线框 + 圆手柄）。</summary>
     private void DrawAnnotationSelection(Microsoft.Graphics.Canvas.CanvasDrawingSession ds)
     {
-        if (_selectedAnnotation is not { } annotation)
+        if (_textEditor is not null || _document.Selected is not { } annotation)
         {
             return;
         }
 
-        if (annotation.Points.Count >= 2)
+        if (annotation.Kind is AnnotationKind.Arrow or AnnotationKind.Line or AnnotationKind.Highlighter)
         {
-            foreach (var point in new[] { annotation.Points[0], annotation.Points[^1] })
+            foreach (var point in new[] { annotation.From, annotation.To })
             {
                 var dip = new Windows.Foundation.Point(point.X / _scale, point.Y / _scale);
                 ds.FillRectangle(new Windows.Foundation.Rect(dip.X - 4, dip.Y - 4, 8, 8), HandleFill);
@@ -411,8 +409,15 @@ internal sealed partial class SelectionOverlayWindow : Window
             return;
         }
 
-        var rect = ToDip(annotation.Rect);
+        var boxed = annotation.Kind is AnnotationKind.Rectangle or AnnotationKind.Ellipse or AnnotationKind.Mosaic or
+            AnnotationKind.Spotlight;
+        var rect = ToDip(boxed ? annotation.Rect : annotation.Bounds(_scale));
         ds.DrawRectangle(rect, Accent, 1);
+        if (!boxed)
+        {
+            return;
+        }
+
         foreach (var corner in new[]
                  {
                      new Windows.Foundation.Point(rect.X, rect.Y),
@@ -425,49 +430,46 @@ internal sealed partial class SelectionOverlayWindow : Window
             ds.DrawRectangle(new Windows.Foundation.Rect(corner.X - 3, corner.Y - 3, 6, 6), Accent, 1);
         }
     }
-    private void PushUndo()
-    {
-        _undoStack.Add(_annotations.Select(annotation => annotation.Clone()).ToList());
-        _redoStack.Clear();
-    }
 
     private void ResetAnnotations()
     {
-        _annotations.Clear();
-        _undoStack.Clear();
-        _redoStack.Clear();
-        _activeAnnotation = null;
+        _document.Reset();
+        _draft = null;
     }
 
-    private void Undo()
+    /// <summary>撤销 / 重做：先收下打着的字；拖着标注时不响应；栈空时提示音（mac NSSound.beep）。</summary>
+    private void Undo() => StepHistory(redo: false);
+
+    private void Redo() => StepHistory(redo: true);
+
+    private void StepHistory(bool redo)
     {
-        if (_undoStack.Count == 0)
+        if (IsDraggingAnnotation)
         {
             return;
         }
 
-        _redoStack.Add(_annotations.Select(annotation => annotation.Clone()).ToList());
-        var previous = _undoStack[^1];
-        _undoStack.RemoveAt(_undoStack.Count - 1);
-        _annotations.Clear();
-        _annotations.AddRange(previous.Select(annotation => annotation.Clone()));
-        _canvas.Invalidate();
-    }
-
-    private void Redo()
-    {
-        if (_redoStack.Count == 0)
+        CommitText();
+        if (!(redo ? _document.Redo() : _document.Undo()))
         {
+            Beep();
             return;
         }
 
-        _undoStack.Add(_annotations.Select(annotation => annotation.Clone()).ToList());
-        var next = _redoStack[^1];
-        _redoStack.RemoveAt(_redoStack.Count - 1);
-        _annotations.Clear();
-        _annotations.AddRange(next.Select(annotation => annotation.Clone()));
+        UpdateToolbarChrome();
         _canvas.Invalidate();
     }
+
+    /// <summary>挡下会清掉标注的操作：提示音 + 顶部提示 2 秒说怎么退出（mac refuseWipe）。</summary>
+    private void RefuseWipe(string what)
+    {
+        Beep();
+        _flash = what + " · Esc 退出";
+        _flashUntil = Environment.TickCount64 + 2000;
+        _canvas.Invalidate();
+    }
+
+    private static void Beep() => MessageBeep(0xFFFFFFFF);
 
 
     public void ShowOverlay(bool key)
@@ -527,33 +529,28 @@ internal sealed partial class SelectionOverlayWindow : Window
     private Border BuildToolbar()
     {
         var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
-        foreach (var (tool, label, name, shortcut) in new[]
+        foreach (var (tool, label, name, shortcut) in new (AnnotationKind?, string, string, string)[]
                  {
-                     (AnnotationTool.Select, Glyphs.ToolSelect, "选择", "V"),
-                     (AnnotationTool.Rectangle, Glyphs.ToolRectangle, "矩形", "1"),
-                     (AnnotationTool.Arrow, Glyphs.ToolArrow, "箭头", "2"),
-                     (AnnotationTool.Pen, Glyphs.ToolPen, "画笔", "3"),
-                     (AnnotationTool.Text, Glyphs.ToolText, "文字", "4"),
-                     (AnnotationTool.Mosaic, Glyphs.ToolMosaic, "马赛克", "5"),
+                     (null, Glyphs.ToolSelect, "选择", "V"),
+                     (AnnotationKind.Rectangle, Glyphs.ToolRectangle, "矩形", "1"),
+                     (AnnotationKind.Arrow, Glyphs.ToolArrow, "箭头", "2"),
+                     (AnnotationKind.Pen, Glyphs.ToolPen, "画笔", "3"),
+                     (AnnotationKind.Text, Glyphs.ToolText, "文字", "4"),
+                     (AnnotationKind.Mosaic, Glyphs.ToolMosaic, "马赛克", "5"),
                  })
         {
             var button = ToolbarButton(label, $"{name}（{shortcut}）", name);
-            button.Click += (_, _) =>
-            {
-                _tool = tool;
-                UpdateToolbarChrome();
-                _canvas.Invalidate();
-            };
-            _toolButtons[tool] = button;
+            button.Click += (_, _) => SelectTool(tool);
+            _toolButtons.Add((tool, button));
             tools.Children.Add(button);
         }
 
         var extras = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
-        _colorButton = ToolbarButton(string.Empty, "颜色 / 线宽", "颜色");
+        _colorButton = ToolbarButton(string.Empty, "颜色 / 粗细", "颜色");
         _colorButton.Click += (_, _) => ToggleStyleTray();
         extras.Children.Add(_colorButton);
 
-        _widthButton = ToolbarButton("3", "线宽", "线宽");
+        _widthButton = ToolbarButton("中", "粗细", "粗细");
         _widthButton.Click += (_, _) => ToggleStyleTray();
         extras.Children.Add(_widthButton);
 
@@ -687,18 +684,22 @@ internal sealed partial class SelectionOverlayWindow : Window
         Margin = new Thickness(2, 0, 2, 0),
     };
 
-    /// <summary>样式托盘（PLAN-v7 §3.6）：8 个色点 + 三档线宽，从当前工具按钮下方长出来。</summary>
+    /// <summary>
+    /// 样式托盘（PLAN-v7 §3.6）：mac 的 8 个色点 + 细 / 中 / 粗三档。改的是正在输入的文字、选中的标注，
+    /// 没选中时改新标注用的（B6）。第 5b 批换成 mac 的样子（跟着工具换内容、锚在工具按钮下方、选项分段）。
+    /// </summary>
     private Border BuildStyleTray()
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
-        foreach (var color in Theme.Shot.AnnotationPalette)
+        for (var palette = 0; palette < AnnotationPalette.Argb.Length; palette++)
         {
+            var index = palette;
             var swatch = new Border
             {
                 Width = 22,
                 Height = 22,
                 CornerRadius = new CornerRadius(11),
-                Background = new SolidColorBrush(color),
+                Background = new SolidColorBrush(AnnotationRenderer.ColorOf(index)),
                 BorderBrush = new SolidColorBrush(Theme.Argb(80, 255, 255, 255)),
                 BorderThickness = new Thickness(1),
             };
@@ -712,14 +713,9 @@ internal sealed partial class SelectionOverlayWindow : Window
                 BorderThickness = new Thickness(0),
                 CornerRadius = new CornerRadius(4),
             };
-            AutomationProperties.SetName(button, "标注颜色");
-            button.Click += (_, _) =>
-            {
-                _color = color;
-                UpdateToolbarChrome();
-                _canvas.Invalidate();
-                _styleTray.Visibility = Visibility.Collapsed;
-            };
+            AutomationProperties.SetName(button, AnnotationPalette.Titles[index] + "色");
+            ToolTipService.SetToolTip(button, AnnotationPalette.Titles[index] + "色");
+            button.Click += (_, _) => Restyle(style => style with { Color = index });
             row.Children.Add(button);
         }
 
@@ -731,17 +727,13 @@ internal sealed partial class SelectionOverlayWindow : Window
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(3, 0, 3, 0),
         });
-        foreach (var width in new[] { 2.0, 3, 5, 8 })
+        for (var weight = 0; weight < 3; weight++)
         {
-            var button = ToolbarButton(width.ToString("F0"), $"线宽 {width:F0}", "线宽 " + width.ToString("F0"), 30);
+            var index = weight;
+            var title = new[] { "细", "中", "粗" }[index];
+            var button = ToolbarButton(title, title, title, 30);
             button.Height = 30;
-            button.Click += (_, _) =>
-            {
-                _width = width;
-                UpdateToolbarChrome();
-                _canvas.Invalidate();
-                _styleTray.Visibility = Visibility.Collapsed;
-            };
+            button.Click += (_, _) => Restyle(style => style with { Weight = index });
             row.Children.Add(button);
         }
 
@@ -836,14 +828,44 @@ internal sealed partial class SelectionOverlayWindow : Window
     private Button? _undoButton;
     private Button? _redoButton;
 
-    /// <summary>当前工具（品牌粉实心底）、颜色块、线宽、撤销 / 重做可用状态。</summary>
-    private void SelectTool(AnnotationTool tool)
+    /// <summary>换工具：先收下打着的字，取消选中（mac choose）。null = 选择。</summary>
+    private void SelectTool(AnnotationKind? tool)
     {
+        CommitText();
         _tool = tool;
+        _document.SelectedId = null;
         UpdateToolbarChrome();
         _canvas.Invalidate();
     }
 
+    /// <summary>
+    /// 改颜色 / 粗细：作用于选中的标注（记一步撤销），否则改新标注用的（B6，mac restyle）。打着字时改的是这段字收下时的样式。
+    /// 选中的那条正好是当前工具画的，新标注也跟着用它（mac remember：owner == tool 时 style = changed）。
+    /// </summary>
+    private void Restyle(Func<AnnotationStyle, AnnotationStyle> change)
+    {
+        if (_textEditor is null && !IsDraggingAnnotation && _document.Selected is { } selected &&
+            _document.RestyleSelected(change) is { } restyled)
+        {
+            if (selected.Kind == _tool)
+            {
+                _style = restyled;
+            }
+        }
+        else
+        {
+            _style = change(_style);
+        }
+
+        UpdateToolbarChrome();
+        _canvas.Invalidate();
+    }
+
+    /// <summary>样式托盘显示的：选中的标注的，否则新标注用的。</summary>
+    private AnnotationStyle ShownStyle
+        => _textEditor is null && _document.Selected is { } selected ? selected.Style : _style;
+
+    /// <summary>当前工具（品牌粉实心底）、颜色块、粗细、撤销 / 重做可用状态。</summary>
     private void UpdateToolbarChrome()
     {
         foreach (var (tool, button) in _toolButtons)
@@ -862,24 +884,25 @@ internal sealed partial class SelectionOverlayWindow : Window
             }
         }
 
+        var shown = ShownStyle;
         if (_colorButton is not null)
         {
-            _colorButton.Background = new SolidColorBrush(_color);
+            _colorButton.Background = new SolidColorBrush(AnnotationRenderer.ColorOf(shown.Color));
         }
 
         if (_widthButton?.Content is TextBlock width)
         {
-            width.Text = _width.ToString("F0");
+            width.Text = new[] { "细", "中", "粗" }[Math.Clamp(shown.Weight, 0, 2)];
         }
 
         if (_undoButton is not null)
         {
-            _undoButton.IsEnabled = _undoStack.Count > 0;
+            _undoButton.IsEnabled = _document.CanUndo;
         }
 
         if (_redoButton is not null)
         {
-            _redoButton.IsEnabled = _redoStack.Count > 0;
+            _redoButton.IsEnabled = _document.CanRedo;
         }
     }
 
@@ -963,7 +986,8 @@ internal sealed partial class SelectionOverlayWindow : Window
         if (selection is { } own)
         {
             AnnotationRenderer.Draw(
-                ds, _annotations, _screen, new PointD(0, 0), 1 / _scale, 1);
+                ds, _draft is { } draft ? _document.Items.Append(draft).ToList() : _document.Items,
+                _screen, new PointD(0, 0), 1 / _scale, 1);
             DrawSelection(ds, own);
             DrawAnnotationSelection(ds);
         }
@@ -1006,7 +1030,8 @@ internal sealed partial class SelectionOverlayWindow : Window
 
     private void DrawHint(Microsoft.Graphics.Canvas.CanvasDrawingSession ds, float width, float height)
     {
-        var hint = _session.Mode switch
+        var flashing = _flash is not null && Environment.TickCount64 < _flashUntil;
+        var hint = flashing ? _flash! : _session.Mode switch
         {
             ScreenshotMode.Ocr => "拖动框选要识别的区域 · Esc 取消",
             ScreenshotMode.Translate => "拖动框选要翻译的区域 · Esc 取消",
@@ -1068,9 +1093,16 @@ internal sealed partial class SelectionOverlayWindow : Window
             Theme.Shot.LabelBackground);
         ds.DrawText(text, x + 6, y + size + 7, Theme.Shot.HudText, _small);
     }
-
     private void OnPointerPressed(object sender, PointerRoutedEventArgs e)
     {
+        // 打着字点了输入框外面：这一下只把字收下，不做别的（mac mouseDown；以前会接着开一个新输入框或开始画）
+        if (_textEditor is not null)
+        {
+            CommitText();
+            e.Handled = true;
+            return;
+        }
+
         _canvas.Focus(FocusState.Pointer);
         ReadCursor();
         var point = _cursor;
@@ -1081,82 +1113,56 @@ internal sealed partial class SelectionOverlayWindow : Window
         if (e.GetCurrentPoint(_canvas).Properties.IsRightButtonPressed)
         {
             e.Handled = true;
-            if (_session.HasSelection)
-            {
-                _session.ClearSelection();
-            }
-            else
-            {
-                _session.Finish();
-            }
-
+            OnRightClick();
             return;
         }
 
         _canvas.CapturePointer(e.Pointer);
-        if (_session.Mode == ScreenshotMode.Capture &&
-            _session.SelectionScreen == _screen && _session.HasSelection)
+        var own = _session.SelectionScreen == _screen && _session.HasSelection;
+        if (_session.Mode == ScreenshotMode.Capture && own && _session.Selection.Contains(point))
         {
-            // 选中工具：点已画好的标注 → 选中、拖动（PLAN-v2 §3.8）。
-            if (_tool == AnnotationTool.Select && _session.Selection.Contains(point) &&
-                HitAnnotation(point) is { } hit)
+            // 选择工具：点中已画好的标注 → 选中、拖动（PLAN-v2 §3.8）。撤销在松手时按按下前的样子记（B1）。
+            if (_tool is null && HitAnnotation(point) is { } hit)
             {
-                PushUndo();
-                _selectedAnnotation = hit;
-                _annotationDragStart = point;
-                _annotationDragRect = hit.Rect;
-                _annotationDragPoints = hit.Points.Count > 0 ? new List<PointD>(hit.Points) : null;
+                _document.SelectedId = hit.Id;
+                _dragOriginal = hit;
+                _dragBefore = _document.Items;
+                _annotationStart = point;
                 _drag = DragKind.MoveAnnotation;
+                UpdateToolbarChrome();
                 _canvas.Invalidate();
                 e.Handled = true;
                 return;
             }
 
-            if (_tool != AnnotationTool.Select && _session.Selection.Contains(point))
+            if (_tool is { } tool)
             {
-                if (_tool == AnnotationTool.Text)
+                _document.SelectedId = null;
+                if (tool == AnnotationKind.Text)
                 {
                     _ = ShowTextAsync(point);
                     e.Handled = true;
                     return;
                 }
 
+                // 拖出来的那条先放在 _draft，松手够大才收进 _document（记一步撤销）
                 _annotationStart = point;
-                // REVIEW R55：按下就把「还没有这一条」的状态压进撤销栈，松手时不再压，
-                // 不然撤销出来的永远带着刚画的那一条、永远差一步。太小被丢掉的，松手时弹回这一份。
-                PushUndo();
-                _activeAnnotation = new Annotation
-                {
-                    Tool = _tool,
-                    Color = _color,
-                    Width = _width,
-                    Rect = new RectD(point.X, point.Y, 0, 0),
-                };
-                if (_tool is AnnotationTool.Pen or AnnotationTool.Arrow)
-                {
-                    _activeAnnotation.Points.Add(point);
-                    if (_tool == AnnotationTool.Arrow)
-                    {
-                        _activeAnnotation.Points.Add(point);
-                    }
-                }
-
-                _annotations.Add(_activeAnnotation);
-                _selectedAnnotation = _activeAnnotation;
+                _draft = Annotation.Drawn(tool, point, point, false, _style);
                 _drag = DragKind.Annotate;
+                UpdateToolbarChrome();
                 _canvas.Invalidate();
                 e.Handled = true;
                 return;
             }
         }
 
-        if (_session.SelectionScreen == _screen && _session.HasSelection)
+        if (own)
         {
             var handle = RegionMath.HandleAt(point, _session.Selection, 8 * _scale, 8 * _scale);
-            if (handle is { } hit)
+            if (handle is { } grip)
             {
                 _drag = DragKind.Resize;
-                _handle = hit;
+                _handle = grip;
                 _original = _session.Selection;
                 e.Handled = true;
                 return;
@@ -1164,18 +1170,52 @@ internal sealed partial class SelectionOverlayWindow : Window
 
             if (_session.Selection.Contains(point))
             {
+                _document.SelectedId = null;
                 _drag = DragKind.Move;
                 _original = _session.Selection;
+                UpdateToolbarChrome();
+                _canvas.Invalidate();
                 e.Handled = true;
                 return;
             }
         }
 
+        // B3：已经有选区（这块屏或别的屏）时，在选区外按下先记着，拖开 3 DIP 才算重新框；单击什么都不做
+        // （以前按一下就清掉了全部标注和选区）。
+        if (_session.HasSelection)
+        {
+            _drag = DragKind.Pending;
+            e.Handled = true;
+            return;
+        }
+
         _drag = DragKind.Draw;
+        _restore = null;
         ResetAnnotations();
-        _canvas.CapturePointer(e.Pointer);
         _session.SetSelection(_screen, new RectD(point.X, point.Y, 0, 0));
         e.Handled = true;
+    }
+
+    /// <summary>
+    /// 右键：截图翻译 / 识字、还没有选区时退出；有选区时回到待选重新框，但画了标注（含正在输入的字，不管在哪块屏）
+    /// 就不清，只提示（B3，mac rightMouseDown）。
+    /// </summary>
+    private void OnRightClick()
+    {
+        if (!_session.HasSelection || _session.Mode is ScreenshotMode.Ocr or ScreenshotMode.Translate)
+        {
+            _session.Finish();
+            return;
+        }
+
+        if (HasAnnotations || _session.HasAnnotations(besides: this))
+        {
+            RefuseWipe("有标注时右键不清空");
+            return;
+        }
+
+        ResetAnnotations();
+        _session.ClearSelection();
     }
 
     private void OnPointerMoved(object sender, PointerRoutedEventArgs e)
@@ -1197,6 +1237,12 @@ internal sealed partial class SelectionOverlayWindow : Window
         var previousCursor = _cursor;
         var previousHover = _hover;
         ReadCursor();
+        if (_flash is not null && Environment.TickCount64 >= _flashUntil)
+        {
+            _flash = null;
+            _canvas.Invalidate();
+        }
+
         if (_drag == DragKind.None)
         {
             UpdateHover();
@@ -1225,34 +1271,50 @@ internal sealed partial class SelectionOverlayWindow : Window
     private void UpdateDrag()
     {
         var point = _cursor;
+        if (_drag == DragKind.Pending)
+        {
+            if (Math.Sqrt(Math.Pow(point.X - _pressed.X, 2) + Math.Pow(point.Y - _pressed.Y, 2)) < 3 * _scale)
+            {
+                return;
+            }
+
+            // 别的屏上画了标注：不在这块屏重新框（框出来那边的就没了），只提示（mac refuseWipe）
+            if (_session.HasAnnotations(besides: this))
+            {
+                _drag = DragKind.None;
+                _canvas.ReleasePointerCaptures();
+                RefuseWipe("有标注时不能换屏重新框选");
+                return;
+            }
+
+            // 这块屏上重新框：标注存的是整屏坐标，换个选区照样在；太小作废时退回原来的选区
+            _restore = _session.SelectionScreen == _screen ? _session.Selection : null;
+            _document.SelectedId = null;
+            _drag = DragKind.Draw;
+        }
+
         if (_drag == DragKind.MoveAnnotation)
         {
             MoveSelectedAnnotation();
             return;
         }
 
-        if (_drag == DragKind.Annotate && _activeAnnotation is { } annotation)
+        if (_drag == DragKind.Annotate && _draft is { } draft)
         {
-            if (annotation.Tool == AnnotationTool.Pen)
+            if (draft.Kind == AnnotationKind.Pen)
             {
-                var last = annotation.Points[^1];
-                if (Math.Abs(last.X - point.X) + Math.Abs(last.Y - point.Y) >= 2)
+                // 画笔一路累点，离上一个点不到 1.5 DIP 的不要（mac）
+                var last = draft.Points[^1];
+                if (Math.Sqrt(Math.Pow(last.X - point.X, 2) + Math.Pow(last.Y - point.Y, 2)) >= 1.5 * _scale)
                 {
-                    annotation.Points.Add(point);
+                    _draft = draft with { Points = draft.Points.Append(point).ToArray() };
                 }
             }
-            else if (annotation.Tool == AnnotationTool.Arrow)
+            else if (Annotation.Drawn(draft.Kind, _annotationStart, point, IsDown(Windows.System.VirtualKey.Shift),
+                         draft.Style) is { } shaped)
             {
-                annotation.Points[0] = _annotationStart;
-                annotation.Points[^1] = point;
-            }
-            else
-            {
-                annotation.Rect = RectD.FromLtrb(
-                    Math.Min(_annotationStart.X, point.X),
-                    Math.Min(_annotationStart.Y, point.Y),
-                    Math.Max(_annotationStart.X, point.X),
-                    Math.Max(_annotationStart.Y, point.Y));
+                // B7：Shift = 正方形 / 正圆 / 45° 线；拖动中按下、松开都立刻重算（PollCursor 20 ms 一次）
+                _draft = shaped with { Id = draft.Id };
             }
 
             _canvas.Invalidate();
@@ -1281,11 +1343,22 @@ internal sealed partial class SelectionOverlayWindow : Window
             return;
         }
 
+        if (_drag == DragKind.Pending)
+        {
+            // 单击选区外：什么都不做，免得误点丢掉选区和标注（mac mouseUp .pending）
+            _drag = DragKind.None;
+            _canvas.ReleasePointerCaptures();
+            e.Handled = true;
+            return;
+        }
+
         if (_drag == DragKind.MoveAnnotation)
         {
             _drag = DragKind.None;
             _canvas.ReleasePointerCaptures();
-            _annotationDragPoints = null;
+            _dragOriginal = null;
+            _document.RecordUndo(_dragBefore);
+            UpdateToolbarChrome();
             e.Handled = true;
             return;
         }
@@ -1294,39 +1367,28 @@ internal sealed partial class SelectionOverlayWindow : Window
         {
             _drag = DragKind.None;
             _canvas.ReleasePointerCaptures();
-            if (_activeAnnotation is { } annotation)
+            var drawn = _draft;
+            _draft = null;
+            // B9：小到看不出来的（误点）不留；画完自动选中，工具保持
+            if (drawn is not null && drawn.IsMeaningful(_scale) && _document.Commit(_document.Items.Append(drawn)))
             {
-                var small = annotation.Tool switch
-                {
-                    AnnotationTool.Pen => annotation.Points.Count < 2,
-                    AnnotationTool.Arrow => annotation.Points.Count < 2 ||
-                                            (Math.Abs(annotation.Points[^1].X - annotation.Points[0].X) +
-                                             Math.Abs(annotation.Points[^1].Y - annotation.Points[0].Y) < 3),
-                    _ => annotation.Rect.Width < 3 || annotation.Rect.Height < 3,
-                };
-                if (small)
-                {
-                    _annotations.Remove(annotation);
-                    // 按下时压进去的那份是「没有这一条」的状态，丢掉的话会空撤一步。
-                    if (_undoStack.Count > 0)
-                    {
-                        _undoStack.RemoveAt(_undoStack.Count - 1);
-                    }
-                }
+                _document.SelectedId = drawn.Id;
             }
 
-            _activeAnnotation = null;
+            UpdateToolbarChrome();
             _canvas.Invalidate();
             e.Handled = true;
             return;
         }
 
         var wasDraw = _drag == DragKind.Draw;
+        var restore = _restore;
+        _restore = null;
         ReadCursor();
         var moved = Math.Abs(_cursor.X - _pressed.X) + Math.Abs(_cursor.Y - _pressed.Y);
         _canvas.ReleasePointerCaptures();
         _drag = DragKind.None;
-        if (wasDraw && moved < 3 && _hover is { } hover)
+        if (wasDraw && moved < 3 && restore is null && _hover is { } hover)
         {
             ResetAnnotations();
             _session.SetSelection(
@@ -1337,7 +1399,16 @@ internal sealed partial class SelectionOverlayWindow : Window
                   _session.Selection.Width < RegionMath.MinimumSide * _scale ||
                   _session.Selection.Height < RegionMath.MinimumSide * _scale))
         {
-            _session.ClearSelection();
+            // 太小算误触：调整时退回原来的选区（想拖边差了几点不该把选区弄丢），否则回到待选
+            if (restore is { } previous)
+            {
+                _session.SetSelection(_screen, previous);
+            }
+            else
+            {
+                _session.ClearSelection();
+            }
+
             e.Handled = true;
             return;
         }
@@ -1416,27 +1487,27 @@ internal sealed partial class SelectionOverlayWindow : Window
             // R39：工具键改成数字（1 矩形 / 2 箭头 / 3 画笔 / 4 文字 / 5 马赛克），
             // A 留给长截图自动滚动、T 留给截图翻译；换工具和点按钮走同一个 SelectTool。
             case Windows.System.VirtualKey.Number1 when !control:
-                SelectTool(AnnotationTool.Rectangle);
+                SelectTool(AnnotationKind.Rectangle);
                 e.Handled = true;
                 break;
             case Windows.System.VirtualKey.Number2 when !control:
-                SelectTool(AnnotationTool.Arrow);
+                SelectTool(AnnotationKind.Arrow);
                 e.Handled = true;
                 break;
             case Windows.System.VirtualKey.Number3 when !control:
-                SelectTool(AnnotationTool.Pen);
+                SelectTool(AnnotationKind.Pen);
                 e.Handled = true;
                 break;
             case Windows.System.VirtualKey.Number4 when !control:
-                SelectTool(AnnotationTool.Text);
+                SelectTool(AnnotationKind.Text);
                 e.Handled = true;
                 break;
             case Windows.System.VirtualKey.Number5 when !control:
-                SelectTool(AnnotationTool.Mosaic);
+                SelectTool(AnnotationKind.Mosaic);
                 e.Handled = true;
                 break;
             case Windows.System.VirtualKey.V when !control:
-                SelectTool(AnnotationTool.Select);
+                SelectTool(null);
                 e.Handled = true;
                 break;
             case Windows.System.VirtualKey.Escape:
@@ -1445,16 +1516,17 @@ internal sealed partial class SelectionOverlayWindow : Window
                 e.Handled = true;
                 if (_textEditor is not null)
                 {
-                    CancelText();
+                    CommitText();
                 }
-                else if (_selectedAnnotation is not null)
+                else if (_document.SelectedId is not null)
                 {
-                    _selectedAnnotation = null;
+                    _document.SelectedId = null;
+                    UpdateToolbarChrome();
                     _canvas.Invalidate();
                 }
-                else if (_tool != AnnotationTool.Select)
+                else if (_tool is not null)
                 {
-                    SelectTool(AnnotationTool.Select);
+                    SelectTool(null);
                 }
                 else
                 {
@@ -1466,6 +1538,11 @@ internal sealed partial class SelectionOverlayWindow : Window
             case Windows.System.VirtualKey.Back:
                 e.Handled = true;
                 DeleteSelectedAnnotation();
+                break;
+            case Windows.System.VirtualKey.Z when control && shift:
+                // D5：重做 Ctrl+Y 和 Ctrl+Shift+Z 都认
+                e.Handled = true;
+                Redo();
                 break;
             case Windows.System.VirtualKey.Z when control:
                 e.Handled = true;
@@ -1662,6 +1739,8 @@ internal sealed partial class SelectionOverlayWindow : Window
     private enum DragKind
     {
         None,
+        /// <summary>有选区时在选区外按下：拖开 3 DIP 才变成 Draw（B3）。</summary>
+        Pending,
         Draw,
         Resize,
         Move,
@@ -1708,4 +1787,8 @@ internal sealed partial class SelectionOverlayWindow : Window
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool ShowWindow(IntPtr hwnd, int command);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool MessageBeep(uint type);
 }

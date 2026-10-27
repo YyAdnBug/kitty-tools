@@ -163,6 +163,12 @@ internal static class UiSnapshotProbe
                 var crop = new PixelBounds(
                     (int)(width * 0.3) - 40, (int)(height * 0.25) - 40, (int)(width * 0.7) + 40, (int)(height * 0.6) + below);
                 await WindowShot.SaveAsync(overlay.Handle, Path.Combine(directory, "shot-toolbar.png"), crop);
+                // PLAN-v9 第 5a 批：五种标注、选中箭头、样式托盘（8 色 + 细 / 中 / 粗）、顶部的提示
+                overlay.ShowProbeAnnotations();
+                await Task.Delay(500);
+                await WindowShot.SaveAsync(
+                    overlay.Handle, Path.Combine(directory, "shot-annotations.png"),
+                    crop with { Top = 0 });
                 ScreenshotSession.FinishCurrent();
             }
 

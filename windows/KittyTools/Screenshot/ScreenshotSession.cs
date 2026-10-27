@@ -133,7 +133,7 @@ internal sealed class ScreenshotSession
         session.ShowOverlays();
         session.SetSelection(screen, placed);
         var annotations = item.Annotations
-            .Select(data => ShotAnnotations.FromData(data, placed.X, placed.Y))
+            .Select(data => ShotAnnotations.FromData(data, placed.X, placed.Y, Math.Max(1, screen.Scale)))
             .OfType<Annotation>()
             .ToList();
         session._overlays.FirstOrDefault()?.LoadAnnotations(annotations);
@@ -191,6 +191,10 @@ internal sealed class ScreenshotSession
         Selection = rect;
         InvalidateAll();
     }
+
+    /// <summary>别的屏上画了标注（含正在输入的字）：会把它们清掉的操作（换屏框选）都不做（mac hasAnnotations(besides:)）。</summary>
+    public bool HasAnnotations(SelectionOverlayWindow besides)
+        => _overlays.Any(overlay => overlay != besides && overlay.HasAnnotations);
 
     public void ClearSelection()
     {

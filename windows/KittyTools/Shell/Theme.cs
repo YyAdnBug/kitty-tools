@@ -46,19 +46,7 @@ internal static class Theme
         public static readonly Color HudHover = Color.FromArgb(245, 52, 52, 52);
         public static readonly Color HudPressed = Color.FromArgb(245, 40, 40, 40);
 
-        /// <summary>标注可选的颜色（9 种，最后一档白和黑）。</summary>
-        public static readonly Color[] AnnotationPalette =
-        {
-            Accent,
-            Color.FromArgb(255, 235, 60, 60),
-            Color.FromArgb(255, 240, 150, 30),
-            Color.FromArgb(255, 245, 205, 40),
-            Color.FromArgb(255, 60, 180, 90),
-            Color.FromArgb(255, 60, 130, 240),
-            Color.FromArgb(255, 150, 80, 220),
-            Color.FromArgb(255, 255, 255, 255),
-            Color.FromArgb(255, 0, 0, 0),
-        };
+        // 标注的 8 色是内容色，在 Core 的 AnnotationPalette（照 mac，PLAN-v9-annotate D4）。
     }
 
     /// <summary>
