@@ -32,6 +32,13 @@ internal static unsafe partial class Tray
             return true;
         }
 
+        // 自检进程不登记：每个不同路径的 exe 都会在「其他系统托盘图标」里永久多一条（AutomatedRun 文件头）。
+        if (AutomatedRun.IsActive)
+        {
+            Log.Info("tray.skipped automated-run");
+            return true;
+        }
+
         _icon = LoadTrayIcon();
         if (_icon == default)
         {
