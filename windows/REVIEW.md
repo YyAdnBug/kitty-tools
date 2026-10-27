@@ -64,6 +64,128 @@
 
 （2026-10-27：审查方在 Mac 上把代码过了一遍，找还能优化、没优化的地方，新加 R42–R52，行号都对着 `e82715d2`。每一条都读过代码确认过，只是没在 Windows 上量过：**改之前先量一次、改完再量一次**，两个数都写进报告；量出来不值得改的，写上数挪到「有异议」。顺序：R41 修完先做 R42–R44（P1），再做 R24；P2、P3 照常一条一条来。功能缺口另写在 `PLAN-v9.md`，那是拍板页，用户拍板之前别动。）
 
+（2026-10-27 晚：用户定 Windows 第一个对外版本叫 0.1.0、主打剪贴板 / 截图 / 翻译，新加 R53（发版清单）和 R54–R64（这三样里的 bug，行号对着 `0533b3ae`）。**R53 排在所有待修前面**，R42–R52 里不挡发版的照旧往后排。）
+
+### R53（P0）0.1.0 发版：先修下面这些，再打包
+
+用户 2026-10-27：「你找出来，然后我 windows 上打包，并且 windows 就是 0.1.0 版本，没有现在那么多个版本」。Windows 的第一个对外版本叫 **0.1.0**，主打**剪贴板历史、截图、翻译**。
+
+审查方已经提交了（在 Mac 上改的，**没编译**）：
+- `Directory.Build.props` 版本改成 0.1.0；`changelog.json` 的七条内部版本合成一条对外的 0.1.0。
+- `Shell/Feature.cs`：启动器和录屏没存过时默认关（`DefaultOn`，带 ponytail 注释）。启动器读浏览历史、默认值还没对齐 mac（R42、PLAN-v9 V1），录屏真机没走完（R24）。欢迎页的快捷键说明跟着改了（`Settings/SettingsWindow.cs` 的 `BuildWelcome`）。
+- `AGENTS.md`「版本和发布」、`STATUS.md` 开头、PLAN-v9 的最后一批改成新编号。
+
+**顺序**：
+
+1. 编过审查方这次的改动。`--smoke` 里还直接开启动器面板和录音条，功能关着也该能开；开不了就把 smoke 里那两步跳过，别为了 smoke 把默认值改回去。
+2. 修 R54–R63（这三样里的 bug，审查方读代码找的，都核过代码）。
+3. 在 Windows 上验 R64 的五条，是真的就修。
+4. 修已有待修里影响这三样的：
+   - R41 第一条（剪贴板 Ctrl+K 里按 Enter 不执行）；
+   - R44（每截一次图，设置窗就在后台重建一页）；
+   - R46（剪贴板后台识字大图不缩、失败了每次启动重来）；
+   - R47（每日备份跨线程读数据）；
+   - R48 第一条（钉图「复制」卡界面）；
+   - PLAN-v9 的 V2（识字默认不接行，截图翻译照旧接）。这一条用户还没拍板，审查方替用户定先做：只是改默认值、加一个开关。
+5. **不挡 0.1.0**：R42、R24（启动器、录屏默认关了）；R43（长截图拼长了会卡）、R45（长译文流式会卡）能顺手修就修，修不完写进下面的「已知问题」；R49–R52、PLAN-v9 的其余项照旧往后排。
+6. 打包：`dotnet test` 全过 → `pwsh windows/build-release.ps1`（AOT x64 / ARM64、零警告、`--smoke`、zip、setup.exe）→ 产物在 `windows/build/release/0.1.0/`。
+7. 手测，用 `KittyTools-0.1.0-windows-x64-setup.exe` 装一次（开发机上装过旧的 0.7.0 也直接装：安装程序会出「重新安装」那一页）：
+   - `HANDTEST.md`「发版冒烟清单」的 1、2、3、5、6、8、9、15、16、17，第 7 条里除了启动器的部分；
+   - 截图历史（333–338）、长截图（216–224 里长截图那几条）、提示带按钮（339–345）；
+   - R54–R64 每条修完的那个场景再走一遍。
+
+   没走的写「没测」，别打勾。
+8. 报告：做了哪些、量到的数、产物路径和大小、没修的写成「已知问题」（一条一句）。**不发布**；用户要发时，tag 用 `windows-v0.1.0`、`--latest=false`、别标预发布（`App/UpdateService.cs` 只认非预发布的 `windows-v*`）。
+
+### R54（P1）「截取上次区域」裁的是屏幕左上角那一块
+
+- `Screenshot/ScreenshotSession.cs:370`：`new PixelBounds(0, 0, global.Width, global.Height)` 从屏幕的 (0, 0) 开始裁，上一行算好的 `local`（减掉了 `screen.Bounds`）没用上。`Crop`（`Screenshot/ScreenCapture.cs:38`）吃的是这块屏里的像素坐标。
+- 触发：在屏幕中间截一次图，再按 Ctrl+Alt+Z。复制出去的、飞入卡、截图历史里，都是屏幕左上角同样大小的一块。
+- 改：`new PixelBounds((int)local.X, (int)local.Y, (int)local.X + global.Width, (int)local.Y + global.Height)`；加一条副屏上的手测。
+
+### R55（P1）标注的撤销差一步：画完第一条按 Ctrl+Z 没反应
+
+- `Screenshot/SelectionOverlayWindow.cs:1089`：矩形、箭头、画笔、马赛克一按下就加进 `_annotations`；松手时（:1258）才 `PushUndo()`，存进撤销栈的那份已经带着这一条，`Undo`（:435）还原出来的和现在一模一样。
+- 触发：画一个矩形，按 Ctrl+Z 或点工具栏的撤销，没反应；画几条再撤，永远差一步。
+- 改：按下、加进列表**之前** `PushUndo()`；松手时太小被丢掉的，把刚压进去的那份弹出来（不然要空撤一步）。文字工具、拖着挪标注那两条路（:289、:1052）也对一遍有没有同样的毛病。
+
+### R56（P2）从托盘、设置窗打开面板，会粘进上一次的旧窗口
+
+- `Shell/OverlayWindow.cs:129–133`：呼出时前台如果是本 App 自己的窗口（托盘菜单、设置窗、截图历史、钉图），就不更新 `_previousForeground`，留着上一次的。
+- 触发：先往记事本粘过一次；之后点托盘「剪贴板历史」，选一条按 Enter，记事本被拉到前台、内容粘了进去。
+- `Translate/TranslateWindow.cs:451–457` 的 `_replaceTarget` 同样：在剪贴板面板里 Ctrl+T 打开浮窗，点「替换原文」，粘进上一次翻译时的那个窗口。
+- 改：前台是自己的窗口时，把目标清成 `default`，只复制、不粘贴，提示说「已复制」。Windows 的托盘菜单会抢前台，拿不准要粘到哪就别粘。
+
+### R57（P2）复制即译：翻译关了照样弹；剪贴板关了它也跟着停
+
+- `Translate/TranslateHost.cs:139` 的 `OnTextCopied` 不看翻译功能开没开。设置里关掉「翻译」后，复制文字照样弹浮窗；托盘里「复制即译」的开关又因为翻译关了被藏起来，关不掉。
+- `Clipboard/ClipboardService.cs:65`：复制即译挂在剪贴板采集后面（:125 `TextCopied`）。关掉「剪贴板」功能、或者托盘里暂停记录以后，这里直接 return，复制即译就悄悄不工作了。
+- mac 的做法（`App/AppDelegate.swift:2377`，以及 `applyFeatures` 里「剪贴板关着时只为复制即译跑、不入库」）：翻译开着才译；剪贴板关着时照样监听，只是不入库。
+- 改：
+  - `OnTextCopied` 先查 `Features.IsOn(Feature.Translate)`；
+  - `Suspended` 时照样读文本、发 `TextCopied`，只是不入库；
+  - 隐私标记、排除的 App、敏感文本、`_selectionPaused`（划词自己发的 Ctrl+C）这几道照样挡；
+  - 「暂停记录」时复制即译停不停，照 mac 的 `isUserPaused` 那一处定。
+
+### R58（P2）划词超过 2048 个字符，后面的直接丢掉
+
+- `Translate/SelectionReader.cs:111`：UIA 取词用的是 `GetText(2048)`。
+- 触发：在浏览器或 Word 里选 3000 字划词翻译，只翻了前 2048 个字符，没有任何提示（输入翻译的上限是 32 KB）。
+- 改：`GetText(-1)`，长度交给后面那道 32 KB 的检查；超了照输入翻译那样提示。
+
+### R59（P2）超过 2 MB 的 HTML / RTF 被截了一半存下来，不是丢掉
+
+- `Clipboard/ClipboardFormats.cs:495` 的 `ReadRich` 调 `ReadBlob(format, MaxRichBytes)`，`:523` 的 `Math.Min` 把超长的截断；`MaxRichBytes`（:46）的注释说的是「超过就只留纯文本」。
+- 触发：复制几千行的 Excel 区域、带内嵌图片的网页，再从历史里粘回 Word / Outlook，格式是坏的，或者只出来一部分。
+- 划词走 Ctrl+C 兜底时，`CaptureSnapshot`（:128 起）还原回去的也是截断版，等于把用户剪贴板里原来的富文本弄坏了。
+- 改：`ReadRich` 改用 `ReadBlobWithin`（超了返回 null），和图片那几处一样。
+
+### R60（P2）多选粘贴、替换原文：失败了还显示成功
+
+- `Clipboard/ClipboardPanel.xaml.cs`：
+  - 依次粘贴失败时，`break`（:1419–1420）只跳出循环，接着 :1429 照样显示「已依次粘贴 N 条」，把刚报的错盖掉（`NoticeHost.Show` 是原地换内容）；
+  - 一起粘文件时（:1395–1399）不看 `Paster.Paste` 的返回值，`Paster` 自己弹的「没能切回原窗口，请手动粘贴」「目标是管理员窗口」会被马上换成「已一起粘贴」。
+- `Translate/TranslateWindow.cs` 的 `ReplaceWith`（:885 起）也一样：失败时把 `Paster` 给的具体原因换成「没能切回原窗口」。
+- 改：失败就 return，看返回值再报成功；`ReplaceWith` 失败时不再另报一遍。
+
+### R61（P3）片段里的 `{uuid}` 每次都一样
+
+- `Clipboard/Expander.cs:25`：传进去的是片段自己的 `Uid`，每次粘贴、同一片段里的几处都是同一个值；mac 是每处各生成一个新的。
+- 改：`SnippetRules.Expand` 的 uuid 参数改成一个生成函数，每处现生成一个 `Guid`；单测补「同一片段两处不一样、两次粘贴不一样」。
+
+### R62（P3）长截图进剪贴板历史，记的是选区的尺寸
+
+- `Screenshot/ScreenshotSession.cs:440` → `ScreenshotOutput.CopyPngAsync`（:33）按选区算宽高。
+- 触发：拼出一张 1440 × 12000 的长图，剪贴板列表、预览角标、「已复制截图」提示都写着选区的大小（比如 1440 × 800）。
+- 改：`CopyPngAsync` 加宽高参数，长截图传拼好的那张的。
+
+### R63（P3）钉图、飞入卡的「复制」失败了没提示
+
+- `Screenshot/PinWindow.cs:311`、`Screenshot/ScreenshotCard.cs:431`：剪贴板被别的程序占着、写不进去时，什么都不显示。
+- 改：照 `ShotHistoryWindow.CopyAsync` 补一句「没能复制」（错误语气）。
+
+### R64（P1，先在 Windows 上验）五处读代码看着有问题的
+
+验出来是真的就按建议修，都挡 0.1.0；不成立的写一句怎么验的，挪到「有异议」。
+
+- **A. Alt+F4 关掉浮层以后，整块功能失灵到重启**：剪贴板面板（`Shell/OverlayWindow.cs`）、翻译浮窗（`Translate/TranslateWindow.cs`）、截图遮罩都没接 `AppWindow.Closing`，只有设置窗接了（`Settings/SettingsWindow.cs:151`）。
+  - Alt+F4 之后，`OverlayHost._window`、`TranslateHost._window` 还指着已经关掉的窗口，下次按热键调它会抛异常。
+  - 截图遮罩被关时只调 `Release()`（`SelectionOverlayWindow.cs:142`），不走 `Finish()`：`_current` 不清，开截图时注销掉的全局热键（`ScreenshotSession.cs:72`）不再注册；多屏时别的屏上的遮罩还盖着。
+  - 验：在剪贴板面板、翻译浮窗、截图遮罩上各按一次 Alt+F4，再按它自己的热键和别的热键。
+  - 改：`Closing` 里 `Cancel = true`，改走各自的 Hide / Finish。
+- **B. 数据库打不开时，选择框可能出不来**：`Storage/Recovery.cs:138` 在 UI 线程上 `ShowAsync().AsTask().GetAwaiter().GetResult()` 同步等 ContentDialog，`XamlRoot` 是 `Activate()` 之后立刻取的、可能还是 null。结果要么卡死，要么异常被当成「退出」，App 一声不响地退了（HANDTEST 170 没走过）。
+  - 验：在测试数据目录里把 `kitty.db` 写成乱码再启动。
+  - 改：改成 await；`XamlRoot` 等内容 `Loaded` 以后再取。
+- **C. 从剪贴板面板拖出去，可能变成「移动」**：`Clipboard/ClipboardPanel.xaml.cs:406–453` 没设 `RequestedOperation = Copy`（`ScreenshotCard.cs:483` 设了）。图片条目给的是 `images\<id>.png` 本体，文件条目给的是用户的原文件；资源管理器在同一个盘上按默认的「移动」处理时，图片被挪出数据目录（历史里变成图片丢了），用户的原文件被搬走。
+  - 验：把图片条目拖到桌面（和 `%LOCALAPPDATA%` 同一个盘），看 `images` 目录和预览；文件条目同样试一次。
+  - 改：设成 Copy；图片给一份临时副本。
+- **D. 多屏时，在另一块屏上框选后按键可能没反应**：只有一开始光标所在那块屏的遮罩会把焦点给画布（`SelectionOverlayWindow.cs:476–486`、`:503–509`），按下鼠标时也不给。
+  - 验：两块屏，光标在 A 屏按截图热键，到 B 屏框一块，按 Enter、Esc、Ctrl+C、1–5。
+  - 改：按下鼠标时给画布焦点，激活不只限起始那块屏。
+- **E. 输入法组字时按 Enter，可能直接粘贴或翻译**：剪贴板面板的 Enter / Esc / ↑↓（`ClipboardPanel.xaml.cs:1152–1183`，`handledEventsToo`）没看 `_composing`（:47）；翻译浮窗的 `OnSourceKeyDown`（`TranslateWindow.cs:521`）也一样。
+  - 验：用微软拼音在剪贴板搜索框里打几个字母，按 Enter 上屏，看是不是直接粘贴了选中的条目；翻译浮窗同样试一次。
+  - 改：组字中这几个键直接 return。
+
 ### R39（P2）截图遮罩的按键：A、T 和工具栏对不上，换工具不刷新 → 已修（`901d4e3`）
 
 - `SelectionOverlayWindow.OnKeyDown`（L1338 起）里 `case A when !control` 排在 `case A when !control && HasSelection` 前面，**A 永远选箭头**：「A 向下、Shift+A 向上自动滚动长截图」走不到，长截图里「被鼠标打断后按 A 继续」也就没机会用。
