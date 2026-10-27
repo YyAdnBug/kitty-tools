@@ -433,6 +433,25 @@ public sealed class AnnotationGeometryTests
     }
 
     [TestMethod]
+    public void RestyleRefitsTextInTheSameUndoStep()
+    {
+        // 5d：文字换了字号要重新量框（App 里量），量过的框和样式一起是一步撤销，重做回来的也是量过的
+        var document = new AnnotationDocument();
+        var text = new Annotation { Kind = AnnotationKind.Text, Rect = new RectD(10, 10, 40, 20), Text = "Kitty" };
+        document.Commit(new[] { text });
+        document.SelectedId = text.Id;
+        document.RestyleSelected(
+            style => style with { Weight = 2 },
+            annotation => annotation with { Rect = annotation.Rect with { Width = annotation.Style.FontSize * 2 } });
+        Assert.AreEqual(56, document.Items[0].Rect.Width);
+        Assert.AreEqual(2, document.Items[0].Style.Weight);
+        Assert.IsTrue(document.Undo());
+        Assert.AreEqual(40, document.Items[0].Rect.Width);
+        Assert.IsTrue(document.Redo());
+        Assert.AreEqual(56, document.Items[0].Rect.Width);
+    }
+
+    [TestMethod]
     public void HistoryRoundTripKeepsEveryTool()
     {
         var annotations = new Annotation[]

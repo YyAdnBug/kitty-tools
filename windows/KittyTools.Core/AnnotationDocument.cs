@@ -86,8 +86,10 @@ public sealed class AnnotationDocument
         return Commit(_items.Where(annotation => annotation.Id != id));
     }
 
-    /// <summary>改选中那条的样式（记一步撤销），返回改完的样式；没选中返回 null。</summary>
-    public AnnotationStyle? RestyleSelected(Func<AnnotationStyle, AnnotationStyle> change)
+    /// <summary>
+    /// 改选中那条的样式（记一步撤销），返回改完的样式；没选中返回 null。refit 给文字换了字号后重新量框（量字在 App 里）。
+    /// </summary>
+    public AnnotationStyle? RestyleSelected(Func<AnnotationStyle, AnnotationStyle> change, Func<Annotation, Annotation>? refit = null)
     {
         if (Selected is not { } selected)
         {
@@ -95,6 +97,7 @@ public sealed class AnnotationDocument
         }
 
         var restyled = selected with { Style = change(selected.Style) };
+        restyled = refit?.Invoke(restyled) ?? restyled;
         Commit(_items.Select(annotation => annotation.Id == selected.Id ? restyled : annotation));
         return restyled.Style;
     }

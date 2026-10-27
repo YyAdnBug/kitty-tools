@@ -266,6 +266,48 @@ internal sealed partial class SelectionOverlayWindow : Window
         RefuseWipe("有标注时右键不清空");
     }
 
+    /// <summary>
+    /// --ui-snapshots（第 5d 批）：选区里摆 3 × 3 条两行的文字（行 = 无底 / 描边 / 底色，列 = 小 / 中 / 大，中英文混排，
+    /// 有白字黑描边、黄底黑字）。editing 是在第几条上打开输入框（不全选）：和收下后的那张逐像素比，只该差一圈焦点环和光标。
+    /// </summary>
+    internal void ShowProbeTexts(int? editing)
+    {
+        CommitText();
+        var area = _session.Selection;
+        var colors = new[,]
+        {
+            { AnnotationPalette.Red, AnnotationPalette.White, AnnotationPalette.Pink },
+            { AnnotationPalette.Red, 5, AnnotationPalette.White },
+            { AnnotationPalette.Yellow, AnnotationPalette.Red, AnnotationPalette.White },
+        };
+        var texts = new List<Annotation>();
+        for (var option = 0; option < 3; option++)
+        {
+            for (var weight = 0; weight < 3; weight++)
+            {
+                var origin = new RectD(
+                    area.X + area.Width * (0.04 + weight * 0.3), area.Y + area.Height * (0.06 + option * 0.32), 0, 0);
+                texts.Add(AnnotationRenderer.Measured(
+                    new Annotation
+                    {
+                        Kind = AnnotationKind.Text, Rect = origin, Text = "标注 Kitty\n第二行 gy",
+                        Style = new AnnotationStyle(colors[option, weight], weight, option),
+                    },
+                    _scale));
+            }
+        }
+
+        _document.Load(texts);
+        PositionToolbar();
+        UpdateToolbarChrome();
+        if (editing is { } index)
+        {
+            _ = ShowTextAsync(default, texts[index], selectAll: false);
+        }
+
+        _canvas.Invalidate();
+    }
+
     /// <summary>画了标注，或正在输入还没收下的字：会把它们清掉的操作都不做（mac hasAnnotations）。</summary>
     internal bool HasAnnotations
         => _document.Items.Count > 0 || !string.IsNullOrWhiteSpace(_textEditor?.Text);
@@ -317,11 +359,12 @@ internal sealed partial class SelectionOverlayWindow : Window
     }
 
     /// <summary>
-    /// 文字原位输入（PLAN-v2 §3.8）：在点下的位置叠一个 TextBox，Enter / Esc / 点到外面收下。existing 是双击的已有文字
-    /// （E12，mac beginEditing(existing:)）：照它的位置、样式、原文打开、全选，编辑时画面上先不画它，收下时换掉同一条。
-    /// ponytail: 输入框还是系统的样子，所见即所得的输入框是第 5d 批（PLAN-v9-annotate T7）。
+    /// 文字原位输入（PLAN-v9-annotate T6–T8，mac beginEditing）：在点下的位置（文字左上角）叠一个没有底和边的 TextBox，字体、
+    /// 字号、颜色和收下后一样，阴影 / 外描边 / 色块和焦点环由画布垫在它下面（DrawTextEditor），改样式立刻变。Enter 换行，
+    /// Esc、Ctrl+Enter、点到外面、换工具、出图都收下（D6）。existing 是双击的已有文字（E12）：照它的位置、样式、原文打开、全选，
+    /// 编辑时画面上先不画它，收下时换掉同一条。
     /// </summary>
-    private async Task ShowTextAsync(PointD point, Annotation? existing = null)
+    private async Task ShowTextAsync(PointD point, Annotation? existing = null, bool selectAll = true)
     {
         if (_session.SelectionScreen != _screen || !_session.HasSelection ||
             (existing is null && !_session.Selection.Contains(point)))
@@ -339,35 +382,209 @@ internal sealed partial class SelectionOverlayWindow : Window
 
         var editor = new TextBox
         {
-            Text = existing?.Text ?? string.Empty,
-            FontSize = 15,
-            MinWidth = 200,
-            AcceptsReturn = false,
-            PlaceholderText = "输入文字，Enter 确认",
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.NoWrap,
+            IsSpellCheckEnabled = false,
+            IsTextPredictionEnabled = false,
+            MinWidth = 0,
+            MinHeight = 0,
+            BorderThickness = new Thickness(0),
+            Background = new SolidColorBrush(Colors.Transparent),
+            Foreground = _editorInk,
+            FontFamily = new Microsoft.UI.Xaml.Media.FontFamily(AnnotationRenderer.TextFontFamily),
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            // 全选时选中底是品牌粉 0.4（截图家族不用系统强调色）
+            SelectionHighlightColor = new SolidColorBrush(Theme.Argb(102, Accent.R, Accent.G, Accent.B)),
         };
-        Canvas.SetLeft(editor, _textPoint.X / _scale);
-        Canvas.SetTop(editor, _textPoint.Y / _scale);
-        editor.KeyDown += (_, e) =>
+        // TextBox 的模板在悬停 / 有焦点时换自己的底、边和字色：都换成透明 / 这段字的颜色（要在模板套上之前放进 Resources）
+        var clear = new SolidColorBrush(Colors.Transparent);
+        foreach (var key in new[]
+                 {
+                     "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused",
+                     "TextControlBorderBrush", "TextControlBorderBrushPointerOver", "TextControlBorderBrushFocused",
+                 })
         {
-            if (e.Key is Windows.System.VirtualKey.Enter or Windows.System.VirtualKey.Escape)
+            editor.Resources[key] = clear;
+        }
+
+        foreach (var key in new[] { "TextControlForeground", "TextControlForegroundPointerOver", "TextControlForegroundFocused" })
+        {
+            editor.Resources[key] = _editorInk;
+        }
+
+        editor.Resources["TextControlBorderThemeThicknessFocused"] = new Thickness(0);
+        // 原文在 AcceptsReturn 之后再放：单行时赋的 Text 会在第一个换行处截断
+        editor.Text = existing?.Text ?? string.Empty;
+        ScrollViewer.SetHorizontalScrollBarVisibility(editor, ScrollBarVisibility.Hidden);
+        ScrollViewer.SetVerticalScrollBarVisibility(editor, ScrollBarVisibility.Hidden);
+        editor.PreviewKeyDown += (_, e) =>
+        {
+            // 组字时 Esc 先给输入法取消组字（T11）；Enter 换行（AcceptsReturn），Ctrl+Enter 收下
+            if ((e.Key == Windows.System.VirtualKey.Escape && !_composing) ||
+                (e.Key == Windows.System.VirtualKey.Enter && IsDown(Windows.System.VirtualKey.Control)))
             {
-                // B5：照 mac，Esc 也是收下打的字（要扔就清空再 Esc，空的不留）
                 e.Handled = true;
                 CommitText();
             }
         };
-        editor.LostFocus += (_, _) => CommitText();
-        _root.Children.Add(editor);
+        editor.TextChanged += (_, _) => LayoutEditor();
+        editor.Loaded += (_, _) => LayoutEditor(); // 套上模板、排好之后才量得到输入框的行距
+        editor.TextCompositionStarted += (_, _) => _composing = true;
+        editor.TextCompositionChanged += (_, _) => LayoutEditor();
+        editor.TextCompositionEnded += (_, _) =>
+        {
+            _composing = false;
+            LayoutEditor();
+        };
+        editor.LostFocus += (_, _) =>
+        {
+            // 拿掉的旧输入框的失焦是之后才到的：那时 _textEditor 已经是新开的那个，不能把它收下
+            if (ReferenceEquals(_textEditor, editor))
+            {
+                CommitText();
+            }
+        };
         _textEditor = editor;
+        _composing = false;
+        ApplyEditorStyle();
+        _root.Children.Add(editor);
         editor.Focus(FocusState.Programmatic);
-        if (existing is not null)
+        if (existing is not null && selectAll)
         {
             editor.SelectAll();
+        }
+        else
+        {
+            editor.Select(editor.Text.Length, 0);
         }
 
         UpdateToolbarChrome();
         _canvas.Invalidate();
         await Task.CompletedTask;
+    }
+
+    /// <summary>输入框的字色（底色样式是压在色块上的黑 / 白字）。同一个画刷，换样式时只改颜色：模板的状态里引用的也是它。</summary>
+    private readonly SolidColorBrush _editorInk = new(Colors.White);
+
+    /// <summary>输入法正在组字（这时 Esc 归输入法）。</summary>
+    private bool _composing;
+
+    /// <summary>打着的字现在的样子（框按现在的字量），画布照它垫阴影 / 描边 / 色块。</summary>
+    private Annotation? _editingLive;
+
+    /// <summary>输入框实际的行距（DIP），按字号记住：垫的那层照它排（AnnotationRenderer.DrawTextBacking）。</summary>
+    private readonly Dictionary<double, double> _editorPitch = new();
+    private double? _editingPitch;
+
+    /// <summary>输入框的字体、字号、颜色跟上 _style，再重排。</summary>
+    private void ApplyEditorStyle()
+    {
+        if (_textEditor is not { } editor)
+        {
+            return;
+        }
+
+        editor.FontSize = _style.FontSize;
+        _editorInk.Color = _style.Option == 2 ? AnnotationRenderer.InkOf(_style.Color) : AnnotationRenderer.ColorOf(_style.Color);
+        LayoutEditor();
+    }
+
+    /// <summary>
+    /// 输入框比文字框大一圈、字的位置不变（左上角不动，往右往下长，mac layoutEditor）：底色时这一圈是色块的留边（6 / 2），
+    /// 其余留 3 给阴影和外描边。另外右边、下边多留一个字号的余量，输入框自己排出来的比量的宽一点也不会滚动。
+    /// </summary>
+    private void LayoutEditor()
+    {
+        if (_textEditor is not { } editor)
+        {
+            return;
+        }
+
+        _editingPitch = EditorPitch(editor);
+        _editingLive = AnnotationRenderer.Measured(
+            (_editingText ?? new Annotation { Kind = AnnotationKind.Text }) with
+            {
+                Rect = new RectD(_textPoint.X, _textPoint.Y, 0, 0),
+                Text = EditorText(editor),
+                Style = _style,
+            },
+            _scale,
+            _editingPitch);
+        var (padX, padY) = EditorPadding(_style);
+        var frame = ToDip(_editingLive.Rect);
+        editor.Padding = new Thickness(padX, padY, padX, padY);
+        Canvas.SetLeft(editor, frame.X - padX);
+        Canvas.SetTop(editor, frame.Y - padY);
+        editor.Width = frame.Width + padX * 2 + _style.FontSize;
+        editor.Height = frame.Height + padY * 2 + _style.FontSize * 1.5;
+        _canvas.Invalidate();
+    }
+
+    /// <summary>输入框第二行比第一行低多少（有第二行时量一次，按字号记住）；还没量到时 null，按 DirectWrite 自己的行距。</summary>
+    private double? EditorPitch(TextBox editor)
+    {
+        var size = _style.FontSize;
+        var lineBreak = editor.Text.IndexOf('\r');
+        if (lineBreak >= 0 && lineBreak + 1 < editor.Text.Length)
+        {
+            try
+            {
+                var pitch = editor.GetRectFromCharacterIndex(lineBreak + 1, false).Y - editor.GetRectFromCharacterIndex(0, false).Y;
+                if (pitch > size && pitch < size * 2)
+                {
+                    _editorPitch[size] = pitch;
+                }
+            }
+            catch (Exception ex) when (ex is ArgumentException or COMException)
+            {
+                // 还没排好（刚放进去、模板还没套上）：等 Loaded 再量
+            }
+        }
+
+        return _editorPitch.TryGetValue(size, out var known) ? known : null;
+    }
+
+    private static (double X, double Y) EditorPadding(AnnotationStyle style)
+        => style.Option == 2 ? (Annotation.PlatePaddingX, Annotation.PlatePaddingY) : (3, 3);
+
+    /// <summary>TextBox 的换行是 \r：存和量都按 \n。</summary>
+    private static string EditorText(TextBox editor) => editor.Text.Replace("\r\n", "\n").Replace('\r', '\n');
+
+    /// <summary>
+    /// 打着的字垫在输入框下面的那层（AnnotationRenderer.DrawTextBacking）和焦点环（Whisker §3：1 DIP 粉 0.55 + 粉 0.18 的 4 外发光，
+    /// 圆角同色块：底色 6，否则 3）。环贴着文字框外一圈（和收下后的选中框不是一回事）。
+    /// </summary>
+    private void DrawTextEditor(Microsoft.Graphics.Canvas.CanvasDrawingSession ds)
+    {
+        if (_textEditor is null || _editingLive is not { } live)
+        {
+            return;
+        }
+
+        AnnotationRenderer.DrawTextBacking(ds, live, new PointD(0, 0), 1 / _scale, 1, _editingPitch);
+        var (padX, padY) = EditorPadding(live.Style);
+        var frame = ToDip(live.Rect);
+        var ring = new Windows.Foundation.Rect(
+            Math.Round(frame.X - padX) + 0.5, Math.Round(frame.Y - padY) + 0.5,
+            Math.Round(frame.Width + padX * 2) - 1, Math.Round(frame.Height + padY * 2) - 1);
+        var radius = live.Style.Option == 2 ? 6f : 3f;
+        using (var list = new Microsoft.Graphics.Canvas.CanvasCommandList(ds))
+        {
+            using (var inner = list.CreateDrawingSession())
+            {
+                inner.DrawRoundedRectangle(ring, radius, radius, Accent, 1);
+            }
+
+            using var glow = new Microsoft.Graphics.Canvas.Effects.ShadowEffect
+            {
+                Source = list,
+                BlurAmount = 2,
+                ShadowColor = Theme.Argb(46, Accent.R, Accent.G, Accent.B),
+            };
+            ds.DrawImage(glow);
+        }
+
+        ds.DrawRoundedRectangle(ring, radius, radius, Theme.Argb(140, Accent.R, Accent.G, Accent.B), 1);
     }
 
     /// <summary>收下输入的文字：新的加在最上面并选中；重新编辑的换掉原来那条，清空了就删掉（都记一步撤销，没变不记）。</summary>
@@ -379,9 +596,12 @@ internal sealed partial class SelectionOverlayWindow : Window
         }
 
         _textEditor = null;
+        _editingLive = null;
+        _composing = false;
         var existing = _editingText;
         _editingText = null;
-        var text = editor.Text.Trim();
+        // 照 mac：原样收下（多行、行首空格都留着），只是全是空白的不要
+        var text = EditorText(editor);
         _root.Children.Remove(editor);
         var edited = AnnotationRenderer.Measured(
             (existing ?? new Annotation { Kind = AnnotationKind.Text }) with
@@ -901,6 +1121,7 @@ internal sealed partial class SelectionOverlayWindow : Window
                 CornerRadius = new CornerRadius(4),
                 BorderThickness = new Thickness(0),
                 Background = new SolidColorBrush(Colors.Transparent),
+                AllowFocusOnInteraction = false,
             };
             AutomationProperties.SetName(button, options[index]);
             button.Click += (_, _) => Restyle(style => style with { Option = index });
@@ -958,6 +1179,8 @@ internal sealed partial class SelectionOverlayWindow : Window
             Background = new SolidColorBrush(Colors.Transparent),
             BorderThickness = new Thickness(0),
             CornerRadius = new CornerRadius(13),
+            // 不抢焦点：打着字时点托盘改样式，输入框接着打（点了就失焦会把字收下）
+            AllowFocusOnInteraction = false,
         };
         AutomationProperties.SetName(button, name);
         ToolTipService.SetToolTip(button, name);
@@ -1108,7 +1331,7 @@ internal sealed partial class SelectionOverlayWindow : Window
         AnnotationKind? owner;
         AnnotationStyle changed;
         if (_textEditor is null && !IsDraggingAnnotation && _document.Selected is { } selected &&
-            _document.RestyleSelected(change) is { } restyled)
+            _document.RestyleSelected(change, annotation => AnnotationRenderer.Measured(annotation, _scale)) is { } restyled)
         {
             owner = selected.Kind;
             changed = restyled;
@@ -1129,6 +1352,7 @@ internal sealed partial class SelectionOverlayWindow : Window
         if (owner == _tool || _textEditor is not null)
         {
             _style = changed;
+            ApplyEditorStyle(); // 打着字时改样式立刻变（T7）
         }
 
         UpdateToolbarChrome();
@@ -1201,7 +1425,8 @@ internal sealed partial class SelectionOverlayWindow : Window
     }
 
     private void OnDraw(CanvasControl sender, CanvasDrawEventArgs args)
-    {        var width = (float)sender.ActualWidth;
+    {
+        var width = (float)sender.ActualWidth;
         var height = (float)sender.ActualHeight;
         if (width <= 0 || height <= 0)
         {
@@ -1251,6 +1476,7 @@ internal sealed partial class SelectionOverlayWindow : Window
         if (selection is { } own)
         {
             DrawAnnotations(sender, ds, own, width, height);
+            DrawTextEditor(ds);
             DrawSelection(ds, own);
             DrawAnnotationSelection(ds);
         }

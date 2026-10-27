@@ -56,12 +56,12 @@ internal static class ShotAnnotations
     public static ShotAnnotationData ToData(Annotation annotation, double dx, double dy)
         => ShotHistoryRules.ToData(annotation, dx, dy);
 
-    /// <summary>存盘的 → 标注；认不得的工具名返回 null。旧数据的文字没存大小，按这块屏的缩放量一遍。</summary>
+    /// <summary>
+    /// 存盘的 → 标注；认不得的工具名返回 null。文字的框按这块屏的缩放重新量（旧数据没存大小，5d 之前存的是 Segoe UI 16 量的）。
+    /// </summary>
     public static Annotation? FromData(ShotAnnotationData data, double dx, double dy, double scale)
         => ShotHistoryRules.FromData(data, dx, dy) is { } annotation
-            ? annotation.Kind == AnnotationKind.Text && annotation.Rect.Width <= 0
-                ? AnnotationRenderer.Measured(annotation, scale)
-                : annotation
+            ? annotation.Kind == AnnotationKind.Text ? AnnotationRenderer.Measured(annotation, scale) : annotation
             : null;
 }
 

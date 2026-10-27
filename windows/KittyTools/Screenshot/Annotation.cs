@@ -4,7 +4,8 @@
 // 屏幕上 unit = 1 / 缩放、strokeScale = 1（画布按 DIP）；导出 unit = 1、strokeScale = 缩放（位图按像素）。
 // 顺序固定：荧光笔垫底（正片叠底要叠在冻结帧上）→ 马赛克 → 聚光灯（合成一层）→ 其余按列表顺序 → 序号永远最上。
 // 除马赛克、聚光灯、荧光笔外都带 black 0.28 的阴影（白色标注在白底上也看得见）。
-// ponytail: 文字还是第一版的 Segoe UI 16 纯色字，三档字号和无底 / 描边 / 底色是第 5d 批（PLAN-v9-annotate §6）。
+// 文字（PLAN-v9-annotate §6）：Segoe UI Variable Text Semibold（中文由系统回退到微软雅黑，D2），三档 14 / 20 / 28；
+// 无底 = 字带阴影，描边 = 带阴影的外描边 + 不带阴影的字，底色 = 带阴影的圆角色块 + 压在上面的字。输入框也照这套（DrawTextBacking）。
 using System.Numerics;
 using KittyTools.Core;
 using Microsoft.Graphics.Canvas;
@@ -18,8 +19,8 @@ namespace KittyTools;
 
 internal static class AnnotationRenderer
 {
-    /// <summary>文字标注的字号（DIP）。第 5d 批换成三档。</summary>
-    private const float TextSize = 16;
+    /// <summary>文字标注的字体（输入框用同一个，所见即所得）。</summary>
+    public const string TextFontFamily = "Segoe UI Variable Text";
 
     /// <summary>阴影的模糊（标准差，DIP）：mac 是 CG 的 blur 3，约等于标准差 1.5。</summary>
     private const float ShadowBlur = 1.5f;
@@ -36,28 +37,33 @@ internal static class AnnotationRenderer
 
     public static Color ColorOf(int palette) => FromArgb(AnnotationPalette.ArgbOf(palette));
 
+    /// <summary>压在这个颜色上的字（底色文字、序号）：黄、白上黑字，其余白字。</summary>
+    public static Color InkOf(int palette) => FromArgb(AnnotationPalette.InkOf(palette));
+
     private static Color FromArgb(uint argb)
         => Color.FromArgb((byte)(argb >> 24), (byte)(argb >> 16), (byte)(argb >> 8), (byte)argb);
 
-    /// <summary>文字框的大小（DIP），和 Draw 画字用同一个格式；空串、末尾换行也留一行高。</summary>
-    public static (double Width, double Height) MeasureText(string text)
+    /// <summary>
+    /// 文字框的大小（DIP），和 Draw 画字用同一个排版；空串、末尾换行也留一行高（输入框里光标要有地方，mac textFrame）。
+    /// linePitch 只给正在输入的字（见 DrawTextBacking）。
+    /// </summary>
+    public static (double Width, double Height) MeasureText(string text, AnnotationStyle style, double? linePitch = null)
     {
         var measured = text.Length == 0 || text.EndsWith('\n') ? text + " " : text;
-        using var format = TextFormat(1);
-        using var layout = new CanvasTextLayout(CanvasDevice.GetSharedDevice(), measured, format, float.MaxValue, float.MaxValue);
+        using var layout = TextLayout(CanvasDevice.GetSharedDevice(), measured, style, 1, linePitch);
         var bounds = layout.LayoutBounds;
         return (Math.Ceiling(bounds.Width), Math.Ceiling(bounds.Height));
     }
 
-    /// <summary>文字标注补上量出来的框（像素）：收下文字时、从截图历史读出旧数据时。</summary>
-    public static Annotation Measured(Annotation annotation, double scale)
+    /// <summary>文字标注补上量出来的框（像素）：收下文字时、改了字号时、从截图历史读出来时。</summary>
+    public static Annotation Measured(Annotation annotation, double scale, double? linePitch = null)
     {
         if (annotation.Kind != AnnotationKind.Text)
         {
             return annotation;
         }
 
-        var (width, height) = MeasureText(annotation.Text);
+        var (width, height) = MeasureText(annotation.Text, annotation.Style, linePitch);
         return annotation with { Rect = annotation.Rect with { Width = width * scale, Height = height * scale } };
     }
 
@@ -114,6 +120,12 @@ internal static class AnnotationRenderer
     /// <summary>除荧光笔、马赛克、聚光灯以外的：带阴影的线条 / 色块 / 字（实心矩形、椭圆的 0.28 底不带阴影，先铺）。</summary>
     private static void DrawInk(CanvasDrawingSession ds, Annotation annotation, Mapping map)
     {
+        if (annotation.Kind == AnnotationKind.Text)
+        {
+            DrawText(ds, annotation, map, glyphs: true);
+            return;
+        }
+
         var color = ColorOf(annotation.Style.Color);
         var width = map.Size(annotation.Style.LineWidth);
         if (annotation.Kind is AnnotationKind.Rectangle or AnnotationKind.Ellipse && annotation.Style.Option == 1 &&
@@ -171,13 +183,6 @@ internal static class AnnotationRenderer
                     }
 
                     break;
-                case AnnotationKind.Text:
-                {
-                    var point = map.Point(new PointD(annotation.Rect.X, annotation.Rect.Y));
-                    using var format = TextFormat(map.StrokeScale);
-                    inner.DrawText(annotation.Text, point.X, point.Y, color, format);
-                    break;
-                }
                 case AnnotationKind.Counter:
                     DrawCounterDisc(inner, annotation, color, map);
                     break;
@@ -193,8 +198,8 @@ internal static class AnnotationRenderer
         }
     }
 
-    /// <summary>先把 body 画进一张命令列表，垫一层 ShadowEffect，再把本体叠上去。</summary>
-    private static void WithShadow(CanvasDrawingSession ds, Mapping map, Action<CanvasDrawingSession> body)
+    /// <summary>先把 body 画进一张命令列表，垫一层 ShadowEffect，再把本体叠上去（withBody = false 只画阴影）。</summary>
+    private static void WithShadow(CanvasDrawingSession ds, Mapping map, Action<CanvasDrawingSession> body, bool withBody = true)
     {
         using var list = new CanvasCommandList(ds);
         using (var inner = list.CreateDrawingSession())
@@ -204,7 +209,91 @@ internal static class AnnotationRenderer
 
         using var shadow = new ShadowEffect { Source = list, BlurAmount = map.Size(ShadowBlur), ShadowColor = ShadowColor };
         ds.DrawImage(shadow);
-        ds.DrawImage(list);
+        if (withBody)
+        {
+            ds.DrawImage(list);
+        }
+    }
+
+    /// <summary>
+    /// 正在输入的文字垫在输入框下面的那层（T7，mac 的输入框也是这样）：无底只画字的阴影，描边画带阴影的外描边，底色画带阴影的色块；
+    /// 字本身由输入框画。坐标同 Draw。linePitch 是输入框实际的行距（DIP）：TextBox 的行距取整到整像素（14 / 20 / 28 号是
+    /// 18 / 26 / 36），DirectWrite 自己排是 18.6 / 26.6 / 37.2，多行时每行差出零点几到一个多像素，外描边就和字错开了；
+    /// 垫的这层按输入框的行距排，和它上面的字对齐。
+    /// ponytail: 收下后按 DirectWrite 自己的行距画，第二行起每行往下挪不到 1 px（mac 输入框和画出来是同一套排版，没有这一下）。
+    /// 要完全一致得让 TextBox 用指定行距（换 RichEditBox 设段落行距 Exactly），再看值不值。
+    /// </summary>
+    public static void DrawTextBacking(
+        CanvasDrawingSession ds, Annotation annotation, PointD origin, double unit, double strokeScale, double? linePitch)
+        => DrawText(ds, annotation, new Mapping(origin, unit, strokeScale), glyphs: false, linePitch);
+
+    /// <summary>文字的三种样式（mac Annotation.draw 的 .text）；glyphs = false 时不画字本身（输入框在上面画）。</summary>
+    private static void DrawText(CanvasDrawingSession ds, Annotation annotation, Mapping map, bool glyphs, double? linePitch = null)
+    {
+        var style = annotation.Style;
+        var color = ColorOf(style.Color);
+        var origin = map.Point(new PointD(annotation.Rect.X, annotation.Rect.Y));
+        using var layout = TextLayout(ds, annotation.Text, style, map.StrokeScale, linePitch);
+        switch (style.Option)
+        {
+            case 1:
+            {
+                // 描边：先画带阴影的外描边（字号的 1/7，一半压在字里，随后填上的字把它盖住；白字用黑描边），再不带阴影地把字填上
+                using var outline = CanvasGeometry.CreateText(layout);
+                var stroke = style.Color == AnnotationPalette.White ? Colors.Black : Colors.White;
+                WithShadow(ds, map, inner => inner.DrawGeometry(outline, origin, stroke, map.Size(style.FontSize / 7), RoundStroke));
+                if (glyphs)
+                {
+                    ds.FillGeometry(outline, origin, color);
+                }
+
+                break;
+            }
+            case 2:
+            {
+                // 底色：带阴影的圆角 6 色块（文字框左右各留 6、上下各留 2）+ 压在上面的字（黄 / 白底黑字）
+                var frame = map.Rect(annotation.Rect);
+                var padX = map.Size(Annotation.PlatePaddingX);
+                var padY = map.Size(Annotation.PlatePaddingY);
+                var plate = new Windows.Foundation.Rect(frame.X - padX, frame.Y - padY, frame.Width + padX * 2, frame.Height + padY * 2);
+                var radius = map.Size(6);
+                WithShadow(ds, map, inner => inner.FillRoundedRectangle(plate, radius, radius, color));
+                if (glyphs)
+                {
+                    ds.DrawTextLayout(layout, origin, InkOf(style.Color));
+                }
+
+                break;
+            }
+            default:
+                WithShadow(ds, map, inner => inner.DrawTextLayout(layout, origin, color), withBody: glyphs);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// 文字的排版：不折行，字号按档乘 scale（屏幕上 1，导出是屏幕缩放）。给了 linePitch 就每行一样高（基线在 Segoe UI Variable
+    /// 的上伸部 2210 / 2048 em，第一行和不给时一样）。
+    /// </summary>
+    private static CanvasTextLayout TextLayout(
+        ICanvasResourceCreator creator, string text, AnnotationStyle style, double scale, double? linePitch = null)
+    {
+        using var format = new CanvasTextFormat
+        {
+            FontFamily = TextFontFamily,
+            FontSize = (float)(style.FontSize * scale),
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            WordWrapping = CanvasWordWrapping.NoWrap,
+        };
+        if (linePitch is { } pitch)
+        {
+            format.LineSpacingMode = CanvasLineSpacingMode.Uniform;
+            format.LineSpacing = (float)(pitch * scale);
+            format.LineSpacingBaseline = (float)(style.FontSize * 2210 / 2048 * scale);
+        }
+
+        // 给有限的框（同 DrawNumber）：float.MaxValue 时量出来的框是空的
+        return new CanvasTextLayout(creator, text, format, 100_000, 100_000);
     }
 
     /// <summary>矩形（圆角 3）/ 椭圆；别的工具 null。</summary>
@@ -406,13 +495,6 @@ internal static class AnnotationRenderer
                 FromArgb(AnnotationPalette.InkOf(annotation.Style.Color)));
         }
     }
-
-    private static CanvasTextFormat TextFormat(double scale) => new()
-    {
-        FontFamily = "Segoe UI",
-        FontSize = (float)(TextSize * scale),
-        WordWrapping = CanvasWordWrapping.NoWrap,
-    };
 
     private static (byte R, byte G, byte B) Average(FrozenScreen screen, int left, int top, int right, int bottom)
     {

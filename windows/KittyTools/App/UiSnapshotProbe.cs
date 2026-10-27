@@ -179,6 +179,18 @@ internal static class UiSnapshotProbe
                 {
                     await File.WriteAllBytesAsync(Path.Combine(directory, "shot-annotations-export.png"), exported);
                 }
+
+                // 第 5d 批：文字三种样式 × 三档（只截选区）；再依次在无底小号、描边中号、底色大号那条上打开输入框，和收下后的那张逐像素对着看
+                var texts = crop with { Top = (int)(height * 0.25) - 20, Bottom = (int)(height * 0.6) + 20 };
+                overlay.ShowProbeTexts(null);
+                await Task.Delay(500);
+                await WindowShot.SaveAsync(overlay.Handle, Path.Combine(directory, "shot-text.png"), texts);
+                for (var option = 0; option < 3; option++)
+                {
+                    overlay.ShowProbeTexts(option * 4);
+                    await Task.Delay(500);
+                    await WindowShot.SaveAsync(overlay.Handle, Path.Combine(directory, $"shot-text-editing-{option}.png"), texts);
+                }
                 ScreenshotSession.FinishCurrent();
             }
 
