@@ -11,6 +11,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import UniformTypeIdentifiers
 
 /// 历史里一条的那几样操作（AppDelegate 接到截图那条路上：拷贝、快速保存、另存为、钉到屏幕、识字并拷贝、改标注）。
 /// 截图历史窗口（ShotHistoryModel）和晾衣绳（Clothesline）共用一份，不各接一遍
@@ -182,6 +183,62 @@ import Foundation
   }
 
   // MARK: 读
+
+  // MARK: 拖出去
+
+  /// 拖出去的那一份：存过的就是存的那个文件、录制的就是那段录像（名字是用户自己的），别的在临时目录里写一份
+  /// 成品 PNG（原图 + 标注），名字同快速保存。写过的留着，同一条再拖不重写；那个目录启动时清空
+  /// （ShotShelf.dragDirectory）
+  func dragFile(for item: Item) async -> URL? {
+    if let path = item.filePath ?? item.savedPath, FileManager.default.fileExists(atPath: path) {
+      return URL(filePath: path)
+    }
+    if let made = dragFiles[item.id], FileManager.default.fileExists(atPath: made.path) {
+      return made
+    }
+    guard let image = composed(item), let png = await ScreenshotOutput.png(image, scale: item.scale)
+    else { return nil }
+    let url = ScreenshotOutput.availableURL(in: ShotShelf.dragDirectory, date: item.createdAt)
+    guard await Self.write(png, to: url) else { return nil }
+    dragFiles[item.id] = url
+    return url
+  }
+
+  /// 写临时文件（几 MB 到几十 MB，不在主线程写）
+  @concurrent nonisolated static func write(_ png: Data, to url: URL) async -> Bool {
+    try? FileManager.default.createDirectory(
+      at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    return (try? png.write(to: url)) != nil
+  }
+
+  /// 拖出去给别的 App 的那一份（历史窗口、晾衣绳都用这个文件，见 dragFile）。
+  /// **成品 PNG 是落到别人手上那一刻才合成写盘的**：历史里成百上千条，不像绳子上那 8 张能先备好
+  func dragProvider(for item: Item) -> NSItemProvider {
+    if let path = item.filePath ?? item.savedPath, FileManager.default.fileExists(atPath: path),
+      let provider = NSItemProvider(contentsOf: URL(filePath: path))
+    {
+      provider.suggestedName = (path as NSString).lastPathComponent  // 自己写上，不是每次都有
+      return provider
+    }
+    let provider = NSItemProvider()
+    provider.registerFileRepresentation(
+      for: .png, visibility: .all, openInPlace: false
+    ) { [weak self] completion in
+      // 系统给的回调没标 sending，挪进 Task 里编译器拦；只在主 actor 上调一次，安全
+      nonisolated(unsafe) let finish = completion
+      Task { @MainActor in
+        guard let url = await self?.dragFile(for: item) else {
+          return finish(nil, false, CocoaError(.fileNoSuchFile))
+        }
+        finish(url, false, nil)
+      }
+      return nil
+    }
+    return provider
+  }
+
+  /// 已经写好的那几份（按 id）：同一条拖第二次不重写
+  @ObservationIgnored private var dragFiles: [UUID: URL] = [:]
 
   /// 原图（用时才读盘；录制的那几条没有原图）
   func image(for id: UUID) -> CGImage? { Self.decode(url(for: id)) }

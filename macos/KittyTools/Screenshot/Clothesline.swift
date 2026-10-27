@@ -236,26 +236,12 @@ import SwiftUI
     updateWatching()
   }
 
-  /// 拖出去的那个文件：存过的就是存的那个、录制的就是那段文件（名字是用户自己的），别的在临时目录里写一份成品
-  /// PNG（原图 + 标注），名字同快速保存。常驻缩略图也往这个目录写、启动时清空（ShotShelf.dragDirectory）
+  /// 拖出去的那个文件（和历史窗口同一份，见 ShotHistory.dragFile）：挂上来就先备好，
+  /// 这样从绳子上拖的那一下不用等
   private func prepareDragFile(_ item: ShotHistory.Item) async {
-    if let path = item.savedPath ?? item.filePath, FileManager.default.fileExists(atPath: path) {
-      model.dragFiles[item.id] = URL(filePath: path)
-      return
-    }
-    guard let history = model.history, let image = history.composed(item),
-      let png = await ScreenshotOutput.png(image, scale: item.scale)
+    guard let url = await model.history?.dragFile(for: item), model.pegged.contains(item.id)
     else { return }
-    let url = ScreenshotOutput.availableURL(in: ShotShelf.dragDirectory)
-    guard await Self.write(png, to: url), model.pegged.contains(item.id) else { return }
     model.dragFiles[item.id] = url
-  }
-
-  /// 写临时文件（几 MB 到几十 MB，不在主线程写；同常驻缩略图）
-  @concurrent nonisolated private static func write(_ png: Data, to url: URL) async -> Bool {
-    try? FileManager.default.createDirectory(
-      at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-    return (try? png.write(to: url)) != nil
   }
 
   /// 下一张挂在哪（屏幕坐标）：截图的飞行卡片照它落地（拍板 B1）。pixels 是原图的像素尺寸；

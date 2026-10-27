@@ -3,6 +3,7 @@
 
 import AppKit
 import Testing
+import UniformTypeIdentifiers
 
 @testable import KittyTools
 
@@ -238,6 +239,92 @@ struct ShotHistoryTests {
     // 原图那份不带标注（回头还能接着改）
     #expect(
       try Data(contentsOf: history.url(for: plain)) == Data(contentsOf: history.url(for: drawn)))
+  }
+
+  /// 改完标注，**左边那片网格**里那张卡也跟着变（2026-10-26 用户手测：右边的预览变了、左边的列表没变）。
+  /// 上面两个测只管到磁盘和缓存——缓存失效了和 SwiftUI 重不重画是两回事，所以这里把整扇窗摆到屏幕外
+  /// 渲染出来、只比左边网格那一块的像素
+  @Test func gridRedrawsAfterUpdate() async throws {
+    let (history, root) = try makeHistory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let id = try #require(await history.record(image(width: 800, height: 600), scale: 2))
+    ShotThumbnails.shared.clear()
+    let model = ShotHistoryModel(history: history)
+    var redrawn: UUID?
+    history.onThumbnailChanged = { changed in  // 同 AppDelegate 的接法
+      ShotThumbnails.shared.forget(changed)
+      model.touch()
+      redrawn = changed
+    }
+    let holder = ShotHistoryWindow(model: model, frameName: nil)
+    let window = holder.window
+    window.setFrameOrigin(NSPoint(x: -20000, y: -20000))  // 屏幕外，不弹到用户眼前
+    window.orderFront(nil)
+    defer { window.orderOut(nil) }
+    let settle = { for _ in 0..<4 { RunLoop.main.run(until: .now.addingTimeInterval(0.05)) } }
+    settle()
+    let content = try #require(window.contentView)
+    // 左边网格那一块（卡片在左上角那一片；右边的预览不算）
+    let grid = CGRect(x: 0, y: content.bounds.height - 320, width: 400, height: 300)
+    func shot() throws -> Data {
+      content.layoutSubtreeIfNeeded()
+      let bitmap = try #require(content.bitmapImageRepForCachingDisplay(in: grid))
+      content.cacheDisplay(in: grid, to: bitmap)
+      return try #require(bitmap.representation(using: .png, properties: [:]))
+    }
+    let before = try shot()
+    #expect(before.count > 2000, "网格那一块没画出东西，这个测就白跑了")
+    history.update(
+      id,
+      annotations: [
+        Annotation(
+          shape: .rectangle(CGRect(x: 20, y: 20, width: 360, height: 260)),
+          style: Annotation.Style(color: .red, weight: .large))
+      ])
+    for _ in 0..<40 where redrawn == nil {
+      try await Task.sleep(for: .milliseconds(25))
+    }
+    #expect(redrawn == id)
+    settle()
+    #expect(try shot() != before, "改完标注，左边那张卡没跟着变")
+  }
+
+  /// 拖到别的 App 里去：没存过盘的拖一份**现合成**的成品 PNG（带标注，落到别人手上那一刻才写盘），
+  /// 存过盘的就拖存的那个文件（名字是用户自己的）
+  @Test func dragProvidesFile() async throws {
+    let (history, root) = try makeHistory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let id = try #require(
+      await history.record(
+        image(), scale: 2,
+        annotations: [
+          Annotation(
+            shape: .rectangle(CGRect(x: 10, y: 10, width: 120, height: 80)),
+            style: Annotation.Style(color: .red, weight: .large))
+        ]))
+    let item = try #require(history.items.first { $0.id == id })
+    let png = UTType.png.identifier
+    let provider = history.dragProvider(for: item)
+    #expect(provider.registeredTypeIdentifiers.contains(png))
+    // 真的去拿一次（这一下才会合成 + 写盘）
+    let data: Data = try await withCheckedThrowingContinuation { continuation in
+      provider.loadFileRepresentation(forTypeIdentifier: png) { url, error in
+        if let url {
+          continuation.resume(returning: (try? Data(contentsOf: url)) ?? Data())
+        } else {
+          continuation.resume(throwing: error ?? CocoaError(.fileNoSuchFile))
+        }
+      }
+    }
+    #expect(data.prefix(4) == Data([0x89, 0x50, 0x4E, 0x47]), "拿到的不是 PNG")
+    #expect(try data != Data(contentsOf: history.url(for: id)), "拖出去的那份要带标注，不是原图")
+
+    // 存过盘之后拖的是那个文件
+    let saved = root.appending(path: "我自己命的名.png")
+    try data.write(to: saved)
+    history.markSaved(id, to: saved)
+    let after = try #require(history.items.first { $0.id == id })
+    #expect(history.dragProvider(for: after).suggestedName == "我自己命的名.png")
   }
 
   /// 窗口建得出来、标题对，关掉之后不再可见

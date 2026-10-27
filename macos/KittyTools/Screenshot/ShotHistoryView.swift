@@ -63,9 +63,7 @@ struct ShotHistoryView: View {
   // MARK: 左边的网格
 
   private var grid: some View {
-    // 读一下：改完标注、缩略图重做好之后要重画这片网格
-    let _ = model.redraws
-    return ScrollView {
+    ScrollView {
       if model.groups.isEmpty {
         EmptyState(symbol: "clock.arrow.circlepath", title: "还没有截图") {
           Text(
@@ -84,8 +82,10 @@ struct ShotHistoryView: View {
                 ShotCard(
                   item: item, chosen: model.selection == item.id,
                   thumbnail: ShotThumbnails.shared.image(for: item, in: model.history),
+                  generation: model.redraws,
                   select: { model.selection = item.id }, edit: { edit(item) }
                 )
+                .onDrag { model.dragProvider(for: item) }
                 .contextMenu { menu(item) }
               }
             }
@@ -132,6 +132,7 @@ struct ShotHistoryView: View {
         }
       }
       .frame(height: 180)
+      .onDrag { model.dragProvider(for: item) }
       Text(ShotHistoryModel.caption(item)).font(.system(size: 12))
       let details = ShotHistoryModel.details(item)
       if !details.isEmpty {
@@ -206,6 +207,10 @@ private struct ShotCard: View {
   let item: ShotHistory.Item
   let chosen: Bool
   let thumbnail: NSImage?
+  /// 缩略图重做了第几回（ShotThumbnails 不是 @Observable）：改完标注这一条本身没变，
+  /// 不把代数摆进卡片的值里，LazyVGrid 就认为这一格没变、不重画
+  /// （2026-10-26 用户手测：右边的预览变了、左边的列表没变）
+  let generation: Int
   let select: () -> Void
   let edit: () -> Void
 

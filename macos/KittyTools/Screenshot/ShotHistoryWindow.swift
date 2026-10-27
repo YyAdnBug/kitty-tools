@@ -146,6 +146,11 @@ import SwiftUI
 
   func open(_ item: ShotHistory.Item) { ShotHistory.open(item, notice: actions.notice) }
 
+  /// 拖到别的 App 里去（同晾衣绳：存过的拖那个文件，别的拖一份现合成的成品 PNG）
+  func dragProvider(for item: ShotHistory.Item) -> NSItemProvider {
+    history.dragProvider(for: item)
+  }
+
   /// 这一条有没有文件可以显示 / 打开（没有时那一项置灰）
   func hasFile(_ item: ShotHistory.Item) -> Bool { (item.filePath ?? item.savedPath) != nil }
 
