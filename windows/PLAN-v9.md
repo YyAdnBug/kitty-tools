@@ -35,6 +35,8 @@
 | C2 | 图片最多占用的档位 | 512 MB / 1 GB / 2 GB / 5 GB / 不限，默认 512 MB（`ClipboardTab.swift:36–42`） | 128 MB / 256 MB / 512 MB / 1 GB / 不限（`SettingsWindow.cs:824`） | 档位换成 mac 那五个，默认不变；存着 128 / 256 的照旧按原值算，下拉框里多显示一项原值，换了就没了 |
 | C3 | Ctrl+K 操作补齐 | `Clipboard/ClipboardPanelModel.swift:1177–1208`：打开文件 / 打开链接 ⌘O、在访达中显示 ⌘R、复制路径 ⌥⌘C、美化 JSON、放大预览 ⌘Y、复制为纯文本 | 只有文件的「在资源管理器中显示」，没有快捷键（`Clipboard/ClipboardPanel.xaml.cs:1888–1931`） | 都做，键照 Windows 的换算：Ctrl+O、Ctrl+R、Ctrl+Shift+C、Ctrl+Y，和面板里现有的键撞了就照 mac 的意思另取、写进速查表。「在资源管理器中显示」叫这个名字（mac 叫「在访达中显示」）。多选时的 Ctrl+K（一次钉多张、批量收藏）照 mac 看一遍，缺的一起补 |
 
+**整个剪贴板对齐 mac 的差异清单**（2026-10-28，数据、列表、透镜、按键、对话框、放大预览、设置页）：见 `PLAN-v9-clipboard.md`。C1–C3 并进那一页，第 2 批按它拆成 6a–6g，那一页另有 D1–D8 要拍。
+
 ## 3. 第 3 批：翻译和三个快捷动作
 
 | # | 项 | mac（出处） | Windows 现在 | 推荐 |
