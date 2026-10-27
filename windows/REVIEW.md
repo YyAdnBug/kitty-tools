@@ -103,7 +103,7 @@
 - 触发：在屏幕中间截一次图，再按 Ctrl+Alt+Z。复制出去的、飞入卡、截图历史里，都是屏幕左上角同样大小的一块。
 - 改：`new PixelBounds((int)local.X, (int)local.Y, (int)local.X + global.Width, (int)local.Y + global.Height)`；加一条副屏上的手测。
 
-### R55（P1）标注的撤销差一步：画完第一条按 Ctrl+Z 没反应
+### R55（P1）标注的撤销差一步：画完第一条按 Ctrl+Z 没反应 → 已修（`a86db3c`）
 
 - `Screenshot/SelectionOverlayWindow.cs:1089`：矩形、箭头、画笔、马赛克一按下就加进 `_annotations`；松手时（:1258）才 `PushUndo()`，存进撤销栈的那份已经带着这一条，`Undo`（:435）还原出来的和现在一模一样。
 - 触发：画一个矩形，按 Ctrl+Z 或点工具栏的撤销，没反应；画几条再撤，永远差一步。

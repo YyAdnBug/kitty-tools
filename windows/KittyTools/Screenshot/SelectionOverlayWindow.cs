@@ -1070,6 +1070,9 @@ internal sealed partial class SelectionOverlayWindow : Window
                 }
 
                 _annotationStart = point;
+                // REVIEW R55：按下就把「还没有这一条」的状态压进撤销栈，松手时不再压，
+                // 不然撤销出来的永远带着刚画的那一条、永远差一步。太小被丢掉的，松手时弹回这一份。
+                PushUndo();
                 _activeAnnotation = new Annotation
                 {
                     Tool = _tool,
@@ -1252,10 +1255,11 @@ internal sealed partial class SelectionOverlayWindow : Window
                 if (small)
                 {
                     _annotations.Remove(annotation);
-                }
-                else
-                {
-                    PushUndo();
+                    // 按下时压进去的那份是「没有这一条」的状态，丢掉的话会空撤一步。
+                    if (_undoStack.Count > 0)
+                    {
+                        _undoStack.RemoveAt(_undoStack.Count - 1);
+                    }
                 }
             }
 
