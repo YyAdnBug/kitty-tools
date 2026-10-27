@@ -266,6 +266,39 @@ struct ClotheslineTests {
     #expect(Prefs.ShotPlacement.current(defaults) == .corner)
   }
 
+  /// 「截完图放哪」选的不是晾衣绳：这根绳子整个不开，**之前挂着的那几张也取下**
+  /// （2026-10-27 用户手测：换成「角落的缩略图」之后，鼠标停到菜单栏绳子照样滑下来）
+  @MainActor @Test func ropeOffWhenShotsGoElsewhere() throws {
+    let root = FileManager.default.temporaryDirectory.appending(
+      path: "kitty-clothesline-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let history = try ShotHistory(
+      db: Database(path: ":memory:"), directory: root.appending(path: "shots"))
+    let items = (0..<2).map {
+      ShotHistory.Item(
+        id: UUID(), kind: .shot, createdAt: Date.now.addingTimeInterval(Double($0)),
+        pixelSize: CGSize(width: 800, height: 600), scale: 2)
+    }
+    history.seed(items)
+    let rope = Clothesline(history: history)
+    // 选的是角落的缩略图：起不来，挂着的当场取下
+    rope.placement = { .corner }
+    rope.model.setPegged(items.map(\.id))
+    rope.start()
+    #expect(rope.isEmpty, "换成别的落点之后，之前挂着的还在绳子上")
+    #expect(history.items.count == 2, "取下不该动历史")
+    // 「都不要」也一样
+    rope.placement = { Prefs.ShotPlacement.none }
+    rope.model.setPegged(items.map(\.id))
+    rope.start()
+    #expect(rope.isEmpty)
+    // 换回晾衣绳：照常起，挂上去的留着
+    rope.placement = { .clothesline }
+    rope.model.setPegged([items[0].id])
+    rope.start()
+    #expect(!rope.isEmpty)
+  }
+
   /// 绳子只是历史的一个视图（拍板 B2）：历史里删掉的跟着没，取下只去掉「挂着」这一笔、历史不动
   @MainActor @Test func pegsFollowTheHistory() throws {
     let root = FileManager.default.temporaryDirectory.appending(
@@ -468,6 +501,7 @@ struct ClotheslineTests {
     }
     history.seed(items)
     let line = Clothesline(history: history)
+    line.placement = { .clothesline }  // start() 要看「截完图放哪」
     history.onRemoved = { line.forget($0) }  // 同 AppDelegate 的接法
     line.model.setPegged(items.map(\.id))
     line.start()
@@ -494,6 +528,7 @@ struct ClotheslineTests {
     defer { defaults.removePersistentDomain(forName: suite) }
     history.defaults = defaults
     let line = Clothesline(history: history)
+    line.placement = { .clothesline }  // start() 要看「截完图放哪」
     line.isSuppressed = { true }  // prepare 不真的把面板摆到屏幕上
     line.start()
     defer { line.stop() }

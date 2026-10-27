@@ -37,6 +37,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// nil = 还没起过（启动时）
   private var appliedFeatures: Set<Feature>?
   private var appliedCopyToTranslate = false
+  /// 上一次应用的「截完图放哪」：换了就重新起停晾衣绳（2026-10-27 用户手测）
+  private var appliedPlacement: Prefs.ShotPlacement?
   /// 屏幕边缘的便签起过没有：便签开着才起（start 会把固定着的浮动便签放回屏幕上），启动时关着的打开时再起
   private var startedNoteEdge = false
   let hotKeys = HotKeyCenter()
@@ -809,9 +811,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let now = Feature.enabled
     let copyToTranslate = UserDefaults.standard.bool(forKey: Prefs.translateCopyToTranslate)
     let before = appliedFeatures
-    guard now != before || copyToTranslate != appliedCopyToTranslate else { return }
+    let placement = Prefs.ShotPlacement.current()
+    guard
+      now != before || copyToTranslate != appliedCopyToTranslate
+        || placement != appliedPlacement
+    else { return }
     appliedFeatures = now
     appliedCopyToTranslate = copyToTranslate
+    appliedPlacement = placement
     let turnedOn = now.subtracting(before ?? [])
     let turnedOff = (before ?? []).subtracting(now)
     let launching = before == nil
@@ -845,8 +852,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
     }
 
-    // 晾衣绳（第十族）：截图开着才听鼠标；关掉时取下全部、收起（挂着的标记本来就不跨重启）
-    if turnedOn.contains(.screenshot) { clothesline.start() }
+    // 晾衣绳（第十族）：截图开着、而且「截完图放哪」选的就是它才听鼠标（start 自己再查一次落点，
+    // 选了别的就当场取下、收起）；截图关掉时也取下全部（挂着的标记本来就不跨重启）
+    if Feature.screenshot.isOn { clothesline.start() }
 
     if turnedOn.contains(.dockPreview) {
       dockPreview.start()

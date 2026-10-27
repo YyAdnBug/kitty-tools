@@ -91,6 +91,8 @@ import SwiftUI
   var actions = ShotActions()
   /// 减弱动态效果（不跑物理：卡片直接在静止位置上，绳子画成静止的）；截图自检注入
   var reducesMotion: () -> Bool = { Style.reduceMotion }
+  /// 「截完图放哪」现在选的是哪个（单测注入）：不是晾衣绳的话这根绳子整个不开——见 start()
+  var placement: () -> Prefs.ShotPlacement = { Prefs.ShotPlacement.current() }
 
   private var panel: NSPanel?
   private var host: ClotheslineHost?
@@ -163,8 +165,12 @@ import SwiftUI
 
   // MARK: 起停
 
-  /// 起（截图这个功能开着时）：挂着东西才真去听鼠标
+  /// 起（截图这个功能开着、而且「截完图放哪」选的就是晾衣绳时）：挂着东西才真去听鼠标。
+  /// 选的是别的落点就当场停掉——不光是截完图不往上挂，**之前挂着的那几张也取下**
+  /// （2026-10-27 用户手测：换成「角落的缩略图」之后，鼠标停到菜单栏绳子照样滑下来）。
+  /// 偏好一变 AppDelegate.applyFeatures 就再调一次这里
   func start() {
+    guard placement() == .clothesline else { return stop() }
     started = true
     updateWatching()
   }
