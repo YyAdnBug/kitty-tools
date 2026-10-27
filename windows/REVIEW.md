@@ -79,6 +79,7 @@
 - **审查方的进度**：
   - `53d609e9` 第 4 步：R41 第一条、R44、R46、R47、R48 第一条、PLAN-v9 V2；
   - `9efc8da9` R64 五条：都按建议写了，**没在 Windows 上验过**，手测 358–362；
+  - R66 托盘菜单换成系统的 Win32 菜单、安装程序加桌面快捷方式（`git log --grep R66`，用户真机反馈），手测 367–370；
   - R65 Inno 安装程序（`git log --grep R65`）：`installer/KittyTools.iss`、App 的 `--quit` / `--uninstall-cleanup`、`SetupRecord` 改认 Inno 的登记、删掉 `KittyTools.Setup` 和 `Core/SetupPayload.cs`、`build-release.ps1` 调 ISCC、`setup-e2e.ps1` 重写。
 - **最可能要改的**：
   - `.iss` 的 Pascal 没用 ISCC 编过；
@@ -226,6 +227,21 @@
   - `[UninstallDelete]` 整个删 `{app}` 之前，位置规则一定要先保证这个文件夹整个是我们的；
   - `--uninstall-cleanup` 不能开数据库、不能往数据目录写日志（R25）。
 - **验收**：PLAN-setup-inno §7。`setup-e2e.ps1` 五步全过；浅 / 深色四张截图推到 `windows-shots`；报告写两个 setup.exe 的大小、装一次和卸载一次的耗时。
+
+### R66（P1）用户真机反馈：没有桌面快捷方式；托盘菜单位置不对 → 已写（审查方，`git log --grep R66`，待编译）
+
+用户 2026-10-27：「1、没有桌面快捷方式 2、系统托盘图标右键弹出的窗口怎么位置不对，没有使用官方的吗」。
+
+- **桌面快捷方式**：`installer/KittyTools.iss` 选位置那一页多一个勾选框「在桌面上建快捷方式」，默认勾上；`[Icons]` 加 `{userdesktop}`，更新时不再建，卸载时 Inno 删掉。静默安装用 `/DESKTOPICON=0` 关掉；`setup-e2e.ps1` 跟着查。
+- **托盘菜单**：以前是 WinUI 的 MenuFlyout 弹在一块 360 × 480 的透明窗口里，窗口右下角对准鼠标，位置全靠自己算。托盘回调 `wParam` 里系统给的位置没用（键盘选中时菜单跑到鼠标那儿）。
+  - 换成系统的 Win32 弹出菜单，照微软 NotificationIcon 示例写：
+    - 位置用 v4 回调的 `wParam`；
+    - `SetForegroundWindow(托盘隐藏窗口)` → `TrackPopupMenuEx`（`SM_MENUDROPALIGNMENT` 定左 / 右对齐、`TPM_RETURNCMD`）→ `PostMessage(WM_NULL)`；
+    - 位置、翻转、多屏、DPI、键盘、读屏都由系统管。
+  - 分节、勾选（暂停记录、复制即译）、灰掉、快捷键（`\t` 右对齐）都保留；**菜单项前的彩色图标没了**（系统菜单是纯文字），这一处和 PLAN-v7 §3.5 不一样。
+  - 深色用 uxtheme 没写进文档的序号 135 / 136（SetPreferredAppMode + FlushMenuThemes，资源管理器同一套），跟着设置 › 外观；拿不到就是浅色菜单。
+  - `--ui-snapshots` 不再截托盘菜单（TrackPopupMenuEx 会一直占着界面线程），改成手测 368。
+- **要验**：编译（`Shell/TrayMenu.cs` 整个重写了，`LibraryImport` 声明和函数指针调用最可能要改）；手测 367–370。
 
 ### R39（P2）截图遮罩的按键：A、T 和工具栏对不上，换工具不刷新 → 已修（`901d4e3`）
 

@@ -149,17 +149,9 @@ internal static class UiSnapshotProbe
             await WindowShot.SaveAsync(AudioHud.HandleForProbe, Path.Combine(directory, "shot-audio-pending.png"));
             AudioHud.Hide();
 
-            foreach (var dark in new[] { false, true })
-            {
-                SettingsService.Current.Theme = dark ? "dark" : "light";
-                SettingsService.Save();
-                TrayMenu.Show();
-                await Task.Delay(900);
-                await WindowShot.SaveAsync(
-                    TrayMenu.HandleForProbe, Path.Combine(directory, $"tray-menu-{(dark ? "dark" : "light")}.png"));
-                TrayMenu.Close();
-                await Task.Delay(300);
-            }
+            // 托盘菜单换成了系统的 Win32 菜单（2026-10-27）：TrackPopupMenuEx 一直占着界面线程等到菜单收起，
+            // 这里截不了；深浅色两张靠手测截（HANDTEST 367）。
+            Log.Info("snapshot.tray-menu skipped (system menu)");
 
             if (ScreenshotSession.StartSynthetic() is { } overlay)
             {

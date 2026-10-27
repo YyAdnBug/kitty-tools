@@ -7,9 +7,9 @@
 #
 # 五步：
 #   1 装到 Windows 里、装到网络路径：都被拒（退出码非 0），什么都没写
-#   2 静默新装：文件齐、登记键的 InstallLocation / DisplayVersion 对、快捷方式和开机启动在
+#   2 静默新装：文件齐、登记键的 InstallLocation / DisplayVersion 对、开始菜单和桌面的快捷方式、开机启动都在
 #   3 程序开着时装更新的版本：程序被 --quit 叫退、位置不变、DisplayVersion 变了
-#   4 安装目录里多放一个文件（模拟程序内更新带进来的），静默卸载：整个目录、登记、快捷方式、开机启动都没了，数据目录还在
+#   4 安装目录里多放一个文件（模拟程序内更新带进来的），静默卸载：整个目录、登记、两个快捷方式、开机启动都没了，数据目录还在
 #   5 重装后 /REMOVEDATA=1 卸载：数据目录进了回收站（回收站里会多一个 KittyTools.Probe.<名字>，可以清掉）
 #
 # 用法（仓库根目录）：
@@ -43,6 +43,7 @@ $uninstallKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Kitty
 $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 $runValue = "KittyTools.Probe.$key"
 $shortcut = Join-Path ([Environment]::GetFolderPath("StartMenu")) "Programs\Kitty Tools.Test.$key.lnk"
+$desktopShortcut = Join-Path ([Environment]::GetFolderPath("Desktop")) "Kitty Tools.Test.$key.lnk"
 $dataDir = Join-Path $env:LOCALAPPDATA "KittyTools.Probe.$key"
 $cleanupLog = Join-Path ([System.IO.Path]::GetTempPath()) "KittyTools.Probe.$key-uninstall.log"
 $installDir = Join-Path $work "Kitty Tools"
@@ -119,6 +120,7 @@ try {
     Check "2 文件" ((Test-Path (Join-Path $installDir "KittyTools.exe")) -and (Test-Path (Join-Path $installDir "unins000.exe"))) $installDir
     Check "2 登记" ($location -and (Same-Dir $location $installDir) -and (Registered "DisplayVersion") -eq "0.0.1") "$location $(Registered 'DisplayVersion')"
     Check "2 快捷方式" (Test-Path $shortcut) $shortcut
+    Check "2 桌面快捷方式" (Test-Path $desktopShortcut) $desktopShortcut
     Check "2 开机启动" (Has-RunValue) $runValue
 
     Write-Host "3 程序开着时更新"
@@ -137,13 +139,13 @@ try {
     $code = Uninstall-Quiet ""
     Check "4 安装目录整个没了" (-not (Test-Path $installDir)) "exit $code"
     Check "4 登记没了" (-not (Test-Path $uninstallKey)) $uninstallKey
-    Check "4 快捷方式、开机启动没了" (-not (Test-Path $shortcut) -and -not (Has-RunValue)) ""
+    Check "4 快捷方式、开机启动没了" (-not (Test-Path $shortcut) -and -not (Test-Path $desktopShortcut) -and -not (Has-RunValue)) ""
     Check "4 数据目录还在" (Test-Path $dataDir) $dataDir
     Check "4 程序做了清理" ((Test-Path $cleanupLog) -and (Select-String -Path $cleanupLog -Pattern "credentials" -SimpleMatch -Quiet)) $cleanupLog
 
     Write-Host "5 卸载时连数据一起删"
-    $code = Install-Quiet $setupNew "/DIR=`"$installDir`" /AUTOSTART=0"
-    Check "5 重装" ($code -eq 0 -and -not (Has-RunValue)) "exit $code（/AUTOSTART=0 不写开机启动）"
+    $code = Install-Quiet $setupNew "/DIR=`"$installDir`" /AUTOSTART=0 /DESKTOPICON=0"
+    Check "5 重装" ($code -eq 0 -and -not (Has-RunValue) -and -not (Test-Path $desktopShortcut)) "exit $code（/AUTOSTART=0 /DESKTOPICON=0：不写开机启动、不建桌面快捷方式）"
     $code = Uninstall-Quiet "/REMOVEDATA=1"
     Check "5 数据目录进了回收站" (-not (Test-Path $dataDir)) "exit $code"
 }

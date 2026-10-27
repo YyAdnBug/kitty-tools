@@ -145,8 +145,14 @@ internal static unsafe partial class Tray
             // 左键 / 键盘选中：v4 发 NIN_SELECT 和 NIN_KEYSELECT，不再发 WM_LBUTTONUP。
             case NinSelect:
             case NinKeySelect:
-                ShowMenu();
+            {
+                // v4 的 wParam 是这次弹菜单的位置（鼠标处；键盘选中时是图标处），屏幕物理坐标。照微软
+                // NotificationIcon 示例在这一点弹；以前一律取鼠标位置，键盘选中时菜单跑到鼠标那儿去了。
+                var x = (short)(wParam.Value & 0xFFFF);
+                var y = (short)((wParam.Value >> 16) & 0xFFFF);
+                TrayMenu.Show(x, y);
                 break;
+            }
         }
     }
 

@@ -17,12 +17,12 @@
 | I1 | 出几个 exe | 和现在一样，每个架构一个：`KittyTools-<版本>-windows-<x64\|arm64>-setup.exe`，release 附件的名字不变。`ISCC /DArch=x64` / `/DArch=arm64` 各编一次 |
 | I2 | AppId | **`{FF0E2BF7-9B90-4EB0-9C08-818112ACEC15}`，以后永远不改**：「设置 › 应用」里的登记（`HKCU\...\Uninstall\{FF0E2BF7-…}_is1`）、更新时找原来装在哪，都靠它 |
 | I3 | 长相 | `WizardStyle=modern dynamic windows11`（跟着系统深浅色）。右上角小图 `installer/wizard-small-*.png`，完成页左边 `installer/wizard-large-*.png`；两组都是透明底的图标，深浅色都能用，由 `tools/app-icon.swift` 生成（审查方已经出好、提交了）。安装程序自己的图标用 `KittyTools/Resources/AppIcon.ico`。只用简体中文（`compiler:Languages\ChineseSimplified.isl`），不弹语言选择 |
-| I4 | 有哪几页 | 新装：**选位置**（默认 `%LOCALAPPDATA%\Programs\Kitty Tools`，下面加一个勾选框「开机时自动打开」，默认勾上；按钮写「安装」）→ 安装进度 → **装好了**（勾选「现在打开 Kitty Tools」，默认勾上）。欢迎页、准备安装页、开始菜单文件夹页都不要。更新：不问位置、不问开机启动（照原样），按钮写「更新到 x.y.z」，然后是进度和装好了 |
+| I4 | 有哪几页 | 新装：**选位置**（默认 `%LOCALAPPDATA%\Programs\Kitty Tools`，下面两个勾选框「在桌面上建快捷方式」「开机时自动打开」，都默认勾上；按钮写「安装」。桌面快捷方式是 2026-10-27 用户报「没有桌面快捷方式」后加的）→ 安装进度 → **装好了**（勾选「现在打开 Kitty Tools」，默认勾上）。欢迎页、准备安装页、开始菜单文件夹页都不要。更新：不问位置、不问开机启动（照原样），按钮写「更新到 x.y.z」，然后是进度和装好了 |
 | I5 | 装在当前用户名下 | `PrivilegesRequired=lowest`，不给改成管理员模式（`PrivilegesRequiredOverridesAllowed` 不写）；`DefaultDirName={autopf}\Kitty Tools`（这种模式下就是 `%LOCALAPPDATA%\Programs`） |
 | I6 | 位置的规矩（照 S3、§2.2） | 用户选的文件夹名字不是「Kitty Tools」就在后面拼上 `\Kitty Tools`（点「浏览」选的由 `AppendDefaultDirName=yes` 管；手打的路径在 Pascal 里补）。拼完以后：要是本机磁盘上的路径（`X:\...`，不收网络路径）；不在 `{win}`、`{commonpf32}` / `{commonpf64}` / `ProgramFiles(Arm)` 里面；不超过 200 个字符；要写得进去（建一个临时文件试一下）。旧方案里「驱动器根目录、用户主目录、桌面这些文件夹本身」那几条，拼上「Kitty Tools」以后不会再撞上，不用单独查（选 `D:\` 就装到 `D:\Kitty Tools`）。不合规矩就提示原因、留在这一页。**静默安装也要挡**：同样的检查在 `PrepareToInstall` 里再做一遍，返回错误 |
 | I7 | 已经装过 | `UsePreviousAppDir=yes`、`DisableDirPage=auto`：更新时直接用原来的位置。要装的版本和登记里的 `DisplayVersion` 一样或更旧：先问一句「已经装了 x.y.z，要重新安装吗？」（是 / 否，默认否），静默时照装 |
 | I8 | 程序正开着（照 S5） | `PrepareToInstall` 和卸载的 `InitializeUninstall` 里：互斥量 `Local\KittyTools` 在就运行 `{app}\KittyTools.exe --quit`（§4.2），最多等 10 s 看互斥量放掉；还在就提示「请从托盘退出 Kitty Tools 再试」，安装停在这一步、卸载取消。`CloseApplications=no`：不让「重新启动管理器」去强关，强关会丢掉剪贴板里还没提交的删除。**不按进程名结束** |
-| I9 | 装什么、装完做什么 | `[Files]` 把发布目录（和 zip 里的一模一样）整个放进 `{app}`；`[Icons]` 建 `{userprograms}\Kitty Tools.lnk`（和 `App/StartMenuShortcut.cs` 同一个位置、同一个名字，App 第一次运行时会看到它已经在）；勾了「开机时自动打开」就在 `[Registry]` 写 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 的 `KittyTools` = `"{app}\KittyTools.exe"`（和 `App/Autostart.cs` 写的一字不差），带 `uninsdeletevalue`；`[Run]` 用 `postinstall nowait skipifsilent` 打开程序 |
+| I9 | 装什么、装完做什么 | `[Files]` 把发布目录（和 zip 里的一模一样）整个放进 `{app}`；`[Icons]` 建 `{userprograms}\Kitty Tools.lnk`（和 `App/StartMenuShortcut.cs` 同一个位置、同一个名字，App 第一次运行时会看到它已经在），勾了就再建 `{userdesktop}\Kitty Tools.lnk`（更新时不再建，免得用户删了又冒出来）；勾了「开机时自动打开」就在 `[Registry]` 写 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 的 `KittyTools` = `"{app}\KittyTools.exe"`（和 `App/Autostart.cs` 写的一字不差），带 `uninsdeletevalue`；`[Run]` 用 `postinstall nowait skipifsilent` 打开程序 |
 | I10 | 卸载（照 S9） | 从「设置 › 应用」、开始菜单（不加卸载快捷方式，Windows 11 的开始菜单里右键就有「卸载」）或者程序里「从这台电脑移除」进来，都是 Inno 的 `unins000.exe`。流程：叫程序退出（I8）→ 问「同时删除我的数据吗？剪贴板历史、设置、截图历史会挪进回收站」（是 / 否，**默认否**；静默卸载时当「否」）→ 运行 `{app}\KittyTools.exe --uninstall-cleanup`（勾了「是」再加 `--remove-data`，§4.3）：删凭据管理器里的密钥和开机启动值（装的时候没勾、后来在程序里打开的那种，Inno 不知道），要的话把数据目录挪进回收站 → Inno 删它记下的文件 → `[UninstallDelete] Type: filesandordirs; Name: "{app}"` 把整个安装文件夹删掉（程序内更新带进来的新文件 Inno 不认得，不这样删会留下；I6 保证了这个文件夹整个是我们的） |
 | I11 | 程序里「从这台电脑移除」（照 S10） | 用安装程序装的（§4.1 的判断）：启动 `unins000.exe`，然后退出程序；zip 解压的：照现在的做法 |
 | I12 | 程序内更新之后（照 S11） | 用安装程序装的：把 `{AppId}_is1` 里的 `DisplayVersion` 改成新版本，`EstimatedSize` 重新量（`--updated` 启动、删掉 `*.old` 以后再量一次，同现在的 `RefreshSize`） |
@@ -168,7 +168,7 @@ Type: filesandordirs; Name: "{app}"
   3. 程序开着时装 0.0.2：它被 `--quit` 叫退，位置不变、`DisplayVersion` 变成 0.0.2。
   4. 安装目录里多放一个文件（模拟程序内更新带进来的），静默卸载：安装目录整个没了、登记键没了、快捷方式和 Run 值没了、数据目录还在、`%TEMP%` 里的清理日志有 credentials 那一行。
   5. 带 `/AUTOSTART=0` 重装（Run 值不写），再 `/REMOVEDATA=1` 静默卸载：数据目录进了回收站。
-- 静默安装 / 卸载用的两个参数（`.iss` 的 `{param:...}`）：安装 `/AUTOSTART=0` 不写开机启动；卸载 `/REMOVEDATA=1` 连数据一起挪进回收站。
+- 静默安装 / 卸载用的参数（`.iss` 的 `{param:...}`）：安装 `/DESKTOPICON=0` 不建桌面快捷方式、`/AUTOSTART=0` 不写开机启动；卸载 `/REMOVEDATA=1` 连数据一起挪进回收站。
 - 每一步打印一行结果，有一步不过就退出码非 0。`build-release.ps1` 不跑它，发版前手动跑一次（同 `update-e2e.ps1`）。
 
 ## 7. 验收

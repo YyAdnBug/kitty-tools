@@ -3,7 +3,7 @@
 ; 自检（tools/setup-e2e.ps1）再加 /DTestKey=<字母数字>：AppId、开机启动值、快捷方式、互斥量都换成测试名
 ; （和 Core/SetupRules.NamesFor 一一对应），装的程序配 KITTY_PROBE_PROFILE=<同一个名字> 跑，不碰真的那一份。
 ; 这个文件要存成带 BOM 的 UTF-8，不然 ISCC 按 ANSI 读，中文会乱。
-; 命令行参数（静默安装 / 自检用）：/AUTOSTART=0 不写开机启动；卸载时 /REMOVEDATA=1 连数据一起挪进回收站。
+; 命令行参数（静默安装 / 自检用）：/DESKTOPICON=0 不建桌面快捷方式，/AUTOSTART=0 不写开机启动；卸载时 /REMOVEDATA=1 连数据一起挪进回收站。
 
 #ifndef AppVersion
   #error 要传 /DAppVersion=x.y.z
@@ -79,6 +79,8 @@ Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs 
 [Icons]
 ; 和 App/StartMenuShortcut.cs 同一个位置、同一个名字：App 第一次运行时看到它已经在，就不再建。
 Name: "{userprograms}\{#ShortcutName}"; Filename: "{app}\KittyTools.exe"; Comment: "Kitty Tools"
+; 桌面快捷方式（2026-10-27 用户：「没有桌面快捷方式」）：选位置那一页勾着才建，默认勾上；更新时不动。卸载时 Inno 删掉。
+Name: "{userdesktop}\{#ShortcutName}"; Filename: "{app}\KittyTools.exe"; Comment: "Kitty Tools"; Check: ShouldCreateDesktopIcon
 
 [Registry]
 ; 和 App/Autostart.cs 写的一字不差。更新时不动（照用户在程序里改过的）。
@@ -94,6 +96,7 @@ Type: filesandordirs; Name: "{app}"
 
 [Code]
 var
+  DesktopBox: TNewCheckBox;
   AutostartBox: TNewCheckBox;
   InstalledVersion: String;
 
@@ -236,11 +239,21 @@ end;
 
 procedure InitializeWizard;
 begin
-  { 选位置那一页下面加「开机时自动打开」（PLAN-setup-inno I4），默认勾上，和程序里 StartWithWindows 的默认值一样。 }
+  { 选位置那一页下面加两个勾选框（PLAN-setup-inno I4），都默认勾上：「在桌面上建快捷方式」，
+    「开机时自动打开」（和程序里 StartWithWindows 的默认值一样）。 }
+  DesktopBox := TNewCheckBox.Create(WizardForm);
+  DesktopBox.Parent := WizardForm.SelectDirPage;
+  DesktopBox.Left := WizardForm.DirEdit.Left;
+  DesktopBox.Top := WizardForm.DirEdit.Top + WizardForm.DirEdit.Height + ScaleY(20);
+  DesktopBox.Width := WizardForm.SelectDirPage.ClientWidth - DesktopBox.Left;
+  DesktopBox.Height := ScaleY(20);
+  DesktopBox.Caption := '在桌面上建快捷方式';
+  DesktopBox.Checked := ExpandConstant('{param:desktopicon|1}') <> '0';
+
   AutostartBox := TNewCheckBox.Create(WizardForm);
   AutostartBox.Parent := WizardForm.SelectDirPage;
   AutostartBox.Left := WizardForm.DirEdit.Left;
-  AutostartBox.Top := WizardForm.DirEdit.Top + WizardForm.DirEdit.Height + ScaleY(20);
+  AutostartBox.Top := DesktopBox.Top + DesktopBox.Height + ScaleY(8);
   AutostartBox.Width := WizardForm.SelectDirPage.ClientWidth - AutostartBox.Left;
   AutostartBox.Height := ScaleY(20);
   AutostartBox.Caption := '开机时自动打开';
@@ -276,6 +289,12 @@ end;
 function ShouldWriteAutostart: Boolean;
 begin
   Result := (not IsUpdate) and AutostartBox.Checked;
+end;
+
+function ShouldCreateDesktopIcon: Boolean;
+begin
+  { 更新时不再建：用户删掉了桌面上那个，就别每次更新又冒出来。 }
+  Result := (not IsUpdate) and DesktopBox.Checked;
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;

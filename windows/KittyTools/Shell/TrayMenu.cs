@@ -1,395 +1,308 @@
-// 托盘的 WinUI 菜单（PLAN-v2 §3.2 / D2）：MenuFlyout 弹在一个 1×1 的透明宿主窗口里，
-// 位置在鼠标处，向上展开（托盘在屏幕底部）。跟随深浅色、Fluent 样式、每项带图标，
-// 快捷键右对齐（KeyboardAcceleratorTextOverride）。键盘能操作（方向键 + Enter）。
-// 点外面、按 Esc 收起；收起后宿主窗口隐藏。
-//
-// 为什么不用 Win32 菜单：Win32 菜单没有公开的深色接口，系统深色模式下会突然亮一块（D2）。
+// 托盘菜单：系统的 Win32 弹出菜单（2026-10-27，用户：「托盘图标右键弹出的窗口怎么位置不对，没有使用官方的吗」）。
+// 照微软 NotificationIcon 示例：NOTIFYICON_VERSION_4 回调的 wParam 给这次的位置（鼠标处；键盘选中时是图标处），
+// SetForegroundWindow(托盘的隐藏窗口) → TrackPopupMenuEx（按 SM_MENUDROPALIGNMENT 左 / 右对齐）→ PostMessage(WM_NULL)。
+// 位置、翻转、多屏、DPI、键盘、读屏、Windows 11 的圆角都由系统管；快捷键用「\t」右对齐。
+// 分节和 mac 菜单栏菜单一样（剪贴板与启动器 / 翻译 / 截图与录制 / 通用），菜单项前面不带图标（系统菜单是纯文字）。
+// 深色：Win32 菜单没有公开的深色接口，用 uxtheme 没写进文档的 SetPreferredAppMode（序号 135）+ FlushMenuThemes（136），
+// 资源管理器、记事本的深色菜单也是这一套；拿不到就是浅色菜单，功能不受影响。
+// 以前（PLAN-v2 D2）是 WinUI 的菜单弹在一块自己摆位置的透明窗口里，位置是自己按鼠标算的，会偏。
+using System.Runtime.InteropServices;
 using KittyTools.Infrastructure;
-using Microsoft.UI.Windowing;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Controls.Primitives;
-using Microsoft.UI.Xaml.Media;
 using Windows.Win32;
 
 namespace KittyTools;
 
-internal static partial class TrayMenu
+internal static unsafe partial class TrayMenu
 {
-    private const int HostWidth = 360;
-    private const int HostHeight = 480;
-    private const int GwlExStyle = -20;
-    private const int WsExToolWindow = 0x00000080;
-    private const int WsExLayered = 0x00080000;
-    private const uint LwaAlpha = 0x00000002;
+    private const uint MfString = 0x0000;
+    private const uint MfGrayed = 0x0001;
+    private const uint MfChecked = 0x0008;
+    private const uint MfSeparator = 0x0800;
+    private const uint TpmRightButton = 0x0002;
+    private const uint TpmRightAlign = 0x0008;
+    private const uint TpmReturnCmd = 0x0100;
+    private const int SmMenuDropAlignment = 40;
 
-    private static Window? _host;
+    private static IntPtr _menu;
 
-    /// <summary>R33 截图自检用：菜单的宿主窗口（菜单画在它里面）。</summary>
-    internal static IntPtr HandleForProbe =>
-        _host is null ? IntPtr.Zero : WinRT.Interop.WindowNative.GetWindowHandle(_host);
-    private static Grid? _anchor;
-    private static MenuFlyout? _menu;
-    private static bool _opening;
+    public static bool IsOpen => _menu != IntPtr.Zero;
 
-    public static bool IsOpen => _menu is not null;
-
-    /// <summary>在鼠标位置弹出菜单（托盘右键、左键、键盘选中都走这里）。</summary>
+    /// <summary>没有托盘回调给的位置时（别处调）：弹在鼠标处。</summary>
     public static void Show()
     {
-        EnsureHost();
-        if (_host is null || _anchor is null)
-        {
-            return;
-        }
-
-        // 第一次弹：宿主窗口还没显示过，元素没有 XamlRoot，ShowAt 会抛「This element does not
-        // have a XamlRoot」。先激活窗口，等 Loaded 再弹。
-        if (_anchor.XamlRoot is null)
-        {
-            _anchor.Loaded -= OnHostLoaded;
-            _anchor.Loaded += OnHostLoaded;
-            _host.Activate();
-            return;
-        }
-
-        ShowCore();
+        PInvoke.GetCursorPos(out var cursor);
+        Show(cursor.X, cursor.Y);
     }
 
-    private static void OnHostLoaded(object sender, RoutedEventArgs e)
+    /// <summary>在 (x, y)（屏幕物理坐标）弹菜单；TrackPopupMenuEx 一直等到菜单收起，选中的那一项收起之后再执行。</summary>
+    public static void Show(int x, int y)
     {
-        if (_anchor is not null)
-        {
-            _anchor.Loaded -= OnHostLoaded;
-        }
-
-        ShowCore();
-    }
-
-    private static void ShowCore()
-    {
-        if (_opening || _host is null || _anchor is null)
+        if (_menu != IntPtr.Zero)
         {
             return;
         }
 
-        _opening = true;
+        var items = new List<Item>();
+        Build(items);
+        _menu = CreatePopupMenu();
+        if (_menu == IntPtr.Zero)
+        {
+            Log.Warn("tray.menu-create-failed");
+            return;
+        }
+
+        Action? chosen = null;
         try
         {
-            PInvoke.GetCursorPos(out var cursor);
-            // 宿主窗口比菜单大一些，鼠标停在右下角：Flyout 被限制在 XamlRoot 的范围里，
-            // 1×1 的窗口会把菜单裁成一条（实测）。整块窗口是透明的，看不见。
-            _host.AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(
-                cursor.X - HostWidth + 1, cursor.Y - HostHeight + 1, HostWidth, HostHeight));
-            // 每次弹都按现在的外观设：宿主只建一次，运行中换了深浅色菜单不会自己跟着变。
-            Theme.ApplyTo(_host.Content as FrameworkElement ?? _anchor);
-            _host.Activate();
+            for (var index = 0; index < items.Count; index++)
+            {
+                var item = items[index];
+                if (item.Text is null)
+                {
+                    AppendMenu(_menu, MfSeparator, 0, null);
+                    continue;
+                }
 
-            _menu = Build();
-            _menu.Closed += (_, _) =>
+                var flags = MfString | (item.Enabled ? 0 : MfGrayed) | (item.Checked ? MfChecked : 0);
+                // & 在菜单里是助记符，原样显示要写成 &&。
+                var text = item.Text.Replace("&", "&&") +
+                           (string.IsNullOrEmpty(item.Shortcut) ? string.Empty : "\t" + item.Shortcut);
+                AppendMenu(_menu, flags, (nuint)(index + 1), text);
+            }
+
+            ApplyMenuTheme();
+            var hwnd = (IntPtr)HiddenWindow.Hwnd.Value;
+            // 官方示例的两步：先把托盘的窗口设成前台（不然点菜单外面菜单不收），收起后发一个 WM_NULL。
+            SetForegroundWindow(hwnd);
+            var align = GetSystemMetrics(SmMenuDropAlignment) != 0 ? TpmRightAlign : 0;
+            var command = TrackPopupMenuEx(_menu, TpmRightButton | TpmReturnCmd | align, x, y, hwnd, IntPtr.Zero);
+            PostMessage(hwnd, 0, 0, 0);
+            if (command > 0 && command <= items.Count)
             {
-                _menu = null;
-                try
-                {
-                    _host?.AppWindow.Hide();
-                }
-                catch
-                {
-                    // 隐藏失败不影响下一次弹菜单。
-                }
-            };
-            // 托盘贴着屏幕底边：往上展开，右边缘对齐鼠标。不给 Position：给了之后菜单把那一点当左上角，往右展开。
-            var options = new FlyoutShowOptions
-            {
-                Placement = FlyoutPlacementMode.TopEdgeAlignedRight,
-            };
-            _menu.ShowAt(_anchor, options);
+                chosen = items[command - 1].Run;
+            }
         }
         catch (Exception ex)
         {
-            Log.Error($"tray.menu-open-failed {ex.Message}");
-            _menu = null;
+            Log.Warn($"tray.menu-open-failed {ex.GetType().Name}");
         }
         finally
         {
-            _opening = false;
+            DestroyMenu(_menu);
+            _menu = IntPtr.Zero;
         }
+
+        chosen?.Invoke();
     }
 
     public static void Close()
     {
-        _menu?.Hide();
-        _menu = null;
-        try
+        if (_menu != IntPtr.Zero)
         {
-            _host?.AppWindow.Hide();
-        }
-        catch
-        {
-            // 同上。
+            EndMenu();
         }
     }
 
-    private static void EnsureHost()
-    {
-        if (_host is not null && _anchor is not null)
-        {
-            return;
-        }
+    /// <summary>Text 为 null 是分隔线。</summary>
+    private sealed record Item(string? Text, string? Shortcut, Action Run, bool Enabled = true, bool Checked = false);
 
-        // 锚点放在宿主的右下角，也就是鼠标那一点。原来是 Grid 默认的居中：菜单离托盘图标差半个宿主高（约 240 px）。
-        _anchor = new Grid
-        {
-            Width = 1,
-            Height = 1,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            VerticalAlignment = VerticalAlignment.Bottom,
-        };
-        _host = new Window
-        {
-            Title = Paths.ProductName + " 菜单",
-            Content = new Grid { Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), Children = { _anchor } },
-            SystemBackdrop = new TransparentBackdrop(),
-        };
-        var presenter = OverlappedPresenter.Create();
-        presenter.IsAlwaysOnTop = true;
-        presenter.IsResizable = false;
-        presenter.IsMaximizable = false;
-        presenter.IsMinimizable = false;
-        presenter.SetBorderAndTitleBar(false, false);
-        _host.AppWindow.SetPresenter(presenter);
-        _host.AppWindow.IsShownInSwitchers = false;
-        Theme.ApplyTo(_host.Content as FrameworkElement ?? _anchor);
-
-        // 客户区透明（和轻提示一样把 DWM 边框扩到整个客户区），菜单外不留下白底。
-        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(_host);
-        var margins = new Margins { Left = -1, Right = -1, Top = -1, Bottom = -1 };
-        var noBorder = unchecked((int)0xFFFFFFFE);
-        try
-        {
-            DwmExtendFrameIntoClientArea(hwnd, ref margins);
-            DwmSetWindowAttribute(hwnd, 34, ref noBorder, sizeof(int));
-            // 菜单画在它自己的弹出窗口里（会伸出宿主窗口的范围），宿主只当锚点。上面两步在有的机器上不管用：
-            // 宿主整块白、或者留一圈白框（用户截图，360 × 480 正好是宿主大小）。分层 + 透明度 0，
-            // 宿主连同系统边框一起看不见，也不挡鼠标；菜单窗口不受影响。
-            var style = GetWindowLong(hwnd, GwlExStyle);
-            SetWindowLong(hwnd, GwlExStyle, style | WsExLayered | WsExToolWindow);
-            SetLayeredWindowAttributes(hwnd, 0, 0, LwaAlpha);
-        }
-        catch (Exception ex)
-        {
-            Log.Warn($"tray.menu-transparent-failed {ex.GetType().Name}");
-        }
-    }
-
-    private static MenuFlyout Build()
+    private static void Build(List<Item> menu)
     {
         var runtime = ShellRuntime.Instance;
         var settings = SettingsService.Current;
         var clipboardReady = runtime?.Clipboard is not null && Features.IsOn(Feature.Clipboard);
-        var menu = new MenuFlyout { Placement = FlyoutPlacementMode.TopEdgeAlignedRight };
-
-        // 图标的颜色跟着所在那一节走（mac 菜单栏：暂停记录算剪贴板、复制即译算翻译），最后一节是通用灰。
-        var clip = Theme.Family.Clipboard;
-        var translate = Theme.Family.Translate;
-        var capture = Theme.Family.Capture;
-        var general = Theme.Family.General;
 
         // 第一节：剪贴板与启动器。
         if (Features.IsOn(Feature.Clipboard))
         {
-            Add(menu, Glyphs.ClipboardHistory, clip, "剪贴板历史", HotKeyActions.Clipboard,
+            Add(menu, "剪贴板历史", HotKeyActions.Clipboard,
                 () => runtime?.OpenClipboard(), clipboardReady);
         }
 
         if (Features.IsOn(Feature.Launcher))
         {
-            Add(menu, Glyphs.Search, clip, "启动器", HotKeyActions.Launcher, () => OverlayHost.Toggle(OverlayKind.Launcher));
+            Add(menu, "启动器", HotKeyActions.Launcher, () => OverlayHost.Toggle(OverlayKind.Launcher));
         }
 
         if (Features.IsOn(Feature.Clipboard))
         {
-            var pause = new ToggleMenuFlyoutItem
-            {
-                Text = "暂停记录剪贴板",
-                IsChecked = runtime?.Clipboard?.Paused == true,
-                Icon = Icon(Glyphs.Pause, clip),
-                IsEnabled = clipboardReady,
-            };
-            pause.Click += (_, _) => runtime?.TogglePauseClipboard();
-            menu.Items.Add(pause);
+            menu.Add(new Item(
+                "暂停记录剪贴板", null, () => runtime?.TogglePauseClipboard(), clipboardReady,
+                runtime?.Clipboard?.Paused == true));
         }
 
-        menu.Items.Add(new MenuFlyoutSeparator());
+        AddSeparator(menu);
 
         // 第二节：翻译。
         if (Features.IsOn(Feature.Translate))
         {
-            Add(menu, Glyphs.TextTranslate, translate, "输入翻译", HotKeyActions.InputTranslate,
+            Add(menu, "输入翻译", HotKeyActions.InputTranslate,
                 () => TranslateHost.ToggleInput());
-            var copyTranslate = new ToggleMenuFlyoutItem
-            {
-                Text = "复制即译",
-                IsChecked = settings.CopyTranslate,
-                // mac 的 doc.on.doc：复制一下就翻译。
-                Icon = Icon(Glyphs.Copy, translate),
-                IsEnabled = runtime is not null,
-            };
-            copyTranslate.Click += (_, _) => runtime?.ToggleCopyTranslate();
-            menu.Items.Add(copyTranslate);
+            menu.Add(new Item(
+                "复制即译", null, () => runtime?.ToggleCopyTranslate(), runtime is not null, settings.CopyTranslate));
         }
 
-        menu.Items.Add(new MenuFlyoutSeparator());
+        AddSeparator(menu);
 
         // 第三节：截图与录制。
         if (Features.IsOn(Feature.Screenshot))
         {
-            Add(menu, Glyphs.Screenshot, capture, "截图", HotKeyActions.Screenshot,
+            Add(menu, "截图", HotKeyActions.Screenshot,
                 () => ScreenshotSession.Start(ScreenshotMode.Capture));
             if (Features.IsOn(Feature.Translate))
             {
-                Add(menu, Glyphs.ScreenshotTranslate, capture, "截图翻译", HotKeyActions.ScreenshotTranslate,
+                Add(menu, "截图翻译", HotKeyActions.ScreenshotTranslate,
                     () => ScreenshotSession.Start(ScreenshotMode.Translate));
             }
 
-            Add(menu, Glyphs.Ocr, capture, "识字", HotKeyActions.Ocr, () => ScreenshotSession.Start(ScreenshotMode.Ocr));
-            Add(menu, Glyphs.History, capture, "截图历史", HotKeyActions.ShotHistory, ShotHistoryWindow.ShowWindow);
+            Add(menu, "识字", HotKeyActions.Ocr, () => ScreenshotSession.Start(ScreenshotMode.Ocr));
+            Add(menu, "截图历史", HotKeyActions.ShotHistory, ShotHistoryWindow.ShowWindow);
         }
 
         if (Features.IsOn(Feature.Recording))
         {
             if (RecordingHost.IsRecording)
             {
-                Add(menu, Glyphs.Stop, capture, "停止录屏 " + RecordingHost.Elapsed, HotKeyActions.Record,
+                Add(menu, "停止录屏 " + RecordingHost.Elapsed, HotKeyActions.Record,
                     RecordingHost.Stop);
             }
             else
             {
-                Add(menu, Glyphs.Record, capture, "录屏", HotKeyActions.Record, RecordingHost.Toggle);
+                Add(menu, "录屏", HotKeyActions.Record, RecordingHost.Toggle);
             }
 
             if (RecordingHost.LastPath is { } last && File.Exists(last) &&
                 last.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase))
             {
-                Add(menu, Glyphs.File, capture,
+                Add(menu,
                     CompressionService.IsRunning
                         ? $"压缩中 {(int)(CompressionService.Progress * 100)}%"
                         : "压缩最近的录屏（不超过 60%）",
                     string.Empty, () => _ = CompressionService.CompressLastAsync());
-                Add(menu, Glyphs.Image, capture, "转成 GIF（10 fps，长边 800）", string.Empty,
+                Add(menu, "转成 GIF（10 fps，长边 800）", string.Empty,
                     () => _ = GifService.ConvertLastAsync());
             }
 
             if (AudioHost.IsRecording)
             {
-                Add(menu, Glyphs.Stop, capture, "停止录音 " + AudioHost.Elapsed, string.Empty, AudioHost.Stop);
+                Add(menu, "停止录音 " + AudioHost.Elapsed, string.Empty, AudioHost.Stop);
             }
             else if (AudioHost.IsArmed)
             {
-                Add(menu, Glyphs.Close, capture, "取消待录", string.Empty, AudioHost.Toggle);
+                Add(menu, "取消待录", string.Empty, AudioHost.Toggle);
             }
             else
             {
-                Add(menu, Glyphs.Microphone, capture, "录音（麦克风）", string.Empty, AudioHost.Toggle);
+                Add(menu, "录音（麦克风）", string.Empty, AudioHost.Toggle);
             }
         }
 
-        menu.Items.Add(new MenuFlyoutSeparator());
-
-        var settingsItem = new MenuFlyoutItem
-        {
-            Text = "设置…",
-            Icon = Icon(Glyphs.Settings, general),
-        };
-        settingsItem.Click += (_, _) => runtime?.ShowSettings(welcome: false);
-        menu.Items.Add(settingsItem);
-
+        AddSeparator(menu);
+        menu.Add(new Item("设置…", null, () => runtime?.ShowSettings(welcome: false)));
         var updateText = AutoUpdater.ProgressMenuText
                          ?? (UpdateService.AvailableVersion is { } available
                              ? $"更新到 {available}"
                              : "检查更新");
-        var update = new MenuFlyoutItem
-        {
-            Text = updateText,
-            // 有新版本时用强调色（mac：菜单最上面那一项「更新到 x」）。
-            Icon = Icon(Glyphs.Update, UpdateService.AvailableVersion is null ? general : Theme.AccentColor),
-            IsEnabled = !AutoUpdater.IsBusy,
-        };
-        update.Click += (_, _) =>
-        {
-            if (UpdateService.AvailableVersion is not null)
+        menu.Add(new Item(
+            updateText,
+            null,
+            () =>
             {
-                _ = AutoUpdater.StartAsync();
-            }
-            else
-            {
-                _ = UpdateService.CheckAsync(userInitiated: true);
-            }
-        };
-        menu.Items.Add(update);
-
-        var exit = new MenuFlyoutItem
-        {
-            Text = "退出 Kitty Tools",
-            Icon = Icon(Glyphs.Shutdown, general),
-        };
-        exit.Click += (_, _) => runtime?.Exit();
-        menu.Items.Add(exit);
-
-        return menu;
+                if (UpdateService.AvailableVersion is not null)
+                {
+                    _ = AutoUpdater.StartAsync();
+                }
+                else
+                {
+                    _ = UpdateService.CheckAsync(userInitiated: true);
+                }
+            },
+            !AutoUpdater.IsBusy));
+        menu.Add(new Item("退出 Kitty Tools", null, () => runtime?.Exit()));
     }
 
-    private static FontIcon Icon(string glyph, Windows.UI.Color color)
-        => new() { Glyph = glyph, Foreground = new SolidColorBrush(color) };
+    private static void Add(List<Item> menu, string text, string action, Action run, bool enabled = true)
+        => menu.Add(new Item(text, ShellRuntime.Instance?.HotKeys.ShortcutFor(action), run, enabled));
 
-    private static void Add(
-        MenuFlyout menu,
-        string glyph,
-        Windows.UI.Color color,
-        string text,
-        string action,
-        Action invoke,
-        bool enabled = true)
+    /// <summary>某一节整个没有（功能关了）时不留连着的两条分隔线，也不在最前面放一条。</summary>
+    private static void AddSeparator(List<Item> menu)
     {
-        var item = new MenuFlyoutItem
+        if (menu.Count > 0 && menu[^1].Text is not null)
         {
-            Text = text,
-            Icon = Icon(glyph, color),
-            IsEnabled = enabled,
-        };
-        var shortcut = ShellRuntime.Instance?.HotKeys.ShortcutFor(action);
-        if (!string.IsNullOrEmpty(shortcut))
-        {
-            item.KeyboardAcceleratorTextOverride = shortcut;
+            menu.Add(new Item(null, null, static () => { }));
         }
-
-        item.Click += (_, _) => invoke();
-        menu.Items.Add(item);
     }
 
-    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
-    private struct Margins
+    /// <summary>
+    /// 让 Win32 菜单跟着深浅色走。ponytail: 用的是 uxtheme 没写进文档的两个序号（135 SetPreferredAppMode、
+    /// 136 FlushMenuThemes，Windows 10 1903 起有）；哪天系统改了拿不到，就是浅色菜单。微软出了公开接口就换过去。
+    /// </summary>
+    private static void ApplyMenuTheme()
     {
-        public int Left;
-        public int Right;
-        public int Top;
-        public int Bottom;
+        try
+        {
+            var uxtheme = LoadLibrary("uxtheme.dll");
+            if (uxtheme == IntPtr.Zero)
+            {
+                return;
+            }
+
+            var setMode = GetProcAddress(uxtheme, 135);
+            var flush = GetProcAddress(uxtheme, 136);
+            if (setMode == IntPtr.Zero || flush == IntPtr.Zero)
+            {
+                return;
+            }
+
+            // PreferredAppMode：1 跟随系统，2 一直深色，3 一直浅色（设置 › 外观选了和系统不一样的时候）。
+            var mode = SettingsService.Current.Theme switch
+            {
+                "dark" => 2,
+                "light" => 3,
+                _ => 1,
+            };
+            ((delegate* unmanaged[Stdcall]<int, int>)setMode)(mode);
+            ((delegate* unmanaged[Stdcall]<void>)flush)();
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"tray.menu-theme-failed {ex.GetType().Name}");
+        }
     }
 
-    [System.Runtime.InteropServices.LibraryImport(
-        "dwmapi.dll", EntryPoint = "DwmExtendFrameIntoClientArea")]
-    private static partial int DwmExtendFrameIntoClientArea(IntPtr hWnd, ref Margins margins);
+    [LibraryImport("user32.dll", EntryPoint = "CreatePopupMenu")]
+    private static partial IntPtr CreatePopupMenu();
 
-    [System.Runtime.InteropServices.LibraryImport("dwmapi.dll", EntryPoint = "DwmSetWindowAttribute")]
-    private static partial int DwmSetWindowAttribute(IntPtr hWnd, int attribute, ref int value, int size);
+    [LibraryImport("user32.dll", EntryPoint = "AppendMenuW", StringMarshalling = StringMarshalling.Utf16)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool AppendMenu(IntPtr menu, uint flags, nuint id, string? text);
 
-    [System.Runtime.InteropServices.LibraryImport("user32.dll", EntryPoint = "GetWindowLongW", SetLastError = true)]
-    private static partial int GetWindowLong(IntPtr hWnd, int index);
+    /// <summary>带 TPM_RETURNCMD 时返回选中项的 id，没选返回 0。</summary>
+    [LibraryImport("user32.dll", EntryPoint = "TrackPopupMenuEx")]
+    private static partial int TrackPopupMenuEx(IntPtr menu, uint flags, int x, int y, IntPtr hwnd, IntPtr parameters);
 
-    [System.Runtime.InteropServices.LibraryImport("user32.dll", EntryPoint = "SetWindowLongW", SetLastError = true)]
-    private static partial int SetWindowLong(IntPtr hWnd, int index, int value);
+    [LibraryImport("user32.dll", EntryPoint = "DestroyMenu")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool DestroyMenu(IntPtr menu);
 
-    [System.Runtime.InteropServices.LibraryImport("user32.dll", EntryPoint = "SetLayeredWindowAttributes", SetLastError = true)]
-    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
-    private static partial bool SetLayeredWindowAttributes(IntPtr hWnd, uint colorKey, byte alpha, uint flags);
+    [LibraryImport("user32.dll", EntryPoint = "EndMenu")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool EndMenu();
+
+    [LibraryImport("user32.dll", EntryPoint = "SetForegroundWindow")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool SetForegroundWindow(IntPtr hwnd);
+
+    [LibraryImport("user32.dll", EntryPoint = "PostMessageW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool PostMessage(IntPtr hwnd, uint message, nuint wParam, nint lParam);
+
+    [LibraryImport("user32.dll", EntryPoint = "GetSystemMetrics")]
+    private static partial int GetSystemMetrics(int index);
+
+    [LibraryImport("kernel32.dll", EntryPoint = "LoadLibraryW", StringMarshalling = StringMarshalling.Utf16)]
+    private static partial IntPtr LoadLibrary(string name);
+
+    [LibraryImport("kernel32.dll", EntryPoint = "GetProcAddress")]
+    private static partial IntPtr GetProcAddress(IntPtr module, nint ordinal);
 }
