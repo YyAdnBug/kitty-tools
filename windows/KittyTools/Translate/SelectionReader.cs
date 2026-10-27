@@ -108,7 +108,9 @@ internal static class SelectionReader
 
                                 try
                                 {
-                                    var text = range->GetText(2048);
+                                    // REVIEW R58：以前取 2048 个字符，长选区后面直接丢掉、也不说一声。
+                                    // 取全文，长度交给 TranslateCoordinator 那道 32 KB 检查（超了会提示分段）。
+                                    var text = range->GetText(-1);
                                     try
                                     {
                                         return text.ToString();
