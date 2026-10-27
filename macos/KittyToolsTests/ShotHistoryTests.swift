@@ -654,6 +654,47 @@ struct ShotHistoryTests {
     #expect(try press("1", kVK_ANSI_1) && model.filter == .all)
   }
 
+  /// 方向键挑到看不见的那一行时，内容区跟着滚（2026-10-27 用户手测报的）。
+  /// 真量滚动视图的位置：光看代码看不出 ScrollViewReader 接没接上
+  @Test func arrowKeysScrollIntoView() async throws {
+    let (history, root) = try makeHistory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    // 够滚起来的条数（窗口 620 高，一行约 150）
+    for _ in 0..<30 { _ = await history.record(image(width: 200, height: 150), scale: 2) }
+    let model = ShotHistoryModel(history: history)
+    let window = stage(ShotHistoryView(model: model))
+    defer { window.orderOut(nil) }
+    let settle = { for _ in 0..<4 { RunLoop.main.run(until: .now.addingTimeInterval(0.05)) } }
+    settle()
+    // 窗口里内容最高的那个滚动视图就是左边的网格
+    func scrollViews(_ view: NSView) -> [NSScrollView] {
+      (view as? NSScrollView).map { [$0] } ?? [] + view.subviews.flatMap(scrollViews)
+    }
+    let content = try #require(window.contentView)
+    let grid = try #require(
+      scrollViews(content).max {
+        ($0.documentView?.frame.height ?? 0)
+          < ($1.documentView?.frame.height ?? 0)
+      })
+    #expect(
+      (grid.documentView?.frame.height ?? 0) > grid.contentSize.height + 50, "没撑出可滚的内容")
+    let before = grid.documentVisibleRect.origin.y
+
+    // 一路按 ↓ 到最后一张
+    let down = String(UnicodeScalar(UInt32(NSDownArrowFunctionKey))!)
+    for _ in 0..<12 {
+      _ = window.performKeyEquivalent(
+        with: try #require(
+          NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, characters: down,
+            charactersIgnoringModifiers: down, isARepeat: false, keyCode: UInt16(kVK_DownArrow))))
+      settle()
+    }
+    #expect(model.selection == history.items.last?.id, "没走到最后一张")
+    #expect(grid.documentVisibleRect.origin.y != before, "选中挪到看不见的那行，内容区没跟着滚")
+  }
+
   /// 一行几张、方向键挪到第几张（纯函数）
   @Test func gridStepping() {
     // .adaptive(minimum: 168)、间距 12、两边各留 16

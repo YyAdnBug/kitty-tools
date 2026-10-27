@@ -112,50 +112,58 @@ struct ShotHistoryView: View {
 
   private var grid: some View {
     let groups = model.groups
-    return ScrollView {
-      if groups.isEmpty {
-        EmptyState(symbol: "clock.arrow.circlepath", title: "还没有截图") {
-          Text(
-            model.search.isEmpty
-              ? "截图、长截图、录屏录音都会留在这里，默认保留 30 天。" : "换个词试试。")
+    return ScrollViewReader { proxy in
+      ScrollView {
+        if groups.isEmpty {
+          EmptyState(symbol: "clock.arrow.circlepath", title: "还没有截图") {
+            Text(
+              model.search.isEmpty
+                ? "截图、长截图、录屏录音都会留在这里，默认保留 30 天。" : "换个词试试。")
+          }
+          .padding(.top, 80)
         }
-        .padding(.top, 80)
-      }
-      LazyVStack(alignment: .leading, spacing: 18, pinnedViews: [.sectionHeaders]) {
-        ForEach(groups) { group in
-          Section {
-            LazyVGrid(
-              columns: [GridItem(.adaptive(minimum: Self.cardWidth), spacing: 12)], spacing: 12
-            ) {
-              ForEach(group.items) { item in
-                ShotCard(
-                  item: item, chosen: model.selection == item.id, history: model.history,
-                  generation: model.redraws,
-                  select: { model.selection = item.id }, edit: { edit(item) }
-                )
-                .onDrag { model.dragProvider(for: item) }
-                .contextMenu { menu(item) }
+        LazyVStack(alignment: .leading, spacing: 18, pinnedViews: [.sectionHeaders]) {
+          ForEach(groups) { group in
+            Section {
+              LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: Self.cardWidth), spacing: 12)], spacing: 12
+              ) {
+                ForEach(group.items) { item in
+                  ShotCard(
+                    item: item, chosen: model.selection == item.id, history: model.history,
+                    generation: model.redraws,
+                    select: { model.selection = item.id }, edit: { edit(item) }
+                  )
+                  .onDrag { model.dragProvider(for: item) }
+                  .contextMenu { menu(item) }
+                }
               }
+            } header: {
+              Text(group.title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.tertiary)
+                .padding(.leading, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.bar)  // 吸顶时盖住下面滚过去的卡片（深浅自适应）
             }
-          } header: {
-            Text(group.title)
-              .font(.system(size: 11, weight: .semibold))
-              .foregroundStyle(.tertiary)
-              .padding(.leading, 10)
-              .frame(maxWidth: .infinity, alignment: .leading)
-              .background(.bar)  // 吸顶时盖住下面滚过去的卡片（深浅自适应）
           }
         }
+        .padding(16)
       }
-      .padding(16)
-    }
-    .frame(minWidth: 420)
-    // 量出一行几张：方向键的 ↑↓ 跳一行
-    .onGeometryChange(for: CGFloat.self) {
-      $0.size.width
-    } action: { width in
-      model.columnsPerRow = ShotHistoryModel.columns(
-        width: width, card: Self.cardWidth, spacing: 12, padding: 16)
+      .frame(minWidth: 420)
+      // 量出一行几张：方向键的 ↑↓ 跳一行
+      .onGeometryChange(for: CGFloat.self) {
+        $0.size.width
+      } action: { width in
+        model.columnsPerRow = ShotHistoryModel.columns(
+          width: width, card: Self.cardWidth, spacing: 12, padding: 16)
+      }
+      // 换选中时把那张滚进视野（2026-10-27 用户手测：方向键挑到看不见的那一行，内容区不跟着滚）。
+      // anchor 给 nil 是「滚最少的距离、够看见就行」：已经看得见的（点一下、同一行里左右挪）一动不动
+      .onChange(of: model.selection) { _, now in
+        guard let now else { return }
+        proxy.scrollTo(now, anchor: nil)
+      }
     }
   }
 
