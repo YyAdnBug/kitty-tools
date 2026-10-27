@@ -3,6 +3,8 @@
 // 40 / 48 / 64 / 256 八档、每档存 PNG：
 // - windows/KittyTools/Resources/AppIcon.ico：应用图标，托盘也用它（Windows 托盘习惯用彩色应用图标，不分深浅色）；
 // - windows/KittyTools/Resources/AppIconRecording.ico：同一张图右下角加一个红点（录屏、录音时的托盘图标，PLAN-v4 V8）。
+// 另出安装程序（Inno Setup，PLAN-setup-inno §3）的两组透明底 PNG，放在 windows/installer/：右上角的小图 wizard-small-*.png，
+// 完成页左边那条 wizard-large-<宽>x<高>.png（只放图标，深浅色外观都能用）；尺寸照 Inno 帮助里按 DPI 的表，它自己挑最接近的。
 // 每档取 mac 那组里不小于它的最小一张缩下来：16、32 用 mac 手调过的小图原样，20、24 从 32 缩，40、48 从 64 缩。
 import AppKit
 
@@ -79,3 +81,21 @@ for (name, images) in [("AppIcon.ico", base), ("AppIconRecording.ico", base.map(
   try data.write(to: resources.appendingPathComponent(name))
   print("\(name)：\(sizes.count) 档，\(data.count) 字节")
 }
+
+let installer = root.appendingPathComponent("windows/installer")
+try FileManager.default.createDirectory(at: installer, withIntermediateDirectories: true)
+let large = load("icon_512x512@2x.png")
+for size in [58, 77, 97, 116, 124, 143, 159] {
+  try png(scaled(large, to: size)).write(to: installer.appendingPathComponent("wizard-small-\(size).png"))
+}
+for (width, height) in [(202, 386), (269, 515), (336, 643), (403, 772), (430, 824), (498, 953), (534, 1022)] {
+  let ctx = CGContext(
+    data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+    space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+  ctx.interpolationQuality = .high
+  // 图标宽占六成、中心在离顶边四成的地方（CG 坐标原点在左下）
+  let side = (CGFloat(width) * 0.6).rounded()
+  ctx.draw(large, in: CGRect(x: (CGFloat(width) - side) / 2, y: CGFloat(height) * 0.6 - side / 2, width: side, height: side))
+  try png(ctx.makeImage()!).write(to: installer.appendingPathComponent("wizard-large-\(width)x\(height).png"))
+}
+print("installer：7 张小图、7 张品牌图")

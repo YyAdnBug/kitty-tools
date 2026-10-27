@@ -79,6 +79,7 @@ Kitty Tools 的 **Windows 原生版**（C# + WinUI 3，2026-10-23 立项）。�
 - **`PLAN-v5.md`**：第五版（和 Mac 互通的同步）。mac 的源码在 `reference/mac-sync/`。
 - **`PLAN-v6.md`**：第六版（收尾与优化）。§0 的规矩（数字口径、录屏只录测试窗口、COM 写法、删比加好）这一版起一直有效。
 - **`PLAN-v7.md`**：第七版（界面对齐 mac）。§2 的刻度和共用部件定下来以后，所有界面都从那里取；规格是 mac 的 Whisker（`.cursor/rules/mac-whisker*.mdc`），只读方案里点名的章节。
+- **`PLAN-setup-inno.md`**：安装程序换成 Inno Setup 7（2026-10-27，REVIEW R65，0.1.0 打包之前做）。`PLAN-setup.md` 被它取代，只当历史看。
 - **`PLAN-setup.md`**：exe 安装程序（2026-10-26）。**已交接**：Claude 在单独的会话里写完了（`616840b`，没编译过），先做 `REVIEW.md` 的 R36（真机验收）、R37、R38。从现在起 `windows/KittyTools.Setup/`、`KittyTools.Core/SetupPayload.cs`、`SetupRules.cs`、`KittyTools.Tests/SetupTests.cs`、`tools/setup-e2e.ps1` 归你们维护，规矩照方案 §1–§2 和 §7 记下的改动。
 - `PLAN.md`：第一版的规格。
 - 做到哪一批，就读那一批引用的 mac 源码和规则章节（只看行为，不搬 AppKit 的做法）。
@@ -86,7 +87,7 @@ Kitty Tools 的 **Windows 原生版**（C# + WinUI 3，2026-10-23 立项）。�
 ## 红线
 
 - **只改 `windows/` 里的文件。** 根目录 `.gitignore` 要加东西时在报告里说明；`macos/`、根目录的 `AGENTS.md` / `CLAUDE.md`、`.cursor/`、`.claude/` 一律不动。
-- **依赖只用微软自家的包**（PLAN §2）。
+- **依赖只用微软自家的包**（PLAN §2）。例外（用户 2026-10-27 定）：打包用 Inno Setup 7，只在 `build-release.ps1` 里调 `ISCC.exe`，不进 App（`PLAN-setup-inno.md`）。
 - **Native AOT，发布构建零 trim / AOT 警告。** 不用反射、`dynamic`、`{Binding}`、运行时 COM 互操作（COM 走 CsWin32 生成的、AOT 能用的写法；CsWin32 生成不了的接口，自己用函数指针按 vtable 调，参考第二版第 1 批报告里图标那一条的处理）。
 - **日志和错误信息里不出现**剪贴板内容、原文、译文、URL、请求头、密钥。
 - **密钥只进凭据管理器**；内置智谱 key 只在不入库的 `Secrets.props` 里。

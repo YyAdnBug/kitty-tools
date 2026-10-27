@@ -88,8 +88,8 @@
    - R48 第一条（钉图「复制」卡界面）；
    - PLAN-v9 的 V2（识字默认不接行，截图翻译照旧接）。这一条用户还没拍板，审查方替用户定先做：只是改默认值、加一个开关。
 5. **不挡 0.1.0**：R42、R24（启动器、录屏默认关了）；R43（长截图拼长了会卡）、R45（长译文流式会卡）能顺手修就修，修不完写进下面的「已知问题」；R49–R52、PLAN-v9 的其余项照旧往后排。
-6. 打包：`dotnet test` 全过 → `pwsh windows/build-release.ps1`（AOT x64 / ARM64、零警告、`--smoke`、zip、setup.exe）→ 产物在 `windows/build/release/0.1.0/`。
-7. 手测，用 `KittyTools-0.1.0-windows-x64-setup.exe` 装一次（开发机上装过旧的 0.7.0 也直接装：安装程序会出「重新安装」那一页）：
+6. 先做 R65（安装程序换成 Inno Setup 7），再打包：`dotnet test` 全过 → `pwsh windows/build-release.ps1`（AOT x64 / ARM64、零警告、`--smoke`、zip、Inno 编的 setup.exe）→ `pwsh windows/tools/setup-e2e.ps1` 五步全过 → 产物在 `windows/build/release/0.1.0/`。
+7. 手测，用 `KittyTools-0.1.0-windows-x64-setup.exe` 装一次。开发机上用旧安装程序装过的，先用它的 `Uninstall.exe` 卸掉（PLAN-setup-inno I14，不做迁移）：
    - `HANDTEST.md`「发版冒烟清单」的 1、2、3、5、6、8、9、15、16、17，第 7 条里除了启动器的部分；
    - 截图历史（333–338）、长截图（216–224 里长截图那几条）、提示带按钮（339–345）；
    - R54–R64 每条修完的那个场景再走一遍。
@@ -185,6 +185,25 @@
 - **E. 输入法组字时按 Enter，可能直接粘贴或翻译**：剪贴板面板的 Enter / Esc / ↑↓（`ClipboardPanel.xaml.cs:1152–1183`，`handledEventsToo`）没看 `_composing`（:47）；翻译浮窗的 `OnSourceKeyDown`（`TranslateWindow.cs:521`）也一样。
   - 验：用微软拼音在剪贴板搜索框里打几个字母，按 Enter 上屏，看是不是直接粘贴了选中的条目；翻译浮窗同样试一次。
   - 改：组字中这几个键直接 return。
+
+### R65（P1）安装程序换成 Inno Setup 7（0.1.0 打包之前做）
+
+用户 2026-10-27：「安装 exe 的界面太简陋了，市面上没有现成的工具能使用吗，期望优化」，看过几种做法以后定了：「安装程序换成 Inno Setup 7」。现在的安装程序全是系统的任务对话框（PLAN-setup S2），几页白底弹框。
+
+- **方案**：`PLAN-setup-inno.md`，照它做，一批做完。
+  - 用户能看到的行为（装到哪、不许装到哪、装过就更新、开着先叫它退出、只问「开机时自动打开」、卸载时问删不删数据）和现在一样，改用 Inno 实现；
+  - 长相换成 `WizardStyle=modern dynamic windows11`，跟着系统深浅色；
+  - 两组安装图审查方已经出好、提交在 `windows/installer/`。
+- **红线例外**：用户同意打包用 Inno Setup 7（只在 `build-release.ps1` 里用，不进 App）。`AGENTS.md` 红线那一条已经写上。装 Inno 用 `winget install --id JRSoftware.InnoSetup -e`，要 7.x。
+- **AppId 定死**：`{FF0E2BF7-9B90-4EB0-9C08-818112ACEC15}`，以后永远不改。
+- **删**：`KittyTools.Setup/` 整个项目、`Core/SetupPayload.cs`、`Core/SetupRules.cs` 的大半、`SetupTests.cs` 跟着删到只剩留下来的函数（PLAN-setup-inno §5）。**加**：`installer/KittyTools.iss`；App 的 `--quit`、`--uninstall-cleanup [--remove-data]`；`SetupRecord` 改成认 Inno 的登记（§4）。
+- **R37 / R38 的口子跟着改**：「从这台电脑移除」启动 `unins000.exe`；程序内更新后改 `{AppId}_is1` 里的 `DisplayVersion` / `EstimatedSize`。
+- **最可能踩的坑**（PLAN-setup-inno §2 末尾）：
+  - `CheckForMutexes` 认不认 `Local\` 前缀；
+  - 静默安装时 `NextButtonClick` 调不调（所以位置检查在 `PrepareToInstall` 里再做一遍）；
+  - `[UninstallDelete]` 整个删 `{app}` 之前，位置规则一定要先保证这个文件夹整个是我们的；
+  - `--uninstall-cleanup` 不能开数据库、不能往数据目录写日志（R25）。
+- **验收**：PLAN-setup-inno §7。`setup-e2e.ps1` 五步全过；浅 / 深色四张截图推到 `windows-shots`；报告写两个 setup.exe 的大小、装一次和卸载一次的耗时。
 
 ### R39（P2）截图遮罩的按键：A、T 和工具栏对不上，换工具不刷新 → 已修（`901d4e3`）
 
