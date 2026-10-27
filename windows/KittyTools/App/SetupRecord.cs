@@ -1,8 +1,8 @@
-// 安装程序留下的东西（PLAN-setup §4.2 / §4.3，REVIEW R37 / R38）：exe 旁边有 .kitty-install 就是安装程序装的。
-// - 设置里「从这台电脑移除」交给同目录的 Uninstall.exe；
-// - 程序内更新之后，把标记的版本 / 文件清单和「设置 › 应用」里的登记跟上。
-// 名字和安装程序同一套（SetupRules.NamesFor；Release 探针档 KITTY_PROBE_PROFILE 用同名的测试名）。
-using System.Text;
+// 安装程序（Inno Setup 7，PLAN-setup-inno §4.1）留下的东西：exe 旁边有 unins000.exe，而且「设置 › 应用」里
+// {AppId}_is1 这个登记的 InstallLocation 就是这个文件夹，就是安装程序装的。
+// - 设置里「从这台电脑移除」交给 unins000.exe（I11）；
+// - 程序内更新之后，把登记里的 DisplayVersion / EstimatedSize 跟上（I12）。
+// 名字和 installer/KittyTools.iss 同一套（SetupRules.NamesFor；Release 探针档 KITTY_PROBE_PROFILE 用同名的测试名）。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 using Microsoft.Win32;
@@ -14,42 +14,49 @@ internal static class SetupRecord
     private static string? InstallDirectory =>
         string.IsNullOrEmpty(Paths.ExecutablePath) ? null : Path.GetDirectoryName(Paths.ExecutablePath);
 
-    /// <summary>安装程序装的（有标记）才不是 false；zip 解压的、Debug 版都是 false。</summary>
-    public static bool IsInstalled => InstallDirectory is { } dir && SetupRules.ReadMarker(dir) is not null;
+    /// <summary>安装程序装的才是 true；zip 解压的、Debug 版都是 false。</summary>
+    public static bool IsInstalled => Uninstaller() is not null;
 
-    /// <summary>安装程序装的、而且 Uninstall.exe 还在：返回它的完整路径。</summary>
+    /// <summary>安装程序装的、而且 unins000.exe 还在：返回它的完整路径。</summary>
     public static string? Uninstaller()
     {
-        if (InstallDirectory is not { } dir || SetupRules.ReadMarker(dir) is null)
+        if (InstallDirectory is not { } dir)
         {
             return null;
         }
 
         var path = Path.Combine(dir, SetupRules.UninstallerName);
-        return File.Exists(path) ? path : null;
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var key = OpenRegistration(dir, writable: false);
+            return key is null ? null : path;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"setup.read-failed {ex.GetType().Name}");
+            return null;
+        }
     }
 
-    /// <summary>
-    /// 更新装好之后（还没重启）：标记的 version 改成新版本、files 并上这次装进去的文件（相对路径），
-    /// 不然更新带进来的新文件卸载时算「不认得的」，安装目录就不会整个删。失败只记日志，不挡更新。
-    /// </summary>
-    public static void AfterUpdate(string installDir, string version, IReadOnlyList<string> installed)
+    /// <summary>更新装好之后（还没重启）：登记的版本改成新版本，大小重新量。失败只记日志，不挡更新。</summary>
+    public static void AfterUpdate(string installDir, string version)
     {
         try
         {
-            if (SetupRules.ReadMarker(installDir) is not { } marker)
+            using var key = OpenRegistration(installDir, writable: true);
+            if (key is null)
             {
                 return;
             }
 
-            var updated = SetupRules.WithInstalledFiles(
-                marker, version, installed.Select(path => Path.GetRelativePath(installDir, path)));
-            File.WriteAllText(
-                Path.Combine(installDir, SetupRules.MarkerName),
-                SetupRules.WriteMarker(updated),
-                new UTF8Encoding(false));
-            UpdateRegistration(installDir, version);
-            Log.Info($"setup.record-updated files={updated.Files.Count}");
+            key.SetValue("DisplayVersion", version, RegistryValueKind.String);
+            SetSize(key, installDir);
+            Log.Info($"setup.registration version={version}");
         }
         catch (Exception ex)
         {
@@ -62,9 +69,10 @@ internal static class SetupRecord
     {
         try
         {
-            if (SetupRules.ReadMarker(installDir) is { } marker)
+            using var key = OpenRegistration(installDir, writable: true);
+            if (key is not null)
             {
-                UpdateRegistration(installDir, marker.Version);
+                SetSize(key, installDir);
             }
         }
         catch (Exception ex)
@@ -73,20 +81,25 @@ internal static class SetupRecord
         }
     }
 
-    /// <summary>登记的 InstallLocation 就是这个目录才改 DisplayVersion / EstimatedSize（另一处装的那份不动）。</summary>
-    private static void UpdateRegistration(string installDir, string version)
+    /// <summary>登记的 InstallLocation 就是这个目录才算（另一处装的那份不动）；不是返回 null。</summary>
+    private static RegistryKey? OpenRegistration(string installDir, bool writable)
     {
         var testKey = Environment.GetEnvironmentVariable("KITTY_PROBE_PROFILE");
         var names = SetupRules.NamesFor(testKey is { } value && SetupRules.IsValidTestKey(value) ? value : null);
-        using var key = Registry.CurrentUser.OpenSubKey(SetupRules.UninstallRoot + "\\" + names.UninstallKey, writable: true);
-        if (key?.GetValue("InstallLocation") is not string location || !SetupRules.SamePath(location, installDir))
+        var key = Registry.CurrentUser.OpenSubKey(SetupRules.UninstallRoot + "\\" + names.UninstallKey, writable);
+        if (key?.GetValue("InstallLocation") is string location && SetupRules.SamePath(location, installDir))
         {
-            return;
+            return key;
         }
 
+        key?.Dispose();
+        return null;
+    }
+
+    private static void SetSize(RegistryKey key, string installDir)
+    {
         var sizeKb = (int)Math.Clamp(SetupRules.DirectorySizeKb(installDir), 0, int.MaxValue);
-        key.SetValue("DisplayVersion", version, RegistryValueKind.String);
         key.SetValue("EstimatedSize", sizeKb, RegistryValueKind.DWord);
-        Log.Info($"setup.registration version={version} sizeKb={sizeKb}");
+        Log.Info($"setup.size sizeKb={sizeKb}");
     }
 }

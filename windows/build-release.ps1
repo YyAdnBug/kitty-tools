@@ -1,7 +1,7 @@
 ﻿# Kitty Tools Windows 发布脚本：AOT 发布 x64 + ARM64，打 zip，生成发布说明。
 # 每个架构出三样（PLAN-setup S1）：
 #   KittyTools-<版本>-windows-<x64|arm64>.zip（+ .sha256）       程序内更新用，也能手动解压
-#   KittyTools-<版本>-windows-<x64|arm64>-setup.exe（+ .sha256） 安装程序：KittyTools.Setup 的 AOT 本体 + 上面那个 zip + 64 字节尾巴
+#   KittyTools-<版本>-windows-<x64|arm64>-setup.exe（+ .sha256） 安装程序：Inno Setup 7 编的（installer/KittyTools.iss，PLAN-setup-inno）
 # 不调用 gh，不自动上传；发布前先问用户，release 一律 --latest=false。
 [CmdletBinding()]
 param(
@@ -56,8 +56,16 @@ foreach ($item in $entry.items) {
 [void]$notes.AppendLine('Windows 版 release 不标 latest，避免 mac 版收不到更新。')
 
 $summary = @()
-# 打包（--pack）用 x64 那份安装程序本体：ARM64 的 Windows 也能跑 x64，反过来不行。
-$packer = $null
+# 安装程序用 Inno Setup 7 编（用户 2026-10-27 同意的例外，只在打包时用、不进 App）。
+$innoScript = Join-Path $root 'installer/KittyTools.iss'
+$iscc = @(
+    (Join-Path ${env:ProgramFiles} 'Inno Setup 7/ISCC.exe'),
+    (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 7/ISCC.exe'),
+    (Join-Path ${env:LOCALAPPDATA} 'Programs/Inno Setup 7/ISCC.exe')
+) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+if (-not $iscc) {
+    throw '找不到 Inno Setup 7 的 ISCC.exe。先装：winget install --id JRSoftware.InnoSetup -e（要 7.x）'
+}
 foreach ($target in $targets) {
     $stage = Join-Path $outRoot $target.Label
     if (Test-Path $stage) {
@@ -137,37 +145,16 @@ foreach ($target in $targets) {
         "$hash  $([System.IO.Path]::GetFileName($zip))`n",
         [System.Text.UTF8Encoding]::new($false))
 
-    # PLAN-setup：发布安装程序本体（AOT），把上面的 zip 接在后面。
-    $setupStage = Join-Path $outRoot "setup-stub/$($target.Label)"
-    if (Test-Path $setupStage) {
-        Remove-Item $setupStage -Recurse -Force
-    }
-
-    Write-Host "发布安装程序 $($target.Rid)..."
-    & dotnet publish (Join-Path $root 'KittyTools.Setup/KittyTools.Setup.csproj') `
-        -c $Configuration -r $target.Rid -o $setupStage
-    if ($LASTEXITCODE -ne 0) {
-        throw "安装程序 $($target.Rid) 发布失败"
-    }
-
-    Get-ChildItem $setupStage -Filter '*.pdb' -File | ForEach-Object {
-        Move-Item $_.FullName (Join-Path $pdbDir $_.Name) -Force
-    }
-
-    $stub = Join-Path $setupStage 'KittyTools.Setup.exe'
-    if ($target.Label -eq 'x64') {
-        $packer = $stub
-    }
-
+    # PLAN-setup-inno：用 Inno Setup 7 编安装程序，装的就是打 zip 的那个目录（和 zip 一模一样）。
     $setupExe = Join-Path $outRoot "KittyTools-$version-windows-$($target.Label)-setup.exe"
     if (Test-Path $setupExe) {
         Remove-Item $setupExe -Force
     }
 
-    # 安装程序没有控制台，只看退出码；失败原因在 %TEMP%\KittyTools-setup.log。
-    $pack = Start-Process -FilePath $packer -ArgumentList "--pack `"$stub`" `"$zip`" `"$setupExe`"" -Wait -PassThru
-    if ($pack.ExitCode -ne 0 -or -not (Test-Path $setupExe)) {
-        throw "安装程序 $($target.Label) 打包失败（exit $($pack.ExitCode)），看 %TEMP%\KittyTools-setup.log"
+    Write-Host "编安装程序 $($target.Label)..."
+    & $iscc /Q "/DAppVersion=$version" "/DArch=$($target.Label)" "/DSourceDir=$stage\Kitty Tools" "/O$outRoot" $innoScript
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $setupExe)) {
+        throw "安装程序 $($target.Label) 编译失败（ISCC exit $LASTEXITCODE）"
     }
 
     $setupHash = (Get-FileHash $setupExe -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -175,11 +162,10 @@ foreach ($target in $targets) {
         "$setupExe.sha256",
         "$setupHash  $([System.IO.Path]::GetFileName($setupExe))`n",
         [System.Text.UTF8Encoding]::new($false))
-    $stubSize = [math]::Round((Get-Item $stub).Length / 1MB, 1)
     $setupSize = [math]::Round((Get-Item $setupExe).Length / 1MB, 1)
 
     $summary += "$($target.Label)：$size MB / $($files.Count) 个文件（不含 pdb），zip $zipSize MB，sha256 $($hash.Substring(0, 12))…；" +
-        "安装包 $setupSize MB（本体 $stubSize MB），sha256 $($setupHash.Substring(0, 12))…"
+        "安装包 $setupSize MB，sha256 $($setupHash.Substring(0, 12))…"
 }
 
 $notesPath = Join-Path $outRoot 'release-notes.md'

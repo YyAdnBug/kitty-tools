@@ -1,28 +1,22 @@
-﻿# 安装程序的端到端测试（PLAN-setup §5，Windows 上跑）。
+﻿# 安装程序（Inno Setup 7，PLAN-setup-inno §6）的端到端测试，在 Windows 上跑。
 #
-# 全程用 KITTY_SETUP_TEST_KEY=<随机名>：注册表登记是 KittyTools.Test.<名字>，开机启动值、快捷方式、凭据前缀、互斥量、
-# 数据目录都是 .Probe.<名字> 那一套（和 App 的 KITTY_PROBE_PROFILE 同名），装到 windows\build\setup-e2e 下的临时目录，
+# 全程用测试名（随机的 e2e<数字>）：用 ISCC /DTestKey 编两个测试版安装程序（0.0.1、0.0.2），登记键是
+# KittyTools.Test.<名字>_is1，开机启动值、快捷方式、互斥量、数据目录都是 .Probe.<名字> 那一套（和 App 的
+# KITTY_PROBE_PROFILE 同名，见 Core/SetupRules.NamesFor），装到 windows\build\setup-e2e 下的临时目录，
 # 碰不到用户正在用的 Kitty Tools。程序只启动自己起的那一个、只按它的 PID 收拾，不按进程名结束任何进程。
 #
-# 用 -Zip 给的 release zip（build-release.ps1 的产物，要包含单实例管道认 quit 的那个提交）现场发布两个版本的安装程序本体
-# （0.0.1 / 0.0.2，AOT，各约一分钟），用 --pack 接上 zip，然后走七步：
-#   1 静默装到临时目录：文件齐全、.kitty-install 对、注册表测试键每个值都对、快捷方式和开机启动在
-#   2 装更新的版本（故意给另一个 --dir）：位置不变、DisplayVersion 变了
-#   3 程序开着时安装：发 quit 之后装上，程序是自己退的
-#   4 静默卸载（不带 --with-data）：安装目录、快捷方式、开机启动、注册表测试键都没了，数据目录还在
-#   5 重装后带 --with-data 卸载：数据目录进了回收站（回收站里会多一个 KittyTools.Probe.<名字>，只有一个小文件，可以清掉）
-#   6 安装目录里放一个别的文件再卸载：不整个删、日志里有 leftover
-#   7 载荷改坏一个字节：退出码 2，什么都没写
+# 五步：
+#   1 装到 Windows 里、装到网络路径：都被拒（退出码非 0），什么都没写
+#   2 静默新装：文件齐、登记键的 InstallLocation / DisplayVersion 对、快捷方式和开机启动在
+#   3 程序开着时装更新的版本：程序被 --quit 叫退、位置不变、DisplayVersion 变了
+#   4 安装目录里多放一个文件（模拟程序内更新带进来的），静默卸载：整个目录、登记、快捷方式、开机启动都没了，数据目录还在
+#   5 重装后 /REMOVEDATA=1 卸载：数据目录进了回收站（回收站里会多一个 KittyTools.Probe.<名字>，可以清掉）
 #
 # 用法（仓库根目录）：
-#   pwsh windows/tools/setup-e2e.ps1 -Zip windows/build/release/0.7.0/KittyTools-0.7.0-windows-x64.zip
-#   pwsh windows/tools/setup-e2e.ps1 -Zip <zip> -Rid win-arm64        # ARM64 的机器
-#   pwsh windows/tools/setup-e2e.ps1 -Zip <zip> -NoBuild              # 用上次发布的两个本体
-# 退出码 0 = 七步全过。
+#   pwsh windows/tools/setup-e2e.ps1 -Zip windows/build/release/0.1.0/KittyTools-0.1.0-windows-x64.zip
+# 退出码 0 = 五步全过。
 param(
-    [Parameter(Mandatory = $true)][string]$Zip,
-    [string]$Rid = "win-x64",
-    [switch]$NoBuild
+    [Parameter(Mandatory = $true)][string]$Zip
 )
 
 $ErrorActionPreference = "Stop"
@@ -33,14 +27,25 @@ if (-not (Test-Path $Zip)) {
     throw "找不到 $Zip，先跑 build-release.ps1"
 }
 
+$iscc = @(
+    (Join-Path ${env:ProgramFiles} 'Inno Setup 7\ISCC.exe'),
+    (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 7\ISCC.exe'),
+    (Join-Path ${env:LOCALAPPDATA} 'Programs\Inno Setup 7\ISCC.exe')
+) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+if (-not $iscc) {
+    throw '找不到 Inno Setup 7 的 ISCC.exe。先装：winget install --id JRSoftware.InnoSetup -e'
+}
+
 $key = "e2e" + (Get-Random -Minimum 100000 -Maximum 999999)
-$env:KITTY_SETUP_TEST_KEY = $key
-$uninstallKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\KittyTools.Test.$key"
+# 安装程序里 Exec 的 KittyTools.exe（--quit、--uninstall-cleanup）继承这个环境变量，用的就是测试名那一套。
+$env:KITTY_PROBE_PROFILE = $key
+$uninstallKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\KittyTools.Test.${key}_is1"
 $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 $runValue = "KittyTools.Probe.$key"
 $shortcut = Join-Path ([Environment]::GetFolderPath("StartMenu")) "Programs\Kitty Tools.Test.$key.lnk"
 $dataDir = Join-Path $env:LOCALAPPDATA "KittyTools.Probe.$key"
-$log = Join-Path ([System.IO.Path]::GetTempPath()) "KittyTools-setup.Test.$key.log"
+$cleanupLog = Join-Path ([System.IO.Path]::GetTempPath()) "KittyTools.Probe.$key-uninstall.log"
+$installDir = Join-Path $work "Kitty Tools"
 $results = [System.Collections.Generic.List[object]]::new()
 $started = @()
 
@@ -55,148 +60,105 @@ function Run-Exe([string]$exe, [string]$arguments) {
     return $process.ExitCode
 }
 
-function Publish-Stub([string]$version) {
-    $out = Join-Path $work "stub-$version"
-    if (-not $NoBuild) {
-        if (Test-Path $out) { Remove-Item $out -Recurse -Force }
-        Write-Host "发布安装程序本体 $version ($Rid) ..."
-        dotnet publish (Join-Path $windowsRoot "KittyTools.Setup\KittyTools.Setup.csproj") -c Release -r $Rid "-p:Version=$version" -o $out --nologo -v q
-        if ($LASTEXITCODE -ne 0) { throw "发布 $version 失败" }
-    }
-    $stub = Join-Path $out "KittyTools.Setup.exe"
-    $setup = Join-Path $work "KittyTools-$version-setup.exe"
-    if (Test-Path $setup) { Remove-Item $setup -Force }
-    $code = Run-Exe $stub "--pack `"$stub`" `"$Zip`" `"$setup`""
-    if ($code -ne 0 -or -not (Test-Path $setup)) { throw "打包 $version 失败（exit $code）" }
+function Build-Setup([string]$version, [string]$source) {
+    $out = Join-Path $work "out"
+    & $iscc /Q "/DAppVersion=$version" "/DArch=x64" "/DSourceDir=$source" "/DTestKey=$key" "/O$out" `
+        (Join-Path $windowsRoot "installer\KittyTools.iss")
+    $setup = Join-Path $out "KittyTools-$version-windows-x64-setup-test-$key.exe"
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $setup)) { throw "编 $version 失败（ISCC exit $LASTEXITCODE）" }
     return $setup
 }
 
-# 静默卸载：Uninstall.exe 把自己复制到 %TEMP% 再接着跑、原来那份马上退出，所以等日志里多出一行 uninstall.exit。
-function Uninstall-Quiet([string]$installDir, [string]$extra) {
-    $before = if (Test-Path $log) { @(Select-String -Path $log -Pattern "uninstall.exit" -SimpleMatch).Count } else { 0 }
-    $code = Run-Exe (Join-Path $installDir "Uninstall.exe") "--quiet $extra"
+function Install-Quiet([string]$setup, [string]$extra) {
+    $log = Join-Path $work ("install-" + (Get-Date -Format "HHmmssfff") + ".log")
+    return Run-Exe $setup "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=`"$log`" $extra"
+}
+
+# 静默卸载：unins000.exe 把自己复制到 %TEMP% 再接着跑、原来那份马上退出，所以等登记键和安装目录都没了。
+function Uninstall-Quiet([string]$extra) {
+    $code = Run-Exe (Join-Path $installDir "unins000.exe") "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART $extra"
     $deadline = (Get-Date).AddSeconds(60)
-    while ((Get-Date) -lt $deadline) {
+    while ((Get-Date) -lt $deadline -and ((Test-Path $uninstallKey) -or (Test-Path $installDir))) {
         Start-Sleep -Milliseconds 500
-        if ((Test-Path $log) -and @(Select-String -Path $log -Pattern "uninstall.exit" -SimpleMatch).Count -gt $before) {
-            $line = (Select-String -Path $log -Pattern "uninstall.exit" -SimpleMatch | Select-Object -Last 1).Line
-            return "relocate=$code $($line.Substring($line.IndexOf('uninstall.exit')))"
-        }
     }
-    return "relocate=$code timeout"
+    return $code
 }
 
-function Mutex-Exists {
-    $mutex = $null
-    if ([System.Threading.Mutex]::TryOpenExisting("Local\KittyTools.Probe.$key", [ref]$mutex)) {
-        $mutex.Dispose()
-        return $true
-    }
-    return $false
+function Registered([string]$name) {
+    (Get-ItemProperty -Path $uninstallKey -Name $name -ErrorAction SilentlyContinue).$name
 }
 
-if (Test-Path $work) { Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue }
-New-Item -ItemType Directory -Force $work | Out-Null
-$setup1 = Publish-Stub "0.0.1"
-$setup2 = Publish-Stub "0.0.2"
-$parent = Join-Path $work "apps"
-$installDir = Join-Path $parent "Kitty Tools"
-Write-Host "测试名 $key，装到 $installDir"
+function Has-RunValue {
+    $null -ne (Get-ItemProperty -Path $runKey -Name $runValue -ErrorAction SilentlyContinue)
+}
+
+function Same-Dir([string]$a, [string]$b) {
+    [string]::Equals($a.TrimEnd('\'), $b.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)
+}
 
 try {
-    # 1. 静默装
-    $code = Run-Exe $setup1 "--quiet --dir `"$parent`" --no-launch"
-    $files = (Test-Path (Join-Path $installDir "KittyTools.exe")) -and (Test-Path (Join-Path $installDir "Uninstall.exe"))
-    $marker = Get-Content (Join-Path $installDir ".kitty-install") -Raw -Encoding utf8 | ConvertFrom-Json
-    $reg = Get-ItemProperty $uninstallKey
-    $regOk = $reg.DisplayName -eq "Kitty Tools" -and $reg.DisplayVersion -eq "0.0.1" -and $reg.Publisher -eq "Kitty Tools" -and
-        $reg.DisplayIcon -eq "$installDir\KittyTools.exe,0" -and $reg.InstallLocation -eq $installDir -and
-        $reg.UninstallString -eq "`"$installDir\Uninstall.exe`"" -and $reg.QuietUninstallString -eq "`"$installDir\Uninstall.exe`" --quiet" -and
-        $reg.NoModify -eq 1 -and $reg.NoRepair -eq 1 -and $reg.EstimatedSize -gt 1000 -and
-        $reg.InstallDate -eq (Get-Date -Format "yyyyMMdd") -and $reg.URLInfoAbout -eq "https://github.com/YyAdnBug/kitty-tools"
-    $run = (Get-ItemProperty $runKey -ErrorAction SilentlyContinue).$runValue
-    Check "1 静默安装" ($code -eq 0 -and $files -and $marker.path -eq $installDir -and $marker.version -eq "0.0.1" -and
-        $marker.files.Count -gt 10 -and $regOk -and (Test-Path $shortcut) -and $run -eq "`"$installDir\KittyTools.exe`"") `
-        "exit=$code files=$files marker=$($marker.path)/$($marker.version)/$($marker.files.Count) registry=$regOk shortcut=$(Test-Path $shortcut) run=$run"
+    if (Test-Path $work) { Remove-Item $work -Recurse -Force }
+    New-Item -ItemType Directory -Force (Join-Path $work "payload") | Out-Null
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($Zip, (Join-Path $work "payload"))
+    $source = Join-Path $work "payload\Kitty Tools"
+    Write-Host "编两个测试版安装程序（测试名 $key）..."
+    $setupOld = Build-Setup "0.0.1" $source
+    $setupNew = Build-Setup "0.0.2" $source
 
-    # 2. 更新：给另一个 --dir 也不该挪位置
-    $elsewhere = Join-Path $work "elsewhere"
-    $code = Run-Exe $setup2 "--quiet --dir `"$elsewhere`" --no-launch"
-    $reg = Get-ItemProperty $uninstallKey
-    Check "2 更新" ($code -eq 0 -and $reg.DisplayVersion -eq "0.0.2" -and $reg.InstallLocation -eq $installDir -and -not (Test-Path $elsewhere)) `
-        "exit=$code version=$($reg.DisplayVersion) location=$($reg.InstallLocation)"
+    Write-Host "1 不许装的位置"
+    foreach ($bad in @((Join-Path $env:WINDIR "Kitty Tools"), "\\localhost\c$\Kitty Tools")) {
+        $code = Install-Quiet $setupOld "/DIR=`"$bad`""
+        Check "1 拒绝 $bad" ($code -ne 0 -and -not (Test-Path $uninstallKey)) "exit $code"
+    }
 
-    # 3. 程序开着时安装（同版本 = 重新安装）
-    $env:KITTY_PROBE_PROFILE = $key
+    Write-Host "2 静默新装"
+    $code = Install-Quiet $setupOld "/DIR=`"$installDir`""
+    $location = Registered "InstallLocation"
+    Check "2 退出码" ($code -eq 0) "exit $code"
+    Check "2 文件" ((Test-Path (Join-Path $installDir "KittyTools.exe")) -and (Test-Path (Join-Path $installDir "unins000.exe"))) $installDir
+    Check "2 登记" ($location -and (Same-Dir $location $installDir) -and (Registered "DisplayVersion") -eq "0.0.1") "$location $(Registered 'DisplayVersion')"
+    Check "2 快捷方式" (Test-Path $shortcut) $shortcut
+    Check "2 开机启动" (Has-RunValue) $runValue
+
+    Write-Host "3 程序开着时更新"
     $app = Start-Process -FilePath (Join-Path $installDir "KittyTools.exe") -PassThru
-    $env:KITTY_PROBE_PROFILE = $null
     $started += $app
-    $deadline = (Get-Date).AddSeconds(20)
-    while (-not (Mutex-Exists) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 300 }
-    $wasRunning = Mutex-Exists
-    $code = Run-Exe $setup2 "--quiet --no-launch"
-    $app.Refresh()
-    $quitLogged = (Get-Content $log -Raw) -match "app\.quit-ok"
-    Check "3 开着时安装" ($wasRunning -and $code -eq 0 -and $app.HasExited -and $quitLogged) `
-        "running=$wasRunning exit=$code app-exited=$($app.HasExited) quit-ok=$quitLogged"
+    Start-Sleep -Seconds 5
+    $code = Install-Quiet $setupNew ""
+    $exited = $app.WaitForExit(15000)
+    Check "3 退出码" ($code -eq 0) "exit $code"
+    Check "3 程序自己退了" $exited "pid $($app.Id)"
+    Check "3 位置不变、版本变了" ((Same-Dir (Registered "InstallLocation") $installDir) -and (Registered "DisplayVersion") -eq "0.0.2") "$(Registered 'DisplayVersion')"
 
-    # 4. 静默卸载，不删数据
+    Write-Host "4 静默卸载（留数据）"
+    Set-Content -Path (Join-Path $installDir "extra-from-update.dll") -Value "x"
     New-Item -ItemType Directory -Force $dataDir | Out-Null
-    Set-Content (Join-Path $dataDir "e2e.txt") "setup-e2e" -Encoding utf8
-    $detail = Uninstall-Quiet $installDir ""
-    $run = (Get-ItemProperty $runKey -ErrorAction SilentlyContinue).$runValue
-    Check "4 卸载（留数据）" (-not (Test-Path $installDir) -and -not (Test-Path $shortcut) -and $null -eq $run -and
-        -not (Test-Path $uninstallKey) -and (Test-Path $dataDir)) `
-        "$detail dir=$(Test-Path $installDir) shortcut=$(Test-Path $shortcut) run=$run key=$(Test-Path $uninstallKey) data=$(Test-Path $dataDir)"
+    $code = Uninstall-Quiet ""
+    Check "4 安装目录整个没了" (-not (Test-Path $installDir)) "exit $code"
+    Check "4 登记没了" (-not (Test-Path $uninstallKey)) $uninstallKey
+    Check "4 快捷方式、开机启动没了" (-not (Test-Path $shortcut) -and -not (Has-RunValue)) ""
+    Check "4 数据目录还在" (Test-Path $dataDir) $dataDir
+    Check "4 程序做了清理" ((Test-Path $cleanupLog) -and (Select-String -Path $cleanupLog -Pattern "credentials" -SimpleMatch -Quiet)) $cleanupLog
 
-    # 5. 带 --with-data
-    $code = Run-Exe $setup2 "--quiet --dir `"$parent`" --no-launch --no-autostart"
-    $detail = Uninstall-Quiet $installDir "--with-data"
-    $bin = (New-Object -ComObject Shell.Application).Namespace(0xA)
-    $inBin = @($bin.Items() | Where-Object { $_.Name -eq "KittyTools.Probe.$key" }).Count -gt 0
-    Check "5 卸载（删数据）" ($code -eq 0 -and -not (Test-Path $dataDir) -and $inBin -and -not (Test-Path $installDir)) `
-        "install=$code $detail data=$(Test-Path $dataDir) in-recycle-bin=$inBin"
-
-    # 6. 安装目录里有别的文件
-    $code = Run-Exe $setup2 "--quiet --dir `"$parent`" --no-launch --no-autostart"
-    $note = Join-Path $installDir "我的笔记.txt"
-    Set-Content $note "别删我" -Encoding utf8
-    $detail = Uninstall-Quiet $installDir ""
-    $left = @(Get-ChildItem $installDir -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })
-    $leftLogged = (Get-Content $log -Raw) -match "uninstall\.leftover"
-    Check "6 有别的文件" ($code -eq 0 -and (Test-Path $note) -and $left.Count -eq 1 -and $leftLogged -and -not (Test-Path $uninstallKey)) `
-        "install=$code $detail left=$($left -join ',') leftover-logged=$leftLogged"
-    Remove-Item $installDir -Recurse -Force -ErrorAction SilentlyContinue
-
-    # 7. 载荷坏了一个字节
-    $broken = Join-Path $work "broken-setup.exe"
-    Copy-Item $setup2 $broken -Force
-    $bytes = [System.IO.File]::ReadAllBytes($broken)
-    $bytes[$bytes.Length - 64 - 100] = $bytes[$bytes.Length - 64 - 100] -bxor 0xFF
-    [System.IO.File]::WriteAllBytes($broken, $bytes)
-    $brokenParent = Join-Path $work "broken"
-    $code = Run-Exe $broken "--quiet --dir `"$brokenParent`" --no-launch"
-    Check "7 载荷损坏" ($code -eq 2 -and -not (Test-Path $brokenParent) -and -not (Test-Path $uninstallKey)) `
-        "exit=$code dir=$(Test-Path $brokenParent) key=$(Test-Path $uninstallKey)"
+    Write-Host "5 卸载时连数据一起删"
+    $code = Install-Quiet $setupNew "/DIR=`"$installDir`" /AUTOSTART=0"
+    Check "5 重装" ($code -eq 0 -and -not (Has-RunValue)) "exit $code（/AUTOSTART=0 不写开机启动）"
+    $code = Uninstall-Quiet "/REMOVEDATA=1"
+    Check "5 数据目录进了回收站" (-not (Test-Path $dataDir)) "exit $code"
 }
 finally {
-    # 只收拾自己起的进程（按 PID）和测试名下的东西。
     foreach ($process in $started) {
         if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue }
     }
-    Remove-Item $uninstallKey -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-ItemProperty $runKey -Name $runValue -ErrorAction SilentlyContinue
-    Remove-Item $shortcut -Force -ErrorAction SilentlyContinue
-    Remove-Item $dataDir -Recurse -Force -ErrorAction SilentlyContinue
-    $env:KITTY_SETUP_TEST_KEY = $null
+    if ((Test-Path $uninstallKey) -and (Test-Path (Join-Path $installDir "unins000.exe"))) {
+        Uninstall-Quiet "" | Out-Null
+    }
     $env:KITTY_PROBE_PROFILE = $null
 }
 
-$failed = @($results | Where-Object { -not $_.ok }).Count
-Write-Host "日志：$log"
-if ($failed -gt 0) {
-    Write-Host "$failed 步没过"
-    exit 1
-}
-Write-Host "七步全过。"
+$failed = @($results | Where-Object { -not $_.ok })
+Write-Host ""
+Write-Host ("{0} 项，{1} 项没过" -f $results.Count, $failed.Count)
+if ($failed.Count -gt 0) { exit 1 }
 exit 0

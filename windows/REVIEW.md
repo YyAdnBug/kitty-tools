@@ -70,10 +70,22 @@
 
 用户 2026-10-27：「你找出来，然后我 windows 上打包，并且 windows 就是 0.1.0 版本，没有现在那么多个版本」。Windows 的第一个对外版本叫 **0.1.0**，主打**剪贴板历史、截图、翻译**。
 
-**0.1.0 分工（2026-10-27 中午，用户：「要不你来接手」）**：
-- **归审查方**（在 Mac 上写、不编译，推上来）：第 4 步那几条（R41 第一条、R44、R46、R47、R48 第一条、PLAN-v9 V2）和 R65（Inno Setup）。这些文件你们先别动：`Clipboard/ClipboardPanel.xaml.cs` 的 Ctrl+K 那段、`Screenshot/PinWindow.cs` 的 `Copy`、`Shell/ShellRuntime.cs` 的 `OnSettingsChanged` 和 `ScheduleBackup`、`Settings/SettingsWindow.cs`、`Storage/ArchiveService.cs`、`Clipboard/OcrQueue.cs`、`Screenshot/OcrService.cs`、`App/Settings.cs`、`App/SetupRecord.cs`、`App/Program.cs`、`App/SingleInstance.cs`、`KittyTools.Setup/`、`KittyTools.Core/Setup*.cs`、`KittyTools.Tests/SetupTests.cs`、`build-release.ps1`、`tools/setup-e2e.ps1`、`installer/`。
-- **归你们**：R64 的五条真机验证（是真的就修；要改上面那些文件的，先在这里写一句再改）。做完以后 `git fetch && git rebase origin/windows-wip`，编译审查方推上来的提交，编译错、行为不对直接修，在这一节下面记一句；然后照第 6、7 步打包、跑 `setup-e2e.ps1`、手测、写报告。
-- 审查方每推一条就在这里记提交号。
+**0.1.0 分工（2026-10-27 中午，用户：「要不你来接手」，随后「我的 agent 本地修改的代码我都回退了，都交给你」）**：
+- **代码全部归审查方**（在 Mac 上写、不编译）。R54–R63 是你们推的（`cc019fcc`…`589511c4`），审查方复查过，都认可。
+- **你们只做这些**：
+  - `git fetch && git rebase origin/windows-wip`，编译，编译错、单测红直接修，在这一节下面记一句；
+  - 装 Inno Setup 7，照第 6、7 步打包、跑 `setup-e2e.ps1`、手测（`HANDTEST.md` 351–366 是这一轮新加的），写报告。
+  - 行为不对的，先在这里写一句，再改。
+- **审查方的进度**：
+  - `53d609e9` 第 4 步：R41 第一条、R44、R46、R47、R48 第一条、PLAN-v9 V2；
+  - `9efc8da9` R64 五条：都按建议写了，**没在 Windows 上验过**，手测 358–362；
+  - R65 Inno 安装程序（`git log --grep R65`）：`installer/KittyTools.iss`、App 的 `--quit` / `--uninstall-cleanup`、`SetupRecord` 改认 Inno 的登记、删掉 `KittyTools.Setup` 和 `Core/SetupPayload.cs`、`build-release.ps1` 调 ISCC、`setup-e2e.ps1` 重写。
+- **最可能要改的**：
+  - `.iss` 的 Pascal 没用 ISCC 编过；
+  - `CheckForMutexes` 认不认 `Local\` 前缀；
+  - `{param:...}` 在卸载程序里能不能用；
+  - `DisableReadyPage=yes` 时更新会不会照样出准备页（按钮文字设在 `wpReady` 上）；
+  - `Recovery.AskAndRepairAsync` 里 `Window.Activate()` 之后 `Loaded` 来不来。
 
 审查方已经提交了（在 Mac 上改的，**没编译**）：
 - `Directory.Build.props` 版本改成 0.1.0；`changelog.json` 的七条内部版本合成一条对外的 0.1.0。
@@ -169,7 +181,7 @@
 - `Screenshot/PinWindow.cs:311`、`Screenshot/ScreenshotCard.cs:431`：剪贴板被别的程序占着、写不进去时，什么都不显示。
 - 改：照 `ShotHistoryWindow.CopyAsync` 补一句「没能复制」（错误语气）。
 
-### R64（P1，先在 Windows 上验）五处读代码看着有问题的
+### R64（P1，先在 Windows 上验）五处读代码看着有问题的 → 五条都已按建议写（`9efc8da9`，审查方，没在 Windows 上验）
 
 验出来是真的就按建议修，都挡 0.1.0；不成立的写一句怎么验的，挪到「有异议」。
 
@@ -191,7 +203,7 @@
   - 验：用微软拼音在剪贴板搜索框里打几个字母，按 Enter 上屏，看是不是直接粘贴了选中的条目；翻译浮窗同样试一次。
   - 改：组字中这几个键直接 return。
 
-### R65（P1）安装程序换成 Inno Setup 7（0.1.0 打包之前做）
+### R65（P1）安装程序换成 Inno Setup 7（0.1.0 打包之前做） → 已写（审查方，`git log --grep R65`，没编译、没用 ISCC 编过）
 
 用户 2026-10-27：「安装 exe 的界面太简陋了，市面上没有现成的工具能使用吗，期望优化」，看过几种做法以后定了：「安装程序换成 Inno Setup 7」。现在的安装程序全是系统的任务对话框（PLAN-setup S2），几页白底弹框。
 
@@ -224,7 +236,7 @@
 - `RefreshHistory` 里读 `Shift + Tab` 来筛收藏（L633），但没有哪个按键处理会在 Shift+Tab 时调它，等于走不到（mac 是 ⇧Tab 在 全部 / 收藏 之间切）。
 - 历史里的 Delete 只看光标在不在末尾，没看有没有选中文字（剪贴板那边两样都看）。
 
-### R41（P3）几处按键和说明对不上
+### R41（P3）几处按键和说明对不上 → 第一条已写（`53d609e9`，审查方，待编译）；其余三条不挡 0.1.0
 
 - 剪贴板的 Ctrl+K 操作面板里按 Enter 只是把焦点挪到第一个匹配的按钮，**不执行**（L1862）；mac 是直接执行第一项。
 - 钉图文件头说「右键菜单同这些」，菜单里少了快速保存和恢复 100%。
@@ -256,7 +268,7 @@
   - `Stitch`（:237）的接口和现有单测（`PlanV3Batch6Tests`）的期望值不变；加一个单测：条带拼出来的和现在逐帧拼的逐像素一样。
 - **验收**：Core 单测里 200 帧、1440 宽的合成样本，新旧两种拼法结果一致，两种的分配量（`GC.GetAllocatedBytesForCurrentThread`）写进报告；真机拍一张 20000 px 的长图（测试窗口，别拍用户的内容），拍的过程中专用工作集的峰值、每拍 UI 线程的耗时，前后各量一次。
 
-### R44（P1）每保存一次设置，设置窗就在后台整页重建一次
+### R44（P1）每保存一次设置，设置窗就在后台整页重建一次 → 已写（`53d609e9`，审查方，待编译）
 
 - `Shell/ShellRuntime.cs:1021` 的 `OnSettingsChanged`：热键比过签名，但后面 :1036–1039 不管改了什么，每次都 `Theme.ApplyAccent()`（新建强调色那一组资源），再 `_settingsWindow?.RefreshTheme()`。`Settings/SettingsWindow.cs:202` 的 `RefreshTheme` 无条件 `BuildPage(_currentPage)`。
 - `SettingsService.Save()` 全仓 72 处调用，很多和设置窗无关：
@@ -279,7 +291,7 @@
 - **建议**：读流、累积放线程池，UI 合并成 33 ms 刷一次，只刷变了的那张卡；高度只在这一拍里文字行数变了时才重量。
 - **验收**：一个大模型服务译 2000 字，生成期间进程 CPU（% 单核）和 UI 线程每拍耗时，前后各量一次；PLAN-v7 第 4 批「生成中 < 3% 单核」的那个数一起报。
 
-### R46（P2）剪贴板后台识字：大图不缩、失败不记、跨线程读列表
+### R46（P2）剪贴板后台识字：大图不缩、失败不记、跨线程读列表 → 已写（`53d609e9`，审查方，待编译）
 
 - `Clipboard/OcrQueue.cs:107`：`GetSoftwareBitmapAsync` 整张解码、不缩放，一张 1440 × 30000 的长截图约 172 MB。截图那边的 `Screenshot/OcrService.cs:55` 已经按 `OcrEngine.MaxImageDimension` 先 `Fit` 了，这里没有。
 - 失败的只记在内存的 `Failed`（:15），下次启动又整张解一遍、又失败。
@@ -287,14 +299,14 @@
 - **建议**：解码时用 `BitmapTransform` 缩到上限以内（或者走 `OcrService` 那个 `Fit`）；失败的落库成空串，不再重识；待识的那一条回 UI 线程去取（`_dispatcher.TryEnqueue` + `TaskCompletionSource`）。
 - **验收**：复制一张 1440 × 20000 的图，识字期间专用工作集的峰值前后各量一次；重启后日志里同一张不再出现 `ocr.image-failed`。
 
-### R47（P2）每日备份在线程池上读 UI 线程的列表和数据库连接
+### R47（P2）每日备份在线程池上读 UI 线程的列表和数据库连接 → 已写（`53d609e9`，审查方，待编译）
 
 - `Shell/ShellRuntime.cs:852` 的 `ScheduleBackup` 在 `Task.Run` 里调 `ArchiveService.BackupDaily()`。它在 `Storage/ArchiveService.cs:111` 读 `ClipboardStore.Items`（UI 线程在改的 `List`），又调 `TranslationHistory.Search`（:134），用的是只许 UI 线程用的 `Database.Connection`。
 - 碰上那一刻在复制东西，枚举会抛「集合已修改」，当天那份就没备成；数据库连接跨线程用，是没定义的行为。
 - **建议**：要备份的数据（收藏的片段、收藏夹、生词本、设置）在 UI 线程上取成快照，序列化、加密、写文件放线程池。
 - **验收**：单测或者 `--backup-now` 调试参数：一边每 10 ms 往剪贴板库里加一条，一边备份 20 次，全部成功。
 
-### R48（P2）UI 线程上几处同步的图片活
+### R48（P2）UI 线程上几处同步的图片活 → 第一条已写（`53d609e9`，审查方，待编译）；另外两条不挡 0.1.0
 
 - `Screenshot/PinWindow.cs:313`：钉图「复制」直接 `WriteImagePng(_png)`，没带转好的 DIB，于是走到 `Clipboard/ClipboardWriter.cs:121` 的 `Task.Run(...).GetAwaiter().GetResult()`，在 UI 线程上干等 PNG → DIB（那里的注释自己写了大图要几百毫秒）。别的入口都先 `await PrepareImageAsync`。
 - `Clipboard/ClipboardStore.cs:389` 的 `RecordImage` 算一次 SHA-256，`:426` 的 `Images.Save` → `Clipboard/ImageStore.cs:22` 同步 `File.WriteAllBytes` 整张 PNG（单张上限 128 MB），再算一次 SHA-256（返回值没人用）。复制大图、截图、钉图、从历史复制都会走到。

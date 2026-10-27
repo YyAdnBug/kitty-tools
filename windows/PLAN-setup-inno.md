@@ -19,7 +19,7 @@
 | I3 | 长相 | `WizardStyle=modern dynamic windows11`（跟着系统深浅色）。右上角小图 `installer/wizard-small-*.png`，完成页左边 `installer/wizard-large-*.png`；两组都是透明底的图标，深浅色都能用，由 `tools/app-icon.swift` 生成（审查方已经出好、提交了）。安装程序自己的图标用 `KittyTools/Resources/AppIcon.ico`。只用简体中文（`compiler:Languages\ChineseSimplified.isl`），不弹语言选择 |
 | I4 | 有哪几页 | 新装：**选位置**（默认 `%LOCALAPPDATA%\Programs\Kitty Tools`，下面加一个勾选框「开机时自动打开」，默认勾上；按钮写「安装」）→ 安装进度 → **装好了**（勾选「现在打开 Kitty Tools」，默认勾上）。欢迎页、准备安装页、开始菜单文件夹页都不要。更新：不问位置、不问开机启动（照原样），按钮写「更新到 x.y.z」，然后是进度和装好了 |
 | I5 | 装在当前用户名下 | `PrivilegesRequired=lowest`，不给改成管理员模式（`PrivilegesRequiredOverridesAllowed` 不写）；`DefaultDirName={autopf}\Kitty Tools`（这种模式下就是 `%LOCALAPPDATA%\Programs`） |
-| I6 | 位置的规矩（照 S3、§2.2） | 用户选的文件夹名字不是「Kitty Tools」就在后面拼上 `\Kitty Tools`（点「浏览」选的由 `AppendDefaultDirName=yes` 管；手打的路径在 Pascal 里补）。不许装到：驱动器根目录、`{win}`、`{commonpf32}` / `{commonpf64}` 和它们下面、用户主目录本身，以及桌面 / 文档 / 下载 / 图片 / 音乐 / 视频本身；拼完以后不超过 200 个字符；要写得进去（建一个临时文件试一下）。不合规矩就提示原因、留在这一页。**静默安装也要挡**：同样的检查在 `PrepareToInstall` 里再做一遍，返回错误 |
+| I6 | 位置的规矩（照 S3、§2.2） | 用户选的文件夹名字不是「Kitty Tools」就在后面拼上 `\Kitty Tools`（点「浏览」选的由 `AppendDefaultDirName=yes` 管；手打的路径在 Pascal 里补）。拼完以后：要是本机磁盘上的路径（`X:\...`，不收网络路径）；不在 `{win}`、`{commonpf32}` / `{commonpf64}` / `ProgramFiles(Arm)` 里面；不超过 200 个字符；要写得进去（建一个临时文件试一下）。旧方案里「驱动器根目录、用户主目录、桌面这些文件夹本身」那几条，拼上「Kitty Tools」以后不会再撞上，不用单独查（选 `D:\` 就装到 `D:\Kitty Tools`）。不合规矩就提示原因、留在这一页。**静默安装也要挡**：同样的检查在 `PrepareToInstall` 里再做一遍，返回错误 |
 | I7 | 已经装过 | `UsePreviousAppDir=yes`、`DisableDirPage=auto`：更新时直接用原来的位置。要装的版本和登记里的 `DisplayVersion` 一样或更旧：先问一句「已经装了 x.y.z，要重新安装吗？」（是 / 否，默认否），静默时照装 |
 | I8 | 程序正开着（照 S5） | `PrepareToInstall` 和卸载的 `InitializeUninstall` 里：互斥量 `Local\KittyTools` 在就运行 `{app}\KittyTools.exe --quit`（§4.2），最多等 10 s 看互斥量放掉；还在就提示「请从托盘退出 Kitty Tools 再试」，安装停在这一步、卸载取消。`CloseApplications=no`：不让「重新启动管理器」去强关，强关会丢掉剪贴板里还没提交的删除。**不按进程名结束** |
 | I9 | 装什么、装完做什么 | `[Files]` 把发布目录（和 zip 里的一模一样）整个放进 `{app}`；`[Icons]` 建 `{userprograms}\Kitty Tools.lnk`（和 `App/StartMenuShortcut.cs` 同一个位置、同一个名字，App 第一次运行时会看到它已经在）；勾了「开机时自动打开」就在 `[Registry]` 写 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 的 `KittyTools` = `"{app}\KittyTools.exe"`（和 `App/Autostart.cs` 写的一字不差），带 `uninsdeletevalue`；`[Run]` 用 `postinstall nowait skipifsilent` 打开程序 |
@@ -32,7 +32,7 @@
 
 ## 2. `installer/KittyTools.iss` 的骨架
 
-Pascal 那几段（I4 的勾选框和按钮文字、I6、I7、I8、I10 的提问）自己写，照上面的规矩；用到的函数（`CheckForMutexes`、`Exec`、`WizardForm` 的控件、`UninstallSilent`、`ExpandConstant`）以 Inno 7 的帮助为准。
+**审查方 2026-10-27 已经写好完整的 `installer/KittyTools.iss`（带 BOM 的 UTF-8，没用 ISCC 编过）**，下面是当初的骨架，以文件为准。Pascal 用到的函数（`CheckForMutexes`、`Exec`、`WizardForm` 的控件、`UninstallSilent`、`ExpandConstant`、`{param:...}`）以 Inno 7 的帮助为准，编不过就照帮助改。
 
 ```iss
 ; Kitty Tools 的安装程序（PLAN-setup-inno）。build-release.ps1 调：
@@ -162,12 +162,13 @@ Type: filesandordirs; Name: "{app}"
   - 「发布安装程序本体、把 zip 接在后面」那一段换成调 `ISCC.exe`：先找 `%ProgramFiles%\Inno Setup 7\ISCC.exe`，再找 `%ProgramFiles(x86)%\Inno Setup 7\ISCC.exe`，都没有就报「先装 Inno Setup 7（winget install --id JRSoftware.InnoSetup -e）」并中止。
   - `SourceDir` 就是打 zip 的那个 `<stage>\Kitty Tools`，setup.exe 和 zip 装的东西一模一样。
   - setup.exe 照旧出 `.sha256`，`SIZES.txt` 照旧记大小。
-- **`tools/setup-e2e.ps1`** 重写。用 `/DTestKey=E2E` 编一个测试版，装到 `%TEMP%` 下的临时目录，全程设 `KITTY_PROBE_PROFILE=E2E`（`KITTY_SETUP_TEST_KEY` 是旧安装程序用的，跟着删掉），**不碰真的登记、开机启动和快捷方式**：
-  1. 静默新装（`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=<临时目录> /LOG=<日志>`，`/TASKS` 或 Pascal 的参数选上开机启动）：文件齐、登记键在且 `InstallLocation` 对、`DisplayVersion` 对、测试名的快捷方式和 Run 值都在。
-  2. 程序开着时再装一次：它被 `--quit` 叫退（日志里有 `instance.quit`），装完能再启动。
-  3. 装到 `C:\` 和 `%USERPROFILE%`：都被拒，退出码非 0，什么都没写。
-  4. 把一个更新 zip 解进去（模拟程序内更新多出来的文件），再静默卸载（`unins000.exe /VERYSILENT /SUPPRESSMSGBOXES`）：安装目录整个没了、登记键没了、快捷方式和 Run 值没了、测试名的凭据没了、数据目录还在（静默卸载默认不删数据）。
-  5. 用 `--remove-data` 的那条路再走一遍：数据目录进了回收站。
+- **`tools/setup-e2e.ps1`** 重写（审查方 2026-10-27 已写，见脚本文件头）。用 `/DTestKey=<随机名>` 编两个测试版（0.0.1、0.0.2），装到 `windows\build\setup-e2e` 下，全程设 `KITTY_PROBE_PROFILE=<同一个名字>`（`KITTY_SETUP_TEST_KEY` 是旧安装程序用的，跟着删掉），**不碰真的登记、开机启动和快捷方式**：
+  1. 装到 `%WINDIR%\Kitty Tools`、装到网络路径：都被拒，退出码非 0，什么都没写。
+  2. 静默新装：文件齐（含 `unins000.exe`）、登记键在且 `InstallLocation` / `DisplayVersion` 对、测试名的快捷方式和 Run 值都在。
+  3. 程序开着时装 0.0.2：它被 `--quit` 叫退，位置不变、`DisplayVersion` 变成 0.0.2。
+  4. 安装目录里多放一个文件（模拟程序内更新带进来的），静默卸载：安装目录整个没了、登记键没了、快捷方式和 Run 值没了、数据目录还在、`%TEMP%` 里的清理日志有 credentials 那一行。
+  5. 带 `/AUTOSTART=0` 重装（Run 值不写），再 `/REMOVEDATA=1` 静默卸载：数据目录进了回收站。
+- 静默安装 / 卸载用的两个参数（`.iss` 的 `{param:...}`）：安装 `/AUTOSTART=0` 不写开机启动；卸载 `/REMOVEDATA=1` 连数据一起挪进回收站。
 - 每一步打印一行结果，有一步不过就退出码非 0。`build-release.ps1` 不跑它，发版前手动跑一次（同 `update-e2e.ps1`）。
 
 ## 7. 验收

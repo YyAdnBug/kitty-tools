@@ -2150,8 +2150,8 @@ internal sealed class SettingsWindow : Window
 
     private async Task UninstallAsync()
     {
-        // R37：安装程序装的交给 Uninstall.exe：它自己确认（含「同时删除我的数据」），先通过管道叫我们退出，
-        // 删快捷方式、开机启动、登记和程序文件。这里不再弹自己的对话框。
+        // R37 / PLAN-setup-inno I11：安装程序装的交给 Inno 的 unins000.exe：它自己确认（含「同时删除我的数据」），
+        // 先用 --quit 叫我们退出，删快捷方式、开机启动、凭据、登记和程序文件。这里不再弹自己的对话框。
         if (SetupRecord.Uninstaller() is { } uninstaller)
         {
             try
@@ -2205,7 +2205,7 @@ internal sealed class SettingsWindow : Window
         {
             // R25：先停掉所有会写数据目录的后台服务、关掉 SQLite，再挪进回收站。
             ShellRuntime.Instance?.PrepareForUninstall();
-            if (!Recycle(Paths.DataDirectory))
+            if (!UninstallCleanup.Recycle(Paths.DataDirectory))
             {
                 var failed = new ContentDialog
                 {
@@ -2243,29 +2243,6 @@ internal sealed class SettingsWindow : Window
         }
 
         Microsoft.UI.Xaml.Application.Current.Exit();
-    }
-
-    /// <summary>把整个目录挪进回收站；返回是否真的不在了（R25：失败要能告诉用户）。</summary>
-    private static bool Recycle(string path)
-    {
-        try
-        {
-            if (!Directory.Exists(path))
-            {
-                return true;
-            }
-
-            Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(
-                path,
-                Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
-                Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
-            return !Directory.Exists(path);
-        }
-        catch (Exception ex)
-        {
-            Log.Warn($"uninstall.recycle-failed {ex.GetType().Name}");
-            return false;
-        }
     }
 
     private void OpenDataDirectory()

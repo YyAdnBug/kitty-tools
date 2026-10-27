@@ -1,6 +1,6 @@
 // 单实例：命名互斥量 Local\KittyTools（Debug 版 .Dev）。
 // 第二个实例把「打开设置」转给第一个，然后自己退出。
-// 管道还认 quit：安装 / 卸载程序（KittyTools.Setup，PLAN-setup §4.1）发来，走和托盘「退出」一样的 ShellRuntime.Exit。
+// 管道还认 quit：KittyTools.exe --quit 发来（Inno 安装 / 卸载时调，PLAN-setup-inno I8），走和托盘「退出」一样的 ShellRuntime.Exit。
 using System.IO.Pipes;
 using System.Text;
 using Microsoft.UI.Dispatching;
@@ -71,6 +71,22 @@ internal static class SingleInstance
             Name = "KittyTools.InstanceServer",
         };
         thread.Start();
+    }
+
+    /// <summary>--quit：有一个在跑就叫它退出（不等它退完，安装程序自己看互斥量）；连不上管道 = 没有在跑的，什么都不做。</summary>
+    public static void SendQuit()
+    {
+        try
+        {
+            using var pipe = new NamedPipeClientStream(".", Paths.InstancePipeName, PipeDirection.Out);
+            pipe.Connect(1500);
+            using var writer = new StreamWriter(pipe, new UTF8Encoding(false)) { AutoFlush = true, NewLine = "\n" };
+            writer.WriteLine(QuitCommand);
+        }
+        catch (Exception)
+        {
+            // 没有在跑的：本来就不用退。
+        }
     }
 
     private static void NotifyFirstInstance()

@@ -17,6 +17,18 @@ public static class Program
             return UpdateE2E.Run(args);
         }
 
+        // 安装程序（Inno，PLAN-setup-inno §4.2 / §4.3）调的两个：不建窗口、不占单实例、不写数据目录，做完就退。
+        if (args.Contains("--quit", StringComparer.OrdinalIgnoreCase))
+        {
+            SingleInstance.SendQuit();
+            return 0;
+        }
+
+        if (UninstallCleanup.IsRequested(args))
+        {
+            return UninstallCleanup.Run(args);
+        }
+
         // 自动更新换上的新版本要等旧进程退出并放掉互斥量，所以带 --updated 时多等几秒；
         // 数据库恢复完重启自己（--restarted，REVIEW R64 B）也一样。
         var updated = args.Contains("--updated", StringComparer.OrdinalIgnoreCase) ||
