@@ -22,12 +22,6 @@ internal sealed partial class RecordingHud
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SetWindowDisplayAffinity(IntPtr hwnd, uint affinity);
 
-    [System.Runtime.InteropServices.LibraryImport("user32.dll", EntryPoint = "GetWindowLongW")]
-    private static partial int GetWindowLong(IntPtr hwnd, int index);
-
-    [System.Runtime.InteropServices.LibraryImport("user32.dll", EntryPoint = "SetWindowLongW")]
-    private static partial int SetWindowLong(IntPtr hwnd, int index, int value);
-
     private static RecordingHud? _instance;
 
     /// <summary>R33 截图自检（WindowShot）用：当前这扇窗口的 HWND，没开就是 0。</summary>
@@ -48,16 +42,7 @@ internal sealed partial class RecordingHud
     private RecordingHud(PixelBounds region)
     {
         _window = new Window { Title = "录屏" };
-        _window.SystemBackdrop = new TransparentBackdrop();
-        _window.AppWindow.IsShownInSwitchers = false;
-        var presenter = OverlappedPresenter.Create();
-        presenter.IsAlwaysOnTop = true;
-        presenter.IsResizable = false;
-        presenter.IsMaximizable = false;
-        presenter.IsMinimizable = false;
-        presenter.SetBorderAndTitleBar(false, false);
-        _window.AppWindow.SetPresenter(presenter);
-        _window.ExtendsContentIntoTitleBar = true;
+        HudFrame.Apply(_window);
 
         var dot = new Ellipse
         {
@@ -124,12 +109,10 @@ internal sealed partial class RecordingHud
         panel.Children.Add(_abandon);
         panel.Children.Add(stop);
 
+        // 铺满整扇窗口：圆角、阴影、发丝线由 DWM 画（HudFrame）。
         var root = new Border
         {
-            CornerRadius = new CornerRadius(10),
-            Background = new SolidColorBrush(ColorHelper.FromArgb(235, 32, 32, 32)),
-            BorderBrush = new SolidColorBrush(ColorHelper.FromArgb(60, 255, 255, 255)),
-            BorderThickness = new Thickness(1),
+            Background = new SolidColorBrush(ColorHelper.FromArgb(255, 32, 32, 32)),
             Padding = new Thickness(12, 6, 10, 6),
             Child = panel,
         };
@@ -145,12 +128,9 @@ internal sealed partial class RecordingHud
             region.Left, region.Top, region.Right, region.Bottom,
             display.Work.Left, display.Work.Top, display.Work.Right, display.Work.Bottom,
             display.Scale);
-        _window.AppWindow.MoveAndResize(new RectInt32(
-            placement.X, placement.Y, placement.Width, placement.Height));
+        _window.AppWindow.MoveAndResize(HudFrame.WithFrame(_window, new RectInt32(
+            placement.X, placement.Y, placement.Width, placement.Height)));
         var hwnd = (IntPtr)WinRT.Interop.WindowNative.GetWindowHandle(_window);
-        // R22：显示但不抢焦点（用户接着打的字还在原来的程序里）。
-        var style = GetWindowLong(hwnd, -20);
-        SetWindowLong(hwnd, -20, style | 0x08000000 /* WS_EX_NOACTIVATE */);
         _window.AppWindow.Show(false);
         if (Environment.GetEnvironmentVariable("KITTY_HUD_CAPTURE") != "1")
         {

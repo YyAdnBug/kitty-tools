@@ -36,16 +36,7 @@ internal sealed partial class AudioHud
     {
         _pending = pending;
         _window = new Window { Title = "录音" };
-        _window.SystemBackdrop = new TransparentBackdrop();
-        _window.AppWindow.IsShownInSwitchers = false;
-        var presenter = OverlappedPresenter.Create();
-        presenter.IsAlwaysOnTop = true;
-        presenter.IsResizable = false;
-        presenter.IsMaximizable = false;
-        presenter.IsMinimizable = false;
-        presenter.SetBorderAndTitleBar(false, false);
-        _window.AppWindow.SetPresenter(presenter);
-        _window.ExtendsContentIntoTitleBar = true;
+        HudFrame.Apply(_window);
 
         var dot = new Ellipse
         {
@@ -145,13 +136,10 @@ internal sealed partial class AudioHud
         row.Children.Add(_pause);
         row.Children.Add(stop);
 
+        // 铺满整扇窗口：圆角、阴影、发丝线由 DWM 画（HudFrame）。
         var root = new Border
         {
-            Height = 40,
-            CornerRadius = new CornerRadius(8),
-            Background = new SolidColorBrush(Theme.Argb(235, 0, 0, 0)),
-            BorderBrush = new SolidColorBrush(Theme.Argb(36, 255, 255, 255)),
-            BorderThickness = new Thickness(0.5),
+            Background = new SolidColorBrush(Theme.Argb(255, 28, 28, 28)),
             Padding = new Thickness(12, 4, 8, 4),
             Child = row,
         };
@@ -162,10 +150,7 @@ internal sealed partial class AudioHud
         var height = (int)Math.Round(40 * display.Scale);
         var x = display.Work.Left + (display.Work.Width - width) / 2;
         var y = display.Work.Top + (int)Math.Round(12 * display.Scale);
-        _window.AppWindow.MoveAndResize(new RectInt32(x, y, width, height));
-        var hwnd = (IntPtr)WinRT.Interop.WindowNative.GetWindowHandle(_window);
-        var style = GetWindowLong(hwnd, -20);
-        SetWindowLong(hwnd, -20, style | 0x08000000);
+        _window.AppWindow.MoveAndResize(HudFrame.WithFrame(_window, new RectInt32(x, y, width, height)));
         _window.AppWindow.Show(false);
 
         _tick = DispatcherQueue.GetForCurrentThread()!.CreateTimer();
@@ -263,10 +248,4 @@ internal sealed partial class AudioHud
     {
         _pause.Content = AudioHost.IsPaused ? "继续" : "暂停";
     }
-
-    [System.Runtime.InteropServices.LibraryImport("user32.dll", EntryPoint = "GetWindowLongW")]
-    private static partial int GetWindowLong(IntPtr hwnd, int index);
-
-    [System.Runtime.InteropServices.LibraryImport("user32.dll", EntryPoint = "SetWindowLongW")]
-    private static partial int SetWindowLong(IntPtr hwnd, int index, int value);
 }
