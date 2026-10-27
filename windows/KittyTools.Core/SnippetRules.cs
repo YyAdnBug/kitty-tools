@@ -13,10 +13,11 @@ public static class SnippetRules
     public const int MaxCursorBackChars = 500;
 
     /// <summary>支持 {name} 和 {name:参数} 两种写法；不认识的占位符原样留着。</summary>
+    /// <param name="uuid">每出现一处 {uuid} 调一次：每处、每次粘贴都应该是新的（REVIEW R61）。</param>
     public static SnippetExpansion Expand(
         string template,
         DateTimeOffset now,
-        string uuid,
+        Func<string> uuid,
         string clipboard,
         IReadOnlyList<string> history)
     {
@@ -58,7 +59,7 @@ public static class SnippetRules
                     builder.Append(Weekday(now));
                     break;
                 case "uuid":
-                    builder.Append(uuid);
+                    builder.Append(uuid());
                     break;
                 case "clipboard":
                     var depth = 0;

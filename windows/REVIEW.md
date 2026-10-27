@@ -148,7 +148,7 @@
 - `Translate/TranslateWindow.cs` 的 `ReplaceWith`（:885 起）也一样：失败时把 `Paster` 给的具体原因换成「没能切回原窗口」。
 - 改：失败就 return，看返回值再报成功；`ReplaceWith` 失败时不再另报一遍。
 
-### R61（P3）片段里的 `{uuid}` 每次都一样
+### R61（P3）片段里的 `{uuid}` 每次都一样 → 已修（`70e5814`）
 
 - `Clipboard/Expander.cs:25`：传进去的是片段自己的 `Uid`，每次粘贴、同一片段里的几处都是同一个值；mac 是每处各生成一个新的。
 - 改：`SnippetRules.Expand` 的 uuid 参数改成一个生成函数，每处现生成一个 `Guid`；单测补「同一片段两处不一样、两次粘贴不一样」。

@@ -10,7 +10,14 @@ public sealed class SnippetRulesTests
     private static readonly DateTimeOffset Now = new(2026, 10, 25, 9, 5, 0, TimeSpan.FromHours(8));
 
     private static SnippetExpansion Expand(string template, string clipboard = "CURRENT", params string[] history)
-        => SnippetRules.Expand(template, Now, "ABCD-1234", clipboard, history);
+        => SnippetRules.Expand(template, Now, Sequential(), clipboard, history);
+
+    /// <summary>每调一次出一个新值，用来看「同一片段里两处、两次粘贴不一样」。</summary>
+    private static Func<string> Sequential()
+    {
+        var count = 0;
+        return () => "ABCD-" + (++count);
+    }
 
     [TestMethod]
     public void ReplacesDateAndTime()
@@ -19,7 +26,23 @@ public sealed class SnippetRulesTests
         Assert.AreEqual("09:05", Expand("{time}").Text);
         Assert.AreEqual("2026-10-25 09:05", Expand("{datetime}").Text);
         Assert.AreEqual("星期日", Expand("{weekday}").Text);
-        Assert.AreEqual("ABCD-1234", Expand("{uuid}").Text);
+        Assert.AreEqual("ABCD-1", Expand("{uuid}").Text);
+    }
+
+    [TestMethod]
+    public void UuidIsNewForEachOccurrenceAndEachPaste()
+    {
+        // REVIEW R61：同一片段里的两处不一样。
+        Assert.AreEqual("ABCD-1-ABCD-2", Expand("{uuid}-{uuid}").Text);
+
+        // 两次粘贴也不一样（用真的生成器，和 Expander 传的一样）。
+        static string One() => SnippetRules.Expand(
+            "{uuid}", Now, () => Guid.NewGuid().ToString("D").ToUpperInvariant(),
+            "CURRENT", Array.Empty<string>()).Text;
+        var first = One();
+        var second = One();
+        Assert.AreNotEqual(first, second);
+        Assert.AreEqual(36, first.Length);
     }
 
     [TestMethod]

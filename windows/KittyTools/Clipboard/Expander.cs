@@ -23,7 +23,8 @@ internal static class Expander
         var expansion = SnippetRules.Expand(
             entry.Text!,
             DateTimeOffset.Now,
-            entry.Uid ?? Guid.NewGuid().ToString("D").ToUpperInvariant(),
+            // REVIEW R61：每处 {uuid} 现生成一个，不再是整个片段共用一个 uid。
+            () => Guid.NewGuid().ToString("D").ToUpperInvariant(),
             clipboard: history.FirstOrDefault() ?? string.Empty,
             history);
         return expansion;
