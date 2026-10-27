@@ -154,6 +154,30 @@ import SwiftUI
   /// 这一条有没有文件可以显示 / 打开（没有时那一项置灰）
   func hasFile(_ item: ShotHistory.Item) -> Bool { (item.filePath ?? item.savedPath) != nil }
 
+  /// 网格一行放得下几张：方向键的 ↑↓ 要跳一行。由视图量出宽度后写进来
+  @ObservationIgnored var columnsPerRow = 4
+
+  /// 一行几张：LazyVGrid 的 .adaptive(minimum:) 就是「按最小宽尽量塞，至少一列」。纯函数，配单测
+  static func columns(width: CGFloat, card: CGFloat, spacing: CGFloat, padding: CGFloat) -> Int {
+    max(1, Int((width - padding * 2 + spacing) / (card + spacing)))
+  }
+
+  /// 方向键挪到第几张：夹在两头、不绕圈（绕圈时按住 → 会从最后一张跳回开头，看着像乱跳）。纯函数，配单测
+  static func stepped(from index: Int, by step: Int, count: Int) -> Int {
+    min(max(index + step, 0), max(count - 1, 0))
+  }
+
+  /// 方向键换选中（没选中的时候选第一张）
+  func move(by step: Int) {
+    let list = shown
+    guard !list.isEmpty else { return }
+    guard let now = selection.flatMap({ id in list.firstIndex { $0.id == id } }) else {
+      selection = list.first?.id
+      return
+    }
+    selection = list[Self.stepped(from: now, by: step, count: list.count)].id
+  }
+
   func delete(_ ids: [UUID]) {
     if let selection, ids.contains(selection) { self.selection = nil }
     history.remove(ids)
@@ -165,6 +189,7 @@ import SwiftUI
   let window: NSWindow
   let model: ShotHistoryModel
   var onClose: () -> Void = {}
+  private var keyMonitor: Any?
 
   var isVisible: Bool { window.isVisible }
 
@@ -198,8 +223,43 @@ import SwiftUI
   }
 
   func windowWillClose(_ notification: Notification) {
+    removeKeyMonitor()
     NSApp.leaveDockIfNoWindows(closing: window)
     onClose()
+  }
+
+  /// 窗口自己认的键：**⇧⌘S 另存为**。不挂 SwiftUI 的隐藏按钮——同一个字母上挂 ⌘S、⇧⌘S 两颗按钮，
+  /// 实测 ⌘S 会被带 ⇧ 的那颗抢走（三次里错一两次，和 NotesWindow 的 ⇧⌘Z 是同一个坑）。
+  /// 别的键都在 ShotHistoryView.shortcuts
+  static func handlesKeyDown(_ event: NSEvent, in window: NSWindow, model: ShotHistoryModel)
+    -> Bool
+  {
+    guard event.window === window else { return false }
+    guard
+      event.modifierFlags.intersection([.command, .control, .option, .shift])
+        == [.command, .shift],
+      event.charactersIgnoringModifiers?.lowercased() == "s",
+      let item = model.selected, item.filePath == nil  // 录制的那几条没有「另存为」
+    else { return false }
+    model.actions.saveAs(item)
+    return true
+  }
+
+  func windowDidBecomeKey(_ notification: Notification) {
+    guard keyMonitor == nil else { return }
+    keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+      let handled = MainActor.assumeIsolated {
+        self.map { Self.handlesKeyDown(event, in: $0.window, model: $0.model) } ?? false
+      }
+      return handled ? nil : event
+    }
+  }
+
+  func windowDidResignKey(_ notification: Notification) { removeKeyMonitor() }
+
+  private func removeKeyMonitor() {
+    if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+    keyMonitor = nil
   }
 }
 

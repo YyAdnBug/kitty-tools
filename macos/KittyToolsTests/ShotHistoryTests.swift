@@ -2,6 +2,8 @@
 // 过期和超总量的清理、开关关掉时不记。都在临时目录里跑，不碰用户的数据目录。
 
 import AppKit
+import Carbon.HIToolbox
+import SwiftUI
 import Testing
 import UniformTypeIdentifiers
 
@@ -256,10 +258,7 @@ struct ShotHistoryTests {
       model.touch()
       redrawn = changed
     }
-    let holder = ShotHistoryWindow(model: model, frameName: nil)
-    let window = holder.window
-    window.setFrameOrigin(NSPoint(x: -20000, y: -20000))  // 屏幕外，不弹到用户眼前
-    window.orderFront(nil)
+    let window = stage(ShotHistoryView(model: model))
     defer { window.orderOut(nil) }
     let settle = { for _ in 0..<4 { RunLoop.main.run(until: .now.addingTimeInterval(0.05)) } }
     settle()
@@ -327,6 +326,111 @@ struct ShotHistoryTests {
     #expect(history.dragProvider(for: after).suggestedName == "我自己命的名.png")
   }
 
+  /// 摆一扇屏幕外的窗口（同全部便签窗口的那几扇：不激活、不会被 AppKit 拽回屏幕里）
+  private func stage(_ view: some View) -> NSWindow {
+    let window = Offscreen(contentViewController: .windowContent(view))
+    window.styleMask = [.titled, .closable, .resizable, .fullSizeContentView]
+    window.toolbarStyle = .unified
+    window.isReleasedWhenClosed = false
+    window.setContentSize(NSSize(width: 960, height: 620))
+    window.setFrameOrigin(NSPoint(x: -20000, y: -20000))
+    window.orderFront(nil)
+    return window
+  }
+
+  /// 窗口里的快捷键真按一遍（屏幕外的窗口、不激活，事件直接交给 performKeyEquivalent）：
+  /// 挂在看不见的按钮上的键最容易「挂上了却不灵」，光看代码看不出来
+  @Test func shortcutsReachTheActions() async throws {
+    let (history, root) = try makeHistory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    var ids: [UUID] = []
+    for _ in 0..<3 { ids.append(try #require(await history.record(image(), scale: 2))) }
+    let model = ShotHistoryModel(history: history)
+    var done: [String] = []
+    model.actions.copy = { _ in done.append("拷贝") }
+    model.actions.save = { _ in done.append("存储") }
+    model.actions.saveAs = { _ in done.append("另存为") }
+    model.actions.pin = { _ in done.append("钉图") }
+    model.actions.recognize = { _ in done.append("识字") }
+    model.actions.edit = { _ in done.append("改标注") }
+    let window = stage(ShotHistoryView(model: model))
+    defer { window.orderOut(nil) }
+    #expect(window.screen == nil)  // 没被挪进屏幕里（跑测试时不闪窗口）
+    let settle = { for _ in 0..<4 { RunLoop.main.run(until: .now.addingTimeInterval(0.05)) } }
+    func press(
+      _ characters: String, _ keyCode: Int, _ flags: NSEvent.ModifierFlags = .command,
+      plain: String? = nil
+    ) throws -> Bool {
+      defer { settle() }
+      return window.performKeyEquivalent(
+        with: try #require(
+          NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, characters: characters,
+            charactersIgnoringModifiers: plain ?? characters, isARepeat: false,
+            keyCode: UInt16(keyCode))))
+    }
+    func arrow(_ scalar: Int, _ keyCode: Int) throws -> Bool {
+      let text = String(UnicodeScalar(UInt32(scalar))!)
+      return try press(text, keyCode, [], plain: text)
+    }
+    settle()
+
+    // 没选中的时候：⌘C 不接（那颗按钮是灰的），事件让给别人
+    #expect(try !press("c", kVK_ANSI_C))
+    #expect(done.isEmpty)
+
+    // 方向键挑：最新的在最前
+    #expect(try arrow(NSRightArrowFunctionKey, kVK_RightArrow))
+    #expect(model.selection == ids[2])
+    #expect(try arrow(NSRightArrowFunctionKey, kVK_RightArrow))
+    #expect(model.selection == ids[1])
+    // ↓ 跳一行（一行几张由窗口宽度量出来，少于一行时落到最后一张）
+    let columns = model.columnsPerRow
+    #expect(columns >= 1)
+    #expect(try arrow(NSDownArrowFunctionKey, kVK_DownArrow))
+    #expect(model.selection == ids[0])
+    #expect(try arrow(NSUpArrowFunctionKey, kVK_UpArrow))
+    #expect(model.selection == ids[min(2, columns)])
+    #expect(try arrow(NSLeftArrowFunctionKey, kVK_LeftArrow))
+
+    // 选中了：每个键落到对应的动作上
+    model.selection = ids[1]
+    settle()
+    #expect(try press("c", kVK_ANSI_C))
+    #expect(try press("s", kVK_ANSI_S))
+    // ⇧⌘S 是窗口自己认的（本地按键监听在 performKeyEquivalent 之前，屏外发事件走不到那条路）
+    #expect(
+      ShotHistoryWindow.handlesKeyDown(
+        try #require(
+          NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [.command, .shift], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, characters: "S",
+            charactersIgnoringModifiers: "S", isARepeat: false, keyCode: UInt16(kVK_ANSI_S))),
+        in: window, model: model))
+    #expect(try press("p", kVK_ANSI_P))
+    #expect(try press("o", kVK_ANSI_O))
+    #expect(try press("\r", kVK_Return, []))
+    #expect(done == ["拷贝", "存储", "另存为", "钉图", "识字", "改标注"], "实际：\(done)")
+
+    // ⌘1…⌘4 换筛选
+    #expect(try press("3", kVK_ANSI_3) && model.filter == .scroll)
+    #expect(try press("1", kVK_ANSI_1) && model.filter == .all)
+  }
+
+  /// 一行几张、方向键挪到第几张（纯函数）
+  @Test func gridStepping() {
+    // .adaptive(minimum: 168)、间距 12、两边各留 16
+    #expect(ShotHistoryModel.columns(width: 420, card: 168, spacing: 12, padding: 16) == 2)
+    #expect(ShotHistoryModel.columns(width: 680, card: 168, spacing: 12, padding: 16) == 3)
+    #expect(ShotHistoryModel.columns(width: 100, card: 168, spacing: 12, padding: 16) == 1)
+    // 夹在两头、不绕圈
+    #expect(ShotHistoryModel.stepped(from: 0, by: -1, count: 5) == 0)
+    #expect(ShotHistoryModel.stepped(from: 4, by: 1, count: 5) == 4)
+    #expect(ShotHistoryModel.stepped(from: 1, by: 3, count: 5) == 4)
+    #expect(ShotHistoryModel.stepped(from: 0, by: 1, count: 0) == 0)
+  }
+
   /// 窗口建得出来、标题对，关掉之后不再可见
   @Test func windowOpens() throws {
     let (history, root) = try makeHistory()
@@ -369,5 +473,12 @@ struct ShotHistoryTests {
     _ = await history.record(image(), scale: 2)
     #expect(history.items.count == 1)
     #expect(!FileManager.default.fileExists(atPath: history.url(for: first).path))
+  }
+}
+
+/// 屏幕外的窗口：不让 AppKit 把它拽回屏幕里（同 NotesWindowTests）
+private final class Offscreen: NSWindow {
+  override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+    frameRect
   }
 }

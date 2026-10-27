@@ -445,8 +445,17 @@ struct ShortcutsSheet: View {
         title: "截图历史", symbol: "clock.arrow.circlepath", color: Style.Family.screenshot,
         features: [.screenshot], globals: [.shotHistory],
         entries: [
-          Entry("双击", text: "改标注（录制的是用默认 App 打开）"),
+          Entry("↑↓", "←→", text: "在卡片之间挑（←→ 前一张 / 后一张，↑↓ 上下一行；搜索框里打字时让给它）"),
+          Entry("↩", "双击", text: "改标注（录制的是用默认 App 打开）"),
+          Entry("⌘C", text: "拷贝那一张（画过标注的带标注）"),
+          Entry("⌘S", "⇧⌘S", text: "存储到快速保存目录 / 另存为…"),
+          Entry("⌘P", text: "钉到屏幕"),
+          Entry("⌘O", text: "识字并拷贝"),
+          Entry("⇧⌘R", text: "在访达中显示（存过盘的、录制的那几条才有）"),
+          Entry("⌘F", text: "搜索（搜来源 App 和种类）"),
+          Entry("⌘1", "⌘4", text: "换筛选：⌘1 全部、⌘2 截图、⌘3 长截图、⌘4 录制"),
           Entry("⌫", text: "删掉选中的那条"),
+          Entry("拖出去", text: "发一份到别的 App 或文件夹（历史里那条还在）"),
         ]),
       // 晾衣绳（第十族，2026-10-26 拍板 C1 C3）：全局的「晾衣绳」不设默认键，没设时那一行写「未设置」。
       // 绳子上的动作在 ClotheslineView 的 CardMouse（面板永不当 key，没有按键）

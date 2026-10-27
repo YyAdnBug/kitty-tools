@@ -8,6 +8,8 @@ import SwiftUI
 struct ShotHistoryView: View {
   @Bindable var model: ShotHistoryModel
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  /// 光标在不在搜索框里：在的话方向键和 ⌘C 让给它（见 shortcuts）
+  @FocusState private var searching: Bool
 
   /// 网格里一张卡多宽（高按 3:2 留，图按自己的比例缩在里面）
   static let cardWidth: CGFloat = 168
@@ -20,6 +22,7 @@ struct ShotHistoryView: View {
         Divider()
         detail(item).frame(width: 280)
       }
+      shortcuts
     }
     .toolbar {
       ToolbarItem(placement: .principal) {
@@ -31,14 +34,10 @@ struct ShotHistoryView: View {
       }
     }
     .searchable(text: $model.search, prompt: "搜来源或种类")
+    .searchFocused($searching)
     .onKeyPress(.delete) {
       guard let item = model.selected else { return .ignored }
       model.deleting = [item.id]
-      return .handled
-    }
-    .onKeyPress(.return) {
-      guard let item = model.selected else { return .ignored }
-      edit(item)
       return .handled
     }
     .confirmationDialog(
@@ -58,6 +57,54 @@ struct ShotHistoryView: View {
     }
     .symbolEffectsRemoved(reduceMotion)
     .appAccent()
+  }
+
+  // MARK: 快捷键
+
+  /// 窗口里的键。挂在看不见的按钮上（同全部便签窗口）：挂在工具栏项上的话，窗口一窄工具栏收进「»」，
+  /// 键就跟着不灵了。⌫ 删除还是 onKeyPress（SwiftUI 的 .keyboardShortcut(.delete) 认的不是 ⌫ 键，
+  /// 见 NotesWindowView.shortcuts）。
+  /// 方向键和 ⌘C 在搜索框里打字时让开：performKeyEquivalent 比输入框先看到键，不让开就没法在搜索框里
+  /// 挪光标、拷贝选中的字。
+  /// ⇧⌘S 另存为不在这里：同一个字母上挂 ⌘S、⇧⌘S 两颗，⌘S 会被带 ⇧ 的那颗抢走（实测，三次里错一两次），
+  /// 由窗口自己认（ShotHistoryWindow.handlesKeyDown，同 NotesWindow 的 ⇧⌘Z）
+  @ViewBuilder private var shortcuts: some View {
+    let item = model.selected
+    let isImage = item.map { $0.filePath == nil } ?? false
+    Group {
+      Group {
+        Button("上一张") { model.move(by: -1) }.keyboardShortcut(.leftArrow, modifiers: [])
+        Button("下一张") { model.move(by: 1) }.keyboardShortcut(.rightArrow, modifiers: [])
+        Button("上一行") { model.move(by: -model.columnsPerRow) }
+          .keyboardShortcut(.upArrow, modifiers: [])
+        Button("下一行") { model.move(by: model.columnsPerRow) }
+          .keyboardShortcut(.downArrow, modifiers: [])
+        Button("拷贝") { if let item { model.actions.copy(item) } }
+          .keyboardShortcut("c").disabled(!isImage)
+      }
+      .disabled(searching)
+      Button("改标注") { if let item { edit(item) } }
+        .keyboardShortcut(.return, modifiers: []).disabled(item == nil)
+      Button("存储到…") { if let item { model.actions.save(item) } }
+        .keyboardShortcut("s").disabled(!isImage)
+      Button("钉到屏幕") { if let item { model.actions.pin(item) } }
+        .keyboardShortcut("p").disabled(!isImage)
+      Button("识字并拷贝") { if let item { model.actions.recognize(item) } }
+        .keyboardShortcut("o").disabled(!isImage)
+      Button("在访达中显示") { if let item { model.reveal(item) } }
+        .keyboardShortcut("r", modifiers: [.command, .shift])
+        .disabled(item.map { !model.hasFile($0) } ?? true)
+      Button("搜索") { searching = true }.keyboardShortcut("f")
+      // ⌘1…⌘4：换筛选（同顶上那排）
+      ForEach(Array(ShotHistoryModel.Filter.allCases.enumerated()), id: \.element) {
+        index, filter in
+        Button(filter.title) { model.filter = filter }
+          .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")))
+      }
+    }
+    .opacity(0)
+    .frame(width: 0, height: 0)
+    .accessibilityHidden(true)
   }
 
   // MARK: 左边的网格
@@ -102,6 +149,13 @@ struct ShotHistoryView: View {
       .padding(16)
     }
     .frame(minWidth: 420)
+    // 量出一行几张：方向键的 ↑↓ 跳一行
+    .onGeometryChange(for: CGFloat.self) {
+      $0.size.width
+    } action: { width in
+      model.columnsPerRow = ShotHistoryModel.columns(
+        width: width, card: Self.cardWidth, spacing: 12, padding: 16)
+    }
   }
 
   static func symbol(_ kind: ShotHistory.Kind) -> String {
@@ -150,30 +204,38 @@ struct ShotHistoryView: View {
     let isImage = item.filePath == nil
     VStack(alignment: .leading, spacing: 8) {
       if isImage {
-        row("改标注", "pencil.tip.crop.circle") { edit(item) }
-        row("拷贝", "doc.on.doc") { model.actions.copy(item) }
-        row("存储到…", "square.and.arrow.down") { model.actions.save(item) }
-        row("另存为…", "square.and.arrow.down.on.square") { model.actions.saveAs(item) }
-        row("钉到屏幕", "pin") { model.actions.pin(item) }
-        row("识字并拷贝", "text.viewfinder") { model.actions.recognize(item) }
+        row("改标注", "pencil.tip.crop.circle", key: "↩") { edit(item) }
+        row("拷贝", "doc.on.doc", key: "⌘C") { model.actions.copy(item) }
+        row("存储到…", "square.and.arrow.down", key: "⌘S") { model.actions.save(item) }
+        row("另存为…", "square.and.arrow.down.on.square", key: "⇧⌘S") { model.actions.saveAs(item) }
+        row("钉到屏幕", "pin", key: "⌘P") { model.actions.pin(item) }
+        row("识字并拷贝", "text.viewfinder", key: "⌘O") { model.actions.recognize(item) }
       } else {
-        row("打开", "play.rectangle") { model.open(item) }
+        row("打开", "play.rectangle", key: "↩") { model.open(item) }
       }
-      row("在访达中显示", "folder") { model.reveal(item) }
+      row("在访达中显示", "folder", key: "⇧⌘R") { model.reveal(item) }
         .disabled(!model.hasFile(item))
-      row("删除", "trash", danger: true) { model.deleting = [item.id] }
+      row("删除", "trash", key: "⌫", danger: true) { model.deleting = [item.id] }
     }
   }
 
+  /// 一行操作：右边写着键位（同菜单里的写法，用户不用去速查表翻）
   private func row(
-    _ title: String, _ symbol: String, danger: Bool = false, action: @escaping () -> Void
+    _ title: String, _ symbol: String, key: String, danger: Bool = false,
+    action: @escaping () -> Void
   ) -> some View {
     Button(action: action) {
-      Label(title, systemImage: symbol)
-        .foregroundStyle(danger ? AnyShapeStyle(Style.danger) : AnyShapeStyle(.primary))
+      HStack(spacing: 6) {
+        Label(title, systemImage: symbol)
+          .foregroundStyle(danger ? AnyShapeStyle(Style.danger) : AnyShapeStyle(.primary))
+        Spacer(minLength: 8)
+        Text(key).foregroundStyle(.tertiary).monospacedDigit()
+      }
+      .contentShape(.rect)
     }
     .buttonStyle(.plain)
     .font(.system(size: 13))
+    .accessibilityLabel(title)
   }
 
   @ViewBuilder private func menu(_ item: ShotHistory.Item) -> some View {
