@@ -70,6 +70,8 @@ internal sealed partial class SelectionOverlayWindow : Window
     private RectD? _holeTo;
     private long _holeStarted;
     private bool _holeAnimating;
+    private bool _cloaked;
+    private int _framesUntilUncloak;
 
     public SelectionOverlayWindow(FrozenScreen screen, ScreenshotSession session)
     {
@@ -156,6 +158,7 @@ internal sealed partial class SelectionOverlayWindow : Window
     /// </summary>
     public void Release()
     {
+        CompositionTarget.Rendering -= OnRenderingWhileCloaked;
         _timer?.Stop();
         _timer = null;
         _canvas.Draw -= OnDraw;
@@ -473,6 +476,9 @@ internal sealed partial class SelectionOverlayWindow : Window
     public void ShowOverlay(bool key)
     {
         _key = key;
+        // 先隐身（DWM cloak）再露出来，冻结帧画上第一帧才去掉：窗口每次新建，Win2D 还没画时 WinUI 先合成
+        // 一帧白底，整块屏闪一下白（0.1.0 用户反馈）。隐身的窗口照样能激活、照样合成，只是不上屏。
+        SetCloaked(true);
         AppWindow.MoveAndResize(new RectInt32(
             _screen.Bounds.Left, _screen.Bounds.Top, _screen.Bounds.Width, _screen.Bounds.Height));
         DisableRoundCorners();
@@ -570,11 +576,9 @@ internal sealed partial class SelectionOverlayWindow : Window
             }
             : new (string, string, string, Action)[]
             {
-                (Glyphs.Copy, "复制（Enter）", "复制截图", () => _ = _session.CopySelectionAsync()),
-                (Glyphs.Save, "快速保存（Ctrl+S）", "保存截图", () => _ = _session.SaveSelectionAsync(saveAs: false)),
-                (Glyphs.Pin, "钉在屏幕上（P）", "钉图", () => _ = PinSelectionAsync()),
                 (Glyphs.Ocr, "识字（O）", "识别文字", () => _ = _session.RecognizedSelectionAsync()),
                 (Glyphs.Translate, "翻译（T）", "截图翻译", () => _ = _session.TranslateSelectionAsync()),
+                (Glyphs.Pin, "钉在屏幕上（P）", "钉图", () => _ = PinSelectionAsync()),
             };
         foreach (var (glyph, tip, name, action) in actionItems)
         {
@@ -583,10 +587,35 @@ internal sealed partial class SelectionOverlayWindow : Window
             actions.Children.Add(button);
         }
 
+        // 和 mac 一样（EditorToolbar）：保存 + 旁边的 ▾（保存到文件夹 / 另存为…），最右是 ✕ 取消、✓ 复制。
+        // 以前只有一个快速保存、复制是两张纸的图标，用户找不到「保存」和「完成」（0.1.0 反馈）。
+        if (_session.Mode != ScreenshotMode.Record)
+        {
+            actions.Children.Add(Separator());
+            var save = ToolbarButton(Glyphs.Save, "快速保存（Ctrl+S）", "保存截图");
+            save.Click += (_, _) => _ = _session.SaveSelectionAsync(saveAs: false);
+            actions.Children.Add(save);
+            var saveMenu = ToolbarButton(Glyphs.ChevronDown, "更多保存选项", "更多保存选项", width: 18);
+            if (saveMenu.Content is FontIcon chevron)
+            {
+                chevron.FontSize = 10;
+            }
+
+            saveMenu.Click += (_, _) => ShowSaveMenu(saveMenu);
+            actions.Children.Add(saveMenu);
+            actions.Children.Add(Separator());
+        }
+
         var close = ToolbarButton(Glyphs.Close, _session.Mode == ScreenshotMode.Record ? "取消录屏（Esc）" : "取消（Esc）",
             "取消截图");
         close.Click += (_, _) => _session.Finish();
         actions.Children.Add(close);
+        if (_session.Mode != ScreenshotMode.Record)
+        {
+            var done = ToolbarButton(Glyphs.Check, "复制（Enter）", "复制截图");
+            done.Click += (_, _) => _ = _session.CopySelectionAsync();
+            actions.Children.Add(done);
+        }
 
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
         if (_session.Mode == ScreenshotMode.Record)
@@ -618,6 +647,18 @@ internal sealed partial class SelectionOverlayWindow : Window
         };
         Canvas.SetZIndex(toolbar, 10);
         return toolbar;
+    }
+
+    private void ShowSaveMenu(FrameworkElement anchor)
+    {
+        var menu = new MenuFlyout { Placement = FlyoutPlacementMode.Bottom };
+        var quick = new MenuFlyoutItem { Text = "快速保存到文件夹", KeyboardAcceleratorTextOverride = "Ctrl+S" };
+        quick.Click += (_, _) => _ = _session.SaveSelectionAsync(saveAs: false);
+        menu.Items.Add(quick);
+        var saveAs = new MenuFlyoutItem { Text = "另存为…", KeyboardAcceleratorTextOverride = "Ctrl+Shift+S" };
+        saveAs.Click += (_, _) => _ = _session.SaveSelectionAsync(saveAs: true);
+        menu.Items.Add(saveAs);
+        menu.ShowAt(anchor);
     }
 
     private static Border Capsule(UIElement child) => new()
@@ -887,6 +928,12 @@ internal sealed partial class SelectionOverlayWindow : Window
             DirectXPixelFormat.B8G8R8A8UIntNormalized);
         var ds = args.DrawingSession;
         ds.DrawImage(_bitmap, new Windows.Foundation.Rect(0, 0, width, height));
+        if (_cloaked && _framesUntilUncloak == 0)
+        {
+            // 画完这一帧还要等它提交上去：再过两次合成才露出来。
+            _framesUntilUncloak = 2;
+            CompositionTarget.Rendering += OnRenderingWhileCloaked;
+        }
 
         var selection = _session.SelectionScreen == _screen ? _session.Selection : (RectD?)null;
         var hoverHole = _hover is { } h ? new RectD(h.Left, h.Top, h.Width, h.Height) : (RectD?)null;
@@ -1586,6 +1633,42 @@ internal sealed partial class SelectionOverlayWindow : Window
         => new(
             rect.X / _scale, rect.Y / _scale,
             Math.Max(0, rect.Width) / _scale, Math.Max(0, rect.Height) / _scale);
+
+    private void OnRenderingWhileCloaked(object? sender, object args)
+    {
+        if (--_framesUntilUncloak > 0)
+        {
+            return;
+        }
+
+        CompositionTarget.Rendering -= OnRenderingWhileCloaked;
+        SetCloaked(false);
+    }
+
+    private unsafe void SetCloaked(bool cloaked)
+    {
+        if (_cloaked == cloaked)
+        {
+            return;
+        }
+
+        _cloaked = cloaked;
+        var value = cloaked ? 1 : 0;
+        DwmSetWindowAttribute(_hwnd, 13 /* DWMWA_CLOAK */, &value, sizeof(int));
+        if (cloaked)
+        {
+            // 万一第一帧一直不来（设备丢失之类），最多藏 300 ms，不能让遮罩隐身着吞掉输入。
+            var fallback = DispatcherQueue.CreateTimer();
+            fallback.Interval = TimeSpan.FromMilliseconds(300);
+            fallback.IsRepeating = false;
+            fallback.Tick += (_, _) =>
+            {
+                CompositionTarget.Rendering -= OnRenderingWhileCloaked;
+                SetCloaked(false);
+            };
+            fallback.Start();
+        }
+    }
 
     private unsafe void DisableRoundCorners()
     {

@@ -295,7 +295,6 @@ internal sealed unsafe partial class TranslateWindow : Window
 
     public void ShowInput(bool missedSelection)
     {
-        ShowCore(activate: true);
         _noActivate = false;
         RemoveNoActivateStyle();
         _source.PlaceholderText = missedSelection
@@ -306,7 +305,7 @@ internal sealed unsafe partial class TranslateWindow : Window
             _source.Text = string.Empty;
         }
 
-        PositionAtPointer(save: false);
+        ShowCore(activate: true, () => PositionAtPointer(save: false));
         ActivateWindow();
         FocusSource();
         _source.SelectAll();
@@ -314,12 +313,11 @@ internal sealed unsafe partial class TranslateWindow : Window
     }
     public void ShowSelection(string text)
     {
-        ShowCore(activate: true);
         _noActivate = false;
         RemoveNoActivateStyle();
         _source.Text = text;
+        ShowCore(activate: true, () => PositionAtPointer(save: false));
         _coordinator.Translate(text);
-        PositionAtPointer(save: false);
         ActivateWindow();
         FocusSource();
     }
@@ -327,13 +325,12 @@ internal sealed unsafe partial class TranslateWindow : Window
     public void ShowText(string text, bool fromCopy)
     {
         _noActivate = fromCopy;
-        ShowCore(activate: !fromCopy);
+        _source.Text = text;
         if (fromCopy)
         {
             ApplyNoActivateStyle();
-            _source.Text = text;
+            ShowCore(activate: false, () => PositionAtPointer(save: false));
             _coordinator.Translate(text, fromCopy);
-            PositionAtPointer(save: false);
             PInvoke.ShowWindow(_hwnd, (SHOW_WINDOW_CMD)4); // SW_SHOWNOACTIVATE
             OutsideClickHook.Install(_hwnd, () => Hide(restoreForeground: false));
             ResizeToContent();
@@ -341,9 +338,8 @@ internal sealed unsafe partial class TranslateWindow : Window
         else
         {
             RemoveNoActivateStyle();
-            _source.Text = text;
+            ShowCore(activate: true, () => PositionAtPointer(save: false));
             _coordinator.Translate(text, fromCopy);
-            PositionAtPointer(save: false);
             ActivateWindow();
             FocusSource();
         }
@@ -356,11 +352,10 @@ internal sealed unsafe partial class TranslateWindow : Window
     public void ShowTextPassive(string text)
     {
         _noActivate = true;
-        ShowCore(activate: false);
         ApplyNoActivateStyle();
         _source.Text = text;
+        ShowCore(activate: false, () => PositionAtPointer(save: false));
         _coordinator.Translate(text);
-        PositionAtPointer(save: false);
         PInvoke.ShowWindow(_hwnd, (SHOW_WINDOW_CMD)4); // SW_SHOWNOACTIVATE
         OutsideClickHook.Install(_hwnd, () => Hide(restoreForeground: false));
         ResizeToContent();
@@ -372,13 +367,15 @@ internal sealed unsafe partial class TranslateWindow : Window
     public void ShowTextNear(string text, PixelRect anchor)
     {
         _noActivate = false;
-        ShowCore(activate: true);
         RemoveNoActivateStyle();
         _source.Text = text;
+        ShowCore(activate: true, () =>
+        {
+            var display = Displays.AtPoint(anchor.X, anchor.Y);
+            var rect = MonitorLayout.NearRect(anchor, display.Work, display.Scale, _widthDip, NeededHeightDip());
+            AppWindow.MoveAndResize(new RectInt32(rect.X, rect.Y, rect.Width, rect.Height));
+        });
         _coordinator.Translate(text);
-        var display = Displays.AtPoint(anchor.X, anchor.Y);
-        var rect = MonitorLayout.NearRect(anchor, display.Work, display.Scale, _widthDip, NeededHeightDip());
-        AppWindow.MoveAndResize(new RectInt32(rect.X, rect.Y, rect.Width, rect.Height));
         ActivateWindow();
         FocusSource();
         DispatcherQueue.TryEnqueue(ResizeToContent);
@@ -452,7 +449,9 @@ internal sealed unsafe partial class TranslateWindow : Window
         }
     }
 
-    private void ShowCore(bool activate)
+    /// <param name="place">挪到该在的位置。在 Show 之前调：以前先在上次收起的地方露出来再挪，
+    /// 截图翻译的浮窗看着像从别处飘到选区旁边（0.1.0 用户反馈）。</param>
+    private void ShowCore(bool activate, Action place)
     {
         IdleReclaimer.Cancel();
         _root.RequestedTheme = Theme.ElementTheme;
@@ -469,6 +468,7 @@ internal sealed unsafe partial class TranslateWindow : Window
         }
 
         _replaceTarget = (IntPtr)_previousForeground.Value;
+        place();
         if (!_visible)
         {
             _visible = true;

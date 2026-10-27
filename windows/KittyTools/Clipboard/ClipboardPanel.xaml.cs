@@ -901,7 +901,8 @@ public sealed partial class ClipboardPanel : UserControl
         {
             Content = PreviewHost,
             MaxHeight = body,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            // 不露滚动条（0.1.0 用户反馈：每条预览都带一根）；长内容照样能用滚轮滚，底下的渐隐提示还有。
+            VerticalScrollBarVisibility = ScrollBarVisibility.Hidden,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             Padding = new Thickness(16, 0, 16, 0),
             IsTabStop = false,
@@ -957,8 +958,13 @@ public sealed partial class ClipboardPanel : UserControl
             return 90;
         }
 
-        return text.Length <= 80 && !text.Contains('\n') ? 36 : 90;
+        return IsShortPlain(text) ? 36 : 90;
     }
+
+    /// <summary>一行就放得下的普通文字：行标题已经整句显示了，透镜只留卡头，不再画第二遍（同 mac Lens.bodyHeight）。</summary>
+    private static bool IsShortPlain(string text)
+        => text.Length <= 80 && !text.Contains('\n') && !PreviewRules.TryParseColor(text, out _, out _, out _) &&
+           !PreviewRules.LooksLikeCode(text) && LinkPreviewRules.SingleUrl(text) is null;
 
     private void ShowText(ClipEntry entry)
     {
@@ -985,6 +991,11 @@ public sealed partial class ClipboardPanel : UserControl
                 VerticalAlignment = VerticalAlignment.Center,
             });
             PreviewHost.Children.Add(swatch);
+        }
+
+        if (IsShortPlain(text))
+        {
+            return;
         }
 
         const int limit = 50_000;
