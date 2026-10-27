@@ -257,6 +257,12 @@
   - `--ui-snapshots` 不再截托盘菜单（TrackPopupMenuEx 会一直占着界面线程），改成手测 368。
 - **要验**：编译（`Shell/TrayMenu.cs` 整个重写了，`LibraryImport` 声明和函数指针调用最可能要改）；手测 367–370。
 - **Windows 侧编译时改的（2026-10-27）**：`TrayMenu` 整个类标着 `unsafe`，`Show` 里 async lambda 的 `await Task.Delay` 编不过（CS4004）→ `unsafe` 只留在 `ApplyMenuTheme` 上；`(IntPtr)HiddenWindow.Hwnd.Value` 是指针转换、出了 unsafe 就编不过 → 改成 `(IntPtr)HiddenWindow.Hwnd`。之后 Debug、Release AOT x64 / ARM64 零警告，325 个单测过，`--smoke` 过，`setup-e2e.ps1` 18 项全过（含桌面快捷方式和 `/DESKTOPICON=0`）。
+- **Windows 侧验的（2026-10-27，脚本，不是真点）**：测试档的 Release 版，往托盘隐藏窗口直接发 v4 回调（`WM_CONTEXTMENU` / `NIN_KEYSELECT`，wParam 带位置），截图在 `windows-shots/0.1.0-r66/`。
+  - 位置：两种回调都弹在 wParam 给的那一点上，左下角对齐它往上展开（贴着屏幕底，系统自己翻的）；右键给的是鼠标处，键盘给的是图标中心（2560 × 1440、单屏、100%）。
+  - 深色：设置 › 外观「一直深色」时菜单是深色（背景 44,44,44），浅色 249,249,249。系统是浅色，「跟随系统 + 系统深色」那条没验（不改系统设置）。
+  - 「复制即译」打开时前面有勾；快捷键右对齐；Esc 能收；同一进程里连开两次都能弹。
+  - 367「删掉桌面快捷方式后更新」：测试名静默装 0.0.1 → 删桌面那个 → 装 0.0.2 → 没再冒出来；卸载后目录、登记、快捷方式都没了。
+  - 没测：真的鼠标右键 / Win+B（369 的真实路径）、多屏和 150%（370，这台只有一块屏）、371 里点菜单外面收起和「截图」不拍进残影。
 
 ### R39（P2）截图遮罩的按键：A、T 和工具栏对不上，换工具不刷新 → 已修（`901d4e3`）
 
