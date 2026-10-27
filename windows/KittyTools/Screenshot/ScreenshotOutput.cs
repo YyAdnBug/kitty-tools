@@ -27,12 +27,15 @@ internal static partial class ScreenshotOutput
     {
         var rect = SelectionPixels(screen, selection);
         var png = await PngAsync(screen, selection);
-        return png is not null && await CopyPngAsync(png, screen, selection);
+        return png is not null && await CopyPngAsync(png, rect.Width, rect.Height);
     }
 
-    public static async Task<bool> CopyPngAsync(byte[] png, FrozenScreen screen, Core.RectD selection)
+    /// <summary>
+    /// 复制一张已经编好的 PNG，宽高由调用方给：长截图拼出来的那张比选区高得多，
+    /// 不能按选区算（REVIEW R62：以前剪贴板历史、预览角标、「已复制截图」都写选区的大小）。
+    /// </summary>
+    public static async Task<bool> CopyPngAsync(byte[] png, int width, int height)
     {
-        var rect = SelectionPixels(screen, selection);
         // DIB 先在后台转好，写剪贴板时一次写完（第二版 §2 第 7 条）。
         var prepared = await ClipboardWriter.PrepareImageAsync(png);
         if (!ClipboardWriter.WriteImagePng(prepared.Png, prepared.Dib))
@@ -44,9 +47,9 @@ internal static partial class ScreenshotOutput
 
         var service = ClipboardService.Instance;
         service?.MarkOwnWrite();
-        service?.Store.RecordImage(png, rect.Width, rect.Height, null, "截图");
-        NoticeHost.Show("已复制截图", $"{rect.Width} × {rect.Height}", NoticeTone.Normal);
-        Log.Info($"screenshot.copy ok=true {rect.Width}x{rect.Height}");
+        service?.Store.RecordImage(png, width, height, null, "截图");
+        NoticeHost.Show("已复制截图", $"{width} × {height}", NoticeTone.Normal);
+        Log.Info($"screenshot.copy ok=true {width}x{height}");
         return true;
     }
 

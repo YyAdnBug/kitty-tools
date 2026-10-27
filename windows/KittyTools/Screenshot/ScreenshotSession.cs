@@ -256,7 +256,8 @@ internal sealed class ScreenshotSession
         var copied = false;
         if (png is not null)
         {
-            copied = await ScreenshotOutput.CopyPngAsync(png, screen, selection);
+            var rect = ScreenshotOutput.SelectionPixels(screen, selection);
+            copied = await ScreenshotOutput.CopyPngAsync(png, rect.Width, rect.Height);
         }
 
         if (copied && png is not null)
@@ -374,7 +375,7 @@ internal sealed class ScreenshotSession
         {
             var bgra = screen.Crop(pixels);
             var png = await ImageCodec.BgraToPngAsync(global.Width, global.Height, bgra);
-            if (png is not null && await ScreenshotOutput.CopyPngAsync(png, screen, local))
+            if (png is not null && await ScreenshotOutput.CopyPngAsync(png, global.Width, global.Height))
             {
                 _ = ShotHistory.RecordAsync(png, global.Width, global.Height, screen.Scale, ShotKind.Shot, frame: global);
                 ScreenshotCard.Show(png, global);
@@ -435,11 +436,12 @@ internal sealed class ScreenshotSession
 
         var png = await ImageCodec.BgraToPngAsync(frame.Width, frame.Height, bgra);
         var screen = SelectionScreen;
-        var selection = Selection;
         var copied = false;
         if (png is not null && screen is not null)
         {
-            copied = await ScreenshotOutput.CopyPngAsync(png, screen, selection);
+            // REVIEW R62：宽高用拼好的那张长图的，不是选区那块（1440 × 12000 的长图
+            // 以前在剪贴板历史、预览角标、「已复制截图」里都写着选区的大小）。
+            copied = await ScreenshotOutput.CopyPngAsync(png, frame.Width, frame.Height);
         }
 
         Finish();
