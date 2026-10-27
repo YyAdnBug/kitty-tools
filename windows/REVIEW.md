@@ -256,6 +256,7 @@
   - 深色用 uxtheme 没写进文档的序号 135 / 136（SetPreferredAppMode + FlushMenuThemes，资源管理器同一套），跟着设置 › 外观；拿不到就是浅色菜单。
   - `--ui-snapshots` 不再截托盘菜单（TrackPopupMenuEx 会一直占着界面线程），改成手测 368。
 - **要验**：编译（`Shell/TrayMenu.cs` 整个重写了，`LibraryImport` 声明和函数指针调用最可能要改）；手测 367–370。
+- **Windows 侧编译时改的（2026-10-27）**：`TrayMenu` 整个类标着 `unsafe`，`Show` 里 async lambda 的 `await Task.Delay` 编不过（CS4004）→ `unsafe` 只留在 `ApplyMenuTheme` 上；`(IntPtr)HiddenWindow.Hwnd.Value` 是指针转换、出了 unsafe 就编不过 → 改成 `(IntPtr)HiddenWindow.Hwnd`。之后 Debug、Release AOT x64 / ARM64 零警告，325 个单测过，`--smoke` 过，`setup-e2e.ps1` 18 项全过（含桌面快捷方式和 `/DESKTOPICON=0`）。
 
 ### R39（P2）截图遮罩的按键：A、T 和工具栏对不上，换工具不刷新 → 已修（`901d4e3`）
 

@@ -12,7 +12,7 @@ using Windows.Win32;
 
 namespace KittyTools;
 
-internal static unsafe partial class TrayMenu
+internal static partial class TrayMenu
 {
     private const uint MfString = 0x0000;
     private const uint MfGrayed = 0x0001;
@@ -72,7 +72,7 @@ internal static unsafe partial class TrayMenu
             }
 
             ApplyMenuTheme();
-            var hwnd = (IntPtr)HiddenWindow.Hwnd.Value;
+            var hwnd = (IntPtr)HiddenWindow.Hwnd;
             // 官方示例的两步：先把托盘的窗口设成前台（不然点菜单外面菜单不收），收起后发一个 WM_NULL。
             SetForegroundWindow(hwnd);
             var align = GetSystemMetrics(SmMenuDropAlignment) != 0 ? TpmRightAlign : 0;
@@ -264,7 +264,7 @@ internal static unsafe partial class TrayMenu
     /// 让 Win32 菜单跟着深浅色走。ponytail: 用的是 uxtheme 没写进文档的两个序号（135 SetPreferredAppMode、
     /// 136 FlushMenuThemes，Windows 10 1903 起有）；哪天系统改了拿不到，就是浅色菜单。微软出了公开接口就换过去。
     /// </summary>
-    private static void ApplyMenuTheme()
+    private static unsafe void ApplyMenuTheme()
     {
         try
         {
