@@ -788,72 +788,6 @@ public sealed partial class ClipboardPanel : UserControl
             return;
         }
 
-        var header = new Grid { ColumnSpacing = 8 };
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-        // 卡头：类型图标 + 来源 + 时间（PLAN-v2 §3.5）。
-        var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        title.Children.Add(new FontIcon
-        {
-            Glyph = entry.Kind switch
-            {
-                ClipKind.Image => "\uEB9F",
-                ClipKind.Files => "\uE8B7",
-                _ => "\uE8C8",
-            },
-            FontSize = 13,
-            Foreground = new SolidColorBrush(Theme.Family.Clipboard),
-            VerticalAlignment = VerticalAlignment.Center,
-        });
-        title.Children.Add(new TextBlock
-        {
-            Text = string.IsNullOrEmpty(entry.SourceName) ? "本机" : entry.SourceName,
-            FontSize = 12,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            VerticalAlignment = VerticalAlignment.Center,
-            MaxWidth = 120,
-            TextTrimming = TextTrimming.CharacterEllipsis,
-        });
-        title.Children.Add(new TextBlock
-        {
-            Text = PreviewRules.SourceAndAge(null, ClipRow.Relative(entry.CopiedAt)) + " · " +
-                   DateTimeOffset.FromUnixTimeMilliseconds(entry.CopiedAt).ToLocalTime().ToString("HH:mm"),
-            FontSize = Theme.FontSize("Kitty.FontSize.Meta"),
-            Foreground = Theme.SecondaryText(),
-            VerticalAlignment = VerticalAlignment.Center,
-            MinWidth = 72,
-            TextTrimming = TextTrimming.CharacterEllipsis,
-        });
-        Grid.SetColumn(title, 0);
-        header.Children.Add(title);
-
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        var favorite = new Button
-        {
-            Content = entry.Favorite ? "取消收藏" : "收藏",
-            Padding = new Thickness(10, 4, 10, 4),
-        };
-        favorite.Click += (_, _) =>
-        {
-            Store?.ToggleFavorite(entry.Id);
-            Refresh(entry.Id, animated: false);
-        };
-        var copy = new Button { Content = "复制", Padding = new Thickness(10, 4, 10, 4) };
-        copy.Click += (_, _) => Copy(entry);
-        if (entry.Kind == ClipKind.Text)
-        {
-            var translate = new Button { Content = "翻译", Padding = new Thickness(10, 4, 10, 4) };
-            translate.Click += (_, _) => TranslateEntry(entry);
-            actions.Children.Add(translate);
-        }
-
-        actions.Children.Add(favorite);
-        actions.Children.Add(copy);
-        Grid.SetColumn(actions, 1);
-        header.Children.Add(actions);
-        PreviewHost.Children.Add(header);
-
         switch (entry.Kind)
         {
             case ClipKind.Image:
@@ -896,6 +830,8 @@ public sealed partial class ClipboardPanel : UserControl
             _lensScroll.Content = null;
         }
 
+        // 同 mac LensView：正文区（查表定高，可能是 0）+ 一行元信息「类型 · 字数 · 时间 · 来源」，不放按钮；
+        // 复制 / 收藏 / 翻译在右键菜单和 Ctrl+K 里（0.1.0 用户反馈）。
         var body = LensBodyHeight(entry);
         _lensScroll = new ScrollViewer
         {
@@ -904,14 +840,29 @@ public sealed partial class ClipboardPanel : UserControl
             // 不露滚动条（0.1.0 用户反馈：每条预览都带一根）；长内容照样能用滚轮滚，底下的渐隐提示还有。
             VerticalScrollBarVisibility = ScrollBarVisibility.Hidden,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Padding = new Thickness(16, 0, 16, 0),
+            // 左边和行标题对齐（同 mac LensView 的 x = 44）。
+            Padding = new Thickness(36, 0, 16, 0),
             IsTabStop = false,
         };
-        var host = new Grid { Height = body + 28 };
+        var host = new Grid { Height = body + LensMetaHeight + LensBottom };
+        host.RowDefinitions.Add(new RowDefinition { Height = new GridLength(body) });
+        host.RowDefinitions.Add(new RowDefinition { Height = new GridLength(LensMetaHeight) });
         host.Children.Add(_lensScroll);
+        var meta = new TextBlock
+        {
+            Text = LensMeta(entry),
+            FontSize = Theme.FontSize("Kitty.FontSize.Meta"),
+            Foreground = Theme.SecondaryText(),
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(36, 0, 16, 0),
+        };
+        Grid.SetRow(meta, 1);
+        host.Children.Add(meta);
         var cardColor = Theme.CardColor();
         host.Children.Add(new Border
         {
+            Visibility = body >= 90 ? Visibility.Visible : Visibility.Collapsed,
             Height = 26,
             VerticalAlignment = VerticalAlignment.Bottom,
             IsHitTestVisible = false,
@@ -926,7 +877,7 @@ public sealed partial class ClipboardPanel : UserControl
                 },
             },
         });
-        _rows[index].SetLens(host, body + 28);
+        _rows[index].SetLens(host, body + LensMetaHeight + LensBottom);
         DispatcherQueue.TryEnqueue(() => MoveHighlight(animated: false));
     }
 
@@ -958,10 +909,37 @@ public sealed partial class ClipboardPanel : UserControl
             return 90;
         }
 
-        return IsShortPlain(text) ? 36 : 90;
+        return ShowsWholeText(text) ? 0 : IsShortPlain(text) ? 36 : 90;
     }
 
-    /// <summary>一行就放得下的普通文字：行标题已经整句显示了，透镜只留卡头，不再画第二遍（同 mac Lens.bodyHeight）。</summary>
+    private const double LensMetaHeight = 22;
+    private const double LensBottom = 6;
+
+    /// <summary>行标题已经原样显示全了：透镜不再画第二遍，只剩元信息行（同 mac Lens.bodyHeight 的 0 档）。</summary>
+    private static bool ShowsWholeText(string text) => text.Length <= 30 && IsShortPlain(text);
+
+    /// <summary>「文本 · 70 字 · 14:02 · 记事本」（同 mac LensView.metaText）。</summary>
+    private static string LensMeta(ClipEntry entry)
+    {
+        var text = entry.Text ?? string.Empty;
+        var (type, detail) = entry.Kind switch
+        {
+            ClipKind.Image => ("图片", entry.Width > 0 ? $"{entry.Width}×{entry.Height}" : null),
+            ClipKind.Files => ("文件", $"{entry.Files.Length} 个"),
+            _ when PreviewRules.TryParseColor(text, out _, out _, out _) => ("颜色", (string?)null),
+            _ when LinkPreviewRules.SingleUrl(text) is not null => ("链接", null),
+            _ when PreviewRules.LooksLikeCode(text) => ("代码", $"{text.Length} 字"),
+            _ => ("文本", $"{text.Length} 字"),
+        };
+        var copied = DateTimeOffset.FromUnixTimeMilliseconds(entry.CopiedAt).ToLocalTime();
+        var now = DateTimeOffset.Now;
+        var time = copied.Date == now.Date ? copied.ToString("HH:mm")
+            : copied.Year == now.Year ? copied.ToString("M月d日 HH:mm")
+            : copied.ToString("yyyy年M月d日 HH:mm");
+        return string.Join(" · ", new[] { type, detail, time, entry.SourceName }.Where(part => !string.IsNullOrEmpty(part)));
+    }
+
+    /// <summary>没换行、不超过 80 字的普通文字：正文区给矮的一档（同 mac Lens.isShort）。</summary>
     private static bool IsShortPlain(string text)
         => text.Length <= 80 && !text.Contains('\n') && !PreviewRules.TryParseColor(text, out _, out _, out _) &&
            !PreviewRules.LooksLikeCode(text) && LinkPreviewRules.SingleUrl(text) is null;
@@ -993,7 +971,7 @@ public sealed partial class ClipboardPanel : UserControl
             PreviewHost.Children.Add(swatch);
         }
 
-        if (IsShortPlain(text))
+        if (ShowsWholeText(text))
         {
             return;
         }
