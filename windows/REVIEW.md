@@ -217,7 +217,7 @@
   - 用户能看到的行为（装到哪、不许装到哪、装过就更新、开着先叫它退出、只问「开机时自动打开」、卸载时问删不删数据）和现在一样，改用 Inno 实现；
   - 长相换成 `WizardStyle=modern dynamic windows11`，跟着系统深浅色；
   - 两组安装图审查方已经出好、提交在 `windows/installer/`。
-- **红线例外**：用户同意打包用 Inno Setup 7（只在 `build-release.ps1` 里用，不进 App）。`AGENTS.md` 红线那一条已经写上。装 Inno 用 `winget install --id JRSoftware.InnoSetup -e`，要 7.x。
+- **红线例外**：用户同意打包用 Inno Setup 7（只在 `build-release.ps1` 里用，不进 App）。`AGENTS.md` 红线那一条已经写上。装 Inno 用 `winget install --id JRSoftware.InnoSetup.7 -e`，要 7.x。
 - **AppId 定死**：`{FF0E2BF7-9B90-4EB0-9C08-818112ACEC15}`，以后永远不改。
 - **删**：`KittyTools.Setup/` 整个项目、`Core/SetupPayload.cs`、`Core/SetupRules.cs` 的大半、`SetupTests.cs` 跟着删到只剩留下来的函数（PLAN-setup-inno §5）。**加**：`installer/KittyTools.iss`；App 的 `--quit`、`--uninstall-cleanup [--remove-data]`；`SetupRecord` 改成认 Inno 的登记（§4）。
 - **R37 / R38 的口子跟着改**：「从这台电脑移除」启动 `unins000.exe`；程序内更新后改 `{AppId}_is1` 里的 `DisplayVersion` / `EstimatedSize`。

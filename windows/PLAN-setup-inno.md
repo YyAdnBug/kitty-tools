@@ -4,7 +4,7 @@
 
 - **谁做**：Windows 上的 agent，照 `AGENTS.md`「每一批的流程」做，一批做完；对应 `REVIEW.md` 的 R65。**在 0.1.0 打包之前做**（R53）：0.1.0 是第一个对外版本，先用自己的安装程序发、以后再换，就得给真用户做一次「旧安装程序 → Inno」的迁移；现在换，一个真用户都没有，不用迁移。
 - **红线的例外**（用户 2026-10-27 定）：打包用 Inno Setup 7。它只在 `build-release.ps1` 里用，不进 App、不进 NuGet 依赖。其余红线照旧。
-  - 装法：`winget install --id JRSoftware.InnoSetup -e`，装完 `ISCC.exe /?` 看版本是 7.x，不是就从 jrsoftware.org 装 7.1 或更新的版本。
+  - 装法：`winget install --id JRSoftware.InnoSetup.7 -e`，装完 `ISCC.exe /?` 看版本是 7.x，不是就从 jrsoftware.org 装 7.1 或更新的版本。
   - 授权：作者「请商业用户购买授权」，是请求，不是强制；我们是个人项目，不用买，许可证里要求的版权声明 Inno 自己会带上。
 - **替代的东西**：`PLAN-setup.md` 的 S1（安装程序长什么样）、S2（界面）、S6（换文件）、S7 里的标记文件和 Uninstall.exe、S9 的卸载流程、§2.1 载荷尾巴、§2.3 卸载前的检查，都换成下面的做法。S3（装到哪、不许装到哪）、S4（装过的就更新）、S5（开着先叫它退出、不按进程名杀）、S8（只问一个「开机时自动打开」）、S12（不签名）这几条**用户能看到的行为照旧**，只是改用 Inno 来实现。
 - **为什么是它**：免费；6.6 起有 `windows11` 风格和跟随系统的深色模式，7.0.2 起自带官方的简体中文；能选安装位置、不要管理员权限，在「设置 › 应用」里能卸载。Velopack 不能选安装位置，WiX / MSI 的界面老、写起来繁琐，MSIX 不签名装不上。
@@ -159,7 +159,7 @@ Type: filesandordirs; Name: "{app}"
 ## 6. 打包脚本和自检
 
 - **`build-release.ps1`**：
-  - 「发布安装程序本体、把 zip 接在后面」那一段换成调 `ISCC.exe`：先找 `%ProgramFiles%\Inno Setup 7\ISCC.exe`，再找 `%ProgramFiles(x86)%\Inno Setup 7\ISCC.exe`，都没有就报「先装 Inno Setup 7（winget install --id JRSoftware.InnoSetup -e）」并中止。
+  - 「发布安装程序本体、把 zip 接在后面」那一段换成调 `ISCC.exe`：先找 `%ProgramFiles%\Inno Setup 7\ISCC.exe`，再找 `%ProgramFiles(x86)%\Inno Setup 7\ISCC.exe`，都没有就报「先装 Inno Setup 7（winget install --id JRSoftware.InnoSetup.7 -e）」并中止。
   - `SourceDir` 就是打 zip 的那个 `<stage>\Kitty Tools`，setup.exe 和 zip 装的东西一模一样。
   - setup.exe 照旧出 `.sha256`，`SIZES.txt` 照旧记大小。
 - **`tools/setup-e2e.ps1`** 重写（审查方 2026-10-27 已写，见脚本文件头）。用 `/DTestKey=<随机名>` 编两个测试版（0.0.1、0.0.2），装到 `windows\build\setup-e2e` 下，全程设 `KITTY_PROBE_PROFILE=<同一个名字>`（`KITTY_SETUP_TEST_KEY` 是旧安装程序用的，跟着删掉），**不碰真的登记、开机启动和快捷方式**：
