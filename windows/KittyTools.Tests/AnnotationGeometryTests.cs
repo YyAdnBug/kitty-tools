@@ -458,6 +458,101 @@ public sealed class AnnotationGeometryTests
     }
 
     [TestMethod]
+    public void CurvedArrowHeadMeetsTheShaftWithoutAKink()
+    {
+        // 5b，照 mac：手柄拖到弦的 ¾ 处、离弦 12：弧线贴着尖端拐个钩，底边中点到尖端的弦和杆在颈部差 20° 多。
+        // 箭头底边垂直于杆（颈部不折），尖端还在终点上
+        var (from, to) = (new PointD(0, 0), new PointD(160, 0));
+        var bend = Annotation.CurveBend(from, to, new PointD(120, 12), false);
+        Assert.AreEqual(0.25, bend.X);
+        static double Angle(VectorD a, VectorD b)
+            => Math.Abs(Math.Atan2(a.X * b.Y - a.Y * b.X, a.X * b.X + a.Y * b.Y)) * 180 / Math.PI;
+        static VectorD Heading(PointD left, PointD right) => new(left.Y - right.Y, right.X - left.X);
+        foreach (var width in new[] { 4.0, 6 })
+        {
+            var points = Annotation.CurvedArrowPolygon(from, to, width, bend)!;
+            var tip = Array.IndexOf(points, to);
+            Assert.IsTrue(tip >= 3);
+            var shaft = Heading(points[tip - 3], points[tip + 3]);
+            var across = Heading(points[tip - 1], points[tip + 1]);
+            var neck = new PointD((points[tip - 2].X + points[tip + 2].X) / 2, (points[tip - 2].Y + points[tip + 2].Y) / 2);
+            Assert.IsTrue(Angle(new VectorD(to.X - neck.X, to.Y - neck.Y), shaft) > 15);
+            Assert.IsTrue(Angle(across, shaft) < 3);
+        }
+    }
+
+    [TestMethod]
+    public void CurvedArrowIsAlwaysDrawnInsideItsBounds()
+    {
+        // 弯过的粗箭头被拖短（弦 10、弧线鼓出 18）：箭头缩短照样沿弧线画，和外框、点中对得上
+        var degenerate = Segment(AnnotationKind.Arrow, new PointD(100, 100), new PointD(110, 100), new VectorD(0, 1.8), 2);
+        var polygon = Annotation.CurvedArrowPolygon(new PointD(100, 100), new PointD(110, 100), 6, new VectorD(0, 1.8))!;
+        Assert.IsTrue(polygon.Max(point => point.Y) > 112);
+        Assert.IsTrue(degenerate.Contains(new PointD(105, 118), 1));
+        Assert.IsTrue(Annotation.PolygonContains(polygon, new PointD(104, 115)));
+        Assert.AreEqual(2, degenerate.Handles(1).Count);
+        // 各种弯法、粗细：画出来的都在外框里（点中先按外框排除，不能排掉画出来的部分）
+        foreach (var weight in new[] { 0, 1, 2 })
+        {
+            foreach (var length in new[] { 10.0, 32, 80, 400 })
+            {
+                foreach (var bend in new[]
+                         {
+                             new VectorD(0, 0.03), new VectorD(0.25, 0.05), new VectorD(-0.25, -0.2),
+                             new VectorD(0.1, 0.6), new VectorD(0.25, 1.5), new VectorD(0, -3),
+                         })
+                {
+                    var (from, to) = (new PointD(20, 30), new PointD(20 + length * 0.6, 30 + length * 0.8));
+                    var arrow = Segment(AnnotationKind.Arrow, from, to, bend, weight);
+                    var drawn = Annotation.ArrowOutline(from, to, arrow.Style.LineWidth, bend)!;
+                    var bounds = arrow.Bounds(1);
+                    Assert.IsTrue(
+                        drawn.All(point => point.X >= bounds.X - 1e-6 && point.X <= bounds.Right + 1e-6 &&
+                                           point.Y >= bounds.Y - 1e-6 && point.Y <= bounds.Bottom + 1e-6),
+                        $"{weight} {length} {bend}");
+                }
+            }
+        }
+    }
+
+    [TestMethod]
+    public void StylesAreRememberedPerTool()
+    {
+        // 5b（Y8）：第一次红色中号、荧光笔黄色；记过的读回来；坏的、越界的用默认
+        var saved = new Dictionary<string, string>();
+        Assert.AreEqual(AnnotationStyle.Default, AnnotationStyle.Remembered(saved, AnnotationKind.Arrow));
+        Assert.AreEqual(AnnotationPalette.Yellow, AnnotationStyle.Remembered(null, AnnotationKind.Highlighter).Color);
+        AnnotationStyle.Remember(saved, AnnotationKind.Text, new AnnotationStyle(5, 2, 2));
+        AnnotationStyle.Remember(saved, AnnotationKind.Arrow, new AnnotationStyle(4, 1, 0));
+        Assert.AreEqual(new AnnotationStyle(5, 2, 2), AnnotationStyle.Remembered(saved, AnnotationKind.Text));
+        Assert.AreEqual(4, AnnotationStyle.Remembered(saved, AnnotationKind.Arrow).Color);
+        Assert.AreEqual(AnnotationStyle.Default, AnnotationStyle.Remembered(saved, AnnotationKind.Rectangle));
+        CollectionAssert.AreEquivalent(new[] { "text", "arrow" }, saved.Keys.ToArray());
+        Assert.AreEqual("5,2,2", saved["text"]);
+        saved["arrow"] = "9,1,0";
+        saved["rectangle"] = "1,1,5"; // 矩形只有两个选项
+        saved["pen"] = "乱码";
+        Assert.AreEqual(AnnotationStyle.Default, AnnotationStyle.Remembered(saved, AnnotationKind.Arrow));
+        Assert.AreEqual(AnnotationStyle.Default, AnnotationStyle.Remembered(saved, AnnotationKind.Rectangle));
+        Assert.AreEqual(AnnotationStyle.Default, AnnotationStyle.Remembered(saved, AnnotationKind.Pen));
+    }
+
+    [TestMethod]
+    public void CounterPlacedLiveRecordsOneStep()
+    {
+        // 5b：单击放序号先不记撤销，接着拖、松手一共一步
+        var document = new AnnotationDocument();
+        var before = document.Items;
+        var counter = new Annotation { Kind = AnnotationKind.Counter, Number = 1, From = new PointD(10, 10) };
+        document.AppendLive(counter);
+        document.Replace(counter.Offset(5, 5));
+        Assert.IsTrue(document.RecordUndo(before));
+        Assert.IsTrue(document.Undo());
+        Assert.AreEqual(0, document.Items.Count);
+        Assert.IsFalse(document.CanUndo);
+    }
+
+    [TestMethod]
     public void OldHistoryDataStillReads()
     {
         // 第一版存的：没有 palette / weight，颜色是那套 9 色、线宽 2 / 3 / 5 / 8，箭头是 points 的头尾

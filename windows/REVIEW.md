@@ -15,6 +15,7 @@
 **归 Claude 的文件**（这一轮别的 agent 先别改；真要改先在这里写一句再动）：`KittyTools.Core/AnnotationGeometry.cs`、`KittyTools.Core/AnnotationDocument.cs`、`KittyTools.Tests/AnnotationGeometryTests.cs`、`KittyTools/Screenshot/Annotation.cs`、`KittyTools/Screenshot/SelectionOverlayWindow.cs`；`ShotHistoryRules.cs` 里标注 JSON 那几段、`ShotHistory.cs` 的 `ShotAnnotations`。5e 再加尺寸胶囊和工具栏用到的文件，到时写在这里。
 
 - 5a（底子和 B1–B9）：见 `git log --grep "5a"`。
+- 5b（十种工具、mac 的画法、样式托盘、每个工具记住样式）：见 `git log --grep "5b"`。另动了 `Shell/Glyphs.cs`（五个工具图标、删掉 ToolSelect）、`Shell/Theme.cs`（托盘选项分段两色）、`App/Settings.cs`（`ScreenshotToolStyles`）、`Settings/ShortcutsSheet.cs`（标注那一组的键）。
 
 ## v8 分工（2026-10-26 深夜，用户定：审查方接着把 mac 新功能搬过来）
 

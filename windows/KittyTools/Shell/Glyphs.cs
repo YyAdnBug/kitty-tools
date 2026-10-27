@@ -41,7 +41,6 @@ internal static class Glyphs
 
     // 截图的标注工具，对着 mac Annotation.Tool.symbol 挑。以前矩形是文档（E7C3）、箭头是 ⇄（E8AB）、
     // 马赛克是任务视图（E7C4）。
-    public const string ToolSelect = "\uE8B0";
     /// <summary>矩形（mac rectangle）：圆角矩形框。</summary>
     public const string ToolRectangle = "\uE7FB";
     /// <summary>箭头（mac arrow.up.right）。</summary>
@@ -52,6 +51,16 @@ internal static class Glyphs
     public const string ToolText = "\uE97E";
     /// <summary>马赛克（mac checkerboard.rectangle）：网格。</summary>
     public const string ToolMosaic = "\uE80A";
+
+    // PLAN-v9 第 5b 批补的五种（mac circle / line.diagonal / highlighter / 1.circle / circle.square.fill）。
+    /// <summary>椭圆：空心圆环。</summary>
+    public const string ToolEllipse = "\uEA3A";
+    /// <summary>直线：Fluent 没有斜线，用横线（E738）转 −45° 画（见 SelectionOverlayWindow.BuildToolbar）。</summary>
+    public const string ToolLine = "\uE738";
+    /// <summary>荧光笔。</summary>
+    public const string ToolHighlighter = "\uE7E6";
+    /// <summary>聚光灯：亮度（太阳）。序号没有合适的字形，工具栏上直接画带圈的 1。</summary>
+    public const string ToolSpotlight = "\uE706";
 
     public const string Play = "\uE768";
     public const string Pause = "\uE769";

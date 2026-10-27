@@ -356,15 +356,16 @@ internal static class ShortcutsSheet
                 new("单击", "选中鼠标下面的整个窗口"),
                 new("右键", "清掉选区；没有选区时退出"),
                 new("C", "复制放大镜里的色值"),
-                new("Esc", "逐级退出：正在输入的文字、选中的标注、选区，最后退出截图"),
+                new("Esc", "逐级退出：收下正在输入的文字、取消选中的标注、收起工具，最后退出截图"),
                 new("Ctrl+W", "退出截图"),
             }),
         new("screenshot", "截图 · 标注", "capture", Glyphs.Edit, Array.Empty<string>(), new ShortcutEntry[]
         {
-            new(new[] { "1", "2", "3", "4", "5", "V" }, "矩形 · 箭头 · 画笔 · 文字 · 马赛克 · 选择"),
+            new(new[] { "1", "2", "3", "4", "5" }, "矩形 · 椭圆 · 箭头 · 直线 · 画笔"),
+            new(new[] { "6", "7", "8", "9", "0" }, "荧光笔 · 文字 · 序号 · 马赛克 · 聚光灯（再按一次收起工具）"),
             new("Delete", "Backspace", "删除选中的标注"),
-            new("Ctrl+Z", "Ctrl+Y", "撤销 / 重做"),
-            new("Enter", "文字框里确认文字（Esc 取消）"),
+            new(new[] { "Ctrl+Z", "Ctrl+Y", "Ctrl+Shift+Z" }, "撤销 / 重做"),
+            new("Enter", "文字框里收下文字（Esc 也是收下）"),
         }),
         new("screenshot", "截图 · 出图", "capture", Glyphs.Save, Array.Empty<string>(), new ShortcutEntry[]
         {

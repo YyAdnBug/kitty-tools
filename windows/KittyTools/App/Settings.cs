@@ -102,6 +102,9 @@ internal sealed class Settings
     /// <summary>识字后把同一段里的换行接起来（PLAN-v9 V2，默认关，同 mac 的 ocrJoinLines）；截图翻译也看它（mac 的截图翻译总是接，0.1.0 用户要留原文换行）。</summary>
     public bool OcrJoinLines { get; set; }
 
+    /// <summary>截图标注每个工具上次的样式（PLAN-v9-annotate Y8，同 mac 的 screenshotToolStyles）：工具存盘名 → 「颜色,粗细,选项」。</summary>
+    public Dictionary<string, string>? ScreenshotToolStyles { get; set; }
+
     /// <summary>上一次截图的区域（物理像素，只在内存里，不进导出文件；第三版 §7）。</summary>
     public int ScreenshotLastX { get; set; }
 

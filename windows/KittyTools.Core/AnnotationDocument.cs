@@ -50,6 +50,9 @@ public sealed class AnnotationDocument
         _items = next;
     }
 
+    /// <summary>放在最上面、先不记撤销（单击放序号接着就能拖，松手时 RecordUndo 一共记一步）。</summary>
+    public void AppendLive(Annotation annotation) => _items = _items.Append(annotation).ToArray();
+
     /// <summary>一次拖动（挪、改大小）松手时按按下前的样子记一步撤销；没变不记。</summary>
     public bool RecordUndo(IReadOnlyList<Annotation> before)
     {

@@ -4,7 +4,7 @@
 
 **结论：做得到。** 遮罩里的标注本来就是 Win2D 在一块 `CanvasControl` 上自己画的（`Screenshot/Annotation.cs` 的 `AnnotationRenderer`），mac 那边的手柄、点中、阴影、文字描边 / 底色、弯箭头，用同一块画布、`CanvasPathBuilder` / `CanvasGeometry` / `CanvasTextLayout` / `ShadowEffect` 都画得出来；第一版只是按 PLAN.md 的范围做了 5 种工具和「选中、拖动、删除」。
 
-**状态：用户 2026-10-27 拍板 D1–D7 全部按推荐，从 5a 开始做；分工见 `REVIEW.md`「v9 标注分工」。** 5a 已做（见 `git log --grep "5a"`）。这一页把 PLAN-v9 §5 的 S1–S3 拆细（S4、S5 的选区调整和工具栏按钮照 PLAN-v9 原文），先列 Windows 现在的毛病（§1），再按工具、画法、样式、编辑、文字、工具栏逐项对 mac（§2–§7），最后是要拍的几件事（§8）和分批（§9）。说「全部按推荐」或逐项改完再动手。
+**状态：用户 2026-10-27 拍板 D1–D7 全部按推荐，从 5a 开始做；分工见 `REVIEW.md`「v9 标注分工」。** 5a、5b 已做（见 `git log --grep "5a"`、`--grep "5b"`）。这一页把 PLAN-v9 §5 的 S1–S3 拆细（S4、S5 的选区调整和工具栏按钮照 PLAN-v9 原文），先列 Windows 现在的毛病（§1），再按工具、画法、样式、编辑、文字、工具栏逐项对 mac（§2–§7），最后是要拍的几件事（§8）和分批（§9）。说「全部按推荐」或逐项改完再动手。
 
 - **对的是谁**：mac `macos/KittyTools/Screenshot/Annotation.swift`（模型、几何、画法）、`SelectionView.swift` 的「标注」「文字」「鼠标」「键盘」几节（交互）、`EditorToolbar.swift`（工具栏、样式托盘、HUD 菜单）、`SizeField.swift`；规格 `.cursor/rules/mac-whisker-capture.mdc` §6「工具栏」「样式托盘」「工具」「标注编辑」「Esc / 右键」。Windows 对着 `1df58a7`（Esc 顺序刚按 mac 改好）的 `Screenshot/Annotation.cs`、`SelectionOverlayWindow.cs`、`ShotHistory.cs` 的 `ShotAnnotations`。下面写的 mac 行号都是 `Annotation.swift` / `SelectionView.swift` 里的。
 - **规矩照旧**：功能、行为、数值、文案跟 mac；字体、图标字形、快捷键写法跟 Windows（⌘ → Ctrl、⌥ → Alt、⇧ → Shift、⌫ → Delete / Backspace）。mac 的点（pt）在 Windows 上是 DIP，导出时乘这块屏的缩放。

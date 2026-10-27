@@ -108,6 +108,33 @@ public readonly record struct AnnotationStyle(int Color, int Weight, int Option)
 
     /// <summary>旧数据只存了线宽（2 / 3 / 5 / 8 那四档）：换成最近的档。</summary>
     public static int WeightFromWidth(double width) => width < 2.5 ? 0 : width <= 5 ? 1 : 2;
+
+    /// <summary>
+    /// 每个工具记住的样式（PLAN-v9-annotate Y8，mac Style.remembered）：存在设置的 ScreenshotToolStyles 里，
+    /// 键是工具的存盘名、值是「颜色,粗细,选项」。没记过、记坏了的用 DefaultFor。
+    /// </summary>
+    public static AnnotationStyle Remembered(IReadOnlyDictionary<string, string>? saved, AnnotationKind kind)
+    {
+        if (saved is not null && saved.TryGetValue(AnnotationKinds.StorageName(kind), out var text))
+        {
+            var parts = text.Split(',');
+            if (parts.Length == 3 &&
+                int.TryParse(parts[0], System.Globalization.CultureInfo.InvariantCulture, out var color) &&
+                int.TryParse(parts[1], System.Globalization.CultureInfo.InvariantCulture, out var weight) &&
+                int.TryParse(parts[2], System.Globalization.CultureInfo.InvariantCulture, out var option) &&
+                color is >= 0 and < 8 && weight is >= 0 and <= 2 &&
+                option >= 0 && option < Math.Max(1, AnnotationKinds.OptionTitles(kind).Length))
+            {
+                return new AnnotationStyle(color, weight, option);
+            }
+        }
+
+        return DefaultFor(kind);
+    }
+
+    public static void Remember(IDictionary<string, string> saved, AnnotationKind kind, AnnotationStyle style)
+        => saved[AnnotationKinds.StorageName(kind)] = string.Create(
+            System.Globalization.CultureInfo.InvariantCulture, $"{style.Color},{style.Weight},{style.Option}");
 }
 
 public static class AnnotationKinds
@@ -525,35 +552,121 @@ public sealed record Annotation
         };
     }
 
-    /// <summary>
-    /// 点中用的箭头轮廓：直的是 ArrowPolygon；弯的取弧线上离尖端一个头长的点当底边中点，按它到尖端的走向摆三角。
-    /// ponytail: 弯箭头画出来的轮廓（底边垂直于杆的走向）第 5b 批照 mac curvedArrowPath 移植，点中暂用这个三角，
-    /// 差的只是两翼边缘一两个像素。
-    /// </summary>
+    /// <summary>箭头的轮廓（画和点中共用）：直的是 ArrowPolygon，弯的是 CurvedArrowPolygon。零长度 null。</summary>
     public static PointD[]? ArrowOutline(PointD from, PointD to, double width, VectorD bend)
-    {
-        if (bend == VectorD.Zero)
-        {
-            return ArrowPolygon(from, to, width);
-        }
+        => bend == VectorD.Zero ? ArrowPolygon(from, to, width) : CurvedArrowPolygon(from, to, width, bend);
 
-        var curve = CurvePoints(from, to, bend);
-        var neck = curve[0];
-        for (var index = curve.Count - 1; index >= 0; index--)
+    /// <summary>
+    /// 弯箭头（照 mac curvedArrowPath）：同直箭头的锥形实心多边形，沿二次贝塞尔弯过去。尖端是弧线的终点，箭头底边的中点落在
+    /// 弧线上离尖端一个头长（4 × 线宽）处；杆是弧线到底边中点的那一段（de Casteljau 截出来），沿弧长从尾部半宽 0.15 × 线宽
+    /// 渐粗到颈 0.6 × 线宽，按每个采样点的法向往两侧偏出。底边垂直于杆在颈部的走向（不垂直于底边中点到尖端的弦：弧线贴着尖端
+    /// 拐得急时按弦摆会在颈部折一下），偏角最多 30°。整条弧都离尖端不到一个头长时头缩到最远那点。零长度 null。
+    /// ponytail: 按法向偏移的轮廓在弧线半径小于杆的半宽处内侧自交，那一小块可能描不满（同 mac），真碰到再改成逐段取并集。
+    /// </summary>
+    public static PointD[]? CurvedArrowPolygon(PointD from, PointD to, double width, VectorD bend)
+    {
+        var control = CurveControl(from, to, bend);
+        var samples = CurvePoints(from, to, bend);
+        var head = Math.Min(width * 4, samples.Max(point => Distance(point, to)));
+        bool Far(PointD point) => Distance(point, to) >= head;
+        var index = -1;
+        for (var at = samples.Count - 1; at >= 0; at--)
         {
-            neck = curve[index];
-            if (Distance(neck, to) >= width * 4)
+            if (Far(samples[at]))
             {
+                index = at;
                 break;
             }
         }
 
-        if (ArrowPolygon(neck, to, width) is not { } head)
+        if (head <= 0 || index < 0)
         {
             return null;
         }
 
-        return new[] { head[2], head[3], head[4] };
+        // 最后一个够远的采样点和下一个之间二分出底边中点
+        var step = 1.0 / (samples.Count - 1);
+        var (low, high) = (index * step, Math.Min(1, (index + 1) * step));
+        for (var round = 0; round < 24; round++)
+        {
+            var middle = (low + high) / 2;
+            if (Far(Quad(from, control, to, middle)))
+            {
+                low = middle;
+            }
+            else
+            {
+                high = middle;
+            }
+        }
+
+        var baseCenter = Quad(from, control, to, low);
+        var length = Distance(baseCenter, to);
+        if (length <= 0)
+        {
+            return null;
+        }
+
+        var axis = new VectorD((to.X - baseCenter.X) / length, (to.Y - baseCenter.Y) / length);
+        // 杆：[0, low] 那段弧的控制点是 from → control 的 low 处；它在颈部的走向是 base − bodyControl
+        var bodyControl = new PointD(from.X + (control.X - from.X) * low, from.Y + (control.Y - from.Y) * low);
+        var end = new VectorD(baseCenter.X - bodyControl.X, baseCenter.Y - bodyControl.Y);
+        var skew = Math.Clamp(
+            Math.Atan2(axis.X * end.Y - axis.Y * end.X, axis.X * end.X + axis.Y * end.Y), -Math.PI / 6, Math.PI / 6);
+        var across = new VectorD(
+            axis.X * Math.Cos(skew) - axis.Y * Math.Sin(skew), axis.X * Math.Sin(skew) + axis.Y * Math.Cos(skew));
+        static PointD Beside(PointD point, VectorD direction, double side)
+            => new(point.X - direction.Y * side, point.Y + direction.X * side);
+        var body = Sample(from, bodyControl, baseCenter);
+        var run = new double[body.Length];
+        for (var at = 1; at < body.Length; at++)
+        {
+            run[at] = run[at - 1] + Distance(body[at - 1], body[at]);
+        }
+
+        var total = Math.Max(run[^1], double.Epsilon);
+        var wing = head * Math.Tan(28 * Math.PI / 180);
+        var tail = width * 0.15;
+        var neck = Math.Min(width * 0.6, wing);
+        var left = new List<PointD>();
+        var right = new List<PointD>();
+        for (var at = 0; at < body.Length - 1; at++)
+        {
+            // 切线：B'(s) ∝ (1 − s)(c − a) + s(b − c)；退化成 0 时用底边的朝向
+            var s = (double)at / (body.Length - 1);
+            var tangent = new VectorD(
+                (1 - s) * (bodyControl.X - from.X) + s * (baseCenter.X - bodyControl.X),
+                (1 - s) * (bodyControl.Y - from.Y) + s * (baseCenter.Y - bodyControl.Y));
+            var size = Math.Sqrt(tangent.X * tangent.X + tangent.Y * tangent.Y);
+            var direction = size > 0 ? new VectorD(tangent.X / size, tangent.Y / size) : across;
+            var half = tail + (neck - tail) * run[at] / total;
+            left.Add(Beside(body[at], direction, half));
+            right.Add(Beside(body[at], direction, -half));
+        }
+
+        right.Reverse();
+        return left
+            .Concat(new[]
+            {
+                Beside(baseCenter, across, neck), Beside(baseCenter, across, wing), to,
+                Beside(baseCenter, across, -wing), Beside(baseCenter, across, -neck),
+            })
+            .Concat(right)
+            .ToArray();
+    }
+
+    /// <summary>二次贝塞尔上按 t 均分的点（含两端）：按控制折线长每 3 个单位一段、16–400 段。</summary>
+    private static PointD[] Sample(PointD start, PointD control, PointD end)
+    {
+        var length = Distance(control, start) + Distance(end, control);
+        var segments = Math.Min(400, Math.Max(16, (int)(length / 3)));
+        var points = new PointD[segments + 1];
+        for (var step = 0; step <= segments; step++)
+        {
+            points[step] = Quad(start, control, end, (double)step / segments);
+        }
+
+        return points;
     }
 
     /// <summary>箭头底边的半宽：头长 × tan 28°（弯的头长按 4 × 线宽算，外框宁大勿小）。</summary>
@@ -606,21 +719,7 @@ public sealed record Annotation
     /// <summary>箭头、直线的骨架折线：直的是两端，弯的是弧线上的采样点（按控制折线长每 3 个单位一段、16–400 段）。</summary>
     public static IReadOnlyList<PointD> CurvePoints(PointD from, PointD to, VectorD bend)
     {
-        if (bend == VectorD.Zero)
-        {
-            return new[] { from, to };
-        }
-
-        var control = CurveControl(from, to, bend);
-        var length = Distance(control, from) + Distance(to, control);
-        var segments = Math.Min(400, Math.Max(16, (int)(length / 3)));
-        var points = new PointD[segments + 1];
-        for (var step = 0; step <= segments; step++)
-        {
-            points[step] = Quad(from, control, to, (double)step / segments);
-        }
-
-        return points;
+        return bend == VectorD.Zero ? new[] { from, to } : Sample(from, CurveControl(from, to, bend), to);
     }
 
     /// <summary>弧线的外框：两端 + 每个轴上的极值点。直的就是两端围成的框。</summary>
@@ -679,21 +778,29 @@ public sealed record Annotation
         return Box(start, end);
     }
 
+    /// <summary>点在多边形里：非零环绕（同 CGPath.contains 的默认、Win2D 填充的默认），弯箭头的轮廓自交处也算在里面。</summary>
     public static bool PolygonContains(IReadOnlyList<PointD> polygon, PointD point)
     {
-        var inside = false;
+        var winding = 0;
         for (int i = 0, j = polygon.Count - 1; i < polygon.Count; j = i++)
         {
-            var a = polygon[i];
-            var b = polygon[j];
-            if ((a.Y > point.Y) != (b.Y > point.Y) &&
-                point.X < (b.X - a.X) * (point.Y - a.Y) / (b.Y - a.Y) + a.X)
+            var a = polygon[j];
+            var b = polygon[i];
+            var side = (b.X - a.X) * (point.Y - a.Y) - (point.X - a.X) * (b.Y - a.Y);
+            if (a.Y <= point.Y)
             {
-                inside = !inside;
+                if (b.Y > point.Y && side > 0)
+                {
+                    winding++;
+                }
+            }
+            else if (b.Y <= point.Y && side < 0)
+            {
+                winding--;
             }
         }
 
-        return inside;
+        return winding != 0;
     }
 
     /// <summary>这一轴上 (1−t)²a + 2t(1−t)b + t²c 的极值点（在 0–1 之间才算）。</summary>

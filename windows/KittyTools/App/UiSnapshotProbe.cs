@@ -163,12 +163,22 @@ internal static class UiSnapshotProbe
                 var crop = new PixelBounds(
                     (int)(width * 0.3) - 40, (int)(height * 0.25) - 40, (int)(width * 0.7) + 40, (int)(height * 0.6) + below);
                 await WindowShot.SaveAsync(overlay.Handle, Path.Combine(directory, "shot-toolbar.png"), crop);
-                // PLAN-v9 第 5a 批：五种标注、选中箭头、样式托盘（8 色 + 细 / 中 / 粗）、顶部的提示
-                overlay.ShowProbeAnnotations();
+                // PLAN-v9 第 5b 批：十种标注、选中弯箭头（托盘 8 色 + 三档）、再选中实心椭圆（托盘多一段空心 / 实心）
+                overlay.ShowProbeAnnotations(KittyTools.Core.AnnotationKind.Arrow);
                 await Task.Delay(500);
                 await WindowShot.SaveAsync(
                     overlay.Handle, Path.Combine(directory, "shot-annotations.png"),
                     crop with { Top = 0 });
+                overlay.ShowProbeAnnotations(KittyTools.Core.AnnotationKind.Ellipse);
+                await Task.Delay(500);
+                await WindowShot.SaveAsync(
+                    overlay.Handle, Path.Combine(directory, "shot-annotations-tray.png"),
+                    crop with { Left = Math.Max(0, crop.Left - (int)(120 * overlay.Screen.Scale)) });
+                // 导出走同一个 AnnotationRenderer.Draw（按像素）：和屏幕上的那张对着看
+                if (await overlay.ExportPngAsync() is { } exported)
+                {
+                    await File.WriteAllBytesAsync(Path.Combine(directory, "shot-annotations-export.png"), exported);
+                }
                 ScreenshotSession.FinishCurrent();
             }
 

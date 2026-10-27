@@ -46,6 +46,10 @@ internal static class Theme
         public static readonly Color HudHover = Color.FromArgb(245, 52, 52, 52);
         public static readonly Color HudPressed = Color.FromArgb(245, 40, 40, 40);
 
+        /// <summary>样式托盘选项分段的轨道（mac HUD.chipFill，white 0.08）和选中的那段（HUD.selectedFill，white 0.18）。</summary>
+        public static readonly Color ChipFill = Color.FromArgb(20, 255, 255, 255);
+        public static readonly Color SelectedFill = Color.FromArgb(46, 255, 255, 255);
+
         // 标注的 8 色是内容色，在 Core 的 AnnotationPalette（照 mac，PLAN-v9-annotate D4）。
     }
 
