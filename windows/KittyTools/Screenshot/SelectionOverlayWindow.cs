@@ -1440,12 +1440,21 @@ internal sealed partial class SelectionOverlayWindow : Window
                 e.Handled = true;
                 break;
             case Windows.System.VirtualKey.Escape:
-                // 按一下就退出截图（0.1.0 用户反馈：以前有选区时第一下只清选区、要按两下）。
-                // 只有正在打字时 Esc 是取消这段字（文字框自己先收到）。
+                // 照 mac：打字中的文字 → 选中的标注 → 选中的工具 → 退出截图（免得一下把画好的标注全丢了）。
+                // 有选区、没选工具时按一下就退出，不先清选区（0.1.0 用户反馈：以前要按两下）。
                 e.Handled = true;
                 if (_textEditor is not null)
                 {
                     CancelText();
+                }
+                else if (_selectedAnnotation is not null)
+                {
+                    _selectedAnnotation = null;
+                    _canvas.Invalidate();
+                }
+                else if (_tool != AnnotationTool.Select)
+                {
+                    SelectTool(AnnotationTool.Select);
                 }
                 else
                 {

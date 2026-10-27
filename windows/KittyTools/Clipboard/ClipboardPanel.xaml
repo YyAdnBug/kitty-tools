@@ -166,6 +166,7 @@
                 Visibility="Collapsed"
                 HorizontalAlignment="Stretch"
                 VerticalAlignment="Top" />
+            <!-- 列表不露滚动条（0.1.0 用户反馈：上下键挪高亮时右边冒出一根）；滚轮、方向键照样滚。 -->
             <ListView
                 x:Name="List"
                 ItemTemplate="{StaticResource ClipRowTemplate}"
@@ -178,6 +179,7 @@
                 SelectionChanged="OnSelectionChanged"
                 DoubleTapped="OnListDoubleTapped"
                 RightTapped="OnListRightTapped"
+                ScrollViewer.VerticalScrollBarVisibility="Hidden"
                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
             <StackPanel
                 x:Name="EmptyState"

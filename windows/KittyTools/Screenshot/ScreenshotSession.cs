@@ -629,7 +629,7 @@ internal sealed class ScreenshotSession
                 return;
             }
 
-            // PLAN-v9 V2：识字看设置（默认不接行，和 mac 一样）；截图翻译那一处（下面）总是接。
+            // PLAN-v9 V2：识字看设置（默认不接行，和 mac 一样）；截图翻译那一处（下面）也看这个设置。
             var (text, _) = await OcrService.RecognizeAsync(
                 image.Bgra, image.Width, image.Height, joined: SettingsService.Current.OcrJoinLines);
             if (string.IsNullOrWhiteSpace(text))
@@ -685,8 +685,11 @@ internal sealed class ScreenshotSession
                 return;
             }
 
+            // 原文的换行默认原样留着（0.1.0 用户反馈：分行的原文进了输入框变成一整段）；
+            // 开了「把同一段里的换行接起来」才接，段和段之间空一行。mac 这里总是接，Windows 不学。
             var (text, _) = await OcrService.RecognizeAsync(
-                image.Bgra, image.Width, image.Height, separator: "\n\n");
+                image.Bgra, image.Width, image.Height,
+                joined: SettingsService.Current.OcrJoinLines, separator: "\n\n");
             if (string.IsNullOrWhiteSpace(text))
             {
                 NoticeHost.Show("没有识别到文字", "换个区域再试", NoticeTone.Warning);

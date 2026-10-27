@@ -1191,7 +1191,7 @@ internal sealed class SettingsWindow : Window
             TextWrapping = TextWrapping.Wrap,
         });
         AddToggle("识字后把同一段里的换行接起来",
-            "段和段之间保留换行；中文、日文的行直接接上，其它文字之间加空格。截图翻译总是这样接。",
+            "识字和截图翻译都看这个。段和段之间保留换行；中文、日文的行直接接上，其它文字之间加空格。",
             SettingsService.Current.OcrJoinLines,
             value =>
             {
