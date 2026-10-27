@@ -125,9 +125,10 @@ final class FileSearch {
     return (folder as NSString).abbreviatingWithTildeInPath
   }
 
-  static func item(_ hit: Hit) -> LauncherItem {
+  /// pinyin：名字转拼音全拼 + 首字母（一条约 0.12 ms）；查询词里没有拉丁字母时用不上，不转（P3）
+  static func item(_ hit: Hit, pinyin withPinyin: Bool = true) -> LauncherItem {
     let stem = (hit.name as NSString).deletingPathExtension
-    let pinyin = AppCatalog.pinyin(stem)
+    let pinyin = withPinyin ? AppCatalog.pinyin(stem) : nil
     let parent = location(of: (hit.path as NSString).deletingLastPathComponent)
     let path = (hit.path as NSString).abbreviatingWithTildeInPath
     return LauncherItem(
@@ -143,10 +144,17 @@ final class FileSearch {
         ?? UTType(filenameExtension: (hit.path as NSString).pathExtension) ?? .data)
   }
 
+  /// 拼音只在查询词里有拉丁字母时才用得上（「季度」「2024」不会去比拼音）
+  static func needsPinyin(_ terms: [String]) -> Bool {
+    terms.contains { $0.contains { $0.isASCII && $0.isLetter } }
+  }
+
   /// 匹配分 × 使用加成（和启动器其它结果同一公式）→ 最近打开 / 修改的在前 → 路径浅的在前。
-  /// Spotlight 靠驼峰切词 / 中文词中间命中、我们的匹配分为 0 的给底分 30；只输关键词时只看使用和时间
+  /// Spotlight 靠驼峰切词 / 中文词中间命中、我们的匹配分为 0 的给底分 30；只输关键词时只看使用和时间。
+  /// item：一条命中变成条目（启动器传按路径缓存的 `FileSearch.item(_:pinyin:)`，P3）
   static func rank(
-    _ hits: [Hit], terms: [String], boost: (LauncherItem) -> (global: Double, query: Double)
+    _ hits: [Hit], terms: [String], item: (Hit) -> LauncherItem = { FileSearch.item($0) },
+    boost: (LauncherItem) -> (global: Double, query: Double)
   ) -> [LauncherItem] {
     let query = terms.joined(separator: " ")
     return hits.map { hit -> (LauncherItem, Double, Date, Int) in
@@ -199,6 +207,24 @@ final class FileSearch {
     }
     return (exact, partial)
   }
+
+  // MARK: 按路径缓存的条目（P3）
+
+  /// 每批结果都是到目前为止的全部（上限 2 万），转拼音一条约 0.12 ms，单个汉字能命中几千条：不缓存的话每到一批都要全部重转。
+  /// 换查询也接着用（打字时前后两次的结果大半重叠），收起面板时清掉。
+  /// ponytail: 满 2 万条整个清掉重来，要更省就换成按最近用到的淘汰
+  private var items: [String: (item: LauncherItem, pinyin: Bool)] = [:]
+
+  /// 这条命中的条目：缓存里有、且转过拼音（或这次用不上拼音）就直接用
+  func item(_ hit: Hit, pinyin: Bool) -> LauncherItem {
+    if let cached = items[hit.path], cached.pinyin || !pinyin { return cached.item }
+    if items.count >= Self.processLimit { items.removeAll(keepingCapacity: true) }
+    let item = Self.item(hit, pinyin: pinyin)
+    items[hit.path] = (item, pinyin)
+    return item
+  }
+
+  func forgetItems() { items = [:] }
 
   // MARK: 查询
 

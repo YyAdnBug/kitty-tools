@@ -240,7 +240,9 @@ nonisolated enum Microsoft {
       // 两个接口的请求体不同：认知服务是 [{"Text": ...}]，Edge 接口是字符串数组；返回结构相同
       let body: Any = key == nil ? [request.text] : [["Text": request.text]]
       urlRequest.httpBody = try JSONSerialization.data(withJSONObject: body)
-      let (data, response) = try await HTTP.session(for: components.url!).data(for: urlRequest)
+      let (data, response) = try await HTTP.perform { [urlRequest] in
+        try await HTTP.session(for: urlRequest.url!).data(for: urlRequest)
+      }
       let object = try? JSONSerialization.jsonObject(with: data)
       try HTTP.check(response, object as? [String: Any] ?? [:])
       let first = (object as? [[String: Any]])?.first

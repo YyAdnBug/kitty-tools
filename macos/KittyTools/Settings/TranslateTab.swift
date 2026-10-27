@@ -149,7 +149,7 @@ struct TranslateTab: View {
             Text("复制即译")
             Text("在别的 App 里复制外语文字，浮窗自动弹出翻译（网址、路径、数字和第一语言的文字不翻）")
           }
-          Toggle("自动复制第一个服务的译文", isOn: $autoCopy)
+          Toggle("自动复制译文", isOn: $autoCopy)
             .help("复制即译弹出的翻译不会自动复制，免得覆盖你刚复制的原文")
           Toggle(isOn: $copyRecognized) {
             Text("截图翻译时复制识别出的原文")
@@ -199,7 +199,7 @@ struct TranslateTab: View {
         Text("翻译服务")
       } footer: {
         SectionFootnote(
-          "拖动调整顺序，结果按这个顺序显示，第一个服务的结果写入历史、用于自动复制；点一行进入设置。删掉的内置服务可以从「+」加回来，密钥还在。")
+          "拖动调整顺序，结果按这个顺序显示；排在最前、翻译成功的那个服务的结果写入历史、用于自动复制和收藏。点一行进入设置。删掉的内置服务可以从「+」加回来，密钥还在。")
       }
       .gated(by: .translate)
     }

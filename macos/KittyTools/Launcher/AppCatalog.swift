@@ -1,9 +1,10 @@
 // 启动器的 App 目录：扫各应用程序目录下的 .app（含一层子文件夹）。名字取显示名、文件名、中文本地化名，
-// 中文名再转拼音全拼 + 首字母，让「活动监视器」「huodong」「hdjsq」都能搜到（修旧版只认文件名，§11 #26）。
+// 标题（中文本地化名，没有就是显示名）再转拼音全拼 + 首字母，让「活动监视器」「huodong」「hdjsq」都能搜到（修旧版只认文件名，
+// §11 #26）；中文名直接写在主 Info.plist 里的（企业微信）也转（第三轮体检 B2）。
 // 系统 App 不另写死一份、按解开符号链接后的路径去重（修旧版同一个 App 出现两行，§11 #25；
 // 本机 /Applications/Safari.app 就是指向 Cryptexes 的链接）；访达不在应用程序目录里，单独加。
-// 在主线程扫：本机 116 个 App 实测约 65ms（含拼音），由 LauncherModel 决定何时重扫：各目录的修改时间（signature，
-// 只 stat）变了就在呼出前重扫（放进 / 删掉 .app 都会改它，体检 B31）。
+// 本机 116 个 App 实测约 65ms（含拼音），在后台扫（scanInBackground，第三轮体检 P3；启动台的 LaunchpadCatalog 同一份）。
+// 由 LauncherModel 决定何时重扫：各目录的修改时间（signature，只 stat）变了就在呼出时重扫（放进 / 删掉 .app 都会改它，体检 B31）。
 // 副标题：显示名是中文时写英文文件名；否则标准目录（及其一层子文件夹）里的留空，别处的写所在位置（~/Downloads），
 // 好分清同名的两份（体检 A25：以前写「应用程序」，和右侧类型「应用」重复）。
 // 顺带扫系统设置的各个面板（体检 D9）：/System/Library/ExtensionKit/Extensions 里扩展点是 com.apple.Settings.extension.ui、
@@ -22,6 +23,10 @@ enum AppCatalog {
   ]
 
   nonisolated static let extraApps = ["/System/Library/CoreServices/Finder.app"]
+
+  /// 后台扫（启动器呼出时不卡主线程；第三轮体检 P3）
+  @concurrent
+  nonisolated static func scanInBackground() async -> [LauncherItem] { scan() }
 
   nonisolated static func scan() -> [LauncherItem] {
     var seen = Set<String>()
@@ -60,7 +65,8 @@ enum AppCatalog {
     if display.hasSuffix(".app") { display = String(display.dropLast(4)) }
     let chinese = chineseName(URL(filePath: path))
     let title = chinese ?? display
-    let pinyin = chinese.flatMap(Self.pinyin)
+    // 按标题转：中文名直接写在主 Info.plist 里的（企业微信、小程序开发者工具）没有 zh-Hans.lproj，显示名就是中文（B2）
+    let pinyin = Self.pinyin(title)
     let names = [title, display, fileName, pinyin?.full].compactMap { $0.map(LauncherMatch.fold) }
     return LauncherItem(
       kind: .app, target: path, title: title,

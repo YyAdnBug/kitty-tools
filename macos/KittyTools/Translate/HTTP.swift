@@ -129,7 +129,8 @@ nonisolated enum HTTP {
     return "\(base)：\(serverMessage.prefix(160))"
   }
 
-  private static func perform<T>(_ body: () async throws -> T) async throws -> T {
+  /// 发请求一律包这一层：连不上、超时、断网报成统一的中文网络错误（`.network`），不让原始 URLError 被包成服务类错误
+  static func perform<T>(_ body: () async throws -> T) async throws -> T {
     do { return try await body() } catch { throw userFacing(error) }
   }
 

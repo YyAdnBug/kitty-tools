@@ -26,6 +26,20 @@ nonisolated enum LauncherMatch {
     return fold(result)
   }
 
+  /// 查询切成词（和 score 同一种切法）：粗筛用
+  static func tokens(_ query: String) -> [Substring] {
+    fold(query.trimmingCharacters(in: .whitespaces)).split(whereSeparator: \.isWhitespace)
+  }
+
+  /// 粗筛：score > 0 的必要条件——每个词都是某个名字的子串，或者（≥ 2 个字时）某个首字母缩写的开头（整句的那次比较
+  /// 命中时每个词也都是那个名字的子串）。不切词，比完整打分便宜得多：几千个书签 / 浏览历史先过一遍再排
+  static func mayMatch(_ tokens: [Substring], _ item: LauncherItem) -> Bool {
+    tokens.allSatisfy { token in
+      item.names.contains { $0.contains(token) }
+        || (token.count >= 2 && item.initials.contains { $0.hasPrefix(token) })
+    }
+  }
+
   /// 0 表示不匹配
   static func score(_ query: String, item: LauncherItem) -> Double {
     let whole = fold(query.trimmingCharacters(in: .whitespaces))

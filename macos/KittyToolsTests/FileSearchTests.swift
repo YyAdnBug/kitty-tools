@@ -81,6 +81,28 @@ struct FileSearchTests {
     #expect(file.completion == "~/Downloads/Kitty.dmg" && file.contentType != nil)
   }
 
+  /// P3：命中按路径缓存（每批结果都是到目前为止的全部，只转新到的）；查询词里没有拉丁字母时不转拼音，排序不受影响
+  @Test func cachesItemsByPathAndSkipsPinyinForChineseQueries() {
+    #expect(!FileSearch.needsPinyin(["季度"]) && !FileSearch.needsPinyin(["2024", "报告"]))
+    #expect(FileSearch.needsPinyin(["jidu"]) && FileSearch.needsPinyin(["季度", "q3"]))
+    let search = FileSearch()
+    let report = hit("/Documents/季度报告.pdf")
+    #expect(!search.item(report, pinyin: false).names.contains("jidubaogao"))
+    #expect(search.item(report, pinyin: true).names.contains("jidubaogao"))  // 要拼音时补转
+    // 同一路径再来用缓存（转过拼音的，不要拼音时照用）；清掉之后重新做
+    var renamed = report
+    renamed.name = "别的.pdf"
+    #expect(search.item(renamed, pinyin: false).title == "季度报告.pdf")
+    search.forgetItems()
+    #expect(search.item(renamed, pinyin: false).title == "别的.pdf")
+    let hits = [hit("/Documents/季度报告.pdf"), hit("/Documents/年度季度总结.md", daysAgo: 0)]
+    let noBoost: (LauncherItem) -> (global: Double, query: Double) = { _ in (0, 0) }
+    #expect(
+      FileSearch.rank(
+        hits, terms: ["季度"], item: { FileSearch.item($0, pinyin: false) }, boost: noBoost
+      ).map(\.title) == FileSearch.rank(hits, terms: ["季度"], boost: noBoost).map(\.title))
+  }
+
   @Test func ranksByMatchUsageAndDate() throws {
     let hits = [
       hit("/Documents/old-report.pdf", daysAgo: 1),

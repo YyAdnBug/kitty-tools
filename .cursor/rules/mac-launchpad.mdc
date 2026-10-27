@@ -44,11 +44,14 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
 ## 2. App 目录
 - 复用 `AppCatalog.scan()`（同一份目录、去重、中文名、拼音、首字母），**只留 `.app`**，目录扫描在后台（`@concurrent` 的 `LaunchpadCatalog.loadInBackground`，回来接上；打开路径不扫）：不要系统设置的面板（kind `.url`），
   不要访达。`LaunchpadCatalog.load()` 顺带读 bundle id、`LSApplicationCategoryType`（本地化名给文件夹起名）、
-  `Contents/_MASReceipt/receipt`（只有 App Store 装的才给删）。目录修改时间（`AppCatalog.signature`）变了才重扫。
+  `Contents/_MASReceipt/receipt`（只有 App Store 装的才给删）。目录修改时间（`AppCatalog.signature`）变了、或者离上次扫超过 5 分钟（`LauncherModel.rescanInterval`，
+  第三轮体检 U4：装进 /Applications 子文件夹里的、子文件夹里升级的，顶层目录的修改时间不变）才重扫，都在打开时后台扫、不挡打开。
 - 图标 `NSWorkspace.shared.icon(forFile:)`（文档写明任何线程能调），**在后台画成一张位图、常驻**在 `LaunchpadIcons`
   （2026-10-18 真机反馈「第一次打开卡一阵」后改的，用户定常驻：本机 111 个、185 px 见方约 15 MB）。系统图标是多尺寸的，交给界面
   每画一次都重渲染（111 个第一次 1.8 s、之后每遍 0.25 s，全在主线程），所以界面只拿位图。目录扫完就预热；边长 = 所有屏里最大的图标 × 缩放倍数，
   屏变大了重画（旧图先留着）；还没画好的给透明占位、画好一批界面自己刷新。单测和截图自检用 `synchronous: true`（缺了当场画）。
+  **位图按 App 包的修改时间认**（`LaunchpadProjectApp.modified`：包本身和 `Contents/Info.plist` 取晚的；第三轮体检 B3）：升级换了图标的照新的重画，
+  画好之前旧图照样显示；扫完目录已经不在的（卸掉的）放掉（`LaunchpadIcons.prune`）。启动器那边重扫 App 目录时清掉 App 路径的图标缓存（`LauncherIcons.forget`）。
 - 背景的壁纸（`LaunchpadWallpaper`）只读 `NSWorkspace.desktopImageURL` 那个文件，后台缩着读、裁、模糊，缓存一张；不截屏、不要权限。
 - 第一次自动导入、设置里重新导入时，岛上先挂「正在按原来的启动台排列…」（`.progress`），排好换成结果；导入期间用户动过布局就不覆盖、换成「已保留你刚才的排列」。打开到第一帧、翻页每帧的时间要量（R11），写进 PLAN。
 
@@ -72,6 +75,8 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
   （焦点本来就在框里，点了没变化，用户以为没点中；2026-10-19）。屏外单测等 `initialFirstResponder is NSTextField` 再取，别拿整个界面视图当搜索框。
 - 收起后晚一拍拆界面：面板在 async 里强持一拍，只放**这块面板自己的**模型（中间又开了新的，新模型不能被放掉，G20）。
 - 拖动 / 搜索中来的布局（导入、恢复默认）和扫完的目录先压着，松手 / 清空搜索时（model 的 `onSettled`）再换（G14 / G26）；
+  压着的布局在模型里（`LaunchpadModel.replaceWhenIdle`），松手换上时**再交给总控存一次盘**——松手那一挪已经把「拖之前那份 + 这一挪」存下去、
+  盖掉了总控先存的那份（第三轮体检 B4：第一次自动导入恰好在拖的时候排好，下次打开导入的排法就没了）；
   点一下打开 App 按**目录**找，不按布局（搜索结果里刚装、布局里还没有的也开得了）。
 - 收起后放掉窗口和界面；还在跑的动画、计时、追踪区先停再放（别在回调里碰已经放掉的面板）。
 - **开 / 收只有一个数**（2026-10-19）：每块面板一个 `LaunchpadZoom`（0 = 收着、1 = 摆好），窗口透明度和上面那层的缩放都只听它（`apply`），

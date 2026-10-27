@@ -75,7 +75,7 @@ enum Prefs {
   static let translateFirst = "translateNativeLang"
   static let translateSecond = "translateForeignLang"
   static let translateRemoveNewlines = "translateDeleteNewline"
-  /// 自动复制第一个服务的译文
+  /// 自动复制译文（主结果：按列表顺序第一个翻成功的服务）
   static let translateAutoCopy = "autoCopy"
   /// 截图翻译时把识别出的原文也写进剪贴板（2026-10-23 用户要的，⌘V 就能贴原文）；默认关：照旧只记进剪贴板历史、
   /// 不换掉剪贴板里原来的东西

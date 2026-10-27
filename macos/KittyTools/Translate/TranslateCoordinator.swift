@@ -1,8 +1,9 @@
 // 翻译会话：一段原文 → 预处理 → 检测语种、解析源 / 目标 → 所有启用的服务并行翻译（大模型逐字流式）。
-// 新会话取消旧会话的全部请求；单张卡片可单独重试。列表第一个服务出结果后写历史、按设置自动复制
-// （复制即译带来、还没改过的原文不自动复制，体检 A19）。截断的结果（B19）不算完成。
+// 新会话取消旧会话的全部请求；单张卡片可单独重试。按列表顺序第一个翻成功的服务（primaryResult，第三轮体检 U1：
+// 排在前面的失败了就往后取）定下来时写历史、按设置自动复制一次（复制即译带来、还没改过的原文不自动复制，体检 A19）。
+// 截断的结果（B19）不算完成。被取消的任务一个字都不再写回卡片（B1：取消后流缓冲里的增量照样会交出来）。
 // 服务分发在 TranslateService.translate 的一个 switch 里。浮窗的收藏（⌘D，体检 A31）、复制第 N 张卡（⌘1–9）、
-// 替换原文（划词来的会话）都以这里的状态为准；静默替换走 translateOnce（只用第一个服务、不开浮窗）。
+// 替换原文（划词来的会话）都以这里的状态为准；静默替换走 translateOnce（只用第一个启用的服务、不开浮窗）。
 // 原文改过还没重译（needsTranslate）时浮窗才出「翻译 ↩」胶囊（N5）；翻译历史的列表状态在 historyList，
 // 它的搜索框命令和 ⌘ 键（N7）也从这里分发。
 
@@ -99,7 +100,16 @@ import Observation
   /// 复制即译带来的原文（去首尾空白）：没改过就不自动复制（免得盖掉刚复制的原文，体检 A19）；别的入口开会话时清掉
   @ObservationIgnored private var copiedSource: String?
   @ObservationIgnored private var dictionaryTask: Task<Void, Never>?
-  @ObservationIgnored private var tasks: [String: Task<Void, Never>] = [:]
+  @ObservationIgnored private var tasks: [String: (run: Int, task: Task<Void, Never>)] = [:]
+  /// 每次 run 加一：旧任务拿着旧号，写不进同一个服务的新卡（B1，和 Task.isCancelled 两道保险）
+  @ObservationIgnored private var runs = 0
+  /// 这次会话已经按哪个服务写过历史 / 自动复制过（U1：第一个翻成功的服务定下来时只做一次）
+  @ObservationIgnored private var recordedPrimary: String?
+  /// 翻译用的流（单测换成假的；默认就是 TranslateService.translate 的那个 switch）
+  @ObservationIgnored
+  var stream: (TranslateService, TranslateRequest) -> AsyncThrowingStream<String, Error> = {
+    $0.translate($1)
+  }
 
   /// 原文上限（字节）：再长的文本请求和渲染都不划算
   static let maxSourceBytes = 32 * 1024
@@ -130,12 +140,22 @@ import Observation
     }
   }
 
-  /// 第一个服务的完成结果（写历史、自动复制、收藏、替换原文都认它）
+  /// 主结果：按列表顺序第一个翻成功的服务（写历史、自动复制、收藏、替换原文都认它）。排在它前面的都得已经没成
+  /// （出错、截断、中断）才轮到它——前面的还在跑就先等，免得先认了第二个、第一个出来又换（U1）
   var primaryResult: (service: TranslateService, text: String)? {
-    guard let first = cards.first, case .done(let text) = first.state, !text.isEmpty else {
-      return nil
+    Self.primary(of: cards)
+  }
+
+  /// 纯函数，配单测
+  static func primary(of cards: [Card]) -> (service: TranslateService, text: String)? {
+    for card in cards {
+      switch card.state {
+      case .done(let text) where !text.isEmpty: return (card.service, text)
+      case .waiting, .running: return nil
+      case .done, .truncated, .failed: continue
+      }
     }
-    return (first.service, text)
+    return nil
   }
 
   /// 这次翻译收藏了没有（星标）；读 history.revision 让收藏变化时刷新
@@ -145,7 +165,7 @@ import Observation
     return history.isFavorite(source: request.text, target: target)
   }
 
-  /// ⌘D / 星标：收藏或取消这次翻译（第一个服务出结果后才能收藏）；返回是否做了。
+  /// ⌘D / 星标：收藏或取消这次翻译（主结果定下来后才能收藏）；返回是否做了。
   /// 关着历史时取消收藏就把这条删掉（收藏时才记进去的，留着就成了「关了历史却有历史」）。
   /// 焦点一直在原文框，星标变了读屏看不到：播报（同历史 ⌘C、启动器 ⌘D）
   @discardableResult
@@ -261,6 +281,7 @@ import Observation
     abandonedTarget = plan.abandonedTarget
     request = plan.request
     isWordLookup = plan.request.isWord
+    recordedPrimary = nil
     cards = services.enabled.map { Card(service: $0, state: .waiting) }
     for card in cards { run(card.service) }
     lookUpDictionary(text)
@@ -359,7 +380,7 @@ import Observation
   /// 停掉还在跑的服务，没出完的卡片标成中断（不然卡片一直是「生成中」，隐藏的浮窗里骨架、彗星、光标动画停不下来）
   func cancel() {
     dictionaryTask?.cancel()
-    for task in tasks.values { task.cancel() }
+    for entry in tasks.values { entry.task.cancel() }
     tasks = [:]
     for index in cards.indices {
       switch cards[index].state {
@@ -370,26 +391,36 @@ import Observation
   }
 
   private func run(_ service: TranslateService) {
-    tasks[service.id]?.cancel()
+    tasks[service.id]?.task.cancel()
     guard let request else { return }
+    // 重跑的正是记过历史的那个：出来了照常再记一次、再复制一次（和以前重试第一个服务一样）
+    if recordedPrimary == service.id { recordedPrimary = nil }
     update(service.id, .waiting)
-    tasks[service.id] = Task {
+    runs += 1
+    let run = runs
+    let task = Task {
+      // 取消后流缓冲里的增量照样会交出来（AsyncThrowingStream 先交完缓冲再结束）：每一段都先看还是不是自己的，
+      // 不然收起时标成「已中断」的卡被改回「生成中」，流结束后又不收尾，卡就一直转（B1）
+      let current = { !Task.isCancelled && self.tasks[service.id]?.run == run }
       var latest = ""
       do {
-        for try await text in service.translate(request) {
+        for try await text in stream(service, request) {
+          guard current() else { return }
           latest = text
           update(service.id, .running(text))
         }
         // 取消时流会正常结束而不是抛错：这里不能把半截结果当成完成
-        guard !Task.isCancelled else { return }
+        guard current() else { return }
         update(service.id, .done(latest))
-        finished(service, request: request, text: latest)
       } catch {
-        guard !Task.isCancelled, !(error is CancellationError) else { return }
-        // 截断：半截照常显示、另写一行说明；不写历史、不自动复制（不调 finished）
+        guard current(), !(error is CancellationError) else { return }
+        // 截断：半截照常显示、另写一行说明；不写历史、不自动复制（primaryResult 不认它）
         update(service.id, Self.state(after: error, latest: latest))
       }
+      // 这一张成了、或者没成让后面已经出来的那张轮上：都在这里定主结果
+      settlePrimary()
     }
+    tasks[service.id] = (run, task)
   }
 
   /// 流抛错后卡片的状态（纯函数，配单测）：输出到上限被截断、且已经出来了字的是 .truncated（半截照常显示），
@@ -404,10 +435,15 @@ import Observation
     cards[index].state = state
   }
 
-  /// 只认列表第一个服务：写历史、自动复制（复制即译带来、还没改过的原文不复制：免得盖掉用户刚复制的原文，体检 A19；
-  /// 本 App 写剪贴板都经 Paster.write，watcher 按 ownChangeCount 跳过，不会自己触发自己）
-  private func finished(_ service: TranslateService, request: TranslateRequest, text: String) {
-    guard service.id == cards.first?.id else { return }
+  /// 主结果定下来（或换成了另一个服务的）时写历史、自动复制，同一个服务只做一次：后面的服务再出来不各复制一次（U1）。
+  /// 复制即译带来、还没改过的原文不复制：免得盖掉用户刚复制的原文，体检 A19；
+  /// 本 App 写剪贴板都经 Paster.write，watcher 按 ownChangeCount 跳过，不会自己触发自己
+  private func settlePrimary() {
+    guard let request, let primary = primaryResult, primary.service.id != recordedPrimary else {
+      return
+    }
+    let (service, text) = primary
+    recordedPrimary = service.id
     let defaults = UserDefaults.standard
     if defaults.bool(forKey: Prefs.translateHistoryEnabled) {
       history.add(

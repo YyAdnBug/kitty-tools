@@ -18,7 +18,7 @@ alwaysApply: false
 - 分发只有 `TranslateService.translate` 的一个 `switch`；加服务 = 一个 `Providers/*.swift` + 一个 case，不建 registry / factory / protocol。
 - **列表只放加进来的服务**（体检 B21，mac-whisker §6 设置「有序列表」）：从没存过时默认只有智谱（启用，`TranslateServiceStore.defaults`）；存过的原样用，删掉的内置服务不再自动补回。设置「+」菜单 = 没加的内置服务（加回来直接启用）｜「AI 服务」子菜单：厂商预设 `TranslateService.aiPresets`（OpenAI、DeepSeek、通义千问、Kimi、硅基流动、OpenRouter、Gemini、Anthropic、Ollama，只填名称 / 协议 / 地址，不持久化；D15）+ 自定义（OpenAI 兼容）/ Azure OpenAI；新建 AI 服务默认关，推进详情页、光标落在 API Key，「测试连接」成功自动启用；选了就已经加进列表末尾，详情页即改即存、没有「保存」按钮（同系统设置；2026-10-03 用户问过「没有保存的地方」，起因是当时超过 10 行的列表看不到新加的服务，回来以为没存、又加了几遍，见 mac-whisker-settings「有序列表」）。
 - **服务 logo**（第 13 批，外观见 mac-whisker §6 翻译「服务身份」）：AI 服务按 `AIVendor`（`Providers/AIService.swift`，一处定义；关思考分档、max_tokens 也读它）认厂商，先看地址的 host（`api.` 前缀、端口、大小写都不影响；本机 / 局域网的 11434 端口 = Ollama）、再看服务名的关键词，都认不出时 Anthropic 协议算 Anthropic，Azure 用微软；加厂商 = 表里加一行 + `ServiceLogo` 里加一张官网图。**官网图标的网络访问**：内置表认不出的自建 AI 服务（如 opencode.ai），在设置页或翻译卡片要显示它时（懒取），由地址推出官网（可注册域名，`ServiceIcons.registrableDomain`）、经 `LinkPreview.siteIcon`（同一个 `Fetcher`：临时会话、不收发 Cookie、限大小、3 s 超时、`isPublicHTTP` 拦本机 / 内网 / 私有地址，IP 地址也不取）取网站图标，缩到长边 128 存 `~/Library/Application Support/<bundle id>/ServiceIcons/<官网主机>.png`；有缓存就不再取，满 7 天显示时后台重取一次，本次运行里每个主机只试一次，失败不报错（色块）。只访问用户自己配置的服务所在的官网，**不加设置开关**，和剪贴板「链接预览」开关无关。截图自检把 `ServiceIcons.shared.fetch` 换成不联网的、`directory` 换成临时目录；联网冒烟 `TEST_RUNNER_KITTY_LIVE_LINK=1`（`liveSiteIcons`，不写磁盘）。
-- 列表顺序 = 卡片顺序；**第一个服务**的结果写历史、按设置自动复制（**复制即译带来、还没改过的原文不自动复制**，免得盖掉用户刚复制的原文；划词、输入、截图翻译照设置复制，体检 A19，`TranslateCoordinator.autoCopies`；本 App 写剪贴板都经 `Paster.write`，watcher 按 ownChangeCount 跳过，不会自己触发自己）；自动复制走 `copyCard`，和 ⌘1–9 一样对勾 + 整卡闪。
+- 列表顺序 = 卡片顺序；**主结果**（`primaryResult`：按列表顺序第一个翻成功的服务——排在它前面的都已经出错 / 截断 / 中断才轮到它，前面的还在跑就先等；第三轮体检 U1，以前只认列表第一个，它没配密钥时收藏、替换原文、历史、自动复制全用不了）写历史、按设置自动复制，主结果定下来时做一次（`settlePrimary`：后面的服务再出来不各复制一次；重试的是记过的那个、或者排在前面的重试成功换了主结果，才再做一次）（**复制即译带来、还没改过的原文不自动复制**，免得盖掉用户刚复制的原文；划词、输入、截图翻译照设置复制，体检 A19，`TranslateCoordinator.autoCopies`；本 App 写剪贴板都经 `Paster.write`，watcher 按 ownChangeCount 跳过，不会自己触发自己）；自动复制走 `copyCard`，和 ⌘1–9 一样对勾 + 整卡闪。
 - 密钥只进钥匙串，账户名 `"<服务 id>.<字段>"`，字段名已定，改名读不到已存的密钥（`baidu.appId`、`baidu.secret`、`youdao.appKey`、`youdao.appSecret`、`google.apiKey`、`deepl.authKey`、`microsoft.subscriptionKey`、`volcengine.accessKey/secretKey`、`tencent.secretId/secretKey`、`ai:<id>.apiKey`、`zhipu.apiKey`）。**删 AI 服务连带删密钥；删内置服务不确认、密钥留着**（从「+」加回来还在）。账户名统一由 `TranslateService.account(_:)` 给；密钥出钥匙串只有设置的导出一条路（用户勾选、密码加密，mac-native §2「设置的导出与导入」），导入时只收文件里那些服务自己的字段（`SettingsArchive.accepted`），加了新服务 / 新字段不用另外登记（按 `secretFields` 走）。
 
 ## 3. 接口约束（外部 API 事实，改之前先查官方文档）
@@ -39,7 +39,7 @@ alwaysApply: false
 ## 4. 流式与取消
 - 流式增量交给 `StreamingText`：只剥开头的 `<think>…</think>`（开标签被拆开时先不显示），完成后去整段外层引号；结果为空报 `TranslateError.emptyResult`。
 - 流的约定：每次给出到目前为止的整段译文，内容没变不重复发；**空串 = 模型在思考**（`delta.reasoning_content` / `reasoning`、Anthropic `thinking_delta`、或开头的 `<think>` 段，`StreamingText.isThinking`），卡片 `.running("")` 显示「思考中」扫光（mac-whisker S3）；开头 role 那一段的空 content 不发。
-- **取消时 AsyncThrowingStream 是正常结束、不抛错**：`for try await` 循环之后必须先 `guard !Task.isCancelled`，否则会把半截译文当成完成写进历史（实测踩过的坑的同类）。
+- **取消时 AsyncThrowingStream 是正常结束、不抛错**：`for try await` 循环之后必须先 `guard !Task.isCancelled`，否则会把半截译文当成完成写进历史（实测踩过的坑的同类）。**取消之后缓冲里的元素照样交给 `next()`**（先交完缓冲再结束）：循环里每拿到一段也要先看——`run` 里是 `Task.isCancelled` 加这次 run 的代号（`tasks[id].run`，旧任务写不进同一个服务的新卡），不然 Esc 收起时标成「已中断」的卡被改回「生成中」、之后又不收尾，彗星一直转、`resumeInput` 不重跑（第三轮体检 B1，单测 `cancelledStreamDoesNotReviveCard`）。
 - 新会话 `cancel()` 旧会话全部 Task；浮窗收起也 cancel（省额度）；单卡重试只替换自己的 Task。
 
 ## 5. 入口
@@ -53,7 +53,7 @@ alwaysApply: false
 - **「翻译前把同一段里的换行接起来」**（`Prefs.translateRemoveNewlines`，默认关）：预处理调 `OCR.joiningLines(_:paragraphSeparator: "\n\n")`，和识字同一套规则（中日文直接连、其它加空格、行尾紧跟字母的连字符：下一行小写去掉、大写留着；空行是段落分隔、保留）。静默替换不套它。识别失败 / 没有文字、缺屏幕录制授权、截屏失败都走刘海岛（同识字），不为一句提示开浮窗、不开翻译会话；缺授权时同时打开系统设置的「屏幕录制」。浮窗的 `showNotice(_:permission:)` 只剩划词缺辅助功能授权（浮窗本来就要开）。框选细节见 mac-overlay-panel §8。
 
 ## 5.1 浮窗补强（M12，对标 Bob）
-- 浮窗快捷键只在 `TranslateCoordinator.handleKeyEquivalent`：只收纯 ⌘（和 ⌘⇧=），编辑键不拦；⌘D 收藏（**全 App 收藏统一 ⌘D，⌘S 在浮窗和历史里不再响应**，⌘S 只表示存储，体检 A31）、⌘Y 开 / 关历史、⌘, 打开设置（N6，和「⋯」菜单项的键位一致）；⌘W 由 `OverlayPanel` 统一处理（各浮层都认）。固定（⌘P / 图钉）只管失焦不收起，Esc、⌘W 固定着也关（体检 A9，2026-09-28；历史开着时 Esc 先关历史）；「第一个服务」的完成结果 `primaryResult` 是收藏、替换原文的唯一来源（和写历史、自动复制一致）。
+- 浮窗快捷键只在 `TranslateCoordinator.handleKeyEquivalent`：只收纯 ⌘（和 ⌘⇧=），编辑键不拦；⌘D 收藏（**全 App 收藏统一 ⌘D，⌘S 在浮窗和历史里不再响应**，⌘S 只表示存储，体检 A31）、⌘Y 开 / 关历史、⌘, 打开设置（N6，和「⋯」菜单项的键位一致）；⌘W 由 `OverlayPanel` 统一处理（各浮层都认）。固定（⌘P / 图钉）只管失焦不收起，Esc、⌘W 固定着也关（体检 A9，2026-09-28；历史开着时 Esc 先关历史）；主结果 `primaryResult`（按顺序第一个翻成功的服务）是收藏、替换原文的唯一来源（和写历史、自动复制一致）。
 - 收藏存 translations 表（「原文 + 实际目标语言」唯一），`HistoryStore.stored` 统一去空白截断，收藏和 add 必须找同一条。生词本可以跟着设置的导出文件走（2026-10-07，mac-native §2）：只导出收藏的；导入 `HistoryStore.adoptFavorites` 是合并——没有这条就按原来的时间记成收藏，已有的只标成收藏、译文和时间不动，目标语言不认识的跳过。
 - 复制出去的译文、原文、单词释义（卡片复制、⌘1–9、自动复制、「复制原文」、历史 ⌘C / 右键）和替换原文写进去的译文都是本 App 生成的新文字，一律 `Paster.write(string:record: true)` 同时记进剪贴板历史（mac-native §5，体检 A30）；卡片对勾停 `Style.copiedHold`（1.2 s）。焦点一直在原文框：⌘1–9 / 卡片复制播报「已复制译文」、⌘D / 星标播报「已收藏 / 已取消收藏」（`Island.announce`；自动复制不播）。
 - 替换原文 / 静默替换都是「收起 → `Paster.write` → `pasteToFrontmost`」，不激活本 App、不等待；粘之前核对前台还是取词时记下的 pid（`replaceSource` / 静默替换取词前记），对不上或自家浮层是 key 就只复制；译文用 `rewrap` 补回原选区的首尾空白。静默替换用 `translateOnce`（不动浮窗会话、不合并换行，再按热键取消；取词一返回先看是否已取消，免得「没有选中文字」「翻译中…」盖掉「已取消」，后者会挂到 60 s 兜底）。

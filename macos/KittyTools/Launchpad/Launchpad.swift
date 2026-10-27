@@ -40,6 +40,8 @@ final class Launchpad {
   private var model: LaunchpadModel?
   private var catalog: [LaunchpadProjectApp] = []
   private var signature: [Date?] = []
+  /// 上次扫目录的时刻：超过 5 分钟打开时在后台再扫一次（子文件夹里新装、升级的顶层目录修改时间不变，第三轮体检 U4）
+  private var scannedAt: Date?
   private var screen: NSScreen?
   private let icons = LaunchpadIcons(synchronous: false)
   private let wallpaper = LaunchpadWallpaper()
@@ -49,8 +51,6 @@ final class Launchpad {
   private var importTask: Task<Void, Never>?
   /// 本次打开是「还没存过布局」：等目录扫完（或马上）自动按系统旧库导入一次
   private var pendingAutoImport = false
-  /// 正在拖时来的布局（导入、恢复默认）：松手再换（G26）
-  private var pendingLayout: LaunchpadLayout?
   /// 正在拖 / 正在搜时扫完的目录还没并进布局（G14）
   private var mergePending = false
   /// 上一次导入 / 恢复默认之前的布局：设置页和岛上的「撤销」用它（只留一份；存在偏好里，重启后还在，F41）
@@ -139,8 +139,6 @@ final class Launchpad {
       pendingAutoImport = true
     }
     if plan.shouldSave { save(layout) }
-    // 上一次打开时压着没换的（那次收起前没松手）已经存进偏好、这次读到的就是：别留到这一次再拿旧的盖上来
-    pendingLayout = nil
     mergePending = false
     let model = LaunchpadModel(
       layout: layout, catalog: catalog, icons: icons, columns: Self.columns, rows: Self.rows,
@@ -420,25 +418,29 @@ final class Launchpad {
 
   // MARK: 本机 App 目录
 
-  /// 扫目录（启动时预热一次，打开时按目录修改时间决定要不要重扫）。真正的扫描在后台（F31），
-  /// 扫完接上：已经开着的话把新目录喂给模型、新装的接在最后。
+  /// 扫目录（启动时预热一次，打开时按目录修改时间决定要不要重扫，超过 5 分钟也重扫：接住子文件夹里新装、升级的，U4）。
+  /// 真正的扫描在后台（F31），不挡打开；扫完接上：已经开着的话把新目录喂给模型、新装的接在最后。
   func prepare() {
     guard Self.isAvailable else { return }
     let signature = AppCatalog.signature()
-    if !catalog.isEmpty, signature == self.signature {
+    let fresh = scannedAt.map { Date.now.timeIntervalSince($0) <= LauncherModel.rescanInterval }
+    if !catalog.isEmpty, signature == self.signature, fresh == true {
       // 功能开关刚打开（关着时放掉了图标）：缺的在后台补画，第一次打开不用等
       if Self.isOn { icons.prewarm(catalog, pixelSize: Self.iconPixelSize) }
       autoImportIfNeeded()
       return
     }
     self.signature = signature
+    scannedAt = .now
     prepareTask?.cancel()
     prepareTask = Task { [weak self] in
       let apps = await LaunchpadCatalog.loadInBackground()
       guard !Task.isCancelled, let self else { return }
       let changed = self.catalog.map(\.id) != apps.map(\.id)
       self.catalog = apps
-      // 图标在后台画好、常驻：打开时只贴位图（新装的 App 只补画它自己）。启动台关着时不画（约 15 MB），开了以后第一次打开再补
+      // 卸掉的 App 的位图放掉（B3）
+      self.icons.prune(keeping: apps)
+      // 图标在后台画好、常驻：打开时只贴位图（新装的、升级换了图标的只补画它自己）。启动台关着时不画（约 15 MB），开了以后第一次打开再补
       if Self.isOn {
         self.icons.prewarm(apps, pixelSize: Self.iconPixelSize)
         if let screen = NSScreen.main { _ = self.wallpaper.image(for: screen) { _ in } }
@@ -465,22 +467,13 @@ final class Launchpad {
     save(updated)
   }
 
-  /// 换一份布局进开着的模型：正在拖的话等松手再换（G26：中途 replace 会把手里那一格换成别的 App）
+  /// 换一份布局进开着的模型：正在拖的话模型压到松手再换，换上时再存一次盘（G26 / B4，`LaunchpadModel.replaceWhenIdle`）
   private func replaceOpenLayout(_ layout: LaunchpadLayout) {
-    guard let model else { return }
-    if model.drag != nil {
-      pendingLayout = layout
-    } else {
-      model.replace(layout: layout)
-    }
+    model?.replaceWhenIdle(layout)
   }
 
-  /// 松手 / 清空搜索之后：压着的布局、目录接上
+  /// 松手 / 清空搜索之后：压着的目录接上（压着的布局模型自己在松手时换上、存盘）
   private func applyPending() {
-    if let layout = pendingLayout, let model, model.drag == nil {
-      pendingLayout = nil
-      model.replace(layout: layout)
-    }
     if mergePending { mergeCatalogIntoOpenModel() }
   }
 

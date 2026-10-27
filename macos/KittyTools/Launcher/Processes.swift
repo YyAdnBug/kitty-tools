@@ -168,12 +168,14 @@ enum Processes {
       }
   }
 
-  /// ps、lsof（在监听的端口）同时在进程外跑
+  /// ps、lsof（在监听的端口）同时在进程外跑。lsof 会碰各个挂载点、卡住的网络盘上可能回不来：-b 不去 stat 它们，
+  /// 2 秒没回就当没有端口（第三轮体检 B9）
   private static func snapshot() async -> (entries: [Entry], ports: [Int32: [Int]]) {
     async let ps = try? Subprocess.run(
       "/bin/ps", ["-U", NSUserName(), "-o", "pid=,ppid=,rss=,comm="], captures: true)
     async let lsof = try? Subprocess.run(
-      "/usr/sbin/lsof", ["-nP", "-iTCP", "-sTCP:LISTEN", "-Fpn"], captures: true)
+      "/usr/sbin/lsof", ["-b", "-nP", "-iTCP", "-sTCP:LISTEN", "-Fpn"], captures: true,
+      timeout: .seconds(2))
     let (processes, listening) = await (ps, lsof)
     return (parse(ps: processes?.output ?? ""), parse(lsof: listening?.output ?? "").ports)
   }

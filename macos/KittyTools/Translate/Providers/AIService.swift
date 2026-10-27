@@ -86,7 +86,9 @@ nonisolated enum AIService {
       request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
     default: break
     }
-    let (data, response) = try await HTTP.session(for: listURL).data(for: request)
+    let (data, response) = try await HTTP.perform { [request] in
+      try await HTTP.session(for: listURL).data(for: request)
+    }
     let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
     try HTTP.check(response, object)
     let entries = (object["data"] ?? object["models"]) as? [[String: Any]] ?? []

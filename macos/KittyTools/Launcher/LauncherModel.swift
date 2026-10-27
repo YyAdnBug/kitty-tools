@@ -89,8 +89,12 @@ import UniformTypeIdentifiers
   @ObservationIgnored let usage: LauncherUsage
   @ObservationIgnored private var apps: [LauncherItem] = []
   @ObservationIgnored private var appsScannedAt: Date?
-  /// 上次扫描时各应用程序目录的修改时间：呼出时变了就先重扫（体检 B31）
+  /// 上次扫描时各应用程序目录的修改时间：呼出时变了就重扫（体检 B31）
   @ObservationIgnored private var appsSignature: [Date?] = []
+  /// 正在后台扫 App 目录（P3）：扫完换上；扫的时候再要不重复起
+  @ObservationIgnored private var scanTask: Task<Void, Never>?
+  /// 面板开着（prepareForShow 到 didHide）：后台扫完时开着才按新目录重搜
+  @ObservationIgnored private var isShown = false
   /// 单测 / 截图自检：传入固定的 App 列表，不扫本机、不查 Spotlight、不读书签（文件结果由 showFiles 直接给）
   @ObservationIgnored private let isFixture: Bool
   @ObservationIgnored private let files = FileSearch()
@@ -233,16 +237,31 @@ import UniformTypeIdentifiers
   /// 开着的功能（Feature）：cb 那一行要剪贴板开着、fy 那一行要翻译开着
   private var features: Set<Feature> { actionState().features }
 
-  /// 启动时、呼出前应用程序目录变了时扫 App 目录
+  /// 启动时、呼出时应用程序目录变了时扫 App 目录。在后台扫（约 65 ms，原来在主线程：装完 App 马上按 ⌥Space 要卡这么久，
+  /// 第三轮体检 P3）：面板先用旧列表出来，扫完换上——开着、正在搜的按新目录重搜（用户还没挪过选中时）。
+  /// App 路径的图标缓存跟着清掉：升级换了图标的下次按新的读（B3）
   func rescanApps() {
-    guard !isFixture else { return }
-    appsSignature = AppCatalog.signature()
-    apps = AppCatalog.scan()
-    appsScannedAt = .now
+    guard !isFixture, scanTask == nil else { return }
+    // 扫之前取：扫的时候又装了 App，下次呼出照样看得出目录变了
+    let signature = AppCatalog.signature()
+    scanTask = Task {
+      let scanned = await AppCatalog.scanInBackground()
+      scanTask = nil
+      LauncherIcons.forget((apps + scanned).filter { $0.kind == .app }.map(\.target))
+      apps = scanned
+      appsSignature = signature
+      appsScannedAt = .now
+      if isShown, !userMovedSelection, armed == nil, fileRequest == nil, commandRequest == nil,
+        !query.trimmingCharacters(in: .whitespaces).isEmpty
+      {
+        search()
+      }
+    }
   }
 
-  /// 呼出前：应用程序目录变了就重扫（刚装的 App 马上搜得到）；60 秒内没执行就收起的，接着上次的查询和选中项
+  /// 呼出前：应用程序目录变了就重扫（后台扫，扫完刚装的 App 就搜得到）；60 秒内没执行就收起的，接着上次的查询和选中项
   func prepareForShow(now: Date = .now) {
+    isShown = true
     if !isFixture,
       Self.needsRescan(
         scannedAt: appsScannedAt, scanned: appsSignature, now: AppCatalog.signature())
@@ -283,6 +302,8 @@ import UniformTypeIdentifiers
   /// 收起：执行过、或者查询是空的，清空；没执行就收起的（点外面、再按热键、切到别的 App）留着查询和选中项，
   /// 60 秒内再呼出接着用（体检 A27）。App 目录超过 5 分钟就趁没人看时重扫（接住子文件夹里的升级、改名）
   func didHide(now: Date = .now) {
+    isShown = false
+    files.forgetItems()
     showsActions = false
     error = nil
     armed = nil
@@ -365,9 +386,11 @@ import UniformTypeIdentifiers
     // 书签、浏览历史至少 2 个字才搜（1 个字母命中太多）
     let bookmarks = query.count >= 2 && !isFixture ? Bookmarks.items() : []
     let used = usedLocations(excluding: bookmarks)
+    // 书签先粗筛（几千个每敲一个字都完整打分太慢，P3；同 visited）
+    let tokens = LauncherMatch.tokens(query)
     let local = LauncherMatch.rank(
       apps + builtIns + SystemCommands.items + WebSearch.quicklinkItems(engines: engines)
-        + bookmarks + used, query: query
+        + bookmarks.filter { LauncherMatch.mayMatch(tokens, $0) } + used, query: query
     ) { usage.boost(for: $0, query: query) }
     let history = query.count >= 2 ? visited(query, excluding: bookmarks + used) : []
     // 兜底默认只在没有本地结果时出现（和 Alfred 一样；以前带空格的查询把兜底排到匹配的 App 前面），
@@ -395,13 +418,12 @@ import UniformTypeIdentifiers
     let pages = historyItems()
     guard !pages.isEmpty else { return [] }
     let seen = Set(known.map { $0.target.lowercased() })
-    // 先粗筛：每个词都得是某个名字的子串（匹配分档的必要条件）。3000 条直接排序要逐条切词，
+    // 先粗筛（LauncherMatch.mayMatch：匹配分档的必要条件）。3000 条直接排序要逐条切词，
     // Debug 构建实测本机 3000 条一次按键约 45 ms，粗筛后 10–15 ms。
     // ponytail: 还嫌慢就在 BrowserHistory 里存好拼接的小写名字，只做一次 contains
-    let tokens = LauncherMatch.fold(query).split(whereSeparator: \.isWhitespace)
+    let tokens = LauncherMatch.tokens(query)
     let candidates = pages.filter { page in
-      tokens.allSatisfy { token in page.names.contains { $0.contains(token) } }
-        && !seen.contains(page.target.lowercased())
+      LauncherMatch.mayMatch(tokens, page) && !seen.contains(page.target.lowercased())
     }
     let now = Date.now
     return LauncherMatch.rank(candidates, query: query) { _ in (0, 0) }
@@ -494,7 +516,11 @@ import UniformTypeIdentifiers
   /// 空格开头是明确要搜文件，不放
   func showFiles(_ hits: [FileSearch.Hit], for request: FileSearch.Request) {
     guard request == fileRequest else { return }  // 已经换了查询
-    let found = FileSearch.rank(hits, terms: request.terms) { usage.boost(for: $0, query: query) }
+    // 按路径缓存的条目（每批只转新到的）；查询词里没有拉丁字母时不转拼音（P3）
+    let pinyin = FileSearch.needsPinyin(request.terms)
+    let found = FileSearch.rank(
+      hits, terms: request.terms, item: { files.item($0, pinyin: pinyin) },
+      boost: { usage.boost(for: $0, query: query) })
     let whole = query.trimmingCharacters(in: .whitespaces)
     let named =
       request.terms.isEmpty || query.first?.isWhitespace == true

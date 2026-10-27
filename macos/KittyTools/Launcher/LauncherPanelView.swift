@@ -549,6 +549,11 @@ enum LauncherIcons {
     cache.setObject(image, forKey: path as NSString)
   }
 
+  /// 重扫 App 目录时清掉 App 路径的项：升级换了图标的、卸掉的不再一直显示旧的（第三轮体检 B3）
+  static func forget(_ paths: [String]) {
+    for path in paths { cache.removeObject(forKey: path as NSString) }
+  }
+
   static func icon(for path: String) -> NSImage? {
     if let cached = cache.object(forKey: path as NSString) { return cached }
     guard FileManager.default.fileExists(atPath: path) else { return nil }

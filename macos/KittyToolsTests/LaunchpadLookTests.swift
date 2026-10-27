@@ -98,6 +98,30 @@ struct LaunchpadLookTests {
     #expect(icons.icon(for: calculator, size: 60) === drawn)
   }
 
+  /// 升级换了图标（App 包的修改时间变了，第三轮体检 B3）：照新的重画，画好之前旧图照样显示；同步模式同样按修改时间认；
+  /// 卸掉的（扫完目录不在了）放掉
+  @Test func iconsRerenderWhenAppChangesAndDropRemoved() async {
+    let icons = LaunchpadIcons(synchronous: false, pixelSize: 64)
+    var old = calculator
+    old.modified = Date(timeIntervalSinceReferenceDate: 1)
+    icons.prewarm([old])
+    await waitUntil { icons.count == 1 }
+    let drawn = icons.icon(for: old, size: 32)
+    #expect(drawn !== LaunchpadIcons.placeholder)
+    var upgraded = old
+    upgraded.modified = Date(timeIntervalSinceReferenceDate: 2)
+    #expect(icons.icon(for: upgraded, size: 32) === drawn)  // 新的还没画好：旧图先顶着
+    await waitUntil { icons.icon(for: upgraded, size: 32) !== drawn }
+    let redrawn = icons.icon(for: upgraded, size: 32)
+    #expect(redrawn !== drawn && redrawn !== LaunchpadIcons.placeholder)
+    #expect(icons.icon(for: upgraded, size: 32) === redrawn)  // 画好了就不再画
+    let sync = LaunchpadIcons()
+    let first = sync.icon(for: old, size: 32)
+    #expect(sync.icon(for: old, size: 32) === first && sync.icon(for: upgraded, size: 32) !== first)
+    icons.prune(keeping: [])
+    #expect(icons.count == 0)
+  }
+
   /// 换了更大的屏：按新的像素尺寸重画，画好之前旧图照样显示
   @Test func iconsRerenderWhenScreenGetsBigger() async {
     let icons = LaunchpadIcons(synchronous: false, pixelSize: 64)

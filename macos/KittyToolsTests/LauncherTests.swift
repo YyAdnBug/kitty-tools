@@ -68,6 +68,37 @@ struct LauncherTests {
     }
   }
 
+  /// 中文名直接写在主 Info.plist 里的（没有 zh-Hans.lproj，显示名就是中文：企业微信；第三轮体检 B2）：拼音、首字母也搜得到。
+  /// 假路径：不存在的包显示名就是文件名
+  @Test func chineseDisplayNameGetsPinyin() {
+    let app = AppCatalog.item(path: "/no/such/企业微信.app")
+    #expect(app.title == "企业微信")
+    for query in ["qiye", "weixin", "qywx", "企业"] {
+      #expect(LauncherMatch.score(query, item: app) > 0, "\(query)")
+    }
+  }
+
+  /// 粗筛（P3，书签和浏览历史先过一遍）：完整打分不是 0 的一定过得去，只靠首字母缩写命中的（vsc、hdjsq）也过
+  @Test func prefilterNeverDropsAMatch() {
+    let items = [
+      app("Visual Studio Code"), app("Activity Monitor", chinese: "活动监视器"), app("Safari"),
+      app("WPS Office"),
+    ]
+    let queries = [
+      "vsc", "vis", "studio code", "code visual", "hdjsq", "活动", "am", "s", "sa fa", "wo", "zzz",
+      "visual xyz", "o",
+    ]
+    for item in items {
+      for query in queries where LauncherMatch.score(query, item: item) > 0 {
+        #expect(
+          LauncherMatch.mayMatch(LauncherMatch.tokens(query), item), "\(query) \(item.title)")
+      }
+    }
+    #expect(LauncherMatch.mayMatch(LauncherMatch.tokens("vsc"), items[0]))
+    #expect(!LauncherMatch.mayMatch(LauncherMatch.tokens("zzz"), items[2]))
+    #expect(!LauncherMatch.mayMatch(LauncherMatch.tokens("visual xyz"), items[0]))
+  }
+
   @Test func realScanHasNoDuplicates() {
     // 本机实测过：/Applications/Safari.app 是指向 Cryptexes 的链接，两处都在扫描目录里
     let apps = AppCatalog.scan()

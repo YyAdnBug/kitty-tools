@@ -2,7 +2,8 @@
 // 只留 .app——不要系统设置的面板，也不要访达（macOS 15 的启动台里没有访达）。扫的时候顺带取 bundle id、是不是从
 // App Store 装的（Contents/_MASReceipt/receipt，而且不在 /System 下）、LSApplicationCategoryType（文件夹名字用），
 // 都只读 Info.plist / 看文件在不在，便宜。显示名、搜索用的名字直接沿用 LauncherItem，和现有启动器一致。
-// 图标在后台画成位图、常驻在 LaunchpadIcons（2026-10-18 真机反馈后；原来是面板收起后闲下来放掉）。
+// 图标在后台画成位图、常驻在 LaunchpadIcons（2026-10-18 真机反馈后；原来是面板收起后闲下来放掉），按 App 包的修改时间认：
+// 升级换了图标的重画，卸掉的放掉（第三轮体检 B3）。
 
 import AppKit
 
@@ -16,6 +17,8 @@ nonisolated struct LaunchpadProjectApp: Identifiable, Sendable {
   let isAppStore: Bool
   /// LSApplicationCategoryType 的本地化名（「效率」「工具」…）；没有 / 不认识的是 nil
   let category: String?
+  /// App 包的修改时间（包本身和 Contents/Info.plist 取晚的）：升级、换了自定义图标都会变，图标位图按它认（B3）
+  var modified: Date? = nil
 
   var path: String { ref.path }
   var bundleID: String? { ref.bundleID }
@@ -46,7 +49,7 @@ enum LaunchpadCatalog {
         return LaunchpadProjectApp(
           id: app.path, ref: LaunchpadAppRef(bundleID: nil, path: app.path), item: app.item,
           url: app.url, isSystem: app.isSystem, inUtilities: app.inUtilities,
-          isAppStore: app.isAppStore, category: app.category)
+          isAppStore: app.isAppStore, category: app.category, modified: app.modified)
       }
       return app
     }
@@ -69,7 +72,18 @@ enum LaunchpadCatalog {
       inUtilities: resolved.hasPrefix("/System/Applications/Utilities/"),
       isAppStore: !path.hasPrefix("/System/")
         && FileManager.default.fileExists(atPath: path + "/Contents/_MASReceipt/receipt"),
-      category: categoryKey.flatMap(categoryName))
+      category: categoryKey.flatMap(categoryName),
+      modified: modificationDate(resolved))
+  }
+
+  /// 包本身和 Contents/Info.plist 的修改时间取晚的：整个换掉的包、只改了包里文件的升级（Info.plist 的版本号总会变）、
+  /// 在访达里换了自定义图标（包里多一个 Icon 文件）都认得出。按解开链接后的路径取（/Applications/Safari.app 是链接）
+  nonisolated static func modificationDate(_ path: String) -> Date? {
+    [path, path + "/Contents/Info.plist"]
+      .compactMap {
+        (try? FileManager.default.attributesOfItem(atPath: $0))?[.modificationDate] as? Date
+      }
+      .max()
   }
 
   /// 建文件夹时的名字：两个 App 分类相同时用它，不同就用第一个的；第一个没分类就用第二个的（G12），
@@ -121,12 +135,13 @@ enum LaunchpadCatalog {
 /// **常驻**（本机 111 个、185 px 见方约 15 MB；用户定的，不再闲两分钟就放掉），打开时只贴位图。
 /// 原来交给界面的是系统的多尺寸 NSImage，每画一次都按尺寸重新渲染：本机 111 个第一次画 1.8 s、之后每遍 0.25 s，全在主线程。
 /// 还没画好的先给一块透明占位，画好一批 `generation` 加一、界面自己刷新（@Observable）。`synchronous`（单测、截图自检）：缺了当场画。
+/// 位图按 App 包的修改时间认（第三轮体检 B3）：升级换了图标的照新的重画（画好之前旧图照样显示），卸掉的扫完目录时放掉（`prune`）。
 /// `NSWorkspace.icon(forFile:)` 文档写明任何线程都能调；画位图用这一个线程自己的 NSGraphicsContext。
 @Observable
 @MainActor
 final class LaunchpadIcons {
   /// 位图本身不进观察（同步模式在界面求值时就地写，写观察中的属性会让 SwiftUI 报「更新中改状态」）
-  @ObservationIgnored private var bitmaps: [String: NSImage] = [:]
+  @ObservationIgnored private var bitmaps: [String: (image: NSImage, modified: Date?)] = [:]
   /// 后台画好一批就加一：界面读它，画好了自己刷新
   private var generation = 0
   @ObservationIgnored private var rendering: Set<String> = []
@@ -143,15 +158,16 @@ final class LaunchpadIcons {
 
   func icon(for app: LaunchpadProjectApp, size: CGFloat) -> NSImage {
     _ = generation
-    if let image = bitmaps[app.id] { return image }
+    if let cached = bitmaps[app.id], cached.modified == app.modified { return cached.image }
     if synchronous {
       let image =
         Self.render(path: app.path, pixelSize: pixelSize).map(Self.image) ?? Self.placeholder
-      bitmaps[app.id] = image
+      bitmaps[app.id] = (image, app.modified)
       return image
     }
     prewarm([app])
-    return Self.placeholder
+    // 升级换了图标的：新的画好之前旧图照样显示，不闪成空白
+    return bitmaps[app.id]?.image ?? Self.placeholder
   }
 
   /// 后台把还没画的画好（App 启动、目录扫完时调；界面要了一个没画的也会走到这里）；`pixelSize` 变大了全部重画
@@ -160,23 +176,33 @@ final class LaunchpadIcons {
       pixelSize = wanted
       // 旧的先留着显示，新的一张张换上（尺寸不对的晚到结果在 start 里丢掉）
       rendering.removeAll()
-      start(apps.map { (id: $0.id, path: $0.path) })
+      start(apps)
       return
     }
+    // 没画过的、App 包改过的（升级换了图标，B3）
     start(
-      apps.filter { bitmaps[$0.id] == nil && !rendering.contains($0.id) }
-        .map { (id: $0.id, path: $0.path) })
+      apps.filter { app in
+        !rendering.contains(app.id) && bitmaps[app.id].map { $0.modified != app.modified } ?? true
+      })
   }
 
-  private func start(_ items: [(id: String, path: String)]) {
-    guard !items.isEmpty else { return }
+  /// 目录扫完：已经不在目录里的（卸掉了）放掉
+  func prune(keeping apps: [LaunchpadProjectApp]) {
+    let ids = Set(apps.map(\.id))
+    bitmaps = bitmaps.filter { ids.contains($0.key) }
+  }
+
+  private func start(_ apps: [LaunchpadProjectApp]) {
+    guard !apps.isEmpty else { return }
+    let items = apps.map { (id: $0.id, path: $0.path) }
+    let modified = Dictionary(apps.map { ($0.id, $0.modified) }) { first, _ in first }
     for item in items { rendering.insert(item.id) }
     let (size, epoch) = (pixelSize, epoch)
     Task { [weak self] in
       let results = await Self.renderAll(items, pixelSize: size)
       guard let self, size == self.pixelSize, epoch == self.epoch else { return }
       for item in items { rendering.remove(item.id) }
-      for (id, bitmap) in results { bitmaps[id] = Self.image(bitmap) }
+      for (id, bitmap) in results { bitmaps[id] = (Self.image(bitmap), modified[id] ?? nil) }
       generation += 1
     }
   }

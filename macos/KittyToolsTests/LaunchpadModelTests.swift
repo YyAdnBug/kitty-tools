@@ -167,6 +167,30 @@ struct LaunchpadModelTests {
     #expect(model.layout.tiles.compactMap { $0.app?.id } == [b.id, a.id])
   }
 
+  /// 拖着的时候导入完成（第三轮体检 B4）：导入的排法压到松手再换（G26），换上后最后存盘的是它——
+  /// 松手那一挪先把「拖之前那份 + 这一挪」存了下去，不再存一次的话下次打开导入的就没了
+  @Test func layoutArrivingMidDragIsSavedAfterDrop() {
+    let (a, b, c) = (ref("a"), ref("b"), ref("c"))
+    let model = model(LaunchpadLayout(pages: [[.app(a), .app(b)]]))
+    var saved: [LaunchpadLayout] = []
+    model.onLayoutChange = { saved.append($0) }
+    let metrics = model.metrics
+    model.gridFrames[0] = CGRect(
+      x: metrics.side, y: 0, width: metrics.gridWidth, height: metrics.gridHeight)
+    model.beginDrag(tile: .app(b), appID: b.id, folder: nil, at: CGPoint(x: 700, y: 100))
+    model.updateDrag(location: CGPoint(x: metrics.side + 20, y: 100), pageWidth: 900)
+    let imported = LaunchpadLayout(pages: [[.app(c), .app(a), .app(b)]])
+    model.replaceWhenIdle(imported)
+    #expect(model.layout != imported)  // 拖着不换
+    model.endDrag()
+    #expect(model.layout == imported)
+    #expect(saved.last == imported)
+    // 没在拖：当场换，不另存（总控送来之前已经存过）
+    saved = []
+    model.replaceWhenIdle(LaunchpadLayout(pages: [[.app(a)]]))
+    #expect(model.layout.apps.map(\.id) == [a.id] && saved.isEmpty)
+  }
+
   @Test func dwellingInIconCenterMakesAFolder() async {
     let a = ref("a")
     let b = ref("b")

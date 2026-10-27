@@ -911,6 +911,87 @@ struct TranslateBatch4Tests {
     #expect(coordinator.cards.map(\.state) == [.failed(error)])  // 不是中断的不重跑
   }
 
+  /// 取消后流缓冲里还有增量（第三轮体检 B1）：AsyncThrowingStream 被取消后照样先交完缓冲。收起时标成「已中断」的卡
+  /// 不能被改回「生成中」（不然流结束后不收尾、一直转，resumeInput 也不重跑）；新会话里旧任务写不进同一个服务的新卡
+  @Test func cancelledStreamDoesNotReviveCard() async throws {
+    var ai = TranslateService.newAI()
+    ai.isEnabled = true
+    let coordinator = TranslateCoordinator(
+      services: TranslateServiceStore(services: [ai]),
+      history: try HistoryStore(db: Database(path: ":memory:")))
+    // 旧的那句一下子把 50 段全塞进缓冲再结束（消费的任务一轮取一段）；新的那句出一段就完
+    coordinator.stream = { _, request in
+      AsyncThrowingStream { continuation in
+        if request.text.hasPrefix("Old") {
+          for index in 1...50 { continuation.yield("旧\(index)") }
+        } else {
+          continuation.yield("新译文")
+        }
+        continuation.finish()
+      }
+    }
+    // 复制即译带来的：不自动复制（不碰真剪贴板）
+    coordinator.translate("Old sentence to translate", fromCopy: true)
+    for _ in 0..<50 where coordinator.cards.first?.state == .waiting { await Task.yield() }
+    #expect(coordinator.cards.first?.state.text?.hasPrefix("旧") == true)
+    coordinator.cancel()
+    for _ in 0..<100 { await Task.yield() }
+    #expect(coordinator.cards.map(\.state) == [.failed(.interrupted)])
+    // 中断的照常重跑、能出完
+    coordinator.resumeInput()
+    for _ in 0..<200 where coordinator.isRunning { await Task.yield() }
+    #expect(coordinator.cards.map(\.state) == [.done("旧50")])
+    // 旧会话还在吐缓冲时开新会话：新卡只认新译文
+    coordinator.translate("Old sentence again please", fromCopy: true)
+    for _ in 0..<3 { await Task.yield() }
+    coordinator.translate("New sentence to translate", fromCopy: true)
+    for _ in 0..<200 { await Task.yield() }
+    #expect(coordinator.cards.map(\.state) == [.done("新译文")])
+  }
+
+  /// 主结果（第三轮体检 U1）：按顺序第一个翻成功的；前面的还在跑就等，出错 / 截断 / 中断的跳过
+  @Test func primaryResultIsFirstSuccessfulInOrder() async throws {
+    let (a, b, c) = (TranslateService.newAI(), TranslateService.newAI(), TranslateService.newAI())
+    typealias Card = TranslateCoordinator.Card
+    func primary(_ states: [TranslateCoordinator.CardState]) -> String? {
+      TranslateCoordinator.primary(
+        of: zip([a, b, c], states).map { Card(service: $0, state: $1) })?.service.id
+    }
+    #expect(primary([.done("甲"), .done("乙"), .waiting]) == a.id)
+    #expect(primary([.running("半"), .done("乙"), .done("丙")]) == nil)  // 第一个还在跑：等它
+    #expect(primary([.failed(.config("缺 Key")), .done("乙"), .done("丙")]) == b.id)
+    #expect(primary([.truncated("半截"), .failed(.interrupted), .done("丙")]) == c.id)
+    #expect(primary([.done(""), .done("乙"), .waiting]) == b.id)
+    #expect(primary([.failed(.emptyResult), .failed(.interrupted), .truncated("x")]) == nil)
+    // 跑一遍：第一个没配密钥马上报错、第二个出「你好」、第三个出「您好」→ 主结果是第二个，收藏、替换原文都能用；
+    // 写历史的（开着历史时）也是第二个的，不被第三个换掉
+    var services = [a, b, c]
+    for index in services.indices { services[index].isEnabled = true }
+    let history = try HistoryStore(db: Database(path: ":memory:"))
+    let coordinator = TranslateCoordinator(
+      services: TranslateServiceStore(services: services), history: history)
+    coordinator.stream = { service, _ in
+      AsyncThrowingStream { continuation in
+        switch service.id {
+        case a.id: continuation.finish(throwing: TranslateError.config("缺 Key"))
+        case b.id:
+          continuation.yield("你好")
+          continuation.finish()
+        default:
+          continuation.yield("您好")
+          continuation.finish()
+        }
+      }
+    }
+    coordinator.translate("Hello there friend", fromCopy: true)
+    for _ in 0..<200 where coordinator.isRunning { await Task.yield() }
+    #expect(coordinator.primaryResult?.service.id == b.id)
+    #expect(coordinator.primaryResult?.text == "你好")
+    if UserDefaults.standard.bool(forKey: Prefs.translateHistoryEnabled) {
+      #expect(history.search("").map(\.result) == ["你好"])
+    }
+  }
+
   /// ⌘D 收藏（体检 A31）：浮窗和历史都认 ⌘D，⌘S 不再响应（交还系统）
   @Test func favoriteIsCommandD() throws {
     let history = try HistoryStore(db: Database(path: ":memory:"))

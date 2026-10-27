@@ -116,6 +116,8 @@ final class LaunchpadModel {
   /// 手上的事停下来了（松手、清空搜索）：总控把这期间压着没换的布局 / 目录接上（G14 / G26）
   var onSettled: () -> Void = {}
 
+  /// 正在拖时总控送来的布局（导入、恢复默认、撤销、改行列数）：松手再换（G26），见 replaceWhenIdle
+  @ObservationIgnored private var heldLayout: LaunchpadLayout?
   @ObservationIgnored private var scroll: CGFloat = 0
   @ObservationIgnored private var scrollTask: Task<Void, Never>?
   @ObservationIgnored private var pager = LaunchpadPager()
@@ -984,6 +986,8 @@ final class LaunchpadModel {
     defer { gestureCancelled = false }
     // 松手了：这期间压着没换的布局 / 目录接上（G14 / G26）。放在最前面，任何一条返回路径都会走到
     defer { onSettled() }
+    // 压着的布局在这一挪存盘之后才换上（defer 倒着跑：先于 onSettled）
+    defer { replaceHeldLayout() }
     guard let drag, !gestureCancelled else { return }
     jiggleTask?.cancel()
     combineTask?.cancel()
@@ -1223,6 +1227,22 @@ final class LaunchpadModel {
     openFolderID = nil
     drag = nil
     deleteCandidate = nil
+  }
+
+  /// 总控送来的布局（导入、恢复默认、撤销、改行列数；总控已经存过盘）：正在拖就压到松手再换（G26：中途换会把手里那一格
+  /// 换成别的 App）
+  func replaceWhenIdle(_ layout: LaunchpadLayout) {
+    guard drag != nil else { return replace(layout: layout) }
+    heldLayout = layout
+  }
+
+  /// 松手时换上压着的那份，并且再交给总控存一次盘：松手这一挪已经把「拖之前那份 + 这一挪」存下去、盖掉了总控存的那份，
+  /// 只换不存的话界面上是导入的排法、下次打开又回到拖之前的（第三轮体检 B4）
+  private func replaceHeldLayout() {
+    guard let layout = heldLayout else { return }
+    heldLayout = nil
+    replace(layout: layout)
+    onLayoutChange(layout)
   }
 
   /// 布局变了（拖格子、建文件夹）：马上交给总控存盘（R5）

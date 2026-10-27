@@ -16,7 +16,7 @@ struct TranslatePanelView: View {
   let speaker: Speaker
   /// 内容要的高度、至少要放得下的高度（浮窗按 panelHeight 伸缩，顶边不动）
   var resize: (_ height: CGFloat, _ mustFit: CGFloat) -> Void = { _, _ in }
-  /// 把第一个服务的译文粘回原 App 的选区
+  /// 把主结果（第一个翻成功的服务）的译文粘回原 App 的选区
   var replaceOriginal: () -> Void = {}
   /// 浮窗现在看得见没有（收着时换了语言不重译：同步、导入设置都会改这两项）
   var isShown: () -> Bool = { true }
@@ -340,7 +340,7 @@ struct TranslatePanelView: View {
           Button("替换原文", systemImage: "arrow.uturn.backward", action: replaceOriginal)
             .labelStyle(.titleAndIcon)
             .disabled(coordinator.primaryResult == nil)
-            .help("用第一个服务的译文替换原文（便签里选中的那一段，或原 App 里选中的文字）")
+            .help("用第一个翻译成功的服务的译文替换原文（便签里选中的那一段，或原 App 里选中的文字）")
         }
         // 没有常驻「翻译」按钮（N5）：↩ 就是翻译，原文改过、还没重译时才从右下角弹出来
         if coordinator.needsTranslate {
