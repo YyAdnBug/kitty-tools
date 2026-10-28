@@ -45,4 +45,20 @@ public sealed class ServiceBadgeTests
         Assert.AreEqual("ai:azure", ServiceBadge.Vendor("ai", "azure"));
         Assert.AreEqual("baidu", ServiceBadge.Vendor("baidu", null));
     }
+
+    [TestMethod]
+    public void LogoFollowsMacServiceTile()
+    {
+        // 内置按种类；Azure 用微软；AI 先认地址（DeepSeek 预设的名字里没有别家关键词也认得出）、再认名字、Anthropic 协议兜底。
+        Assert.AreEqual("deepl", ServiceBadge.Logo("deepl", null, null, "DeepL"));
+        Assert.AreEqual("microsoft", ServiceBadge.Logo("ai", "azure", "https://x.openai.azure.com", "GPT"));
+        Assert.AreEqual("deepseek", ServiceBadge.Logo("ai", "openai", "https://api.deepseek.com/v1", "AI"));
+        Assert.AreEqual("openai", ServiceBadge.Logo("ai", "openai", "https://api.openai.com/v1", "OpenAI"));
+        Assert.AreEqual("siliconflow", ServiceBadge.Logo("ai", "openai", "https://example.com/v1", "硅基流动 DeepSeek"));
+        Assert.AreEqual("anthropic", ServiceBadge.Logo("ai", "anthropic", string.Empty, "我的模型"));
+        Assert.AreEqual("ollama", ServiceBadge.Logo("ai", "openai", "http://192.168.1.5:11434/v1", "本地"));
+        Assert.IsNull(ServiceBadge.Logo("ai", "openai", "https://llm.example.com/v1", "公司模型"));
+        Assert.IsTrue(ServiceBadge.IsFullBleed("zhipu"));
+        Assert.IsFalse(ServiceBadge.IsFullBleed("deepseek"));
+    }
 }

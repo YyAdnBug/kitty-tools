@@ -1,5 +1,7 @@
 // 设置页的「设置卡」和几个小零件（PLAN-v2 §3.4 / D4）：自己写，几十行，不引 CommunityToolkit。
-// 一张卡的组成：左边 36×36 的图标块 + 标题 + 一行说明，右边是控件（开关 / 下拉 / 按钮）或一个箭头。
+// 一张卡的组成：标题 + 一行说明，右边是控件（开关 / 下拉 / 按钮）或一个箭头。卡上不放装饰图标、也不留图标位（同 mac 的
+// 设置；用户 2026-10-28：有的有图标有的没有很怪）；只有列表里标明「这一项是谁」的才在最左边：功能开关的家族色块、
+// 翻译服务的 logo（leading）。
 // 子设置放在可以展开的卡里（Expand 参数）。全部颜色走主题资源，深浅色和高对比度自动跟着变。
 using KittyTools.Ui;
 using Microsoft.UI.Text;
@@ -12,14 +14,18 @@ namespace KittyTools;
 
 internal static class SettingsUi
 {
-    /// <summary>设置卡：图标 + 标题 + 说明 + 右边控件（control 为 null 时整张卡可点，右侧显示箭头）。</summary>
+    /// <summary>
+    /// 设置卡：（身份图标）+ 标题 + 说明 + 右边控件（control 为 null 时整张卡可点，右侧显示箭头）。
+    /// problem：说明写的是配置问题（没找到书签文件、未填密钥），用橙字（配置问题的语义色）。
+    /// </summary>
     public static Border Card(
-        string glyph,
         string title,
         string description,
         FrameworkElement? control = null,
         Action? onClick = null,
-        bool enabled = true)
+        bool enabled = true,
+        FrameworkElement? leading = null,
+        bool problem = false)
     {
         var text = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
         text.Children.Add(new TextBlock
@@ -34,47 +40,30 @@ internal static class SettingsUi
             {
                 Text = description,
                 FontSize = Theme.FontSize("Kitty.FontSize.Label"),
-                Foreground = Theme.SecondaryText(),
+                Foreground = problem ? Caution() : Theme.SecondaryText(),
                 TextWrapping = TextWrapping.Wrap,
             });
         }
 
+        // 没有身份图标时不建那一列：空列也会吃一份 ColumnSpacing，标题就缩进去了。
         var row = new Grid { ColumnSpacing = 14 };
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var column = 0;
+        if (leading is not null)
+        {
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            leading.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(leading, column++);
+            row.Children.Add(leading);
+        }
+
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-        FrameworkElement icon;
-        if (string.IsNullOrEmpty(glyph))
-        {
-            icon = new Border { Width = 36, Height = 36 };
-        }
-        else
-        {
-            // PLAN-v7 §3.7：卡片上的图标一律单色；不再每张都套剪贴板蓝。
-            icon = new Border
-            {
-                Width = 36,
-                Height = 36,
-                Child = new FontIcon
-                {
-                    Glyph = glyph,
-                    FontSize = 20,
-                    Foreground = Theme.SecondaryText(),
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                },
-            };
-        }
-
-        Grid.SetColumn(icon, 0);
-        row.Children.Add(icon);
-        Grid.SetColumn(text, 1);
+        Grid.SetColumn(text, column++);
         row.Children.Add(text);
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         if (control is not null)
         {
-            Grid.SetColumn(control, 2);
+            Grid.SetColumn(control, column);
             row.Children.Add(control);
         }
         else if (onClick is not null)
@@ -85,7 +74,7 @@ internal static class SettingsUi
                 FontSize = 12,
                 Foreground = Theme.SecondaryText(),
             };
-            Grid.SetColumn(chevron, 2);
+            Grid.SetColumn(chevron, column);
             row.Children.Add(chevron);
         }
 
@@ -98,12 +87,22 @@ internal static class SettingsUi
         };
         if (onClick is not null)
         {
-            card.PointerPressed += (_, _) => onClick();
+            // 只认左键：右键是卡上的菜单（翻译服务那几行）。
+            card.PointerPressed += (_, e) =>
+            {
+                if (e.GetCurrentPoint(card).Properties.IsLeftButtonPressed)
+                {
+                    onClick();
+                }
+            };
         }
 
         AutomationProperties.SetName(card, description.Length > 0 ? $"{title}，{description}" : title);
         return card;
     }
+
+    /// <summary>配置问题的橙字。</summary>
+    public static Brush Caution() => Theme.Brush("SystemFillColorCautionBrush", Windows.UI.Color.FromArgb(255, 157, 93, 0));
 
     /// <summary>左右并排的小开关（用于卡片右侧）。</summary>
     public static ToggleSwitch Toggle(bool value, Action<bool> changed, string automationName)

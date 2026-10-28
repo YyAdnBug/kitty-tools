@@ -99,10 +99,5 @@ internal static class AiServiceProvider
         }
     }
 
-    public static AiProtocol Protocol(string? value) => value?.ToLowerInvariant() switch
-    {
-        "azure" => AiProtocol.Azure,
-        "anthropic" => AiProtocol.Anthropic,
-        _ => AiProtocol.OpenAi,
-    };
+    public static AiProtocol Protocol(string? value) => AiEndpoint.ParseProtocol(value);
 }

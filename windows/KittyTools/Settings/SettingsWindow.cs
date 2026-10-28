@@ -302,11 +302,9 @@ internal sealed class SettingsWindow : Window
                 SettingsService.Save();
             });
 
-        _content.Children.Add(SettingsUi.Card(
-            Glyphs.Palette, "外观", "跟随系统、浅色或深色。", ThemePicker()));
+        _content.Children.Add(SettingsUi.Card("外观", "跟随系统、浅色或深色。", ThemePicker()));
 
-        _content.Children.Add(SettingsUi.Card(
-            Glyphs.Palette, "强调色", "跟随系统，或者固定成一种颜色。", AccentPicker()));
+        _content.Children.Add(SettingsUi.Card("强调色", "跟随系统，或者固定成一种颜色。", AccentPicker()));
 
         AddToggle("自动检查更新", "每天检查一次，有新版本时提示。",
             SettingsService.Current.AutoCheckUpdates,
@@ -320,26 +318,25 @@ internal sealed class SettingsWindow : Window
             "功能", "用不着的整个关掉：它的热键、托盘菜单项和后台工作一起停；数据和设置都留着。"));
         foreach (var feature in Enum.GetValues<Feature>())
         {
-            AddToggle(
+            _content.Children.Add(SettingsUi.Card(
                 Features.Title(feature),
                 Features.Blurb(feature),
-                Features.IsOn(feature),
-                isOn =>
+                SettingsUi.Toggle(Features.IsOn(feature), isOn =>
                 {
                     Features.Set(feature, isOn);
                     BuildPage(_currentPage);
-                });
+                }, Features.Title(feature)),
+                leading: FeatureTile(feature)));
         }
 
+        _content.Children.Add(SettingsUi.Section("数据"));
         var dataButton = SettingsUi.Card(
-            "\uE8B7",
             "数据目录",
             "数据库、图片、日志和设置都放在这里。",
             null,
             OpenDataDirectory);
         _content.Children.Add(dataButton);
         _content.Children.Add(SettingsUi.Card(
-            "\uE74D",
             "从这台电脑移除 Kitty Tools…",
             "删掉开始菜单快捷方式、开机启动和保存的密钥；数据可以留着。",
             null,
@@ -350,13 +347,11 @@ internal sealed class SettingsWindow : Window
         _content.Children.Add(SettingsUi.Section(
             "导出与导入", "换电脑、重装或备份时用。密钥默认不带；片段、收藏、生词本是合并，不会删本机已有的。"));
         _content.Children.Add(SettingsUi.Card(
-            "\uE896",
             "导出…",
             "把设置、翻译服务、网页搜索、片段与收藏存成一个文件；要带密钥就设一个密码。",
             null,
             () => _ = ExportArchiveAsync()));
         _content.Children.Add(SettingsUi.Card(
-            "\uE8B5",
             "导入…",
             "从 Kitty Tools 导出的文件导回来；导入前会先自动备份一次现在的数据。",
             null,
@@ -566,7 +561,6 @@ internal sealed class SettingsWindow : Window
                 _ => "关着",
             };
         _content.Children.Add(SettingsUi.Card(
-            "\uE8F7",
             "同步文件夹",
             folder + (statusText.Length > 0 ? "\n" + statusText : string.Empty),
             null,
@@ -840,8 +834,7 @@ internal sealed class SettingsWindow : Window
                 SettingsService.Save();
                 ReportCleanup(service.EnforceLimits());
             });
-        _content.Children.Add(SettingsUi.Card(
-            "\uEB9F", "图片当前占用", $"普通图片约 {service.Store.OrdinaryImageBytes / 1_048_576.0:F0} MB，共 {service.Store.Count} 条"));
+        _content.Children.Add(SettingsUi.Card("图片当前占用", $"普通图片约 {service.Store.OrdinaryImageBytes / 1_048_576.0:F0} MB，共 {service.Store.Count} 条"));
 
         // 面板
         _content.Children.Add(SettingsUi.Section("面板"));
@@ -853,7 +846,7 @@ internal sealed class SettingsWindow : Window
                 settings.ClipboardShowLens = isOn;
                 SettingsService.Save();
                 BuildPage("clipboard");
-            }, "\uE8A1");
+            });
         AddToggle("链接显示网页标题和图片", "选中链接时联网读取；本机、内网和带登录令牌的网址不读",
             settings.LinkPreviews,
             isOn =>
@@ -866,14 +859,14 @@ internal sealed class SettingsWindow : Window
                 }
 
                 BuildPage("clipboard");
-            }, "\uE71B");
+            });
         AddToggle("单击条目直接粘贴", "关着时单击选中、双击粘贴；打开后点一下就粘贴，想先看内容用 ↑↓，Ctrl 单击、Shift 单击照常多选",
             settings.ClipboardPasteOnClick,
             isOn =>
             {
                 settings.ClipboardPasteOnClick = isOn;
                 SettingsService.Save();
-            }, "\uE7C9");
+            });
 
         // 内容
         _content.Children.Add(SettingsUi.Section("内容"));
@@ -883,7 +876,7 @@ internal sealed class SettingsWindow : Window
             {
                 settings.ClipboardPastePlain = isOn;
                 SettingsService.Save();
-            }, "\uE8D2");
+            });
         AddToggle("识别图片中的文字，用于搜索", string.Empty,
             settings.ClipboardImageOcr,
             isOn =>
@@ -894,7 +887,7 @@ internal sealed class SettingsWindow : Window
                 {
                     OcrQueue.Kick();
                 }
-            }, "\uE8C1");
+            });
 
         // 隐私
         _content.Children.Add(SettingsUi.Section("隐私"));
@@ -904,21 +897,21 @@ internal sealed class SettingsWindow : Window
             {
                 settings.ClipboardBlockSensitive = isOn;
                 SettingsService.Save();
-            }, "\uE72E");
+            });
         AddToggle("退出时清空普通历史", string.Empty,
             settings.ClipboardClearOnQuit,
             isOn =>
             {
                 settings.ClipboardClearOnQuit = isOn;
                 SettingsService.Save();
-            }, "\uE7E8");
+            });
         AddToggle("锁屏时清空普通历史", string.Empty,
             settings.ClipboardClearOnLock,
             isOn =>
             {
                 settings.ClipboardClearOnLock = isOn;
                 SettingsService.Save();
-            }, "\uE72E");
+            });
         var clear = new Button
         {
             Content = "立即清空普通历史…",
@@ -1190,12 +1183,13 @@ internal sealed class SettingsWindow : Window
             {
                 settings.LauncherRomanInput = isOn;
                 SettingsService.Save();
-            }, "\uE765");
+            });
 
         // 文件搜索
         _content.Children.Add(Section("文件搜索",
             "「open 文件名」搜文件并打开，「find 文件名」在资源管理器中显示；搜的是 Windows 搜索建了索引的位置，不想被搜到的文件夹从索引里去掉。"));
-        _content.Children.Add(SettingsUi.Card("\uE8B7", "建了索引的位置", "设置 › 隐私和安全性 › 搜索 Windows", null,
+        _content.Children.Add(SettingsUi.Card(
+            "建了索引的位置", "设置 › 隐私和安全性 › 搜索 Windows", null,
             () => LauncherOpeners.Start("ms-settings:cortana-windowssearch")));
 
         // 浏览器书签与历史
@@ -1203,7 +1197,7 @@ internal sealed class SettingsWindow : Window
         var installed = Browsers.Installed();
         if (installed.Count == 0)
         {
-            _content.Children.Add(SettingsUi.Card(string.Empty, "没有找到浏览器", "装了 Edge、Chrome、Firefox 这些之后会列在这里"));
+            _content.Children.Add(SettingsUi.Card("没有找到浏览器", "装了 Edge、Chrome、Firefox 这些之后会列在这里"));
         }
 
         foreach (var browser in installed)
@@ -1282,7 +1276,7 @@ internal sealed class SettingsWindow : Window
             {
                 settings.LauncherFallbackAlways = isOn;
                 SettingsService.Save();
-            }, "\uE721");
+            });
 
         // 使用记录
         _content.Children.Add(Section("使用记录",
@@ -1331,11 +1325,13 @@ internal sealed class SettingsWindow : Window
         var bookmarkIds = Browsers.BookmarkIds(settings).ToList();
         var historyIds = (settings.LauncherHistoryBrowsers ?? new List<string>()).ToList();
         var bookmarksOn = bookmarkIds.Contains(browser.Id);
-        var bookmarkStatus = bookmarksOn ? BrowserIndex.Status(browser.Id, history: false) : null;
+        // 读到几条写在名字下面（mac browserRows）；书签关着时只有名字。
+        var (bookmarkText, bookmarkProblem) = bookmarksOn
+            ? StatusText(BrowserIndex.Status(browser.Id, history: false), "书签", "书签文件里一条书签都没有", "没找到书签文件")
+            : (string.Empty, false);
         _content.Children.Add(SettingsUi.Card(
-            "\uE774",
             browser.Name,
-            bookmarksOn ? string.Empty : "书签",
+            bookmarkText,
             SettingsUi.Toggle(bookmarksOn, isOn =>
             {
                 var ids = Browsers.BookmarkIds(settings).Where(id => id != browser.Id).ToList();
@@ -1347,15 +1343,17 @@ internal sealed class SettingsWindow : Window
                 settings.LauncherBookmarkBrowsers = ids;
                 SettingsService.Save();
                 BuildPage("launcher");
-            }, $"读 {browser.Name} 的书签")));
+            }, $"读 {browser.Name} 的书签"),
+            problem: bookmarkProblem));
         if (bookmarksOn)
         {
-            _content.Children.Add(StatusLine(bookmarkStatus, "书签", "书签文件里一条书签都没有", "没找到书签文件", indent: 50));
             var historyOn = historyIds.Contains(browser.Id);
+            var (historyText, historyProblem) = historyOn
+                ? StatusText(BrowserIndex.Status(browser.Id, history: true), "历史", "浏览历史里还没有常去的网页", "没找到浏览历史文件")
+                : ("去过两次以上或手输过的网页，排在书签后面", false);
             var historyCard = SettingsUi.Card(
-                string.Empty,
                 "也搜浏览历史",
-                historyOn ? string.Empty : "去过两次以上或手输过的网页，排在书签后面",
+                historyText,
                 SettingsUi.Toggle(historyOn, isOn =>
                 {
                     var ids = (settings.LauncherHistoryBrowsers ?? new List<string>()).Where(id => id != browser.Id).ToList();
@@ -1367,37 +1365,22 @@ internal sealed class SettingsWindow : Window
                     settings.LauncherHistoryBrowsers = ids;
                     SettingsService.Save();
                     BuildPage("launcher");
-                }, $"也搜 {browser.Name} 的浏览历史"));
+                }, $"也搜 {browser.Name} 的浏览历史"),
+                problem: historyProblem);
             historyCard.Margin = new Thickness(24, 0, 0, 0);
             _content.Children.Add(historyCard);
-            if (historyOn)
-            {
-                _content.Children.Add(StatusLine(BrowserIndex.Status(browser.Id, history: true), "历史",
-                    "浏览历史里还没有常去的网页", "没找到浏览历史文件", indent: 74));
-            }
         }
     }
 
-    /// <summary>开关下的一行：「已读到 N 条书签」；没读到是橙字（配置问题的语义色）；还没读完写「正在读取…」。</summary>
-    private static UIElement StatusLine(BrowserStatus? status, string noun, string empty, string missing, double indent)
-    {
-        var (text, problem) = status switch
+    /// <summary>开关下的说明：「已读到 N 条书签」；没读到是问题（橙字）；还没读完写「正在读取…」。</summary>
+    private static (string Text, bool Problem) StatusText(BrowserStatus? status, string noun, string empty, string missing)
+        => status switch
         {
             null or { State: BrowserReadState.Reading } => ("正在读取…", false),
             { State: BrowserReadState.Read, Count: > 0 } read => ($"已读到 {read.Count} 条{noun}", false),
             { State: BrowserReadState.Read } => (empty, true),
             _ => (missing, true),
         };
-        return new TextBlock
-        {
-            Text = text,
-            FontSize = Theme.FontSize("Kitty.FontSize.Label"),
-            Foreground = problem
-                ? Theme.Brush("SystemFillColorCautionBrush", Windows.UI.Color.FromArgb(255, 157, 93, 0))
-                : Theme.SecondaryText(),
-            Margin = new Thickness(indent, -2, 0, 4),
-        };
-    }
 
     /// <summary>开关变了、页面重建时：浏览器数据该重读就在后台读，读完还停在这一页就再画一次（条数就出来了）。</summary>
     private async Task RefreshBrowsersAsync(Settings settings)
@@ -1484,18 +1467,11 @@ internal sealed class SettingsWindow : Window
             persist();
         });
 
-        var card = SettingsUi.Card(
-            engine.IsQuicklink ? "\uE71B" : "\uE721",
+        return SettingsUi.Card(
             WebSearch.Title(engine),
             problem ?? WebSearch.KindTitle(engine),
-            controls);
-        if (problem is not null && card.Child is Grid grid &&
-            grid.Children.OfType<StackPanel>().FirstOrDefault()?.Children.OfType<TextBlock>().Skip(1).FirstOrDefault() is { } detail)
-        {
-            detail.Foreground = Theme.Brush("SystemFillColorCautionBrush", Windows.UI.Color.FromArgb(255, 157, 93, 0));
-        }
-
-        return card;
+            controls,
+            problem: problem is not null);
     }
 
     /// <summary>
@@ -1651,7 +1627,7 @@ internal sealed class SettingsWindow : Window
             });
         var openHistory = new Button { Content = "打开…" };
         openHistory.Click += (_, _) => ShotHistoryWindow.ShowWindow();
-        _content.Children.Add(SettingsUi.Card(string.Empty, "截图历史", "看、拷贝、再钉出来，或者删掉", openHistory));
+        _content.Children.Add(SettingsUi.Card("截图历史", "看、拷贝、再钉出来，或者删掉", openHistory));
 
         if (Features.IsOn(Feature.Recording))
         {
@@ -1737,7 +1713,6 @@ internal sealed class SettingsWindow : Window
             folderRow.Children.Add(pick);
             _content.Children.Add(folderRow);
             _content.Children.Add(SettingsUi.Card(
-                "\uE8B7",
                 "打开录屏文件夹",
                 RecordingHost.Folder,
                 null,
@@ -1876,7 +1851,7 @@ internal sealed class SettingsWindow : Window
         historyButtons.Children.Add(clearHistory);
         _content.Children.Add(historyButtons);
 
-        _content.Children.Add(Section("服务", "列表顺序就是浮窗里卡片的顺序。密钥只存在凭据管理器，不写 settings.json。"));
+        _content.Children.Add(Section("服务", "结果按这个顺序显示。点一行进入设置，右键可以上移、下移和删除；删掉的内置服务可以从「添加服务」加回来，密钥还在。密钥只存在凭据管理器，不写 settings.json。"));
         if (TranslateServiceStore.BuiltinZhipuKey is null)
         {
             _content.Children.Add(new TextBlock
@@ -1888,55 +1863,10 @@ internal sealed class SettingsWindow : Window
             });
         }
 
-        foreach (var service in store.Services.ToList())
+        var services = store.Services.ToList();
+        foreach (var service in services)
         {
-            var row = new Grid { ColumnSpacing = 12 };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-            var enabled = new CheckBox
-            {
-                IsChecked = service.Enabled,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            AutomationProperties.SetName(enabled, service.Name + " 启用");
-            enabled.Checked += (_, _) => SetServiceEnabled(service, true);
-            enabled.Unchecked += (_, _) => SetServiceEnabled(service, false);
-            Grid.SetColumn(enabled, 0);
-            row.Children.Add(enabled);
-
-            var info = new StackPanel { Spacing = 2 };
-            info.Children.Add(new TextBlock
-            {
-                Text = service.Name,
-                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            });
-            info.Children.Add(new TextBlock
-            {
-                Text = ServiceSubtitle(service),
-                FontSize = 12,
-                Foreground = Theme.SecondaryText(),
-                TextWrapping = TextWrapping.Wrap,
-            });
-            Grid.SetColumn(info, 1);
-            row.Children.Add(info);
-
-            var detail = new Button { Content = "详情", Padding = new Thickness(10, 2, 10, 2) };
-            detail.Click += (_, _) => ShowServiceDialog(service);
-            Grid.SetColumn(detail, 2);
-            row.Children.Add(detail);
-
-            var remove = new Button { Content = "删除", Padding = new Thickness(10, 2, 10, 2) };
-            remove.Click += (_, _) =>
-            {
-                store.Remove(service.Id);
-                BuildPage("translate");
-            };
-            Grid.SetColumn(remove, 3);
-            row.Children.Add(remove);
-            _content.Children.Add(row);
+            _content.Children.Add(ServiceRow(store, service, services.IndexOf(service), services.Count));
         }
 
         var add = new Button { Content = "＋ 添加服务" };
@@ -1999,23 +1929,118 @@ internal sealed class SettingsWindow : Window
         Log.Info($"settings.translate.build-done services={store.Services.Count}");
     }
 
-    private static string ServiceSubtitle(TranslateServiceConfig service)
+    /// <summary>
+    /// 一个服务一行（mac ServiceListRow）：服务图标 24、名称 + 状态、启用开关、›；点一行打开详情，右键 设置… / 上移 / 下移 / 删除。
+    /// 内置的直接删（「添加服务」里能加回来，密钥留着），自建的 AI 服务先确认、连密钥一起删。
+    /// </summary>
+    private Border ServiceRow(TranslateServiceStore store, TranslateServiceConfig service, int index, int count)
     {
-        var kind = service.Kind switch
+        var (status, problem) = ServiceStatus(store, service);
+        var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, VerticalAlignment = VerticalAlignment.Center };
+        controls.Children.Add(SettingsUi.Toggle(service.Enabled, isOn => SetServiceEnabled(service, isOn), $"启用「{service.Name}」"));
+        controls.Children.Add(new FontIcon
         {
-            TranslateKinds.Zhipu => "智谱 GLM",
-            TranslateKinds.Google => "Google",
-            TranslateKinds.DeepL => service.UsesDeepLX == true ? "DeepLX" : "DeepL",
-            TranslateKinds.Microsoft => "微软（留空 key 用 Edge 免费接口）",
-            _ => service.Protocol switch
+            Glyph = Glyphs.ChevronRight,
+            FontSize = 12,
+            Foreground = Theme.SecondaryText(),
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        var card = SettingsUi.Card(
+            service.Name,
+            status,
+            controls,
+            () => ShowServiceDialog(service),
+            leading: ServiceTile.Create(service, 24),
+            problem: problem);
+
+        var menu = new MenuFlyout();
+        void Add(string text, bool enabled, Action action)
+        {
+            var item = new MenuFlyoutItem { Text = text, IsEnabled = enabled };
+            item.Click += (_, _) => action();
+            menu.Items.Add(item);
+        }
+
+        void Move(int offset)
+        {
+            store.Services.RemoveAt(index);
+            store.Services.Insert(index + offset, service);
+            store.Save();
+            BuildPage("translate");
+        }
+
+        Add("设置…", true, () => ShowServiceDialog(service));
+        menu.Items.Add(new MenuFlyoutSeparator());
+        Add("上移", index > 0, () => Move(-1));
+        Add("下移", index < count - 1, () => Move(1));
+        menu.Items.Add(new MenuFlyoutSeparator());
+        Add(service.Kind == TranslateKinds.Ai ? "删除…" : "删除", true, async () =>
+        {
+            if (service.Kind == TranslateKinds.Ai)
             {
-                "anthropic" => "AI · Anthropic",
-                "azure" => "AI · Azure OpenAI",
-                _ => "AI · OpenAI 兼容",
-            },
+                var dialog = new ContentDialog
+                {
+                    RequestedTheme = Theme.ElementTheme,
+                    Title = $"删除「{service.Name}」？",
+                    Content = "会同时删除它保存在凭据管理器里的密钥。",
+                    PrimaryButtonText = "删除",
+                    CloseButtonText = "取消",
+                    DefaultButton = ContentDialogButton.Close,
+                    XamlRoot = _content.XamlRoot,
+                };
+                if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+                {
+                    return;
+                }
+            }
+
+            store.Remove(service.Id);
+            BuildPage("translate");
+        });
+        card.ContextFlyout = menu;
+        return card;
+    }
+
+    /// <summary>服务行的状态字（mac settingsStatus）：缺了要填的、且服务开着时算问题（橙字）。</summary>
+    private static (string Text, bool Problem) ServiceStatus(TranslateServiceStore store, TranslateServiceConfig service)
+    {
+        var (text, missing) = service.Kind switch
+        {
+            TranslateKinds.Zhipu => store.Secret(service) is null && TranslateServiceStore.BuiltinZhipuKey is null
+                ? ("未填密钥", true)
+                : (TranslatePresets.ZhipuModel(service.Model), false),
+            TranslateKinds.Ai => AiProviderStatus(service),
+            TranslateKinds.DeepL => service.UsesDeepLX == true
+                ? string.IsNullOrWhiteSpace(service.BaseUrl) ? ("未填 DeepLX 地址", true) : ("DeepLX（自建）", false)
+                : store.Secret(service) is null ? ("未填密钥", true) : ("官方 API", false),
+            TranslateKinds.Microsoft => (store.Secret(service) is null ? "免费 Edge 接口" : "Azure 翻译", false),
+            _ => TranslateKinds.SecretFields(service.Kind).All(field => store.Secret(service, field) is not null)
+                ? ("已填密钥", false)
+                : ("未填密钥", true),
         };
-        var model = string.IsNullOrWhiteSpace(service.Model) ? string.Empty : " · " + service.Model;
-        return kind + model + (service.Enabled ? string.Empty : " · 已停用");
+        return (text, missing && service.Enabled);
+    }
+
+    private static (string, bool) AiProviderStatus(TranslateServiceConfig service)
+    {
+        var protocol = AiEndpoint.ParseProtocol(service.Protocol);
+        if (protocol != AiProtocol.Anthropic && string.IsNullOrWhiteSpace(service.BaseUrl))
+        {
+            return ("未填服务地址", true);
+        }
+
+        if (string.IsNullOrWhiteSpace(service.Model))
+        {
+            return ("未填模型", true);
+        }
+
+        var title = protocol switch
+        {
+            AiProtocol.Azure => "Azure OpenAI",
+            AiProtocol.Anthropic => "Anthropic",
+            _ => "OpenAI 兼容",
+        };
+        return ($"{title} · {service.Model.Trim()}", false);
     }
 
     private void SetServiceEnabled(TranslateServiceConfig service, bool enabled)
@@ -2252,7 +2277,6 @@ internal sealed class SettingsWindow : Window
 
         _content.Children.Add(Header(Features.Title(feature), string.Empty));
         _content.Children.Add(SettingsUi.Card(
-            "\uE7E8",
             "已关闭",
             "这个功能关掉了：热键、托盘菜单项和后台工作都停了。到 通用 › 功能 里打开就回来。",
             null,
@@ -2314,14 +2338,14 @@ internal sealed class SettingsWindow : Window
             right.Children.Add(clear);
 
             var card = SettingsUi.Card(
-                "\uE765",
                 definition.DisplayName,
                 binding.VirtualKey == 0
                     ? "未设置"
                     : failure is null
                         ? statusText == "正常" ? "正在使用" : "已设置"
                         : failure,
-                right);
+                right,
+                leading: HotKeyTile(definition.Action));
             if (failure is not null)
             {
                 // 被占用时红字说明原因（PLAN-v2 §3.4）。
@@ -2476,7 +2500,6 @@ internal sealed class SettingsWindow : Window
 
         _content.Children.Add(SettingsUi.Section("更新"));
         var updateCard = SettingsUi.Card(
-            "\uE895",
             "检查更新",
             UpdateService.AvailableVersion is { } available
                 ? $"有可用的新版本 {available}"
@@ -2486,7 +2509,6 @@ internal sealed class SettingsWindow : Window
         _content.Children.Add(updateCard);
 
         _content.Children.Add(SettingsUi.Card(
-            "\uE8B7",
             "数据目录",
             "数据库、图片、日志和设置都放在这里。",
             null,
@@ -2703,6 +2725,44 @@ internal sealed class SettingsWindow : Window
         }
     }
 
+    /// <summary>通用 › 功能一行的家族色块（mac FeatureToggle）：和侧栏那一页同一个；录屏没有自己的页，用截图的粉 + 录制符号。</summary>
+    private static Border FeatureTile(Feature feature)
+    {
+        if (feature == Feature.Recording)
+        {
+            return KindTile.Create("capture", Glyphs.Record, 20);
+        }
+
+        var tag = Features.Key(feature);
+        return KindTile.Create(FamilyForPage(tag), Pages.First(page => page.Tag == tag).Glyph, 20);
+    }
+
+    /// <summary>快捷键页一行的家族色块（mac HotKeyAction.symbol / color）：剪贴板蓝、启动器紫、翻译绿、截图和录屏粉。</summary>
+    private static Border HotKeyTile(string action)
+    {
+        var family = Features.ForHotKey(action) switch
+        {
+            Feature.Clipboard => "clipboard",
+            Feature.Launcher => "launcher",
+            Feature.Translate => "translate",
+            _ => "capture",
+        };
+        var glyph = action switch
+        {
+            HotKeyActions.Clipboard => Glyphs.ClipboardHistory,
+            HotKeyActions.Launcher => Glyphs.Command,
+            HotKeyActions.SelectionTranslate => Glyphs.Translate,
+            HotKeyActions.InputTranslate => Glyphs.TextTranslate,
+            HotKeyActions.ScreenshotTranslate => Glyphs.ScreenshotTranslate,
+            HotKeyActions.ScreenshotLast => Glyphs.ToolRectangle,
+            HotKeyActions.Ocr => Glyphs.Ocr,
+            HotKeyActions.Record => Glyphs.Record,
+            HotKeyActions.ShotHistory => Glyphs.Clock,
+            _ => Glyphs.Screenshot,
+        };
+        return KindTile.Create(family, glyph, 20);
+    }
+
     private static string FamilyForPage(string tag) => tag switch
     {
         "hotkeys" or "shortcuts" => "shortcut",
@@ -2867,38 +2927,18 @@ internal sealed class SettingsWindow : Window
         return row;
     }
 
-    private void AddToggle(string title, string subtitle, bool value, Action<bool> changed, string glyph = "")
+    private void AddToggle(string title, string subtitle, bool value, Action<bool> changed)
         => _content.Children.Add(SettingsUi.Card(
-            glyph.Length > 0 ? glyph : GlyphFor(title),
             title,
             subtitle,
             SettingsUi.Toggle(value, changed, title)));
 
     private void AddCombo(
-        string title, string subtitle, string[] items, int selected, Action<int> changed, string glyph = "")
+        string title, string subtitle, string[] items, int selected, Action<int> changed)
         => _content.Children.Add(SettingsUi.Card(
-            glyph.Length > 0 ? glyph : GlyphFor(title),
             title,
             subtitle,
             SettingsUi.Combo(items, selected, changed, title)));
-
-    /// <summary>每个设置项一个有意思的图标（REVIEW R10）；没有合适的就不画图标块。</summary>
-    private static string GlyphFor(string title) => title switch
-    {
-        "登录时自动打开" => "\uE7E8",
-        "外观" => "\uE790",
-        "强调色" => "\uE790",
-        "自动检查更新" => "\uE895",
-        "暂停记录" => "\uE769",
-        "保留普通历史" => "\uE787",
-        "图片最多占用" => "\uEB9F",
-        "不记录疑似密钥和卡号" => "\uE72E",
-        "第一语言" => "\uE774",
-        "第二语言" => "\uE774",
-        "浮窗位置" => "\uE7C2",
-        "自动复制第一个服务的结果" => "\uE8C8",
-        _ => string.Empty,
-    };
 
     private static Border Card(UIElement child) => new()
     {

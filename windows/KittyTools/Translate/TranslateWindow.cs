@@ -1319,8 +1319,7 @@ internal sealed unsafe partial class TranslateWindow : Window
             };
 
             // 服务标识：有官方 logo 用 logo，没有用品牌色首字母（PLAN-v7 §2.1）。
-            _badge = ServiceTile.Create(
-                ServiceBadge.Vendor(service.Kind, service.Protocol), service.Name, 18);
+            _badge = ServiceTile.Create(service, 18);
 
             _body = new TextBlock
             {

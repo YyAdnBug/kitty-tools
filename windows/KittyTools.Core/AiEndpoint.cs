@@ -29,6 +29,14 @@ public enum AiVendor
 
 public static class AiEndpoint
 {
+    /// <summary>设置里存的协议字（openai / azure / anthropic，不分大小写）；别的都当 OpenAI 兼容。</summary>
+    public static AiProtocol ParseProtocol(string? value) => value?.ToLowerInvariant() switch
+    {
+        "azure" => AiProtocol.Azure,
+        "anthropic" => AiProtocol.Anthropic,
+        _ => AiProtocol.OpenAi,
+    };
+
     /// <summary>
     /// OpenAI 兼容 / Azure：已含 /chat/completions 原样用；末段是 v&lt;数字&gt; 或 openai 补
     /// /chat/completions；否则补 /v1/chat/completions。Anthropic 同理对应 /messages，
