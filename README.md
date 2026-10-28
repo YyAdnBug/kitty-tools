@@ -82,3 +82,16 @@
 ## 0.5.0-review-r15（R15 深色设置卡）
 
 - settings-dark-system-light.png：系统浅色 + 设置深色，只截设置窗口；卡片深底白字
+## 0.1.0-launcher（PLAN-v9-launcher 7a–7d 启动器对齐 mac，Windows 编译修过之后）
+
+`--ui-snapshots` 屏外渲染（只画启动器面板，不截屏幕），浅 / 深各一套；高对比度要改系统设置，没截。
+数值对过 PLAN-v9-launcher §3：搜索线 56、发丝线、四周内缩 6、行 40、分组标题 28、计算卡 64、底栏 36。
+
+- launcher-*.png：搜「a」（系统设置页用「设置」的齿轮图标，第一行在最上面、带高亮）
+- launcher-home-*.png：空查询、空数据——只有搜索线和底栏（V3「第一次用什么都没有」）
+- launcher-calc-*.png：`10 km to mi` 计算卡一行「算式 → 结果」
+- launcher-kill-*.png / launcher-port-*.png：「后台进程」「在监听的端口」分组和行（本机当时在跑的进程）
+- launcher-prompt-*.png：`g` 第一行「用 Google 搜索…」补全提示
+- launcher-empty-*.png：匹配不到时只剩 Bing 兜底一行
+- launcher-actions-*.png：Ctrl+K 菜单（占位「搜索操作」、命令符号）
+- launcher-keys-*.png：按住 Ctrl 的「Ctrl+1…9」键帽
