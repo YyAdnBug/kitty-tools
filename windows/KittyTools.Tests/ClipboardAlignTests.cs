@@ -135,6 +135,42 @@ public sealed class ClipboardAlignTests
     }
 
     [TestMethod]
+    public void QuickLookSizeFollowsImageRatio()
+    {
+        // 照 mac quickLookSizeFollowsImageRatio：整屏截图放不下时等比缩小，窗口跟着图片的比例走，不是宽高各夹各的。
+        var (width, height) = ClipPreviewRules.QuickLookSize(ClipKind.Image, null, null, 3840, 2160, false, 0, 1200, 800, 2);
+        Assert.AreEqual((width - 52) / 1920.0, (height - 134) / 1080.0, 1e-9);
+        Assert.AreEqual(1200, width, 1e-9);
+        Assert.IsTrue(height <= 800);
+        // 小图到最小 560 × 420；文本按行数，短的 420、长的 720 封顶；都夹进可见区。
+        Assert.AreEqual((560.0, 420.0), ClipPreviewRules.QuickLookSize(ClipKind.Image, null, null, 100, 80, false, 0, 1600, 1000, 1));
+        Assert.AreEqual((820.0, 420.0), ClipPreviewRules.QuickLookSize(ClipKind.Text, null, "一行", 0, 0, false, 0, 1600, 1000, 1));
+        Assert.AreEqual((820.0, 720.0), ClipPreviewRules.QuickLookSize(ClipKind.Text, null, string.Join('\n', Enumerable.Repeat("x", 80)), 0, 0, false, 0, 1600, 1000, 1));
+        Assert.AreEqual((700.0, 500.0), ClipPreviewRules.QuickLookSize(ClipKind.Files, null, null, 0, 0, false, 1, 700, 500, 1));
+    }
+
+    [TestMethod]
+    public void HeaderTextStaysReadable()
+    {
+        foreach (var (r, g, b) in new[] { ((byte)0, (byte)122, (byte)255), ((byte)255, (byte)204, (byte)0), ((byte)40, (byte)40, (byte)40), ((byte)250, (byte)250, (byte)250) })
+        {
+            var style = ClipPreviewRules.HeaderStyle(r, g, b);
+            var luminance = ClipPreviewRules.Luminance(style.R / 255.0, style.G / 255.0, style.B / 255.0);
+            if (style.DarkText)
+            {
+                Assert.IsTrue(luminance >= 0.3);
+            }
+            else
+            {
+                Assert.IsTrue(1.05 / (luminance + 0.05) >= 4.5, $"{r},{g},{b} 白字对比度不够");
+            }
+        }
+
+        Assert.IsTrue(ClipPreviewRules.HeaderStyle(255, 204, 0).DarkText);
+        Assert.IsFalse(ClipPreviewRules.HeaderStyle(0, 122, 255).DarkText);
+    }
+
+    [TestMethod]
     public void MenuFilterMatchesPinyin()
     {
         Assert.IsTrue(Search.MatchesTitle("收藏", "收"));

@@ -38,8 +38,8 @@ internal static class ClipLensView
         ? Color.FromArgb(114, 255, 255, 255)
         : Color.FromArgb(114, 0, 0, 0);
 
-    /// <summary>从 height − 12 往下渐变到透明的字色（Absolute：坐标按这段文字自己的左上角算）。</summary>
-    private static Brush Fading(Color color, double height) => new LinearGradientBrush
+    /// <summary>从 height − 12 往下渐变到透明的字色（Absolute：坐标按这段文字自己的左上角算）；height ≤ 0 = 不渐隐（放大卡）。</summary>
+    private static Brush Fading(Color color, double height) => height <= 0 ? new SolidColorBrush(color) : new LinearGradientBrush
     {
         MappingMode = BrushMappingMode.Absolute,
         StartPoint = new Windows.Foundation.Point(0, Math.Max(0, height - FadeHeight)),
@@ -81,8 +81,11 @@ internal static class ClipLensView
         return block;
     }
 
-    /// <summary>代码 / JSON：从第一个命中那一行的上一行开始，最多 10 行、每行前 300 字。</summary>
-    public static FrameworkElement Code(string text, bool json, string query, double height)
+    /// <summary>
+    /// 代码 / JSON：从第一个命中那一行的上一行开始，最多 maxLines 行、每行前 300 字。放大卡里（height 0）不渐隐、字放大、能选中。
+    /// </summary>
+    public static FrameworkElement Code(
+        string text, bool json, string query, double height, int maxLines = 10, double fontSize = 12, bool selectable = false)
     {
         var source = text.Length > 20_000 ? text[..20_000] : text;
         var lines = source.Replace("\r\n", "\n").Split('\n');
@@ -92,19 +95,19 @@ internal static class ClipLensView
             first = Math.Max(0, source[..hits[0].Start].Count(ch => ch == '\n') - 1);
         }
 
-        var shown = lines.Skip(first).Take(10).Select(line => line.Length > 300 ? line[..300] : line).ToList();
+        var shown = lines.Skip(first).Take(maxLines).Select(line => line.Length > 300 ? line[..300] : line).ToList();
         var joined = string.Join('\n', shown);
         var digits = (first + shown.Count).ToString().Length;
 
         var grid = new Grid { ColumnSpacing = 10 };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(digits * 7 + 2) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(digits * Math.Ceiling(fontSize * 0.6) + 2) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         var numbers = new TextBlock
         {
             Text = string.Join('\n', Enumerable.Range(first + 1, shown.Count)),
             FontFamily = new FontFamily("Cascadia Mono, Consolas"),
-            FontSize = 11,
-            LineHeight = 16,
+            FontSize = fontSize - 1,
+            LineHeight = Math.Round(fontSize * 4 / 3),
             LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
             TextAlignment = TextAlignment.Right,
             Foreground = Fading(TertiaryInk, height),
@@ -114,11 +117,12 @@ internal static class ClipLensView
         var code = new TextBlock
         {
             FontFamily = new FontFamily("Cascadia Mono, Consolas"),
-            FontSize = 12,
-            LineHeight = 16,
+            FontSize = fontSize,
+            LineHeight = Math.Round(fontSize * 4 / 3),
             LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
             TextWrapping = TextWrapping.NoWrap,
             TextTrimming = TextTrimming.CharacterEllipsis,
+            IsTextSelectionEnabled = selectable,
         };
         foreach (var (start, length, kind) in ClipPreviewRules.Highlight(joined, json))
         {

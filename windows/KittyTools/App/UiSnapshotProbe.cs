@@ -74,6 +74,23 @@ internal static class UiSnapshotProbe
                 await SafeRenderAsync(root, () => new ClipboardPanel(), "clip", dark, directory);
                 // PLAN-v7 §3.1：多选时的底栏（已选 N 条 · 合并粘贴 / 收藏 / 删除 / 取消）。
                 await SafeRenderAsync(root, () => new ClipboardPanel(), "clip-multi", dark, directory);
+                // 6f：Ctrl+Y 放大卡（真窗口，不激活；RenderTargetBitmap 只画它自己的内容）。
+                foreach (var form in new[] { "json", "text" })
+                {
+                    var quick = new ClipboardPanel { Width = 720, Height = 520 };
+                    root.Children.Add(quick);
+                    quick.OnShown();
+                    await Task.Delay(300);
+                    quick.ApplyProbeState("clip-quicklook-" + form);
+                    if (quick.QuickLookForProbe is { } window)
+                    {
+                        await RenderWindowAsync(window, "clip-quicklook-" + form, dark, directory);
+                    }
+
+                    quick.OnHidden();
+                    root.Children.Remove(quick);
+                }
+
                 if (!dark && Environment.GetEnvironmentVariable("KITTY_CLIP_PERF") == "1")
                 {
                     await MeasureClipboardAsync(root);

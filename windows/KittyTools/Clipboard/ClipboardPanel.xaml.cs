@@ -41,6 +41,8 @@ public sealed partial class ClipboardPanel : UserControl
     private readonly ClipPalette _palette = new();
     /// <summary>备注、编辑内容 / 新建片段、新建 / 管理收藏夹（画在面板里）。</summary>
     private readonly ClipDialogHost _dialogs = new();
+    /// <summary>Ctrl+Y 放大预览（单独一扇不激活的窗口，第一次用时建）。</summary>
+    private ClipQuickLook? _quickLook;
     /// <summary>菜单开着时搜索框是过滤词：原来的搜索词先收在这里。</summary>
     private string? _savedQuery;
     private bool _suppressSearch;
@@ -230,6 +232,7 @@ public sealed partial class ClipboardPanel : UserControl
         _linkLens = null;
         _palette.Close();
         _dialogs.Close();
+        _quickLook?.Hide();
         _savedQuery = null;
         _kindFilter = null;
         _formFilter = null;
@@ -347,6 +350,11 @@ public sealed partial class ClipboardPanel : UserControl
         var (lens, lensHeight) = BuildLens();
         _list.SetSelection(index, lens, lensHeight, Motion.Reduced ? MotionCurve.Instant : curve);
         _list.Reveal(index);
+        if (_quickLook?.IsOpen == true)
+        {
+            // 放大卡开着时 ↑↓ 换条目，它跟着换。
+            ShowQuickLook();
+        }
         Footer.HideNotice();
         ScheduleLinkPreview();
         UpdateFooter();
@@ -507,6 +515,9 @@ public sealed partial class ClipboardPanel : UserControl
         CheckedChanged(MotionCurve.Instant);
     }
 
+    /// <summary>--ui-snapshots：开着的放大卡窗口。</summary>
+    internal Window? QuickLookForProbe => _quickLook?.IsOpen == true ? _quickLook : null;
+
     /// <summary>--ui-snapshots 的几种状态（只在自检档里用）。</summary>
     internal void ApplyProbeState(string name)
     {
@@ -578,6 +589,14 @@ public sealed partial class ClipboardPanel : UserControl
                 }
 
                 ShowManageGroups();
+                break;
+            case "clip-quicklook-json":
+                SelectWhere(entry => entry.Form == ContentForm.Json);
+                ShowQuickLook();
+                break;
+            case "clip-quicklook-text":
+                SelectWhere(entry => entry.Kind == ClipKind.Text && entry.Form is null && entry.Text!.Length > 40);
+                ShowQuickLook();
                 break;
             case "clip-scrolled":
                 Select(3, MotionCurve.Instant);
@@ -993,8 +1012,12 @@ public sealed partial class ClipboardPanel : UserControl
         {
             case VirtualKey.Escape:
                 e.Handled = true;
-                // mac 的顺序：标签待删 → 清搜索词 → 取消多选 → 收起。
-                if (SearchBox.Text.Length > 0)
+                // mac 的顺序：放大卡 → 标签待删 → 清搜索词 → 取消多选 → 收起。
+                if (_quickLook?.IsOpen == true)
+                {
+                    _quickLook.Hide();
+                }
+                else if (SearchBox.Text.Length > 0)
                 {
                     SearchBox.Text = string.Empty;
                 }
@@ -1119,6 +1142,15 @@ public sealed partial class ClipboardPanel : UserControl
                     Beep();
                 }
 
+                break;
+            case VirtualKey.Y when control:
+                e.Handled = true;
+                ToggleQuickLook();
+                break;
+            case VirtualKey.C when control && _quickLook?.SelectedText is { } selection:
+                // 放大卡里选中了字：只拷选中的纯文本（mac 体检 B11）。
+                e.Handled = true;
+                CopyText(selection, recordOnHide: true);
                 break;
             case VirtualKey.C when control:
                 if (SearchBox.SelectionLength > 0)
@@ -1799,6 +1831,8 @@ public sealed partial class ClipboardPanel : UserControl
             SetSearchQuietly(string.Empty);
         }
 
+        _quickLook?.Hide();
+
         _palette.HorizontalAlignment = top ? HorizontalAlignment.Left : HorizontalAlignment.Right;
         _palette.VerticalAlignment = top ? VerticalAlignment.Top : VerticalAlignment.Bottom;
         _palette.Margin = top ? new Thickness(12, 4, 0, 0) : new Thickness(0, 0, 12, 4);
@@ -1974,6 +2008,7 @@ public sealed partial class ClipboardPanel : UserControl
                 items.Add(new PaletteItem("翻译", Glyphs.Translate, 1, () => TranslateEntry(single), "Ctrl+T"));
             }
 
+            items.Add(new PaletteItem("放大预览", Glyphs.OpenInNewWindow, 1, ShowQuickLook, "Ctrl+Y"));
             if (single.Form == ContentForm.Json)
             {
                 items.Add(new PaletteItem(_prettyJson ? "显示原文" : "美化 JSON", Glyphs.Code, 1, () =>
@@ -2337,11 +2372,71 @@ public sealed partial class ClipboardPanel : UserControl
         return true;
     }
 
+    // ---- Ctrl+Y 放大预览（PLAN-v9-clipboard D3）
+
+    private void ToggleQuickLook()
+    {
+        if (_quickLook?.IsOpen == true)
+        {
+            _quickLook.Hide();
+            return;
+        }
+
+        if (SingleTarget is null)
+        {
+            Beep();
+            return;
+        }
+
+        ShowQuickLook();
+    }
+
+    /// <summary>打开放大卡，或换成当前选中的那条（以剪贴板面板为中心）。</summary>
+    private void ShowQuickLook()
+    {
+        if (SingleTarget is not { } entry || XamlRoot?.ContentIslandEnvironment is not { } island)
+        {
+            return;
+        }
+
+        var panel = (Windows.Win32.Foundation.HWND)Microsoft.UI.Win32Interop.GetWindowFromWindowId(island.AppWindowId);
+        _quickLook ??= new ClipQuickLook();
+        var (third, title, glyph) = entry.Kind switch
+        {
+            ClipKind.Files => ((Action<ClipEntry>?)RevealFiles, "在资源管理器中显示", Glyphs.Folder),
+            ClipKind.Image => (item => _ = PinImagesAsync(new[] { item }), "钉到屏幕", Glyphs.Pin),
+            _ when entry.Form == ContentForm.Link => (item => OpenTarget(item), "打开", Glyphs.Globe),
+            _ when entry.Form == ContentForm.Json => (_ =>
+            {
+                _prettyJson = !_prettyJson;
+                Select(_selected, MotionCurve.Instant);
+            }, _prettyJson ? "原文" : "美化", Glyphs.Code),
+            _ => (_ => FavoriteSelected(), entry.Favorite ? "取消收藏" : "收藏", entry.Favorite ? Glyphs.FavoriteFilled : Glyphs.Star),
+        };
+        _quickLook.Show(
+            entry,
+            SearchBox.Text.Trim(),
+            entry.Form == ContentForm.Json ? DisplayText(entry) : entry.Text ?? string.Empty,
+            new QuickLookActions(
+                () => Paste(plain: false),
+                Copy,
+                third,
+                title,
+                glyph,
+                () =>
+                {
+                    _quickLook?.Hide();
+                    OpenActionPalette();
+                }),
+            panel);
+    }
+
     // ---- 对话框（画在面板里，PLAN-v9-clipboard D2）
 
     private void OnDialogOpened()
     {
         _palette.Close();
+        _quickLook?.Hide();
         HeightRequested?.Invoke(ContentHeightDip, false);
     }
 

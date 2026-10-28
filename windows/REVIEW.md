@@ -19,6 +19,7 @@
 - 6c（透镜）：见 `git log --grep "6c"`。新文件 `Clipboard/ClipLensView.cs`、`Core/ClipPreviewRules.cs`；删了 `Core/PreviewRules.cs` 和它的测试（换成 ContentForm / ClipPreviewRules）；`LinkPreviewService` 多取网站图标、加 `Peek`。
 - 6d（键盘和菜单）：见 `git log --grep "6d"`。新文件 `Clipboard/ClipPalette.cs`（面板里的筛选 / 操作菜单）；`ClipEntry` 加形态缓存 `Form`；另动了 `Settings/ShortcutsSheet.cs` 剪贴板那一组。
 - 6e（对话框）：见 `git log --grep "6e"`。新文件 `Clipboard/ClipDialogs.cs`；`Shell/Glyphs.cs` 加 `Remove`。
+- 6f（放大预览）：见 `git log --grep "6f"`。新文件 `Clipboard/ClipQuickLook.cs`；`Core/ClipPreviewRules.cs` 加 `QuickLookSize`、`HeaderStyle`。
 
 ## v9 标注分工（2026-10-27，用户拍板 PLAN-v9-annotate D1–D7 全部按推荐）
 
