@@ -27,6 +27,13 @@
 //   就是库退回去了（写到一半停了、换过文件夹、文件夹被恢复成旧的，都是文件夹里的小，不会认错）。
 // - **状态**（设置页的状态行）：关着 / 正在同步 / 好了（上次同步的时刻）/ 停了（为什么：文件夹不在、不是那个文件夹、
 //   更新版本写的、哪台的东西读不出来、读写出错）/ 等你确认（刹车）。别的电脑：名字和最后一次看到它的文件变的时刻。
+// - **跳过**（第三轮体检第 6 批）：一部分上一轮整轮走完、什么都没落也没写，这一轮的输入又一模一样——读到的文件属性
+//   （NoteSyncDisk.Snapshot.stamps：路径、文件号、改动时间、大小，同读缓存认「没变」的那几样）、本机那份（便签：库的代数、
+//   电脑编号、库里记的第几轮、两边的图片文件名；一类：交出来的值、账本）——就不合也不写这一部分（合出来的会和上一轮一样）。
+//   有文件没下载完、读不出来、刚改过（不到 2 秒）的部分不跳过；哪一步停了，下一轮全都照常合。量到的数在 SyncProbeTests 文件头。
+//   ponytail: 上一轮的输入只记在内存里，重启后第一轮全合；没变的一轮还是要把每个文件看一遍属性、比一遍，随文件数线性涨
+//   （5000 条便签 -O 13–19 ms，1000 条约 6 ms）——要再省就换 FSEvents 只看变了的；有一个永远读不出来的文件（哪台不用了的
+//   Mac 留下的坏文件）时，那一部分每轮都不跳过，回到原来每轮全合的样子。
 // 拿下来的图片：编辑器里正开着的那条下次打开时才画出来（附件的尺寸在建的时候读）。
 // ponytail: 退出时不再赶一轮（落盘照常，下次打开那一轮写出去）
 
@@ -105,6 +112,33 @@ import Observation
   @ObservationIgnored private var pending: [String: Int] = [:]
   /// 刹车上一次弹刘海岛时是几条（一样的不再弹）
   @ObservationIgnored private var braked: Int?
+  /// 上一轮整轮走完时什么都没做（没落什么、没写什么）的那几部分，当时的输入：这一轮一模一样就跳过这一部分（文件头「跳过」）
+  @ObservationIgnored private var settled: [String: Inputs] = [:]
+  /// 上一轮跳过了哪几部分（单测看）
+  @ObservationIgnored private(set) var skippedParts: Set<String> = []
+
+  /// 一部分这一轮的输入里会变的那几样：读到的文件的属性（NoteSyncDisk.Stamp）+ 本机那份。一样就合出来、写出去的都一样
+  private enum Inputs: Equatable {
+    /// 便签：库的代数（改一条、合进来、清到期的都 +1）、电脑编号、库里记的第几轮、本机图片目录和文件夹 images/ 里的文件名
+    case notes(
+      stamps: [NoteSyncDisk.Stamp], generation: Int, device: String, epoch: Int,
+      images: Set<String>, folderImages: Set<String>)
+    /// 一类：电脑编号（换了编号要写出新的子文件夹）、本机那份、账本（账本被退回去了也认得出来）
+    case records(
+      stamps: [NoteSyncDisk.Stamp], device: String, values: Values, ledger: SyncRecords.Ledger?)
+  }
+
+  /// 一类交出来的值，按字节比（同 SyncRecords：只换了写法的改动也要发出去，不能当成没变跳过）
+  private struct Values: Equatable {
+    var values: [String: String]
+
+    static func == (a: Values, b: Values) -> Bool {
+      a.values.count == b.values.count
+        && a.values.allSatisfy { key, value in
+          b.values[key].map { SyncRecords.sameBytes($0, value) } ?? false
+        }
+    }
+  }
 
   init(store: NoteStore, defaults: UserDefaults = .standard) {
     self.store = store
@@ -134,7 +168,7 @@ import Observation
   }
 
   /// 便签那部分的名字（和类别名放在同一组勾里）
-  static let notesPart = "notes"
+  static let notesPart = NoteSyncFolder.notesPart
 
   /// 这一部分同不同步（设置页的勾）
   func syncs(_ part: String) -> Bool { !skipped.contains(part) }
@@ -204,17 +238,21 @@ import Observation
     self.folder = folder
     self.library = library
     cache = NoteSyncDisk.Cache()
+    settled = [:]
     return nil
   }
 
-  /// 不同步了：文件夹里的东西留着，本机的便签不动
+  /// 不同步了：文件夹里的东西留着，本机的便签不动；为同步留着的几份缓存放掉
   func disable() {
     stop()
+    SyncLedger.forget()
+    for source in sources { source.syncStopped() }
     defaults.removeObject(forKey: Prefs.notesSyncFolder)
     defaults.removeObject(forKey: Prefs.notesSyncLibrary)
     folder = nil
     library = nil
     cache = NoteSyncDisk.Cache()
+    settled = [:]
     peers = []
     lastSync = nil
     downloading = 0
@@ -227,6 +265,8 @@ import Observation
     let timer = Timer(timeInterval: Self.interval, repeats: true) { [weak self] _ in
       MainActor.assumeIsolated { self?.syncNow() }
     }
+    // 晚几秒没关系（同步盘本来就是几秒到几分钟的延迟）：让系统把这次唤醒和别的计时器并在一起
+    timer.tolerance = Self.interval / 4
     RunLoop.main.add(timer, forMode: .common)
     self.timer = timer
     syncNow()
@@ -290,8 +330,13 @@ import Observation
       syncs($0.syncKind.rawValue) && featureOn($0.syncKind.rawValue)
     }
     if notesOn { store.flush() }
+    // 这一轮没整轮走完（停在哪一步）的话下一轮都照常合
+    let previous = settled
+    settled = [:]
+    var settling: [String: Inputs] = [:]
+    var skipping: Set<String> = []
     let snapshot = await NoteSyncDisk.read(
-      folder: folder, cache: cache, kinds: sources.map(\.syncKind))
+      folder: folder, cache: cache, kinds: sources.map(\.syncKind), device: store.deviceID)
     // 读的时候被关了、换了文件夹：这一轮作废
     guard self.folder == folder, self.library == library else { return }
     cache = snapshot.cache
@@ -314,7 +359,16 @@ import Observation
     }
 
     var plan = NoteSyncFolder.Publish()
-    if notesOn {
+    let localImages = notesOn ? store.images?.fileNames() ?? [] : []
+    let noteInputs = Inputs.notes(
+      stamps: snapshot.stamps[Self.notesPart] ?? [], generation: store.generation,
+      device: store.deviceID, epoch: epoch, images: localImages,
+      folderImages: snapshot.folder.images)
+    let notesSettled = !snapshot.unsettled.contains(Self.notesPart)
+    if notesOn, notesSettled, previous[Self.notesPart] == noteInputs {
+      settling[Self.notesPart] = noteInputs
+      skipping.insert(Self.notesPart)
+    } else if notesOn {
       // 库被退回去了吗（文件头注释）：① 钟；② 第几轮——恢复之后又打了字、计数追上了也认得出来（光看钟认不出：同一台
       // 电脑同一个计数的两回改动，钟分不出来）。认出来就换编号，和自己文件夹里那一版不一样的都记一笔新编号的改动（走另存
       // 那条路，两版都留下）
@@ -335,6 +389,7 @@ import Observation
         }
       }
       var held: Set<String> = []
+      var merged = false
       switch NoteSyncFolder.round(
         local: store.notes, erased: store.erased, folder: snapshot.folder, library: library,
         now: clock())
@@ -347,6 +402,7 @@ import Observation
             [Self.notesPart: round.trashing], title: "便签同步先停下了",
             detail: "这一轮要把 \(round.trashing) 条便签放进「最近删除」")
         }
+        merged = !round.merges.isEmpty
         held = editing().intersection(round.merges.keys)
         let merges = round.merges.filter { !held.contains($0.key) }
         let before = Set(store.notes.map(\.id))
@@ -364,9 +420,13 @@ import Observation
       }
       plan = NoteSyncFolder.publish(
         local: store.notes, erased: store.erased, own: snapshot.folder.devices[store.deviceID],
-        localImages: store.images?.fileNames() ?? [], folderImages: snapshot.folder.images)
+        localImages: localImages, folderImages: snapshot.folder.images)
       // 没换进来的那几条也先不写出去（还是没合的样子：别的电脑会把它当成和自己各改各的、另存一条）
       plan.writes.removeAll { held.contains($0.id) }
+      // 什么都没换、什么都不用写（也没换编号）：输入不变的话下一轮也一样
+      if notesSettled, !merged, plan.isEmpty, regressed.isEmpty, !rolledBack {
+        settling[Self.notesPart] = noteInputs
+      }
     }
 
     // 别的几类：一类一类合，落进各自的库（账本同一个事务），要写的文件交给 write；哪一类停了只跳过它
@@ -375,8 +435,16 @@ import Observation
     var trouble: Problem?
     for source in sources {
       let part = source.syncKind.rawValue
-      switch merge(source, snapshot: snapshot, library: library, allowance: allowance[part] ?? 0) {
-      case .done(let data): if let data { kindFiles[source.syncKind] = data }
+      switch merge(
+        source, snapshot: snapshot, library: library, allowance: allowance[part] ?? 0,
+        previous: previous[part])
+      {
+      case .done(let data, let inputs):
+        if let data { kindFiles[source.syncKind] = data }
+        settling[part] = inputs
+      case .unchanged(let inputs):
+        settling[part] = inputs
+        skipping.insert(part)
       case .skipped: break
       case .braked(let count): waiting[part] = count
       case .problem(let problem): trouble = trouble ?? problem
@@ -403,6 +471,8 @@ import Observation
     store.imagesArrived(Set(written.downloaded.map(\.id)))
     guard self.folder == folder else { return }
     if let problem = written.problem { return halt(.failed(problem)) }
+    settled = settling
+    skippedParts = skipping
     lastSync = clock()
     if !waiting.isEmpty {
       let count = waiting.values.reduce(0, +)
@@ -419,8 +489,10 @@ import Observation
 
   /// 一类合到哪了
   private enum KindStep {
-    /// 合完了（要重写的自己那份；nil = 不用写）
-    case done(Data?)
+    /// 合完了（要重写的自己那份；nil = 不用写）；什么都没落、没写的话带着这一轮的输入
+    case done(Data?, settled: Inputs?)
+    /// 输入和上一轮什么都没做的那一轮一样：跳过
+    case unchanged(Inputs)
     /// 这一轮先不合（剪贴板面板里有还能撤销的改动）
     case skipped
     /// 刹车：这一轮要删这么多条
@@ -431,9 +503,11 @@ import Observation
   /// 合一类：读到的各台那份 + 本机的 + 账本 → SyncRecords.round → 落下去（和账本一个事务）。别人的那份读不出来（还在下载）
   /// 这一类先不合（不知道它删了什么）；自己那份读不出来照常合（引擎接着见过的最大往上数）
   private func merge(
-    _ source: SyncSource, snapshot: NoteSyncDisk.Snapshot, library: String, allowance: Int
+    _ source: SyncSource, snapshot: NoteSyncDisk.Snapshot, library: String, allowance: Int,
+    previous: Inputs?
   ) -> KindStep {
     guard !source.syncBusy else { return .skipped }
+    let part = source.syncKind.rawValue
     let me = store.deviceID
     var own: SyncRecords.File?
     var others: [SyncRecords.File] = []
@@ -453,9 +527,17 @@ import Observation
     } catch {
       return .problem(.failed("\(source.syncKind.title)的同步记录读不出来"))
     }
+    let local = source.syncValues()
+    let inputs =
+      snapshot.unsettled.contains(part)
+      ? nil
+      : Inputs.records(
+        stamps: snapshot.stamps[part] ?? [], device: me, values: Values(values: local),
+        ledger: ledger)
+    if let inputs, inputs == previous { return .unchanged(inputs) }
     let outcome = SyncRecords.round(
-      local: source.syncValues(), changed: source.syncChanged(), ledger: ledger, own: own,
-      others: others, me: me, now: Note.milliseconds(clock()), join: source.syncJoin)
+      local: local, changed: source.syncChanged(), ledger: ledger, own: own, others: others,
+      me: me, now: Note.milliseconds(clock()), join: source.syncJoin)
     // 刹车：别处要删掉本机的、本机自己一下删掉的，加起来按删之前有几条算（设置不算：删一项 = 改回默认，没丢东西）
     let deleting = outcome.trashing + outcome.erasing
     if source.syncKind != .settings,
@@ -478,8 +560,10 @@ import Observation
       case .failed: return .problem(.failed("\(source.syncKind.title)没存上"))
       }
     }
-    // 按字节比（String 的相等按 Unicode 等价，只换了写法的改动会漏写）
-    return .done(own.map { SyncRecords.data(of: $0, kind: source.syncKind) } == data ? nil : data)
+    // 和读到的自己那份按字节比（String 的相等按 Unicode 等价，只换了写法的改动会漏写）
+    let unchanged = own != nil && snapshot.ownBytes[source.syncKind] == data
+    let idle = unchanged && outcome.changes.isEmpty && outcome.ledger == ledger
+    return .done(unchanged ? nil : data, settled: idle ? inputs : nil)
   }
 
   /// 刹车：停在这一轮，等用户说继续（条数变了才再弹刘海岛）。parts：每一部分要删几条（点继续时各自记下额度）

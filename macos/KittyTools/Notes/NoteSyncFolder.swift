@@ -35,6 +35,8 @@ nonisolated enum NoteSyncFolder {
   static let erasedName = "erased.json"
   static let deviceInfoName = "device.json"
   static let imagesName = "images"
+  /// 便签那部分的名字（和类别名放在同一组里：设置页的勾、刹车的额度、读到的文件属性）
+  static let notesPart = "notes"
   /// 文件夹格式的版本（标记、墓碑文件里写着）：以后改了写法 +1，读到更大的整轮不合、说先更新
   static let format = 1
   /// 一轮放进「最近删除」多少条要停下来问（A5）
@@ -161,7 +163,10 @@ nonisolated enum NoteSyncFolder {
 
   /// 读回来：要是自家的同步文件（第一行 `---`、头里有合法的 kitty-note、sync-clock、sync-hash，文件名对得上编号），
   /// 写了的键都要解得出来，内容和哈希对得上；文字过一遍收拾（同导入）。认不出给 nil（这一版这一轮不算）
-  static func note(from text: String, fileID: String) -> Note? {
+  static func note(from text: String, fileID: String) -> Note? { parse(text, fileID: fileID)?.note }
+
+  /// 同 note(from:fileID:)，连核对过的内容哈希一起给（Device.hashes：一轮里合的时候不用再算一遍）
+  static func parse(_ text: String, fileID: String) -> (note: Note, hash: String)? {
     guard text.utf8.count <= maxNoteFileBytes, text.hasPrefix("---\n") else { return nil }
     var values: [String: String] = [:]
     var cursor = text.index(text.startIndex, offsetBy: 4)
@@ -220,7 +225,7 @@ nonisolated enum NoteSyncFolder {
       modifiedAt: date(modified), revision: min(max(revision, 0), Note.maxRevision),
       isArchived: archived, isPinned: pinned, order: order, deletedAt: deleted,
       stateChangedAt: date(state), orderChangedAt: date(ordered), clock: clock)
-    return NoteSync.contentHash(note) == hash ? note : nil
+    return NoteSync.contentHash(note) == hash ? (note, hash) : nil
   }
 
   // MARK: 一轮
@@ -232,6 +237,8 @@ nonisolated enum NoteSyncFolder {
     var epoch: Int?
     /// 读出来的便签
     var notes: [String: Note] = [:]
+    /// 读出来的便签的内容哈希（文件头里写的、读的时候核对过的；手搭的文件夹可以不给，合的时候现算）
+    var hashes: [String: String] = [:]
     /// 有文件、但读不出来的（没下载完、写坏了、格式认不出）
     var unreadable: Set<String> = []
     /// 墓碑文件
@@ -305,15 +312,20 @@ nonisolated enum NoteSyncFolder {
     }
     var round = Round(tombstones: tombstones)
     var remotes: [String: [Note]] = [:]
+    var hashes: [String: [String?]] = [:]
     for other in folder.devices.values {
       round.skipped.formUnion(other.unreadable)
-      for (id, note) in other.notes { remotes[id, default: []].append(note) }
+      for (id, note) in other.notes {
+        remotes[id, default: []].append(note)
+        hashes[id, default: []].append(other.hashes[id])
+      }
     }
     let mine = Dictionary(uniqueKeysWithValues: local.map { ($0.id, $0) })
     round.alive = local.count { $0.deletedAt == nil }
     for id in Set(mine.keys).union(remotes.keys) {
       let merge = NoteSync.merge(
-        local: mine[id], remotes: remotes[id] ?? [], tombstone: tombstones[id], now: now)
+        local: mine[id], remotes: remotes[id] ?? [], tombstone: tombstones[id], now: now,
+        hashes: hashes[id] ?? [])
       let fresh = merge.copies.contains { mine[$0.id] == nil && tombstones[$0.id] == nil }
       guard merge.note != mine[id] || fresh else { continue }
       round.merges[id] = merge

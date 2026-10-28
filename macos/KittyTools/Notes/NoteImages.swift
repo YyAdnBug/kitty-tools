@@ -186,7 +186,17 @@ nonisolated enum NoteImages {
   }
 
   /// 正文（存的字）里有没有令牌：先做一个便宜的判断，绝大多数没有图片的便签就此打住
-  static func containsToken(_ text: String) -> Bool { text.contains("![image") }
+  /// 按字节找（Foundation 的 contains 每次都把正文桥成 NSString 再找：几千条便签过一遍要几十毫秒，同步一轮每条都问）
+  static func containsToken(_ text: String) -> Bool {
+    var text = text
+    return text.withUTF8 { bytes in
+      tokenPrefix.withUnsafeBufferPointer { needle in
+        memmem(bytes.baseAddress, bytes.count, needle.baseAddress, needle.count) != nil
+      }
+    }
+  }
+
+  private static let tokenPrefix = Array("![image".utf8)
 
   /// 第一条令牌（标题摘要、墙卡片要用第一张图）
   static func first(in text: String) -> Image? {

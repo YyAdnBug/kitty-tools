@@ -13,6 +13,8 @@
 //   原因，别的照写。文件夹本身不在了就什么都不写（不替它建回来）。
 // - 全局同步的一类一类数据（2026-10-23，SyncRecords）：每台子文件夹里的 `<类别>.json`，读法同上（先看属性、没下载的
 //   算读不出来、按文件号 + 时刻 + 大小记着上一轮读出来的），写在 device.json 之前。
+// - 每一部分读到的文件的属性（Snapshot.stamps，第三轮体检第 6 批）：执行层拿它和上一轮比，没变的部分跳过；本机自己那几类
+//   文件留着原样字节（ownBytes，合完要写的和它一样就不写）；便签文件头里核对过的内容哈希一并给出（Device.hashes）。
 // - 标记（inspect / createMarker）：开同步时看这个文件夹是新的、还是已经有库了（有几台电脑、多少条便签：设置页问一句要不要
 //   合在一起）；标记**不覆盖**着写（两台同时开、别处刚传来一个：先到的算）。
 // 测试在临时目录里真读真写（不是同步盘，没有下载状态）。
@@ -31,6 +33,8 @@ nonisolated enum NoteSyncDisk {
       var modified: Date
       var size: Int
       var note: Note?
+      /// 文件头里核对过的内容哈希
+      var hash: String?
     }
     var files: [String: Entry] = [:]
     /// 一类一类数据的文件：路径 → 同上，读出来的是整份（SyncRecords.file）
@@ -39,8 +43,24 @@ nonisolated enum NoteSyncDisk {
       var modified: Date
       var size: Int
       var read: SyncRecords.Read
+      /// 原样的字节（只留本机自己的：合完要写的和它一样就不写）
+      var bytes: Data?
     }
     var kinds: [String: KindEntry] = [:]
+  }
+
+  /// 一个文件的属性（路径、文件号、改动时间、大小；同读缓存认「没变」的那几样）
+  struct Stamp: Equatable, Sendable {
+    var path: String
+    var file: UInt64?
+    var modified: Date
+    var size: Int
+
+    /// 路径按字节比（String 的 == 碰上中文的文件夹名要按 Unicode 等价慢慢比，一轮要比上万个）
+    static func == (a: Stamp, b: Stamp) -> Bool {
+      a.file == b.file && a.modified == b.modified && a.size == b.size
+        && SyncRecords.sameBytes(a.path, b.path)
+    }
   }
 
   /// 一台别的电脑：叫什么、它的文件最后一次变的时刻（设置页列出来）
@@ -65,18 +85,37 @@ nonisolated enum NoteSyncDisk {
     var peers: [Peer] = []
     /// 这一轮请系统去下载了几个（状态行说「还在下载」）
     var downloading = 0
+    /// 每一部分（便签 NoteSyncFolder.notesPart、每一类的类别名）读到的文件的属性，按读的先后：便签是各台的 device.json、
+    /// erased.json、notes/*.md，一类是各台的 `<类别>.json`。和上一轮一样就是读到的一样（NoteSyncer 据此跳过没变的部分）
+    var stamps: [String: [Stamp]] = [:]
+    /// 有文件没下载完、读不出来、刚改过（离读的时候不到 2 秒，同读缓存）的部分：这几部分这一轮不能跳过
+    var unsettled: Set<String> = []
+    /// 本机自己那几类文件的原样字节（device 给了才有）
+    var ownBytes: [SyncRecords.Kind: Data] = [:]
   }
 
   // MARK: 读
 
-  /// kinds：这一轮要合的几类（每台子文件夹里读它们的 `<类别>.json`）
+  /// kinds：这一轮要合的几类（每台子文件夹里读它们的 `<类别>.json`）；device：本机的电脑编号（留下自己那几类的原样字节）
   @concurrent static func read(
-    folder root: URL, cache old: Cache, kinds: [SyncRecords.Kind] = []
+    folder root: URL, cache old: Cache, kinds: [SyncRecords.Kind] = [], device me: String? = nil
   ) async -> Snapshot {
     var snapshot = Snapshot()
     guard isDirectory(root) else {
       snapshot.missing = true
       return snapshot
+    }
+    let notesPart = NoteSyncFolder.notesPart
+    /// 记下一部分的一个文件；刚改过的不算数（同读缓存：时刻只精确到 1–2 秒的盘上，同一刻里再改一回认不出）
+    func stamp(_ part: String, _ url: URL, _ attributes: Attributes) {
+      guard Date.now.timeIntervalSince(attributes.modified) > 2 else {
+        snapshot.unsettled.insert(part)
+        return
+      }
+      snapshot.stamps[part, default: []].append(
+        Stamp(
+          path: url.path, file: attributes.file, modified: attributes.modified,
+          size: attributes.size))
     }
     switch small(root.appending(path: NoteSyncFolder.markerName), as: NoteSyncFolder.Marker.self) {
     case .absent: break
@@ -89,18 +128,20 @@ nonisolated enum NoteSyncDisk {
       guard isDirectory(folder) else { continue }
       var device = NoteSyncFolder.Device()
       var seen: Date?
-      func saw(_ url: URL) {
-        if let date = attributes(url)?.modified { seen = max(seen ?? date, date) }
-      }
       let info = folder.appending(path: NoteSyncFolder.deviceInfoName)
       switch small(info, as: NoteSyncFolder.DeviceInfo.self) {
       case .absent: break
-      case .unreadable: snapshot.unreadableInfo.insert(name)
+      case .unreadable:
+        snapshot.unreadableInfo.insert(name)
+        snapshot.unsettled.insert(notesPart)
       case .read(let described):
         device.name = described.name
         device.epoch = described.epoch
       }
-      saw(info)
+      if let attributes = attributes(info) {
+        seen = attributes.modified
+        stamp(notesPart, info, attributes)
+      }
       let erased = folder.appending(path: NoteSyncFolder.erasedName)
       switch state(of: erased, limit: maxErasedBytes) {
       case .absent: device.erased = .read([:])
@@ -108,10 +149,14 @@ nonisolated enum NoteSyncDisk {
         device.erased = .unreadable
         snapshot.downloading += 1
       case .tooLarge: device.erased = .unreadable
-      case .here:
-        saw(erased)
+      case .here(let attributes):
+        seen = max(seen ?? attributes.modified, attributes.modified)
+        stamp(notesPart, erased, attributes)
         device.erased =
           coordinatedRead(erased).map(NoteSyncFolder.tombstones(from:)) ?? .unreadable
+      }
+      if device.erased == .unreadable || device.erased == .newer {
+        snapshot.unsettled.insert(notesPart)
       }
       let notes = folder.appending(path: NoteSyncFolder.notesName)
       for file in listing(notes) {
@@ -122,6 +167,7 @@ nonisolated enum NoteSyncDisk {
             device.unreadable.insert(id)
             startDownloading(notes.appending(path: real))
             snapshot.downloading += 1
+            snapshot.unsettled.insert(notesPart)
           }
           continue
         }
@@ -132,8 +178,10 @@ nonisolated enum NoteSyncDisk {
         case .notHere:
           device.unreadable.insert(id)
           snapshot.downloading += 1
+          snapshot.unsettled.insert(notesPart)
         case .tooLarge:
           device.unreadable.insert(id)
+          snapshot.unsettled.insert(notesPart)
         case .here(let attributes):
           if attributes.modified > (seen ?? .distantPast) { seen = attributes.modified }
           var entry: Cache.Entry?
@@ -142,48 +190,62 @@ nonisolated enum NoteSyncDisk {
           {
             entry = cached
           } else if let data = coordinatedRead(url) {
-            let note = String(data: data, encoding: .utf8).flatMap {
-              NoteSyncFolder.note(from: $0, fileID: id)
+            let parsed = String(data: data, encoding: .utf8).flatMap {
+              NoteSyncFolder.parse($0, fileID: id)
             }
             entry = Cache.Entry(
               file: attributes.file, modified: attributes.modified, size: attributes.size,
-              note: note)
+              note: parsed?.note, hash: parsed?.hash)
           }
           if let entry, Date.now.timeIntervalSince(attributes.modified) > 2 {
             snapshot.cache.files[url.path] = entry
           }
           if let note = entry?.note {
             device.notes[id] = note
+            device.hashes[id] = entry?.hash
+            stamp(notesPart, url, attributes)
           } else {
             device.unreadable.insert(id)
+            snapshot.unsettled.insert(notesPart)
           }
         }
       }
       for kind in kinds {
+        let part = kind.rawValue
         let url = folder.appending(path: kind.fileName)
         switch state(of: url, limit: maxErasedBytes) {
         case .absent: continue
         case .notHere:
           snapshot.kinds[kind, default: [:]][name] = .unreadable
           snapshot.downloading += 1
+          snapshot.unsettled.insert(part)
         case .tooLarge:
           snapshot.kinds[kind, default: [:]][name] = .unreadable
+          snapshot.unsettled.insert(part)
         case .here(let attributes):
           if attributes.modified > (seen ?? .distantPast) { seen = attributes.modified }
           var entry: Cache.KindEntry?
           if let cached = old.kinds[url.path], cached.file == attributes.file,
-            cached.modified == attributes.modified, cached.size == attributes.size
+            cached.modified == attributes.modified, cached.size == attributes.size,
+            name != me || cached.bytes != nil
           {
             entry = cached
           } else if let data = coordinatedRead(url) {
             entry = Cache.KindEntry(
               file: attributes.file, modified: attributes.modified, size: attributes.size,
-              read: SyncRecords.file(from: data, kind: kind))
+              read: SyncRecords.file(from: data, kind: kind), bytes: name == me ? data : nil)
           }
           if let entry, Date.now.timeIntervalSince(attributes.modified) > 2 {
             snapshot.cache.kinds[url.path] = entry
           }
-          snapshot.kinds[kind, default: [:]][name] = entry?.read ?? .unreadable
+          let read = entry?.read ?? .unreadable
+          snapshot.kinds[kind, default: [:]][name] = read
+          if name == me, let bytes = entry?.bytes { snapshot.ownBytes[kind] = bytes }
+          if case .read = read {
+            stamp(part, url, attributes)
+          } else {
+            snapshot.unsettled.insert(part)
+          }
         }
       }
       snapshot.folder.devices[name] = device

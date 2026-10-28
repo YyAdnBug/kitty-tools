@@ -412,6 +412,8 @@ struct NoteSyncerTests {
     let first = await NoteSyncDisk.read(folder: shared, cache: .init())
     let device = try #require(first.folder.devices["B"])
     #expect(device.notes[real.id]?.body == "真的" && device.unreadable == [waiting, huge])
+    // 有读不出来的：便签这部分这一轮不能跳过
+    #expect(first.unsettled.contains(NoteSyncer.notesPart))
     // 缓存里那一项换成别的：文件没变，就用缓存里的（证明没再读）
     var cache = first.cache
     var marked = real
@@ -1084,5 +1086,157 @@ struct NoteSyncerTests {
     try SyncRecords.data(of: file, kind: .vocabulary).write(to: url)
     await b.syncer.round()
     #expect(b.syncer.status == .stopped(.newerFormat) && b.words.isEmpty)
+  }
+
+  // MARK: 没变的部分跳过（第三轮体检第 6 批）
+
+  /// 文件夹里的文件都拨到同一个旧时刻（刚写的文件不算数：离读的时候不到 2 秒）；同一个时刻拨两遍，没变的文件属性一样
+  private func age(to past: Date) throws {
+    let files = FileManager.default.enumerator(at: shared, includingPropertiesForKeys: nil)
+    while let url = files?.nextObject() as? URL {
+      guard (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true else {
+        continue
+      }
+      try FileManager.default.setAttributes([.modificationDate: past], ofItemAtPath: url.path)
+    }
+  }
+
+  /// 两台都合好了、文件都旧了：再合一轮每一部分都跳过；对面改了文件、本机改了便签 / 片段 / 设置，那一部分照常合、照常写出去
+  @Test func unchangedPartsAreSkippedButChangesStillTravel() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let past = Date.now.addingTimeInterval(-3600)
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    let note = a.store.create(body: "一", now: .now)
+    a.clipboard.saveSnippet("片段")
+    for mac in [a, b] { #expect(await mac.syncer.enable(folder: shared) == nil) }
+    await settle([a, b])
+    try age(to: past)
+    await settle([a, b])
+    let all = Set([NoteSyncer.notesPart] + SyncRecords.Kind.allCases.map(\.rawValue))
+    #expect(a.syncer.skippedParts == all && b.syncer.skippedParts == all)
+    #expect(a.syncer.status == .idle)
+    // 对面改了一条便签（换了一个文件；拨到同一个旧时刻，只有它的文件号、大小变了）
+    b.store.setBody("一二", of: note.id, now: .now.addingTimeInterval(5))
+    await b.syncer.round()
+    try age(to: past)
+    await a.syncer.round()
+    #expect(!a.syncer.skippedParts.contains(NoteSyncer.notesPart))
+    #expect(a.syncer.skippedParts.contains(SyncRecords.Kind.clips.rawValue))
+    #expect(a.store.note(note.id)?.body == "一二")
+    await settle([a, b])
+    try age(to: past)
+    await settle([a, b])
+    #expect(a.syncer.skippedParts == all)
+    // 本机改了：便签、片段、设置各自不跳过，传到对面
+    a.store.setBody("一二三", of: note.id, now: .now.addingTimeInterval(10))
+    a.clipboard.saveSnippet("新片段")
+    a.defaults.set(19, forKey: Prefs.notesFontSize)
+    await a.syncer.round()
+    #expect(a.syncer.skippedParts.isDisjoint(with: ["notes", "clips", "settings"]))
+    await b.syncer.round()
+    #expect(b.store.note(note.id)?.body == "一二三" && b.retained["新片段"] != nil)
+    #expect(b.defaults.integer(forKey: Prefs.notesFontSize) == 19)
+  }
+
+  /// 时间机器把账本 / 库里记的第几轮退回去了（本机的值、文件夹都没变）：那一部分不跳过——片段的账本追上，便签认出退回去了
+  @Test func rolledBackLedgerOrEpochIsNotSkipped() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let past = Date.now.addingTimeInterval(-3600)
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    let note = a.store.create(body: "一", now: .now)
+    a.clipboard.saveSnippet("片段")
+    for mac in [a, b] { #expect(await mac.syncer.enable(folder: shared) == nil) }
+    await settle([a, b])
+    let library = try #require(a.syncer.library)
+    let old = try #require(try SyncLedger.load(.clips, library: library, in: a.kitty))
+    a.clipboard.saveSnippet("后加的片段")
+    a.store.setBody("一二", of: note.id, now: .now.addingTimeInterval(5))
+    await settle([a, b])
+    let epoch = try #require(try a.store.meta(NoteSyncer.epochKey))
+    try age(to: past)
+    await settle([a, b])
+    #expect(a.syncer.skippedParts.contains(SyncRecords.Kind.clips.rawValue))
+    let current = try SyncLedger.load(.clips, library: library, in: a.kitty)
+    #expect(current != old)
+    // 账本退回去：本机的值、文件夹都没变，只有账本是旧的
+    try a.kitty.transaction {
+      try SyncLedger.save(old, kind: .clips, library: library, in: a.kitty)
+    }
+    await a.syncer.round()
+    #expect(!a.syncer.skippedParts.contains(SyncRecords.Kind.clips.rawValue))
+    #expect(try SyncLedger.load(.clips, library: library, in: a.kitty) != old)
+    #expect(a.syncer.status == .idle && b.retained["后加的片段"] != nil)
+    // 库里记的第几轮退回去：便签不跳过，认出库被退回去了、换编号
+    try age(to: past)
+    await settle([a, b])
+    #expect(a.syncer.skippedParts.contains(NoteSyncer.notesPart))
+    let device = a.store.deviceID
+    try a.store.setMeta(NoteSyncer.epochKey, String((Int(epoch) ?? 1) - 1))
+    await a.syncer.round()
+    #expect(!a.syncer.skippedParts.contains(NoteSyncer.notesPart) && a.store.deviceID != device)
+    // 换了编号：别的几类也不跳过，这一轮就写进新编号的子文件夹
+    #expect(a.syncer.skippedParts.isEmpty)
+    let mine = shared.appending(path: NoteSyncFolder.devicesName).appending(path: a.store.deviceID)
+    #expect(
+      FileManager.default.fileExists(
+        atPath: mine.appending(path: SyncRecords.Kind.clips.fileName).path))
+  }
+
+  /// 没开同步时改设置：从没合过（没有设置的账本）的不记；合过、停了同步的照记改的那一刻，重启（新的一份 SettingsSync）、
+  /// 过一会儿再开同步后还是那一刻——不当成刚改的，翻不掉别的 Mac 后来改的
+  @Test func settingsChangedWhileOffKeepTheirTime() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let fresh = try Mac(host: "b", root: root)
+    fresh.defaults.set(21, forKey: Prefs.notesFontSize)
+    for _ in 0..<3 { await Task.yield() }
+    #expect(fresh.defaults.dictionary(forKey: SettingsSync.timesKey) == nil)
+    let a = try Mac(host: "a", root: root)
+    #expect(await a.syncer.enable(folder: shared) == nil)
+    await a.syncer.round()
+    #expect(a.defaults.object(forKey: SyncLedger.key(.settings)) != nil)
+    a.syncer.disable()
+    let key = "pref:" + Prefs.notesFontSize
+    func stamp() -> Int64? {
+      (a.defaults.dictionary(forKey: SettingsSync.timesKey)?[key] as? NSNumber)?.int64Value
+    }
+    let before = Note.milliseconds(.now)
+    a.defaults.set(21, forKey: Prefs.notesFontSize)
+    for _ in 0..<3 { await Task.yield() }
+    let after = Note.milliseconds(.now)
+    let changed = try #require(stamp())
+    #expect(changed >= before && changed <= after)
+    try await Task.sleep(for: .milliseconds(200))
+    let restarted = SettingsSync(defaults: a.defaults, domainName: a.suite)
+    a.relaunch()
+    #expect(await a.syncer.enable(folder: shared) == nil)
+    for _ in 0..<3 { await Task.yield() }
+    #expect(stamp() == changed && restarted.syncChanged()[key] == changed)
+  }
+
+  /// 只换了写法的改动（合成的 é → e + 组合重音）：没变的几轮跳过之后照样认出来、发出去（按字节比，不按 String 的 ==）
+  @Test func normalizationOnlyEditsStillTravel() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let past = Date.now.addingTimeInterval(-3600)
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    a.clipboard.saveSnippet("caf\u{E9}")
+    for mac in [a, b] { #expect(await mac.syncer.enable(folder: shared) == nil) }
+    await settle([a, b])
+    try age(to: past)
+    await settle([a, b])
+    #expect(a.syncer.skippedParts.contains(SyncRecords.Kind.clips.rawValue))
+    let id = try #require(a.clipboard.items.first { $0.isSnippet }?.id)
+    a.clipboard.update([id]) { $0.text = "cafe\u{301}" }
+    await a.syncer.round()
+    #expect(!a.syncer.skippedParts.contains(SyncRecords.Kind.clips.rawValue))
+    await b.syncer.round()
+    let text = try #require(b.clipboard.items.first { $0.isSnippet }?.text)
+    #expect(Array(text.utf8) == Array("cafe\u{301}".utf8))
   }
 }

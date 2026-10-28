@@ -63,7 +63,7 @@ nonisolated enum NoteSync {
     data.append(contentsOf: note.body.utf8)
     data.append(0)
     data.append(contentsOf: String(note.color).utf8)
-    return SHA256.hash(data: data).prefix(16).map { String(format: "%02x", $0) }.joined()
+    return Signing.hex(SHA256.hash(data: data).prefix(16))
   }
 
   /// a 被 b 盖过了吗：a 的每一格都不大于 b，而且两个不一样
@@ -107,18 +107,23 @@ nonisolated enum NoteSync {
   }
 
   /// 合一条：local 是本机的（没有 = 本机没有这条，新来的或本机永久删过的），remotes 是别的电脑文件夹里的（同一个编号），
-  /// tombstone 是这条的墓碑（本机的和别的电脑的并起来）。now 只用来记另存那几条放进「最近删除」的时刻。规则见文件头
-  static func merge(local: Note?, remotes: [Note], tombstone: Tombstone?, now: Date) -> Merge {
+  /// tombstone 是这条的墓碑（本机的和别的电脑的并起来）。now 只用来记另存那几条放进「最近删除」的时刻。规则见文件头。
+  /// known：remotes 各版的内容哈希（一一对应，读文件时核对过的；没给的现算——一轮几千版，每版都算一遍是大头）
+  static func merge(
+    local: Note?, remotes: [Note], tombstone: Tombstone?, now: Date, hashes known: [String?] = []
+  ) -> Merge {
     let base = local?.revision
-    let others = remotes.filter { tombstone?.buries($0) != true }
-    if let local, tombstone?.buries(local) == true, others.isEmpty {
+    let kept = remotes.indices.filter { tombstone?.buries(remotes[$0]) != true }
+    if let local, tombstone?.buries(local) == true, kept.isEmpty {
       return Merge(note: nil, base: base)
     }
-    let versions = (local.map { [$0] } ?? []) + others
+    let versions = (local.map { [$0] } ?? []) + kept.map { remotes[$0] }
     guard !versions.isEmpty else { return Merge(note: nil, base: base) }
 
     // 内容：去掉被盖过的（内容不一样、钟被别的版本盖过），剩下的里「改于」后的赢，同一刻按哈希
-    let hashes = versions.map(contentHash)
+    let hashes =
+      (local.map { [contentHash($0)] } ?? [])
+      + kept.map { (known.indices.contains($0) ? known[$0] : nil) ?? contentHash(remotes[$0]) }
     let standing = versions.indices.filter { i in
       !versions.indices.contains { j in
         hashes[j] != hashes[i] && precedes(versions[i].clock, versions[j].clock)

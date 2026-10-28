@@ -123,6 +123,11 @@ TEST_RUNNER_KITTY_NOTES_FUZZ=20000 xcodebuild -project macos/KittyTools.xcodepro
 # 按需加大，2000 个种子约 15 分钟；另可加 TEST_RUNNER_KITTY_SYNC_RECORDS_FUZZ_SEED=<起始种子>）
 TEST_RUNNER_KITTY_SYNC_RECORDS_FUZZ=2000 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/SyncRecordsFuzzTests/randomOperationsConverge()'
+# 全局同步一轮的主线程耗时探针（按需，Debug 约 3 分钟，临时目录里三台、便签 1000 / 5000 条、片段几千条，grep「sync-probe」：
+# 没变的一轮、新的一台加入的第一轮、拆开的各步；改设置的那一下是 settingsChanges()，几秒）。-O 的数加
+# SWIFT_OPTIMIZATION_LEVEL=-O SWIFT_COMPILATION_MODE=wholemodule 跑（换一个 -derivedDataPath，免得来回全量重编）；数在测试文件头
+TEST_RUNNER_KITTY_SYNC_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -only-testing:'KittyToolsTests/SyncProbeTests/measure()'
 # 程序坞预览的本机探针（按需，几秒；只读：不动屏幕、不切 / 关窗口，会把开着的窗口截进内存、不存盘；测试宿主 = Dev 版，
 # 有辅助功能 / 屏幕录制授权才量得全；grep「dock-probe」：私有接口在不在、程序坞结构、列窗口 / 截缩略图耗时、全透明的几扇）
 # 面板占多少内存（同一个开关，屏上量：**屏幕右上角有一块透明度 0.02 的面板约两秒**，不接鼠标；grep「dock-probe memory」）：

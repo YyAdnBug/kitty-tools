@@ -4,8 +4,16 @@ import CryptoKit
 import Foundation
 
 nonisolated enum Signing {
+  /// 小写十六进制（同逐个字节 String(format: "%02x") 拼起来；那样一个字节要格式化一回，同步一轮几千个哈希时是大头）
   static func hex<D: Sequence>(_ digest: D) -> String where D.Element == UInt8 {
-    digest.map { String(format: "%02x", $0) }.joined()
+    var digits: [UInt8] = []
+    digits.reserveCapacity(digest.underestimatedCount * 2)
+    func digit(_ nibble: UInt8) -> UInt8 { nibble < 10 ? 0x30 + nibble : 0x57 + nibble }
+    for byte in digest {
+      digits.append(digit(byte >> 4))
+      digits.append(digit(byte & 0x0F))
+    }
+    return String(decoding: digits, as: UTF8.self)
   }
 
   static func md5(_ text: String) -> String { hex(Insecure.MD5.hash(data: Data(text.utf8))) }

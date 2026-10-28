@@ -25,6 +25,8 @@ import Foundation
   /// 落合并出来的改动（编号 → 新内容，nil = 不再留着）并在**同一个事务**里存账本；没成的时候什么都没改，账本也没存
   func applySync(_ changes: [String: String?], ledger: SyncRecords.Ledger, library: String)
     -> SyncApplied
+  /// 停止同步了：为同步留着的缓存放掉（有的才实现）
+  func syncStopped()
 }
 
 /// 落合并结果落成了没有
@@ -38,6 +40,7 @@ enum SyncApplied {
 
 extension SyncSource {
   func syncChanged() -> [String: Int64] { [:] }
+  func syncStopped() {}
 }
 
 /// 账本表：一类一行，整本账存成一段 JSON（几百条也就几十 KB，有变化才写）
@@ -51,14 +54,32 @@ nonisolated enum SyncLedger {
   }
 
   /// 读账本：没有这一行、是别的库的给 nil（第一次合）；读库出错、解不出来（写坏了、更新的版本写的）抛错——执行层这一类先不合
-  static func load(_ kind: SyncRecords.Kind, library: String, in db: Database) throws
+  @MainActor static func load(_ kind: SyncRecords.Kind, library: String, in db: Database) throws
     -> SyncRecords.Ledger?
   {
     let rows = try db.query(
       "SELECT library, ledger FROM sync_ledger WHERE kind = ?", [kind.rawValue]
     ) { ($0.text(0), $0.text(1)) }
     guard let (owner, text) = rows.first, owner == library, let text else { return nil }
-    return try JSONDecoder().decode(SyncRecords.Ledger.self, from: Data(text.utf8))
+    return try decoded(kind, Data(text.utf8), as: SyncRecords.Ledger.self)
+  }
+
+  /// 每一类上次解的那份：存着的原样字节和解出来的（同步每 20 秒每一类都读一回账本，几千条的账本解一遍要好几毫秒；
+  /// 字节一样就是同一本账，不再解）
+  @MainActor private static var memo: [SyncRecords.Kind: (bytes: Data, value: any Sendable)] = [:]
+
+  /// 停止同步时放掉
+  @MainActor static func forget() { memo = [:] }
+
+  @MainActor private static func decoded<Value: Decodable & Sendable>(
+    _ kind: SyncRecords.Kind, _ bytes: Data, as _: Value.Type
+  ) throws -> Value {
+    if let cached = memo[kind], cached.bytes == bytes, let value = cached.value as? Value {
+      return value
+    }
+    let value = try JSONDecoder().decode(Value.self, from: bytes)
+    memo[kind] = (bytes, value)
+    return value
   }
 
   /// 存账本（调用方开着事务）
@@ -73,7 +94,7 @@ nonisolated enum SyncLedger {
 
   // MARK: 存在偏好里的几类
 
-  private struct Stored: Codable {
+  private struct Stored: Codable, Sendable {
     var library: String
     var ledger: SyncRecords.Ledger
   }
@@ -81,11 +102,11 @@ nonisolated enum SyncLedger {
   static func key(_ kind: SyncRecords.Kind) -> String { "syncLedger.\(kind.rawValue)" }
 
   /// 读偏好里的账本：没有、是别的库的给 nil；解不出来抛错
-  static func load(_ kind: SyncRecords.Kind, library: String, in defaults: UserDefaults) throws
-    -> SyncRecords.Ledger?
-  {
+  @MainActor static func load(
+    _ kind: SyncRecords.Kind, library: String, in defaults: UserDefaults
+  ) throws -> SyncRecords.Ledger? {
     guard let data = defaults.data(forKey: key(kind)) else { return nil }
-    let stored = try JSONDecoder().decode(Stored.self, from: data)
+    let stored = try decoded(kind, data, as: Stored.self)
     return stored.library == library ? stored.ledger : nil
   }
 

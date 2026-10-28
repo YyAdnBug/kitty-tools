@@ -134,7 +134,17 @@ nonisolated enum SyncRecords {
 
   /// 内容的哈希：比「两版一不一样」、同一刻时定先后
   static func hash(_ value: String) -> String {
-    SHA256.hash(data: Data(value.utf8)).prefix(16).map { String(format: "%02x", $0) }.joined()
+    Signing.hex(SHA256.hash(data: Data(value.utf8)).prefix(16))
+  }
+
+  /// 两段字按字节一样吗（String 的 == 按 Unicode 等价：合成的「é」和 e + 组合重音算一样，只换了写法的改动会被当成没变）
+  static func sameBytes(_ a: String, _ b: String) -> Bool {
+    guard a.utf8.count == b.utf8.count else { return false }
+    var a = a
+    var b = b
+    return a.withUTF8 { x in
+      b.withUTF8 { y in x.isEmpty || memcmp(x.baseAddress!, y.baseAddress!, x.count) == 0 }
+    }
   }
 
   /// 钟每格都不超过墓碑：被它压住了
@@ -206,10 +216,12 @@ nonisolated enum SyncRecords {
       }
     }
 
-    // 本机这一版
+    // 本机这一版（本机各条的哈希记下来，后面比「本机要不要换」时不再算）
     var mine: [String: Record] = [:]
+    var localHashes: [String: String] = [:]
     for (id, value) in local where !dropped.contains(id) {
       let digest = hash(value)
+      localHashes[id] = digest
       if let entry = ledger.entries[id], entry.hash == digest {
         mine[id] = Record(value: value, clock: entry.clock, modified: entry.modified)
       } else if ledger.entries[id] == nil, joining,
@@ -243,8 +255,9 @@ nonisolated enum SyncRecords {
       let all = (mine[id].map { [$0] } ?? []) + (versions[id] ?? [])
       let alive = all.filter { !buried($0.clock, by: tombstone) }
       let candidates = standing(alive, tombstone: nil)
+      // 同 (改于, 哈希) 比；哈希只在同一刻时才算（每比一次都算两个，几千条一轮要几十毫秒）
       let winner = candidates.max {
-        ($0.modified, hash($0.value)) < ($1.modified, hash($1.value))
+        $0.modified != $1.modified ? $0.modified < $1.modified : hash($0.value) < hash($1.value)
       }
       guard var merged = winner else {
         ledger.entries[id] = nil
@@ -259,7 +272,10 @@ nonisolated enum SyncRecords {
       ledger.entries[id] = Entry(clock: merged.clock, hash: digest, modified: merged.modified)
       outcome.own.records[id] = merged
       // 按字节比（Swift 的字符串相等按 Unicode 等价：两种写法的「é」算一样，哈希不一样，会两台来回改）
-      if local[id].map(hash) != digest { outcome.changes[id] = .some(merged.value) }
+      // （本机没有这条 = nil，和哪个哈希都不一样：加上）
+      if (localHashes[id] ?? local[id].map(hash)) != digest {
+        outcome.changes[id] = .some(merged.value)
+      }
     }
     outcome.ledger = ledger
     outcome.own.erased = ledger.erased

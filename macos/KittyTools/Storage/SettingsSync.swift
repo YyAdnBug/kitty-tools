@@ -13,8 +13,8 @@
 //   更新了认得了，下一次改动时照常落。透传着的那几项交出去的是透传的那份（本机设置里还是旧值，交旧值就把新版本写的翻回去）；
 //   本机自己又改了它才换成本机的、透传的扔掉。
 // - **一项一项后改的赢**（C3）：每项改的时刻记在偏好里（`syncChangedAt.settings`）——监听偏好的变化（通知在主线程同步送到；
-//   攒到这一轮主线程空下来再比），退出、合盖之后才合到的改动不会被记成「刚改的」翻掉别人后来改的；同步落下去的那几项清掉
-//   它们的时刻。
+//   攒到这一轮主线程空下来再比，只给值变了的那几项重编；没开同步、设置也从没合过时不比——再开就是第一次合，用不上），
+//   退出、合盖之后才合到的改动不会被记成「刚改的」翻掉别人后来改的；同步落下去的那几项清掉它们的时刻。
 // - **第一次合跟着已有的**（C4，adopt）：别的电脑已经有设置，整个跟着它们（本机改过、它们没有的那几项回到默认）——保留天数、
 //   「不记录」的 App、功能开关也跟着换，「合在一起？」里写明；换了之后清掉了历史的，刘海岛说一声（applied 的条数）。
 // - 正在录屏 / 录音、正在录快捷键、状态屏开着时这一类先不合（isBusy：对面关掉录制功能会把这台正在录的停掉）。
@@ -49,6 +49,10 @@ import Foundation
   var conflicted: (String) -> Void = { _ in }
   /// 上次看到的本机设置里的各项（编号 → 内容，不含透传）：比出本机改了哪几项、记改的时刻
   private var known: [String: String] = [:]
+  /// ownValues 的缓存：偏好键 / 快捷键动作 → 上次读到的值和编出来的那条（只给值变了的重编；窗口位置、启动台布局、别的
+  /// 几类的账本，写哪个偏好都要整份比一遍）
+  private var encodedPrefs: [String: (value: SettingsArchive.Value, text: String?)] = [:]
+  private var encodedHotKeys: [String: (data: Data, text: String?)] = [:]
   private var pending = false
   private var applying = false
 
@@ -83,19 +87,40 @@ import Foundation
     let domain = domainName.flatMap(defaults.persistentDomain(forName:)) ?? [:]
     var values: [String: String] = [:]
     for (key, kind) in SettingsArchive.kinds where !Self.localKeys.contains(key) {
-      // 发之前也核一遍：对面落不下的不发（不然对面这一类就落成透传、本机的改不过去）
-      guard let value = kind.value(of: domain[key]), kind.plist(value) != nil,
-        let text = Self.encoded(value)
-      else { continue }
-      values[Self.prefPrefix + key] = text
+      guard let value = kind.value(of: domain[key]) else { continue }
+      let text: String?
+      if let cached = encodedPrefs[key], Self.same(cached.value, value) {
+        text = cached.text
+      } else {
+        // 发之前也核一遍：对面落不下的不发（不然对面这一类就落成透传、本机的改不过去）
+        text = kind.plist(value) != nil ? Self.encoded(value) : nil
+        encodedPrefs[key] = (value, text)
+      }
+      if let text { values[Self.prefPrefix + key] = text }
     }
     for action in HotKeyAction.allCases {
       guard let data = domain[action.prefsKey] as? Data else { continue }
-      // 解不出来的当清除了（同 HotKeyAction.resolve）
-      let hotKey = try? JSONDecoder().decode(HotKey.self, from: data)
-      values[Self.hotkeyPrefix + action.rawValue] = Self.encoded(hotKey)
+      let text: String?
+      if let cached = encodedHotKeys[action.rawValue], cached.data == data {
+        text = cached.text
+      } else {
+        // 解不出来的当清除了（同 HotKeyAction.resolve）
+        text = Self.encoded(try? JSONDecoder().decode(HotKey.self, from: data))
+        encodedHotKeys[action.rawValue] = (data, text)
+      }
+      values[Self.hotkeyPrefix + action.rawValue] = text
     }
     return values
+  }
+
+  /// 缓存认不认这个值：字符串按字节比（只换了写法也要重编、发出去；Value 的 == 按 Unicode 等价）
+  private static func same(_ a: SettingsArchive.Value, _ b: SettingsArchive.Value) -> Bool {
+    switch (a, b) {
+    case (.string(let x), .string(let y)): SyncRecords.sameBytes(x, y)
+    case (.strings(let x), .strings(let y)):
+      x.count == y.count && zip(x, y).allSatisfy { SyncRecords.sameBytes($0, $1) }
+    default: a == b
+    }
   }
 
   private static func encoded(_ value: some Encodable) -> String? {
@@ -108,9 +133,16 @@ import Foundation
 
   // MARK: 改的时刻
 
-  /// 偏好变了：攒到这一轮主线程空下来再比（一次改好几项只比一回）
+  /// 偏好变了：攒到这一轮主线程空下来再比（一次改好几项只比一回）。没开同步、设置也从没合过（没有账本）时不比：再开同步
+  /// 是第一次合（跟着别的 Mac，或者是第一台），改的时刻用不上；合过的（停了同步、账本留着）照记——重开之后按真正改的
+  /// 时刻和别的 Mac 后来改的比，不能当成刚改的
   private func noteChanges() {
-    guard !applying, !pending else { return }
+    guard !applying else { return }
+    guard
+      defaults.string(forKey: Prefs.notesSyncFolder) != nil
+        || defaults.object(forKey: SyncLedger.key(.settings)) != nil
+    else { return }
+    guard !pending else { return }
     pending = true
     Task { @MainActor [weak self] in self?.recordChanges() }
   }
@@ -122,16 +154,18 @@ import Foundation
     let changed = Set(own.keys).union(known.keys).filter { own[$0] != known[$0] }
     known = own
     guard !changed.isEmpty else { return }
-    let passed = passthrough()
+    // 下面写的两项是自己的账，不再引起一次比较
+    applying = true
+    defer { applying = false }
+    var passed = passthrough()
     if !changed.isDisjoint(with: passed.keys) {
-      let kept = passed.filter { !changed.contains($0.key) }
-      defaults.set(kept.isEmpty ? nil : kept, forKey: Self.passthroughKey)
+      passed = passed.filter { !changed.contains($0.key) }
+      defaults.set(passed.isEmpty ? nil : passed, forKey: Self.passthroughKey)
     }
     let stamp = Note.milliseconds(.now)
     var times = changeTimes()
     for id in changed { times[id] = stamp }
-    let now = syncValues()
-    saveTimes(times.filter { now[$0.key] != nil })
+    saveTimes(times.filter { own[$0.key] != nil || passed[$0.key] != nil })
   }
 
   private func changeTimes() -> [String: Int64] {

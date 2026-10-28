@@ -47,6 +47,9 @@ struct NoteSyncFolderTests {
       let text = NoteSyncFolder.text(of: original)
       let back = try #require(NoteSyncFolder.note(from: text, fileID: original.id))
       #expect(back == original)
+      // 一并给出的哈希就是核对过的那个（一轮里合的时候拿它，不再算）
+      #expect(
+        NoteSyncFolder.parse(text, fileID: original.id)?.hash == NoteSync.contentHash(original))
       #expect(NoteSyncFolder.isSyncFile(text))
     }
     // 设置里「导入…」的头也读得懂（它认出是同步文件就跳过，见 MarkdownImport）

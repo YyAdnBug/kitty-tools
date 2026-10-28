@@ -37,6 +37,12 @@ struct SyncRecordsTests {
     }
   }
 
+  /// 内容的哈希是 SHA-256 前 16 字节的小写十六进制（写进文件、账本，换写法要一字不差）
+  @Test func hashIsTheShortSHA256() {
+    #expect(SyncRecords.hash("abc") == "ba7816bf8f01cfea414140de5dae2223")
+    #expect(Signing.hex([0x00, 0x0F, 0xA0, 0xFF]) == "000fa0ff")
+  }
+
   @Test func newItemsTravelAndEditsInOrderReplace() {
     var a = Mac("A")
     var b = Mac("B")

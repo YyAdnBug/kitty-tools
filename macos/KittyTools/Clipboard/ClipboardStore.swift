@@ -47,6 +47,9 @@ import Observation
   @ObservationIgnored private var ocrFailed: Set<UUID> = []
   /// 搜索用的折叠文本缓存。改动条目内容（正文、备注、图片文字、来源）的地方都要清掉对应的键
   @ObservationIgnored private var searchKeys: [UUID: Search.Key] = [:]
+  /// syncValues 的缓存：编号 → 上次交出去的那条和编出来的文本（同步每 20 秒问一次，几千条收藏每条都编一遍 JSON 要几十毫秒；
+  /// 只给变了的重编，每次整个换成这次的）
+  @ObservationIgnored private var syncEncoded: [String: (clip: SyncedClip, text: String?)] = [:]
 
   private static let columns = """
     id, kind, text, file_paths, image_width, image_height, image_bytes, image_sha256, ocr_text,
@@ -640,6 +643,14 @@ extension ClipboardStore: SyncSource {
     var note: String?
     /// 所在的收藏夹（编号）
     var group: String?
+
+    /// 一样吗（正文、备注按字节比：只换了写法也要重编、发出去）
+    func same(as other: SyncedClip) -> Bool {
+      favorite == other.favorite && snippet == other.snippet && group == other.group
+        && SyncRecords.sameBytes(text, other.text)
+        && (note.map { mine in other.note.map { SyncRecords.sameBytes(mine, $0) } ?? false }
+          ?? (other.note == nil))
+    }
   }
 
   /// 同步文件里的一个收藏夹（编号 = "group:" + 收藏夹的编号）；收藏夹的顺序单独一条（SyncRecords.orderID，编号数组）
@@ -674,15 +685,21 @@ extension ClipboardStore: SyncSource {
   /// 对不上，会被当成本机改了、把截断的那版传出去）
   func syncValues() -> [String: String] {
     var values: [String: String] = [:]
+    var encoded: [String: (clip: SyncedClip, text: String?)] = [:]
     for item in items where item.kind == .text && item.isRetained {
-      guard let text = item.text, !text.contains("\0"), item.note?.contains("\0") != true else {
-        continue
-      }
-      values[item.id.uuidString] = Self.encoded(
-        SyncedClip(
-          text: text, favorite: item.favorite, snippet: item.isSnippet, note: item.note,
-          group: item.groupID?.uuidString))
+      // 按字节找 NUL（Foundation 的 contains 每条都要桥成 NSString，几千条要二十来毫秒）
+      guard let text = item.text, !text.utf8.contains(0), item.note?.utf8.contains(0) != true
+      else { continue }
+      let id = item.id.uuidString
+      let clip = SyncedClip(
+        text: text, favorite: item.favorite, snippet: item.isSnippet, note: item.note,
+        group: item.groupID?.uuidString)
+      let cached = syncEncoded[id]
+      let value = cached?.clip.same(as: clip) == true ? cached?.text : Self.encoded(clip)
+      encoded[id] = (clip, value)
+      values[id] = value
     }
+    syncEncoded = encoded
     let synced = groups.filter { !$0.name.contains("\0") }
     for group in synced {
       values[Self.groupPrefix + group.id.uuidString] = Self.encoded(
@@ -698,6 +715,8 @@ extension ClipboardStore: SyncSource {
   func syncLedger(library: String) throws -> SyncRecords.Ledger? {
     try SyncLedger.load(.clips, library: library, in: db)
   }
+
+  func syncStopped() { syncEncoded = [:] }
 
   /// 落合并结果（先算好新的样子，库和账本一个事务写下去，成了才换进内存；有一条解不出来就整个不落，这一类停下说先更新（.newer）——
   /// 当成删了的话会一路删到每一台）：
@@ -798,33 +817,51 @@ extension ClipboardStore: SyncSource {
       return groupIDs.contains(target) ? target : nil
     }
 
-    // 条目
-    var newItems = items
+    // 条目：在格子里改（拿走 = 置空，新的、改了的接在最后），「编号 → 格子」「正文 → 格子」两张表代替逐条找——第一次合
+    // 几千条收藏碰上几万条历史时逐条找是「改动数 × 条目数」，要卡好几秒。格子的先后就是原来数组的先后：同正文的照旧挑最前那条
+    var slots: [ClipItem?] = items
+    var slotOf: [UUID: Int] = [:]
+    var textSlots: [String: [Int]] = [:]
+    for (slot, item) in items.enumerated() {
+      if slotOf[item.id] == nil { slotOf[item.id] = slot }
+      if item.kind == .text, let text = item.text { textSlots[text, default: []].append(slot) }
+    }
     var touched: [UUID: ClipItem] = [:]
     var removedItems: Set<UUID> = []
     /// 第一次合时被去重掉的本机那条（先走了清标记那一支）清掉之前的样子：同正文合成一条时从它取标记。有墓碑的是别处真删了 /
     /// 取消了的，不记（不然别处取消的标记会被带回来）
     var unretained: [UUID: ClipItem] = [:]
-    for index in newItems.indices {
-      guard let group = newItems[index].groupID, !groupIDs.contains(group) else { continue }
-      newItems[index].groupID = resolved(group)
-      touched[newItems[index].id] = newItems[index]
+    for slot in slots.indices {
+      guard var item = slots[slot], let group = item.groupID, !groupIDs.contains(group) else {
+        continue
+      }
+      item.groupID = resolved(group)
+      slots[slot] = item
+      touched[item.id] = item
+    }
+    /// 拿走一格（这一条换到最后、并进别的、删掉）
+    func take(_ slot: Int) -> ClipItem? {
+      guard let item = slots[slot] else { return nil }
+      slots[slot] = nil
+      slotOf[item.id] = nil
+      return item
     }
     for (id, synced) in clipChanges {
-      let index = newItems.firstIndex { $0.id == id }
+      let index = slotOf[id]
       guard let synced else {
         // 别处删了 / 不再留着：本机取消收藏、移出片段和收藏夹
-        guard let index else { continue }
-        if ledger.erased[id.uuidString] == nil { unretained[id] = newItems[index] }
-        newItems[index].favorite = false
-        newItems[index].isSnippet = false
-        newItems[index].groupID = nil
-        touched[id] = newItems[index]
+        guard let index, var item = slots[index] else { continue }
+        if ledger.erased[id.uuidString] == nil { unretained[id] = item }
+        item.favorite = false
+        item.isSnippet = false
+        item.groupID = nil
+        slots[index] = item
+        touched[id] = item
         continue
       }
       var item: ClipItem
-      if let index {
-        item = newItems.remove(at: index)
+      if let index, let existing = take(index) {
+        item = existing
       } else {
         item = ClipItem(kind: .text)
         item.id = id
@@ -835,10 +872,9 @@ extension ClipboardStore: SyncSource {
       item.note = synced.note
       item.groupID = resolved(synced.group.flatMap(UUID.init(uuidString:)))
       item.favorite = synced.favorite || item.groupID != nil
-      if let other = newItems.first(where: {
-        $0.kind == .text && $0.text == synced.text && $0.id != id
-      }) {
-        newItems.removeAll { $0.id == other.id }
+      // 正文一样的格子里还在的、不是这一条的第一个（格子里的正文不会变：改了正文的都换到了新的格子）
+      let same = textSlots[synced.text]?.first { slots[$0] != nil && slots[$0]?.id != id }
+      if let same, let other = take(same) {
         var keeper = other.isRetained && other.id.uuidString < id.uuidString ? other : item
         let loser = keeper.id == other.id ? item : unretained[other.id] ?? other
         keeper.favorite = keeper.favorite || loser.favorite
@@ -851,10 +887,17 @@ extension ClipboardStore: SyncSource {
         touched[loser.id] = nil
         item = keeper
       }
-      newItems.append(item)
+      slotOf[item.id] = slots.count
+      if item.kind == .text, let text = item.text {
+        textSlots[text, default: []].append(slots.count)
+      }
+      slots.append(item)
       touched[item.id] = item
     }
-    newItems.sort { ($0.copiedAt, $0.id.uuidString) > ($1.copiedAt, $1.id.uuidString) }
+    // 同 (copiedAt, 编号) 倒序；编号的字符串只在同一刻时才拼（几万条每次都拼要几百毫秒）
+    let newItems = slots.compactMap { $0 }.sorted {
+      $0.copiedAt != $1.copiedAt ? $0.copiedAt > $1.copiedAt : $0.id.uuidString > $1.id.uuidString
+    }
 
     do {
       try db.transaction {
