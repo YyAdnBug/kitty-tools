@@ -230,6 +230,9 @@ internal sealed partial class TranslateCardView
         _host.Children.Add(_copyFlash);
         _host.SizeChanged += (_, args) => SizeEffects(args.NewSize);
         _scroll.ViewChanged += (_, _) => UpdateFade();
+        // 正文排好、卡片改高之后才知道还有没有没露出来的（Update 里那次调用时还没排版）：不然长结果出来时底部没有渐隐，要滚一下才有。
+        _textPanel.SizeChanged += (_, _) => UpdateFade();
+        _scroll.SizeChanged += (_, _) => UpdateFade();
         AutomationProperties.SetName(_host, service.Name);
     }
 
