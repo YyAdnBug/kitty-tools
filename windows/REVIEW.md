@@ -21,6 +21,9 @@
 - **要截的图**（`--ui-snapshots` 现在只截了输入翻译空着的那一张）：浅 / 深各一张——空状态（三个入口的快捷键）、两张卡生成中（彗星边框 + 骨架）、一张完成一张配置错误、截断、历史（分组 + 选中 + 收藏星标）、历史 Ctrl+K 菜单、设置 › 翻译（字号预览卡）、服务详情（AI，模型下拉）。
 - **Windows 编译记录（2026-10-28，Claude 在 worktree 里）**：
   - `Translate/TranslateWindow.cs`：CS4004「无法在不安全的上下文中等待」——类声明是 `unsafe partial class`，新加的 `ExportAsync` 里的 `await` 因此不让编。去掉类上的 `unsafe`，只给用指针的 `ApplyNoActivateStyle` / `RemoveNoActivateStyle` 两个方法标 `unsafe`。这一处修完 Debug 0 警告 0 错误（XAML 那几个 WMC0001 是它连带的），别的都一次编过。
+  - **跑起来修的**（动了归审查方的 `TranslateCardView.cs` / `TranslateWindow.cs`，各一个提交，正文有量法）：彗星边框改成沿描边走的几段虚线（原来画刷绕卡片左上角转，一半时间整圈没光，`999f32b`）；长结果出来时底部渐隐不出（`8fac8e1`）；深色渐隐比卡底暗一截（`42f7c45`，还是近似，真要一致得上遮罩）；出字时每段都重建四个按钮（Release 两张卡同时出字 CPU 40–126% → 12–63%、工作集 +100 MB → +19 MB，`3a02df2`）；固定着的浮窗在不激活的入口（复制即译、剪贴板 Ctrl+T）点外面照样收起（8a 之前就有，`06fdab6`）。另外 `15493ed`：发布包里没有 `Resources/ServiceLogo`（所有 logo，不只新加的四张；用户报的「logo 缺」就是这个），csproj 补了 CopyToOutputDirectory；`d8770e5`：设置页头一直是齿轮，换成这一页自己的符号（同 mac PageHeader）。
+  - **为截图自检加的入口**（都是 internal、只给 `--ui-snapshots` 用，正常入口不碰）：`TranslateWindow.ShowProbe`、`TranslateCoordinator.ShowProbe`、`TranslateHistoryView.ApplyProbeState`、`TranslationHistory.InsertForProbe`、`SettingsWindow.ScrollToEndForProbe`；`--translate-text` 挪出 `#if DEBUG`、只在自检档认，加 `KITTY_TRANSLATE_PASSIVE=1`。
+  - 没动、留给审查方看的：服务详情的模型下拉、「⋯」菜单这些弹出层截图里拍不到；出字时 CPU 还会随正文变长涨（每段整篇重排一次 `RichTextBlock`、`ResizeToContent` 量一遍），1200 字时界面线程往返 p95 约 20 ms，还不卡。
 
 ## 真机反馈修复（2026-10-28 晚，审查方在 Mac 上写，**没编译**）
 
