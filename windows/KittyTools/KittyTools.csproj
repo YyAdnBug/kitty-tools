@@ -61,6 +61,9 @@
   <ItemGroup>
     <Content Include="Resources\AppIcon.ico" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Resources\changelog.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- 翻译服务的 logo（ms-appx:///Resources/ServiceLogo/*.png）：WinUI 把它们收成默认 Content，build 时会拷，publish 不拷；
+         不标 CopyToOutputDirectory 的话发布包里一张都没有，设置和卡片上全是色块首字（2026-10-28 真机反馈的「logo 缺」）。 -->
+    <Content Update="Resources\ServiceLogo\*.png" CopyToOutputDirectory="PreserveNewest" />
     <None Include="NativeMethods.txt" />
     <None Include="NativeMethods.json" />
   </ItemGroup>
