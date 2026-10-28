@@ -24,6 +24,9 @@ internal sealed partial class LauncherListView : Grid
     private Func<int, LauncherRowView> _build = _ => throw new InvalidOperationException();
     private int _selected = -1;
     private int _lastTapped = -1;
+
+    /// <summary>视口还没量出来时要露的那一行（量出大小后再露）；-1 = 没有。</summary>
+    private int _pendingReveal = -1;
     private bool _shortcutsShown;
 
     public LauncherListView()
@@ -53,6 +56,10 @@ internal sealed partial class LauncherListView : Grid
         {
             Clip = new RectangleGeometry { Rect = new Rect(0, 0, args.NewSize.Width, args.NewSize.Height) };
             Realize(force: true);
+            if (_pendingReveal >= 0)
+            {
+                Reveal(_pendingReveal);
+            }
         };
     }
 
@@ -124,6 +131,14 @@ internal sealed partial class LauncherListView : Grid
     public void Reveal(int row)
     {
         var viewport = _scroll.ViewportHeight > 0 ? _scroll.ViewportHeight : ActualHeight;
+        // 列表刚从收起变出来（第一次打字）、面板还没长高时视口是 0：这时算会滚掉第一行，等量出大小再露。
+        if (row >= 0 && row < _layout.Count && viewport < _layout.Height(row) + 2 * Inset)
+        {
+            _pendingReveal = row;
+            return;
+        }
+
+        _pendingReveal = -1;
         if (_layout.Reveal(row, _scroll.VerticalOffset, viewport) is { } target)
         {
             _scroll.UpdateLayout();
