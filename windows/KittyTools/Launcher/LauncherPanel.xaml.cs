@@ -26,6 +26,7 @@ public sealed partial class LauncherPanel : UserControl
     private readonly Dictionary<string, BitmapImage> _icons = new();
     private readonly Dictionary<string, byte[]?> _pathIcons = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _pendingHosts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _pendingPaths = new(StringComparer.OrdinalIgnoreCase);
     private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _keyHintTimer;
     private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _shiftTimer;
     private bool _active;
@@ -342,6 +343,7 @@ public sealed partial class LauncherPanel : UserControl
         _selected = index >= 0 ? index : results.Count > 0 ? 0 : -1;
         _selectedId = _selected >= 0 ? results[_selected].Id : null;
         _pendingHosts.Clear();
+        _pendingPaths.Clear();
         _list.SetItems(layout, titles, _selected, BuildRow);
         _list.Visibility = results.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         EmptyText.Text = model.EmptyText;
@@ -360,20 +362,22 @@ public sealed partial class LauncherPanel : UserControl
         UpdateFooter();
         HeightRequested?.Invoke(ContentHeightDip, false);
         LoadSiteIcons();
+        LoadPathIcons();
     }
 
     private LauncherRowView BuildRow(int index)
     {
         var item = Model!.Results[index];
         var row = new LauncherRowView(item, index, Context(item, index));
-        // 滚出来的新行要的网站图标也攒成一批去查（Render 末尾那一次只管得到当时建好的行）。
-        if (_pendingHosts.Count > 0 && !_iconLoadQueued)
+        // 滚出来的新行要的网站图标、文件图标也攒成一批去查（Render 末尾那一次只管得到当时建好的行）。
+        if ((_pendingHosts.Count > 0 || _pendingPaths.Count > 0) && !_iconLoadQueued)
         {
             _iconLoadQueued = true;
             DispatcherQueue.TryEnqueue(() =>
             {
                 _iconLoadQueued = false;
                 LoadSiteIcons();
+                LoadPathIcons();
             });
         }
 
@@ -493,8 +497,13 @@ public sealed partial class LauncherPanel : UserControl
         byte[]? bytes;
         switch (item.Kind)
         {
+            case LauncherKind.Setting when SettingsExe is not null:
+                // 系统设置的页：用「设置」应用的图标（mac 用系统设置 App 的图标）。取 SystemSettings.exe 的系统图标：
+                // 开始菜单里那张商店 logo 四周留白很大，缩到 24 只剩一个小齿轮。
+                key = "path:" + SettingsExe;
+                bytes = PathIcon(SettingsExe);
+                break;
             case LauncherKind.Setting:
-                // 系统设置的页：用「设置」应用的图标（mac 用系统设置 App 的图标）。
                 key = "settings-app";
                 bytes = SettingsAppIcon();
                 break;
@@ -545,7 +554,10 @@ public sealed partial class LauncherPanel : UserControl
         return image;
     }
 
-    /// <summary>文件、exe 的系统图标（按路径缓存；读不到的也记着，不反复读）。</summary>
+    /// <summary>
+    /// 文件、exe 的系统图标（按路径缓存；读不到的也记着，不反复读）。没读过的先空着、攒成一批去后台读：
+    /// ShellIcons.LoadPng 里同步等 PNG 编码，在 UI 线程上调会把 UI 线程锁死（编码的续体要回 UI 线程）。
+    /// </summary>
     private byte[]? PathIcon(string path)
     {
         if (_pathIcons.TryGetValue(path, out var cached))
@@ -553,22 +565,63 @@ public sealed partial class LauncherPanel : UserControl
             return cached;
         }
 
-        byte[]? bytes = null;
+        _pendingPaths.Add(path);
+        return null;
+    }
+
+    /// <summary>这一轮布局要的文件 / exe 图标在线程池里读；读完记进缓存、重画一次。</summary>
+    private void LoadPathIcons()
+    {
+        if (_pendingPaths.Count == 0)
+        {
+            return;
+        }
+
+        var paths = _pendingPaths.ToList();
+        _pendingPaths.Clear();
+        foreach (var path in paths)
+        {
+            _pathIcons[path] = null; // 读着的不再排进下一批
+        }
+
+        _ = LoadPathIconsAsync(paths, XamlRoot?.RasterizationScale ?? 1.0);
+    }
+
+    private async Task LoadPathIconsAsync(List<string> paths, double scale)
+    {
+        var loaded = await Task.Run(() => paths.Select(path => (Path: path, Bytes: ReadPathIcon(path, scale))).ToList());
+        var any = false;
+        foreach (var (path, bytes) in loaded)
+        {
+            _pathIcons[path] = bytes;
+            any |= bytes is not null;
+        }
+
+        if (any && _active)
+        {
+            Render(_selectedId, resetScroll: false);
+        }
+    }
+
+    private static byte[]? ReadPathIcon(string path, double scale)
+    {
         try
         {
-            if (File.Exists(path) || Directory.Exists(path))
-            {
-                bytes = ShellIcons.LoadPng(path, XamlRoot?.RasterizationScale ?? 1.0, 24);
-            }
+            return File.Exists(path) || Directory.Exists(path) ? ShellIcons.LoadPng(path, scale, 24) : null;
         }
         catch (Exception ex)
         {
             Log.Warn($"launcher.path-icon-failed {ex.GetType().Name}");
+            return null;
         }
-
-        _pathIcons[path] = bytes;
-        return bytes;
     }
+
+    /// <summary>「设置」应用的 exe（没有就是 null，退回开始菜单里的商店 logo）。</summary>
+    private static readonly string? SettingsExe = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.Windows), "ImmersiveControlPanel", "SystemSettings.exe") is var exe &&
+        File.Exists(exe)
+            ? exe
+            : null;
 
     private static byte[]? SettingsAppIcon()
         => AppCatalog.Instance?.Apps
