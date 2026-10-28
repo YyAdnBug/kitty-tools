@@ -516,6 +516,11 @@ internal static class UiSnapshotProbe
             settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 720));
             settings.ShowPage(welcome: false, "general");
             await RenderWindowAsync(settings, "settings", dark, directory);
+            // 通用页整页（HANDTEST 576：「功能」每行的家族色块、单独的「数据」一节），一屏放不下就滚到底再拍一张。
+            settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 1500));
+            await RenderWindowAsync(settings, "settings-general", dark, directory);
+            settings.ScrollToEndForProbe();
+            await RenderWindowAsync(settings, "settings-general-end", dark, directory);
             // PLAN-v9-clipboard 6g：设置 › 剪贴板整页（拉长看到排除的应用列表，同 mac settings-clipboard-full）。
             settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 1700));
             settings.ShowPage(welcome: false, "clipboard");
