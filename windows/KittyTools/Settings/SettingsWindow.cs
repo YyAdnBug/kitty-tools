@@ -2182,7 +2182,7 @@ internal sealed partial class SettingsWindow : Window
     };
 
     private static UIElement Header(string title, string subtitle)
-        => SettingsUi.Header(title, subtitle);
+        => SettingsUi.Header(title, subtitle, Pages.FirstOrDefault(page => page.Title == title).Glyph);
 
     /// <summary>启动器的「快捷键速查表」：设置窗排好版之后弹（ContentDialog 要 XamlRoot）。</summary>
     public void ShowShortcutsSheet()

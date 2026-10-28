@@ -155,8 +155,8 @@ internal static class SettingsUi
         return panel;
     }
 
-    /// <summary>页头：一个家族色块 + 大标题 + 一句说明（PLAN-v7 §3.7）。</summary>
-    public static UIElement Header(string title, string subtitle)
+    /// <summary>页头：一个家族色块 + 大标题 + 一句说明（PLAN-v7 §3.7）。glyph 是这一页自己的符号（和左栏同一个，同 mac PageHeader 的 page.symbol）。</summary>
+    public static UIElement Header(string title, string subtitle, string? glyph = null)
     {
         var texts = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
         texts.Children.Add(new TextBlock
@@ -182,7 +182,7 @@ internal static class SettingsUi
             Spacing = 12,
             Margin = new Thickness(2, 0, 2, 8),
         };
-        row.Children.Add(KindTile.Create(FamilyOfPage(title), Glyphs.Settings, 32));
+        row.Children.Add(KindTile.Create(FamilyOfPage(title), glyph ?? Glyphs.Settings, 32));
         row.Children.Add(texts);
         return row;
     }
