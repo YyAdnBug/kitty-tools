@@ -284,7 +284,8 @@ public sealed partial class LauncherPanel : UserControl
 
     private void OnSearchTextChanged(object sender, TextChangedEventArgs e)
     {
-        if (!_active || _suppressSearch || !CompositionRules.ShouldSearch(_composing, SearchBox.Text))
+        // 组字时不搜；删空了要搜（回到收藏 / 常用、菜单的过滤词清空），所以不用 CompositionRules.ShouldSearch（它把空串也挡了）。
+        if (!_active || _suppressSearch || _composing)
         {
             return;
         }
