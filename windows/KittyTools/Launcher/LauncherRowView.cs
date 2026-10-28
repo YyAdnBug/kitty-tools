@@ -236,9 +236,10 @@ internal sealed partial class LauncherRowView : Grid
             MaxWidth = 440,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        if (item.Kind == LauncherKind.Process && item.Title.StartsWith(':'))
+        if ((item.Kind == LauncherKind.Process && item.Title.StartsWith(':')) ||
+            (item.Kind == LauncherKind.Ip && item.Title.Length > 0 && char.IsAsciiDigit(item.Title[0])))
         {
-            // port 的标题是端口号：等宽数字，后面的进程名才成一列。
+            // port 的标题是端口号、ip 的是地址：等宽数字，后面的副标题才成一列。
             title.FontFamily = new FontFamily("Cascadia Mono, Consolas");
         }
 

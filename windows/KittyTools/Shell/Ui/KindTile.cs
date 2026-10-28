@@ -77,7 +77,7 @@ internal static class KindTile
     /// </summary>
     public static string FamilyOf(LauncherKind kind) => kind switch
     {
-        LauncherKind.Command or LauncherKind.Process => "command",
+        LauncherKind.Command or LauncherKind.Process or LauncherKind.Ip => "command",
         LauncherKind.Url => "url",
         LauncherKind.Search or LauncherKind.Prompt => "search",
         LauncherKind.Calculation => "calculator",
@@ -99,6 +99,7 @@ internal static class KindTile
         LauncherKind.Clip => Glyphs.ClipboardHistory,
         LauncherKind.Translate => Glyphs.TextTranslate,
         LauncherKind.Process => Glyphs.Process,
+        LauncherKind.Ip => Glyphs.Port,
         _ => Glyphs.App,
     };
 
@@ -117,6 +118,9 @@ internal static class KindTile
         LauncherKind.Action => LauncherActions.GlyphOf(target),
         LauncherKind.Command => SystemCommands.GlyphOf(target),
         LauncherKind.Path when target.EndsWith('\\') => Glyphs.Folder,
+        // ip：外网是地球、VPN 是锁、局域网是网络（mac globe / lock.shield / network）。
+        LauncherKind.Ip when target.StartsWith("public", StringComparison.Ordinal) => Glyphs.Globe,
+        LauncherKind.Ip when target.StartsWith("vpn:", StringComparison.Ordinal) => Glyphs.Lock,
         LauncherKind.Prompt => target switch
         {
             "file-open" or "file-find" => Glyphs.Search,

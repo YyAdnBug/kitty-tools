@@ -1,7 +1,7 @@
 // 启动器的一条结果（纯数据）：给匹配和排序用；界面按 Kind 决定图标和动作。
 // Names / Initials 存的是 LauncherMatch.Fold 之后的小写折叠文本，构建时折一次，之后每次按键只折查询。
 // 照 mac LauncherItem（PLAN-v9-launcher）：应用、设置页、系统命令、内置动作、网址、文件这几类记使用、能收藏；
-// 网页搜索、计算、cb 那一行、fy 那一行、补全提示、kill / port / quit 列出来的进程不记。
+// 网页搜索、计算、cb 那一行、fy 那一行、补全提示、kill / port / quit 列出来的进程、「ip」列的地址不记。
 // 是 record：浏览历史的副标题按搜的那一刻拼「3 天前」，用 with 换一份。
 namespace KittyTools.Core;
 
@@ -29,6 +29,9 @@ public enum LauncherKind
 
     /// <summary>kill / port / quit / hide / forcequit 列出来的进程或应用（进程本身在 Process 里）。</summary>
     Process,
+
+    /// <summary>「ip」列的本机 / 外网地址（LauncherIp）：Enter 粘贴 Payload、Ctrl+Enter 只复制；没有 Payload 的（还在查、没查到）不能粘贴。</summary>
+    Ip,
 }
 
 public static class LauncherKinds

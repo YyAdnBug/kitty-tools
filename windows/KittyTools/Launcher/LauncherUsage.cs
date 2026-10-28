@@ -173,6 +173,7 @@ internal sealed class LauncherUsageStore
         LauncherKind.Translate => "translate",
         LauncherKind.Prompt => "prompt",
         LauncherKind.Process => "process",
+        LauncherKind.Ip => "ip",
         _ => "calculation",
     };
 

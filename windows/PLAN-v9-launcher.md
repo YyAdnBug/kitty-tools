@@ -2,7 +2,7 @@
 
 2026-10-28。剪贴板（`PLAN-v9-clipboard.md`）、截图标注（`PLAN-v9-annotate.md`）、设置之后，用户：「检查启动器的样式和功能有没有和 macos 保持一致，没有的话就开始对齐 macos；你只管实现功能和对齐 UI，我会让 windows 的去检查」。
 
-**状态：用户说「没有的话就开始对齐」，D1–D9 按推荐直接做（想改哪一条说一声，再回头改）。7a–7d 审查方在 Mac 上都写完了（2026-10-28，`git log --grep "启动器"`），一个字都没编译过：Windows 那边先编译、跑单测和 `--ui-snapshots`，编译错直接修；手测见 HANDTEST 529–570（都没走）。** 先列 Windows 现在的毛病（§1），再按结果（§2）、视觉（§3）、按键和 Ctrl+K（§4）、设置页（§5）逐项对 mac，最后是替用户定的几件事（§6）和分批（§7）。
+**状态：用户说「没有的话就开始对齐」，D1–D9 按推荐直接做（想改哪一条说一声，再回头改）。7a–7d 审查方在 Mac 上都写完了（2026-10-28，`git log --grep "启动器"`），一个字都没编译过：Windows 那边先编译、跑单测和 `--ui-snapshots`，编译错直接修；手测见 HANDTEST 529–575（都没走）。** 先列 Windows 现在的毛病（§1），再按结果（§2）、视觉（§3）、按键和 Ctrl+K（§4）、设置页（§5）逐项对 mac，最后是替用户定的几件事（§6）和分批（§7）。
 
 - **对的是谁**：mac 的路径相对 `macos/KittyTools/`：`Launcher/LauncherModel.swift`（结果顺序、执行、按键、Ctrl+K 动作表）、`LauncherPanelView.swift`（行、分组标题、高度、底栏）、`LauncherItem.swift`（内置动作）、`SystemCommands.swift`、`WebSearch.swift`、`Calculator.swift`、`LauncherUsage.swift`（收藏、常用、移除）、`Settings/LauncherTab.swift`；规格 `.cursor/rules/mac-whisker-launcher.mdc`（写成「wl」）。Windows 对着 `024d0e3`，路径相对 `windows/KittyTools/`：`Launcher/**`、`KittyTools.Core/{LauncherItem,LauncherMatch,LauncherCommands,DirectItems,WebSearch,Calculator,PanelFooterText,PanelMetrics}.cs`、`Shell/Ui/KindTile.cs`、`Settings/SettingsWindow.cs` 的 `BuildLauncher`。
 - **规矩照旧**：功能、行为、数值、文案跟 mac；窗口外壳、字体、图标字形、快捷键写法跟 Windows（⌘ → Ctrl，⌥ → Alt，⌫ → Delete）。mac 的 pt 是 DIP；mac 13 号的副标题在 Windows 上是 14（PLAN-v7 §2.1 字号表）。全 App 不做「从小放大」。
@@ -41,6 +41,7 @@
 | R13 | Tab 补全 | 选中项的补全：App / 动作 / 网址 / 系统命令补标题，文件夹补「路径\」（`completion(for:)`） | 只有带 `Completion` 的几种 | 照 mac |
 | R14 | 60 秒内再呼出 | 留着查询和选中项，字全选着（直接打字就替换）（`prepareForShow`） | 留着，但光标在末尾 | 补「全选」 |
 | R16 | fy 单词的释义 | 「fy 单个英文词」时副标题异步换成系统词典的第一条释义（体检 D10，`lookUpDefinition`） | 没有 | Windows 没有系统词典：取本机翻译历史 / 生词本里这个词上一次的译文第一行（生词本优先，不分大小写），只给「一个词」（`WordLookup.IsWord`）查，没翻过的空着；不联网（2026-10-28 补） |
+| R17 | ip | 「ip」（「ip 地址」「内网 ip」这类）排在最前列本机每块网卡的 IPv4（默认路由那块第一，VPN 写「内网」）和外网地址（问 myip.ipip.net、api.ipify.org，两家不一样各一行）；↩ 粘贴、⌘↩ 只复制；输到 ip 等 0.3 s 再问（mac 2026-10-28 新加的 `IPAddresses.swift`，当时还没提交） | 没有 | 照 mac：网卡用 `NetworkInterface` 读、默认路由用 `GetBestInterface`，VPN 按 PPP / 隧道类型或说明里的 VPN / WireGuard / TAP 认；拼行在 Core 的 `LauncherIp`（2026-10-28 补） |
 | R15 | 计算器 | mod、函数、pi / e、0x / 0b / 0o、单位换算、进制，大字千分位、⌘K 多「复制原始数字」「复制十六进制」…（`Calculator.swift`） | 四则、括号、乘方、百分号 | 照 mac 原样移植 = L6，mac 的单测期望值一起搬 |
 
 ## 3. 视觉

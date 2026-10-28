@@ -402,3 +402,104 @@ public sealed class LauncherHomeTests
         Assert.IsNull(LauncherHome.Swap(order, visible, "hidden", 1));
     }
 }
+
+[TestClass]
+public sealed class LauncherIpTests
+{
+    // mac IPAddressesTests.keywords
+    [TestMethod]
+    public void Keywords()
+    {
+        foreach (var query in new[] { "ip", "IP", " ip ", "IP 地址", "ip地址", "内网 IP", "外网ip" })
+        {
+            Assert.IsTrue(LauncherIp.Matches(query), query);
+        }
+
+        foreach (var query in new[] { "i", "ipa", "iphone", "ip 1", "ipconfig", "" })
+        {
+            Assert.IsFalse(LauncherIp.Matches(query), query);
+        }
+    }
+
+    // mac IPAddressesTests.localRows（网卡名换成 Windows 的叫法）
+    [TestMethod]
+    public void LocalRows()
+    {
+        var rows = LauncherIp.LocalItems(new[]
+        {
+            new LocalAddress("{A}", "vEthernet (WSL)", "172.20.0.1", false),
+            new LocalAddress("{B}", "WLAN", "192.168.1.23", false),
+            new LocalAddress("{C}", "公司 VPN", "10.8.0.6", true),
+            new LocalAddress("{D}", string.Empty, "10.9.0.2", true),
+        }, primary: "{B}");
+        CollectionAssert.AreEqual(new[] { "192.168.1.23", "172.20.0.1", "10.8.0.6", "10.9.0.2" }, rows.Select(row => row.Title).ToArray());
+        CollectionAssert.AreEqual(new[] { "局域网 · WLAN", "局域网 · vEthernet (WSL)", "内网 · 公司 VPN", "内网 · VPN" },
+            rows.Select(row => row.Subtitle).ToArray());
+        CollectionAssert.AreEqual(new[] { "192.168.1.23", "172.20.0.1", "10.8.0.6", "10.9.0.2" }, rows.Select(row => row.Payload).ToArray());
+        Assert.AreEqual(4, rows.Select(row => row.Id).Distinct().Count());
+        Assert.IsTrue(rows[2].Target.StartsWith("vpn:", StringComparison.Ordinal) && rows[0].Target.StartsWith("lan:", StringComparison.Ordinal));
+        Assert.AreEqual("网络", PanelFooterText.LauncherKindName(LauncherKind.Ip, rows[0].Target));
+        Assert.AreEqual("粘贴", PanelFooterText.LauncherVerb(LauncherKind.Ip, rows[0].Target, false).Text);
+
+        var offline = LauncherIp.LocalItems(Array.Empty<LocalAddress>(), primary: null);
+        Assert.AreEqual("没有连上网络", offline.Single().Subtitle);
+        Assert.IsNull(offline[0].Payload);
+    }
+
+    // mac IPAddressesTests.publicRows
+    [TestMethod]
+    public void PublicRows()
+    {
+        static string[] Rows(Dictionary<IpService, IpLookup> lookups)
+            => LauncherIp.PublicItems(lookups).Select(item => $"{item.Title} | {item.Subtitle} | {item.Payload ?? "-"}").ToArray();
+
+        var pending = new IpLookup(IpLookupState.Pending);
+        var failed = new IpLookup(IpLookupState.Failed);
+        IpLookup Found(string address) => new(IpLookupState.Found, address);
+        CollectionAssert.AreEqual(new[] { "外网 IP | 没查到：没有联网，或查询超时 | -" }, Rows(new()));
+        CollectionAssert.AreEqual(new[] { "外网 IP | 正在查询… | -" },
+            Rows(new() { [IpService.Domestic] = pending, [IpService.Overseas] = pending }));
+        CollectionAssert.AreEqual(new[] { "外网 IP | 没查到：没有联网，或查询超时 | -" },
+            Rows(new() { [IpService.Domestic] = failed, [IpService.Overseas] = failed }));
+        // 只查到一家、两家一样：一行
+        CollectionAssert.AreEqual(new[] { "203.0.113.7 | 外网 | 203.0.113.7" },
+            Rows(new() { [IpService.Domestic] = Found("203.0.113.7"), [IpService.Overseas] = pending }));
+        CollectionAssert.AreEqual(new[] { "198.51.100.24 | 外网 | 198.51.100.24" },
+            Rows(new() { [IpService.Domestic] = failed, [IpService.Overseas] = Found("198.51.100.24") }));
+        CollectionAssert.AreEqual(new[] { "203.0.113.7 | 外网 | 203.0.113.7" },
+            Rows(new() { [IpService.Domestic] = Found("203.0.113.7"), [IpService.Overseas] = Found("203.0.113.7") }));
+        // 不一样（开着代理）：国内的在前，各写访问哪边时
+        CollectionAssert.AreEqual(new[]
+            {
+                "203.0.113.7 | 外网 · 访问国内网站时 | 203.0.113.7",
+                "198.51.100.24 | 外网 · 访问国外网站时 | 198.51.100.24",
+            },
+            Rows(new() { [IpService.Domestic] = Found("203.0.113.7"), [IpService.Overseas] = Found("198.51.100.24") }));
+        // 第一行的 id 一直是同一个：查到了原地换，选中不跳
+        Assert.AreEqual(
+            LauncherIp.PublicItems(new Dictionary<IpService, IpLookup> { [IpService.Domestic] = pending })[0].Id,
+            LauncherIp.PublicItems(new Dictionary<IpService, IpLookup>
+            {
+                [IpService.Domestic] = Found("203.0.113.7"),
+                [IpService.Overseas] = Found("198.51.100.24"),
+            })[0].Id);
+    }
+
+    // mac IPAddressesTests.serviceReply + 本机地址的过滤
+    [TestMethod]
+    public void ServiceReplyAndUsableAddresses()
+    {
+        Assert.AreEqual("203.0.113.7", LauncherIp.AddressIn("203.0.113.7\n"));
+        Assert.AreEqual("39.144.172.172", LauncherIp.AddressIn(" 39.144.172.172 "));
+        Assert.IsNull(LauncherIp.AddressIn("256.1.1.1"));
+        Assert.IsNull(LauncherIp.AddressIn("<html><body>请先登录</body></html>"));
+        Assert.IsNull(LauncherIp.AddressIn("当前 IP：1.2.3.4"));
+        Assert.IsNull(LauncherIp.AddressIn(string.Empty));
+        Assert.IsTrue(LauncherIp.IsUsable("192.168.1.23"));
+        Assert.IsFalse(LauncherIp.IsUsable("169.254.10.2"));
+        Assert.IsFalse(LauncherIp.IsUsable("198.18.0.1"));
+        Assert.IsFalse(LauncherIp.IsUsable("198.19.255.1"));
+        Assert.IsTrue(LauncherIp.IsUsable("198.20.0.1"));
+        Assert.IsFalse(LauncherIp.IsUsable("127.0.0.1"));
+    }
+}

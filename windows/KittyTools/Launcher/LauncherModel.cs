@@ -48,6 +48,11 @@ internal sealed partial class LauncherModel
     private CancellationTokenSource? _filesCts;
     private string? _filesQuery;
 
+    // 「ip」这次呼出里的结果（收起、再呼出时全清：这期间可能换了网络）：本机那几行、两家查询服务各自查到没有、还在查的。
+    private List<LauncherItem>? _ipLocal;
+    private readonly Dictionary<IpService, IpLookup> _ipLookups = new();
+    private readonly Dictionary<IpService, CancellationTokenSource> _ipTasks = new();
+
     public static LauncherModel Start()
     {
         Instance = new LauncherModel();
@@ -132,6 +137,7 @@ internal sealed partial class LauncherModel
         Executed = false;
         UserMovedSelection = false;
         LauncherOpeners.ForgetBrowsers();
+        ResetIp();
         var keeps = _keptAt != 0 && Environment.TickCount64 - _keptAt <= KeepQueryMs && _keptQuery.Trim().Length > 0;
         _keptAt = 0;
         ResumesQuery = keeps;
@@ -157,6 +163,7 @@ internal sealed partial class LauncherModel
         _targets = null;
         _targetsMode = LauncherMode.Normal;
         _filesQuery = null;
+        ResetIp();
         if (Executed || Query.Trim().Length == 0)
         {
             _keptAt = 0;
@@ -206,6 +213,12 @@ internal sealed partial class LauncherModel
         {
             _filesCts?.Cancel();
             _filesQuery = null;
+        }
+
+        // 打字路过 ip（「iphone」）时还没查完的不要了。
+        if (!LauncherIp.Matches(query))
+        {
+            CancelIpLookups();
         }
 
         if (mode.IsFileMode())
@@ -265,6 +278,12 @@ internal sealed partial class LauncherModel
             top.AddRange(LauncherCommands.TranslatePrompts(trimmed));
         }
 
+        // 「ip」排在 cb / fy 后面、直达前面（mac）。
+        if (LauncherIp.Matches(trimmed))
+        {
+            top.AddRange(IpItems());
+        }
+
         top.AddRange(direct);
         if (Calculator.ItemFor(trimmed) is { } calculation)
         {
@@ -315,6 +334,84 @@ internal sealed partial class LauncherModel
         return top.Concat(local).Concat(history).Concat(prompts.Partial).Concat(commandPrompts.Partial).Concat(fallback)
             .Where(item => seen.Add(item.Id))
             .ToList();
+    }
+
+    /// <summary>
+    /// 「ip」那几行（mac ipItems）：本机地址，再是外网地址。外网这次呼出里没查过、上次没查到的，等 0.3 s 再问（还在打字就撤掉）；
+    /// 查到一家换一次那几行（可能多出一行：两家看到的不一样），选中留在原来那一项上（第一行外网的 id 不变）。
+    /// </summary>
+    private List<LauncherItem> IpItems()
+    {
+        var local = _ipLocal ??= IpAddresses.LocalItems();
+        var dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+        foreach (var service in new[] { IpService.Domestic, IpService.Overseas })
+        {
+            if (_ipTasks.ContainsKey(service) ||
+                (_ipLookups.TryGetValue(service, out var known) && known.State == IpLookupState.Found))
+            {
+                continue;
+            }
+
+            _ipLookups[service] = new IpLookup(IpLookupState.Pending);
+            var cts = new CancellationTokenSource();
+            _ipTasks[service] = cts;
+            _ = Task.Run(async () =>
+            {
+                string? address;
+                try
+                {
+                    await Task.Delay(LauncherIp.LookupDelayMs, cts.Token).ConfigureAwait(false);
+                    address = await IpAddresses.LookUpAsync(service, cts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+
+                dispatcher?.TryEnqueue(() =>
+                {
+                    if (cts.IsCancellationRequested || !_ipTasks.TryGetValue(service, out var current) || current != cts)
+                    {
+                        return;
+                    }
+
+                    _ipTasks.Remove(service);
+                    _ipLookups[service] = address is null ? new IpLookup(IpLookupState.Failed) : new IpLookup(IpLookupState.Found, address);
+                    var start = Results.FindIndex(item => item.Kind == LauncherKind.Ip);
+                    if (start < 0)
+                    {
+                        return;
+                    }
+
+                    var rest = Results.Where(item => item.Kind != LauncherKind.Ip).ToList();
+                    rest.InsertRange(Math.Min(start, rest.Count), local.Concat(LauncherIp.PublicItems(_ipLookups)));
+                    Results = rest;
+                    ResultsChanged(null);
+                });
+            });
+        }
+
+        return local.Concat(LauncherIp.PublicItems(_ipLookups)).ToList();
+    }
+
+    /// <summary>撤掉还在等 / 在查的外网查询（查到的、没查到的留着）。</summary>
+    private void CancelIpLookups()
+    {
+        foreach (var (service, cts) in _ipTasks)
+        {
+            cts.Cancel();
+            _ipLookups.Remove(service);
+        }
+
+        _ipTasks.Clear();
+    }
+
+    /// <summary>呼出、收起时全清：这期间可能换了网络，再输 ip 重读重查。</summary>
+    private void ResetIp()
+    {
+        CancelIpLookups();
+        _ipLookups.Clear();
+        _ipLocal = null;
     }
 
     /// <summary>
@@ -659,6 +756,18 @@ internal sealed partial class LauncherModel
             case LauncherKind.Calculation:
                 Paste(item.Payload ?? item.Title);
                 break;
+            case LauncherKind.Ip:
+                // 外网还在查、没查到、没连上网络的那一行没有地址：只响一声。
+                if (item.Payload is { } address)
+                {
+                    Paste(address);
+                }
+                else
+                {
+                    Beep();
+                }
+
+                break;
             case LauncherKind.Clip:
                 // 先收起（还前台），再呼出剪贴板面板：它粘贴的目标才是原来那个程序，不是启动器（REVIEW R56 那一条）。
                 Close();
@@ -770,6 +879,7 @@ internal sealed partial class LauncherModel
                 LauncherOpeners.Reveal(item.Target);
                 break;
             case LauncherKind.Calculation:
+            case LauncherKind.Ip when item.Payload is not null:
                 Copy(item);
                 break;
             default:
@@ -981,6 +1091,7 @@ internal sealed partial class LauncherModel
         LauncherKind.Path => "复制路径",
         LauncherKind.Url or LauncherKind.Search => "复制网址",
         LauncherKind.Calculation => "复制结果",
+        LauncherKind.Ip when item.Payload is not null => "复制地址",
         _ => null,
     };
 
@@ -1159,6 +1270,7 @@ internal sealed partial class LauncherModel
                 ? ("打开", Glyphs.OpenInNewWindow, false)
                 : ("在资源管理器中显示", Glyphs.Folder, false),
             LauncherKind.Calculation => ("只复制，不粘贴", Glyphs.Copy, false),
+            LauncherKind.Ip when item.Payload is not null => ("只复制，不粘贴", Glyphs.Copy, false),
             _ => null,
         };
     }
@@ -1222,7 +1334,8 @@ internal sealed partial class LauncherModel
         }
 
         // 2 复制（计算结果的 Ctrl+C 和 Ctrl+Enter 一样，不重复列）。
-        if (item.Kind != LauncherKind.Calculation && CopyTitle(item) is { } copyTitle)
+        // 计算结果、ip 的 Ctrl+C 和 Ctrl+Enter 一样，不重复列。
+        if (item.Kind is not (LauncherKind.Calculation or LauncherKind.Ip) && CopyTitle(item) is { } copyTitle)
         {
             actions.Add(new PaletteItem(copyTitle, item.Kind is LauncherKind.App or LauncherKind.Path ? Glyphs.Link : Glyphs.Copy, 2,
                 () => Copy(item), "Ctrl+C"));
