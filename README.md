@@ -95,3 +95,23 @@
 - launcher-empty-*.png：匹配不到时只剩 Bing 兜底一行
 - launcher-actions-*.png：Ctrl+K 菜单（占位「搜索操作」、命令符号）
 - launcher-keys-*.png：按住 Ctrl 的「Ctrl+1…9」键帽
+
+## 0.1.0-translate（PLAN-v9-translate 8a–8e 翻译对齐 mac，Windows 编译修过之后）
+
+`--ui-snapshots`（Debug、自检档 `KITTY_DEV_SUFFIX`、空数据）浅 / 深各一套，只截自己的窗口。
+翻译浮窗那几张是 WGC 只抓浮窗这一扇窗口（不激活、放在左上角，亚克力是失焦时的回落色）：
+彗星边框、骨架扫光是合成层的，RenderTargetBitmap 画不出来。卡片是自检摆出来的，不发请求。
+
+- translate-empty-*.png：刚打开、没翻过——「划词、截图或输入后开始翻译」+ 三个入口和快捷键键帽
+- translate-running-*.png：两张卡生成中——智谱「思考中」+ 骨架两根带扫光；DeepSeek 出字到一半、末尾光标；两张都有彗星（边框上一段粉光）
+- translate-comet-frames-light.png：生成中每 0.3 s 一帧、一圈 8 帧（`KITTY_COMET_FRAMES=1`），粉光顺时针绕边框走
+- translate-done-*.png：智谱完成（行内 Markdown：加粗、`代码`）+ DeepSeek 配置错误（整卡染橙、钥匙、「打开设置」）
+- translate-truncated-*.png：截断的长结果——卡里 8 行封顶、底部渐隐（「只翻了前一部分」那行在滚动区最下面，同 mac）
+- translate-history-*.png：Ctrl+H 历史——搜索框 + 全部 / 收藏胶囊、今天 / 昨天 / 10月24日 分组、选中第二条、收藏星标
+- translate-history-menu-*.png：历史里的 Ctrl+K 菜单（重新翻译 / 复制译文 / 复制原文 / 收藏 / 删除 ｜ 导出 › / 清空历史…）
+- settings-translate-*.png：设置 › 翻译上半页（语言、译文字号的滑块和预览卡、查词、行为）
+- settings-translate-services-*.png：滚到底的「翻译服务」——logo、名字、状态行（智谱没有内置 key 时橙字「未填密钥」、微软「免费 Edge 接口」、DeepSeek「OpenAI 兼容 · deepseek-chat」、Kimi 橙字「未填模型」、百度关着时灰字）、开关、›、「＋ 添加服务」
+- settings-translate-service-*.png：DeepSeek 详情子页（「‹ 翻译」、启用、名称 / 协议 / 服务地址 / 模型 ↻、API Key、测试连接、删除…）。模型下拉要联网取 /models、下拉是弹出层，没截
+- settings-general-*.png / settings-general-end-*.png：设置 › 通用整页和滚到底——「功能」每行 20 的家族色块、单独的「数据」一节，卡上没有灰色单色图标；页头图标是这一页自己的（d8770e5）
+- settings-hotkeys-*.png：快捷键页，每行家族色块，最后一行「划词翻译并替换」（未设置）。多数行写「被占用」是因为装着的正式版占着这些键（Dev 自检档和正式版同时开）
+- launcher-home-*.png：启动器空首页（空数据）——只有搜索线，没有底栏、没有下面那一截
