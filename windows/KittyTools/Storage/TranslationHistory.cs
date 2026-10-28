@@ -343,6 +343,14 @@ internal sealed class TranslationHistory
         }
     }
 
+    /// <summary>UI 截图自检（--ui-snapshots，只在自检档）：按给的时间插一条，好出「今天 / 昨天 / 某天」分组。</summary>
+    internal void InsertForProbe(string source, string targetLang, string result, string service, DateTimeOffset at, bool favorite)
+    {
+        Insert(Guid.NewGuid().ToString("D").ToUpperInvariant(), Stored(source), "en", targetLang, result, service,
+            at.ToUnixTimeMilliseconds(), favorite);
+        Changed?.Invoke();
+    }
+
     private void Insert(
         string id, string source, string? sourceLang, string targetLang, string result, string service,
         long createdAt, bool favorite)

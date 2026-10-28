@@ -1179,6 +1179,87 @@ internal sealed partial class TranslateWindow : Window
         ResizeToContent();
     }
 
+    // ---- 截图自检
+
+    /// <summary>
+    /// UI 截图自检（--ui-snapshots）：摆出一种状态，不激活地露在左上角 (8, 8)（RenderTargetBitmap 只画它自己的内容）。
+    /// translate-empty / -running / -done / -truncated / -history / -history-menu。卡片是摆出来的，不发请求。正常入口不碰。
+    /// </summary>
+    internal void ShowProbe(string state)
+    {
+        const string source = "The quick brown fox jumps over the lazy dog. It was the best of times, it was the worst of times.";
+        var zhipu = new TranslateServiceConfig { Id = "probe-zhipu", Kind = TranslateKinds.Zhipu, Name = "智谱 GLM（免费）", Model = "glm-4-flash" };
+        var deepseek = new TranslateServiceConfig
+        {
+            Id = "probe-deepseek",
+            Kind = TranslateKinds.Ai,
+            Name = "DeepSeek",
+            BaseUrl = "https://api.deepseek.com/v1",
+            Model = "deepseek-chat",
+        };
+        const string done = "敏捷的棕色狐狸跳过了那只懒狗。那是最好的时代，也是最坏的时代。";
+        ShowHistory(false);
+        SetSourceQuietly(state == "translate-empty" ? string.Empty : source);
+        switch (state)
+        {
+            case "translate-empty":
+                _coordinator.BeginInput();
+                break;
+            case "translate-running":
+                _coordinator.ShowProbe(source, Lang.En, Lang.ZhHans, new[]
+                {
+                    new TranslateCard { Service = zhipu, State = CardState.Running },
+                    new TranslateCard { Service = deepseek, State = CardState.Running, Text = "敏捷的棕色狐狸跳过了那只懒狗。那是最好的时代，" },
+                });
+                break;
+            case "translate-done":
+                _coordinator.ShowProbe(source, Lang.En, Lang.ZhHans, new[]
+                {
+                    new TranslateCard { Service = zhipu, State = CardState.Done, Text = "敏捷的**棕色狐狸**跳过了那只懒狗。那是最好的时代，也是最坏的时代（`best of times`）。" },
+                    new TranslateCard
+                    {
+                        Service = deepseek,
+                        State = CardState.Failed,
+                        Error = TranslateError.Config("请先在设置里填写服务地址和模型"),
+                    },
+                });
+                break;
+            case "translate-truncated":
+                _coordinator.ShowProbe(source, Lang.En, Lang.ZhHans, new[]
+                {
+                    new TranslateCard
+                    {
+                        Service = deepseek,
+                        State = CardState.Truncated,
+                        Text = string.Join("\n", Enumerable.Repeat(done, 6)),
+                        Error = TranslateError.Truncated,
+                    },
+                });
+                break;
+            default:
+                _coordinator.ShowProbe(source, Lang.En, Lang.ZhHans, new[]
+                {
+                    new TranslateCard { Service = zhipu, State = CardState.Done, Text = done },
+                });
+                break;
+        }
+
+        if (!_visible)
+        {
+            _noActivate = true;
+            ShowCore(activate: false, followMouse: false);
+        }
+
+        if (state.StartsWith("translate-history", StringComparison.Ordinal))
+        {
+            ShowHistory(true);
+            _history.ApplyProbeState(menu: state == "translate-history-menu");
+        }
+
+        AppWindow.Move(new PointInt32(8, 8));
+        ResizeToContent();
+    }
+
     // ---- 尺寸和位置
 
     /// <summary>内容要的高、至少要放得下的高（结果卡多于三张时到第三张的下沿）。都是 DIP，含窗口边框。</summary>

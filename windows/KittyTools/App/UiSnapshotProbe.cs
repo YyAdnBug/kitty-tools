@@ -128,15 +128,12 @@ internal static class UiSnapshotProbe
                 await SafeRenderShotHistoryAsync(dark, directory);
             }
 
-            // 翻译窗只出浅色一张：两次 Show/Hide 在 Debug 下偶尔会撞 XAML 异常（R33 先保证设置窗两张）。
-            SettingsService.Current.Theme = "light";
-            SettingsService.Save();
-            TranslateHost.ShowInput();
-            await Task.Delay(500);
-            if (TranslateHost.WindowForProbe is { } translate)
+            // PLAN-v9-translate：翻译浮窗六种状态 × 浅深。每种外观新建一扇浮窗（代码建的画刷按建的时候的外观取色）。
+            foreach (var dark in new[] { false, true })
             {
-                await RenderWindowAsync(translate, "translate", false, directory);
-                TranslateHost.Hide();
+                SettingsService.Current.Theme = dark ? "dark" : "light";
+                SettingsService.Save();
+                await SafeRenderTranslateAsync(dark, directory);
             }
 
             await RenderWithWgcAsync(directory);
@@ -407,6 +404,104 @@ internal static class UiSnapshotProbe
         }
     }
 
+    /// <summary>翻译浮窗：空状态、生成中两张卡、完成 + 配置错误、截断、历史、历史的 Ctrl+K 菜单。</summary>
+    private static async Task SafeRenderTranslateAsync(bool dark, string directory)
+    {
+        if (!Wanted("translate"))
+        {
+            return;
+        }
+
+        SeedTranslationHistory();
+        TranslateWindow? window = null;
+        try
+        {
+            window = new TranslateWindow();
+            // 第一次露出时窗口还在按光标那块屏的缩放摆，等它在 (8, 8) 定下宽再拍。
+            window.ShowProbe("translate-empty");
+            await Task.Delay(600);
+            var handle = WinRT.Interop.WindowNative.GetWindowHandle(window);
+            foreach (var state in new[]
+                     {
+                         "translate-empty", "translate-running", "translate-done", "translate-truncated",
+                         "translate-history", "translate-history-menu",
+                     })
+            {
+                if (!Wanted(state))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    window.ShowProbe(state);
+                    // 生成中的彗星、骨架扫光转起来再拍。
+                    await Task.Delay(state == "translate-running" ? 900 : 300);
+                    await RenderWindowAsync(window, state, dark, directory);
+                    // 彗星边框、骨架扫光是合成层的，RenderTargetBitmap 画不出来；WGC 只抓这一扇窗口再出一张（真窗口的样子和高）。
+                    await WindowShot.SaveAsync(handle, Path.Combine(directory, $"{state}-{(dark ? "dark" : "light")}-window.png"));
+                    if (state == "translate-running" && Environment.GetEnvironmentVariable("KITTY_COMET_FRAMES") == "1")
+                    {
+                        for (var frame = 0; frame < 8; frame++)
+                        {
+                            await Task.Delay(300);
+                            await WindowShot.SaveAsync(handle, Path.Combine(directory, $"comet-{(dark ? "dark" : "light")}-{frame}.png"));
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Warn($"ui-snapshots {state} dark={dark} failed {ex.GetType().Name} {ex.Message}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"ui-snapshots translate dark={dark} failed {ex.GetType().Name} {ex.Message}");
+        }
+        finally
+        {
+            window?.Hide(restoreForeground: false);
+        }
+    }
+
+    /// <summary>
+    /// 自检档里只有默认的智谱时补几个服务，好看出服务行的各种状态（HANDTEST 577）：谷歌、微软（没 key：免费 Edge 接口）、
+    /// DeepSeek（填了模型）、Kimi（没填模型：橙字）、百度（关着、缺密钥：灰字）。
+    /// </summary>
+    private static void SeedTranslateServices()
+    {
+        if (!Paths.IsTestProfile || TranslateServiceStore.Instance is not { } store || store.Services.Count > 1)
+        {
+            return;
+        }
+
+        // 设置里「添加服务」加回来的内置服务直接是开着的，这里照着开。
+        store.AddBuiltin(TranslateKinds.Google).Enabled = true;
+        store.AddBuiltin(TranslateKinds.Microsoft).Enabled = true;
+        var deepseek = store.AddAi(TranslatePresets.Ai.First(preset => preset.Name == "DeepSeek"));
+        deepseek.Model = "deepseek-chat";
+        deepseek.Enabled = true;
+        store.AddAi(TranslatePresets.Ai.First(preset => preset.Name == "Kimi")).Enabled = true;
+        store.AddBuiltin(TranslateKinds.Baidu).Enabled = false;
+        store.Save();
+    }
+
+    /// <summary>自检档里没有翻译历史时塞几条：今天两条（一条收藏）、昨天一条、前几天一条收藏。</summary>
+    private static void SeedTranslationHistory()
+    {
+        if (!Paths.IsTestProfile || TranslationHistory.Instance is not { } history || history.Counts().Total > 0)
+        {
+            return;
+        }
+
+        var now = DateTimeOffset.Now;
+        history.InsertForProbe("serendipity", "zh-Hans", "意外发现珍宝的运气；机缘巧合", "智谱 GLM（免费）", now.AddDays(-4), true);
+        history.InsertForProbe("It was the best of times, it was the worst of times.", "zh-Hans", "那是最好的时代，也是最坏的时代。", "DeepSeek", now.AddDays(-1), false);
+        history.InsertForProbe("Hello, world", "zh-Hans", "你好，世界", "谷歌翻译", now.AddMinutes(-40), false);
+        history.InsertForProbe("The quick brown fox jumps over the lazy dog.", "zh-Hans", "敏捷的棕色狐狸跳过了那只懒狗。", "智谱 GLM（免费）", now.AddMinutes(-5), true);
+    }
+
     private static async Task SafeRenderSettingsAsync(bool dark, string directory)
     {
         if (!Wanted("settings"))
@@ -425,6 +520,23 @@ internal static class UiSnapshotProbe
             settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 1700));
             settings.ShowPage(welcome: false, "clipboard");
             await RenderWindowAsync(settings, "settings-clipboard", dark, directory);
+            // PLAN-v9-translate 8e：设置 › 翻译整页（字号预览卡）、一个 AI 服务的详情子页、快捷键页。
+            SeedTranslateServices();
+            settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 1900));
+            settings.ShowPage(welcome: false, "translate");
+            await RenderWindowAsync(settings, "settings-translate", dark, directory);
+            settings.ScrollToEndForProbe();
+            await RenderWindowAsync(settings, "settings-translate-services", dark, directory);
+            if (Paths.IsTestProfile && TranslateServiceStore.Instance?.Services.FirstOrDefault(service => service.Model == "deepseek-chat") is { } ai)
+            {
+                settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 1100));
+                settings.ShowPage(welcome: false, "translate", ai.Id);
+                await RenderWindowAsync(settings, "settings-translate-service", dark, directory);
+            }
+
+            settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 1300));
+            settings.ShowPage(welcome: false, "hotkeys");
+            await RenderWindowAsync(settings, "settings-hotkeys", dark, directory);
         }
         catch (Exception ex)
         {

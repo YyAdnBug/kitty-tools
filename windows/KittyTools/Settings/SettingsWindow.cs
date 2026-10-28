@@ -2184,6 +2184,13 @@ internal sealed partial class SettingsWindow : Window
     private static UIElement Header(string title, string subtitle)
         => SettingsUi.Header(title, subtitle, Pages.FirstOrDefault(page => page.Title == title).Glyph);
 
+    /// <summary>UI 截图自检：内容滚到底（设置 › 翻译的服务列表在一屏以下）。</summary>
+    internal void ScrollToEndForProbe()
+    {
+        _scroll.UpdateLayout();
+        _scroll.ChangeView(null, _scroll.ScrollableHeight, null, disableAnimation: true);
+    }
+
     /// <summary>启动器的「快捷键速查表」：设置窗排好版之后弹（ContentDialog 要 XamlRoot）。</summary>
     public void ShowShortcutsSheet()
     {

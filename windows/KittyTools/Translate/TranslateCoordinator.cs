@@ -338,6 +338,27 @@ internal sealed class TranslateCoordinator
         return latest;
     }
 
+    /// <summary>UI 截图自检（--ui-snapshots）：直接摆出一组卡片（不发请求）。正常入口不碰。</summary>
+    internal void ShowProbe(string source, Lang detected, Lang target, IReadOnlyList<TranslateCard> cards)
+    {
+        Cancel();
+        SourceText = source;
+        TranslatedSource = source.Trim();
+        MissedSelection = false;
+        Replace = null;
+        Notice = null;
+        Detected = detected;
+        Target = target;
+        FixedSource = null;
+        AbandonedTarget = null;
+        IsWordLookup = false;
+        _request = new TranslateRequest(source.Trim(), null, target);
+        _recordedPrimary = null;
+        _cards.Clear();
+        _cards.AddRange(cards);
+        Changed?.Invoke();
+    }
+
     /// <summary>去首尾空白、换行统一成 \n（输入框给的是 \r）；开着就把同一段里的换行接起来（段间空一行，同识字）。</summary>
     private static string Preprocess(string source, bool joinLines)
     {

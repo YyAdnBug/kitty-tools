@@ -192,6 +192,16 @@ internal sealed partial class TranslateHistoryView : Grid
 
     public void FocusSearch() => _search.Focus(FocusState.Programmatic);
 
+    /// <summary>UI 截图自检：选中第二条；menu 时再打开 Ctrl+K 菜单。</summary>
+    internal void ApplyProbeState(bool menu)
+    {
+        Move(1);
+        if (menu)
+        {
+            OpenPalette();
+        }
+    }
+
     /// <summary>历史开着时的按键（窗口的 PreviewKeyDown 先给这里）。返回 true = 已经处理。</summary>
     public bool HandleKey(KeyRoutedEventArgs e, bool control, bool shift)
     {
