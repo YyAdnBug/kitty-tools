@@ -1,18 +1,13 @@
-// 一次翻译会话：按设置里的源 / 目标解析方向，给每个启用的服务开一张卡并发流式请求；
-// 只认第一张卡写自动复制。取消 = 停掉全部请求，半截译文不算完成。
+// 翻译会话（照 mac TranslateCoordinator，PLAN-v9-translate 8a）：一段原文 → 预处理（去首尾空白、换行统一成 \n；开着「把同一段里的
+// 换行接起来」就接）→ 检测语种、解析源 / 目标 → 所有启用的服务并行翻译（大模型逐字流式）。新会话取消旧会话的全部请求；单张卡可单独重试。
+// 按列表顺序第一个翻成功的服务（主结果，TranslateSession.Primary）定下来时写历史、按设置自动复制一次：排在前面的出错了就往后取，
+// 前面的还在跑就先等。截断的不算完成。被取消的请求一个字都不再写回卡片（每次跑一个号，旧号写不进新卡）。
+// 替换原文只给划词来的会话（Replace）；静默的「划词翻译并替换」走 TranslateOnceAsync（只用第一个启用的服务、不开浮窗）。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
+using Windows.Win32.Foundation;
 
 namespace KittyTools;
-
-internal enum CardState
-{
-    Waiting,
-    Running,
-    Done,
-    Failed,
-    Truncated,
-}
 
 internal sealed class TranslateCard
 {
@@ -20,110 +15,200 @@ internal sealed class TranslateCard
 
     public CardState State { get; set; } = CardState.Waiting;
 
+    /// <summary>到目前为止的译文；出错时是空的（出错只显示错误行）。</summary>
     public string Text { get; set; } = string.Empty;
 
-    public bool Thinking { get; set; }
+    /// <summary>生成中、还没有正文：模型在思考（卡片上「思考中」）。</summary>
+    public bool Thinking => State == CardState.Running && Text.Length == 0;
 
     public TranslateError? Error { get; set; }
 }
 
+/// <summary>划词来的会话：取到的原文（不去首尾空白，替换时照它补回）、取词时的前台窗口和它的进程（粘之前核对）。</summary>
+internal sealed record ReplaceTarget(string Text, HWND Window, uint ProcessId);
+
 internal sealed class TranslateCoordinator
 {
+    /// <summary>复制后卡上的对勾留多久（mac Style.copiedHold）。</summary>
+    public static readonly TimeSpan CopiedHold = TimeSpan.FromSeconds(1.2);
+
     private readonly List<TranslateCard> _cards = new();
-    private readonly Dictionary<string, CancellationTokenSource> _runs = new();
+    private readonly Dictionary<string, (int Run, CancellationTokenSource Cts)> _runs = new();
+    private int _runCounter;
     private TranslateRequest? _request;
+
+    /// <summary>复制即译带来的原文（去首尾空白）：没改过就不自动复制（免得盖掉刚复制的原文）；别的入口开会话时清掉。</summary>
     private string? _copiedSource;
+
+    /// <summary>这次会话已经按哪个服务写过历史 / 自动复制过：主结果定下来时只做一次。</summary>
+    private string? _recordedPrimary;
+
+    private int _copyTick;
 
     public event Action? Changed;
 
-    public event Action<string>? Notice;
+    /// <summary>复制了一张卡（服务 id）：卡上换对勾、整张卡闪一下。</summary>
+    public event Action<string>? Copied;
+
+    /// <summary>给读屏的播报（焦点一直在原文框，卡上的对勾、星标读屏看不到）。</summary>
+    public event Action<string>? Announce;
 
     public IReadOnlyList<TranslateCard> Cards => _cards;
 
     public string SourceText { get; private set; } = string.Empty;
 
-    public Lang? Detected { get; private set; }
+    /// <summary>划词没取到文字、当输入翻译打开的：原文框占位换成「没取到选中的文字…」，开始输入就恢复。</summary>
+    public bool MissedSelection { get; private set; }
 
-    public Lang Target { get; private set; } = Lang.En;
-
-    public Lang? FixedSource { get; private set; }
-
-    public Lang? AbandonedTarget { get; private set; }
-
+    /// <summary>最近一次翻译的原文（去首尾空白）；复制即译拿它去重。</summary>
     public string? TranslatedSource { get; private set; }
 
-    /// <summary>这次是查词（单词模式）：结果不自动复制、不给「替换原文」（第三版 §3.4）。</summary>
-    public bool WordMode { get; private set; }
+    /// <summary>本地检测出的原文语种（偏向第一 / 第二语言；纯数字等认不出时为 null）。</summary>
+    public Lang? Detected { get; private set; }
+
+    /// <summary>实际译成的语言。</summary>
+    public Lang? Target { get; private set; }
+
+    /// <summary>这次用的固定源语言（null = 自动检测）；方向标签按这次的值，不看浮窗上此刻的选择。</summary>
+    public Lang? FixedSource { get; private set; }
+
+    /// <summary>选的固定目标正好是原文语言、这次改按「自动」译了：记下原来选的目标（「原文已是 X，改译成 Y」）。</summary>
+    public Lang? AbandonedTarget { get; private set; }
+
+    public ReplaceTarget? Replace { get; private set; }
+
+    /// <summary>刚被复制的卡（Ctrl+1–9、卡上的复制、自动复制），卡上短暂显示对勾。</summary>
+    public string? CopiedCard { get; private set; }
+
+    /// <summary>结果区的提示（原文太长这类）；有它就不画卡片。</summary>
+    public string? Notice { get; private set; }
+
+    /// <summary>这次原文是单个词、大模型按词典格式回答（结果是释义：不自动复制、不给「替换原文」）。</summary>
+    public bool IsWordLookup { get; private set; }
+
+    /// <summary>浮窗收着时在设置里换了第一 / 第二语言：卡片还是旧语言的，下次 ResumeInput 照新语言重译。</summary>
+    public bool LanguageChanged { get; set; }
 
     public bool IsRunning => _cards.Any(card => card.State is CardState.Waiting or CardState.Running);
 
-    /// <summary>原文改过（只多了首尾空白不算）之后才显示「翻译 ↵」。</summary>
-    public bool NeedsTranslate
-        => SourceText.Trim().Length > 0 &&
-           !string.Equals(SourceText.Trim(), TranslatedSource?.Trim(), StringComparison.Ordinal);
+    /// <summary>原文改过还没重新翻译：原文框右下角出「翻译 ↩」。</summary>
+    public bool NeedsTranslate => TranslateSession.IsEdited(SourceText, TranslatedSource);
+
+    /// <summary>主结果：按列表顺序第一个翻成功的卡（写历史、自动复制、收藏、替换原文都认它）。</summary>
+    public TranslateCard? Primary
+    {
+        get
+        {
+            var index = TranslateSession.Primary(_cards.Select(card => (card.State, card.Text)).ToList());
+            return index >= 0 ? _cards[index] : null;
+        }
+    }
+
+    /// <summary>这次翻译收藏了没有（星标）。</summary>
+    public bool IsFavorite
+        => _request is { } request && TranslationHistory.Instance?.IsFavorite(request.Text, request.To.Code()) == true;
+
+    /// <summary>替换原文这时能不能用：划词来的、主结果出来了、不是查词。</summary>
+    public bool CanReplace => Replace is not null && !IsWordLookup && Primary is not null;
 
     public void SetSource(string text)
     {
         SourceText = text;
+        if (text.Length > 0)
+        {
+            MissedSelection = false;
+        }
+
         Changed?.Invoke();
     }
 
-    /// <summary>用当前原文开新会话。fromCopy：复制即译带来的（自动复制要跳过）。</summary>
-    public void Translate(string text, bool fromCopy = false)
+    /// <summary>清空上一次的内容等输入（划词没取到文字、浮窗里的「清空」）。输入翻译热键不走这里（保留上次的，见 ResumeInput）。</summary>
+    public void BeginInput(bool missedSelection = false)
     {
         Cancel();
-        SourceText = text;
-        _copiedSource = fromCopy ? text.Trim() : null;
+        SourceText = string.Empty;
+        MissedSelection = missedSelection;
         TranslatedSource = null;
-        AbandonedTarget = null;
+        Replace = null;
+        _copiedSource = null;
+        _request = null;
         _cards.Clear();
+        IsWordLookup = false;
+        Detected = null;
+        Target = null;
+        FixedSource = null;
+        AbandonedTarget = null;
+        Notice = null;
+        Changed?.Invoke();
+    }
 
-        var trimmed = text.Trim();
-        if (trimmed.Length == 0)
+    /// <summary>输入翻译再打开浮窗：保留上次的原文和结果（调用方把原文全选）；上次收起时被中断的卡重新跑。收着时换过语言的整个重译。</summary>
+    public void ResumeInput()
+    {
+        Notice = null;
+        MissedSelection = false;
+        if (LanguageChanged && SourceText.Trim().Length > 0)
         {
-            Changed?.Invoke();
+            Start();
             return;
         }
 
-        if (System.Text.Encoding.UTF8.GetByteCount(trimmed) > CopyTranslateRules.MaxSourceBytes)
+        foreach (var card in _cards.Where(card => card.State == CardState.Failed && card.Error == TranslateError.Interrupted).ToList())
         {
-            Notice?.Invoke("原文太长（上限 32 KB），请分段翻译");
-            Changed?.Invoke();
-            return;
-        }
-
-        var store = TranslateServiceStore.Instance;
-        if (store is null)
-        {
-            return;
-        }
-
-        var (first, second) = store.Languages;
-        Detected = Langs.Detect(trimmed, new[] { first, second });
-        var chosenTarget = Langs.FromCode(SettingsService.Current.TranslateTarget);
-        FixedSource = Langs.FromCode(SettingsService.Current.TranslateSource);
-        var plan = Langs.Resolve(FixedSource, chosenTarget, Detected, first, second);
-        Target = plan.To;
-        AbandonedTarget = plan.FellBack ? chosenTarget : null;
-        _request = new TranslateRequest(trimmed, plan.From, plan.To);
-        TranslatedSource = trimmed;
-        WordMode = SettingsService.Current.TranslateWordLookup && WordLookup.IsWord(trimmed);
-
-        var enabled = store.Enabled.ToList();
-        if (enabled.Count == 0)
-        {
-            Notice?.Invoke("没有启用的翻译服务，去设置 › 翻译里打开一个");
-            Changed?.Invoke();
-            return;
-        }
-
-        foreach (var service in enabled)
-        {
-            _cards.Add(new TranslateCard { Service = service });
+            _ = RunAsync(card);
         }
 
         Changed?.Invoke();
-        foreach (var card in _cards)
+    }
+
+    /// <summary>开新会话。replace：划词来的（浮窗里给「替换原文」）；fromCopy：复制即译带来的（不自动复制）。</summary>
+    public void Translate(string text, ReplaceTarget? replace = null, bool fromCopy = false)
+    {
+        SourceText = text;
+        Replace = replace;
+        _copiedSource = fromCopy ? text.Trim() : null;
+        Start();
+    }
+
+    /// <summary>用当前原文开新会话（Enter、Ctrl+R、换了语言）。</summary>
+    public void Start()
+    {
+        LanguageChanged = false;
+        Cancel();
+        Notice = null;
+        MissedSelection = false;
+        TranslatedSource = SourceText.Trim();
+        var text = Preprocess(SourceText, SettingsService.Current.TranslateJoinLines);
+        if (text.Length == 0)
+        {
+            Changed?.Invoke();
+            return;
+        }
+
+        if (System.Text.Encoding.UTF8.GetByteCount(text) > CopyTranslateRules.MaxSourceBytes)
+        {
+            Notice = "原文太长（上限 32 KB），请分段翻译";
+            _cards.Clear();
+            Changed?.Invoke();
+            return;
+        }
+
+        var plan = PlanFor(text, wordMode: true);
+        Detected = plan.Detected;
+        FixedSource = plan.FixedSource;
+        Target = plan.Request.To;
+        AbandonedTarget = plan.AbandonedTarget;
+        _request = plan.Request;
+        IsWordLookup = plan.Request.IsWord;
+        _recordedPrimary = null;
+        _cards.Clear();
+        if (TranslateServiceStore.Instance is { } store)
+        {
+            _cards.AddRange(store.Enabled.Select(service => new TranslateCard { Service = service }));
+        }
+
+        Changed?.Invoke();
+        foreach (var card in _cards.ToList())
         {
             _ = RunAsync(card);
         }
@@ -131,69 +216,182 @@ internal sealed class TranslateCoordinator
 
     public void Retry(string serviceId)
     {
-        var card = _cards.FirstOrDefault(item => item.Service.Id == serviceId);
-        if (card is not null)
+        if (_cards.FirstOrDefault(card => card.Service.Id == serviceId) is { } card)
         {
             _ = RunAsync(card);
         }
     }
 
+    /// <summary>停掉还在跑的服务，没出完的卡标成中断（不然隐藏的浮窗里骨架、彗星、光标停不下来）。</summary>
     public void Cancel()
     {
-        foreach (var source in _runs.Values)
+        foreach (var (_, cts) in _runs.Values)
         {
-            source.Cancel();
-            source.Dispose();
+            cts.Cancel();
+            cts.Dispose();
         }
 
         _runs.Clear();
-        foreach (var card in _cards)
+        foreach (var card in _cards.Where(card => card.State is CardState.Waiting or CardState.Running))
         {
-            if (card.State is CardState.Waiting or CardState.Running)
-            {
-                card.State = CardState.Failed;
-                card.Error = TranslateError.Interrupted;
-                card.Thinking = false;
-            }
+            card.State = CardState.Failed;
+            card.Error = TranslateError.Interrupted;
+            card.Text = string.Empty;
         }
 
         Changed?.Invoke();
     }
 
-    /// <summary>按浮窗上选的源 / 目标和本地检测定这次的请求（纯逻辑，配单测的部分在 Core）。</summary>
-    public static (LangPlan Plan, Lang? Detected) Plan(
-        string text,
-        Lang? fixedSource,
-        Lang? chosenTarget,
-        Lang first,
-        Lang second)
+    /// <summary>
+    /// Ctrl+1–9 / 卡上的复制 / 自动复制：复制这张卡当前的译文（流式中也能复制已出来的部分）；返回是否复制了（没有字时调用方出提示音）。
+    /// announces：播报「已复制译文」；自动复制不播，免得打断朗读。
+    /// </summary>
+    public bool CopyCard(string id, bool announces = true)
     {
+        if (_cards.FirstOrDefault(card => card.Service.Id == id) is not { Text.Length: > 0 } card)
+        {
+            return false;
+        }
+
+        if (!ClipboardWriter.WriteText(card.Text))
+        {
+            NoticeHost.Show("没能复制", "剪贴板被别的程序占着", NoticeTone.Error);
+            return true;
+        }
+
+        // 译文是本 App 给出的新文字：同时记进剪贴板历史。
+        ClipboardService.Instance?.MarkOwnWrite();
+        ClipboardService.Instance?.Store.RecordOwnText(card.Text);
+        CopiedCard = id;
+        if (announces)
+        {
+            Announce?.Invoke("已复制译文");
+        }
+
+        var tick = ++_copyTick;
+        Copied?.Invoke(id);
+        _ = ClearCopiedAsync(tick);
+        return true;
+    }
+
+    /// <summary>Ctrl+D / 星标：收藏或取消这次翻译（主结果定下来后才能收藏）；返回是否做了。关着历史时取消收藏 = 删掉这条。</summary>
+    public bool ToggleFavorite()
+    {
+        if (_request is not { } request || Primary is not { } primary || TranslationHistory.Instance is not { } history)
+        {
+            return false;
+        }
+
+        var favorite = !IsFavorite;
+        if (!favorite && !SettingsService.Current.TranslateHistoryEnabled)
+        {
+            history.Remove(request.Text, request.To.Code());
+        }
+        else
+        {
+            history.SetFavorite(request.Text, request.From?.Code(), request.To.Code(), primary.Text, primary.Service.Name, favorite);
+        }
+
+        Announce?.Invoke(favorite ? "已收藏" : "已取消收藏");
+        Changed?.Invoke();
+        return true;
+    }
+
+    /// <summary>
+    /// 静默替换（划词翻译并替换）：不开浮窗、不动当前会话，只用第一个启用的服务、等完整结果；记历史（开着的话）。
+    /// 不接行、不用单词模式：要替换回去的是译文、段落得保住。
+    /// </summary>
+    public static async Task<string> TranslateOnceAsync(string source, CancellationToken cancellationToken)
+    {
+        var text = Preprocess(source, joinLines: false);
+        if (text.Length == 0 || System.Text.Encoding.UTF8.GetByteCount(text) > CopyTranslateRules.MaxSourceBytes)
+        {
+            throw new TranslateError("原文为空或太长");
+        }
+
+        if (TranslateServiceStore.Instance?.Enabled.FirstOrDefault() is not { } service)
+        {
+            throw TranslateError.Config("没有启用的翻译服务");
+        }
+
+        var request = PlanFor(text, wordMode: false).Request;
+        var latest = string.Empty;
+        await foreach (var piece in TranslateServiceStore.Translate(service, request, cancellationToken)
+                           .WithCancellation(cancellationToken))
+        {
+            latest = piece;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        if (latest.Length == 0)
+        {
+            throw TranslateError.EmptyResult;
+        }
+
+        var settings = SettingsService.Current;
+        if (settings.TranslateHistoryEnabled)
+        {
+            TranslationHistory.Instance?.Add(
+                request.Text, request.From?.Code(), request.To.Code(), latest, service.Name, settings.TranslateHistoryLimit);
+        }
+
+        return latest;
+    }
+
+    /// <summary>去首尾空白、换行统一成 \n（输入框给的是 \r）；开着就把同一段里的换行接起来（段间空一行，同识字）。</summary>
+    private static string Preprocess(string source, bool joinLines)
+    {
+        var text = source.ReplaceLineEndings("\n").Trim();
+        return joinLines ? OcrText.JoiningLines(text, "\n\n") : text;
+    }
+
+    /// <summary>按浮窗上选的源 / 目标（全局记住的）和检测结果定这次的请求；wordMode：单个词时让大模型按词典格式回答。</summary>
+    private static (TranslateRequest Request, Lang? Detected, Lang? FixedSource, Lang? AbandonedTarget) PlanFor(
+        string text, bool wordMode)
+    {
+        var settings = SettingsService.Current;
+        var (first, second) = Langs.Pair(settings.TranslateFirstLanguage, settings.TranslateSecondLanguage);
         var detected = Langs.Detect(text, new[] { first, second });
-        return (Langs.Resolve(fixedSource, chosenTarget, detected, first, second), detected);
+        var chosenTarget = Langs.FromCode(settings.TranslateTarget);
+        var fixedSource = Langs.FromCode(settings.TranslateSource);
+        var plan = Langs.Resolve(fixedSource, chosenTarget, detected, first, second);
+        var isWord = wordMode && settings.TranslateWordLookup && WordLookup.IsWord(text);
+        return (new TranslateRequest(text, plan.From, plan.To, isWord), detected, fixedSource,
+            plan.FellBack ? chosenTarget : null);
     }
 
     private async Task RunAsync(TranslateCard card)
     {
-        if (_request is not { } request || TranslateServiceStore.Instance is not { } store)
+        if (_request is not { } request)
         {
             return;
         }
 
-        if (_runs.Remove(card.Service.Id, out var previous))
+        var id = card.Service.Id;
+        if (_runs.Remove(id, out var previous))
         {
-            previous.Cancel();
-            previous.Dispose();
+            previous.Cts.Cancel();
+            previous.Cts.Dispose();
         }
 
+        // 重跑的正是记过历史的那个：出来了照常再记一次、再复制一次。
+        if (_recordedPrimary == id)
+        {
+            _recordedPrimary = null;
+        }
+
+        var run = ++_runCounter;
         var cts = new CancellationTokenSource();
-        _runs[card.Service.Id] = cts;
+        _runs[id] = (run, cts);
         card.State = CardState.Waiting;
         card.Text = string.Empty;
         card.Error = null;
-        card.Thinking = false;
         Changed?.Invoke();
 
-        string latest = string.Empty;
+        // 取消后流里缓冲的增量照样会交出来：每一段都先看还是不是自己的，不然标成「已中断」的卡被改回生成中。
+        bool Current() => !cts.IsCancellationRequested && _runs.TryGetValue(id, out var entry) && entry.Run == run;
+
+        var latest = string.Empty;
         try
         {
             // R12 调试用：让请求停在等待状态，量等待动画期间的 CPU（KITTY_TRANSLATE_FAKE_DELAY_MS）。
@@ -203,109 +401,96 @@ internal sealed class TranslateCoordinator
                 await Task.Delay(fakeDelay, cts.Token);
             }
 
-            await foreach (var piece in TranslateServiceStore.Translate(
-                               card.Service, request, cts.Token).WithCancellation(cts.Token))
+            await foreach (var piece in TranslateServiceStore.Translate(card.Service, request, cts.Token)
+                               .WithCancellation(cts.Token))
             {
+                if (!Current())
+                {
+                    return;
+                }
+
                 latest = piece;
                 card.State = CardState.Running;
                 card.Text = piece;
-                card.Thinking = piece.Length == 0;
                 Changed?.Invoke();
             }
 
-            if (cts.IsCancellationRequested)
+            // 取消时流会正常结束而不是抛错：半截结果不能当成完成。
+            if (!Current())
             {
                 return;
             }
 
             card.State = CardState.Done;
             card.Text = latest;
-            card.Thinking = false;
             Changed?.Invoke();
-            if (ReferenceEquals(card, _cards.FirstOrDefault()))
-            {
-                RecordHistory(latest, card.Service.Id);
-                Finished(latest);
-            }
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
-            // 取消不算完成：不复制、不写任何地方。
+            return;
         }
-        catch (TranslateError error) when (error == TranslateError.Truncated && latest.Length > 0)
+        catch (Exception ex)
         {
-            card.State = CardState.Truncated;
-            card.Text = latest;
-            card.Thinking = false;
+            if (!Current())
+            {
+                return;
+            }
+
+            // 截断：半截照常显示、另写一行说明；不写历史、不自动复制（主结果不认它）。
+            var error = ex as TranslateError ?? new TranslateError("翻译失败，请重试");
+            var truncated = error == TranslateError.Truncated && latest.Length > 0;
+            card.State = truncated ? CardState.Truncated : CardState.Failed;
+            card.Text = truncated ? latest : string.Empty;
             card.Error = error;
-            Changed?.Invoke();
-        }
-        catch (TranslateError error)
-        {
-            card.State = CardState.Failed;
-            card.Text = latest;
-            card.Thinking = false;
-            card.Error = error;
-            Changed?.Invoke();
-        }
-        catch (Exception)
-        {
-            card.State = CardState.Failed;
-            card.Error = new TranslateError("翻译失败，请重试", TranslateErrorKind.Service);
-            card.Thinking = false;
             Changed?.Invoke();
         }
         finally
         {
-            if (_runs.TryGetValue(card.Service.Id, out var current) && current == cts)
+            if (_runs.TryGetValue(id, out var current) && current.Run == run)
             {
-                _runs.Remove(card.Service.Id);
+                _runs.Remove(id);
             }
 
             cts.Dispose();
         }
+
+        // 这一张成了、或者没成让后面已经出来的那张轮上：都在这里定主结果。
+        SettlePrimary();
     }
 
-    /// <summary>只认第一张卡：设置开了自动复制、且不是复制即译带来又没改过的原文时才复制。</summary>
-    private void Finished(string text)
+    /// <summary>主结果定下来（或换成了另一个服务的）时写历史、自动复制，同一个服务只做一次：后面的服务再出来不各复制一次。</summary>
+    private void SettlePrimary()
     {
-        if (text.Length == 0 || !SettingsService.Current.TranslateAutoCopy || WordMode)
+        if (_request is not { } request || Primary is not { } primary || primary.Service.Id == _recordedPrimary)
         {
             return;
         }
 
-        if (_copiedSource is not null && SourceText.Trim() == _copiedSource)
+        _recordedPrimary = primary.Service.Id;
+        var settings = SettingsService.Current;
+        if (settings.TranslateHistoryEnabled)
         {
-            return;
+            TranslationHistory.Instance?.Add(
+                request.Text, request.From?.Code(), request.To.Code(), primary.Text, primary.Service.Name,
+                settings.TranslateHistoryLimit);
         }
 
-        if (!ClipboardWriter.WriteText(text))
+        // 单词模式的结果是释义，不自动复制；复制即译带来、还没改过的原文也不复制。
+        if (TranslateSession.AutoCopies(settings.TranslateAutoCopy, request.IsWord, _copiedSource, TranslatedSource))
         {
-            return;
+            CopyCard(primary.Service.Id, announces: false);
         }
 
-        ClipboardService.Instance?.MarkOwnWrite();
-        ClipboardService.Instance?.Store.RecordOwnText(text);
-        Notice?.Invoke("已复制译文");
+        Changed?.Invoke();
     }
 
-    /// <summary>只有第一个服务的完成结果写历史（同自动复制），第三版 §3.1。</summary>
-    private void RecordHistory(string result, string serviceId)
+    private async Task ClearCopiedAsync(int tick)
     {
-        if (!SettingsService.Current.TranslateHistoryEnabled ||
-            TranslationHistory.Instance is not { } history ||
-            _request is not { } request ||
-            result.Length == 0)
+        await Task.Delay(CopiedHold);
+        if (tick == _copyTick)
         {
-            return;
+            CopiedCard = null;
+            Changed?.Invoke();
         }
-
-        history.Add(
-            SourceText,
-            request.From?.Code(),
-            request.To.Code(),
-            result,
-            serviceId,
-            SettingsService.Current.TranslateHistoryLimit);
     }
 }

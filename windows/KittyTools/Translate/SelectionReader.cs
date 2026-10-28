@@ -15,11 +15,12 @@ internal static class SelectionReader
 {
     public static async Task<string?> ReadAsync(CancellationToken cancellationToken)
     {
+        // 原样返回（不去首尾空白）：替换原文时照它补回原选区首尾的空白和换行（PLAN-v9-translate B7），判空交给调用方。
         var text = await ReadViaUiaAsync(cancellationToken);
         if (!string.IsNullOrWhiteSpace(text))
         {
             Log.Info($"selection.uia chars={text.Trim().Length}");
-            return text.Trim();
+            return text;
         }
 
         var copied = await ReadViaClipboardAsync(cancellationToken);
@@ -215,7 +216,7 @@ internal static class SelectionReader
 
             var read = ClipboardFormats.Read();
             var text = read?.Text;
-            return string.IsNullOrWhiteSpace(text) ? null : text.Trim();
+            return string.IsNullOrWhiteSpace(text) ? null : text;
         }
         finally
         {

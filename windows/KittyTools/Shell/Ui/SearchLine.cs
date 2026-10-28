@@ -61,15 +61,7 @@ public sealed partial class SearchLine : Grid
                 71, Theme.AccentColor.R, Theme.AccentColor.G, Theme.AccentColor.B)),
         };
         AutomationProperties.SetName(Box, placeholder);
-        foreach (var key in new[]
-                 {
-                     "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused",
-                     "TextControlBorderBrush", "TextControlBorderBrushPointerOver", "TextControlBorderBrushFocused",
-                     "TextControlElevationBorderFocusedBrush",
-                 })
-        {
-            Box.Resources[key] = new SolidColorBrush(Colors.Transparent);
-        }
+        MakePlain(Box);
 
         SetColumn(Box, 2);
         Children.Add(Box);
@@ -94,6 +86,20 @@ public sealed partial class SearchLine : Grid
 
     /// <summary>底下那条发丝线通栏（剪贴板照 mac：抵掉左右 18 的内边距）。</summary>
     public void ExtendHairline() => _hairline.Margin = new Thickness(-18, 0, -18, 0);
+
+    /// <summary>输入框去掉自己的底色和描边（悬停、拿焦点时也不画）：底和焦点环由外面那一层画（翻译的原文框、历史搜索框也用）。</summary>
+    public static void MakePlain(TextBox box)
+    {
+        foreach (var key in new[]
+                 {
+                     "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused",
+                     "TextControlBorderBrush", "TextControlBorderBrushPointerOver", "TextControlBorderBrushFocused",
+                     "TextControlElevationBorderFocusedBrush",
+                 })
+        {
+            box.Resources[key] = new SolidColorBrush(Colors.Transparent);
+        }
+    }
 
     /// <summary>下面什么都没有时（启动器的空首页）藏起发丝线，免得贴着面板底边多一条线。</summary>
     public void ShowHairline(bool shows) => _hairline.Visibility = shows ? Visibility.Visible : Visibility.Collapsed;

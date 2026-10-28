@@ -131,5 +131,23 @@ internal static class Glyphs
     public const string VolumeUp = "\uE995";
     public const string VolumeDown = "\uE993";
     public const string Command = "\uE756";
+
+    /// <summary>两个方向的箭头（翻译浮窗的互换钮、划词翻译并替换）。</summary>
+    public const string Swap = "\uE8AB";
+
+    /// <summary>钥匙（翻译卡的配置问题：缺密钥、缺地址）。</summary>
+    public const string Key = "\uE8D7";
+
+    /// <summary>朗读中（喇叭 + 声波）。</summary>
+    public const string VolumeOn = "\uE995";
+
+    /// <summary>清空输入（圆里一个叉）。</summary>
+    public const string ClearInput = "\uE894";
+
+    /// <summary>已固定（实心图钉）。</summary>
+    public const string Pinned = "\uE840";
+
+    /// <summary>往回的箭头（替换原文）。</summary>
+    public const string ReplaceBack = "\uE7A7";
     public const string Minimize = "\uE921";
 }

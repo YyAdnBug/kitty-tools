@@ -119,29 +119,29 @@ public sealed class WordLookupTests
 [TestClass]
 public sealed class HistoryExportTests
 {
+    /// <summary>和 mac 的 exportCSVAndAnkiTSV 同一组输入、同样的输出（PLAN-v9-translate B12）。</summary>
     [TestMethod]
-    public void CsvQuotesCommasQuotesAndNewlines()
+    public void CsvAndAnkiTsvMatchMac()
     {
-        var text = HistoryExport.Csv(new[]
-        {
-            new HistoryRow("a,b", "say \"hi\"", "zh-Hans", "zhipu", 0, true),
-            new HistoryRow("line1\nline2", "ok", "en", "google", 0, false),
-        });
-        StringAssert.Contains(text, "\"a,b\"");
-        StringAssert.Contains(text, "\"say \"\"hi\"\"\"");
-        StringAssert.Contains(text, "\"line1\nline2\"");
-        Assert.IsTrue(text.Contains("原文,译文,目标语言,服务,时间,收藏", StringComparison.Ordinal));
-    }
+        var shanghai = TimeZoneInfo.CreateCustomTimeZone("UTC+8", TimeSpan.FromHours(8), "UTC+8", "UTC+8");
+        var entry = new HistoryRow("say \"hi\", ok\r\nline2", "-ing\t<b>&", "zh-Hans", "智谱", 0, true);
+        var csv = HistoryExport.Csv(new[] { entry }, shanghai);
+        StringAssert.StartsWith(csv, "原文,译文,目标语言,服务,时间,收藏\r\n");
+        StringAssert.Contains(csv, "\"say \"\"hi\"\", ok\r\nline2\",");
+        StringAssert.Contains(csv, ",'-ing\t<b>&,");
+        StringAssert.Contains(csv, ",简体中文,智谱,");
+        StringAssert.EndsWith(csv, ",1970-01-01 08:00:00,是\r\n");
 
-    [TestMethod]
-    public void TsvIsOneLinePerField()
-    {
-        var text = HistoryExport.AnkiTsv(new[]
+        var tsv = HistoryExport.AnkiTsv(new[]
         {
-            new HistoryRow("a\tb\nc", "d", "zh-Hans", "zhipu", 0, true),
+            entry,
+            new HistoryRow("# Getting Started", "a\rb\u2028c", "zh-Hans", string.Empty, 0, false),
         });
-        Assert.AreEqual(1, text.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length);
-        StringAssert.Contains(text, "a b c\td");
+        Assert.AreEqual(
+            "#separator:tab\n#html:true\n" +
+            "\"say \"\"hi\"\", ok<br>line2\"\t-ing &lt;b&gt;&amp;\n" +
+            "\"# Getting Started\"\ta<br>b<br>c\n",
+            tsv);
     }
 }
 

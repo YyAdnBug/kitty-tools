@@ -66,8 +66,8 @@ internal static class Features
     {
         HotKeyActions.Clipboard => Feature.Clipboard,
         HotKeyActions.Launcher => Feature.Launcher,
-        HotKeyActions.SelectionTranslate or HotKeyActions.InputTranslate or HotKeyActions.ScreenshotTranslate =>
-            Feature.Translate,
+        HotKeyActions.SelectionTranslate or HotKeyActions.InputTranslate or HotKeyActions.ScreenshotTranslate
+            or HotKeyActions.TranslateReplace => Feature.Translate,
         HotKeyActions.Record => Feature.Recording,
         _ => Feature.Screenshot,
     };

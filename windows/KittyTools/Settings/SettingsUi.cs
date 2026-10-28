@@ -40,7 +40,7 @@ internal static class SettingsUi
             {
                 Text = description,
                 FontSize = Theme.FontSize("Kitty.FontSize.Label"),
-                Foreground = problem ? Caution() : Theme.SecondaryText(),
+                Foreground = problem ? Theme.Caution() : Theme.SecondaryText(),
                 TextWrapping = TextWrapping.Wrap,
             });
         }
@@ -100,9 +100,6 @@ internal static class SettingsUi
         AutomationProperties.SetName(card, description.Length > 0 ? $"{title}，{description}" : title);
         return card;
     }
-
-    /// <summary>配置问题的橙字。</summary>
-    public static Brush Caution() => Theme.Brush("SystemFillColorCautionBrush", Windows.UI.Color.FromArgb(255, 157, 93, 0));
 
     /// <summary>左右并排的小开关（用于卡片右侧）。</summary>
     public static ToggleSwitch Toggle(bool value, Action<bool> changed, string automationName)

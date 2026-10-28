@@ -62,7 +62,7 @@ public static class ServiceBadge
 
         var vendor = (AiEndpoint.Resolve(baseUrl, aiProtocol) is { } url ? AiEndpoint.VendorOf(url) : null)
             ?? AiEndpoint.VendorOfName(name)
-            ?? (aiProtocol == AiProtocol.Anthropic ? AiVendor.Anthropic : null);
+            ?? (aiProtocol == AiProtocol.Anthropic ? AiVendor.Anthropic : (AiVendor?)null);
         return vendor?.ToString().ToLowerInvariant();
     }
 

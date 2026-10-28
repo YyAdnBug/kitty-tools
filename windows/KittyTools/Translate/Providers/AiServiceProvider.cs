@@ -24,12 +24,8 @@ internal static class AiServiceProvider
 
         var target = request.To.EnglishName();
         var from = request.From is { } source ? $" from {source.EnglishName()}" : string.Empty;
-        var system =
-            SettingsService.Current.TranslateWordLookup && WordLookup.IsWord(request.Text)
-                ? "You are a concise dictionary. Explain the user's word in " + target +
-                  ", in the same shape as this example and nothing else:\n\n### example\n" +
-                  "**Part of speech** noun\n**Meaning** a word used as an example\n" +
-                  "**Example** This is an example. 这是一个例子。"
+        var system = request.IsWord
+                ? WordLookup.AiPrompt(request.To)
                 : "You are a translation engine. Translate the user's text" + from + " into " + target + ". " +
                   "Output only the translation: no explanations, no quotes. Keep line breaks and Markdown structure.";
 

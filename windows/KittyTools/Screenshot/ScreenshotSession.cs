@@ -780,16 +780,9 @@ internal sealed class ScreenshotSession
                 return;
             }
 
-            // 原文记进剪贴板历史，但不覆盖剪贴板（PLAN §9.4）。
-            ClipboardService.Instance?.Store.RecordOwnText(text);
-            var anchor = new PixelRect(
-                screen.Bounds.Left + (int)Math.Round(selection.X),
-                screen.Bounds.Top + (int)Math.Round(selection.Y),
-                Math.Max(1, (int)Math.Round(selection.Width)),
-                Math.Max(1, (int)Math.Round(selection.Height)));
             Finish();
-            // 浮窗贴着选区出现（PLAN-v2 §3.8）。
-            TranslateHost.ShowTextNear(text, anchor);
+            // 原文记进剪贴板历史（开了「复制识别出的原文」就当复制一次），浮窗照「浮窗位置」放（PLAN-v9-translate F6、D2）。
+            TranslateHost.ShowRecognized(text);
         }
         catch (Exception ex)
         {

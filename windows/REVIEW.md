@@ -8,6 +8,18 @@
 
 条目编号不复用。行号按条目里写的那个提交。
 
+## v9 翻译分工（2026-10-28，用户：「全部按推荐」，PLAN-v9-translate D1–D3 按推荐）
+
+翻译对齐 mac（`PLAN-v9-translate.md`）由 **审查方（Claude）在 Mac 上写、不编译**，8a–8e 一次写完、一起推。你们负责编译、单测、`--ui-snapshots`、手测（HANDTEST 581–620）；编译错直接修，在这一节下面记一句。
+
+**归审查方的文件**（这一轮别的 agent 先别改；真要改先在这里写一句再动）：`KittyTools/Translate/**`、`Settings/SettingsWindow.Translate.cs`、`Shell/Speech.cs`、`Storage/TranslationHistory.cs`、`Core/{TranslateSession,HistoryListLayout,InlineMarkdown,HistoryExport,WordLookup,AiEndpoint,ServiceBadge}.cs` 和它们的测试。
+
+- **新文件**：`Translate/{TranslateCardView,TranslateHistoryView,HistoryMenu}.cs`、`Settings/SettingsWindow.Translate.cs`（翻译页整个从 SettingsWindow.cs 挪过来，`SettingsWindow` 改成 partial）、`Shell/SystemSound.cs`、`Core/{TranslateSession,HistoryListLayout,InlineMarkdown}.cs`，测试 `TranslateSessionTests`、`HistoryListLayoutTests`、`InlineMarkdownTests`。`CardState` 挪进 Core（`KittyTools.Core.CardState`）。
+- **重写的**：`TranslateWindow.cs`（整份）、`TranslateCoordinator.cs`（整份）、`TranslateHost.cs`（整份：`ShowTextNear` 没了，截图翻译走 `ShowRecognized`；新 `TranslateAndReplace`）、`HistoryExport`（输出照 mac 变了，`HistoryExportTests` 的期望值跟着换成 mac 的那一组）、`Speech`（`Toggle` / `Speaking`，事件只挂一次、回 UI 线程发）。
+- **动了别人的文件**（都是加东西）：`App/HotKeyDefaults.cs`（`translateReplace` 加在表末尾）、`Shell/Feature.cs`、`Shell/ShellRuntime.cs`（热键分发、`ShowSettings` 多一个 `service` 参数）、`Shell/Glyphs.cs`（Swap、Key、VolumeOn、ClearInput、Pinned、ReplaceBack）、`Shell/Ui/SearchLine.cs`（`MakePlain` 抽出来给原文框、历史搜索框用）、`Screenshot/ScreenshotSession.cs`（截图翻译那几行）、`Settings/ShortcutsSheet.cs`（翻译两组）、`Settings/SettingsWindow.cs`（`ShowPage` 的 service 参数改成进详情子页、左栏换页时收起子页、删了翻译页和旧的导出对话框）、`App/Settings.cs`（四个新字段、默认宽 420、删 `TranslateReplaceHotKeySeen`）。
+- **编译时留意**：`TranslateWindow` 用 `UIElement.PreviewKeyDownEvent` 在根上统一接键；卡片的彗星边框是 `ElementCompositionPreview.SetElementChildVisual` 挂的 `ContainerVisual`（两个 `ShapeVisual`）、画刷转的是 `CompositionLinearGradientBrush.RotationAngleInDegrees`；正文是 `RichTextBlock`（Markdown 用 Run / Hyperlink 拼）；历史列表是 Canvas + 前缀和；服务详情的模型框是 `AutoSuggestBox`；`TranslateHttp.GetTextAsync` 是新的 GET。
+- **要截的图**（`--ui-snapshots` 现在只截了输入翻译空着的那一张）：浅 / 深各一张——空状态（三个入口的快捷键）、两张卡生成中（彗星边框 + 骨架）、一张完成一张配置错误、截断、历史（分组 + 选中 + 收藏星标）、历史 Ctrl+K 菜单、设置 › 翻译（字号预览卡）、服务详情（AI，模型下拉）。
+
 ## 真机反馈修复（2026-10-28 晚，审查方在 Mac 上写，**没编译**）
 
 用户试包后报的五条：设置卡有的有图标有的没有、翻译服务一行间距大、服务 logo 缺、启动器空首页多一截、Chrome「没找到书签文件」。`f7115e7`（启动器两条）、`b56ac4c`（设置和 logo），手测 HANDTEST 576–580。翻译功能本身的差异另起 `PLAN-v9-translate.md`（拍板页，等用户定）。

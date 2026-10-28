@@ -183,6 +183,76 @@ public static class AiEndpoint
         return null;
     }
 
+    /// <summary>
+    /// 取服务端模型列表的地址（设置里服务详情的「模型」下拉，mac AIService.fetchModels）：从补全后的对话地址往回退——
+    /// OpenAI 兼容 / Azure 去掉 /chat/completions 接 /models，Anthropic 去掉 /messages 接 /models?limit=1000。
+    /// </summary>
+    public static Uri? ModelsUrl(Uri chat, AiProtocol protocol)
+    {
+        var path = chat.GetLeftPart(UriPartial.Path).TrimEnd('/');
+        var root = chat.GetLeftPart(UriPartial.Authority).Length;
+        for (var step = 0; step < (protocol == AiProtocol.Anthropic ? 1 : 2); step++)
+        {
+            var slash = path.LastIndexOf('/');
+            if (slash < root)
+            {
+                return null;
+            }
+
+            path = path[..slash];
+        }
+
+        return Uri.TryCreate(path + (protocol == AiProtocol.Anthropic ? "/models?limit=1000" : "/models"), UriKind.Absolute, out var url)
+            ? url
+            : null;
+    }
+
+    /// <summary>模型列表的返回：data 或 models 数组里每一项的 id（没有就 name），去重、排序。</summary>
+    public static List<string> ParseModels(string json)
+    {
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (root.ValueKind != System.Text.Json.JsonValueKind.Object ||
+                !(root.TryGetProperty("data", out var list) || root.TryGetProperty("models", out list)) ||
+                list.ValueKind != System.Text.Json.JsonValueKind.Array)
+            {
+                return new List<string>();
+            }
+
+            var models = new SortedSet<string>(StringComparer.Ordinal);
+            foreach (var item in list.EnumerateArray())
+            {
+                if (item.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                    (item.TryGetProperty("id", out var id) || item.TryGetProperty("name", out id)) &&
+                    id.ValueKind == System.Text.Json.JsonValueKind.String && id.GetString() is { Length: > 0 } name)
+                {
+                    models.Add(name);
+                }
+            }
+
+            return models.ToList();
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return new List<string>();
+        }
+    }
+
+    /// <summary>模型框下拉里列哪些（mac TranslateServiceDetail.suggestions）：没打字时全部，打了字按包含（不分大小写）过滤；已经打全了的那个不再列。</summary>
+    public static List<string> ModelSuggestions(IReadOnlyList<string> models, string typed)
+    {
+        var query = typed.Trim();
+        if (query.Length == 0)
+        {
+            return models.ToList();
+        }
+
+        var matches = models.Where(model => model.Contains(query, StringComparison.OrdinalIgnoreCase)).ToList();
+        return matches.Count == 1 && matches[0] == query ? new List<string>() : matches;
+    }
+
     public static bool IsOpenCode(Uri url)
     {
         var host = NormalizeHost(url);

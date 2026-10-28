@@ -1,17 +1,26 @@
-// 翻译浮窗：语言胶囊、原文框、每个启用服务一张卡（等待 / 思考中 / 流式 / 完成 / 错误）。
-// 宽 460（可拖左右边改宽并记住），高度随内容，最矮 220、最高到工作区的 85%。
-// 位置：跟随鼠标（默认）或上次位置；复制即译只露出、不激活。
+// 翻译浮窗（照 mac TranslatePanelView，PLAN-v9-translate 8b–8d）：三层、没有分割线（内边距 12、层间距 10）——
+// 顶栏：两个 28 高的语言胶囊（显示实际语言，自动时带「自动」标签）+ 圆形互换钮（转半圈、两个胶囊滑着换位），右边是复制即译开着时的
+// 状态胶囊（点一下关掉）、图钉、「⋯」菜单（翻译历史 Ctrl+H、清空历史…、导出、条数、复制即译、设置… Ctrl+,）；
+// 原文框（高 76，Enter 翻译，Shift+Enter / Ctrl+Enter 换行；只在出乎所选时写一行方向说明）+ 框内一行操作（朗读原文、复制原文、清空 ｜
+// 收藏 Ctrl+D、划词来的「替换原文」），原文改过还没重译时右下角才出「翻译 ↩」；下面是各服务的结果卡（TranslateCardView，折叠按服务记住）。
+// 翻译历史（TranslateHistoryView）整块替换结果区，原文区不动。宽 420 起（只能往宽里拖，记住），高度随内容（TranslateSession.PanelHeight：
+// 最矮 220，结果卡不超过三张时全放下、多于三张时至少放下前三张）。字号可调（Ctrl+= / Ctrl+- / Ctrl+0）。
+// 位置：输入翻译总在上次的位置；划词、复制即译、截图翻译照「浮窗位置」（跟随鼠标 / 上次位置）。复制即译只露出、不激活。
+// 按键在根上统一分发（PreviewKeyDown，焦点在卡片正文、按钮上也灵；历史开着时先给它）。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 using KittyTools.Ui;
 using Microsoft.UI;
+using Microsoft.UI.Text;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Media.Animation;
 using Windows.Graphics;
 using Windows.System;
 using Windows.Win32;
@@ -23,32 +32,49 @@ namespace KittyTools;
 
 internal sealed unsafe partial class TranslateWindow : Window
 {
-    private const int MinHeightDip = 220;
-    private const int DefaultWidthDip = 420;
+    private const int MinWidthDip = 420;
+    private const double EmptyHeight = 200;
+
+    /// <summary>窗口边框（量出来的内容高再加它才是外框）。</summary>
+    private const double FrameDip = 8;
+
+    /// <summary>主键盘上的 , = -（VirtualKey 里没有名字）。</summary>
+    private const VirtualKey OemComma = (VirtualKey)188;
+    private const VirtualKey OemPlus = (VirtualKey)187;
+    private const VirtualKey OemMinus = (VirtualKey)189;
+
+    private const string SourcePlaceholder = "输入或粘贴文字，Enter 翻译，Shift+Enter 换行";
+    private const string MissedPlaceholder = "没取到选中的文字，可以直接输入或粘贴";
+
+    private readonly TranslateCoordinator _coordinator = new();
+    private readonly Dictionary<string, TranslateCardView> _cardViews = new();
 
     private readonly Grid _root;
+    private readonly StackPanel _chrome;
     private readonly Grid _topBar;
+    private readonly StackPanel _languages;
     private readonly Button _sourcePill;
     private readonly Button _targetPill;
-    private readonly ToggleButton _pinButton;
+    private readonly Button _swap;
+    private readonly FontIcon _swapIcon;
+    private readonly Button _copyBadge;
+    private readonly Button _pin;
+    private readonly FontIcon _pinIcon;
+    private readonly Border _sourceBox;
     private readonly TextBox _source;
-    private bool _composing;
-    private readonly Button _translateButton;
+    private readonly TextBlock _note;
+    private readonly Button _speakSource;
+    private readonly FontIcon _speakIcon;
+    private readonly Button _copySource;
+    private readonly Button _clearSource;
+    private readonly Button _star;
+    private readonly FontIcon _starIcon;
+    private readonly Button _replace;
+    private readonly Button _translateCapsule;
+    private readonly ScrollViewer _cardsScroll;
     private readonly StackPanel _cardsPanel;
-    private readonly TextBlock _footer;
-    private readonly ScrollViewer _scroll;
-    private readonly Grid _historyHost;
-    private readonly TextBox _historySearch;
-    private readonly ScrollViewer _historyList;
-    private readonly StackPanel _historyRows;
-    private readonly TextBlock _historyHint;
-    private readonly List<TranslationEntry> _historyEntries = new();
-    private TranslationEntry? _historySelected;
-    private bool _historyVisible;
-    private bool _historyFavoritesOnly;
-    private IntPtr _replaceTarget;
-    private readonly TranslateCoordinator _coordinator = new();
-    private readonly Dictionary<string, CardView> _cardViews = new();
+    private readonly Grid _emptyHost;
+    private readonly TranslateHistoryView _history;
 
     private HWND _hwnd;
     private HWND _previousForeground;
@@ -56,135 +82,119 @@ internal sealed unsafe partial class TranslateWindow : Window
     private bool _hiding;
     private bool _noActivate;
     private bool _resizing;
-    private int _widthDip = DefaultWidthDip;
+    private bool _quietSource;
+    private bool _composing;
+    private bool _historyVisible;
+    private int _holdOpen;
+    private int _swaps;
+    private string _emptyKey = string.Empty;
+    private int _widthDip = MinWidthDip;
     private (int X, int Y)? _dragStartCursor;
     private (int X, int Y)? _dragStartWindow;
 
     public TranslateWindow()
     {
         Title = Paths.ProductName + " 翻译";
-        _root = new Grid
-        {
-            RequestedTheme = Theme.ElementTheme,
-            Padding = new Thickness(12),
-            RowSpacing = 10,
-        };
-        _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        _root = new Grid { RequestedTheme = Theme.ElementTheme };
         _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        _topBar = new Grid { ColumnSpacing = 6, Background = new SolidColorBrush(Colors.Transparent) };
-        _topBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        _topBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        _topBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        // ---- 顶栏
+        _sourcePill = LanguagePill("源语言");
+        _sourcePill.Click += (_, _) => ShowLanguageMenu(_sourcePill, target: false);
+        _targetPill = LanguagePill("目标语言");
+        _targetPill.Click += (_, _) => ShowLanguageMenu(_targetPill, target: true);
+        _swapIcon = new FontIcon { Glyph = Glyphs.Swap, FontSize = 11, FontWeight = FontWeights.SemiBold };
+        _swap = new Button
+        {
+            Content = _swapIcon,
+            Width = 24,
+            Height = 24,
+            Padding = new Thickness(0),
+            MinWidth = 0,
+            MinHeight = 0,
+            CornerRadius = new CornerRadius(12),
+            BorderThickness = new Thickness(0),
+            Background = Theme.Brush("Kitty.Fill.Control", Theme.Argb(15, 0, 0, 0)),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        _swap.Click += (_, _) => SwapLanguages();
+        ToolTipService.SetToolTip(_swap, "交换语言");
+        AutomationProperties.SetName(_swap, "交换语言");
+        _languages = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
+        _languages.Children.Add(_sourcePill);
+        _languages.Children.Add(_swap);
+        _languages.Children.Add(_targetPill);
+
+        _copyBadge = new Button
+        {
+            Content = "复制即译",
+            Height = 22,
+            MinHeight = 0,
+            MinWidth = 0,
+            Padding = new Thickness(10, 0, 10, 0),
+            FontSize = 12,
+            FontWeight = FontWeights.Medium,
+            CornerRadius = new CornerRadius(11),
+            BorderThickness = new Thickness(0),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        _copyBadge.Click += (_, _) => SetCopyTranslate(false);
+        ToolTipService.SetToolTip(_copyBadge, "复制即译已开启：复制文字后自动翻译。点一下关闭");
+        AutomationProperties.SetName(_copyBadge, "复制即译已开启，点一下关闭");
+
+        _pinIcon = new FontIcon { Glyph = Glyphs.Pin, FontSize = 13 };
+        _pin = IconButton(_pinIcon, "固定浮窗");
+        _pin.Click += (_, _) => TogglePin();
+        var more = IconButton(new FontIcon { Glyph = Glyphs.More, FontSize = 13 }, "更多：翻译历史、导出、复制即译、设置");
+        var moreMenu = new MenuFlyout();
+        moreMenu.Opening += (_, _) => BuildMoreMenu(moreMenu);
+        more.Flyout = moreMenu;
+        var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+        tools.Children.Add(_pin);
+        tools.Children.Add(more);
+
+        _topBar = new Grid { ColumnSpacing = 8, Height = 28, Background = new SolidColorBrush(Colors.Transparent) };
         _topBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         _topBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         _topBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-        _sourcePill = Pill("自动");
-        _sourcePill.Click += (_, _) => ShowLanguageMenu(_sourcePill, target: false);
-        _targetPill = Pill("自动");
-        _targetPill.Click += (_, _) => ShowLanguageMenu(_targetPill, target: true);
-        var swap = IconButton("\uE8AB", "交换源 / 目标语言");
-        swap.Click += (_, _) => SwapLanguages();
-        var arrow = new FontIcon { Glyph = "\uE72A", FontSize = 11, Opacity = 0.6, VerticalAlignment = VerticalAlignment.Center };
-
-        var languages = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 6,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        languages.Children.Add(_sourcePill);
-        languages.Children.Add(arrow);
-        languages.Children.Add(_targetPill);
-        Grid.SetColumn(languages, 0);
-
-        var actions = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 4,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        _pinButton = new ToggleButton
-        {
-            Content = new FontIcon { Glyph = "\uE840", FontSize = 13 },
-            Padding = new Thickness(6, 2, 6, 2),
-            Background = new SolidColorBrush(Colors.Transparent),
-            BorderThickness = new Thickness(0),
-        };
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_pinButton, "固定翻译窗口");
-        ToolTipService.SetToolTip(_pinButton, "固定（点别处不收起）");
-        _pinButton.Click += (_, _) => UpdatePin();
-        var more = IconButton("\uE712", "更多");
-        var moreMenu = new MenuFlyout();
-        var copyTranslate = new ToggleMenuFlyoutItem
-        {
-            Text = "复制即译",
-            IsChecked = SettingsService.Current.CopyTranslate,
-        };
-        copyTranslate.Click += (_, _) =>
-        {
-            SettingsService.Current.CopyTranslate = copyTranslate.IsChecked;
-            SettingsService.Save();
-            TranslateHost.ApplyCopyTranslate();
-        };
-        var settings = new MenuFlyoutItem { Text = "设置…" };
-        settings.Click += (_, _) => TranslateHost.OpenSettings();
-        var close = new MenuFlyoutItem { Text = "关闭" };
-        close.Click += (_, _) => Hide(restoreForeground: true);
-        moreMenu.Items.Add(copyTranslate);
-        moreMenu.Items.Add(new MenuFlyoutSeparator());
-        moreMenu.Items.Add(settings);
-        moreMenu.Items.Add(close);
-        more.Flyout = moreMenu;
-        var closeButton = IconButton("\uE711", "关闭");
-        closeButton.Click += (_, _) => Hide(restoreForeground: true);
-        actions.Children.Add(_pinButton);
-        // 朗读原文（第三版 §3.3）。
-        var speak = IconButton("\uE767", "朗读原文");
-        speak.Click += (_, _) => SpeakSource();
-        actions.Children.Add(speak);
-        var history = IconButton("\uE81C", "历史（Ctrl+H）");
-        history.Click += (_, _) => ToggleHistory();
-        actions.Children.Add(history);
-        actions.Children.Add(more);
-        actions.Children.Add(closeButton);
-        Grid.SetColumn(actions, 5);
-
-        _topBar.Children.Add(languages);
-        _topBar.Children.Add(actions);
+        Grid.SetColumn(_copyBadge, 1);
+        Grid.SetColumn(tools, 2);
+        _topBar.Children.Add(_languages);
+        _topBar.Children.Add(_copyBadge);
+        _topBar.Children.Add(tools);
         _topBar.PointerPressed += OnTopBarPointerPressed;
         _topBar.PointerMoved += OnTopBarPointerMoved;
-        _topBar.PointerReleased += OnTopBarPointerReleased;
+        _topBar.PointerReleased += (_, _) => EndDrag();
         _topBar.PointerCaptureLost += (_, _) => EndDrag();
 
+        // ---- 原文框：输入框 + 方向说明 + 一行操作，外面一层画底和焦点环
         _source = new TextBox
         {
-            PlaceholderText = "输入要翻译的文字，Enter 翻译，Shift+Enter 换行",
-            // 多行模式才会换行：单行 TextBox 会把长原文横向截掉（Enter 由 OnSourceKeyDown 接管）。
+            PlaceholderText = SourcePlaceholder,
             AcceptsReturn = true,
             TextWrapping = TextWrapping.Wrap,
-            MinHeight = 64,
-            MaxHeight = 150,
-            Style = Theme.Style("Kitty.InputStyle"),
-            Background = Theme.Brush("Kitty.Input", Theme.Argb(11, 0, 0, 0)),
+            Height = 76,
+            Padding = new Thickness(12, 0, 12, 0),
+            Background = new SolidColorBrush(Colors.Transparent),
             BorderThickness = new Thickness(0),
-            CornerRadius = Theme.Corner("Kitty.Corner.Card"),
-            FontSize = Theme.FontSize("Kitty.FontSize.Reading"),
             VerticalContentAlignment = VerticalAlignment.Top,
         };
+        SearchLine.MakePlain(_source);
+        ScrollViewer.SetVerticalScrollBarVisibility(_source, ScrollBarVisibility.Auto);
+        AutomationProperties.SetName(_source, "原文");
         _source.TextChanged += (_, _) =>
         {
-            _coordinator.SetSource(_source.Text);
-            RefreshTranslateButton();
+            if (!_quietSource)
+            {
+                _coordinator.SetSource(_source.Text);
+            }
         };
         _source.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(OnSourceKeyDown), handledEventsToo: true);
         _source.TextCompositionStarted += (_, _) => _composing = true;
         _source.TextCompositionEnded += (_, _) => _composing = false;
+        _source.GotFocus += (_, _) => _sourceBox!.BorderBrush = new SolidColorBrush(Theme.AccentColor);
+        _source.LostFocus += (_, _) => _sourceBox!.BorderBrush = new SolidColorBrush(Colors.Transparent);
         _source.Loaded += (_, _) =>
         {
             if (_visible && !_noActivate)
@@ -193,76 +203,113 @@ internal sealed unsafe partial class TranslateWindow : Window
             }
         };
 
-        _translateButton = new Button
+        _note = new TextBlock
         {
-            Content = "翻译 ↵",
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Background = new SolidColorBrush(Theme.AccentColor),
-            Foreground = new SolidColorBrush(Theme.OnAccentColor),
-            Padding = new Thickness(12, 4, 12, 4),
+            FontSize = 11,
+            Foreground = Theme.SecondaryText(),
+            Margin = new Thickness(12, 0, 12, 0),
+            TextWrapping = TextWrapping.Wrap,
             Visibility = Visibility.Collapsed,
         };
-        _translateButton.Click += (_, _) => TranslateFromSource();
 
-        _cardsPanel = new StackPanel { Spacing = 8 };
-        _scroll = new ScrollViewer
+        _speakIcon = new FontIcon { Glyph = Glyphs.Volume, FontSize = 13 };
+        _speakSource = IconButton(_speakIcon, "朗读原文");
+        _speakSource.Click += (_, _) => Speech.Toggle(
+            _coordinator.SourceText, (_coordinator.FixedSource ?? _coordinator.Detected)?.Code() ?? SettingsService.Current.TranslateSource);
+        _copySource = IconButton(new FontIcon { Glyph = Glyphs.Copy, FontSize = 13 }, "复制原文");
+        _copySource.Click += (_, _) => CopySource();
+        _clearSource = IconButton(new FontIcon { Glyph = Glyphs.ClearInput, FontSize = 13 }, "清空");
+        _clearSource.Click += (_, _) =>
+        {
+            _coordinator.BeginInput();
+            SetSourceQuietly(string.Empty);
+            FocusSource();
+        };
+        _starIcon = new FontIcon { Glyph = Glyphs.Star, FontSize = 13 };
+        _star = IconButton(_starIcon, "收藏这次翻译（Ctrl+D），在历史里可以只看收藏");
+        _star.Click += (_, _) => _coordinator.ToggleFavorite();
+        var replaceContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        replaceContent.Children.Add(new FontIcon { Glyph = Glyphs.ReplaceBack, FontSize = 12 });
+        replaceContent.Children.Add(new TextBlock { Text = "替换原文", FontSize = 12 });
+        _replace = new Button
+        {
+            Content = replaceContent,
+            Height = 24,
+            MinHeight = 0,
+            Padding = new Thickness(6, 0, 6, 0),
+            Background = new SolidColorBrush(Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            Foreground = Theme.SecondaryText(),
+            Visibility = Visibility.Collapsed,
+        };
+        _replace.Click += (_, _) => ReplaceOriginal();
+        ToolTipService.SetToolTip(_replace, "用第一个翻译成功的服务的译文替换原文");
+        AutomationProperties.SetName(_replace, "替换原文");
+        _translateCapsule = TranslateCapsule();
+        _translateCapsule.Click += (_, _) => _coordinator.Start();
+
+        var leftActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
+        leftActions.Children.Add(_speakSource);
+        leftActions.Children.Add(_copySource);
+        leftActions.Children.Add(_clearSource);
+        var rightActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
+        rightActions.Children.Add(_star);
+        rightActions.Children.Add(_replace);
+        rightActions.Children.Add(_translateCapsule);
+        var actionRow = new Grid { Height = 24, Margin = new Thickness(10, 0, 8, 0) };
+        actionRow.Children.Add(leftActions);
+        actionRow.Children.Add(rightActions);
+
+        var sourceStack = new StackPanel { Spacing = 6 };
+        sourceStack.Children.Add(_source);
+        sourceStack.Children.Add(_note);
+        sourceStack.Children.Add(actionRow);
+        _sourceBox = new Border
+        {
+            Background = Theme.Brush("Kitty.Input", Theme.Argb(11, 0, 0, 0)),
+            CornerRadius = Theme.Corner("Kitty.Corner.Card"),
+            BorderThickness = new Thickness(1),
+            BorderBrush = new SolidColorBrush(Colors.Transparent),
+            Padding = new Thickness(0, 8, 0, 8),
+            Child = sourceStack,
+        };
+
+        _chrome = new StackPanel { Spacing = 10, Padding = new Thickness(12, 12, 12, 0) };
+        _chrome.Children.Add(_topBar);
+        _chrome.Children.Add(_sourceBox);
+        _root.Children.Add(_chrome);
+
+        // ---- 结果区：卡片 / 空状态 / 历史
+        _cardsPanel = new StackPanel { Spacing = 10, Padding = new Thickness(12, 0, 12, 10) };
+        _cardsScroll = new ScrollViewer
         {
             Content = _cardsPanel,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             VerticalScrollMode = ScrollMode.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            IsTabStop = false,
         };
-        _footer = new TextBlock
+        _emptyHost = new Grid { Height = EmptyHeight, Padding = new Thickness(20) };
+        _history = new TranslateHistoryView(
+            entry =>
+            {
+                SetSourceQuietly(entry.Source);
+                ShowHistory(false);
+                _coordinator.Translate(entry.Source);
+            },
+            () => ShowHistory(false),
+            () => AppWindow.Id,
+            hold => _holdOpen += hold ? 1 : -1)
         {
-            FontSize = 11,
-            Foreground = Theme.SecondaryText(),
-            TextTrimming = TextTrimming.CharacterEllipsis,
+            Visibility = Visibility.Collapsed,
         };
-
-        // 历史（Ctrl+H，第三版 §3.1）：原文区不动，结果区换成历史列表。
-        _historySearch = new TextBox
-        {
-            PlaceholderText = "搜索原文或译文…",
-            FontSize = 13,
-            Height = 32,
-            Margin = new Thickness(0, 0, 0, 6),
-        };
-        _historySearch.TextChanged += (_, _) => RefreshHistory();
-        _historySearch.KeyDown += OnHistoryKeyDown;
-        _historyRows = new StackPanel { Spacing = 2 };
-        _historyList = new ScrollViewer
-        {
-            Content = _historyRows,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-        };
-        _historyHint = new TextBlock
-        {
-            FontSize = 11,
-            Foreground = Theme.SecondaryText(),
-            TextTrimming = TextTrimming.CharacterEllipsis,
-        };
-        var historyGrid = new Grid();
-        historyGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        historyGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        historyGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        Grid.SetRow(_historySearch, 0);
-        Grid.SetRow(_historyList, 1);
-        Grid.SetRow(_historyHint, 2);
-        historyGrid.Children.Add(_historySearch);
-        historyGrid.Children.Add(_historyList);
-        historyGrid.Children.Add(_historyHint);
-        _historyHost = historyGrid;
-        _historyHost.Visibility = Visibility.Collapsed;
-
-        Grid.SetRow(_topBar, 0);
-        Grid.SetRow(_source, 1);
-        Grid.SetRow(_translateButton, 2);
-        Grid.SetRow(_scroll, 3);
-        Grid.SetRow(_historyHost, 3);
-        _root.Children.Add(_topBar);
-        _root.Children.Add(_source);
-        _root.Children.Add(_translateButton);
-        _root.Children.Add(_scroll);
-        _root.Children.Add(_historyHost);
+        var results = new Grid { Margin = new Thickness(0, 10, 0, 2) };
+        results.Children.Add(_cardsScroll);
+        results.Children.Add(_emptyHost);
+        results.Children.Add(_history);
+        Grid.SetRow(results, 1);
+        _root.Children.Add(results);
+        _root.AddHandler(UIElement.PreviewKeyDownEvent, new KeyEventHandler(OnRootPreviewKeyDown), handledEventsToo: true);
 
         Content = _root;
         SystemBackdrop = new AcrylicBackdrop();
@@ -287,37 +334,72 @@ internal sealed unsafe partial class TranslateWindow : Window
         Activated += OnActivated;
         AppWindow.Changed += OnWindowChanged;
         _coordinator.Changed += OnCoordinatorChanged;
-        _coordinator.Notice += message => NoticeHost.Show("翻译", message, NoticeTone.Normal);
-        _widthDip = (int)Math.Round(SettingsService.Current.TranslateWindowWidth);
+        _coordinator.Copied += id =>
+        {
+            if (_cardViews.TryGetValue(id, out var view))
+            {
+                view.FlashCopy();
+            }
+        };
+        _coordinator.Announce += Announce;
+        Speech.Changed += OnSpeechChanged;
+        _widthDip = Math.Max(MinWidthDip, (int)Math.Round(SettingsService.Current.TranslateWindowWidth));
+        ApplyFontScale();
+        RefreshAll();
     }
 
     public bool IsVisible => _visible;
 
+    /// <summary>最近一次翻译的原文（复制即译拿它去重）。</summary>
+    public string? TranslatedSource => _coordinator.TranslatedSource;
+
+    public void MarkLanguagesChanged()
+    {
+        if (_visible)
+        {
+            if (_coordinator.SourceText.Trim().Length > 0)
+            {
+                _coordinator.Start();
+            }
+        }
+        else
+        {
+            _coordinator.LanguageChanged = true;
+        }
+    }
+
+    public void AuditAccessibility() => AccessibilityAudit.Run(_root, "translate");
+
+    // ---- 入口
+
+    /// <summary>输入翻译：保留上次的原文和结果、原文全选（直接打字就替换），上次收起时中断的卡重跑；总在上次的位置。划词没取到字时清空。</summary>
     public void ShowInput(bool missedSelection)
     {
         _noActivate = false;
         RemoveNoActivateStyle();
-        _source.PlaceholderText = missedSelection
-            ? "没取到选中的文字，可以直接输入或粘贴"
-            : "输入要翻译的文字，Enter 翻译，Shift+Enter 换行";
         if (missedSelection)
         {
-            _source.Text = string.Empty;
+            _coordinator.BeginInput(missedSelection: true);
+        }
+        else
+        {
+            _coordinator.ResumeInput();
         }
 
-        ShowCore(activate: true, () => PositionAtPointer(save: false));
+        SetSourceQuietly(_coordinator.SourceText);
+        ShowCore(activate: true, followMouse: false);
         ActivateWindow();
         FocusSource();
         _source.SelectAll();
-        UpdateHeader();
     }
-    public void ShowSelection(string text)
+
+    public void ShowSelection(string text, ReplaceTarget? replace)
     {
         _noActivate = false;
         RemoveNoActivateStyle();
-        _source.Text = text;
-        ShowCore(activate: true, () => PositionAtPointer(save: false));
-        _coordinator.Translate(text);
+        SetSourceQuietly(text);
+        _coordinator.Translate(text, replace);
+        ShowCore(activate: true, followMouse: FollowsMouse);
         ActivateWindow();
         FocusSource();
     }
@@ -325,64 +407,40 @@ internal sealed unsafe partial class TranslateWindow : Window
     public void ShowText(string text, bool fromCopy)
     {
         _noActivate = fromCopy;
-        _source.Text = text;
+        SetSourceQuietly(text);
+        _coordinator.Translate(text, fromCopy: fromCopy);
         if (fromCopy)
         {
             ApplyNoActivateStyle();
-            ShowCore(activate: false, () => PositionAtPointer(save: false));
-            _coordinator.Translate(text, fromCopy);
+            ShowCore(activate: false, followMouse: FollowsMouse);
             PInvoke.ShowWindow(_hwnd, (SHOW_WINDOW_CMD)4); // SW_SHOWNOACTIVATE
             OutsideClickHook.Install(_hwnd, () => Hide(restoreForeground: false));
             ResizeToContent();
+            return;
         }
-        else
-        {
-            RemoveNoActivateStyle();
-            ShowCore(activate: true, () => PositionAtPointer(save: false));
-            _coordinator.Translate(text, fromCopy);
-            ActivateWindow();
-            FocusSource();
-        }
+
+        RemoveNoActivateStyle();
+        ShowCore(activate: true, followMouse: FollowsMouse);
+        ActivateWindow();
+        FocusSource();
     }
 
-    /// <summary>
-    /// 剪贴板里的「翻译」（Ctrl+T）：浮窗只露出、不抢焦点，剪贴板面板留着（PLAN §7.4）。
-    /// 面板还在前台，所以这里不能激活；点浮窗外面（包括点回面板）自己收起。
-    /// </summary>
+    /// <summary>剪贴板里的「翻译」（Ctrl+T）：浮窗只露出、不抢焦点，剪贴板面板留着（PLAN §7.4）；点浮窗外面自己收起。</summary>
     public void ShowTextPassive(string text)
     {
         _noActivate = true;
         ApplyNoActivateStyle();
-        _source.Text = text;
-        ShowCore(activate: false, () => PositionAtPointer(save: false));
+        SetSourceQuietly(text);
         _coordinator.Translate(text);
+        ShowCore(activate: false, followMouse: FollowsMouse);
         PInvoke.ShowWindow(_hwnd, (SHOW_WINDOW_CMD)4); // SW_SHOWNOACTIVATE
         OutsideClickHook.Install(_hwnd, () => Hide(restoreForeground: false));
         ResizeToContent();
     }
 
-    /// <summary>
-    /// 截图翻译：浮窗贴着选区出现（PLAN-v2 §3.8）。其它行为和输入翻译一样（要拿焦点才能选中原文）。
-    /// </summary>
-    public void ShowTextNear(string text, PixelRect anchor)
-    {
-        _noActivate = false;
-        RemoveNoActivateStyle();
-        _source.Text = text;
-        ShowCore(activate: true, () =>
-        {
-            var display = Displays.AtPoint(anchor.X, anchor.Y);
-            var rect = MonitorLayout.NearRect(anchor, display.Work, display.Scale, _widthDip, NeededHeightDip());
-            AppWindow.MoveAndResize(new RectInt32(rect.X, rect.Y, rect.Width, rect.Height));
-        });
-        _coordinator.Translate(text);
-        ActivateWindow();
-        FocusSource();
-        DispatcherQueue.TryEnqueue(ResizeToContent);
-    }
-
     public void ToggleInput()
-    {        if (_visible && !_noActivate)
+    {
+        if (_visible && !_noActivate)
         {
             Hide(restoreForeground: true);
             return;
@@ -406,9 +464,7 @@ internal sealed unsafe partial class TranslateWindow : Window
             Speech.Stop();
             if (_historyVisible)
             {
-                _historyVisible = false;
-                _historyHost.Visibility = Visibility.Collapsed;
-                _scroll.Visibility = Visibility.Visible;
+                ShowHistory(false);
             }
 
             SaveGeometry();
@@ -427,48 +483,34 @@ internal sealed unsafe partial class TranslateWindow : Window
         }
     }
 
+    /// <summary>宽和位置不管哪种「浮窗位置」都记（输入翻译总在上次的位置）。</summary>
     public void SaveGeometry()
     {
         var settings = SettingsService.Current;
-        var changed = Math.Abs(settings.TranslateWindowWidth - _widthDip) >= 1;
-        settings.TranslateWindowWidth = _widthDip;
-        if (settings.TranslateWindowPosition == "last")
+        var position = AppWindow.Position;
+        if (Math.Abs(settings.TranslateWindowWidth - _widthDip) < 1 &&
+            (int)settings.TranslateWindowX == position.X && (int)settings.TranslateWindowY == position.Y)
         {
-            var position = AppWindow.Position;
-            if ((int)settings.TranslateWindowX != position.X || (int)settings.TranslateWindowY != position.Y)
-            {
-                settings.TranslateWindowX = position.X;
-                settings.TranslateWindowY = position.Y;
-                changed = true;
-            }
+            return;
         }
 
-        if (changed)
-        {
-            SettingsService.Save();
-        }
+        settings.TranslateWindowWidth = _widthDip;
+        settings.TranslateWindowX = position.X;
+        settings.TranslateWindowY = position.Y;
+        SettingsService.Save();
     }
 
-    /// <param name="place">挪到该在的位置。在 Show 之前调：以前先在上次收起的地方露出来再挪，
-    /// 截图翻译的浮窗看着像从别处飘到选区旁边（0.1.0 用户反馈）。</param>
-    private void ShowCore(bool activate, Action place)
+    private static bool FollowsMouse => SettingsService.Current.TranslateWindowPosition != "last";
+
+    private void ShowCore(bool activate, bool followMouse)
     {
         IdleReclaimer.Cancel();
         _root.RequestedTheme = Theme.ElementTheme;
-
         var before = Foreground.Get();
-        if (before != default && !Foreground.IsOurs(before))
-        {
-            _previousForeground = before;
-        }
-        else
-        {
-            // REVIEW R56：「替换原文」的目标同上：前台是自己的窗口时不知道要换哪儿，只复制。
-            _previousForeground = default;
-        }
-
-        _replaceTarget = (IntPtr)_previousForeground.Value;
-        place();
+        _previousForeground = before != default && !Foreground.IsOurs(before) ? before : default;
+        ApplyFontScale();
+        RefreshAll();
+        Place(followMouse);
         if (!_visible)
         {
             _visible = true;
@@ -483,9 +525,6 @@ internal sealed unsafe partial class TranslateWindow : Window
             }
         }
 
-        _pinButton.IsChecked = SettingsService.Current.TranslatePinned;
-        UpdateHeader();
-        RebuildFooter();
         // 入场：透明度 0→1 + 下落 6 px（减弱动画时只淡入）。
         Motion.Entrance(_root);
         Log.Info($"translate.show activate={activate}");
@@ -500,9 +539,13 @@ internal sealed unsafe partial class TranslateWindow : Window
 
     private void FocusSource()
     {
-        var focused = _source.Focus(FocusState.Programmatic);
-        Log.Info($"translate.focus ok={focused}");
-        if (!focused)
+        if (_historyVisible)
+        {
+            _history.FocusSearch();
+            return;
+        }
+
+        if (!_source.Focus(FocusState.Programmatic))
         {
             _ = FocusManager.TryFocusAsync(_source, FocusState.Programmatic);
         }
@@ -511,7 +554,7 @@ internal sealed unsafe partial class TranslateWindow : Window
     private void OnActivated(object sender, WindowActivatedEventArgs args)
     {
         if (args.WindowActivationState == WindowActivationState.Deactivated && _visible && !_hiding &&
-            SettingsService.Current.TranslatePinned is false && !_noActivate)
+            !SettingsService.Current.TranslatePinned && !_noActivate && _holdOpen <= 0)
         {
             Hide(restoreForeground: false);
             return;
@@ -523,489 +566,650 @@ internal sealed unsafe partial class TranslateWindow : Window
         }
     }
 
+    /// <summary>拖边改宽：记住；比 420 窄就弹回 420（B16）。</summary>
     private void OnWindowChanged(AppWindow sender, AppWindowChangedEventArgs args)
     {
-        if (args.DidSizeChange && !_resizing && sender.Size.Width > 0)
-        {
-            var scale = Displays.AtWindow(_hwnd).Scale;
-            _widthDip = (int)Math.Round(sender.Size.Width / scale);
-        }
-    }
-
-    private void OnSourceKeyDown(object sender, KeyRoutedEventArgs e)
-    {
-        // REVIEW R64 E：组字时的 Enter 是上屏，不是翻译（同剪贴板面板）。
-        if (_composing || e.Key == (VirtualKey)0xE5)
+        if (!args.DidSizeChange || _resizing || sender.Size.Width <= 0)
         {
             return;
         }
 
-        var control = IsDown(VirtualKey.Control);
+        var scale = Displays.AtWindow(_hwnd).Scale;
+        var width = (int)Math.Round(sender.Size.Width / scale);
+        _widthDip = Math.Max(MinWidthDip, width);
+        if (width < MinWidthDip)
+        {
+            DispatcherQueue.TryEnqueue(ResizeToContent);
+        }
+    }
+
+    // ---- 按键
+
+    private void OnRootPreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Handled || _composing || e.Key == (VirtualKey)0xE5)
+        {
+            return;
+        }
+
+        var control = IsDown(VirtualKey.Control) && !IsDown(VirtualKey.Menu);
+        var shift = IsDown(VirtualKey.Shift);
+        if (_historyVisible && _history.HandleKey(e, control, shift))
+        {
+            e.Handled = true;
+            return;
+        }
+
+        var handled = true;
         switch (e.Key)
         {
-            case VirtualKey.Enter when !IsDown(VirtualKey.Shift):
-                e.Handled = true;
-                TranslateFromSource();
-                break;
-            case VirtualKey.Enter:
-                e.Handled = true;
-                InsertNewline();
-                break;
             case VirtualKey.Escape:
-                e.Handled = true;
-                if (_historyVisible)
+                Hide(restoreForeground: true);
+                break;
+            case VirtualKey.H when control:
+                ShowHistory(!_historyVisible);
+                break;
+            case OemComma when control:
+                TranslateHost.OpenSettings();
+                break;
+            case VirtualKey.R when control:
+                if (_coordinator.SourceText.Trim().Length == 0)
                 {
-                    ToggleHistory();
+                    SystemSound.Beep();
                 }
                 else
                 {
-                    Hide(restoreForeground: true);
+                    _coordinator.Start();
                 }
 
                 break;
-            case VirtualKey.H when control:
-                e.Handled = true;
-                ToggleHistory();
-                break;
-            case VirtualKey.W when control:
-                e.Handled = true;
-                Hide(restoreForeground: true);
+            case VirtualKey.D when control && !_historyVisible:
+                if (!_coordinator.ToggleFavorite())
+                {
+                    SystemSound.Beep();
+                }
+
                 break;
             case VirtualKey.P when control:
-                e.Handled = true;
-                _pinButton.IsChecked = !(_pinButton.IsChecked == true);
-                UpdatePin();
+                TogglePin();
+                break;
+            case VirtualKey.W when control:
+                Hide(restoreForeground: true);
+                break;
+            case OemPlus or VirtualKey.Add when control: // Ctrl+= / 小键盘 +
+                SetFontScale(SettingsService.Current.TranslateFontScale + 0.1);
+                break;
+            case OemMinus or VirtualKey.Subtract when control: // Ctrl+- / 小键盘 -
+                SetFontScale(SettingsService.Current.TranslateFontScale - 0.1);
+                break;
+            case VirtualKey.Number0 or VirtualKey.NumberPad0 when control:
+                SetFontScale(1.0);
                 break;
             case >= VirtualKey.Number1 and <= VirtualKey.Number9 when control:
-                e.Handled = true;
-                CopyCard((int)e.Key - (int)VirtualKey.Number1);
+                var index = (int)e.Key - (int)VirtualKey.Number1;
+                if (index >= _coordinator.Cards.Count || !_coordinator.CopyCard(_coordinator.Cards[index].Service.Id))
+                {
+                    SystemSound.Beep();
+                }
+
+                break;
+            default:
+                handled = false;
                 break;
         }
+
+        e.Handled = handled;
     }
 
-    private void TranslateFromSource()
+    /// <summary>原文框：Enter 翻译，Shift+Enter / Ctrl+Enter 换行（组字时的 Enter 是上屏，不管）。</summary>
+    private void OnSourceKeyDown(object sender, KeyRoutedEventArgs e)
     {
-        var text = _source.Text;
-        if (string.IsNullOrWhiteSpace(text))
+        if (e.Key != VirtualKey.Enter || _composing || IsDown(VirtualKey.Menu))
         {
             return;
         }
 
-        _coordinator.Translate(text);
+        e.Handled = true;
+        if (IsDown(VirtualKey.Shift) || IsDown(VirtualKey.Control))
+        {
+            InsertNewline();
+        }
+        else if (_source.Text.Trim().Length > 0)
+        {
+            _coordinator.Start();
+        }
     }
 
     private void InsertNewline()
     {
         var caret = _source.SelectionStart;
-        var length = _source.SelectionLength;
         var text = _source.Text;
-        _source.Text = text.Remove(caret, length).Insert(caret, "\n");
+        _source.Text = text.Remove(caret, _source.SelectionLength).Insert(caret, "\r");
         _source.SelectionStart = caret + 1;
+    }
+
+    // ---- 顶栏
+
+    private void TogglePin()
+    {
+        SettingsService.Current.TranslatePinned = !SettingsService.Current.TranslatePinned;
+        SettingsService.Save();
+        UpdatePin();
     }
 
     private void UpdatePin()
     {
-        SettingsService.Current.TranslatePinned = _pinButton.IsChecked == true;
-        SettingsService.Save();
-        ToolTipService.SetToolTip(_pinButton, SettingsService.Current.TranslatePinned ? "已固定（Esc 仍可关闭）" : "固定（点别处不收起）");
+        var pinned = SettingsService.Current.TranslatePinned;
+        _pinIcon.Glyph = pinned ? Glyphs.Pinned : Glyphs.Pin;
+        _pinIcon.Foreground = pinned ? new SolidColorBrush(Theme.AccentColor) : Theme.SecondaryText();
+        ToolTipService.SetToolTip(_pin, pinned ? "已固定：点别处不收起（Ctrl+P）" : "固定浮窗（Ctrl+P）");
+        AutomationProperties.SetItemStatus(_pin, pinned ? "已固定" : "未固定");
     }
 
-    // ---- 历史（第三版 §3.1）----
-
-    public bool HistoryVisible => _historyVisible;
-
-    /// <summary>Ctrl+H：结果区换成历史列表；再按一次回来。</summary>
-    public void AuditAccessibility() => AccessibilityAudit.Run(_root, "translate");
-
-    public void ToggleHistory()
+    private void SetCopyTranslate(bool on)
     {
-        _historyVisible = !_historyVisible;
-        _historyHost.Visibility = _historyVisible ? Visibility.Visible : Visibility.Collapsed;
-        _scroll.Visibility = _historyVisible ? Visibility.Collapsed : Visibility.Visible;
-        _translateButton.Visibility = Visibility.Collapsed;
-        if (_historyVisible)
+        SettingsService.Current.CopyTranslate = on;
+        SettingsService.Save();
+        TranslateHost.ApplyCopyTranslate();
+        UpdateCopyBadge();
+    }
+
+    private void UpdateCopyBadge()
+    {
+        var on = SettingsService.Current.CopyTranslate;
+        _copyBadge.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        var accent = Theme.AccentColor;
+        _copyBadge.Background = new SolidColorBrush(Theme.Argb(41, accent.R, accent.G, accent.B));
+        _copyBadge.Foreground = new SolidColorBrush(Theme.AccentTextColor);
+    }
+
+    /// <summary>「⋯」菜单（F8）：翻译历史、清空历史…、导出（4 种）、条数、复制即译、设置…；键位写在菜单项右边（按键在根上已经处理）。</summary>
+    private void BuildMoreMenu(MenuFlyout menu)
+    {
+        menu.Items.Clear();
+        var (total, favorites) = TranslationHistory.Instance?.Counts() ?? (0, 0);
+        var history = new ToggleMenuFlyoutItem { Text = "翻译历史", IsChecked = _historyVisible, KeyboardAcceleratorTextOverride = "Ctrl+H" };
+        history.Click += (_, _) => ShowHistory(!_historyVisible);
+        var clear = new MenuFlyoutItem { Text = "清空历史…", IsEnabled = total > favorites, Foreground = Theme.Critical() };
+        clear.Click += (_, _) => _ = HistoryMenu.ConfirmClearAsync(_root.XamlRoot);
+        var export = new MenuFlyoutSubItem { Text = "导出", IsEnabled = total > 0 };
+        foreach (var (favoritesOnly, anki, title) in HistoryMenu.Exports)
         {
-            RefreshHistory();
-            _historySearch.Focus(FocusState.Programmatic);
+            var item = new MenuFlyoutItem { Text = title };
+            item.Click += (_, _) => _ = ExportAsync(favoritesOnly, anki);
+            export.Items.Add(item);
+        }
+
+        var counts = new MenuFlyoutItem { Text = $"共 {total} 条 · 收藏 {favorites}", IsEnabled = false };
+        var copyTranslate = new ToggleMenuFlyoutItem { Text = "复制即译", IsChecked = SettingsService.Current.CopyTranslate };
+        copyTranslate.Click += (_, _) => SetCopyTranslate(copyTranslate.IsChecked);
+        var settings = new MenuFlyoutItem { Text = "设置…", KeyboardAcceleratorTextOverride = "Ctrl+," };
+        settings.Click += (_, _) => TranslateHost.OpenSettings();
+        menu.Items.Add(history);
+        menu.Items.Add(clear);
+        menu.Items.Add(export);
+        menu.Items.Add(counts);
+        menu.Items.Add(new MenuFlyoutSeparator());
+        menu.Items.Add(copyTranslate);
+        menu.Items.Add(new MenuFlyoutSeparator());
+        menu.Items.Add(settings);
+    }
+
+    private async Task ExportAsync(bool favoritesOnly, bool anki)
+    {
+        // 文件对话框是另一扇窗：开着时浮窗别因为失去激活收起来。
+        _holdOpen++;
+        try
+        {
+            await HistoryMenu.ExportAsync(AppWindow.Id, favoritesOnly, anki);
+        }
+        finally
+        {
+            _holdOpen--;
+        }
+    }
+
+    // ---- 语言
+
+    /// <summary>源胶囊：固定的写语言名；自动时写检测到的（还没翻译时「自动检测」）。目标同理（还没翻译时「自动」）。</summary>
+    private void UpdateHeader()
+    {
+        var settings = SettingsService.Current;
+        var source = Langs.FromCode(settings.TranslateSource);
+        var target = Langs.FromCode(settings.TranslateTarget);
+        var sourceTitle = source?.Title() ?? (_coordinator.FixedSource ?? _coordinator.Detected)?.Title() ?? "自动检测";
+        var targetTitle = target?.Title() ?? _coordinator.Target?.Title() ?? "自动";
+        SetPill(_sourcePill, sourceTitle, source is null && sourceTitle != "自动检测");
+        SetPill(_targetPill, targetTitle, target is null && targetTitle != "自动");
+        var bothAuto = source is null && target is null;
+        _swap.IsEnabled = !bothAuto;
+        _swap.Opacity = bothAuto ? 0.35 : 1;
+    }
+
+    private void ShowLanguageMenu(Button anchor, bool target)
+    {
+        var settings = SettingsService.Current;
+        var current = target ? settings.TranslateTarget : settings.TranslateSource;
+        var menu = new MenuFlyout();
+        var (first, second) = Langs.Pair(settings.TranslateFirstLanguage, settings.TranslateSecondLanguage);
+        var auto = new ToggleMenuFlyoutItem
+        {
+            Text = target ? $"自动（{first.Title()} ⇄ {second.Title()}）" : "自动检测",
+            IsChecked = current is null,
+        };
+        auto.Click += (_, _) => Choose(target, null);
+        menu.Items.Add(auto);
+        menu.Items.Add(new MenuFlyoutSeparator());
+        foreach (var lang in Enum.GetValues<Lang>())
+        {
+            var code = lang.Code();
+            var item = new ToggleMenuFlyoutItem { Text = lang.Title(), IsChecked = current == code };
+            item.Click += (_, _) => Choose(target, code);
+            menu.Items.Add(item);
+        }
+
+        menu.ShowAt(anchor);
+    }
+
+    /// <summary>选成和另一边相同的固定语言时，另一边换成这边原来的值（像交换一样），不会出现「英 → 英」（B3）。</summary>
+    private void Choose(bool target, string? code)
+    {
+        var settings = SettingsService.Current;
+        var mine = target ? settings.TranslateTarget : settings.TranslateSource;
+        var other = target ? settings.TranslateSource : settings.TranslateTarget;
+        if (code is not null && code == other)
+        {
+            other = mine;
+        }
+
+        (settings.TranslateSource, settings.TranslateTarget) = target ? (other, code) : (code, other);
+        SettingsService.Save();
+        Retranslate();
+    }
+
+    /// <summary>原样互换，「自动」也照换（B2）；箭头转半圈、两个胶囊滑着换位（Glide）。</summary>
+    private void SwapLanguages()
+    {
+        var settings = SettingsService.Current;
+        if (settings.TranslateSource is null && settings.TranslateTarget is null)
+        {
+            return;
+        }
+
+        var oldTargetX = _targetPill.TransformToVisual(_languages).TransformPoint(default).X;
+        (settings.TranslateSource, settings.TranslateTarget) = (settings.TranslateTarget, settings.TranslateSource);
+        SettingsService.Save();
+        _swaps++;
+        UpdateHeader();
+        if (!Motion.Reduced)
+        {
+            var icon = ElementCompositionPreview.GetElementVisual(_swapIcon);
+            icon.CenterPoint = new System.Numerics.Vector3((float)_swapIcon.ActualWidth / 2, (float)_swapIcon.ActualHeight / 2, 0);
+            var turn = icon.Compositor.CreateScalarKeyFrameAnimation();
+            turn.InsertKeyFrame(1f, _swaps * 180f);
+            turn.Duration = TimeSpan.FromSeconds(0.3);
+            icon.StartAnimation("RotationAngleInDegrees", turn);
+
+            // 新的源胶囊是原来右边那个、新的目标胶囊是原来左边那个：各从原来的位置滑过来。
+            _languages.UpdateLayout();
+            var newTargetX = _targetPill.TransformToVisual(_languages).TransformPoint(default).X;
+            Motion.SlideTo(_sourcePill, oldTargetX, 0, MotionCurve.Instant);
+            Motion.SlideTo(_sourcePill, 0, 0, MotionCurve.Glide);
+            Motion.SlideTo(_targetPill, -newTargetX, 0, MotionCurve.Instant);
+            Motion.SlideTo(_targetPill, 0, 0, MotionCurve.Glide);
+        }
+
+        Retranslate();
+    }
+
+    /// <summary>换了源 / 目标：浮窗开着、有原文才重译。</summary>
+    private void Retranslate()
+    {
+        UpdateHeader();
+        if (_coordinator.SourceText.Trim().Length > 0)
+        {
+            _coordinator.Start();
+        }
+    }
+
+    // ---- 原文区
+
+    private void SetSourceQuietly(string text)
+    {
+        _quietSource = true;
+        _source.Text = text;
+        _source.SelectionStart = text.Length;
+        _quietSource = false;
+    }
+
+    private void RefreshSourceArea()
+    {
+        _source.PlaceholderText = _coordinator.MissedSelection ? MissedPlaceholder : SourcePlaceholder;
+        var note = DirectionNote();
+        _note.Text = note ?? string.Empty;
+        _note.Visibility = note is null ? Visibility.Collapsed : Visibility.Visible;
+        var hasSource = _coordinator.SourceText.Length > 0;
+        _speakSource.IsEnabled = _copySource.IsEnabled = _clearSource.IsEnabled = hasSource;
+        var speaking = hasSource && Speech.Speaking == _coordinator.SourceText;
+        _speakIcon.Glyph = speaking ? Glyphs.VolumeOn : Glyphs.Volume;
+        _speakIcon.Foreground = speaking ? new SolidColorBrush(Theme.AccentColor) : Theme.SecondaryText();
+        var favorite = _coordinator.IsFavorite;
+        _star.IsEnabled = _coordinator.Primary is not null;
+        _starIcon.Glyph = favorite ? Glyphs.StarFilled : Glyphs.Star;
+        _starIcon.Foreground = favorite ? Theme.Brush("Kitty.Favorite", Theme.Argb(255, 0xFF, 0xCC, 0x00)) : Theme.SecondaryText();
+        AutomationProperties.SetName(_star, favorite ? "取消收藏" : "收藏");
+        // 查单个词时结果是一段释义，不能拿去替换。
+        _replace.Visibility = _coordinator.Replace is not null && !_coordinator.IsWordLookup ? Visibility.Visible : Visibility.Collapsed;
+        _replace.IsEnabled = _coordinator.CanReplace;
+        var needs = _coordinator.NeedsTranslate;
+        if (needs != (_translateCapsule.Visibility == Visibility.Visible))
+        {
+            _translateCapsule.Visibility = needs ? Visibility.Visible : Visibility.Collapsed;
+            if (needs)
+            {
+                Motion.Appear(_translateCapsule);
+            }
+        }
+    }
+
+    /// <summary>只在出乎所选时写一行：固定目标正好是原文语言而改译了另一端；固定源和检测结果对不上（照所选发出，只提示）。</summary>
+    private string? DirectionNote()
+    {
+        if (_coordinator.AbandonedTarget is { } abandoned && _coordinator.Target is { } to)
+        {
+            return $"原文已是{abandoned.Title()}，改译成{to.Title()}";
+        }
+
+        if (_coordinator.FixedSource is { } fixedSource && _coordinator.Detected is { } detected && !detected.SameLanguage(fixedSource))
+        {
+            return $"检测到{detected.Title()}，仍按{fixedSource.Title()}翻译";
+        }
+
+        return null;
+    }
+
+    private void CopySource()
+    {
+        var text = _coordinator.SourceText;
+        if (text.Length == 0 || !ClipboardWriter.WriteText(text))
+        {
+            return;
+        }
+
+        ClipboardService.Instance?.MarkOwnWrite();
+        ClipboardService.Instance?.Store.RecordOwnText(text);
+        NoticeHost.Show("已复制原文", TranslateSession.Excerpt(text), NoticeTone.Normal);
+    }
+
+    /// <summary>
+    /// 替换原文（B7）：用主结果、照原选区补回首尾的空白；先收起浮窗再粘回取词时的窗口。那扇窗已经不是取词的那个程序了就只复制。
+    /// </summary>
+    private void ReplaceOriginal()
+    {
+        if (_coordinator.Replace is not { } target || _coordinator.Primary is not { } primary || _coordinator.IsWordLookup)
+        {
+            return;
+        }
+
+        var result = TranslateSession.Rewrap(primary.Text, target.Text);
+        Hide(restoreForeground: false);
+        if (target.Window == default || Foreground.PidOf(target.Window) != target.ProcessId)
+        {
+            if (ClipboardWriter.WriteText(result))
+            {
+                ClipboardService.Instance?.MarkOwnWrite();
+                ClipboardService.Instance?.Store.RecordOwnText(result);
+            }
+
+            NoticeHost.Show("已复制译文", "取词的窗口已经关了，没有替换", NoticeTone.Normal);
+            return;
+        }
+
+        // REVIEW R60：失败时 Paster 已经弹了具体原因（没能切回原窗口 / 管理员窗口 / 剪贴板被占），这里不再另报。
+        if (Paster.Paste(target.Window, () => ClipboardWriter.WriteText(result), ClipboardService.Instance))
+        {
+            ClipboardService.Instance?.Store.RecordOwnText(result);
+            NoticeHost.Show("已替换原文", TranslateSession.Excerpt(result), NoticeTone.Normal);
+        }
+    }
+
+    // ---- 字号
+
+    private void SetFontScale(double scale)
+    {
+        var clamped = Math.Round(Math.Clamp(scale, 0.8, 1.6), 1);
+        if (Math.Abs(clamped - SettingsService.Current.TranslateFontScale) < 0.001)
+        {
+            return;
+        }
+
+        SettingsService.Current.TranslateFontScale = clamped;
+        SettingsService.Save();
+        ApplyFontScale();
+        RefreshResults();
+        ResizeToContent();
+    }
+
+    private void ApplyFontScale() => _source.FontSize = 15 * SettingsService.Current.TranslateFontScale;
+
+    // ---- 结果区
+
+    private void OnCoordinatorChanged()
+    {
+        RefreshSourceArea();
+        UpdateHeader();
+        RefreshResults();
+        ResizeToContent();
+    }
+
+    private void RefreshAll()
+    {
+        UpdatePin();
+        UpdateCopyBadge();
+        UpdateHeader();
+        RefreshSourceArea();
+        RefreshResults();
+    }
+
+    /// <summary>结果区：有提示 → 提示；没有启用的服务 → 去设置；还没翻译 → 三个入口和它们的快捷键；否则是卡片。历史开着时整块是历史。</summary>
+    private void RefreshResults()
+    {
+        var mode = _coordinator.Notice is { } notice
+            ? "notice:" + notice
+            : TranslateServiceStore.Instance?.Enabled.Any() != true
+                ? "none"
+                : _coordinator.Cards.Count == 0 ? "empty" : "cards";
+        var showsCards = mode == "cards";
+        _cardsScroll.Visibility = showsCards && !_historyVisible ? Visibility.Visible : Visibility.Collapsed;
+        _emptyHost.Visibility = !showsCards && !_historyVisible ? Visibility.Visible : Visibility.Collapsed;
+        if (!showsCards && mode != _emptyKey)
+        {
+            _emptyKey = mode;
+            _emptyHost.Children.Clear();
+            _emptyHost.Children.Add(EmptyContent(mode));
+        }
+
+        if (showsCards)
+        {
+            _emptyKey = string.Empty;
+            SyncCards();
+        }
+    }
+
+    private FrameworkElement EmptyContent(string mode)
+    {
+        if (mode.StartsWith("notice:", StringComparison.Ordinal))
+        {
+            return EmptyState.Create(Glyphs.Info, mode["notice:".Length..], string.Empty);
+        }
+
+        if (mode == "none")
+        {
+            var panel = EmptyState.Create(Glyphs.Translate, "没有启用的翻译服务", string.Empty);
+            var open = new Button
+            {
+                Content = "打开翻译设置",
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Style = Theme.Style("AccentButtonStyle"),
+            };
+            open.Click += (_, _) => TranslateHost.OpenSettings();
+            panel.Children.Add(open);
+            return panel;
+        }
+
+        var empty = EmptyState.Create(Glyphs.Translate, "划词、截图或输入后开始翻译", string.Empty);
+        foreach (var action in new[] { HotKeyActions.SelectionTranslate, HotKeyActions.ScreenshotTranslate, HotKeyActions.InputTranslate })
+        {
+            var row = new Grid { Width = 200 };
+            row.Children.Add(new TextBlock
+            {
+                Text = SettingsDefaults.Find(action)?.DisplayName ?? action,
+                FontSize = 12,
+                Foreground = Theme.SecondaryText(),
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+            var shortcut = HotKeyManager.FormatFor(action);
+            FrameworkElement keys = shortcut == "未设置"
+                ? new TextBlock { Text = "未设置", FontSize = 12, Foreground = Theme.TertiaryText() }
+                : (FrameworkElement)KeyCap.Combo(shortcut.Split('+', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
+            keys.HorizontalAlignment = HorizontalAlignment.Right;
+            row.Children.Add(keys);
+            empty.Children.Add(row);
+        }
+
+        return empty;
+    }
+
+    /// <summary>卡片和会话里的卡对上（按服务 id；没变就原地更新，不重建）。</summary>
+    private void SyncCards()
+    {
+        var cards = _coordinator.Cards;
+        var ids = cards.Select(card => card.Service.Id).ToList();
+        if (ids.Count != _cardViews.Count ||
+            !ids.SequenceEqual(_cardsPanel.Children.Select(child => (child as FrameworkElement)?.Tag as string ?? string.Empty)))
+        {
+            var keep = _cardViews.Where(pair => ids.Contains(pair.Key)).ToDictionary(pair => pair.Key, pair => pair.Value);
+            _cardViews.Clear();
+            _cardsPanel.Children.Clear();
+            foreach (var card in cards)
+            {
+                var id = card.Service.Id;
+                if (!keep.TryGetValue(id, out var view))
+                {
+                    view = new TranslateCardView(
+                        card.Service,
+                        () => _coordinator.Retry(id),
+                        () =>
+                        {
+                            if (!_coordinator.CopyCard(id))
+                            {
+                                SystemSound.Beep();
+                            }
+                        },
+                        () => ToggleCollapse(id),
+                        () => TranslateHost.OpenSettings(id));
+                    view.Root.Tag = id;
+                }
+
+                _cardViews[id] = view;
+                _cardsPanel.Children.Add(view.Root);
+            }
+        }
+
+        var collapsed = SettingsService.Current.TranslateCollapsedServices ?? new List<string>();
+        for (var index = 0; index < cards.Count; index++)
+        {
+            var card = cards[index];
+            if (_cardViews.TryGetValue(card.Service.Id, out var view))
+            {
+                view.Update(card, index, SettingsService.Current.TranslateFontScale, collapsed.Contains(card.Service.Id),
+                    _coordinator.CopiedCard == card.Service.Id, _coordinator.Target);
+            }
+        }
+    }
+
+    /// <summary>折叠按服务记住（跨重启），不再因为出结果自动展开（F3）。</summary>
+    private void ToggleCollapse(string id)
+    {
+        var collapsed = SettingsService.Current.TranslateCollapsedServices ?? new List<string>();
+        if (!collapsed.Remove(id))
+        {
+            collapsed.Add(id);
+        }
+
+        SettingsService.Current.TranslateCollapsedServices = collapsed;
+        SettingsService.Save();
+        RefreshResults();
+        ResizeToContent();
+    }
+
+    private void OnSpeechChanged()
+    {
+        RefreshSourceArea();
+        foreach (var view in _cardViews.Values)
+        {
+            view.RefreshSpeaking();
+        }
+    }
+
+    // ---- 历史
+
+    private void ShowHistory(bool show)
+    {
+        if (show == _historyVisible)
+        {
+            return;
+        }
+
+        _historyVisible = show;
+        _history.Reset();
+        _history.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        RefreshResults();
+        if (show)
+        {
+            Motion.FadeIn(_history, MotionCurves.FadeInSeconds);
+            _history.FocusSearch();
         }
         else
         {
-            _footer.Text = FooterText();
+            // 关上时焦点立刻还给原文框（不等淡出：淡出期间按的键会落进看不见的搜索框）。
             FocusSource();
         }
 
         ResizeToContent();
     }
 
-    private string FooterText()
-    {
-        var detected = _coordinator.Detected is { } lang ? "检测：" + lang.Title() + " · " : string.Empty;
-        return detected + "目标：" + _coordinator.Target.Title() + " · Enter 翻译 · Ctrl+H 历史 · Esc 关闭 · Ctrl+P 固定";
-    }
+    // ---- 尺寸和位置
 
-    /// <summary>按搜索框重排历史列表（原文 / 译文都搜，新→旧）。</summary>
-    private void RefreshHistory()
+    /// <summary>内容要的高、至少要放得下的高（结果卡多于三张时到第三张的下沿）。都是 DIP，含窗口边框。</summary>
+    private (double Desired, double MustFit) MeasureHeights()
     {
-        if (TranslationHistory.Instance is not { } history)
+        var width = _widthDip;
+        _chrome.Measure(new Windows.Foundation.Size(width, double.PositiveInfinity));
+        var chrome = _chrome.DesiredSize.Height;
+        double body;
+        double? third = null;
+        if (_historyVisible)
         {
-            return;
+            body = TranslateHistoryView.PanelHeight;
         }
-
-        var favorites = IsDown(VirtualKey.Shift) && IsDown(VirtualKey.Tab);
-        _historyEntries.Clear();
-        _historyEntries.AddRange(history.Search(_historySearch.Text, favorites, limit: 200));
-        _historyRows.Children.Clear();
-        _historySelected = _historyEntries.FirstOrDefault();
-        foreach (var entry in _historyEntries)
+        else if (_cardsScroll.Visibility == Visibility.Visible)
         {
-            _historyRows.Children.Add(HistoryRow(entry));
-        }
-
-        var (total, favoritesCount) = history.Counts();
-        _historyHint.Text = _historyEntries.Count == 0
-            ? "还没有历史（翻译一段就会记下来）"
-            : $"{_historyEntries.Count} 条 · 共 {total} 条、收藏 {favoritesCount} 条 · " +
-              "Enter 重新翻译 · Ctrl+D 收藏 · Delete 删除 · Ctrl+Z 撤销 · Esc 回到浮窗";
-        UpdateHistorySelection();
-    }
-
-    private FrameworkElement HistoryRow(TranslationEntry entry)
-    {
-        var panel = new StackPanel { Spacing = 2 };
-        panel.Children.Add(new TextBlock
-        {
-            Text = OneLine(entry.Source),
-            FontSize = 13,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            TextTrimming = TextTrimming.CharacterEllipsis,
-        });
-        panel.Children.Add(new TextBlock
-        {
-            Text = OneLine(entry.Result),
-            FontSize = 12,
-            Foreground = Theme.SecondaryText(),
-            TextTrimming = TextTrimming.CharacterEllipsis,
-        });
-        var meta = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        meta.Children.Add(new TextBlock
-        {
-            Text = entry.Favorite ? "★ " + entry.TargetLang : entry.TargetLang,
-            FontSize = 10,
-            Foreground = Theme.SecondaryText(),
-        });
-        meta.Children.Add(new TextBlock
-        {
-            Text = DateTimeOffset.FromUnixTimeMilliseconds(entry.CreatedAt).ToLocalTime()
-                .ToString("MM-dd HH:mm"),
-            FontSize = 10,
-            Foreground = Theme.SecondaryText(),
-        });
-        panel.Children.Add(meta);
-
-        var border = new Border
-        {
-            Padding = new Thickness(8, 5, 8, 5),
-            CornerRadius = new CornerRadius(6),
-            Child = panel,
-        };
-        border.Tapped += (_, _) =>
-        {
-            _historySelected = entry;
-            UpdateHistorySelection();
-        };
-        border.DoubleTapped += (_, _) =>
-        {
-            _historySelected = entry;
-            RetranslateSelected();
-        };
-        border.ContextFlyout = HistoryMenu(entry);
-        border.Tag = entry;
-        return border;
-    }
-
-    private MenuFlyout HistoryMenu(TranslationEntry entry)
-    {
-        var menu = new MenuFlyout();
-        void Add(string text, Action action)
-        {
-            var item = new MenuFlyoutItem { Text = text };
-            item.Click += (_, _) =>
+            _cardsPanel.Measure(new Windows.Foundation.Size(width, double.PositiveInfinity));
+            body = _cardsPanel.DesiredSize.Height;
+            if (_cardsPanel.Children.Count > 3)
             {
-                _historySelected = entry;
-                action();
-            };
-            menu.Items.Add(item);
-        }
-
-        Add("重新翻译", RetranslateSelected);
-        Add("复制译文", CopySelectedResult);
-        Add("复制原文", CopySelectedSource);
-        Add(entry.Favorite ? "取消收藏" : "收藏", ToggleSelectedFavorite);
-        menu.Items.Add(new MenuFlyoutSeparator());
-        Add("删除", DeleteSelected);
-        return menu;
-    }
-
-    private void UpdateHistorySelection()
-    {
-        foreach (var child in _historyRows.Children.OfType<Border>())
-        {
-            var selected = ReferenceEquals(child.Tag, _historySelected);
-            child.Background = selected
-                ? Theme.Brush("SubtleFillColorSecondaryBrush", Theme.Argb(30, 128, 128, 128))
-                : new SolidColorBrush(Colors.Transparent);
-        }
-    }
-
-    private void OnHistoryKeyDown(object sender, KeyRoutedEventArgs e)
-    {
-        if (!_historyVisible)
-        {
-            return;
-        }
-
-        var control = IsDown(VirtualKey.Control);
-        switch (e.Key)
-        {
-            case VirtualKey.Escape:
-                e.Handled = true;
-                ToggleHistory();
-                break;
-            case VirtualKey.Down:
-                e.Handled = true;
-                MoveHistory(1);
-                break;
-            case VirtualKey.Up:
-                e.Handled = true;
-                MoveHistory(-1);
-                break;
-            case VirtualKey.Enter:
-                e.Handled = true;
-                RetranslateSelected();
-                break;
-            case VirtualKey.Delete when _historySearch.SelectionLength == 0 &&
-                _historySearch.SelectionStart == _historySearch.Text.Length:
-                e.Handled = true;
-                DeleteSelected();
-                break;
-            case VirtualKey.C when control && !IsDown(VirtualKey.Shift):
-                e.Handled = true;
-                CopySelectedResult();
-                break;
-            case VirtualKey.C when control && IsDown(VirtualKey.Shift):
-                e.Handled = true;
-                CopySelectedSource();
-                break;
-            case VirtualKey.D when control:
-                e.Handled = true;
-                ToggleSelectedFavorite();
-                break;
-            case VirtualKey.Z when control:
-                e.Handled = true;
-                if (TranslationHistory.Instance?.Undo() is not null)
-                {
-                    RefreshHistory();
-                }
-
-                break;
-            case VirtualKey.H when control:
-                e.Handled = true;
-                ToggleHistory();
-                break;
-            case VirtualKey.W when control:
-                e.Handled = true;
-                Hide(restoreForeground: true);
-                break;
-            case VirtualKey.Tab when IsDown(VirtualKey.Shift):
-                e.Handled = true;
-                _historyFavoritesOnly = !_historyFavoritesOnly;
-                RefreshHistory();
-                break;
-        }
-    }
-
-    private void MoveHistory(int delta)
-    {
-        if (_historyEntries.Count == 0)
-        {
-            return;
-        }
-
-        var index = _historySelected is null ? 0 : _historyEntries.IndexOf(_historySelected);
-        index = Math.Clamp(index + delta, 0, _historyEntries.Count - 1);
-        _historySelected = _historyEntries[index];
-        UpdateHistorySelection();
-        if (_historyRows.Children.OfType<Border>().FirstOrDefault(
-                border => ReferenceEquals(border.Tag, _historySelected)) is { } row)
-        {
-            row.StartBringIntoView();
-        }
-    }
-
-    private void RetranslateSelected()
-    {
-        if (_historySelected is not { } entry)
-        {
-            return;
-        }
-
-        _source.Text = entry.Source;
-        ToggleHistory();
-        _coordinator.Translate(entry.Source);
-    }
-
-    private void CopySelectedResult()
-    {
-        if (_historySelected is { } entry)
-        {
-            CopyText(entry.Result);
-        }
-    }
-
-    private void CopySelectedSource()
-    {
-        if (_historySelected is { } entry)
-        {
-            CopyText(entry.Source);
-        }
-    }
-
-    private void ToggleSelectedFavorite()
-    {
-        if (_historySelected is not { } entry || TranslationHistory.Instance is not { } history)
-        {
-            return;
-        }
-
-        history.SetFavorite(entry.Id, !entry.Favorite);
-        RefreshHistory();
-    }
-
-    private void DeleteSelected()
-    {
-        if (_historySelected is not { } entry || TranslationHistory.Instance is not { } history)
-        {
-            return;
-        }
-
-        history.Delete(entry.Id);
-        RefreshHistory();
-        NoticeHost.Show("已删除", "Ctrl+Z 可以撤销", NoticeTone.Normal, new NoticeAction("撤销", () =>
-        {
-            if (TranslationHistory.Instance?.Undo() is not null)
-            {
-                RefreshHistory();
-            }
-        }));
-    }
-
-    // ---- 替换原文、朗读（第三版 §3.2 / §3.3）----
-
-    /// <summary>替换原文：先收起浮窗，再写入译文并粘回原窗口；切不回去就只复制。</summary>
-    public void ReplaceWith(string text)
-    {
-        var target = new Windows.Win32.Foundation.HWND(_replaceTarget);
-        Hide(restoreForeground: false);
-        if (target == default)
-        {
-            if (ClipboardWriter.WriteText(text))
-            {
-                ClipboardService.Instance?.MarkOwnWrite();
-                ClipboardService.Instance?.Store.RecordOwnText(text);
-            }
-
-            NoticeHost.Show("已复制译文", "没能切回原窗口", NoticeTone.Warning);
-            return;
-        }
-
-        // REVIEW R60：失败时 Paster 已经弹了具体原因（没能切回原窗口 / 管理员窗口 / 剪贴板被占），
-        // 这里不再另报一遍、更不能报成功。
-        if (!Paster.Paste(target, () => ClipboardWriter.WriteText(text), ClipboardService.Instance))
-        {
-            return;
-        }
-
-        NoticeHost.Show("已替换原文", string.Empty, NoticeTone.Normal);
-    }
-
-    public void SpeakSource()
-        => Speech.Speak(_source.Text, _coordinator.Detected?.Code() ?? SettingsService.Current.TranslateSource);
-
-    private static string OneLine(string text)
-    {
-        var line = text.Replace('\r', ' ').Replace('\n', ' ').Trim();
-        return line.Length <= 120 ? line : line[..120] + "…";
-    }
-
-    private void UpdateHeader()
-    {
-        var settings = SettingsService.Current;
-        _sourcePill.Content = Langs.FromCode(settings.TranslateSource) is { } source ? source.Title() : "自动";
-        _targetPill.Content = Langs.FromCode(settings.TranslateTarget) is { } target ? target.Title() : "自动";
-        RefreshTranslateButton();
-    }
-
-    private void RefreshTranslateButton()
-        => _translateButton.Visibility = _coordinator.NeedsTranslate ? Visibility.Visible : Visibility.Collapsed;
-
-    private void RebuildFooter()
-    {
-        var abandoned = _coordinator.AbandonedTarget is { } old
-            ? $"（原文已是{old.Title()}，改按自动）"
-            : string.Empty;
-        _footer.Text = FooterText() + abandoned;
-    }
-
-    private void OnCoordinatorChanged()
-    {
-        var ids = _coordinator.Cards.Select(card => card.Service.Id).ToList();
-        if (ids.Count != _cardViews.Count || ids.Any(id => !_cardViews.ContainsKey(id)))
-        {
-            _cardsPanel.Children.Clear();
-            _cardViews.Clear();
-            foreach (var card in _coordinator.Cards)
-            {
-                var view = new CardView(card.Service, this);
-                _cardViews[card.Service.Id] = view;
-                _cardsPanel.Children.Add(view.Root);
+                third = _cardsPanel.Children.Take(3).Sum(child => child.DesiredSize.Height) + 2 * _cardsPanel.Spacing + _cardsPanel.Padding.Bottom;
             }
         }
-
-        foreach (var card in _coordinator.Cards)
+        else
         {
-            if (_cardViews.TryGetValue(card.Service.Id, out var view))
-            {
-                view.Update(card);
-            }
+            body = EmptyHeight;
         }
 
-        RebuildFooter();
-        RefreshTranslateButton();
-        ResizeToContent();
-        DispatcherQueue.TryEnqueue(ResizeToContent);
-    }
-
-    private double NeededHeightDip()
-    {
-        // 按内容重新量一遍（REVIEW R8）：以前拿 ActualHeight，卡片被窗口高度裁住时会越量越小，
-        // 最后一张卡被底栏盖住。Measure 用无限高度，拿到的是内容真正想要的高度。
-        try
-        {
-            _root.Measure(new Windows.Foundation.Size(_widthDip, double.PositiveInfinity));
-            var measured = _root.DesiredSize.Height;
-            if (measured > 0 && !double.IsNaN(measured) && !double.IsInfinity(measured))
-            {
-                return measured + 8;
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Warn($"translate.measure-failed {ex.GetType().Name}");
-        }
-
-        var needed = _topBar.ActualHeight + _source.ActualHeight + _translateButton.ActualHeight +
-                     _cardsPanel.ActualHeight + _footer.ActualHeight + 20 + 32;
-        return needed > 0 && !double.IsNaN(needed) ? needed : MinHeightDip;
+        var desired = chrome + 10 + body + 2 + FrameDip;
+        var mustFit = third is { } bottom ? chrome + 10 + bottom + 2 + FrameDip : desired;
+        return (desired, mustFit);
     }
 
     private void ResizeToContent()
@@ -1015,22 +1219,25 @@ internal sealed unsafe partial class TranslateWindow : Window
             return;
         }
 
-        // 窗口已经在这块屏上了：按它所在显示器的缩放比例换算。
-        var display = Displays.AtWindow(_hwnd);
-        var maxHeightDip = display.Work.Height / display.Scale * 0.85;
-        var heightDip = Math.Clamp(NeededHeightDip(), MinHeightDip, maxHeightDip);
-        var widthPx = MonitorLayout.Pixels(_widthDip, display.Scale);
-        var heightPx = MonitorLayout.Pixels(heightDip, display.Scale);
-        if (Math.Abs(AppWindow.Size.Height - heightPx) < 2 && Math.Abs(AppWindow.Size.Width - widthPx) < 2)
-        {
-            return;
-        }
-
-        _resizing = true;
         try
         {
+            var display = Displays.AtWindow(_hwnd);
+            var (desired, mustFit) = MeasureHeights();
+            var heightDip = TranslateSession.PanelHeight(desired, mustFit, display.Work.Height / display.Scale);
+            var widthPx = MonitorLayout.Pixels(_widthDip, display.Scale);
+            var heightPx = MonitorLayout.Pixels(heightDip, display.Scale);
+            if (Math.Abs(AppWindow.Size.Height - heightPx) < 2 && Math.Abs(AppWindow.Size.Width - widthPx) < 2)
+            {
+                return;
+            }
+
+            _resizing = true;
             var position = AppWindow.Position;
             AppWindow.MoveAndResize(new RectInt32(position.X, position.Y, widthPx, heightPx));
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"translate.resize-failed {ex.GetType().Name}");
         }
         finally
         {
@@ -1038,131 +1245,33 @@ internal sealed unsafe partial class TranslateWindow : Window
         }
     }
 
-    private void PositionAtPointer(bool save)
+    /// <summary>followMouse：放在光标右下 12（放不下翻到左边 / 上边）；否则上次的位置（第一次没有记过时也跟着鼠标）。</summary>
+    private void Place(bool followMouse)
     {
         var settings = SettingsService.Current;
-        var useSaved = settings.TranslateWindowPosition == "last" && !save && settings.TranslateWindowX != 0;
-        if (useSaved)
+        var (desired, mustFit) = MeasureHeights();
+        if (!followMouse && (settings.TranslateWindowX != 0 || settings.TranslateWindowY != 0))
         {
             // 上次的位置：按那块屏（存的是像素坐标）的缩放比例换算尺寸。
-            var savedX = (int)settings.TranslateWindowX;
-            var savedY = (int)settings.TranslateWindowY;
-            var display = Displays.AtPoint(savedX, savedY);
-            var maxHeightDip = display.Work.Height / display.Scale * 0.85;
-            var heightDip = Math.Clamp(NeededHeightDip(), MinHeightDip, maxHeightDip);
+            var x = (int)settings.TranslateWindowX;
+            var y = (int)settings.TranslateWindowY;
+            var display = Displays.AtPoint(x, y);
+            var height = TranslateSession.PanelHeight(desired, mustFit, display.Work.Height / display.Scale);
             var rect = MonitorLayout.Clamp(
-                new PixelRect(
-                    savedX, savedY,
-                    MonitorLayout.Pixels(_widthDip, display.Scale),
-                    MonitorLayout.Pixels(heightDip, display.Scale)),
+                new PixelRect(x, y, MonitorLayout.Pixels(_widthDip, display.Scale), MonitorLayout.Pixels(height, display.Scale)),
                 display.Work);
             AppWindow.MoveAndResize(new RectInt32(rect.X, rect.Y, rect.Width, rect.Height));
             return;
         }
 
-        // 跟随鼠标：按鼠标所在显示器自己的缩放比例算，放不下就翻到左边 / 上边。
-        var pointerDisplay = Displays.AtCursor();
-        var height = NeededHeightDip();
-        var maxHeight = pointerDisplay.Work.Height / pointerDisplay.Scale * 0.85;
-        height = Math.Clamp(height, MinHeightDip, maxHeight);
+        var pointer = Displays.AtCursor();
+        var pointerHeight = TranslateSession.PanelHeight(desired, mustFit, pointer.Work.Height / pointer.Scale);
         PInvoke.GetCursorPos(out var cursor);
-        var placed = MonitorLayout.NearPointer(
-            cursor.X, cursor.Y, pointerDisplay.Work, pointerDisplay.Scale, _widthDip, height);
+        var placed = MonitorLayout.NearPointer(cursor.X, cursor.Y, pointer.Work, pointer.Scale, _widthDip, pointerHeight);
         AppWindow.MoveAndResize(new RectInt32(placed.X, placed.Y, placed.Width, placed.Height));
     }
 
-    private void ShowLanguageMenu(Button anchor, bool target)
-    {
-        var menu = new MenuFlyout();
-        var auto = new MenuFlyoutItem { Text = "自动" };
-        auto.Click += (_, _) =>
-        {
-            if (target)
-            {
-                SettingsService.Current.TranslateTarget = null;
-            }
-            else
-            {
-                SettingsService.Current.TranslateSource = null;
-            }
-
-            SettingsService.Save();
-            UpdateHeader();
-            if (!string.IsNullOrWhiteSpace(_source.Text))
-            {
-                _coordinator.Translate(_source.Text);
-            }
-        };
-        menu.Items.Add(auto);
-        menu.Items.Add(new MenuFlyoutSeparator());
-        foreach (var lang in Enum.GetValues<Lang>())
-        {
-            var item = new MenuFlyoutItem { Text = lang.Title() };
-            item.Click += (_, _) =>
-            {
-                if (target)
-                {
-                    SettingsService.Current.TranslateTarget = lang.Code();
-                }
-                else
-                {
-                    SettingsService.Current.TranslateSource = lang.Code();
-                }
-
-                SettingsService.Save();
-                UpdateHeader();
-                if (!string.IsNullOrWhiteSpace(_source.Text))
-                {
-                    _coordinator.Translate(_source.Text);
-                }
-            };
-            menu.Items.Add(item);
-        }
-
-        menu.ShowAt(anchor);
-    }
-
-    private void SwapLanguages()
-    {
-        var source = Langs.FromCode(SettingsService.Current.TranslateSource);
-        var target = Langs.FromCode(SettingsService.Current.TranslateTarget);
-        SettingsService.Current.TranslateSource = target?.Code() ?? Lang.En.Code();
-        SettingsService.Current.TranslateTarget = source?.Code() ?? Lang.ZhHans.Code();
-        SettingsService.Save();
-        UpdateHeader();
-        if (!string.IsNullOrWhiteSpace(_source.Text))
-        {
-            _coordinator.Translate(_source.Text);
-        }
-    }
-
-    private void CopyCard(int index)
-    {
-        if (index < 0 || index >= _coordinator.Cards.Count)
-        {
-            return;
-        }
-
-        CopyText(_coordinator.Cards[index].Text);
-    }
-
-    public void CopyText(string text)
-    {
-        if (string.IsNullOrEmpty(text))
-        {
-            return;
-        }
-
-        if (!ClipboardWriter.WriteText(text))
-        {
-            NoticeHost.Show("没能复制", "剪贴板被别的程序占着", NoticeTone.Error);
-            return;
-        }
-
-        ClipboardService.Instance?.MarkOwnWrite();
-        ClipboardService.Instance?.Store.RecordOwnText(text);
-        NoticeHost.Show("已复制译文", string.Empty, NoticeTone.Normal);
-    }
+    // ---- 拖动顶栏挪窗口
 
     private void OnTopBarPointerPressed(object sender, PointerRoutedEventArgs e)
     {
@@ -1201,12 +1310,8 @@ internal sealed unsafe partial class TranslateWindow : Window
         }
 
         PInvoke.GetCursorPos(out var cursor);
-        AppWindow.Move(new PointInt32(
-            origin.X + cursor.X - start.X,
-            origin.Y + cursor.Y - start.Y));
+        AppWindow.Move(new PointInt32(origin.X + cursor.X - start.X, origin.Y + cursor.Y - start.Y));
     }
-
-    private void OnTopBarPointerReleased(object sender, PointerRoutedEventArgs e) => EndDrag();
 
     private void EndDrag()
     {
@@ -1218,13 +1323,127 @@ internal sealed unsafe partial class TranslateWindow : Window
         _dragStartCursor = null;
         _dragStartWindow = null;
         _topBar.ReleasePointerCaptures();
-        if (SettingsService.Current.TranslateWindowPosition == "last")
+        SaveGeometry();
+    }
+
+    // ---- 小零件
+
+    private void Announce(string text)
+    {
+        var peer = FrameworkElementAutomationPeer.FromElement(_source) ?? FrameworkElementAutomationPeer.CreatePeerForElement(_source);
+        peer?.RaiseNotificationEvent(
+            AutomationNotificationKind.ActionCompleted, AutomationNotificationProcessing.ImportantMostRecent, text, "translate");
+    }
+
+    /// <summary>28 高的语言胶囊：语言名 13 medium +（自动且已知实际语言时）「自动」标签 + 10 的下拉箭头，左 12 右 10。</summary>
+    private static Button LanguagePill(string name)
+    {
+        var button = new Button
         {
-            var position = AppWindow.Position;
-            SettingsService.Current.TranslateWindowX = position.X;
-            SettingsService.Current.TranslateWindowY = position.Y;
-            SettingsService.Save();
+            Height = 28,
+            MinHeight = 0,
+            Padding = new Thickness(12, 0, 10, 0),
+            CornerRadius = new CornerRadius(14),
+            BorderThickness = new Thickness(0),
+            Background = Theme.Brush("Kitty.Fill.Control", Theme.Argb(15, 0, 0, 0)),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTipService.SetToolTip(button, name);
+        AutomationProperties.SetName(button, name);
+        return button;
+    }
+
+    private static void SetPill(Button pill, string title, bool autoTag)
+    {
+        // 流式时每个字都会走到这里：没变就不重建。
+        var key = title + (autoTag ? "|auto" : string.Empty);
+        if (pill.Tag as string == key)
+        {
+            return;
         }
+
+        pill.Tag = key;
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        row.Children.Add(new TextBlock
+        {
+            Text = title,
+            FontSize = 13,
+            FontWeight = FontWeights.Medium,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        if (autoTag)
+        {
+            var accent = Theme.AccentColor;
+            row.Children.Add(new Border
+            {
+                Padding = new Thickness(4, 1, 4, 1),
+                CornerRadius = new CornerRadius(7),
+                Background = new SolidColorBrush(Theme.Argb(41, accent.R, accent.G, accent.B)),
+                VerticalAlignment = VerticalAlignment.Center,
+                Child = new TextBlock
+                {
+                    Text = "自动",
+                    FontSize = 10,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = new SolidColorBrush(Theme.AccentTextColor),
+                },
+            });
+        }
+
+        row.Children.Add(new FontIcon
+        {
+            Glyph = Glyphs.ChevronDown,
+            FontSize = 10,
+            Foreground = Theme.SecondaryText(),
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        pill.Content = row;
+        AutomationProperties.SetItemStatus(pill, title);
+    }
+
+    private static Button IconButton(FontIcon icon, string name)
+    {
+        icon.Foreground ??= Theme.SecondaryText();
+        var button = new Button
+        {
+            Content = icon,
+            Width = 24,
+            Height = 24,
+            Padding = new Thickness(0),
+            MinWidth = 0,
+            MinHeight = 0,
+            Background = new SolidColorBrush(Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTipService.SetToolTip(button, name);
+        AutomationProperties.SetName(button, name);
+        return button;
+    }
+
+    /// <summary>原文框右下角的「翻译 ↩」：强调色实心胶囊（24 高、左右 12、12 semibold），只在原文改过、还没重译时出现。</summary>
+    private static Button TranslateCapsule()
+    {
+        var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        content.Children.Add(new TextBlock { Text = "翻译", FontSize = 12, FontWeight = FontWeights.SemiBold });
+        content.Children.Add(new TextBlock { Text = "↩", FontSize = 12, FontWeight = FontWeights.SemiBold, Opacity = 0.75 });
+        var button = new Button
+        {
+            Content = content,
+            Height = 24,
+            MinHeight = 0,
+            Padding = new Thickness(12, 0, 12, 0),
+            CornerRadius = new CornerRadius(12),
+            BorderThickness = new Thickness(0),
+            Background = new SolidColorBrush(Theme.AccentColor),
+            Foreground = new SolidColorBrush(Theme.OnAccentColor),
+            VerticalAlignment = VerticalAlignment.Center,
+            Visibility = Visibility.Collapsed,
+        };
+        ToolTipService.SetToolTip(button, "翻译改过的原文（Enter）");
+        AutomationProperties.SetName(button, "翻译");
+        return button;
     }
 
     private void ApplyNoActivateStyle()
@@ -1243,451 +1462,9 @@ internal sealed unsafe partial class TranslateWindow : Window
         => Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(key)
             .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
 
-    private static Button Pill(string text) => new()
-    {
-        Content = text,
-        Padding = new Thickness(10, 3, 10, 3),
-        CornerRadius = new CornerRadius(14),
-        Background = Theme.Brush("SubtleFillColorSecondaryBrush", Theme.Argb(26, 128, 128, 128)),
-        BorderThickness = new Thickness(0),
-        FontSize = 12,
-    };
-
-    private static Button IconButton(string glyph, string tooltip)
-    {
-        var button = new Button
-        {
-            Content = new FontIcon { Glyph = glyph, FontSize = 13 },
-            Padding = new Thickness(6, 2, 6, 2),
-            Background = new SolidColorBrush(Colors.Transparent),
-            BorderThickness = new Thickness(0),
-        };
-        ToolTipService.SetToolTip(button, tooltip);
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, tooltip);
-        return button;
-    }
-
     [System.Runtime.InteropServices.LibraryImport("user32.dll", EntryPoint = "GetWindowLongW", SetLastError = true)]
     private static partial int GetWindowLong(IntPtr hwnd, int index);
 
     [System.Runtime.InteropServices.LibraryImport("user32.dll", EntryPoint = "SetWindowLongW", SetLastError = true)]
     private static partial int SetWindowLong(IntPtr hwnd, int index, int value);
-
-    private sealed class CardView
-    {
-        /// <summary>正文最多 8 行，超出的在卡片里滚动（PLAN §3.7 / PLAN-v2 §6 第 1 批）。</summary>
-        private const int MaxBodyLines = 8;
-
-        private const double BodyLineHeight = 22;
-
-        private readonly TextBlock _name;
-        private readonly TextBlock _status;
-        private readonly FrameworkElement _badge;
-        private readonly TextBlock _body;
-        private readonly ScrollViewer _bodyScroll;
-        private readonly Border _fade;
-        private readonly Border _cursor;
-        private readonly StackPanel _skeleton;
-        private readonly TextBlock _error;
-        private readonly Border _errorCard;
-        private readonly Border _glow;
-        private readonly Storyboard _glowStoryboard;
-        private bool _glowActive;
-        private readonly Button _copy;
-        private readonly Button _retry;
-        private readonly Button _settings;
-        private readonly StackPanel _actions;
-        private readonly TranslateWindow _owner;
-        private bool _blinking;
-        private bool _shimmering;
-
-        public CardView(TranslateServiceConfig service, TranslateWindow owner)
-        {
-            _owner = owner;
-            _name = new TextBlock
-            {
-                Text = service.Name,
-                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            _status = new TextBlock
-            {
-                Text = "等待中…",
-                FontSize = 11,
-                Foreground = Theme.SecondaryText(),
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-
-            // 服务标识：有官方 logo 用 logo，没有用品牌色首字母（PLAN-v7 §2.1）。
-            _badge = ServiceTile.Create(service, 18);
-
-            _body = new TextBlock
-            {
-                TextWrapping = TextWrapping.Wrap,
-                IsTextSelectionEnabled = true,
-                FontSize = Theme.FontSize("Kitty.FontSize.Reading"),
-                LineHeight = 22,
-            };
-            // 正文不截断、改成卡片里滚动：下面还有内容时能看到自己的滚动条。
-            // 光标和正文放在同一层，坐标才对得上（不再单独占正文下面一行）。
-            var bodyLayer = new Grid();
-            bodyLayer.Children.Add(_body);
-            _bodyScroll = new ScrollViewer
-            {
-                Content = bodyLayer,
-                MaxHeight = MaxBodyLines * BodyLineHeight,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                VerticalScrollMode = ScrollMode.Auto,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                HorizontalScrollMode = ScrollMode.Disabled,
-            };
-
-            // 下面还有内容时底部渐隐（PLAN-v2 §3.7）。
-            var cardColor = Theme.CardColor();
-            _fade = new Border
-            {
-                Height = 26,
-                VerticalAlignment = VerticalAlignment.Bottom,
-                IsHitTestVisible = false,
-                Visibility = Visibility.Collapsed,
-                Background = new LinearGradientBrush
-                {
-                    StartPoint = new Windows.Foundation.Point(0, 0),
-                    EndPoint = new Windows.Foundation.Point(0, 1),
-                    GradientStops =
-                    {
-                        new GradientStop
-                        {
-                            Color = Theme.Argb(0, cardColor.R, cardColor.G, cardColor.B),
-                            Offset = 0,
-                        },
-                        new GradientStop { Color = cardColor, Offset = 1 },
-                    },
-                },
-            };
-            var bodyHost = new Grid { MaxHeight = MaxBodyLines * BodyLineHeight };
-            bodyHost.Children.Add(_bodyScroll);
-            bodyHost.Children.Add(_fade);
-
-            // 生成中末尾一根强调色闪烁光标（PLAN-v2 §3.7）。
-            _cursor = new Border
-            {
-                Width = 2,
-                Height = 14,
-                CornerRadius = new CornerRadius(1),
-                Background = new SolidColorBrush(Theme.AccentColor),
-                HorizontalAlignment = HorizontalAlignment.Left,
-                VerticalAlignment = VerticalAlignment.Top,
-                Margin = new Thickness(0),
-                IsHitTestVisible = false,
-                Visibility = Visibility.Collapsed,
-                Opacity = 0,
-            };
-            bodyLayer.Children.Add(_cursor);
-
-            // 等待 / 思考中的骨架条（只动透明度，交给合成器，进程 CPU 接近 0）。
-            _skeleton = new StackPanel { Spacing = 8, Margin = new Thickness(0, 2, 0, 2) };
-            foreach (var width in new[] { 1.0, 0.82, 0.55 })
-            {
-                _skeleton.Children.Add(new Border
-                {
-                    Height = 8,
-                    CornerRadius = new CornerRadius(4),
-                    HorizontalAlignment = HorizontalAlignment.Left,
-                    Width = 340 * width,
-                    Background = Theme.Brush(
-                        "ControlFillColorSecondaryBrush", Theme.Argb(40, 128, 128, 128)),
-                });
-            }
-
-            _error = new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 12, Foreground = Theme.Critical() };
-            _errorCard = new Border
-            {
-                CornerRadius = new CornerRadius(8),
-                Padding = new Thickness(10, 7, 10, 7),
-                BorderThickness = new Thickness(1),
-                Visibility = Visibility.Collapsed,
-                Child = _error,
-            };
-            _copy = SmallButton("复制");
-            _copy.Click += (_, _) => _owner.CopyText(_body.Text);
-            _retry = SmallButton("重试");
-            _retry.Click += (_, _) => _owner._coordinator.Retry(service.Id);
-            _settings = SmallButton("打开设置");
-            _settings.Click += (_, _) => TranslateHost.OpenSettings();
-            _actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-
-            var header = new Grid { ColumnSpacing = 6 };
-            header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-            title.Children.Add(_badge);
-            title.Children.Add(_name);
-            title.Children.Add(_status);
-            Grid.SetColumn(title, 0);
-            Grid.SetColumn(_actions, 1);
-            header.Children.Add(title);
-            header.Children.Add(_actions);
-
-            var panel = new StackPanel { Spacing = 6 };
-            panel.Children.Add(header);
-            panel.Children.Add(_skeleton);
-            panel.Children.Add(bodyHost);
-            panel.Children.Add(_errorCard);
-            var card = new Border
-            {
-                Style = Theme.Style("Kitty.CardStyle"),
-                Padding = new Thickness(10, 8, 10, 8),
-                Child = panel,
-            };
-            // 彗星边：三段渐变（透明 → 强调色 → 透明）沿对角线跑；不做几何路径，先保证观感。
-            var glowBrush = new LinearGradientBrush
-            {
-                StartPoint = new Windows.Foundation.Point(0, 0),
-                EndPoint = new Windows.Foundation.Point(1, 1),
-            };
-            var stops = new[]
-            {
-                new GradientStop { Color = Theme.Argb(0, 255, 77, 126), Offset = 0 },
-                new GradientStop { Color = Theme.AccentColor, Offset = 0.5 },
-                new GradientStop { Color = Theme.Argb(0, 255, 77, 126), Offset = 1 },
-            };
-            foreach (var stop in stops)
-            {
-                glowBrush.GradientStops.Add(stop);
-            }
-
-            _glow = new Border
-            {
-                CornerRadius = new CornerRadius(8),
-                BorderThickness = new Thickness(1.5),
-                BorderBrush = glowBrush,
-                Opacity = 0,
-                IsHitTestVisible = false,
-            };
-            _glowStoryboard = new Storyboard { RepeatBehavior = RepeatBehavior.Forever };
-            for (var index = 0; index < stops.Length; index++)
-            {
-                var slide = new DoubleAnimation
-                {
-                    From = -0.6 + index * 0.5,
-                    To = 1.4 + index * 0.5,
-                    Duration = new Duration(TimeSpan.FromMilliseconds(1600)),
-                    EnableDependentAnimation = true,
-                };
-                Storyboard.SetTarget(slide, stops[index]);
-                Storyboard.SetTargetProperty(slide, "Offset");
-                _glowStoryboard.Children.Add(slide);
-            }
-            var host = new Grid();
-            host.Children.Add(card);
-            host.Children.Add(_glow);
-            Root = host;
-            _bodyScroll.ViewChanged += (_, _) => UpdateFade();
-            Update(new TranslateCard { Service = service });
-        }
-
-        public Grid Root { get; }
-
-        public void Update(TranslateCard card)
-        {
-            var hasText = card.Text.Length > 0;
-            // 生成中自动跟到末尾；用户往上滚过就不再跟（PLAN §3.7）。
-            var follow = IsNearBottom();
-            if (_body.Text != card.Text)
-            {
-                _body.Text = card.Text;
-                if (follow)
-                {
-                    _body.UpdateLayout();
-                    _bodyScroll.ChangeView(null, _bodyScroll.ScrollableHeight, null, disableAnimation: true);
-                }
-            }
-
-            var waiting = (card.State is CardState.Waiting or CardState.Running) && !hasText;
-            _bodyScroll.Visibility = hasText ? Visibility.Visible : Visibility.Collapsed;
-            _skeleton.Visibility = waiting ? Visibility.Visible : Visibility.Collapsed;
-            _errorCard.Visibility = Visibility.Collapsed;
-            _actions.Children.Clear();
-
-            // 生成中末尾的闪烁光标（PLAN-v2 §3.7）。
-            var generating = card.State == CardState.Running && hasText && !card.Thinking;
-            _cursor.Visibility = generating ? Visibility.Visible : Visibility.Collapsed;
-            if (generating)
-            {
-                PositionCursor();
-            }
-
-            SetBlink(generating, _cursor);
-            SetShimmer(waiting);
-
-            var glow = card.State is CardState.Waiting or CardState.Running;
-            if (glow && !_glowActive)
-            {
-                _glowActive = true;
-                _glow.Visibility = Visibility.Visible;
-                _glowStoryboard.Begin();
-            }
-            else if (!glow && _glowActive)
-            {
-                _glowActive = false;
-                _glowStoryboard.Stop();
-                _glow.Opacity = 0;
-                _glow.Visibility = Visibility.Collapsed;
-            }
-
-            switch (card.State)
-            {
-                case CardState.Waiting:
-                    _status.Text = "等待中…";
-                    break;
-                case CardState.Running when card.Thinking || !hasText:
-                    _status.Text = "思考中…";
-                    break;
-                case CardState.Running:
-                    _status.Text = "翻译中…";
-                    break;
-                case CardState.Done:
-                    _status.Text = "完成";
-                    break;
-                case CardState.Truncated:
-                    _status.Text = "只翻了前一部分";
-                    _error.Text = card.Error?.Message ?? "超出单次输出上限";
-                    _error.Foreground = Theme.Caution();
-                    _errorCard.Background = Theme.Brush("Kitty.WarningFill", Theme.Argb(13, 157, 93, 0));
-                    _errorCard.BorderBrush = Theme.Brush("Kitty.WarningStroke", Theme.Argb(46, 157, 93, 0));
-                    _errorCard.Visibility = Visibility.Visible;
-                    _actions.Children.Add(_retry);
-                    break;
-                case CardState.Failed:
-                    _status.Text = "失败";
-                    _error.Text = card.Error?.Message ?? "翻译失败";
-                    // 设置问题是橙色，网络 / 服务问题是红色（PLAN-v2 §3.7）。
-                    var config = card.Error?.Kind == TranslateErrorKind.Config;
-                    _error.Foreground = config ? Theme.Caution() : Theme.Critical();
-                    _errorCard.Background = config
-                        ? Theme.Brush("Kitty.WarningFill", Theme.Argb(13, 157, 93, 0))
-                        : Theme.Brush("Kitty.ErrorFill", Theme.Argb(13, 196, 43, 28));
-                    _errorCard.BorderBrush = config
-                        ? Theme.Brush("Kitty.WarningStroke", Theme.Argb(46, 157, 93, 0))
-                        : Theme.Brush("Kitty.ErrorStroke", Theme.Argb(46, 196, 43, 28));
-                    _errorCard.Visibility = Visibility.Visible;
-                    // 设置类错误只给「打开设置」（PLAN §7.2：缺密钥 / 401–404 重试也没用）。
-                    _actions.Children.Add(config ? _settings : _retry);
-                    break;
-            }
-
-            if (hasText)
-            {
-                _actions.Children.Add(_copy);
-                var speak = SmallButton("朗读");
-                speak.Click += (_, _) => Speech.Speak(_body.Text, _owner._coordinator.Target.Code());
-                _actions.Children.Add(speak);
-                // 替换原文（第三版 §3.2）：单词模式的结果是释义、不给替换。
-                if (!_owner._coordinator.WordMode && card.State == CardState.Done)
-                {
-                    var replace = SmallButton("替换原文");
-                    replace.Click += (_, _) => _owner.ReplaceWith(_body.Text);
-                    _actions.Children.Add(replace);
-                }
-            }
-
-            UpdateFade();
-        }
-
-        /// <summary>下面还有内容时显示底部渐隐。</summary>
-        private void UpdateFade()
-        {
-            var more = _bodyScroll.Visibility == Visibility.Visible &&
-                       _bodyScroll.ScrollableHeight - _bodyScroll.VerticalOffset > 8;
-            _fade.Visibility = more ? Visibility.Visible : Visibility.Collapsed;
-        }
-
-        /// <summary>
-        /// 把光标贴到正文最后一个字后面（PLAN-v7 §3.3）：ContentEnd 的字符矩形是相对 TextBlock 的，
-        /// 光标和正文在同一个 Grid 里，所以直接当 Margin 用；取不到就留在左上角。
-        /// </summary>
-        private void PositionCursor()
-        {
-            try
-            {
-                var rect = _body.ContentEnd.GetCharacterRect(default);
-                if (!rect.IsEmpty)
-                {
-                    _cursor.Height = Math.Max(10, rect.Height * 0.82);
-                    _cursor.Margin = new Thickness(rect.X, rect.Y + (rect.Height - _cursor.Height) / 2, 0, 0);
-                }
-            }
-            catch
-            {
-                _cursor.Margin = new Thickness(0);
-            }
-        }
-
-        private void SetShimmer(bool on)
-        {
-            if (on == _shimmering)
-            {
-                return;
-            }
-
-            _shimmering = on;
-            var visual = Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.GetElementVisual(_skeleton);
-            if (on)
-            {
-                var animation = visual.Compositor.CreateScalarKeyFrameAnimation();
-                animation.InsertKeyFrame(0f, 0.35f);
-                animation.InsertKeyFrame(0.5f, 0.85f);
-                animation.InsertKeyFrame(1f, 0.35f);
-                animation.Duration = TimeSpan.FromSeconds(1.2);
-                animation.IterationBehavior = Microsoft.UI.Composition.AnimationIterationBehavior.Forever;
-                visual.StartAnimation("Opacity", animation);
-            }
-            else
-            {
-                visual.StopAnimation("Opacity");
-                visual.Opacity = 1;
-            }
-        }
-
-        private void SetBlink(bool on, UIElement element)
-        {
-            if (on == _blinking)
-            {
-                return;
-            }
-
-            _blinking = on;
-            var visual = Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.GetElementVisual(element);
-            if (on)
-            {
-                var animation = visual.Compositor.CreateScalarKeyFrameAnimation();
-                animation.InsertKeyFrame(0f, 1f);
-                animation.InsertKeyFrame(0.5f, 0f);
-                animation.InsertKeyFrame(1f, 1f);
-                animation.Duration = TimeSpan.FromSeconds(0.9);
-                animation.IterationBehavior = Microsoft.UI.Composition.AnimationIterationBehavior.Forever;
-                visual.StartAnimation("Opacity", animation);
-            }
-            else
-            {
-                visual.StopAnimation("Opacity");
-                visual.Opacity = 0;
-            }
-        }
-
-        private bool IsNearBottom()
-        {
-            // 还有 8 px 以内就算在底部：流式输出时跟着走。
-            var remaining = _bodyScroll.ScrollableHeight - _bodyScroll.VerticalOffset;
-            return remaining <= 8 || double.IsNaN(remaining);
-        }
-
-        private static Button SmallButton(string text) => new()
-        {
-            Content = text,
-            Padding = new Thickness(8, 2, 8, 2),
-            FontSize = 11,
-        };
-    }
 }

@@ -752,7 +752,8 @@ internal sealed class ShellRuntime
         }
     }
 
-    public void ShowSettings(bool welcome, string page = "general")
+    /// <param name="service">翻译服务的 id：直达设置 › 翻译里那个服务的详情（翻译错误卡的「打开设置」）。</param>
+    public void ShowSettings(bool welcome, string page = "general", string? service = null)
     {
         OverlayHost.Hide(restoreForeground: false);
         if (_settingsWindow is null || _settingsWindow.IsClosed)
@@ -771,7 +772,7 @@ internal sealed class ShellRuntime
             _settingsWindow = window;
         }
 
-        _settingsWindow.ShowPage(welcome, page);
+        _settingsWindow.ShowPage(welcome, page, service);
     }
 
     /// <summary>启动器的「快捷键速查表」（PLAN-v9-launcher R12）：打开设置窗，在上面弹速查表。</summary>
@@ -1080,6 +1081,9 @@ internal sealed class ShellRuntime
                 break;
             case HotKeyActions.ShotHistory:
                 ShotHistoryWindow.ShowWindow();
+                break;
+            case HotKeyActions.TranslateReplace:
+                TranslateHost.TranslateAndReplace();
                 break;
         }
     }

@@ -17,6 +17,9 @@ internal static class HotKeyActions
 
     /// <summary>截图历史（PLAN-v8），默认不设键。</summary>
     public const string ShotHistory = "shotHistory";
+
+    /// <summary>划词翻译并替换（不开浮窗，PLAN-v9-translate F7），默认不设键；名字同 mac。</summary>
+    public const string TranslateReplace = "translateReplace";
 }
 
 internal sealed record HotKeyDefault(
@@ -40,6 +43,7 @@ internal static class SettingsDefaults
         new(HotKeyActions.Ocr, "识字", HotKeyModifiers.Alt, (uint)'O'),
         // 新动作只加在最后（快捷键页和速查表按这张表的顺序排）。
         new(HotKeyActions.ShotHistory, "截图历史", HotKeyModifiers.None, 0),
+        new(HotKeyActions.TranslateReplace, "划词翻译并替换", HotKeyModifiers.None, 0),
     };
 
     public static void Apply(Settings settings)

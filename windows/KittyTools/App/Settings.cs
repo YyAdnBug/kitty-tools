@@ -76,14 +76,30 @@ internal sealed class Settings
 
     public bool TranslateAutoCopy { get; set; }
 
-    /// <summary>浮窗位置：pointer = 跟随鼠标；last = 上次位置。</summary>
+    /// <summary>
+    /// 浮窗位置：pointer = 跟随鼠标；last = 上次位置。只管划词、复制即译、截图翻译；输入翻译总在上次的位置（mac）。
+    /// 上次的位置（X / Y，像素）不管哪种都记。
+    /// </summary>
     public string TranslateWindowPosition { get; set; } = "pointer";
 
     public double TranslateWindowX { get; set; }
 
     public double TranslateWindowY { get; set; }
 
-    public double TranslateWindowWidth { get; set; } = 460;
+    /// <summary>浮窗宽（DIP），最窄 420（mac 的默认宽，只能往宽里拖）。</summary>
+    public double TranslateWindowWidth { get; set; } = 420;
+
+    /// <summary>翻译前把同一段里的换行接起来（PDF 复制出来的段落；mac translateDeleteNewline，默认关）。</summary>
+    public bool TranslateJoinLines { get; set; }
+
+    /// <summary>截图翻译时把识别出的原文也写进剪贴板（默认只记进剪贴板历史；mac translateCopyRecognized）。</summary>
+    public bool TranslateCopyRecognized { get; set; }
+
+    /// <summary>译文字号倍数 0.8–1.6，一步 0.1（浮窗 Ctrl+= / Ctrl+- / Ctrl+0 和设置里的滑块同一个值）。</summary>
+    public double TranslateFontScale { get; set; } = 1.0;
+
+    /// <summary>折起来的服务卡（服务 id），重启后还折着。</summary>
+    public List<string>? TranslateCollapsedServices { get; set; }
 
     public bool TranslatePinned { get; set; }
 
@@ -96,8 +112,6 @@ internal sealed class Settings
     /// <summary>查词（单词模式）开关（第三版 §3.4）。</summary>
     public bool TranslateWordLookup { get; set; } = true;
 
-    /// <summary>「划词翻译并替换」的独立热键动作是否已在快捷键表里（第三版 §3.2，不设默认键）。</summary>
-    public bool TranslateReplaceHotKeySeen { get; set; }
 
     // 同步（第五版）：用户选的同步文件夹、开关和四类。
     public bool SyncEnabled { get; set; }

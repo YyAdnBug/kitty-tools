@@ -2,7 +2,7 @@
 
 2026-10-28。剪贴板、截图标注、启动器之后，用户真机反馈：「翻译的功能没有和 macos 的功能对齐，并且翻译的服务 icon 缺失，macos 有默认的 icon」。
 
-**状态：等用户拍板。** §6 的 D1–D3 都写了推荐；用户说「全部按推荐」后，审查方（Claude）在 Mac 上照 §7 分 8a–8e 五批写（不编译，一批一推），Windows 那边编译、单测、`--ui-snapshots`、手测，同启动器那一轮（REVIEW「v9 启动器分工」）。
+**状态：用户 2026-10-28「全部按推荐」，D1–D3 按推荐。8a–8e 审查方在 Mac 上写完了，一个字都没编译过**（同启动器那一轮：一次写完、一起推）。Windows 那边编译、单测、`--ui-snapshots`、手测（HANDTEST 581–620），编译错直接修、在 REVIEW「v9 翻译分工」下面记一句。§8 是做了什么、哪些故意没做。
 **已经先做了的**（`b56ac4c`，同一次反馈里的设置排版问题）：服务 logo 补齐四张、AI 服务按地址 / 名字认厂商（V0）；设置里服务一行照 mac（S8）、右键上移 / 下移（S9 的一半，拖动没做）、删自建 AI 先确认（B19）。下面这些行标了「已做」。
 
 - **对的是谁**：mac 的路径相对 `macos/KittyTools/`：`Translate/TranslatePanelView.swift`（TPV）、`ProviderCardView.swift`（PCV）、`TranslateCoordinator.swift`（TCo）、`HistoryView.swift`（HV）、`HistoryStore.swift`（HS）、`TranslateService.swift`（TS）、`Speaker.swift`、`ResultText.swift`、`WordLookup.swift`、`SourceTextView.swift`、`Settings/TranslateTab.swift`（TT）、`Settings/TranslateServiceDetail.swift`（TSD）、`App/AppDelegate.swift`（AD）、`Settings/ShortcutsSheet.swift`（SS）；规格 `.cursor/rules/mac-translate.mdc`、`mac-whisker-translate.mdc`。Windows 对着 `b56ac4c`，路径相对 `windows/KittyTools/`：`Translate/TranslateWindow.cs`（TW）、`TranslateCoordinator.cs`（TC）、`TranslateServices.cs`（TSv）、`TranslateHost.cs`（TH）、`Settings/SettingsWindow.cs`（SW）的 `BuildTranslate` / `ShowServiceDialog`、`App/Settings.cs`（Set）、`KittyTools.Core/HistoryExport.cs`（HE）。
@@ -143,3 +143,21 @@
 | 8e 设置页 | B11；S1–S7、S9–S16；K12 | 取模型列表的解析 | `--a11y-audit` 设置翻译页 0/0 + 截图 |
 
 **归审查方的文件**（这一轮别的 agent 先别改；真要改先在 REVIEW 里写一句）：`KittyTools/Translate/**`、`Shell/Speech.cs`、`Storage/TranslationHistory.cs`、`Core/{Lang,CopyTranslateRules,Sse,StreamingText,ServiceBadge,AiEndpoint,HistoryExport}.cs` 和这一轮新加的 `Translate*` Core 文件和测试、`Settings/SettingsWindow.cs` 的 `BuildTranslate` / `ShowServiceDialog`、`Settings/ShortcutsSheet.cs` 翻译那一组、`App/Settings.cs` 里翻译的新字段。
+
+## 8. 做了什么（2026-10-28，审查方写、没编译）
+
+- **8a 会话和数据**：`TranslateCoordinator` 整份照 mac 重写（主结果 `TranslateSession.Primary`、只写一次历史 / 自动复制、`ResumeInput`、`BeginInput`、`ToggleFavorite`、`CopyCard` 带对勾和闪光、`TranslateOnceAsync`、旧号写不进新卡）；`TranslateRequest.IsWord`，智谱 / AI 的单词模式提示词照搬 mac（`WordLookup.ZhipuPrompt` / `AiPrompt`）；`SelectionReader` 原样返回、`TranslateSession.Rewrap` 补回首尾空白；划词翻译并替换 = 新热键动作 `translateReplace`（加在表末尾、默认不设键，`TranslateHost.TranslateAndReplace`）；`HistoryExport` 照 mac 改（CSV 带 BOM 由调用方加、写语言名和服务名、到秒、防公式；TSV 两行头、HTML 转义、`<br>`），历史记服务名；复制即译跟最近一次翻译的原文去重；宽 420 起；输入翻译总在上次位置、别的入口照「浮窗位置」（截图翻译也是，`TranslateHost.ShowRecognized`，D2）；设置加 `TranslateJoinLines` / `TranslateCopyRecognized` / `TranslateFontScale` / `TranslateCollapsedServices`，删了没人用的 `TranslateReplaceHotKeySeen`。
+- **8b 顶栏和原文区**：`TranslateWindow` 重写——语言胶囊（自动标签、下拉箭头）、互换钮（转半圈、两个胶囊 Glide 换位、两边自动时 0.35 并禁用）、原样互换 / 撞同语言互换、语言菜单（「自动检测」/「自动（A ⇄ B）」、当前项打勾）、复制即译胶囊、图钉（强调色、文案照 mac）、「⋯」菜单（历史、清空…、导出 4 种、条数、复制即译、设置…，带键位）；原文框 76 高 + 方向说明 + 框内一行（朗读开关、复制原文、清空 ｜ 星标、替换原文、「翻译 ↩」胶囊）；三种空状态；字号 Ctrl+= / - / 0；按键在根上统一分发（PreviewKeyDown）；去掉了底栏 `_footer` 和关闭钮。
+- **8c 结果卡**：新文件 `TranslateCardView`——卡头（服务名去括号 + 模型名）、右上角一组图标（朗读开关、复制→对勾、重新翻译、折叠，按服务记住）、骨架两根 + 扫光（合成器平移高光带）、思考中、生成中光标 1 ↔ 0.35、截断说明行、错误行（钥匙 / 三角晃一下、重试 · 打开设置直达这个服务）、错误卡染色、彗星边框（`ShapeVisual` 描边 + 旋转线性渐变画刷，2.4 s 一圈）、完成闪边、复制闪卡、换状态淡变 0.18 s、重新翻译时骨架撑到上次的高、行内 Markdown（Core `InlineMarkdown`）。
+- **8d 历史**：新文件 `TranslateHistoryView`——28 高搜索框 + 两枚范围胶囊、按天分组（Core `HistoryListLayout`）、行 44、滑动高亮 + 悬停底、只建可见区附近、一页 500 滚到底取下一页、Ctrl+K / → 动作菜单（`ClipPalette`，含导出子列表和清空）、右键同一份、三种空状态、复制后「✓ 已复制」、Esc 三级、撤销栈开关历史时清。导出 / 清空三处共用 `HistoryMenu`。
+- **8e 设置页**：翻译页挪到 `Settings/SettingsWindow.Translate.cs`，照 mac 分节（语言 ｜ 译文字号带实时预览卡 ｜ 查词 ｜ 行为 ｜ 翻译服务）；服务详情改成子页（「‹ 翻译」回列表，D3），改了就存：启用、智谱模型、AI 名称 / 协议 / 地址（占位按协议）/ 模型（AutoSuggestBox，自动取 `/models`，↻ 重取）、DeepL 接口 + DeepLX 地址、微软区域、密钥预填（改了就存、清空就删）、测试连接（Hello, world，✓ / ✗，成功自动启用）、删除自建 AI；「添加服务」8 个内置都能加回（直接启用）+「AI 服务」子菜单（带 logo）+ 自定义 / Azure，加完进详情（AI 光标在 API Key）；内置名「火山翻译」「腾讯翻译」；速查表翻译两组照 mac 补齐。
+
+**故意没做 / 简化了的**（都写了 `ponytail:` 或在这里）：
+
+- S9 拖动排序：只有右键上移 / 下移（卡片列表要换成可拖的 ListView）。
+- V12 正文渐隐：上下两头盖卡底色渐变，不是 mac 的透明度遮罩（WinUI 里遮罩 XAML 要先渲成合成表面）。
+- V13「思考中」那行字：一明一暗的脉冲，没做和骨架同步的扫光。
+- V3 窄时两边一起收「自动」标签：最窄就是 420，mac 说这个宽正好放得下，没做收标签。
+- V0 认不出厂商的自建 AI 去官网取图标（mac ServiceIcons）：要联网，先用色块首字。
+- 固定着的浮窗在「划词翻译并替换」之后不再露出来（mac 会露回去）。
+- 设置里「浮窗位置」「历史最多保留」用下拉，不是 mac 的分段控件（系统控件跟 Windows）。

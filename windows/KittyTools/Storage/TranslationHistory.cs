@@ -81,8 +81,8 @@ internal sealed class TranslationHistory
         Changed?.Invoke();
     }
 
-    /// <summary>原文或译文包含关键词（不区分大小写），新→旧；0 = 不限（导出用）。</summary>
-    public List<TranslationEntry> Search(string query, bool favoritesOnly = false, int limit = 200)
+    /// <summary>原文或译文包含关键词（不区分大小写），新→旧；0 = 不限（导出用）。offset：分页（历史列表一页 500，滚到底取下一页）。</summary>
+    public List<TranslationEntry> Search(string query, bool favoritesOnly = false, int limit = 200, int offset = 0)
     {
         var conditions = new List<string>();
         var trimmed = query.Trim();
@@ -99,7 +99,8 @@ internal sealed class TranslationHistory
         var sql = "SELECT id, source, source_lang, target_lang, result, service, created_at, favorite " +
                   "FROM translations " +
                   (conditions.Count > 0 ? "WHERE " + string.Join(" AND ", conditions) + " " : string.Empty) +
-                  "ORDER BY created_at DESC" + (limit > 0 ? " LIMIT " + limit : string.Empty) + ";";
+                  "ORDER BY created_at DESC" + (limit > 0 ? " LIMIT " + limit : string.Empty) +
+                  (limit > 0 && offset > 0 ? " OFFSET " + offset : string.Empty) + ";";
         var entries = new List<TranslationEntry>();
         using var statement = _database.Connection.Prepare(sql);
         if (trimmed.Length > 0)
@@ -193,6 +194,26 @@ internal sealed class TranslationHistory
         _deleted.Add(entry);
         Changed?.Invoke();
     }
+
+    /// <summary>关着历史时取消收藏 = 删掉这条（收藏时才记进去的，留着就成了「关了历史却有历史」；mac remove(source:target:)）。不进撤销栈。</summary>
+    public void Remove(string source, string targetLang)
+    {
+        if (Find(source, targetLang) is not { } entry)
+        {
+            return;
+        }
+
+        using (var statement = _database.Connection.Prepare("DELETE FROM translations WHERE id = $id;"))
+        {
+            statement.BindText(1, entry.Id);
+            statement.Step();
+        }
+
+        Changed?.Invoke();
+    }
+
+    /// <summary>开 / 关历史列表时清掉撤销栈（mac HistoryList.reset）：上一次打开时删的不能在这一次撤回来。</summary>
+    public void ClearUndo() => _deleted.Clear();
 
     public TranslationEntry? Undo()
     {

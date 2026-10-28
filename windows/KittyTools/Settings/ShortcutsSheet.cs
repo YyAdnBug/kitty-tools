@@ -347,30 +347,40 @@ internal static class ShortcutsSheet
             new(new[] { "lock", "sleep", "emptytrash" }, "系统命令（锁定、睡眠、关闭显示器、屏保、回收站、注销、重启、关机、音量）：中文、英文、拼音都能搜"),
         }),
 
-        // Translate/TranslateWindow.cs 的 OnSourceKeyDown（焦点在原文框里时）。
+        // Translate/TranslateWindow.cs 的 OnRootPreviewKeyDown / OnSourceKeyDown（PLAN-v9-translate K1–K6，照 mac 速查表的「翻译」）。
         new("translate", "翻译", "translate", Glyphs.Translate,
-            new[] { HotKeyActions.SelectionTranslate, HotKeyActions.InputTranslate, HotKeyActions.ScreenshotTranslate },
+            new[]
+            {
+                HotKeyActions.SelectionTranslate, HotKeyActions.InputTranslate, HotKeyActions.TranslateReplace,
+                HotKeyActions.ScreenshotTranslate,
+            },
             new ShortcutEntry[]
             {
                 new("Enter", "翻译"),
-                new("Shift+Enter", "换行"),
+                new(new[] { "Shift+Enter", "Ctrl+Enter" }, "换行"),
+                new("Ctrl+R", "重新翻译"),
+                new("Ctrl+D", "收藏这次翻译"),
                 new("Ctrl+1–9", "复制第 1–9 个结果"),
-                new("Ctrl+H", "打开翻译历史"),
+                new("Ctrl+H", "打开 / 关闭翻译历史"),
                 new("Ctrl+P", "固定 / 取消固定浮窗（固定后点别处不收起）"),
-                new("Esc", "Ctrl+W", "关闭（历史开着时 Esc 先回到浮窗）"),
+                new(new[] { "Ctrl+=", "Ctrl+-", "Ctrl+0" }, "放大 / 缩小 / 还原字号"),
+                new("Ctrl+,", "打开 设置 › 翻译"),
+                new(new[] { "Esc", "Ctrl+W" }, "关闭（固定着也关；历史开着时 Esc 先关历史）"),
             }),
 
-        // TranslateWindow.cs 的 OnHistoryKeyDown（焦点在历史的搜索框里时）。
+        // TranslateHistoryView.cs 的 HandleKey（历史开着时先给它）。
         new("translate", "翻译 · 历史", "translate", Glyphs.History, Array.Empty<string>(), new ShortcutEntry[]
         {
             new("↑↓", "移动选中"),
-            new("Enter", "重新翻译这条"),
+            new("Enter", "重新翻译这条（双击同样）"),
+            new(new[] { "Ctrl+K", "→" }, "打开 / 关闭操作菜单：这条的全部操作、导出、清空历史（→ 要在搜索词末尾按；在「导出」上按 → 或 Enter 进去）"),
+            new("←", "操作菜单开着、过滤词为空时回上一级 / 关掉它"),
+            new("Shift+Tab", "在 全部 / 收藏 之间切换"),
             new("Ctrl+C", "复制译文"),
             new("Ctrl+Shift+C", "复制原文"),
-            new("Ctrl+D", "收藏 / 取消收藏"),
-            new("Delete", "删除"),
-            new("Ctrl+Z", "撤销删除"),
-            new("Esc", "回到浮窗"),
+            new("Ctrl+D", "收藏 / 取消收藏这条"),
+            new("Ctrl+Delete", "删除（Ctrl+Z 撤销）"),
+            new("Esc", "先关操作菜单，再清空搜索，最后回到浮窗"),
         }),
 
         // Screenshot/SelectionOverlayWindow.cs 的 OnKeyDown 和鼠标处理。

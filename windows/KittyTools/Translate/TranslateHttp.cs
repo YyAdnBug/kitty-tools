@@ -187,6 +187,54 @@ internal static class TranslateHttp
         }
     }
 
+    /// <summary>GET，返回原文（设置里取大模型的模型列表用）；状态码不对、超时、断网照别的请求一样报。</summary>
+    public static async Task<string> GetTextAsync(
+        Uri url,
+        IReadOnlyDictionary<string, string> headers,
+        CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        foreach (var (name, value) in headers)
+        {
+            request.Headers.TryAddWithoutValidation(name, value);
+        }
+
+        try
+        {
+            using var response = await ClientFor(url).SendAsync(request, cancellationToken);
+            var text = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                string? message = null;
+                try
+                {
+                    using var document = JsonDocument.Parse(text);
+                    message = ServerMessage(document.RootElement);
+                }
+                catch (JsonException)
+                {
+                    // 不是 JSON 的错误页：只按状态码说。
+                }
+
+                throw Describe(response.StatusCode, message);
+            }
+
+            return text;
+        }
+        catch (TranslateError)
+        {
+            throw;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TranslateError("请求超时，请检查网络或服务地址", TranslateErrorKind.Network);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw NetworkError(ex);
+        }
+    }
+
     /// <summary>SSE：逐行给出 data: 之后的内容（遇到 [DONE] 结束）。</summary>
     public static async IAsyncEnumerable<string> StreamAsync(
         Uri url,

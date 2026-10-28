@@ -30,8 +30,8 @@ internal static class TranslateKinds
         Microsoft => "微软翻译",
         Baidu => "百度翻译",
         Youdao => "有道翻译",
-        Volcengine => "火山引擎翻译",
-        Tencent => "腾讯云翻译",
+        Volcengine => "火山翻译",
+        Tencent => "腾讯翻译",
         _ => "AI 服务",
     };
 
@@ -210,10 +210,9 @@ internal sealed class TranslateServiceStore
         Save();
     }
 
+    /// <summary>还没加的内置服务（8 个都能加回来，B11；顺序同 mac TranslateService.builtins）。</summary>
     public IReadOnlyList<string> MissingBuiltins
-        => new[] { TranslateKinds.Zhipu, TranslateKinds.Google, TranslateKinds.DeepL, TranslateKinds.Microsoft }
-            .Where(kind => Find(kind) is null)
-            .ToList();
+        => TranslateKinds.All.Where(kind => TranslateKinds.IsBuiltin(kind) && Find(kind) is null).ToList();
 
     public string? Secret(TranslateServiceConfig service, string? field = null)
     {
