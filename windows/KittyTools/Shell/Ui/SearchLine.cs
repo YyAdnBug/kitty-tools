@@ -95,6 +95,9 @@ public sealed partial class SearchLine : Grid
     /// <summary>底下那条发丝线通栏（剪贴板照 mac：抵掉左右 18 的内边距）。</summary>
     public void ExtendHairline() => _hairline.Margin = new Thickness(-18, 0, -18, 0);
 
+    /// <summary>下面什么都没有时（启动器的空首页）藏起发丝线，免得贴着面板底边多一条线。</summary>
+    public void ShowHairline(bool shows) => _hairline.Visibility = shows ? Visibility.Visible : Visibility.Collapsed;
+
     public StackPanel Chips { get; }
 
     /// <summary>把焦点放进输入框（面板打开时用）。</summary>

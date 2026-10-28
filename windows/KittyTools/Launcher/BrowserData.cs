@@ -1,6 +1,7 @@
 // 启动器的浏览器书签与浏览历史（PLAN-v9-launcher B1 B2 = PLAN-v9 V1 + REVIEW R42，照 mac Browsers / Bookmarks / BrowserHistory）：
 // 只认本机装了的浏览器（用户数据目录在不在）；每家两个开关（书签、也搜浏览历史），默认书签开 Edge 和 Chrome、历史全关。
-// 读都在线程池里：Chromium 的 Bookmarks 是 JSON 直接读；History、Firefox 的 places.sqlite 拷到临时目录再只读打开，读完删。
+// 读都在线程池里：Chromium 的 Bookmarks / AccountBookmarks 是 JSON 直接读（同 mac：登录了账号的新版 Chrome 把书签存在
+// AccountBookmarks 里，Bookmarks 可能没有）；History、Firefox 的 places.sqlite 拷到临时目录再只读打开，读完删。
 // 读完换上一份不可变的快照，回 UI 线程通知；之后按「开关 + 各文件的修改时间」判断要不要重读，没变就不读。
 // 浏览历史只要「去过两次以上或手输过的」（同 mac），各家合起来按网址去重留最近的。
 // 网站图标（D8）：Chromium 系的 Favicons 库也拷一份，按主机查一张 ≤ 64 的图，查过的按主机缓存（SiteIcons）。
@@ -52,6 +53,9 @@ internal static class Browsers
     public static IReadOnlyList<string> HistoryIds(Settings settings)
         => (settings.LauncherHistoryBrowsers ?? new List<string>()).Where(id => BookmarkIds(settings).Contains(id)).ToList();
 
+    /// <summary>Chromium 系每个配置目录里的两份书签：本机的、登录账号后存在账号里的（格式相同）。</summary>
+    public static readonly string[] ChromiumBookmarkFiles = { "Bookmarks", "AccountBookmarks" };
+
     /// <summary>一家的各个配置目录：Chromium 是 Default、Profile 1…（Opera 就是根目录本身），Firefox 是 Profiles 下的每一个。</summary>
     public static IEnumerable<string> Profiles(BrowserInfo browser)
     {
@@ -60,7 +64,7 @@ internal static class Browsers
             yield break;
         }
 
-        if (!browser.IsFirefox && File.Exists(Path.Combine(browser.Root, "Bookmarks")))
+        if (!browser.IsFirefox && ChromiumBookmarkFiles.Any(name => File.Exists(Path.Combine(browser.Root, name))))
         {
             yield return browser.Root;
         }
@@ -209,7 +213,11 @@ internal static class BrowserIndex
             yield break;
         }
 
-        yield return Path.Combine(profile, "Bookmarks");
+        foreach (var name in Browsers.ChromiumBookmarkFiles)
+        {
+            yield return Path.Combine(profile, name);
+        }
+
         if (history)
         {
             yield return Path.Combine(profile, "History");
@@ -226,7 +234,7 @@ internal static class BrowserIndex
             var wantsHistory = historyIds.Contains(browser.Id);
             var foundBookmarks = false;
             var foundHistory = false;
-            var bookmarkCount = 0;
+            var firstBookmark = bookmarks.Count;
             var historyCount = 0;
             foreach (var profile in Browsers.Profiles(browser))
             {
@@ -244,7 +252,7 @@ internal static class BrowserIndex
                         foundHistory |= wantsHistory;
                         WithCopy(places, connection =>
                         {
-                            bookmarkCount += ReadFirefoxBookmarks(connection, browser, bookmarks);
+                            ReadFirefoxBookmarks(connection, browser, bookmarks);
                             if (wantsHistory)
                             {
                                 historyCount += ReadHistory(connection, browser, history, firefox: true);
@@ -253,14 +261,18 @@ internal static class BrowserIndex
                         continue;
                     }
 
-                    var file = Path.Combine(profile, "Bookmarks");
-                    if (File.Exists(file))
+                    foreach (var name in Browsers.ChromiumBookmarkFiles)
                     {
+                        var file = Path.Combine(profile, name);
+                        if (!File.Exists(file))
+                        {
+                            continue;
+                        }
+
                         foundBookmarks = true;
                         foreach (var bookmark in ChromiumBookmarks.Parse(File.ReadAllText(file), browser.Name))
                         {
                             bookmarks.Add(Bookmark(bookmark.Title, bookmark.Url, browser));
-                            bookmarkCount++;
                         }
                     }
 
@@ -279,7 +291,9 @@ internal static class BrowserIndex
             }
 
             status[Key(browser.Id, false)] = new BrowserStatus(
-                foundBookmarks ? BrowserReadState.Read : BrowserReadState.NoFile, bookmarkCount);
+                foundBookmarks ? BrowserReadState.Read : BrowserReadState.NoFile,
+                // 同一家里去重后的条数（本机和账号里的书签常有重的，几个配置之间也是）。
+                bookmarks.Skip(firstBookmark).Select(item => item.Target).Distinct(StringComparer.OrdinalIgnoreCase).Count());
             if (wantsHistory)
             {
                 status[Key(browser.Id, true)] = new BrowserStatus(
@@ -316,9 +330,8 @@ internal static class BrowserIndex
         };
     }
 
-    private static int ReadFirefoxBookmarks(SqliteConnection connection, BrowserInfo browser, List<LauncherItem> into)
+    private static void ReadFirefoxBookmarks(SqliteConnection connection, BrowserInfo browser, List<LauncherItem> into)
     {
-        var count = 0;
         using var statement = connection.Prepare(
             """
             SELECT COALESCE(b.title, p.title, p.url), p.url
@@ -333,11 +346,8 @@ internal static class BrowserIndex
                                     url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)))
             {
                 into.Add(Bookmark(statement.GetText(0) ?? url, url, browser));
-                count++;
             }
         }
-
-        return count;
     }
 
     /// <summary>去过两次以上或手输过的网页（mac 同口径），最近的 3000 条；时间换成 Unix 毫秒。</summary>

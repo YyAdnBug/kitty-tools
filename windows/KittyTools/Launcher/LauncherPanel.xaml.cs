@@ -136,10 +136,30 @@ public sealed partial class LauncherPanel : UserControl
                 return LauncherListLayout.SearchHeight + LauncherListLayout.BarHeight;
             }
 
+            if (!ShowsBar)
+            {
+                return LauncherListLayout.SearchHeight;
+            }
+
             var heights = model.Results.Select(item => LauncherListLayout.HeightOf(item.Kind)).ToList();
             return LauncherListLayout.PanelHeight(
                 heights, model.Groups.Count, model.ShowsEmptyText, _palette.IsOpen ? _paletteHeight : 0);
         }
+    }
+
+    /// <summary>
+    /// 底栏露不露：空首页（第一次用、收藏和常用都没有）没有选中项可说，留着就是搜索线下面一截空白，整条收起、
+    /// 连搜索线底下的发丝线一起（面板只剩搜索线）。有就地提示、「更新到 x」时照常露出来。
+    /// </summary>
+    private bool ShowsBar => Model is not { } model || model.Results.Count > 0 || model.ShowsEmptyText || _palette.IsOpen ||
+                             Footer.HasNotice || UpdateService.AvailableVersion is not null;
+
+    private void ApplyBar()
+    {
+        var shows = ShowsBar;
+        FooterRow.Height = new GridLength(shows ? LauncherListLayout.BarHeight : 0);
+        Footer.Visibility = shows ? Visibility.Visible : Visibility.Collapsed;
+        SearchLineControl.ShowHairline(shows);
     }
 
     /// <summary>
@@ -158,7 +178,14 @@ public sealed partial class LauncherPanel : UserControl
             SearchBox.Text = text;
             SearchBox.SelectionStart = text.Length;
         };
-        model.ShowBarNotice = (text, actionText, action, success) => Footer.ShowNotice(text, actionText, action, success);
+        model.ShowBarNotice = (text, actionText, action, success) =>
+        {
+            Footer.ShowNotice(text, actionText, action, success);
+            // 从常用里移除了最后一项：首页空了，提示还得有地方显示。
+            // ponytail: 提示 5 s 后退了，底栏要等下一次重画才收起；要马上收就给 PanelFooter 加一个提示退场的事件。
+            ApplyBar();
+            HeightRequested?.Invoke(ContentHeightDip, false);
+        };
         model.Announce = Announce;
         model.ResultsChanged = keep =>
         {
@@ -366,6 +393,7 @@ public sealed partial class LauncherPanel : UserControl
 
         _footerKey = string.Empty;
         UpdateFooter();
+        ApplyBar();
         HeightRequested?.Invoke(ContentHeightDip, false);
         LoadSiteIcons();
         LoadPathIcons();
