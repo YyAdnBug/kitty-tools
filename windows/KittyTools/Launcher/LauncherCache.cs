@@ -9,7 +9,8 @@ namespace KittyTools;
 
 internal static class LauncherCache
 {
-    private const int Version = 1;
+    // 2：2026-10-28 程序图标倒着的修好了（ShellIcons.ToPng），旧缓存里的图标是倒的，换版本让它重扫一次。
+    private const int Version = 2;
 
     private static string Path => System.IO.Path.Combine(Paths.DataDirectory, "launcher-cache.json");
 

@@ -44,8 +44,6 @@ internal sealed partial class ClipDialogHost : Grid
             Background = Theme.Brush("Kitty.CardSolid", Color.FromArgb(255, 251, 251, 251)),
             BorderBrush = Theme.Brush("Kitty.Hairline", Color.FromArgb(20, 0, 0, 0)),
             BorderThickness = new Thickness(1),
-            Translation = new System.Numerics.Vector3(0, 0, 32),
-            Shadow = new ThemeShadow(),
         };
         Children.Add(_card);
         // 点压暗的地方 = 取消（同点菜单外面）。

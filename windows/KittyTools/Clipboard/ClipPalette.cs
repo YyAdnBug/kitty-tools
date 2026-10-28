@@ -38,6 +38,8 @@ internal sealed partial class ClipPalette : Grid
     private IReadOnlyList<PaletteItem> _root = Array.Empty<PaletteItem>();
     private PaletteItem? _parent;
     private List<PaletteItem> _shown = new();
+    /// <summary>当前这一级每一项的行（下标同 _shown）：悬停 / ↑↓ 只换底色，不重建，免得按下和松开落在两个不同的元素上。</summary>
+    private readonly List<Grid> _rowViews = new();
     private string _filter = string.Empty;
     private int _selected;
 
@@ -50,8 +52,8 @@ internal sealed partial class ClipPalette : Grid
         BorderBrush = Theme.Brush("Kitty.Hairline", Color.FromArgb(20, 0, 0, 0));
         BorderThickness = new Thickness(1);
         Visibility = Visibility.Collapsed;
-        Translation = new System.Numerics.Vector3(0, 0, 32);
-        Shadow = new ThemeShadow();
+        // 不用 ThemeShadow + Translation Z：菜单浮在列表上时它可能让点击落到后面的条目上（2026-10-28 用户报点菜单穿透）；
+        // 边上一条发丝线就分得开层次。
         _scroll = new ScrollViewer
         {
             Content = _rows,
@@ -61,9 +63,29 @@ internal sealed partial class ClipPalette : Grid
         };
         Children.Add(_scroll);
         AutomationProperties.SetName(this, "菜单");
+        Scrim.Tapped += (_, args) =>
+        {
+            args.Handled = true;
+            Close();
+        };
+        Scrim.RightTapped += (_, args) =>
+        {
+            args.Handled = true;
+            Close();
+        };
     }
 
     public bool IsOpen => Visibility == Visibility.Visible;
+
+    /// <summary>
+    /// 菜单开着时垫在菜单和列表之间的透明层（宿主把它放在菜单下面、盖满列表区）：点到菜单外面只关菜单，
+    /// 不落到后面的条目上（mac：同系统菜单；2026-10-28 用户报剪贴板的操作菜单点击穿透）。开关由菜单自己管。
+    /// </summary>
+    public Grid Scrim { get; } = new()
+    {
+        Background = new SolidColorBrush(Colors.Transparent),
+        Visibility = Visibility.Collapsed,
+    };
 
     /// <summary>在子列表里（← / Esc 先回第一级）。</summary>
     public bool InSubmenu => _parent is not null;
@@ -81,6 +103,7 @@ internal sealed partial class ClipPalette : Grid
         _filter = string.Empty;
         _selected = 0;
         Visibility = Visibility.Visible;
+        Scrim.Visibility = Visibility.Visible;
         Render();
         Motion.Entrance(this, MotionCurve.Settle, rise: Kind == "filter" ? -6 : 6);
     }
@@ -102,6 +125,7 @@ internal sealed partial class ClipPalette : Grid
         }
 
         Visibility = Visibility.Collapsed;
+        Scrim.Visibility = Visibility.Collapsed;
         _parent = null;
         Closed?.Invoke();
     }
@@ -133,7 +157,7 @@ internal sealed partial class ClipPalette : Grid
         }
 
         _selected = next;
-        Render();
+        ApplySelection(bringIntoView: true);
     }
 
     /// <summary>Enter：执行选中的（子列表行是进去）。返回有没有执行一个动作（执行了菜单自己关掉）。</summary>
@@ -217,6 +241,7 @@ internal sealed partial class ClipPalette : Grid
         }
 
         _rows.Children.Clear();
+        _rowViews.Clear();
         if (_parent is { } parent)
         {
             var back = Row(new PaletteItem(parent.Title, Glyphs.ChevronLeft, -1, null), selected: false, header: true);
@@ -250,7 +275,7 @@ internal sealed partial class ClipPalette : Grid
                 if (_selected != at)
                 {
                     _selected = at;
-                    Render();
+                    ApplySelection(bringIntoView: false);
                 }
             };
             row.Tapped += (_, args) =>
@@ -260,6 +285,7 @@ internal sealed partial class ClipPalette : Grid
                 Activate();
             };
             _rows.Children.Add(row);
+            _rowViews.Add(row);
         }
 
         if (_shown.Count == 0)
@@ -271,6 +297,24 @@ internal sealed partial class ClipPalette : Grid
                 Foreground = Theme.SecondaryText(),
                 Margin = new Thickness(10, 6, 10, 6),
             });
+        }
+    }
+
+    /// <summary>选中的那行换成 Fill.Selected，其余透明（读屏状态跟着换）。</summary>
+    private void ApplySelection(bool bringIntoView)
+    {
+        for (var index = 0; index < _rowViews.Count; index++)
+        {
+            var selected = index == _selected;
+            _rowViews[index].Background = selected
+                ? Theme.Brush("Kitty.Fill.Selected", Color.FromArgb(18, 0, 0, 0))
+                : new SolidColorBrush(Colors.Transparent);
+            AutomationProperties.SetItemStatus(_rowViews[index], selected ? "已选中" : string.Empty);
+        }
+
+        if (bringIntoView && _selected >= 0 && _selected < _rowViews.Count)
+        {
+            _rowViews[_selected].StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false });
         }
     }
 

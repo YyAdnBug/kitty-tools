@@ -170,12 +170,13 @@ internal static unsafe partial class ShellIcons
             return null;
         }
 
+        // 位图是 CreateBitmap 按「自上而下」建的（biHeight 传负数），第一行就是最上面一行，照原样拷。
+        // 不能看 GetObject 回来的 dsBmih.biHeight 判断行序：GDI 对自上而下的 DIB 也报正数，按它倒着拷整张图就上下颠倒了
+        // （2026-10-28 用户报剪贴板和启动器里的程序图标是倒着的）。
         var pixels = new byte[width * height * 4];
-        var bottomUp = section.dsBmih.biHeight > 0;
         for (var row = 0; row < height; row++)
         {
-            var sourceRow = bottomUp ? height - 1 - row : row;
-            new ReadOnlySpan<byte>(bits + sourceRow * stride, width * 4)
+            new ReadOnlySpan<byte>(bits + row * stride, width * 4)
                 .CopyTo(pixels.AsSpan(row * width * 4, width * 4));
         }
 

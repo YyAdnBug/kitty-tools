@@ -61,6 +61,12 @@ internal static class UiSnapshotProbe
         try
         {
             SeedSampleClips();
+            // 程序图标的方向（2026-10-28 用户报「程序图标是倒着的」）：记事本的图标出一张，书脊应该在上面。
+            var notepad = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", "notepad.exe");
+            if (Wanted("icon") && ShellIcons.LoadPng(notepad, 2, 24) is { } png)
+            {
+                File.WriteAllBytes(Path.Combine(directory, "icon-notepad.png"), png);
+            }
             var originalTheme = SettingsService.Current.Theme;
             foreach (var dark in new[] { false, true })
             {
@@ -330,9 +336,23 @@ internal static class UiSnapshotProbe
         Log.Info("ui-snapshots seeded sample clips");
     }
 
+    /// <summary>
+    /// KITTY_SNAPSHOT_ONLY=clip-,settings：只出文件名以这些前缀开头的图（同 mac 的 TEST_RUNNER_KITTY_SNAPSHOT_ONLY），
+    /// 只改了一族界面时省时间。没设就全出。
+    /// </summary>
+    private static bool Wanted(string name)
+        => Environment.GetEnvironmentVariable("KITTY_SNAPSHOT_ONLY") is not { Length: > 0 } only ||
+           only.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+               .Any(prefix => name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+
     private static async Task SafeRenderAsync(
         Grid root, Func<FrameworkElement> create, string name, bool dark, string directory)
     {
+        if (!Wanted(name))
+        {
+            return;
+        }
+
         try
         {
             await RenderAsync(root, create(), name, dark, directory);
@@ -357,6 +377,11 @@ internal static class UiSnapshotProbe
 
     private static async Task SafeRenderSettingsAsync(bool dark, string directory)
     {
+        if (!Wanted("settings"))
+        {
+            return;
+        }
+
         SettingsWindow? settings = null;
         try
         {
@@ -389,6 +414,11 @@ internal static class UiSnapshotProbe
     private static async Task RenderWindowAsync(
         Window window, string name, bool dark, string directory)
     {
+        if (!Wanted(name))
+        {
+            return;
+        }
+
         await Task.Delay(800);
         if (window.Content is not FrameworkElement content)
         {

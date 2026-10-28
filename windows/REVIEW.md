@@ -31,6 +31,7 @@
 - 6d（键盘和菜单）：见 `git log --grep "6d"`。新文件 `Clipboard/ClipPalette.cs`（面板里的筛选 / 操作菜单）；`ClipEntry` 加形态缓存 `Form`；另动了 `Settings/ShortcutsSheet.cs` 剪贴板那一组。
 - 6e（对话框）：见 `git log --grep "6e"`。新文件 `Clipboard/ClipDialogs.cs`；`Shell/Glyphs.cs` 加 `Remove`。
 - 6f（放大预览）：见 `git log --grep "6f"`。新文件 `Clipboard/ClipQuickLook.cs`；`Core/ClipPreviewRules.cs` 加 `QuickLookSize`、`HeaderStyle`。
+- 真机反馈两条（2026-10-28，用户试 024d0e3 的包）：① 剪贴板操作菜单点击穿透到后面的条目 → `ClipPalette` 悬停 / ↑↓ 只换底色不重建行、去掉 ThemeShadow + Translation Z、加 `Scrim`（菜单下面一层透明垫层，点了只关菜单）；**启动器也用它，在 `Launcher/LauncherPanel.xaml.cs` 里加了一行 `ListHost.Children.Add(_palette.Scrim)`**（审查方的文件，只加这一行）。② 程序图标倒着 → `Launcher/ShellIcons.cs` 的 `ToPng` 不再看 `GetObject` 报的 biHeight 判断行序（自上而下的 DIB 也报正数，整张被翻了一次）；`Launcher/LauncherCache.cs` 的缓存版本 1 → 2，让旧的倒图标缓存作废、重扫一次。另：`--ui-snapshots` 加 `KITTY_SNAPSHOT_ONLY=前缀,…` 只出部分图；这次跑全套时卡在启动器 `launcher-calc` 之后不动（10 分钟被杀），没查，审查方看一下 7a–7d 的截图状态。
 - 6g（设置页）：见 `git log --grep "6g"`。`App/Settings.cs` 加 `ClipboardShowLens`、`ClipboardPasteOnClick`、`ClipboardPastePlain`、`ClipboardImageOcr`、`ClipboardClearOnQuit`、`ClipboardClearOnLock`（字段名以后别改）；另动了 `Clipboard/OcrQueue.cs`（识字开关）、`Shell/ShellRuntime.cs`（退出 / 锁屏清空）、`Core/PanelFooterText.cs`、`App/UiSnapshotProbe.cs`（settings-clipboard 整页）。**6a–6g 做完，上面这些文件已交还**，照常归你们；真机手测 HANDTEST 449–528 都没走。
 
 ## v9 标注分工（2026-10-27，用户拍板 PLAN-v9-annotate D1–D7 全部按推荐）

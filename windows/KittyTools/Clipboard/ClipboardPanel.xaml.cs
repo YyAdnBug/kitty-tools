@@ -105,6 +105,7 @@ public sealed partial class ClipboardPanel : UserControl
         _keyHintTimer.Tick += (_, _) => SetKeyHints(true);
 
         ListHost.Children.Insert(0, _list);
+        ListHost.Children.Add(_palette.Scrim);
         ListHost.Children.Add(_palette);
         ListHost.Children.Add(_dialogs);
         _dialogs.Closed += OnDialogClosed;

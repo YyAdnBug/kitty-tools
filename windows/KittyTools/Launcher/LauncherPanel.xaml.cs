@@ -70,6 +70,8 @@ public sealed partial class LauncherPanel : UserControl
         _shiftTimer.Tick += (_, _) => SetAlternate(LauncherAlternate.Shift);
 
         ListHost.Children.Insert(0, _list);
+        // 菜单下面垫一层：点到菜单外面只关菜单，不落到后面的结果上（剪贴板那边用户报过点击穿透）。
+        ListHost.Children.Add(_palette.Scrim);
         ListHost.Children.Add(_palette);
         _palette.Closed += OnPaletteClosed;
         _palette.FilterReset += () => SetSearchQuietly(string.Empty);
