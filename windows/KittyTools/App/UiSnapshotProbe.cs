@@ -74,6 +74,16 @@ internal static class UiSnapshotProbe
                 await SafeRenderAsync(root, () => new ClipboardPanel(), "clip", dark, directory);
                 // PLAN-v7 §3.1：多选时的底栏（已选 N 条 · 合并粘贴 / 收藏 / 删除 / 取消）。
                 await SafeRenderAsync(root, () => new ClipboardPanel(), "clip-multi", dark, directory);
+                if (!dark && Environment.GetEnvironmentVariable("KITTY_CLIP_PERF") == "1")
+                {
+                    await MeasureClipboardAsync(root);
+                }
+
+                // PLAN-v9-clipboard 6b：命中高亮、片段范围的「＋ 新建片段」行、收藏标签、滚动后吸顶的分组标题。
+                foreach (var state in new[] { "clip-search", "clip-snippets", "clip-favorites", "clip-scrolled" })
+                {
+                    await SafeRenderAsync(root, () => new ClipboardPanel(), state, dark, directory);
+                }
                 await SafeRenderSettingsAsync(dark, directory);
             }
 
@@ -231,6 +241,35 @@ internal static class UiSnapshotProbe
     }
 
     /// <summary>
+    /// PLAN-v9-clipboard 6b 的验收（KITTY_CLIP_PERF=1，只在自检档）：5000 条历史，在第 4000 条附近按 ↓，每一下从选中到布局更新完的耗时。
+    /// 屏外排版，不弹面板；这 5000 条留在自检档的库里，跑完删掉那个数据目录。
+    /// </summary>
+    private static async Task MeasureClipboardAsync(Grid root)
+    {
+        if (!Paths.IsTestProfile || ClipboardService.Instance?.Store is not { } store)
+        {
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var clips = new List<(string Text, bool Favorite, DateTimeOffset? CopiedAt)>();
+        for (var index = 0; index < 5000; index++)
+        {
+            clips.Add((string.Concat("R33 样本 ", index.ToString(), "：一段普通剪贴板文本。"), false, now.AddSeconds(-index * 40)));
+        }
+
+        store.AdoptTextClips(clips);
+        var panel = new ClipboardPanel { Width = 720, Height = 520 };
+        root.Children.Add(panel);
+        panel.OnShown();
+        await Task.Delay(500);
+        var result = panel.MeasureSelection(150);
+        Log.Info($"clip.scroll median={result.Median:F2}ms p95={result.P95:F2}ms n={result.Count} items={store.Count}");
+        panel.OnHidden();
+        root.Children.Remove(panel);
+    }
+
+    /// <summary>
     /// 自检的那套数据里剪贴板是空的时候塞几条假文本，底栏和透镜才有东西可看。
     /// 只在自检档（Debug / KITTY_PROBE_PROFILE）、而且一条都没有时才塞，不碰真实历史。
     /// </summary>
@@ -250,6 +289,11 @@ internal static class UiSnapshotProbe
             ("#FF2D55", false, now.AddHours(-3)),
             ("Kitty Tools 0.7.0 界面对齐 mac", false, now.AddHours(-26)),
             ("SELECT id, text FROM clips ORDER BY copied_at DESC LIMIT 20;", false, now.AddHours(-30)),
+            ("{\"name\": \"kitty\", \"version\": \"0.2.0\", \"features\": [\"clipboard\", \"screenshot\"]}", false, now.AddDays(-3)),
+            ("周报：本周完成剪贴板对齐 mac 的数据底子和列表重写，下周做透镜和键盘。\n风险：Release 构建的 AOT 警告要一直保持为零。", true, now.AddDays(-3).AddHours(-1)),
+            ("rgba(52, 199, 89, 0.6)", false, now.AddDays(-4)),
+            ("git log --oneline -20 | cat", false, now.AddDays(-5)),
+            ("https://learn.microsoft.com/windows/apps/winui/winui3/", false, now.AddDays(-6)),
         });
         Log.Info("ui-snapshots seeded sample clips");
     }
@@ -368,12 +412,9 @@ internal static class UiSnapshotProbe
                 break;
             case ClipboardPanel clipboard:
                 clipboard.OnShown();
-                if (name == "clip-multi")
-                {
-                    await Task.Delay(300);
-                    clipboard.SelectFirstForProbe(3);
-                }
-
+                await Task.Delay(300);
+                clipboard.ApplyProbeState(name);
+                panel.Height = clipboard.ContentHeightDip;
                 break;
         }
 

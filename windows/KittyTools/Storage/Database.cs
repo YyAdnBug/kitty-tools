@@ -51,7 +51,7 @@ internal sealed class Database : IDisposable
             """
             SELECT id, kind, text, file_paths, image_hash, width, height, image_bytes,
                    source_exe, source_name, copied_at, favorite,
-                   uid, snippet, note, group_id, ocr_text
+                   uid, snippet, note, group_id, ocr_text, (html IS NOT NULL OR rtf IS NOT NULL)
             FROM clips ORDER BY copied_at DESC, id DESC
             """);
         while (statement.Step())
@@ -81,6 +81,7 @@ internal sealed class Database : IDisposable
                 Note = statement.GetText(14),
                 GroupId = statement.GetText(15),
                 OcrText = statement.GetText(16),
+                Rich = statement.GetInt64(17) != 0,
             });
         }
 
@@ -172,7 +173,8 @@ internal sealed class Database : IDisposable
 
     public void SetText(long id, string text)
     {
-        using var statement = _connection.Prepare("UPDATE clips SET text = ?2 WHERE id = ?1");
+        // 改了正文，原来的格式就不对了：一起清掉（mac「保存后不再保留原来的格式」），不然粘出来还是旧的。
+        using var statement = _connection.Prepare("UPDATE clips SET text = ?2, html = NULL, rtf = NULL WHERE id = ?1");
         statement.BindInt64(1, id).BindText(2, text);
         statement.Step();
     }

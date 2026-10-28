@@ -7,201 +7,43 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="mc">
 
-    <UserControl.Resources>
-        <!-- 系统的悬停 / 选中底色都设成透明，只用我们自己那块会滑动的高亮（Highlight）。日期标题在同一个 ListViewItem 里，
-             系统底色会连它一起盖上，和高亮叠在一起（0.1.0 用户反馈）。 -->
-        <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver" Color="Transparent" />
-        <SolidColorBrush x:Key="ListViewItemBackgroundPressed" Color="Transparent" />
-        <SolidColorBrush x:Key="ListViewItemBackgroundSelected" Color="Transparent" />
-        <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver" Color="Transparent" />
-        <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPressed" Color="Transparent" />
-        <SolidColorBrush x:Key="ListViewItemSelectionIndicatorBrush" Color="Transparent" />
-        <SolidColorBrush x:Key="ListViewItemSelectionIndicatorPointerOverBrush" Color="Transparent" />
-        <SolidColorBrush x:Key="ListViewItemSelectionIndicatorPressedBrush" Color="Transparent" />
-        <Style x:Key="ClipRowStyle" TargetType="ListViewItem">
-            <Setter Property="Padding" Value="0" />
-            <Setter Property="Margin" Value="0" />
-            <Setter Property="MinHeight" Value="0" />
-            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-        </Style>
-
-        <DataTemplate x:Key="ClipRowTemplate" x:DataType="local:ClipRow">
-            <StackPanel>
-                <TextBlock
-                    Text="{x:Bind DateHeader}"
-                    Visibility="{x:Bind DateHeaderVisibility}"
-                    FontSize="{StaticResource Kitty.FontSize.GroupHeader}"
-                    Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                    Margin="8,10,0,4" />
-                <Grid Height="40" ColumnSpacing="10" Padding="6,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <Border
-                        Width="24"
-                        Height="24"
-                        CornerRadius="5.5"
-                        Background="{x:Bind IconBackground}"
-                        VerticalAlignment="Center">
-                        <FontIcon
-                            Glyph="{x:Bind Glyph}"
-                            FontSize="12"
-                            HorizontalAlignment="Center"
-                            VerticalAlignment="Center" />
-                    </Border>
-                    <TextBlock
-                        Grid.Column="1"
-                        Text="{x:Bind Title}"
-                        FontSize="{StaticResource Kitty.FontSize.RowTitle}"
-                        TextTrimming="CharacterEllipsis"
-                        TextWrapping="NoWrap"
-                        MaxLines="1"
-                        VerticalAlignment="Center" />
-                    <StackPanel
-                        Grid.Column="2"
-                        VerticalAlignment="Center"
-                        Spacing="0">
-                        <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
-                            <TextBlock
-                                Text="{x:Bind RightText}"
-                                FontSize="{StaticResource Kitty.FontSize.Meta}"
-                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                MaxWidth="90"
-                                TextTrimming="CharacterEllipsis"
-                                MaxLines="1" />
-                            <FontIcon
-                                Glyph="&#xE735;"
-                                FontSize="11"
-                                Foreground="{ThemeResource Kitty.Favorite}"
-                                Visibility="{x:Bind FavoriteVisibility}" />
-                            <Border
-                                Style="{StaticResource Kitty.KeyCap}"
-                                Visibility="{x:Bind SnippetVisibility}">
-                                <TextBlock Text="片段" FontSize="{StaticResource Kitty.FontSize.KeyCap}" />
-                            </Border>
-                        </StackPanel>
-                        <TextBlock
-                            Text="{x:Bind NoteText}"
-                            Visibility="{x:Bind NoteVisibility}"
-                            FontSize="{StaticResource Kitty.FontSize.Label}"
-                            Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                            MaxWidth="150"
-                            TextTrimming="CharacterEllipsis"
-                            MaxLines="1"
-                            HorizontalAlignment="Right" />
-                    </StackPanel>
-                    <Border
-                        Grid.Column="3"
-                        Style="{StaticResource Kitty.KeyCap}"
-                        Visibility="{x:Bind KeyHintVisibility}">
-                        <TextBlock
-                            Text="{x:Bind KeyHint}"
-                            FontSize="{StaticResource Kitty.FontSize.KeyCap}"
-                            HorizontalAlignment="Center"
-                            VerticalAlignment="Center" />
-                    </Border>
-                </Grid>
-                <!-- U1 透镜：选中行原地展开的正文区，由代码挂上去。 -->
-                <ContentControl
-                    Content="{x:Bind Lens, Mode=OneWay}"
-                    Visibility="{x:Bind LensVisibility, Mode=OneWay}"
-                    Height="{x:Bind LensHeight, Mode=OneWay}"
-                    HorizontalContentAlignment="Stretch" />
-            </StackPanel>
-        </DataTemplate>
-    </UserControl.Resources>
-
-    <Grid Padding="16,14,16,0" RowSpacing="8">
+    <!-- 照 mac 的透镜指令条：搜索线 56（含底下一条发丝线）+ 列表 + 底栏 36，没有外边距；
+         列表是 ClipListView（前缀和摆放，四周内缩 6），由代码放进 ListHost。 -->
+    <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="36" />
         </Grid.RowDefinitions>
 
-        <Grid Grid.Row="0" ColumnSpacing="12">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <ui:SearchLine x:Name="SearchLineControl" Grid.Column="0" />
-            <StackPanel
-                Grid.Column="1"
-                Orientation="Horizontal"
-                Spacing="6"
-                Visibility="Collapsed"
-                VerticalAlignment="Center">
-                <ToggleButton
-                    x:Name="AllScope"
-                    Content="全部"
-                    IsChecked="True"
-                    Click="OnAllScopeClick" />
-                <ToggleButton
-                    x:Name="FavoriteScope"
-                    Content="收藏"
-                    Click="OnFavoriteScopeClick" />
-                <ToggleButton
-                    x:Name="SnippetScope"
-                    Content="片段"
-                    Click="OnSnippetScopeClick" />
-                <ComboBox
-                    x:Name="GroupFilter"
-                    MinWidth="110"
-                    PlaceholderText="收藏夹"
-                    AutomationProperties.Name="收藏夹筛选"
-                    Visibility="Collapsed"
-                    SelectionChanged="OnGroupFilterChanged" />
-            </StackPanel>
-        </Grid>
+        <ui:SearchLine x:Name="SearchLineControl" Grid.Row="0" />
 
-        <Grid Grid.Row="1">
-            <Border
-                x:Name="Highlight"
-                Height="40"
-                CornerRadius="4"
-                Background="{ThemeResource Kitty.Fill.Selected}"
-                IsHitTestVisible="False"
-                Visibility="Collapsed"
-                HorizontalAlignment="Stretch"
-                VerticalAlignment="Top" />
-            <!-- 列表不露滚动条（0.1.0 用户反馈：上下键挪高亮时右边冒出一根）；滚轮、方向键照样滚。 -->
-            <ListView
-                x:Name="List"
-                ItemTemplate="{StaticResource ClipRowTemplate}"
-                ItemContainerStyle="{StaticResource ClipRowStyle}"
-                SelectionMode="Extended"
-                CanDragItems="True"
-                DragItemsStarting="OnDragItemsStarting"
-                IsItemClickEnabled="True"
-                ItemClick="OnItemClick"
-                SelectionChanged="OnSelectionChanged"
-                DoubleTapped="OnListDoubleTapped"
-                RightTapped="OnListRightTapped"
-                ScrollViewer.VerticalScrollBarVisibility="Hidden"
-                ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
+        <Grid x:Name="ListHost" Grid.Row="1">
             <StackPanel
                 x:Name="EmptyState"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center"
-                Spacing="8"
-                Visibility="Collapsed"
-                IsHitTestVisible="False">
-                <FontIcon
-                    Glyph="&#xE8C8;"
-                    FontSize="28"
-                    Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                    HorizontalAlignment="Center" />
+                Orientation="Horizontal"
+                Spacing="6"
+                Visibility="Collapsed">
                 <TextBlock
                     x:Name="EmptyText"
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     FontSize="{StaticResource Kitty.FontSize.RowTitle}"
-                    TextAlignment="Center" />
+                    VerticalAlignment="Center" />
+                <HyperlinkButton
+                    x:Name="EmptyClear"
+                    Content="清除搜索和筛选"
+                    Padding="0"
+                    FontSize="{StaticResource Kitty.FontSize.RowTitle}"
+                    Visibility="Collapsed"
+                    VerticalAlignment="Center"
+                    IsTabStop="False"
+                    Click="OnEmptyClearClick" />
             </StackPanel>
         </Grid>
 
-        <!-- PLAN-v7 §3.1 底栏：左「N 条」/ 就地提示，右「粘贴 ↩ · 操作 Ctrl+K ｜ 齿轮 图钉」；负外边距撑到整宽 -->
-        <ui:PanelFooter x:Name="Footer" Grid.Row="2" Margin="-16,0,-16,0" />
+        <!-- PLAN-v7 §3.1 底栏：左「N 条」/ 就地提示，右「粘贴 ↩ · 操作 Ctrl+K ｜ 齿轮 图钉」 -->
+        <ui:PanelFooter x:Name="Footer" Grid.Row="2" />
     </Grid>
 </UserControl>

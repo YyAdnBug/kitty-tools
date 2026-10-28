@@ -1,9 +1,7 @@
-// 剪贴板面板：搜索框 + 收藏范围 + 左列表右预览。焦点一直在搜索框，方向键转给列表。
-// 按键表见 PLAN §6.3；删除先只从列表拿掉（Ctrl+Z 可撤），面板收起时才真的删库。
-// 列表用一个固定的 ObservableCollection，按键搜索时只替换变了的尾部，不整表重建 ItemsSource。
-// 第二版 §3.5：高度随内容（三行起、十行封顶）、只有一块会滑动的选中高亮、按住 Ctrl 150 ms 后
-// 前九行右边浮现数字键帽、预览卡按内容换字体 / 色块 / 棋盘格、空状态各一句。
-using System.Collections.ObjectModel;
+// 剪贴板面板（照 mac 的透镜指令条 Lens Bar）：搜索线 + 单列列表 + 底栏。焦点一直在搜索框，方向键、Ctrl 组合键都在这里处理。
+// 列表是 ClipListView（Core 的前缀和摆放，只建可见区附近的行）；选中行原地展开成透镜，高亮就是透镜的底。
+// 选择模型在这里：一个选中项 + 多选的勾选集（Ctrl 单击 / Shift 单击 / Shift+↑↓），操作对象 = 勾选项（按复制先后）或选中项。
+// 删除先只从列表拿掉（Ctrl+Z 可撤），面板收起时才真的删库。
 using System.Diagnostics;
 using System.Numerics;
 using KittyTools.Core;
@@ -28,19 +26,22 @@ namespace KittyTools;
 public sealed partial class ClipboardPanel : UserControl
 {
     private readonly List<ClipEntry> _visible = new();
-    private readonly ObservableCollection<ClipRow> _rows = new();
+    private readonly ClipListView _list = new();
+    /// <summary>多选的勾选项（条目 id）；空 = 不在多选状态。</summary>
+    private readonly HashSet<long> _checked = new();
     /// <summary>搜索线的输入框（PLAN-v7 §2.2 的共用部件）。</summary>
     private TextBox SearchBox => SearchLineControl.Box;
     /// <summary>当前选中行透镜里的内容（U1：原地展开，不再有右边那一栏）。</summary>
     private readonly StackPanel PreviewHost = new() { Spacing = 8 };
     private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _keyHintTimer;
+    private readonly TextBlock _titleMeasure = new() { FontSize = 14, TextWrapping = TextWrapping.NoWrap };
     private ClipScope _scope = ClipScope.All;
     private string? _groupFilterId;
+    private int _selected = -1;
+    /// <summary>Shift 单击 / Shift+↑↓ 整段选的起点。</summary>
+    private long? _anchorId;
     private bool _active;
     private bool _showKeyHints;
-    private bool _animateHighlight;
-    private MotionCurve _highlightCurve = MotionCurve.Glide;
-    private ScrollViewer? _listScroll;
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _linkTimer;
     private CancellationTokenSource? _linkCts;
     private Uri? _linkPending;
@@ -58,7 +59,8 @@ public sealed partial class ClipboardPanel : UserControl
     public ClipboardPanel()
     {
         InitializeComponent();
-        SearchBox.PlaceholderText = "搜索剪贴板…";
+        SearchBox.PlaceholderText = "搜索剪贴板，Tab 筛选";
+        SearchLineControl.ExtendHairline();
         SearchBox.TextChanged += OnSearchTextChanged;
         AddHandler(KeyDownEvent, new KeyEventHandler(OnKeyDown), handledEventsToo: true);
         AddHandler(KeyUpEvent, new KeyEventHandler(OnKeyUp), handledEventsToo: true);
@@ -67,14 +69,6 @@ public sealed partial class ClipboardPanel : UserControl
         {
             _composing = false;
             Refresh(animated: false);
-        };
-        List.ContainerContentChanging += (_, e) =>
-        {
-            if (e.Item is ClipRow row && e.ItemContainer is { } container)
-            {
-                Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
-                    container, $"{row.Title}，{row.RightText}");
-            }
         };
         SearchBox.Loaded += (_, _) =>
         {
@@ -88,16 +82,16 @@ public sealed partial class ClipboardPanel : UserControl
         _keyHintTimer.IsRepeating = false;
         _keyHintTimer.Tick += (_, _) => SetKeyHints(true);
 
-        List.Loaded += (_, _) =>
+        ListHost.Children.Insert(0, _list);
+        _list.ItemTapped += OnItemTapped;
+        _list.ItemDoubleTapped += index =>
         {
-            _listScroll ??= FindDescendant<ScrollViewer>(List);
-            if (_listScroll is not null)
-            {
-                _listScroll.ViewChanged += (_, _) => MoveHighlight(animated: false);
-            }
-
-            MoveHighlight(animated: false);
+            Select(index, MotionCurve.Instant);
+            Paste(plain: false);
         };
+        _list.ItemRightTapped += OnItemRightTapped;
+        _list.ItemDragStarting += OnItemDragStarting;
+        _list.NewSnippetTapped += () => _ = NewSnippetAsync();
         if (ClipboardService.Instance?.Store is { } store)
         {
             store.Changed += OnStoreChanged;
@@ -125,18 +119,16 @@ public sealed partial class ClipboardPanel : UserControl
     /// <summary>内容高度变了（DIP，是否带动画）：浮层窗口据此改高度、顶边不动（第二版 §3.5）。</summary>
     public event Action<double, bool>? HeightRequested;
 
-    /// <summary>按当前条数算出来的面板高度（三行起、十行封顶、最多 520 DIP）。</summary>
+    /// <summary>按当前条数算出来的面板高度（照 mac：透镜预留是常数，↑↓ 不改窗口高度；最多 520 DIP）。</summary>
     public double ContentHeightDip
-    {
-        get
-        {
-            var groups = _visible
-                .Select(entry => ClipRow.DateLabel(entry.CopiedAt))
-                .Distinct(StringComparer.Ordinal)
-                .Count();
-            return PanelMetrics.ClipboardHeightFor(_visible.Count, groups);
-        }
-    }
+        => PanelMetrics.ClipboardHeightFor(
+            _visible.Count + (ShowsNewSnippetRow ? 1 : 0), _list.Layout.SectionTops.Count, reservesLens: LensEnabled);
+
+    /// <summary>设置 › 剪贴板「显示透镜」（6g 接上设置；关掉 = 纯列表）。</summary>
+    private static bool LensEnabled => true;
+
+    /// <summary>片段范围、没有搜索词时第一行固定一条「＋ 新建片段 Ctrl+N」（mac）。</summary>
+    private bool ShowsNewSnippetRow => _scope == ClipScope.Snippets && SearchBox.Text.Trim().Length == 0;
 
     private static ClipboardStore? Store => ClipboardService.Instance?.Store;
 
@@ -186,10 +178,11 @@ public sealed partial class ClipboardPanel : UserControl
         Footer.HideNotice();
         SearchBox.Text = string.Empty;
         _visible.Clear();
-        _rows.Clear();
-        List.SelectedIndex = -1;
-        Highlight.Visibility = Visibility.Collapsed;
+        _checked.Clear();
+        _anchorId = null;
+        _selected = -1;
         PreviewHost.Children.Clear();
+        _list.SetItems(_visible, Array.Empty<long>(), false, RowContext(), null, -1, null, 0);
         if (Store is { } store)
         {
             store.CommitDeletion();
@@ -204,14 +197,17 @@ public sealed partial class ClipboardPanel : UserControl
         _copiedOnHide = null;
     }
 
-    /// <summary>R33：5000 条时按 ↓ 从选中到布局更新的耗时；返回中位数 / 最慢 5%。</summary>
+    /// <summary>R33：5000 条时在第 4000 条附近按 ↓ 从选中到布局更新的耗时；返回中位数 / 最慢 5%。</summary>
     public (double Median, double P95, int Count) MeasureSelection(int steps)
     {
         var times = new List<double>(Math.Max(1, steps));
-        for (var step = 0; step < steps && _rows.Count > 1; step++)
+        // PLAN-v7 第 2 批的口径：在第 4000 条附近按 ↓（每一下都是从选中到布局更新完）。
+        Select(Math.Min(3990, Math.Max(0, _visible.Count - steps - 1)), MotionCurve.Instant);
+        UpdateLayout();
+        for (var step = 0; step < steps && _visible.Count > 1; step++)
         {
             var watch = Stopwatch.StartNew();
-            List.SelectedIndex = (step * 37) % _rows.Count;
+            MoveSelection(1, extending: false, repeat: false);
             UpdateLayout();
             times.Add(watch.Elapsed.TotalMilliseconds);
         }
@@ -238,74 +234,115 @@ public sealed partial class ClipboardPanel : UserControl
         _visible.Clear();
         _visible.AddRange(store.Filter(SearchBox.Text.Trim(), _scope, _groupFilterId));
 
-        ApplyRows();
-
-        if (_visible.Count == 0)
+        // 勾选裁成看得见的；一条不剩就退出多选（mac 体检 B8）。
+        var visibleIds = _visible.Select(entry => entry.Id).ToHashSet();
+        _checked.IntersectWith(visibleIds);
+        if (_anchorId is { } anchor && !visibleIds.Contains(anchor))
         {
-            _animateHighlight = false;
-            List.SelectedIndex = -1;
-            ShowPreview(null);
+            _anchorId = null;
+        }
+
+        var index = previous is { } id ? _visible.FindIndex(entry => entry.Id == id) : 0;
+        _selected = _visible.Count == 0 ? -1 : Math.Max(0, index);
+        var (lens, lensHeight) = BuildLens();
+        _list.SetItems(
+            _visible, _visible.Select(entry => ClipRowView.DayKey(entry.CopiedAt)).ToList(), ShowsNewSnippetRow, RowContext(),
+            CheckedOrNull(), _selected, lens, lensHeight);
+        if (_selected >= 0)
+        {
+            _list.Reveal(_selected);
         }
         else
         {
-            var index = previous is { } id ? _visible.FindIndex(entry => entry.Id == id) : 0;
-            index = index < 0 ? 0 : index;
-            if (List.SelectedIndex == index)
-            {
-                // 同一条还在同一个位置：选中项没变，高亮自己重新量一次就行。
-                ShowPreview(_visible[index]);
-                DispatcherQueue.TryEnqueue(() => MoveHighlight(animated: false));
-            }
-            else
-            {
-                _animateHighlight = animated;
-                List.SelectedIndex = index;
-            }
-
-            List.ScrollIntoView(_rows[List.SelectedIndex]);
+            _list.ScrollToTop();
         }
 
+        ScheduleLinkPreview();
         UpdateFooter();
         UpdateEmptyState();
         HeightRequested?.Invoke(ContentHeightDip, animated);
     }
 
-    /// <summary>
-    /// 只把变了的尾部换掉：前缀的条目和日期分隔都没变就沿用原来的行，
-    /// 不重设 ItemsSource（每按一个键整表重建会让列表跳动、虚拟化的容器全丢）。
-    /// </summary>
-    private void ApplyRows()
+    /// <summary>换选中项（↑↓、点选、撤销回来）：只挪高亮和透镜，不重建列表。</summary>
+    private void Select(int index, MotionCurve curve)
     {
-        if (!ReferenceEquals(List.ItemsSource, _rows))
+        if (index < 0 || index >= _visible.Count)
         {
-            List.ItemsSource = _rows;
+            return;
         }
 
-        var headers = new bool[_visible.Count];
-        var lastDate = long.MinValue;
-        for (var index = 0; index < _visible.Count; index++)
+        _selected = index;
+        var (lens, lensHeight) = BuildLens();
+        _list.SetSelection(index, lens, lensHeight, Motion.Reduced ? MotionCurve.Instant : curve);
+        _list.Reveal(index);
+        Footer.HideNotice();
+        ScheduleLinkPreview();
+        UpdateFooter();
+    }
+
+    private ClipRowContext RowContext() => new(
+        SearchBox.Text.Trim(),
+        ShowsGroupPill: _groupFilterId is null,
+        ShowsKeyHints: _showKeyHints,
+        Multi: _checked.Count > 0,
+        Scale: XamlRoot?.RasterizationScale ?? 1.0);
+
+    private IReadOnlySet<long>? CheckedOrNull() => _checked.Count > 0 ? new HashSet<long>(_checked) : null;
+
+    /// <summary>勾选变了：行上的勾选圈跟着换，透镜在多选时收起。</summary>
+    private void CheckedChanged(MotionCurve curve)
+    {
+        _list.SetChecked(CheckedOrNull());
+        Select(_selected, curve);
+    }
+
+    /// <summary>单击 / Ctrl 单击 / Shift 单击（mac ClipboardPanelModel.click）。</summary>
+    private void OnItemTapped(int index, VirtualKeyModifiers modifiers)
+    {
+        if (index < 0 || index >= _visible.Count)
         {
-            var localDate = DateTimeOffset.FromUnixTimeMilliseconds(_visible[index].CopiedAt).ToLocalTime().Date.Ticks;
-            headers[index] = localDate != lastDate;
-            lastDate = localDate;
+            return;
         }
 
-        var reuse = 0;
-        while (reuse < _visible.Count && reuse < _rows.Count &&
-               _rows[reuse].SameAs(_visible[reuse], headers[reuse], reuse, _showKeyHints))
+        var entry = _visible[index];
+        if (modifiers.HasFlag(VirtualKeyModifiers.Control))
         {
-            reuse++;
+            if (_checked.Count == 0 && SelectedEntry is { } current)
+            {
+                _checked.Add(current.Id);
+            }
+
+            if (!_checked.Remove(entry.Id))
+            {
+                _checked.Add(entry.Id);
+            }
+
+            _anchorId = entry.Id;
+        }
+        else if (modifiers.HasFlag(VirtualKeyModifiers.Shift))
+        {
+            var anchor = _anchorId ?? SelectedEntry?.Id;
+            var from = _visible.FindIndex(item => item.Id == anchor);
+            if (from < 0)
+            {
+                return;
+            }
+
+            _checked.Clear();
+            for (var at = Math.Min(from, index); at <= Math.Max(from, index); at++)
+            {
+                _checked.Add(_visible[at].Id);
+            }
+        }
+        else
+        {
+            _checked.Clear();
+            _anchorId = entry.Id;
         }
 
-        for (var index = _rows.Count - 1; index >= reuse; index--)
-        {
-            _rows.RemoveAt(index);
-        }
-
-        for (var index = reuse; index < _visible.Count; index++)
-        {
-            _rows.Add(ClipRow.Create(_visible[index], headers[index], index, _showKeyHints));
-        }
+        _list.SetChecked(CheckedOrNull());
+        Select(index, MotionCurve.Glide);
+        FocusSearch();
     }
 
     /// <summary>
@@ -379,48 +416,75 @@ public sealed partial class ClipboardPanel : UserControl
         FocusSearch();
     }
 
-    /// <summary>--ui-snapshots：选中前 count 行，出多选底栏的图。</summary>
+    /// <summary>--ui-snapshots：勾选前 count 行，出多选底栏的图。</summary>
     internal void SelectFirstForProbe(int count)
     {
-        if (_rows.Count == 0)
+        if (_visible.Count == 0)
         {
             return;
         }
 
-        List.SelectRange(new Microsoft.UI.Xaml.Data.ItemIndexRange(0, (uint)Math.Min(count, _rows.Count)));
-        UpdateFooter();
+        _checked.Clear();
+        foreach (var entry in _visible.Take(count))
+        {
+            _checked.Add(entry.Id);
+        }
+
+        CheckedChanged(MotionCurve.Instant);
     }
 
-    /// <summary>多选时的「取消」/ Esc：只留第一条选中。</summary>
+    /// <summary>--ui-snapshots 的几种状态（只在自检档里用）。</summary>
+    internal void ApplyProbeState(string name)
+    {
+        switch (name)
+        {
+            case "clip-multi":
+                SelectFirstForProbe(3);
+                break;
+            case "clip-search":
+                SearchBox.Text = "release";
+                Refresh(animated: false);
+                break;
+            case "clip-snippets":
+                SetScope(ClipScope.Snippets);
+                break;
+            case "clip-favorites":
+                SetScope(ClipScope.Favorites);
+                break;
+            case "clip-scrolled":
+                Select(3, MotionCurve.Instant);
+                _list.ScrollTo(150);
+                break;
+        }
+    }
+
+    /// <summary>多选时的「取消」/ Esc：退出多选，选中项不变。</summary>
     private void CancelMultiSelect()
     {
-        if (List.SelectedItems.Count <= 1)
+        if (_checked.Count == 0)
         {
             return;
         }
 
-        var keep = List.SelectedIndex;
-        List.SelectedItems.Clear();
-        List.SelectedIndex = keep;
-        UpdateFooter();
+        _checked.Clear();
+        CheckedChanged(MotionCurve.Instant);
     }
 
-    private List<ClipEntry> SelectedEntries => List.SelectedItems
-        .OfType<ClipRow>()
-        .Select(row => row.Entry)
-        .OrderBy(entry => entry.CopiedAt)
-        .ToList();
+    /// <summary>操作对象（mac targets）：勾选项里看得见的、按复制先后；没有勾选时是选中项。</summary>
+    private List<ClipEntry> SelectedEntries => _checked.Count > 0
+        ? _visible.Where(entry => _checked.Contains(entry.Id)).OrderBy(entry => entry.CopiedAt).ThenBy(entry => entry.Id).ToList()
+        : SelectedEntry is { } entry ? new List<ClipEntry> { entry } : new List<ClipEntry>();
 
     /// <summary>
     /// 拖出去（第三版 §5）：文本带格式、文件给原文件、图片给一份临时副本；拖不算粘贴，不挪顺序也不记历史。
     /// 一律请求「复制」（REVIEW R64 C）：资源管理器在同一个盘上默认是「移动」，以前会把 images 里的原图挪走、把用户的原文件搬走。
     /// </summary>
-    private void OnDragItemsStarting(object sender, DragItemsStartingEventArgs e)
+    private void OnItemDragStarting(int index, DragStartingEventArgs e)
     {
-        var entries = e.Items.OfType<ClipRow>()
-            .Select(row => row.Entry)
-            .OrderBy(entry => entry.CopiedAt)
-            .ToList();
+        // 拖的是勾选项之一就拖全部勾选项，否则只拖这一条（mac dragItems）。
+        var entries = index >= 0 && index < _visible.Count && !_checked.Contains(_visible[index].Id)
+            ? new List<ClipEntry> { _visible[index] }
+            : SelectedEntries;
         if (entries.Count == 0)
         {
             return;
@@ -430,6 +494,7 @@ public sealed partial class ClipboardPanel : UserControl
         {
             e.Data.Properties.Title = "Kitty Tools";
             e.Data.RequestedOperation = DataPackageOperation.Copy;
+            e.AllowedOperations = DataPackageOperation.Copy;
             if (entries.All(entry => entry.Kind == ClipKind.Text))
             {
                 var text = MultiPaste.Merge(entries.Select(entry => entry.Text ?? string.Empty));
@@ -509,14 +574,25 @@ public sealed partial class ClipboardPanel : UserControl
 
     private void UpdateEmptyState()
     {
-        var empty = _visible.Count == 0;
+        var empty = _visible.Count == 0 && !ShowsNewSnippetRow;
         EmptyState.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
-        if (empty)
+        if (!empty)
         {
-            EmptyText.Text = SearchBox.Text.Trim().Length > 0
-                ? "没有匹配的条目\n换个词试试"
-                : "还没有剪贴板历史\n复制点什么就会出现";
+            return;
         }
+
+        // 搜索 / 筛选没结果：「没有匹配的条目 · 清除搜索和筛选」（后半句能点，mac）。
+        var filtered = SearchBox.Text.Trim().Length > 0 || _scope != ClipScope.All || _groupFilterId is not null;
+        EmptyText.Text = filtered ? "没有匹配的条目 ·" : "还没有剪贴板历史，复制点什么就会出现";
+        EmptyClear.Visibility = filtered ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void OnEmptyClearClick(object sender, RoutedEventArgs e)
+    {
+        SearchBox.Text = string.Empty;
+        _groupFilterId = null;
+        SetScope(ClipScope.All);
+        FocusSearch();
     }
 
     /// <summary>按住 Ctrl 150 ms 后前九行右边浮现数字键帽（PLAN-v2 §3.5）。</summary>
@@ -528,62 +604,10 @@ public sealed partial class ClipboardPanel : UserControl
         }
 
         _showKeyHints = show;
-        ApplyRows();
+        _list.SetKeyHints(show);
     }
 
-    /// <summary>只有一块中性高亮，换选中项时滑过去：键盘用 snap，鼠标点用 glide，换列表时不动画。</summary>
-    private void MoveHighlight(bool animated)
-    {
-        var index = List.SelectedIndex;
-        if (index < 0 || index >= _visible.Count)
-        {
-            Highlight.Visibility = Visibility.Collapsed;
-            return;
-        }
-
-        if (List.ContainerFromIndex(index) is not ListViewItem container)
-        {
-            // 容器还没实现（虚拟化 / 刚换列表）：等下一次布局。
-            Highlight.Visibility = Visibility.Collapsed;
-            return;
-        }
-
-        var row = container.ContentTemplateRoot is Panel panel && panel.Children.Count > 1 &&
-                  panel.Children[1] is FrameworkElement inner
-            ? inner
-            : container;
-        var offset = row.TransformToVisual(List).TransformPoint(new Windows.Foundation.Point(0, 0));
-        Highlight.Width = Math.Max(0, List.ActualWidth - 2);
-        Highlight.Height = Math.Max(24, row.ActualHeight);
-        Highlight.Visibility = Visibility.Visible;
-        // 不带动画也走 SlideTo（Instant）：它会停掉还在滑的那一段，不然滚动时高亮会被旧动画拖走。
-        Motion.SlideTo(Highlight, 0, offset.Y, animated && EnableAnimations ? _highlightCurve : MotionCurve.Instant);
-    }
-
-    private bool EnableAnimations => !Motion.Reduced;
-
-    private static T? FindDescendant<T>(DependencyObject root)
-        where T : DependencyObject
-    {
-        var count = VisualTreeHelper.GetChildrenCount(root);
-        for (var index = 0; index < count; index++)
-        {
-            var child = VisualTreeHelper.GetChild(root, index);
-            if (child is T match)
-            {
-                return match;
-            }
-
-            if (FindDescendant<T>(child) is { } deeper)
-            {
-                return deeper;
-            }
-        }
-
-        return null;
-    }
-
-    private ClipEntry? SelectedEntry => (List.SelectedItem as ClipRow)?.Entry;
+    private ClipEntry? SelectedEntry => _selected >= 0 && _selected < _visible.Count ? _visible[_selected] : null;
 
     private void OnStoreChanged()
     {
@@ -601,28 +625,6 @@ public sealed partial class ClipboardPanel : UserControl
         }
 
         Refresh(animated: false);
-    }
-
-    private void OnAllScopeClick(object sender, RoutedEventArgs e) =>
-        SetScope(ClipScope.All);
-
-    private void OnFavoriteScopeClick(object sender, RoutedEventArgs e) =>
-        SetScope(ClipScope.Favorites);
-
-    private void OnSnippetScopeClick(object sender, RoutedEventArgs e) =>
-        SetScope(ClipScope.Snippets);
-
-    private void OnGroupFilterChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (!_active)
-        {
-            return;
-        }
-
-        _groupFilterId = GroupFilter.SelectedItem is ComboBoxItem { Tag: string id } ? id : null;
-        Refresh(animated: false);
-        SearchBox.Focus(FocusState.Programmatic);
-        UpdateFilterChips();
     }
 
     /// <summary>U2：Tab 弹出筛选菜单（全部 / 收藏 / 片段 / 收藏夹）。</summary>
@@ -676,11 +678,7 @@ public sealed partial class ClipboardPanel : UserControl
     private void SetScope(ClipScope scope, bool refresh = true)
     {
         _scope = scope;
-        AllScope.IsChecked = scope == ClipScope.All;
-        FavoriteScope.IsChecked = scope == ClipScope.Favorites;
-        SnippetScope.IsChecked = scope == ClipScope.Snippets;
         RefreshGroups();
-        UpdateFilterChips();
         if (refresh)
         {
             Refresh();
@@ -713,88 +711,34 @@ public sealed partial class ClipboardPanel : UserControl
         });
     }
 
-    /// <summary>「收藏」范围旁边那个收藏夹下拉：第一项是全部收藏夹。</summary>
+    /// <summary>收藏夹筛选只在「收藏」范围里有；收藏夹被删了就清掉这个筛选。</summary>
     private void RefreshGroups()
     {
-        GroupFilter.Visibility = _scope == ClipScope.Favorites ? Visibility.Visible : Visibility.Collapsed;
-        if (_scope != ClipScope.Favorites)
+        if (_scope != ClipScope.Favorites ||
+            (_groupFilterId is { } id && Store?.Groups.Any(group => group.Id == id) != true))
         {
             _groupFilterId = null;
-            return;
         }
 
-        var store = Store;
-        if (store is null)
-        {
-            return;
-        }
-
-        var previous = _groupFilterId;
-        GroupFilter.Items.Clear();
-        GroupFilter.Items.Add(new ComboBoxItem { Content = "全部收藏夹", Tag = string.Empty });
-        foreach (var group in store.Groups.OrderBy(item => item.Position))
-        {
-            GroupFilter.Items.Add(new ComboBoxItem { Content = group.Name, Tag = group.Id });
-        }
-
-        var index = 0;
-        if (previous is not null)
-        {
-            for (var item = 1; item < GroupFilter.Items.Count; item++)
-            {
-                if ((GroupFilter.Items[item] as ComboBoxItem)?.Tag as string == previous)
-                {
-                    index = item;
-                    break;
-                }
-            }
-        }
-
-        _groupFilterId = index == 0 ? null : previous;
-        GroupFilter.SelectedIndex = index;
         UpdateFilterChips();
     }
 
-    private void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    /// <summary>
+    /// 选中项的透镜：正文区（按类型查表定高，可能是 0）+ 元信息行 22 + 底 8（同 mac LensView）；多选、没有选中、关了透镜时没有。
+    /// 返回透镜（不含行头）和它的总高（含行头 40）。
+    /// </summary>
+    private (FrameworkElement? Lens, double Height) BuildLens()
     {
-        ShowPreview(SelectedEntry);
-        ScheduleLinkPreview();
-        UpdateFooter();
-        var animated = _animateHighlight;
-        _animateHighlight = false;
-        // 选中项的容器可能还没实现：等这一轮布局完再量它的位置。
-        DispatcherQueue.TryEnqueue(() => MoveHighlight(animated));
-    }
-
-    private void OnItemClick(object sender, ItemClickEventArgs e)
-    {
-        if (e.ClickedItem is ClipRow row)
+        if (_lensScroll is not null)
         {
-            _animateHighlight = true;
-            _highlightCurve = MotionCurve.Glide;
-            List.SelectedItem = row;
+            _lensScroll.Content = null;
+            _lensScroll = null;
         }
-    }
 
-    private void OnListDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
-    {
-        e.Handled = true;
-        Paste(plain: false);
-    }
-
-    private void ShowPreview(ClipEntry? entry)
-    {
         PreviewHost.Children.Clear();
-        if (entry is null)
+        if (SelectedEntry is not { } entry || _checked.Count > 0 || !LensEnabled)
         {
-            AttachLens(null);
-            PreviewHost.Children.Add(new TextBlock
-            {
-                Text = "选中一条看预览",
-                Foreground = Theme.SecondaryText(),
-                Margin = new Thickness(0, 8, 0, 0),
-            });
-            return;
+            return (null, ClipListLayout.RowHeight);
         }
 
         switch (entry.Kind)
@@ -810,52 +754,21 @@ public sealed partial class ClipboardPanel : UserControl
                 break;
         }
 
-        AttachLens(entry);
-    }
-
-    private ScrollViewer? _lensScroll;
-
-    /// <summary>把 PreviewHost 挂到选中行的透镜里；其它行的透镜收起来。</summary>
-    private void AttachLens(ClipEntry? entry)
-    {
-        foreach (var row in _rows)
-        {
-            row.SetLens(null, 0);
-        }
-
-        if (entry is null)
-        {
-            return;
-        }
-
-        var index = _visible.FindIndex(item => item.Id == entry.Id);
-        if (index < 0 || index >= _rows.Count)
-        {
-            return;
-        }
-
-        if (_lensScroll is not null)
-        {
-            _lensScroll.Content = null;
-        }
-
-        // 同 mac LensView：正文区（查表定高，可能是 0）+ 一行元信息「类型 · 字数 · 时间 · 来源」，不放按钮；
-        // 复制 / 收藏 / 翻译在右键菜单和 Ctrl+K 里（0.1.0 用户反馈）。
         var body = LensBodyHeight(entry);
         _lensScroll = new ScrollViewer
         {
             Content = PreviewHost,
-            MaxHeight = body,
-            // 不露滚动条（0.1.0 用户反馈：每条预览都带一根）；长内容照样能用滚轮滚，底下的渐隐提示还有。
+            Height = body,
+            // 不露滚动条（0.1.0 用户反馈）；长内容照样能用滚轮滚，底下的渐隐提示还有。
             VerticalScrollBarVisibility = ScrollBarVisibility.Hidden,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             // 左边和行标题对齐（同 mac LensView 的 x = 44）。
-            Padding = new Thickness(36, 0, 16, 0),
+            Padding = new Thickness(ClipLens.RowPadding + 24 + ClipLens.RowSpacing, 0, ClipLens.RowPadding, 0),
             IsTabStop = false,
         };
-        var host = new Grid { Height = body + LensMetaHeight + LensBottom };
+        var host = new Grid { Height = body + ClipLens.Meta + ClipLens.Bottom };
         host.RowDefinitions.Add(new RowDefinition { Height = new GridLength(body) });
-        host.RowDefinitions.Add(new RowDefinition { Height = new GridLength(LensMetaHeight) });
+        host.RowDefinitions.Add(new RowDefinition { Height = new GridLength(ClipLens.Meta) });
         host.Children.Add(_lensScroll);
         var meta = new TextBlock
         {
@@ -864,68 +777,54 @@ public sealed partial class ClipboardPanel : UserControl
             Foreground = Theme.SecondaryText(),
             TextTrimming = TextTrimming.CharacterEllipsis,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(36, 0, 16, 0),
+            Margin = new Thickness(ClipLens.RowPadding + 24 + ClipLens.RowSpacing, 0, ClipLens.RowPadding, 0),
         };
         Grid.SetRow(meta, 1);
         host.Children.Add(meta);
-        var cardColor = Theme.CardColor();
-        host.Children.Add(new Border
+        if (body > 0)
         {
-            Visibility = body >= 90 ? Visibility.Visible : Visibility.Collapsed,
-            Height = 26,
-            VerticalAlignment = VerticalAlignment.Bottom,
-            IsHitTestVisible = false,
-            Background = new LinearGradientBrush
+            // 正文底部 12 的渐隐：颜色取透镜底下那一层（面板底 + 选中高亮）。
+            var fade = Theme.CardColor();
+            host.Children.Add(new Border
             {
-                StartPoint = new Windows.Foundation.Point(0, 0),
-                EndPoint = new Windows.Foundation.Point(0, 1),
-                GradientStops =
+                Height = 12,
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, body - 12, 0, 0),
+                IsHitTestVisible = false,
+                Background = new LinearGradientBrush
                 {
-                    new GradientStop { Color = Theme.Argb(0, cardColor.R, cardColor.G, cardColor.B), Offset = 0 },
-                    new GradientStop { Color = cardColor, Offset = 1 },
+                    StartPoint = new Windows.Foundation.Point(0, 0),
+                    EndPoint = new Windows.Foundation.Point(0, 1),
+                    GradientStops =
+                    {
+                        new GradientStop { Color = Theme.Argb(0, fade.R, fade.G, fade.B), Offset = 0 },
+                        new GradientStop { Color = Theme.Argb(160, fade.R, fade.G, fade.B), Offset = 1 },
+                    },
                 },
-            },
-        });
-        _rows[index].SetLens(host, body + LensMetaHeight + LensBottom);
-        DispatcherQueue.TryEnqueue(() => MoveHighlight(animated: false));
+            });
+        }
+
+        return (host, ClipLens.Head + body + ClipLens.Meta + ClipLens.Bottom);
     }
 
-    private static double LensBodyHeight(ClipEntry entry)
+    private ScrollViewer? _lensScroll;
+
+    /// <summary>正文区高度（Core 的 ClipLens 查表）；文本的 0 档先量标题在最窄的标题列里放不放得下。</summary>
+    private double LensBodyHeight(ClipEntry entry)
     {
-        if (entry.Kind == ClipKind.Image)
-        {
-            return 108;
-        }
-
-        if (entry.Kind == ClipKind.Files)
-        {
-            return 90;
-        }
-
-        var text = entry.Text ?? string.Empty;
-        if (PreviewRules.TryParseColor(text, out _, out _, out _))
-        {
-            return 72;
-        }
-
-        if (PreviewRules.LooksLikeCode(text))
-        {
-            return 128;
-        }
-
-        if (LinkPreviewRules.SingleUrl(text) is not null)
-        {
-            return 90;
-        }
-
-        return ShowsWholeText(text) ? 0 : IsShortPlain(text) ? 36 : 90;
+        var form = entry.Kind == ClipKind.Text ? ContentForms.Detect(entry.Text) : null;
+        var whole = entry.Kind == ClipKind.Text && form is null &&
+                    ClipLens.ShowsWholeText(entry.Text, entry.Rich, entry.Snippet, entry.Favorite, MeasureTitle);
+        return ClipLens.BodyHeight(entry.Kind, form, entry.Text, whole);
     }
 
-    private const double LensMetaHeight = 22;
-    private const double LensBottom = 6;
-
-    /// <summary>行标题已经原样显示全了：透镜不再画第二遍，只剩元信息行（同 mac Lens.bodyHeight 的 0 档）。</summary>
-    private static bool ShowsWholeText(string text) => text.Length <= 30 && IsShortPlain(text);
+    /// <summary>行标题 14 号的宽度（DirectWrite 排一次）。</summary>
+    private double MeasureTitle(string title)
+    {
+        _titleMeasure.Text = title;
+        _titleMeasure.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+        return _titleMeasure.DesiredSize.Width;
+    }
 
     /// <summary>「文本 · 70 字 · 14:02 · 记事本」（同 mac LensView.metaText）。</summary>
     private static string LensMeta(ClipEntry entry)
@@ -947,11 +846,6 @@ public sealed partial class ClipboardPanel : UserControl
             : copied.ToString("yyyy年M月d日 HH:mm");
         return string.Join(" · ", new[] { type, detail, time, entry.SourceName }.Where(part => !string.IsNullOrEmpty(part)));
     }
-
-    /// <summary>没换行、不超过 80 字的普通文字：正文区给矮的一档（同 mac Lens.isShort）。</summary>
-    private static bool IsShortPlain(string text)
-        => text.Length <= 80 && !text.Contains('\n') && !PreviewRules.TryParseColor(text, out _, out _, out _) &&
-           !PreviewRules.LooksLikeCode(text) && LinkPreviewRules.SingleUrl(text) is null;
 
     private void ShowText(ClipEntry entry)
     {
@@ -980,7 +874,7 @@ public sealed partial class ClipboardPanel : UserControl
             PreviewHost.Children.Add(swatch);
         }
 
-        if (ShowsWholeText(text))
+        if (LensBodyHeight(entry) == 0)
         {
             return;
         }
@@ -1098,7 +992,7 @@ public sealed partial class ClipboardPanel : UserControl
     /// </summary>
     private int PreviewDecodeWidth()
     {
-        var width = List.ActualWidth > 0 ? Math.Max(240, List.ActualWidth - 48) : 520;
+        var width = _list.ActualWidth > 0 ? Math.Max(240, _list.ActualWidth - 64) : 520;
         var scale = XamlRoot?.RasterizationScale ?? 1.0;
         return Math.Clamp((int)Math.Round(width * scale), 64, 2048);
     }
@@ -1190,13 +1084,14 @@ public sealed partial class ClipboardPanel : UserControl
         {
             case VirtualKey.Escape:
                 e.Handled = true;
-                if (List.SelectedItems.Count > 1)
-                {
-                    CancelMultiSelect();
-                }
-                else if (SearchBox.Text.Length > 0)
+                // mac 的顺序：先清搜索词，再取消多选，最后收起。
+                if (SearchBox.Text.Length > 0)
                 {
                     SearchBox.Text = string.Empty;
+                }
+                else if (_checked.Count > 0)
+                {
+                    CancelMultiSelect();
                 }
                 else
                 {
@@ -1210,11 +1105,22 @@ public sealed partial class ClipboardPanel : UserControl
                 break;
             case VirtualKey.Down:
                 e.Handled = true;
-                MoveSelection(1);
+                MoveSelection(1, shift, e.KeyStatus.WasKeyDown);
                 break;
             case VirtualKey.Up:
                 e.Handled = true;
-                MoveSelection(-1);
+                MoveSelection(-1, shift, e.KeyStatus.WasKeyDown);
+                break;
+            case VirtualKey.A when control && SearchBox.Text.Length == 0:
+                // 搜索框空着时 Ctrl+A 全选（mac）。
+                e.Handled = true;
+                if (_visible.Count > 1)
+                {
+                    _checked.Clear();
+                    _checked.UnionWith(_visible.Select(entry => entry.Id));
+                    CheckedChanged(MotionCurve.Instant);
+                }
+
                 break;
             case VirtualKey.Enter when !control:
                 e.Handled = true;
@@ -1293,7 +1199,9 @@ public sealed partial class ClipboardPanel : UserControl
                 var number = (int)e.Key - (int)VirtualKey.Number1;
                 if (number < _visible.Count)
                 {
-                    List.SelectedIndex = number;
+                    _checked.Clear();
+                    _list.SetChecked(null);
+                    Select(number, MotionCurve.Instant);
                     Paste(plain: false);
                 }
 
@@ -1319,18 +1227,42 @@ public sealed partial class ClipboardPanel : UserControl
         => Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(key)
             .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
 
-    private void MoveSelection(int delta)
+    /// <summary>
+    /// ↑↓ 移动（到头绕回，mac）/ Shift+↑↓ 从锚点整段选（到头停住）；按住连发时不动画。
+    /// </summary>
+    private void MoveSelection(int delta, bool extending, bool repeat)
     {
         if (_visible.Count == 0)
         {
             return;
         }
 
-        var index = Math.Clamp(List.SelectedIndex + delta, 0, _visible.Count - 1);
-        _highlightCurve = MotionCurve.Snap;
-        _animateHighlight = true;
-        List.SelectedIndex = index;
-        List.ScrollIntoView(List.SelectedItem);
+        var current = Math.Max(0, _selected);
+        var count = _visible.Count;
+        var next = extending ? Math.Clamp(current + delta, 0, count - 1) : (current + delta + count) % count;
+        if (extending)
+        {
+            if (_anchorId is null || _checked.Count == 0)
+            {
+                _anchorId = _visible[current].Id;
+            }
+
+            var anchor = Math.Max(0, _visible.FindIndex(entry => entry.Id == _anchorId));
+            _checked.Clear();
+            for (var at = Math.Min(anchor, next); at <= Math.Max(anchor, next); at++)
+            {
+                _checked.Add(_visible[at].Id);
+            }
+
+            _list.SetChecked(CheckedOrNull());
+        }
+        else if (_checked.Count > 0)
+        {
+            _checked.Clear();
+            _list.SetChecked(null);
+        }
+
+        Select(next, repeat ? MotionCurve.Instant : MotionCurve.Snap);
     }
 
     private async void Paste(bool plain)
@@ -1814,19 +1746,21 @@ public sealed partial class ClipboardPanel : UserControl
         }
     }
 
-    private void OnListRightTapped(object sender, RightTappedRoutedEventArgs e)
+    private void OnItemRightTapped(int index, FrameworkElement row, Windows.Foundation.Point position)
     {
-        var row = (e.OriginalSource as FrameworkElement)?.DataContext as ClipRow;
-        if (row is null)
+        if (index < 0 || index >= _visible.Count)
         {
             return;
         }
 
-        List.SelectedItem = row;
-        var entry = row.Entry;
-        var menu = BuildEntryMenu(entry);
-        menu.ShowAt(List, new FlyoutShowOptions { Position = e.GetPosition(List) });
-        e.Handled = true;
+        if (!_checked.Contains(_visible[index].Id))
+        {
+            _checked.Clear();
+            _list.SetChecked(null);
+            Select(index, MotionCurve.Glide);
+        }
+
+        BuildEntryMenu(_visible[index]).ShowAt(row, new FlyoutShowOptions { Position = position });
     }
 
     /// <summary>一条的全部操作（右键菜单和 Ctrl+K 操作面板共用这一份）。</summary>
@@ -1899,7 +1833,7 @@ public sealed partial class ClipboardPanel : UserControl
     /// <summary>Ctrl+K：在选中行旁边弹出同一份操作（第三版 §4），可以打字过滤。</summary>
     private void ShowActionPanel()
     {
-        if (SelectedEntry is not { } entry || List.ContainerFromItem(List.SelectedItem) is not FrameworkElement row)
+        if (SelectedEntry is not { } entry || _list.RowElement(_selected) is not { } row)
         {
             return;
         }

@@ -81,6 +81,22 @@ public sealed class ClipboardAlignTests
     }
 
     [TestMethod]
+    public void HitRangesCoverEveryTokenOnce()
+    {
+        // 标题里命中词的位置：每个词每一处、不分大小写 / 全半角，重叠的并起来。
+        CollectionAssert.AreEqual(
+            new[] { (15, 7) },
+            Search.HitRanges("dotnet publish Release", "release").ToArray());
+        CollectionAssert.AreEqual(
+            new[] { (0, 3), (8, 3) },
+            Search.HitRanges("abc xyz ABC", "abc").ToArray());
+        CollectionAssert.AreEqual(
+            new[] { (0, 5) },
+            Search.HitRanges("hello", "hel llo").ToArray());
+        Assert.AreEqual(0, Search.HitRanges("hello", "  ").Count);
+    }
+
+    [TestMethod]
     public void LayoutIsAPrefixSum()
     {
         // 两天：今天 3 条、昨天 2 条；第 1 条（下标 1）展开透镜 198。

@@ -134,6 +134,11 @@ internal sealed class ClipboardStore
             }
 
             entry.Uid = write.Uid ?? entry.Uid;
+            if (write.TextChanged)
+            {
+                entry.Rich = false;
+            }
+
             entry.Text = write.Text;
             entry.Favorite = write.Favorite;
             entry.Snippet = write.Snippet;
@@ -317,6 +322,7 @@ internal sealed class ClipboardStore
 
         entry.Text = text;
         entry.Folded = null;
+        entry.Rich = false;
         _database.SetText(id, text);
         Changed?.Invoke();
     }
@@ -422,6 +428,7 @@ internal sealed class ClipboardStore
             existing.SourceExe = entry.SourceExe;
             existing.SourceName = entry.SourceName;
             existing.Folded = null;
+            existing.Rich = html is not null || rtf is not null;
             _database.UpdateForRerecord(existing, html, rtf);
             _items.Insert(0, existing);
             if (entry.Kind == ClipKind.Image && entry.Id != existing.Id)
@@ -431,6 +438,7 @@ internal sealed class ClipboardStore
         }
         else
         {
+            entry.Rich = html is not null || rtf is not null;
             entry.Id = _database.Insert(entry, html, rtf);
             _items.Insert(0, entry);
         }

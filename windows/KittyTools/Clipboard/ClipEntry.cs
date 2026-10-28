@@ -41,6 +41,9 @@ internal sealed class ClipEntry
 
     public string? GroupId { get; set; }
 
+    /// <summary>带格式（库里存着 HTML / RTF）：行上的「带格式」标记、替代粘贴和「复制为纯文本」只给它。</summary>
+    public bool Rich { get; set; }
+
     /// <summary>后台识字的结果（第三版 §5）：搜索也搜它，靠它命中时行标题显示命中的那一段。</summary>
     public string? OcrText { get; set; }
 

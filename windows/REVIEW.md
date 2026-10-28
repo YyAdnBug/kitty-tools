@@ -14,6 +14,9 @@
 
 **归 Claude 的文件**（这一轮别的 agent 先别改；真要改先在这里写一句再动）：`KittyTools/Clipboard/**`、`KittyTools.Core/PanelMetrics.cs`、这一轮新加的 Core 文件和它们的测试（`ClipList*`、`ClipLens*`、`SyntaxHighlight`、`ColorFormats` 之类，加了就写在下面）、`Settings/SettingsWindow.cs` 的 `BuildClipboard`、`Settings/ShortcutsSheet.cs` 剪贴板那一组、`App/Settings.cs` 里剪贴板的新字段。
 
+- 6a（数据底子）：见 `git log --grep "6a"`。另动了 `Core/BackupPlan.cs`（备份留「留下的」= 收藏 ∨ 片段）、`Core/Retention.cs`、`Storage/ArchiveService.cs`（导出带片段、导入带收藏夹名单）。新 Core 文件：`ContentForm.cs`、`ClipLens.cs`、`ClipListLayout.cs`、`ClipOrder.cs`，测试 `ClipboardAlignTests.cs`。
+- 6b（列表）：见 `git log --grep "6b"`。新文件 `Clipboard/ClipListView.cs`、`ClipRowView.cs`、`ClipIcons.cs`，删了 `ClipRow.cs`；另动了 `Shell/Ui/SearchLine.cs`（加 `ExtendHairline`，启动器不受影响）、`Shell/Glyphs.cs`（RichText / Snippet / StarFilled）、`Launcher/ShellIcons.cs`（`LoadPng` 加 dip 参数，默认 32 不变）、`Storage/Database.cs`（读「带格式」标记；改正文时清掉 HTML / RTF）、`App/UiSnapshotProbe.cs`（clip-search / snippets / favorites / scrolled 四张，`KITTY_CLIP_PERF=1` 量 5000 条按 ↓）、`Core/PanelMetrics.cs`（剪贴板高度照 mac，删了不用的 `ClipboardHeight`）。
+
 ## v9 标注分工（2026-10-27，用户拍板 PLAN-v9-annotate D1–D7 全部按推荐）
 
 截图标注编辑器对齐 mac（`PLAN-v9-annotate.md`，PLAN-v9 第 5 批拆成 5a–5e）由 **Claude 在自己的 worktree 里做**（D7），做完一小批推一次。

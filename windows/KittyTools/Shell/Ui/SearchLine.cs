@@ -74,17 +74,22 @@ public sealed partial class SearchLine : Grid
         SetColumn(Box, 2);
         Children.Add(Box);
 
-        var hairline = new Border
+        _hairline = new Border
         {
             Height = 1,
             Background = Theme.Brush("Kitty.Hairline", Color.FromArgb(20, 0, 0, 0)),
             VerticalAlignment = VerticalAlignment.Bottom,
         };
-        SetColumnSpan(hairline, 3);
-        Children.Add(hairline);
+        SetColumnSpan(_hairline, 3);
+        Children.Add(_hairline);
     }
 
+    private readonly Border _hairline;
+
     public TextBox Box { get; }
+
+    /// <summary>底下那条发丝线通栏（剪贴板照 mac：抵掉左右 18 的内边距）。</summary>
+    public void ExtendHairline() => _hairline.Margin = new Thickness(-18, 0, -18, 0);
 
     public StackPanel Chips { get; }
 

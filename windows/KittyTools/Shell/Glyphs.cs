@@ -102,6 +102,16 @@ internal static class Glyphs
     public const string Image = "\uEB9F";
     public const string File = "\uE8A5";
     public const string Code = "\uE943";
+
+    /// <summary>剪贴板行上的「带格式」标记（mac textformat）。</summary>
+    public const string RichText = "\uE8D3";
+
+    /// <summary>剪贴板行上的「片段」标记（mac text.badge.star）。</summary>
+    public const string Snippet = "\uE70B";
+
+    /// <summary>剪贴板行上的收藏星（实心，Kitty.Favorite 黄）。</summary>
+    public const string StarFilled = "\uE735";
+
     public const string Text = "\uE8D2";
     public const string Up = "\uE74A";
     public const string Down = "\uE74B";

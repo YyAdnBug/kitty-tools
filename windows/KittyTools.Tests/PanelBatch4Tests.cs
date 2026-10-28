@@ -10,12 +10,6 @@ public sealed class PanelMetricsTests
     [TestMethod]
     public void HeightsFollowRowsWithMinAndMax()
     {
-        Assert.AreEqual(PanelMetrics.ClipboardChrome + 3 * 40, PanelMetrics.ClipboardHeight(0));
-        Assert.AreEqual(PanelMetrics.ClipboardChrome + 3 * 40, PanelMetrics.ClipboardHeight(3));
-        Assert.AreEqual(PanelMetrics.ClipboardChrome + 5 * 40, PanelMetrics.ClipboardHeight(5));
-        Assert.AreEqual(PanelMetrics.ClipboardChrome + 8 * 40, PanelMetrics.ClipboardHeight(8));
-        Assert.AreEqual(PanelMetrics.MaxHeightDip, PanelMetrics.ClipboardHeight(50));
-        Assert.IsTrue(PanelMetrics.ClipboardHeight(8) <= PanelMetrics.MaxHeightDip);
         Assert.AreEqual(PanelMetrics.LauncherChrome + 3 * PanelMetrics.LauncherRowHeight, PanelMetrics.LauncherHeight(1));
         Assert.AreEqual(PanelMetrics.LauncherChrome + 8 * PanelMetrics.LauncherRowHeight, PanelMetrics.LauncherHeight(9));
         Assert.AreEqual(PanelMetrics.LauncherChrome + 8 * PanelMetrics.LauncherRowHeight, PanelMetrics.LauncherHeight(40));
@@ -25,15 +19,16 @@ public sealed class PanelMetricsTests
     public void LauncherShowsAtLeastAsMuchAsClipboardPerRow()
     {
         // PLAN-v7 U3：启动器一行 40，和剪贴板一样高；同样行数时两者只差顶栏 / 底栏的 6 DIP。
-        Assert.IsTrue(PanelMetrics.LauncherHeight(5) <= PanelMetrics.ClipboardHeight(5));
+        Assert.IsTrue(PanelMetrics.LauncherHeight(5) <= PanelMetrics.ClipboardHeightFor(5, 1, reservesLens: false));
     }
 
     [TestMethod]
     public void LensHeightReservesRoomWithoutJumping()
     {
-        // U1：没有条目 140；三行一条分组给最高的透镜预留 160；12 条封顶 520。
-        Assert.AreEqual(PanelMetrics.ClipboardChrome + 140, PanelMetrics.ClipboardHeightFor(0, 0));
-        Assert.AreEqual(PanelMetrics.ClipboardChrome + 316, PanelMetrics.ClipboardHeightFor(3, 1));
+        // 照 mac：没有条目 140；三行一条分组 = 内缩 12 + 标题 24 + 120 + 透镜预留 158；关掉透镜不预留；12 条封顶 520。
+        Assert.AreEqual(56 + 36 + 140.0, PanelMetrics.ClipboardHeightFor(0, 0));
+        Assert.AreEqual(56 + 36 + 314.0, PanelMetrics.ClipboardHeightFor(3, 1));
+        Assert.AreEqual(56 + 36 + 156.0, PanelMetrics.ClipboardHeightFor(3, 1, reservesLens: false));
         Assert.AreEqual(PanelMetrics.MaxHeightDip, PanelMetrics.ClipboardHeightFor(12, 12));
         // 选中行换成另一条（行数、分组数不变）时高度完全一样：窗口不会跟着改。
         Assert.AreEqual(

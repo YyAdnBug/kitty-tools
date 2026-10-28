@@ -19,10 +19,10 @@ namespace KittyTools;
 
 internal static unsafe partial class ShellIcons
 {
-    /// <summary>启动器里的图标画成 32 DIP：按显示器缩放取出对应像素数的图。</summary>
-    public static byte[]? LoadPng(string path, double scale = 1.0)
+    /// <summary>启动器里的图标画成 32 DIP（剪贴板的行图标 24）：按显示器缩放取出对应像素数的图。</summary>
+    public static byte[]? LoadPng(string path, double scale = 1.0, double dip = 32)
     {
-        var size = MonitorLayout.Pixels(32, Math.Max(1.0, scale));
+        var size = MonitorLayout.Pixels(dip, Math.Max(1.0, scale));
         var info = default(SHFILEINFOW);
         fixed (char* name = path)
         {
