@@ -383,14 +383,17 @@ internal static class BrowserIndex
         return count;
     }
 
-    /// <summary>浏览器开着时库是锁着的、带 -wal：拷到临时目录再只读打开，读完删掉。</summary>
+    /// <summary>
+    /// 浏览器开着时库是锁着的、带 -wal 或 -journal：拷到临时目录再打开，读完删掉。带着回滚日志（Chromium 的 History、
+    /// Favicons 用的是它）时副本要读写打开，SQLite 先按日志把写到一半的事务滚回去；只读打开会报「malformed」或不让读。
+    /// </summary>
     internal static void WithCopy(string source, Action<SqliteConnection> read)
     {
         var copy = Path.Combine(Path.GetTempPath(), "kitty-browser-" + Guid.NewGuid().ToString("N"));
         try
         {
             CopyWithWal(source, copy);
-            using var connection = new SqliteConnection(copy, readOnly: true);
+            using var connection = new SqliteConnection(copy, readOnly: !File.Exists(copy + "-journal"));
             read(connection);
         }
         finally
@@ -399,7 +402,7 @@ internal static class BrowserIndex
         }
     }
 
-    /// <summary>SQLite 正在用的库可能带 -wal / -shm，一并拷到临时文件再读。</summary>
+    /// <summary>SQLite 正在用的库可能带 -wal / -shm / -journal，一并拷到临时文件再读。</summary>
     internal static void CopyWithWal(string source, string target)
     {
         using (var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
@@ -408,7 +411,7 @@ internal static class BrowserIndex
             input.CopyTo(output);
         }
 
-        foreach (var suffix in new[] { "-wal", "-shm" })
+        foreach (var suffix in new[] { "-wal", "-shm", "-journal" })
         {
             var extra = source + suffix;
             if (File.Exists(extra))
@@ -429,7 +432,7 @@ internal static class BrowserIndex
 
     internal static void DeleteWithWal(string target)
     {
-        foreach (var path in new[] { target, target + "-wal", target + "-shm" })
+        foreach (var path in new[] { target, target + "-wal", target + "-shm", target + "-journal" })
         {
             try
             {
