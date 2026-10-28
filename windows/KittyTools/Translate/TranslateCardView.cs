@@ -365,15 +365,31 @@ internal sealed partial class TranslateCardView
 
     private int _lastIndex;
 
+    /// <summary>右上角那组图标上次按什么建的：没变就不重建。</summary>
+    private string _actionsKey = string.Empty;
+
+    /// <summary>
+    /// 右上角一组图标。流式出字时每来一段都会 Update 一次（两张卡各 25 次 / 秒），每次都重建四个按钮的话
+    /// 一秒要建几百个 Button（实测出字时工作集涨 100 多 MB、CPU 跟着涨），按下和松开之间按钮还可能被换掉。
+    /// 所以只在显示的东西变了（有没有字、在不在朗读、刚复制、第几张、收没收起）时才重建；朗读读的是点下去那一刻的正文。
+    /// </summary>
     private void BuildActions(TranslateCard card, int index, bool copied)
     {
         _lastIndex = index;
-        _actions.Children.Clear();
-        if (card.Text.Length > 0)
+        var hasText = card.Text.Length > 0;
+        var speaking = hasText && Speech.Speaking == card.Text;
+        var key = $"{hasText}|{speaking}|{copied}|{index}|{_collapsed}";
+        if (key == _actionsKey)
         {
-            var speaking = Speech.Speaking == card.Text;
+            return;
+        }
+
+        _actionsKey = key;
+        _actions.Children.Clear();
+        if (hasText)
+        {
             var speak = IconAction(speaking ? Glyphs.VolumeOn : Glyphs.Volume, speaking ? "停止朗读" : "朗读",
-                () => Speech.Toggle(card.Text, _language?.Code()));
+                () => Speech.Toggle(_last?.Text ?? string.Empty, _language?.Code()));
             if (speaking)
             {
                 speak.Foreground = new SolidColorBrush(Theme.AccentColor);
