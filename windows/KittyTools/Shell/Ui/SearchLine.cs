@@ -29,7 +29,7 @@ public sealed partial class SearchLine : Grid
         {
             Glyph = Glyphs.Search,
             FontSize = 17,
-            Foreground = Theme.Brush("TextFillColorTertiaryBrush", Color.FromArgb(255, 128, 128, 128)),
+            Foreground = Theme.TertiaryText(),
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 10, 0),
             Width = 22,
