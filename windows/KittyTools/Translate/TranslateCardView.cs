@@ -2,7 +2,7 @@
 // 这种括号）+ 大模型的模型名 11 tertiary，右边一组图标：朗读（开关）、复制（Ctrl+N，复制后换对勾）、重新翻译、收起 / 展开（按服务记住）；
 // 每格 20 × 18、间距 4、平时 0.45 透明。正文：等待是两根骨架条 + 扫光（模型在思考时上面多一行「思考中」）；生成中新字直接出现、末尾一根
 // 光标；截断的照常显示、下面一行说明；出错只显示错误行（配置问题橙色钥匙 + 「打开设置」直达这个服务，网络 / 服务问题红色三角 + 「重试」，
-// 自建 AI 另给「打开设置」），整张卡染橙 / 红。大模型生成中边框上一段强调色光绕行（2.4 s 一圈，合成器上转），完成时整圈闪一下；
+// 自建 AI 另给「打开设置」），整张卡染橙 / 红。大模型生成中边框上一段强调色光绕行（2.4 s 一圈，几段虚线沿描边走，合成器上动），完成时整圈闪一下；
 // 复制时整卡闪一下。换状态时正文淡变 0.18 s；重新翻译时骨架先撑到上次正文的高。正文最多 8 行，再长在卡里滚、上下渐隐。
 // 大模型的结果有行内 Markdown 时按 Markdown 显示（Core 的 InlineMarkdown）。
 using System.Numerics;
@@ -27,6 +27,11 @@ internal sealed partial class TranslateCardView
 {
     /// <summary>正文最多几行，再长就在卡里滚。</summary>
     public const int BodyLines = 8;
+
+    /// <summary>彗星：描边粗细、每一段占周长多少、从尾到头每段的透明度（照 mac 角向渐变 0.62 → 0.78 → 0.92 的亮度走势）。</summary>
+    private const float CometThickness = 1.5f;
+    private const float CometSegment = 0.05f;
+    private static readonly float[] CometAlphas = { 0.08f, 0.18f, 0.35f, 0.6f, 1f, 0.5f };
 
     private const double SideInset = 12;
     private const double IconSlot = 18;
@@ -60,6 +65,9 @@ internal sealed partial class TranslateCardView
     private ShapeVisual? _doneFlash;
     private CompositionRoundedRectangleGeometry? _cometGeometry;
     private CompositionRoundedRectangleGeometry? _flashGeometry;
+
+    /// <summary>彗星这一圈的周长（DIP）：卡片长高时变，跟着重排虚线。</summary>
+    private float _cometPerimeter;
 
     private TranslateCard? _last;
     private string _textKey = string.Empty;
@@ -710,8 +718,9 @@ internal sealed partial class TranslateCardView
     }
 
     /// <summary>
-    /// 彗星边框（mac CometBorder）：描边是一条线性渐变（大半透明、一头强调色），整支画刷绕卡片中心转，2.4 s 一圈——
-    /// 亮的那一头沿着边框走。合成器上转，不占 UI 线程。结束时 0.35 s 淡出。
+    /// 彗星边框（mac CometBorder）：一段强调色的光沿着边框顺时针绕行，2.4 s 一圈，头亮、尾巴渐淡（约占周长三成）。
+    /// mac 是绕卡片中心转的角向渐变；合成层没有角向渐变，转线性渐变在扁卡片上转到竖直时整段落在卡外，
+    /// 所以这里是几段虚线（同一条圆角矩形描边、各一段、透明度递增）一起沿路径走。合成器上动，不占 UI 线程。结束时 0.35 s 淡出。
     /// </summary>
     private void SetComet(bool on)
     {
@@ -732,15 +741,7 @@ internal sealed partial class TranslateCardView
         {
             _comet.StopAnimation("Opacity");
             _comet.Opacity = 1;
-            if (_comet.Shapes[0] is CompositionSpriteShape { StrokeBrush: CompositionLinearGradientBrush brush })
-            {
-                var spin = compositor.CreateScalarKeyFrameAnimation();
-                spin.InsertKeyFrame(0f, 0f);
-                spin.InsertKeyFrame(1f, 360f, compositor.CreateLinearEasingFunction());
-                spin.Duration = TimeSpan.FromSeconds(2.4);
-                spin.IterationBehavior = AnimationIterationBehavior.Forever;
-                brush.StartAnimation("RotationAngleInDegrees", spin);
-            }
+            RunComet();
         }
         else
         {
@@ -748,6 +749,41 @@ internal sealed partial class TranslateCardView
             fade.InsertKeyFrame(1f, 0f);
             fade.Duration = TimeSpan.FromSeconds(0.35);
             _comet.StartAnimation("Opacity", fade);
+        }
+    }
+
+    /// <summary>按当前周长排好每一段虚线（一段长 Segment × 周长，其余是空），各自从自己的位置往前走一整圈。</summary>
+    private void RunComet()
+    {
+        if (_comet is null || _cometPerimeter <= 0)
+        {
+            return;
+        }
+
+        var compositor = _comet.Compositor;
+        var thickness = CometThickness;
+        // 虚线长度按描边粗细的倍数算（D2D 的规矩）。
+        var perimeter = _cometPerimeter / thickness;
+        var segment = perimeter * CometSegment;
+        var linear = compositor.CreateLinearEasingFunction();
+        for (var index = 0; index < _comet.Shapes.Count; index++)
+        {
+            if (_comet.Shapes[index] is not CompositionSpriteShape shape)
+            {
+                continue;
+            }
+
+            shape.StrokeDashArray.Clear();
+            shape.StrokeDashArray.Add(segment);
+            shape.StrokeDashArray.Add(perimeter - segment);
+            // 第 0 段是尾巴、最后一段是头：越往后的段在路径上越靠前。
+            var start = -index * segment;
+            var travel = compositor.CreateScalarKeyFrameAnimation();
+            travel.InsertKeyFrame(0f, start);
+            travel.InsertKeyFrame(1f, start - perimeter, linear);
+            travel.Duration = TimeSpan.FromSeconds(2.4);
+            travel.IterationBehavior = AnimationIterationBehavior.Forever;
+            shape.StartAnimation("StrokeDashOffset", travel);
         }
     }
 
@@ -810,18 +846,17 @@ internal sealed partial class TranslateCardView
         var accent = Theme.AccentColor;
         var radius = (float)Theme.Corner("Kitty.Corner.Card").TopLeft;
 
-        var gradient = compositor.CreateLinearGradientBrush();
-        gradient.CenterPoint = new Vector2(0.5f, 0.5f);
-        gradient.ColorStops.Add(compositor.CreateColorGradientStop(0f, Color.FromArgb(0, accent.R, accent.G, accent.B)));
-        gradient.ColorStops.Add(compositor.CreateColorGradientStop(0.62f, Color.FromArgb(0, accent.R, accent.G, accent.B)));
-        gradient.ColorStops.Add(compositor.CreateColorGradientStop(1f, accent));
         _cometGeometry = compositor.CreateRoundedRectangleGeometry();
         _cometGeometry.CornerRadius = new Vector2(radius, radius);
-        var cometShape = compositor.CreateSpriteShape(_cometGeometry);
-        cometShape.StrokeBrush = gradient;
-        cometShape.StrokeThickness = 1.5f;
         _comet = compositor.CreateShapeVisual();
-        _comet.Shapes.Add(cometShape);
+        foreach (var alpha in CometAlphas)
+        {
+            var segment = compositor.CreateSpriteShape(_cometGeometry);
+            segment.StrokeBrush = compositor.CreateColorBrush(Color.FromArgb((byte)(alpha * 255), accent.R, accent.G, accent.B));
+            segment.StrokeThickness = CometThickness;
+            _comet.Shapes.Add(segment);
+        }
+
         _comet.Opacity = 0;
 
         _flashGeometry = compositor.CreateRoundedRectangleGeometry();
@@ -856,6 +891,18 @@ internal sealed partial class TranslateCardView
         _cometGeometry.Offset = new Vector2(0.75f, 0.75f);
         _flashGeometry.Size = inner;
         _flashGeometry.Offset = new Vector2(0.75f, 0.75f);
+
+        // 圆角矩形的周长：四条直边 + 四个四分之一圆。卡片长高时重排虚线（这一圈从头走，看不出来）。
+        var radius = Math.Min(_cometGeometry.CornerRadius.X, Math.Min(inner.X, inner.Y) / 2);
+        var perimeter = 2 * (inner.X + inner.Y) - (8 - 2 * MathF.PI) * radius;
+        if (Math.Abs(perimeter - _cometPerimeter) > 0.5f)
+        {
+            _cometPerimeter = perimeter;
+            if (_cometOn && !Motion.Reduced)
+            {
+                RunComet();
+            }
+        }
     }
 
     [GeneratedRegex("（.*）$")]
