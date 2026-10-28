@@ -270,7 +270,7 @@ internal sealed partial class LauncherListView : Grid
             Text = title,
             FontSize = Theme.FontSize("Kitty.FontSize.GroupHeader"),
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            Foreground = Theme.Brush("TextFillColorTertiaryBrush", Color.FromArgb(255, 128, 128, 128)),
+            Foreground = Theme.TertiaryText(),
             VerticalAlignment = VerticalAlignment.Bottom,
             Margin = new Thickness(10, 0, 0, 2),
         };

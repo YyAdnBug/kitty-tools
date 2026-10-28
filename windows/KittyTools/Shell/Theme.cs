@@ -338,6 +338,12 @@ internal static class Theme
             ? Color.FromArgb(255, 190, 190, 190)
             : Color.FromArgb(255, 96, 96, 96));
 
+    /// <summary>三级文字（启动器的种类、分组标题）：同 SecondaryText，按设置里选的那套直接给颜色，不取主题字典（R15）。</summary>
+    public static Brush TertiaryText() => new SolidColorBrush(
+        EffectiveTheme == ElementTheme.Dark
+            ? Color.FromArgb(255, 150, 150, 150)
+            : Color.FromArgb(255, 128, 128, 128));
+
     /// <summary>设置卡的实色近似（渐隐遮罩的终点）。</summary>
     public static Color CardColor()
         => ((SolidColorBrush)Brush("Kitty.CardSolid", EffectiveTheme == ElementTheme.Dark

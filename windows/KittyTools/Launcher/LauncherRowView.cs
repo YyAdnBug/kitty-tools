@@ -9,6 +9,7 @@ using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
 using Windows.UI;
 
@@ -46,9 +47,9 @@ internal sealed partial class LauncherRowView : Grid
         {
             CornerRadius = Theme.Corner("Kitty.Corner.Control"),
             Background = Theme.Brush("Kitty.Fill.Hover", Color.FromArgb(10, 0, 0, 0)),
-            Opacity = 0,
             IsHitTestVisible = false,
         };
+        HideVisual(_hover);
         Children.Add(_hover);
 
         var content = new Grid { Padding = new Thickness(10, 0, 10, 0), ColumnSpacing = 10 };
@@ -69,12 +70,12 @@ internal sealed partial class LauncherRowView : Grid
         {
             Text = context.KindName,
             FontSize = Theme.FontSize("Kitty.FontSize.Meta"),
-            Foreground = Theme.Brush("TextFillColorTertiaryBrush", Color.FromArgb(255, 128, 128, 128)),
+            Foreground = Theme.TertiaryText(),
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Right,
         };
         _shortcut = KeyCap.Create("Ctrl+" + (index + 1));
-        _shortcut.Opacity = 0;
+        HideVisual(_shortcut);
         _shortcut.HorizontalAlignment = HorizontalAlignment.Right;
         _shortcut.VerticalAlignment = VerticalAlignment.Center;
         var kindHost = new Grid { VerticalAlignment = VerticalAlignment.Center };
@@ -176,13 +177,19 @@ internal sealed partial class LauncherRowView : Grid
         var target = _hovered && !_selected ? 1 : 0;
         if (Motion.Reduced)
         {
-            _hover.Opacity = target;
+            ElementCompositionPreview.GetElementVisual(_hover).Opacity = target;
         }
         else
         {
             Motion.Fade(_hover, target, 0.10);
         }
     }
+
+    /// <summary>
+    /// 一开始透明的那几样（悬停底、Ctrl 键帽）把透明度放在合成层上：Motion.Fade 动的是合成层，
+    /// XAML 的 Opacity = 0 会一直压着，淡入了也看不见。
+    /// </summary>
+    private static void HideVisual(UIElement element) => ElementCompositionPreview.GetElementVisual(element).Opacity = 0f;
 
     private static Brush SubtitleBrush(bool alternate, bool armed)
         => armed
@@ -279,7 +286,7 @@ internal sealed partial class LauncherRowView : Grid
         {
             Glyph = "",
             FontSize = 11,
-            Foreground = Theme.Brush("TextFillColorTertiaryBrush", Color.FromArgb(255, 128, 128, 128)),
+            Foreground = Theme.TertiaryText(),
             VerticalAlignment = VerticalAlignment.Center,
         });
         row.Children.Add(new TextBlock
