@@ -414,7 +414,7 @@ internal sealed partial class TranslateWindow : Window
             ApplyNoActivateStyle();
             ShowCore(activate: false, followMouse: FollowsMouse);
             PInvoke.ShowWindow(_hwnd, (SHOW_WINDOW_CMD)4); // SW_SHOWNOACTIVATE
-            OutsideClickHook.Install(_hwnd, () => Hide(restoreForeground: false));
+            OutsideClickHook.Install(_hwnd, OnOutsideClick);
             ResizeToContent();
             return;
         }
@@ -434,8 +434,17 @@ internal sealed partial class TranslateWindow : Window
         _coordinator.Translate(text);
         ShowCore(activate: false, followMouse: FollowsMouse);
         PInvoke.ShowWindow(_hwnd, (SHOW_WINDOW_CMD)4); // SW_SHOWNOACTIVATE
-        OutsideClickHook.Install(_hwnd, () => Hide(restoreForeground: false));
+        OutsideClickHook.Install(_hwnd, OnOutsideClick);
         ResizeToContent();
+    }
+
+    /// <summary>不激活露出的浮窗（复制即译、剪贴板里的翻译）点到外面：固定着就不收（同 mac OverlayPanel.clickedOutside）。</summary>
+    private void OnOutsideClick()
+    {
+        if (!SettingsService.Current.TranslatePinned)
+        {
+            Hide(restoreForeground: false);
+        }
     }
 
     public void ToggleInput()
