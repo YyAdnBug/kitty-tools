@@ -2,7 +2,7 @@
 
 2026-10-28。按截图标注那一轮（`PLAN-v9-annotate.md`）的做法，把 Windows 的剪贴板历史从数据、面板到设置页逐项对着 mac 过了一遍。
 
-**状态：等用户拍板。** 先列 Windows 现在的毛病（§1），再按数据（§2）、视觉（§3）、交互（§4）、设置页（§5）逐项对 mac，最后是要拍的几件事（§6）和分批（§7）。说「全部按推荐」或逐项改完再动手。
+**状态：用户 2026-10-28 拍板 D1–D8 全部按推荐，从 6a 开始做；分工见 `REVIEW.md`「v9 剪贴板分工」。** 先列 Windows 现在的毛病（§1），再按数据（§2）、视觉（§3）、交互（§4）、设置页（§5）逐项对 mac，最后是要拍的几件事（§6）和分批（§7）。说「全部按推荐」或逐项改完再动手。
 
 - **对的是谁**：mac 的路径相对 `macos/KittyTools/`：`Clipboard/**`（`ClipboardStore.swift`、`ClipboardPanelModel.swift`、`ClipboardPanelView.swift`、`ClipRowView.swift`、`LensView.swift`、`PreviewView.swift`、`QuickLookView.swift`、`Dialogs.swift`、`LinkPreview.swift`）、`Storage/Database.swift`、`Settings/ClipboardTab.swift`、`Storage/Prefs.swift`。规格 `.cursor/rules/mac-clipboard.mdc`（下文写成「mc §n」）和 `.cursor/rules/mac-whisker-clipboard.mdc`（写成「wc」）。Windows 对着 `576adc5`，路径相对 `windows/KittyTools/`：`Clipboard/ClipboardPanel.xaml(.cs)`、`ClipRow.cs`、`ClipboardStore.cs`、`ClipboardService.cs`、`Settings/SettingsWindow.cs` 的 `BuildClipboard`、`KittyTools.Core/PanelMetrics.cs`。
 - **怎么看的**：读两边的代码，再用 `576adc5` 的 Debug 版跑 `--ui-snapshots`（测试数据目录）出了一套现状图（`clip-*.png`），§1 里标「截图」的几条是图上看到的。

@@ -8,6 +8,12 @@
 
 条目编号不复用。行号按条目里写的那个提交。
 
+## v9 剪贴板分工（2026-10-28，用户拍板 PLAN-v9-clipboard D1–D8 全部按推荐）
+
+剪贴板历史对齐 mac（`PLAN-v9-clipboard.md`，PLAN-v9 第 2 批拆成 6a–6g，C1–C3 并在里面）由 **Claude 在自己的 worktree 里做**（D8），做完一小批推一次。
+
+**归 Claude 的文件**（这一轮别的 agent 先别改；真要改先在这里写一句再动）：`KittyTools/Clipboard/**`、`KittyTools.Core/PanelMetrics.cs`、这一轮新加的 Core 文件和它们的测试（`ClipList*`、`ClipLens*`、`SyntaxHighlight`、`ColorFormats` 之类，加了就写在下面）、`Settings/SettingsWindow.cs` 的 `BuildClipboard`、`Settings/ShortcutsSheet.cs` 剪贴板那一组、`App/Settings.cs` 里剪贴板的新字段。
+
 ## v9 标注分工（2026-10-27，用户拍板 PLAN-v9-annotate D1–D7 全部按推荐）
 
 截图标注编辑器对齐 mac（`PLAN-v9-annotate.md`，PLAN-v9 第 5 批拆成 5a–5e）由 **Claude 在自己的 worktree 里做**（D7），做完一小批推一次。
