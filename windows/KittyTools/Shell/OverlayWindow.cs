@@ -88,6 +88,9 @@ internal sealed unsafe class OverlayWindow : Window
     /// <summary>给启动器带一个查询（调试 / 从剪贴板等入口打开用）。</summary>
     public void SetLauncherQueryInner(string query) => _launcher?.SetQuery(query);
 
+    /// <summary>自检档的操作脚本用（LauncherProbe）。</summary>
+    internal LauncherPanel? Launcher => _launcher;
+
     /// <summary>Ctrl+P / 底栏图钉：固定后点别处不收起（Esc 照样收）。</summary>
     public void TogglePin()
     {
@@ -418,6 +421,13 @@ internal static class OverlayHost
     }
 
     internal static string? PendingLauncherQuery;
+
+    /// <summary>开着的启动器面板（自检档的操作脚本用；没开、开的是剪贴板时是 null）。</summary>
+    internal static LauncherPanel? VisibleLauncher
+        => _window is { IsVisible: true, Kind: OverlayKind.Launcher } window ? window.Launcher : null;
+
+    /// <summary>浮层窗口的 HWND（自检档截图用，没建过是 0）。</summary>
+    internal static IntPtr HandleForProbe => _window is null ? IntPtr.Zero : WinRT.Interop.WindowNative.GetWindowHandle(_window);
 
     /// <summary>启动 3 秒后预建浮层和两块面板（第二版 §4.2：第一次按热键 115–256 ms → 十几毫秒）。</summary>
     public static void Prewarm()

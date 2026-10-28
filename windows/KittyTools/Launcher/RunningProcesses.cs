@@ -153,7 +153,7 @@ internal static unsafe partial class RunningProcesses
         return null;
     }
 
-    /// <summary>最小化它的每一扇应用窗口（mac 的「隐藏」）。</summary>
+    /// <summary>最小化它的每一扇应用窗口（mac 的「隐藏」）。用 ShowWindowAsync：别的进程的窗口用 ShowWindow 要等对方处理完，对方没响应时 UI 线程跟着卡住。</summary>
     public static string? Minimize(int pid)
     {
         var windows = AppWindows();
@@ -164,7 +164,7 @@ internal static unsafe partial class RunningProcesses
 
         foreach (var hwnd in list)
         {
-            ShowWindow(hwnd, SwMinimize);
+            ShowWindowAsync(hwnd, SwMinimize);
         }
 
         return null;
@@ -291,7 +291,7 @@ internal static unsafe partial class RunningProcesses
 
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool ShowWindow(IntPtr hwnd, int command);
+    private static partial bool ShowWindowAsync(IntPtr hwnd, int command);
 
     [LibraryImport("dwmapi.dll")]
     private static partial int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out int value, int size);

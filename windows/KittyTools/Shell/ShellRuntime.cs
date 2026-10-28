@@ -281,6 +281,15 @@ internal sealed class ShellRuntime
             });
         }
 
+        // 自检档：照脚本操作启动器（打字、挪选中、Enter、收起），量 UI 线程卡没卡（LauncherProbe）。
+        var launcherScript = Environment.GetCommandLineArgs()
+            .FirstOrDefault(arg => arg.StartsWith(LauncherProbe.ArgumentPrefix, StringComparison.OrdinalIgnoreCase));
+        if (launcherScript is not null && Paths.IsTestProfile)
+        {
+            var script = launcherScript[LauncherProbe.ArgumentPrefix.Length..];
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => _ = LauncherProbe.RunAsync(script));
+        }
+
 #if DEBUG
         if (Environment.GetCommandLineArgs().Contains("--tray-menu", StringComparer.OrdinalIgnoreCase))
         {

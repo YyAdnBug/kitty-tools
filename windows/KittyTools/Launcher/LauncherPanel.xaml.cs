@@ -260,6 +260,32 @@ public sealed partial class LauncherPanel : UserControl
         FocusSearch();
     }
 
+    // ---- 自检档的操作脚本（LauncherProbe）：像用户一样改搜索框、挪选中、按 Enter，走的是同一条代码路，不合成按键。
+
+    /// <summary>改搜索框里的字（TextChanged 照常异步发，和打字一样触发搜索）。</summary>
+    internal void ProbeType(string text)
+    {
+        SearchBox.Text = text;
+        SearchBox.SelectionStart = text.Length;
+    }
+
+    internal string ProbeText => SearchBox.Text;
+
+    internal void ProbeMove(int delta) => MoveSelection(delta, repeat: false);
+
+    /// <summary>Enter（没有修饰键）。</summary>
+    internal void ProbeEnter()
+    {
+        if (Model is not { } model || SelectedItem is not { } item)
+        {
+            return;
+        }
+
+        model.KeyRepeat = false;
+        model.Execute(item);
+        AfterAction();
+    }
+
     /// <summary>截图自检摆状态（UiSnapshotProbe）：launcher-home / -calc / -kill / -empty / -actions / -keys。</summary>
     public void ApplyProbeState(string name)
     {
