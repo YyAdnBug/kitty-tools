@@ -8,6 +8,12 @@
 
 条目编号不复用。行号按条目里写的那个提交。
 
+## v9 启动器分工（2026-10-28，用户：「没有的话就开始对齐 macos」，PLAN-v9-launcher D1–D9 按推荐）
+
+启动器对齐 mac（`PLAN-v9-launcher.md`，并进 PLAN-v9 第 4 批 L1、L3–L8，第 1 批 V1，REVIEW R42）由 **审查方（Claude）在 Mac 上写、不编译**（D9），7a–7d 一批一推。你们负责编译、单测、`--ui-snapshots`、手测；编译错直接修，在这一节下面记一句。
+
+**归审查方的文件**（这一轮别的 agent 先别改；真要改先在这里写一句再动）：`KittyTools/Launcher/**`、`KittyTools.Core/{LauncherItem,LauncherMatch,LauncherCommands,DirectItems,WebSearch,Calculator}.cs`、这一轮新加的 Core 文件和测试（`Launcher*` 开头的）、`Shell/Ui/KindTile.cs`、`Core/PanelFooterText.cs` 里启动器那两个函数、`Core/PanelMetrics.cs` 里启动器那几个、`Settings/SettingsWindow.cs` 的 `BuildLauncher`、`Settings/ShortcutsSheet.cs` 启动器那一组、`App/Settings.cs` 里启动器的新字段。
+
 ## v9 剪贴板分工（2026-10-28，用户拍板 PLAN-v9-clipboard D1–D8 全部按推荐）
 
 剪贴板历史对齐 mac（`PLAN-v9-clipboard.md`，PLAN-v9 第 2 批拆成 6a–6g，C1–C3 并在里面）由 **Claude 在自己的 worktree 里做**（D8），做完一小批推一次。
