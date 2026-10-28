@@ -30,7 +30,7 @@ using Color = Windows.UI.Color;
 
 namespace KittyTools;
 
-internal sealed unsafe partial class TranslateWindow : Window
+internal sealed partial class TranslateWindow : Window
 {
     private const int MinWidthDip = 420;
     private const double EmptyHeight = 200;
@@ -1446,13 +1446,13 @@ internal sealed unsafe partial class TranslateWindow : Window
         return button;
     }
 
-    private void ApplyNoActivateStyle()
+    private unsafe void ApplyNoActivateStyle()
     {
         var style = GetWindowLong((IntPtr)_hwnd.Value, -20);
         SetWindowLong((IntPtr)_hwnd.Value, -20, style | 0x08000000); // WS_EX_NOACTIVATE
     }
 
-    private void RemoveNoActivateStyle()
+    private unsafe void RemoveNoActivateStyle()
     {
         var style = GetWindowLong((IntPtr)_hwnd.Value, -20);
         SetWindowLong((IntPtr)_hwnd.Value, -20, style & ~0x08000000);

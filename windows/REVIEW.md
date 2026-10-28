@@ -19,6 +19,8 @@
 - **动了别人的文件**（都是加东西）：`App/HotKeyDefaults.cs`（`translateReplace` 加在表末尾）、`Shell/Feature.cs`、`Shell/ShellRuntime.cs`（热键分发、`ShowSettings` 多一个 `service` 参数）、`Shell/Glyphs.cs`（Swap、Key、VolumeOn、ClearInput、Pinned、ReplaceBack）、`Shell/Ui/SearchLine.cs`（`MakePlain` 抽出来给原文框、历史搜索框用）、`Screenshot/ScreenshotSession.cs`（截图翻译那几行）、`Settings/ShortcutsSheet.cs`（翻译两组）、`Settings/SettingsWindow.cs`（`ShowPage` 的 service 参数改成进详情子页、左栏换页时收起子页、删了翻译页和旧的导出对话框）、`App/Settings.cs`（四个新字段、默认宽 420、删 `TranslateReplaceHotKeySeen`）。
 - **编译时留意**：`TranslateWindow` 用 `UIElement.PreviewKeyDownEvent` 在根上统一接键；卡片的彗星边框是 `ElementCompositionPreview.SetElementChildVisual` 挂的 `ContainerVisual`（两个 `ShapeVisual`）、画刷转的是 `CompositionLinearGradientBrush.RotationAngleInDegrees`；正文是 `RichTextBlock`（Markdown 用 Run / Hyperlink 拼）；历史列表是 Canvas + 前缀和；服务详情的模型框是 `AutoSuggestBox`；`TranslateHttp.GetTextAsync` 是新的 GET。
 - **要截的图**（`--ui-snapshots` 现在只截了输入翻译空着的那一张）：浅 / 深各一张——空状态（三个入口的快捷键）、两张卡生成中（彗星边框 + 骨架）、一张完成一张配置错误、截断、历史（分组 + 选中 + 收藏星标）、历史 Ctrl+K 菜单、设置 › 翻译（字号预览卡）、服务详情（AI，模型下拉）。
+- **Windows 编译记录（2026-10-28，Claude 在 worktree 里）**：
+  - `Translate/TranslateWindow.cs`：CS4004「无法在不安全的上下文中等待」——类声明是 `unsafe partial class`，新加的 `ExportAsync` 里的 `await` 因此不让编。去掉类上的 `unsafe`，只给用指针的 `ApplyNoActivateStyle` / `RemoveNoActivateStyle` 两个方法标 `unsafe`。这一处修完 Debug 0 警告 0 错误（XAML 那几个 WMC0001 是它连带的），别的都一次编过。
 
 ## 真机反馈修复（2026-10-28 晚，审查方在 Mac 上写，**没编译**）
 
