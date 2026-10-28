@@ -8,6 +8,14 @@
 
 条目编号不复用。行号按条目里写的那个提交。
 
+## 真机反馈修复（2026-10-28 晚，审查方在 Mac 上写，**没编译**）
+
+用户试包后报的五条：设置卡有的有图标有的没有、翻译服务一行间距大、服务 logo 缺、启动器空首页多一截、Chrome「没找到书签文件」。`f7115e7`（启动器两条）、`b56ac4c`（设置和 logo），手测 HANDTEST 576–580。翻译功能本身的差异另起 `PLAN-v9-translate.md`（拍板页，等用户定）。
+
+- **改了公用的**：`SettingsUi.Card` 去掉第一个 glyph 参数（全设置窗 21 处跟着改），加了 `leading`（身份图标）和 `problem`（说明用橙字）两个可选参数；`AddToggle` / `AddCombo` 去掉 glyph、删了 `GlyphFor`。没有 leading 时不建图标那一列（空列也吃 ColumnSpacing）。卡片单击只认左键。
+- **服务图标**：`ServiceTile.Create` 现在收 `TranslateServiceConfig`（以前收 vendor 字符串）；Core 加了 `ServiceBadge.Logo` / `IsFullBleed`、`AiEndpoint.ParseProtocol`（`AiServiceProvider.Protocol` 转调它）。`Resources/ServiceLogo` 多了 deepl / deepseek / openai / siliconflow 四张 128 px PNG（mac 那边是 SVG，在 Mac 上渲的）——确认 Release 发布目录里有这四张。
+- **编译时留意**：`SettingsWindow.ServiceRow` 里的本地函数和 async lambda、`ServiceStatus` 的 switch 出元组；`LauncherPanel.xaml` 给底栏那一行起了名字 `FooterRow`。
+
 ## v9 启动器分工（2026-10-28，用户：「没有的话就开始对齐 macos」，PLAN-v9-launcher D1–D9 按推荐）
 
 启动器对齐 mac（`PLAN-v9-launcher.md`，并进 PLAN-v9 第 4 批 L1、L3–L8，第 1 批 V1，REVIEW R42）由 **审查方（Claude）在 Mac 上写、不编译**（D9），7a–7d 一批一推。你们负责编译、单测、`--ui-snapshots`、手测；编译错直接修，在这一节下面记一句。
