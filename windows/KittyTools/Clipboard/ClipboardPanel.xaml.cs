@@ -39,6 +39,8 @@ public sealed partial class ClipboardPanel : UserControl
     private ClipLinkLens? _linkLens;
     /// <summary>Tab 的筛选面板 / Ctrl+K 的操作面板（画在面板里，焦点留在搜索框）。</summary>
     private readonly ClipPalette _palette = new();
+    /// <summary>备注、编辑内容 / 新建片段、新建 / 管理收藏夹（画在面板里）。</summary>
+    private readonly ClipDialogHost _dialogs = new();
     /// <summary>菜单开着时搜索框是过滤词：原来的搜索词先收在这里。</summary>
     private string? _savedQuery;
     private bool _suppressSearch;
@@ -102,6 +104,8 @@ public sealed partial class ClipboardPanel : UserControl
 
         ListHost.Children.Insert(0, _list);
         ListHost.Children.Add(_palette);
+        ListHost.Children.Add(_dialogs);
+        _dialogs.Closed += OnDialogClosed;
         _palette.Closed += OnPaletteClosed;
         _palette.FilterReset += () => SetSearchQuietly(string.Empty);
         _list.ItemTapped += OnItemTapped;
@@ -120,7 +124,7 @@ public sealed partial class ClipboardPanel : UserControl
                 CloseUnlessPinned();
             }
         };
-        _list.NewSnippetTapped += () => _ = NewSnippetAsync();
+        _list.NewSnippetTapped += () => ShowNewSnippet();
         if (ClipboardService.Instance?.Store is { } store)
         {
             store.Changed += OnStoreChanged;
@@ -154,7 +158,12 @@ public sealed partial class ClipboardPanel : UserControl
         {
             var height = PanelMetrics.ClipboardHeightFor(
                 _visible.Count + (ShowsNewSnippetRow ? 1 : 0), _list.Layout.SectionTops.Count, reservesLens: LensEnabled);
-            // 浮起的菜单开着时至少放得下 8.5 行（mac paletteListHeight）。
+            // 对话框开着给满；浮起的菜单开着时至少放得下 8.5 行（mac）。
+            if (_dialogs.IsOpen)
+            {
+                return PanelMetrics.MaxHeightDip;
+            }
+
             return _palette.IsOpen
                 ? Math.Max(height, PanelMetrics.ClipboardPanelChrome + ClipPalette.MaxListHeight + 24)
                 : height;
@@ -220,6 +229,7 @@ public sealed partial class ClipboardPanel : UserControl
         _selected = -1;
         _linkLens = null;
         _palette.Close();
+        _dialogs.Close();
         _savedQuery = null;
         _kindFilter = null;
         _formFilter = null;
@@ -549,6 +559,25 @@ public sealed partial class ClipboardPanel : UserControl
                 Refresh(animated: false);
                 _pendingChip = true;
                 UpdateFilterChips();
+                break;
+            case "clip-note":
+                SelectWhere(entry => entry.Kind == ClipKind.Text);
+                ShowNote(SelectedEntry!);
+                break;
+            case "clip-edit":
+                SelectWhere(entry => entry.Form == ContentForm.Code);
+                ShowEditContent(SelectedEntry);
+                break;
+            case "clip-new-snippet":
+                ShowNewSnippet();
+                break;
+            case "clip-groups":
+                foreach (var group in new[] { "工作", "灵感" })
+                {
+                    Store?.CreateGroup(group);
+                }
+
+                ShowManageGroups();
                 break;
             case "clip-scrolled":
                 Select(3, MotionCurve.Instant);
@@ -914,6 +943,12 @@ public sealed partial class ClipboardPanel : UserControl
             return;
         }
 
+        // 对话框开着：键盘归对话框（Esc 关它、Ctrl+Enter 保存），面板不再处理。
+        if (_dialogs.IsOpen)
+        {
+            return;
+        }
+
         if (e.Key == VirtualKey.Control)
         {
             // 按住 Ctrl 150 ms 才浮现键帽：中途松开就不显示（PLAN-v2 §3.5）。
@@ -1044,13 +1079,17 @@ public sealed partial class ClipboardPanel : UserControl
                 break;
             case VirtualKey.N when control:
                 e.Handled = true;
-                _ = NewSnippetAsync();
+                ShowNewSnippet();
                 break;
             case VirtualKey.E when control:
                 e.Handled = true;
                 if (SingleTarget is { Kind: ClipKind.Text } editable)
                 {
-                    _ = EditSnippetAsync(editable);
+                    ShowEditContent(editable);
+                }
+                else
+                {
+                    Beep();
                 }
 
                 break;
@@ -1857,7 +1896,7 @@ public sealed partial class ClipboardPanel : UserControl
             }, Checked: string.Equals(_sourceFilter, exe, StringComparison.OrdinalIgnoreCase)));
         }
 
-        items.Add(new PaletteItem("管理收藏夹…", Glyphs.Settings, 4, () => _ = ManageGroupsAsync()));
+        items.Add(new PaletteItem("管理收藏夹…", Glyphs.Settings, 4, () => ShowManageGroups()));
         return items;
     }
 
@@ -1953,7 +1992,7 @@ public sealed partial class ClipboardPanel : UserControl
         items.Add(new PaletteItem(favorite ? "取消收藏" : "收藏", favorite ? Glyphs.FavoriteFilled : Glyphs.Star, 2, FavoriteSelected, "Ctrl+D"));
         if (Store?.Groups.Count is null or 0)
         {
-            items.Add(new PaletteItem("放进新收藏夹…", Glyphs.Folder, 2, () => _ = NewGroupForAsync(targets)));
+            items.Add(new PaletteItem("放进新收藏夹…", Glyphs.Folder, 2, () => ShowNewGroupFor(targets)));
         }
         else
         {
@@ -1973,10 +2012,10 @@ public sealed partial class ClipboardPanel : UserControl
 
         if (single is not null)
         {
-            items.Add(new PaletteItem("备注…", Glyphs.Edit, 2, () => _ = EditNoteAsync(single)));
+            items.Add(new PaletteItem("备注…", Glyphs.Edit, 2, () => ShowNote(single)));
             if (single.Kind == ClipKind.Text)
             {
-                items.Add(new PaletteItem("编辑内容…", Glyphs.Edit, 2, () => _ = EditSnippetAsync(single), "Ctrl+E"));
+                items.Add(new PaletteItem("编辑内容…", Glyphs.Edit, 2, () => ShowEditContent(single), "Ctrl+E"));
             }
         }
 
@@ -2005,7 +2044,7 @@ public sealed partial class ClipboardPanel : UserControl
             items.Add(new PaletteItem("移出收藏夹", Glyphs.Folder, 1, () => MoveToGroup(targets, null, null)));
         }
 
-        items.Add(new PaletteItem("新建收藏夹…", Glyphs.Add, 1, () => _ = NewGroupForAsync(targets)));
+        items.Add(new PaletteItem("新建收藏夹…", Glyphs.Add, 1, () => ShowNewGroupFor(targets)));
         return items;
     }
 
@@ -2023,40 +2062,6 @@ public sealed partial class ClipboardPanel : UserControl
 
         Refresh(SelectedEntry?.Id, animated: false);
         Footer.ShowNotice(name is null ? "已移出收藏夹" : $"已移到「{name}」");
-    }
-
-    private async Task NewGroupForAsync(List<ClipEntry> targets)
-    {
-        var name = await PromptAsync("新建收藏夹", "收藏夹的名字（最多 24 字）");
-        if (string.IsNullOrWhiteSpace(name) || Store is not { } store)
-        {
-            return;
-        }
-
-        if (store.CreateGroup(name) is not { } group)
-        {
-            NoticeHost.Show("名字不能用", "不能为空、不能重名、最多 24 字", NoticeTone.Warning);
-            return;
-        }
-
-        MoveToGroup(targets, group.Id, group.Name);
-    }
-
-    /// <summary>一行字的小对话框（6e 换成画在面板里的）。</summary>
-    private async Task<string?> PromptAsync(string title, string placeholder)
-    {
-        var box = new TextBox { PlaceholderText = placeholder, MaxLength = ClipGroups.MaxNameLength };
-        var dialog = new ContentDialog
-        {
-            RequestedTheme = Theme.ElementTheme,
-            Title = title,
-            PrimaryButtonText = "好",
-            CloseButtonText = "取消",
-            DefaultButton = ContentDialogButton.Primary,
-            Content = box,
-            XamlRoot = XamlRoot,
-        };
-        return await dialog.ShowAsync() == ContentDialogResult.Primary ? box.Text : null;
     }
 
     private void RemoveSnippets(List<ClipEntry> snippets)
@@ -2332,213 +2337,123 @@ public sealed partial class ClipboardPanel : UserControl
         return true;
     }
 
-    private async Task NewSnippetAsync()
-    {
-        var name = new TextBox { Header = "名称（存成备注，可空）", MaxLength = 100 };
-        var body = new TextBox
-        {
-            Header = "内容（可以用 {date} {time} {datetime} {weekday} {uuid} {clipboard} {clipboard:N} {cursor}）",
-            AcceptsReturn = true,
-            TextWrapping = TextWrapping.Wrap,
-            MinHeight = 120,
-            MaxHeight = 260,
-        };
-        var dialog = new ContentDialog
-        {
-            RequestedTheme = Theme.ElementTheme,
-            Title = "新建片段",
-            PrimaryButtonText = "保存",
-            CloseButtonText = "取消",
-            DefaultButton = ContentDialogButton.Primary,
-            Content = new StackPanel { Spacing = 10, Children = { body, name } },
-            XamlRoot = XamlRoot,
-        };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary ||
-            string.IsNullOrWhiteSpace(body.Text) ||
-            ClipboardService.Instance?.Store is not { } store)
-        {
-            return;
-        }
+    // ---- 对话框（画在面板里，PLAN-v9-clipboard D2）
 
-        store.AddSnippet(body.Text, name.Text);
-        SetScope(ClipScope.Snippets);
-        SearchBox.Focus(FocusState.Programmatic);
+    private void OnDialogOpened()
+    {
+        _palette.Close();
+        HeightRequested?.Invoke(ContentHeightDip, false);
     }
 
-    private async Task EditSnippetAsync(ClipEntry? target = null)
+    private void OnDialogClosed()
     {
-        var entry = target ?? SelectedEntry;
-        if (entry is null || entry.Kind != ClipKind.Text || ClipboardService.Instance?.Store is not { } store)
+        if (_active)
         {
-            return;
-        }
-
-        // 「编辑内容…」只改正文，不改类型、不换范围（mac）；只有片段才有名称框。
-        var name = new TextBox { Header = "名称（存成备注，可空）", Text = entry.Note ?? string.Empty, MaxLength = 100 };
-        var body = new TextBox
-        {
-            Header = "内容",
-            Text = entry.Text ?? string.Empty,
-            AcceptsReturn = true,
-            TextWrapping = TextWrapping.Wrap,
-            MinHeight = 120,
-            MaxHeight = 260,
-        };
-        var dialog = new ContentDialog
-        {
-            RequestedTheme = Theme.ElementTheme,
-            Title = entry.Snippet ? "编辑片段" : "编辑内容",
-            PrimaryButtonText = "保存",
-            CloseButtonText = "取消",
-            DefaultButton = ContentDialogButton.Primary,
-            Content = entry.Snippet ? new StackPanel { Spacing = 10, Children = { body, name } } : body,
-            XamlRoot = XamlRoot,
-        };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary || string.IsNullOrWhiteSpace(body.Text))
-        {
-            return;
-        }
-
-        if (entry.Snippet)
-        {
-            store.SetNote(entry.Id, name.Text);
-        }
-
-        if (body.Text != entry.Text)
-        {
-            store.UpdateText(entry.Id, body.Text);
+            HeightRequested?.Invoke(ContentHeightDip, false);
+            FocusSearch();
         }
     }
 
-    private async Task EditNoteAsync(ClipEntry entry)
+    /// <summary>新建片段（Ctrl+N）：名称（可选，存成备注）+ 正文；被当前范围 / 筛选 / 搜索挡住时底栏说「已存为片段」（mac）。</summary>
+    private void ShowNewSnippet()
     {
-        var box = new TextBox
+        _dialogs.ShowText("新建片段", string.Empty, asksName: true, "占位符：" + ClipDialogHost.PlaceholderHelp, (name, body) =>
         {
-            Header = "备注（能搜到；取消收藏不清备注）",
-            Text = entry.Note ?? string.Empty,
-            AcceptsReturn = true,
-            TextWrapping = TextWrapping.Wrap,
-            MinHeight = 80,
-            MaxHeight = 200,
-        };
-        var dialog = new ContentDialog
-        {
-            RequestedTheme = Theme.ElementTheme,
-            Title = "备注",
-            PrimaryButtonText = "保存",
-            CloseButtonText = "取消",
-            DefaultButton = ContentDialogButton.Primary,
-            Content = box,
-            XamlRoot = XamlRoot,
-        };
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
-        {
-            if (string.IsNullOrWhiteSpace(box.Text))
+            if (Store?.AddSnippet(body, name) is not { } entry)
             {
-                ClipboardService.Instance?.Store.SetNote(entry.Id, null);
-            }
-            else
-            {
-                ClipboardService.Instance?.Store.SetNote(entry.Id, box.Text);
-            }
-        }
-    }
-
-    private async Task ManageGroupsAsync()
-    {
-        if (ClipboardService.Instance?.Store is not { } store)
-        {
-            return;
-        }
-
-        var list = new StackPanel { Spacing = 6 };
-        void Rebuild()
-        {
-            list.Children.Clear();
-            foreach (var group in store.Groups.OrderBy(item => item.Position))
-            {
-                var name = new TextBox { Text = group.Name, MinWidth = 180 };
-                var rename = new Button { Content = "改名" };
-                rename.Click += (_, _) =>
-                {
-                    if (!store.RenameGroup(group.Id, name.Text))
-                    {
-                        NoticeHost.Show("名字不能用", "不能为空、不能重名、最多 24 字", NoticeTone.Warning);
-                    }
-                    else
-                    {
-                        Rebuild();
-                    }
-                };
-                var up = new Button { Content = "↑" };
-                up.Click += (_, _) =>
-                {
-                    store.MoveGroup(group.Id, -1);
-                    Rebuild();
-                };
-                var down = new Button { Content = "↓" };
-                down.Click += (_, _) =>
-                {
-                    store.MoveGroup(group.Id, 1);
-                    Rebuild();
-                };
-                var delete = new Button { Content = "删除" };
-                delete.Click += (_, _) =>
-                {
-                    store.DeleteGroup(group.Id);
-                    RefreshGroups();
-                    Refresh(animated: false);
-                    Footer.ShowNotice($"已删除收藏夹「{group.Name}」 ·", "撤销 Ctrl+Z", UndoDelete, success: false);
-                    Rebuild();
-                };
-                var rowPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-                rowPanel.Children.Add(name);
-                rowPanel.Children.Add(rename);
-                rowPanel.Children.Add(up);
-                rowPanel.Children.Add(down);
-                rowPanel.Children.Add(delete);
-                list.Children.Add(rowPanel);
-            }
-
-            if (store.Groups.Count == 0)
-            {
-                list.Children.Add(new TextBlock { Text = "还没有收藏夹。", Foreground = Theme.SecondaryText() });
-            }
-        }
-
-        Rebuild();
-        var create = new TextBox { PlaceholderText = "新收藏夹的名字（最多 24 字）", MinWidth = 200 };
-        var add = new Button { Content = "新建" };
-        add.Click += (_, _) =>
-        {
-            if (store.CreateGroup(create.Text) is null)
-            {
-                NoticeHost.Show("名字不能用", "不能为空、不能重名、最多 24 字", NoticeTone.Warning);
                 return;
             }
 
-            create.Text = string.Empty;
-            RefreshGroups();
-            Rebuild();
-        };
-        var footer = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        footer.Children.Add(create);
-        footer.Children.Add(add);
-        var content = new StackPanel { Spacing = 10 };
-        content.Children.Add(list);
-        content.Children.Add(footer);
-        var dialog = new ContentDialog
-        {
-            RequestedTheme = Theme.ElementTheme,
-            Title = "管理收藏夹",
-            CloseButtonText = "完成",
-            Content = new ScrollViewer { Content = content, MaxHeight = 360 },
-            XamlRoot = XamlRoot,
-        };
-        await dialog.ShowAsync();
-        RefreshGroups();
-        Refresh(animated: false);
+            Refresh(entry.Id);
+            Footer.ShowNotice(_visible.Any(item => item.Id == entry.Id) ? "已新建片段" : "已存为片段");
+        });
+        OnDialogOpened();
     }
+
+    /// <summary>
+    /// 编辑内容（Ctrl+E）：只改正文，不改类型、不换范围；提示只说相关的——片段列占位符，带格式的写「保存后不再保留原来的格式」。
+    /// </summary>
+    private void ShowEditContent(ClipEntry? target = null)
+    {
+        var entry = target ?? SelectedEntry;
+        if (entry is not { Kind: ClipKind.Text } || Store is not { } store)
+        {
+            return;
+        }
+
+        var hint = entry.Snippet ? "占位符：" + ClipDialogHost.PlaceholderHelp
+            : entry.Rich ? "保存后不再保留原来的格式" : null;
+        _dialogs.ShowText(entry.Snippet ? "编辑片段" : "编辑内容", entry.Text ?? string.Empty, asksName: false, hint, (_, body) =>
+        {
+            store.UpdateText(entry.Id, body);
+            Refresh(entry.Id);
+            Footer.ShowNotice("已保存");
+        });
+        OnDialogOpened();
+    }
+
+    /// <summary>备注：单行，Enter 保存、空着保存 = 清除；所有条目都能写。</summary>
+    private void ShowNote(ClipEntry entry)
+    {
+        _dialogs.ShowNote(entry.Note, note =>
+        {
+            Store?.SetNote(entry.Id, note);
+            Refresh(entry.Id);
+        });
+        OnDialogOpened();
+    }
+
+    /// <summary>新建收藏夹（「放进新收藏夹…」「新建收藏夹…」）：建好就把这几条放进去。</summary>
+    private void ShowNewGroupFor(List<ClipEntry> targets)
+    {
+        _dialogs.ShowNewGroup(name =>
+        {
+            if (Store is not { } store)
+            {
+                return null;
+            }
+
+            if (store.CreateGroup(name) is not { } group)
+            {
+                return GroupProblem(name);
+            }
+
+            MoveToGroup(targets, group.Id, group.Name);
+            return null;
+        });
+        OnDialogOpened();
+    }
+
+    private void ShowManageGroups()
+    {
+        if (Store is not { } store)
+        {
+            return;
+        }
+
+        _dialogs.ShowManageGroups(new ClipGroupsModel(
+            Groups: () => store.Groups.OrderBy(group => group.Position)
+                .Select(group => (group.Id, group.Name, store.Items.Count(entry => entry.GroupId == group.Id)))
+                .ToList(),
+            Create: name => store.CreateGroup(name) is null ? GroupProblem(name) : null,
+            Rename: (id, name) => store.RenameGroup(id, name) ? null : GroupProblem(name),
+            Delete: (id, name) =>
+            {
+                store.DeleteGroup(id);
+                RefreshGroups();
+                Refresh(animated: false);
+                Footer.ShowNotice($"已删除收藏夹「{name}」 ·", "撤销 Ctrl+Z", UndoDelete, success: false);
+            },
+            Move: (id, delta) => store.MoveGroup(id, delta),
+            Undo: UndoDelete));
+        OnDialogOpened();
+    }
+
+    /// <summary>收藏夹名字不能用的原因。</summary>
+    private string GroupProblem(string name)
+        => ClipGroups.Normalize(name) is null ? "名字不能为空"
+            : Store?.Groups.Count >= ClipGroups.MaxCount ? $"收藏夹最多 {ClipGroups.MaxCount} 个"
+            : "已经有叫这个名字的收藏夹了";
 
     private static void RevealInExplorer(string path)
     {

@@ -18,6 +18,7 @@
 - 6b（列表）：见 `git log --grep "6b"`。新文件 `Clipboard/ClipListView.cs`、`ClipRowView.cs`、`ClipIcons.cs`，删了 `ClipRow.cs`；另动了 `Shell/Ui/SearchLine.cs`（加 `ExtendHairline`，启动器不受影响）、`Shell/Glyphs.cs`（RichText / Snippet / StarFilled）、`Launcher/ShellIcons.cs`（`LoadPng` 加 dip 参数，默认 32 不变）、`Storage/Database.cs`（读「带格式」标记；改正文时清掉 HTML / RTF）、`App/UiSnapshotProbe.cs`（clip-search / snippets / favorites / scrolled 四张，`KITTY_CLIP_PERF=1` 量 5000 条按 ↓）、`Core/PanelMetrics.cs`（剪贴板高度照 mac，删了不用的 `ClipboardHeight`）。
 - 6c（透镜）：见 `git log --grep "6c"`。新文件 `Clipboard/ClipLensView.cs`、`Core/ClipPreviewRules.cs`；删了 `Core/PreviewRules.cs` 和它的测试（换成 ContentForm / ClipPreviewRules）；`LinkPreviewService` 多取网站图标、加 `Peek`。
 - 6d（键盘和菜单）：见 `git log --grep "6d"`。新文件 `Clipboard/ClipPalette.cs`（面板里的筛选 / 操作菜单）；`ClipEntry` 加形态缓存 `Form`；另动了 `Settings/ShortcutsSheet.cs` 剪贴板那一组。
+- 6e（对话框）：见 `git log --grep "6e"`。新文件 `Clipboard/ClipDialogs.cs`；`Shell/Glyphs.cs` 加 `Remove`。
 
 ## v9 标注分工（2026-10-27，用户拍板 PLAN-v9-annotate D1–D7 全部按推荐）
 

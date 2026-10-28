@@ -112,6 +112,9 @@ internal static class Glyphs
     /// <summary>剪贴板行上的收藏星（实心，Kitty.Favorite 黄）。</summary>
     public const string StarFilled = "\uE735";
 
+    /// <summary>减号（管理收藏夹里删一个，mac 的「−」）。</summary>
+    public const string Remove = "\uE738";
+
     public const string Text = "\uE8D2";
     public const string Up = "\uE74A";
     public const string Down = "\uE74B";
