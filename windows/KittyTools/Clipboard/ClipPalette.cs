@@ -366,7 +366,7 @@ internal sealed partial class ClipPalette : Grid
                     {
                         Text = detail,
                         FontSize = Theme.FontSize("Kitty.FontSize.Meta"),
-                        Foreground = Theme.Brush("TextFillColorTertiaryBrush", Color.FromArgb(255, 128, 128, 128)),
+                        Foreground = Theme.TertiaryText(),
                         TextTrimming = TextTrimming.CharacterEllipsis,
                         MaxWidth = 120,
                     }

@@ -1481,7 +1481,7 @@ Windows 原生版的发版冒烟清单和每批手测。编号一直往下排，
 278. **输入法组字不搜**（新，半走）
      启动器 / 剪贴板搜索框用微软拼音打一句中文。
      → 组字期间不查询，上屏后才搜；候选框贴着光标。
-     开发机：启动器和剪贴板都接了 `TextCompositionStarted/Ended`，纯函数 `CompositionRules.ShouldSearch` 有单测；
+     开发机：启动器和剪贴板都接了 `TextCompositionStarted/Ended`，组字时（`_composing`）不搜，删空照常重搜（2026-10-28：原来的 `CompositionRules.ShouldSearch` 把空串也挡了，已删）；
      真机用微软拼音走一遍还没做。截图里直接打字、翻译输入框还没接这个判断。
 
 279. **多屏 / 混合 DPI**（半走）

@@ -260,6 +260,11 @@ public sealed partial class LauncherPanel : UserControl
                 SetQuery("a");
                 ToggleActions();
                 break;
+            case "launcher-calc-actions":
+                // 计算结果的 Ctrl+K：「复制十六进制」右边那行小字（三级文字）。
+                SetQuery("0xFF + 1");
+                ToggleActions();
+                break;
             case "launcher-keys":
                 SetQuery("a");
                 SetKeyHints(true);
@@ -284,7 +289,7 @@ public sealed partial class LauncherPanel : UserControl
 
     private void OnSearchTextChanged(object sender, TextChangedEventArgs e)
     {
-        // 组字时不搜；删空了要搜（回到收藏 / 常用、菜单的过滤词清空），所以不用 CompositionRules.ShouldSearch（它把空串也挡了）。
+        // 组字时不搜；删空了要搜（回到收藏 / 常用、菜单的过滤词清空），所以不挡空串。
         if (!_active || _suppressSearch || _composing)
         {
             return;

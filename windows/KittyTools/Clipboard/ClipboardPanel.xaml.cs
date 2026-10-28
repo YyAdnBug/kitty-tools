@@ -556,6 +556,12 @@ public sealed partial class ClipboardPanel : UserControl
                 SearchBox.Text = "release";
                 Refresh(animated: false);
                 break;
+            case "clip-search-cleared":
+                // 搜过再删空，要回到全部条目（以前空串不重搜，一直停在「release」的结果上）。
+                SearchBox.Text = "release";
+                Refresh(animated: false);
+                SearchBox.Text = string.Empty;
+                break;
             case "clip-snippets":
                 SetScope(ClipScope.Snippets);
                 break;
@@ -801,7 +807,8 @@ public sealed partial class ClipboardPanel : UserControl
 
     private void OnSearchTextChanged(object sender, TextChangedEventArgs e)
     {
-        if (_suppressSearch || !CompositionRules.ShouldSearch(_composing, SearchBox.Text))
+        // 组字时不搜；删空了要搜（回到全部条目、菜单的过滤词清空），所以不挡空串（启动器同款）。
+        if (_suppressSearch || _composing)
         {
             return;
         }

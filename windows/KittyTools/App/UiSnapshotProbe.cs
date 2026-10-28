@@ -6,6 +6,7 @@
 // 透明宿主窗口（轻提示、录制条、录音待录条、托盘菜单）和截图遮罩的工具栏走 WindowShot：
 // WGC 只抓那一扇窗口；截图遮罩用合成的冻结帧，不抓桌面（REVIEW R33）。
 using System.Runtime.InteropServices.WindowsRuntime;
+using KittyTools.Core;
 using KittyTools.Infrastructure;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -80,7 +81,7 @@ internal static class UiSnapshotProbe
                 foreach (var state in new[]
                          {
                              "launcher", "launcher-home", "launcher-calc", "launcher-kill", "launcher-port", "launcher-prompt",
-                             "launcher-empty", "launcher-actions", "launcher-keys",
+                             "launcher-empty", "launcher-actions", "launcher-calc-actions", "launcher-keys",
                          })
                 {
                     await SafeRenderAsync(root, () => new LauncherPanel(), state, dark, directory);
@@ -113,7 +114,7 @@ internal static class UiSnapshotProbe
                 // PLAN-v9-clipboard 6b：命中高亮、片段范围的「＋ 新建片段」行、收藏标签、滚动后吸顶的分组标题。
                 foreach (var state in new[]
                          {
-                             "clip-search", "clip-snippets", "clip-favorites", "clip-scrolled",
+                             "clip-search", "clip-search-cleared", "clip-snippets", "clip-favorites", "clip-scrolled",
                              "clip-lens-text", "clip-lens-code", "clip-lens-json", "clip-lens-color", "clip-lens-link",
                              "clip-actions", "clip-actions-multi", "clip-filter", "clip-chips",
                              "clip-note", "clip-edit", "clip-new-snippet", "clip-groups",
@@ -122,6 +123,9 @@ internal static class UiSnapshotProbe
                     await SafeRenderAsync(root, () => new ClipboardPanel(), state, dark, directory);
                 }
                 await SafeRenderSettingsAsync(dark, directory);
+                // 代码建的三级文字（速查表的「全局」、空状态的符号、截图历史的分组标题和种类符号）要按设置里的外观给色。
+                await SafeRenderAsync(root, ShortcutsSheet.ProbeView, "shortcuts", dark, directory);
+                await SafeRenderShotHistoryAsync(dark, directory);
             }
 
             // 翻译窗只出浅色一张：两次 Show/Hide 在 Debug 下偶尔会撞 XAML 异常（R33 先保证设置窗两张）。
@@ -375,6 +379,34 @@ internal static class UiSnapshotProbe
         }
     }
 
+    private static async Task SafeRenderShotHistoryAsync(bool dark, string directory)
+    {
+        if (!Wanted("shot-history"))
+        {
+            return;
+        }
+
+        try
+        {
+            if (Paths.IsTestProfile && ShotHistory.Instance is { Items.Count: 0 })
+            {
+                // 一条没有封面的录音：卡片画种类符号，顶上是「今天」分组标题。
+                await ShotHistory.RecordFileAsync(Path.Combine(Path.GetTempPath(), "kitty-probe.m4a"), ShotKind.Audio);
+                await Task.Delay(300);
+            }
+
+            if (ShotHistoryWindow.OpenForProbe() is { } window)
+            {
+                await RenderWindowAsync(window, "shot-history", dark, directory);
+                window.Close();
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"ui-snapshots shot-history dark={dark} failed {ex.GetType().Name} {ex.Message}");
+        }
+    }
+
     private static async Task SafeRenderSettingsAsync(bool dark, string directory)
     {
         if (!Wanted("settings"))
@@ -490,6 +522,12 @@ internal static class UiSnapshotProbe
         }
 
         await Task.Delay(500);
+        if (panel is ClipboardPanel settled)
+        {
+            // 搜索框的 TextChanged 是异步的（clip-search-cleared）：按刷新后的内容再定一次高。
+            panel.Height = settled.ContentHeightDip;
+        }
+
         root.UpdateLayout();
 
         var bitmap = new RenderTargetBitmap();

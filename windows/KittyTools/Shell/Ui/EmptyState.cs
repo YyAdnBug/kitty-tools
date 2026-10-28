@@ -23,7 +23,7 @@ internal static class EmptyState
         {
             Glyph = glyph,
             FontSize = 28,
-            Foreground = Theme.Brush("TextFillColorTertiaryBrush", Color.FromArgb(255, 128, 128, 128)),
+            Foreground = Theme.TertiaryText(),
             HorizontalAlignment = HorizontalAlignment.Center,
         });
         panel.Children.Add(new TextBlock

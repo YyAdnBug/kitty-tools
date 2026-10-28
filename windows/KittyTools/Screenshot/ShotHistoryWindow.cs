@@ -177,6 +177,21 @@ internal sealed class ShotHistoryWindow : Window
         _current.Activate();
     }
 
+    /// <summary>--ui-snapshots：开一扇不激活的（左上角，按当前外观新建；出完图由自检关掉）。</summary>
+    internal static Window? OpenForProbe()
+    {
+        if (ShotHistory.Instance is not { } history)
+        {
+            return null;
+        }
+
+        _current?.Close();
+        _current = new ShotHistoryWindow(history);
+        _current.AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(8, 8, 1000, 640));
+        _current.AppWindow.Show(activateWindow: false);
+        return _current;
+    }
+
     private void OnHistoryChanged() => Rebuild(resetPaging: false);
 
     private void OnThumbnailChanged(string id)
@@ -250,7 +265,7 @@ internal sealed class ShotHistoryWindow : Window
                 Text = ShotHistoryRules.DayTitle(group.Key, today),
                 FontSize = Theme.FontSize("Kitty.FontSize.GroupHeader"),
                 FontWeight = FontWeights.SemiBold,
-                Foreground = Theme.Brush("TextFillColorTertiaryBrush", Color.FromArgb(255, 128, 128, 128)),
+                Foreground = Theme.TertiaryText(),
                 Margin = new Thickness(0, 12, 0, 4),
             });
             var grid = new GridView { SelectionMode = ListViewSelectionMode.Single };
@@ -314,7 +329,7 @@ internal sealed class ShotHistoryWindow : Window
             {
                 Glyph = KindGlyph(item.Kind),
                 FontSize = 28,
-                Foreground = Theme.Brush("TextFillColorTertiaryBrush", Color.FromArgb(255, 128, 128, 128)),
+                Foreground = Theme.TertiaryText(),
             });
         }
 

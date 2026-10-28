@@ -137,6 +137,19 @@ internal static class ShortcutsSheet
         await dialog.ShowAsync();
     }
 
+    /// <summary>--ui-snapshots：搜不到时的空状态 + 剪贴板那一类的几组（不弹对话框）。</summary>
+    internal static FrameworkElement ProbeView()
+    {
+        var panel = new StackPanel { Spacing = 4, Padding = new Thickness(16, 0, 8, 8) };
+        panel.Children.Add(EmptyState.Create(Glyphs.Search, "没有匹配的快捷键", "换个关键词试试"));
+        foreach (var group in Groups().Where(group => group.Page == "clipboard"))
+        {
+            panel.Children.Add(GroupView(group));
+        }
+
+        return panel;
+    }
+
     /// <summary>搜索：说明、按键、组名里都要有每一个词；整组标题命中就整组留着。</summary>
     private static ShortcutGroup? Filter(ShortcutGroup group, string query)
     {
@@ -199,7 +212,7 @@ internal static class ShortcutsSheet
             {
                 Text = "全局",
                 FontSize = Theme.FontSize("Kitty.FontSize.Meta"),
-                Foreground = Theme.Brush("TextFillColorTertiaryBrush", Color.FromArgb(255, 128, 128, 128)),
+                Foreground = Theme.TertiaryText(),
                 VerticalAlignment = VerticalAlignment.Center,
             });
         }
