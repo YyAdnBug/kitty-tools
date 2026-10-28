@@ -40,15 +40,15 @@ internal sealed partial class ClipRowView : Grid
         ColumnSpacing = Spacing;
         CornerRadius = Theme.Corner("Kitty.Corner.Control");
         Background = new SolidColorBrush(Colors.Transparent);
-        for (var column = 0; column < 6; column++)
-        {
-            ColumnDefinitions.Add(new ColumnDefinition
-            {
-                Width = column == 2 ? new GridLength(1, GridUnitType.Star) : GridLength.Auto,
-            });
-        }
+        // 三列：[勾选圈 + 图标块] 标题 [右侧文字 + 标记 + 键帽]。收起的东西不能占列，不然空列也吃一份间距
+        // （标题会比透镜正文右移 10、右侧文字离右边线 20）；左右两组里各件自带左边距。
+        ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var lead = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        var right = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
 
-        // 0：多选时的勾选圈（15，品牌粉）。
+        // 多选时的勾选圈（15，品牌粉）。
         _check = new Border
         {
             Width = 15,
@@ -56,6 +56,7 @@ internal sealed partial class ClipRowView : Grid
             CornerRadius = new CornerRadius(7.5),
             BorderThickness = new Thickness(1.2),
             VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, Spacing, 0),
             Visibility = context.Multi ? Visibility.Visible : Visibility.Collapsed,
             Child = new FontIcon
             {
@@ -66,20 +67,17 @@ internal sealed partial class ClipRowView : Grid
                 VerticalAlignment = VerticalAlignment.Center,
             },
         };
-        Children.Add(_check);
+        lead.Children.Add(_check);
+        lead.Children.Add(IconTile(entry, context.Scale));
+        Children.Add(lead);
 
-        // 1：图标块。
-        var tile = IconTile(entry, context.Scale);
-        SetColumn(tile, 1);
-        Children.Add(tile);
-
-        // 2：标题。
+        // 标题。
         var form = entry.Kind == ClipKind.Text ? ContentForms.Detect(entry.Text) : null;
         var title = TitleBlock(entry, form, context.Query);
-        SetColumn(title, 2);
+        SetColumn(title, 1);
         Children.Add(title);
 
-        // 3：右侧文字（备注优先）。
+        // 右侧文字（备注优先）。
         var hasNote = !string.IsNullOrWhiteSpace(entry.Note);
         var trailing = new TextBlock
         {
@@ -92,15 +90,16 @@ internal sealed partial class ClipRowView : Grid
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Right,
         };
-        SetColumn(trailing, 3);
-        Children.Add(trailing);
+        right.Children.Add(trailing);
 
-        // 4：标记（收藏夹胶囊、带格式、片段、星）；没收藏时星连间距都不占。
-        var markers = new StackPanel { Orientation = Orientation.Horizontal, Spacing = Spacing, VerticalAlignment = VerticalAlignment.Center };
+        // 标记（收藏夹胶囊、带格式、片段、星），各连它前面的间距；没收藏时星连间距都不占。
+        var markers = right;
         if (context.ShowsGroupPill && ClipboardService.Instance?.Store.GroupName(entry.GroupId) is { } group)
         {
             markers.Children.Add(new Border
             {
+                Margin = new Thickness(Spacing, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
                 CornerRadius = Theme.Corner("Kitty.Corner.Control"),
                 Background = Theme.Brush("Kitty.Fill.Control", Color.FromArgb(20, 128, 128, 128)),
                 Padding = new Thickness(6, 1, 6, 1),
@@ -123,20 +122,14 @@ internal sealed partial class ClipRowView : Grid
             markers.Children.Add(Marker(Glyphs.StarFilled, Theme.Brush("Kitty.Favorite", Color.FromArgb(255, 255, 204, 0)), "收藏"));
         }
 
-        if (markers.Children.Count == 0)
-        {
-            markers.Visibility = Visibility.Collapsed;
-        }
-
-        SetColumn(markers, 4);
-        Children.Add(markers);
-
-        // 5：按住 Ctrl 才出的数字键帽（前 9 行）。
+        // 按住 Ctrl 才出的数字键帽（前 9 行）。
         _keyCap = KeyCap.Create(index < 9 ? (index + 1).ToString() : string.Empty);
         _keyCap.VerticalAlignment = VerticalAlignment.Center;
+        _keyCap.Margin = new Thickness(Spacing, 0, 0, 0);
         _keyCap.Visibility = context.ShowsKeyHints && index < 9 ? Visibility.Visible : Visibility.Collapsed;
-        SetColumn(_keyCap, 5);
-        Children.Add(_keyCap);
+        right.Children.Add(_keyCap);
+        SetColumn(right, 2);
+        Children.Add(right);
 
         AutomationProperties.SetName(this, $"{TitleText(entry)}，{(hasNote ? entry.Note : Trailing(entry))}");
         ApplyBackground();
@@ -193,7 +186,14 @@ internal sealed partial class ClipRowView : Grid
 
     private static FontIcon Marker(string glyph, Brush brush, string name)
     {
-        var icon = new FontIcon { Glyph = glyph, FontSize = 11, Foreground = brush, VerticalAlignment = VerticalAlignment.Center };
+        var icon = new FontIcon
+        {
+            Glyph = glyph,
+            FontSize = 11,
+            Foreground = brush,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(Spacing, 0, 0, 0),
+        };
         AutomationProperties.SetName(icon, name);
         return icon;
     }
@@ -330,7 +330,7 @@ internal sealed partial class ClipRowView : Grid
             var swatch = new Grid { Width = side, Height = side, CornerRadius = corner };
             if (rgba.Alpha < 1)
             {
-                swatch.Children.Add(Checker(side));
+                swatch.Children.Add(Checker(side, side));
             }
 
             swatch.Children.Add(new Border
@@ -425,14 +425,14 @@ internal sealed partial class ClipRowView : Grid
         },
     };
 
-    /// <summary>透明色块 / 图片后面的棋盘格（4 × 4 一格）。</summary>
-    public static FrameworkElement Checker(double side, double cell = 4)
+    /// <summary>透明色块 / 图片后面的棋盘格（行图标 4 一格，透镜 8 一格）。</summary>
+    public static FrameworkElement Checker(double width, double height, double cell = 4)
     {
-        var canvas = new Canvas { Width = side, Height = side, Background = new SolidColorBrush(Color.FromArgb(255, 255, 255, 255)) };
+        var canvas = new Canvas { Width = width, Height = height, Background = new SolidColorBrush(Color.FromArgb(255, 255, 255, 255)) };
         var dark = new SolidColorBrush(Color.FromArgb(255, 214, 214, 214));
-        for (var row = 0; row * cell < side; row++)
+        for (var row = 0; row * cell < height; row++)
         {
-            for (var column = 0; column * cell < side; column++)
+            for (var column = 0; column * cell < width; column++)
             {
                 if ((row + column) % 2 == 0)
                 {

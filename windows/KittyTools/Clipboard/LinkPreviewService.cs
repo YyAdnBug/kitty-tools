@@ -14,7 +14,17 @@ internal sealed class LinkPreviewService
 
     public static bool Enabled => SettingsService.Current.LinkPreviews;
 
-    public sealed record CachedPreview(LinkPreview Preview, byte[]? ImageBytes);
+    /// <summary>取到的预览：头图和网站图标都是下载来的原始字节（透镜、放大卡各自解码）。</summary>
+    public sealed record CachedPreview(LinkPreview Preview, byte[]? ImageBytes, byte[]? IconBytes);
+
+    /// <summary>已经取过的（透镜一出来就显示，不等 0.25 s）；没取过返回 null。</summary>
+    public static CachedPreview? Peek(Uri uri)
+    {
+        lock (Cache)
+        {
+            return Cache.TryGetValue(uri.ToString(), out var cached) ? cached : null;
+        }
+    }
 
     public static async Task<CachedPreview?> FetchAsync(Uri uri, CancellationToken cancellationToken)
     {
@@ -73,7 +83,11 @@ internal sealed class LinkPreviewService
             var image = preview.ImageUrl is { } imageUrl && Uri.TryCreate(imageUrl, UriKind.Absolute, out var imageUri)
                 ? await ImageAsync(imageUri, cancellationToken)
                 : null;
-            var cached = new CachedPreview(preview, image);
+            var icon = preview.IconUrl is { } iconUrl && iconUrl != preview.ImageUrl &&
+                       Uri.TryCreate(iconUrl, UriKind.Absolute, out var iconUri)
+                ? await ImageAsync(iconUri, cancellationToken)
+                : null;
+            var cached = new CachedPreview(preview, image, icon is { Length: <= 512 * 1024 } ? icon : null);
             Remember(key, cached);
             return cached;
         }

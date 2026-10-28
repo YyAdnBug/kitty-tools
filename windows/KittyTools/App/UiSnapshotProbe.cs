@@ -80,7 +80,11 @@ internal static class UiSnapshotProbe
                 }
 
                 // PLAN-v9-clipboard 6b：命中高亮、片段范围的「＋ 新建片段」行、收藏标签、滚动后吸顶的分组标题。
-                foreach (var state in new[] { "clip-search", "clip-snippets", "clip-favorites", "clip-scrolled" })
+                foreach (var state in new[]
+                         {
+                             "clip-search", "clip-snippets", "clip-favorites", "clip-scrolled",
+                             "clip-lens-text", "clip-lens-code", "clip-lens-json", "clip-lens-color", "clip-lens-link",
+                         })
                 {
                     await SafeRenderAsync(root, () => new ClipboardPanel(), state, dark, directory);
                 }
@@ -293,6 +297,7 @@ internal static class UiSnapshotProbe
             ("周报：本周完成剪贴板对齐 mac 的数据底子和列表重写，下周做透镜和键盘。\n风险：Release 构建的 AOT 警告要一直保持为零。", true, now.AddDays(-3).AddHours(-1)),
             ("rgba(52, 199, 89, 0.6)", false, now.AddDays(-4)),
             ("git log --oneline -20 | cat", false, now.AddDays(-5)),
+            ("// 透镜的代码样例\nfunction lensHeight(kind) {\n  if (kind === \"json\") return 128; // 最高\n  return 90;\n}", false, now.AddDays(-5).AddHours(-2)),
             ("https://learn.microsoft.com/windows/apps/winui/winui3/", false, now.AddDays(-6)),
         });
         Log.Info("ui-snapshots seeded sample clips");
@@ -412,6 +417,8 @@ internal static class UiSnapshotProbe
                 break;
             case ClipboardPanel clipboard:
                 clipboard.OnShown();
+                // 先按内容定高（真的浮层也是先改窗口高度、之后才有选中和滚动），再摆状态。
+                panel.Height = clipboard.ContentHeightDip;
                 await Task.Delay(300);
                 clipboard.ApplyProbeState(name);
                 panel.Height = clipboard.ContentHeightDip;

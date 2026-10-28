@@ -1,4 +1,4 @@
-// 第二版第 4 批的纯函数单测：浮层高度、预览卡的代码 / 颜色判断、翻译服务徽标的字。
+// 第二版第 4 批的纯函数单测：浮层高度、翻译服务徽标的字（预览卡的代码 / 颜色判断换成 Core 的 ContentForm，测试在 ClipboardAlignTests）。
 using KittyTools.Core;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -34,60 +34,6 @@ public sealed class PanelMetricsTests
         Assert.AreEqual(
             PanelMetrics.ClipboardHeightFor(5, 2),
             PanelMetrics.ClipboardHeightFor(5, 2));
-    }
-}
-
-[TestClass]
-public sealed class PreviewRulesTests
-{
-    [TestMethod]
-    public void DetectsCode()
-    {
-        Assert.IsTrue(PreviewRules.LooksLikeCode("{\n    \"a\": 1,\n    \"b\": [1, 2]\n}"));
-        Assert.IsTrue(PreviewRules.LooksLikeCode("const value = Compute(input);\nreturn value;"));
-        Assert.IsTrue(PreviewRules.LooksLikeCode("def hello(name):\n    print(name)"));
-        Assert.IsTrue(PreviewRules.LooksLikeCode("```csharp\nvar x = 1;\n```"));
-    }
-
-    [TestMethod]
-    public void DoesNotTreatPlainTextAsCode()
-    {
-        Assert.IsFalse(PreviewRules.LooksLikeCode("今天下午三点开会，记得带电脑。"));
-        Assert.IsFalse(PreviewRules.LooksLikeCode("hello world"));
-        Assert.IsFalse(PreviewRules.LooksLikeCode("12345"));
-        Assert.IsFalse(PreviewRules.LooksLikeCode(null));
-        Assert.IsFalse(PreviewRules.LooksLikeCode(string.Empty));
-    }
-
-    [TestMethod]
-    public void ParsesColorValues()
-    {
-        Assert.IsTrue(PreviewRules.TryParseColor("#FF4D7E", out var r, out var g, out var b));
-        Assert.AreEqual((255, 77, 126), ((int)r, (int)g, (int)b));
-
-        Assert.IsTrue(PreviewRules.TryParseColor("#f00", out r, out g, out b));
-        Assert.AreEqual((255, 0, 0), ((int)r, (int)g, (int)b));
-
-        Assert.IsTrue(PreviewRules.TryParseColor("#CCFF4D7E", out r, out g, out b));
-        Assert.AreEqual((255, 77, 126), ((int)r, (int)g, (int)b));
-
-        Assert.IsTrue(PreviewRules.TryParseColor("rgb(0, 120, 255)", out r, out g, out b));
-        Assert.AreEqual((0, 120, 255), ((int)r, (int)g, (int)b));
-
-        Assert.IsTrue(PreviewRules.TryParseColor("rgba(10, 20, 30, 0.5)", out r, out g, out b));
-        Assert.AreEqual((10, 20, 30), ((int)r, (int)g, (int)b));
-
-        Assert.IsFalse(PreviewRules.TryParseColor("#FF4D7", out _, out _, out _));
-        Assert.IsFalse(PreviewRules.TryParseColor("rgb(1,2)", out _, out _, out _));
-        Assert.IsFalse(PreviewRules.TryParseColor("这是红色", out _, out _, out _));
-        Assert.IsFalse(PreviewRules.TryParseColor(null, out _, out _, out _));
-    }
-
-    [TestMethod]
-    public void SourceAndAgeJoinsWithMiddleDot()
-    {
-        Assert.AreEqual("Chrome · 3 分钟前", PreviewRules.SourceAndAge("Chrome", "3 分钟前"));
-        Assert.AreEqual("3 分钟前", PreviewRules.SourceAndAge("  ", "3 分钟前"));
     }
 }
 

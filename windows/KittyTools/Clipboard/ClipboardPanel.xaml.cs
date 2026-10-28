@@ -31,8 +31,12 @@ public sealed partial class ClipboardPanel : UserControl
     private readonly HashSet<long> _checked = new();
     /// <summary>搜索线的输入框（PLAN-v7 §2.2 的共用部件）。</summary>
     private TextBox SearchBox => SearchLineControl.Box;
-    /// <summary>当前选中行透镜里的内容（U1：原地展开，不再有右边那一栏）。</summary>
-    private readonly StackPanel PreviewHost = new() { Spacing = 8 };
+    /// <summary>JSON 默认美化；一次呼出里点过「原文」就一直看原文，收起面板才复位（mac 体检 A10）。</summary>
+    private bool _prettyJson = true;
+    /// <summary>美化结果按条目缓存（正文变了重算，收起面板时清空）。</summary>
+    private readonly Dictionary<long, (string Source, string? Pretty)> _prettyCache = new();
+    /// <summary>当前透镜里的链接卡（取到预览后更新它）。</summary>
+    private ClipLinkLens? _linkLens;
     private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _keyHintTimer;
     private readonly TextBlock _titleMeasure = new() { FontSize = 14, TextWrapping = TextWrapping.NoWrap };
     private ClipScope _scope = ClipScope.All;
@@ -101,11 +105,10 @@ public sealed partial class ClipboardPanel : UserControl
         IdleReclaimer.Register(ReleaseCaches);
     }
 
-    /// <summary>空闲回收：清掉预览里的图片和控件。</summary>
+    /// <summary>空闲回收：丢掉 JSON 美化的缓存（透镜本身面板收起时就拆了）。</summary>
     public void ReleaseCaches()
     {
-        _lensScroll?.Content = null;
-        PreviewHost.Children.Clear();
+        _prettyCache.Clear();
         Log.Info("clipboard.caches-released");
     }
 
@@ -181,7 +184,9 @@ public sealed partial class ClipboardPanel : UserControl
         _checked.Clear();
         _anchorId = null;
         _selected = -1;
-        PreviewHost.Children.Clear();
+        _linkLens = null;
+        _prettyJson = true;
+        _prettyCache.Clear();
         _list.SetItems(_visible, Array.Empty<long>(), false, RowContext(), null, -1, null, 0);
         if (Store is { } store)
         {
@@ -451,10 +456,34 @@ public sealed partial class ClipboardPanel : UserControl
             case "clip-favorites":
                 SetScope(ClipScope.Favorites);
                 break;
+            case "clip-lens-text":
+                SelectWhere(entry => entry.Kind == ClipKind.Text && ContentForms.Detect(entry.Text) is null && entry.Text!.Contains('\n'));
+                break;
+            case "clip-lens-code":
+                SelectWhere(entry => ContentForms.Detect(entry.Text) == ContentForm.Code);
+                break;
+            case "clip-lens-json":
+                SelectWhere(entry => ContentForms.Detect(entry.Text) == ContentForm.Json);
+                break;
+            case "clip-lens-color":
+                SelectWhere(entry => ContentForms.Detect(entry.Text) == ContentForm.Color && entry.Text!.StartsWith("rgba", StringComparison.Ordinal));
+                break;
+            case "clip-lens-link":
+                SelectWhere(entry => ContentForms.Detect(entry.Text) == ContentForm.Link);
+                break;
             case "clip-scrolled":
                 Select(3, MotionCurve.Instant);
                 _list.ScrollTo(150);
                 break;
+        }
+    }
+
+    private void SelectWhere(Func<ClipEntry, bool> match)
+    {
+        var index = _visible.FindIndex(entry => match(entry));
+        if (index >= 0)
+        {
+            Select(index, MotionCurve.Instant);
         }
     }
 
@@ -729,85 +758,117 @@ public sealed partial class ClipboardPanel : UserControl
     /// </summary>
     private (FrameworkElement? Lens, double Height) BuildLens()
     {
-        if (_lensScroll is not null)
-        {
-            _lensScroll.Content = null;
-            _lensScroll = null;
-        }
-
-        PreviewHost.Children.Clear();
+        _linkLens = null;
         if (SelectedEntry is not { } entry || _checked.Count > 0 || !LensEnabled)
         {
             return (null, ClipListLayout.RowHeight);
         }
 
-        switch (entry.Kind)
-        {
-            case ClipKind.Image:
-                ShowImage(entry);
-                break;
-            case ClipKind.Files:
-                ShowFiles(entry);
-                break;
-            default:
-                ShowText(entry);
-                break;
-        }
-
+        var form = entry.Kind == ClipKind.Text ? ContentForms.Detect(entry.Text) : null;
         var body = LensBodyHeight(entry);
-        _lensScroll = new ScrollViewer
+        var scale = XamlRoot?.RasterizationScale ?? 1.0;
+        var host = new Grid
         {
-            Content = PreviewHost,
-            Height = body,
-            // 不露滚动条（0.1.0 用户反馈）；长内容照样能用滚轮滚，底下的渐隐提示还有。
-            VerticalScrollBarVisibility = ScrollBarVisibility.Hidden,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            // 左边和行标题对齐（同 mac LensView 的 x = 44）。
-            Padding = new Thickness(ClipLens.RowPadding + 24 + ClipLens.RowSpacing, 0, ClipLens.RowPadding, 0),
-            IsTabStop = false,
+            Height = body + ClipLens.Meta + ClipLens.Bottom,
+            Padding = new Thickness(ClipLensView.Left, 0, ClipLens.RowPadding, ClipLens.Bottom),
         };
-        var host = new Grid { Height = body + ClipLens.Meta + ClipLens.Bottom };
         host.RowDefinitions.Add(new RowDefinition { Height = new GridLength(body) });
         host.RowDefinitions.Add(new RowDefinition { Height = new GridLength(ClipLens.Meta) });
-        host.Children.Add(_lensScroll);
-        var meta = new TextBlock
-        {
-            Text = LensMeta(entry),
-            FontSize = Theme.FontSize("Kitty.FontSize.Meta"),
-            Foreground = Theme.SecondaryText(),
-            TextTrimming = TextTrimming.CharacterEllipsis,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(ClipLens.RowPadding + 24 + ClipLens.RowSpacing, 0, ClipLens.RowPadding, 0),
-        };
-        Grid.SetRow(meta, 1);
-        host.Children.Add(meta);
         if (body > 0)
         {
-            // 正文底部 12 的渐隐：颜色取透镜底下那一层（面板底 + 选中高亮）。
-            var fade = Theme.CardColor();
-            host.Children.Add(new Border
+            var content = LensContent(entry, form, body, scale);
+            // 正文放进固定高度里裁掉（不滚：滚轮滚的是列表）。
+            var clip = new Grid { Height = body, VerticalAlignment = VerticalAlignment.Top, Children = { content } };
+            clip.SizeChanged += (_, args) => clip.Clip = new RectangleGeometry
             {
-                Height = 12,
-                VerticalAlignment = VerticalAlignment.Top,
-                Margin = new Thickness(0, body - 12, 0, 0),
-                IsHitTestVisible = false,
-                Background = new LinearGradientBrush
-                {
-                    StartPoint = new Windows.Foundation.Point(0, 0),
-                    EndPoint = new Windows.Foundation.Point(0, 1),
-                    GradientStops =
-                    {
-                        new GradientStop { Color = Theme.Argb(0, fade.R, fade.G, fade.B), Offset = 0 },
-                        new GradientStop { Color = Theme.Argb(160, fade.R, fade.G, fade.B), Offset = 1 },
-                    },
-                },
-            });
+                Rect = new Windows.Foundation.Rect(0, 0, args.NewSize.Width, body),
+            };
+            content.VerticalAlignment = VerticalAlignment.Top;
+            host.Children.Add(clip);
         }
 
+        var meta = ClipLensView.Meta(
+            entry, form, scale,
+            form == ContentForm.Json ? _prettyJson : null,
+            () =>
+            {
+                _prettyJson = !_prettyJson;
+                Select(_selected, MotionCurve.Instant);
+            });
+        Grid.SetRow(meta, 1);
+        host.Children.Add(meta);
+        var preview = entry.Kind == ClipKind.Text ? ClipLens.TextTitle(entry.Text) : ClipRowView.TitleText(entry);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
+            host,
+            body > 0 ? $"{ClipLensView.TypeTitle(entry, form)} · {(preview.Length > 200 ? preview[..200] : preview)}" : ClipLensView.TypeTitle(entry, form));
         return (host, ClipLens.Head + body + ClipLens.Meta + ClipLens.Bottom);
     }
 
-    private ScrollViewer? _lensScroll;
+    /// <summary>正文区里按类型画什么。</summary>
+    private FrameworkElement LensContent(ClipEntry entry, ContentForm? form, double body, double scale)
+    {
+        var query = SearchBox.Text.Trim();
+        switch (entry.Kind)
+        {
+            case ClipKind.Image:
+                return ClipLensView.Picture(entry, scale);
+            case ClipKind.Files:
+                return ClipLensView.Files(entry.Files, scale);
+        }
+
+        var text = entry.Text ?? string.Empty;
+        switch (form)
+        {
+            case ContentForm.Color when ContentForms.Color(text) is { } color:
+                return ClipLensView.ColorSwatch(color, CopyColorValue);
+            case ContentForm.Link when LinkPreviewRules.SingleUrl(text) is { } uri:
+            {
+                var link = new ClipLinkLens(uri);
+                if (LinkPreviewService.Enabled && LinkPreviewService.Peek(uri) is { } cached)
+                {
+                    link.Update(cached, animate: false);
+                }
+
+                _linkLens = link;
+                return link;
+            }
+
+            case ContentForm.Code:
+                return ClipLensView.Code(text, json: false, query, body);
+            case ContentForm.Json:
+                return ClipLensView.Code(DisplayText(entry), json: true, query, body);
+            default:
+                return ClipLensView.Text(text, query, body);
+        }
+    }
+
+    /// <summary>透镜 / 放大卡里显示的正文：JSON 默认美化（缓存），其余原样。</summary>
+    private string DisplayText(ClipEntry entry)
+    {
+        var text = entry.Text ?? string.Empty;
+        if (!_prettyJson)
+        {
+            return text;
+        }
+
+        if (!_prettyCache.TryGetValue(entry.Id, out var cached) || !ReferenceEquals(cached.Source, text))
+        {
+            cached = (text, ClipPreviewRules.PrettyJson(text));
+            _prettyCache[entry.Id] = cached;
+        }
+
+        return cached.Pretty ?? text;
+    }
+
+    /// <summary>透镜里的色值胶囊：只写剪贴板、不记历史（记了新条目会把选中跳走），底栏「已复制 #3478F6」。</summary>
+    private void CopyColorValue(string value)
+    {
+        if (ClipboardWriter.WriteText(value))
+        {
+            ClipboardService.Instance?.MarkOwnWrite();
+            Footer.ShowNotice($"已复制 {value}");
+        }
+    }
 
     /// <summary>正文区高度（Core 的 ClipLens 查表）；文本的 0 档先量标题在最窄的标题列里放不放得下。</summary>
     private double LensBodyHeight(ClipEntry entry)
@@ -824,229 +885,6 @@ public sealed partial class ClipboardPanel : UserControl
         _titleMeasure.Text = title;
         _titleMeasure.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
         return _titleMeasure.DesiredSize.Width;
-    }
-
-    /// <summary>「文本 · 70 字 · 14:02 · 记事本」（同 mac LensView.metaText）。</summary>
-    private static string LensMeta(ClipEntry entry)
-    {
-        var text = entry.Text ?? string.Empty;
-        var (type, detail) = entry.Kind switch
-        {
-            ClipKind.Image => ("图片", entry.Width > 0 ? $"{entry.Width}×{entry.Height}" : null),
-            ClipKind.Files => ("文件", $"{entry.Files.Length} 个"),
-            _ when PreviewRules.TryParseColor(text, out _, out _, out _) => ("颜色", (string?)null),
-            _ when LinkPreviewRules.SingleUrl(text) is not null => ("链接", null),
-            _ when PreviewRules.LooksLikeCode(text) => ("代码", $"{text.Length} 字"),
-            _ => ("文本", $"{text.Length} 字"),
-        };
-        var copied = DateTimeOffset.FromUnixTimeMilliseconds(entry.CopiedAt).ToLocalTime();
-        var now = DateTimeOffset.Now;
-        var time = copied.Date == now.Date ? copied.ToString("HH:mm")
-            : copied.Year == now.Year ? copied.ToString("M月d日 HH:mm")
-            : copied.ToString("yyyy年M月d日 HH:mm");
-        return string.Join(" · ", new[] { type, detail, time, entry.SourceName }.Where(part => !string.IsNullOrEmpty(part)));
-    }
-
-    private void ShowText(ClipEntry entry)
-    {
-        var text = entry.Text ?? string.Empty;
-
-        // 整条就是一个颜色值：上面加一块色块（PLAN-v2 §3.5）。
-        if (PreviewRules.TryParseColor(text, out var red, out var green, out var blue))
-        {
-            var swatch = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
-            swatch.Children.Add(new Border
-            {
-                Width = 44,
-                Height = 44,
-                CornerRadius = new CornerRadius(8),
-                Background = new SolidColorBrush(Theme.Argb(255, red, green, blue)),
-                BorderThickness = new Thickness(1),
-                BorderBrush = Theme.Brush("ControlStrokeColorDefaultBrush", Theme.Argb(40, 128, 128, 128)),
-            });
-            swatch.Children.Add(new TextBlock
-            {
-                Text = $"#{red:X2}{green:X2}{blue:X2}",
-                FontFamily = new FontFamily("Consolas"),
-                FontSize = 13,
-                VerticalAlignment = VerticalAlignment.Center,
-            });
-            PreviewHost.Children.Add(swatch);
-        }
-
-        if (LensBodyHeight(entry) == 0)
-        {
-            return;
-        }
-
-        const int limit = 50_000;
-        var truncated = text.Length > limit;
-        var code = PreviewRules.LooksLikeCode(text);
-        var block = new TextBlock
-        {
-            Text = truncated ? text[..limit] : text,
-            TextWrapping = TextWrapping.Wrap,
-            IsTextSelectionEnabled = true,
-            FontSize = code ? 13 : 14,
-            LineHeight = code ? 20 : 22,
-        };
-        if (code)
-        {
-            // FontFamily 不能设成 null（WinUI 里会直接挂掉），只在是代码时才换字体。
-            block.FontFamily = new FontFamily("Consolas");
-        }
-
-        PreviewHost.Children.Add(block);
-        if (truncated)
-        {
-            PreviewHost.Children.Add(new TextBlock
-            {
-                Text = $"只显示前 {limit:N0} 个字，粘贴时是完整内容",
-                FontSize = Theme.FontSize("Kitty.FontSize.Label"),
-                Foreground = Theme.SecondaryText(),
-            });
-        }
-    }
-
-    private void ShowImage(ClipEntry entry)
-    {
-        var path = Paths.ImagesFile(entry.Id);
-        if (!File.Exists(path))
-        {
-            PreviewHost.Children.Add(new TextBlock
-            {
-                Text = "图片文件丢了（可能被清理了）",
-                Foreground = Theme.SecondaryText(),
-            });
-            return;
-        }
-
-        var stack = new Grid { HorizontalAlignment = HorizontalAlignment.Left };
-        var checker = Checkerboard();
-        stack.Children.Add(checker);
-
-        var image = new Image
-        {
-            MaxHeight = 340,
-            Stretch = Stretch.Uniform,
-            HorizontalAlignment = HorizontalAlignment.Left,
-        };
-        stack.Children.Add(image);
-
-        // 右上角标「宽 × 高」（PLAN-v2 §3.5）。
-        var size = new Border
-        {
-            Padding = new Thickness(6, 2, 6, 2),
-            CornerRadius = new CornerRadius(4),
-            Background = Theme.Brush("ControlFillColorSecondaryBrush", Theme.Argb(160, 32, 32, 32)),
-            HorizontalAlignment = HorizontalAlignment.Right,
-            VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(0, 4, 4, 0),
-            Child = new TextBlock
-            {
-                Text = $"{entry.Width} × {entry.Height}",
-                FontSize = 11,
-                FontFamily = new FontFamily("Consolas"),
-            },
-        };
-        stack.Children.Add(size);
-        PreviewHost.Children.Add(stack);
-        _ = LoadImageAsync(image, path, PreviewDecodeWidth());
-    }
-
-    /// <summary>透明图片后面的棋盘格（十来行，比引一个平铺画刷省事）。</summary>
-    private static Grid Checkerboard()
-    {
-        var grid = new Grid
-        {
-            Width = 320,
-            Height = 240,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            Opacity = 0.5,
-        };
-        var light = new SolidColorBrush(Theme.Argb(255, 220, 220, 220));
-        var dark = new SolidColorBrush(Theme.Argb(255, 190, 190, 190));
-        const int cell = 16;
-        for (var row = 0; row < 15; row++)
-        {
-            for (var column = 0; column < 20; column++)
-            {
-                var square = new Border
-                {
-                    Width = cell,
-                    Height = cell,
-                    Background = (row + column) % 2 == 0 ? light : dark,
-                    HorizontalAlignment = HorizontalAlignment.Left,
-                    VerticalAlignment = VerticalAlignment.Top,
-                    Margin = new Thickness(column * cell, row * cell, 0, 0),
-                };
-                grid.Children.Add(square);
-            }
-        }
-
-        return grid;
-    }
-
-    /// <summary>
-    /// 预览按预览区的宽度 × 缩放比例解码（4K 截图整张解码要 33 MB）。预览区还没排好时给个保守值。
-    /// </summary>
-    private int PreviewDecodeWidth()
-    {
-        var width = _list.ActualWidth > 0 ? Math.Max(240, _list.ActualWidth - 64) : 520;
-        var scale = XamlRoot?.RasterizationScale ?? 1.0;
-        return Math.Clamp((int)Math.Round(width * scale), 64, 2048);
-    }
-
-    private async Task LoadImageAsync(Image image, string path, int decodeWidth)
-    {
-        try
-        {
-            using var stream = await FileRandomAccessStream.OpenAsync(path, FileAccessMode.Read);
-            var bitmap = new BitmapImage { DecodePixelWidth = decodeWidth };
-            await bitmap.SetSourceAsync(stream);
-            image.Source = bitmap;
-        }
-        catch (Exception ex)
-        {
-            Log.Warn($"clipboard.preview-image-failed {ex.GetType().Name}");
-        }
-    }
-
-    private void ShowFiles(ClipEntry entry)
-    {
-        var files = entry.Files;
-        var panel = new StackPanel { Spacing = 6, Margin = new Thickness(0, 6, 0, 0) };
-        foreach (var file in files.Take(50))
-        {
-            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-            var exists = File.Exists(file) || Directory.Exists(file);
-            row.Children.Add(new FontIcon
-            {
-                Glyph = Directory.Exists(file) ? "\uE8B7" : "\uE8A5",
-                FontSize = 14,
-                Opacity = exists ? 0.8 : 0.4,
-            });
-            row.Children.Add(new TextBlock
-            {
-                Text = exists ? file : file + "（找不到了）",
-                TextWrapping = TextWrapping.Wrap,
-                FontSize = 13,
-                Opacity = exists ? 0.9 : 0.5,
-            });
-            panel.Children.Add(row);
-        }
-
-        if (files.Length > 50)
-        {
-            panel.Children.Add(new TextBlock
-            {
-                Text = $"还有 {files.Length - 50} 个文件",
-                FontSize = Theme.FontSize("Kitty.FontSize.Label"),
-                Foreground = Theme.SecondaryText(),
-            });
-        }
-
-        PreviewHost.Children.Add(panel);
     }
 
     private void OnKeyDown(object sender, KeyRoutedEventArgs e)
@@ -1436,13 +1274,13 @@ public sealed partial class ClipboardPanel : UserControl
         _linkCts?.Cancel();
         _linkPending = null;
 
-        if (!LinkPreviewService.Enabled || SelectedEntries is not { Count: 1 } selected ||
-            selected[0].Kind != ClipKind.Text || LinkPreviewRules.SingleUrl(selected[0].Text) is not { } uri)
+        if (!LinkPreviewService.Enabled || _linkLens is not { } lens || LinkPreviewService.Peek(lens.Uri) is not null ||
+            !LinkPreviewRules.CanFetch(lens.Uri) || SensitiveText.LooksSensitive(SelectedEntry?.Text ?? string.Empty))
         {
             return;
         }
 
-        _linkPending = uri;
+        _linkPending = lens.Uri;
         _linkTimer.Tick -= OnLinkTimerTick;
         _linkTimer.Tick += OnLinkTimerTick;
         _linkTimer.Start();
@@ -1454,6 +1292,7 @@ public sealed partial class ClipboardPanel : UserControl
         if (_linkPending is { } uri)
         {
             _linkCts = new CancellationTokenSource();
+            _linkLens?.SetLoading(true);
             _ = LoadLinkPreviewAsync(uri, _linkCts.Token);
         }
     }
@@ -1461,80 +1300,18 @@ public sealed partial class ClipboardPanel : UserControl
     private async Task LoadLinkPreviewAsync(Uri uri, CancellationToken cancellationToken)
     {
         var cached = await LinkPreviewService.FetchAsync(uri, cancellationToken);
-        if (cancellationToken.IsCancellationRequested || !LinkPreviewService.Enabled || cached is null ||
-            SelectedEntry is not { } entry || LinkPreviewRules.SingleUrl(entry.Text) != uri)
+        if (cancellationToken.IsCancellationRequested || _linkLens is not { } lens || lens.Uri != uri)
         {
             return;
         }
 
-        AppendLinkCard(cached);
-    }
-
-    private void AppendLinkCard(LinkPreviewService.CachedPreview cached)
-    {
-        var stack = new StackPanel { Spacing = 6 };
-        stack.Children.Add(new TextBlock
+        if (cached is null || !LinkPreviewService.Enabled)
         {
-            Text = cached.Preview.Title,
-            FontSize = 14,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            TextWrapping = TextWrapping.Wrap,
-        });
-        stack.Children.Add(new TextBlock
-        {
-            Text = cached.Preview.Site,
-            FontSize = Theme.FontSize("Kitty.FontSize.Label"),
-            Foreground = Theme.SecondaryText(),
-        });
-        if (!string.IsNullOrEmpty(cached.Preview.Description))
-        {
-            stack.Children.Add(new TextBlock
-            {
-                Text = cached.Preview.Description,
-                FontSize = Theme.FontSize("Kitty.FontSize.Label"),
-                Foreground = Theme.SecondaryText(),
-                TextWrapping = TextWrapping.Wrap,
-                MaxLines = 3,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-            });
+            lens.SetLoading(false);
+            return;
         }
 
-        if (cached.ImageBytes is { Length: > 0 } bytes)
-        {
-            try
-            {
-                var bitmap = new BitmapImage { DecodePixelWidth = 1200 };
-                var stream = new InMemoryRandomAccessStream();
-                using (var writer = new DataWriter(stream.GetOutputStreamAt(0)))
-                {
-                    writer.WriteBytes(bytes);
-                    writer.StoreAsync().AsTask().GetAwaiter().GetResult();
-                }
-
-                bitmap.SetSource(stream);
-                stack.Children.Add(new Image
-                {
-                    Source = bitmap,
-                    Stretch = Stretch.Uniform,
-                    MaxHeight = 160,
-                    HorizontalAlignment = HorizontalAlignment.Left,
-                });
-            }
-            catch (Exception ex)
-            {
-                Log.Warn($"linkpreview.image-show-failed {ex.GetType().Name}");
-            }
-        }
-
-        var card = new Border
-        {
-            Padding = new Thickness(10, 8, 10, 8),
-            CornerRadius = new CornerRadius(8),
-            Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"],
-            Child = stack,
-            Margin = new Thickness(0, 8, 0, 0),
-        };
-        PreviewHost.Children.Add(card);
+        lens.Update(cached, animate: true);
     }
 
     private void CopyText(string text)

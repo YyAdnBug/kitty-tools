@@ -81,6 +81,44 @@ public sealed class ClipboardAlignTests
     }
 
     [TestMethod]
+    public void PrettyJsonIndentsAndKeepsChinese()
+    {
+        Assert.AreEqual("{\n  \"名字\": \"kitty\",\n  \"n\": [\n    1,\n    2\n  ]\n}",
+            ClipPreviewRules.PrettyJson("{\"名字\":\"kitty\",\"n\":[1,2]}")!.Replace("\r\n", "\n"));
+        Assert.IsNull(ClipPreviewRules.PrettyJson("{not json"));
+    }
+
+    [TestMethod]
+    public void SyntaxSpansLikeMac()
+    {
+        static string Kinds(string text, bool json) => string.Concat(ClipPreviewRules.Highlight(text, json)
+            .Select(span => $"{text.Substring(span.Start, span.Length)}={span.Kind};"));
+
+        // JSON：键蓝、字符串红、数字紫、true / null 关键字。
+        Assert.AreEqual("{=Plain;\"a\"=Key;: =Plain;\"b\"=String;, =Plain;\"n\"=Key;: =Plain;12=Number;, =Plain;\"t\"=Key;: =Plain;true=Keyword;}=Plain;",
+            Kinds("{\"a\": \"b\", \"n\": 12, \"t\": true}", json: true));
+        // 代码：字符串里的 // 不是注释、注释里的引号不是字符串（先开始的赢）。
+        Assert.AreEqual("let=Keyword; x = =Plain;\"a//b\"=String; =Plain;// \"c\"=Comment;",
+            Kinds("let x = \"a//b\" // \"c\"", json: false));
+        // 盖满整段文字。
+        Assert.AreEqual(9, ClipPreviewRules.Highlight("plain txt", json: false).Sum(span => span.Length));
+    }
+
+    [TestMethod]
+    public void ColorValuesAndInk()
+    {
+        CollectionAssert.AreEqual(
+            new[] { "#FF2D55", "rgb(255, 45, 85)", "hsl(349, 100%, 59%)", "rgba(255, 45, 85, 1.00)" },
+            ClipPreviewRules.ColorValues(ContentForms.Color("#FF2D55")!.Value));
+        CollectionAssert.AreEqual(
+            new[] { "#34C75999", "rgb(52, 199, 89)", "hsla(135, 59%, 49%, 0.60)", "rgba(52, 199, 89, 0.60)" },
+            ClipPreviewRules.ColorValues(ContentForms.Color("rgba(52, 199, 89, 0.6)")!.Value));
+        Assert.IsTrue(ClipPreviewRules.IsLight(ContentForms.Color("#FFCC00")!.Value));
+        Assert.IsFalse(ClipPreviewRules.IsLight(ContentForms.Color("#007AFF")!.Value));
+        Assert.IsTrue(ClipPreviewRules.IsLight(ContentForms.Color("#00000040")!.Value));
+    }
+
+    [TestMethod]
     public void HitRangesCoverEveryTokenOnce()
     {
         // 标题里命中词的位置：每个词每一处、不分大小写 / 全半角，重叠的并起来。

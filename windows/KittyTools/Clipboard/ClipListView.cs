@@ -165,8 +165,22 @@ internal sealed partial class ClipListView : Grid
     {
         if (_layout.Reveal(item, _scroll.VerticalOffset, _scroll.ViewportHeight > 0 ? _scroll.ViewportHeight : ActualHeight) is { } target)
         {
+            // Canvas 刚因为透镜变高：先排一次，不然 ChangeView 按旧的内容高度夹住，透镜下半截露不出来。
+            _scroll.UpdateLayout();
             _scroll.ChangeView(null, target, null, disableAnimation: true);
             Realize(offset: target);
+            if (target > _scroll.ScrollableHeight)
+            {
+                // 滚动区还没认新的内容高度（被夹住了）：等这一轮布局完再滚一次。
+                DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+                {
+                    if (item < _items.Count && _layout.Reveal(item, _scroll.VerticalOffset, _scroll.ViewportHeight) is { } again)
+                    {
+                        _scroll.ChangeView(null, again, null, disableAnimation: true);
+                        Realize(offset: again);
+                    }
+                });
+            }
         }
     }
 
