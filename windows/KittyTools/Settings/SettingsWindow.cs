@@ -784,6 +784,10 @@ internal sealed class SettingsWindow : Window
         return Card(panel);
     }
 
+    /// <summary>
+    /// 设置 › 剪贴板（照 mac Settings/ClipboardTab.swift 的分节，PLAN-v9-clipboard §5）：历史 ｜ 面板（示意图 + 三个开关）｜
+    /// 内容 ｜ 隐私 ｜ 不记录这些应用里的复制。「暂停记录」只在托盘菜单里（D7）。
+    /// </summary>
     private void BuildClipboard()
     {
         if (!ShowIfDisabled(Feature.Clipboard))
@@ -791,7 +795,7 @@ internal sealed class SettingsWindow : Window
             return;
         }
 
-        _content.Children.Add(Header("剪贴板", "记录文本、图片和文件；面板里按 Ctrl+D 收藏。收藏的条目不受保留天数和图片额度影响。"));
+        _content.Children.Add(Header("剪贴板", "记录文本、图片和文件；面板里按 Ctrl+D 收藏。收藏和片段不受保留天数和图片占用影响。"));
         AddShortcutsLink("clipboard");
         var service = ClipboardService.Instance;
         if (service is null)
@@ -805,161 +809,363 @@ internal sealed class SettingsWindow : Window
             return;
         }
 
-        AddToggle("暂停记录", "只在这次运行有效，重启后自动恢复记录。",
-            service.Paused,
-            isOn => service.Paused = isOn);
+        var settings = SettingsService.Current;
 
-        var dayIndex = SettingsService.Current.ClipboardRetentionDays switch
-        {
-            1 => 0,
-            7 => 1,
-            30 => 2,
-            90 => 3,
-            365 => 4,
-            _ => 5,
-        };
-        AddCombo("保留普通历史", "收藏的不清理；选「永久」就不按时间删。",
-            new[] { "1 天", "7 天", "30 天", "90 天", "365 天", "永久" },
-            dayIndex,
+        // 历史
+        _content.Children.Add(Section("历史", "收藏和片段一直留着，图片占用也只算普通历史里的。"));
+        var days = new[] { 1, 7, 30, 90, 365, 0 };
+        AddCombo("保留普通历史", string.Empty,
+            new[] { "1 天", "7 天", "30 天", "90 天", "1 年", "永久" },
+            Math.Max(0, Array.IndexOf(days, settings.ClipboardRetentionDays) is var dayIndex and >= 0 ? dayIndex : 5),
             index =>
             {
-                SettingsService.Current.ClipboardRetentionDays = index switch
-                {
-                    0 => 1,
-                    1 => 7,
-                    2 => 30,
-                    3 => 90,
-                    4 => 365,
-                    _ => 0,
-                };
+                settings.ClipboardRetentionDays = days[index];
                 SettingsService.Save();
                 ReportCleanup(service.EnforceLimits());
             });
 
-        var budgetIndex = SettingsService.Current.ClipboardImageBudgetMB switch
+        // 图片占用：512 MB / 1 GB / 2 GB / 5 GB / 不限（= PLAN-v9 C2）；存着别的值（旧的 128 / 256）照原值算，多显示一项，换了就没了。
+        var budgets = new List<(int Value, string Title)> { (512, "512 MB"), (1024, "1 GB"), (2048, "2 GB"), (5120, "5 GB"), (0, "不限") };
+        if (budgets.All(budget => budget.Value != settings.ClipboardImageBudgetMB))
         {
-            128 => 0,
-            256 => 1,
-            1024 => 3,
-            0 => 4,
-            _ => 2,
-        };
-        AddCombo("图片最多占用", "只算普通图片；超了从最旧的删起，最新的一张这一轮不删。",
-            new[] { "128 MB", "256 MB", "512 MB", "1 GB", "不限" },
-            budgetIndex,
+            budgets.Insert(0, (settings.ClipboardImageBudgetMB, $"{settings.ClipboardImageBudgetMB} MB"));
+        }
+
+        AddCombo("图片最多占用", "超了从最旧的删起，最新的一张这一轮不删。",
+            budgets.Select(budget => budget.Title).ToArray(),
+            budgets.FindIndex(budget => budget.Value == settings.ClipboardImageBudgetMB),
             index =>
             {
-                SettingsService.Current.ClipboardImageBudgetMB = index switch
-                {
-                    0 => 128,
-                    1 => 256,
-                    3 => 1024,
-                    4 => 0,
-                    _ => 512,
-                };
+                settings.ClipboardImageBudgetMB = budgets[index].Value;
                 SettingsService.Save();
                 ReportCleanup(service.EnforceLimits());
             });
+        _content.Children.Add(SettingsUi.Card(
+            "\uEB9F", "图片当前占用", $"普通图片约 {service.Store.OrdinaryImageBytes / 1_048_576.0:F0} MB，共 {service.Store.Count} 条"));
 
-        AddToggle("不记录疑似密钥和卡号", "看起来像 API Key、Bearer token、私钥或银行卡号的文本不记录。",
-            SettingsService.Current.ClipboardBlockSensitive,
+        // 面板
+        _content.Children.Add(SettingsUi.Section("面板"));
+        _content.Children.Add(ClipboardSketch(settings.ClipboardShowLens, settings.LinkPreviews));
+        AddToggle("显示透镜", "选中的条目在原地展开预览；关掉就是纯列表，一屏多露出几行",
+            settings.ClipboardShowLens,
             isOn =>
             {
-                SettingsService.Current.ClipboardBlockSensitive = isOn;
+                settings.ClipboardShowLens = isOn;
                 SettingsService.Save();
-            });
-
-        AddToggle("链接预览", "选中「只有一个网址」的文本时，取网页标题、描述和头图（不访问本机 / 内网地址）。",
-            SettingsService.Current.LinkPreviews,
+                BuildPage("clipboard");
+            }, "\uE8A1");
+        AddToggle("链接显示网页标题和图片", "选中链接时联网读取；本机、内网和带登录令牌的网址不读",
+            settings.LinkPreviews,
             isOn =>
             {
-                SettingsService.Current.LinkPreviews = isOn;
+                settings.LinkPreviews = isOn;
                 SettingsService.Save();
                 if (!isOn)
                 {
                     LinkPreviewService.Clear();
                 }
-            });
 
-        _content.Children.Add(Section("不记录的应用", "按 exe 名，不分大小写。密码管理器默认就在里面。"));
-
-        foreach (var app in SettingsService.Current.ClipboardExcludedApps.ToList())
-        {
-            var row = new Grid { ColumnSpacing = 12 };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            row.Children.Add(new TextBlock
-            {
-                Text = app,
-                VerticalAlignment = VerticalAlignment.Center,
-                FontFamily = new FontFamily("Consolas"),
-            });
-            var remove = new Button { Content = "移除", Padding = new Thickness(10, 2, 10, 2) };
-            remove.Click += (_, _) =>
-            {
-                SettingsService.Current.ClipboardExcludedApps.RemoveAll(
-                    value => string.Equals(value, app, StringComparison.OrdinalIgnoreCase));
-                SettingsService.Save();
                 BuildPage("clipboard");
-            };
-            Grid.SetColumn(remove, 1);
-            row.Children.Add(remove);
-            _content.Children.Add(row);
-        }
+            }, "\uE71B");
+        AddToggle("单击条目直接粘贴", "关着时单击选中、双击粘贴；打开后点一下就粘贴，想先看内容用 ↑↓，Ctrl 单击、Shift 单击照常多选",
+            settings.ClipboardPasteOnClick,
+            isOn =>
+            {
+                settings.ClipboardPasteOnClick = isOn;
+                SettingsService.Save();
+            }, "\uE7C9");
 
-        var addRow = new Grid { ColumnSpacing = 8 };
-        addRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(240) });
-        addRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var input = new TextBox { PlaceholderText = "比如 WeChat.exe" };
-        var add = new Button { Content = "添加" };
-        add.Click += (_, _) =>
+        // 内容
+        _content.Children.Add(SettingsUi.Section("内容"));
+        AddToggle("默认粘贴为纯文本", "打开后 Enter 粘贴纯文本，Shift+Enter 保留格式；文字的格式总是记下来",
+            settings.ClipboardPastePlain,
+            isOn =>
+            {
+                settings.ClipboardPastePlain = isOn;
+                SettingsService.Save();
+            }, "\uE8D2");
+        AddToggle("识别图片中的文字，用于搜索", string.Empty,
+            settings.ClipboardImageOcr,
+            isOn =>
+            {
+                settings.ClipboardImageOcr = isOn;
+                SettingsService.Save();
+                if (isOn)
+                {
+                    OcrQueue.Kick();
+                }
+            }, "\uE8C1");
+
+        // 隐私
+        _content.Children.Add(SettingsUi.Section("隐私"));
+        AddToggle("不记录疑似密钥和银行卡号", string.Empty,
+            settings.ClipboardBlockSensitive,
+            isOn =>
+            {
+                settings.ClipboardBlockSensitive = isOn;
+                SettingsService.Save();
+            }, "\uE72E");
+        AddToggle("退出时清空普通历史", string.Empty,
+            settings.ClipboardClearOnQuit,
+            isOn =>
+            {
+                settings.ClipboardClearOnQuit = isOn;
+                SettingsService.Save();
+            }, "\uE7E8");
+        AddToggle("锁屏时清空普通历史", string.Empty,
+            settings.ClipboardClearOnLock,
+            isOn =>
+            {
+                settings.ClipboardClearOnLock = isOn;
+                SettingsService.Save();
+            }, "\uE72E");
+        var clear = new Button
         {
-            var name = input.Text.Trim();
-            if (name.Length == 0)
-            {
-                return;
-            }
-
-            if (!name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-            {
-                name += ".exe";
-            }
-
-            if (SettingsService.Current.ClipboardExcludedApps
-                .Any(value => string.Equals(value, name, StringComparison.OrdinalIgnoreCase)))
-            {
-                return;
-            }
-
-            SettingsService.Current.ClipboardExcludedApps.Add(name);
-            SettingsService.Save();
-            BuildPage("clipboard");
+            Content = "立即清空普通历史…",
+            Foreground = Theme.Critical(),
         };
-        Grid.SetColumn(add, 1);
-        addRow.Children.Add(input);
-        addRow.Children.Add(add);
-        _content.Children.Add(addRow);
-
-        _content.Children.Add(Section("占用",
-            $"普通图片约 {service.Store.OrdinaryImageBytes / 1_048_576.0:F0} MB，共 {service.Store.Count} 条。"));
-
-        var clear = new Button { Content = "立即清空普通历史" };
-        var armed = false;
-        clear.Click += (_, _) =>
+        clear.Click += async (_, _) =>
         {
-            if (!armed)
+            var dialog = new ContentDialog
             {
-                armed = true;
-                clear.Content = "再点一次：清空（收藏保留）";
+                RequestedTheme = Theme.ElementTheme,
+                Title = "清空普通历史？",
+                Content = "收藏和片段会保留",
+                PrimaryButtonText = "清空",
+                CloseButtonText = "取消",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = _content.XamlRoot,
+            };
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+            {
                 return;
             }
 
             var removed = service.Store.ClearOrdinary();
-            SettingsService.Save();
-            NoticeHost.Show("已清空", $"删了 {removed} 条，收藏还在", NoticeTone.Normal);
+            NoticeHost.Show("已清空", $"删了 {removed} 条，收藏和片段还在", NoticeTone.Normal);
             BuildPage("clipboard");
         };
         _content.Children.Add(clear);
+
+        // 不记录这些应用里的复制
+        _content.Children.Add(Section("不记录这些应用里的复制", "密码管理器通常会自己标记「不要记录」，这里只是兜底。"));
+        BuildExcludedApps(settings);
+    }
+
+    /// <summary>
+    /// 排除的应用：一行一个（图标 + 显示名 + 灰色的 exe 名 + 移除）；「选择应用…」从正在运行的程序里选，或浏览一个 exe。
+    /// 存的还是 exe 名（同步、导出的格式不动）；图标和显示名从正在运行的同名程序里取，没在运行的只写 exe 名。
+    /// </summary>
+    private void BuildExcludedApps(Settings settings)
+    {
+        var running = RunningApps();
+        var list = new StackPanel { Spacing = 2 };
+        if (settings.ClipboardExcludedApps.Count == 0)
+        {
+            list.Children.Add(new TextBlock { Text = "没有排除的应用", Foreground = Theme.SecondaryText(), Margin = new Thickness(4) });
+        }
+
+        foreach (var app in settings.ClipboardExcludedApps.ToList())
+        {
+            var path = running.FirstOrDefault(item => string.Equals(Path.GetFileName(item.Path), app, StringComparison.OrdinalIgnoreCase)).Path;
+            var row = new Grid { ColumnSpacing = 10, Padding = new Thickness(8, 4, 4, 4) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var icon = new Border { Width = 20, Height = 20, VerticalAlignment = VerticalAlignment.Center, Child = new FontIcon { Glyph = "\uE7C3", FontSize = 14, Foreground = Theme.SecondaryText() } };
+            if (path is not null)
+            {
+                _ = LoadAppIconAsync(icon, path);
+            }
+
+            row.Children.Add(icon);
+            var names = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            names.Children.Add(new TextBlock { Text = path is null ? Path.GetFileNameWithoutExtension(app) : AppDisplayName(path) });
+            names.Children.Add(new TextBlock { Text = app, FontSize = 11, Foreground = Theme.SecondaryText() });
+            Grid.SetColumn(names, 1);
+            row.Children.Add(names);
+            var remove = new Button { Content = "移除", Padding = new Thickness(10, 2, 10, 2), VerticalAlignment = VerticalAlignment.Center };
+            remove.Click += (_, _) =>
+            {
+                settings.ClipboardExcludedApps.RemoveAll(value => string.Equals(value, app, StringComparison.OrdinalIgnoreCase));
+                SettingsService.Save();
+                BuildPage("clipboard");
+            };
+            Grid.SetColumn(remove, 2);
+            row.Children.Add(remove);
+            list.Children.Add(row);
+        }
+
+        _content.Children.Add(new Border
+        {
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(6),
+            Background = Theme.CardBackground(),
+            Child = list,
+        });
+
+        void Add(string exe)
+        {
+            var name = Path.GetFileName(exe);
+            if (name.Length == 0 || settings.ClipboardExcludedApps.Any(value => string.Equals(value, name, StringComparison.OrdinalIgnoreCase)))
+            {
+                return;
+            }
+
+            settings.ClipboardExcludedApps.Add(name);
+            SettingsService.Save();
+            BuildPage("clipboard");
+        }
+
+        var choose = new DropDownButton { Content = "选择应用…" };
+        var menu = new MenuFlyout { Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.BottomEdgeAlignedLeft };
+        var runningMenu = new MenuFlyoutSubItem { Text = "正在运行的程序" };
+        foreach (var (path, name) in running.Take(40))
+        {
+            var item = new MenuFlyoutItem { Text = name };
+            item.Click += (_, _) => Add(path);
+            runningMenu.Items.Add(item);
+        }
+
+        if (runningMenu.Items.Count == 0)
+        {
+            runningMenu.Items.Add(new MenuFlyoutItem { Text = "（没有找到）", IsEnabled = false });
+        }
+
+        menu.Items.Add(runningMenu);
+        var browse = new MenuFlyoutItem { Text = "浏览 exe…" };
+        browse.Click += async (_, _) =>
+        {
+            var picker = new FileOpenPicker(AppWindow.Id);
+            picker.FileTypeFilter.Add(".exe");
+            var file = await picker.PickSingleFileAsync();
+            if (file is not null && !string.IsNullOrEmpty(file.Path))
+            {
+                Add(file.Path);
+            }
+        };
+        menu.Items.Add(browse);
+        choose.Flyout = menu;
+        _content.Children.Add(choose);
+    }
+
+    /// <summary>正在运行、有窗口的程序（去重，按显示名排）：给「选择应用…」用。</summary>
+    private static List<(string Path, string Name)> RunningApps()
+    {
+        var apps = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var process in System.Diagnostics.Process.GetProcesses())
+        {
+            try
+            {
+                if (process.MainWindowHandle == IntPtr.Zero || process.Id == Environment.ProcessId)
+                {
+                    continue;
+                }
+
+                var path = process.MainModule?.FileName;
+                if (!string.IsNullOrEmpty(path) && !apps.ContainsKey(path))
+                {
+                    apps[path] = AppDisplayName(path);
+                }
+            }
+            catch (Exception)
+            {
+                // 别的用户 / 提权进程读不到模块路径：跳过。
+            }
+            finally
+            {
+                process.Dispose();
+            }
+        }
+
+        return apps.Select(pair => (pair.Key, pair.Value)).OrderBy(app => app.Value, StringComparer.CurrentCulture).ToList();
+    }
+
+    private static string AppDisplayName(string path)
+    {
+        try
+        {
+            var description = System.Diagnostics.FileVersionInfo.GetVersionInfo(path).FileDescription;
+            return string.IsNullOrWhiteSpace(description) ? Path.GetFileNameWithoutExtension(path) : description.Trim();
+        }
+        catch (Exception)
+        {
+            return Path.GetFileNameWithoutExtension(path);
+        }
+    }
+
+    private static async Task LoadAppIconAsync(Border host, string path)
+    {
+        var png = await Task.Run(() => ShellIcons.LoadPng(path, 1.5, 20));
+        if (png is not null)
+        {
+            host.Child = null;
+            host.Background = new ImageBrush { ImageSource = IconSource(png), Stretch = Stretch.Uniform };
+        }
+    }
+
+    /// <summary>
+    /// 设置里的面板示意图（mac ClipboardPanelSketch）：一条搜索线 + 几行，「显示透镜」开着时选中那行展开一块透镜；
+    /// 「链接显示网页标题和图片」开着时透镜里画一张小头图。
+    /// </summary>
+    private static Border ClipboardSketch(bool lens, bool linkPreview)
+    {
+        var ink = Theme.SecondaryText();
+        var line = Theme.Brush("Kitty.Hairline", Windows.UI.Color.FromArgb(20, 0, 0, 0));
+        var fill = Theme.Brush("Kitty.Fill.Selected", Windows.UI.Color.FromArgb(18, 0, 0, 0));
+        var stack = new StackPanel { Width = 300, Spacing = 4, Padding = new Thickness(10) };
+        stack.Children.Add(new Border { Height = 14, CornerRadius = new CornerRadius(3), Background = line });
+        for (var row = 0; row < 4; row++)
+        {
+            var selected = row == 1;
+            var block = new StackPanel
+            {
+                Padding = new Thickness(6, 4, 6, 4),
+                Spacing = 4,
+                CornerRadius = new CornerRadius(4),
+                Background = selected ? fill : null,
+            };
+            var head = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            head.Children.Add(new Border { Width = 10, Height = 10, CornerRadius = new CornerRadius(2), Background = new SolidColorBrush(Theme.Family.Clipboard) });
+            head.Children.Add(new Border { Width = 120 + row * 17 % 60, Height = 6, CornerRadius = new CornerRadius(3), Background = ink, Opacity = 0.5, VerticalAlignment = VerticalAlignment.Center });
+            block.Children.Add(head);
+            if (selected && lens)
+            {
+                var body = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(16, 0, 0, 0) };
+                if (linkPreview)
+                {
+                    body.Children.Add(new Border { Width = 48, Height = 28, CornerRadius = new CornerRadius(3), Background = new SolidColorBrush(Theme.Family.Url), Opacity = 0.6 });
+                }
+
+                var lines = new StackPanel { Spacing = 4 };
+                for (var index = 0; index < 3; index++)
+                {
+                    lines.Children.Add(new Border { Width = 150 - index * 30, Height = 5, CornerRadius = new CornerRadius(2.5), Background = ink, Opacity = 0.3 });
+                }
+
+                body.Children.Add(lines);
+                block.Children.Add(body);
+            }
+
+            stack.Children.Add(block);
+        }
+
+        var sketch = new Border
+        {
+            CornerRadius = new CornerRadius(8),
+            Background = Theme.CardBackground(),
+            Padding = new Thickness(12),
+            Child = new Border
+            {
+                HorizontalAlignment = HorizontalAlignment.Center,
+                CornerRadius = new CornerRadius(8),
+                BorderBrush = line,
+                BorderThickness = new Thickness(1),
+                Child = stack,
+            },
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(sketch, lens ? "示意图：选中的条目展开预览" : "示意图：纯列表");
+        return sketch;
     }
 
     private void BuildLauncher()

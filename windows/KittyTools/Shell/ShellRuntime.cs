@@ -920,6 +920,11 @@ internal sealed class ShellRuntime
     {
         Log.Info("app.exit");
         Clipboard?.CommitDeletion();
+        if (SettingsService.Current.ClipboardClearOnQuit && Clipboard?.Store is { } quitting)
+        {
+            // 退出时清空普通历史（收藏、片段、收藏夹里的不清，mac）。
+            Log.Info($"clipboard.cleared-on-quit count={quitting.ClearOrdinary()}");
+        }
         HotKeys.UnregisterAll();
         Tray.Remove();
         Application.Current.Exit();
@@ -985,6 +990,13 @@ internal sealed class ShellRuntime
             if (wParam.Value == 7)
             {
                 StopRecordingForSession();
+                if (SettingsService.Current.ClipboardClearOnLock && Clipboard?.Store is { } locked)
+                {
+                    // 锁屏时清空普通历史（先提交撤销栈；收藏、片段、收藏夹里的不清，mac）。
+                    OverlayHost.Hide(restoreForeground: false);
+                    Log.Info($"clipboard.cleared-on-lock count={locked.ClearOrdinary()}");
+                }
+
                 ScheduleBackup();
             }
             else if (wParam.Value == 8)

@@ -86,7 +86,8 @@ internal static class OcrQueue
             try
             {
                 var store = ClipboardService.Instance?.Store;
-                var next = store?.PendingOcr(limit: 1).FirstOrDefault();
+                // 设置里关了「识别图片中的文字」：不再排队识字（mac clipboardImageOcr）。
+                var next = SettingsService.Current.ClipboardImageOcr ? store?.PendingOcr(limit: 1).FirstOrDefault() : null;
                 done.TrySetResult(next is null || store is null
                     ? null
                     : (next.Id, next.ImageBytes, store.Images.PathFor(next.Id)));

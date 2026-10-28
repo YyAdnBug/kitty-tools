@@ -114,7 +114,7 @@ public sealed partial class ClipboardPanel : UserControl
         _list.ItemDoubleTapped += index =>
         {
             Select(index, MotionCurve.Instant);
-            Paste(plain: false);
+            PasteDefault();
         };
         _list.ItemRightTapped += OnItemRightTapped;
         _list.ItemDragStarting += OnItemDragStarting;
@@ -172,8 +172,14 @@ public sealed partial class ClipboardPanel : UserControl
         }
     }
 
-    /// <summary>设置 › 剪贴板「显示透镜」（6g 接上设置；关掉 = 纯列表）。</summary>
-    private static bool LensEnabled => true;
+    /// <summary>设置 › 剪贴板「显示透镜」（关掉 = 纯列表，透镜预留为 0）。</summary>
+    private static bool LensEnabled => SettingsService.Current.ClipboardShowLens;
+
+    /// <summary>设置 › 剪贴板「默认粘贴为纯文本」。</summary>
+    private static bool DefaultPlain => SettingsService.Current.ClipboardPastePlain;
+
+    /// <summary>Enter / 双击 / Ctrl+1–9 / 单击直接粘贴：看「默认粘贴为纯文本」。</summary>
+    private void PasteDefault() => Paste(DefaultPlain);
 
     /// <summary>片段范围、没有搜索词时第一行固定一条「＋ 新建片段 Ctrl+N」（mac）。</summary>
     private bool ShowsNewSnippetRow => _scope == ClipScope.Snippets && SearchBox.Text.Trim().Length == 0;
@@ -385,7 +391,26 @@ public sealed partial class ClipboardPanel : UserControl
         }
 
         var entry = _visible[index];
-        if (modifiers.HasFlag(VirtualKeyModifiers.Control))
+        var click = ClipOrder.Click(
+            modifiers.HasFlag(VirtualKeyModifiers.Control), modifiers.HasFlag(VirtualKeyModifiers.Shift), clicks: 1,
+            SettingsService.Current.ClipboardPasteOnClick);
+        if (click == ClipClick.Paste)
+        {
+            // 单击直接粘贴：粘点中的这一条（有勾选时也只粘它）；菜单开着时这一下只关菜单（mac）。
+            if (_palette.IsOpen)
+            {
+                _palette.Close();
+                return;
+            }
+
+            _checked.Clear();
+            _list.SetChecked(null);
+            Select(index, MotionCurve.Instant);
+            PasteDefault();
+            return;
+        }
+
+        if (click == ClipClick.Check)
         {
             if (_checked.Count == 0 && SelectedEntry is { } current)
             {
@@ -399,7 +424,7 @@ public sealed partial class ClipboardPanel : UserControl
 
             _anchorId = entry.Id;
         }
-        else if (modifiers.HasFlag(VirtualKeyModifiers.Shift))
+        else if (click == ClipClick.Range)
         {
             var anchor = _anchorId ?? SelectedEntry?.Id;
             var from = _visible.FindIndex(item => item.Id == anchor);
@@ -441,7 +466,7 @@ public sealed partial class ClipboardPanel : UserControl
             Footer.Status = PanelFooterText.ClipSelected(selected.Count);
             SetFooterActions($"multi:{mode}", () =>
             {
-                Footer.AddVerb(MultiPaste.ShortVerb(mode), "↩", primary: true, () => Paste(plain: false));
+                Footer.AddVerb(MultiPaste.ShortVerb(mode), "↩", primary: true, PasteDefault);
                 Footer.AddVerb("收藏", "Ctrl+D", primary: false, FavoriteSelected);
                 // 「收藏夹…」打开收藏夹列表（和 Ctrl+K 的「移到收藏夹」子列表同一份，mac 体检 C3）。
                 Footer.AddVerb("收藏夹…", null, primary: false, () => OpenPalette("groups", GroupItems(SelectedEntries), top: false));
@@ -453,7 +478,7 @@ public sealed partial class ClipboardPanel : UserControl
 
         var paused = ClipboardService.Instance?.Paused == true;
         Footer.Status = _shiftHeld && _visible.Count > 0
-            ? PanelFooterText.ShiftHint
+            ? DefaultPlain ? PanelFooterText.ShiftHintRich : PanelFooterText.ShiftHint
             : _visible.Count > 0 || paused
                 ? PanelFooterText.ClipStatus(_visible.Count, paused)
                 : string.Empty;
@@ -462,7 +487,7 @@ public sealed partial class ClipboardPanel : UserControl
         {
             if (hasItems)
             {
-                Footer.AddVerb("粘贴", "↩", primary: true, () => Paste(plain: false));
+                Footer.AddVerb("粘贴", "↩", primary: true, PasteDefault);
                 Footer.AddVerb("操作", "Ctrl+K", primary: false, OpenActionPalette);
                 Footer.AddSeparator();
             }
@@ -1061,7 +1086,8 @@ public sealed partial class ClipboardPanel : UserControl
                 break;
             case VirtualKey.Enter:
                 e.Handled = true;
-                Paste(shift);
+                // 打开「默认粘贴为纯文本」后 Enter 和 Shift+Enter 对调（mac 体检 A5）。
+                Paste(shift ^ DefaultPlain);
                 break;
             case VirtualKey.Tab when shift:
                 // 范围在 全部 → 收藏 → 片段 之间循环（mac cycleScope）。
@@ -1218,7 +1244,7 @@ public sealed partial class ClipboardPanel : UserControl
                     _checked.Clear();
                     _list.SetChecked(null);
                     Select(number, MotionCurve.Instant);
-                    Paste(plain: false);
+                    PasteDefault();
                 }
 
                 break;
@@ -1963,11 +1989,11 @@ public sealed partial class ClipboardPanel : UserControl
             targets.All(entry => entry.Kind == ClipKind.Files));
         var items = new List<PaletteItem>
         {
-            new(targets.Count > 1 ? MultiPaste.ShortVerb(mode) : "粘贴", Glyphs.Paste, 0, () => Paste(plain: false), "Enter"),
+            new(targets.Count > 1 ? MultiPaste.ShortVerb(mode) : "粘贴", Glyphs.Paste, 0, PasteDefault, "Enter"),
         };
         if (formatted)
         {
-            items.Add(new PaletteItem("粘贴为纯文本", Glyphs.Text, 0, () => Paste(plain: true), "Shift+Enter"));
+            items.Add(new PaletteItem(DefaultPlain ? "保留格式粘贴" : "粘贴为纯文本", Glyphs.Text, 0, () => Paste(!DefaultPlain), "Shift+Enter"));
         }
 
         items.Add(new PaletteItem("仅复制", Glyphs.Copy, 0, CopySelected, "Ctrl+C"));
@@ -2418,7 +2444,7 @@ public sealed partial class ClipboardPanel : UserControl
             SearchBox.Text.Trim(),
             entry.Form == ContentForm.Json ? DisplayText(entry) : entry.Text ?? string.Empty,
             new QuickLookActions(
-                () => Paste(plain: false),
+                PasteDefault,
                 Copy,
                 third,
                 title,

@@ -356,6 +356,10 @@ internal static class UiSnapshotProbe
             settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 720));
             settings.ShowPage(welcome: false, "general");
             await RenderWindowAsync(settings, "settings", dark, directory);
+            // PLAN-v9-clipboard 6g：设置 › 剪贴板整页（拉长看到排除的应用列表，同 mac settings-clipboard-full）。
+            settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 1700));
+            settings.ShowPage(welcome: false, "clipboard");
+            await RenderWindowAsync(settings, "settings-clipboard", dark, directory);
         }
         catch (Exception ex)
         {

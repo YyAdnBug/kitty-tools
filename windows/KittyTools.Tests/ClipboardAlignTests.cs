@@ -171,6 +171,18 @@ public sealed class ClipboardAlignTests
     }
 
     [TestMethod]
+    public void ClickPastesOnlyWhenAsked()
+    {
+        Assert.AreEqual(ClipClick.Select, ClipOrder.Click(false, false, 1, pastesOnClick: false));
+        Assert.AreEqual(ClipClick.Paste, ClipOrder.Click(false, false, 1, pastesOnClick: true));
+        Assert.AreEqual(ClipClick.Paste, ClipOrder.Click(false, false, 2, pastesOnClick: false));
+        // 读屏激活（连击数 0）只选中；Ctrl / Shift 单击照常多选。
+        Assert.AreEqual(ClipClick.Select, ClipOrder.Click(false, false, 0, pastesOnClick: true));
+        Assert.AreEqual(ClipClick.Check, ClipOrder.Click(true, false, 1, pastesOnClick: true));
+        Assert.AreEqual(ClipClick.Range, ClipOrder.Click(false, true, 1, pastesOnClick: true));
+    }
+
+    [TestMethod]
     public void MenuFilterMatchesPinyin()
     {
         Assert.IsTrue(Search.MatchesTitle("收藏", "收"));

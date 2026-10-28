@@ -36,6 +36,25 @@ internal sealed class Settings
     /// <summary>链接预览（第三版 §5）：选中「只有一个网址」的文本时取标题 / 描述 / 头图。</summary>
     public bool LinkPreviews { get; set; } = true;
 
+    // PLAN-v9-clipboard 6g（= PLAN-v9 C1，默认值照 mac Prefs）。字段名进了 settings.json，以后别改。
+
+    /// <summary>显示透镜：选中的条目原地展开预览；关掉就是纯列表（mac clipboardShowPreview，默认开）。</summary>
+    public bool ClipboardShowLens { get; set; } = true;
+
+    /// <summary>单击条目直接粘贴（mac clipboardPasteOnClick，默认关）。</summary>
+    public bool ClipboardPasteOnClick { get; set; }
+
+    /// <summary>默认粘贴为纯文本：打开后 Enter 粘纯文本、Shift+Enter 保留格式（mac clipboardPastePlainByDefault，默认关）。</summary>
+    public bool ClipboardPastePlain { get; set; }
+
+    /// <summary>识别图片中的文字，用于搜索（mac clipboardImageOcr，默认开）。</summary>
+    public bool ClipboardImageOcr { get; set; } = true;
+
+    /// <summary>退出时 / 锁屏时清空普通历史（收藏、片段、收藏夹里的不清；mac 默认都关）。</summary>
+    public bool ClipboardClearOnQuit { get; set; }
+
+    public bool ClipboardClearOnLock { get; set; }
+
     public List<string> ClipboardExcludedApps { get; set; } = new()
     {
         "KeePass.exe",

@@ -10,6 +10,9 @@ public static class PanelFooterText
     /// <summary>按住 Shift 时剪贴板底栏左边换成这一句。</summary>
     public const string ShiftHint = "Shift+Enter 粘贴为纯文本";
 
+    /// <summary>打开「默认粘贴为纯文本」后 Shift+Enter 是保留格式（mac 体检 A5）。</summary>
+    public const string ShiftHintRich = "Shift+Enter 保留格式粘贴";
+
     /// <summary>剪贴板底栏左边：「N 条」，暂停记录时前面加「⏸ 已暂停记录 ·」。</summary>
     public static string ClipStatus(int count, bool paused)
         => paused ? $"⏸ 已暂停记录 · {count} 条" : $"{count} 条";
