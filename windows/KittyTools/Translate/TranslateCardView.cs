@@ -542,7 +542,13 @@ internal sealed partial class TranslateCardView
 
     private Border Fade(bool top)
     {
-        var color = Theme.CardColor();
+        // 卡底是半透明的 Kitty.Card 叠在窗口底色上：渐隐也得是这两层叠出来的颜色。只用 Kitty.CardSolid（窗口底色的近似）的话，
+        // 深色下渐隐比卡底暗一截（实测 43 对 64），正文底下一条黑带、和卡底之间一道硬边。
+        var solid = Theme.CardColor();
+        var layer = (Theme.Brush("Kitty.Card", Theme.Argb(0, 0, 0, 0)) as SolidColorBrush)?.Color ?? Theme.Argb(0, 0, 0, 0);
+        var alpha = layer.A / 255.0;
+        byte Mix(byte under, byte over) => (byte)Math.Round(under + (over - under) * alpha);
+        var color = Theme.Argb(255, Mix(solid.R, layer.R), Mix(solid.G, layer.G), Mix(solid.B, layer.B));
         var brush = new LinearGradientBrush
         {
             StartPoint = new Windows.Foundation.Point(0, 0),
