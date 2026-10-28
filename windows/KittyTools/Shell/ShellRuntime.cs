@@ -259,6 +259,28 @@ internal sealed class ShellRuntime
                 TestPatternWindow.Close();
             });
         }
+
+        // 自检档（Debug，或 Release 带 KITTY_PROBE_PROFILE）：带一段原文直接开翻译浮窗，量 Release 下等待 / 流式的 CPU 用。
+        // KITTY_TRANSLATE_PASSIVE=1 走不激活的那条路（同剪贴板里的翻译），不抢用户的焦点。
+        var translateArg = Environment.GetCommandLineArgs()
+            .FirstOrDefault(arg => arg.StartsWith("--translate-text=", StringComparison.OrdinalIgnoreCase));
+        if (translateArg is not null && Paths.IsTestProfile)
+        {
+            var text = translateArg["--translate-text=".Length..];
+            var passive = Environment.GetEnvironmentVariable("KITTY_TRANSLATE_PASSIVE") == "1";
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() =>
+            {
+                if (passive)
+                {
+                    TranslateHost.ShowTextKeepOverlay(text);
+                }
+                else
+                {
+                    TranslateHost.ShowText(text);
+                }
+            });
+        }
+
 #if DEBUG
         if (Environment.GetCommandLineArgs().Contains("--tray-menu", StringComparer.OrdinalIgnoreCase))
         {
@@ -617,14 +639,6 @@ internal sealed class ShellRuntime
         if (Environment.GetCommandLineArgs().Contains("--translate", StringComparer.OrdinalIgnoreCase))
         {
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => TranslateHost.ShowInput());
-        }
-
-        var translateArg = Environment.GetCommandLineArgs()
-            .FirstOrDefault(arg => arg.StartsWith("--translate-text=", StringComparison.OrdinalIgnoreCase));
-        if (translateArg is not null)
-        {
-            var text = translateArg["--translate-text=".Length..];
-            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => TranslateHost.ShowText(text));
         }
 
         if (Environment.GetCommandLineArgs().Contains("--selection", StringComparer.OrdinalIgnoreCase))
