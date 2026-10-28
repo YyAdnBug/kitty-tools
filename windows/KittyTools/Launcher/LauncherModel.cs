@@ -647,6 +647,7 @@ internal sealed partial class LauncherModel
                 List<LauncherItem> items;
                 try
                 {
+                    var watch = System.Diagnostics.Stopwatch.StartNew();
                     var snapshot = RunningProcesses.Take(foreground);
                     items = mode switch
                     {
@@ -654,6 +655,7 @@ internal sealed partial class LauncherModel
                         LauncherMode.Port => RunningProcesses.PortTargets(snapshot),
                         _ => RunningProcesses.AppTargets(snapshot, mode, LauncherCommands.Keyword(mode)),
                     };
+                    Log.Info($"launcher.targets mode={mode} ms={watch.ElapsedMilliseconds} processes={snapshot.Processes.Count} rows={items.Count}");
                 }
                 catch (Exception ex)
                 {
