@@ -74,16 +74,19 @@ public static class BackupPlan
     /// 备份里不留的行（只有「用户明确留下的」才留）：普通剪贴板历史、没收藏的翻译历史、启动器使用记录。
     /// translations 表第三版第 2 批才有，没有就跳过那一条。
     /// </summary>
+    /// <summary>「留下的」剪贴板条目在库里的写法（= ClipboardStore.IsRetained，改一个要连另一个一起改）。</summary>
+    public const string ClipRetainedSql = "favorite = 1 OR snippet = 1 OR group_id IS NOT NULL";
+
     public static IReadOnlyList<string> DroppedStatements(bool hasTranslations) => hasTranslations
         ? new[]
         {
-            "DELETE FROM clips WHERE favorite = 0;",
+            "DELETE FROM clips WHERE NOT (" + ClipRetainedSql + ");",
             "DELETE FROM translations WHERE favorite = 0;",
             "DELETE FROM launcher_usage;",
         }
         : new[]
         {
-            "DELETE FROM clips WHERE favorite = 0;",
+            "DELETE FROM clips WHERE NOT (" + ClipRetainedSql + ");",
             "DELETE FROM launcher_usage;",
         };
 

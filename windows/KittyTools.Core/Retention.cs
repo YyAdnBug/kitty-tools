@@ -9,7 +9,7 @@ public enum ClipKind
     Files,
 }
 
-/// <summary>清理计划需要知道的字段；调用方按复制时间新→旧传入。</summary>
+/// <summary>清理计划需要知道的字段；调用方按复制时间新→旧传入。Favorite = 留下的（收藏 ∨ 片段，同 mac isRetained）。</summary>
 public readonly record struct RetentionItem(
     string Id,
     ClipKind Kind,
@@ -25,6 +25,10 @@ public readonly record struct RetentionLimits(int MaxAgeDays, long ImageBudgetBy
 
 public static class Retention
 {
+    /// <summary>不再留下的条目是不是已经超过保留天数（取消收藏 / 移出片段后要不要进撤销栈，照 mac changeRetention）。</summary>
+    public static bool IsExpired(long copiedAtMs, RetentionLimits limits, long nowMs)
+        => limits.MaxAgeMs is { } maxAge && nowMs - copiedAtMs > maxAge;
+
     /// <summary>
     /// 返回这一轮要删的条目 id。items 必须按复制时间新→旧；同一毫秒按 id 无所谓，调用方排序时会带上 rowid。
     /// hoursOfDay 不做处理：保留天数按整 24 小时算。

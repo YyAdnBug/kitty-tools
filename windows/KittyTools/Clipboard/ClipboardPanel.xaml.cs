@@ -47,6 +47,8 @@ public sealed partial class ClipboardPanel : UserControl
     private bool _composing;
     private bool _shiftHeld;
     private bool _pinned;
+    /// <summary>Ctrl+C 复制的那条和当时剪贴板的序号：收起面板时剪贴板还是它，就挪到最前。</summary>
+    private (long Id, uint Sequence)? _copiedOnHide;
     /// <summary>底栏右边现在摆的是哪一套按钮：没变就不重建（按 ↓ 连发时每下都重建会拖慢）。</summary>
     private string _footerActions = string.Empty;
 
@@ -191,8 +193,15 @@ public sealed partial class ClipboardPanel : UserControl
         if (Store is { } store)
         {
             store.CommitDeletion();
+            if (_copiedOnHide is { } copied && copied.Sequence == PInvoke.GetClipboardSequenceNumber())
+            {
+                store.Bump(copied.Id);
+            }
+
             store.EnforceLimits();
         }
+
+        _copiedOnHide = null;
     }
 
     /// <summary>R33：5000 条时按 ↓ 从选中到布局更新的耗时；返回中位数 / 最慢 5%。</summary>
@@ -693,7 +702,7 @@ public sealed partial class ClipboardPanel : UserControl
             };
         if (_scope == ClipScope.All && _groupFilterId is null)
         {
-            SearchLineControl.AddChip(text);
+            // 「全部」不出标签（mac）。
             return;
         }
 
@@ -1211,6 +1220,17 @@ public sealed partial class ClipboardPanel : UserControl
                 e.Handled = true;
                 Paste(shift);
                 break;
+            case VirtualKey.Tab when shift:
+                // 范围在 全部 → 收藏 → 片段 之间循环（mac cycleScope）。
+                e.Handled = true;
+                _groupFilterId = null;
+                SetScope(_scope switch
+                {
+                    ClipScope.All => ClipScope.Favorites,
+                    ClipScope.Favorites => ClipScope.Snippets,
+                    _ => ClipScope.All,
+                });
+                break;
             case VirtualKey.Tab:
                 e.Handled = true;
                 ShowFilterMenu();
@@ -1643,6 +1663,8 @@ public sealed partial class ClipboardPanel : UserControl
             }
 
             ClipboardService.Instance?.MarkOwnWrite();
+            // 面板里不动，收起时再挪到最前（剪贴板没被换掉才挪，mac 体检 A8）。
+            _copiedOnHide = (entry.Id, PInvoke.GetClipboardSequenceNumber());
             Footer.ShowNotice("已复制");
         }
         catch (Exception ex)
@@ -1677,13 +1699,28 @@ public sealed partial class ClipboardPanel : UserControl
             return;
         }
 
-        var restored = store.Undo();
-        if (restored is { Count: > 0 })
+        switch (store.Undo())
         {
-            Refresh(restored[0].Id);
-            Footer.ShowNotice(restored.Count > 1 ? $"已恢复 {restored.Count} 条" : "已恢复");
+            case { Kind: ClipUndoKind.Deleted, Entries: { Count: > 0 } restored }:
+                // 删掉的回来后选中这批里最靠前的（mac）。
+                Refresh(FirstInList(restored));
+                Footer.ShowNotice(restored.Count > 1 ? $"已恢复 {restored.Count} 条" : "已恢复");
+                break;
+            case { Kind: ClipUndoKind.Group } group:
+                RefreshGroups();
+                Refresh(animated: false);
+                Footer.ShowNotice($"已恢复收藏夹「{group.GroupName}」");
+                break;
+            case { Kind: ClipUndoKind.Unretained } unretained:
+                Refresh(animated: false);
+                Footer.ShowNotice($"已撤销，{unretained.Entries.Count} 条不会被清理");
+                break;
         }
     }
+
+    /// <summary>撤销回来的那批里排在列表最前的一条。</summary>
+    private static long FirstInList(IReadOnlyList<ClipEntry> restored)
+        => restored.OrderByDescending(entry => entry.CopiedAt).ThenByDescending(entry => entry.Id).First().Id;
 
     private void FavoriteSelected()
     {
@@ -1693,15 +1730,44 @@ public sealed partial class ClipboardPanel : UserControl
             return;
         }
 
-        // 批量：只要有一条不是收藏就全部收藏；全是收藏就全部取消。
+        // 批量：只要有一条不是收藏就全部收藏；全是收藏就全部取消（同时移出收藏夹，片段和备注不动）。
         var target = entries.Any(entry => !entry.Favorite);
-        foreach (var entry in entries.Where(entry => entry.Favorite != target))
+        var expired = store.ToggleFavorite(entries.Select(entry => entry.Id).ToList());
+        Refresh(entries[0].Id);
+        if (!ShowExpiredNotice(expired))
         {
-            store.ToggleFavorite(entry.Id);
+            Footer.ShowNotice(target ? "已加入收藏" : "已取消收藏");
+        }
+    }
+
+    /// <summary>
+    /// 取消收藏 / 移出片段后已经超过保留天数的：底栏「超过 N 天，收起面板后会被清理 · 撤销 Ctrl+Z」（mac changeRetention）。
+    /// </summary>
+    private bool ShowExpiredNotice(int expired)
+    {
+        if (expired <= 0)
+        {
+            return false;
         }
 
-        Refresh(entries[0].Id);
-        Footer.ShowNotice(target ? "已加入收藏" : "已取消收藏");
+        var days = SettingsService.Current.ClipboardRetentionDays;
+        Footer.ShowNotice($"超过 {days} 天，收起面板后会被清理 ·", "撤销 Ctrl+Z", UndoDelete, success: false);
+        return true;
+    }
+
+    private void ToggleSnippet(ClipEntry entry)
+    {
+        if (Store is not { } store)
+        {
+            return;
+        }
+
+        var removing = entry.Snippet;
+        var expired = store.ToggleSnippet(entry.Id);
+        if (!ShowExpiredNotice(expired))
+        {
+            Footer.ShowNotice(removing ? "已移出片段" : "已存为片段");
+        }
     }
 
     private static void TranslateEntry(ClipEntry entry)
@@ -1772,8 +1838,12 @@ public sealed partial class ClipboardPanel : UserControl
         AddItem(menu, "复制", () => Copy(entry));
         AddItem(menu, entry.Favorite ? "取消收藏" : "收藏", () => FavoriteSelected());
         // 片段（第三版 §4）
-        AddItem(menu, entry.Snippet ? "移出片段" : "存为片段", () => Store?.ToggleSnippet(entry.Id));
-        AddItem(menu, "编辑片段…", () => _ = EditSnippetAsync(entry));
+        AddItem(menu, entry.Snippet ? "移出片段" : "存为片段", () => ToggleSnippet(entry));
+        if (entry.Kind == ClipKind.Text)
+        {
+            AddItem(menu, "编辑内容…", () => _ = EditSnippetAsync(entry));
+        }
+
         AddItem(menu, "编辑备注…", () => _ = EditNoteAsync(entry));
         menu.Items.Add(GroupMenu(entry));
         AddItem(menu, "管理收藏夹…", () => _ = ManageGroupsAsync());
@@ -1942,10 +2012,13 @@ public sealed partial class ClipboardPanel : UserControl
             ("粘贴为纯文本", () => Paste(plain: true)),
             ("复制", () => Copy(entry)),
             (entry.Favorite ? "取消收藏" : "收藏", FavoriteSelected),
-            (entry.Snippet ? "移出片段" : "存为片段", () => Store?.ToggleSnippet(entry.Id)),
-            ("编辑片段…", () => _ = EditSnippetAsync(entry)),
+            (entry.Snippet ? "移出片段" : "存为片段", () => ToggleSnippet(entry)),
             ("编辑备注…", () => _ = EditNoteAsync(entry)),
         };
+        if (entry.Kind == ClipKind.Text)
+        {
+            actions.Insert(actions.Count - 1, ("编辑内容…", () => _ = EditSnippetAsync(entry)));
+        }
         if (Store is { } store)
         {
             actions.Add(("移到收藏夹：默认收藏", () => store.MoveToGroup(entry.Id, null)));
@@ -2021,6 +2094,7 @@ public sealed partial class ClipboardPanel : UserControl
             return;
         }
 
+        // 「编辑内容…」只改正文，不改类型、不换范围（mac）；只有片段才有名称框。
         var name = new TextBox { Header = "名称（存成备注，可空）", Text = entry.Note ?? string.Empty, MaxLength = 100 };
         var body = new TextBox
         {
@@ -2034,11 +2108,11 @@ public sealed partial class ClipboardPanel : UserControl
         var dialog = new ContentDialog
         {
             RequestedTheme = Theme.ElementTheme,
-            Title = entry.Snippet ? "编辑片段" : "新建片段",
+            Title = entry.Snippet ? "编辑片段" : "编辑内容",
             PrimaryButtonText = "保存",
             CloseButtonText = "取消",
             DefaultButton = ContentDialogButton.Primary,
-            Content = new StackPanel { Spacing = 10, Children = { body, name } },
+            Content = entry.Snippet ? new StackPanel { Spacing = 10, Children = { body, name } } : body,
             XamlRoot = XamlRoot,
         };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary || string.IsNullOrWhiteSpace(body.Text))
@@ -2046,14 +2120,15 @@ public sealed partial class ClipboardPanel : UserControl
             return;
         }
 
-        store.SetNote(entry.Id, name.Text);
-        store.UpdateText(entry.Id, body.Text);
-        if (!entry.Snippet)
+        if (entry.Snippet)
         {
-            store.ToggleSnippet(entry.Id);
+            store.SetNote(entry.Id, name.Text);
         }
 
-        SetScope(ClipScope.Snippets);
+        if (body.Text != entry.Text)
+        {
+            store.UpdateText(entry.Id, body.Text);
+        }
     }
 
     private async Task EditNoteAsync(ClipEntry entry)
@@ -2134,6 +2209,7 @@ public sealed partial class ClipboardPanel : UserControl
                     store.DeleteGroup(group.Id);
                     RefreshGroups();
                     Refresh(animated: false);
+                    Footer.ShowNotice($"已删除收藏夹「{group.Name}」 ·", "撤销 Ctrl+Z", UndoDelete, success: false);
                     Rebuild();
                 };
                 var rowPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };

@@ -109,13 +109,13 @@ internal static class ArchiveService
         if (sections.Contains(ArchiveSection.Clips) && ClipboardService.Instance?.Store is { } clips)
         {
             archive.Clips = clips.Items
-                .Where(entry => entry.Kind == ClipKind.Text && entry.Favorite)
+                .Where(entry => entry.Kind == ClipKind.Text && ClipboardStore.IsRetained(entry))
                 .Take(SettingsArchive.MaxClips)
                 .Select(entry => new SettingsArchive.ArchiveClip
                 {
                     Text = entry.Text,
                     Note = entry.Note,
-                    Favorite = true,
+                    Favorite = entry.Favorite,
                     Snippet = entry.Snippet,
                     Group = clips.GroupName(entry.GroupId),
                     CopiedAt = DateTimeOffset.FromUnixTimeMilliseconds(entry.CopiedAt),
@@ -211,7 +211,8 @@ internal static class ArchiveService
                         clip.CopiedAt,
                         clip.Note,
                         clip.Snippet == true,
-                        clip.Group)).ToList());
+                        clip.Group)).ToList(),
+                    archive.ClipGroups);
                 outcome.ClipsAdded = added;
                 outcome.ClipsUpdated = updated;
             }

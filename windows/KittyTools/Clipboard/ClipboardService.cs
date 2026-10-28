@@ -109,7 +109,14 @@ internal sealed class ClipboardService
             return;
         }
 
+        // 在本 App 自己的窗口里复制的：没有来源、不触发复制即译（mac-clipboard §2「来源」）。
         var ownWindow = pid == (uint)Environment.ProcessId;
+        if (ownWindow)
+        {
+            exe = null;
+            name = null;
+        }
+
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         switch (read.Kind)
         {

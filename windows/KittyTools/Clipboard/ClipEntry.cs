@@ -82,5 +82,5 @@ internal sealed class ClipEntry
     };
 
     public RetentionItem ToRetentionItem()
-        => new(Id.ToString(), Kind, CopiedAt, ImageBytes, Favorite);
+        => new(Id.ToString(), Kind, CopiedAt, ImageBytes, ClipboardStore.IsRetained(this));
 }
