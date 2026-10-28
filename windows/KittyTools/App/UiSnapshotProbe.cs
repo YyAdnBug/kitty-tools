@@ -84,6 +84,7 @@ internal static class UiSnapshotProbe
                          {
                              "clip-search", "clip-snippets", "clip-favorites", "clip-scrolled",
                              "clip-lens-text", "clip-lens-code", "clip-lens-json", "clip-lens-color", "clip-lens-link",
+                             "clip-actions", "clip-actions-multi", "clip-filter", "clip-chips",
                          })
                 {
                     await SafeRenderAsync(root, () => new ClipboardPanel(), state, dark, directory);

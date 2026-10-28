@@ -86,6 +86,9 @@ internal sealed partial class ClipListView : Grid
 
     public event Action? NewSnippetTapped;
 
+    /// <summary>拖出去放下了：对方收了没有（DropResult）。</summary>
+    public event Action<Windows.ApplicationModel.DataTransfer.DataPackageOperation>? ItemDropCompleted;
+
     public ClipListLayout Layout => _layout;
 
     public double VerticalOffset => _scroll.VerticalOffset;
@@ -332,6 +335,7 @@ internal sealed partial class ClipListView : Grid
                     ItemRightTapped?.Invoke(item, row, args.GetPosition(row));
                 };
                 row.DragStarting += (_, args) => ItemDragStarting?.Invoke(item, args);
+                row.DropCompleted += (_, args) => ItemDropCompleted?.Invoke(args.DropResult);
                 return row;
             }
         }

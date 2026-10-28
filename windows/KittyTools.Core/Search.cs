@@ -116,6 +116,25 @@ public static class Search
         return merged;
     }
 
+    /// 菜单项的过滤（剪贴板的筛选 / 操作面板）：名字里有这个词（不分大小写 / 全半角），或拼音全拼 / 首字母里有它
+    /// （mac menuFilterMatchesPinyin：打「sc」找到「收藏」）。
+    public static bool MatchesTitle(string title, string filter)
+    {
+        filter = filter.Trim();
+        if (filter.Length == 0 || HitRanges(title, filter).Count > 0)
+        {
+            return true;
+        }
+
+        if (Pinyin.For(title) is not { } pinyin)
+        {
+            return false;
+        }
+
+        var folded = Fold(filter.Replace(" ", string.Empty));
+        return pinyin.Initials.Contains(folded, StringComparison.Ordinal) || pinyin.Full.Contains(folded, StringComparison.Ordinal);
+    }
+
     /// 命中摘录：命中前留 before 个字、命中后留 after 个字，截掉的那头补「…」。
     /// 没有搜索词、没有命中，或命中就在开头 before 个字以内时返回 null。
     public static string? Excerpt(string text, string query, int before = 40, int after = 40)

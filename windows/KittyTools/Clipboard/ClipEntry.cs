@@ -10,7 +10,34 @@ internal sealed class ClipEntry
 
     public ClipKind Kind { get; set; }
 
-    public string? Text { get; set; }
+    public string? Text
+    {
+        get => _text;
+        set
+        {
+            _text = value;
+            _formKnown = false;
+        }
+    }
+
+    /// <summary>文本条目的内容形态（颜色 / JSON / 链接 / 代码），第一次用时算、正文变了重算（mac formCache）。</summary>
+    public ContentForm? Form
+    {
+        get
+        {
+            if (!_formKnown)
+            {
+                _form = Kind == ClipKind.Text ? ContentForms.Detect(_text) : null;
+                _formKnown = true;
+            }
+
+            return _form;
+        }
+    }
+
+    private string? _text;
+    private ContentForm? _form;
+    private bool _formKnown;
 
     /// <summary>文件类：路径用换行拼起来。</summary>
     public string? FilePaths { get; set; }

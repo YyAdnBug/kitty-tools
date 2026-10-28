@@ -37,6 +37,20 @@ public sealed partial class ClipboardPanel : UserControl
     private readonly Dictionary<long, (string Source, string? Pretty)> _prettyCache = new();
     /// <summary>当前透镜里的链接卡（取到预览后更新它）。</summary>
     private ClipLinkLens? _linkLens;
+    /// <summary>Tab 的筛选面板 / Ctrl+K 的操作面板（画在面板里，焦点留在搜索框）。</summary>
+    private readonly ClipPalette _palette = new();
+    /// <summary>菜单开着时搜索框是过滤词：原来的搜索词先收在这里。</summary>
+    private string? _savedQuery;
+    private bool _suppressSearch;
+    /// <summary>筛选：类型、形态（选了形态类型一定是文本）、来源（exe 路径）。</summary>
+    private ClipKind? _kindFilter;
+    private ContentForm? _formFilter;
+    private string? _sourceFilter;
+    /// <summary>⌫ 第一下：最后一个标签待删。</summary>
+    private bool _pendingChip;
+    private readonly List<Action> _chipRemovers = new();
+    /// <summary>合成的复制（多条合并、路径、图中文字）：收起面板时剪贴板还是它，就记成一条新历史（mac）。</summary>
+    private (string Text, uint Sequence)? _recordOnHide;
     private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _keyHintTimer;
     private readonly TextBlock _titleMeasure = new() { FontSize = 14, TextWrapping = TextWrapping.NoWrap };
     private ClipScope _scope = ClipScope.All;
@@ -87,6 +101,9 @@ public sealed partial class ClipboardPanel : UserControl
         _keyHintTimer.Tick += (_, _) => SetKeyHints(true);
 
         ListHost.Children.Insert(0, _list);
+        ListHost.Children.Add(_palette);
+        _palette.Closed += OnPaletteClosed;
+        _palette.FilterReset += () => SetSearchQuietly(string.Empty);
         _list.ItemTapped += OnItemTapped;
         _list.ItemDoubleTapped += index =>
         {
@@ -95,6 +112,14 @@ public sealed partial class ClipboardPanel : UserControl
         };
         _list.ItemRightTapped += OnItemRightTapped;
         _list.ItemDragStarting += OnItemDragStarting;
+        // 真放下了（对方收了）照常收起面板，固定着不收；拖回来 / 没放成不收（mac）。
+        _list.ItemDropCompleted += result =>
+        {
+            if (result != DataPackageOperation.None)
+            {
+                CloseUnlessPinned();
+            }
+        };
         _list.NewSnippetTapped += () => _ = NewSnippetAsync();
         if (ClipboardService.Instance?.Store is { } store)
         {
@@ -124,8 +149,17 @@ public sealed partial class ClipboardPanel : UserControl
 
     /// <summary>按当前条数算出来的面板高度（照 mac：透镜预留是常数，↑↓ 不改窗口高度；最多 520 DIP）。</summary>
     public double ContentHeightDip
-        => PanelMetrics.ClipboardHeightFor(
-            _visible.Count + (ShowsNewSnippetRow ? 1 : 0), _list.Layout.SectionTops.Count, reservesLens: LensEnabled);
+    {
+        get
+        {
+            var height = PanelMetrics.ClipboardHeightFor(
+                _visible.Count + (ShowsNewSnippetRow ? 1 : 0), _list.Layout.SectionTops.Count, reservesLens: LensEnabled);
+            // 浮起的菜单开着时至少放得下 8.5 行（mac paletteListHeight）。
+            return _palette.IsOpen
+                ? Math.Max(height, PanelMetrics.ClipboardPanelChrome + ClipPalette.MaxListHeight + 24)
+                : height;
+        }
+    }
 
     /// <summary>设置 › 剪贴板「显示透镜」（6g 接上设置；关掉 = 纯列表）。</summary>
     private static bool LensEnabled => true;
@@ -185,6 +219,12 @@ public sealed partial class ClipboardPanel : UserControl
         _anchorId = null;
         _selected = -1;
         _linkLens = null;
+        _palette.Close();
+        _savedQuery = null;
+        _kindFilter = null;
+        _formFilter = null;
+        _sourceFilter = null;
+        _pendingChip = false;
         _prettyJson = true;
         _prettyCache.Clear();
         _list.SetItems(_visible, Array.Empty<long>(), false, RowContext(), null, -1, null, 0);
@@ -196,10 +236,17 @@ public sealed partial class ClipboardPanel : UserControl
                 store.Bump(copied.Id);
             }
 
+            if (_recordOnHide is { } composed && composed.Sequence == PInvoke.GetClipboardSequenceNumber() &&
+                ClipboardService.Instance?.Paused != true)
+            {
+                store.RecordOwnText(composed.Text);
+            }
+
             store.EnforceLimits();
         }
 
         _copiedOnHide = null;
+        _recordOnHide = null;
     }
 
     /// <summary>R33：5000 条时在第 4000 条附近按 ↓ 从选中到布局更新的耗时；返回中位数 / 最慢 5%。</summary>
@@ -237,7 +284,17 @@ public sealed partial class ClipboardPanel : UserControl
 
         var previous = keepSelection ?? SelectedEntry?.Id;
         _visible.Clear();
-        _visible.AddRange(store.Filter(SearchBox.Text.Trim(), _scope, _groupFilterId));
+        var query = _palette.IsOpen ? _savedQuery ?? string.Empty : SearchBox.Text;
+        _visible.AddRange(store.Filter(query.Trim(), _scope, _groupFilterId).Where(entry =>
+            (_kindFilter is not { } kind || entry.Kind == kind) &&
+            (_formFilter is not { } form || entry.Form == form) &&
+            (_sourceFilter is null || string.Equals(entry.SourceExe, _sourceFilter, StringComparison.OrdinalIgnoreCase))));
+        // 某来源的条目都没了自动清掉这个筛选（mac）。
+        if (_sourceFilter is { } source && !store.Items.Any(entry => string.Equals(entry.SourceExe, source, StringComparison.OrdinalIgnoreCase)))
+        {
+            _sourceFilter = null;
+            UpdateFilterChips();
+        }
 
         // 勾选裁成看得见的；一条不剩就退出多选（mac 体检 B8）。
         var visibleIds = _visible.Select(entry => entry.Id).ToHashSet();
@@ -368,6 +425,8 @@ public sealed partial class ClipboardPanel : UserControl
             {
                 Footer.AddVerb(MultiPaste.ShortVerb(mode), "↩", primary: true, () => Paste(plain: false));
                 Footer.AddVerb("收藏", "Ctrl+D", primary: false, FavoriteSelected);
+                // 「收藏夹…」打开收藏夹列表（和 Ctrl+K 的「移到收藏夹」子列表同一份，mac 体检 C3）。
+                Footer.AddVerb("收藏夹…", null, primary: false, () => OpenPalette("groups", GroupItems(SelectedEntries), top: false));
                 Footer.AddVerb("删除", "Del", primary: false, DeleteSelected, danger: true);
                 Footer.AddVerb("取消", "Esc", primary: false, CancelMultiSelect);
             });
@@ -386,7 +445,7 @@ public sealed partial class ClipboardPanel : UserControl
             if (hasItems)
             {
                 Footer.AddVerb("粘贴", "↩", primary: true, () => Paste(plain: false));
-                Footer.AddVerb("操作", "Ctrl+K", primary: false, ShowActionPanel);
+                Footer.AddVerb("操作", "Ctrl+K", primary: false, OpenActionPalette);
                 Footer.AddSeparator();
             }
 
@@ -470,6 +529,26 @@ public sealed partial class ClipboardPanel : UserControl
                 break;
             case "clip-lens-link":
                 SelectWhere(entry => ContentForms.Detect(entry.Text) == ContentForm.Link);
+                break;
+            case "clip-actions":
+                SelectWhere(entry => entry.Form == ContentForm.Json);
+                OpenActionPalette();
+                break;
+            case "clip-actions-multi":
+                SelectFirstForProbe(3);
+                OpenActionPalette();
+                break;
+            case "clip-filter":
+                OpenFilterPalette();
+                SearchBox.Text = "json";
+                break;
+            case "clip-chips":
+                _scope = ClipScope.Favorites;
+                _formFilter = ContentForm.Code;
+                _kindFilter = ClipKind.Text;
+                Refresh(animated: false);
+                _pendingChip = true;
+                UpdateFilterChips();
                 break;
             case "clip-scrolled":
                 Select(3, MotionCurve.Instant);
@@ -648,60 +727,24 @@ public sealed partial class ClipboardPanel : UserControl
 
     private void OnSearchTextChanged(object sender, TextChangedEventArgs e)
     {
-        if (!CompositionRules.ShouldSearch(_composing, SearchBox.Text))
+        if (_suppressSearch || !CompositionRules.ShouldSearch(_composing, SearchBox.Text))
         {
             return;
         }
 
+        if (_palette.IsOpen)
+        {
+            _palette.SetFilter(SearchBox.Text);
+            return;
+        }
+
+        if (_pendingChip)
+        {
+            _pendingChip = false;
+            UpdateFilterChips();
+        }
+
         Refresh(animated: false);
-    }
-
-    /// <summary>U2：Tab 弹出筛选菜单（全部 / 收藏 / 片段 / 收藏夹）。</summary>
-    private void ShowFilterMenu()
-    {
-        var menu = new MenuFlyout();
-        void AddScope(string text, ClipScope scope, bool selected)
-        {
-            var item = new MenuFlyoutItem { Text = text };
-            if (selected)
-            {
-                item.Icon = new FontIcon { Glyph = Glyphs.Check };
-            }
-
-            item.Click += (_, _) => SetScope(scope);
-            menu.Items.Add(item);
-        }
-
-        AddScope("全部", ClipScope.All, _scope == ClipScope.All);
-        AddScope("收藏", ClipScope.Favorites, _scope == ClipScope.Favorites);
-        AddScope("片段", ClipScope.Snippets, _scope == ClipScope.Snippets);
-        if (Store is { } store && store.Groups.Count > 0)
-        {
-            menu.Items.Add(new MenuFlyoutSeparator());
-            foreach (var group in store.Groups.OrderBy(item => item.Position))
-            {
-                var item = new MenuFlyoutItem { Text = "收藏夹 · " + group.Name };
-                if (_groupFilterId == group.Id)
-                {
-                    item.Icon = new FontIcon { Glyph = Glyphs.Check };
-                }
-
-                item.Click += (_, _) =>
-                {
-                    SetScope(ClipScope.Favorites, refresh: false);
-                    _groupFilterId = group.Id;
-                    Refresh();
-                    UpdateFilterChips();
-                    SearchBox.Focus(FocusState.Programmatic);
-                };
-                menu.Items.Add(item);
-            }
-        }
-
-        menu.ShowAt(SearchLineControl, new FlyoutShowOptions
-        {
-            Placement = FlyoutPlacementMode.BottomEdgeAlignedLeft,
-        });
     }
 
     private void SetScope(ClipScope scope, bool refresh = true)
@@ -713,31 +756,6 @@ public sealed partial class ClipboardPanel : UserControl
             Refresh();
             SearchBox.Focus(FocusState.Programmatic);
         }
-    }
-
-    /// <summary>U2：当前范围做成搜索线里的标签胶囊；点 × 回到全部。</summary>
-    private void UpdateFilterChips()
-    {
-        SearchLineControl.Chips.Children.Clear();
-        var text = _groupFilterId is { } id
-            ? Store?.Groups.FirstOrDefault(group => group.Id == id)?.Name ?? "收藏夹"
-            : _scope switch
-            {
-                ClipScope.Favorites => "收藏",
-                ClipScope.Snippets => "片段",
-                _ => "全部",
-            };
-        if (_scope == ClipScope.All && _groupFilterId is null)
-        {
-            // 「全部」不出标签（mac）。
-            return;
-        }
-
-        SearchLineControl.AddChip(text, () =>
-        {
-            _groupFilterId = null;
-            SetScope(ClipScope.All);
-        });
     }
 
     /// <summary>收藏夹筛选只在「收藏」范围里有；收藏夹被删了就清掉这个筛选。</summary>
@@ -764,7 +782,7 @@ public sealed partial class ClipboardPanel : UserControl
             return (null, ClipListLayout.RowHeight);
         }
 
-        var form = entry.Kind == ClipKind.Text ? ContentForms.Detect(entry.Text) : null;
+        var form = entry.Form;
         var body = LensBodyHeight(entry);
         var scale = XamlRoot?.RasterizationScale ?? 1.0;
         var host = new Grid
@@ -873,7 +891,7 @@ public sealed partial class ClipboardPanel : UserControl
     /// <summary>正文区高度（Core 的 ClipLens 查表）；文本的 0 档先量标题在最窄的标题列里放不放得下。</summary>
     private double LensBodyHeight(ClipEntry entry)
     {
-        var form = entry.Kind == ClipKind.Text ? ContentForms.Detect(entry.Text) : null;
+        var form = entry.Form;
         var whole = entry.Kind == ClipKind.Text && form is null &&
                     ClipLens.ShowsWholeText(entry.Text, entry.Rich, entry.Snippet, entry.Favorite, MeasureTitle);
         return ClipLens.BodyHeight(entry.Kind, form, entry.Text, whole);
@@ -918,11 +936,29 @@ public sealed partial class ClipboardPanel : UserControl
 
         var control = IsDown(VirtualKey.Control);
         var shift = IsDown(VirtualKey.Shift);
+        if (e.Key != VirtualKey.Back && _pendingChip)
+        {
+            _pendingChip = false;
+            UpdateFilterChips();
+            if (e.Key == VirtualKey.Escape)
+            {
+                // Esc 这一下只取消标签待删。
+                e.Handled = true;
+                return;
+            }
+        }
+
+        // 菜单开着：↑↓ Enter → ← Esc Tab 归菜单；Ctrl 组合键做了才收起菜单（mac：同启动器）。
+        if (_palette.IsOpen && HandlePaletteKey(e, control))
+        {
+            return;
+        }
+
         switch (e.Key)
         {
             case VirtualKey.Escape:
                 e.Handled = true;
-                // mac 的顺序：先清搜索词，再取消多选，最后收起。
+                // mac 的顺序：标签待删 → 清搜索词 → 取消多选 → 收起。
                 if (SearchBox.Text.Length > 0)
                 {
                     SearchBox.Text = string.Empty;
@@ -960,7 +996,12 @@ public sealed partial class ClipboardPanel : UserControl
                 }
 
                 break;
-            case VirtualKey.Enter when !control:
+            case VirtualKey.Enter when control:
+                // Ctrl+Enter 仅复制（mac ⌘↩）。
+                e.Handled = true;
+                CopySelected();
+                break;
+            case VirtualKey.Enter:
                 e.Handled = true;
                 Paste(shift);
                 break;
@@ -977,7 +1018,29 @@ public sealed partial class ClipboardPanel : UserControl
                 break;
             case VirtualKey.Tab:
                 e.Handled = true;
-                ShowFilterMenu();
+                OpenFilterPalette();
+                break;
+            case VirtualKey.Right when SearchBox.SelectionStart == SearchBox.Text.Length && SearchBox.SelectionLength == 0 &&
+                                       SelectedEntry is not null:
+                // 光标在搜索词末尾（或搜索为空）且有选中项：→ 打开 Ctrl+K（mac）。
+                e.Handled = true;
+                OpenActionPalette();
+                break;
+            case VirtualKey.Back when SearchBox.Text.Length == 0 && SearchLineControl.Chips.Children.Count > 0:
+                // 搜索为空且有标签：第一下选中最后一个标签（待删），第二下删掉（mac）。
+                e.Handled = true;
+                if (_pendingChip)
+                {
+                    _pendingChip = false;
+                    RemoveLastChip();
+                }
+                else
+                {
+                    _pendingChip = true;
+                    UpdateFilterChips();
+                    Footer.ShowNotice("再按一次删除键移除这个标签");
+                }
+
                 break;
             case VirtualKey.N when control:
                 e.Handled = true;
@@ -985,7 +1048,11 @@ public sealed partial class ClipboardPanel : UserControl
                 break;
             case VirtualKey.E when control:
                 e.Handled = true;
-                _ = EditSnippetAsync();
+                if (SingleTarget is { Kind: ClipKind.Text } editable)
+                {
+                    _ = EditSnippetAsync(editable);
+                }
+
                 break;
             case VirtualKey.P when control:
                 e.Handled = true;
@@ -993,12 +1060,26 @@ public sealed partial class ClipboardPanel : UserControl
                 break;
             case VirtualKey.K when control:
                 e.Handled = true;
-                ShowActionPanel();
+                OpenActionPalette();
+                break;
+            case (VirtualKey)188 when control:
+                // Ctrl+,：设置 › 剪贴板（底栏齿轮同样直达）。
+                e.Handled = true;
+                SettingsRequested?.Invoke();
                 break;
             case VirtualKey.Delete when SearchBox.SelectionStart == SearchBox.Text.Length &&
                                         SearchBox.SelectionLength == 0:
                 e.Handled = true;
                 DeleteSelected();
+                break;
+            case VirtualKey.C when control && shift:
+                // Ctrl+Shift+C：复制路径（全是文件时）。
+                e.Handled = true;
+                if (!CopyPaths(SelectedEntries))
+                {
+                    Beep();
+                }
+
                 break;
             case VirtualKey.C when control:
                 if (SearchBox.SelectionLength > 0)
@@ -1024,9 +1105,35 @@ public sealed partial class ClipboardPanel : UserControl
                 break;
             case VirtualKey.T when control:
                 e.Handled = true;
-                if (SelectedEntry is { } selected)
+                if (SingleTarget is { } translatable && CanTranslate(translatable))
                 {
-                    TranslateEntry(selected);
+                    TranslateEntry(translatable);
+                }
+                else
+                {
+                    Beep();
+                }
+
+                break;
+            case VirtualKey.O when control:
+                // Ctrl+O：打开链接 / 用默认程序打开文件。
+                e.Handled = true;
+                if (!OpenTarget(SingleTarget))
+                {
+                    Beep();
+                }
+
+                break;
+            case VirtualKey.R when control:
+                // Ctrl+R：在资源管理器中显示（文件）。
+                e.Handled = true;
+                if (SingleTarget is { Kind: ClipKind.Files } files)
+                {
+                    RevealFiles(files);
+                }
+                else
+                {
+                    Beep();
                 }
 
                 break;
@@ -1045,6 +1152,74 @@ public sealed partial class ClipboardPanel : UserControl
 
                 break;
         }
+    }
+
+    /// <summary>菜单开着时的按键；返回 true = 已经处理（不再往下走）。</summary>
+    private bool HandlePaletteKey(KeyRoutedEventArgs e, bool control)
+    {
+        switch (e.Key)
+        {
+            case VirtualKey.Escape:
+                e.Handled = true;
+                if (!_palette.Back())
+                {
+                    _palette.Close();
+                }
+
+                return true;
+            case VirtualKey.Up:
+                e.Handled = true;
+                _palette.Move(-1);
+                return true;
+            case VirtualKey.Down:
+                e.Handled = true;
+                _palette.Move(1);
+                return true;
+            case VirtualKey.Enter when !control:
+                e.Handled = true;
+                _palette.Activate();
+                return true;
+            case VirtualKey.Right when SearchBox.SelectionStart == SearchBox.Text.Length:
+                e.Handled = true;
+                _palette.EnterSelected();
+                return true;
+            case VirtualKey.Left when SearchBox.Text.Length == 0:
+                e.Handled = true;
+                if (!_palette.Back())
+                {
+                    _palette.Close();
+                }
+
+                return true;
+            case VirtualKey.Tab:
+                // Tab 开 / 关筛选面板；操作面板开着时 Tab 换成筛选面板。
+                e.Handled = true;
+                var wasFilter = _palette.Kind == "filter";
+                _palette.Close();
+                if (!wasFilter)
+                {
+                    OpenFilterPalette();
+                }
+
+                return true;
+            case VirtualKey.K when control && _palette.Kind == "actions":
+                e.Handled = true;
+                _palette.Close();
+                return true;
+        }
+
+        // 过滤框里有字时 Ctrl+Delete / A / V / X / Z 交给输入框、菜单留着；其余 Ctrl 组合键做了就收起菜单（mac 体检 B10）。
+        if (control && e.Key is not (VirtualKey.Control or VirtualKey.Shift or VirtualKey.Menu))
+        {
+            if (SearchBox.Text.Length > 0 && e.Key is VirtualKey.A or VirtualKey.V or VirtualKey.X or VirtualKey.Z or VirtualKey.Back or VirtualKey.Delete)
+            {
+                return true;
+            }
+
+            _palette.Close();
+        }
+
+        return false;
     }
 
     private void OnKeyUp(object sender, KeyRoutedEventArgs e)
@@ -1314,13 +1489,19 @@ public sealed partial class ClipboardPanel : UserControl
         lens.Update(cached, animate: true);
     }
 
-    private void CopyText(string text)
+    /// <summary>写一段字进剪贴板；recordOnHide：面板里不动，收起时剪贴板还是它就记成一条新历史（mac 合成的复制）。</summary>
+    private void CopyText(string text, bool recordOnHide = false, string notice = "已复制")
     {
         if (ClipboardWriter.WriteText(text))
         {
             ClipboardService.Instance?.MarkOwnWrite();
+            if (recordOnHide)
+            {
+                _recordOnHide = (text, PInvoke.GetClipboardSequenceNumber());
+            }
+
             // 面板开着：成功的提示进底栏（PLAN-v7 §3.1），出错的才走轻提示。
-            Footer.ShowNotice("已复制");
+            Footer.ShowNotice(notice);
         }
     }
 
@@ -1339,15 +1520,6 @@ public sealed partial class ClipboardPanel : UserControl
         ClipKind.Files => entry.Files.Any(file => File.Exists(file) || Directory.Exists(file)),
         _ => true,
     };
-
-    private void CopySelected()
-    {
-        var entry = SelectedEntry;
-        if (entry is not null)
-        {
-            Copy(entry);
-        }
-    }
 
     private async void Copy(ClipEntry entry)
     {
@@ -1479,19 +1651,31 @@ public sealed partial class ClipboardPanel : UserControl
         }
     }
 
+    /// <summary>翻译文本，或识别出文字的图片（翻译识别出的字）。</summary>
     private static void TranslateEntry(ClipEntry entry)
     {
-        if (entry.Kind != ClipKind.Text || string.IsNullOrWhiteSpace(entry.Text))
+        var text = entry.Kind == ClipKind.Image ? entry.OcrText : entry.Text;
+        if (string.IsNullOrWhiteSpace(text))
         {
-            NoticeHost.Show("不能翻译", "只有文本条目能翻译", NoticeTone.Warning);
+            NoticeHost.Show("不能翻译", "只有文本和识别出文字的图片能翻译", NoticeTone.Warning);
             return;
         }
 
         // 剪贴板面板留着，翻译浮窗只露出（PLAN §7.4 / PLAN-v2 §6 第 1 批）。
-        TranslateHost.ShowTextKeepOverlay(entry.Text);
+        TranslateHost.ShowTextKeepOverlay(text);
     }
 
-    private async Task PinImageAsync(ClipEntry entry)
+    /// <summary>钉到屏幕：多张依次往右下错开 24，不叠在一起（mac）；没固定就先收起面板。</summary>
+    private async Task PinImagesAsync(IReadOnlyList<ClipEntry> entries)
+    {
+        CloseUnlessPinned();
+        for (var index = 0; index < entries.Count; index++)
+        {
+            await PinImageAsync(entries[index], index * 24);
+        }
+    }
+
+    private async Task PinImageAsync(ClipEntry entry, int offset)
     {
         try
         {
@@ -1512,8 +1696,8 @@ public sealed partial class ClipboardPanel : UserControl
             var scale = Math.Min(1, Math.Min(area.Width * 0.8 / image.Width, area.Height * 0.8 / image.Height));
             var width = Math.Max(1, (int)(image.Width * scale));
             var height = Math.Max(1, (int)(image.Height * scale));
-            var left = Math.Clamp(cursor.X - width / 2, area.X, area.X + area.Width - width);
-            var top = Math.Clamp(cursor.Y - height / 2, area.Y, area.Y + area.Height - height);
+            var left = Math.Clamp(cursor.X - width / 2 + offset, area.X, area.X + area.Width - width);
+            var top = Math.Clamp(cursor.Y - height / 2 + offset, area.Y, area.Y + area.Height - height);
             PinHost.Show(png, new PixelBounds(left, top, left + width, top + height));
         }
         catch (Exception ex)
@@ -1530,238 +1714,622 @@ public sealed partial class ClipboardPanel : UserControl
             return;
         }
 
-        if (!_checked.Contains(_visible[index].Id))
+        // 右键对着被点的那一条（mac「右键传被点的 [item]」）；点在勾选项上就对着全部勾选项。
+        var targets = _checked.Contains(_visible[index].Id) ? SelectedEntries : new List<ClipEntry> { _visible[index] };
+        if (targets.Count == 1)
         {
             _checked.Clear();
             _list.SetChecked(null);
             Select(index, MotionCurve.Glide);
         }
 
-        BuildEntryMenu(_visible[index]).ShowAt(row, new FlyoutShowOptions { Position = position });
+        ContextMenu(targets).ShowAt(row, new FlyoutShowOptions { Position = position });
     }
 
-    /// <summary>一条的全部操作（右键菜单和 Ctrl+K 操作面板共用这一份）。</summary>
-    private MenuFlyout BuildEntryMenu(ClipEntry entry)
+    // ---- 菜单：Tab 的筛选面板、Ctrl+K 的操作面板、多选底栏的收藏夹列表、右键菜单（PLAN-v9-clipboard I5、I11、I12、I16）
+
+    /// <summary>单条操作（Ctrl+E / T / O / R）的对象：操作对象只有一条时就是它（mac singleTarget）。</summary>
+    private ClipEntry? SingleTarget => SelectedEntries is { Count: 1 } targets ? targets[0] : null;
+
+    private void OpenFilterPalette()
     {
-        var menu = new MenuFlyout();
-        AddItem(menu, "粘贴", () => Paste(plain: false));
-        AddItem(menu, "粘贴为纯文本", () => Paste(plain: true));
-        AddItem(menu, "复制", () => Copy(entry));
-        AddItem(menu, entry.Favorite ? "取消收藏" : "收藏", () => FavoriteSelected());
-        // 片段（第三版 §4）
-        AddItem(menu, entry.Snippet ? "移出片段" : "存为片段", () => ToggleSnippet(entry));
-        if (entry.Kind == ClipKind.Text)
-        {
-            AddItem(menu, "编辑内容…", () => _ = EditSnippetAsync(entry));
-        }
-
-        AddItem(menu, "编辑备注…", () => _ = EditNoteAsync(entry));
-        menu.Items.Add(GroupMenu(entry));
-        AddItem(menu, "管理收藏夹…", () => _ = ManageGroupsAsync());
-        if (entry.Kind == ClipKind.Text)
-        {
-            AddItem(menu, "翻译", () => TranslateEntry(entry));
-        }
-
-        if (entry.Kind == ClipKind.Image)
-        {
-            AddItem(menu, "钉到屏幕", () => _ = PinImageAsync(entry));
-            if (!string.IsNullOrWhiteSpace(entry.OcrText))
-            {
-                AddItem(menu, "复制图中文字", () => CopyText(entry.OcrText!));
-            }
-        }
-
-        if (entry.Kind == ClipKind.Files && entry.Files.FirstOrDefault() is { } first)
-        {
-            AddItem(menu, "在资源管理器中显示", () => RevealInExplorer(first));
-        }
-
-        menu.Items.Add(new MenuFlyoutSeparator());
-        AddItem(menu, "删除", () => DeleteSelected());
-        return menu;
+        OpenPalette("filter", FilterItems(), top: true);
     }
 
-    /// <summary>「移到收藏夹 ›」：默认收藏 + 每个命名收藏夹。</summary>
-    private MenuFlyoutSubItem GroupMenu(ClipEntry entry)
+    private void OpenActionPalette()
     {
-        var submenu = new MenuFlyoutSubItem { Text = "移到收藏夹" };
-        var none = new MenuFlyoutItem { Text = "默认收藏", IsEnabled = entry.GroupId is not null };
-        none.Click += (_, _) => Store?.MoveToGroup(entry.Id, null);
-        submenu.Items.Add(none);
-        if (Store is { } store)
+        var targets = SelectedEntries;
+        if (targets.Count == 0)
         {
-            foreach (var group in store.Groups.OrderBy(item => item.Position))
+            Beep();
+            return;
+        }
+
+        OpenPalette("actions", ActionItems(targets), top: false);
+    }
+
+    /// <summary>
+    /// 打开面板里的菜单：搜索框这时用来过滤菜单，原来的搜索词先收着、关菜单时放回去。
+    /// 筛选面板锚在搜索线左下，操作面板 / 收藏夹列表锚在底栏右上（对着「操作 Ctrl+K」）。
+    /// </summary>
+    private void OpenPalette(string kind, IReadOnlyList<PaletteItem> items, bool top, string? submenu = null)
+    {
+        if (!_palette.IsOpen)
+        {
+            _savedQuery = SearchBox.Text;
+            SetSearchQuietly(string.Empty);
+        }
+
+        _palette.HorizontalAlignment = top ? HorizontalAlignment.Left : HorizontalAlignment.Right;
+        _palette.VerticalAlignment = top ? VerticalAlignment.Top : VerticalAlignment.Bottom;
+        _palette.Margin = top ? new Thickness(12, 4, 0, 0) : new Thickness(0, 0, 12, 4);
+        _palette.Open(kind, items, submenu);
+        SearchBox.PlaceholderText = kind == "filter" ? "过滤筛选项" : "过滤操作";
+        UpdateFooter();
+        HeightRequested?.Invoke(ContentHeightDip, false);
+        FocusSearch();
+    }
+
+    private void OnPaletteClosed()
+    {
+        SetSearchQuietly(_savedQuery ?? string.Empty);
+        _savedQuery = null;
+        SearchBox.PlaceholderText = SearchLineControl.Chips.Children.Count > 0 ? "搜索" : "搜索剪贴板，Tab 筛选";
+        if (_active)
+        {
+            UpdateFooter();
+            HeightRequested?.Invoke(ContentHeightDip, false);
+            FocusSearch();
+        }
+    }
+
+    /// <summary>改搜索框里的字但不触发搜索（菜单开关时换过滤词）。</summary>
+    private void SetSearchQuietly(string text)
+    {
+        _suppressSearch = true;
+        SearchBox.Text = text;
+        SearchBox.SelectionStart = text.Length;
+        _suppressSearch = false;
+    }
+
+    /// <summary>
+    /// 筛选面板（mac）：收藏、各个收藏夹（紧跟在收藏下面，按顺序）、片段 ｜ 类型 ｜ 形态 ｜ 来源（按条数从多到少）｜ 管理收藏夹…；
+    /// 已生效的打 ✓，对它再按一次 = 取消。
+    /// </summary>
+    private List<PaletteItem> FilterItems()
+    {
+        var items = new List<PaletteItem>
+        {
+            new("收藏", Glyphs.Star, 0, () => ToggleScope(ClipScope.Favorites), Checked: _scope == ClipScope.Favorites && _groupFilterId is null),
+        };
+        foreach (var group in Store?.Groups.OrderBy(item => item.Position) ?? Enumerable.Empty<ClipGroup>())
+        {
+            var id = group.Id;
+            items.Add(new PaletteItem(group.Name, Glyphs.Folder, 0, () =>
             {
-                var item = new MenuFlyoutItem
+                if (_groupFilterId == id)
                 {
-                    Text = group.Name,
-                    IsEnabled = entry.GroupId != group.Id,
-                };
-                var id = group.Id;
-                item.Click += (_, _) => store.MoveToGroup(entry.Id, id);
-                submenu.Items.Add(item);
+                    _groupFilterId = null;
+                    SetScope(ClipScope.All);
+                    return;
+                }
+
+                _scope = ClipScope.Favorites;
+                _groupFilterId = id;
+                RefreshGroups();
+                Refresh();
+            }, Checked: _groupFilterId == id));
+        }
+
+        items.Add(new PaletteItem("片段", Glyphs.Snippet, 0, () => ToggleScope(ClipScope.Snippets), Checked: _scope == ClipScope.Snippets));
+        foreach (var (kind, title, glyph) in new[] { (ClipKind.Text, "文本", Glyphs.Text), (ClipKind.Image, "图片", Glyphs.Image), (ClipKind.Files, "文件", Glyphs.Folder) })
+        {
+            items.Add(new PaletteItem(title, glyph, 1, () =>
+            {
+                _kindFilter = _kindFilter == kind && _formFilter is null ? null : kind;
+                // 选图片或文件就清掉形态（mac 联动）。
+                _formFilter = null;
+                Refresh(animated: false);
+                UpdateFilterChips();
+            }, Checked: _kindFilter == kind && _formFilter is null));
+        }
+
+        foreach (var form in new[] { ContentForm.Color, ContentForm.Json, ContentForm.Link, ContentForm.Code })
+        {
+            var glyph = ClipRowView.KindOf(new ClipEntry { Kind = ClipKind.Text }, form).Glyph;
+            items.Add(new PaletteItem(ContentForms.Title(form), glyph, 2, () =>
+            {
+                // 选了形态自动把类型切到文本（mac 联动）。
+                _formFilter = _formFilter == form ? null : form;
+                _kindFilter = _formFilter is null ? null : ClipKind.Text;
+                Refresh(animated: false);
+                UpdateFilterChips();
+            }, Checked: _formFilter == form));
+        }
+
+        foreach (var (exe, name, _) in Sources())
+        {
+            items.Add(new PaletteItem(name, Glyphs.App, 3, () =>
+            {
+                _sourceFilter = _sourceFilter == exe ? null : exe;
+                Refresh(animated: false);
+                UpdateFilterChips();
+            }, Checked: string.Equals(_sourceFilter, exe, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        items.Add(new PaletteItem("管理收藏夹…", Glyphs.Settings, 4, () => _ = ManageGroupsAsync()));
+        return items;
+    }
+
+    /// <summary>来源候选：按条数从多到少（没有来源的不列）。</summary>
+    private List<(string Exe, string Name, int Count)> Sources()
+        => (Store?.Items ?? Array.Empty<ClipEntry>())
+            .Where(entry => !string.IsNullOrEmpty(entry.SourceExe))
+            .GroupBy(entry => entry.SourceExe!, StringComparer.OrdinalIgnoreCase)
+            .Select(group => (group.Key, group.First().SourceName ?? Path.GetFileNameWithoutExtension(group.Key), group.Count()))
+            .OrderByDescending(item => item.Item3)
+            .ToList();
+
+    private void ToggleScope(ClipScope scope)
+    {
+        _groupFilterId = null;
+        SetScope(_scope == scope ? ClipScope.All : scope);
+    }
+
+    /// <summary>
+    /// 操作面板（mac ClipboardPanelModel.actions(for:targets:)）：粘贴与复制 ｜ 按类型打开 / 查看 ｜ 收藏、收藏夹、片段、备注、编辑 ｜ 删除。
+    /// 勾了不止一条时只给批量操作。右键菜单是同一份。
+    /// </summary>
+    private List<PaletteItem> ActionItems(List<ClipEntry> targets)
+    {
+        var single = targets.Count == 1 ? targets[0] : null;
+        var formatted = targets.Count > 1 || single?.Rich == true;
+        var mode = MultiPaste.Mode(
+            targets.Count,
+            targets.All(entry => entry.Kind == ClipKind.Text),
+            targets.All(entry => entry.Kind == ClipKind.Files));
+        var items = new List<PaletteItem>
+        {
+            new(targets.Count > 1 ? MultiPaste.ShortVerb(mode) : "粘贴", Glyphs.Paste, 0, () => Paste(plain: false), "Enter"),
+        };
+        if (formatted)
+        {
+            items.Add(new PaletteItem("粘贴为纯文本", Glyphs.Text, 0, () => Paste(plain: true), "Shift+Enter"));
+        }
+
+        items.Add(new PaletteItem("仅复制", Glyphs.Copy, 0, CopySelected, "Ctrl+C"));
+        if (formatted && targets.All(entry => entry.Kind == ClipKind.Text))
+        {
+            items.Add(new PaletteItem("复制为纯文本", Glyphs.Copy, 0, () => CopyPlain(targets)));
+        }
+
+        if (single is { Kind: ClipKind.Image } image && !string.IsNullOrWhiteSpace(image.OcrText))
+        {
+            items.Add(new PaletteItem("复制图中文字", Glyphs.Ocr, 0, () => CopyText(image.OcrText!, recordOnHide: true)));
+        }
+
+        if (targets.All(entry => entry.Kind == ClipKind.Files))
+        {
+            items.Add(new PaletteItem("复制路径", Glyphs.Link, 0, () => CopyPaths(targets), "Ctrl+Shift+C"));
+        }
+
+        if (single is not null)
+        {
+            if (single.Kind == ClipKind.Files)
+            {
+                items.Add(new PaletteItem("打开", Glyphs.OpenInNewWindow, 1, () => OpenTarget(single), "Ctrl+O"));
+                items.Add(new PaletteItem("在资源管理器中显示", Glyphs.Folder, 1, () => RevealFiles(single), "Ctrl+R"));
+            }
+            else if (single.Kind == ClipKind.Text && ContentForms.FirstLink(single.Text) is not null)
+            {
+                items.Add(new PaletteItem("打开链接", Glyphs.Globe, 1, () => OpenTarget(single), "Ctrl+O"));
+            }
+
+            if (single.Kind == ClipKind.Image)
+            {
+                items.Add(new PaletteItem("钉到屏幕", Glyphs.Pin, 1, () => _ = PinImagesAsync(new[] { single })));
+            }
+
+            if (CanTranslate(single))
+            {
+                items.Add(new PaletteItem("翻译", Glyphs.Translate, 1, () => TranslateEntry(single), "Ctrl+T"));
+            }
+
+            if (single.Form == ContentForm.Json)
+            {
+                items.Add(new PaletteItem(_prettyJson ? "显示原文" : "美化 JSON", Glyphs.Code, 1, () =>
+                {
+                    _prettyJson = !_prettyJson;
+                    Select(_selected, MotionCurve.Instant);
+                }));
+            }
+        }
+        else if (targets.Any(entry => entry.Kind == ClipKind.Image))
+        {
+            items.Add(new PaletteItem("钉到屏幕", Glyphs.Pin, 1, () => _ = PinImagesAsync(targets.Where(entry => entry.Kind == ClipKind.Image).ToList())));
+        }
+
+        var favorite = targets.All(entry => entry.Favorite);
+        items.Add(new PaletteItem(favorite ? "取消收藏" : "收藏", favorite ? Glyphs.FavoriteFilled : Glyphs.Star, 2, FavoriteSelected, "Ctrl+D"));
+        if (Store?.Groups.Count is null or 0)
+        {
+            items.Add(new PaletteItem("放进新收藏夹…", Glyphs.Folder, 2, () => _ = NewGroupForAsync(targets)));
+        }
+        else
+        {
+            items.Add(new PaletteItem("移到收藏夹", Glyphs.Folder, 2, null, Submenu: GroupItems(targets)));
+        }
+
+        if (single is { Kind: ClipKind.Text, Snippet: false })
+        {
+            items.Add(new PaletteItem("存为片段", Glyphs.Snippet, 2, () => ToggleSnippet(single)));
+        }
+
+        var snippets = targets.Where(entry => entry.Snippet).ToList();
+        if (snippets.Count > 0)
+        {
+            items.Add(new PaletteItem("移出片段", Glyphs.Snippet, 2, () => RemoveSnippets(snippets)));
+        }
+
+        if (single is not null)
+        {
+            items.Add(new PaletteItem("备注…", Glyphs.Edit, 2, () => _ = EditNoteAsync(single)));
+            if (single.Kind == ClipKind.Text)
+            {
+                items.Add(new PaletteItem("编辑内容…", Glyphs.Edit, 2, () => _ = EditSnippetAsync(single), "Ctrl+E"));
             }
         }
 
-        return submenu;
+        items.Add(new PaletteItem("删除", Glyphs.Delete, 3, DeleteSelected, "Delete", Danger: true));
+        return items;
     }
 
-    /// <summary>Ctrl+K：在选中行旁边弹出同一份操作（第三版 §4），可以打字过滤。</summary>
-    private void ShowActionPanel()
+    /// <summary>「移到收藏夹 ›」：各个收藏夹（都在里面的那个 ✓，再选一次移出）、「移出收藏夹」「新建收藏夹…」。</summary>
+    private List<PaletteItem> GroupItems(List<ClipEntry> targets)
     {
-        if (SelectedEntry is not { } entry || _list.RowElement(_selected) is not { } row)
+        var items = new List<PaletteItem>();
+        if (Store is not { } store)
+        {
+            return items;
+        }
+
+        foreach (var group in store.Groups.OrderBy(item => item.Position))
+        {
+            var id = group.Id;
+            var inIt = targets.All(entry => entry.GroupId == id);
+            items.Add(new PaletteItem(group.Name, Glyphs.Folder, 0, () => MoveToGroup(targets, inIt ? null : id, inIt ? null : group.Name), Checked: inIt));
+        }
+
+        if (targets.Any(entry => entry.GroupId is not null))
+        {
+            items.Add(new PaletteItem("移出收藏夹", Glyphs.Folder, 1, () => MoveToGroup(targets, null, null)));
+        }
+
+        items.Add(new PaletteItem("新建收藏夹…", Glyphs.Add, 1, () => _ = NewGroupForAsync(targets)));
+        return items;
+    }
+
+    private void MoveToGroup(List<ClipEntry> targets, string? groupId, string? name)
+    {
+        if (Store is not { } store)
         {
             return;
         }
 
-        var panel = new StackPanel { Width = 260, Spacing = 4 };
-        var filter = new TextBox
+        foreach (var entry in targets)
         {
-            PlaceholderText = "过滤操作…",
-            FontSize = 12,
-            Padding = new Thickness(8, 4, 8, 4),
-        };
-        var list = new StackPanel { Spacing = 1 };
-        panel.Children.Add(filter);
-        panel.Children.Add(list);
-        var flyout = new Flyout
-        {
-            Content = panel,
-            Placement = FlyoutPlacementMode.BottomEdgeAlignedLeft,
-            FlyoutPresenterStyle = null,
-        };
-
-        var actions = EntryActionList(entry);
-        Action? firstMatch = null;
-        var composing = false;
-        void Populate()
-        {
-            list.Children.Clear();
-            firstMatch = null;
-            foreach (var (text, action) in actions.Where(item =>
-                         item.Text.Contains(filter.Text, StringComparison.OrdinalIgnoreCase)))
-            {
-                firstMatch ??= action;
-                var button = new Button
-                {
-                    Content = text,
-                    HorizontalAlignment = HorizontalAlignment.Stretch,
-                    HorizontalContentAlignment = HorizontalAlignment.Left,
-                    Padding = new Thickness(8, 4, 8, 4),
-                    BorderThickness = new Thickness(0),
-                    FontSize = 12,
-                };
-                button.Click += (_, _) =>
-                {
-                    flyout.Hide();
-                    action();
-                };
-                list.Children.Add(button);
-            }
-
-            if (list.Children.Count == 0)
-            {
-                list.Children.Add(new TextBlock
-                {
-                    Text = "没有匹配的操作",
-                    Foreground = Theme.SecondaryText(),
-                    FontSize = Theme.FontSize("Kitty.FontSize.Label"),
-                    Margin = new Thickness(8, 4, 8, 4),
-                });
-            }
+            store.MoveToGroup(entry.Id, groupId);
         }
 
-        filter.TextChanged += (_, _) => Populate();
-        filter.TextCompositionStarted += (_, _) => composing = true;
-        filter.TextCompositionEnded += (_, _) => composing = false;
-        filter.KeyDown += (_, args) =>
-        {
-            if (composing)
-            {
-                return;
-            }
-
-            if (args.Key == VirtualKey.Escape)
-            {
-                args.Handled = true;
-                flyout.Hide();
-            }
-            else if (args.Key == VirtualKey.Enter && firstMatch is { } run)
-            {
-                // REVIEW R41：Enter 直接执行第一个匹配的操作（mac 同样），不只是把焦点挪过去。
-                args.Handled = true;
-                flyout.Hide();
-                run();
-            }
-        };
-        flyout.Opened += (_, _) =>
-        {
-            Populate();
-            filter.Focus(FocusState.Programmatic);
-        };
-        // 关掉后焦点还给搜索框（从底栏「操作」点开时焦点在按钮上）；执行的动作收起了面板就不管。
-        flyout.Closed += (_, _) =>
-        {
-            if (_active)
-            {
-                FocusSearch();
-            }
-        };
-        flyout.ShowAt(row, new FlyoutShowOptions
-        {
-            Position = new Windows.Foundation.Point(8, Math.Min(row.ActualHeight, 24)),
-        });
+        Refresh(SelectedEntry?.Id, animated: false);
+        Footer.ShowNotice(name is null ? "已移出收藏夹" : $"已移到「{name}」");
     }
 
-    /// <summary>Ctrl+K 操作面板的条目（和右键菜单同名同顺序，收藏夹摊平）。</summary>
-    private List<(string Text, Action Action)> EntryActionList(ClipEntry entry)
+    private async Task NewGroupForAsync(List<ClipEntry> targets)
     {
-        var actions = new List<(string, Action)>
+        var name = await PromptAsync("新建收藏夹", "收藏夹的名字（最多 24 字）");
+        if (string.IsNullOrWhiteSpace(name) || Store is not { } store)
         {
-            ("粘贴", () => Paste(plain: false)),
-            ("粘贴为纯文本", () => Paste(plain: true)),
-            ("复制", () => Copy(entry)),
-            (entry.Favorite ? "取消收藏" : "收藏", FavoriteSelected),
-            (entry.Snippet ? "移出片段" : "存为片段", () => ToggleSnippet(entry)),
-            ("编辑备注…", () => _ = EditNoteAsync(entry)),
+            return;
+        }
+
+        if (store.CreateGroup(name) is not { } group)
+        {
+            NoticeHost.Show("名字不能用", "不能为空、不能重名、最多 24 字", NoticeTone.Warning);
+            return;
+        }
+
+        MoveToGroup(targets, group.Id, group.Name);
+    }
+
+    /// <summary>一行字的小对话框（6e 换成画在面板里的）。</summary>
+    private async Task<string?> PromptAsync(string title, string placeholder)
+    {
+        var box = new TextBox { PlaceholderText = placeholder, MaxLength = ClipGroups.MaxNameLength };
+        var dialog = new ContentDialog
+        {
+            RequestedTheme = Theme.ElementTheme,
+            Title = title,
+            PrimaryButtonText = "好",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Primary,
+            Content = box,
+            XamlRoot = XamlRoot,
         };
-        if (entry.Kind == ClipKind.Text)
+        return await dialog.ShowAsync() == ContentDialogResult.Primary ? box.Text : null;
+    }
+
+    private void RemoveSnippets(List<ClipEntry> snippets)
+    {
+        if (Store is not { } store)
         {
-            actions.Insert(actions.Count - 1, ("编辑内容…", () => _ = EditSnippetAsync(entry)));
+            return;
         }
-        if (Store is { } store)
+
+        var expired = store.SetSnippet(snippets.Select(entry => entry.Id).ToList(), false);
+        if (!ShowExpiredNotice(expired))
         {
-            actions.Add(("移到收藏夹：默认收藏", () => store.MoveToGroup(entry.Id, null)));
-            foreach (var group in store.Groups.OrderBy(item => item.Position))
+            Footer.ShowNotice(snippets.Count > 1 ? $"已移出片段 {snippets.Count} 条" : "已移出片段");
+        }
+    }
+
+    /// <summary>右键菜单：和 Ctrl+K 同一份条目；分节是分隔线、子列表是子菜单、不写键位（Windows 右键菜单的习惯）、删除是危险色。</summary>
+    private MenuFlyout ContextMenu(List<ClipEntry> targets)
+    {
+        var menu = new MenuFlyout();
+        void Fill(IList<MenuFlyoutItemBase> into, IReadOnlyList<PaletteItem> items)
+        {
+            var section = int.MinValue;
+            foreach (var item in items)
             {
-                var id = group.Id;
-                actions.Add(("移到收藏夹：" + group.Name, () => store.MoveToGroup(entry.Id, id)));
+                if (section != int.MinValue && item.Section != section)
+                {
+                    into.Add(new MenuFlyoutSeparator());
+                }
+
+                section = item.Section;
+                if (item.Submenu is { } submenu)
+                {
+                    var sub = new MenuFlyoutSubItem { Text = item.Title, Icon = new FontIcon { Glyph = item.Glyph } };
+                    Fill(sub.Items, submenu);
+                    into.Add(sub);
+                    continue;
+                }
+
+                var entry = new MenuFlyoutItem
+                {
+                    Text = item.Title,
+                    Icon = new FontIcon { Glyph = item.Checked ? Glyphs.Check : item.Glyph },
+                    IsEnabled = item.Run is not null,
+                };
+                if (item.Danger)
+                {
+                    entry.Foreground = new SolidColorBrush(Theme.Value(0xFF3B30, 0xFF453A));
+                }
+
+                var run = item.Run;
+                entry.Click += (_, _) => run?.Invoke();
+                into.Add(entry);
             }
         }
 
-        actions.Add(("管理收藏夹…", () => _ = ManageGroupsAsync()));
-        if (entry.Kind == ClipKind.Text)
+        Fill(menu.Items, ActionItems(targets));
+        return menu;
+    }
+
+    private static bool CanTranslate(ClipEntry entry)
+        => entry.Kind == ClipKind.Text ? !string.IsNullOrWhiteSpace(entry.Text) : entry.Kind == ClipKind.Image && !string.IsNullOrWhiteSpace(entry.OcrText);
+
+    /// <summary>打开链接 / 用默认程序打开文件：没固定就先收起面板，再交给系统在后台打开（mac 体检 B13）。</summary>
+    private bool OpenTarget(ClipEntry? entry)
+    {
+        string? target = entry?.Kind switch
         {
-            actions.Add(("翻译", () => TranslateEntry(entry)));
+            ClipKind.Files => entry.Files.FirstOrDefault(path => File.Exists(path) || Directory.Exists(path)),
+            ClipKind.Text => ContentForms.FirstLink(entry.Text)?.ToString(),
+            _ => null,
+        };
+        if (target is null)
+        {
+            if (entry?.Kind == ClipKind.Files)
+            {
+                NoticeHost.Show("没能打开", "文件已经不在原处", NoticeTone.Warning);
+                return true;
+            }
+
+            return false;
         }
 
-        if (entry.Kind == ClipKind.Image)
+        CloseUnlessPinned();
+        try
         {
-            actions.Add(("钉到屏幕", () => _ = PinImageAsync(entry)));
-            if (!string.IsNullOrWhiteSpace(entry.OcrText))
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(target) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"clipboard.open-failed {ex.GetType().Name}");
+            NoticeHost.Show("没能打开", ex.GetType().Name, NoticeTone.Error);
+        }
+
+        return true;
+    }
+
+    private void RevealFiles(ClipEntry entry)
+    {
+        var first = entry.Files.FirstOrDefault(path => File.Exists(path) || Directory.Exists(path));
+        if (first is null)
+        {
+            NoticeHost.Show("没能显示", "文件已经不在原处", NoticeTone.Warning);
+            return;
+        }
+
+        CloseUnlessPinned();
+        RevealInExplorer(first);
+    }
+
+    private void CloseUnlessPinned()
+    {
+        if (!_pinned)
+        {
+            CloseRequested?.Invoke();
+        }
+    }
+
+    private static void Beep() => MessageBeep(0xFFFFFFFF);
+
+    [System.Runtime.InteropServices.LibraryImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static partial bool MessageBeep(uint type);
+
+    // ---- 标签（范围 / 收藏夹、类型或形态、来源）
+
+    /// <summary>搜索线里的标签：范围（收藏 / 片段）或收藏夹、类型或形态、来源；点 × 移除，点标签本身开筛选面板；⌫ 待删时底色加深。</summary>
+    private void UpdateFilterChips()
+    {
+        SearchLineControl.Chips.Children.Clear();
+        var chips = new List<(string Text, Action Remove)>();
+        if (_groupFilterId is { } id)
+        {
+            chips.Add((Store?.GroupName(id) ?? "收藏夹", () =>
             {
-                actions.Add(("复制图中文字", () => CopyText(entry.OcrText!)));
+                _groupFilterId = null;
+                SetScope(ClipScope.All);
+            }));
+        }
+        else if (_scope != ClipScope.All)
+        {
+            chips.Add((_scope == ClipScope.Favorites ? "收藏" : "片段", () => SetScope(ClipScope.All)));
+        }
+
+        if (_formFilter is { } form)
+        {
+            chips.Add((ContentForms.Title(form), () =>
+            {
+                _formFilter = null;
+                _kindFilter = null;
+                Refresh(animated: false);
+                UpdateFilterChips();
+            }));
+        }
+        else if (_kindFilter is { } kind)
+        {
+            chips.Add((kind switch { ClipKind.Image => "图片", ClipKind.Files => "文件", _ => "文本" }, () =>
+            {
+                _kindFilter = null;
+                Refresh(animated: false);
+                UpdateFilterChips();
+            }));
+        }
+
+        if (_sourceFilter is { } source)
+        {
+            var name = Sources().FirstOrDefault(item => string.Equals(item.Exe, source, StringComparison.OrdinalIgnoreCase)).Name
+                       ?? Path.GetFileNameWithoutExtension(source);
+            chips.Add((name, () =>
+            {
+                _sourceFilter = null;
+                Refresh(animated: false);
+                UpdateFilterChips();
+            }));
+        }
+
+        _chipRemovers.Clear();
+        for (var index = 0; index < chips.Count; index++)
+        {
+            var (text, remove) = chips[index];
+            _chipRemovers.Add(remove);
+            var chip = SearchLineControl.AddChip(text, () =>
+            {
+                remove();
+                FocusSearch();
+            });
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(chip, $"筛选：{text}");
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetHelpText(chip, "按删除键移除");
+            chip.Tapped += (_, args) =>
+            {
+                args.Handled = true;
+                OpenFilterPalette();
+            };
+            if (_pendingChip && index == chips.Count - 1)
+            {
+                var accent = Theme.AccentColor;
+                chip.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(77, accent.R, accent.G, accent.B));
             }
         }
 
-        if (entry.Kind == ClipKind.Files && entry.Files.FirstOrDefault() is { } first)
+        if (!_palette.IsOpen)
         {
-            actions.Add(("在资源管理器中显示", () => RevealInExplorer(first)));
+            SearchBox.PlaceholderText = chips.Count > 0 ? "搜索" : "搜索剪贴板，Tab 筛选";
+        }
+    }
+
+    private void RemoveLastChip()
+    {
+        if (_chipRemovers.Count > 0)
+        {
+            _chipRemovers[^1]();
         }
 
-        actions.Add(("删除", DeleteSelected));
-        return actions;
+        UpdateFilterChips();
+    }
+
+    // ---- 复制
+
+    /// <summary>
+    /// Ctrl+C / 仅复制（mac copy(targets)）：一条照常；全是文本合成一段；全是文件一次写进全部文件；
+    /// 混着图片的只写第 1 条、底栏警告。合成的面板里不动，收起面板时才记成一条新历史。
+    /// </summary>
+    private void CopySelected()
+    {
+        var targets = SelectedEntries;
+        if (targets.Count == 0)
+        {
+            return;
+        }
+
+        if (targets.Count == 1)
+        {
+            Copy(targets[0]);
+            return;
+        }
+
+        if (targets.All(entry => entry.Kind == ClipKind.Text))
+        {
+            CopyText(MultiPaste.Merge(targets.Select(entry => entry.Text ?? string.Empty)), recordOnHide: true, $"已复制 {targets.Count} 条，合成一段");
+            return;
+        }
+
+        if (targets.All(entry => entry.Kind == ClipKind.Files))
+        {
+            var files = targets.SelectMany(entry => entry.Files).Distinct(StringComparer.OrdinalIgnoreCase)
+                .Where(path => File.Exists(path) || Directory.Exists(path)).ToList();
+            if (files.Count > 0 && ClipboardWriter.WriteFiles(files))
+            {
+                ClipboardService.Instance?.MarkOwnWrite();
+                Footer.ShowNotice($"已复制 {files.Count} 个文件");
+            }
+
+            return;
+        }
+
+        Copy(targets[0]);
+        Footer.ShowNotice("只复制了第 1 条，图片和别的一起没法放进剪贴板", success: false);
+    }
+
+    /// <summary>复制为纯文本：去掉格式写进剪贴板，收起面板时记一条。</summary>
+    private void CopyPlain(List<ClipEntry> targets)
+        => CopyText(MultiPaste.Merge(targets.Select(entry => entry.Text ?? string.Empty)), recordOnHide: true);
+
+    /// <summary>复制路径（全是文件时，多个按换行拼）；同 Ctrl+C：面板开着时列表不动，收起时才记成一条新历史。</summary>
+    private bool CopyPaths(List<ClipEntry> targets)
+    {
+        if (targets.Count == 0 || !targets.All(entry => entry.Kind == ClipKind.Files))
+        {
+            return false;
+        }
+
+        CopyText(string.Join("\r\n", targets.SelectMany(entry => entry.Files)), recordOnHide: true, "已复制路径");
+        return true;
     }
 
     private async Task NewSnippetAsync()
@@ -1970,13 +2538,6 @@ public sealed partial class ClipboardPanel : UserControl
         await dialog.ShowAsync();
         RefreshGroups();
         Refresh(animated: false);
-    }
-
-    private static void AddItem(MenuFlyout menu, string text, Action action)
-    {
-        var item = new MenuFlyoutItem { Text = text };
-        item.Click += (_, _) => action();
-        menu.Items.Add(item);
     }
 
     private static void RevealInExplorer(string path)

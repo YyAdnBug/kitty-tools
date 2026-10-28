@@ -135,6 +135,18 @@ public sealed class ClipboardAlignTests
     }
 
     [TestMethod]
+    public void MenuFilterMatchesPinyin()
+    {
+        Assert.IsTrue(Search.MatchesTitle("收藏", "收"));
+        Assert.IsTrue(Search.MatchesTitle("收藏", "sc"));
+        Assert.IsTrue(Search.MatchesTitle("收藏", "shoucang"));
+        Assert.IsTrue(Search.MatchesTitle("在资源管理器中显示", "zyglq"));
+        Assert.IsTrue(Search.MatchesTitle("JSON", "json"));
+        Assert.IsFalse(Search.MatchesTitle("复制", "sc"));
+        Assert.IsTrue(Search.MatchesTitle("删除", "  "));
+    }
+
+    [TestMethod]
     public void LayoutIsAPrefixSum()
     {
         // 两天：今天 3 条、昨天 2 条；第 1 条（下标 1）展开透镜 198。

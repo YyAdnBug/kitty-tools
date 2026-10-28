@@ -72,7 +72,7 @@ internal sealed partial class ClipRowView : Grid
         Children.Add(lead);
 
         // 标题。
-        var form = entry.Kind == ClipKind.Text ? ContentForms.Detect(entry.Text) : null;
+        var form = entry.Form;
         var title = TitleBlock(entry, form, context.Query);
         SetColumn(title, 1);
         Children.Add(title);
@@ -322,7 +322,7 @@ internal sealed partial class ClipRowView : Grid
     {
         const double side = 24;
         var corner = new CornerRadius(side * 0.225);
-        var form = entry.Kind == ClipKind.Text ? ContentForms.Detect(entry.Text) : null;
+        var form = entry.Form;
 
         // 颜色：色块（垫棋盘格，白 0.2 内描边）。
         if (form == ContentForm.Color && ContentForms.Color(entry.Text) is { } rgba)
