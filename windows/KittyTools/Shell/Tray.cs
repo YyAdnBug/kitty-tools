@@ -1,4 +1,4 @@
-// 托盘图标（Shell_NotifyIcon，NOTIFYICON_VERSION_4）。
+// 托盘图标（Shell_NotifyIcon，NOTIFYICON_VERSION_4；悬停提示是系统画的标准提示，靠 NIF_SHOWTIP）。
 // Windows 11 默认把新图标收进「^」溢出区；资源管理器重启时靠 TaskbarCreated 重新加。
 // 菜单是系统的 Win32 弹出菜单（Shell/TrayMenu.cs，2026-10-27 R66；以前是 WinUI 的 MenuFlyout）。
 // v4 下右键会先后收到 WM_RBUTTONUP 和 WM_CONTEXTMENU，只认后者；左键认 NIN_SELECT，键盘认 NIN_KEYSELECT。
@@ -45,12 +45,14 @@ internal static unsafe partial class Tray
             Log.Error($"tray.icon-failed {Marshal.GetLastWin32Error()}");
         }
 
+        // NIF_SHOWTIP：v4 下系统默认不画标准提示（留给程序自己画弹窗），悬停只剩一个空框；带上它才显示 szTip 里的名字。
         var data = new NOTIFYICONDATAW
         {
             cbSize = (uint)sizeof(NOTIFYICONDATAW),
             hWnd = HiddenWindow.Hwnd,
             uID = TrayIconId,
-            uFlags = NOTIFY_ICON_DATA_FLAGS.NIF_MESSAGE | NOTIFY_ICON_DATA_FLAGS.NIF_ICON | NOTIFY_ICON_DATA_FLAGS.NIF_TIP,
+            uFlags = NOTIFY_ICON_DATA_FLAGS.NIF_MESSAGE | NOTIFY_ICON_DATA_FLAGS.NIF_ICON | NOTIFY_ICON_DATA_FLAGS.NIF_TIP |
+                     NOTIFY_ICON_DATA_FLAGS.NIF_SHOWTIP,
             uCallbackMessage = CallbackMessage,
             hIcon = _icon,
         };
