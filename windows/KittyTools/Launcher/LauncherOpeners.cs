@@ -100,7 +100,9 @@ internal static partial class LauncherOpeners
                     using var key = clients.OpenSubKey(name);
                     var command = key?.OpenSubKey(@"shell\open\command")?.GetValue(null) as string;
                     var exe = ExeOf(command);
-                    if (exe is null || !File.Exists(exe) || !seen.Add(exe))
+                    // Windows 11 上 IE 还登记着，但打开它会跳到 Edge：不算一个浏览器。
+                    if (exe is null || !File.Exists(exe) || !seen.Add(exe) ||
+                        Path.GetFileName(exe).Equals("iexplore.exe", StringComparison.OrdinalIgnoreCase))
                     {
                         continue;
                     }
