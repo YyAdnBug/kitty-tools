@@ -217,6 +217,14 @@ internal static unsafe partial class RunningProcesses
                 return 1;
             }
 
+            // 先认进程、跳过本 App 自己的窗口（本来也不列自己）：对自己进程的窗口 GetWindowTextLength 会同步发
+            // WM_GETTEXTLENGTH 给 UI 线程，快照在线程池里拍时 UI 线程要是正等着这把锁（Quit / Minimize），两边就互相等死。
+            GetWindowThreadProcessId(hwnd, out var pid);
+            if (pid == (uint)Environment.ProcessId)
+            {
+                return 1;
+            }
+
             var style = (long)GetWindowLongPtrW(hwnd, GwlExStyle);
             if ((style & WsExToolWindow) != 0 && (style & WsExAppWindow) == 0)
             {
@@ -240,7 +248,6 @@ internal static unsafe partial class RunningProcesses
                 return 1;
             }
 
-            GetWindowThreadProcessId(hwnd, out var pid);
             if (!_collecting.TryGetValue((int)pid, out var list))
             {
                 _collecting[(int)pid] = list = new List<IntPtr>();

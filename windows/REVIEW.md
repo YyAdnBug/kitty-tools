@@ -26,6 +26,7 @@
 
 - **改了公用的**：`SettingsUi.Card` 去掉第一个 glyph 参数（全设置窗 21 处跟着改），加了 `leading`（身份图标）和 `problem`（说明用橙字）两个可选参数；`AddToggle` / `AddCombo` 去掉 glyph、删了 `GlyphFor`。没有 leading 时不建图标那一列（空列也吃 ColumnSpacing）。卡片单击只认左键。
 - **服务图标**：`ServiceTile.Create` 现在收 `TranslateServiceConfig`（以前收 vendor 字符串）；Core 加了 `ServiceBadge.Logo` / `IsFullBleed`、`AiEndpoint.ParseProtocol`（`AiServiceProvider.Protocol` 转调它）。`Resources/ServiceLogo` 多了 deepl / deepseek / openai / siliconflow 四张 128 px PNG（mac 那边是 SVG，在 Mac 上渲的）——确认 Release 发布目录里有这四张。
+- **kill 白屏（用户 2026-10-28 晚转来）**：截图里窗口停在「正在读取进程…」那一档的高（144）、整块白，正是 d670adc2 修过的那个死锁（行一出来在 UI 线程同步编 exe 图标的 PNG）——报的包多半早于 d670adc2，用现在的 windows-wip 重打。根上补了一道：`ShellIcons.ToPng` 改成把编码放到线程池再同步等，以后谁在 UI 线程上调 `LoadPng` 都不会再死锁；`RunningProcesses` 枚举窗口先认进程、跳过自己的窗口（对自己的窗口 `GetWindowTextLength` 会同步发消息给 UI 线程，UI 线程正等着同一把锁时互相等死）。验：kill / port / quit 各进一次，列表出来、带图标；quit 里按 Enter 关一个记事本不卡。
 - **编译时留意**：`SettingsWindow.ServiceRow` 里的本地函数和 async lambda、`ServiceStatus` 的 switch 出元组；`LauncherPanel.xaml` 给底栏那一行起了名字 `FooterRow`。
 
 ## v9 启动器分工（2026-10-28，用户：「没有的话就开始对齐 macos」，PLAN-v9-launcher D1–D9 按推荐）

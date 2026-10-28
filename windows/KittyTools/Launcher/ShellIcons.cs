@@ -180,7 +180,10 @@ internal static unsafe partial class ShellIcons
                 .CopyTo(pixels.AsSpan(row * width * 4, width * 4));
         }
 
-        return ImageCodec.BgraToPngAsync(width, height, OpaqueIfNoAlpha(pixels)).GetAwaiter().GetResult();
+        // 编码放到线程池上做、这里同步等：BgraToPngAsync 里的 await 会抓调用方的线程上下文，
+        // 直接在 UI 线程上 GetResult 的话续体要回 UI 线程、UI 线程又在等它——死锁，整个 App 白屏（kill 列表那次就是）。
+        // 这样不管谁在哪个线程上调 LoadPng 都不会卡死。
+        return Task.Run(() => ImageCodec.BgraToPngAsync(width, height, OpaqueIfNoAlpha(pixels))).GetAwaiter().GetResult();
     }
 
     /// <summary>图标没有 alpha 通道时全填不透明（不然整张图透明）。</summary>
