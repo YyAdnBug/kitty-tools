@@ -115,6 +115,18 @@ internal sealed class TranslationHistory
         return entries;
     }
 
+    /// <summary>
+    /// 这段原文上一次的译文（不分大小写，生词本里的优先，再按时间）：启动器「fy 单词」那一行的副标题用（PLAN-v9-launcher R16）。
+    /// </summary>
+    public string? LatestResult(string source)
+    {
+        using var statement = _database.Connection.Prepare(
+            "SELECT result FROM translations WHERE source = $source COLLATE NOCASE " +
+            "ORDER BY favorite DESC, created_at DESC LIMIT 1;");
+        statement.BindText(1, Stored(source));
+        return statement.Step() ? statement.GetText(0) : null;
+    }
+
     public (int Total, int Favorites) Counts()
     {
         using var statement = _database.Connection.Prepare(

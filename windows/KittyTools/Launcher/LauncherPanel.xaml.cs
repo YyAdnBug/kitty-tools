@@ -502,8 +502,9 @@ public sealed partial class LauncherPanel : UserControl
                     return null;
                 }
 
-                key = "site:" + host;
                 bytes = SiteIcons.Peek(host, out var found);
+                // 没查过浏览器图标库时先用的是链接预览那张：键分开，查到浏览器的那张后换得上（不被位图缓存挡住）。
+                key = "site:" + host + (found ? ":browser" : ":preview");
                 if (!found)
                 {
                     _pendingHosts.Add(host);

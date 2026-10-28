@@ -26,6 +26,31 @@ internal sealed class LinkPreviewService
         }
     }
 
+    /// <summary>
+    /// 启动器网站图标的兜底（mac SiteIcons：本机浏览器的图标库里没有时用剪贴板链接预览取到的）：按主机找一条带网站图标的；
+    /// 设置里关了链接预览时不给（同「缓存也不显示」）。只看内存里那十几条，不联网。
+    /// </summary>
+    public static byte[]? IconFor(string host)
+    {
+        if (!Enabled)
+        {
+            return null;
+        }
+
+        lock (Cache)
+        {
+            foreach (var (key, cached) in Cache)
+            {
+                if (cached?.IconBytes is { Length: > 0 } icon && string.Equals(LauncherText.Host(key), host, StringComparison.Ordinal))
+                {
+                    return icon;
+                }
+            }
+        }
+
+        return null;
+    }
+
     public static async Task<CachedPreview?> FetchAsync(Uri uri, CancellationToken cancellationToken)
     {
         var key = uri.ToString();

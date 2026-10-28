@@ -234,7 +234,7 @@ internal sealed partial class LauncherModel
         var translateOn = Features.IsOn(Feature.Translate);
         if (translateOn && LauncherCommands.TranslateQuery(query) is { } text)
         {
-            return new List<LauncherItem> { LauncherCommands.TranslateItem(text) };
+            return new List<LauncherItem> { LauncherCommands.TranslateItem(text, Definition(text)) };
         }
 
         // 「cb 词」（带空格）只有这一行；单输 cb 时它排第一，后面照常接本地结果（mac 体检 B33）。
@@ -316,6 +316,13 @@ internal sealed partial class LauncherModel
             .Where(item => seen.Add(item.Id))
             .ToList();
     }
+
+    /// <summary>
+    /// 「fy 单词」的释义（mac 体检 D10 用系统词典的第一条）：Windows 没有系统词典，取本机翻译历史 / 生词本里这个词上一次的译文
+    /// （生词本里的优先）；只给「一个词」（WordLookup.IsWord，同查词模式）查，没翻过的不显示。查本机的库，几条记录，不联网。
+    /// </summary>
+    private static string Definition(string text)
+        => WordLookup.IsWord(text) ? TranslationHistory.Instance?.LatestResult(text) ?? string.Empty : string.Empty;
 
     /// <summary>浏览历史里匹配上的（mac visited）：去掉已经是书签 / 用过的网址，只按名字排、不加使用分，最多 5 行；副标题拼上多久前。</summary>
     private static List<LauncherItem> Visited(

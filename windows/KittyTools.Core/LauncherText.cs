@@ -58,6 +58,21 @@ public static class LauncherText
         };
     }
 
+    /// <summary>一段译文的第一行（fy 单词那一行的副标题：放在一行里，后面的义项不要）。</summary>
+    public static string FirstLine(string text)
+    {
+        foreach (var line in text.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.Length > 0)
+            {
+                return trimmed;
+            }
+        }
+
+        return string.Empty;
+    }
+
     /// <summary>浏览历史的副标题（mac BrowserHistory.subtitle）：「历史 · 主机」后面拼上多久前。</summary>
     public static string HistorySubtitle(string subtitle, long? visitedAt, long nowMs)
         => visitedAt is { } then ? subtitle + " · " + RelativeTime(then, nowMs) : subtitle;

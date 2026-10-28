@@ -108,12 +108,16 @@ public static partial class LauncherCommands
         return rest.Length == 0 ? null : rest;
     }
 
-    /// <summary>fy 那一行（mac translateItem）：Enter 收起启动器、翻译浮窗直接翻译。</summary>
-    public static LauncherItem TranslateItem(string text) => new()
+    /// <summary>
+    /// fy 那一行（mac translateItem）：Enter 收起启动器、翻译浮窗直接翻译。definition：副标题的释义
+    /// （mac 是系统词典的第一条；Windows 没有系统词典，用本机翻译历史里这个词上一次的译文，见 LauncherModel）。
+    /// </summary>
+    public static LauncherItem TranslateItem(string text, string definition = "") => new()
     {
         Kind = LauncherKind.Translate,
         Target = text,
         Title = $"翻译「{text}」",
+        Subtitle = LauncherText.FirstLine(definition),
         HotKeyAction = "inputTranslate",
     };
 

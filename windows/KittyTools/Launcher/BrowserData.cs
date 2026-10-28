@@ -455,7 +455,7 @@ internal static class BrowserIndex
 
 /// <summary>
 /// 网站图标（D8，照 mac SiteIcons，不联网）：书签开关开着的 Chromium 系浏览器的 Favicons 库，按主机查一张最接近 32 的图；
-/// 再退到剪贴板链接预览取到的。查过的（含没找到的）按主机缓存，浏览器数据重读时清掉。
+/// 没有再退到剪贴板链接预览取到的（LinkPreviewService.IconFor）。查过的（含没找到的）按主机缓存，浏览器数据重读时清掉。
 /// </summary>
 internal static class SiteIcons
 {
@@ -478,14 +478,19 @@ internal static class SiteIcons
         }
     }
 
-    /// <summary>已经查过的（UI 线程上调，不碰磁盘）：查到了是图，没查到是 null；没查过 found = false。</summary>
+    /// <summary>
+    /// 已经查过的（UI 线程上调，不碰磁盘）：浏览器图标库里有就是它；没有（或还没查过，found = false）先用剪贴板链接预览取到的
+    /// （mac 的第二个来源），都没有是 null（行里用种类色块）。
+    /// </summary>
     public static byte[]? Peek(string host, out bool found)
     {
+        byte[]? bytes;
         lock (Lock)
         {
-            found = Cache.TryGetValue(host, out var bytes);
-            return bytes;
+            found = Cache.TryGetValue(host, out bytes);
         }
+
+        return bytes ?? LinkPreviewService.IconFor(host);
     }
 
     /// <summary>在线程池里查一批主机（同一轮布局报上来的攒成一批），查完回调。</summary>

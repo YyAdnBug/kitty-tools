@@ -63,6 +63,10 @@ public sealed class LauncherModesTests
         Assert.IsNull(LauncherCommands.TranslateQuery("fy "));
         Assert.IsNull(LauncherCommands.TranslateQuery("fy"));
         Assert.AreEqual("fy ", LauncherCommands.TranslatePrompts("fy").Single().Completion);
+        // 副标题的释义（R16）：只放第一行；没翻过的空着。
+        Assert.AreEqual("int. 你好", LauncherCommands.TranslateItem("hello", "\n  int. 你好  \nn. 招呼").Subtitle);
+        Assert.AreEqual(string.Empty, LauncherCommands.TranslateItem("hello").Subtitle);
+        Assert.AreEqual(string.Empty, LauncherText.FirstLine(" \n \n"));
         Assert.AreEqual(0, LauncherCommands.TranslatePrompts("fyx").Count);
     }
 

@@ -2,7 +2,7 @@
 
 2026-10-28。剪贴板（`PLAN-v9-clipboard.md`）、截图标注（`PLAN-v9-annotate.md`）、设置之后，用户：「检查启动器的样式和功能有没有和 macos 保持一致，没有的话就开始对齐 macos；你只管实现功能和对齐 UI，我会让 windows 的去检查」。
 
-**状态：用户说「没有的话就开始对齐」，D1–D9 按推荐直接做（想改哪一条说一声，再回头改）。7a–7d 审查方在 Mac 上都写完了（2026-10-28，`git log --grep "启动器"`），一个字都没编译过：Windows 那边先编译、跑单测和 `--ui-snapshots`，编译错直接修；手测见 HANDTEST 529–568（都没走）。** 先列 Windows 现在的毛病（§1），再按结果（§2）、视觉（§3）、按键和 Ctrl+K（§4）、设置页（§5）逐项对 mac，最后是替用户定的几件事（§6）和分批（§7）。
+**状态：用户说「没有的话就开始对齐」，D1–D9 按推荐直接做（想改哪一条说一声，再回头改）。7a–7d 审查方在 Mac 上都写完了（2026-10-28，`git log --grep "启动器"`），一个字都没编译过：Windows 那边先编译、跑单测和 `--ui-snapshots`，编译错直接修；手测见 HANDTEST 529–570（都没走）。** 先列 Windows 现在的毛病（§1），再按结果（§2）、视觉（§3）、按键和 Ctrl+K（§4）、设置页（§5）逐项对 mac，最后是替用户定的几件事（§6）和分批（§7）。
 
 - **对的是谁**：mac 的路径相对 `macos/KittyTools/`：`Launcher/LauncherModel.swift`（结果顺序、执行、按键、Ctrl+K 动作表）、`LauncherPanelView.swift`（行、分组标题、高度、底栏）、`LauncherItem.swift`（内置动作）、`SystemCommands.swift`、`WebSearch.swift`、`Calculator.swift`、`LauncherUsage.swift`（收藏、常用、移除）、`Settings/LauncherTab.swift`；规格 `.cursor/rules/mac-whisker-launcher.mdc`（写成「wl」）。Windows 对着 `024d0e3`，路径相对 `windows/KittyTools/`：`Launcher/**`、`KittyTools.Core/{LauncherItem,LauncherMatch,LauncherCommands,DirectItems,WebSearch,Calculator,PanelFooterText,PanelMetrics}.cs`、`Shell/Ui/KindTile.cs`、`Settings/SettingsWindow.cs` 的 `BuildLauncher`。
 - **规矩照旧**：功能、行为、数值、文案跟 mac；窗口外壳、字体、图标字形、快捷键写法跟 Windows（⌘ → Ctrl，⌥ → Alt，⌫ → Delete）。mac 的 pt 是 DIP；mac 13 号的副标题在 Windows 上是 14（PLAN-v7 §2.1 字号表）。全 App 不做「从小放大」。
@@ -40,6 +40,7 @@
 | R12 | 内置动作 | 和菜单栏同名同序：快捷动作（启动器自己除外）、每节末尾接「暂停记录剪贴板」（副标题正在记录 / 已暂停）「复制即译」（已开启 / 已关闭），最后设置、快捷键速查表、关于、检查更新、退出；关着的功能不列（`LauncherItem.swift:82–107`） | 9 项写死 | 照 mac = L8：内置动作表从快捷动作表 + 托盘那几项生成；划词翻译不进（同托盘 G1：点了启动器，原来的程序就不在前台了） |
 | R13 | Tab 补全 | 选中项的补全：App / 动作 / 网址 / 系统命令补标题，文件夹补「路径\」（`completion(for:)`） | 只有带 `Completion` 的几种 | 照 mac |
 | R14 | 60 秒内再呼出 | 留着查询和选中项，字全选着（直接打字就替换）（`prepareForShow`） | 留着，但光标在末尾 | 补「全选」 |
+| R16 | fy 单词的释义 | 「fy 单个英文词」时副标题异步换成系统词典的第一条释义（体检 D10，`lookUpDefinition`） | 没有 | Windows 没有系统词典：取本机翻译历史 / 生词本里这个词上一次的译文第一行（生词本优先，不分大小写），只给「一个词」（`WordLookup.IsWord`）查，没翻过的空着；不联网（2026-10-28 补） |
 | R15 | 计算器 | mod、函数、pi / e、0x / 0b / 0o、单位换算、进制，大字千分位、⌘K 多「复制原始数字」「复制十六进制」…（`Calculator.swift`） | 四则、括号、乘方、百分号 | 照 mac 原样移植 = L6，mac 的单测期望值一起搬 |
 
 ## 3. 视觉
@@ -52,7 +53,7 @@
 | V4 | 行 | 40 高、左右 10；图标 24；标题 14 medium + 副标题同一行、secondary、从中间截；右边种类 12 tertiary（wl） | 左右 6；副标题从末尾截 | 照 mac；副标题从中间截写成 Core 的纯函数（按字数，ponytail） |
 | V5 | 悬停 | 没选中的行铺 `Fill.Hover`（0.10 s），不移动选中 | `ListView` 自带的悬停底 | 照 mac |
 | V6 | 计算卡 | 64 高，一行：算式 13 等宽 secondary → 箭头 → 结果 28 semibold 等宽数字（`LauncherRow` 计算分支） | 上下两行，结果用 Consolas | 照 mac（D3）：算式用 Cascadia Mono 14，结果 Segoe UI Variable Display 28 semibold |
-| V7 | 图标 | App / 文件是系统图标；网址 / 书签 / 搜索是网站图标（没有才是种类色块）；系统设置面板是「设置」应用的图标；种类色块按家族色（wl） | App 有图标；设置页、网址都是色块 | 设置页用「设置」应用的图标（开始菜单里那一个）；网站图标先读本机 Chromium 的 `Favicons` 库、再用剪贴板链接预览取到的，都没有才是色块（同 mac，不联网） |
+| V7 | 图标 | App / 文件是系统图标；网址 / 书签 / 搜索是网站图标（没有才是种类色块）；系统设置面板是「设置」应用的图标；种类色块按家族色（wl） | App 有图标；设置页、网址都是色块 | 设置页用「设置」应用的图标（开始菜单里那一个）；网站图标先读本机 Chromium 的 `Favicons` 库、再用剪贴板链接预览取到的（`LinkPreviewService.IconFor`，链接预览关着时不用），都没有才是色块（同 mac，不联网） |
 | V8 | 家族色 | App / 文件灰（只在取不到图标时露出来）、内置动作跟它那一节（剪贴板蓝、翻译绿、截图粉）、系统命令和进程紫、网址青、搜索和提示靛、计算橙 | App 紫、文件橙、内置动作一律粉 | 照 mac |
 | V9 | 按住 Ctrl | 150 ms 后右边的种类依次换成 ⌘1–9 键帽（每行错开 15 ms），松开换回（`kind`） | 种类旁边多一个数字键帽 | 照 mac：换成「Ctrl+1」…，种类淡出 |
 | V10 | 选中的内置动作 | 种类前多一组它的全局快捷键键帽（没设不显示） | 没有 | 照 mac |
