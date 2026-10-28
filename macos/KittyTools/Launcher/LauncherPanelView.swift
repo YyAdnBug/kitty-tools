@@ -366,8 +366,8 @@ private struct LauncherRow: View {
           .minimumScaleFactor(0.5)
           .animation(Style.Motion.snap.animation(reduced: reduceMotion), value: item.title)
       } else {
-        // port 的标题是端口号：等宽数字，后面的进程名才成一列
-        (item.isPort ? Text(item.title).monospacedDigit() : Text(item.title))
+        // port 的标题是端口号、ip 的是地址：等宽数字，后面的副标题才成一列
+        (item.isPort || item.kind == .ip ? Text(item.title).monospacedDigit() : Text(item.title))
           .font(.system(size: 14, weight: .medium))
           .lineLimit(1)
           .layoutPriority(1)
@@ -493,7 +493,7 @@ extension LauncherItem {
       hotKeyAction?.color ?? MenuExtra(rawValue: target)?.color ?? Style.Family.general
     case .translate: Style.Family.translate
     case .prompt where target == "translate-fy": Style.Family.translate
-    case .system, .process: Style.Family.command
+    case .system, .process, .ip: Style.Family.command
     case .prompt where target.hasPrefix("system-"): Style.Family.command
     case .url where isSettingsPane: Style.Family.general
     case .url: Style.Family.url
@@ -526,6 +526,7 @@ extension LauncherItem {
     case .calculation: "计算"
     case .clip: "剪贴板"
     case .process: "进程"
+    case .ip: "网络"
     }
   }
 }

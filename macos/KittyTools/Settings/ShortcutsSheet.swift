@@ -347,6 +347,7 @@ struct ShortcutsSheet: View {
           Entry("eject", text: "列出可推出的磁盘：↩ 推出"),
           Entry("kill", text: "列出后台进程（kill :端口 按端口列）：↩ 结束，⌘↩ 强制结束（再按一次确认）"),
           Entry("port", text: "列出在监听的端口：↩ 结束占用它的进程，⌘↩ 强制结束（再按一次确认）"),
+          Entry("ip", text: "本机的局域网 / 内网地址和外网地址（外网要联网查）：↩ 粘贴，⌘↩ 只复制"),
         ]),
       // mac-translate「浮窗快捷键」「翻译浮窗」（N5–N6）；代码在 TranslateCoordinator.handleKeyEquivalent、SourceTextView
       Group(

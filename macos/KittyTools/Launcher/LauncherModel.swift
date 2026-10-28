@@ -3,7 +3,8 @@
 // （含系统设置面板，体检 D9）+ 内置动作 + 快捷链接 / 搜索提示 + 书签 + 用过的网址 / 文件按匹配分排序（同分系统命令最后，
 // 体检 B36），再是浏览历史（各家开了「也搜浏览历史」才有，排在书签后、不和书签 / 用过的重复，最多 5 行，体检 D8），网页搜索兜底；
 // 「cb 关键词」只有一行，↩ 收起启动器、呼出剪贴板面板并把关键词填进它的搜索框（N9；单输 cb 时它排第一、后面照常接本地结果）；
-// 「fy 文本」只有一行，↩ 收起启动器、翻译浮窗直接翻译（体检 D10）；「open / find 词」、空格开头搜文件（FileSearch，
+// 「fy 文本」只有一行，↩ 收起启动器、翻译浮窗直接翻译（体检 D10）；「ip」排在最前列本机和外网地址（IPAddresses，
+// 外网的异步到，到了只换那几行），↩ 粘贴、⌘↩ 只复制；「open / find 词」、空格开头搜文件（FileSearch，
 // 结果异步到，先留着上一次的结果，后面仍接整句匹配到的 App）。
 // 系统命令（SystemCommands，对标 Alfred）：锁定屏幕、清倒废纸篓这类固定命令一行一个，按中文名 / 拼音 / Alfred 关键词
 // 搜到；「quit / hide / forcequit / eject 空格」列正在运行的 App / 可推出的宗卷，「kill 空格」列后台进程（异步，
@@ -165,6 +166,16 @@ import UniformTypeIdentifiers
     await WordLookup.systemDictionary(word)?.groups.first?.senses.first?.definition
   }
   @ObservationIgnored private var definitionTask: Task<Void, Never>?
+  /// 「ip」的本机地址（这次呼出里第一次输 ip 时读一次）；单测、截图自检换成固定的
+  @ObservationIgnored var localAddresses: () -> [LauncherItem] = { IPAddresses.localItems() }
+  /// 「ip」的外网地址：问一家查询服务；单测、截图自检换成固定的，不联网
+  @ObservationIgnored var publicAddress: (IPAddresses.Service) async -> String? = {
+    await IPAddresses.lookUp($0)
+  }
+  /// 这次呼出里 ip 的结果：本机那几行、两家查询服务各自查到没有、还在查的（收起时全清）
+  @ObservationIgnored private var ipLocal: [LauncherItem]?
+  @ObservationIgnored private var ipLookups: [IPAddresses.Service: IPAddresses.Lookup] = [:]
+  @ObservationIgnored private var ipTasks: [IPAddresses.Service: Task<Void, Never>] = [:]
   /// 这次呼出里查过的浏览器 / 打开方式（⌘K 每打一个字都要重算动作表，LaunchServices 别每次都问）
   @ObservationIgnored private var browserCache: [URL]?
   @ObservationIgnored private var applicationCache: [String: [(url: URL, isDefault: Bool)]] = [:]
@@ -317,6 +328,10 @@ import UniformTypeIdentifiers
     // 还在列的进程不要了（再呼出重列）
     processTask?.task.cancel()
     processTask = nil
+    // ip 再呼出时重读重查：这期间可能换了网络
+    cancelIPLookups()
+    ipLookups = [:]
+    ipLocal = nil
     if executed || query.isEmpty {
       keptAt = nil
       if !query.isEmpty { query = "" }
@@ -341,6 +356,8 @@ import UniformTypeIdentifiers
     shownFileRequest = nil
     favoriteCount = 0
     definitionTask?.cancel()
+    // 打字路过 ip（「iphone」）时还没查完的不要了
+    if !IPAddresses.matches(query) { cancelIPLookups() }
     fileRequest = FileSearch.request(for: query)
     commandRequest = fileRequest == nil ? SystemCommands.request(for: query) : nil
     if commandRequest == nil { commandItems = nil }
@@ -366,6 +383,7 @@ import UniformTypeIdentifiers
       return
     }
     let query = query.trimmingCharacters(in: .whitespaces)
+    let ip = IPAddresses.matches(query) ? ipItems() : []
     if query.isEmpty {
       results = home()
       return
@@ -380,7 +398,7 @@ import UniformTypeIdentifiers
       features.contains(.clipboard) && Self.clipQuery(query) != nil ? [Self.clipItem("")] : []
     let fy = features.contains(.translate) ? Self.translatePrompts(for: query) : []
     let top =
-      clip + fy + direct
+      clip + fy + ip + direct
       + [Calculator.item(for: query), keyword].compactMap { $0 } + prompts.exact
       + filePrompts.exact + systemPrompts.exact
     // 书签、浏览历史至少 2 个字才搜（1 个字母命中太多）
@@ -592,6 +610,45 @@ import UniformTypeIdentifiers
   /// 等副标题的释义查完（截图自检、单测用）
   func definitionLookup() async { await definitionTask?.value }
 
+  /// 「ip」那几行：本机地址，再是外网地址。外网这次呼出里没查过、上次没查到的，等 0.3 s 再问（还在打字就撤掉）；
+  /// 查到一家换一次行，行数可能多一行（两家看到的不一样），选中留在原来那一项上
+  private func ipItems() -> [LauncherItem] {
+    let local = ipLocal ?? localAddresses()
+    ipLocal = local
+    for service in IPAddresses.Service.allCases where ipTasks[service] == nil {
+      if case .found = ipLookups[service] { continue }
+      ipLookups[service] = .pending
+      ipTasks[service] = Task {
+        try? await Task.sleep(for: IPAddresses.lookupDelay)
+        guard !Task.isCancelled else { return }
+        let address = await publicAddress(service)
+        guard !Task.isCancelled else { return }
+        ipTasks[service] = nil
+        ipLookups[service] = address.map { .found($0) } ?? .failed
+        guard let start = results.firstIndex(where: { $0.kind == .ip }) else { return }
+        let kept = selectedItem?.id
+        results.removeAll { $0.kind == .ip }
+        results.insert(contentsOf: local + IPAddresses.publicItems(ipLookups), at: start)
+        selection = kept.flatMap { id in results.firstIndex { $0.id == id } } ?? selection
+      }
+    }
+    return local + IPAddresses.publicItems(ipLookups)
+  }
+
+  /// 撤掉还在等 / 在查的外网查询（查到的、没查到的留着）
+  private func cancelIPLookups() {
+    for (service, task) in ipTasks {
+      task.cancel()
+      ipLookups[service] = nil
+    }
+    ipTasks = [:]
+  }
+
+  /// 等外网地址查完（截图自检、单测用）
+  func ipLookup() async {
+    for task in ipTasks.values { await task.value }
+  }
+
   /// 用过的网址 / 文件：不在任何目录里，靠使用记录找回来；和书签同一网址（不分大小写）时只留书签。
   /// 系统设置面板在 App 目录里，不另列
   private func usedLocations(excluding bookmarks: [LauncherItem]) -> [LauncherItem] {
@@ -659,7 +716,7 @@ import UniformTypeIdentifiers
     case .path:
       return FileManager.default.fileExists(atPath: target)
         ? Self.item(kind: .path, target: target, title: title) : nil
-    case .search, .calculation, .clip, .prompt, .translate, .process: return nil  // 不记使用，不会出现
+    case .search, .calculation, .clip, .prompt, .translate, .process, .ip: return nil  // 不记使用，不会出现
     }
   }
 
@@ -689,6 +746,9 @@ import UniformTypeIdentifiers
     switch item.kind {
     case .calculation:
       paste { Paster.write(string: item.payload ?? "", record: true) }
+    case .ip:
+      guard let address = item.payload else { return NSSound.beep() }
+      paste { Paster.write(string: address, record: true) }
     case .clip:
       close()
       openClipboard(item.target)
@@ -916,7 +976,7 @@ import UniformTypeIdentifiers
       let exists = FileManager.default.fileExists(atPath: item.target, isDirectory: &isDirectory)
       let path = (item.target as NSString).abbreviatingWithTildeInPath
       return exists && isDirectory.boolValue && !path.hasSuffix("/") ? path + "/" : path
-    case .search, .calculation, .clip, .prompt, .translate, .process: return nil
+    case .search, .calculation, .clip, .prompt, .translate, .process, .ip: return nil
     }
   }
 
@@ -952,7 +1012,7 @@ import UniformTypeIdentifiers
     case .search: ("搜索", "magnifyingglass")
     case .prompt:
       item.target == FileSearch.accessTarget ? ("授权", "lock.open") : ("补全关键词", "text.cursor")
-    case .calculation: ("粘贴", "arrow.turn.down.left")
+    case .calculation, .ip: ("粘贴", "arrow.turn.down.left")
     case .clip: (item.target.isEmpty ? "打开" : "搜索", "doc.on.clipboard")
     case .translate: ("翻译", "character.bubble")
     case .process: ("结束", "stop.circle")
@@ -976,6 +1036,7 @@ import UniformTypeIdentifiers
     case .app, .path:
       revealsOnReturn(item) ? ("打开", "arrow.up.forward.app") : ("在访达中显示", "folder")
     case .calculation: ("只复制，不粘贴", "doc.on.doc")
+    case .ip where item.payload != nil: ("只复制，不粘贴", "doc.on.doc")
     default: nil
     }
   }
@@ -987,6 +1048,7 @@ import UniformTypeIdentifiers
     case .url where AppCatalog.isSettingsPane(item.target): nil
     case .url, .search: "复制网址"
     case .calculation: "复制结果"
+    case .ip: item.payload == nil ? nil : "复制地址"
     case .action, .system, .prompt, .clip, .translate, .process: nil
     }
   }
@@ -1385,6 +1447,8 @@ import UniformTypeIdentifiers
       NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: item.target)])
     case .calculation:
       copy(item)
+    case .ip where item.payload != nil:
+      copy(item)
     default:
       NSSound.beep()  // 以前吞掉这个键、什么都不响
     }
@@ -1494,8 +1558,8 @@ import UniformTypeIdentifiers
         }
       }
     }
-    // 2 复制（计算结果的 ⌘C 和 ⌘↩ 一样，不重复列）；复制路径和剪贴板 ⌘K 的「复制路径」同一个符号 link（mac-whisker §3）
-    if item.kind != .calculation, let title = copyTitle(for: item) {
+    // 2 复制（计算结果、ip 的 ⌘C 和 ⌘↩ 一样，不重复列）；复制路径和剪贴板 ⌘K 的「复制路径」同一个符号 link（mac-whisker §3）
+    if ![.calculation, .ip].contains(item.kind), let title = copyTitle(for: item) {
       let symbol = item.kind == .app || item.kind == .path ? "link" : "doc.on.doc"
       add(title, symbol, "⌘C", section: 2) { [unowned self] in copy(item) }
     }

@@ -559,7 +559,8 @@ struct SnapshotProbeTests {
       ("installing", .installing(release), false, nil),
       ("downloading", .installing(release), false, 0.42),
       ("downloading", .installing(release), true, 0.42),
-      ("downloaded", .installing(release), false, 1), ("installed", .installed(release), false, nil),
+      ("downloaded", .installing(release), false, 1),
+      ("installed", .installed(release), false, nil),
       ("latest", .upToDate, false, nil),
       ("failed", .failed("检查更新失败：网络连接已中断。"), false, nil),
     ]
@@ -3153,6 +3154,16 @@ struct SnapshotProbeTests {
           title: "grid - CSS: Cascading Style Sheets | MDN", visitedAt: .now - 86_400),
       ])
     }
+    // ip：Wi-Fi + 一块 VPN，开着代理时两家看到的外网地址不一样（文档用的保留地址，不是真的）
+    model.localAddresses = {
+      IPAddresses.localItems(
+        [
+          .init(interface: "en0", address: "192.168.1.23"),
+          .init(interface: "utun4", address: "10.8.0.6"),
+        ],
+        primary: "en0", names: ["en0": "Wi-Fi"])
+    }
+    model.publicAddress = { $0 == .domestic ? "203.0.113.7" : "198.51.100.24" }
     let home = NSHomeDirectory()
     model.processTargets = { verb in
       let node = "/opt/homebrew/bin/node"
@@ -3205,9 +3216,11 @@ struct SnapshotProbeTests {
         ("launcher-kill-force", "kill no"), ("launcher-port-prompt", "port"),
         ("launcher-port", "port "), ("launcher-port-filter", "port 5"),
         ("launcher-port-force", "port 3000"), ("launcher-port-app", "port 微信"),
+        ("launcher-ip", "ip"),
       ] {
         model.query = query
         await model.processLookup()
+        await model.ipLookup()
         model.showsActions = name == "launcher-actions-calc"
         if ["launcher-kill-force", "launcher-port-force"].contains(name),
           let first = model.results.first
